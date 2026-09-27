@@ -6,6 +6,104 @@
 
 ---
 
+## QUYẾT ĐỊNH KIẾN TRÚC — chuyển toàn bộ `pi` vào omp, và tổ chức lại package theo `pi`
+
+Hai quyết định của chủ sở hữu, chốt sau khi M1–M4 đã được viết và kiểm chứng. Cả hai **sửa lại ý
+nghĩa của M1**: phần "Không làm gì" của M1 hiện ghi `chord`, `durable` và `session-backends` là đã
+waive, và điều đó nay sai.
+
+### 1. `pi` là MIT, nên ta CHÉP chứ không làm lại
+
+`earendil-works/pi` (`~/Projects/pi-ref`, HEAD `d6af72e`) là **MIT — Copyright (c) 2025 Mario
+Zechner**. Nghĩa vụ duy nhất khi chép là **giữ nguyên copyright và permission notice**. Ở chỗ
+này chép code **ít rủi ro pháp lý hơn** là tái tạo sạch, và nhanh hơn nhiều.
+
+Bằng chứng cho thấy đây là đường đúng: bốn package mà omp **đã** có giữ nguyên tên, chỉ đổi scope —
+`@earendil-works/pi-agent-core` → `@oh-my-pi/pi-agent-core`, và cùng vậy cho `pi-ai`,
+`pi-coding-agent`, `pi-tui`. Vậy quy ước đã có sẵn, và bảy package mới chỉ cần theo đúng nó.
+
+**Bảy package omp chưa có** (đo bằng `find` + `du` trên cả hai cây, 2026-09-28):
+
+| package | file | dung lượng | ghi chú |
+|---|---|---|---|
+| `chord` | 62 | 674 KB | dependency ngoài duy nhất là `esbuild` — omp **chưa** có |
+| `durable` | 63 | 788 KB | có `src/documents.ts` — xem mục kế bên |
+| `evals` | 30 | 130 KB | |
+| `server` | 29 | 113 KB | có thể trùng vai trò với `collab-web` / `metaharness` của omp |
+| `client` | 19 | 69 KB | |
+| `protocol` | 17 | 54 KB | so trực tiếp với `packages/wire` của omp |
+| `telemetry` | 12 | 61 KB | phải phân biệt với `packages/stats` (local dashboard ≠ gửi đi) |
+| **Tổng** | **232** | **~1,9 MB** | |
+
+`sed` đổi scope là phần dễ; phần khó là **va chạm với thứ omp đã có**. Đó là việc phải nghiên cứu
+trước khi chép, không phải việc làm sau.
+
+**Lỗ hổng M1 tự thừa nhận đóng được.** M1 ghi: *"nửa 'document' của `durable` không có thay thế nào
+được xác minh — `git grep "document runtime|DocumentsRuntime" -- packages/` không trả về gì. Đây là
+**điểm không có bằng chứng duy nhất** trong milestone."* Nguồn thì có: `packages/durable/src/documents.ts`,
+7,7 KB. Chép nó vào là đóng lỗ hổng.
+
+### 2. Bốn package dùng chung đã phân kỳ hoàn toàn — nên phải tổ chức lại trước
+
+Đo từng file `.ts`/`.tsx` (loại `node_modules`, so **cả kích thước byte**) trên cả hai cây:
+
+| package | giống hệt | khác | chỉ có ở `pi` | chỉ có ở `omp` |
+|---|---|---|---|---|
+| `pi-agent-core` | **0** | 5 | 130 | 32 |
+| `pi-ai` | **0** | 11 | 187 | 308 |
+| `pi-coding-agent` | **0** | 30 | 349 | 1.341 |
+| `pi-tui` | **0** | 24 | 19 | 365 |
+
+**Không có một file nào giống hệt từ byte ở cả bốn package.** Vì vậy "copy move" nếu làm trên cấu trúc
+hiện tại là map thủ công từng file — đắt, dễ sai, và không kiểm chứng được bằng gì ngoài đọc tay.
+
+**Đó là lý do quyết định số 2: tổ chức lại package của omp theo độ mịn của `pi`, và tách ra cái gì
+tách được.** Mục tiêu là làm cho mọi lần chép về sau trở thành **thao tác cơ học**, không phải dự án
+riêng cho từng file.
+
+**Vì sao `pi-agent-core` là ví dụ đáng chú ý nhất.** 130 file chỉ có ở `pi` so với 29 chỉ có ở omp —
+chiều ngược lại với ba package kia. Gần như toàn bộ là **một hệ thống `harness/` mà omp chưa từng có**:
+
+```
+pi-agent-core/src/harness/                12
+pi-agent-core/src/harness/pico3/          16   (+ pico3/kinds/ 9)
+pi-agent-core/src/harness/runtime/         9   (+ runtime/drive/ 12)
+pi-agent-core/src/harness/session/        11   (+ session/jsonl/ 8)
+pi-agent-core/src/harness/tools/          10
+```
+
+Đây không phải chuyện tổ chức — đây là **một năng lực còn thiếu hẳn**. Và nó là bằng chứng cụ thể nhất
+cho điều chủ sở hữu nói: *omp được fork trước khi `pi` phát triển thêm*.
+
+**Chiều ngược lại cũng phải nói.** omp có 2.046 file mà `pi` không có, tập trung ở `coding-agent`
+(1.341, trong đó 1.567 là test) và `tui` (365). Tổ chức lại theo `pi` **không được** xoá những thứ đó.
+`pi` là mốc **độ mịn** (granularity), không phải khuôn đúc.
+
+### 3. Điểm đau kế tiếp: học và **chép logic** từ `deepseek-harness`
+
+Chủ sở hữu định hướng tiếp theo là học `deepseek-harness` và **chép logic** để cải thiện omp. Điều này
+**hợp pháp**, và đây là lý do:
+
+- `deepseek-harness` (`~/Projects/deepseek-harness`, HEAD `477b4f4`) là **MIT — Copyright (c) 2026
+  DeepSeek**.
+- Cả **9** package trong `vendor/` của nó — `cordis`, `cosmokit`, `group`, `hmr`, `include`, `loader`,
+  `logger-console`, `schemastery`, `timer` — đều mang file LICENSE riêng và đều là **MIT**.
+
+Khác hẳn `oh-my-openagent` (SUL-1.0, non-sublicensable, chỉ nội bộ/phi thương mại), ở đó ta **không**
+được chép dòng nào. Ở đây thì được, với nghĩa vụ giữ notice.
+
+**Nhưng phải nói đúng cơ chế.** `vendor/README.md` của dsh có manifest đầy đủ — từng package, upstream
+repo, commit — và một **sổ 22 sửa đổi cục bộ đã đánh số**. Nghĩa là mã trong `vendor/` **không còn là
+Cordis nguyên bản**: nó là cách DeepSeek hiểu Cordis. Chép nó thì ta nhận **trạng thái fork của họ**, không
+phải upstream. Muốn Cordis sạch thì lấy từ `github.com/cordiverse/cordis` tại commit mà manifest ghi.
+
+Hệ quả thẳng cho M4: M4 hiện ghi quyết định *"chỉ mượn **kỷ luật**, không mượn **kiến trúc**"*. Quyết định
+đó **còn đúng**, nhưng lý do đứng sau nó đã thay đổi — trước đây là vì sợ mượn nhầm, bây giờ là vì
+**mượn kiến trúc Cordis là mượn code của bên thứ ba đã bị fork 22 lần**, và cái đáng mượn là bài học về
+thứ tự ưu tiên, đăng ký fail-loud và tái tải có nối — không phải kernel.
+
+---
+
 ## LUẬN ĐIỂM
 
 Mục tiêu của cả chương trình là **một coding agent duy nhất, trong đó mọi thứ là plugin**.
@@ -302,7 +400,7 @@ Toàn bộ 50 dòng nằm ở [Bảng điều chỉnh tổng hợp](#bảng-đi�
 
 | Phần | Nội dung |
 |---|---|
-| **M1** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Mục tiêu · Không làm gì · Điều kiện tiên quyết · Thứ tự thực hiện · 17 hạng mục W1–W17 · Rủi ro · **Bảng 64 quyết định cần bạn chốt** · **Đính chính so với plan tổng (141 mục)** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |
+| **Quyết định kiến trúc** | Chuyển toàn bộ `pi` (7 package, 232 file) vào omp bằng cách chép — `pi` là MIT. Bốn package dùng chung đã phân kỹ 100% (0 file giống byte), nên phải tổ chức lại package theo độ mịn của `pi` trước. Điểm kế tiếp: chép logic từ `deepseek-harness` (cũng MIT, kể cả 9 package vendored). |
 | **M2** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Mục tiêu · Không làm gì · Điều kiện tiên quyết · Thứ tự thực hiện (8 sóng) · 15 hạng mục WI-0…WI-13 · Rủi ro · **Bảng 69 quyết định cần bạn chốt** · **Đính chính so với plan tổng (129 mục)** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |
 | **M3** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Vì sao không port được dạng plugin · Bối cảnh §1–§5 · 6 sóng, 17 hạng mục (A1–A9, B1–B3, C1–C2, D1–D3) · **Cổng chấp nhận và pháp lý §7–§8** · **Bảng 50 quyết định cần bạn chốt** · **Đính chính so với plan tổng (134 mục)** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |
 | **M4** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Vì sao chỉ mượn kỷ luật · **Phạm vi đã thu hẹp** (sáu work item đã rời sang M2/M1) · 4 hạng mục còn lại, sóng B/C/D · **Pháp lý §7 — neo chưa kiểm chứng được** · **Bảng 19 quyết định cần bạn chốt** · **Đính chính so với plan tổng** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |

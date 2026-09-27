@@ -14096,6 +14096,52 @@ Hai thần đẩy con số này cao hơn ước lượng ngầm của pass trư�
 
 # MILESTONE 6 — Bài học từ Codex, OpenCode và gajae-code
 
+## 0. Nguồn thứ tư đã được thêm vào M6: `code-yeongyu/oh-my-openagent`
+
+M6 ban đầu có ba nguồn tham chiếu. `oh-my-openagent` được thêm vào **đây**, không phải vào M3, và lý do
+cần nói rõ vì ban đầu nó được đề xuất cho M3:
+
+**Về danh tính.** Repo tên là `oh-my-openagent` nhưng tên thật trong `package.json` là
+`oh-my-opencode` v5.0.1 — nó là **plugin cho OpenCode**, không phải hậu duệ hay fork của oh-my-pi. Trong
+~49 package, không package nào trùng tên với omp (trừ `utils`). M6 đã lấy bài học từ **OpenCode**, nên
+một plugin cho OpenCode thuộc đúng phạm vi đó.
+
+**Về kỹ thuật — 0/17 work item của M3 có tương ứng.** Grep 0 hit trên toàn bộ `.ts`/`.tsx` của repo đó cho
+`elicit`, `colorblind|dalton`, `registerStatusLineSegment`, `readCollapsesIntoGroup`, `MEASURED_THRESHOLDS`,
+`setWorkingMessage`. Lý do gốc đo được: **repo đó không sở hữu mã nguồn trình bày terminal nào** — phần
+tui/sidebar tự viết là 12.053 dòng so với 189.051 dòng của `packages/tui` của omp (gấp 15,7 lần), và TUI
+của họ là mua từ npm qua `overrides`. Trong khi toàn bộ 17 work item của M3 nằm trên bề mặt terminal.
+
+**Về pháp lý — không lấy được dòng code nào.** Giấy phép là **SUL-1.0** (Sustainable Use License), không
+phải open source. `LICENSE.md:20-22`: *"non-exclusive, royalty-free, worldwide, **non-sublicensable**,
+non-transferable"*. `LICENSE.md:24-29`: *"only for your own internal business purposes or for
+non-commercial or personal use"*. `LICENSE.md:53-57`: vi phạm thì giấy phép **tự động chấm dứt, và lần
+vi phạm thứ hai sau khi khôi phục thì chấm dứt vĩnh viễn**. Với một dự án mục tiêu phát hành MIT công khai,
+điều khoản `non-sublicensable` tự nó đã đóng phương án dùng code — không cần tranh luận về "free of charge
+có bằng non-commercial không". SUL **không** bảo hộ ý tưởng, nên **đọc để học thì được**.
+
+**Còn sự lộn xộn trong khai báo giấy phép, phải biết trước khi tin bất cứ thứ gì.** `package.json` gốc khai
+`"license": "SUL-1.0"`, nhưng 14 package con khai `"MIT"` và **35 package không khai gì**. Trong 14 cái
+khai MIT, phần lớn là **binary prebuild của chính dự án SUL** được dán nhãn MIT. Vậy nên: **đừng coi
+package nào ở đó là MIT chỉ vì `package.json` của nó ghi vậy.**
+
+**Bảy ý tưởng đáng học sạch** (ý tưởng chung không được bảo hộ bản quyền; **không chép dòng nào**):
+
+1. **Thuật toán cấp phát độ rộng** — hằng số khai trước rồi mới chọn. Đây là câu trả lời trực tiếp cho
+   §4.1 của M3, vốn tự cảnh báo thang độ rộng là chỗ dễ sai nhất.
+2. **Ngữ pháp status line là túi TOKEN có thứ tự ưu tiên**, không phải một hàm format chuỗi.
+3. **Thang động từ**: hàng không được tuyên bố chuyển động trước khi nó thật sự chuyển động.
+4. **Hợp đồng phủ định** là cách viết test cho D2: assert sự vắng mặt trên những hàng mà số liệu CÓ.
+5. **Biên nhận giao hàng thay vì hàng đợi toast** — câu trả lời cho A7 của M3.
+6. **Mọi status surface mới nên có**: event-driven + debounce + latest-wins + timer tiêm vào được để test
+   không cần thời gian thật.
+7. **Phủ định đáng giá nhất: đừng học cách họ làm tầng model.** Họ hardcode hàng nghìn model-id literal
+   trong TypeScript và có **0** provider implementation. Đó là chiều ngược lại luận điểm M2.
+
+Bản audit đầy đủ: `~/Documents/omo-audit/report.md` (2026-09-27, commit `6c9e0aa`).
+
+---
+
 ## 1. Mục tiêu và danh tính ba nguồn tham chiếu
 
 Milestone này **không** đề xuất tính năng mới. Nó làm ba việc: kiểm chứng ba báo cáo audit trước đó trực tiếp trên mã nguồn, giải quyết các điểm bất đồng giữa chúng, rồi biến mỗi bài học còn sống thành một thay đổi cụ thể trong `omp` với một anchor `file:line`.

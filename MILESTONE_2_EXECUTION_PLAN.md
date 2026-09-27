@@ -54,6 +54,9 @@ Native addon phải build trước khi `bun test` có nghĩa là gì:
 
 ```
 brew install bazelisk
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
 bun --cwd=packages/natives run build
 ```
 
@@ -296,6 +299,9 @@ grep -nE '^\|[[:space:]]*[^|[:space:]][^|]*\|[[:space:]]*[^|[:space:]][^|]*\|[[:
 **Cảnh báo môi trường, đã kiểm chứng tận tay:** `bun test` hiện bị **CHẶN hoàn toàn**. Chạy `bun test test/extension-context-project-trust.test.ts` từ `packages/coding-agent` báo `'0 pass, 1 fail, 1 error'` với `'Failed to load pi_natives native addon for darwin-arm64'` — binary addon `packages/natives/native/pi_natives.darwin-arm64.node` không tồn tại. Điều này không đổi WI-0 (mục này không viết test), nhưng nó nghĩa là hai test tin cậy có sẵn chỉ được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh ở bất kỳ đâu. Hãy build addon trước bất kỳ mục nào sau đó cần một lần chạy test thật:
 
 ```bash
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
 bun --cwd=packages/natives run build
 ```
 
@@ -1964,6 +1970,9 @@ bun run check:ts
 # 2. Test đặc tính hoá — BỊ CHẶN ở HEAD 808b365: báo 0 pass / 1 fail,
 #    "Failed to load pi_natives native addon for darwin-arm64"
 #    Build addon trước rồi chạy lại:
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
 bun --cwd=packages/natives run build
 cd packages/coding-agent && bun test test/tools/tool-admission-table.test.ts
 
@@ -2523,6 +2532,9 @@ Ba dòng test, theo thứ tự này vì thứ tự mã hoá chính hợp đồng
 
 ```bash
 bun run check:ts
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
 bun --cwd=packages/natives run build
 cd packages/coding-agent && bun test test/config/plugin-settings-provenance.test.ts
 cd packages/coding-agent && bun test test/plugin-config.test.ts test/plugin-config-validate.test.ts test/config/settings-registry.test.ts
@@ -2842,6 +2854,9 @@ Bốn dòng do §11.2 mục 7 yêu cầu, cộng MỘT dòng do chính blocker b
 
 ```bash
 bun run check:ts
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
 bun --cwd=packages/natives run build   # unblock bun test; verified: without it bun test reports 0 pass / 1 fail / 1 error
 cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts
 cd packages/coding-agent && bun test test/config/settings-registry.test.ts   # the 41 files of existing register({...}) call sites must not regress

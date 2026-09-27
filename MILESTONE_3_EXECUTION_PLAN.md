@@ -1787,6 +1787,9 @@ bun run check:ts
 Sau khi addon đã build:
 
 ```bash
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
 bun --cwd=packages/natives run build
 bun test packages/coding-agent/test/user-shell-status-line.test.ts
 bun test packages/tui/test/status-line-cache-hit-rate.test.ts

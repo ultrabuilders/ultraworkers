@@ -3047,20 +3047,29 @@ import { TINY_WORKER_ARG } from "../src/tiny/title-protocol";
 // Nên ở đây dựng từ tiền tố, đúng như cách test thứ nhất đã làm — không mở bề mặt `bare`
 // export chỉ để một test chạy được, vì AGENTS.md cấm đúng loại export đó.
 
-const JS_EVAL_WORKER_ARG   = `${WORKER_HOST_SELECTOR_PREFIX}js_eval`;     // khớp cli.ts:186
+const JS_EVAL_WORKER_ARG   = `${WORKER_HOST_SELECTOR_PREFIX}js_eval`;         // khớp cli.ts:185
+const JS_EVAL_PROCESS_ARG  = `${WORKER_HOST_SELECTOR_PREFIX}js_eval_process`; // khớp cli.ts:186
 
 const ALL_16 = [
 	...Object.values(selectors),            // 8
-	STT_WORKER_ARG, TTS_WORKER_ARG, MNEMOPI_EMBED_WORKER_ARG,   // 4
-	TINY_WORKER_ARG, JS_EVAL_WORKER_ARG,                        // 2
-	`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`,                  // 3 nằm ở cli.ts,
+	STT_WORKER_ARG, TTS_WORKER_ARG, MNEMOPI_EMBED_WORKER_ARG,   // 3
+	TINY_WORKER_ARG, JS_EVAL_WORKER_ARG, JS_EVAL_PROCESS_ARG,   // 3
+	`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`,                  // 2 còn lại nằm ở cli.ts,
 	`${WORKER_HOST_SELECTOR_PREFIX}tab`,                         // chưa export, nên dựng
 ];
+// 8 + 3 + 3 + 1 + 1 = 16, đúng bằng 16 selector có thật trong cây (8 ở
+// cli/worker-selectors.ts + 8 ở cli.ts:182-189). Nếu số này lệch 16, cây đã đổi —
+// đừng sửa con số cho khớp, hãy đếm lại từ hai file đó.
 // KHÔNG export STATS_SYNC/TAB/JS_EVAL ra từ cli.ts "cho test dùng": làm vậy là mở bề
 // mặt `bare` export mà AGENTS.md cấm, để đổi lấy một test. Dựng từ tiền tố thì test
 // vẫn bắt được lệch — nếu ai đó đổi tiền tố, cả 16 dòng đỏ cùng lúc.
 
-describe("worker selector parity", () => {
+// CỔNG CHUYỂN TIẾP, không phải parity test vĩnh viễn. Nó đúng ở trạng thái GIỮA W2 và
+// SAU W9: W9 dồi mọi selector về `cli/worker-selectors.ts`, và khi đó spread
+// `Object.values(selectors)` đã ăn hết 16 — bảy dòng dựng tay bên dưới thành thừa và
+// cổng này phải bị xoá cùng W9. Giữ nó lâu hơn sẽ tạo ra một parity test bao quanh
+// 16 giá trị mà không còn so với gì.
+describe("worker selector parity (chỉ trong giai đoạn W2 → W9)", () => {
 	it("mọi selector khai báo đều khớp tiền tố — 16/16", () => {
 		expect(ALL_16).toHaveLength(16);
 		for (const arg of ALL_16) expect(isWorkerHostSelector(arg)).toBeTrue();

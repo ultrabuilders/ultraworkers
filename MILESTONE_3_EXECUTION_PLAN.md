@@ -86,8 +86,9 @@ chứng là tương thích. Port ý tưởng nghĩa là port cái người dùng
 
 ## Điều kiện tiên quyết
 
-**Addon native phải build trước khi `bun test` có nghĩa là gì.** Phần lớn cổng của M3 là cổng test:
-nếu addon chưa build thì chúng không chạy, chỉ có `bun run check:ts` chạy được — và nó chạy xanh mà
+**Addon native: khi nào `bun test` có nghĩa, và khi nào không.** Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445.
+
+Phần lớn cổng của M3 là cổng test: nếu addon chưa build thì chúng không chạy, chỉ có `bun run check:ts` chạy được — và nó chạy xanh mà
 không cần addon (đo lại tại HEAD e040a60: exit 0, cả 16 package type-check Done). Thứ tự đúng là
 `brew install bazelisk` rồi `bun --cwd=packages/natives run build`, và chỉ sau đó mới tính kết quả
 test là bằng chứng.

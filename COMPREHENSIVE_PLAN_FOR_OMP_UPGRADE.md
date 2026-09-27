@@ -419,15 +419,7 @@ Toàn bộ 50 dòng nằm ở [Bảng điều chỉnh tổng hợp](#bảng-đi�
 ---
 
 
-# MILESTONE 1 — PARITY VỚI `pi` (STRICT SUPERSET) · KẾ HOẠCH THỰC THIỆN
-
-> **Phần này đã được sinh lại và kiểm chứng lại trên source thật.** Nó thay thế toàn bộ văn bản M1
-> cũ trong `main`. Mọi đoạn cũ viết bằng tay trước đây đã bị gỡ — **141 claim trong đó sai**, và
-> danh sách đầy đủ nằm ở mục [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) ở
-> cuối tài liệu này. Mỗi hạng mục dưới đây đã được một lượt kiểm tra độc lập mở file thật và xác
-> nhận từng neo bằng lệnh (`git grep -n`, `sed -n`); neo nào không tái lập được thì đánh dấu là
-> **chưa xác minh** chứ không mang sang.
-
+# KẾ HOẠCH THỰC THIỆN — MILESTONE 1: BAO TRỌN `pi`
 
 Milestone 1 đưa toàn bộ phần còn nợ của `pi` vào `omp` theo đúng tiêu chuẩn dùng cho phần đã có: **mọi thứ người dùng nhìn thấy phải là một surface có kiểm chứng, mọi thứ chỉ "đúng về bên trong" phải nói thẳng là bên trong**. Nó gồm 17 work item (W1–W17) chia thành 7 wave, trải trên `packages/coding-agent`, `packages/agent`, `packages/ai`, `packages/catalog`, `packages/tui`.
 
@@ -523,7 +515,7 @@ bun test packages/coding-agent/test/rpc-output.test.ts
   packages/natives/native/index.js:23:24
 ```
 
-Đó **không phải** kết quả của code bạn viết. `bun test` báo đỏ bất kể code đúng hay sai. Hệ quả thẳng về mặt thể chế: **trước khi chạy `bun run build:native`, một kết quả đỏ của `bun test` là vô nghĩa, và một work item chưa build addon thì phải được coi là CHƯA xác minh, không phải là xanh.** Đây không phải là lý thuyết — nó đã được quan sát thấy ở W13, W16 và W11, và riêng W13 được ghi rõ là gate *trong* (vacuous) cho tới khi addon có.
+Đó **không phải** kết quả của code bạn viết — nhưng cũng **không phải** mọi test đều đỏ. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. Hệ quả thẳng về mặt thể chế: **trước khi chạy `bun run build:native`, một kết quả đỏ của `bun test` là vô nghĩa, và một work item chưa build addon thì phải được coi là CHƯA xác minh, không phải là xanh.** Đây không phải là lý thuyết — nó đã được quan sát thấy ở W13, W16 và W11, và riêng W13 được ghi rõ là gate *trong* (vacuous) cho tới khi addon có.
 
 **4. Kiểm tra kiểu — chạy được, và là hàng rào duy nhất hữu ích trong ngày đầu.**
 
@@ -4320,13 +4312,8 @@ plan tổng là bản khảo sát ban đầu.
 
 ---
 
-# MILESTONE 2 — MỌI THỨ LÀ PLUGIN · KẾ HOẠCH THỰC THIỆN
 
-> **Phần này đã được sinh lại và kiểm chứng lại trên source thật.** Nó thay thế toàn bộ văn bản M2
-> cũ trong `main`. Danh sách đầy đủ những claim đã lỗi thời nằm ở mục
-> [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) ở cuối phần này. Mỗi hạng mục dưới
-> đây đã được một lượt kiểm tra độc lập mở file thật và xác nhận từng neo bằng lệnh (`git grep -n`,
-> `sed -n`); neo nào không tái lập được thì đánh dấu là **chưa xác minh** chứ không mang sang.
+# KẾ HOẠCH THỰC THIỆN — MILESTONE 2: MỌI THỨ LÀ PLUGIN
 
 Milestone 2 không mang lại khả năng mới cho người dùng. Nó làm cho ranh giới giữa "lõi" và "extension" trở nên trung thực — ai đang giữ tài nguyên, ai phải trả lại, và lúc nào việc gỡ extension thật sự xảy ra chứ không chỉ là "quên" trong bộ nhớ. Vì vậy nó là bước đầu tiên của luận điểm của cả chương trình: nếu một extension không thật sự được nhả ra khi bị tắt, thì câu chuyện "mọi thứ là plugin" chỉ là một câu chuyện về cách load, không phải về cách sống. Milestone 1 đã dựng tiền đề bằng cách biến `omp` thành strict superset của `earendil-works/pi` — một năng lực không thể trở thành plugin nếu nó chưa tồn tại. Nhưng bao trọn không phải mục tiêu cuối, và cũng không phải mục tiêu của milestone này. M2 không viết lại toàn bộ; phần lớn công việc là sửa cho đúng những chỗ đang nói dối về quyền sở hữu.
 
@@ -4378,7 +4365,9 @@ Còn một mục nữa đáng nêu như một sự thật chứ không phải m�
 
 ## Điều kiện tiên quyết
 
-Native addon phải build trước khi `bun test` có nghĩa là gì:
+Native addon: khi nào `bun test` có nghĩa, và khi nào không. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445.
+
+Để build được (khi bạn cần), thứ tự là:
 
 ```
 brew install bazelisk
@@ -4624,7 +4613,7 @@ grep -nE '^[[:space:]]*\|[^|]*\|[[:space:]]*[^|]*(OWNER|CHỦ|DECIDER)[^|]*\|[[:
 grep -nE '^\|[[:space:]]*[^|[:space:]][^|]*\|[[:space:]]*[^|[:space:]][^|]*\|[[:space:]]*[^|[:space:]]' docs/extension-trust-model.md | grep -vE 'OWNER|CHỦ|DATE|NGÀY|---'
 ```
 
-**Cảnh báo môi trường, đã kiểm chứng tận tay:** `bun test` hiện bị **CHẶN hoàn toàn**. Chạy `bun test test/extension-context-project-trust.test.ts` từ `packages/coding-agent` báo `'0 pass, 1 fail, 1 error'` với `'Failed to load pi_natives native addon for darwin-arm64'` — binary addon `packages/natives/native/pi_natives.darwin-arm64.node` không tồn tại. Điều này không đổi WI-0 (mục này không viết test), nhưng nó nghĩa là hai test tin cậy có sẵn chỉ được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh ở bất kỳ đâu. Hãy build addon trước bất kỳ mục nào sau đó cần một lần chạy test thật:
+**Cảnh báo môi trường, đã kiểm chứng tận tay:** `bun test` bị chặn **một phần**, không phải toàn cục. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. Chạy `bun test test/extension-context-project-trust.test.ts` từ `packages/coding-agent` báo `'0 pass, 1 fail, 1 error'` với `'Failed to load pi_natives native addon for darwin-arm64'` — binary addon `packages/natives/native/pi_natives.darwin-arm64.node` không tồn tại. Điều này không đổi WI-0 (mục này không viết test), nhưng nó nghĩa là hai test tin cậy có sẵn chỉ được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh ở bất kỳ đâu. Hãy build addon trước bất kỳ mục nào sau đó cần một lần chạy test thật:
 
 ```bash
 brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
@@ -8711,16 +8700,8 @@ Milestone 2 chỉ được coi là xong khi cả 15 dòng trên cùng đúng cù
 
 ---
 
-# MILESTONE 3 — BỀ MẶT NGƯỜI DÙNG KIỂU CLAUDE CODE · KẾ HOẠCH THỰC HIỆN
 
-> **Phần này đã được sinh lại và kiểm chứng lại trên source thật.** Nó thay thế toàn bộ văn bản M3
-> cũ trong `main`. Danh sách đầy đủ những claim đã lỗi thời nằm ở mục
-> [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) ở cuối phần này. Mỗi mục dưới đây đã được
-> một lượt kiểm tra độc lập mở file thật và xác nhận từng neo bằng lệnh; neo nào không tái lập được thì
-> đánh dấu là **chưa xác minh** chứ không mang sang.
->
-> **Một điều phải nói ngay:** Claude Code **không cấp giấy phép nào** cho bề mặt này, nên §8 ở đây là
-> phần pháp lý chứ không phải ghi chú. Đọc nó trước khi viết dòng code đầu tiên.
+# KẾ HOẠCH THỰC THIỆN — MILESTONE 3: BỀ MẶT NGƯỜI DÙNG KIỂU CLAUDE CODE
 
 Cả chương trình hướng tới một coding agent duy nhất, mọi thứ là plugin. M1 đã làm `omp` thành strict
 superset của `earendil-works/pi`; M2 cắt các seam để mọi thứ lắp ghép được. M3 mang trải nghiệm
@@ -8808,8 +8789,9 @@ chứng là tương thích. Port ý tưởng nghĩa là port cái người dùng
 
 ## Điều kiện tiên quyết
 
-**Addon native phải build trước khi `bun test` có nghĩa là gì.** Phần lớn cổng của M3 là cổng test:
-nếu addon chưa build thì chúng không chạy, chỉ có `bun run check:ts` chạy được — và nó chạy xanh mà
+**Addon native: khi nào `bun test` có nghĩa, và khi nào không.** Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445.
+
+Phần lớn cổng của M3 là cổng test: nếu addon chưa build thì chúng không chạy, chỉ có `bun run check:ts` chạy được — và nó chạy xanh mà
 không cần addon (đo lại tại HEAD e040a60: exit 0, cả 16 package type-check Done). Thứ tự đúng là
 `brew install bazelisk` rồi `bun --cwd=packages/natives run build`, và chỉ sau đó mới tính kết quả
 test là bằng chứng.
@@ -9119,34 +9101,6 @@ Cả bốn chân đều xanh, và không chân nào được thỏa bằng `chec
 1. `bun run check:ts` exit 0 — đã kiểm chứng trong checkout này tại HEAD 808b365.
 2. Cả hai file test mới pass một khi addon được build. (2) là chân đều mang theo mục này; thiếu nó, mục này chỉ là một tài liệu có tham vọng.
 3. `docs/plugin-surface-closure.md` tồn tại và mọi số dòng trong đó do một câu lệnh trong khối xác minh sinh ra **trong lần thực hiện này**, chứ không chép từ plan. Đảm chéo năm neo đã biết là trôi: 2-30 (không phải 1-32) cho hợp, 157/158 (không phải 148-149) cho `setFooter`/`setHeader`, 302 (không phải 301) cho call site trong composer, 101-102 (không phải 100-104) cho MCP capabilities, và 94-97 (không phải 93-96) cho subpath export.
-> ### 2.0 RÀNG BUỘC PHÁP LÝ ĐỊNH HÌNH M3 — phải đọc trước mọi thứ khác trong phần này
->
-> Chủ sở hữu đã yêu cầu: *"chắc chắn port 100% UI Claude Code như là 1 plugin vào omp"*. Yêu cầu đó **không
-> thể thực hiện theo nghĩa chép dòng code**, và lý do đã kiểm chứng được:
->
-> - Nguồn tham chiếu là `claude-code-best/claude-code` (HEAD `77a7934`), tựa đề tự nó là
->   **"Reverse-engineered Anthropic Claude Code CLI"**. Nó **không phải code của Anthropic** — đó là một
->   bản dựng lại độc lập của bên thứ ba.
-> - Repo đó **không có file LICENSE**, và `package.json` **không khai trường `license`**. Mục License
->   trong README nói nguyên văn: *"This project is for educational and research purposes only. All rights
->   to Claude Code belong to Anthropic."*
-> - **Một repo không khai giấy phép thì không phải mã nguồn mở.** Mặc định thì bản quyền thuộc về chủ sở
->   hữu, và chủ sở hữu **không** cấp quyền sao chép. Khác `pi` (MIT) và `deepseek-harness` (MIT, kể cả
->   9 package vendored) — hai nguồn đó được phép và `chord`/`protocol`/`server`/`client`/`durable`/
->   `telemetry`/`evals` đã được chép theo đúng giấy phép đó. Ở đây thì không.
->
-> **Điều này KHÔNG chặn M3, và đây là lý do.** Nguồn đó là **2.551 file `.ts` + 701 `.tsx` source
-> TypeScript đọc được, 137 MB** — *không* phải bundle binary. Mọi thứ M3 gọi là chưa có bằng chứng (cell
-> buffer, ANSI định kiểu sẵn, 17 work item tương ứng) đều **có mã nguồn thật ở đó để đọc**. Đọc để hiểu
-> thì được; đọc rồi **viết lại theo cách của omp** thì được — đó là clean-room, và nó là con đường mà M3
-> vốn đã chọn. Cái không được là **chép dòng nào**.
->
-> **Hệ quả thẳng cho kế hoạch:** mọi câu chữ trong M3 nói "port" phải được hiểu là "port Ý TƯỞNG, viết
-> lại bằng ngôn ngữ omp", và bất kỳ chỗ nào lần theo một khối code cụ thể của CCB để chép hình dạng thì
-> đó là chỗ cần dừng lại. Mục (4) "what this does not prove" phải sống nguyên vẹn — và giờ nó có thêm một
-> lý do nữa: hồ sơ khảo sát không chỉ chưa phân tích tính tương thích runtime, mà còn chưa kiểm tra
-> **tình trạng pháp lý của chính nguồn đó**.
-
 4. Mục (4) "what this does not prove" của tài liệu sống sót nguyên vẹn — cụ thể là hồ sơ khảo sát chưa bao giờ phân tích tính tương thích runtime giữa engine CCB và plugin của omp, và KHÔNG có bằng chứng nào ở bất cứ đâu cho cách đóng khung "cell buffer" hay "pre-styled ANSI" từ bản brief gốc. Nếu một biên tập viên tương lai xoá mục đó, họ vừa nhập lại claim chưa kiểm chứng mà mục này sinh ra để cách ly.
 
 **KHÔNG** thêm test cho bất biến "một call site `setFrameProvider`". Sự vắng mặt của nó là một phần của cổng: nếu một test dạng grep cho nó xuất hiện trong diff, mục này sai chứ không chỉ thiếu.
@@ -11418,6 +11372,7 @@ Mỗi dòng là một cổng có thể đỏ. Cổng xanh trên một sóng khô
   - Ngược lại, G4 (9) và G5 (`left=7`) đã đỏ sẵn nên là cổng thật. Một cổng viết kiểu "số đếm không đổi" thì tự thỏa và phải viết ngược lại — bản kế hoạch tự lập luận dài về điều này rồi tự trái ở G10.
 
 ---
+
 
 # MILESTONE 4 — MƯỢN KỶ LUẬT, KHÔNG MƯỢN KIẾN TRÚC · KẾ HOẠCH THỰC THIỆN
 
@@ -15342,7 +15297,7 @@ Môi trường đã được kiểm chứng bằng lệnh thật trên máy này
 
 - `bun run check:ts` chạy được và exit 0 ở HEAD — đo baseline thật: oxlint+oxfmt sạch (5445 file), rồi **16** workspace `check:types` đều Done (đếm bằng `for p in packages/*/package.json; do grep -q '"check:types"' "$p" && basename $(dirname "$p"); done` → 16 tên). Banner in ra `@oh-my-pi/pi-ai:check:types` … `@oh-my-pi/typescript-edit-benchmark:check:types`. Sau W7 banner phải đọc `@ultraworkers/...`. Đây là tín hiệu quan sát được rõ nhất.
 - `bun run check` KHÔNG dùng làm cổng: nó là `bun run --parallel check:ts check:rs`, cần cargo, chưa xác minh ở đây.
-- `bun test` BỊ CHẶN: native addon chưa build, mọi test báo `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64`.
+- `bun test` bị chặn **một phần**, không phải toàn cục. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445.
 - Lệnh gỡ chặn `bun --cwd=packages/natives run build` THẤT BẠI: `CMake Error: CMake was unable to find a build program corresponding to "Ninja". CMAKE_MAKE_PROGRAM is not set.` (đã tái hiện ở HEAD `1454dc0`; `cmake` có ở `/opt/homebrew/bin/cmake`, `ninja` thì không). `brew install ninja` là **ĐIỀU KIỆN ĐẦU TIÊN và là chặn đầu tiên đã quan sát được — đường còn lại chưa từng chạy tới cuối**: build phải biên dịch crate `opusic-sys` (có trong `Cargo.lock`) qua cmake, nên sau `ninja` còn có thể có chặn thứ hai. Hãy ghi kết quả từng lần build thất bại thay vì giả định một lệnh là đủ. GATE E vẫn là `NOT RUN — environment blocked` cho tới khi `bun test` thực sự chạy.
 
 Vì vậy ba cổng nghiệm thu gốc của plan được thay bằng một `check:ts` đã đo thật, cộng một cổng test riêng ghi rõ là bị chặn môi trường:
@@ -15501,7 +15456,7 @@ Bản cũ viết `node -e '…' | grep . && { echo …; exit 1; }` và **không 
 - **Sai lầm 6, MỚI, KHÔNG CÓ TRONG PLAN — `loader-state.js:70` resolve tới sáu leaf package ĐÃ PHÁT HÀNH trên registry.** Đổi scope ở đó trước khi leaf package tồn tại dưới scope mới ⇒ `require_.resolve` ném ⇒ `catch { return null }` ⇒ loader rơi im lặng. Không có lỗi nào được ném, không có test nào đỏ. Đây là phần thất bại im lặng đắt nhất của W7.
 - **Sai lầm 7, MỚI — `.lavish-wip/specs/*.spec.json`** (13 file workflow scratch đã bị commit, 68 lượt) và 5 tài liệu kế hoạch (333 lượt ở HEAD `1454dc0`) không nằm trong bất kỳ danh sách loại trừ nào của plan. Mẫu toàn-repo của plan sẽ viết lại chúng. Đặc tả đã đưa chúng ra khỏi tập in-scope.
 - **Sai lầm 8, MỚI — LOẠI NHẦM `.omp/skills/**`.** N14 khoá TÊN THƯ MỤC `.omp`, không khoá nội dung. 3 file đó là code thật với import statement; loại chúng làm skill vỡ. (Nhóm thứ tư ngoài danh sách loại trừ là 2 transcript `.jsonl` ở Sai lầm 6/Q2 — chúng nằm trong 4100 file nên đã bị pass phủ, nhưng chờ Q2 quyết.)
-- **Sai lầm 9, MỚI — ĐỂ CỔNG 'test pass' xanh trong khi `bun test` không chạy.** Trên máy này mọi test báo `0 pass / 1 fail / 1 error`. Một cổng báo xanh vì không chạy là cổng không có tác dụng.
+- **Sai lầm 9, MỚI — ĐỂ CỔNG 'test pass' xanh trong khi `bun test` không chạy.** Trên máy này chỉ những test import `pi_natives` mới báo `0 pass / 1 fail / 1 error`. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. Một cổng báo xanh vì không chạy là cổng không có tác dụng.
 
 ### Cần người quyết
 
@@ -16692,7 +16647,7 @@ KHÔNG có test mới. Hợp đồng được bảo vệ bởi 4 bộ test relea
 
 ### Xác minh
 
-Mọi số dưới đây đã chạy thật trên HEAD `1454dc0` (branch `milestone-1`) vào 2026-09-28. `bun run test:scripts` → 34 pass/1 fail/1 error (lỗi addon, không phải hồi quy). `bun test scripts/ci-update-brew-formula.test.ts` → 3 pass/0 fail/15 expect. Bốn file release còn lại chạy riêng: 4/2/11/17 pass, 0 fail. `bun run check:ts` là cổng kiểu duy nhất còn chạy được (exit 0 ~29s trên máy rảnh). `bun test` bị chặn toàn cục bởi native addon; lệnh gỡ chặn `bun --cwd=packages/natives run build` THẤT BẠI trên máy này vì thiếu Ninja — phải `brew install ninja` trước, rồi `cmake` build của `opusic-sys` mới chạy.
+Mọi số dưới đây đã chạy thật trên HEAD `1454dc0` (branch `milestone-1`) vào 2026-09-28. `bun run test:scripts` → 34 pass/1 fail/1 error (lỗi addon, không phải hồi quy). `bun test scripts/ci-update-brew-formula.test.ts` → 3 pass/0 fail/15 expect. Bốn file release còn lại chạy riêng: 4/2/11/17 pass, 0 fail. `bun run check:ts` là cổng kiểu duy nhất còn chạy được (exit 0 ~29s trên máy rảnh). `bun test` bị chặn **một phần** bởi native addon; lệnh gỡ chặn `bun --cwd=packages/natives run build` THẤT BẠI trên máy này vì thiếu Ninja — phải `brew install ninja` trước, rồi `cmake` build của `opusic-sys` mới chạy.
 
 ```bash
 # Bước 2 — bằng chứng nền, TRƯỚC khi đổi bất kỳ tên nào
@@ -18074,7 +18029,7 @@ Mỗi dòng dưới đây là một mệnh đề phán đoán được: đúng h
 
 **Các neo file:line là ảnh chụp tại một thời điểm, và file này tự mâu thuẫn về điều đó.** W2 và W3 đo ở HEAD `808b365`, còn mười mục còn lại đo ở `84cbac9`. Kế hoạch gốc viết trên commit `5873776` mà repo này không có (`git cat-file -t 5873776` → *fatal: Not a valid object name*), nên toàn bộ số của §2.2 và §2.3 được dẫn lại trên một cây chưa từng tồn tại ở đây. Sai lệch đã được ghi nhận và cần sửa khi dùng: thân `getInstallId` nằm ở `packages/utils/src/dirs.ts:1104` chứ không phải `:1090`; bình luận orphaning ở `:340-355` chứ không phải `:341-352`; `publishBin` thật ở `scripts/ci-release-publish.ts:186` chứ không phải `:165`; 61 file chứ không phải 59 và 70 file chứ không phải 68; dòng trong `python/robomp/tests/test_sandbox.py` lệch từng dòng một. Cổng H của W8a còn ghi rõ mâu thuẫn nội bộ: lệnh của W8b quy ra "15 file" nhưng chạy trên HEAD hiện tại trả 16. Thời gian chạy `bun run check:ts` cũng dao động từ ~29 giây tới ~10 phút giữa các mục cùng file — con số 29 giây là đầu lạc quan nhất, các lần đo khác là 54s, 56s, 85s và 4m14s.
 
-**Môi trường chặn test, nhưng không chặn đều — và file này tự nói hai kiểu.** W1, W2, W3, W7, W8a, W8b và W11 coi `bun test` bị chặn toàn cục; W4, W6 và W6a đo được `bun test packages/utils/test/dirs.test.ts` ra 6 pass và `install-id.test.ts` ra 5 pass, vì `packages/utils/src/dirs.ts` không có đường tới addon. Nghĩa là cổng nào thực sự đỏ được trên máy này phụ thuộc vào package nó nằm ở đâu, và điều đó chưa được thống nhất. Lệnh gỡ chặn `bun --cwd=packages/natives run build` tự nó thất bại khi thiếu `ninja` — phải `brew install ninja` trước. `bun run test:py` bị chặn vì lý do khác hẳn: `No module named pytest`; `bun run lint:py` chết với `ruff: command not found`. Không có cổng nào trong sáu milestone này chạy được hết. Ranh giới không nằm ở tên package mà ở đái dựng import: một file trong `packages/utils/test/` chạm `@oh-my-pi/pi-natives` là bị chặn ngay, nên trước khi tin một lệnh `bun test` là chạy được, hãy chạy nó một lần và đọc exit code chứ không suy từ vị trí file.
+**Môi trường chặn test, nhưng không chặn đều — và file này tự nói hai kiểu.** W1, W2, W3, W7, W8a, W8b và W11 coi `bun test` bị chặn toàn cục — **điều đó sai**. Thực tế: chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. W4, W6 và W6a đo được `bun test packages/utils/test/dirs.test.ts` ra 6 pass và `install-id.test.ts` ra 5 pass, vì `packages/utils/src/dirs.ts` không có đường tới addon. Nghĩa là cổng nào thực sự đỏ được trên máy này phụ thuộc vào package nó nằm ở đâu, và điều đó chưa được thống nhất. Lệnh gỡ chặn `bun --cwd=packages/natives run build` tự nó thất bại khi thiếu `ninja` — phải `brew install ninja` trước. `bun run test:py` bị chặn vì lý do khác hẳn: `No module named pytest`; `bun run lint:py` chết với `ruff: command not found`. Không có cổng nào trong sáu milestone này chạy được hết. Ranh giới không nằm ở tên package mà ở đái dựng import: một file trong `packages/utils/test/` chạm `@oh-my-pi/pi-natives` là bị chặn ngay, nên trước khi tin một lệnh `bun test` là chạy được, hãy chạy nó một lần và đọc exit code chứ không suy từ vị trí file.
 
 **Các câu hỏi mở chưa có câu trả lời trong file, nên các nhánh cổng phụ thuộc chưa có mặc định — cần bạn quyết.** W3 nêu "nếu open_questions[0] được giải quyết theo hướng (b) thì phải chạy thêm" một lượt kiểm tra XDG riêng; W8b nói cổng `omp://` "chỉ áp dụng nếu open_questions #1 được trả lời giữ", còn nếu trả lời "đổi" thì 24 file tham chiếu `omp://` phải đi cùng một commit và ba file phải được đổi tên; W9 dẫn `open_questions[5]` cho việc giữ hay đổi sentinel `__omp_worker_test`. File không mang đáp án của cả ba.
 
@@ -18083,6 +18038,7 @@ Mỗi dòng dưới đây là một mệnh đề phán đoán được: đúng h
 Nhưng phần đó có biên, và biên đó chưa đo được. Các baseline chỉ có nghĩa trên một máy, một thời điểm; W8b tự nói một `grep` sạch có thể thu được bằng nhiều cách, trong đó có cách xoá sạch cả dòng lẽ ra phải giữ, và cổng của nó chỉ đỏ nếu bảng còn hàng `keep-*` tương ứng — tức là điều kiện chống lại cách xoá sạch lại trông quyền lực vào chính bảng mà người review vừa đọc. W6a nói thẳng hai mục grep của nó là checklist cho người, không phải test tự động. Và còn một bề mặt mà file này không có cổng nào chạm tới: metadata của gói Python khi phát hành. W13p soi nguồn `python/**` và hai file bàn giao (`docker-compose.yml`, `.env.example`), nhưng không mục nào đọc tên gói trong `pyproject.toml` hay `setup.py` — nơi mà tên cũ còn nằm lại sẽ không làm bất kỳ cổng nào ở đây đỏ.
 
 ---
+
 
 # RỦI RO, CÂU HỎI MỞ VÀ ĐỊNH NGHĨA HOÀN THÀNH
 

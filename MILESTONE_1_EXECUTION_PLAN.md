@@ -94,7 +94,7 @@ bun test packages/coding-agent/test/rpc-output.test.ts
   packages/natives/native/index.js:23:24
 ```
 
-Đó **không phải** kết quả của code bạn viết. `bun test` báo đỏ bất kể code đúng hay sai. Hệ quả thẳng về mặt thể chế: **trước khi chạy `bun run build:native`, một kết quả đỏ của `bun test` là vô nghĩa, và một work item chưa build addon thì phải được coi là CHƯA xác minh, không phải là xanh.** Đây không phải là lý thuyết — nó đã được quan sát thấy ở W13, W16 và W11, và riêng W13 được ghi rõ là gate *trong* (vacuous) cho tới khi addon có.
+Đó **không phải** kết quả của code bạn viết — nhưng cũng **không phải** mọi test đều đỏ. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. Hệ quả thẳng về mặt thể chế: **trước khi chạy `bun run build:native`, một kết quả đỏ của `bun test` là vô nghĩa, và một work item chưa build addon thì phải được coi là CHƯA xác minh, không phải là xanh.** Đây không phải là lý thuyết — nó đã được quan sát thấy ở W13, W16 và W11, và riêng W13 được ghi rõ là gate *trong* (vacuous) cho tới khi addon có.
 
 **4. Kiểm tra kiểu — chạy được, và là hàng rào duy nhất hữu ích trong ngày đầu.**
 

@@ -50,7 +50,9 @@ Còn một mục nữa đáng nêu như một sự thật chứ không phải m�
 
 ## Điều kiện tiên quyết
 
-Native addon phải build trước khi `bun test` có nghĩa là gì:
+Native addon: khi nào `bun test` có nghĩa, và khi nào không. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445.
+
+Để build được (khi bạn cần), thứ tự là:
 
 ```
 brew install bazelisk
@@ -296,7 +298,7 @@ grep -nE '^[[:space:]]*\|[^|]*\|[[:space:]]*[^|]*(OWNER|CHỦ|DECIDER)[^|]*\|[[:
 grep -nE '^\|[[:space:]]*[^|[:space:]][^|]*\|[[:space:]]*[^|[:space:]][^|]*\|[[:space:]]*[^|[:space:]]' docs/extension-trust-model.md | grep -vE 'OWNER|CHỦ|DATE|NGÀY|---'
 ```
 
-**Cảnh báo môi trường, đã kiểm chứng tận tay:** `bun test` hiện bị **CHẶN hoàn toàn**. Chạy `bun test test/extension-context-project-trust.test.ts` từ `packages/coding-agent` báo `'0 pass, 1 fail, 1 error'` với `'Failed to load pi_natives native addon for darwin-arm64'` — binary addon `packages/natives/native/pi_natives.darwin-arm64.node` không tồn tại. Điều này không đổi WI-0 (mục này không viết test), nhưng nó nghĩa là hai test tin cậy có sẵn chỉ được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh ở bất kỳ đâu. Hãy build addon trước bất kỳ mục nào sau đó cần một lần chạy test thật:
+**Cảnh báo môi trường, đã kiểm chứng tận tay:** `bun test` bị chặn **một phần**, không phải toàn cục. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. Chạy `bun test test/extension-context-project-trust.test.ts` từ `packages/coding-agent` báo `'0 pass, 1 fail, 1 error'` với `'Failed to load pi_natives native addon for darwin-arm64'` — binary addon `packages/natives/native/pi_natives.darwin-arm64.node` không tồn tại. Điều này không đổi WI-0 (mục này không viết test), nhưng nó nghĩa là hai test tin cậy có sẵn chỉ được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh ở bất kỳ đâu. Hãy build addon trước bất kỳ mục nào sau đó cần một lần chạy test thật:
 
 ```bash
 brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.

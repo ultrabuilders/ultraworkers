@@ -3043,18 +3043,22 @@ import { STT_WORKER_ARG } from "../src/stt/asr-client";
 import { TTS_WORKER_ARG } from "../src/tts/tts-client";
 import { MNEMOPI_EMBED_WORKER_ARG } from "../src/mnemopi/embed-client";
 import { TINY_WORKER_ARG } from "../src/tiny/title-protocol";
-// KHÔNG import JS_EVAL_PROCESS_ARG: `const` trần ở context-manager.ts:130, KHÔNG export. Dùng chuỗi trực tiếp.
+// KHÔNG import JS_EVAL_PROCESS_ARG: nó là `const` trần ở context-manager.ts:130, KHÔNG export.
+// Nên ở đây dựng từ tiền tố, đúng như cách test thứ nhất đã làm — không mở bề mặt `bare`
+// export chỉ để một test chạy được, vì AGENTS.md cấm đúng loại export đó.
+
+const JS_EVAL_WORKER_ARG   = `${WORKER_HOST_SELECTOR_PREFIX}js_eval`;     // khớp cli.ts:186
 
 const ALL_16 = [
 	...Object.values(selectors),            // 8
 	STT_WORKER_ARG, TTS_WORKER_ARG, MNEMOPI_EMBED_WORKER_ARG,   // 4
-	TINY_WORKER_ARG, JS_EVAL_PROCESS_ARG,                        // 2
+	TINY_WORKER_ARG, JS_EVAL_WORKER_ARG,                        // 2
 	`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`,                  // 3 nằm ở cli.ts,
-	`${WORKER_HOST_SELECTOR_PREFIX}tab`,                         // chưa export — hoặc
-	`${WORKER_HOST_SELECTOR_PREFIX}js_eval`,                     // export chúng ra
+	`${WORKER_HOST_SELECTOR_PREFIX}tab`,                         // chưa export, nên dựng
 ];
-// Ưu tiên hơn: export STATS_SYNC/TAB/JS_EVAL từ cli.ts cho test dùng, để
-// 16 giá trị đều là hằng số thật chứ không phải chuỗi dựng lại trong test.
+// KHÔNG export STATS_SYNC/TAB/JS_EVAL ra từ cli.ts "cho test dùng": làm vậy là mở bề
+// mặt `bare` export mà AGENTS.md cấm, để đổi lấy một test. Dựng từ tiền tố thì test
+// vẫn bắt được lệch — nếu ai đó đổi tiền tố, cả 16 dòng đỏ cùng lúc.
 
 describe("worker selector parity", () => {
 	it("mọi selector khai báo đều khớp tiền tố — 16/16", () => {

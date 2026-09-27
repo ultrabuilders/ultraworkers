@@ -1,0 +1,191 @@
+{
+  "id": "W14",
+  "title": "PowerShell encoding guard on the Windows spawn paths (+ an optional, separately-gated `powershell` tool)",
+  "wave": "Wave 7 (TUI and Windows — the cuttable tail)",
+  "one_line": "When omp spawns a real PowerShell to run a command, it now forces UTF-8 output with a guarded assignment so non-ASCII tool results stop coming back as mojibake — and a separate `powershell` tool is only built if the user says omp wants one.",
+  "user_visible_effect": "A Windows user who points omp's `shellPath` at `pwsh`/`powershell` and runs commands through the `!` hotkey, the interactive PTY, or an ACP client terminal gets correctly-decoded non-ASCII output (paths with accents, CJK filenames, emoji) instead of mojibake. On POSIX hosts and on the default embedded-shell path nothing changes at all. If the user answers the scope question with yes, a `powershell` tool also appears in the tool list; if no, nothing appears.",
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/exec/powershell-encoding.ts",
+      "action": "create",
+      "change": "New pure module exporting `POWERSHELL_UTF8_PREFIX` and `withPowerShellUtf8Output(command, shell)`, which returns `command` byte-identical unless `isPowerShell(shell)` is true, in which case it returns the UTF-8 assignment statement followed by the original command.",
+      "verified": true,
+      "note": "New file; does not exist at HEAD (ecd516f). The shape is required because the only existing PowerShell spawn sites in omp are literals inside `utils/clipboard.ts:231` and `:290`, with no shared helper to extend."
+    },
+    {
+      "path": "packages/coding-agent/src/exec/bash-executor.ts",
+      "action": "modify",
+      "change": "In `buildUserShellCommand` (line 379), pass the command through `withPowerShellUtf8Output` before quoting, so every user-shell spawn (`!` hotkey, PTY) gets the guard. `isPowerShell` is added to the existing `@oh-my-pi/pi-utils/procmgr` import at line 17.",
+      "verified": true,
+      "note": "`buildUserShellCommand` at :379 is the single funnel for the executor's user-shell path: `finalCommand` at :531-534 calls it when `useUserShell === true && !bashShell && !isCmdShell(shell) && !runCdInPersistentShell`. Also import the new helper; line 17 currently imports `{ isCmdShell, isExecutable, type ShellConfig }`."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/bash.ts",
+      "action": "modify",
+      "change": "In `wrapShellLineForClientTerminal` (lines 163-167), route `line` through `withPowerShellUtf8Output` before applying `shellConfig.prefix`, so the ACP client-terminal path gets the same guard.",
+      "verified": true,
+      "note": "The function already takes `shellConfig: { shell, args, prefix? }` so it needs no signature change. Sole caller is `bash.ts:1239`. The embedded brush path must NOT be touched — see the brush-core correction in plan_corrections."
+    },
+    {
+      "path": "packages/coding-agent/test/tools/powershell-encoding.test.ts",
+      "action": "create",
+      "change": "Contract tests for the transform: non-PowerShell shells pass through unchanged; PowerShell shells get the exact guard; the guard cannot swallow the user's command.",
+      "verified": false,
+      "note": "New test file. Requires the native addon to be built before it can run — see the environment correction."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/powershell.ts",
+      "action": "create",
+      "change": "CONDITIONAL — only if open question 4a is answered YES. A `PowerShellTool` class (omp's tools are classes, not pi-ref's factory functions) plus a `shellConfig` override seam on `BashExecutorOptions` and a `prompts/tools/powershell.md`. NOT part of the W14a gate.",
+      "verified": false,
+      "note": "Does not exist at HEAD. Deliberately excluded from the committed gate because the plan's own P3 marks it as an unanswered product-scope decision."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/builtin-names.ts",
+      "action": "modify",
+      "change": "CONDITIONAL (W14b only) — add `\"powershell\"` to `BUILTIN_TOOL_NAMES` (the `as const` array starting line 1; `BuiltinToolName` is derived from it, so `ToolName` follows automatically).",
+      "verified": true,
+      "note": "68 lines; `\"bash\"` is at line 3. `normalizeToolName` and `CANONICAL_TOOL_NAMES` are both derived from this array, so no other edit in the file is needed."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/index.ts",
+      "action": "modify",
+      "change": "CONDITIONAL (W14b only) — add a `PowerShellTool` factory entry to the `BUILTIN_TOOLS` record (declared line 554; the `bash: s => new BashTool(s)` entry is line 557).",
+      "verified": true,
+      "note": "966 lines. `BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory>` at :554 will not typecheck until `BuiltinToolName` includes `\"powershell\"`, so `builtin-names.ts` must land in the same change."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Get the scope answer before writing any code. Ask the user open question 4a verbatim: does omp want a first-class `powershell` tool, or is bash-only-on-Windows a deliberate scope decision? Record the answer in the PR description. Do NOT infer it from the codebase — the plan is explicit that this must come from the user. If the answer is NO or unanswered, do steps 1-6 only and skip steps 7-10 entirely; the item still lands.",
+      "anchor": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:3072-3080 (P3), and :1746-1748"
+    },
+    {
+      "n": 2,
+      "instruction": "Create `packages/coding-agent/src/exec/powershell-encoding.ts` exporting the exact prefix constant `try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}` followed by a newline, and the pure function `withPowerShellUtf8Output(command: string, shell: string): string` that returns `command` unchanged when `isPowerShell(shell)` is false and `POWERSHELL_UTF8_PREFIX + command` when true. Import `isPowerShell` from `@oh-my-pi/pi-utils/procmgr` as a top-level named import. Do NOT re-implement the basename check — `isPowerShell` is the sanctioned central helper and duplicating it is a rule violation.",
+      "anchor": "packages/utils/src/procmgr.ts:71 (isPowerShell)"
+    },
+    {
+      "n": 3,
+      "instruction": "In `packages/coding-agent/src/exec/bash-executor.ts`, add `isPowerShell` to the existing procmgr import on line 17, then change `buildUserShellCommand` (line 379) so the `command` argument is transformed with `withPowerShellUtf8Output(command, shell)` before it is quoted and joined. Do not change its signature and do not move the call — `finalCommand` at :531-534 is the only caller and already routes exactly the shells that need this.",
+      "anchor": "packages/coding-agent/src/exec/bash-executor.ts:17,379"
+    },
+    {
+      "n": 4,
+      "instruction": "In `packages/coding-agent/src/tools/bash.ts`, change the body of `wrapShellLineForClientTerminal` so the incoming `line` is passed through `withPowerShellUtf8Output(line, shellConfig.shell)` before the `shellConfig.prefix` join. Add a top-level import of the helper. This is the ACP client-terminal path and it is currently the one spawn route with no encoding handling.",
+      "anchor": "packages/coding-agent/src/tools/bash.ts:163-167"
+    },
+    {
+      "n": 5,
+      "instruction": "Confirm you did NOT touch the embedded-shell path. `executeBash` runs commands in brush-core (a POSIX shell engine in the native addon), not a spawned shell, so the default bash-tool path must not receive a PowerShell statement. Verify the only two edits are the ones in steps 3 and 4 — `git diff --stat` should list exactly two source files.",
+      "anchor": "packages/coding-agent/src/exec/bash-executor.ts:1-5 (brush-core contract)"
+    },
+    {
+      "n": 6,
+      "instruction": "Write `packages/coding-agent/test/tools/powershell.test.ts` covering the three contracts in `test_contract` below, then build the native addon (`bun --cwd=packages/natives run build`) before running it — without the addon the module graph fails to load and the test errors out rather than failing an assertion. Run `bun run check:ts` and the test file. Both must pass.",
+      "anchor": "packages/coding-agent/test/tools/powershell-encoding.test.ts (new)"
+    },
+    {
+      "n": 7,
+      "instruction": "W14b ONLY (answer was YES). Add an optional `shellConfig?: ShellConfig` field to `BashExecutorOptions` (the interface at lines 33-67) so a tool can point the executor at a specific shell, and have `executeBash` prefer it over `settings.getShellConfig()` at line 487-490. This is the seam the plan assumed already existed; it does not.",
+      "anchor": "packages/coding-agent/src/exec/bash-executor.ts:33-67,485-490"
+    },
+    {
+      "n": 8,
+      "instruction": "W14b ONLY. Create `packages/coding-agent/src/tools/powershell.ts` with a `PowerShellTool` class extending `AgentTool`, mirroring `BashTool` (bash.ts:473) for approval, streaming updates, and result details, delegating execution to `executeBash` with the pwsh `ShellConfig` from step 7. Set `readonly name = \"powershell\"` and `readonly label = \"PowerShell\"` following the convention at bash.ts:474 and :567. Port the approval gate correctly: `BashTool.approval` extracts compound-command segments only when `isPosixShell(shell)` (bash.ts:484), and `isPosixShell(\"pwsh\")` is false, so PowerShell commands are matched as a whole chain — verify this against a real PowerShell rather than assuming it is right.",
+      "anchor": "packages/coding-agent/src/tools/bash.ts:473,474,484,567"
+    },
+    {
+      "n": 9,
+      "instruction": "W14b ONLY. Create `packages/coding-agent/src/prompts/tools/powershell.md` and import it exactly the way `bash.ts:38` imports the bash description (`import powershellDescription from \"../prompts/tools/powershell.md\" with { type: \"text\" }`). Prompts are never built in code.",
+      "anchor": "packages/coding-agent/src/tools/bash.ts:38"
+    },
+    {
+      "n": 10,
+      "instruction": "W14b ONLY. Register the tool: add `\"powershell\"` to `BUILTIN_TOOL_NAMES` in `builtin-names.ts` and the factory entry in `BUILTIN_TOOLS` in `tools/index.ts`. Both edits are required in the same change or the `Record<BuiltinToolName, ToolFactory>` annotation will not typecheck. Re-run `bun run check:ts`.",
+      "anchor": "packages/coding-agent/src/tools/builtin-names.ts:3, packages/coding-agent/src/tools/index.ts:554-557"
+    }
+  ],
+
+  "code_shape": "// packages/coding-agent/src/exec/powershell-encoding.ts\nimport { isPowerShell } from \"@oh-my-pi/pi-utils/procmgr\";\n\n/**\n * PowerShell emits output in the host's active code page unless the console\n * encoding is forced, so every non-ASCII tool result comes back as mojibake.\n * The assignment throws on some hosts (older Windows, redirected consoles),\n * and the command must still run when it does — hence the try/catch, which is\n * load-bearing rather than defensive.\n */\nexport const POWERSHELL_UTF8_PREFIX =\n\t\"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\\n\";\n\n/** Prepend the encoding guard only when the spawn target really is PowerShell. */\nexport function withPowerShellUtf8Output(command: string, shell: string): string {\n\treturn isPowerShell(shell) ? `${POWERSHELL_UTF8_PREFIX}${command}` : command;\n}\n\n// packages/coding-agent/src/exec/bash-executor.ts:379\nfunction buildUserShellCommand(shell: string, args: string[], command: string): string {\n\tconst guarded = withPowerShellUtf8Output(command, shell);\n\treturn [shell, ...ensureInteractiveShellArgs(shell, args), guarded].map(quoteShellArg).join(\" \");\n}\n\n// packages/coding-agent/src/tools/bash.ts:163\nexport function wrapShellLineForClientTerminal(\n\tline: string,\n\tshellConfig: { shell: string; args: string[]; prefix?: string | undefined },\n): { command: string; args: string[] } {\n\tconst guarded = withPowerShellUtf8Output(line, shellConfig.shell);\n\tconst finalLine = shellConfig.prefix ? `${shellConfig.prefix} ${guarded}` : guarded;\n\treturn { command: shellConfig.shell, args: [...shellConfig.args, finalLine] };\n}\n\n// CONDITIONAL W14b — the seam the plan wrongly assumed already existed.\n// packages/coding-agent/src/exec/bash-executor.ts, BashExecutorOptions (line 33)\nexport interface BashExecutorOptions {\n\t// ...existing fields...\n\t/** Spawn a specific shell instead of the session's resolved one. */\n\tshellConfig?: ShellConfig;\n}",
+  "test_contract": "Three contracts, all asserting the value a consumer actually reads — the PowerShell interpreter parses the emitted command string, so its exact bytes are the contract (AGENTS.md: 'exact bytes/shape MAY be asserted when a provider, parser, protocol, or persisted consumer reads them'). (1) NEGATIVE/PRECEDENCE: for shells `/bin/bash`, `/bin/zsh`, and `cmd.exe`, `withPowerShellUtf8Output` returns the input byte-identical. This is the assertion that stops the item from being a rubber stamp — without it a helper that prefixes unconditionally would pass the PowerShell tests while corrupting every POSIX command, since a PowerShell statement is a syntax error in bash. (2) TRANSFORMATION: for `pwsh`, `powershell.exe`, and `C:\\Program Files\\PowerShell\\7\\pwsh.exe`, the result starts with `try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}` followed by a newline, and the user's command appears verbatim after it — this is the encoding contract the whole item exists to buy. (3) NON-CATASTROPHIC FAILURE: the guard is a `try`/`catch` block, so if the encoding assignment throws on an old host, the user's command is still reached. Assert the user's command appears AFTER the closing `catch {}` rather than inside it, i.e. the emitted line is a guarded statement followed by a separate statement. If the try/catch were dropped, or the prefix lost its `catch`, this test goes red. This is the honest POSIX-host proxy for the plan's 'assert the command still executes on a host where the assignment throws' — it defends the same contract without stubbing bytes and without a Windows host. What a consumer sees on regression: on Windows, every non-ASCII tool result renders as `ÄÆá»ç`-style mojibake, or the whole command aborts with a red error and no output.",
+
+  "test_files": [
+    "packages/coding-agent/test/tools/powershell.test.ts (new)"
+  ],
+
+  "verification": [
+    "bun run check:ts",
+    "bun --cwd=packages/natives run build",
+    "bun test packages/coding-agent/test/tools/powershell.test.ts"
+  ],
+
+  "gate": "Two parts, and both must be run. (1) `bun run check:ts` — passes at HEAD today (measured: all 15 packages `Done`, no errors), so any type error introduced by this change turns it red. (2) `bun --cwd=packages/natives run build && bun test packages/coding-agent/test/tools/powershell.test.ts` — the test file must report 0 fail. The build step is mandatory and not optional: at HEAD the addon is absent, so any test whose module graph reaches `@oh-my-pi/pi-natives` fails to LOAD. This is measured, not assumed: `bun test packages/coding-agent/test/tools/` currently gives 145 pass / 177 fail / 174 errors across 322 tests, and every one of the failures is the `Failed to load pi_natives native addon for darwin-arm64` error. Note that `packages/coding-agent/src/tools/bash.ts:19` imports `@oh-my-pi/pi-utils/procmgr`, whose line 3 imports `@oh-my-pi/pi-natives` — so a test importing the tool (rather than only the pure helper) is unrunnable until the addon exists. The gate also includes a diff-scope check: `git diff --stat` must show exactly two production files (bash-executor.ts, bash.ts) plus the new helper and test — a third production file means the embedded-shell path was edited, which must not happen.",
+
+  "gate_can_fail": true,
+
+  "depends_on": [],
+
+  "blocks": [],
+
+  "effort": "W14a (the encoding guard, the part that lands unconditionally): S — roughly 30 production lines plus one test file. W14b (the separate `powershell` tool, only if open question 4a is answered yes): M, roughly 250-400 lines, because it needs a new `shellConfig` override seam on `BashExecutorOptions` and a new tool class — NOT the plan's 'S / ~80 dòng'. See plan_corrections #1: that 80-line figure is a pi-ref-shaped number and does not transfer to omp.",
+
+  "risk": "The single most likely way to get this wrong is to believe the plan's 'Effort đã chốt, không còn mở ... đây là một tool definition cộng đăng ký, không phải một refactor' and drop pi-ref's 67-line `powershell.ts` into `packages/coding-agent/src/tools/`. It will not compile: `createShellToolDefinition`, `ShellToolConfig`, `createLocalShellOperations`, `BashOperations` and `BashSpawnHook` do not exist anywhere in omp's `tools/` module graph — `git grep` for the first two returns zero hits repo-wide, and the only copies of the latter three are in `extensibility/legacy-pi-coding-agent-shim.ts`, a legacy plugin-compatibility shim that is not the live tool. The tempting fallback is to fork `BashTool` (1504 lines), which is precisely the refactor the plan warns against. The honest smaller path is W14a: fix the encoding on the two spawn sites that exist, and treat the separate tool as its own scoped decision.",
+
+  "open_questions": [
+    "Open question 4a (plan P3, lines 3072-3080) is unresolved and blocks W14b: does omp want a first-class `powershell` tool, or is bash-only-on-Windows a deliberate scope decision? This must be answered by the user, not inferred. Until it is answered, land W14a alone — the plan itself says W14 is droppable without losing any correctness anyone can observe today.",
+    "Given the brush-core finding below, the user should also be told that the mojibake the plan describes does NOT occur on omp's default Windows path. If they read the plan's 'mọi tool result non-ASCII bị hỏng' as a live bug report, that expectation needs correcting before anyone spends a day on W14b.",
+    "Should W14a ship at all if the answer to 4a is 'Windows support is deliberately bash-only'? It is ~30 lines and defends a real encoding contract on the spawn paths that DO exist (`!` hotkey, PTY, ACP terminal when `shellPath` is set to pwsh), so the recommendation is yes — but it is the user's call, since it is a behaviour change on a path they may not support.",
+    "pi-ref's version wraps the prefix inside the `exec` operations seam. The port above wraps at the command-composition site instead. If the user later wants the `powershell` tool, the W14a helper is reusable as-is; confirm no one objects to it living in `exec/` rather than `tools/`."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "\"Effort đã chốt, không còn mở: shell tool đã tham số hoá đa-shell (`bash.ts:481-484` đọc `settings.getShellConfig().shell` và gate trên `isPosixShell`) ... nên đây là một tool definition cộng đăng ký, không phải một refactor.\" (plan lines 1751-1755)",
+      "verdict": "FALSE for omp",
+      "correction": "The multi-shell parameterization exists only in pi-ref, a different repository, at a different path. omp's `packages/coding-agent/src/tools/bash.ts` exports exactly five things: `wrapShellLineForClientTerminal` (163), `CRITICAL_BASH_PATTERNS` (188), `BashToolInput` (384), `BashToolOptions` (395), `BashTool` (473). `BashToolOptions` is an EMPTY interface. `BashTool` is a class that calls module-level `executeBash` imported at line 22. `git grep ShellToolConfig` and `git grep createShellToolDefinition` return ZERO hits repo-wide. So pi-ref's 67-LOC `powershell.ts` cannot be dropped in; a real `powershell` tool is an M-sized job, not 80 lines.",
+      "evidence": "grep -n '^export' packages/coding-agent/src/tools/bash.ts -> lines 163, 188, 384, 395, 473 only; sed -n '395p' -> `export interface BashToolOptions {}`; `git grep -n ShellToolConfig -- 'packages/**/*.ts'` -> no output; `git grep -n createShellToolDefinition -- 'packages/**/*.ts'` -> no output; pi-ref at /Users/tranquangdang21/Projects/pi-ref/packages/coding-agent/src/core/tools/bash.ts exports ShellToolConfig:217, createShellToolDefinition:227, createBashTool:400."
+    },
+    {
+      "claim": "\"trên host Windows, bash tool là đường shell duy nhất của omp — nghĩa là hoặc không có PowerShell, hoặc có một `powershell.exe -Command` được bash gọi mà bỏ qua tiền tố UTF-8 ... mọi tool result non-ASCII bị hỏng\" (plan lines 1790-1793, and P3 at 3073-3076)",
+      "verdict": "FALSE for the default path — the real gap is much narrower",
+      "correction": "omp's bash tool does not spawn a shell at all in the default path. It executes in brush-core, an embedded POSIX shell engine in the native addon. `useUserShell` is true only on the `!` hotkey path and the PTY path. So no `powershell.exe` is invoked by the bash tool by default and there is no code-page mojibake there. The UTF-8 gap is real ONLY when a user explicitly configures `shellPath` to `pwsh`/`powershell` and then uses a spawn path (`!` hotkey, interactive PTY, ACP client terminal). W14a is scoped to exactly those paths, which is why it is small.",
+      "evidence": "sed -n '1,5p' packages/coding-agent/src/exec/bash-executor.ts -> 'Uses brush-core via native bindings for shell execution.'; `git grep -n useUserShell` -> only command-controller.ts:1423 sets it true; sed -n '127,131p' packages/utils/src/procmgr.ts -> 'A host bash is OPTIONAL: bash tool commands always execute in the embedded brush-core shell. The resolved binary only serves the spawn-a-shell paths (interactive PTY sessions, ACP client terminals, SHELL env)'."
+    },
+    {
+      "claim": "\"grep -rni powershell packages/coding-agent/src/ trả về 73 hit trên 10 file\" and the anchors `profile-alias.ts:5,11,19,33`, `bash.ts:481-484`, `procmgr.ts:81`, `clipboard.ts:228-231, :288-290` (plan lines 1777-1789)",
+      "verdict": "VERIFIED (all but two anchors, off by ~3 lines)",
+      "correction": "Keep the count and the profile-alias / isPosixShell anchors — they are exact. Two small corrections: the two operative bash.ts lines are 482 and 484 (not 481-484), and the clipboard `powershell.exe` spawn literals are at lines 231 and 290, not 228-231 / 288-290. Cost of the drift is minutes, but the engineer should not hunt for a line 228 that does not contain the spawn.",
+      "evidence": "grep -rni powershell packages/coding-agent/src/ | wc -l -> 73, across 10 files (profile-alias.ts 30, clipboard.ts 26, open.ts 6, ssh/connection-manager.ts 3, cli/update-cli.ts 3, plus 4 singletons); grep -n -> profile-alias.ts:5, :11, :19, :33 exact; sed -n '81p' packages/utils/src/procmgr.ts -> `export function isPosixShell(shell: string): boolean {`; grep -n getShellConfig packages/coding-agent/src/tools/bash.ts -> 482; grep -n isPosixShell (same file) -> 484; grep -n powershell.exe packages/coding-agent/src/utils/clipboard.ts -> 231, 290."
+    },
+    {
+      "claim": "\"Prompt `PS>` hiển thị\" as a test assertion (plan line 1800-1801), implying an omp-runnable check",
+      "verdict": "UNSOUND as stated — no `PS>` string exists in omp and the assertion is close to a banned static echo",
+      "correction": "pi-ref's `ShellToolConfig.prompt: \"PS>\"` has no omp analog: omp tools carry `readonly label` (bash.ts:567) and a static prompt markdown file imported at bash.ts:38. A port must add `prompts/tools/powershell.md` rather than set a `PS>` string. The test assertion is also dropped: asserting a label is a wording assertion, which AGENTS.md bans, and the plan's own 'Tường minh KHÔNG làm tool đã được đăng ký' already forbids the adjacent version of it.",
+      "evidence": "grep -n 'readonly label' packages/coding-agent/src/tools/*.ts -> bash.ts:567 `readonly label = \"Bash\"`; sed -n '38p' packages/coding-agent/src/tools/bash.ts -> `import bashDescription from \"../prompts/tools/bash.md\" with { type: \"text\" }`; `git grep -n 'PS>'` -> no hits in omp."
+    },
+    {
+      "claim": "pi-ref's `powershell.ts` is the file to port (plan lines 1774-1776, 67 LOC)",
+      "verdict": "EXISTS and LOC confirmed, but not directly portable",
+      "correction": "The file is real at 67 LOC and its UTF-8 prefix constant matches byte-for-byte what this spec uses. Two blockers to a literal port: it depends on five symbols omp does not have, and it uses `ReturnType<typeof createBashTool>` at lines 49 and 56, which AGENTS.md bans outright ('NEVER use ReturnType<>'). Any port must name the concrete tool type.",
+      "evidence": "wc -l /Users/tranquangdang21/Projects/pi-ref/packages/coding-agent/src/core/tools/powershell.ts -> 67; line 14 -> `const UTF8_OUTPUT_PREFIX = \"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\\n\";`; lines 49, 56 -> ReturnType<> usages."
+    },
+    {
+      "claim": "Task brief: \"the native addon is not built, so `bun test` currently reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64'\"",
+      "verdict": "IMPRECISE — the addon is indeed missing, but bun test is not at 0 pass",
+      "correction": "The addon is genuinely absent and `bun run check:ts` genuinely passes. But `bun test` is not fully blocked: `bun test packages/coding-agent/test/tools/` gives 145 pass / 177 fail / 174 errors over 322 tests. The precise and decision-relevant fact is that any test whose module graph reaches `@oh-my-pi/pi-natives` fails to LOAD. Since `tools/bash.ts:19` -> `procmgr.ts:3` -> natives, a test that imports the tool cannot run until the addon is built — which is why the gate names the build step explicitly rather than treating `bun test` as usable.",
+      "evidence": "bun run check:ts -> all 15 packages Done, no errors; bun test packages/coding-agent/test/tools/ -> '145 pass 177 fail 174 errors ... Ran 322 tests across 189 files'; find . -name '*.node' -> no native artifact; head -3 packages/utils/src/procmgr.ts -> `import { Process, ProcessStatus } from \"@oh-my-pi/pi-natives\";`."
+    },
+    {
+      "claim": "omp already has PowerShell plumbing in the shell layer, implying only a thin tool is missing (implied by plan lines 1751-1755 and 1785-1787)",
+      "verdict": "PARTIALLY TRUE, and it is the useful half",
+      "correction": "omp's `procmgr` does already model PowerShell: `isPowerShell` (line 71) recognizes powershell/powershell.exe/pwsh/pwsh.exe, and `getShellArgs` (line 53) already returns `-NoLogo -Command` for it. So a user can already configure `shellPath: pwsh` and get correct spawn args. What is missing is only the encoding guard — which is why W14a is ~30 lines rather than a refactor. omp also already knows the encoding idiom: `utils/clipboard.ts:270` sets `[Console]::OutputEncoding = [Text.Encoding]::UTF8` (without a try/catch, in a `$ErrorActionPreference='Stop'` script — a different context, so it is not a counterexample to the plan's try/catch requirement, but it is prior art for the pattern).",
+      "evidence": "sed -n '53,73p' packages/utils/src/procmgr.ts -> getShellArgs with isPowerShell branch returning ['-NoLogo','-Command']; sed -n '268,272p' packages/coding-agent/src/utils/clipboard.ts -> POWERSHELL_TEXT_SCRIPT with the encoding assignment."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W14.spec.json"
+}

@@ -1,0 +1,143 @@
+{
+  "id": "W5",
+  "title": "Make the wire package's dangling type-conformance citation real",
+  "wave": "Wave 1 — Lifecycle foundation (W1, W2, W3, W5)",
+  "one_line": "Create `packages/coding-agent/test/collab/web-wire.types.ts`, a type-only file that enforces at `bun run check:ts` that every frame discriminant declared by the `@oh-my-pi/pi-wire` package has a matching host-side variant in `CollabFrame` — which is exactly what the comment at `packages/wire/src/index.ts:7` already promises but points at a file that does not exist.",
+  "user_visible_effect": "none — internal. No runtime code, no flag, no default change. The only user-visible consequence is indirect: a wire/host frame mismatch that used to surface as a silently-swallowed frame or a nonsense TypeError inside a browser now fails the typecheck in CI.",
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/test/collab/web-wire.types.ts",
+      "action": "create",
+      "change": "New ~45-line type-only conformance file. Imports `CollabFrame` from `../../src/collab/protocol` and `WireFrame` from `@oh-my-pi/pi-wire`, derives the `t` discriminant of each union, and asserts `WireT ⊆ CollabT` via a constrained helper `type Expect<T extends true> = T`. The assertion alias is `export`ed.",
+      "verified": true,
+      "note": "This is the ONLY file this work item creates or edits. The path is not arbitrary — it is the exact path named in the dangling comment at `packages/wire/src/index.ts:7`, so creating it makes the existing sentence true with no edit to the wire package."
+    },
+    {
+      "path": "packages/wire/src/index.ts",
+      "action": "modify",
+      "change": "NO CHANGE. Line 7 (`* asserted type-only in \\`packages/coding-agent/test/collab/web-wire.types.ts\\`.`) already names the correct future path and becomes true the moment the new file exists. Verified clean before and after: `git diff packages/wire/src/index.ts` is empty.",
+      "verified": true,
+      "note": "This is the plan's deliberate choice — create the file rather than delete the sentence. Do NOT reword or re-anchor this comment."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Confirm the tree is at a green baseline before touching anything: `bun install --frozen-lockfile` (required — `node_modules` was ABSENT in this checkout, so neither `bun run check:ts` nor `bun test` can run without it; this is independent of the native addon), then `bun run check:ts`. Expect exit 0. Do NOT use `tsc`/`npx tsc` (AGENTS.md) and do NOT run `bun test` for this item — it is irrelevant here and needs the unbuilt native addon.",
+      "anchor": "package.json:94"
+    },
+    {
+      "n": 2,
+      "instruction": "Create `packages/coding-agent/test/collab/web-wire.types.ts` with exactly the content in the `code_shape` field below. Two things are load-bearing and easy to get wrong: (a) the assertion alias MUST be `export type`, not a bare `type` — a non-exported unused alias draws an `eslint(no-unused-vars)` oxlint WARNING (verified); (b) imports must be `import type` — `verbatimModuleSyntax: true` in `packages/tsconfig.base.json`.",
+      "anchor": "packages/coding-agent/test/collab/web-wire.types.ts"
+    },
+    {
+      "n": 3,
+      "instruction": "Gate 1 (green): `bun run check:ts` must PASS. Internally this is `oxlint .` + `oxfmt --check` + `tsgo -p tsconfig.json --noEmit` per package; the file is reached because `packages/coding-agent/tsconfig.json` sets `\"include\": [\"src\", \"test\", \"scripts\"]`, and the lint/format globs `packages/*/{test,bench,examples,scripts}/**/*.ts` both match it. Verified: oxlint exit 0, oxfmt 'All matched files use the correct format', tsgo reports zero errors for this file.",
+      "anchor": "packages/coding-agent/tsconfig.json"
+    },
+    {
+      "n": 4,
+      "instruction": "Gate 2 (RED — the part that makes this worth anything): prove the assertion has teeth. Temporarily rename ONE discriminant in the wire package — `sed -i '' '379s/.*/\\t| { t: \"bye-vanished\"; reason: string }/' packages/wire/src/index.ts` (line 379 is `| { t: \"bye\"; reason: string }`, the last arm of `HostFrame`). Then run `bun run --cwd packages/coding-agent check:types` and confirm exit 1 with the error `test/collab/web-wire.types.ts(44,40): error TS2344: Type 'false' does not satisfy the constraint 'true'.` VERIFIED: this produces EXACTLY ONE error, in this file, and ZERO collateral errors anywhere else in the package — the guest `switch`es keep tolerant `default:` branches, so renaming a `t` does not cascade. That isolation is the result worth recording: the red is legible and points at the conformance file, not at a hundred downstream call sites.",
+      "anchor": "packages/wire/src/index.ts:379"
+    },
+    {
+      "n": 5,
+      "instruction": "Revert: `git checkout -- packages/wire/src/index.ts`, then re-run `bun run --cwd packages/coding-agent check:types` and confirm exit 0 again. BOTH directions are the evidence — a conformance file that has never gone red proves nothing. Record both exit codes in the PR description.",
+      "anchor": "packages/wire/src/index.ts:379"
+    },
+    {
+      "n": 6,
+      "instruction": "Optional cleanup pass, only if you want the citation to be self-explanatory: leave `packages/wire/src/index.ts:7` alone anyway. The one thing you MAY add inside the new file is the header comment already present in `code_shape` explaining that this file is enforced by tsgo and deliberately not collected by `bun test` — that prevents the next engineer from 'fixing' it into a `.test.ts` and silently deleting the guarantee.",
+      "anchor": "packages/coding-agent/test/collab/web-wire.types.ts:1"
+    },
+    {
+      "n": 7,
+      "instruction": "Changelog: NO entry. This is an internal test-only change with no user-facing surface, and the comment it makes true is unchanged. Per AGENTS.md, `## [Unreleased]` entries are for what the user will see or can now do. If a reviewer asks for one, the honest entry would be a `### Fixed` line about the stale citation, not about a feature.",
+      "anchor": "packages/wire/CHANGELOG.md"
+    }
+  ],
+
+  "code_shape": "// packages/coding-agent/test/collab/web-wire.types.ts\n//\n// TYPE-ONLY conformance between the shared wire package and the collab host.\n//\n// No `expect`, no runtime assertion, no source-grep: this is a compile-time\n// guarantee, so it is enforced by `tsgo` (via `bun run check:ts`), not by\n// `bun test`. This file is deliberately NOT named `*.test.ts` — the runner in\n// `scripts/ci-test-ts.ts` only collects `*.test.ts`, and\n// `packages/coding-agent/tsconfig.json` includes `test`, so tsgo type-checks\n// this file while `bun test` never loads it.\nimport type { CollabFrame } from \"../../src/collab/protocol\";\nimport type { WireFrame } from \"@oh-my-pi/pi-wire\";\n\ntype Assignable<From, To> = [From] extends [To] ? true : false;\ntype Expect<T extends true> = T;\ntype Discriminant<F> = F extends { t: infer T } ? T : never;\n\ntype WireT = Discriminant<WireFrame>;\ntype CollabT = Discriminant<CollabFrame>;\n\n/**\n * CONTRACT: every frame discriminant declared by the wire package has a\n * matching host-side variant. This is the direction that has teeth — it goes\n * red when a frame is added to `packages/wire` that the host never emits, and\n * red when the host renames a `t` out from under it.\n *\n * Deliberately NOT asserted: payload-level assignability in either direction.\n * The two sides carry deliberately different `event` unions. Wire's\n * `AgentEvent` declares nine turn/message/tool-execution discriminants the host\n * never emits — `agent_start`, `turn_start`, `turn_end`, `message_start`,\n * `message_update`, `message_end`, `tool_execution_start`,\n * `tool_execution_update`, `tool_execution_end` (verified to be exactly\n * `Exclude<AgentEvent's type, AgentSessionEvent's type>`) — and the host's\n * `AgentSessionEvent` declares discriminants wire has no arm for\n * (`model_changed`, `advisor_cost_changed`, `advisor_yielded`,\n * `goal_updated`, `irc_message`, `todo_auto_clear`, and others).\n * `packages/wire/src/index.ts` states the design in its own header: the unions\n * \"cover only the variants this client renders; consumers cast at the JSON\n * boundary and every `switch` keeps a tolerant `default:` branch\". Asserting\n * payload assignability would fight that design.\n *\n * The reverse direction (`CollabT ⊆ WireT`) is also not asserted: the host is\n * allowed to emit a variant a browser client has not learned to render yet.\n * That is the forward-compatible half of the same design.\n */\nexport type WireCoveredByHost = Expect<Assignable<WireT, CollabT>>;\n",
+
+  "test_contract": "This is a compile-time contract, not a runtime one — there is nothing for a consumer to observe at execution time, and that is the point. The contract defended: 'the set of frame discriminants the wire package declares is a subset of the set the collab host can actually produce.' A consumer who regresses this is a browser collab client: it switches on `frame.t`, and a `t` the host renamed or a `t` only the host knows about falls into its tolerant `default:` branch. Today that means a frame is silently dropped — the guest's UI stalls with no error, no log line, and no red test anywhere. The observable failure the typecheck converts into a build break is exactly that: silence. If this file is deleted, weakened to `Expect<true>`, or renamed to `web-wire.types.test.ts` (which `scripts/ci-test-ts.ts:234` would then collect but which would carry no runtime assertion), the guarantee is gone and `bun test` will still report green — which is the specific trap this work item exists to close.",
+
+  "test_files": [
+    "packages/coding-agent/test/collab/web-wire.types.ts"
+  ],
+
+  "verification": "1) `bun install --frozen-lockfile` — required; `node_modules` was absent in this checkout, so every command below fails with `tsgo: command not found` until it runs.\n2) `bun run check:ts` — MUST PASS with the file present. VERIFIED: oxlint exit 0; `oxfmt --check` reports 'All matched files use the correct format'; `tsgo -p tsconfig.json --noEmit` reports zero errors for `web-wire.types.ts`.\n3) NEGATIVE: `sed -i '' '379s/.*/\\t| { t: \"bye-vanished\"; reason: string }/' packages/wire/src/index.ts` then `bun run --cwd packages/coding-agent check:types` — MUST FAIL with exit 1 and the error `test/collab/web-wire.types.ts(44,40): error TS2344: Type 'false' does not satisfy the constraint 'true'.` VERIFIED: exactly one error, in this file, zero collateral errors elsewhere in the package.\n4) `git checkout -- packages/wire/src/index.ts` then `bun run --cwd packages/coding-agent check:types` — MUST PASS again. VERIFIED exit 0.\n`bun test` is NOT part of this item's verification and is currently blocked in this environment by the unbuilt `pi_natives` addon. Do not add it to the gate — the file is intentionally outside the runner's `*.test.ts` glob.",
+
+  "gate": "The gate is two-sided and both sides were run against real source, not reasoned about. (a) GREEN: with `packages/coding-agent/test/collab/web-wire.types.ts` present and `packages/wire/src/index.ts` untouched, `bun run --cwd packages/coding-agent check:types` exits 0 — observed. (b) RED: with exactly one discriminant renamed in `packages/wire/src/index.ts:379` and the conformance file untouched, the same command exits 1 and the only new error is `web-wire.types.ts(44,40) TS2344: Type 'false' does not satisfy the constraint 'true'` — observed. After reverting the wire edit the command exits 0 again — observed. A gate that only has (a) is worthless: a file containing `type X = Expect<true>` also passes (a). Only (b) distinguishes a real assertion from a decorative one.",
+
+  "gate_can_fail": true,
+
+  "depends_on": [],
+
+  "blocks": [],
+
+  "effort": "S — one ~45-line type-only file, zero runtime code, zero new dependencies. (`@oh-my-pi/pi-wire` is already a dependency of coding-agent at `packages/coding-agent/package.json:547`.)",
+
+  "risk": "Writing it as a runtime `.test.ts` with a grep or a placeholder `expect(true)` — which the plan names as the easiest way to get this wrong, and for good reason: that shape passes forever while the wire types drift silently. The subtler variant of the same mistake is adding payload-level assignability assertions 'to make it stronger'. Those assertions CANNOT hold — verified, the two `event` unions differ in both directions, nine discriminants wire-only and a dozen-plus host-only — so the engineer will either delete the file or soften the assertion into something that cannot fail, and the work item lands looking done while proving nothing. The second-order risk is procedural: because this file is not collected by `bun test`, an engineer who validates only by running tests will see green throughout and never learn the guarantee exists. That is why step 4 (the deliberate red) is mandatory and must be recorded in the PR body, not just performed.",
+
+  "open_questions": [
+    "Should `packages/wire/src/index.ts:7` be tightened to name the enforcement command (e.g. 'asserted type-only in `packages/coding-agent/test/collab/web-wire.types.ts`, enforced by `bun run check:ts`')? It would save the next reader from looking for a test. Default answer for this work item: leave the line alone — the plan explicitly chose 'create the file, not delete the sentence', and touching the wire package widens the review surface of an S-sized item for a comment-only gain. Raise it as a follow-up if the reviewer wants it.",
+    "A payload projection function (e.g. `toWireFrame(frame: CollabFrame): WireFrame` in `packages/coding-agent/src/collab/protocol.ts`) is the only thing that would let this conformance file assert at the PAYLOAD layer instead of the discriminant layer — that is the real remaining gap, because a `CollabSessionState` gaining a field changes the wire payload while the discriminant assertion stays green. The plan explicitly scopes this OUT of W5. Confirm it stays out; it needs its own work item with its own risk discussion.",
+    "The reverse assertion (`CollabT ⊆ WireT`) is deliberately omitted because the host may legitimately emit a frame the browser has not learned to render. If the guest client is ever declared feature-complete, that assertion becomes meaningful and should be added — but only with the forward-compat contract explicitly retired in the comment, not silently."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "`git grep -n \"web-wire.types\"` toàn repo chỉ ra đúng một dòng: chính dòng trích dẫn ở `packages/wire/src/index.ts:7` (exactly one hit repo-wide).",
+      "verdict": "stale",
+      "correction": "True when the plan was written; no longer true at the current HEAD. The plan document itself is now committed into the repo, so the grep returns 9 hits: 8 inside `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (lines 857, 859, 860, 872, 2250, 2263, 3134, 3135, 3158) plus the one real source hit. Restate it as: 'the only hit outside the plan document is `packages/wire/src/index.ts:7`.' The substantive finding — no `web-wire.types.ts` file exists and nothing else in the repo depends on one — is unchanged and confirmed.",
+      "evidence": "`git grep -n \"web-wire.types\"` at HEAD ecd516f returns COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:857,859,860,872,2250,2263,3134,3135,3158 and packages/wire/src/index.ts:7. `ls packages/coding-agent/test/collab/` shows 22 `*.test.ts` files plus a `helpers/` directory and no `web-wire.types.ts`."
+    },
+    {
+      "claim": "The repo is at `git HEAD 5873776`.",
+      "verdict": "stale",
+      "correction": "Actual HEAD is `ecd516f35b64327392329443ceb52dfbc4e08f06` on branch `milestone-1` — a squashed initial publish of oh-my-pi 18.3.3, not the upstream commit the plan reviewed. Every anchor this work item depends on was re-checked against this tree and all of them still hold, so the difference is cosmetic for W5 — but do not use `5873776` when bisecting or when reading plan citations about other items.",
+      "evidence": "`git rev-parse HEAD` -> ecd516f35b64327392329443ceb52dfbc4e08f06; `git branch --show-current` -> milestone-1; `packages/wire/package.json:4` -> \"version\": \"18.3.3\"."
+    },
+    {
+      "claim": "`AgentSessionEvent` (định nghĩa ở `agent-session-events.ts:13`, **14** variant).",
+      "verdict": "wrong",
+      "correction": "The file and line are right (`packages/coding-agent/src/session/agent-session-events.ts:13`) but the count is not: there are 18 unique `type` discriminants across 19 arms (`agent_end` appears twice, for two differently-shaped variants). Do not copy '14' into any comment. The conclusion the plan drew from the count is unaffected — the host union is strictly larger than the wire one — so the file comment should state the direction of the difference and name concrete examples, not a count.",
+      "evidence": "`sed -n '13,82p' packages/coding-agent/src/session/agent-session-events.ts | grep -o 'type: \"[a-z_]*\"' | sort -u` yields 18 distinct values."
+    },
+    {
+      "claim": "Hai tập `AgentEvent` và `AgentSessionEvent` giao nhau chỉ ở `agent_end` và `notice` (the two event sets intersect at only `agent_end` and `notice`).",
+      "verdict": "wrong",
+      "correction": "The intersection is at least 7 discriminants wide, not 2. Verified by type-level membership assertions: `agent_end`, `auto_compaction_start`, `auto_compaction_end`, `auto_retry_start`, `auto_retry_end`, `notice`, AND `thinking_level_changed` are each members of BOTH unions. This does not change the design conclusion — the sets still differ in both directions, so payload assignability still cannot be asserted — but the stated reason was wrong. Use the corrected reason in the file comment. Separately verified and still correct from the plan: wire declares exactly 9 wire-only discriminants (`agent_start`, `turn_start`, `turn_end`, `message_start`, `message_update`, `message_end`, `tool_execution_start`, `tool_execution_update`, `tool_execution_end`) — that set is exactly `Exclude<AgentEvent's type, AgentSessionEvent's type>`.",
+      "evidence": "Type-level probe asserting `In<\"agent_end\", W> & In<\"agent_end\", H>` (and the same for the other six) compiled clean under `tsgo`; a separate probe asserting `Eq<Exclude<W,H>, <the 9 lifecycle discriminants>>` also compiled clean. A companion probe attempting to assert `Eq<W & H, <7 literals>>` FAILED — see the note in the risk field on the `Eq<>` identity trick being unreliable on deferred conditional types here."
+    },
+    {
+      "claim": "The plan's draft file body: `type WireCoveredByHost = Expect<Assignable<WireT, CollabT>>;` as a bare, non-exported type alias.",
+      "verdict": "incomplete",
+      "correction": "The type logic is right (it compiles green and the negative test makes it red), but as written it draws an oxlint warning: `eslint(no-unused-vars): Type alias 'WireCoveredByHost' is declared but never used`. It is only a warning today, so it would not fail the build — but it is noise on a file whose entire job is to be read carefully. Prefix it with `export`, which silences the rule at zero cost and reads as intentional. The `code_shape` in this spec already does this.",
+      "evidence": "`oxlint` on the bare-alias form prints the warning and exits 0; `oxlint` on the `export type` form prints nothing and exits 0. `oxfmt --check` accepts both."
+    },
+    {
+      "claim": "Verification command is `bun check` (and `bun check` must PASS with the file and FAIL when a wire type is narrowed).",
+      "verdict": "needs precision",
+      "correction": "`bun check` is the RIGHT command and it does reach this file, but two things must be said precisely or the engineer will lose an hour. (1) `bun check` runs `check:ts` AND `check:rs` — the Rust half needs a toolchain and is irrelevant here; use `bun run check:ts`, or for a fast loop `bun run --cwd packages/coding-agent check:types`, which is exactly `tsgo -p tsconfig.json --noEmit` (`packages/coding-agent/package.json:523`). (2) `bun run check:ts` is a repo-wide gate, so on a busy tree it can be red for reasons that have nothing to do with this file. Read the error list and confirm the only NEW error is the one in `web-wire.types.ts`.",
+      "evidence": "package.json:93-95 (`check` = `--parallel check:ts check:rs`; `check:ts` = `check:tools` + sequential per-package `check:types`); packages/coding-agent/package.json:523 (`check:types` = `tsgo -p tsconfig.json --noEmit`). Both were run: `bun run check:ts` exits 0 on a clean tree."
+    },
+    {
+      "claim": "Task framing: 'the native addon is not built, so `bun test` currently reports 0 pass with \"Failed to load pi_natives native addon for darwin-arm64\" ... treat `bun test` as blocked until the addon is built.'",
+      "verdict": "irrelevant to this item — with an additional blocker the framing missed",
+      "correction": "`bun test` is not part of W5's gate at all: this is a compile-time guarantee and the file is deliberately outside the runner's collection glob. The real blocker in this checkout was different and more immediate — `node_modules` was entirely ABSENT, so `tsgo` and `oxlint` were both missing and `bun run check:ts` failed with `tsgo: command not found` before any addon question arose. Running `bun install --frozen-lockfile` fixed it (404 packages, 3.2s) and the native addon never entered into it. Make `bun install` step 1 of this item so the engineer does not read a `command not found` as a broken checkout.",
+      "evidence": "`tsgo: command not found` before install; after `bun install --frozen-lockfile` (`@typescript/native-preview@7.0.0-dev.20260707.2`, `oxlint@1.85.0`) `bun run check:ts` exits 0 with no addon build."
+    },
+    {
+      "claim": "W5 depends on W3 (W3 nên land trước để cả hai thay đổi biên giới collab chỉ được đụng một lần).",
+      "verdict": "soft, not a code dependency — make this explicit or the engineer will wait for nothing",
+      "correction": "There is NO code dependency. The conformance file imports only `CollabFrame` (from `packages/coding-agent/src/collab/protocol.ts`) and `WireFrame` (from `@oh-my-pi/pi-wire`); W3 touches neither. The stated reason — batching both collab-boundary changes into one review pass — is a review-sequencing preference and is legitimate, but it must not be recorded as a blocking dependency or W5 will sit idle. Worth knowing: W3 was already being implemented concurrently in this same working tree during W5's verification (`packages/coding-agent/src/collab/crypto.ts` gained a `FRAME_REQUIRED_FIELDS: Record<CollabFrame[\"t\"], readonly string[]>` guard). That record is itself an exhaustiveness constraint over `CollabFrame`'s discriminants, so it and this file agree by construction and will both go red together if `CollabFrame`'s `t` set changes — a useful cross-check, not a dependency.",
+      "evidence": "`git status` during verification showed `M packages/coding-agent/src/collab/crypto.ts` and `?? packages/coding-agent/test/collab/w3-probe.test.ts`, both belonging to the concurrent W3 work, not to W5. W5's own file list touches neither."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W5.spec.json"
+}

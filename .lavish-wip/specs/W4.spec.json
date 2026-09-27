@@ -1,0 +1,149 @@
+{
+  "id": "W4",
+  "title": "Scope ACP `_omp/usage` to the requested session; record the stdio single-client attachment assumption at all seven unchecked `#sessions.get` sites",
+  "wave": "Wave 2 — Correctness trên các đường đang ship (W4, W6, W12, W13)",
+  "one_line": "`_omp/usage` currently answers with the FIRST session in the agent's map no matter which session the client asked about; make it resolve `params.sessionId`, and add comments (not guards) at the seven session lookups that carry no attachment check.",
+  "user_visible_effect": "An ACP client asking for token/quota usage of session B today gets session A's numbers. After this change it gets B's. No new UI, no new flags, no default behavior change for any single-session client.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W4.spec.json",
+
+  "effort": "S — one handler case (~+2/-1 lines) plus seven comment blocks and one test. Plan rates it S and that is accurate.",
+  "risk": "The single most likely way to get this wrong is ADDING FENCING — rejecting sessions without an attachment check — instead of writing the comment. The plan calls this out explicitly. The seven lookups are safe today only because the stdio transport carries exactly one client per connection; a fence there breaks the legitimate single-client path. Second-most-likely mistake: fixing the `unknown sessionId` case by falling back to `#initialSession`, which silently reproduces the very bug W4 removes (asking about session B and getting A's numbers back).",
+
+  "depends_on": [],
+  "blocks": [],
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/modes/acp/acp-agent.ts",
+      "action": "modify",
+      "change": "Replace the three-line session-selection block inside `case \"_omp/usage\":` (case at :1180, body :1181-:1188) so it resolves `params.sessionId` instead of destructuring the first map entry. Add one full explanatory comment block at :1384 (`#getSessionRecord`) and a short cross-reference comment at the other six unchecked sites: :758, :1251, :1266, :1400, :2101, :2126.",
+      "verified": true,
+      "note": "File exists (98 KB, 2831 lines). Every anchor re-confirmed by `git grep -n` at HEAD ecd516f: `case \"_omp/usage\":` at :1180, `const [firstRecord] = this.#sessions.values();` at :1181, `#sessions.get` at :758, :1251, :1266, :1384, :1400, :2101, :2126 (exactly seven), `#assertMatchingCwd` defined at :1391 and called ONLY at :1253 and :1268."
+    },
+    {
+      "path": "packages/coding-agent/test/acp-agent.test.ts",
+      "action": "modify",
+      "change": "Add a `usageReports` field and a `fetchUsageReports()` method to the `FakeAgentSession` class (:117), add a `usageReportFor(sessionId)` fixture helper, add `type { UsageReport }` to the existing top-level `@oh-my-pi/pi-ai` import at :6, and add one test asserting `_omp/usage` returns the requested session's reports.",
+      "verified": true,
+      "note": "File exists (128 KB, 3488 lines). `FakeAgentSession` is at :117 and already builds on real SessionManager entries via `SessionManager.create(cwd)` in its constructor — so the plan's 'no mock.module(), build on real SessionManager' constraint is already satisfied by the existing harness. The class currently has NO `fetchUsageReports` method; that must be added."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Open `packages/coding-agent/src/modes/acp/acp-agent.ts` and go to line 1180. Confirm with `git grep -n '_omp/usage' -- packages/coding-agent/src/modes/acp/acp-agent.ts` that the case is still at :1180 before editing (line numbers may drift if earlier waves land first; match on the `case \"_omp/usage\":` text, not the number).",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-agent.ts:1180"
+    },
+    {
+      "n": 2,
+      "instruction": "Replace the session-selection lines `const [firstRecord] = this.#sessions.values();` / `const target = firstRecord?.session ?? this.#initialSession;` with the sessionId-resolving form given in `code_shape` below. Keep the `if (!target) { return { reports: [] }; }` guard and the `return { reports: reports ?? [] };` tail exactly as they are — both are existing contract.",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-agent.ts:1181"
+    },
+    {
+      "n": 3,
+      "instruction": "Add the SHORT cross-reference comment (2 lines) immediately above each of these six statements: `const record = this.#sessions.get(params.sessionId);` in `closeSession`; `const existing = this.#sessions.get(sessionId);` in `#loadManagedSession`; the same line in `#resumeManagedSession`; `const loaded = this.#sessions.get(sessionId);` in `#resolveForkSourceSessionPath`; `const record = this.#sessions.get(sessionId);` inside the `setTimeout` in `#scheduleBootstrapUpdates`; and `if (this.#sessions.get(sessionId) !== record) {` in `#emitBootstrapUpdates`. Text is in `code_shape` under SHORT_COMMENT.",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-agent.ts:758,1251,1266,1400,2101,2126"
+    },
+    {
+      "n": 4,
+      "instruction": "Add the FULL rationale comment block (the LONG_COMMENT text in `code_shape`) immediately above `const record = this.#sessions.get(sessionId);` inside `#getSessionRecord`. This is the canonical site: it is the single choke point that `setSessionMode`, `setSessionConfigOption`, `prompt`, and `cancel` all funnel through, and it already has the adjacent `#assertMatchingCwd` definition at :1391 for contrast. Do NOT repeat the long block at the other six sites.",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-agent.ts:1384"
+    },
+    {
+      "n": 5,
+      "instruction": "CRITICAL — do not add any attachment check, fence, throw, or guard to any of the seven sites. The deliverable is comments only. If you find yourself writing an `if (!record.attachment) throw`, stop: that is the documented wrong answer (see `risk`).",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-agent.ts:1384"
+    },
+    {
+      "n": 6,
+      "instruction": "In `packages/coding-agent/test/acp-agent.test.ts`, extend the `import type { Model } from \"@oh-my-pi/pi-ai\";` line at :6 to also import `UsageReport` (`import type { Model, UsageReport } from \"@oh-my-pi/pi-ai\";`). Top-level import only — never `await import()` and never an inline `import(\"...\").Type` type position (AGENTS.md).",
+      "anchor": "packages/coding-agent/test/acp-agent.test.ts:6"
+    },
+    {
+      "n": 7,
+      "instruction": "Inside the `FakeAgentSession` class, add the two members from `code_shape` (the `usageReports` field and the `fetchUsageReports()` method) near the other test-double state, e.g. beside `usageFallbackConfirmer`. The method must be `async` and return `this.usageReports` so each fake session yields a distinguishable payload. This mirrors the real `AgentSession.fetchUsageReports(signal?: AbortSignal): Promise<UsageReport[] | null>` at `packages/coding-agent/src/session/agent-session.ts:11210`, but the fake may ignore the signal — the production call site at :1186 passes none.",
+      "anchor": "packages/coding-agent/test/acp-agent.test.ts:147"
+    },
+    {
+      "n": 8,
+      "instruction": "Add the `usageReportFor(sessionId)` helper (see `code_shape`) at module scope in the test file, near `advanceBootstrapGuard()`. It must build a fully-typed `UsageReport` with NO casts and NO `any` (AGENTS.md): `provider` is the `Provider` type alias, which is plain `string` per `packages/catalog/src/types.ts:138`, so a string literal is valid. Embedding the session id in `metadata` makes the payload self-identifying, which is what makes the negative assertion meaningful rather than a tautology.",
+      "anchor": "packages/coding-agent/test/acp-agent.test.ts:551"
+    },
+    {
+      "n": 9,
+      "instruction": "Add the new test inside the existing `describe(\"ACP agent\", ...)` block, next to the test at :558 that already calls `newSession` twice. Copy the two-session setup from that test verbatim: `const first = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });` and the same for `second` with `cwdB`. Full body in `code_shape` under TEST.",
+      "anchor": "packages/coding-agent/test/acp-agent.test.ts:558"
+    },
+    {
+      "n": 10,
+      "instruction": "Run the gate in the given order. The first two commands are prerequisites, not optional: this checkout has NO `node_modules` at all, so `bun run check:ts` currently dies at its first step with `oxlint: command not found` and `bun test` dies with `Cannot find module '@oh-my-pi/pi-agent-core'`. After `bun install` + `bun run build:native`, both should work.",
+      "anchor": "package.json (scripts: check:ts, build:native)"
+    }
+  ],
+
+  "code_shape": "PRODUCTION CHANGE — packages/coding-agent/src/modes/acp/acp-agent.ts, `case \"_omp/usage\":` (currently :1180). Replaces 2 lines, adds 3. Note the deliberate asymmetry: a SUPPLIED sessionId must never fall back to another session (`record?.session` only), while an ABSENT sessionId keeps the pre-existing fallback chain for external clients that never send one.\n\n```ts\n\t\t\tcase \"_omp/usage\": {\n\t\t\t\t// Resolve the session the client actually asked about. This used to\n\t\t\t\t// destructure `#sessions.values()[0]`, so with two live sessions a client\n\t\t\t\t// asking about session 2 was answered with session 1's numbers.\n\t\t\t\t// A supplied-but-unknown sessionId resolves to nothing rather than\n\t\t\t\t// falling back, because falling back IS the bug being fixed.\n\t\t\t\tconst requestedId = typeof params.sessionId === \"string\" ? params.sessionId : undefined;\n\t\t\t\tconst [firstRecord] = this.#sessions.values();\n\t\t\t\tconst record = requestedId !== undefined ? this.#sessions.get(requestedId) : firstRecord;\n\t\t\t\tconst target = record?.session ?? (requestedId === undefined ? this.#initialSession : undefined);\n\t\t\t\tif (!target) {\n\t\t\t\t\treturn { reports: [] };\n\t\t\t\t}\n\t\t\t\tconst reports = await target.fetchUsageReports();\n\t\t\t\treturn { reports: reports ?? [] };\n\t\t\t}\n```\n\nLONG_COMMENT — full rationale, placed ONLY at packages/coding-agent/src/modes/acp/acp-agent.ts:1384 (`#getSessionRecord`):\n\n```ts\n\t\t// No attachment check. `#sessions` is keyed by session id but never records\n\t\t// which client connection owns an entry. That is safe today only because the\n\t\t// stdio transport carries exactly one client per connection — a property of\n\t\t// the transport, not a design decision. A future socket or WebSocket\n\t\t// transport voids this assumption at ALL SEVEN `#sessions.get` sites at\n\t\t// once: :758, :1251, :1266, :1384, :1400, :2101, :2126.\n\t\t//\n\t\t// Do NOT add a per-call fence here. The legitimate single-client stdio path\n\t\t// would start failing, and fencing does not actually buy isolation: a\n\t\t// multi-client transport needs an explicit session router that owns the\n\t\t// attachment map and its leases, which is a transport-layer change, not a\n\t\t// patch at these call sites.\n\t\t//\n\t\t// The only attachment-adjacent check that exists today is\n\t\t// `#assertMatchingCwd` (defined just below, called from :1253 and :1268\n\t\t// only) — it verifies cwd, not client identity.\n```\n\nSHORT_COMMENT — placed at the other six sites (:758, :1251, :1266, :1400, :2101, :2126):\n\n```ts\n\t\t// No attachment check — see `#getSessionRecord` for why that is safe today\n\t\t// and why adding a fence here would break the single-client stdio path.\n```\n\nTEST-SIDE CHANGE 1 — packages/coding-agent/test/acp-agent.test.ts, inside `class FakeAgentSession` (at :117), near `usageFallbackConfirmer` (:147):\n\n```ts\n\tusageReports: UsageReport[] | null = null;\n\tasync fetchUsageReports(): Promise<UsageReport[] | null> {\n\t\treturn this.usageReports;\n\t}\n```\n\nTEST-SIDE CHANGE 2 — module-scope helper near `advanceBootstrapGuard()`:\n\n```ts\nfunction usageReportFor(sessionId: string): UsageReport {\n\treturn { provider: \"test-provider\", fetchedAt: 0, limits: [], metadata: { sessionId } };\n}\n```\n\nTEST-SIDE CHANGE 3 — the new test:\n\n```ts\n\tit(\"scopes _omp/usage to the session the client asked about\", async () => {\n\t\tconst harness = await createHarness();\n\t\tconst first = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });\n\t\tconst second = await harness.agent.newSession({ cwd: harness.cwdB, mcpServers: [] });\n\n\t\tconst firstSession = harness.findSession(first.sessionId)!;\n\t\tconst secondSession = harness.findSession(second.sessionId)!;\n\t\tfirstSession.usageReports = [usageReportFor(first.sessionId)];\n\t\tsecondSession.usageReports = [usageReportFor(second.sessionId)];\n\n\t\tconst result = (await harness.agent.extMethod(\"_omp/usage\", { sessionId: second.sessionId })) as {\n\t\t\treports: UsageReport[];\n\t\t};\n\n\t\texpect(result).toEqual({ reports: [usageReportFor(second.sessionId)] });\n\t\t// Both sessions are live. Session 1's numbers must not leak into the\n\t\t// answer to a question about session 2.\n\t\texpect(result.reports).not.toContainEqual(usageReportFor(first.sessionId));\n\t});\n```",
+
+  "test_contract": "CONTRACT: `_omp/usage` reports the usage of the session named by `params.sessionId`, and no other session's. WHAT A CONSUMER OBSERVES IF IT REGRESSES: an ACP client with two live sessions renders the wrong quota/token panel — asking about session B and showing session A's numbers — with no error, no empty state, and nothing in the log to distinguish it from correct output. That is why the assertion must be on WHICH session's payload comes back, and must include the negative (`not.toContainEqual`) leg: with a single session the bug is invisible, so a test that only opens one session would pass against the broken code.\n\nBOUNDARY ALSO COVERED BY THE SAME PRODUCTION CODE (assert it if cheap, otherwise leave it — do not build a second test around it): when `params.sessionId` names a session that is not in `#sessions`, the handler must return `{ reports: [] }` and must NOT return the initial session's or another session's reports. This is the negative half of the fix and is the case most likely to be 'fixed' wrongly by adding a `?? this.#initialSession` fallback.\n\nWHAT NOT TO TEST: the comment half of this item. It documents a transport assumption and has no observable behavior. Per AGENTS.md, a test that asserts on comment text is a banned source-grep, and a test that asserts 'the code ran' is a placeholder.",
+
+  "test_files": [
+    "packages/coding-agent/test/acp-agent.test.ts"
+  ],
+
+  "verification": "Prerequisites (this checkout has no node_modules at all — `ls node_modules` -> 'No such file or directory'):\n  1. bun install\n  2. bun run build:native          # packages/natives addon; the acp-agent test transitively loads it\nThen:\n  3. bun run check:ts             # NEVER tsc / npx tsc. Currently fails at step 1 with `oxlint: command not found` until `bun install` runs.\n  4. bun test packages/coding-agent/test/acp-agent.test.ts -t \"usage\"\n  5. bun test packages/coding-agent/test/acp-agent.test.ts     # whole file, to prove the 7 comments and the 2 fake members broke nothing\n\nRed/green proof for the gate: with the test in place and the production change reverted, step 4 must FAIL with second's sessionId expected but first's received. Record that failure before reverting the fix back in.\n\nDo NOT use the task text's stated blocker as the baseline: it says `bun test` reports 'Failed to load pi_natives native addon for darwin-arm64'. That is not what this checkout produces. The actual first error is `Cannot find module '@oh-my-pi/pi-agent-core'`, because node_modules is absent entirely.",
+
+  "gate": "The new test in packages/coding-agent/test/acp-agent.test.ts, run via `bun test packages/coding-agent/test/acp-agent.test.ts -t \"usage\"`, must be RED before the `acp-agent.ts` change and GREEN after. Concretely: before the fix the handler ignores `params.sessionId`, returns `firstRecord` (session 1), and the assertion `expect(result).toEqual({ reports: [usageReportFor(second.sessionId)] })` fails showing session 1's id. After the fix both `toEqual` and the `not.toContainEqual` pass. Secondary gate: `bun run check:ts` exits 0, and the full `acp-agent.test.ts` file shows no new failures. A reviewer confirms the comment deliverable by reading, not by running anything — there is deliberately no automated gate for it.",
+
+  "gate_can_fail": true,
+
+  "plan_corrections": [
+    {
+      "claim": "\"Nó phải resolve đúng session client hỏi, khớp với cách các handler anh em trong cùng `switch` đã làm qua `params.sessionId`\" — fix it to match how the SIBLING handlers in the same switch already resolve via `params.sessionId`.",
+      "verdict": "WRONG",
+      "correction": "No other case in that `extMethod` switch reads `params.sessionId`. Verified: the switch spans :1131-:1208 and its cases are `_omp/sessions/listAll`, `_omp/projects/list`, `_omp/chats/byCwd`, `_omp/usage`, `_omp/extensions`, `_omp/extensions/toggle` — none references `sessionId`. The `params.sessionId` convention the fix should match comes from the ACP protocol methods, which all funnel through the `#getSessionRecord(params.sessionId)` helper defined at :1383 and called at :767 (`setSessionMode`), :778 (`setSessionConfigOption`), :824 (`prompt`), and :1076 (`cancel`). The engineer should model the fix on `#getSessionRecord`, and this also justifies putting the long comment at :1384 — that is the canonical site.",
+      "evidence": "`git grep -n 'extMethod' -- acp-agent.ts` -> single definition at :1131 with `params: { [key: string]: unknown }`. `git grep -n '#getSessionRecord' -- acp-agent.ts` -> :767, :778, :824, :1076 (call sites) and :1383 (definition). `sed -n '1090,1180p' acp-agent.ts | grep 'sessionId'` -> no hits inside the switch."
+    },
+    {
+      "claim": "\"Server của pi đã test và bác bỏ đúng hình dạng này (`pi-ref/packages/server/test/conformance.test.ts:223,246`) với một session-router giữ map attachment tường minh kèm lease.\"",
+      "verdict": "UNVERIFIABLE — stale citation",
+      "correction": "`pi-ref/` does not exist in this repository, so the cited lines cannot be checked and must not be cited in the comment block. The DESIGN CONCLUSION (that a multi-client transport needs an explicit session router with an attachment map and leases, not a per-call fence) is still sound and worth recording as reasoning, but it should be stated as design rationale without a file:line that no reader can follow. Drop the citation; keep the conclusion.",
+      "evidence": "`ls -d pi-ref` -> 'lsd: pi-ref: No such file or directory (os error 2)'. `find . -maxdepth 3 -name conformance.test.ts -not -path '*/node_modules/*'` -> no results."
+    },
+    {
+      "claim": "The plan (and the task text) both state the repo is at HEAD 5873776.",
+      "verdict": "STALE but harmless",
+      "correction": "Actual HEAD is ecd516f35b64327392329443ceb52dfbc4e08f06 ('feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers') on branch milestone-1. This is a different commit than 5873776 — but every one of the plan's seven anchors still resolves EXACTLY at ecd516f, so no anchor needs correcting. The engineer should nonetheless match on surrounding code text rather than bare line numbers, because earlier waves in this milestone will shift these lines.",
+      "evidence": "`git rev-parse HEAD` -> ecd516f35b64327392329443ceb52dfbc4e08f06. `git log -1 --format='%H %s'`. `git grep -n '#sessions\\.get' -- acp-agent.ts` -> exactly 758, 1251, 1266, 1384, 1400, 2101, 2126, matching the plan's list."
+    },
+    {
+      "claim": "\"Cấm `mock.module()` — dựng agent trên các entry SessionManager thật thay vì stub module.\" (implies the test must be built this way.)",
+      "verdict": "ALREADY TRUE — not a task, a constraint to preserve",
+      "correction": "The existing harness already satisfies this: `FakeAgentSession`'s constructor calls `SessionManager.create(cwd)` for a real session id, and `createHarness` builds a real `AcpAgent` over a fake `AgentSideConnection`. There is no module stubbing to remove. The new test just reuses `createHarness()`. What the plan DOES omit is that `FakeAgentSession` has no `fetchUsageReports` method at all, so one must be added to the fake — that is the actual work in the test file.",
+      "evidence": "`git grep -n 'class FakeAgentSession' -- acp-agent.test.ts` -> :117; `this.sessionManager = SessionManager.create(cwd)` in its constructor; `const agent = new AcpAgent(connection, factory, initialSession ...)` at test :527. `git grep -n 'usage' -- acp-agent.test.ts` -> hits only at 104, 147, 204, 1152, 1198, 1479, 1602, 1651 — no `fetchUsageReports`."
+    },
+    {
+      "claim": "The fix is described only as \"resolve the session the client asked about\", with no statement about what happens when the client omits `sessionId`.",
+      "verdict": "UNDERSPECIFIED — plan gap, not a plan error",
+      "correction": "`_omp/usage` has ZERO callers anywhere in this repository (`git grep -rn '_omp/usage'` returns only the server-side case label at :1180), so it is consumed by an EXTERNAL client this repo cannot see. The existing `?? this.#initialSession` fallback is therefore load-bearing for any client that calls without a sessionId, and the fix must preserve it. Two distinct branches are required and the spec makes the asymmetry explicit: absent sessionId keeps the old chain; present-but-unknown sessionId resolves to nothing. Collapsing both into one expression is where the bug gets half-fixed.",
+      "evidence": "`git grep -rn '_omp/usage' -- .` -> only `acp-agent.ts:1180`. `#initialSession` declared :615, assigned :626, read :1182, cleared :2822-2823. `#registerPreparedSession` (:1326) inserts into `#sessions` at :1340 — the initial session is NEVER registered there, which is why the fallback exists at all."
+    },
+    {
+      "claim": "\"ENVIRONMENT: the native addon is not built, so `bun test` currently reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64'. Verify with `bun run check:ts` (which does not need the addon).\"",
+      "verdict": "WRONG for this checkout",
+      "correction": "There is no node_modules directory at all in this checkout. Both commands fail earlier and for a different reason than stated. `bun test packages/coding-agent/test/acp-agent.test.ts` fails with `Cannot find module '@oh-my-pi/pi-agent-core'` (1 fail, 1 error) — not the native-addon message. `bun run check:ts` dies at its very first sub-step: `check:tools` -> `oxlint: command not found`, exit 127, so the typecheck never starts. The real prerequisite chain is `bun install` then `bun run build:native`. An engineer who trusts the task text will believe `bun run check:ts` is a working baseline and lose time discovering otherwise.",
+      "evidence": "`ls node_modules` -> 'No such file or directory'. `bun test packages/coding-agent/test/acp-agent.test.ts -t usage` -> 'Cannot find module @oh-my-pi/pi-agent-core ... 0 pass, 1 fail, 1 error'. `bun run check:ts` -> 'oxlint: command not found / error: script \"check:tools\" exited with code 127'. oxlint and oxfmt are declared in root devDependencies but are not installed."
+    },
+    {
+      "claim": "\"chỉ `:1253` và `:1268` gọi `#assertMatchingCwd`\" and `#assertMatchingCwd` is defined at `:1391`; and there are exactly seven unchecked `#sessions.get` sites including `:2126`.",
+      "verdict": "CONFIRMED — no correction",
+      "correction": "The plan's own re-count (flagged as C18/A2 in the plan text) is right. Verified independently: seven `.get` sites at 758, 1251, 1266, 1384, 1400, 2101, 2126; definition at 1391; calls at 1253 and 1268 only. Note :2126 is `if (this.#sessions.get(sessionId) !== record) {` — an identity check against a captured record, not an attachment check, exactly as the plan says. Line 721 is a `#sessions.values()` iteration (not a `.get`) and 1181 is the line being changed; neither belongs in the seven.",
+      "evidence": "`git grep -n '#sessions\\.\\(get\\|values\\)' -- acp-agent.ts` and `git grep -n assertMatchingCwd -- acp-agent.ts` (1391/1253/1268), both run at HEAD ecd516f."
+    }
+  ],
+
+  "open_questions": [
+    "Should a supplied-but-unknown `sessionId` return `{ reports: [] }` (this spec's recommendation — non-breaking, no other session's numbers) or throw an ACP error (matching `#getSessionRecord`'s strictness)? This is a wire-visible choice for an external client we cannot see in this repo. The spec picks `[]` because the handler already has that branch and throwing turns a data gap into a client error. A human should confirm before merge; changing it later is a one-line edit either way.",
+    "Should all seven sites carry the full rationale block, or one full block at `#getSessionRecord` (:1384) plus a two-line cross-reference at the other six (this spec's recommendation)? The plan says 'đặt comment tại cả bảy điểm', which a strict reading makes a seven-fold duplicated paragraph. The spec's split still records the assumption at every site, which is the point, without the drift risk of seven copies. Deviation is deliberate — flag it in the PR description.",
+    "Is there a reason `_omp/usage` should not accept a sessionId at all (i.e. should the client instead be expected to call a per-session method)? No in-repo caller exists to arbitrate this, and the fix direction is the smaller change, so the spec proceeds with it."
+  ]
+}

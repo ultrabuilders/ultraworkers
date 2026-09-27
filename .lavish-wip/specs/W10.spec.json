@@ -1,0 +1,237 @@
+{
+  "id": "W10",
+  "title": "Vendor-neutral telemetry adapter contract + conformance suite (two commits, never squashed)",
+  "wave": "Wave 4 (with W11; W11 lands first — W10 follows because its two commits must not be squashed and its commit 2 carries the highest per-LOC regression risk in the milestone)",
+  "one_line": "Add a small vendor-neutral span interface (with a NOOP, an in-memory reference implementation, and a shared conformance suite) that every future telemetry backend can implement, then wire the existing OpenTelemetry path underneath it as the default adapter without changing a single exported signature or a single line of the existing OTEL test.",
+  "user_visible_effect": "none in milestone 1 — this is internal. No setting, no output, no flag, no dependency change. The payoff is that a later milestone can ship a Sentry or structured-log telemetry backend without forking telemetry.ts, and without forcing a non-OTEL backend to depend on @opentelemetry/api.",
+
+  "files_touched": [
+    {
+      "path": "packages/agent/src/telemetry/context.ts",
+      "action": "create",
+      "change": "The vendor-neutral contract. MUST contain: TelemetryAttributeValue (including readonly string[] and readonly number[]), TelemetryAttributes, SpanStatus, an interface named TelemetrySpan (NOT `Span` — see plan_corrections P1) with addEvent / setAttributes / setStatus / end, and TelemetryContext with the callback-based startSpan<T>(context, name, fn): T. Zero imports from outside this directory — see gate note.",
+      "note": "Directory does not exist today; `ls packages/agent/src/telemetry/` returns 'No such file or directory'. Only telemetry.ts exists (2114 LOC, confirmed). This is commit 1.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/src/telemetry/noop.ts",
+      "action": "create",
+      "change": "NOOP_TELEMETRY_CONTEXT: a frozen module-level TelemetrySpan whose three-plus-one methods are empty, and a startSpan that returns `fn(NOOP_SPAN)` — the callback's return value completely unchanged. This identity is the negative contract the plan calls out and it needs its own dedicated assertion.",
+      "note": "Commit 1.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/src/telemetry/memory.ts",
+      "action": "create",
+      "change": "In-memory reference adapter + a recording factory usable by the conformance suite. Must record: span name, parent span, ordered events, merged attributes, final status (with message), and whether end() was called. Must pass the shared conformance suite.",
+      "note": "Commit 1. The plan sized this from pi-ref (219 LOC) — pi-ref does not exist in this repo, so this is a from-scratch design, not a port. See plan_corrections P5.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/src/telemetry/conformance.ts",
+      "action": "create",
+      "change": "Shared suite exported as createCase(factory, group, name, test) plus a runConformance(factory) driver. Cases: span parentage (a child nests under the enclosing span, not under root), event recording, status transition, attribute round-trip including array-valued attributes, end() idempotence, and callback return-value passthrough.",
+      "note": "Commit 1. The conformance module must not import the NOOP or the memory adapter by name — it takes the implementation as a `factory` argument, otherwise the suite is not vendor-neutral.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/src/telemetry/index.ts",
+      "action": "create",
+      "change": "Barrel with star re-exports: `export * from \"./context\"; export * from \"./noop\"; export * from \"./memory\";` and optionally conformance. Extensionless specifiers — the plan's §F8 snippet used `\"./context.ts\"` with an explicit extension, which no file in packages/agent/src uses.",
+      "note": "Commit 1. Safe to create next to telemetry.ts: verified empirically with bun that `./telemetry` still resolves to telemetry.ts even when telemetry/index.ts exists.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/src/index.ts",
+      "action": "modify",
+      "change": "Add one line `export * from \"./telemetry/context\";` (or re-export the telemetry/index barrel) immediately after line 24. Mandatory, not optional: without it the contract is a private path and commit 2's premise is unusable.",
+      "note": "Line 24 confirmed to be exactly `export * from \"./telemetry\";`. This addition is what makes plan_corrections P1 (TS2308) fire unless the interface is named TelemetrySpan. Commit 1.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/src/telemetry.ts",
+      "action": "modify",
+      "change": "COMMIT 2 ONLY. Minimal seam, not a rewrite: implement the vendor-neutral contract as an OTEL-backed adapter and route the private startSpan (line 466) and runInActiveSpan (line 2048) through it. Every exported signature stays byte-identical, @opentelemetry/api stays the default path, and telemetry.ts:2106 keeps re-exporting Span / SpanKind / SpanStatusCode / Tracer / trace unchanged.",
+      "note": "2114 LOC confirmed. The plan's own correction C17 (line 380) supersedes the plan's §W10/§F8 instruction to 're-express the whole file as an adapter' — see plan_corrections P4. This is the highest per-LOC regression risk in the milestone.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/test/telemetry-conformance.test.ts",
+      "action": "create",
+      "change": "Runs the shared conformance suite against BOTH the in-memory adapter and NOOP_TELEMETRY_CONTEXT, plus a standalone assertion that NOOP returns the callback's return value bit-for-bit unchanged and records nothing. Import from the deep path `@oh-my-pi/pi-agent-core/telemetry/context` etc., NOT from the package root, so the test does not pull the package barrel.",
+      "note": "Commit 1. Deep-path import is what lets this test run without the native addon — see verification.",
+      "verified": true
+    },
+    {
+      "path": "packages/agent/test/otel.test.ts",
+      "action": "modify",
+      "change": "NOTHING. This file must have a zero-line diff. It is the regression net for commit 2.",
+      "note": "1152 LOC confirmed. If commit 2 requires ANY change here, stop: the refactor is not behavior-preserving and the adapter is wrong. Note the net has two known blind spots (plan_corrections P6) — it is not a complete safety net.",
+      "verified": true
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/agent/src/telemetry/context.ts (new)",
+      "instruction": "Create the contract. Name the span interface `TelemetrySpan`, NOT `Span` — packages/agent/src/index.ts:24 already star-exports telemetry.ts, which re-exports OTEL's `Span` at telemetry.ts:2106, so a second star-exported `Span` makes `bun run check:ts` fail with TS2308. Include `end(): void` on the interface (7 span.end() call sites exist today and the span handle outlives the call). Widen TelemetryAttributeValue to include readonly string[] and readonly number[] (telemetry.ts:755 and :764 assign string arrays). Give setStatus a second optional `message` parameter (all 5 setStatus sites pass one). Zero imports from outside this directory."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/agent/src/telemetry/noop.ts (new)",
+      "instruction": "Create the NOOP context. `startSpan` must be `return fn(NOOP_SPAN)` — no try/catch, no wrapper, no transformation. The return value must be the callback's own return value, by identity, for every T including promises, undefined, and objects."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/agent/src/telemetry/memory.ts (new)",
+      "instruction": "Create the in-memory reference adapter. Expose a `createMemoryTelemetryContext()` factory returning both the TelemetryContext and a readable record list (name, parent, events, attributes, status, statusMessage, ended). Parent linkage must come from an explicit enclosing-span stack, not from ambient context, so parentage is deterministic and testable."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/agent/src/telemetry/conformance.ts (new)",
+      "instruction": "Create the suite as `createCase(factory, group, name, test)` entries plus a `runConformance(factory)` driver. Write one case per distinct branch: parentage, event recording, status transition (ok and error, and unset-by-default), attribute round-trip, array-valued attribute round-trip, end() idempotence, callback return passthrough. Do not import noop.ts or memory.ts here."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/agent/src/telemetry/index.ts (new)",
+      "instruction": "Add the star barrel with extensionless specifiers."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/agent/src/index.ts:24",
+      "instruction": "Add `export * from \"./telemetry/context\";` immediately after line 24. Then run `bun run check:types` in packages/agent and confirm it is green — this is the step that catches TS2308 if step 1 was done wrong."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/agent/test/telemetry-conformance.test.ts (new)",
+      "instruction": "Run the suite against BOTH the memory adapter and NOOP. Add the dedicated NOOP negative assertion: `expect(NOOP_TELEMETRY_CONTEXT.startSpan(ctx, 'n', () => sentinel)).toBe(sentinel)` — `toBe` (identity), not `toEqual`. Run `bun test packages/agent/test/telemetry-conformance.test.ts`."
+    },
+    {
+      "n": 8,
+      "anchor": "COMMIT 1 — gate",
+      "instruction": "`bun run check:ts` green, conformance test green, and `git diff --stat` must show ONLY the six new files plus the one-line index.ts change. Commit 1 must not touch telemetry.ts or any production path. Land and merge before starting commit 2."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/agent/src/telemetry.ts:466 (commit 2)",
+      "instruction": "Add an OTEL-backed implementation of the contract. Route the private `startSpan` through it, keeping its existing signature and its existing attribute-assembly order byte-for-byte (attribute precedence at :466-491 is load-bearing: operation → model → conversation → agent → config → dynamic → caller). Do not reorder."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/agent/src/telemetry.ts:2048 (commit 2)",
+      "instruction": "Route `runInActiveSpan` through the contract's activation hook, preserving the OTEL-context semantics its doc comment describes (startSpan creates but does not activate; the wrapper is what makes downstream provider/MCP spans attach as children). Keep it exported with the same signature — it is part of the public surface."
+    },
+    {
+      "n": 11,
+      "anchor": "COMMIT 2 — gate",
+      "instruction": "Confirm OTEL is still the default path and nothing else moved: `git diff --stat packages/agent/test/otel.test.ts` MUST be empty. If it is not empty, STOP — do not edit the test to make it pass. Then run `bun test packages/agent/test/otel.test.ts` once the native addon is built."
+    },
+    {
+      "n": 12,
+      "anchor": "COMMIT 2 — changelog + commit hygiene",
+      "instruction": "Add one line under `## [Unreleased]` in packages/agent/CHANGELOG.md (it is an internal refactor, so `### Changed` and worded as the user-visible absence of change, or omit — a human decides). Then verify `git log` shows W10 as exactly two separate commits, never squashed."
+    }
+  ],
+
+  "code_shape": "// packages/agent/src/telemetry/context.ts — no imports at all.\n\nexport type TelemetryAttributeValue =\n\t| string\n\t| number\n\t| boolean\n\t| readonly string[]\n\t| readonly number[];\nexport type TelemetryAttributes = Readonly<Record<string, TelemetryAttributeValue>>;\n\nexport type SpanStatus = \"unset\" | \"ok\" | \"error\";\n\n/**\n * Named `TelemetrySpan`, NOT `Span`: packages/agent/src/index.ts:24 star-exports\n * telemetry.ts, which re-exports OTEL's `Span` (telemetry.ts:2106). A second\n * star-exported `Span` is TS2308 under `bun run check:ts`.\n *\n * `end()` is REQUIRED: telemetry.ts has 7 `span.end()` call sites and span\n * handles escape their creator (startChatSpan :693 -> finishChatSpan :1116,\n * across an await). A callback-scoped span with no end() cannot express this.\n */\nexport interface TelemetrySpan {\n\taddEvent(name: string, attributes?: TelemetryAttributes): void;\n\tsetAttributes(attributes: TelemetryAttributes): void;\n\tsetStatus(status: SpanStatus, message?: string): void;\n\tend(): void;\n}\n\nexport interface TelemetryContext {\n\t/**\n\t * Callback-based: the span exists for the duration of `fn`, and the return\n\t * value of `fn` is the return value of startSpan. EVERY adapter must keep\n\t * this shape — including NOOP. A NOOP that swallows the return value\n\t * silently breaks the shape of every other adapter.\n\t */\n\tstartSpan<T>(context: TelemetryContext, name: string, fn: (span: TelemetrySpan) => T): T;\n}\n\n// packages/agent/src/telemetry/noop.ts\nconst NOOP_SPAN: TelemetrySpan = {\n\taddEvent() {},\n\tsetAttributes() {},\n\tsetStatus() {},\n\tend() {},\n};\n\nexport const NOOP_TELEMETRY_CONTEXT: TelemetryContext = {\n\t// MUST return the callback's result UNCHANGED.\n\tstartSpan<T>(_context: TelemetryContext, _name: string, fn: (span: TelemetrySpan) => T): T {\n\t\treturn fn(NOOP_SPAN);\n\t},\n};\n\n// packages/agent/src/telemetry/index.ts — extensionless, matching the repo.\nexport * from \"./context\";\nexport * from \"./memory\";\nexport * from \"./noop\";\n\n// packages/agent/src/index.ts, inserted immediately after line 24:\n//   export * from \"./telemetry\";          <- existing line 24\n//   export * from \"./telemetry/context\";  <- add this\n\n// commit 2 — packages/agent/src/telemetry.ts, OTEL-backed, DEFAULT path.\n// The adapter satisfies the contract structurally WITHOUT changing any\n// exported signature, so telemetry.ts:2106 keeps re-exporting Span,\n// SpanKind, SpanStatusCode, Tracer and trace verbatim, and\n// packages/agent/src/run-collector.ts:19,144-145 (which types spans as the\n// OTEL Span and WeakMap-keys them) keeps compiling untouched.\nconst otelAdapter: TelemetryContext = {\n\tstartSpan<T>(_context: TelemetryContext, _name: string, fn: (span: TelemetrySpan) => T): T {\n\t\t// The real work stays in the private startSpan() at telemetry.ts:466,\n\t\t// whose signature and attribute-precedence order are unchanged. This\n\t\t// adapter only narrows the OTEL Span to the vendor-neutral surface.\n\t\treturn fn(narrowSpan(otelSpan));\n\t},\n};",
+
+  "test_contract": "The observable contract is: an implementation of TelemetryContext can be swapped in and every telemetry behaviour omp exposes stays identical. Concretely the tests defend four things. (1) SPAN PARENTAGE — a span started inside another span's callback records the enclosing span as its parent, never root; a consumer debugging a run in a non-OTEL backend sees the same tree shape they see in OTEL today. (2) EVENT + STATUS — addEvent and setStatus on the vendor-neutral surface produce the same span events and the same status.code a downstream OTEL exporter would see; otel.test.ts:246,317,337,384 are the existing proof for the OTEL side. (3) NOOP IDENTITY — NOOP_TELEMETRY_CONTEXT.startSpan returns the callback's return value by identity and records nothing; if this regresses, every code path that does `return telemetry.startSpan(..., () => computeSomething())` silently returns undefined, which is a wrong-answer bug that no assertion on OTEL output would catch. (4) ARRAY ATTRIBUTES AND STATUS MESSAGES — string[] attributes and setStatus messages survive the round trip; these are the two sites otel.test.ts does NOT cover, so if the contract is too narrow the ONLY thing that catches it is this suite. Consumer-visible failure if the contract regresses: a future Sentry or structured-log backend either fails to typecheck against the contract, or ships and silently drops stop sequences, available-tool lists, and every error message on failed spans.",
+
+  "test_files": [
+    "packages/agent/test/telemetry-conformance.test.ts",
+    "packages/agent/test/otel.test.ts"
+  ],
+
+  "verification": "Runnable TODAY (no native addon needed):\n  cd packages/agent && bun run check:types\n  bun run check:ts\nThese are the gates for commit 1. `bun run check:types` in packages/agent was verified green at HEAD ecd516f, and it is what catches the TS2308 barrel collision.\n\nRunnable only after the native addon is built (`bun --cwd=packages/natives run build`):\n  bun test packages/agent/test/telemetry-conformance.test.ts\n  bun test packages/agent/test/otel.test.ts\n  git diff --stat packages/agent/test/otel.test.ts   # MUST print nothing\n\nBLOCKED as of this spec: `bun test packages/agent/test/otel.test.ts` was run and returns `0 pass / 1 fail / 1 error` with 'Failed to load pi_natives native addon for darwin-arm64'. Any spec step that says 'run the test' is blocked until the addon is built.\n\nMITIGATION so commit 1 is verifiable without the addon: import the conformance test from the DEEP path (`@oh-my-pi/pi-agent-core/telemetry/context`), never from the package root. The package exports map has `\"./*\": \"./src/*.ts\"`, so the deep path resolves straight to the file and does not load src/index.ts (and therefore does not load pi-natives). This should be verified empirically on the first run — if it turns out the deep path still pulls natives, commit 1 becomes type-check-only until the addon is built, and that should be recorded in the PR.",
+
+  "gate": "COMMIT 1: (a) `cd packages/agent && bun run check:types` is green — this is the load-bearing gate and it is the ONLY one that is currently runnable; (b) `git diff --stat` lists exactly six new files under packages/agent/src/telemetry/ plus a one-line change to packages/agent/src/index.ts, and nothing else — in particular telemetry.ts must show zero lines changed; (c) `git log` shows commit 1 as its own commit.\nCOMMIT 2: (a) `git diff --stat packages/agent/test/otel.test.ts` prints NOTHING; (b) `git diff --stat packages/agent/src/telemetry.ts` shows a small, reviewable seam — if it is a wholesale rewrite of the 2114 LOC file, the commit-2 design from correction P4 was not followed; (c) `bun test packages/agent/test/otel.test.ts` green once the addon is built; (d) `git log` shows W10 as exactly two separate commits, never squashed.",
+
+  "gate_can_fail": "Yes for the type gate, and it was demonstrated failing rather than assumed. I reproduced the exact failure mode in an isolated scratch project: with `export * from \"./telem\"` and `export * from \"./telem/context\"` where both export an interface named `Span`, tsc emits `error TS2308: Module \"./telem\" has already exported a member named 'Span'`. Since telemetry.ts:2106 re-exports OTEL's `Span` and the plan mandates adding a second star-export to packages/agent/src/index.ts, following the plan's §F8 interface name verbatim WILL turn `bun run check:types` red. Renaming to `TelemetrySpan` is what makes it green — so the gate discriminates between the right and wrong implementation. The commit-2 gate (`git diff --stat` on otel.test.ts) is also genuinely falsifiable: it goes non-empty the instant anyone edits that file, which is precisely the failure the plan is trying to prevent. The only caveat: the behavioural half of both gates is currently unrunnable because the native addon is not built, so on Monday the type gate is real and the test gate is a promise.",
+
+  "depends_on": [],
+
+  "blocks": [],
+
+  "effort": "M, but asymmetric: commit 1 is S (four small dependency-free files, one barrel line, one test) and commit 2 is the M half. Under the C17 reading this spec adopts, commit 2 is a ~40 LOC seam at two private/public functions rather than a rewrite of 2114 LOC, which is what brings the total to M instead of L.",
+
+  "risk": "The highest per-LOC regression risk in the milestone. telemetry.ts sits on every agent path, so a regression here is a production incident and not a red test. The specific trap: designing the contract from the plan's §F8 sketch, which cannot express omp's actual span lifecycle (no `end()`, and a callback-scoped span when the handle escapes across an await) and is too narrow on attribute types — and then discovering the only thing that catches the resulting silent attribute loss is a suite you are writing at the same time as the thing it is supposed to police. Second trap: the temptation to make otel.test.ts pass by editing it. Do not. Third trap: the plan's own C17 correction contradicts its §W10/§F8 instruction, so an engineer who reads only §F8 will build the wrong commit 2.",
+
+  "open_questions": [
+    "Should TelemetryAttributes accept `null | undefined` values, as OTEL's own AttributeValue does? I checked node_modules: OTEL's AttributeValue is `string | number | boolean | Array<null|undefined|string> | Array<null|undefined|number> | Array<null|undefined|boolean>` and Attributes allows `AttributeValue | undefined`. I specified the narrower readonly string[]/number[] because it is what omp actually assigns today, but a future backend may want null. A human should pick: match OTEL exactly, or stay narrow and widen when a backend needs it.",
+    "Is `conformance.ts` shipped in the published `src` tree or dev-only? packages/agent/package.json has `files: [\"src\"]` and main/types point at source, so a conformance module in src ships to every consumer. It is harmless (pure, dependency-free) but it is a deliberate choice, not an accident — confirm it is intended rather than a test-only module that belongs in test/.",
+    "Should the contract be exported from the package root at all in milestone 1, or held internal with a named owner? The plan calls the barrel line mandatory; I agree, because commit 2's premise depends on it. But it does mean a public API commitment is being made in a milestone that is explicitly not user-facing. Worth an explicit yes/no from the maintainer before merging commit 1.",
+    "Is the second W10 (CI/release/Docker/homebrew/nix rename, plan line 7962) or the third W10 (collab transport watchdog, plan line 8544) the one on someone's board this week? The ID is reused three times in one document. The spec here is unambiguously the telemetry one (Wave 4, lines 1347-1429) but a ticket board keyed on 'W10' will collide."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "§F8: the reference shape is `pi-ref/packages/telemetry/src/memory.ts` (219 LOC) and `pi-ref/packages/telemetry/src/testing/conformance.ts` (315 LOC); pi's telemetry package is 935 LOC vs omp's 2114.",
+      "verdict": "unverifiable — the referenced source is not in this repository",
+      "correction": "There is no pi-ref/ directory. memory.ts and conformance.ts must be designed from scratch, not ported, and the 219/315/935 LOC figures must not be used for sizing or for the 'no advantage in LOC count' argument. The strategy (vendor-neutral contract, OTEL kept as default) still stands on its own merits; only the evidence for it is unavailable.",
+      "evidence": "`ls -d pi-ref` -> NO pi-ref DIRECTORY. `git ls-files | grep -c pi-ref` -> 0. Confirmed twice."
+    },
+    {
+      "claim": "§F8 / §W10: the contract is `interface Span { addEvent; setAttributes; setStatus }` plus a callback-based `startSpan<T>(context, name, fn)`.",
+      "verdict": "wrong — the contract as written cannot express omp's span lifecycle at all",
+      "correction": "There is no `end()` on the interface and the span is scoped to the callback, but omp's spans are NOT callback-scoped: startChatSpan (telemetry.ts:693) RETURNS a handle, which is handed to finishChatSpan (telemetry.ts:1116) across an await boundary, which calls span.end() at :1162. There are 7 `span.end()` call sites total, none of them inside the creating callback. A span that cannot be ended cannot be implemented. I added `end(): void` to the interface. Keep the callback form too — it is what models runInActiveSpan (:2048) — but the interface must carry end().",
+      "evidence": "`grep -c '\\.end()' packages/agent/src/telemetry.ts` -> 7, at lines 1162, 1195, 1634, 1880, 1951, 2093 (plus one doc mention at 383). startChatSpan signature at :693-701 returns `Span | undefined`; finishChatSpan at :1116-1118 takes `span: Span | undefined` as a separate async call."
+    },
+    {
+      "claim": "§F8: the span interface is named `Span`, and the plan mandates adding `export * from \"./telemetry/context\";` to packages/agent/src/index.ts after line 24.",
+      "verdict": "wrong — these two instructions together are a hard build break (TS2308)",
+      "correction": "packages/agent/src/index.ts:24 is `export * from \"./telemetry\";` and telemetry.ts:2106 re-exports OTEL's `Span` (`export { type Attributes, type Span, SpanKind, SpanStatusCode, type Tracer, trace }`). Star-exporting a second interface named `Span` from the same barrel makes `bun run check:ts` fail. Name the contract's interface `TelemetrySpan` and export the bare OTEL `Span` untouched. I verified this by compiling the exact shape, not by reasoning about it.",
+      "evidence": "Reproduced in an isolated scratch project: `tsc --noEmit --strict` on two star-exporting barrels that both export `Span` emits `error TS2308: Module \"./telem\" has already exported a member named 'Span'. Consider explicitly re-exporting to resolve the ambiguity.` Source of the collision: packages/agent/src/index.ts:24 + packages/agent/src/telemetry.ts:2106, both confirmed by read."
+    },
+    {
+      "claim": "§W10 (line 1347) and §F8 (line 2558): commit 2 re-expresses packages/agent/src/telemetry.ts (2114 LOC) as an adapter on the new contract.",
+      "verdict": "self-contradictory — the plan's own correction C17 says the opposite, and C17 is the one to follow",
+      "correction": "C17 (plan line 380) states the correct scope: the seam ALREADY exists as `AgentTelemetry` at telemetry.ts:406 and `resolveTelemetry` at :418, and W10 should give the ~15 free-function span helpers a replaceable backing by defining a narrow contract UNDER `AgentTelemetry` and keeping `AgentTelemetry` as the public surface — explicitly 'does NOT require re-expressing 2114 LOC'. A wholesale rewrite contradicts this and is the least likely route to a zero-line otel.test.ts diff. Implement commit 2 as the ~40 LOC seam at the private startSpan (:466) and runInActiveSpan (:2048), with every exported signature byte-identical. Both plan sections that say 'rewrite' should be treated as superseded by C17.",
+      "evidence": "Plan line 380 (C17 correction, verdict 'wrong', severity medium) vs plan lines 1347-1429 (§W10) and 2558-2605 (§F8). Confirmed anchors: AgentTelemetry interface at packages/agent/src/telemetry.ts:406, resolveTelemetry at :418, private startSpan at :466, runInActiveSpan at :2048."
+    },
+    {
+      "claim": "§F8: `export type TelemetryAttributeValue = string | number | boolean;`",
+      "verdict": "wrong — too narrow; it cannot represent attributes omp already emits",
+      "correction": "Two call sites assign string arrays: telemetry.ts:755 `attrs[GenAIAttr.RequestStopSequences] = [...request.stopSequences]` and telemetry.ts:764 `attrs[PiGenAIAttr.RequestAvailableTools] = request.tools.map(tool => tool.name)`. A contract that rejects string[] forces commit 2 to either drop those attributes (a silent behavior change) or widen against the plan. Widen to include `readonly string[]` and `readonly number[]`. I checked node_modules rather than guessing: OTEL's real AttributeValue is `string | number | boolean | Array<null|undefined|string> | Array<null|undefined|number> | Array<null|undefined|boolean>`.",
+      "evidence": "packages/agent/src/telemetry.ts:755 and :764 (read directly). node_modules/@opentelemetry/api/build/src/common/Attributes.d.ts:18 for the real AttributeValue."
+    },
+    {
+      "claim": "§W10 and §F8: otel.test.ts (1152 LOC) is the safety net for commit 2, and it passing with a zero-line diff is the proof of behavior preservation.",
+      "verdict": "partly-wrong — it is a real net but has two blind spots, and both sit exactly where the contract is most likely to be wrong",
+      "correction": "otel.test.ts has ZERO assertions on RequestStopSequences or RequestAvailableTools, and zero anywhere in packages/agent/test for stopSequences / availableTools / available_tools. It also asserts only on `status.code` (lines 246, 317, 337, 384) and never on `status.message`, while all 5 setStatus sites in telemetry.ts pass a message. So an adapter built on the plan's contract would silently drop stop sequences, available-tool lists, and every error message on failed spans, and the plan's own gate would stay green. The conformance suite MUST cover array-valued attributes and status messages, and the PR should say out loud that otel.test.ts does not cover them.",
+      "evidence": "`grep -n 'RequestStopSequences\\|RequestAvailableTools' packages/agent/test/otel.test.ts` -> no matches. `git grep 'stopSequences|available_tools|availableTools' -- packages/agent/test` -> no matches. `grep -n 'status\\.message' packages/agent/test/otel.test.ts` -> no matches; the four status assertions are all `.status.code`. setStatus sites: telemetry.ts:1187, 1190, 1547, 1872, 1949, all passing a message."
+    },
+    {
+      "claim": "The vendor-neutral Span can flow through the existing telemetry.ts internals.",
+      "verdict": "constrained — two hard couplings the plan does not mention",
+      "correction": "First, packages/agent/src/run-collector.ts declares `import type { Span } from \"@opentelemetry/api\"` and uses the live Span as a WeakMap key with symbol-tagged properties (types at :144-145, usage at :180-274). Second, telemetry.ts:2106 re-exports Span, SpanKind, SpanStatusCode, Tracer and trace from the package's PUBLIC surface, with the comment 'Re-exports so consumers can write hooks without depending on @opentelemetry/api directly'. So the OTEL types are already part of the public API and cannot be removed in this milestone. The zero-diff otel.test.ts gate is only reachable if the contract is satisfied structurally, behind the existing signatures, rather than by replacing the Span type. Note also that @opentelemetry/api is a hard RUNTIME dependency of packages/agent/package.json (not optional, not peer) — this milestone does not remove it, and should not claim to.",
+      "evidence": "packages/agent/src/run-collector.ts:19, 144-145, 180-274. packages/agent/src/telemetry.ts:2106. packages/agent/package.json dependencies include `\"@opentelemetry/api\": \"catalog:\"`; devDependencies include @opentelemetry/sdk-trace-base and @opentelemetry/context-async-hooks."
+    },
+    {
+      "claim": "§F8: the barrel re-exports with explicit extensions — `export * from \"./context.ts\";`",
+      "verdict": "wrong convention for this repo",
+      "correction": "No file in packages/agent/src uses a `.ts` extension in an import or re-export specifier. Use `export * from \"./context\";`. Also, the plan's §W10 warns against a non-canonical `packages/ai/../agent/...` path; I confirmed the canonical path is `packages/agent/src/telemetry/context.ts` and that adding a `telemetry/` directory next to `telemetry.ts` is safe.",
+      "evidence": "`git grep -n 'from \"\\..*\\.ts\"' -- packages/agent/src` -> no matches. Resolution verified empirically, not assumed: in a scratch dir with `mod.ts` AND `mod/index.ts` both present, `bun run consumer.ts` importing './mod' printed `bun resolves ./mod -> FILE mod.ts`."
+    },
+    {
+      "claim": "§W10: 'packages/agent/src/index.ts:24 is `export * from \"./telemetry\";` and three consumers use that specifier — agent-loop.ts:74, compaction/anthropic.ts:22, compaction/branch-summarization.ts:11.'",
+      "verdict": "mostly right but incomplete, with one line number off by one",
+      "correction": "Line 24 is correct. agent-loop.ts imports at line 75, not 74. The two compaction files use `\"../telemetry\"` (they are one directory down), not `\"./telemetry\"`. More importantly the consumer list is incomplete — a refactor must keep ALL of these compiling: compaction/compaction.ts:41 (omitted from the plan), the barrel at index.ts:24, a type-only import at types.ts:28, and four test files that import the public subpath: compaction-telemetry.test.ts:26, instrumented-oneshot-retry.test.ts:2, run-summary.test.ts:19, otel.test.ts:24.",
+      "evidence": "`git grep -n 'from \"\\./telemetry\"' -- packages/agent` -> agent-loop.ts:75, index.ts:24, types.ts:28. `git grep 'from \"\\.\\./telemetry\"' -- packages/agent` -> compaction/anthropic.ts:22, compaction/branch-summarization.ts:11, compaction/compaction.ts:41. Test subpath imports confirmed at the four paths listed."
+    },
+    {
+      "claim": "The task brief and the plan refer to the repo at git HEAD 5873776.",
+      "verdict": "wrong",
+      "correction": "HEAD is ecd516f on branch milestone-1, and it is the only commit in the repo ('feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers'). Every anchor in this spec was verified against ecd516f, so an engineer starting Monday on this branch will find them accurate; anyone chasing 5873776 will not find it.",
+      "evidence": "`git log --oneline -1` -> ecd516f. `git rev-parse --abbrev-ref HEAD` -> milestone-1."
+    },
+    {
+      "claim": "§W10: 'Verified: import ... from \"./telemetry\" STILL resolves to the FILE telemetry.ts, not to the directory.'",
+      "verdict": "CONFIRMED — the plan's single most load-bearing structural claim holds, and I re-verified it by running it",
+      "correction": "None needed, but I strengthened the verification: it holds even when telemetry/index.ts also exists, so creating the barrel is safe. This also means the exports map entry `\"./*\": {\"types\": \"./src/*.ts\", \"import\": \"./src/*.ts\"}` in packages/agent/package.json keeps serving `@oh-my-pi/pi-agent-core/telemetry` to the file, and that no package.json change is needed for commit 1.",
+      "evidence": "Scratch reproduction, run twice: with mod.ts alone, then with mod.ts AND mod/index.ts. Both printed `bun resolves ./mod -> FILE mod.ts`. exports map read from packages/agent/package.json."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W10.spec.json"
+}

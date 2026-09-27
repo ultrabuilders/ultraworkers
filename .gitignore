@@ -94,3 +94,10 @@ packages/coding-agent/bench/boot-baseline.json
 /.bazelrc.user
 
 .parity/
+
+# M1 execution plan: local scratch (workflow scripts, derived indexes, section parts).
+# The specs/ directory IS committed — it is the evidence behind every correction in the plan.
+.lavish-wip/md/
+.lavish-wip/*.js
+.lavish-wip/*.py
+.lavish-wip/*.json

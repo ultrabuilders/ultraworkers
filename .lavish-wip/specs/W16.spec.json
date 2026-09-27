@@ -1,0 +1,163 @@
+{
+  "id": "W16",
+  "title": "Shared storage conformance contract across every SessionStorage backend",
+  "wave": "Wave 6 — Storage conformance (test-only, second cut candidate)",
+  "one_line": "Every session-storage backend — filesystem, in-memory, indexed, real SQL, Redis — is put through one shared set of behaviour questions, so a change to one can no longer quietly disagree with the others.",
+  "user_visible_effect": "none — internal. No runtime code changes. The payoff is that a divergence between the SQL and Redis backends now fails a test instead of surfacing as a user who loses an in-memory session transcript on close.",
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/test/session/storage-conformance.ts",
+      "action": "create",
+      "change": "The shared, backend-agnostic case factory: a `ConformanceGroups` map of named contract groups plus `createStorageConformance(name, createHarness, groups)`, which returns `{ groups, skipped }` rather than self-registering tests — so an omitted group is an observable value a test can assert on, not a silent absence.",
+      "verified": true,
+      "note": "The plan put this at `packages/coding-agent/src/session/storage-conformance.ts`. That is wrong for this repo: 81 test-only helper modules live under `test/` (e.g. `test/session-manager/helpers.ts`, `test/core/helpers.ts`, `test/helpers/`), and the package's `\"./*\"` export map (`./*` -> `./src/*.ts`) would publish a test-only module to consumers. Sibling-of-test placement matches `test/session-manager/helpers.ts`."
+    },
+    {
+      "path": "packages/coding-agent/test/session/storage-conformance.test.ts",
+      "action": "create",
+      "change": "Registers all five backends against the shared suite with their `Pick`-scoped group subsets, and holds the two contract tests for the harness itself: that an omitted group is reported in `skipped` rather than failed, and that each registration reports exactly the subset it declared.",
+      "verified": true,
+      "note": "Replaces the plan's two separate `sql-storage-conformance.test.ts` / `redis-storage-conformance.test.ts`. Both real backends are `IndexedSessionStorage` subclasses with an identical group set, so one file with a `describe` per backend is smaller and makes the Wave 6 cut a single-file delete."
+    },
+    {
+      "path": "packages/coding-agent/test/session/indexed-over-real-backend.test.ts",
+      "action": "create",
+      "change": "The regression this work item is named for: replays the F1 late-atomic-rollback settler schedule and the transient-failure recovery matrix over a REAL `SqlSessionStorage` (real `Bun.SQL` in-memory SQLite), over the Redis double, and over the existing Map-backed control, asserting all three reach the same durable state.",
+      "verified": true,
+      "note": "This is the file that closes the genuinely-uncovered cell. Both the F1 schedule and the durability matrix have only ever run against `GatedBackend` / `FakeBackend`."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Re-verify the three anchors the whole design rests on before writing any code. Run `git rev-parse --short HEAD` (expected `ecd516f` on branch `milestone-1`), `grep -n \"extends IndexedSessionStorage\" packages/coding-agent/src/session/*.ts` (expected `sql-session-storage.ts:262` and `redis-session-storage.ts:109`), and `grep -n \"confirmWrites\\|withSessionFileLockSync\\|deleteSessionWithArtifactsIf\\|defersSyncPublish\" packages/coding-agent/src/session/session-storage.ts packages/coding-agent/src/session/indexed-session-storage.ts`. If SQL or Redis no longer extends `IndexedSessionStorage`, or the optional members moved, STOP — the design below is invalidated and this spec must be re-derived.",
+      "anchor": "packages/coding-agent/src/session/sql-session-storage.ts:262"
+    },
+    {
+      "n": 2,
+      "instruction": "Create `test/session/storage-conformance.ts` with three exports: `StorageHarness` (a `SessionStorage` plus a `dispose()` and an optional gateable-`readFull` handle), `ConformanceGroups` (a named map of group factories), and `createStorageConformance(name, createHarness, groups)`. The function MUST return `{ groups, skipped }` and MUST NOT call `describe`/`it` itself — that is what makes the skip contract assertable in step 6. Iterate `Object.keys(ALL_GROUPS)`, keep the keys present in the `groups` argument, and put every absent key into `skipped`.",
+      "anchor": "packages/coding-agent/test/session/storage-conformance.ts"
+    },
+    {
+      "n": 3,
+      "instruction": "Implement the eight group factories in that same file. `readWrite`: `writeTextSync` then `drain()` then `readText` round-trips the exact body; `rename` moves the body and leaves the source ENOENT; `unlink` removes it. `indexCoherence`: after each write, `existsSync`, `statSync().size` (UTF-8 byte length, not string length) and `listFilesSync(dir, \"*.jsonl\")` agree with the body actually stored; two rapid writes produce strictly increasing `mtimeMs`. `casToken`: `writeTextSync(path, body, { expectedSize: <current byte length> })` is accepted; the same call with a stale `expectedSize` rejects with `SessionWriteConflictError` carrying the right `path`/`expectedSize`/`actualSize`; `{ expectedSize: null }` on an existing path rejects, on a missing path succeeds. `sliceReads`: `readTextSlices` returns the exact head and tail UTF-8 byte windows, including `(0, 0)` -> `[\"\", \"\"]` and an over-budget request returning the whole body. `deferredPublish`: `defersSyncPublish === true`; `confirmWrites(path)` resolves only after the backend publish, and rejects when a queued publish for that path failed. `crossProcessLock`: `withSessionFileLockSync` serialises, and `deleteSessionWithArtifactsIf` deletes only when the predicate accepts the CURRENT content. `failureRecovery`: with the backend set to fail its next `writeFull`/`append`, the in-memory index rolls back to the last durable entry, the failed body is NOT readable, and the next write converges and republishes the full transcript. `lateAtomicRollback`: the exact F1 schedule from `indexed-late-atomic-rollback.test.ts` — reject atomic A, gate A's readback, publish a different-sized sync B and `await confirmWrites(path)`, release A's readback, then assert the backend AND `statSync` both still describe B and a guarded follow-up write at B's size succeeds.",
+      "anchor": "packages/coding-agent/test/session/storage-conformance.ts"
+    },
+    {
+      "n": 4,
+      "instruction": "Add the five harness factories. `createSqlHarness`: `new SQL(\"sqlite::memory:\")` wrapped in a `SqlSessionStorageClient` object that delegates `unsafe`/`transaction` to the real client but can (a) inject one-shot failures and (b) park `readFull` behind a release gate — copy that wrapper seam from the one already proven at `sql-session-storage.test.ts:51-60`, and `await SqlSessionStorage.create({ client })` plus `client.end()` in `dispose`. `createRedisHarness`: reuse the hand-rolled `createFakeRedis` double at `redis-session-storage.test.ts:37`, extended with the same two injection points. `createFileHarness` and `createMemoryHarness`: `FileSessionStorage` and `MemorySessionStorage` over a `Bun.tempDir()` / fresh map. `createMapHarness`: bare `new IndexedSessionStorage(new FakeBackend())` reusing the `FakeBackend` class at `session-manager-indexed-durability.test.ts:22` as the control. NEVER use `mock.module()` — mutate the injected client object per-test and reset it, so nothing leaks across files.",
+      "anchor": "packages/coding-agent/test/session/sql-session-storage.test.ts:51"
+    },
+    {
+      "n": 5,
+      "instruction": "Write `test/session/storage-conformance.test.ts`. Register five `describe` blocks — `SqlSessionStorage (real SQLite)`, `RedisSessionStorage (double)`, `IndexedSessionStorage (map control)`, `MemorySessionStorage`, `FileSessionStorage` — each calling `createStorageConformance` with its subset, then a local `register(plan)` helper that wires `plan.groups` into `describe`/`it`. Scope by capability, not by convenience: the three indexed backends get all groups; `MemorySessionStorage` and `FileSessionStorage` omit `deferredPublish` (neither declares `defersSyncPublish` or `confirmWrites`); the three non-file backends omit `crossProcessLock` (only `FileSessionStorage` implements `withSessionFileLockSync` / `deleteSessionWithArtifactsIf`).",
+      "anchor": "packages/coding-agent/test/session/storage-conformance.test.ts"
+    },
+    {
+      "n": 6,
+      "instruction": "Add the two harness-contract tests to the same file. (1) `SqlSessionStorage` reports exactly `skipped === [\"crossProcessLock\"]` and `FileSessionStorage` reports exactly `skipped === [\"deferredPublish\"]` — proving an omitted group is skipped, not failed, and not silently run. (2) For every registration, `Object.keys(plan.groups)` is a subset of the declared capability set AND every declared-and-supported group actually appears in `groups` — this is the anti-pattern guard for a backend quietly running the wrong subset, which the plan correctly calls worse than not registering at all.",
+      "anchor": "packages/coding-agent/test/session/storage-conformance.test.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "Write `test/session/indexed-over-real-backend.test.ts`: drive the `lateAtomicRollback` and `failureRecovery` groups over `createSqlHarness`, `createRedisHarness` and `createMapHarness` in one parameterised loop, and assert all three reach identical durable state. This is the only place the F1 schedule and the durability matrix ever run against a real SQL row-replacement path rather than a Map, so it is the file that carries the new coverage.",
+      "anchor": "packages/coding-agent/test/session/indexed-over-real-backend.test.ts"
+    },
+    {
+      "n": 8,
+      "instruction": "Verify. `bun test packages/coding-agent/test/session/storage-conformance.test.ts packages/coding-agent/test/session/indexed-over-real-backend.test.ts` must exit 0 — but note the native addon must be built first (`bun --cwd=packages/natives run build`), because `bun test` currently reports 0 pass / 1 fail with \"Failed to load pi_natives native addon for darwin-arm64\" for every file in this package. Then `bun run check:ts` (this is what works in the unbuilt environment — it passed clean on `ecd516f`, 5445 files formatted, every package Done). Never use `tsc` / `npx tsc`.",
+      "anchor": "package.json"
+    },
+    {
+      "n": 9,
+      "instruction": "Report the divergences the suite surfaced as SEPARATE findings, do not quietly relax a group to make it green. If a divergence turns out to be a production bug, that becomes a user-facing fix and therefore needs a `packages/coding-agent/CHANGELOG.md` entry under `## [Unreleased]` in the appropriate section. If every divergence is resolved as 'the suite was over-specified', W16 is genuinely test-only and needs no changelog entry at all. Say which of the two happened.",
+      "anchor": "packages/coding-agent/CHANGELOG.md"
+    }
+  ],
+
+  "code_shape": "```ts\n// test/session/storage-conformance.ts — the mechanism. Pure, no describe/it.\nimport { IndexedSessionStorage } from \"@oh-my-pi/pi-coding-agent/session/indexed-session-storage\";\nimport type { SessionStorage } from \"@oh-my-pi/pi-coding-agent/session/session-storage\";\n\nexport interface StorageHarness {\n\treadonly storage: SessionStorage;\n\t/** Fail the next N backend `writeFull` / `append` calls (transient-failure group). */\tfailWrites(n: number): void;\n\t/** Park `readFull` until `releaseReadFull()` — required by the F1 late-rollback schedule. */\tgateReadFull(): void;\n\treleaseReadFull(): void;\n\tdispose(): Promise<void>;\n}\n\nexport interface ConformanceGroups {\n\treadWrite(): void;\n\tindexCoherence(): void;\n\tcasToken(): void;\n\tsliceReads(): void;\n\tdeferredPublish(): void;\n\tcrossProcessLock(): void;\n\tfailureRecovery(): void;\n\tlateAtomicRollback(): void;\n}\n\n/** `Partial` IS the scope: an absent key is skipped, never failed. */\nexport interface ConformancePlan {\n\treadonly groups: Record<string, () => void>;\n\treadonly skipped: readonly string[];\n}\n\nexport function createStorageConformance(\n\tname: string,\n\tcreateHarness: () => Promise<StorageHarness>,\n\tgroups: Partial<ConformanceGroups>,\n): ConformancePlan {\n\tconst all: ConformanceGroups = {\n\t\treadWrite, indexCoherence, casToken, sliceReads,\n\t\tdeferredPublish, crossProcessLock, failureRecovery, lateAtomicRollback,\n\t};\n\tconst keys = Object.keys(all) as Array<keyof ConformanceGroups>;\n\tconst kept = keys.filter(key => groups[key] !== undefined);\n\tconst harness = once(createHarness);\n\treturn {\n\t\tgroups: Object.fromEntries(kept.map(key => [key, () => groups[key]!()])),\n\t\tskipped: keys.filter(key => groups[key] === undefined),\n\t};\n}\n```\n\n```ts\n// test/session/storage-conformance.test.ts — registration, one describe per backend.\nconst sqlPlan = createStorageConformance(\"SqlSessionStorage\", createSqlHarness, {\n\treadWrite, indexCoherence, casToken, sliceReads,\n\tdeferredPublish, failureRecovery, lateAtomicRollback,\n\t// crossProcessLock omitted on purpose -> must be reported as skipped\n});\nregister(\"SqlSessionStorage (real SQLite)\", sqlPlan);\n\nit(\"reports an omitted group as skipped instead of failing it\", () => {\n\texpect(sqlPlan.skipped).toEqual([\"crossProcessLock\"]);\n\texpect(filePlan.skipped).toEqual([\"deferredPublish\"]);\n});\n```\n\n```ts\n// test/session/indexed-over-real-backend.test.ts — the regression that closes the cell.\nfor (const [name, createHarness] of [\n\t[\"sql (real Bun.SQL sqlite)\", createSqlHarness],\n\t[\"redis (double)\", createRedisHarness],\n\t[\"map control\", createMapHarness],\n] as const) {\n\tit(`${name} keeps B durable when A's gated readback settles after B commits`, async () => {\n\t\tconst h = await createHarness();\n\t\tconst s = h.storage as IndexedSessionStorage;\n\t\t// ... same settler schedule as indexed-late-atomic-rollback.test.ts:120-145,\n\t\t//     but `failWrites` / `gateReadFull` come from the REAL backend client.\n\t\texpect(h.backendBody(path)).toBe(bBody);\n\t\texpect(s.statSync(path).size).toBe(bSize);\n\t\ts.writeTextSync(path, \"C\\n\", { expectedSize: bSize }); // must not throw\n\t\tawait h.dispose();\n\t});\n}\n```",
+
+  "test_contract": "The contract: every `SessionStorage` implementation in `packages/coding-agent/src/session/` answers the same eight named questions about read/write, index coherence, the `expectedSize` CAS token, byte-window slice reads, deferred-publish drain semantics, cross-process locking, transient-failure recovery, and the F1 late-atomic-rollback schedule — and a backend that structurally cannot support a group is recorded as `skipped` rather than quietly passed.\n\nWhat a consumer sees if it regresses: the F1 failure mode documented at `test/session/indexed-late-atomic-rollback.test.ts:5-11` — `#failFrame` (`src/session/indexed-session-storage.ts:553-566`) restores a pre-write snapshot over a NEWER durable index, so `statSync` describes a body the backend no longer holds, the next guarded rewrite is rejected by the CAS, and the user loses the in-memory session transcript. The second failure mode is a storage that is correct in isolation but disagrees with its siblings: the SQL backend's `writeFull` conflict branch does a `readFull` + `Buffer.byteLength` re-check and swallows a byte-identical replace as success (`src/session/sql-session-storage.ts:384-393`) — a branch that has never once executed in a test, because the F1 schedule has only ever run against a `Map`.\n\nThe harness contract itself is equally load-bearing: if a registration silently ran the wrong group subset, a `deferredPublish` assertion could pass against an in-body backend that never defers anything, and the suite would report green coverage it does not have.",
+
+  "test_files": [
+    "packages/coding-agent/test/session/storage-conformance.ts",
+    "packages/coding-agent/test/session/storage-conformance.test.ts",
+    "packages/coding-agent/test/session/indexed-over-real-backend.test.ts"
+  ],
+
+  "verification": "```\n# BLOCKED until the native addon is built (verified on ecd516f: 0 pass, 1 fail,\n# \"Failed to load pi_natives native addon for darwin-arm64\"):\nbun --cwd=packages/natives run build\n\n# The gate — must exit 0:\nbun test packages/coding-agent/test/session/storage-conformance.test.ts \\\n         packages/coding-agent/test/session/indexed-over-real-backend.test.ts\n\n# Works today, no addon needed (verified clean on ecd516f):\nbun run check:ts\n\n# The three pre-existing files this must not break:\nbun test packages/coding-agent/test/session/sql-session-storage.test.ts \\\n         packages/coding-agent/test/session/redis-session-storage.test.ts \\\n         packages/coding-agent/test/session/session-manager-indexed-durability.test.ts \\\n         packages/coding-agent/test/session/indexed-late-atomic-rollback.test.ts\n```",
+
+  "gate": "`bun test packages/coding-agent/test/session/storage-conformance.test.ts packages/coding-agent/test/session/indexed-over-real-backend.test.ts` exits 0, AND the `lateAtomicRollback` group demonstrably runs against a real `SqlSessionStorage` built on `new SQL(\"sqlite::memory:\")` — verified by the fact that suite passes while the SQL backend's `writeFull` conflict branch (`sql-session-storage.ts:377-394`, the `readFull` + byte-length re-check) has no other test exercising it. The negative form of the gate: if you delete the real-SQL arm of the parameterised loop in `indexed-over-real-backend.test.ts` and only the Map control remains, the `sqlPlan.skipped` equality assertions in step 6 still pass while the actual cross-product coverage is gone — so also assert that `createSqlHarness` is among the harnesses enumerated by the loop, by making the loop's harness list itself the subject of a test that fails when it drops below three entries.",
+
+  "gate_can_fail": true,
+  "gate_can_fail_note": "Yes, three ways. (1) The two test files do not exist -> `bun test` errors on a missing path. (2) The `skipped` equality assertions are exact-array comparisons, so a registration that gains, loses, or mis-scopes a group turns the suite red rather than silently passing. (3) The F1 assertions are behavioural: `expect(statSync(path).size).toBe(bSize)` and an unguarded follow-up `writeTextSync(path, \"C\\n\", { expectedSize: bSize })` that must not throw. A regression in `#failFrame` (`indexed-session-storage.ts:553-566`) or in the SQL conflict branch (`sql-session-storage.ts:384-393`) makes them red. I could not execute this gate: `bun test` is blocked in this environment by the unbuilt native addon, so the gate is argued from the source, not observed passing. `bun run check:ts` WAS run and passes clean on `ecd516f`.",
+
+  "depends_on": [],
+  "blocks": [],
+
+  "effort": "M. The mechanism is ~250-350 LOC of case factory, ~200 LOC of harness factories, ~150 LOC of registration and harness-contract tests, ~120 LOC for the cross-product regression. The schedule risk, not the line count, is what makes this M: two known real divergences between the SQL and Redis backends will surface the first time both are run against one definition, and each needs a human decision (see open questions).",
+
+  "risk": "Treating the first divergence the suite surfaces as test friction and tuning the group until it goes green. Two are already visible in the source and are almost certainly real, not noise: (1) `RedisSessionStorageBackend.move` (`redis-session-storage.ts:261-267`) catches a failed meta-hash migration and only `logger.warn`s it, leaving the STRING key moved while the metadata still points at the old path — whereas `SqlSessionStorageBackend.move` (`sql-session-storage.ts:427-432`) wraps the whole move in `client.transaction` and is all-or-nothing; a `crossProcessLock`-shaped group asserting atomic rename will fail on Redis, and that failure is a genuine durability bug, not a spec disagreement. (2) `SqlSessionStorageBackend.readSlices` throws `enoent(path)` for a missing row (`sql-session-storage.ts:358`) while `RedisSessionStorageBackend.readSlices` returns `[\"\", \"\"]` because Redis `GETRANGE` on a missing key is an empty string (`redis-session-storage.ts:182-187`) — a silent-data-shaped divergence where SQL is loud and Redis is quiet.",
+
+  "open_questions": [
+    "Is the Redis registration allowed to run against the hand-rolled double? There is no `bun:redis` test infrastructure in this repo and both existing Redis test files state outright that they avoid a live server ('so the suite runs without a live server', `redis-session-storage.test.ts:1-16`). Running against the double tests the storage contract, not Redis-server semantics — real Lua `EVAL` atomicity, `SCAN` cursor behaviour and connection errors stay untested either way. Confirm the double is acceptable for milestone 1, or budget a Redis service in CI.",
+    "For the `move()` divergence (Redis swallows meta-migration failure, SQL is transactional): which behaviour is correct? A conformance group asserting atomic rename fails on Redis. Either Redis is wrong and this becomes a user-facing bug fix with a changelog entry, or the group is over-specified and should be scoped out for Redis. A human has to decide — do not let the suite decide by being loosened.",
+    "Same question for the `readSlices`-on-missing-path divergence (SQL throws ENOENT, Redis returns empty strings). This one is a live-read path, so the answer determines whether a Redis user can be served a phantom empty session rather than an error.",
+    "Should Postgres and MySQL be in scope? `sql-session-storage.test.ts` only string-inspects the dialect DDL/upsert built at construction; no test executes those statements. Adding live Postgres/MySQL to the conformance suite is a materially larger job than everything else in this item combined, and is out of scope for milestone 1 unless explicitly requested."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "The repo is at git HEAD 5873776 on branch milestone-1.",
+      "verdict": "STALE",
+      "correction": "HEAD is `ecd516f` on branch `milestone-1` (verified with `git rev-parse --short HEAD`). Re-derive any anchor that was checked against 5873776.",
+      "evidence": "`git rev-parse --short HEAD` -> `ecd516f`; `git log --oneline -1` -> `ecd516f feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers`."
+    },
+    {
+      "claim": "pi ships two conformance layers to copy: `pi-ref/packages/agent/src/harness/session/testing/conformance/session-repo.ts` (1,185 LOC) and `pi-ref/packages/durable/src/testing/storage-conformance.ts` (1,520 LOC).",
+      "verdict": "UNAVAILABLE — the 'receive the mechanism, not the code' framing is not executable as written",
+      "correction": "Neither `pi-ref/` nor `packages/durable/` exists in this repo. There is no local source to port from, so the suite must be AUTHORED against this repo's own `SessionStorage` contract, using pi's files only as a design reference if someone fetches them upstream. Budget for design-from-scratch, not copy-and-adapt.",
+      "evidence": "`ls -d pi-ref` -> No such file or directory. `ls -d packages/durable` -> No such file or directory. `ls packages/` -> agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire."
+    },
+    {
+      "claim": "`IndexedSessionStorage x a real backend` is an untested cell — the cross-product this item closes.",
+      "verdict": "WRONG — the cell does not exist in this architecture",
+      "correction": "`SqlSessionStorage extends IndexedSessionStorage` and `RedisSessionStorage extends IndexedSessionStorage`. Indexed is not a peer backend to be crossed with SQL/Redis; it is their shared superclass, and `indexed x real backend` is the ONLY production wiring that exists. The plan's headline regression (test item 2) is built on a false premise and cannot be specified as written. The real, verifiable gap is narrower and is what step 7 targets: the F1 late-atomic-rollback schedule and the transient-failure recovery matrix have only ever run against `GatedBackend` / `FakeBackend`, never against `SqlSessionStorageBackend.writeFull`'s real conflict branch.",
+      "evidence": "`sql-session-storage.ts:262` `export class SqlSessionStorage extends IndexedSessionStorage`; `redis-session-storage.ts:109` `export class RedisSessionStorage extends IndexedSessionStorage`; `indexed-session-storage.ts:118` `export class IndexedSessionStorage implements SessionStorage`."
+    },
+    {
+      "claim": "Neither real backend is tested against the CAS-token contract, so a green suite over three backends would close the gap.",
+      "verdict": "PARTLY WRONG — real-SQL CAS coverage already exists",
+      "correction": "`sql-session-storage-manager.test.ts:128` already asserts `SessionWriteConflictError` over a REAL `Bun.SQL` in-memory SQLite connection, driven through `IndexedSessionStorage` and `SessionManager.rewriteEntries()`. Do not re-litigate CAS-on-SQL as new coverage; the genuine gaps are (a) the F1 schedule and failure-recovery matrix never running over a real backend, (b) `readTextSlices` never running on `RedisSessionStorage` at all, and (c) the two `move`/`readSlices` divergences below.",
+      "evidence": "`sql-session-storage-manager.test.ts:128` `it(\"rejects a stale rewrite after another SQL storage appends\", ...)` -> `await expect(first.rewriteEntries()).rejects.toBeInstanceOf(SessionWriteConflictError)` against `new SQL(\"sqlite::memory:\")`. `grep -rn readTextSlices test/` returns hits in `memory-session-storage.test.ts` and `sql-session-storage.test.ts:281` but zero in `redis-session-storage.test.ts`."
+    },
+    {
+      "claim": "Create the case factory at `packages/coding-agent/src/session/storage-conformance.ts`.",
+      "verdict": "WRONG LOCATION for this repo",
+      "correction": "Put it at `packages/coding-agent/test/session/storage-conformance.ts`. 81 test-only helper modules live under `test/`, not `src/`, and the package's `\"./*\"` -> `\"./src/*.ts\"` export map would publish a test-only module to every consumer. Sibling-of-test placement matches the existing `test/session-manager/helpers.ts` precedent.",
+      "evidence": "`find test -name '*.ts' ! -name '*.test.ts' | wc -l` -> 81, including `test/session-manager/helpers.ts`, `test/core/helpers.ts`, `test/utilities.ts`. `packages/coding-agent/package.json` exports `\"./*\": { \"types\": \"./src/*.ts\", \"import\": \"./src/*.ts\" }`."
+    },
+    {
+      "claim": "New tests: `test/session/sql-storage-conformance.test.ts`, `test/session/redis-storage-conformance.test.ts`, `test/session/indexed-over-real-backend.test.ts`.",
+      "verdict": "DELIBERATELY MERGED (2 files, not 3)",
+      "correction": "Both real backends are `IndexedSessionStorage` subclasses with an identical group set, so a single `storage-conformance.test.ts` with one `describe` per backend is smaller AND makes the Wave 6 cut a single-file delete — which is the wave's stated purpose ('Đặt nó thành một wave riêng làm cho việc cắt thành một cắt gọn một wave'). Failures stay attributable because each backend keeps its own `describe`.",
+      "evidence": "Both backends delegate to `super(backend)` — `sql-session-storage.ts:277-282` and `redis-session-storage.ts:116-120` — so the inherited `SessionStorage` surface is identical."
+    },
+    {
+      "claim": "The existing fake-backend tests to reconcile with are `test/session/session-manager-indexed-durability.test.ts` and `test/indexed-late-atomic-rollback.test.ts`.",
+      "verdict": "ONE PATH WRONG",
+      "correction": "`indexed-late-atomic-rollback.test.ts` lives at `test/session/indexed-late-atomic-rollback.test.ts`, not at `test/` root. Both files must keep passing unchanged; the conformance suite is additive and must not edit them.",
+      "evidence": "`ls packages/coding-agent/test/session/indexed-late-atomic-rollback.test.ts` -> present (4.8 KB, 146 lines, 1 test). No `indexed-late-atomic-rollback.test.ts` at `test/` root."
+    },
+    {
+      "claim": "Verification command is `bun check && bun test <three files>`.",
+      "verdict": "ENVIRONMENT-BLOCKED as given",
+      "correction": "`bun test` cannot run at HEAD without the native addon. Verified: `bun test packages/coding-agent/test/session/indexed-late-atomic-rollback.test.ts` -> `0 pass / 1 fail`, `error: Failed to load pi_natives native addon for darwin-arm64`. Build first with `bun --cwd=packages/natives run build`. `bun run check:ts` was run and passes clean (5445 files formatted, every package `Done`) and is the only verification available before the addon exists.",
+      "evidence": "Observed `bun test` output: `0 pass / 1 fail / 1 error`, `Failed to load pi_natives native addon for darwin-arm64.` with `Tried: .../packages/natives/native/pi_natives.darwin-arm64.node ... Cannot find module`. `find . -name '*.node' -not -path '*/node_modules/*'` -> no results. `bun run check:ts` -> all 16 packages Done, exit clean."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W16.spec.json"
+}

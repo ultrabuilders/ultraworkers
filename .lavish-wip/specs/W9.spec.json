@@ -1,0 +1,198 @@
+{
+  "id": "W9",
+  "title": "Per-model usage attribution with a Tools/summaries bucket, plus a priced cache-miss total",
+  "wave": "3b",
+  "one_line": "Split the session's flat token/cost total into one row per model that actually served tokens plus one literal \"Tools/summaries\" row, then add a priced total for the prompt-cache misses the agent caused.",
+  "user_visible_effect": "`/info` gains an \"Attribution\" section listing each model that actually burned tokens, its token counts and dollar cost, sorted by cost descending, plus a \"Tools/summaries\" row for compaction/branch-summary/subagent calls the agent made on your behalf, and a \"Cache misses\" line reporting how many tokens were re-paid at cache-read price and what that cost. `/usage` (ACP text mode) gains the same per-model block above its existing flat totals. A user who switched models mid-session can finally see which model is actually spending the money, and can see the agent's own summarization cost separated from the model they chose.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W9.spec.json",
+  "effort": "M",
+  "risk": "Double counting. The three usage sources (assistant message, `task` tool result, `model_usage` entry) must each land in exactly ONE bucket, and a `model_usage` entry must never also be credited to a model row. The plan is explicit that this is the single easiest way to get the item wrong, and it is why the two layers are one work item: layer two's cache-miss cost has nowhere correct to land without layer one's bucketing. The second risk is picking the wrong identity field -- the plan says `responseModel`, which does not exist on `AssistantMessage` in this repo (see plan_corrections); using `message.model` alone silently mis-attributes every provider-alias turn.",
+  "gate": "Two commands, both must be green. (1) `bun run check:ts` from the repo root -- oxlint + oxfmt + `tsgo --noEmit` across every package; it catches the type errors that a blocked `bun test` cannot. (2) Once the native addon is built (`bun --cwd=packages/natives run build`), `bun test packages/coding-agent/test/usage-breakdown.test.ts packages/coding-agent/test/session-manager/usage-statistics.test.ts` -- the new file plus the pre-existing file whose totals it refactors, so a regression in the flat totals is caught by the suite that already pins them. Additionally, `/info` must render a non-empty Attribution section for a session that used two models plus a compaction; run it in the TUI and confirm the `Tools/summaries` row is present and that the per-row costs sum to the unchanged `Cost: Total` line already on screen. WHY THE GATE CAN FAIL: The gate goes red if the bucketing is wrong in the way that matters: if a `model_usage` entry (compaction / auto-thinking / judgment / subagent `task` result) is also added to a model row, the new test's equality assertion (`sum of per-row costs === the single flat total`, and `Tools/summaries` row cost > 0 with no model row carrying it) fails, and the pre-existing `usage-statistics.test.ts` totals also drift. If `upstreamModel` fallback is omitted, the provider-alias test fails. If the noise floor is not applied, the sub-1024-token miss test asserts a non-zero cost and fails. If the sticky rule is not implemented, the read-only-provider test and the no-caching-provider test produce the same result and the discriminating test fails. `bun run check:ts` independently goes red on any type error, and I confirmed it is currently green at HEAD, so it is a real signal and not a pre-existing red.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [
+    "W17"
+  ],
+  "open_questions": [
+    "Where exactly should the per-model rows render in `/info` -- inside the existing `Cost` block (command-controller.ts:415-431) or as a new `Attribution` section immediately after it? Recommend a new section, because the existing `Cost` block also carries Credits and Premium Requests which have no per-model meaning; folding rows into it would imply those are attributed too.",
+    "Should `/usage` (the ACP text path, `buildUsageReportText`) gain the per-model block when it has provider-reported limits? The provider-reported branch returns early (usage-report.ts:175-186) and never reaches the local tallies. Recommend adding the block only to the local-tallies fallback branch, and noting in a comment that the provider-reported branch has no per-model data by construction.",
+    "Is the `Tools/summaries` bucket name a literal that ships, or should it be a shared exported constant? Recommend exporting `TOOLS_SUMMARIES_BUCKET` from the new module and using it in both the aggregator and the renderer, so a later rename is one edit -- but the plan specifies the literal string, so confirm the name is final before other work items (W17) hard-code it in a bug-report template."
+  ],
+  "verification": "bun run check:ts\nbun --cwd=packages/natives run build   # unblocks bun test; currently the only blocker\nbun test packages/coding-agent/test/usage-breakdown.test.ts\nbun test packages/coding-agent/test/session-manager/usage-statistics.test.ts",
+  "test_contract": "The consumer is a human asking \"which model is actually costing me money, and what did the agent spend summarizing my own context?\" If this regresses, the user sees one blended total and cannot tell that a background compaction burned half the session, or that a mid-session model switch moved the bill to a model they stopped using ten turns ago. Concretely the tests defend four observable contracts: (1) the per-model rows plus the `Tools/summaries` row sum EXACTLY to the pre-existing flat total -- this is the double-count guard and the reason the pre-existing `usage-statistics.test.ts` must be re-run alongside; (2) a `model_usage` entry produced by compaction lands in the `Tools/summaries` bucket and in NO model row; (3) an assistant message whose `upstreamModel` differs from `model` is attributed to the served model, not the requested one; (4) a cache miss below the noise floor reports zero missed tokens and zero missed cost. Consumer-visible regression: rows that double-count would make the Attribution section sum to more than the `Cost: Total` the user is already looking at -- an arithmetic impossibility the UI makes obvious, which is why contract (1) is written as an equality against the untouched flat total rather than as a snapshot.",
+  "test_files": [
+    "packages/coding-agent/test/usage-breakdown.test.ts",
+    "packages/coding-agent/test/session-manager/usage-statistics.test.ts"
+  ],
+  "code_shape": "// packages/coding-agent/src/session/usage-breakdown.ts  (new)\n//\n// NOTE: the plan's reference implementation (`pi-ref/.../core/usage-totals.ts`) does NOT\n// exist in this repo. The shape below is derived from the walk that\n// `session-stats.ts:114 getSessionStats()` already performs, split into buckets.\n\nimport type { Usage } from \"@oh-my-pi/pi-ai\";\nimport type { SessionEntry } from \"./session-entries\";\n\n/** Literal bucket for agent-initiated calls that never touch the user's chosen model. */\nexport const TOOLS_SUMMARIES_BUCKET = \"Tools/summaries\";\n\n/**\n * Cache misses below this many reprocessed tokens are granularity noise, not a\n * miss the user caused. Sourced from pi's NOISE_FLOOR_TOKENS = 1024, which does not\n * exist here; 2048 is this repo's existing floor (MIN_CACHE_FOOTPRINT in\n * packages/tui/src/chat/cache-invalidation-marker.ts:12). Pick ONE and comment why.\n */\nexport const NOISE_FLOOR_TOKENS = 2048;\n\n/** Attribution window. pi's CACHE_TTL_MS (5min) is ANTHROPIC_CACHE_TTL_MS at packages/ai/src/stream.ts:1209. */\nexport const CACHE_ATTRIBUTION_WINDOW_MS = 5 * 60_000;\n\nexport interface UsageBucket {\n  /** `${provider}/${servedModel}` for model rows; the literal TOOLS_SUMMARIES_BUCKET otherwise. */\n  key: string;\n  /** True for the Tools/summaries row. */\n  isToolsOrSummaries: boolean;\n  turns: number;\n  input: number;\n  output: number;\n  cacheRead: number;\n  cacheWrite: number;\n  totalTokens: number;\n  cost: number;\n}\n\nexport interface CacheMissCost {\n  missedTokens: number;\n  /** missedTokens / 1e6 * Model.cost.cacheRead -- TokenCost is a PER-MILLION rate. */\n  missedCost: number;\n  idleMs: number;\n  modelChanged: boolean;\n  /** Set once a turn on this provider proves caching is live (cacheRead > 0 or cacheWrite > 0). */\n  providerReportsCaching: boolean;\n}\n\nexport interface UsageBreakdown {\n  /** cost-descending; entries with cost === 0 && totalTokens === 0 are dropped. */\n  rows: UsageBucket[];\n  cacheMiss: CacheMissCost;\n}\n\nexport function buildUsageBreakdown(input: {\n  messages: readonly Message[];\n  branch: readonly SessionEntry[];\n  transcript: { cacheMissExplainedAt?: readonly boolean[] };\n  /** Resolves `${provider}/${id}` -> per-million cacheRead rate, or undefined. */\n  cacheReadRatePerMillion: (provider: string, modelId: string) => number | undefined;\n  nowMs: number;\n}): UsageBreakdown;\n\n// Identity for an assistant turn -- the `responseModel ?? model` fallback the plan asks for.\n// NOTE the plan spells the field `responseModel`; on AssistantMessage in THIS repo it is\n// `upstreamModel` (packages/ai/src/types.ts:1130-1138). `model` is what was REQUESTED.\nconst servedId = (m: AssistantMessage): string => m.upstreamModel ?? m.model;\nconst modelKey = (m: AssistantMessage): string => `${m.provider}/${servedId(m)}`;\n\n// Layer-two core: stickiness. `modelChanged` alone cannot tell\n//   (a) a read-only-cache provider (OpenAI reports cacheRead, never cacheWrite) from\n//   (b) a provider that reports no caching at all.\n// The discriminator is evidence, not identity: once ANY turn on the provider shows\n// cacheRead > 0 || cacheWrite > 0, the provider demonstrably caches, so a later cold\n// turn is NOT explained by a model change. Otherwise the model-change signal stays\n// sticky -- it keeps explaining misses until caching is proven.\n",
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Confirm the baseline before touching anything: run `bun run check:ts` from the repo root and confirm it is green. I verified this on 2026-09-27 at HEAD ecd516f and it passed. NOTE the working tree is shared with other milestone-1 workers writing to the same branch -- I observed a transient red on packages/coding-agent/test/collab/w3-probe.test.ts (a file that did not exist on disk when I re-checked seconds later). If check:ts is red, first confirm the offending file is not one you created before assuming your change broke it.",
+      "anchor": "repo root package.json scripts.check:ts"
+    },
+    {
+      "n": 2,
+      "instruction": "Create packages/coding-agent/src/session/usage-breakdown.ts. Export the three constants (TOOLS_SUMMARIES_BUCKET, NOISE_FLOOR_TOKENS, CACHE_ATTRIBUTION_WINDOW_MS) and the three types (UsageBucket, CacheMissCost, UsageBreakdown), then a single pure exported function `buildUsageBreakdown(input)`. Keep it pure and read-only: no session-manager calls, no registry calls, no Date.now() inside -- the caller passes `nowMs`. Dependency injection for the price lookup (`cacheReadRatePerMillion`) so the function is testable without a ModelRegistry.",
+      "anchor": "packages/coding-agent/src/session/usage-breakdown.ts (new file)"
+    },
+    {
+      "n": 3,
+      "instruction": "Implement layer one, the per-model buckets, by copying the walk that getSessionStats() already performs -- this is the important move, because that function at session-stats.ts:114-205 is ALREADY doing the three-source walk; W9 splits its single flat accumulator into per-key buckets rather than inventing a new traversal. Three sources, each landing in exactly one bucket: (a) assistant messages, keyed `${msg.provider}/${msg.upstreamModel ?? msg.model}`; (b) tool results where `message.toolName === \"task\"`, reading usage out of `message.details` exactly as `taskToolUsage` does at session-stats.ts:422-426 -- these go to the Tools/summaries bucket because a `task` tool result is a subagent the agent spawned, not the user's model; (c) `model_usage` entries from the branch, selected by `activeModelUsageEntries(branch)` (session-stats.ts:63-76) -- these also go to Tools/summaries. Increment `turns` only for source (a). Accumulate input/output/cacheRead/cacheWrite/totalTokens/cost using the same fields `addUsage` reads at session-stats.ts:134-151 so the two aggregators cannot drift apart.",
+      "anchor": "packages/coding-agent/src/session/session-stats.ts:134-151, 152-172"
+    },
+    {
+      "n": 4,
+      "instruction": "Add the final filter-and-sort the plan specifies, reproducing pi's `.filter(entry => entry.cost > 0 || entry.tokens > 0).sort((a, b) => b.cost - a.cost)`: drop any bucket whose cost and totalTokens are both zero, then sort by cost descending. Ties broken by key ascending for a stable render. Keep the Tools/summaries row in this same list -- it is a peer row, not a footer.",
+      "anchor": "packages/coding-agent/src/session/usage-breakdown.ts (new file)"
+    },
+    {
+      "n": 5,
+      "instruction": "Implement layer two, the priced cache-miss total, in the same function. Walk the assistant messages in order; for each one that is NOT already explained (`transcript.cacheMissExplainedAt[i] !== true`, the array built at session-context.ts:364-378), compute idleMs as the gap from the previous assistant message's `completedAt ?? timestamp` to this message's `timestamp`. A miss is counted only when ALL of: cacheRead === 0 this turn, reprocessedTokens (cacheWrite + input) > 0, reprocessedTokens >= NOISE_FLOOR_TOKENS, and idleMs >= CACHE_ATTRIBUTION_WINDOW_MS or a model change preceded it. `missedTokens += reprocessedTokens`. `missedCost += reprocessedTokens / 1_000_000 * cacheReadRatePerMillion(provider, servedId)` -- the division is required because Model.cost.cacheRead is a PER-MILLION rate (packages/catalog/src/types.ts:1116-1122 'Per-million-token rates for one model pricing tier'), while Usage.cost.* is already dollars. When the rate lookup returns undefined, add tokens but not cost.",
+      "anchor": "packages/coding-agent/src/session/session-context.ts:364-378, packages/catalog/src/types.ts:1116-1122"
+    },
+    {
+      "n": 6,
+      "instruction": "Implement the STICKY model-change signal -- this is the subtle branch the plan flags and the one most likely to be done wrong. Do not read the boolean straight off trackMessageCacheState. Instead: set `providerReportsCaching = true` on the bucket as soon as ANY turn in the session shows `cacheRead > 0 || cacheWrite > 0`; only while it is still false does a model change explain a miss. This is what makes a read-only-cache provider (OpenAI: reports cacheRead, never cacheWrite) distinguishable from a provider that reports no caching at all -- the first will have flipped the flag by the time its cold turn arrives, the second never will, so the second keeps getting the model-change explanation. Record `modelChanged` per contributing miss, and OR them into the total.",
+      "anchor": "packages/coding-agent/src/session/usage-breakdown.ts (new file)"
+    },
+    {
+      "n": 7,
+      "instruction": "Wire the aggregator into the session stats path. Add `usageBreakdown` to the `SessionStats` interface (optional, so the many existing `getSessionStats()` callers and test fixtures that build a partial SessionStats keep type-checking -- there are literal-object fixtures at packages/coding-agent/src/cli/gallery-fixtures/preview-session.ts:43 and status-line.ts:40 that would otherwise break). Compute it inside SessionStatsTracker after the existing walk, reusing the already-collected routedModels/branch data so the Attribution block and the existing flat totals are provably derived from the same pass.",
+      "anchor": "packages/coding-agent/src/session/agent-session-types.ts:451-477, packages/coding-agent/src/session/session-stats.ts:114-205"
+    },
+    {
+      "n": 8,
+      "instruction": "Render the Attribution section in the session info view. Insert it in handleSessionCommand() immediately after the existing Cost block (which ends at command-controller.ts:431) so per-model spend sits next to the total it decomposes. One line per row: key, totalTokens, and cost to 4 decimals -- matching the existing `stats.cost.toFixed(4)` at command-controller.ts:420 so the column is visually consistent. Then a `Cache misses:` line with `missedTokens` and `missedCost.toFixed(4)`, omitted entirely when missedTokens is 0. Sanitize the key with replaceTabs + sanitizeText before interpolating -- the existing routedModels render at command-controller.ts:384 does exactly this, follow it. Skip the whole section when there are no rows.",
+      "anchor": "packages/coding-agent/src/modes/controllers/command-controller.ts:415-431, 384"
+    },
+    {
+      "n": 9,
+      "instruction": "Add the per-model block to the ACP `/usage` text path, in the local-tallies fallback branch only (after the early return at usage-report.ts:186, alongside the existing `Cost: $...` line). This branch is a plain-text TUI-sanitized string, not a theme-rendered overlay, so use plain lines and run model keys through sanitizeText. Leave the provider-reported branch untouched and add a one-line comment saying why (it has no per-model data by construction). Note that buildUsageReportText is confirmed to be the ONLY export of usage-report.ts, so this file needs no new export surface.",
+      "anchor": "packages/coding-agent/src/slash-commands/helpers/usage-report.ts:167-202"
+    },
+    {
+      "n": 10,
+      "instruction": "Write packages/coding-agent/test/usage-breakdown.test.ts. Use `SessionManager.inMemory()` + `appendMessage` / `appendModelUsage` / `buildSessionContext()` as the fixture seam -- that is exactly the pattern in the existing packages/coding-agent/test/session-manager/usage-statistics.test.ts, and it gives a real branch and a real cacheMissExplainedAt without mocks. Cover: (1) two models plus one compaction -- assert the rows sum to the flat `getUsageStatistics().cost` AND that the compaction's usage is in the Tools/summaries row and in no model row; (2) provider alias -- an assistant message with `upstreamModel` differing from `model` attributes to the served id; (3) real idle-gap miss reports missedTokens > 0 with missedCost equal to `missedTokens / 1e6 * rate`, while a miss under the noise floor reports exactly 0 and 0; (4) the sticky discrimination -- a provider that reported a warm cacheRead on an earlier turn and then goes cold is NOT attributed to a model change, while a provider whose turns report neither cacheRead nor cacheWrite at all still is. Four distinct branches, no duplicated rows, every assertion naming a consumer-visible outcome. Do NOT assert on prompt/label wording.",
+      "anchor": "packages/coding-agent/test/session-manager/usage-statistics.test.ts:1-70 (fixture pattern to copy)"
+    },
+    {
+      "n": 11,
+      "instruction": "Re-run packages/coding-agent/test/session-manager/usage-statistics.test.ts. It pins the flat totals your step-7 refactor touches; if it drifts, layer one is double counting. Note this file cannot run until the native addon is built -- `bun --cwd=packages/natives run build`. Until then `bun run check:ts` is your only executable signal.",
+      "anchor": "packages/coding-agent/test/session-manager/usage-statistics.test.ts"
+    },
+    {
+      "n": 12,
+      "instruction": "Add a one-line entry under `## [Unreleased]` / `### Added` in packages/coding-agent/CHANGELOG.md, user-facing, no implementation detail: \"`/info` now breaks down token cost by the model that actually served each turn, separates the agent's own summarization into a Tools/summaries row, and reports the dollar cost of prompt-cache misses.\" Per AGENTS.md this is an internal change with no issue link, so plain wording.",
+      "anchor": "packages/coding-agent/CHANGELOG.md [Unreleased]"
+    }
+  ],
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/session/usage-breakdown.ts",
+      "action": "create",
+      "change": "New pure module: buildUsageBreakdown() returns cost-descending UsageBucket rows (per served model + one literal \"Tools/summaries\") plus a priced CacheMissCost { missedTokens, missedCost, idleMs, modelChanged, providerReportsCaching }. Exports NOISE_FLOOR_TOKENS and CACHE_ATTRIBUTION_WINDOW_MS alongside TOOLS_SUMMARIES_BUCKET.",
+      "verified": true,
+      "note": "Does not exist at HEAD ecd516f -- confirmed by ls. This is the plan's proposed file and its path is correct."
+    },
+    {
+      "path": "packages/coding-agent/src/session/session-stats.ts",
+      "action": "modify",
+      "change": "SessionStatsTracker.getSessionStats() gains a usageBreakdown field computed from the same pass that already collects the flat totals and routedModels (lines 114-205). No change to the existing accumulator -- the flat totals must stay byte-identical.",
+      "verified": true,
+      "note": "`getSessionStats(): SessionStats` confirmed at line 114. `addUsage` at 134-151, the three-source walk at 152-172, `activeModelUsageEntries` at 63-76, `taskToolUsage` at 422-426 -- all confirmed by grep."
+    },
+    {
+      "path": "packages/coding-agent/src/session/agent-session-types.ts",
+      "action": "modify",
+      "change": "Add optional `usageBreakdown?: UsageBreakdown` to the SessionStats interface (lines 451-477).",
+      "verified": true,
+      "note": "`export interface SessionStats` confirmed at line 451; the interface ends at 477. Optional so the partial-object fixtures at cli/gallery-fixtures/preview-session.ts:43 and status-line.ts:40 keep compiling."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/command-controller.ts",
+      "action": "modify",
+      "change": "handleSessionCommand() renders an Attribution section after the existing Cost block (ends line 431), one row per bucket plus a Cache misses line; follows the routedModels render at line 380-386 for replaceTabs + sanitizeText.",
+      "verified": true,
+      "note": "`async handleSessionCommand()` confirmed at line 349; the `Cost` block spans 415-431 and ends with the Credits lines; `showSessionInfo(info)` is at line 461."
+    },
+    {
+      "path": "packages/coding-agent/src/slash-commands/helpers/usage-report.ts",
+      "action": "modify",
+      "change": "buildUsageReportText() appends the per-model block in the local-tallies fallback branch, after the existing `Cost: $...` line. Provider-reported branch untouched with a comment explaining why.",
+      "verified": true,
+      "note": "`export async function buildUsageReportText` confirmed at line 167, file is 202 lines. The plan's claim that this is the file's ONLY export is CONFIRMED -- `git grep -n '^export'` returns exactly that one line."
+    },
+    {
+      "path": "packages/coding-agent/test/usage-breakdown.test.ts",
+      "action": "create",
+      "change": "Four contract tests: (1) rows + Tools/summaries sum to the flat total and the compaction lands only in Tools/summaries; (2) upstreamModel alias attributes to the served model; (3) real idle miss prices out, sub-noise-floor miss is exactly 0; (4) sticky model-change discriminates a read-only-cache provider from a no-caching provider.",
+      "verified": true,
+      "note": "Does not exist at HEAD -- confirmed by ls. Test dir has 791 *.test.ts files at this level; this path is correct."
+    },
+    {
+      "path": "packages/coding-agent/test/session-manager/usage-statistics.test.ts",
+      "action": "modify",
+      "change": "No edit required. It is re-run as a regression guard because step 7 touches the aggregation it pins.",
+      "verified": true,
+      "note": "`describe(\"SessionManager usage statistics\"...)` confirmed present; it asserts getUsageStatistics() totals for a model_usage entry and for assistant+task tool results -- exactly the totals W9 must not disturb."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under [Unreleased] > Added describing the per-model cost breakdown, the Tools/summaries row, and the cache-miss cost.",
+      "verified": false,
+      "note": "Not opened during verification -- AGENTS.md's attribution rules for this item (internal, no issue link) are unambiguous, so no ambiguity to resolve by reading."
+    }
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Reference shape: `pi-ref/packages/coding-agent/src/core/usage-totals.ts:37-73`, including `addUsageToTotals` at :63, the `.filter((entry) => entry.cost > 0 || entry.tokens > 0)` at :71, the `.sort((a, b) => b.cost - a.cost)` at :72, and the `UsageCostBreakdownEntry` return type at :30-34.",
+      "verdict": "STALE -- the entire reference is absent from this repo",
+      "correction": "There is no `pi-ref` directory at HEAD ecd516f (`ls -d pi-ref` -> No such file or directory), and `git grep -rn 'getUsageCostBreakdown' packages/` and `'addUsageToTotals'` both return ZERO hits. The reference implementation cannot be read. Build the filter+sort tail from the plan's prose (it is unambiguous: 'lọc về 0, sắp theo cost giảm dần') and take the traversal from the real, in-repo analogue instead: `SessionStatsTracker.getSessionStats()` at packages/coding-agent/src/session/session-stats.ts:114-205 already performs exactly the three-source walk W9 describes. Use that as the shape, not pi-ref.",
+      "evidence": "`ls -d pi-ref` -> No such file or directory; `git grep -rn 'getUsageCostBreakdown' -- packages/` -> no output; `git grep -rn 'addUsageToTotals' -- packages/` -> no output; `grep -n 'getSessionStats(): SessionStats' packages/coding-agent/src/session/session-stats.ts` -> `114:`"
+    },
+    {
+      "claim": "Key helper messages by `${provider}/${responseModel ?? model}`, where the `responseModel` fallback is 'exactly what makes a provider-side alias attribute correctly'.",
+      "verdict": "STALE NAME, correct intent",
+      "correction": "`AssistantMessage` has NO `responseModel` field. `git grep -rn 'responseModel' -- packages/` hits only OTel span attributes in packages/agent/src/telemetry.ts:1566, 1590, 1598, 1605 -- never a message field. The field carrying this meaning on `AssistantMessage` is `upstreamModel` (packages/ai/src/types.ts:1130-1138: 'Concrete model that produced this turn when it is knowable independently of the requested id ... Compared against `model` to notice a gateway serving something other than what was requested'). The fallback must be `msg.upstreamModel ?? msg.model`. The plan's intent survives intact -- the `??` fallback is still what makes the provider-alias case attribute correctly -- only the identifier is wrong. Corollary: `trackMessageCacheState` at session-context.ts:364-373 does NOT apply this fallback; it uses `${msg.provider}/${msg.model}` raw. That is pre-existing behaviour and arguably a small bug, but changing it would alter which turns the UI marks as cache-explained -- out of scope for W9, flag it rather than fix it here.",
+      "evidence": "`awk '/^export interface AssistantMessage/,/^}/' packages/ai/src/types.ts` (line 1102) shows fields `api, provider, model, ... upstreamProvider?, upstreamModel?, usage, stopReason, ...` and no `responseModel`; `git grep -rn 'responseModel' -- packages/` -> 4 hits, all telemetry.ts; `git grep -n 'trackMessageCacheState' packages/coding-agent/src/session/session-context.ts` -> 364, 377, 577"
+    },
+    {
+      "claim": "Bucket 'ALL tool results with usage' AND 'branch_summary/compaction entries with usage' into the literal \"Tools/summaries\" key.",
+      "verdict": "WRONG SHAPES -- the real entry points are different",
+      "correction": "Two of the three named shapes do not exist as described. (a) `ToolResultMessage` (packages/ai/src/types.ts:1178-1198) has NO `usage` field -- the only usage a tool result can carry is nested inside `details`, and only the `task` tool result's details do: `taskToolUsage(details)` at session-stats.ts:422-426 reads `Reflect.get(details, 'usage')` and guards it with `isUsage` (428-438). The real predicate is `message.toolName === \"task\"` (session-stats.ts:155-158), not 'any tool result with usage'. (b) `CompactionEntry` (session-entries.ts:121+) has NO `usage` field -- it carries `summary, shortSummary, firstKeptEntryId, tokensBefore, tokensAfter, method, details, preserveData, fromExtension`. Compaction/branch-summary usage is recorded out-of-band as a separate `ModelUsageEntry` with `type: \"model_usage\"` (session-entries.ts:80-91, carrying `purpose, role, api, provider, model, usage, stopReason`), written by `SessionManager.appendModelUsage()` at session-manager.ts:2820-2839. The third source is therefore `activeModelUsageEntries(branch)` at session-stats.ts:63-76. Net effect on the work: the bucket's membership is right in spirit (agent-initiated calls, not the user's model) but the three selectors must be rewritten. Observed `purpose` values: `\"auto-thinking\"` (model-controls.ts:634-637) and free-form judgment purposes (judgment/index.ts:78-85).",
+      "evidence": "`sed -n '1178,1215p' packages/ai/src/types.ts` -> ToolResultMessage has role/toolCallId/toolName/content/details/isError/attribution?/prunedAt?/providerMetadata?/useless?/timestamp, no usage; `sed -n '121,140p' packages/coding-agent/src/session/session-entries.ts` -> CompactionEntry has no usage; `git grep -n 'type: \"model_usage\"' -- packages/` -> session-entries.ts:82, session-manager.ts:2832, packages/stats/src/types.ts:99, packages/tui/src/overlays/tree-selector.ts:34"
+    },
+    {
+      "claim": "Keep a noise floor (pi uses `NOISE_FLOOR_TOKENS = 1024`) and keep pi's `CACHE_TTL_MS = 5min` as the attribution window.",
+      "verdict": "STALE NAMES -- both constants renamed/absent, one value differs",
+      "correction": "`git grep -rn 'NOISE_FLOOR_TOKENS' -- packages/` returns ZERO hits -- the constant does not exist here. The nearest existing analogue is `MIN_CACHE_FOOTPRINT = 2048` at packages/tui/src/chat/cache-invalidation-marker.ts:12, which serves the same purpose (filter out sub-footprint cache collapses) but is deliberately gated BEHIND a prior warm read (`prev.cacheRead < MIN_CACHE_FOOTPRINT` at :55). `CACHE_TTL_MS` also does not exist; the 5-minute value is `ANTHROPIC_CACHE_TTL_MS = 5 * 60_000` at packages/ai/src/stream.ts:1209. Do NOT import either from where the plan implies -- define W9's own constants in usage-breakdown.ts and comment the provenance. Decision needed (see open_questions): 1024 as the plan specifies, or 2048 to match this repo's existing floor. Recommend 2048 for internal consistency, and note that `detectCacheInvalidation` already encodes the sharper provider-discrimination rule the plan's 'sticky' note is reaching for: it requires `current.cacheWrite > 0` (:61) precisely because implicit-cache providers report cacheWrite 0 (doc comment at :29-44). Read that function before writing layer two -- it is the best existing statement of the semantics and reusing its reasoning avoids a second, subtly different rule.",
+      "evidence": "`git grep -rn 'NOISE_FLOOR_TOKENS' -- packages/` -> no output; `grep -n 'MIN_CACHE_FOOTPRINT' packages/tui/src/chat/cache-invalidation-marker.ts` -> 12, 55; `git grep -rn 'CACHE_TTL_MS' -- packages/` -> 10 hits, none named plain CACHE_TTL_MS; `grep -n 'ANTHROPIC_CACHE_TTL_MS' packages/ai/src/stream.ts` -> 1209 (const), 1249 (use)"
+    },
+    {
+      "claim": "HEAD is 5873776.",
+      "verdict": "STALE",
+      "correction": "Actual HEAD is ecd516f on branch milestone-1, whose only commit is 'feat: initial publish -- oh-my-pi 18.3.3 under ultrabuilders/ultraworkers'. The repo has a single squashed initial commit, so there is no 5873776 to compare against -- do not spend time looking for it, and do not assume any prior milestone work has landed.",
+      "evidence": "`git rev-parse --short HEAD` -> ecd516f; `git branch --show-current` -> milestone-1; `git log --oneline -1` -> ecd516f feat: initial publish"
+    },
+    {
+      "claim": "Consumer is `buildUsageReportText` at usage-report.ts:167, 'verified as the file's ONLY export'.",
+      "verdict": "CONFIRMED",
+      "correction": "No correction. `git grep -n '^export' -- packages/coding-agent/src/slash-commands/helpers/usage-report.ts` returns exactly one line, `167:export async function buildUsageReportText(...)`. The file is 202 lines and adds no new export surface. Recording this as verified so the implementer does not re-check it.",
+      "evidence": "`git grep -n '^export' -- packages/coding-agent/src/slash-commands/helpers/usage-report.ts` -> one hit at 167; `wc -l` -> 202"
+    },
+    {
+      "claim": "Cache-miss input is `cacheMissExplainedAt?: boolean[]` at session-context.ts:117, plus :345, :377, :727.",
+      "verdict": "CONFIRMED -- all four line numbers exact",
+      "correction": "No correction. Verified: `:117` is the field on the transcript interface (doc-commented 'Array parallel to messages, indicating which assistant turns should have their prompt-cache misses suppressed/explained'), `:345` the `const cacheMissExplainedAt: boolean[] = []` declaration, `:377` the `pushMessage` push, `:727` the return-site assignment. Two facts the plan omits and the implementer needs: the field is only populated when `options?.transcript` is set (`:727` guards on it, and `pushMessage` early-returns before pushing otherwise at :375-376), so it is `undefined` outside transcript mode; and `trackMessageCacheState` has a second call site at `:577` for hidden pre-compaction assistants, so the array is written on paths that do not go through `pushMessage`. Consumers must treat the array as possibly-absent and index-parallel to `transcript.messages`, exactly as ui-helpers.ts:509 does.",
+      "evidence": "`git grep -n 'cacheMissExplainedAt' -- packages/coding-agent/src/session/session-context.ts` -> 117, 345, 377, 727; `git grep -rn 'cacheMissExplainedAt' -- packages/` also shows the three existing consumer tests (compaction.test.ts:1603, session-manager/build-context.test.ts:716/718/840/895) and the one production consumer at modes/utils/ui-helpers.ts:509"
+    },
+    {
+      "claim": "The new module is `packages/coding-agent/src/session/usage-breakdown.ts` and the new test is `packages/coding-agent/test/usage-breakdown.test.ts`.",
+      "verdict": "CONFIRMED -- both absent, paths correct",
+      "correction": "No correction. Neither file exists at HEAD, and `packages/coding-agent/src/session/` has no `index.ts` barrel, so a plain module file with direct relative imports is the right shape (matches session-stats.ts, which agent-session.ts:408 imports as `./session-stats`). The test path is consistent with the 791 flat *.test.ts files in packages/coding-agent/test/.",
+      "evidence": "`ls packages/coding-agent/src/session/usage-breakdown.ts` -> No such file; `ls packages/coding-agent/src/session/index.ts` -> No such file; `ls packages/coding-agent/test/*.test.ts | wc -l` -> 791; `git grep -rn 'session-stats' -- packages/coding-agent` -> agent-session.ts:408"
+    }
+  ]
+}

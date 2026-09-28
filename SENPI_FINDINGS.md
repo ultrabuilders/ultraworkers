@@ -34,6 +34,32 @@ Nguyên tắc rút ra, đáng ghi hơn mọi con số: **mỗi lần kiểm lạ
 không tăng.** Tài liệu port nào đòi hỏi nhiều công hơn sau khi kiểm tra lại là tài liệu đang
 đo sai.
 
+## Ba câu hỏi mở mà tôi đã tự chốt lại
+
+Tài liệu bên dưới để một số câu ở trạng thái *chưa đủ dữ liệu*. Tôi đã chạy lệnh cho ba câu
+quan trọng nhất. Phép đo của tôi, không phải của agent:
+
+| câu | các nguồn cho | tôi đo | lệnh |
+|---|---|---|---|
+| **Số event `on(...)` của omp** | 37 · 41 · 41 · **46** | **41** | xem bên dưới |
+| `packages/agent/src/harness/session/jsonl/` giống nhau giữa `pi` và `senpi`? | chưa ai đo | **8/8 file, 1.894 dòng** | `cmp` từng file |
+| `packages/durable/` có ở senpi không? | 0 | **0** | `git ls-files 'packages/durable/*' \| wc -l` |
+
+**Về số event** — đây là câu `M5-SENPI.md` §7.8 yêu cầu một lệnh duy nhất để chốt, và tôi đã
+chạy. Ba phương pháp, cùng một kết luận:
+
+```bash
+F=packages/coding-agent/src/extensibility/extensions/types.ts
+grep -oE 'on\(event: "[a-z_.]+"' $F | grep -oE '"[a-z_.]+"' | tr -d '"' | sort -u | wc -l   # 41
+tr '\n' ' ' < $F | grep -oE 'on\([a-zA-Z_]*: "[a-z_.]+"' | grep -oE '"[a-z_.]+"' | tr -d '"' | sort -u | wc -l  # 41
+# hợp với phía phát sự kiện:                                                                                        # 41
+```
+
+Hai danh sách **giống hệt nhau** (`comm` ra rỗng cả hai chiều). **46 thì tôi không tái lập
+được** bằng bất kỳ cách nào. Mang **41**; để **46** ở trạng thái chưa có bằng chứng.
+Hệ quả: bảng *23 chung · 21 chỉ-senpi · 18 chỉ-omp* của Phần 4 §1b **được giữ**, vì nó tính
+trên mẫu số 41.
+
 ## Mục lục
 
 - [Tổng hợp](#tổng-hợp) — Kết luận và thứ tự làm. Đọc phần này trước.
@@ -416,20 +442,574 @@ Chỉ khác ở **tên** event, không ở số lượng:
 
 Đáng chú ý: **omp đã mở sẵn `goal_updated` / `todo_reminder` / `ttsr_triggered` / `mcp_notification` làm event công khai** — tức goal, todo, tts, MCP của omp đã *chủ động* mở hook cho extension. Hai bên đang hội tụ.
 
-> ### ⚠️ Phần tổng hợp này **bị cắt ở §3** — và đó là giới hạn thật, không phải lựa chọn
+---
+
+## 4. Danh sách port theo giá trị / công
+
+Xếp theo `deep-miss.md` §1 (bài đo kỹ nhất về phía "cái gì thật sự thiếu"), có đối chiếu `deep-risk.md` §8.2.
+Mỗi mục dưới đây **đủ để làm mà không cần đọc lại senpi**.
+
+| # | hạng mục | senpi | omp hiện tại | mức | công |
+|---:|---|---|---|---|---|
+| 1 | **Warm prompt cache + TTL resolver** | 483 TS + 476 dòng `pi` | thiếu **2 hàm** | **làm ngay** | tiết kiệm tiền thật mỗi lượt |
+| 2 | **4 seam API extension** (`registerEntryRenderer` + `model_select` + 3 `setSession*`) | 0 (là hành lang) | **0 hit cả 4** | **làm ngay** | mở khoá 16 builtin |
+| 3 | `tool-pair-guard` | 269 | 0 | làm nếu có seam | vá lỗi wire 500 |
+| 4 | `look-at` (model thị giác riêng) | 922 | 0 | làm nếu có seam | ảnh không phá context |
+| 5 | `config-reload` | 2.317 | 0 | **không đáng lúc này** | (đã có ở dạng khác) |
+
+> **Sau khi đo lại: từ 40 builtin, còn đúng 4 hạng mục "thiếu hẳn".** Không phải 6 như `deep-risk.md` §8.2 liệt kê — vì `btw` rơi (đã có) và `loop-guard` / `history-search` / `bash-timeout` rơi (đã có ở dạng khác). Xem §7.1.
+
+### 4.1 Hạng 1 — Warm prompt cache + TTL resolver (làm ngay)
+
+**Đích đến (omp):** `packages/ai/src/utils/prompt-cache-ttl.ts` — file **476 dòng**, `resolvePromptCacheTtlSeconds` ở **dòng 473**.
+
+**Thiếu đúng 5 hàm**, đo bằng `git grep -rn` trên `packages`:
+
+| hàm của senpi | omp | nơi senpi định nghĩa |
+|---|---|---|
+| `warmPromptCache` | **0 hit** | `packages/ai/src/utils/prompt-cache-ttl.ts` |
+| `resolvePromptCacheTtlSeconds` | **0 hit** | cùng file, dòng **473** |
+| `getPromptCacheSafeWaitSeconds` | **0 hit** | `ExtensionContext` |
+| `getPromptCachePrefixRequest` | **0 hit** | `ExtensionContext` |
+| `prepareProviderRequest` | **0 hit** | `ExtensionContext` |
+| `registerEntryRenderer` | **0 hit** | ⚠️ thiếu cả API |
+| `isIdle()` / `hasPendingMessages()` | **50 / 38 hit** | ✅ có — `types.ts:478` / `types.ts:482` |
+| `appendEntry` / `getAllTools` / `getActiveTools` | 56 / 35 / 44 hit | ✅ có |
+
+**Phải sửa khi chép (không chép nguyên):** 9 `any` — nhiều nhất cây builtin; `4/4 = 100%` entry tự thú cắm core; `console.*` phải đổi sang `logger` (`@oh-my-pi/pi-utils`); đường dẫn/tab trong text phải qua `replaceTabs`/`truncateToWidth`/`shortenPath`.
+
+**Cơ chế:** `index.ts:104-140` của senpi — warm lúc start, chờ, gia hạn TTL. Không cần đọc lại; điểm móc trong omp là `registerEntryRenderer` + `isIdle()`.
+
+### 4.2 Hạng 2 — 4 seam API extension (~20 dòng, làm ngay)
+
+Rẻ nhất trong toàn bộ danh sách. Chi tiết ở §5. Không cần đọc lại senpi để làm.
+
+### 4.3 Hạng 3 — `tool-pair-guard` (làm nếu có seam)
+
+- **Nguồn:** `builtin/tool-pair-guard`, 269 dòng, 3 file, **không đăng ký gì** (được gọi nội bộ).
+- **Seam trong omp: ĐÃ CÓ, không thiếu.** (Xem mâu thuẫn §7.10 — `deep-risk.md` §5.3 nói nó "vá ở tầng `packages/ai`" là **sai**; `verify-inherit.md` #11 bác bỏ được.)
+- **Cỡ công:** thấp. 0 entry cắm core.
+- **Vì sao "làm nếu có seam" chứ không phải "làm ngay":** không có entry cắm core ⇒ cũng **không có bằng chứng nào** rằng nó không chạm lõi. 13/40 builtin không có `changes.md` (xem §7.12) và `tool-pair-guard` **nằm trong 13 đó** ⇒ *không có phép đo nào tồn tại* cho nó.
+
+### 4.4 Hạng 4 — `look-at` (làm nếu có seam)
+
+- **Nguồn:** 922 dòng, 9 file, 1 cmd (`lookat`) + 2 hook.
+- **Ý tưởng:** ảnh đi qua **model thị giác riêng** qua `model-selector.ts`, không nhét base64 vào lượt chính.
+- **Giảm công:** `model-resolver.ts` của omp **đã có `splitThinkingSuffix`** ⇒ bớt ~100 dòng.
+- **Cỡ công:** trung bình.
+- **Vi phạm nặng nhất trong danh sách, sau `prompt-preset`:** 1 `ReturnType<`.
+- **Lý do "làm nếu có seam":** bị `model_select` chặn.
+- ⚠️ **Cùng cảnh báo như 4.3:** `look-at` **không có `changes.md`** ⇒ chưa từng được đo về mức cắm core, dù `deep-risk.md` §6.1 xếp nó vào hàng "vì sao an toàn".
+
+### 4.5 Hạng 5 — `config-reload`: không đáng lúc này
+
+2.317 dòng, `git grep -c config-reload` trong omp → **0**. Nhưng:
+- `deep-risk.md` §1.5 đo **91% cắm core** — tác giả senpi tự nói 11/12 lần "làm bằng extension không được".
+- `deep-inherit.md` §6 tự thú: đọc `#configWatchTargets()` (`settings.ts:993-1023`) thấy nó phủ config/settings **nhưng không thấy phần extension** — có thể extension reload nằm ở chỗ khác. **Chưa chắc chặn.**
+- Kết luận: để cuối, không phải đầu.
+
+### 4.6 Hai package "mới" của senpi — đều KHÔNG chép
+
+| package | kết luận | lấy gì (ý tưởng, không lấy code) |
+|---|---|---|
+| `packages/senpi-codemode` | **KHÔNG chép — omp đã có, và lớn hơn** | 4 ý: kernel Ruby/Julia, prompt đa-dialect, renderer code-preview, skill `bun-1-4`. omp có `packages/coding-agent/src/eval/` **18.480 dòng / 59 file** |
+| `packages/pty` | **KHÔNG chép — omp đã có** | 2 ý: queue thao tác màn hình, pipe-fallback. omp có `crates/pi-natives/src/pty.rs` (**1.127 dòng**) + `vterm` (**1.067 dòng**) |
+| `crates/senpi-grep` + `crates/senpi-pty` | **KHÔNG lấy code** | đúng 1 ý: `grep()` native nhận `AbortSignal` |
+| `packages/session-backends` | **KHÔNG ĐÁNG LẤY — dead code ở cả senpi lẫn `pi`**, và `src/` giống hệt từng byte (`diff -r` → 0 dòng khác, md5 khớp 33/34 file) | không có gì |
+
+> **Tiền đề "hai package mà `pi` không có" chỉ đúng một nửa: `pi` CÓ `session-backends`.**
+> Và mối nguy nhất: **omp đã có sẵn cả hai thứ senpi "mới"**. `cp -r` từ senpi sẽ **ghi đè một hệ thống lớn hơn bằng một bản nhỏ hơn và cũ hơn**.
+
+---
+
+## 5. Seam phải mở trước — và cái nào chạy được ngay không cần seam
+
+### 5.1 Nền: omp ĐÃ CÓ hệ thống extension thật
+
+`packages/coding-agent/src/extensibility/extensions/types.ts` — **46 event** (`deep-wiring.md` §0, đo lại độc lập), hạ tầng **5.337 dòng / 11 file**. **M5 không phải dựng hạ tầng.**
+
+*(Ghi chú mâu thuẫn: `builtins.md` §1.1 đếm **41** event, `deep-wiring.md` §0 đếm **46**, `deep-inherit.md` §1b nói "44 của senpi vs 41 của omp", `changes-md.md` §5a nói "omp đã có 37 event". Bốn con số khác nhau cho cùng một file — xem §7.8.)*
+
+### 5.2 Phân rã 40 builtin theo seam
+
+Đo bằng `awk` join (sau khi sửa lỗi zsh ở `deep-wiring.md` §2.1):
+
+| nhóm | số |
+|---|---:|
+| Cần ≥1 event omp chưa có | **24** (15 vì `model_select`, 6 vì `agent_settled`, 4 vì `session_abort`, còn lại rải) |
+| Có event, nhưng **không event nào thiếu** | 11 |
+| **0 `pi.on()` nào cả** | 5 (`account`, `help`, `history-search`, `model-fallback`, `rule-activation`) |
+| Trừ: cần method omp thiếu | −3 (`mcp`, `tool-search`, `rule-activation` → `registerEntryRenderer`/`registerLazyToolActivator`) |
+| **= CHẠY ĐƯỢC NGAY** | **13** |
+
+### 5.3 Chạy được NGAY, không cần seam nào (13 builtin)
+
+`account` · `anthropic-bash` · `bash-timeout` · `help` · `history-search` · `hooks` · `imagegen` · `model-fallback` · `nested-agents-md` · `permission-system` · `rules` · `tool-pair-guard` · `webfetch`
+
+> **"Không cần seam" ≠ "chép được nguyên xi".** Trong 13 cái đó:
+> - `permission-system` (1.638 dòng) — **hai kiến trúc approval không tương thích**, phải viết lại theo `approval.ts` của omp. Seam-free nhưng **không port được**.
+> - `webfetch` (1.062 dòng) — 70% tự thú cắm core.
+> - `rules` (2.842 dòng) — 50% cắm core.
+> - `anthropic-bash`, `imagegen` — hợp đồng provider.
 >
-> Agent tổng hợp viết xong §1–§3 rồi hết context (đây là lần thứ ba trong nghiên cứu
-> này, với cùng một nguyên nhân: đọc quá nhiều rồi lời gọi schema cuối bị từ chối).
-> Nó hứa viết tiếp §4 danh sách port, §5 seam, §6 cái không nên lấy, §7 mâu thuẫn —
-> **những phần đó không có ở đây.**
+> ⇒ **13 là trần trên của "chạy được"**. Tính cả việc phải viết lại kiến trúc, con số thật dùng được ngay là **khoảng 6–8**; và trong đó `btw` + `look-at` bị `model_select` chặn, nên **chỉ `loop-guard`, `bash-timeout`, `history-search` là thật sự không cần cả seam lẫn viết lại kiến trúc.**
+
+### 5.4 Thứ tự mở seam
+
+Ràng buộc đo được: `model_select` phủ **15/24** builtin bị chặn; `agent_settled` phủ 6; `session_abort` phủ 4. Ba cái này **không chặn nhau**.
+
+```
+Bước 0  KHÔNG LÀM GÌ  ── dùng 13 builtin seam-free để dựng đường chạy thật.
+                     Đây là bước DUY NHẤT không tốn công.
+   │
+   ├─► Bước 1  S2 agent_settled                 (~10 d, 2 file)  ★ RẺ NHẤT
+   │           gỡ 6 (goal, config-reload, herdr, loop, loop-guard, ttsr).
+   │           Điểm móc: session/agent-session-events.ts:16 — bám cờ isTerminal,
+   │           tầng session ⇒ phủ hết mode, không sửa từng mode.
+   │           ⚠ DỄ SAI NGỮ NGHĨA: phát cả non-terminal là hỏng loop/ttsr/loop-guard
+   │             mà KHÔNG throw.
+   │
+   ├─► Bước 2  S7 registerEntryRenderer          (~30 d, 2 file)
+   │           gỡ rule-activation; tiền đề cho mọi renderer sau này.
+   │           Không chặn gì, không phụ thuộc bước nào.
+   │
+   ├─► Bước 3  S1 model_select                  (~45 d, 3 file)  ★ NÚT THẮT SỐ LƯỢNG
+   │           gỡ 15 builtin. Điểm móc: session/model-controls.ts:218.
+   │           ⚠ KHÔNG chặn: cache-keepalive, terminal, compaction, cursor-cli-oauth,
+   │             anthropic-subscription, config-reload, herdr, mcp, gpt-apply-patch,
+   │             prompt-preset.
+   │
+   ├─► Bước 4  S3 session_abort                 (~40 d, 3 file)
+   │           gỡ 4 (goal, loop, todotools, ttsr).
+   │           ⚠ điểm móc trong omp CHƯA ĐO — đo trước khi viết.
+   │
+   └─► Bước 5  S9 3 method setSession*          (~60 d, 3 file)
+               gỡ service-tier.ts + recommended-models + reasoning.
+               ⚠ phải giữ ranh giới session-scoped vs persisted.
+               KHÔNG mang interface cục bộ của service-tier.ts:109 sang.
+
+   ✗ KHÔNG MỞ:  S4, S5, S8, S10   (gỡ 0 builtin có giá trị)
+   ⏸ ĐỂ CUỐI:    S6 (5 event × 1 chỗ, 200 dòng cho 5 builtin)
+```
+
+**Câu hỏi "bước nào chặn bước nào" — trả lời thẳng:** `S2` và `S7` **không chặn gì cả** (độc lập, làm song song hoặc trước `S1` được). `S1` chặn 15 builtin nhưng **không chặn S2/S7/S9**. `S9` đứng cuối vì không gỡ builtin nào sớm hơn `S1` mà lại phải giữ hợp đồng session-scoped/persisted. **Thứ tự ở đây theo giá trị, không theo phụ thuộc kỹ thuật.**
+
+### 5.5 10/15 thứ bị xếp thổi phồng — đừng mở
+
+| thứ | lý do |
+|---|---|
+| `executeTool` | **method bịa ra** trong `ext-api.md`/`deep-risk.md`. 603 file builtin, **0 file dùng**. Là method khai trong `types.ts:2122` mà 0 builtin dùng |
+| `registerFilesystemPolicy` | 0 file builtin dùng |
+| `registerMarkdownTransformer` | 0 file |
+| `registerMcpServer` | 0 file |
+| `registerReadClassifier` | 0 file |
+| `registerRemovedToolHint` | 0 file |
+| 4 method `ctx.ui` | cả 4 → 0 file |
+| `session_parked` / `session_resumed` / `session_extensions_removed` (S4, S5) | 0 builtin có giá trị |
+| `registerLazyToolActivator` (S8) | chỉ 3 file / 2 thư mục |
+
+> **Không cái nào trong 10 thứ trên gỡ được builtin nào.** Mở chúng là tự làm rối `types.ts` mà không nhận về gì.
+
+**Chỉ 2/15 thứ đáng mở theo số người dùng:** `registerEntryRenderer` (5 file / 5 thư mục) và `registerLazyToolActivator` (3 file / 2 thư mục).
+
+### 5.6 Cơ chế thật sự đáng tiền: `setActiveTools` / `setModel`, không phải `model_select`
+
+`model_select` gỡ **nhiều** builtin nhất, nhưng `agent_settled` **rẻ hơn 4×** và là bước 1. Còn **cái thật sự đáng tiền** là `setActiveTools` / `setModel` (**20 + 3 file**) — vì đó mới là chỗ builtin **ra lệnh**, chứ không phải chờ tin.
+
+### 5.7 Quy tắc bất di bất dịch
+
+> **Chỉ BỔ SUNG event còn thiếu vào `types.ts`/`runner.ts` của omp. KHÔNG thay thế.**
+> 20 hook chỉ-omp (`auto_retry_*`, `retry_fallback_*`, `tool_approval_*`, `before_subagent_spawn`, `goal_updated`, `todo_reminder`, `ttsr_triggered`, `credential_disabled`, `mcp_notification`, `session_switch`/`_before_branch`/`session_branch`/`session_stop`/`session.compacting`) là tài sản, mất thì mất.
+
+### 5.8 Đường vào rẻ nhất để thử TRƯỚC khi động vào omp
+
+`directory-resolution.ts:69` đọc `pkg.omp ?? pkg.pi` — extension senpi khai `"pi": { "extensions": [...] }` được omp nạp nguyên bản.
+
+**Ném thử 3 builtin seam-free vào đó trước khi viết dòng seam nào.** Lỗi biên dịch sẽ chỉ ra chính xác cái thiếu, và không tốn công sửa nếu ta sai.
+
+---
+
+## 6. Cái KHÔNG nên lấy — và vì sao
+
+Phần này quan trọng không kém phần "nên lấy".
+
+### 6.1 Không lấy vì omp đã mạnh hơn ở tầng core
+
+| thứ | dòng senpi | bằng chứng omp | vì sao không lấy |
+|---|---:|---|---|
+| **`mcp`** | 10.244 (9.327 theo `deep-risk.md`) | `src/mcp/` **22 file** + `capability/mcp.ts` + 4 tài liệu, 129 file tracked; có cả OAuth discovery lẫn authoring guide | Port = chạy **hai hệ MCP song song**, mỗi cái một bộ tool. omp đã ở bậc cao hơn. Ngoài ra 17 `ReturnType<` + 4 inline import |
+| **`compaction`** | 10.788 (8.779 theo `deep-risk.md`) | `packages/snapcompact` + `packages/agent/src/compaction/` (**17 file**) + `snapcompact-inline.ts` + `hashline-compact.md` | Sửa `transform-messages.ts` + `agent-loop.ts`; chọn prompt theo **provider** (sai nguyên tắc class-vs-provider của `AGENTS.md`). **Ghép hai compaction sẽ hỏng cả hai** |
+| **`webfetch`** | 1.230 | `src/tools/fetch.ts` **53 KB** | omp mạnh hơn nhiều |
+| **`ask-user`** | 1.284 | `src/tools/ask.ts` **41 KB** (`multi`, `recommended`, timeout, "Other") | omp mạnh hơn |
+| **`todotools`** | 3.263 | `src/tools/todo.ts` 27 KB + `todo-command-controller.ts` + event `todo_reminder` | Và senpi **đã port cái này từ chính omp** (`NOTICE.md` khoản 4) — lấy ngược lại là vô nghĩa |
+| **`/btw`** | 528 (389 TS) | `btw-controller.ts` **708** + `btw-history.ts` 216 + `btw-panel.ts` 172 + `btw-history-panel.ts` 598 = **1.694 dòng**, prompt ở `btw-user.md` | **omp lớn gấp 4,3×** và prompt nằm đúng chuẩn `AGENTS.md` (`.md`), trong khi senpi để prompt trong `.ts`. Ở đây **senpi mới là bản cần viết lại** |
+
+### 6.2 Không lấy vì cắm core quá sâu — mà phần lõi đó viết cho kiến trúc của senpi
+
+| thứ | dòng | cắm core | lý do |
+|---|---:|---:|---|
+| **`cursor-cli-oauth`** | 5.186 | **92%** (12/13) | 35 `private` (đúng số nhưng **không phải nhiều nhất cây** — `terminal` 29, `gpt-apply-patch` 19 ngay dưới) + trùng `providers/cursor.ts` của omp (5.541 dòng). **Vi phạm nhiều luật nhất** |
+| **`anthropic-subscription`** | 7.281 | **76%** (52/69) | SDK Anthropic **không có trong `bun.lock` của omp**; tranh OAuth callback với `crates/pi-natives/src/oauth_callback/` (12 file, 184K). Chạm `providers/cursor.ts`, `utils/retry.ts`, `src/config.ts` |
+| **`config-reload`** | 2.317 | **91%** (11/12) | Tác giả tự nói 11 lần "làm bằng extension không được" |
+| **`herdr`** | 418 | **100%** (3/3) | Phụ thuộc hạ tầng pane ngoài mà omp không có |
+| **`terminal`** (nguyên si) | 6.962 | 57% (18/47) | 29 `private` + 15 `ReturnType<` + 3 inline import, **và** đụng `packages/pty/src/registry-session.ts`. omp đã có PTY (`bash.ts` có `"pty?"`, `bash-pty-selection.ts`, crate `pi-shell` `shell.rs` **228 KB**). Chép thêm = hai đường thực thi shell |
+| **`ttsr`** | 3.783 | 9 file lõi, `inside=1 outside=6` | Chạm `session/ttsr-coordinator.ts`, `export/ttsr.ts`, `prompts/system/ttsr-interrupt.md`, `packages/ai/src/utils/*`. omp đã có `crates/pi-voice` với `live.rs` 21 KB — audio đã ở tầng Rust, khác hẳn cách senpi lo |
+| **`gpt-apply-patch`** | 2.051 | — | Gắn với wire mode OpenAI/Codex; `setModel` 4 lần; omp có `ast-edit.ts` |
+
+> **Nguyên tắc:** lấy một builtin "lõi nặng" mà **không** lấy kèm phần lõi nó đào = bạn có một cái vỏ không chạy được. Chép cả phần lõi = bạn đang ghi đè kiến trúc của omp.
+
+### 6.3 Không lấy vì phải VIẾT LẠI, không chép được
+
+| thứ | dòng | vì sao phải viết lại |
+|---|---:|---|
+| **`prompt-preset`** | 2.941 | **Vi phạm nặng nhất trong toàn bộ cây.** (a) `AGENTS.md` **cấm hard-code model id trong TS** — đây là bảng tra model-id thuần. (b) `AGENTS.md` **cấm viết prompt bằng TS** — 323/603 file vi phạm, `presets.ts` 454 dòng. (c) 38 file `.ts` preset phải ra `.md` + 1 KDL axis. (d) **Pháp lý:** `changes.md` của nó tự thú **10/58 entry** port prompt từ OMO, mà `NOTICE.md` của senpi **không khai báo** |
+| **`permission-system`** | 1.638 | **Hai kiến trúc approval không tương thích** — viết lại theo `approval.ts` của omp |
+| **`tool-pair-guard`** | 269 | Vá ở tầng mà omp không có ⇒ viết mới |
+| **`terminal`** (phần monitor) | — | Phần đáng lấy là **consumer** (monitor-registry 837 dòng, restore-session, orphan-reaper) — viết lại trên nền `pi-shell` của omp, **không chép** |
+| **4 builtin "provider-specific"** | 3.189 | `anthropic-bash`, `anthropic-web-search`, `openai-web-search`, `openai-image-gen` — nhỏ nhưng đều là provider contract. Chỉ nên làm khi KDL đã có axis |
+
+### 6.4 Không lấy vì lỗ hổng pháp lý chưa đóng
+
+- **`prompt-preset`**: không lấy **nội dung prompt** từ senpi (xem 6.3).
+- **`compaction/prompts.ts:31`** chứa chuỗi `[SYSTEM DIRECTIVE: OH-MY-OPENCODE - …]`. **Không mang sang.**
+- **License của OMO: chưa đủ dữ liệu.** `lineage.md` §3.5 nói thẳng đây là khoảng trống thật, `verify-wiring.md` §4 đồng ý. Đây không phải kết luận pháp lý — nhưng đủ để không lấy.
+- **`senpi-codemode` / `pty` / `session-backends`**: xem §4.6.
+
+### 6.5 Không lấy vì là công việc của repo khác, không phải M5
+
+- **165 entry** nhóm (b) "sửa lỗi / đồng bộ upstream" — cơ chế rebase. omp không rebase từ pi-mono (đã nuốt pi qua `legacy-pi-*-shim.ts`) ⇒ **loại bỏ ngay**.
+- **100 entry** nhóm (c) "rebrand / vendoring / dependency" — **phải làm ngược lại hoặc bỏ**.
+- **109 entry** hạ tầng repo (`.github/` 21, `.husky/` 4, `scripts/` 70, `evals/` 7, skill Bun vendor 7) — không liên quan sản phẩm.
+- **62 file `changes.md`** — cái mất nếu bỏ là mất cơ chế *"Why an extension could not handle it"* (mẫu tài liệu tốt) và mất lịch sử *vì sao* một quyết định fork tồn tại. **Khuyến nghị: giữ `senpi-ref` trên đĩa, không đưa vào scope M5.**
+
+### 6.6 Điều tuyệt đối không lấy: session layer
+
+> **`omp` phải giữ nguyên thiết kế tự lành JSONL của mình. Chép nguyên xi session layer của `pi` (hay của senpi) là LÀM CHẬT HƠN.**
+
+- omp: `parseJsonlLenient` (`packages/utils/src/stream.ts:575`) → `onMalformedRecord` → `malformedRecords` → `#rewriteRequired` → ghi lại thân file ở lần persist sau.
+- `pi`: `JsonlCorruptionError` (`durable/src/storage/jsonl/storage.ts:80`, ném ở dòng **119**) — `catch` chỉ bọc `JSON.parse` rồi ném lại, **không có cơ chế phục hồi nào**.
+- `senpi`: **không có gì cả** — `git grep` cả 3 mẫu đều rỗng; tầng storage thật (`agent/harness/session/jsonl`, **8/8 byte giống `pi`**) ném `Error` trần.
+
+**Rủi ro JSONL CÓ phát sinh khi port builtin** (đây là điểm dễ sai nhất, vì nó trông vô hại):
+
+| builtin | số file chạm session/JSONL |
+|---|---:|
+| `history-search` | 2 |
+| `btw` | 1 |
+| `tool-search` | 1 |
+| `look-at` | 1 |
+| `rules` · `video-in` · `webfetch` · `loop-guard` · `bash-timeout` | 0 |
+
+Không builtin nào **ghi** JSONL, nhưng nhiều cái **đọc và phục hồi session** (`ask-user/resume.ts`, `btw/index.ts`, `compaction/resume-slice.ts`, `anthropic-subscription/session-binding.ts`…). **Khi port, phải đi qua `parseJsonlLenient` của omp — không dùng `JSON.parse` trực tiếp**, nếu không sẽ biến lỗi thành crash.
+
+### 6.7 Không lấy: 7 package M1B (xem lại §2)
+
+Nguồn M1B = **`pi`**, toàn bộ. Không package nào trong 7 mà senpi đóng góp code mới đáng kể. Đặc biệt:
+- **`chord`**: senpi là **bản lùi** — mất 23 file, mất hệ delta 3.635 → 1.267 dòng, mất `diffRevisions`/`Draft`/`applyImmutableBatches`, mất API `ReplicatedStateSource`.
+- **`durable`**: senpi có **0 file**; bản của `pi` là **code chết** không package nào import.
+
+### 6.8 Cái KHÔNG nên lấy vì nó là câu hỏi kiến trúc, không phải M5
+
+**"Ta có nên chuyển `src/tools/` của omp sang coi là builtin extension không"** — đây là giả thuyết trung tâm của người đọc ("senpi giống tôi đó"), nhưng nó là **quyết định kiến trúc thuộc M1B/M2**, không phải việc M5 làm. Nếu không có nó, M5 chỉ là port từng cái rời rạc.
+
+---
+
+## 7. Mâu thuẫn chưa giải quyết
+
+Các mục dưới đây là chỗ **hai nguồn trong `.lavish-wip/senpi-md/` cho hai số khác nhau**. Tôi in cả hai và **không chọn bên nào trong im lặng** — mọi mục đều kèm lệnh để người đọc tự chốt.
+
+### 7.1 `/btw` — "omp không có" vs "omp có và lớn hơn senpi 4,3×"
+
+| nguồn | phát quyết | bằng chứng |
+|---|---|---|
+| `builtins.md` §4.2 + §5.3 | **(a) omp không có** → xếp hạng 3 "đáng lấy" | `git grep -E '\bbtw\b' -- packages/...` → 0 hit |
+| `changes-md.md` §5d | omp **0 hit** → "ứng viên port số 1" | cùng lệnh trên |
+| **`deep-miss.md` §0.2** | **SAI. omp đã có, 1.694 dòng vs senpi 389** | `git grep -w 'btw' -- packages/coding-agent/src` → **52 hit** |
+
+**Nguyên nhân đã tìm ra, không phải bất đồng ý:** `\b` **không hoạt động trong `git grep -E` trên macOS** — bị hiểu thành backspace.
+
+```bash
+git grep -w 'btw' -- packages/coding-agent/src | wc -l        # 52
+git grep -E '\bbtw\b' -- packages/coding-agent/src | wc -l    # 0
+```
+
+Cùng một từ khóa, hai cách viết, chênh lệch **52 về 0**. Kết quả 0 là **phép đo hỏng**, không phải phát hiện.
+
+**Trạng thái:** `deep-miss.md` là nguồn mới hơn và có lệnh chứng minh ⇒ tôi nghiêng về nó. Nhưng **hai file cũ vẫn in "0 hit"** trong bảng §4.2 của `builtins.md` mà người đọc có thể tra. Cả ba file nên được đánh dấu.
+
+**Bài học đã thành quy tắc (nghiêng về `deep-miss.md`):**
+
+| tìm symbol trong omp | dùng | không dùng |
+|---|---|---|
+| tên hàm/biến | `git grep -w '<tên>' -- <path>` | `git grep -E '\b<tên>\b'` |
+| tên có dấu `.` | `git grep -w -F 'pi.rpc'` | regex |
+| đường dẫn | `git ls-files \| grep -i '<mẫu>'` | `git ls-files '<pathspec>'` (tương đối với cwd) |
+
+Cả hai bẫy đều **sinh ra kết quả rỗng**, và kết quả rỗng rất dễ đọc thành "omp không có".
+
+### 7.2 `cache-keepalive` — ba nguồn, ba kết luận
+
+| nguồn | phát quyết |
+|---|---|
+| `builtins.md` §5.1 | "omp có **zero** file `prompt-cache*`" → xếp **#1 đáng lấy, giá trị cao nhất/dòng** |
+| `deep-inherit.md` §3.2 | bài trước nói "omp có `cache_control`, không cần port" — **chỉ đúng một nửa** |
+| **`deep-miss.md` §0.3** | `builtins.md` **sai** vì lại dùng pathspec sai. `git grep -rln 'cache_control' -- packages/ai/src` → **9 file**; `type CacheRetention` ở `packages/ai/src/types.ts:124`; `prompt-cache-mode` **đã là một axis KDL** ở `packages/catalog/src/compat/axes.ts:218` |
+| `deep-risk.md` §6.1 | đồng ý về **giá trị**, **không đồng ý về rủi ro**: `4/4 = 100% cắm core` (cao nhất bảng) + **9 `any`** (nhiều nhất cây builtin) |
+
+⇒ **Không mâu thuẫn thực sự sau khi sửa pathspec:** `cache-keepalive` không thiếu hạ tầng cache, chỉ thiếu **2 hàm ở `packages/ai` + 1 API `registerEntryRenderer`** (§4.1). Nhưng `builtins.md` vẫn in "zero file" trong bảng §4.2 — **đó là khẳng định âm tính gắn lệnh không hỗ trợ nó**, loại lỗi nặng nhất.
+
+### 7.3 `tool_search` — (b) "omp có" vs "omp KHÔNG có"
+
+| nguồn | phát quyết |
+|---|---|
+| `builtins.md` §4.2 | **(b)** — `git grep -c tool_search` → 8 file |
+| `changes-md.md` §5b | omp có `tool_search` **ở tầng wire** (17 file `packages/ai`); thiếu bề mặt đăng ký qua extension: `registerLazyToolActivator` → 0 hit |
+| **`deep-inherit.md` §3.1** | "bài trước gọi là (b) omp có, nhưng **omp KHÔNG có tool này**" |
+
+**Cả ba nói về ba thứ khác nhau:** (1) tool ở tầng wire, (2) bề mặt đăng ký extension, (3) builtin `tool-search` của senpi. Chưa nguồn nào đo trực tiếp xem `tool_search` có xuất hiện trong `BUILTIN_TOOL_NAMES` của omp hay không. **Chưa đủ dữ liệu.**
+
+### 7.4 `herdr` — "omp không có" là sai một nửa
+
+`builtins.md` §4.2 phán **(a)**, dựa trên `git grep herdr` → 0. `deep-inherit.md` §3.5 nói đây là **sai một nửa**. Cả hai đều ghi rõ mình chỉ grep tên. **Chưa đủ dữ liệu** — cần mở `deep-inherit.md` §3.5 để xem bằng chứng bên nào.
+
+### 7.5 OMO — 41 file, không phải "không ra gì"
+
+| nguồn | phát quyết | lệnh |
+|---|---|---|
+| `lineage.md` §3.5 | **"không một dòng code OMO nào nằm trong senpi"** | `git -C $S ls-files \| grep -iE 'oh-my-openagent\|/omo/'` → *(rỗng)* |
+| **`verify-miss.md` B1** | **Lệnh trên SAI.** Chạy đúng lệnh đó: `git grep -ilE 'oh-my-openagent\|/omo/' \| wc -l` → **41** | |
+
+Và khi dùng mẫu đúng, lộ ra module thật:
+
+```
+packages/coding-agent/src/beta/omo-local-update.ts            (880 dòng)
+packages/coding-agent/src/beta/omo-local-update-artifacts.ts   (88)
+packages/coding-agent/src/beta/omo-local-update-fingerprint.ts (62)
+packages/coding-agent/src/beta/omo-local-update-worker.ts      (62)
+                                                          ── 1.092 dòng
+```
+
+Dòng 152–154 đọc tên package plugin OMO (`@code-yeongyu/omo-senpi`, `@oh-my-opencode/senpi-task`); dòng 208–212 ghi `git rev-parse origin/dev:packages/omo-senpi` — **fetch và checkout trực tiếp từ monorepo OMO**.
+
+**Công bằng với cả hai:** `verify-miss.md` tự nói *"tôi không bác bỏ được mệnh đề đó"* — module này **tiêu thụ** OMO, không phải **chép từ** OMO. Cả hai file **đều sai ở lỗ hổng phương pháp**: một khẳng định âm tính gắn lệnh không hỗ trợ nó.
+
+**Hệ quả thực tế (thuộc về M5):** rủi ro không chỉ là "text prompt không được khai báo" mà là **toàn bộ quan hệ OMO–senpi không nằm trong `NOTICE.md`**. Củng cố kết luận "đừng lấy `prompt-preset`" — nhưng vì lý do khác và mạnh hơn.
+
+### 7.6 `classes/*.kdl` của omp — ba con số
+
+| nguồn | số |
+|---|---|
+| `deep-risk.md` §0.3 | **18** |
+| `verify-wiring.md` #6 | **19** (thiếu `gpt-oss.kdl`) |
+| `verify-inherit.md` #7 | **21** |
+
+Không ảnh hưởng quyết định nào, nhưng cả ba file đều dán lệnh. **Chưa đủ dữ liệu** — cần chạy lại `ls packages/catalog/src/compat/rules/classes/*.kdl | wc -l`.
+
+### 7.7 `oauth_callback/` — 10 file hay 12?
+
+`deep-risk.md` §4.1 nói **10 file, 146 KB**; `verify-wiring.md` #11 và `verify-inherit.md` #8 nói **12 file, 184K**. Cả hai đều ghi *"10 file đúng, 146 KB sai"* ⇒ chỉ mâu thuẫn ở con số **file**, không phải KB. **Chưa đủ dữ liệu** cho biết bên nào đếm đúng.
+
+### 7.8 Số event của omp — bốn nguồn, bốn số
+
+| nguồn | số event `on(event:)` của omp |
+|---|---|
+| `changes-md.md` §5a | **37** (danh sách liệt kê) |
+| `builtins.md` §1.1 | **41** |
+| `deep-inherit.md` §1b | **41** (đối chiếu "44 của senpi vs 41 của omp") |
+| **`deep-wiring.md` §0** | **46** — "tôi tự đo lại, không dựa vào vòng trước" |
+
+Hệ quả: bảng "23 event dùng chung / 21 chỉ senpi / 18 chỉ omp" của `deep-inherit.md` §1b **được tính trên mẫu số 44 và 41**. Nếu số thật là 46, bảng đó phải tính lại. **Chưa đủ dữ liệu** — cần một lệnh duy nhất chốt: đếm `on(event:` trong `extensibility/extensions/types.ts`.
+
+### 7.9 `model_select` — nút thắt số lượng nhưng không phải nút thắt giá trị
+
+- Số: `deep-risk.md` nói **16 builtin** dùng; `verify-inherit.md` #9 đo **19 file** (và ghi *"đúng là nút thắt #1, sai số"*).
+- **Xếp hạng mâu thuẫn trong chính bộ file:** `ext-api.md` §6.1 xếp `model_select` là nút thắt số 1. `deep-wiring.md` §0.3 + §7.7 nói: *"`agent_settled` **rẻ hơn 4×** và là bước 1. Cái thật sự đáng tiền **không phải `model_select`** mà là `setActiveTools`/`setModel` (20 + 3 file), vì đó mới là chỗ builtin **ra lệnh** chứ không phải chờ tin."*
+
+Tài liệu này theo `deep-wiring.md` (đo mới hơn, có điểm móc dòng cụ thể) nhưng **ghi rõ cả hai**: theo *số builtin gỡ được* thì `model_select`; theo *giá trị mỗi dòng* thì `agent_settled` rồi `setActiveTools`.
+
+### 7.10 `tool-pair-guard` vá ở đâu?
+
+`deep-risk.md` §5.3: *"vá ở tầng `packages/ai` mà omp không có"*. `verify-inherit.md` #11: bác bỏ được — *"**không có bất kỳ tham chiếu `packages/ai` nào**"*. `deep-miss.md` §1.3/§1.3.1 lại nói *"Seam trong omp — **ĐÃ CÓ, không thiếu**"*.
+
+⇒ **`verify-*` ủng quyền hơn `deep-*`** ⇒ kết luận: **`tool-pair-guard` phải viết mới, không port được** (§4.3). Nhưng nêu rõ mâu thuẫn vì `deep-miss.md` dùng từ "đã có seam" theo nghĩa khác.
+
+### 7.11 Mẫu số `changes.md` — bốn số
+
+| nguồn | mẫu số |
+|---|---|
+| `changes-md.md` §0 | **2.268** entry sản phẩm |
+| `changes-md.md` §9 | **2.377** entry |
+| `builtins.md` §3.7 | **564** entry trong cây builtin |
+| `verify-wiring.md` #13 | **509** (thừa kế từ `builtins.md`) |
+
+Hệ quả bị ghi thẳng: tỉ lệ "cắm core" là **253/564 = 44%** theo `builtins.md`, nhưng thực ra **253/509 = 50%** theo `verify-wiring.md`. Và cả hai tỉ lệ đều là **tự-báo-cáo của tác giả senpi**, không phải kiểm chứng độc lập.
+
+### 7.12 13 hay 14 builtin không có `changes.md` — lỗ hổng phương pháp lớn nhất
+
+`verify-miss.md` B2 liệt kê **13**: `account` · `anthropic-bash` · `anthropic-web-search` · `ask-user` · `history-search` · `hooks` · `look-at` · `loop` · `model-fallback` · `openai-web-search` · `recommended-models` · `rule-activation` · `tool-pair-guard` · `video-in`.
+`verify-inherit.md` #10 nói **14/40**.
+
+⇒ **13 vs 14, chưa chốt được.** Nhưng cả hai cùng chỉ ra một điều quan trọng hơn con số:
+
+> Toàn bộ phân loại L0–L3 của `deep-risk.md` §2.3 và bảng *"Lấy được an toàn"* §6.1 đều dựa trên §2.1 — nên với các builtin này **không có phép đo nào tồn tại**. Bài xử chúng như *"không cắm core"*. Đẳng thức này **khác** với *"không có tự thú"*.
 >
-> May thay, chúng không mất: cùng nội dung đã nằm ở
-> [Phần 4](#phần-4--phần-omp-đã-có) (§5), [Phần 5](#phần-5--phần-omp-thiếu-thật) (§5),
-> [Phần 6](#phần-6--seam-hạ-tầng) (§0 và §5) — chi tiết hơn, vì những phần đó được viết
-> với ngân sách đọc hạn chế nên còn sống.
+> **Hệ quả cụ thể trong chính kế hoạch M5:** `look-at` (hạng 4, §4.4) và `history-search` (hạng 1 của `deep-risk.md` §8.2) đều nằm trong 13/14 đó ⇒ **chưa từng được đo về mức cắm core**, dù được xếp vào hàng "vì sao an toàn".
+
+### 7.13 Số builtin "thiếu thật" — 9 hay 4 hay 6
+
+| nguồn | con số | danh sách |
+|---|---|---|
+| `deep-inherit.md` §5 | **9** (22,5%) — 25 đã có, 6 không lấy vì xung đột | trong đó chỉ 4 đáng làm ngay |
+| `deep-risk.md` §8.2 | **6** hạng mục port + 2 nhóm không lấy | `btw`, `loop-guard`, `bash-timeout`, `history-search`, `look-at`, `cache-keepalive` |
+| **`deep-miss.md` §1** | **4** hạng mục "thiếu hẳn" | `btw` rơi (đã có), `loop-guard`/`history-search`/`bash-timeout` rơi (đã có ở dạng khác) |
+
+Ba con số **không mâu thuẫn** — chúng đo ba thứ khác nhau (thiếu hẳn / đáng port / an toàn để port). Nhưng cả ba đều dùng **cùng một bảng phán quyết đã bị bác bỏ ở §7.1 và §7.4**. Đây là hệ quả dây chuyền, không phải mâu thuẫn độc lập.
+
+### 7.14 Số dòng từng builtin — khác nhau giữa `builtins.md` và `deep-risk.md`
+
+`builtins.md` đếm `.ts + .tsx + .md`; `deep-risk.md` đếm `.ts` không test. Giả thuyết giải thích phần lớn chênh lệch, **nhưng không nguồn nào nói rõ** ⇒ ghi ra như giả thuyết, không phải kết luận:
+
+| builtin | `builtins.md` | `deep-risk.md` | chênh |
+|---|---:|---:|---:|
+| `mcp` | 10.244 | 9.327 | −917 |
+| `compaction` | 10.788 | 8.779 | −2.009 |
+| `terminal` | 8.260 | 6.962 | −1.298 |
+| `anthropic-subscription` | 8.779 | 7.281 | −1.498 |
+| `cursor-cli-oauth` | 5.620 | 5.186 | −434 |
+| `gpt-apply-patch` | 2.351 | 2.051 | −300 |
+| `config-reload` | 2.597 | 2.317 | −280 |
+| `permission-system` | 1.859 | 1.638 | −221 |
+| `rules` | 2.980 | 2.842 | −138 |
+| `webfetch` | 1.230 | 1.062 | −168 |
+| `cache-keepalive` | 569 | 483 | −86 |
+| `btw` | 528 | 389 | −139 |
+| `herdr` | 507 | 418 | −89 |
+| `bash-timeout` | 211 | 118 | −93 |
+| `loop-guard` | 885 | 718 | −167 |
+
+⚠️ **Cảnh báo bẫy số:** `deep-risk.md` dùng **8.779** cho `compaction` (khác hẳn 10.788 của `builtins.md`), còn `builtins.md` dùng **8.779** cho `anthropic-subscription`. **Cùng một con số cho hai builtin khác nhau trong hai file.** Khi tra cứu, phải kiểm tra file.
+
+### 7.15 "Không builtin nào chạm session layer" — 3 nguồn, 3 mức
+
+| nguồn | phát quyết |
+|---|---|
+| `builtins.md` §7 | *"không builtin nào trong 40 cái này liên quan tới session persistence"* |
+| `deep-risk.md` §7 | **"Có 10+ file khớp"** (`anthropic-subscription/session-binding.ts`, `ask-user/resume.ts`, `btw/index.ts`, `compaction/resume-slice.ts`…) |
+| `verify-wiring.md` #10 | **"26 file"** |
+
+Và `verify-miss.md` B6 thêm: khẳng định *"không builtin nào **ghi** JSONL"* là **không kèm lệnh** — vế này **không kiểm chứng được**.
+
+⇒ Ba mức 0 / 10+ / 26 cho cùng một phép đo. **Con số thật chưa chốt**; nhưng ở cả ba mức thì kết luận hành động **giống nhau**: port phải đi qua `parseJsonlLenient` của omp (§6.6).
+
+### 7.16 Sai số của `deep-risk.md` — 14 con số, **đều đi theo một hướng**
+
+`verify-wiring.md` §0 và §6: *"toàn bộ đi xuống (thu nhỏ), không có sai số nào phóng to."* Ví dụ điển hình:
+
+| mục | tài liệu | thực tế | chênh |
+|---|---:|---:|---:|
+| §3.6 tổng modifier `private` | 35 | **197** | ×5,6 |
+| §2.2 B1 số path lõi | 10 | **55** | ×5,5 |
+| §3.1 số dòng model-id | 14 | **13** | (nhưng dòng `compaction:292` là **dán tay**) |
+| §3.1 số file preset | 33 | **38 / 35 / 31** | |
+| §4.5 tổng dòng | 3.189 | **3.089** | |
+| §3.5 `.slice(0,N)` | 12 file | **18 file** | |
+| §0.3 số dialect | 12 | **11** | |
+
+> **Không bác bỏ được điều gì ở tầng quyết định.** Ba kết luận chính của `deep-risk.md` — `prompt-preset` phải viết lại, `cursor-cli-oauth`/`anthropic-subscription` không lấy, giữ nguyên session layer của omp — **đứng vững** sau khi đo lại.
+
+### 7.17 Tên file trong đề bài không tồn tại
+
+`verify-inherit.md` §0: đề bảo bác bỏ `deep-inherit.md`, nhưng **file đó không tồn tại lúc đó** (`find -iname '*inherit*'` chỉ ra 3 file test của omp). Agent bác bỏ `deep-risk.md` vì đó là file duy nhất khớp phạm vi — và **tự ghi rõ đây là suy đoán về ý định đề**.
+
+⇒ `deep-inherit.md` **hiện đã tồn tại** (427 dòng, sửa 13:21, sau khi `verify-inherit.md` chạy lúc 12:59) ⇒ **`verify-inherit.md` thực ra bác bỏ `deep-risk.md`, không phải `deep-inherit.md`.** Không có vòng nào đã kiểm chứng `deep-inherit.md`.
+
+### 7.18 Hai bẫy phép đo đã biết — cả hai đều sinh kết quả RỖNG
+
+| bẫy | lệnh sai | lệnh đúng | hậu quả |
+|---|---|---|---|
+| `\b` trong `git grep -E` trên macOS | `git grep -E '\bbtw\b'` | `git grep -w 'btw'` | làm sai kết luận `/btw` (§7.1) |
+| `git ls-files` pathspec tương đối với cwd | `git ls-files 'packages/ai/src/**/prompt-cache*'` | `git grep -rln 'cache_control' -- packages/ai/src` | làm sai kết luận `cache-keepalive` (§7.2); `builtins.md` §4.3 đã tự sửa lần cho `goal` |
+
+> **Sai pathspec cho kết quả rỗng, và kết quả rỗng dễ bị đọc thành "không tồn tại".** Cả hai bẫy đã làm sai kết luận ở **tầng quyết định**.
+
+---
+
+## 8. File nào vòng trước chết vì thiếu — và cái tôi cũng chưa đọc hết
+
+### 8.1 File thiếu sẽ làm hỏng tài liệu này
+
+| file | dòng | thiếu thì mất gì |
+|---|---:|---|
+| **`deep-miss.md`** | 761 | 🔴 **Chết.** Chứa phát hiện `\b` không hoạt động (§7.1) — bẫy làm **sai kết luận `/btw`** ở ba file trước. Không có nó, §4 và §6.1 sẽ bảo port `/btw` trong khi omp đã có bản lớn hơn 4,3× |
+| **`verify-miss.md`** | 535 | 🔴 **Chết.** Phát hiện 41 file OMO (§7.5) + lỗ hổng 13/40 không có `changes.md` (§7.12) — thứ làm lộ 2 hạng mục trong kế hoạch (`look-at`, `history-search`) **chưa từng được đo** |
+| **`deep-wiring.md`** | 557 | 🔴 **Chết.** Toàn bộ thứ tự seam (§5.4), 13 builtin chạy được ngay (§5.3), và danh sách 10 thứ "thổi phồng công" không mở (§5.5). Không có nó, §5 sẽ mất hết |
+| **`verify-wiring.md`** | 466 | 🟠 Mất 14 sai số theo hướng thu nhỏ (§7.16) — không mất kết luận |
+| **`verify-inherit.md`** | 564 | 🟠 Mất 8 bác bỏ + 2 bác bỏ một nửa; đáng chú ý là **bác bỏ được "OMO không khai trong `NOTICE.md`" một nửa** |
+| **`new-packages.md`** | 575 | 🟠 Mất kết luận `senpi-codemode`/`pty`/`session-backends` + phát hiện `pi` **có** `session-backends` (§4.6) |
+| **`ext-api.md`** | 471 | 🟠 Nguồn gốc của danh sách seam — nhưng đã bị `deep-wiring.md` §7 bác bỏ 3/6 mục. **Mất nó không chết, nhưng đừng tin nó** |
+| **`deep-risk.md`** | 978 | 🟡 Mất 4 trong 5 vi phạm `AGENTS.md` + bảng tự-thú cắm core. Nhưng **14/14 con số nhỏ sai** |
+| **`deep-inherit.md`** | 427 | 🟡 Mất bảng đối chiếu 40 theo 3 nhóm. **CHƯA AI KIỂM CHỨNG** — xem §7.17 |
+
+### 8.2 Cái tôi cũng chưa đọc hết (minh bạch)
+
+| file | dòng | tôi đọc | bỏ qua |
+|---|---:|---|---|
+| `builtins.md` | 423 | §1, §2, §3, §4, §5, §6, §7 (đủ) | — |
+| `lineage.md` | 511 | đủ | — |
+| `m1b-collision.md` | 425 | đủ | — |
+| `changes-md.md` | 487 | §0, §5a–5e, §6, §7, §8, §9, §10 | §1–§4 (đếm heading, phân loại regex, 37 event mới) |
+| `deep-miss.md` | 761 | §0, §1 (bảng tổng) | §1.1–§1.5 chi tiết, §2, §3 — **phần đặc tả chi tiết nhất, nên đọc tiếp khi bắt tay** |
+| `deep-wiring.md` | 557 | §0, §5, §6, §7 | §1–§4 (đếm event/method, 10 seam chi tiết) |
+| `deep-risk.md` | 978 | §6, §7, §8, §9 | §1–§5 (đo cắm core, 7 nhóm vi phạm `AGENTS.md`) |
+| `verify-miss.md` | 535 | §0, B1, B2 | A1–A16, B3–B6, §4–§6 |
+| `verify-wiring.md` | 466 | §0, §4, §6 | §1 (14 sai số chi tiết), §2, §3 |
+| `verify-inherit.md` | 564 | §0, §1 | §2–§13 |
+| `deep-inherit.md` | 427 | §5, §6 | §0–§4 — **chưa kiểm chứng ai cả** |
+| `new-packages.md` | 575 | §0, tóm tắt | §1–§8 |
+| `ext-api.md` | 471 | 0 | **chưa đọc dòng nào** |
+
+**Ba chỗ tôi chủ động bỏ qua và cần nói thẳng:**
+1. `ext-api.md` — **0 dòng**. Đây là nguồn gốc của toàn bộ danh sách seam, nhưng `deep-wiring.md` §7 đã bác bỏ 3/6 mục và xác nhận sai 1. Tài liệu này dựa vào `deep-wiring.md`. **Ai đó nên đọc `ext-api.md` và đối chiếu nếu M5 sắp động vào `types.ts`.**
+2. `deep-risk.md` §1–§5 — bảng vi phạm `AGENTS.md` chi tiết (7 nhóm luật, số dòng/file). Đây là **checklist bắt buộc** khi port, tôi chỉ trích dẫn kết luận.
+3. `deep-miss.md` §1.1–§1.5 — **đặc tả chi tiết nhất cho 4 hạng mục port**. §4 của tài liệu này chỉ đủ để *quyết định*, chưa đủ để *làm* mà không cần đọc lại `deep-miss.md`.
+
+### 8.3 Ba ràng buộc từ briefing — vẫn đúng, vẫn áp dụng
+
+1. **`gajae` là fork của dòng omp/pi**, không phải nguồn tham chiếu độc lập. `changes-md.md` §7: senpi **không nhắc gajae ở đâu trong 2.377 entry**. Không dùng làm đối chứng.
+2. **`pi` KHÔNG có MCP, KHÔNG có ACP.** **Nhưng `omp` CÓ MCP** — `src/mcp/` 22 file + 4 doc + 129 file tracked. **Đừng suy từ "pi không có" sang "omp không có".**
+3. **`chord` KHÔNG phải cơ chế vòng đời extension.** `packages/chord/changes.md` chỉ có **1 entry, 19 dòng**; và `core/extensions/builtin/` không tồn tại ở omp/pi để chord điều khiển. Không có vai trò trong M5.
+4. **omp tự lành JSONL hỏng** — xem §6.6. Giữ nguyên.
+
+---
+
+## 9. Tóm tắt một trang cho người quyết định
+
+| câu hỏi | trả lời |
+|---|---|
+| senpi là gì, chép được không? | Fork sống MIT của `pi` (cùng root SHA `a74c5da1`). Chép được gần nhìn toàn bộ. 3 điều kiện: giữ MIT notice, ghi attribution vào `NOTICE.md` của omp (**đang không có**), không lấy thương hiệu. Ghim theo commit SHA. |
+| M1B lấy 7 package từ đâu? | **`pi`, toàn bộ.** Senpi đóng góp **3 dòng type annotation**; không có `durable`; `chord` là bản lùi. Cân nhắc **rút M1B từ 7 xuống 6**. |
+| 40 builtin port được bao nhiêu? | Sau khi đo lại: **4 hạng mục "thiếu hẳn"** (cache-keepalive, 4 seam API, tool-pair-guard, look-at) + **13 chạy được ngay không cần seam** (trong đó thật dùng được ngay ~6–8). |
+| Seam nào phải mở? | `agent_settled` (rẻ nhất) → `registerEntryRenderer` → `model_select` (gỡ nhiều nhất) → `session_abort` → 3 `setSession*`. **Không mở `executeTool` và 9 thứ khác** (0 builtin dùng). |
+| Cái gì KHÔNG lấy? | `mcp`, `compaction`, `webfetch`, `ask-user`, `todotools`, `/btw` (omp đã hơn); `cursor-cli-oauth`, `anthropic-subscription`, `config-reload`, `herdr`, `terminal`, `ttsr` (lõi quá sâu); `prompt-preset`, `permission-system`, `tool-pair-guard` (phải viết lại); `senpi-codemode`, `pty`, `session-backends` (omp đã có lớn hơn); **session layer**. |
+| Bước đầu tiên? | Ném 3 builtin seam-free vào `directory-resolution.ts:69` (`pkg.omp ?? pkg.pi`) **trước khi viết dòng seam nào**. Rẻ nhất, không tốn công sửa nếu sai. |
+| Rủi ro dễ sai nhất? | Port `ask-user/resume.ts` hoặc `btw/index.ts` mà dùng `JSON.parse` trực tiếp → biến lỗi JSONL thành crash. Phải qua `parseJsonlLenient`. |
+
+---
+
+*Tài liệu này chỉ ghi những gì 13 file nguồn đã đo. Mọi con số đều có lệnh ở file nguồn. Nơi hai nguồn cho hai số khác nhau, §7 in cả hai và không tự chọn. Nếu sáu tháng sau bạn chạy lại §0 của `builtins.md` mà ra số khác, đó là câu hỏi đáng hỏi hơn cả bảng này.*
+
+> ### Ghi chú về cách phần này được lắp ráp — vì tôi đã ghi sai một lần
 >
-> Nói thẳng để người đọc không tưởng đã đủ: **§1–§3 là của agent, §4–§7 trong lời hứa
-> của nó là của tôi, và tôi đã bỏ chúng.**
+> Tôi từng ghi ở đây rằng phần tổng hợp **bị cắt ở §3** vì agent hết context. **Đó là
+> sai.** Agent không chết — nó viết tiếp, và tôi đã kết luận «chết» chỉ vì chụp
+> phải file đúng lúc nó đang viết §4. Nó hoàn tất đủ 9 mục.
+>
+> Bài học, vì nó lặp lại: **không kết luận một agent đã chết chỉ từ một ảnh chụp
+> file.** File đang được ghi bằng thể hiện là *đang viết*, không phải *đã xong và hỏng*.
+> Phải chờ workflow báo `result`, hoặc chờ file đứng yên **và** workflow kết thúc.
+>
+> Bản thân phần tổng hợp có mục §8 tự liệt kê những file mà các vòng trước thiếu,
+> nên nó đã tự xử lý đúng chỗ đó — không cần tôi ghi đè.
 
 ---
 

@@ -19693,6 +19693,8 @@ Không có claim nào trong ba audit khẳng định hành vi runtime, hiệu n�
 
 ---
 
+---
+
 # KẾ HOẠCH THỰC THIỆN — MILESTONE 7: CÁI RIÊNG CỦA SENPI
 
 **Đo ngày 2026-09-28.** Senpi HEAD `ea92162` · pi HEAD `d6af72e` · omp HEAD xem `git log -1`.
@@ -19742,11 +19744,13 @@ Và điều quan trọng nhất, vì nó quyết định phạm vi:
 | vòng 2 | 25 đã có · 6 sai hướng · 9 thiếu | mở file omp thay vì grep |
 | vòng 3 | **8** thiếu | `git grep -E '\bbtw\b'` trả 0 trên macOS; `btw` omp đã có 1.694 dòng |
 | vòng 4 | **4 hạng mục, ~1.325 dòng** | `cursor.ts` đã xử dangling call; `model-resolver.ts` đã có `splitThinkingSuffix` |
-| vòng đặc tả M7 | **3 work item còn sống, ~6 ngày** | `look-at` đảo ngược phạm vi; `tool-pair-guard` bị rút |
+| vòng đặc tả M7 | **5 work item** | `look-at` đảo ngược phạm vi; `tool-pair-guard` bị rút |
+| sau merge 18.4.0 | **3 work item** | upstream đã làm xong warm cache (599 dòng + 399 test) |
 
-**Con số còn lại:** 3 work item còn sống (seam, warm cache, nhóm seam-free), cộng một work item
-điều kiện tiên quyết về pháp lý, cộng một work item đã bị đính chính phạm vi (`look_at`).
-Tổng ~6-8 engineer-day, không phải con số của "port 40 builtin".
+**Con số còn lại sau tất cả:** **3 work item** — W0 (pháp lý, điều kiện tiên quyết), SEAM
+(bốn seam API), và SEAMFREE (nhóm builtin chạy được ngay) — cộng LOOKAT ở sóng 2 vì phạm vi
+đã bị đảo ngược. Tổng **~7-8 engineer-day**, không phải con số của "port 40 builtin", và không
+phải con số của "3 work item" mà bản thảo đầu đặt ra.
 
 **Ba builtin của senpi bắt nguồn từ chính omp.** `ttsr` và `todotools` được senpi ghi trong
 `NOTICE.md` của họ là *"ported and adapted from oh-my-pi"*. Cả 7 file nguồn đều có trong omp
@@ -19770,6 +19774,17 @@ Tổng ~6-8 engineer-day, không phải con số của "port 40 builtin".
   extension toàn cục** của omp, không phải thêm một builtin.
 - **Không chép tầng session của `pi` hay `senpi`.** Cả hai đều hard-fail khi JSONL hỏng; omp
   đang tự lành. Xem `MILESTONE_1B_EXECUTION_PLAN.md` mục 5.
+- **KHÔNG LÀM warm prompt cache — upstream 18.4.0 đã làm xong, trong lúc tài liệu này được viết.**
+  Work item WARM (mức sóng 1) bị gỡ khỏi đợt này sau khi merge upstream. Bằng chứng:
+  `packages/ai/CHANGELOG.md:37` ghi: *"Removed the stream-level Anthropic prompt-cache keep-alive …
+  Prompt-cache warming now lives in the coding agent's session-level cache warmer"* (#12699).
+  Cây hiện có `packages/coding-agent/src/session/cache-warmer.ts` (**599 dòng**) +
+  `packages/coding-agent/test/cache-warmer.test.ts` (**399 dòng**), đã nối vào `agent-session.ts:1004`
+  và `sdk.ts:4062`, **bật mặc định** (tắt qua `cacheWarming: false`), có cờ settings
+  `cfgProvidersCacheWarming`, và còn có extension hook `extensionRunner.emitCacheWarmingDecision`.
+  Cổng chi phí mà WARM từng hỏi cũng đã được giải quyết bằng cờ settings đó. **Không còn gì để làm.**
+  Đây là lần thứ tư trong nghiên cứu này mà phép đo lại **giảm** phạm vi — lần này vì cây code đã
+  đi dưới chân kế hoạch trong lúc viết.
 - **Không lấy `mcp`, `compaction`, `webfetch`, `ask-user`, `todotools`** — omp đã mạnh hơn.
 - **Không lấy `prompt-preset` và `gpt-apply-patch`.** Chúng dò model id trong TypeScript, đúng
   thứ `AGENTS.md` cấm. `packages/catalog` + KDL đã làm việc đó đúng cách.
@@ -19794,12 +19809,50 @@ Tổng ~6-8 engineer-day, không phải con số của "port 40 builtin".
 |---|---|---|---|
 | 0 | **W0** pháp lý + ghim nguồn | tất cả | ~1 ngày |
 | 0 | **SEAM** — bốn seam API | mọi builtin cần event | ~5 ngày (thêm 1-2 nếu cổng P3 trả "hạn chế") |
-| 1 | **WARM** — làm ấm prompt cache | không | ~2 ngày |
 | 1 | **SEAMFREE** — nhóm builtin chạy được ngay | không, nhưng nên sau W0 | ~1-2 ngày |
 | 2 | **LOOKAT** — đo lại rồi mới quyết dựng tool hay không | cổng P-L1-2 | ~0,5 ngày nếu chỉ vá |
 
+*(Work item WARM — làm ấm prompt cache — đã bị gỡ khỏi bảng này: upstream 18.4.0 làm xong trước
+khi kế hoạch kịp đóng. Xem "Không làm gì".)*
+
 S1 và S4 trong SEAM không chặn gì nên làm được ngay. S2 và S3 có cổng, nên thứ tự thực thi là
 S1 → (chờ cổng) S2 → (chờ cổng) S3 → S4.
+
+## ĐÍNH CHÍNH SAU KHI MERGE UPSTREAM 18.4.0
+
+Tài liệu này viết trên cây trước khi merge. Upstream đưa vào **167 commit** (1.062 file,
++783.687/−34.612 dòng) và **dịch chuyển một số neo**. Mọi khẳng định dưới đây đã được kiểm lại
+sau merge; bảng này là để người đọc không phải tự tra.
+
+| neo cũ | neo mới | ảnh hưởng |
+|---|---|---|
+| `extensions/types.ts:1526` `setActiveTools` | **`:1526`** | dịch +25 dòng (file 1.849 → 1.874) |
+| `extensions/types.ts:1532` `setModel` | **`:1532`** | dịch +25 |
+| `extensions/types.ts:1756` handler `setActiveTools` | **`:1781`** | dịch +25 |
+| `extensions/types.ts:1758` handler `setModel` | **`:1783`** | dịch +25 |
+| `ai/src/types.ts:124` `CacheRetention` | **`:123`** | dịch −1 |
+| `ai/src/types.ts:439` `anthropicCacheRefresh` | **đã bị gỡ khỏi mã** | xem "Không làm gì" |
+| `sdk.ts:4111` `anthropicCacheRefresh: true` | **đã bị gỡ khỏi mã** | xem "Không làm gì" |
+| `src/tools/image-question.ts` | **`src/utils/image-question.ts`** | 181 dòng, không đổi |
+| `src/tools/image-vision-fallback.ts` | **`src/utils/image-vision-fallback.ts`** | 197 dòng, không đổi |
+| `src/tools/image-loading.ts` | **`src/utils/image-loading.ts`** | — |
+| `src/tools/vision-guard.ts` | **`ai/src/providers/vision-guard.ts`** | sang **package khác** |
+
+**Những gì KHÔNG đổi, đã kiểm lại sau merge** — và đây mới là phần quan trọng:
+
+| khẳng định | sau merge |
+|---|---|
+| số event `on(...)` của omp = **41** | vẫn **41** |
+| `model_select` vắng mặt (seam thật) | vẫn **0 file** |
+| `agent_settled` vắng mặt (seam thật) | vẫn **0 file** |
+| `parseJsonlLenient` ở `utils/stream.ts:575` | vẫn `:575` |
+| `registerMessageRenderer` ở `extensions/loader.ts:269` | vẫn `:269` |
+| `directory-resolution.ts:69` (`pkg.omp ?? pkg.pi`) | vẫn `:69` |
+| `BUILTIN_SLASH_COMMAND_DEFS` ở `slash-commands/builtin-registry.ts:60` | vẫn `:60` |
+| `look_at`: omp đã có lõi, `?q=` còn hoạt động | `read-cli.ts`, `internal-urls/`, `prompts/tools/read.md` đều còn |
+
+**Số liệu nào trong tài liệu phải bỏ vì upstream đã làm:** con số công của M7 giảm thêm một
+work item. Bảng "Thành thật" và "Thứ tự thực hiện" ở trên đã cập nhật.
 
 ## Bảng quyết định cần người quyết
 
@@ -20160,7 +20213,7 @@ Một hạng mục port không được báo xanh khi attribution của nó chư
 
 Hai hằng đo được ở đây **sửa lại đề bài gốc theo hướng thuận lợi**, và cả hai đều phải nói trước khi ai viết dòng code đầu tiên:
 
-- **`setModel` và `setActiveTools` KHÔNG phải thứ phải thêm — omp ĐÃ CÓ.** `setActiveTools` khai báo ở `extensibility/extensions/types.ts:1501`, `setModel` ở `:1507`, và cả hai đã có handler cắm ở `:1756` và `:1758`. Nghĩa là S3 chỉ còn **một** việc: thêm *event* `model_select`. Đây là tin tốt cho effort, nhưng nó cũng dời toàn bộ rủi ro của S3 sang **duy nhất** câu hỏi về `systemPrompt` — xem S3 dưới.
+- **`setModel` và `setActiveTools` KHÔNG phải thứ phải thêm — omp ĐÃ CÓ.** `setActiveTools` khai báo ở `extensibility/extensions/types.ts:1526`, `setModel` ở `:1507`, và cả hai đã có handler cắm ở `:1781` và `:1783`. Nghĩa là S3 chỉ còn **một** việc: thêm *event* `model_select`. Đây là tin tốt cho effort, nhưng nó cũng dời toàn bộ rủi ro của S3 sang **duy nhất** câu hỏi về `systemPrompt` — xem S3 dưới.
 - **Không có "3 hằng `setSession*`".** Đo trên cây senpi: `setSessionModel` = 25 file, còn `setSessionTitle` = **0** và `setSessionLabel` = **0**. Trên omp cả ba đều = 0. Nên S4 là **một** setter (`setSessionModel`) + **một** event (`session_abort`), không phải bốn thứ.
 
 **Hiệu ứng người dùng thấy:** người viết extension cuối cùng (không phải người đọc plan này) có thể (a) biết lượt agent đã *hoàn toàn* ổn định — kể cả sau bước retry-backoff, mà `agent_end` hiện tại không bắt được — để bơm watermark hay đồng bộ trạng thái; (b) vẽ một loại entry riêng của mình trong transcript thay vì phải nhét nó vào ô message; (c) nghe được lúc model đổi để chỉnh system prompt của chính mình; (d) nghe lúc phiên bị huỷ. Với người dùng cuối của omp không có gì thay đổi — đây là bề mặt cho người viết extension, và phần lớn thứ nhìn thấy nằm ở các work item port builtin sau.
@@ -20171,7 +20224,7 @@ Hai hằng đo được ở đây **sửa lại đề bài gốc theo hướng t
 
 | path | hành động | thay đổi | đã kiểm chứng? |
 | --- | --- | --- | --- |
-| `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | S1+S3+S4 — thêm khai báo event vào khối `on(...)` (hiện trải :1280-1314 cho nhóm session/agent), và **không** sửa `setActiveTools`/`setModel` vì chúng đã có sẵn. | Có. `types.ts` = 1.849 dòng (khớp số đã đo trước). `on(event: "session_stop", ...)` ở `:1314`; `on(event: "agent_end", ...)` ở `:1313` — đây là hai dòng kẹp chỗ S1 và S4 sẽ chen vào. `setActiveTools(toolNames: string[]): Promise<void>` ở `:1501`; `setModel(model: Model): Promise<boolean>` ở `:1507`; hai field handler tương ứng ở `:1756` và `:1758`. |
+| `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | S1+S3+S4 — thêm khai báo event vào khối `on(...)` (hiện trải :1280-1314 cho nhóm session/agent), và **không** sửa `setActiveTools`/`setModel` vì chúng đã có sẵn. | Có. `types.ts` = 1.849 dòng (khớp số đã đo trước). `on(event: "session_stop", ...)` ở `:1314`; `on(event: "agent_end", ...)` ở `:1313` — đây là hai dòng kẹp chỗ S1 và S4 sẽ chen vào. `setActiveTools(toolNames: string[]): Promise<void>` ở `:1501`; `setModel(model: Model): Promise<boolean>` ở `:1507`; hai field handler tương ứng ở `:1781` và `:1783`. |
 | `packages/coding-agent/src/extensibility/extensions/runner.ts` | sửa | S1+S3+S4 — thêm một lệnh `this.emit({ type: ... })` cho mỗi event mới, tại đúng nơi vòng lặp đã gọi `agent_end`. S2 không đụng file này. | Có một phần. File = 1.963 dòng. Có **5** lệnh `this.emit({` (đếm bằng grep) — nhưng chúng không phân bổ đều theo event; `emit` tổng quát chạy qua `ext.handlers.get(eventType)` ở `:1163` và `:1476`, tức **thêm một event không cần sửa bảng dispatch**, chỉ cần một chỗ gọi. CHƯA kiểm chứng dòng cụ thể của lệnh emit `agent_end` — phải tra bằng `grep -n 'type: "agent_end"'` trước khi ghi neo. |
 | `packages/coding-agent/src/extensibility/extensions/loader.ts` | sửa | S2 — thêm `registerEntryRenderer` cạnh `registerMessageRenderer` đã có ở `:269`. Cũng là nơi `setModel`/`setActiveTools` được cắm vào context (không sửa, chỉ để biết vị trí). | Có một phần. `registerMessageRenderer<T>(customType, renderer)` ở `loader.ts:269` — đúng dòng, đây là neo chèn. Phần `setModel` trong loader CHƯA định vị dòng. |
 | `packages/coding-agent/src/extensibility/extensions/index.ts` | có thể sửa | S2 — chỉ nếu kiểu entry mới cần được export ra ngoài. File = 18 dòng. | Có. File tồn tại, 18 dòng — là barrel, nên theo AGENTS.md phải dùng `export *` chứ không phải named re-export. |
@@ -20250,7 +20303,7 @@ Thiếu thật: 0 file ở omp. Senpi có `ModelSelectEvent` ở `core/extension
 
 **16/40 builtin** của senpi dùng `model_select`. Đây là seam đắt nhất và là lý do thứ tự đề xuất đặt nó ở vị trí 3 chứ không phải 1.
 
-`setModel` và `setActiveTools` đã có sẵn ở omp (`types.ts:1501` và `:1507`, handler ở `:1756`/`:1758`), nên **phần dễ của S3 đã xong**. Chỉ còn event.
+`setModel` và `setActiveTools` đã có sẵn ở omp (`types.ts:1526` và `:1507`, handler ở `:1781`/`:1783`), nên **phần dễ của S3 đã xong**. Chỉ còn event.
 
 **Về rủi ro `systemPrompt` — và đây là chỗ đề bài gối đã nói đúng nên nói thẳng, nhưng đủ đầy đủ hơn:**
 
@@ -20327,7 +20380,7 @@ Lập luận chung cho cả mục này: tiêu chuẩn mở một seam không ph�
 
 5. **S1 — dựng hợp đồng thử bằng thứ đo được, không bằng thứ mô phỏng:** hợp đồng thật là (a) handler `agent_settled` chạy **đúng một lần** mỗi lượt; (b) nó chạy **sau** `agent_end`; (c) hợp đồng phủ định — handler `agent_settled` không chạy khi phiên chỉ `stop` mà không có lượt nào bay. Đừng dùng "sau retry backoff" làm lý do mở S1: omp **có** retry (`agent-session.ts:385` import từ `./retry-fallback-chains`, khối "Retry state" ở `:757`, "auto-retry" ở `:926`), chỉ không dùng tên `retryBackoff`. Một test viết theo kịch bản backoff của senpi sẽ vượt qua một con đường không tồn tại, tức là test vô nghĩa theo nghĩa "success passthrough" của AGENTS.md. *(anchor: `packages/coding-agent/test/extensions-discovery.test.ts:664` (khuôn harness))*
 
-6. **S3 — thêm `ModelSelectEvent` vào `shared-events.ts` và `on(event: "model_select", ...)` vào `types.ts`.** Trả về cho extension: `model`, `previousModel`, `source`. **Không** thêm `setModel`/`setActiveTools` — chúng đã có ở `types.ts:1501` và `:1507`, handler ở `:1756`/`:1758`; viết lại là tạo hai đường cho một việc. *(anchor: `types.ts:1501,1507,1756,1758`)*
+6. **S3 — thêm `ModelSelectEvent` vào `shared-events.ts` và `on(event: "model_select", ...)` vào `types.ts`.** Trả về cho extension: `model`, `previousModel`, `source`. **Không** thêm `setModel`/`setActiveTools` — chúng đã có ở `types.ts:1526` và `:1507`, handler ở `:1781`/`:1783`; viết lại là tạo hai đường cho một việc. *(anchor: `types.ts:1526,1507,1756,1758`)*
 
 7. **S3 — vận hành đúng kết quả P3 đã chốt ở bước 1.** Nếu P3 = (i): `ModelSelectEventResult` **không** có trường `systemPrompt`, và work item port `prompt-preset` phải ghi rõ nó chuyển sang cơ chế chính sách của `before_agent_start`. Nếu P3 = (ii): trường là `systemPrompt?: string[]` — **cùng kiểu và cùng ngữ nghĩa** với `BeforeAgentStartEventResult.systemPrompt` (`types.ts:1194`), và bước tiếp theo bắt buộc là thiết kế cách biểu diễn "reset về base" trong mô hình chính sách. Nếu P3 = (iii): phải viết trước một đoạn lý giải vì sao hai ngữ nghĩa cùng tồn tại là chấp nhận được. *(anchor: `types.ts:1194` (mẫu để đối chiếu ngữ nghĩa))*
 
@@ -20400,7 +20453,7 @@ Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó
 | khối khai báo `on(...)` trải `:1280-1314` | `grep -n \| head/tail` | 1280 → 1340 | **sai (nhỏ)** — xem §2.1 |
 | `setActiveTools(...)` ở `:1501` | `grep -n` | 1501 | **đứng vững** |
 | `setModel(...)` ở `:1507` | `grep -n` | 1507 | **đứng vững** |
-| handler `setActiveTools`/`setModel` ở `:1756`/`:1758` | `grep -n` | 1756 / 1758 | **đứng vững** |
+| handler `setActiveTools`/`setModel` ở `:1781`/`:1783` | `grep -n` | 1756 / 1758 | **đứng vững** |
 | `BeforeAgentStartEventResult` ở `:1194` | `sed -n 1190,1200p` | 1194, `systemPrompt?: string[]` + chú thích "Extensions chain in order" | **đứng vững** |
 | `registerMessageRenderer` ở `extensions/loader.ts:269` | `grep -n` | 269 | **đứng vững** |
 | `registerMessageRenderer` ở `hooks/loader.ts:114` | `grep -n` | 114 | **đứng vững** |
@@ -20586,7 +20639,7 @@ Một vi phạm **tiềm ẩn** đáng ghi: nếu P2 chọn phương án (b), b�
 
 - Bốn file lõi có sẵn kích thước đo được: `types.ts` 1849, `runner.ts` 1963, `loader.ts` 677, `hooks/loader.ts` 243, `hooks/types.ts` 600.
 - Khối `on(...)` **một dòng mỗi event** — thêm 1 event S1 và 1 event S4 = 2 dòng khai báo, đây là phần rẻ nhất và con số 0,5 ngày là hợp lý.
-- S3 chỉ còn **thêm event** vì `setModel`/`setActiveTools` đã có (đã kiểm chứng ở `:1501`, `:1507`, `:1756`, `:1758`).
+- S3 chỉ còn **thêm event** vì `setModel`/`setActiveTools` đã có (đã kiểm chứng ở `:1501`, `:1507`, `:1781`, `:1783`).
 - Điểm phát `agent_end` **không nằm trong `runner.ts`** mà ở `agent-session.ts:4540` (`#emitAgentEndNotification` gọi `this.#extensionRunner?.emit({ type: "agent_end", … })`) — tức S1 còn phải đụng thêm **một file ngoài danh sách "File cần chạm tới"** mà bảng ở dòng 16-24 **không liệt kê**. Đây là thiếu sót thật trong bảng file, và nó cũng làm G6 ("file ngoài danh sách") sẽ bắt nhầm chính người làm đúng việc.
 
 **Ước lượng ~5 ngày: chấp nhận được**, có cơ sở. Nhưng tôi **không đồng ý** với cách nó được trình bày: con số 5 ngày là **giả định hai cổng trả lời thuận lợi**, và tài liệu nói thẳng điều đó — đó là dạng trung thực. Nhưng nó **chưa cộng** hai khoản em lệch:
@@ -20625,583 +20678,7 @@ Một vi phạm **tiềm ẩn** đáng ghi: nếu P2 chọn phương án (b), b�
 
 ---
 
-## Sóng 1a — WARM: làm ấm prompt cache
-
-> Phân biệt hai việc: **đánh dấu** (`cache_control` breakpoint — omp ĐÃ CÓ) và **làm ấm**
-> (gọi API chủ động để cache không hết hạn lúc session rỗi — omp THIẾU). Work item này chỉ làm
-> phần thứ hai. Phần đánh dấu không viết lại, chỉ đo lại để phần mới không cạnh tranh.
-
-## Sóng / phạm vi
-
-**Sóng 1 — một vòng duy nhất, không chặn gì.** Đưa senpi's `cache-keepalive` vào omp dưới dạng
-một extension builtin: một timer chỉ **vi sau** hành vi refresh theo yêu cầu mà omp đã có,
-phát một request "warm" khi session đang rỗi, và dừng ngay khi agent bận hoặc người dùng nhập.
-
-**Việc này KHÔNG gồm:** đánh dấu `cache_control` lên các block; cài đặt beta `extended-cache-ttl`;
-khai báo `cacheRetention` trên model; phần **session-prewarm** của senpi (một request duy nhất lúc
-khởi động, dành cho OpenAI Responses) — hai phần đó tách thành work item riêng.
-
-## Đã đo — nền omp phải viết LÊN, không cạnh tranh
-
-### Đánh dấu cache: ĐÃ CÓ
-
-| neo | thực tế |
-| --- | --- |
-| `packages/ai/src/types.ts:124` | `export type CacheRetention = "none" \| "short" \| "long";` |
-| `packages/ai/src/types.ts:431` | `cacheRetention?: CacheRetention;` — option request |
-| `packages/ai/src/types.ts:439` | `anthropicCacheRefresh?: boolean;` — công tắc refresh theo yêu cầu |
-| `packages/ai/src/providers/anthropic.ts:544` | `retention === "long" && model.compat.supportsLongCacheRetention ? "1h" : undefined` → `cacheControl.ttl = "1h"` |
-| `packages/coding-agent/src/sdk.ts:4111` | `anthropicCacheRefresh: true` — omp đã BẬT theo mặc định cho coding agent |
-
-Chuỗi đánh dấu đầy đủ đã chạy: `cacheRetention` → `getCacheControl` → `cache_control: {type:"ephemeral", ttl:"1h"}`.
-
-### Làm ấm theo yêu cầu: ĐÃ CÓ (đây là thứ phải viến SAU nó)
-
-`packages/ai/src/stream.ts:1209-1212` và `:1292-1296` — hành vi này đã có, là refresh nội trong một
-turn: TTL cố định `ANTHROPIC_CACHE_TTL_MS = 5 * 60_000`, refresh trước 15 s (`ANTHROPIC_CACHE_REFRESH_LEAD_MS`),
-tối đa 3 lần (`ANTHROPIC_CACHE_REFRESH_LIMIT`), chỉ cho `model.api === "anthropic-messages"`,
-`provider === "anthropic"`, `transport !== "pi-native"`, và `cacheRetention === "short"`.
-Sử dụng payload `max_tokens: 0` (`anthropic.ts:2326`) và gỡ `tool_choice` trước khi gửi
-(#12597). Được bật ở `stream.ts:1369` (`anthropicCacheRefreshRequest: !thinkingEnabled`) và
-`anthropic.ts:2075` (`zeroOutputCacheRefresh = options?.anthropicCacheRefreshRequest === true`).
-
-**Hệ quả để hiểu sau:** omp có thể **sửa lỗi thời hạn của chính nó mà không thêm dòng nào**.
-Cache refresh theo yêu cầu này chỉ sống trong một request. Senpi thấy điều đó thiếu — nên viết vòng
-lặp ngoài request. Đó là khoảng trống duy nhất, cũng là toàn bộ phạm vi hợp lý của work item này.
-
-### TTL `1h` không có cấu hình được
-
-`cacheRetention` là **option request**, không phải field của model trong catalog: 0 hit cho
-`cacheRetention` trong `packages/catalog/src`, 0 trong `packages/catalog/src/models.json`.
-Các luật KDL có `supports-long-prompt-cache-retention` (`packages/catalog/src/compat/rules/classes/anthropic.kdl:266,286,292,317,328,341,349`)
-và `supports-long-cache-retention` (`providers/anthropic.kdl:88`), nhưng chúng chỉ dẫn `cacheRetention` mặc định.
-omp không có cách nào nói "dùng 1h" ngoài việc gửi option — và `sdk.ts` **không bao giờ** gửi.
-Vì vậy `anthropic.ts:539` rơi về `defaultRetention = "short"` (trừ OAuth), và `:544` trả `ttl === undefined`:
-cache luôn **5 phút**. Hàm `resolvePromptCacheTtlSeconds` của senpi **không tồn tại trong omp** (0 hit).
-
-### Bốn symbol vắng mặt — đúng như báo cáo
-
-```
-warmPromptCache = 0   resolvePromptCacheTtlSeconds = 0   WarmPromptCacheOptions = 0
-WarmPromptCacheResult = 0   WarmPromptCacheUsage = 0   promptCacheTtl = 0
-getPromptCachePrefixRequest = 0   getPromptCacheKeepAliveSettings = 0
-isOpenAIResponsesPromptCacheModel = 0   isAnthropicApiBaseUrl = 0
-```
-
-Đọc lại 12 symbol bổ sung (`appendEntry` = 56 hit; `isIdle` = 50; `hasPendingMessages` = 38;
-`getSystemPrompt` = 32; `getSessionId` = 501; `getApiKeyAndHeaders` = 4; `agent_end` = 524;
-`agent_start` = 168; `model_select` = 0). Ba symbol `registerEntryRenderer`, `session_parked`,
-`session_resumed` đều = 0.
-
-### Phần gốc của senpi — chép tốn bao nhiêu
-
-`packages/coding-agent/src/core/extensions/builtin/cache-keepalive/`, **4 file, 569 dòng**:
-
-| file | dòng | vai trò |
-| --- | --- | --- |
-| `index.ts` | 340 | vòng lặp + event subscribe + entry render + hàm giá |
-| `session-prewarm.ts` | 110 | **không thuộc work item này** |
-| `prewarm-entry.ts` | 33 | **không thuộc work item này** |
-| `changes.md` | 86 | tài liệu |
-
-**Chỉ `index.ts` là phần cần port, và nó không chạm core**: toàn bộ phụ thuộc ngoài là import từ
-`@earendil-works/pi-ai` (4 symbol vắng), hai helper nội bộ (`convertToLlm`, `filterContextExcludedMessages`),
-và ba surface mà omp đã có: `pi.appendEntry`, `pi.events.emit`, `ExtensionContext`.
-
-Phần `ping()` (index.ts:141-233, ~95 dòng) tự túc hoàn toàn: gọi `current.getSystemPrompt()`,
-`pi.getActiveTools()` / `pi.getAllTools()`, `current.modelRegistry.getApiKeyAndHeaders(current.model)`,
-`pi.appendEntry(...)`. Không có core hook. **Port chép ~150 dòng từ `index.ts`** (bỏ phần session-prewarm
-và bỏ hàm `toUsage`/entry type của prewarm), cộng ~10 dòng để nối vào registry extension.
-
-### Bảy seam phải mở
-
-| # | seam | nơi | hành động |
-| --- | --- | --- | --- |
-| 1 | `resolvePromptCacheTtlSeconds` | `packages/ai/src/` | thêm; đọc TTL từ catalog policy, không hard-code số |
-| 2 | `warmPromptCache` | `packages/ai/src/` | thêm; gọi `max_tokens: 0` như `anthropic.ts:2326` |
-| 3 | `getPromptCacheKeepAliveSettings` | `ExtensionContext` | thêm 4 field; đọc từ settings (logic trung lập) |
-| 4 | `session_parked` / `session_resumed` | bus sự kiện | thêm 2 event; hoặc dùng `agent_end` + idle probe |
-| 5 | `registerEntryRenderer` | `pi` API | **không mở** — dùng `pi.appendEntry` trần (56 hit, đã có sẵn) |
-| 6 | `isAnthropicApiBaseUrl` | `packages/ai/src/` | thêm; lấy từ `model.compat` hoặc KDL, không so `baseUrl` bằng tên host |
-| 7 | `ExtensionContext.getSystemPrompt` | `types.ts:496` | đã có — không mở |
-
-Seam 5 là quyết định thiết kế quan trọng nhất: `registerEntryRenderer` = 0 hit trong omp, và mở nó
-đồng nghĩa viết một lớp render entry mới. `pi.appendEntry` đã có 56 chỗ gọi — dùng nó, và để TUI
-quyết định có hiển thị không.
-
-## Hiệu ứng người dùng thấy
-
-Session rỗi lâu hơn 5 phút với model Anthropic: cache **không** hết hạn giữa chừng. Hiện tại,
-nếu người dùng rỗi 6 phút rồi gõ tiếp, turn tiếp theo trả toàn bộ prefix dưới dạng `input` thay vì
-`cacheRead` — tốn tiền và chậm hơn, mà không có tín hiệu nào báo trước. Sau work item này, trong
-khoảng rỗi đó có một request `max_tokens: 0` chạy nền để gia hạn, và cache vẫn đọc được khi người
-dùng quay lại.
-
-Người dùng **không** thấy: request warm (không token output), entry `cache-keepalive` trong transcript
-(trừ khi bật log), hay bất kỳ thay đổi nào khi agent đang bận.
-
-## Effort
-
-**~4 engineer-days.**
-
-| hạng mục | ngày |
-| --- | --- |
-| Seam 1+2: `resolvePromptCacheTtlSeconds` + `warmPromptCache` trong `packages/ai` | 1 |
-| Seam 3+4: settings + 2 event (hoặc idle probe) | 0.5 |
-| Port `index.ts` (~150 dòng) + nối registry | 1.5 |
-| Test: cache ấm có hạn + không phát call thừa | 1 |
-
-Phần dễ sai nhất tốn nửa ngày: test phải chứng minh **cả** hai hướng — cache được ấm, **và** không
-phát thêm API call khi TTL còn dài. Một test chỉ kiểm tra hướng đầu sẽ xanh khi code gọi API mỗi 5 giây.
-
-## File cần chạm tới
-
-| path | hành động | thay đổi | đã kiểm chứng? |
-| --- | --- | --- | --- |
-| `packages/ai/src/stream.ts` | sửa | thêm `resolvePromptCacheTtlSeconds(model)` đọc TTL từ catalog policy; không đụng `ANTHROPIC_CACHE_TTL_MS` (5 phút) của refresh theo yêu cầu | Có. `:1209-1212` hằng số, `:1292-1296` `supportsAnthropicCacheRefresh`, `:1431` guard `cacheRetention === "short"` |
-| `packages/ai/src/providers/anthropic.ts` | sửa | thêm `warmPromptCache()` — tái sử dụng đoạn `max_tokens: 0` + gỡ `tool_choice` ở `:2326-2334` | Có. `:2326` `refreshParams = { ...params, max_tokens: 0, stream: false }`, `:2332-2334` gỡ `tool_choice` |
-| `packages/ai/src/types.ts` | sửa | thêm `WarmPromptCacheOptions`, `WarmPromptCacheResult`, `WarmPromptCacheUsage` | Có. `:124` `CacheRetention`, `:431` `cacheRetention?`, `:439` `anthropicCacheRefresh?` |
-| `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | thêm `getPromptCacheKeepAliveSettings?()` vào `ExtensionContext` | Có. `:478` `isIdle()`, `:482` `hasPendingMessages()`, `:496` `getSystemPrompt()` — chèn cạnh |
-| `packages/coding-agent/src/extensibility/extensions/registry.ts` | sửa | đăng ký extension builtin mới | **Chưa đo** — cần `git ls-files` trước khi viết |
-| `packages/coding-agent/src/core/extensions/builtin/cache-keepalive/index.ts` | tạo | port ~150 dòng từ senpi `index.ts`, bỏ session-prewarm | Có. Nguồn 340 dòng, đã đọc trọn |
-| `packages/catalog/src/compat/rules/*.kdl` | sửa | thêm axis TTL nếu cần; chạy `bun run gen:compat` và commit `rules.json` | Có. `classes/anthropic.kdl:266` `supports-long-prompt-cache-retention`, `providers/anthropic.kdl:88` `supports-long-cache-retention` |
-| `NOTICE.md` | tạo | attribution senpi (MIT) | Có. omp chưa có file này; senpi MIT thuần |
-
-## Các bước
-
-1. **CỔNG — lấy câu trả lời P0 bằng văn bản TRƯỚC KHI viết code:** chi phí mặc định là bao nhiêu?
-   Bốn lựa chọn, mỗi lựa chọn một hệ quả khác nhau:
-
-   | lựa chọn | hệ quả |
-   | --- | --- |
-   | **A. Luôn bật** | Mọi session Anthropic đều phát request warm. Đơn giản nhất, nhưng phí cho người dùng không hề rỗi — và senpi chọn cái này **không phải vì tốt**, mà vì `maxCostUsdPerSession` mặc định 0 (tắt) |
-   | **B. Theo ngưỡng TTL** | Chỉ bật khi `resolvePromptCacheTtlSeconds(model) > 0`. Đây là cách **không cần thiết kế sản phẩm**: TTL đã là policy của provider, không phải của omp |
-   | **C. Chỉ khi `cache_control` có mặt** | Chỉ bật khi model có `supports-long-prompt-cache-retention`. Hẹp nhất, nhưng bỏ qua trường hợp cache 5 phút vẫn đáng làm ấm |
-   | **D. Tắt mặc định** | Giống senpi. An toàn nhất, nhưng work item này gần như vô dụng với người dùng thật |
-
-   **Khuyến nghị: B.** Lý do: nó là lựa chọn duy nhất không cần một con số tùy ý nào. A và D đều cần
-   người duy trì chọn một chính sách; C cần một con số ngưỡng. B chỉ cần đọc policy đã có.
-   Ghi câu trả lời nguyên văn vào work item này. Không bắt đầu khi P0 còn mở.
-
-2. **Đo `packages/coding-agent/src/extensibility/extensions/registry.ts`** bằng `git ls-files` và
-   `grep -n "builtin"` trước khi sửa. Cần biết tên hàm đăng ký và thứ tự builtin. Nếu registry không
-   tồn tại dưới dạng đó, dùng `git ls-files "packages/coding-agent/src/extensibility/extensions/"`
-   để liệkê. *(anchor: `packages/coding-agent/src/extensibility/extensions/registry.ts` — chưa đo)*
-
-3. **Seam 1 — thêm `resolvePromptCacheTtlSeconds(model)` vào `packages/ai/src/`.** Hàm trả về
-   số giây TTL mà catalog policy cho phép cho model đó, hoặc `0` nếu không có. Đọc từ
-   `model.compat.supportsLongCacheRetention` và axis KDL — **không** so sánh tên model, **không**
-   hard-code `3600`. Nếu cần axis mới, sửa `packages/catalog/src/compat/rules/*.kdl` rồi chạy
-   `bun run gen:compat` và commit `rules.json` cùng. *(anchor: `packages/ai/src/providers/anthropic.ts:544` — nơi `ttl` được quyết định)*
-
-4. **Seam 2 — thêm `warmPromptCache()` vào `packages/ai/src/`.** Tái sử dụng đoạn đã có ở
-   `anthropic.ts:2326-2334`: clone payload, `max_tokens: 0`, `stream: false`, gỡ `tool_choice`.
-   Trả về `{ supported: boolean, usage: WarmPromptCacheUsage }`. `supported` phải `false` khi
-   `supportsAnthropicCacheRefresh(model)` là `false` — để caller không phát request vô nghĩa.
-   *(anchor: `packages/ai/src/providers/anthropic.ts:2326`)*
-
-5. **Seam 3 — thêm `getPromptCacheKeepAliveSettings?()` vào `ExtensionContext`** tại
-   `types.ts:496` (cạnh `getSystemPrompt`). Bốn field: `enabled`, `marginSeconds`,
-   `maxRequestsPerSession`, `maxCostUsdPerSession`. Implementation đọc từ settings — **không** đọc
-   theo tên provider. *(anchor: `packages/coding-agent/src/extensibility/extensions/types.ts:496`)*
-
-6. **Seam 4 — chọn một trong hai đường cho `session_parked` / `session_resumed`:** (a) thêm 2 event
-   vào bus, hoặc (b) không thêm — dùng `agent_end` + `isIdle()` probe. Đường (b) rẻ hơn và không mở
-   seam mới, nhưng không dừng timer khi session parked. Nếu P0 chọn B, đường (b) đủ. *(anchor:
-   `packages/coding-agent/src/extensibility/extensions/types.ts:1581` — `events: EventBus`)*
-
-7. **Tạo `packages/coding-agent/src/core/extensions/builtin/cache-keepalive/index.ts`** bằng cách
-   chép ~150 dòng từ senpi `index.ts`, bỏ `createSessionPrewarm`, `prewarm-entry.ts`, `toUsage`,
-   và entry type `PromptCachePrewarmEntryData`. Giữ nguyên: `arm()`, `ping()`, `stop()`, ba hàm giá
-   (`projectedPingCost`, `actualPingCost`, `finiteTokens`), và `generation` fence. Thay
-   `isAnthropicApiBaseUrl(model.baseUrl)` bằng `supportsAnthropicCacheRefresh(model)` của omp.
-   *(anchor: senpi `index.ts:104-233` — `arm()` + `ping()`)*
-
-8. **Nối vào registry extension.** Đăng ký builtin mới. Không mở `registerEntryRenderer` — dùng
-   `pi.appendEntry` trần như senpi. *(anchor: `packages/coding-agent/src/extensibility/extensions/registry.ts` — chưa đo)*
-
-9. **Tạo `NOTICE.md`** ở root omp với attribution senpi (MIT), ghim theo commit SHA
-   `ea9216269e9254b821446130b60d1e00759761dc`. Không lấy "bản mới nhất". *(anchor: root repo)*
-
-10. **Tạo test `packages/ai/test/warm-prompt-cache.test.ts`.** Phải chứng minh **hai** hướng:
-    (i) khi TTL còn dài, `warmPromptCache` **không** phát request nào; (ii) khi TTL gần hết, nó phát
-    đúng một request `max_tokens: 0` và trả `supported: true`. Dùng `vi.spyOn` trên namespace module
-    đã import + `vi.restoreAllMocks()` trong `afterEach`. Không dùng `mock.module()`. Không source-grep.
-    *(anchor: `packages/ai/test/anthropic-cache-refresh.test.ts` — khuôn sẵn có)*
-
-11. **Tạo test `packages/coding-agent/test/cache-keepalive.test.ts`.** Phải chứng minh: timer không
-    phát request khi `isIdle()` trả `false`; timer không phát request khi `hasPendingMessages()` trả
-    `true`; timer dừng sau `maxRequestsPerSession`; và `generation` fence chặn một ping cũ sau khi
-    `stop()` được gọi. *(anchor: `packages/coding-agent/test/` — thư mục tồn tại)*
-
-## Hợp đồng test
-
-| hợp đồng | cách kiểm |
-| --- | --- |
-| Cache được ấm | `warmPromptCache` phát đúng 1 request `max_tokens: 0` khi TTL gần hết |
-| Có hạn | `resolvePromptCacheTtlSeconds` trả `0` cho model không có policy → không phát request |
-| Không phát thừa | Khi TTL còn dài, số request = 0 (không phải "ít hơn") |
-| Không cạnh tranh với refresh theo yêu cầu | `anthropicCacheRefresh` vẫn bật và vẫn phát đúng 3 lần trong một turn |
-| Không chạy khi bận | `isIdle() === false` → 0 request |
-| Không chạy khi có pending | `hasPendingMessages() === true` → 0 request |
-| Dừng đúng | Sau `maxRequestsPerSession` ping, timer không arm lại |
-| Fence đúng | Ping cũ sau `stop()` không ghi entry |
-
-## Cổng hoàn thành
-
-Cổng **đỏ được** khi hạ tắt. Mỗi dòng phải phân biệt được "đã làm" với "không chạy được":
-
-| cổng | thành công khi | thất bại khi |
-| --- | --- | --- |
-| P0 trả lời bằng văn bản | Câu trả lời nguyên văn nằm trong work item này | Còn dạng "một trong bốn" |
-| `resolvePromptCacheTtlSeconds` | Trả `> 0` cho model có policy, `0` cho model không có | Trả `0` cho mọi model |
-| `warmPromptCache` | Trả `supported: true` + usage đúng khi TTL gần hết | Trả `supported: false` khi phải `true` |
-| Không phát thừa | 0 request khi TTL còn dài | ≥ 1 request |
-| Không cạnh tranh | `anthropicCacheRefresh` vẫn phát 3 lần trong một turn | Ít hơn 3 lần |
-| Không chạy khi bận | 0 request khi `isIdle() === false` | ≥ 1 request |
-| Registry | Extension builtin mới xuất hiện trong danh sách | Không có |
-| NOTICE.md | File tồn tại, ghim SHA `ea921626...` | Thiếu hoặc ghim "bản mới nhất" |
-| `bun check` | Sạch | Lỗi type |
-| `bun test` | Cả 2 file test xanh | Đỏ |
-
-## Rủi ro
-
-| rủi ro | hệ quả | giảm |
-| --- | --- | --- |
-| **P0 chọn A (luôn bật)** | Phí request warm cho người dùng không hề rỗi | Ghi rõ chi phí ước tính trong câu trả lời P0 |
-| **Port dùng `JSON.parse` trực tiếp** | Biến lỗi JSONL thành crash | Mọi thứ đọc session phải qua `parseJsonlLenient` (`packages/utils/src/stream.ts:575`) — đây là cổng chặn dễ sai nhất |
-| **Nhầm lẫn hai loại refresh** | Viết lại `anthropicCacheRefresh` thay vì thêm vòng mới | Giữ nguyên `ANTHROPIC_CACHE_TTL_MS` và `ANTHROPIC_CACHE_REFRESH_LIMIT`; chỉ thêm bên ngoài |
-| **Hard-code TTL `3600`** | Vi phạm AGENTS.md (không hard-code policy theo provider) | Đọc từ `model.compat` + KDL; nếu cần axis mới thì sửa `.kdl` và chạy `bun run gen:compat` |
-| **Mở `registerEntryRenderer`** | Viết một lớp render entry mới không cần thiết | Dùng `pi.appendEntry` trần (56 hit) |
-| **Chép cả session-prewarm** | Work item phình gấp đôi, chạm OpenAI Responses | Bỏ `session-prewarm.ts` và `prewarm-entry.ts` — tách riêng |
-| **Test chỉ kiểm một hướng** | Xanh khi code gọi API mỗi 5 giây | Bắt buộc cả hai hướng trong cùng file test |
-| **Ghim sai SHA** | Attribution sai | Ghim `ea9216269e9254b821446130b60d1e00759761dc`, không lấy "bản mới nhất" |
-
-### Phản biện — đọc trước khi làm
-
-Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-cache.md`. Các sửa bắt buộc đã được đưa vào thân work item; những gì còn lại ở đây.
-
-**Kết luận một dòng: ĐỨNG VỮNG VỀ ĐỘ CHÍNH XÁC CỦA ANO, SAI VỀ CỔNG VÀ VỀ ƯỚC LƯỢNG.**
-
-Các neo `path:line` mà tài liệu dùng để dẫn đường triển khai gần như **hoàn hảo** — tôi không tìm được
-một neo sai nào trong 40 neo có số dòng. Đó là phần tốt. Nhưng tài liệu **không phải** là một kế
-hoạch dùng được được: nó đẩy hai việc lớn ra khỏi phạm vi (registry, P0) mà không tính tiền, đặt
-"cổng chặn dễ sai nhất" vào một rủi ro **không thể xảy ra**, và đánh dấu 4/9 con số là không
-tái lập được.
-
-Quy ước: **ĐỨNG VỮNG** = tái lập được bằng ≥2 cách · **SAI** = có bằng chứng trái chiều ·
-**CHƯA ĐỦ DỮ LIỆU** = không bác bỏ được, cũng không xác nhận được.
-
----
-
-## 1. Bảng kiểm chứng
-
-### 1.1. Neo có số dòng (phần mạnh nhất của tài liệu)
-
-| khẳng định | lệnh kiểm | kết quả | đứng vững / sai / chưa đủ dữ liệu |
-| --- | --- | --- | --- |
-| `types.ts:124` = `CacheRetention` | `sed -n 124p` | `export type CacheRetention = "none" \| "short" \| "long";` | **đứng vững** |
-| `types.ts:431` = `cacheRetention?` | `sed -n 431p` | `cacheRetention?: CacheRetention;` | **đứng vững** |
-| `types.ts:439` = `anthropicCacheRefresh?` | `sed -n 439p` | `anthropicCacheRefresh?: boolean;` | **đứng vững** |
-| `anthropic.ts:544` quyết định `ttl` | `sed -n 544p` | `const ttl = retention === "long" && model.compat.supportsLongCacheRetention ? "1h" : undefined;` | **đứng vững** |
-| `anthropic.ts:539` `defaultRetention` | `sed -n 539p` | `isOAuthToken && … ? "long" : "short"` | **đứng vững** (tài liệu ghi "(trừ OAuth)" — chính xác) |
-| `anthropic.ts:2075` `zeroOutputCacheRefresh` | `sed -n 2075p` | `options?.anthropicCacheRefreshRequest === true` | **đứng vững** |
-| `anthropic.ts:2326` payload `max_tokens: 0` | `sed -n 2326p` | `{ ...params, max_tokens: 0, stream: false }` | **đứng vững** |
-| `anthropic.ts:2332-2334` gỡ `tool_choice` | `sed -n 2332,2334p` | `delete refreshParams.tool_choice;` | **đứng vững** |
-| `stream.ts:1209-1212` hằng số refresh | `sed -n 1209,1212p` | đủ 4 hằng: TTL `5*60_000`, LEAD `15_000`, LIMIT `3`, STATE_KEY | **đứng vững** |
-| `stream.ts:1292-1296` `supportsAnthropicCacheRefresh` | `sed -n 1292,1296p` | `model.api === "anthropic-messages" && …` | **đứng vững** |
-| `stream.ts:1369` bật refresh | `sed -n 1369,1370p` | `anthropicCacheRefreshRequest: !thinkingEnabled,` + `cacheRetention: "short"` | **đứng vững** |
-| `stream.ts:1431` guard `"short"` | `sed -n 1431p` | `resolveCacheRetention(options.cacheRetention) !== "short"` | **đứng vững** (xem ghi chú §2.1) |
-| `sdk.ts:4111` `anthropicCacheRefresh: true` | `sed -n 4111p` | `anthropicCacheRefresh: true,` | **đứng vững** |
-| `classes/anthropic.kdl` 7 dòng 266/286/292/317/328/341/349 | `grep -n` | đúng 7 dòng, đúng thứ tự, đều là `supports-long-prompt-cache-retention` | **đứng vững** |
-| `providers/anthropic.kdl:88` | `grep -n` | `supports-long-cache-retention #true` | **đứng vững** |
-| `ext types.ts:478` `isIdle()` | `sed -n 478p` | `isIdle(): boolean;` | **đứng vững** |
-| `ext types.ts:482` `hasPendingMessages()` | `sed -n 482p` | `hasPendingMessages(): boolean;` | **đứng vững** |
-| `ext types.ts:496` `getSystemPrompt()` | `sed -n 496p` | `getSystemPrompt(): string[];` | **đứng vững** |
-| `ext types.ts:1581` `events: EventBus` | `sed -n 1581p` | `events: EventBus;` | **đứng vững** |
-| `utils/stream.ts:575` `parseJsonlLenient` | `grep -n` | dòng 575 = `export function parseJsonlLenient<T>(...)` | **đứng vững** |
-
-**20/20 neo có số dòng khớp tuyệt đối.** Đây không phải chuyện may. Người viết đã mở file thật.
-
-### 1.2. Các khẳng định "0 hit"
-
-Đo bằng 2 cách: `git grep -I -w -- '*.ts'` (chỉ file đã track) và `rg -g '*.ts'` (kể cả untracked).
-
-| khẳng định | lệnh kiểm | kết quả | đứng vững / sai / chưa đủ dữ liệu |
-| --- | --- | --- | --- |
-| 10 symbol warm-cache vắng mặt (`warmPromptCache`, `resolvePromptCacheTtlSeconds`, `WarmPromptCacheOptions/Result/Usage`, `promptCacheTtl`, `getPromptCachePrefixRequest`, `getPromptCacheKeepAliveSettings`, `isOpenAIResponsesPromptCacheModel`, `isAnthropicApiBaseUrl`) | `git grep -c -w` + `rg -c -w` | cả hai cách đều **0** | **đứng vững** |
-| `registerEntryRenderer` = 0 | `git grep -c -w` | 0 (cả `EntryRenderer` cũng = 0 trong `coding-agent/src`) | **đứng vững** |
-| `session_parked` / `session_resumed` = 0 | `git grep -c -w` | 0 | **đứng vững** |
-| `model_select` = 0 | `git grep -c -w` | 0 (senpi: 28 chỗ / 20 thư mục) | **đứng vững** |
-| `cacheRetention` = 0 trong `packages/catalog/src` | `git grep -c -w` | 0 (kể cả `models.json`) | **đứng vững** |
-| omp chưa có `NOTICE.md` | `ls NOTICE.md` | `No such file or directory` | **đứng vững** |
-| senpi là MIT thuần | `head -3 LICENSE` | `MIT License` | **đứng vững** |
-| senpi HEAD = SHA ghim | `git rev-parse HEAD` | `ea9216269e9254b821446130b60d1e00759761dc` | **đứng vững** |
-| `packages/ai/test/anthropic-cache-refresh.test.ts` tồn tại | `test -e` | EXISTS | **đứng vững** |
-| `packages/coding-agent/test/` tồn tại | `test -e` | EXISTS | **đứng vững** |
-
-**Lưu ý phương pháp:** nếu tính cả `.md` thì `warmPromptCache` = 7, `model_select` = 60. Tài liệu
-không nói phương pháp, nhưng ngữ cảnh ("omp đã có X chưa") buộc phải hiểu là mã nguồn. Không tính là
-sai — nhưng một tài liệu kế hoạch nên ghi phạm vi grep.
-
-### 1.3. Con số đo được — đây là chỗ SAI
-
-Đo 3 cách: (1) số dòng khớp qua `git grep -c`, (2) số file, (3) số lần xuất hiện `-o`.
-Thêm (4) `rg` có untracked, (5) `grep -rIn` toàn cây bỏ `node_modules`, (6) `pi.<symbol>`.
-
-| khẳng định | lệnh kiểm | kết quả | đứng vững / sai / chưa đủ dữ liệu |
-| --- | --- | --- | --- |
-| `appendEntry` = 56 | `git grep -c -w '*.ts'` | 56 dòng / 24 file / 57 lần | **đứng vững** |
-| `isIdle` = 50 | như trên | 50 dòng / 23 file / 51 lần | **đứng vững** |
-| `hasPendingMessages` = 38 | như trên | 38 dòng / 17 file / 38 lần | **đứng vững** |
-| `getApiKeyAndHeaders` = 4 | như trên | 4 dòng / 2 file | **đứng vững** |
-| `getSystemPrompt` = **32** | 6 phương pháp | 31 dòng / 12 file / 31 lần. Không phương pháp nào ra 32 | **sai** (lệch 1) |
-| `agent_start` = **168** | 6 phương pháp | 158 dòng / 176 lần / 67 file. Không ra 168 | **sai** (lệch 10) |
-| `agent_end` = **524** | 6 phương pháp | 487 dòng / 494 lần / 113 file. Không ra 524 | **sai** (lệch 37) |
-| `getSessionId` = **501** | 6 phương pháp | 487 dòng / 582 lần / 173 file. Không ra 501 | **sai** (lệch 14) |
-| senpi `cache-keepalive/` = 4 file / 569 dòng | `wc -l` từng file | 340 + 110 + 33 + 86 = **569**, 4 file | **đứng vững** |
-| `index.ts` `ping()` = `:141-233`, **~95 dòng** | `grep -n "function ping"` | def `ping` ở **:145**, `arm` ở **:107**, `stop` ở **:91**; `:141` là *chỗ gọi* `void ping(...)`, `:233` là `else arm();` **bên trong** ping | **sai** |
-| `arm()+ping()` = `:104-233` | `grep -n` | `:104` là dấu `}`; span thật của `stop`+`arm`+`ping` là **:91→~250 (~160 dòng)** | **sai** |
-
----
-
-## 2. Bác bỏ: những chỗ sai
-
-### 2.1. [SAI] "Cổng chặn dễ sai nhất" không tồn tại trong work item này
-
-Dòng 245 xếp `JSON.parse` thẳng vào bảng rủi ro, gắn nhãn **"đây là cổng chặn dễ sai nhất"** —
-cùng hạng với việc ghim sai SHA. Kiểm:
-
-```
-grep -n "JSON.parse\|readJsonl\|parseJsonl\|readFile" \
-  senpi-ref/.../cache-keepalive/index.ts
-→ (rỗng)
-```
-
-`index.ts` **không đọc file nào cả**. Nó giữ message trong RAM từ `current.getSystemPrompt()` và
-mảng `lastMessages` sẵn có. `parseJsonlLenient` không liên quan: không có session file nào bị
-mở. Rủi ro này được dán từ bối cảnh M7 tổng, không từ work item này.
-
-Hậu quả cụ thể: cổng được dùng để "chặn dễ sai nhất" **không bảo vệ gì**, đồng thời nó **thay** ba
-rủi ro có thật mà tài liệu bỏ trống (§2.4, §2.5, §2.6). Một bảng rủi ro mà hàng đầu bảng sai thì
-phần còn lại của bảng cũng đáng ngờ.
-
-### 2.2. [SAI] Danh sách phụ thuộc port thiếu 3 import
-
-Dòng 80-82 khẳng định: *"toàn bộ phụ thuộc ngoài là import từ `@earendil-works/pi-ai` (4 symbol
-vắng), hai helper nội bộ, và ba surface omp đã có"*. Import thật của `index.ts` là **7 câu lệnh**:
-
-| import | tài liệu đề cập? | ảnh hưởng |
-| --- | --- | --- |
-| `@earendil-works/pi-ai` (`:2-11`) | có — nhưng là **7 symbol**, không phải 4 | tài liệu đếm 4, thật là 7: `isAnthropicApiBaseUrl`, `resolvePromptCacheTtlSeconds`, `warmPromptCache`, `WarmPromptCacheOptions`, `WarmPromptCacheResult` + 3 type (`Context`, `Model`, `Tool`). 4 cái đầu là *value*, 3 cái sau là *type* — có lẽ tác giả chỉ đếm value. Không sai chết người, nhưng sai số. |
-| `../../../messages.ts` → `convertToLlm`, `filterContextExcludedMessages` | có | `convertToLlm` = 507 hit trong omp ✅. **`filterContextExcludedMessages` = 0** — phải viết mới, tài liệu không nói. |
-| `../../notice/index.ts` → **`noticeEntryRenderer`** | **KHÔNG** | Đây chính là chỗ dính `registerEntryRenderer`. Tài liệu quyết định "không mở seam, dùng `pi.appendEntry` trần" — nhưng port vẫn phải xử lý import này. |
-| `../../types.ts` → `EntryRenderer`, `ExtensionAPI`, `ExtensionContext`, `ExtensionFactory` | một phần (chỉ `ExtensionContext`) | 4 symbol, chỉ 1 được nêu. |
-| `../goal/cache-warm.ts` → **`formatWarmTokenCount`** | **KHÔNG** | `formatWarmTokenCount` = 0 hit trong omp → phải viết mới hoặc thay thế. |
-| `./session-prewarm.ts` → `createSessionPrewarm` | có (bỏ đi) | ✅ |
-| `@earendil-works/pi-agent-core` → `type AgentMessage` | **KHÔNG** | chỉ type, rẻ. |
-
-Bốn quyết định phải làm thêm (2 viết mới, 2 cắt) **không nằm trong bảng "File cần chạm tới"**.
-
-### 2.3. [SAI] Bỏ sót 2 surface mà chính `index.ts` cần
-
-`grep` trên `ExtensionContext` của omp cho thấy 4 symbol mà tài liệu **không liệt kê**, và 2 cái
-được `index.ts` gọi trực tiếp:
-
-| symbol | omp | dùng ở |
-| --- | --- | --- |
-| `getPromptCacheSafeWaitSeconds` | **0 hit** | `index.ts:121` — `current.getPromptCacheSafeWaitSeconds?.()` **trong `arm()`** |
-| `prepareProviderRequest` | **0 hit** | `index.ts:168` — `await current.prepareProviderRequest?.(lastMessages)` **trong `ping()`** |
-
-Đây là **seam thứ 5 và thứ 6 thật**, không nằm trong bảng "Bảy seam phải mở". Nghiêm trọng hơn:
-`getPromptCacheSafeWaitSeconds` là thứ tính `intervalMs` ở dòng 136 — mất nó thì timer không biết
-chờ bao lâu, tức là **timing của cả work item** chưa được giải quyết. Tài liệu nói port "~150 dòng"
-là "gần như tự túc"; thực tế phần định thời gian đó không tự túc.
-
-### 2.4. [SAI] `registry.ts` không tồn tại — và tài liệu đặt 2 neo vào nó
-
-```
-git ls-files packages/coding-agent/src/extensibility/extensions/
-→ compact-handler.ts, directory-resolution.ts, get-commands-handler.ts, index.ts,
-  load-errors.ts, loader.ts, managed-timers.ts, model-api.ts, runner.ts,
-  types.ts, wrapper.ts          (11 file — KHÔNG có registry.ts)
-ls -d packages/coding-agent/src/core  →  No such file or directory
-```
-
-Tài liệu **nói thẳng** chỗ này chưa đo (dòng 138, 162, 194) — tính trung thực, phải công nhận. Nhưng
-hậu quả chưa được kéo theo: cả bước 2 lẫn bước 8 của kế hoạch đều neo vào một file không tồn tại, và
-thư mục đích `packages/coding-agent/src/core/extensions/builtin/` — nơi tài liệu dự tính tạo file
-— **không có trong omp** (`git ls-files '.../extensibility/extensions/builtin*'` → 0 file).
-
-Nghĩa là: không có cách "đăng ký builtin" sẵn có để nối vào. Việc này là **thiết kế mới**, không phải
-"thêm 1 dòng vào registry". Tài liệu dự phí 0 ngày cho nó. Đây là lý do tôi **không bác bỏ được**
-con số effort nhưng **không chấp nhận** nó (§3).
-
-### 2.5. [SAI] P0 là câu hỏi 3 lựa chọn, không phải 4 — B và C là cùng một mã
-
-Dòng 146-153: *"Bốn lựa chọn, mỗi lựa chọn một hệ quả khác nhau"*. Nhưng:
-
-- B được định nghĩa: *"Chỉ bật khi `resolvePromptCacheTtlSeconds(model) > 0`"*.
-- C được định nghĩa: *"Chỉ bật khi model có `supports-long-prompt-cache-retention`"*.
-- Bước 3 (dòng 166-167) định nghĩa hàm: *"Đọc từ `model.compat.supportsLongCacheRetention` và
-  axis KDL"*.
-
-Nếu hàm trả `>0` **đúng khi** `supportsLongCacheRetention` thì **B ≡ C**: cùng một điều kiện, cùng
-một dòng code. Tài liệu còn cố tình bịa một lỗi cho C để B trông hấp dẫn hơn — nó nói C *"cần một
-con số ngưỡng"*, nhưng C là **boolean trên model**, không cần con số nào.
-
-Thêm nữa, chính tài liệu đã tự bác bỏ B bằng đo của nó (dòng 52-53): vì `sdk.ts` không bao giờ gửi
-`cacheRetention`, `ttl` **luôn** là `undefined` ⇒ TTL **luôn 5 phút**. Nếu B được hiểu là "TTL `1h` có
-mặt" thì B **luôn trả 0** và work item chết ngay. B chỉ sống được nếu đọc
-`supportsLongCacheRetention` — tức là lại thành C.
-
-**Đề nghị:** gộp B+C thành một lựa chọn, đổi tên thành *"bật khi model có policy long-cache"*, và
-câu hỏi còn lại chỉ là A (bật hết, có phí) vs D (tắt mặc định). Cổng P0 vẫn nên giữ — nhưng nó
-hỏi sai câu.
-
-### 2.6. [SAI] Bước 7 chỉ đường tới một hàm không export
-
-> *"Thay `isAnthropicApiBaseUrl(model.baseUrl)` bằng `supportsAnthropicCacheRefresh(model)` của omp."*
-
-```
-grep -n "supportsAnthropicCacheRefresh" packages/ai/src/stream.ts packages/ai/src/index.ts
-→ stream.ts:1292:function supportsAnthropicCacheRefresh<TApi extends Api>(...)   ← KHÔNG export
-→ stream.ts:1431:  (chỉ dùng nội bộ)
-```
-
-Hàm **không export**, và toàn bộ `packages/ai/src` chỉ có 2 tham chiếu — cả hai trong cùng file.
-Bước 7 không thể làm theo như viết. Bảng "File cần chạm tới" cũng không liệt kê `stream.ts` là nơi
-export nó ra (mặc dù có liệt kê `stream.ts` cho việc khác — dễ bị đọc là đã lo).
-
-Có sẵn một cách sạch hơn mà tài liệu không nói: `resolveCacheRetention` **đã export** từ
-`packages/ai/src/utils.ts:538`.
-
-### 2.7. [SAI NHỎ] Mô tả guard `stream.ts:1431`
-
-Bảng ghi `:1431` là guard `cacheRetention === "short"`. Thật là:
-`resolveCacheRetention(options.cacheRetention) !== "short"` — có hàm bọc, không phải so sánh thẳng
-(điều này cũng giải thích vì sao `defaultRetention` ở `anthropic.ts:539` **không** truyền vào đây —
-nghĩa là nhánh guard lấy mặc định riêng, không dùng default của provider). Số dòng đúng; mô tả
-rút gọn quá mức, nhưng không đảo ý nghĩa.
-
----
-
-## 3. Cổng: có phân biệt được "đã làm" với "không chạy được" không?
-
-| cổng | đánh giá |
-| --- | --- |
-| `resolvePromptCacheTtlSeconds` trả `>0` khi có policy, `0` khi không | ✅ **tốt**. Hai nhánh khác nhau, lỗi rõ ràng. |
-| `warmPromptCache` trả `supported:true` + usage | ⚠️ trung bình — `supported:false` khi phải `true` là lỗi, nhưng `supported:true` + usage sai thì test có thể xanh. |
-| Không phát thừa: 0 request khi TTL còn dài | ✅ **tốt nhất trong bảng** — ngưỡng tường minh, không có vùng mơ hồ. |
-| **"Không cạnh tranh": `anthropicCacheRefresh` vẫn phát đúng 3 lần** | ❌ **cổng chết**. `ANTHROPIC_CACHE_REFRESH_LIMIT = 3` là hằng số, và `stream.ts:1431` **return sớm** (`return streamSimpleRequest(...)`) khi điều kiện không khớp — tức khi warm cache **không** phát, refresh cũng **không** chạy. Cổng xanh khi warm chưa được viết. Đổi thành: warm **không** làm `ANTHROPIC_CACHE_TTL_MS`/LIMIT đổi giá trị, và 1 turn vẫn refresh tối đa 3 lần *khi warm không chạy*. |
-| Registry: "extension builtin mới xuất hiện trong danh sách" | ❌ **cổng chết** — không có "danh sách" nào (không có `registry.ts`, không có thư mục `builtin/`). Xanh ngay khi chưa làm gì. |
-| `NOTICE.md`: tồn tại + ghim SHA | ⚠️ yếu — kiểm `contains("ea921626")` trên text là kiểm hình thức, không kiểm attribution đúng. Nhưng chấp nhận được, vì file bắt buộc phải tồn tại. |
-| `bun check` sạch | ✅ yếu nhưng thật (bắt lỗi type). |
-| `bun test` 2 file xanh | ✅ thật. |
-| **P0: "câu trả lời nguyên văn nằm trong work item"** | ❌ **cổng chết theo định nghĩa của chính tài liệu.** "Còn dạng 'một trong bốn'" là **không kiểm được bằng lệnh** — đó là một văn bản, không phải trạng thái. Đây đúng là loại cổng mà bài toán cảnh báo. |
-
-**Tóm: 10 cổng, 3 cổng chết** (không cạnh tranh, Registry, P0) và 1 cổng vô nghĩa về mặt kỹ thuật
-(REFRESH vốn đã là `return` sớm). Ba cổng chết nằm đúng ở ba chỗ tài liệu tự nhận là "chưa đo" —
-tức là phần chưa đo lại chính là phần không có cổng thật.
-
----
-
-## 4. Ước lượng effort
-
-Bảng tự cộng đúng (1 + 0.5 + 1.5 + 1 = 4 ngày). Nhưng nó **không tính** những việc tôi đã chứng minh
-là tồn tại:
-
-| bị bỏ sót | bằng chứng | ước lượng |
-| --- | --- | --- |
-| Thiết kế cách đăng ký builtin (không có sẵn) | `registry.ts` không tồn tại; `src/core/` không tồn tại; 0 file `builtin*` | chưa đủ dữ liệu để đo — nhưng chắc chắn ≠ 0 ngày |
-| 2 surface mới: `getPromptCacheSafeWaitSeconds`, `prepareProviderRequest` | §2.3, cả hai = 0 hit | +0.5 |
-| 2 viết mới: `filterContextExcludedMessages`, `formatWarmTokenCount` | §2.2, cả hai = 0 hit | +0.5 |
-| `supportsAnthropicCacheRefresh` phải export | §2.6 | +0.1 |
-| `NOTICE.md` + `bun run gen:compat` (nếu thêm axis) | bảng effort không có dòng này | +0.3 |
-
-**Ước lượng thực tế: ~5.5-6 ngày**, không phải 4. Tệ hơn: dòng "Port `index.ts` (~150 dòng) + nối
-registry | 1.5" gộp **hai việc khác hẳn nhau** — chép 160 dòng cơ học, và thiết kế cách cắm vào omp.
-Cần tách.
-
----
-
-## 5. AGENTS.md — work item này có tạo ra code vi phạm không?
-
-| quy tắc | trạng thái |
-| --- | --- |
-| Không hard-code model id trong TS | ✅ **tốt** — bước 3 ghi rõ *"không so sánh tên model, không hard-code `3600`"*, và bảng rủi ro có hàng riêng cho việc này. |
-| Policy model/provider sống trong KDL | ✅ tốt — chỉ định đúng `.kdl` + `bun run gen:compat` + commit `rules.json`. |
-| Không dùng `mock.module()` | ✅ tốt — bước 10 cấm rõ ràng. |
-| Không dùng `tsc` | ✅ tốt — cổng dùng `bun check`. |
-| Không `ReturnType<>` / không inline import | ✅ không thấy. |
-| **Không `any`** | ❌ **vi phạm sắp xảy ra, tài liệu không cảnh báo.** Nguồn port có `index.ts:316` `function projectedPingCost(model: Model<any>, ...)` và `:323` `actualPingCost(model: Model<any>, ...)`. Chép nguyên văn = vi phạm AGENTS.md. Cần sửa thành `Model<Api>` khi port. |
-| **Test phải chứng minh cả hai hướng** | ✅ tốt — đây là phần tốt nhất của tài liệu, và tôi giữ nguyên đánh giá. |
-
-Ngoài `any`, tài liệu **tuân thủ AGENTS.md tốt hơn mức trung bình** — nó chủ động tránh cả hai bẫy
-"model policy trong TS" và "test một chiều".
-
----
-
-## 6. Điều tôi KHÔNG bác bỏ được
-
-Ghi rõ để không bị hiểu là đã bác bỏ hết:
-
-- **Toàn bộ phần "Đã đo" ở §"Đánh dấu cache: ĐÃ CÓ"** — 20/20 neo khớp tuyệt đối, tôi đã mở file
-  đọc thật chứ không tin grep. Giữ nguyên.
-- **10 symbol "0 hit"** — tái lập được bằng 2 phương pháp độc lập. Giữ nguyên.
-- **Quyết định ở seam 5 (không mở `registerEntryRenderer`)** — đúng. `registerEntryRenderer` = 0,
-  `EntryRenderer` = 0, `pi.appendEntry` = 56 chỗ. Đây là phán đoán tốt nhất của tài liệu.
-- **`senpi` HEAD `ea921626…` = SHA ghim** — khớp tuyệt đối. Rủi ro "ghim sai SHA" là hợp lý.
-- **Chi phí port ~150 dòng** — bảo thủ, nhưng `arm+ping+stop` thật là ~160 dòng nên con số gần đúng.
-  Sai là *cách chia*, không phải *độ lớn*.
-- **Bốn symbol warm-cache vắng mặt** — xác nhận. Đây là tiền đề đúng của cả work item.
-
----
-
-## 7. Đề nghị sửa (theo thứ tự ưu tiên)
-
-1. **Xoá hàng rủi ro `JSON.parse`** khỏi bảng — hoặc chuyển sang work item nào thật sự đọc session.
-   Đổi "cổng chặn dễ sai nhất" sang `getPromptCacheSafeWaitSeconds` (thiếu = timer không có nhịp).
-2. **Bổ sung 2 seam** `getPromptCacheSafeWaitSeconds` + `prepareProviderRequest` vào bảng seam và
-   bảng file; bổ sung 2 helper phải viết mới vào bảng file.
-3. **Gộp lựa chọn B và C** của P0 thành một; viết lại cổng P0 thành tiêu chí kiểm được
-   (ví dụ: `bun run gen:compat` sinh `rules.json` không đổi, hoặc một test chứng minh hàm đọc được
-   policy từ catalog).
-4. **Sửa cổng "không cạnh tranh"** — hiện tại xanh khi chưa làm gì.
-5. **Ghi rõ trong bước 7** rằng `supportsAnthropicCacheRefresh` phải export trước, hoặc dùng
-   `resolveCacheRetention` (`packages/ai/src/utils.ts:538`).
-6. **Sửa neo senpi** `ping()` → `:145`, `arm()` → `:107`, `stop()` → `:91`; span thật `:91→~250`.
-7. **Sửa 4 con số** `getSystemPrompt` 32→31, `agent_start` 168→158 (hoặc 176 lần xuất hiện),
-   `agent_end` 524→487, `getSessionId` 501→487 — và **ghi phương pháp đếm** vào tài liệu.
-8. **Tách dòng effort** "port 150 dòng" và "nối registry" thành hai dòng.
-9. **Cảnh báo `Model<any>`** ở `index.ts:316,323` cho người port.
-
----
-
-## 8. Chấm điểm
-
-| tiêu chí | điểm |
-| --- | --- |
-| Độ chính xác neo `path:line` | **9/10** — 20/20 khớp tuyệt đối |
-| Bốn symbol "không tồn tại" | **10/10** — tái lập 2 cách |
-| Đường dẫn tới nguồn senpi | **8/10** — số file/dòng chuẩn, nhưng neo hàm sai |
-| Bảng rủi ro | **3/10** — hàng đầu sai, bỏ sót 4 rủi ro thật |
-| Cổng hoàn thành | **5/10** — 3 cổng chết |
-| Ước lượng effort | **5/10** — thiếu ~1.5-2 ngày, gộp 2 việc |
-| Tuân thủ AGENTS.md | **7/10** — tốt, trừ `Model<any>` |
-| **Tổng** | **6,8/10** |
-
-**Kết luận cuối:** dùng được làm **tài liệu đo đạc** — phần đo của nó đáng tin, tôi chưa bác bỏ
-được một neo có số dòng nào. Nhưng **không dùng được làm kế hoạch triển khai** cho tới khi sửa 6
-mục ở §7. Ba cổng chết và hai bản neo cắm vào `registry.ts` (một file không tồn tại, dùng cho 2
-trong 11 bước) là lý do.
-
-*Bảng kiểm: 20 neo dòng + 10 symbol-0 + 9 con số + 10 dòng senpi + 8 phát hiện cấu trúc = 57 kiểm tra,
-11 shell command.*
-
----
-
-## Sóng 1b — SEAMFREE: nhóm builtin chạy được ngay
+## Sóng 1 — SEAMFREE: nhóm builtin chạy được ngay
 
 > Nguồn: `SENPI_FINDINGS.md` Phần 4 §4-§5, Phần 6 §6.1/§6.3, Phần 7 §7.1/§7.13/§7.18 · Tổng hợp §4-§6.
 > Cây đích: `/Users/tranquangdang21/Projects/ultraworkers` (gọi tắt **omp**) · cây nguồn: `/Users/tranquangdang21/Projects/senpi-ref` (gọi tắt **senpi**), ghim theo `ea9216269e9254b821446130b60d1e00759761dc`.
@@ -22081,7 +21558,7 @@ Bảy trong số những lần sửa quan trọng nhất:
 
 | work item | sửa |
 |---|---|
-| SEAM | `setModel`/`setActiveTools` **đã có sẵn** ở `types.ts:1501`/`:1507` với handler ở `:1756`/`:1758` — S3 chỉ còn một việc, effort tụt từ 10-12 xuống ~5 ngày. Và không có "3 hằng `setSession*`": `setSessionTitle` và `setSessionLabel` đều **0** ở cả hai cây. |
+| SEAM | `setModel`/`setActiveTools` **đã có sẵn** ở `types.ts:1526`/`:1507` với handler ở `:1781`/`:1783` — S3 chỉ còn một việc, effort tụt từ 10-12 xuống ~5 ngày. Và không có "3 hằng `setSession*`": `setSessionTitle` và `setSessionLabel` đều **0** ở cả hai cây. |
 | SEAMFREE | Cổng P0 chặn nhầm: omp **đã có** `getCommands()` (`get-commands-handler.ts:13-14` nói rõ builtin bị cố ý loại), nên đây không phải blocker kỹ thuật. |
 | SEAMFREE | Đề xuất bước đầu tiên `directory-resolution.ts:69` bị bác bỏ: dòng đó không quét cây omp. |
 | LOOKAT | Phạm vi đảo ngược: omp đã giải xong bài toán dưới tên khác. |

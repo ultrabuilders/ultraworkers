@@ -12,6 +12,124 @@ Mục đích của phần MỞ ĐẦU này là đủ để người bảo trì q
 
 ---
 
+## ĐIỀU CHỈNH PHẠM VI 2026-09-28 — 7 package xuống 6, và một tầng bị thiếu
+
+> **Đọc mục này trước mọi thứ khác trong file.** Nó ghi đè hai con số và một tiền đề xuất hiện bên dưới.
+> Bằng chứng: `SENPI_FINDINGS.md` và `RESEARCH_FINDINGS_2026-09-28.md`, cả hai đo trên cây thật.
+
+### 1. `durable` không còn nằm trong phạm vi — **7 package xuống 6, tiết kiệm 21.093 dòng**
+
+`durable` của `pi` là **package chết**: không package nào ngoài nó import, và bằng chứng duy nhất cho
+tính tồn tại của nó là **23 file test của chính nó**. Tầng session thật sự chạy nằm ở
+`packages/agent/src/harness/session/jsonl/`, và **8/8 file giống hệt từ byte** giữa `pi` và `senpi`
+(1.894 dòng). **Cả hai đều `hard-fail` khi JSONL hỏng.**
+
+Chép bất kỳ tầng session nào của chúng vào omp là **lùi về sau** so với `parseJsonlLenient` +
+`malformedRecords → #rewriteRequired` mà omp đang có. Chép 21.093 dòng code chết là chi phí vô ích.
+
+**Hai việc phải làm cùng lúc:**
+1. Mọi chỗ trong file này nói "7 package", "bảy package", `pi-durable` ở bảng va chạm, và con số
+   `21.093` như một phần tử chép — **đã sai theo mặt phạm vi**. Sáu package còn lại:
+   `chord`, `pi-protocol`, `pi-server`, `pi-client`, `pi-telemetry`, `pi-evals`.
+2. `MILESTONE_1_EXECUTION_PLAN.md` tự gọi tên đây là *"điểm duy nhất trong milestone không có bằng chứng
+   nào đứng sau"*. Bằng chứng **đã có** — nó chỉ chưa được chép sang. Đóng lỗ hổng đó.
+
+**Cổng mở trước khi tin con số:** chạy lại `grep -rn "from.*durable"` trên cây `pi` và đối chiếu
+`8/8 file byte-identical`. Đừng chép số của SENPI mà không đo lại.
+
+### 2. "Bao trọn `pi`" chỉ là **tầng A**. Hệ sinh thái `pi.dev` là tầng B và C, và không tồn tại.
+
+`https://pi.dev/packages` là một **registry sống** (`pi install npm:<pkg>`): package đăng cách đây
+14 phút, `pi-mcp-adapter` 761K lượt/tháng. `grep "pi.dev"` trên cả 8 tài liệu kế hoạch → **0 hit**.
+
+Đo trên **4 package thật** tải từ registry:
+
+| Import specifier | Số lần |
+| --- | --- |
+| `@earendil-works/pi-coding-agent` | **91** |
+| `@earendil-works/pi-agent-core` | 37 |
+| `@earendil-works/pi-tui` | 30 |
+| `@earendil-works/pi-ai` | 16 |
+| `typebox` (bare) | **15** |
+
+`pi-subagents` khai `peerDependencies` gồm `@earendil-works/pi-ai: ">=0.86.1"`, `@earendil-works/pi-agent-core`,
+`@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, và `typebox: "*"`.
+`pi-todo` khai hợp đồng manifest `"pi": { "extensions": ["./src/index.ts"] }`.
+omp **không có lệnh install nào** — grep `cli/commands/` không khớp `install|plugin|ext`.
+
+**Quy tắc `@earendil-works/X` → `@oh-my-pi/X` của file này, áp vào đây, làm 174 import site không resolve.**
+Đó không phải lý do để đổi lại quy tắc — đó là phép đo nói rõ **tầng A không kéo theo tầng B**.
+
+**Bằng chứng hệ sinh thái là thật:** `oh-my-openagent` (fork của OpenCode, không phải của omp) **pin
+`@earendil-works/pi-ai / pi-agent-core / pi-tui / pi-coding-agent` ở `0.84.2` qua `overrides`** —
+consumer hạ nguồn của đúng substrate pi.
+
+**Seam đã có sẵn, chưa ai xác minh:** `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts`
+chứa `PI_SCOPE_ALIASES = ["oh-my-pi", "mariozechner", "earendil-works"]` — `earendil-works` **đã nằm
+trong danh sách alias**. Nếu cơ chế đó chạy trên specifier của package bên thứ ba, tầng B gần như miễn
+phí. **Chưa có câu trả lời, và WI-ECOSYS-1 bị chặn cho tới khi có.**
+
+---
+
+## Sóng 0.5 — ba work item cho tầng B và C
+
+> Thêm 2026-09-28. Đặt **trước mọi sóng port**, vì chúng quyết định *đoàn gì sẽ được port* và *port xong
+> thì dùng được để làm gì*. M1B hiện trả lời "chép gì"; nó không trả lời "chép xong thì người dùng
+> dùng được thứ mà hệ sinh thái pi có".
+
+### WI-ECOSYS-3. Chốt `typebox`
+
+Gỡ blocker đã ghi ở phần Mở đầu ("`typebox` chưa chốt… chặn cả ba package"). Đồng thời gỡ blocker của
+tầng B — 15 import site thật, trong đó có `peerDependencies: { "typebox": "*" }`.
+
+Các bước: (1) grep `typebox` trong corpus đã tải, liệt kê **từng symbol** và **từng cách dùng**;
+(2) kiểm `@sinclair/typebox@0.34.52` đã có trong cây chưa — **đọc `bun.lock`, đừng tin tài liệu cũ** —
+rồi đối chiếu từng symbol plugin cần; (3) trình ba lựa chọn kèm giá: thêm dep thật / re-export shim /
+bundler alias; (4) **cổng bắt buộc: một package thật từ registry phải load được.** `check:ts` xanh
+không phải bằng chứng — nó xanh ngay cả khi xoá sạch cả file kiểm thử.
+
+Cổng hoàn thành: mỗi symbol đo ở bước 1 có dòng "được / không được"; một package thật load được.
+**Cỡ S. Phụ thuộc: không. Làm trước WI-ECOSYS-1.**
+
+### WI-ECOSYS-1. Resolve specifier `@earendil-works/*` của package bên thứ ba — `BLOCKED_ON_MEASUREMENT`
+
+Cổng mở, phải đo trước khi viết một dòng code:
+1. Đọc `legacy-pi-compat.ts` **toàn bộ**. Xác định nó là (i) chuẩn hoá extension **id**, (ii) viết lại
+   **npm dependency specifier**, (iii) **import-map** module resolution, hay (iv) khác.
+2. Trace call path từ "extension source được load" → "specifier được resolve". Nếu đường đó không chạm
+   `legacy-pi-compat`, **ghi thẳng như vậy** — đừng suy luận.
+3. Tác dụng riêng của từng cái: `CANONICAL_PI_SCOPE`, `PI_SCOPE_ALIASES`, `PI_PACKAGE_NAMES`,
+   `LEGACY_PI_SPECIFIER_FILTER`. Cái nào ảnh hưởng package bên thứ ba, cái nào chỉ là tên nội bộ.
+4. Kiểm lại failure mode M5 đã ghi: canonicaliser chết lặng lẽ ở dev (lỗi resolve bị `try/catch` nuốt)
+   và crash cứng ở binary đã compile. Nếu đúng, đây là blocker của blocker.
+
+Nếu kết luận là **có thể**: mở rộng alias **ở tầng resolve của extension loader**, không phải ở
+`package.json` của omp — vì package bên thứ ba resolve trong **cây của chính nó**.
+
+Nếu kết luận là **không thể**: **dừng lại.** Đó là quyết định phạm vi, có thể cần `imports` map trong
+manifest của package, hoặc một resolver riêng. Đừng implement trước khi biết mình đang sửa tầng nào.
+
+Cổng hoàn thành: một package thật từ registry load được **không sửa một dòng nào trong source của nó**,
+và `check:ts` vẫn xanh. **Cỡ S. Phụ thuộc: WI-ECOSYS-3.**
+
+### WI-ECOSYS-2. Cài package từ npm + đọc manifest `pi.extensions` — `BLOCKED_ON_MEASUREMENT`
+
+Phụ thuộc WI-ECOSYS-1 — **cài xong mà không load được thì vô nghĩa.**
+
+Cổng mở: (1) đọc `install.mjs` của package thật — `pi-subagents` có `bin` trỏ `install.mjs`; đó là
+bootstrap mà `pi install` gọi, hay chỉ là CLI của chính package? **Đừng giả định.** (2) Xác định omp
+tìm extension ở đâu: literal path strings, global config dir, project dir, `.omp/`. (3) Sau khi cài,
+package đăng ký thế nào — manifest field, convention, hay config tường minh?
+
+**Ràng buộc sản phẩm, bắt buộc:** **trust phải nghĩ trước khi cài, không phải sau.** `isProjectTrusted()`
+hiện là `() => true` (M2 WI-0 đã nói rõ). Cài package npm từ registry là hành vi khác nhiều so với bật
+một extension đã nằm sẵn trong thư mục. **Cái này chặn WI-ECOSYS-2 nếu M2 chưa chốt trust model.**
+Không đụng marketplace — ngoài phạm vi, bị M2-OQ7 ràng buộc.
+
+Cổng hoàn thành: cài một package thật → restart → extension chạy, không sửa source của package. **Cỡ M.**
+
+---
+
 ## Mục tiêu
 
 Với người dùng omp, đợt này mang tới ba thứ cụ thể:

@@ -39,6 +39,12 @@ Viết bằng kết quả quan sát được, không bằng kết quả nội b�
 
 ## Vì sao chỉ mượn kỷ luật
 
+> **CẢNH BÁO PHƯƠNG PHÁP, thêm sau khi kiểm chứng lại (2026-09-28).** Mục này ban đầu kết luận bằng
+> `grep` ở **một** thư mục rồi suy ra về **cả repo**, và kiểm chứng lại trên HEAD thật đã bác **4/7 claim**.
+> Quy tắc bắt buộc từ nay: **kiểm tra chỗ khái niệm thật sự sống trước khi kết luận vắng mặt.** Nếu
+> `vendor/` là Cordis upstream thì "không có priority trong `vendor/`" chỉ chứng minh Cordis không có
+> priority — không nói gì về dsh, và ở đây kết luận sai đã đảo chiều.
+
 `light.json` không chứa bản kiểm kê mã nguồn dsh — nó chỉ chứa bốn work item. Nên phần "dsh làm tốt hơn omp ở chỗ nào" phải suy ra từ chính bốn item, và suy ra rất gọn: **cả bốn item đều sửa một loại vi phạm cùng một hình dạng — hệ thống tuyên bố một điều mà nó không kiểm chứng được.**
 
 - **M4-4:** bật/tắt plugin trả `void` vô điều kiện. Không có cách nào để biết ghi file có thành công hay không. Hệ thống nói *"đã áp dụng"* bằng cách không hỏi.
@@ -47,6 +53,152 @@ Viết bằng kết quả quan sát được, không bằng kết quả nội b�
 - **M4-9:** một bản kiểm kê plugin mà tự suy diễn lại shadowing thay vì chiếu từ `loadAllExtensions`. Rủi ro mà chính kế hoạch gọi ra và đúng: **"một bản kiểm kê nói dối tệ hơn không có bản kiểm kê nào."**
 
 Đó là kỷ luật được mượn: **không tuyên bố hiệu ứng mà bạn không đo được; không dựng nguồn sự thật thứ hai; không nuốt thứ được giao.** Đây là thứ một dự án buộc phải nói ra to, vì dsh là một *harness* không có monolith để giấu mình vào. omp thì ngược lại — là một monolith đã gắn plugin, nên kỷ luật phải được **cưỡng chế** từ trong ra chứ không thể thừa hưởng.
+
+### Đính chính 2026-09-28 — đo lại trên HEAD thật
+
+Checkout `~/Projects/deepseek-harness` ở HEAD `21638c56` (2026-09-27). **HEAD này khác `477b4f4` mà bản thảo dùng**, nên mọi neo `file:line` cũ cần kiểm lại. Kết quả:
+
+| Claim của bản thảo | Kết quả kiểm chứng |
+| --- | --- |
+| "dsh không có hệ thống priority nào" (`grep -rn "priority" vendor/` → 0) | **SAI.** `vendor/` là Cordis upstream, nơi priority **không phải khái niệm tồn tại**. Đo đúng chỗ: **161 hit priority trên 26 file nguồn không test, và bốn hệ priority trưởng thành riêng biệt.** Đây là lỗi mẫu: suy ra sự vắng mặt của một khái niệm từ thư mục mà khái niệm đó không thể có. |
+| "`Impl.check` (availability predicate của Cordis) dsh dùng **zero lần**" | **SAI.** `vendor/cordis/src/service.ts:57` — mọi subclass `Service extends` đều truyền `this[symbols.check]` vào `ctx.reflect.provide(name, …)`. Wiring là phổ quát, không phải ngẫu nhiên. |
+| "dsh MIT, nghĩa vụ duy nhất là giữ copyright" | **SAI cho cả dsh.** Mọi claim về `vendor/` đều đúng (9 LICENSE đều MIT, đã kiểm lại từng cái), nhưng bỏ sót `native/system/LICENSE:1-3` là **BSD 3-Clause**. |
+| `guard/` là một lớp an toàn | **SAI.** 321 dòng hygiene tham vấn, **không có ngữ nghĩa bảo mật, không có quyền veto**. |
+| dsh có exec policy khai báo mang `match`/`not_match` + `justification` | **SAI — không tồn tại.** Xác minh ba cách. `packages/coding-agent/src/tools/bash-interceptor.ts` của omp là hình hài tương tự, nhưng để *chuyển hướng tool*, không phải *ra quyết định an toàn*. |
+| comment ở `runner.ts:1327-1331` nói invariant "được enforce bằng construction" | **BỊA CITATION.** Comment đó là docstring thường, không nói vậy. Kết luận thì đúng; trích dẫn thì không tồn tại. |
+| "Tài liệu đó **bán khuếch đại** ở đúng ba chỗ" | **UNVERIFIABLE.** Đếm 3 mà không nêu tên ở bất kỳ đâu; người đọc không kiểm được, người lập kế hoạch không hành động được. |
+
+**Hệ quả cho phạm vi M4, nói thẳng:** trong 63 lượt phản biện trên các ý tưởng lấy từ dsh, **42 bị bác** và lý do bác lặp lại: *"omp **đã có** guard giống hệt và bản đó tốt hơn"*, *"omp đã có bản thành thụ hơn nhiều của ý tưởng đó, ngay trong công cụ mà claim nhắm tới"*. Đây là **cùng cơ chế với SENPI** — ước lượng sai lệch, chỉ khác dấu. Kết luận "chỉ mượn kỷ luật" **đứng vững**, nhưng lý do đứng sau nó phải viết lại.
+
+**Lý do đúng, theo bản thảo tổng đã tự sửa:** không phải "sợ mượn nhầm" nữa, mà vì *mượn kiến trúc Cordis là mượn code của bên thứ ba đã bị fork 22 lần*. Cái đáng mượn là **ba** thứ, không phải một: **thứ tự ưu tiên, đăng ký fail-loud, và tái tải có nối.**
+
+### Kiểm kê thật, thay cho bốn work item
+
+Bốn work item của `light.json` không phải kiểm kê. Đo trên cây thật:
+
+- **`.agents/notes/`** — **3.675 file quyết định kiến trúc git-tracked**; tiếng Anh có 1.214 Agent Notes (518 implemented / 642 archived / 40 proposed / 14 rejected). dsh **tài liệu hoá quyết định của nó ở mức cao hơn mức code**, và đây mới đúng là cái gọi là "kỷ luật". Tách ra ở `M4-DISCIPLINE-3`.
+- **`scripts/run-gates.ts`** — 1.660 dòng, lane-based gate runner; ~40 `scripts/verify-*.ts`, mỗi cái có `*.spec.ts` đi kèm; `lefthook.yml` định nghĩa pre-commit / pre-merge / pre-push.
+- Claim "no privileged core" **được máy kiểm, không phải convention**: `scripts/verify-package-dependencies.ts` enforce allowlist ở **mức export** cho cạnh Client→Host (`collectHostDependencyExportPolicyViolations`, quyết định ở `:546`). Bản thảo cũ nói "không có lint hay verify gate nào… nó là convention, nên sẽ mòn" — **điều đó sai.**
+- **TUI đã tồn tại và bị xoá 8 tuần trước HEAD** (`.agents/notes/archived/simplification/2026-08-04-remove-tui-package.md`). Bản thảo cũ kết luận "không có TUI" như thể đó là trạng thái ổn định.
+
+### Quyết định 2026-09-28 — KHÔNG lấy kernel Cordis
+
+Đo thật: diff 7 package giữa `cordiverse/cordis` (shallow `f8ea3cd`, rc.10) và
+`deepseek-harness/vendor/` (rc.7 + 22 bản vá). Bản vendor **không phải fork-tiến** — mọi khác biệt là hai chiều,
+và hướng chứng minh được từng dấu hiệu bằng `git log -S`.
+
+**Quy mô:** 4.991 dòng nguồn / 6.497 dòng test trên 9 package; core 1.874 dòng. **+822 dòng net mà
+manifest báo — 70% là JSDoc.** Đo trên 9 file core: 1.013 dòng thêm = 712 comment + 12 trống +
+37 import churn + **252 dòng code thật**, trong đó ~180 nằm ở một file.
+
+**Upstream rc.10 KHÔNG tự giao được clean unload.** Kiểm trực tiếp:
+`grep -c 'effectInertia|setupBarrier|emitPluginDisposed' upstream/core/src/fiber.ts` → **0**. Bản vá là của
+DeepSeek, không phải drift:
+
+| Dòng trong bản vendor | Bất biến | Upstream |
+| --- | --- | --- |
+| `fiber.ts:515` | effect nằm trên danh sách chủ **trước khi** `setup()` chạy, nên unload bắt đầu từ trong setup vẫn thấy nó | `fiber.ts:338` đăng ký wrapper **sau** `this._execute(runner)` |
+| `:462,:467,:475` | `setupBarrier` / `waitForSetup` / `disposeAfter` — unload reentrant chờ setup **và** mọi cleanup setup đó thu được | không có |
+| `:421` | `throw new CordisError('INACTIVE_EFFECT')` khi owner đang `UNLOADING` | chỉ `assertActive()`; uid vẫn khác null trong `UNLOADING` |
+| `:112,:114` | `effectInertia` WeakMap + `runDisposable()` — cleanup **sở hữu một lần, N quan sát cùng nối** | người gọi thứ hai nhận `undefined` và coi như đã teardown |
+| `:120` | `emitPluginDisposed` — try/catch theo từng observer | `context.emit(...)` trần; không chứa lỗi theo callback |
+
+**Và bản vendor LÙI upstream ở ba chỗ, đều đã chạy thử:**
+`events.ts:132` dùng `_hooks: {}` thay vì `Object.create(null)` (upstream `:46`) → `on('constructor')` /
+`on('toString')` **ném TypeError**; mất chốt `if (called) throw` "next() called multiple times" (upstream `:125`)
+→ listener gọi `next()` hai lần chạy lại cả chuỗi dưới, **âm thầm**; và bản vendor có **0 file test** so với
+6.497 dòng test upstream. `vendor/timer/` còn thay hàng đợi waiter bằng **một ô duy nhất** — `next()`
+thứ hai ghi đè promise thứ nhất, promise đó **không bao giờ settle**.
+
+**Kết luận: KHÔNG lấy kernel. Không nhòe.** Lý do theo trọng số:
+1. **omp đã quyết rồi, bằng văn bản, với lý do đã nêu.** M2 WI-9 bước 10: *"KHÔNG phơi bản `unloadExtension`
+   lên ExtensionAPI… Các bucket per-extension **CHÍNH LÀ** sổ sở hữu."* Các bucket trên `interface Extension`
+   **đã là** một sổ sở hữu, được thiết kế cho 9 phương thức đăng ký phải giữ là 9. omp không thiếu kernel —
+   **omp có một kernel, và hình dạng của nó tốt hơn fiber.**
+2. omp có **0 tham chiếu cordis**; không có seam nào để mọc từ đó.
+3. Phần thu được là **~119 dòng code thật** chống một loại bug mà omp **chưa có bằng chứng nào từng dính**.
+   Đó là một port, không phải một dependency. Lấy dependency framework để có 119 dòng pattern là hỏi
+   ở mọi quy mô.
+4. Nó đấu với luật của chính repo: `cordis-plugin-logger-console` gọi `console.log` (`shared.ts:66`) —
+   bị `AGENTS.md` cấm trong mọi đường TUI/RPC/SDK/worker.
+5. `latest` trên npm là **`4.0.0-rc.10`** — mười RC, chưa có 4.0 ổn định, một người duy trì, toolchain
+   yarn/vitest đối chiếu bun/bun-test của omp.
+
+**Ba ý đáng lấy dù không lấy code** (đính vào M2 WI-9, xem mục kế):
+
+1. **Disposer single-shot cho người gọi, joinable cho chủ teardown** (`fiber.ts:112,:515`). Sáu dòng WeakMap
+   cộng một ô `inFlight`. Đây là bất biến khó nhất trong fork, và omp **không có tương đương**.
+2. **Chứa lỗi theo từng observer khi báo teardown** (`fiber.ts:120`). omp **đã thoả** cho `session_shutdown`
+   (`runner.ts:1501-1511`) — hãy ghi thành bất biến để một refactor không lặng lẽ nối tiếp vòng lặp.
+3. **Teardown là LIFO, và disposer gỡ đúng cái nó đăng ký, theo identity.** `DisposableList.clear()`
+   (`core/src/utils.ts:26-30`) trả `values.reverse()`.
+
+**Cách lấy đúng:** **đừng chép file của DeepSeek.** Lấy `fiber.ts` của **upstream rc.10** và áp bản vá của
+riêng omp. Cùng kết quả, attribution sạch — vì sửa đổi của DeepSeek **không được ghi ở đâu trong LICENSE**
+(chỉ nằm trong `vendor/README.md`, mà file đó không thuộc artifact nào được publish: `files: ["lib/index.js",
+"lib/types/**", "src"]`). ~30 dòng. Không dependency, không bề mặt rebase, và nó là của omp.
+
+#### M4 sửa một mục trong danh sách "đáng mượn" của chính nó
+
+M4:73 liệt kê ba thứ đáng mượn: thứ tự ưu tiên, đăng ký fail-loud, và **"tái tải có nối"**. **Đừng lấy
+thứ ba từ dsh.** `Fiber.update()` trong bản vendor là hệ quả trực tiếp của
+`Revert #932 transactional Cordis reload changes` (commit `e07f41d5fd`, lặp lại ở `d225dbba50`):
+`fiber.ts:736-753` trả `void`, **vứt kết quả waterfall `internal/update`**, và vứt suppression
+`task.catch(() => {})`. Upstream rc.10 `fiber.ts:478-494` là **ngược lại** — awaitable, có nuốt rejection,
+`await update()` quan sát được thất bại khi khởi động lại.
+
+> **M4 hiện đang nhắm vào một nửa mà DeepSeek đã cố ý xoá và thay bằng hành vi không-transactional — đúng
+> thứ omp đang cố rời bỏ.** Dù M4 có nghĩa "có nối" là gì, cây vendor của dsh là cây sai để sao chép;
+> **upstream mới đúng.**
+
+**Và sửa luôn lý do, không chỉ danh sách.** Câu *"không phải 'sợ mượn nhầm' nữa"* trong M4 giờ sai vì một
+lý do tốt hơn: **không phải cảnh giác pháp lý hay fork hygiene.** Danh sách mượn **đã đúng sẵn**, và cái lý do
+bên dưới nó **là một cảm giác**. M4:68 đã ghi 42/63 claim bị bác vì cùng một lý do — *"omp đã có bản thành
+thụ hơn nhiều"* — và phân tích này tìm thấy điều đó **lần thứ ba**. Lý do đúng để dừng: **bucket per-extension
+của omp đã là một sổ sở hữu tốt hơn fiber, và thứ duy nhất dsh có mà omp thiếu là ~30 dòng văn xuôi về
+thứ tự disposal.**
+
+#### Chưa đo — nói thẳng
+
+1. **Không tìm thấy issue, test đỏ, hay báo cáo người dùng nào ở omp thể hiện bug reentrant-disposal.**
+   Ba ý trên rẻ và biện minh được, nhưng claim "chúng ngăn được thứ gì **hôm nay**" thì **chưa chứng minh**.
+   Nếu cần bằng chứng: **một file test đối kháng duy nhất** chạy trên `ExtensionRunner` trước khi WI-9
+   bước 6 ship. Đây là phép thử rẻ nhất nên làm, và nó quyết định cả ba ý có đáng giữ không.
+2. `vendor/timer/` **chưa ai diff** (`next()` thô đã đọc, phần còn lại thì không). Đừng coi "22 bản vá" là
+   bề mặt có ranh giới.
+3. Manifest **có thể cũ** so với cây hiện tại.
+
+### Wave 0 — ba work item sửa chính M4 (thêm 2026-09-28)
+
+Cả ba **phải xong trước bất kỳ item nào của wave B/C/D**, vì chúng sửa tiền đề mà các item đó đứng trên.
+
+#### M4-DISCIPLINE-1. Sửa các claim đã bị bác
+
+**Cổng hoàn thành:** M4 không còn claim nào trong bảng đính chính ở trên; mỗi thay thế có số đo và đường dẫn; cảnh báo phương pháp đã nằm ở đầu §"Vì sao chỉ mượn kỷ luật". **Cỡ S. Không có phụ thuộc.**
+
+#### M4-DISCIPLINE-2. Đổi tiêu chí DoD của M4-6 sang mẫu `assertUnshadowed`
+
+**Vì sao, đo được:** dsh **không có** provenance. Nó có **composition** — biết giá trị thắng và từ chối ghi bị che, nhưng **không nói được file nào thắng, field nào thắng** (`provenance` = 0 hit toàn repo). Bản thảo cũ tưởng dsh có thứ này và vay được; **không có.**
+
+**Nhưng** `packages/credentials/credentials-local/src/index.ts:780-787` có `assertUnshadowed` **tốt hơn**: nó **gọi tên lớp thắng** *và* **nêu cách sửa** — *"supplied read-only by the launching environment, so set would be shadowed; unset it in the shell you start dsh from instead"*. Kèm `assertOwnerOnly` được kiểm lại **mỗi lần đọc và trước mỗi lần ghi**.
+
+**Các bước:**
+1. Đổi DoD của M4-6 từ *"biết lớp nào thắng"* (chưa ai đạt được, kể cả dsh) sang **"nêu tên lớp thắng và nêu hành động sửa"** — tiêu chí dsh thực sự đạt được.
+2. Giữ nguyên nguyên tắc chặn-**trước**-khi-ghi. dsh throw ở `config-editor/src/index.ts:128`, `writeFileAtomic` ở `:130` — tức **chặn trước lần ghi**, không rollback. Đây là tiền lệ **tốt hơn** thiết kế "ghi rồi rollback trong bộ nhớ" mà M4-6 hiện tại đang cân nhắc. Nói rõ lựa chọn này trong M4-6.
+3. Assertion bắt buộc: thông điệp phải chứa **cả** tên lớp thắng **và** hành động sửa. Test "không ghi được" trần **không đạt**.
+
+**Cổng hoàn thành:** test chứng minh thông điệp chứa cả hai thành phần. **Cỡ S. Phụ thuộc M4-4** (cùng dải `setPluginSetting`).
+
+#### M4-DISCIPLINE-3. Định nghĩa lại "kỷ luật": đọc kiểm kê quyết định, không chép cấu trúc thư mục
+
+**Vì sao:** M4 hiện định nghĩa "kỷ luật" bằng **4 work item suy ra từ một spec không chứa kiểm kê**. Cái thật nằm ở `.agents/notes/` và ở tầng cổng kiểm.
+
+**Các bước:**
+1. Sửa §Mục tiêu: định nghĩa "kỷ luật" là **kiểm kê quyết định + cổng kiểm được enforce**, không phải "4 work item".
+2. Một work item đọc `.agents/notes/` **theo loại quyết định** (không theo *file*), chọn ra cái nào là **chính sách có thể chuyển**. **Tuyệt đối không chép cấu trúc thư mục** — `.agents/notes/` là thứ riêng của dsh; điều chuyển được là *công thức của một quyết định có tên*, không phải *hình dạng thư mục của nó*.
+3. Chốt: claim "no privileged core" ở omp phải **được gate kiểm tra tự động** (`scripts/verify-package-dependencies.ts` là mẫu: allowlist ở **mức export**, không phải ở mức import), **hoặc** phải được hạ xuống thành convention và nói rõ là convention. Hiện omp chưa có cái thứ nhất.
+
+**Cổng hoàn thành:** M4 nêu được **ít nhất một** quyết định có tên của dsh (ai quyết, ngày, lý do) mà bản thảo cũ không biết. **Cỡ S.**
 
 **Và những thứ dsh đã phải tự vá — đó chính là danh sách loại trừ.** Bốn dòng `risk` trong `light.json` viết bằng lời của chính kế hoạch, và chúng là bản dịch các bước vá đó thành câu hỏi cho omp:
 

@@ -61,6 +61,20 @@ Milestone 1 **không port** ba package của `pi`. Chúng không bị bỏ sót 
 
 **2. Nửa "document" của `pi` durable không có thay thế nào đã được xác minh, và đây là điểm duy nhất trong milestone không có bằng chứng nào đứng sau.** Không có work item nào phủ nó. Không có file nào được chỉ định. Nó là một lỗ hổng bằng chứng, không phải một quyết định đã cân nhắc. Hệ quả thực hành: **nếu sau này có ai phát hiện một năng lực người dùng quan sát được đến từ `durable`, đây là chỗ đầu tiên phải soi.** Đừng mở một work item mới để bịa một thay thế; hãy quay lại đây và điền bằng chứng trước.
 
+> **Cập nhật 2026-09-28 — lỗ hổng này ĐÃ ĐƯỢC ĐIỀN, và kết luận là đừng chép gì cả.**
+> `SENPI_FINDINGS.md` đo trên cây thật: `durable` của `pi` là **package chết** — không package nào ngoài
+> nó import, và bằng chứng duy nhất cho tính tồn tại của nó là **23 file test của chính nó**. Tầng session
+> thật sự chạy nằm ở `packages/agent/src/harness/session/jsonl/`, và **8/8 file giống hệt từ byte** giữa
+> `pi` và `senpi` (1.894 dòng). **Cả hai đều `hard-fail` khi JSONL hỏng** — còn omp có
+> `parseJsonlLenient` + `malformedRecords → #rewriteRequired`.
+>
+> **Năng lực người dùng quan sát được mà `durable` mang, không mất đi: đó là một tầng chịu lỗi, và omp
+> đã có một tầng chịu lỗi mạnh hơn.** Không phải "thiếu thay thế" — là **có sẵn thứ tốt hơn**.
+>
+> Hệ quả cho phạm vi: **`MILESTONE_1B_EXECUTION_PLAN.md` rút từ 7 package xuống 6, tiết kiệm 21.093 dòng.**
+> Cổng mở bắt buộc trước khi tin: chạy lại `grep -rn "from.*durable"` trên cây `pi` và đối chiếu
+> `8/8 file byte-identical` — đừng chép số của SENPI mà không đo lại.
+
 ---
 
 ## Điều kiện tiên quyết

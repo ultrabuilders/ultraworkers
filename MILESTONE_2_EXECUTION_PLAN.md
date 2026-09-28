@@ -218,6 +218,112 @@ Những cái này **không** chặn bắt đầu — ngoại lệ duy nhất là
 ---
 
 
+## WI-SESSION-LOG. Session log là nguồn sự thật duy nhất (thêm 2026-09-28)
+
+> **Đây không phải WI-PRESTEP-1.** WI-PRESTEP-1 là "ghi turn bị chặn". Cái này là **lật mô hình session**, và
+> nó là phát hiện lớn nhất của đợt nghiên cứu dsh. Đọc WI-PRESTEP-1 trước, nhưng đừng gộp chúng.
+
+### Vì sao
+
+dsh giữ **một append-only event log** và làm mọi request model trở thành **một phép suy ra thuần tuý** từ
+log đó. `packages/core/session/src/index.ts:860` — `deriveMessages()`. Cơ chế đáng chú ý nhất nằm ở chỗ nó
+**không phải reducer**: nó chiếu từ một danh sách *surface node*, mỗi node mang `surfaceOp`:
+
+- `append` — thêm vào transcript.
+- `replace` — **xoá các node bị che khỏi phép chiếu** (compaction thu gọn transcript, log không mất gì).
+- **không có dấu** — `assistant/chunk`, turn boundary. Log có đầy đủ, **transcript vắng mặt một cách đúng đắn**.
+
+Ngược chiều: `packages/core/tools/src/types.ts:37,:52` — có sự kiện **cố tình ghi log mà cố tình không
+chiếu** ("call abandoned in the queue logs nothing", "log-only: `deriveMessages()` ignores it, so sub-calls
+never re-enter"). Đây là chiều ngược lại của lỗi thường gặp.
+
+Cơ chế: append thuần thì **O(new nodes)** qua `derivedGeneration`/`derivedNodes`; có `replace` hoặc message
+projection thì rebuild. Mảng trả về là **bản sao mới** mỗi lần, nhưng object `Message` **dùng chung và đóng
+băng sâu** — consumer không thể mutate log qua bất kỳ đường nào. Kiểu sự kiện bền vững: `session/created`,
+`turn/start|end`, `step/start`, `user/message`, `assistant/attempt|chunk|message`, `tool/call|result`,
+`request/header`, `session/flush`, `session/disposed`. Chuỗi format có migration `v0→v1 … v3→v4`.
+
+### Phần đắt nhất, và là thứ đáng lấy: **bất biến kiểm bằng máy**
+
+`packages/core/agent-loop/src/invariant.ts` cài listener vào `llm/stream` với
+`{ global: true, prepend: true }` — **prepend để một listener replay short-circuit không thể làm câm nó**.
+Với **mọi** request do loop tạo, nó bắt:
+
+```ts
+const expected = session.deriveMessages()
+if (JSON.stringify(options.messages) !== JSON.stringify(expected)) {
+  fail(`... diverges from the dispatch-time durable derivation (log-reconstruction desync)`)
+}
+```
+
+Cộng: `options` và `messages` phải frozen; phải có `step/start` trong log; `options.system === undefined`
+(system prompt đi trong `messages` với vai trò **surface node 0**, không phải field riêng); và header gấp lại
+phải khớp `model`/`temperature`/`maxTokens`/`stop`/`tools`.
+
+**Đây là câu trả lời cơ học cho đúng câu hỏi M4 đặt ra — "thao tác này có thật sự xảy ra không?" — ở tầng thấp
+hơn nhiều.** M4 thêm một cờ trả về vào từng đường ghi config. Ở đây, **mọi byte gửi cho model phải tái
+dựng được từ log**; lệch là đỏ, tự động, mọi lần. Và hệ quả miễn phí: resume, fork, replay, transcript,
+telemetry, debug, và reliability test **đọc cùng một nguồn** — thay vì mỗi thứ một bản như hiện tại.
+
+### Cổng mở — đo trước khi viết
+
+1. **Đo khoảng cách thật, đừng đoán.** Session model hiện của omp có những thứ nào mà log-derivation đòi
+   hỏi? Liệt kê từng thứ: resume, fork, transcript, compaction, cache-state, telemetry, replay. **Cái nào
+   đang giữ state riêng thay vì đọc lại từ một nguồn?** Đó là bảng sẽ quyết định cỡ.
+2. `deriveMessages` của omp ngày nay là gì — có sẵn, không, hay dưới tên khác? **Grep trước.**
+3. Có chỗ nào đã log rồi mà transcript vẫn phải giữ thêm state không? Đó chính là chỗ phải bỏ.
+
+### Rẽ nhánh, và cách chọn
+
+**Phương án A — chỉ thêm invariant.** Giữ nguyên session model hiện tại, thêm một listener kiểu
+`llm/stream` kiểm tra cái đang gửi **có tái dựng được từ lịch sử hiện có không**. **Chi phí thấp, lấy được
+phần lớn giá trị** (chuyển "cảm giác" thành lỗi đỏ). Nhưng nó chỉ mạnh bằng chất lượng nguồn dựng lại.
+
+**Phương án B — lật sang log là nguồn sự thật.** Đắt hơn nhiều, nhưng cho resume/fork/replay/reliability
+test một nguồn thật thay vì n bản.
+
+**Mặc định: làm A trước, đo lại, rồi mới cân nhắc B.** Lý do: phương án A cho biết **bao nhiêu phần
+trong khoảng cách là bất biến** và bao nhiêu là cấu trúc — mà câu trả lời đó quyết định B có đáng làm
+không. Làm B trước là đoán.
+
+**Cổng quyết định sau A:** số vi phạm mà invariant mới bắt được trên corpus hiện có. **Nếu con số đó là 0
+trên toàn bộ test suite, hãy ghi thẳng "không có bằng chứng omp cần B"** và dừng — đừng lật mô hình vì
+nó trông đúng. Đây là bài học lặp lại lần thứ tư trong đợt nghiên cứu này: cứ giả định một thứ có vẻ cần
+thì kiểm tra xem omp đã có chưa.
+
+**Cỡ M. Phụ thuộc:** không, nhưng đọc WI-PRESTEP-1 trước — hai cái cùng đụng một bề mặt log.
+
+---
+
+## WI-PRESTEP-1. Ghi durable turn khi bị chặn (thêm 2026-09-28, đặt trước M4)
+
+**Vì sao thuộc M2 chứ không thuộc M4.** M4 tuyên bố sản phẩm bàn giao của cả chương trình là câu hỏi
+**"thao tác này có thật sự xảy ra không?"**. dsh trả lời bằng một cơ chế khác, và cơ chế đó **rẻ hơn nhiều**:
+`agent/pre-step` là một **waterfall event**; listener có thể **reject**; và **khi reject, một durable turn
+vẫn được ghi vào session log** — bằng chứng vĩnh viễn rằng *"agent đã thử nhưng bị chặn"*.
+
+Tức là: **thay vì thêm một cờ trả về vào mọi đường thực thi, ghi lại cả thất bại vào log bền vững.**
+
+**Nhưng đừng giả định đây chỉ là "thêm một event".** Mô hình log của dsh là một **cách tổ chức khác**:
+*"model-visible means logged"* — mọi request là một phép suy ra thuần tuý từ append-only log
+(`session.deriveMessages()`, incremental O(new-nodes)); compaction, tool scheduling, retry, crash repair
+và migration đều xếp **trên log đó** chứ không cắm bên cạnh. Đó là một quyết định kiến trúc, không phải
+một việc vá.
+
+**Cổng mở — đo trước khi viết:**
+1. So sánh mô hình session hiện của omp với derivation kiểu `deriveMessages()`. **Ghi rõ khác biệt là
+   gì**, đừng viết "dsh tốt hơn".
+2. Thêm "turn bị chặn" vào log có làm phình transcript hiển thị không? Nếu có → cần cấp hiển thị riêng,
+   và **đó là quyết định sản phẩm, phải ghi tên người quyết** (WI-10 style).
+
+**Cổng hoàn thành:** một lượt bị chặn **vẫn truy vết được sau khi restart**, và transcript mặc định
+**không** hiển thị nó trừ khi người dùng mở.
+
+**Phụ thuộc:** WI-1 (session log). **Cỡ M.** Đặt trước M4-4 vì M4-4 là nơi phát sinh ra tình huống
+"báo applied nhưng không có gì thay đổi" mà WI này chữa ở tầng thấp hơn.
+
+---
+
 ## WI-0. Chốt và viết ra mô hình tin cậy cho extension (quyết định, không code)
 
 **Thay đổi gì:** Viết một ADR phê chuẩn hoặc lật ngược cách `oh-my-pi` đối xử với code extension đi kèm khi bạn clone một project — không code, không build, không test — bởi thế bài tin cậy đã được giao hàng một cách ngầm, và một thế bài mà không ai viết ra thì không ai dám thay đổi mà không làm vỡ mọi tác giả bên thứ ba.
@@ -3146,6 +3252,52 @@ Cần nhấn mạnh: (1) một mình **không** đủ làm bằng chứng hoàn 
 - **WI-5 (wave 3 commit 1)** — để bản kiểm kê tài nguyên toàn-runner đầy đủ. Cụ thể `reset()` phải đã là unconditional.
 
 **Chặn:** WI-12 (M2 wave 8, chỉ thiết kế, hoãn lại) — kế hoạch nói WI-12 không thể thiết kế nếu chưa có WI-9.
+
+#### Ba bất biến disposal lấy từ Cordis (thêm 2026-09-28)
+
+Đo thật (diff upstream `cordiverse/cordis` rc.10 vs bản DeepSeek vendor, 7 package). **Quyết định là KHÔNG
+lấy kernel Cordis** — xem `MILESTONE_4_EXECUTION_PLAN.md` §"Quyết định 2026-09-28". Nhưng ba bất biến dính
+thẳng vào WI-9, và chỉ tốn ~30 dòng:
+
+1. **Disposer single-shot cho người gọi, joinable cho chủ teardown.** `fiber.ts:112,:515` — WeakMap
+   `effectInertia` + ô `inFlight`. Ba câu: *"cái disposer tôi đưa cho bạn chạy đúng một lần; chủ đang teardown
+   scope thì được nối vào một lần chạy đang bay."* Đây là bất biến khó nhất trong fork, và **omp không có
+   tương đương**. Chỉ sống được ngày nào omp có disposer trả về — tức WI-11, hoặc một `on()` trả disposer.
+2. **Chứa lỗi theo từng observer khi báo teardown.** `fiber.ts:120` `emitPluginDisposed` — một observer
+   ném không được phép làm cơm các observer khác, cũng không được cắt ownership cleanup. **omp đã thoả cho
+   `session_shutdown`** (`runner.ts:1501-1511`, `Promise.all` try/catch theo handler) — **hãy ghi thành bất
+   biến** để một refactor không lặng lẽ biến nó thành tuần tự.
+3. **Teardown là LIFO, và disposer gỡ đúng thứ nó đăng ký — theo identity, không theo tên.**
+   `DisposableList.clear()` (`core/src/utils.ts:26-30`) trả `values.reverse()`.
+
+**Cái này sửa lỗ hổng đã có sẵn trong WI-9, không phải thêm mới:**
+
+- **FIFO, không chứa lỗi.** `runner.ts:1375-1376` là
+  `for (const dispose of this.#fileFallbackDisposers.splice(0)) dispose()` — **FIFO, không try/catch, trên
+  một registry toàn tiến trình.** Bước 6 của WI-9 thay mảng phẳng bằng `Map<string, Array<() => void>>`
+  nhưng **giữ nguyên FIFO và vẫn không chứa lỗi**, nên **một disposer ném làm mồ côi mọi fallback còn lại.**
+  Bắt buộc: bước 6 lấy thứ tự tham chiếu từ `utils.ts:26-30` (LIFO) **và** containment từ ý 2. Cả hai
+  **chi phí bằng không** tại đúng chỗ đó.
+- **`sourceId` là câu trả lời, và DeepSeek đã viết ra câu trả lời đó.** Bản thảo đã ghi
+  `unregisterProvider(name, sourceId)` có tham số mà không hiện thực nào dùng. Sửa đổi #21 trong sổ vá của
+  dsh **chính là loại bug này, đã sửa, đã viết ra** cho logger: mỗi disposer giữ lại **registration id**,
+  nên gỡ exporter trước không xoá nhầm exporter sau. Bước 9 của WI-9 đang gọi `unregisterProvider(path, path)`,
+  mà theo chính dòng của bản thảo sẽ **không** gỡ được provider mà extension đăng ký dưới tên khác.
+  **Lấy hình dạng của sửa đổi #21 làm mẫu, và chốt một lần:** sổ sở hữu theo **registration identity**,
+  không theo tên. Đó cũng chính là câu hỏi mà WI-5 commit 2-3 gọi là *"câu hỏi duy nhất trong item này quyết
+  định `unloadExtension` có thật sự giải phóng hết không"*. Trả lời nó cùng lúc với WI-9.
+
+**Phép thử trước khi giữ cả ba ý** (rẻ, và nên làm): **một file test đối kháng** chạy trên
+`ExtensionRunner`, trước khi bước 6 ship. Hiện **không** tìm thấy issue, test đỏ, hay báo cáo người
+dùng nào ở omp thể hiện bug reentrant-disposal — ba ý trên rẻ và biện minh được, nhưng claim *"chúng ngăn
+được thứ gì hôm nay"* thì **chưa chứng minh**. Nếu test đối kháng xanh ngay, hãy ghi thẳng "không có bằng
+chứng omp cần cái này" và cắt cả ba, thay vì giữ cho có vẻ đúng.
+
+**Không lấy kernel Cordis, và ba lý do nặng nhất:** (1) bucket per-extension trên `interface Extension`
+**đã là** sổ sở hữu, thiết kế cho 9 phương thức đăng ký phải giữ là 9 — omp không thiếu kernel, omp có một
+kernel và hình dạng tốt hơn fiber; (2) omp có **0 tham chiếu cordis**, không có seam để mọc từ đó;
+(3) `cordis-plugin-logger-console` gọi `console.log` (`shared.ts:66`) — bị `AGENTS.md` cấm trong mọi đường
+TUI/RPC/SDK/worker.
 
 ### Cách sai dễ nhất
 

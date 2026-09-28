@@ -29,7 +29,33 @@ một plugin cho OpenCode thuộc đúng phạm vi đó.
 tui/sidebar tự viết là 12.053 dòng so với 189.051 dòng của `packages/tui` của omp (gấp 15,7 lần), và TUI
 của họ là mua từ npm qua `overrides`. Trong khi toàn bộ 17 work item của M3 nằm trên bề mặt terminal.
 
-**Về pháp lý — không lấy được dòng code nào.** Giấy phép là **SUL-1.0** (Sustainable Use License), không
+**Về pháp lý — không lấy được dòng code nào.** *(Đính chính 2026-09-28: câu "không lấy được dòng code nào" là
+**đúng về kết luận nhưng sai về lý do** — và bản thảo cũ đã nói sai theo hướng ngược lại, tức là nghiêm
+trọng hơn. Đọc toàn văn `LICENSE.md` trên HEAD `bc67110e`:)*
+
+SUL-1.0 **cấp quyền** *"use, copy, distribute, make available, and **prepare derivative works of**"* và
+giới hạn *"You may **use or modify** the software… You may distribute… **only if you do so free of charge
+for non-commercial purposes**."* → **Sửa đổi được. Phát hành miễn phí phi thương mại được.** ultraworkers
+là MIT + miễn phí, nên **thoả điều kiện sử dụng**. Bản thảo cũ cần người đọc tin rằng SUL là *"chỉ nội
+bộ/phi thương mại"* và suy ra không dùng được — **đó là hiểu sai.**
+
+Chỗ thật sự chặn là `non-sublicensable` + `non-transferable`, và **có đường thoát rõ ràng**:
+*"anyone who gets a copy of any part of the software from you also gets a copy of these terms… If you
+modify the software, you must include in any modified copies a prominent notice stating that you have
+modified the software."* → **cây nhiều giấy phép, không phải tường.** Không gộp được vào MIT, nhưng
+không cấm.
+
+*(Không phải tư vấn pháp lý. Và kết luận thực dụng không đổi: ý tưởng thì SUL không bảo hộ, nên 7 ý tưởng
+dưới đây vẫn lấy được nguyên vẹn — đó mới là thứ omp thật sự cần.)*
+
+Bản thảo cũ đã **tự bác** phần khai báo giấy phép rồi, và đo lại xác nhận đúng: root `package.json`
+khai `SUL-1.0`, **14** package con khai `"MIT"`, **35** không khai gì. Trong 14 cái khai MIT, mở từng
+cái cho thấy **12 cái là binary prebuild — 0 file `.ts`, tổng 2 file** (`bin/` + `package.json`); chỉ
+`lsp-daemon` và `lsp-tools-mcp` là source thật. Vấn đề không phải bừa bãn mà là **mâu thuẫn sống giữa
+`LICENSE.md` và metadata npm**: **24 package đã publish (12 platform × 2 họ tên) khai MIT**, kiểm trên
+registry sống (`oh-my-opencode-linux-x64@5.0.1` → MIT, còn `oh-my-opencode@5.0.1` → SUL-1.0).
+
+**Bản thảo gốc:**
 phải open source. `LICENSE.md:20-22`: *"non-exclusive, royalty-free, worldwide, **non-sublicensable**,
 non-transferable"*. `LICENSE.md:24-29`: *"only for your own internal business purposes or for
 non-commercial or personal use"*. `LICENSE.md:53-57`: vi phạm thì giấy phép **tự động chấm dứt, và lần

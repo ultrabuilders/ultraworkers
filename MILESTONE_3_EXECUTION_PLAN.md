@@ -58,9 +58,39 @@ Nghĩa là **774 site `flexDirection` mới là chi phí port thật**. Đây l�
 của M3: *xây một layout engine flexbox trong `packages/tui`, hay chấp nhận compose string row từng
 component*.
 
-**Dữ kiệm nghiêng về "không cần flexbox":** `opencode/packages/tui` có **245 file .ts · 39.771 dòng**
-và `flexbox`/`yoga-layout` đều **0 file** — một TUI trưởng thành ship được mà không có layout engine.
-Xem `MILESTONE_6_EXECUTION_PLAN.md` (audit opencode) để biết họ bố cục thay thế bằng gì.
+**Đính chính quan trọng — tôi đã đo sai một lần, và kết luận sai đi làm thay đổi quyết định này.**
+
+Ban đầu tôi báo *"opencode ship TUI 39.771 dòng **không có flexbox**, nên có thể không cần engine"*. **Sai.**
+`git ls-files | grep -ci flexbox` = 0 chỉ nói **không có file tên `flexbox`** — còn prop thì dùng **269
+site**. opencode **mua** flexbox từ engine của bên thứ ba. Đây đúng là dạng lỗi đã ghi trong
+`LESSONS.md`: một phép đo đứng thay cho nội dung thật.
+
+Và khi tra đúng chỗ, câu trả lời tốt hơn nhiều so với cả hai hướng tôi đã cân nhắc:
+
+| | Engine layout | Giấy phép | Quy mô |
+|---|---|---|---|
+| `opencode` | **`@opentui/core@0.5.12`** — lõi Zig, TS bindings, C ABI, layout bằng **yoga-layout 3.2.1** | **MIT** | 13.080 star · 174,7K lượt/tuần · *"OpenCode dùng nó ở production"* |
+| `ccb` | `@anthropic/ink` (fork) — React, cũng trên **yoga** | *không có LICENSE* | — |
+| `omp` | **không có** | — | — |
+
+**Cả hai đều đứng trên cùng một engine: `yoga-layout`, MIT.**
+
+Vậy câu hỏi đúng **không phải** "xây 774 site flexDirection bằng tay", và cũng **không** là "tự viết
+layout engine". Ba lựa chọn thật:
+
+| | Lựa chọn | Cán đồ |
+|---|---|---|
+| **(i)** | Dùng **chỉ `yoga-layout`** (MIT) và nối vào renderer sẵn có của omp, thêm flex vào `Box` | Cán nhỏ nhất: giữ `Component.render(): string[]`, giữ `box.ts`, chỉ thêm engine. Đổi 774 site CCB thành prop thật |
+| **(ii)** | Dùng trọn `@opentui/core` | Thay **cả renderer** của omp (189.051 dòng) — vì OpenTUI tự render, tự phân giải, tự cập nhật cell. Không phải việc thêm, mà là việc thay |
+| **(iii)** | Tiếp tục compose string row tay | 774 site, và mỗi component tự chịu trách nhiệm căn chỉnh. Đắt và dễ vỡ |
+
+**(i) là hướng đáng chọn nhất theo đo**, vì nó lấy đúng thứ còn thiếu (layout engine) mà không đổi thứ
+đang chạy (renderer). Nhưng đây là **quyết định của chủ sở hữu**, không phải kết luận kỹ thuật —
+nó đụng tới 189.051 dòng TUI.
+
+**Ràng buộc đo được:** `yoga-layout@3.2.1` là native/WASM và cần load đồng bộ hoặc qua FFI. Kiểm tra
+xem omp có thể chịu được điều đó **trước khi** chốt (i). Một cổng nhỏ: thêm `yoga-layout`, dựng một
+`Box` có `flexDirection`, và xem `bun test packages/tui` còn xanh không.
 
 Tầng widget thì omp **đã phủ gần hết** — `packages/tui/src/index.ts` export 31 module component:
 `select-list`, `settings-list`, `editor` (165 KB), `markdown` (150 KB), `image`, `kitty-graphics`,

@@ -16,7 +16,7 @@ Mục đích của phần MỞ ĐẦU này là đủ để người bảo trì q
 
 Với người dùng omp, đợt này mang tới ba thứ cụ thể:
 
-- **Một runtime soạn thảo ứng dụng** (`chord`): vòng đời facet kích hoạt/huỷ, engine delta bất
+- **Một tầng runtime composition** (`chord`): vòng đời facet kích hoạt/huỷ, engine delta bất
   biến (CRDT) với tracker, diff, apply, encoder/decoder và chốt ô nhiễm prototype, một scope hủy
   theo `Context`, và provider/consumer dịch vụ từ xa.
 - **Một cặp server/client nói chuyện qua RPC CBOR khung length-framed** (`pi-server`,
@@ -176,6 +176,42 @@ Hai điểm phải nói thẳng vì dữ liệu tự mâu thuẫn:
 - **Scope của `chord` lệch với sáu package kia.** Index ghi `@oh-my-pi/chord`, trong khi sáu package
   còn lại đều là `@oh-my-pi/pi-*`. Giữ nguyên bất đối xứng hay chuẩn hoá — chưa có mặc định — cần
   bạn quyết.
+
+---
+
+## Nguồn chép: `pi`, KHÔNG phải `senpi` — và câu này đã đóng
+
+Có một repo thứ sáu trên đĩa: `senpi` (https://github.com/code-yeongyu/senpi), MIT, là fork **đúng dòng
+`pi` này**. Nó có `chord`, `protocol`, `server`, `client`, `telemetry`, `evals` — cùng tên, cùng tác
+giả. Trông như một nguồn chép thay thế tốt hơn (được người dùng thật duy trì, HEAD 3 ngày trước).
+**Đo thì không phải.**
+
+| Bằng chứng | `pi` | `senpi` |
+|---|---|---|
+| version mọi package | **0.87.1** | `agent`/`ai`/`coding-agent`/`telemetry`/`protocol`/`server`/`client` = `2026.9.28-3`; **`chord` = `0.85.1`** |
+| `packages/durable/` | **63 file** | **0 file** — không tồn tại |
+| `packages/` | 12 | 13 (thêm `pty`, `senpi-codemode`) |
+
+Hai kết luận, mỗi cái đủ để chốt:
+
+1. **Không chép được `durable` từ `senpi`** — nó không có package đó. `git ls-files
+   'packages/durable/*' | wc -l` → `0`; 11 chỗ khác chứa chữ "durable" đều là
+   `builtin/terminal/durable-command.ts`, `durable-file.ts` và test — không phải package.
+2. **`chord` của `senpi` là bản LÙI.** Nó kẹt ở `0.85.1` vì `packages/protocol/changes.md` ghi rõ
+   package đó được ghim đúng version upstream mà nó resolve được, vì fork không publish. Còn `pi` đã
+   đi tới `0.87.1`. Kéo `chord` từ `senpi` là **lùi hai bản minor**.
+
+Về 5 package còn lại, tỉ lệ file giống **từ byte** với `pi`: `protocol` 15/17 · `server` 24/29 ·
+`client` 15/19 · `telemetry` 8/12 — tức là phần lớn là bản cũ hơn một chút, và phần "chỉ có ở senpi"
+gần như luôn đúng **2 file**: `changes.md` + một file sổ, tức là sổ ghi chép fork chứ không phải code.
+Riêng `evals` là ngoại lệ lớn (senpi **bỏ 25 file** của pi), nhưng `evals` vốn đã là package kém giá
+nhất trong bảy.
+
+**Kết luận:** M1B chép từ `pi-ref`, như tài liệu này vốn đã ghi. `senpi` **không** thay được `pi` làm
+nguồn. Nó có giá trị ở chỗ khác hẳn: 40 builtin extension, 97.893 dòng — đó là nội dung cho M5, xem
+`SENPI_FINDINGS.md`.
+
+> Chi tiết đo và lệnh tái lập: `SENPI_FINDINGS.md` mục "M1B va chạm với senpi".
 
 ---
 
@@ -378,7 +414,28 @@ dùng thấy được" ở `pi-durable` là mẫu kinh điển: đừng chọn m
 ---
 
 
-## 1. `chord` — cơ chế vòng đời, nền của cả đợt migrate
+## 1. `chord` — tầng runtime composition (ĐÍNH CHÍNH LẦM: nó KHÔNG phải cơ chế vòng đời extension)
+
+> ### Đính chính: `chord` không phải cơ chế vòng đời extension
+>
+> Bản thảo đầu gọi `chord` là "cơ chế vòng đời, nền của cả đợt migrate". **Đo lại thì sai**, và đây là
+> loại sai tốn kém nhất vì nó định hướng cả kế hoạch.
+>
+> | Câu hỏi | Đo được |
+> |---|---|
+> | `chord` có được import trong `core/extensions/` không? | **0 file** |
+> | `chord` được import ở đâu? | `experimental/services` 14 · `experimental` 5 · `experimental/plugins` 2 · `experimental/micro` 1 |
+> | Vòng đời extension của `pi` nằm ở đâu? | `core/extensions/` — **4.506 dòng** (`index` `loader` `runner` `types`), **không đụng chord** |
+> | Ai thật sự phụ thuộc `chord`? | `durable` 35 file · `server` 9 · `client` 5 |
+>
+> Nên `chord` là **tầng runtime composition** phục vụ `durable`/`server`/`client` và phần
+> `experimental/` — **không** phải cơ chế vòng đời extension. Hệ quả thẳng: **kéo `chord` vào không
+> giải quyết vòng đời extension của omp**, và 669 dòng `src/` của nó (17.651 dòng cộng test) sẽ đi
+> vào cây mà không phục vụ mục tiêu đã ghi.
+>
+> Việc cần làm lại: `core/extensions/` của `pi` so với `packages/coding-agent/src/extensibility/extensions/`
+> của omp. Đó là so sánh **thật sự liên quan** tới vòng đời, và nó chưa nằm trong tài liệu này.
+
 
 **Vị trí trong thứ tự migrate:** thứ nhất trong bảy package. Đây là runtime ghép thành phần ứng dụng mà sáu package còn lại đứng trên; `durable` phụ thuộc nó. Spec gọi nó là “FIRST of the 7 new packages”, và danh sách public API của nó bị bốn package anh em dùng ngay (`pi-server`, `pi-client`, `pi-durable`, `pi-protocol`) — vì vậy nó phải đứng trước tất cả.
 
@@ -1494,6 +1551,47 @@ Hai rủi ro nhỏ hơn đáng gọi tên. **THỨ NHẤT**, việc chuyển bar
 
 Lý do là CHÉP chứ không phải làm lại, gói trong một dòng: `pi-ref` là 1 commit squash (`git log --oneline | wc -l = 1`, 1,935 file), nên không có diff nào để "cập nhật" — chỉ có copy. Và `durable` không phải bản sao cũ của omp: `pi-ref packages/agent/` có 117 file `src`, omp `packages/agent/` chỉ có 50, và chỉ 5 tên file trùng nhau (đo theo ĐƯỜNG DẪN TƯƠNG ĐỐI trong `src/`; nếu chỉ so tên file thì 12) — `agent-loop.ts` 26KB (pi) vs 148KB (omp), `agent.ts` 19KB vs 74KB, `types.ts` 19KB vs 51KB. `durable` là sực tách ra TÍCH LŨY TRONG PI sau khi omp đã phát triển tiếp: ba nơi gộp 3 thứ, tổng 20KB source. LƯU Ý: ở HEAD d6af72e KHÔNG package nào ngoài `durable` import nó — `git grep -l pi-durable d6af72e` chỉ ra README.md, package-lock.json, tsconfig.json và `scripts/*` ở root. `durable` là package CHƯA ĐƯỢC TIÊU THỤ, không phải runtime đã kiểm chứng; bằng chứng duy nhất là 23 file test của chính nó. Vì vậy càng phải giữ nguyên bộ test khi chép.
 
+> ### Đính chính lớn: chép `durable` nguyên xi sẽ làm omp **tệ hơn** ở đúng trục quan trọng nhất
+>
+> Đây là phát hiện sinh ra từ so sánh 5 repo, sau khi bản thảo này đã viết xong. Nó đảo ngược một
+> phần kế hoạch, nên nằm ngay đầu mục `durable` chứ không cuối tài liệu.
+>
+> **omp hiện tự lành được file JSONL hỏng. `pi` thì không — và sẽ mất sạch session.**
+>
+> | Câu hỏi | omp | `pi` | `gajae` | `opencode` | `codex` |
+> |---|---|---|---|---|---|
+> | Có hàm parse JSONL khoan dung? | **có** — `packages/utils/src/stream.ts:575` `parseJsonlLenient` | **không** | có — `stream.ts:434` | không | không |
+> | Có callback báo dòng hỏng? | **có** — `{ onMalformedRecord?: () => void }` | không có hàm | không | — | — |
+> | Dòng JSON hỏng thì sao? | đếm vào `malformedRecords` | **ném `JsonlCorruptionError`** | — | — | — |
+>
+> Chuỗi chững chạy đầy đủ ở omp, đo từng bước:
+> 1. `session-loader.ts:95` tăng `malformedRecords` cho mỗi dòng hỏng, và trả nó ra ở `:102`.
+> 2. `session-manager.ts:1882` — `this.#rewriteRequired = migrated || loaded.malformedRecords > 0;`
+> 3. Lần persist kế tiếp ghi lại toàn bộ thân file, nên dòng hỏng **biến mất vĩnh viễn** —
+>    tự lành, không cần người dùng can thiệp.
+>
+> Bên `pi`: `durable/src/storage/jsonl/storage.ts:115-121` bọc `JSON.parse` trong `try` rồi **ném
+> lại** thành `JsonlCorruptionError` (class khai ở `:80`; 20 chỗ `throw` trong file này). Ba khối
+> `try` trong toàn bộ `jsonl/storage.ts` đều để **chuyển đổi** lỗi hạ tầng thành lỗi ném ra, không
+> khối nào **bắt** `JsonlCorruptionError` để phục hồi. Không có đường thoát nào ngoài việc ném.
+>
+> **Hệ quả trực tiếp cho kế hoạch này:** cột "chép nguyên văn" ở mục `storage/jsonl/*` bên dưới là
+> **sai** cho omp. Không phải vì `pi` làm sai, mà vì omp đang làm **tốt hơn** ở đúng trục này và việc
+> chép sẽ **xoá** điểm mạnh đó. Ba lựa chọn, theo thứ tự ưu tiên:
+>
+> - **A (mặc định đề xuất):** chép `durable` trừ tầng lưu, và **giữ tầng lưu của omp**. Tức là mang
+>   sang `Session` / `Transaction` / `documents.ts` (lớp phải ở trên) mà **không** mang
+>   `storage/jsonl/`. Tách đúng ranh giới này thì M1B vẫn thu được phần đáng giá nhất mà không mất gì.
+> - **B:** chép cả `storage/jsonl/` nhưng port `parseJsonlLenient` và cơ chế `#rewriteRequired` vào
+>   đúng chỗ, để hành vi thành "bỏ dòng hỏng, đánh dấu cần viết lại" thay vì "ném". Tốn công hơn A và
+>   phải giữ bộ test của cả hai bên cho khớp.
+> - **C:** chép nguyên xi. **Không chọn** — đây là lựa chọn làm hỏng omp.
+>
+> Còn một điều nữa, nhỏ hơn nhưng cùng hướng: `durable` của `pi` **không nói** giới hạn của nó. omp
+> thì nói thẳng — `session-manager.ts:690`: *"Durability is software-crash safe but not power-loss
+> safe"*, kèm 6 dòng giải thích vì sao entry đã hoàn tất không được `fsync`. Cả 5 repo đều không an
+> toàn khi mất điện, nhưng **chỉ omp dám nói ra**. Nếu chọn phương án A hoặc B, phải **giữ** đoạn này.
+
 **Về `documents.ts`** — `packages/durable/src/documents.ts` (207 dòng, 7,888 byte) là nửa document mà M1 gọi là điểm không có bằng chứng duy nhất trong milestone. Đọc kỹ thì KHÔNG phải một phần document. Nó là LỚP PHẢI — nơi đọc các Định nghĩa (definitions) thành địa chỉ lưu (address) và kiểm tra chúng (validation). Hạ tầng thật sự — Session, Transaction, và cả 3 storage back-end — đều gọi qua nó. Ba khả năng cụ thể:
 
 1. **PHÂN GIẢI ĐA NĂNG (từ 2 overload thành 1).** `defineDoc` và `defineDocFamily` có 4 overload mới: scope `'session'`, scope `'conversation'` + history `'latest'`, scope `'conversation'` + history `'rewindable'`, scope `'task'`. Kiểu trả về khác nhau (`SessionDocToken` / `ConversationDocToken` / `RewindableConversationDocToken` / `TaskDocToken`). Nghe đổi là `tx.doc(MyToken)` sẽ KHÔNG bị chạy khi token và bản ghi đã lưu lệch scope — đó là định nghĩa tại thời gian biên dịch, không phải kiểm tra runtime.
@@ -1527,7 +1625,7 @@ Bằng chứng thì có: nguồn có 3 test nên trực tiếp vào nó — `tes
 | `src/storage/sqlite/migrations.ts` | 5,230 | chép nguyên văn | Không có scope. |
 | `src/storage/sqlite/index.ts` | 263 | chép rồi sửa | Chuyển named re-export sang star (AGENTS.md). Không có scope. |
 | `src/storage/sqlite/node.ts` | 3,756 | chép rồi sửa | KHÔNG đổi scope. NHƯNG sửa runtime: bỏ `node:sqlite`/`node:fs`/`node:path` (AGENTS.md 'Bun Over Node') → dùng `openSqliteDatabaseSync` từ `@oh-my-pi/pi-utils`, hoặc viết adapter `bun:sqlite` mới. Xem `collisions[]`. |
-| `src/storage/jsonl/storage.ts` | 29,888 | chép rồi sửa | 1 dòng scope (L1 chord). |
+| `src/storage/jsonl/storage.ts` | 29,888 | **BỎ (phương án A)** hoặc chép rồi sửa nặng (B) | ⚠️ **XEM ĐÍNH CHÍNH Ở ĐẦU MỤC 5.** Dòng này ném `JsonlCorruptionError` khi JSONL hỏng; omp hiện tự lành. Chép nguyên văn sẽ **xoá** khả năng tự lành. A: không chép, giữ tầng lưu của omp. B: chép rồi thay `parseJson` bằng `parseJsonlLenient` + nối `malformedRecords` vào cơ chế `#rewriteRequired`. Nếu chép (B) thì 1 dòng scope (L1 chord) như cũ. |
 | `src/storage/jsonl/node.ts` | 583 | chép rồi sửa | 1 dòng scope (L1 chord). |
 | `src/storage/jsonl/index.ts` | 125 | chép rồi sửa | Chuyển sang star re-export. |
 | `src/env/index.ts` | 6,010 | chép rồi sửa | 1 dòng scope (L1 chord). |

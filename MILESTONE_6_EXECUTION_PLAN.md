@@ -61,6 +61,32 @@ Bản audit đầy đủ: `~/Documents/omo-audit/report.md` (2026-09-27, commit 
 
 ---
 
+## Điều chỉnh sau khi so sánh: `gajae` là fork của dòng omp, không phải repo độc lập
+
+Các audit ở dưới dựa trên giả định rằng bốn nguồn là bốn repo độc lập. **Đo lại thì ba trong bốn đúng, một
+sai, và sai theo hướng quan trọng.**
+
+`gajae-code` **không** là nguồn tham chiếu độc lập. Nó là **fork của chính dòng `omp`/`pi`**:
+
+- `crates/pi-ast`, `crates/pi-iso` còn nguyên trong repo nó.
+- Nó dùng chung đường dẫn với omp: `packages/ai/src/model-thinking.ts`, `packages/agent/src`.
+- Nó còn **mới hơn `pi`**.
+
+Hệ quả cho việc đọc audit của nó: **những gì `gajae` làm thêm là hướng đi của một fork, không phải chuẩn để
+học vào.** Nó vẫn đáng đọc — nó là mốc thời gian của một nhánh phát triển — nhưng phải đọc với con dấu đó,
+và cơ chế "port từ `gajae`" trong bất kỳ tài liệu nào là sai.
+
+Một ví dụ đo được, và nó minh hoạ vì sao con dấu này quan trọng: `gajae` **đã gỡ** cây KDL của omp. Hậu
+quả là `model-thinking.ts` thành **1.179 dòng chứa 86 model id hardcode** và `model-pricing.ts` chỉ còn
+101 dòng hằng số giá viết tay — đúng thứ `AGENTS.md` của omp cấm. Đó là phép thử tự nhiên chứng minh kiến
+trúc KDL đáng giữ, do một fork thực sự đã bỏ nó rồi đo hậu quả.
+
+### Và một tiền đề nữa cũng sai: `pi` không có MCP, cũng không có ACP
+
+Đo: `git ls-files | grep -ic mcp` → **0**; `grep -ic acp` → **0**. Hàng duy nhất nhắc MCP là một optional
+peerDependency của `@google/genai`, không phải code của `pi`. `protocol`/`client`/`server` của `pi` là
+**CBOR trên Unix socket** để điều phối nội bộ. Đừng coi chúng là tương đương MCP/ACP.
+
 ## Ranh giới pháp lý — đọc để học, chép dòng nào thì không
 
 Ba repo đầu đều cho phép chép với nghĩa vụ giữ notice (MIT; Apache-2.0 thêm yêu cầu NOTICE và

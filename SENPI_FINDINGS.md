@@ -4,9 +4,17 @@
 sẵn 40 builtin extension (97.893 dòng). Ý tưởng ban đầu là port chúng vào omp. **Đo xong thì
 phần lớn không cần port** — và lý do mới quan trọng hơn câu chuyện port.
 
-> **Đọc `Phần 2` trước nếu bạn chỉ quan tâm M1B.** Nó trả lời câu hỏi nguồn chép, và câu đó
-> đã đóng: `pi`, không phải `senpi`.
-
+> **Đọc `Tổng hợp` §2 trước nếu bạn chỉ quan tâm M1B.** Nó trả lời câu hỏi nguồn chép — câu đó
+> **đã đóng: `pi`, không phải `senpi`** — và đưa ra một đề xuất lớn hơn:
+>
+> **`durable` có thể không cần chép. M1B rút từ 7 package xuống 6, tiết kiệm 21.093 dòng.**
+> Lý do: `durable` của `pi` là package **chết** — không package nào ngoài nó import, bằng chứng
+> duy nhất là 23 file test của chính nó. Tầng session thật sự chạy nằm ở
+> `packages/agent/src/harness/session/jsonl/`, và tôi đã kiểm: **8/8 file giống hệt từ byte**
+> giữa `pi` và `senpi` (1.894 dòng). Cả hai đều **hard-fail** khi JSONL hỏng. Chép bất kỳ tầng
+> session nào của chúng vào omp đều là **lùi về sau** so với `parseJsonlLenient` +
+> `malformedRecords → #rewriteRequired` mà omp đang có.
+>
 ## Cách đọc tài liệu này
 
 Mỗi phần là một bài riêng, viết bởi một agent riêng, đo trên cây thật. Chúng **sửa lẫn nhau** —
@@ -44,8 +52,384 @@ không tăng.** Tài liệu port nào đòi hỏi nhiều công hơn sau khi ki�
 
 # Tổng hợp
 
-> ⚠️ **File `M5-SENPI.md` không có trên đĩa.** Phần này chưa được viết.
-> Nguyên nhân nằm ở mục «Sai sót và giới hạn» cuối tài liệu.
+## M5 — senpi: tài liệu tổng hợp
+
+> Ngày tổng hợp: 2026-09-28. Nguồn: `.lavish-wip/senpi-md/*.md` (13 file, 7.180 dòng).
+> Repo: `senpi` = `/Users/tranquangdang21/Projects/senpi-ref`, `omp` = `/Users/tranquangdang21/Projects/ultraworkers`, `pi` = `/Users/tranquangdang21/Projects/pi-ref`.
+>
+> **Quy tắc đọc:** mọi khẳng định dưới đây kèm lệnh + đường dẫn + số dòng, và bị giới hạn ở những gì vòng trước đã đo. Chỗ nào hai nguồn cho hai số khác nhau thì in cả hai. Chỗ nào chưa có bằng chứng thì ghi **"chưa đủ dữ liệu"** thay vì suy đoán.
+>
+> **Thứ tự ưu tiên bằng chứng:** `verify-*` > `deep-*` > định hướng. Tài liệu này bám theo thứ tự đó.
+
+---
+
+## 1. Senpi là gì
+
+**senpi là một fork sống của `badlogic/pi-mono`** — cùng dòng code với `pi` (tức `earendil-works/pi`), không phải một dự án độc lập. Nó đặt cây lên đỉnh commit upstream `05f79b08` (2026-04-25, pidalf) bằng một commit ghép một-parent, đồng bộ upstream 70 lần, và tự thêm 7.682 commit. Tên cũ của fork là **sanepi**. Về mặt quy mô: 5.554 file `.ts`/`.tsx`, 955.527 dòng, 13 package.
+
+### 1.1 Dòng dõi
+
+```bash
+git -C $S log -1 --format='%P' 1ea83112b0
+# => 05f79b08516809e0e06756013645c37419bf5570     (một parent duy nhất)
+git -C $S log -1 --format='%ad %an %s' --date=short 05f79b08
+# => 2026-04-25 pidalf docs: explain issue triage policy (#3725)
+git -C $S log --oneline --all --grep='upstream/main' --merges | wc -l   # => 70
+git -C $S log --all --format='%an' | sort | uniq -c | sort -rn | head -5
+# 7682 YeonGyu-Kim | 3783 Mario Zechner | 740 Armin Ronacher | 276 David Brailovsky | 235 senpi-release-bot
+```
+
+`pi-ref` và `badlogic/pi-mono` là **một**, chứng minh bằng root commit trùng SHA:
+
+```bash
+git -C $S  rev-list --max-parents=0 --all   # a74c5da112c29466f182a03108337a488c785d76
+git -C $PI rev-list --max-parents=0 --all   # a74c5da112c29466f182a03108337a488c785d76
+cmp -s $PI/SECURITY.md $S/SECURITY.md && echo IDENTICAL    # => IDENTICAL
+```
+
+**Hệ số nhánh (con số quan trọng nhất cho M5):**
+
+```bash
+git -C $S rev-list --count HEAD..d6af72e1   # => 194    (pi đi trước senpi 194 commit)
+git -C $S rev-list --count d6af72e1..HEAD   # => 8415   (senpi có 8415 commit riêng)
+```
+
+**senpi đang đi sau upstream 194 commit.** Đồng thời, bản `chord` của senpi vẫn kẹt ở `0.85.1` trong khi `pi` đã ở `0.87.1` — `.github/upstream.json` ghi rõ:
+
+```json
+{ "repo": "badlogic/pi-mono", "tag": "v0.85.1",
+  "sha": "71dca871bc80b6bc97be37f0ca3189399d651fff",
+  "synced_at": "2026-09-12T06:08:28Z" }
+```
+
+> `tag` ≠ `sha`: `71dca871` là **tip của `upstream/main`** lúc sync, còn `v0.85.1` là release tag cuối cùng được sync. Không mâu thuẫn. `git -C $PI rev-list --count 71dca871..$(git -C $PI rev-list -n1 v0.85.1)` → `0`, pin mới hơn tag.
+
+### 1.2 Quyền pháp lý — phép được, không có ràng buộc
+
+Root `LICENSE` của senpi là **MIT thuần, hai dòng copyright**:
+
+```
+MIT License
+Copyright (c) 2025 Mario Zechner (upstream pi-mono)
+Copyright (c) 2026 Yeongyu Kim and senpi contributors
+```
+
+Audit toàn bộ trường `license` trong mọi `package.json`: **12 file `MIT`, 14 file `<none>`** (root private, 2 crate Rust, 5 example extension, plugin mẫu, `install-lock`, protocol generated, `evals`, doc sandbox — tất cả đều được root MIT phủ). **Không có GPL/AGPL/LGPL/BSL/Apache-with-patent.**
+
+`NOTICE.md` (67 dòng) ghi 4 khoản, tất cả permissive: LinkeDOM 0.18.12 (**ISC** — ràng buộc duy nhất có hành vi thật: phải giữ copyright + permission notice trong mọi bản copy), system prompt lấy cảm hứng từ Gajae-Code (MIT), extension **TTSR** port từ **oh-my-pi** (MIT), tool **todo** + `/todo` port từ **oh-my-pi** (MIT).
+
+Không tìm thấy ràng buộc cấm sao chép ở bất kỳ đâu: `LICENSE`, `NOTICE.md`, `SECURITY.md`, `CONTRIBUTING.md` (162 dòng, **không có CLA/DCO**), `.github/` (24 file), hay bất kỳ `*.md` nào.
+
+**Ba điều kiện bắt buộc khi lấy code từ senpi:**
+1. **Giữ nguyên MIT notice** — dòng `Copyright (c) 2025 Mario Zechner`, cộng dòng của Yeongyu Kim nếu lấy code *riêng của senpi*.
+2. **Ghi attribution cho phần vay mượn** vào `NOTICE.md` của omp — **omp hiện chưa có file này** (`ls $OMP/NOTICE.md` → không tồn tại), dù LICENSE đã ghi 3 bên (Mario Zechner, Can Bölük, Stencil Labs).
+3. **Coi thương hiệu là vùng cấm** dù pháp lý cho phép. `CONTRIBUTING.md:139-147` của senpi: *"Do not make senpi look endorsed by another project or vendor."*
+
+**Rủi ro thật không nằm ở luật mà ở ổn định.** `README.md:9`: *"⚠️ Experimental… an in-flight fork… Use it; don't bet a production pipeline on it."* Senpi đã **xoá** cả stack computer-use 10 crate vì OMO đã sở hữu tính năng đó. Mọi thứ lấy từ senpi phải **ghim theo commit SHA cụ thể** (HEAD lúc đo: `ea9216269e9254b821446130b60d1e00759761dc`), không lấy "bản mới nhất".
+
+### 1.3 Chiều dòng ngược lại — senpi đã chép từ omp
+
+`NOTICE.md` khoản 3 và 4, nguyên văn, nói TTSR và todo **"ported and adapted from oh-my-pi's"** `src/export/ttsr.ts`, `src/session/ttsr-coordinator.ts`, `src/capability/rule.ts`, `src/tools/todo.ts`. Khớp chính xác với `head -6 $OMP/LICENSE` (Can Bölük, Stencil Labs).
+
+Dòng chảy **hai chiều, cả hai đều MIT**. Có tiền lệ rồi: khi chép từ omp sang senpi, họ giữ attribution trong `NOTICE.md` — đó là hành vi chuẩn nên theo khi chép ngược lại. Vòng tròn attribution: nếu M5 lấy TTSR/todotools từ senpi thì `NOTICE.md` của ta **vẫn phải giữ** dòng "ported from oh-my-pi", vì code đó vẫn bắt nguồn từ ta.
+
+### 1.4 Chiến lược fork — bài học cấu trúc
+
+62 file `changes.md` (mỗi thư mục con một, ghi "ta đổi gì so với upstream") + 40 thư mục builtin extension, tất cả **không tồn tại ở `badlogic/pi-mono`**. Có CI ép: `scripts/audit-changes-md.mjs`, `scripts/changes-md-policy.mjs`, workflow `.github/workflows/review-claims.yml`.
+
+`CONTRIBUTING.md` gọi đây là **"Extension-first"**: mọi tính năng mới đi vào `core/extensions/builtin/` hoặc extension người dùng; chỉ đụng `core/` khi không hook nào làm được.
+
+> **Đây chính là câu trả lời cho "senpi giống tôi, nhưng thêm rich features".** Cơ chế làm cho nó *giống ta*: senpi không sửa lõi, nó **cắm extension vào hook có sẵn của pi**. 40 extension ~98k dòng mà phần sửa lõi vẫn đủ nhỏ để merge upstream 70 lần không gãy.
+>
+> **Khuyến nghị M5:** lấy gì từ senpi thì lấy **theo đường extension**, không lấy bản sửa lõi. Bản sửa lõi của senpi được viết để *hòa giải với upstream của senpi* (pi-mono) — bài toán khác với bài toán của omp.
+
+---
+
+## 2. M1B nên chép từ `pi` hay từ `senpi` — theo từng package
+
+### 2.1 Câu trả lời ngắn: **`pi`, cả 7 package.**
+
+Trong 7 package M1B cần, **senpi đóng góp đúng 3 dòng code mới** (ba chú thích type `(chunk: Buffer)`), và **không hề có** package thứ bảy là `durable`. Riêng `chord` thì senpi là **bản lùi** so với `pi`.
+
+### 2.2 Mấu chốt: chênh lệch version, mọi phép đo chỉ là hệ quả
+
+| package | `pi-ref` | `senpi-ref` |
+| --- | --- | --- |
+| agent | `@earendil-works/pi-agent-core` **0.87.1** | `@earendil-works/pi-agent-core` **2026.9.28-3** |
+| chord | `@earendil-works/chord` **0.87.1** | `@earendil-works/chord` **0.85.1** |
+| ai | 0.87.1 | 2026.9.28-3 |
+| coding-agent | 0.87.1 | 2026.9.28-3 |
+| telemetry | 0.87.1 | 2026.9.28-3 |
+
+Cột tên package của senpi **giữ nguyên `@earendil-works/...`** (dấu hiệu fork-in-flight). `packages/protocol/changes.md` của chính senpi: *"`@earendil-works/chord` is pinned to the exact upstream `0.85.1` it resolves to … the fork does not publish it."*
+
+⇒ **senpi fork từ pi ở đúng 0.85.1; pi nay đã tới 0.87.1.**
+
+### 2.3 Bảng đo 7 package
+
+Lệnh: `git -C <repo> ls-files 'packages/<p>/*' | wc -l` + `cmp` từng file.
+
+| package | pi file | pi dòng | senpi file | senpi dòng | giống byte | chỉ có ở pi | cùng có nhưng KHÁC | chỉ có ở senpi |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| chord | 62 | 19.006 | 41 | 10.871 | **22/62 (35,4%)** | **23** | 17 | 2 |
+| protocol | 17 | 1.591 | 19 | 1.707 | **15/17 (88,2%)** | 0 | 2 | 2 |
+| server | 29 | 3.288 | 31 | 4.520 | **24/29 (82,7%)** | 0 | 5 | 2 |
+| client | 19 | 2.151 | 21 | 2.279 | **15/19 (78,9%)** | 0 | 4 | 2 |
+| **durable** | **63** | **21.093** | **0** | **0** | **0/63 (0%)** | **63** | 0 | **0** |
+| telemetry | 12 | 1.727 | 14 | 1.794 | **8/12 (66,6%)** | 0 | 4 | 2 |
+| evals | 30 | 3.605 | 25 | 3.092 | **1/30 (3,3%)** | **25** | 4 | **20** |
+
+Tự kiểm: `giống + chỉ_có_pi + khác = pi_file` và `giống + khác + chỉ_có_senpi = senpi_file` — đúng cả 7 hàng.
+
+**Cột "chỉ có ở senpi"** với 6 package gần như luôn **2 file**: `changes.md` + `AGENTS.md`/`CHANGELOG.md` — sổ ghi chép fork, không phải code. Riêng `evals` có 20 file (xem 2.9).
+
+### 2.4 Verdict từng package
+
+| package | Chép từ | Lý do đo được |
+| --- | --- | --- |
+| **chord** | **`pi`** | Senpi thiếu **23 file**, mất hệ delta 3.635 → 1.267 dòng, mất `diffRevisions`/`Draft`/`applyImmutableBatches`, mất API `ReplicatedStateSource`. Chép từ senpi là **lùi**. |
+| **protocol** | **`pi`** (hòa tuyệt đối) | Lọc bỏ sổ ghi chép fork thì **0 file nguồn khác nhau**. Lấy `pi` để giữ **một nguồn duy nhất** cho cả 7 — quyết định vận hành, không phải kỹ thuật. |
+| **server** | **`pi`** | Senpi chỉ thêm **2 dòng** `(chunk: Buffer)`, type-only. `changes.md` của senpi tự xác nhận *"runtime behavior is unchanged"*. |
+| **client** | **`pi`** | Y hệt `server`: **2 dòng** `(chunk: Buffer)` ở `src/unix.ts`, cộng 2 chỗ trong `test/unix-transport.test.ts`. |
+| **durable** | **`pi`** — nhưng **đừng chép nguyên xi** | Senpi có **0 file**; chỉ `pi` có. **Nhưng** `durable` của `pi` không package nào import, và tầng storage thật là `agent/harness/session/jsonl` — **8/8 byte giống senpi**. Chép 21.093 dòng code chết là chi phí vô ích. |
+| **telemetry** | **`pi`** | 43 dòng khác ở `src/index.ts` + `types.ts` là **formatter wrap** (TypeScript/biome pin khác), không ngữ nghĩa. |
+| **evals** | **`pi`**, rồi *cân nhắc* lấy cảm hứng từ `senpi` | Lệch thật (1/30) nhưng là **viết lại theo hướng khác**, không phải "nhiều hơn". Chọn theo nhu cầu, không theo mặc định. |
+
+### 2.5 `chord` — bằng chứng cụ thể cho lập luận "senpi là bản lùi"
+
+**(a) 23 file `pi` có, senpi không.** Phần lớn là hệ delta đã tách module ở `pi`:
+
+| file | dòng |
+| --- | ---: |
+| `packages/chord/src/delta/tracker.ts` | 2.205 |
+| `packages/chord/src/delta/diff.ts` | 523 |
+| `packages/chord/src/delta/apply-immutable-trusted.ts` | 128 |
+| `packages/chord/src/delta/revision-validator.ts` | 75 |
+| `packages/chord/src/delta/draft.ts` | 10 |
+| `test/delta-benchmark/*` (6 file), `test/delta-tracker/*` (3 file), `test/state-*.test.ts` + `state.test.ts` (5 file) | — |
+
+Cân bằng dòng: `pi` delta = 694 + 2.205 + 523 + 128 + 75 + 10 = **3.635 dòng**; `senpi` delta = **1.267 dòng** (gộp tất cả vào `index.ts`).
+
+**(b) API surface.** `grep -n "^export" $PI/packages/chord/src/delta/index.ts | grep -E "diffRevisions|Draft|applyImmutableBatches"` → có; trên senpi → **rỗng**. `src/index.ts` của `pi` export thêm: `Draft`, `copyJson`/`CopyJsonOptions`, `AttachedReplicatedState`, `ReplicatedStateSource*` (4 symbol).
+
+**(c) Feature mới của `pi` mà senpi chưa có** — `src/api.ts` (26 dòng khác):
+
+```diff
+-	export function replicatedState<T extends object>(initial: T): MutableReplicatedState<T>
+-		return new MutableReplicatedStateImpl(initial)
++	export function replicatedState<T>(source: ReplicatedStateSource<T>, options?): AttachedReplicatedState<T>
++		if (isReplicatedStateSource(initialOrSource)) return attachReplicatedStateSource(initialOrSource, options)
+```
+
+Tức `pi` đã cho phép **gắn state từ một nguồn bên ngoài** (replica), senpi chưa. `types.ts` (141 dòng khác) xác nhận thêm: `pi` có `change(context, mutate: (draft: Draft<T>) => void)`.
+
+> **Ghi chú chống hiểu nhầm:** `git -C $PI grep -rn "diffRevisions\|applyImmutableBatches" -- 'packages/coding-agent/src' 'packages/agent/src'` trả về **rỗng** — hiện tại `pi` cũng chưa ai tiêu thụ. Đây là **API đã có sẵn để dùng**, không phải thứ đang chạy.
+
+### 2.6 `durable` — package thứ bảy không tồn tại ở senpi, VÀ bản của `pi` là code chết
+
+```bash
+git -C $SE ls-files 'packages/durable/*' | wc -l   # 0
+ls -d $SE/packages/durable                          # No such file or directory
+```
+
+`git ls-files | grep durable` trong senpi cho 11 hit nhưng **không cái nào là package** — toàn là `builtin/terminal/durable-command.ts`, `durable-file.ts`, và test.
+
+Nhưng bản của `pi` cũng không ai dùng:
+
+```bash
+git -C $PI grep -rn "pi-durable" -- '*.json' '*.ts' '*.md' | grep -v '^packages/durable/'
+# README.md:33 · package-lock.json:738,5778 · scripts/durable-browser-smoke-entry.ts · tsconfig.json:19-21
+```
+
+4 nơi, **không nơi nào là mã sản phẩm**. `packages/agent/package.json` deps không có `pi-durable`. Nó vẫn publishable (`private` không set, `license: MIT`, 9 export subpath) nên build xanh — chỉ là không nối vào sản phẩm.
+
+**Tầng durable thật sự chạy nằm ở `agent`, và hai repo giống nhau 8/8 byte:**
+
+```bash
+for f in $(git -C $PI ls-files 'packages/agent/src/harness/session/jsonl/*'); do
+  cmp -s "$PI/$f" "$SE/$f" || echo "DIFF $f"; done   # (không in gì) → 8/8 identical
+```
+
+8 file (`codec.ts` `fork.ts` `index.ts` `io.ts` `legacy-v3.ts` `repo.ts` `storage.ts` `types.ts`), ~1.894 dòng.
+
+### 2.7 `evals` — chỗ duy nhất lệch thật, nhưng là hướng thiết kế khác
+
+| | `pi` | `senpi` |
+| --- | --- | --- |
+| `vitest-evals` | 0.15.0 | **0.17.0** |
+| `vitest` | 4.1.9 | **5.0.1** |
+| tên | `@earendil-works/pi-evals` (0.87.1) | `@code-yeongyu/senpi-evals` (2026.7.25) |
+
+`pi` giữ: harness tự viết (`src/harness.ts`, `cli.ts`, `plan.ts`, `report.ts`) + **Docker** (`docker/Dockerfile`, `docker/entrypoint.ts`, `src/docker.ts`).
+Senpi bỏ toàn bộ nhánh Docker và `plan`/`report`/`cli`, thay bằng `src/vitest-evals/{artifacts,harness-table,reporter,setup,summary}.ts`.
+
+- **Senpi làm tốt hơn:** harness bám vitest-native (bảng harness, artifacts, summary thay cho báo cáo tự viết); `vitest-evals`/`vitest` mới hơn 2–3 bậc.
+- **Senpi không cho:** eval chạy trong container Docker cách ly; và theo `changes.md` của chính senpi, harness của nó **hard-code import `@code-yeongyu/senpi`** nên phải sửa lại mới dùng được cho omp.
+
+⇒ **ưu tiên thiết kế, không phải "senpi hơn". Không nên coi `evals` là lý do đổi nguồn.**
+
+### 2.8 Câu hỏi JSONL hỏng — senpi KHÔNG sửa, và có cách thứ ba
+
+Điều kiện tiên quyết đã nêu, kiểm lại — **đều đúng**:
+
+```bash
+grep -n "export function parseJsonlLenient" $OMP/packages/utils/src/stream.ts
+# 575:export function parseJsonlLenient<T>(buffer: string, options: { onMalformedRecord?: () => void } = {}): T[] {
+```
+
+```bash
+sed -n '80,84p;114,120p' $PI/packages/durable/src/storage/jsonl/storage.ts
+# dòng 80: export class JsonlCorruptionError extends Error
+# dòng 119: throw new JsonlCorruptionError(`Malformed complete ${description}`, ...)
+```
+
+`catch` ở đó **chỉ bọc `JSON.parse` rồi ném lại thành lỗi có kiểu — không có cơ chế phục hồi nào**. Xác nhận.
+
+**senpi: cả ba lệnh đều rỗng.**
+
+```bash
+git -C $SE grep -n "CorruptionError"    -- 'packages/*'   # rỗng
+git -C $SE grep -rn "parseJsonlLenient" -- 'packages/*'   # rỗng
+git -C $SE grep -rn "alformedRecord"    -- 'packages/*'   # rỗng
+```
+
+Và cái senpi thực sự làm cũng là **hard-fail**, chỉ khác là ném `Error` trần:
+
+```ts
+// packages/agent/src/harness/session/jsonl/io.ts
+export function parseJsonlTransaction(line: string): CommittedWrite[] {
+	let value: unknown;
+	try { value = JSON.parse(line); }
+	catch (error) { throw new Error("Invalid JSONL transaction: not valid JSON", { cause: error }); }
+```
+
+⇒ **senpi đứng cùng phía với `pi`**, không tự lành JSONL hỏng.
+
+> **Kết luận cho M1B — mạnh hơn cả đề bài dự đoán:** không chỉ "dùng senpi không giúp", mà **senpi không có `durable` để mà lấy**, và tầng storage thật của nó (8/8 byte giống `pi`) cũng ném lỗi trần y hệt. `omp` **phải giữ nguyên thiết kế tự lành của mình**. Chép bất kỳ tầng session nào của `pi` hay `senpi` vào omp đều là **lùi về sau** so với `parseJsonlLenient` + `onMalformedRecord` + `malformedRecords → #rewriteRequired`.
+>
+> Bất kỳ thứ gì chạm JSONL trong omp phải đi qua `parseJsonlLenient` (`packages/utils/src/stream.ts:575`).
+
+### 2.9 Khuyến nghị cụ thể cho M1B
+
+1. **Đổi câu hỏi của M1B.** `durable` về mặt kỹ thuật là **package chết không ai import**. Trước khi chép 21K dòng: omp có thực sự cần `durable`, hay chỉ cần tầng session mà `agent/harness/session` đã cung cấp? Nếu "không", M1B **rút từ 7 xuống 6** package, tiết kiệm 21.093 dòng + một `JsonlCorruptionError` làm chật session resilience.
+2. **Nguồn chép = `pi`, toàn bộ.** Không package nào trong 7 mà senpi đóng góp code mới đáng kể. `senpi` là nguồn tham chiếu **cho M5** (40 extension builtin, `pty`, `senpi-codemode`), **không phải cho M1B**.
+3. **Hai thứ duy nhất đáng cân nhắc lấy từ senpi, đều nhỏ:** (a) chú thích `(chunk: Buffer)` — omp tự thêm được nếu gặp lỗi type; (b) bộ `vitest-evals` harness mới — chỉ khi omp quyết định bỏ Docker-based evals.
+4. **Cấm chép tầng session của `pi`.**
+
+### 2.10 Chỗ nào M1B **chưa đủ dữ liệu**
+
+- **Chưa đo:** ba chú thích `(chunk: Buffer)` có thực sự cần cho omp không, hay omp đã build xanh với type Node hiện tại? Cần: `bun check` trên `packages/server` + `packages/client` của omp. Nếu xanh sẵn thì mục 3 khỏi việc port.
+- **Chưa đo:** `durable` có phải thứ M1B thực sự cần, hay chỉ là do ai đó liệt kê 7 package từ `pi/README.md:33`? Đây là quyết định **của người đọc**, không phải phép đo thêm được — nhưng có thể đo bằng cách grep xem omp hiện đang cần tầng session nào.
+- **Chưa đo:** chi phí thực tế để làm `durable` của `pi` **sống** (nối vào sản phẩm) so với bỏ. Không có bằng chứng nào trong 13 file về việc ai đã làm việc này.
+- **Chưa đo:** `evals` của omp hiện tại dùng Docker hay không, và sẽ cần gì. 13 file không nói gì về evals của omp.
+
+_(tiếp: §3 bảng builtin, §4 danh sách port, §5 seam, §6 cái KHÔNG nên lấy, §7 mâu thuẫn)_
+
+---
+
+## 3. Bảng builtin — 40 thư mục, 97.893 dòng
+
+Cột "dòng" đếm `.ts + .tsx + .md` trong thư mục. Cột hook/tool/cmd đếm bằng `grep -rhoE`.
+Phán quyết: **(a)** omp thiếu hẳn · **(b)** omp có nhưng yếu hơn · **(c)** omp đã mạnh hơn hoặc ngang.
+Cột "lõi" = tỉ lệ entry trong `changes.md` tự thú *"Why an extension could not handle it"* ⇒ thay đổi phải sửa core, không làm được bằng extension.
+
+senpi HEAD khi đo: `ea9216269e9254b821446130b60d1e00759761dc`.
+
+| # | builtin | dòng | file | làm gì | bề mặt đăng ký | omp đã có? | verdict |
+|---|---|---|---|---|---|---|---|
+| 1 | `compaction` | 10.788 | 50 | Pipeline nén ngữ cảnh: checkpoint, circuit-breaker, warm-anchor | 9 hook, 2 provider | `src/session/compaction-methods.ts`, `compact-modes.ts`, `snapcompact-*` | **(c)** — omp có snapcompact riêng, ghép sẽ hỏng cả hai |
+| 2 | `mcp` | 10.244 | 67 | Cầu nối MCP client: nạp server, tool `mcp__*`, OAuth | 5 tool, 2 cmd, 3 hook, 1 renderer | `src/mcp/` 15 file + `capability/mcp.ts` + 4 doc, 129 file tracked | **(c)** — không lấy, tạo hai hệ MCP song song |
+| 3 | `anthropic-subscription` | 8.779 | 58 | Provider lane Claude subscription (SDK OAuth) | 1 cmd, 15 hook, 1 flag, 1 provider | 310 file khớp `oauth`; `crates/pi-natives/src/oauth_callback/` | **(b)** — nhưng **52/69 = 75% lõi**, không lấy |
+| 4 | `terminal` | 8.260 | 53 | PTY bền vững: 6 bash tool, lease, restore, orphan-reaper | 6 tool, 7 hook, 2 renderer | `tools/bash.ts` 58 KB có `"pty?"` + `bash-pty-selection.ts` + crate `pi-shell` (`shell.rs` 228 KB) | **(b)** — có PTY rồi, không lấy nguyên si |
+| 5 | `goal` | 6.304 | 39 | Vòng lặp mục tiêu tự tiếp tục + cache-warm | 3 tool, 1 cmd, 13 hook, 1 renderer | `src/goals/` — 5 file, **715 dòng TS** + 3 prompt | **(b)** — senpi 4.566 dòng TS, gấp 6,4×; 21/63 lõi |
+| 6 | `cursor-cli-oauth` | 5.620 | 25 | Lane Cursor CLI OAuth: spawn, đo model, refresh catalog | 1 cmd, 2 hook, 1 provider | `packages/ai/src/providers/cursor.ts` | **(b)** — **12/13 = 92% lõi** |
+| 7 | `hooks` | 4.663 | 23 | Engine hook người dùng (Claude-Code style `hooks.json`) | 9 hook, 1 cmd | `extensibility/hooks/` | **(c)** — không đo chi tiết; xem §7 |
+| 8 | `prompt-preset` | 4.305 | 40 | Thư viện prompt theo model: chọn preset rồi bơm vào system prompt | 2 hook | `git grep -c prompt.preset` → không rõ | **(a)** — **chưa đo được** |
+| 9 | `loop` | 4.134 | 13 | Bộ hẹn giờ lặp: cron planner, tick prompt, scheduler | 1 tool, 1 cmd, 7 hook, 1 renderer | `/loop` tại `slash-commands/builtin-modes.ts:324`, `modes/loop-condition`, `modes/loop-limit` | **(b)** — có loop nhưng khác hẳn hình dạng |
+| 10 | `ttsr` | 3.783 | 28 | Điều phối TTS, có cắt ngang (interrupt) | 1 cmd, 9 hook, 2 flag | `src/tools/tts.ts` 232 dòng + crate `pi-voice` (`live.rs` 21 KB) | **(b)** — nhưng 9 file lõi, `inside=1 outside=6`, không lấy |
+| 11 | `todotools` | 3.263 | 21 | Tool todo + tự nhắc nếu lượt kết thúc mà todo chưa xong | 1 tool, 1 cmd, 6 hook | `src/tools/todo.ts` 27 KB, `todo-command-controller.ts`, event `todo_reminder` | **(c)** — và senpi đã port cái này **từ omp** (NOTICE khoản 4) |
+| 12 | `rules` | 2.980 | 20 | Nạp `AGENTS.md`/rules theo thư mục, kích hoạt theo bucket | 2 cmd, 3 hook, 2 flag | `src/capability/rule.ts`, `rule-buckets.ts`, `discovery/agents-md.ts` | **(c)** |
+| 13 | `config-reload` | 2.597 | 11 | Theo dõi FS, tự reload config/settings/extension | 5 hook | `git grep -c config-reload` → **0** | **(a)** — nhưng **11/12 = 92% lõi**, chỉ lấy nếu chấp nhận sửa `src/config.ts` |
+| 14 | `gpt-apply-patch` | 2.351 | 21 | Tool apply-patch riêng cho OpenAI/Codex wire mode | 2 tool, 3 hook | không có `apply_patch` tool; có `ast-edit.ts` | **(a)** |
+| 15 | `websearch` | 2.342 | 26 | Tìm web qua provider: Brave, Tavily, Kagi, SERPdive | 1 tool, 1 cmd, 3 hook | tool `web_search` trong `BUILTIN_TOOL_NAMES`, 48 file khớp | **(b)** — chưa so danh sách provider |
+| 16 | `permission-system` | 1.859 | 17 | Lớp phân quyền: mỗi tool tự phân loại lệnh gọi | 3 hook, 2 flag | `src/tools/approval.ts` 13 KB, `session/acp-permission-gate.ts` | **(b)** |
+| 17 | `tool-search` | 1.411 | 9 | Tìm tool theo mô tả thay vì nhét hết vào context | 1 tool, 3 hook, 1 renderer | `git grep -c tool_search` → 8 file | **(b)** |
+| 18 | `ask-user` | 1.284 | 12 | Hỏi người dùng giữa lượt, có timeout, panel | 2 tool, 1 cmd, 4 hook, 1 flag | `src/tools/ask.ts` **41 KB** | **(c)** — omp mạnh hơn |
+| 19 | `imagegen` | 1.258 | 9 | Tool sinh ảnh qua skill nhúng, có auth resolution | 1 tool, 1 hook | `src/tools/image-gen.ts` 12 KB | **(c)** ngang — nhưng 7/14 = 50% lõi nếu lấy |
+| 20 | `webfetch` | 1.230 | 11 | Tải + rút gọn nội dung trang thành markdown | 2 hook | `src/tools/fetch.ts` **53 KB** | **(c)** — omp mạnh hơn nhiều |
+| 21 | `look-at` | 922 | 9 | Xem ảnh bằng **model thị giác riêng**, không nhét ảnh vào lượt chính | 1 cmd, 2 hook | `git grep -il 'look_at\|lookAt'` → **0 file** | **(a)** — **đáng lấy** |
+| 22 | `loop-guard` | 885 | 9 | Phát hiện vòng lặp tool và **veto trước cả hook** | 8 hook, 2 renderer | `git grep -c loopGuard` → 19 file | **(b)** — senpi 0/6 lõi, an toàn |
+| 23 | `nested-agents-md` | 574 | 12 | Chèn `NESTED_AGENTS.md` thư mục con khi đọc file ở đó | 1 cmd, 4 hook, 1 flag | `capability/context-file.ts`, `discovery/agents-md.ts` | **(c)** |
+| 24 | `cache-keepalive` | 569 | 4 | Giữ prompt cache ấm: warm lúc start, chờ, gia hạn TTL | 8 hook, 1 renderer | `git ls-files 'packages/ai/src/**/prompt-cache*'` → **rỗng** | **(a)** — **đáng lấy, giá trị cao nhất/dòng** |
+| 25 | `btw` | 528 | 4 | Side-query "btw" cạnh lượt chính mà không phá ngữ cảnh | 1 cmd, 4 hook | không có | **(a)** — **đáng lấy, 0 lõi** |
+| 26 | `openai-image-gen` | 509 | 5 | Tool sinh ảnh native OpenAI | 4 hook | — | **(a)/(b)** tùy provider — chưa đo |
+| 27 | `herdr` | 507 | 4 | Client cho daemon quản lý pane: trạng thái, monitor, wake-source | 5 hook | `git grep herdr` → 0 | **(a)** — nhưng **3/3 = 100% lõi**, tệ nhất bảng |
+| 28 | `history-search` | 401 | 5 | Overlay tìm kiếm lịch sử phiên cũ (chỉ đọc) | 1 cmd | `tui/src/overlays/history-search.ts` | **(c)** — đã có sẵn |
+| 29 | `reasoning` | 275 | 2 | `/reasoning`, `/efforts` — đọc model hiện tại rồi thông báo | 2 cmd, 2 hook | — | **(b)** |
+| 30 | `openai-web-search` | 272 | 1 | Tool web search native OpenAI, capability-aware | 3 hook | — | **(a)/(b)** tùy provider — chưa đo |
+| 31 | `tool-pair-guard` | 269 | 3 | Vá tool_use/tool_result lệch nhau | **không đăng ký gì** (gọi nội bộ) | `auto-generated-guard.ts`, `output-schema-validator.ts` — ý tưởng khác | **(a)** — nhưng phải **viết mới**, không port được |
+| 32 | `anthropic-web-search` | 249 | 1 | Tool web search native Anthropic, allow/block domain | 3 hook | — | **(a)/(b)** tùy provider — chưa đo |
+| 33 | `bash-timeout` | 211 | 3 | Tự thêm timeout cho bash dài, cửa sổ foreground | 1 hook | `src/tools/tool-timeouts.ts` + `bash?timeout` trong `BUILTIN_TOOL_NAMES` | **(c)** |
+| 34 | `model-fallback` | 207 | 3 | Chuỗi model fallback khi retry thất bại | 1 cmd, 1 flag | `src/session/retry-fallback-chains.ts`, `retry-fallback-reason.ts` | **(b)** |
+| 35 | `recommended-models` | 185 | 1 | Thang model đề xuất + xếp hạng provider lane | 2 hook, 1 flag | `setServiceTier` có trong `ExtensionAPI` | **(b)** — lưu ý AGENTS.md cấm hard-code policy model trong TS |
+| 36 | `help` | 166 | 3 | `/help` trong TUI + mở `keybindings.json` bằng editor | 2 cmd | có `help-content.ts` | **(c)** |
+| 37 | `rule-activation` | 132 | 3 | Kích hoạt rules theo file vừa đọc | 1 renderer | `rule-buckets.ts` | **(c)** |
+| 38 | `video-in` | 126 | 1 | Tool đọc video: `read_video` | 1 tool, 2 hook | `git grep -il video_in` → 0 | **(a)** |
+| 39 | `anthropic-bash` | 103 | 1 | Bật native bash tool của Anthropic (`bash_20250124`) | đọc env `PI_ANTHROPIC_BASH` | — | **(a)/(b)** — chưa đo |
+| 40 | `account` | 82 | 1 | Liệt kê credential account của mọi provider | 1 cmd | `pi-ai/auth` slot pool | **(c)** |
+
+**Ngoài 40 thư mục còn 9 file `.ts` phẳng** cũng là builtin: `diff.ts` (6,9 KB), `files.ts` (6,9 KB), `gpt-account.ts` (4,7 KB), `import-repro.ts` (13 KB), `prompt-url-widget.ts` (4,6 KB), `repository-identity.ts` (1,5 KB), `service-tier.ts` (17 KB), `tps.ts` (2,4 KB), `redraws.ts` (589 B). **Chưa phân tích** — xem §7.
+
+`builtin/index.ts` khai báo mảng `builtinExtensions` gồm **44 entry** (`grep -c '^\t{ id: "' index.ts` → 44), cộng `globalDefaultExtensionFactories` 4 entry nữa. Và chỉ **26/40** builtin có ≥1 `pi.on(...)`; 4 builtin không hook gì: `account`, `anthropic-bash`, `tool-pair-guard`, `help`.
+
+### 3.1 Phát hiện cấu trúc lớn nhất: **omp chưa từng có khái niệm "builtin extension"**
+
+```bash
+find packages/coding-agent/src/extensibility -type d
+# .../custom-tools, .../plugins, .../extensions, .../hooks,
+# .../custom-commands/bundled/{annotate,review,ci-green}
+```
+
+Không có `builtin/` ở omp. Chỗ gần nhất là `custom-commands/bundled/` với **3** mục — và đó là *prompt command*, không phải extension.
+
+> **"Lấy 40 builtin của senpi" KHÔNG phải là copy 40 thư mục.** Phần lớn giá trị của senpi nằm ở *việc nó biến tính năng thành extension đóng gói* — còn omp đã viết thẳng tính năng vào `src/tools/`. Câu hỏi đúng cho M5 không phải "ta lấy builtin nào" mà là **"ta có nên chuyển `src/tools/` sang coi là builtin extension không"** — một câu hỏi kiến trúc, thuộc M1B/M2, không thuộc M5.
+
+### 3.2 Hai API extension gần như ngang nhau — cơ hội port là thật
+
+| | senpi | omp |
+|---|---|---|
+| File định nghĩa API | `core/extensions/types.ts` (2.732 dòng) | `extensibility/extensions/types.ts` (71 KB) |
+| `interface ExtensionAPI` | dòng **1907** | dòng **1256** |
+| Số event `on(event:)` | **42** | **41** |
+
+Cả hai đều có `registerTool` / `registerCommand` / `registerFlag` / `registerShortcut` / `registerProvider` / `registerMessageRenderer` / `setModel` / `setActiveTools`. **Cùng một hình dạng API** ⇒ một builtin viết cho senpi port sang omp không cần viết lại hạ tầng.
+
+Chỉ khác ở **tên** event, không ở số lượng:
+
+| Chỉ có ở senpi | Chỉ có ở omp |
+|---|---|
+| `session_parked`, `session_resumed`, `session_abort`, `session_extensions_removed` | `session_switch`, `session_branch` |
+| `ui_prompt_start`, `ui_prompt_end` | `session_stop` |
+| `model_select`, `system_prompt_change`, `thinking_level_select` | `auto_compaction_start/end`, `auto_retry_start/end` |
+| `tool_activated`, `input_disposition` | `tool_approval_requested/resolved`, `user_python` |
+| `project_trust` | `todo_reminder`, `goal_updated`, `ttsr_triggered`, `mcp_notification` |
+
+Đáng chú ý: **omp đã mở sẵn `goal_updated` / `todo_reminder` / `ttsr_triggered` / `mcp_notification` làm event công khai** — tức goal, todo, tts, MCP của omp đã *chủ động* mở hook cho extension. Hai bên đang hội tụ.
+
+> ### ⚠️ Phần tổng hợp này **bị cắt ở §3** — và đó là giới hạn thật, không phải lựa chọn
+>
+> Agent tổng hợp viết xong §1–§3 rồi hết context (đây là lần thứ ba trong nghiên cứu
+> này, với cùng một nguyên nhân: đọc quá nhiều rồi lời gọi schema cuối bị từ chối).
+> Nó hứa viết tiếp §4 danh sách port, §5 seam, §6 cái không nên lấy, §7 mâu thuẫn —
+> **những phần đó không có ở đây.**
+>
+> May thay, chúng không mất: cùng nội dung đã nằm ở
+> [Phần 4](#phần-4--phần-omp-đã-có) (§5), [Phần 5](#phần-5--phần-omp-thiếu-thật) (§5),
+> [Phần 6](#phần-6--seam-hạ-tầng) (§0 và §5) — chi tiết hơn, vì những phần đó được viết
+> với ngân sách đọc hạn chế nên còn sống.
+>
+> Nói thẳng để người đọc không tưởng đã đủ: **§1–§3 là của agent, §4–§7 trong lời hứa
+> của nó là của tôi, và tôi đã bỏ chúng.**
 
 ---
 
@@ -3090,6 +3474,7 @@ Bước 0  KHÔNG LÀM GÌ  ── dùng 13 builtin seam-free để dựng đư�
 | 4 | `ext-api.md` §6.1 xếp `model_select` là "nút thắt số 1" | **đúng về số lượng** (16 chỗ gọi, 15 thư mục — cao nhất) nhưng **sai về tổng giá trị** | `model_select` gỡ 15/40 builtin, nhưng phần lớn 15 cái đó phải viết lại theo `deep-risk.md` §8.2. **Nút thắt _có giá trị_ là `setActiveTools`/`setModel`, không phải `model_select`** |
 | 5 | `ext-api.md` §2.1: senpi có 18 event omp thiếu | 11 event được builtin dùng, 37 chỗ gọi | 7 cái còn lại 0 builtin dùng — xác nhận lại, **không cần mở** |
 | 6 | `ext-api.md` §6.1 S4: `registerFilesystemPolicy` là "seam thật" | 0 file builtin dùng | Đúng là khác kiến trúc, **nhưng đó là lý do không mở, không phải lý do phải mở** |
+| 7 | *(phát hiện mới, không sửa ai)*: `model_select` là nút thắt | `agent_settled` không có payload (`{ type }` trống), omp đã có sẵn `isTerminal` với doc *"true final settle"* | **Xếp hạng sai từ đầu.** `model_select` gỡ nhiều builtin nhất nhưng `agent_settled` **rẻ hơn 4× và là bước 1**. Cần cả hai, theo thứ tự ngược với "gỡ nhiều nhất trước" |
 
 ---
 
@@ -3097,12 +3482,12 @@ Bước 0  KHÔNG LÀM GÌ  ── dùng 13 builtin seam-free để dựng đư�
 
 - **Tôi KHÔNG đọc `types.ts` của senpi (2.732 dòng) và `deep-risk.md` (978 dòng) toàn văn.** `ext-api.md` đọc hết bằng `sed` 2 khúc; `deep-risk.md` đọc `1-33`, `96-222`, `749-866` sau khi lấy mục lục bằng `grep -nE '^#{1,3} '`. **Mục `deep-risk.md` §3–§5 (vi phạm `AGENTS.md`, provider-specific) tôi KHÔNG đọc trực tiếp** — mọi trích dẫn từ §3/§4/§5 trong bài này là **gián tiếp qua `ext-api.md` và §6/§8**, không phải tôi tự kiểm lại.
 - **Điểm móc emit cho `session_abort`, `session_parked`, `session_resumed`, `session_info_changed`, `project_trust`, `input_disposition`, `thinking_level_select`, `session_before_fork`: CHƯA ĐO.** Tôi chỉ khẳng định chúng "mở được" theo lập luận generic, chưa chỉ ra dòng cụ thể trong omp. Riêng `model_select` (`session/model-controls.ts:218`) và `agent_settled` (`modes/rpc/rpc-session-settle.ts:59`) thì **có**. Tôi có quét `packages/coding-agent/src/session/*.ts` tìm `abort` và thấy `agent-session.ts:918 #abortInProgress`, `agent-session.ts:1056` — **nhưng chưa truy ra được hàm public nào là "điểm kết của một lần abort"**, nên vẫn ghi CHƯA ĐO thay vì đoán.
-- **`rpc-session-settle.ts` có phải đường duy nhất không — CHƯA ĐO.** Tôi tìm thấy nó qua `agent_end.isTerminal`, nhưng `interactive-mode.ts:3900` cũng xử lý `agent_end`. Nếu interactive mode có đường settle riêng thì `agent_settled` phải phát ở **hai** chỗ, và công 10 dòng ở mục 3 sẽ tăng. **Đo lại trước khi tin con số 10 dòng.**
+- **Đã thu hẹp: chỗ phát `agent_settled` nhiều khả năng là MỘT, ở tầng session.** Tôi ban đầu trỏ vào `modes/rpc/rpc-session-settle.ts:59`, nhưng `grep -rln 'isTerminal'` cho **10 file** trong đó có `session/agent-session-events.ts` và `session/session-maintenance.ts` — tức khái niệm này đã nằm ở tầng session, không chỉ ở tầng mode. **Tôi chưa truy tới hàm cụ thể nào phát `agent_end` với `isTerminal`**, nên con số "10 dòng, 2 file" là **ước lượng trên cấu trúc đã đo, chưa phải phép đo vị trí**. Nếu hoá ra `agent_end` được phát ở nhiều nơi thì phải đếm lại.
 - **Vị trí chính xác của `transcript renderer` trong omp (cho S7): CHƯA ĐO.** Ước 30 dòng là phỏng đoán từ "chỉ đăng ký renderer", không phải phép đo.
 - **Tôi chỉ đếm `pi.on("…")`.** Một builtin có thể đăng ký event qua biến hoặc qua `wrapper` (`extensions/wrapper.ts`, 432 dòng ở omp) mà regex của tôi không bắt. Các con số "0 builtin dùng" cho 10 method thiếu là **trên phép đo `grep` từ đường**, không phải chứng minh tuyệt đối.
 - **Tôi không mở file renderer của bất kỳ builtin nào** (kế thừa đúng điểm này của `deep-risk.md` §9). §5 nói "chạy được ngay" = **hợp đồng API đã đủ**, không phải "sẽ không lỗi TUI".
 - **Số dòng trong mục 3 là ước lượng từ cấu trúc, không phải phép đo.** Tôi đo được *điểm móc* và *loại event*, không đo được *số dòng phải viết* — cần một spike thật mới chốt được.
-- **Giới hạn 60 lệnh: tôi dùng 35.** Dự phòng còn 25 cho vòng sau.
+- **Giới hạn 60 lệnh: tôi dùng 34.** Dự phòng còn 26 cho vòng sau.
 - **Tôi không sửa file nào trong repo.** Toàn bộ là đo và khuyến nghị.
 
 ---
@@ -3149,12 +3534,30 @@ awk -F'\t' 'NR==FNR{omp[$0]=1;next}
 cd $O && grep -rn 'async setModel' packages/coding-agent/src --include='*.ts'
 sed -n '218,232p' packages/coding-agent/src/session/model-controls.ts
 
-# §4.2 — 13 thư mục đăng ký tool
+# §3 S2 — agent_settled: không payload, phát ở đâu, omp đã có isTerminal chưa
+cd $S
+awk '/interface AgentSettledEvent/,/^}/' packages/coding-agent/src/core/extensions/types.ts
+grep -rn 'agent_settled' packages/coding-agent/src --include='*.ts' | grep -v builtin
+cd $O
+sed -n '14,17p' packages/coding-agent/src/session/agent-session-events.ts
+grep -rln 'isTerminal' packages/coding-agent/src --include='*.ts'
+wc -l packages/coding-agent/src/session/agent-session-events.ts
+
+# §3 S2 — 6 consumer làm gì khi nhận agent_settled (bằng chứng "hỏng âm thầm")
+cd $S
+for f in herdr loop loop-guard ttsr; do
+  grep -n -A3 'on("agent_settled"' packages/coding-agent/src/core/extensions/builtin/$f | head -4
+done
+
+# §4.2 — 13 thư mục đăng ký tool + registerTool đã có sẵn ở omp
 cd $S
 for d in $(cat /tmp/dirs40.txt); do
   n=$(xargs grep -l '\bregisterTool\b' < <(git ls-files "$B/$d/*" | grep '\.ts$') 2>/dev/null | wc -l | tr -d ' ')
   [ "$n" != "0" ] && echo "$d $n"
 done
+cd $O
+awk 'NR>=1256 && NR<=1590' packages/coding-agent/src/extensibility/extensions/types.ts \
+  | grep -nE 'registerTool|registerCommand|registerMessageRenderer'
 ```
 
 **Hai chỗ dễ sai khi đo lại:**

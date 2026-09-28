@@ -1,6 +1,6 @@
 # KẾ HOẠCH THỰC THIỆN — MILESTONE 1: BAO TRỌN `pi`
 
-Milestone 1 đưa toàn bộ phần còn nợ của `pi` vào `omp` theo đúng tiêu chuẩn dùng cho phần đã có: **mọi thứ người dùng nhìn thấy phải là một surface có kiểm chứng, mọi thứ chỉ "đúng về bên trong" phải nói thẳng là bên trong**. Nó gồm 17 work item (W1–W17) chia thành 7 wave, trải trên `packages/coding-agent`, `packages/agent`, `packages/ai`, `packages/catalog`, `packages/tui`.
+Milestone 1 đưa toàn bộ phần còn nợ của `pi` vào `omp` theo đúng tiêu chuẩn dùng cho phần đã có: **mọi thứ người dùng nhìn thấy phải là một surface có kiểm chứng, mọi thứ chỉ "đúng về bên trong" phải nói thẳng là bên trong**. Nó gồm 21 work item (W1–W7, W9–W17, W18–W22) chia thành 8 wave, trải trên `packages/coding-agent`, `packages/agent`, `packages/ai`, `packages/catalog`, `packages/tui`.
 
 Đây là tiền đề — và chỉ là tiền đề — cho luận điểm của dự án: **một coding agent duy nhất, mọi thứ là plugin**. Luận điểm đó chỉ đứng vững nếu ba điều trước nó đã đúng: vòng đời plugin có thể tháo ra lắp vào sạch (Wave 1), những đường đang chạy ngày hôm nay không âm thầm hỏng (Wave 2), và những mặt bằng người dùng thực sự chạm tới — tiền, cache, chẩn đoán, transcript — đã được dựng lại thay vì mượn. Cho tới khi Wave 1–3 xong, mọi plugin thêm vào sau đó đều đứng trên một nền mà ta chưa chứng minh là đứng vững. Milestone 1 không thêm tính năng mới; nó làm những cái đã hứa chịu được kiểm chứng.
 
@@ -17,7 +17,9 @@ Không mục tiêu nào ở đây được viết theo danh sách task. Mỗi m�
 | `/info` có thêm mục **Attribution** (W9) | Xem từng model nào thực sự tiêu token, bao nhiêu token, bao nhiêu đô la, cộng một dòng literal `Tools/summaries`, cộng tổng tiền của các lần **miss** prompt-cache do chính agent gây ra. Trước đó con số là một tổng phẳng, không tách được ai là người tốn tiền. |
 | Lệnh `/bug-report` (W17) | Gom một gói chẩn đoán để gửi đi, có metadata, chi phí theo model, và **crash ring** ghi qua `getCrashLogPath()` vốn đã có sẵn nhưng chưa ai dùng. Nội dung transcript trong gói là **opt-in**, mặc định không có. Mọi khoá nhạy cảm (`apiKey` / `api_key` / `API-KEY`) bị bóp theo tên khoá đã chuẩn hoá camelCase. |
 | Tìm trong transcript (W15) | `Ctrl+Shift+F` mở overlay fullscreen với thanh tìm; gõ để lọc các dòng đã render, thanh tìm đếm số kết quả, `Enter` / `Shift+Enter` nhảy viewport tới từng kết quả và highlight. |
-| Thiết lập `providers.promptCacheRefresh` (W8) | Ba trạng thái `off` (mặc định ở release đầu) / `cost-gated` / `always`. Chỉ thứ người dùng **tự bật** mới được tiêu tiền của họ. |
+| Lệnh `omp doctor` (W18) | Một lệnh chẩn đoán thật, in ra bảng check có `severity` + `detail` + `remedy` và **tự thừa nhận chỗ nó mù**: check nào hỏng tiền đề thì in "không kiểm được X vì Y" thay vì im lặng bỏ qua rồi báo xanh. Cùng một module đó xuất hiện trong `/debug`, và `~/.omp/logs` được tạo với `mode: 0o700` thay vì theo umask. Hôm nay `runDoctorChecks` đã viết xong nhưng **không có call site nào** — đúng 1 hit toàn repo, chính dòng định nghĩa. |
+| Namespace lệnh `omp session` (W22) | Làm việc với session **bằng script**: `list` (mặc định, nhân bản output của `omp find`), `show`, `archive`, `unarchive`, `delete`, với cờ `--last` / `--all` / `--json`. Store và lệnh đều đã có; đây là khoảng cách **sửa cho khớp**, không phải tính năng mới. |
+| ~~Thiết lập `providers.promptCacheRefresh` (W8)~~ | ⛔ **Ngoài phạm vi (2026-09-28).** Setting này không tồn tại trong repo (`grep -rn promptCacheRefresh packages/` → 0 hit) và sẽ không được dựng. Cổng chi phí prompt-cache đã được giải quyết bằng cờ `providers.cacheWarming` (`packages/coding-agent/src/session/settings.ts:1120-1121`). Xem khối ⛔ ở đầu §W8. |
 
 ### B. Hỏng âm thầm được chặn lại
 
@@ -27,33 +29,38 @@ Những thay đổi này người dùng không "thấy" một màn hình mới, 
 - **Hai lần sửa cùng một file trong một lượt không còn xen kẽ nhau** (W12). Hai subagent (hay hai session) cùng đụng một file, bản ghi thứ hai sẽ không còn ghi đè lên bản ghi đang dở của bản ghi thứ nhất. Hàng đợi là **per-realpath**: cùng một file thì tuần tự, khác file thì vẫn song song.
 - **Client JSON/ACP ngừng đọc không còn làm hỏng stdout** (W13). Frame của `omp` được trì hoãn có kiểm soát (thử lại khi gặp `ENOBUFS`/`EAGAIN`/`EWOULDBLOCK`, có chặn trên) thay vì bị cắt cụt giữa dòng hoặc bị vứt mất không dấu vết.
 - **Windows + PowerShell không còn ra mojibake** (W14a). Người dùng Windows trỏ `shellPath` sang `pwsh`/`powershell` và chạy lệnh qua hotkey `!`, PTY tương tác hay tool `bash` sẽ nhận kết quả tool không phải UTF-8. W14a đi kèm **vô điều kiện**. W14b (tool `powershell` riêng) chỉ được dựng **nếu người dùng nói omp cần nó**.
+- **Một lần bấm "Always allow" không còn cấp quyền cho cả tool** (W20). `acp-permission-gate.ts` hỏi bạn về *một lệnh cụ thể* (title lấy từ lệnh, `.slice(0, 80)`) nhưng lại ghi nhớ quyết định của bạn theo **tên tool** — nên bấm "Always allow" một lần trên `git status` là `rm -rf` cũng tự qua. Sau W20, khoá cache đi theo hành động đã canonicalize, và phạm vi sắp cấp được **hiện ra** trước khi bạn bấm.
 - **ACP `_omp/usage` trả về đúng session được hỏi** (W4). Client hỏi usage của session B hôm nay nhận số của session A — session đầu tiên trong map. Sau W4 nó nhận của B.
 
 ### C. Những thay đổi hoàn toàn bên trong — nói thẳng
 
-**8 trên 17 work item không có bất kỳ bề mặt người dùng nào.** Không UI, không output, không cờ, không đổi hành vi mặc định:
+**10 trên 21 work item không có bất kỳ bề mặt người dùng nào.** Không UI, không output, không cờ, không đổi hành vi mặc định:
 
-W1 (disposer cho `pi.on()`), W2 (`drainDisposers` tháo theo thứ tự ngược + cô lập lỗi), W3 (type guard ở biên giải mã frame collab), W5 (khoá bằng type bảo đảm khớp discriminant wire↔host), W7 (trục TTL theo tier của prompt-cache trong catalog), W10 (hợp đồng telemetry trung lập vendor), W11 (khoá hợp đồng `strict` qua extension-tool bridge), W16 (conformance chung cho mọi backend SessionStorage).
+W1 (disposer cho `pi.on()`), W2 (`drainDisposers` tháo theo thứ tự ngược + cô lập lỗi), W3 (type guard ở biên giải mã frame collab), W5 (khoá bằng type bảo đảm khớp discriminant wire↔host), W7 (trục TTL theo tier của prompt-cache trong catalog), W10 (hợp đồng telemetry trung lập vendor), W11 (khoá hợp đồng `strict` qua extension-tool bridge), W16 (conformance chung cho mọi backend SessionStorage), W19 (cấm `console.*` ở tầng thư viện bằng lint), W21 (harden tiến trình trước main).
 
-Chúng vẫn nằm trong milestone 1 vì ba lý do cụ thể, không phải vì "cho đủ số":
+Chúng vẫn nằm trong milestone 1 vì bốn lý do cụ thể, không phải vì "cho đủ số":
 
-1. **W1 là gốc của mọi thứ khác.** Hôm nay `pi.on(event, handler)` không trả về gì cả, nên một teardown không có gì để gọi. Wave 1 không có W1 thì W2 không có disposer để drain, W12 không có mẫu để xếp hàng teardown, và W8 không có chỗ đăng ký disposer lúc session teardown.
+1. **W1 là gốc của mọi thứ khác.** Hôm nay `pi.on(event, handler)` không trả về gì cả, nên một teardown không có gì để gọi. Wave 1 không có W1 thì W2 không có disposer để drain, và W12 không có mẫu để xếp hàng teardown.
 2. **Chúng là chỗ hỏng âm thầm.** W3 biến một frame hỏng cấu trúc từ `TypeError` vô nghĩa vài lần gọi sau thành một lần **drop có tên lý do** ngay tại biên giải mã. W16 làm cho một sai lệch giữa backend SQL và Redis **hỏng test** thay vì lặng lẽ tồn tại.
 3. **Chúng là hợp đồng, và hợp đồng thì phải khoá trước khi có người dùng.** W5 và W11 không sửa một dòng production nào; chúng biến một lời hứa đang nằm trong comment thành thứ mà `bun run check:ts` trả đỏ khi ai đó phá vỡ nó.
+4. **W19 và W21 là kỷ luật, không phải tính năng — và kỷ luật thì rẻ nhất khi làm sớm.** W19 biến một quy tắc đang chỉ tồn tại bằng văn xuôi trong `AGENTS.md` thành lint đỏ: hôm nay `packages/ai/src/providers/cursor.ts:405` đã gọi `console.*` trong **provider wire code**, đúng loại lỗi mà `AGENTS.md` tự mô tả là "hỏng rendering hoặc hỏng protocol cho mọi consumer cùng lúc". W21 đóng trục duy nhất còn thiếu: omp giữ API token trong bộ nhớ và spawn subprocess không kiểm soát, mà hôm nay không có gì ngăn debugger attach, không có gì ngăn core dump, và `LD_PRELOAD` đi thẳng vào mọi child. Cả hai là hai mục có tỉ lệ giá trị/công sức cao nhất trong sổ khoảng trống.
 
-Nếu maintainer cần cắt cho deadline, **Wave 7 (W14, W15) là cái đuôi cắt được** — nó tự chứa, không ai chặn nó, và cả hai đều là bề mặt người dùng thuần tuý. W1–W6 và W8–W9 thì không.
+Nếu maintainer cần cắt cho deadline, **Wave 7 (W14, W15) là cái đuôi cắt được** — nó tự chứa, không ai chặn nó, và cả hai đều là bề mặt người dùng thuần tuý. W1–W6, W9 và Wave 8 thì không: W20 đóng một lỗ hổng phê duyệt đang sống, và W19/W21 là hàng rào kỷ luật rẻ nhất nếu làm sớm.
 
 ---
 
-## Không làm gì
+## Không làm gì — ĐÃ BỊ QUYẾT ĐỊNH KIẾN TRÚC ĐẢO NGƯỢC (2026-09-28, commit `1454dc0`)
 
-Milestone 1 **không port** ba package của `pi`. Chúng không bị bỏ sót — chúng bị loại có chủ đích, và thay thế bằng thứ đã có sẵn trong cây:
+Bản trước của mục này ghi ba package "không port": `session-backends`, `durable` (một phần), và một
+package thứ ba **chưa xác định**. Cả ba dòng đó hết hiệu lực. Lý do: `pi` là MIT (Copyright (c) 2025
+Mario Zechner), nên chép rẻ hơn và ít rủi ro pháp lý hơn tái tạo; bốn package dùng chung đã phân kỳ
+100% (0 file giống từ byte), nên mọi lần chép về sau phải là thao tác cơ hệc.
 
-| Package của `pi` bị từ chối | Thay bằng | Mức độ tin cậy |
-| --- | --- | --- |
-| `session-backends` | Họ backend `SessionStorage` đã có sẵn trong cây: filesystem, in-memory, indexed, SQL thật, Redis. W16 đặt tất cả vào **một** bộ câu hỏi hành vi chung để chúng không thể lệch nhau nữa. | Chỉ xác minh **theo tên và theo bề mặt**. Chưa chứng minh tương đương hành vi. |
-| `durable` (một phần) | Session persistence đã có sẵn trong cây. | Xem cảnh báo bên dưới — nửa "document" **không có** thay thế nào. |
-| *(package thứ ba)* | — | Chưa xác định. Xem bảng quyết định ở mục dưới. |
+| Package của `pi` | Quyết định hiện hành |
+| --- | --- |
+| `session-backends` | **Còn để ngỏ** — thứ duy nhất trong ba cái chưa có quyết định. Thay thế hiện tại chỉ được kiểm **theo tên và bề mặt**, chưa chứng minh tương đương hành vi; W16 mới ép chúng trả lời cùng một bộ câu hỏi. |
+| `durable` | **KHÔNG chép** — package chết, 0 file ngoài nó import. Xem khối *Cập nhật 2026-09-28* trong mục *Hai điều không được chôn vùi* ngay dưới đây. |
+| **`chord`** | **CHÉP** — đây là package thứ ba từng ghi "Chưa xác định". Nằm trong sáu package của đợt này, vị trí 1 trong bảng *Thứ tự migrate*. |
 
 ### Hai điều không được chôn vùi
 
@@ -124,45 +131,47 @@ Lệnh này **không cần** native addon và đã được xác minh PASS tại
 
 ## Thứ tự thực hiện
 
-7 wave, 17 work item. Bảng dưới là bản tóm tắt để quyết định có bắt đầu không; chi tiết từng item nằm ở spec riêng.
+8 wave, 21 work item. Bảng dưới là bản tóm tắt để quyết định có bắt đầu không; chi tiết từng item nằm ở spec riêng. (W8 đã ra khỏi bảng ngày 2026-09-28 — xem khối ⛔ ở đầu §W8.)
 
 | Wave | Nội dung | Item | Cỡ | Phải đúng trước khi bắt đầu | Đúng vào lúc kết thúc |
 | --- | --- | --- | --- | --- | --- |
 | **1** | Nền móng vòng đời | W1, W2, W3, W5 | S, S, S, S | native addon đã build; `bun install` xong | `pi.on()` trả về hàm huỷ một lần, xoá **đúng** handler đó và xoá khoá Map khi danh sách rỗng; cả bốn vòng drain đi qua `drainDisposers`; frame collab hỏng bị drop có tên; type-only guard wire↔host làm `check:ts` đỏ khi lệch |
 | **2** | Correctness trên các đường đang chạy | W4, W6, W12, W13 | S, S, M, S | Wave 1 xong **cho W12**; quyết định sản phẩm của W6 đã chốt | `rm -rf /` bị deny ở mọi chế độ; ACP usage trả đúng session; ghi file cùng realpath nối tiếp nhau, khác file vẫn song song; stdout không còn mất frame khi reader nghẽn |
-| **3a** | Kinh tế cache | W7, W8 | M, M | **Bảng TTL theo provider/tier đã có nguồn** (xem quyết định); F6 (`decideWarm` / `WarmDecision`) đã tồn tại | Catalog có trục TTL per-tier do rule sở hữu; `providers.promptCacheRefresh` tồn tại ở `off`/`cost-gated`/`always`; **không** request byte nào thay đổi |
+| **3a** | Kinh tế cache | W7 | M | **Bảng TTL theo provider/tier đã có nguồn** (xem quyết định) | Catalog có trục TTL per-tier do rule sở hữu; **không** request byte nào thay đổi |
 | **3b** | Quy kết chi phí | W9 | M | Không phụ thuộc wave nào | `/info` có Attribution; không token nào bị đếm hai lần |
 | **4** | Hợp đồng hướng provider | **W11 rồi W10** | S, M | Không có | `strict` đi qua bridge mà không rơi và không bị bịa; telemetry có hợp đồng trung lập vendor + NOOP + in-memory + conformance; `otel.test.ts` **không đổi một dòng** |
 | **5** | Chẩn đoán hướng người dùng | W17 | < M | W9 xong (W9 blocks W17) | `/bug-report` dựng được gói đã bóp khoá; transcript opt-in; crash ring sống |
 | **6** | Storage conformance | W16 | M | Không có | Mọi backend trả lời cùng một bộ câu hỏi; nhóm `lateAtomicRollback` **đã chứng minh bắt được** sai lệch thật |
 | **7** | TUI và Windows — **cái đuôi cắt được** | W14, W15 | S + M, M+ | Không có; chạy song song với bất kỳ ai | PowerShell ép UTF-8; `Ctrl+Shift+F` tìm trong transcript |
+| **8** | Năm mục từ sổ khoảng trống (`GAP-REGISTER-2.md`) | W18, W19, W20, W21, W22 | M, S, S–M, S, S | Không có. Nhưng W18 và W22 sửa **cùng một file** `cli-commands.ts` nên phải mở chung một đợt | `omp doctor` và `omp session` là hai lệnh thật trong registry, không rơi xuống `runCli`; `console.*` ở tầng thư viện là lint đỏ; "Always allow" khoá theo hành động đã canonicalize và hiện phạm vi sắp cấp; tiến trình không bị attach và không đổi core dump; `omp session` có `archive`/`unarchive` và `--last`/`--all`/`--json` |
+
+*(Dòng Wave 8 cộng thêm ngày 2026-09-29 từ `.lavish-wip/GAP-REGISTER-2.md`. Câu "cái đuôi cắt được" ở Wave 7 là nói về bảy wave gốc và không mở rộng sang Wave 8 — xem mục *Cái đuối cắt được* bên dưới.)*
 
 ### Cấu trúc song song — cái gì chạy cùng, cái gì không
 
 **Hard edges (không thể vượt):**
 
 ```
-W1 ──▶ W2 ──▶ W12        W1 ──┐
-                                 ├──▶ W8 ◀── W7 (HARD BLOCK)
-W3 ───────────────────────┘         ▲
-                                   └── F6 (decideWarm / WarmDecision — chưa tồn tại)
+W1 ──▶ W2 ──▶ W12
 W9 ──▶ W17
 W11 ──▶ W10
-W7 + W8 ship như MỘT đơn vị
+W18 ══ W22
 ```
+
+*(W8 đã bị gỡ khỏi sơ đồ này ngày 2026-09-28 — upstream đã dựng xong cache warmer, xem khối ⛔ ở
+đầu §W8. Nhánh `W8 ◀── W7` và dòng "W7 + W8 ship như MỘT đơn vị" không còn đúng.)*
 
 Đọc hình như sau:
 
-- **W1 là đầu chuỗi và là lý do nó đứng đầu Wave 1.** Nó là nền cho W2, và W2 là nền cho W12. Qua W2, W1 còn là nền cho W8: cache warmer đăng ký một disposer lúc session teardown, mà hôm nay hàm `on()` trả `void` nên không có gì để gọi và một request đang bay bị rò.
+- **W1 là đầu chuỗi và là lý do nó đứng đầu Wave 1.** Nó là nền cho W2, và W2 là nền cho W12.
 - **W7 không phụ thuộc Wave 1.** Nó không đụng lifecycle, không đụng disposer. `light.json` nói thẳng: xây song song với Wave 1 được.
-- **W8 đợi W1, W2, W3** (tất cả đều `blocks` W8) **và W7** (hard block) **và F6** — mà F6 chưa tồn tại trong repo. Đừng đọc danh sách này là "ba việc nhỏ": `promptCacheLifetime` và `decideWarm` đều chưa có chỗ nào trong cây, nên W8 là việc **không thể bắt đầu** cho tới khai cả hai đứng.
-- **W8 KHÔNG phụ thuộc W2 về mặt code** — đường huỷ request bay đã tồn tại sẵn (`AnthropicCacheRefreshState` đã là `ProviderSessionState` với `cancel()`/`close()`, và `cancel()` đã gọi `abort()`). W2 chỉ là tiền đề cho extension disposer, không phải cho W8.
 - **W13 về kỹ thuật song song với W2**, phụ thuộc thứ tự chứ không phụ thuộc mã: nó không import gì của W2. Xếp vào Wave 2 chỉ vì cần ba file test của Wave 1 đã chứng minh được đường test chạy được. Có thể làm cùng lúc; chỉ cần chạy full suite **một lần** sau khi cả hai land.
 - **W11 phải land trước W10** (cùng Wave 4, không phải cùng commit) — và W10 là **hai commit, không bao giờ squash**.
+- **W18 và W22 là một cặp, không phải hai item độc lập.** Cả hai sửa `packages/coding-agent/src/cli-commands.ts`, và bảng cổng đỏ phải chứa **một** assertion *"mọi subcommand trong registry thật sự được phân tuyến"*, không phải hai assertion riêng. Lý do: một lệnh thiếu trong `cli-commands.ts` rơi xuống `runCli` và **argv thành prompt cho LLM** (hồi quy #1499/#1496) — hậu quả im lặng, và hai assertion rời rạc sẽ cho phép nó quay lại. Ký hiệu `══` nghĩa là *phải mở chung một đợt*, khác `──▶` là *thứ tự merge*.
 
-**Hoàn toàn độc lập, chạy ngay được:** W4, W5, W6, W9, W11, W16, và W14/W15 nếu không cắt.
+**Hoàn toàn độc lập, chạy ngay được:** W4, W5, W6, W9, W11, W16, W19, W20, W21, W22, và W14/W15 nếu không cắt. (W18 độc lập với tất cả, trừ W22 — xem dòng `W18 ══ W22` ở trên.)
 
-**Cái đuối cắt được:** Wave 7. Tự chứa, không ai chặn.
+**Cái đuối cắt được:** Wave 7. Tự chứa, không ai chặn. Câu này nói về **bảy wave gốc** và không mở rộng sang Wave 8: năm mục `GAP-REGISTER-2` không phải đuôi cắt được, vì W20 đóng một **lỗ hổng phê duyệt lan rộng** đang sống, và sổ xếp W18/W19/W21 vào nhóm có tỉ lệ giá trị/công sức cao nhất.
 
 **Cảnh báo về độ trễ của gate:** nhiều gate trong wave sau hiện **không chạy được** vì addon chưa build, và `light.json` đã đánh dấu chúng là trong (vacuous). Trước khi dùng bất kỳ gate nào làm tiêu chuẩn nghiệm thu, build addon. Gate nào chưa build mà đỏ thì coi như **chưa xác minh**.
 
@@ -175,10 +184,12 @@ W7 + W8 ship như MỘT đơn vị
 | # | Quyết định | Ở đâu | Vì sao nó chặn | Ai chốt |
 | --- | --- | --- | --- | --- |
 | 1 | **Mặc định của bash critical-pattern dưới `yolo`.** Lệnh khớp `CRITICAL_BASH_PATTERNS` sẽ `deny` hay vẫn tự approve? | W6 | Đây là **ký hiệu sản phẩm**: nó đổi hành vi của chế độ mặc định trên máy người dùng thật. Chốt sau thì không sửa ngược được mà không phá người đã quen hành vi cũ. | Maintainer, bằng văn bản |
-| 2 | **Bảng TTL prompt-cache theo provider/tier phải có nguồn trước khi W7 bắt đầu.** | W7 (chặn cả W8) | Là hard gate, không phải task. W7 cấp **schema**, W7 không cấp **data**. Kỹ sư không tìm được con số thì để field `undefined` — **đừng đoán**: TTL đo quá ca làm số lần refresh bùng nổ trên một entry lẽ ra còn sống; TTL đo quá thấp chỉ mất đi một lần trúng-cache tránh được. Sai lệch hai bên không cân bằng. | Nghiên cứu, trước Wave 3a |
+| 2 | **Bảng TTL prompt-cache theo provider/tier phải có nguồn trước khi W7 bắt đầu.** | W7 | Là hard gate, không phải task. W7 cấp **schema**, W7 không cấp **data**. Kỹ sư không tìm được con số thì để field `undefined` — **đừng đoán**: TTL đo quá ca làm số lần refresh bùng nổ trên một entry lẽ ra còn sống; TTL đo quá thấp chỉ mất đi một lần trúng-cache tránh được. Sai lệch hai bên không cân bằng. | Nghiên cứu, trước Wave 3a |
 | 3 | **Trục TTL có trùng lặp trục cũ không.** `promptCacheLifetime` có phải là cái đã có sẵn dưới tên khác không, hay là trục mới độc lập? | W7 (OQ1) | **Compiler sẽ không bắt lỗi này.** Cả ba gate của W7 có thể xanh trong khi quyết định thiết kế vẫn chưa được đưa ra. Đó là lý do nó là câu hỏi mở chặn, không phải chi tiết. Lưu ý khi làm: đừng đặt field cạnh `promptCacheBreakpointTtl` tại `packages/catalog/src/types.ts:403` — chỗ đó kéo nó lên `OpenAICompat`/`ResolvedOpenAIShare…` và gắn nó vào wire field đang có. | Maintainer + kỹ sư catalog |
 | 4 | **Tính tới được của hàng đợi ghi file.** `writeFileWithFallback` tại `packages/coding-agent/src/tools/file-write-fallback.ts:402` có bọc khoá quanh **cả** vòng lặp fallback-handler (`:440-452`), mà vòng lặp đó gọi các handler do extension đăng ký. Handler đó có thể quay lại ghi chính file đó không? | W12 | Rủi ro cao nhất của W12 là **deadlock**: một lời gọi re-entrant chặn đứng hàng đợi. Đây là câu hỏi reachability phải trả lời **trước khi** viết helper, không phải sau khi test treo. | Kỹ sư, bằng cách đọc call path |
-| 5 | **Package `pi` thứ ba bị từ chối — tên và thay thế là gì.** | Mục *Không làm gì* | Danh sách "không làm gì" của milestone chỉ xác minh được hai package theo tên. Không đóng được mục này thì phần "bỏ sót có chủ đích" chưa đầy đủ, và người đọc không biết chỗ nào an toàn để tìm năng lực còn thiếu. | Maintainer |
+
+*(Hàng "package thứ ba bị từ chối" đã bị đóng bởi quyết định kiến trúc `1454dc0`: package thứ ba là
+`chord`, và quyết định là **chép** chứ không phải từ chối.)*
 
 ---
 
@@ -218,7 +229,7 @@ rồi commit `rules.json` **cùng** file `.kdl` đã sửa. **Không bao giờ s
 | `packages/coding-agent/src/extensibility/extensions/loader.ts` | sửa | `ConcreteExtensionAPI.on` (dòng 210) đổi kiểu trả về `void` → `() => void`; thêm `return createHandlerDisposer(this.extension.handlers, event, handler);` sau ba dòng thân hàm hiện có. Thêm `createHandlerDisposer` vào import `../utils` ở dòng 40. | Có — text hiện tại ở 210–214; class khai báo ở 179 là `class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime` — `implements` này là kiểm tra cứng, nên chỉ sửa file type sẽ fail loudly ngay tại đây. `HandlerFn` là type alias cục bộ ở dòng 61. |
 | `packages/coding-agent/src/extensibility/hooks/loader.ts` | sửa | `on` dạng object literal (dòng 93) đổi kiểu trả về `void` → `() => void`; thêm `return createHandlerDisposer(handlers, event, handler);` sau dòng 97. Thêm `createHandlerDisposer` vào import `../utils` ở dòng 15. | Có — text hiện tại ở 93–98. Cast `} as HookAPI;` nằm ở dòng **128**, không phải 92 (dòng 92 là `const api = {`; dòng 90–91 là comment nhắc tới cast). |
 | `packages/coding-agent/src/extensibility/extensions/types.ts` | sửa | Toàn bộ 41 overload `on(event: "..."): void;` bên trong `export interface ExtensionAPI` (khai báo dòng 1256; overload nằm ở 1280–1340) thành `on(event: "..."): () => void;`. Phần chữ ký còn lại không đụng. | Có — `grep -c 'on(event: "'` = 41, cả 41 nằm trong 1256–1400 tức trong `ExtensionAPI`; không có `on(event: "` nào khác trong file. `ToolDefinition` ở dòng 636 (không phải 611) và **không** cần sửa — nó không phải event handler. |
-| `packages/coding-agent/src/extensibility/hooks/types.ts` | sửa | Toàn bộ 24 overload `on(event: "..."): void;` bên trong `export interface HookAPI` (khai báo dòng 469; overload nằm ở 471–500) thành `on(event: "..."): () => void;`. | Có — đếm được 24. **Không** đụng dòng 134 (`) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,` — đó là dispose của UI component, không liên quan). |
+| `packages/coding-agent/src/extensibility/hooks/types.ts` | sửa | Toàn bộ 24 overload `on(event: "..."): void;` bên trong `export interface HookAPI` (khai báo dòng 469; overload nằm ở 471–500) thành `on(event: "..."): () => void;`. | Có — đếm được 24. **Không** đụng dòng 134 (`) => (Component & { dispose?(): void }) \| Promise<Component & { dispose?(): void }>,` — đó là dispose của UI component, không liên quan). |
 | `packages/coding-agent/test/extensions-disposer.test.ts` | tạo | File test mới, 4 case, tách trên hai surface. Chi tiết ở mục *Hợp đồng test*. | Có — chưa tồn tại. Thư mục `packages/coding-agent/test/` có 791 file `.test.ts`. Theo đúng quy ước đặt tên của file lân cận (`extension-*.test.ts`, `hook-*.test.ts`). |
 
 ### Các bước
@@ -423,7 +434,6 @@ Ba khẳng định, cả ba đều đỏ trên HEAD hiện tại: (a) `bun test 
 - `depends_on`: không.
 - `blocks`:
   - **W2** — helper drain theo thứ tự ngược và cô lập lỗi là mẫu cho hàng đợi teardown của W12, mà teardown chỉ có thể rút được disposer nếu disposer tồn tại.
-  - **W8** — cache warmer đăng ký một disposer lúc teardown session; với kiểu trả về `void` của hôm nay nó không có gì để gọi và một request đang bay bị rò. Đây là phụ thuộc "phải có trước W8" mà plan nêu, và là lý do W1 đứng đầu Wave 1.
 
 ### Cách sai dễ nhất
 
@@ -448,7 +458,7 @@ Ba khẳng định, cả ba đều đỏ trên HEAD hiện tại: (a) `bun test 
 | Vì có cast `as HookAPI`, cả hai impl buộc phải giữ kiểu tương thích chữ ký nếu không cast sẽ vỡ type-check. | **MỘT PHẦN SAI — đúng cho extensions, KHÔNG bảo đảm cho hooks** | Nửa extension CÓ bị ép: `class ConcreteExtensionAPI implements ExtensionAPI` (`extensions/loader.ts:179`) là kiểm tra cấu trúc cứng, nên đổi 41 overload mà không sửa method của class sẽ fail `bun check` loudly. Nửa hook KHÔNG được bảo đảm: một hàm trả `() => void` gán được cho chữ ký trả `void` (quy tắc return-type-void của TypeScript), và phép so sánh cho assertion `as` được thoả nếu **một** trong hai chiều đúng — nên một thay đổi chỉ trong `hooks/types.ts` nhiều khả năng vẫn compile và ship một disposer trả `undefined` lúc runtime. Hệ quả cho đặc tả này: chứng minh disposer phía hook bằng test runtime, đừng bằng type checker. Đừng để "`bun check` xanh" trở thành bằng chứng cho nửa đó. |
 | Xác minh: `bun check && bun test packages/coding-agent/test/extensions-disposer.test.ts`. | **KHÔNG CHẠY ĐƯỢC như viết trong repo này** | Ba vướng riêng. (1) `bun check` là `check:ts` + `check:rs`; nửa Rust cần cargo toolchain và rất chậm — dùng `cd packages/coding-agent && bun run check:types`. (2) `bun test` hiện báo 0 pass / 1 fail với `Failed to load pi_natives native addon for darwin-arm64` — addon chưa build. Build trước bằng `bun --cwd=packages/natives run build`, nếu không một lần chạy xanh và một lần "test không hề chạy" là không phân biệt được. (3) `bun run check:ts` cho cả repo ĐÃ ĐỎ trên HEAD: đúng một lỗi, `test/collab/w3-probe.test.ts(76,15): error TS2352`. File đó **chưa track** (`git ls-files --error-unmatch` → "did not match any file(s) known to git") — một probe nghiên cứu W3 còn sót. Dời nó đi thì `bun run check:types` trong `packages/coding-agent` là xanh. Cổng của bạn là "không lỗi mới". |
 | Cây làm việc ở nhánh `milestone-1` sạch đủ để xây trên đó. | **SAI — cây bẩn, và đó là việc của W3 không phải W1** | `packages/coding-agent/src/collab/crypto.ts` đang modified và **chưa commit** (+42/-1): thêm bảng `FRAME_REQUIRED_FIELDS` và decode guard `assertCollabFrame` — đó là W3 ("một cast mù `as CollabFrame` tại `crypto.ts:57`"), đã xây dở một nửa bởi một probe trước đó. Nó type-check sạch nên không chặn W1, nhưng: đừng revert, và đừng để nó cưỡi vào một commit W1. Cũng cảnh báo — một `git diff` lúc đầu W1 sẽ hiện 43 dòng đổi của `crypto.ts` không phải của bạn. |
-| Việc xoá key Map là nửa "bản port chỉ-splice bỏ sót", và thiếu nó "là rò rỉ chậm mỗi lần reload extension". | **ĐÚNG nhưng yếu hơn đã nêu — đó là tuyên bố về bộ nhớ, và điều đó đổi cách viết test** | Rò rỉ là thật, nhưng không consumer nào quan sát được, nghĩa là một test dựa trên dispatch cho nửa này chứng minh không điều gì. Đã kiểm chứng: mọi reader của Map handler đều là `.get(eventType)` rồi guard độ dài — `extensions/runner.ts:1163` (`handlers && handlers.length > 0`), `hooks/runner.ts:173` (giống), `hooks/runner.ts:286` (`if (!handlers || handlers.length === 0) continue`), và tương tự ở 285/333/365/402 và `extensions/runner.ts:1476/1488/1534/1596`. Không gì ở đâu duyệt các key của Map handler. Nên một mảng rỗng để lại dưới key là vô hình về hành vi. Case 2 của bộ test **phải** khẳng định `handlers.has(event) === false` trực tiếp trên object Map. Viết nó thành "event không còn dispatch" sẽ xanh trên cả bản cài đặt hỏng và tạo cảm giác an toàn giả. |
+| Việc xoá key Map là nửa "bản port chỉ-splice bỏ sót", và thiếu nó "là rò rỉ chậm mỗi lần reload extension". | **ĐÚNG nhưng yếu hơn đã nêu — đó là tuyên bố về bộ nhớ, và điều đó đổi cách viết test** | Rò rỉ là thật, nhưng không consumer nào quan sát được, nghĩa là một test dựa trên dispatch cho nửa này chứng minh không điều gì. Đã kiểm chứng: mọi reader của Map handler đều là `.get(eventType)` rồi guard độ dài — `extensions/runner.ts:1163` (`handlers && handlers.length > 0`), `hooks/runner.ts:173` (giống), `hooks/runner.ts:286` (`if (!handlers \|\| handlers.length === 0) continue`), và tương tự ở 285/333/365/402 và `extensions/runner.ts:1476/1488/1534/1596`. Không gì ở đâu duyệt các key của Map handler. Nên một mảng rỗng để lại dưới key là vô hình về hành vi. Case 2 của bộ test **phải** khẳng định `handlers.has(event) === false` trực tiếp trên object Map. Viết nó thành "event không còn dispatch" sẽ xanh trên cả bản cài đặt hỏng và tạo cảm giác an toàn giả. |
 | Chỉ có hai file production cài đặt các API này. | **XÁC NHẬN — và các stub trong test là an toàn** | Grep toàn repo: các cài đặt production duy nhất là `ConcreteExtensionAPI` (`extensions/loader.ts:179`, `implements` cứng) và object literal của hook (`hooks/loader.ts:128`, `as HookAPI`). Sáu file test dựng stub một phần qua `as unknown as ExtensionAPI` (`autoresearch-tools.test.ts:70`, `autoresearch-git.test.ts:40`, `autoresearch-state.test.ts:474` và `:620`, `autoresearch-before-*-start.test.ts:43`, `modes/warp-events.test.ts:47`) — một double assertion nên không có kiểm tra tương thích nào bắn vào, chúng không cần sửa. Biết để không đi săn implementer thứ năm là đủ. |
 
 
@@ -570,7 +580,7 @@ Cả ba test trong `packages/coding-agent/test/disposer-drain.test.ts` đều pa
 ### Phụ thuộc
 
 - `depends_on`: không — mục này không phụ thuộc mục nào khác.
-- `blocks`: W8, W12.
+- `blocks`: W12.
 
 ### Cách sai dễ nhất
 
@@ -806,7 +816,6 @@ Cổng này **đi được** cả chiều đỏ, và điều đó đã được 
 
 - `depends_on`: không.
 - `blocks`:
-  - W8 (Wave 3a) — plan yêu cầu toàn bộ công việc biên giới collab phải land trong một lượt review.
   - Bất kỳ công việc nào sau này thêm variant `CollabFrame`: chú thích `Record<CollabFrame["t"], …>` biến một hàng guard bị quên thành lỗi compile — đây là ràng buộc có chủ đích.
 
 ### Cách sai dễ nhất
@@ -1068,7 +1077,7 @@ Ghi chú: đường dẫn không tùy ý — nó đúng bằng đường dẫn m
 ### Các bước
 
 1. **Xác nhận baseline xanh trước khi đụng gì.** Chạy `bun install --frozen-lockfile` (bắt buộc — trong checkout này `node_modules` vắng mặt, nên cả `bun run check:ts` lẫn `bun test` đều không chạy được; việc này độc lập với native addon), rồi `bun run check:ts`. Mong đợi exit 0. **Không** dùng `tsc`/`npx tsc` (AGENTS.md cấm), và **không** chạy `bun test` cho item này — nó không liên quan và cần native addon chưa build. *(neo: `package.json:94`)*
-2. **Tạo `packages/coding-agent/test/collab/web-wire.types.ts`** với đúng nội dung trong khối `code_shape` bên dưới. Hai điểm tải trọng, rất dễ làm sai: (a) alias khẳng định **phải** là `export type`, không phải `type` trần — một alias không export mà không dùng sẽ dính oxlint WARNING `eslint(no-unused-vars)` (đã kiểm chứng); (b) import phải là `import type` — vì `verbatimModuleSyntax: true` trong `packages/tsconfig.base.json`. *(neo: `packages/coding-agent/test/collab/web-wire.types.ts`)*
+2. **Tạo `packages/coding-agent/test/collab/web-wire.types.ts`** với đúng nội dung trong khối `code_shape` bên dưới. Hai điểm tải trọng, rất dễ làm sai: (a) alias khẳng định **phải** là `export type`, không phải `type` trần — một alias không export mà không dùng sẽ dính oxlint WARNING `eslint(no-unused-vars)` (đã kiểm chứng); (b) import phải là `import type` — vì `verbatimModuleSyntax: true` trong `tsconfig.base.json` ở gốc repo (không phải `packages/tsconfig.base.json` — thư mục `packages/` không chứa file này). *(neo: `packages/coding-agent/test/collab/web-wire.types.ts`)*
 3. **Cổng 1 (xanh):** `bun run check:ts` phải PASS. Bên trong nó là `oxlint .` + `oxfmt --check` + `tsgo -p tsconfig.json --noEmit` cho từng package; file này được với tới vì `packages/coding-agent/tsconfig.json` đặt `"include": ["src", "test", "scripts"]`, và cả glob lint lẫn glob format `packages/*/{test,bench,examples,scripts}/**/*.ts` đều khớp nó. Đã kiểm chứng: oxlint exit 0, oxfmt báo `All matched files use the correct format`, tsgo báo 0 lỗi cho file này. *(neo: `packages/coding-agent/tsconfig.json`)*
 4. **Cổng 2 (ĐỎ — phần làm cho item này đáng giá): chứng minh khẳng định có răng.** Tạm đổi tên MỘT discriminant trong package wire — `sed -i '' '379s/.*/\t| { t: "bye-vanished"; reason: string }/' packages/wire/src/index.ts` (dòng 379 là `| { t: "bye"; reason: string }`, arm cuối của `HostFrame`). Rồi chạy `bun run --cwd packages/coding-agent check:types` và xác nhận exit 1 với lỗi `test/collab/web-wire.types.ts(44,40): error TS2344: Type 'false' does not satisfy the constraint 'true'.` **ĐÃ KIỂM CHỨNG:** thao tác này sinh **đúng một** lỗi, nằm trong file này, và **không** một lỗi dây chuyền nào ở nơi khác trong package — các `switch` ở phía guest giữ nhánh `default:` khoan dung, nên đổi tên một `t` không lan. Sự cô lập đó mới là kết quả đáng ghi: đỏ rõ ràng và chỉ trỏ về file conformance, không phải trăm chỗ gọi hệ quả. *(neo: `packages/wire/src/index.ts:379`)*
 5. **Hoàn tác:** `git checkout -- packages/wire/src/index.ts`, rồi chạy lại `bun run --cwd packages/coding-agent check:types` và xác nhận exit 0 trở lại. **Cả hai chiều đều là bằng chứng** — một file conformance chưa từng đỏ lần nào thì không chứng minh được gì. Ghi cả hai mã exit vào phần mô tả PR. *(neo: `packages/wire/src/index.ts:379`)*
@@ -1377,7 +1386,7 @@ không — `depends_on` rỗng và `blocks` rỗng. Cổng sign-off ở bước 
 
 **Thay đổi gì:** Thêm một trục KDL mới — thời gian sống (TTL) của prompt cache theo từng tier (`short`/`long`, tính bằng giây) — do rule sở hữu, mà không đụng tới field wire OpenAI đang có. **Wave:** 3a — Cache economics, core value (ship default-OFF). **Effort:** M.
 
-**Người dùng thấy:** nội bộ, người dùng không thấy. W7 không thêm bề mặt nào cho người dùng và không đổi một byte request nào. Nó chỉ làm cho bảng TTL theo tier có nguồn gốc trở thành một biểu thức được trong cây rule, để W8 (cache warmer, mặc định tắt) đọc thay vì đọc hằng số 5 phút hard-code. Ship W7 mà không kèm W8 thì không có gì quan sát được thay đổi.
+**Người dùng thấy:** nội bộ, người dùng không thấy. W7 không thêm bề mặt nào cho người dùng và không đổi một byte request nào. Nó chỉ làm cho bảng TTL theo tier có nguồn gốc trở thành một biểu thức được trong cây rule, và giá trị của nó nằm ở catalog. Ở tầng request, không có gì quan sát được thay đổi — và W8, consumer duy nhất từng đọc trục này, đã bị gỡ khỏi milestone (xem khối ⛔ ở đầu §W8), nên W7 ship một mình.
 
 ### File cần chạm tới
 
@@ -1390,7 +1399,7 @@ không — `depends_on` rỗng và `blocks` rỗng. Cổng sign-off ở bước 
 | `packages/catalog/test/prompt-cache-lifetime.test.ts` | tạo | Test mới ở mức rule, gồm bốn ca plan đã nêu: cả hai tier lộ ra qua `buildModel`; model không khai báo thì field resolve về `undefined` (khẳng định phủ định tường minh); `promptCacheBreakpointTtl` sẵn có vẫn resolve `"30m"`; payload wire của OpenAI không đổi. | Có |
 | `packages/ai/test/prompt-cache-lifetime-wire-unchanged.test.ts` | tạo | Test hợp đồng wire chứng minh trục mới không làm dịch chuyển bất kỳ giá trị nào gửi đi OpenAI. Khẳng định `prompt_cache_options` đã build cho một model có `promptCacheLifetime` và một model không có là **giống hệt nhau**. | Có |
 
-Lưu ý về độ chắc chắn: cả sáu file trên đều đã được kiểm chứng (`verified: true`). Hai điểm bổ sung đã kiểm chứng nhưng nằm ngoài danh sách file: shape `"object"` đã được compiler hỗ trợ — `objectValue()` trong `scripts/compat-compiler/compile-axes.ts` truyền thẳng `KdlScalar` (`string|number|boolean|null`) nên `{ short 300 }` một mình là một object thực sự partial. Và `bun run gen:compat` chạy sạch trong môi trường này, tạo **không** diff nào với file đã commit — nên generator là tất định và baseline sạch. Output: `wrote src/compat/rules.json (736 rules, 21 classes, 82 catalog providers, 91 auth providers, 221 files)`.
+Lưu ý về độ chắc chắn: cả sáu file trên đều đã được kiểm chứng (`verified: true`). Hai điểm bổ sung đã kiểm chứng nhưng nằm ngoài danh sách file: shape `"object"` đã được compiler hỗ trợ — `objectValue()` trong `packages/catalog/scripts/compat-compiler/compile-axes.ts` truyền thẳng `KdlScalar` (`string|number|boolean|null`) nên `{ short 300 }` một mình là một object thực sự partial. Và `bun run gen:compat` chạy sạch trong môi trường này, tạo **không** diff nào với file đã commit — nên generator là tất định và baseline sạch. Output: `wrote src/compat/rules.json (736 rules, 21 classes, 82 catalog providers, 91 auth providers, 221 files)`.
 
 ### Các bước
 
@@ -1525,15 +1534,15 @@ Cả bốn điều kiện sau đều phải đúng:
 
 Cổng (1) một mình đã bắt được những lỗi nối dây có xác suất cao nhất: một directive chưa đăng ký sẽ fail với ``unknown directive `prompt-cache-lifetime` ``, một shape sai sẽ fail với `directive ... has a malformed value`, và một tên con camelCase sẽ fail với `must be kebab-case`.
 
-**Cổng có thực sự đỏ được không:** Có, và nó đỏ theo một cách rất cụ thể, dễ chẩn đoán. `gen:compat` là một cổng thật: `collectAxis` / `axisFor` trong `scripts/compat-compiler/compile-axes.ts` ném `CompatCompileError` khi gặp directive lạ, một trục shape `scalar` bị đưa một khối con, một object child viết camelCase, hoặc cùng một trục bị gán hai lần trong một khối. Cổng kiểu cũng là cổng thật: quên bước `Omit` sẽ biến `promptCacheLifetime` thành một `PromptCacheLifetime` bắt buộc trên `ResolvedAnthropicCompat` trong khi `resolveAnthropicPolicy` không bao giờ gán nó — đó là lỗi kiểu hoặc một lời nói dối thầm lặng. **Cảnh báo phải thành thật, vì nó quan trọng:** nửa test của cổng này **KHÔNG chạy được** trong môi trường hiện tại, nên hôm nay chỉ cổng (1)–(3) là chạy được. Và phải nói rõ: compiler **sẽ không** phát hiện vấn đề "hai trục nói cùng một sự thật" — xem mục Đính chính, claim số 7 — nên cổng (1)–(3) có thể cùng xanh trong khi quyết định thiết kế vẫn chưa được đưa ra. Đó là lý do OQ1 được liệt kê như một câu hỏi mở chặn khởi đầu, không phải một chi tiết triển khai.
+**Cổng có thực sự đỏ được không:** Có, và nó đỏ theo một cách rất cụ thể, dễ chẩn đoán. `gen:compat` là một cổng thật: `collectAxis` / `axisFor` trong `packages/catalog/scripts/compat-compiler/compile-axes.ts` ném `CompatCompileError` khi gặp directive lạ, một trục shape `scalar` bị đưa một khối con, một object child viết camelCase, hoặc cùng một trục bị gán hai lần trong một khối. Cổng kiểu cũng là cổng thật: quên bước `Omit` sẽ biến `promptCacheLifetime` thành một `PromptCacheLifetime` bắt buộc trên `ResolvedAnthropicCompat` trong khi `resolveAnthropicPolicy` không bao giờ gán nó — đó là lỗi kiểu hoặc một lời nói dối thầm lặng. **Cảnh báo phải thành thật, vì nó quan trọng:** nửa test của cổng này **KHÔNG chạy được** trong môi trường hiện tại, nên hôm nay chỉ cổng (1)–(3) là chạy được. Và phải nói rõ: compiler **sẽ không** phát hiện vấn đề "hai trục nói cùng một sự thật" — xem mục Đính chính, claim số 7 — nên cổng (1)–(3) có thể cùng xanh trong khi quyết định thiết kế vẫn chưa được đưa ra. Đó là lý do OQ1 được liệt kê như một câu hỏi mở chặn khởi đầu, không phải một chi tiết triển khai.
 
 ### Phụ thuộc
 
 - **Cổng cứng, không phải một task:** phải có một bảng TTL prompt-cache theo từng provider và từng tier, có nguồn gốc, **trước khi** item này bắt đầu (open question 0 của plan). Chính các con số TTL là sản phẩm bàn giao của nghiên cứu đó; item này cung cấp schema, không cung cấp dữ liệu. Một kỹ sư không tìm được nguồn cho một con số thì phải để field ở `undefined` chứ không đoán — một TTL bị định giá quá cao làm số lần refresh phình lên trên một entry lẽ ra còn sống; bị định giá quá thấp thì chỉ mất thỉnh thoảng một lần miss có thể tránh được.
 - **Không phụ thuộc cấu trúc.** Khác với phần lớn milestone này, W7 **không** phụ thuộc Wave 1 (W1/W2/W3/W5) — nó không chạm vào code lifecycle hay disposer nào. Có thể build song song với Wave 1.
-- **W7 và W8 dự định ship như một đơn vị:** trục này một mình là trọng lượng chết, và warmer thì bị chặn nếu không có nó.
+- **W7 từng được dự định ship cùng W8 như một đơn vị; nay W8 nằm ngoài phạm vi (xem khối ⛔ ở đầu §W8) nên W7 ship một mình.** Lập luận "trục này một mình là trọng lượng chết" vẫn đúng **về KDL** — `promptCacheLifetime` phải do rule sở hữu chứ không hard-code trong code. Cổng bảng TTL theo provider theo tier ở trên là tiền đề cứng của W7, và giờ chỉ của W7.
 
-**Chặn:** W8 (cache warmer Anthropic, mặc định tắt) — bị chặn bởi đúng ý nghĩa của trục này. Đường hiện tại của W8 hard-code `ANTHROPIC_CACHE_TTL_MS = 5 * 60_000` tại `packages/ai/src/stream.ts:1209` và bật vô điều kiện tại `packages/coding-agent/src/sdk.ts:4111`; W8 chính là consumer sẽ đọc field mới.
+**Chặn (lịch sử, đã hết hiệu lực):** W8 (cache warmer Anthropic, mặc định tắt) từng bị chặn bởi đúng ý nghĩa của trục này; W8 nay nằm ngoài phạm vi (xem khối ⛔ ở đầu §W8). Các neo nó từng trỏ tới — `ANTHROPIC_CACHE_TTL_MS` tại `packages/ai/src/stream.ts:1209` và bật vô điều kiện tại `packages/coding-agent/src/sdk.ts:4111` — không còn tồn tại.
 
 ### Cách sai dễ nhất
 
@@ -1556,12 +1565,12 @@ Sai dễ thứ hai: chép nguyên văn anchor `:258-266` và đặt rule chỉ b
 | "Repo is at git HEAD 5873776 on branch milestone-1." | stale | HEAD thực tế là `ecd516f` (`feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers`). Branch `milestone-1` là đúng. Số dòng trong plan vẫn resolve đúng với commit này — từng cái đều đã kiểm chứng — nên plan được viết trên nội dung tương đương dù SHA khác. Bằng chứng: `git log --oneline -1` → `ecd516f feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers` |
 | Danh sách anchor: `types.ts:403` (`promptCacheBreakpointTtl?: "30m"`), `:795` (resolved), `:393` (`promptCacheSessionHeader`), `:863-865` (key union), `axes.ts:106`, `resolve.ts:533 & :723`, `openai-responses.ts:1168`, `openai-completions.ts:1791`, `anthropic.kdl:258-266` (+ lặp lại ở `:263, :269, :283, :289, :298`), `package.json:158`, `stream.ts:1209`, `sdk.ts:4111`. | confirmed | Không cần sửa — mọi anchor tái lập chính xác. Mục plan này hiếm khi có nền tảng chắc như vậy. Chuỗi `ttl: promptCache.ttl ?? model.compat.promptCacheBreakpointTtl` xuất hiện nguyên văn ở cả hai dòng consumer, và các lần lặp KDL rơi đúng vào những dòng đã nêu. Bằng chứng: `git grep` và `sed` trên từng anchor; `grep -n 'prompt-cache\|supports-long-prompt-cache-retention' packages/catalog/src/compat/rules/classes/anthropic.kdl` trả về 258,259,260,263,264,265,266,269,283,289,298 như đã nêu. |
 | Field mới nên khai báo "ngay cạnh `promptCacheBreakpointTtl?: "30m"` ở `:403`, resolve ngay cạnh `:795`, và thêm vào key union ở `:863-865`". | wrong | `types.ts:403` nằm trong `OpenAICompat` (khai báo ở `:237`); `:795` nằm trong `ResolvedOpenAISharedCompat` (khai báo ở `:745`); `:863-865` nằm trong `Required<Omit<OpenAICompat, ...>>` của `ResolvedOpenAICompat` (khai báo ở `:823`). Cả ba đều là shape chỉ-dành-cho-OpenAI. Nhưng consumer của W7+W8 là warmer Anthropic, và `applyWireAxes` (`resolve.ts:131-140`) chỉ gán wire axis khi API của model ánh xạ tới một trong các records mà trục khai báo, với `API_COMPAT_RECORDS` ánh xạ `anthropic-messages` → `["anthropic"]` và `openai-responses` → `["openai-responses"]` — rời nhau. Một trục khai trên các shape OpenAI không bao giờ tới được model Anthropic. Field thuộc về `AnthropicCompat` (`:526`) và `ResolvedAnthropicCompat` (`:963`), với records của trục là `["anthropic"]` (cộng `"bedrock"` nếu OQ1 đi hướng đó). Làm theo plan đến từng chữ sẽ ra code compile, regenerate và qua mọi cổng trong khi chết ở runtime. Bằng chứng: `types.ts:237` `export interface OpenAICompat`; `:526` `export interface AnthropicCompat`; `:745` `export interface ResolvedOpenAISharedCompat`; `:963` `export type ResolvedAnthropicCompat`; `axes.ts:369-381` `API_COMPAT_RECORDS` (`"anthropic-messages": ["anthropic"]`); `resolve.ts:131-140` `applyWireAxes` gate trên `meta?.records.some(record => records.includes(record))`. |
-| (ngầm, plan không nói) rằng thêm một field optional vào một shape compat đã resolve chỉ là sửa một dòng. | incomplete | `ResolvedAnthropicCompat` là `Required<Omit<AnthropicCompat, "streamIdleTimeoutMs" | "thinkingLoopGuard">> & {...}`. Vòng bọc `Required<>` khiến `promptCacheLifetime?:` mới trên `AnthropicCompat` trở thành `PromptCacheLifetime` **bắt buộc** trên kiểu resolved, trái trực tiếp với yêu cầu cứng của chính plan là mặc định phải **vắng mặt** khi chưa biết. Field buộc phải được thêm vào union `Omit` và khai báo lại optional trong intersection `& {...}` — đúng mẫu file đã dùng cho `streamIdleTimeoutMs` và `thinkingLoopGuard`. Plan không hề nhắc tới, và làm sai thì kiểu sẽ claim một giá trị mà resolver không bao giờ gán. Bằng chứng: `types.ts:963` `export type ResolvedAnthropicCompat = Required<Omit<AnthropicCompat, "streamIdleTimeoutMs" \| "thinkingLoopGuard">> & {` |
+| (ngầm, plan không nói) rằng thêm một field optional vào một shape compat đã resolve chỉ là sửa một dòng. | incomplete | `ResolvedAnthropicCompat` là `Required<Omit<AnthropicCompat, "streamIdleTimeoutMs" \| "thinkingLoopGuard">> & {...}`. Vòng bọc `Required<>` khiến `promptCacheLifetime?:` mới trên `AnthropicCompat` trở thành `PromptCacheLifetime` **bắt buộc** trên kiểu resolved, trái trực tiếp với yêu cầu cứng của chính plan là mặc định phải **vắng mặt** khi chưa biết. Field buộc phải được thêm vào union `Omit` và khai báo lại optional trong intersection `& {...}` — đúng mẫu file đã dùng cho `streamIdleTimeoutMs` và `thinkingLoopGuard`. Plan không hề nhắc tới, và làm sai thì kiểu sẽ claim một giá trị mà resolver không bao giờ gán. Bằng chứng: `types.ts:963` `export type ResolvedAnthropicCompat = Required<Omit<AnthropicCompat, "streamIdleTimeoutMs" \| "thinkingLoopGuard">> & {` |
 | Trục mới nên được viết "cạnh `prompt-cache-mode` / `prompt-cache-minimum-tokens` / `prompt-cache-maximum-checkpoints` ở `:258-266` (và các lần lặp ở `:263, :269, :283, :289, :298`)". | misleading | Số dòng đúng, nhưng phần bị bỏ sót mới là phần mang tải trọng: tất cả những trục prompt-cache đó nằm bên trong khối `on "amazon-bedrock" { ... }` mở ra ở `anthropic.kdl:255`, nên chúng chỉ áp dụng cho provider `amazon-bedrock`. Chép nguyên anchor này sẽ viết rule chỉ cho Bedrock và để Anthropic first-party — họ model mà warmer của W8 thực sự phục vụ — không có gì. Rule bắt buộc phải xuất hiện thêm dưới một selector `on "anthropic" { ... }` (file có nhiều khối như vậy: `:14, :44, :64, :183`). Bằng chứng: `sed -n '250,360p' packages/catalog/src/compat/rules/classes/anthropic.kdl` — dòng 255 là `on "amazon-bedrock" {`, và các khối `on "anthropic"` của file nằm ở 14, 44, 64, 183. |
 | Test (4) nên khẳng định payload gửi đi "tại `openai-responses.ts:1168` và `openai-completions.ts:1791`" bằng cách build request params qua đường public của provider. | partly-wrong | Chỉ làm được cho đường responses. `openai-responses.ts:1174` là `export function buildParams` và nó gọi `applyOpenAIResponsesPromptCachePolicy` ở `:1365`, nên params reachable. Nhưng `openai-completions.ts:1797` là `function buildParams(` không có export, và policy function `applyOpenAIChatCompletionsPromptCachePolicy` (`:1767`) cũng private, chỉ reachable từ `:1999`. Không có đường public nào tới các params đó. Cần lưu ý thêm: hướng dẫn tiếp theo của chính plan (dòng 3179) cấm viết cái này thành source-grep của hai dòng `ttl:` — test kiểu đó vẫn xanh ngay cả khi trục được nối ngược, và `AGENTS.md` cấm source-grep hoàn toàn. Đã ghi lại thành OQ2 với ba lựa chọn cụ thể. Bằng chứng: grep `^export ` trong `openai-completions.ts` chỉ ra `applyOpenRouterRoutingVariant`, `isOpenAICompletionsProgressChunk`, `OpenAICompletionsOptions`, `streamOpenAICompletions`, `parseChunkUsage`, `convertMessages` — không có `buildParams`; `sed -n '1797,1800p'` cho thấy `function buildParams(`. |
 | (khối F5 của plan) "The boolean axis doesn't set priority=, so resolve will throw AmbiguousOverlapError — you'll hit it at bun run gen:compat." | wrong | `AmbiguousOverlapError` chỉ nổ lên khi hai rule **cùng rank** tranh **cùng một axis key** (`cascade.ts:245-253` khoá winner theo axis; doc của class ở `cascade.ts:6-9` nói các rule resolve độc lập theo từng axis). Hai axis **khác nhau** không bao giờ va nhau, và `collectAxis` chỉ lỗi khi một khóa bị gán lặp trong cùng một khối. Nên viết `prompt-cache-lifetime` cạnh `supports-long-prompt-cache-retention` sẽ **KHÔNG** tạo lỗi compiler. Vấn đề hai-nguồn-sự-thật là có thật và tinh thần `AGENTS.md` cấm nó, nhưng đó là một quyết định thiết kế không có cổng tự động nào — điều này làm nó **càng** cần được giải quyết có chủ đích (OQ1) chứ không kém đi. Plan hứa một tripwire compiler không tồn tại. Bằng chứng: `cascade.ts:6-9` "per axis the matching rule with the greatest (model-selector exactness, constrained-dimension count, priority) tuple wins, and an equal-tuple same-axis contest throws AmbiguousOverlapError"; `cascade.ts:245-253` khoá trên `winners[axis]`; `collectAxis` trong `compile-axes.ts` chỉ lỗi khi `axis.key in map`. |
 | Xác minh là `bun run gen:compat && bun check && bun test packages/catalog/test/prompt-cache-lifetime.test.ts`. | partly-wrong | `bun test` bị chặn trong môi trường này với **mọi** package, kể cả `packages/catalog`, vốn không phụ thuộc trực tiếp pi-natives nhưng bị kéo vào gián tiếp qua `build.ts` → `compat/resolve.ts:37` → `compat/cascade.ts:12` → `@oh-my-pi/pi-utils/lru`. Cách build được tài liệu hoá shell ra bazel, và cả bazel lẫn bazelisk đều không có trong PATH. `bun check` = `check:ts` + `check:rs` chạy song song (`package.json:93`) và thừa hưởng chính blocker đó. `bun run gen:compat` **có** chạy — đã chạy và cho ra không diff nào với `rules.json` đã commit, xác nhận cả generator là tất định lẫn baseline sạch. Riêng `bun run check:ts` hiện không đáng tin trong cây làm việc này vì một lý do không liên quan tới W7: các phiên khác đang ghi các file scratch type-probe không được track vào `packages/coding-agent/`, làm hỏng `check:types` của package đó (quan sát `w3-scratch-verify.ts`, rồi `__probe.types.ts`, rồi `__probe2.types.ts` qua ba lần chạy liên tiếp). Hãy giới hạn cổng bằng `bun run --filter @oh-my-pi/pi-catalog check:types` và chụp baseline `check:ts` trước khi bắt đầu. Bằng chứng: `bun test packages/catalog/test/descriptors.test.ts` → 0 pass, 1 fail, `Failed to load pi_natives native addon for darwin-arm64`; `bun -e 'import("@oh-my-pi/pi-catalog/build")'` → cùng lỗi, trong khi `import("@oh-my-pi/pi-catalog/compat/axes")` → OK; `which bazel bazelisk` → not found; `bun run gen:compat` → `wrote src/compat/rules.json (736 rules, 21 classes, 82 catalog providers, 91 auth providers, 221 files)` với `git diff --stat` rỗng; ba lần `bun run check:ts` liên tiếp mỗi lần fail trên một file probe khác tên. |
-| Sinh lại và commit `packages/catalog/src/compat/rules.json` kèm thay đổi `.kdl`. | incomplete | `bun run gen:compat` ghi **BA** file, không phải một: `rules.json` cộng `packages/catalog/src/compat/auth-ids.ts` và `packages/catalog/src/compat/provider-ids.ts` (xem `scripts/compile-compat.ts`). Thực tế hai file `.ts` chỉ dịch chuyển nếu bề mặt auth/provider thay đổi, điều mà một trục cache-lifetime không nên có, nhưng người triển khai vẫn phải kiểm tra `git status` cho cả ba thay vì giả định chỉ `rules.json` dịch chuyển. Bằng chứng: `scripts/compile-compat.ts` ghi `outPath`, `authIdsPath` và `providerIdsPath` trong một lần chạy. |
+| Sinh lại và commit `packages/catalog/src/compat/rules.json` kèm thay đổi `.kdl`. | incomplete | `bun run gen:compat` ghi **BA** file, không phải một: `rules.json` cộng `packages/catalog/src/compat/auth-ids.ts` và `packages/catalog/src/compat/provider-ids.ts` (xem `packages/catalog/scripts/compile-compat.ts`). Thực tế hai file `.ts` chỉ dịch chuyển nếu bề mặt auth/provider thay đổi, điều mà một trục cache-lifetime không nên có, nhưng người triển khai vẫn phải kiểm tra `git status` cho cả ba thay vì giả định chỉ `rules.json` dịch chuyển. Bằng chứng: `packages/catalog/scripts/compile-compat.ts` ghi `outPath`, `authIdsPath` và `providerIdsPath` trong một lần chạy. |
 
 
 ---
@@ -1569,8 +1578,30 @@ Sai dễ thứ hai: chép nguyên văn anchor `:258-266` và đặt rule chỉ b
 
 ## W8. Biến vòng prompt-cache refresh đang có thành một vòng có cổng chi phí (không phải warmer thứ hai)
 
+> ### ⛔ ĐÍNH CHÍNH 2026-09-28 — W8 nằm ngoài phạm vi; cổng của nó đỏ vĩnh viễn
+>
+> Upstream 18.3.5 đã xoá sạch tầng stream-level keep-alive mà W8 định sửa
+> (`packages/ai/CHANGELOG.md:37`, breaking change #12699) và dựng thay bằng
+> `packages/coding-agent/src/session/cache-warmer.ts` (599 dòng) + `test/cache-warmer.test.ts`
+> (399 dòng). Bốn neo mà W8 chỉ định — `stream.ts:1209`, `types.ts:439`, `sdk.ts:4111`,
+> `settings.ts:863` — không còn tồn tại. **Cũng không còn** các neo còn lại mà §W8 dùng
+> (`stream.ts:1237`, `:1258`, `:1292`, `:1322`, `:1348`, `:1369`, `:1370`, `:1431`,
+> `:1454`, `:1465`): `grep -n 'CacheRefresh\|ANTHROPIC_CACHE' packages/ai/src/stream.ts`
+> ở HEAD trả về **0 dòng** — cả tầng stream-level đã biến mất, không chỉ vài dòng.
+> **Cổng `test ! -e packages/coding-agent/src/session/cache-warmer.ts`
+> ở dòng 1762 giờ đỏ vĩnh viễn; đừng chạy nó, đừng cố làm nó xanh.** Cổng chi phí mà W8 từng hỏi đã
+> được giải quyết bằng cờ `providers.cacheWarming` (`settings.ts:1120-1121`).
+>
+> **Cùng đợt xoá đó, file test `packages/ai/test/anthropic-cache-refresh.test.ts` cũng biến
+> mất** — `f804d66` xoá 386 dòng, 0 dòng thêm. Mọi câu hỏi kiểu "7 khối `it()` ở đâu",
+> "case retention ở `:335`", "case OAuth ở `:359`" trong §W8 này là **số đo đúng cho
+> `ecd516f` (18.3.3), không phải cho HEAD**. Đừng đi tìm chúng; chúng không tồn tại.
+> Kẻ thừa kế thật sự của tầng warm là `packages/coding-agent/src/session/cache-warmer.ts`
+> (599 dòng) + `packages/coding-agent/test/cache-warmer.test.ts` (399 dòng, 18 khối
+> `test()` trong 2 `describe()`) — hai số đó đã đo ở HEAD.
+
 **Thay đổi gì:** Vòng lặp keep-alive prompt-cache đang chạy vô điều kiện hôm nay được gộp về một cờ tri-state duy nhất (`off` / `cost-gated` / `always`) cộng một cổng kinh tế, để thứ duy nhất tiêu tiền của người dùng là thứ họ đã tự bật.
-**Wave:** 3a — Cache economics (ships together with W7, default-OFF).
+**Wave:** ~~3a — Cache economics (ships together with W7, default-OFF).~~ ⛔ **Đã hết hiệu lực 2026-09-28** — W8 nằm ngoài phạm vi, nên **W7 ship một mình** (xem mục *Phụ thuộc* của W7: "W7 từng được dự định ship cùng W8 như một đơn vị; nay W8 nằm ngoài phạm vi").
 **Effort:** M — bốn thay đổi vào code đang chạy, không phải port một package. Phần lớn công việc là viết lại các test đang khoá hành vi cũ, chứ không phải viết production code mới. Dành thêm cẩn thận cho test duy nhất phải ĐỔI kỳ vọng thay vì chỉ thêm một case.
 
 **Người dùng thấy:** Có setting mới `providers.promptCacheRefresh` (`off` mặc định, `cost-gated`, `always`). Ở `off` — mặc định cho release đầu — các lần replay keep-alive 4m45s vô điều kiện đang ship hôm nay dừng hẳn, nên hoá đơn Anthropic của người dùng giảm và không có gì được chi tiêu. `always` khôi phục đúng hành vi hôm nay. `cost-gated` chỉ warm khi lợi ích kỳ vọng vượt sàn $0.05, và warm ở pha idle cần khoảng $0.35 chi phí miss mới thực sự bắn — nên ở đa số phiên nó đúng là không làm gì cả, và release notes phải nói thẳng điều đó ra, nếu không người đọc sẽ tưởng tính năng hỏng. Đây là thay đổi hành vi trên một tính năng đang chạy, nên cần một changelog entry nói thẳng.
@@ -1583,12 +1614,12 @@ Sai dễ thứ hai: chép nguyên văn anchor `:258-266` và đặt rule chỉ b
 | `packages/ai/src/types.ts` | sửa | `:439`: mở rộng `anthropicCacheRefresh?: boolean` thành `anthropicCacheRefresh?: "off" \| "cost-gated" \| "always"` (thêm union type có tên được export; `undefined` giữ nguyên nghĩa cũ là off, nên mọi consumer hiện có bỏ trống field vẫn xanh). Thêm `anthropicCacheRefreshPhase?: () => "streaming" \| "idle"` ngay cạnh — là probe, không phải literal. | có — `:439` chính xác. Đây là mở rộng public type, nên là breaking change với mọi caller bên ngoài truyền boolean. |
 | `packages/coding-agent/src/sdk.ts` | sửa | ở `:4111` thay `anthropicCacheRefresh: true` hard-code bằng tri-state đọc từ settings, và thêm phase probe `() => (agent.state.isStreaming ? "streaming" : "idle")`. `agent` đã có sẵn trong closure này — `agent.state.tools` được đọc ở `:4105`. KHÔNG đụng vào `transformProviderContext` (`:3949`); nó làm việc trên messages và không có đường tới stream options. | có — PLAN nói `:4105` — THỰC TẾ là `:4111`. Plan lệch 6 dòng; mọi anchor sdk.ts khác trong plan cũng lệch. Xem mục Đính chính. |
 | `packages/coding-agent/src/session/settings.ts` | sửa | Đăng ký `providers.promptCacheRefresh` như enum tri-state theo khuôn `cfgProvidersAnthropicSlowMode` ở `:863` (`register({ id, type: "enum", values: [...] as const, default: "off" as const })`), mặc định `"off"`. | có — PLAN nói `:860` — THỰC TẾ là `:863`. Tiền lệ `slowMode` cố ý KHÔNG mang block `ui`; phải quyết rõ setting này có UI `/settings` hay chỉ script-only như model của nó. |
-| `packages/ai/test/anthropic-cache-refresh.test.ts` | sửa | Thêm test (0)–(6) và VIẾT LẠI (không xoá) case retention ở `:335`. Đồng thời xác minh case OAuth chưa được plan nhắc tới ở `:359` vẫn xanh sau khi nới cổng `:1431` — nó khoá cùng một lỗ hổng bằng đường khác. | có — 386 dòng, 7 khối `it()` ở `:237, :257, :279, :297, :318, :335, :359`. Helper có sẵn: `createFetch`, `finishRequest`, `drainUntil`, `CACHE_REFRESH_DELAY_MS`, `withOfficialAnthropicEndpoint`. |
+| `packages/ai/test/anthropic-cache-refresh.test.ts` | sửa | Thêm test (0)–(6) và VIẾT LẠI (không xoá) case retention ở `:335`. Đồng thời xác minh case OAuth chưa được plan nhắc tới ở `:359` vẫn xanh sau khi nới cổng `:1431` — nó khoá cùng một lỗ hổng bằng đường khác. | **KHÔNG — file KHÔNG tồn tại ở HEAD.** Số đo trong bản plan cũ (386 dòng, 7 khối `it()` tại `:237, :257, :279, :297, :318, :335, :359`) là **đúng** cho `ecd516f` (18.3.3) — đã kiểm lại bằng `git show ecd516f:packages/ai/test/anthropic-cache-refresh.test.ts`. Nhưng `f804d66` (sync upstream 18.4.0) đã **xoá hẳn** file: `386 deletions, 0 insertions`. Ở HEAD, `git cat-file -e HEAD:packages/ai/test/anthropic-cache-refresh.test.ts` thất bại. Nên toàn bộ neo `:335` / `:359` / `:1431` bên dưới là neo của một file **đã không còn**, và cột "hành động" của dòng này không còn làm được gì. |
 | `packages/ai/CHANGELOG.md` | sửa | Entry dưới `## [Unreleased]` → `### Changed`, nói thẳng rằng keep-alive prompt-cache vô điều kiện nay mặc định tắt và rằng warm ở pha idle cần khoảng $0.35 miss cost mới bắn. | **KHÔNG** — path tồn tại theo quy ước (`packages/*/CHANGELOG.md` theo AGENTS.md) nhưng không được mở trong lúc phân tích; phải xác nhận đúng file và heading `### Changed` trước khi sửa. |
 
 ### Các bước
 
-1. **Làm vỡ môi trường trước, đừng sửa code vội.** Chạy `bun install` và `bun run build` (hoặc tối thiểu `bun run build:native`) để có native addon. Xác nhận `bun test packages/ai/test/anthropic-cache-refresh.test.ts` báo 7 pass / 0 fail **trước khi** sửa bất kỳ dòng production code nào, và ghi lại baseline xanh đó. Mọi cổng trong spec này vô nghĩa nếu thiếu nó — hiện tại file lỗi ra với thông báo gây hiểu lầm `Cannot find module '@oh-my-pi/pi-catalog/build'`, mà thực ra là `@oh-my-pi/pi-natives` không load được từ bên dưới. *(anchor: `packages/ai/src/stream.ts:1209`)*
+1. **Làm vỡ môi trường trước, đừng sửa code vội.** Chạy `bun install` và `bun run build` (hoặc tối thiểu `bun run build:native`) để có native addon. Xác nhận `bun test packages/ai/test/anthropic-cache-refresh.test.ts` báo 7 pass / 0 fail **trước khi** sửa bất kỳ dòng production code nào, và ghi lại baseline xanh đó. Mọi cổng trong spec này vô nghĩa nếu thiếu nó — hiện tại file lỗi ra với thông báo gây hiểu lầm `Cannot find module '@oh-my-pi/pi-catalog/build'`, mà thực ra là `@oh-my-pi/pi-natives` không load được từ bên dưới. ⛔ **Bước này không chạy được ở HEAD**: file test đã bị `f804d66` xoá, nên `bun test` trên nó sẽ báo "no tests found" chứ không phải 7 pass. Baseline 7 pass chỉ tồn tại ở `ecd516f`. *(anchor: `packages/ai/src/stream.ts:1209`)*
 2. **Xác nhận W7 đã landed:** `grep -rn promptCacheLifetime packages/catalog/src packages/ai/src` phải có hit. Nếu không có, DỪNG — W8 bị chặn cứng bởi W7. Đồng thời xác nhận helper kinh tế của F6 đã landed: `grep -rn 'decideWarm' packages/` phải trả về một định nghĩa. Nếu F6 vắng, DỪNG — kiểu `WarmDecision` mà spec này luồn qua `arm()` không tồn tại ở bất kỳ đâu trong repo. *(anchor: `packages/ai/src/stream.ts:1209`)*
 3. **Xoá** `const ANTHROPIC_CACHE_TTL_MS = 5 * 60_000;`. Luồn `promptCacheLifetime` theo tier của W7 vào thay thế. Model không khai báo lifetime cho ra `undefined` và **không được** warm — đó là hợp đồng âm của W7 và W8 là consumer duy nhất của nó. Để nguyên `ANTHROPIC_CACHE_REFRESH_LEAD_MS` (`:1210`), `ANTHROPIC_CACHE_REFRESH_LIMIT` (`:1211`) và `ANTHROPIC_CACHE_REFRESH_STATE_KEY` (`:1212`). *(anchor: `packages/ai/src/stream.ts:1209`)*
 4. **Mở rộng** `arm()` thành `arm(plan: AnthropicCacheRefreshPlan, cacheTouchedAtMs: number, decision: WarmDecision, phase: () => "streaming" | "idle"): void`. Thêm hai field ES `#private` mới — `#decision` và `#phase` — cạnh `#controller` / `#generation` / `#plan` / `#refreshesRemaining` / `#timer` sẵn có. Dùng `#private`, không bao giờ dùng từ khoá TS `private`. `#schedule` vẫn private và **không được** tự định giá bất cứ thứ gì; nó chỉ hỏi verdict đã quyết rồi. *(anchor: `packages/ai/src/stream.ts:1237`)*
@@ -1718,7 +1749,7 @@ streamFn: (streamModel, context, streamOptions) => {
 
 ### Hợp đồng test
 
-Bộ test bảo vệ ranh giới tiêu tiền, nên các assertion quan trọng nhất là **âm** — chứng minh những request ĐÃ KHÔNG được gửi đi. Tất cả nằm trong `packages/ai/test/anthropic-cache-refresh.test.ts`; KHÔNG tạo test nào ở `packages/coding-agent`.
+Bộ test bảo vệ ranh giới tiêu tiền, nên các assertion quan trọng nhất là **âm** — chứng minh những request ĐÃ KHÔNG được gửi đi. Tất cả nằm trong `packages/ai/test/anthropic-cache-refresh.test.ts`; KHÔNG tạo test nào ở `packages/coding-agent`. ⛔ File đó **không còn ở HEAD** (xoá ở `f804d66`) — hợp đồng test dưới đây là của spec W8 đã hết hiệu lực, kèm các neo `:335` / `:359`.
 
 - **(0) Cổng nghiệm thu.** Với `anthropicCacheRefresh: "off"` truyền thẳng vào `SimpleStreamOptions`, assert PAYLOAD REPLAY VẮNG MẶT — không phải chỉ "không có refresh mới". Một toggle được đo bằng "không có refresh mới" không chứng minh nó đã tắt thứ vốn đang chạy; chỉ một replay payload vắng mặt mới chứng minh điều đó. Đỏ nếu tri-state bị gộp về boolean (truthiness của chuỗi `"off"` vẫn warm), hoặc nếu `sdk.ts` vẫn hard-code một lần warm vô điều kiện.
 - **(1)** Với TTL đã khai báo, warming bắn ở 90% TTL với sàn 10s; TTL ≤ 10s trả về `undefined` và warm **KHÔNG GÌ**. (Đây là hợp đồng âm của W7, tiêu thụ ở đây.)
@@ -1740,10 +1771,10 @@ Ngoài ra, cần xác minh — không ai trong plan nhắc — rằng case ở t
 bun install && bun run build
 
 # Baseline phải xanh TRƯỚC mọi chỉnh sửa
-bun test packages/ai/test/anthropic-cache-refresh.test.ts   # phải ra 7 pass
+bun test packages/ai/test/anthropic-cache-refresh.test.ts   # ⛔ KHÔNG chạy được: file đã bị f804d66 xoá
 
 # Sau khi làm xong
-bun test packages/ai/test/anthropic-cache-refresh.test.ts   # cả 7 case gốc + case mới
+bun test packages/ai/test/anthropic-cache-refresh.test.ts   # ⛔ tương tự — không có file để chạy
 bun run check:ts                                             # types/lint
 test ! -e packages/coding-agent/src/session/cache-warmer.ts  # phần B của cổng
 
@@ -1759,7 +1790,7 @@ Hai cái bẫy môi trường đã được kiểm chứng, đừng mất thời
 
 **HAI PHẦN, vì một phần là chưa đủ.**
 
-**PHẦN A** — `bun test packages/ai/test/anthropic-cache-refresh.test.ts` với test (0): `anthropicCacheRefresh: "off"` ở biên phải cho ra replay payload vắng mặt, cộng test (3) (không gửi request nào dưới sàn $0.05) và cặp idle/streaming của test (4). Đỏ nếu tri-state không được luồng từ đầu đến cuối, nếu cổng kinh tế vắng mặt, hoặc nếu phase probe bị đọc sai thời điểm.
+**PHẦN A** — `bun test packages/ai/test/anthropic-cache-refresh.test.ts` với test (0): `anthropicCacheRefresh: "off"` ở biên phải cho ra replay payload vắng mặt, cộng test (3) (không gửi request nào dưới sàn $0.05) và cặp idle/streaming của test (4). Đỏ nếu tri-state không được luồng từ đầu đến cuối, nếu cổng kinh tế vắng mặt, hoặc nếu phase probe bị đọc sai thời điểm. ⛔ **Phần A không dựng được ở HEAD** — file test đã bị `f804d66` xoá, nên lệnh `bun test` trên nó không có file để chạy.
 
 **PHẦN B** — cái bẫy warmer-thứ-hai, mà Phần A về cấu trúc **KHÔNG THỂ** bắt được: assert `test ! -e packages/coding-agent/src/session/cache-warmer.ts`, và xác nhận qua code review rằng `streamSimpleWithAnthropicCacheRefresh` vẫn là con đường warm duy nhất. Đây là failure mode #1 mà plan nêu và nó im lặng: một file mới mặc định `"off"` không tốn xu nào, test của nó tự xanh, Phần A vẫn xanh — trong khi `anthropicCacheRefresh: true` ở `sdk.ts:4111` vẫn refresh vô điều kiện và không ai đụng tới. Một assertion về sự vắng mặt trên filesystem là chính đáng ở đây chính vì AGENTS.md cấm source-grep file implementation — không có cách nào mang hình thức test để hỏi "có phải có scheduler thứ hai không", nên guard là kiểm tra file cộng review.
 
@@ -1769,11 +1800,16 @@ Hai cái bẫy môi trường đã được kiểm chứng, đừng mất thời
 
 ### Phụ thuộc
 
+> ⛔ **Mục này thuộc về spec W8 cũ, đã hết hiệu lực ngày 2026-09-28.** W8 nằm ngoài phạm vi
+> (xem khối ⛔ ở đầu §W8), nên không còn "phải chờ" gì cả. Danh sách bên dưới được giữ lại như
+> **vết của phân tích trước khi gỡ** — các mệnh đề trong đó vẫn đúng về mặt sự kiện, nhưng
+> không còn mô tả trạng thái cần làm.
+
 **depends_on**
 
 - **W7 — CHẶN CỨNG.** `promptCacheLifetime` không tồn tại ở bất kỳ đâu trong repo hôm nay (`grep -rn promptCacheLifetime packages/catalog/src packages/ai/src` không trả về gì). Chính ghi chú của plan nói đúng: hợp đồng âm của W7 — lifetime không khai báo nghĩa là không warm — không có consumer nào nếu thiếu W8.
 - **F6 (helper quyết định kinh tế) — cũng chặn, và plan đánh giá thấp chỗ này.** `decideWarm` / `WarmDecision` cũng không tồn tại ở bất kỳ đâu trong repo. Chữ ký `arm()` mới luồn `WarmDecision` xuyên qua, nên W8 cần F6 đã landed, không chỉ W7.
-- **Cổng chung của wave 3a:** bảng TTL theo provider theo tier có nguồn (open question 0 của plan). Cổng đó bọc W7 và W8 cùng nhau, và không bọc gì khác.
+- **Cổng chung của wave 3a:** bảng TTL theo provider theo tier có nguồn (open question 0 của plan). Cổng đó ~~bọc W7 và W8 cùng nhau~~ **nay chỉ bọc W7** — W8 nằm ngoài phạm vi (2026-09-28), và không bọc gì khác.
 - **KHÔNG phụ thuộc W2.** Đã kiểm chứng: `AnthropicCacheRefreshState` đã là một `ProviderSessionState` có `cancel()`/`close()`, và `cancel()` đã gọi `this.#controller?.abort()`, nên đường huỷ in-flight đã tồn tại hôm nay. W2 chỉ còn là tiền đề cho extension disposer, không phải cho W8.
 
 **blocks:** không.
@@ -1788,6 +1824,10 @@ Thứ ba: rơi mất điều kiện thứ tư của `supportsAnthropicCacheRefre
 
 ### Cần người quyết
 
+> ⛔ **Các câu hỏi dưới đây thuộc về spec W8 cũ và không còn cần người trả lời** (2026-09-28):
+> W8 nằm ngoài phạm vi, nên không có bước nào để gõ và không có type nào để chọn. Chúng được giữ
+> lại như vết — **đừng mở lại** trừ khi W8 được đưa ngược vào phạm vi.
+
 - **F6 là một phụ thuộc cứng chưa được nói ra.** Plan chỉ nêu W7, nhưng chữ ký `arm()` đề xuất lại lấy `WarmDecision` "là shape ở F6" và không có type hay `decideWarm` nào tồn tại trong repo. F6 có được lên lịch trong milestone 1 không, hay W8 phải tự định nghĩa shape của quyết định? **Phải chốt trước khi kỹ sư bắt tay**, vì nó quyết định bước 4 có type được hay không.
 - **`pi-ref/` không tồn tại trong checkout này** — không có thư mục như vậy, nên cả sáu hằng số mà plan nói sẽ port (`MAX_WARMING_AGE_MS` :16, `MAX_IDLE_WARMING_AGE_MS` :18, `CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS` :20, `IDLE_CONTINUATION_PROBABILITY` :26, `getCacheWarmingDelayMs` :29, `isReplayable` :55-57) cùng mọi tuyên bố hành vi lấy nguồn từ `cache-warmer.ts` đều **KHÔNG KIỂM CHỨNG ĐƯỢC** từ repo này. Package tham chiếu đó thực chất nằm ở đâu, và kỹ sư có nên tự suy ra giá trị từ bảng TTL đã công bố của Anthropic thay vì port không?
 - **Mặc định `"off"` là một hành vi PHÁ VỠ trên một tính năng đang sống và đang miễn phí.** Người dùng hưởng lợi từ unconditional keep-alive sẽ mất nó mà không hề hành động gì. Một ghi chú migration trong changelog là đủ, hay release đầu cần một cửa sổ deprecation giữ lại mặc định cũ?
@@ -1801,9 +1841,9 @@ Hai câu còn lại trong danh sách (`isLeakedThinkingHealExempt` đọc `$env.
 | --- | --- | --- |
 | `anthropicCacheRefresh: true` nằm ở `packages/coding-agent/src/sdk.ts:4105`, lân cận `externalThinking` ở `:4099` và `fallbackCreditRedemption` ở `:4102`; `transformProviderContext` ở `:3943`; `primaryStreamFn` ở `:4030-4036`; wrapper `streamFn` ở `:4086-4110`. | STALE — mọi anchor sdk.ts đều lệch | Số dòng thực: `anthropicCacheRefresh: true` ở `:4111`; `externalThinking` ở `:4104`; `fallbackCreditRedemption` ở `:4108`; `transformProviderContext` ở `:3949`; `primaryStreamFn` ở `:4036`; wrapper `streamFn` ở `:4092-4117`. Plan lệch 4–6 dòng khắp nơi, có lẽ do một lần sửa có trước HEAD. Bằng chứng: `grep -n` trên `packages/coding-agent/src/sdk.ts` tại HEAD `ecd516f`. |
 | Replay guard là `isReplayable` trong `streamSimpleWithAnthropicCacheRefresh`, và HEAD đã có nó; port `isReplayable` của pi (pi-ref cache-warmer.ts:55-57) sẽ tổng quát hoá cái sẵn có. | SAI Ở CHI TIẾT — hàm không tồn tại | Không có `isReplayable` ở bất kỳ đâu trong `packages/ai/src/stream.ts`. HEAD diễn đạt guard là `isAnthropicThinkingActive` (stream.ts:1348) dẫn tới `anthropicCacheRefreshRequest: !thinkingEnabled` ở `:1369` cùng `maxTokens: thinkingEnabled ? options?.maxTokens : 0`. Kỹ sư đi tìm `isReplayable` để mở rộng sẽ không thấy gì và có thể kết luận guard vắng mặt — nó có thật, chỉ khác hình dạng và khác tên. Cảnh giác việc tổng quát hoá làm rơi nhánh non-reasoning: `isAnthropicThinkingActive` trả false khi `payload.thinking.type === "disabled"`, và nhánh độc lập model đó phải sống qua phép chia theo từng API. Bằng chứng: `grep -n isReplayable packages/ai/src/stream.ts` → không có hit. `sed -n '1348,1371p'`. |
-| Test (7) viết lại `anthropic-cache-refresh.test.ts:335`, test duy nhất khoá hành vi retention-long cũ. | KHÔNG ĐẦY ĐỦ — một test thứ hai khoá cùng lỗ hổng và plan không hề nhắc | File có BẢY khối `it()` (`:237, :257, :279, :297, :318, :335, :359`). Cái ở `:359`, "arms no keep-alive refresh for an OAuth request with automatic retention", khoá cùng hành vi retention bằng một đường khác — OAuth resolve ra 1h, nên không tồn tại short breakpoint để `hasShortAnthropicMessageBreakpoint` tìm thấy. Nó vẫn nên xanh sau khi nới `:1431`, nhưng phải chạy lại có chủ đích, không được coi là hiển nhiên. Coi `:335` là test duy nhất bị ảnh hưởng là cách một wave 3a trông xanh ship kèm regression. Bằng chứng: `grep -n 'it(' packages/ai/test/anthropic-cache-refresh.test.ts` → 7 khối; `sed -n '359,386p'`. |
+| Test (7) viết lại `anthropic-cache-refresh.test.ts:335`, test duy nhất khoá hành vi retention-long cũ. | KHÔNG ĐẦY ĐỦ — một test thứ hai khoá cùng lỗ hổng và plan không hề nhắc | File có BẢY khối `it()` (`:237, :257, :279, :297, :318, :335, :359`) — *đúng cho `ecd516f` (18.3.3); ở HEAD file đã bị `f804d66` xoá nên con số này không còn kiểm được*. Cái ở `:359`, "arms no keep-alive refresh for an OAuth request with automatic retention", khoá cùng hành vi retention bằng một đường khác — OAuth resolve ra 1h, nên không tồn tại short breakpoint để `hasShortAnthropicMessageBreakpoint` tìm thấy. Nó vẫn nên xanh sau khi nới `:1431`, nhưng phải chạy lại có chủ đích, không được coi là hiển nhiên. Coi `:335` là test duy nhất bị ảnh hưởng là cách một wave 3a trông xanh ship kèm regression. Bằng chứng: `grep -n 'it(' packages/ai/test/anthropic-cache-refresh.test.ts` → 7 khối; `sed -n '359,386p'`. |
 | Các điều kiện lúc arm là bốn cái trong `supportsAnthropicCacheRefresh` cộng usage bail; tập thay đổi plan mô tả không bao giờ nhắc `hasShortAnthropicMessageBreakpoint`. | KHÔNG ĐẦY ĐỦ — có điều kiện thứ năm lúc arm | `armRefresh` (stream.ts:1454) có bail năm nhánh, và nhánh thứ năm là `!hasShortAnthropicMessageBreakpoint(capturedPayload)` ở `:1461` (hàm nằm ở `:1322`). Mọi thay đổi lên trục TTL hay cổng retention đều phải suy luận với điều kiện này — thực tế chính nó là thứ giữ test OAuth ở `:359` xanh. Bằng chứng: `sed -n '1454,1466p' packages/ai/src/stream.ts`. |
-| Tiền đề cứng duy nhất của W8 là W7. | KHÔNG ĐẦY ĐỦ — F6 là tiền đề cứng thứ hai | Chữ ký `arm()` đề xuất lấy `decision: WarmDecision` được mô tả là "là shape ở F6", nhưng cả `WarmDecision` lẫn `decideWarm` đều không tồn tại ở bất kỳ đâu trong repo. W8 cần F6 landed, y như cần W7. Danh sách phụ thuộc nên đọc là W7 + F6, và thứ tự wave nên xác nhận F6 xuống ở 3a hoặc sớm hơn. Bằng chứng: `grep -rn 'decideWarm\|WarmDecision' packages/` → không có hit. |
+| Tiền đề cứng duy nhất của W8 là W7. | KHÔNG ĐẦY ĐỦ — F6 là tiền đề cứng thứ hai *(đính chính đúng về sự kiện, nhưng **đã hết hiệu lực** 2026-09-28: W8 nằm ngoài phạm vi)* | Chữ ký `arm()` đề xuất lấy `decision: WarmDecision` được mô tả là "là shape ở F6", nhưng cả `WarmDecision` lẫn `decideWarm` đều không tồn tại ở bất kỳ đâu trong repo. ~~W8 cần F6 landed, y như cần W7. Danh sách phụ thuộc nên đọc là W7 + F6, và thứ tự wave nên xác nhận F6 xuống ở 3a hoặc sớm hơn.~~ Bằng chứng vẫn giữ nguyên: `grep -rn 'decideWarm\|WarmDecision' packages/` → không có hit. |
 | Hằng số port từ `pi-ref/packages/coding-agent/src/core/cache-warmer.ts` ở các dòng :16, :18, :20, :26, :29, :55-57, :252, :380-390, :387-398. | KHÔNG KIỂM CHỨNG ĐƯỢC — path không tồn tại | Không có thư mục `pi-ref/` trong checkout này. Mọi giá trị và mọi tuyên bố hành vi lấy nguồn từ file đó nằm ngoài repo và không thể kiểm tra từ đây. Hãy coi sáu hằng số là input **CHƯA KIỂM CHỨNG**: tự suy ra chúng từ tài liệu TTL và bảng giá chính thức của Anthropic theo từng tier, hoặc tìm package tham chiếu rồi dẫn nguồn. Đừng copy mù. Bằng chứng: `ls -d pi-ref` → không có thư mục như vậy. |
 | `cfgProvidersAnthropicSlowMode` ở `packages/coding-agent/src/session/settings.ts:860`. | STALE lệch 3 dòng | Nó ở `:863`. Khuôn cần copy là `register({ id, type: "enum", values: [...] as const, default: "off" as const })`. Lưu ý nó cố ý KHÔNG mang block `ui` — tiền lệ settings để theo là script-only, nên phải quyết rõ `providers.promptCacheRefresh` có UI `/settings` hay không. Bằng chứng: `grep -n cfgProvidersAnthropicSlowMode packages/coding-agent/src/session/settings.ts` → `:863`; `sed -n '855,870p'`. |
 | `Agent` phát `agent_end` ở `packages/agent/src/agent.ts:1921` và `:1925`, và giữ `AgentState.isStreaming` ở `packages/agent/src/types.ts:946`. | STALE — cả hai đều lệch | `agent_end` được phát ở agent.ts:1975 (nhánh thành công) và `:1979` (nhánh lỗi); `case "agent_end":` ở `:1843` là một construct khác. `AgentState.isStreaming` ở types.ts:954. Phần **NỘI DUNG** của plan là đúng và đây là phần chịu tải của tính năng phase: probe `() => (agent.state.isStreaming ? "streaming" : "idle")` là hợp lý, và `agent` thực sự đã có sẵn trong closure `streamFn` (`agent.state.tools` được đọc ở `:4105`). Bằng chứng: `grep -n agent_end packages/agent/src/agent.ts`; `grep -n isStreaming packages/agent/src/types.ts`; `sed -n '4104,4106p' packages/coding-agent/src/sdk.ts`. |
@@ -2980,7 +3020,7 @@ Tin câu của plan *"Effort đã chốt, không còn mở ... đây là một t
 | `packages/tui/src/app-keybindings.ts` | sửa | Thêm `"app.transcript.search": true` vào `interface AppKeybindings` (block dòng 26–65, member cuối `app.live.toggle` ở dòng 64) và một entry `KEYBINDINGS` với `defaultKeys "ctrl+shift+f"` ngay sau entry `"app.history.search"` ở dòng 236–239. **Không** sửa dòng 68. | **Có** — dòng 26 `interface AppKeybindings`; dòng 68 `export type AppKeybinding = keyof AppKeybindings` (tự suy ra, không cần sửa — plan nói ba chỗ sửa, thực tế là hai); dòng 86 `export const KEYBINDINGS = {`. |
 | `packages/coding-agent/src/modes/controllers/input-controller.ts` | sửa | Trong block `#globalEditorActionsListener` (bắt đầu dòng 319), thêm nhánh `app.transcript.search` cạnh nhánh `app.history.search` ở dòng 331–337: chặn bằng `hasOverlay()`, gọi `this.ctx.showTranscriptSearch()`, trả `{ consume: true }`. | **Có** — plan trích `:391` làm chặn overlay; `:391` thực ra nằm trong listener `app.tools.expand`. Chặn thật của history search là check `getFocused() instanceof HistorySearchComponent` ở `:332`. Nhánh mới không cần self-guard đó vì overlay này mount qua `showOverlay`, không phải `showSelector`. |
 | `packages/coding-agent/src/modes/controllers/selector-controller.ts` | sửa | Thêm `showTranscriptSearch()` cạnh `showCopySelector()` (dòng 1204). Dùng lại nguyên vẹn entry source (`getBranch().filter(isTranscriptEntry)`, dòng 1205), block deps `ChatTranscriptBuilder` (dòng 1217–1226) và mount fullscreen `showOverlay` (dòng 1249–1255). | **Có** — `showCopySelector` ở 1204, mount options ở 1249–1255, import `HistorySearchComponent` ở `:92` và `new HistorySearchComponent(...)` ở `:475`. `isTranscriptEntry` nằm ở `packages/coding-agent/src/session/session-context.ts:214`. |
-| `packages/tui/src/hotkeys-markdown.ts` | sửa | Thêm một dòng hotkey ngay sau dòng `app.history.search` ở dòng 79, nếu không thì binding không được tài liệu hoá ở đâu cả và người dùng không tìm ra được tính năng. | **Có** — dòng 79 là dòng `` | `${hotkeyLabel(bindings, "app.history.search")}` | Search prompt history | ``. |
+| `packages/tui/src/hotkeys-markdown.ts` | sửa | Thêm một dòng hotkey ngay sau dòng `app.history.search` ở dòng 79, nếu không thì binding không được tài liệu hoá ở đâu cả và người dùng không tìm ra được tính năng. | **Có** — dòng 79 là dòng `` \| `${hotkeyLabel(bindings, "app.history.search")}` \| Search prompt history \| ``. |
 | `packages/tui/test/transcript-search.test.ts` | tạo | Test hợp đồng cho index và máy trạng thái điều hướng. Không source-grep, không `mock.module`, không `not.toThrow()` trần. | **Chưa** — file không tồn tại ở HEAD. Quy ước thư mục test đã xác nhận: `packages/tui/test/` chứa 235 file `*.test.ts`. |
 | `packages/tui/CHANGELOG.md` | sửa | Một dòng dưới `[Unreleased]` > `Added`: `Ctrl+Shift+F` tìm kiếm trong transcript đã render. | **Chưa** — theo quy tắc changelog của AGENTS.md; không đọc để giữ context có giới hạn. |
 | `packages/coding-agent/CHANGELOG.md` | sửa | Một dòng dưới `[Unreleased]` > `Added`: keybinding mới nhìn thấy được từ phía người dùng. | **Chưa** — theo quy tắc changelog của AGENTS.md; không đọc để giữ context có giới hạn. |
@@ -3407,7 +3447,7 @@ không — `depends_on` rỗng và `blocks` rỗng. Không work item nào khác 
 | "pi ship hai lớp conformance để copy: `pi-ref/packages/agent/src/harness/session/testing/conformance/session-repo.ts` (1.185 LOC) và `pi-ref/packages/durable/src/testing/storage-conformance.ts` (1.520 LOC)." | **UNAVAILABLE** — cách đặt vấn đề "nhận cơ chế chứ không nhận mã" không thi hành được như đang viết | Không `pi-ref/` lẫn `packages/durable/` tồn tại trong repo này. Không có nguồn cục bộ để port, nên suite phải được **VIẾT MỚI** dựa trên hợp đồng `SessionStorage` của chính repo này, dùng file của pi chỉ như tham chiếu thiết kế nếu ai đó fetch chúng từ upstream. Hãy budget cho thiết kế từ đầu, không phải copy-and-adapt. Bằng chứng: `ls -d pi-ref` -> No such file or directory; `ls -d packages/durable` -> No such file or directory. |
 | "`IndexedSessionStorage` × một backend thật là một ô chưa test — cross-product mà item này đóng." | **SAI — ô đó không tồn tại trong kiến trúc này** | `SqlSessionStorage extends IndexedSessionStorage` và `RedisSessionStorage extends IndexedSessionStorage`. Indexed không phải backend ngang hàng để cross với SQL/Redis; nó là **superclass chung** của chúng, và `indexed × real backend` là **duy nhất** cách wiring production đang tồn tại. Regression đầu bản của plan (test item 2) dựng trên tiền đề sai và không thể đặc tả như đang viết. Khoảng trống thật, xác minh được, hẹp hơn nhiều và chính là cái bước 7 nhắm tới: lịch F1 late-atomic-rollback và ma trận hồi phục transient-failure tới giờ chỉ chạy trên `GatedBackend` / `FakeBackend`, chưa từng chạy trên nhánh conflict thật của `SqlSessionStorageBackend.writeFull`. Bằng chứng: `sql-session-storage.ts:262` `export class SqlSessionStorage extends IndexedSessionStorage`; `redis-session-storage.ts:109` `export class RedisSessionStorage extends IndexedSessionStorage`; `indexed-session-storage.ts:118` `export class IndexedSessionStorage implements SessionStorage`. |
 | "Không backend thật nào được test với hợp đồng CAS token, nên một suite xanh trên ba backend sẽ đóng khoảng trống." | **SAI MỘT PHẦN — coverage CAS trên SQL thật đã tồn tại** | `packages/coding-agent/test/session/sql-session-storage-manager.test.ts:128` đã khẳng định `SessionWriteConflictError` trên một kết nối SQLite in-memory `Bun.SQL` **thật**, đi qua `IndexedSessionStorage` và `SessionManager.rewriteEntries()`. Đừng tranh luận lại CAS-trên-SQL như coverage mới; khoảng trống thật là (a) lịch F1 và ma trận hồi phục lỗi chưa từng chạy trên backend thật, (b) `readTextSlices` chưa từng chạy trên `RedisSessionStorage` dù chỉ một lần, và (c) hai sai lệch `move`/`readSlices` nêu dưới. Bằng chứng: `it("rejects a stale rewrite after another SQL storage appends", ...)` -> `await expect(first.rewriteEntries()).rejects.toBeInstanceOf(SessionWriteConflictError)`; `grep -rn readTextSlices test/` trả hit ở `memory-session-storage.test.ts` và `sql-session-storage.test.ts:281` nhưng **không** hit nào ở `redis-session-storage.test.ts`. |
-| "Tạo case factory tại `packages/coding-agent/src/session/storage-conformance.ts`." | **SAI VỊ TRÍ** cho repo này | Đặt tại `packages/coding-agent/test/session/storage-conformance.ts`. 81 module helper chỉ-dùng-cho-test nằm dưới `test/`, không phải `src/`, và export map `"./*" -> "./src/*.ts"` của package sẽ publish module test ra tới mọi consumer. Vị trí sibling-of-test khớp với tiền lệ `test/session-manager/helpers.ts`. Bằng chứng: `find test -name '*.ts' ! -name '*.test.ts' | wc -l` -> 81. |
+| "Tạo case factory tại `packages/coding-agent/src/session/storage-conformance.ts`." | **SAI VỊ TRÍ** cho repo này | Đặt tại `packages/coding-agent/test/session/storage-conformance.ts`. 81 module helper chỉ-dùng-cho-test nằm dưới `test/`, không phải `src/`, và export map `"./*" -> "./src/*.ts"` của package sẽ publish module test ra tới mọi consumer. Vị trí sibling-of-test khớp với tiền lệ `test/session-manager/helpers.ts`. Bằng chứng: `find test -name '*.ts' ! -name '*.test.ts' \| wc -l` -> 81. |
 | "Test mới: `test/session/sql-storage-conformance.test.ts`, `test/session/redis-storage-conformance.test.ts`, `test/session/indexed-over-real-backend.test.ts`." | **CỐ Ý GỘP (2 file, không phải 3)** | Cả hai backend thật là subclass của `IndexedSessionStorage` với tập nhóm **giống hệt**, nên một `storage-conformance.test.ts` duy nhất với một `describe` mỗi backend vừa nhỏ hơn vừa biến việc cắt Wave 6 thành **xoá một file** — đúng mục đích mà wave tuyên bố. Failure vẫn truy được nguồn vì mỗi backend giữ `describe` riêng. Bằng chứng: cả hai delegate `super(backend)` — `sql-session-storage.ts:277-282` và `redis-session-storage.ts:116-120`. |
 | "Các file fake-backend sẵn có cần đối chiếu là `test/session/session-manager-indexed-durability.test.ts` và `test/indexed-late-atomic-rollback.test.ts`." | **SAI MỘT ĐƯỜNG DẪN** | `indexed-late-atomic-rollback.test.ts` nằm ở `test/session/indexed-late-atomic-rollback.test.ts`, không phải ở gốc `test/`. Cả hai file phải tiếp tục pass mà không đổi; conformance suite là phần cộng thêm và **không được** sửa chúng. Bằng chứng: `ls packages/coding-agent/test/session/indexed-late-atomic-rollback.test.ts` -> có (4.8 KB, 146 dòng, 1 test). |
 | "Lệnh xác minh là `bun check && bun test <ba file>`." | **BỊ CHẶN BỞI MÔI TRƯỜNG** như đang viết | `bun test` không chạy được ở HEAD khi chưa có native addon. Đã xác minh: `bun test packages/coding-agent/test/session/indexed-late-atomic-rollback.test.ts` -> `0 pass / 1 fail`, `error: Failed to load pi_natives native addon for darwin-arm64`. Build trước bằng `bun --cwd=packages/natives run build`. `bun run check:ts` đã chạy và pass sạch (5445 files formatted, mọi package `Done`) và là xác minh **duy nhất** khả dụng trước khi addon tồn tại. Bằng chứng: `find . -name '*.node' -not -path '*/node_modules/*'` -> không có kết quả. |
@@ -3673,7 +3713,7 @@ Ba lối gần kế, theo thứ tự:
 | "Đăng ký slash-command trong registry hiện có cạnh `packages/coding-agent/src/slash-commands/helpers/usage-report.ts`." (plan:2009) | WRONG ANCHOR | `helpers/usage-report.ts` là helper dựng chuỗi text — export duy nhất là `buildUsageReportText(runtime: SlashCommandRuntime)` tại dòng 167. Nó không phải registry và không có gì được đăng ký "cạnh" nó. Slash command được khai báo dưới dạng object trong các module `builtin-*.ts` và gộp lại bởi spread `BUILTIN_SLASH_COMMAND_REGISTRY` tại `builtin-registry.ts` dòng 39-47. Nhà đúng cho một lệnh chẩn đoán là `builtin-lifecycle.ts`, ngay sau lệnh `debug` hiện có (object `{ name: "debug", ... }` tại dòng 545-553, vốn đã mang `icon: "bug"`). |
 | `getCrashLogPath` tại `packages/utils/src/dirs.ts:955` phân giải `~/.omp/agent/omp-crash.log` và có zero consumer, nên W17 nên tạo module mới thay vì sửa module có sẵn. (plan:1993-2006) | CONFIRMED IN FULL | Mọi thành phần đều đã kiểm. `getCrashLogPath` ở dòng 955 với thân `return dirs.agentSubdir(agentDir, "omp-crash.log", "state")`; `git grep -n getCrashLogPath -- packages/` trả về đúng một dòng, chính là định nghĩa; `git grep -rln 'crash-log\|crashLog' -- packages/` trả về đúng một file, `packages/natives/CHANGELOG.md`; và `packages/coding-agent/src/core/crash-log.ts` không tồn tại. Kết luận — tạo `diagnostics/crash-log.ts` thay vì sửa — là đúng. |
 | `crash-log.ts` của pi là mô hình để port (169 LOC). | TRUE BUT OVER-SIZED FOR omp | Nguồn port có thật (169 LOC, đã đọc hết), nhưng ~65 dòng là `findExtensionStackMatches` cùng hai path helper của nó (`normalizeStackPath`, `stackContainsPath`), phụ thuộc vào hình dạng `Extension.sourceInfo.{origin,source,baseDir,scope}` của pi. Record extension của omp có hình dạng khác, nên hàm đó không thể port mù. Lõi thật sự mang được là ~100 dòng còn lại: `CrashRecord`, trần 5 bản ghi, `MAX_AGE` 7 ngày, `readCrashLog`, `recordCrash`, `takeUnnotifiedCrash`, `clearCrashLog`. Spec này hoãn extension matcher — xem mục Cần người quyết. |
-| Bundle nên được zip, và lựa chọn giao là upload vs. zip cục bộ. (plan:1988-1990, 2010-2011) | CORRECT, nhưng plan hàm ý thiếu một khả năng đã có | Zip có sẵn ở trung tâm — `writeArchive(destPath, "zip", entries)` trong `@oh-my-pi/pi-utils/ar`. **Không** thêm dependency: `adm-zip` và `tar` chỉ xuất hiện trong node_modules như transitive dep (`onnxruntime-node` kéo adm-zip; `fastembed` kéo tar) và **không** package.json workspace nào khai báo chúng. Cũng đừng port `packages/coding-agent/src/utils/zip.ts` tự chế của pi — nó dựng ZIP classic bằng `deflateRawSync` bằng tay, trùng lặp với một helper trung tâm mà AGENTS.md cấm. |
+| Bundle nên được zip, và lựa chọn giao là upload vs. zip cục bộ. (plan:1988-1990, 2010-2011) | CORRECT, nhưng plan hàm ý thiếu một khả năng đã có | Zip có sẵn ở trung tâm — `writeArchive(destPath, "zip", entries)` trong `@oh-my-pi/pi-utils/ar`. **Không** thêm dependency: `adm-zip` và `tar` chỉ xuất hiện trong node_modules như transitive dep (`onnxruntime-node` kéo adm-zip; `fastembed` kéo tar) và **không** package.json workspace nào khai báo chúng. Cũng đừng port `pi-ref/packages/coding-agent/src/utils/zip.ts` tự chế của pi — **đường dẫn đó thuộc repo thượng nguồn `pi`, không phải repo này** (`packages/coding-agent/src/utils/zip.ts` không tồn tại ở đây). Nó dựng ZIP classic bằng `deflateRawSync` bằng tay, trùng lặp với một helper trung tâm mà AGENTS.md cấm. |
 | Phần tóm tắt hội thoại do LLM viết là một phần của bundle. (plan:1988-1989, 2012-2013) | TRUE, nhưng bản port KHÔNG được nguyên văn | pi giữ prompt tóm tắt dưới dạng hai hằng template-literal nội tuyến, `BUG_SUMMARY_SYSTEM_PROMPT` và `BUG_SUMMARY_INSTRUCTIONS` (bug-report.ts:316-333). AGENTS.md cấm dựng prompt trong code — prompt phải nằm trong file `.md` tĩnh với Handlebars cho phần động, import `with { type: "text" }`. Nên prompt này phải được tách ra thành `packages/coding-agent/src/prompts/diagnostics/bug-summary.md` trong lúc port. Cấu trúc bốn mục của nó (What the user was doing / What went wrong / Steps to reproduce / Relevant details) và ràng buộc kết ('Do not include file contents, secrets, or credentials from the transcript; refer to files by path only') nên được giữ nguyên văn trong file `.md`. Quy ước `with { type: "text" }` đã xác nhận tại `packages/coding-agent/src/advisor/advise-tool.ts:13` và `auto-thinking/classifier.ts:18`. |
 | Plan không nói crash writer gắn ở đâu, và hàm ý một process handler thô. (plan:2004-2006, im lặng về wiring) | OMISSION — một rủi ro wiring thật | omp đã dồn SIGINT/SIGTERM/SIGHUP/uncaughtException qua `@oh-my-pi/pi-utils/postmortem`. Thêm `process.on("uncaughtException")` thô sẽ tranh với teardown sẵn có và là rủi ro hồi quy. Điểm gắn đúng là `postmortem.register(id, callback)` (dòng 661) cho đường cleanup/exit và `interceptUnhandledRejections(interceptor)` (dòng 453) cho các rejection lẽ ra giết phiên. Lưu ý thêm: `packages/coding-agent/src/session/session-teardown.ts` được nhắc trong comment ở `modes/interactive-mode.ts:1600` và `extensibility/extensions/managed-timers.ts:7` nhưng **không tồn tại** tại HEAD — đừng đi tìm nó. `git grep -rn 'uncaughtException' -- packages/coding-agent/src packages/utils/src` không trả về chỗ đăng ký `process.on("uncaughtException")` nào. |
 | W17 đưa redaction contract vào như thể không có gì tương đương trong omp. (plan:1978-1980) | INCOMPLETE — có tiền lệ và phải gọi tên | omp đã ship sẵn một redactor theo tên key: `SECRET_KEY` khai báo tại `packages/coding-agent/src/mcp/errors.ts:45` (regex literal ở dòng 46) và `sanitizeData` đệ quy tại `:100` thay giá trị dưới key khớp bằng `[redacted]` (phép thay ở `:117`), có giới hạn độ sâu/số entry và phát hiện vòng lặp. Nó là module-private — `grep -n '^export'` trên file đó cho 8 export, không cái nào là `sanitizeData` hay `SECRET_KEY`. Nó cố ý **LỎNG** hơn quy tắc của plan (so khớp substring, không chuẩn hoá camelCase, và comment của nó nói các tên ghép như `clientSecret` và `signingSecret` phải được xếp là secret). Vậy W17 là port-và-siết, không phải hiện thực lần đầu, và module mới phải là nơi mang quy tắc chặt hơn, có anchor biên. Theo AGENTS.md, hai hiện thực là thứ cần về sau dọn dẹp, nhưng bản của mcp nuôi output lỗi sống, nên refactor là việc theo sau chứ không phải W17. `git grep -rn SENSITIVE_KEY -- packages/` → **không** hit, xác nhận quy tắc đúng như plan chưa tồn tại. |
@@ -3684,26 +3724,610 @@ Ba lối gần kế, theo thứ tự:
 ---
 
 
+## W18. GAP-M1-18 — `omp doctor`: một lệnh chẩn đoán, hai lối ra, tự thừa nhận chỗ nó mù
+
+**Thay đổi gì:** Biến `runDoctorChecks` + `formatDoctorResults` — hai export đang chết trong `extensibility/plugins/doctor.ts` — thành một bề mặt chẩn đoán thật: một module thu thập check **không phụ thuộc TUI** trả `readonly DoctorCheck[]` (mỗi phần tử có `severity` + `name` + `detail` + `remedy`), một bảng registry trong đó mỗi check là một hàm thuần, và **hai lối ra dùng chung một module** — `omp doctor` (stdout, `exit 0\|1`) và một mục trong `/debug`. Kèm header tự cảnh báo (check nào hỏng tiền đề thì in "không kiểm được X vì Y" thay vì im lặng bỏ qua) và `mkdirSync` với `mode: 0o700` cho thư mục log.
+*(Mục `GAP-M1-18` của `.lavish-wip/GAP-REGISTER-2.md`, gộp từ `codex.127` + `dsh.105` + `gajae.33` + `gajae.106` — ba phát biểu khác nhau về cùng một lệnh, giữ ba mục nghĩa là ba lần sửa cùng một tệp ở ba milestone khác nhau.)*
+
+**Wave:** Wave 8. Sổ đăng ký xếp mục này "ngay sau W17" — nó không chặn gì, và M1 không có tiền lệ (W13, W17 không chặn gì), nên làm ở đây thì dead code có consumer thật sớm nhất. Lý do **không** đặt ở M4 Wave D như đề xuất ban đầu: M4-9 (`omp extensions-triage`) đang mở đúng đường `cli-commands.ts` mà `doctor` cũng cần, và bảng cổng của M4-9 tự nói rằng "Command có thật sự được đăng ký hay không" là thứ **không cổng nào bắt được** — đặt hai lệnh mới vào cùng một milestone làm một điểm mù không có test bắt trở thành hai.
+
+**Effort:** M.
+
+**Người dùng thấy:** `omp doctor` trở thành một lệnh thật: in ra một bảng check có `severity` + `detail` + `remedy`, và **tự nói ra chỗ nó mù** — check nào không chạy được vì tiền đề hỏng thì in lý do thay vì im lặng bỏ qua và báo xanh. `~/.omp/logs` được tạo với `mode: 0o700` thay vì theo umask, và `doctor` báo ra mode thật. Cùng một module đó xuất hiện trong `/debug`.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/extensibility/plugins/doctor.ts` | sửa | Tách `runDoctorChecks` (dòng 5) thành module thu thập check không phụ thuộc TUI, trả `readonly DoctorCheck[]` có `severity` + `name` + `detail` + `remedy`. Thêm bảng registry check, mỗi check là một hàm thuần. `formatDoctorResults` ngồi cạnh giữ vai trò định dạng. **Giữ nguyên export** kể cả sau khi có consumer. | Có — `runDoctorChecks` đúng **1 hit toàn repo**, là chính dòng định nghĩa; `formatDoctorResults` cũng chết. |
+| `packages/coding-agent/src/cli-commands.ts` | sửa | Thêm mục `doctor`. Điều kiện bảo toàn tuyệt đối: thiếu mục này thì `omp doctor` rơi xuống `runCli` và **argv thành prompt cho LLM** (hồi quy #1499/#1496). Merge cùng W22. | Có — 49 lệnh cấp một; `grep -c 'name: "doctor"'` → **0**. |
+| `packages/coding-agent/src/images-cli.ts` | **không sửa** (đọc làm khuôn) | `ImagesDoctorResult` (`:136-145`) đã có sẵn `exitCode` + `healthy` + `checks` — dùng lại làm khuôn, không phát minh shape mới. | Có |
+| `packages/coding-agent/src/extensibility/plugins/plugin-cli.ts` | **không sửa** | `plugin-cli.ts:32` là doctor thứ hai hẹp đang có; verb `doctor` ở `:672` phải giữ nguyên hành vi. | Có |
+| `packages/utils/src/logger.ts` | sửa | Dòng 171: `fs.mkdirSync(dir, { recursive: true })` thêm `mode: 0o700`. Phải **giữ nguyên** `recursive: true` — chỉ thêm `mode`. | Có |
+| `packages/coding-agent/test/doctor/doctor.test.ts` | tạo | Hợp đồng: hai lối ra dùng chung một module; header tự cảnh báo; check credential chỉ báo có/không. Chi tiết ở mục *Hợp đồng test*. | **không** — file mới, hư mục `test/doctor/` chưa tồn tại; chưa chạy được hôm nay vì native addon chưa build |
+
+### Các bước
+
+1. **Chốt danh sách check TRƯỚC khi viết dòng nào** — đây là `GAP-D4`, xem mục *Cần người quyết*. Danh sách đã chốt trong sổ: config parse + `assertKnownSettingPaths`; credential reachability cho provider đang chọn (**chỉ báo có/không, không in giá trị**); parity `patches/*.patch` ↔ `package.json.patchedDependencies`; thư mục log; số extension active; `PATH`/`which` cho `git`; native addon đã build chưa. **Không** đưa vào: probe network, sandbox, bất kỳ thứ gì cần network.
+2. **Tách module thu thập check** khỏi bất kỳ thứ gì của TUI. `runDoctorChecks` trả `readonly DoctorCheck[]`; `formatDoctorResults` nhận đúng mảng đó. Giữ nguyên tên export.
+3. **Bảng registry check**, mỗi check là một hàm thuần — không check nào được tự ghi vào global hay đọc TUI.
+4. **Hai lối ra dùng chung một module**: `omp doctor` (stdout, `exit 0\|1`) và một mục trong `/debug`. Đây là bước biến một script thành một hợp đồng test được.
+5. **Header tự cảnh báo** (từ `dsh.105`): check nào hỏng tiền đề thì in "không kiểm được X vì Y" thay vì im lặng bỏ qua. **Áp dụng bắt buộc cho check ledger** — nếu GAP-M4-10 (sổ bản vá phụ thuộc cục bộ, M4) chưa merge, check phải nói *đó*, không được báo xanh.
+6. **`mkdirSync` với `mode: 0o700`** tại `packages/utils/src/logger.ts:171`, giữ `recursive: true`; thêm một dòng trong doctor báo mode thật.
+7. **Thêm mục `doctor`** vào `cli-commands.ts` — cùng đợt merge với W22, và dùng chung **một** assertion phân tuyến với W22.
+8. **Viết test** theo *Hợp đồng test* dưới đây.
+9. **Build native addon rồi chạy toàn bộ cổng**: `bun --cwd=packages/natives run build`, `bun run check:ts`, `bun test packages/coding-agent/test/doctor/`.
+
+### Hình dạng code
+
+```typescript
+// packages/coding-agent/src/extensibility/plugins/doctor.ts — thu thập check KHÔNG
+// phụ thuộc TUI. `omp doctor` và mục trong `/debug` gọi ĐÚNG module này; tách
+// thành hai bản thì bước "biến một script thành một hợp đồng test được" là vô nghĩa.
+export interface DoctorCheck {
+	// Tập giá trị của `severity` CHƯA chốt — nó là một phần của GAP-D4 và phải
+	// có trước bước 1, không phải sau. Đừng tự chọn rồi coi như đã chốt.
+	readonly severity: string;
+	readonly name: string;
+	readonly detail: string;
+	readonly remedy: string;
+}
+
+export function runDoctorChecks(): readonly DoctorCheck[] { /* … bảng registry … */ }
+export function formatDoctorResults(checks: readonly DoctorCheck[]): string { /* … */ }
+
+// Khuôn có thật để đối chiếu, không phát minh: ImagesDoctorResult tại
+// packages/coding-agent/src/images-cli.ts:136-145 đã có sẵn
+// exitCode + healthy + checks.
+```
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: **cùng một tập `name` đi ra từ cả hai lối ra**, và một check không chạy được thì **nói ra là không chạy được** chứ không biến mất.
+
+- **(1)** `omp doctor` và mục `/debug` trả cùng một tập `name`, theo cùng một thứ tự. Đây là case bắt được việc tách hai bản module — dạng hỏng đó xanh hoàn toàn vì mỗi bản tự đúng với chính nó.
+- **(2)** Khi tiền đề của một check hỏng (ví dụ ledger `patches/*.patch` chưa có nguồn), output phải chứa dòng "không kiểm được X vì Y" và **không** được chứa một dòng báo xanh cho X. Assert **cả hai chiều cùng lúc** — assert thiếu dòng cảnh báo thì im lặng vẫn xanh, assert có dòng cảnh báo thì báo xanh song song vẫn xanh.
+- **(3)** Check credential reachability: assert output **có** nói provider đang chọn tới được hay không, và assert giá trị key **không** xuất hiện. Đây là bản âm phủ định của hợp đồng "chỉ báo có/không, không in giá trị".
+- **(4)** `exit 0\|1` là hợp đồng: có check lỗi thì `exit 1`, sạch hết thì `exit 0`. Chỉ assert `exit 0` là xanh tầm thường.
+- **(5)** Danh sách check ở bước 1 là một hợp đồng của riêng nó: **mọi check thêm sau này phải tự chứng minh bằng một test** — không thêm check chỉ vì "thông tin này hữu ích". Đây là nửa còn lại của `GAP-D4` và nó không tự kiểm được, nên nó là quy tắc review chứ không phải assertion.
+
+Người dùng vỡ nếu hồi quy là `doctor` báo xanh trên một máy mà ledger đã hỏng, và người đó tin báo cáo rồi debug sai chỗ cả buổi.
+
+### Xác minh
+
+```bash
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
+bun --cwd=packages/natives run build
+bun run check:ts
+bun test packages/coding-agent/test/doctor/
+grep -c 'name: "doctor"' packages/coding-agent/src/cli-commands.ts   # phải ≥ 1, không phải 0
+bun run doctor     # exit 0|1; exit 1 thì kiểm tra remedy có nghĩa không
+```
+
+### Cổng hoàn thành
+
+W18 xong khi **tất cả** các điều dưới đây đều đúng, và cổng này **có thể đỏ** — mỗi dòng đỏ nếu phần công việc tương ứng bị thiếu:
+
+1. `grep -c 'name: "doctor"' packages/coding-agent/src/cli-commands.ts` ≥ **1**. Đây là dòng đỏ đầu tiên và rẻ nhất: thiếu mục này thì `omp doctor` rơi xuống `runCli` và argv thành prompt cho LLM.
+2. `bun run doctor` trả `exit 1` khi có check `severity` lỗi và `exit 0` khi sạch — cả hai vế trong cùng một đợt.
+3. `bun test packages/coding-agent/test/doctor/` xanh, và case (2) đỏ **riêng** nếu xoá nhánh header tự cảnh báo (bằng chứng nâng đỡ: xoá nhánh đó, xác nhận đúng case (2) đỏ, khôi phục lại).
+4. `plugins/doctor.ts` vẫn export `runDoctorChecks` và `formatDoctorResults` sau khi có consumer. Không assert bằng source-grep trong test — kiểm bằng import.
+5. `fs.mkdirSync` ở `packages/utils/src/logger.ts` **vẫn còn `recursive: true`** và đã có `mode: 0o700`.
+6. Ba verb `doctor` sẵn có (`plugin-cli.ts:672`, `images-cli.ts:546`) giữ nguyên hành vi — `bun test` các suite `images`/`plugin` hiện có vẫn xanh.
+7. `bun run check:ts` xanh (không dùng `tsc` / `npx tsc`).
+
+**Giới hạn nói thẳng:** `bun test` **không** chạy được trong checkout này cho tới khi `bun --cwd=packages/natives run build` đã chạy — nó báo `0 pass, 1 fail` với "Failed to load pi_natives native addon for darwin-arm64". Cổng thật duy nhất chạy được ngay là `bun run check:ts` cộng dòng `grep` ở điều 1. **Đừng ghi work item này là xong chỉ dựa trên type-check.**
+
+### Phụ thuộc
+
+- `depends_on`: không.
+- `blocks`: không work item nào trong M1. Nhưng W22 sửa **cùng file** `cli-commands.ts` và sổ bắt buộc hai cái dùng **một** assertion phân tuyến, nên chúng phải mở chung một đợt.
+
+### Cách sai dễ nhất
+
+**Biến `doctor` thành cái bẫy check tự phát.** `GAP-D4` gọi thẳng đây là "cái bẫy kinh điển vì mọi tính năng mới đều muốn thêm một check" — và mỗi check thêm vào mà không tự chứng minh bằng test làm bảng cổng dài ra cho tới khi không ai còn đọc, đúng thứ bảng cổng của M4-9 đã tự mô tả. Cách sửa là quy tắc, không phải code: chốt danh sách ở bước 1, sau đó mọi check mới phải mang theo test của nó và được review như một dòng mới trong hợp đồng.
+
+Hai lối gần kế:
+- **Cho một check hỏng tiền đề báo xanh.** Đây là hỏng âm thầm đúng kiểu item này sinh ra để chặn: ledger chưa có nguồn thì phải in "không kiểm được X vì Y", không được bỏ qua im lặng.
+- **Tách `omp doctor` và `/debug` thành hai module.** Mỗi bản tự xanh với chính nó, và test cũng xanh vì chẳng test cái gì về bản kia — trong khi đúng thứ cần bảo vệ là chúng là **một** module.
+
+### Cần người quyết
+
+- **`GAP-D4` — chốt danh sách check trước khi viết dòng nào.** Câu hỏi: *`doctor` là cái bẫy kinh điển vì mọi tính năng mới đều muốn thêm một check.* Phương án trong sổ: chốt danh sách ở bước 1; **mọi check sau đó phải tự chứng minh được bằng một test** — không thêm check chỉ vì "thông tin này hữu ích"; và cần một quy tắc ghi vào **PR template**, không chỉ ý định miệng. Đây là quyết định **chặn bắt đầu** vì nó quyết định bước 1 có gõ được hay không.
+- **Thứ tự merge với W22 là bắt buộc**, không phải khuyến nghị: cả hai sửa `cli-commands.ts`, và bảng cổng đỏ phải chứa **một** assertion *"mọi subcommand trong registry thật sự được phân tuyến"*, không phải hai assertion riêng. Lý do rất cụ thể: một lệnh thiếu trong `cli-commands.ts` rơi xuống `runCli` và argv thành prompt cho LLM — đó là hậu quả im lặng, và hai assertion rời rạc sẽ cho phép nó quay lại.
+- **Thứ tự với W21 không quan trọng, nhưng phải nói rõ trong PR rằng `doctor` chạy trong tiến trình đã harden** — `dumpable=0` nghĩa là một check muốn đọc core dump sẽ không được.
+
+### Đính chính so với plan
+
+> Bảng này đính chính các claim của **`.lavish-wip/GAP-REGISTER-2.md`** (mục `GAP-M1-18`), không phải của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`.
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "`cli-commands.ts` đăng ký 50 command" (mục `GAP-M1-18`) | SAI CON SỐ | Số thật là **49**. Con số 50 đếm bằng `grep -c 'name: "'`, tức tính cả tên option lồng nhau. Đo lại: `grep -oE '^\s+name: "[a-z0-9-]+"' packages/coding-agent/src/cli-commands.ts \| sort -u \| wc -l` → 49. Kết luận không đổi: `doctor` vẫn không có. Đính chính này do chính mục `GAP-M1-22` của sổ đưa ra, và W22 ghi lại. |
+| "M3 đã **chủ động loại** cái này khỏi phạm vi (`:2013`, `:2552` — 'dead code thấy lúc đi ngang, cố ý KHÔNG vào scope')" (mục `GAP-M1-18`) | ĐÚNG, NHƯNG CHỈ NÓI VỀ M3 | Việc loại có thật, nhưng nó là quyết định của **M3**, và sổ kết luận "nên nó không thuộc đợt nào" — tức là nó rơi vào khoảng trống giữa các milestone, không phải vào phạm vi của M3. `GAP-REGISTER-2` xếp lại nó vào M1. Kỹ sư đọc trích dẫn M3 mà không đọc vế sau sẽ kết luận sai rằng item này bị loại vĩnh viễn. |
+| "Nửa còn lại của `dsh.105` cũng thiếu: `packages/utils/src/logger.ts:171` gọi `fs.mkdirSync(dir, { recursive: true })` không truyền `mode`, nên `~/.omp/logs` theo umask." | CONFIRMED, và ràng buộc đi kèm là của sổ | Sửa phải **thêm `mode: 0o700`**, tuyệt đối không được bỏ `recursive: true` — nếu mất nó thì lần chạy đầu tiên với thư mục log chưa tồn tại sẽ ném `ENOENT`. Đây là điều kiện bảo toàn, không phải chi tiết tuỳ chọn. |
+| "Ba doctor còn lại đều hẹp: `IMAGES_ACTIONS` (`images-cli.ts:50`) và `plugin-cli.ts:32`" | ĐÚNG, VÀ NÓ LÀ KHUÔN | Sổ gọi `ImagesDoctorResult` (`images-cli.ts:136-145`, đã có sẵn `exitCode` + `healthy` + `checks`) là "khuôn có thật — dùng lại, không phát minh". Hình dạng `DoctorCheck` của W18 phải đọc được qua khuôn đó, không phải một hình dạng thứ ba cạnh nó. |
+| "Pháp lý: chỉ mang ý tưởng, không chép dòng nào" | CONFIRMED — và nên giữ nguyên lập trường | `codex-rs/cli/src/doctor.rs` là 4.352 dòng Rust mô tả sản phẩm có hàng trăm biến môi trường quản trị (managed-env, spoofed version) — á vào omp là vô nghĩa. Nhánh Apache-2.0 của codex: nếu lấy bất kỳ dòng nào thì bắt buộc giữ `LICENSE` 201 dòng + `NOTICE` (**dòng ghi công Ratatui theo MIT trong `NOTICE` — xoá là vi phạm Điều 4(d)**) + tuyên bố đã sửa đổi. `dsh` MIT, `gajae` MIT thuần. **Khuyến nghị: không lấy dòng nào** — phần duy nhất đáng học là *tính tụ lệnh*, mà omp đã có sẵn khuôn. |
+
+
+---
+
+## W19. GAP-M1-19 — Cấm `console.*` ở tầng thư viện bằng lint, thay vì bằng quy ước trong `AGENTS.md`
+
+**Thay đổi gì:** Chuyển quy tắc "cấm `console.*` ở tầng thư viện" từ văn xuôi trong `AGENTS.md` xuống tầng lint: thêm `eslint/no-console: "error"` vào `.oxlintrc.json` với `overrides` allow-list **theo đường dẫn** cho đúng các entrypoint CLI mà `AGENTS.md` đã cho phép, sửa các file còn lại sang `logger`, và khoá allow-list bằng **test** chứ không bằng lint-ignore — để "vì sao file này được phép" trở thành giá trị quan sát được.
+*(Mục `GAP-M1-19` của `.lavish-wip/GAP-REGISTER-2.md`, nguồn `codex.57`.)*
+
+**Wave:** Wave 8. Sổ xếp "cùng sóng với W13" (Wave 2) vì cùng là một thay đổi kỷ luật nhỏ và độc lập tuyệt đối — nó không import gì của W13, không chạm file nào W13 chạm.
+
+**Effort:** S — nửa ngày. Tỉ lệ giá trị/công sức cao nhất trong toàn sổ.
+
+**Người dùng thấy:** Không có bề mặt mới. Đây là hàng rào cho những người viết sau: hôm nay `packages/ai/src/providers/cursor.ts:405` gọi `console.*` trong **provider wire code** — đúng loại lỗi mà `AGENTS.md` mô tả là "hỏng rendering hoặc hỏng protocol cho mọi consumer cùng lúc" — và quy tắc chỉ tồn tại bằng văn xuôi nên không có gì ngăn nó.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `.oxlintrc.json` | sửa | Thêm `eslint/no-console: "error"` cộng `overrides` **allow-list theo đường dẫn** cho `packages/*/src/cli/**`, `packages/*/src/commands/**`, `packages/metaharness/src/tb/cli.ts`. **Không** dùng `ignorePatterns` cho việc này. | Có — `grep -c 'no-console' .oxlintrc.json` → **0**; file đã có sẵn `ignorePatterns` 24 dòng. |
+| `packages/ai/src/providers/cursor.ts` | sửa | Dòng 405: `console.*` trong **provider wire code** — đổi sang `logger`. Đây là case đáng chú ý nhất trong danh sách vì nó nằm đúng trên đường wire. | Có |
+| `packages/mnemopi/src/core/migrations/e6-triplestore-split.ts` | sửa | Dòng 149 và 156 đang dùng `console.log` làm **default parameter** (`logFn: (line: string) => void = console.log`) — cần đổi thành **sink rõ ràng, không phải đổi tên**. | Có |
+| các file thư viện còn lại | sửa | `git grep -l 'console\.\(log\|error\|warn\|info\|debug\)' -- 'packages/*/src/**/*.ts' \| wc -l` → **33 file** dính trước khi rule bật; phần cần sửa tay sau khi các entrypoint được override là **~10 file**. Lấy danh sách bằng lệnh, đừng đoán. | Có — con số 33 đo được |
+| `packages/tui/**` | **không sửa** | TUI đã sạch (`tab-bar.ts:54` chỉ là `console.log` trong *chú thích JSDoc*, không phải mã chạy) — **không** cần override. | Có |
+| `packages/coding-agent/test/lint-no-console-allowlist.test.ts` | tạo | Allowlist **bằng test**, không bằng lint-ignore: mỗi đường dẫn được phép phải trả lời được "vì sao được phép". | **không** — file mới, chưa kiểm chứng |
+
+### Các bước
+
+1. **Thêm rule và `overrides`.** `eslint/no-console: "error"` ở cấp gốc; `overrides` theo đường dẫn cho đúng ba nhóm entrypoint nêu trong bảng file. **Đừng** đưa entrypoint vào `ignorePatterns`: file đã có sẵn 24 dòng đó, và đưa vào sẽ tắt **mọi** rule khác trên các file đó, không chỉ `no-console`.
+2. **Sửa các file còn lại sang `logger`.** Riêng `mnemopi/src/core/migrations/e6-triplestore-split.ts:149,156` cần một sink rõ ràng — `console.log` làm default parameter thì đổi tên không sửa được gì.
+3. **Allowlist bằng test**, không bằng lint-ignore.
+4. **Cổng đỏ ngay:** thêm một `console.log` vào bất kỳ file thư viện nào, chạy `bun run lint`, xác nhận đỏ, xoá nó. Sổ nói thẳng: không cần test nào khác để chứng minh item này.
+5. Chạy `bun run check:ts` cho phần type/format.
+
+### Hình dạng code
+
+```jsonc
+// .oxlintrc.json — CHỈ phần liên quan. KHÔNG thêm entrypoint vào `ignorePatterns`:
+// `ignorePatterns` tắt mọi rule trên các file đó, không chỉ `no-console`.
+{
+	"rules": {
+		"eslint/no-console": "error"
+	},
+	"overrides": [
+		{
+			"files": ["packages/*/src/cli/**", "packages/*/src/commands/**", "packages/metaharness/src/tb/cli.ts"],
+			"rules": { "eslint/no-console": "off" }
+		}
+	]
+}
+```
+
+### Hợp đồng test
+
+Hợp đồng quan sát được: một `console.*` mới ở tầng thư viện làm lint đỏ, và mỗi đường dẫn được miễn phải có một lý do được nêu tên trong test.
+
+- **(1)** Thêm `console.log` vào một file thư viện bất kỳ → `bun run lint` đỏ. Đây là bằng chứng nâng đỡ: cổng phải đỏ **trước** khi xoá dòng đó. Bằng chứng nâng đỡ bắt buộc theo quy ước của tài liệu này.
+- **(2)** Allowlist được khoá bằng test: một đường dẫn nằm trong `overrides` mà không có lý do tương ứng trong test là test đỏ. Đây là lý do sổ bắt khoá allowlist bằng test thay vì lint-ignore — lint-ignore không trả lời được "vì sao file này được phép".
+- **(3)** Chiều ngược: một entrypoint CLI **có** dùng `console.*` vẫn phải xanh. Không có chiều này thì cách sửa dễ nhất là tắt rule toàn cục và cả cổng vẫn xanh.
+- **(4)** `packages/tui/**` không cần override — một file TUI có `console.log` trong mã chạy phải đỏ, trong khi `tab-bar.ts:54` (chỉ nằm trong chú thích JSDoc) không được làm đỏ. Đây là ranh giới thật của rule, không phải tiện lợi.
+
+### Xác minh
+
+```bash
+bun run lint          # phải xanh sau khi sửa hết file
+bun run check:ts
+bun test packages/coding-agent/test/lint-no-console-allowlist.test.ts
+git grep -c 'no-console' .oxlintrc.json   # phải ≥ 1
+# Cổng đỏ ngay: thêm một dòng console.log vào một file thư viện, chạy `bun run lint`, phải ĐỎ.
+```
+
+### Cổng hoàn thành
+
+1. `grep -c 'no-console' .oxlintrc.json` ≥ **1**.
+2. `bun run lint` xanh tại HEAD sau khi sửa hết file vi phạm.
+3. **Bằng chứng nâng đỡ:** thêm một `console.log` vào một file thư viện bất kỳ → `bun run lint` **đỏ**; xoá đi → xanh lại. Nếu cổng này không đỏ được, item chưa có bằng chứng.
+4. Entry đi qua `overrides`, **không** đi qua `ignorePatterns` — `git diff` trên `.oxlintrc.json` không được đụng khối `ignorePatterns` 24 dòng.
+5. `packages/metaharness/src/tb/cli.ts` vẫn được phép dùng `console.*` (chiều ngược của cổng).
+6. `e6-triplestore-split.ts:149,156` không còn `console.log` làm default parameter.
+
+Cổng có thể thực sự đỏ: có — điều 3 là phép kiểm có thể đỏ và là điều duy nhất cần để chứng minh item này.
+
+### Phụ thuộc
+
+- `depends_on`: không.
+- `blocks`: không.
+
+### Cách sai dễ nhất
+
+**Dùng `ignorePatterns` cho allow-list.** Nó nghe có vẻ đúng và là cơ chế mà `.oxlintrc.json` đã có sẵn, nhưng nó tắt **mọi** rule trên các file đó — kể cả type-safety và format — chứ không chỉ `no-console`. PR sẽ xanh, review sẽ không thấy, và repo mất hàng rào ở đúng những file entrypoint mà người khác hay chạm nhất. Sổ đã đánh dấu đây là **sửa so với đề xuất ban đầu**, tức nó là chỗ đã bị đề xuất sai một lần.
+
+Hai lối gần kế:
+- **Dựng một hệ thống thay vì một dòng cấu hình.** Bản tham chiếu chỉ có `#![deny(clippy::print_stdout, clippy::print_stderr)]` + chú thích 2 dòng — **một dòng cấu hình, không phải một hệ thống**. Chuyển nó thành một lớp wrapper hay một plugin tuỳ biến là biến một quy tắc S thành một hạ tầng.
+- **Đổi tên `console.log` thành `logger.log` ở `e6-triplestore-split.ts` mà không đổi default parameter.** Code trông đã sửa, lint xanh, và hàm vẫn mặc định ghi thẳng ra stdout.
+
+### Cần người quyết
+
+Sổ **không** gán quyết định nào (`GAP-D1…GAP-D9` và `GAP-D10…GAP-D13` đều không trỏ tới `GAP-M1-19`). Chỉ có một ràng buộc bảo toàn phải giữ, và nó là ràng buộc thiết kế chứ không phải câu hỏi mở:
+
+- **Đường phép dùng `console.*` của `AGENTS.md` phải giữ nguyên nghĩa.** Exception *"Standalone CLI commands that exit without entering the TUI"* **không được thu hẹp** thành allow-list tĩnh, vì allow-list sẽ chết khi có entrypoint mới. Quy tắc mới phải **mở rộng** exception đó, không thay nó. Đây là lý do bước 3 khoá allowlist bằng test: một entrypoint mới phải được thêm vào có chủ đích, không phải âm thầm.
+
+### Đính chính so với plan
+
+> Bảng này đính chính các claim của **`.lavish-wip/GAP-REGISTER-2.md`** (mục `GAP-M1-19`), không phải của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`.
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Dùng `ignorePatterns` cho allow-list entrypoint" (đề xuất ban đầu trong sổ) | SAI CƠ CHẾ — đã tự sửa trong chính sổ §0 | Cơ chế đúng là `overrides`, **không phải** `ignorePatterns`. `.oxlintrc.json` đã có sẵn `ignorePatterns` 24 dòng; đưa entrypoint vào đó tắt **mọi** rule khác trên các file đó, không chỉ `no-console`. Đây là một trong ba chỗ §0 của sổ đã đo lại và sửa. |
+| "Quy tắc chỉ tồn tại bằng văn xuôi" | CONFIRMED | `grep -c 'no-console' .oxlintrc.json` → **0**. Quy tắc nằm trong `AGENTS.md` và không có gì cưỡng chế nó. |
+| "Quy tắc đang bị vi phạm: 33 file" | CONFIRMED, NHƯNG HAI CON SỐ TRONG SỔ KHÔNG CÙNG PHẠM VI | `git grep -l 'console\.\(log\|error\|warn\|info\|debug\)' -- 'packages/*/src/**/*.ts' \| wc -l` → **33 file**. Sổ đồng thời nói bước sửa tay là "~10 file". Hai con số không mâu thuẫn nếu hiểu 33 là tổng file dính **trước khi** các entrypoint được override, còn ~10 là phần còn lại sau đó — nhưng sổ không nói rõ, và kỹ sư lấy nhầm con số nào thì hoặc sửa thiếu, hoặc mở một diff 33 file không cần thiết. **Đo lại bằng lệnh sau khi đã bật `overrides`**, đừng chọn con số theo trí nhớ. |
+| "Pháp lý: chỉ mang ý tưởng, mức nhẹ nhất trong sổ" | CONFIRMED | Không có dòng code nào để chép: bản tham chiếu dùng attribute Rust, omp cần rule oxlint, hai ngôn ngữ khác nhau. Đây là item duy nhất trong năm mục M1 không có ràng buộc `NOTICE` nào. |
+| "`packages/tui/**` không cần override" | CONFIRMED | TUI đã sạch. `tab-bar.ts:54` chỉ là `console.log` **trong chú thích JSDoc**, không phải mã chạy — đừng "sửa" nó, và đừng vì nó mà mở override cho cả `packages/tui/**`. |
+
+
+---
+
+## W20. GAP-M1-20 — Khoá cache `allow_always` theo hành động đã canonicalize, không theo tên tool
+
+**Thay đổi gì:** `packages/coding-agent/src/session/acp-permission-gate.ts` trả `cacheKey: toolName` ở **mọi** nhánh, trong khi `getPermissionIntent` lại **tính title từ lệnh** (`.slice(0, 80)`). Nghĩa là người dùng được hỏi về một lệnh cụ thể nhưng quyết định của họ lại được ghi nhớ theo tên tool. Thay bằng một hàm canonicalize dùng chung `canonicalizeApprovalKey(toolName, args)` đặt cạnh `getPermissionIntent`, khoá theo lớp hành động; đổi `PERMISSION_OPTIONS` để "Always allow" mang khoá đó theo **và hiển thị phạm vi sắp cấp**; giữ nguyên `reject_always` theo cùng khoá.
+*(Mục `GAP-M1-20` của `.lavish-wip/GAP-REGISTER-2.md`, gộp từ `codex.49` + `codex.79` + `codex.95`. Đây là **lỗ hổng, không phải thiếu tiện nghi**.)*
+
+**Wave:** Wave 8. Sổ xếp "ngay sau W6" — và W6 là thứ phải có trước, vì nó dựng lại ranh giới deny của chính nhánh approval mà khoá cache này nằm trong.
+
+**Effort:** S–M (1–1,5 ngày).
+
+**Người dùng thấy:** Hệ quả quan sát được hôm nay: bấm "Always allow" **một lần** trên `git status` ⇒ `#acpPermissionDecisions.set("bash", "allow_always")` ⇒ **mọi lệnh bash sau đó trong phiên đều tự động qua**, kể cả `rm -rf`. Sau W20, phạm vi sắp cấp được **hiện ra** ("allow `git status` for the rest of this session") và hai lệnh khác nhau cùng tool phải hỏi riêng. `docs/approval-mode.md` hiện không đề cập khoá cache này.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/session/acp-permission-gate.ts` | sửa | Thêm `canonicalizeApprovalKey(toolName, args)` ngay cạnh `getPermissionIntent`. Bỏ `cacheKey: toolName` ở **cả bốn** nhánh: dòng 55 (`bash`), 63 (`delete`), 70 và 75 (`move`). Đổi `PERMISSION_OPTIONS` để "Always allow" mang khoá canonicalize theo **và** hiển thị phạm vi sắp cấp. | Có — đã kiểm, cả bốn dòng đều trả `cacheKey: toolName`. |
+| `packages/coding-agent/src/session/session-tools.ts` | sửa | Dòng 991: `#acpPermissionDecisions.set("bash", "allow_always")` phải ghi bằng khoá đã canonicalize, không phải tên tool. | Có |
+| `bash-interceptor.ts` | **không sửa** (dùng lại) | Dùng lại parser sẵn có của `bash-interceptor.ts` để lấy mảng lệnh đã parse cho khoá `bash`. Không viết parser thứ hai. | Có |
+| `docs/approval-mode.md` | sửa | Tài liệu hiện không đề cập khoá cache. Ba chế độ approval và ba tầng tool **không được đổi hình dạng**; 1.471 dòng test hiện có cũng vậy. | Có |
+| `packages/coding-agent/test/session/permission-cache-key.test.ts` | tạo | Bản âm phủ định bắt buộc: hai lệnh khác nhau cùng tool phải hỏi riêng. | **không** — file mới, chưa kiểm chứng |
+
+### Các bước
+
+1. **Viết `canonicalizeApprovalKey(toolName, args)`** cạnh `getPermissionIntent`, trả khoá theo lớp: `bash` + mảng lệnh đã parse (dùng lại parser sẵn có của `bash-interceptor.ts`); `delete`/`move` + đường dẫn đã `realpath`; `edit` + loại thao tác phá hủy.
+2. **Đổi `PERMISSION_OPTIONS`** để "Always allow" mang khoá đó theo, **và hiển thị phạm vi sắp cấp**. Nếu không hiện phạm vi thì key tốt hơn cũng không giúp — người dùng vẫn không biết mình vừa cấp gì.
+3. **Giữ nguyên `reject_always` theo cùng khoá.** Tách khoá ra là một lệnh bị từ chối vĩnh viễn sẽ lại hỏi.
+4. **Viết bản âm phủ định bắt buộc:** hai lệnh khác nhau cùng tool phải hỏi riêng. Không có nó thì "sửa" này chỉ là thêm chi tiết.
+5. **Chốt `GAP-D5`** trước khi ship — xem *Cần người quyết*.
+6. Chạy `bun run check:ts` và suite approval hiện có.
+
+### Hình dạng code
+
+```typescript
+// packages/coding-agent/src/session/acp-permission-gate.ts — ngay cạnh
+// getPermissionIntent. Hợp đồng này chỉ đổi cách *ghi nhớ* một quyết định;
+// nó KHÔNG đổi tập quyết định.
+export function canonicalizeApprovalKey(toolName: string, args: unknown): string {
+	// bash   → tool + mảng lệnh đã parse (parser sẵn có của bash-interceptor.ts)
+	// delete → tool + đường dẫn đã realpath
+	// move  → tool + đường dẫn đã realpath
+	// edit  → tool + loại thao tác phá hủy
+}
+
+// Cả hai quyết định dùng CHUNG khoá này. Tách khoá reject_always ra khỏi
+// khoá allow_always là một lỗi: lệnh bị từ chối vĩnh viễn sẽ lại hỏi.
+```
+
+### Hợp đồng test
+
+Hợp đồng quan sát được là: **phạm vi của một quyết định "always" hẹp bằng hành động đã canonicalize, và người dùng được cho biết phạm vi đó trước khi bấm.**
+
+- **(1) Bản âm phủ định bắt buộc.** Duyệt "Always allow" cho `git status`, rồi chạy `rm -rf ./build` cùng tool `bash` → phải **hỏi lại**. Không có case này thì toàn bộ item là thêm chi tiết trang trí: một bản sửa chỉ thêm key mà không thu hẹp thì vẫn cho `rm -rf` đi qua, và test vẫn xanh.
+- **(2) Chiều thu hẹp thật.** Duyệt "Always allow" cho `git status`, rồi chạy `git status` lần nữa → phải **không** hỏi. Đây là chiều ngược của (1); chỉ assert (1) thì một bản sửa "hỏi lại mọi thứ" cũng xanh.
+- **(3) Phạm vi sắp cấp phải hiện ra.** Assert chuỗi mà người dùng đọc trước khi bấm có nói phạm vi ("allow `git status` for the rest of this session"). Không có nó thì khoá tốt hơn cũng không giúp.
+- **(4)** `reject_always` dùng **cùng** khoá: sau khi từ chối vĩnh viễn một hành động, hành động đó không hỏi lại — **trong khi** một hành động khác cùng tool vẫn hỏi.
+- **(5)** Hình dạng cũ không đổi: ba chế độ approval và ba tầng tool trong `docs/approval-mode.md` vẫn trả về đúng hình dạng cũ.
+
+### Xác minh
+
+```bash
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+bun --cwd=packages/natives run build
+bun run check:ts
+bun test packages/coding-agent/test/session/permission-cache-key.test.ts
+bun test packages/coding-agent/test/tools/approval.test.ts   # 1.471 dòng test hiện có — không được đổi hình dạng
+```
+
+### Cổng hoàn thành
+
+1. `bun test` bản âm phủ định xanh, và **case (1) đỏ riêng** nếu `canonicalizeApprovalKey` bị đổi lại thành trả `toolName` (bằng chứng nâng đỡ: sửa tạm, xác nhận đúng case (1) đỏ, khôi phục lại). Nếu không có gì đỏ, case (1) không test điều nó tuyên bố.
+2. `grep` xác nhận không còn `cacheKey: toolName` ở bất kỳ nhánh nào trong `acp-permission-gate.ts` — bốn nhánh, bốn chỗ.
+3. `PERMISSION_OPTIONS` hiển thị phạm vi sắp cấp, và test (3) đọc được chuỗi đó.
+4. `reject_always` và `allow_always` dùng cùng một hàm khoá — assert bằng hành vi, không bằng source-grep.
+5. Suite `approval.test.ts` hiện có vẫn xanh, không đổi một assertion nào.
+6. `bun run check:ts` xanh (không dùng `tsc` / `npx tsc`).
+
+Cổng có thể thực sự đỏ: có — điều 1 và 2 là hai phép kiểm độc lập, mỗi cái đỏ được khi phần việc tương ứng vắng mặt.
+
+### Phụ thuộc
+
+- `depends_on`: W6. Sổ xếp "ngay sau W6", và lý do là cả hai cùng nằm trên nhánh approval: W6 dựng lại ranh giới `deny` của chính lớp quyết định mà khoá cache này ghi vào. Nếu W6 chưa chốt (nó cần sign-off của product), W20 **vẫn làm được** — chỉ ghi rõ là nó chưa có nền.
+- `blocks`: không.
+
+### Cách sai dễ nhất
+
+**Đổi khoá cache mà không hiện phạm vi sắp cấp.** Đây là cách sửa nửa vời, và nó là cách sập âm thầm: key tốt hơn cũng không giúp nếu người dùng không biết mình vừa cấp gì — họ bấm "Always allow" một lần và đi tin rằng chỉ lệnh đó được miễn, trong khi mọi lệnh cùng tool vẫn đi qua. Sổ nói thẳng: *"Nếu không hiện phạm vi thì key tốt hơn cũng không giúp."*
+
+Ba lối gần kế, theo thứ tự:
+- **Chỉ sửa một trong bốn nhánh.** `bash` ở `:55`, `delete` ở `:63`, `move` ở `:70` và `:75` — sửa ba nhánh và bỏ một nhánh thì một lớp hành động vẫn lan rộng, và test viết bằng `bash` vẫn xanh.
+- **Tách khoá `reject_always`.** Một lệnh bị từ chối vĩnh viễn sẽ lại hỏi, và người dùng sẽ nghĩ omp không nhớ.
+- **Đổi hình dạng ba chế độ approval hoặc ba tầng tool.** Item này chỉ đổi cách *ghi nhớ* một quyết định, không đổi tập quyết định. `M6 §3` nói approval của omp "đã hoàn chỉnh" — câu đó nói về ba tầng tool / ba chế độ / ba quyết định, **không** nói về khoá cache; đừng dùng nó làm lý do để không làm.
+
+### Cần người quyết
+
+- **`GAP-D5` — giữ đường hồi tương thích cho cache `allow_always` theo tên tool cũ không?** Các phiên đang cache sẽ hỏi lại một lần nữa. Phương án trong sổ: **khuyến nghị không giữ** — cache cũ theo tên tool chính là thứ đang gây lỗi (`rm -rf` sau một "always allow" cho `git status`). Nhưng đây là thay đổi hành vi người dùng thấy, nên phải nêu trong changelog, và **quyết định này phải của người chứ, không phải của người implementer**.
+- Đây là quyết định **chặn ship, không chặn bắt đầu** — có thể viết `canonicalizeApprovalKey` và test trước, nhưng phải chốt trước khi merge vì nó quyết định có cần một nhánh migration không.
+
+### Đính chính so với plan
+
+> Bảng này đính chính các claim của **`.lavish-wip/GAP-REGISTER-2.md`** (mục `GAP-M1-20`), không phải của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`.
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Đây là lỗ hổng, không phải thiếu tiện nghi" | CONFIRMED — và đây là claim quan trọng nhất của mục | Chuỗi lỗi là đo được từng mắt: `getPermissionIntent` **tính title từ lệnh** (`.slice(0, 80)`) nhưng **khoá cache bằng tên tool** (`cacheKey: toolName` ở `:55`, `:63`, `:70`, `:75`) ⇒ `#acpPermissionDecisions.set("bash", "allow_always")` tại `session/session-tools.ts:991` ⇒ mọi lệnh bash sau đó trong phiên tự động qua, kể cả `rm -rf`. Đây là **phê duyệt lan rộng ngoài ý muốn**, và nó không xuất hiện trong `docs/approval-mode.md`. |
+| "Ba chế độ approval và ba tầng tool … không được đổi hình dạng" | Ràng buộc bảo toàn, không phải claim về sự thật | Giữ nguyên nghĩa: item này chỉ đổi cách *ghi nhớ* một quyết định, **không đổi tập quyết định**. 1.471 dòng test hiện có là bằng chứng cho hình dạng đó; sửa chúng để "cho khớp" là xoá bằng chứng chứ không phải cập nhật. |
+| "Không chép file 42 dòng Rust của codex; chép ý" | CONFIRMED | Ba việc của hình dạng port là ý, không phải dòng code: (1) hàm canonicalize dùng chung; (2) `PERMISSION_OPTIONS` mang khoá theo và hiện phạm vi; (3) giữ `reject_always` theo cùng khoá. Không có ràng buộc `NOTICE` nào ở mục này (không liên quan Ratatui). |
+| "`M6 §3` nói approval của omp 'đã hoàn chỉnh'" | Cần đọc kèm, không đủ để bác bỏ item | Câu đó nói về **ba tầng tool / ba chế độ / ba quyết định**, không nói về khoá cache. Nó là bằng chứng rằng lớp quyết định đã đủ, không phải bằng chứng rằng phạm vi của một quyết định đã đúng. |
+| "`docs/approval-mode.md` không đề cập [khoá cache]" | CONFIRMED | Hệ quả thẳng: người đọc tài liệu không có đường nào để biết "Always allow" rộng tới đâu. Vì vậy hiển thị phạm vi sắp cấp trong `PERMISSION_OPTIONS` là một nửa bắt buộc của item, không phải một nicety. |
+
+
+---
+
+## W21. GAP-M1-21 — Harden tiến trình trước main: cấm attach debugger, cấm core dump, lọc `LD_*` khỏi môi trường con
+
+**Thay đổi gì:** Thêm một module `harden-process.ts` (~50 dòng) và **một** lời gọi ở đầu `cli.ts`, trước mọi import nặng: Linux `prctl(PR_SET_DUMPABLE, 0)` và `prctl(PR_SET_PDEATHSIG, SIGKILL)`; portable `setrlimit(RLIMIT_CORE, 0)`; và `sanitizeChildEnv()` bỏ `LD_PRELOAD` / `LD_LIBRARY_PATH` / `DYLD_INSERT_LIBRARIES` / `DYLD_LIBRARY_PATH` khỏi env truyền cho mọi child. Tất cả sau `try/catch` im lặng + `logger.debug`; **trên Windows phải là no-op sạch** — không được phép làm hỏng startup.
+*(Mục `GAP-M1-21` của `.lavish-wip/GAP-REGISTER-2.md`, nguồn `codex.86`.)*
+
+**Wave:** Wave 8. Sổ xếp "cùng sóng với `GAP-M1-19`" vì cùng là một thay đổi kỷ luật nhỏ, **độc lập tuyệt đối, không chạm file người khác đang sửa**.
+
+**Effort:** S — khoảng 0,5 ngày. Bốn syscall, một module, một chỗ nối.
+
+**Người dùng thấy:** Không có bề mặt mới. Cái thay đổi là: omp là CLI agent giữ API token trong bộ nhớ (`packages/ai/src/auth-storage.ts`, `packages/coding-agent/src/secrets/`) và spawn subprocess không kiểm soát (`bash-interceptor.ts`, `browser/launch.ts`) — hôm nay **không có gì** ngăn một debugger gắn vào tiến trình đó, **không có gì** ngăn nó đổ core dump chứa token, và `LD_PRELOAD` trong môi trường đi thẳng vào mọi child.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/harden-process.ts` | tạo | ~50 dòng. Linux: `prctl(PR_SET_DUMPABLE, 0)`, `prctl(PR_SET_PDEATHSIG, SIGKILL)`. Portable: `setrlimit(RLIMIT_CORE, 0)`. `sanitizeChildEnv()` bỏ `LD_PRELOAD` / `LD_LIBRARY_PATH` / `DYLD_INSERT_LIBRARIES` / `DYLD_LIBRARY_PATH`. Tất cả sau `try/catch` im lặng + `logger.debug`. | **không** — file mới. Đo được: `git grep -rn 'PR_SET_DUMPABLE\|RLIMIT_CORE\|PT_DENY_ATTACH\|LD_PRELOAD\|DYLD_INSERT' -- packages crates` → **0 hit** |
+| `packages/coding-agent/src/cli.ts` | sửa | Một lời gọi harden ở đầu file, **trước mọi import nặng**. `process.title = APP_NAME` (dòng 54) phải chạy **sau** harden, không phải trước. Thêm guard `isProcessEntry`. | Có — hôm nay `cli.ts` chỉ làm đúng **một** việc tiền-main: `process.title = APP_NAME` tại dòng 54. Không setuid/setgid, không umask, không rlimit. |
+| `bash-executor.ts` | sửa | `sanitizeChildEnv()` dùng chung cho `Bun.spawn` và `` $`cmd` ``. | Có |
+| các child spawn hiện có (LSP, kernel, browser) | **không sửa** | Phải **tiếp tục nhận** PATH / NODE_PATH / Homebrew của chúng. Chỉ `LD_*` và `DYLD_*` bị lọc — lọc rộng hơn là hỏng ngay. | Có |
+| `crates/pi-shell/src/process.rs` | **không sửa** | Đã có `kill_process_group` (`:1627`) và leo thang TERM→KILL ở `:1446/:1496/:1525` — phần này ĐÃ có, đừng làm lại. | Có |
+| `packages/coding-agent/test/harden-process.test.ts` | tạo | Ba điều kiện bảo toàn bên dưới là hợp đồng của item này. | **không** — file mới, chưa kiểm chứng |
+
+### Các bước
+
+1. **Ghi lại phần omp ĐÃ có, đừng làm lại:** secret obfuscation, approval gate, process-group kill trong bash-executor. Sổ nói thẳng: *thiếu đúng một trục — trạng thái bảo vệ của chính tiến trình.*
+2. **Tạo `harden-process.ts`** theo ba nhóm lệnh ở trên. Không chép dòng Rust nào từ bản tham chiếu — đây là bốn syscall, không phải bản quyền được bảo vệ.
+3. **Nối vào `cli.ts` trước mọi import nặng.** `process.title = APP_NAME` (dòng 54) chuyển xuống **sau**.
+4. **Thêm guard `isProcessEntry`** — bắt buộc, xem *Hợp đồng test* case (2).
+5. **Dùng `sanitizeChildEnv()`** cho `Bun.spawn` và `` $`cmd` `` trong `bash-executor.ts`.
+6. **Viết test** cho ba điều kiện bảo toàn.
+7. Chạy `bun run check:ts` và smoke trên một máy Windows để xác nhận no-op sạch.
+
+### Hình dạng code
+
+```typescript
+// packages/coding-agent/src/harden-process.ts — gọi ở đầu cli.ts, TRƯỚC mọi
+// import nặng. Mọi lời gọi sau `try/catch` im lặng + `logger.debug`:
+// harden không bao giờ được biến thành lý do omp không khởi động được.
+export function hardenProcess(): void {
+	// Linux:  prctl(PR_SET_DUMPABLE, 0); prctl(PR_SET_PDEATHSIG, SIGKILL);
+	// Portable: setrlimit(RLIMIT_CORE, 0);
+	// Windows: no-op sạch — không được phép làm hỏng startup.
+}
+
+/** Bỏ `LD_*` / `DYLD_*` khỏi env truyền cho child. KHÔNG lọc rộng hơn:
+ *  LSP, kernel và browser vẫn phải nhận PATH / NODE_PATH / Homebrew của chúng. */
+export function sanitizeChildEnv(env: Record<string, string>): Record<string, string> { /* … */ }
+```
+
+### Hợp đồng test
+
+Hợp đồng quan sát được là ba điều kiện bảo toàn — cả ba đều bắt buộc, và tất cả đều là những cách hỏng im lặng:
+
+- **(1) Thứ tự.** `process.title = APP_NAME` phải chạy **sau** harden. `prctl(PR_SET_PDEATHSIG)` trên một tiến trình cha đã thoát là hành vi khác — assert thứ tự, không assert "có gọi harden".
+- **(2) Guard `isProcessEntry`.** `bun test` và SDK embedding đi vào **cùng** `cli.ts`. Không có guard thì test runner tự `dumpable=0`, và một test chủ động crash sẽ **im lặng** — đó là thất lạc khó chẩn đoán nhất từng gặp. Test phải chứng minh chạy dưới test runner thì harden **không** bật.
+- **(3) Lọc đúng biên.** Child spawn vẫn nhận `PATH` / `NODE_PATH` / Homebrew; chỉ `LD_*` và `DYLD_*` bị bỏ. Lọc rộng hơn là hỏng ngay — assert cả hai chiều: biến `LD_*` bị bỏ **và** `PATH` còn nguyên byte.
+
+Chiều ngược đáng chú ý: trên Windows, `hardenProcess()` phải là no-op sạch — một lời gọi ném lỗi ở đó là hỏng startup, tức hỏng sản phẩm chứ không phải hỏng item.
+
+### Xác minh
+
+```bash
+bun run check:ts
+bun test packages/coding-agent/test/harden-process.test.ts
+# Cổng đỏ cho case (3): thêm một biến PATH giả vào sanitizeChildEnv, xác nhận case đỏ.
+```
+
+### Cổng hoàn thành
+
+1. `bun test` xanh với cả ba case (1), (2), (3).
+2. **Bằng chứng nâng đỡ cho (2):** bỏ guard `isProcessEntry`, chạy lại suite → case (2) phải đỏ. Đây là case bắt được việc tự làm test runner im lặng.
+3. **Bằng chứng nâng đỡ cho (3):** sửa `sanitizeChildEnv()` để lọc cả `PATH` → case (3) phải đỏ.
+4. `sanitizeChildEnv()` được dùng ở **cả hai** đường spawn trong `bash-executor.ts` (`Bun.spawn` và `` $`cmd` ``), không chỉ một.
+5. `process.title = APP_NAME` vẫn còn trong `cli.ts` và nằm sau lời gọi harden.
+6. Trên Windows: `hardenProcess()` không ném. Cần một máy Windows hoặc CI Windows để kiểm; nếu không có, ghi rõ là **chưa kiểm chứng** thay vì coi là xanh.
+7. `bun run check:ts` xanh (không dùng `tsc` / `npx tsc`).
+
+Cổng có thể thực sự đỏ: có — điều 2 và 3 là hai phép kiểm đỏ được độc lập.
+
+### Phụ thuộc
+
+- `depends_on`: không.
+- `blocks`: không.
+
+### Cách sai dễ nhất
+
+**Quên guard `isProcessEntry`.** Đây là cách hỏng nặng nhất của item và nó **không** làm đỏ bất kỳ test nào. `bun test` và SDK embedding đi vào **cùng** `cli.ts`; không có guard thì test runner tự `dumpable=0`, và một test chủ động crash sẽ **im lặng** — thất lạc khó chẩn đoán nhất từng gặp, vì dấu vết của nó không nằm ở đâu cả.
+
+Ba lối gần kế:
+- **Đặt `process.title = APP_NAME` trước harden.** Đọc tự nhiên và sai: `prctl(PR_SET_PDEATHSIG)` trên một tiến trình cha đã thoát là hành vi khác.
+- **Lọc `LD_*` quá rộng.** Mọi child spawn hiện có — LSP, kernel, browser — phải **tiếp tục nhận** PATH / NODE_PATH / Homebrew của nó. Lọc rộng hơn `LD_*`/`DYLD_*` là hỏng ngay.
+- **Không nói trong PR rằng `doctor` chạy trong tiến trình đã harden.** Sổ yêu cầu nói rõ: `dumpable=0` nghĩa là một check muốn đọc core dump sẽ không được. Bỏ qua câu này thì một người đọc PR của W18 sẽ thiết kế một check đáng lẽ phải chạy được.
+
+### Cần người quyết
+
+Sổ **không** gán quyết định nào cho `GAP-M1-21` (`GAP-D1…GAP-D9` và `GAP-D10…GAP-D13` đều không trỏ tới nó). §7 của sổ xếp nó vào hai mục có **tỉ lệ giá trị/công sức cao nhất trong cả sổ**, và khác ở chỗ nó **không chặn gì**.
+
+Có một điều kiện phải ghi rõ trong PR, không phải quyết định cần trả lời: **thứ tự với W18 không quan trọng**, nhưng PR phải nói rõ `doctor` chạy trong tiến trình đã harden.
+
+### Đính chính so với plan
+
+> Bảng này đính chính các claim của **`.lavish-wip/GAP-REGISTER-2.md`** (mục `GAP-M1-21`), không phải của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`.
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "Đo được, không suy đoán: `git grep -rn 'PR_SET_DUMPABLE\|RLIMIT_CORE\|PT_DENY_ATTACH\|LD_PRELOAD\|DYLD_INSERT' -- packages crates` → 0 hit" | CONFIRMED | Không có gì trong cây. Entry point `packages/coding-agent/src/cli.ts` chỉ làm đúng **một** việc tiền-main: `process.title = APP_NAME` tại dòng 54. Không setuid/setgid, không umask, không rlimit. |
+| "Phần omp ĐÃ có, phải nói để không làm lại" | CONFIRMED — đây là claim quan trọng thứ hai của mục | Secret obfuscation, approval gate, process-group kill trong bash-executor (`crates/pi-shell/src/process.rs:1627` `kill_process_group`, leo thang TERM→KILL ở `:1446/:1496/:1525`) đều đã có. Kết luận của sổ: **thiếu đúng một trục — trạng thái bảo vệ của chính tiến trình.** Đừng viết lại ba thứ trên. |
+| "Bối cảnh thì đúng" | CONFIRMED | omp là CLI agent giữ API token trong bộ nhớ (`packages/ai/src/auth-storage.ts`, `packages/coding-agent/src/secrets/`) và spawn subprocess không kiểm soát (`bash-interceptor.ts`, `browser/launch.ts`). Đây là lý do trục còn thiếu có ý nghĩa, không phải một quy ước vệ sinh. |
+| "Pháp lý: chỉ mang ý tưởng, không chép dòng nào" | CONFIRMED | Bản tham chiếu là Apache-2.0, nhưng phần này là **bốn syscall**, không phải bản quyền được bảo vệ. Nguyên tắc chỉ mang: *một tiến trình giữ bí mật không nên bị attach, và không nên đổi core dump.* |
+| Ba điều kiện bảo toàn (thứ tự `process.title`, guard `isProcessEntry`, biên lọc child env) | Ràng buộc bắt buộc, được sổ nâng thành hợp đồng test | Cả ba đều là cách hỏng **im lặng** — không cái nào làm đỏ một test hiện có. Vì vậy W21 hạ chúng xuống thành ba case bắt buộc có bằng chứng nâng đỡ, thay vì để là ghi chú ở cuối mục. |
+
+
+---
+
+## W22. GAP-M1-22 — `omp session`: một bề mặt CLI cho session, có archive/unarchive và cờ chọn mục tiêu
+
+**Thay đổi gì:** Thêm một entry `session` trong `cli-commands.ts` trỏ tới `commands/session.ts`, lặp lại khuôn của `commands/find.ts` (ba dòng: `name` / `load` / `help`). Năm verb: `list` (mặc định, **nhân bản output của `omp find`** chứ không viết lại), `show`, `archive`, `unarchive`, `delete`. Cờ chọn mục tiêu: `--last` / `--all` / `--json`.
+*(Mục `GAP-M1-22` của `.lavish-wip/GAP-REGISTER-2.md`, nguồn `codex.129`. **Khoảng cách: SỬA CHO KHỚP** — store và lệnh đều có, chỉ thiếu bề mặt.)*
+
+**Wave:** Wave 8. Sổ xếp "cùng miền với `GAP-M1-18`" và **bắt buộc merge cùng một đợt** với nó — xem *Cần người quyết*.
+
+**Effort:** S — khoảng 1 ngày. Năm verb, trong đó bốn verb (`show` / `archive` / `unarchive` / `delete`) là wrapper, không phải logic mới; `list` là bản nhân bản của `omp find`.
+
+**Người dùng thấy:** `omp session` trở thành namespace để làm việc đó **bằng script**: liệt kê, xem, lưu trữ, bỏ lưu trữ, xoá. Hôm nay `--resume` / `-r` / `--session`, `--continue`, `omp find`, `omp gc`, `omp share` và trong TUI `/resume` `/fork` `/delete` `/export` `/queue` đều có, nhưng **không có verb archive/unarchive session nào** và không có namespace để gọi bằng script.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/cli-commands.ts` | sửa | Thêm entry `session` trỏ tới `commands/session.ts`. Merge cùng W18, dùng chung **một** assertion phân tuyến. | Có — 49 lệnh cấp một; `grep -c 'name: "session"'` → **0** |
+| `packages/coding-agent/src/commands/session.ts` | tạo | Lặp khuôn `commands/find.ts` — ba dòng `name` / `load` / `help`. Năm verb + ba cờ `--last` / `--all` / `--json`. `list` **nhân bản output của `omp find`**, không viết lại. | Có — `commands/find.ts` là khuôn, lấy từ chính omp chứ không từ bản tham chiếu |
+| `SessionStorageBackend.loadIndex` | **dùng lại, không sửa** | Đã trả path/size/mtime/title — **nguồn duy nhất**. Mở đường đọc thứ hai cho cùng dữ liệu là tạo nguồn sự thật thứ hai, đúng thứ M4 cấm. | Có |
+| `flag-tables.ts` | **giữ nguyên** | `:249` (`--resume` / `-r` / `--session` với `rejectEmpty`) và `:300` (`--continue`) nguyên vẹn — đường một-shot, đổi chúng là hồi quy trực tiếp. | Có |
+| `packages/coding-agent/src/slash-commands/helpers/security.ts` | **giữ nguyên** | `:99` `--archive-existing` là một cờ của nhánh security scan, **không phải** verb archive session. | Có |
+| `packages/coding-agent/test/session/session-cli.test.ts` | tạo | Assertion phân tuyến chung với W18 + bản âm phủ định "không mở đường đọc thứ hai". | **không** — file mới, chưa kiểm chứng |
+
+### Các bước
+
+1. **Đo lại số lệnh cấp một trước khi ghi vào PR** (xem *Đính chính*): con số thật là 49, không phải 50.
+2. **Tạo `commands/session.ts`** theo đúng khuôn ba dòng của `commands/find.ts`.
+3. **`list` phải nhân bản output của `omp find`** — `omp find` giữ **từng byte output** vì đã có script phụ thuộc.
+4. **Bốn verb còn lại** (`show` / `archive` / `unarchive` / `delete`) đọc từ `SessionStorageBackend.loadIndex` — nguồn duy nhất.
+5. **Ba cờ** `--last` / `--all` / `--json`.
+6. **Đăng ký entry `session`** trong `cli-commands.ts`, cùng đợt merge với W18.
+7. **Viết assertion phân tuyến dùng chung** với W18 — một cái, không phải hai.
+8. Chạy `bun run check:ts` và `bun test` các suite session hiện có.
+
+### Hình dạng code
+
+```typescript
+// packages/coding-agent/src/commands/session.ts — lặp khuôn
+// packages/coding-agent/src/commands/find.ts: ba dòng name / load / help.
+// `list` NHÂN BẢN output của `omp find`, không viết lại: `omp find` giữ
+// từng byte output vì đã có script phụ thuộc.
+// Mọi verb đọc từ SessionStorageBackend.loadIndex — nguồn duy nhất.
+```
+
+### Hợp đồng test
+
+- **(1) Assertion phân tuyến — dùng chung với W18, một cái.** "Mọi subcommand trong registry thật sự được phân tuyến" phải đúng cho `doctor` lẫn `session` trong **cùng một** assertion. Hai assertion rời rạc sẽ cho phép hồi quy #1499/#1496 quay lại: một lệnh thiếu trong `cli-commands.ts` rơi xuống `runCli` và **argv thành prompt cho LLM** — hậu quả im lặng.
+- **(2) Bản âm phủ định của nguồn sự thật.** `list` và `omp find` phải cho ra **cùng một nội dung** trên cùng một store. Nếu `list` tự đọc store theo đường riêng, hai lệnh có thể lệch nhau theo thời gian và không test nào bắt được.
+- **(3)** Bốn verb còn lại đọc từ `loadIndex`. Assert bằng hành vi trên một store thật, không bằng source-grep.
+- **(4) Bảo toàn:** `omp find` giữ **từng byte** output; `/resume` `/fork` trong TUI không đổi; `omp gc` và `omp share` giữ nguyên phạm vi dù chạm cùng tập session.
+- **(5)** `flag-tables.ts:249` và `:300` giữ nguyên hành vi, kể cả `rejectEmpty` ở `--session`.
+
+### Xác minh
+
+```bash
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+bun --cwd=packages/natives run build
+bun run check:ts
+bun test packages/coding-agent/test/session/session-cli.test.ts
+grep -c 'name: "session"' packages/coding-agent/src/cli-commands.ts   # phải ≥ 1, không phải 0
+bun run session list      # phải khớp từng byte với `bun run find`
+```
+
+### Cổng hoàn thành
+
+1. `grep -c 'name: "session"' packages/coding-agent/src/cli-commands.ts` ≥ **1**, và **cùng một** assertion phân tuyến cũng phủ `doctor` (W18).
+2. `bun run session list` và `bun run find` cho ra cùng nội dung trên cùng một store.
+3. `bun test` xanh, **kèm bằng chứng nâng đỡ**: đổi `list` sang tự đọc store theo đường riêng → case (2) phải đỏ.
+4. `flag-tables.ts:249` (`:--resume` / `-r` / `--session` với `rejectEmpty`) và `:300` (`--continue`) không đổi một dòng — kiểm bằng `git diff --stat`.
+5. `omp find`, `omp gc`, `omp share`, `/resume`, `/fork` giữ nguyên hành vi.
+6. `bun run check:ts` xanh (không dùng `tsc` / `npx tsc`).
+
+Cổng có thể thực sự đỏ: có — điều 1 và 3 là hai phép kiểm độc lập.
+
+### Phụ thuộc
+
+- `depends_on`: không về kỹ thuật. Nhưng **thứ tự merge với W18 là bắt buộc** — cả hai sửa `cli-commands.ts`, và bảng cổng đỏ phải chứa **một** assertion *"mọi subcommand trong registry thật sự được phân tuyến"*, không phải hai assertion riêng.
+- `blocks`: không.
+
+### Cách sai dễ nhất
+
+**Viết lại output của `list` thay vì nhân bản `omp find`.** Nó trông sạch hơn và dễ hơn, và nó là một cách hỏng mà không có test nào sẽ bắt nếu không có case (2) — vì hai bản đều tự đúng với chính nó. `omp find` giữ **từng byte** output vì đã có script phụ thuộc; một bản "gần giống" phá chúng trong im lặng.
+
+Lối gần kế, và nó nặng hơn:
+- **Tách thành hai assertion phân tuyến, một cái cho W18 và một cái cho W22.** Sổ nói rõ lý do: một lệnh thiếu trong `cli-commands.ts` rơi xuống `runCli` và argv thành prompt cho LLM (hồi quy #1499/#1496) — hậu quả im lặng — và hai assertion rời rạc sẽ cho phép nó quay lại. Đây là lý do thứ tự merge là **bắt buộc**, không phải khuyến nghị.
+- **Mở một đường đọc thứ hai cho cùng dữ liệu session.** `SessionStorageBackend.loadIndex` đã trả path/size/mtime/title và là nguồn duy nhất; làm thêm một đường là tạo nguồn sự thật thứ hai, đúng thứ M4 cấm.
+
+### Cần người quyết
+
+Sổ **không** gán quyết định nào cho `GAP-M1-22` (`GAP-D1…GAP-D9` và `GAP-D10…GAP-D13` đều không trỏ tới nó). §7 của sổ phân loại nó là **hỗ trợ vận hành, không phải lỗ hổng** — khác `GAP-M4-15`, mà sổ gọi là "hình dạng lỗ hổng tin cấu hình".
+
+Có một ràng buộc thứ tự phải chốt trước khi mở PR:
+
+- **Thứ tự merge với W18 — bắt buộc, và lý do rất cụ thể.** Cả hai sửa `cli-commands.ts`. Bảng cổng đỏ phải chứa **một** assertion *"mọi subcommand trong registry thật sự được phân tuyến"*, không phải hai assertion riêng. Lý do: một lệnh thiếu trong `cli-commands.ts` rơi xuống `runCli` và **argv thành prompt cho LLM** (hồi quy #1499/#1496) — đó là hậu quả im lặng, và hai assertion rời rạc sẽ cho phép nó quay lại.
+
+### Đính chính so với plan
+
+> Bảng này đính chính các claim của **`.lavish-wip/GAP-REGISTER-2.md`** (mục `GAP-M1-22`), không phải của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`.
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "GAP-M1-18 ghi '50 command'" | SAI CON SỐ, ĐÃ ĐÍNH CHÍNH Ở CHÍNH MỤC NÀY | Con số 50 đếm bằng `grep -c 'name: "'`, tức tính cả tên option lồng nhau. Số thật là **49**: `grep -oE '^\s+name: "[a-z0-9-]+"' packages/coding-agent/src/cli-commands.ts \| sort -u \| wc -l`. **Kết luận không đổi** — `doctor` và `session` đều vẫn không có. W18 ghi lại con số 49. |
+| "`grep -c 'name: "session"'` → 0" | CONFIRMED | `cli-commands.ts` không có lệnh cấp một nào tên `session`. Đây là một nửa của phép đo; nửa kia là `grep -rn 'archive' packages/coding-agent/src/slash-commands/` chỉ trả về `--archive-existing` tại `helpers/security.ts:99`, tức **không có verb archive/unarchive session nào**. |
+| "Effort: S — Bốn verb là wrapper" nhưng mục liệt kê **năm** verb | KHÔNG MÂU THUẪN, NHƯNG DỄ ĐỌC SAI | Năm verb là `list` / `show` / `archive` / `unarchive` / `delete`. `list` là bản **nhân bản** của `omp find` nên không phải logic mới; bốn verb còn lại là wrapper. W22 ghi lại con số theo cách đó để không để lại hai cách đếm khác nhau trong cùng một tài liệu. |
+| "Khoảng cách: SỬA CHO KHỚP" | CONFIRMED | Phần omp ĐÃ có, và khá nhiều: `--resume` / `-r` / `--session` với `rejectEmpty` (`flag-tables.ts:249`), `--continue` (`:300`), `omp find`, `omp gc`, `omp share`, và trong TUI `/resume` `/fork` `/delete` `/export` `/queue`. Thiếu đúng hai thứ: (a) một namespace lệnh để làm việc đó **bằng script**; (b) hai verb vòng đời — lưu trữ và bỏ lưu trữ — cùng cờ chọn mục tiêu theo câu (`--last`) và theo tập (`--all`). |
+| "Pháp lý: chỉ mang ý tưởng" | CONFIRMED | Khuôn lấy từ chính `commands/find.ts` của omp, không từ bản tham chiếu — không có dòng nào được chép, nên không có ràng buộc `NOTICE` nào. |
+| Bốn điều bảo toàn | Ràng buộc bắt buộc, được nâng thành hợp đồng test | (1) `--resume` / `--continue` / `-r` nguyên vẹn — đường một-shot, đổi chúng là hồi quy trực tiếp; (2) `omp find` giữ **từng byte** output — đã có script phụ thuộc; (3) `/resume` `/fork` trong TUI không đổi — lệnh CLI là **bề mặt thứ hai trên cùng store**, không phải nguồn sự thật thứ hai; (4) `omp gc` và `omp share` giữ nguyên phạm vi dù chạm cùng tập session. |
+
+
+---
+
+
 ## Rủi ro và cách sai dễ nhất
 
-Mười bảy work item có mười bảy `risk` riêng. Đọc chúng cạnh nhau thì chúng rút lại còn **bốn kiểu chết**, và bốn kiểu này không phải bốn lỗi ở bốn chỗ khác nhau — chúng là bốn cách milestone này đi sai mà mọi cổng nghiệm thu vẫn báo xanh.
+Hai mươi mối work item còn trong phạm vi có hai mươi mối `risk` riêng (W8 đã ra khỏi phạm vi ngày 2026-09-28 nhưng §W8 vẫn còn nguyên trong file này như vết của spec cũ). Đọc chúng cạnh nhau thì chúng rút lại còn **bốn kiểu chết**, và bốn kiểu này không phải bốn lỗi ở bốn chỗ khác nhau — chúng là bốn cách milestone này đi sai mà mọi cổng nghiệm thu vẫn báo xanh.
 
 | Work item | Rủi ro | Cách giảm |
 | --- | --- | --- |
-| W2, W4, W8, W9, W11, W12, W13, W14, W15, W16, W17 | **Cổng xanh giả — `bun test` chưa chạy được.** Ở HEAD `ecd516f`, `bun test` trả `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64` tại `packages/natives/native/index.js:23:24`. Tới lúc addon được build, mọi cổng hành vi của các item này là **trong** (vacuous): W13 nói thẳng "Cho tới khi chạy `bun run build:native`, `bun test` báo đỏ bất kể code đúng hay sai, nên đây là một gate TRONG"; W16, W11, W12, W8, W9, W14, W15, W17 đều ghi cùng một điều kiện. | Build addon **trước** khi nhận việc: `bun --cwd=packages/natives run build` (hoặc `bun run build:native`). Tới lúc đó mọi item kể trên phải được coi là **chưa xác minh**, không phải là xanh. Trong lúc chờ, cổng thật duy nhất là `bun run check:ts` — đã PASS ở HEAD, không cần addon. Không dùng `tsc`. |
+| W2, W4, W9, W11, W12, W13, W14, W15, W16, W17 | **Cổng xanh giả — `bun test` chưa chạy được.** Ở HEAD `ecd516f`, `bun test` trả `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64` tại `packages/natives/native/index.js:23:24`. Tới lúc addon được build, mọi cổng hành vi của các item này là **trong** (vacuous): W13 nói thẳng "Cho tới khi chạy `bun run build:native`, `bun test` báo đỏ bất kể code đúng hay sai, nên đây là một gate TRONG"; W16, W11, W12, W8, W9, W14, W15, W17 đều ghi cùng một điều kiện. | Build addon **trước** khi nhận việc: `bun --cwd=packages/natives run build` (hoặc `bun run build:native`). Tới lúc đó mọi item kể trên phải được coi là **chưa xác minh**, không phải là xanh. Trong lúc chờ, cổng thật duy nhất là `bun run check:ts` — đã PASS ở HEAD, không cần addon. Không dùng `tsc`. |
 | W1, W5, W11, W16, W17 | **Cổng xanh mà không bảo vệ đúng thứ** — code chạy, im lặng, không throw. W5: viết thành runtime `.test.ts` với grep thì "passes forever while the wire types drift silent". W11: nếu `declare strict: boolean` thành field runtime thật, field initializer chạy trước thân constructor nên guard `key in this` thành `true`, guard BỎ QUA proxy và `adapter.strict` đọc ra `false` dù definition có `strict: true` — "silent breakage, không throw, không cảnh báo", và phân kỳ theo provider. W16: nới group cho tới khi xanh. W17: giao normalize `camelCase`→`snake_case` làm phần "cleanup" tuỳ chọn. W1: cast `as HookAPI` tại `hooks/loader.ts:128` đủ lỏng để đổi `hooks/types.ts` **không** kèm impl vẫn type-check sạch. | Mỗi cổng phải có ít nhất một assertion đọc **giá trị cụ thể** — run-order array, call count, wire payload — chứ không phải `expect(true)` hay một grep. Với W1, sửa `hooks/types.ts` và `hooks/loader.ts` trong cùng một commit, vì type-check sẽ không bắt được khi thiếu một trong hai. Với W11, khoá cả hai chiều của hợp đồng trên cùng output của bridge. Với W16, khi một group đỏ, **không** nới group để làm nó xanh. |
-| W8, W11, W12, W13, W14, W15, W17 | **Chọn nhầm bản tham chiếu** — hoặc dựng thêm một hệ thống thứ hai cạnh cái đang chạy, hoặc port từ một nguồn không tồn tại. W8: "Creating a SECOND system instead of gating the existing one" — âm thầm nhất, vì file mới default `"off"` không tốn tiền, test riêng của nó xanh, và accounting không thấy. W13: viết một writer backpressure thứ hai, yếu hơn, cạnh `RpcOutputWriter` đã mạnh hơn và đã có test. W11: dựng `constrained-sampling.ts` cạnh `normalize.ts`. W12: phải nói rõ `concurrency = \"exclusive\"` đã serialise gì — nó chỉ trong MỘT batch của MỘT agent (`lastExclusive` function-local tại `packages/agent/src/agent-loop.ts:3511`, trong `executeToolCalls` bắt đầu ở `:3024`), không chia sẻ giữa các agent hay session; `ast_edit` không khai báo concurrency nên không được bảo vệ gì. W14/W15/W17: kế hoạch và bản tham chiếu mô tả một hình dạng mà cây này không có — W8 nói thẳng "`pi-ref/` does not exist in this checkout ... all six constants ... are UNVERIFIABLE from this repo"; W15 nói transcript chính KHÔNG dùng `ScrollView` như kế hoạch giả định; W17 nói `findExtensionStackMatches` phụ thuộc `Extension.sourceInfo.{origin,source,baseDir,scope}` mà record của omp khác hình dạng. | Mỗi item phải trả lời bằng chứng: "cái đang chạy là gì, và tôi đang sửa nó chứ không thêm bên cạnh". Với W12, viết vào PR một câu giải thích vì sao cần cả hai cơ chế. Với W8/W14/W15/W17, số và hình dạng phải **suy ra từ cây này hoặc từ nguồn công bố**, không từ trí nhớ về `pi-ref`; nếu không suy ra được thì để field undefined và ghi lại, đừng đoán. |
-| W6, W8, W10, W12, W13, W17 | **Đổi hành vi người dùng thấy, trên đường production đang chạy, khi quyết định chưa được ký.** W6: `rm -rf /tmp/build` khớp regex recursive-delete neo `/`, nên user dựa vào allow rule để auto-run cleanup trong yolo mất luôn, không có escape hatch ở tầng settings — và thêm nữa là **half-applying the pair**: check ở `bash.ts:515` bị guard `!compoundSegments` nên không reachable với compound command, dòng `bash.ts:545` mới là nhánh payload thật đi tới; sửa 516 một mình là không làm gì. W8: `"off"` làm mặc định là một BREAK trên tính năng đang chạy và miễn phí. W10: "telemetry.ts sits on every agent path, so a regression here is a production incident and not a red test" — rủi ro hồi quy trên mỗi LOC cao nhất milestone. W12: queue chặn interleaving và byte-tearing nhưng KHÔNG chặn lost update, vì lần đọc pre-image tại `packages/coding-agent/src/edit/index.ts:711` nằm ngoài lock; và bọc `writeFileWithFallback` (:402) có thể deadlock nếu extension handler gọi lại vào chính queue đó. W13: chạm ba đường stdout đang chạy. W17: transcript là opt-in (đúng), nhưng redaction phải load-bearing — không thì bí mật lọt vào một file mà người dùng được dặn là an toàn để gửi đi. | Không item nào trong nhóm này được coi là xong khi test xanh mà quyết định sản phẩm chưa có. W6 cần sign-off của product trước khi sửa dòng nào. W8 cần chốt cửa sổ deprecation trước release. W10 cần commit tách riêng: `git diff --stat` trên `packages/ai/test/otel.test.ts` phải rỗng — đó là bằng chứng duy nhất rằng không có exported signature nào đổi. W12 phải nói rõ trong PR là chỉ sửa interleaving. W13 chỉ migrate những call site đã chốt ở bảng quyết định, không tự mở rộng. W17 khoá normalize như một assertion bắt buộc, không phải tuỳ chọn. |
+| W11, W12, W13, W14, W15, W17 | **Chọn nhầm bản tham chiếu** — hoặc dựng thêm một hệ thống thứ hai cạnh cái đang chạy, hoặc port từ một nguồn không tồn tại. ~~W8: "Creating a SECOND system instead of gating the existing one" — âm thầm nhất, vì file mới default `"off"` không tốn tiền, test riêng của nó xanh, và accounting không thấy.~~ *(W8 ngoài phạm vi 2026-09-28 — vết của spec cũ.)* W13: viết một writer backpressure thứ hai, yếu hơn, cạnh `RpcOutputWriter` đã mạnh hơn và đã có test. W11: dựng `constrained-sampling.ts` cạnh `normalize.ts`. W12: phải nói rõ `concurrency = \"exclusive\"` đã serialise gì — nó chỉ trong MỘT batch của MỘT agent (`lastExclusive` function-local tại `packages/agent/src/agent-loop.ts:3511`, trong `executeToolCalls` bắt đầu ở `:3024`), không chia sẻ giữa các agent hay session; `ast_edit` không khai báo concurrency nên không được bảo vệ gì. W14/W15/W17: kế hoạch và bản tham chiếu mô tả một hình dạng mà cây này không có — ~~W8 nói thẳng "`pi-ref/` does not exist in this checkout ... all six constants ... are UNVERIFIABLE from this repo";~~ W15 nói transcript chính KHÔNG dùng `ScrollView` như kế hoạch giả định; W17 nói `findExtensionStackMatches` phụ thuộc `Extension.sourceInfo.{origin,source,baseDir,scope}` mà record của omp khác hình dạng. W19: dựng một hệ thống (wrapper, plugin tuỳ biến) thay vì một dòng cấu hình — bản tham chiếu chỉ có một dòng `deny` cộng chú thích 2 dòng, không phải một hệ thống. | Mỗi item phải trả lời bằng chứng: "cái đang chạy là gì, và tôi đang sửa nó chứ không thêm bên cạnh". Với W12, viết vào PR một câu giải thích vì sao cần cả hai cơ chế. Với ~~W8~~/W14/W15/W17, số và hình dạng phải **suy ra từ cây này hoặc từ nguồn công bố**, không từ trí nhớ về `pi-ref`; nếu không suy ra được thì để field undefined và ghi lại, đừng đoán. |
+| W6, W10, W12, W13, W17 | **Đổi hành vi người dùng thấy, trên đường production đang chạy, khi quyết định chưa được ký.** W6: `rm -rf /tmp/build` khớp regex recursive-delete neo `/`, nên user dựa vào allow rule để auto-run cleanup trong yolo mất luôn, không có escape hatch ở tầng settings — và thêm nữa là **half-applying the pair**: check ở `bash.ts:515` bị guard `!compoundSegments` nên không reachable với compound command, dòng `bash.ts:545` mới là nhánh payload thật đi tới; sửa 516 một mình là không làm gì. ~~W8: `"off"` làm mặc định là một BREAK trên tính năng đang chạy và miễn phí.~~ *(W8 ngoài phạm vi 2026-09-28.)* W10: "telemetry.ts sits on every agent path, so a regression here is a production incident and not a red test" — rủi ro hồi quy trên mỗi LOC cao nhất milestone. W12: queue chặn interleaving và byte-tearing nhưng KHÔNG chặn lost update, vì lần đọc pre-image tại `packages/coding-agent/src/edit/index.ts:711` nằm ngoài lock; và bọc `writeFileWithFallback` (:402) có thể deadlock nếu extension handler gọi lại vào chính queue đó. W13: chạm ba đường stdout đang chạy. W17: transcript là opt-in (đúng), nhưng redaction phải load-bearing — không thì bí mật lọt vào một file mà người dùng được dặn là an toàn để gửi đi. | Không item nào trong nhóm này được coi là xong khi test xanh mà quyết định sản phẩm chưa có. W6 cần sign-off của product trước khi sửa dòng nào. ~~W8 cần chốt cửa sổ deprecation trước release.~~ *(W8 ngoài phạm vi 2026-09-28 — không còn release nào của nó.)* W10 cần commit tách riêng: `git diff --stat` trên `packages/agent/test/otel.test.ts` phải rỗng — đó là bằng chứng duy nhất rằng không có exported signature nào đổi. W12 phải nói rõ trong PR là chỉ sửa interleaving. W13 chỉ migrate những call site đã chốt ở bảng quyết định, không tự mở rộng. W17 khoá normalize như một assertion bắt buộc, không phải tuỳ chọn. |
 
-**Vì sao bốn dòng này và không phải mười bảy.** Dòng 1 và dòng 2 là cùng một triệu chứng — bạn tin cổng, cổng im — nhưng khác nguồn: một cái do môi trường, một cái do bản thân cách viết test. Dòng 3 và dòng 4 là cùng một triệu chứng — bạn viết code đúng hình dạng nhưng sai ý. Ba đường hỏng nặng nhất theo thứ tự: **dòng 1** vì nó làm mất toàn bộ giá trị nghiệm thu của mười một item cùng lúc và không tự lộ ra; **dòng 4** vì hậu quả tới người dùng và tới production; **dòng 3** vì nó âm thầm để lại nợ kỹ thuật mà không ai phát hiện cho tới milestone sau. Bảy mục `risk` còn lại của các item là biến thể cục bộ của bốn dòng này, không phải đường hỏng thứ năm.
+**Vì sao bốn dòng này và không phải hai mươi mối.** Dòng 1 và dòng 2 là cùng một triệu chứng — bạn tin cổng, cổng im — nhưng khác nguồn: một cái do môi trường, một cái do bản thân cách viết test. Dòng 3 và dòng 4 là cùng một triệu chứng — bạn viết code đúng hình dạng nhưng sai ý. Ba đường hỏng nặng nhất theo thứ tự: **dòng 1** vì nó làm mất toàn bộ giá trị nghiệm thu của mười một item cùng lúc và không tự lộ ra; **dòng 4** vì hậu quả tới người dùng và tới production; **dòng 3** vì nó âm thầm để lại nợ kỹ thuật mà không ai phát hiện cho tới milestone sau. Bảy mục `risk` còn lại của các item là biến thể cục bộ của bốn dòng này, không phải đường hỏng thứ năm.
 
 ---
 
 ## Bảng quyết định cần bạn chốt
 
-`questions.json` có **64 câu hỏi**. Hai câu của W16 về `move()` và về `readSlices` trên path không tồn tại là **cùng một quyết định** (hợp đồng nào là đúng, hay group bị over-specified) nên gộp thành một dòng và ghi rõ cả hai divergence — tổng còn **63 dòng**. Nhóm A là những câu không có câu trả lời thì **không bắt đầu được** work item, hoặc bắt đầu rồi thì viết ra sai ngay dòng code đầu tiên. Nhóm B là phần còn lại: gộp sau khi land, hoặc ghi vào handoff M2.
+`questions.json` có **64 câu hỏi**. Hai câu của W16 về `move()` và về `readSlices` trên path không tồn tại là **cùng một quyết định** (hợp đồng nào là đúng, hay group bị over-specified) nên gộp thành một dòng và ghi rõ cả hai divergence — tổng còn **63 dòng**. Thêm **2 dòng** ngày 2026-09-29 từ `.lavish-wip/GAP-REGISTER-2.md` §4 (`GAP-D4` → W18, `GAP-D5` → W20) — chúng **không** đến từ `questions.json` — nên bảng dưới có **65 dòng**. Nhóm A là những câu không có câu trả lời thì **không bắt đầu được** work item, hoặc bắt đầu rồi thì viết ra sai ngay dòng code đầu tiên. Nhóm B là phần còn lại: gộp sau khi land, hoặc ghi vào handoff M2.
 
 ### Nhóm A — chặn việc bắt đầu work item
+
+> ⛔ **Sáu hàng `~~W8 (cache warmer)~~` dưới đây không còn cần bạn chốt** (2026-09-28): W8 đã ra
+> khỏi phạm vi, nên không có work item nào để bắt đầu và không có quyết định nào còn treo. Chúng
+> được giữ lại như vết của `questions.json` cũ — **đừng trả lời chúng**, và đừng tính chúng vào
+> việc còn tồn đọng.
 
 | Work item | Câu hỏi | Vì sao nó chặn | Mặc định nếu không trả lời |
 | --- | --- | --- | --- |
@@ -3711,8 +4335,8 @@ Mười bảy work item có mười bảy `risk` riêng. Đọc chúng cạnh nh
 | W6 (deny critical patterns) | `policy: \"prompt\"` có thay được cho `deny` không? Dưới yolo một quyết định mang `policy` tường minh được trả nguyên văn kèm `override: false`, nên lệnh nguy hiểm sẽ hỏi thay vì bị từ chối. `prompt` bị loại vì `docs/approval-mode.md:162` nói `prompt` không thỏa được trong subagent headless, còn `deny` fail-closed xác định. | Câu hỏi tự nói: "this is not a detail the engineer should decide". Nó đổi nhánh if, không phải đổi một dòng. | `deny` (theo câu hỏi) |
 | W6 (deny critical patterns) | **SIGN-OFF:** có chấp nhận rằng `bash.patterns` với `{ approval: \"allow\" }` không còn cho phép **bất kỳ** lệnh nào khớp `CRITICAL_BASH_PATTERNS` không? `rm -rf /tmp/build` khớp regex recursive-delete neo `/`, nên user đang dựa vào allow rule để auto-run cleanup trong yolo sẽ mất, không có escape hatch ở tầng settings. Ba lựa chọn: (a) ship nguyên; (b) deny nhường cho `tools.approval.bash: \"allow\"` tường minh; (c) thu hẹp `CRITICAL_BASH_PATTERNS` để loại `/tmp` và `/var/tmp`. | Đây là phần sắc nhất của thay đổi và kế hoạch không gọi tên nó. Chốt (b) hay (c) sau khi đã ship (a) thì là thay đổi hành vi lần hai. | (a) ship nguyên — khuyến nghị trong câu hỏi |
 | W7 (`promptCacheLifetime`) | **OQ1 — chặn:** giữ boolean `supports-long-prompt-cache-retention` (đã wired ở `axes.ts:153`, khai ở `anthropic.kdl:266, 286, 292, 317, 328, 341, 349`, hai consumer gate `ttl: \"1h\"` tại `packages/ai/src/providers/amazon-bedrock.ts:960` và `openai-responses.ts:1253`, resolve ở `resolve.ts:721` và `:830` với baseline hard-code `false` ở `resolve.ts:899`) hay hợp nhất? (a) xoá boolean và migrate cả hai consumer sang `promptCacheLifetime?.long`; (b) giữ cả hai với nghĩa tách bạch tường minh. | Kế hoạch tự gọi đây là BLOCKING và nó đổi nội dung bước 6. Quan trọng hơn: compiler **không** bắt được chuyện "hai axis nói cùng một sự thật" — `gen:compat`, `check:ts` và `check:ts` ở catalog đều có thể xanh trong khi quyết định thiết kế vẫn chưa có. | chưa có mặc định — khuyến nghị trong câu hỏi: giữ boolean (đã ship và đúng), scope `promptCacheLifetime` chỉ cho `[\"anthropic\"]`, tách việc hợp nhất thành work item riêng |
-| W8 (cache warmer) | F6 (`decideWarm` / `WarmDecision`) được lên lịch trong milestone 1, hay W8 tự định nghĩa shape? Chữ ký `arm()` mới nhận `WarmDecision`, mà trong repo chưa có type hay hàm nào tên đó. | Câu hỏi tự nói: phải chốt trước khi kỹ sư bắt đầu, vì nó quyết định bước 4 có gõ được hay không. | chưa có mặc định — cần bạn quyết |
-| W8 (cache warmer) | `pi-ref/` không tồn tại trong checkout này, nên cả sáu hằng kế hoạch bảo port (`MAX_WARMING_AGE_MS` :16, `MAX_IDLE_WARMING_AGE_MS` :18, `CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS` :20, `IDLE_CONTINUATION_PROBABILITY` :26, `getCacheWarmingDelayMs` :29, `isReplayable` :55-57) và mọi claim hành vi trích từ `cache-warmer.ts` đều **không kiểm chứng được** từ repo này. Package tham chiếu thật nằm ở đâu, và có nên tự suy ra số từ bảng TTL công bố của Anthropic thay vì port? | Cùng một cổng chặn với W7: bảng TTL theo provider theo tier phải tồn tại trước khi W7 **và** W8 bắt đầu. Kỹ sư không source được một con số thì phải để field undefined chứ không đoán — TTL đo quá làm refresh nổ trên một entry lẽ ra còn sống, TTL đo thiếu chỉ mất một lần miss. | chưa có mặc định — cần bạn quyết |
+| ~~W8 (cache warmer)~~ — ⛔ NGOÀI PHẠM VI | F6 (`decideWarm` / `WarmDecision`) được lên lịch trong milestone 1, hay W8 tự định nghĩa shape? Chữ ký `arm()` mới nhận `WarmDecision`, mà trong repo chưa có type hay hàm nào tên đó. | Câu hỏi tự nói: phải chốt trước khi kỹ sư bắt đầu, vì nó quyết định bước 4 có gõ được hay không. | chưa có mặc định — cần bạn quyết |
+| ~~W8 (cache warmer)~~ — ⛔ NGOÀI PHẠM VI | `pi-ref/` không tồn tại trong checkout này, nên cả sáu hằng kế hoạch bảo port (`MAX_WARMING_AGE_MS` :16, `MAX_IDLE_WARMING_AGE_MS` :18, `CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS` :20, `IDLE_CONTINUATION_PROBABILITY` :26, `getCacheWarmingDelayMs` :29, `isReplayable` :55-57) và mọi claim hành vi trích từ `cache-warmer.ts` đều **không kiểm chứng được** từ repo này. Package tham chiếu thật nằm ở đâu, và có nên tự suy ra số từ bảng TTL công bố của Anthropic thay vì port? | Cùng một cổng chặn với W7: bảng TTL theo provider theo tier phải tồn tại trước khi W7 **và** W8 bắt đầu. Kỹ sư không source được một con số thì phải để field undefined chứ không đoán — TTL đo quá làm refresh nổ trên một entry lẽ ra còn sống, TTL đo thiếu chỉ mất một lần miss. | chưa có mặc định — cần bạn quyết |
 | W11 (strict qua bridge) | Có nâng W11 lên M không? Năm dòng `readonly strict = true` của builtin cố ý **không** được file test này khoá; muốn khoá thật phải assert trên wire của một provider opt-in (dựng tool list với `bash` rồi đọc payload `openai-codex-responses.ts:5078` hoặc `devin.ts:659` phát ra) — đó là provider round-trip cỡ M, không phải S. | Quyết định cỡ của item. Nếu giữ S thì khoảng trống này bắt buộc phải được ghi vào bảng wave, để người đọc không tưởng là sót. | chưa có mặc định — cần bạn quyết (nếu giữ S thì phải ghi khoảng trống) |
 | W12 (`withFileMutationQueue`) | **DECISION REQUIRED — bề mặt extension:** helper là internal. Một extension ngoài repo đăng ký tool qua `registerTool` (`packages/coding-agent/src/extensibility/extensions/types.ts:1347`) rồi gọi `Bun.write` trực tiếp là nép hoàn toàn. (a) export `withFileMutationQueue` ra API extension ngay, hay (b) ghi vào handoff M2 rằng mutation của bên thứ ba không được serialize, kèm lý do? | Câu hỏi tự nói: câu trả lời BẮT BUỘC phải nằm trong handoff M2 — M2 không được phải đoán. Đây cũng là quyết định bề mặt public, nên phải có trước khi viết. Lưu ý: neo `types.ts:1322` mà kế hoạch trích là một overload `on(\"auto_compaction_end\")`, không phải `registerTool`. | chưa có mặc định — cần bạn quyết |
 | W12 (`withFileMutationQueue`) | **DECISION REQUIRED — keying cho `ast_edit`:** một call `ast_edit` có thể ghi nhiều file dưới một glob (`runAstEditTargets` lặp ở :85-95). (a) key theo scope path đã resolve (`resolvedSearchPath`) — thô nhưng rẻ, và hai call cùng scope sẽ serialize; (b) key theo từng file được ghi — không làm được hôm nay, vì các write nằm bên trong call native `astEdit` và omp không thấy từng file; (c) không route `ast_edit` và chấp nhận lỗ hổng. | Kế hoạch nói phải route `ast_edit` nhưng không nói key thế nào — đây đúng là phần code sẽ viết. Chọn (c) là một thay đổi phạm vi lặng lẽ. | (a) key theo `resolvedSearchPath`, ghi rõ độ thô đó trong PR (khuyến nghị trong câu hỏi) |
@@ -3724,6 +4348,8 @@ Mười bảy work item có mười bảy `risk` riêng. Đọc chúng cạnh nh
 | W15 (transcript search) | **Chi phí replay trên session lớn.** `CopySelectorComponent` cố tình chỉ replay phần đuôi (`recentEntries` / `INITIAL_ENTRIES`) rồi lazy-load toàn bộ history. Search cần cả nhánh, nên mọi lần mở đều là một full rebuild; trên session 200k dòng đây là rủi ro hiệu năng thật duy nhất của item, và fast path không giúp vì nó chỉ áp cho indexing chứ không áp cho replay. (i) chấp nhận và hiện `indexing…`; (ii) cache replay trên mode object, invalidate khi session đổi; (iii) giới hạn cửa sổ tìm kiếm và nói rõ trong UI. | Người chọn cần một **con số**, không phải cảm giác — phải đo trước khi chọn. Nhánh (i) và (iii) là quyết định trải nghiệm người dùng, (ii) là quyết định kiến trúc. | chưa có mặc định — cần bạn quyết, sau khi đo |
 | W16 (storage conformance) | Cho phép đăng ký Redis chạy trên double tự viết không? Repo không có hạ tầng `bun:redis`, và cả hai file test Redis hiện tại nói thẳng là tránh server sống (`so the suite runs without a live server`, `redis-session-storage.test.ts:1-16`). Chạy trên double thì test **contract của storage**, không test ngữ nghĩa Redis server: `EVAL` atomicity thật, hành vi cursor `SCAN` và connection error đều không được test dù thế nào. | Quyết định này đổi hạ tầng CI chứ không đổi code — nên phải chốt trước khi viết registration. | chưa có mặc định — cần bạn quyết |
 | W16 (storage conformance) | Có đưa Postgres và MySQL vào phạm vi không? `sql-session-storage.test.ts` chỉ string-inspect DDL/upsert dialect dựng lúc khởi tạo; không test nào thực sự chạy các câu lệnh đó. Thêm Postgres/MySQL sống vào conformance suite là một việc lớn hơn tất cả phần còn lại của item cộng lại. | Cùng lý do: quyết định phạm vi và ngân sách hạ tầng, phải có trước khi viết. | Ngoài phạm vi milestone 1 trừ khi được yêu cầu tường minh (theo câu hỏi) |
+| W18 (`omp doctor`) | **GAP-D4 — chặn:** chốt danh sách check **trước khi viết dòng nào**. `doctor` là cái bẫy kinh điển vì mọi tính năng mới đều muốn thêm một check. Câu hỏi từ `.lavish-wip/GAP-REGISTER-2.md` §4. | Quyết định này quyết định bước 1 của W18 có gõ được hay không. Mọi check thêm sau danh sách phải **tự chứng minh bằng một test**; sổ còn yêu cầu một quy tắc ghi vào **PR template**, không chỉ ý định miệng. | Chốt danh sách 7 check ở bước 1 của W18 (config parse + `assertKnownSettingPaths`; credential reachability; parity `patches/*.patch` ↔ `package.json.patchedDependencies`; thư mục log; số extension active; `PATH`/`which` cho `git`; native addon). **Không** probe network, sandbox, hay bất kỳ thứ gì cần network (theo câu hỏi) |
+| W20 (approval cache key) | **GAP-D5 — chặn ship:** giữ đường hồi tương thích cho cache `allow_always` theo tên tool cũ không? Các phiên đang cache sẽ hỏi lại một lần nữa. | Cache cũ theo tên tool **chính là thứ đang gây lỗi** (`rm -rf` sau một "always allow" cho `git status`). Nhưng đây là thay đổi hành vi người dùng thấy, và quyết định này phải của người chứ chứ không phải của người implementer. | **Không giữ** (khuyến nghị trong câu hỏi); nêu trong changelog |
 | W17 (bug-report) | Crash ring có dùng luôn `getCrashLogPath()` (`~/.omp/agent/omp-crash.log`) như kế hoạch dặn không, dù nó sẽ chứa một JSON array dưới đuôi `.log`? pi ghi JSON ra `crashes.json`. Nếu bạn muốn tên khớp thì đó là một dòng trong `packages/utils/src/dirs.ts` cộng một ghi chú rằng helper không còn zero-consumer nữa. | Câu hỏi tự nói: quyết **trước khi viết file**, không phải sau. | Dùng `getCrashLogPath()` — kế hoạch nói rõ và câu hỏi xác nhận mặc định bám theo kế hoạch |
 
 ### Nhóm B — phần còn lại
@@ -3748,14 +4374,13 @@ Mười bảy work item có mười bảy `risk` riêng. Đọc chúng cạnh nh
 | W6 (deny critical patterns) | Ví dụ extension-authoring ở `docs/approval-mode.md:124` sửa sang hình dạng mới, hay để nguyên như một bằng chứng rằng override trần vẫn hợp lệ nhưng bị yolo bỏ qua? | Ảnh hưởng tài liệu mà extension author đọc. | Sửa theo hình dạng mới (bước 11) — ví dụ hiện tại đang dạy một hình dạng âm thầm không có tác dụng dưới chế độ mặc định (theo câu hỏi) |
 | W7 (`promptCacheLifetime`) | **OQ2:** test (4) của kế hoạch yêu cầu dựng request params "qua public path của provider" cho **cả** `openai-responses.ts` và `openai-completions.ts`. Với responses thì làm được (`buildParams` export ở :1174, gọi policy fn ở :1365), nhưng với completions thì không: `buildParams` ở :1797 là module-private, `applyOpenAIChatCompletionsPromptCachePolicy` ở :1767 cũng vậy, chỉ reachable từ :1999. Chọn (a) export `buildParams`; (b) chạy `streamOpenAICompletions` với fetch bị chặn (hoàn toàn public, nặng, cần mock server); (c) cover responses qua `buildParams` export, cover completions qua test stream với mock fetch. | Quyết định bề mặt public của `openai-completions` chỉ để test được. Chọn (a) là thay đổi production chỉ vì testability. | chưa có mặc định — cần bạn quyết, và ghi lựa chọn vào comment header của file test |
 | W7 (`promptCacheLifetime`) | **OQ3:** `promptCacheLifetime` có cho user override trong `models.yml` không? Nếu có thì phải thêm vào omptype schema viết tay `packages/coding-agent/src/config/models-config-schema-bundle.ts` (không phải file generated; `supportsLongPromptCacheRetention?: \"boolean\"` hiện ở :70 và :96). Nếu axis thuần rule-owned thì bỏ ra và nói rõ. | Quyết định có mở rộng bề mặt authoring cho user hay không. | Không cho override — strata sở hữu trong AGENTS.md đặt thứ này vào cây KDL (khuyến nghị mặc định trong câu hỏi) |
-| W8 (cache warmer) | `"off"` làm mặc định là một **BREAK** trên tính năng đang chạy và miễn phí. User đang hưởng lợi từ keep-alive warming không điều kiện sẽ mất nó mà không cần hành động gì. Một ghi chú migration trong changelog là đủ, hay release đầu cần một cửa sổ deprecation giữ mặc định cũ? | Quyết định thuộc về release, phải chốt trước khi chốt mặc định. | chưa có mặc định — cần bạn quyết (giá trị mặc định `off` thì đã nêu trong effect của W8; câu hỏi này là về cửa sổ deprecation) |
-| W8 (cache warmer) | **Cách ly test:** `isLeakedThinkingHealExempt` (`packages/ai/src/stream.ts:102`) đọc `$env.ANTHROPIC_BASE_URL` và `$env.FOUNDRY_BASE_URL`, còn `resolveCacheRetention` (`utils.ts:538`) đọc `$env.PI_CACHE_RETENTION`. Một máy có `PI_CACHE_RETENTION=long` trong shell sẽ cho kết quả khác CI, và AGENTS.md cấm mutate env ở cấp file. Suite hiện có đã có `withOfficialAnthropicEndpoint` trong `packages/ai/test/helpers` cho nửa endpoint — test mới nên đi qua một helper tương ứng cho nửa retention, hay mỗi case phải trung hoà env tường minh? | Quyết định công cụ test dùng chung; ảnh hưởng độ ổn định của suite trên máy kỹ sư. | chưa có mặc định — cần bạn quyết |
-| W8 (cache warmer) | Nới cổng retention ở :1431 để `long` cũng warm sẽ đổi kinh tế của các session context lớn nhất. Điều này có tương tác với accounting cache-miss của W9 không, hay W9 hoàn toàn downstream và không biết? | Quyết định giá trị mà W9 báo cáo có còn đúng không khi chính sách warm đổi. | chưa có mặc định — cần bạn quyết |
-| W8 (cache warmer) | Kế hoạch nói không provider nào khác được phép warm, nhưng cũng nói KDL fact có thể nói về axis api/provider/transport. Trạng thái cuối đúng là gì: "anthropic-messages trên mọi provider trừ pi-native transport", hay "chỉ provider anthropic, để axis sẵn sàng cho sau"? | Hai hình dạng KDL khác nhau, và sự khác biệt không khôi phục lại được sau này nếu thiếu migration. | chưa có mặc định — cần bạn quyết |
+| ~~W8 (cache warmer)~~ — ⛔ NGOÀI PHẠM VI | `"off"` làm mặc định là một **BREAK** trên tính năng đang chạy và miễn phí. User đang hưởng lợi từ keep-alive warming không điều kiện sẽ mất nó mà không cần hành động gì. Một ghi chú migration trong changelog là đủ, hay release đầu cần một cửa sổ deprecation giữ mặc định cũ? | Quyết định thuộc về release, phải chốt trước khi chốt mặc định. | chưa có mặc định — cần bạn quyết (giá trị mặc định `off` thì đã nêu trong effect của W8; câu hỏi này là về cửa sổ deprecation) |
+| ~~W8 (cache warmer)~~ — ⛔ NGOÀI PHẠM VI | **Cách ly test:** `isLeakedThinkingHealExempt` (`packages/ai/src/stream.ts:102`) đọc `$env.ANTHROPIC_BASE_URL` và `$env.FOUNDRY_BASE_URL`, còn `resolveCacheRetention` (`utils.ts:538`) đọc `$env.PI_CACHE_RETENTION`. Một máy có `PI_CACHE_RETENTION=long` trong shell sẽ cho kết quả khác CI, và AGENTS.md cấm mutate env ở cấp file. Suite hiện có đã có `withOfficialAnthropicEndpoint` trong `packages/ai/test/helpers` cho nửa endpoint — test mới nên đi qua một helper tương ứng cho nửa retention, hay mỗi case phải trung hoà env tường minh? | Quyết định công cụ test dùng chung; ảnh hưởng độ ổn định của suite trên máy kỹ sư. | chưa có mặc định — cần bạn quyết |
+| ~~W8 (cache warmer)~~ — ⛔ NGOÀI PHẠM VI | Nới cổng retention ở :1431 để `long` cũng warm sẽ đổi kinh tế của các session context lớn nhất. Điều này có tương tác với accounting cache-miss của W9 không, hay W9 hoàn toàn downstream và không biết? | Quyết định giá trị mà W9 báo cáo có còn đúng không khi chính sách warm đổi. | chưa có mặc định — cần bạn quyết |
+| ~~W8 (cache warmer)~~ — ⛔ NGOÀI PHẠM VI | Kế hoạch nói không provider nào khác được phép warm, nhưng cũng nói KDL fact có thể nói về axis api/provider/transport. Trạng thái cuối đúng là gì: "anthropic-messages trên mọi provider trừ pi-native transport", hay "chỉ provider anthropic, để axis sẵn sàng cho sau"? | Hai hình dạng KDL khác nhau, và sự khác biệt không khôi phục lại được sau này nếu thiếu migration. | chưa có mặc định — cần bạn quyết |
 | W9 (usage attribution) | Các dòng per-model render ở đâu trong `/info`: bên trong block `Cost` sẵn có (`command-controller.ts:415-431`), hay thành một section `Attribution` mới ngay sau nó? | Quyết định hình dạng output. | Section `Attribution` mới — block `Cost` sẵn có còn mang Credits và Premium Requests vốn không có nghĩa per-model; gộp dòng vào đó sẽ ám chỉ chúng cũng được attribution (khuyến nghị trong câu hỏi) |
 | W9 (usage attribution) | `/usage` (đường text của ACP, `buildUsageReportText`) có thêm block per-model khi có limit do provider báo không? | Quyết định nhất quán giữa `/info` và `/usage`. | Chỉ thêm block vào nhánh fallback local-tallies, và ghi comment rằng nhánh provider-reported không có dữ liệu per-model theo cấu trúc (theo câu hỏi) |
 | W9 (usage attribution) | Tên bucket `Tools/summaries` là literal bán ra hay một hằng export dùng chung? | Tên này sẽ bị W17 hard-code vào template bug-report, nên phải chốt trước khi W17 viết. | Export `TOOLS_SUMMARIES_BUCKET` từ module mới và dùng ở cả aggregator lẫn renderer (khuyến nghị trong câu hỏi); literal vẫn là `"Tools/summaries"` |
-
 | W10 (telemetry contract) | `TelemetryAttributes` có nhận giá trị `null`/`undefined` không, giống `AttributeValue` của OTEL? Đã kiểm `node_modules`: OTEL định nghĩa `string \| number \| boolean \| Array<null\|undefined\|string> \| Array<null\|undefined\|number> \| Array<null\|undefined\|boolean>` và `Attributes` cho phép `AttributeValue \| undefined`. Spec đang đặt hẹp hơn (`readonly string[]` / `number[]`) vì đó là thứ omp thực sự gán hôm nay. | Đây là hình dạng type đầu tiên của commit 1, và một backend sau này có thể cần `null`. | Hẹp (`readonly string[]` / `number[]`), nới ra khi có backend cần (theo câu hỏi) |
 | W10 (telemetry contract) | `conformance.ts` được ship trong cây `src` đã publish hay chỉ dev? `packages/agent/package.json` có `files: [\"src\"]` và main/types trỏ vào source, nên một module conformance nằm trong `src` sẽ tới tay mọi consumer. Nó vô hại (thuần, không dependency) nhưng đây là lựa chọn có chủ ý, không phải tai nạn. | Quyết định có đóng gói hay không — ảnh hưởng bề mặt publish của package, khó gỡ sau. | Đặt ở `packages/agent/src/telemetry/conformance.ts` theo danh sách file của spec, tức là sẽ được publish; nếu muốn test-only thì chuyển sang `test/` (theo câu hỏi) |
 | W10 (telemetry contract) | Có export contract ra package root trong milestone 1 không, hay giữ internal với một owner được gọi tên? Kế hoạch coi dòng barrel là bắt buộc và điều đó đúng, vì tiền đề của commit 2 phụ thuộc vào nó — nhưng nó cũng nghĩa là một cam kết API public được cam kết trong một milestone không hướng người dùng. | Cần một yes/no tường minh trước khi merge commit 1. | Export ra root — dòng barrel là bắt buộc vì tiền đề của commit 2 dựa vào nó (theo câu hỏi) |
@@ -3782,6 +4407,10 @@ Mười bảy work item có mười bảy `risk` riêng. Đọc chúng cạnh nh
 
 
 ## Đính chính so với plan tổng
+
+> ⛔ **Các mục ghi `W8` trong mục này thuộc về lịch sử, không phải việc còn tồn.** W8 đã ra khỏi phạm
+> vi ngày 2026-09-28 (xem khối ⛔ ở đầu §W8). Mục này ghi lại **plan gốc đã nói gì và sai ở đâu**,
+> nên W8 vẫn xuất hiện ở đây — đọc nó như một bản ghi, đừng suy ra W8 còn cần làm.
 
 Bảng dưới liệt kê đủ **141** đính chính của milestone này, nhóm theo work item. Mỗi dòng là một điểm kiểm được, không phải nhận xét chung chung.
 
@@ -3847,16 +4476,21 @@ cổng nghiệm thu với một dòng kể.
 | **W15** | Tìm kiếm transcript trong TUI | Three gates, at least two of which genuinely go red. (1) REGISTRY GATE — the real one. packages/coding-agent/src/modes/controllers/input-controller.ts calls this.ctx.keybindings.matches(data, "app.transcript.search"), and Keybind… | có |
 | **W16** | Hợp đồng conformance chung cho session storage | `bun test packages/coding-agent/test/session/storage-conformance.test.ts packages/coding-agent/test/session/indexed-over-real-backend.test.ts` exits 0, AND the `lateAtomicRollback` group demonstrably runs against a real `SqlSessi… | có |
 | **W17** | Gói bug-report đã redact + crash ring | W17 is DONE when all of the following hold, and it is falsifiable — each line goes red if the corresponding work is missing. (1) `bun test packages/coding-agent/test/diagnostics/redact.test.ts` passes with all seven cases, and th… | có |
+| **W18** | GAP-M1-18 — `omp doctor` | W18 is DONE when all of the following hold, and each line is falsifiable. (1) `grep -c 'name: "doctor"' packages/coding-agent/src/cli-commands.ts` is >= 1 — without it `omp doctor` falls through to `runCli` and argv becomes an LLM prompt (regression #1499/#1496). (2) `bun run doctor` exits 1 when a check is at error severity and 0 when clean — BOTH branches, in the same run. (3) The header self-warning case goes red ON ITS OWN when that branch is removed: a check whose precondition is broken must print "không kiểm được X vì Y" and must NOT also print a green line for X — both halves are asserted together, because a one-directional assert passes on a silent implementation. (4) `runDoctorChecks` and `formatDoctorResults` are still exported after `doctor` has a consumer (proved by import, never by source-grep). (5) The credential check reports presence/absence and the key value is absent from the output. Caveat stated plainly: `bun test` does not run in this checkout until `bun --cwd=packages/natives run build`; before that only `check:ts` and the `grep` in (1) produce any signal. | có |
+| **W19** | GAP-M1-19 — cấm `console.*` bằng lint | W19 is DONE when (1) `grep -c 'no-console' .oxlintrc.json` is >= 1; (2) `bun run lint` is green at HEAD; (3) the load-bearing proof — adding one `console.log` to any library file turns `bun run lint` RED, and removing it turns it green again. A gate that cannot go red is not evidence. (4) the allow-list is enforced through `overrides`, NOT `ignorePatterns` — `git diff` on `.oxlintrc.json` must not touch the 24-line `ignorePatterns` block, because `ignorePatterns` disables every other rule on those files. (5) `packages/metaharness/src/tb/cli.ts` still passes (the reverse direction — otherwise switching the rule off repo-wide would also pass). | có |
+| **W20** | GAP-M1-20 — khoá cache `allow_always` theo hành động | W20 is DONE when (1) the mandatory negative case holds and goes red ON ITS OWN if `canonicalizeApprovalKey` is reverted to returning `toolName`: approving "Always allow" for `git status` and then running `rm -rf ./build` through the same `bash` tool must ask again; (2) the tightening direction also holds — the SAME approval followed by `git status` must NOT ask; (3) `PERMISSION_OPTIONS` renders the scope being granted and the test reads that string; (4) `reject_always` and `allow_always` share one key function, proved by behaviour, never by source-grep; (5) no `cacheKey: toolName` remains on any of the four branches (bash :55, delete :63, move :70 and :75); (6) the existing `approval.test.ts` suite stays green with no assertion edited. | có |
+| **W21** | GAP-M1-21 — harden tiến trình trước main | W21 is DONE when (1) all three preservation cases pass; (2) removing the `isProcessEntry` guard turns case (2) red by itself — without that guard `bun test` and SDK embedding enter the same `cli.ts`, the test runner silently becomes dumpable=0, and a deliberately crashing test produces no trace at all; (3) widening `sanitizeChildEnv` to filter `PATH` turns case (3) red by itself; (4) the filter is wired into BOTH spawn paths in `bash-executor.ts` (`Bun.spawn` and the Bun shell), not one; (5) `process.title = APP_NAME` still exists and runs AFTER the harden call; (6) on Windows `hardenProcess()` throws nothing — record this as UNVERIFIED if no Windows host or CI runner is available, rather than green. | có |
+| **W22** | GAP-M1-22 — `omp session` | W22 is DONE when (1) `grep -c 'name: "session"' packages/coding-agent/src/cli-commands.ts` is >= 1 AND the SINGLE shared routing assertion added with W18 covers `doctor` as well — two separate assertions would let regression #1499/#1496 come back, because a command missing from `cli-commands.ts` falls through to `runCli` and argv becomes an LLM prompt, a silent consequence; (2) `bun run session list` and `bun run find` produce the same content on the same store, and re-routing `list` to its own read path turns that case red by itself; (3) `flag-tables.ts:249` (`:--resume` / `-r` / `--session` with `rejectEmpty`) and `:300` (`--continue`) are unchanged, verified with `git diff --stat`; (4) `omp find`, `omp gc`, `omp share`, `/resume` and `/fork` keep their behaviour. | có |
 | **W2** | Bốn điểm drain: ngược thứ tự, cô lập lỗi | All three tests in `packages/coding-agent/test/disposer-drain.test.ts` pass, and `bun run check:ts` is clean. Specifically: (1) run order is `["C", "B", "A"]`; (2) the non-throwing disposer ran AND `logger.warn` fired once AND `d… | có |
 | **W3** | Type guard ở biên giải mã collab frame | All three commands above pass. Specifically: (a) `bun test packages/coding-agent/test/collab/crypto.test.ts` reports 33 pass / 0 fail; (b) `cd packages/coding-agent && bun run check:types` exits 0 — which in particular means the… | có |
 | **W4** | Giới hạn ACP `_omp/usage` vào session được yêu cầu | The new test in packages/coding-agent/test/acp-agent.test.ts, run via `bun test packages/coding-agent/test/acp-agent.test.ts -t "usage"`, must be RED before the `acp-agent.ts` change and GREEN after. Concretely: before the fix th… | có |
 | **W5** | Trích dẫn type-conformance của package wire trở nên có thật | The gate is two-sided and both sides were run against real source, not reasoned about. (a) GREEN: with `packages/coding-agent/test/collab/web-wire.types.ts` present and `packages/wire/src/index.ts` untouched, `bun run --cwd packa… | có |
 | **W6** | Deny lệnh bash critical-pattern dưới yolo | `bun test packages/coding-agent/test/tools/approval.test.ts` exits 0 with zero failures, AND the suite contains a test that drives the real `BashTool` under mode `"yolo"` and asserts `resolveApproval(...)` returns `policy: "deny"… | có |
 | **W7** | Trục tuổi thọ prompt-cache theo tier trong catalog | All four must hold. (1) `bun run gen:compat` exits 0 and `git status --short packages/catalog/` shows only the expected regenerated files. (2) `bun run --filter @oh-my-pi/pi-catalog check:types` exits 0. (3) `bun run check:ts` in… | có |
-| **W8** | Vòng refresh prompt-cache có cổng chi phí | TWO PARTS, because one is not enough. PART A — `bun test packages/ai/test/anthropic-cache-refresh.test.ts` with test (0): `anthropicCacheRefresh: "off"` at the boundary produces an absent replay payload, plus test (3) (no request… | có |
+| ~~**W8**~~ | ⛔ **NGOÀI PHẠM VI (2026-09-28)** — xem khối ⛔ ở đầu §W8. Dòng này được giữ lại như vết của spec cũ, **không phải một cổng còn sống**; cổng của nó đỏ vĩnh viễn. | ~~TWO PARTS, because one is not enough. PART A — `bun test packages/ai/test/anthropic-cache-refresh.test.ts` with test (0): `anthropicCacheRefresh: "off"` at the boundary produces an absent replay payload, plus test (3) (no request…~~ | ⛔ không còn áp dụng |
 | **W9** | Attribution usage theo model + bucket Tools/summaries | Two commands, both must be green. (1) `bun run check:ts` from the repo root -- oxlint + oxfmt + `tsgo --noEmit` across every package; it catches the type errors that a blocked `bun test` cannot. (2) Once the native addon is built… | có |
 
-**Milestone 1 hoàn thành khi cả 17 dòng trên đều đạt** — không phải khi code merge, mà khi từng
+**Milestone 1 hoàn thành khi cả 21 dòng còn trong phạm vi ở trên đều đạt** (22 dòng nếu tính hàng `~~W8~~` đã gạch — hàng đó nằm ngoài phạm vi) — không phải khi code merge, mà khi từng
 cổng chạy xanh trên HEAD sau khi thay đổi.
 
 ### Điều kiện áp dụng cho *mọi* cổng
@@ -3876,15 +4510,16 @@ Mục này ngắn và cố ý không đệm. Đây là những gì bạn nên **
 
 Toàn bộ đặc tả được sinh bằng cách **đọc code và chạy lệnh kiểm tra anchor** (`git grep -n`,
 `sed -n`), không phải bằng cách build rồi xem có chạy không. Một work item duy nhất — W3 — đã được
-thử thật (áp dụng, typecheck, chạy test, rồi hoàn tác trên nhánh phụ), và nó xanh. **16 cái còn lại
+thử thật (áp dụng, typecheck, chạy test, rồi hoàn tác trên nhánh phụ), và nó xanh. **21 cái còn lại
 thì không.** Đó là giới hạn thật của tài liệu này.
 
-### 2. Thay thế cho ba package của `pi` chỉ được đối chiếu theo TÊN và BỀ MẶT
+### 2. Thay thế cho `session-backends` chỉ được đối chiếu theo TÊN và BỀ MẶT
 
-`chord`, `durable`, `session-backends` bị loại khỏi M1 với lập luận "đã có thay thế trực tiếp".
-Cái thật sự được kiểm là **file thay thế tồn tại** và **phủ năng lực được nêu tên**. Chưa ai so
-`tương đương hành vi` giữa thay thế và bản gốc. Nên câu *"năng lực giống hệt"* **chưa được
-chứng minh** — nó là giả định, không phải kết luận.
+`chord` **không còn bị loại** — nó được chép (vị trí 1 trong M1B). `durable` **không chép** — package
+chết. `session-backends` vẫn là thứ duy nhất chưa có quyết định, và nó là thứ duy nhất còn bị loại
+khỏi M1 với lập luận "đã có thay thế trực tiếp". Cái thật sự được kiểm là **file thay thế tồn tại** và
+**phủ năng lực được nêu tên**. Chưa ai so `tương đương hành vi` giữa thay thế và bản gốc. Nên câu
+*"năng lực giống hệt"* **chưa được chứng minh** — nó là giả định, không phải kết luận.
 
 ### 3. Nửa "document" của `durable` không có thay thế nào được xác minh
 

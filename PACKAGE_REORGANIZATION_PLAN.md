@@ -1,7 +1,7 @@
 # KẾ HOẠCH TỔ CHỨC LẠI PACKAGE — ĐỘ MỊN CỦA `pi`
 
 Tài liệu này **không thuộc sáu milestone**. Nó là điều kiện tiên quyết để `MILESTONE_1B_EXECUTION_PLAN.md`
-thật sự rẻ và an toàn: nếu 232 file từ `pi` không biết rơi vào đâu, thì mỗi lần chép là một dự án
+thật sự rẻ và an toàn: nếu 169 file từ `pi` không biết rơi vào đâu, thì mỗi lần chép là một dự án
 riêng.
 
 ## Vì sao cần, bằng số đo
@@ -43,9 +43,18 @@ repo) là ứng viên **tệ nhất**, vì `pi/ai/src/auth/` đã tồn tại v�
 
 - `bun run check:ts` exit 0 (0 lỗi, 16 package) — chạy được ngay, **không** cần addon.
 - `bun test packages/tui` và `packages/ai` — chạy được; `coding-agent` thì **bị chặn một phần** bởi
-  native addon (đo: 913 pass / 1.445 fail). Vì vậy cắt bên trong `coding-agent` **không có kiểm thử đầy
-  đủ** cho tới khi addon build được — đây là ràng buộc thứ tự thật, không phải lưu ý.
+  native addon (đo lại 2026-09-29: 855 pass / 1.439 fail, trong đó 1.433 lỗi là `pi-natives` chưa
+  build). Vì vậy cắt bên trong `coding-agent` **không có kiểm thử đầy đủ** cho tới khi addon build
+  được — đây là ràng buộc thứ tự thật, không phải lưu ý.
 - Mỗi bước gộp phải là **một commit**, để hoàn tác được bằng `git revert`.
+- **Bất biến số file.** Chụp `git ls-files packages/ | wc -l` **trước bước gộp đầu tiên**, và sau **mỗi**
+  commit gộp chạy lại đúng lệnh đó: tổng số file trong `packages/` **không được giảm**. `prompts/` và
+  `tools/puppeteer/` cũng vậy — đo riêng từng thư mục, cũng không được giảm. Cổng này không thừa: một
+  file mồ côi biến mất lúc gộp **không** làm đỏ `check:ts`, và cũng **không** làm đỏ test, vì
+  `coding-agent` đã đỏ sẵn (xem dòng trên). Không có phép đo này thì mất file là mất việc, và không ai
+  thấy.
+- Mọi thao tác ở đây là `git mv` + sửa import. **Không thao tác nào được phép xoá file**; xoá là một
+  work item riêng với lý do riêng.
 
 ---
 
@@ -65,7 +74,8 @@ hướng làm giảm số. Nó đếm *file có chuỗi đường dẫn trong te
 
 Script dùng ở đây: build graph thật trên 5.420 file `.ts/.tsx`, resolve qua `package.json` `exports`
 (cả key chính xác, wildcard dài nhất, và `./*`), rồi đếm. **25 specifier không resolve được, tất cả
-đều là fixture trong `test/`** (`test-themes.js`, `helper.cjs`, `optional-missing.js`…) — không ảnh hưởng số.
+đều là fixture trong `test/`** (ví dụ `packages/tui/test/test-themes.ts`; `helper.cjs` và
+`optional-missing.js` không tồn tại trong cây hiện tại) — không ảnh hưởng số.
 
 Bằng chứng số phải dùng: cùng một thư mục, hai cách đếm
 
@@ -177,7 +187,7 @@ Chi phí thật nằm ở **số import statement phải viết lại**, tức c
 kéo theo cả 7. Đây là **xương sống**, không phải lá.
 
 pi tương ứng: `pi/tui/src` chỉ có **1** thư mục con (`components`, 18 file) + 25 file `.ts` ở gốc.
-Tức pi đã **làm phẳng** tui. Xem `model.md` — đây là lý do thao tác đúng ở tui là **gộp**, không phải cắt.
+Tức pi đã **làm phẳng** tui. Xem mục *Mô hình tổng thể* — đây là lý do thao tác đúng ở tui là **gộp**, không phải cắt.
 
 ## 4. `ai/src` — 15 thư mục, pi có 5
 
@@ -297,7 +307,7 @@ Tương tự: `commit`, `commands`, `dap`, `stream`, `security`, `tts`, `stt`, `
 Cắt chúng ra package **không làm việc chép từ pi dễ hơn**; nó chỉ giảm số thư mục con.
 
 Mục tiêu đã nêu là *chép từ pi thành cơ học* + *giảm vỡ vật lý*. Với phần lớn thư mục trong Nhóm B/C,
-cắt package **không phục vụ mục tiêu đó**. Xem `model.md`.
+cắt package **không phục vụ mục tiêu đó**. Xem mục *Mô hình tổng thể*.
 
 ---
 
@@ -481,7 +491,7 @@ vào — tách được, nhưng đắt hơn giá trị.
 **Có một cách cắt rẻ hơn nhiều, và nó cũng phục vụ đúng mục tiêu:** `web/scrapers` (78 file) và
 `web/search` (35 file) là hai thứ **không liên quan gì nhau** — một là bóc nội dung web, một là gọi
 API tìm kiếm. Đo cả hai chiều: **0 import** từ `search`/`gốc web` vào `scrapers/`, và **0 import**
-từ `scrapers/` ngược lại `search` hay `web/index`. Tách `web/scrapers` ra thư mục cấp 2
+từ `scrapers/` ngược lại `search`. Tách `web/scrapers` ra thư mục cấp 2
 (`web-scrapers/`) là **0 import phải viết lại** — chỉ thêm một `web/scrapers.ts` re-export. Sau đó
 chép từ `pi` là chép 35 file có tên, thay vì phải biết nó nằm trong `web/` cạnh 78 file scraper
 không liên quan.
@@ -640,8 +650,9 @@ Lớn nhất, nhưng: import 31 thư mục khác nhau, trong đó `prompts`(46),
 `internal-urls`(31), `task`(25), `config`(23), `sdk.ts`(13). Và `task <-> tools` là vòng 2 chiều.
 
 Cấu trúc nội bộ *có* điểm mềm: `tools/browser` 50 file, `tools/computer` 7, `tools/jfind` 8,
-`tools/puppeteer` **0 file** (thư mục rỗng — nên xoá). 84 file nằm ở gốc `tools/`. Nhưng đây là
-cải tổ nội bộ, không phải tách package.
+`tools/puppeteer` **14 file `.txt` + 0 file `.ts`** (**KHÔNG xoá** — xem mục 4.6; thư mục này trông rỗng
+chỉ vì ta đếm sai đuôi file). 84 file nằm ở gốc `tools/`. Nhưng đây là cải tổ nội bộ, không phải tách
+package.
 
 ### 4.3 `config` (24 file, 403 in-edge, 56 ext-importer)
 
@@ -663,16 +674,25 @@ Cả ba đều là tầng điều phối. Không cắt được.
 
 ### 4.6 `tools/puppeteer/` — **KHÔNG xoá, tôi đã đoán sai**
 
+> **Mục 4.2 đã gỡ câu sai này và trỏ tới đây.** Mục 4.2 từng ghi `tools/puppeteer` là *"0 file (thư
+> mục rỗng — nên xoá)"*. **Câu đó sai và đã bị gỡ.** Xoá ở đây là **hỏng build**, không phải dọn rác —
+> lý do ở hai đoạn kế.
+
 Đếm `*.ts` cho ra 0 nên tôi định ghi "xoá". Sai. Thư mục này chứa **14 file `.txt`** —
 `00_stealth_tampering.txt` … `13_stealth_worker.txt` — là payload chống-detect của trình duyệt nhúng.
-`tools/browser/{launch,registry,screenshot,navigation,frames,dialogs,interactions,query-handlers,queries,webmcp}.ts`
-là những file nạp nó (grep xác nhận 10 file).
+Nó được nạp bởi **đúng một file**: `tools/browser/launch.ts:16-29`, `import` **tĩnh** cả 14 payload
+với `with { type: "text" }` (đo: `git grep -ln 'puppeteer/.*\.txt' -- packages/coding-agent/src` →
+một dòng kết quả). Vì là import tĩnh chứ không phải `readFile` lúc chạy, xoá thư mục này làm đỏ
+`check:ts` — cổng ở mục *Cổng kiểm bắt buộc*.
+*(Đính chính 2026-09-28: bản gốc của mục này ghi "10 file" và kèm danh sách 10 tên; cả hai đều sai —
+trong danh sách ấy chỉ `launch.ts` thật sự nạp payload, các file còn lại không import tới
+`tools/puppeteer/`.)*
 
 Đây chính xác là bẫy của việc đếm file theo phần mở rộng: một thư mục "0 dòng TypeScript" có thể là
 thư mục rác, **hoặc** có thể là payload dữ liệu mà code khác nạp lúc runtime. Ở đây là vế thứ hai.
 Giữ nguyên.
 
-### 4.7 `prompts/` — 223 file `.md`, 0 dòng TS
+### 4.7 `prompts/` — 227 file `.md`, 0 dòng TS
 
 Prompt assets, không phải code. Không tính vào việc cắt code, nhưng **đây là thứ chép từ `pi` dễ
 vỡ nhất** — chép logic thì sửa được, chép prompt thì sai một dòng là hỏng hành vi, và test không bắt
@@ -685,7 +705,7 @@ vỡ nhất** — chép logic thì sửa được, chép prompt thì sai một d
 `package.json` có **119 export key**, gồm:
 - `"." ` → `./src/index.ts`
 - `"./*"` → `./src/*.ts`  ← **wildcard: bất kỳ đường dẫn nào trong `src/` cũng là public API**
-- 38 subpath tường minh (`./session`, `./modes`, `./tools`, `./lsp`, …) + 39 wildcard tương ứng
+- 49 subpath tường minh (`./capability`, `./modes`, `./tools`, `./lsp`, …) + 70 wildcard tương ứng
 
 Package đã publish ở `@oh-my-pi/pi-coding-agent@18.3.3`. Người dùng bên ngoài **có thể đang** import
 `@oh-my-pi/pi-coding-agent/tools/fetch`.
@@ -772,7 +792,7 @@ thư mục*, không phải vấn đề *độ mịn*. Tách thêm sẽ đi **ng�
 Vấn đề thật, có số đo:
 1. **0 file giống hệt từ byte** giữa 4 package chung. Đây là vấn đề *nội dung*, không phải *hình dạng
    thư mục*. Cắt thư mục không tạo ra 1 file nào giống byte.
-2. **`prompts/` 223 file `.md`**. Prompt là nơi chép từ `pi` vỡ nhiều nhất — chép logic thì sửa được,
+2. **`prompts/` 227 file `.md`**. Prompt là nơi chép từ `pi` vỡ nhiều nhất — chép logic thì sửa được,
    chép prompt thì sai 1 dòng là hỏng hành vi, mà test không bắt được.
 3. **Trùng lặp thật, đã đo**: `tts` và `stt` có 4 file trùng cấu trúc (`downloader.ts`, `models.ts`,
    `settings.ts`, `wav.ts`) cùng phụ thuộc `tiny/device` + `tiny/dtype` + `downloads/model-downloads`.
@@ -801,8 +821,8 @@ Cách đo ban đầu bằng `git grep -l "coding-agent/src/<dir>/"` **sai**: imp
 **Hai chỗ tôi đoán sai rồi sửa lại sau khi kiểm chứng** — ghi lại vì đây là bài học về phương pháp:
 
 1. **`tools/puppeteer/` không rỗng.** Bộ lọc `*.ts` trả về 0, nhưng thư mục chứa 14 file `.txt` là
-   payload stealth mà `tools/browser/*` nạp lúc runtime. Đếm file theo phần mở rộng đơn lẻ không
-   đủ để kết luận "thư mục rác".
+   payload stealth mà **đúng một file** — `tools/browser/launch.ts` — nạp lúc runtime. Đếm file
+   theo phần mở rộng đơn lẻ không đủ để kết luận "thư mục rác".
 2. **`mnemopi` ở hai nơi không phải trùng lặp.** `packages/mnemopi/` là engine tri thức
    (`core/`, `db.ts`, `migrations/`) và **không** import ngược vào `pi-coding-agent`;
    `src/mnemopi/` chỉ là client dùng `@oh-my-pi/pi-mnemopi`. Đây là phân tách đúng, không sửa.
@@ -817,7 +837,9 @@ còn "thư mục này trông có rỗng không" thì không.
 Nhiệm vụ: cắt `tui` và `ai` để chép từ `pi` về sau thành thao tác cơ học.
 Đo bằng script phân giải `exports` map thật của từng package, không đoán, không `grep` chuỗi.
 
-**Cách đo (lặp lại được):** `/tmp/imp6.mjs` — dựng map `importer → target` từ *toàn bộ* `packages/**/*.ts`
+**Cách đo (lặp lại được):** script đo từng chạy nằm ở `/tmp` (`imp6.mjs`) và **không được giữ trong
+repo** — nó không còn tồn tại, nên các số dưới đây **không tái lập được** từ cây này. Nó dựng map
+`importer → target` từ *toàn bộ* `packages/**/*.ts`
 (5.325 file), phân giải cả đường dẫn tương đối lẫn bare specifier `@oh-my-pi/*` qua `exports` map
 của từng `package.json`. Số "file bên ngoài import vào" = số file *duy nhất* nằm ngoài thư mục đang xét
 mà import trực tiếp bất kỳ file nào trong thư mục đó (hoặc `index.ts` của nó).
@@ -1062,7 +1084,7 @@ Ngân sách cả gói reorg `tui`+`ai` nằm gọn trong ~30 import và ~5 lần
 
 ## Mô hình tổng thể: thứ tự, và cái KHÔNG cắt
 
-> Đọc `cuts.md` trước — mọi con số ở đây đều từ đó. File này là quyết định, không phải đo đạc.
+> Đọc mục *Ứng viên tách — đã đo fan-in* trước — mọi con số ở đây đều từ đó. Mục này là quyết định, không phải đo đạc.
 
 ---
 

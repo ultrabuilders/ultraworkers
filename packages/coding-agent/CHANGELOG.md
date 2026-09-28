@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- Project-scope MCP config (`mcp.json`, `.mcp.json`, `.omp/mcp.json`) is no longer loaded by default. Because these files travel inside a repository, honouring them let a cloned project start arbitrary processes through a stdio server's `command`, and run `!command` env and header values through the shell. Set Settings → Tools → Discovery & MCP → MCP Project Config to re-enable it per project.
+
 ## [18.4.0] - 2026-09-28
 
 ### Added

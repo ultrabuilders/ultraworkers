@@ -9,12 +9,14 @@ import { effect, register } from "../config/registry";
 export const cfgMcpEnableProjectConfig = register({
 	id: "mcp.enableProjectConfig",
 	type: "boolean",
-	default: true,
+	// Off by default: a project-scope mcp.json arrives with the repository, so honouring it
+	// lets a cloned repo start processes and run `!command` env values. Opt in per project.
+	default: false,
 	ui: {
 		tab: "tools",
 		group: "Discovery & MCP",
 		label: "MCP Project Config",
-		description: "Load .mcp.json/mcp.json from project root",
+		description: "Load .mcp.json/mcp.json from project root. Off by default: this runs code shipped in the repo",
 	},
 });
 

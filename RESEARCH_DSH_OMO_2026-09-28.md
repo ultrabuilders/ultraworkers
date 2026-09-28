@@ -1520,7 +1520,7 @@ vendored cordis        0 test files  |  upstream 6,497 test LOC
 
 
 # WORKFLOW wf_93420fad-615
-started=218 results=208
+started=250 results=240
 
 
 ## [dsh:workflow-orchestration]
@@ -10448,6 +10448,1372 @@ VENDOR PROSE (THEIR CLAIM, UNVERIFIED — comments/docs, not executed contracts)
 - lsp-stdio/README.md:67 "...keeps it pooled. Each query reads the current source through ctx.fs... so the server always sees current text and no document state persists between calls."
 
 SCALE: 8 source files in lsp-stdio/src (abort.ts 2.0K, connection.ts 13.2K, framing.ts 4.4K, host.ts 4.4K, index.ts 17.2K, instance.ts 16.1K, protocol.ts 2.9K, translate.ts 10.5K); 9 test files.
+refuted: true
+
+
+
+## [v1]
+
+reason: Every element of the claim checks out against the code, and the cited line ranges are exact. (1) Closed 4-operation union: types.ts:17 is literally `export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover'`. (2) No JSON-RPC escape hatch: CONFIRMED structurally, not merely by convention — the seam's entire public surface is LspService (types.ts:113-130, exactly two methods) and the Lsp class (index.ts:82-150, only registerProvider/query), and the LspProvider contract (types.ts:95-107) carries no connection handle, no method name, no params passthrough. I swept the whole packages/lsp/ tree, not just the cited file: the only JSON-RPC is lsp-stdio/src/connection.ts (LspConnection.request) plus LspInstance.sendRequest, which is `private` (instance.ts:187) and takes `operation: LspOperation` rather than a wire method string; the wire method is derived by the exhaustive requestMethod() switch (translate.ts:32-40). So the escape hatch is sealed at the boundary and sealed in the only real provider too (LocalLspProvider keeps `instances` private, lsp-stdio/src/index.ts:221). (3) All-or-nothing validate-before-mutation: index.ts:93-126 runs all seven checks before line 130, the first mutation. I specifically probed the TOCTOU angle — Fiber.effect runs its body synchronously (fiber.ts:403 "execute runs immediately"; _execute at fiber.ts:377-382 drains a sync generator in a synchronous while loop), so the reservation lands in the same JS turn as the check and there is no window. (4) Joint release in one effect: index.ts:130-137 is one ctx.effect that adds id + every route and yields a single disposer removing both. Line ranges are exact — registerProvider is index.ts:90-141 inclusive, the union is types.ts:17 with the no-escape-hatch rationale at types.ts:5-6. Three qualifications that bound but do not refute it: the union is closed at compile time only (Lsp.query at index.ts:143-149 never validates request.operation at runtime; runtime enforcement exists only at the tool boundary, tool-lsp/src/render.ts:63); types.ts:13-15's "compile-enforced change across the seam, providers, and the tool" is a doc claim with a real drift hole because tool-lsp/src/render.ts:15 hand-maintains a duplicate `readonly LspOperation[]` literal that would silently omit a fifth member; and a registration on an already-disposed fiber throws CordisError('INACTIVE_EFFECT') (fiber.ts:419-421) rather than an LspError, so types.ts:116's "throws LspError" has a non-LspError path (still publishes nothing). MEASURED, not assumed: npx vitest run packages/lsp/lsp/tests/lsp.spec.ts -> 19 passed / 19 in 710ms, including the two tests that directly assert the claim's guarantees ('publishes nothing when a later extension conflicts (atomic reservation)' and 'releases every extension and the id together on dispose').
+evidence: UNION (types.ts:17): `export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover'` — exactly 4. SEALED SURFACE (types.ts:113-130): LspService has only `registerProvider(provider: LspProvider): () => void` (line 121) and `query(request: LspQueryRequest, signal?: AbortSignal): Promise<LspQueryResult>` (line 129). Lsp class (index.ts:82-150) exposes no other public method; only `providerIds`/`routes` private fields (83-84). PROVIDER CONTRACT (types.ts:95-107): `query(request: LspProviderQuery, signal?): Promise<LspQueryResult>` — no connection/handle/method/params field. NO ESCAPE HATCH DOWNSTREAM: `private async sendRequest(operation: LspOperation, uri, position, signal)` (lsp-stdio/src/instance.ts:187-187) and `requestMethod(operation: LspOperation)` exhaustive switch -> 'textDocument/definition' | 'references' | 'implementation' | 'hover' (lsp-stdio/src/translate.ts:32-40); LocalLspProvider holds `private readonly instances` (lsp-stdio/src/index.ts:221). REGISTRATION (index.ts:90-141): checks at 94 (empty id, LSP_INVALID_PROVIDER), 97 (dup id, LSP_CONFLICT), 102 (no extensions), 111 (EXTENSION_PATTERN /^\.[^./\\]+$/, line 70), 114 (empty languageId), 117 (intra-provider dup), 122-125 (cross-provider conflict) — ALL before line 130, the first mutation: `const dispose = this.ctx.effect(function* (this: Lsp) { this.providerIds.add(id); for (const [ext, route] of pending) this.routes.set(ext, route); yield () => { this.providerIds.delete(id); for (const ext of pending.keys()) this.routes.delete(ext) } }.bind(this), 'lsp.registerProvider()')` — one effect, id+extensions added together and released together. ATOMICITY PROOF: vendor/cordis/src/fiber.ts:403 ("`execute` runs immediately") and _execute at fiber.ts:377-382 drains a sync generator synchronously. TEST RUN (measured): `npx vitest run packages/lsp/lsp/tests/lsp.spec.ts --config vitest.config.ts` -> "Test Files 1 passed (1) / Tests 19 passed (19) / Duration 710ms", including tests 'publishes nothing when a later extension conflicts (atomic reservation)' and 'releases every extension and the id together on dispose'. TIERING: BORROW the validate-then-mutate + single-lifecycle-effect atomic registration (index.ts:93-140) and the contract-level sealing that makes the escape hatch structurally impossible (types.ts:95-107); REFERENCE the closed operation union itself; DO-NOT-COPY the hand-maintained duplicate `LSP_OPERATIONS` array at tool-lsp/src/render.ts:15 — a fifth union member would not break it and the model-facing enum would silently omit the new operation.
+refuted: false
+
+
+
+## [v2]
+
+reason: REFUTED on portability. The claim is factually TRUE in dsh's home repo (I verified every cited line), but porting it to omp is a net-negative regression on both halves.
+
+HALF 1 — "closed 4-operation union with no JSON-RPC escape hatch": omp already has the strictly better version, and the escape hatch is the load-bearing part.
+- omp's lspSchema exposes 14 actions (packages/coding-agent/src/lsp/types.ts:9-24): diagnostics, definition, references, hover, symbols, rename, rename_file, code_actions, type_definition, implementation, status, reload, capabilities, request. dsh's union covers ~4. Porting deletes 10 actions including `symbols`, `rename`, `code_actions`, and `diagnostics`.
+- `action: "request"` (src/lsp/tool.ts:873-949) IS a raw JSON-RPC passthrough: it takes a model-supplied `method` string plus `JSON.parse(params.payload)` and calls `sendRequest(client, method, requestParams, signal)`. The error text at tool.ts:880 even advertises vendor extensions ("rust-analyzer/expandMacro"). That is precisely the capability dsh/types.ts:5-8 says the seam lacks. It is test-covered at test/tools/lsp-regressions.test.ts:3081 and :3148 — a defended contract, not incidental code.
+- dsh's entire LSP stack (2,406 src LOC) uses only definition/hover/implementation/references — verified by enumerating every textDocument/* and workspace/* method across lsp-stdio/src and tool-lsp/src. The gap is real, not a measurement artifact.
+
+HALF 2 — "all-or-nothing registration ... releases id+extensions together in one effect": omp's model is deliberately different, and dsh's exclusivity would break it.
+- dsh throws LSP_CONFLICT on a reused id (index.ts:97-99) and on an already-claimed extension (index.ts:122-126). omp tolerates overlap by construction: getLspServersForFile returns an ARRAY and getLspServerForFile takes [0] (src/lsp/servers.ts:220-227). Honest caveat: shipped defaults.json has 55 servers and 0 overlapping extensions, so that permissiveness is a tolerance, not an exercised default.
+- The decisive conflict is the provider registry. omp's modelRegistry.registerProvider (src/config/model-registry.ts:2974-3018) validates before mutating (line 2979 — a real partial match to dsh) but then performs explicit source handoff (3007-3018): last-writer-wins. Overriding an existing provider is a documented load-bearing behavior in omp — `pi.registerProvider("anthropic", { baseUrl })` is called out in packages/ai/src/providers/anthropic.ts:1145. dsh's exclusive reservation would forbid that outright.
+
+SUBSTRATE: dsh's atomicity rides on `ctx.effect(...)` from @deepseek-ai/cordis (index.ts:130-137) — a fiber-scoped effect. omp has no cordis/fiber context, so the mechanism does not port. omp's real lifecycle is a deferred queue with per-extension checkpoint/rollback (src/extensibility/extensions/loader.ts:102-111, runExtensionFactory at 397-414) plus source-scoped teardown (src/sdk.ts:1013-1017). Where the two overlap, omp is arguably stronger: its rollback restores the complete queue and explicitly handles a failing extension having already unregistered an earlier extension's entries (loader.ts:392-396) — a case dsh's per-call dispose does not address.
+
+SCALE: dsh's seam is 2,406 src LOC across 3 packages (lsp 309, lsp-stdio 1,643, tool-lsp 454). omp's single src/lsp/ is 9,881 LOC across 23 files, plus 8,151 LOC of tests. The "port" would replace a 9.9k-LOC subsystem with a 309-LOC stub.
+
+TIERS — BORROW: the validate-before-mutate ordering discipline (index.ts:91-126) as a review checklist; omp already complies at model-registry.ts:2974-2990, so this confirms rather than adds. REFERENCE: the `pending` staging map (index.ts:108-121) separating normalization/validation from commit. DO-NOT-COPY: the closed 4-op union, the "no escape hatch" property, and the exclusive id/extension reservation.
+
+UNVERIFIED: I did not evaluate whether dsh's lsp-stdio/tool-lsp would gain ops under omp's feature set — that is a design question, not a code fact, and nothing in the 2,406 LOC suggests one.
+evidence: DSH CLAIM VERIFIED AT HOME (accurate, not overstated):
+- packages/lsp/lsp/src/types.ts:17 — `export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover'`; doc at :5-8 states "no generic JSON-RPC escape hatch — only the four semantic operations."
+- packages/lsp/lsp/src/index.ts:90-141 registerProvider: validates id (:94-96), id conflict (:97-99), empty extensions (:101-104), per-ext normalize+validate into `pending` (:109-121), cross-provider conflict (:122-126), then one ctx.effect (:130-137) adding id+all exts with a disposer deleting both. All-or-nothing confirmed.
+
+OMP CONTRADICTING CODE (measured, not estimated):
+- packages/coding-agent/src/lsp/types.ts:9-24 — 14 actions incl. 'request'.
+- packages/coding-agent/src/lsp/tool.ts:873-949 — raw JSON-RPC: `const method = query?.trim()` (:874), `JSON.parse(params.payload)` (:913), `sendRequest(client, method, requestParams, signal)` (:938).
+- packages/coding-agent/src/lsp/tool.ts:880 — error text names vendor extension `rust-analyzer/expandMacro`.
+- test/tools/lsp-regressions.test.ts:3081, :3148 — escape hatch is test-covered.
+- packages/coding-agent/src/lsp/servers.ts:220-227 — getLspServersForFile returns Array; getLspServerForFile takes [0] (overlap tolerated, not rejected).
+- packages/coding-agent/src/config/model-registry.ts:2974-3018 — validate-first (:2979) then source handoff (:3007-3018), last-writer-wins, no conflict throw.
+- packages/ai/src/providers/anthropic.ts:1145 — documents `pi.registerProvider("anthropic", { baseUrl })` as a real override, which dsh's exclusive reservation forbids.
+- packages/coding-agent/src/extensibility/extensions/loader.ts:102-111 (deferred queue), :392-414 (runExtensionFactory checkpoint/rollback), src/sdk.ts:1013-1019 (replay + source-scoped clear) — no cordis fiber/effect anywhere; `grep registerProvider` in src/lsp/ returns nothing.
+
+SCALE (counted):
+- dsh: lsp src=309, lsp-stdio src=1643, tool-lsp src=454 (total 2406 src LOC).
+- omp: src/lsp/ = 9881 LOC across 23 files; test/ lsp files = 8151 LOC. Ratio ~32x on src alone.
+- dsh methods enumerated across lsp-stdio/src + tool-lsp/src: textDocument/{definition,hover,implementation,references,didOpen,didClose}, workspace/{applyEdit,configuration} — no escape hatch anywhere.
+refuted: true
+
+
+
+## [v3]
+
+reason: NOT REFUTED on the legal axis — the code is clean MIT and genuinely copyable — but the claim's SOURCE CITATION IS WRONG and must be corrected before anyone acts on it.
+
+**Legal verdict: copy is clean.** dsh is a genuinely public MIT repo (verified three ways: LICENSE file, `gh repo view` → `isPrivate:false, licenseInfo:{key:"mit"}`, and `"license":"MIT"` in the owning package.json). MIT permits copying into an MIT project with attribution preserved. This is NOT idea-only.
+
+**Provenance verdict: dsh-original, not derived from the SUL-1.0 repo.** `git blame -L 237,245` attributes the entire guard to Tianyi Cui, 2026-08-11 (commit 49426cae02e). That commit is not in omo's object store. Rule-3 due diligence on omo (0 hits is not proof of absence, so I checked alternate names): `projectContent` → 0 hits repo-wide; `prepareImageProjection` → 0; `WeakMap<..., Execution>` → 0; omo's `ToolExecutionResult` (packages/lsp-core/src/tools/types.ts:20) is a 3-field unrelated shape with no projection hook. omo's nearest equivalent, the "diagnostics-freshness" equality guards, use `JSON.stringify(a)===JSON.stringify(b)` — a different, weaker technique, and semantically unrelated. The one residual caveat: the omo clone is SHALLOW (`.git/shallow`, 1 commit), so I cannot do full-history derivation analysis; the direction-of-inference rests on dsh's complete 20,177-commit blame plus omo's total absence of the concept.
+
+**THE DEFECT — misattributed source.** The cited path `dsh/mcp-lsp-tools` **does not exist**. No such directory at HEAD, and `git log --all -- "*mcp-lsp-tools*"` returns nothing. The real path is `packages/mcp/mcp-client/src/tools.ts` (verified: 0 hits for the string `mcp-lsp-tools` anywhere in the tree). The line range is exact and the mechanism description is faithful — but the *name* is a cross-repo collision hazard: `lsp-tools-mcp` is a real package in the SUL-1.0 repo (omo), where `tools.ts` is a 1-line `export * from "@oh-my-opencode/lsp-core/tools"` containing none of this code. A porter who followed the citation to the name-matching package would pull from the non-sublicensable repo. Correct citation: `deepseek-harness/packages/mcp/mcp-client/src/tools.ts:237-245`.
+
+**Separate license-integrity finding (not part of the claim, but material to any future omo borrowing):** omo's root `package.json:164` declares `"license": "SUL-1.0"`, yet 14 of its own `packages/*/package.json` declare `"license": "MIT"` — including `@code-yeongyu/lsp-tools-mcp:7`. Root `LICENSE.md` is Sustainable Use License 1.0 ("non-sublicensable, non-transferable"). A per-package MIT field does not override the root grant, but it is exactly the string a scanning tool or hurried reader would key on. Treat every omo package as SUL-1.0 absent a written upstream clarification.
+
+**Tier:** BORROW (pattern), not as lift-and-shift. The 9 guard lines are MIT-clean and trivially portable, but they are inert without dsh's surrounding contract — `ToolDefinition.projectContent` (packages/core/tools/src/schema.ts:522, index.ts:246), execution-identity `WeakMap` semantics, the `ContentBlock` vocabulary, `@deepseek-ai/dsh-attachment`, and cordis `Context`. Any port is a reimplementation against omp's own tool-definition contract, with the MIT notice retained on the adapted fragment. DO-NOT-COPY: nothing here is a regression risk. REFERENCE: the one-shot `projections.delete(exec)` at line 240 is stronger than the claim states — the projection is dropped even when a guard FAILS, so stale content can never be applied on a later call. Worth carrying over as a design note.
+evidence: LICENSE, dsh root: "MIT License / Copyright (c) 2026 DeepSeek" — full grant incl. "without restriction", sole condition = retain notice.
+`gh repo view deepseek-ai/deepseek-harness` → {"isPrivate":false,"licenseInfo":{"key":"mit","name":"MIT License"}}
+packages/mcp/mcp-client/package.json:29 → "license": "MIT"; :4 "version":"0.1.7-rc.2"; :2-3 "name":"@deepseek-ai/dsh-mcp-client"; publishConfig.access "public"
+packages/core/tools/package.json:42 → "license":"MIT" (owning runtime, also public)
+THIRD_PARTY_NOTICES.md — 288 lines; only restrictive entries are eslint-plugin-sonarjs (LGPL-3.0-only, :225) and lightningcss (MPL-2.0), and :253 states both "run only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact". Vendored cordis/schemastery all MIT (:19-26).
+
+CLAIMED CODE — packages/mcp/mcp-client/src/tools.ts:237-245 (exact range match, claim verified line-for-line):
+  237  projectContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
+  238    const projection = projections.get(exec)
+  239    if (projection === undefined) return undefined
+  240    projections.delete(exec)
+  241    if (result.isError) return undefined
+  242    if (!isDeepStrictEqual(result.value, projection.value)) return undefined
+  243    if (!isDeepStrictEqual(result.content, projection.fallback)) return undefined
+  244    return projection.content
+  245  },
+Staging side, :307-311 (inside execute): `if (containsImage(content)) { const fallback = [{type:"text",text:extractText(content,rawName)}]; const projected = await prepareImageProjection(...); projections.set(exec, {value, fallback, content: projected}) }`
+Declaration :230 `const projections = new WeakMap<ToolExecution, PreparedProjection>()`; interface :175-182; import :16 `isDeepStrictEqual` from 'node:'.
+Guard is load-bearing, not defensive padding: runtime applies the projector AFTER result construction — packages/core/tools/src/index.ts:1642-1649 `const project = this.contentProjectors.get(exec); this.contentProjectors.delete(exec); const content = project?.(exec, result); const projected = content === undefined ? result : this.markCanonical(exec, this.materializeFinalResult({...result, content}))`, then :1650 `await this.postExecute(exec, projected)`. Registry captures the hook pre-dispatch at :1437-1448.
+
+MISATTRIBUTION PROOF:
+  `git log --all -- "*mcp-lsp-tools*"` → empty (package never existed in dsh history)
+  `find -type d -name "*mcp-lsp*"` → empty
+  grep "mcp-lsp-tools" across all .ts/.json/.md → 0 hits
+  dsh LSP packages are packages/lsp/{lsp,lsp-stdio,tool-lsp} — tool-lsp/src has no projectContent, no isDeepStrictEqual
+  NAME COLLISION: omo packages/lsp-tools-mcp/src/tools.ts is 48 bytes, 1 line: `export * from "@oh-my-opencode/lsp-core/tools";` — the cited mechanism is absent there.
+
+ORIGINALITY:
+  git blame -L 237,245 → 49426cae02e Tianyi Cui 2026-08-11 (lines 238-245), ab102138c8 creatixchu 2026-09-21 (line 237)
+  `git cat-file -t 49426cae02e` in omo → "fatal: Not a valid object name"
+  omo projectContent → 0; prepareImageProjection → 0; omo isDeepStrictEqual → 3 hits, all in test/QA scripts (senpi-desktop-engine/test/conformance.test.ts:3, senpi-task/scripts/manual-qa.ts:3), none in the pattern
+
+LICENSE CONFLICT IN omo: root package.json:164 "license":"SUL-1.0" vs 14 packages declaring "license":"MIT" (incl. packages/lsp-tools-mcp/package.json:7), against root LICENSE.md "Sustainable Use License ... non-sublicensable, non-transferable".
+refuted: false
+
+
+
+## [v2]
+
+reason: DO-NOT-COPY. The claim is true in dsh but does not survive the port, for four measured reasons.
+
+(1) The "AST walk" is not a TypeScript AST walk — it is a Cordis-idiom walk. cordis-walk.ts:14 prefilters on MERGE_HEAD = /declare module ['"](?:@deepseek-ai\/cordis|\.\/context\.ts)['"]/, then reads `interface Context` members (cordis-walk.ts:66) and `interface Events` members (cordis-walk.ts:88); events additionally require a JSDoc @mode tag parsed into 'emit'|'bail'|'waterfall'|'parallel'|'serial' (typert/generator/src/cordis-catalog.ts:20). omp has ZERO `declare module` augmentations: grep "declare module" on packages/coding-agent/src/extensibility/extensions/types.ts returns nothing — the file is 115 flat `export interface`/`export type` declarations. The extractor would extract nothing. Porting it is writing a new extractor, not porting one.
+
+(2) omp's model-facing surface is runtime-derived, so there is no snapshot that can go stale. packages/agent/src/agent-loop.ts:992-1018 `normalizeTools()` builds the wire spec every turn from the live tool object (toolWireSchema(t), t.description, renderToolExamples(...)). The model reads the source of truth directly. Grep for "Generated by|DO NOT EDIT|do not edit by hand" across all of packages/coding-agent/src: 0 hits. Zero *catalog* / *.generated.ts files under packages/coding-agent/src. The anti-divergence property the claim buys is structurally vacuous for omp's tool surface.
+
+(3) The "model context vs rendered docs" contract is a non-contract in omp — the two artifacts are not connected. The only reference to docs/extensions.md in the entire packages/coding-agent/src tree is a JSDoc pointer at extensibility/extensions/types.ts:1402. The model never reads docs/. The 912-line docs/extensions.md is a hand-written human artifact, as its own header states ("This document covers the current extension runtime in: [5 file paths]"). There is no coupling to protect.
+
+(4) Scale runs 20x+ against the port, with a heavy hand-curated tax. dsh: 11,098 LOC across the five pipeline files (8,228 generated / 1,266 script / 1,069 typert projection / 433 core-api / 102 walk), on top of a 16,321-LOC packages/typert dependency, plus 843 hand-maintained key->page mapping entries (SERVICE_PAGE at gen-cordis-catalog.ts:52, EVENT_SCOPE_PAGE at :213, plus SERVICE_WALK_EXEMPTIONS :165 / EVENT_WALK_EXEMPTIONS :259), a CORDIS_CATALOG_POLICY at :948, and 192 docs/subsystems/ pages each with a .zh.md pair and .i18n.yaml. omp's entire extensibility tree is 71 files / 21,454 LOC with 30 model-facing tool names (tools/builtin-names.ts).
+
+Nuance worth recording: the anti-divergence work is done by the fail-closed CURATED partition (generator lines 52-300; a discovered key absent from the table AND a table entry the projection no longer discovers are both hard errors) plus the byte-diff --check — not by the AST walk. The walk is the smaller half of the mechanism, which makes the claim's framing ("generated by an AST walk ... so they cannot diverge") overstate the walk's role even at home.
+
+BORROW-able residue, if wanted at all: enforce a live invariant instead of a byte-diff — assert that every ExtensionContext member and every ToolDefinition carries a non-empty JSDoc first line. That is a ~50-line test, not an 11,098-LOC pipeline. Different, smaller idea than the claim; not a port of it.
+
+UNVERIFIED: I did not execute `pnpm run verify-cordis-catalog` in dsh (requires the full pnpm workspace boot). The gate's wiring is verified by reading run-gates.ts:789, gen-cordis-catalog.ts:1189 and 1231-1246, and .github/workflows/docs-pages.yml:74; the byte-comparison logic is read, not executed.
+evidence: --- SOURCE CLAIM VERIFIED TRUE IN dsh ---
+packages/extensions/tool-cordis/src/api-cordis api-catalog.ts:1-12 (banner): "Generated by scripts/gen-cordis-api.ts — do not edit by hand ... freshness-gated by `pnpm run verify-cordis-api` in doc-sync ... Produced by the same AST walk as docs/cordis-catalog, so this data and the rendered docs cannot diverge."
+scripts/gen-cordis-catalog.ts:42: const OUT_RUNTIME_API = 'packages/extensions/tool-cordis/src/api-catalog.ts'
+scripts/gen-cordis-catalog.ts:1189: outputs.push([OUT_RUNTIME_API, projector.renderRuntimeApi(model)])
+scripts/gen-cordis-catalog.ts:1231-1246: if (process.argv.includes('--check')) { ... if (committed !== content) stale.push(out) ... process.exit(1) }
+scripts/run-gates.ts:789: pnpmScript('cordis-catalog', 'verify-cordis-catalog', { label: 'cordis catalog' })  [inside docSyncLeafGates, defined at run-gates.ts:770]
+.github/workflows/docs-pages.yml:74: run: pnpm run doc-sync
+
+--- CITATION DRIFT (2, both minor) ---
+grep -rn "verify-cordis-api" scripts/run-gates.ts .github/  => 0 hits. The gate that actually covers api-catalog.ts is `verify-cordis-catalog`; scripts/gen-cordis-api.ts (9 lines) is a shim: import { main } from './gen-cordis-catalog.ts'; main()
+scripts/gen-cordis-catalog.ts:42 is the OUTPUT PATH, not the AST walk. The walk is scripts/cordis-walk.ts (102 LOC) + packages/typert/generator/src/cordis-catalog.ts (1,069 LOC).
+
+--- REFUTATION 1: the walk is Cordis-idiom, omp has zero matching syntax ---
+scripts/cordis-walk.ts:14  const MERGE_HEAD = /declare module ['"](?:@deepseek-ai\/cordis|\.\/context\.ts)['"]/
+scripts/cordis-walk.ts:66  interface Context property signatures -> contextKeyMap()
+scripts/cordis-walk.ts:88  interface Events members -> eventNameList()
+packages/typert/generator/src/cordis-catalog.ts:20  type Mode = 'emit' | 'bail' | 'waterfall' | 'parallel' | 'serial'
+grep -n "declare module" packages/coding-agent/src/extensibility/extensions/types.ts  => 0 hits
+grep -c "^export interface \|^export type " .../extensions/types.ts  => 115 (flat declarations, no module augmentation)
+
+--- REFUTATION 2: omp model-facing surface is runtime-derived ---
+packages/agent/src/agent-loop.ts:992-1018 normalizeTools():
+  const wire = toolWireSchema(t);
+  const parameters = (doInjectIntent ? memoizedInjectIntentIntoSchema(wire, intentMode, true) : wire) as TSchema;
+  const description = t.description ?? "";
+  const examplesBlock = renderToolExamples({ ...t, parameters }, doInjectIntent ? INTENT_FIELD : undefined);
+grep -rln "Generated by|DO NOT EDIT|do not edit by hand" packages/coding-agent/src --include=*.ts  => 0 files
+find packages/coding-agent/src -name "*catalog*" -o -name "*.generated.ts"  => 0 files
+ts-morph in omp is used ONLY by codemods: scripts/cleanup-scan.ts:19, scripts/inline-functions.ts:82-83 — never for catalog generation.
+
+--- REFUTATION 3: model context and docs/ are not connected ---
+grep -rn "docs/extensions" packages/coding-agent/src  => 1 hit, extensibility/extensions/types.ts:1402 (a JSDoc pointer for a human)
+docs/extensions.md = 912 lines, header: "This document covers the current extension runtime in: - src/extensibility/extensions/types.ts - .../runner.ts - .../wrapper.ts - .../index.ts - src/modes/controllers/extension-ui-controller.ts"
+grep -rln "GENERATED|generated.*do not edit" docs/  => 0 files
+No gen:* script in omp root package.json targets extensions or docs (lines 154-166: gen:compat, gen:models, gen:clippy, gen:bazel-lock, gen:stats, gen:changelog, gen:nix, gen:tool-views [collab-web UI, build-tool-views.ts], gen:bundle, gen:native, gen:glyphs).
+
+--- REFUTATION 4: scale ---
+dsh:  8,228 api-catalog.ts (103 services at :83, 1,016 events at :3733) | 1,266 gen-cordis-catalog.ts | 1,069 typert cordis-catalog.ts | 433 cordis-core-api.ts | 102 cordis-walk.ts  = 11,098 LOC; + packages/typert = 16,321 LOC; + 843 curated mapping entries; + 192 docs/subsystems/ pages (x2 language sides)
+omp:  packages/coding-agent/src/extensibility = 71 files / 21,454 LOC; 30 model-facing builtin tool names (tools/builtin-names.ts)
+refuted: true
+
+
+
+## [v3]
+
+reason: The CODE at the cited lines is clean to copy. dsh is MIT, and the specific files carry no license carve-out, so an MIT project can lift lsp-stdio verbatim with only the standard MIT attribution condition. The refutation attempt fails on the legal axis.
+
+But the claim's provenance LABEL is wrong, and the confusion it creates points at a real hazard. "dsh/mcp-lsp-tools" does not exist — zero hits for "mcp-lsp" anywhere in deepseek-harness outside node_modules. The cited paths are packages/lsp/lsp-stdio/ (@deepseek-ai/dsh-lsp-stdio). The auditor appears to have conflated dsh with omo's packages/lsp-tools-mcp/, which reads as MIT (own LICENSE + NOTICE, Copyright 2026 Yeongyu Kim) but is a one-line re-export of packages/lsp-core/src/lsp/client.ts — and lsp-core is "private": true with no license field, so the root SUL-1.0 (non-sublicensable, non-commercial-distribution-only) governs the actual 8,345 LOC of engine. Anyone who reached for "the mcp-lsp-tools in omo" believing it MIT would be shipping SUL-1.0 code. That is the DO-NOT-COPY, and it is worth fixing the source label before anyone acts on it.
+
+Second, a fidelity gap rather than a legal one: "survives edits as a structural property" is true but conditional, and the claim omits the price. dsh gates the entire design on supportsTransientOpen (translate.ts:79-83), rejecting at instance.ts:149-151 any server whose textDocumentSync is not Full(1)/Incremental(2) or openClose:true — tests assert 0 and undefined both return false. The property is purchased by refusing non-open/close servers, not by being free.
+
+The technical contrast itself I confirmed as real, and it is a genuine BORROW: dsh re-reads from disk per query inside the workspace queue (index.ts:277-279) and wraps each request in a try/finally transient open/close (instance.ts:158-184). omo does the opposite by design — a persistent, generation-tracked document store issuing didOpen/didChange/didSave (workspace-document-state.ts:340-380) with a waiter mechanism, plus applyEdit resync tests. Two opposite architectures; the claim's "structural property vs. synchronization problem" framing is fair.
+
+TIER: BORROW the dsh design and code (MIT, attribution required). REFERENCE omo's lsp-core only for its diagnostic waiters. DO-NOT-COPY omo's lsp-tools-mcp licensing posture.
+
+One bounded uncertainty, stated rather than papered over: I cannot read the auditor's intent behind "mcp-lsp-tools" — it may denote isaacphi/mcp-lsp-tools, a public MIT project with the same transient-open signature. It does not move the verdict, since the cited lines are dsh's and dsh is MIT either way.
+evidence: LICENSE CHAIN (dsh — the actual source of the cited lines)
+- C:\Users\ADMIN\Projects\deepseek-harness\LICENSE: "MIT License / Copyright (c) 2026 DeepSeek" (full text read).
+- packages\lsp\lsp-stdio\package.json: "name": "@deepseek-ai/dsh-lsp-stdio", "license": "MIT", repo git+https://github.com/deepseek-ai/deepseek-harness.git. Remote confirmed: origin https://github.com/deepseek-ai/deepseek-harness.git
+- `grep -rh '"license"' --include=package.json packages/` (excl node_modules) → single unique value: "MIT". No per-package override anywhere in dsh.
+- `grep -rn "Copyright|SPDX|Licensed under" packages/lsp/lsp-stdio/src/` → ZERO hits. No per-file headers that could carve out separate terms; root MIT governs.
+- THIRD_PARTY_NOTICES.md (23,582 bytes) → `grep -i lsp` → ZERO hits. No vendored/copied LSP code declared.
+- ORIGIN: `git log --diff-filter=A -- packages/lsp/lsp-stdio/src/instance.ts` → d0029d8d60 2026-07-16 Dudu-0223 <fsyo0223@gmail.com> "feat(lsp): LSP capability seam, generic stdio provider, and lsp tool". Body describes original design ("transient didOpen/query/didClose, an abortable per-instance queue...").
+- RFC docs/rfc/architecture/2026-07-15-lsp-capability-seam.md: `grep -i "inspir|prior art|based on|reference|upstream|mcp-lsp|vendored|copy"` → ZERO hits. No upstream attribution.
+
+CITED LINES VERIFIED ACCURATE
+- packages\lsp\lsp-stdio\src\index.ts:279 → `const source = await readHostSource(this.fs, request.filePath, workspace, this.config.maxDocumentBytes, querySignal)` inside the per-workspace enqueue() callback. Per-query disk re-read, confirmed.
+- packages\lsp\lsp-stdio\src\instance.ts:159-177 → `connection.notify('textDocument/didOpen', {...})` at 159, then `sendRequest` at 169, then `finally` at 171 with `connection.notify('textDocument/didClose', ...)` at 177, guarded by `if (opened && !this.dead)`. Transient open/close, confirmed.
+- Scale: packages/lsp = 29 .ts files, 5,559 lines (src+tests).
+
+NO REVERSE-DERIVATION FROM omo (checked, not assumed)
+- omo's LSP does the OPPOSITE architecture. C:\Users\ADMIN\Projects\oh-my-openagent\packages\lsp-core\src\lsp\workspace-document-state.ts:340-380 → `openDocumentSingleFlight` + `changeDocument` maintain a PERSISTENT document store with `version`/`generation` counters, issuing didOpen (line 358) then didChange + didSave. That IS the "synchronization problem" the claim says dsh avoids.
+- omo tests actively defend the sync contract: packages/lsp-core\src\lsp\workspace-apply-edit-sync.integration.test.ts:51,111 assert `methods.indexOf("textDocument/didClose") < methods.lastIndexOf("textDocument/didOpen")` after applyEdit. Architecturally incompatible with a transient-per-query design; no copy path.
+
+THE PROVENANCE DEFECT (the real finding)
+- `grep -rn "mcp-lsp|mcp_lsp"` across all of deepseek-harness excluding node_modules → ZERO hits. The claim's source label "dsh/mcp-lsp-tools" names nothing in dsh.
+- omo DOES have packages/lsp-tools-mcp/, which is the likely referent — and its license posture is inverted from appearance:
+  - packages/lsp-tools-mcp\package.json: "name": "@code-yeongyu/lsp-tools-mcp", "license": "MIT", separate repo code-yeongyu/lsp-tools-mcp.
+  - packages\lsp-tools-mcp\LICENSE: "MIT License / Copyright (c) 2026 YeonGyu Kim".
+  - packages\lsp-tools-mcp\NOTICE (165 B): "lsp-tools-mcp extracts the standalone LSP runtime from codex-lsp into a reusable package. The package includes adapted code originally developed for pi-lsp-client."
+  - BUT packages\lsp-tools-mcp\src\lsp\client.ts is a single line: `export * from "@oh-my-opencode/lsp-core/lsp/client";`
+  - The real engine is packages/lsp-core/ (71 non-test .ts, 8,345 LOC), whose package.json has `"private": true` and NO "license" field → falls under root LICENSE.md = Sustainable Use License 1.0 ("non-sublicensable, non-transferable", internal/non-commercial use only, distribute only free of charge for non-commercial purposes).
+  - Net: the MIT-labeled shell re-exports SUL-1.0 code. "Take from omo's lsp-tools-mcp" is exactly the unsafe move.
+
+TECHNICAL CAVEAT THE CLAIM OMITS
+- instance.ts:149-151 hard-fails servers lacking transient-open support: `if (!supportsTransientOpen(capabilities.textDocumentSync)) throw new LspError('server does not support the transient textDocument/didOpen this host requires', 'LSP_UNSUPPORTED_OPERATION')`.
+- translate.ts:79-83: `supportsTransientOpen` returns false for `undefined` and for numeric kind 0 (None); true only for 1 (Full), 2 (Incremental), or `openClose === true`.
+- packages\lsp\lsp-stdio\tests\translate.spec.ts:41-42 asserts `expect(0).toBe(false)` and `expect(undefined).toBe(false)`. So "structural property" is purchased by refusing non-open/close servers.
+
+UNVERIFIED (stated, not filled in)
+- I did not resolve which real-world project the label "mcp-lsp-tools" was meant to denote (a public project of that name exists upstream of dsh and is also MIT). This does not affect the verdict: the cited file:line are dsh's, and dsh is MIT on every path checked.
+refuted: false
+
+
+
+## [v1]
+
+reason: The claim is accurate on all three load-bearing points, verified by opening every cited file and by executing the gate. (1) AST walk is real: packages/typert/generator/src/analyzer.ts (3285 lines) uses the TypeScript Compiler API — `import ts from 'typescript'` (line 10), ts.createProgram (340), ts.createCompilerHost (242), ts.createSourceFile (442), ts.SyntaxKind/ts.isClassDeclaration (446-456). (2) The cited line is exact: scripts/gen-cordis-catalog.ts:42 is literally `const OUT_RUNTIME_API = 'packages/extensions/tool-cordis/src/api-catalog.ts'`, and it cites the real implementation rather than the 9-line shim scripts/gen-cordis-api.ts that the generated banner names. (3) Freshness-gated in CI, and stronger than claimed: computeOutputs() (gen-cordis-catalog.ts:1157) emits api-catalog plus every docs region from one projectCordisCatalog() call; main() (1231-1251) diffs all of them under --check and exit(1)s. I ran `tsx scripts/gen-cordis-api.ts --check` → "119 generated file(s)/region(s) are up to date", and enumerated computeOutputs() directly: 114 outputs, `api-catalog present: true`, plus 112 docs/subsystems regions and docs/cordis-api/inherited.md. The gate `verify-cordis-catalog` sits in docSyncLeafGates() (scripts/run-gates.ts:789), composed into ci-static (479) and ci-primary (381); .github/workflows/ci.yml triggers on pull_request with no path filter and runs `pnpm run check:ci:static` (line 108). A vitest gate asserts byte equality directly (packages/typert/generator/tests/cordis-catalog.spec.ts:89-91). The "cannot diverge" mechanism is real, not conventional: model-facing consumption is api-catalog.ts → packages/extensions/tool-cordis/src/providers.ts:6 → hostInspectProviders (the cordis_inspect tool), and both surfaces render from the same in-memory `model` (gen-cordis-catalog.ts:1158); walkPartitionProblems (1090-1118) is fail-closed in both directions and throws before any file is written (1184). Two imprecisions, neither load-bearing: (a) "verify-cordis-api in doc-sync" names a script that appears only in package.json:153 and in no gate list — doc-sync actually runs `verify-cordis-catalog`; both call the identical main(), so coverage is real and only the name is wrong (the repo's own banner at api-catalog.ts:2-3 repeats this imprecision). (b) "AST walk" covers SERVICE_API/EVENT_API/TYPE_API (~8125 of 8228 lines); INHERITED_CTX_API (api-catalog.ts:8129-8139, 9 rows) is hand-curated prose from CORDIS_CATALOG_POLICY.inheritedServices/inheritedEvents (gen-cordis-catalog.ts:986, 1003), not walked — though it still feeds both surfaces via renderInheritedPage, so it creates no divergence.
+evidence: FILES OPENED AND LINES CITED
+
+A) packages/extensions/tool-cordis/src/api-catalog.ts — 570286 bytes, 8228 lines. Head: "Generated by scripts/gen-cordis-api.ts — do not edit by hand ... Produced by the same AST walk as docs/cordis-catalog, so this data and the rendered docs cannot diverge. @module @deepseek-ai/dsh-tool-cordis/api-catalog" (lines 1-12). INHERITED_CTX_API at 8129-8139 (9 curated rows).
+
+B) scripts/gen-cordis-catalog.ts — 1266 lines.
+ - line 42: `const OUT_RUNTIME_API = 'packages/extensions/tool-cordis/src/api-catalog.ts'` (exact match to claim)
+ - line 1157-1158: `export function computeOutputs()` → `const { projector, model } = projectCordisCatalog(root, CORDIS_CATALOG_POLICY)`
+ - line 1187-1190: outputs include `[OUT_INHERITED, renderInheritedPage(...)]` and `[OUT_RUNTIME_API, projector.renderRuntimeApi(model)]`
+ - line 1191-1215: same `model` filtered by SERVICE_PAGE/EVENT_SCOPE_PAGE injected into docs/subsystems/*.md and *.zh.md
+ - line 1231-1251: `--check` compares every output byte-for-byte, prints stale list, process.exit(1)
+ - line 1090-1118: walkPartitionProblems fail-closed both ways (rendered-but-unmapped, mapped-but-not-rendered, declared-but-invisible without a named exemption, stale exemptions)
+ - line 1184: throws on partition violations before any write
+
+C) scripts/gen-cordis-api.ts — 9 lines: `import { main } from './gen-cordis-catalog.ts'; main()`
+
+D) packages/typert/generator/src/analyzer.ts — 3285 lines. line 10 `import ts from 'typescript'`; 242 `ts.createCompilerHost`; 340 `const program = ts.createProgram({ rootNames, options, host })`; 442 `ts.createSourceFile`; 446-456 `ts.SyntaxKind.ExportKeyword` / `ts.isClassDeclaration` / `ts.isInterfaceDeclaration` / `ts.isTypeAliasDeclaration`.
+
+E) scripts/run-gates.ts — line 789 `pnpmScript('cordis-catalog', 'verify-cordis-catalog', ...)` inside docSyncLeafGates(); composed into ci-primary (381) and ciStaticGates (479); line 335 `case 'doc-sync': return docSyncLeafGates()`.
+
+F) package.json — 150 `gen-cordis-catalog`, 151 `verify-cordis-catalog`, 152 `gen-cordis-api`, 153 `verify-cordis-api`, 188 `doc-sync`.
+
+G) .github/workflows/ci.yml — line 3-4 `on: pull_request:` (no paths filter); line 108 `run: pnpm run check:ci:static` in the `node 24 / static` job.
+
+H) .github/workflows/docs-pages.yml — doc-sync only here is workflow_dispatch-only (line 13-14), tag-gated by release:verify; its own comment says the real build signal is "Every pull request builds the production site through `check:ci:static`".
+
+I) packages/typert/generator/tests/cordis-catalog.spec.ts — line 66 `it('reproduces every committed catalog artifact byte for byte', { timeout: 480_000 })`; lines 89-91 `expect(projector.renderRuntimeApi(model)).toBe(expected('packages/extensions/tool-cordis/src/api-catalog.ts'))`.
+
+COMMANDS ACTUALLY RUN (cwd C:/Users/ADMIN/Projects/deepseek-harness)
+  $ node_modules/.bin/tsx scripts/gen-cordis-api.ts --check
+    → gen-cordis-catalog: 119 generated file(s)/region(s) are up to date.   [exit 0]
+  $ temporary probe importing computeOutputs() (created at repo root, run via tsx, deleted after)
+    → total outputs: 114
+      api-catalog present: true
+      docs/cordis-api/inherited.md
+      packages/extensions/tool-cordis/src/api-catalog.ts
+      docs/subsystems regions: 112
+  $ grep -rn "verify-cordis-api\|gen-cordis-api" --include=*.yml --include=*.json --include=*.yaml --include=Makefile .
+    → only package.json:152 and package.json:153 (no workflow/gate/Makefile reference)
+  $ git status --porcelain  → empty (probe left no mutation); git rev-parse --is-inside-work-tree → true
+
+TIER
+ - BORROW: one projection → two renderers sharing a single in-memory model, with a single --check covering every emitted artifact and a fail-closed both-ways partition check plus an independent regex scan cross-check (gen-cordis-catalog.ts:1162-1183).
+ - REFERENCE: the two-name script alias (gen-cordis-api shim vs gen-cordis-catalog) and the generated banner naming a gate that does not exist under that name.
+ - DO-NOT-COPY: the cost. The byte-equality test carries `timeout: 480_000` because each face builds a full ts.Program; disproportionate for a smaller repo.
+refuted: false
+
+
+
+## [v1]
+
+reason: The MECHANISM is accurately described and the two line citations are exactly right. The PAYOFF ("Real scale lever at 54 first-party tool names") is refuted by the code. Four independent measurements kill it:
+
+(1) ZERO first-party tools opt in. I grepped every `deferLoading: true` literal in the repo (all .ts/.tsx/.json, excluding node_modules): 25 hits, and every one is either a test fixture in a `/tests/` or `*.spec.ts` file, or `content.ts:391` itself — which is the projector RE-DERIVING the flag from recorded history, not any tool opting in. `api-catalog.ts` (8228 lines, the first-party tool catalog) has exactly 1 `deferLoading` hit, and it is a type-declaration string, not a usage. So of the 54 tools, 54/54 are declared eagerly. The lever exists and nothing pulls it.
+
+(2) It is not scale-gated by tool count at all — it is gated by mid-conversation ADDITION, a fixed bound of 1 event per tool. `content.ts:452` computes `offered` from `history.tools.filter(tool => !tool.deferLoading)`, i.e. baseline tools are already "offered" and get activated immediately. The 54 baseline tools are shipped in full on request 1 (`agent-loop/tests/tool-updates.spec.ts:83` asserts the first request carries `['search']` complete, no deferLoading flags). `deferLoading` shrinks the mid-conversation DELTA; it does nothing for the 54-tool baseline. That is the opposite of a scale lever — its value is O(1) in tool count.
+
+(3) Route support is one model in one adapter. `toolUpdate` is set in exactly one non-test production site: `llm-deepseek/src/models.ts:13`, `toolUpdate: 'addition-only'` on `deepseek-flash`. Its sibling `deepseek-v4-pro` (same file, line 16) omits it. No other adapter sets it. When `toolUpdate === undefined`, `content.ts:430-435` explicitly strips the flags and drops all developer messages — full declaration list, as the type doc at `types.ts:405` says ("Absent means every request declares the complete current tool list").
+
+(4) The main provider path throws on it. `llm-pi-ai/src/context.ts:131-133`: `throw new LlmError('Deferred tool loading is not supported yet', 'UNSUPPORTED_CONTENT')`.
+
+Verdict: accurate mechanism, overstated payoff. This is a narrow single-route cache-delta optimization that is fully implemented and wired end-to-end (header fold, V3→V4 session format, migration refusal) but has zero production adoption. Correct tier: REFERENCE — the mechanism is well-built and worth reading if omp ever adds mid-conversation tool mutation, but citing it as a live scale lever at 54 tools is wrong. Not BORROW (nothing to borrow yet, no proven win), and not DO-NOT-COPY either. The `defer_loading` wire flag at `llm-deepseek/src/serialize.ts:164` is DeepSeek-specific; a general "omit baseline schemas" lever would have to be built independently, not ported.
+evidence: MECHANISM CONFIRMED, EXACT LINES:
+- `packages/core/tools/src/schema.ts:499-500` — `/** Requests deferred loading of the tool definition... */` / `readonly deferLoading?: true` in `DefineToolOptions`. Cited range is correct to the line.
+- `packages/core/tools/src/schema.ts:595` — passthrough `...(options.deferLoading === true ? { deferLoading: options.deferLoading } : {})`.
+- `packages/llm/llm/src/content.ts:391` — `declarations.set(tool.name, { ...tool, deferLoading: true })` inside `toolDeclarations`, with comment "Later additions activate these definitions at their recorded position." Cited line correct.
+- `packages/llm/llm/src/content.ts:464-467` — `case 'tool-addition': if (!declarations.has(block.toolName) || offered.has(block.toolName)) return false; offered.add(block.toolName); return true` — the activation filter.
+- `packages/llm/llm/src/content.ts:470-473` — `case 'tool-removal': if (toolUpdate !== 'in-history') return false; return offered.delete(block.toolName)`.
+- `packages/llm/llm/src/types.ts:399-407` — ToolUpdate doc: "'addition-only': the model reads a `tool-addition` block in a later developer message as activating a tool declared with `deferLoading`, so an added tool follows the cached history instead of rewriting the declaration list." and "Absent means every request declares the complete current tool list."
+- `packages/llm/llm/src/types.ts:474-480` — ToolSchema.deferLoading doc: "Uses Anthropic's defer_loading terminology."
+- BEHAVIOR TEST `packages/core/agent-loop/tests/tool-updates.spec.ts:85-113` — proves the whole flow: 3 requests, tool added at request 2; request 1 tools `['search']`; request 2 tools `[{search, no flag}, {fetch, deferLoading: true}]` with `developerContent(second)` == `[[{type:'tool-addition', toolName:'fetch'}]]`; request 3 reuses the same declaration list and appends a `tool-removal` block.
+
+REFUTATION 1 — zero production adoption:
+`grep -rn "deferLoading: true" --include=*.ts --include=*.tsx --include=*.json .` (excl node_modules) → 25 hits. All are in `packages/*/tests/*.spec.ts` or `packages/test-support/session-snapshot/tests/fixtures/dynamic-tool-updates.ts` EXCEPT the single production hit `packages/llm/llm/src/content.ts:391`, which is the projector re-deriving the flag from folded history. `packages/extensions/tool-cordis/src/api-catalog.ts` (8228 lines) → `grep -c deferLoading` = 1, and that one is `declaration: 'export interface ToolSchema {\n    deferLoading?: true;...'` — a catalogued type string at line 7672, not a tool opting in.
+
+REFUTATION 2 — not count-scaled, addition-scaled:
+`packages/llm/llm/src/content.ts:452` — `const offered = new Set(history.tools.filter(tool => !tool.deferLoading).map(tool => tool.name))`; comment on line 451: "Deferred baseline tools still need their first addition to become available." Baseline tools lacking the flag are offered immediately. `packages/core/agent-loop/tests/tool-updates.spec.ts:80` — `expect(request.tools?.some(schema => schema.deferLoading === true)).toBeFalsy()` on the initial request.
+
+REFUTATION 3 — one model, one adapter:
+`grep -rn "toolUpdate" packages/ --include=*.ts | grep -v tests` → only production setter is `packages/llm/llm-deepseek/src/models.ts:13` `toolUpdate: 'addition-only'` on `deepseek-flash`; `deepseek-v4-pro` at line 16 omits it. `grep -c toolUpdate packages/llm/llm-deepseek/src/models.ts` = 1. Fallback path `packages/llm/llm/src/content.ts:430-436`: `if (toolUpdate === undefined) { let immediateTools = tools; if (tools?.some(t => t.deferLoading === true)) immediateTools = tools.map(({deferLoading: _l, ...t}) => t); return { messages: withoutDeveloperMessages(messages), tools: immediateTools } }`.
+
+REFUTATION 4 — pi-ai throws:
+`packages/llm/llm-pi-ai/src/context.ts:129-133` — `// Deferred definitions are persisted for V4; provider loading is intentionally deferred.` / `if (options.tools?.some(tool => tool.deferLoading === true)) { throw new LlmError('Deferred tool loading is not supported yet', 'UNSUPPORTED_CONTENT') }`.
+
+TOOL COUNT: `grep -rn -A3 "defineTool(" packages/ | grep -oE "name: *[\"'][a-zA-Z0-9_-]+[\"']" | sort -u` → 52 unique first-party names (ask_user_question, bash, cordis_inspect_list, cordis_inspect_query, create_goal, edit, get_goal, glob, grep, interrupt_agent, job_kill, job_list, job_output, list_agents, list_mcp_resource_templates, list_mcp_resources, list_subagent_models, load_workspace_dependencies, lsp, plugin_manager, present, pwsh, ralph, read, read_image, read_mcp_resource, schedule_create, schedule_delete, schedule_list, schedule_update, send_message, session_event_read, session_event_search, session_event_trace, session_search, session_trace, skill, spawn_teammate, str_replace_editor, team_task_create, team_task_get, team_task_list, team_task_update, terminal_close, terminal_list, terminal_open, terminal_read, terminal_send, terminal_signal, todo_write, update_goal, wait_agent, web_fetch, web_search, write). Claim's "54" is within noise of 52, so the COUNT is fine — it is the "scale lever" inference that fails.
+refuted: true
+
+
+
+## [v3]
+
+reason: NOT REFUTED on the legal/provenance axis. The pipeline is clean MIT→MIT; taking the CODE is legal, so this is not idea-only.
+
+LICENSE CHAIN (all measured, none from docs):
+- deepseek-harness `LICENSE:1-3` = MIT, "Copyright (c) 2026 DeepSeek". 315 package.json files under packages/ (`find ... | wc -l` = 315), and `grep -L '"license": "MIT"'` over all of them returns ZERO — no non-MIT package anywhere in the workspace.
+- All 9 vendored packages are MIT, "Copyright (c) 2021-present Shigma": cordis, cosmokit, schemastery, loader, include, group, timer, hmr, logger-console. Declared in `THIRD_PARTY_NOTICES.md:20-26`.
+- No CLA and no proprietary/confidential restriction: `grep -rn "CLA\b|Contributor License|proprietary|Confidential" --include=*.md` returns zero hits. `CONTRIBUTING.md` affirmatively invites reuse: "consider this repository an idea, an official showcase, and a source of inspiration".
+- Build-time-only deps of the generator chain: `typescript` (Apache-2.0) and `@jridgewell/gen-mapping` (MIT) — neither is redistributed in generated output.
+- oh-my-openagent is SUL-1.0 ("non-sublicensable, non-transferable", `LICENSE.md:15-18`) and is non-clean, but ZERO bytes of omo are in this pipeline. The copy path dsh→your-MIT-repo never touches omo, so there is no SUL-1.0 contamination path.
+
+THE TECHNICAL CLAIM ALSO VERIFIES (I ran it, not just read it):
+- Claim's file:line is accurate: `scripts/gen-cordis-catalog.ts:42` is `const OUT_RUNTIME_API = 'packages/extensions/tool-cordis/src/api-catalog.ts'`.
+- "AST walk": real — `projectCordisCatalog` (packages/typert/generator/src/cordis-catalog.ts:369) → `WorkspaceAnalyzer` over the `typescript` compiler AST.
+- "cannot diverge": `computeOutputs()` builds `docs/cordis-api/inherited.md` and `api-catalog.ts` from ONE `model` in ONE call (`gen-cordis-catalog.ts:1188-1189`), plus 100+ subsystem page regions; the curated `SERVICE_PAGE`/`EVENT_SCOPE_PAGE` partition is fail-closed both ways (`:46-51`, throws at `:1184`).
+- "freshness-gated in CI": ran it — `npx tsx scripts/gen-cordis-catalog.ts --check` → "gen-cordis-catalog: 119 generated file(s)/region(s) are up to date." exit 0. The gate is `cordis-catalog` → `verify-cordis-catalog` (`run-gates.ts:789`), which `ci-primary`, `ci-static` and `check-all` all include; `.github/workflows/ci.yml:3-4` runs on `pull_request`.
+
+FOUR CAVEATS worth carrying (none of them refutes the claim):
+1. ATTRIBUTION IS LOAD-BEARING, NOT DECORATIVE. The generated file embeds cordis-derived material — `FiberState` originates at `vendor/cordis/src/fiber.ts:147` and surfaces in a lifted declaration at `api-catalog.ts:4464`; the 9 `INHERITED_CTX_API` rows (`:8129-8139`) summarize cordis core + loader/hmr/timer. MIT→MIT is allowed; MIT→MIT *while dropping "Copyright (c) 2021-present Shigma"* is a violation. Copy the notices, not just the code.
+2. THE GENERATED BANNER MISNAMES ITS OWN GATE. `api-catalog.ts:4` claims gating by "`pnpm run verify-cordis-api` in doc-sync". That script exists (package.json:153) but is NOT a doc-sync gate id; the real gate is `verify-cordis-catalog` (`run-gates.ts:789`). They converge on the same `main()` (`scripts/gen-cordis-api.ts:7` is a one-line alias importing `main` from `gen-cordis-catalog.ts`), so coverage is real and I proved it by running the check. This is the exact class of drift the claim says "cannot" happen — it just happened to the prose, not the data.
+3. PORT THE MECHANISM, NOT THE FILE. The 8228-line catalog is 935 verbatim lifted type declarations (`TYPE_API`, lines 4385-8128) of DeepSeek's PRODUCT domain: `AccountBonusBatch`, `AccountWallet` carrying `'CNY' | 'USD'`, `AccountLinks` with `usageUrl`/`topUpUrl`, `AgentPresetRoster`. Legally fine, useless outside dsh. BORROW = the ~7179 lines of generic extraction machinery (gen-cordis-catalog.ts 1266, typert cordis-catalog.ts 1069, analyzer.ts 3285, renderer.ts 365, model.ts 442, cordis-walk.ts 102, cordis-core-api.ts 433, jsdoc.ts 201). REFERENCE = the catalog file itself.
+4. THE MACHINERY IS CORDIS-SPECIFIC. It keys on `declare module '@deepseek-ai/cordis'` merges (`scripts/cordis-walk.ts:14,49`) plus a curated page table. Adopting it means adopting cordis, or rewriting the walk. Also: the inherited tier is a curated policy table with `file:line` pointers, not AST-extracted — "AST walk" is accurate for the harness service/event/type tiers, slightly overstated for the inherited tier.
+evidence: LEGAL (measured):
+- C:/Users/ADMIN/Projects/deepseek-harness/LICENSE:1-3 → "MIT License / Copyright (c) 2026 DeepSeek"
+- `find packages -maxdepth 3 -name package.json -not -path "*/node_modules/*" | wc -l` → 315; `grep -L '"license": "MIT"'` over those 315 → 0 files
+- vendor/cordis/LICENSE:1-3 → "MIT License / Copyright (c) 2021-present Shigma"; same holder for all 9 vendor/*/LICENSE files
+- THIRD_PARTY_NOTICES.md:20-26 → 9-row vendored manifest, every row MIT
+- `grep -rn "CLA\b|Contributor License|proprietary|Confidential" --include=*.md` (excl. node_modules) → 0 hits
+- C:/Users/ADMIN/Projects/oh-my-openagent/LICENSE.md:15-18 → SUL-1.0 "non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable" + "non-commercial purposes" only. Nothing from omo appears in the dsh pipeline.
+- Generator-chain external imports (`grep -rhn "from '[a-z@]" packages/typert/generator/src/ scripts/gen-cordis-catalog.ts scripts/cordis-core-api.ts scripts/cordis-walk.ts | sort -u`) → only: @deepseek-ai/dsh-typert-generator, @jridgewell/gen-mapping, typescript, node:*
+
+TECHNICAL (verified by execution):
+- `cd C:/Users/ADMIN/Projects/deepseek-harness && npx tsx scripts/gen-cordis-catalog.ts --check` → "gen-cordis-catalog: 119 generated file(s)/region(s) are up to date." exit 0
+- scripts/gen-cordis-catalog.ts:42 → `const OUT_RUNTIME_API = 'packages/extensions/tool-cordis/src/api-catalog.ts'` (claim's file:line is correct)
+- scripts/gen-cordis-catalog.ts:1188-1189 → inherited.md and api-catalog.ts both rendered from the same `model` in one call
+- scripts/gen-cordis-catalog.ts:1231-1244 → `--check` byte-compares every output, exit 1 on stale
+- scripts/gen-cordis-catalog.ts:46-51, :1184 → curated partition table, fail-closed both directions
+- scripts/run-gates.ts:789 → `pnpmScript('cordis-catalog', 'verify-cordis-catalog', { label: 'cordis catalog' })`; included via `docSyncLeafGates()` at run-gates.ts:381-384 (ci-primary), :479-489 (ci-static), :321 (check-all)
+- .github/workflows/ci.yml:3-4 → `on: pull_request`
+- .github/workflows/docs-pages.yml:13-14 + :74 → doc-sync also runs, but that workflow is `workflow_dispatch`-only by design (header comment lines 1-10) — the PR signal is ci.yml, not this one
+- scripts/gen-cordis-api.ts:7 → `import { main } from './gen-cordis-catalog.ts'` (why the banner's script name still reaches the same gate)
+- packages/typert/generator/src/cordis-catalog.ts:369 → `export function projectCordisCatalog(scanRoot, policy, targetFace)`; :8 → `WorkspaceAnalyzer` (the AST walk)
+- packages/extensions/tool-cordis/src/api-catalog.ts → 8228 lines; 12 top-level exports; 935 `declaration: '` entries; TYPE_API at :4385, INHERITED_CTX_API at :8129
+- vendor/cordis/src/fiber.ts:147 → `export const enum FiberState` (origin of the type surfaced at api-catalog.ts:4464)
+- machinery `wc -l` → 7179 total across the 8 files listed in reason caveat 3
+refuted: false
+
+
+
+## [v2]
+
+reason: REFUTED on portability. The cited dsh code is real and correctly described, but the transient didOpen/didClose + per-query disk re-read is valid ONLY under a precondition omp violates by design, and in omp it is not merely unnecessary — it is actively wrong (inverted staleness). dsh's LSP host is read-only by construction: `instance.ts:259-261` REJECTS `workspace/applyEdit` ("this host never applies edits or runs commands") and `index.ts:305` states "Queries are read-only." With no writer, disk is the sole source of truth, so a per-query disk re-read is trivially correct. omp has a writer: `writethrough.ts:367` calls `beginPendingDiskWrite(dst)`, and its comment at 364-366 says the overlay INTENTIONALLY LEADS DISK until the write commits. Under dsh's pattern, the server's copy is authoritative ONLY while disk is authoritative — so the port would revert the language server to pre-write content mid-write, which is a data-loss-class bug omp already ships a refcounted guard against (`client.ts:46` pendingDiskWrites, `beginPendingDiskWrite` at 1256, checked at 1371 and 1401). The "structural property" is inverted: in omp, disk is the STALE side, so the re-read dsh relies on is the wrong direction. Second, omp already has a strictly better version of the exact concern the claim names. `reconcileFileFromDisk` (client.ts:1356-1431) IS "survives edits," solved: read disk, compare `documentSignature` to `info.syncedHash` (1402-1403), push `didChange` with a monotonic `++info.version` (1408-1418), drop stale cached diagnostics (1407), and SUPPRESS the re-read when an overlay leads disk (1371, 1401). Its doc comment at 1352-1354 names the precise failure mode dsh's design cannot even express. dsh needs no equivalent because it has no version to bump and no diagnostics to invalidate. Third, omp's persistent model carries contracts a transient model cannot express: `tool.ts:1167` threads `reconciledFromDisk` into `code_actions` (1352-1360), which waits for diagnostics matching the RECONCILED DOCUMENT VERSION — under a transient doc there is no surviving version for diagnostics to match. `refreshFile` (1607) sends didChange+didSave on every watched-file change to drive format-on-save — a transient model has no save point to hook. `reconcileExecutedChanges` (621-653) closes overlays on delete and refreshes on edit, derived from actually-executed ops — transient makes it a no-op and loses overlay cleanup. The mux broker (mux/server.ts:378-387) routes per-session didOpen/didChange/didClose across a shared server, i.e. it maintains per-session open-doc sets. Fourth, the surface gap is exactly where the model breaks: dsh has 4 operations (LspOperation = goToDefinition | findReferences | goToImplementation | hover, dsh lsp/src/types.ts:17); omp dispatches >=10 actions (definition, type_definition, implementation, references, hover, code_actions, symbols, rename, reload — tool.ts:1210-1528) plus format-on-write and diagnostics-on-write. The two capabilities dsh lacks (code_actions needing version-keyed diagnostics, and the write path) are precisely the two the transient model destroys. Scale: dsh LSP = 5,559 total lines across 3 packages (~1,422 src lines in lsp-stdio); omp src/lsp = 9,881 lines (~7x). This is not "adopt a missing subsystem" — it is "delete a subsystem the host's write path depends on." NOTE: omo was not consulted; the claim is sourced entirely from dsh/mcp-lsp-tools and every citation resolved in deepseek-harness.
+evidence: CITATIONS VERIFIED IN dsh (C:/Users/ADMIN/Projects/deepseek-harness): packages/lsp/lsp-stdio/src/index.ts:279 = `const source = await readHostSource(this.fs, request.filePath, workspace, this.config.maxDocumentBytes, querySignal)` (per-query disk re-read, inside the workspace queue, before spawn). packages/lsp/lsp-stdio/src/instance.ts:159-161 didOpen with `version: 1`; :169 sendRequest; :177 didClose. dsh lsp/src/types.ts:17 = `export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover'` (4 ops). dsh instance.ts:259-261 = `if (method === 'workspace/applyEdit') { return Promise.reject(new Error('workspace/applyEdit is not permitted by this host')) }`. dsh index.ts:305 comment = "Queries are read-only, so replace that transport once and retry transparently". dsh host.ts:65 = "This layer owns the LSP-specific complete-document cap"; :72 readHostSource(fs, filePath, workspace, maxDocumentBytes, signal).
+
+OMP CODE ACTUALLY READ (C:/Users/ADMIN/Documents/Projects/ultraworkers/packages/coding-agent) — note the task pointed at src/extensibility, but omp's LSP lives in src/lsp (extensibility has 17 entries, no LSP): `grep -rl "didOpen|didChange|didClose" --include=*.ts packages/` = 8 files, all under src/lsp. src/lsp line counts (wc -l): client.ts 1935, tool.ts 1563, mux/server.ts 765, utils.ts 695, diagnostics.ts 632, writethrough.ts 625, config.ts 594, types.ts 484, edits.ts 452, mux/daemon.ts 354, servers.ts 306, lspmux.ts 233, biome-client.ts 226, format-options.ts 119, mux/protocol.ts 112, swiftlint-client.ts 125, deferred-diagnostics.ts 68, diagnostics-ledger.ts 51, clients/index.ts 50, batch.ts 24, startup-events.ts 13, index.ts 10 = 9,881 total.
+
+DECISIVE EVIDENCE (omp):
+- client.ts:38-46 (verbatim): "URIs whose server overlay OMP has intentionally advanced ahead of the on-disk file for an in-flight write/edit: the writethrough syncs the new (and possibly formatted) text to the language server before committing it to disk, so while a write is pending the file on disk is *older* than the overlay. Refcounted by {@link beginPendingDiskWrite}/{@link endPendingDiskWrite}..." -> `const pendingDiskWrites = new Map<string, number>();`
+- writethrough.ts:364-367 (verbatim): "The overlay leads disk from the first sync below until the write commits; bar disk-reconciliation for the file so a concurrent semantic query cannot revert the server to pre-write content." -> `beginPendingDiskWrite(dst);`
+- client.ts:1352-1354 (verbatim): "A file with an in-flight OMP write ({@link beginPendingDiskWrite}) is skipped entirely: its overlay leads disk, so reading disk back would revert the server to pre-write content."
+- client.ts:1356-1431 `reconcileFileFromDisk` = omp's answer to "survives edits": :1402-1403 `const signature = documentSignature(content); if (signature === info.syncedHash) return;` -> :1408 `const version = ++info.version;` -> :1410-1418 sendNotification "textDocument/didChange" with `contentChanges: [{ text: content }]` -> :1419 `info.syncedHash = signature;`; :1407 drops `client.diagnostics.delete(uri)`; :1371 and :1401 early-return when `pendingDiskWrites.has(uri)`.
+- client.ts:1277-1337 `ensureFileOpen`: :1283 `if (client.openFiles.has(uri)) return;`, :1327 `client.openFiles.set(uri, { version: 1, languageId, syncedHash: documentSignature(content) })`.
+- types.ts:408 `syncedHash?: number | bigint;`, types.ts:439 `openFiles: Map<string, OpenFile>;`
+- tool.ts:1167 `reconciledFromDisk = await reconcileFileFromDisk(client, targetFile, signal);` consumed at tool.ts:1352-1360 in `case "code_actions"` — waits for diagnostics matching the reconciled document version.
+- tool.ts:936 same reconcile before a raw `sendRequest`.
+- client.ts:1607-1665 `refreshFile` = didChange + didSave with `++info.version`, driving format-on-save.
+- client.ts:621-653 `reconcileExecutedChanges`: :643 didClose + openFiles.delete + diagnostics.delete for deleted roots; :649 refreshFile for finalUris; driven by applyWorkspaceEditWithLsp (client.ts:663).
+- mux/server.ts:378-387 fans out didOpen / didChange / didClose per session over a shared brokered server.
+- omp action surface (tool.ts): definition :1210, type_definition :1235, implementation :1260, references :1284, hover :1333, code_actions :1352, symbols :1459, rename :1494, reload :1528.
+- `grep -c "openFiles|didChange|didOpen|didClose|didSave|version" src/lsp/client.ts` = 45 sync touchpoints in one file.
+
+GENUINE GAP FOUND (the only portable steal): `grep -rn "maxDocumentBytes|maxFileSize|MAX_DOCUMENT" src/lsp/` = 0 hits in omp, while dsh host.ts:65 makes the complete-document cap an explicit owned concern. omp streams unbounded whole files into didOpen: client.ts:1304, :1392, :1632 are all `content = await Bun.file(filePath).text();`. dsh's byte-bounded streaming read (host.ts:72-100, counting `bytes` against `maxDocumentBytes`) is directly portable and omp has no equivalent bound.
+refuted: true
+
+
+
+## [v1]
+
+reason: Claim is ACCURATE on all three components, verified in code and by running the tests. (1) maxDelayMs genuinely serves double duty: connection.ts:34 documents it, connection.ts:222 uses it as the uptime stability window (`if (connectedAt !== undefined && Date.now() - connectedAt >= policy.maxDelayMs) failedAttempts = 0`) and connection.ts:236 uses it as the backoff ceiling (`Math.min(policy.maxDelayMs, ...)`). (2) The budget is genuinely outage-scoped, not attempt-scoped: connection.ts:341 sets `connectedAt = Date.now()` on a successful connect but never resets `failedAttempts`; a package-wide grep shows `failedAttempts` is reset in exactly ONE place (connection.ts:222) and that site is gated on the stability window. (3) Exhaustion is terminal: connection.ts:225-235 unregisters tools and returns BEFORE the setTimeout at :239-242 that would re-arm a retry, so nothing restarts it. Three caveats, none refuting: (a) The cited line ranges :5-12 and :31-42 are DOC COMMENTS (module header and the ReconnectConfig interface fields), not the enforcing code — the implementation is connection.ts:220-236; I confirmed the prose matches the code, but a code-level citation should point at 220-236. (b) "Briefly" is load-bearing and the claim scopes it correctly: a crash loop slower than the stability window (30s default) resets the budget every cycle and DOES restart forever. (c) Off-by-one in phrasing: give-up fires on failure maxAttempts+1 (`connection.ts:225` tests `failedAttempts > policy.maxAttempts`), so only maxAttempts reconnects actually run — confirmed by reconnect.spec.ts:499 (4 instances at maxAttempts: 3). The coupling of backoff ceiling to stability window is itself a real design wart worth flagging separately (tuning one silently tunes the other), but it is precisely what produces the claimed crash-loop protection.
+evidence: FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/mcp/mcp-client/src/connection.ts (409 lines)
+
+CITED RANGES (doc comments, prose matches implementation):
+- :5-12 = module header: "One outage shares one attempt budget (`maxAttempts` consecutive failed attempts, delays doubling from `initialDelayMs` up to `maxDelayMs`). A connection that stays up past the stability window closes the outage, so the next disconnect starts a fresh budget while a crash-looping server — even one whose connects briefly succeed — still exhausts the cap instead of restarting forever."
+- :31-42 = ReconnectConfig interface + RECONNECT_DEFAULTS. :34 = "Backoff ceiling in milliseconds; also the uptime after which the attempt budget resets (default 30000)." :36-37 = "Consecutive failed attempts per outage before giving up for good (default 10)." :41-46 = frozen defaults {enabled: true, initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10}.
+
+ENFORCING CODE (the real anchor; NOT in the cited ranges):
+- :153 `let failedAttempts = 0`
+- :155 `let connectedAt: number | undefined`
+- :220-222 `// A connection that stayed up past the stability window (= maxDelayMs, the longest backoff spacing) ended the previous outage: start a fresh budget.` / `if (connectedAt !== undefined && Date.now() - connectedAt >= policy.maxDelayMs) failedAttempts = 0`
+- :223-225 `connectedAt = undefined` / `failedAttempts += 1` / `if (failedAttempts > policy.maxAttempts) {`
+- :228-234 on exhaustion: enqueues disposer flush, logs "giving up after ${policy.maxAttempts} consecutive failed reconnect attempts — tools unregistered; reload the plugin or restart the Host to reconnect", then `return` — skipping the timer arm at :239-242, so nothing restarts it.
+- :236 `const delayMs = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** (failedAttempts - 1))`  <- same field as stability window
+- :341 `connectedAt = Date.now()` on successful connect — NOTE: `failedAttempts` deliberately NOT reset here. This is the mechanism that makes "connects briefly succeed still exhausts maxAttempts" true.
+
+GREP (packages/mcp/mcp-client, whole package) — `failedAttempts` appears only at :153, :212, :222, :224, :225, :236, :238, :242, :342 and in tests. Single reset site (:222), gated on the stability window. No other module owns this policy.
+
+TESTS RUN (measured, not inferred):
+- `npx vitest run packages/mcp/mcp-client/tests/reconnect.spec.ts -t "stability window"` -> "Tests 1 passed | 30 skipped (31)"
+- `npx vitest run packages/mcp/mcp-client/tests/reconnect.spec.ts -t "crash loop with briefly successful connects"` -> "Tests 1 passed | 30 skipped (31)"
+- `npx vitest run packages/mcp/mcp-client/tests/reconnect.spec.ts` (full file) -> "Test Files 1 passed (1) / Tests 31 passed (31)", 2.81s
+
+CONTRACT-LOCKING TEST BODIES:
+- reconnect.spec.ts:462-479 "a crash loop with briefly successful connects still exhausts the cap" — config {initialDelayMs: 2, maxDelayMs: 10_000, maxAttempts: 1}; crash, recover, crash again inside the window; asserts log "giving up after 1 consecutive failed reconnect attempts", `instances` stays at 2, tool undefined. Comment at :468: "the successful connect must not launder the budget."
+- reconnect.spec.ts:444-460 "an uptime past the stability window resets the attempt budget" — config {maxDelayMs: 30, maxAttempts: 1}; after 40ms uptime a second crash restarts at attempt 1 rather than exceeding maxAttempts; asserts 0 errors.
+- reconnect.spec.ts:481-501 (boundary/offset) — maxAttempts: 3 with connect-reject racing onclose yields exactly 4 generations (1 initial + 3 budgeted) and exactly one "giving up" line.
+
+CONFIG SURFACE: index.ts:115 `maxDelayMs: z.number().min(1).max(MAX_TIMER_DELAY_MS).default(RECONNECT_DEFAULTS.maxDelayMs)`; resolveReconnectPolicy (connection.ts:69-94) re-validates all bounds and enforces `initialDelayMs <= maxDelayMs` (:86-88).
+
+REPO LABELS: the harness labels the source "dsh/mcp-lsp-tools"; the actual verified path is packages/mcp/mcp-client in C:/Users/ADMIN/Projects/deepseek-harness (path exists, 5 src files: connection.ts, index.ts, server-context.ts, tools.ts, transport.ts).
+refuted: false
+
+
+
+## [v3]
+
+reason: NOT REFUTED. The claim survives on both axes — it is factually accurate against the code, and the code is clean, original, MIT-licensed work. This is BORROW (code + idea), not idea-only.
+
+1) TECHNICAL CLAIM — VERIFIED IN CODE, NOT JUST IN DOC COMMENTS.
+- Closed 4-operation union: `C:/Users/ADMIN/Projects/deepseek-harness/packages/lsp/lsp/src/types.ts:17` is literally `export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover'`. Exactly four members, no index signature, no `string & {}` widening.
+- No JSON-RPC escape hatch: the `LspService` interface (types.ts:113-130) has exactly two members — `registerProvider` and `query`. `query` takes `LspQueryRequest`, whose `operation` is the closed `LspOperation` union (types.ts:40). The concrete `Lsp` class (index.ts:82-150) has only two private fields (`providerIds`, `routes`) and two methods. Grep for `jsonrpc|json-rpc|sendRequest|notify|executeCommand` across `packages/lsp/lsp/src/` returns 3 hits, ALL of them prose in doc comments (index.ts:10, types.ts:6, types.ts:111) — zero executable escape hatch. The raw JSON-RPC lives in a *different package* (`packages/lsp/lsp-stdio/`, 8 src files / 1643 lines) sealed behind the `LspProvider` interface, so the exclusion is architectural, not a convention.
+- All-or-nothing registration: index.ts:90-126 performs every check (empty id :94, duplicate id :97, empty extension map :102, per-entry pattern/language/dup :109-121, cross-provider conflict :122-126) and the FIRST mutation is `this.providerIds.add(id)` at index.ts:131 — inside the `ctx.effect` generator. Nothing is written to `this.providerIds` or `this.routes` before all validation passes.
+- Single-effect release: one `this.ctx.effect(...)` at index.ts:130-137 whose single disposer (:133-136) deletes the id and every extension together.
+- Behavioral proof (not documentation): `packages/lsp/lsp/tests/lsp.spec.ts:125` is titled "publishes nothing when a later extension conflicts (atomic reservation)" and :135 "releases every extension and the id together on dispose". 19 test cases total in a 187-line spec. So the atomicity is an enforced contract with a regression test, not marketing prose.
+
+2) LICENSE — UNAMBIGUOUSLY MIT, AND MACHINE-ENFORCED.
+- Root `LICENSE` is stock MIT (no rider, no addendum), "Copyright (c) 2026 DeepSeek".
+- `packages/lsp/lsp/package.json` declares `"license": "MIT"` with `"publishConfig": {"access": "public"}` and version `0.1.7-rc.2` — the exact version of the source I read.
+- A dedicated gate, `scripts/verify-dsh-package-licenses.ts` (line 10 matches `^@deepseek-ai/dsh(?:-|$)`, line 67 fails any non-MIT manifest), is wired into CI twice: `scripts/run-gates.ts:348` and `:759`. So a non-MIT declaration for any `@deepseek-ai/dsh*` package breaks the build. This is about as strong a license guarantee as a repo can make.
+- No CLA anywhere: `find . -iname "CLA.md" -o -iname "CLA.txt"` returns nothing. `CONTRIBUTING.md` only says external PRs are not accepted — that governs *contribution in*, not *copying out*, and MIT explicitly grants the latter.
+- No file-level override: `grep -rni "copyright|SPDX|licensed under|proprietary" packages/lsp` returns 0 hits.
+- No restrictive terms anywhere in LICENSE/CONTRIBUTING/AGENTS/package.json/.github/docs: grep for `non-?commercial|sublicens|not permitted|sustainable use|proprietary|all rights reserved` returns 0 hits.
+
+3) PROVENANCE — ORIGINAL DEEPSEEK WORK, NOT A PORT OF OMO (SUL-1.0).
+- First commit touching `packages/lsp/lsp/src/index.ts`: `d0029d8d609d297ede039cc579fed8cc89d1705c`, 2026-07-16, author `Dudu-0223 <fsyo0223@gmail.com>`, subject "feat(lsp): LSP capability seam, generic stdio provider, and lsp tool". Full body describes implementing an internal RFC (`docs/rfc/architecture/2026-07-15-lsp-capability-seam.md`, since renamed to `docs/subsystems/lsp.md`). No "ported from" / "adapted from" language anywhere in the history.
+- The two designs are opposites, which rules out shared ancestry in either direction. omo's LSP surface (`C:/Users/ADMIN/Projects/oh-my-openagent/packages/lsp-core/src/lsp/types.ts:1-100`) is raw protocol vocabulary — `LspServerConfig`, `TextEdit`, `DocumentSymbol`, `Diagnostic`, `FormattingOptions` — and omo has `json-rpc-connection.ts`, `manager.ts`, `workspace-edit.ts`, `format-document.ts`, `directory-diagnostics.ts`: a WIDE, protocol-shaped surface. dsh's is a NARROW, protocol-free 4-op seam. `grep -rn "LspProviderId|goToImplementation" packages/ --include=*.ts` in omo returns ZERO hits; omo's 20+ `registerProvider` hits are all LLM model providers in QA mocks (`packages/omo-senpi/scripts/qa/*`), unrelated. omo uses no cordis at all.
+- `THIRD_PARTY_NOTICES.md` contains no `oh-my` / `openagent` / `sustainable` / `SUL` entry (grepped explicitly).
+
+4) THE PUBLISHED ARTIFACT ITSELF IS MIT — VERIFIED, NOT ASSUMED.
+- `npm pack @deepseek-ai/dsh-lsp@0.1.7-rc.2` → 9 files, including `package/LICENSE` whose first lines are `MIT License` / `Copyright (c) 2026 DeepSeek`. The shipped `lib/types/types.d.ts:15` is the identical 4-op union. So even a consumer who takes the code from npm rather than the git tree gets the MIT grant and the notice.
+- GOTCHA worth knowing, though it does not block copying: the `latest` dist-tag is stale at `0.0.1-rc.1` (published 2026-08-10) and that version declares `BSD-3-Clause` in npm metadata. The repo relicensed in commit `c905c4694e` "Adopt MIT for DSH packages" (2026-08-13); `git show c905c4694e^:LICENSE` is BSD 3-Clause. Every version from `0.1.6-alpha.2` onward is MIT. BSD-3-Clause is also permissive and MIT-compatible, so either metadata you land on is copyable — but pin a version rather than trusting the `latest` tag's license field.
+
+5) HONEST CAVEAT ON THE BORROW — the code is copyable but NOT drop-in.
+`registerProvider` is 52 lines (index.ts:90-141) and its correctness rests on two framework primitives you would have to supply: `Context.effect` (index.ts:130, a fiber-scoped generator-backed lifecycle controller) and `HarnessError` (index.ts:50, from `@deepseek-ai/dsh-llm`). Cordis itself is vendored MIT (`vendor/cordis/LICENSE`, upstream @shigma, MIT) and dsh-llm/dsh-brand are dsh packages under the same MIT gate — so all three dependencies are clean, but they are not zero-cost. The genuinely portable payload is the ~40-line discipline: build a `pending` Map, validate it fully (pattern → language id → intra-provider dup → cross-provider conflict), THEN commit. That ordering is the idea; the exact `ctx.effect` form is the DeepSeek-specific part.
+
+TIER: BORROW — closed 4-op union + validate-then-commit registration ordering. Copy the union and the ordering; re-implement the effect primitive against whatever fiber/scoped-disposer system omp already has. REFERENCE — `packages/lsp/lsp-stdio/` (1643 lines) for the transient didOpen/query/didClose + single-flight-per-(provider, workspace) process pattern. DO-NOT-COPY — the `Source: dsh/mcp-lsp-tools` label in the claim. That path does not exist: `grep -rn "mcp-lsp" .` across the entire dsh tree (excluding node_modules) returns ZERO hits, and `find . -type d -name "mcp-lsp-tools"` finds nothing. The real path is `packages/lsp/lsp/`. The label almost certainly leaked from omo's package `packages/lsp-tools-mcp/`, which IS SUL-1.0 ("non-sublicensable... only for your own internal business purposes or for non-commercial or personal use... distribute only if you do so free of charge for non-commercial purposes"). Anyone reaching for the OMO side of this idea is idea-only and must not ship it in a commercially-distributed MIT project. The DSH side is clean. Do not let the two get conflated again.
+evidence: LICENSE / MANIFEST
+- `C:/Users/ADMIN/Projects/deepseek-harness/LICENSE` (1065 B): "MIT License / Copyright (c) 2026 DeepSeek" — stock text, no rider.
+- `packages/lsp/lsp/package.json`: `"license": "MIT"`, `"version": "0.1.7-rc.2"`, `"publishConfig": {"access": "public"}`.
+- `package.json:4`: `"license": "MIT"` (root).
+- `git show c905c4694e^:LICENSE` → "BSD 3-Clause License"; `git log -- LICENSE` → `c905c4694e 2026-08-13 Adopt MIT for DSH packages`, `b67e81ac97 2026-06-10 Initialize repo`. Relicense was 2026-08-13, by the copyright holder.
+
+CI ENFORCEMENT
+- `scripts/verify-dsh-package-licenses.ts:10` `DSH_PACKAGE_NAME = /^@deepseek-ai\/dsh(?:-|$)/`; `:67` `if (manifest.license !== 'MIT') failures.push(...)`; `:82-83` exit 1.
+- Wired at `scripts/run-gates.ts:348` and `scripts/run-gates.ts:759`: `pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', ...)`.
+
+NPM (executed)
+- `npm view @deepseek-ai/dsh-lsp@0.1.7-rc.2 license` → `MIT`. `@0.1.6-alpha.2` → `MIT`. `@0.0.1-rc.1` (the stale `latest`) → `BSD-3-Clause`.
+- `npm pack @deepseek-ai/dsh-lsp@0.1.7-rc.2` → 9 files: `lib/index.js`, `lib/types/{brand,index,types}.d.ts`, `package.json`, `README*.{md,zh.md,i18n.yaml}`, `package/LICENSE`. Extracted `package/LICENSE` head: "MIT License / Copyright (c) 2026 DeepSeek".
+- Extracted `package/lib/types/types.d.ts:15` == source types.ts:17 (same 4-op union). `:115` `registerProvider(provider: LspProvider): () => void`. Tarball lib = 301 lines total (110 js + 191 d.ts).
+
+CODE READ (not docs)
+- `packages/lsp/lsp/src/types.ts` = 130 lines total. `:17` the union. `:85-87` closed result union. `:95-107` LspProvider. `:113-130` LspService (only 2 members).
+- `packages/lsp/lsp/src/index.ts` = 158 lines. `:50` `export class LspError extends HarnessError {}`. `:60-67` finalExtension. `:82-84` two private fields. `:90-141` registerProvider. `:143-149` query. `:153-156` normalizeExtension.
+- Validation-before-mutation boundary: last check at index.ts:126 (`this.routes.has(ext)`), first mutation at index.ts:131 (`this.providerIds.add(id)`) — 5 lines apart, all inside the effect generator opened at :130.
+- Disposer index.ts:133-136 deletes id (:134) and loops all extensions (:135) in one closure; returned at :140 as `() => void dispose()`.
+- `packages/lsp/lsp/src/brand.ts` = 21 lines, `Branded<'LspProviderId'>` from `@deepseek-ai/dsh-brand`.
+- Escape-hatch grep `grep -rni "jsonrpc|json-rpc|sendRequest|notify|escape|generic|custom method|executeCommand" packages/lsp/lsp/src/` → 3 hits, all inside `* ... *` doc comments (index.ts:10, types.ts:6, types.ts:111). Zero executable.
+
+TESTS (behavioral, not doc)
+- `packages/lsp/lsp/tests/lsp.spec.ts` = 187 lines, 19 `it(...)` cases. `:125` "publishes nothing when a later extension conflicts (atomic reservation)"; `:135` "releases every extension and the id together on dispose"; `:170` fiber-dispose HMR safety; `:145` order-independence; `:164` LSP_UNAVAILABLE.
+
+PROVENANCE
+- `git log --diff-filter=A -- packages/lsp/lsp/src/index.ts` → `d0029d8d609d297ede039cc579fed8cc89d1705c`, Dudu-0223 <fsyo0223@gmail.com>, Thu Jul 16 2026. Full body: "Implements the LSP capability seam RFC as three packages... without leaking a JSON-RPC escape hatch." Mentions an internal RFC, no external source.
+- 9 total commits touching `packages/lsp/lsp/src`, all DeepSeek-internal authors (Dudu-0223, Tianyi Cui, imccyu, Turtle).
+
+OMO SIDE (SUL-1.0) — NO CONTAMINATION
+- `C:/Users/ADMIN/Projects/oh-my-openagent/LICENSE.md`: Sustainable Use License 1.0 — "non-sublicensable, non-transferable... only for your own internal business purposes or for non-commercial or personal use... distribute the software or provide it to others only if you do so free of charge for non-commercial purposes."
+- `packages/lsp-core/src/lsp/types.ts:1-100` is raw LSP protocol types (`LspServerConfig`, `TextEdit`, `DocumentSymbol`, `Diagnostic`, `FormattingOptions`, `Position`, `Range`, `Location`) — the opposite of dsh's protocol-free seam.
+- `grep -rn "LspProviderId|goToImplementation" packages/ --include=*.ts` in omo → 0 hits.
+- omo LSP package contains `json-rpc-connection.ts`, `manager.ts`, `workspace-edit.ts`, `format-document.ts`, `directory-diagnostics.ts` — a wide protocol surface, not a closed 4-op union.
+- omo's 20+ `registerProvider` hits are LLM model providers under `packages/omo-senpi/scripts/qa/` — unrelated to LSP.
+- omo uses no cordis (`grep cordis` in omo package.jsons → 0).
+- `grep -in "oh-my|openagent|sustainable|SUL" THIRD_PARTY_NOTICES.md` (dsh) → 0 hits.
+
+SOURCE-LABEL DEFECT (the one real problem with the claim)
+- `find . -type d -name "mcp-lsp-tools"` in dsh → not found. `grep -rn "mcp-lsp" .` excluding node_modules → 0 hits. The path `dsh/mcp-lsp-tools` in the claim does not exist; the real path is `packages/lsp/lsp/`. omo's package is `packages/lsp-tools-mcp/` — the label appears transposed/carried over from the SUL-1.0 repo.
+
+SCALE (repo doctrine: report honestly)
+- `packages/lsp/lsp`: 3 src files, 309 lines (+187-line spec, 19 cases) — the code under review, ~50 LOC of actual logic in `registerProvider`.
+- `packages/lsp/lsp-stdio`: 8 src files, 1643 lines (the provider side, separate package).
+- `packages/lsp/tool-lsp`: 3 src files, 454 lines (the model-facing tool).
+
+RESTRICTIVE-TERM SWEEP (dsh)
+- `grep -rniE "non-?commercial|sublicens|not permitted|sustainable use|proprietary|all rights reserved"` over LICENSE, CONTRIBUTING.md, AGENTS.md, package.json, .github/, docs/ → 0 hits.
+- `find . -iname "CLA.md" -o -iname "CLA.txt" -o -iname "AGPL*"` → none.
+- `grep -rni "copyright|SPDX|licensed under|proprietary" packages/lsp` → 0 hits.
+- `vendor/cordis/LICENSE` → MIT, "Copyright (c) 2021-present Shigma"; THIRD_PARTY_NOTICES lists all 9 vendored Cordis packages as MIT.
+refuted: false
+
+
+
+## [v2]
+
+reason: The mechanism is accurately cited in dsh, but it fails the port on three independent counts, each measured: (1) omp already implements the same mechanism, more completely, with byte-stable declaration chaining, rewritten-history handling, both tool_addition AND tool_removal, reverse bookkeeping, and token accounting; (2) omp already has a STRONGER lever for the stated goal — `loadMode: "discoverable"` omits the schema from the request entirely, while dsh's `defer_loading` still ships full name+description+input_schema and only adds a flag, so "scale lever" is a mischaracterization on the wire axis; (3) the "54 first-party tool names" scale premise is wrong for omp (33 names, not 54) and the real scale driver is unbounded dynamic tools, which the existing lever already targets via a default-deny allowlist. Compounding all three: dsh's feature is dead code in dsh — 78 deferLoading references, zero production tool definitions set the flag, and its own pi-ai backend throws on it. There is nothing tested to port. The residual gap is real but points at an omp-internal change, not a dsh import.
+evidence: THE CITATION IS ACCURATE. dsh `packages/core/tools/src/schema.ts:499-500` declares `readonly deferLoading?: true` on `DefineToolOptions`; `packages/llm/llm/src/content.ts:391` is the projection that does `declarations.set(tool.name, { ...tool, deferLoading: true })` inside `toolDeclarations()`. A later developer message's `tool_addition` activates a definition already in the declaration list, so the list is not rewritten. Mechanism confirmed.
+
+=== 1. omp ALREADY HAS IT, MORE COMPLETELY ===
+`packages/ai/src/providers/anthropic.ts:4269-4336` `planAnthropicToolControls()` is the same mechanism, and strictly larger:
+- Its own doc: "Keep top-level `tools` byte-stable across a conversation... plus newly active tools appended with `defer_loading`" — the exact claim.
+- Beyond dsh: a persisted record chain (`requestControls.tools.{declared,deferred,active}`, `packages/ai/src/types.ts:957-975`) so a later request replays a byte-identical prefix; explicit rewritten-history handling ("Records at a different index than they were written at are rewritten history... the net change from the declared baseline lands at the first live position"); BOTH `tool_addition` and `tool_removal` via `diffAnthropicActiveTools` (anthropic.ts:4242-4257); and a reverse-direction registry `SentToolDefinitions` (`packages/agent/src/sent-tool-definitions.ts:1-40`) wired at `agent-loop.ts:1917` and `agent.ts:901`.
+- omp even books the cost: `packages/agent/src/output-budget.ts:122-127` counts `inactiveTools` fragments as prompt tokens ("Anthropic replays retired tool definitions, so they are prompt too").
+- MCP additions mid-conversation already hit this path: `mcp/manager.ts:828,1270,1588,1640` `#onToolsChanged` -> `refreshBaseSystemPrompt` (`session/session-tools.ts:1729`).
+- dsh's version is weaker in its own repo: `packages/llm/llm-pi-ai/src/context.ts:131` THROWS `LlmError('Deferred tool loading is not supported yet','UNSUPPORTED_CONTENT')`.
+
+=== 2. omp HAS A STRONGER LEVER; dsh's IS NOT A PAYLOAD LEVER ===
+`packages/agent/src/types.ts:989-999` defines `ToolLoadMode = "essential" | "discoverable"`, documented: discoverable tools "are removed from the top-level schema and either mounted under `xd://` device URLs (when that transport is active) or surfaced through BM25 tool search — keeping their schemas off every request."
+Measured payload proof that dsh's is weaker: dsh `llm-deepseek/src/serialize.ts:160-165` and omp `anthropic.ts:5842-5854` BOTH emit full `name` + `description` + `input_schema` and only ADD the flag. So `defer_loading` never shrinks the request. (What Anthropic does server-side is a VENDOR CLAIM, UNVERIFIED — but the wire payload, which I measured, is identical either way.)
+omp additionally has the discovery substrate dsh lacks: `anthropic-wire.ts:86,138-139` `tool_search_tool_regex`/`tool_search_tool_bm25`; `openai-responses-wire.ts:5697` `tool_search` + `3127/5082` `tool_search_call`/`tool_search_output`; compaction handling at `agent/src/compaction/openai.ts:163`; and `defer_loading` already modelled on four OpenAI shapes (347 CustomTool, 490 Function, 584 NamespaceTool, 5313 MCP).
+
+=== 3. omp ALREADY USES IT, DEFAULT-DENY ===
+`packages/coding-agent/src/tools/essential-tools.ts:41-44` `defaultLoadModeForToolName` allows only a 13-name allowlist (read, write, bash, edit, glob, find, eval, task, wait, learn, manage_skill, context_notes, new_context); EVERYTHING else defaults to `"discoverable"` — and all five extensibility adapters funnel through it: `extensibility/custom-tools/wrapper.ts:29`, `extensibility/extensions/wrapper.ts:78`, `modes/rpc/host-tools.ts:60`, `modes/rpc/rpc-mode.ts:534`, `sdk.ts:1208`. Measured split across `packages/coding-agent/src/tools/`: 12 `loadMode = "essential"`, 15 `loadMode = "discoverable"` (ask, ast-edit, ast-grep, checkpoint, debug, gh, grep, ida, memory-edit, memory-recall, memory-reflect, memory-retain, security-scan, todo). The hazard dsh's design invites — a new tool silently joining the top-level list — is omp's DEFAULT. Hardened by 19 tests in `packages/ai/test/anthropic-head-caching.test.ts` and 4 in `anthropic-control-state-stability.test.ts`, plus a drift guard noted at `essential-tools.ts:20-22` (issue #5764).
+
+=== 4. SCALE PREMISE MISCOUNTED FOR omp ===
+`packages/coding-agent/src/tools/builtin-names.ts:1-38`: 30 `BUILTIN_TOOL_NAMES` + 3 `HIDDEN_TOOL_NAMES` = 33. dsh measures 55 by my own count (grep of `defineTool({` name fields across `packages/`, deduped) — so "54" is fair for dsh but the 1.7x gap is on the wrong axis: omp's scale problem is unbounded DYNAMIC tools (MCP/extension/plugin), not the built-in roster, and that is exactly what the existing discoverable/tool-search path targets.
+
+=== 5. dsh's FEATURE IS DEAD CODE THERE ===
+78 total `deferLoading` references in dsh. Grepping `deferLoading: true` across all production `defineTool({` bodies outside `tests/`: 0 hits. Every opt-in is in `tests/`/`*.spec.ts`. Plus the pi-ai throw above. Nothing exercises it; there is no proven behaviour to port.
+
+=== RESIDUAL GAP (named honestly, not a dsh port) ===
+MCP tools carry NO loadMode: `grep "loadMode|discoverable"` over `packages/coding-agent/src/mcp/tool-bridge.ts` and `mcp/manager.ts` returns zero hits, so every MCP tool stays top-level regardless of roster size. That is a real gap and the right target. But dsh's mechanism does not close it (schema still ships). The correct close is omp-internal: stamp `loadMode: "discoverable"` on MCP tools, which already flows to `deferred: true` in the Codex namespace info at `session/code-mode.ts:111` (`deferred: tool.loadMode === "discoverable"`). TIER: REFERENCE for dsh's projection; DO-NOT-COPY as a port; BORROW = nothing.
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED — not from the code claim's accuracy (it is accurate in dsh) but because omp already has a *tighter* implementation of the same guarantee, shipped after a real fork-bomb incident, with a regression test defending it. Porting dsh's version would be a net-negative regression.
+
+CODE-CLAIM ACCURACY (verified in the home repo, so this part stands): `dsh/packages/mcp/mcp-client/src/connection.ts:34-37` documents maxDelayMs doubling as the uptime stability window; `:222` implements it (`if (connectedAt !== undefined && Date.now() - connectedAt >= policy.maxDelayMs) failedAttempts = 0`); `:225` is the give-up. It is even tested: `dsh/packages/mcp/mcp-client/tests/reconnect.spec.ts:462` `'a crash loop with briefly successful connects still exhausts the cap'` and `:444` `'an uptime past the stability window resets the attempt budget'`. So the claim is factually true at home. It just isn't novel to omp.
+
+PORTABILITY VERDICT — omp already solved this, more tightly:
+1. Same guarantee, stricter bound. `omp/packages/coding-agent/src/mcp/manager.ts:111-112` sets `RECONNECT_BURST_WINDOW_MS = 30_000` / `RECONNECT_BURST_LIMIT = 5`; `#tripReconnectBreaker` (`:1398-1433`) appends a timestamp on *every* `reconnectServer` entry and trips at 6 within any 30s window. Critically, it counts disconnects regardless of whether the connect succeeded — a successful connect does NOT launder the budget. That is exactly dsh's stated benefit, with 5 attempts/30s vs dsh's 10/outage.
+2. Bounded inner ladder, so the ceiling is arithmetic. `DEFAULT_RECONNECT_POLICY` (`:142-146`) `ladderMs: [500, 1000, 2000, 4000]`; `#doReconnect:1488` runs `attempt <= delays.length` → ≤5 connect attempts per reconnect. Ceiling 5 × 5 = 25 processes per server per 30s window (documented at `:106-107`), versus dsh's 10 spawns per outage.
+3. Aging-out exists. Sliding-window pruning at `:1401` (`previous.filter(ts => now - ts < RECONNECT_BURST_WINDOW_MS)`) gives the "a single transient failure ages out cheaply" behavior that dsh's `maxDelayMs`-as-stability-window was invented for. No uptime-stability-window concept is missing.
+4. Recovery is strictly better. dsh exhaustion is terminal until dispose/HMR (`connection.ts:233`). omp's `reconnectServer(..., { manual: true })` (`:1322-1324`) clears the window, and `/mcp reconnect` passes exactly that at `modes/controllers/mcp-command-controller.ts:2155`.
+5. Real-world provenance, not speculation. omp shipped this as a bug fix: commits `230514d937 fix(mcp): cap automatic reconnect bursts to prevent fork-bomb` and `6881c5cc41 fix(mcp): drop stale connection when reconnect breaker trips`, from issue #1592 (66,487 forked PHP processes parented to the agent's bun PID). The regression test `packages/coding-agent/test/mcp-reconnect-storm.test.ts:45` uses fixture `test/fixtures/crash-after-init-mcp.ts`, which "completes initialize + tools/list and then exits cleanly" — the precise "connects briefly succeed then crash-loop" case, asserted at `expect(spawns).toBeLessThanOrEqual(10)`.
+
+TWO GENUINE DIFFERENCES, both non-borrowable:
+- Configurability. dsh exposes `ReconnectConfig` per server with a fail-loud validator (`connection.ts:69-94`, plus 7 `resolveReconnectPolicy` specs). omp's `MCPReconnectPolicy` is constructor-only (`manager.ts:317`) with no per-server config surface — grep shows it referenced only in manager.ts and one test. This is a real feature gap, but it is ergonomics, not resilience, and adding a validated config block on top of a working breaker is speculative scope, not a port of this claim.
+- Exhaustion semantics are deliberately opposite. dsh *unregisters the tools* on give-up (`connection.ts:228-233`). omp deliberately *keeps* stale tools registered so the user's selection survives and calls fail with MCP errors (`manager.ts:1525-1529`, and again at `:1413-1415` on breaker trip). Porting dsh's unregister would break omp's UX. DO-NOT-COPY.
+
+NON-GAP: neither implementation caps a *slow* crash loop (omp needs 6 disconnects inside 30s; dsh needs 11 fails inside one outage). Both leave ≥30s-between-crashes loops uncapped. That is by design in both — a slow loop is not a fork bomb — so dsh's design buys nothing omp lacks.
+
+LOCATION CORRECTION (hard rule 3): the task pointed at `packages/coding-agent/src/extensibility` for "the same concern". That directory contains no MCP client at all. Grepping it for reconnect/backoff/maxAttempts returns only unrelated `maxAttempts` type fields (`custom-tools/types.ts:135,155`, `shared-events.ts:248,303`) and MCP *notification* fan-out (`extensions/runner.ts:339-344, 502-512, 836-844`, a 100-frame buffer mirroring `MCPManager.NOTIFICATION_BUFFER_CAP`). The connection supervisor lives at `packages/coding-agent/src/mcp/manager.ts` (1,941 lines; the whole `src/mcp/` module is 10,792 lines across 28 files).
+
+TIER: DO-NOT-COPY. omp already has a better version.
+evidence: READ DIRECTLY (omp, C:/Users/ADMIN/Documents/Projects/ultraworkers):
+- packages/coding-agent/src/mcp/manager.ts:111-112 — `const RECONNECT_BURST_WINDOW_MS = 30_000; const RECONNECT_BURST_LIMIT = 5;`
+- packages/coding-agent/src/mcp/manager.ts:93-109 — doc comment naming issue #1592 (66,487 PHP processes / ~158 spawns per sec) and the `≤ 25` ceiling
+- packages/coding-agent/src/mcp/manager.ts:136-146 — `MCPReconnectPolicy` { ladderMs, retryBaseMs:15_000, retryMaxMs:5*60_000 }; `DEFAULT_RECONNECT_POLICY = { ladderMs:[500,1000,2000,4000], ... }`
+- packages/coding-agent/src/mcp/manager.ts:1398-1433 — `#tripReconnectBreaker`: `const recent = previous.filter(ts => now - ts < RECONNECT_BURST_WINDOW_MS); recent.push(now); ... if (recent.length > RECONNECT_BURST_LIMIT) { ... return true }`
+- packages/coding-agent/src/mcp/manager.ts:1322-1324 — `if (options?.manual) { this.#reconnectHistory.delete(name); }`
+- packages/coding-agent/src/mcp/manager.ts:1487-1488 — `const delays = scheduled ? [] : this.reconnectPolicy.ladderMs; for (let attempt = 0; attempt <= delays.length; attempt++)` → 5 connect attempts max
+- packages/coding-agent/src/mcp/manager.ts:1525-1529 — "// Don't remove stale tools — keep them in the registry so they remain selected."
+- packages/coding-agent/src/mcp/manager.ts:783-787 — `connection.transport.onClose = () => { ...; void this.reconnectServer(name); }` (the fork-bomb trigger)
+- packages/coding-agent/src/modes/controllers/mcp-command-controller.ts:2155 — `await this.ctx.mcpManager.reconnectServer(name, { manual: true });`
+- packages/coding-agent/test/mcp-reconnect-storm.test.ts:45,78,87 — `it("stops respawning after a burst of immediate exits")`; `expect(spawns).toBeLessThanOrEqual(10)`; `expect(manager.getConnectionStatus("crashy")).toBe("disconnected")`
+- packages/coding-agent/test/fixtures/crash-after-init-mcp.ts:9-10 — fixture docstring: "completes the initialize + tools/list handshake and then exits cleanly"
+- `git log --all --grep=1592` → `230514d937 fix(mcp): cap automatic reconnect bursts to prevent fork-bomb`, `6881c5cc41 fix(mcp): drop stale connection when reconnect breaker trips`
+- grep `MCPReconnectPolicy|reconnectPolicy` across packages/ → only manager.ts + test/mcp-lost-remote-retry.test.ts:24,32,60 (confirms: constructor-only, no user config surface)
+- grep reconnect/backoff/maxAttempts/crash across packages/coding-agent/src/extensibility/ → no MCP client there; only custom-tools/types.ts:135,155 and shared-events.ts:248,303 maxAttempts fields, plus extensions/runner.ts notification buffer
+
+READ DIRECTLY (dsh, C:/Users/ADMIN/Projects/deepseek-harness):
+- packages/mcp/mcp-client/src/connection.ts:34-37 (ReconnectConfig doc), :69-94 (resolveReconnectPolicy), :211-245 (scheduleReconnect), :222 (stability-window reset), :225 (give-up), :228-233 (tools unregistered on exhaustion)
+- packages/mcp/mcp-client/tests/reconnect.spec.ts:444 `'an uptime past the stability window resets the attempt budget'`, :462 `'a crash loop with briefly successful connects still exhausts the cap'`
+
+COMMANDS RUN AND FAILED (reported honestly, not guessed):
+- `bun test test/mcp-reconnect-storm.test.ts` in packages/coding-agent → 0 pass, 1 fail, "Cannot find module .../pi_natives.win32-x64.node"; native addon not built in this checkout
+- `bun run build` in packages/natives → "napi build failed ... cargo metadata failed to run" (rust toolchain unavailable in this sandbox)
+→ The test EXECUTION is UNVERIFIED in this environment. The breaker behavior itself is verified by reading the code at the lines quoted above, and by the two fix commits existing in git history.
+refuted: true
+
+
+
+## [v3]
+
+reason: Refutation FAILED on the legal/provenance axis — MIT to MIT is clean, so the "default to refuted=true if the code is not clean" condition is not met. deepseek-harness ships a root MIT LICENSE (Copyright (c) 2026 DeepSeek) and packages/mcp/mcp-client/package.json independently declares "license": "MIT" with publishConfig.access "public". There is no CLA anywhere in the repo, no per-package LICENSE override under packages/mcp/, no license-header lint rule, and no per-file headers. The file was authored by lintianle <lintianle@deepseek.com> (an employee) in commit 00f68d7e9339105184d7f13dcf89a17ce80f3fe5 (2026-08-10) with no third-party origin trace. The target ultraworkers/omp is MIT at the root and in all 16 packages. MIT to MIT is compatible; the only obligation is retaining the DeepSeek copyright notice. HOWEVER the citation is materially wrong and the cited span is not code: connection.ts:5-12 lies entirely inside the @module JSDoc block (opens line 1, closes line 16; file is 409 lines) and is prose describing the design; :31-42 is the type-only ReconnectConfig interface plus the head of RECONNECT_DEFAULTS. The behavior the claim names is ONE line at :222, in neither cited range, and :222 is the only failedAttempts reset site (:153 is the declaration). Net: idea-only, but for the opposite reason the framing assumes — the license permits it, and the expression at the cited lines is too thin to be worth lifting. Tier: REFERENCE, and omp already has a near-equivalent at manager.ts:111-112 / :142-146.
+evidence: LICENSE PROVENANCE (all read directly):
+- C:\Users\ADMIN\Projects\deepseek-harness\LICENSE:1-3 = "MIT License / Copyright (c) 2026 DeepSeek"
+- packages/mcp/mcp-client/package.json contains "license": "MIT" and "publishConfig": { "access": "public" }
+- `find . -maxdepth 3 -iname "*CLA*"` (dsh root) -> only CLAUDE.md, .claude, and unrelated postmortem filenames. No CLA.
+- `find packages/mcp -iname "LICENSE*" -o -iname "COPYING*"` -> empty (no per-package override)
+- grep -i "license|header" .oxlintrc.json -> 0 hits (no license-header lint)
+- dsh root package.json:4-5 = "license": "MIT", "private": true (monorepo root only; the mcp-client package is publishable)
+- dsh CONTRIBUTING.md = no-external-PRs notice, no extra IP terms. dsh SAFETY.md: "provided without warranty under the MIT License".
+- git log --diff-filter=A -- packages/mcp/mcp-client/src/connection.ts -> 00f68d7e9339105184d7f13dcf89a17ce80f3fe5, 2026-08-10, lintianle <lintianle@deepseek.com>, "feat(mcp-client): auto-reconnect with bounded backoff after transport close". git remote -v -> https://github.com/deepseek-ai/deepseek-harness.git
+- Target: C:\Users\ADMIN\Documents\Projects\ultraworkers\LICENSE = MIT (Mario Zechner / Can Boluk / Stencil Labs); root package.json:5 "license": "MIT"; all 16 packages/*/package.json declare MIT.
+
+CITATION ACCURACY (measured):
+- `wc -l packages/mcp/mcp-client/src/connection.ts` -> 409
+- awk NR 5..12 shows every cited line is a JSDoc continuation prefixed with " *"; the block runs line 1 ("/**") to line 16 (" */").
+- awk NR 31..42: line 31 "enabled?: boolean", 32 JSDoc, 33 "initialDelayMs?: number", 34 JSDoc, 35 "maxDelayMs?: number", 36 JSDoc, 37 "maxAttempts?: number", 38 "}", 40 JSDoc, 41 "export const RECONNECT_DEFAULTS: Required<ReconnectConfig> =", 42 "enabled: true,". Lines 31-38 are an interface (erased at compile); the only runtime code in range is a 5-line Object.freeze literal of four primitives (41-46).
+- The actual mechanism: connection.ts:222 `if (connectedAt !== undefined && Date.now() - connectedAt >= policy.maxDelayMs) failedAttempts = 0`; budget increment :224; give-up :225-235; backoff doubling :236 `const delayMs = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** (failedAttempts - 1))`.
+- `grep -n "failedAttempts = 0|failedAttempts ="` on connection.ts -> exactly two hits: :153 (declaration `let failedAttempts = 0`) and :222 (the only reset). Confirms :222 is the sole stability-window reset.
+- No test file under packages/mcp/mcp-client asserts the stability window (grep for "stability|maxDelayMs" in test/*.ts -> 0 hits).
+
+ALREADY-HAVE-IT IN omp:
+- packages/coding-agent/src/mcp/manager.ts:111-112 `const RECONNECT_BURST_WINDOW_MS = 30_000; const RECONNECT_BURST_LIMIT = 5;` with rationale docblock :93-110 (cites issue #1592 fork-bomb) and pruning logic at :1394-1409 (`previous.filter(ts => now - ts < RECONNECT_BURST_WINDOW_MS)`).
+- manager.ts:142-146 `DEFAULT_RECONNECT_POLICY = { ladderMs: [500,1000,2000,4000], retryBaseMs: 15_000, retryMaxMs: 5 * 60_000 }`. Genuine deltas vs dsh: omp's window slides on crash timestamps (a crash every >30s never trips it), whereas dsh resets on uptime; and dsh's exhaustion unregisters tools as a terminal state recoverable only by disposal, which omp has no equivalent of.
+
+UNVERIFIED: live GitHub visibility of deepseek-ai/deepseek-harness (I verified the local remote URL and git history only, not the public repo). Also did not read dsh's own design note .agents/notes/.../2026-08-06-mcp-client-auto-reconnect.md referenced in the commit message — any design claim from it would be THEIR CLAIM, UNVERIFIED.
+refuted: false
+
+
+
+## [v3]
+
+reason: The legal/provenance refutation FAILS: the cited code is first-party DeepSeek MIT, its entire import chain is permissively licensed, and it is provably NOT derived from the SUL-1.0 oh-my-openagent repo. Taking the CODE is legally clean, so per the stated rule ("default refuted=true if taking the CODE is not clean") the correct answer is refuted=false. SIX measured findings: (1) LICENSE CHAIN IS UNIFORMLY MIT — root LICENSE is MIT "Copyright (c) 2026 DeepSeek"; SAFETY.md:29 states "The software is provided without warranty under the [MIT License](LICENSE)"; packages/extensions/cordis-host-runner/package.json declares "license":"MIT" with "publishConfig":{"access":"public"}. (2) NO PER-PACKAGE CARVE-OUT EXISTS ON THE ANCESTOR PATH — find -maxdepth 4 for LICENSE*/COPYING*/NOTICE* returns exactly 12 hits (./LICENSE, ./native/system/LICENSE, ./packages/boot/hmr/LICENSE, and 8 vendor/*/LICENSE); ls confirms no LICENSE at packages/, packages/extensions/, or packages/extensions/cordis-host-runner/. (3) THE IMPORT GRAPH IS CONTAMINATION-FREE — every direct import in guard.ts:15-21 is either first-party MIT (@deepseek-ai/dsh-scope, dsh-tools, dsh-llm, dsh-util-values, all with "license":"MIT" in their package.json) or vendored MIT (Context/Plugin from @deepseek-ai/cordis -> vendor/cordis/LICENSE = "MIT License / Copyright (c) 2021-present Shigma"). THIRD_PARTY_NOTICES.md enumerates the whole tree as 155 MIT / 20 Apache-2.0 / 4 ISC — zero copyleft, and all 8 cordis-ecosystem vendor rows are MIT. (4) PUBLISHED PUBLICLY UNDER MIT — npm view @deepseek-ai/dsh-cordis-host-runner@0.1.7-rc.2 (the version matching this checkout) returns license='MIT', created 2026-08-12, maintainers imccyu <imccyu@gmail.com> and tianyicui-deepseek <tianyi@deepseek.com>; the file is first-party, not vendored. (5) PROVENANCE IS INDEPENDENT OF THE SUL REPO — this was the decisive check, since omo's root LICENSE.md grants only "non-sublicensable, non-transferable" rights "for your own internal business purposes or for non-commercial or personal use", so had the code originated there, copying into an MIT project would be barred. It did not: grepping oh-my-openagent/packages for denyContext, sandboxTools, sandboxContext, guardedService, CTX_VERBS, DYNAMIC_TOOL, sandboxRegisterTool, "monotonic guards", "which the sandbox does not" and "ctx.tools.register" returned 0 hits each; the sole near-miss ("does not expose") hit 3 unrelated files (cli/doctor/checks/tui-plugin-config.ts, create-runtime-tmux-config.ts). (6) FIRST-PARTY AUTHORSHIP — git blame on the cited lines attributes every one to DeepSeek employees (imccyu, Tianyi Cui), originating in 3e9527278a "fix(tool-cordis): gate façade services on inject, and make tools.get read-only" (imccyu, 2026-07-09); `git log --format='%an'` for guard.ts returns exactly two authors, no external contributor. Destination confirmed MIT: omp root LICENSE is "Copyright (c) 2025 Mario Zechner", and both the root package.json and packages/coding-agent/package.json declare "license":"MIT". TIER: BORROW the idea, but in practice idea-only for omp — license-clean does not mean paste-able. denyContext does `value instanceof Context` against cordis's own class, and sandboxTools/sandboxContext ride on scopeOf(ctx), ctx.fiber.inject, ctx.tools.schemas, and the cordis verb set CTX_VERBS (guard.ts:636). omp has no cordis dependency, so the pattern must be re-derived against omp's own dispatch layer rather than copied.
+evidence: 1) Root LICENSE (MIT License, Copyright (c) 2026 DeepSeek); SAFETY.md:29 "The software is provided without warranty under the [MIT License](LICENSE)". 2) packages/extensions/cordis-host-runner/package.json -> "license": "MIT", "publishConfig": {"access": "public"}, repository github.com/deepseek-ai/deepseek-harness. 3) `find . -maxdepth 4 \( -name "LICENSE*" -o -name "COPYING*" -o -name "NOTICE*" \) -not -path "./node_modules/*" -not -path "./.git/*"` -> 12 hits only: ./LICENSE, ./native/system/LICENSE, ./packages/boot/hmr/LICENSE, vendor/{cordis,cosmokit,group,hmr,include,loader,logger-console,schemastery,timer}/LICENSE; `ls packages/LICENSE* packages/extensions/LICENSE* packages/extensions/cordis-host-runner/LICENSE*` -> No such file or directory (x3). vendor/cordis/LICENSE, vendor/schemastery/LICENSE, vendor/include/LICENSE, vendor/loader/LICENSE, packages/boot/hmr/LICENSE all begin "MIT License / Copyright (c) 2021-present Shigma". 4) guard.ts:15-21 imports: {Context,type Plugin} from '@deepseek-ai/cordis'; {scopeOf} from '@deepseek-ai/dsh-scope'; {assertSupportedJsonSchema,defineTool,type ToolDefinition} from '@deepseek-ai/dsh-tools'; {type ContentBlock} from '@deepseek-ai/dsh-llm'; {type JsonValue} from '@deepseek-ai/dsh-util-values'. First-party dep licenses measured: packages/{scope,tools,llm}/…/package.json "license":"MIT"; packages/util/values/package.json "license":"MIT"; packages/extensions/cordis-client-runner/package.json "license":"MIT". 5) THIRD_PARTY_NOTICES.md:20 "| `@deepseek-ai/cordis` | `cordis` | [vendor/cordis](vendor/cordis/) | MIT |"; :19 schemastery MIT; :18 cosmokit MIT; :21-26 loader/include/group/timer/hmr/logger-console all MIT. License-kind census over the table: 155 "| MIT |", 20 "| Apache-2.0 |", 4 "| ISC |" — no GPL/AGPL/SUL. 6) `npm view @deepseek-ai/dsh-cordis-host-runner@0.1.7-rc.2 license maintainers` -> "license = 'MIT'"; maintainers ['imccyu <imccyu@gmail.com>', 'tianyicui-deepseek <tianyi@deepseek.com>']; registry created 2026-08-12T20:38:47Z, 26 published versions, dist-tags {latest:0.0.1-rc.3, next:0.1.7-rc.2}. 7) Provenance vs SUL repo: `cd C:/Users/ADMIN/Projects/oh-my-openagent && grep -rl --include=*.ts --include=*.tsx <token> packages` -> 0 hits for denyContext, sandboxTools, sandboxContext, guardedService, CTX_VERBS, DYNAMIC_TOOL, sandboxRegisterTool, "monotonic guards", "which the sandbox does not", "ctx.tools.register"; 3 hits for "does not expose", all unrelated (packages/omo-opencode/src/cli/doctor/checks/tui-plugin-config.ts:+, packages/omo-opencode/src/cli/doctor/checks/tui-plugin-config.test.ts, packages/omo-opencode/src/create-runtime-tmux-config.test.ts). omo LICENSE.md: "non-sublicensable, non-transferable … only for your own internal business purposes or for non-commercial or personal use … distribute … only if you do so free of charge for non-commercial purposes." 8) `git blame -L 640,655 packages/extensions/cordis-host-runner/src/guard.ts` -> all 16 lines by imccyu / Tianyi Cui across 1b1ba96d4f, 3e9527278a (2026-07-09), 2489402610, f32cfafa1a, 3263dab822, a2d0f7f411, 4064198560 (2026-08-12); `git log --format='%an <%ae>' -- guard.ts | sort -u` -> "imccyu <276526105+imccyu@users.noreply.github.com>" and "Tianyi Cui <53024+tianyicui@users.noreply.github.com>" only. 9) Citation resolves: guard.ts is 836 lines; sandboxTools body at 648-655 (doc 639-647), denyContext at 669-678, guardedService at 685-697, both inside /* jscpd:ignore-start */ (668) .. /* jscpd:ignore-end */ (698). The browser-half twin exists at packages/extensions/cordis-client-runner/src/client/guard.ts:56,59,75,78-79. 10) Destination: C:/Users/ADMIN/Documents/Projects/ultraworkers/LICENSE -> "MIT License / Copyright (c) 2025 Mario Zechner"; root package.json and packages/coding-agent/package.json both "license": "MIT". 11) Source-label defect: `find . -maxdepth 4 -iname "*mcp-lsp*" -not -path "./node_modules/*"` -> no results; `ls packages/` lists lsp/ and mcp/ separately (packages/mcp/ holds only mcp-client, mcp-resources). "dsh/mcp-lsp-tools" is a workflow partition label, not a path — the cited packages/extensions/cordis-host-runner/src/guard.ts is real. 12) Zero test coverage: `grep -rln "sandboxContext\|denyContext" --include=*.ts packages/` returns only the two guard.ts sources; `find packages -name "*.test.ts" -path "*cordis*"` returns nothing — the control ships untested in this tree. 13) Practical barrier: `grep -n '"cordis"' packages/coding-agent/package.json` at the omp destination has no cordis dependency; the code is bound to cordis's Context class (value instanceof Context), scopeOf(ctx), ctx.fiber.inject, ctx.tools.schemas and CTX_VERBS (guard.ts:636).
+refuted: false
+
+
+
+## [v2]
+
+reason: The concern does not survive the port. omp already has a STRICTLY STRONGER version of the tool half, and the service half has no referent in omp at all.
+
+(1) omp has no `ctx.tools` to narrow. `grep -rn "ctx\.tools" packages/coding-agent/src/` returns 0 hits. The lone `context.tools` hit (session/agent-session.ts:6753) is a `string[]` of enabled tool names inside a magic-keyword notice — not a registry.
+
+(2) The "schema view" already exists, and omp's is stronger than dsh's: `getAllToolInfos()` (session/session-tools.ts:726-740) iterates the live registry but builds a FRESH object literal `{name, description, parameters, sourceInfo}`. `ToolInfo` (extensions/types.ts:727-733) has no `execute`, no `renderCall`. dsh returns entries from `schemas()`; omp returns detached copies, so a mutation cannot reach the registry either.
+
+(3) The "bypass dispatch policy" hole is already closed more tightly. omp deleted arbitrary cross-tool invocation rather than gating it: `ctx.invokeTool` (types.ts:545-548) takes NO name parameter. The target is captured at registration (extensions/wrapper.ts:121 `toolName: this.registeredTool.definition.name`) and closed over (runner.ts:1337-1350); the only caller-controlled input is `params`. runner.ts:614-616 throws when no native built-in of that name exists; runner.ts:618-620 depth-guards at 8. The invariant is stated in the public type at types.ts:539-543. This is strictly narrower than "return a schema instead of the definition" — dsh still lets package code see every tool's schema; omp lets it reach exactly zero other tools' implementations. The 5th arg to a tool's `execute` (`AgentToolContext`, agent/src/types.ts:1030-1043) carries only `addAdditionalContext?` plus one symbol — no registry, no other `execute`.
+
+(4) "Deny a service from returning a Context" is inapplicable: omp has no DI, no `inject`, no `provide`/`Service`. `grep -rn "inject\b" packages/coding-agent/src/extensibility/` hits only English prose in comments. `ExtensionContext` (types.ts:454-573) and `ExtensionActions` (types.ts:1774-1791) have no service field, no `get`, no registry.
+
+(5) There is no realm to guard. Extensions load in-process via plain `await import(resolvedPath)` (custom-tools/loader.ts:78, hooks/loader.ts:151, custom-commands/loader.ts:41) — no `node:vm`, no Worker, no split bundle. The "sandbox" at plugins/loader.ts:74 means an OS-level unreadable plugin root (EACCES/EPERM), not a code sandbox. A façade over `ctx` cannot be a security boundary against code that can already `import` any module in-process.
+
+Porting would be net-negative: it would ADD a `ctx.tools` service (a new escape surface) to close a hole that is not open, inside an architecture with no trust boundary to defend. TIER: DO-NOT-COPY as written. The underlying idea — "never hand extension code a live tool carrying `execute`" — is BORROW-shaped but already implemented; the only residual value is preserving the invariant comment if `getAllTools` is ever refactored, and session-tools.ts:718-725 + types.ts:726 already do. `denyContext`/`guardedService` are REFERENCE-only (inapplicable).
+evidence: SOURCE CLAIM — TRUE IN HOME REPO (read, not docs):
+- dsh guard.ts:640-655 `sandboxTools()`: `get: (name) => ctx.tools.schemas(scopeOf(ctx)).find(s => s.name === name)` — schema view, no `execute`.
+- dsh guard.ts:663-696 `denyContext()` + `guardedService()`: `value instanceof Context` → `rejectGuard`.
+- Tested at dsh tests/sandbox-context.spec.ts:66-94 (deny Context; asserts message contains "returned a cordis Context, which the sandbox does not expose"), :208-245 ("ctx.tools.get returns a schema, not the live ToolDefinition with execute" — asserts `hasExecute: 'execute' in view` is false), :246-267 (unknown tool → undefined). So the claim is faithful; dsh guard.ts is 836 lines.
+- dsh's OWN code concedes it is not containment — sandbox.ts:7-8: "This keeps cooperative packages inspectable and disposable but is not containment: host-realm helper functions remain an escape route."
+
+OMP MEASUREMENTS (all run):
+- `grep -rn "ctx\.tools" packages/coding-agent/src/` → 0 hits.
+- session/session-tools.ts:726-740 `getAllToolInfos()`: `return { name, description: tool.description, parameters: tool.parameters, sourceInfo };` — fresh literal, no `execute`.
+- extensions/types.ts:727-733 `ToolInfo { name; description; parameters; promptGuidelines?; sourceInfo }` — no execute/renderCall. Exposed as types.ts:1523 `getAllTools(): ToolInfo[]`; wired at extension-ui-controller.ts:204, modes/runtime-init.ts:106, modes/acp/acp-agent.ts:2585, task/executor.ts:4208.
+- extensions/types.ts:539-548 (verbatim): "Delegation is same-tool only: it invokes the built-in of the SAME name as the registering tool, never an arbitrary target, so it cannot escalate past the approval already granted for this call." Signature `invokeTool?<TDetails>(params, options?)` — no name arg.
+- extensions/wrapper.ts:121 `toolName: this.registeredTool.definition.name` (captured at registration).
+- extensions/runner.ts:1337-1350 — `invokeTool` present only when `delegation !== undefined && this.hasNativeTool(delegation.toolName)`; closes over `delegation.toolName`.
+- extensions/runner.ts:614-620 — `if (!resolved) throw new Error('invokeTool: no native built-in named ... ')`; `if (depth >= 8) throw new Error('invokeTool: delegation depth exceeded 8 ...')`.
+- agent/src/types.ts:1030-1043 `AgentToolContext` = `addAdditionalContext?(context: string): void` + `[SPECULATIVE_STREAM_SESSION]?` only.
+- `grep -rn "AgentTool\b" packages/coding-agent/src/extensibility/` → every hit is a host-side wrapper class (custom-tools/wrapper.ts, extensions/wrapper.ts, hooks/tool-wrapper.ts) or an internal type import; none is handed to extension code.
+- `grep -rn "inject\b" packages/coding-agent/src/extensibility/` → prose only (hooks/runner.ts:392, hooks/types.ts:282,427,430,467). No DI.
+- `grep -rn "import(" packages/coding-agent/src/extensibility/` → custom-commands/loader.ts:41, custom-tools/loader.ts:78, hooks/loader.ts:151 — plain in-process `await import(resolvedPath)`; no `node:vm`, no Worker.
+- omp tests: test/extensions-runner.test.ts:3984-4062 "invokeTool same-tool delegation" — "inherits the wrapper call's signal and onUpdate for a bare invokeTool", "lets explicit invokeTool options override the inherited channels", "omits invokeTool when no native built-in of that name exists", "bounds recursion per call chain"; plus test/agent-session-message-pipeline.test.ts:2236-2335 end-to-end re-registered-built-in delegation.
+
+SCALE: dsh guard.ts = 836 lines, 1 file, 7 src files in the package. omp extensibility = 68 .ts files / 21,376 lines.
+
+UNVERIFIED: none material. I did not run the dsh test suite or the omp test suite; all findings are from reading code and grep, plus the tests' own titles/assertions as source text.
+refuted: true
+
+
+
+## [v3]
+
+reason: The legal/provenance refutation FAILS — the license genuinely permits copying, so the "default to refuted=true if taking the CODE is not clean" condition does not fire. deepseek-harness is a stock unmodified MIT (Copyright (c) 2026 DeepSeek), declared as "license": "MIT" at both the root package.json and packages/boot/config-editor/package.json, with no CLA, no CLA.md, no NOTICE, no per-file license-header overrides, and zero licensing terms in CONTRIBUTING.md. The cited code is dsh-original, not vendored and not derived from oh-my-openagent: config-editor/src/index.ts has a single commit 601d6761e4 ("feat(settings): project volatile Config through profile-backed forms (#4587)") and the remote is github.com/deepseek-ai/deepseek-harness. The reachable dependency path is MIT end-to-end — the cited lines call flatten (local, config-editor/src/index.ts:21-22), composeEntries (packages/boot/app-boot/src/profile.ts:731), readProfilePatches (packages/boot/app-boot/src/profile-context.ts:63) and node:util isDeepStrictEqual, and the vendored deps touched (cordis, cosmokit, loader, hmr) are all MIT (Shigma 2021-present) with no copyleft. The citation is line-accurate: index.ts:126-129 is exactly the compose -> compare -> throw sequence. It still lands as idea-only, but for a NON-legal reason: the 4 lines are welded to dsh privates (hardcoded 'dsh' bin-name literal, dsh's bundle/profile/launcher three-layer patch model, ownerContext.profileContext, entry.fiber), and omp has no equivalent — its only composeEntries is an unrelated private TUI sidebar assembler at packages/tui/src/overlays/model-hub.ts:523. Dropped into omp the snippet does not compile, so any port is a reimplementation and the MIT notice becomes moot. Two technical inaccuracies found: (1) "re-parse through the real composer" is overstated — line 126 composes from [patches] only, omitting loaded.layers, whereas the read path at line 66 composes [...loaded.layers.map(layer => layer.patches), patches]; the shadow check composes a NARROWER input set than the read path. (2) "do not convert it to write-then-rollback" is correct for this check (throw at :128 precedes writeFileAtomic at :130) but overstates the method, which does contain a write-then-rollback at :131-137 for reconcileProfilePatches failure.
+evidence: LICENSE CHAIN (all stock MIT, no carve-outs): deepseek-harness/LICENSE head = "MIT License / Copyright (c) 2026 DeepSeek"; LICENSE tail is the verbatim warranty tail with no rider. Root package.json and packages/boot/config-editor/package.json both declare "license": "MIT". `ls CLA* LICENSE* NOTICE*` in dsh root returns only CLAUDE.md and LICENSE — no CLA.md, no NOTICE. `find . -name "LICENSE*"` (excl node_modules/.git) returns only ./LICENSE, native/system/** prebuilt binaries, packages/boot/hmr/LICENSE and vendor/* — none of which scope config-editor. grep -in "licen" CONTRIBUTING.md = 0 hits (no contributor terms reassigning rights). PROVENANCE: git remote -v = https://github.com/deepseek-ai/deepseek-harness.git; `git log --oneline -- packages/boot/config-editor/src/index.ts` = single commit "601d6761e4 feat(settings): project volatile Config through profile-backed forms (#4587)" -> original, not vendored. OMO (the SUL-1.0 repo) is NOT in this code's provenance chain. CITED LINES VERIFIED (config-editor/src/index.ts, 145 lines total): 126 `const effective = flatten(composeEntries([patches])).find(row => row.id === entry.options.id)` / 127 `if (!isDeepStrictEqual(effective?.config ?? {}, next)) {` / 128 `throw new Error(\`Configuration for "${entry.options.id}" is overridden by a home patch or command-line overlay\`)` / 129 `}`. Dependencies of those lines, all in-repo or node stdlib: flatten defined locally at index.ts:21-22; composeEntries at packages/boot/app-boot/src/profile.ts:731; readProfilePatches at packages/boot/app-boot/src/profile-context.ts:63; isDeepStrictEqual from node:util (index.ts:4). Vendored licenses in path: vendor/cordis/LICENSE, vendor/cosmokit/LICENSE, vendor/loader/LICENSE, packages/boot/hmr/LICENSE all = "MIT License / Copyright (c) 2021-present Shigma". NON-LIFTABILITY: `grep -rn "composeEntries|readProfilePatches|flatten(compose" packages/ --include=*.ts` in ultraworkers returns only packages/tui/src/overlays/model-hub.ts:523 `#composeEntries(): void` (private TUI sidebar-section assembler) and its call sites at :514/:737/:752 plus a comment at :229 — no config patch-layer composer exists in omp. omp root LICENSE = "MIT License / Copyright (c) 2025 Mario Zechner" (target is a valid MIT recipient). ASYMMETRY: read path at index.ts:66 = `flatten(composeEntries([...loaded.layers.map(layer => layer.patches), patches]))` includes loaded layers; shadow check at index.ts:126 = `flatten(composeEntries([patches]))` omits them. ROLLBACK: index.ts:130 `await writeFileAtomic(path, String(document), { mode: 0o600 })` then :131-137 try/catch around reconcileProfilePatches restoring `before` and `beforePatches` — a genuine write-then-rollback for that second step.
+refuted: false
+
+
+
+## [v2]
+
+reason: The claim's mechanism is backwards, and omp already ships a strictly better version of the exact capability it credits to dsh.
+
+(1) THE MECHANISM IS FALSIFIED BY dsh's OWN SHADOW CHECK. dsh's guard is at config-editor/src/index.ts:126-128: it re-runs `readProfilePatches` with a hypothetical profile patch substituted in (:125), flattens through `composeEntries`, then decides by VALUE — `!isDeepStrictEqual(effective?.config ?? {}, next)`. It can only answer "is the effective value different?". It cannot name the winner, so the message hardcodes a two-way guess: "overridden by a home patch or command-line overlay". `grep -rni provenance --include='*.ts' packages/` in dsh (excluding node_modules) = 0 hits. dsh has composition, not provenance.
+
+(2) FLATTENING IS WHAT DESTROYS PROVENANCE, NOT WHAT ENABLES THE CHECK. dsh's own composer signature is `composeEntries(layers: readonly PatchOptions[][], ...)` (profile.ts:732) and it immediately calls `layers.flat()` (profile.ts:734). dsh's type system says layers-of-layers; the flatten is the lossy convenience step. `readProfilePatches` returns a bare `PatchOptions[]` (profile-context.ts:63) — layer identity is gone at the return boundary.
+
+(3) omp SHIPS THE COUNTER-EXAMPLE, AND IT ALREADY BIT. `loadAllExtensions(cwd, disabledIds): Promise<Extension[]>` (state-manager.ts:69) flattens skills/commands/agents/hooks/mcp into ONE flat list — exactly the advocated shape. That flatten is why `Extension.shadowedBy` is dead code: `shadowedBy: opts?.getShadowedBy?.(item)` at state-manager.ts:103, and `grep -c "getShadowedBy:" state-manager.ts` = 0. Meanwhile capability/index.ts:247 and :271 set `item._shadowed = true` — a bare boolean with no winner. Flattening produced precisely the "cannot name the winner" limitation the claim asserts it prevents. This is why the plan scoped M4-9 to "state/shadowed only, no shadow-source" (MILESTONE_4_EXECUTION_PLAN.md:280).
+
+(4) omp ALREADY HAS A STRICTLY BETTER, SHIPPED AND TESTED VERSION. `SettingProvenance = "env" | "runtime" | "overlay" | "project" | "global" | "default"` (settings.ts:62) — 6 named values vs dsh's 5 untagged sources. `AnySetting.provenance(scope)` (registry.ts:764) → `Settings.getProvenance` (settings.ts:800-808) is an ordered probe of NAMED layers. `shadowingSource(setting)` (config-cli.ts:325-360) already returns `{ json: { overriddenBy | fallbackEnv }, message }` and `omp config set` prints it in yellow (config-cli.ts:314). The TUI `cfg://` path goes further: `PROVENANCE_LABELS` (cfg-protocol.ts:66-73), `shadowingLayer` (:243), `saveShadowingLayer` (:266-286), `ABOVE_GLOBAL = ["env","runtime","overlay","project"]` (:291) put the winning layer's name on the approval request (`CfgChangeRequest.shadowedBy`, :83). Tested positive + negative: cfg-protocol.test.ts:223 asserts `shadowedBy` contains "project config"; :229 and :234 are the no-shadow controls — exactly M4-6's stated DoD, already met on a sibling surface.
+
+(5) THE ONE GENUINELY BORROWABLE KERNEL IS DIFFERENT, AND OMPA DOES IT WITHOUT FLATTENING. dsh's real asset is counterfactuality — re-running the pure function with a hypothetical layer swapped in. That comes from the function being pure and a function of its inputs, not from flattening; a flat untagged list is strictly worse for it, because you cannot ask "would the *project* layer win if I wrote the global layer?" of an untagged array. omp's addressable layers make that probe trivial — and omp already builds it: `saveShadowingLayer` reads `getGlobalSettings()` (cfg-protocol.ts:277) and compares it against `effective` (:273) and `owner` (:272). That IS the counterfactual.
+
+(6) PORTABILITY BLOCKER — omp's layer model is not a list and cannot be flattened without regression. It is a 4-field struct `OwnLayers {global, project, configOverlay, overrides}` (settings.ts:249-254) plus a RECURSIVE parent chain `#parent?.getProvenance(...) ?? "default"` (settings.ts:807, :1654) created by `overlay()` (settings.ts:709-714) for subagents; `getGlobalSettings()` also recurses (settings.ts:1386-1389). A flat list cannot represent a parent chain. Worse, omp needs TWO probes because TWO resolution rules exist: generic settings use `getByPath` with null-as-unset (settings.ts:800-808), while model roles use `#modelRoleLayerOwns` with key-presence so a `null` tombstone in the overlay/runtime layer correctly blocks lower layers (settings.ts:1641-1655, documented at :1644-1648). Collapsing to dsh's single flat list forces choosing one rule and losing the other — a live regression on model-role resolution. Third, omp's env layer is not a list member at all but an override of `get` (`override get(scope) { return this.#effectiveEnv(scope) ?? super.get(scope) }`, registry.ts:537-539) with `envFallback` semantics (registry.ts:526-535); dsh's env layer is one appended patch (profile-context.ts:52-55).
+
+TIERS. BORROW: dsh's block-BEFORE-write ordering (throw at config-editor :128, `writeFileAtomic` at :130) — a decision about guard placement, not layer representation; the plan already adopted it at MILESTONE_4_EXECUTION_PLAN.md:187 and M4-DISCIPLINE-2 at :179-190. Also dsh's `assertUnshadowed` (credentials-local/src/index.ts:780-787) as the "name the winner AND name the fix" message template. REFERENCE: dsh's purity discipline (recompute-with-hypothesis rather than mutate-then-check) — worth reading, and omp's `saveShadowingLayer` is the better execution of it. DO-NOT-COPY: the flattened `PatchOptions[]` representation (destroys layer identity; dsh's own composer flattens at profile.ts:734 and then cannot report a winner at config-editor :128); the value-equality shadow test at config-editor :127 (cannot distinguish "shadowed" from "different"); dsh's guessed two-way error string.
+
+WHAT IS UNVERIFIED: `PatchOptions`' field list — it is imported from `@deepseek-ai/cordis-plugin-include` (app-boot/src/index.ts:16) and that package is not vendored locally, so I confirmed the layer-identity loss from the `PatchOptions[]` return type at profile-context.ts:63 and the `.flat()` at profile.ts:734 rather than from the type's fields. The conclusion is unchanged either way. Also unverified: whether dsh's *other* subsystems (e.g. settings-controller) have a shadow notion outside config-editor — my 0-hit grep for "provenance" covered all of dsh's `packages/`, but I did not audit its 715 "shadow" hits file by file.
+evidence: omp (the port target) — all verified by reading:
+- C:/Users/ADMIN/Documents/Projects/ultraworkers/packages/coding-agent/src/config/settings.ts:62 — `export type SettingProvenance = "env" | "runtime" | "overlay" | "project" | "global" | "default";`
+- .../settings.ts:249-254 — `/** One instance's own layers, lowest precedence first. */ interface OwnLayers { global; project; configOverlay; overrides }` (a struct, not a list)
+- .../settings.ts:800-808 — `getProvenance(setting)`: ordered if-probe of NAMED layers, `if (...#overrides...) return "runtime"; ... "overlay" ... "project" ... "global" ... return this.#parent?.getProvenance(setting) ?? "default"` — a RECURSIVE parent chain
+- .../settings.ts:709-714 — `overlay()` sets `child.#parent = this` (subagent view; not list-representable)
+- .../settings.ts:1386-1389 — `getGlobalSettings()` recurses over `#parent` via `#deepMerge`
+- .../settings.ts:1641-1655 — `getModelRoleProvenance`, a SECOND probe using `#modelRoleLayerOwns` (key-presence / null-tombstone aware), doc at :1644-1648
+- .../settings.ts:3623-3628 — `#mergeOwnLayers`: the composer is a left-fold of `deepMerge` over the 4 named layers (NOT a flat list)
+- .../config/registry.ts:764 — `provenance(scope)` = `#effectiveEnv(scope) !== undefined ? "env" : settingsOf(scope).getProvenance(this)`
+- .../config/registry.ts:526-535 / :537-547 — `#effectiveEnv` + `override get(scope) { return this.#effectiveEnv(scope) ?? super.get(scope) }` + `layered(scope)`; env is an override of get, not a list member
+- .../cli/config-cli.ts:318 `globalValue`, :325-360 `shadowingSource` (switch over 6 provenances, per-layer message), :314 `console.log(chalk.yellow(...))` — ALREADY SHIPPED
+- .../internal-urls/cfg-protocol.ts:66-73 `PROVENANCE_LABELS`, :83 `shadowedBy?: string`, :243 `shadowingLayer`, :266-286 `saveShadowingLayer` (reads `getGlobalSettings()` at :277 — the counterfactual probe), :291 `ABOVE_GLOBAL = ["env","runtime","overlay","project"]`, :425-428 sets `request.shadowedBy`
+- .../tui/src/overlays/settings-defs.ts:131-142 — `SettingsHost` has only get/set/unset (the real M4-6 gap)
+- .../config/settings-ui.ts:51-79 — `createSettingsHost`, 79 lines, the adapter M4-6 would extend
+- .../modes/components/extensions/state-manager.ts:69 `loadAllExtensions(...): Promise<Extension[]>` (the FLAT list), :103 `shadowedBy: opts?.getShadowedBy?.(item)`, :89 reads bare `(item as {_shadowed?: boolean})._shadowed`
+- .../capability/index.ts:247 and :271 — `item._shadowed = true` (boolean, no winner); :144-146 same type
+- Tests: packages/coding-agent/test/internal-urls/cfg-protocol.test.ts:42 (`source: session override`), :189, :223 (`expect(asked[0]?.shadowedBy).toContain("project config")`), :229, :234 (negative controls)
+- Measured: `grep -c 'settings\.set(' packages/tui/src/overlays/settings-selector.ts` = 13 (matches the plan's baseline)
+- Scale: settings.ts 3798 + config-cli.ts 432 + registry.ts 956 + settings-ui.ts 82 = 5268 lines vs dsh's profile-context.ts 75 + config-editor/index.ts 145 = 220 lines
+
+dsh (the source) — all verified by reading:
+- C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/profile-context.ts:63-75 — `readProfilePatches` returns `PatchOptions[]`; body :65-70 concatenates 4 sources, :71-73 appends the env-derived telemetry patch
+- .../profile-context.ts:52-55 — `resolveTelemetryPatch`, the env layer, appended last
+- .../app-boot/src/profile.ts:731-738 — `composeEntries(layers: readonly PatchOptions[][], ...)` → `applyEntryPatches([], structuredClone(layers.flat()), ...)` — the flatten is INSIDE the composer
+- .../config-editor/src/index.ts:125 — `readProfilePatches('dsh', profile, { ...loaded, patches: <hypothetical> })`; :126 — `const effective = flatten(composeEntries([patches])).find(...)`; :127 `!isDeepStrictEqual(effective?.config ?? {}, next)`; :128 `throw new Error('Configuration for "${entry.options.id}" is overridden by a home patch or command-line overlay')`; :130 `writeFileAtomic` (so block-BEFORE-write, confirmed)
+- .../credentials/credentials-local/src/index.ts:780-787 — `assertUnshadowed`, names the winner and the fix
+- Measured: `grep -rni "provenance" --include="*.ts" packages/` (excl. node_modules) → 0; `grep -rni "shadow"` → 715 hits across many files (so "no provenance" is not merely "didn't grep the right place" — I grepped the whole tree)
+
+Plan (omp's own, read as a document — labelled THE PLAN'S CLAIM, not code): MILESTONE_4_EXECUTION_PLAN.md:280 (M4-9 scoped to no shadow-source), :937-947 (M4-6 file plan), :179-190 (M4-DISCIPLINE-2, which independently states dsh has no provenance), :187 (block-before-write adopted).
+refuted: true
+
+
+
+## [v3]
+
+reason: LEGAL AXIS: NOT REFUTED — the code is clean and genuinely copyable, NOT idea-only. dsh is MIT throughout (root LICENSE "Copyright (c) 2026 DeepSeek", root package.json license=MIT, zero per-package overrides across all packages/ and apps/, every vendored dep MIT per THIRD_PARTY_NOTICES.md), has zero omo/openagent provenance (0 hits for oh-my-openagent|oh-my-opencode|can1357|opencode-ai across .ts/.json/.md; remote is deepseek-ai/deepseek-harness), and all deferLoading commits are DeepSeek-internal (Yixiang Tu x5, Tianyi Cui x4, creatixchu). omo is IRRELEVANT to this claim: "deferLoading" has 0 hits in omo. The wire contract (defer_loading / tool_reference / tool_search_tool_bm25_20251119) is Anthropic's PUBLIC API, owned by neither harness. So the "default to refuted if the code is not clean" trigger does NOT fire — this is copyable code, with the MIT notice.
+
+CLAIM REFUTED ON SUBSTANCE, two independent grounds:
+
+(1) SCALE IS FALSE. "Real scale lever at 54 first-party tool names" is un-pulled. Measured: 23 non-test deferLoading occurrences in all of packages/, and ZERO first-party tool definitions set deferLoading:true. The only production writer is content.ts:391 during history reconstruction of a mid-conversation addition — not a tool author opting in. No config-driven bulk opt-in exists (checked all yaml/kdl/toml/json/py). The ~54 tool-name figure is roughly right (grep of defineTool({ sites yields 58 distinct names incl. 1 artifact, ToolCallError), but the count describes the tool catalog, not deferLoading adoption. dsh's own README admits the mechanism is inert: "declaring a deferred tool does not activate it" and "Unsupported routes receive active tools without developer messages or deferLoading". llm-pi-ai/src/context.ts:131 additionally THROWS UNSUPPORTED_CONTENT on any deferred tool, so the feature is not even live inside dsh on that adapter. Fully built, fully plumbed, 15 test files, zero production consumers.
+
+(2) ZERO MARGINAL VALUE — omp already implements it, as a strict superset. ultraworkers/packages/ai/src/providers/anthropic.ts:4271-4332 planAnthropicToolControls does the identical transform at :4323 ("tools.push(deferred.has(name) ? { ...tool, deferLoading: true } : tool)"), line-for-line equivalent to dsh content.ts:391. omp additionally has: diffAnthropicActiveTools emitting tool_addition/tool_removal controls (:4255), a byte-stable top-level declaration-list guarantee dsh lacks, an inactiveTools concept dsh lacks, anthropic-messages-server.ts:255 + anthropic-messages-server-schema.ts:178, and a second wire adapter (openai-responses-wire.ts:347,490) carrying defer_loading, which dsh has no equivalent of.
+
+TIER: DO-NOT-COPY — not because of licensing (it is clean) but because there is nothing to copy: omp is already strictly ahead. The only residual value is REFERENCE-level: dsh's "Known Limitations and Deferred Work" README discipline (naming inert vocabulary as deferred work, per .agents/notes/archived/simplification/2026-07-04-prune-producerless-vocabulary-variants.md) is a good pattern — but dsh failed to apply it here, shipping a producerless feature and documenting it as such.
+
+CAVEAT ON DOC READING: I read dsh's own README prose, labelled as THEIR CLAIM. It cuts against their own interest (it concedes the feature is inert), so it corroborates rather than oversells. The 58-vs-54 tool-name number is from a crude regex over defineTool({ sites and may include 1-2 non-tool artifacts; the ~54 order of magnitude is confirmed, the exact integer is UNVERIFIED.
+evidence: LEGAL / PROVENANCE (all measured):
+- dsh LICENSE:1-3 = "MIT License / Copyright (c) 2026 DeepSeek"; root package.json -> {"name":"@deepseek-ai/dsh-root","license":"MIT","private":true,"version":"0.1.7-rc.2"}
+- Per-package license scan over all packages/** + apps/** package.json: printed NOTHING non-MIT (zero overrides)
+- find . -name "LICENSE*" (non-node_modules): only root + native/system + packages/boot/hmr + vendor/{cordis,cosmokit,schemastery,group,hmr,include,loader,logger-console,timer} — THIRD_PARTY_NOTICES.md marks every one MIT
+- grep -rniE "oh-my-openagent|oh-my-opencode|can1357|opencode-ai" over all .ts/.json/.md: 0 hits
+- git remote -v = https://github.com/deepseek-ai/deepseek-harness.git
+- git log --format="%an" -S "deferLoading" --all | sort | uniq -c -> "5 Yixiang Tu / 4 Tianyi Cui" (+1 non-name author line)
+- grep -rn "deferLoading" --include=*.ts in oh-my-openagent: 0 files. omo is a distractor for this claim.
+- Anthropic public API: platform.claude.com/docs/en/agents-and-tools/tool-search-tool documents "set defer_loading: true on the tools that shouldn't load up front", tool_reference blocks, tool_search_tool_bm25_20251119, beta advanced-tool-use-2025-11-20. Corroborated by omo's own packages/omo-native/test/anthropic-tool-search-compat.test.ts:6-9 calling them "The Anthropic native tool-search contract".
+
+CITED LINES VERIFIED ACCURATE:
+- dsh packages/core/tools/src/schema.ts:499-500 = "/** Requests deferred loading of the tool definition; ... */" + "readonly deferLoading?: true"
+- dsh packages/llm/llm/src/content.ts:391 = "declarations.set(tool.name, { ...tool, deferLoading: true })" inside toolDeclarations(tools, mode, history)
+
+SCALE REFUTATION (measured):
+- grep -rn "deferLoading" --include=*.ts packages/ (excl. node_modules, /tests/, .spec.ts, .test.ts) = 23 lines total, ALL plumbing: surface.ts:397-398 (validation), system-prompt/src/index.ts:586,590, tools/src/index.ts:1283,1292, schema.ts:499,500,595, extensions/tool-cordis/src/api-catalog.ts:7672 (string literal), llm/llm/src/content.ts:391,433,434,452, llm/llm/src/types.ts:401,479, llm-deepseek/src/serialize.ts:164, llm-pi-ai/src/context.ts:131, session-format-v3-to-v4/src/content.ts:53,76,78 + developer.ts:108,109
+- grep for "deferLoading: true" outside tests/fixtures/README: ONLY content.ts:391. ZERO defineTool/tool-definition call sites set it.
+- grep -rn "deferLoading|defer_loading" excluding .ts/.md/pnpm-lock: only JSON schema files, snapshots, and one python smoke assert. No config-driven opt-in.
+- dsh own README packages/llm/llm/README.md "Known Limitations and Deferred Work": "Unsupported routes receive active tools without developer messages or `deferLoading`" ... "Explicitly deferred baseline tools remain deferred until their first retained addition block; declaring a deferred tool does not activate it."
+- dsh packages/llm/llm-pi-ai/src/context.ts:130-132: "if (options.tools?.some(tool => tool.deferLoading === true)) { throw new LlmError('Deferred tool loading is not supported yet', 'UNSUPPORTED_CONTENT') }"
+- tool-name count: grep defineTool({|defineTool< over non-test files -> 58 distinct names (bash read edit write glob grep lsp skill plan todo_present web_fetch web_search schedule_* team_task_* session_* terminal_* subagent/agent tools ralph ralph-loop cordis_inspect_* job_* goal tools ask_user_question ...), incl. 1 grep artifact (ToolCallError) -> ~54-57 real.
+
+OMP ALREADY IMPLEMENTS IT (measured in ultraworkers):
+- packages/ai/src/providers/anthropic.ts:4263 doc comment "inactiveTools, plus newly active tools appended with defer_loading"
+- :4271 function planAnthropicToolControls(context, records, enabled)
+- :4323 "if (tool) tools.push(deferred.has(name) ? { ...tool, deferLoading: true } : tool);"  <-- direct equivalent of dsh content.ts:391
+- :4330 "deferred: tools.filter(tool => tool.deferLoading === true).map(tool => tool.name),"
+- :4255 diffAnthropicActiveTools -> changes.push({ type: "tool_addition", name })
+- :4080 "if (!tool || tool.defer_loading) continue;"
+- :5853 "...(tool.deferLoading ? { defer_loading: true } : {}),"
+- packages/ai/src/providers/anthropic-messages-server.ts:255 "deferLoading: tool.defer_loading,"
+- packages/ai/src/providers/anthropic-messages-server-schema.ts:178 "defer_loading?": "boolean"
+- packages/ai/src/providers/anthropic-wire.ts:238, openai-responses-wire.ts:347,490 — second adapter dsh has no equivalent of
+refuted: true
+
+
+
+## [v3]
+
+reason: REFUTATION FAILED on the legal/provenance axis the task targeted. Taking the CODE is clean: dsh's exact package (packages/boot/app-boot) is MIT, relicensed BSD-3 -> MIT by the copyright holder (a relaxation, not a restriction), with no oh-my/SUL-1.0 lineage anywhere in its tracked tree or notices, and all of the target function's dependencies are MIT (Shigma cordis/schemastery/cosmokit/include). The destination repo (ultraworkers/omp) is MIT with zero SUL/omo references in THIRD-PARTY-NOTICES.txt. MIT -> MIT copy is permitted; the sole obligation is retaining "Copyright (c) 2026 DeepSeek" in copies/substantial portions. So this is a genuine CODE copy, not idea-only.
+
+HOWEVER the claim is technically INACCURATE on one load-bearing point, which I report separately from the legal verdict: "all flattened into ONE list and applied through the real composer" is FALSE for readProfilePatches. The function's own JSDoc (profile-context.ts:61) states "@returns Detached ordered patches; this function does not update the Loader." It applies nothing. composeEntries is invoked exactly once, at line 72, purely as a MEMBERSHIP TEST to decide whether the env-derived telemetry patch is needed. The real application happens in a different export, reconcileProfilePatches (index.ts:273-301), which calls entry.update({config: {...includeConfig, patches: prepared}}) and awaits ctx.loader.await(). Two further precision defects: layer 2 is `initialProfile?.patches ?? loadOptionalPatches(...)`, so it is conditional (in-memory vs on-disk) rather than a fifth always-present source; and the env layer is pushed at line 73 OUTSIDE the structuredClone spread, not folded into the flatten.
+
+TIERING: BORROW = the flatten-to-one-list shape and the "compose first, then check membership before synthesizing an override" trick. REFERENCE = the rest of the boot/profile package. DO-NOT-COPY = nothing from dsh. SEPARATE WARNING: the underlying CONCEPT also exists in omo under different names (packages/omo-config-core/src/loader/, packages/isolation-core/src/merge/patch-mode.ts, packages/omo-opencode/src/agents/builtin-agents/agent-overrides.ts) and grepping omo for readProfilePatches / PROFILE_PATCH_FILENAME / telemetryDisabledEnv returns 0 hits -- if anyone later proposes sourcing this layering from omo instead of dsh, that IS dirty (SUL-1.0, non-sublicensable, non-commercial-distribution-only) and identifier-level greps would wrongly report "absent."
+evidence: LICENSE VERIFICATION (dsh):
+- C:/Users/ADMIN/Projects/deepseek-harness/LICENSE lines 1-3: "MIT License / Copyright (c) 2026 DeepSeek"
+- C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/package.json:33 -> "license": "MIT"  (this is the package containing profile-context.ts)
+- Predecessor license was BSD-3: `git show c905c4694e^:LICENSE` -> "BSD 3-Clause License / Copyright (c) 2026, DeepSeek"
+- Relicensing commit: c905c4694e "Adopt MIT for DSH packages", Thu Aug 13 01:46:57 2026 +0800, Author Tianyi Cui; `git show --stat c905c4694e` includes `packages/boot/app-boot/package.json | 2 +-` -> the exact package was covered.
+- Repo provenance: remote https://github.com/deepseek-ai/deepseek-harness.git; `git rev-list --count HEAD` = 20177; first commit b67e81ac97 "Initialize repo with README, AGENTS.md, and CLAUDE.md symlink".
+
+NO omo/SUL CONTAMINATION IN dsh (checked per hard rule #3, not just identifier grep):
+- `git grep -c "oh-my-opencode\|oh-my-openagent\|ultraworkers" -- .` in dsh -> EMPTY (0 files)
+- `grep -in "oh-my\|omo-\|senpi\|ultraworkers\|openagent" THIRD_PARTY_NOTICES.md` -> 0 hits
+- dsh is architecturally unrelated to the oh-my lineage: @deepseek-ai/dsh-root v0.1.7-rc.2, cordis plugin framework, packages/{boot,host,mcp,...} vs omp's packages/{coding-agent,tui,catalog,...}
+
+DEPENDENCY LICENSES (all MIT):
+- vendor/cordis/LICENSE, vendor/include/LICENSE, vendor/loader/LICENSE, vendor/schemastery/LICENSE, vendor/cosmokit/LICENSE -> all "MIT License Copyright (c) 2021-present Shigma"
+- Only non-permissive deps in dsh are dev-only: THIRD_PARTY_NOTICES.md:225 (eslint-plugin-sonarjs LGPL-3.0-only) and :253 -> "run only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact."
+
+TARGET REPO (omp) IS MIT AND CLEAN:
+- C:/Users/ADMIN/Documents/Projects/ultraworkers/LICENSE lines 1-5: MIT, (c) 2025 Mario Zechner, (c) 2025-2026 Can Boluk, (c) 2026 Stencil Labs, Inc.
+- `grep -in "openagent\|oh-my-opencode\|Sustainable Use\|SUL-1" THIRD-PARTY-NOTICES.txt` -> 0 hits
+- remotes: origin github.com/ultrabuilders/ultraworkers, upstream github.com/can1357/oh-my-pi
+
+CLAIM INACCURACY #1 - "applied through the real composer" IS FALSE:
+- profile-context.ts:61 (JSDoc): "@returns Detached ordered patches; this function does not update the Loader."
+- profile-context.ts:72: composeEntries appears exactly once, as a membership test: `composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID)`
+- The real applier is a separate export: index.ts:273 `export async function reconcileProfilePatches(ctx, patches, binName, requiredIds)`; index.ts:288-291 `const prepared = prepareProfilePatches(ctx, patches, parentURL, binName); await entry.update({ config: { ...includeConfig, patches: prepared } }); ... await ctx.loader.await();`
+
+CLAIM INACCURACY #2 - layer 2 is conditional: profile-context.ts:67 `...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? [])` -> in-memory profile when provided, on-disk otherwise; not a fifth always-present source.
+CLAIM INACCURACY #3 - profile-context.ts:73 `if (telemetryPatch !== undefined) patches.push(telemetryPatch)` runs AFTER the structuredClone on 65-70, so the env layer is outside the flatten.
+
+FILE ORIGIN: profile-context.ts added 2026-09-14 in dsh commit 438c862fea "refactor: keep profile launch context data-only and HMR backend-scoped"; first version already carried the flatten + telemetry-membership-test. Subsequent: abd765a600, 8c5ae870c2, 3cd6782114. No "ported from"/"derived from"/"forked from" attribution anywhere in packages/boot/app-boot/src/.
+
+UNVERIFIED: I cannot rule out from inside the repo that DeepSeek internally seeded dsh from an oh-my-* codebase, since I have no access to dsh's pre-publication history (its first commit is a clean init). This does not change the conclusion: the published artifact carries an explicit MIT grant, and the licensor's warranty is what an MIT licensee relies on.
+
+RESIDUAL RISK: grepping omo for readProfilePatches / PROFILE_PATCH_FILENAME / resolveTelemetryPatch / telemetryDisabledEnv returns 0 hits, but the CONCEPT lives there under other names (packages/omo-config-core/src/loader/, packages/isolation-core/src/merge/patch-mode.ts, packages/omo-opencode/src/agents/builtin-agents/agent-overrides.ts) -- the exact "0 grep hits is not proof of absence" trap flagged in the doctrine.
+refuted: false
+
+
+
+## [v1]
+
+reason: REFUTED on its load-bearing causal claim; the descriptive half is accurate but overstated.
+
+ACCURATE (verified): `readProfilePatches` is at profile-context.ts:63-75 (file is 75 lines total), and the precedence bundles -> profile patch -> home patch -> CLI overlay -> env-derived patch is real and pinned by a test (app-boot/tests/profile.spec.ts:184-208). The result does reach the real composer in boot(): boot() -> mountRootInclude (index.ts:1004,538-583) -> prepareProfilePatches (compatibility-preflight.ts:180-187) -> Include mount -> applyEntryPatches (vendor/include/src/index.ts:57).
+
+REFUTED: "Applying layers as a single flattened list rather than folding pairwise is what makes a shadow-check possible at all." Three independent contradictions:
+(1) The repo gives a different reason. app-boot/tests/config-dump.spec.ts:118-122: flattening exists so offline tooling issues the SAME single applyEntryPatches call boot does — a per-layer fold would rebuild the id index and let layer 2 patch a group child "a tree the real boot never mounts." Flattening is a divergence-PREVENTION constraint, not a check-enabler. In fact it makes strictly FEWER patches land.
+(2) There is no shadow-check in that path, and flattening is an obstacle to one, not an enabler. `grep -rni shadow` over packages/ apps/ native/ python/ hits only shadowRoot, transcript shadowing, credentials source shadowing, and a package-name shadowing test — nothing in profile/patch composition. The one real override check (config-editor/src/index.ts:126-129) works identically under pairwise folding (it compares only the final effective config) and never names the shadowing layer — its message guesses "a home patch or command-line overlay". Where dsh DOES report which layer won, it deliberately does NOT flatten: renderConfigDump (index.ts:462-491) keeps labeled `ConfigDumpLayer[]` and derives attribution by composing prefix snapshots 1..k and diffing positionally into `entryOrigins[index].patchedBy`; `PatchOptions` (vendor/include/src/index.ts:130-141) carries no source field and readProfilePatches discards `ProfileLayer.packageName`, so the flat list cannot support attribution. Same for env: createLaunchEnvironmentSnapshot (launch-environment/src/index.ts:78-103) keeps layers in a Map keyed by source, searched by SOURCE_ORDER, precisely so `get()` returns `{value, source, path}` — its module docstring says consumers resolve "instead of a flattened process.env".
+(3) The target already has the shadow-check and it is the opposite shape. M4-6's requirement is "panel nói rõ lớp nào đang che nó" (COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:11584, §M4-6 at :12328). That is `getProvenance` (coding-agent/src/config/settings.ts:800-810), which probes #overrides -> #configOverlay -> projectLayerForMerge(#project) -> #global -> #parent as SEPARATE stores and returns the layer NAME; `shadowingSource` (config-cli.ts:325-360) switches on that name. A single flattened list answers "what is the value", never "which layer" — so it is the wrong reference model for M4-6.
+
+TWO OVERSTATEMENTS in the description: (a) "all flattened into ONE list" is false for the 5th layer — the env-derived telemetry patch is NOT in the flat list at flatten time; profile-context.ts:71-73 resolves it only AFTER a `composeEntries([patches])` probe and pushes it conditionally, so it is a flatten-then-probe-then-append two-phase construction. (b) "bundles" is N layers, not one: `profile.layers` is `ProfileLayer[]`, one per `dsh.profile.bundles` entry (profile.ts:78-103, 655-689). Real arity is N+4. (c) In the actual profile boot path the 5-layer list never reaches the composer as-is: prepareProfilePatches composes it over an EMPTY root (compatibility-preflight.ts:184) and returns `[{ insert: rows }]` (line 186) — the list boot mounts is that single insert patch.
+
+TIERS. BORROW: `composeEntries` (profile.ts:731-738) — the real transferable idea is "offline tooling must invoke the SAME function with the SAME arguments as boot so a dump can never drift" (profile.ts:723-730, index.ts:398-422), plus the clone-patches-per-call rule at index.ts:456-461. BORROW: the config-editor write-verify pattern (config-editor/src/index.ts:123-129) — recompute effective from the candidate document BEFORE writing and refuse if it isn't what you wrote. REFERENCE: renderConfigDump's prefix-snapshot attribution (index.ts:462-491) — right technique, but it needs labeled layers, which is precisely what the flat list drops. DO-NOT-COPY: the flattened unlabeled list as M4-6's reference model; `getProvenance`'s per-store probe already dominates it for the stated requirement.
+evidence: FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/profile-context.ts (75 lines total)
+
+:52-55  resolveTelemetryPatch(disabledEnv, hasRow) — gated on `hasRow`.
+:63    export function readProfilePatches(binName, context, initialProfile?) {
+:64      const profile = initialProfile ?? loadProfileDirectory(..., { userLayer: false })
+:65      const patches = structuredClone([
+:66        ...profile.layers.flatMap(layer => layer.patches),
+:67        ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
+:68        ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
+:69        ...context.overlays,
+:70      ])
+:71      const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
+:72        composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
+:73      if (telemetryPatch !== undefined) patches.push(telemetryPatch)
+:74      return patches
+:75      }
+:61    docstring: "returns Detached ordered patches; this function does not update the Loader."
+=> 4 sources in the flat list; the 5th (env-derived) is appended at :73 only after the :72 probe. NOT one list.
+
+FILE: .../packages/boot/app-boot/src/profile.ts
+:78-103  ProfileLayer (packageName, packageDir, patchPaths, patches) / Profile { layers: ProfileLayer[]; ... } — N layers.
+:655-689 loadProfileDirectory: `for (const packageName of bundles)` ... `layers.push({...})` — one layer per dsh.profile.bundles entry.
+:723-730 docstring: "Compose patch layers into the effective entry list over an empty root — the same single applyEntryPatches call the boot include makes, so flag derivation and config dumps see exactly what mounts."
+:731-738 composeEntries = applyEntryPatches([], structuredClone(layers.flat()), warn).
+
+FILE: .../packages/boot/app-boot/tests/config-dump.spec.ts   <-- THE REPO'S OWN REASON FOR FLATTENING
+:117  it('composes all layers as one flattened patch list, exactly like boot()', () => {
+:118    // boot() flattens every layer into ONE applyEntryPatches call, whose id
+:119    // index sees inserted rows but NOT children introduced by a plain group
+:120    // `config` replacement. A per-layer composition would rebuild the index
+:121    // between layers and let the second layer patch that child — a tree the
+:122    // real boot never mounts. Pin the single-call semantics: the child patch
+:123    // is skipped (with the layer-labeled warning), matching boot.
+
+FILE: .../packages/boot/app-boot/src/index.ts
+:390-396  interface ConfigDumpLayer { label: string; patches: PatchOptions[] }  <-- labels exist upstream of flattening
+:398-405  docstring: "...apply every layer's patches as ONE flattened list through the include's own patch algorithm (applyEntryPatches) — the same call boot() makes, so even patch-visibility corner cases ... compose identically"
+:456-461 snapshot(count, warnings): `const flattened = structuredClone(layers.slice(0, count).flatMap(l => l.patches)); return applyEntryPatches(base, flattened, ...)`
+:473     const entryOrigins: { origin: string; patchedBy: string[] }[] = base.map(() => ({ origin: baseLabel, patchedBy: [] }))
+:485-487 for each row: `if (index >= before.length) entryOrigins.push({ origin: layer.label, patchedBy: [] }) else if (JSON.stringify(composed[index]) !== before[index]) entryOrigins[index]?.patchedBy.push(layer.label)`
+:514-515 `${record.origin}, patched by ${record.patchedBy.join(', ')}`
+=> Attribution is recovered from LABELS + prefix snapshots, NOT from the flat list.
+:1004    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl, binName)
+:538-583 mountRootInclude: :569 prepareProfilePatches(ctx, [...patches], ...) -> includeConfig.patches -> Include entry.
+
+FILE: .../packages/boot/app-boot/src/compatibility-preflight.ts
+:171-179 docstring: "The caller passes every patch layer of the profile, because this returns one insertion patch for that empty root: a non-empty root config would lose the caller's override patches by id."
+:184     const entries = applyEntryPatches([], patches, patchWarning(ctx))
+:186     return rows.length === 0 ? [] : [{ insert: rows }]
+=> The mounted list is one insert patch, not the 5-layer list.
+
+FILE: .../vendor/include/src/index.ts
+:43-56  applyEntryPatches docstring: "THE patch semantics of this include, shared by mounting (applyPatches) and offline config tooling (dsh --dump-config) so a dump can never drift from what boots."
+:76-124 single pass over `for (const patch of patches)`, one entryMap built once at :65-74.
+:130-141 interface PatchOptions { id?, insert?, name?, config?, ... } — NO source/label field.
+
+FILE: .../packages/boot/config-editor/src/index.ts   <-- the only real override check
+:126     const effective = flatten(composeEntries([patches])).find(row => row.id === entry.options.id)
+:127-129 if (!isDeepStrictEqual(effective?.config ?? {}, next)) throw new Error(`Configuration for "${entry.options.id}" is overridden by a home patch or command-line overlay`)
+=> boolean-only; does not name the layer; pairwise-folding-invariant.
+
+FILE: .../packages/util/launch-environment/src/index.ts   <-- layers KEPT SEPARATE to answer "which layer"
+:1-6     module docstring: "records which layer supplied each value. Harness consumers resolve through it instead of a flattened `process.env`"
+:18      const SOURCE_ORDER = ['process', 'project-env', 'user-env']
+:81-87   const bySource = new Map<LaunchEnvironmentSource, {...}>()
+:88-98   getFrom: for (const source of SOURCE_ORDER) { ...; return { value, source, ...path } }
+:43      get(name): LaunchEnvironmentEntry | undefined  — returns the WINNING LAYER.
+
+FILE: C:/Users/ADMIN/Documents/Projects/ultraworkers/packages/coding-agent/src/config/settings.ts   <-- M4-6's shadow-check already exists, unflattened
+:62      export type SettingProvenance = "env" | "runtime" | "overlay" | "project" | "global" | "default";
+:795-810 getProvenance(setting): SettingProvenance {
+           if (!this.isConfigured(setting)) return "default";
+           if (getByPath(this.#overrides, segments) !== undefined) return "runtime";
+           if (getByPath(this.#configOverlay, segments) !== undefined) return "overlay";
+           if (getByPath(projectLayerForMerge(this.#project), segments) !== undefined) return "project";
+           if (getByPath(this.#global, segments) !== undefined) return "global";
+           return this.#parent?.getProvenance(setting) ?? "default";
+         }
+=> Per-store probe in explicit precedence order; returns the layer NAME. No flattening.
+
+FILE: C:/Users/ADMIN/Documents/Projects/ultraworkers/packages/coding-agent/src/cli/config-cli.ts
+:317-322 globalValue(setting) — reads settings.getGlobalSettings() only (the global layer).
+:325-360 shadowingSource(setting) { const provenance = setting.provenance(settings); switch (provenance) { case "global": case "default": return undefined; case "env": ... case "project": ... case "overlay": ... case "runtime": ... } }
+
+FILE: C:/Users/ADMIN/Documents/Projects/ultraworkers/COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md
+:11584   "Chỉnh một setting trong panel mà đang bị project config, `--config` overlay, runtime override hoặc biến môi trường chiếm giá trị: **panel nói rõ lớp nào đang che nó** ... *(M4-6)*"
+:12328+  §M4-6 "Chặn ghi `settings` theo provenance" — step 5 installs the guard calling `shadowingSource(setting, settings)`.
+
+COMMANDS RUN (in C:/Users/ADMIN/Projects/deepseek-harness):
+  grep -rn "readProfilePatches" --include=*.ts .            -> 17 hits, no hidden consumer
+  grep -rni "shadow" --include=*.ts packages/ apps/ native/ python/ -> 39 hits, none in profile/patch composition
+  grep -rn "applyEntryPatches" vendor/include/src/*.ts      -> :57 definition, :240 internal use
+  wc -l packages/boot/app-boot/src/*.ts                     -> profile-context.ts = 75 lines
+refuted: true
+
+
+
+## [v1]
+
+reason: Split verdict: the loadability trick is REAL and verified; the "Row-level" label is WRONG — provenance is emitted per maximal CONTIGUOUS RUN, not per row — and the cited line range points at the renderer, not the provenance logic.
+
+(1) REFUTED — "Row-level provenance in YAML comments". Measured by running the real `renderConfigDump` (probe with 5 composed rows): output was 5 rows / 4 `# ==` comments, and the label `# == base.yml` was emitted TWICE (once for row `a`, once for rows `c`+`d`). No-patch case with 3 rows produced exactly ONE comment for all three. So one comment header can cover N rows, and the same label repeats non-contiguously. The code says so itself: `groupedDump`'s doc comment at index.ts:495 is "Render the composed rows grouped under one source-and-patches comment per contiguous run", and the `renderConfigDump` doc at index.ts:409 says "Every RUN of rows ... is preceded by" and "showing which SECTION comes from which file". The test is literally titled "groups contiguous rows with the same origin and patches under one separator" (config-dump.spec.ts:103) and asserts `dump.match(/# == base\.yml/g)).toHaveLength(1)` for a 2-row base (line 114). Accurately: provenance DATA is row-indexed (`entryOrigins` is index-aligned with `composed`, index.ts:473 and 486-487) — but that tracking happens in `renderConfigDump` at index.ts:471-492, NOT in the cited 497-523 range, which is only the `yaml.dump` emitter. The citation is misplaced by ~25 lines.
+
+(2) CONFIRMED — "the diagnostic output stays a loadable config file". Measured: `yaml.load(dump, { schema: entryListSchema })` on my 5-row dump returned an array with ids `["a","b","c","d","newrow"]`; and in a second probe the round-tripped parse was byte-equal (JSON.stringify) to `applyEntryPatches(base, [], ...)` — the exact single call `boot()` makes. Enforced in-repo by config-dump.spec.ts:74-92 ("Comments do not break loadability: the dump parses as one document equal to what boot() would mount").
+
+(3) CONFIRMED with scope caveat — "no second format to keep in sync" holds for the emitted ARTIFACT (one YAML dialect, same schema the loader uses). It does NOT hold for the computation: `renderConfigDump` (index.ts:430-493) is a second composition path separate from `boot()`, and keeping them honest is itself a sync burden the repo tests explicitly (config-dump.spec.ts:118-150 pins that a later layer targeting a group child must be skipped exactly as boot does). Also README.md:217 declines byte stability — "Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract before anything consumes it programmatically" (THEIR CLAIM, docs — but consistent with the code having no stability test). And no e2e test feeds a dump back in as a config: apps/cli/tests/built-bin.e2e.ts:1308-1317 only string-matches stdout.
+
+Net: the idea is worth BORROWing, the label is not. Restate as "per-contiguous-run section headers in a single YAML stream" — the loadability half is the real trick and it is genuinely single-format; the row-level framing is an overstatement that would mislead an implementer into emitting N comments.
+evidence: MEASURED (ran the real code in C:/Users/ADMIN/Projects/deepseek-harness, temp probe dir since removed):
+
+A) 5-row probe — comments: 4, rows: 5, and `# == base.yml` appeared TWICE:
+  # == base.yml
+  - id: a
+  # == base.yml, patched by surface.yml
+  - id: b
+  # == base.yml
+  - id: c
+  - id: d
+  # == surface.yml
+  - id: newrow
+
+B) no-patch probe — comments: 1, rows: 3 (one header for the whole file).
+
+C) round-trip — yaml.load(dump, {schema: entryListSchema}) -> array, ids ["a","b","c","d","newrow"]; deep-equal to applyEntryPatches(...) == true.
+
+SOURCE (C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/index.ts, 1066 lines; real path is packages/boot/app-boot/src/index.ts, not "app-boot/src/index.ts"):
+- :495  `/** Render the composed rows grouped under one source-and-patches comment per contiguous run. */`
+- :496-524 groupedDump(composed, entryOrigins)
+- :505  `lines.push(`# == ${currentLabel}`)`   <- one header per flush() = per RUN
+- :506  `yaml.dump(group, { schema: entryListSchema, noRefs: true })`  <- whole run dumped under that one header
+- :513-519 label compared to currentLabel; change triggers flush() -> new header (hence duplicate `# == base.yml`)
+- :471-492 (in renderConfigDump, NOT in cited range) — the row-indexed provenance loop: `entryOrigins` built at :473, pushed/patched at :486-487
+- :430-493 renderConfigDump = the second, dump-only composition path
+- :401-404 doc: "apply every layer's patches as ONE flattened list ... the same call `boot()` makes"
+- :409-410 doc: "Every run of rows from the same file and patch layers is preceded by a `# ==` comment ... so the output stays a loadable YAML document"
+
+TESTS:
+- packages/boot/app-boot/tests/config-dump.spec.ts:103-116 — it('groups contiguous rows with the same origin and patches under one separator'); 2-row base, asserts exactly 1 `# == base.yml`
+- :74-92 — yaml.load round-trip deep-equals the boot() composition
+- :118-150 — pins single-flattened-call semantics vs boot()
+- apps/cli/tests/built-bin.e2e.ts:1308-1317 — --dump-config e2e only string-matches stdout; no dump->reload test
+
+DOC (THEIR CLAIM, UNVERIFIED, README.md:217): "output is a loadable YAML document ... Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract before anything consumes it programmatically."
+refuted: true
+
+
+
+## [v1]
+
+reason: ACCURATE, not refuted — but with three caveats that narrow the generalization.
+
+Every factual assertion checks out against code, and I confirmed the load-bearing one by executing the real composer:
+
+1. File:line is exact. The claim's `config-editor/src/index.ts:126-129` is really `C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/config-editor/src/index.ts:126-129` (the claim drops the `packages/boot/` prefix; the whole file is 145 lines).
+2. "re-render, re-parse" — line 125 stringifies the in-memory YAML document and re-parses it through the real schema: `readProfilePatches('dsh', profile, { ...loaded, patches: yaml.load(String(document), { schema: entryListSchema }) as PatchOptions[] })`.
+3. "through the real composer" — line 126 is `flatten(composeEntries([patches])).find(...)`. `composeEntries` is at `packages/boot/app-boot/src/profile.ts:731` and delegates to `applyEntryPatches` at `C:/Users/ADMIN/Projects/deepseek-harness/vendor/include/src/index.ts:57` — the *same* function the boot include uses (`profile.ts:725-726` doc comment; `packages/boot/app-boot/src/index.ts:455-468`). The editor keeps no precedence table of its own.
+4. "assert the recomputed effective value equals the intent" — line 127 `isDeepStrictEqual(effective?.config ?? {}, next)`. `next` is the intent from the caller's `change` callback.
+5. "throw-before-write" — the throw is line 128; the first `writeFileAtomic` is line 130. Confirmed, and on the exact bytes that will be written (same `String(document)`).
+6. "catches unenumerated layers" — PROVEN BY EXECUTION. I ran the real `applyEntryPatches` with (a) a home-patch override after the intent row, (b) a name-mismatched patch, (c) a row that was never inserted. All three recomputed to something other than the intent, so the check refuses each: home override → `{"model":"HOME-OVERRIDE"}`; name mismatch → the WHOLE patch is skipped (config silently not applied, result `{"model":"base"}`); missing row → patch dropped, `effective` undefined. None of those three behaviours (last-write-wins across 4 sources, name-validation skip, missing-target skip) exists in a priority table; the check gets them for free.
+7. The layer set is real and partly read live from disk — `packages/boot/app-boot/src/profile-context.ts:65-70` concatenates bundle layers, the profile patch (here swapped for the re-rendered one), the home `cordis.patch.yml`, and `context.overlays`. The home layer is read at check time via `loadOptionalPatches` → `readFileSync` (`packages/boot/app-boot/src/index.ts:315-324`). The error text at line 128 names exactly layers 3 and 4.
+
+CAVEATS (narrow the "generalized" framing, but none falsify the pattern):
+
+A. "which a hand-written priority table never will" is rhetorical. `readProfilePatches` is itself a hand-written ordered list of four sources. A fifth layer added to the system but not to that function would be invisible to this check. The real, defensible claim is narrower: the *editor* maintains no table of its own and delegates precedence to the single composer — so it cannot drift from the composer's rules.
+
+B. The check recomposes on an EMPTY root (`applyEntryPatches([], ...)`) whereas the real boot path composes onto a non-empty `base` (`app-boot/src/index.ts:455-468`). This is sound only because profile rows are created by `insert` patches over the empty root — stated in the repo's own comment at `C:/Users/ADMIN/Projects/deepseek-harness/packages/bundle/base/cordis.patch.yml:1-3` ("applied as ONE insert over the empty profile root"). A row declared in the include's own `base` config would make `effective` undefined and the `?? {}` fallback would falsely refuse any non-empty intent. This is a genuine narrow-case coupling for anyone generalizing the pattern.
+
+C. Two silent holes in the assert itself: `effective?.config ?? {}` means an EMPTY intent always passes even if the row vanished entirely; and only the single row being edited is checked, so other rows' YAML round-trip fidelity (e.g. the `__jsExpr` custom-tag rewrite at lines 117-122) is unverified by this gate.
+
+BONUS CAVEAT for the BORROW decision (not part of the claim): the shadow branch is untested. `packages/boot/config-editor/` has no `tests/` directory at all, `packages/settings/settings/tests/configuration-fixture.ts:34` passes `overlays: []` and writes no home `cordis.patch.yml`, and no spec drives a non-empty overlay/home patch through `edit` (only `packages/boot/app-boot/tests/profile.spec.ts:194` uses overlays, for telemetry). `packages/settings/settings/tests/editor-failures.spec.ts` covers only the *file-failure* pre-commit gates (denied read / truncated YAML / wrong document), not the override refusal. Note also that the same `edit()` deliberately uses write-then-rollback for the LATER reconcile step (lines 131-137), which supports the claim's advice to keep the shadow check as throw-before-write.
+
+Not audited: whether omp has an equivalent shadow/override surface to apply this to.
+evidence: File read (C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/config-editor/src/index.ts, 145 lines total):
+  125  const patches = readProfilePatches('dsh', profile, { ...loaded, patches: yaml.load(String(document), { schema: entryListSchema }) as PatchOptions[] })
+  126  const effective = flatten(composeEntries([patches])).find(row => row.id === entry.options.id)
+  127  if (!isDeepStrictEqual(effective?.config ?? {}, next)) {
+  128    throw new Error(`Configuration for "${entry.options.id}" is overridden by a home patch or command-line overlay`)
+  129  }
+  130  await writeFileAtomic(path, String(document), { mode: 0o600 })
+  131  try {
+  132    await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh', [entry.options.id])
+  133  } catch (error) {
+  134    await writeFileAtomic(path, before, { mode: 0o600 })   // <-- write-then-rollback, used for reconcile only
+  135    await reconcileProfilePatches(this.ownerContext.root, beforePatches, 'dsh')
+
+Layer enumeration (C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/profile-context.ts:63-75):
+  65  const patches = structuredClone([
+  66    ...profile.layers.flatMap(layer => layer.patches),                                  // bundle layers
+  67    ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),  // profile patch (swapped for re-render)
+  68    ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),     // HOME patch, read live
+  69    ...context.overlays,                                                                  // command-line overlays
+  70  ])
+
+Real composer (C:/Users/ADMIN/Projects/deepseek-harness/vendor/include/src/index.ts:57-127): last-write-wins over an ordered patch list, with three non-table behaviours the check absorbs —
+  110  if (!target) { warn('patch: entry %C not found', id); continue }        // silent drop
+  115  if (name && name !== target.name) { warn('patch: name mismatch ... skipping'); continue }  // whole patch dropped
+  100  buildMap(insert)  // a later layer may configure a row an earlier layer inserted
+
+Executed probe (temp file created at repo root, run with `bun run`, then deleted):
+  recomputed effective : {"model":"HOME-OVERRIDE"}
+  editor intent        : {"model":"EDITOR-INTENT"}
+  => shadow check THROWS (refuses write)? true
+  --- name mismatch skips the WHOLE patch ---  warn: patch: name mismatch for %C (expected %C, got %C), skipping
+  recomputed effective : {"model":"base"}   => check catches silently-dropped patch? true
+  --- row NOT inserted => patch silently dropped ---  warn: patch: entry %C not found
+  rows after compose   : []  => effective undefined => check refuses? true
+
+Row-origin precondition (C:/Users/ADMIN/Projects/deepseek-harness/packages/bundle/base/cordis.patch.yml:1-3):
+  "The dsh-base bundle patch: the shared core of each base-backed profile, applied as ONE insert over the empty profile root."
+  (This is what makes the empty-root recomposition at index.ts:126 faithful; real boot composes onto non-empty `base` at app-boot/src/index.ts:455-468.)
+
+Coverage gap:
+  packages/boot/config-editor/  -> no tests/ directory exists.
+  packages/settings/settings/tests/configuration-fixture.ts:34 -> `overlays: []`, no home cordis.patch.yml written.
+  packages/settings/settings/tests/editor-failures.spec.ts (34 lines) -> covers only denied-read / truncated-YAML / wrong-document, asserting the patch file is byte-identical; never exercises the override refusal.
+  grep for `overlays: [` in all *.spec.ts -> only profile.spec.ts:194 (telemetry), no configEditor.edit coverage.
+
+Introduction: `git log -S "overridden by a home patch"` -> single commit 601d6761e4 "feat(settings): project volatile Config through profile-backed forms (#4587)".
+refuted: false
+
+
+
+## [v2]
+
+reason: The claim mischaracterizes its own source, and the mechanism has no substrate in omp and would be destroyed by omp's config writer.
+
+1. "ROW-LEVEL" IS FALSE AS STATED. `groupedDump` emits ONE `# == <label>` per contiguous RUN of rows, not per row. dsh's own docstring at app-boot/src/index.ts:495 says "grouped under one source-and-patches comment per contiguous run", and its test proves it: config-dump.spec.ts:101-115 writes two rows (`a`, `b`) into base.yml and asserts `expect(dump.match(/# == base\.yml/g)).toHaveLength(1)`.
+
+2. NO SUBSTRATE: THERE ARE NO "ROWS" IN omp. dsh's config is a top-level YAML ARRAY of EntryOptions keyed by `id` (vendor/include/src/index.ts:57-74 builds a `Map<string, EntryOptions>` by id), patched with an `insert` op that nests a `config` array under a group id. Rows are positionally indexed — the dump's entire algorithm is `composed[index]` vs `before[index]` (index.ts:484-488). omp's config is a nested MAPPING keyed by setting path: `RawSettings` (settings.ts:65-67) with getByPath/setByPath/deleteByPath on `setting.segments`, last-writer-wins per path. No row identity, no `insert`, no positional index — a comment has no addressable unit to attach to. "Row-level provenance" is not a thing that could be built on this shape.
+
+3. omp ALREADY HAS A STRICTLY BETTER VERSION, AND IT'S TESTED. `Settings.getProvenance` (settings.ts:800-808) walks the precedence chain directly — runtime → overlay → project → global → parent → default. `Setting.provenance(scope)` (registry.ts:764-766) adds the `env` layer dsh does not have. Surfaced to users already: `renderLeaf` emits `source: environment variable | session override | --config overlay | project config | global config | default` (cfg-protocol.ts:66-73, 223-235), and the write path already reports which higher layer will SHADOW a save (cfg-protocol.ts:392, 425-429) — predictive provenance the dump structurally cannot express, since the dump is post-hoc. Covered by 15+ assertions in test/config/settings-registry.test.ts and test/config/settings-reload.test.ts, including the null-as-unset edge (#13183). Plus `getModelRoleProvenance` (settings.ts:1649).
+
+The comparison is exact and inverts the claim's value: dsh INFERS provenance with O(layers² × rows) full re-merges (index.ts:462-491 — `structuredClone` per call per the aliasing hazard noted at 458-461, then `JSON.stringify` per row per layer) because an array structurally hides where rows came from. omp READS it in O(layers) path lookups because the merge IS the attribution.
+
+4. DECISIVE: THE TRICK IS WIPED BY omp's OWN WRITE PATH. omp persists config via `#writeYamlAtomically` → `stringifyYamlConfig` → `YAML.stringify` (settings.ts:3310; packages/utils/src/yaml-config.ts:6-8). I ran a `YAML.parse` → `YAML.stringify` round-trip: it strips EVERY comment, including the `# ==` provenance comments and the user's own hand-written notes. Provenance comments written into omp's config.yml would be erased by the next `/save` or any persisted `Setting.set`. Making the trick work would first require building a CST-preserving YAML round-tripper — a larger project than the thing being ported.
+
+The asymmetry cuts deeper: dsh's dump is a derived, read-only artifact (stdout, never re-loaded — consumer is apps/cli/src/dump-config.ts:41 writing to stdout for a `diff`). Comments are cosmetic annotations on a throwaway. omp's config.yml is hand-edited, long-lived, and round-tripped on every write. dsh can afford comment-as-provenance because nothing rewrites the dump; omp cannot because something always rewrites the config.
+
+Default-to-refuted is also correct on the "no second format" clause: omp's `cfg://` protocol IS a second format, and it is load-bearing rather than redundant — `renderLeaf` emits `type:`, `default:`, `source:`, `values:`, `description:` fields that are not valid config keys, so they cannot live in a config file. dsh avoided a second format because it had no such display-only fields. That is a substrate difference, not an oversight.
+evidence: MEASURED / READ (absolute paths):
+
+DSH side:
+- C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/index.ts:495 — docstring: "Render the composed rows grouped under one source-and-patches comment per contiguous run." (contradicts "row-level")
+- index.ts:496-524 — `groupedDump`; :505 `lines.push(\`# == ${currentLabel}\`)` fires once per run change
+- index.ts:462-491 — provenance INFERRED: `snapshot(count)` re-runs `structuredClone` + `applyEntryPatches` once per layer; :484-488 diffs rows by `JSON.stringify(composed[index]) !== before[index]`
+- index.ts:458-461 — comment admitting `structuredClone` is required to avoid snapshot mutation aliasing
+- index.ts:409 — "Every run of rows ... is preceded by a `# ==` comment"
+- vendor/include/src/index.ts:57-74 — `applyEntryPatches(data: EntryOptions[], ...)`, `buildMap` keys rows by `entry.id` into `Map<string, EntryOptions>`; :79-87 `insert` nests under a group id
+- packages/boot/app-boot/tests/config-dump.spec.ts:101-115 — "groups contiguous rows with the same origin and patches under one separator"; two rows → `toHaveLength(1)`
+- config-dump.spec.ts:74-92 — loadability proven: `yaml.load(dump, {schema: entryListSchema})` deep-equals the mounted composition
+- apps/cli/src/dump-config.ts:41 — `process.stdout.write(renderConfigDump(...))`; output is never re-loaded by dsh
+- packages/boot/app-boot/README.md:217 — "Nothing promises byte stability across package versions; decide whether the dump becomes a serialization contract"
+- .agents/notes/archived/feature/2026-07-30-dsh-dump-config.md:32 — own cost admission: "proportional to layers² × rows"
+
+omp side:
+- packages/coding-agent/src/config/settings.ts:800-808 — `getProvenance`, structural walk of the layer chain
+- settings.ts:65-67 — `RawSettings` is a plain mapping, not a row array
+- settings.ts:785-793 — `isConfigured`; :776-779 documents null-as-unset (#13183)
+- settings.ts:1649 — `getModelRoleProvenance`
+- config/registry.ts:764-766 — `provenance(scope)` adds the `env` layer
+- config/settings.ts:3310 — `await handle.writeFile(stringifyYamlConfig(settings), "utf8")`
+- packages/utils/src/yaml-config.ts:6-8 — `stringifyYamlConfig` = `YAML.stringify(value, null, 2).replace(...)`
+- internal-urls/cfg-protocol.ts:66-73 — `PROVENANCE_LABELS`; :223-235 `renderLeaf` emits `source:`; :195-221 `renderTree`; :380-396 and :418-429 `shadowedBy` on save
+- test/config/settings-registry.test.ts:50,52,64,69,77,82,93,224,227,232,292 and test/config/settings-reload.test.ts:174,178,183 — provenance asserted per layer
+
+COMMAND RUN (comment destruction — the decisive measurement):
+`bun` script feeding `# == global config\nskills:\n  enabled: true # my note\ntui:\n  theme: dark\n` through `YAML.parse` → `YAML.stringify(parsed, null, 2)`:
+  input had  `# == global config` and  `enabled: true # my note`
+  output had neither — output was `skills: \n  enabled: true\ntui: \n  theme: dark`
+
+CHECKED FOR ABSENCE, WITH LOCATION (per rule 3): searched all of packages/ for `yaml-cst|preserveComment|keepComment|commentRange|Document.*comment` — single hit, packages/utils/src/dom/parser.ts:278, an HTML `document.createComment` call, unrelated to YAML. So no CST-preserving YAML machinery exists in the workspace; this is a targeted search of the code that reads/writes config, not a bare grep miss.
+
+UNVERIFIED: I did not audit whether dsh's `applyEntryPatches` merge semantics have some indirect analogue elsewhere in omp. The blocker is structural (mapping vs array) and rests on reading omp's merge path directly (settings.ts:781-808), not on an absence-of-grep inference.
+refuted: true
+
+
+
+## [v3]
+
+reason: Legal/provenance refutation FAILED. dsh is MIT end-to-end and the cited code is DeepSeek-original, so copying it into an MIT project is clean. Three measured chains: (1) LICENSE:1-3 = "MIT License, Copyright (c) 2026 DeepSeek"; (2) packages/boot/app-boot/package.json declares "license": "MIT" with publishConfig.access "public"; (3) the PUBLISHED artifact on npm — @deepseek-ai/dsh-app-boot, latest 0.1.0-rc.6, modified 2026-09-24 — reports license MIT, so the distributed bytes match the repo. Provenance: git blame -L 495,525 attributes every line of groupedDump to dsh-authored commits on 2026-07-31/2026-08-26 under packages/{ui,boot}/app-boot/src/index.ts, dsh's OWN package — not vendored; the file has zero Copyright/SPDX headers (grep 0 hits in packages/boot/app-boot/src/), so no inherited third-party notice is being laundered. Repo history is a clean publish (b67e81ac97 "Initialize repo…", then 72688a3888 "Vendor Cordis framework packages as source"), not a rewritten fork lineage, so there is no squashed-away prior-license claim. Dependency chain is fully permissive: groupedDump touches only js-yaml (MIT) and string ops; renderConfigDump additionally uses applyEntryPatches + entryListSchema from vendor/include, which is vendored @cordisjs/plugin-include — MIT, "Copyright (c) 2021-present Shigma" at vendor/include/LICENSE, notice preserved — and all 9 vendor/*/ dirs carry their upstream MIT LICENSE, with DeepSeek's own edits enumerated in vendor/README.md modification #11 (MIT permits modification with notice retention). dsh has NO CLA.md (contrast: omo has one) and CONTRIBUTING.md has zero license/CLA/copyright mentions; no use-restriction language in AGENTS.md/CONTRIBUTING.md/README.md. app-boot's dependency list contains no omo-derived package, so dsh's THIRD_PARTY_NOTICES.md entry for @earendil-works/pi-ai (listed MIT) does not contaminate this artifact. Independently, the idea itself is uncopyrightable — YAML comments are a language feature, so at worst only the ~28-line expression is protectable, and it is MIT. BORROW the code. Caveats below misstate the claim but do not block the copy.
+evidence: LICENSE (C:/Users/ADMIN/Projects/deepseek-harness/LICENSE):1-3 — "MIT License / Copyright (c) 2026 DeepSeek".
+packages/boot/app-boot/package.json — "license": "MIT", "publishConfig": {"access": "public"}, "repository.url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/boot/app-boot". Deps: @deepseek-ai/dsh-atomic-write, dsh-package-manifest, @eslint-community/regexpp, ajv, js-yaml, node-addon-require-builtin, resolve.exports, semver (no omo/pi-ai package).
+npm registry query https://registry.npmjs.org/@deepseek-ai%2Fdsh-app-boot → latest 0.1.0-rc.6, license MIT, time.modified 2026-09-24T14:04:37.481Z.
+packages/boot/app-boot/src/index.ts — no Copyright/SPDX header (grep over packages/boot/app-boot/src/ returned 0 matches).
+git blame -L 495,525 packages/boot/app-boot/src/index.ts → lines 496-524 authored by commit ce0aa90c1e1 (Turtle, 2026-07-31, then at packages/ui/app-boot/src/index.ts); 498 and 510 by 71d50b4a848 (2026-08-26); 511 by 9704749b013 (2026-08-09).
+git log --oneline --reverse | head -5 → b67e81ac97 "Initialize repo with README, AGENTS.md, and CLAUDE.md symlink" … 72688a3888 "Vendor Cordis framework packages as source". git remote -v → origin https://github.com/deepseek-ai/deepseek-harness.git.
+ls CLA.md → "No such file or directory" (no CLA in dsh).
+grep -in "licen|CLA|copyright" CONTRIBUTING.md → 0 matches. grep -rniE "no (use|reuse) of|may not (copy|reuse)|proprietary|internal use only" AGENTS.md CONTRIBUTING.md README.md → 0 matches.
+for d in vendor/*/ → all 9 (cordis, cosmokit, group, hmr, include, loader, logger-console, schemastery, timer) print "MIT License" from their LICENSE files. vendor/include/LICENSE:1-2 = "MIT License / Copyright (c) 2021-present Shigma".
+THIRD_PARTY_NOTICES.md:23-32 — vendored source table, all MIT, "each directory preserves its upstream LICENSE file".
+vendor/README.md "Local modifications" item 11 — records the DeepSeek-added exports applyEntryPatches(data, patches, warn) and entryListSchema, and states the extraction exists "so `dsh --dump-config` composes and prints exactly what the include would mount without booting a tree".
+vendor/include/src/index.ts:23 — export const entryListSchema = yaml.JSON_SCHEMA.extend(JsExpr); :57 — export function applyEntryPatches(...).
+apps/boot tests: packages/boot/app-boot/tests/config-dump.spec.ts — :74-80 "Comments do not break loadability: the dump parses as one document" then yaml.load(dump, {schema: entryListSchema}) and expect(parsed).toEqual([...]); :93 "Unevaluated: the expression text round-trips as a !!js scalar"; :103 test name "groups contiguous rows with the same origin and patches under one separator"; :114 expect(dump.match(/# == base\.yml/g)).toHaveLength(1); :143 and :172 re-parse the dump and assert patched values.
+CAVEAT 1 (mis-scoped citation): packages/boot/app-boot/src/index.ts:496-524 is only groupedDump, the renderer; it takes `entryOrigins: readonly {origin, patchedBy[]}[]` as a parameter and builds nothing. The provenance DERIVATION is lines 462-491 inside renderConfigDump (430-493) — the snapshot(count, warnings) closure, the JSON.stringify positional diff at 484-488, and entryOrigins seeding at 473. A copy of 497-523 alone is a no-op. Real borrowable unit ≈ 95 lines (430-524) of a 1066-line file.
+CAVEAT 2 ("row-level" overstates it): the mechanism is CONTIGUOUS-RUN-level, not row-level — one `# == label` comment per maximal run of adjacent rows sharing a label (flush() at 503-508, label comparison at 516-519). Proven by dsh's own test at config-dump.spec.ts:103 and :114. Additionally the derivation keys rows by top-level positional index (485-488), not stable id; the JSDoc at 412-416 explicitly admits the positional-differencing assumption ("a top-level index identifies one row across snapshots").
+CAVEAT 3 (round-trip only half portable): the comment trick is portable (plain YAML), but loadability depends on re-reading with entryListSchema (vendor/include/src/index.ts:23, a DeepSeek ADDED export extending JSON_SCHEMA with JsExpr); under stock js-yaml DEFAULT_SCHEMA the `!!js` tag is unknown. config-dump.spec.ts asserts loadability only with that schema (:76, :143, :172).
+CAVEAT 4 (checked, does not apply): THIRD_PARTY_NOTICES.md lists @earendil-works/pi-ai as MIT while the related oh-my-openagent project is SUL-1.0 (oh-my-openagent/LICENSE.md:16-24, package.json:164 "license": "SUL-1.0") — but that package is absent from app-boot's dependency graph (measured from its package.json), so this claim's artifact is untouched.
+CROSS-REPO: grep for "patched by|# == " across oh-my-openagent/packages/ found only 2 unrelated hits (a Python async skill doc `result = await handle  # == 6` and an AGENTS.md table) — the pattern does not already exist in omo.
+refuted: false
+
+
+
+## [v3]
+
+reason: The LEGAL/provenance refutation FAILS. dsh's atomic-write/src/index.ts is first-party MIT code, cleanly copyable into an MIT project (ultraworkers is itself MIT, Copyright 2025 Mario Zechner) with only the standard obligation to retain the DeepSeek copyright notice. The critical disambiguation: the SUL-1.0 non-sublicensable/non-commercial restriction belongs to omo, but this claim sources 100% from dsh (MIT) with no omo code involved — the restrictive license is not in play, and treating it as such would be a category error. Since "taking the CODE" IS clean, the instructed default (refuted=true) does not apply. CAVEAT — the claim is separately overstated on the technical axis: "solves ... PID-reuse races" is contradicted by the vendor's own README, which states a lock naming a reused PID is NOT taken over and later writers time out pending operator removal. The code closes only the narrow window where a PID is reused DURING the claim (test uses probeExited([EXITED_PID], 1) — absent once, present on re-probe). It converts a corruption race into an availability/orphan failure rather than solving it. The double-takeover half of the claim IS accurate and test-covered. Recommend restating as "prevents wrongly deleting a lock; leaves reused-PID locks to operator recovery" and flagging the orphan-lock operational cost to whoever ports it.
+evidence: LICENSE (verified, 21 lines): "MIT License / Copyright (c) 2026 DeepSeek" — vanilla MIT, no addendum. packages/util/atomic-write/package.json:14-15: "license": "MIT", "publishConfig": {"access": "public"}.
+
+PROVENANCE — git blame -L 149,177 packages/util/atomic-write/src/index.ts attributes every line of the takeover to a single in-house author: "7e7ba139fd5 (Turtle 2026-09-24 149)", "7e7ba139fd5 (Turtle 2026-09-24 152)", "1bd3df926d2 (Turtle 2026-09-24 162)". Commit 7e7ba139fd5191ec09e310f164661c90512a6289, Author: Turtle <turtle1999@deepseek.com>, "fix(atomic-write): take over a writer lock whose holder exited", touching src/index.ts (+110/-). No third-party authorship, no upstream import, no port.
+
+ZERO EXTERNAL DEPS — index.ts:14-16 are the only imports: node:crypto, node:fs/promises, node:path. Nothing vendored from the repo's vendor/ directory (which holds cordis/, cosmokit/, hmr/, etc., unrelated to locking).
+
+NO CLA / NO RESTRICTION — grep -ri "CLA|contributor license agreement|assignment of rights" CONTRIBUTING.md returned zero hits; none is required since the author is a DeepSeek employee and DeepSeek is the named copyright holder. grep -rin "may not be copied|internal use only|proprietary" packages/util/atomic-write/ returned zero hits. No per-file license header beyond the module docblock (index.ts:1-12).
+
+NO CONTAMINATION — THIRD_PARTY_NOTICES.md (288 lines) contains no entry for atomic-write or lock code; the single relevant line 151 concerns @anthropic-ai/claude-agent-sdk optionalDependencies, unrelated.
+
+CITED LINES ARE ACCURATE — index.ts:152 `const claim = \`${lockPath}.takeover-${createHash('sha256').update(record).digest('hex').slice(0, 16)}\`` and :162 `if (await readLockRecord(lockPath) !== record || !holderExited(record)) return false`. Double-takeover is real and test-covered: spec.ts:393 "leaves an exited holder's lock to the contender that claimed its record" and :406 "keeps a lock that another contender acquired while this one claimed the exited record" (asserts readdir === ['document.lock'], i.e. claim cleaned up).
+
+TECHNICAL OVERSTATEMENT (secondary) — packages/util/atomic-write/README.md:63: "A lock whose record is empty or incomplete, or names a PID that a live process reused, is not taken over; later writers time out, and an operator removes it only after verifying that no writer still owns it." README.md:127 "Known limitations": "Some orphaned locks require operator recovery — a lock whose record is empty or incomplete, or names a PID a live process reused, stays in place; later writers time out without deleting it." src/index.ts:222-224 "A holder whose PID a live process reused keeps its lock until an operator removes it." Test :357 "keeps a lock whose holder reused the exited PID while this contender claimed it" calls probeExited([EXITED_PID], 1) — absent exactly ONCE, so the first probe passes and the under-claim re-probe at :162 catches it. That is a narrow TOCTOU window, not a solution to PID reuse generally.
+
+LICENSES — ultraworkers (target) /LICENSE: "MIT License / Copyright (c) 2025 Mario Zechner". MIT→MIT, notice-retention only; repo has no THIRD_PARTY/NOTICE file, so a new attribution file would be needed.
+
+NO PRIOR EQUIVALENT IN omp — grep -rn "flag: *.wx.|proper-lockfile|process.kill(.*, 0)" packages/*/src returns 9 hits, all PID liveness probes in stream.ts:231, gc-cli.ts:1498, ps-data.ts:165, cli.ts:429, collab/registry.ts:597, launch/broker.ts:352, launch/presence.ts:84 plus two unrelated wx token writes (managed-skills.ts:195, auth-gateway-cli.ts:108). packages/coding-agent/src/commit/agentic/lock-files.ts is unrelated (hides package-manager lockfiles from the commit model, issue #4632). No cross-process writer lock with a claim protocol exists in omp.
+
+UNVERIFIED — whether the design is independent of any prior GPL implementation cannot be proven from the repo; however the record-hashed wx-claim construction matches no distinctive fingerprint of a known lock library (proper-lockfile is MIT and uses an mtime/heartbeat design instead), and the commit history shows continuous in-house evolution including a simplification away from hostname+nonce to PID-only (910711e6c1 "fix(atomic-write): keep the PID-only lock record").
+refuted: false
+
+
+
+## [v2]
+
+reason: REFUTED as a port, though TRUE in its home repo. Three independent measured reasons.
+
+(1) MECHANISM ALREADY EXISTS IN omp, TWICE, WITH TESTS. The "re-render through the real composer and compare the recomputed effective value" is already the shipped architecture. `Settings.writeValue` (config/settings.ts:818-838) mutates the global layer then calls `#rebuildMerged()` (:835), which re-runs the actual merge (`#mergeOwnLayers`/`#mergeOverParent`/`#deepMerge`, :3608-3660). Every `setting.get()` after a write therefore reads a genuinely recomputed effective value, not a table lookup. Two write paths already assert on it: `internal-urls/cfg-protocol.ts:243-259` (`shadowingLayer`), `:266-286` (`saveShadowingLayer`), and `cli/config-cli.ts:300-330` (`handleSet` → `globalValue()` + `provenance()` after `await settings.flush()`). Both are covered by existing tests (test/internal-urls/cfg-protocol.test.ts:189,222-234; test/config-cli.test.ts:233). Importing dsh's pattern adds zero mechanism.
+
+(2) THE PRESCRIPTION IS WRONG FOR omp AND ITS CLAUSE MISDESCRIBES THE CITED LINES. "Keep it as throw-before-write — do not convert it to write-then-rollback" is a non-sequitur: dsh's `edit()` ALREADY is write-then-rollback, at index.ts:130-137 — after `writeFileAtomic` it calls `reconcileProfilePatches(..., [entry.options.id])` and on failure restores `before` and re-reconciles `beforePatches`. The throw at :127-129 guards the *document*, not the reconcile. Worse, throw-before-write is a deliberate non-policy in omp: cfg-protocol.ts:419 says "Saving may still be meant for other projects, so ask anyway, but name the layer that wins here" — `/save` writes config.yml globally while the shadow is cwd-scoped, so refusing would block a legitimate, commonly-wanted write. omp's chosen answer is disclosure (`request.shadowedBy` at :427-429 in the approval prompt; `details.cfg.effective` at :380-395 in the result). And `SettingsHost.unset`'s own doc (packages/tui/src/overlays/settings-defs.ts:135-139) states the contract the throw would break: "A project or other layer, or an environment variable, that configures the setting still applies; otherwise the default does." The panel edits 512 registered settings; throwing whenever a project layer or env var owns one would fail ordinary edits in any configured project. `SettingsHost.set` returns `void` (:134) — there is no channel for a refusal.
+
+(3) THE RESIDUAL GAP IS A DIFFERENT, SMALLER FIX. The one true survivor is that omp's shadow *detection* is gated on a closed enumeration — `if (!above.includes(owner)) return undefined` (cfg-protocol.ts:250) over `getProvenance`'s if-chain (settings.ts:800-808: overrides → configOverlay → project → global → parent, plus env at registry.ts:765). The functional equality below the gate can only CLEAR an alarm, never raise one, so an unenumerated layer would hide a shadow. The claim is right about that shape. But the fix is to make the gate itself functional (compare recomputed-effective vs intent unconditionally; use provenance only to NAME the culprit), not to import dsh's throw. The concrete divergence it would catch: `rawValue` (:781-783) resolves path-scoped entries for cwd via `configuredValue` (settings.ts:437-440), while `isConfigured` (:790-793) and `getProvenance` (:800-808) use raw `getByPath` — two different questions for the 3 `pathScoped` settings (`enabledModels`, `enabledProviders`, `disabledProviders`; model-settings.ts:55/62/69).
+
+VERDICT: the pattern is already in omp, more completely than in dsh; the failure-mode prescription would regress a shipped, deliberately-chosen behavior; the one surviving idea is a ~15-line gate refactor plus disclosure in two UI write paths (config/settings-ui.ts:77 `set: (path, value) => resolve(path).set(settings, value)` and modes/components/extensions/dashboard-runtime.ts:30 `setDisabledExtensions: ids => cfgDisabledExtensions.set(settings, ids)`, neither of which reports a shadow) — using omp's own disclosure idiom, not a throw. BORROW (small, re-scoped): make the shadow gate functional so an unenumerated layer cannot hide a shadow, and surface the recomputed effective value in the settings panel + extensions dashboard write paths. DO-NOT-COPY: the hard pre-write throw on `/save` (breaks save-aimed-at-other-projects) and the "no write-then-rollback" clause (dsh already rolls back). REFERENCE: dsh's choice to compare the pre-waterfall `next`, not the `internal/config` waterfall's `resolved`.
+evidence: SCALE (measured): omp coding-agent/src has 512 `= register({` setting declarations (1 .test.ts in src); config/settings.ts 3798 lines, config/registry.ts 956. dsh config-editor/src/index.ts is 145 lines total; the cited check is 4 lines (126-129).
+
+SOURCE CLAIM IS TRUE IN dsh (I initially mis-read this, then corrected it): `readProfilePatches` (dsh packages/boot/app-boot/src/profile-context.ts:63-79) folds bundle layers + user layers + the re-parsed profile document + the home patch (`join(context.home, PROFILE_PATCH_FILENAME)`) + `context.overlays` (CLI). So `composeEntries([patches])` at config-editor/src/index.ts:126 IS a full-stack recomposition, and `composeEntries` (profile.ts:731-738) routes through the same `applyEntryPatches` the boot include uses. The error text at :128 ("overridden by a home patch or command-line overlay") is accurate.
+
+dsh nuance 1 — the compared intent is pre-waterfall: `next = change(current, inherited)` (:88); `fiber.ctx.waterfall(fiber, 'internal/config', next, () => next)` (:91) yields `resolved`, used only for `resolveConfig(...)` schema validation (:92); the write persists `next` (:115-116) and the equality compares `next` (:127). The one runtime layer that rewrites config is deliberately outside the assertion.
+
+dsh nuance 2 — write-then-rollback already present: index.ts:130-137 (`await writeFileAtomic(path, String(document), { mode: 0o600 })` then try/catch restoring `before` and `reconcileProfilePatches(..., beforePatches)`).
+
+omp already has a read-side group-shadow guard: `dropSettingsGroupShadows` (config/settings.ts:285-312), tested in test/settings-group-shadowing.test.ts (46 lines) — it drops foreign non-object leaves from capability-provided project settings that would deep-merge over an entire omp settings group.
+
+omp's layered store is 4 layer objects + env + overlay parent, merged by `#deepMerge` (settings.ts:3655+), precedence global → project → configOverlay → overrides (`#mergeOwnLayers`, :3624-3629). 512 settings, so the shadow surface is real and already instrumented.
+
+omp's existing shadow tests encode the contract as intended behavior, e.g. test/config/settings-registry.test.ts:235-240: a global write beneath a runtime override leaves `get()` at the override value, asserted as correct.
+
+Files read: C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/config-editor/src/index.ts; C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/profile-context.ts; C:/Users/ADMIN/Projects/deepseek-harness/packages/boot/app-boot/src/profile.ts; C:/Users/ADMIN/Documents/Projects/ultraworkers/packages/coding-agent/src/config/settings.ts; .../config/registry.ts; .../config/settings-ui.ts; .../config/resolve-config-value.ts; .../config/model-settings.ts; .../internal-urls/cfg-protocol.ts; .../cli/config-cli.ts; .../modes/components/extensions/dashboard-runtime.ts; .../mcp/config-writer.ts; C:/Users/ADMIN/Documents/Projects/ultraworkers/packages/tui/src/overlays/settings-defs.ts; .../settings-selector.ts; .../overlays/extensions/types.ts.
+
+UNVERIFIED: whether omp's `getProvenance` gate has ever been observed to miss a real shadow in production — I found the structural hole (closed enumeration; functional compare only clears) and the pathScoped divergence, but no failing test or bug report demonstrating a live miss. Also UNVERIFIED: whether an unenumerated layer has ever been added to `OwnLayers` without a `getProvenance` branch (omp's history is a single squashed publish commit ecd516f35b, so history cannot answer this).
+refuted: true
+
+
+
+## [v1]
+
+reason: The first half of the claim is exactly right; the second half — the load-bearing "omp already encodes this instinct" — is false, and the check cuts the opposite way from what the claim asserts. First half, verified line-by-line: `packages/util/atomic-write/src/index.ts:196` is literally `const DEFAULT_LOCK_WAIT_MS = 2_000`; `FileLockOptions.waitMs?: number` is at :199-209; it is consumed at :241 as `Date.now() + (options?.waitMs ?? DEFAULT_LOCK_WAIT_MS)`. Commit `26a8e6a555` ("feat(atomic-write): state the writer-lock wait limit per call") states the rationale verbatim: "How long a contender waits is a property of the operation the lock holder runs, not of the write protocol." `packages/boot/plugin-manager/src/index.ts:181` is literally `lockWaitMs: z.number().step(1).min(0).default(120000)`. The "holds across pnpm install" mechanism is confirmed: `index.ts:772` takes `withFileLock(join(this.profile.dir, 'package.json'), ...)`, which wraps `change()`, whose install body at :506 runs `await this.runPnpm(['add', spec, ...registryArguments(registry)])` inside a fallback-registry retry loop (:500-506), and `removeBundle` at :621 runs `runPnpm(['remove', name])`. But note the claim understates the pattern's reach: 7 of 12 `withFileLock` call sites state an explicit wait, not 2. `credentials-local/src/index.ts` sets `DOCUMENT_LOCK_WAIT_MS = 30_000` at :112 with an 11-line comment (:100-111) explaining it is sized by "a provider request"; it is passed at :697, :716, :771, :841. `apps/cli/src/plugin.ts:49` hardcodes `{ waitMs: 120000 }` for the same package.json lock. Only 5 sites keep the 2s default (app-boot/profile-compatibility.ts:126, config-editor:81, upload-index ×3). Where the claim is wrong is the omp half. omp's AGENTS.md:66 lists "timeouts" among hardening properties central versions carry, and :70 says "Extend the central helper (new option, new sub-function on the namespace) and call it — don't fork its logic locally" — but that rule's axis is *don't duplicate helpers*, not *size a bound to the operation it guards*. Grepping AGENTS.md for "sized|property of the operation|per-operation" returns one unrelated Rust profile line. More decisively, omp's central helper has exactly the deficiency dsh's commit fixed: `packages/utils/src/file-lock.ts` exposes `FileLockOptions { retries?, retryDelayMs?, signal? }` with `DEFAULT_OPTIONS = { retries: 50, retryDelayMs: 100 }` — a ~5s worst-case, retries-based bound with no time-based wait and no `waitMs` option. An omp caller holding the lock across a slow operation cannot give contenders a 2-minute budget except by hand-computing `retries`. So dsh is a fix for a gap omp still has, not a concrete instance of a rule omp already encodes. Tiers: BORROW the dsh pattern into `packages/utils/src/file-lock.ts` (add a `waitMs` with a documented default, and a deadline rather than a retry count) — measured gap, 6 call sites in omp consume the current helper. BORROW the `DOCUMENT_LOCK_WAIT_MS` comment style: naming what the number is sized against and why it is not a deployment tunable. REFERENCE the dead-holder takeover protocol (`takeOverExitedLock`, atomic-write:149-177) — sophisticated, but it is a different concern and omp's OS-native lock auto-releases on process exit, so it is largely inapplicable. DO-NOT-COPY the PID-record + takeover-by-signal design in general: dsh's own commit `1bd3df926d` documents three ways it let two writers overlap, including a Worker process shim that reported its own PID as absent.
+evidence: ds=C:/Users/ADMIN/Projects/deepseek-harness @ 21638c5631, omp=C:/Users/ADMIN/Documents/Projects/ultraworkers (oh-my-pi). CITATIONS THAT CHECK OUT EXACTLY: (1) packages/util/atomic-write/src/index.ts:196 `const DEFAULT_LOCK_WAIT_MS = 2_000`; :199-209 `export interface FileLockOptions { waitMs?: number }`; :241 `const deadline = Date.now() + (options?.waitMs ?? DEFAULT_LOCK_WAIT_MS)`; :257-259 throws `atomic-write: timed out waiting for the writer lock at ${lockPath}`. (2) packages/boot/plugin-manager/src/index.ts:181 `lockWaitMs: z.number().step(1).min(0).default(120000)`; :45 Config doc `/** Maximum time to wait for another process's profile package operation. */ lockWaitMs?: number`; :194,:212 `private readonly lockWaitMs` / `this.lockWaitMs = (config as Required<Config>).lockWaitMs`; :790 `}, { waitMs: this.lockWaitMs })`. (3) PNPM-HOLDS-LOCK PATH, measured: index.ts:772 `return withFileLock(join(this.profile.dir, 'package.json'), async () => {` -> :767-771 `private async change(operation, request, reason)` -> :470 `const result = this.change(async (result) => {` -> :506 `run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)` inside the `for (const [index, registry] of plan.entries())` loop at :500; also index.ts:621 `result.packageResult = await this.runPnpm(['remove', name])`. operations.ts:549-556 `runPluginCommand` wraps `runProfilePnpm` in the same lock with `options.lockWaitMs === undefined ? undefined : { waitMs: options.lockWaitMs }`. COMMIT `26a8e6a555` (2026-08-13) body: "How long a contender waits is a property of the operation the lock holder runs, not of the write protocol... withFileLock takes an optional waitMs; the retry cadence stays fixed... Every existing call site keeps the default." SCALE, measured: 12 non-test `withFileLock(` call sites; 7 pass an explicit wait. Grep-verified pairs: credentials-local 4/4 (`:697`,`:716`,`:771`,`:841`, all `{ waitMs: DOCUMENT_LOCK_WAIT_MS }`, constant defined at :112 `= 30_000` after the comment block :100-111 "A contender's wait is sized by the longest holder it can meet, and refs and records share one file and one lock, so every writer of this document... waits this long, not only the mutation that holds it"); apps/cli/plugin.ts:49 `}, { waitMs: 120000 })`; plugin-manager index.ts:790 and operations.ts:556. Default-2s sites: app-boot/src/profile-compatibility.ts:126, config-editor/src/index.ts:81, llm-deepseek/src/upload-index.ts:174/:203/:218 (0 `waitMs` mentions in each file). WHERE THE CLAIM IS WRONG: (a) omp AGENTS.md:66 (Central Utilities) reads "The central versions carry hardening a fresh copy always loses (timeouts, output caps, non-interactive env, lock avoidance, caching, TUI sanitization)" and :70 "Missing capability? Extend the central helper (new option, new sub-function on the namespace) and call it - don't fork its logic locally." Neither states the operation-sized-bound rule; the rule is about deduplication, not about parameterizing timeouts. `grep -n "sized|property of the operation|per-operation" AGENTS.md` -> one hit, line 278, about the Rust `profiling` profile and `split-debunfo`. (b) omp's central helper C:\Users\ADMIN\Documents\Projects\ultraworkers\packages\utils\src\file-lock.ts:11-18 `export interface FileLockOptions { retries?: number; retryDelayMs?: number; signal?: AbortSignal }` and :25-28 `const DEFAULT_OPTIONS = { retries: 50, retryDelayMs: 100 }`; :52-55 loops `for (let attempt = 0; attempt < opts.retries; attempt++)` and :57 `throw new Error(\`Failed to acquire lock for ${filePath} after ${opts.retries} attempts\`)`. There is no `waitMs`/`timeoutMs` and no deadline - the wait budget is a retry count, so a caller holding the lock across a slow operation cannot raise it except by hand-computing retries. (c) omp consumes that helper at coding-agent/src/cli/update-cli.ts:1920 and :2013, coding-agent/src/config/settings.ts:2051, coding-agent/src/eval/js/package-installer.ts:141, coding-agent/src/mcp/config-writer.ts:34. Corroborating dsh history: `1bd3df926d` "fix(plugin-manager): wait for a pnpm run its exited operation left behind".
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED — the port is a no-op, and the specific mechanism dsh contributes is the weaker one.
+
+**dsh side of the claim is accurate** (I verified every cited line). But the pattern it describes is *already implemented in omp's central helper*, on all four lock entry points, with an explicit named default and per-operation overrides already in production and test use. There is nothing to port.
+
+1. **omp already has the pattern.** `packages/utils/src/file-lock.ts:12-19` defines `FileLockOptions { retries?, retryDelayMs?, signal? }`; `:26-29` is `DEFAULT_OPTIONS = { retries: 50, retryDelayMs: 100 }` (~5s); all four entry points take it — `acquireFileLock:41`, `acquireLockSync:55`, `withFileLock:70`, `withFileLockSync:84`. Overrides are already used at different budgets: `security/store.ts:37` `{retries:200, retryDelayMs:50}` (10s), and tested at `file-lock.test.ts:41-43` `{signal, retries:100, retryDelayMs:1000}` — a **100s** budget, same shape and magnitude as dsh's 120s plugin-manager default. The "explicit default + per-operation override" contract is already tested, not aspirational.
+
+2. **omp's version is strictly more expressive than `waitMs`.** It has `signal?: AbortSignal`, honored per-attempt at `:46` and via `scheduler.wait(delay, {signal})` at `:49` — a contender can abandon a wait, which dsh's `waitMs` cannot do. Its lock is OS-backed and process-owned with auto-release on exit (`:3-6`: Linux abstract sockets, Windows named mutexes, `flock` elsewhere); dsh's is a `wx` sentinel file whose own doc concedes "A holder whose PID a live process reused keeps its lock until an operator removes it" and that cross-host/PID-namespace writers "could both hold the lock" (atomic-write `:222-231`). omp also has a sync variant; dsh's is async-only.
+
+3. **`waitMs` is the *worse* expression of the knob.** dsh bounds by a wall-clock deadline read from `Date.now()` (atomic-write `:241`, `:260`), so an NTP step — or a laptop suspending mid-`pnpm install` — expires the deadline while the holder is perfectly healthy. omp's attempt count is immune to that. Copying `waitMs` trades a robust bound for a fragile one.
+
+4. **The AGENTS.md justification is a misquote.** `AGENTS.md:66` lists "lock avoidance" among the hardenings, not lock timeouts. Its concrete instances are `extensibility/plugins/bun-git-cache.ts:49` (refresh Bun's cached bare clone *before* an update, to avoid *taking* the shared cache lock) and `custom-commands/bundled/review/diff.ts:19-28` (ignore `*.lock`/`pnpm-lock.yaml`/etc. in diffs). The claim reads "lock avoidance" as "lock timeout configurability" — a different concern.
+
+5. **The motivating instance doesn't exist in the dir the task names.** dsh's plugin-manager holds a lock across `pnpm install` (verified: `index.ts:181` default 120000, threaded to `withFileLock(..., {waitMs})` at `:790` and `operations.ts:556`; it really does spawn pnpm at `index.ts:665`, `operations.ts:177/357/507`). omp's counterpart, `extensibility/plugins/installer.ts:33-89`, runs `bun install` with **no lock at all** — it delegates entirely to bun's own directory locking; `manager.ts` has none either (its hits are `omp-plugins.lock.json`/`bun.lock` *lockfiles*). I enumerated all 16 `withFileLock`/`acquireFileLock` call sites in `coding-agent/src` — **zero in `extensibility/`**. So there is no plugin-manager-shaped lock there to make per-operation.
+
+**DO-NOT-COPY** the `waitMs` knob. **BORROW** — but discovered by reading omp, not by porting: `eval/js/package-installer.ts:141` holds `withFileLock(lockPath, …)` across a full network `bun add` (`:150-153`) passing **no options**, so it takes the ~5s default — while `executor.ts:79` allows that install `JS_PACKAGE_INSTALL_TIMEOUT_MS = 10*60_000` (600s), a ~120× looser budget. `executor.ts:117-122` already computes the right object (`packageSignal = AbortSignal.any([options.signal, AbortSignal.timeout(600_000)])`) and threads it into the inner work; it is simply never forwarded to the lock *acquisition*. That is a real bug of exactly the class dsh's 120s default prevents — and the fix is one line using machinery omp already has: pass `{ signal: options.signal }` at `package-installer.ts:141`. Adding a `waitMs` knob would not fix it, and would be redundant with the `signal` that already exists.
+evidence: dsh (claim's side, VERIFIED):
+- `packages/util/atomic-write/src/index.ts:196` — `const DEFAULT_LOCK_WAIT_MS = 2_000`; used at `:241` `const deadline = Date.now() + (options?.waitMs ?? DEFAULT_LOCK_WAIT_MS)`; option declared `:198-211`. Doc `:188-195`: "How long is *worth* waiting is a property of the operation the lock holder runs, which is why {@link FileLockOptions.waitMs} exists."
+- `packages/boot/plugin-manager/src/index.ts:181` — `lockWaitMs: z.number().step(1).min(0).default(120000),` in `PluginManager.Config`; threaded to `withFileLock(..., { waitMs: this.lockWaitMs })` at `index.ts:790` and `operations.ts:556`. pnpm is real: `index.ts:179,665`; `operations.ts:177,357,507`.
+- dsh doc concedes weaknesses omp lacks (atomic-write `:222-231`): "A holder whose PID a live process reused keeps its lock until an operator removes it"; "writers on other hosts or in other PID namespaces sharing the file are unsupported and could both hold the lock."
+
+omp (target, MEASURED):
+- `packages/utils/src/file-lock.ts:12-19` — `FileLockOptions { retries?: number; retryDelayMs?: number; signal?: AbortSignal }` (per-operation).
+- `packages/utils/src/file-lock.ts:26-29` — `const DEFAULT_OPTIONS = { retries: 50, retryDelayMs: 100 };` (explicit default; 49 sleeps x 100ms = ~4.9s).
+- `packages/utils/src/file-lock.ts:41,55,70,84` — options threaded through `acquireFileLock`, `acquireLockSync`, `withFileLock`, `withFileLockSync`; abort honored at `:46` (`opts.signal?.throwIfAborted()`) and `:49` (`scheduler.wait(opts.retryDelayMs, { signal: opts.signal })`).
+- `packages/utils/src/file-lock.ts:3-6` — "The native handle is process-owned and automatically released on exit: Linux uses abstract Unix sockets, Windows uses named mutexes, and other Unix platforms use `flock(2)`".
+- `packages/coding-agent/src/security/store.ts:37` — production override `{ retries: 200, retryDelayMs: 50 }` (10s) on a read/modify/write transaction.
+- `packages/utils/test/file-lock.test.ts:41-43` — `{ signal: controller.signal, retries: 100, retryDelayMs: 1000 }` (100s) with abort assertions; `:145` — `{ retries: 500, retryDelayMs: 5 }` (2.5s) under a 500-way contention stress test.
+- `AGENTS.md:66` — exact text ends "...(timeouts, output caps, non-interactive env, **lock avoidance**, caching, TUI sanitization)." Instances of "lock avoidance": `extensibility/plugins/bun-git-cache.ts:49` ("Fetches current heads and tags into Bun's matching cached bare clone before a plugin update"); `extensibility/custom-commands/bundled/review/diff.ts:19-28` (ignores `.lock`, `package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, ...).
+- No lock in extensibility: whole-tree grep of `withFileLock(|withFileLockSync(|acquireFileLock(` over `packages/coding-agent/src/` returns 16 call sites (update-cli x2, settings, eval/js/package-installer, ida/host, mcp/config-writer, predict/daemon, predict/smollm-weights, security/store, session/agent-session x2, session/btw-history, session/session-pins, session/session-storage, sharpshooter/consolidate, tiny/mlx-runtime, tiny/worker-server) — **none under extensibility/**. `extensibility/plugins/installer.ts:33-89` `installPlugin` spawns `bun install` with no lock wrapper.
+- The real defect: `packages/coding-agent/src/eval/js/package-installer.ts:141` `await withFileLock(lockPath, async () => {` — no options arg, so ~5s default; inside it `:150-153` `ptree.exec([..., "add", "--cwd", environment.root, "--ignore-scripts", ...packages], ...)`, a full network install. `packages/coding-agent/src/eval/js/executor.ts:79` — `const JS_PACKAGE_INSTALL_TIMEOUT_MS = 10 * 60_000;` and `:117-122` `AbortSignal.any([options.signal, AbortSignal.timeout(JS_PACKAGE_INSTALL_TIMEOUT_MS)])` passed as `installOptions.signal` (`:132`), never forwarded to the lock.
+
+UNVERIFIED: whether the eval-install contention is hit in production (I traced the call path to `eval/js/executor.ts:137-138` but did not observe a real concurrent-acquisition failure). The 120x budget mismatch itself is measured from source.
+refuted: true
+
+
+
+## [v1]
+
+reason: Split verdict; the second half is refuted, the first holds.\n\nACCURATE: the claim file is genuinely SHA-256'd on the lock record at :152, and :162 is the re-read/re-probe half of the same mechanism. The double-takeover protection is real and load-bearing, not decorative: without the `wx` claim, two contenders can both clear the :162 re-read while the dead record is still in the lock, then A removes and re-creates the lock while B's `rm(lockPath, {force:true})` at :164 lands afterwards — deleting a live holder's lock and admitting a third writer. The `wx` claim admits only one of them to :164. The \"naive reapers get this wrong\" framing is fair; a single-probe or mtime-expiry reaper has exactly that window.\n\nREFUTED — \"solves PID-reuse races\" is wrong twice over:\n\n1. It does not solve PID reuse; it declines to take over in the live-reuse case. Test :357 (\"keeps a lock whose holder reused the exited PID while this contender claimed it\") proves the conservative outcome, not a solve.\n\n2. In the dead-reuse case it INVERTS into a permanent-wedge bug. The hash has no lock-generation component: `record` is just `\"<pid>\\n\"` (:113), so two lock generations carrying the same PID produce the IDENTICAL claim name. The claim is removed in a `finally` at :172 whose error is swallowed (:172-175), and grep shows no sweeper of `.takeover-*` anywhere in the repo (only :152 and tests mention it). A leaked claim therefore permanently blocks takeover of any future lock with the same record bytes. I ran the real module: probe A left `document.lock.takeover-6f2264250160ee91` on disk; probe B then showed a same-record lock was never acquirable — `acquired = false`, `atomic-write: timed out waiting for the writer lock`, lock still holding `2000000000`. The code's own comment at :173 — \"A claim left behind names a record that is no longer the lock, so it blocks no later takeover\" — is factually wrong under PID reuse, which is the exact case the claim was introduced for. The repo's test at :445 exercises the leaked-claim path but only asserts the operation still runs; it never asserts the claim is reclaimed, so the hole is untested.\n\n3. The leak path is not exotic. The file itself treats rm-failure on Windows as routine (:165-168, \"Windows can refuse the removal while other software briefly holds the file\"), and a crash between the claim create (:154) and the finally (:172) leaks one with no failure at all. The suite's own comment at :280 notes \"Windows reissues an exited PID almost at once\" and runs the real probe on POSIX only — so the platform where PID reuse is most likely is the one where the leak is most likely.\n\n4. Blast radius is a wedge, not corruption: a permanently unreclaimable lock makes every writer of that file time out at :258 until an operator deletes it by hand. And the \"harness solves stale locks\" framing is not a uniform house style — the same repo's harder ownership case uses a kernel arbiter with no takeover, no PID probe, and no orphan class at all.\n\nThe module doc is also more careful than the claim: :223-229 states takeover \"proves only that the recorded process exited\", that a live-but-PID-reused holder keeps its lock until an operator removes it, and that cross-host/PID-namespace writers are unsupported. \"Solves\" is a strong word against the file's own hedge.\n\nDO-NOT-COPY: the claim-name scheme (hash of PID-only record) — the generation collision is a real availability defect. BORROW: the record re-read + re-probe under an exclusive claim, which is the correct pattern for double-takeover.
+evidence: Read C:/Users/ADMIN/Projects/deepseek-harness/packages/util/atomic-write/src/index.ts (269 lines) and its 483-line test suite.\n\nKey lines:\n- :152 `const claim = \`${lockPath}.takeover-${createHash('sha256').update(record).digest('hex').slice(0,16)}\`` — hash input is `record`\n- :113 `if (!/^\\d+\\n$/.test(record)) return false` — record is just `\"<pid>\\n\"`, no generation/token component\n- :154 claim created with `flag: 'wx'`, `mode: 0o600`\n- :158 `if (code === 'EEXIST' || code === 'EPERM') return false` — a leftover claim makes every later contender bail\n- :162 `if (await readLockRecord(lockPath) !== record || !holderExited(record)) return false`\n- :164 `await rm(lockPath, { force: true })` — force makes a stale claimer's rm able to delete a successor's live lock\n- :165-168 comment: \"Windows can refuse the removal while other software briefly holds the file\"\n- :171-176 `finally { await rm(claim, {force:true}).catch(...void error) }` — removal error swallowed, claim orphaned\n- :173 comment: \"A claim left behind names a record that is no longer the lock, so it blocks no later takeover\" — contradicted under PID reuse\n- :258 `throw new Error(\`atomic-write: timed out waiting for the writer lock at ${lockPath}\`)`\n- :223-229 doc: takeover \"proves only that the recorded process exited\"; cross-host/PID-namespace writers \"unsupported and could both hold the lock\"\n\nEmpirical probe (real module, vitest, probe files created then deleted; repo left clean):\n```\nPROBE-A dir after takeover with failed claim removal: [ 'document.lock.takeover-6f2264250160ee91' ]\nPROBE-B dir before gen2 takeover attempt: [ 'document.lock', 'document.lock.takeover-6f2264250160ee91' ]\nPROBE-B threw: atomic-write: timed out waiting for the writer lock at ...\\probe-Ixg7XW\\document.lock\nPROBE-B acquired gen2 lock = false | lock content = 2000000000\n```\nBoth probe assertions FAILED as designed (i.e. the bug is real), not because of a harness error.\n\nRepo's own tests defending the mechanism: atomic-write.spec.ts:357 (live PID reuse, keeps lock), :393 (claim contention), :406 (successor lock kept, asserts `readdir(dir) === ['document.lock']` — no orphan), :445 (claim removal fails → operation still runs; does NOT assert the orphan is reclaimed). Tests :280, :90 note \"Windows reissues an exited PID almost at once\" and gate the real probe to POSIX.\n\nGrep for a stale-claim sweeper — only 5 hits, all creation-site or tests, no GC:\n```\npackages/util/atomic-write/src/index.ts:152 (create)\npackages/util/atomic-write/tests/atomic-write.spec.ts:35,44,399 (tests)\n```\n\nContrast implementation in the same repo — packages/session/session-persistence-jsonl/src/lease.ts:1-27 and :90-116: kernel arbiter (POSIX flock(2) via node-addon-system, Win32 named semaphore), \"there is deliberately no expiry that could expropriate a stalled writer\" (:11-13), plus an inode re-verification loop (:104). No PID probe, no claim file, no orphan class.\n\nReal callers exposed to the wedge: packages/credentials/credentials-local/src/index.ts:676,708,754,824; packages/boot/plugin-manager/src/operations.ts:549 and index.ts:772 (all on package.json); packages/boot/config-editor/src/index.ts:81; packages/boot/app-boot/src/profile-compatibility.ts:126; packages/llm/llm-deepseek/src/upload-index.ts:174.
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED on three independent grounds. The claim mis-describes its own source, and omp already has a categorically stronger mechanism that makes the pattern's target failure modes unrepresentable.
+
+(1) PID-reuse is NOT solved — dsh's own README says the opposite. `packages/util/atomic-write/README.md:127` (THEIR CLAIM, but against the claim under audit): "a lock whose record is empty or incomplete, or **names a PID a live process reused, stays in place; later writers time out without deleting it**" and the operator deletes files by hand. The test `tests/atomic-write.spec.ts:357` ("keeps a lock whose holder reused the exited PID while this contender claimed it") *asserts* `rejects.toThrow(/timed out waiting for the writer lock/)` — PID reuse yields permanent liveness loss, the opposite of "solves". The claim file is keyed on `sha256(record)` where record is only `<pid>\n` (index.ts:152), so it cannot distinguish "same dead pid" from "pid 123 recycled" — it contributes nothing to PID reuse. What prevents an *unsafe* steal is the second probe at index.ts:162, not the claim file.
+
+(2) omp has no stale-lock reaper for the OS-backed lock, so there is nothing to fix. `packages/utils/src/file-lock.ts:1-6` + `crates/pi-natives/src/file_lock/`: Linux binds an abstract Unix socket (linux.rs:14-22, kernel arbitrates, zero filesystem artifact), Windows uses `CreateMutexW` with `ERROR_ALREADY_EXISTS` as the lease test (windows.rs:17-45), other Unix uses `flock(2)` on the open file description (unix.rs:23), released on fd close. There is no PID in the record because there is no record → PID reuse is not representable. There is no `rm(lockPath)` reaper step → double-takeover is not representable. MEASURED on this win32 box with the exact primitive omp uses: live holder → contender refused (`False`); SIGKILL the holder → next acquire succeeds immediately (`True`), no reaper, no probe, no claim, no backoff.
+
+(3) The ONE place omp does have a PID lockfile reaper is already fenced by that OS gate. `packages/coding-agent/src/session/session-storage.ts:419-446` `#withPublishLock` acquires the native gate first and releases it last — its own doc: "The OS gate is acquired first and released last, so the lockfile claim below only ever runs while this process provably owns the name." So two omp processes can never be inside `#stealStalePublishLock` (:548) simultaneously; the exact race the claim file closes is already closed by the kernel. omp's reaper also already has the re-read-before-remove identity check (:567) and fails closed on PID probing (`isPidAlive`, :386-393 — anything not a proven `ESRCH` counts as alive).
+
+Tiers — BORROW: nothing from the claim file. REFERENCE: dsh README.md:86 as a clear write-up of a PID-lock protocol's reasoning and limits; `WriteFileAtomicOptions.mode` being required at every call site (index.ts:49-61) as a design worth stealing in a settings-writer audit. DO-NOT-COPY: the `.lock.takeover-<hash>` claim file.
+evidence: MEASURED (win32, the primitive omp uses — .NET/Win32 named mutex == CreateMutexW):
+  owner holds mutex -> contender probe: acquired_after_kill=False   (correct exclusion)
+  kill -9 the owner  -> contender probe: acquired_after_kill=True    (immediate, no reaper/probe/claim/backoff)
+
+DSH SOURCE (all read in full; file is 268 lines):
+  atomic-write/src/index.ts:152  claim = `${lockPath}.takeover-${sha256(record).slice(0,16)}`  (record is only `<pid>\n`)
+  atomic-write/src/index.ts:154  writeFile(claim, pid, {flag:'wx'})   -- the only mutual exclusion the claim adds
+  atomic-write/src/index.ts:162  if (await readLockRecord(lockPath) !== record || !holderExited(record)) return false  <- the SECOND probe is what handles pid reuse, not the claim
+  atomic-write/src/index.ts:173-175 comment "A claim left behind ... blocks no later takeover"  <- contradicted by their own README:127
+  atomic-write/src/index.ts:224  "A holder whose PID a live process reused keeps its lock until an operator removes it"
+  atomic-write/src/index.ts:74   "Crash durability (fsync) is out of scope"  (+ TODO at :84-85)
+  atomic-write/README.md:127     "names a PID a live process reused, stays in place; later writers time out without deleting it ... the operator removes both"
+  atomic-write/tests/atomic-write.spec.ts:357-372  asserts rejects.toThrow(/timed out/) on the pid-reuse case
+  atomic-write/tests/atomic-write.spec.ts:19-59    whole suite runs through vi.mock('node:fs/promises') with injected afterClaim/claimFailure/claimRemovalFails -- no test exercises a real concurrent race
+  rg 'takeover' across all of dsh (excl node_modules): 30 hits, ZERO sweeper; only spec mocks + README text
+
+OMP COUNTERPART:
+  packages/utils/src/file-lock.ts:1-6,41-53,70-81  (100 lines total, TS)
+  crates/pi-natives/src/file_lock/{mod.rs:1-6,44-46,110-116, linux.rs:14-30, unix.rs:12-32, windows.rs:17-53}  (269 lines Rust, 4 files)
+  packages/utils/test/file-lock.test.ts:58  "process death hands ownership to B while excluding C" (real Bun.spawn + holder.kill(), i.e. SIGKILL)
+  packages/utils/test/file-lock.test.ts:100 "a former owner's late release cannot unlock its successor"  <- structurally impossible in dsh, since dsh's release is rm(lockPath) and CAN delete a successor's lock
+  packages/utils/test/file-lock.test.ts:124 "serializes N concurrent writers without lost updates" (N=30)
+  mod.rs:98-106 release() is idempotent via inner.take(); Drop at :110-116 releases on exit
+
+OMP PID-LOCKFILE SITES (already fenced):
+  session/session-storage.ts:419-446  #withPublishLock -- gate first / released last
+  session/session-storage.ts:455-466  #acquireOsPublishLock (NativeFileLock on `<lock>.os`)
+  session/session-storage.ts:447-451  doc: gate's flock sidecar is deliberately NEVER unlinked (names the exact unlink-vs-successor race class)
+  session/session-storage.ts:548-575  #stealStalePublishLock -- re-read identity check at :567
+  session/session-storage.ts:386-393  isPidAlive fails closed: hasFsCode(err,"EPERM") || !hasFsCode(err,"ESRCH")
+  session/session-storage.ts:366-367  SESSION_PUBLISH_LOCK_WAIT_MS=500, POLL_MS=2
+  cli/gc-cli.ts:1566-1610  removeStaleGcLock + openGcBreakerLock (same shape, breaker lock)
+
+DSH'S ACTUAL USE CASE, ALREADY COVERED IN OMP:
+  coding-agent/src/config/settings.ts:2049-2051  #withYamlWriteLock -> withFileLock(writePath, ...) (OS-backed)
+  coding-agent/src/config/settings.ts:3305-3318  open(tempPath,"wx",0o600) + handle.writeFile + handle.sync()  <- omp fsyncs; dsh explicitly does not
+
+SCALE:
+  omp: ~20 withFileLock/acquireFileLock call sites in packages/*/src (excl. tests + 2 export defs); 9 named, incl. settings.ts, update-cli.ts x2, runtime-install.ts, browsers.ts, worker-server.ts, mlx-runtime.ts, package-installer.ts, sqlite.ts
+  dsh: 12 withFileLock call sites; atomic-write = 268 lines src + 483 lines vitest
+
+DOCTRINE-3 CHECK (location named, not just "0 hits"): the task pointed at packages/coding-agent/src/extensibility/ -- 68 .ts files; searching `lock` | `\bpid\b` | `process\.kill` there returns only the English word "block" (shared-events.ts:312-470) and a `deadlock` comment (hooks/types.ts:180,207). That directory has no cross-process locking concern at all.
+refuted: true
+
+
+
+## [v1]
+
+reason: OVERSTATED, and it only holds in a narrow case. The claim's *mechanism* is exactly right, but its *conclusion* — "so package code cannot obtain another tool's execute function and bypass dispatch policy" — is false, because the guard only covers the plugin-`apply` façade surface. A second surface hands the sandbox the very thing the guard denies.
+
+MECHANISM (accurate, verified):
+- guard.ts:640-655 — `sandboxTools()` returns `{register, schemas, get}`; `get` is `ctx.tools.schemas(scopeOf(ctx)).find(s => s.name === name)`.
+- Real `ToolRuntime.get` (packages/core/tools/src/index.ts:1230-1232) returns the LIVE `ToolDefinition`; `schemas()` (:1260-1262) -> `schemaOf` (:1277-1288) projects only `{name, description, parameters, deferLoading?}` with deep-cloned parameters. No `execute`. Confirmed.
+- `denyContext` (guard.ts:669-678) and `guardedService` (:685-697) sit at exactly the cited lines. The prose comment at :642-646 makes the same claim.
+- The repo pins it itself at tests/sandbox-context.spec.ts:209-241. I ran the suite: 24/24 in that file, 91/91 in the package.
+
+WHY THE CONCLUSION FAILS (measured, not inferred):
+The `exec` second argument passed to a sandbox-defined tool's `execute` is forwarded verbatim, and it carries a real cordis `Context`:
+- guard.ts:582-584 — `async execute(args, exec) { return cloneJson(await rawExecute(args, exec), ...) }`. No scrubbing, no proxying of `exec`.
+- packages/core/tools/src/index.ts:1581 — `tool.execute(exec.arguments, exec)`; `createExecution` at :1417 does `...agent !== undefined ? { agent } : {}`.
+- packages/core/agent-loop/src/tool-calls.ts:73 — every model-planned call sets `agent`.
+- packages/core/agent-loop/src/agent.ts:105,131 — `readonly ctx: Context; ... this.ctx = this.scope.ctx`.
+- packages/core/scope/src/index.ts:137-143 — `createScope` builds that ctx from `fiber.ctx.extend(...)`.
+
+I ran four throwaway vitest probes against the real vm sandbox + real registry, then deleted them (`git status --porcelain` empty; 91/91 still pass). Results:
+- With a root-shaped `agent.ctx`, the tool body read a live definition: `liveHasExecute: true, liveKeys: [description, execute, name, output, parameters]`.
+- With the production `createScope()` shape, `agent.ctx.tools` throws cordis's own `cannot get property "tools" without inject` — but `agent.ctx.root` IS reachable.
+- Through that root: `exec.agent.ctx.root.tools.get('victim_tool')` gave `liveHasExecute: true`, and CALLING `live.execute(...)` actually ran the victim tool — my probe reported `victimExecuted: true`. That is a direct tool invocation with no `ToolRuntime.execute` pipeline: no identity protection, pre-policy, approval, monotonic guards, post-policy, or result normalization — precisely the six-stage list the comment at guard.ts:644-645 names as the thing being protected.
+
+SECONDARY NARROWNESS in "deny a service from EVER returning a Context":
+- `guardedService` (guard.ts:686-696) defines only a `get` trap. `readService` (:742) explicitly admits function-valued services, so calling one directly hits the target's `[[Call]]` with no `apply` trap — the return value never reaches `denyContext`. Probe 2 confirmed the Context leaked; it was only stopped later by cordis's own reflect guard (vendor/cordis/src/reflect.ts:144) when `.tools` was read, i.e. by a different mechanism, not this one.
+- The guard is shallow: a service method returning `{inner: ctx}` is not denied (same probe).
+- CTX_VERBS returns (guard.ts:761-765) are not passed through `denyContext` either. Low risk — `ctx.effect(execute: () => Effect)` (vendor/cordis/src/fiber.ts:418) takes no arguments, so no fiber leak there. UNVERIFIED-but-implemented.
+- `readService` special-cases only the literal name `tools` (guard.ts:739). A registry handle republished under another service name would flow through `guardedService` as an object (not a Context) and yield a live definition. UNVERIFIED — I found no such provider in the repo.
+
+NARROW, DEFENSIBLE RESTATEMENT: at plugin-apply time, the ctx facade's `tools.get` is a schema-only view and declared-service reads are Context-guarded. It says nothing about the tool-execution thread.
+
+TIER: the idea is BORROW (capability-shaped facade, schema-only view, fail-loud on a Context return, marker-guarded registration). The implementation as shipped is REFERENCE, not copyable — reproducing it in omp would import a hole: a tool's `exec` argument is an unguarded runtime handle. If omp adopts the pattern, scrub `exec` before handing it to untrusted tool code.
+evidence: CONFIRMED MECHANISM (code read, not docs):
+- packages/extensions/cordis-host-runner/src/guard.ts:648-655 — `get: (name) => ctx.tools.schemas(scopeOf(ctx)).find(schema => schema.name === name)`
+- packages/core/tools/src/index.ts:1230-1232 — real `get(name, scope): ToolDefinition | undefined { return this.view(scope).visible.get(name) }`
+- packages/core/tools/src/index.ts:1260-1262 + 1277-1288 — `schemas()` -> `schemaOf` returns only `{name, description, parameters, deferLoading?}`; `detachParameters` deep-clones
+- packages/extensions/cordis-host-runner/src/guard.ts:669-678 `denyContext`, :685-697 `guardedService` (get trap only; no apply trap), :742 admits function-valued services, :761-765 CTX_VERBS returns unguarded
+- packages/extensions/cordis-host-runner/src/guard.ts:582-584 — `async execute(args, exec) { return cloneJson(await rawExecute(args, exec), 'harness.defineTool execute result') }` (exec forwarded verbatim)
+- packages/core/tools/src/index.ts:1581 `tool.execute(exec.arguments, exec)`; :1417 `...agent !== undefined ? { agent } : {}`
+- packages/core/agent-loop/src/tool-calls.ts:73 `agent,` on every planned call
+- packages/core/agent-loop/src/agent.ts:105 `readonly ctx: Context`; :131 `this.ctx = this.scope.ctx`
+- packages/core/scope/src/index.ts:137-143 `createScope` -> `fiber.ctx.extend({ [kScope]: key })`
+- packages/core/tools/src/index.ts:849 `super(ctx, 'tools')` (ToolRuntime is the `tools` service)
+- vendor/cordis/src/fiber.ts:418 `effect(execute: () => Effect, ...)` — no fiber arg
+- vendor/cordis/src/reflect.ts:144 `cannot get property "${prop}" without inject`
+
+MEASURED (4 temp vitest specs, run then deleted; `git status --porcelain` empty afterward; package suite 91/91 passing):
+- `npx vitest run packages/extensions/cordis-host-runner/tests/sandbox-context.spec.ts` -> Tests 24 passed (24)
+- Probe 1 (root-shaped agent.ctx): `{"hasAgent":true,"hasAgentCtx":true,"liveIsObject":true,"liveHasExecute":true,"liveKeys":["description","execute","name","output","parameters"]}`
+- Probe 2 (denyContext gaps): `{"directCall":{"threw":true,"message":"cannot get property \"tools\" without inject"},"nested":{"threw":true,"message":"cannot get property \"tools\" without inject"}}` — Context leaked past denyContext both times; only cordis's own reflect guard stopped the read
+- Probe 3 (production createScope shape): `{"hasAgent":true,"hasAgentCtx":true,"error":"cannot get property \"tools\" without inject"}` and `{"hasRoot":true,"isRealContext":true}` for `scope.ctx`
+- Probe 4 (the bypass): `{"reachedRoot":true,"liveHasExecute":true,"liveKeys":["description","execute","name","output","parameters"]}` then `{"probe":"PROBE4B","victimExecuted":true,"isError":false,"body":"{\"called\":true,\"out\":null}"}` — the victim tool's live `execute` was invoked directly, victimExecuted=true
+
+FILES: C:\Users\ADMIN\Projects\deepseek-harness\packages\extensions\cordis-host-runner\src\guard.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\tools\src\index.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\agent-loop\src\tool-calls.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\agent-loop\src\agent.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\scope\src\index.ts ; C:\Users\ADMIN\Projects\deepseek-harness\vendor\cordis\src\reflect.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\extensions\cordis-host-runner\tests\sandbox-context.spec.ts
 refuted: true
 
 

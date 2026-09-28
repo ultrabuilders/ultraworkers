@@ -95,11 +95,14 @@ Dùng số cột phải thì kết luận có thể ngược.
 `importers` = số file **bên ngoài** thư mục đó có ít nhất một import vào bên trong.
 `2-cycle` = số thư mục con khác mà nó vừa import vào vừa bị nó import lại (vòng 2 nhảy).
 
+**Quy ước đếm của tài liệu này: chỉ file `.ts`/`.tsx`** — asset (`.txt`/`.js`/`.py`) không tính
+vào cột `files` lẫn `lines`.
+
 | dir | files | lines | importers | 2-cycle | cần thư mục con nào |
 | --- | --- | --- | --- | --- | --- |
 | config | 24 | 14.663 | **949** | **35** | 35 thư mục |
 | session | 89 | 55.398 | **769** | — | 32 |
-| tools | 149 | 61.718 | **444** | — | 34 |
+| tools | 149 | 61.700 | **444** | — | 34 |
 | modes | 67 | 42.279 | **327** | — | 42 |
 | extensibility | 68 | 21.309 | **284** | — | 18 |
 | utils | 41 | 8.875 | **224** | 8 | 12 |
@@ -333,7 +336,7 @@ di chuyển test sang package mới — mà `package.json` đã khai báo sẵn)
 1.304 file `.ts` trong `src/`.** Mọi phân tích dưới đây dùng con số này.
 
 Hệ quả trực tiếp: tỉ lệ "phần to nhất gần bằng" mà đề bài nêu vẫn đúng
-(`pi/src/core` 96 file vs `omp/src/tools` 147 file — 1,5×, không phải 6×). Nhưng con số 6,0× trong đề
+(`pi/src/core` 96 file vs `omp/src/tools` 149 file — 1,5×, không phải 6×). Nhưng con số 6,0× trong đề
 bài là so **bao gồm test**, và phần lớn chênh lệch nằm ở test chứ không ở mã nguồn.
 
 ---
@@ -374,7 +377,7 @@ dùng bên ngoài có thể đang import bất kỳ đường dẫn nào. Xem m�
 |---|---:|---:|---:|---:|---:|---|
 | **config** | 24 | 14.663 | 56 | 403 | 56 | session, tools, modes, utils, task, extensibility, cli |
 | **session** | 89 | 55.398 | 44 | 345 | 331 | config(70), prompts(51), extensibility(34), tools(33) |
-| **tools** | 147 | 59.871 | 37 | 268 | 359 | prompts(46), utils(41), internal-urls(31), task(25) |
+| **tools** | 149 | 61.700 | 37 | 268 | 359 | prompts(46), utils(41), internal-urls(31), task(25) |
 | **utils** | 41 | 8.875 | 32 | 182 | 51 | config(13), tools(10), prompts(6), session(3) |
 | **capability** | 18 | 2.083 | **74** | **269** | **5** | config, export, extensibility, mcp |
 | **modes** | 67 | 42.279 | 15 | 65 | **434** | session(93), utils(48), config(34), extensibility(31) |
@@ -446,7 +449,7 @@ Bên trong `pi/coding-agent/src`: **8 thư mục con** (`bun`, `cli`, `client`, 
 2. **Protocol/transport tách riêng** (`pi-protocol`, `pi-client`, `pi-server`, `pi-durable`) — vì
    chúng nằm *giữa* các thứ, không nằm *trong* chúng.
 3. **Trong coding-agent, thư mục con không vượt quá ~1 file/1000 dòng** — cùng thang đo với
-   `omp/src/tools` (147 file/59.871 = 407 dòng/file). Ở `pi`, `core/tools` 24 file — nhỏ hơn nhiều.
+   `omp/src/tools` (149 file/61.700 = 414 dòng/file). Ở `pi`, `core/tools` 24 file — nhỏ hơn nhiều.
 
 Điểm 3 là chỗ `omp` **đã đúng hơn `pi`**. `pi` có 9 thư mục con nhưng tổng 96+65+55+36+17+6+4 = 279
 file; `omp` có 67 thư mục con / 1.304 file. Về *tỉ lệ file-mỗi-thư-mục*, `omp` mịn hơn `pi` (19,5 vs
@@ -644,7 +647,7 @@ Tách `session` ra package riêng: `session` import `config`(70 lần), `prompts
 `pi` cũng không tách cái này: `pi` đặt tất cả vào `core/agent-session.ts` + `core/session-manager.ts`.
 **Đây là chỗ `pi` và `omp` đã giống nhau.** Cắt là chi phí không đổi gì.
 
-### 4.2 `tools` (147 file, 359 out-edge)
+### 4.2 `tools` (149 file, 359 out-edge)
 
 Lớn nhất, nhưng: import 31 thư mục khác nhau, trong đó `prompts`(46), `utils`(41),
 `internal-urls`(31), `task`(25), `config`(23), `sdk.ts`(13). Và `task <-> tools` là vòng 2 chiều.
@@ -1158,7 +1161,7 @@ chép từ `pi` thành cơ học**: khi đường dẫn khớp, copy một cụm
 
 | cắt ra | thành | vì sao | chi phí |
 | --- | --- | --- | --- |
-| `blob-broker` (27f / 8.944d) | `@oh-my-pi/pi-durable` | khớp `pi/durable` (storage, publication, session transaction) — cùng ~27 vs 29 file, cùng vai trò | 18 importer, 3 vòng → 2 lần `bun check` |
+| `blob-broker` (27f / 8.944d) | `@oh-my-pi/pi-blob` | | 18 importer, 3 vòng → 2 lần `bun check` |
 | `collab` + `irc` + `registry` (15f) | `@oh-my-pi/pi-chord` | khớp `pi/chord` (services/state, wire, handle, provider) | 38+10+97 importer, nhưng gộp trước rồi mới cắt → 2 lần `bun check` |
 | `stream/protocol.ts` + `wire` (3f) | `@oh-my-pi/pi-protocol` | khớp `pi/protocol`; `wire` đã là package nhưng chỉ 3 file | nhỏ |
 | *(thiếu)* transport client/server | `@oh-my-pi/pi-client`, `pi-server` | `pi` có, `omp` **không có gì tương đương** | đây là *thêm mới*, không phải di chuyển |
@@ -1202,9 +1205,8 @@ Giai đoạn 1  Gộp các thư mục lá 0-vòng (bước 1 trong Loại 1). ~1
 Giai đoạn 2  Gộp theo domain: speech/, trust/, memory/ (bước 2-5). ~70 file.
              Chi phí: 2-3 lần bun check. Rủi ro: đổi đường dẫn import, không đổi hành vi.
 
-Giai đoạn 3  Cắt `blob-broker` → package `pi-durable`. Đây là cắt package ĐẦU TIÊN
-             và có thể là duy nhất. Lý do: nó là thứ khớp `pi/durable` gần nhất,
-             và fan-in 18 là thấp để làm an toàn.
+Giai đoạn 3  Cắt `blob-broker` → package `pi-blob`. Đây là cắt package ĐẦU TIÊN
+             và có thể là duy nhất. Lý do: fan-in 18 là thấp để làm an toàn.
              Chi phí: 18 file import + package.json + exports + workspace entry + 2 lần bun check.
 
 Giai đoạn 4  Gộp `collab`+`irc`+`registry` rồi cắt ra `pi-chord`.

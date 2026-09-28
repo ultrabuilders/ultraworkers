@@ -1589,7 +1589,7 @@ Sai dễ thứ hai: chép nguyên văn anchor `:258-266` và đặt rule chỉ b
 > `:1454`, `:1465`): `grep -n 'CacheRefresh\|ANTHROPIC_CACHE' packages/ai/src/stream.ts`
 > ở HEAD trả về **0 dòng** — cả tầng stream-level đã biến mất, không chỉ vài dòng.
 > **Cổng `test ! -e packages/coding-agent/src/session/cache-warmer.ts`
-> ở dòng 1762 giờ đỏ vĩnh viễn; đừng chạy nó, đừng cố làm nó xanh.** Cổng chi phí mà W8 từng hỏi đã
+> ở dòng 1779 giờ đỏ vĩnh viễn; đừng chạy nó, đừng cố làm nó xanh.** Cổng chi phí mà W8 từng hỏi đã
 > được giải quyết bằng cờ `providers.cacheWarming` (`settings.ts:1120-1121`).
 >
 > **Cùng đợt xoá đó, file test `packages/ai/test/anthropic-cache-refresh.test.ts` cũng biến
@@ -1776,7 +1776,7 @@ bun test packages/ai/test/anthropic-cache-refresh.test.ts   # ⛔ KHÔNG chạy 
 # Sau khi làm xong
 bun test packages/ai/test/anthropic-cache-refresh.test.ts   # ⛔ tương tự — không có file để chạy
 bun run check:ts                                             # types/lint
-test ! -e packages/coding-agent/src/session/cache-warmer.ts  # phần B của cổng
+test ! -e packages/coding-agent/src/session/cache-warmer.ts  # phần B của cổng   # ⛔ đỏ vĩnh viễn — đừng chạy
 
 # TUYỆT ĐỐI KHÔNG: tsc, npx tsc
 ```
@@ -4412,7 +4412,7 @@ Hai mươi mối work item còn trong phạm vi có hai mươi mối `risk` riê
 > vi ngày 2026-09-28 (xem khối ⛔ ở đầu §W8). Mục này ghi lại **plan gốc đã nói gì và sai ở đâu**,
 > nên W8 vẫn xuất hiện ở đây — đọc nó như một bản ghi, đừng suy ra W8 còn cần làm.
 
-Bảng dưới liệt kê đủ **141** đính chính của milestone này, nhóm theo work item. Mỗi dòng là một điểm kiểm được, không phải nhận xét chung chung.
+Bảng dưới liệt kê đủ **22** đính chính của milestone này, nhóm theo work item. Mỗi dòng là một điểm kiểm được, không phải nhận xét chung chung.
 
 Bốn loại lỗi lặp lại nhiều lần, nói một lần rồi các mục còn lại ghi tắt:
 
@@ -4420,6 +4420,8 @@ Bốn loại lỗi lặp lại nhiều lần, nói một lần rồi các mục 
 2. **Nguồn `pi-ref/` không nằm trong repo này.** 12 mục trích nó. Với 8 mục (W1, W2, W4, W8, W9, W10, W13, W16) nguồn đó không đọc được từ đây; với 4 mục (W12, W14, W15, W17) file có thật, đúng LOC, nhưng nằm ở `/Users/tranquangdang21/Projects/pi-ref` — một checkout riêng, không phải thư mục con của `ultraworkers`. Hệ quả: mọi câu chữ "port từ `pi-ref/...`" phải đổi thành "thiết kế từ đầu" hoặc "đọc từ checkout riêng".
 3. **Công thức xác minh `bun check && bun test <file>` không chạy được.** Ba mục (W1, W5, W13) gọi tên nó: `bun check` ở `package.json:93` là `bun run --parallel check:ts check:rs`, kéo cả Rust toolchain không liên quan tới thay đổi TS. Lệnh thay thế là `bun run check:ts` (toàn repo) hoặc `bun run check:types` (trong một package).
 4. **Hai môi trường khác nhau bị gộp làm một.** 5 mục (W2, W4, W5, W6, W8) báo `node_modules` vắng hẳn — `bun test` chết ở `Cannot find module '@oh-my-pi/pi-*'`, `check:ts` chết ở `oxlint: command not found` — khác hẳn với "thiếu native addon" mà các mục khác mô tả. Cả hai đều chặn `bun test`, nhưng là hai lỗi khác nhau và phải chữa đúng lỗi.
+
+Mục này hiện chỉ phủ **W1–W3**; **W4–W22 chưa có bảng đính chính** — nên câu *"hãy dùng tài liệu này làm nguồn"* chỉ đúng trong phạm vi W1–W3.
 
 ### W1 — Khôi phục disposer mà API `on()` của extension và hook trả về (9 đính chính)
 
@@ -4534,6 +4536,6 @@ của tài liệu này **không tạo ra tín hiệu nào cả** — chúng báo
 
 ### 5. Phần M1 trong `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` đã cũ
 
-141 đính chính ở mục [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) là những
+22 đính chính ở mục [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) là những
 điểm cụ thể mà phần M1 của plan tổng **không còn đúng**. Hãy dùng tài liệu này làm nguồn, và coi
 plan tổng là bản khảo sát ban đầu.

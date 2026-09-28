@@ -3,8 +3,8 @@
 Tài liệu này bàn việc chuyển toàn bộ sáu package mà omp chưa có từ `earendil-works/pi` (MIT) vào
 repo, bằng cách **chép nguyên văn rồi migrate**, không phải viết lại từ đầu. Sáu package đó là
 `chord`, `pi-protocol`, `pi-server`, `pi-client`, `pi-telemetry`, `pi-evals` — tổng
-169 file nguồn / 1.127.593 byte, 245 file sẽ chép vào, 516 symbol công khai, 56 va chạm với code
-đã có. Đây là tài liệu DUY NHẤT bao trọn phần còn thiếu của M1; 17 hạng mục W1–W17 của M1 gốc nằm
+169 file nguồn / 1.127.593 byte, 245 file sẽ chép vào, 516 symbol công khai, 64 va chạm với code
+đã có (52 thuộc sáu package trong phạm vi). Đây là tài liệu DUY NHẤT bao trọn phần còn thiếu của M1; 17 hạng mục W1–W17 của M1 gốc nằm
 riêng ở `MILESTONE_1_EXECUTION_PLAN.md`.
 
 Mục đích của phần MỞ ĐẦU này là đủ để người bảo trì quyết định trong hai phút: có nên bắt tay vào
@@ -393,8 +393,8 @@ nguồn. Nó có giá trị ở chỗ khác hẳn: 40 builtin extension, 97.893 
 
 Đây là mục quan trọng nhất của cả tài liệu, và lý do khiến "chép là xong" là một câu nói sai.
 
-**56 va chạm được ghi nhận.** Nhưng con số đó không có nghĩa là 56 chỗ phải sửa tay theo cùng một
-kiểu. Đa số **không phải cùng tên mà là cùng tên khác hành vi** — cùng tên khác **giá trị**, hoặc
+**64 va chạm được ghi nhận — 52 thuộc sáu package trong phạm vi.** Nhưng con số đó không có
+nghĩa là 64 chỗ phải sửa tay theo cùng một kiểu. Đa số **không phải cùng tên mà là cùng tên khác hành vi** — cùng tên khác **giá trị**, hoặc
 cùng tên nhưng mô hình vòng đời ngược nhau. Và phần lớn trong số đó được giải quyết bằng đúng một
 chiêu: **giữ cả hai bên, không đổi tên** — để specifier của import phân giải, để hai symbol cùng
 tên sống ở hai package khác nhau. Đổi tên bên nào cũng là một quyết định phá huỷ hợp đồng công
@@ -3305,7 +3305,7 @@ quyết định mở — ràng buộc đã chốt**", nên giữ trong bảng đ
 
 ## Va chạm với thứ omp đã có
 
-**33 trong 61 va chạm** — toàn bộ phần thuộc bốn package đầu theo thứ tự migrate: `chord` → `protocol` → `server` → `client`. 28 va chạm còn lại (phần còn của `client`, rồi `durable`, `telemetry`, `evals`) nằm ở phần 2.
+**33 trong 64 va chạm** — toàn bộ phần thuộc bốn package đầu theo thứ tự migrate: `chord` → `protocol` → `server` → `client`. 31 va chạm còn lại (phần còn của `client`, rồi `durable`, `telemetry`, `evals`) nằm ở phần 2. 52 thuộc sáu package trong phạm vi; 12 hàng `durable` là tài liệu tham khảo.
 
 | package | cái gì | neo phía pi | cách giải quyết |
 | --- | --- | --- | --- |

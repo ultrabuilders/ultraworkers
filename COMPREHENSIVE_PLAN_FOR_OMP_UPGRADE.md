@@ -280,6 +280,8 @@ Không dùng `tsc` — AGENTS.md cấm.
 | 5 | **M5** | Rebrand `ultraworkers` | M1–M4 | 16 | 6 | L (phần lớn là **phân phối**, không phải code) |
 | 6 | **M6** | Bài học từ codex / opencode / gajae | M1–M5 | 15 | 5 | S+M (~4–6 ngày XS/S, +2–3 tuần M) |
 
+`R0` không phải tiền đề của M1 — nó là tiền đề của `M1B`, theo `PACKAGE_REORGANIZATION_PLAN.md:3`.
+
 ### Đường găng thẽ
 
 - **Chuỗi phụ thuộc dài nhất:** `M1 → M2 → {M3, M4} → M5 → M6`. M6 là điểm cuối của mọi thứ.
@@ -2010,7 +2012,7 @@ Sai dễ thứ hai: chép nguyên văn anchor `:258-266` và đặt rule chỉ b
 > `:1454`, `:1465`): `grep -n 'CacheRefresh\|ANTHROPIC_CACHE' packages/ai/src/stream.ts`
 > ở HEAD trả về **0 dòng** — cả tầng stream-level đã biến mất, không chỉ vài dòng.
 > **Cổng `test ! -e packages/coding-agent/src/session/cache-warmer.ts`
-> ở dòng 1762 giờ đỏ vĩnh viễn; đừng chạy nó, đừng cố làm nó xanh.** Cổng chi phí mà W8 từng hỏi đã
+> ở dòng 1779 giờ đỏ vĩnh viễn; đừng chạy nó, đừng cố làm nó xanh.** Cổng chi phí mà W8 từng hỏi đã
 > được giải quyết bằng cờ `providers.cacheWarming` (`settings.ts:1120-1121`).
 >
 > **Cùng đợt xoá đó, file test `packages/ai/test/anthropic-cache-refresh.test.ts` cũng biến
@@ -2197,7 +2199,7 @@ bun test packages/ai/test/anthropic-cache-refresh.test.ts   # ⛔ KHÔNG chạy 
 # Sau khi làm xong
 bun test packages/ai/test/anthropic-cache-refresh.test.ts   # ⛔ tương tự — không có file để chạy
 bun run check:ts                                             # types/lint
-test ! -e packages/coding-agent/src/session/cache-warmer.ts  # phần B của cổng
+test ! -e packages/coding-agent/src/session/cache-warmer.ts  # phần B của cổng   # ⛔ đỏ vĩnh viễn — đừng chạy
 
 # TUYỆT ĐỐI KHÔNG: tsc, npx tsc
 ```
@@ -4833,7 +4835,7 @@ Hai mươi mối work item còn trong phạm vi có hai mươi mối `risk` riê
 > vi ngày 2026-09-28 (xem khối ⛔ ở đầu §W8). Mục này ghi lại **plan gốc đã nói gì và sai ở đâu**,
 > nên W8 vẫn xuất hiện ở đây — đọc nó như một bản ghi, đừng suy ra W8 còn cần làm.
 
-Bảng dưới liệt kê đủ **141** đính chính của milestone này, nhóm theo work item. Mỗi dòng là một điểm kiểm được, không phải nhận xét chung chung.
+Bảng dưới liệt kê đủ **22** đính chính của milestone này, nhóm theo work item. Mỗi dòng là một điểm kiểm được, không phải nhận xét chung chung.
 
 Bốn loại lỗi lặp lại nhiều lần, nói một lần rồi các mục còn lại ghi tắt:
 
@@ -4841,6 +4843,8 @@ Bốn loại lỗi lặp lại nhiều lần, nói một lần rồi các mục 
 2. **Nguồn `pi-ref/` không nằm trong repo này.** 12 mục trích nó. Với 8 mục (W1, W2, W4, W8, W9, W10, W13, W16) nguồn đó không đọc được từ đây; với 4 mục (W12, W14, W15, W17) file có thật, đúng LOC, nhưng nằm ở `/Users/tranquangdang21/Projects/pi-ref` — một checkout riêng, không phải thư mục con của `ultraworkers`. Hệ quả: mọi câu chữ "port từ `pi-ref/...`" phải đổi thành "thiết kế từ đầu" hoặc "đọc từ checkout riêng".
 3. **Công thức xác minh `bun check && bun test <file>` không chạy được.** Ba mục (W1, W5, W13) gọi tên nó: `bun check` ở `package.json:93` là `bun run --parallel check:ts check:rs`, kéo cả Rust toolchain không liên quan tới thay đổi TS. Lệnh thay thế là `bun run check:ts` (toàn repo) hoặc `bun run check:types` (trong một package).
 4. **Hai môi trường khác nhau bị gộp làm một.** 5 mục (W2, W4, W5, W6, W8) báo `node_modules` vắng hẳn — `bun test` chết ở `Cannot find module '@oh-my-pi/pi-*'`, `check:ts` chết ở `oxlint: command not found` — khác hẳn với "thiếu native addon" mà các mục khác mô tả. Cả hai đều chặn `bun test`, nhưng là hai lỗi khác nhau và phải chữa đúng lỗi.
+
+Mục này hiện chỉ phủ **W1–W3**; **W4–W22 chưa có bảng đính chính** — nên câu *"hãy dùng tài liệu này làm nguồn"* chỉ đúng trong phạm vi W1–W3.
 
 ### W1 — Khôi phục disposer mà API `on()` của extension và hook trả về (9 đính chính)
 
@@ -4955,14 +4959,14 @@ của tài liệu này **không tạo ra tín hiệu nào cả** — chúng báo
 
 ### 5. Phần M1 trong `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` đã cũ
 
-141 đính chính ở mục [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) là những
+22 đính chính ở mục [Đính chính so với plan tổng](#đính-chính-so-với-plan-tổng) là những
 điểm cụ thể mà phần M1 của plan tổng **không còn đúng**. Hãy dùng tài liệu này làm nguồn, và coi
 plan tổng là bản khảo sát ban đầu.
 # KẾ HOẠCH THỰC THIỆN — MILESTONE 2: MỌI THỨ LÀ PLUGIN
 
 Milestone 2 không mang lại khả năng mới cho người dùng. Nó làm cho ranh giới giữa "lõi" và "extension" trở nên trung thực — ai đang giữ tài nguyên, ai phải trả lại, và lúc nào việc gỡ extension thật sự xảy ra chứ không chỉ là "quên" trong bộ nhớ. Vì vậy nó là bước đầu tiên của luận điểm của cả chương trình: nếu một extension không thật sự được nhả ra khi bị tắt, thì câu chuyện "mọi thứ là plugin" chỉ là một câu chuyện về cách load, không phải về cách sống. Milestone 1 đã dựng tiền đề bằng cách biến `omp` thành strict superset của `earendil-works/pi` — một năng lực không thể trở thành plugin nếu nó chưa tồn tại. Nhưng bao trọn không phải mục tiêu cuối, và cũng không phải mục tiêu của milestone này. M2 không viết lại toàn bộ; phần lớn công việc là sửa cho đúng những chỗ đang nói dối về quyền sở hữu.
 
-Milestone 2 dự kiến gồm **25 work item trong 11 wave**. Chỉ mục đi đi kèm đã đánh dấu 90 câu hỏi còn mở và 162 đính chính so với dự thảo kế hoạch — con số này không phải để làm kế hoạch trông nặng, mà để báo trước rằng phần lớn rủi ro nằm ở chỗ đồ thuật nghe đúng nhưng chưa ai chắc. Tám work item cuối (WI-14 … WI-21) là đợt 2026-09-29, lấy từ sổ khoảng trống; chúng cộng thêm **8 work item**, **2 wave** (1c và 9), **21 câu hỏi** và **33 hàng đính chính** — mã `GAP-M2-n` được giữ nguyên trong tiêu đề từng mục để theo dõi về sau.
+Milestone 2 dự kiến gồm **25 work item trong 11 wave**. Chỉ mục đi đi kèm đã đánh dấu 89 câu hỏi còn mở và 162 đính chính so với dự thảo kế hoạch — con số này không phải để làm kế hoạch trông nặng, mà để báo trước rằng phần lớn rủi ro nằm ở chỗ đồ thuật nghe đúng nhưng chưa ai chắc. Tám work item cuối (WI-14 … WI-21) là đợt 2026-09-29, lấy từ sổ khoảng trống; chúng cộng thêm **8 work item**, **2 wave** (1c và 9), **21 câu hỏi** và **33 hàng đính chính** — mã `GAP-M2-n` được giữ nguyên trong tiêu đề từng mục để theo dõi về sau.
 
 ---
 
@@ -10020,7 +10024,7 @@ Hai dòng dưới đây là rủi ro của **tám mục lấy từ sổ khoảng
 
 ## Bảng quyết định cần bạn chốt
 
-90 câu hỏi mở trên 25 work item. Bảng dưới chia làm hai nhóm: nhóm đầu là những câu **chặn việc bắt đầu** một work item — không có câu trả lời thì kỹ sư phải chờ mới mở được commit đầu; nhóm sau là những câu **chỉ chặn về sau**, có thể trả lúc review hoặc khi tới commit thứ hai. Cột cuối là mặc định sẽ được áp nếu bạn im lặng; chỗ nào câu hỏi không nêu mặc định thì ghi rõ là chưa có, không tự bịa.
+89 câu hỏi mở trên 25 work item. Bảng dưới chia làm hai nhóm: nhóm đầu là những câu **chặn việc bắt đầu** một work item — không có câu trả lời thì kỹ sư phải chờ mới mở được commit đầu; nhóm sau là những câu **chỉ chặn về sau**, có thể trả lúc review hoặc khi tới commit thứ hai. Cột cuối là mặc định sẽ được áp nếu bạn im lặng; chỗ nào câu hỏi không nêu mặc định thì ghi rõ là chưa có, không tự bịa.
 
 Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất: WI-0 → WI-12 (trust tier của MCP server kế thừa câu A/B/C của WI-0), WI-10 → WI-11 (M2-OQ2), WI-2 → WI-7 (thứ tự nạp làm input của `order` cho registered mode).
 
@@ -10123,7 +10127,7 @@ Ba dây chuyền xuyên suốt, trả trước sẽ tiết kiệm nhiều nhất
 | WI-14 | Cột trạng thái trong `hook-editor.ts` có phải là bề mặt hiển thị **đủ** không, hay cần một bề mặt thứ hai? | Chặn phạm vi hiển thị, không chặn viết trạng thái. Sổ nói **không** cần overlay mới, nhưng chưa nói lần đầu người dùng biết trạng thái từ đâu nếu họ không mở overlay sửa hook. | chưa có mặc định — cần bạn quyết |
 | WI-16 | Test xung đột của WI-16 sống ở file test riêng hay chung với file của WI-3? | Chặn ngân sách test, không chặn code. WI-3 và WI-16 cùng chạm `session/agent-session.ts` theo mô tả wave 3, nên tách hay gộp là một quyết định cân bằng. | chưa có mặc định — cần bạn quyết |
 
-90 câu trên 89 dòng bảng: cặp câu của WI-4 và WI-5 về native addon là một quyết định, gộp chung một dòng và đã nêu cả hai work item. 66 câu chặn bắt đầu, 24 câu chỉ chặn về sau. (Trước đợt sổ khoảng trống 2026-09-29: 69 câu trên 68 dòng, 47 + 22. Tám mục mới cộng thêm **21** dòng — 19 vào nhóm 1, 2 vào nhóm 2.)
+89 câu trên 89 dòng bảng: cặp câu của WI-4 và WI-5 về native addon là một quyết định, gộp chung một dòng và đã nêu cả hai work item. 66 câu chặn bắt đầu, 23 câu chỉ chặn về sau. (Trước đợt sổ khoảng trống 2026-09-29: 69 câu trên 68 dòng, 47 + 22. Tám mục mới cộng thêm **21** dòng — 19 vào nhóm 1, 2 vào nhóm 2.)
 
 
 ---
@@ -10318,6 +10322,7 @@ Kiểu sai lặp nhiều nhất ở phần này là **neo `file:line` đã cũ**
 | WI-11 | `git diff --name-only \| grep -c '\.ts$'` bằng 0. `docs/extension-state-persistence.md` có, và đã xếp hạng ba substrate rồi chọn một; nêu đường dẫn on-disk cụ thể và đơn vị sở hữu là identity của extension, khoá theo install path, theo `extension.flags` (`loader.ts:263`) chứ không phải `runtime.flagValues` (`loader.ts:265`). Hai hợp đồng tương lai viết ở thì hiện tại, và cái thứ hai nói rõ chuyện gì xảy ra với giá trị khi extension đổi tên. Deferral được ghi lại: build vô chủ, WI-9 là tiền đề kỹ thuật, không dùng nhãn "Phase 4/5". Maintainer trả lời được cả năm câu từ văn bản. | Số 0 từ lệnh grep; các lệnh `grep` phải có hit cho ba substrate, `appendEntry`, `WI-9`, `unowned`, `extensions-state`; câu trả lời của maintainer cho (a)–(e). |
 | WI-12 | `docs/mcp-server-contribution-by-extensions.md` tồn tại và chứa đủ sáu phần bắt buộc, trong đó trust tier là MỘT câu một reviewer có thể bất đồng, và đề xuất approval-parity được viết theo tier thật chứ không giả định. `git diff --stat HEAD` liệt kê đúng ba path docs và không có gì dưới `packages/` — chạm vào source nghĩa là mục này bị build thay vì được thiết kế. Tiền đề của văn bản khớp với cây: đóng góp DECLARATIVE ở mức package đã ship (ba provider), khoảng trống là đóng góp IMPERATIVE lúc runtime. Một maintainer đã trả lời bằng tên cả câu hỏi trust tier lẫn credential, và văn bản ghi lại ai, khi nào. Một maintainer khác đọc văn bản là trả lời được "cài extension đăng ký MCP server thì mạng và credential của tôi ra sao" mà không cần đọc code. | `git diff --stat HEAD` ra đúng ba path; tên + ngày trong văn bản; câu trả lời của maintainer thứ hai. |
 | WI-13 | PR 1: `bun run check:ts` xanh; `bun test test/extension-ui-header-footer.test.ts` báo 2 test pass; grep `setFooter: () => {}\|setHeader: () => {}` trả 0 hit ở cả bốn vị trí; cả hai test đã được quan sát ĐỎ trên HEAD trước khi sửa. PR 2: check:ts xanh, hai test của PR 1 vẫn xanh, widget map theo từng extension và giữ nội dung, cả năm call site remount đã đổi (`controller` :246, :307, :478, :536 và `interactive-mode` :6020), khối comment `runner.ts:756-777` không còn mâu thuẫn, và kiểm tra thủ công `/new` đã làm và ghi lại. | Output grep (0 hit); "2 pass"; biên bản đỏ-trước/xanh-sau của từng test; danh sách năm call site đã đếm, không đếm bằng mắt. |
+| WI-SESSION-LOG (phần đo — phần invariant chưa làm) | Hàng này chốt **phần đo**, không chốt phần invariant. Trước hết phải có **bảng lỗ hổng 7 dòng** — `resume`, `fork`, `transcript`, `compaction`, `cache-state`, `telemetry`, `replay` — và mỗi dòng phải ghi rõ nó **"đang giữ state riêng"** hay **"đọc lại từ nguồn"**; **cộng** câu trả lời cho **bước 2 của Cổng mở** (`:313`): `deriveMessages` của omp ngày nay là gì — có sẵn, không, hay dưới tên khác. In ngay trên hàng này: **CHƯA LÀM: listener invariant — phần này là phương án A, hàng này không dựng được nó** — nên đây là cổng đo, chưa phải cổng hoàn thành của cả WI-SESSION-LOG. | Bảng lỗ hổng 7 dòng tồn tại trong cây, mỗi dòng ghi đúng một trong hai cột trên; `grep -rn "deriveMessages" --include='*.ts' packages/` và `grep -rn "llm/stream" --include='*.ts' packages/` — câu trả lời bước 2 của Cổng mở được ghi ra cùng hàng này. |
 | WI-PRESTEP-1 | Một lượt bị chặn **vẫn truy vết được sau khi restart**, và transcript mặc định **không** hiển thị nó trừ khi người dùng mở. Cổng này lấy nguyên văn từ "Cổng hoàn thành" trong thân mục; nó được đưa vào bảng này vì mục này là một trong 25 work item M2 tuyên bố, và bảng là nơi người đọc tìm điều kiện chốt. | Đọc lại log của session sau khi restart và thấy lượt bị chặn; transcript mặc định không hiện nó, bật hiển thị thì hiện. |
 | WI-14 | Union bốn trạng thái `untrusted` / `trusted` / `modified` / `admin` nằm cạnh `HookEvent`; khoá ổn định lấy từ `capability/hook.ts:31` chứ không phải một chuỗi mới. **Nhánh phủ định:** dưới ngưỡng chặn, hành vi y hệt hôm nay. `hook-editor.ts` giữ nguyên mọi chức năng sửa hook sẵn có. `isProjectTrusted()` **vẫn trả `true`**. Hai test sẵn có hoặc vẫn xanh, hoặc chuyển đỏ **có lý do đã nêu trong PR** — chuyển đỏ rồi sửa cho xanh là thất bại của cổng. | `grep -rn 'contentHash\|trustState' -- packages/` có hit ở `extensibility/hooks/types.ts`; output grep của `capability/hook.ts:31` không đổi; biên bản trạng thái của hai test trước và sau. |
 | WI-15 | `grep -rn 'reason: "reload"' packages --include='*.ts'` trả về **ít nhất một hit** — một call site thật. `rescopeHeadlessToCwd` vẫn còn **đúng bốn** call site và không có tầng reload thứ hai nào được thêm. `/reload` tại `builtin-session.ts:672` vẫn làm **đúng** việc MCP như hôm nay. | Exit code của `grep` (0 hit trước khi viết, ≥1 hit sau); đếm bốn call site; diff của `builtin-session.ts` không đổi mô tả hay hành vi. |
@@ -10326,9 +10331,9 @@ Kiểu sai lặp nhiều nhất ở phần này là **neo `file:line` đã cũ**
 | WI-18 | `bun run check:ts` exit 0, và effect là **một** khai báo chứ không phải hai bảng cùng nói một điều. Cổng hỏi phát ra ở **biên thủ tục tác vụ** và dùng tập effect đã khai báo, không phải khớp mẫu câu lệnh. Cổng tách khỏi vòng đời của chủ sở hữu. **Và doc nói rõ đây không phải sandbox**, khớp với `docs/approval-mode.md:72`. | Exit 0 của `check:ts`; hình dạng câu hỏi phát ra ở biên thủ tục; câu trong doc khớp với `docs/approval-mode.md:72`. |
 | WI-19 | `bun run check:ts` exit 0, và getter `model` — không phải chỉ method — cũng đi qua cùng một kiểm tra state. Sau khi dispose, **mọi** method của `ctx` cũ ném lỗi **có tên** (không phải `TypeError` vô danh). Context của extension đã bị gỡ **không** gọi được vào runner đã thay thế. `isProjectTrusted()` vẫn trả `true` ở **cả hai** call site. | Exit 0 của `check:ts`; biên bản "đỏ trước / xanh sau" của từng dòng; output grep của hai call site `isProjectTrusted`. |
 
-Milestone 2 chỉ được coi là xong khi cả **22** dòng trên cùng đúng cùng lúc — kể cả các dòng chỉ kiểm được bằng đọc của một maintainer, và cả các dòng phải build native addon trước khi chạy được. **Nhưng 22 dòng vẫn chưa đủ cho 25 work item, và phải nói thẳng vì sao — vì ba mục thiếu mỗi mục một lý do khác nhau, và chỉ một trong ba là sự bỏ sót:**
+Milestone 2 chỉ được coi là xong khi cả **23** dòng trên cùng đúng cùng lúc — kể cả các dòng chỉ kiểm được bằng đọc của một maintainer, và cả các dòng phải build native addon trước khi chạy được. **Nhưng 23 dòng vẫn chưa đủ cho 25 work item, và phải nói thẳng vì sao — vì ba mục thiếu mỗi mục một lý do khác nhau, và chỉ một trong ba là sự bỏ sót:**
 
-- **`WI-SESSION-LOG` — sự bỏ sót thật.** Nó chưa từng có điều kiện hoàn thành nào được viết ra ở bất kỳ đâu: mục đó chỉ có *cổng mở* (đo trước khi viết) và *cổng quyết định sau A*, không có *cổng hoàn thành*. Nó vẫn là một trong 25 mục M2 tuyên bố, nên **M2 không thể đóng khi cả 22 dòng trên đều đúng mà nó vẫn chưa làm**. Hoặc phải có một hàng cho nó, hoặc phải có quyết định của bạn rằng nó nằm ngoài phạm vi M2. Chưa có mặc định — cần bạn quyết.
+- ~~**`WI-SESSION-LOG` — sự bỏ sót thật.** Nó chưa từng có điều kiện hoàn thành nào được viết ra ở bất kỳ đâu: mục đó chỉ có *cổng mở* (đo trước khi viết) và *cổng quyết định sau A*, không có *cổng hoàn thành*. Nó vẫn là một trong 25 mục M2 tuyên bố, nên **M2 không thể đóng khi cả 23 dòng trên đều đúng mà nó vẫn chưa làm**. Hoặc phải có một hàng cho nó, hoặc phải có quyết định của bạn rằng nó nằm ngoài phạm vi M2. Chưa có mặc định — cần bạn quyết.~~ **ĐÃ CHỐT (b′):** bảng *Định nghĩa hoàn thành* đã có hàng `WI-SESSION-LOG (phần đo — phần invariant chưa làm)` chốt **phần đo**; phần invariant (phương án A) vẫn chưa làm, và dòng `CHƯA LÀM` trên chính hàng đó nói thẳng điều đó.
 - **`WI-20` (GAP-M2-13) và `WI-21` (GAP-M2-14) — CỐ Ý, không phải sót.** Chúng ở **wave 9**, là wave mà bảng này không tính vào phần bàn giao của M2. WI-0 nói phần thực thi của tư thế tin cậy là M–L và **nằm ngoài M2**; giao nó vào M2 là chốt ngược chính plan. Mỗi mục vẫn có *Cổng hoàn thành* riêng trong thân nó — cổng của chúng chỉ không nằm trong bảng *Định nghĩa hoàn thành của M2* này. Nếu bạn muốn chúng trở thành một phần của M2 thì bảng này phải có hai hàng nữa, và đó là một quyết định phạm vi chứ không phải một dòng bảng.
 
 ## Những điều chưa được kiểm chứng
@@ -13747,7 +13752,7 @@ M1 bọc trọn `pi` làm tiền đề, M2 cắt seam composable, M3 dựng tr�
 | Câu hỏi mở / đính chính | **25 câu hỏi mở, 41 đính chính** (34 của bốn mục gốc + 7 của sáu mục mới) |
 | Sóng | 3 (B, C, D) — **cả ba đều `shippable: false`**, và nay có 10 work item thay vì 4 |
 | Cổng đang đỏ ngay bây giờ | 4/6 bước kiểm của M4-4 đỏ — (a)(b) vì cây chưa build addon native; (c)(d) vì refactor chưa thực thi |
-| Phụ thuộc chưa thoả | **3** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 chưa có trong kế hoạch M1 — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**) |
+| Phụ thuộc chưa thoả | **4** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 chưa có trong kế hoạch M1 — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**; M2 Wave 1b (WI-PRESTEP-1) cho M4-4) |
 
 Đây **không phải** một milestone bắt đầu từ xanh. Hai trong bốn work item gốc phụ thuộc công việc M2 **chưa được thực thi** trên nhánh này, và item lớn nhất về mặt cơ học (M4-4) không viết test được cho tới khi build addon native xong.
 
@@ -14080,6 +14085,7 @@ Và nó **là** một cổng thật cho cả bốn work item gốc — không ph
 | **M2 WI-8a + WI-8b** phải merge — chúng là thứ tạo ra bề mặt `pi.registerSetting` có namespace mà M4-6 sửa | M4-6 | **CHƯA XÁC NHẬN** — WI-8a/8b là việc M2 chưa thực thi; phải xác nhận đã vào nhánh này trước khi bắt đầu |
 | **M2 WI-2** (thứ tự nạp extension + giải quyết va chạm tường minh) phải merge | M4-9 | **CHƯA THOẢ** — `extension-load-order-determinism.test.ts` không tồn tại, `git grep -n 'extension-load-order' packages/coding-agent/` trả **0 hit** |
 | Bản viết M2 WI-4 phải được thống nhất (§6.1) | M4-7 (trước khi mở PR) | Thuộc WI-4 của kế hoạch M2, đã có sẵn trong §11 và đã đặc tả xong |
+| **M2 Wave 1b** (`WI-PRESTEP-1`, ghi durable turn khi bị chặn) phải merge | M4-4 | **CHƯA THOẢ** |
 | Quyết định về merge order với M3-A4 | M4-4 | M3-A4 viết lại đúng dải `setPluginSetting` 942-949; hai bản vá độc lập sẽ âm thầm hủy lẫn nhau |
 | Quyết định con người về câu hỏi mở 1 (ai sở hữu `application`) | M4-4 (điều kiện DONE) | Chờ bạn |
 | Quyết định changelog của M4 (plan:§6.2) | Mở PR của Wave B | Chờ bạn — merge thì được, release thì không |
@@ -14557,6 +14563,7 @@ xoá khoá, xem nó đỏ lên — mới chứng minh hàng phòng thủ đó c�
 - M3-A4 (chỉ thứ tự merge, không phải phụ thuộc mã): M3-A4 viết lại cùng dải
   `setPluginSetting` 942-949. Plan đòi cùng PR hoặc một thứ tự merge tường minh; hai
   bản vá độc lập sẽ âm thầm huỷ lẫn nhau.
+- M2 Wave 1b (`WI-PRESTEP-1`) — chỉ thứ tự, không phải phụ thuộc mã
 
 **blocks:**
 - M4-6 — chạm cùng gói `packages/tui/src/overlays/`; plan bắt một lần review, hai commit.

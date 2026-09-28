@@ -11,7 +11,7 @@ M1 bọc trọn `pi` làm tiền đề, M2 cắt seam composable, M3 dựng tr�
 | Câu hỏi mở / đính chính | **25 câu hỏi mở, 41 đính chính** (34 của bốn mục gốc + 7 của sáu mục mới) |
 | Sóng | 3 (B, C, D) — **cả ba đều `shippable: false`**, và nay có 10 work item thay vì 4 |
 | Cổng đang đỏ ngay bây giờ | 4/6 bước kiểm của M4-4 đỏ — (a)(b) vì cây chưa build addon native; (c)(d) vì refactor chưa thực thi |
-| Phụ thuộc chưa thoả | **3** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 chưa có trong kế hoạch M1 — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**) |
+| Phụ thuộc chưa thoả | **4** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 chưa có trong kế hoạch M1 — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**; M2 Wave 1b (WI-PRESTEP-1) cho M4-4) |
 
 Đây **không phải** một milestone bắt đầu từ xanh. Hai trong bốn work item gốc phụ thuộc công việc M2 **chưa được thực thi** trên nhánh này, và item lớn nhất về mặt cơ học (M4-4) không viết test được cho tới khi build addon native xong.
 
@@ -344,6 +344,7 @@ Và nó **là** một cổng thật cho cả bốn work item gốc — không ph
 | **M2 WI-8a + WI-8b** phải merge — chúng là thứ tạo ra bề mặt `pi.registerSetting` có namespace mà M4-6 sửa | M4-6 | **CHƯA XÁC NHẬN** — WI-8a/8b là việc M2 chưa thực thi; phải xác nhận đã vào nhánh này trước khi bắt đầu |
 | **M2 WI-2** (thứ tự nạp extension + giải quyết va chạm tường minh) phải merge | M4-9 | **CHƯA THOẢ** — `extension-load-order-determinism.test.ts` không tồn tại, `git grep -n 'extension-load-order' packages/coding-agent/` trả **0 hit** |
 | Bản viết M2 WI-4 phải được thống nhất (§6.1) | M4-7 (trước khi mở PR) | Thuộc WI-4 của kế hoạch M2, đã có sẵn trong §11 và đã đặc tả xong |
+| **M2 Wave 1b** (`WI-PRESTEP-1`, ghi durable turn khi bị chặn) phải merge | M4-4 | **CHƯA THOẢ** |
 | Quyết định về merge order với M3-A4 | M4-4 | M3-A4 viết lại đúng dải `setPluginSetting` 942-949; hai bản vá độc lập sẽ âm thầm hủy lẫn nhau |
 | Quyết định con người về câu hỏi mở 1 (ai sở hữu `application`) | M4-4 (điều kiện DONE) | Chờ bạn |
 | Quyết định changelog của M4 (plan:§6.2) | Mở PR của Wave B | Chờ bạn — merge thì được, release thì không |
@@ -821,6 +822,7 @@ xoá khoá, xem nó đỏ lên — mới chứng minh hàng phòng thủ đó c�
 - M3-A4 (chỉ thứ tự merge, không phải phụ thuộc mã): M3-A4 viết lại cùng dải
   `setPluginSetting` 942-949. Plan đòi cùng PR hoặc một thứ tự merge tường minh; hai
   bản vá độc lập sẽ âm thầm huỷ lẫn nhau.
+- M2 Wave 1b (`WI-PRESTEP-1`) — chỉ thứ tự, không phải phụ thuộc mã
 
 **blocks:**
 - M4-6 — chạm cùng gói `packages/tui/src/overlays/`; plan bắt một lần review, hai commit.

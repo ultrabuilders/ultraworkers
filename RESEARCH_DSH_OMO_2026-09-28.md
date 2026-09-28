@@ -1520,7 +1520,7 @@ vendored cordis        0 test files  |  upstream 6,497 test LOC
 
 
 # WORKFLOW wf_93420fad-615
-started=250 results=240
+started=275 results=265
 
 
 ## [dsh:workflow-orchestration]
@@ -11814,6 +11814,1191 @@ MEASURED (4 temp vitest specs, run then deleted; `git status --porcelain` empty 
 - Probe 4 (the bypass): `{"reachedRoot":true,"liveHasExecute":true,"liveKeys":["description","execute","name","output","parameters"]}` then `{"probe":"PROBE4B","victimExecuted":true,"isError":false,"body":"{\"called\":true,\"out\":null}"}` — the victim tool's live `execute` was invoked directly, victimExecuted=true
 
 FILES: C:\Users\ADMIN\Projects\deepseek-harness\packages\extensions\cordis-host-runner\src\guard.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\tools\src\index.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\agent-loop\src\tool-calls.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\agent-loop\src\agent.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\core\scope\src\index.ts ; C:\Users\ADMIN\Projects\deepseek-harness\vendor\cordis\src\reflect.ts ; C:\Users\ADMIN\Projects\deepseek-harness\packages\extensions\cordis-host-runner\tests\sandbox-context.spec.ts
+refuted: true
+
+
+
+## [v3]
+
+reason: REFUTED — but NOT on license grounds. The licensing half of the claim survives, and I will not fake a refutation there: dsh is unambiguously MIT (LICENSE "Copyright (c) 2026 DeepSeek"; package.json:4 `"license": "MIT"`; THIRD_PARTY_NOTICES.md:6), so copying dsh code into omp (MIT, "Copyright (c) 2025 Mario Zechner / Can Bölük / Stencil Labs") is legally clean. dsh is NOT a relicensed oh-my-openagent fork — zero "opencode"/"oh-my"/"sst" hits in its notices, and it enforces a permissive-only allowlist. The claim dies on three other grounds.
+
+(1) THERE IS NO CODE TO TAKE — omp already implements the pattern, with the same API shape. `packages/utils/src/file-lock.ts` (100 lines) already exports `withFileLock<T>(filePath, fn, options)`, already exports a `FileLockOptions` interface of the same name, and already has an explicit per-operation default: `const DEFAULT_OPTIONS = { retries: 50, retryDelayMs: 100 }` (line 27), merged per call at line 43. 22 production call sites already import it. The claim proposes as a "borrow" something the target repo shipped long ago, in the exact central helper the AGENTS.md rule mandates.
+
+(2) THE AGENTS.md MAPPING IS WRONG. AGENTS.md:66 says central versions "carry hardening a fresh copy always loses (timeouts, output caps, …)" — that rule pushes toward ONE hardened central default, which is the opposite axis from per-operation configurability. dsh's own code makes the distinction the rule does not: it holds retry cadence fixed as a protocol invariant and makes only the deadline per-call. So dsh is not "a concrete instance" of that rule; it is a refinement the rule does not state.
+
+(3) THE SOURCE LABEL DOES NOT RESOLVE. No file, dir, or module named "persistence-settings-config" exists in dsh. `find -name "*persistence*"` returns only `.agents/notes/**` markdown; `packages/settings/` holds only READMEs and a nested `settings/`. The claim's two verified anchors live in entirely different packages.
+
+Residual value is one naming choice, and adopting it is a REGRESSION: dsh expresses the budget as a wall-clock `waitMs` with exponential backoff (20ms→200ms cap); omp expresses it as 50 fixed 100ms polls. Swapping would mean rewriting file-lock.ts and 22 call sites to change nothing observable. Tier: DO-NOT-COPY (the `waitMs` rename), REFERENCE at most (the per-call-vs-fixed split of protocol invariants vs deployment tunables). Nothing here is BORROW.
+evidence: FILE:LINE ANCHORS — BOTH VERIFY EXACTLY.
+- dsh `packages/util/atomic-write/src/index.ts:196` → `const DEFAULT_LOCK_WAIT_MS = 2_000` (grep-confirmed; used at :241 `Date.now() + (options?.waitMs ?? DEFAULT_LOCK_WAIT_MS)`).
+- dsh `packages/boot/plugin-manager/src/index.ts:181` → `lockWaitMs: z.number().step(1).min(0).default(120000),` (grep-confirmed; applied at :212 and consumed at :790 `}, { waitMs: this.lockWaitMs })`).
+- "holds across pnpm install" is STRUCTURALLY verified, not doc-copied: `runPnpm` is called at index.ts:506 (`['add', spec, …]`) and :621 (`['remove', name]`), both inside `this.change()`, whose body (:770-790) is the `withFileLock(..., { waitMs: this.lockWaitMs })` wrapper. The `120000` *value*'s rationale is not written down anywhere (README.md:81 only says "Maximum time in milliseconds to acquire the profile write lock" = THEIR CLAIM, UNVERIFIED) — the causal is a sound code-structure inference, not a stated justification.
+
+PROVENANCE — dsh IS CLEAN MIT (no refutation available here).
+- `git remote -v` → origin https://github.com/deepseek-ai/deepseek-harness.git. Repo is from-scratch: earliest commit b67e81ac97 "Initialize repo with README, AGENTS.md, and CLAUDE.md symlink", Wed Jun 10 2026; 20,177 commits total; Cordis source-vendored with upstream LICENSEs preserved (THIRD_PARTY_NOTICES.md:16-27, all MIT).
+- `grep -in "opencode\|oh-my\|sst\b" THIRD_PARTY_NOTICES.md` → ZERO hits. No relicensing of SUL-1.0 material. No CLA / "relicense" / "proprietary" terms in CONTRIBUTING.md. No file-level copyright headers in first-party .ts.
+- dsh runs an enforced license gate: THIRD_PARTY_NOTICES.md:169 records MPL-2.0 libreoffice-kit as "outside the permissive-license allowlist" — evidence of an active permissive-only policy, not a lax one.
+- Cited files are dsh-original: `git log --diff-filter=A` → atomic-write/src/index.ts first added in ba37180946 (Yichen Jiang, Jul 29 2026, "feat(util): extract dsh-atomic-write"); plugin-manager/src/index.ts first added in 98b92b683c (Turtle, Sep 14 2026). Neither README carries "adapted from" / "derived from" / "inspired by" text.
+
+THE ACTUAL COPY SURFACE — measured, not estimated.
+`git show --stat 26a8e6a555` ("feat(atomic-write): state the writer-lock wait limit per call", Yichen Jiang, Aug 13 2026) = 36 lines changed in src/index.ts, 41 in the spec, 4 in READMEs. The semantic content is one renamed constant (`LOCK_TIMEOUT_MS` → `DEFAULT_LOCK_WAIT_MS`) plus a new 1-field `FileLockOptions` interface. The commit body states the principle explicitly: "How long a contender waits is a property of the operation the lock holder runs, not of the write protocol… the retry cadence stays fixed because it governs how often a contender asks, which no caller varies."
+
+TARGET ALREADY HAS IT.
+`C:\Users\ADMIN\Documents\Projects\ultraworkers\packages\utils\src\file-lock.ts` (100 lines): exports `FileLockOptions { retries?, retryDelayMs?, signal? }`, `acquireFileLock`, `withFileLock`, `withFileLockSync`, `acquireLockSync`; `const DEFAULT_OPTIONS = { retries: 50, retryDelayMs: 100 }` at :27-30; `const opts = { ...DEFAULT_OPTIONS, ...options }` at :43. `grep -rln "withFileLock\|acquireFileLock" --include="*.ts" packages/ | grep -v node_modules | grep -v "/test/\|\.test\.\|\.spec\."` → 22 production files (settings.ts, session-storage.ts, security/store.ts, mcp/config-writer.ts, predict/daemon.ts, tiny/mlx-runtime.ts, session/session-pins.ts, ida/host.ts, …).
+
+SOURCE LABEL FAILS TO RESOLVE.
+No `persistence-settings-config` file/dir/module in dsh. `find -name "*persistence*"` → only `.agents/notes/**` markdown (e.g. `2026-06-18-shared-persistence-write-coordinator.md`); `packages/settings/` contains only README{,.i18n.yaml,.zh}.md and a nested `settings/` dir. The anchors are in `packages/util/atomic-write` and `packages/boot/plugin-manager` — unrelated to the label.
+
+Cited dsh READMEs (atomic-write README.md:57 and :86, plugin-manager README.md:81) were read as THEIR CLAIM, UNVERIFIED where they assert rationale; all rationale above is taken from code and git history instead.
+
+Not verified: whether dsh's `withFileLock` design has any undisclosed upstream ancestor — I checked the two package READMEs for attribution text and found none, which is evidence of absence only for those two files, not proof of clean-room origin.
+refuted: true
+
+
+
+## [v3]
+
+reason: The claim's underlying facts are real, but it fails on provenance in four measured ways, and its own hedge is the only legally clean reading.
+
+1) THE CITATION IS PROSE, NOT CODE. `packages/session/session-persistence-jsonl/src/lease.ts` is 135 lines; lines 1-29 are a single `@module` JSDoc block, line 30 is blank, line 31 is the first import. The cited range `:1-22` contains ZERO executable lines. It is the design's *self-description*, not its implementation. The real implementation is lease.ts:70-116 (`acquire`, the inode re-verify) plus lease.ts:124-134 (`release`). A claim that presents a docstring as a copyable artifact cannot be evaluated on what you'd actually take.
+
+2) THE SOURCE PATH IN THE CLAIM'S OWN METADATA DOES NOT EXIST. `Source: dsh/persistence-settings-config` — `find` and `grep -rn "persistence-settings-config"` over the whole repo return nothing. The real path is `packages/session/session-persistence-jsonl/`. A provenance claim whose stated source is a phantom path is not verified provenance.
+
+3) THE DESIGN IS NOT SELF-CONTAINED — ITS LOAD-BEARING HALF IS BSD-3, NOT MIT. The root LICENSE (LICENSE:1-3) is MIT © 2026 DeepSeek, and `session-persistence-jsonl/package.json` declares `"license": "MIT"`. But lease.ts:34 imports `tryLockExclusive` from `@deepseek-ai/node-addon-system/flock`, which is a **Node-API native addon** (`native/system/packages/entry/src/flock.ts`) that `require`s a **precompiled `system.node` binary** per platform. `native/system/LICENSE:1-3` is **BSD 3-Clause, Copyright (c) 2026, node-addon-landlock-run contributors**, and `native/system/package.json:6` says `"license": "BSD-3-Clause"`. Every per-platform prebuilt package (`native/system/packages/{linux-x64,darwin-x64,darwin-arm64,linux-arm64}/LICENSE`) ships that same BSD-3 text. So the MIT file is the thin wrapper; the flock itself is BSD-3 + binary blobs. Taking the code as described is NOT clean.
+
+4) UPSTREAM LICENSE PROVENANCE CONFLICTS WITH ITSELF. `THIRD_PARTY_NOTICES.md:288` asserts `@deepseek-ai/node-addon-system` "is built and released from this repository under BSD 3-Clause… it is first-party, not third-party." But the LICENSE it ships says © "node-addon-landlock-run contributors." Both cannot be clean. "dsh is MIT" therefore does not transitively cover the flock — that boundary is asserted, not proven.
+
+TWO MORE FINDINGS that undercut the claim's substance:
+
+- The Windows half isn't in the cited file either. lease.ts:79 only calls `acquireLockHandleWin32(path)`; the real `CreateSemaphoreW` code is `win32.ts:151-161`, and win32.ts:56 dynamically imports **`koffi`** to `koffi.load('kernel32.dll')` — a third-party FFI (MIT per THIRD_PARTY_NOTICES.md:97, but an undeclared runtime dep the claim never mentions).
+
+- TWO OF THE FOUR NAMED PROPERTIES ARE KERNEL-GIVEN, NOT AUTHORED REASONING. "Auto-release on process death" (docstring lease.ts:8-10) just restates documented flock(2)/Win32-kernel-object semantics — the kernel does it whether or not anyone reasons about it. "Deliberate no-expiry" (docstring lease.ts:11-13) is the *absence* of code: flock has no TTL, so there is nothing to copy. "Copy the reasoning" is a category error for both. Only **post-lock inode re-verification (lease.ts:99-106)** is genuine authored engineering — and it is a hazard *created by* the flock-on-a-path-file design, not a general principle.
+
+TIER VERDICTS:
+- BORROW (idea-only, clean): the unlink-and-recreate inode race (lease.ts:99-106) and the "don't remove the lock file" invariant (lease.ts:118-123). Ideas/methods are not copyrightable; MIT's attribution clause attaches to the *expression*, so stating the reasoning in your own words carries no license obligation.
+- REFERENCE: the kernel-as-arbiter framing and the module docstring's narrative structure.
+- DO-NOT-COPY: the `@deepseek-ai/node-addon-system/flock` dependency (BSD-3 + per-platform prebuilt `.node` binaries) and the koffi/kernel32 FFI path. Reimplement `tryLockExclusive` yourself (Node exposes no flock) or take omp's simpler lock.
+
+The claim's own hedge — "copy the reasoning even if omp keeps a simpler lock" — is therefore the only correct reading, and it should be stated as idea-only rather than presented as a copyable artifact with a file:line.
+evidence: REPO PROVENANCE (verified, clean):
+- `git remote -v` in C:/Users/ADMIN/Projects/deepseek-harness → `origin https://github.com/deepseek-ai/deepseek-harness.git` (upstream DeepSeek, not a local fork).
+- `git log --oneline -- .../src/lease.ts` → `c58097a826 feat(session-persistence-jsonl): cross-process write-ownership lease` and `d927cbff99 feat(native): add prebuilt Node-API flock support`. Committed, not a scratch file.
+- `git status --porcelain packages/session/session-persistence-jsonl/` → empty (clean tree).
+- C:/Users/ADMIN/Projects/deepseek-harness/LICENSE:1-3 → `MIT License` / `Copyright (c) 2026 DeepSeek`.
+- packages/session/session-persistence-jsonl/package.json → `"license": "MIT"`, `"name": "@deepseek-ai/dsh-session-persistence-jsonl"`.
+- `find . -iname "LICENSE*"` (excl. node_modules/.git) → no per-package LICENSE under packages/session/, so the root MIT governs. (Other LICENSE files are unrelated: native/system/, vendor/cordis, vendor/cosmokit, etc.)
+
+CITATION IS PROSE:
+- File is 135 lines / 6374 bytes (`ls -la .../src/lease.ts`).
+- `awk 'NR>=28 && NR<=32'` → line 28 ` * @module @deepseek-ai/dsh-session-persistence-jsonl/lease`, line 29 ` */`, line 30 blank, line 31 `import { mkdir, open, stat } from 'node:fs/promises'`. Lines 1-29 are one JSDoc block ⇒ cited range `:1-22` has 0 executable lines.
+- Real implementation: lease.ts:70-116 `acquire`; lease.ts:99-106 inode re-verify (`current.ino === held.ino && current.dev === held.dev`); lease.ts:124-134 `release`.
+
+PHANTOM SOURCE PATH:
+- `find . -name "*persistence-settings-config*"` → no results.
+- `grep -rn "persistence-settings-config" --include=*.json --include=*.ts .` (excl. node_modules) → 0 hits. The claim's `Source: dsh/persistence-settings-config` names a path that does not exist in dsh.
+
+BSD-3 DEPENDENCY (the blocker):
+- lease.ts:34 → `import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'`.
+- native/system/packages/entry/src/flock.ts → `require(join(dirname(manifest), 'bin', filename)) as FlockBinding` — loads a precompiled `system.node`, resolved per `@deepseek-ai/node-addon-system-${platform}-${arch}`.
+- native/system/LICENSE:1-3 → `BSD 3-Clause License` / `Copyright (c) 2026, node-addon-landlock-run contributors`.
+- native/system/package.json:6 → `"license": "BSD-3-Clause"`.
+- native/system/packages/linux-x64/LICENSE:1-3 → same BSD-3 text (also darwin-x64, darwin-arm64, linux-arm64).
+- THIRD_PARTY_NOTICES.md:288 → `… is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.` — conflicts with the LICENSE's "node-addon-landlock-run contributors" copyright.
+
+WINDOWS HALF NOT AT THE CITATION:
+- lease.ts:79 → `handle = await acquireLockHandleWin32(path)`.
+- win32.ts:151-161 → `acquireLockHandleWin32`; win32.ts:153 builds `Local\\dsh-session-lock-<sha256>`, win32.ts:154 `createSemaphoreW(null, 1, 1, name)`, win32.ts:156 `waitForSingleObject(handle, 0)`.
+- win32.ts:56 → `const koffi = (await import('koffi')).default`; win32.ts:58 `koffi.load('kernel32.dll')`.
+- THIRD_PARTY_NOTICES.md:97 → `| [koffi](https://github.com/Koromix/koffi) | MIT |`.
+
+NOT OMO (no mis-attribution):
+- `find` in C:/Users/ADMIN/Projects/oh-my-openagent → only `packages/omo-codex/plugin/components/ulw-loop/test/fixtures/lease-clock.ts` and `packages/senpi-task/src/tools/task/lease-parking.test.ts`; no lease.ts. (omo LICENSE is indeed SUL-1.0 "non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable" — not load-bearing for this dsh-sourced claim.)
+
+DESTINATION:
+- C:/Users/ADMIN/Documents/Projects/ultraworkers/LICENSE:1-4 → `MIT License` © 2025 Mario Zechner, © 2025-2026 Can Bölük, © 2026 Stencil Labs, Inc. `git remote -v` → origin `ultrabuilders/ultraworkers`, upstream `can1357/oh-my-pi`. Destination is MIT, so the constraint is entirely on the source side.
+refuted: true
+
+
+
+## [v1]
+
+reason: Every one of the five technical assertions about dsh is CONFIRMED in code, but the claim is refuted on two counts: its citation points at the vendor's own docblock rather than the implementation, and its load-bearing conclusion ("omp keeps a simpler lock — copy the reasoning") is factually wrong.
+
+CITATION DEFECT. Real path is packages/session/session-persistence-jsonl/src/lease.ts (claim omits the packages/session/ prefix), and ":1-22" is the module DOCBLOCK PROSE, not code. That is exactly what the repo's own hard rule #2 distrusts (vendor docs overselling themselves). The implementing code is lease.ts:70-134 plus win32.ts:151-173 plus native/system/packages/entry/src/flock.c:58. The docblock happens to be accurate here, but citing it means the claim was sourced from prose, not from code.
+
+WHAT IS CONFIRMED (all read directly):
+- flock on POSIX: real syscall, flock.c:58 -> `flock(request->fd, LOCK_EX | LOCK_NB)`. Non-blocking, EAGAIN/EWOULDBLOCK mapped at lease.ts:48-52.
+- named semaphore on Windows: win32.ts:151-161 -> CreateSemaphoreW(null,1,1,"Local\\dsh-session-lock-<sha256>") + WaitForSingleObject(handle,0); release = ReleaseSemaphore + CloseHandle (win32.ts:168-173). Code backs the doc.
+- auto-release on process death: PROVEN, not asserted. tests/lease.two-process.e2e.ts:34-64 spawns a real holder process, asserts SessionAlreadyOwnedError while it lives, SIGKILLs it, then acquires with no waiting period.
+- deliberate no-expiry: grep for timeout/TTL/expire across lease.ts and the lock half of win32.ts returns only the zero-timeout ACQUISITION wait (win32.ts:144,156), which is fail-fast contention, not an expiry of a held lock. Rationale at lease.ts:11-13 (a resumed append from a stalled writer would tear the log).
+- post-lock inode re-verification: lease.ts:99-106 re-stats and compares BOTH `ino` AND `dev` inside a bounded 3-attempt retry loop (lease.ts:90, 113). The claim UNDERSTATES this. Tests: lease.spec.ts:310-318 ("retries when the locked inode is no longer the lock path"), :193 ("removing the lock file forfeits a wedged holder").
+
+WHY THE CONCLUSION IS REFUTED. "omp keeps a simpler lock" is false. My first pass found only packages/coding-agent/src/utils/repo-lock.ts (an in-process promise chain, Map of Promises) and would have wrongly concluded omp has no cross-process lock — the exact hard-rule-3 trap. Searching other locations found omp ALREADY ships the identical kernel-as-arbiter design:
+- packages/utils/src/file-lock.ts:1-6 and crates/pi-natives/src/file_lock/mod.rs:1-6: "Linux uses abstract Unix sockets and Windows uses named mutexes, and other Unix platforms use flock(2)"; process-owned, auto-released on exit.
+- crates/pi-natives/src/file_lock/unix.rs:23 libc::flock(LOCK_EX|LOCK_NB); linux.rs:16-19 abstract-name bind, AddrInUse = contention; windows.rs:17-31 named "Global\\omp-file-lock-<xxh64>" mutex, existence-is-the-lease, auto-released by handle drop/exit.
+- For sessions specifically, packages/coding-agent/src/session/session-storage.ts:455-478 holds a `.os` sidecar NativeFileLock, with a comment naming dsh's EXACT failure mode: "unlinking it after release can race a successor that already opened the old inode, allowing a third process to lock a new inode at the same path concurrently" — and omp's fix is the same never-unlink policy ("a crash-orphaned sidecar is inert").
+So all four of the claim's design points map onto code omp already has: same kernel arbiter, same process-death auto-release, same persistent-lock-path policy, same non-blocking try-acquire.
+
+WHAT IS GENUINELY BORROWABLE (narrow):
+(a) DETECTION vs PREVENTION. dsh DETECTS the stale-inode race by re-stat'ing after the lock and retrying (lease.ts:99-106). omp only PREVENTS it by policy (session-storage.ts:468-474). omp has NO post-lock inode verification on the lock path: the `.os` gate at session-storage.ts:458 is acquired with no verification. If anything ever unlinks the `.os` sidecar (a cleaner, another tool, a user), omp locks an orphaned inode and silently admits a second concurrent writer. Borrow dsh's re-stat-and-retry as defense-in-depth. (Note omp DOES do post-lock inode re-verification on the DATA file — session-storage.ts:233-241 #reopenIfReplaced, comparing live.ino against fstatSync(fd).ino — just not on the lock file. And it already does the post-write record re-read check against the same unlinked-between-create-and-write race at session-storage.ts:532-541.)
+(b) The ino+dev DOUBLE check (dsh checks both; a dev check catches cross-device lock-path replacement).
+
+WHERE THE CLAIM INVERTS THE TRADE-OFF, not an improvement: dsh refuses all expiry; omp deliberately does the opposite — #stealStalePublishLock (session-storage.ts:550-560) reads the lock's `pid:timestamp` record and unlinks it when !isPidAlive(pid), after a 500ms bounded wait (SESSION_PUBLISH_LOCK_WAIT_MS=500, session-storage.ts:366). That is precisely the expropriation dsh refuses, narrowed to dead holders (a live-but-wedged writer is safe under omp's pid check). dsh's own doc concedes the flip side of its no-expiry: a wedged live holder blocks successors forever (lease.spec.ts:193 exercises exactly that).
+
+DO-NOT-COPY (real defect in dsh's Windows path): win32.ts:154-157 does CreateSemaphoreW(...,1,1,name) then WaitForSingleObject(handle,0). If the semaphore does not yet exist it is created with count 1; a concurrent acquirer B calling CreateSemaphoreW inside that window gets a handle to the EXISTING object with lInitialCount IGNORED (still 1), so B's zero-timeout wait also succeeds and B believes it holds the lock. That is a create-then-wait TOCTOU admitting two holders. omp's CreateMutexW (windows.rs:17-31) has no such window. Also cosmetic: lease.ts:81-82 reports a "sharing violation" that win32.ts:159 FABRICATES from ERROR_SHARING_VIOLATION on a real WAIT_TIMEOUT.
+evidence: DSH (deepseek-harness) — file: C:/Users/ADMIN/Projects/deepseek-harness/packages/session/session-persistence-jsonl/src/lease.ts (135 lines)
+- lease.ts:1-29 module docblock; ACTUAL CODE is 70-134 (claim cited ":1-22", i.e. prose only)
+- lease.ts:34 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
+- lease.ts:40 LEASE_FILENAME = 'session.lock'
+- lease.ts:48-52 isLockContention: EAGAIN || EWOULDBLOCK
+- lease.ts:74 mkdir(dir, { recursive: true, mode: 0o700 })
+- lease.ts:76-86 win32 branch: acquireLockHandleWin32(path); EBUSY -> SessionAlreadyOwnedError
+- lease.ts:90 for (let attempt = 0; attempt < 3; attempt += 1)  <- bounded retry
+- lease.ts:94 await tryLockExclusive(handle.fd)
+- lease.ts:99-106 const held = await handle.stat({bigint:true}); const current = await stat(path,{bigint:true})...; if (current.ino === held.ino && current.dev === held.dev) return  <- POST-LOCK INODE+DEV RE-VERIFICATION
+- lease.ts:113 await handle.close()   (retry on mismatch)
+- lease.ts:115 throw new SessionAlreadyOwnedError(id)  (after 3 attempts)
+- lease.ts:124-134 release(): idempotent; close() is what releases the lock
+- grep timeout|TTL|expire|ms in lease.ts + win32.ts lock section => NO held-lock expiry
+
+flock.c: C:/Users/ADMIN/Projects/deepseek-harness/native/system/packages/entry/src/flock.c:58
+  request->error = flock(request->fd, LOCK_EX | LOCK_NB) == 0 ? 0 : errno;
+flock.ts: native/system/packages/entry/src/flock.ts:46-57 tryLockExclusive -> throws with code from getSystemErrorName(-errno); throws ERR_FLOCK_UNSUPPORTED_PLATFORM on non-linux/darwin (line 15-20)
+
+win32.ts: C:/Users/ADMIN/Projects/deepseek-harness/packages/session/session-persistence-jsonl/src/win32.ts:151-173
+- :153 const name = `Local\\dsh-session-lock-${createHash('sha256').update(resolve(path).toLowerCase()).digest('hex')}`
+- :154 const handle = api.createSemaphoreW(null, 1, 1, name)
+- :156 const wait = api.waitForSingleObject(handle, 0)
+- :157 if (wait === WAIT_OBJECT_0) return handle
+- :159 if (wait === WAIT_TIMEOUT) throw win32Error('WaitForSingleObject', ERROR_SHARING_VIOLATION, path, name)  <- SYNTHESIZED errno
+- :168-173 releaseLockHandleWin32: ReleaseSemaphore(handle,1,null) + CloseHandle
+- :60-64 koffi bindings for MoveFileExW/CreateSemaphoreW/WaitForSingleObject/ReleaseSemaphore/CloseHandle/GetLastError
+
+PROOF of auto-release on death: packages/session/session-persistence-jsonl/tests/lease.two-process.e2e.ts:34-64
+- :51 await expect(mine.open(SessionId(SESSION), 'write')).rejects.toBeInstanceOf(SessionAlreadyOwnedError)
+- :59 holder.kill('SIGKILL'); :61 const taken = await mine.open(SessionId(SESSION), 'write')   <- immediate takeover
+Tests: packages/session/session-persistence-jsonl/tests/lease.spec.ts (434 lines, 10 `it(`)
+- :193 'removing the lock file forfeits a wedged holder: a fresh inode admits a successor'
+- :310 'retries when the locked inode is no longer the lock path, and wins on a stable pass'
+- :299 'surfaces a lock-path stat refusal from the inode verification'
+- :412 'The file survives every release, keeping the stable inode later...'
+Browser stub: packages/experimental/webworker-runtime/src/node/external_packages/node-addon-system-flock.ts:12-14 tryLockExclusive -> Promise.resolve()
+
+OMP (ultraworkers) — already has the same design
+- C:/Users/ADMIN/Documents/ultraworkers/packages/utils/src/file-lock.ts:1-6
+  "Cross-process advisory lock ... The native handle is process-owned and automatically released on exit: Linux uses abstract Unix sockets, Windows uses named mutexes, and other Unix platforms use flock(2) on ${filePath}.lock."
+  :35-38 tryAcquireLock -> NativeFileLock.tryAcquire(lockPath); :26-29 DEFAULT_OPTIONS {retries:50, retryDelayMs:100}
+- C:/Users/ADMIN/Documents/ultraworkers/crates/pi-natives/src/file_lock/mod.rs:1-6 (same contract in Rust); :32-40 memory_lock_name -> "omp-file-lock-<xxh64>"
+- crates/pi-natives/src/file_lock/unix.rs:23 unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }
+- crates/pi-natives/src/file_lock/linux.rs:16-19 SocketAddr::from_abstract_name + bind_addr; AddrInUse -> Ok(None)
+- crates/pi-natives/src/file_lock/windows.rs:17-31 CreateMutexW on "Global\\{name}"; :24-26 "The name's existence, not thread-affine mutex ownership, is the lease" -> no create-then-wait TOCTOU
+- packages/coding-agent/src/session/session-storage.ts:455-466 #acquireOsPublishLock (bounded 500ms wait, then SessionLockError)
+- session-storage.ts:468-474 "Platforms backed by flock(2) require this path to remain persistent: unlinking it after release can race a successor that already opened the old inode, allowing a third process to lock a new inode at the same path concurrently."  <- omp already documents dsh's exact hazard
+- session-storage.ts:476-478 #osGatePath -> `${lockPath}.os`
+- session-storage.ts:366-367 SESSION_PUBLISH_LOCK_WAIT_MS = 500; SESSION_PUBLISH_LOCK_POLL_MS = 2
+- session-storage.ts:550-560 #stealStalePublishLock: isPidAlive(pid) -> if dead, steal (deliberate expiry/steal dsh refuses)
+- session-storage.ts:532-541 post-write re-read verification of the lock record (defeats create/write race)
+- session-storage.ts:233-241 #reopenIfReplaced: `if (live.ino === fs.fstatSync(this.#fd).ino) return;`  <- inode re-verification on the DATA file, NOT on the lock path
+- session-storage.ts:458 const gate = NativeFileLock.tryAcquire(this.#osGatePath(lockPath));  <- NO post-lock verification
+- grep "\.ino\b|\.dev\b" over coding-agent/utils/pi-natives: only gc-cli.ts:1515-1526, lsp/edits.ts:378, session-paths.ts:228-322, utils/atomic-file.ts:75, session-storage.ts:241, speculation/host.ts:77-94 — none on the .os lock gate
+- packages/coding-agent/src/utils/repo-lock.ts:1-39 withRepoLock: purely in-process Map<string, Promise> chain (not the cross-process lock)
+
+SCALE: dsh lease implementation = 135 lines (lease.ts) + ~60 lines of lock code in win32.ts (151-173) + flock.c native + 434-line unit spec + 1 real two-process e2e. omp equivalent = 4 rust files under crates/pi-natives/src/file_lock/ + 100-line packages/utils/src/file-lock.ts + ~120 lines of session-storage.ts (429-560).
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED on portability grounds. The claim is a description of a real, well-reasoned design, but omp already implements a strictly better version of all four mechanisms, natively and 47 call sites deep, and the one thing dsh has that omp lacks (whole-life exclusive write ownership) would be a regression if ported.
+
+CLAIM AXIS 1 — "flock on POSIX": omp does not use flock on Linux. crates/pi-natives/src/file_lock/linux.rs:14-22 binds an abstract Unix-domain socket (`SocketAddr::from_abstract_name`, `UnixDatagram::bind_addr`) and treats `AddrInUse` as contention. That is structurally stronger than flock: no filesystem artifact exists, so the unlink/recreate-inode hazard the claim praises dsh for verifying is not merely mitigated, it is impossible. flock is retained only on non-Linux Unix (unix.rs:23), where abstract sockets do not exist. mod.rs:4-6 states this split explicitly.
+
+CLAIM AXIS 2 — "named semaphore on Windows": omp uses `CreateMutexW` with EXISTENCE semantics (windows.rs:32-44), dsh uses a count-1 `CreateSemaphoreW` plus a zero-timeout `WaitForSingleObject` (win32.ts:151-161). Existence is the better protocol: a crashed holder's count is frozen at 0, so a contender that already holds a handle sees a spurious WAIT_TIMEOUT and reports "already owned" against a dead holder — and dsh's 3-attempt recovery loop at lease.ts:90 sits inside the POSIX branch only, unreachable because the win32 branch returns at lease.ts:76-86. omp's kernel object dies with its last handle, so a successor always creates fresh.
+
+Namespaces diverge, and I measured it. omp uses `Global\` (windows.rs:19); dsh uses `Local\` (win32.ts:153). `Local\` is per-logon-session, so two processes in different Windows sessions (services, scheduled tasks, RDP) derive different kernel objects and get zero exclusion while believing they hold it. My probe created `Global\X` and `Local\X` with the same suffix in one process: both returned fresh handles with lastError=0, i.e. ERROR_ALREADY_EXISTS not set — two distinct objects. omp also required no privilege for `Global\` mutex creation, consistent with Windows scoping that privilege to file-mapping and symlink objects only. I did not build a second logon session, so cross-session non-exclusion for dsh is mechanism-confirmed but not reproduced end-to-end.
+
+CLAIM AXIS 3 — "auto-release on process death": omp has it, owned by the kernel via `OwnedHandle` and `Drop` (windows.rs:14,38,44; mod.rs:110-116; unix.rs:9,26-29). Already held, and already tested cross-process: packages/utils/test/file-lock.test.ts:59 "process death hands ownership to B while excluding C" spawns a holder, kills it, and asserts B wins while C is refused. Nothing to borrow.
+
+CLAIM AXIS 4 — "deliberate no-expiry": omp states the identical reasoning in its own words at session-storage.ts:349-353 — the gate is "process-owned" so "the kernel reclaims it on process exit (including SIGKILL), so no wall-clock age heuristic decides liveness and no unlink races ownership (F2)". omp's mtime-based orphan test (#isOrphanedPublishLock, line 588) is scoped to the legacy compat lockfile, never the gate. Already held.
+
+CLAIM AXIS 5 — "post-lock inode re-verification": not portable value. It is a mitigation for a hazard omp's Linux and Windows paths do not have. Where omp genuinely hits the hazard (the flock-backed `.os` sidecar on macOS/BSD) it already carries dsh's exact invariant: session-storage.ts:468-474 — "unlinking it after release can race a successor that already opened the old inode, allowing a third process to lock a new inode at the same path concurrently" — and honors it, since `#osGatePath` has one call site (line 458) and no unlinkSync targets it (unlinks hit only lockPath/tempPath/backupPath/sessionPath, lines 436/521/575/756/823/874). omp additionally re-verifies twice where dsh does not: read-back of the lockfile record (line 537) and writer-descriptor inode identity (line 241).
+
+DO-NOT-COPY — the one genuinely dsh-specific element. dsh's lease is held for the whole life of a write handle (lease.ts:3-4, acquired at write-open, index.ts:378-382), giving single-writer-per-directory semantics. omp deliberately models the opposite: concurrent O_APPEND writers with `#reopenIfReplaced` (session-storage.ts:227-251) handling a peer process's atomic rewrite, and only the rename/publish serialized (342-365, microsecond-scale, 500ms bounded fail-closed at 366). Porting whole-life exclusive ownership would break legitimate multi-process session attach — a behavior regression dressed as a safety improvement.
+
+Net: the only transferable asset is the prose rationale for the no-unlink invariant, which omp already carries with better citations. Mechanism borrow: none. REFERENCE the module doc; DO-NOT-COPY the lease semantics.
+evidence: DSH SOURCE (read, not docs):
+- lease.ts = 135 lines (claim cites "1-22"; the module doc reasoning actually spans 1-28). win32.ts = 209 lines. lease tests = 531 lines (lease.spec.ts 434, lease.two-process.e2e.ts 69, fixtures/lease-holder.mjs 28).
+- lease.ts:74 mkdir 0o700; :76-86 win32 early-return (NO retry); :90 POSIX 3-attempt loop; :99-106 ino+dev re-verification; :120-124 release never unlinks; :34 imports flock from @deepseek-ai/node-addon-system.
+- win32.ts:153 `Local\dsh-session-lock-${sha256(resolve(path).toLowerCase())}`; :154 CreateSemaphoreW(null,1,1,name); :156 WaitForSingleObject(handle,0).
+- Dependency cost: package.json:40 "@deepseek-ai/node-addon-system": "workspace:~", :42 "koffi": "^3.1.0"; native/system/packages ships darwin-arm64, darwin-x64, linux-arm64, linux-x64 (+entry); native/system/packages/entry/src/flock.ts does glibc-vs-musl runtime branch via process.report.getReport().
+
+OMP SOURCE (read, not docs):
+- crates/pi-natives/src/file_lock/: linux.rs 30, mod.rs 116, unix.rs 40, windows.rs 83; packages/utils/src/file-lock.ts 100. Total 369 lines.
+- windows.rs:19 `format!(r"Global\{name}")`; :32 CreateMutexW(ptr::null(),0,...); :41-43 GetLastError()==ERROR_ALREADY_EXISTS -> Ok(None) (existence, not count); :24-26 comment "The name's existence, not thread-affine mutex ownership, is the lease."
+- linux.rs:16 from_abstract_name; :17 bind_addr; :19 AddrInUse -> Ok(None).
+- mod.rs:4-6 doc: "Linux uses abstract Unix sockets and Windows uses named mutexes, so neither platform leaves a filesystem artifact."
+- session-storage.ts:349-353 no-expiry rationale; :366 500ms bounded wait; :468-474 .os sidecar never-unlink rationale; :537 lockfile read-back verify; :241 writer inode re-verify; :455-465 #acquireOsPublishLock bounded retry.
+- Scale: 47 lock call sites across packages/*/src (settings.ts:2051, mcp/config-writer.ts:34, predict/daemon.ts:189, security/store.ts:37, tiny/worker-server.ts:47, stats/aggregator.ts:77, utils/sqlite.ts:166, etc.). dsh: 7 lease references.
+
+MEASURED (this machine, Windows 11):
+- PowerShell Add-Type probe, same name suffix: `Global\X` handle nonzero + lastError=0; `Local\X` handle nonzero + lastError=0 -> distinct kernel objects, ERROR_ALREADY_EXISTS not set for either. Confirms per-session vs cross-session namespace split. `Global\` mutex creation needed no SeCreateGlobalPrivilege.
+- UNVERIFIED: `bun test packages/utils/test/file-lock.test.ts` could NOT run here — pi_natives.win32-x64.node is not built in this checkout (loader-state.js:970 "Cannot find module ... try `bun --cwd=packages/natives run build`"). Result was 0 pass / 1 fail / 1 error from the loader, not from the test. The process-death test at file-lock.test.ts:59 is therefore code-read evidence, not runtime-confirmed.
+- UNVERIFIED: dsh cross-session non-exclusion was mechanism-confirmed (distinct namespaces) but not reproduced with two real Windows logon sessions.
+refuted: true
+
+
+
+## [v1]
+
+reason: The claim is accurate on structure but false on its distinguishing mechanism. "tests durability across a real process boundary" is not what the harness does. `reopen()` constructs a new backend *instance in the same process, inside the same test body* — `new JsonStorageBackend(root)` (json-backend.spec.ts:26) and `backendAt(path)` (sqlite-backend.spec.ts:33). `grep -rn "spawn|fork(|child_process|execPath|Worker("` across `packages/storage` returns zero hits; there is no child process, worker, or subprocess anywhere in the storage tree. The code's own comments concede this is a simulation: contract.ts:12 labels the field "(crash simulation)" and contract.ts:16 says "as after a process restart" — the "as" is the tell. The test is even named "durably across reopen", not across restart. The in-repo memory double makes the same admission ("simulates process restarts", storage-domain/tests/helpers/memory-backend.ts:12,30). A same-process reopen is a real and useful durability check (it does catch a backend that writes only to an instance-local cache, because the fresh instance starts empty), but it is strictly weaker than a process-boundary test: it cannot catch process-global state — a module-level handle map, a static cache keyed by path, a module-scoped singleton. The suite's strength therefore comes entirely from the harness factory binding real on-disk media, not from any isolation the harness provides; `SqliteStorageBackend` survives the reopen only because its `DatabaseSync` is instance-scoped (storage-sqlite/src/index.ts:59), a property the suite does not test for. Verdict: OVERSTATED on the mechanism, accurate on everything else — a same-process, real-media reopen harness, not a cross-process durability test.
+evidence: CONFIRMED PARTS
+1. Suite exists at the cited location. packages/storage/storage/tests/contract.ts:32 `export function runKvBackendContract(label, create)`; describe opens :33; describe closes :101; function closes :102. Five `it` clauses: empty-open (:34), "round-trips records and global durably across reopen" (:43), overwrite/idempotent delete (:61), version-mismatch on reopen (:74), closed-guard/idempotent close (:91).
+2. Harness type: contract.ts:13-18 `KvBackendContractHarness { backend: StorageBackend; reopen(): Promise<StorageBackend> }`.
+3. Adopted by both shipped backends — the ONLY two `StorageBackend` implementations under src/ (`grep "implements StorageBackend"` → storage-json/src/index.ts:39 `JsonStorageBackend`, storage-sqlite/src/index.ts:55 `SqliteStorageBackend`; the third hit, `MemoryStorageBackend` at storage-domain/tests/helpers/memory-backend.ts:117, is a test double under tests/, not a backend). Importers: json-backend.spec.ts:7 + call at :22 `runKvBackendContract('json', ...)`; sqlite-backend.spec.ts:9 + call at :29 `runKvBackendContract('sqlite', ...)`. `grep -rl runKvBackendContract` (excl. node_modules) returns exactly those 3 files.
+4. Real media, not a double: json harness `json-backend.spec.ts:23-27` = `mkdtemp` root + `new JsonStorageBackend(root)`; sqlite harness `sqlite-backend.spec.ts:29-35` = real `freshDbPath()` file, with the comment at :27-28 "The contract suite's reopen() needs a surviving medium, so the harness binds a real file; :memory: gets its own cases below." In-memory cases live separately at :45-50.
+5. Executed and green. `npx vitest run packages/storage/storage-json/tests/json-backend.spec.ts packages/storage/storage-sqlite/tests/sqlite-backend.spec.ts` → "Test Files 2 passed (2) / Tests 55 passed (55)", 1.23s. `--reporter=verbose | grep "kv backend contract"` shows the same 5 titles registered twice: `kv backend contract: json > ...` and `kv backend contract: sqlite > ...` (10 of the 55). So 10/55 of the storage backend tests come from the shared suite; the other 45 are backend-specific.
+
+REFUTING EVIDENCE
+6. No process boundary anywhere: `grep -rn "spawn|fork(|child_process|execPath|Worker(" --include=*.ts packages/storage` (excl. node_modules) → 0 hits. `reopen` is same-process object construction: json `reopen: async () => new JsonStorageBackend(root)` (json-backend.spec.ts:26); sqlite `reopen: async () => backendAt(path)` (sqlite-backend.spec.ts:33, `backendAt` = `new SqliteStorageBackend(new Config({ path }))` at :14-16). Both run in the same vitest worker as the writer.
+7. The repo's own vocabulary admits simulation, not a boundary: contract.ts:12 "(crash simulation)"; contract.ts:16 "as after a process restart"; memory-backend.ts:12 "which simulates process restarts"; memory-backend.ts:30 "to simulate reopening the same medium after a restart". The only "cross-process" mention in the storage packages is unrelated — storage-domain/src/events.ts:5, the domain event-sourcing layer, not the conformance suite.
+refuted: true
+
+
+
+## [v3]
+
+reason: REFUTED on the legal/provenance axis the question asks about, and independently false as stated.
+
+(1) PROVENANCE MISATTRIBUTION — the code is not DeepSeek's. `vendor/include/src/index.ts:9-15` is byte-identical to upstream cordis `packages/include/src/index.ts` (I fetched cordiverse/cordis master and diffed the `JsExpr` block; it matches exactly, including line 12 `construct: (data) => ({ __jsExpr: data })`). It is `@cordisjs/plugin-include` v1.0.4, MIT, `Copyright (c) 2021-present Shigma` (`vendor/include/LICENSE:3`, `vendor/package.json` author `Shigma <shigma10826@gmail.com>`). dsh is a downstream source-vendor, self-declared at `THIRD_PARTY_NOTICES.md:14,22` and `vendor/README.md`. None of the 22 entries in the exhaustive "Local modifications" log claims to define or change the `JsExpr` type (`grep -c construct vendor/README.md` = 0). So the audit's `dsh/persistence-settings-config` sourcing credits DeepSeek for a third-party design. MIT's "copyright notice ... shall be included in all copies or substantial portions" means an omp copy must carry *Shigma's* notice — a "borrowed from dsh" citation strips the actual copyright holder. That is the specific defect.
+
+(2) IS IT CLEAN TO COPY? MIT-to-MIT is legally clean *with* the notice — so this is not "idea-only" by license. But the vendored file is a MODIFIED MIT fork (mod-log entries #8, #11, #13, #14, #15 all touch `include/src/index.ts`; only #11's `export` on `entryListSchema` at line 23 is visible at the cited site, the `JsExpr` const is upstream). Wholesale copying imports DeepSeek's unpublished modifications to a Shigma file with no "modified" note.
+
+(3) "SINGLE activation-time sink" is FALSE — there are two `__jsExpr` eval sites, and the second is a DeepSeek addition, not upstream: `vendor/loader/src/config/utils.ts:14` inside `interpolate()`, reached from `vendor/loader/src/index.ts:112`; and `vendor/loader/src/config/entry.ts:91` inside `disabledOf()`. The latter is mod-log entry #18, which states "`disabled` is the only interpolated metadata field" — i.e. metadata interpolation was *added by dsh*. The claim fuses a dsh invention into an upstream design and then cites the upstream line.
+
+(4) "PLAIN DATA OBJECT EVERYWHERE ... right shape for ANY user-authored expression" is refuted by dsh's own code, which draws a hard boundary and REJECTS the marker in several places: `packages/boot/app-boot/src/config-schema/collect.ts:60` `throw new Error('include patches must be literal mappings; config expressions are not evaluated')`; `collect.ts:127` `'include config must be literal; config expressions are not evaluated'`; plus a literal-path rule. Tree carriers bypass interpolation entirely (`vendor/loader/src/index.ts:108-111`, `EntryGroup.key`). Tests assert markers rejected for `id`, `name`, `group`, `insert` (`config-schema.spec.ts:369-374`). The marker is inert *everywhere* but legal only in a bounded subset (ordinary Config values + `disabled`).
+
+(5) The sink is arbitrary code execution: `new Function('ctx','expr','with (ctx) { return eval(expr) }')` at `vendor/loader/src/config/utils.ts:5-9`. Importing the shape into omp persisted config means shipping config-driven `eval` — an explicit trust-boundary decision, not a shape borrow.
+
+(6) NOT AN OMO PATTERN. Measured: `__jsExpr` = 0 hits and `cordis` = 0 hits across oh-my-openagent (excluding node_modules). Different lineage entirely. And omo's own `LICENSE.md:8-11` is SUL-1.0: "non-sublicensable", "only for your own internal business purposes or for non-commercial or personal use" — so had anyone sourced this via omo, THAT would have been the unclean path. The clean origin is cordis MIT; dsh is a middleman; omo is unusable.
+
+(7) BONUS STALENESS: upstream cordis has since moved `applyPatches` into `./patch.ts` with `ensureInsertIds` — i.e. upstream fixed the exact insert-index bug dsh hand-patched (mod #11: "upstream built the id index once before the patch loop, leaving inserted rows silently unpatchable"). dsh's vendored copy is a superseded fork; copying it imports dead code.
+
+TIERS: the inert-marker IDEA = BORROW (reimplement natively in omp, do not vendor the file). Copying dsh's `vendor/include/src/index.ts` as "from dsh" = DO-NOT-COPY (wrong provenance, stale modified fork, drops Shigma's notice). The `new Function`+`eval` sink = DO-NOT-COPY without an explicit trust boundary.
+evidence: LICENSE CHAIN: C:/Users/ADMIN/Projects/deepseek-harness/LICENSE:1 "MIT License / Copyright (c) 2026 DeepSeek" (21 lines) — but the governing file for the cited line is C:/Users/ADMIN/Projects/deepseek-harness/vendor/include/LICENSE:1-3 "MIT License / Copyright (c) 2021-present Shigma" (21 lines), confirmed by vendor/include/package.json:2,29-31 (name @deepseek-ai/cordis-plugin-include, author "Shigma <shigma10826@gmail.com>", license MIT).
+
+CITED LINE: vendor/include/src/index.ts:9-15 =
+  const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
+    kind: 'scalar', resolve: (data) => typeof data === 'string',
+    construct: (data) => ({ __jsExpr: data }),        <-- line 12
+    predicate: isJsExpr, represent: (data) => data['__jsExpr'],
+  })
+UPSTREAM MATCH: fetched https://raw.githubusercontent.com/cordiverse/cordis/master/packages/include/src/index.ts — JsExpr block is byte-identical (same 6 lines, same `construct: (data) => ({ __jsExpr: data })`). Upstream has `const schema = yaml.JSON_SCHEMA.extend(JsExpr)`; dsh has `export const entryListSchema = ...; const schema = entryListSchema` (vendor/include/src/index.ts:23,25), matching mod-log #11.
+
+PROVENANCE SELF-DOC: vendor/README.md manifest row — `include/` | @deepseek-ai/cordis-plugin-include | upstream @cordisjs/plugin-include | 1.0.4 | commit abb0a307cb1d3b0947f455d590cf5ba922d4caa4. THIRD_PARTY_NOTICES.md:14 "source-vendored ... All are MIT-licensed; each directory preserves its upstream LICENSE file"; :22 lists @cordisjs/plugin-include -> vendor/include -> MIT. `grep -c construct vendor/README.md` = 0 (no mod entry defines JsExpr).
+
+TWO SINKS, NOT ONE: vendor/loader/src/config/utils.ts:12-22 `interpolate()` -> :14 `return evaluate(ctx, value.__jsExpr)`, called at vendor/loader/src/index.ts:112 `return interpolate(this.ctx, config)`. Second: vendor/loader/src/config/entry.ts:89-92 `disabledOf()` -> :91 `Boolean(this.evaluate(options.disabled.__jsExpr))`. Second one is DeepSeek-authored: vendor/README.md mod #18 "Entry `disabled` interpolation in `loader/src/config/entry.ts` ... `disabled` is the only interpolated metadata field."
+
+"NOT EVERYWHERE" — dsh rejects the marker: packages/boot/app-boot/src/config-schema/collect.ts:60 `if (!record(patch) || isJsExpr(patch)) throw new Error('include patches must be literal mappings; config expressions are not evaluated')`; collect.ts:127 `if (!record(config) || isJsExpr(config)) throw new Error('include config must be literal; config expressions are not evaluated')`; collect.ts:130 `include path must be literal`. Tree carriers skipped: vendor/loader/src/index.ts:108-111 `if (plugin?.[EntryGroup.key]) return config`. Rejections asserted for id/name/group/insert in packages/boot/app-boot/tests/config-schema.spec.ts:369-374. Vendor's own doc (THEIR CLAIM, UNVERIFIED as to runtime behavior, but corroborated by the code above): apps/cli/reference/README.md:60 "Group lists and Include fields stay literal."
+
+EVAL SINK: vendor/loader/src/config/utils.ts:5-9 `export const evaluate = new Function('ctx', 'expr', '\n  with (ctx) {\n    return eval(expr)\n  }\n')`.
+
+STALE FORK: upstream cordis include now imports `{ applyPatches, ensureIds, ensureInsertIds, PatchIndex, PatchOptions, routeJournal } from './patch.ts'`; dsh still inlines applyPatches and mod #11 documents fixing upstream's build-index-once insert bug.
+
+OMO MEASUREMENT: `grep -rn "__jsExpr" --include=*.ts --include=*.js . | grep -v node_modules` in C:/Users/ADMIN/Projects/oh-my-openagent = 0 hits; `grep -rn "cordis" package.json packages/*/package.json` = 0 hits. omo LICENSE.md:8-11 "non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable license ... only for your own internal business purposes or for non-commercial or personal use".
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED on three independent grounds: the mechanism is provably non-portable, omp already has a strictly better version of the concern, and the claim's own characterization is factually wrong in its home repo.
+
+**1. The port is mechanically impossible as written (measured, not estimated).**
+dsh's discipline depends on a `yaml.Type` custom-type construct/represent pair. omp parses YAML with stock `YAML.parse` from `bun` (config/config-file.ts:242, config/settings.ts:1803) — no custom-type hook. I ran a probe: `value: !myTag some-string` parses to the bare string `"some-string"` and re-serializes to `value: some-string` — **the tag is silently destroyed**. The inert-marker round-trip that IS the point of the pattern (`config-dump.spec.ts:48` "prints `!!js` verbatim") cannot be built on Bun's parser. Porting would require inventing a different representation, i.e. it is not a port.
+
+**2. omp already solved the underlying problem, better and narrower.**
+omp's `resolve-config-value.ts` dispatches on a string prefix, not an object marker: `isCommandConfigValue` = `value?.startsWith("!")` (line 22-24), with `$envExact` fallback (line 104-108). This is strictly superior for omp because: (a) it round-trips through YAML *and* JSON with zero parser support — verified, Bun auto-quotes it (`"!pass show omp/key"`) so the `!` tag collision never occurs; (b) execution is bounded (10s timeout, isolated stdio, process-tree supervision, `runShellCommand` lines 116-146) whereas dsh uses `new Function('ctx','expr', 'with(ctx){return eval(expr)}')` (vendor/loader/src/config/utils.ts:5-9) — arbitrary JS with no timeout; (c) it has caching + 30s failure backoff. Its scope is also tighter: credentials/headers only (model-registry.ts:436, mcp/manager.ts:1905,1916), not behavior control.
+
+**3. omp has no need for it, and already has a strictly cleaner alternative for enable/disable.**
+omp's activation filter is plain set membership on a string ID — `disabledExtensionIds.has(extensionId)` (capability/index.ts:150,193) and `disabled.has(\`extension-module:${name}\`)` (extensions/loader.ts:580,583). Zero expression surface. And user-authored logic lives in real `.ts` module files imported with a host guard — `await import(resolvedPath)` at hooks/loader.ts:151, custom-tools/loader.ts:78, custom-commands/loader.ts:41 — never in persisted config. omp's settings are a typed registry (`register({id, type, default})`, extensibility/settings.ts:10-12) of booleans/arrays/strings; there is no field an expression would populate.
+
+**4. The claim's "single activation-time sink" is false in dsh itself.** There are 4 distinct eval sinks, and the predicate discipline is already inconsistent — two non-equivalent definitions of the same concept:
+- `vendor/loader/src/config/utils.ts:26` — LOOSE: `value instanceof Object && '__jsExpr' in value`
+- `packages/settings/settings/src/schema.ts:51` — STRICT: `Object.keys(value).length === 1 && typeof Reflect.get(value,'__jsExpr') === 'string'`
+
+An object carrying `__jsExpr` plus any other key is an expression to the loader and NOT an expression to the settings projector. The claimed discipline is already leaking in its home repo.
+
+**One honest counter-consideration (does not rescue the port):** if omp ever needed platform-conditional *config values*, `!` is the wrong tool because it is async (awaits stdout) while `discoverExtensionPaths` filters synchronously. But the right fix there would be a sync prefix or a capability predicate — never an `eval`. Note also that adding eval-in-config would be a *capability regression in auditability*: omp deliberately grants project-local trust via readable `.ts` files, and `extensions/types.ts:557-563` states it plainly ("OMP has no equivalent per-directory trust gate… already trusts project-local inputs by default"). An opaque `!!js` tag in `.omp/config.yml` adds a code-execution path that is materially harder to review than a module file, for zero new capability.
+
+Tier classification: **DO-NOT-COPY** (the `yaml.Type` mechanism — provably unportable to Bun's YAML, and dsh's own version of it is already internally inconsistent). **REFERENCE** only, at most, for the general observation that an expression should be inert data until one well-defined activation point — a principle omp already satisfies by construction, not by marker.
+evidence: CLAIM SITE (accurate): dsh/vendor/include/src/index.ts:12 `construct: (data) => ({ __jsExpr: data })`, :14 `represent: (data) => data['__jsExpr']`, :9-15 the yaml.Type registration.
+
+FOUR EVAL SINKS, NOT ONE (dsh, non-test):
+- vendor/loader/src/config/utils.ts:14 `return evaluate(ctx, value.__jsExpr)` — reached by `interpolate` (line 12), which walks the ENTIRE config tree recursively (lines 17-21) from vendor/loader/src/index.ts:112
+- vendor/loader/src/config/entry.ts:91 `Boolean(this.evaluate(options.disabled.__jsExpr))`
+- packages/preset/agent-preset-registry/src/composition-inventory.ts:66 `Boolean(evaluateExpression(value.__jsExpr))`
+- packages/test-support/client-runtime/src/assembly/bundle-roster.ts:65 `Boolean(evaluate(disabledContext, value.__jsExpr))`
+
+TWO NON-EQUIVALENT PREDICATES:
+- vendor/loader/src/config/utils.ts:26 `value instanceof Object && '__jsExpr' in value`
+- packages/settings/settings/src/schema.ts:51 `Object.keys(value).length === 1 && typeof Reflect.get(value, '__jsExpr') === 'string'`
+Also the marker is public schema surface: packages/boot/app-boot/src/config-schema/projector.ts:9 `{ type:'object', properties:{ __jsExpr:{type:'string'} }, required:['__jsExpr'] }`.
+
+EVAL MECHANISM: vendor/loader/src/config/utils.ts:5-9 `new Function('ctx','expr', 'with (ctx) { return eval(expr) }')` — unbounded arbitrary JS.
+
+HOME-REPO CLAIM IS REAL: packages/boot/app-boot/tests/config-dump.spec.ts:48 "prints `!!js` verbatim"; app-boot.spec.ts:831,1031,1098,1164-1165 cover round-trip + error mapping.
+
+MEASURED BLOCKER (Bun YAML custom tags dropped):
+$ bun run /tmp/yamltag-probe.ts
+PARSED: {"value":"some-string"}
+RE-SERIALIZED: "value: some-string"      <-- tag gone
+BANG SERIALIZED: "apiKey: \"!pass show omp/key\""   <-- auto-quoted, safe
+BANG ROUNDTRIP: {"apiKey":"!pass show omp/key"}
+
+OMP'S EXISTING MECHANISM: config/resolve-config-value.ts:22-24 `isCommandConfigValue` = startsWith("!"); :104-108 `resolveConfigValue`; :116-146 `runShellCommand` (10s timeout, detached process group, linux subreaper); :40-52 `invalidateAllCommandConfigs`; :30-38 per-value backoff.
+
+OMP ENABLE/DISABLE IS EXPRESSION-FREE: capability/index.ts:150-152, 193 `disabledExtensionIds.has(extensionId)`; extensibility/extensions/loader.ts:580,583 `disabled.has(\`extension-module:${name}\`)` (sync `new Set`).
+
+OMP LOADS LOGIC AS MODULES: extensibility/hooks/loader.ts:151 `await withHostGuard(() => import(resolvedPath))`; custom-tools/loader.ts:78; custom-commands/loader.ts:41; extensions/loader.ts:523,527 `.ts`/`.js` + index names.
+
+ZERO HITS (grepped expected location + repo-wide, then checked other names): `__jsExpr|jsExpr|JsExpr|yaml.Type|!!js` in packages/coding-agent/src/ → 0 matches. Checked under alternate names instead: resolve-config-value.ts (the `!`/env dispatcher), config/registry.ts (typed `register`), extensibility/settings.ts (`cfgExtensions`/`cfgDisabledExtensions` are `type:"array"` of strings).
+
+SCALE: omp extensibility = 68 .ts files / 21,376 lines. dsh vendor/loader = 8 files / 1,064 lines (+ vendor/include 343 lines).
+
+UNVERIFIED: I did not test whether Bun's YAML can be made to support custom tags via a future API; the probe only establishes current behavior of the pinned Bun.
+refuted: true
+
+
+
+## [v1]
+
+reason: REFUTED on both halves. The line cite is real but the described discipline is not what the code does.
+
+(1) "The single activation-time sink" is false — there are 4 distinct production sites that RUN a `__jsExpr`, with 3 different carve-out rules:
+  a. `vendor/loader/src/config/utils.ts:14` in `interpolate()`, reached from the loader's `internal/config` hook at `vendor/loader/src/index.ts:112`, which skips tree carriers (`if (plugin?.[EntryGroup.key]) return config`, index.ts:111 — carriers declared at `vendor/loader/src/config/group.ts:77`, `vendor/include/src/index.ts:167`, `packages/preset/agent-preset/src/index.ts:15`).
+  b. `vendor/loader/src/config/entry.ts:90-91` `disabledOf()` — a *different field* (`disabled`, a sibling of `config` on `EntryOptions`, entry.ts:10-23), read straight off `this.options.disabled` and run through `this.evaluate()` (entry.ts:95-96). NOT routed through `interpolate`, and NOT exempted for tree carriers. Two evaluation paths, two rule sets, one marker.
+  c. `packages/preset/agent-preset-registry/src/composition-inventory.ts:66` — a third consumer in a separate package behind an injected `DisabledExpressionEvaluator` (line 18) whose only production caller supplies a *refusing* evaluator: `definitionComposition(record.config.plugins, () => { throw new Error('Inactive definition') })` at `packages/preset/agent-preset-registry/src/index.ts:358`, yielding `'conditional'` instead of an answer (composition-inventory.ts:67-71).
+  d. `packages/test-support/client-runtime/src/assembly/bundle-roster.ts:65` imports `evaluate` from the loader and calls it directly.
+  Plus `packages/settings/settings/src/index.ts:320` calls the same `interpolate` at describe time, not activation time.
+
+(2) "A plain data object everywhere" is false — the marker needs explicit carve-outs and the repo carries THREE mutually-inconsistent predicates for "is this a marker": presence-only `value instanceof Object && '__jsExpr' in value` (loader utils.ts:26); value-typed `typeof value.__jsExpr === 'string'` (`scripts/cordis-yaml.ts:37-40`); strict-singleton `Object.keys(value).length === 1 && typeof __jsExpr === 'string'` (`packages/settings/settings/src/schema.ts:51`, mirrored in YAML-node form at `packages/boot/config-editor/src/index.ts:118`). I ran all three on the same four inputs and they disagree. It also needs a carve-out in the diff engine: `vendor/loader/src/config/diff.ts:12` returns false for any marker so expression changes never diff-equal.
+
+(3) The normative half — "the right shape for ANY user-authored expression in persisted config" — is inverted from what dsh enforces. dsh ships a static verifier stating the opposite: `scripts/verify-cordis-config.ts:508-523` (`metadataExpressionErrors`): "`disabled` is the single interpolated metadata field … every other metadata field must stay fully static", emitting `"!!js is not interpolated here"`. `packages/boot/app-boot/src/config-schema/collect.ts:60,127-128` throws `'include patches must be literal mappings; config expressions are not evaluated'` and `'include config must be literal; config expressions are not evaluated'`. The negative contract is test-enforced: `packages/boot/app-boot/tests/config-schema.spec.ts:369-374` rejects `__jsExpr` in `id`/`name`/`group`/`insert`; lines 525-526 reject it in a group row's `config` and an include's `path`. The disciplined shape is a two-field whitelist (`config` on leaf rows + top-level `disabled`), with a hard error everywhere else — the opposite of "any".
+
+(4) No applicability in omo: 0 hits for `__jsExpr` and 0 for `tag:yaml.org,2002:js` across the whole repo (all .ts/.tsx/.js/.json/.yaml/.yml, not just the expected dir). omo depends on js-yaml ^5.4.2 (`package.json:184`, `packages/skills-loader-core/package.json:71`, `packages/utils/package.json:116`) but never uses the `!!js` tag. There is no "user-authored expression in persisted config" to apply the shape to.
+
+What survives: the inert-marker *idea* is genuinely good and worth borrowing as a tagged union resolved at one boundary — it is `structuredClone`-safe (`vendor/include/src/index.ts:63`), deep-equal-stable (~40 test sites assert `toEqual({__jsExpr: …})`), and YAML round-trippable (`represent` at index.ts:14 + `entryListSchema` at index.ts:23). Tier: BORROW the idea, REFERENCE the rest. But if you take it, take the strict-singleton predicate from `settings/src/schema.ts:51` and the verifier from `verify-cordis-config.ts:517`, not the presence-only one from `utils.ts:26` — and scope the whitelist to a named field set rather than "any".
+evidence: LINE CITE IS REAL: `vendor/include/src/index.ts:12` = `construct: (data) => ({ __jsExpr: data })` inside `new yaml.Type('tag:yaml.org,2002:js', {...})` (lines 9-15).
+
+SINKS (production, non-test) — 4, not 1:
+- `vendor/loader/src/config/utils.ts:14` `return evaluate(ctx, value.__jsExpr)`; `evaluate` = `new Function('ctx','expr','with (ctx) { return eval(expr) }')` at utils.ts:5-9. Called from `vendor/loader/src/index.ts:112` `return interpolate(this.ctx, config)` inside `ctx.on('internal/config', ...)`, preceded by `vendor/loader/src/index.ts:111` `if (plugin?.[EntryGroup.key]) return config`.
+- `vendor/loader/src/config/entry.ts:90-91`: `return isJsExpr(options.disabled) ? Boolean(this.evaluate(options.disabled.__jsExpr)) : Boolean(options.disabled)`; `this.evaluate` at entry.ts:95-96 delegates to the same utils.ts:5 function. Doc comment entry.ts:85-89: "The raw node stays in the options, so write-back keeps the form."
+- `packages/preset/agent-preset-registry/src/composition-inventory.ts:64-71` `if (isJsExpr(value)) { try { return Boolean(evaluateExpression(value.__jsExpr)) } catch { return 'conditional' } }`; evaluator type at line 18; only production wiring `packages/preset/agent-preset-registry/src/index.ts:358` `definitionComposition(record.config.plugins, () => { throw new Error('Inactive definition') })`.
+- `packages/test-support/client-runtime/src/assembly/bundle-roster.ts:65` `disabled.some(value => isJsExpr(value) && Boolean(evaluate(disabledContext, value.__jsExpr)))` with `evaluate` imported from `@deepseek-ai/cordis-plugin-loader` (bundle-roster.ts:20).
+- Extra callsite, not activation: `packages/settings/settings/src/index.ts:320` `const resolved: unknown = interpolate(entry.fiber.ctx, inherited)`.
+
+TREE CARRIERS (grep for `EntryGroup.key`, non-test): `vendor/loader/src/config/group.ts:7` (Symbol.for('cordis.group')), `vendor/loader/src/config/group.ts:77`, `vendor/include/src/index.ts:167`, `packages/preset/agent-preset/src/index.ts:15`, consumed at `vendor/loader/src/index.ts:111` and `packages/boot/app-boot/src/config-schema/collect.ts:97`.
+
+THREE DISAGREEING PREDICATES (executed, not reasoned):
+  input                                          | loader utils.ts:26 (presence) | cordis-yaml.ts:37 (type) | settings schema.ts:51 (strict singleton)
+  {__jsExpr:'1+1'}                               | true                         | true                    | true
+  {__jsExpr:'1+1', other:'keep-me'}               | true                         | true                    | false
+  {__jsExpr:42}                                   | true  (eval(42) -> 42)        | false                   | false
+  Object.create(null) + __jsExpr:'1'              | false (fails instanceof)      | true                    | true
+
+DIFF CARVE-OUT: `vendor/loader/src/config/diff.ts:12` `if (!value || typeof value !== 'object' || isJsExpr(value)) return false` — markers never diff-equal.
+
+REPRESENT CARVE-OUT: `vendor/include/src/index.ts:14` `represent: (data) => data['__jsExpr']` (presence-based dump); editor reverses it at `packages/boot/config-editor/src/index.ts:118-120` (`node.items.length !== 1 || typeof node.get('__jsExpr') !== 'string'` then re-tags `tag:yaml.org,2002:js`).
+
+PROJECTOR ADMITS THE EXTRA-KEY HOLE: `packages/boot/app-boot/src/config-schema/projector.ts:9-10` `LOADER_EXPRESSION_SCHEMA` description: "Inert representation of a YAML !!js scalar … Extra marker-object fields are ignored by interpolation."
+
+STATIC VERIFIER (the counter-evidence to "any"): `scripts/verify-cordis-config.ts:508-516` doc: "`disabled` is the single interpolated metadata field: its own `!!js` expression node is allowed and must parse, while expressions nested below it stay truthy data; every other metadata field must stay fully static." Function at :517, error push at :523 `"${expressionPath}: !!js is not interpolated here"`. Parse-only check at :548-563 using `new Script('(' + expression + ')')` ("Compilation only — constructing a Script does not execute its source").
+
+HARD REJECTIONS: `packages/boot/app-boot/src/config-schema/collect.ts:60` `'include patches must be literal mappings; config expressions are not evaluated'`; :127 `'include config must be literal; config expressions are not evaluated'`; :128 `'include path must be literal; config expressions are not evaluated'`.
+NEGATIVE-CONTRACT TESTS: `packages/boot/app-boot/tests/config-schema.spec.ts:369-374` (id/name/group/insert carry `__jsExpr: 'PRIVATE_EXPRESSION'` -> invalid), :525 `config: {__jsExpr:'ctx.entries'}` on a `cordis:group` row -> false, :526 `path: {__jsExpr:'ctx.path'}` on an include row -> false, :513 patches list carrying `__jsExpr` -> false.
+
+OMO (grepped the whole repo, not just an expected dir): `grep -rn "__jsExpr" --include=*.ts --include=*.tsx --include=*.js --include=*.json --include=*.yaml --include=*.yml . | grep -v node_modules | wc -l` -> 0; `grep -rn "tag:yaml.org,2002:js" . | wc -l` -> 0. js-yaml is a dependency (`package.json:184`, `packages/skills-loader-core/package.json:71`, `packages/utils/package.json:116`) but the `!!js` tag is never used. Its only `new Function` uses are import-hiding, not config eval: `packages/omo-opencode/src/plugin/ultrawork-db-model-override.ts:11,20`.
+
+SCALE: 11 non-test files in dsh build or read the marker (vendor/include/src/index.ts, vendor/loader/src/config/{utils,entry,diff}.ts, vendor/loader/src/index.ts, packages/boot/app-boot/src/config-schema/projector.ts, packages/boot/config-editor/src/index.ts, packages/preset/agent-preset-registry/src/composition-inventory.ts, packages/settings/settings/src/schema.ts, packages/test-support/client-runtime/src/assembly/bundle-roster.ts, scripts/{cordis-yaml,verify-cordis-config,verify-runtime-closure}.ts) — i.e. the discipline costs carve-outs in 11 places, which is what "plain data object everywhere" denies.
+
+All file paths are under C:/Users/ADMIN/Projects/deepseek-harness/ (omo greps under C:/Users/ADMIN/Projects/oh-my-openagent/). No vendor README/CLAUDE.md docs were read; every statement above is from source or from a command I ran.
+refuted: true
+
+
+
+## [v3]
+
+reason: LEGAL/PROVENANCE: NOT REFUTED. The code is clean MIT and directly copyable into omp (also MIT) — this is NOT idea-only. dsh (github.com/deepseek-ai/deepseek-harness) is MIT at the root LICENSE (Copyright (c) 2026 DeepSeek) and packages/storage/storage/package.json:32 declares "license": "MIT" with publishConfig.access public. The file was authored in-repo in a single ORIGINAL feature commit e90b0d51df (imccyu, 2026-07-24, real parent f7b36bd3) — not an import/squash — within a 20177-commit history rooted at b67e81ac (Tianyi Cui, 2026-06-10). No SUL contamination: THIRD_PARTY_NOTICES.md (23KB) has zero openagent/oh-my/Sustainable hits; no CLA, no submodules; `git log --all --grep="openagent" -i` returns nothing. No omo->dsh derivation exists: the symbols runKvBackendContract/KvBackendContractHarness appear nowhere in oh-my-openagent, whose only contract.ts is packages/senpi-task/src/kernel-tools/contract.ts (unrelated domain). MIT->MIT requires only retaining the DeepSeek copyright + permission notice. TIERING: the 102-line shared conformance suite and the "one suite, N backends" pattern = BORROW; contract.ts:74-89 (version-mismatch rejects WITHOUT touching data) is the highest-value clause to take.
+
+TECHNICAL CORRECTION (separate, and the claim is wrong here): "tests durability across a real process boundary" is FALSE — reopen() is same-process. json-backend.spec.ts:26 `reopen: async () => new JsonStorageBackend(root)` and sqlite-backend.spec.ts:33 `reopen: async () => backendAt(path)` are plain same-OS-process re-instantiations over a shared on-disk medium; zero spawn/exec/child_process/Bun.spawn in all three files. dsh's own comments concede it: contract.ts:12 "crash simulation", contract.ts:16 "as after a process restart". What reopen() actually buys is a REAL FILE MEDIUM rather than :memory: (sqlite-backend.spec.ts:27-28 says so explicitly) — the claim conflates "real on-disk medium" with "real process boundary". DO-NOT-COPY the claim's framing: a write buffered in a process-level cache and flushed only on exit passes this suite, so borrowing it as crash-durability testing is a false-durability trap. Borrow the pattern, not the marketing. "adopted by both backends" IS TRUE and verified by execution.
+evidence: CITATION CHECK (accurate): dsh file is 102 lines total; lines 32-101 are exactly the runKvBackendContract function body. Function is `export function runKvBackendContract(label: string, create: () => Promise<KvBackendContractHarness>)` wrapping 5 `it()` clauses in `describe(\`kv backend contract: ${label}\`)`.
+
+LICENSE: dsh/LICENSE:1-3 = "MIT License / Copyright (c) 2026 DeepSeek"; packages/storage/storage/package.json:32 = "license": "MIT", :4-6 publishConfig.access public. Target: ultraworkers/package.json = "license": "MIT"; LICENSE = "Copyright (c) 2025 Mario Zechner / Can Boluk / 2026 Stencil Labs, Inc."
+
+PROVENANCE: `git show --stat e90b0d51df` = "feat(storage): storage hub with named backend registry and data-form mounts", author imccyu <276526105+imccyu@users.noreply.github.com>, Fri Jul 24 19:06:48 2026 +0800, PARENTS: f7b36bd36dd9c83444f0ed283a11384b83469f8a, 12 files / 564 insertions, tests/contract.ts = 102 +++ (all additions = new file, not a move). Root commit b67e81ac "Initialize repo..." Tianyi Cui Wed Jun 10 22:57:44 2026. No .gitmodules in dsh.
+
+NO-CONTAMINATION: `grep -niE "openagent|opencode|oh-my|sustainab|SUL" THIRD_PARTY_NOTICES.md` = zero hits. The 7 files matching openagent|oh-my-open are FALSE POSITIVES: openAgentPresetDirectory (api-settings-controller), reopenAgentResume (bench). `git log --all --oneline --grep="openagent" -i` = empty.
+
+NO-DERIVATION: `grep -rn "runKvBackendContract\|KvBackendContractHarness" omo` = 0 hits. omo contract.ts files: only ./packages/senpi-task/src/kernel-tools/contract.ts.
+
+BOTH-BACKENDS ADOPTION (verified by execution): grep callers = packages/storage/storage-json/tests/json-backend.spec.ts:7,22 (`runKvBackendContract('json', ...)`) and packages/storage/storage-sqlite/tests/sqlite-backend.spec.ts:9,29 (`runKvBackendContract('sqlite', ...)`). `npx vitest run <both specs>` = "Test Files 2 passed (2) / Tests 55 passed (55) / Duration 1.24s". Verbose output shows all 5 clauses under BOTH labels: "kv backend contract: json > round-trips records and global durably across reopen", same for sqlite, plus opens-missing-unit, putRecord-overwrites/deleteRecord-idempotent, rejects-version-mismatch-without-touching-data, rejects-after-close/close-idempotent = 10 contract executions.
+
+NO PROCESS BOUNDARY: `grep -niE "spawn|execFile|child_process|Bun.spawn|fork\(" ` on contract.ts + both spec files = zero hits. Self-documenting comments: contract.ts:12 "(crash simulation)", contract.ts:16 "Open a NEW backend instance over the SAME medium, as after a process restart." sqlite-backend.spec.ts:27-28 "The contract suite's reopen() needs a surviving medium, so the harness binds a real file; :memory: gets its own cases below."
+
+UNVERIFIED: whether DeepSeek's corporate policy permits relicensing any file — no CLA in dsh, so no evidence of any third-party contributor agreement that could conflict; treated as clean.
+refuted: false
+
+
+
+## [v2]
+
+reason: REFUTED on the load-bearing half. The claim's mechanical half is true — `runKvBackendContract` really is a shared suite adopted by both backends — but its stated *value* ("tests durability across a real process boundary instead of asserting on an in-memory double") is false, and the version omp already has is strictly stronger. Three independent refutations: (1) dsh's `reopen()` is an object-identity boundary, not a process boundary. `contract.ts:9-10` imports only `vitest` and a type; the file physically cannot spawn. `contract.ts:16` says "as after a process restart" — *as if*. Both factories are in-process constructors (`json-backend.spec.ts:26`, `sqlite-backend.spec.ts:33`), and the sqlite spec comment at :27-28 concedes it binds "a real file; :memory: gets its own cases below" — real file, not real process. (2) "instead of an in-memory double" is also wrong: dsh runs in-memory doubles throughout — a `MemoryStorageBackend` (storage-domain/tests/helpers/memory-backend.ts:117) and many `:memory:` cases (sqlite-backend.spec.ts:45,89,96,103,113,192,203,212). It complements the doubles, not replaces them. (3) omp already has the real thing AND the same-process reopen, so nothing is missing: `storage-exit-lifecycle.test.ts:75-111` spawns an actual `Bun.spawn([process.execPath, "--eval", ...])` child that calls `process.exit(0)`, then copies ONLY the main `.db` with no `-wal`/`-shm` and asserts the rows are visible. Its own comment (:90-94) states the rows are visible "only if process-exit cleanup flushed the deferred perf batch and checkpointed committed frames into the main file." That is a WAL-checkpoint assertion a same-process reopen is structurally BLIND to — the in-process reopen reads committed frames straight from the still-present WAL and passes whether or not a checkpoint ever happened. Three such tests exist (:60, :114, :152). Separately, the precondition for the pattern is absent from the directory the task pointed at: `extensibility/` is 71 files whose only storage touch is one read-only sqlite cache (`skill-descriptions.ts:1,99-102`) — no backend hub, no two interchangeable impls, nothing to bind a shared suite to. The honest residue is a narrow test-refactor win (finding 8), not a durability win, and the framing itself is DO-NOT-COPY.
+evidence: === 1. THE CLAIM'S MECHANISM IS SAME-PROCESS, NOT A PROCESS BOUNDARY ===
+C:/Users/ADMIN/Projects/deepseek-harness/packages/storage/storage/tests/contract.ts:9-10 — imports are ONLY `vitest` (describe/expect/it) and a type. No child_process, no spawn, no worker_thread. The suite file structurally CANNOT cross a process boundary.
+contract.ts:16 — `/** Open a NEW backend instance over the SAME medium, as after a process restart. */` — "as after" = SIMULATION. The file's own docstring refutes the claim's wording.
+Both harness factories are plain in-process constructors:
+- storage-json/tests/json-backend.spec.ts:22-28 → `reopen: async () => new JsonStorageBackend(root)`
+- storage-sqlite/tests/sqlite-backend.spec.ts:29-35 → `reopen: async () => backendAt(path)`
+sqlite-backend.spec.ts:27-28 (their own comment): "The contract suite's reopen() needs a surviving medium, so the harness binds a real file; :memory: gets its own cases below." → real FILE, not real PROCESS. The sqlite contract explicitly is NOT run against `:memory:`.
+
+=== 2. "INSTEAD OF AN IN-MEMORY DOUBLE" IS ALSO FALSE IN dsh ===
+- packages/storage/storage-domain/tests/helpers/memory-backend.ts:117 → `export class MemoryStorageBackend implements StorageBackend`
+- sqlite-backend.spec.ts runs in-memory cases at :45, :89, :96, :103, :113, :192, :203, :212
+So dsh runs BOTH. The suite complements the doubles; it does not replace them.
+
+=== 3. omp ALREADY HAS A STRICTLY STRONGER VERSION (real process + WAL checkpoint) ===
+C:/Users/ADMIN/Documents/ultraworkers/packages/coding-agent/test/storage-exit-lifecycle.test.ts:75-81
+  `const child = Bun.spawn([process.execPath, "--eval", script], { cwd: REPO_ROOT, ... })`
+  with `"process.exit(0);"` in the child script (:73) — a REAL process boundary.
+:85-96 — copies ONLY the main .db (no -wal/-shm): `Bun.write(historyCheckpoint, Bun.file(historyDbPath))`
+:90-94 (their comment): "Both rows are visible only if process-exit cleanup flushed the deferred perf batch and checkpointed committed frames into the main file."
+This is a durability class a same-process reopen CANNOT observe: the in-process reopen reads committed frames from the still-present WAL and passes regardless of whether a checkpoint ever occurred. Three such tests: :60, :114, :152.
+This also directly violates the dsh `SessionStorageWriter` doc (session-storage.ts:25-38) which admits "No `fsync` — power loss may still drop the last page."
+
+=== 4. omp ALSO ALREADY HAS THE SAME-PROCESS reopen (so dsh's pattern is not missing) ===
+C:/Users/ADMIN/Documents/ultraworkers/packages/coding-agent/test/storage-errors.test.ts:34-56 — close → corrupt → reopen → close → reopen, across AgentStorage (:52), HistoryStorage (:79), SqliteAuthCredentialStore (:112).
+
+=== 5. PRECONDITION ABSENT IN THE POINTED-AT DIR ===
+C:/Users/ADMIN/Documents/ultraworkers/packages/coding-agent/src/extensibility/ = 71 files. Only storage touch is a read-only sqlite cache: skill-descriptions.ts:1 `import { Database } from "bun:sqlite"`, :99-102 `function openDb(dbPath)`. No StorageBackend hub, no `implements StorageBackend`, no KvUnit-shaped contract. Nothing for a shared suite to bind.
+Verified: `grep -rn "implements StorageBackend" packages/storage/` (dsh) hits 3; omp's extensibility hits 0.
+
+=== 6. SCALE (honest) ===
+dsh: 2 production StorageBackend impls — storage-json/src/index.ts:39 `JsonStorageBackend`, storage-sqlite/src/index.ts:55 `SqliteStorageBackend` (+1 test double). Shared suite = 103 lines, 5 `it` blocks.
+omp: 6 `SessionStorage` impls across 4690 LOC — FileSessionStorage (session-storage.ts:397), MemorySessionStorage (session-storage.ts:1127), IndexedSessionStorage (indexed-session-storage.ts:118), SqlSessionStorage (sql-session-storage.ts:262), RedisSessionStorage (redis-session-storage.ts:109); plus 2 `ForeignSessionStore` (claude-session-store.ts:345, codex-session-store.ts:457).
+
+=== 7. SURFACE MISMATCH (the KV contract does not map onto omp) ===
+dsh contract exercises putRecord/deleteRecord/setGlobal/loadAll over named "units" with version stamps. omp's SessionStorage surface is openWriter/append/flush/isOpen/stat/listFiles/deleteSessionWithArtifacts. Different vocabulary → the 5 assertions are not liftable.
+
+=== 8. THE ONE GENUINE BORROW KERNEL (test-refactor only, not durability) ===
+packages/coding-agent/test/session/sql-session-storage-manager.test.ts (145 lines) and redis-session-storage-manager.test.ts (272 lines) assert the SAME three behaviors against different substrates:
+  - "persists appended assistant messages into <BACKEND> and reloads [them] via open()"
+  - "SessionManager.list returns <BACKEND>-backed sessions for the cwd"
+  - "rejects a stale rewrite after another <BACKEND> storage appends"
+Normalized diff = 209 lines. A shared factory would compress this. But compression is PARTIAL: the redis suite needs a ~30-line fake client (redis-session-storage-manager.test.ts:20-45 `createFakeREDISBACK`) and redis-session-storage.test.ts:1-16 states it runs "against a hand-rolled fake Redis client so the suite runs without a live server" — so redis is ALREADY tested against an in-memory double, i.e. the exact thing the claim credits dsh with avoiding. That is a medium-fidelity gap in omp, but it is a gap about the MEDIUM, not about the `reopen()` mechanism, and the claim does not make that argument.
+
+TIERS:
+- BORROW (narrow, test-refactor): the shared-factory shape for SessionManager × substrate, scoped to the 3 duplicated cases in finding 8. ~2 files, 209 diff lines. Net-positive but modest, and AGENTS.md's testing doctrine ("no static echo / no success passthrough", full-suite safety) applies to any rewrite.
+- REFERENCE: the `{ backend, reopen() }` harness-interface ergonomics in contract.ts:12-18 — a clean way to parameterize "fresh medium + a way back in."
+- DO-NOT-COPY: the `reopen()`-as-"real process boundary" framing. It is an object-identity boundary. Importing that label into omp would downgrade a repo that already tests the real process boundary at higher fidelity (real spawn + WAL-checkpoint proof) and would invite someone to "fix" the weaker test.
+refuted: true
+
+
+
+## [v3]
+
+reason: NOT REFUTED on the legal/provenance axis. Taking the code is clean: the entire transitive chain from the cited file is MIT, and the destination is MIT. (1) Source repo dsh is MIT (Copyright (c) 2026 DeepSeek) and public (git remote = github.com/deepseek-ai/deepseek-harness). (2) The cited file's ONLY imports are @deepseek-ai/cordis (vendored, MIT, Shigma), @deepseek-ai/dsh-invariants (in-repo, "license": "MIT"), and ./events.ts (same MIT package) — all MIT, no copyleft, no field-of-use restriction, no CLA anywhere in dsh. (3) The omo SUL-1.0 repo is NOT a source: omo has no runtime invariant registry at all (every "invariant" hit there is a .test.ts or test helper), so there is no reverse-engineering taint from the non-commercial license. (4) Destination ultraworkers/omp is MIT (Copyright (c) 2025 Mario Zechner). MIT->MIT with the DeepSeek notice retained is permissive and clean. TWO CAVEATS that qualify but do not refute: (a) the claim's provenance label "dsh/persistence-settings-config" is FACTUALLY WRONG — no such package exists anywhere in dsh (3 independent negative searches; nearest real packages are session-persistence, settings/settings, client/ui-settings-*). The real home is packages/storage/storage-domain (@deepseek-ai/dsh-storage-domain). An auditor following the stated path lands on nothing. (b) Not drop-in copyable to omp: the file is built on cordis's plugin model (Context, Service, ctx.on/ctx.plugin/ctx.effect, inject), and omp does not use cordis (0 hits in omp package.json). "Copy" here means port the pattern onto omp's own lifecycle, not vendor the file.
+evidence: LICENSE CHAIN (all read directly):
+- C:/Users/ADMIN/Projects/deepseek-harness/LICENSE:1-3 -> "MIT License / Copyright (c) 2026 DeepSeek"
+- C:/Users/ADMIN/Projects/deepseek-harness/packages/runtime-diagnostics/invariants/package.json -> "license": "MIT", "name": "@deepseek-ai/dsh-invariants"
+- C:/Users/ADMIN/Projects/deepseek-harness/vendor/cordis/package.json -> "license": "MIT", "name": "@deepseek-ai/cordis"; vendor/cordis/LICENSE -> "MIT License / Copyright (c) 2021-present Shigma"
+- C:/Users/ADMIN/Projects/deepseek-harness/THIRD_PARTY_NOTICES.md (vendored table) -> all cordis foundation packages MIT, "each directory preserves its upstream LICENSE file"
+- C:/Users/ADMIN/Documents/Projects/ultraworkers/LICENSE:1-3 -> "MIT License / Copyright (c) 2025 Mario Zechner"; package.json -> "license": "MIT"
+- Repo-wide LICENSE scan (18 files): root MIT, vendor/* all MIT (Shigma), native/system BSD-3-Clause (Landlock launcher, not in this file's chain). No copyleft anywhere in the chain.
+- No CLA: `ls CLA.md CLA.txt` in dsh -> empty; grep -i "licen|CLA|assign" CONTRIBUTING.md -> 0 hits.
+
+CLAIM SUBSTANCE VERIFIED IN CODE (not docs):
+- C:/Users/ADMIN/Projects/deepseek-harness/packages/storage/storage-domain/src/invariant.ts (68 lines) — imports only cordis Context, dsh-invariants {InvariantFailure, InvariantInstaller}, ./events.ts. Line 25-58: ctx.on('domain/changed', ..., { global: true }) = a LIVE listener bound to production state, i.e. continuous assertion, not test-only. Line 67: ctx.invariants.register(PACKAGE_NAME, install) = per-package ownership by npm package name.
+- packages/runtime-diagnostics/invariants/src/index.ts (200 lines) — InvariantRegistry extends cordis Service; register() reserves the package name in a Set (:136-149), enforces no-duplicate registration (:140-142), and provides package_allowlist/package_blocklist regex filtering so a package can be deselected (:19-22, :121-126). InvariantError carries packageName (:50-66) = attribution.
+- Production mounting is a first-class, CI-enforced contract, not a test artifact: storage-domain/package.json declares a separate "./invariant" export entrypoint, and C:/Users/ADMIN/Projects/deepseek-harness/scripts/check-workspace-constraints.ts:490-499 fails the build unless exports["./invariant"] exists with correct types+default targets. src/index.ts:154/179/231 comments confirm production write paths rely on the invariant cross-checking each event.
+- SCALE (measured, not estimated): 38 invariant.ts companion files; 3,476 total LOC; 42 files call invariants.register.
+
+NO OMO SUL TAINT:
+- C:/Users/ADMIN/Projects/oh-my-openagent — all files matching "invariant" are TEST-TIME: model-requirements-invariants.test.ts, ralph-loop/dispatch-failure-invariant.test.ts, tool-pair-validator/conversion-invariant.test.ts, identity-invariants.test.ts, senpi-task/__adversarial__/chaos-invariants.ts. No InvariantRegistry, no companion-entrypoint convention. The runtime pattern is dsh-original.
+- C:/Users/ADMIN/Projects/oh-my-openagent/LICENSE.md -> Sustainable Use License 1.0 (non-sublicensable, internal/non-commercial only) — relevant to OTHER claims sourced from omo, but not to this one.
+
+PROVENANCE DEFECT (found, non-blocking):
+- Claim cites source "dsh/persistence-settings-config". That package does not exist: find -type d -name "persistence-settings-config" -> 0 results; grep '"name": "@deepseek-ai/dsh-persistence' across all package.json -> 0 results. Real neighbors that do exist: packages/session/session-persistence, packages/session/session-persistence-jsonl, packages/settings/settings, packages/api/settings-controller, packages/client/ui-settings-*. None matches. Actual package: packages/storage/storage-domain, npm name @deepseek-ai/dsh-storage-domain.
+- Git history of the cited file: earliest path commit f5506cf35f (2026-07-25, imccyu) "refactor(storage): rename dsh-domain to dsh-storage-domain"; also ec601ca13d "build(vendor): rescope the vendored Cordis packages into @deepseek-ai". It is DeepSeek-authored, not vendored-from-Shigma — consistent with its DeepSeek-package provenance.
+
+PORTABILITY BLOCKER (engineering, not legal):
+- grep cordis in C:/Users/ADMIN/Documents/Projects/ultraworkers/package.json -> 0 hits. omp has no cordis dependency and no packages/ entry resembling a service/plugin host (agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats). The 68-line companion will not compile verbatim; the reusable asset is the registry contract (package-name ownership + allow/blocklist + attributed failure) plus the companion file shape, re-hosted on omp's own lifecycle.
+refuted: false
+
+
+
+## [v3]
+
+reason: Provenance is clean MIT end-to-end, so the code is genuinely copyable into an MIT public project — not idea-only. dsh root LICENSE is verbatim MIT (Copyright (c) 2026 DeepSeek) with no rider, exception, field-of-use, or non-commercial clause; packages/settings/settings/package.json independently declares "license": "MIT"; the generated THIRD_PARTY_NOTICES.md has zero hits for SUL/SSPL/AGPL/Elastic/BSL/non-commercial. The claimed lines exist verbatim at packages/settings/settings/src/index.ts:73-83 (the SettingsPathOp doc comment + 3-line union type) and the rationale is test-backed (configuration.spec.ts:250-256). Critically, the claim is NOT a laundered port of SUL-1.0 code: git log -L 73,83 shows the block authored 2026-07-30 by Yichen Jiang in deepseek-ai/deepseek-harness (repo first commit 2026-06-10), and omo (oh-my-openagent, SUL-1.0) contains no equivalent — verified by grepping the location the code would live, not just the identifier: no SettingsPathOp/applyPathOp, no op:'set'|'unset' shapes under any other name, no configEditor/volatile()/profile.patchPath model. All vendored deps dsh uses here are MIT upstream (schemastery, cosmokit, cordis all MIT per local clones). Only obligation is MIT attribution (retain the DeepSeek copyright + permission notice), which is a notice requirement, not a copying barrier. Tiering: the 3-line type at 73-83 is BORROW (zero-dependency, copy verbatim with attribution); the applyPathOp body at 86-110 is REFERENCE (real code, but coupled to schemastery schema nodes and dsh-internal isPlainObject/cloneJsonShaped/volatileForm, so adapt rather than lift).
+evidence: LICENSE at C:/Users/ADMIN/Projects/deepseek-harness/LICENSE: 1065 bytes, "MIT License / Copyright (c) 2026 DeepSeek", full standard grant, no added rider. packages/settings/settings/package.json:30 "license": "MIT". grep -inE 'sustainable use|SUL-1|SSPL|AGPL|Elastic|non-?commercial|Business Source' THIRD_PARTY_NOTICES.md -> 0 hits. Local dep licenses: shigma-schemastery/LICENSE, shigma-cosmokit/LICENSE, cordis-upstream-cordiverse/LICENSE all "MIT License / Copyright (c) 2021-present Shigma". Claimed code at packages/settings/settings/src/index.ts:73-83 (verified by awk NR 73-83): doc comment "Path mutation exists for a caller holding an INCOMPLETE view of the section ... a wholesale `replace` rebuilt from a redacted document silently deletes every secret the wire never returned" + `export type SettingsPathOp = { op: 'set'; path: readonly string[]; value: unknown } | { op: 'unset'; path: readonly string[] }`. Implementation: replace() at index.ts:357-360, mutate() at index.ts:367-375, applyPathOp at index.ts:86-110. Backed test: packages/settings/settings/tests/configuration.spec.ts:250-256 "restores an inherited secret without returning it to remote forms". Redaction source confirmed at packages/settings/settings/src/redact.ts:2,98 and packages/api/settings-controller/src/index.ts:71 ("Every remote read uses `redactSecrets: true`, so a `role('secret')` field cannot ride a response"). Origin: `git log -L 73,83:packages/settings/settings/src/index.ts` -> 9f996be8e3 2026-07-30 Yichen Jiang "fix(web-config): close the wire boundary, the redacted-replace data loss, and three P2s"; `git log --reverse` first commit 2026-06-10; remote origin https://github.com/deepseek-ai/deepseek-harness.git. omo checked at C:/Users/ADMIN/Projects/oh-my-openagent (LICENSE.md = Sustainable Use License 1.0): grep -lE 'SettingsPathOp|applyPathOp' over all .ts/.tsx -> 0 files; grep -E "op: ?'(set|unset|remove|delete)'" -> 0 hits; grep -rlE 'configEditor|volatile\(\)|profile\.patchPath' -> 0 files; packages/ contains omo-config-core but with a different design. Target project LICENSE at C:/Users/ADMIN/Documents/Projects/ultraworkers/LICENSE is MIT (Mario Zechner / Can Bolük / Stencil Labs).
+refuted: false
+
+
+
+## [v2]
+
+reason: REFUTED as a port candidate — omp already has a strictly stronger version, and the port would be a regression.
+
+The claim is real in dsh. `packages/settings/settings/src/index.ts:73-110` defines `SettingsPathOp` (`{op:'set',path,value}` | `{op:'unset',path}`) plus a 25-line hand-rolled `applyPathOp` tree editor, consumed by `SettingsForms.mutate()` at :367-375. The stated harm is concrete: `replace()` at :357-360 does `mergeLayers(base, input)` — merging the client's restated section onto the BASE, not onto current — so a document rebuilt from `describe({redactSecrets:true})` (:302-332, which strips `role('secret')` fields per `redact.ts:51-95`) silently drops every secret it never received. I verified all of that by reading the file.
+
+But omp never has that API to be unsafe. Every settings write surface in omp is addressed to a single registered `Setting` leaf, so "restating a section" is not a representable operation:
+
+1. The agent-facing surface REFUSES it outright. `internal-urls/cfg-protocol.ts:362-365`: `if (!leaf) throw new Error("... is a namespace; write a single setting, e.g. ...")`. `parseCfgUrl` (`packages/tui/src/tools/cfg-url.ts:19-30`) exposes exactly two suffixes — plain and `/save`. There is no replace verb, no bulk verb, no unset verb.
+2. It also refuses out-of-schema payloads before the approval prompt fires. `cfg-protocol.ts:367` `const value = leaf.parse(content)` type-parses content against the leaf's declared type. `test/internal-urls/cfg-protocol.test.ts:257-270` asserts all three refusals and closes with `expect(asked).toEqual([])` — the user is never even prompted.
+3. Redaction exists and is tested: `cfg-protocol.ts:151` `if (setting.isCredential && value !== "") return REDACTED`; `cfg-protocol.test.ts:45-48` asserts `token: <redacted>`. 8 credential-marked settings are live in the registry.
+4. The other two write surfaces are equally leaf-addressed: TUI panel `config/settings-ui.ts:77-78` (`resolve(path).set/unset`), and `omp config set|reset` (`cli/config-cli.ts:58,297,378`, via `lookup(path)`). `Settings.overlay()` (`config/settings.ts:711-730`) takes a Record but is `inMemory: true` and never persisted — it is a read view, not a write.
+
+omp's model is stronger in kind, not just degree. dsh's gate on `mutate()` is `isVolatilePath` (`schema.ts:74-79`) — volatility, not secrecy — so a remote client there can still blank a secret via `{op:'unset', path:[<secret>]}`. dsh's fix buys PRECISION, not AUTHORIZATION. omp buys authorization: `writerSettings` (`cfg-protocol.ts:304-317`) refuses subagents, print, RPC, ACP and background forks outright, and every surviving write needs a human answer through `approvalHost.approve()` (:142, :435). dsh's threat model is a REMOTE client; omp has no remote settings writer at all. The only three consumers of the whole registry are read-only projections, and all three redact (cfg-protocol `renderTree`, `config-cli.ts:201`, `settings-ui.ts:54`).
+
+Porting `SettingsPathOp` would be DO-NOT-COPY: it adds a strictly WEAKER write primitive (caller-supplied `string[]` + schema-blind tree editor) next to the existing narrower leaf API, and `applyPathOp` duplicates merge/unset/default-seed/array-index-range logic that omp already gets schema-validated from `Setting.set/unset` → `settingsOf(scope).writeValue/unsetGlobalValue` (`config/registry.ts:716-737`). That is a second implementation of the same thing, which AGENTS.md calls a bug. If a path-addressed API were ever genuinely needed, the address should come from `Setting.segments` (`registry.ts:458`, which already splits an id into a dotted path) rather than a caller-supplied array.
+
+One honest residual, which does not rescue the claim: an agent CAN write a credential setting to `""` via `cfg://searxng/token`, and `formatValue`'s `value !== ""` guard shows the empty value unredacted in the approval prompt (so the human does see the change). That is a deliberate, named, human-approved write — categorically different from an accidental wholesale restatement. If omp ever wants to close it, the right lever is a `credential: true` non-writable flag on the registry, not a path-op type.
+evidence: SOURCE (read, dsh=C:/Users/ADMIN/Projects/deepseek-harness): packages/settings/settings/src/index.ts:73-83 (`SettingsPathOp` + rationale comment), :86-110 (`applyPathOp`), :302-332 (`describe`, `options?.redactSecrets` -> `redactSecrets(...)` on value/base/user), :357-360 (`replace` = `mergeLayers(base, input)`), :367-375 (`mutate`), :387-389 (path gate = `isVolatilePath`); packages/settings/settings/src/redact.ts:51-95, :106-116; packages/settings/settings/src/schema.ts:74-79 (`isVolatilePath` is volatility-only, so a secret path is still unsettable). Scale: dsh settings pkg = 703 lines / 4 files (index 431, redact 116, schema 79, types 77).
+
+TARGET (read, omp=C:/Users/ADMIN/Documents/Projects/ultraworkers): packages/coding-agent/src/internal-urls/cfg-protocol.ts:151 (credential -> `<redacted>`), :304-317 (`writerSettings` refuses taskDepth>0 and `settingsApproval !== true`), :358-365 (leaf-only write, namespace refused), :367 (`leaf.parse(content)`), :401-411, :412-417, :431-440 (approval required, deny/timeout handled); packages/coding-agent/src/config/registry.ts:458 (`Setting.segments`), :508-511 (`isCredential`), :659 (`assertWritable`), :711-737 (`set`/`override`/`unset`/`clearOverride` -> `writeValue`/`unsetGlobalValue`), :800 (`all()`); packages/coding-agent/src/config/settings-ui.ts:64 (`credential: setting.isCredential`), :77-78 (panel set/unset by path); packages/coding-agent/src/config/settings.ts:711-730 (`overlay` is inMemory-only), :877 (`writeValue` override layer); packages/coding-agent/src/cli/config-cli.ts:58, :201, :250, :297, :378 (leaf via `lookup`); packages/tui/src/tools/cfg-url.ts:5, :19-30 (only `save` suffix); test/internal-urls/cfg-protocol.test.ts:45-48, :257-270 (`expect(asked).toEqual([])`).
+
+MEASURED (commands run from packages/coding-agent/src): `grep -rn "register({" --include=*.ts . | wc -l` = 520 call sites across 42 files; `grep -rn "credential: true" | wc -l` = 8 (blob-broker/settings.ts:59 `images.urls.credentials`, config/model-settings.ts:38 `auth.broker.token`, hindsight/settings.ts:31 `hindsight.apiToken`, mnemopi/settings.ts:211 `mnemopi.embeddingApiKey`, mnemopi/settings.ts:262 `mnemopi.llmApiKey`, tools/settings.ts:942 `dev.autoqaPush.token`, web/settings.ts:47 `searxng.token`, web/settings.ts:63 `searxng.basicPassword`); `wc -l` config/registry.ts = 956, config/settings.ts = 3798. `grep -rn "all()\|orderedSettings()"` excluding tests returns only 3 non-DB call sites (config-cli.ts:201, all-settings.ts:90/92, settings-ui.ts:54) plus the registry definition — i.e. no remote structured settings service exists. dsh scale from wc -l: 431/116/79/77.
+
+NOT VERIFIED: whether the dsh `secrets` UI actually round-trips a redacted document back through `replace()` in production (I read the API and its doc comment, not its call sites beyond this file); I did not run either test suite.
+refuted: true
+
+
+
+## [v1]
+
+reason: The file:line citation is accurate and the mechanism genuinely exists, but the claim's load-bearing clause — that path-addressed mutation exists SO THAT "a client that never received secret fields must not be able to delete them by restating a section" — is not enforced by the code. The path API is an alternative write channel, not a guard: `{op:'set', path: []}` is an explicitly documented, wire-exposed operation that performs precisely the wholesale restatement the claim says is prevented, and it destroys a secret exactly as `replace` does (measured: identical patch result). It is strictly WORSE than `replace`, because `replace` merges over the inherited `base` layer and therefore restores inherited secrets, while the empty-path set ignores `base` entirely. The invariant also only holds in a narrow case: (a) only non-empty paths are protected — the per-path volatility guard is skipped when `path.length === 0`; (b) only VOLATILE (form-visible) secrets are in scope at all — a secret without `.volatile()` is never in the form, is not redacted, and survives every operation untouched; (c) `unset`'s apparent protection is inherited-value restoration, not secret protection — a secret with no inherited value is deleted outright, and the array branch skips the fallback. So: accurate as a description of a useful write affordance, overstated as a security guarantee. BORROW the pattern (merge-over-base on replace, path ops resolved against stored state, revision CAS, redaction sidecar) — but do not copy the "clients cannot delete secrets by restating" framing, because the code does not deliver it.
+evidence: CITATION ACCURATE. Real path is `packages/settings/settings/src/index.ts` (not `settings/src/index.ts`). Lines 73-83 are exactly the `SettingsPathOp` JSDoc (73-80) + union type (81-83). Introduced by commit 9f996be8e32 "fix(web-config): close the wire boundary, the redacted-replace data loss, and three P2s" — so the motivation is real, not invented.
+
+PREMISE CONFIRMED BY MEASUREMENT. Fixture schema `z.object({ordinary, count:.volatile(), userTok: z.string().role('secret').volatile()})`; secret written ONLY into the user profile patch (`cordis.patch.yml` in the profile dir), never into the bundle patch. Probe A: `replace(redactedDoc)` ACCEPTED, patch went `{"ordinary":"fixed","userTok":"USER-LAYER-ONLY-SECRET"}` -> `{"ordinary":"fixed","count":2}`. Secret silently deleted. The doc comment's stated failure mode is factual.
+
+THE INVARIANT IS NOT ENFORCED (decisive). Probe B: `mutate('first',[{op:'set',path:[],value:redactedDoc}])` ACCEPTED, no error, patch -> `{"ordinary":"fixed","count":2}`. Secret deleted. Byte-identical destruction to `replace`.
+ - index.ts:89 `if (head === undefined) return op.op === 'set' ? op.value : undefined` — empty path returns the caller's value wholesale, ignoring BOTH `current` and `base`.
+ - index.ts:387-389 `if (path.length && !isVolatilePath(schema, path)) throw ...` — the per-path volatility guard is SKIPPED for the empty path.
+ - types.ts:47-54 documents it as intentional: "The empty path addresses the section root"; `SettingsPathOpView = {op:'set'; path: string[]; value: JsonValue}` permits `[]`; `SettingsController.mutate` (api/settings-controller/src/index.ts:151-158) forwards `input as SettingsPathOp[]` with no validation.
+ - The only guard that fires is the post-hoc `validatePaths` (index.ts:399-409), which walks PRESENT keys. Absence is invisible to it. Probe 3: an empty-path set carrying a non-volatile field IS refused ("Config field \"ordinary\" is not volatile"), but one that merely OMITS a secret sails through.
+ - Strictly worse than `replace`: index.ts:359 `replace` does `mergeLayers(base, input)` so inherited secrets are restored; the empty-path set bypasses `base` entirely. Probe 1 P2: a secret inherited from the bundle also vanished (live value `{"count":2,"list":[]}`, secrets flipped `set:true` -> `set:false`).
+
+SCOPE IS NARROWER THAN "every secret". Only VOLATILE (form-visible) secrets are in scope. Probe P5 used `quiet: z.string().role('secret')` with no `.volatile()`: redacted value `{"count":2}`, `secrets: []`, and after `replace({count:9})` the patch still held `quiet: "non-volatile-secret"`. `strip()` (index.ts:410-419) deletes only volatile paths, so non-volatile config survives every operation. The doc's "every secret the wire never returned" is scoped to volatile secrets.
+
+`unset` PROTECTS INHERITED VALUES, NOT SECRETS. index.ts:370-373 falls back to the `base` (inherited) value when the path resolves there. A secret existing only in the user layer has no fallback and is deleted outright — probe P4: `mutate(unset,['token'])` ACCEPTED, patch entry emptied. The array branch (index.ts:371) bypasses the fallback entirely. The `secrets` sidecar (`{path, set}`, redact.ts:26-33) is a UI affordance for write-only inputs, not server-side enforcement.
+
+WHERE IT DOES HOLD (control C). `mutate([{op:'set',path:['count'],value:9}])` preserved the secret: patch kept `userTok: USER-LAYER-ONLY-SECRET`, `secrets` flipped to `set:true`. Matches existing tests configuration.spec.ts:79-90, 221-232, 250-256.
+
+ONE-LINE FIX EXISTS: reject `op === 'set'` when `path.length === 0`, or route the empty-path set through the same `mergeLayers(base, value)` used by `replace`.
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED on portability. The claim is TRUE in dsh but does not survive the port, because (a) the stated rationale — "stable machine code for wire remapping" — has no target in omp, which has no remote/wire settings-write surface, and (b) omp already contains a strictly better version of BOTH halves of the claim, at finer granularity and enforced at a better point.
+
+1) SOURCE IS ACCURATE (with one wording quibble). dsh `packages/settings/settings/src/index.ts:313-315` really does `const revision = previous === undefined ? 0 : previous.revision + Number(previous.raw !== raw)`, and `:47` really is `readonly code = 'SETTINGS_CONFLICT'`, raised at `:393-394`. But "content hash" is a misnomer: `raw` (line 312) is `JSON.stringify([entry.fiber.uid, schema.toJSON(), entry.options.config ?? {}])` — a serialized string compared with `!==`, never hashed.
+
+2) NO WIRE TO REMAP ACROSS. Checked the locations I expected: `extensibility/settings.ts` is only a declaration registry (`register({id,type,default,ui})`) — no describe/update/revision at all; the real layer `config/settings.ts` (3798 lines) is local YAML; `modes/rpc/rpc-mode.ts:1151` exposes settings read-only; `collab-web/src` + `browser-relay/src` contain no settings writer (sole hit is CSS `font-feature-settings`, base.css:35); `sdk.ts` only reads settings. The one wire protocol that writes config, ACP `modes/acp/acp-agent.ts:777 setSessionConfigOption`, is a closed 3-value enum of *session* state (mode/model/thinking) that pushes a fresh `configOptions` snapshot on every call (:821) — no read-modify-write window exists, so there is nothing for a conflict code to protect.
+
+3) OMP ALREADY SOLVED IT, BETTER — (a) Settings persistence has a per-path THREE-WAY MERGE at the single write choke point, `config/settings.ts:3383-3396`, whose comment at :3379-3380 reads "Apply pending changes unless a newer file generation also changed that setting. Disjoint external edits still merge." with `logger.warn("Settings: skipped stale change after external config edit")` at :3389/:3427. It beats dsh on three axes: GRANULARITY (per-path vs dsh's per-namespace — dsh keys `revisions` by `entry.id` over the entry's ENTIRE config, so a colleague editing field B invalidates your whole-form write of field A; omp skips only the truly conflicting path); ENFORCEMENT POINT (omp guards centrally so every caller is protected, whereas dsh's guard is opt-in — `expected !== undefined` at :393 means a caller omitting the arg silently gets last-write-wins); DETECTION PRIMITIVE (omp's `yamlGenerationsMatch` at :108-124 uses source/mtimeNs/ctimeNs/inode/size PLUS a `Bun.deepEquals` content fallback, so a same-size rewrite on a coarse-timestamp FS is still caught; dsh compares one JSON string). Contract-tested at `test/config/settings-reload.test.ts:57,74,105`.
+
+(b) Cross-worker admission already uses the very same revision+digest pattern at `eval/js/worker-core.ts:278` — and omp's is better on both halves: `shadowSnapshotDigest` (`eval/js/shared/runtime.ts:156-163`) is a real `Bun.hash(JSON.stringify(...))` rather than a string compare, and the refusal is encoded IN THE PROTOCOL as a discriminated-union variant (`{ type: "shadow-run", eligible: false, reason: "snapshot changed" }`, worker-protocol.ts:73) rather than a thrown Error subclass that a wire layer must catch and remap — the "stable machine-readable code" property achieved structurally by the type system, with zero error-code strings to keep in sync. The digest is not redundant: the comment at :157-161 documents a genuine case (`globalThis.String = null` bumps no revision but must invalidate), which is exactly why the dual gate exists.
+
+4) REGRESSION RISK. The port would add a second, coarser conflict mechanism to a subsystem that already solved the problem more precisely, and would collide on the word "revision" — `Settings.revision` (`config/settings.ts:1372`) is already a local cache counter bumped at :3609 inside `#rebuildMerged()` and used for parent-overlay re-sync. Two different "revisions" on one class is a real footgun.
+
+TIER: DO-NOT-COPY as a port. The only BORROW-able residue is a REFERENCE-tier note: IF omp ever adds a remote settings editor, copy the *shape* — pair a revision with a real content digest, and encode refusal in the protocol union rather than in a thrown error code. That is not this port.
+
+SCALE, honestly: dsh's entire settings package is 13 .ts files / 1580 lines; omp's `config/settings.ts` alone is 3798 lines. omp is not missing this concern — it is a larger, differently-shaped system that already closed the gap.
+evidence: DSH SOURCE (true in home repo): packages/settings/settings/src/index.ts:313-315 — `const previous = this.revisions.get(entry.id)` / `const revision = previous === undefined ? 0 : previous.revision + Number(previous.raw !== raw)` / `this.revisions.set(entry.id, { raw, revision, ... })`. :47 — `readonly code = 'SETTINGS_CONFLICT'`. :393-394 — `if (expected !== undefined && descriptor.revision !== expected) throw new SettingsConflictError(...)`. NOTE: :312 `raw` is `JSON.stringify([...])`, a string, not a hash. Scale: `find packages/settings -name '*.ts' -not -path '*/node_modules/*'` = 13 files, 1580 lines total.
+
+OMP (target) — no wire surface: packages/coding-agent/src/extensibility/settings.ts = declaration registry only (`register({id,type,default,ui})`, `combine`, `SettingValueOf`), zero describe/update/revision. packages/coding-agent/src/modes/rpc/rpc-mode.ts:1151 `settings: session.settings` (read-only). grep for settings writes across packages/collab-web/src and packages/browser-relay/src returns only `packages/collab-web/src/styles/base.css:35: font-feature-settings` (CSS false positive). packages/coding-agent/src/sdk.ts imports Settings read-only (lines 79, 85, 163-165, 255, 299-301). packages/coding-agent/src/modes/acp/acp-agent.ts:777-820 `setSessionConfigOption` is a closed switch over MODE_CONFIG_ID / MODEL_CONFIG_ID / THINKING_CONFIG_ID with `throw new Error("Unknown ACP config option: ...")` and returns a fresh `#buildConfigOptions` snapshot at :821 — no revision, no read-modify-write window.
+
+OMP (target) — better existing version, settings: packages/coding-agent/src/config/settings.ts:3379-3396, comment "Apply pending changes unless a newer file generation also changed that setting. Disjoint external edits still merge." then `const canApply = mutation !== undefined && mutation.generation.kind !== "unreadable" && (yamlGenerationsMatch(mutation.generation, loaded.generation) || Bun.deepEquals(getByPath(current, segments), mutation.baseValue));` then `logger.warn("Settings: skipped stale change after external config edit", { path: configPath, setting: modPath })` at :3389 and :3427. `yamlGenerationsMatch` at :108-124 compares source/mtimeNs/ctimeNs/inode/size. `Settings.revision` getter at :1367-1375 ("Monotonic revision for consumers caching derived effective settings"), bumped at :3609 inside `#rebuildMerged()` — a local cache counter, never compared to a caller token. Contract tests: packages/coding-agent/test/config/settings-reload.test.ts:57 "never adopts an invalid on-disk value through the save that merges external edits", :74 "keeps global writes made while a save waits on the lock live and persists them next", :105 "persists a setting written again while its save waits on the lock without a stale-edit warning".
+
+OMP (target) — better existing version, cross-worker: packages/coding-agent/src/eval/js/worker-core.ts:278 `if (current.revision !== msg.expectedRevision || shadowSnapshotDigest(current) !== msg.expectedDigest) { this.#transport.send({ type: "shadow-run", id: msg.id, eligible: false, reason: "snapshot changed" }); return; }`. Digest at packages/coding-agent/src/eval/js/shared/runtime.ts:156-163: `return \`${Bun.hash(JSON.stringify({ values: snapshot.values, initialGlobals: snapshot.initialGlobals }))}\`;` with comment at :157-161 explaining intrinsic-identity flags that "bump no revision" yet must invalidate. Protocol variant at packages/coding-agent/src/eval/js/worker-protocol.ts:50-58 (`expectedRevision` + `expectedDigest` on `run-if-snapshot-matches`) and :73 (`{ type: "shadow-run"; id: string; eligible: boolean; reason?: string }`). Tested at packages/coding-agent/test/eval/worker-core.test.ts:538,579. `expectedRevision`/SETTINGS_CONFLICT appear NOWHERE else in packages/ production code.
+
+Commands run: `find`/`wc -l` on both trees; `grep -n` on dsh packages/settings/settings/src/index.ts; `grep -rn -i "revision|conflict|optimistic|etag|CAS"` on omp config/settings.ts; `grep -rn "readonly code = "` on omp coding-agent/src (hits only collab/registry.ts:152, mcp/errors.ts:59, modes/rpc/rpc-messages.ts:19, modes/acp/acp-agent.ts:125 — none settings-related).
+refuted: true
+
+
+
+## [v1]
+
+reason: OVERSTATED — the mechanics are real and the line citations are exact, but the headline invariant is kind-scoped and has never fired in shipped code, and the two are disjoint.
+
+WHAT IS ACCURATE (verified in code, not docs):
+1. The sort is exactly as claimed. `C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-slots/src/index.ts:1282-1284` sorts on every registration: list kind gets `(a,b) => (a.options.priority ?? 0) - (b.options.priority ?? 0) || ((a.options.order ?? 0) - (b.options.order ?? 0))`; every other kind gets priority-only. Comparator returns 0 on full ties, so ES2019 stable-sort keeps registration sequence. `:1278-1281` is the comment that says exactly this.
+2. `order` is the list-only tiebreaker — confirmed, and it is the only kind that refines by it (`:1283`).
+3. The fail-loud throw exists and names the occupant: `index.ts:1217` (single), `:1223` (keyed), `:1231` (list), all matching on `=== priority` where `priority = options.priority ?? 0` (`:1212`).
+
+WHAT BREAKS THE CLAIM AS STATED:
+
+(a) THE INVARIANT IS NOT UNIVERSAL — CHAIN IS EXEMPT BY DESIGN. The `case 'chain':` arm at `index.ts:1237-1239` has no `occupant` lookup at all; it only enforces that `select` is present. The reason is explicit in `entriesOfSlot` (`:1345-1346`, `:1356`): "Chain keys return the raw entries unchanged: election consumes every entry, shadowing does not apply." I ran a probe against the real `SlotCore`: three chain registrations at the SAME default priority 0 in one slot produced NO throw and all three coexist in the ledger. The claim presents the fail-loud rule as *the* invariant of the system; it is the invariant of 3 of 4 kinds.
+
+(b) THE CLAIM'S OWN USE-CASE IS THE EXEMPT KIND. I grepped `priority:` across `packages/` (36 non-test hits; the overwhelming majority are an unrelated string-literal field — `priority: 'builtin' | 'fallback'` on sidebar-resource definitions, and `OfficeToPdfPriority` in `packages/document/office-to-pdf/`). Exactly TWO shipped registrations set a numeric slot priority, and I read both call sites:
+  - `packages/client/ui-approval/src/client/index.ts:93` → `priority: 1`
+  - `packages/client/ui-subagent/src/client/index.ts:99` → `priority: -10`
+  Both target `conversation.composer`, which is `{ kind: 'chain', scope: 'session' }` (`packages/client/ui-conversation/src/client/apply.ts:315` and `contract/slots.ts:187`). So: the field is used only on chain (no fail-loud), and the fail-loud rule guards single/keyed/list, where the repo sets priority ZERO times. `order:` by contrast has 58 shipped registrations. The protection the claim calls critical has never been exercised by a real registration.
+
+(c) "THROWS NAMING THE OCCUPANT" IS A WRAPPER PROPERTY, NOT A CORE ONE. The name comes from `occupantHint` (`index.ts:1213-1214`), which only interpolates `occupant.registrant` when defined. `registrant` is not set by the core at all — it is auto-stamped by the delegating layer at `packages/client/ui-renderer/src/client/registry.ts:481` (`options.registrant ?? (this.ctx.fiber as {name?: string})?.name`). A direct `SlotCore.register` caller gets `at priority 0 — register at a different priority...` with no occupant named (my chain probe printed `registrant: undefined`).
+
+(d) "FAIL-LOUD" IS TRIVIALLY OPT-OUT-OF. Setting ANY different priority shadows silently — the design comment at `index.ts:1211` says so ("clashes only at the exact priority: a different priority shadows"), and `entriesOfSlot` (`:1357-1366`) then drops the higher-priority entry from the rendered heads. My probes confirmed `SHADOW_THREW: false` and `LIST_SHADOW_THREW: false`. It catches accidental double-registration, not deliberate override. The claim's "keeps priority-less composition from silently shadowing shipped UI" is true as literally worded (priority-less = default 0 = throws), but the guard is one number away from being gone.
+
+(e) The superlative "single most directly portable mechanism in the audit" is UNVERIFIABLE — it is a ranking over an audit artifact I was not given, and no code measurement can settle it. Per the "say UNVERIFIED, do not guess" rule I am not crediting or disputing it.
+
+Minor portability gotcha the claim omits: the occupancy scan reads the RAW ledger (`rec.entries.find(...)`), not the abdictation-filtered `entriesOfSlot` view. An abdicated/dead entry therefore still throws against a new same-priority registration — the error names an occupant that renders nothing.
+
+Existing suite: `bun test packages/client/ui-slots/tests/` → 34 pass, 0 fail (unchanged behavior confirmed). My probe spec was deleted; `git status --porcelain` is clean.
+
+BOTTOM LINE: BORROW the fail-loud-at-exact-priority idea (it is genuinely good and it does work, exactly at the cited lines) — but port it as kind-scoped, drop the chain case, and do not carry over the belief that it protects shipped UI, because in this repo it protects nothing today. The claim as written overstates scope, overstates who enforces the "naming", and hangs its conclusion on a superlative I cannot verify.
+evidence: FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-slots/src/index.ts (1669 lines)
+
+SORT — claim VERIFIED, lines exact:
+  1282	  next.sort(spec.kind === 'list'
+  1283	    ? (a, b) => ((a.options.priority ?? 0) - (b.options.priority ?? 0)) || ((a.options.order ?? 0) - (b.options.order ?? 0))
+  1284	    : (a, b) => (a.options.priority ?? 0) - (b.options.priority ?? 0))
+
+FAIL-LOUD — present for 3 of 4 kinds:
+  1212	    const priority = options.priority ?? 0
+  1213	    const occupantHint = (occupant: StoredEntry) =>
+  1214	      `at priority ${priority}${occupant.registrant !== undefined ? ` (registered by ${occupant.registrant})` : ''} — register at a different priority to shadow it (lowest renders)`
+  1216	      case 'single': {
+  1217	        const occupant = rec.entries.find(e => (e.options.priority ?? 0) === priority)
+  1218	        if (occupant) throw new Error(`single slot "${options.name}" already has a registration ${occupantHint(occupant)}`)
+  1223	        const occupant = rec.entries.find(e => e.options.key === options.key && (e.options.priority ?? 0) === priority)
+  1231	        const occupant = rec.entries.find(e => e.options.id === options.id && (e.options.priority ?? 0) === priority)
+
+CHAIN — NO OCCUPANT CHECK (refutes universality of the invariant):
+  1237	      case 'chain':
+  1238	        if (options.select === undefined) throw new Error(`chain slot "${options.name}" requires options.select`)
+  1239	        break
+
+CHAIN SHADOWING DOES NOT APPLY — by design, in the projection:
+  1345	   * Chain keys return the raw entries unchanged: election consumes every
+  1346	   * entry, shadowing does not apply.
+  1356	    if (kind === 'chain') return rec.entries
+
+OCCUPANT NAME IS WRAPPER-SUPPLIED, NOT CORE:
+  C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-renderer/src/client/registry.ts
+  481	    const registrant = options.registrant ?? (this.ctx.fiber as { name?: string } | undefined)?.name
+
+ONLY TWO SHIPPED NUMERIC SLOT-PRIORITY USES — BOTH ON A CHAIN SLOT:
+  C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-approval/src/client/index.ts
+  92	  ctx.slots.inject('conversation.composer', () => ctx.slots.register({
+  93	    name: 'conversation.composer',
+  94	    priority: 1,
+  C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-subagent/src/client/index.ts
+  97	      name: 'conversation.composer',
+  99	      priority: -10,
+  and that slot's kind:
+  C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-conversation/src/client/apply.ts
+  315	      'conversation.composer': { kind: 'chain', scope: 'session' },
+  C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-conversation/src/client/contract/slots.ts
+  187	    'conversation.composer': { kind: 'chain'; scope: 'session'; owner: ComposerChainProps }
+
+USAGE TALLIES (measured):
+  slot kind declarations: single 283, list 203, keyed 92, chain 24
+  shipped numeric slot `priority:` registrations: 2 (both chain)
+  shipped list `order:` registrations: 58
+  `bun test packages/client/ui-slots/tests/` -> 34 pass, 0 fail (before and after probe)
+
+EMPIRICAL PROBE (temporary spec against real SlotCore, since deleted; repo verified clean):
+  SINGLE_THROW: Error: single slot "p.single" already has a registration at priority 0 (registered by shipped) — register at a different priority to shadow it (lowest renders)
+  SHADOW_THREW: false
+  LIST_THROW: Error: list slot "p.list" already has an entry with id "a" at priority 0 (registered by shipped) — register at a different priority to shadow it (lowest renders)
+  LIST_SHADOW_THREW: false
+  KEYED_THROW: Error: keyed slot "p.keyed" already has an entry for key "k1" at priority 0 (registered by shipped) — register at a different priority to shadow it (lowest renders)
+  CHAIN_SAME_PRIORITY_THREW: false  entries: 3
+  CHAIN_ORDER: -10/undefined,1/undefined
+  -> 6 pass, 0 fail. Confirms: throw+naming for single/keyed/list; no throw at all for chain; silent shadow on any priority delta; occupant name absent when registrant undefined.
+refuted: true
+
+
+
+## [v1]
+
+reason: The claim's MECHANISM is real and well-built, but the specific assertion it anchors to the named file is false. `packages/storage/storage-domain/src/invariant.ts` is never loaded by any shipped profile — its check executes only inside its own vitest unit test, which is the exact opposite of the claim's "continuously against production state instead of only in tests."
+
+What the code DOES confirm (mechanism half of the claim is accurate):
+- File exists, 67 lines, `name = 'storage-domain-invariant'` (invariant.ts:19). Its check is a genuine live global listener on `domain/changed` (invariant.ts:25, `{ global: true }` at :58) that re-reads authoritative in-memory state and compares (invariant.ts:26-57). Not a test fixture, not a startup-only snapshot.
+- Per-package ownership is real and well-implemented. `InvariantRegistry.register(packageName, installer)` (packages/runtime-diagnostics/invariants/src/index.ts:136) reserves the name, throws on duplicate (`:140-142`), binds `fail` to throw `InvariantError(packageName)` with message `invariant violated by "<package>": ...` (`:50-66`, `:161-163`), and runs each installer in a child Cordis fiber whose service access is capped by `installer.inject` (`:166-168`). selection via global switch + per-name allowlist/blocklist (`:15-22`, `:121-126`), `enabled` defaults true (`:98`). That half is accurate.
+
+Why it is refuted (the load surface):
+- The plugin loader resolves only explicit patch rows (`name: '@deepseek-ai/...'` -> loader.import). No auto-discovery loads every package's `./invariant` export; the one "inventory" package is LLM-provider scoped (packages/llm/plugin-package-inventory-deepseek).
+- ripgrep (gitignore-aware, whole repo) for `dsh-storage-domain/invariant` returns exactly 3 hits: its own module doc (invariant.ts:9), the tsconfig path map (tsconfig.base.json:486), and its own test (tests/invariant.spec.ts:6). For `storage-domain-invariant`: 3 hits — its `name` export (invariant.ts:19) and two README lines (README.md:109, README.zh.md:109). Zero production load sites.
+- `apps/cli/composition.md` ("DSH Base Composition", 300 lines) contains 0 invariant rows, yet `storage-domain` IS mounted there (composition.md:73, :234). So the base profile — which web and headless build on — loads the package WITHOUT its companion and does not even mount the `dsh-invariants` service.
+- `dsh-invariants` appears under packages/bundle/ and apps/ only in packages/bundle/sdk-minimal (cordis.patch.yml:107, package.json:41). That profile composes exactly 4 companions (cordis.patch.yml:109-120: session, agent, scope, agent-loop), and `storage-domain` is absent from that profile's plugin list entirely — the exact row list is asserted in apps/cli/tests/built-bin.e2e.ts:1245-1277.
+- The verifier enforces publication, not deployment. scripts/package-invariants.ts:92-140 checks `exports["./invariant"]`, `files`, and the `@deepseek-ai/dsh-invariants` dependency range — it never checks that a companion is mounted in any bundle. So nothing mechanically requires a published companion to actually run.
+- The test is hermetic: it builds its own `Context` and manually plugins the companion with a `MemoryStorageBackend` (tests/invariant.spec.ts:20-30). It never runs inside a real profile.
+
+Scale (measured, honest): 38 companions are published repo-wide (`find packages -name invariant.ts` = 38); 4 are composed in any shipped profile. So "per-package ownership" is repo-wide as a publication convention, but "asserted continuously in production" holds for 4 of 38, and not for the one the claim names.
+
+Tiers: BORROW — the registry design (name reservation, package-attributed `InvariantError`, child-fiber `inject` capability scoping, allowlist/blocklist) and the `./invariant` split that keeps diagnostics out of ordinary package entrypoints. REFERENCE — the companion mechanism itself. DO-NOT-COPY — treating publication as deployment: 34/38 companions are unloaded with no mechanical check that a published companion is mounted, so the pattern yields coverage that reads as exhaustive but is not. If citing this to omp, cite packages/core/scope/src/invariant.ts or packages/core/session/src/invariant.ts (both live global listeners AND actually composed), not storage-domain.
+
+Unverified: I did not build the binary and run `--dump-default-config` myself; the shipped row list is read from the committed composition doc and the e2e assertion, not from a live run.
+evidence: FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/storage/storage-domain/src/invariant.ts (67 lines)
+  :19  export const name = 'storage-domain-invariant'
+  :25  ctx.on('domain/changed', (change: DomainChanged) => {   <- live global listener
+  :58  }, { global: true })
+  :67  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+
+REGISTRY: C:/Users/ADMIN/Projects/deepseek-harness/packages/runtime-diagnostics/invariants/src/index.ts
+  :98   enabled: z.boolean().default(true)
+  :136  register(packageName, installer)
+  :140-142  duplicate package name throws
+  :161-163  fail -> throw new InvariantError(packageName, message)
+  :166-168  child fiber injected with installer.inject
+
+ABSENCE (ripgrep, gitignore-aware, whole repo):
+  "dsh-storage-domain/invariant" -> 3 hits ONLY:
+     packages/storage/storage-domain/src/invariant.ts:9        (own module doc)
+     packages/storage/storage-domain/tests/invariant.spec.ts:6  (own test)
+     tsconfig.base.json:486                                    (path map)
+  "storage-domain-invariant" -> 3 hits ONLY:
+     packages/storage/storage-domain/src/invariant.ts:19       (its own name export)
+     packages/storage/storage-domain/README.md:109
+     packages/storage/storage-domain/README.zh.md:109
+
+COMPOSITION:
+  apps/cli/composition.md  ("DSH Base Composition", 300 lines)
+     grep -ci invariant = 0        <- no invariant rows at all
+     :73  plugin_dsh_base_storage_domain["storage-domain ..."]
+     :234 | `storage-domain` | `@deepseek-ai/dsh-storage-domain` |   <- mounted WITHOUT companion
+  packages/bundle/sdk-minimal/cordis.patch.yml
+     :107  name: '@deepseek-ai/dsh-invariants'      <- only mount of the service
+     :109/:113/:116/:119  session-, agent-, scope-, agent-loop-invariant  (4 companions)
+  grep -rn "dsh-invariants" packages/bundle/ apps/  -> only sdk-minimal (patch + package.json)
+  apps/cli/tests/built-bin.e2e.ts:1245-1277 asserts the exact sdk-minimal row list:
+     no storage/storage-domain row, no storage-domain-invariant row
+
+SCALE:
+  find packages -name invariant.ts -not -path "*/node_modules/*" | wc -l  -> 38 published
+  grep -c "/invariant" packages/bundle/sdk-minimal/cordis.patch.yml       ->  4 composed
+
+VERIFIER (publication, not deployment): scripts/package-invariants.ts:92-140
+  checks exports["./invariant"], files includes lib/invariant.js, dsh-invariants dep range
+  no bundle/load-site assertion
+
+TEST IS HERMETIC: packages/storage/storage-domain/tests/invariant.spec.ts:20-30
+  new Context(); ctx.plugin(Storage); ctx.plugin(InvariantRegistry,{enabled:true});
+  ctx.plugin(DomainInvariantCompanion); MemoryStorageBackend
+
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED on two independent grounds.
+
+(1) The claim is factually false where it lives. "Assert a live invariant CONTINUOUSLY against production state INSTEAD OF ONLY IN TESTS" is backwards. The only loader that mounts companions is `scripts/test-invariants.ts`, a **vitest setupFile** (header: "Vitest-wide invariant host"), registered in all 6 vitest configs (`vitest.config.ts:164,180,195`, `vitest.e2e.config.ts:42`, `vitest.expected.config.ts:11`, `vitest.snapshot.config.ts:50`). Measured: 38 companions published, but only **4 are wired into any shipped bundle**, and only **1 of 6 bundles** wires the registry at all. The DEFAULT bundle (`DEFAULT_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base']`, `packages/boot/app-boot/src/profile.ts:203`) has **0 invariant rows across 95 plugin rows**. `apps/cli/package.json` has **0** occurrences of "invariant", so the shipped CLI cannot resolve the plugin name at all. So 34/38 companions (89%) are test-only; the mechanism is a test harness plus a CI structural gate. dsh's own gate script admits it (`scripts/package-invariants.ts:3-4`): *"The runtime registry stays product-independent."*
+
+(2) The port is not net-positive. The registry is inseparable from Cordis (`InvariantRegistry extends Service`, `ctx.effect()`, `ctx.plugin()` child fiber with startup barrier + disposer, `inject` DI). omp has **no cordis dependency anywhere** and no service container/DI graph — its extensibility layer is a directory loader (`extensions/loader.ts` 677 lines, `extensions/runner.ts` 1992 lines). The publication contract (`exports["./invariant"]`, separate `lib/invariant.js` tsdown entry, `files` array) is pnpm/tsdown-specific; omp packages use `main: ./src/index.ts` with a wildcard `"./*": "./src/*.ts"` export map. Scale: 315 packages → 38 companions amortizes; omp's 16 packages cannot. And omp ALREADY has the intent covered better: 28 reactive `.listen(this, ...)` reconcilers + 29 `reconcile*` methods that *repair* live state instead of throwing mid-turn in a long-lived TUI process, plus 126 files importing `@oh-my-pi/omptype` (10,642 LOC) for boundary validation, plus the AGENTS.md-mandated answer for structural invariants ("enforce with a type test or an oxlint rule" — compile-time and free).
+
+DO-NOT-COPY: the whole companion+registry+AST-gate. DO-NOT-COPY: the throw-on-live-state enforcement half. BORROW (narrow, ~1/50 the size): the specific dual-write check shape, asserted inline at the write site — the way omp already does with `assertNotShorterReadProjection`/`assertNotTruncatedFileReadProjection` (`tools/write.ts:253,268`). REFERENCE: the "a package only asserts what it can maintain" scoping principle — omp's equivalent is simply "keep the assertion at the write site that owns the state."
+evidence: ## 1. The claim is false in dsh's own tree (measured)
+
+**The only loader is a vitest setupFile.** `scripts/test-invariants.ts:1-6`: "Vitest-wide invariant host. Ordinary Cordis roots receive the invariant service with global enablement plus the current test package's companion." Registered as `setupFiles` in all 6 configs:
+- `vitest.config.ts:164,180,195`, `vitest.e2e.config.ts:42`, `vitest.expected.config.ts:11`, `vitest.snapshot.config.ts:50` → `grep -c` = **6**
+
+**The shipped CLI cannot load a companion:**
+- `grep -c "invariant" apps/cli/package.json` → **0**
+- `grep -n "invariant" apps/cli/src/plugin.ts` → **0** (and that file is pnpm plugin management, not Cordis composition)
+- `grep -n "invariant" packages/boot/app-boot/src/profile.ts` → **0**
+
+**Bundle reachability — the decisive numbers:**
+| measurement | command | result |
+|---|---|---|
+| companions published | `ls packages/*/*/src/invariant.ts \| wc -l` | **38** |
+| companions wired into ANY shipped bundle | `grep -rhoE "@deepseek-ai/[a-z-]+/invariant" packages/bundle/*/cordis.patch.yml \| sort -u \| wc -l` | **4** |
+| bundles with invariant rows | `grep -rl invariant packages/bundle/*/cordis.patch.yml \| wc -l` | **1 of 6** |
+| DEFAULT bundle invariant rows | `grep -c "invariant" packages/bundle/base/cordis.patch.yml` | **0** (across **95** `- id:` plugin rows) |
+| default bundle identity | `packages/boot/app-boot/src/profile.ts:203` | `DEFAULT_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base']` |
+
+The single enabling bundle is `packages/bundle/sdk-minimal/cordis.patch.yml:106-119` — 5 rows (service + session/agent/scope/agent-loop). Per-bundle scan of all 6: `acp-app → 0`, `base → 0`, `headless → 0`, `sdk-app → 0`, `web-app → 0`, `sdk-minimal → 2 files`. So **34/38 companions (89%) are test-only**, and the default product runs **0 of 95** plugins as a companion.
+
+**dsh's own gate admits it** — `scripts/package-invariants.ts:3-4`: *"The runtime registry stays product-independent; this gate keeps each published companion complete without requiring synthetic empty companions."* Also 38 companions across 315 packages = 12% coverage.
+
+## 2. The real enforcement is a banned source-grep
+
+`scripts/package-invariants.ts` (419 lines) reads `src/invariant.ts` as text/AST and asserts: no `@generated` marker (`:238`), exactly one `ctx.invariants.register(<own package name>)` (`:287`), named exports `name`/`inject`/`apply` (`:294`), no default export (`:299`), non-empty installer body that uses the `fail` reporter (`:326-341`). This is precisely the class omp's `AGENTS.md` bans: *"Never source-grep… `expect(src).toContain("someCall()")`… is banned. It tests how code looks, not what it does."*
+
+## 3. No host in omp
+
+- `grep -rn "cordis" --include="package.json" packages/*/package.json package.json` → **0 hits**. The registry needs `Service` (`invariants/src/index.ts:94`), `ctx.effect()` (`:153`), `ctx.plugin()` child fiber with `await child` barrier + disposer (`:166-183`), and `inject` DI (`:32-42,166-168`). omp has no DI graph; `extensions/loader.ts` is a directory loader.
+- Publication contract is tsdown/pnpm-specific: `exports["./invariant"]` → `./lib/types/invariant.d.ts` + `./lib/invariant.js` (`package-invariants.ts:117-126`), separate tsdown entry, `files` array entry. omp: `packages/omptype/package.json:23,57` uses `main: ./src/index.ts` + `"./*": "./src/*.ts"` — no per-subpath bundling.
+- Scale: dsh **315** packages vs omp **16** (`ls -d packages/*/ | wc -l`).
+
+## 4. omp already covers the intent, better
+
+- Repair-not-throw, reactive: **28** `.listen(this, ...)` reconcilers + **29** distinct `reconcile*` methods. e.g. `packages/coding-agent/src/session/agent-session.ts:2170-2171` (`cfgProviderAppendOnlyContext.listen(this, () => this.#syncAppendOnlyContext(this.model))`; `cfgModelRoles.listen(this, () => this.#advisors.reconcileModelRoles())`), `packages/coding-agent/src/modes/interactive-mode.ts:1924` (`cfgLiveUiSettings.listen(this.settings, (next, previous) => this.#applyUiSettingChanges(next, previous))`).
+- Boundary validation: **126** files import `@oh-my-pi/omptype`; `wc -l packages/omptype/src/*.ts` = **10,642**.
+- omp's existing doctor is pull-based and subsystem-scoped, not a throw-registry: `extensibility/plugins/doctor.ts` (65 lines — checks `sd`/`sg`/`git` + 3 API keys) and `extensibility/plugins/manager.ts:969` `doctor()` (filesystem/manifest reconciliation for installed plugins, `omp plugin doctor --fix`).
+- Structural-invariant ownership is already mandated as compile-time: `AGENTS.md` — *"enforce structural invariants … with a type test or an oxlint rule."* 40+ local `assert*` helpers already carry per-module ownership (e.g. `tools/write.ts:89,253,268`).
+
+## UNVERIFIED
+- I could not execute the built `dsh` binary to confirm the default profile runs 0 companions at runtime; the conclusion is from manifest/bundle/CI-wiring evidence plus the fact that `apps/cli/package.json` omits the dependency, which a Cordis loader needs to resolve the plugin name.
+refuted: true
+
+
+
+## [v1]
+
+reason: Claim is ACCURATE on both halves, verified by line number and by running the tests. (1) Monotonic revision at packages/settings/settings/src/index.ts:311-315 is verbatim correct: `const revision = previous === undefined ? 0 : previous.revision + Number(previous.raw !== raw)` — non-decreasing, advancing only on content change. The disposal path (lines 333-338) uses a flat `previous.revision + 1`, also monotonic. (2) `SettingsConflictError.code = 'SETTINGS_CONFLICT'` at index.ts:47 is an exact string match, and the wire remap is real and genuinely decoupled: settings-controller/src/index.ts:240-247 matches STRUCTURALLY via Reflect.get on code/message/expected/actual rather than `instanceof`, and the controller never imports the class (it imports only SettingsDescriptor, SettingsPathOp, SettingsForms at line 14). It remaps into a different taxonomy: SETTINGS_CONFLICT -> RemoteError('settings/conflict'). Two honest caveats that do not refute: (a) "content hash" is loose — there is NO digest, it is JSON.stringify over [fiber.uid, schema, config]; grep -cE "createHash|Bun\.hash|sha[0-9]|digest\(" returns 0 across all four files in packages/settings/settings/src/. It is a content-derived fingerprint compared by string equality — terminology looseness, not a behavior error. (b) The guard is OPT-IN: expectedRevision is `number | undefined` end-to-end, check is `if (expected !== undefined && descriptor.revision !== expected)` (line 393), and controller line 111 states outright "`undefined` writes unconditionally" — so SETTINGS_CONFLICT is never raised for callers that omit it. Tiers: BORROW the structural (non-instanceof) error remap across a package boundary plus the settings/conflict vs settings/rejected taxonomy split (a stale writer is its own outcome, not a malformed request — re-read and re-apply rather than 400); REFERENCE the monotonic-revision-over-content pattern itself (standard optimistic concurrency); DO-NOT-COPY nothing found, though a port should consider making the revision check mandatory rather than silently skippable.
+evidence: FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/settings/settings/src/index.ts (431 lines total)
+
+L45-63 — error class, exact code match:
+  45  export class SettingsConflictError extends Error {
+  46    /** Stable machine code for wire layers mapping this to their own taxonomy. */
+  47    readonly code = 'SETTINGS_CONFLICT'
+  58    constructor(ns: SettingsNamespace, expected: number, actual: number) {
+  59      super(`settings namespace "${ns}" changed since it was read (expected revision ${String(expected)}, now ${String(actual)})`)
+
+L311-318 — revision over content fingerprint (the claimed range, verbatim):
+  311  const raw = JSON.stringify([entry.fiber.uid, schema.toJSON(), entry.options.config ?? {}])
+  312  const autoGenerate = this.presentations.get(entry.fiber)?.auto ?? true
+  313  const previous = this.revisions.get(entry.id)
+  314  const revision = previous === undefined ? 0 : previous.revision + Number(previous.raw !== raw)
+  315  this.revisions.set(entry.id, { raw, revision, ns: entry.options.id as SettingsNamespace, autoGenerate })
+  316  if (previous?.raw !== raw || previous.autoGenerate !== autoGenerate) {
+  317    this.ownerContext.emit('settings/document-updated', entry.options.id as SettingsNamespace, revision)
+
+L225 — the revision store (set-only, never deleted => monotonicity preserved):
+  225  private revisions = new Map<string, { raw: string | undefined; revision: number; ns: SettingsNamespace; autoGenerate: boolean }>()
+
+L333-338 — disposal path, also monotonic:
+  335    const revision = previous.revision + 1
+
+L393-395 — the conflict raise, note the `expected !== undefined` opt-in gate:
+  393  if (expected !== undefined && descriptor.revision !== expected) {
+  394    throw new SettingsConflictError(ns as SettingsNamespace, expected, descriptor.revision)
+
+FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/api/settings-controller/src/index.ts
+  14  import type { SettingsDescriptor, SettingsPathOp, SettingsForms } from '@deepseek-ai/dsh-settings'
+      (grep confirms SettingsConflictError is NEVER imported by the wire layer)
+  111  /** @param expectedRevision - revision the caller read; `undefined` writes unconditionally. */
+  240-247 — structural match, no instanceof:
+  240  function settingsConflictOf(error: unknown): SettingsConflict | undefined {
+  242    if (Reflect.get(error, 'code') !== 'SETTINGS_CONFLICT'
+  243      || typeof Reflect.get(error, 'message') !== 'string'
+  244      || typeof Reflect.get(error, 'expected') !== 'number'
+  245      || typeof Reflect.get(error, 'actual') !== 'number') return undefined
+  257-268 — remap into a different taxonomy:
+  257  function rejected(ns: string, error: unknown): RemoteError {
+  260    return new RemoteError('settings/conflict', conflict.message, { ns, expected, actual }, { cause: error })
+  267  return new RemoteError('settings/rejected', messageOf(error), { ns }, { cause: error })
+
+TESTS ACTUALLY RUN (not merely read):
+  $ npx vitest run packages/settings/settings/tests/configuration.spec.ts -t "refuses stale revisions"
+    -> Test Files 1 passed | Tests 1 passed | 24 skipped (25), Duration 1.30s
+  $ npx vitest run packages/api/settings-controller/tests/settings-controller.host.spec.ts
+    -> Test Files 1 passed | Tests 8 passed (8), Duration 3.03s
+  Assertion at settings-controller.host.spec.ts:33:
+    await expect(controller.update(model.ns, { model: 'stale' }, model.revision)).rejects.toMatchObject({ code: 'settings/conflict' })
+  Assertion at configuration.spec.ts:171:
+    expect(updates.filter(([ns]) => ns === 'first')).toEqual([['first', original.revision + 1]])
+
+NEGATIVE CHECK (per "0 grep hits is not proof of absence" — I grepped the expected location, packages/settings/settings/src/):
+  $ grep -cE "createHash|Bun\.hash|sha[0-9]|digest\(" packages/settings/settings/src/*.ts
+    index.ts:0  redact.ts:0  schema.ts:0  types.ts:0
+  => "content hash" is a loose descriptor; raw is a JSON serialization compared by string equality, not a digest.
+refuted: false
+
+
+
+## [v3]
+
+reason: The claim survives BOTH the factual and the legal/provenance refutation attempt. Factually, every cited element exists verbatim at the cited lines. Legally, the code is MIT-licensed, self-authored inside the MIT repo, with no third-party or SUL-1.0 provenance, and the target (ultraworkers) is a public MIT project — so this is cleanly COPYABLE, not idea-only. The instruction to "default to refuted=true if taking the CODE is not clean" does not trigger: taking this code IS clean. The SUL-1.0 non-sublicensable license that constrains other claims in this deepseek-harness vs oh-my-openagent comparison does NOT apply here, because the specific mechanism traced (SettingsConflictError / SETTINGS_CONFLICT / monotonic revision) has zero presence in oh-my-openagent. This is a BORROW: the pattern and the ~15 lines of implementation can both be taken, with only the obligation to retain the MIT notice on any substantial copy. One fidelity caveat for whoever ports it: the revision counter is per-process in-memory state, not persisted, so monotonicity does not survive a restart.
+evidence: FACTUAL (all verified, no line drift — `git status --porcelain` clean on both files):
+- packages/settings/settings/src/index.ts:311-315 verbatim: `const raw = JSON.stringify([entry.fiber.uid, schema.toJSON(), entry.options.config ?? {}])` / `const autoGenerate = this.presentations.get(entry.fiber)?.auto ?? true` / `const previous = this.revisions.get(entry.id)` / `const revision = previous === undefined ? 0 : previous.revision + Number(previous.raw !== raw)` / `this.revisions.set(entry.id, { raw, revision, ns: entry.options.id as SettingsNamespace, autoGenerate })`. Monotonic revision over a content fingerprint: CONFIRMED.
+- index.ts:45-64 `export class SettingsConflictError extends Error`; :47 `readonly code = 'SETTINGS_CONFLICT'` with JSDoc "Stable machine code for wire layers mapping this to their own taxonomy."; fields `expected`/`actual` at :49-51. Thrown at :394 inside `write()` when `expected !== undefined && descriptor.revision !== expected`. CONFIRMED.
+- "for wire remapping" is not aspirational — a real consumer exists. packages/api/settings-controller/src/index.ts:233-238 declares `interface SettingsConflict { readonly code: 'SETTINGS_CONFLICT'; message; expected; actual }`; :240-247 `settingsConflictOf()` duck-types structurally via `Reflect.get(error, 'code')` (NOT instanceof — correct across the workspace package boundary); :257-266 `rejected()` returns `new RemoteError('settings/conflict', conflict.message, { ns, expected, actual }, { cause: error })`; called at :204 `throw rejected(ns, error)`. CONFIRMED.
+
+LEGAL:
+- /c/Users/ADMIN/Projects/deepseek-harness/LICENSE = "MIT License, Copyright (c) 2026 DeepSeek" — full permission-to-use/copy/modify/merge/publish/distribute/sublicense/sell granted.
+- packages/settings/settings/package.json declares `"license": "MIT"` independently. packages/api/settings-controller/package.json declares `"license": "MIT"` (name `@deepseek-ai/dsh-api-settings-controller`).
+- THIRD_PARTY_NOTICES.md is 288 lines; `grep -in "settings|SUL|Sustainable"` returns ZERO hits — no attribution constraint touches this code.
+- All 10 vendor/*/LICENSE files are MIT (Copyright (c) 2021-present Shigma): native/system, packages/boot/hmr, vendor/cordis, vendor/cosmokit, vendor/group, vendor/hmr, vendor/include, vendor/loader, vendor/logger-console, vendor/schemastery, vendor/timer. No SUL-1.0 anywhere in dsh.
+- Target repo /c/Users/ADMIN/Documents/Projects/ultraworkers/LICENSE = MIT (Copyright (c) 2025 Mario Zechner, Copyright (c) 2025-2026 Can Bölük); root package.json:5 `"license": "MIT"`. Public MIT project.
+
+PROVENANCE (rules out derivation from the non-sublicensable repo):
+- `git log --diff-filter=A -- packages/settings/settings/src/index.ts` => `ec0786e099 feat(settings): add user-settings seam (ctx.settings) + file provider`. Created in-repo, never vendored. Later history: 601d6761e4, f4e49ccf8f, a2d0f7f411, d88f771e19, ec601ca13d.
+- `grep -rln "SettingsConflictError\|SETTINGS_CONFLICT" --include=*.ts --include=*.tsx` over /c/Users/ADMIN/Projects/oh-my-openagent (SUL-1.0) => ZERO files. omo package.json:164 `"license": "SUL-1.0"`; LICENSE.md terms = non-sublicensable, internal-business/non-commercial only. None of that reaches this code.
+
+FIDELITY CAVEAT (not legal): `private revisions = new Map<...>()` at index.ts:225 is per-instance in-memory state. Monotonicity holds for one SettingsForms process lifetime; the counter restarts at 0 after a restart, and :333-338 bumps revision + 1 for entries that go inactive (raw set to undefined). A port that persists the counter must handle the reset or reintroduce a stale-writer hazard.
+
+UNVERIFIED: I did not audit whether dsh's own `dsh-settings` package is published to a registry with different terms than the in-repo LICENSE (the package.json has `publishConfig.access: public` and `version: 0.1.7-rc.2`, but I did not fetch the published tarball). The in-repo LICENSE and package.json field are the operative grant for source copying.
+refuted: false
+
+
+
+## [v2]
+
+reason: REFUTED on portability. (1) The claim is accurate about dsh — I verified all of it in C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-slots/src/index.ts: the stable ascending sort at :1278-1284, `order` as the list-kind tiebreaker at :1283, and the fail-loud rule at :1211-1233 whose message names the occupant/registrant (:1212-1214). Package is 1,964 lines across index.ts/renderer.ts/store.ts. (2) But omp ALREADY has this invariant, in a STRICTLY STRONGER form, at two layers — packages/tui/src/components/composer/registry.ts:44-54 `registerComposerStyle` throws on built-in ids unconditionally, throws on duplicate extension ids ("already registered"), and returns an identity-guarded disposer; plus a second guard at packages/coding-agent/src/extensibility/extensions/loader.ts:285. dsh is strictly WEAKER: it only throws at an *exact* priority match, so a dsh extension picking a lower priority silently shadows a built-in. omp has no priority escape hatch at all. (3) The specific harm the claim names is not a live failure mode in omp: the widget maps (extension-ui-controller.ts:87-88) are NEVER seeded with core-owned entries (only written at :353, cleared at :1217-1218), and setHeader/setFooter are literal no-ops in the TUI (:157-158) — so "silently shadowing shipped UI" cannot occur in the widget cell, because there is no shipped UI there to shadow. (4) The portable delta is therefore a no-op: fail-loud + disposer already exist. What dsh has that omp lacks is multi-occupant priority COEXISTENCE (deliberate shadowing, lowest wins) — a composition feature, not the safety invariant. Porting it would mean converting omp's imperative set()/replace() API into a register/disposer ledger, a breaking change to the public extension API for zero safety gain. Per the task's default, the port is not net-positive. Honest caveat (does not rescue the claim): the built-in/duplicate throw branches are untested — 0 grep hits for "Cannot replace built-in composer" under any test/ dir, and packages/tui/test/editor.test.ts:2981 covers only the register/dispose round-trip. The guard is live but undefended; that is an omp coverage gap, not evidence for the port.
+evidence: CLAIM VERIFIED IN HOME REPO (dsh packages/client/ui-slots/src/index.ts, 1669 lines; package 1964 lines total): sort at :1278-1284 with `next.sort(spec.kind === 'list' ? (a,b) => ((a.options.priority ?? 0) - (b.options.priority ?? 0)) || ((a.options.order ?? 0) - (b.options.order ?? 0)) : (a,b) => (a.options.priority ?? 0) - (b.options.priority ?? 0))` — `order` tiebreaker confirmed at :1283. Fail-loud at :1212-1233: `const occupantHint = (occupant) => \`at priority ${priority}${occupant.registrant !== undefined ? \` (registered by ${occupant.registrant})\` : ''} — register at a different priority to shadow it (lowest renders)\``, with per-kind occupant lookups (single :1217, keyed :1223, list :1231) all keyed on `(e.options.priority ?? 0) === priority`.
+
+COUNTER-ARTIFACT (omp already has it, stronger) — packages/tui/src/components/composer/registry.ts:44-54:
+  export function registerComposerStyle(style: ComposerStyle): () => void {
+    const id = style.id.trim();
+    if (id.length === 0 || id !== style.id) throw new TypeError("Composer style id must be a non-empty trimmed string");
+    if (isBuiltinComposerStyle(id)) throw new Error(`Cannot replace built-in composer style "${id}"`);
+    if (extensionComposerStyles.has(id)) throw new Error(`Composer style "${id}" is already registered`);
+    extensionComposerStyles.set(id, style);
+    return () => { if (extensionComposerStyles.get(id) === style) extensionComposerStyles.delete(id); };
+  }
+Doc comment :41-43: "Built-in ids and duplicate extension ids are rejected. The returned disposer removes only this registration." 8 built-in styles at :12-21. Second layer: packages/coding-agent/src/extensibility/extensions/loader.ts:285-286 `if (isBuiltinComposerStyle(id)) throw new Error(\`Cannot replace built-in composer shape "${id}"\`)`. STRICTLY STRONGER than dsh: dsh's guard is `=== priority` only, so `priority: -1` silently shadows a shipped entry; omp's built-in guard is unconditional.
+
+SPECIFIC HARM NOT LIVE IN omp — the widget cell: extension-ui-controller.ts:343-355 `setHookWidget` does `this.#removeHookWidget(this.#hookWidgetsAbove, key); this.#removeHookWidget(this.#hookWidgetsBelow, key); ... target.set(key, this.#createHookWidget(content))` — a last-writer-wins Map with no priority/throw, but the maps at :87-88 are written ONLY at :353 and cleared at :1217-1218, so no shipped entry ever occupies the cell. setFooter/setHeader are no-ops in the TUI: extension-ui-controller.ts:157-158. Headless stubs likewise (extensions/runner.ts:427-429, modes/acp/acp-agent.ts:580-582, session/agent-session.ts:558-559, modes/rpc/rpc-mode.ts:924-928).
+
+GENUINELY WEAKER SPOTS (small, local, REFERENCE-tier not a port justification): runner.ts:1095-1098 `getComposerShapes()` aggregates across extensions with bare `shapes.set(id, shape)` (silent last-wins, doc comment :1094 acknowledges "later extensions winning id collisions"). omp's own house pattern for exactly this: custom-commands/loader.ts:205 bundled-first load order + :224-238 records `error: \`Command name "${command.name}" conflicts with existing command\`` and drops the loser, surfaced via extensibility/extensions/load-errors.ts:4-11 `formatExtensionLoadNotifications`.
+
+CONCEPT-ELSEWHERE CHECK (hard rule 3): grepped omp extensibility for `slot|Slot` → only `compressionSlots` Semaphore (skill-descriptions.ts:18), no UI slot system. grepped packages/tui/src for `priority` → layout-only ranks (components/metric.ts:14,41-49 metric drop order; components/table.ts:17,42-43 column shrink), not registration/occlusion priorities. The concern lives in omp under a different name: the composer style registry.
+refuted: true
+
+
+
+## [v1]
+
+reason: Mechanically accurate, but the load-bearing causal and normative claim is refuted by the code. CONFIRMED: guard.ts:127-132 does overwrite a declared priority (`options.priority = priority`) whenever `spec === undefined || spec.kind !== 'chain'`; runtime.ts:424 is `allocatePriority: () => --this.nextPriority` with `private nextPriority = 0` (runtime.ts:183), descending so later registrations sort first (guard.ts:125); rows are pushed to the ledger at guard.ts:135 (factories get `priority: undefined`, guard.ts:115); the chain carve-out is real and tested (guard.client.spec.ts:165-172). REFUTED: "because ranks are host-allocated and globally unique, a render crash is attributable to a specific package" is false — the render-crash path (runtime.ts:217-219, the onEntryError handler) resolves the owner by a WeakMap lookup on the component OBJECT IDENTITY (`this.owners`, runtime.ts:202, populated by `claim` at 417), and `failures` is keyed by pluginId (runtime.ts:208). Priority is never consulted there. The guard's own doc at guard.ts:41-48 states the attribution job belongs to the ownership index: "Identity is the key." Further, the ledger's `priority` field is WRITE-ONLY: the only two `priority` references in the entire `src/client/` tree are guard.ts:128 (read the declared option) and 131 (the overwrite); nothing reads `row.priority`. The ledger is a plain array `DynamicCordisSlotLedgerRow[]` (runtime.ts:110), not "keyed by slot", and its sole consumption is runtime.ts:268 `slots: [...new Set(ledger.map(row => row.slot))]` which projects slot names only, omitting priority. Priority's real, tested job is newest-wins shadowing order (guard.client.spec.ts:149-163 asserts -1/-2, "Newest-wins ordering is what 'registering IS shadowing' means"). So dsh does NOT implement priority-as-attribution; the claim bolts that property on because the code comments gesture at it. Two overstatements beyond the main one: "globally unique" is per runtime instance / page-local (nextPriority is a private field; the code says "This page's last render crash" runtime.ts:207 and separately notes the host keeps crashes ACROSS pages, runtime.ts:228-230), and guard.ts:32's doc comment calling priority "globally unique — how winners are matched back to packages" is an unrealized claim (nothing reads the field). The chain-exemption verdict does hold, and for a reason independent of attribution: a monotonically descending host rank would break a chain slot's own select-order election. Note: the cited path exists in dsh, NOT in omo — omo has zero `cordis` files, zero `packages/extensions/`, and zero `nextPriority` hits in working tree, git index, and all-branch history.
+evidence: REFUTES: "Because ranks are host-allocated and globally unique, a render crash is attributable to a specific package." Actual attribution path is component-identity, not priority. C:/Users/ADMIN/Projects/deepseek-harness/packages/extensions/cordis-client-runner/src/client/runtime.ts:217-219 — `this.unwatch = env.slots.onEntryError((slot, entry, error, info) => { const component: unknown = (entry as { component?: unknown }).component; const owner = indexable(component) ? this.owners.get(component) : undefined; if (owner === undefined) return ...`. runtime.ts:202 — `private readonly owners = new WeakMap<object, { pluginId; pluginRunId; agentId }>()`. runtime.ts:208 — `private readonly failures = new Map<CordisDynamicPluginId, DynamicCordisRenderFailure>()`. runtime.ts:417 — `this.owners.set(component, { pluginId: pkg.pluginId, pluginRunId: pkg.pluginRunId, agentId })`. guard.ts:41-48 (the guard's own doc) — "Ownership index sink: the component object seated in a slot, so a later render crash reported against the stored entry can be attributed back to this package. Identity is the key — the registry stores the component verbatim — which is why nothing else has to be remembered about the entry."
+
+REFUTES "a ledger keyed by slot": runtime.ts:110 `ledger: DynamicCordisSlotLedgerRow[]` (an array of rows); its ONLY read is runtime.ts:268 `slots: [...new Set(ledger.map(row => row.slot))]` inside getSnapshot(), which projects slot names and drops priority.
+
+REFUTES the priority-as-attribution premise: `priority` appears exactly twice in the whole src/client/ tree — guard.ts:128 `let priority = options.priority` and guard.ts:131 `options.priority = priority`. The ledger field is write-only; no consumer reads row.priority. The test at tests/guard.client.spec.ts:160 reads `bench.slots.entries('root').map(entry => entry.options.priority)` — off the registry, not the ledger row.
+
+CONFIRMS the mechanical part: guard.ts:127-132 `const spec = (slots.spec as ...)(slot); let priority = options.priority; if (spec === undefined || spec.kind !== 'chain') { priority = env.allocatePriority(); options.priority = priority }`; runtime.ts:424 `allocatePriority: () => --this.nextPriority`; runtime.ts:183 `private nextPriority = 0`; guard.ts:125-126 comment "Shadowing kinds get a page-local rank. Later registrations sort first; chain slots keep their own election (select order) untouched."
+
+CONFIRMS chain carve-out: guard.client.spec.ts:165-172 mocks spec to `{ kind: 'chain', scope: 'root' }` and asserts ledger equals `[{ slot: 'root', priority: 5 }]`.
+
+REFUTES "globally unique": nextPriority is a private per-instance field; runtime.ts:207 "This page's last render crash per package"; runtime.ts:228-230 "the host keeps the last crash ACROSS pages for the model, this map is what THIS page currently shows."
+
+UNVERIFIED vendor doc: guard.ts:31-32 `/** The assigned shadowing priority (globally unique — how winners are matched back to packages). */` — no code path reads this field, so the described matching is unrealized.
+
+SCOPE NOTE: cited path exists only in dsh. In omo (C:/Users/ADMIN/Projects/oh-my-openagent, origin/HEAD e3d2409d fetched fresh), `git ls-tree -r origin/HEAD | grep -i cordis` returns zero, there is no packages/extensions/, and `git grep -c nextPriority origin/HEAD` returns zero; working tree, git index, and `git log --all -- "*cordis*"` all return nothing for cordis. rg sanity check: 643 hits for "priority" in omo, so the zeros are real and not tooling failure.
+refuted: true
+
+
+
+## [v1]
+
+reason: OVERSTATED — the mechanics are verbatim correct, but the load-bearing justification clause ("which gets 'specific beats general'") is measurably false and survives only in a narrow case. I refuted it, not the file description.
+
+WHAT SURVIVES (verified line-by-line):
+1. The three-band ladder is real. tab-registry.ts:49 declares the union 'extension'|'builtin'|'fallback', :52-56 RANKS = {extension:3, builtin:2, fallback:1}, :59 DEFAULT_BAND = 'extension'. (The claim cites 49-58; the ladder actually spans 49-59 — DEFAULT_BAND is on 59, not 58. Trivial off-by-one, the only inaccuracy in the citation.)
+2. The un-annotated default is applied at :257 `definition.priority ?? DEFAULT_BAND`.
+3. The ranking tuple at :361-362 is literally band -> matched-pattern length -> registration order.
+4. An un-annotated type really does outrank all shipped product UI: all SEVEN production `SidebarRightTabDefinition` factories annotate `priority` explicitly — 'builtin' at tabs/guide/definition.ts:24, ui-deliverables/review-definition.ts:43, ui-schedule/definition.ts:38, ui-sidebar-browser/definition.tsx:20, ui-sidebar-files/definition.tsx:29, ui-subagent/sidebar-chat/index.tsx:185, and 'fallback' at ui-sidebar-documentpreview/definition.ts:50. The default is exercised only by tests and third-party callers, so extension(3) strictly outranks every shipped viewer(2/1). "Rather than being invisible" is correct for the extension.
+5. "Without making authors compute numbers" is correct — `priority` is an optional string literal union, never a numeric weight.
+
+WHAT I REFUTED:
+(a) "specific beats general" does NOT hold across the ladder — BAND strictly dominates specificity. The authors' own test at tests/tab-registry.client.spec.ts:79-84 is literally titled "lets a more specific builtin beat the fallback viewer despite the viewer's longer pattern": a 23-char `dsh-resource://file/**` fallback LOSES to a 5-char `*.png` builtin. The file's own header comment (:11-16) lists band first and never claims specific-beats-general — the claim inverts the authors' emphasis.
+(b) Within a band, the measure is raw `pattern.length` string length (:355, `matcher.pattern.length`), NOT specificity. I ran it: two same-band builtins where the generic catch-all is written longer than the specific pattern → `['catchall','mdviewer']`. A maximally general `dsh-resource://file/**` (23 chars) beats a specific `*.md` (4 chars). The proxy inverts whenever a general pattern is textually longer than a specific one.
+(c) The claim also understates the blast radius, which cuts against its own framing. An un-annotated extension does not merely "outrank" a shipped viewer — via `enter()` at :291-296 it TAKES OVER the kind, the shadowed builtin's globs stop counting, and the shipped viewer's whole address family becomes unopenable. Probe: shipped builtin text `dsh-resource://file/**` + un-annotated ext on kind `text` → `get('text').id === 'ext/text'` and `claim('...a.bin')` THROWS "no registered tab type claims". So the mechanism that makes the extension visible is the same one that makes shipped product UI invisible. That is a single-tenant shadow slot, not a coexistence, and the claim presents only the benign half.
+
+Also checked (the "0 hits != absence" rule): the band ladder is defined in exactly one place repo-wide (:49, :59, :257 — three hits, no sibling registry or renamed duplicate anywhere under packages/), and no production definition omits `priority` except the three non-definition consumers (index.ts, SidebarRight.tsx, tab-registry.ts itself).
+
+NARROW CASE WHERE THE CLAIM'S CONCLUSION IS TRUE: two registrations in the SAME band, where the more specific pattern is also literally longer as a string (their own test at :134-140, `README.md` over `*.md`). That is the whole of the "specific beats general" guarantee.
+
+TIER: BORROW the band/pattern-length/order triple as a *resolution contract* — but if taking it into omp, invert DEFAULT_BAND to the shipped-product band (defaulting unknown-registrant to the LOW band makes the safe case safe; defaulting it to the top band makes a missing annotation silently hijack a product kind), and do not describe pattern string length as specificity — it is a proxy that inverts on longer-but-generic globs.
+evidence: FILE: C:/Users/ADMIN/Projects/deepseek-harness/packages/client/ui-sidebar-right/src/client/tab-registry.ts
+
+L49:  export type SidebarRightTabPriority = 'extension' | 'builtin' | 'fallback'
+L52-56: const RANKS = { extension: 3, builtin: 2, fallback: 1 }
+L59:  const DEFAULT_BAND: SidebarRightTabPriority = 'extension'      <-- claim says 49-58; ladder is 49-59
+L257: const band = definition.priority ?? DEFAULT_BAND
+L291-296 (enter): if (RANKS[entry.band] > RANKS[held.inForce.band]) { held.shadowed = held.inForce; held.inForce = entry }
+L355: if (matcher.test(address) && matcher.pattern.length > length) length = matcher.pattern.length   <-- raw STRING length
+L361-362: ranked.sort((l, r) => r.rank - l.rank || r.length - l.length || l.order - r.order)
+
+HEADER COMMENT L11-16 (their own framing, lists band FIRST, never claims specific-beats-general):
+"Address recognition follows VS Code's editor resolver: a glob declaration narrows the candidates, an
+ optional canOpen predicate vetoes, and the survivors are ranked by priority band, then by matched-pattern
+ length, then by registration order."
+
+OWN TEST THAT CONTRADICTS THE CLAIM'S CONCLUSION — tests/tab-registry.client.spec.ts:79-84:
+  it('lets a more specific builtin beat the fallback viewer despite the viewer\'s longer pattern', ...)
+  registry.register(typeFor('text', ['dsh-resource://file/**'], { priority: 'fallback' }))  // 23 chars
+  registry.register(typeFor('image', ['*.png'], { priority: 'builtin' }))                     // 5 chars
+  expect(registry.claim('...shot.png').kind).toBe('image')
+  => band beats specificity. A 23-char fallback loses to a 5-char builtin.
+
+OWN TEST CONFIRMING NARROW CASE — :134-140:
+  it('within a band, the longer matched pattern wins', ...)
+  markdown '*.md' vs readme 'README.md' -> ['readme','markdown']   // works only because more specific == longer string
+
+EXECUTED PROBE (bun, importing the real registry, then deleted):
+ C1 band=builtin, catchall 'dsh-resource://file/**' (23) vs '*.md' (4):
+      -> [ "catchall", "mdviewer" ]     <-- generic catch-all WINS on length, refuting "specific beats general"
+ C3 shipped builtin text ('dsh-resource://file/**') + UN-ANNOTATED ext on kind 'text':
+      get('text')?.id = ext/text
+      claim('dsh-resource://file/session/s/a.bin') THROWS:
+      "sidebarRight: no registered tab type claims \"dsh-resource://file/session/s/a.bin\""
+      <-- extension is visible AND the shipped viewer's family is now unreachable (takeover, not coexistence)
+
+PRODUCTION ANNOTATION CENSUS (7/7 definitions annotate priority; default never used in prod):
+  ui-sidebar-right/src/client/tabs/guide/definition.ts:24        priority: 'builtin'
+  ui-deliverables/src/client/review-definition.ts:43             priority: 'builtin'
+  ui-schedule/src/client/definition.ts:38                        priority: 'builtin'
+  ui-sidebar-browser/src/client/definition.tsx:20                priority: 'builtin'
+  ui-sidebar-files/src/client/definition.tsx:29                  priority: 'builtin'
+  ui-subagent/src/client/sidebar-chat/index.tsx:185              priority: 'builtin'
+  ui-sidebar-documentpreview/src/client/definition.ts:50         priority: 'fallback'
+
+LADDER UNIQUENESS CHECK (rule 3 — concept not living elsewhere under another name):
+  grep -rn "DEFAULT_BAND|priorityRank|PRIORITY_RANK|'extension' | 'builtin'" packages/  -> 3 hits, all tab-registry.ts (:49, :59, :257). No sibling/renamed registry anywhere.
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED on four independent grounds, the first two of which come from dsh's own source contradicting the claim.
+
+(1) THE CLAIM'S CENTRAL ASSERTION IS EXPLICITLY REJECTED BY DSH'S OWN CODE COMMENT. The claim says "because ranks are host-allocated and globally unique, a render crash is attributable to a specific package." dsh documents the opposite at `runtime.ts:192-193`, enumerating why priority is NOT usable for attribution: "the assigned shadowing priority is unique but absent on chain entries (their election is deliberately left alone), **so it would miss chain crashes**." The claim calls the chain-slot exemption "the right carve-out" — dsh names that very carve-out as the reason the mechanism cannot work. Actual attribution is a separate mechanism: a WeakMap keyed by component object (`runtime.ts:202-206`, written at `:417`, read at `:219`).
+
+(2) `priority` IS WRITE-ONLY. Across all 11 files / 7,648 LOC of `cordis-client-runner/src/`, every `priority` occurrence is a type declaration, the write itself (`guard.ts:130-131`), the ledger push (`guard.ts:135`), or a comment. Nothing anywhere reads `row.priority`. `getSnapshot()` (`runtime.ts:263-271`) projects only a deduped set of `slots` and discards priority entirely. The claim describes a live feedback loop; the code has a dead column.
+
+(3) TWO LOAD-BEARING PREMISES ARE FALSE. "Globally unique" is wrong — `nextPriority` is a per-instance field restarting at 0 (`runtime.ts:183`), and dsh's own comment at `runtime.ts:182` calls it "**Page-local** shadowing rank." "Records it in a ledger keyed by slot" is wrong — the ledger is a flat `DynamicCordisSlotLedgerRow[]` array (`guard.ts:39`), pushed to at `:115`/`:135`, with no keying. The claim also inherits a stale doc comment: `guard.ts:31` claims priority is "how winners are matched back to packages," which `runtime.ts:192-193` contradicts.
+
+(4) PORTABILITY FAILS — THE SUBSTRATE DOES NOT EXIST IN omp. Zero hits for `slots.`, `SlotRegistry`, `registerFactory`, `slots.register` in omp's extensibility. Per hard rule 3 I checked whether the concept lives elsewhere under another name: omp's 203 "slot" hits are in `advisor/emission-guard.ts`, an emission budget with `#slots: {key, rank, pending}[]` (`:176`) that has ZERO references to extension or plugin — different concept, different subsystem. omp has no renderer-slot registry at all (68 files / 21,376 LOC of extensibility).
+
+omp already has a strictly better version of what the claim is selling: a first-class `SourceInfo { path, source, scope, origin, baseDir }` provenance type (`extensions/types.ts:705-724`), `Extension.path`/`resolvedPath` as primary record identity (`types.ts:1828-1829`), per-extension Maps for every registration, load failures attributed by path (`loader.ts:434,457,505`), runtime failures by `ext.path` (`runner.ts:1466-1474`), and an explicit `sourceId` on provider registration (`types.ts:1766-1770`).
+
+The claim's thesis is also inverted for omp: omp's precedence IS declared source-tiered *configuration* (bundled < user/project at `custom-commands/loader.ts:205-238`; managed < authored at `skills.ts:216-268`) — no host counter allocates a rank. Attribution is a separate, better channel, not something squeezed out of priority.
+
+Finally, omp's one shadowing point doesn't need the machinery: `getMessageRenderer` (`runner.ts:1200-1208`) resolves by extension array order and the winner is `ext.messageRenderers` on an `ext` that already carries `ext.path`; the multiplicity case `getAssistantThinkingRenderers` (`runner.ts:1210-1212`) is `flatMap` — all run, no election. The shadowing/chain dichotomy that forces dsh to build an allocator plus a carve-out never arises.
+
+Verdict: DO-NOT-COPY the mechanism. Porting it would require inventing a registry omp does not have, replace working explicit provenance with rank inference, and actively lose chain-crash attribution.
+evidence: CLAIMED PATH LOCATION: the claim cites `packages/extensions/cordis-client-runner/src/client/guard.ts` without saying which repo. It is NOT in omo — `find` for `cordis*` dirs and `nextPriority` in C:/Users/ADMIN/Projects/oh-my-openagent returns nothing, and the only `guard.ts` there is `packages/omo-senpi/src/components/memory/guard.ts`. The code is in dsh (C:/Users/ADMIN/Projects/deepseek-harness), matching the "Source: dsh/prov-refutations" attribution.
+
+=== 1. THE MECHANISM, AS WRITTEN IN dsh ===
+`guard.ts:96` `function guardedSlots(slots, env)` — a Proxy over SlotRegistry intercepting `register`/`registerFactory`.
+`guard.ts:125-132`:
+  // Shadowing kinds get a page-local rank. Later registrations sort first;
+  // chain slots keep their own election (select order) untouched.
+  const spec = (slots.spec as (key) => {kind?: string} | undefined)(slot)
+  let priority = options.priority
+  if (spec === undefined || spec.kind !== 'chain') { priority = env.allocatePriority(); options.priority = priority }
+`guard.ts:135` `env.ledger.push({ slot, priority })`
+`runtime.ts:183` `private nextPriority = 0`
+`runtime.ts:424` `allocatePriority: () => --this.nextPriority,`
+So the mechanism exists and the claim's code description is broadly accurate.
+
+=== 2. REFUTATION A: dsh's own code rejects priority-as-attribution ===
+`runtime.ts:184-201` (doc comment on the `owners` WeakMap) enumerates why component identity is "the only attribution key that holds":
+  "- `entry.registrant` is `options.registrant ?? fiber.name` and the facade does not strip a package-supplied one, so a package could name itself something else — attributing by it would let a package impersonate another;
+   - the assigned shadowing priority is unique but absent on chain entries (their election is deliberately left alone), so it would miss chain crashes;"
+The claim calls the chain exemption "the right carve-out"; dsh names it the reason the mechanism fails. The comment also warns of package impersonation — a risk the claim does not mention.
+
+=== 3. REFUTATION B: `priority` is never read back ===
+`grep -rn "priority" src/ | grep -v slot-catalog.ts` over all 11 files / 7,648 LOC returns ONLY:
+  - `api-catalog.ts:668,976` — upstream type declarations (`LiveSlotOccupant.priority`, `StoredEntry.options.priority`)
+  - `guard.ts:7,31,32,88,93` — comments and type decls
+  - `guard.ts:115,128,130,131,135` — the write and the ledger push
+  - `runtime.ts:182,192` — comments
+No read of `row.priority` exists. Additionally `getSnapshot()` at `runtime.ts:263-271` projects `{pluginId, packageId, pluginRunId, name, slots: [...new Set(ledger.map(row => row.slot))], styleCount}` — priority is dropped. The ledger's priority column is dead weight; `claim` names "how winners are matched back to packages" is aspirational.
+
+=== 4. REFUTATION C: "globally unique" and "keyed by slot" are both false ===
+- `nextPriority` is a per-instance class field (`runtime.ts:183`), so ranks repeat across instances/page mounts. dsh's own comment `runtime.ts:182` says "Page-local shadowing rank."
+- The ledger is a flat array: `ledger: DynamicCordisSlotLedgerRow[]` (`guard.ts:39`), pushed at `:115` and `:135`. No Map, no keying by slot.
+- Scale: 3 `kind: 'chain'` slots out of 89 total (38 single, 33 list, 15 keyed, 3 chain) in the 4,133-line `slot-catalog.ts`. Also note `slot-catalog.ts:2828`: chain entries are tried "in ascending order; the first non-null result wins" — a selector-based election, i.e. content claims the surface, which is a third mechanism beyond both priority and select-order.
+
+=== 5. PORTABILITY: omp has no slot registry, under any name ===
+`grep -rniE "\bslot\b|occupant|slotregistry" packages/coding-agent/src/` = 203 hits, ALL in `advisor/emission-guard.ts` (an emission BUDGET: `#slots: { key: string; rank: number; pending: boolean }[]` at `:176`, with "displace the lowest-rank STILL-PENDING slot" logic). `grep -c "extension\|plugin" advisor/emission-guard.ts` = **0**. So the slot+rank concept does exist in omp but is an unrelated concern with no plugin attribution.
+In `extensibility/` specifically: 0 hits for `slots.`, `SlotRegistry`, `registerFactory`, `slots.register`, `kind: 'chain'`. 68 files / 21,376 LOC.
+
+=== 6. omp ALREADY HAS THE BETTER VERSION (REFERENCE tier — do not port) ===
+- `extensions/types.ts:705-724` — `SourceScope = "user"|"project"|"temporary"`, `SourceOrigin = "package"|"top-level"`, and `SourceInfo { path; source; scope; origin; baseDir? }`, doc'd as mirroring upstream `@earendil-works/pi-coding-agent` so extensions authored against pi read it unchanged. Surfaced via `ToolInfo.sourceInfo` (`types.ts:726-732`).
+- `extensions/types.ts:1827-1842` — `Extension { path; resolvedPath; ... tools; commands; messageRenderers; assistantThinkingRenderers; shortcuts; flags }`: every contribution is a Map ON the extension, so ownership is structural, never inferred.
+- `runner.ts:1466-1474` — runtime handler failure/timeouts logged with `extensionPath: ext.path` and pushed to `emitError({ extensionPath: ext.path, ... })`.
+- `extensions/loader.ts:434,457,505` — load failures return `{ path: extensionPath, error: "Failed to load extension: ..." }` and are collected per-path.
+- `runner.ts:1221-1222` — command conflicts produce an explicit user-visible diagnostic naming `ext.path`, not a silent drop.
+- `types.ts:1766-1770` — `registerProvider(name, config, sourceId)` takes an explicit attribution id.
+
+=== 7. omp's precedence is configuration, not host-allocated rank ===
+- `custom-commands/loader.ts:205-238`: "// 1. Load bundled commands first (lowest priority - can be overridden)"; user/project commands override ONLY `source === "bundled"`; user-vs-user conflicts become errors naming the path. Declared source tier, not a counter.
+- `skills.ts:216-226,330,350,365`: managed skills are filtered out separately so "a disabled high-priority provider must not hide an enabled lower-priority provider with the same skill name" (issue #7190); every skill records `source: "${provider}:${level}"`.
+In omp, priority IS configuration, and attribution is a SEPARATE, better channel — the exact inverse of the claim's thesis.
+
+=== 8. omp's single shadowing point needs none of this ===
+- `runner.ts:1200-1208` `getMessageRenderer(customType)`: `for (const ext of this.extensions) { const r = ext.messageRenderers.get(customType); if (r) return r; }` — first-by-load-order wins, and the winner is an `ext` that already has `ext.path`. No rank, no ledger.
+- `runner.ts:1210-1212` `getAssistantThinkingRenderers()`: `this.extensions.flatMap(ext => ext.assistantThinkingRenderers)` — ALL renderers run. The multiplicity case is additive, so the shadowing/chain dichotomy that forces dsh to build an allocator plus a carve-out simply never arises in omp.
+
+=== ONE RESIDUAL BORROW ITEM (genuinely small) ===
+`getMessageRenderer` drops a same-`customType` renderer from a second extension SILENTLY, whereas `getRegisteredCommands` emits an explicit diagnostic for the same class of conflict (`runner.ts:1221-1222`). Surfacing a warning there would be a net-positive, ~5-line borrow. It is unrelated to priority allocation.
+refuted: true
+
+
+
+## [v2]
+
+reason: REFUTED ON PORTABILITY, not on fact. The claim is accurate in dsh (verified: tab-registry.ts:49 type, :52-56 RANKS 3/2/1, :59 DEFAULT_BAND='extension', :257 `definition.priority ?? DEFAULT_BAND`, :361-362 sort `rank || length || order` — an un-annotated registration gets rank 3 and sorts first, so it genuinely outranks rather than being invisible). But it should not be ported to omp, on three measured grounds.
+
+(1) THE CONCERN DOES NOT EXIST IN omp. The tab registry is a multi-candidate content-type router for `scheme://` addresses: many registrations can match one address with overlapping globs (tab-registry.ts:350-364 `candidates()` collects every match then sorts), so a ranking is mandatory. omp has no sidebar, no tab strip, no address-addressed viewers, and no extension-contributed view components. Its extension surfaces are name/exact-key keyed only: `registerTool` (extensions/types.ts:1372), `registerCommand` (:1436), `registerShortcut` (:1446), `registerMessageRenderer(customType, renderer)` (:1475), `registerAssistantThinkingRenderer` (:1478). No glob, no pattern, no candidate set. A grep for `specific|specificity` across all of `src/extensibility` returns zero ranking-related hits (every hit is the English word in unrelated comments). Porting a specificity ladder means first inventing the ambiguous-match problem it solves.
+
+(2) omp ALREADY HAS A STRONGER ANSWER TO THE SAME UNDERLYING CONCERN, on a better axis. The real question is "an extension collides with a shipped built-in — who wins, and can we recover?" omp answers with host-owned identity + reversibility, not contributor-declared rank:
+- Tool override is name-keyed and RECOVERABLE, not ranked: last-extension-wins at extensions/runner.ts:1012-1019, plus `invokeNativeTool` / `ctx.invokeTool` (types.ts:533-545, runner.ts:570-590+) so a wrapper can delegate to the native original, and unregister restores it (sdk.ts ~4655-4660: `toolRegistry.set(name, new ExtensionToolWrapper(native, extensionRunner)); session.setToolBuiltIn(name, true)`).
+- Host-reserved classes are NAMED SETS owned by the host, not bands self-declared by the contributor: `hasRpcHostTool` / `sdkCustomToolNames` / `hasMCPManagerTool` (sdk.ts:4501-4502, 4632-4634) and `BUILTIN_SLASH_COMMAND_RESERVED_NAMES` / `ACP_BUILTIN_RESERVED_NAMES` (get-commands-handler.ts:36, slash-commands/available-commands.ts:77). An extension command clashing a builtin is SKIPPED with a diagnostic (runner.ts:1219-1227); a reserved shortcut is warned and dropped (runner.ts:1156-1162); a duplicate custom tool is REJECTED per-path, first wins (custom-tools/loader.ts:174-183).
+dsh's band is precisely the self-declared-band anti-pattern: the contributor states its own trust level, and omission is silently read as the top tier. omp's reservation is the better form for third-party code.
+
+(3) `DEFAULT_BAND = 'extension'` IS A LIABILITY, NOT A FEATURE, ON A PORT. It is safe in dsh only by discipline: all 7 shipped definitions annotate `priority:` explicitly (files, browser, documentpreview/text, deliverables, schedule, guide — each `priority: 'builtin'` or `'fallback'`; I checked each file). Nothing enforces it. A new in-product tab that forgets the field silently lands in the TOP band and can shadow a builtin `kind` outright — `coexists` (:181-183) admits an extension over a builtin and `enter` (:291-297) promotes it. omp loads project-local extension code unconditionally and its own `isProjectTrusted` doc (types.ts ~:556-566) says OMP "has no equivalent per-directory trust gate" and "always returns `true`". Copying a default that silently promotes unannotated code above shipped UI into that trust model is a regression.
+
+TIERS — REFERENCE: the ranking comparator itself (:361-362) and VS Code glob-rule parity (:13-16, :211-221), worth reading only if omp ever grows an address-routed viewer registry. BORROW (conditional): the `coexists`/shadow-resume lifecycle (:181-183, :284-310) — "extension takes over a builtin kind, builtin resumes on unregister" is a genuinely good lifecycle, and sdk.ts:4655-4660 is its working analogue in omp, so borrow the idea, not the code. DO-NOT-COPY: `DEFAULT_BAND = 'extension'`; the general shape of a self-declared priority outranking host-owned policy; and `coexists` permitting two registrations of one kind at all — omp's reject-with-diagnostic policy (runner.ts:1221, custom-tools/loader.ts:179) is strictly safer for untrusted plugin code.
+
+One imprecision in the claim worth flagging: "specific beats general" holds only WITHIN a band. Band strictly dominates (:361 `right.rank - left.rank || ...`), so a 4-char `*.md` un-annotated extension pattern outranks a 24-char `dsh-resource://file/**` builtin. True of the code, loose as stated.
+evidence: dsh (claim source) — packages/client/ui-sidebar-right/src/client/tab-registry.ts:
+- :49 `export type SidebarRightTabPriority = 'extension' | 'builtin' | 'fallback'`
+- :52-56 `const RANKS = { extension: 3, builtin: 2, fallback: 1 }`
+- :59 `const DEFAULT_BAND: SidebarRightTabPriority = 'extension'`
+- :257 `const band = definition.priority ?? DEFAULT_BAND`
+- :350-364 `candidates()` — every match collected, then :361-362 `ranked.sort((l, r) => r.rank - l.rank || r.length - l.length || l.order - r.order)`
+- :181-183 `coexists()` — an `extension` MAY take over a `builtin` kind
+- :291-297 `enter()` — higher RANKS promotes and shadows
+- :301-310 `leave()` — shadowed builtin resumes on unregister
+- 414 LOC total.
+Discipline check (all 7 shipped definitions annotate explicitly — nothing enforces it):
+  ui-sidebar-files/src/client/definition.tsx:29 `priority: 'builtin'`
+  ui-sidebar-browser/src/client/definition.tsx:20 `priority: 'builtin'`
+  ui-sidebar-documentpreview/src/client/definition.ts:50 `priority: 'fallback'`
+  ui-deliverables/src/client/review-definition.ts:43 `priority: 'builtin'`
+  ui-schedule/src/client/definition.ts:38 `priority: 'builtin'`
+  ui-sidebar-right/src/client/tabs/guide/definition.ts:24 `priority: 'builtin'`
+  (7th is a test fixture; 6 product definitions total)
+
+omp (target) — 68 non-test .ts files under packages/coding-agent/src/extensibility:
+Registration surfaces, all name/exact-key keyed, none glob-based:
+  extensions/types.ts:1372 `registerTool<TParams, TDetails>(tool)`
+  extensions/types.ts:1436 `registerCommand(`
+  extensions/types.ts:1446 `registerShortcut(`
+  extensions/types.ts:1475 `registerMessageRenderer<T>(customType: string, renderer)`
+  extensions/types.ts:1478 `registerAssistantThinkingRenderer(`
+Override + recovery (better than a band ladder):
+  extensions/runner.ts:1012-1019 `getRegisteredTool` — "normal last-extension-wins precedence"
+  extensions/runner.ts:570-577 `#nativeToolResolver` — "pre-extension-override, unwrapped tool"
+  extensions/runner.ts:588-590 `hasNativeTool(name)`
+  extensions/types.ts:533-545 `ctx.invokeTool` — "Run the NATIVE built-in ... same-tool only ... cannot escalate past the approval already granted"; undefined for "a net-new tool that shadows no built-in"
+  sdk.ts:4655-4660 restore-on-unregister — `if (native) { toolRegistry.set(name, new ExtensionToolWrapper(native, extensionRunner)); ... session.setToolBuiltIn(name, true); }`
+Host-owned reserved sets (identity, not self-declaration):
+  sdk.ts:4501-4502 `if (session.hasRpcHostTool(name) || sdkCustomToolNames.has(name)) return;`
+  sdk.ts:4632-4634 same guard on the suspend/resume path
+  extensibility/get-commands-handler.ts:36 `runner.getRegisteredCommands(BUILTIN_SLASH_COMMAND_RESERVED_NAMES)`
+  slash-commands/available-commands.ts:77 `runner.getRegisteredCommands(ACP_BUILTIN_RESERVED_NAMES)`
+Reject-on-collision:
+  extensions/runner.ts:1219-1227 "Extension command '<name>' ... conflicts with built-in commands. Skipping." + `#commandDiagnostics`
+  extensions/runner.ts:1156-1162 reserved shortcut -> `logger.warn` + `continue`; :1164-1172 ext-vs-ext -> `logger.warn`
+  custom-tools/loader.ts:174-183 duplicate name -> push error, `continue` (first wins)
+  custom-commands/loader.ts:205-211 "1. Load bundled commands first (lowest priority - can be overridden)"; :222-234 "Allow overriding bundled commands, but not user/project conflicts"
+Trust posture (why a self-declared band is a bad fit):
+  extensions/types.ts ~:556-566 `isProjectTrusted` — "OMP has no equivalent per-directory trust gate: `.omp/extensions`, `.omp/config.yml`, and other project-local inputs are already discovered and loaded unconditionally ... always returns `true`"
+
+Absence check stated per doctrine: I grepped `specific|specificity` across the whole of `src/extensibility` (the only location an address/candidate matcher would live, alongside custom-tools/loader.ts and extensions/loader.ts) — zero ranking-related hits, all matches are the English word in unrelated doc comments. That is a real absence signal, not an unqualified "0 grep hits": the corroborating structural fact is that omp's registration keys are exact strings (`registerMessageRenderer` keys on a `customType`, `registerTool` on `tool.name`), so no matcher can exist.
 refuted: true
 
 

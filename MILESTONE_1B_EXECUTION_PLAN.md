@@ -55,23 +55,73 @@ Chép bất kỳ tầng session nào của chúng vào omp là **lùi về sau**
 `pi-subagents` khai `peerDependencies` gồm `@earendil-works/pi-ai: ">=0.86.1"`, `@earendil-works/pi-agent-core`,
 `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, và `typebox: "*"`.
 `pi-todo` khai hợp đồng manifest `"pi": { "extensions": ["./src/index.ts"] }`.
-omp **không có lệnh install nào** — grep `cli/commands/` không khớp `install|plugin|ext`.
 
-**Quy tắc `@earendil-works/X` → `@oh-my-pi/X` của file này, áp vào đây, làm 174 import site không resolve.**
-Đó không phải lý do để đổi lại quy tắc — đó là phép đo nói rõ **tầng A không kéo theo tầng B**.
+> ### ⛔ ĐÍNH CHÍNH 2026-09-28 (lượt 2) — tầng B và C **ĐÃ TỒN TẠI**
+>
+> Bản đính chính đầu tiên của mục này nói **"omp không có lệnh install nào"**. **Đó là sai.** Sự thật đo được
+> bằng cách **chạy thật**, không phải grep: `omp plugin install <pkg>` trên omp 18.4.1 với 20 package thật →
+> **17 cài và load OK**, 3 fail cứng, 2 partial. Và omp **đã resolve** `@earendil-works/pi-*` lúc chạy
+> thông qua **Bun.plugin `onResolve` shim** trong `legacy-pi-compat.ts`.
+>
+> **Lý do tôi sai, để không ai lặp lại:** tôi grep `packages/coding-agent/src/cli/commands/` cho
+> `install|plugin|ext` và nhận 0 kết quả — rồi kết luận lớn. **Đó chính là lỗi mà chính M4 vừa bị phê bình
+> ở dsh: suy ra sự vắng mặt từ một grep hẹp, rồi đem ra khẳng định về cả hệ thống.** Lệnh được đăng ký
+> ngoài thư mục tôi nhìn. **Bài học: với câu hỏi "omp có làm được không", hãy chạy nó — đừng grep.**
+>
+> **Kết luận đảo chiều: tầng A, B và C đều tồn tại. Điều plan thiếu không phải nền tảng — mà là mức độ
+> bao phủ, và nó đã được đo chính xác:**
 
-**Bằng chứng hệ sinh thái là thật:** `oh-my-openagent` (fork của OpenCode, không phải của omp) **pin
-`@earendil-works/pi-ai / pi-agent-core / pi-tui / pi-coding-agent` ở `0.84.2` qua `overrides`** —
-consumer hạ nguồn của đúng substrate pi.
+| Tầng | Kết luận đo được |
+| --- | --- |
+| A. BUNDLED | ✅ đúng như M1 nói |
+| B. RESOLVABLE | ✅ **có** — Bun.plugin `onResolve` shim. Độ phủ: `pi-coding-agent` **43/45** export, `pi-tui` **26/27**, `pi-ai` **7/7**, `typebox` **3/6**; **`chord` không được cover** (0 hit trong shim) |
+| C. INSTALLABLE | ✅ **có** — `omp plugin install`. **17/20 package thật chạy** |
 
-**Seam đã có sẵn, chưa ai xác minh:** `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts`
-chứa `PI_SCOPE_ALIASES = ["oh-my-pi", "mariozechner", "earendil-works"]` — `earendil-works` **đã nằm
-trong danh sách alias**. Nếu cơ chế đó chạy trên specifier của package bên thứ ba, tầng B gần như miễn
-phí. **Chưa có câu trả lời, và WI-ECOSYS-1 bị chặn cho tới khi có.**
+**Ba khoảng trống thật, đo được, tên cụ thể — đây mới là việc đáng làm:**
+
+| Triệu chứng runtime | Package | Symbol thiếu |
+| --- | --- | --- |
+| `pi.registerEntryRenderer is not a function` | `pi-subagents`, `@tintinweb/pi-subagents` | `ExtensionAPI` khai **18/23**; `registerEntryRenderer` xác nhận vắng bằng cả grep lẫn lỗi runtime |
+| `Export named 'withFileMutationQueue' not found` | `pi-mcp-adapter` | shim `pi-coding-agent` thiếu `ModelRuntime`, `withFileMutationQueue` |
+| `registry.getProvider is not a function` | `pi-background-tasks` (partial) | `ModelRegistry` thiếu `getProvider` + 6 handoff method |
+| `event.systemPromptOptions.sections` undefined | `@companion-ai/feynman` (partial) | `ExtensionContext` khai **13/30** |
+
+**Và khoảng cách đang tự thu hẹp:** cùng phép thử trên omp 18.1.13 cho **15 OK / 5 FAIL**; trên 18.4.1 là
+**17 OK / 3 FAIL**. Không có work item nào đang đẩy con số đó — **nó đang tự đi.**
+
+**Quy mô hệ sinh thái (đo, không phải ước lượng):** **5.398 package** trên `pi.dev` (npm
+`keywords:pi-package` báo 10.772 nhưng trùng lặp ~2×; con số dùng được **~5.250**). Loại: extension 2.975
+(55%), skill 157, theme 37, prompt 12, mixed 231, **không phân loại 1.999 (37%)** — trong 60 mẫu
+"không phân loại", **48 thật ra có manifest `pi`**. **93% permissive** (MIT 4.664, Apache-2.0 196).
+Tải/tháng: p50 386 · p90 2.256 · p99 21.380 · max 1.120.235; **tổng 10,19 triệu/tháng**, top 800 gói = 80%
+lưu lượng. `pi-coding-agent` 10,5M/tháng. **56/60 extension top khai một dependency `@earendil-works/pi-*`.**
+
+**Về quy tắc `@earendil-works/X` → `@oh-my-pi/X` của file này:** nó **đúng** cho phạm vi nội bộ của omp.
+Đối với package bên thứ ba, shim đã xử lý — và phép thử 20/20 nói nó chạy. **Câu hỏi đã đóng, và câu trả lời
+là "đã có, phủ 43/45".**
+
+**Điều duy nhất còn thật sự treo:** 47 work item đánh số trên 7 plan, **0 cái nào cho install, 0 cho
+ecosystem, 0 cho plugin distribution.** Vậy mà tầng B và C **đã chạy được**. Phần bị bỏ sót không phải
+nền tảng — mà là **không ai sở hữu ba khoảng trống API ở bảng trên**, và không có ai đo độ phủ bao giờ.
 
 ---
 
 ## Sóng 0.5 — ba work item cho tầng B và C
+
+> ### ⛔ ĐÍNH CHÍNH LƯỜT 2 — WI-ECOSYS-1 và WI-ECOSYS-2 **ĐÃ ĐƯỢC TRẢ LỜI, KHÔNG CÒN LÀ BLOCKED**
+>
+> Chúng bị đặt `BLOCKED_ON_MEASUREMENT` vì tôi tin một grep hẹp. **Phép thử chạy thật đã trả lời cả hai:**
+>
+> - **Tầng B có rồi** — Bun.plugin `onResolve` shim trong `legacy-pi-compat.ts`. 20 package thật: **17 chạy**.
+> - **Tầng C có rồi** — `omp plugin install`. Không cần xây.
+> - **`typebox` đã được cover 3/6**; phần thiếu là `Compile`, `Check`, `Errors` trên **subpath**
+>   (`typebox/value` 4 site, `typebox/compile` 3 site) — **cố ý không remap**.
+>
+> **Còn lại đúng một việc, và nó không phải nền tảng:** đóng **ba khoảng trống API** đã đo ở phần trên,
+> rồi **thêm một phép thử độ phủ chạy được** để con số 17/20 không trôi theo thời gian mà không ai canh.
+>
+> **Cổng duy nhất nên thêm:** một script kiểm độ phủ chạy trên danh sách package thật, có số trong báo cáo.
+> Đó là thứ biến "17/20" từ một con số lạ thành một cái cổng, và nó là thứ duy nhất trong nhóm này còn đáng viết.
 
 > Thêm 2026-09-28. Đặt **trước mọi sóng port**, vì chúng quyết định *đoàn gì sẽ được port* và *port xong
 > thì dùng được để làm gì*. M1B hiện trả lời "chép gì"; nó không trả lời "chép xong thì người dùng

@@ -16776,6 +16776,15 @@ Con số 181 là tổng `n_files` của 16 work item, và nó **understated** b�
 5. **W13p GATE 2** — tripwire, đỏ có chủ đích hôm nay: `shipped_overrides=[omp,omp]`.
 
 Ngoài năm cổng đó, có thêm một lớp đỏ nền của môi trường đã tồn tại sẵn: các test import transitively `pi_natives` fail với `Failed to load pi_natives native addon for darwin-arm64` vì addon chưa build. Đây là **baseline có sẵn trên cây sạch, không phải hậu quả của công việc M5** — trong lần chạy đầy đủ `packages/utils/test/` (81 file, `658 pass / 2 skip / 17 fail / 16 errors`), 17 **file** đỏ, chứ không phải 17 lỗi dồn vào đúng hai file: tất cả cùng một nguyên nhân `Failed to load pi_natives native addon for darwin-arm64`, và 16 file trong số đó **chạy 0 test** vì addon ném ngay lúc nạp module. Chỉ `logger-contract.test.ts` còn chạy được (12 pass / 1 fail trong 13 test). Mô tả chính xác ở [Điều kiện tiên quyết](#điều-kiện-tiên-quyết) — đọc mục đó trước khi tin bất kỳ cổng test nào.
+> ### ✅ ĐÍNH CHÍNH 2026-09-29 — lớp đỏ nền ĐÃ BIẾN MẤT; con số `17 fail` trong câu trên là của máy **chưa build addon**
+>
+> Đo lại sau khi cài `ninja` và build addon (`brew install ninja` → `bun --cwd=packages/natives run build`, exit 0):
+>
+> ```
+> bun test packages/utils/test/   →  743 pass / 10 skip / 0 fail   (753 test, 80 file, 9.6s)
+> ```
+>
+> Nghĩa là **17 fail / 16 errors trước đây không phải lỗi test, mà là addon chưa build** — cùng một nguyên nhân, và giờ đã hết. Câu trên vẫn đúng về *cơ chế* (test import `pi_natives` thì fail khi thiếu addon) nhưng **sai về hiện trạng**: không còn lớp đỏ nền nào trên cây này nữa. Đừng dùng nó làm lý do để bỏ qua một lần test đỏ — bây giờ test đỏ là lỗi thật.
 
 Các phép đo trong tài liệu này lấy trên HEAD `84cbac9` với cây sạch. Cây hiện tại là `1454dc0`, chỉ thêm một commit tài liệu, nên mọi neo `file:line` và mọi số đếm trong đây vẫn đúng — riêng `scripts/rename/`, `dirs.ts:21`, `dirs.ts:27`, `dirs.ts:360`, 12 dòng `runs-on: … omp-kata`, `ci.yml:34` và 14 file được git track dưới `.omp/` đều được kiểm chứng lại trực tiếp.
 

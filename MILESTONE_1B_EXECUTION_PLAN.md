@@ -179,6 +179,42 @@ Hai điểm phải nói thẳng vì dữ liệu tự mâu thuẫn:
 
 ---
 
+## Nguồn chép: `pi`, KHÔNG phải `senpi` — và câu này đã đóng
+
+Có một repo thứ sáu trên đĩa: `senpi` (https://github.com/code-yeongyu/senpi), MIT, là fork **đúng dòng
+`pi` này**. Nó có `chord`, `protocol`, `server`, `client`, `telemetry`, `evals` — cùng tên, cùng tác
+giả. Trông như một nguồn chép thay thế tốt hơn (được người dùng thật duy trì, HEAD 3 ngày trước).
+**Đo thì không phải.**
+
+| Bằng chứng | `pi` | `senpi` |
+|---|---|---|
+| version mọi package | **0.87.1** | `agent`/`ai`/`coding-agent`/`telemetry`/`protocol`/`server`/`client` = `2026.9.28-3`; **`chord` = `0.85.1`** |
+| `packages/durable/` | **63 file** | **0 file** — không tồn tại |
+| `packages/` | 12 | 13 (thêm `pty`, `senpi-codemode`) |
+
+Hai kết luận, mỗi cái đủ để chốt:
+
+1. **Không chép được `durable` từ `senpi`** — nó không có package đó. `git ls-files
+   'packages/durable/*' | wc -l` → `0`; 11 chỗ khác chứa chữ "durable" đều là
+   `builtin/terminal/durable-command.ts`, `durable-file.ts` và test — không phải package.
+2. **`chord` của `senpi` là bản LÙI.** Nó kẹt ở `0.85.1` vì `packages/protocol/changes.md` ghi rõ
+   package đó được ghim đúng version upstream mà nó resolve được, vì fork không publish. Còn `pi` đã
+   đi tới `0.87.1`. Kéo `chord` từ `senpi` là **lùi hai bản minor**.
+
+Về 5 package còn lại, tỉ lệ file giống **từ byte** với `pi`: `protocol` 15/17 · `server` 24/29 ·
+`client` 15/19 · `telemetry` 8/12 — tức là phần lớn là bản cũ hơn một chút, và phần "chỉ có ở senpi"
+gần như luôn đúng **2 file**: `changes.md` + một file sổ, tức là sổ ghi chép fork chứ không phải code.
+Riêng `evals` là ngoại lệ lớn (senpi **bỏ 25 file** của pi), nhưng `evals` vốn đã là package kém giá
+nhất trong bảy.
+
+**Kết luận:** M1B chép từ `pi-ref`, như tài liệu này vốn đã ghi. `senpi` **không** thay được `pi` làm
+nguồn. Nó có giá trị ở chỗ khác hẳn: 40 builtin extension, 97.893 dòng — đó là nội dung cho M5, xem
+`SENPI_FINDINGS.md`.
+
+> Chi tiết đo và lệnh tái lập: `SENPI_FINDINGS.md` mục "M1B va chạm với senpi".
+
+---
+
 ## Va chạm
 
 Đây là mục quan trọng nhất của cả tài liệu, và lý do khiến "chép là xong" là một câu nói sai.

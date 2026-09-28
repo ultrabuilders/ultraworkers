@@ -8713,6 +8713,150 @@ sóng 1, và phần đuôi §7–§8 cùng §9–§11.
 M3 port **ý tưởng**, không port code. Claude Code đóng, và §8 của kế hoạch nói thẳng nó không cấp
 giấy phép nào cho phần bề mặt này — nên ở đây không có lời hứa nào về việc sao chép.
 
+## Wave 0 — đo trước khi viết, đã đổi cả kế hoạch này
+
+Chủ sở hữu yêu cầu: *"chắc chắn port 100% UI Claude Code như là 1 plugin vào omp"*. M3 vốn viết cho
+một mục tiêu khác, nên trước khi viết tiếp, ba lượt đo đã chạy. Phần này ghi kết quả và **thay đổi
+phạm vi M3 theo đo**, không phải theo giả định.
+
+### Ràng buộc pháp lý đã chốt, không mở lại
+
+Nguồn là `claude-code-best/claude-code`, tựa đề tự nó là **"Reverse-engineered Anthropic Claude Code
+CLI"**. Repo đó **không có file `LICENSE`**, `package.json` không khai `license`, và README gõ
+*"This project is for educational and research purposes only. All rights to Claude Code belong to
+Anthropic."* — xem [§2.0 của phần này trong plan tổng](#200-ràng-buộc-pháp-lý-định-hình-m3--phải-đọc-trước-mọi-thứ-khác-trong-phần-này).
+
+Hệ quả: **đọc để hiểu thì được, chép dòng nào thì KHÔNG, và viết lại bằng ngôn ngữ omp thì được.**
+Mọi mục dưới đây đều theo ranh giới đó.
+
+### "Port 100% UI" — ba nghĩa, hai bị loại bằng số đo
+
+| Hướng | Kết luận | Bằng chứng |
+|---|---|---|
+| (a) Chạy app Ink của CCB như tiến trình con | **Loại** | CCB không phải thư viện UI mà là **agent thứ hai**: 558.328 LOC; `src/screens/REPL.tsx` dài 6.684 dòng tự quản lý session; và nó **tự giành terminal** — `setRawMode` ở `App.tsx:317`, alternate screen, 52 file ghi thẳng `process.stdout`, 20 file đọc `process.stdin` |
+| (b) Nhúng Ink (React) vào bên trong omp | **Loại** | Không chỉ vì bundle. `packages/tui/src/tui.ts:224` định nghĩa `Component { render(width): readonly string[]; handleInput?; invalidate?; dispose? }` — **mệnh lệnh, không VDOM, không reconciler**. Ink là cây React-retained trên yoga. Cả hai hệ đều tin mình sở hữu stdin + scroll region + raw mode + synchronized output trên cùng một tty, nên output hỏng **theo cấu trúc**, không phải đôi khi. Chặn là **hợp đồng render**, không phải kích thước bundle. |
+| (c) Viết lại component trên TUI của omp | **Khả thi** | Nhưng phải định nghĩa lại "100%" — xem ngay dưới |
+
+### Chặn thật không phải bundle, mà là layout
+
+Đo 418 component của CCB trong `src/components`:
+
+| Loại | file | LOC |
+|---|---|---|
+| **presentational** | **174** | **12.519** |
+| stateful (có React hook) | 92 | 12.190 |
+| logic — dialog gắn agent/MCP/settings của CCB | 152 | 45.936 |
+
+Nhưng con số quyết định **không phải 174**:
+
+> **229/418 file (52.770 LOC) phụ thuộc prop flex.** `flexDirection` **774 lần**, `gap` 226,
+> `paddingX` 82, `flexShrink` 52, `minWidth` 41, `borderStyle` 40, `justifyContent` 34.
+
+Và phía omp: `Box` có constructor `(paddingX = 1, paddingY = 1, bgFn?, border?)` tại
+`packages/tui/src/components/box.ts:56` — **không có `flexDirection`, `flexGrow`, `flexShrink`,
+`flexWrap`, `justifyContent`, `alignItems`, `gap`, hay sizing prop nào**. Đo: `flexDirection` **0 file**
+trong `packages/tui/src`; `yoga-layout` **0 file**.
+
+Nghĩa là **774 site `flexDirection` mới là chi phí port thật**. Đây là quyết định đòn bẩy cao nhất
+của M3: *xây một layout engine flexbox trong `packages/tui`, hay chấp nhận compose string row từng
+component*.
+
+**Dữ kiệm nghiêng về "không cần flexbox":** `opencode/packages/tui` có **245 file .ts · 39.771 dòng**
+và `flexbox`/`yoga-layout` đều **0 file** — một TUI trưởng thành ship được mà không có layout engine.
+Xem `MILESTONE_6_EXECUTION_PLAN.md` (audit opencode) để biết họ bố cục thay thế bằng gì.
+
+Tầng widget thì omp **đã phủ gần hết** — `packages/tui/src/index.ts` export 31 module component:
+`select-list`, `settings-list`, `editor` (165 KB), `markdown` (150 KB), `image`, `kitty-graphics`,
+`scroll-view`/`viewport`, `render`/`code-cell`, `tool-card`, `loader`, `progress-bar`, `tree-view`,
+`table`, `tab-bar`, `form`, `wizard-step`. Thiếu đúng **một thứ**: layout engine.
+
+### Phần thật của "100%" — còn 174 file presentational, trong đó 108 không dùng flex
+
+Thứ tự ưu tiên, xếp theo **tỉ lệ presentational chứ không theo LOC**:
+
+`messages/` (32/45) → `agents/` (16/29) → `EffortPanel`, `sandbox`, `design-system`, `Spinner`,
+`LogoV2`; **hoãn** `mcp/` (2/14) và `permissions/` (15/53) vì đó là dialog, không phải UI.
+
+### M3 thật sự còn việc gì: 7 seam, không phải 16 work item
+
+Đo lại từng work item của M3 trên cây thật:
+
+| Hạng mục | Loại | Seam phải mở |
+|---|---|---|
+| A1 usage preset | **CÓ SẴN** | không — `usage` đã có id + renderer, chỉ thiếu ở 0/7 preset |
+| A2 capability elicitation | **MỞ LÕI** | key `elicitation` + `case` trong manager |
+| A3 wheel accel | **MỞ LÕI** | `mouse-wheel.ts` (file mới) |
+| A4 secret mask | **CÓ SẴN** | không — `plugin-settings.ts:152` đã mask |
+| A5 stall | **MỞ LÕI** | bề mặt render mới |
+| A6 read predicate | **MỞ LÕI** | predicate mới trong module 872 dòng đã có chủ sở hữu |
+| A7 notice | **MỞ LÕI** | container mới trong mảng bố cục |
+| A8 tmux hint | **CÓ SẴN** | không |
+| A9 daltonize | **MỞ LÕI** | `daltonize.ts` (file mới) + mở rộng loader |
+| B1 renderer pin | **CÓ SẬN** | không — ghim lỗ hổng, 0 dòng core |
+| B2 working msg | **CÓ SẬN** | không — 3 chặng đã nối |
+| B3 key-hint | **CÓ SẬN** | không |
+| C2 user shell | **CÓ SẬN** | trượt vì Q6 (cổng quyền lực), không vì thiếu seam |
+| D1 elicitation form | **MỞ LÕI** | method giao thức MCP mới |
+| D2 cache-hit | **CÓ SẬN — ĐÃ SHIP** | không |
+| D3 scroll chrome | **CÓ SẬN** | không |
+
+**MỞ LÕI = 7 · CÓ SẴN = 9 · 32/34 file đích đã tồn tại.**
+
+#### Ba phát hiện làm thay đổi kế hoạch
+
+**1. D2 đã ship, dưới tên khác.** `cacheHitSegment` (`segments.ts:718-738`) đã tính đúng
+`cacheRead/(cacheRead+cacheWrite+input)*100` — đúng tỉ lệ hit mà D2 định thêm, đúng biên đoạn. Và
+`presets.ts:40` đã bật `"cache_hit"` trong preset `full`. **D2 là bí danh thứ hai cho một số đang
+hiển thị.** Nên bỏ D2, hoặc hạ xuống một dòng preset gộp vào commit của A1.
+
+**2. `registerStatusLineSegment` không tồn tại, nhưng thứ nó định đăng ký thì có đủ.** Đo: 0 hit trong
+`packages/` (2 hit còn lại đều là **tài liệu kế hoạch**). Nhưng thư mục `status-line/` có **13 file ·
+5.776 LOC**, `STATUS_LINE_SEGMENT_IDS` là union **27 phần tử** (`schema.ts:2-30`), `SEGMENTS` có
+**27 renderer** (`segments.ts:919-947`), và `setStatus` có **74 call site**. Thiếu không phải
+status line — thiếu **một hàm đăng ký runtime**. omp đăng ký bằng union biên dịch đóng thay vì registry.
+
+**3. A2 không thể mở một mình — và đây là rủi ro âm thầm chung.** Khai báo capability làm server **bắt
+đầu gửi** `elicitation/create`; chưa có handler thì rơi vào nhánh `default:` và ném `-32601`. Đây là
+seam duy nhất **bắt buộc chung commit với D1**.
+
+Rủi ro âm thầm chung cho mọi thay đổi status line: `renderSegment` (`:949-953`) trả
+`{content:"", visible:false}` khi thiếu entry — **không throw**. Thêm union member mà quên registry
+⇒ **segment biến mất im lặng, không có dòng đỏ nào**. Cần một khẳng định
+`ALL_SEGMENT_IDS.length === STATUS_LINE_SEGMENT_IDS.length` trong test, để cái im lặng thành đỏ.
+
+### Ràng buộc thứ tự và chặn M2
+
+- **A2 + D1 phải là MỘT commit.** Không tách.
+- A3 trước D3 (cùng file `agent-transcript-viewer.ts`).
+- 9 mục "có sẵn" chạy song song được, 0 ràng buộc giữa chúng.
+- **Không work item M3 nào bị M2 chặn vì lý do seam.** Chỉ A4-PERSIST (thuộc M2 WI-8a) và C2 (Q6 —
+  cổng quyền lực, không phải kỹ thuật).
+
+### Ba thứ CCB có mà omp không, đều nhỏ và port sạch
+
+1. **Spinner biết mình đang treo.** `useStalledAnimation.ts:42` coi là treo khi >3s không có token mới
+   **và** không có tool đang chạy; cường độ leo dần 0→1 trong 2s; miễn báo khi đang có tool chạy; tôn
+   trọng `reducedMotion`. Phía omp, `components/loader.ts` chỉ là bộ đếm khung — **không biết token có
+   đến không**. Và `loop-watchdog.ts` **không phải** thứ này: nó đo trễ event-loop để chẩn đoán hiệu
+   năng, không phải thứ người dùng thấy.
+2. **Tự dò cuộn chuột có hoạt động không, rồi degrade kèm gợi ý.** `fullscreen.ts:180-195` chạy
+   `tmux show -Av mouse`; và comment `:169-179` giải thích vì sao họ **cố ý không tự sửa** —
+   `tmux set mouse on` đổi hành vi chuột cho *mọi pane anh em* (vim, less, htop) và rò rỉ lúc
+   kill-pane. Phía omp, `tmux.ts` chỉ 52 dòng DCS passthrough, `grep` chuột = **0 hit**.
+3. **Ba quy tắc supersession** trong `useVoice.ts`: thay tại chỗ thay vì append (`:833`), so giá
+   trị trước khi setState (`:836`, `:854`), và generation counter để bỏ kết quả async cũ (`:870`). Cả
+   ba đều là quy tắc, không phải widget.
+
+### Ba mục đã gọi tên — kết quả đo làm đổi phạm vi
+
+- **Wheel acceleration: CCB KHÔNG có.** `defaultBindings.ts:211-212` là `wheelup: 'scroll:lineUp'` —
+  đúng 1 dòng mỗi notch, không hệ số. A3 vì thật ra là **sửa mâu thuẫn nội bộ của omp**
+  (`agent-transcript-viewer.ts:470` cuộn `wheel*3`, còn `select-list.ts:229` ghi "một bước mỗi
+  notch"). Đáng làm, nhưng **không phải port** — và cũng **không phải vì CCB dạy được gì**.
+- **Colorblind: CCB CÓ** — `ThemePicker.tsx:78,82`, hai theme daltonized. Đây là thứ duy nhất trong ba
+  mục mà thật sự có thể học.
+- **Supersession: không có hệ thống chung** ở CCB, chỉ 3 quy tắc như trên.
+
 ## Mục tiêu
 
 Sau M3, người dùng nhận được:
@@ -11372,7 +11516,6 @@ Mỗi dòng là một cổng có thể đỏ. Cổng xanh trên một sóng khô
   - Ngược lại, G4 (9) và G5 (`left=7`) đã đỏ sẵn nên là cổng thật. Một cổng viết kiểu "số đếm không đổi" thì tự thỏa và phải viết ngược lại — bản kế hoạch tự lập luận dài về điều này rồi tự trái ở G10.
 
 ---
-
 
 # MILESTONE 4 — MƯỢN KỶ LUẬT, KHÔNG MƯỢN KIẾN TRÚC · KẾ HOẠCH THỰC THIỆN
 

@@ -1,0 +1,119 @@
+[
+ {
+  "severity": "blocking",
+  "location": "telemetry.md:170 (mục 'Cổng hoàn thành') và :133 (bước 14)",
+  "claim": "Doc tuyên bố `bun test` bị chặn vì native addon chưa build, nên 'chỉ một nửa của hợp đồng', và tuyên bố 'portable giữa các runner' CHƯA được chứng minh thực nghiệm. Lệnh `bun test packages/telemetry/` được liệt kê trong 'Xác minh' nhưng không bao giờ chạy được.",
+  "why_wrong": "SAI. Tôi đã dựng `packages/telemetry` thật trong cây omp (copy + đủ 16 bỏ đuôi `.ts`, 2 barrel star, `#state`, vitest→bun:test), rồi chạy `bun test packages/telemetry/` — kết quả **15 pass, 0 fail, 23 expect() calls, 2 files, 69ms**. Lý do sai lệch: doc quy chung lỗi natives cho mọi package, nhưng telemetry KHÔNG import `@oh-my-pi/pi-natives` (chỉ import `node:assert/strict` và specifier tương đối — đã verify bằng `grep -rnoE 'from \"[^\"]+\"' src test`). `bun test packages/utils/` thì đúng là fail vì utils kéo natives qua `file-lock.ts:9` và `ptree.ts:10`. Hệ quả: người đọc sẽ báo cáo 'portable giữa các runner' là chưa chứng minh trong khi nó ĐÃ được chứng minh, và sẽ bỏ qua một cổng xanh đang chạy được ngay.",
+  "evidence": "`cd /Users/tranquangdang21/Projects/ultraworkers && bun test packages/telemetry/`\n→ `15 pass / 0 fail / 23 expect() calls / Ran 15 tests across 2 files. [69.00ms]`\nĐối chứng: `bun test packages/utils/` → `error: Failed to load pi_natives native addon for darwin-arm64 ... 17 fail`.\nNguyên nhân gốc: `grep -rnoE 'from \"[^\"]+\"' src test | grep -v '\"\\.'` trong packages/telemetry của pi chỉ trả về 3 dòng — `node:assert/strict`, `vitest` ×2. Không có natives.",
+  "fix": "Thay đoạn ở dòng 170 bằng: `Cổng đỏ được — cả hai lớp. \\`bun test packages/telemetry/\\` CHẠY ĐƯỢC và xanh (15 pass / 0 fail): telemetry là package lá, không import \\`@oh-my-pi/pi-natives\\`, nên lỗi native addon không chạm tới nó — khác với \\`packages/utils\\` hay \\`packages/agent\\`. Riêng \\`bun run --cwd=packages/natives run build\\` thì đúng là không chạy được (thiếu \\`ninja\\`, CMake báo \"unable to find a build program corresponding to Ninja\"), nhưng cổng này không cần cho telemetry. Vì vậy tuyên bố \"portable giữa các runner\" ĐÃ được chứng minh thực nghiệm, không phải suông.`\n\nVà ở bước 14 (dòng 133), thêm cổng thứ hai vào danh sách lệnh phải chạy: đổi `Đây là cổng duy nhất chạy được trong môi trường này (\\`bun test\\` bị chặn bởi native addon chưa build)` thành `Chạy cả hai: \\`bun test packages/telemetry/\\` (xanh, 15 pass — telemetry không kéo natives) rồi \\`bun run check:ts\\`. Cổng thứ hai, \\`bun --cwd=packages/natives run build\\`, không cần cho package này vì không có phụ thuộc native.`",
+  "file": "telemetry"
+ },
+ {
+  "severity": "blocking",
+  "location": "telemetry.md:4 và :121 (bước 2)",
+  "claim": "'Quy mô: 12 file / 62831 bytes, trong đó chỉ 8 file chứa code (34128 bytes)' — lặp lại ở bước 2: 'chép nguyên văn 8 file source+test ... tổng 34128 bytes'.",
+  "why_wrong": "SAI, lệch 6.427 byte. Tổng 12 file và 62831 byte thì ĐÚNG. Nhưng 8 file code là 40555 byte, không phải 34128. Sai số nằm ở con số dùng để kiểm tra 'chép đủ chưa' — người triển khai đối chiếu byte sau khi copy sẽ thấy lệch và tưởng mình chép thiếu hoặc sai nguồn.",
+  "evidence": "`cd /Users/tranquangdang21/Projects/pi-ref/packages/telemetry && wc -c src/index.ts src/memory.ts src/noop.ts src/testing/index.ts src/testing/types.ts src/testing/conformance.ts test/telemetry.test.ts test/conformance.test.ts | tail -1` → `40555 total`\nTách nhóm: 4 file không phải code = `wc -c package.json README.md CHANGELOG.md tsconfig.build.json | tail -1` → `22276 total`; `62831 - 22276 = 40555`. Con số 34128 không khớp bất kỳ tổng con nào.",
+  "fix": "Thay `34128 bytes` bằng `40555 bytes` ở CẢ HAI chỗ — dòng 4 ('chỉ 8 file chứa code (34128 bytes)') và dòng 121 trong bước 2 ('tổng 34128 bytes').",
+  "file": "telemetry"
+ },
+ {
+  "severity": "blocking",
+  "location": "telemetry.md:33 và :174",
+  "claim": "'36 symbol' ở phần 'Bề mặt công khai', và '0 ref với 33 trong 36 symbol công khai' ở phần 'Rủi ro'.",
+  "why_wrong": "SAI: bảng ngay dưới có 38 hàng, và spec JSON cũng có đúng 38 phần tử public_api. Doc tự mâu thuẫn với chính bảng của nó. Hệ quả cho phần Rủi ro: '33 trong 36' sai ở cả tử số lẫn mẫu số; số đúng là 35 trong 38 (3 symbol có va chạm: AttributeValue, SpanOptions, SpanStatus — tôi đã quét cả 38 và không có va chạm nào khác mà doc bỏ sót).",
+  "evidence": "`awk 'NR>=37 && NR<=74' telemetry.md | grep -c '^| \\`'` → `38`\n`python3 -c \"...len(d['public_api'])\"` trên telemetry.spec.json → `public_api entries: 38`\nQuét `git grep -c -w` trên omp cho cả 38 symbol → chỉ 3 HIT: AttributeValue (3 file), SpanOptions (1), SpanStatus (1).",
+  "fix": "Dòng 33: đổi `36 symbol.` thành `38 symbol.`\nDòng 174: đổi `(đã kiểm chứng: 0 ref với 33 trong 36 symbol công khai)` thành `(đã kiểm chứng: 0 ref với 35 trong 38 symbol công khai)`.",
+  "file": "telemetry"
+ },
+ {
+  "severity": "blocking",
+  "location": "telemetry.md:126 (bước 7) và :168",
+  "claim": "'hợp đồng thật là 11 comment `@ts-expect-error` bên trong các closure đó' (bước 7) và 'kể cả 11 assertion `@ts-expect-error`' (Cổng hoàn thành).",
+  "why_wrong": "SAI: có đúng 9, không phải 11. Đây là con số dùng để lập luận rằng cổng typecheck ép được hợp đồng, nên sai số làm suy yếu chính luận điều đó. Phân bố thực tế: closure thứ nhất (L60-70) có 4, closure thứ hai (L138-151) có 5 — khớp với mô tả '5 khối + 5 khối' ở dòng 139 chỉ ở nửa sau; nửa đầu là 4 chứ không phải 5.",
+  "evidence": "`grep -rn '@ts-expect-error' src test | wc -l` → `9`\n`grep -n '@ts-expect-error' test/telemetry.test.ts` → L62, 64, 66, 68 (4 khối) + L140, 143, 145, 147, 149 (5 khối)\nKhông file nào khác trong package chứa `@ts-expect-error`.",
+  "fix": "Dòng 126: `11 comment \\`@ts-expect-error\\`` → `9 comment \\`@ts-expect-error\\` (4 trong closure thứ nhất, 5 trong closure thứ hai)`.\nDòng 168: `kể cả 11 assertion \\`@ts-expect-error\\`` → `kể cả 9 assertion \\`@ts-expect-error\\``.\nDòng 139, mệnh đề (a): `và 5 khối \\`@ts-expect-error\\` chứng minh tập khoá đóng` → `và 4 khối \\`@ts-expect-error\\` chứng minh tập khoá đóng` (giữ nguyên `5 khối \\`@ts-expect-error\\` nữa` ở mệnh đề (b), mệnh đề đó đúng).",
+  "file": "telemetry"
+ },
+ {
+  "severity": "major",
+  "location": "telemetry.md:16 và :84",
+  "claim": "Doc biện minh cho việc giữ nguyên `import { deepStrictEqual, doesNotThrow, fail, ok, strictEqual } from \"node:assert/strict\"` (named import) trong src, bằng tiền lệ `packages/utils/src/abortable.ts:1` và `packages/ai/test/fixtures/completion-retention.ts:1`.",
+  "why_wrong": "Lập luận tiền lệ SAI. Cả hai file được trích dẫn đều dùng DEFAULT import (`import assert from \"node:assert/strict\"`), không phải named import. Nên không có bằng chứng nào trong repo chứng minh named import `node:assert/strict` chạy được trong `src/`. Đây không phải lỗi chặn (Bun/Node đều hỗ trợ named import qua cjs-module-lexer, và tôi đã typecheck + chạy test thật với named import này — xanh), nhưng lập luận đưa ra thì không đúng, và người đọc có thể tin rằng đã có tiền lệ thì bỏ qua kiểm chứng.",
+  "evidence": "`sed -n '1p' packages/utils/src/abortable.ts` → `import assert from \"node:assert/strict\";`\n`sed -n '1p' packages/ai/test/fixtures/completion-retention.ts` → `import assert from \"node:assert/strict\";`\n`grep -rn 'from \"node:assert' packages/*/src` (toàn repo) → CHỈ 1 hit, chính là abortable.ts, và là default import.\n`grep -rn 'import {.*} from \"node:assert' packages scripts` (toàn repo) → 1 hit duy nhất, `packages/omptype/test/ark/realWorld.test.ts:2:import { AssertionError } from \"node:assert\";` — và đó là `node:assert` (không phải `/strict`), lại nằm trong test.\nVerify thực nghiệm: sau khi dựng package, `bun run check:ts` exit 0 và `bun test packages/telemetry/` 15 pass với named import này còn nguyên.",
+  "fix": "Ở dòng 16, thay câu tiền lệ bằng: `L1 \\`import { deepStrictEqual, doesNotThrow, fail, ok, strictEqual } from \"node:assert/strict\"\\` chép nguyên văn. Lưu ý: \\`packages/utils/src/abortable.ts:1\\` và \\`packages/ai/test/fixtures/completion-retention.ts:1\\` dùng DEFAULT import (\\`import assert from ...\\`), không phải named import — nên chúng KHÔNG phải tiền lệ cho named import. Tiền lệ named import duy nhất trong repo là \\`packages/omptype/test/ark/realWorld.test.ts:2\\` (\\`node:assert\\`, trong test). Named import \\`node:assert/strict\\` đã được kiểm chứng thực nghiệm: typecheck sạch và 15/15 test xanh.`\n\nỞ dòng 84, sửa tương ứng: ``@types/node` đã có sẵn trong `node_modules`, và named import `node:assert/strict` trong `src` đã có tiền lệ chạy được ở omp (`packages/utils/src/abortable.ts:1`)`` → ``@types/node` đã có sẵn trong `node_modules`. Named import \\`node:assert/strict\\` trong `src` KHÔNG có tiền lệ — \\`packages/utils/src/abortable.ts:1\\` dùng default import — nhưng đã được kiểm chứng thực nghiệm trên chính package này (typecheck sạch, 15/15 test xanh).`",
+  "file": "telemetry"
+ },
+ {
+  "severity": "major",
+  "location": "telemetry.md:122 (bước 3) và :133 (bước 14)",
+  "claim": "'BẮT BUỘC, không phải thẩm mỹ: `tsconfig.base.json` KHÔNG đặt `allowImportingTsExtensions` (chỉ `tsconfig.tools.json` đặt), nên `tsgo` phát TS5097 trên cả 16 và package sẽ không typecheck được.' Bước 14 liệt kê 'TS5097 ×16 (sót bước 3)' là một trong bốn kiểu hỏng dự kiến.",
+  "why_wrong": "SAI về cơ chế. Tôi đã thử lại: giữ nguyên một specifier `.ts` (`src/noop.ts:1` → `from \"./index.ts\"`) rồi chạy `tsgo -p packages/telemetry/tsconfig.json --noEmit` — exit 0, KHÔNG có TS5097. Vì `tsconfig.base.json` đặt `moduleResolution: \"Bundler\"`, TypeScript cho phép đuôi `.ts` mà không cần `allowImportingTsExtensions`. Việc bỏ đuôi `.ts` vẫn NÊN làm (khớp quy ước omp, và `oxlint`/editor khác có thể khác), nhưng lập luận 'không làm thì typecheck hỏng' thì sai, và nếu ai đó dựa vào đó để quyết định có cần làm bước 3 hay không thì sẽ bỏ sót.",
+  "evidence": "`grep -n 'allowImportingTsExtensions\\|noEmit' tsconfig.base.json` → chỉ có `\"noEmit\": true` ở L14\n`grep -n 'moduleResolution' tsconfig.base.json` → `\"moduleResolution\": \"Bundler\"` (L6)\nThử nghiệm thật (package đã dựng đầy đủ trong cây omp):\n`perl -pi -e 's{from \"./index\"}{from \"./index.ts\"}' packages/telemetry/src/noop.ts && ./node_modules/.bin/tsgo -p packages/telemetry/tsconfig.json --noEmit` → không output, rc=0.\nControl để chứng minh gate CÓ bắt lỗi thật: đổi thành `from \"./does-not-exist\"` → `error TS2307: Cannot find module './does-not-exist'`; để nguyên `from \"vitest\"` → `error TS2307: Cannot find module 'vitest'`.",
+  "fix": "Sửa lập luận ở bước 3, thay: `BẮT BUỘC, không phải thẩm mỹ: \\`tsconfig.base.json\\` **không** đặt \\`allowImportingTsExtensions\\` (chỉ \\`tsconfig.tools.json\\` đặt), nên \\`tsgo\\` phát TS5097 trên cả 16 và package sẽ không typecheck được.`\nbằng: `Làm cho khớp quy ước omp, không phải vì gate bắt: đã thử lại — giữ nguyên đuôi \\`.ts\\` vẫn typecheck sạch, vì \\`tsconfig.base.json\\` đặt \\`moduleResolution: \"Bundler\"\\` nên TypeScript cho phép đuôi \\`.ts\\` mà không cần \\`allowImportingTsExtensions\\`. TS5097 KHÔNG nổ lên. Vẫn bỏ vì mọi package khác của omp không dùng đuôi \\`.ts\\`, và để lại sẽ lệch quy ước khi tách file.`\n\nVà ở bước 14, bỏ mục `TS5097 ×16 (sót bước 3)` khỏi danh sách kiểu hỏng dự kiến — thay bằng ghi chú rằng bước 3 không tự bắt được: `Lưu ý: cổng KHÔNG bắt được sót bước 3 (đuôi \\`.ts\\` typecheck vẫn sạch) — bắt buộc review thủ công, xem \\`grep -rno 'from \".[^\"]*\\.ts\"' packages/telemetry/\\` ở phần Xác minh.`",
+  "file": "telemetry"
+ },
+ {
+  "severity": "major",
+  "location": "telemetry.md:121 (bước 2) và :133 (bước 14)",
+  "claim": "Bước 2: 'chép nguyên văn 8 file ... Không format lại, không để editor reflow tab, chưa \"sửa\" gì cả.' Bước 14 dự đoán chỉ có 'diff tab/dấu nháy của oxfmt trên cả 8 file được chép (file chép theo tab của pi — xác nhận chúng khớp `.oxfmtrc.json` của omp)'.",
+  "why_wrong": "Tiên lệ sai và kết luận sai. Tôi đã dựng package và chạy cổng: `bun run check:ts` FAIL ngay ở `check:tools` với `Format issues found in above 5 files` trên 5/8 file, dù copy ĐÃ giữ tab đúng như `.oxfmtrc.json` yêu cầu. Khác biệt nằm ở `printWidth: 120` và `arrowParens: \"avoid\"`: oxfmt gộp import nhiều dòng thành một dòng dài 118 ký tự, bỏ dấu ngoặc quanh tham số đơn (`(span) =>` → `span =>`), và reflow một khối generic type. Bước 2 cấm format, bước 14 lại giả định chỉ có diff nhỏ — nên người triển khai sẽ bị chặn cổng mà không có chỉ dẫn sửa, hoặc tệ hơn là tưởng 'xác nhận chúng khớp' rồi dừng.",
+  "evidence": "Đã dựng `packages/telemetry` trong cây omp rồi `bun run check:ts`:\n`packages/telemetry/src/index.ts (0ms) / src/memory.ts / src/testing/conformance.ts / test/conformance.test.ts / test/telemetry.test.ts` → `Format issues found in above 5 files.` → `error: script \"check:ts\" exited with code 1`\nChạy `bunx oxfmt` rồi diff, ví dụ `src/memory.ts` L1-8 (import 7 dòng) → 1 dòng 118 ký tự; `conformance.ts:29` `(candidate) =>` → `candidate =>`; `test/telemetry.test.ts:109,118,119,160,163,189` đều mất ngoặc.\nByte delta do oxfmt: index.ts 13223→13233, memory.ts 6047→6034, conformance.ts 10622→10545, conformance.test.ts 1811→1805, telemetry.test.ts 7092→7080.\nSau khi fmt: `bun run check:ts` exit 0, và `@oh-my-pi/pi-telemetry:check:types | Done in 52ms`.",
+  "fix": "Ở bước 2, đổi `Không format lại, không để editor reflow tab, chưa \"sửa\" gì cả.` thành: `Không sửa gì cả ở bước này (chưa format, chưa bỏ đuôi \\`.ts\\`) — nhưng biết trước rằng 5/8 file SẼ phải qua \\`oxfmt\\`, xem bước 14.`\nThêm một bước mới 14b (đặt trước cổng): ``Chạy \\`bunx oxfmt 'packages/telemetry/src/**/*.{ts,tsx}' 'packages/telemetry/test/**/*.ts'\\` TRƯỚC khi chạy cổng. 5/8 file cần format: \\`src/index.ts\\`, \\`src/memory.ts\\`, \\`src/testing/conformance.ts\\`, \\`test/conformance.test.ts\\`, \\`test/telemetry.test.ts\\`. Lý do: \\`.oxfmtrc.json\\` đặt \\`printWidth: 120\\` và \\`arrowParens: \"avoid\"\\`, nên oxfmt gộp import nhiều dòng thành một dòng, bỏ ngoặc quanh tham số đơn, và reflow khối conditional type ở \\`index.ts:173-178\\`. Copy đã giữ tab đúng như yêu cầu — tab KHÔNG phải nguồn diff.``\nVà ở bước 14, thay vế 'diff tab/dấu nháy của oxfmt ... xác nhận chúng khớp' bằng: ``5 file fail \\`oxfmt --check\\` nếu chưa chạy bước 14b (đã verify: \\`Format issues found in above 5 files\\`, \\`check:ts\\` exit 1). Không phải do tab.``",
+  "file": "telemetry"
+ },
+ {
+  "severity": "minor",
+  "location": "telemetry.md:174",
+  "claim": "'cây 17 package' — mô tả repo omp hiện tại.",
+  "why_wrong": "Sai số đếm. Cây omp hiện có 16 package, không phải 17. Câu này mang tính mô tả nền nên hậu quả thấp, nhưng nó là loại số mà người đọc dùng để tự đối chiếu.",
+  "evidence": "`ls -d /Users/tranquangdang21/Projects/ultraworkers/packages/*/ | wc -l` → `16`\nDanh sách: agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire.",
+  "fix": "Đổi `trong cây 17 package` thành `trong cây 16 package`.",
+  "file": "telemetry"
+ },
+ {
+  "severity": "minor",
+  "location": "telemetry.md:20 (hàng README) và :131 (bước 12)",
+  "claim": "Doc nói mục 'Pi Package Integration' ở `L365-372`, và các scope rewrite trong README được gom bằng mô tả vị trí: '3× `@earendil-works/pi-agent-core` (L3 của khối bảng API quanh L365)'.",
+  "why_wrong": "Hai sai lệch vị trí. (1) Mục 'Pi Package Integration' chạy L365-383, không phải L365-372 — cắt ở 372 bỏ sót code block `L374-380` import `AGENT_TELEMETRY_SCHEMAS`/`AI_TELEMETRY_SCHEMA`/`HARNESS_TELEMETRY_SCHEMA`/`startAiSpan`/`startHarnessSpan`, tức là 1 trong 3 occurrence `pi-agent-core` (L380) nằm NGOÀI phạm vi doc chỉ định. Ai làm đúng theo hướng dẫn sẽ không sửa L380. (2) Mô tả 'L3 của khối bảng API' không có thật — không có bảng API nào trong README; 3 occurrence nằm ở L326, L371, L380.",
+  "evidence": "`grep -rn '@earendil-works/pi-agent-core' README.md` → `README.md:326`, `README.md:371`, `README.md:380`\n`awk 'NR>=365{...} NR>365 && /^## /{exit}' README.md` → section kết thúc ở L383; heading kế tiếp `## Security and Portability` ở L385.\n9 occurrence `pi-telemetry` mà doc liệt kê (L1, 36, 72, 139, 159, 180, 186, 219, 369) — đã verify, khớp chính xác.",
+  "fix": "Trong hàng README (dòng 20), sửa: `3× \\`@earendil-works/pi-agent-core\\` (L3 của khối bảng API quanh L365)` → `3× \\`@earendil-works/pi-agent-core\\` (L326, L371, L380)`. Đồng thời đổi `mục 'Pi Package Integration' (L365-372)` → `mục 'Pi Package Integration' (L365-383, gồm code block L373-381)`.\nLặp lại hai sửa này ở bước 12 (dòng 131) cho nhất quán.",
+  "file": "telemetry"
+ },
+ {
+  "severity": "minor",
+  "location": "telemetry.md:21 và :131 (bước 12)",
+  "claim": "'Không chép 9 heading phiên bản có ngày của pi (0.84.2 → 0.87.1) — đó là lịch sử phát hành của pi'.",
+  "why_wrong": "Cả số lượng lẫn khoảng đều sai. CHANGELOG.md của pi có 11 heading phiên bản có ngày, từ 0.84.0 (không phải 0.84.2) tới 0.87.1. Kết luận 'xoá hết' thì đúng, nhưng người đọc đếm sẽ thấy 11 không phải 9 và sẽ nghi ngờ phần còn lại của tài liệu.",
+  "evidence": "`grep -o '^## \\[[0-9.]*\\]' CHANGELOG.md | grep -v Unreleased | wc -l` → `11`\nĐầu: `## [0.87.1]` … cuối: `## [0.84.0]` (thứ tự file: 0.87.1, 0.87.0, 0.86.1, 0.86.0, 0.85.1, 0.85.0, 0.84.4, 0.84.3, 0.84.2, 0.84.1, 0.84.0).",
+  "fix": "Đổi `9 heading phiên bản có ngày của pi (0.84.2 → 0.87.1)` thành `11 heading phiên bản có ngày của pi (0.84.0 → 0.87.1)` ở cả dòng 21 và dòng 131.",
+  "file": "telemetry"
+ },
+ {
+  "severity": "minor",
+  "location": "telemetry.md:23 (hàng LICENSE) và :120 (bước 1)",
+  "claim": "Hàng LICENSE ghi `bytes` là 1109; mô tả là 'chép nguyên văn `/Users/tranquangdang21/Projects/pi-ref/LICENSE` (21 dòng, MIT, ...)'.",
+  "why_wrong": "Con số 1109 không tái lập được. LICENSE của pi là 1069 byte, và file sau khi nối thêm hai dòng copyright của omp sẽ là 1143 byte — khớp ở cả hai đầu, không có cách nào ra 1109. Số dòng 21 thì ĐÚNG (1069 byte / 20 newline / 21 logical lines — file không kết thúc bằng newline). Đây là cột `bytes` của bảng, nên dùng để đối chiếu sau khi copy.",
+  "evidence": "`wc -c /Users/tranquangdang21/Projects/pi-ref/LICENSE` → `1069`\nPython: `len(open(...,'rb').read())` → `1069`; `splitlines()` → `21`; `endswith(b'\\n')` → False\nMô phỏng nối 2 dòng (`Copyright (c) 2025-2026 Can Bölük` + `Copyright (c) 2026 Stencil Labs, Inc.`) → `1143 byte`\nĐối chiếu khuôn: `packages/wire/LICENSE` = 1111 byte / 22 dòng (2 dòng copyright sẵn có của omp).",
+  "fix": "Đổi `| packages/telemetry/LICENSE | 1109 | chép rồi sửa |` thành `| packages/telemetry/LICENSE | 1143 | chép rồi sửa |` (1069 byte của pi + 74 byte hai dòng copyright của omp), kèm chú thích trong cột rewrite: `— nguồn 1069 byte / 21 dòng, cộng 2 dòng copyright của omp (74 byte) = 1143 byte`.",
+  "file": "telemetry"
+ },
+ {
+  "severity": "minor",
+  "location": "telemetry.md:112 (hàng va chạm `AttributeValue`)",
+  "claim": "Neo phía omp của `AttributeValue` được liệt kê là `packages/agent/src/telemetry.ts:44` (import), `:2100` (`setSpanAttribute`); thêm `packages/coding-agent/src/telemetry-export-otlp.ts:25`, `:399`.",
+  "why_wrong": "Thiếu một file va chạm. `AttributeValue` của OTEL xuất hiện ở 3 file, không phải 2 — doc bỏ sót `packages/agent/test/run-summary.test.ts`, nơi nó được import (L24) và dùng ở L36, L72, L76. Cột 'đã có sẵn ở omp chưa' ở dòng 37 cũng chỉ dẫn `packages/agent/src/telemetry.ts:2100` và `telemetry-export-otlp.ts:399`, cùng thiếu file thứ ba.",
+  "evidence": "`git grep -l -w 'AttributeValue' -- 'packages/*'` → 3 file: `packages/agent/src/telemetry.ts`, `packages/agent/test/run-summary.test.ts`, `packages/coding-agent/src/telemetry-export-otlp.ts`\n`git grep -n -w 'AttributeValue' packages/agent/test/run-summary.test.ts` → L24 (import from `@opentelemetry/api`), L36, L72, L76\nCác neo khác đã verify đúng: `sed -n '44p' packages/agent/src/telemetry.ts` → `type AttributeValue,`; `sed -n '25p;399p' packages/coding-agent/src/telemetry-export-otlp.ts` → `type AttributeValue,` / `function logAttributeValue(value: unknown): AttributeValue | undefined {`.",
+  "fix": "Thêm `packages/agent/test/run-summary.test.ts:24,36,72,76` vào neo phía omp ở hàng va chạm `AttributeValue` (dòng 112), và sửa cột 'đã có sẵn ở omp chưa' ở dòng 37 thành: `**Có** — \\`AttributeValue\\` khác hình dạng từ \\`@opentelemetry/api\\`, dùng ở \\`packages/agent/src/telemetry.ts:2100\\` (\\`setSpanAttribute\\`), \\`packages/coding-agent/src/telemetry-export-otlp.ts:399\\`, và \\`packages/agent/test/run-summary.test.ts:24,36,72,76\\`.`",
+  "file": "telemetry"
+ },
+ {
+  "severity": "minor",
+  "location": "telemetry.md:161",
+  "claim": "Lệnh xác minh: `grep -rn 'vitest' packages/telemetry/` phải ra 0 hit.",
+  "why_wrong": "Lệnh này không kiểm tra đúng thứ cần kiểm. Sau khi bước 6 đổi runner sang `bun:test`, không còn hit nào — nhưng nếu ai đó CHƯA làm bước 6 thì lệnh bắt đúng. Vấn đề là nó sẽ \"0 hit\" cả khi bước 6 bị bỏ sót một phần, và quan trọng hơn: hai file test sau khi sửa còn chứa `not.toThrow()` cần thay theo bước 8 — lệnh này không động tới chúng. Đây là lệnh xác minh yếu, không phải sai. Lưu ý thêm: `grep -rno 'from \"\\.[^\"]*\\.ts\"'` là regex không escape `.` nên khớp cả `from \"./indexXts\"`, vô hại ở đây nhưng không chính xác.",
+  "evidence": "Đã verify 16 specifier `.ts` tồn tại trong pi: `grep -rnoE 'from \"(\\.\\.?/)[^\"]*\\.ts\"' src test | wc -l` → `16`, khớp đúng danh sách 16 vị trí mà bước 3 liệt kê (noop.ts:1; index.ts:24,356,357; memory.ts:8,9; testing/index.ts:1,6; testing/types.ts:1,2; testing/conformance.ts:2,3,8; test/telemetry.test.ts:13; test/conformance.test.ts:2,3).",
+  "fix": "Bổ sung hai lệnh xác minh mà hiện đang thiếu, và siết regex: `grep -rnoE 'from \"\\.[^\"]*\\.ts\"' packages/telemetry/   # phải ra 0 hit (escape dấu chấm)` và `grep -rn 'not\\.toThrow()' packages/telemetry/test/   # phải ra 0 hit sau bước 8`.",
+  "file": "telemetry"
+ }
+]

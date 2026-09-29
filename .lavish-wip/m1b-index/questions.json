@@ -1,0 +1,134 @@
+[
+ {
+  "id": "chord",
+  "q": "The M1 W2 drain question needs an owner decision, and it is NOT this change's to make. Should the four existing loops (packages/coding-agent/src/session/agent-session.ts:4983, :5218, packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:112, packages/coding-agent/src/extensibility/extensions/runner.ts:1347) be moved to W2's log-and-continue design, left alone, or aligned to chord's throwing design? The evidence favours W2's design on correctness grounds (it protects saveDraft) and this spec deliberately does not touch them. But now that chord is in-tree, someone will want to 'reconcile' the two, and the reconciliation must be the OTHER direction than it looks."
+ },
+ {
+  "id": "chord",
+  "q": "Should the 6 benchmark files (test/delta-traversal.bench.ts plus 5 under test/delta-benchmark/, ~87 KB) and PLANNING.md (41634 bytes) be copied in a follow-up? This spec skips all 7. omp's house layout puts benchmarks in a top-level `bench/` directory (packages/omptype/bench/), so porting them means relocating as well as converting from vitest's bench API to `bun bench`. Worth deciding explicitly rather than letting them rot in the source tree."
+ },
+ {
+  "id": "chord",
+  "q": "TODO_CONTEXT (src/context/index.ts:56) is named after a source-tree TODO and is exported. Keep the name verbatim for a faithful copy, or rename to something meaningful now? Renaming is safe — nothing outside the package imports it, and no sibling of the seven uses a Context constant by name. Leaning toward keeping it so a future diff against pi stays clean."
+ },
+ {
+  "id": "chord",
+  "q": "test/delta-tracker/retention.worker.ts spawns a Worker. AGENTS.md's `declareWorkerHostEntry` / dispatch-table requirement is written for production workers that re-enter cli.ts; this is a test fixture. Confirm the direct `new Worker(new URL(...), {type:'module'})` fallback is acceptable for a bun:test fixture, or route it through the host entry like production code."
+ },
+ {
+  "id": "chord",
+  "q": "test/boundary.test.ts walks the package and asserts no upstream-scope specifier reaches a published entry. Confirm this passes the 'no source-grep' rule. The spec's reading is that it checks import RESOLUTION rather than file TEXT, which is the distinction the rule draws — but it is close enough to the line that a reviewer should rule on it explicitly rather than inherit the judgement."
+ },
+ {
+  "id": "chord",
+  "q": "Does omp want a single shared JsonValue/isJsonValue in @oh-my-pi/pi-utils to replace the six definitions plus chord's two (collisions #2 and #3)? This migration deliberately does not unify — all four sibling packages import chord's copy and are mutually consistent. But the divergence is real: packages/coding-agent/src/secrets/obfuscator.ts:72 admits `| undefined` in the object branch, which the others do not, and packages/ai/src/judgment/types.ts:17 uses the readonly variant. Someone should own that cleanup separately."
+ },
+ {
+  "id": "protocol",
+  "q": "BLOCKING for step 4, and four other specs inherit it — keep `typebox@1.3.27` (MIT, verified; upstream pins it exactly, latest published is 1.3.34), or port protocol.ts onto `@oh-my-pi/omptype/typebox`? THIS SPEC RECOMMENDS THE OMPTYPE PORT. Evidence: omp already ships a TypeBox facade at `@oh-my-pi/omptype/typebox` and uses it in production (packages/coding-agent/src/extensibility/legacy-typebox.ts, plus 4 test files). Every builder protocol.ts calls is present and measured — `Type.String` with `minLength` (typebox.ts:207) and `pattern` (:209-216), `Type.Integer` with `minimum` (:121-141), `Type.Object` with `additionalProperties:false` (-> `def[\"+\"]=\"reject\"` at :426), `Type.Literal`, `Type.Union`, `Type.Optional`, `Type.Unknown`, `Type.Unsafe`, and `Static<T> = T[\"infer\"]` (:85). Only `Check` is absent, and omp's own idiom replaces it in one line (security/contracts/validation.ts:10-14: `const result = schema(value); if (result instanceof type.errors) throw ...`). AGENTS.md's central-utilities rule points the same way: two schema engines in one repo is a bug even when both work. AGAINST: `typebox` is a 1-line import change and zero risk, and the `StrictObject` generic at protocol.ts:10 is unverified against omptype's `Type.Object` signature. IF OMPTYPE: the escape hatch is explicit — if `bun run check:ts` rejects the `StrictObject` generic, fall back to typebox and record why. Do not redesign the schemas to fit.,Does the chord dependency survive at all? pi-protocol uses exactly 2 symbols from chord (`JsonValue`, `isJsonValue`) across 2 import lines. This spec keeps the dependency because redefining `JsonValue` locally would make `OpaqueJsonValueSchema` a different contract from the one `isJsonValue` enforces, which is a correctness bug, not a DRY win. But if chord's spec decides to re-export `json.ts` at a subpath, the repoint is 1 line. Worth a subpath decision across the wave: does `isJsonValue`/`JsonValue` live at `@oh-my-pi/chord` or `@oh-my-pi/chord/json`? pi upstream puts `isJsonValue` in `chord/src/json.ts:74` and `JsonValue` in `chord/src/types.ts:21`, and exports the former from the root index but not the latter. That asymmetry is worth resolving once, here, rather than in seven specs.,Should `packages/coding-agent/src/live/attestation.ts` be routed through the new encoder? This spec's answer is NO, deliberately, and the README will say so with the three measured reasons (30 lines vs a 216-line import tree; platform-gated to darwin/arm64 behind a native call, so unreachable by any test; fatal-vs-non-fatal text decoders). The owner may overrule — it is a one-file change once the codec exists — but overrule it knowingly, not by accident. Note the attestation needs a BYTE STRING (major type 4) which the shared encoder supports, so there is no technical blocker, only a risk/benefit one.,Is the protocol name right? pi calls it `@earendil-works/pi-protocol`; the brief's rule gives `@oh-my-pi/pi-protocol`. That is unambiguous. The residual question is only whether a repo containing BOTH `pi-wire` and `pi-protocol` needs a disambiguation sentence in each README. This spec adds it to both sides; the alternative — renaming pi-wire, or merging the two — is worse and should be declined if raised.,The `ProtocolError` (type) vs `ProtocolValidationError` (class) near-collision. Upstream's naming is genuinely confusing and this spec preserves it verbatim because the distinction is the package's error contract: one is a value that crosses the wire, the other is a class thrown locally. Renaming either is an API break for every downstream spec in the wave (server and client both import from this barrel). Confirm the owner accepts the confusing names rather than a rename before the PR, because renaming after server/client land is 10x the work."
+ },
+ {
+  "id": "server",
+  "q": "BLOCKING — where does `SessionMetadata` live in omp? Recommended: declare the 6-field interface locally in packages/server/src/types.ts (collisions[2]), making this package landable standalone. Alternatives: (a) land pi's `harness/session/types.ts` into omp's pi-agent-core as a first slice of the agent-core reconciliation, which couples server to a much larger decision; (b) make `ServerHost` metadata-generic with no constraint (`TMetadata = unknown`), which is the smallest diff but weakens the `resolveSession` contract that test/conformance.test.ts:334 and :346 depend on. The owner should pick before step 4, because it changes the package.json dependency list.,Does the 7-package wave have a name for the chord Context re-export layer? The recommendation here is to import Context/BACKGROUND_CONTEXT/TODO_CONTEXT/withAbortSignal from `@oh-my-pi/chord/context` directly, matching upstream's own re-export path. If the wave instead decides to build an omp-side `pi-agent-core/context` barrel (the shape pi uses), then step 10's 4 repoints become 1 import-line change per file instead — cosmetically cheaper, architecturally a real fork. Worth a decision, not worth blocking on.,Do the `pi.session-management` / `pi.session-directory` service-id string literals get rebased to an `omp.*` namespace? Measured: 3 occurrences, all in src/testing (testing/host.ts:126, :136, testing/client.ts:66) plus 1 more in test/conformance.test.ts's call fixtures. They are runtime protocol constants owned by the durable/session-management layer, not scope strings, so they are deliberately NOT in scope_rewrites. If omp rebadges the service namespace, these 4 move with that decision — but pi-server's own routing is id-agnostic (it forwards `call.serviceId` opaquely), so nothing in the server half cares either way.,Is `typebox@1.3.27` going into the omp catalog, or does pi-protocol get ported onto `@oh-my-pi/omptype`? This is pi-protocol's spec to answer but it gates this one: every `Static<typeof XSchema>` in pi-protocol's protocol.ts is a compile-time type projection over a runtime schema, and omptype's ArkType surface is not a drop-in. If the answer is 'port to omptype', pi-protocol's rewrite surface grows and server's start date moves with it.,Does `test/unix.test.ts`'s `fork(new URL('fixtures/stale-socket-server.mjs', import.meta.url), ...)` work under Bun's node:child_process shim, including the `process.send('listening')` handshake the parent waits on? Nothing in the source answers this and GATE 2 is currently unrunnable, so it is untested. If `fork` misbehaves, replace the fixture with an in-process `createServer()` that binds and never accepts — same observable precondition, no child process, and it removes a test that is invisible to both oxlint and tsgo because `.mjs` matches no omp lint or include glob.,The two `index.ts` barrels (transports/unix/index.ts, testing/index.ts) use named re-exports where AGENTS.md prefers `export * from` in pure index barrels. Converting them to stars would newly export the `@internal` UnixByteConnection from `./unix`, changing the public API. This spec keeps the named re-exports and calls the deviation out in the PR rather than silently widening the surface — but if the owner prefers strict AGENTS.md compliance, the fix is to delete the `@internal` export comment's claim and accept the wider barrel."
+ },
+ {
+  "id": "client",
+  "q": "Does pi's coding-agent `RemoteSession` controller (packages/coding-agent/src/client/index.ts in pi, plus src/experimental/client-runtime.ts and src/experimental/services/connection.ts) belong in a later omp work item, or is it in scope for the coding-agent spec that re-exports this package as `@oh-my-pi/pi-coding-agent/client`? pi's client package is useless without it, so if the coding-agent spec does not adopt it, this migration ships an unused package. That decision belongs to the coding-agent spec and must be recorded there, not here."
+ },
+ {
+  "id": "client",
+  "q": "test/unix.test.ts needs three pi-server subpaths (`@oh-my-pi/pi-server`, `.../testing/host`, `.../transports/unix/listener`). Will pi-server keep those subpath exports in omp, or will omp collapse them into a single barrel? If they are collapsed, that test file needs a rewrite to the new shape and its 8 discovery tests become substantially more than a mechanical port. Confirm against the server spec before scheduling client."
+ },
+ {
+  "id": "client",
+  "q": "Is `@earendil-works/chord/context` (a subpath, not a bare specifier) preserved under `@oh-my-pi/chord/context`? client.ts:19 and test/client.test.ts:1 both import `BACKGROUND_CONTEXT` from it. It resolves inside the pi repo only because chord's exports map carries a `./context` entry. The chord spec must preserve that subpath or these 2 imports break."
+ },
+ {
+  "id": "client",
+  "q": "The four 0.87.1-versioned pi packages this migration touches all pin `engines.node >=22.19.0`, but omp pins `engines.bun >=1.3.14`. unix.ts is the only place this could bite (node:net, node:fs/promises, socket `.unref()`/`.drain`). Confirm the target Bun version supports `NodeJS.Timeout` as a type and that `fork()` in the test fixture works under `bun test` -- `bun test` does not run vitest's process model, so the stale-socket-server.mjs fork at unix.test.ts:126 is the most likely test to need rework."
+ },
+ {
+  "id": "client",
+  "q": "Should the 4 omitted files (tsconfig.build.json, tsconfig.test.json, vitest.config.ts, CHANGELOG.md) be recorded as intentional skips in the PR description, or is a silent omission acceptable? This spec says omit them deliberately; the PR should say so, because a reviewer diffing against pi will see 4 fewer files and may read it as an accident."
+ },
+ {
+  "id": "client",
+  "q": "The 2 occurrences of `@earendil-works/pi-ai` and 1 each of `@earendil-works/pi-telemetry` / `@earendil-works/pi-agent-core` exist ONLY in pi's tsconfig.test.json, which this spec deletes. So those 4 scope strings need no rewrite at all -- but if a later decision resurrects a test tsconfig, they must be rewritten then. Confirm the deletion is intended so nobody later greps for un-rewritten `@earendil-works` strings and reports them as misses."
+ },
+ {
+  "id": "durable",
+  "q": "CHORD. 52 import tro vao @oh-my-pi/chord, chua ton tai o omp. Phai migrate chord TRUOC durable. Bao gio durable co the dich chuyen khong? Khong - thi thieu 8 symbol: Context, Draft, JsonValue, Op, copyJson, track, apply, applyImmutableBatches, awaitWithContext, withoutAbortSignal, BACKGROUND_CONTEXT, withAbortSignal. Phai khop dung chu ky pi: chord phai ra truoc, durable sau."
+ },
+ {
+  "id": "durable",
+  "q": "OMITTED: O HEAD pi-ref (d6af72e) 12 package, omp co 4 trung ten (agent, ai, coding-agent, tui), con 8 KHAC ten. Task ghi 7 - 8 la dung neu tinh session-backends/sqlite-node la package rieng (no co package.json ten '@earendil-works/pi-session-backend-sqlite-node' va phu thuoc durable). Xac nhan so 7 hay 8 truoc khi chot ke hoach chung."
+ },
+ {
+  "id": "durable",
+  "q": "TACH BIEN CHOT. 51 file src cua omp da dung bun:sqlite. durable them storage/sqlite voi schema rieng (conversations/entries/tasks/submissions/documents) trong mot DB rieng. Neu muon dung chung DB voi cac store hien co, se phai viet migration noi bo - tang rui ro gap 2 lan. De mac dinh: DB rieng, ghi ro trong README."
+ },
+ {
+  "id": "durable",
+  "q": "NodeExecutionEnv: giu node:child_process hay doi sang Bun.spawn trong cung PR? Da quyet o spec nay: TACH RA, PR rieng. De nghi cho roadmap chung."
+ },
+ {
+  "id": "durable",
+  "q": "test/types.test.ts va expectTypeOf: chuyen thanh type test trong tsconfig hay bo han? Da quyet: bo, va ghi ro ly do trong test_contract."
+ },
+ {
+  "id": "durable",
+  "q": "Cach chay 18 file test khi CHUA build pi-natives: `bun test packages/durable` co chay doc lap khong, hay con import lai pi-tui/pi-utils (co pi-native)? PI-TUI va PI-UTILS deu phai kiem tra. Neu co, thi `brew install ninja` la buoc bat buoc truoc khi chay test."
+ },
+ {
+  "id": "durable",
+  "q": "LICENSE: omp dat LICENSE cho TUNG package (packages/agent/LICENSE, packages/ai/LICENSE) va ca root LICENSE deu ghi 'Copyright (c) 2025 Mario Zechner'. Ban LICENSE rieng cho durable nen dung nguyen 21 dong MIT cua pi-ref, hay ghep them 3 dong copyright cua omp nhu root? De nghi: dung nguyen 21 dong + them 'Copyright (c) 2025-2026 Can Boluk' va 'Copyright (c) 2026 Stencil Labs, Inc.' cho khop root - nhung day la quyet dinh cua chu so hu, khong tu quyet."
+ },
+ {
+  "id": "durable",
+  "q": "Suy nghi: durable/CHANGELOG.md la changelog cua pi-ref, khong phai cua omp. Co nen giu lich su cua pi hay bat dau '## [Unreleased]' moi? De nghi giu - no la bang chong nguon."
+ },
+ {
+  "id": "telemetry",
+  "q": "Should the omp scope be `@oh-my-pi/pi-telemetry` (matching the 4 already-migrated names pi-agent-core/pi-ai/pi-coding-agent/pi-tui) or `@oh-my-pi/omp-telemetry` (matching the odd one out, `@oh-my-pi/omp-stats`)? This spec assumes `pi-telemetry` because the task fixes the convention at 'change scope only, keep the name'. `omp-stats` is the sole exception and it looks like drift rather than policy — worth one confirmation before the copy, because it is a rename of the published name and is painful to undo."
+ },
+ {
+  "id": "telemetry",
+  "q": "pi's version is 0.87.1; omp's catalog is 18.3.3. This spec writes `18.3.3` (what `bun run release` will stamp). Confirm the intent is a clean 18.3.3 with no pi-version lineage in the manifest, since the CHANGELOG rewrite in step 12 drops pi's version headings entirely."
+ },
+ {
+  "id": "telemetry",
+  "q": "Should the package be published, or is it internal-only until omp's agent actually consumes it? The `./testing` subpath and the README are written for third-party adapter authors. If omp has no plan to publish it, the conformance suite's raison d'etre weakens and someone should decide whether the export stays."
+ },
+ {
+  "id": "telemetry",
+  "q": "Is the OTEL emitter in packages/agent/src/telemetry.ts (2114 lines) meant to eventually BE the adapter that `createTelemetryAdapterConformance` grades, or is it staying hand-rolled? The answer decides whether `RecordedTelemetrySpan` becomes a live integration contract in the agent spec or just a test fixture. Out of scope here, but telemetry's conformance suite is useless if nothing is ever run against it."
+ },
+ {
+  "id": "telemetry",
+  "q": "pi's agent owns the AI/harness/session SCHEMAS (AI_TELEMETRY_SCHEMA, HARNESS_TELEMETRY_SCHEMA, AGENT_TELEMETRY_SCHEMAS, packages/agent/src/harness/telemetry.ts). Copying them is the AGENT spec's job, not this one. Confirm the agent spec will bring them over — without them, `defineTelemetrySchema` and `createTypedSpanStarter` ship in omp with zero in-tree consumers and read as dead code."
+ },
+ {
+  "id": "telemetry",
+  "q": "pi uses `'single quotes'` in README code samples and omp uses tabs + double quotes. The README snippets (L72, L139, L186, L219) are illustrative, not compiled — confirm omp wants them restyled to double quotes for consistency, or left as pi wrote them."
+ },
+ {
+  "id": "evals",
+  "q": "Does omp's coding-agent support an agent adding a provider or model to its own installation at all? pi's 3 of 5 eval suites (models, openai-provider, custom-provider) test exactly that. omp's model policy lives in a compiled KDL rule tree (packages/catalog/src/compat/rules/), not in a runtime-editable registry — if so those 3 evals are unwriteable and the package ships with 2 behavioural suites instead of 5. THIS BLOCKS THE SCOPE DECISION and should be answered before any suite is ported."
+ },
+ {
+  "id": "evals",
+  "q": "Which packages/evals symbols are covered by an existing test after the migration? test/plan.test.ts, comparison.test.ts, report.test.ts and acme-server.test.ts cover plan.ts, report.ts and acme-server.ts. src/harness.ts loses ALL of its coverage (harness.test.ts is skipped) and src/docker.ts and src/cli.ts had none to begin with. The sandbox and credential-isolation logic in harness.ts is the highest-consequence code in the package and is currently untested. Is a narrower harness test (the pure parts: resolveModelSelection, verifySystemPrompt, resolveDocumentationVariant, excludePiDocumentation, seedWorkspace's escape rejection) worth writing against bun:test, or does the AGENTS.md test-quality bar rule it out as too narrow?"
+ },
+ {
+  "id": "evals",
+  "q": "Is the pi -> omp scope rename (@earendil-works/ -> @oh-my-pi/) the right call for the PACKAGE NAME specifically? The convention gives @oh-my-pi/pi-evals, which reads redundantly. The other 6 new packages are unaffected (chord, client, durable, protocol, server, telemetry) but if evals is the one that looks wrong, now is the time — after it lands it is a breaking change to a published package name."
+ },
+ {
+  "id": "evals",
+  "q": "Should the Docker arm survive at all in the first cut? Option (a) mount omp source into a bun container and run from source (smaller, cannot drift, loses pi's dist-resolution assertion); option (b) extend scripts/release.ts to emit packed tarballs and write the missing scripts/release-packages.mjs + scripts/coding-agent-consumer.mjs (faithful, bigger, and a new build surface to maintain). This is a maintainer decision with a long tail, and it should be made once, explicitly, not drifted into."
+ },
+ {
+  "id": "evals",
+  "q": "Where do the 3 deferred ModelRuntime-dependent test files go — a follow-up package, or a tracked TODO in the new package's README? They are not deletable (they encode real contracts against a surface omp does not have yet) and leaving them unfiled means the next person re-derives that ModelRuntime is missing."
+ }
+]

@@ -1,0 +1,144 @@
+{
+  "id": "W2",
+  "title": "Block inherited loader/injection env vars on both child-spawn paths",
+  "wave": "M6",
+  "one_line": "A child process the agent starts — a bash-tool shell or any worker/daemon subprocess — no longer inherits LD_PRELOAD, DYLD_INSERT_LIBRARIES, DYLD_LIBRARY_PATH, DYLD_FRAMEWORK_PATH, BUN_OPTIONS or NODE_OPTIONS from the shell that launched omp, while LD_LIBRARY_PATH is deliberately left alone so the ONNX native addon still resolves libstdc++ on NixOS.",
+  "user_visible_effect": "If someone launches omp from a shell that exports LD_PRELOAD, DYLD_* or BUN_OPTIONS/NODE_OPTIONS, every command the agent runs and every helper it spawns stops carrying those variables, so a hijacking preload library can no longer be pulled into tools' subprocesses. No change for users who never set them.",
+  "files_touched": [
+    {
+      "path": "packages/utils/src/env.ts",
+      "change": "Add a `LOADER_INJECTION_ENV_NAMES` const list and an exported `stripLoaderInjectionEnv(env: Record<string, string>): void` helper immediately after `stripGitRepoLocationEnv` ends (currently line 108; insert at line 109, before the `// Bun autoloads the project's dotenv files` comment at line 110). Also call it from `filterChildShellEnvInternal` on the line directly after `stripGitRepoLocationEnv(result)` (currently line 238), and add a note to the `isSafeEnvName` doc comment (line 28) saying it is a spawn-framing validator, not a security boundary.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified: `stripGitRepoLocationEnv` body ends at env.ts:108, blank 109, dotenv comment starts 110. `stripGitRepoLocationEnv(result);` is at env.ts:238, `return result;` at :239, closing brace at :240. `filterChildShellEnvInternal` declared at :153, `export function filterChildShellEnv` at :243, `getDotenvEnvValues` at :251 with its direct `filterChildShellEnvInternal(...)` call at :256. `export function isSafeEnvName` at :28."
+    },
+    {
+      "path": "packages/coding-agent/src/subprocess/worker-client.ts",
+      "change": "Import `stripLoaderInjectionEnv` alongside `stripGitRepoLocationEnv` from `@oh-my-pi/pi-utils/env` (line 18) and call it on `merged` in `workerEnvFromParent`, after `stripGitRepoLocationEnv(merged)` (line 194) and BEFORE the `if (overlay)` merge (lines 195-198) so an explicit overlay can still set a loader var deliberately.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified: import at worker-client.ts:18; `workerEnvFromParent` declared at :185, `stripGitRepoLocationEnv(merged)` at :194, `if (overlay)` at :195, closing brace :198. `nativeLibraryPathOverlay` at :212-220 reads `env.LD_LIBRARY_PATH` (:219) and only on `platform === \"linux\"` (:216). `inferenceWorkerEnv` at :229-231 calls `workerEnvFromParent({ ...nativeLibraryPathOverlay($env, process.platform), ...overlay })` at :230."
+    },
+    {
+      "path": "packages/utils/test/env.test.ts",
+      "change": "Add one test to the existing `describe(\"filterChildShellEnv\")` block: a plain parent-env object carrying LD_PRELOAD, BUN_OPTIONS and LD_LIBRARY_PATH with NO project dotenv file, asserting the first two are gone and LD_LIBRARY_PATH survives. Optionally add a second assertion that an `.env`-sourced LD_PRELOAD is still removed.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified: `describe(\"filterChildShellEnv\")` starts at env.test.ts:185; `writeTempEnv(content)` helper at :26 writes only the given content, so `writeTempEnv(\"\")` yields a cwd with an empty `.env` — the 'no project dotenv defines these names' precondition. Suite currently reports 24 pass / 0 fail."
+    },
+    {
+      "path": "packages/coding-agent/test/tiny-worker-env.test.ts",
+      "change": "Add one test to the existing `describe(\"workerEnvFromParent\")` block that saves/restores `process.env.LD_PRELOAD`, `process.env.BUN_OPTIONS` and `process.env.LD_LIBRARY_PATH` in a try/finally, sets them, asserts the first two are absent from the returned record and LD_LIBRARY_PATH is preserved.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified: the file already has `describe(\"workerEnvFromParent\")` with exactly this save/restore shape for GIT_DIR (lines 9-21), so the pattern is established. `$env` is `Bun.env` (env.ts:323), a live reference, so mutating `process.env` is visible to `workerEnvFromParent`."
+    },
+    {
+      "path": "packages/utils/CHANGELOG.md",
+      "change": "Add a one-line user-facing entry under `## [Unreleased]` in the `### Fixed` (or `### Changed`) section describing that child processes no longer inherit loader/injection env vars from the launching shell.",
+      "action": "modify",
+      "verified": false,
+      "note": "Not read in this session — the engineer must confirm the existing [Unreleased] section and pick the section heading that matches the neighbouring entries."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/utils/src/env.ts:109",
+      "instruction": "In packages/utils/src/env.ts, insert a new block immediately after the closing brace of stripGitRepoLocationEnv (line 108) and before the `// Bun autoloads the project's dotenv files` comment (line 110). It declares `const LOADER_INJECTION_ENV_NAMES = [\"LD_PRELOAD\", \"DYLD_INSERT_LIBRARIES\", \"DYLD_LIBRARY_PATH\", \"DYLD_FRAMEWORK_PATH\", \"BUN_OPTIONS\", \"NODE_OPTIONS\"] as const;` and an exported `stripLoaderInjectionEnv(env: Record<string, string>): void` that deletes each name in place. Copy the shape and doc-comment style of `stripGitRepoLocationEnv` (env.ts:86-108) so the two denylist helpers read as siblings. Do NOT add a `platform` parameter — unlike the git list, these names are denied on every platform, and `stripGitRepoLocationEnv` takes one only because Windows needs case folding. CRITICAL: the list contains DYLD_LIBRARY_PATH (the macOS variable). It must NOT contain LD_LIBRARY_PATH (the Linux variable) — see the risk field."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/utils/src/env.ts:238",
+      "instruction": "Add `stripLoaderInjectionEnv(result);` on the line immediately after the existing `stripGitRepoLocationEnv(result);` (line 238), inside filterChildShellEnvInternal, before `return result;` (line 239). This placement is deliberate and is the whole reason the helper lives in the internal and not in the `filterChildShellEnv` wrapper: `getDotenvEnvValues` (env.ts:251-256) calls `filterChildShellEnvInternal` directly and would otherwise bypass the denylist entirely."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/subprocess/worker-client.ts:18",
+      "instruction": "Add `stripLoaderInjectionEnv` to the existing import from `@oh-my-pi/pi-utils/env` on line 18 (it currently imports only `stripGitRepoLocationEnv`). Keep it a top-level named import — no dynamic import."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/subprocess/worker-client.ts:194",
+      "instruction": "In `workerEnvFromParent`, add `stripLoaderInjectionEnv(merged);` on the line after `stripGitRepoLocationEnv(merged);` (line 194) and before `if (overlay) {` (line 195). Placing it before the overlay means a caller that deliberately supplies e.g. NODE_OPTIONS in its own overlay still wins — this mirrors the existing git-repo-location precedence documented in the comment at lines 192-193, and it is what lets `inferenceWorkerEnv` (line 230) keep its LD_LIBRARY_PATH overlay working."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/utils/src/env.ts:28",
+      "instruction": "Extend the doc comment on `isSafeEnvName` (line 28) with one sentence stating that it validates `KEY=VALUE` spawn framing only and is not a security boundary — loader/injection variable stripping is done separately by stripLoaderInjectionEnv. This is the comment the plan asks for; it exists to stop a future reader from treating isSafeEnvName as the denylist."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/utils/test/env.test.ts:185",
+      "instruction": "Add a test inside `describe(\"filterChildShellEnv\")`: build the cwd with `path.dirname(writeTempEnv(\"\"))` (an empty .env, so no project dotenv defines the names), call `filterChildShellEnv({ LD_PRELOAD: \"/tmp/evil.so\", BUN_OPTIONS: \"--inspect\", LD_LIBRARY_PATH: \"/usr/lib\" }, cwd)`, and assert the result has no `LD_PRELOAD` and no `BUN_OPTIONS` but still has `LD_LIBRARY_PATH === \"/usr/lib\"`. Do NOT set the variables on `process.env` for this test — passing a plain object keeps the test hermetic and avoids cross-file env mutation. If you also add the dotenv regression case, write `writeTempEnv('LD_PRELOAD=\"evil.so\"')` and assert it is gone; keep it in the same `it` or a separate clearly-named one, and do not set process.env for it either."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/test/tiny-worker-env.test.ts:9",
+      "instruction": "Add a test inside `describe(\"workerEnvFromParent\")` that follows the save/restore pattern already used for GIT_DIR in that file: capture the previous values of LD_PRELOAD, BUN_OPTIONS and LD_LIBRARY_PATH, set them on `process.env` inside a try block, call `workerEnvFromParent()`, and assert LD_PRELOAD and BUN_OPTIONS are undefined while LD_LIBRARY_PATH survives; restore in `finally`. This file's test cannot run until the native addon is built (see verification), so confirm it locally only after `bun --cwd=packages/natives run build`."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/utils/CHANGELOG.md",
+      "instruction": "Add the user-facing changelog line under `## [Unreleased]` in the right section. Keep it one line and lead with what the user observes, e.g. `Child processes no longer inherit LD_PRELOAD, DYLD_*, BUN_OPTIONS or NODE_OPTIONS from the launching shell`. No issue or PR link unless one exists."
+    }
+  ],
+  "code_shape": "// packages/utils/src/env.ts — insert after stripGitRepoLocationEnv (ends line 108)\n\n/**\n * Variables that change how the OS dynamic loader, dyld, or the JS runtimes\n * themselves are initialised when a child is exec'd. A value inherited from\n * the shell that launched omp would otherwise be replayed into every process\n * the agent spawns, so a preload/inject library or a runtime flag planted in\n * the parent environment silently reaches tools' subprocesses.\n *\n * `LD_LIBRARY_PATH` is deliberately absent: it is the loader's plain search\n * path, not an injection vector, and `nativeLibraryPathOverlay`\n * (coding-agent/src/subprocess/worker-client.ts) reads the inherited value to\n * make the dlopen'd ONNX addon find libstdc++ on NixOS. `DYLD_LIBRARY_PATH`\n * above is the macOS equivalent and IS denied.\n */\nconst LOADER_INJECTION_ENV_NAMES = [\n\t\"LD_PRELOAD\",\n\t\"DYLD_INSERT_LIBRARIES\",\n\t\"DYLD_LIBRARY_PATH\",\n\t\"DYLD_FRAMEWORK_PATH\",\n\t\"BUN_OPTIONS\",\n\t\"NODE_OPTIONS\",\n] as const;\n\n/** Removes {@link LOADER_INJECTION_ENV_NAMES} from a copied child env in place. */\nexport function stripLoaderInjectionEnv(env: Record<string, string>): void {\n\tfor (const name of LOADER_INJECTION_ENV_NAMES) {\n\t\tdelete env[name];\n\t}\n}\n\n// packages/utils/src/env.ts:238 — inside filterChildShellEnvInternal\n\tstripGitRepoLocationEnv(result);\n\tstripLoaderInjectionEnv(result);\n\treturn result;\n\n// packages/coding-agent/src/subprocess/worker-client.ts:18\nimport { stripGitRepoLocationEnv, stripLoaderInjectionEnv } from \"@oh-my-pi/pi-utils/env\";\n\n// packages/coding-agent/src/subprocess/worker-client.ts:194 — inside workerEnvFromParent\n\tstripGitRepoLocationEnv(merged);\n\tstripLoaderInjectionEnv(merged);\n\tif (overlay) {\n\t\tfor (const key in overlay) merged[key] = overlay[key];\n\t}\n\treturn merged;",
+  "test_contract": "The observable contract is: given a parent environment that carries a loader/injection variable, no env record the agent hands to a child process contains it — through BOTH the bash-tool shell path (`filterChildShellEnv` → `filterChildShellEnvInternal`) and the worker/daemon path (`workerEnvFromParent`) — AND `LD_LIBRARY_PATH` still passes through both, because `nativeLibraryPathOverlay` (worker-client.ts:212-220, linux-only) reads the inherited `LD_LIBRARY_PATH` and `inferenceWorkerEnv` (worker-client.ts:230) builds the ONNX worker's env from it; on NixOS without it the addon cannot dlopen libstdc++ and the tiny/mnemopi models fail to start. The consumer-visible failure if this regresses: a user who exports `LD_PRELOAD=/tmp/evil.so` or `DYLD_INSERT_LIBRARIES` in their shell gets that library loaded into every command and daemon omp starts, and — on the other side — a user on NixOS who exports `LD_LIBRARY_PATH` (or whose packaged build sets `OMP_NATIVE_LIBRARY_PATH`) gets a broken ONNX addon. The two halves are deliberately asserted in the same tests so neither can be traded for the other. The `.env`-sourced assertion is a weaker regression guard: it passes on today's unpatched code, because `filterChildShellEnvInternal` already deletes every key a project dotenv defines (env.ts:199-235); keep it only as a tripwire against a future refactor that inverts that provenance logic, and do not present it as proof the fix works.",
+  "test_files": [
+    "packages/utils/test/env.test.ts",
+    "packages/coding-agent/test/tiny-worker-env.test.ts"
+  ],
+  "verification": "1. `bun test packages/utils/test/env.test.ts` — this suite runs today WITHOUT the native addon (verified: 24 pass / 0 fail on the unpatched tree) and must go red on the unpatched tree the moment the new test is added, then green after steps 1-2. This is the only W2 test you can execute before building the addon.\n2. `bun --cwd=packages/natives run build`, then `bun test packages/coding-agent/test/tiny-worker-env.test.ts` — blocked on the unpatched tree by `Failed to load pi_natives native addon for darwin-arm64` (verified: 0 pass / 1 fail with a module-resolution error for pi_natives.darwin-arm64.node, thrown from packages/natives/native/loader-state.js:970). After the build, the new test must pass and the four existing `nativeLibraryPathOverlay` tests must stay green — they are the regression guard for the LD_LIBRARY_PATH half.\n3. `bun test packages/coding-agent/test/tools` — the plan's third command. Verified to run without the addon (bash-pty-selection.test.ts: 3 pass / 0 fail), so it is a usable smoke pass over the bash-tool path that consumes `buildSpawnEnv`. No new tests belong here; the bash-tool child env is already covered through `filterChildShellEnv`.\n4. `bun run check:ts` — must pass. Do NOT use `tsc`/`npx tsc`.\n5. Manual end-to-end confirmation, since no test can cover a real loader: `LD_PRELOAD=/nonexistent.so BUN_OPTIONS=--smoke bun -e '...'` is not a valid check (Bun refuses to start), so instead export `LD_PRELOAD` only, run omp, and have the agent run `bash -c 'echo ${LD_PRELOAD:-stripped}'` through the bash tool — it must print `stripped`. Repeat with `NODE_OPTIONS=--max-old-space-size=4096`, which is legal to set, and confirm the parent's own tooling still honours it while the child shell does not receive it.",
+  "gate": "The item is DONE when all four of these hold. (a) A test in packages/utils/test/env.test.ts asserts, on a parent-env object with no project dotenv, that `LD_PRELOAD` and `BUN_OPTIONS` are absent from `filterChildShellEnv`'s return AND `LD_LIBRARY_PATH` is present — and that test is observed to FAIL on the unpatched tree before the fix is applied. (b) A test in packages/coding-agent/test/tiny-worker-env.test.ts asserts the same three outcomes for `workerEnvFromParent`. (c) `stripLoaderInjectionEnv` is called from inside `filterChildShellEnvInternal` (not the `filterChildShellEnv` wrapper) and from inside `workerEnvFromParent` before its overlay merge — verifiable by `git grep -n stripLoaderInjectionEnv` returning exactly one definition plus one call in env.ts and one call in worker-client.ts. (d) `bun run check:ts` passes and `LD_LIBRARY_PATH` is absent from `LOADER_INJECTION_ENV_NAMES`.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [],
+  "effort": "S — roughly 40 lines of new source across two files, one shared helper, and two test cases. The plan's own size call (S, no dependencies) is accurate. The only time cost is building the native addon so the second test can run.",
+  "risk": "THE ONE WAY TO BREAK THIS: adding `LD_LIBRARY_PATH` to the denylist. The plan's own prose is a trap here — line 9086 of the plan contains the string \"Chặn `LD_LIBRARY_PATH`\" (Vietnamese for \"blocking LD_LIBRARY_PATH\") but it sits in the RISK column, meaning \"this would be harmful\", not \"do this\"; the denylist at line 9145 correctly lists `DYLD_LIBRARY_PATH` (macOS) and correctly omits `LD_LIBRARY_PATH` (Linux). An engineer skimming the risk line can easily confuse the two names, since they differ by a `DY` prefix, and the failure is silent in CI and only shows up as a broken ONNX addon on NixOS. That is exactly why the positive assertion (`LD_LIBRARY_PATH` survives both functions) is mandatory and not optional — without it, an over-broad denylist still passes every test. Second-order risk: a user whose toolchain genuinely depends on `NODE_OPTIONS` (e.g. `--max-old-space-size` for a Node-based MCP server) in the environment that launches omp will find that flag missing from the agent's child shells. The plan chose to deny it anyway; if that proves too aggressive in practice, `NODE_OPTIONS` is the first name to reconsider, and the changelog line should say so.",
+  "open_questions": [
+    "Should `NODE_OPTIONS` really be denied? It is the only name on the list that a legitimate toolchain may depend on, and stripping it from the bash tool's child shell can change how a user's Node/MCP tooling behaves. The plan denies it; confirm that is still the intent before shipping, or scope it out and note the decision in the changelog.",
+    "Is the macOS `DYLD_LIBRARY_PATH` denial definitely safe for bundled ONNX addons on darwin-arm64? `nativeLibraryPathOverlay` short-circuits to `{}` on non-linux (worker-client.ts:216), so the shipped macOS path is unaffected — but worth a sanity check that no macOS packaging path (Homebrew formula, `omp` npm bundle) sets `DYLD_LIBRARY_PATH` for its addons.",
+    "Does the LSP mux build its `muxServerKey` env from the stripped worker env? `muxServerKey` (lsp/mux/protocol.ts:108-112) hashes `params.env`; its test (lsp/mux-server-key.test.ts:35) uses an explicit `NODE_OPTIONS` env, not process.env, so the test is unaffected. But if the real LSP client derives that env from process.env, two servers differing only by NODE_OPTIONS would now collide on one key. Low impact, unverified — decide whether to check before or after.",
+    "Where does the changelog entry go? `packages/utils/CHANGELOG.md` was not read in this session, so confirm whether `## [Unreleased]` exists and which section neighbouring entries use. If the coding-agent package ships the visible behaviour, consider an entry there instead."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Plan line 9157: `workerEnvFromParent` is called from `launch/client.ts:322`.",
+      "verdict": "stale line number",
+      "correction": "The call is at packages/coding-agent/src/launch/client.ts:325. Use :325.",
+      "evidence": "sed -n '318,330p' shows `env: workerEnvFromParent(overlay),` at line 325; confirmed by `git grep -n workerEnvFromParent`."
+    },
+    {
+      "claim": "Plan line 9157 lists eight `workerEnvFromParent` call sites ('chín lời gọi rải trong bảy file') and omits predict/client.ts entirely.",
+      "verdict": "incomplete — the list is wrong",
+      "correction": "There are TEN direct call sites in eight files. The missing one is packages/coding-agent/src/predict/client.ts:335. The plan's scope conclusion is unaffected (the helper is patched once, in `workerEnvFromParent`, so every caller benefits), but do not use the plan's caller list as a checklist.",
+      "evidence": "`git grep -n workerEnvFromParent -- '*.ts'` returns call sites at blob-broker/daemon.ts:303, eval/js/context-manager.ts:1024, ida/client.ts:496, launch/broker.ts:798/867/892, launch/client.ts:325, lsp/mux/daemon.ts:331, predict/client.ts:335, stats/activity-client.ts:31."
+    },
+    {
+      "claim": "Plan line 9157: `inferenceWorkerEnv` has four calls at `mnemopi/embed-client.ts:47` and `tiny/title-client.ts:160,385,408`.",
+      "verdict": "stale line numbers",
+      "correction": "Actual: mnemopi/embed-client.ts:50, tiny/title-client.ts:161, 386, 409. (Four call sites is correct.)",
+      "evidence": "`git grep -n inferenceWorkerEnv` plus sed of each region; title-client.ts:161 is `return inferenceWorkerEnv(tinyModelEnv());`, :386 and :409 are the two `const env = inferenceWorkerEnv({` lines."
+    },
+    {
+      "claim": "Task environment note: \"the native addon is not built, so `bun test` currently reports 0 pass\" — i.e. treat `bun test` as blocked.",
+      "verdict": "too broad — would hide a usable signal",
+      "correction": "`bun test` is NOT globally blocked. `bun test packages/utils/test/env.test.ts` runs green today (24 pass / 0 fail) and `packages/coding-agent/test/tools/bash-pty-selection.test.ts` also runs (3 pass). Only files that transitively import `@oh-my-pi/pi-natives` fail — `packages/coding-agent/test/tiny-worker-env.test.ts` is one of them (0 pass / 1 fail, 'Failed to load pi_natives native addon for darwin-arm64'). So the primary W2 test (the filterChildShellEnv half) can be written and run as red-then-green today; only the workerEnvFromParent half needs `bun --cwd=packages/natives run build` first.",
+      "evidence": "Ran both commands on the unpatched tree: utils env.test.ts → 24 pass 0 fail; coding-agent tiny-worker-env.test.ts → 0 pass 1 fail with loader-state.js:970 module-resolution error."
+    },
+    {
+      "claim": "Plan line 9157: the original W2 argued that `nativeLibraryPathOverlay` 'runs after and is handed the already-filtered env'.",
+      "verdict": "the plan itself already retracts this — carrying it forward would be wrong",
+      "correction": "Keep the retraction, and the corrected reason: `workerEnvFromParent` (worker-client.ts:186) reads raw `$env` (which is `Bun.env`, env.ts:323) and only applies `stripGitRepoLocationEnv`. `inferenceWorkerEnv` (worker-client.ts:230) calls `workerEnvFromParent` with a `nativeLibraryPathOverlay($env, process.platform)` overlay computed from the SAME raw env. The two functions live in separate spawn trees — `filterChildShellEnv` feeds only the bash tool via `buildSpawnEnv` (procmgr.ts:31-34) — so patching `filterChildShellEnvInternal` alone neither helps nor hurts the native overlay. The reason `LD_LIBRARY_PATH` must survive is that `inferenceWorkerEnv` depends on the inherited value, not that the overlay runs later.",
+      "evidence": "worker-client.ts:186 `const base = $env as Record<string, string | undefined>;`, :194 the only sanitizer, :212-220 nativeLibraryPathOverlay, :230 inferenceWorkerEnv; procmgr.ts:34 is the sole production `filterChildShellEnv` caller (git grep)."
+    },
+    {
+      "claim": "Plan line 9145 lists the denylist inline, and plan line 9086 separately says 'Chặn LD_LIBRARY_PATH' in its risk column.",
+      "verdict": "correct but dangerously easy to misread",
+      "correction": "The denylist is LD_PRELOAD, DYLD_INSERT_LIBRARIES, DYLD_LIBRARY_PATH, DYLD_FRAMEWORK_PATH, BUN_OPTIONS, NODE_OPTIONS. The plan's 9086 occurrence of \"Chặn LD_LIBRARY_PATH\" is a RISK statement ('blocking LD_LIBRARY_PATH would break nativeLibraryPathOverlay'), not an instruction — and it omits the `DY` prefix that distinguishes the macOS variable in the 9145 list. Implement the macOS/Linux distinction explicitly and call it out in the code comment, because getting it backwards silently breaks the ONNX addon on NixOS with every test still green.",
+      "evidence": "worker-client.ts:216 `if (platform !== \"linux\") return {};` and :219 `const inherited = env.LD_LIBRARY_PATH;` — the shipped overlay only ever reads the Linux name on Linux; existing tests `nativeLibraryPathOverlay` (tiny-worker-env.test.ts) pin that exact behaviour."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m6-specs/W2.spec.json"
+}

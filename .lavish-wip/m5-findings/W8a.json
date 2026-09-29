@@ -1,0 +1,11 @@
+[
+ {
+  "severity": "minor",
+  "location": "dòng 207 (GATE B)",
+  "claim": "Dòng 212: \"đây là con ĐỎ DUY NHẤT bắt được một sed dài\" — Gate B là `case \"$line\" in *\"$v\"*)` với `v=oh-my-pi`.",
+  "why_wrong": "Hai điểm. (a) Phép kiểm là so khớp CHUỖI CON, không phải khớp literal `\"oh-my-pi\"` có dấu nháy. Một sed đổi `\"oh-my-pi\"` thành `\"oh-my-pi-ultraworkers\"` vẫn làm Gate B xanh, và dòng `docs/provider-quirks.md:1706` có chứa `\"oh-my-pi\"` lẫn mô tả dài — bất kỳ thay đổi nào chỉ chạm phần chữ khác trên dòng đó cũng không bị bắt. (b) Câu \"DUY NHẤT\" sai: một sed dài trên cả 15 file cũng làm Gate C đỏ, vì `git diff --name-only` sẽ liệt kê 7 file test nằm ngoài danh sách 5 file của Gate C. Lập luận \"Gate A không đủ\" thì vẫn đúng, nhưng lý do được nêu thì không.",
+  "evidence": "Gate B chạy nguyên văn ở HEAD → in `GATE B: 7 gia tri wire van nguyen`, exit 0 (xanh). Cùng lệnh sau khi đổi `KEY_NAME = \"oh-my-pi\"` thành `\"oh-my-pi-ultraworkers\"` vẫn xanh vì dòng vẫn chứa chuỗi con `oh-my-pi`.",
+  "fix": "Đổi vế `case` của Gate B thành khớp literal có dấu nháy kép: thay `v=oh-my-pi` bằng `v=\"\\\"oh-my-pi\\\"\"` trong mỗi mục của `for loc in ...` (tức `'...:51:\"oh-my-pi\"'`), và sửa câu dòng 212 thành: \"Phân biệt được: đây là cổng giữ GIÁ TRỊ trong code, và nó là con đỏ đầu tiên bắt được một sed dài — chạy trước Gate C vì Gate C chỉ báo 'chạm file ngoài danh sách' mà không nói vì sao. Gate A vẫn XANH trong cả hai trường hợp, vì tập file không đổi.\"",
+  "file": "W8a"
+ }
+]

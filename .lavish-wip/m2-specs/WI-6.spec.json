@@ -1,0 +1,223 @@
+{
+  "id": "WI-6",
+  "title": "Tool admission table — a declarative single source of truth for which tools reach the model",
+  "wave": "4",
+  "one_line": "Replace the 25-branch `if (name === …)` ladder inside `isToolAllowed` with one `Map` of tool-name → admission rule, so a built-in tool's admission is a single data entry instead of a position in a chain, and make the four parallel tool-name declarations provably agree.",
+  "user_visible_effect": "none directly — the exact same set of tools reaches the model before and after. It becomes visible only through the refactors it unblocks: moving a built-in tool out to an extension becomes a one-file mechanical edit instead of a four-file change, and a new built-in can no longer be added without an admission decision, because the table is compile-time exhaustive.",
+  "effort": "M (~1.5 days). Mostly careful mechanical work plus a characterization test that must be written and proven green BEFORE the refactor, not after.",
+  "risk": "The `isToolAllowed` closure captures eleven values (`session`, `restrictToolNames`, `requestedTools`, `includeYield`, `enableLsp`, `goalEnabled`, `externalThinkingActive`, `allowEval`, and every `cfg*.get(session.settings)` read). Hoisting each branch into a standalone `(ctx) => boolean` forces every one of those to become an explicit context field; a dropped field compiles cleanly and silently widens or narrows admission. The one that bites hardest is `requestedTools`, which is not a snapshot — it is a live array that `isToolAllowed` reads at call time *after* `requestedTools.push(\"yield\")` has already mutated it at `tools/index.ts:794-796`.",
+  "code_shape": "// packages/coding-agent/src/tools/tool-admission.ts  (NEW)\n\nimport type { BuiltinToolName, HiddenToolName } from \"./builtin-names\";\nimport type { ToolSession } from \"./index\";\n\n/** Every value the admission rules are allowed to read. One field per closure capture. */\nexport interface ToolAdmissionContext {\n\treadonly session: ToolSession;\n\t/** Session forces a restricted subagent set; blocks `goal` outright. */\n\treadonly restrictToolNames: boolean;\n\t/** Live array — read for `!== undefined` by the three depth-gated rules. */\n\treadonly requestedTools: readonly string[] | undefined;\n\treadonly includeYield: boolean;\n\treadonly enableLsp: boolean;\n\treadonly goalEnabled: boolean;\n\treadonly externalThinkingActive: boolean;\n\treadonly allowEval: boolean;\n}\n\nexport type ToolAdmissionRule = (ctx: ToolAdmissionContext) => boolean;\n\n/** Keyed by the UNION, not `ToolName` (= `BuiltinToolName`): `goal` and `think` carry real\n *  rules but are `HiddenToolName`, so a `Record<ToolName, …>` would not typecheck. */\nconst ADMISSION_RULES = {\n\t// --- always admitted: the three transport tools + yield had NO branch in the old chain ---\n\tread: () => true,\n\twrite: () => true,\n\tedit: () => true,\n\tyield: () => true,\n\n\t// --- three-way goal rule (old `tools/index.ts:737-741`) ---\n\tgoal: (ctx) => {\n\t\tif (!ctx.goalEnabled || ctx.restrictToolNames) return false;\n\t\tconst state = ctx.session.getGoalModeState?.();\n\t\treturn state === undefined || state.enabled === true || state.goal.status === \"dropped\";\n\t},\n\n\t// --- depth-gated family: the SAME `taskDepth === 0 || requestedTools !== undefined` term ---\n\tcheckpoint: (ctx) =>\n\t\tcfgCheckpointEnabled.get(ctx.session.settings) &&\n\t\t((ctx.session.taskDepth ?? 0) === 0 || ctx.requestedTools !== undefined),\n\trewind: (ctx) => /* identical body to checkpoint */ true,\n\tmanage_skill: (ctx) =>\n\t\tcfgAutolearnEnabled.get(ctx.session.settings) &&\n\t\t((ctx.session.taskDepth ?? 0) === 0 || ctx.requestedTools !== undefined),\n\tlearn: (ctx) =>\n\t\tcfgAutolearnEnabled.get(ctx.session.settings) &&\n\t\t((ctx.session.taskDepth ?? 0) === 0 || ctx.requestedTools !== undefined) &&\n\t\t[\"hindsight\", \"mnemopi\", \"local\"].includes(cfgMemoryBackend.get(ctx.session.settings)),\n\n\t// --- three-way OR (old `:766-772`) ---\n\twait: (ctx) =>\n\t\tcfgAsyncEnabled.get(ctx.session.settings) ||\n\t\t(ctx.session.enableIrc !== false && isIrcEnabled(ctx.session.settings, ctx.session.taskDepth ?? 0)) ||\n\t\tcfgLaunchEnabled.get(ctx.session.settings),\n\n\t// --- its OWN depth gate, via canSpawnAtDepth — a different fork, not a duplicate row ---\n\ttask: (ctx) => canSpawnAtDepth(cfgTaskMaxRecursionDepth.get(ctx.session.settings), ctx.session.taskDepth ?? 0),\n\n\t// --- simple single-setting reads, one line each ---\n\tlsp: (ctx) => ctx.enableLsp && cfgLspEnabled.get(ctx.session.settings),\n\tbash: (ctx) => cfgBashEnabled.get(ctx.session.settings),\n\teval: (ctx) => ctx.allowEval,\n\t// … 19 more, one per old branch …\n} satisfies Record<BuiltinToolName | HiddenToolName, ToolAdmissionRule>;\n\n/** `satisfies` above gives COMPILE-TIME exhaustiveness (missing AND extra keys both error).\n *  Wrapping in a Map gives PROTOTYPE-SAFE lookup: `ADMISSION['toString']` would return a\n *  callable `Object.prototype.toString` (truthy string, not a boolean) and `[\"__proto__\"]`\n *  would return a non-function that throws when called. A plain `Record` lookup is a\n *  live hazard here because `tools/index.ts:799` already lets `\"toString\"` past its own\n *  `name in BUILTIN_TOOLS` gate. */\nexport const TOOL_ADMISSION: ReadonlyMap<string, ToolAdmissionRule> = new Map(\n\tObject.entries(ADMISSION_RULES),\n);\n\n/** Default-allow. A name with no rule is NOT a built-in — extension / MCP / custom tool. */\nexport function isToolAllowed(name: string, ctx: ToolAdmissionContext): boolean {\n\treturn TOOL_ADMISSION.get(name)?.(ctx) ?? true;\n}\n\n// packages/coding-agent/src/tools/index.ts — the call site collapses to:\n//\n//   const admissionCtx: ToolAdmissionContext = {\n//     session, restrictToolNames, requestedTools, includeYield,\n//     enableLsp, goalEnabled, externalThinkingActive, allowEval,\n//   };\n//   const isToolAllowed = (name: string) => evaluateToolAdmission(name, admissionCtx);\n//\n// …and `isToolAllowed` keeps its exact current signature, so the `BuiltinToolPlan.isAllowed`\n// contract at `tools/index.ts:611` and its consumer at `sdk.ts:3350` are untouched.",
+
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/coding-agent/src/tools/index.ts:731-793",
+      "instruction": "BEFORE touching anything, write the characterization test (step 2) and get it green against the CURRENT if-chain. The plan's own warning is right that this is where the work goes wrong; the only defence is a test that was red when the behaviour differed, and that test is worthless if written after the refactor."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/test/tools/tool-admission-table.test.ts (create)",
+      "instruction": "Build a `makeSession(overrides)` helper modelled on the one at `packages/coding-agent/test/issue-5764-registertool-loadmode.test.ts:22-29` — it MUST set `skipPythonPreflight: true` or `resolveBuiltinToolPlan` awaits a real Python kernel probe. Drive every row through the exported `resolveBuiltinToolPlan(session, toolNames)` and assert on the resolved `.names` list, never on table internals (AGENTS.md: assert the observable contract, and the plan agrees the contract is 'which tools the model is given')."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/test/tools/tool-admission-table.test.ts",
+      "instruction": "Add exactly six table rows, each a DISTINCT branch, no duplicates: (a) `goal` three-way — goal.enabled off, and the `getGoalModeState()` states `undefined` / `{enabled:false}` / `{enabled:false, status:\"dropped\"}`; (b) `wait` three-way OR — each of async / irc / launch alone, plus all three off, since the OR is the whole rule; (c) `checkpoint`+`rewind` depth-gated pair at `taskDepth` 0 and 1, with and without an explicit tool list; (d) `manage_skill` autolearn on/off crossed with the same depth matrix; (e) `learn` = (d) plus the memory-backend axis (`local` admitted, a non-listed backend not); (f) `task` via `canSpawnAtDepth` at the recursion limit — this is a genuinely different fork (it reads `cfgTaskMaxRecursionDepth`, not the `taskDepth === 0` term), which is why it earns a row instead of being folded into (c)/(d)."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/test/tools/tool-admission-table.test.ts",
+      "instruction": "Add the row the plan calls mandatory and the one that fails first: an extension-registered tool name that is NOT a built-in must survive `resolveBuiltinToolPlan` unchanged under EVERY settings combination. Iterate a representative settings matrix (all gates off, all gates on, memory backend `mnemopi`, autolearn on, goal mode on) and assert the extension name is in `.names` each time."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/test/tools/tool-admission-table.test.ts",
+      "instruction": "Add the prototype-safety row: an extension tool named `toString` (and `constructor`) must be admitted, and one named `__proto__` must be admitted without throwing. This is a NEW contract the old code satisfies by accident (the if-chain fell through to `return true`) and a naive `Record` lookup would break. Pin it before the refactor so the failure is observable."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/test/tools/tool-admission-table.test.ts",
+      "instruction": "Commit the characterization test on its own, with the production code untouched. Confirm it is green. If it is not, the if-chain is not what the plan says it is — stop and re-read `tools/index.ts:731-793`."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/src/tools/tool-admission.ts (create)",
+      "instruction": "Create the new module. Declare the `ToolAdmissionContext` interface with ONE field per closure capture listed in `risk`, then the `ADMISSION_RULES` object annotated `satisfies Record<BuiltinToolName | HiddenToolName, ToolAdmissionRule>` — the union, NOT `ToolName`, because `goal` and `think` are `HiddenToolName` and `ToolName = BuiltinToolName` (`tools/index.ts:593`). Give `read`/`write`/`edit`/`yield` explicit `() => true` entries: they had no branch in the old chain, and stating them makes the table a complete description of admission instead of a partial one."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/src/tools/tool-admission.ts",
+      "instruction": "Export `TOOL_ADMISSION: ReadonlyMap<string, ToolAdmissionRule> = new Map(Object.entries(ADMISSION_RULES))` and the `isToolAllowed(name, ctx)` helper whose lookup is `TOOL_ADMISSION.get(name)?.(ctx) ?? true`. The `Map` wrapper is deliberate and load-bearing — do not simplify it back to a bare object; the reason is in `code_shape` and is reproduced in plan_corrections."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/src/tools/index.ts:731-793",
+      "instruction": "Delete the 25-branch ladder wholesale and replace it with a single `admissionCtx` object literal plus `const isToolAllowed = (name: string) => evaluateToolAdmission(name, admissionCtx)`. Keep the exported shape of `BuiltinToolPlan.isAllowed` (`tools/index.ts:611`) byte-identical — `sdk.ts:3350` calls it in the live settings reconcile and must not need a change."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/coding-agent/src/tools/index.ts:719-730",
+      "instruction": "Audit the ORDER of the `requestedTools` mutations relative to the `admissionCtx` construction. `requestedTools.push(\"yield\")` at `:794-796` runs AFTER `isToolAllowed` is defined but BEFORE it is called at `:799`/`:801`; the three depth-gated rules read `ctx.requestedTools !== undefined`, a reference check that survives the push, so behaviour is preserved — but verify it rather than assuming, and do NOT snapshot `requestedTools` into the context as a copy."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/coding-agent/src/tools/essential-tools.ts:47",
+      "instruction": "Optional but strongly recommended, and the natural moment for it: `defaultLoadModeForToolName` uses `name in ESSENTIAL_BUILTIN_TOOL_NAMES` on an object literal, so `defaultLoadModeForToolName(\"toString\")` returns `\"essential\"` today — Object.prototype keys satisfy `in`. Switch to `Object.hasOwn(ESSENTIAL_BUILTIN_TOOL_NAMES, name)`. This is a pre-existing bug, not a regression you introduce; note it as such in the PR so it is not confused with the table work."
+    },
+    {
+      "n": 12,
+      "anchor": "packages/coding-agent/src/tools/builtin-names.ts:23-37 (verified) and packages/coding-agent/src/sdk.ts:1161",
+      "instruction": "Address the 'one source of truth' half. `BUILTIN_TOOL_NAMES` ↔ `BUILTIN_TOOLS` is ALREADY compile-time enforced (`tools/index.ts:554`, `Record<BuiltinToolName, ToolFactory>` — tsc errors on both a missing and an extra key), so there is nothing to merge there. The two declarations with NO type link are `ESSENTIAL_BUILTIN_TOOL_NAMES` (`Record<string, true>`, untyped keys, guarded only by the runtime test at `issue-5764-registertool-loadmode.test.ts:113`) and `SESSION_MANAGED_BUILTIN_TOOL_NAMES` (`sdk.ts:1161`, a bare string array). Give the latter the `readonly BuiltinToolName[]` annotation, which is a one-line change that converts a silent drift into a compile error. Leave `ESSENTIAL_BUILTIN_TOOL_NAMES` as a runtime-verified record — it is keyed by tool class behaviour, not by name identity, and the existing guard is the right instrument for it."
+    }
+  ],
+
+  "verification": "1. `bun run check:ts` — must pass. This is the primary gate while the native addon is unbuilt.\n2. `cd packages/coding-agent && bun test test/tools/tool-admission-table.test.ts` — BLOCKED at HEAD: reports `0 pass / 1 fail`, `Failed to load pi_natives native addon for darwin-arm64`. Confirmed by running it. Build the addon first with `bun --cwd=packages/natives run build`, then re-run; the characterization test from step 6 must be green both BEFORE and AFTER the refactor.\n3. `cd packages/coding-agent && bun test test/issue-5764-registertool-loadmode.test.ts` — the existing anti-drift guard the plan says to keep as the regression net. Must stay green.\n4. `cd packages/coding-agent && bun test test/experimental-context-management.test.ts` — exercises `context_notes`/`new_context` through `BUILTIN_TOOL_NAMES`; the pair the plan explicitly excludes from the depth-gated family.",
+  "gate": "The characterization test from steps 2-6, written and committed BEFORE the refactor, green both before and after. Concretely, all six branch rows plus the extension-tool row plus the prototype-safety row must pass against BOTH the 25-branch chain and the table. Add a manual one-time audit: diff the resolved `.names` for all 33 tool names across a settings×depth matrix (taskDepth 0 and 1 × gates-all-off and gates-all-on × memory backend `hindsight`/`mnemopi`/`local`) between the pre-refactor commit and the post-refactor commit — the two must be byte-identical. This is the check the plan asks for and it is the one that catches a dropped closure capture, which no assertion in the test file can catch by itself.",
+
+  "test_contract": "Defends: 'the set of tools a session is given does not change when the admission ladder becomes a table'. A consumer regression here is silent and severe — an extra tool in the schema costs tokens and confuses the model, a missing tool makes a capability unreachable with no error anywhere. Specifically it pins: the three-way `goal` rule including the `dropped`-status exception; the three-way OR in `wait`; the three depth-gated rules sharing the `taskDepth === 0 || requestedTools !== undefined` term; `task`'s separate `canSpawnAtDepth` fork; and default-allow for anything that is not a built-in. The prototype-safety row is the one that catches a naive `Record` implementation, and the extension-tool row is the one that catches a table accidentally keyed on the wrong union or a lookup that misses its `?? true` default.",
+
+  "gate_can_fail": true,
+
+  "test_files": [
+    "packages/coding-agent/test/tools/tool-admission-table.test.ts",
+    "packages/coding-agent/test/issue-5764-registertool-loadmode.test.ts"
+  ],
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/tools/index.ts",
+      "action": "modify",
+      "change": "Replace the 25-branch `isToolAllowed` ladder (lines 731-793) with a context object + a one-line delegation to the new table module. Add the import. `BuiltinToolPlan.isAllowed` (line 611) and the returned object (line 806) keep their exact current shape.",
+      "line": 731,
+      "verified": true,
+      "note": "VERIFIED by read: `const isToolAllowed = (name: string) => {` is at line 731 and the ladder closes with `};` at line 793. The plan's stated range `:725-789` is stale by 6 lines at the start and 4 at the end."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/tool-admission.ts",
+      "action": "create",
+      "change": "New module holding `ToolAdmissionContext`, the `ADMISSION_RULES` object (`satisfies Record<BuiltinToolName | HiddenToolName, ToolAdmissionRule>`), the `TOOL_ADMISSION` Map, and the `isToolAllowed` helper.",
+      "line": 0,
+      "verified": false,
+      "note": "New file — does not exist yet. A separate module rather than ~60 more lines inside the already-966-line `index.ts`; it also keeps the cfg getters importable without a cycle back into `index.ts`."
+    },
+    {
+      "path": "packages/coding-agent/test/tools/tool-admission-table.test.ts",
+      "action": "create",
+      "change": "Characterization + contract test. 6 distinct-branch rows, 1 extension-tool row, 1 prototype-safety row, all driven through `resolveBuiltinToolPlan` and asserting on `.names`.",
+      "line": 0,
+      "verified": false,
+      "note": "Confirmed absent: `ls` on that path returns 'No such file or directory'. The plan's path is correct and free."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/essential-tools.ts",
+      "action": "modify",
+      "change": "Optional. `name in ESSENTIAL_BUILTIN_TOOL_NAMES` → `Object.hasOwn(ESSENTIAL_BUILTIN_TOOL_NAMES, name)` on line 47, fixing prototype-key leakage into `\"essential\"`.",
+      "line": 47,
+      "verified": true,
+      "note": "VERIFIED by read: line 47 is `return name in ESSENTIAL_BUILTIN_TOOL_NAMES ? \"essential\" : \"discoverable\";`. Confirmed by execution that `defaultLoadModeForToolName(\"toString\")` returns `\"essential\"` today. Plan's `:23-37` for the record itself is correct."
+    },
+    {
+      "path": "packages/coding-agent/src/sdk.ts",
+      "action": "modify",
+      "change": "Optional one-liner: annotate `SESSION_MANAGED_BUILTIN_TOOL_NAMES` as `readonly BuiltinToolName[]` so a typo in that list is a compile error rather than a silent runtime miss.",
+      "line": 1161,
+      "verified": true,
+      "note": "VERIFIED: `const SESSION_MANAGED_BUILTIN_TOOL_NAMES = [\"manage_skill\", \"learn\", \"context_notes\", \"new_context\"];` at line 1161, currently an untyped `string[]` with no compile-time link to the built-in name union."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/builtin-names.ts",
+      "action": "modify",
+      "change": "No change required. Verified as the correct anchor and already the single source for `BUILTIN_TOOL_NAMES` (30 names, lines 2-31) and `HIDDEN_TOOL_NAMES` (3 names, line 36).",
+      "line": 1,
+      "verified": true,
+      "note": "VERIFIED by read. The plan's `:2-31` and `:36` anchors are CORRECT — the only plan anchors in this whole item that needed no correction. `BUILTIN_TOOL_NAMES` is already consumed as the `BuiltinToolName` union by `tools/index.ts:554`."
+    }
+  ],
+
+  "depends_on": [
+    "WI-2 (collision rules settled — registration order becomes order-sensitive once the admission table is declarative)",
+    "WI-5 (the tool-set table the mode registry will draw from, so it starts from a single declaration)"
+  ],
+
+  "blocks": [
+    "the first built-in → extension extraction under WI-6 / WI-8a (the plan's stated purpose: turning a four-file change into a mechanical one)",
+    "WI-8a (settings ownership) — first extraction lands on the table"
+  ],
+
+  "open_questions": [
+    "Should the four always-admitted names (read, write, edit, yield) get explicit `() => true` rows, or stay absent and rely on the `?? true` default? I specified explicit rows so the table is a complete description of admission, but a reviewer may reasonably argue absent-is-more-honest since they had no rule before. This is a style call with no behavioural difference — pick one and note it.",
+    "Does the prototype-safety row (an extension tool literally named `toString` / `__proto__`) belong in this PR, or is it a separate hardening item? It is a genuine new risk introduced by the refactor, so it should be in scope — but it widens the PR's surface from 'refactor' to 'refactor + hardening'.",
+    "Is `SESSION_MANAGED_BUILTIN_TOOL_NAMES` in scope for WI-6, or does it belong to the WI-5 tool-set table? The plan does not mention it; I found it while looking for untyped parallel declarations and it is the same class of problem."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "`packages/coding-agent/src/tools/index.ts:725-789` is the `isToolAllowed` 25-branch ladder.",
+      "verdict": "STALE",
+      "correction": "The ladder is at lines 731-793. Off by +6 at the start, +4 at the end.",
+      "evidence": "`grep -n 'const isToolAllowed' packages/coding-agent/src/tools/index.ts` → `731: const isToolAllowed = (name: string) => {`; read of 731-793 shows the closing `};` at 793."
+    },
+    {
+      "claim": "Sub-anchors: `goal` at `:731-735`, `wait` at `:762-769`, `checkpoint`/`rewind` at `:755-761`, `manage_skill` at `:774-778`, `learn` at `:779-785`, `task` at `:786-788`, `context_notes`/`new_context` at `:753-754`.",
+      "verdict": "STALE (all seven)",
+      "correction": "Actual lines: goal 737-741, context_notes/new_context 759-760, checkpoint/rewind 761-765, wait 766-772, manage_skill 777-781, learn 782-788, task 789-791. Every one is 3-6 lines lower than the plan says. A mechanical copy of these anchors lands on the wrong branch.",
+      "evidence": "Read of `tools/index.ts:700-807` with per-branch line numbers; `awk` count of `^\\s*if (name ===` over 731-793 returns exactly 25, confirming the branch COUNT in the plan is right even though the line numbers are not."
+    },
+    {
+      "claim": "`BUILTIN_TOOLS` at `:548-579`, `SETTINGS_GATED_BUILTIN_TOOL_NAMES` at `:594-597`, the `isMountableUnderXdev` coupling at `:899`.",
+      "verdict": "STALE",
+      "correction": "Actual: `BUILTIN_TOOLS` 554-585, `SETTINGS_GATED_BUILTIN_TOOL_NAMES` 600-602, the xdev coupling at 902.",
+      "evidence": "`grep -n` on `tools/index.ts` for each symbol."
+    },
+    {
+      "claim": "The risk is 'silent priority inversion': the 25-branch chain is an early-return ladder, so reordering branches during the move can change which rule wins without changing any rule's body.",
+      "verdict": "OVERSTATED — and pointing the implementer at it will waste the day they should spend on the real risk",
+      "correction": "All 25 branches are `if (name === \"literal\")` and the 29 distinct names across them are pairwise disjoint, so at most one branch can ever match a given `name`. Branch order therefore provably cannot change any outcome; the stated failure mode cannot occur. The REAL risk is the one the plan does not name: hoisting each branch into a standalone `(ctx) => boolean` requires promoting eleven closure captures to explicit context fields, and a dropped field compiles cleanly while silently changing admission. The mechanical move is order-insensitive; the semantic move is capture-insensitive.",
+      "evidence": "Extracted the 29 distinct names from `tools/index.ts:731-793` and confirmed none appears in two branches: ask ast_edit ast_grep bash checkpoint context_notes debug eval find github glob goal grep ida learn lsp manage_skill memory_edit new_context recall reflect retain rewind security_scan task think todo wait web_search."
+    },
+    {
+      "claim": "The table should be `Record<ToolName, (ctx) => boolean>`.",
+      "verdict": "WOULD NOT TYPECHECK",
+      "correction": "`ToolName = BuiltinToolName` (`tools/index.ts:593`), which is the 30 built-in names. But `isToolAllowed` carries real, non-default rules for `goal` and `think`, and both are `HiddenToolName`, not `BuiltinToolName`. The key must be `BuiltinToolName | HiddenToolName` (33 names). Writing it as the plan states either fails the typecheck or silently drops the `goal` rule — and the `goal` rule is the one carrying a three-way condition and a `dropped`-status exception.",
+      "evidence": "`grep -n 'export type ToolName' tools/index.ts` → `593: export type ToolName = BuiltinToolName;`. `builtin-names.ts:36` shows `HIDDEN_TOOL_NAMES = [\"yield\", \"goal\", \"think\"]`. The branch list contains `goal` and `think`; subtracting the 30 `BUILTIN_TOOL_NAMES` leaves exactly those two as covered-but-not-builtin."
+    },
+    {
+      "claim": "Not mentioned anywhere in the plan: a `Record`-shaped admission table introduces a prototype-chain lookup hazard that the current if-chain does not have.",
+      "verdict": "NEW FINDING — this is the sharpest correctness risk in the item",
+      "correction": "With a plain object literal and a `TABLE[name]` lookup, `TABLE[\"toString\"]` resolves to `Object.prototype.toString` — a FUNCTION, so calling it returns the truthy string `\"[object Undefined]\"` instead of a boolean; `TABLE[\"constructor\"]` returns `Object`, truthy; `TABLE[\"__proto__\"]` returns a non-function that THROWS when called. The current if-chain is immune because unmatched names fall through to `return true`. This is reachable, not theoretical: `tools/index.ts:799` gates on `name in BUILTIN_TOOLS`, and `in` on an object literal is exactly as prototype-polluted — an extension tool named `toString` already passes that gate today and reaches `isToolAllowed`. Mitigation: build the `Map` from `Object.entries()` of a `satisfies Record<…>` literal, which keeps compile-time exhaustiveness while making lookup prototype-safe.",
+      "evidence": "Executed a probe against the real gate shape: `[\"read\",\"toString\",\"constructor\",\"__proto__\"].filter(n => n in BUILTIN_TOOLS)` → all four pass. And against the proposed table: `toString`/`constructor` → callable, truthy non-boolean; `__proto__`/`my_ext_tool` → not callable, throws."
+    },
+    {
+      "claim": "The parallel declarations to merge are `BUILTIN_TOOL_NAMES` (30), `BUILTIN_TOOLS`, and `ESSENTIAL_BUILTIN_TOOL_NAMES` (13).",
+      "verdict": "PARTLY REDUNDANT — one of the three is already safe",
+      "correction": "`BUILTIN_TOOL_NAMES` ↔ `BUILTIN_TOOLS` is ALREADY compile-time enforced: `BUILTIN_TOOLS` is declared `Record<BuiltinToolName, ToolFactory>` (`tools/index.ts:554`), and TypeScript rejects both a missing key and an unknown extra key. There is nothing to merge there and no test to add. The declarations that genuinely lack a type link are `ESSENTIAL_BUILTIN_TOOL_NAMES` (`Record<string, true>` — untyped keys, runtime-only guard) and `SESSION_MANAGED_BUILTIN_TOOL_NAMES` (`sdk.ts:1161`, bare `string[]`, no guard at all). The plan also never mentions the latter.",
+      "evidence": "Compiled a probe with `bunx tsc --noEmit --strict`: `Record<\"a\"|\"b\"|\"c\", F>` with `{a,b}` → TS2741 'Property c is missing'; with an extra `d` → TS2353 'Object literal may only specify known properties'. Baseline `bun run check:ts` is green at HEAD."
+    },
+    {
+      "claim": "`ESSENTIAL_BUILTIN_TOOL_NAMES` at `essential-tools.ts:23-37` (13 names) and `builtin-names.ts:2-31` (30) / `:36` (3).",
+      "verdict": "CORRECT",
+      "correction": "No change. These are the only anchors in the item that are already right — worth stating explicitly so the implementer does not re-verify them.",
+      "evidence": "Read of both files in full; counted 13 and 30 entries respectively."
+    },
+    {
+      "claim": "Three built-ins plus `yield` are implicitly admitted; not stated in the plan.",
+      "verdict": "UNDOCUMENTED BEHAVIOUR THAT MUST NOT BE LOST",
+      "correction": "`read`, `edit`, `write` and hidden `yield` have NO branch in the ladder and reach the trailing `return true`. A `Record` table that only lists tools with rules would silently change nothing today, but it leaves admission under-specified for four of thirty-three names. I specified explicit `() => true` entries so the table is a complete description rather than a partial one.",
+      "evidence": "Subtracting the 29 covered names from the 30 `BUILTIN_TOOL_NAMES` leaves exactly read, edit, write; subtracting from `HIDDEN_TOOL_NAMES` leaves exactly yield."
+    },
+    {
+      "claim": "(Task framing) repo git HEAD is 5873776.",
+      "verdict": "STALE",
+      "correction": "HEAD is 808b365 on branch `milestone-1`.",
+      "evidence": "`git rev-parse HEAD` → `808b365409fa36719c38319a041c0e612b4e702b`; `git log --oneline -3`."
+    },
+    {
+      "claim": "Verification command `bun run check:ts && (cd packages/coding-agent && bun test test/tools/tool-admission-table.test.ts)`.",
+      "verdict": "HALF-BLOCKED",
+      "correction": "`check:ts` passes green at HEAD (all 15 packages Done). The test command cannot run: `bun test` reports `0 pass / 1 fail / 1 error` with `Failed to load pi_natives native addon for darwin-arm64`. The addon must be built with `bun --cwd=packages/natives run build` before the test half of the gate is meaningful. Confirmed by actually running it.",
+      "evidence": "Ran both commands at HEAD 808b365."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-6.spec.json"
+}

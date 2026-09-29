@@ -1,0 +1,242 @@
+[
+ {
+  "file": "CHUNK-01-cc.md",
+  "repo": "cc",
+  "n": 22,
+  "first": "cc.1 Compile-time feature gating with real dead-code elim"
+ },
+ {
+  "file": "CHUNK-02-cc.md",
+  "repo": "cc",
+  "n": 22,
+  "first": "cc.23 apt-style dependency semantics (presence guarantee,"
+ },
+ {
+  "file": "CHUNK-03-cc.md",
+  "repo": "cc",
+  "n": 22,
+  "first": "cc.45 Compaction-of-the-compactor: head-truncating PTL re"
+ },
+ {
+  "file": "CHUNK-04-cc.md",
+  "repo": "cc",
+  "n": 22,
+  "first": "cc.67 CLI acts as its own MCP server"
+ },
+ {
+  "file": "CHUNK-05-cc.md",
+  "repo": "cc",
+  "n": 22,
+  "first": "cc.89 Tips registry that interpolates live shortcut text "
+ },
+ {
+  "file": "CHUNK-06-cc.md",
+  "repo": "cc",
+  "n": 1,
+  "first": "cc.111 Hook config resolved across all editable settings "
+ },
+ {
+  "file": "CHUNK-07-codex.md",
+  "repo": "codex",
+  "n": 22,
+  "first": "codex.1 Shared base-crate discipline (`codex-protocol` as"
+ },
+ {
+  "file": "CHUNK-08-codex.md",
+  "repo": "codex",
+  "n": 22,
+  "first": "codex.23 Extension API: 14 typed contributor slots (INTER"
+ },
+ {
+  "file": "CHUNK-09-codex.md",
+  "repo": "codex",
+  "n": 22,
+  "first": "codex.45 Token usage that includes un-answered history it"
+ },
+ {
+  "file": "CHUNK-10-codex.md",
+  "repo": "codex",
+  "n": 22,
+  "first": "codex.67 MITM-intercepting network proxy with credential "
+ },
+ {
+  "file": "CHUNK-11-codex.md",
+  "repo": "codex",
+  "n": 22,
+  "first": "codex.89 Guardian: LLM reviewer + host constraint enforce"
+ },
+ {
+  "file": "CHUNK-12-codex.md",
+  "repo": "codex",
+  "n": 22,
+  "first": "codex.111 Gi\u1edbi h\u1ea1n 120 FPS \u1edf t\u1ea7ng driver thay v\u00ec r\u00e0ng bu\u1ed9"
+ },
+ {
+  "file": "CHUNK-13-codex.md",
+  "repo": "codex",
+  "n": 9,
+  "first": "codex.133 Sao ch\u00e9p c\u00f3 c\u1ea5u tr\u00fac: cell, d\u00f2ng, c\u00e2y, c\u1ea3 c\u00e2y"
+ },
+ {
+  "file": "CHUNK-14-dsh.md",
+  "repo": "dsh",
+  "n": 22,
+  "first": "dsh.1 Service Definition / Consumer / Provider ba cap"
+ },
+ {
+  "file": "CHUNK-15-dsh.md",
+  "repo": "dsh",
+  "n": 22,
+  "first": "dsh.23 Compaction as a log-bracketed transaction"
+ },
+ {
+  "file": "CHUNK-16-dsh.md",
+  "repo": "dsh",
+  "n": 22,
+  "first": "dsh.45 Three browser backends, two of which are MCP serve"
+ },
+ {
+  "file": "CHUNK-17-dsh.md",
+  "repo": "dsh",
+  "n": 22,
+  "first": "dsh.67 Service isolation realm: c\u00f9ng m\u1ed9t service, nhi\u1ec1u t"
+ },
+ {
+  "file": "CHUNK-18-dsh.md",
+  "repo": "dsh",
+  "n": 21,
+  "first": "dsh.89 Owner-only secret storage with cross-process write"
+ },
+ {
+  "file": "CHUNK-19-gajae.md",
+  "repo": "gajae",
+  "n": 22,
+  "first": "gajae.1 Auth broker + provider-scoped auth gateway"
+ },
+ {
+  "file": "CHUNK-20-gajae.md",
+  "repo": "gajae",
+  "n": 22,
+  "first": "gajae.23 Two-tier hook trust \u2014 constrained API for third-"
+ },
+ {
+  "file": "CHUNK-21-gajae.md",
+  "repo": "gajae",
+  "n": 22,
+  "first": "gajae.45 Typed public command registry with flag validati"
+ },
+ {
+  "file": "CHUNK-22-gajae.md",
+  "repo": "gajae",
+  "n": 22,
+  "first": "gajae.67 Token-correction ratio for the keep window"
+ },
+ {
+  "file": "CHUNK-23-gajae.md",
+  "repo": "gajae",
+  "n": 22,
+  "first": "gajae.89 Shell: vendored brush engine + a 20-filter outpu"
+ },
+ {
+  "file": "CHUNK-24-gajae.md",
+  "repo": "gajae",
+  "n": 1,
+  "first": "gajae.111 Config resolution c\u00f3 `!` = shell command, cache"
+ },
+ {
+  "file": "CHUNK-25-opencode.md",
+  "repo": "opencode",
+  "n": 22,
+  "first": "opencode.1 Layered dependency spine enforced three ways ("
+ },
+ {
+  "file": "CHUNK-26-opencode.md",
+  "repo": "opencode",
+  "n": 22,
+  "first": "opencode.23 Structured summary with user-boundary tail re"
+ },
+ {
+  "file": "CHUNK-27-opencode.md",
+  "repo": "opencode",
+  "n": 22,
+  "first": "opencode.45 Two-tier TUI: full screen TUI and a scrollbac"
+ },
+ {
+  "file": "CHUNK-28-opencode.md",
+  "repo": "opencode",
+  "n": 22,
+  "first": "opencode.67 Per-plugin namespaced durable storage with he"
+ },
+ {
+  "file": "CHUNK-29-opencode.md",
+  "repo": "opencode",
+  "n": 22,
+  "first": "opencode.89 Runtime npm provider loading"
+ },
+ {
+  "file": "CHUNK-30-opencode.md",
+  "repo": "opencode",
+  "n": 8,
+  "first": "opencode.111 Debounced, semaphore-serialized, deep-equali"
+ },
+ {
+  "file": "CHUNK-31-pi.md",
+  "repo": "pi",
+  "n": 22,
+  "first": "pi.1 Entry-point graph cost budget"
+ },
+ {
+  "file": "CHUNK-32-pi.md",
+  "repo": "pi",
+  "n": 22,
+  "first": "pi.23 Unified resource manifest (extensions/skills/prompt"
+ },
+ {
+  "file": "CHUNK-33-pi.md",
+  "repo": "pi",
+  "n": 22,
+  "first": "pi.45 Append-only JSONL session persistence with exclusiv"
+ },
+ {
+  "file": "CHUNK-34-pi.md",
+  "repo": "pi",
+  "n": 22,
+  "first": "pi.67 Usage-anchored context-token estimation"
+ },
+ {
+  "file": "CHUNK-35-pi.md",
+  "repo": "pi",
+  "n": 22,
+  "first": "pi.89 Typed overlay system with focus restore and anchor-"
+ },
+ {
+  "file": "CHUNK-36-senpi.md",
+  "repo": "senpi",
+  "n": 22,
+  "first": "senpi.1 Two-tier agent loop with draining steering/follow"
+ },
+ {
+  "file": "CHUNK-37-senpi.md",
+  "repo": "senpi",
+  "n": 22,
+  "first": "senpi.23 Side query (/btw) with tool-free context isolati"
+ },
+ {
+  "file": "CHUNK-38-senpi.md",
+  "repo": "senpi",
+  "n": 22,
+  "first": "senpi.45 Codex app-server protocol compatibility layer"
+ },
+ {
+  "file": "CHUNK-39-senpi.md",
+  "repo": "senpi",
+  "n": 22,
+  "first": "senpi.67 Lazy SDK boundary guarding CLI startup cost"
+ },
+ {
+  "file": "CHUNK-40-senpi.md",
+  "repo": "senpi",
+  "n": 22,
+  "first": "senpi.89 RPC daemon socket: 0600 + 32-byte secret + timin"
+ }
+]

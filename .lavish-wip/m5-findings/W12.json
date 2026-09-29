@@ -1,0 +1,74 @@
+[
+ {
+  "severity": "blocking",
+  "location": "W12.md:25 (bước 3), củng cố ở :78 và :113 (Tier 2)",
+  "claim": "Tier 2 được tuyên bố là \"tầng phân biệt\" — cổng duy nhất thực sự đỏ được — với test `rewriteManifest(pkg, false)` cho `packages/coding-agent` assert `manifest.bin` còn key `omp`, và bước 3 yêu cầu \"Chạy ... và xác nhận nó **FAIL**\".",
+  "why_wrong": "Test đó KHÔNG thể đỏ trên cây hiện tại. Hôm nay phần tử bảng đã là `publishBin: { omp: \"dist/cli.js\" }` (ci-release-publish.ts:186), nên `rewriteManifest(pkg, false)` ĐÃ trả về `bin = { omp: \"dist/cli.js\" }` trước khi bất kỳ thay đổi nào. Tôi đã chạy thật: sau khi cài đặt xong, test vẫn xanh, vì nó không hề chạm vào đường stub mới. Đây tệ hơn hẳn \"cổng không phân biệt được\" — nó không phân biệt được **đã làm** với **chưa làm**. Tệ nhất: bước 3 tự gọi mệnh đề đó là tautology (\"Nếu bạn không làm test này đỏ được... bạn đã viết một mệnh đề tautology\"), nên kỹ sư sẽ kết luận mình viết test tệ thay vì kết luận bước 3 sai. Mệnh đề \"kể cả sau khi `publishBin` trên phần tử bảng đã được đổi tên\" ở :78 là đúng ý, nhưng bước chạy được (bước 3, khối Xác minh, Tier 2) đã bỏ mất nó. Seam làm cho test đỏ được thì tồn tại và tài liệu không nói: `packages` là mảng export module-level, không bị đóng băng, nên test mutate được `pkg.publishBin`.",
+  "evidence": "Probe thật trên HEAD 1454dc0: `rewriteManifest` với entry coding-agent cho `bin = {\"omp\":\"dist/cli.js\"}`, `has 'omp' key = true` (XANH ngay bây giờ). Sau khi giả lập trạng thái sau-W9 bằng cách gán `pkg.publishBin = { ultraworkers: \"dist/cli.js\" }` (được mutate thành công — mảng `packages` không frozen), output đổi thành `bin = {\"ultraworkers\":\"dist/cli.js\"}`, `has 'omp' key = false`. Tức là đỏ chỉ xảy ra ở trạng thái hậu-W9, và test hiện tại không mô phỏng trạng thái đó. `bun test scripts/ci-release-publish.test.ts` → 11 pass / 0 fail / exit 0 (đúng như tài liệu ghi).",
+  "fix": "Thay bước 3 bằng: \"3. Viết test trước, và làm nó đỏ TRONG TRẠNG THÁI HẬU-W9. Test phải tự dựng trạng thái mà W9 sẽ tạo ra, vì nếu không thì nó xanh sẵn: (a) `const pkg = packages.find(e => e.dir === \"packages/coding-agent\")`; (b) lưu `const original = pkg.publishBin` và `afterEach` phải gán lại `pkg.publishBin = original` — bắt buộc, vì `packages` là export module-level dùng chung và hai test sẵn có ở :212/:242 đọc chính mảng đó, để sót lại sẽ đầu độc các test sau trong cùng file; (c) gán `pkg.publishBin = { ultraworkers: \"dist/cli.js\" }`; (d) gọi `rewriteManifest(pkg, false)` và assert `manifest.bin` **vẫn còn key `omp`**. Chạy `bun test scripts/ci-release-publish.test.ts` và xác nhận nó **FAIL** — hôm nay nó đỏ thật, vì `rewriteManifest` chỉ áp `publishBin` tĩnh ở :243 và không có override theo từng lần phát hành. Sau bước 5, thay lời gọi bằng lời gọi có tham số override mà bước 5 tạo ra, truyền chế độ stub. Bằng chứng rằng cách viết cũ là tautology: probe trên cây hiện tại cho `bin = {\"omp\":\"dist/cli.js\"}` — xanh trước cả khi cài đặt. Neo: `scripts/ci-release-publish.test.ts`, `scripts/ci-release-publish.ts:186,243`.\"",
+  "file": "W12"
+ },
+ {
+  "severity": "blocking",
+  "location": "W12.md:23 (bước 1), lặp lại ở khối Xác minh dòng 88",
+  "claim": "\"`grep -n 'resolveReleaseDist\\|resolveReleaseRename\\|isRecord(manifest\\.omp)' packages/coding-agent/src/cli/update-cli.ts` phải trả về `:165`, `:166`, `:189`, `:190` và không có gì khác. Nếu không, dừng lại — cây này không phải cây mà spec này được viết nhắm tới.\"",
+  "why_wrong": "Lệnh đó trả về BẢY dòng, không phải bốn. Ba hit còn lại (`:875` là docblock tham chiếu `{@link resolveReleaseRename}`, `:895` là lời gọi trong vòng lặp đuổi rename, `:907` là `dist: resolveReleaseDist(latest.manifest)`) là **chính là** cơ chế mà W12 phụ thuộc — chúng tồn tại đúng như mong đợi. Đây là lệnh đầu tiên tài liệu bảo chạy, và tiêu chí \"và không có gì khác\" + \"Nếu không, dừng lại\" khiến kỹ sư DỪNG NGAY trên một cây hoàn toàn đúng. Đây là hậu quả nặng nhất của một tiêu chí quá chặt: nó dạy nhầm rằng cây đã lệch.",
+  "evidence": "Chạy đúng lệnh trong tài liệu trên HEAD 1454dc0: 165, 166, 189, 190, **875, 895, 907**. `sed -n '875p'` = ` * pointers ({@link resolveReleaseRename}) when the package has moved to a new`; `:895` = `\t\tconst rename = resolveReleaseRename(latest.manifest);`; `:907` = `\t\tdist: resolveReleaseDist(latest.manifest),`. Bốn neo tài liệu gọi là \"đã kiểm chứng\" (165/166/189/190) đều đúng.",
+  "fix": "Thay câu tiêu chí bằng: \"phải chứa đủ `:165`, `:166`, `:189`, `:190`. Lệnh này còn trả về đúng ba dòng nữa và đó là bình thường: `:875` (docblock `{@link resolveReleaseRename}`), `:895` (lời gọi trong vòng lặp đuổi rename) và `:907` (`dist: resolveReleaseDist(latest.manifest)`). Chỉ dừng lại nếu thiếu một trong bốn dòng `:165/:166/:189/:190` — đó mới là cây lệch. Nếu thấy đúng bảy dòng nói trên thì cây đúng.\"",
+  "file": "W12"
+ },
+ {
+  "severity": "major",
+  "location": "W12.md:141 (hàng đính chính đầu tiên) và W12.md:52 (khối code_shape)",
+  "claim": "\"Dòng 165 là một dòng trống trong docblock. Bằng chứng: ... `sed -n '160,175p'` cho thấy 165 trống\" — và lặp lại ở :52: \"// Plan nói :165; :165 thực ra là một dòng trống trong docblock.\"",
+  "why_wrong": "Dòng 165 KHÔNG trống và KHÔNG nằm trong docblock — nó là hàng dữ liệu đầu tiên của mảng `packages[]`. Bằng chứng mà hàng đính chính này tự dẫn không tái lập được: chạy đúng lệnh đó sẽ cho ra một dòng code. Kết luận chính của hàng đính chính (neo đúng là :186, không phải :165) vẫn ĐÚNG, nhưng lý do được nêu và bằng chứng kèm theo thì sai — và nó bị lặp lại hai lần, ở cả phần văn xuôi lẫn comment trong khối code. Người đọc chạy lại để kiểm chứng sẽ thấy tài liệu tự mâu thuẫn, và bắt đầu nghi ngờ phần neo đúng.",
+  "evidence": "`sed -n '165p' scripts/ci-release-publish.ts` → `├──┤{·dir:·\"packages/utils\",·kind:·\"typescript\"·},␊` (hiển thị `cat -A`: tab + `{ dir: \"packages/utils\", kind: \"typescript\" },` + newline — không hề trống). `sed -n '160,175p'`: 160-161 là docblock `STATS_CLIENT_LOCK`, 162 là hằng, 163 trống, 164 là `export const packages: PublishPackage[] = [`, 165 là hàng dữ liệu đầu tiên. Còn :186 là `publishBin: { omp: \"dist/cli.js\" },` — neo chính vẫn đúng.",
+  "fix": "Thay cả hai chỗ. Ở :141: \"Dòng 165 là hàng dữ liệu đầu tiên của mảng `packages[]` (`{ dir: \"packages/utils\", kind: \"typescript\" }`), không phải dòng trống trong docblock — docblock của `STATS_CLIENT_LOCK` nằm ở 160-161 và đã đóng ở 161. Bằng chứng: `sed -n '160,175p'` cho thấy 163 là dòng trống và 164 là `export const packages: PublishPackage[] = [`; `sed -n '165p'` in ra `{ dir: \\\"packages/utils\\\", kind: \\\"typescript\\\" },`.\" Ở :52: \"// Plan nói :165; :165 thực ra là hàng `packages/utils` đầu tiên của mảng `packages[]`, không phải dòng trống trong docblock.\"",
+  "file": "W12"
+ },
+ {
+  "severity": "minor",
+  "location": "W12.md:17, :19, :37, :69, :71 (khối code_shape)",
+  "claim": "`applyPublishBin` được mô tả là \"hàm export **riêng** tại `:296-303`\" và \"ném lỗi nếu package không có `publishBin`\" — nhưng tài liệu không nói rằng điều đó là ràng buộc cứng lên cách cài đặt của bước 5.",
+  "why_wrong": "Đây là ràng buộc thật mà bước 5 sẽ phá nếu kỹ sư chọn cách hiểu nhiên nhất: bỏ `publishBin` khỏi phần tử bảng và đẩy toàn bộ override vào tham số theo-từng-lần-phát-hành. Khi đó `applyPublishBin` ném `No publishBin override declared for packages/coding-agent`, và `scripts/install-tests/run-ci.sh:156` gọi nó không có guard → ma trận cài đặt chết bằng một raw throw, ở file của W10, không phải ở W12. Tài liệu chỉ nhắc `applyPublishBin` như một lỗi số dòng của plan, chứ không phải như một ràng buộc lên thiết kế.",
+  "evidence": "`scripts/ci-release-publish.ts:298` = `if (!pkg?.publishBin) throw new Error(\\`No publishBin override declared for ${pkgRelDir}\\`);`. `scripts/install-tests/run-ci.sh:156` = `   bun -e 'import { applyPublishBin } from \"./scripts/ci-release-publish.ts\"; await applyPublishBin(\"packages/coding-agent\", true);' &&`, nằm trong khối `... || agent_rc=$?` rồi `cp \"$agent_pkg_backup\" ...; [ \"$agent_rc\" -eq 0 ] || exit \"$agent_rc\"` — tức lỗi làm cả `run-ci.sh` exit 1.",
+  "fix": "Thêm vào cuối bước 5: \"Ràng buộc cứng: `scripts/ci-release-publish.ts:298` ném lỗi khi phần tử `packages[]` không có `publishBin`, và `scripts/install-tests/run-ci.sh:156` gọi `applyPublishBin(\\\"packages/coding-agent\\\", true)` không có guard — lỗi đó làm `run-ci.sh` exit 1. Vì vậy override theo từng lần phát hành phải được thêm BÊN CẠNH `publishBin` tĩnh ở :186, không được thay thế nó. Nếu buộc phải bỏ `publishBin` khỏi bảng thì phải sửa `applyPublishBin` và `run-ci.sh:156` cùng lúc, và việc đó phải được nêu trong commit message chứ không làm lặng lẽ.\"",
+  "file": "W12"
+ },
+ {
+  "severity": "minor",
+  "location": "W12.md:14, :29, :37",
+  "claim": "\"`getLatestRelease` ở `:883` với vòng lặp đuổi rename ở `:894-903`\" (lặp ở :29 và :37 với `:883`; :37 cũng dùng `:894-903` gián tiếp qua :894-903 ở :33/:143)",
+  "why_wrong": "Lệch một dòng ở cả hai đầu. Tác hại thực tế: bước 7 và bước 11 đều neo vào `update-cli.ts:883` để kỹ sư mở đúng hàm — mở :883 ra sẽ thấy ` */` và phải lùi xuống một dòng. Trong một tài liệu mà phần \"Cách sai dễ nhất\" tự nhấn mạnh đây là loại lỗi khiến kỹ sư đi tới sai hàm, sai số dòng lặp lại ở cả ba chỗ đáng sửa. Các neo khác trong cùng nhóm đều đúng: `MAX_RENAME_HOPS = 3` đúng ở :807, `shouldForceBinaryUpdate` đúng ở :216-222, `resolveReleaseDist` đúng ở :165, `resolveReleaseRename` đúng ở :189, docblock đúng ở :183-188.",
+  "evidence": "`grep -n 'export async function getLatestRelease'` → `884`. Vòng lặp: `:894` = `\tfor (let hop = 0; hop < MAX_RENAME_HOPS; hop++) {`, `:902` = `\t}`, `:903` = dòng trống, `:904` = `\treturn {`. Nên khoảng là `:894-902`, không phải `:894-903`.",
+  "fix": "Thay `:883` → `:884` ở cả ba chỗ (:14, :29, :37) và `:894-903` → `:894-902` ở :14 và :33. Ở :143 giữ nguyên (chỉ nhắc `sed -n '60,79p'`).",
+  "file": "W12"
+ },
+ {
+  "severity": "minor",
+  "location": "W12.md:15 và W12.md:143",
+  "claim": "\"Có — 171 dòng.\" và \"171 dòng của file integration chứa `RenameMigrationSteps` ở `:108-120` và `:149-161`\".",
+  "why_wrong": "File có 170 dòng, không phải 171. File kết thúc bằng newline (byte cuối = `0a`) nên `wc -l` và `awk END{NR}` cùng trả 170 — không có chênh lệch \"dòng cuối không newline\". Sai số này được lặp ở hai chỗ.",
+  "evidence": "`wc -l packages/coding-agent/test/cli/update-rename-migration.integration.test.ts` → `170`. `awk 'END{print \"NR=\"NR}'` cùng file → `NR=170`. `tail -c 1 | xxd` → `0a` (có newline cuối, nên 170 là số dòng thật). Các neo khác của file này đều đúng: `RenameMigrationSteps` ở :29, :108, :149.",
+  "fix": "Thay \"171 dòng\" → \"170 dòng\" ở cả :15 và :143.",
+  "file": "W12"
+ },
+ {
+  "severity": "minor",
+  "location": "W12.md:144 (hàng đính chính \"already-exists\", cột Bằng chứng)",
+  "claim": "\"Bằng chứng: `grep -rn 'codesign\\|notarytool\\|notariz' .github/workflows/ scripts/` trả về ci.yml:962, 965, 1210, 1211, 1218, 1222; ci-macos-sign.sh:83, 84, 90, 91, 94, 98, 103, 109, 110, 112, 120, 122, 135, 137, 145.\"",
+  "why_wrong": "Lệnh được trích không trả về kết quả đó. Nó trả về 32 dòng trên 6 file; tài liệu liệt kê 20 dòng trên 2 file. Tệ nhất: `ci-macos-sign.sh:84` được nêu nhưng dòng 84 của file đó KHÔNG chứa từ khóa nào — `84` thuộc về `scripts/ci-macos-upload-secrets.sh`, tức tài liệu đã gộp nhầm hai file. Thiếu trong `ci-macos-sign.sh`: 3, 10, 14 (docblock), 92 (`security set-keychain-partition-list ... codesign:`). Thiếu hoàn toàn: `ci-release-build-binaries.ts:162`, `ci-macos-upload-secrets.sh:3,83,84`, `scripts/stamp-native-version.ts:111,114`. Kết luận của hàng đính chính vẫn đúng và con số trọng yếu vẫn đúng.",
+  "evidence": "Chạy đúng lệnh: ngoài 6 dòng ci.yml và 18 dòng ci-macos-sign.sh, còn có `scripts/ci-release-build-binaries.ts:162`, `scripts/ci-macos-upload-secrets.sh:3,83,84`, `scripts/stamp-native-version.ts:111,114`. `ci-macos-sign.sh` thật sự hit ở 3, 10, 14, 83, 90, 91, 92, 94, 98, 103, 109, 110, 112, 120, 122, 135, 137, 145 — không có 84.",
+  "fix": "Thay bằng: \"Bằng chứng: `grep -rn 'codesign\\\\|notarytool\\\\|notariz' .github/workflows/ scripts/` trả về 32 dòng trên 6 file — ci.yml:962, 965, 1210, 1211, 1218, 1222; ci-macos-sign.sh:3, 10, 14, 83, 90, 91, 92, 94, 98, 103, 109, 110, 112, 120, 122, 135, 137, 145; ci-release-build-binaries.ts:162; ci-macos-upload-secrets.sh:3, 83, 84; stamp-native-version.ts:111, 114. Các hit quan trọng cho W12 là `ci-macos-sign.sh:109` (codesign --verify) và `ci-macos-sign.sh:94,98` (tìm Apple identity).\"",
+  "file": "W12"
+ },
+ {
+  "severity": "minor",
+  "location": "W12.md:9-19 (bảng \"File cần chạm tới\"), cột \"hành động\"",
+  "claim": "Cột \"hành động\" ghi `không sửa` cho 5 file (update-rename-migration.integration.test.ts :15, update-cli.test.ts :16, ci-macos-sign.sh :17, ci.yml :18, run-ci.sh :19), trong khi `W12.spec.json` đặt `\"action\": \"modify\"` cho cả 9 file — kể cả 5 file đó, với `change` ghi \"NO change\".",
+  "why_wrong": "Không phải tài liệu sai — ngược lại, bản tiếng Việt chính xác hơn JSON. Nhưng tài liệu không nói là mình lệch, nên người đối chiếu hai nguồn sẽ thấy 5/9 hành động khác nhau mà không có tín hiệu nào cho biết đó là chủ ý. Cột `action` của JSON vốn đã là trường dễ đọc sai ngay từ đầu (nó ghi `modify` cho một file mà `change` nói \"NO change\"), nên sự lệch này cần được tuyên bố chứ không bỏ lửng.",
+  "evidence": "Đối chiếu trực tiếp: `W12.spec.json` `files_touched[i].action` = `\"modify\"` cho cả 9 mục (dòng 10, 17, 24, 31, 38, 45, 52, 59, 66), trong khi `change` của các mục 4-9 lần lượt là \"NO change expected\", \"NO change\", \"NO change expected\", \"Not W12's edit\", \"The stub needs a `dist/omp` artifact or this install matrix breaks\". Bảng trong W12.md phân loại lại đúng.",
+  "fix": "Thêm một dòng ngay dưới bảng: \"Cột `hành động` ở đây cố ý khác trường `action` của `W12.spec.json` (JSON ghi `modify` cho cả 9 mục kể cả 5 mục không sửa). Bảng này phân loại theo ý nghĩa thật: 3 file sửa, 6 file không sửa, trong đó `ci.yml` và `run-ci.sh` thuộc W10.\"",
+  "file": "W12"
+ }
+]

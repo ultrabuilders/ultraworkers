@@ -1,0 +1,146 @@
+[
+ {
+  "severity": "blocking",
+  "location": "durable.md:301 (bước 8) + dòng 275 (collisions[0]) + dòng 302 (bước 9)",
+  "claim": "Bước 8 yêu cầu: \"import truncateHead/truncateTail/truncateLine/TruncationResult/TruncationOptions từ `@oh-my-pi/pi-tui/tools`\". Barrel `@oh-my-pi/pi-tui/tools` không export các symbol này — lệnh đó không chạy được.",
+  "why_wrong": "Đây là bước \"NGUY HIỂM NHẤT\" của cả kế hoạch (bước 8 được tự gọi là vậy), và bước 9 cũng phụ thuộc nó. Người triển khai làm đúng như tài liệu nói sẽ hỏng ngay ở bước 8, trước cả khi tới bước 17. Sai path ⇒ `TruncationResult` không tìm thấy ⇒ cả nhánh cắt-trùng-với-pi-tui sập.",
+  "evidence": "Đã chạy thật: `bun -e 'import { truncateHead } from \"@oh-my-pi/pi-tui/tools\"'` → `SyntaxError: Export named 'truncateHead' not found in module '.../packages/tui/src/tools/index.ts'`. Xác nhận thêm: `grep -n \"streaming-output\" packages/tui/src/tools/index.ts` → rỗng; `grep -n \"truncateHead\" packages/tui/src/tools/index.ts` → rỗng. File định nghĩa là `packages/tui/src/tools/streaming-output.ts` và KHÔNG được re-export ở bất kỳ barrel public nào. Subpath ĐÚNG là `@oh-my-pi/pi-tui/tools/streaming-output` (resolve qua exports key `./*` → `./src/*.ts`; đã xác nhận `packages/tui/package.json` có key `\"./*\": {\"types\":\"./src/*.ts\",\"import\":\"./src/*.ts\"}`).",
+  "fix": "Ở dòng 301 (bước 8), thay `@oh-my-pi/pi-tui/tools` bằng `@oh-my-pi/pi-tui/tools/streaming-output` — và thêm câu cảnh báo path này kéo theo pi-natives (xem finding về `bun test` độc lập). Cụ thể, thay câu: \"import `truncateHead`/`truncateTail`/`truncateLine`/`TruncationResult`/`TruncationOptions` từ `@oh-my-pi/pi-tui/tools`\" bằng: \"import `truncateHead`/`truncateTail`/`truncateLine`/`TruncationResult`/`TruncationOptions` từ `@oh-my-pi/pi-tui/tools/streaming-output` (KHÔNG phải barrel `@oh-my-pi/pi-tui/tools` — barrel này KHÔNG re-export `streaming-output`, đã kiểm chứng bằng `bun -e`: SyntaxError Export named 'truncateHead' not found)\".",
+  "file": "durable"
+ },
+ {
+  "severity": "blocking",
+  "location": "durable.md:306 (bước 13) + dòng 326 (test_contract) + dòng 384 (open_questions)",
+  "claim": "Bước 13 khẳng định: \"máy sử dụng `vi` ở `durable` (đã kiểm tra: KHÔNG có `mock.module`, chỉ có `vi.useFakeTimers`/`vi.setSystemTime`/`vi.advanceTimersByTime` trong 4 file)\". Tài liệu cũng nói chuyển `vi` sang `bun:test` chỉ là viết lại fake-timer.",
+  "why_wrong": "`test/env-node-spill.test.ts` mock ở MỨC MODULE (`node:fs`), không phải fake timer. `bun:test` KHÔNG có `vi.mock`/`vi.hoisted` tương đương — không thể chuyển bằng cách đổi tên import. Test này chính là bằng chứng duy nhất cho đường spill/backpressure của `env/node.ts` (file 963 dòng mà tài liệu tự gọi là \"nguy hiểm nhất\"). Bỏ nó = mất trạm thám hiểm của rủi ro lớn nhất package. AGENTS.md cấm `mock.module()` vì nhoè Bun toàn cục, nên phải viết lại bằng seam khác, và việc đó KHÔNG nằm trong ước lượng \"~1 ngày\" của bước 13-14.",
+  "evidence": "`grep -rn \"vi\\.mock\\|vi\\.hoisted\" packages/durable` → `test/env-node-spill.test.ts:12:const spill = vi.hoisted(() => ({ rejectedWrites: 0 }));` và `test/env-node-spill.test.ts:15:vi.mock(\"node:fs\", async (importOriginal) => {` — nó thay `createWriteStream` để `highWaterMark:1` + delay 600ms, nhằm ép backpressure spill deterministically (comment 9-11: \"Make the spill stream deterministically slow and immediately backpressured\"). Ngoài ra còn `vi.spyOn`/`vi.restoreAllMocks`/`vi.useRealTimers` mà tài liệu không kể: `test/env-node.test.ts:122,425,524`, `test/env-output-capture.test.ts:33`, `test/env-adaptive-publisher.test.ts:5`.",
+  "fix": "Ở dòng 306 (bước 13), thay câu \"(đã kiểm tra: KHÔNG có `mock.module`, chỉ có `vi.useFakeTimers`/`vi.setSystemTime`/`vi.advanceTimersByTime` trong 4 file: `env-node`, `env-node-spill`, `env-output-capture`, `env-adaptive-publisher`)\" bằng: \"(đã kiểm tra: KHÔNG có `mock.module` — NHƯNG `test/env-node-spill.test.ts` DÙNG `vi.hoisted` (L12) + `vi.mock('node:fs', ...)` (L15) để ép backpressure spill; `bun:test` không có API tương đương và AGENTS.md cấm `mock.module()`. Phải viết lại bằng seam khác — dependency-inject `createWriteStream` vào `NodeExecutionEnv` thay vì mock module — và tách thành task riêng. Ngoài ra còn `vi.spyOn`/`vi.restoreAllMocks`/`vi.useRealTimers` ở `env-node.test.ts:122,425,524`, `env-output-capture.test.ts:33`, `env-adaptive-publisher.test.ts:5` — chuyển sang `spyOn` trực tiếp từ `bun:test` + `restoreAllMocks()` trong `afterEach`.\")",
+  "file": "durable"
+ },
+ {
+  "severity": "blocking",
+  "location": "durable.md:305 (bước 12) + dòng 267 + dòng 304 (bước 11) + dòng 340 (Xác minh #4)",
+  "claim": "Bước 12: \"KHÔNG cần tsconfig riêng. `tsconfig.workspace.json` đã được omp quét toàn bộ `packages/*/src`.\" Bước 11 yêu cầu thêm script `'check:types'`, và Xác minh #4 chạy `bun --cwd=packages/durable run check:types`.",
+  "why_wrong": "Hai câu này mâu thuẫn nhau và sai: `check:types` ở mọi package omp đều là `tsgo -p tsconfig.json --noEmit` — cần `packages/durable/tsconfig.json` CỤ THỂ. Không có file đó thì `bun --cwd=packages/durable run check:types` fail, tức Xác minh #4 và Cổng #1 không chạy được. Người đọc làm theo bước 12 sẽ tin là không cần tạo file, rồi hỏng ở cổng.",
+  "evidence": "Đã đọc thật: `packages/utils/package.json:47` và `packages/tui/package.json:33` → `\"check:types\": \"tsgo -p tsconfig.json --noEmit\"`. Cả hai package đều có file mà lệnh đó trỏ tới: `packages/utils/tsconfig.json` = `{\"extends\":\"../tsconfig.workspace.json\",\"include\":[\"src\",\"test\"]}` (tương tự `packages/tui/tsconfig.json`). `tsconfig.workspace.json` chỉ là config gốc dùng để `extends`, không phải thứ thay thế cho file per-package.",
+  "fix": "Ở dòng 305 (bước 12), thay câu \"**KHÔNG cần tsconfig riêng.** `tsconfig.workspace.json` đã được omp quét toàn bộ `packages/*/src`.\" bằng: \"**CẦN `tsconfig.json` riêng (không phải `tsconfig.build.json`).** Không có `tsconfig.build.json` vì omp không build `dist`, NHƯNG script `check:types` mà bước 11 thêm là `tsgo -p tsconfig.json --noEmit` — nó CẦN file này tồn tại. Tạo `packages/durable/tsconfig.json` = `{ \\\"extends\\\": \\\"../tsconfig.workspace.json\\\", \\\"include\\\": [\\\"src\\\", \\\"test\\\"] }`, y hệt `packages/utils/tsconfig.json` và `packages/tui/tsconfig.json`. `extends` đã kéo theo `include: [\\\"*/src\\\",\\\"*/test\\\",...]` nên không cần khai báo lại.\" Đồng thời ở dòng 267 (mục \"Những thứ KHÔNG thêm vào\"), thay \"Không có `tsconfig` riêng: `tsconfig.workspace.json` đã được omp quét toàn bộ `packages/*/src`.\" bằng \"Không có `tsconfig.build.json` (không build `dist`), nhưng CÓ `tsconfig.json` tối thiểu chỉ để `check:types` chạy được.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "blocking",
+  "location": "durable.md:5",
+  "claim": "\"Hệ thống này đã được dùng THẬT trước khi tách (Server, pi-protocol, pi-evals đều import nó) — nó là một persistence runtime đã kiểm chứng, không phải một bản thiết kế.\"",
+  "why_wrong": "Đây là câu được dùng để biện minh cho việc CHÉP (không port tay). Nó sai hoàn toàn: ở HEAD d6af72e, KHÔNG package nào ngoài `durable` import nó. `durable` là package CHƯA AI DÙNG — không phải \"đã kiểm chứng\". Người đọc sẽ tin rằng đây là runtime đã chạy production, nên bỏ qua việc kiểm tra kỹ và đánh giá rủi ro thấp hơn thực tế.",
+  "evidence": "Đã chạy `git grep -l \"pi-durable\" d6af72e -- .` (toàn repo) và lọc bỏ `packages/durable/`: kết quả CHỈ còn README.md, package-lock.json, tsconfig.json và `scripts/*` ở root. KHÔNG file .ts nào trong `packages/server/`, `packages/protocol/`, `packages/evals/` (hay bất kỳ package nào) import `pi-durable`. Xác nhận thêm: `grep -rhon \"@earendil-works/[a-z-]*\" packages/session-backends/sqlite-node/src packages/session-backends/sqlite-node/test` → chỉ `pi-agent-core` (20) và `pi-ai` (3), không có `durable`.",
+  "fix": "Thay câu \"Hệ thống này đã được dùng THẬT trước khi tách (Server, pi-protocol, pi-evals đều import nó) — nó là một persistence runtime đã kiểm chứng, không phải một bản thiết kế.\" bằng: \"LƯU Ý: ở HEAD d6af72e KHÔNG package nào ngoài `durable` import nó — `git grep -l pi-durable d6af72e` chỉ ra README.md, package-lock.json, tsconfig.json và `scripts/*` ở root. `durable` là package CHƯA ĐƯỢC TIÊU THỤ, không phải runtime đã kiểm chứng; bằng chứng duy nhất là 23 file test của chính nó. Vì vậy càng phải giữ nguyên bộ test khi chép.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "blocking",
+  "location": "durable.md:380 (Cần người quyết, mục OMITTED)",
+  "claim": "\"8 là đúng nếu tính `session-backends`/`sqlite-node` là package riêng (nó có package.json tên `@earendil-works/pi-session-backend-sqlite-node` và phụ thuộc `durable`).\"",
+  "why_wrong": "Lý do được đưa ra để tính ra con số 8 là sai, nên câu hỏi \"xác nhận số 7 hay 8\" được đặt trên một tiền đề sai. Tên package thì đúng, còn \"phụ thuộc durable\" thì không — và điều này quan trọng vì nó quyết định có cần migrate `session-backends` cùng lúc hay không. Người đọc sẽ chọn 8 dựa trên cơ sở sai, rồi phải làm lại.",
+  "evidence": "Đã đọc `packages/session-backends/sqlite-node/package.json`: `\"name\": \"@earendil-works/pi-session-backend-sqlite-node\"` (đúng) nhưng `\"dependencies\": {\"@earendil-works/pi-ai\": \"^0.87.1\", \"@earendil-works/pi-agent-core\": \"^0.87.1\"}` — KHÔNG có `pi-durable`. `grep -rn \"durable\" packages/session-backends/` chỉ ra 4 chỗ đều là TÍNH TỪ tiếng Anh (\"durable operation records\", \"The durable ID is unchanged\", \"every durable row\", \"Authoritative durable state\") trong CHANGELOG/README/SQL comment, không phải package.",
+  "fix": "Thay câu \"Task ghi 7 — 8 là đúng nếu tính `session-backends`/`sqlite-node` là package riêng (nó có package.json tên `@earendil-works/pi-session-backend-sqlite-node` và phụ thuộc `durable`).\" bằng: \"Task ghi 7 — 8 là đúng nếu tính `session-backends/sqlite-node` là package riêng (tên `@earendil-works/pi-session-backend-sqlite-node`), NHƯNG nó KHÔNG phụ thuộc `durable`: `dependencies` của nó chỉ có `@earendil-works/pi-ai` và `@earendil-works/pi-agent-core` (chữ 'durable' trong CHANGELOG/README/SQL của nó là tính từ tiếng Anh, không phải package). Nó có thể migrate bất kỳ lúc nào, không bị `durable` chặn.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:300 (bước 7) + dòng 345 (Xác minh #1)",
+  "claim": "Bước 7: \"78 lần... 24 `chord` + 12 `chord/delta` + 16 `chord/context` + 4 `pi-ai` + 22 `pi-durable`. KIỂM CHỨNG: ... *(neo: tất cả 57 file có scope)*\"",
+  "why_wrong": "Cả ba con số trong câu đều lệch. Người đọc dùng 57 làm neo sẽ tưởng còn sót 20 file, hoặc ngược lại — khi grep ra 37 sẽ tưởng đã mất 20 import. Cột \"dòng cần sửa\" của bảng file ở trên cũng đếm theo bản nháp này nên sai theo.",
+  "evidence": "Đã đếm lại bằng `grep -roh '@earendil-works/[a-zA-Z0-9/_-]*' packages/durable | sort | uniq -c`: `24 chord`, `17 chord/context`, `11 chord/delta`, `4 pi-ai`, `22 pi-durable` (9+8+1+1+1+1+1). Tổng vẫn đúng 78 ✓ nhưng `chord/delta` là 11 chứ không phải 12, `chord/context` là 17 chứ không phải 16. Số FILE: `grep -rl '@earendil-works/' packages/durable | wc -l` → **37**, không phải 57. Phân bố 37 file: 3 docs + 1 package.json + 1 README + 1 tsconfig.build.json + 14 src + 17 test.",
+  "fix": "Ở dòng 300 (bước 7), thay câu \"24 `chord` + 12 `chord/delta` + 16 `chord/context` + 4 `pi-ai` + 22 `pi-durable`\" bằng \"24 `chord` + 11 `chord/delta` + 17 `chord/context` + 4 `pi-ai` + 22 `pi-durable`\", và thay \"*(neo: tất cả 57 file có scope)*\" bằng \"*(neo: 37 file có scope — 14 `src`, 17 `test`, 3 `docs`, `package.json`, `README.md`, `tsconfig.build.json`; tổng 78 lần)*\". Đồng thời ở dòng 345 (Xác minh #1), thay \"(78 lần, đã đo bằng `git grep -o`)\" bằng \"(78 lần trong 37 file, đã đo lại bằng `grep -roh '@earendil-works/[a-zA-Z0-9/_-]*' packages/durable | sort | uniq -c`)\" để câu lệnh kiểm chứng khớp với cách đo.",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:3 + dòng 259 (Dependency mới) + dòng 368 (Rủi ro) + dòng 379 (Cần người quyết)",
+  "claim": "\"thiếu 8 symbol là Context, Draft, JsonValue, Op, copyJson, track, apply, applyImmutableBatches, awaitWithContext, withoutAbortSignal, BACKGROUND_CONTEXT, withAbortSignal\" — tự mâu thuẫn: tự đếm ra 12 tên. Dòng 259 và 368 lại ghi \"12 symbol\".",
+  "why_wrong": "Hai chỗ trong cùng tài liệu đưa hai con số khác nhau cho cùng một danh sách. Người đọc không biết phải chờ chord có 8 hay 12 symbol — đây chính là tiền đề quyết định \"durable có dịch được chưa\". Tệ hơn: danh sách vẫn thiếu 3 symbol mà code thật dùng, và 1 symbol không hề được durable dùng.",
+  "evidence": "Đã trích mọi `import ... from '@earendil-works/chord*'` trong `src/` (24 câu lệnh): 14 symbol phân biệt = `BACKGROUND_CONTEXT, Change, Context, Draft, JsonValue, Op, Prepared, Tracker, apply, applyImmutableBatches, awaitWithContext, copyJson, track, withoutAbortSignal`. Ba symbol `Change`/`Prepared`/`Tracker` KHÔNG có trong danh sách của tài liệu — chúng đến từ `src/session/transaction.ts:2`: `import { type Change, type Op, type Prepared, type Tracker, track } from \"@earendil-works/chord/delta\"` và dùng ở các dòng 83, 118, 137, 138. Ngược lại `withAbortSignal` KHÔNG được `src/` dùng — chỉ xuất hiện ở `test/env-node.test.ts:7`.",
+  "fix": "Thay ở cả 4 chỗ (dòng 3, 259, 368, 379) danh sách 12 tên bằng danh sách 14 tên đúng: `Context`, `Draft`, `JsonValue`, `Op`, `Change`, `Prepared`, `Tracker`, `copyJson`, `track`, `apply`, `applyImmutableBatches`, `awaitWithContext`, `withoutAbortSignal`, `BACKGROUND_CONTEXT` — kèm câu: \"14 symbol (đã đếm từ 24 câu lệnh import trong `src/`; `Change`/`Prepared`/`Tracker` đến từ `src/session/transaction.ts:2`). `withAbortSignal` chỉ dùng ở `test/env-node.test.ts:7`, không có trong `src/`.\" Và thống nhất mọi chỗ ghi \"8 symbol\" hoặc \"12 symbol\" thành \"14 symbol\".",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:13",
+  "claim": "\"Tổng 4 file đó là 78,392 byte test cho 7,888 byte code — tỉ lệ 10:1.\"",
+  "why_wrong": "Cộng sai số học. 78,392 là tổng của 3 file test, không phải 4 — cộng thêm `storage-conformance.ts` (54,178) thành 132,570, tỉ lệ 16.8:1. Người đọc dùng con số này để lập luận \"bằng chứng test dày hơn code 10 lần\" sẽ nói quá thực tế.",
+  "evidence": "Đếm lại: `session-documents.test.ts` 27,086 + `session-checkpoints-migrations.test.ts` 24,698 + `session-forks.test.ts` 26,608 = **78,392** (khớp con số trong tài liệu, nhưng đó là 3 file). Thêm `src/testing/storage-conformance.ts` 54,178 → **132,570**. Tỉ lệ: 78,392/7,888 = 9.94; 132,570/7,888 = 16.81.",
+  "fix": "Thay câu \"Tổng 4 file đó là 78,392 byte test cho 7,888 byte code — tỉ lệ 10:1.\" bằng: \"3 file test đó là 78,392 byte; cộng `src/testing/storage-conformance.ts` (54,178) thành 132,570 byte test cho 7,888 byte code — tỉ lệ ~17:1.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:384 (Cần người quyết) + dòng 347 (Xác minh #3) + dòng 310 (bước 17)",
+  "claim": "\"Cách chạy 18 file test khi CHƯA build `pi-natives`: `bun test packages/durable` có chạy độc lập không, hay còn import lại `pi-tui`/`pi-utils` (có pi-native)? PI-TUI và PI-UTILS đều phải kiểm tra. Nếu có, thì `brew install ninja` là bước bắt buộc trước khi chạy test.\" Còn Cổng #3 và Xác minh (3) khẳng định `bun test packages/durable` → xanh.",
+  "why_wrong": "Câu hỏi mở này ĐÃ CÓ ĐÁP ÁN, và đáp án là KHÔNG — `bun test packages/durable` sẽ KHÔNG chạy độc lập sau bước 8. Bước 8 bắt durable import từ pi-tui, mà pi-tui kéo theo pi-natives chưa build. Nếu ai đó chạy Cổng #3 như tài liệu viết, họ sẽ thấy đỏ, và vì tài liệu đã cảnh báo sẵn về ninja họ có thể kết luận sai rằng đây chỉ là vấn đề môi trường, chứ không phải hệ quả trực tiếp của thiết kế bước 8. Đây là câu hỏi mở có thể đóng ngay bằng lệnh thật.",
+  "evidence": "Đã chạy thật và đo: (1) `which ninja` → không có. (2) `bun test packages/utils` → lỗi `Failed to load pi_natives native addon for darwin-arm64`, kết `17 fail / 16 errors` trên 677 test. (3) Quan trọng nhất: `bun -e 'import(\"@oh-my-pi/pi-tui/tools/streaming-output\")'` → CŨNG lỗi `Failed to load pi_natives native addon`. Chuỗi phụ thuộc có thật: `streaming-output.ts:3` → `../render/sixel` → `@oh-my-pi/pi-utils`; `packages/utils/src/index.ts:9,33` re-export `./file-lock` và `./sanitize-text`, cả hai `import` từ `@oh-my-pi/pi-natives`. Ngoài ra 5 file trong `packages/tui/src/tools/` (`read.ts`, `github.ts`, `write.ts`, `edit.ts`, `hashline-format.ts`) import pi-natives.",
+  "fix": "Thay câu hỏi mở ở dòng 384 bằng kết luận đã kiểm chứng: \"**ĐÃ TRẢ LỜI (đo thật 2026-09-28): KHÔNG chạy độc lập được.** Sau bước 8, `durable` import `@oh-my-pi/pi-tui/tools/streaming-output`, và chuỗi `streaming-output.ts:3` → `../render/sixel` → `@oh-my-pi/pi-utils` → `file-lock`/`sanitize-text` → `@oh-my-pi/pi-natives` kéo theo native addon chưa build. `bun -e 'import(\"@oh-my-pi/pi-tui/tools/streaming-output\")'` trên máy này fail với `Failed to load pi_natives native addon`. `which ninja` → không có. KẾT LUẬN: `brew install ninja && bun --cwd=packages/natives run build` là bước BẮT BUỘC trước Cổng #3, không phải tuỳ chọn.\" Đồng thời sửa Cổng #3 (dòng 357) và Xác minh (3) (dòng 347) thành: \"`bun test packages/durable` xanh — SAU khi `pi-natives` đã build (xem mục Cần người quyết); trên máy chưa build, lệnh này FAIL với lỗi native addon, KHÔNG phải lỗi của `durable`.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:264 + dòng 306 (bước 13) + dòng 307 (bước 14) + dòng 375",
+  "claim": "\"19 file test phải đổi `from 'vitest'` sang `from 'bun:test'`\" (dòng 264); bước 13 ghi \"19 file có `from 'vitest'`\" nhưng neo lại là \"18 file trong `test/`\"; bước 14 và ước lượng công cũng dùng 19.",
+  "why_wrong": "Số file thực là 19 trong `test/` — con số 19 đúng, nhưng neo bước 13 lại ghi 18, tự mâu thuẫn trong hai dòng liền nhau. Người đọc dùng 18 làm danh sách việc sẽ bỏ sót một file.",
+  "evidence": "`grep -rl \"from ['\\\"]vitest\" packages/durable` → 19 file trong `test/` + `README.md` + 2 config (tổng 21). Danh sách 19 file test: env-adaptive-publisher, env-node-spill, env-node, env-output-capture, env-truncate, jsonl-storage, memory-storage, session-checkpoints-migrations, session-definitions, session-documents, session-forks, session-tables, sqlite-facade, sqlite-migrations, sqlite-storage, storage-runtime-boundary, storage.bench, types.test, storage-memory — đúng 19.",
+  "fix": "Ở dòng 306 (bước 13), thay \"19 file có `from 'vitest'` → `from 'bun:test'`\" và neo \"*(neo: 18 file trong `test/`)*\" bằng nhất quán: \"19 file trong `test/` có `from 'vitest'` → `from 'bun:test'` (ngoài ra `README.md` còn nhắc `vitest`, và 2 file config sẽ bị xoá ở bước 15) *(neo: 19 file trong `test/`)*\".",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:295 (bước 2) + dòng 358 (Cổng #4) + dòng 385 (Cần người quyết)",
+  "claim": "\"đúng đúng 21 dòng MIT chuẩn\" và Cổng #4 chạy `cmp packages/durable/LICENSE <(git -C pi-ref show d6af72e:LICENSE) == 0`.",
+  "why_wrong": "Hai vấn đề. (a) LICENSE có 20 dòng, không phải 21 — ai đó cố chỉnh cho đủ 21 dòng sẽ sửa hỏng văn bản pháp lý gốc. (b) Lệnh `git -C pi-ref` không chạy được từ thư mục omp vì `pi-ref` là thư mục ANH EM cạnh omp, không phải thư mục con — cổng sẽ fail với lý do sai, khiến người đọc tưởng LICENSE sai.",
+  "evidence": "`wc -l LICENSE` trong pi-ref → **20**. `cat -A LICENSE | tail -1` cho thấy file KẾT THÚC bằng `SOFTWARE.` KHÔNG có newline, nên `wc -l` (đếm newline) báo 20 dành cho 21 dòng nội dung — đây là lý do dễ đếm nhầm, nhưng con số \"21 dòng\" vẫn là mô tả nội dung đúng. Về path: `ls -d pi-ref` từ `/Users/tranquangdang21/Projects/ultraworkers` → không tồn tại; `pi-ref` nằm ở `/Users/tranquangdang21/Projects/pi-ref`.",
+  "fix": "Ở dòng 295 (bước 2), thay \"đúng đúng 21 dòng MIT chuẩn\" bằng \"đúng nguyên văn file MIT ở `pi-ref/` root LICENSE (Copyright (c) 2025 Mario Zechner; 21 dòng nội dung, file KHÔNG có newline cuối — `wc -l` báo 20 vì không đếm dòng cuối không newline; đừng 'sửa cho đủ')\". Ở dòng 358 (Cổng #4), thay `cmp packages/durable/LICENSE <(git -C pi-ref show d6af72e:LICENSE)` bằng `cmp packages/durable/LICENSE <(git -C /Users/tranquangdang21/Projects/pi-ref show d6af72e:LICENSE)` (hoặc `git -C ../pi-ref show d6af72e:LICENSE` — `pi-ref` là thư mục anh em cạnh omp, KHÔNG phải thư mục con nên `git -C pi-ref` chạy từ omp sẽ fail).",
+  "file": "durable"
+ },
+ {
+  "severity": "major",
+  "location": "durable.md:30 (bảng file, dòng `src/session/session.ts`) + dòng 34, 35, 40, 45",
+  "claim": "Cột \"dòng cần sửa sau khi chép\" không hề nhắc việc chuyển `private` → `#private`, dù AGENTS.md cấm tuyệt đối: \"Class privacy: use ES `#private` fields... No `private`/`protected`/`public` keyword\". Đồng thời `ReturnType<>` và `new Promise(` cũng không được nhắc.",
+  "why_wrong": "Đây đúng là loại lỗi tài liệu nguy hiểm nhất: code chép sẽ vi phạm luật dự án mà tài liệu im lặng. 64 chỗ `private` + 11 `ReturnType<>` + 3 `new Promise(` sẽ vào repo qua cửa \"chép rồi sửa\" mà không ai được bảo sửa. Đặc biệt `src/env/utils/adaptive-publisher.ts` được đánh dấu \"chép nguyên văn\" — sai hoàn toàn, vì nó chứa `ReturnType<>`.",
+  "evidence": "Đếm trong `src/`: `private` keyword = **64** chỗ (memory.ts 13, sqlite/storage.ts 17, sqlite/node.ts 3, jsonl/storage.ts 22, env/node.ts 11). `ReturnType<` = **11** (env/node.ts 8, jsonl/storage.ts 2, env/utils/adaptive-publisher.ts 1 — dòng 25: `#timer: ReturnType<typeof setTimeout> | undefined;`). `new Promise(` = **3** (env/node.ts:149, 296, 485). Không có `any`, không có `await import(`, không có `console.*`. Đối chiếu: omp tự nó có 0 `ReturnType<typeof setTimeout>` trong toàn bộ `packages/`.",
+  "fix": "Thêm một hàng mới vào cuối bảng \"File cần chép\" (trước dòng 83) và một bước mới ở phần \"Các bước\", với nội dung: \"**SỬA LUẬT DỰ ÁN SAU KHI CHÉP (bắt buộc, `bun run check:ts` + `oxlint` sẽ đỏ nếu bỏ qua).** (a) `private` → `#private`: 64 chỗ trong `src/storage/memory.ts` (13), `src/storage/sqlite/storage.ts` (17), `src/storage/sqlite/node.ts` (3), `src/storage/jsonl/storage.ts` (22), `src/env/node.ts` (11). (`src/session/session.ts` đã dùng `#` sẵn.) (b) `ReturnType<>`: 11 chỗ — `src/env/node.ts` (8), `src/storage/jsonl/storage.ts` (2), `src/env/utils/adaptive-publisher.ts` (1). Vì vậy `src/env/utils/adaptive-publisher.ts` KHÔNG 'chép nguyên văn' được — phải sửa. (c) `new Promise(`: 3 chỗ trong `src/env/node.ts` (L149, L296, L485) → dùng `Promise.withResolvers()`.\" Và sửa dòng 47 của bảng: `src/env/utils/adaptive-publisher.ts` từ \"chép nguyên văn\" thành \"chép rồi sửa\", lý do: \"1 dòng `ReturnType<typeof setTimeout>` (L25) → thay bằng `Timer`.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "minor",
+  "location": "durable.md:275 (collisions[0])",
+  "claim": "\"omp (16 trường nhưng 9 trong đó là OPTIONAL, KHÔNG có `maxLines`/`maxBytes`, và thêm 6 trường middle-truncation `elidedBytes`/`elidedLines`/`headLines`/`tailLines`/`partialByteWindows` + `truncatedBy` chấp nhận thêm `'middle'`)\"",
+  "why_wrong": "Đếm sai số trường. Người đọc dùng 16/9 để đánh giá độ lệch giữa hai shape sẽ tự tính lại và mất thời gian; con số sai cũng làm va chạm này trông lớn hơn thực tế.",
+  "evidence": "Đếm trực tiếp trong `packages/tui/src/tools/streaming-output.ts:105-126`: `TruncationResult` có **14** trường (`content`, `truncated?`, `truncatedBy?`, `totalLines`, `totalBytes`, `outputLines?`, `outputBytes?`, `elidedBytes?`, `elidedLines?`, `headLines?`, `tailLines?`, `partialByteWindows?`, `lastLinePartial?`, `firstLineExceedsLimit?`) — 3 bắt buộc, 11 optional, không phải 16/9. Phần durable 11 trường bắt buộc thì đúng.",
+  "fix": "Thay \"omp (16 trường nhưng 9 trong đó là OPTIONAL, KHÔNG có `maxLines`/`maxBytes`, và thêm 6 trường middle-truncation\" bằng \"omp (14 trường nhưng chỉ 3 bắt buộc, 11 OPTIONAL, KHÔNG có `maxLines`/`maxBytes`, và thêm 6 trường middle-truncation\".",
+  "file": "durable"
+ },
+ {
+  "severity": "minor",
+  "location": "durable.md:1-13 (tiêu đề + đoạn mở đầu)",
+  "claim": "\"`pi-ref packages/agent/` có 117 file `src`, omp `packages/agent/` chỉ có 50, và chỉ 5 tên file trùng nhau\" — lặp lại ở dòng 285 và 373.",
+  "why_wrong": "Câu này trông sai ngay khi người đọc tự đếm, làm giảm độ tin cậy của toàn bộ phần \"đã đo\" của tài liệu — mà phần đó lại là nền cho quyết định \"chép chứ không port tay\". Cần nói rõ tiêu chí đếm để câu không bị hiểu sai.",
+  "evidence": "Con số 117 / 50 / 5 ĐÚNG khi so ĐƯỜNG DẪN TƯƠNG ĐỐI: `comm -12` trên danh sách đường dẫn tương đối cho đúng 5 file (`agent-loop.ts`, `agent.ts`, `index.ts`, `proxy.ts`, `types.ts`). Nhưng nếu so CHỈ TÊN FILE (`basename`) thì giao là **12**: `agent-loop.ts, agent.ts, branch-summarization.ts, compaction.ts, entries.ts, index.ts, messages.ts, proxy.ts, telemetry.ts, tool-context.ts, types.ts, utils.ts`. Ba size claim khác cũng xác minh đúng: agent-loop 26,649 (pi) vs 151,735 (omp); agent 19,748 vs 75,761; types 19,859 vs 51,849.",
+  "fix": "Thêm tiêu chí đếm vào cả 3 chỗ (dòng 5, 285, 373), ví dụ: \"chỉ 5 tên file trùng nhau (đo theo ĐƯỜNG DẪN TƯƠNG ĐỐI trong `src/`; nếu chỉ so tên file thì 12)\".",
+  "file": "durable"
+ },
+ {
+  "severity": "minor",
+  "location": "durable.md:49 (hàng `src/testing/assertions.ts`)",
+  "claim": "\"Kiểu `ExpectLike` trùng lặp với `bun:test` nên giữ nguyên\" — đánh dấu `src/testing/assertions.ts` là \"chép nguyên văn\".",
+  "why_wrong": "Câu lập luận ngược với kết luận: nếu thật sự trùng lặp với `bun:test` thì theo chính AGENTS.md (\"Missing capability? Extend the central helper — don't fork its logic locally\") thì phải BỎ và dùng bản của omp, chứ không phải \"giữ nguyên\". Người đọc không biết nên theo logic hay theo kết luận.",
+  "evidence": "`src/testing/assertions.ts` (1,229 byte) định nghĩa `ExpectLike` và `createExpectAssertions` — tức là một adapter assertion riêng của durable, không hề import từ `bun:test` hay `vitest` (`grep` không thấy import test framework trong file). Vì vậy nó vẫn chạy được sau khi chuyển sang `bun:test`; nhưng lập luận \"trùng lặp\" thì không có cơ sở, và mâu thuẫn với việc giữ.",
+  "fix": "Thay \"Kiểu `ExpectLike` trùng lặp với `bun:test` nên giữ nguyên.\" bằng: \"File này KHÔNG import test framework nào (chỉ định nghĩa adapter `ExpectLike`/`createExpectAssertions`), nên chạy được sau khi chuyển test sang `bun:test` mà không cần sửa — giữ nguyên. Không phải vì 'trùng lặp' (nó không trùng `bun:test`), mà vì không có gì để đổi.\"",
+  "file": "durable"
+ },
+ {
+  "severity": "minor",
+  "location": "durable.md:24 (hàng CHANGELOG.md) + dòng 309 (bước 16) + dòng 386 (Cần người quyết)",
+  "claim": "Bước 16 và hàng `CHANGELOG.md` chỉ nói thêm mục `'### Added'` vào `durable/CHANGELOG.md`. Không có đề xuất nào cho `packages/*/CHANGELOG.md` của omp — dù AGENTS.md yêu cầu mục changelog cho thay đổi user-facing.",
+  "why_wrong": "Đây là thiếu sót so với quy tắc changelog của AGENTS.md: thêm mới cả một package (`@oh-my-pi/pi-durable`) là thay đổi user-facing, và `packages/durable/CHANGELOG.md` mới là changelog của package MỚI — không thay thế cho mục `[Unreleased]` trong changelog của repo.",
+  "evidence": "AGENTS.md mục \"Changelog\": \"Location: `packages/*/CHANGELOG.md` (per package)... New entries always go under `## [Unreleased]`\" và attribution cho thay đổi. Đối chiếu thực tế: `packages/catalog/CHANGELOG.md` và `packages/tui/CHANGELOG.md` đều tồn tại với mục `[Unreleased]` riêng; tài liệu durable không nhắc tới bất kỳ changelog nào ngoài `packages/durable/CHANGELOG.md`.",
+  "fix": "Ở bước 16, thêm vào danh sách việc dễ cơi: \"thêm mục `## [Unreleased]` + `### Added` vào `packages/durable/CHANGELOG.md` (package MỚI — mục này KHÔNG thay thế cho changelog của các package omp khác)\". Và ở phần \"Cần người quyết\" (dòng 386), thêm câu mới: \"**Changelog ở package omp:** thêm `@oh-my-pi/pi-durable` là thay đổi user-facing — theo AGENTS.md cần mục `## [Unreleased]`/`### Added` trong changelog per-package của omp; tài liệu này mới chỉ nói tới `packages/durable/CHANGELOG.md`. Cần chốt: ghi vào changelog package nào?\"",
+  "file": "durable"
+ }
+]

@@ -1,0 +1,357 @@
+[
+ {
+  "id": "s1",
+  "title": "Wave 1 — four small openings: usage preset, tmux key hints, read-group membership, loop throttle surface",
+  "wave": "Sóng 1 — Bốn khoảng mở nhỏ, không chặn gì",
+  "one_line": "Turn on the already-built `usage` quota segment in the chosen status-line presets, make the tmux prefix visible in keybinding hints, make the read-group membership decision come from one data-driven predicate at all seven sites, and surface named-phase stall indicators plus a per-phase frame-time breakdown.",
+  "user_visible_effect": "Status line: the quota segment (tier, 5h/1d/7d/monthly windows, credit resets) appears in the presets the maintainer picks, and stays on screen at 80 columns.",
+  "files": [
+   "packages/tui/src/status-line/presets.ts [modify,verified]",
+   "packages/tui/src/status-line/schema.ts [modify,verified]",
+   "packages/coding-agent/test/status-line-usage-preset.test.ts [create,verified]",
+   "packages/tui/src/chrome/keybinding-hints.ts [modify,verified]",
+   "packages/tui/test/tmux-key-hints.test.ts [create,verified]",
+   "packages/tui/src/chat/read-tool-group.ts [modify,verified]",
+   "packages/tui/src/chat/chat-transcript-builder.ts [modify,verified]",
+   "packages/coding-agent/src/modes/utils/ui-helpers.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/event-controller.ts [modify,verified]",
+   "packages/tui/src/loop-watchdog.ts [modify,verified]",
+   "packages/utils/src/loop-phase.ts [modify,verified]",
+   "packages/tui/src/components/loader.ts [modify,verified]",
+   "packages/tui/src/tui.ts [modify,verified]",
+   "packages/coding-agent/src/modes/interactive-mode.ts [modify,verified]",
+   "packages/tui/test/loop-watchdog.test.ts [modify,verified]",
+   "packages/tui/test/loader-stall-trailer.test.ts [create,verified]",
+   "packages/tui/test/read-group-membership.test.ts [create,verified]"
+  ],
+  "n_files": 17,
+  "depends_on": [
+   "P1 — maintainer's written answer on whether `usage` enters all seven presets or only the `full` + `nerd` subset. HARD BLOCK on A1.",
+   "P0 — maintainer's written answer on A8's spec provenance (black-box vs omp-native) plus evidence location. HARD BLOCK on A8.",
+   "An answer on whether the two result-side `toolName === \"read\"` checks (chat-transcript-builder.ts:507, ui-helpers.ts:663) are in A6's scope.",
+   "An answer on whether acp-event-mapper.ts:645 is a read-group membership site."
+  ],
+  "blocks": [
+   "The item at plan:7401-7405, which the plan states depends on M2 + A8 and calls the cheapest of the five M2-blocked items.",
+   "Nothing in A1, A5 or A6 depends on this wave. A6 has no external dependency — the O5 seam question the plan raises is already closed and removed from §10 #9."
+  ],
+  "effort": "~6 engineer-days total: A1 ~1 day, A8 ~1 day, A6 ~2 days, A5 ~2 days. The plan's per-item sizes all held up under verification. Two places deserve more than the flat estimate: the A5 loader fixture (multi-line row required, ~half a day on its own) and A1's byte-identical baseline capture for presets outside the P1 subset, which is fiddlier than adding a string.",
+  "risk": "The single most likely way to get this wrong is A6 converting a site it should not, or missing one it should.",
+  "n_questions": 6,
+  "n_corrections": 18,
+  "gate": "All five test files pass, and every anchor in this spec was re-verified against the tree at implementation time rather than trusted from the plan. Specifically: (a) the new status-line test renders every preset at 200/120/80/60 with a full usage context, shows the quota segment surviving at 80 columns, and shows byte-identical output for both ctx.usage=null and every preset outside the P1 subset; (b) the tmux test exercises the real tmux branch — proven, not assumed — and covers the probe-failure fallback; (c) the read-group test passes with the live path and the rebuild path asserted identical to each other; (d) the loader test uses a genuinely multi-line row and covers the no-working-row case; (e) `bun run check:ts` exits 0.\n\nBefore ANY code is written: P1 is answered in writing and recorded (A1 will not start without it), and P0 is answered in writing with a recorded spec provenance and evidence location that is NOT the untracked ~/Projects/claude-code-ref checkout (A8 will not start without it).",
+  "gate_can_fail": "Yes, on every leg. The A1 and A6 tests assert rendered bytes, so a missing usage segment at 80 columns, a changed default-preset row, or a fold that differs between the live and rebuilt transcript each produce a concrete diff. The A8 test goes red if the prefix is not doubled under tmux or if a non-tmux case changes — and the `isBunTestRuntime()` guard at tmux.ts:49 means it is easy to write a version of this test that is green while testing nothing, so the suite must include an assertion that the tmux branch was actually entered rather than trusting green. The A5 loader test goes red if the fixture row collapses to one line, since the trailer is skipped entirely below two lines. The one gate that CANNOT fail is P0/P1: those are human decisions, not code, and an unrecorded answer looks exactly like a recorded one until someone checks the spec file.",
+  "wave_tag": "1"
+ },
+ {
+  "id": "tail1",
+  "title": "§7–8 — Acceptance gates and legal close-out: one runnable gate script, one signable clean-room doc",
+  "wave": "§7–8 (đuôi milestone — chạy sau Sóng 6, không phải một sóng thứ bảy)",
+  "one_line": "Turn the eleven prose gates of plan §7.1 into a single script a reviewer runs from the repo root, and turn plan §8's four-row classification into a document a maintainer can actually sign — nothing ships until the script says XANH.",
+  "user_visible_effect": "none — internal.",
+  "files": [
+   "scripts/m3-acceptance-gates.sh [create,verified]",
+   "docs/clean-room-policy.md [create,verified]",
+   "CONTRIBUTING.md [modify,verified]"
+  ],
+  "n_files": 3,
+  "depends_on": [
+   "s1 (Sóng 1) — owns the status-line test files G1/G2/G3 assert on. Without s1 the script's G1-G3 stay red, which is correct, not a defect.",
+   "s4 (Sóng 4) — owns the MCP elicitation test G6 asserts on and the key-hint strip G11's tmux contract comes from.",
+   "s5 (Sóng 5) — owns the D2 half: G7 is a NEGATIVE gate on work s5 lands, so it is only meaningful once s5 has landed the registered TTL segment it must NOT read.",
+   "s6 (Sóng 6) — owns the 99-palette contrast harness. §7.1's G-gate for A9 is behavioural, not a count, so s6's harness is the artifact; tail1 does not re-derive it."
+  ],
+  "blocks": [
+   "Milestone sign-off. The plan's §11 'ĐỊNH NGHĨA HOÀN THÀNH' cannot be evaluated until a single runnable gate run exists — right now the eleven gates are prose a reviewer must reassemble by hand, and hand-reassembly is where gates get skipped.",
+   "§8.6 #5 (write the clean-room policy down) is blocked on step 1's human answer, and until it is answered nothing stops a future contributor from copying from a reverse-engineered tree — CONTRIBUTING.md:82-91 requires 'the right to submit' but names no specific hazard, which is the gap §8.6 #5 identifies.",
+   "Nothing upstream. tail1 consumes the waves; no wave waits on it."
+  ],
+  "effort": "S — roughly half a day. One shell script (~120 lines including the eight test-gate stubs), one markdown doc (~150 lines), an optional eight-line CONTRIBUTING addendum. No runtime code, no new dependency, no prompt, no model/provider change. The cost is dominated by reading, not writing: the plan's §7.1/§8 anchors were largely stale and every one of them had to be re-pinned against the tree before it could be encoded.",
+  "risk": "The dominant risk is a source-grep gate silently becoming a source-grep TEST.",
+  "n_questions": 5,
+  "n_corrections": 11,
+  "gate": "DONE means all five of these, and each can fail on its own.\n\n(1) `./scripts/m3-acceptance-gates.sh` exists, runs from repo root, prints one XANH/DO line per gate, and exits 1. TODAY IT EXITS 1 — measured, not assumed: G4 finds 9 wheel multipliers, G4b finds 0 of 9 files importing the shared module, G5 reports left=7 kept=3, G6 finds `packages/coding-agent/test/mcp/elicitation-capability.test.ts` absent. That red is the point: a gate script that is green on an unimplemented milestone gates nothing.\n\n(2) G4 and G4b name all NINE sites with correct line numbers, verified by `git grep` on the tree — NOT the plan's list, whose seven `* 3` anchors are all stale (agent-transcript-viewer 469→470, copy-selector 212→214, plan-review-overlay 581→580, rewind-selector 232→245, git-tui 693→697, raw-sse 167→168, log-viewer 638→639) and whose `usage-dashboard.ts:753` is 759.\n\n(3) G10 uses the call form and returns 0, and the plan's literal form is called out in a comment as wrong (2 today, both comments).\n\n(4) `bun run check:ts` exits 0. Measured at HEAD 808b365: exit 0, all 12 type-checking packages Done.\n\n(5) `docs/clean-room-policy.md` exists, carries all four classification rows with corrected anchors, and its sign-off grid shows §8.6 items 1/3/4/5 as their real state — OPEN, not silently ticked. If the human answered Q-A, `CONTRIBUTING.md` carries the addendum and its original licensing sentence survives verbatim.",
+  "gate_can_fail": "Yes, three independent ways, all measured on this tree rather than reasoned about.\n\nFIRST: the gates are red before the work. G4 = 9 (needs 0), G4b = 0/9 (needs 9/9), G5 left = 7 (needs 0), G6 file absent. If someone lands the script and the gates come out green on Monday morning, the gates are broken — that is the failure this gate is designed to catch, and it is the same pathology the plan diagnoses in G4's own rewrite note ('the old gate self-adjusted and could not distinguish A3 done from A3 not done').\n\nSECOND: G10 catches its own historical bug. The plan's literal form returns 2 on a completely correct tree, because two test files contain comments explaining they do NOT use mock.module. A reviewer would either patch the gate or wave it through. The corrected form returns 0.\n\nTHIRD: a stale anchor is caught. The plan's seven `* 3` line numbers are ALL wrong (off by +1 to +13). A script transcribed from the plan prose instead of the tree would grep nine files at nine wrong lines; if a future edit shifts them, the file-existence half still passes while the intent is silently lost. Step 4 forbids transcribing from prose for exactly this reason.\n\nWhat this gate does NOT do: it does not prove UI fidelity. §7.2 says so in the plan's own words — 'phần này không thể chứng minh bằng máy' — and that half stays human. A reviewer reading XANH on all eleven gates has learned nothing about whether the wheel ramp feels right on Ghostty, and the doc must say so where §7.2's four human judgements live.",
+  "wave_tag": "7-8 (đuôi)"
+ },
+ {
+  "id": "ctx1",
+  "title": "M3 §1–2 — opening discovery and why the CCB surface cannot be ported as a plugin: write the corrected finding, then make its load-bearing invariants executable",
+  "wave": "Context (pre-wave) — runs before Sóng 1. S1–S6 all cite this item's claims as their premise, so its anchor drift is silently inherited by every downstream spec.",
+  "one_line": "Before any M3 code is written, replace the plan's §1–2 argument with a finding doc whose every line number was re-verified against this tree, and add two tests that make the two 'the plugin surface is closed' claims fail loudly if a future contributor quietly opens a half-seam.",
+  "user_visible_effect": "none — internal.",
+  "files": [
+   "docs/plugin-surface-closure.md [create,verified]",
+   "packages/tui/test/status-line-segment-closure.test.ts [create,verified]",
+   "packages/coding-agent/test/status-line-segment-picker.test.ts [create,verified]",
+   "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md [modify,verified]"
+  ],
+  "n_files": 4,
+  "depends_on": [
+   "Nothing. This item has no upstream dependency and is the first thing that should be built — every S1–S6 spec cites its framing as premise, so doing it last is what turns one stale anchor into seven.",
+   "For leg (2) only: a built native addon. Out of scope for the engineer to fix; it is an environment prerequisite shared by every M3 spec. If it cannot be built, ctx1 stalls on leg (2) and that should be escalated rather than worked around."
+  ],
+  "blocks": [
+   "S1–S6. Not through a hard dependency but through premise: the S1 spec already navigates by plan line numbers and was corrected mid-flight (its own plan_corrections record do-not-touch lines 1819/1821/1896 as really 1830/1832/1907, +11). Every wave spec that cites a §1–§2 anchor inherits that same class of drift unless this item lands first and gives them one corrected source.",
+   "S1's A1 status-line item specifically, via open question P1 (which presets gain `usage`) — the current CUSTOM_STATUS_LINE_DEFAULTS is deliberately left untested here precisely so A1 is not blocked on this item.",
+   "Nothing blocks on ctx1. It is a leaf."
+  ],
+  "effort": "~1 engineer-day. Roughly 0.5 day for docs/plugin-surface-closure.md — the verification commands are already enumerated in the verification block, so the work is transcribing verified output, not re-deriving. Roughly 0.5 day for the two test files, and that is generous: both follow existing conventions exactly (status-line-cache-hit.test.ts already imports renderSegment and builds a SegmentContext; createGallerySegmentContext at cli/gallery-fixtures/segments.ts:24 hands you a complete deterministic context instead of 40 lines of fixture). If the settings register's `items.values` turns out not to be reachable from outside the module, budget +0.25 day and assert through the resolved config entry instead — noted in step 10 rather than discovered at hour six.",
+  "risk": "The single most likely way to get this wrong is over-testing: reaching for a grep-based test of the 'exactly one non-test setFrameProvider call site' invariant, or a count assertion of 27 union members, because both feel like they are pinning the plan's argument.",
+  "n_questions": 4,
+  "n_corrections": 9,
+  "gate": "All four legs green, and none of them is satisfied by check:ts alone.\n\n(1) bun run check:ts exits 0 — verified in this checkout at HEAD 808b365.\n(2) Both new test files pass once the addon is built. (2) is the leg that matters; without it this item is a doc with aspirations.\n(3) docs/plugin-surface-closure.md exists and every line number in it was produced by a command in the verification block during THIS task, not copied from the plan. Spot-check that the six known-drifted anchors read 2-30 (not 1-32) for the union, 157/158 (not 148-149) for setFooter/setHeader, 302 (not 301) for the composer call site, 101-102 (not 100-104) for MCP capabilities, and 94-96 (not 93-96) for the subpath export.\n(4) The doc's section (4) 'what this does not prove' survives intact — specifically that the dossier never analyzed CCB-engine/omp-plugin runtime compatibility and that NO evidence anywhere supports the 'cell buffer' or 'pre-styled ANSI' framing from the original brief. If a future editor deletes that section, they have re-imported the unverified claim this item exists to quarantine.\n\nDo NOT add a test for the setFrameProvider single-call-site invariant. Its absence is part of the gate: if a grep-based test for it appears in the diff, the item is wrong, not merely incomplete.",
+  "gate_can_fail": "Yes, and leg (2) is the one that carries the item. The union<->registry test is a genuine two-source cross-check, not an echo: STATUS_LINE_SEGMENT_IDS and SEGMENTS are separately maintained literals in different files, so a regression in either — an id added to one and not the other, a registry key deleted, ALL_SEGMENT_IDS reordering — produces a concrete diff naming the offending id. The silent-drop test goes red the moment renderSegment's `if (!segment)` guard is removed or component.ts's `if (rendered.visible && rendered.content)` filter changes, which is precisely the moment a segment would start rendering as a visible gap instead of vanishing. The picker test goes red if a segment is added to SEGMENTS but not to the settings vocabulary — a real and likely mistake, since the two live in different packages.\n\nThe honest weakness: leg (3), the doc, cannot fail automatically. A stale line number in prose produces no red anywhere; the gate for it is a human re-running the verification block. That is inherent to a documentation deliverable and is why the executable legs were made to carry the invariants rather than the doc — the doc records the anchors, the tests carry the contracts.",
+  "wave_tag": "Bối cảnh (trước sóng 1)"
+ },
+ {
+  "id": "tail2",
+  "title": "§9–11: rủi ro, câu hỏi mở, định nghĩa hoàn thành (+ bảng đính chính anchor đã kiểm chứng)",
+  "wave": "Back matter (mục 9–11) — không phải một sóng triển khai. Chạy SONG SONG với sóng 6, nhưng chỉ ghép được sau khi các lát s1–s6 đã có đặc tả; và cổng P0/P1 phải đóng trước khi s1 bắt đầu.",
+  "one_line": "Write the closing three sections of the M3 execution plan — the risk register, the open-question table a maintainer can answer in one sitting, and the definition of done — with every file:line re-checked against the actual tree, plus a corrections table for the 13 anchors the plan got wrong (two of which, as written, would send an engineer to the wrong line or chase a phantom violation).",
+  "user_visible_effect": "none — internal.",
+  "files": [
+   ".lavish-wip/m3-md/90-back1.md [create,UNVERIFIED]",
+   ".lavish-wip/m3-md/90-back2.md [create,UNVERIFIED]",
+   ".lavish-wip/m3-md/90-back3.md [create,UNVERIFIED]",
+   ".lavish-wip/m3-md/check-anchors.mjs [create,UNVERIFIED]",
+   ".lavish-wip/assemble-m3.py [create,UNVERIFIED]",
+   "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md [modify,verified]",
+   ".lavish-wip/m3-specs/ [modify,verified]"
+  ],
+  "n_files": 7,
+  "depends_on": [
+   "s1 — wave 1 items (A1 usage presets, A8 tmux key hints, A6 read-group membership, A5 stall indicator). §11 clauses 1, 2, 3, 7 and 9 are statements about s1's gates and cannot be written without them.",
+   "s4 — wave 4 items (B1 tool-renderer pinning, B2 working message, B3 keybinding hint strip). §11 clause 7 and the B1 row of §10 depend on s4's pin-test design.",
+   "s5 — wave 5 items (A2 elicitation capability, C2 shell-call status strip, D2 hit-rate segment, D1 elicitation handler). §11 clauses 4 and 6 are about s5, and both of those clauses are void until M2-OQ3 has an answer — which is a dependency on M2, not on s5.",
+   "s6 — wave 6 (A9 daltonized theme). §11 clause 9 and the M3-C2 slip sentence both hinge on A9's S-versus-M decision, which §10 question 7 carries and nobody has answered.",
+   "P0 — the maintainer's written confirmation of the §8.2 spec table for A3, A7, A8, D2. Must be closed before wave 1 starts. tail2 cannot close it; it can only make it a table row with an owner and a deadline.",
+   "P1 — the maintainer's written answer to whether `usage` joins all seven status-line presets or a subset, naming each preset. Must be closed before A1 starts, and its answer is the target of §11 clause 1.",
+   "M2-OQ3 — the status-line extension-registration mechanism. §11 clause 6 is written as three branches precisely because this is unanswered; tail2 does not need the answer to write the clause, but s5 cannot implement C2 and D2 without it."
+  ],
+  "blocks": [
+   "MILESTONE_3_EXECUTION_PLAN.md — the assembled execution plan. assemble-m3.py cannot run to completion until 90-back1/2/3.md exist.",
+   "M2 scheduling — §9 risk row (f) and §10 question 1 exist to answer 'what is M2's scope and exit criterion', which is the question that decides whether 7 engineer-days stay blocked."
+  ],
+  "effort": "~2 engineer-days. Roughly 0.5 day to re-verify and write the corrections table — most of that is already done here, and the evidence column is written out, so it is transcription plus a re-run. 0.5 day to write §9 and §10 as tables. 0.5 day to write §11 and the unverified section. 0.5 day to build and shake out check-anchors.mjs and assemble-m3.py. Not on the critical path for any code item: it can be written in parallel with s1-s6 and only needs to land before the plan is handed over.",
+  "risk": "The single most likely way to get this wrong is to write the closing sections as a faithful summary of the plan.",
+  "n_questions": 10,
+  "n_corrections": 20,
+  "gate": "M3 is DONE when all four hold, and each can fail:\n\n(1) `bun .lavish-wip/m3-md/check-anchors.mjs` exits 0 AND has been seen to exit 1. Checked anchors must number in the dozens, not zero — a back matter with no `file:line` in it has evaded the check rather than passed it.\n\n(2) `python3 .lavish-wip/assemble-m3.py` refuses to run when fed a truncated part. The 800-byte and even-fence guards are the whole reason the script exists.\n\n(3) `git grep -rn 'mock\\.module(' -- packages/coding-agent/test packages/tui/test` returns 0, and the plan's uncorrected form (`mock.module`, no paren) is NOT what appears in 90-back1.md or 90-back2.md. This can fail: grep the back matter for the uncorrected token and it is found if someone copied §7 forward.\n\n(4) Every claim in 90-back3.md's corrections table is reproducible on demand. Spot-check any three: run the command in the evidence column, get the same answer. A corrections table nobody spot-checked is worse than no corrections table, because it converts 'unverified' into 'asserted'.\n\nPlus the two content gates, stated negatively: §10's table must contain a row for P0 and a row for P1 with a named owner and a deadline before A1 starts, and §11 must contain a clause naming the M3-C2 slip and a clause that A9 may NOT slip.",
+  "gate_can_fail": "Yes, on every leg, and leg (1) fails in the most useful way. check-anchors.mjs is a plain script over files this item wrote: rename a cited file, move a cited line past EOF, or copy a stale anchor forward from the plan and it exits 1 with the offending citation named. The failure is guaranteed rather than hypothetical because this spec found 13 citations in the plan that are already wrong — so the corpus of anchors an implementer would copy forward is known-bad, and an uncorrected copy is detectable. Legs (2) and (3) are mechanical and were each run against a deliberately wrong input while writing this spec. Leg (4) is the only soft one: it is a discipline, not a script, and it can be satisfied by asserting something false. That is why the spec carries the evidence column verbatim with the exact command for each entry — a claim a reader can re-run in ten seconds is not the same as a claim someone merely typed.",
+  "wave_tag": "9-11 (back matter)"
+ },
+ {
+  "id": "ctx2",
+  "title": "§3–5 verified anchor ledger — inverted value, component map, and the seven core openings",
+  "wave": "context (pre-wave) — read by all 16 M3 work items before any is scheduled",
+  "one_line": "Re-verify every file:line the plan cites in M3 §3, §4 and §5 against the real tree, and hand the implementer a corrected anchor table so no one loses an hour to a stale line.",
+  "user_visible_effect": "none — internal",
+  "files": [
+   "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md [modify,verified]",
+   ".lavish-wip/m3-specs/ctx2.spec.json [create,verified]"
+  ],
+  "n_files": 2,
+  "depends_on": [],
+  "blocks": [
+   "A1 — add usage to a preset",
+   "A2 — declare the elicitation capability",
+   "A3 — mouse wheel acceleration model",
+   "A4 — plugin secret enum mask + storage",
+   "A5 — event-loop stall indicator trailer",
+   "A6 — transcript group membership predicate",
+   "A7 — transient notice buffer",
+   "A8 — tmux-aware key hints",
+   "A9 — daltonized theme palettes",
+   "B1 — tool renderer override",
+   "B2 — working-message plugin",
+   "B3 — key hint strip",
+   "C2 — shell command status segment",
+   "D1 — MCP elicitation form",
+   "D2 — cache hit-rate segment",
+   "D3 — overlay scroll chrome"
+  ],
+  "effort": "S — read 198 lines of plan, run ~30 verification commands, write this ledger. Half a day.",
+  "risk": "The risk is NOT that this ledger is wrong — every anchor in it was reproduced by a real command.",
+  "n_questions": 4,
+  "n_corrections": 17,
+  "gate": "Run the assertion script in `verification` verbatim from the repo root. DONE means it prints `failures: 0` and exits 0 — i.e. all 60 anchors in this ledger still resolve to the exact symbol they name, at HEAD 808b365.\n\nThe script is fail-able by construction, not by intent: 7 of the 60 assertions are the CORRECTED line numbers, which differ from the plan's. If an implementer had instead trusted the plan and written the assertions from IT, those 7 would go red on the first run — which is the point (verified: swapping 4 of them back to the plan's values yields exit 1 with exactly 4 FAIL). It also guards the tree moving under the ledger (e.g. `a usage-segment-end` fails the moment the usage segment grows or shrinks).\n\nExplicitly OUT of scope for this gate: `bun test`, which cannot run (native addon absent). Do not add a test-file gate to a context item — there is no runtime behavior here to defend, and a placeholder test would violate AGENTS.md.",
+  "gate_can_fail": true,
+  "wave_tag": "Bối cảnh (trước sóng 1)"
+ },
+ {
+  "id": "s2",
+  "title": "Sóng 2 — UX cảm nhận được ngay (M3-A3 wheel acceleration, M3-A7 keyed notice queue, M3-D3 transcript scroll chrome)",
+  "wave": "2 (plan lines 7294-7346; the whole wave is exactly these three items — A3, A7, D3)",
+  "one_line": "Fast-scrolling a mouse wheel now speeds up the way a trackpad always has, transient status lines get keys so a newer one can replace an older one instead of scrolling away forever, and the agent transcript overlay grows an unread divider you can click to jump back.",
+  "user_visible_effect": "Wheel scrolling feels the same on a clicky wheel and a trackpad instead of being hard-coded to three rows per notch, with a `ui.mouseWheelSpeedMultiplier` setting to slow it down or speed it up.",
+  "files": [
+   "packages/tui/src/mouse-wheel.ts [create,verified]",
+   "packages/tui/src/mouse.ts [modify,verified]",
+   "packages/tui/src/apps/git/sidebar.ts [modify,verified]",
+   "packages/tui/src/apps/git/git-tui.ts [modify,verified]",
+   "packages/tui/src/overlays/agent-transcript-viewer.ts [modify,verified]",
+   "packages/tui/src/overlays/plan-review-overlay.ts [modify,verified]",
+   "packages/tui/src/overlays/rewind-selector.ts [modify,verified]",
+   "packages/tui/src/overlays/copy-selector.ts [modify,verified]",
+   "packages/tui/src/apps/debug/raw-sse.ts [modify,verified]",
+   "packages/tui/src/apps/debug/log-viewer.ts [modify,verified]",
+   "packages/tui/src/overlays/usage-dashboard.ts [modify,verified]",
+   "packages/coding-agent/src/modes/settings.ts [modify,verified]",
+   "packages/coding-agent/src/modes/utils/ui-helpers.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/event-controller.ts [modify,verified]",
+   "packages/coding-agent/src/modes/interactive-mode.ts [modify,verified]",
+   "packages/coding-agent/src/modes/types.ts [modify,verified]",
+   "packages/tui/test/wheel-acceleration.test.ts [create,verified]",
+   "packages/tui/test/mouse.test.ts [modify,verified]",
+   "packages/coding-agent/test/notice-queue.test.ts [create,verified]",
+   "packages/coding-agent/test/interactive-mode-status.test.ts [modify,verified]",
+   "packages/tui/test/transcript-viewer-scroll-chrome.test.ts [create,verified]"
+  ],
+  "n_files": 21,
+  "depends_on": [
+   "M3-A3: nothing. The plan is explicit that this item has no dependency, and I verified nothing in its path is blocked.",
+   "M3-A7: nothing. Verified `registerStatusLineSegment` does not exist anywhere in `packages/**` (the only grep hits are in the plan document), so the plan's decision not to couple to the M2-OQ3 seam is correct and costs nothing.",
+   "M3-D3: M3-A3 must land FIRST — they touch the same file, `packages/tui/src/overlays/agent-transcript-viewer.ts`, and the wheel line (:470) is inside the same `#frame`-adjacent region. Doing D3 first means the wheel constant is edited twice in one file."
+  ],
+  "blocks": [
+   "M3-A3 and M3-A1 should go through review together (the plan's own instruction) so two UX changes are not in flight at once.",
+   "M3-D3 is blocked by M3-A3 (same file).",
+   "Any later wave item that adds its own scroll surface must route through `packages/tui/src/mouse-wheel.ts` instead of introducing a second multiplier — that is the AGENTS.md 'two implementations of the same thing is a bug' rule applied to scroll speed."
+  ],
+  "effort": "The plan budgets L/~5 days for A3, M/~3 for A7, M/~2 for D3 — about 10 days for the wave. My estimate after verification is closer to 6-7, and the difference is entirely in D3 and in the A3 measurement: D3's hardest part (anchor by message index, survive reflow) is ALREADY IMPLEMENTED (`ChatTranscriptBuilder.rowForEntry` -> `ScrollRangeAnchor` -> `ScrollView.revealRange`), so D3 is a render-and-keybinding job, roughly S/1 day, not M/2. A3's 5 days are real but only ~1.5 of them are code: the measurement table is irreducible calendar time and the plan is right that it should not be split across two people. A7 is 3 days and I would hold it at 2.5-3: the code is small, but proving the composer row and the transcript row never mix is the entire budget, exactly as the plan says. The wave's real risk is not effort, it is that A3's measurement never happens and placeholder numbers ship.",
+  "risk": "The single most likely way to get this wrong is to accept the plan's framing that the six `handleWheel` implementations are 'accelerated' alongside the nine scroll sites.",
+  "n_questions": 4,
+  "n_corrections": 13,
+  "gate": "DONE when, in order:\n\n  (a) The measurement table exists in the work item with three real numbers per terminal (Ghostty, Terminal.app, VS Code, Cursor), and `MEASURED_THRESHOLDS` in `packages/tui/src/mouse-wheel.ts` holds those exact values. The plan's 200/1500/5 are placeholders; shipping them unmeasured fails this gate.\n\n  (b) `bun run check:ts` is green.\n\n  (c) `bun test packages/tui/test/wheel-acceleration.test.ts packages/tui/test/mouse.test.ts packages/coding-agent/test/notice-queue.test.ts packages/coding-agent/test/interactive-mode-status.test.ts packages/tui/test/transcript-viewer-scroll-chrome.test.ts` is green — with the three new files actually executing, not skipped.\n\n  (d) The RENDER-LOCATION assertion is present and passing: keyed notice in the notice container AND absent from `chatContainer.children`; unkeyed notice still in `chatContainer.children`.\n\n  (e) `packages/coding-agent/test/interactive-mode-status.test.ts` passes UNCHANGED in its existing assertions (the `toHaveLength(2)` / `toHaveLength(5)` cases). If A7 had to edit those, the unkeyed branch's behavior changed — that is a gate failure, not a test fix.\n\n  (f) The manual grep audit returns 0 hits for `wheel * [0-9]` and for `delta * 3` under `packages/tui/src`.\n\n  (g) A human has explicitly answered the two open questions (handleWheel acceleration semantics, and whether the new setting is config-file-only) — both change observable behavior, so neither may be resolved by the implementer alone.",
+  "gate_can_fail": "Yes, and each clause fails for a distinct reason. (a) fails if the implementer copies the plan's placeholder numbers instead of measuring — the numbers are visible in the diff. (b) fails on any type error, including the SgrMouseEvent widening that touches 20+ routeMouse implementations. (c) fails if a test file is missing, empty, or its assertions are vacuous. (d) is the specific clause that catches the failure mode the plan warns about: a build where someone renders both the keyed and unkeyed branches into the transcript stays perfectly green without it. (e) is the clause that catches an unrequested behavior change to 332 existing call sites — the pre-existing assertions are the tripwire. (f) fails if a site was missed, and it is the only check that catches the ninth site, since no `event.wheel * N` grep reaches `delta * 3` inside `handleWheel`. (g) cannot be automated at all, which is why it is a gate rather than a step.",
+  "wave_tag": "2"
+ },
+ {
+  "id": "s3",
+  "title": "M3-A2 + M3-D1 — declare the MCP elicitation capability and its handler in ONE commit",
+  "wave": "M3 wave 3 (plan lines 7347-7360; the harness mislabels this range as M2 — it is M3)",
+  "one_line": "omp starts answering elicitation/create from MCP servers with a real multi-field form, and decline / cancel / timeout each arrive at the server as a different answer on the wire.",
+  "user_visible_effect": "A spec-compliant MCP server can now ask the user a question mid-session and get a real answer back.",
+  "files": [
+   "packages/coding-agent/src/mcp/types.ts [modify,verified]",
+   "packages/coding-agent/src/mcp/client.ts [modify,verified]",
+   "packages/coding-agent/src/mcp/manager.ts [modify,verified]",
+   "packages/coding-agent/src/modes/interactive-mode.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts [modify,verified]",
+   "packages/coding-agent/src/modes/acp/acp-agent.ts [modify,verified]",
+   "packages/coding-agent/src/modes/rpc/rpc-mode.ts [modify,verified]",
+   "packages/coding-agent/test/fixtures/elicitation-mcp.ts [create,verified]",
+   "packages/coding-agent/test/mcp/elicitation-capability.test.ts [create,verified]",
+   "packages/coding-agent/test/mcp/elicitation-form.test.ts [create,verified]"
+  ],
+  "n_files": 10,
+  "depends_on": [],
+  "blocks": [
+   "M3-D2 (packages/coding-agent/test/user-shell-status-line.test.ts and the status-line segment work) — no, D2 is independent. The real blocker list is empty; what this item blocks is the reverse: until it lands, M3-C2's status-line segment and M3-B1's renderer pinning are unaffected, but any milestone text that says omp supports MCP elicitation is false.",
+   "Any future M4/M5 work that assumes an MCP server can ask the user something."
+  ],
+  "effort": "L, ~5 days as a single indivisible unit. A2 (the capability declaration) is genuinely a few lines once the types exist. D1 is the whole cost: designing the manager->UI seam, the per-mode policy for interactive / ACP / RPC / headless, three distinct wire outcomes, sanitization of untrusted server strings, and two new test files plus a fixture. Do not split the estimate — the plan is explicit that this is the one item in M3 that should not have its budget raided to pay for something else, because getting the order wrong produces a user-visible protocol error.",
+  "risk": "Shipping the capability before the handler.",
+  "n_questions": 5,
+  "n_corrections": 10,
+  "gate": "All three must hold, and each can fail independently.\n\n(1) `bun run check:ts` is green. This fails on a hand-authored type that does not satisfy the hand-rolled MCP shapes, on an `any` that AGENTS.md forbids, on a `private` keyword on a class field, or on a missing top-level import.\n\n(2) `packages/coding-agent/test/mcp/elicitation-capability.test.ts` passes against a real spawned fixture, proving both directions: the fixture refuses to elicit without the advertised capability AND receives a real answer with it. The negative half asserts `code === -32601` for a forced elicit against a handler-less manager.\n\n(3) `packages/coding-agent/test/mcp/elicitation-form.test.ts` passes, proving the three outcomes are three distinct values, that `required` blocks submit, and that a `writeOnly` value never reaches the transcript.\n\nItem is DONE only when (1)+(2)+(3) are all green in the same tree. Declaring the capability and shipping the handler as two commits is explicitly not done — the test in (2) exists so the half-shipped build fails rather than reviews well.",
+  "gate_can_fail": true,
+  "wave_tag": "3"
+ },
+ {
+  "id": "s4",
+  "title": "Wave 4 — Plugin surface: secret-setting masking, tool-renderer gap pin, working-message sanitization, key-hint strip",
+  "wave": "Sóng 4 — Bề mặt plugin, chờ M2",
+  "one_line": "Four small plugin-surface fixes: stop a secret plugin setting from painting itself in the enum row, pin the tool-renderer-override gap with a real fixture plugin, sanitize the plugin-supplied working message, and let a plugin contribute a key-hint strip. Three of the four are unblocked today; only the secret-persistence half waits on M2 WI-8a.",
+  "user_visible_effect": "A plugin setting marked `secret: true` no longer shows its value when it is an enum, and no longer repaints the plaintext after you pick a new value.",
+  "files": [
+   "packages/tui/src/components/settings-list.ts [modify,verified]",
+   "packages/tui/src/overlays/plugin-settings.ts [modify,verified]",
+   "packages/coding-agent/test/plugin-settings-secret.test.ts [create,UNVERIFIED]",
+   "packages/coding-agent/src/extensibility/plugins/manager.ts [modify,verified]",
+   "packages/coding-agent/test/fixtures/tool-renderer-override/index.ts [create,UNVERIFIED]",
+   "packages/coding-agent/test/plugin-tool-renderer-override.test.ts [create,UNVERIFIED]",
+   "packages/coding-agent/src/modes/interactive-mode.ts [modify,verified]",
+   "packages/coding-agent/test/extension-working-message.test.ts [create,UNVERIFIED]",
+   "packages/tui/src/chrome/keybinding-hints.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts [modify,verified]",
+   "packages/coding-agent/test/extension-status-hint-strip.test.ts [create,UNVERIFIED]"
+  ],
+  "n_files": 11,
+  "depends_on": [
+   "M2 WI-8a — BLOCKS A4-PERSIST ONLY (manager.ts:942-949). A4-display, B1, B2 and B3 are unblocked.",
+   "M2 (wave-level) — as the plan states, the boundary between 'M2 gives the plugin system' and 'M2 gives these exact extension points' is not visible from this repo. The one seam that IS visible is status line, and it is not M2's: schema.ts is a closed 27-id union, status-line/index.ts is a 6-line barrel with zero register*, and setStatus is wired end to end. That is why M3-C1 was removed from M3 and B3 is not C1-blocked.",
+   "M2 A8 — for B3's tmux-stub assertion only, the one assertion that proves two items landed in the right order. If A8 has not landed, ship B3 without that single assertion rather than blocking the whole item."
+  ],
+  "blocks": [
+   "A4-PERSIST cannot ship until this wave's A4-display half is landed, because the display mask without the persistence fix gives false assurance.",
+   "M4/M5 hand-off debt item #4 — 'should the tool-renderer seam be promoted to a public registerToolRenderer API'. B1 pins the existing gap; it deliberately does NOT forge the API. That decision belongs to M4/M5."
+  ],
+  "effort": "~4 days total, deliberately not pooled. A4-display ~1 day and is the cheapest unblock in the wave — do it first, on its own. B1 ~1 day, and the day goes into the three pinned assertions and picking the right remap branch, not into writing code: B1 changes ZERO lines of core. B2 ~1 day. B3 ~1 day, the cheapest of the three M2-blocked items to lift off the schedule. A4-PERSIST is a SEPARATE item worth ~1 day, and the plan's section-6 total counts only the display half — do not merge the two into one schedule box. Do not cut A4-PERSIST's day to pay for anything else in this wave; the plan calls it a real bug on both of its lines.",
+  "risk": "The single most likely way to get this wrong is treating A4 as a one-line display fix.",
+  "n_questions": 4,
+  "n_corrections": 14,
+  "gate": "All four items are DONE when, in one commit each: (1) `bun run check:ts` exits 0; (2) the four named test files exist and each defends the contract above; (3) once the addon is built, all four test files pass; (4) for A4 the mask assertion holds BOTH before and after a submenu selection round-trip — a mask that only holds on first render is NOT done; (5) for B1 the three pinned invariants hold through the SOURCE remap branch only, and the fixture is loaded by path rather than statically imported; (6) A4-PERSIST is either shipped against the post-WI-8a write path or explicitly left out of this wave with the deferral recorded in the PR — it must never be silently folded into the display commit.\n\nThe load-bearing half of the wave is item (4). An engineer who masks at build time only will produce a green first-render test and a shipped leak on the second interaction.",
+  "gate_can_fail": "Yes. Three of the four gates are genuinely red before the work and green after. (A4) the round-trip assertion is red on a clean tree because settings-list.ts:797 reassigns `currentValue` on select, repainting the plaintext — a build-time-only mask does not turn it green. (B2) the tab-byte assertion is red because setWorkingMessage (:6645-6660) passes the plugin string to `loadingAnimation.setMessage` with zero sanitization. (B3) the hint-strip assertions are red because no such entry point exists. (B1) is the weakest gate and must be treated as such: it pins an already-working mechanism, so it is green before AND after on a clean tree. Its value is purely as a tripwire against a future refactor closing the seam — it cannot fail because of anything done in this wave, and it should not be counted as evidence that B1 accomplished work. The 'static echo' risk is real here and is why the fixture must be loaded by path: a static import would make the module-identity assertion vacuously true.",
+  "wave_tag": "4"
+ },
+ {
+  "id": "s5",
+  "title": "Sóng 5 — Người tiêu thụ đầu tiên của seam status line M2 chốt (M3-C2 + M3-D2)",
+  "wave": "M3 wave 5",
+  "one_line": "Two status-line items that are supposed to be the first consumers of the seam M2 settles: C2, a shipped-but-disabled example plugin that runs the user's own shell command and shows its output in the status row, and D2, a `cache_hit_rate` segment that reports the same hit percentage the existing `cache_hit` segment already computes, with no TTL countdown.",
+  "user_visible_effect": "C2: after `omp plugin link` plus flipping its `enabled` setting to true, the stdout of the user's own command appears once in the status row on each documented trigger; with the setting absent or false the status row is byte-identical to a session where the plugin was never loaded.",
+  "files": [
+   "packages/coding-agent/examples/extensions/user-shell-status/package.json [create,verified]",
+   "packages/coding-agent/examples/extensions/user-shell-status/index.ts [create,verified]",
+   "packages/coding-agent/test/user-shell-status-line.test.ts [create,verified]",
+   "packages/tui/src/status-line/schema.ts [modify,verified]",
+   "packages/tui/src/status-line/segments.ts [modify,verified]",
+   "packages/tui/test/status-line-cache-hit-rate.test.ts [create,verified]",
+   "packages/catalog/src/compat/rules/ [modify,verified]",
+   "packages/coding-agent/package.json [modify,verified]"
+  ],
+  "n_files": 8,
+  "depends_on": [
+   "M2-OQ3 — the three-way status-line decision (plan §7.4: prefixed union / contributor Map / mode-reads-ModeRegistry). CONDITIONAL and weaker than the plan states: see plan_corrections #4 and #5. D2 and C2 do not consume `registerStatusLineSegment` at all, so under options 2 and 3 neither is blocked.",
+   "§10 Q6 — the trust question. HARD blocker for C2 only. Unanswered as of HEAD 808b365.",
+   "M2 WI-7 (`registerMode`) only insofar as OQ3 is decided there; no code from WI-7 is imported by either item.",
+   "M3-A1 — the plan lists A1 as a C2 dependency. Not verified as a real code dependency; treat as a scheduling preference, not a build-order constraint."
+  ],
+  "blocks": [
+   "Nothing inside M3. This wave consumes a seam; it opens none. Specifically it does NOT block M3-C1, because M3-C1 no longer exists in this plan."
+  ],
+  "effort": "C2: M, ~3 days, dominated by the test checklist, not the code (a manifest, one extension file, and roughly nine distinct behaviors to pin). D2: S, ~1 day — add one union member, one registry entry, one test. Wave total ~3-4 days. The plan's S for D2 is a CONSEQUENCE of refusing the countdown, not a free estimate; do not use it as license to re-expand the cut half.",
+  "risk": "The single most likely way to get this wrong is to port the reference implementation's countdown along with its hit rate, because the two arrive together in the source being copied.",
+  "n_questions": 4,
+  "n_corrections": 13,
+  "gate": "DONE means all four of these, and each one is capable of going red on its own. (1) `bun run check:ts` exits 0 — this is the D2 compile gate, and it is genuinely load-bearing: `SEGMENTS` is an exhaustive `Record<StatusLineSegmentId, StatusLineSegment>`, so forgetting the registry entry for the new union member is a type error this catches. (2) With the native addon built, the D2 test is green including its three negative contracts: the rendered row contains no countdown and no TTL label; the new segment's rate equals `cache_hit`'s rate for identical usage; and with no usage data the segment contributes nothing. (3) With the addon built, the C2 test is green and its FIRST case is the negative-off one — no `enabled` key and `enabled: false` both produce zero spawns and a status row byte-identical to the plugin-absent baseline. (4) `git grep -n \"examples/extensions\" -- packages/coding-agent/src` still returns 0 hits. AND, for C2 only, the Q6 trust answer is written into the work item with its scope stated. If Q6 is unanswered, C2 is explicitly allowed to slip — that is the plan's own instruction, and shipping it on an unstated premise is worse than slipping.",
+  "gate_can_fail": "Yes, and specifically rather than nominally. Gate (1) goes red the moment a new id is added to the closed union without a matching `SEGMENTS` entry, because the Record is exhaustive — that is a real class of mistake with no other detector. Gate (2)'s countdown assertion goes red if anyone reintroduces a TTL, which is the single most likely way this item goes wrong, since the reference implementation it is being ported from has a countdown and the temptation is to port it. Its rate-parity assertion goes red if a second hit-rate computation is written instead of delegating, which is the other likely mistake. Its no-usage assertion goes red if the segment divides without guarding a zero denominator. Gate (3)'s negative-off case is the strongest of the four: it goes red if the extension defaults a missing `enabled` key to true, if it checks truthiness instead of `=== true`, or if the spawn is written before the gate — and because it also compares against a plugin-absent baseline, it catches the subtle version where the plugin spawns but harmlessly. Its non-exiting-command case goes red if the spawn is awaited on the render path. Gate (4) goes red if anything in src ever references the examples directory, which would silently make the plugin auto-load and destroy the inert-by-default guarantee. The one honest limitation: gates (2) and (3) cannot run until the native addon is built, so until then only gate (1) is actually enforcing anything.",
+  "wave_tag": "5"
+ },
+ {
+  "id": "s6",
+  "title": "M3-A9 — Daltonized colorBlindMode: remap the whole semantic color set, not just toolDiffAdded",
+  "wave": "Sóng 6",
+  "one_line": "Today colorBlindMode recolors exactly one token (the green in added-diff lines); this widens it to the five semantic green/red/amber tokens that actually collide for a red-green colorblind reader, remapping each to a distinct target hue band, and adds a contrast regression harness that checks every builtin theme instead of eyeballing one.",
+  "user_visible_effect": "With Color-Blind Mode on, a red-green colorblind reader can now tell added-diff lines apart from success ticks, from a clean git status, and from an error — today only added-diff lines change, so `success` and `statusLineGitClean` stay green and still read as 'added line' at a glance.",
+  "files": [
+   "packages/tui/src/theme/daltonize.ts [create,verified]",
+   "packages/tui/src/theme/loader.ts [modify,verified]",
+   "packages/coding-agent/src/modes/settings.ts [modify,verified]",
+   "packages/tui/test/daltonized-theme.test.ts [create,UNVERIFIED]",
+   "packages/tui/test/theme-contrast-harness.test.ts [create,UNVERIFIED]"
+  ],
+  "n_files": 5,
+  "depends_on": [],
+  "blocks": [],
+  "effort": "S (~1 day). The plan's M variant (~5 days) was justified by 'you must audit 99 palettes first' — that audit is DONE below and comes back clean, which removes the stated blocker for the S variant. Remaining M-only work is two hand-tuned themes, which is design parity with the reference, not a correctness fix; see open_questions.",
+  "risk": "Applying one uniform hue delta to five tokens collides them.",
+  "n_questions": 4,
+  "n_corrections": 7,
+  "gate": "Three gates, all able to fail.\n\nG1 (can fail): `bun run check:ts` exits non-zero if the DALTONIZE_TARGET_HUE indexing of `resolvedColors` does not typecheck, or if the new module violates the no-`any` / top-level-import rules. It was green at baseline, so a red is attributable to this change.\n\nG2 (can fail): the contrast-4.5 harness goes red if any of the 101 builtin themes has a remapped token that fails its paired-background ratio. This gate is expected to be the expensive one -- it will likely surface themes that were already marginal before this change, and those become the remediation list rather than a reason to lower the threshold silently.\n\nG3 (can fail, and is the one that matters): the negative-identity test goes red if the colorBlindMode branch is moved above `resolveThemeColors` (which would apply the remap to unresolved `$var` strings and change every theme regardless of the flag), if the branch is widened to a path that runs when the flag is false, or if the remap mutates shared state that leaks into the flag-off theme. All three are easy mistakes and all three are invisible in review.\n\nA gate that cannot fail would be 'the file exists' or '99 palettes were iterated' -- neither proves the remap happened or that the flag still gates it.",
+  "gate_can_fail": true,
+  "wave_tag": "6"
+ }
+]

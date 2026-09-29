@@ -1,0 +1,240 @@
+[
+ {
+  "id": "M4-6",
+  "claim": "The fix shape is taken from dsh at `packages/boot/config-editor/src/index.ts:127-129` (throw 'is overridden by a home patch or command-line overlay') and `:133-137` (byte rollback).",
+  "verdict": "WRONG — the file does not exist",
+  "correction": "There is no `packages/boot/` directory in this repo; `ls packages/` shows agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire. `grep -rn 'is overridden by a home patch' packages/` returns nothing. Do not treat the dsh rollback-by-bytes design as a citable precedent. The real in-repo precedent is `packages/coding-agent/src/cli/config-cli.ts:295-318` (handleSet), which does post-write verification via `globalValue` + `shadowingSource` and PRINTS the shadow in yellow — it does not throw and does not roll back. Reconcile against that, and note the two precedents disagree (this is open_question #2).",
+  "evidence": "`ls packages/`; `find . -type d -name config-editor` -> no results; `grep -rn 'overridden by a home patch' --include='*.ts' packages/` -> no results; `sed -n '295,318p' packages/coding-agent/src/cli/config-cli.ts`"
+ },
+ {
+  "id": "M4-6",
+  "claim": "`packages/tui/src/overlays/settings-selector.ts` has a provenance switch at lines 325-357.",
+  "verdict": "WRONG — that range is a copy-paste from config-cli.ts",
+  "correction": "settings-selector.ts:325-357 contains `#showProviderList()` (starts line 321) and `#showProviderEditor(provider)` (starts line 361). There is no provenance logic anywhere in settings-selector.ts today. The range 325-357 is byte-for-byte the range the plan gives for `shadowingSource` in config-cli.ts, so the plan duplicated one line range across two files. Nothing to preserve or lift from the tui side; the tui file's only involvement is the 13 call sites.",
+  "evidence": "`sed -n '320,400p' packages/tui/src/overlays/settings-selector.ts`; `grep -n '#showProviderList\\|#showProviderEditor' packages/tui/src/overlays/settings-selector.ts`"
+ },
+ {
+  "id": "M4-6",
+  "claim": "The 13 `settings.set(` sites are at lines 346, 390, 869, 872, 1155, 1193, 1195, 1209, 1211, 1213, 1215, 1244, 1251.",
+  "verdict": "STALE — count correct, all line numbers wrong",
+  "correction": "The count of 13 is exactly right and the ORDER matches 1:1, but the line numbers are off by +3 for the first two sites and +7 for the remaining eleven. Real lines: 349, 393, 876, 879, 1162, 1200, 1202, 1216, 1218, 1220, 1222, 1251, 1258. Use the grep output at implementation time, not the plan's numbers.",
+  "evidence": "`grep -n 'settings\\.set(' packages/tui/src/overlays/settings-selector.ts` -> 13 lines; `grep -c` -> 13"
+ },
+ {
+  "id": "M4-6",
+  "claim": "`shadowingSource` lives at `packages/coding-agent/src/cli/config-cli.ts:325-357`.",
+  "verdict": "PARTLY WRONG — start correct, end wrong, and a companion function is missing",
+  "correction": "`shadowingSource` starts at 325 (correct) but the function body ends at 360, not 357. More importantly the plan does not mention `globalValue` at config-cli.ts:318-322, which is the function you need to read the pre-write global value — i.e. the rollback primitive. Both are module-private (not in the export list) and both must move together, or the host will re-implement one of them. Lift both into the new shared module with an explicit `scope: Settings` parameter so the settings host and the CLI share one implementation.",
+  "evidence": "`grep -n 'shadowingSource\\|globalValue' packages/coding-agent/src/cli/config-cli.ts` -> 307, 318, 325; `sed -n '353,360p'` shows the closing brace at 360; `grep -n '^export' packages/coding-agent/src/cli/config-cli.ts` -> 5 exports, neither function among them"
+ },
+ {
+  "id": "M4-6",
+  "claim": "`provenance(scope)` is at `registry.ts:763-766` and the env check is at `:764`.",
+  "verdict": "MOSTLY CORRECT — off by one on the sub-anchor",
+  "correction": "The 763-766 range is right. Line 764 is the `provenance(scope: ScopeLike): SettingProvenance {` SIGNATURE; the `#effectiveEnv` check is on line 765. Use 765.",
+  "evidence": "`grep -n 'provenance(scope\\|#effectiveEnv' packages/coding-agent/src/config/registry.ts` -> 526 (definition), 538, 764, 765"
+ },
+ {
+  "id": "M4-6",
+  "claim": "`settingsOf(scope).getProvenance()` never returns 'env', so use `setting.provenance(scope)` instead.",
+  "verdict": "CONFIRMED — verified against source",
+  "correction": "Correct, and it is worth keeping as an explicit rule. `Settings.getProvenance` (settings.ts:800-808) walks `#overrides` -> `#configOverlay` -> `#project` -> `#global` -> parent and has no env branch at all; only `Setting.provenance` (registry.ts:765) layers the `#effectiveEnv` check on top. Also note the full union is six members, not five: `\"env\" | \"runtime\" | \"overlay\" | \"project\" | \"global\" | \"default\"` (settings.ts:62) — the tui mirror type must carry all six.",
+  "evidence": "`sed -n '795,815p' packages/coding-agent/src/config/settings.ts`; `sed -n '764,766p' packages/coding-agent/src/config/registry.ts`; `grep -n 'export type SettingProvenance' packages/coding-agent/src/config/settings.ts` -> line 62"
+ },
+ {
+  "id": "M4-6",
+  "claim": "The work item is 'guard all 13 sites'.",
+  "verdict": "RIGHT OBSERVATION, WRONG SEAM",
+  "correction": "The 13 sites are the right inventory, but they are the wrong place to enforce anything. All 13 are `SettingsHost.set` callers inside ONE file, and `SettingsHost.set` has exactly one production implementation — `createSettingsHost` at settings-ui.ts:77. Enforcing the guard inside that one `set` covers all 13 automatically and cannot be defeated by a future M3 panel adding a 14th. A repo-wide grep for `settings.set(` / `#settings.set(` across packages/tui returns exactly those 13 lines and nothing else. The plan's own warning about the hardcoded list being the most fragile artifact is right — the fix is to delete the list from the design, not to maintain it more carefully.",
+  "evidence": "`grep -rn 'settings\\.set(\\|#settings\\.set(' --include='*.ts' packages/tui/src/` -> 13 results, all in settings-selector.ts; `grep -rn 'SettingsHost' --include='*.ts' packages/` -> single implementor `createSettingsHost`"
+ },
+ {
+  "id": "M4-6",
+  "claim": "`SettingsHost` is a cross-package interface risk 'exactly like PluginSettingsManager'.",
+  "verdict": "CONFIRMED, with a caveat that lowers the severity",
+  "correction": "The structural-satisfaction shape is real: tui declares `SettingsHost` and coding-agent satisfies it in `createSettingsHost` (settings-ui.ts:51, imports the type at line 2), and `packages/tui/package.json` exports a wildcard `'./*' -> './src/*.ts'`, so out-of-repo implementors are possible in principle. But the grep shows only ONE production implementor in this repo. M4-6 adds a new member (additive, no signature change); M4-4 changes an existing method's RETURN TYPE, which is the genuinely breaking one. M4-6 is the lower-risk half of Wave B.",
+  "evidence": "`grep -rn 'SettingsHost' --include='*.ts' packages/`; `sed -n '80,110p' packages/tui/package.json` shows `'./*': { types: './src/*.ts', import: './src/*.ts' }`"
+ },
+ {
+  "id": "M4-6",
+  "claim": "The task context states the repo is at git HEAD 5873776.",
+  "verdict": "STALE",
+  "correction": "HEAD is 808b365 on branch milestone-1. Any other spec in this batch quoting 5873776 is off by the three most recent commits (33d6e33 'docs(m1): execution plan...', 808b365 'docs(plan): fold the spec-verified M1 execution plan...', ecd516f initial publish).",
+  "evidence": "`git rev-parse --short HEAD` -> 808b365"
+ },
+ {
+  "id": "M4-7",
+  "claim": "Plan §M4-7 'Vị trí': `packages/tui/src/chat/chat-transcript-builder.ts:446`, `:454`, `:513` — 'đường render thứ ba' (the third render path).",
+  "verdict": "WRONG FILE — the anchor does not exist",
+  "correction": "The third path is `packages/coding-agent/src/modes/utils/ui-helpers.ts:605` (`decodeStreamedToolArgs(partialJson, {...})`, under the comment 'Mid-stream rebuild (theme change, settings, focus replay)'), reaching the component constructor at :608. `git grep -n 'partialJson\\|__partialJson\\|decodeStreamedToolArgs' packages/tui/src/chat/chat-transcript-builder.ts` returns ZERO hits across all 597 lines — that file handles read-group collapsing (`readArgsCollapseIntoGroup`, `#ensureReadGroup`, `normalizeToolArgs`) and never touches the raw buffer. An implementer following the plan would wire the rebuild path into a file that has no raw-arg plumbing, and plan test (2) would be written against a seam that cannot fail.",
+  "evidence": "`git grep -n 'partialJson\\|__partialJson\\|decodeStreamedToolArgs' -- packages/tui/src/chat/chat-transcript-builder.ts` → 0 matches. `git grep -n 'decodeStreamedToolArgs' -- packages/` → the only production caller is ui-helpers.ts:605 (plus the definition at tool-args-reveal.ts:455 and the bench). `wc -l` = 597."
+ },
+ {
+  "id": "M4-7",
+  "claim": "Plan §M4-7 'Chi tiết' bước 1: 'sửa short-circuit ở `tool-execution.ts:388-394`. Early return ở `:392` nằm trên `#displayInputVersion++` ở `:394`, nên một renderer tiêu thụ raw sẽ không repaint giữa stream' — phrased as a live defect being fixed.",
+  "verdict": "MISFRAMED — the line numbers are right, the diagnosis is not",
+  "correction": "The short-circuit is correct TODAY. `displayArgsForPrefix` allocates a fresh args object on every frame where the raw prefix grew (`const rawPrefixChanged = entry.exposeRawPartialJson && prefix !== entry.displayPrefix;` at :424, then a new literal at :428), returns `changed: true`, and `#tick` only calls `updateArgs` inside `if (display.changed)` (:614-616) — so args reference identity changes exactly when the raw prefix grew, and `#displayInputVersion++` does fire. The early return at :392 is sound. It becomes UNSOUND only as a consequence of step 2: once `rawArgs` is a side channel, the decoded args can be reference-identical while `rawArgs.json` grew, and the guard would swallow the frame. So step 1 is not a bug fix, it is the guard-rail that makes step 2 safe — which is why the ordering is load-bearing. The plan's own text ('nhưng phải tiến version khi chỉ phần tiền tố raw đổi') states the right requirement; only the framing as a pre-existing defect is wrong, and the comment at :388-391 ('Callers always allocate a new arg object on each streamed delta') becomes false at exactly the moment step 2 lands and must be rewritten, not preserved.",
+  "evidence": "tool-args-reveal.ts:424 `const rawPrefixChanged = entry.exposeRawPartialJson && prefix !== entry.displayPrefix;`; :427-429 fresh literal + `changed: true`; :613-616 `const display = displayArgsForPrefix(...); if (display.changed) { entry.component.updateArgs(display.args, id); ... }`. tool-execution.ts:392 `if (args === this.#args) return;` sits above :394 `this.#displayInputVersion++;`, and :800 confirms the version feeds the repaint key."
+ },
+ {
+  "id": "M4-7",
+  "claim": "Plan §M4-7 'Chi tiết' bước 2: 'sửa hai adapter ở `wrapper.ts:59-64` và `sdk.ts:1217-1223` để forward toàn bộ options object thay vì object literal' — implying both renderCall and renderResult are narrowed at both sites.",
+  "verdict": "RIGHT DIAGNOSIS, INCOMPLETE SCOPE — and the plan names two dropped fields where there are four",
+  "correction": "Only `renderResult` narrows. `wrapper.ts:55-57` forwards `options` wholesale to `renderCall` (`registeredTool.definition.renderCall!(args, options, theme as Theme)`), and `sdk.ts:1213` is the bare reference `renderCall: tool.renderCall` with no wrapper at all. An implementer who 'fixes both adapters symmetrically' will churn the renderCall halves for nothing and, worse, may add a narrowing cast there, breaking the one path that currently works. Separately: the adapters drop FOUR fields, not the two the plan names. Besides `argsComplete` and `executionStarted` they also drop `renderContext`, which `#rebuildDisplay` sets at tool-execution.ts:959 (custom branch) and :1121 (built-in branch) and which `RenderResultContextOptions` (renderer.ts:30, consumed at :75) exists to carry. Built-in renderers receive it; extension renderers never have. So the drift is broader than the plan states, and the fix repairs a third live bug for free.",
+  "evidence": "`sed -n '54,66p' packages/coding-agent/src/extensibility/extensions/wrapper.ts` — :55-57 renderCall passes `options` directly, :59-65 renderResult rebuilds. `sed -n '1213,1223p' packages/coding-agent/src/sdk.ts` — `renderCall: tool.renderCall` bare, narrowing literal at :1217. `git grep -n 'renderContext' -- packages/coding-agent/src/extensibility/` → 0 hits (the extension surface has no notion of it). `git grep -n RenderResultContextOptions -- packages/` → only renderer.ts:30 and renderer.ts:75."
+ },
+ {
+  "id": "M4-7",
+  "claim": "Plan §M4-7 'Vị trí': `packages/coding-agent/src/extensibility/extensions/types.ts:581-588` for `ToolRenderResultOptions`, consumed at `:661` (`renderCall`) and `:664` (`renderResult`).",
+  "verdict": "STALE BY ~25 LINES",
+  "correction": "`ToolRenderResultOptions` is at types.ts:606-613 (doc comment :605), not 581-588. The consumption sites are types.ts:686 (`renderCall?: (args, options: ToolRenderResultOptions, theme) => Component`) and types.ts:691 (`renderResult?: (result, options, theme, args?) => Component`), not :661/:664. The plan's substantive claim survives intact — VERIFIED that the interface declares only `expanded`, `isPartial` and `spinnerFrame`, and is genuinely missing both `argsComplete` and `executionStarted` that `RenderResultOptions` (renderer.ts:10-27) has carried. Only the line numbers need correcting.",
+  "evidence": "`sed -n '605,614p' packages/coding-agent/src/extensibility/extensions/types.ts` → the interface verbatim. `git grep -n 'ToolRenderResultOptions' -- packages/` → types.ts:606 (declaration), :686, :691 (uses). `sed -n '10,27p' packages/tui/src/tools/renderer.ts` → `RenderResultOptions` with `argsComplete?` at :19 and `executionStarted?` at :24."
+ },
+ {
+  "id": "M4-7",
+  "claim": "Plan §M4-7 'Rủi ro' (1): 'Sáu file test trỏ tới chuỗi literal.'",
+  "verdict": "VERIFIED EXACTLY",
+  "correction": "Confirmed — exactly six test files reference `__partialJson`. Carried forward unchanged, with the caveat that under the recommended branch of open question 1 (rename only the inner xdev key) none of the six need editing, because all six assert on the OUTER key. The plan's stated expectation that they 'được kỳ vọng phải cập nhật' therefore only holds under the outer-rename branch. Whatever branch is taken, the plan's warning stands: read each assertion and confirm it still describes real behaviour — a test pinning 'the renderer receives a raw prefix' must not be silently inverted into 'the renderer receives inner args'.",
+  "evidence": "`git grep -n '__partialJson' -- packages/*/test/` → packages/coding-agent/test/modes/controllers/event-controller-args-reveal.test.ts (:140,:141,:183), packages/coding-agent/test/tool-args-reveal.test.ts (:34,:36,:260), packages/coding-agent/test/tools/edit-renderer.test.ts (:53,:417), packages/tui/test/bash-render.test.ts (:57), packages/tui/test/json-tree-render.test.ts (:32), packages/tui/test/tool-execution-custom-repaint.test.ts (:23,:88,:98,:144,:161). All six read rendered output or live object state — none source-greps an implementation file, so all six remain legal under AGENTS.md."
+ },
+ {
+  "id": "M4-7",
+  "claim": "Plan §M4-7 'Phụ thuộc': the only remaining constraint is a surface-ordering constraint against M2 WI-4b, and M4-7 must not open its PR before WI-4b is written into §11 and agreed.",
+  "verdict": "VERIFIED — no build-level coupling, ordering rule confirmed",
+  "correction": "Confirmed by inspection: `git grep -n 'packages/tui/src/tools/renderer-registry'` finds no such file, and no M4 work item other than this one touches `packages/tui/src/tools/`. The constraint is genuinely advisory ordering, not build coupling — this item can be implemented and reviewed independently, but its PR must not merge ahead of a reviewed WI-4b. Also confirmed independently by the plan's own gating text: Wave C is `shippable: false` (§6.3) and §6.2 states no M4 wave ships before the single M4 changelog decision covering Waves B, C and D.",
+  "evidence": "`ls packages/tui/src/tools/` shows no renderer-registry.ts. Plan line 7958-7960: 'Wave C — Hợp đồng render … Shippable: false … Chờ cùng cửa changelog của M4 (mục 6.2)'."
+ },
+ {
+  "id": "M4-4",
+  "claim": "Chi tiết (b): 'Bọc #saveRuntimeConfig trong withFileLock và đọc lại config bên trong lock' — wrap the existing save in the lock and re-read inside it.",
+  "verdict": "WRONG — implementing this literally drops 100% of writes",
+  "correction": "The mutation must move INSIDE the locked section as a callback. All nine call sites mutate the memoized `this.#runtimeConfig` before calling save (verified: setEnabled 874-881 does `config.plugins[name].enabled = enabled;` then saves). Re-reading inside the lock and writing the re-read result discards the caller's just-applied mutation. The correct shape is a single `#mutateConfig(mutate, application)` helper that does read → apply callback → diff → write entirely inside `withFileLock`, and every one of the nine sites changes shape. There is no version of this change where the existing call sites survive intact.",
+  "evidence": "sed -n '874,881p' packages/coding-agent/src/extensibility/plugins/manager.ts and sed -n '130,151p' of the same file — the mutate-then-save ordering is present at every site, and #ensureConfigLoaded (141-146) is what hands out the shared object."
+ },
+ {
+  "id": "M4-4",
+  "claim": "`packages/boot/plugin-manager/src/types.ts:111-114` models the ChangeResult type, `packages/boot/plugin-manager/src/index.ts:772/774/787` is the execution precedent, and `packages/boot/config-editor/src/index.ts:127-129` is the rollback precedent.",
+  "verdict": "NOT IN THIS REPO — external reference only",
+  "correction": "`packages/boot/` does not exist here. `ls packages/` returns: agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire. All three are citations to the upstream/reference project (dsh). Legitimate as design precedent, but the engineer must not spend time hunting for them locally, and the ChangeResult type must be defined from scratch in this repo rather than copied.",
+  "evidence": "ls packages/ — no `boot` entry. Verified against the current tree at HEAD 808b365."
+ },
+ {
+  "id": "M4-4",
+  "claim": "`restart-required` is asserted by the test, and `setEnabled` should report it 'when there is no HMR path'.",
+  "verdict": "UNDERSPECIFIED — no HMR path is a partial reload, and the type has zero referents",
+  "correction": "`restart-required` does not appear anywhere in the repo (0 hits). And the settings overlay's reload is demonstrably partial: settings-selector.ts:1329 → selector-controller.ts:305-312 calls clearPluginRootsAndCaches, refreshSkillState, refreshSlashCommandState and resetCapabilities, but NOT `refreshAgentDiscovery` — which the real `reloadPlugins` does at acp-agent.ts:2167. So the honest answer for the current overlay path is 'partially applied', and the binary `applied | restart-required` cannot express it. This is a human decision, not an implementation detail. See open question 1.",
+  "evidence": "git grep 'restart-required' → 0 hits; sed -n '303,312p' packages/coding-agent/src/modes/controllers/selector-controller.ts vs sed -n '2163,2169p' packages/coding-agent/src/modes/acp/acp-agent.ts."
+ },
+ {
+  "id": "M4-4",
+  "claim": "`PluginSettingsMarketplaceManager.setPluginEnabled` is the fourth mutator, also in this overlay package.",
+  "verdict": "MISLEADING — different class, different file, not a lockfile writer",
+  "correction": "It is implemented by `MarketplaceManager` at packages/coding-agent/src/extensibility/plugins/marketplace/manager.ts:686, not by `PluginManager`, and it writes the marketplace registry via `atomicWriteJson`, never through `#saveRuntimeConfig`. It is not one of the nine writers. It only shares the tui overlay package, so widening its return type is an independent breaking decision.",
+  "evidence": "git grep -n setPluginEnabled — implementation at marketplace/manager.ts:686; the nine `#saveRuntimeConfig` call sites are all in manager.ts and none is reachable from it."
+ },
+ {
+  "id": "M4-4",
+  "claim": "Trích `atomicWriteJson` from `marketplace/registry.ts:44-70`.",
+  "verdict": "OFF BY ONE at the end",
+  "correction": "The function spans 44-71. Line 70 closes the inner catch; line 71 is the function's closing brace. Delete through 71.",
+  "evidence": "grep -n 'async function atomicWriteJson' → 44; sed -n '70,72p' shows `\\t}` then `}` then blank."
+ },
+ {
+  "id": "M4-4",
+  "claim": "Kiểm bề mặt export wildcard `packages/tui/package.json:93-96` trước khi ship.",
+  "verdict": "OFF BY ONE",
+  "correction": "The `./*` wildcard export block is at lines 94-97.",
+  "evidence": "grep -n '\"\\./\\*\"' packages/tui/package.json → 94; sed -n '88,100p' shows the block opening at 94 with types/import on 95-96 and the closing brace on 97. The conclusion the plan draws (PluginSettingsManager is reachable by external consumers) still holds."
+ },
+ {
+  "id": "M4-4",
+  "claim": "M3-A4's evidence is `grep -c secret manager.ts` → 0.",
+  "verdict": "ALREADY 0 AT BASELINE — it is a regression guard, not evidence",
+  "correction": "The count is 0 right now on HEAD 808b365, so it cannot distinguish 'M3-A4 landed' from 'M3-A4 never existed'. Keep it as a guard this PR must not break, but do not read it as a statement about M3-A4's state. The genuine collision is that both patches rewrite setPluginSetting at 942-949 — that claim is CORRECT and independently verified.",
+  "evidence": "`grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` → 0. The 942-949 range is confirmed by `async setPluginSetting` at 942 and `await this.#saveRuntimeConfig();` at 948."
+ },
+ {
+  "id": "M4-4",
+  "claim": "Lệnh: `bun test packages/coding-agent/test/ && bun check`.",
+  "verdict": "INSUFFICIENT AND WILL NOT RUN AS WRITTEN",
+  "correction": "`bun test` reports 0 pass until the native addon is built, and this item makes that worse than a general problem: `withFileLock` itself imports `FileLock` from `@oh-my-pi/pi-natives` at file-lock.ts:9, so the code under test is now directly addon-dependent. Add `bun --cwd=packages/natives run build` as step 0. Also prefer `bun run check:ts` over `bun check` for the TS gate — `bun check` fans out to check:rs as well, and the Rust toolchain is a separate concern from this item.",
+  "evidence": "Ran `bun test packages/utils/test/file-lock.test.ts` → '0 pass, 1 fail', 'Failed to load pi_natives native addon for darwin-arm64'. `find packages/natives -name '*.node'` → empty. `bun run check:ts` → clean across all 16 packages."
+ },
+ {
+  "id": "M4-4",
+  "claim": "Nine call sites, with the first seven being public mutators (install / uninstall / link / setEnabled / setEnabledFeatures / setPluginSetting / deletePluginSetting).",
+  "verdict": "VERIFIED — and one caller is missing from the plan",
+  "correction": "All nine line numbers reproduce exactly: 668 (install), 724 (uninstall), 855 (link), 880 (setEnabled), 919 (setEnabledFeatures), 948 (setPluginSetting), 958 (deletePluginSetting), 1221 (#removeInvalidFeature), 1231 (#removeOrphanedConfig). What the plan misses is the CONSUMER side: `packages/coding-agent/src/cli/plugin-cli.ts` calls setEnabledFeatures (:761), setPluginSetting (:906), deletePluginSetting (:917) and setEnabled (:1038). All four are bare `await manager.x(...)`, so they compile unchanged after the widening — which means the new return value is silently discarded outside the TUI unless this PR also surfaces it there.",
+  "evidence": "git grep -n 'saveRuntimeConfig' (9 hits, all as listed); git grep -n '\\.setEnabled(|\\.setEnabledFeatures(|\\.deletePluginSetting(|\\.setPluginSetting(' across packages/ excluding tests."
+ },
+ {
+  "id": "M4-4",
+  "claim": "`withFileLock` at `packages/utils/src/file-lock.ts:70` — đã xác nhận có mặt; cross-process by construction (abstract Unix socket / named mutex / flock).",
+  "verdict": "VERIFIED EXACTLY",
+  "correction": "Nothing to correct. `export async function withFileLock<T>` is at line 70; the doc comment at lines 1-6 says verbatim 'Linux uses abstract Unix sockets, Windows uses named mutexes, and other Unix platforms use `flock(2)` on `${filePath}.lock`' — the plan's paraphrase is accurate. Recording this as confirmed because the plan's central safety claim rests on it: a test asserting mutual exclusion between two instances in one process is a valid exercise of this lock, because contention is on the OS handle, not on JS-level state.",
+  "evidence": "Read of packages/utils/src/file-lock.ts in full (100 lines); existing precedent tests at packages/utils/test/file-lock.test.ts and packages/utils/test/fixtures/file-lock-holder.ts."
+ },
+ {
+  "id": "M4-9",
+  "claim": "`packages/coding-agent/src/modes/components/extensions/state-manager.ts:69` (`loadAllExtensions`)",
+  "verdict": "CONFIRMED",
+  "correction": "None. Line 69 is `export async function loadAllExtensions(cwd?: string, disabledIds?: string[]): Promise<Extension[]>`.",
+  "evidence": "`sed -n '55,130p' packages/coding-agent/src/modes/components/extensions/state-manager.ts` — the signature appears immediately after the `Load all extensions from all capabilities.` doc comment."
+ },
+ {
+  "id": "M4-9",
+  "claim": "`shadowedBy` is read at `state-manager.ts:103` and no `addItems` call site passes `getShadowedBy`, so it is always `undefined` (repo-wide grep returns exactly 2 hits: the type declaration and the read).",
+  "verdict": "CONFIRMED — this is the plan's central claim and it holds exactly.",
+  "correction": "None. The escape criterion the plan set for option (a) is real: naming a shadow source is genuinely impossible without new code, so effort S really is optimistic for (b) and really is cheap for (a). Carry this forward with confidence.",
+  "evidence": "`git grep -n 'getShadowedBy' -- packages/` returns exactly 2 lines: state-manager.ts:81 (`getShadowedBy?: (item: T) => string | undefined;`) and state-manager.ts:103 (`shadowedBy: opts?.getShadowedBy?.(item),`). `git grep -n 'addItems' -- packages/` shows the 6 call sites at :116, :127, :138, :149, :209, :220, none of which passes the option. Corroborated downstream: the TUI's `isShadowedExtension` and the 'Shadowed by X' renderer at inspector-model.ts:466-482 already handle the field, so a string that never arrives is consistent with observed behavior."
+ },
+ {
+  "id": "M4-9",
+  "claim": "The root cause is `packages/coding-agent/src/capability/index.ts:247` and `:271`, where `item._shadowed = true` is assigned as a bare boolean and the winner is discarded.",
+  "verdict": "CONFIRMED, with a material addition the plan omits.",
+  "correction": "The two `_shadowed = true` sites are exactly at :247 and :271 as claimed — but recovering the winner requires THREE more edits the plan does not mention, or the fix compiles and silently does nothing. (i) `seen` is declared `const seen = new Set<string>()` at :228 — keys only, no item reference, so the `keySeen` branch at :242/:264 has nothing to name. It must become a `Map<string, T & { _source: SourceMeta }>`, with `seen.add(key)` at :255 and :265 becoming `seen.set(key, item)`. (ii) `aliasSeen` is computed with `deduped.some(...)` at :246 and :269, which returns a boolean, not the matching element — both must become `.find(...)`. (iii) the inline intersection types at index.ts:144, :145, :146, :211, :218 and the public one at types.ts:165 all declare `_shadowed?: boolean` and must gain the new field, or the assignment does not type-check. An engineer following the plan literally produces code that passes `bun run check:ts` and reports `undefined` forever.",
+  "evidence": "`grep -n 'seen = new Set<string>\\|deduped.some\\|seen.has(key)\\|seen.add(key)\\|_shadowed = true' packages/coding-agent/src/capability/index.ts` → 228, 242, 243, 246, 247, 255, 264, 265, 266, 269, 271, 273. `sed -n '274,320p'` confirms the survivor path at :273. `sed -n '150,180p' packages/coding-agent/src/capability/types.ts` confirms `all: Array<T & { _source: SourceMeta; _shadowed?: boolean }>` at :165. Also confirmed by the same grep: `return { items: deduped, all: ...allItems }` at :290-295 — shadowed items are excluded from `items` but ARE present in `all`, which is what `loadAllExtensions` reads. So shadowed rows really do reach the CLI with `state: \"shadowed\"`."
+ },
+ {
+  "id": "M4-9",
+  "claim": "`packages/coding-agent/src/modes/acp/acp-agent.ts:1189-1196` (route `_omp/extensions`)",
+  "verdict": "NEARLY CONFIRMED — off by one at the end.",
+  "correction": "The `case \"_omp/extensions\":` block is lines 1189-1195. Line 1196 is `case \"_omp/extensions/toggle\":`, the NEXT route. Use 1189-1195. More importantly, the block is load-bearing beyond the plan's use of it: lines 1191-1193 are `const sm = await Settings.init(); const disabledIds = cfgDisabledExtensions.get(sm);` and they are the exact runtime-vs-CLI parity the new command must copy. The plan cites this route only as the place the data is already exposed; an engineer who skims it will miss the mirroring requirement and ship a CLI that under-reports every item-level disable.",
+  "evidence": "`sed -n '1189,1196p' packages/coding-agent/src/modes/acp/acp-agent.ts | cat -n` → 1189 case, 1190 cwd, 1191 Settings.init, 1192 cfgDisabledExtensions.get, 1193 loadAllExtensions(cwd, disabledIds), 1194 return, 1195 closing brace, 1196 next case. Imports confirmed at :48 (`Settings`) and :88 (`cfgDisabledExtensions`)."
+ },
+ {
+  "id": "M4-9",
+  "claim": "Command: `bun check && bun test packages/coding-agent/test/ -t 'acp'`. Testing: a snapshot/CSV test on a fixture tree with a shadowed extension.",
+  "verdict": "WRONG on both counts.",
+  "correction": "The test command is vacuous for this work item. `bun test -t <pattern>` filters by TEST NAME, not by filename — the existing acp tests are named after `describe(\"ACP agent\")` (packages/coding-agent/test/acp-agent.test.ts:556), which is why `-t 'acp'` catches them. A new extensions-triage test will not be named 'acp', so this command runs none of the new code and goes green on a completely broken implementation. Replace it with `bun test packages/coding-agent/test/extensions-triage-cli.test.ts`. Separately, `bun check` runs `check:ts` AND `check:rs`; in the current environment the Rust half and `bun test` are both blocked by the unbuilt native addon, so `check:ts` is the honest gate until the addon is built. On the test style: AGENTS.md bans 'wording/defaults' assertions and snapshot-of-a-fixture tests, and demands the test defend a NAMED observable contract. So: do not snapshot the CSV/text. Assert the transformation — one row per extension keyed by id, states drawn from the real union, a shadowed row present, a policy-disabled row carrying a non-empty `disabledReason`. Text formatting is not a defended contract and asserting it would be a banned wording test.",
+  "evidence": "`grep -n 'describe(' packages/coding-agent/test/acp-agent.test.ts` → :556 `describe(\"ACP agent\")`, :2832, :3437 — names, not filenames. `grep -n '\"check\"\\|\"check:ts\"\\|\"test\"' package.json` → :89 test, :93 check, :94 check:ts. No `pi_natives` `.node` artifact found under the tree, matching the reported addon failure."
+ },
+ {
+  "id": "M4-9",
+  "claim": "New file `packages/coding-agent/src/cli/extensions-triage-cli.ts` + register it in the coding-agent command registry.",
+  "verdict": "INCOMPLETE — under-specifies the file set by two.",
+  "correction": "The registry does not load `-cli.ts` modules. `cli-commands.ts:99` shows the shape: `load: () => import(\"./commands/config\").then(m => m.default)`. A new command needs THREE files plus one registry entry: (1) `src/cli/extensions-triage-cli.ts` — the implementation; (2) `src/commands/extensions-triage.ts` — the thin `Command` subclass that `export default`s it, matching the 49 existing wrappers; (3) an `extensionsTriageHelp` entry in `src/cli/command-help.ts` in the `{ description } satisfies CommandMetadata` form; (4) the `CommandEntry` in `src/cli-commands.ts`. Building only the file the plan names yields a module nothing routes to — and because a missing registry entry makes `runCli` fall through and forward the argv to the LLM as a prompt (the #1496 regression documented in that file's own header), the command would appear to work in a demo and misbehave in real use.",
+  "evidence": "`sed -n '1,60p' packages/coding-agent/src/cli-commands.ts` and `grep -n -A4 'name: \"config\"'` → :98-101. `cat packages/coding-agent/src/commands/config.ts` shows the full wrapper→impl→helpHelp chain. `ls packages/coding-agent/src/commands/` → 49 modules; `sed -n '1,40p' packages/coding-agent/src/cli/command-help.ts` and `git grep -n -A6 'interface CommandMetadata' packages/utils/src/cli.ts` (:136-142) confirm the help shape."
+ },
+ {
+  "id": "M4-9",
+  "claim": "Stated environment: git HEAD 5873776.",
+  "verdict": "STALE — the actual HEAD is 808b365.",
+  "correction": "The working tree is at 808b365 ('docs(plan): fold the spec-verified M1 execution plan into the upgrade plan'), on branch milestone-1. Every anchor in this spec was verified against 808b365, not 5873776. If a different commit was intended, re-verify before implementing — the anchors are correct for 808b365 only.",
+  "evidence": "`git rev-parse --short HEAD` → 808b365; `git status` shows only the untracked `.lavish-wip/` directory, so the tree is clean at that commit."
+ },
+ {
+  "id": "M4-9",
+  "claim": "Dependency: 'M2 WI-2 (post-sort) merged'.",
+  "verdict": "CONFIRMED as unmet — stated as a precondition, not a satisfied fact.",
+  "correction": "WI-2 is not in the tree, so M4-9 is currently NOT startable. The plan lists it as a dependency but a reader could easily assume it had landed. Make the gate explicit in step 2 rather than a background assumption. WI-2's own deliverable is the file `packages/coding-agent/test/extension-load-order-determinism.test.ts` (per plan line 6815), which is the cheapest thing to poll.",
+  "evidence": "`ls packages/coding-agent/test/extension-load-order-determinism.test.ts` → No such file or directory. `git grep -n 'extension-load-order' packages/coding-agent/` → 0 hits. Plan :6815 names that exact file as 'tệp mới của WI-2'."
+ },
+ {
+  "id": "M4-9",
+  "claim": "(Implicit) `shadowedBy` is one field with one meaning.",
+  "verdict": "MISLEADING — the name is overloaded across three unrelated subsystems.",
+  "correction": "Before touching this, know that `shadowedBy` already means two other things in this codebase and neither is the capability-shadowing the plan is about: marketplace plugin summaries use `shadowedBy?: \"project\"` (packages/coding-agent/src/extensibility/plugins/marketplace/types.ts:196, documented at :188) rendered by builtin-marketplace.ts and plugin-settings.ts; and the internal user-config protocol uses `shadowedBy?: string` to mean 'your user config is overridden by your project config' (packages/coding-agent/src/internal-urls/cfg-protocol.ts:83, rendered at interactive-mode.ts:5970-5971). Only the tui extensions `Extension.shadowedBy` is the one this item is about. Conflating them is the easiest mistake in this file and would produce an inventory that reports plugin-scope shadowing as if it were capability shadowing.",
+  "evidence": "`git grep -rn 'shadowedBy' -- packages/` returns 35 hits across six distinct subsystems; the three cited above are at marketplace/types.ts:196, cfg-protocol.ts:83, and tui/overlays/extensions/types.ts:68 respectively."
+ }
+]

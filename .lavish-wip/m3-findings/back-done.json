@@ -1,0 +1,101 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 16, hàng tail2, cột \"bằng chứng cụ thể\"",
+  "claim": "\"Hai chân (2) và (3) đã chạy với đầu vào cố tình sai\" — tức khẳng định `python3 .lavish-wip/assemble-m3.py` đã từng chạy và đã từng bị ném cố tình sai. Cột điều kiện cũng viết `check-anchors.mjs` \"exit 0 **và đã từng thấy exit 1**\".",
+  "why_wrong": "Không có script nào trong hai cái đó tồn tại. `find` toàn cây (loại node_modules) trả về 0 kết quả cho cả `check-anchors*` lẫn `assemble-m3*`. `.lavish-wip/` có `assemble-m1.py` và `assemble-m2.py` — tức M1 và M2 đã có script lắp ghép, riêng M3 thì chưa viết gì. `.lavish-wip/m3-md/` chỉ có 6 file .md và thư mục `sections/`. Vậy một lần chạy nào cũng không thể xảy ra. Đây đúng loại \"trình bày như đã kiểm chứng mà thật ra không\" mà 90-back3.md tự đặt mục tiêu chặn: nó biến cổng tự kiểm neo của chính back matter thành bằng chứng đã chạy, trong khi bộ máy tự kiểm ấy chưa tồn tại.",
+  "evidence": "cd /Users/tranquangdang21/Projects/ultraworkers && find . -path ./node_modules -prune -o \\( -name 'check-anchors*' -o -name 'assemble-m3*' \\) -print  →  (không in gì)\n$ ls .lavish-wip/assemble-m*.py\n.lavish-wip/assemble-m1.py\n.lavish-wip/assemble-m2.py\n$ ls .lavish-wip/m3-md/\n00-front.md  90-back1a.md  90-back1b.md  90-back2a.md  90-back2b.md  90-back3.md  sections/",
+  "fix": "Thay cột bằng chứng của hàng tail2 bằng: \"Chưa script nào tồn tại: `find` toàn cây không ra `check-anchors.mjs` lẫn `assemble-m3.py` (`.lavish-wip/` mới chỉ có `assemble-m1.py`/`assemble-m2.py`) — chân (1) và (2) phải được dựng ra rồi mới chứng minh được là không tự thỏa. Chỉ G4 (9) và G5 (`left=7`) là đã đo thật và đã đỏ sẵn.\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 16, hàng tail2, cột \"điều kiện phải đúng\"",
+  "claim": "\"…trả 0 và **dạng chưa sửa không xuất hiện trong 90-back1.md/90-back2.md**\"",
+  "why_wrong": "Điều kiện này SAI ngay trên cây hiện tại và không bao giờ có thể xanh. Dạng chưa sửa `mock.module` (không ngoặc) xuất hiện 6 lần trong chính hai phần back matter đó: 1 lần ở 90-back1a.md và 5 lần ở 90-back2a.md. Nguyên nhân là bảng corrections — 90-back2a.md:46 ghi rõ \"Trùng tail1-2\" và 90-back2a.md:100/120 dán nguyên văn hai lệnh sai để giải thích vì sao phải sửa. Tức dạng chưa sửa xuất hiện đúng ở chỗ DUY NHẤT nó được phép xuất hiện. Người đọc sẽ đi săn một lần copy-paste từ §7 mà không tồn tại, và muốn xanh cổng thì phải xoá chính bảng corrections mà 90-back3.md đòi hỏi. Đây là dạng cổng tự tát theo chiều ngược lại với G4.",
+  "evidence": "cd /Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md\n$ grep -c \"mock\\.module\" 90-back1a.md 90-back1b.md 90-back2a.md 90-back2b.md\n90-back1a.md:1\n90-back1b.md:0\n90-back2a.md:5\n90-back2b.md:0\n$ grep -n \"mock\\.module\" 90-back1a.md 90-back2a.md | cut -c1-100\n90-back1a.md:5:1. **Cổng xanh mà không kiểm chứt gì.** …\n90-back2a.md:24:| tail1-2 · §7.1 G10 | \"grep -rn 'mock.module' … trong diff phải t…\n90-back2a.md:46:| tail2-2 | §11 clause 10 và §7 gate G10: `grep -rn 'mock.module' …\n90-back2a.md:77:Hai cổng trong §7.1 viết sai theo cách tự tát: G10 grep `mock.modu…\n90-back2a.md:100:- **tail1-2** — `grep -rn 'mock.module' packages/coding-agent/te…\n90-back2a.md:120:- **tail2-2** — `git grep -rn 'mock.module' packages/coding-agent…",
+  "fix": "Thay mệnh đề trong cột điều kiện bằng: \"…trả 0, và dạng chưa sửa **không được dùng làm cổng** ở 90-back1.md/90-back2.md — dạng đó được trích dẫn trong bảng corrections là đúng (hôm nay 6 hit: 90-back1a.md ×1, 90-back2a.md ×5) và đó là chỗ duy nhất nó được phép xuất hiện.\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 15, hàng tail1, cột bằng chứng",
+  "claim": "\"G5 `left=7 kept=3` (**cần `left=0`**)\"",
+  "why_wrong": "Cổng G5 của bản kế hoạch là hai chiều: `[ \"$left\" -eq 0 ] && [ \"$kept\" -eq 3 ]`. 90-back3.md chỉ giữ một nửa. Mất `kept=3` nghĩa là mất đúng tai nạn G5 sinh ra để chặn: xoá nhầm 3 site inline ảnh. Bản kế hoạch nói thẳng \"`kept` < 3 nghĩa là đã xoá nhầm site inline ảnh… Một cổng chỉ kiểm một chiều sẽ bỏ sót đúng tai nạn mà nó sinh ra để chặn\" (dòng 9027). Với điều kiện đã ghi, một người triển khai xoá sạch 3 site `event.toolName === \"read\"` vẫn xanh cổng.",
+  "evidence": "$ sed -n '9024p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md\n[ \"$left\" -eq 0 ] && [ \"$kept\" -eq 3 ] && echo 'G5 XANH' || echo 'G5 DO'\n$ sed -n '9027p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md  (trích: \"nó **đỏ theo cả hai chiều**: `left` vẫn > 0 …; `kept` < 3 nghĩa là đã xóa nhầm site inline ảnh\")\n$ (chạy lại khối G5 của kế hoạch từ repo root) → left=7, kept=3   ✓ khớp số đo trong tài liệu",
+  "fix": "Thay \"G5 `left=7 kept=3` (cần `left=0`)\" bằng: \"G5 `left=7 kept=3` (cần `left=0` **và** `kept=3`; `left>0` là sót site membership, `kept<3` là đã xoá nhầm site inline ảnh — cổng phải đỏ được theo cả hai chiều)\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 8, hàng S2, cột bằng chứng",
+  "claim": "\"`grep -rn 'wheel \\* [0-9]' packages/tui/src` → 0 hit; `grep -rn 'delta \\* 3' packages/tui/src` → 0 hit\"",
+  "why_wrong": "Lệnh G4 đúng của bản kế hoạch có ba phần mà 90-back3.md bỏ mất một: nó quét `event\\.wheel \\* [0-9]` **và** `delta \\* [0-9]`, rồi loại `^packages/tui/src/mouse-wheel\\.ts:`. Hai hậu qua: (1) mất bộ lọc `mouse-wheel.ts` — đó chính là module M3-A3 tạo ra, nên khi A3 làm đúng và viết bảng gia tốc trong đó, cổng vẫn đỏ vĩnh viễn và người đọc đi săn một vi phạm không có; (2) thu hẹp `delta \\* [0-9]` thành `delta \\* 3` nên một site `delta * 2` tương lai sẽ lọt qua cổng. Bản kế hoạch đã cảnh báo đúng cái bẫy thứ hai: \"Lệnh rộng hơn … bắt được nó — nhưng lại **không** bắt `usage-dashboard.ts:753` … Chỉ khi ghép **cả hai** mẫu mới đủ 9.\"",
+  "evidence": "$ sed -n '8991p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md\n{ grep -rn \"event\\.wheel \\* [0-9]\" packages/tui/src --include='*.ts'; grep -rn \"delta \\* [0-9]\" packages/tui/src --include='*.ts'; } | grep -v \"^packages/tui/src/mouse-wheel\\.ts:\" | wc -l  = 0 sau khi đổi (9 hôm nay)\n$ (chạy đúng lệnh trên từ repo root) → 9\n$ ls packages/tui/src/mouse-wheel.ts → không tồn tại (module A3 sẽ tạo)\n$ grep -rn 'delta \\* 3' packages/tui/src → 1 hit (packages/tui/src/apps/git/sidebar.ts:897)",
+  "fix": "Thay hai lệnh trong cột bằng chứng của S2 bằng: \"`{ grep -rn 'event\\.wheel \\* [0-9]' packages/tui/src --include='*.ts'; grep -rn 'delta \\* [0-9]' packages/tui/src --include='*.ts'; } | grep -v '^packages/tui/src/mouse-wheel\\.ts:' | wc -l` → 0 hit (hôm nay **9**). Phải loại `mouse-wheel.ts` vì đó chính là module A3 tạo ra; và phải quét `delta \\* [0-9]`, không phải `delta \\* 3`, nếu không một site `delta * 2` sẽ lọt.\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 27, mục \"Những điều chưa được kiểm chứng\"",
+  "claim": "\"Bộ neo đã trôi sẵn 13 chỗ so với bản kế hoạch (**cả 7 neo `* 3` lệch +1 đến +13**; `usage-dashboard.ts:753` thực ra là 759)\"",
+  "why_wrong": "Cận dưới của khoảng sai. Bảy neo `* 3` lệch: +1, +2, **−1**, +13, +4, +1, +1. `plan-review-overlay.ts` là neo duy nhất lệch theo chiều ngược — kế hoạch ghi 581, cây thật là 580. Khoảng đúng là −1 đến +13, không phải +1 đến +13. Câu này nằm trong mục \"Điểm chưa chắc, gọi thẳng tên\", tức đúng chỗ người đọc dùng nó để biết mức độ tin cậy của bộ neo — một cận dưới sai khiến bộ neo trông đều hơn nó thật.",
+  "evidence": "$ for f in overlays/agent-transcript-viewer overlays/copy-selector overlays/plan-review-overlay overlays/rewind-selector apps/git/git-tui apps/debug/raw-sse apps/debug/log-viewer; do printf \"%-45s \" \"$f\"; grep -n 'event\\.wheel \\* 3' packages/tui/src/$f.ts | cut -d: -f1; done\noverlays/agent-transcript-viewer              470\noverlays/copy-selector                        214\noverlays/plan-review-overlay                  580   <-- kế hoạch ghi 581 ⇒ lệch −1\noverlays/rewind-selector                      245\napps/git/git-tui                              697\napps/debug/raw-sse                            168\napps/debug/log-viewer                         639\n(số trong ngoặc của bản kế hoạch: 469/212/581/232/693/167/638)",
+  "fix": "Thay \"(cả 7 neo `* 3` lệch +1 đến +13\" bằng: \"(cả 7 neo `* 3` lệch **−1 đến +13** — `plan-review-overlay.ts` là neo duy nhất lệch ngược: kế hoạch 581, cây thật 580\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 7, hàng S1, cột bằng chứng",
+  "claim": "\"**5 lệnh `bun test`** trong `verification`\"",
+  "why_wrong": "Khối verification của S1 có **4** lệnh `bun test` phủ **5** file (lệnh cuối gộp hai file). Số 5 là số file, không phải số lệnh. Ngay trên cùng dòng, cột điều kiện đã viết đúng \"5 test file xanh\", nên con số 5 bị dùng hai lần cho hai thứ khác nhau.",
+  "evidence": "$ python3 -c \"…re.findall(r'^\\s*bun test .*$', s1.verification, re.M)\"  →  bun test commands: 4\n  bun test packages/coding-agent/test/status-line-usage-preset.test.ts\n  bun test packages/tui/test/tmux-key-hints.test.ts\n  bun test packages/tui/test/read-group-membership.test.ts\n  bun test packages/tui/test/loop-watchdog.test.ts packages/tui/test/loader-stall-trailer.test.ts\n(5 file, 4 lệnh)",
+  "fix": "Thay \"5 lệnh `bun test` trong `verification`\" bằng: \"4 lệnh `bun test` phủ 5 file trong `verification`\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 13 (hàng ctx1) và dòng 27",
+  "claim": "Dòng 13: \"**6 neo** đã trôi phải đọc 2-30, 157/158, 302, 101-102, 94-96\" (chỉ liệt kê 5 nhóm)",
+  "why_wrong": "Hai chỗ không khớp nhau. Dòng 13 nói 6 nhưng chỉ tên 5 nhóm. Và 5 là con số bắt buộc nếu tổng \"13 chỗ\" ở dòng 27 phải đúng: tail1 đóng góp 8 (7 neo `* 3` + `usage-dashboard.ts:753`), cộng ctx1 = 13 ⇒ ctx1 phải là 5, không phải 6. Với 6 thì tổng thành 14. Tôi đã đối chiếu cả 5 nhóm trên cây và chúng đều ĐÚNG — lỗi nằm ở con số, không ở giá trị neo.",
+  "evidence": "$ (đối chiếu từng nhóm trên cây)\nschema.ts: STATUS_LINE_SEGMENT_IDS = [ @ dòng 2, \"] as const;\" @ dòng 30            → 2-30 ✓\nextension-ui-controller.ts:157-158 setFooter/setHeader: () => {}                      → 157/158 ✓\ncomposer.ts:302 this.ui.setFrameProvider(this);                                       → 302 ✓\nmcp/client.ts:101-102 capabilities: { / roots: { listChanged: false },               → 101-102 ✓\ntui/package.json:94-96 \"./*\": { … \"import\": \"./src/*.ts\"                              → 94-96 ✓\n(gates.json ctx1 cũng tự nói \"six\" rồi liệt kê 5 — 90-back3.md sao chép nguyên xi lỗi đó)",
+  "fix": "Thay \"6 neo đã trôi phải đọc\" bằng: \"5 nhóm neo đã trôi (6 số dòng) phải đọc 2-30, 157/158, 302, 101-102, 94-96 — cộng 8 neo ở tail1 thành đúng 13 chỗ\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 23 và dòng 36",
+  "claim": "\"Một lượt cổng với **11 dòng XANH** không nói gì về việc bánh xe có chạm đúng trên Ghostty hay không.\"",
+  "why_wrong": "Mục 7.1 của bản kế hoạch liệt kê **12** cổng, không phải 11: G1, G2, G3, G4, G4b, G5, G6, G7, G8, G9, G10, G11. Hàng tail1 của chính 90-back3.md nói script \"in một dòng XANH/DO cho mừi cổng\", nên một lượt chạy sẽ ra 12 dòng. Số 11 không dẫn xuất được từ bất kỳ nguồn nào. (tail2.spec.json có câu \"which of the eleven gates\" — nhưng đó là spec, không phải bản kế hoạch, và §7.1 là danh sách cổng thật.)",
+  "evidence": "$ awk 'NR>=8980 && NR<=9000 && /^\\| G/ {n++} END{print n}' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md  →  12\n(danh sách: G1, G2, G3, G4, G4b, G5, G6, G7, G8, G9, G10, G11 — dòng 8988–8999)",
+  "fix": "Thay \"11 dòng XANH\" (ở cả dòng 23 và dòng 36) bằng: \"12 dòng XANH (mục 7.1 của bản kế hoạch liệt kê 12 cổng: G1–G11 cộng G4b)\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 21 so với dòng 16 (cùng một file)",
+  "claim": "Dòng 21: \"Các cổng ở bảng trên là **bản chưa chạy lần nào**.\" — trong khi dòng 16: \"Hai chân (2) và (3) **đã chạy** với đầu vào cố tình sai\", và cột điều kiện tail2 viết \"`check-anchors.mjs` … **và đã từng thấy exit 1**\".",
+  "why_wrong": "Ba câu trong cùng một file phát biểu cùng một sự thật theo hai hướng không thể cùng đúng. Tôi đã chạy khối assert của ctx2 (rút từ gates.json) và nó in `failures: 0`, exit 0, 60/60 OK — nên \"chưa chạy lần nào\" không đúng theo nghĩa đen, và \"đã chạy\" cũng không đúng cho hai script chưa tồn tại. Cần tách rõ hai loại: lệnh đo đã chạy, cổng DONE thì chưa.",
+  "evidence": "$ bash /tmp/ctx2gate.sh > /tmp/ctx2out.txt; echo \"exit=$?\"\nexit=0 ; OK count: 60  FAIL count: 0 ; tail: \"failures: 0\"\n$ find . -path ./node_modules -prune -o \\( -name 'check-anchors*' -o -name 'assemble-m3*' \\) -print  → 0 kết quả\n(⇒ chân (2)/(3) của tail2 không thể đã chạy; nhưng ctx2 thì đã chạy thật)",
+  "fix": "Thay \"Các cổng ở bảng trên là **bản chưa chạy lần nào**.\" bằng: \"Các cổng trong bảng trên **chưa lần nào chạy trên một cây đã có công việc**. Riêng phần đo thì đã chạy: ctx2 in `failures: 0` với 60/60 OK, G4 = 9, G5 = `left=7 kept=3`.\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 11, hàng S5, cột \"điều kiện phải đúng\"",
+  "claim": "\"…D2 xanh với ba hợp đồng âm; C2 xanh và **ca đầu là ca tắt**; câu trả lời Q6 viết vào work item kèm phạm vi\" — Q6 được nêu như một điều kiện cứng của S5, không kèm lối thoát.",
+  "why_wrong": "Đặc tả s5 nói thêm một câu mà 90-back3.md bỏ mất: \"**If Q6 is unanswered, C2 is explicitly allowed to slip** — that is the plan's own instruction, and shipping it on an unstated premise is worse than slipping.\" Bỏ câu đó, hàng S5 trở thành không thể xanh khi C2 được phép trượt hợp lệ, và dòng 17 (\"Sóng nào đỏ thì M3 chưa xong\") biến cái lối thoát hợp pháp thành nghẽn cứng. Lối thoát có thật trong tài liệu (90-back1a.md:7, 90-back1b.md:28, 00-front.md:83) nhưng không có trong bảng định nghĩa hoàn thành — đúng chỗ người đọc tra khi triển khai.",
+  "evidence": "$ python3 -c \"…print(g['gate'])\" cho s5  →  câu cuối: \"If Q6 is unanswered, C2 is explicitly allowed to slip — that is the plan's own instruction, and shipping it on an unstated premise is worse than slipping.\"\n$ grep -n \"Q6\" .lavish-wip/m3-md/90-back1a.md   →  :7  \"nếu Q6 chưa có, C2 được phép TRƯỢT — ship trên tiền đề không nói ra còn tệ hơn trượt\"\n$ grep -n \"Q6\" .lavish-wip/m3-md/90-back1b.md   →  :28 \"Chưa trả lời thì C2 trượt.\"",
+  "fix": "Thay \"câu trả lời Q6 viết vào work item kèm phạm vi\" bằng: \"câu trả lời Q6 viết vào work item kèm phạm vi — **Q6 chưa có thì C2 được phép trượt**, và ship trên một tiền đề không nói ra thì tệ hơn là trượt (xem 90-back1a §3)\"",
+  "file": "back-done"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 8, hàng S2, cột \"điều kiện phải đúng\"",
+  "claim": "Hàng S2 không nêu `check:ts` và không nêu điều kiện \"5 test file thật sự chạy\".",
+  "why_wrong": "S2 là hàng DUY NHẤT trong bảng không mang điều kiện `check:ts` (S1/S3/S4/S5/S6 đều có). Nó cũng bỏ hẳn điều kiện (c) của đặc tả: 5 test file phải xanh **với ba file mới thật sự thực thi, không bị skip** — trong đó có `wheel-acceleration.test.ts`, tức là test chính bảo vệ mô hình gia tốc, và `notice-queue.test.ts` / `transcript-viewer-scroll-chrome.test.ts`. Cột bằng chứng chỉ nhắc `interactive-mode-status.test.ts`. Bảng tự mở đầu bằng \"Mỗi dòng là một cổng có thể đỏ\", nên một dòng thiếu cổng type là một dòng yếu hơn các dòng còn lại.",
+  "evidence": "$ python3 -c \"…print(g['gate'])\" cho s2\n  (a) bảng đo + MEASURED_THRESHOLDS …\n  (b) `bun run check:ts` is green.\n  (c) `bun test …wheel-acceleration.test.ts …mouse.test.ts …notice-queue.test.ts …interactive-mode-status.test.ts …transcript-viewer-scroll-chrome.test.ts` is green — with the three new files actually executing, not skipped.\n$ grep -c \"check:ts\" .lavish-wip/m3-md/90-back3.md   → 5 trong 6 hàng có cổng type; hàng S2 là hàng thứ sáu và không có",
+  "fix": "Thêm vào cuối cột \"điều kiện phải đúng\" của hàng S2: \"…là số giữ chỗ, giao nguyên xi là trượt cổng; `check:ts` xanh; 5 test file của sóng — kể cả `wheel-acceleration.test.ts` và `notice-queue.test.ts` — thật sự thực thi chứ không bị skip\"",
+  "file": "back-done"
+ }
+]

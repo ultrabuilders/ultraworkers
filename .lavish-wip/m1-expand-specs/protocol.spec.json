@@ -1,0 +1,666 @@
+{
+  "id": "protocol",
+  "title": "pi-protocol — length-framed CBOR RPC envelopes (@earendil-works/pi-protocol -> @oh-my-pi/pi-protocol)",
+  "source_path": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol",
+  "source_files": 17,
+  "source_bytes": 55559,
+  "one_line": "Chép nguyên 17 file / 55,559 byte của packages/protocol (CBOR codec + length-prefixed framing + typebox envelope schemas + 28 test) vào packages/protocol mới; 95% việc là 7 chuỗi scope, 15 hậu tố `.ts`, 30 chỗ `private` -> `#private`, và 3 dòng import vitest -> bun:test. Đây là package THỨ HAI trong 7 package mới, ngay sau `chord`, và là hàng ngang của `packages/wire` chứ không thay nó.",
+  "why_copy_not_reimplement": "Vì sao chép chứ không làm lại, cụ thể:\n\n1. Đây là mã bảo mật hình thức, không phải mã sản phẩm. `cbor/encoder.ts` + `cbor/decoder.ts` implement một tập con RFC 8949 nghiêm ngặt: definite-length, không indefinite, không tag, không break marker, chuỗi UTF-8 fatal, số phải finite và safe-integer, key của map phải là string và không trùng, depth/byte/container có trần. `framing.ts` thêm một máy trạng thái 3 trạng thái (open/ended/failed) với block ghép 64 KiB để không giữ alias vào chunk đầu vào. Test có 28 case và 75 assertion, trong đó có một bảng vector CBOR 33 mục (`f6`, `1b001fffffffffffff`, `fb8000000000000000` cho -0, `4401020304` cho byte string, `a26161016162820203` cho map lồng) và một vòng lặp thử MỌI điểm cắt của một frame. Test này CHÍNH LÀ bằng chứng hợp đồng. Viết lại từ đầu nghĩa là phải tái tạo 28 case đó và biện minh chúng — trong khi chép thì chúng đã có sẵn, đã xanh ở upstream.\n\n2. Không có gì để tái dùng. Kiểm bằng grep trên toàn bộ `packages/*/src` của omp: `FrameDecoder` 0 file, `FrameError` 0, `encodeFrame` chỉ 3 file và cả 3 là helper CỤC BỘ trong test của `packages/ai` với chữ ký khác hẳn (`encodeFrame(headers, payload)` cho AWS event-stream), `DEFAULT_MAX_FRAME_LENGTH` 0, `encodeCbor` 0, `decodeCbor` 0, `CborError` 0, `ProtocolValidationError` 0, `ClientMessageDecoder`/`ServerMessageDecoder` 0, `isServerId` 0. Không có một dòng nào để kéo.\n\n3. Rủi ro khi chép là CỐ ĐỊNH và kiểm chứng được; rủi ro khi viết lại là MỞ. Chép thì lỗi có thể chỉ là sai một chuỗi scope (grep được, 7 lần) — và `bun run check:ts` bắt được ngay. Viết lại thì sai ở đâu đó trong 1.448 dòng mà không có tài liệu nào nói phải đúng bao nhiêu, và 28 test sẽ chứng minh rằng code MỚI của tôi đúng chứ không phải code cũ.\n\n4. Pháp lý rẻ hơn nhiều khi chép. MIT của Mario Zechner yêu cầu giữ nguyên copyright + permission notice. Chép 17 file kèm `packages/protocol/LICENSE` (1.069 byte) làm tròn nghĩa vụ đó. Viết lại thì phải lập luận rằng CBOR-RFC-8949-subset là thuật toán không được bảo hộ, rồi vẫn phải giữ attribution cho phần test vector lấy từ RFC 7049/8949 — nhiều rủi ro hơn, không ít hơn.\n\n5. Mục tiêu đã chốt. Chủ sở hữu đã quyết định chép để omp dễ mở rộng hơn; đặc tả này là phần thực thi của quyết định đó, không phải đề xuất lại nó.",
+  "public_api": [
+    {
+      "symbol": "decodeCbor",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/decoder.ts:168",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "Decode exactly one item from the strict RFC 8949 subset. Throws `CborError` (TypeError if the argument is not a Uint8Array). Rejects tags, indefinite lengths, break markers, trailing data, non-finite floats, unsafe integers, non-string map keys, duplicate map keys, and invalid UTF-8."
+    },
+    {
+      "symbol": "encodeCbor",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/encoder.ts:216",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "Encode the strict, definite-length subset. Rejects non-finite numbers, non-safe integers, array holes, `undefined` members, symbol-keyed objects, cycles, lossy Unicode (lone surrogates), and depth/byte/container overflow. `undefined` object properties are OMITTED; falsey values are kept."
+    },
+    {
+      "symbol": "CborError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:24",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "`extends Error` with `name = \"CborError\"`. Public error type for both directions."
+    },
+    {
+      "symbol": "CborOptions",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:10",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ maxByteLength?, maxContainerLength?, maxDepth? }`. All three are range-validated by `resolveOptions` (0..2^32-1, depth capped at 512)."
+    },
+    {
+      "symbol": "DEFAULT_MAX_CBOR_BYTE_LENGTH",
+      "kind": "const",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:8",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "16 * 1024 * 1024. Bounds encoded input/output bytes AND per-string length in both directions."
+    },
+    {
+      "symbol": "DEFAULT_MAX_CBOR_CONTAINER_LENGTH",
+      "kind": "const",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:9",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "1_000_000 array elements / map entries."
+    },
+    {
+      "symbol": "DEFAULT_MAX_CBOR_DEPTH",
+      "kind": "const",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:10",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/cbor/index.ts",
+      "already_exists_in_omp": false,
+      "note": "64 nested item levels."
+    },
+    {
+      "symbol": "ProtocolValidationError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:11",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "`extends Error`, `name = \"ProtocolValidationError\"`. Thrown for envelope violations, malformed CBOR, invalid framing, and push-after-fail. It is the ONLY error type crossing the public API — `FrameError` and `CborError` are always wrapped by it."
+    },
+    {
+      "symbol": "parseClientMessage",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:17",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "`Check(ClientMessageSchema, value) && isJsonValue(value)`. Throws `ProtocolValidationError` on either failure. Returns the value UNCHANGED (no normalisation, no copy)."
+    },
+    {
+      "symbol": "parseServerMessage",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:25",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "Same contract for the server direction. NOTE a same-named string in packages/ai/src/providers/cursor.ts:889 is only a log label — see collisions[2]."
+    },
+    {
+      "symbol": "encodeClientMessage",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:50",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "validate -> `encodeCbor(value, { maxByteLength: maxFrameLength })` -> `encodeFrame`. Returns the complete length-prefixed frame. `options?.maxFrameLength ?? DEFAULT_MAX_FRAME_LENGTH`."
+    },
+    {
+      "symbol": "encodeServerMessage",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:55",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "Same for the server direction."
+    },
+    {
+      "symbol": "ClientMessageDecoder",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:100",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "Incremental: `push(chunk) -> ClientMessage[]` and `end()`. Tolerates arbitrary fragmentation and coalescing. LATCHES on first failure — every later `push`/`end` rethrows `<kind> message decoder has failed` without touching the stream. This latch is a deliberate protocol decision (a length-prefixed stream cannot be resynchronised) and must be preserved."
+    },
+    {
+      "symbol": "ServerMessageDecoder",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:117",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "Same latch semantics, server direction."
+    },
+    {
+      "symbol": "isSupportedProtocolVersion",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:132",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/codec.ts",
+      "already_exists_in_omp": false,
+      "note": "`Number.isInteger(v) && v === PROTOCOL_VERSION`. Used by the handshake; the client hello accepts `minimum: 0` and the SERVER hello requires exactly the literal 8."
+    },
+    {
+      "symbol": "DEFAULT_MAX_FRAME_LENGTH",
+      "kind": "const",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/framing.ts:6",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/framing.ts",
+      "already_exists_in_omp": false,
+      "note": "16 * 1024 * 1024 — default upper bound for ONE framed CBOR payload. Same numeric value as DEFAULT_MAX_CBOR_BYTE_LENGTH; the two are separate knobs fed from the same option."
+    },
+    {
+      "symbol": "FrameDecoderOptions",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/framing.ts:8",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/framing.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ maxFrameLength?: number }`. Range-checked 0..0xffff_ffff."
+    },
+    {
+      "symbol": "FrameError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/framing.ts:12",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/framing.ts",
+      "already_exists_in_omp": false,
+      "note": "`extends Error`, `name = \"FrameError\"`. Thrown by FrameDecoder only; the public message decoders wrap it into `ProtocolValidationError`."
+    },
+    {
+      "symbol": "encodeFrame",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/framing.ts:29",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/framing.ts",
+      "already_exists_in_omp": false,
+      "note": "Prefixes a payload with its unsigned 32-bit BIG-ENDIAN byte length. `TypeError` if not a Uint8Array, `RangeError` if the payload exceeds 2^32-1. NAME COLLISION with three file-local test helpers in packages/ai — see collisions[1]."
+    },
+    {
+      "symbol": "FrameDecoder",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/framing.ts:44",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/framing.ts",
+      "already_exists_in_omp": false,
+      "note": "Splits arbitrary byte chunks into length-prefixed payloads. 3-state machine; `end()` throws FrameError on a truncated frame. Copies into 64 KiB blocks and coalesces, so a returned frame never aliases an input chunk. Rejects an oversized DECLARED length as soon as its 4 header bytes complete — before allocating or reading the body."
+    },
+    {
+      "symbol": "PROTOCOL_VERSION",
+      "kind": "const",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:5",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`= 8 as const`. Bumping this is a breaking wire change: it is a `Type.Literal` in ServerHelloSchema and an equality test in isSupportedProtocolVersion. NAME COLLISION with packages/utils/src/acp/protocol.ts:13 (ACP, `= 1`) — see collisions[0]."
+    },
+    {
+      "symbol": "isServerId",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:15",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "Type guard for a UUID-v4-shaped server id. `Static<ServerIdSchema>` is plain `string` in BOTH typebox and omptype, so the guard narrows nothing beyond `string` — the value is still the only runtime discriminator."
+    },
+    {
+      "symbol": "ServerId",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:13",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`Static<typeof ServerIdSchema>` = `string`, with the v4 pattern enforced at runtime only."
+    },
+    {
+      "symbol": "RpcTarget",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:44",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "Union of `ServerTarget` and `SessionTarget`."
+    },
+    {
+      "symbol": "SessionTarget",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:39",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ serverId, sessionId, attachmentId }` — fences a call to one logical server, one durable session, and one live presentation attachment."
+    },
+    {
+      "symbol": "ClientHello",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:23",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"hello\", version: number }` (integer, minimum 0). Must be the first frame."
+    },
+    {
+      "symbol": "ClientMessage",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:52",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "Union of ClientHello | RequestEnvelope | CancelEnvelope."
+    },
+    {
+      "symbol": "RequestEnvelope",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:48",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"request\", id, target, call }` where `call` is an OPAQUE strict-JSON value."
+    },
+    {
+      "symbol": "CancelEnvelope",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:52",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"cancel\", id, target }`."
+    },
+    {
+      "symbol": "ProtocolError",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:20",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ code: string (minLength 1), message: string }`. `code` is opaque and non-empty BY CONTRACT."
+    },
+    {
+      "symbol": "ProtocolErrorCode",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:19",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`= string`. The branded/typed-code discipline lives in chord, not here."
+    },
+    {
+      "symbol": "ServerHello",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:57",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"hello\", version: 8, serverId }`."
+    },
+    {
+      "symbol": "ServerHelloError",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:62",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"hello_error\", error: ProtocolError }`."
+    },
+    {
+      "symbol": "ResponseEnvelope",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:67",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "Two-member union: `{ ok: true, result?: JsonValue }` (result OPTIONAL — a void success is legal) and `{ ok: false, error }`."
+    },
+    {
+      "symbol": "ServiceEventEnvelope",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:80",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"service_update\", subscriptionId, update: JsonValue }` — opaque subscription push."
+    },
+    {
+      "symbol": "AttachmentEnvelope",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:85",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`{ type: \"attachment\", attachment: SessionTarget | null }` — out-of-band publication of the live route, or null on detach. The ONLY out-of-band server message that mutates routing state."
+    },
+    {
+      "symbol": "ServerMessage",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:96",
+      "target_anchor": "/Users/tranquangdang21/Projects/ultraworkers/packages/protocol/src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "Union of ServerHello | ServerHelloError | ResponseEnvelope | ServiceEventEnvelope | AttachmentEnvelope."
+    },
+    {
+      "symbol": "ClientMessageSchema",
+      "kind": "const (NOT re-exported)",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:54",
+      "target_anchor": "internal to protocol.ts — stays unexported from the omp barrel",
+      "already_exists_in_omp": false,
+      "note": "DELIBERATE OMISSION, and it matters. `export const ClientMessageSchema` and `ServerMessageSchema` exist in protocol.ts but `src/index.ts` re-exports from `./protocol.ts` by an explicit named list that OMITS both. Only parse/encode/decoder functions cross the boundary. PRESERVE THIS: the schema objects are runtime values produced by the schema engine, and if they become public the engine swap in step 4 becomes a breaking API change instead of a private rewrite."
+    },
+    {
+      "symbol": "ServerMessageSchema",
+      "kind": "const (NOT re-exported)",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:90",
+      "target_anchor": "internal to protocol.ts — stays unexported from the omp barrel",
+      "already_exists_in_omp": false,
+      "note": "Same as ClientMessageSchema."
+    },
+    {
+      "symbol": "OpaqueJsonValueSchema / ServerTargetSchema / ClientMessageSchema siblings",
+      "kind": "const (module-private)",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:8-10, 35, 46, 55",
+      "target_anchor": "module-private in src/protocol.ts",
+      "already_exists_in_omp": false,
+      "note": "`IdSchema`, `OpaqueJsonValueSchema`, `StrictObject`, `ServerTargetSchema`, `RpcTargetSchema` are `const` without `export`. They stay private; only the `Static<>` projections they feed are public."
+    },
+    {
+      "symbol": "textEncoder / textDecoder",
+      "kind": "const (module-private)",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:28-29",
+      "target_anchor": "module-private in src/cbor/options.ts",
+      "already_exists_in_omp": false,
+      "note": "`export const` in options.ts but cbor/index.ts re-exports only `CborError`, `CborOptions` and the three DEFAULT_* — so they never reach the barrel. Note the semantics: the decoder is `new TextDecoder(\"utf-8\", { fatal: true, ignoreBOM: true })`. That `fatal: true` is load-bearing (it is what makes decodeCbor reject invalid UTF-8 rather than substitute U+FFFD) and it is also why attestation.ts must NOT be routed through this codec — see collisions[4]."
+    },
+    {
+      "symbol": "UINT32_BASE / MAX_UINT32 / MAX_CONFIGURED_DEPTH / CborWriter / CborReader / ValidatedMessageDecoder / StrictObject helper",
+      "kind": "const/interface/class/function (module-private)",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/options.ts:1-6, /Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/encoder.ts:12, /Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/decoder.ts:9, /Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:64, /Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/protocol.ts:10",
+      "target_anchor": "module-private in their own files",
+      "already_exists_in_omp": false,
+      "note": "NOT exported anywhere. `MAX_UINT32 = 0xffff_ffff` is declared twice in the package (cbor/options.ts:2 exported, framing.ts:2 NOT exported) — the duplicate is safe only because framing's copy never reaches a barrel. Keep both private; do not 'DRY' them into one export, which would newly publish MAX_UINT32 through `export * from \"./framing.ts\"`."
+    },
+    {
+      "symbol": "FRAME_HEADER_LENGTH / PAYLOAD_BLOCK_SIZE / DecoderState / resolveMaxFrameLength / boundedErrorMessage / encodeProtocolMessage / isPlainObject",
+      "kind": "const/type/function (module-private)",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/framing.ts:1-2,37,23; /Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/codec.ts:33,38; /Users/tranquangdang21/Projects/pi-ref/packages/protocol/src/cbor/encoder.ts:99",
+      "target_anchor": "module-private",
+      "already_exists_in_omp": false,
+      "note": "Internal helpers. `boundedErrorMessage` caps any wrapped error message at 500 chars (497 + \"...\") — an anti-leak bound, keep it."
+    }
+  ],
+  "scope_rewrites": [
+    {
+      "from": "@earendil-works/pi-protocol",
+      "to": "@oh-my-pi/pi-protocol",
+      "occurrences": 3,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/chord",
+      "to": "@oh-my-pi/chord",
+      "occurrences": 4,
+      "verified": true
+    }
+  ],
+  "new_dependencies": [
+    {
+      "name": "@oh-my-pi/chord",
+      "version": "catalog (18.3.3, workspace)",
+      "why": "protocol.ts:1 imports `type JsonValue` and codec.ts:1 imports `isJsonValue` from chord. That is the ENTIRE coupling — 2 symbols, 2 import lines. Both live upstream in chord/src/types.ts:21 (the type) and chord/src/json.ts:74 (the predicate). chord is a LEAF for our purposes: its only npm dependency is esbuild, and neither of the two symbols we need touches that. Hence protocol is the 2nd of the 7, immediately after chord and immediately before client + server.",
+      "already_in_omp": false,
+      "license": "MIT — Copyright (c) 2025 Mario Zechner"
+    },
+    {
+      "name": "typebox@1.3.27",
+      "version": "1.3.27 (pinned exact, no caret upstream)",
+      "why": "Upstream protocol.ts builds every envelope type with `Type.*` + `Static<>` and validates with `Check` from `typebox/value`. omp has NEITHER: the lockfile carries only the unrelated `@sinclair/typebox@0.34.52` (a transitive dep, different package, different API) and `node_modules/typebox` does not exist. This is the single decision that blocks the package, and this spec's answer is open_questions[0].",
+      "already_in_omp": false,
+      "license": "MIT (verified via `npm view typebox@1.3.27 license` -> MIT). Latest published is 1.3.34; upstream pins 1.3.27 exactly."
+    },
+    {
+      "name": "@oh-my-pi/omptype",
+      "version": "catalog (18.3.3, workspace) — REPLACES typebox per open_questions[0]",
+      "why": "omp already ships a TypeBox-compatible facade at `@oh-my-pi/omptype/typebox`, used in production by packages/coding-agent/src/extensibility/legacy-typebox.ts and four test files. Measured: it exports `Type.{String,Number,Integer,Boolean,Null,Any,Unknown,Never,Literal,Union,Intersect,Enum,Array,Tuple,Object,Record,Optional,Nullable,Readonly,Partial,Required,Pick,Omit,Composite,Unsafe}` and `Static` — i.e. every builder protocol.ts calls, plus `additionalProperties:false` (typebox.ts:426 maps it to `def[\"+\"] = \"reject\"`), `minLength` (:207), `pattern` (:209-216) and `minimum` (:121-141). The ONLY missing piece is `Check`, and omp's own idiom replaces it in one line: `const r = schema(value); if (r instanceof type.errors) throw ...` (packages/coding-agent/src/security/contracts/validation.ts:10-14).",
+      "already_in_omp": true,
+      "license": "MIT (omp's own package)"
+    }
+  ],
+  "collisions": [
+    {
+      "what": "`PROTOCOL_VERSION` — same exported name, DIFFERENT meaning and value",
+      "pi_anchor": "packages/protocol/src/protocol.ts:5 — `export const PROTOCOL_VERSION = 8 as const`",
+      "omp_anchor": "packages/utils/src/acp/protocol.ts:13 — `export const PROTOCOL_VERSION = 1` (ACP protocol version, consumed at packages/coding-agent/src/modes/acp/acp-agent.ts:30 and :654)",
+      "resolution": "KEEP BOTH, no rename. Measured mitigation: `packages/utils/src/index.ts` does NOT re-export `./acp` — `acp.ts` is a separate sub-barrel reachable only as `@oh-my-pi/pi-utils/acp`, and `grep -rn 'PROTOCOL_VERSION' packages` finds 2 files, neither importing it from the root pi-utils barrel. So the two constants can never be star-merged into one namespace today. pi-protocol stays its own package and is never star-re-exported into pi-utils. Record the triple in the package README: after this lands the repo holds THREE version constants — `PROTOCOL_VERSION = 8` (CBOR RPC), `PROTOCOL_VERSION = 1` (ACP, under /acp), `COLLAB_PROTO = 3` (packages/wire/src/index.ts:394) — plus `STREAM_PROTO = 1` (packages/wire/src/stream.ts:26). Renaming is tempting and must be refused: a rename is a breaking change to an external ACP surface, and pi-protocol's name is what the copied upstream uses, so a rename buys readability and costs a protocol-name divergence from every doc and import in the migrated tree."
+    },
+    {
+      "what": "`encodeFrame` — same name, incompatible signature, 3 in-tree definitions",
+      "pi_anchor": "packages/protocol/src/framing.ts:29 — `encodeFrame(payload: Uint8Array): Uint8Array`, 4-byte BE length prefix",
+      "omp_anchor": "packages/ai/test/issue-3124-repro.test.ts:49, packages/ai/test/aws-event-stream.test.ts:27, packages/ai/test/bedrock-stream-exception-status.test.ts:55 — all `function encodeFrame(headers: Record<string, string>, payload: Uint8Array): Uint8Array`, file-local, module-private, AWS event-stream framing (total-length + prelude + headers + CRC)",
+      "resolution": "KEEP BOTH, no rename. All three are module-private test helpers — none is exported, none is in a barrel, and none can collide at link time. The trap is future, not present: if pi-protocol's star exports are ever re-exported from pi-ai or a shared test-utils barrel, `export * from` will silently shadow one of them. Mitigation is a note in pi-protocol's README naming the three, not a rename — renaming file-local test helpers across packages/ai to clear a hypothetical future ambiguity is a change with real cost and no current defect."
+    },
+    {
+      "what": "`parseServerMessage` — same token, used as a STRING not a symbol",
+      "pi_anchor": "packages/protocol/src/codec.ts:25 — `export function parseServerMessage(value: unknown): ServerMessage`",
+      "omp_anchor": "packages/ai/src/providers/cursor.ts:889 — `log(\"error\", \"parseServerMessage\", { error: String(e) })` — a log label",
+      "resolution": "NO COLLISION, and none to fix. It is a string literal in an unrelated provider. Note it in the PR description only so a reviewer running a naive symbol grep does not file a false positive. Do not rename the pi-ai log label: log labels are an operational surface (grep-able in `~/.omp/logs`), and changing one to disambiguate a symbol that does not exist is churn."
+    },
+    {
+      "what": "`JsonValue` — six in-tree definitions with six different shapes",
+      "pi_anchor": "packages/protocol/src/protocol.ts:1 — `import type { JsonValue } from \"@earendil-works/chord\"` (chord/src/types.ts:21: `null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` — STRICT, no undefined)",
+      "omp_anchor": "packages/ai/src/judgment/types.ts:17 (`readonly` variant), packages/catalog/src/discovery/protobuf.ts:11, packages/mnemopi/src/mcp-tools.ts:9, packages/mnemopi/src/types.ts:2, packages/mnemopi/src/core/beam/types.ts:4, packages/coding-agent/src/secrets/obfuscator.ts:72 (the ONLY one that admits `JsonValue | undefined` per key)",
+      "resolution": "KEEP CHORD'S, and re-export nothing. Concretely: (a) protocol.ts keeps `import type { JsonValue } from \"@oh-my-pi/chord\"` — do NOT redefine the type locally, which would make `OpaqueJsonValueSchema` a different contract from the one `isJsonValue` enforces; (b) `JsonValue` must NOT appear in pi-protocol's `src/index.ts` named export list, so it can never be star-merged with pi-ai's or mnemopi's into one ambiguous namespace. Note the asymmetry with obfuscator.ts: its `undefined`-permitted shape is CORRECT for a secrets masker and WRONG for a wire payload — that is a real difference, not a bug to unify."
+    },
+    {
+      "what": "HAND-ROLLED CBOR WRITER in omp — the one genuine byte-level duplicate in the tree",
+      "pi_anchor": "packages/protocol/src/cbor/encoder.ts (216 lines) — full definite-length CBOR writer with byte strings, text strings, float64, depth/cycle/limit enforcement",
+      "omp_anchor": "packages/coding-agent/src/live/attestation.ts:11-37 — `cborHeader` / `cborUnsigned` / `cborText` / `cborMap` build the SAME major types (0 unsigned, 3 text, 4 byte string, 5 map, 7 float64 via a raw 0xfb prefix) by hand for the ChatGPT DeviceCheck attestation",
+      "resolution": "DELIBERATELY NOT MERGED, and this is the most load-bearing negative finding in the spec. Three measured reasons. (1) attestation.ts is 91 lines total and its CBOR is roughly 30 of them; routing it through the shared codec imports a 216-line dependency tree to replace 30, and `cborHeader(64, ...)` needs a byte string the attestation builds but the shared encoder's API would require re-expressing. (2) It is untestable here: `generateCodexAttestation` early-returns unless `process.platform === \"darwin\" && process.arch === \"arm64\"` and wraps a native call — exactly the coverage GATE 2 cannot provide. A refactor whose only consumer cannot be exercised is a refactor with no safety net. (3) The shared codec and attestation decode with DIFFERENT text decoders — `fatal: true, ignoreBOM: true` (cbor/options.ts:29) vs Buffer's non-fatal default — so substituting one for the other is a real behaviour change to an OAuth attestation, not a refactor. ACTION: record in packages/protocol/README.md that this is the only hand-rolled CBOR in omp and that the shared encoder is the answer IF anyone later wants it — so the next reader closes the question instead of re-finding it."
+    },
+    {
+      "what": "`FrameDecoder` has no counterpart, but omp's framing idioms are two different shapes",
+      "pi_anchor": "packages/protocol/src/framing.ts:44 — incremental length-prefixed BINARY frame splitter",
+      "omp_anchor": "packages/coding-agent/src/tiny/jsonl-socket.ts:9-20 (`LineParser`, newline-delimited JSON over node:net, 49 lines) and packages/coding-agent/src/collab/protocol.ts:105-119 (a 4-byte BE peerId envelope header + AES-GCM sealed payload, read with DataView.getUint32(0, false))",
+      "resolution": "NO MERGE, and say so in the README so the question is closed. The collab envelope header at collab/protocol.ts:113 does use a 4-byte BE uint32 — the same shape as pi-protocol's frame header — but it is a fixed 4-byte PEER-ID PREFIX, not a payload length, and it is a stateless one-shot `subarray` on a complete WebSocket message, not an incremental splitter. Folding it into `FrameDecoder` would change what the bytes mean. jsonl-socket's newline framing is a different protocol entirely. The server spec already reached the same conclusion for packages/coding-agent/src/collab/registry.ts; record it once, here, where the framing primitive actually lands."
+    },
+    {
+      "what": "`private` keyword on 30 members — an AGENTS.md violation that is a REAL semantic difference in one place",
+      "pi_anchor": "30 declarations: cbor/decoder.ts:11,12,13,26,88,112,119,145,152 (9); cbor/encoder.ts:13,14,15,68 (4); codec.ts:66,67,68,69,70,107,124 (7); framing.ts:45-53,141 (10)",
+      "omp_anchor": "AGENTS.md \"Class privacy\": ES `#private` fields, no `private`/`protected`/`public` keyword except on constructor parameter properties",
+      "resolution": "REWRITE all 30. Mostly mechanical `private ` -> `#`, but ONE member needs a decision, not a substitution: `CborWriter.buffer` (encoder.ts:13) and `CborWriter.offset` (encoder.ts:14) are both READ and WRITTEN inside the class only, so `#` works — but `ensureCapacity` (encoder.ts:68) reassigns `this.buffer` to a fresh array, and with `#buffer` that stays legal. Conversely `FrameDecoder.fail` (framing.ts:141) is a `private` METHOD and must become `#fail`; it is called from `push` and `end` only, so no caller changes. In codec.ts, `ValidatedMessageDecoder` is itself module-private and its 5 members plus the 2 `decoder` fields on Client/ServerMessageDecoder all convert. Run the whole thing under `bun run check:ts` — TypeScript catches every missed or over-applied conversion, so this sweep is verifiable rather than a review judgement."
+    },
+    {
+      "what": "`.ts`-suffixed relative imports — pi style vs omp style",
+      "pi_anchor": "15 relative import/export lines, every one carrying an explicit `.ts`: cbor/decoder.ts:8, cbor/encoder.ts:10, cbor/index.ts:1,2,9, codec.ts:3,4,11, index.ts:1,2,3,22, test/cbor/cbor.test.ts:9, test/framing.test.ts:2, test/protocol.test.ts:20",
+      "omp_anchor": "0 occurrences in packages/wire/src and packages/omptype/src; 2 across ALL of packages/*/src, and both are asset imports of a `.d.ts` (packages/coding-agent/src/tools/browser/prelude-definition.ts:5 and .../computer/prelude-definition.ts:3). Measured: `grep -rho 'from \"\\.[^\"]*\\.ts\"' packages/*/src` = 2.",
+      "resolution": "STRIP the `.ts` from all 15. This is not cosmetic: with `.ts` present, the copied files would be the only modules in the tree using explicit extensions, and oxfmt/oxlint/tsgo all run with omp's moduleResolution. Cheap to verify: after the sweep, `grep -rc 'from \"\\./' packages/protocol/src` should return 0, and the 2 pre-existing `.d.ts` asset imports elsewhere are unaffected because they target a declaration file, not a module."
+    },
+    {
+      "what": "Error-type naming: a TYPE named `ProtocolError` alongside a CLASS named `ProtocolValidationError`",
+      "pi_anchor": "packages/protocol/src/protocol.ts:20 (`export type ProtocolError` — a data shape) vs packages/protocol/src/codec.ts:11 (`export class ProtocolValidationError`), plus `FrameError` (framing.ts:12) and `CborError` (cbor/options.ts:24)",
+      "omp_anchor": "grep across packages: 0 occurrences of ProtocolError / ProtocolValidationError / FrameError / CborError",
+      "resolution": "NO RENAME, PRESERVE BOTH NAMES AS-IS. The distinction is the protocol's core error contract and it is easy to get wrong: `ProtocolError` is what a REMOTE peer sends in a response envelope and is a value that crosses the wire; `ProtocolValidationError` is what THIS library throws locally and is a class. Collapsing them would make it impossible to write the handler that catches a local decode failure without also swallowing a remote failure message. No in-tree collision exists. Add one line to the README stating which is which, because the near-identical names will read like a typo to the next person."
+    },
+    {
+      "what": "`vitest` — 3 import lines, 4 describes, 28 tests",
+      "pi_anchor": "test/cbor/cbor.test.ts:1, test/framing.test.ts:1, test/protocol.test.ts:1 — all `import { describe, expect, test } from \"vitest\"`",
+      "omp_anchor": "2690 files under packages/ import from `bun:test`. The root `test` script is `bun scripts/ci-test-ts.ts local`. No vitest anywhere in omp.",
+      "resolution": "REWRITE the 3 import lines to `from \"bun:test\"` and DELETE vitest.config.ts (298 bytes, `globals: true`, `environment: \"node\"`). The deleted config is not loss: `globals: true` is the only thing the tests use from it, and under bun:test the imports are explicit anyway. `environment: \"node\"` is also a non-loss — Bun has no jsdom/happy-dom environment to differ from. Then delete tsconfig.build.json and tsconfig.test.json and use omp's `{ \"extends\": \"../tsconfig.workspace.json\", \"include\": [\"src\", \"test\"] }` plus a `tsconfig.publish.json` cloned from packages/wire/tsconfig.publish.json. Do NOT port the tests to pi-ai's `expect` shims — the assertions here are exact byte and exact-string comparisons (`toEqual(new Uint8Array([0,0,0,3,0xaa,0xbb,0xcc]))`) and Bun's native matcher handles them directly."
+    }
+  ],
+  "files_to_copy": [
+    {
+      "path": "LICENSE",
+      "bytes": 1069,
+      "action": "copy-verbatim",
+      "rewrite": "NEW FILE — not present in packages/protocol/ upstream (pi keeps one LICENSE at the repo root). Create packages/protocol/LICENSE holding the pi notice UNCHANGED in its first 4 lines (`MIT License` / blank / `Copyright (c) 2025 Mario Zechner` / blank) followed by omp's two existing copyright lines (`Copyright (c) 2025-2026 Can Bölük`, `Copyright (c) 2026 Stencil Labs, Inc.`) and then the permission notice VERBATIM. Measured precedent: packages/wire/LICENSE is exactly this shape. 12 of omp's 17 packages carry a per-package LICENSE; the new one makes 13. This is the whole legal obligation and it is satisfied in this one step."
+    },
+    {
+      "path": "package.json",
+      "bytes": 960,
+      "action": "copy-then-rewrite",
+      "rewrite": "Rewrite, do not patch. `name` -> `@oh-my-pi/pi-protocol` (scope string #1). `\"@earendil-works/chord\": \"^0.87.1\"` -> `\"@oh-my-pi/chord\": \"catalog:\"` (scope string #2). Drop the `typebox` dependency line entirely if open_questions[0] resolves to omptype; otherwise `\"typebox\": \"1.3.27\"`. Replace `main`/`types`/`exports` with omp's source form (`\"main\": \"./src/index.ts\"`, plus the `./*` and `./*.js` wildcard exports every omp package has). Replace the 4 pi scripts with omp's `check`/`check:types`/`lint`/`fix`/`fmt` block (`check:types` is `tsgo -p tsconfig.json --noEmit` — NEVER tsc). `repository.url` -> `git+https://github.com/can1357/oh-my-pi.git`, `directory: packages/protocol`, author -> Stencil Labs, `version` -> catalog 18.3.3. Add `@types/bun: catalog:` to devDependencies and `engines.bun: >=1.3.14`. Set `\"sideEffects\": false` (pi's protocol has none, but chord sets it and it is correct)."
+    },
+    {
+      "path": "README.md",
+      "bytes": 3447,
+      "action": "copy-then-rewrite",
+      "rewrite": "3 scope strings: line 1 `# @earendil-works/pi-protocol` -> `# @oh-my-pi/pi-protocol`; line 15 `through \\`@earendil-works/chord\\`` -> `@oh-my-pi/chord`; line 29 the `from \"@earendil-works/pi-protocol\"` sample. Then ADD the two paragraphs this spec produces: (a) the `PROTOCOL_VERSION = 8` / ACP `PROTOCOL_VERSION = 1` / `COLLAB_PROTO` distinction, and (b) the note that packages/coding-agent/src/live/attestation.ts is the only hand-rolled CBOR in omp and is deliberately not routed through this encoder. Also fix the README's closing claim that the protocol is experimental only after the chord-owns-the-payload-semantics paragraph, and correct the sample import to drop the `.ts` extension if it shows one."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 976,
+      "action": "copy-then-rewrite",
+      "rewrite": "REPLACE, do not append. Upstream's file is a pi release history down to 0.84.4 with pi-PR links; none of it describes a package that exists in omp. Keep the `# Changelog` heading and a single `## [Unreleased]` section, and put one Added line per AGENTS.md: `Added length-framed CBOR RPC envelopes (@oh-my-pi/pi-protocol).` Omit any issue/PR link — the milestone has none yet and a fabricated link is worse than none."
+    },
+    {
+      "path": "src/cbor/options.ts",
+      "bytes": 1722,
+      "action": "copy-verbatim",
+      "rewrite": "No import, no scope string, no `private`, no relative import. Copy the file as-is; the only changes are whatever `oxfmt` makes (it should make none — pi and omp share tab indentation and 120-col wrapping). The 4 exported consts, `CborOptions`, `ResolvedCborOptions`, `CborError` and `resolveOptions` all survive intact. DO NOT hoist `textEncoder`/`textDecoder` out or make them public — see public_api."
+    },
+    {
+      "path": "src/cbor/encoder.ts",
+      "bytes": 6712,
+      "action": "copy-then-rewrite",
+      "rewrite": "4 `private` -> `#` (buffer:13, offset:14, maxByteLength:15, ensureCapacity:68). 1 relative import: line 10 `} from \"./options.ts\";` -> `} from \"./options\";`. The `CborWriter` class and `encodeValue`/`encodeText`/`writeArgument`/`isPlainObject` logic are otherwise untouched. Two things that look like bugs and are not, and must not be 'fixed': `writeFloat64` uses `new DataView(this.buffer.buffer)` without byteOffset/byteLength — safe because `this.buffer` is always a freshly allocated whole-buffer view; and `-0` is deliberately encoded as a float64 rather than as integer 0. Both are pinned by cbor.test.ts's `-0` -> `fb8000000000000000` vector and the round-trip test."
+    },
+    {
+      "path": "src/cbor/decoder.ts",
+      "bytes": 5761,
+      "action": "copy-then-rewrite",
+      "rewrite": "9 `private` -> `#` (bytes:11, offset:12, options:13, readItem:26, readSimple:88, readLength:112, readArgument:119, readByte:145, readBytes:152). 1 relative import: line 8 `} from \"./options.ts\";` -> `} from \"./options\";`. Everything else verbatim. Note `readItem` uses a `switch` on major type with a `default: throw new CborError(\"Malformed CBOR major type\")` — keep the default, it is the branch the 6-case cbor test does not reach but a hostile byte stream does."
+    },
+    {
+      "path": "src/cbor/index.ts",
+      "bytes": 241,
+      "action": "copy-then-rewrite",
+      "rewrite": "3 re-export specifiers lose `.ts`: line 1 `\"./decoder.ts\"` -> `\"./decoder\"`, line 2 `\"./encoder.ts\"` -> `\"./encoder\"`, line 9 `\"./options.ts\"` -> `\"./options\"`. AGENTS.md prefers `export * from` in pure index barrels, but this file deliberately names 5 specifiers to KEEP `MAX_UINT32` and `textEncoder`/`textDecoder` out of the public surface (public_api records why). Keep the named re-exports and say so in the PR — the deviation is load-bearing, not an oversight."
+    },
+    {
+      "path": "src/framing.ts",
+      "bytes": 5561,
+      "action": "copy-then-rewrite",
+      "rewrite": "10 `private` -> `#` (header:45, headerLength:46, maxFrameLength:47, payloadBlocks:48, currentPayloadBlock:49, currentPayloadBlockLength:50, expectedPayloadLength:51, payloadLength:52, state:53, fail:141). No relative imports, no scope strings, no `Promise`. `FRAME_HEADER_LENGTH`, `MAX_UINT32`, `PAYLOAD_BLOCK_SIZE` and `DecoderState` stay module-private consts. The non-null assertions (`this.header[0]!` etc.) are load-bearing under the workspace's tsconfig — do not remove them."
+    },
+    {
+      "path": "src/codec.ts",
+      "bytes": 4652,
+      "action": "copy-then-rewrite",
+      "rewrite": "The busiest file — 4 edits plus the engine swap. (a) 7 `private` -> `#` (failed:66, frames:67, kind:68, maxFrameLength:69, parse:70 in ValidatedMessageDecoder; decoder:107 and decoder:124 on the two public classes). (b) 3 relative imports lose `.ts`: line 3 `\"./cbor/index.ts\"` -> `\"./cbor/index\"`, line 4 `\"./framing.ts\"` -> `\"./framing\"`, line 11 `\"./protocol.ts\"` -> `\"./protocol\"`. (c) line 1 `import { isJsonValue } from \"@earendil-works/chord\";` -> `from \"@oh-my-pi/chord\"` (scope string #3). (d) line 2 `import { Check } from \"typebox/value\";` — REPLACE per open_questions[0]: either delete (omptype path) or repoint to a new local `check` helper. Then the 3 `Check(X, value)` call sites at lines 18, 26 and protocol.ts:16 become the one-line `schema(value) instanceof type.errors` idiom. Everything else verbatim, including `boundedErrorMessage`'s 500-char cap and the `failed` latch."
+    },
+    {
+      "path": "src/protocol.ts",
+      "bytes": 3831,
+      "action": "copy-then-rewrite",
+      "rewrite": "The schema-definition file and the reason open_questions[0] exists. (a) line 1 `import type { JsonValue } from \"@earendil-works/chord\";` -> `@oh-my-pi/chord` (scope string #4). (b) line 2 `import Type, { type Static } from \"typebox\";` -> `import Type, { type Static } from \"@oh-my-pi/omptype/typebox\";` (omptype's typebox facade has a default export `{ Type }`, so the default-import form survives). (c) line 3 `import { Check } from \"typebox/value\";` -> deleted or repointed. (d) line 16 `return Check(ServerIdSchema, value);` -> the `instanceof type.errors` idiom. (e) the `StrictObject` helper at line 10 uses a `const T extends Parameters<typeof Type.Object>[0]` generic — this is the ONE construct whose compatibility with omptype's `Type.Object` signature is unverified, and it is where `bun run check:ts` earns its keep. The schema constants, the v4 `pattern`, `additionalProperties: false` on every envelope, and the `Type.Literal(PROTOCOL_VERSION)` pin in ServerHelloSchema are all unchanged."
+    },
+    {
+      "path": "src/index.ts",
+      "bytes": 483,
+      "action": "copy-then-rewrite",
+      "rewrite": "4 re-export specifiers lose `.ts` (lines 1, 2, 3, 22). The named export list from `./protocol.ts` (lines 3-22) is copied EXACTLY — it is the public API contract, and its omission of `ClientMessageSchema`/`ServerMessageSchema` is deliberate. No symbol is added or removed. If open_questions[0] adds a `check` helper, do NOT export it from here: the two public `parse*` functions are the intended entry points."
+    },
+    {
+      "path": "test/cbor/cbor.test.ts",
+      "bytes": 6437,
+      "action": "copy-then-rewrite",
+      "rewrite": "3 edits. (a) line 1 `import { describe, expect, test } from \"vitest\";` -> `from \"bun:test\"`. (b) line 9 `} from \"../../src/index.ts\";` -> `} from \"../../src\";`. (c) The 33-entry `knownVectors` table and its `fromHex`/`toHex` helpers are copied verbatim — they are RFC test vectors and rewriting them would destroy the test. All 6 tests and 75-total assertions stay. `test(...)` and `describe(...)` exist in bun:test with the same semantics, so no call-site rewrite is needed."
+    },
+    {
+      "path": "test/framing.test.ts",
+      "bytes": 4041,
+      "action": "copy-then-rewrite",
+      "rewrite": "2 edits. (a) line 1 `from \"vitest\"` -> `from \"bun:test\"`. (b) line 2 `from \"../src/index.ts\"` -> `from \"../src\"`. All 9 tests verbatim, including the byte-at-a-time fragmentation loop and the every-split-point sweep — those two ARE the framing contract."
+    },
+    {
+      "path": "test/protocol.test.ts",
+      "bytes": 10008,
+      "action": "copy-then-rewrite",
+      "rewrite": "2 edits. (a) line 1 `from \"vitest\"` -> `from \"bun:test\"`. (b) line 20 `} from \"../src/index.ts\";` -> `} from \"../src\";`. All 13 tests across 2 describes verbatim. The `clientHello`/`serverHello` fixtures and the `\"00000000-0000-4000-8000-000000000001\"` v4 id stay as-is: if the omptype `pattern` lowering is correct the tests pass unchanged, and if it is not, these are exactly the cases that catch it."
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 74,
+      "action": "copy-verbatim",
+      "rewrite": "NEW FILE, cloned from packages/wire/tsconfig.json: `{ \"extends\": \"../tsconfig.workspace.json\", \"include\": [\"src\", \"test\"] }`. Replaces upstream's tsconfig.build.json + tsconfig.test.json."
+    },
+    {
+      "path": "tsconfig.publish.json",
+      "bytes": 339,
+      "action": "copy-verbatim",
+      "rewrite": "NEW FILE, cloned from packages/wire/tsconfig.publish.json. Emits declarations to dist/types for publish. Needed because pi's build used `tsc -p tsconfig.build.json` and omp's rule forbids tsc; `tsconfig.json` alone covers `check:types`."
+    },
+    {
+      "path": "vitest.config.ts",
+      "bytes": 298,
+      "action": "skip",
+      "rewrite": "DROP. Sets `globals: true` and `environment: \"node\"`; bun:test has no globals to enable and no separate node environment. Deleting it removes the only vitest reference the package would have had."
+    },
+    {
+      "path": "tsconfig.build.json",
+      "bytes": 209,
+      "action": "skip",
+      "rewrite": "DROP. pi's `tsc -p tsconfig.build.json` build config. Superseded by the omp tsconfig.json + tsconfig.publish.json pair, and its only script user (`\"build\": \"tsc -p ...\"`) is forbidden by AGENTS.md."
+    },
+    {
+      "path": "tsconfig.test.json",
+      "bytes": 220,
+      "action": "skip",
+      "rewrite": "DROP. pi's `noEmit` + `types: [\"node\", \"vitest\"]` config. The workspace tsconfig already includes `*/test`; the `vitest` types entry disappears with the runner."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/protocol/ (does not exist yet — 0 of 17 files land in this step)",
+      "instruction": "SCAFFOLD the package directory. `mkdir -p packages/protocol/src/cbor packages/protocol/test/cbor`. Do not `bun install` and do not register the workspace yet — steps 3 and 10 do that. Rationale: the workspace glob is `packages/*`, so the moment package.json exists bun will try to resolve its dependencies, and at that moment the two imports in protocol.ts/codec.ts are still `@earendil-works/*`. Registering early produces a resolution error that hides the real work."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/protocol/LICENSE",
+      "instruction": "LEGAL, AND IT COMES FIRST. Create packages/protocol/LICENSE: the pi notice from /Users/tranquangdang21/Projects/pi-ref/LICENSE (1,069 bytes) with its first 4 lines kept VERBATIM — `MIT License`, blank, `Copyright (c) 2025 Mario Zechner`, blank — then omp's two existing lines (`Copyright (c) 2025-2026 Can Bölük`, `Copyright (c) 2026 Stencil Labs, Inc.`), then the 21-line permission + warranty-disclaimer body copied byte for byte. Follow packages/wire/LICENSE's shape exactly. This is the entire MIT obligation and it is satisfied in this one step; the attribution must not be a PR-description courtesy but a file in the package."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/protocol/src/{cbor/options.ts,cbor/encoder.ts,cbor/decoder.ts,cbor/index.ts,framing.ts}",
+      "instruction": "COPY the 5 dependency-free files, bottom-up so nothing references a missing module: options.ts -> encoder.ts -> decoder.ts -> cbor/index.ts -> framing.ts. Then apply, in this order: (i) strip the `.ts` extension from the 4 relative specifiers in decoder.ts:8, encoder.ts:10, cbor/index.ts:1,2,9; (ii) convert the 23 `private` members in these five files to `#` (decoder 9, encoder 4, framing 10). options.ts needs no edit at all. Run `bun run fmt` on the package."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/protocol/src/protocol.ts:1-3, :16",
+      "instruction": "COPY protocol.ts and apply the SCHEMA-ENGINE DECISION (open_questions[0]) here — this is the only file where the answer is not a mechanical substitution, and it is why this step is separate. Preferred path (recommended): line 1 `@earendil-works/chord` -> `@oh-my-pi/chord`; line 2 `from \"typebox\"` -> `from \"@oh-my-pi/omptype/typebox\"`; line 3's `import { Check } from \"typebox/value\";` DELETED; line 16's `return Check(ServerIdSchema, value);` -> `return !isSchemaError(ServerIdSchema(value));` with a 3-line module-local helper (`import { type } from \"@oh-my-pi/omptype\"` + `const isSchemaError = (r: unknown): r is type.errors => r instanceof type.errors`). Fallback path (if the owner keeps typebox): import `Check` from `typebox/value` unchanged and add `\"typebox\": \"1.3.27\"` to dependencies. Then `bun run check:ts` — the `StrictObject` generic at line 10 is the one construct whose compatibility with omptype's `Type.Object` signature is UNVERIFIED, and this is where it either typechecks or does not. If it does not, fall back to typebox and record why; do not contort the schema."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/protocol/src/codec.ts:1-4, :11, :66-70, :107, :124",
+      "instruction": "COPY codec.ts and apply 4 edits: (i) line 1 `@earendil-works/chord` -> `@oh-my-pi/chord`; (ii) lines 3, 4, 11 lose their `.ts` suffixes; (iii) the 2 `Check` call sites at lines 18 and 26 become the omptype `instanceof type.errors` check from step 4 (both are `if (!Check(Schema, value) || !isJsonValue(value))` — the rewrite must preserve the `||`, because `isJsonValue` is what rejects non-JSON opaque payloads and is the package's real payload guard, since omptype's `Type.Unsafe` degrades to `type.unknown` by design); (iv) the 7 `private` members -> `#`. Preserve verbatim: the `failed` latch in `ValidatedMessageDecoder` and its rethrow message, `boundedErrorMessage`'s 500-char cap, and the `error instanceof ProtocolValidationError` re-throw branches that keep a local validation error unwrapped."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/protocol/src/index.ts:1-22",
+      "instruction": "COPY index.ts. Strip the `.ts` from 4 specifiers (lines 1, 2, 3, 22). Copy the named export list at lines 3-22 EXACTLY — do not widen it to a star, do not add `JsonValue`, and do not add `ClientMessageSchema`/`ServerMessageSchema`. That omission is what keeps the step-4 engine swap a private rewrite instead of a breaking API change."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/protocol/test/{cbor/cbor.test.ts,framing.test.ts,protocol.test.ts}",
+      "instruction": "COPY the 3 test files. Exactly 5 edits across all of them: 3 `from \"vitest\"` -> `from \"bun:test\"` (cbor.test.ts:1, framing.test.ts:1, protocol.test.ts:1) and 2 specifier `.ts` strips (cbor.test.ts:9 `\"../../src/index.ts\"` -> `\"../../src\"`, protocol.test.ts:20 `\"../src/index.ts\"` -> `\"../src\"`; framing.test.ts:2 as well = 3 total). NO OTHER CHANGE. All 28 tests, 75 assertions, the 33-entry CBOR vector table, the byte-at-a-time fragmentation loop and the every-split-point sweep are copied verbatim — they are the contract. `test()` and `describe()` are bun:test natives, so no call site needs rewriting. Confirm with `grep -rc 'vitest' packages/protocol` -> 0."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/protocol/package.json",
+      "instruction": "AUTHOR package.json for omp (see files_to_copy for the field-by-field list): name `@oh-my-pi/pi-protocol`, version `18.3.3` to match the catalog, `main`/`types` -> `./src/index.ts` with the `./*` and `./*.js` wildcard exports every omp package carries, dependencies `@oh-my-pi/chord: catalog:` (+ `typebox: 1.3.27` only on the fallback path), devDependencies `@types/bun: catalog:`, the omp 5-script check block with `check:types` = `tsgo -p tsconfig.json --noEmit` (NEVER tsc), `engines.bun: >=1.3.14`, `sideEffects: false`, files `[\"src\", \"README.md\", \"CHANGELOG.md\"]`, and omp's repository/author/bugs metadata. Then write tsconfig.json and tsconfig.publish.json by cloning packages/wire's. Do not run `bun install` yet."
+    },
+    {
+      "n": 9,
+      "anchor": "package.json (root) `workspaces.catalog`",
+      "instruction": "REGISTER the package. Add `\"@oh-my-pi/chord\": \"18.3.3\"` and \"@oh-my-pi/pi-protocol\": \"18.3.3\" to the root `workspaces.catalog` beside the 11 existing `@oh-my-pi/*` entries — the workspace glob `packages/*` already picks up the directory, so only the catalog keys are missing. NOTE: if chord has not landed yet (and it must, first — see `steps` note below), `@oh-my-pi/chord: catalog:` cannot resolve and `bun install` will fail. In that case land the package with a temporary local `chord` shim ONLY if the owner has sanctioned it; the preferred answer is to migrate chord first. Then `bun install` and commit the resulting bun.lock change alongside the source."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/protocol/{README.md,CHANGELOG.md}",
+      "instruction": "DOCUMENT. README: 3 scope substitutions, then ADD the two paragraphs this spec produces and that upstream has no equivalent for — (a) `PROTOCOL_VERSION = 8` here vs ACP's `PROTOCOL_VERSION = 1` (under `@oh-my-pi/pi-utils/acp`) vs `COLLAB_PROTO = 3` (pi-wire) vs `STREAM_PROTO = 1`, and (b) that packages/coding-agent/src/live/attestation.ts holds the only hand-rolled CBOR in omp and is deliberately NOT routed through this encoder (with the three reasons: 30 lines vs a 216-line tree, platform-gated and untestable, fatal-vs-non-fatal text decoders). Also state that `ProtocolError` (a wire value) and `ProtocolValidationError` (a local class) are different things despite the names. CHANGELOG: replace upstream's pi release history with a single `## [Unreleased]` and one Added line."
+    },
+    {
+      "n": 11,
+      "anchor": "GATE 1 — `bun run check:ts`",
+      "instruction": "RUN GATE 1 and paste the output in the PR. This is the gate that actually fires today: it runs oxlint + oxfmt over the new package and `tsgo --noEmit` over everything. Baseline measured on this machine just now: exit 0, 24.2s wall (79.3s user, 346% cpu), 5,445 files formatted, 16 packages typechecked. Expect the new package to appear as `@oh-my-pi/pi-protocol:check:types` in the list. Three assertions that must hold: zero `oxlint` findings, zero oxfmt diffs, and `grep -rc '@earendil-works/' packages/protocol` == 0."
+    },
+    {
+      "n": 12,
+      "anchor": "GATE 2 — `bun test packages/protocol` (28 cases; currently blocked)",
+      "instruction": "RUN GATE 2 once the native addon builds. Blocked today: `bun test` fails because packages/natives has no build, and the documented unblock `bun --cwd=packages/natives run build` FAILS without `ninja`. `brew install ninja` first, then build, then run. Expect 28 passing: 9 framing, 13 protocol (across 2 describes), 6 CBOR. Do not 'fix' a failure by editing a test — if a test fails, the copy diverged, and the fix is in step 3/4/5/7, not in the assertion."
+    }
+  ],
+  "test_contract": "28 tests, 75 assertions, copied verbatim from upstream. They are the contract, and they are already well-formed under AGENTS.md's testing rules — every one defends a named externally observable behaviour, none is a static echo or a tautology, and none reads an implementation file's text. Breakdown and what each defends:\n\ntest/framing.test.ts — 9 tests, 1 describe `binary framing`:\n  - `prefixes payloads with a four-byte big-endian length` — the exact 7 bytes [0,0,0,3,0xaa,0xbb,0xcc] and the empty-frame 4 zero bytes. Wire-byte contract.\n  - `decodes fragmented, coalesced, and empty frames in order` — one byte per `push`, proving order survives byte-at-a-time fragmentation.\n  - `assembles payloads spanning multiple internal blocks` — a payload > 64 KiB reassembles across the internal PAYLOAD_BLOCK_SIZE boundary.\n  - `handles every split point across a frame` — the strongest one: loops EVERY offset and asserts the frame comes back identical. This is the property a hand-rolled splitter gets wrong.\n  - `copies payload bytes instead of retaining or aliasing input chunks` — mutating the input chunk after `push` must not change a returned frame. This is why FrameDecoder copies into blocks.\n  - `accepts empty chunks and a clean empty stream`\n  - `rejects an oversized declared length as soon as its header is complete` — the 4 header bytes alone must trigger the rejection, before any body is read or allocated. Denial-of-service contract.\n  - `accepts a frame exactly at the configured maximum` — the boundary is inclusive.\n  - `cannot be pushed after end` — the terminal-state contract.\n\ntest/protocol.test.ts — 13 tests, 2 describes:\n  - `negotiates protocol version 8` — the pinned handshake constant.\n  - `keeps routed request and event payloads opaque` — a `call` payload round-trips untouched; the package must NOT interpret Chord payloads.\n  - `rejects non-JSON opaque payloads` — non-finite numbers, byte arrays, `undefined`, prototypes, cycles. THE critical test for the omptype swap, because omptype's `Type.Unsafe` degrades to `type.unknown` and `isJsonValue` is the only thing still enforcing this.\n  - `validates request cancellation envelopes`\n  - `validates attachment route updates` — including the `null` detach.\n  - `accepts a successful void response without a result field` — `result` is OPTIONAL on `ok: true`; a void success is legal and must not be rejected.\n  - `rejects unknown messages and fields` — the `additionalProperties: false` contract, and the one that proves omptype's `def[\"+\"] = \"reject\"` lowering works.\n  - `does not parse JSON strings as messages` — a JSON *string* is not a message. Branch contract.\n  - `encodes complete client and server frames`, `enforces outbound frame limits`, `incrementally decodes fragmented and coalesced client messages` (same for server), `rejects truncated and oversized framing` — the end-to-end codec surface, including the `ProtocolValidationError` mapping.\n\ntest/cbor/cbor.test.ts — 6 tests, 1 describe `CBOR codec`, built on a 33-entry `knownVectors` table of RFC 8949 byte strings (`f6`, `1b001fffffffffffff`, `fb8000000000000000` for -0, `4401020304`, `a26161016162820203`, and lone-vs-paired surrogate text):\n  - `omits undefined object properties without omitting falsey values` — `undefined` is dropped, `false`/`0`/`\"\"` are kept. A real distinction a naive JSON-ish encoder gets wrong.\n  - `preserves a leading Unicode BOM and treats __proto__ as data` — `ignoreBOM: true` on the decoder, and prototype-pollution safety via `Object.defineProperty` in the decoder.\n  - `rejects maps with enumerable symbol keys`\n  - `rejects lossy strings, cycles, and excessive encoder depth`\n  - `enforces depth and declared length limits before traversing values` — limits must be checked on the DECLARED length, before allocating. DoS contract.\n  - `supports stricter caller-provided limits` — the option plumbing is real, not decorative.\n\nWhat must NOT be added: AGENTS.md bans placeholder tests, `expect(true).toBe(true)`, bare `not.toThrow()`, non-empty/length checks, and source-grepping an implementation file. If a behaviour above is uncovered after the copy, add a case that asserts the OBSERVED result, and never assert on the text of a `.ts` file.",
+  "test_files": [
+    "packages/protocol/test/framing.test.ts",
+    "packages/protocol/test/protocol.test.ts",
+    "packages/protocol/test/cbor/cbor.test.ts"
+  ],
+  "verification": "GATE 1 — BLOCKING, RUNNABLE TODAY: `cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts`. VERIFIED on this machine minutes ago: exit 0, 24.210s wall (79.30s user, 4.55s system, 346% cpu), oxfmt reporting `All matched files use the correct format` over 5,445 files, and 16 packages typechecked (`@oh-my-pi/pi-wire:check:types Done in 61ms`, `@oh-my-pi/omptype:check:types Done in 221ms`, etc.). After the copy, `@oh-my-pi/pi-protocol:check:types` must appear in that list. Budget ~25s.\n\nGATE 2 — BLOCKED, and the block is not in this spec's control: `bun test packages/protocol`. `bun test` fails today because packages/natives has no build. The documented unblock `bun --cwd=packages/natives run build` FAILS without `ninja` — the binary is missing. `brew install ninja`, then build, then `bun test packages/protocol` must report 28 passing.\n\nMECHANICAL ASSERTIONS (each is a grep, each must hold):\n  1. `git grep -c '@earendil-works/' -- packages/protocol` -> 0 (baseline: 7 occurrences across 4 files — README.md 3, package.json 2, src/codec.ts 1, src/protocol.ts 1).\n  2. `grep -rc 'from \"\\./' packages/protocol/src | grep -v ':0'` -> only the extensionless form; 0 lines end in `.ts\"` (baseline upstream: 12 such lines in src, 3 in test).\n  3. `grep -rn '^\\s*private ' packages/protocol/src` -> 0 (baseline upstream: 30, in 4 files).\n  4. `grep -rn 'vitest\\|from \"node:\"\\|require(' packages/protocol` -> 0.\n  5. `grep -rn ': any\\|<any>\\|ReturnType<\\|await import(' packages/protocol/src` -> 0 (already 0 upstream; the AGENTS.md rules are not violated by the source, only by the vitest/import/privacy style).\n  6. `head -4 packages/protocol/LICENSE` -> `MIT License`, blank, `Copyright (c) 2025 Mario Zechner`, blank. Do this check FIRST, not last; a missing attribution in a published package is the one failure here that is not recoverable by a follow-up commit.\n  7. `bunx oxlint packages/protocol` -> 0 findings.\n\nNEGATIVE CHECK (proves the step-6 omission was preserved): `grep -c 'ClientMessageSchema\\|ServerMessageSchema' packages/protocol/src/index.ts` -> 0, while `grep -c 'export const ClientMessageSchema' packages/protocol/src/protocol.ts` -> 1.",
+  "gate": [
+    "GATE 1 (blocking, RUNNABLE NOW): `bun run check:ts` from /Users/tranquangdang21/Projects/ultraworkers — oxlint + oxfmt + tsgo over the new package. Baseline measured today: exit 0, 24.2s wall.",
+    "GATE 1b (blocking, RUNNABLE NOW): 6 mechanical greps — 0 `@earendil-works/`, 0 `.ts\"` in relative specifiers, 0 `private`, 0 `vitest`, 0 `any`/`ReturnType<`/`await import(`, and the LICENSE `Copyright (c) 2025 Mario Zechner` on line 3.",
+    "GATE 2 (blocking, CURRENTLY BLOCKED): `bun test packages/protocol` — 28 cases (9 framing, 13 protocol, 6 CBOR). Unrunnable until `brew install ninja` && `bun --cwd=packages/natives run build`. Not this spec's to unblock; the build failure is environmental."
+  ],
+  "gate_can_fail": [
+    true,
+    false
+  ],
+  "effort": "LOW — roughly a third of a day, and the smallest of the seven. The mechanical part is a few minutes of scripted substitution; the rest is four judgement calls that a half-day absorbs with room to spare.\n\nMeasured surface: 17 files / 55,559 bytes upstream, of which 8 source files are 28,963 bytes and 3 test files are 20,486 bytes (49,449 together; the remaining 6,110 bytes are vitest.config.ts, the two tsconfigs, package.json, CHANGELOG.md and README.md).\n\nARITHMETIC ON files_to_copy, so the byte column reconciles and nobody re-counts: 17 upstream files - 3 skipped (vitest.config.ts 298, tsconfig.build.json 209, tsconfig.test.json 220 = 727) + 3 newly authored (LICENSE 1,069, tsconfig.json 74, tsconfig.publish.json 339 = 1,482) = 20 rows totalling 56,314 bytes. The +755 delta against the 55,559-byte source total is exactly those three new files.\n\nThe mechanical inventory, all counted with `git grep`, not estimated:\n  - 7 scope strings in 4 files (3x `@earendil-works/pi-protocol`, 4x `@earendil-works/chord`).\n  - 15 relative specifiers carrying `.ts` (12 in src, 3 in test) to strip.\n  - 30 `private` members -> `#`, in 4 files (decoder 9, encoder 4, codec 7, framing 10).\n  - 3 vitest import lines -> `bun:test`; 1 vitest.config.ts, 2 tsconfigs deleted.\n  - 2 new tsconfigs + 1 new LICENSE authored from omp templates.\n  - Zero `any`, zero `ReturnType<>`, zero `await import(`, zero `console.*`, zero `node:*` imports, zero `new Promise(` in the upstream source. The AGENTS.md sweeps that dominate the other specs (namespace imports, Promise.withResolvers, logger-not-console, private->#) are almost entirely no-ops here — only `private` has anything to convert.\n\nThe four judgement calls, in the order they will actually bite:\n  1. open_questions[0], the schema engine. 30-60 min to land on omptype, or 10 min to keep typebox. The expensive part is not the swap, it is the `StrictObject` generic at protocol.ts:10 — the one construct whose compatibility with omptype's `Type.Object` signature is UNVERIFIED. If it fails, fall back to typebox and stop; do not redesign the schemas.\n  2. Writing package.json + the 2 tsconfigs to omp's conventions: 30 min.\n  3. The README additions (PROTOCOL_VERSION disambiguation + the attestation non-merge): 20 min, and it is the step that prevents two future re-investigations.\n  4. CHANGELOG replacement (delete pi history, write one omp line): 5 min.\n\nRealistic split: 30 min copy, 45 min rewrites, 1h on the schema decision and its fallout, 30 min packaging and docs, 1h on GATE 1 and fix-iterate. Slack is not the constraint; the constraint is that GATE 2 cannot run, so GATE 1 and the 28 copied tests have to be right on inspection first.",
+  "risk": "First and largest: THE PACKAGE CANNOT TYPE-CHECK WITHOUT A SCHEMA-ENGINE DECISION, and four other specs inherit the answer. pi-protocol declares `typebox@1.3.27` and builds every envelope type with `Static<typeof XSchema>`. omp has no `typebox` in the lockfile — only the unrelated `@sinclair/typebox@0.34.52`, a transitive dependency with a different API — and `node_modules/typebox` does not exist. This spec's recommendation is to port onto `@oh-my-pi/omptype/typebox`, which omp already ships and already uses in production, and which covers every builder protocol.ts calls; the only missing piece is `Check`, replaced by a 3-line `instanceof type.errors` idiom that omp's own `security/contracts/validation.ts:10-14` already demonstrates. That is open_questions[0] and it should be answered before step 4. server's open_questions[3] asks the same question from the other side and is resolved by this spec's answer.\n\nSecond: `Type.Unsafe` DEGRADES SILENTLY UNDER OMPTYPE, and that is safe here only because a second, independent check exists. omptype's `tUnsafe` (typebox.ts:509-513) discards the raw document and returns `type.unknown` — its own comment says it \"cannot honestly implement that contract without importing a second validator\". So `OpaqueJsonValueSchema = Type.Unsafe<JsonValue>(Type.Unknown())` validates as `unknown` at the schema layer. The package stays correct ONLY because `parseClientMessage`/`parseServerMessage` AND `isJsonValue(value)` on top of the schema check, and because `JsonValue` remains the compile-time type. Remove either the `|| !isJsonValue(value)` clause or the `JsonValue` import and the package silently starts accepting `undefined`, byte arrays, cycles, and prototypes on the wire. test/protocol.test.ts's `rejects non-JSON opaque payloads` is the case that catches this, which is exactly why it must not be edited.\n\nThird: the `additionalProperties: false` guarantee is the whole anti-forward-compatibility surface, and it is re-expressed on a different engine. All 12 envelope schemas use pi's `StrictObject` helper, which maps to omptype's `def[\"+\"] = \"reject\"` (typebox.ts:426). `test/protocol.test.ts`'s `rejects unknown messages and fields` is the case that proves the lowering is faithful. If it fails, the fix is in the schema helper, NOT in the test.\n\nFourth, and cheap to state: the `.ts`-suffix sweep. 15 specifiers, but if any is missed the package is the only one in the tree using explicit extensions and the failure mode is confusing rather than loud. It is covered by mechanical assertion 2.\n\nFifth: the `private` -> `#` sweep has 30 sites and one behavioural trap. `FrameDecoder.fail` is a private METHOD, not a field; converting it to a field-shaped edit breaks the class, and converting a field to `#fail` is a compile error TypeScript catches immediately. Low risk because `bun run check:ts` is runnable today and catches every mistake.\n\nSixth, the ordering constraint, which is the real schedule risk: pi-protocol imports chord. It cannot typecheck until chord lands. chord is the natural first package (leaf, one external dep), so the order is chord -> protocol -> {client, server}; evals and telemetry have no dependencies at all and can run in parallel. This spec therefore CANNOT be the first of the seven, and attempting it first produces a 24-second `check:ts` failure that says only 'cannot find module '@oh-my-pi/chord''.\n\nNot a risk, and worth saying so the question closes: the collision with omp's existing `packages/wire`. The two do not overlap. pi-wire is dependency-free JSON type shapes plus link and relay constants for the collab relay; it explicitly \"does not encode, decode, validate, encrypt, or route frames\". pi-protocol is a length-framed CBOR codec with strict envelope validation, written for a Unix-socket RPC server. Different transport, different encoding, different lifecycle, different consumers. pi-wire's `COLLAB_PROTO = 3` and `STREAM_PROTO = 1` are version constants in the same numeric family as `PROTOCOL_VERSION = 8` but govern unrelated protocols. NO MERGE, and nothing in omp migrates: pi-protocol is pure addition. The one real relationship is a naming hazard — a repo with `pi-wire` and `pi-protocol` invites the question \"which one do I import?\" — and the answer belongs in both READMEs, not in a refactor.",
+  "open_questions": [
+    [
+      "BLOCKING for step 4, and four other specs inherit it — keep `typebox@1.3.27` (MIT, verified; upstream pins it exactly, latest published is 1.3.34), or port protocol.ts onto `@oh-my-pi/omptype/typebox`? THIS SPEC RECOMMENDS THE OMPTYPE PORT. Evidence: omp already ships a TypeBox facade at `@oh-my-pi/omptype/typebox` and uses it in production (packages/coding-agent/src/extensibility/legacy-typebox.ts, plus 4 test files). Every builder protocol.ts calls is present and measured — `Type.String` with `minLength` (typebox.ts:207) and `pattern` (:209-216), `Type.Integer` with `minimum` (:121-141), `Type.Object` with `additionalProperties:false` (-> `def[\"+\"]=\"reject\"` at :426), `Type.Literal`, `Type.Union`, `Type.Optional`, `Type.Unknown`, `Type.Unsafe`, and `Static<T> = T[\"infer\"]` (:85). Only `Check` is absent, and omp's own idiom replaces it in one line (security/contracts/validation.ts:10-14: `const result = schema(value); if (result instanceof type.errors) throw ...`). AGENTS.md's central-utilities rule points the same way: two schema engines in one repo is a bug even when both work. AGAINST: `typebox` is a 1-line import change and zero risk, and the `StrictObject` generic at protocol.ts:10 is unverified against omptype's `Type.Object` signature. IF OMPTYPE: the escape hatch is explicit — if `bun run check:ts` rejects the `StrictObject` generic, fall back to typebox and record why. Do not redesign the schemas to fit.",
+      "Does the chord dependency survive at all? pi-protocol uses exactly 2 symbols from chord (`JsonValue`, `isJsonValue`) across 2 import lines. This spec keeps the dependency because redefining `JsonValue` locally would make `OpaqueJsonValueSchema` a different contract from the one `isJsonValue` enforces, which is a correctness bug, not a DRY win. But if chord's spec decides to re-export `json.ts` at a subpath, the repoint is 1 line. Worth a subpath decision across the wave: does `isJsonValue`/`JsonValue` live at `@oh-my-pi/chord` or `@oh-my-pi/chord/json`? pi upstream puts `isJsonValue` in `chord/src/json.ts:74` and `JsonValue` in `chord/src/types.ts:21`, and exports the former from the root index but not the latter. That asymmetry is worth resolving once, here, rather than in seven specs.",
+      "Should `packages/coding-agent/src/live/attestation.ts` be routed through the new encoder? This spec's answer is NO, deliberately, and the README will say so with the three measured reasons (30 lines vs a 216-line import tree; platform-gated to darwin/arm64 behind a native call, so unreachable by any test; fatal-vs-non-fatal text decoders). The owner may overrule — it is a one-file change once the codec exists — but overrule it knowingly, not by accident. Note the attestation needs a BYTE STRING (major type 4) which the shared encoder supports, so there is no technical blocker, only a risk/benefit one.",
+      "Is the protocol name right? pi calls it `@earendil-works/pi-protocol`; the brief's rule gives `@oh-my-pi/pi-protocol`. That is unambiguous. The residual question is only whether a repo containing BOTH `pi-wire` and `pi-protocol` needs a disambiguation sentence in each README. This spec adds it to both sides; the alternative — renaming pi-wire, or merging the two — is worse and should be declined if raised.",
+      "The `ProtocolError` (type) vs `ProtocolValidationError` (class) near-collision. Upstream's naming is genuinely confusing and this spec preserves it verbatim because the distinction is the package's error contract: one is a value that crosses the wire, the other is a class thrown locally. Renaming either is an API break for every downstream spec in the wave (server and client both import from this barrel). Confirm the owner accepts the confusing names rather than a rename before the PR, because renaming after server/client land is 10x the work."
+    ]
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m1-expand-specs/protocol.spec.json"
+}

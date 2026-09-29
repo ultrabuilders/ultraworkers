@@ -1,0 +1,193 @@
+{
+  "id": "M4-6",
+  "title": "Guard /settings writes by provenance",
+  "wave": "M4 Wave B (shippable: false — merges with M4-4, one review, one changelog gate)",
+  "one_line": "When you change a setting in the /settings panel but a project config, a --config overlay, a runtime override, or an environment variable still supplies the effective value, the panel now says which layer is shadowing it and the dead value never gets written to your global config.",
+  "user_visible_effect": "Turning on a setting that a project's .omp/config.yml already sets no longer silently writes a dead duplicate into the global config.yml and calls it 'applied' — the row reports which layer is overriding the panel value instead. Same for an env var (already partly reported today), a --config/PI_CONFIG_FILES overlay, and a runtime override. Settings that are NOT shadowed behave exactly as before, so /settings is not bricked for anyone.",
+  "files_touched": [
+    {
+      "path": "packages/tui/src/overlays/settings-defs.ts",
+      "action": "modify",
+      "change": "Add an exported `SettingsProvenance` union type and a `provenance(path: string): SettingsProvenance` member on the `SettingsHost` interface (currently lines 131-142).",
+      "verified": true,
+      "note": "Line 131 is `export interface SettingsHost {` and line 141 is the last member (`validateProviderLimits`) — confirmed with grep. The plan's `settings-defs.ts:131-142` range is exact. tui owns this type because tui cannot import from coding-agent; `SettingsProvenance` must mirror `SettingProvenance` at packages/coding-agent/src/config/settings.ts:62 (same 6 members: \"env\" | \"runtime\" | \"overlay\" | \"project\" | \"global\" | \"default\")."
+    },
+    {
+      "path": "packages/tui/src/overlays/settings-selector.ts",
+      "action": "modify",
+      "change": "Route all 13 `settings.set(` / `#context.settings.set(` call sites through one new `#writeSetting(path, value)` helper that inspects the returned write result and surfaces the shadow message; add the `settings.set(` -> `#writeSetting(` replacement so zero direct `settings.set(` calls remain in the file.",
+      "verified": true,
+      "note": "13 sites CONFIRMED via `grep -n 'settings\\.set('` — lines 349, 393, 876, 879, 1162, 1200, 1202, 1216, 1218, 1220, 1222, 1251, 1258. The plan's line list (346, 390, 869, 872, 1155, 1193, 1195, 1209, 1211, 1213, 1215, 1244, 1251) is STALE by +3 on the first two and +7 on the remaining eleven; the COUNT of 13 is correct. This file is the ONLY caller of `SettingsHost.set` in all of packages/tui (verified with a repo-wide grep) — which is exactly why the helper can be single-sourced."
+    },
+    {
+      "path": "packages/coding-agent/src/config/shadowing.ts",
+      "action": "create",
+      "change": "New shared module exporting `globalLayerValue(setting, scope)` and `shadowingSource(setting, scope)`, lifted out of config-cli.ts so the CLI and the settings host share one precedence-message implementation (AGENTS.md Central Utilities).",
+      "verified": true,
+      "note": "Do NOT import from coding-agent into tui — this module lives in coding-agent and is consumed by config-cli.ts and settings-ui.ts only. The 13 sites keep calling through the SettingsHost interface, never this module directly."
+    },
+    {
+      "path": "packages/coding-agent/src/cli/config-cli.ts",
+      "action": "modify",
+      "change": "Delete the local `globalValue` (line 318-322) and `shadowingSource` (line 325-360) and import both from `../config/shadowing`, passing `settings` as the scope argument. Behaviour of `omp config set` output must be byte-identical.",
+      "verified": true,
+      "note": "`globalValue` at line 318 and `shadowingSource` at line 325 are both module-private (not in the `export` list — confirmed: exports are only ConfigAction, ConfigCommandArgs, parseConfigArgs, runConfigCommand, printConfigHelp). `shadowingSource` spans 325-360, not 325-357 as the plan states. Sole call site is line 307 inside handleSet."
+    },
+    {
+      "path": "packages/coding-agent/src/config/settings-ui.ts",
+      "action": "modify",
+      "change": "Implement `provenance: path => resolve(path).provenance(settings)` on the host object (createSettingsHost, line 51-82); implement the post-write guard inside `set`; widen `set`'s return type to `SettingsWriteResult`.",
+      "verified": true,
+      "note": "`createSettingsHost` at line 51 and `envNote` at line 39-44 are both CONFIRMED at the plan's line numbers. The host object literal is at lines 74-81; `set: (path, value) => resolve(path).set(settings, value)` is line 77."
+    },
+    {
+      "path": "packages/coding-agent/test/config/settings-provenance-guard.test.ts",
+      "action": "create",
+      "change": "New test file: one test per genuinely distinct shadowing layer (project / env / overlay / runtime) plus a no-shadow control plus an on-disk rollback assertion.",
+      "verified": true,
+      "note": "Mirrors the structure of the existing packages/coding-agent/test/config/settings-panel-clear.test.ts, which already drives the real SettingsSelectorComponent through handleInput and asserts on the on-disk config.yml bytes. Use beginSettingsTest/restoreSettingsTestState from test/helpers/settings-test-state.ts."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Create packages/coding-agent/src/config/shadowing.ts. Move `globalValue` (config-cli.ts:318-322) into it renamed `globalLayerValue`, and `shadowingSource` (config-cli.ts:325-360) into it unchanged in body. Give BOTH an explicit `scope: Settings` parameter instead of closing over the `settings` module proxy — `globalLayerValue` reads `scope.getGlobalSettings()` and `shadowingSource` calls `setting.provenance(scope)`. Export `SettingProvenance` as a re-export of the type from ./settings so callers of the new module do not need a second import. Keep the exact same message strings — the CLI output is user-facing and already shipped.",
+      "anchor": "packages/coding-agent/src/cli/config-cli.ts:318"
+    },
+    {
+      "n": 2,
+      "instruction": "In config-cli.ts delete both local functions and add a top-level `import { globalLayerValue, shadowingSource } from \"../config/shadowing\";`. Update the two call sites inside handleSet (currently line 307) to pass `settings` as the second/third argument. Verify `bun run check:ts` is still clean — this is a pure move, so any error here means the extraction was not faithful.",
+      "anchor": "packages/coding-agent/src/cli/config-cli.ts:307"
+    },
+    {
+      "n": 3,
+      "instruction": "In settings-defs.ts, immediately above the `SettingsHost` interface, add `export type SettingsProvenance = \"env\" | \"runtime\" | \"overlay\" | \"project\" | \"global\" | \"default\";` and add `provenance(path: string): SettingsProvenance;` to the interface with a doc comment explaining the ordering: runtime override -> --config overlay -> project -> global -> schema default, with env checked first and therefore only reachable through this method.",
+      "anchor": "packages/tui/src/overlays/settings-defs.ts:131"
+    },
+    {
+      "n": 4,
+      "instruction": "In settings-ui.ts widen `set` to return a result. Define and export `SettingsWriteResult` as a discriminated union: `{ status: \"applied\" } | { status: \"shadowed\"; source: Exclude<SettingsProvenance, \"global\" | \"default\">; message: string }`. Note that the narrow `source` type is the point of the change — it makes the rollback branch and the UI branch exhaustive.",
+      "anchor": "packages/coding-agent/src/config/settings-ui.ts:77"
+    },
+    {
+      "n": 5,
+      "instruction": "Implement the guard in `createSettingsHost`'s `set` (line 77). Four steps, in this exact order: (1) `const previous = globalLayerValue(setting, settings);` — undefined means the key was absent from the global layer; (2) `setting.set(settings, value);`; (3) read back what actually landed normalised via `const written = globalLayerValue(setting, settings);` and the effective value via `const effective = setting.get(settings);`, then `const shadow = shadowingSource(setting, settings);` — (4) early-return `{ status: \"applied\" }` when `shadow` is undefined OR when `Bun.deepEquals(effective, written)`, because a higher layer holding the identical value is not a real shadow. Otherwise roll back: `previous === undefined ? setting.unset(settings) : setting.set(settings, previous);` and return `{ status: \"shadowed\", source: shadow source, message: shadow.message }`.",
+      "anchor": "packages/coding-agent/src/config/settings-ui.ts:77"
+    },
+    {
+      "n": 6,
+      "instruction": "Add `provenance: path => resolve(path).provenance(settings)` to the host object literal. The declared return type of `SettingsHost.provenance` is what enforces the mirror: if coding-agent's `SettingProvenance` ever gains a member, this arrow function stops type-checking and `bun run check:ts` goes red. That is the drift guard — do not add a runtime assertion on top of it.",
+      "anchor": "packages/coding-agent/src/config/settings-ui.ts:74"
+    },
+    {
+      "n": 7,
+      "instruction": "In settings-selector.ts add a private `#writeSetting(path: string, value: unknown): boolean` to SettingsSelectorComponent that calls `this.#context.settings.set(path, value)`, and on `status === \"shadowed\"` shows `message` through whatever inline error/status affordance the component already has, returning false; otherwise returning true. Then replace all 13 call sites — lines 349, 393, 876, 879, 1162, 1200, 1202, 1216, 1218, 1220, 1222, 1251, 1258 — with `#writeSetting(...)`.",
+      "anchor": "packages/tui/src/overlays/settings-selector.ts:349"
+    },
+    {
+      "n": 8,
+      "instruction": "For the two ProviderLimitsSubmenu sites (349 and 393) note that `this.#settings` is a separate SettingsHost field on that class, not `this.#context.settings` — the helper either takes the host as a parameter or is duplicated once on ProviderLimitsSubmenu. Pick one; do not silently drop those two writes, they are the record-setting path and the easiest to miss.",
+      "anchor": "packages/tui/src/overlays/settings-selector.ts:349"
+    },
+    {
+      "n": 9,
+      "instruction": "Run `grep -c 'settings\\.set(' packages/tui/src/overlays/settings-selector.ts` — it must now print 0. Any non-zero value means step 7 missed a site and the guard has a hole.",
+      "anchor": "packages/tui/src/overlays/settings-selector.ts"
+    },
+    {
+      "n": 10,
+      "instruction": "Generalise `envNote` (settings-ui.ts:39-44) into a `provenanceNote(setting)` that appends to the description for every shadowing layer, not just env, reusing the lifted `shadowingSource` message strings so the panel and `omp config set` say the same words. This is what makes the shadow visible BEFORE the user writes, and it is the fix for the gap the plan names. Keep envNote's existing env-specific wording for the env case — it is already shipped and users recognise it.",
+      "anchor": "packages/coding-agent/src/config/settings-ui.ts:39"
+    },
+    {
+      "n": 11,
+      "instruction": "Write packages/coding-agent/test/config/settings-provenance-guard.test.ts — see test_contract below for the six cases and the exact fixtures.",
+      "anchor": "packages/coding-agent/test/config/settings-panel-clear.test.ts"
+    },
+    {
+      "n": 12,
+      "instruction": "Do NOT add a changelog entry. Wave B is `shippable: false` (plan line 7925) and is gated behind a single M4 changelog decision that has not been made. Both packages' `[Unreleased]` sections stay untouched. Note the shape of this change in the PR body instead.",
+      "anchor": "packages/coding-agent/CHANGELOG.md:3"
+    }
+  ],
+  "code_shape": "// packages/coding-agent/src/config/shadowing.ts  (lifted, scope made explicit)\nimport type { Settings, SettingProvenance } from \"./settings\";\nimport { type AnySetting } from \"./registry\";\n\n/** Value `setting` holds in the global config layer — what a panel or CLI write persisted. */\nexport function globalLayerValue(setting: AnySetting, scope: Settings): unknown {\n\tlet value: unknown = scope.getGlobalSettings();\n\tfor (const segment of setting.segments) {\n\t\tvalue = isRecord(value) ? value[segment] : undefined;\n\t}\n\treturn value;\n}\n\n/** Where the effective value comes from when it is not the global config (or the default), if anywhere. */\nexport function shadowingSource(\n\tsetting: AnySetting,\n\tscope: Settings,\n): { source: Exclude<SettingProvenance, \"global\" | \"default\">; message: string } | undefined {\n\tconst provenance = setting.provenance(scope);\n\tswitch (provenance) {\n\t\tcase \"global\":\n\t\tcase \"default\":\n\t\t\treturn undefined;\n\t\tcase \"env\": { /* ...unchanged from config-cli.ts:332-345... */ }\n\t\tcase \"project\":\n\t\tcase \"overlay\":\n\t\tcase \"runtime\":\n\t\t\t/* ...unchanged... */\n\t}\n}\n\n// packages/coding-agent/src/config/settings-ui.ts  (inside createSettingsHost)\nconst writeSetting = (path: string, value: unknown): SettingsWriteResult => {\n\tconst setting = resolve(path);\n\tconst previous = globalLayerValue(setting, settings); // undefined ⇒ key absent from global\n\n\tsetting.set(settings, value);\n\n\t// writeValue() mutates the in-memory global layer synchronously (settings.ts:818-838),\n\t// so re-reading provenance here observes the write without awaiting the debounced save.\n\tconst written = globalLayerValue(setting, settings);   // normalised value that landed\n\tconst effective = setting.get(settings);              // value the user actually gets\n\tconst shadow = shadowingSource(setting, settings);\n\n\t// A higher layer holding the identical value is not a real shadow — do not roll back.\n\tif (!shadow || Bun.deepEquals(effective, written)) return { status: \"applied\" };\n\n\tif (previous === undefined) setting.unset(settings);\n\telse setting.set(settings, previous);\n\n\treturn { status: \"shadowed\", source: shadow.source, message: shadow.message };\n};\n\n// packages/tui/src/overlays/settings-selector.ts  (one funnel for all 13 writes)\n#writeSetting(path: string, value: unknown): boolean {\n\tconst result = this.#context.settings.set(path, value);\n\tif (result.status === \"shadowed\") {\n\t\tthis.#showInlineStatus(` ${result.message}`); // reuse the component's existing affordance\n\t\treturn false;\n\t}\n\treturn true;\n}",
+  "test_contract": "The observable contract: a /settings write whose effective value is supplied by a higher layer must (a) not leave the dead value in the global config.yml on disk, (b) leave the setting's previous global value exactly as it was, and (c) report which layer is shadowing. A write with nothing shadowing it must land normally in config.yml. If the guard regresses, a user toggles a setting that their project config already controls and config.yml silently accumulates dead values that appear applied — the exact failure M4-6 exists to prevent. The no-shadow control row is not filler: it is what proves the guard distinguishes 'shadowed' from 'applied', and it is the test that fails if someone turns the guard into a blanket refusal and bricks /settings for every user (the risk the plan names as the primary failure mode).",
+  "test_files": ["packages/coding-agent/test/config/settings-provenance-guard.test.ts"],
+  "verification": "BLOCKED-ENV NOTE: `bun test` does not run in this checkout — the native addon is missing and every test file fails to load with \"Failed to load pi_natives native addon for darwin-arm64\" (reproduced: `bun test packages/coding-agent/test/config/settings-panel-clear.test.ts` -> 0 pass, 1 fail, 1 error). Build it with `bun --cwd=packages/natives run build` before the test command below means anything. `bun run check:ts` DOES run and passes at baseline (verified, exit 0).\n\nMust pass, in order:\n1. bun run check:ts\n2. bun --cwd=packages/natives run build   (unblocks the test runner)\n3. bun test packages/coding-agent/test/ -t 'settings'\n4. bun test packages/coding-agent/test/            (no regression across the package)\n5. grep -c 'settings\\.set(' packages/tui/src/overlays/settings-selector.ts   # must print 0\n6. grep -c 'shadowingSource' packages/coding-agent/src/cli/config-cli.ts      # must print 1 (the import only)",
+  "gate": "Four gates, all mechanical and all able to go red.\n(1) `grep -c 'settings\\.set(' packages/tui/src/overlays/settings-selector.ts` prints 0 — no write bypasses the guard. This is the anti-drift gate: it goes red the moment anyone adds a 14th call site the way the plan's hardcoded line list would have silently missed.\n(2) The project-shadow test asserts `YAML.parse(await Bun.file(globalConfigPath).text())` does NOT contain the key after a panel write, and that it contains the PRE-write value — a byte-level assertion on the real file, which is what rollback means here (in-memory revert before the 100ms `#queueSave` debounce drains, so the write and its rollback coalesce into one save; verified settings.ts:818-838 and #queueSave).\n(3) The no-shadow control test asserts the same key IS present in config.yml after a panel write with nothing shadowing it. Without this, gates (1) and (2) are satisfiable by a guard that refuses every write.\n(4) `bun run check:ts` clean, which additionally enforces that tui's `SettingsProvenance` and coding-agent's `SettingProvenance` have not drifted.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "M2 WI-8a and WI-8b must merge first — they are what exposed the namespaced `pi.registerSetting` surface this item edits. NOT VERIFIED: WI-8a/WI-8b are M2 work items that have not been executed; confirm they have landed on this branch before starting.",
+    "M4-4 must land in the SAME PR or with an explicit merge order — Wave B states both items change a structurally-satisfied interface in the same `packages/tui/src/overlays/` package. M4-6 adds a member to `SettingsHost`; M4-4 changes `PluginSettingsManager.setEnabled`'s return type. One review, two commits.",
+    "M4-4's `ChangeResult` shape is the precedent for `SettingsWriteResult` — align the two so Wave B ships one coherent result type, not two near-identical ones."
+  ],
+  "blocks": [
+    "M4 Wave B cannot open its PR until the M4 changelog decision is made (plan:8096) — merge is allowed, release is not.",
+    "Blocks the other half of Wave B: M4-4 cannot be reviewed independently without deciding the shared `ChangeResult` vs `SettingsWriteResult` shape."
+  ],
+  "effort": "M",
+  "risk": "The guard is a post-write verification with rollback, and the rollback decision is what can brick /settings. Two concrete ways this goes wrong. (1) A blanket refusal — if the guard rejects every write whose provenance is not \"global\", then for any setting a project config already defines, the panel becomes read-only and users cannot edit it at all. The no-shadow control test exists specifically to catch this, and the guard must be value-comparing (effective vs written) rather than provenance-only, because a project layer holding the identical value is a false positive. (2) A throw escaping the guard — none of the 13 call sites is wrapped in try/catch (confirmed: the only `throw` in settings-selector.ts is the two `Invalid record JSON` throws at lines 1208 and 1211), so a thrown error from `set` propagates into the component's submit handler and can take down the overlay mid-render. The guard must RETURN a result, never throw for shadowing; genuine write failures (bad JSON, validation) still throw as they do today. Secondary risk, lower: the tui/coding-agent interface drift — `SettingsHost` is declared in tui and satisfied structurally by `createSettingsHost` in coding-agent, and packages/tui/package.json exports `./*` as a wildcard, so out-of-repo implementors exist in principle. Adding one member is far less dangerous than M4-4's return-type change, but the wildcard export is why the provenance member must be additive and optional-free rather than a signature change.",
+  "open_questions": [
+    "Should the panel be LOUD or QUIET on a shadowed write? The spec returns a result and the panel shows an inline message. But a user who typed a value into a text field and pressed enter, and then sees it silently revert, may read that as data loss. Options: (a) reject the write and show why, (b) allow the write, keep it in config.yml, and only annotate the row. Option (b) is what `omp config set` already does today (config-cli.ts:315-317 — it reports the shadow in yellow and leaves the value written), so it has shipped precedent; option (a) is what the dsh precedent did. This is a product decision, not an engineering one, and it changes whether the rollback half of the guard exists at all.",
+    "The plan's dsh precedent (`packages/boot/config-editor/src/index.ts:127-129` and `:133-137`) DOES NOT EXIST in this repo — there is no `packages/boot/` package at all. The rollback-by-bytes half of the plan's design therefore rests on precedent that cannot be inspected here. The in-repo precedent is config-cli.ts:295-318, which verifies post-write but reports rather than rolls back. Decide which precedent governs before writing the guard.",
+    "Should `provenanceNote` (step 10) be applied to the settings' persistent description, or only shown after a write? A persistent description note is strictly more informative and costs nothing, but it changes the description of every shadowed row, which is a wider visual change than the plan scoped. It also grows the entry list, which is rebuilt on every tab switch (`#buildItemsForDefs` at settings-selector.ts:1280) — cheap, but worth confirming with a real settings count.",
+    "Confirm the M2 WI-8a / WI-8b dependency has actually landed. The plan states it as a hard blocker but M2 has not been executed; if those items changed the settings-registration surface, step 3's interface addition may need to match a shape that does not exist yet."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The fix shape is taken from dsh at `packages/boot/config-editor/src/index.ts:127-129` (throw 'is overridden by a home patch or command-line overlay') and `:133-137` (byte rollback).",
+      "verdict": "WRONG — the file does not exist",
+      "correction": "There is no `packages/boot/` directory in this repo; `ls packages/` shows agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire. `grep -rn 'is overridden by a home patch' packages/` returns nothing. Do not treat the dsh rollback-by-bytes design as a citable precedent. The real in-repo precedent is `packages/coding-agent/src/cli/config-cli.ts:295-318` (handleSet), which does post-write verification via `globalValue` + `shadowingSource` and PRINTS the shadow in yellow — it does not throw and does not roll back. Reconcile against that, and note the two precedents disagree (this is open_question #2).",
+      "evidence": "`ls packages/`; `find . -type d -name config-editor` -> no results; `grep -rn 'overridden by a home patch' --include='*.ts' packages/` -> no results; `sed -n '295,318p' packages/coding-agent/src/cli/config-cli.ts`"
+    },
+    {
+      "claim": "`packages/tui/src/overlays/settings-selector.ts` has a provenance switch at lines 325-357.",
+      "verdict": "WRONG — that range is a copy-paste from config-cli.ts",
+      "correction": "settings-selector.ts:325-357 contains `#showProviderList()` (starts line 321) and `#showProviderEditor(provider)` (starts line 361). There is no provenance logic anywhere in settings-selector.ts today. The range 325-357 is byte-for-byte the range the plan gives for `shadowingSource` in config-cli.ts, so the plan duplicated one line range across two files. Nothing to preserve or lift from the tui side; the tui file's only involvement is the 13 call sites.",
+      "evidence": "`sed -n '320,400p' packages/tui/src/overlays/settings-selector.ts`; `grep -n '#showProviderList\\|#showProviderEditor' packages/tui/src/overlays/settings-selector.ts`"
+    },
+    {
+      "claim": "The 13 `settings.set(` sites are at lines 346, 390, 869, 872, 1155, 1193, 1195, 1209, 1211, 1213, 1215, 1244, 1251.",
+      "verdict": "STALE — count correct, all line numbers wrong",
+      "correction": "The count of 13 is exactly right and the ORDER matches 1:1, but the line numbers are off by +3 for the first two sites and +7 for the remaining eleven. Real lines: 349, 393, 876, 879, 1162, 1200, 1202, 1216, 1218, 1220, 1222, 1251, 1258. Use the grep output at implementation time, not the plan's numbers.",
+      "evidence": "`grep -n 'settings\\.set(' packages/tui/src/overlays/settings-selector.ts` -> 13 lines; `grep -c` -> 13"
+    },
+    {
+      "claim": "`shadowingSource` lives at `packages/coding-agent/src/cli/config-cli.ts:325-357`.",
+      "verdict": "PARTLY WRONG — start correct, end wrong, and a companion function is missing",
+      "correction": "`shadowingSource` starts at 325 (correct) but the function body ends at 360, not 357. More importantly the plan does not mention `globalValue` at config-cli.ts:318-322, which is the function you need to read the pre-write global value — i.e. the rollback primitive. Both are module-private (not in the export list) and both must move together, or the host will re-implement one of them. Lift both into the new shared module with an explicit `scope: Settings` parameter so the settings host and the CLI share one implementation.",
+      "evidence": "`grep -n 'shadowingSource\\|globalValue' packages/coding-agent/src/cli/config-cli.ts` -> 307, 318, 325; `sed -n '353,360p'` shows the closing brace at 360; `grep -n '^export' packages/coding-agent/src/cli/config-cli.ts` -> 5 exports, neither function among them"
+    },
+    {
+      "claim": "`provenance(scope)` is at `registry.ts:763-766` and the env check is at `:764`.",
+      "verdict": "MOSTLY CORRECT — off by one on the sub-anchor",
+      "correction": "The 763-766 range is right. Line 764 is the `provenance(scope: ScopeLike): SettingProvenance {` SIGNATURE; the `#effectiveEnv` check is on line 765. Use 765.",
+      "evidence": "`grep -n 'provenance(scope\\|#effectiveEnv' packages/coding-agent/src/config/registry.ts` -> 526 (definition), 538, 764, 765"
+    },
+    {
+      "claim": "`settingsOf(scope).getProvenance()` never returns 'env', so use `setting.provenance(scope)` instead.",
+      "verdict": "CONFIRMED — verified against source",
+      "correction": "Correct, and it is worth keeping as an explicit rule. `Settings.getProvenance` (settings.ts:800-808) walks `#overrides` -> `#configOverlay` -> `#project` -> `#global` -> parent and has no env branch at all; only `Setting.provenance` (registry.ts:765) layers the `#effectiveEnv` check on top. Also note the full union is six members, not five: `\"env\" | \"runtime\" | \"overlay\" | \"project\" | \"global\" | \"default\"` (settings.ts:62) — the tui mirror type must carry all six.",
+      "evidence": "`sed -n '795,815p' packages/coding-agent/src/config/settings.ts`; `sed -n '764,766p' packages/coding-agent/src/config/registry.ts`; `grep -n 'export type SettingProvenance' packages/coding-agent/src/config/settings.ts` -> line 62"
+    },
+    {
+      "claim": "The work item is 'guard all 13 sites'.",
+      "verdict": "RIGHT OBSERVATION, WRONG SEAM",
+      "correction": "The 13 sites are the right inventory, but they are the wrong place to enforce anything. All 13 are `SettingsHost.set` callers inside ONE file, and `SettingsHost.set` has exactly one production implementation — `createSettingsHost` at settings-ui.ts:77. Enforcing the guard inside that one `set` covers all 13 automatically and cannot be defeated by a future M3 panel adding a 14th. A repo-wide grep for `settings.set(` / `#settings.set(` across packages/tui returns exactly those 13 lines and nothing else. The plan's own warning about the hardcoded list being the most fragile artifact is right — the fix is to delete the list from the design, not to maintain it more carefully.",
+      "evidence": "`grep -rn 'settings\\.set(\\|#settings\\.set(' --include='*.ts' packages/tui/src/` -> 13 results, all in settings-selector.ts; `grep -rn 'SettingsHost' --include='*.ts' packages/` -> single implementor `createSettingsHost`"
+    },
+    {
+      "claim": "`SettingsHost` is a cross-package interface risk 'exactly like PluginSettingsManager'.",
+      "verdict": "CONFIRMED, with a caveat that lowers the severity",
+      "correction": "The structural-satisfaction shape is real: tui declares `SettingsHost` and coding-agent satisfies it in `createSettingsHost` (settings-ui.ts:51, imports the type at line 2), and `packages/tui/package.json` exports a wildcard `'./*' -> './src/*.ts'`, so out-of-repo implementors are possible in principle. But the grep shows only ONE production implementor in this repo. M4-6 adds a new member (additive, no signature change); M4-4 changes an existing method's RETURN TYPE, which is the genuinely breaking one. M4-6 is the lower-risk half of Wave B.",
+      "evidence": "`grep -rn 'SettingsHost' --include='*.ts' packages/`; `sed -n '80,110p' packages/tui/package.json` shows `'./*': { types: './src/*.ts', import: './src/*.ts' }`"
+    },
+    {
+      "claim": "The task context states the repo is at git HEAD 5873776.",
+      "verdict": "STALE",
+      "correction": "HEAD is 808b365 on branch milestone-1. Any other spec in this batch quoting 5873776 is off by the three most recent commits (33d6e33 'docs(m1): execution plan...', 808b365 'docs(plan): fold the spec-verified M1 execution plan...', ecd516f initial publish).",
+      "evidence": "`git rev-parse --short HEAD` -> 808b365"
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m4-specs/M4-6.spec.json"
+}

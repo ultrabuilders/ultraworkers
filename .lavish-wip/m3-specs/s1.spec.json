@@ -1,0 +1,388 @@
+{
+  "id": "s1",
+  "title": "Wave 1 — four small openings: usage preset, tmux key hints, read-group membership, loop throttle surface",
+  "wave": "Sóng 1 — Bốn khoảng mở nhỏ, không chặn gì",
+  "one_line": "Turn on the already-built `usage` quota segment in the chosen status-line presets, make the tmux prefix visible in keybinding hints, make the read-group membership decision come from one data-driven predicate at all seven sites, and surface named-phase stall indicators plus a per-phase frame-time breakdown.",
+  "user_visible_effect": "Status line: the quota segment (tier, 5h/1d/7d/monthly windows, credit resets) appears in the presets the maintainer picks, and stays on screen at 80 columns. Footer hints: under tmux with a prefix binding like ctrl+b, the hint reads `ctrl+b ctrl+b` instead of `ctrl+b`, so the doubling is not a surprise. Transcript: consecutive reads with another tool between them group consistently whether the transcript is rendered live or rebuilt from history on reload. Loader/TUI: a long synchronous block shows which named phase caused it, and a normal frame afterwards clears it.",
+  "files_touched": [
+    {
+      "path": "packages/tui/src/status-line/presets.ts",
+      "action": "modify",
+      "change": "A1 — add the string \"usage\" to leftSegments/rightSegments of the presets chosen by the P1 decision gate. No segment implementation work: the segment already exists and is registered.",
+      "verified": true,
+      "note": "All seven preset line numbers in the plan are EXACT: default:5, minimal:16, compact:26, full:36, nerd:59, ascii:84, custom:96. Verified individually with grep -n. No preset currently lists \"usage\"."
+    },
+    {
+      "path": "packages/tui/src/status-line/schema.ts",
+      "action": "modify",
+      "change": "A1 — only if P1 includes `custom`: append \"usage\" to CUSTOM_STATUS_LINE_DEFAULTS.right. Do NOT add \"usage\" to STATUS_LINE_SEGMENT_IDS; it is already there.",
+      "verified": true,
+      "note": "\"usage\" already exists at schema.ts:26 inside STATUS_LINE_SEGMENT_IDS (which begins at line 2). CUSTOM_STATUS_LINE_DEFAULTS actually spans 36-45, not the plan's 36-42."
+    },
+    {
+      "path": "packages/coding-agent/test/status-line-usage-preset.test.ts",
+      "action": "create",
+      "change": "A1 — NEW test rendering a real StatusLineComponent per preset at widths 200/120/80/60.",
+      "verified": true,
+      "note": "Directory exists; the file does not yet. Modeled on packages/coding-agent/test/status-line-overflow.test.ts, which is confirmed to exist and already exposes a createCtx factory with `usage: null` at its tail — extend that shape rather than writing a new one."
+    },
+    {
+      "path": "packages/tui/src/chrome/keybinding-hints.ts",
+      "action": "modify",
+      "change": "A8 — append a NEW prefix-aware hint function after `appKey` (line 47). Net-new code; do not rewrite the editor-key helpers.",
+      "verified": true,
+      "note": "The plan cites ':10-55' and calls the file '46 lines'. The file is 80 lines and lines 10-55 are imports plus editorKey/editorKeys/boundKeys/interruptKey/appKey/keyHint. `grep -c tmux` on this file, packages/tui/src/keybindings.ts and packages/tui/src/app-keybindings.ts returns 0, 0, 0 — confirming the plan's own evidence that this is new code, and contradicting its 'Sửa' line."
+    },
+    {
+      "path": "packages/tui/test/tmux-key-hints.test.ts",
+      "action": "create",
+      "change": "A8 — NEW test. Must use vi.spyOn on the imported module namespace + vi.restoreAllMocks() in afterEach.",
+      "verified": true,
+      "note": "packages/tui/test/ exists with ~40+ test files. No existing tmux test file. mock.module() is banned by AGENTS.md (oven-sh/bun#12823 registry leak)."
+    },
+    {
+      "path": "packages/tui/src/chat/read-tool-group.ts",
+      "action": "modify",
+      "change": "A6 — add one exported membership predicate that folds the name check together with the existing collapse check, then use it at :59.",
+      "verified": true,
+      "note": "The predicate the plan never names is `readArgsCollapseIntoGroup`, defined at read-tool-group.ts:41 (plan line EXACT). Line 59 is `if (content.name !== \"read\" || !readArgsCollapseIntoGroup(content.arguments)) return undefined;` (plan line EXACT)."
+    },
+    {
+      "path": "packages/tui/src/chat/chat-transcript-builder.ts",
+      "action": "modify",
+      "change": "A6 — one mechanical site at :443; one OPEN QUESTION at :507 (see open_questions).",
+      "verified": true,
+      "note": "Line 443: `if (content.name === \"read\" && readArgsCollapseIntoGroup(content.arguments)) {` — plan EXACT. Line 507: `const isReadGroupResult = message.toolName === \"read\" && (!pending || pending instanceof ReadToolGroupComponent);` — plan EXACT, but this is RESULT-side and does NOT call the collapse predicate. Converting it is a semantic change, not mechanical."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/utils/ui-helpers.ts",
+      "action": "modify",
+      "change": "A6 — one mechanical site at :553; one OPEN QUESTION at :663.",
+      "verified": true,
+      "note": "STALE PLAN: says :551 and :661, actual are :553 and :663 (both off by 2). Line 553 pairs the name check with the predicate. Line 663 is a bare result-side `message.toolName === \"read\" &&` with no predicate call."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/event-controller.ts",
+      "action": "modify",
+      "change": "A6 — two membership sites at :1357 and :1695. DO NOT TOUCH :1830, :1832, :1907.",
+      "verified": true,
+      "note": "STALE PLAN: says :1344 and :1684, actual are :1357 (name guard at :1350) and :1695. MUST-STAY-PUT is also stale: plan says :1819/:1821/:1896, actual are :1830/:1832/:1907 (all off by +11) — these are inline read results and :1830 is #inlineReadToolImages; converting them would break inline image rendering. The +11/+13 drift is consistent: the file gained 11 lines above the cited sites after the plan was written."
+    },
+    {
+      "path": "packages/tui/src/loop-watchdog.ts",
+      "action": "modify",
+      "change": "A5 — add the named-phase stall indicator surface on LoopWatchdog (class declaration at :57) and keep consuming takeRecentLoopPhase() at :123.",
+      "verified": true,
+      "note": "Plan :57 points at `export class LoopWatchdog {` (verified) — a fine place to add a field. Plan :123-124 is EXACT (`const phase = takeRecentLoopPhase();` is at :123)."
+    },
+    {
+      "path": "packages/utils/src/loop-phase.ts",
+      "action": "modify",
+      "change": "A5 — extend the phase stack to record per-phase timings, not just the current/recent name.",
+      "verified": true,
+      "note": "takeRecentLoopPhase is at loop-phase.ts:45 (plan EXACT). It clears the recent slot on every call so a phase-less interval is not misattributed — a per-phase accumulator must preserve that property."
+    },
+    {
+      "path": "packages/tui/src/components/loader.ts",
+      "action": "modify",
+      "change": "A5 — render the named-phase stall indicator, and surface per-phase frame cost in the trailer region.",
+      "verified": true,
+      "note": "All three plan anchors EXACT: :32 `#trailer?: () => string | undefined;`, :107-113 the `if (this.#trailer && lines.length > 1)` render block, :141 `setTrailer(...)`. The `lines.length > 1` constraint is real and a test fixture that produces a single-line row will pass vacuously. Existing consumer at :170 (`this.#ui?.lastFrameCostMs ?? 0`) is the natural place to show breakdown."
+    },
+    {
+      "path": "packages/tui/src/tui.ts",
+      "action": "modify",
+      "change": "A5 — split #lastFrameCostMs into a per-phase breakdown that sums to the existing total.",
+      "verified": true,
+      "note": "ALL FOUR plan anchors EXACT: :930 `new LoopWatchdog()`, :1035-1036 the `get lastFrameCostMs()` getter, :2105 and :2204 the two `this.#lastFrameCostMs = this.#renderScheduler.now() - start;` assignments. Field declared at :811; existing consumer at :2187 (`Math.min(TUI.#MAX_ADAPTIVE_RENDER_MS, this.#lastFrameCostMs * 2)`)."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/interactive-mode.ts",
+      "action": "modify",
+      "change": "A5 — merge the stall indicator into the EXISTING #workingRowTrailer return value. Do not call setTrailer a second time.",
+      "verified": true,
+      "note": "STALE PLAN: says :6674, actual is :6624 (`this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());`) — off by 50. #workingRowTrailer is defined at :1013 and also consumed at :1023 by renderIdleStatusHud, which deliberately returns a TWO-element array [\"\", padded] — an in-repo precedent for satisfying the loader's lines.length > 1 constraint."
+    },
+    {
+      "path": "packages/tui/test/loop-watchdog.test.ts",
+      "action": "modify",
+      "change": "A5 — EXTEND the existing file with named-phase stall attribution.",
+      "verified": true,
+      "note": "File exists and is confirmed at packages/tui/test/loop-watchdog.test.ts."
+    },
+    {
+      "path": "packages/tui/test/loader-stall-trailer.test.ts",
+      "action": "create",
+      "change": "A5 — NEW test for the named-phase indicator in the loader row and the frame-time breakdown.",
+      "verified": true,
+      "note": "packages/tui/test/ exists; this file does not yet. A new loader fixture that produces a genuinely MULTI-LINE row is the hard part of this item — budget half a day for the fixture alone, as the plan warns."
+    },
+    {
+      "path": "packages/tui/test/read-group-membership.test.ts",
+      "action": "create",
+      "change": "A6 — NEW test covering BOTH the live and the transcript-rebuild path in one test.",
+      "verified": true,
+      "note": "Does not exist yet. The single-test-both-paths requirement is the point: a missing membership site produces a transcript that folds differently live than on rebuild, which no compile error and no single-path test will catch."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "GATE — get the P1 answer in writing from the maintainer BEFORE writing any code for A1: does `usage` go into all seven presets, or only the `full` + `nerd` subset? Record the answer verbatim in this spec file and in the A1 work item. Do not start A1 while P1 is open; the `default` preset is what every current user sees on day one and `usage` is the widest segment in the catalog.",
+      "anchor": "plan:7249 (P1 row), plan:7255 (why it cannot default)"
+    },
+    {
+      "n": 2,
+      "instruction": "GATE — get the P0 answer in writing for A8: is the tmux prefix-doubling spec black-box (observed on shipped product under tmux) or omp-native (designed here), and where is the evidence? Record `spec: black-box` or `spec: omp-native` plus the evidence location in this spec. Do NOT point the evidence at ~/Projects/claude-code-ref — that checkout is untracked (`git -C <oh-my-pi> ls-files | grep -i claude-code-ref` returns empty) and plan §10 #10 explicitly rules it out as a build input. A8 must not start while P0 is open.",
+      "anchor": "plan:7248 (P0 row), plan:7573 (A8's spec row), plan:7642 (§10 #10)"
+    },
+    {
+      "n": 3,
+      "instruction": "A1 — read packages/tui/src/status-line/segments.ts:864-900 and packages/tui/src/status-line/types.ts:187-201 before editing anything, to confirm the segment renders tier / fiveHour / daily / sevenDay / monthly / resetCredits and returns visible:false when ctx.usage is null. This step exists so you do not go looking for a segment implementation to write.",
+      "anchor": "packages/tui/src/status-line/segments.ts:864"
+    },
+    {
+      "n": 4,
+      "instruction": "A1 — add the literal \"usage\" to the segment arrays of exactly the presets P1 names, in this file. Insert it in the rightSegments array adjacent to the other quota-adjacent segments (cost, context_pct) so the width pressure is where the plan's §4.1 warning expects it. Leave every preset outside the P1 subset completely untouched — not reformatted, not reordered.",
+      "anchor": "packages/tui/src/status-line/presets.ts:5,16,26,36,59,84,96"
+    },
+    {
+      "n": 5,
+      "instruction": "A1 — if and only if P1 includes the custom preset, append \"usage\" to CUSTOM_STATUS_LINE_DEFAULTS.right. The object spans lines 36-45, not 36-42. Do not touch STATUS_LINE_SEGMENT_IDS — \"usage\" is already at line 26.",
+      "anchor": "packages/tui/src/status-line/schema.ts:36"
+    },
+    {
+      "n": 6,
+      "instruction": "A1 — create packages/coding-agent/test/status-line-usage-preset.test.ts by copying the harness shape from status-line-overflow.test.ts: it already imports resetSettingsForTest, Settings, StatusLineComponent, statusLineHost, SegmentContext, initTheme and StatusLineTestComponents, and its createCtx factory already ends with `usage: null`. Add a `usage` override to that factory. Keep the test in packages/coding-agent/test/ — packages/tui declares no dependency on coding-agent, so the harness cannot be imported from packages/tui/test/.",
+      "anchor": "packages/coding-agent/test/status-line-overflow.test.ts:1-30 (imports), :99 (usage: null)"
+    },
+    {
+      "n": 7,
+      "instruction": "A1 — in the new test, build a real StatusLineComponent per preset and render at widths 200, 120, 80 and 60 with a fully populated usage context (tier, fiveHour, daily, sevenDay, monthly, resetCredits). Assert at 200 columns that all five windows plus the tier are present; assert at 80 columns that the quota segment is STILL present; assert that with ctx.usage null the rendered row is byte-identical to the pre-change row; and assert that the `status` segment appears in NO preset, and that one status hook renders exactly once.",
+      "anchor": "packages/coding-agent/test/status-line-usage-preset.test.ts (new)"
+    },
+    {
+      "n": 8,
+      "instruction": "A1 — add the P1 negative contract: for every preset OUTSIDE the chosen subset, assert the rendered bytes equal the pre-change output. Capture the pre-change bytes by checking out the file at the parent commit and rendering, or by asserting against a frozen literal — do not merely assert the preset still lacks the string, which proves nothing about rendering.",
+      "anchor": "packages/coding-agent/test/status-line-usage-preset.test.ts (new)"
+    },
+    {
+      "n": 9,
+      "instruction": "A8 — add ONE new exported function to keybinding-hints.ts, placed after appKey at line 47, that takes a formatted key hint and returns the prefix-doubled form when (a) the process is inside tmux per isInsideTmux(), (b) the underlying binding is a tmux prefix key, and (c) the binding is not itself a prefix. It must return the bare key unchanged in every other case, including when tmux detection throws or the probe times out. Do not modify editorKey/editorKeys/boundKeys/interruptKey/appKey/keyHint/rawKeyHint.",
+      "anchor": "packages/tui/src/chrome/keybinding-hints.ts:47 (insert after), :1-80 (whole file)"
+    },
+    {
+      "n": 10,
+      "instruction": "A8 — create packages/tui/test/tmux-key-hints.test.ts. Spy on the already-imported namespace object with vi.spyOn and call vi.restoreAllMocks() in afterEach; mock.module() is banned. CRITICAL: the test must prove it is actually exercising the tmux branch, not the fallback. resolveTmuxClientTerminalName returns null under isBunTestRuntime() at tmux.ts:49, so a test that merely sets process.env.TMUX takes the fallback path and proves nothing. Additionally, tmux.ts:21 memoizes into a module-level `cachedClientTerminalName` with no reset export — order your cases so the memo cannot be poisoned by an earlier test, and if you must reset it, do so through a supported seam rather than reaching into module state.",
+      "anchor": "packages/tui/src/tmux.ts:49 (the trap), :21 (the memo the plan omits)"
+    },
+    {
+      "n": 11,
+      "instruction": "A8 — assert the four behaviors: under tmux with a ctrl+b prefix binding the hint is `ctrl+b ctrl+b` while the key you send back is still a single `ctrl+b`; outside tmux nothing changes; a binding that is not the prefix is unchanged under tmux; and when the probe fails (no tmux binary, or probe timeout) the hint falls back to the bare key rather than throwing.",
+      "anchor": "packages/tui/test/tmux-key-hints.test.ts (new)"
+    },
+    {
+      "n": 12,
+      "instruction": "A6 — in read-tool-group.ts, add one exported predicate that folds the two conditions currently repeated at the mechanical sites, e.g. `export function isGroupedReadToolCall(name: string, args: unknown): boolean { return name === \"read\" && readArgsCollapseIntoGroup(args); }`, placed directly below readArgsCollapseIntoGroup at line 41. Keep readArgsCollapseIntoGroup exported — other call sites still need it.",
+      "anchor": "packages/tui/src/chat/read-tool-group.ts:41"
+    },
+    {
+      "n": 13,
+      "instruction": "A6 — convert the five genuinely mechanical sites to the new predicate: read-tool-group.ts:59 (invert to `!isGroupedReadToolCall(...)`), chat-transcript-builder.ts:443, ui-helpers.ts:553, event-controller.ts:1357 (name guard at :1350), and event-controller.ts:1695. Use the plan's numbers only as an orientation aid — the verified lines are above and the plan is off by 2 in ui-helpers and by 11-13 in event-controller.",
+      "anchor": "read-tool-group.ts:59, chat-transcript-builder.ts:443, ui-helpers.ts:553, event-controller.ts:1357, event-controller.ts:1695"
+    },
+    {
+      "n": 14,
+      "instruction": "A6 — LEAVE UNTOUCHED: event-controller.ts:1830, :1832, :1907 (inline read results; :1830 is #inlineReadToolImages — converting them breaks inline image rendering). ASK FIRST, do not convert blind: chat-transcript-builder.ts:507 and ui-helpers.ts:663 are result-side `toolName === \"read\"` checks that never call the collapse predicate. The plan lumps them in with the seven membership sites, but they answer a different question. Also check acp-event-mapper.ts:645, a `read` comparison the plan does not mention at all, and rule it in or out explicitly.",
+      "anchor": "event-controller.ts:1830,1832,1907 (leave), chat-transcript-builder.ts:507 + ui-helpers.ts:663 + acp-event-mapper.ts:645 (ask)"
+    },
+    {
+      "n": 15,
+      "instruction": "A6 — create packages/tui/test/read-group-membership.test.ts with ONE test that covers both paths. Mark a non-read tool as a group member, call it twice with a different tool interleaved, and assert the header counts both. Then rebuild the transcript from history and assert the result is IDENTICAL. That rebuild assertion is the only thing that catches a missed site: a missing membership yields a transcript that folds differently live than on reload, which is a silent failure with no compile error.",
+      "anchor": "packages/tui/test/read-group-membership.test.ts (new)"
+    },
+    {
+      "n": 16,
+      "instruction": "A6 — add the negative contract to the same test: an unmarked tool renders standalone, not folded into the group.",
+      "anchor": "packages/tui/test/read-group-membership.test.ts (new)"
+    },
+    {
+      "n": 17,
+      "instruction": "A5 — extend loop-phase.ts so a phase's timing is recorded as it is pushed/popped, not only its name. Preserve the existing property that takeRecentLoopPhase() clears the recent slot on every call, so a later phase-less block is never misattributed to a finished phase.",
+      "anchor": "packages/utils/src/loop-phase.ts:45"
+    },
+    {
+      "n": 18,
+      "instruction": "A5 — expose the just-detected phase from LoopWatchdog so the loader can name it. Keep the existing takeRecentLoopPhase() call at line 123 exactly as it is; the CPU-versus-sleep classification around it is unrelated and must not change.",
+      "anchor": "packages/tui/src/loop-watchdog.ts:57 (surface), :123 (unchanged)"
+    },
+    {
+      "n": 19,
+      "instruction": "A5 — render the named-phase indicator in the loader row. Respect the existing constraint at loader.ts:107 that the trailer is only drawn when lines.length > 1. The trailer seam already exists at loader.ts:32 and setTrailer at :141; you do not need a new one.",
+      "anchor": "packages/tui/src/components/loader.ts:32,107,141"
+    },
+    {
+      "n": 20,
+      "instruction": "A5 — in interactive-mode.ts, MERGE the stall indicator into the value already returned by #workingRowTrailer (defined at :1013) — or into a thin wrapper installed at :6624. Do NOT call setTrailer a second time; the slot is already occupied. Note that renderIdleStatusHud at :1023 solves the multi-line constraint by returning a two-element array — copy that trick rather than inventing one.",
+      "anchor": "packages/coding-agent/src/modes/interactive-mode.ts:6624 (install), :1013 (merge target), :1023 (precedent)"
+    },
+    {
+      "n": 21,
+      "instruction": "A5 — split the frame cost in tui.ts. #lastFrameCostMs is declared at :811, read through the getter at :1035-1036, and written at :2105 and :2204. Introduce a per-phase breakdown that SUMS to the existing total within tolerance — the contract is a decomposition, not a second clock. Keep the existing consumers (tui.ts:2187 adaptive floor, loader.ts:170) working.",
+      "anchor": "packages/tui/src/tui.ts:811,1035,2105,2204"
+    },
+    {
+      "n": 22,
+      "instruction": "A5 — extend packages/tui/test/loop-watchdog.test.ts for phase-named stall attribution, and create packages/tui/test/loader-stall-trailer.test.ts for the indicator and the breakdown. The loader fixture MUST produce a row with more than one line or every trailer assertion passes vacuously; budget half a day for that fixture alone. Also cover the case where there is NO working row at all.",
+      "anchor": "packages/tui/test/loop-watchdog.test.ts (extend), packages/tui/test/loader-stall-trailer.test.ts (new)"
+    },
+    {
+      "n": 23,
+      "instruction": "A5 — assert the two behaviors: drive a synchronous block longer than the threshold from inside a NAMED phase and assert the loader row shows the stall indicator carrying that phase's name, then assert a normal frame afterwards CLEARS it. For the frame breakdown, assert the per-phase values sum to the existing total within tolerance.",
+      "anchor": "packages/tui/test/loader-stall-trailer.test.ts (new)"
+    }
+  ],
+  "code_shape": "// packages/tui/src/chat/read-tool-group.ts — A6, added directly below line 41\n// The one place that answers \"does this tool call collapse into the group?\" from data\n// rather than from a hard-coded name comparison repeated at each call site.\nexport function isGroupedReadToolCall(name: string, args: unknown): boolean {\n\treturn name === \"read\" && readArgsCollapseIntoGroup(args);\n}\n\n// read-tool-group.ts:59 — mechanical inversion, the plan's line is exact\nif (!isGroupedReadToolCall(content.name, content.arguments)) return undefined;\n\n// chat-transcript-builder.ts:443 — plan's line is exact\nif (isGroupedReadToolCall(content.name, content.arguments)) {\n\n// event-controller.ts:1357 — plan says 1344; the name guard sits at 1350\nif (isGroupedReadToolCall(renderToolName, content.arguments)) {\n\n// --- NOT converted, and not convertible without a product call ---\n// event-controller.ts:1830 / :1832 / :1907  — inline read RESULTS, not membership.\n//   :1830 is #inlineReadToolImages; converting these breaks inline image rendering.\n// chat-transcript-builder.ts:507, ui-helpers.ts:663 — result-side `toolName === \"read\"`\n//   that never calls the collapse predicate. The plan calls these membership sites;\n//   they answer a different question. Ask before touching.\n\n// packages/tui/src/chrome/keybinding-hints.ts — A8, new function after line 47.\n// Appends; the editor-key helpers above it are untouched.\nimport { isInsideTmux, resolveTmuxClientTerminalName } from \"../tmux\";\n\n/**\n * Double a tmux prefix in a formatted hint so the footer shows the keystrokes the\n * outer tmux actually needs. Under tmux with a prefix binding, `ctrl+b` is sent as\n * `ctrl+b ctrl+b` while the key we hand back stays a single `ctrl+b`.\n *\n * Every failure mode — outside tmux, no tmux binary, probe timeout, a binding that\n * is not the prefix — returns the bare key. Never throws.\n */\nexport function prefixAwareKeyHint(hint: string, isPrefixBinding: boolean): string {\n\tif (!isPrefixBinding || !isInsideTmux()) return hint;\n\tif (resolveTmuxClientTerminalName() === null) return hint; // probe unavailable -> bare key\n\treturn `${hint} ${hint}`;\n}\n\n// A5 seam, merged not stacked — interactive-mode.ts:1013 and :6624\n// setTrailer is ALREADY installed at :6624 with this working row trailer.\n// Fold the stall indicator into the returned value; never call setTrailer twice.\n#workingRowTrailer(): string | undefined {\n\tconst rate = this.#tokenRateLabel();\n\tconst title = this.#workingTitleTrailer();\n\tconst stall = this.#loopStallIndicator(); // new, undefined when not stalled\n\tconst parts = [rate, title, stall].filter((p): p is string => p !== undefined && p.length > 0);\n\treturn parts.length > 0 ? parts.join(\"  \") : undefined;\n}\n\n// The loader only draws a trailer when lines.length > 1 (loader.ts:107).\n// renderIdleStatusHud at :1023 already solves this by returning a TWO-element\n// array — that is the in-repo precedent, not something to reinvent.",
+  "test_contract": "Four independent contracts, one per item.\n\nA1 — the observable contract: a status-line preset that lists `usage` renders the quota segment at 200 columns (all five windows plus tier) and STILL renders it at 80 columns; a preset whose ctx.usage is null renders byte-identical output to the pre-change build; and every preset outside the P1-chosen subset renders byte-identical to pre-change. A consumer who regresses this sees a quota indicator silently vanish at narrow widths, or — worse — see every existing user's `default` row change shape on upgrade. This is the one item in the wave where a mistake is visible to every user on day one.\n\nA8 — the observable contract: under tmux with a ctrl+b prefix binding, the rendered footer hint reads `ctrl+b ctrl+b` while the key handed back to the input layer is still a single `ctrl+b`; outside tmux, with a non-prefix binding, and when the probe fails, the hint is the bare key and nothing throws. A regression is a footer that lies to the user about what to press.\n\nA6 — the observable contract: a marked non-read tool called twice with a different tool interleaved is counted as TWO by the group header on the LIVE path AND the transcript rebuilt from history produces byte-identical output. The rebuild half is the load-bearing half: a missed membership site produces a transcript that folds differently live than on reload, which is a silent failure — no compile error, no test signal, only visible when a user reopens an old session. The negative half: an unmarked tool still renders standalone.\n\nA5 — the observable contract: a synchronous block longer than the threshold driven from inside a NAMED phase makes the loader row show a stall indicator naming that phase, and a normal frame afterwards clears it. Separately, the per-phase frame-time values SUM to the existing total within tolerance — a decomposition, not a second clock. A regression is either a stall that is invisible when it matters, or an indicator that never goes away.",
+  "test_files": [
+    "packages/coding-agent/test/status-line-usage-preset.test.ts",
+    "packages/tui/test/tmux-key-hints.test.ts",
+    "packages/tui/test/read-group-membership.test.ts",
+    "packages/tui/test/loader-stall-trailer.test.ts",
+    "packages/tui/test/loop-watchdog.test.ts"
+  ],
+  "verification": "bun run check:ts\n\nI ran this in this checkout at HEAD 808b365 and it PASSED (exit code 0). It is genuinely slow though — it did not finish within 9 minutes and only completed as a background job, so budget accordingly and do not kill it early.\n\nNOTE: `bun test` is BLOCKED in this checkout — the native addon is not built, so the runner reports 0 pass with \"Failed to load pi_natives native addon for darwin-arm64\". Build the addon first (cargo build for crates/pi-natives) or treat the test commands below as unverifiable today.\n\nOnce the addon is built, the per-item test commands are:\n  bun test packages/coding-agent/test/status-line-usage-preset.test.ts\n  bun test packages/tui/test/tmux-key-hints.test.ts\n  bun test packages/tui/test/read-group-membership.test.ts\n  bun test packages/tui/test/loop-watchdog.test.ts packages/tui/test/loader-stall-trailer.test.ts",
+  "gate": "All five test files pass, and every anchor in this spec was re-verified against the tree at implementation time rather than trusted from the plan. Specifically: (a) the new status-line test renders every preset at 200/120/80/60 with a full usage context, shows the quota segment surviving at 80 columns, and shows byte-identical output for both ctx.usage=null and every preset outside the P1 subset; (b) the tmux test exercises the real tmux branch — proven, not assumed — and covers the probe-failure fallback; (c) the read-group test passes with the live path and the rebuild path asserted identical to each other; (d) the loader test uses a genuinely multi-line row and covers the no-working-row case; (e) `bun run check:ts` exits 0.\n\nBefore ANY code is written: P1 is answered in writing and recorded (A1 will not start without it), and P0 is answered in writing with a recorded spec provenance and evidence location that is NOT the untracked ~/Projects/claude-code-ref checkout (A8 will not start without it).",
+  "gate_can_fail": "Yes, on every leg. The A1 and A6 tests assert rendered bytes, so a missing usage segment at 80 columns, a changed default-preset row, or a fold that differs between the live and rebuilt transcript each produce a concrete diff. The A8 test goes red if the prefix is not doubled under tmux or if a non-tmux case changes — and the `isBunTestRuntime()` guard at tmux.ts:49 means it is easy to write a version of this test that is green while testing nothing, so the suite must include an assertion that the tmux branch was actually entered rather than trusting green. The A5 loader test goes red if the fixture row collapses to one line, since the trailer is skipped entirely below two lines. The one gate that CANNOT fail is P0/P1: those are human decisions, not code, and an unrecorded answer looks exactly like a recorded one until someone checks the spec file.",
+  "depends_on": [
+    "P1 — maintainer's written answer on whether `usage` enters all seven presets or only the `full` + `nerd` subset. HARD BLOCK on A1.",
+    "P0 — maintainer's written answer on A8's spec provenance (black-box vs omp-native) plus evidence location. HARD BLOCK on A8.",
+    "An answer on whether the two result-side `toolName === \"read\"` checks (chat-transcript-builder.ts:507, ui-helpers.ts:663) are in A6's scope.",
+    "An answer on whether acp-event-mapper.ts:645 is a read-group membership site."
+  ],
+  "blocks": [
+    "The item at plan:7401-7405, which the plan states depends on M2 + A8 and calls the cheapest of the five M2-blocked items.",
+    "Nothing in A1, A5 or A6 depends on this wave. A6 has no external dependency — the O5 seam question the plan raises is already closed and removed from §10 #9."
+  ],
+  "effort": "~6 engineer-days total: A1 ~1 day, A8 ~1 day, A6 ~2 days, A5 ~2 days. The plan's per-item sizes all held up under verification. Two places deserve more than the flat estimate: the A5 loader fixture (multi-line row required, ~half a day on its own) and A1's byte-identical baseline capture for presets outside the P1 subset, which is fiddlier than adding a string.",
+  "risk": "The single most likely way to get this wrong is A6 converting a site it should not, or missing one it should. Two concrete traps, both verified in the tree. First: the plan's do-not-touch line numbers (1819, 1821, 1896) are all wrong by +11 — the real ones are 1830, 1832, 1907 — and 1830 is #inlineReadToolImages, so an engineer navigating by plan line number lands squarely on the inline-image sites and breaks inline image rendering, which no compile error reports. Second: the plan calls all seven sites 'membership', but chat-transcript-builder.ts:507 and ui-helpers.ts:663 are result-side `toolName === \"read\"` checks that never call the collapse predicate; converting them changes behavior rather than deduplicating it. Both failures are silent — the transcript simply folds differently, and only on reload.\n\nRunner-up: A8 shipping green while proving nothing. resolveTmuxClientTerminalName returns null under isBunTestRuntime() at tmux.ts:49, so a test that only sets process.env.TMUX silently takes the fallback branch. Compounding it, tmux.ts:21 memoizes the probe result in module state with no reset export, so an early test can poison every later case in the same process. A wrong answer here is a footer that misreports which keys to press.",
+  "open_questions": [
+    "P1 (blocking A1): all seven presets, or only `full` + `nerd`? Needs a written maintainer answer before the first line of A1 code. Note that `default` is what every current user sees on day one, and `usage` is the widest segment in the catalog — this is a first-run product decision, not a technical one.",
+    "P0 (blocking A8): is the tmux prefix-doubling convention black-box (observed on shipped product under tmux) or omp-native (designed here), and what is the evidence location? The evidence must live in the work item, not in the untracked ~/Projects/claude-code-ref checkout.",
+    "Are chat-transcript-builder.ts:507 and ui-helpers.ts:663 in A6's scope? They are result-side checks that never call the collapse predicate. My read is that they belong in the must-stay-put bucket, which would make A6 five mechanical sites rather than seven — but that is a call for the maintainer, not for the implementer.",
+    "Is acp-event-mapper.ts:645 (`if (raw === undefined || toolName !== \"read\") return raw;`) a read-group membership site? The plan does not mention it. It looks ACP-specific, but it must be explicitly ruled in or out rather than silently ignored.",
+    "A1 negative contract: should `showHookStatus` (component.ts:3064, currently defaulting to true) be flipped to default-false so a status hook stops rendering twice? The plan frames this as disabling a path at component.ts:3067; in fact the setting already exists and 3067 is a closing brace. Flipping the default is a product decision affecting every user, and it is out of scope for this wave unless someone explicitly claims it.",
+    "A5: where should the per-phase frame-cost accumulator live — an extension of loop-phase.ts, or a new module? loop-phase.ts:45 is in packages/utils and is deliberately lightweight; adding a timing store there widens its blast radius. Needs a decision before step 17."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "A1 — \"bảy định nghĩa preset tại :5, :16, :26, :36, :59, :84, :96; cộng packages/tui/src/status-line/schema.ts:36-42\" implies schema work is needed to make `usage` available.",
+      "verdict": "CORRECTED",
+      "correction": "The `usage` segment already exists end to end. It is in STATUS_LINE_SEGMENT_IDS at schema.ts:26, implemented as `usageSegment` at segments.ts:864, and registered in the segment map at segments.ts:943. A1 is PURELY a matter of adding the string \"usage\" to preset segment arrays — there is no segment to write. An engineer reading \"bật segment usage\" could burn time hunting for an implementation that already ships.",
+      "evidence": "grep -n '\"usage\"' packages/tui/src/status-line/schema.ts -> 26:usage; sed -n '864,870p' packages/tui/src/status-line/segments.ts -> `const usageSegment: StatusLineSegment = { id: \"usage\", render(ctx) {`; grep -n 'usage: usageSegment' -> 943."
+    },
+    {
+      "claim": "A1 — \"packages/tui/src/status-line/schema.ts:36-42\" as an edit site.",
+      "verdict": "STALE (minor)",
+      "correction": "CUSTOM_STATUS_LINE_DEFAULTS spans lines 36-45, not 36-42. Trivial to find by name, but a 3-line-wrong anchor on the only schema edit site in the item.",
+      "evidence": "sed -n '36,45p' packages/tui/src/status-line/schema.ts -> `export const CUSTOM_STATUS_LINE_DEFAULTS: {` at 36 through the closing brace at 45."
+    },
+    {
+      "claim": "A1 — \"component.ts:3066-3068 đã in mọi hook status ... phải tắt hoặc mặc định-tắt đường dẫn component.ts:3067\".",
+      "verdict": "CORRECTED",
+      "correction": "The hook-status render is ALREADY gated by a setting. component.ts:3064 reads `const showHooks = this.#settings.showHookStatus ?? true;` and 3065 tests it; the push is at 3066. Line 3067 is the closing brace, not a path to disable. There is no new disable mechanism to build — the product decision, if anyone takes it, is whether to flip the existing showHookStatus default from true. That is a change to every user's day-one view and is out of scope for this wave.",
+      "evidence": "sed -n '3064,3067p' packages/tui/src/status-line/component.ts -> `const showHooks = this.#settings.showHookStatus ?? true;` / `if (showHooks && this.#sortedHookStatuses.length > 0) {` / `lines.push(...this.#sortedHookStatuses.map(...));` / `}`."
+    },
+    {
+      "claim": "A8 — \"Sửa: packages/tui/src/chrome/keybinding-hints.ts:10-55\" and \"Một file, 46 dòng\".",
+      "verdict": "STALE",
+      "correction": "The file is 80 lines, not 46, and lines 10-55 contain no prefix logic to fix — they are the import block plus editorKey, editorKeys, boundKeys, interruptKey, appKey and keyHint. The new function should be appended after appKey at line 47. The plan's own evidence table admits this: it records `grep -c tmux` = 0/0/0 and classifies A8 as 'thuần là mã core mới' (purely new core code), which contradicts its own 'Sửa' line. Follow the evidence, not the edit-site line.",
+      "evidence": "wc -l packages/tui/src/chrome/keybinding-hints.ts -> 80; cat -n shows appKey closing at 47 and keyHint at 57; grep -c tmux on keybinding-hints.ts, keybindings.ts, app-keybindings.ts -> 0, 0, 0 (confirming the plan's own number)."
+    },
+    {
+      "claim": "A8 — the plan's mandatory test trap covers only the `isBunTestRuntime()` short-circuit at tmux.ts:49.",
+      "verdict": "CORRECTED",
+      "correction": "There is a second, undocumented poison. tmux.ts:21 holds `let cachedClientTerminalName: string | null | undefined;` — a module-level memo with no reset export. Once any test resolves the probe, the value is frozen for the whole process and every later case silently reads the cached answer. The plan warns that a TMUX-only test proves nothing; it does not warn that even a correctly-spied test can be invalidated by case ordering. This must be in the spec or the test ships unreliable.",
+      "evidence": "sed -n '18,22p' packages/tui/src/tmux.ts -> `const CLIENT_TERMTYPE_TIMEOUT_MS = 500;` / `let cachedClientTerminalName: string | null | undefined;`; lines 48-51 show the memo is only ever assigned, never invalidated."
+    },
+    {
+      "claim": "A8 — \"phát hiện tmux đã có sẵn ở tmux.ts:5, :48-49\" (the plan's evidence for not inventing detection).",
+      "verdict": "CONFIRMED",
+      "correction": "Both anchors are exact and the seam is genuinely reusable. `isInsideTmux(env = Bun.env)` at tmux.ts:5 is the whole detection primitive — a one-line Boolean over env.TMUX, with no probe, no timeout and no throw path, so it is safe to call on every hint render. `resolveTmuxClientTerminalName(env = Bun.env)` at tmux.ts:48, with its `isBunTestRuntime()` guard at :49, is the heavier probe (500ms timeout, SIGKILL, memoized). Use the first for the hint path; reach for the second only if the hint needs to distinguish tmux's own terminfo from the client's. Note these are DIFFERENT capabilities — the plan groups them as one seam, and picking the wrong one either costs a subprocess per frame or silently disables the feature under test.",
+      "evidence": "grep -n 'export function\\|isBunTestRuntime\\|cachedClientTerminalName' packages/tui/src/tmux.ts -> 5 (isInsideTmux), 10/15 (passthrough wrappers), 21 (memo), 48 (resolveTmuxClientTerminalName), 49 (isBunTestRuntime guard), 50-51 (memo assignment)."
+    },
+    {
+      "claim": "A6 — \"predicate đã có ở packages/tui/src/chat/read-tool-group.ts:41\" (line correct, name never given).",
+      "verdict": "CORRECTED",
+      "correction": "The predicate is named `readArgsCollapseIntoGroup`, and it takes only `args: unknown` — it does NOT do the name check. The line number is exact, but since the plan never names it, an engineer grepping for a membership-style name (`isReadToolGroupMember` and similar) finds nothing and may conclude the seam does not exist. It does: line 41, and it is the data-driven half of every membership decision.",
+      "evidence": "grep -n readArgsCollapseIntoGroup -> read-tool-group.ts:41 `export function readArgsCollapseIntoGroup(args: unknown): boolean`; body at :42-48 is `readArgsTarget` / `splitUrlScheme` / `internalUrlSchemeSpec`."
+    },
+    {
+      "claim": "A6 — \"so sánh cứng tại ... ui-helpers.ts:551 và :661\".",
+      "verdict": "STALE",
+      "correction": "Actual lines are 553 and 663 — both off by +2. ui-helpers.ts:553 is the mechanical site (`if (renderToolName === \"read\" && readArgsCollapseIntoGroup(content.arguments)) {`). ui-helpers.ts:663 is a result-side `message.toolName === \"read\" &&` with no predicate call — see the mis-classification correction below.",
+      "evidence": "grep -n 'name === \"read\"' packages/coding-agent/src/modes/utils/ui-helpers.ts -> 553, 663."
+    },
+    {
+      "claim": "A6 — \"so sánh cứng tại ... event-controller.ts:1344 và :1684\".",
+      "verdict": "STALE",
+      "correction": "Actual lines are 1357 and 1695 — off by +13 and +11 respectively. At 1350 sits the bare name guard `if (renderToolName === \"read\") {` with the predicate call at 1357. At 1695 the name check and the predicate are on the same line. The consistent upward drift indicates the file gained lines above these sites after the plan was written.",
+      "evidence": "grep -n readArgsCollapseIntoGroup packages/coding-agent/src/modes/controllers/event-controller.ts -> 14 (import), 1357, 1695; grep -n 'renderToolName === \"read\"' -> 1350, 1695."
+    },
+    {
+      "claim": "A6 — \"Phải đứng yên: event-controller.ts:1819, :1821, :1896\".",
+      "verdict": "STALE",
+      "correction": "Actual lines are 1830, 1832 and 1907 — all off by +11, the same drift as the two sites above. This matters more than a stale number usually does: 1830 is the call to #inlineReadToolImages, and 1832 is the matching #clearReadToolCall. An engineer trusting the plan's numbers lands on these and breaks inline image rendering, which no type error reports. The plan's substantive instruction (leave them alone) is correct and worth keeping; only the numbers are wrong.",
+      "evidence": "grep -n 'event.toolName === \"read\"' packages/coding-agent/src/modes/controllers/event-controller.ts -> 1830, 1832, 1907; line 1830 is `if (event.toolName === \"read\") this.#inlineReadToolImages(event.toolCallId, event.result);`."
+    },
+    {
+      "claim": "A6 — all seven listed sites are read-group MEMBERSHIP sites to be converted.",
+      "verdict": "CORRECTED",
+      "correction": "Only five are mechanical. chat-transcript-builder.ts:507 (`message.toolName === \"read\" && (!pending || pending instanceof ReadToolGroupComponent)`) and ui-helpers.ts:663 (`message.toolName === \"read\" &&`) never call the collapse predicate — they test the RESULT of a read, and folding them into a shared membership predicate would change behavior, not deduplicate it. The plan's own 'must stay put' reasoning (reads are special because they return images) applies just as well to these two as to the three inline sites. I read A6 as five mechanical sites plus three must-stay-put plus two that need a maintainer ruling — but the implementer must not resolve this unilaterally.",
+      "evidence": "sed -n '507p' chat-transcript-builder.ts -> `const isReadGroupResult = message.toolName === \"read\" && (!pending || pending instanceof ReadToolGroupComponent);`; grep shows only 443 in that file and only 553 in ui-helpers.ts call readArgsCollapseIntoGroup."
+    },
+    {
+      "claim": "A6 — the membership-site list is complete.",
+      "verdict": "UNVERIFIED (needs a ruling)",
+      "correction": "The plan does not mention packages/coding-agent/src/modes/acp/acp-event-mapper.ts:645, which reads `if (raw === undefined || toolName !== \"read\") return raw;`. It looks ACP-specific rather than transcript-grouping, but it is a `read` comparison in the modes tree and must be explicitly ruled in or out rather than passed over.",
+      "evidence": "grep -rn 'toolName !== \"read\"' packages/coding-agent/src/modes/ -> acp-event-mapper.ts:645 (the only hit outside the transcript-grouping files)."
+    },
+    {
+      "claim": "A5 — \"packages/coding-agent/src/modes/interactive-mode.ts:6674 đã cài setTrailer(() => this.#workingRowTrailer())\" (the plan's own correction to the dossier's framing).",
+      "verdict": "STALE",
+      "correction": "The install is at line 6624, not 6674 — off by 50. The plan's substantive instruction is right and important: the trailer slot is already occupied, so the stall indicator must be MERGED into the value #workingRowTrailer returns (defined at :1013) rather than installed with a second setTrailer call. Use 6624, and note that renderIdleStatusHud at :1023 already solves the loader's multi-line requirement by returning a two-element array — an in-repo precedent for step 20.",
+      "evidence": "grep -n 'setTrailer\\|workingRowTrailer' packages/coding-agent/src/modes/interactive-mode.ts -> 6624 (install), 1013 (definition), 1023 (reuse inside renderIdleStatusHud)."
+    },
+    {
+      "claim": "A5 — nine anchors: loop-watchdog.ts:123-124, loop-phase.ts:45, loader.ts:32, loader.ts:107-113, loader.ts:141, tui.ts:930, tui.ts:1035-1036, tui.ts:2105, tui.ts:2204.",
+      "verdict": "CONFIRMED",
+      "correction": "All nine verified exact. This is the most accurate work item in the wave — the only wrong number in A5 is the dossier-correction anchor at 6674. Additional anchors the plan does not list but the implementer needs: tui.ts:811 (`#lastFrameCostMs = 0`), tui.ts:2187 (adaptive-floor consumer), loop-watchdog.ts:57 (`export class LoopWatchdog {`, the plan's field-addition site), and loader.ts:170 (`this.#ui?.lastFrameCostMs ?? 0`, the natural place to surface the breakdown).",
+      "evidence": "grep -n 'takeRecentLoopPhase\\|lastFrameCostMs\\|setTrailer' across loop-watchdog.ts, tui.ts, loop-phase.ts, loader.ts, interactive-mode.ts -> 123 (watchdog), 45 (loop-phase), 32/107/141/170 (loader), 811/930/1035/1036/2105/2187/2204 (tui)."
+    },
+    {
+      "claim": "A5 — \"loader.ts:107 chỉ render trailer khi lines.length > 1\", so the fixture must build a multi-line row or assertions pass vacuously.",
+      "verdict": "CONFIRMED",
+      "correction": "Verified verbatim: `if (this.#trailer && lines.length > 1) {` at loader.ts:107. The trap is real and the plan is right to call it out. The warning applies symmetrically to any no-working-row case, which the plan also requires.",
+      "evidence": "sed -n '107,113p' packages/tui/src/components/loader.ts -> `if (this.#trailer && lines.length > 1) {` / `const trailer = this.#trailer();` / `if (trailer) {`."
+    },
+    {
+      "claim": "The repo is at git HEAD 5873776 (from the task brief).",
+      "verdict": "STALE",
+      "correction": "Actual HEAD on branch milestone-1 is 808b365409fa36719c38319a041c0e612b4e702b. This does not change any anchor above — all were verified against 808b365 — but an engineer who checks out 5873776 to match the brief will get a different tree.",
+      "evidence": "git log --oneline -1 -> 808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan; git rev-parse HEAD -> 808b365409fa36719c38319a041c0e612b4e702b."
+    },
+    {
+      "claim": "All four test files the plan references as siblings/existing files are present.",
+      "verdict": "CONFIRMED",
+      "correction": "status-line-overflow.test.ts, status-line-settings-cache.test.ts, helpers/status-line.ts (exporting StatusLineTestComponents with track/dispose) and packages/tui/test/loop-watchdog.test.ts all exist. The A1 test can copy the overflow harness directly — it already imports StatusLineComponent, statusLineHost, initTheme and StatusLineTestComponents, and its createCtx factory already ends with `usage: null`, so extending it with a usage override is a small change rather than a from-scratch harness.",
+      "evidence": "test -e on all four paths -> EXISTS; sed -n '1,30p' status-line-overflow.test.ts shows the imports and beforeAll/afterAll pattern; status-line.ts:6 `export class StatusLineTestComponents`."
+    },
+    {
+      "claim": "Environment: `bun test` is blocked; `bun run check:ts` does not need the addon and is the verification path.",
+      "verdict": "CONFIRMED (with a caveat)",
+      "correction": "Confirmed that `bun test` requires the unbuilt native addon, and `check:ts` is a real script (package.json:94, `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`). I ran `bun run check:ts` against HEAD 808b365 and it PASSED with exit code 0. The caveat is purely about time: it did not finish within 9 minutes and completed only as a background job, so it is the slow gate, not a fast one. Run it in the background and wait for the exit code rather than killing it.",
+      "evidence": "grep -n '\"check:ts\"' package.json -> 94; the background `bun run check:ts` run reported status completed, exit code 0."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/s1.spec.json"
+}

@@ -1,0 +1,110 @@
+[
+ {
+  "severity": "blocking",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:29 (bước 1) + .lavish-wip/m2-index/specs/WI-8b.spec.json steps[0]",
+  "claim": "「Tại HEAD 808b365, `.lavish-wip/m2-specs/` chỉ chứa WI-0 đến WI-7 — chưa có spec WI-8a」／「As of HEAD 808b365 `.lavish-wip/m2-specs/` holds only WI-0 through WI-7 — there is NO WI-8a spec yet」, kèm chỉ dẫn「hãy viết spec WI-8a trước」. Đây là bước được gắn nhãn BLOCKING PREREQUISITE.",
+  "why_wrong": "Spec WI-8a ĐÃ tồn tại. Đây là bước chặn đầu tiên của mục, và nó sai theo hướng khiến người nhận việc ngồi xuống viết lại một spec 39 KB đã có sẵn, rồi mất thêm thời gian đối chiếu lại ba quyết định mà WI-8a đã chốt. Tệ hơn: vì bước này bảo「đừng bắt đầu nếu chưa có」, người đọc có thể dừng cả mục lại thay vì đi đọc WI-8a.",
+  "evidence": "`ls .lavish-wip/m2-specs/` → `WI-8a.spec.json` 39 KB (cùng `stat` còn cho mtime `2026-09-27 13:49:36`, tức 80 giây SAU `WI-8b.spec.json` 13:48:16 — spec này được viết trước tiền đề của nó, nhưng tiền đề đã có mặt ngay sau đó và vẫn còn nguyên khi tài liệu md được soạn lúc 15:43:12). `python3 -c \"json.load(open('.lavish-wip/m2-index/specs/WI-8a.spec.json'))['one_line']\"` → 「Plugin settings ... start living inside the existing Settings layers under a reserved `plugins.<id>.<key>` namespace」.",
+  "fix": "Thay câu đó bằng: 「Tại thời điểm viết tài liệu này `.lavish-wip/m2-specs/` ĐÃ có `WI-8a.spec.json` (39 KB) — mục này được đặc tả trước tiền đề của nó, nhưng tiền đề đã có mặt. Trước khi code, đọc `WI-8a.spec.json` và đối chiếu ba điểm nó đã chốt: namespace dành riêng `plugins.<id>.<key>`; quy tắc env `OMP_<PLUGIN_ID>_<KEY>` (viết hoa, `-`/`.` → `_`, khai tường minh trong `SettingDefinition.env`, không bao giờ tự sinh); và câu hỏi còn mở về lớp bền vững cho setting bên thứ ba. Nếu WI-8b chọn namespace khác `plugins.` thì phải ghi lý do, vì WI-9 sẽ quét cả hai không gian tên trong một bảng kiểm kê.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "blocking",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:199-204 (code_shape, loader.ts) và :282 (mục Cần người quyết)",
+  "claim": "Mục Cần người quyết nói: 「Một người phải chọn: manifest id do tác giả khai, hash của resolved-path, hay basename. **Đừng tự bịa ra.**」 — nhưng code_shape ngay dưới đó đã bịa sẵn một owner cụ thể: `const EXTENSION_SETTINGS_NAMESPACE = \"extension\"; function extensionSettingOwner(extension: Extension): string { return \\`${EXTENSION_SETTINGS_NAMESPACE}:${extension.resolvedPath}\\`; }`, cùng `const EXTENSION_ID_PREFIX = \"extension.\";`",
+  "why_wrong": "Tài liệu tự mâu thuẫn: một mặt cấm bịa slug, mặt kia đã chốt slug và còn chọn đúng một trong ba phương án mà nó liệt kê (resolved-path). Người đọc code_shape trước, đọc open_questions sau sẽ tưởng quyết định đã xong. Tệ hơn, slug đó lệch với thứ WI-8a vừa chốt (`plugins.<id>.<key>`) mà không một dòng biện minh — hai cơ chế sinh key cho bên thứ ba trong cùng một config file, dưới hai tiền tố khác nhau, và WI-9 phải quét cả hai.",
+  "evidence": "Đọc md:199-204 vs md:282. `WI-8a.spec.json` `one_line` → namespace `plugins.<id>.<key>`. Không có chỗ nào trong WI-8b giải thích vì sao extension dùng tiền tố `extension.` còn plugin dùng `plugins.`.",
+  "fix": "Thay thân hàm trong code_shape bằng: 「// CHƯA CHỐT — xem mục Cần người quyết 「Điều gì tạo ra một slug namespace ổn định cho một extension?」. Đừng hardcode ở đây. // `Extension.path` là đường dẫn người gõ, không ổn định. // `Extension.resolvedPath` chỉ là đường dẫn tuyệt đối trên đường `loadExtensions` (loader.ts:417); // trên `loadExtensionFromFactory` nó BẰNG `name` (loader.ts:471), nên hai extension nạp // bằng cùng một tên sẽ gộp làm một owner. // Khoôn mẫu có sẵn: `capability/extension-module.ts:28` — `toExtensionId: ext => \\`extension-module:${ext.name}\\``. function extensionSettingOwner(extension: Extension): string { throw new Error(\"unimplemented: settle the owner-slug question first\"); }」 và thêm ngay dưới `const EXTENSION_ID_PREFIX = \"extension.\";` một dòng: 「// Cần khớp hoặc giải thích lệch với namespace WI-8a đã chốt: `plugins.<id>.<key>`.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "blocking",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:282 và .lavish-wip/m2-index/specs/WI-8b.spec.json open_questions[1]",
+  "claim": "「`Extension.resolvedPath` (loader.ts:471, đặt từ đường dẫn tuyệt đối) ổn định qua rebind và qua các lần khởi động lại」／「`Extension.resolvedPath` (loader.ts:471, set from the absolute path) IS stable across rebinds and restarts」",
+  "why_wrong": "Hai vấn đề chồng nhau. (1) Neo sai: :471 không đặt resolvedPath từ đường dẫn tuyệt đối. (2) Hệ quả thiết kế — vì code_shape lấy owner là `extension:${resolvedPath}`, nên trên đường `loadExtensionFromFactory` hai extension nạp với CÙNG một tên (kể cả mặc định `\"<inline>\"`) sẽ có cùng owner, và nhánh idempotent trong `registerSetting` sẽ âm thầm trả lại handle của extension thứ nhất cho extension thứ hai. Đó đúng là failure last-writer-wins ngược, và dòng test 1 KHÔNG bắt được vì nó đi qua `bindPreparedExtensions` với đường dẫn thật.",
+  "evidence": "`awk 'NR>=470 && NR<=475' .../extensions/loader.ts` → `471  const extension = createExtension(name, name);` — cả `path` lẫn `resolvedPath` đều bằng `name`. Chỗ đặt từ đường dẫn tuyệt đối là :417 `const resolvedPath = resolvePath(extensionPath, cwd);` (trong `importExtensionModule`). Mẫu setup mà bước 9 bảo chép: `packages/coding-agent/test/extension-registered-tool-source-info.test.ts:42` truyền `\"pi-fabric@0.92.4\"` làm `name` → owner sẽ là `extension:pi-fabric@0.92.4`, không phải một đường dẫn.",
+  "fix": "Thế câu đó bằng: 「`Extension.resolvedPath` chỉ là đường dẫn tuyệt đối trên đường `loadExtensions` (đặt ở loader.ts:417 qua `resolvePath(extensionPath, cwd)`). Trên `loadExtensionFromFactory` nó BẰNG đúng `name` (loader.ts:471, `createExtension(name, name)`), và mẫu test mà bước 9 bảo chép truyền vào một tên package (`\\\"pi-fabric@0.92.4\\\"`), không phải một đường dẫn. Nghĩa là `resolvedPath` ổn định trên đường file thật nhưng KHÔNG phải đường dẫn tuyệt đối nói chung — hai extension nạp bằng `loadExtensionFromFactory` với cùng một `name` (kể cả mặc định `\\\"<inline>\\\"`) sẽ có cùng owner, và nhánh idempotent sẽ âm thầm trả handle của extension thứ nhất. Đó là failure last-writer-wins ngược, và dòng test 1 không bắt được. Đây là một lý do nữa để không chốt owner theo resolvedPath.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:282 (bullet slug) và spec open_questions[1]",
+  "claim": "「không có helper sinh id sẵn có (`git grep -n 'extensionId|slugExtension|normalizeExtensionId'` không trả gì)」／「no existing id-derivation helper (`git grep -n 'extensionId|slugExtension|normalizeExtensionId'` returns nothing)」",
+  "why_wrong": "Đây là dòng bằng chứng đi kèm câu hỏi quyết định slug. Nó sai, và nó sai theo hướng làm người quyết định tin rằng phải phát minh từ đầu trong khi codebase đã có đúng cái khuôn mẫu cần — một hàm một dòng, cùng interface, cùng chỗ tiêu thụ. Đây là loại lệch khiến người đọc tin vào một khoảng trống không tồn tại.",
+  "evidence": "`git grep -nE 'extensionId|slugExtension|normalizeExtensionId' -- packages/` → 30+ kết quả. Đáng chú ý nhất: `packages/coding-agent/src/capability/extension-module.ts:28` → `toExtensionId: ext => \\`extension-module:${ext.name}\\``; `packages/coding-agent/src/capability/types.ts:204` → `toExtensionId?(item: T): string | undefined;` (một `toExtensionId` cho từng capability: context-file, hook, instruction, mcp, prompt, rule, skill, slash-command, tool); `packages/coding-agent/src/capability/index.ts:192-193` tiêu thụ nó để lọc theo `disabledExtensionIds`; và `packages/tui/src/overlays/extensions/extension-dashboard.ts` dùng `extensionId` như một định danh first-class ở khoảng 15 chỗ (:176, :391-450).",
+  "fix": "Thế mệnh đề bằng: 「Không có trường manifest nào trên `Extension` (types.ts:1802-1817) để treo id do tác giả khai. NHƯNG codebase ĐÃ có họ id-derivation: `git grep -nE 'extensionId|slugExtension|normalizeExtensionId' -- packages/` trả hơn 30 kết quả, và đúng khuôn mẫu cần nằm ở `capability/extension-module.ts:28` — `toExtensionId: ext => \\`extension-module:${ext.name}\\``, khai trong interface `Capability.toExtensionId` (`capability/types.ts:204`) và tiêu thụ ở `capability/index.ts:192-193` để lọc theo `disabledExtensionIds`. Đọc `capability/extension-module.ts` TRƯỚC khi chọn giữa ba phương án; nếu vẫn chọn manifest id thì nêu vì sao không theo.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:30 (bước 2) và spec files_touched[0].note",
+  "claim": "「không test nào khẳng định message cũ (đã kiểm chứng: `git grep -n \\\"registered twice\\\"` trả về đúng một kết quả, chính dòng source)」／「`git grep -n \\\"registered twice\\\"` returns exactly one hit repo-wide — the source line」",
+  "why_wrong": "Bằng chứng được gắn nhãn đã kiểm chứng thì sai số. Kết luận đi kèm vẫn đúng, nhưng người đọc không thể tái lập bằng đúng lệnh mà tài liệu nêu, và sẽ tưởng mình đọc sai. Đây đúng là loại vi phạm \"đã kiểm chứng\" mà task yêu cầu săn.",
+  "evidence": "`git grep -n \"registered twice\"` → 3 kết quả: `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9923`, `docs/secrets.md:140` (cụm tiếng Anh trùng tình cờ, không phải trích message), và `packages/coding-agent/src/config/registry.ts:787`. Lệnh giới hạn phạm vi mới đúng: `git grep -n \"registered twice\" -- '*test*'` → rỗng.",
+  "fix": "Thế mệnh đề bằng: 「không test nào khẳng định message cũ (đã kiểm chứng: `git grep -n \\\"registered twice\\\" -- '*test*'` không trả gì; lệnh không giới hạn phạm vi thì trả 3 kết quả — dòng source `registry.ts:787` cùng hai chỗ văn xuôi ở `docs/secrets.md:140` và `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9923`, không phải test)」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:293 (bảng Đính chính, dòng registry.ts:783-792)",
+  "claim": "「không có `unregister` nào ở bất cứ đâu trong `packages/coding-agent/src/config/` (đã kiểm chứng bằng grep)」／「no `unregister` anywhere in `packages/coding-agent/src/config/` (verified by grep)」",
+  "why_wrong": "Câu này tự mâu thuẫn với câu ngay sau nó trong cùng một ô: chính các hàm `unregister*` mà câu kế dùng làm khuôn mẫu nằm trong thư mục mà câu này bảo là không có. Người đọc grep lại sẽ thấy 6 kết quả và phải tự sửa lại.",
+  "evidence": "`git grep -n \"unregister\" -- packages/coding-agent/src/config/` → 6 kết quả, tất cả trong `model-registry.ts`: :3, :4 (import), :2915 `unregisterCustomApis(sourceId)`, :2916 `unregisterOAuthProviders(sourceId)`, :2936 `unregisterProvider(...)`, :2946 `unregisterOAuthProvider(...)`. Không kết quả nào ở `registry.ts`.",
+  "fix": "Thế mệnh đề bằng: 「`byId` (:778) và `ordered` (:779) ở module level và CHỈ NỐI THÊM — `registry.ts` không có `unregister` nào (đã kiểm chứng: `git grep -n unregister -- packages/coding-agent/src/config/` trả 6 kết quả, tất cả ở `model-registry.ts` cho provider/API/OAuth, không kết quả nào ở `registry.ts`)」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:9 (Người dùng thấy) và spec user_visible_effect",
+  "claim": "「...sửa nó ghi vào các lớp setting thường (runtime/overlay/project/global), một biến môi trường có thể ghi đè nó, và **panel hiển thị lớp nào đã thắng**」／「...the panel shows which layer won」",
+  "why_wrong": "Đây là dòng \"Người dùng thấy\" — dòng được đọc đầu tiên của mọi work item — và nó hứa một hành vi không tồn tại ở bất kỳ đâu trong cây code. Đổi lại, `provenance` chỉ được báo qua `cfg://` và `omp config`, tức là qua CLI/protocol chứ không phải qua panel. Dòng test 3 chỉ khẳng định key CÓ MẶT trong panel, không khẳng định panel hiện lớp thắng, nên khoảng trống này không có test nào đứng sau.",
+  "evidence": "`git grep -ni provenance -- packages/tui/src/` → 5 kết quả, không cái nào liên quan settings overlay (`annotation-types.ts`, `oauth-selector.ts`, `task-yield-assembly.ts`). Entry của panel được dựng ở `packages/coding-agent/src/config/settings-ui.ts:58-66` với các trường `path/type/defaultValue/ui/enumValues/credential/condition` — không có trường provenance. Trang trí env duy nhất là `envNote` (`settings-ui.ts:39-44`), chỉ nối một câu vào `description`. Chỗ duy nhất thật sự render lớp là `packages/coding-agent/src/internal-urls/cfg-protocol.ts:66,229,428` (`PROVENANCE_LABELS`) và `packages/coding-agent/src/cli/config-cli.ts:326`.",
+  "fix": "Thế vế cuối bằng: 「...và lớp thắng được báo qua `setting.provenance(scope)` — hiện CHƯA có màn hình panel nào vẽ lớp này (`git grep -ni provenance -- packages/tui/src/` không có kết quả nào cho settings; entry của panel ở `settings-ui.ts:58-66` không có trường provenance; `envNote` ở :39-44 chỉ nối một câu mô tả env vào description). Nếu muốn panel thật sự hiện lớp thắng thì đó là phần việc riêng, chưa nằm trong bốn dòng test và chưa có trong phạm vi mục này.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:239-246 (Hợp đồng test) và :261 (Cổng hoàn thành)",
+  "claim": "Bốn dòng test được tuyên bố là đủ（「Bốn dòng, đủ bốn, không thiếu dòng nào — §11.2 mục 7 không tick được nếu thiếu」), và `gate_can_fail` liệt kê đúng hai lỗ hổng mà cổng không bắt: id không có namespace, và key panel không bao giờ render.",
+  "why_wrong": "Thiếu lỗ hổng thứ ba, và đây chính là lỗ hổng đắt nhất mà chính tài liệu đặt tên. Bước 3 gọi việc thiếu `unregisterOwned` là \"the single most expensive omission available here\" và phần Đính chính gọi nó là blocker bị plan bỏ sót — nhưng `check:ts` không thể bắt (chẳng gì gọi tới nó) và không dòng test nào phủ. Tương tự, hành vi idempotent khi prepared-rebind (bước 7b) cũng không dòng nào phủ. Kết quả: một bản cài xong API + registry + bốn dòng test mà bỏ trụt `unregisterOwned` sẽ xanh toàn bộ cổng, và chính xác là failure \"âm thầm và vĩnh viễn\" mà plan gọi tên.",
+  "evidence": "`packages/coding-agent/test/extension-prepared-rebind.test.ts` (toàn bộ 57 dòng) không đăng ký gì cả — factory của nó chỉ làm `bindings.push(api)` (:30 trong file .ts được sinh ra). Nó khẳng định module không bị eval lại (counter giữ nguyên 1) và hai API instance là khác nhau; nó không chạm registry. Bốn dòng trong `test_contract` lần lượt là: trùng id, setting hạng nhất, có mặt trong panel, lớp env — không dòng nào nói tới gỡ bỏ.",
+  "fix": "Thêm dòng thứ 5 vào mục Hợp đồng test và sửa câu dẫn đầu mục: 「Bốn dòng do §11.2 mục 7 yêu cầu, cộng MỘT dòng do chính blocker bị plan bỏ sót bắt buộc — không có nó thì cổng xanh trên một bản cài thiếu `unregisterOwned`」, rồi thêm: 「5. **GỠ ĐƯỢC RỒI BẬT LẠI ĐƯỢC, VÀ REBIND KHÔNG NÉM.** (a) `unregisterOwned(owner)` xoá key khỏi `byId`, khỏi `ordered` và khỏi cả hai index owner, trả về danh sách id đã gỡ; gọi lại `registerOwned` với cùng owner và cùng id phải thành công, và `orderedSettings()` phải chứa lại key đó sau khi `invalidateOrderedSettings()`. (b) Chạy factory hai lần cho cùng một owner (mô phỏng `bindPreparedExtensions`) phải trả về cùng một handle và không ném. Không có dòng nào trong bốn dòng hiện tại phủ (a), và `check:ts` không bắt được vì không gì gọi tới `unregisterOwned` — đây là lỗ hổng cổng lớn nhất của mục này.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:259-261 (Cổng hoàn thành)",
+  "claim": "Cổng hoàn thành là hai dòng: (a) `bun run check:ts`; (b) `cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts`. Lệnh `bun --cwd=packages/natives run build` chỉ nằm ở mục Xác minh (:252), không nằm trong cổng.",
+  "why_wrong": "Nửa (b) không tự giải thích được. Nhưng (a) thì đỏ THẬT — tôi đã kiểm chứng bằng cách chèn `registerSetting<const D extends { id: string; type: string }>(definition: D): unknown;` vào `ExtensionAPI` và chạy type-check, thu đúng lỗi dự đoán. Phần (b) thì không: lỗi thiếu native addon có ĐÚNG CÙNG hình dạng với một bài test thật sự fail, nên người đọc cổng không thể biết vết đỏ là của ai. Lệnh build là tiền đề để (b) có nghĩa, nên nó phải là một dòng của cổng chứ không phải một dòng của hướng dẫn.",
+  "evidence": "Bằng chứng đỏ thật của (a): `bun run --filter './packages/coding-agent' --if-present check:types` sau khi chèn → `loader.ts(179,7): error TS2420: Class 'ConcreteExtensionAPI' incorrectly implements interface 'ExtensionAPI'. Property 'registerSetting' is missing…`, cộng TS2741 tại :452 và :473. Đã khôi phục lại, `git status` sạch. Bằng chứng mờ của (b): `cd packages/coding-agent && bun test test/config/settings-registry.test.ts` → `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`; `ls packages/natives/native/*.node` → không có file nào. Điều này xảy ra với một file test CÓ SẴN, không liên quan gì tới mục này.",
+  "fix": "Viết lại mục Cổng hoàn thành thành ba dòng, theo đúng thứ tự: 「(0) `bun --cwd=packages/natives run build` — TIỀN ĐỀ, phải xanh trước khi đọc (2); nếu (0) đỏ thì (2) không mang ý nghĩa. (1) `bun run --filter './packages/coding-agent' --filter './packages/tui' --if-present check:types` — thay cho `bun run check:ts`, vì `check:ts` còn chạy `oxlint .` và `oxfmt --check` trên 5446 file của MỌI package nên đỏ được bởi bất kỳ file nào không liên quan. (2) `cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts` — nếu báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon` thì đó là (0), KHÔNG phải hồi quy của bạn.」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "minor",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:123-135 (code_shape, all-settings.ts)",
+  "claim": "code_shape thêm `let orderedGeneration = 0;` cùng `orderedGeneration++;` trong `invalidateOrderedSettings()`, với comment 「A generation counter is the smallest change that keeps the fast path」",
+  "why_wrong": "Bộ đếm được viết ra rồi không ai đọc — `invalidateOrderedSettings` chỉ làm `ordered = undefined`, thứ mà `let ordered` sẵn có đã hỗ trợ. Comment mô tả một cơ chế mà code không có, nên người triển khai sẽ tưởng phải bảo toàn `orderedGeneration` ở nơi khác.",
+  "evidence": "Đọc md:128-135: `let orderedGeneration = 0;` và `orderedGeneration++;` xuất hiện đúng một lần mỗi chỗ, và không có lần đọc nào (`grep` trong khối code cho `orderedGeneration` chỉ ra 2 dòng: khai báo và `++`).",
+  "fix": "Thay khối ở md:128-135 bằng: 「// `ordered` hiện memoize vĩnh viễn (`:85-89`); một setting đăng ký sau lần gọi đầu tiên // sẽ vô hình với panel, nên cần một móc vô hiệu hóa mà registry gọi được. // Chỉ cần xoá memo — `let ordered` sẵn đã đủ, không cần bộ đếm thế hệ. let ordered: readonly AnySetting[] | undefined; /** Gọi từ đường add/remove của registry; buộc `orderedSettings()` kế tiếp tính lại. */ export function invalidateOrderedSettings(): void { ordered = undefined; }」",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "minor",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:20 (bảng File cần chạm tới, dòng settings-defs.ts)",
+  "claim": "「`TAB_METADATA` (:33) là record metadata tĩnh」, trong một hàng có cột 「đã kiểm chứng?」 = 「Có — HEAD 808b365」",
+  "why_wrong": "Lệch một dòng: :33 là dòng JSDoc, phần khai báo ở :34. Tài liệu tự đặt chuẩn này khi sửa neo của plan (「783 là một dòng JSDoc」), nên giữ sai ở đây là nhất quán-trái-chiều trong chính hàng đó.",
+  "evidence": "`sed -n '33,34p' packages/tui/src/overlays/settings-defs.ts` → `33: /** Tab display metadata - icon is a symbol key from theme.ts (tab.*) */` và `34: export const TAB_METADATA: Record<SettingTab, TabMetadata> = {`.",
+  "fix": "Thay `` `TAB_METADATA` (:33) `` bằng `` `TAB_METADATA` (:34, JSDoc ở :33) ``",
+  "item": "WI-8b"
+ },
+ {
+  "severity": "minor",
+  "location": ".lavish-wip/m2-md/sections/WI-8b.md:288-298 (bảng Đính chính, cột verdict)",
+  "claim": "Cột `verdict` của bảng Đính chính so với plan chứa câu tiếng Anh dài: 「correct as written, but the second half is blocked in this environment — flag it before assigning」, 「incomplete — the two are one coupled problem, and the plan misses the constraint that decides between the options」, 「wrong in detail — the loader already propagates; what is missing is a message that names the collision」, 「incomplete — there is a second, sharper failure the plan does not name」, 「correct, with one saving worth knowing」, 「stale-anchor plus a missed blocker」.",
+  "why_wrong": "Toàn bộ phần còn lại của tài liệu — kể cả cột `correction` ngay cạnh và cả mục Cần người xác nhận ở cuối — là tiếng Việt. Sáu verdict tiếng Anh lọt vào giữa tiếng Việt là sót, và chúng là phần người đọc quét nhanh nhất của cả bảng.",
+  "evidence": "Đọc md:288-298. Nhãn ngắn như `stale-anchor` và `confirmed` giữ nguyên được vì chúng là từ khoá cố định.",
+  "fix": "Dịch sáu verdict dài, giữ nguyên hai nhãn khoá `stale-anchor` / `confirmed`: 「correct as written, but the second half is blocked in this environment — flag it before assigning」 → 「đúng như đã viết, nhưng nửa sau bị chặn trong môi trường này — nói ra trước khi giao」; 「incomplete — the two are one coupled problem, and the plan misses the constraint that decides between the options」 → 「thiếu — hai cái là MỘT vấn đề gắn liền, và plan bỏ mất ràng buộc quyết định giữa các phương án」; 「wrong in detail — the loader already propagates; what is missing is a message that names the collision」 → 「sai ở chi tiết — loader ĐÃ truyền tiếp; thứ thiếu là một message nêu đích danh chỗ trùng」; 「incomplete — there is a second, sharper failure the plan does not name」 → 「thiếu — có một lỗi thứ hai, sắc hơn, mà plan không nêu tên」; 「correct, with one saving worth knowing」 → 「đúng, kèm một tiết kiệm công đáng biết」; 「stale-anchor plus a missed blocker」 → 「stale-anchor cộng thêm một blocker bị bỏ sót」.",
+  "item": "WI-8b"
+ }
+]

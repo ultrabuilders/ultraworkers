@@ -1,0 +1,47 @@
+[
+ {
+  "severity": "blocking",
+  "location": "00-front.md:175 and :267 — `plan:8096`",
+  "claim": "The M4 changelog decision lives at `plan:8096`.",
+  "why_wrong": "Line 8096 of COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md is inside a TypeScript code block in the M3 section (a `createUIContext` / `setFooter` / `setHeader` example in `runner.ts`), not the M4 changelog decision. The M4 changelog decision is at §6.2 (line 11433). A reader who opens the cited line lands in the wrong milestone's code example and finds nothing about changelogs.",
+  "evidence": "`awk 'NR>=8090 && NR<=8100' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` shows lines 8090-8100 are a code comment block about `createUIContext(extensionPath: string)` and `unsupportedFrameSurfaceError`. The M4 changelog decision is at line 11433 (`### 6.2 Quy tắc shippable`). `grep -n 'plan:8096' .lavish-wip/m4-md/00-front.md` returns lines 175 and 267.",
+  "fix": "Replace both occurrences of `plan:8096` with `plan:§6.2` (or `plan:11433` if a line number is required). E.g. line 175: `| Quyết định changelog của M4 (plan:§6.2) |` and line 267: `| 1 | **Quyết định changelog của M4** (plan:§6.2) |`.",
+  "file": "front"
+ },
+ {
+  "severity": "major",
+  "location": "00-front.md:76-84 — M4-5 paragraph",
+  "claim": "M4-5 'rời đi' (left M4) and 'sang M1' (went to M1), implying it is handled elsewhere.",
+  "why_wrong": "M4-5 is an outstanding deliverable of M4, not a completed handoff. The master plan (line 11412) says: 'Việc viết nó vào kế hoạch M1 là một deliverable của M4' (writing it into M1's plan is a deliverable of M4). But M4-5 appears 0 times in MILESTONE_1_EXECUTION_PLAN.md and 0 times in the M1 section of the master plan. The front matter's framing 'Chúng sống ở tập work item của M2 (WI-1..WI-4) và trong phạm vi bọc trọn của M1' is misleading for M4-5 — it does not live anywhere yet. A reader will conclude M4-5 is tracked and skip it.",
+  "evidence": "`grep -c 'M4-5' MILESTONE_1_EXECUTION_PLAN.md` → 0. `awk 'NR>=307 && NR<=4180' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -c 'M4-5'` → 0. Master plan line 11412: 'M4-5 thì đi đường khác: sang M1 … Việc viết nó vào kế hoạch M1 là một deliverable của M4, không phải việc chờ sẵn.'",
+  "fix": "Add a sentence after line 82 (the M4-5 bullet) stating: 'M4-5 là một deliverable còn nợ của M4 — nó chưa được viết vào kế hoạch M1 (0 hit trong MILESTONE_1_EXECUTION_PLAN.md). Viết nó vào M1 là việc phải làm, không phải việc đã bàn giao.' Or add a row to the status table: `| Deliverable còn nợ | M4-5 chưa được viết vào kế hoạch M1 |`.",
+  "file": "front"
+ },
+ {
+  "severity": "major",
+  "location": "00-front.md:13 — status table row 'Cổng đang đỏ ngay bây giờ'",
+  "claim": "3/6 bước kiểm của M4-4 đỏ ngay lúc này (3 of 6 verification steps of M4-4 are red right now).",
+  "why_wrong": "Actually 4 of 6 steps are red. Step (a) file-lock test fails (0 pass / 1 fail), step (b) the new test file does not exist, step (c) `git grep -n saveRuntimeConfig` returns 11 hits (target 0), step (d) `git grep -n atomicWriteJson` returns 3 hits (target 1 definition in packages/utils). Only steps (e) secret grep and (f) check:ts are green. The doc also says all three red steps are 'vì cây chưa build addon native' — but steps (c) and (d) are red because the refactor has not happened, not because of the addon.",
+  "evidence": "`bun test packages/utils/test/file-lock.test.ts` → 0 pass, 1 fail. `ls packages/coding-agent/test/plugin-runtime-config-lock.test.ts` → No such file. `git grep -n saveRuntimeConfig -- packages/` → 11 lines (1 def + 9 call sites + 1 extra). `git grep -n atomicWriteJson -- packages/` → 3 lines (registry.ts:44 def, :95 and :128 calls). `grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` → 0.",
+  "fix": "Change the status table row to: `| Cổng đang đỏ ngay bây giờ | 4/6 bước kiểm của M4-4 đỏ — (a)(b) vì cây chưa build addon native; (c)(d) vì refactor chưa thực thi |`. And in the Wave B section (line 154), change 'Ba trong sáu bước kiểm của M4-4 đỏ ngay lúc này, và cả ba đều vì lý do này hoặc vì file chưa tồn tại' to 'Bốn trong sáu bước kiểm của M4-4 đỏ ngay lúc này: (a)(b) vì cây chưa build addon native, (c)(d) vì refactor chưa thực thi.'",
+  "file": "front"
+ },
+ {
+  "severity": "minor",
+  "location": "00-front.md:161 — M4-6 gate 4 description",
+  "claim": "Gate 4 'cấm SettingsProvenance (tui) và SettingProvenance (coding-agent) trôi lệch nhau' — implying both types exist and the gate currently checks them.",
+  "why_wrong": "`SettingsProvenance` (plural, attributed to tui) has 0 hits in the entire repo. Only `SettingProvenance` (singular) exists, in coding-agent. The gate is forward-looking (it will check both once M4-6 creates the tui type), but the doc presents it as a current gate. A reader may search for `SettingsProvenance` and conclude the gate is already broken.",
+  "evidence": "`grep -rn 'SettingsProvenance' packages/ | wc -l` → 0. `grep -rln 'SettingProvenance' packages/` → packages/coding-agent/src/config/settings.ts, registry.ts, internal-urls/cfg-protocol.ts.",
+  "fix": "Clarify that the tui type is to-be-created: '(4) `bun run check:ts` sạch — nó sẽ cấm `SettingsProvenance` (tui, tạo mới bởi M4-6) và `SettingProvenance` (coding-agent, đã tồn tại) trôi lệch nhau.'",
+  "file": "front"
+ },
+ {
+  "severity": "minor",
+  "location": "00-front.md:100 and :172 — '§11' reference for WI-4b",
+  "claim": "WI-4b 'chưa tồn tại trong §11' (does not yet exist in §11).",
+  "why_wrong": "There is no section numbered '§11' in the master plan. The M2 section (lines 4181-8556) contains '## WI-0' through '## WI-13' as work-item headings, not numbered sections. The reference is ambiguous — a reader cannot locate '§11' to verify the claim.",
+  "evidence": "`awk 'NR>=4181 && NR<=8556' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -n '^## 11'` → no output. The M2 section headings are '## Mục tiêu', '## Không làm gì', '## WI-0', '## WI-1', etc. — no '## 11' or '§11'.",
+  "fix": "Replace 'trong §11' with 'trong kế hoạch M2 (WI-0..WI-13)' or 'trong mục WI của kế hoạch tổng'. E.g. line 100: 'WI-4b chưa tồn tại trong kế hoạch M2 — bản thân nó là một việc phải làm trước.'",
+  "file": "front"
+ }
+]

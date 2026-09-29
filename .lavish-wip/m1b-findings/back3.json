@@ -1,0 +1,101 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 8 (hàng `protocol`, GATE 2) và dòng 21",
+  "claim": "\"Cổng không chạy được là GATE 2, vì `bun test packages/protocol` bị chặn cho tới khi có `brew install ninja` rồi `bun --cwd=packages/natives run build`\" — và dòng 21 suy ra chung rằng 28 case của protocol \"chưa có kết quả\".",
+  "why_wrong": "Đồ thị phụ thuộc của `protocol` (src + test) ở d6af72e chỉ gồm: `@earendil-works/chord` (2 import), `typebox` + `typebox/value` (3), `vitest` (3), cộng node builtin. KHÔNG có import nào chạm tới `@oh-my-pi/pi-ai`, `pi-tui`, `pi-agent-core`, `pi-utils` hay `pi-natives`. Sau khi chép, `chord` thành package mới chỉ dùng node builtin + esbuild, còn typebox (dù chọn `typebox@1.3.27` lẫn `@oh-my-pi/omptype/typebox`) đều không kéo natives. Nên GATE 2 chạy được NGAY trên máy này. Tôi đã chứng minh bằng hai lần chạy thật: một test file chỉ import `@oh-my-pi/omptype/typebox` chạy PASS dưới `bun test`, còn một test file chỉ import `@oh-my-pi/pi-ai` FAIL với đúng lỗi native addon. Hậu quả: người đọc hoãn một cổng chạy được 28 case sau `brew install ninja`, hoặc tệ hơn là không làm đổi vitest→bun test cho protocol vì tin rằng cổng đó không chạy được. Cùng lý do đó, `durable` (chỉ chord + node builtin + một import `import type` từ pi-ai, bị erase lúc runtime) cũng chạy được, chứ không phải \"khoảng trống\" như dòng 21 nói.",
+  "evidence": "`grep -rhoE 'from \"[^\".][^\"]*\"' protocol/src protocol/test | sort | uniq -c` trong /Users/tranquangdang21/Projects/pi-ref/packages → `3 from \"vitest\"`, `2 from \"typebox/value\"`, `2 from \"@earendil-works/chord\"`, `1 from \"typebox\"`. Không có dòng nào khác.\nChạy thật: `cp probe.test.ts ./probe-native-scope.test.ts; bun test ./probe-native-scope.test.ts` với nội dung `import(\"@oh-my-pi/omptype/typebox\")` → `1 pass`. Cùng lệnh với `import(\"@oh-my-pi/pi-ai\")` → `0 pass 1 fail`, lỗi `Failed to load pi_natives native addon for darwin-arm64`.\nĐối chiếu: `bun test packages/omptype` → `1139 pass 0 fail` (omptype không dính natives). `bun -e 'await import(\"@oh-my-pi/pi-agent-core\")'` → `Failed to load pi_natives native addon`.\nBốn vòng drain, 4 drain loop, `drainDisposers` vắng mặt, và toàn bộ neo `file:line` ở dòng 22-23 đều tái lập đúng.",
+  "fix": "Thay đoạn trong hàng `protocol` của bảng bằng: \"GATE 2 `bun test packages/protocol` xanh 28 case (9 framing, 13 protocol, 6 CBOR) — CHẠY ĐƯỢC NGAY. Đồ thị phụ thuộc của `protocol` chỉ gồm `chord` và typebox; không import `@oh-my-pi/pi-ai`/`pi-tui`/`pi-agent-core`/`pi-utils`, nên không đi qua native addon. Cổng này KHÔNG phụ thuộc `brew install ninja`.\"\nVà ở mục \"Những điều chưa được kiểm chứng\", thay bullet về native addon bằng: \"**Chỉ `server` và `evals` thật sự bị chặn.** `server` import `@earendil-works/pi-agent-core` và `evals` import `@earendil-works/pi-coding-agent` + `pi-ai`; cả ba map sang package omp đã có, và cả ba đều fail lúc import vì `pi_natives` chưa build. `chord`, `protocol`, `client`, `telemetry`, `durable` chỉ import node builtin + `chord` + typebox, đều chạy được. Hệ quả: 39 case của `server` và 4 file của `evals` chưa có kết quả; 28 case của `protocol` và toàn bộ test của `durable` chạy được ngay.\"",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 9 (hàng `server`) và dòng 21",
+  "claim": "\"`server` | `bun run check:ts` exit 0 và `bun test packages/server` xanh 39 case\" (lặp lại ở dòng 21: \"39 case của `server`\").",
+  "why_wrong": "Đếm lại từng file test ở d6af72e cho ra 41 test, không phải 39. Sai ở hai file: `protocol.test.ts` có 6 test (dòng 51, 66, 75, 111, 122, 145) chứ không phải 5, và `unix.test.ts` có 6 test (dòng 41, 68, 88, 96, 109, 122) chứ không phải 5. Đây là một điều kiện cổng, nên người thực hiện đếm được 41 test xanh sẽ tưởng cổng hỏng — hoặc tệ hơn, dừng ở 39 và tưởng đã xong.",
+  "evidence": "Trong /Users/tranquangdang21/Projects/pi-ref/packages/server, chạy `grep -coE '\\b(it|test)\\(' test/<f>.test.ts` cho từng file: `conformance=20 protocol=6 server=6 unix=6 listener=2 unix-connection=1` → tổng **41**. Đối chiếu `test/protocol.test.ts` có 6 dòng `test(`; `test/unix.test.ts` có 6 dòng `test(`. Không có `test.each`/`for` sinh test thêm. (Cùng cách đếm cho protocol: `9 framing + 13 protocol + 6 CBOR = 28` — khớp chính xác với tài liệu.)",
+  "fix": "Sửa \"xanh 39 case\" thành \"xanh 41 case (20 conformance, 6 protocol, 6 server, 6 unix, 2 listener, 1 unix-connection)\" ở cả dòng 9 và dòng 21.",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 13 (hàng `evals`, điều kiện grep `from \"vitest`) và dòng 27",
+  "claim": "Cổng `evals` yêu cầu `grep -rn 'from \"vitest' packages/evals` không trả gì; dòng 27 mô tả mâu thuẫn chỉ là giữa `new_deps` khai `vitest@4.1.9` và lệnh grep này.",
+  "why_wrong": "Grep đó bỏ sót họ package `@vitest-evals/*`. Mẫu `from \"vitest` yêu cầu ký tự ngay sau dấu `\"` là `v`, nên `from \"@vitest-evals/core\"` không khớp. Chạy đúng lệnh cổng trên cây nguồn: nó chỉ bắt 8 dòng (`from \"vitest\"` × 6 trong test + `from \"vitest-evals/harness\"` trong `src/harness.ts`) và **không** bắt `src/report.ts:5` lẫn `src/report.ts:6`. Trong khi `new_deps` của `evals` khai `@vitest-evals/core@0.15.0` là dependency mới cần thêm. Cổng có thể xanh trong khi `packages/evals` vẫn còn import runtime ra ngoài. Mâu thuẫn ở dòng 27 cũng bị thu hẹp quá mức: nó là cả bốn package (`vitest`, `vitest-evals`, `@vitest-evals/core`, `autoevals`), không chỉ `vitest@4.1.9`.",
+  "evidence": "Chạy đúng lệnh cổng trong /Users/tranquangdang21/Projects/pi-ref/packages/evals: `grep -rn 'from \"vitest' src test` → 8 hit, tất cả đều là `from \"vitest\"` hoặc `from \"vitest-evals/harness\"`. Lọc phần còn lại: `src/report.ts:5:import type { ReportCase } from \"@vitest-evals/core\";` và `src/report.ts:6:import { readReportWorkspace, readVitestJsonReportFile } from \"@vitest-evals/core/node\";` — không dòng nào khớp mẫu. `new_deps` của `evals` trong light.json liệt kê `@vitest-evals/core 0.15.0 | already_in_omp: False`.",
+  "fix": "Ở dòng 13, thay `grep -rn 'from \"vitest' packages/evals` bằng `grep -rnE 'from \"(@?vitest|autoevals)' packages/evals` không trả gì. Ở dòng 27, thay toàn bộ gạch đầu dòng bằng: \"`evals`: `new_deps` khai bốn package cùng họ (`vitest@4.1.9`, `vitest-evals@0.15.0`, `@vitest-evals/core@0.15.0`, `autoevals@0.3.0`) làm runner, còn cổng lại yêu cầu không còn import vitest nào. Grep `from \"vitest` của bản ghi không bắt được `@vitest-evals/core` vì có dấu `@` ngay sau dấu `\"` — phải dùng `from \"(@?vitest|autoevals)`. Bản ghi không nói cái nào thắng.\"",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 11 (hàng `durable`, điều kiện 5 và 6)",
+  "claim": "Điều kiện 5 `grep -rn 'from \"vitest\"' packages/durable` == 0 và điều kiện 6 `ls packages/durable/tsconfig.build.json packages/durable/vitest.config.ts` không tồn tại.",
+  "why_wrong": "Cả hai điều kiện cùng lọt qua `vitest.benchmark.config.ts`. File này tồn tại ở d6af72e và dùng `from \"vitest/config\"` — không phải `from \"vitest\"`, nên điều kiện 5 không khớp dòng nào. Điều kiện 6 chỉ liệt kê `tsconfig.build.json` và `vitest.config.ts`, không nhắc file thứ ba. Kết quả: một config vitest còn sống sót lọt vào cây omp trong khi cổng vẫn báo xanh. `packages/durable/test/storage.bench.ts` thì đã bị điều kiện 5 bắt đúng (dòng 12 `from \"vitest\";`), nên lỗ hổng nằm riêng ở file config.",
+  "evidence": "`git -C /Users/tranquangdang21/Projects/pi-ref ls-tree d6af72e -r --name-only packages/durable | grep -iE 'vitest|bench'` → `src/testing/storage-benchmark.ts`, `test/storage.bench.ts`, `vitest.benchmark.config.ts`, `vitest.config.ts`. Nội dung `vitest.benchmark.config.ts` dòng 1: `import { defineConfig } from \"vitest/config\";`. Chạy gate grep trên cả hai config: `'from \"vitest\"' matches = 0` cho `vitest.config.ts` và `= 0` cho `vitest.benchmark.config.ts`.",
+  "fix": "Sửa điều kiện 6 thành: \"6. `ls packages/durable/tsconfig.build.json packages/durable/vitest.config.ts packages/durable/vitest.benchmark.config.ts` == không tồn tại. THAT BAI NEU: quen xoa — `vitest.benchmark.config.ts` dùng `from \"vitest/config\"` nên KHÔNG bị điều kiện 5 bắt.\"",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "bảng ở dòng 7-13, toàn bộ (đặc biệt hàng `chord`, `server`, `client`, `durable`, `telemetry`, `evals`)",
+  "claim": "Bảng \"Định nghĩa hoàn thành\" chỉ đặt các grep luật dự án vào GATE 1b của `protocol`; sáu package còn lại không có grep nào cho `any`, `ReturnType<`, `await import(`, `private`, `console.*`, `new Promise(`.",
+  "why_wrong": "Đây đúng là khuôn mẫu lỗi mà AGENTS.md cấm: code chép sẽ vi phạm luật dự án trong khi cổng vẫn xanh, vì `check:ts` chỉ chạy oxlint + oxfmt + tsgo, không cấu nào trong ba cái đó cấm `private` hay `ReturnType<`. Đếm trên `src/` ở d6af72e: `private` xuất hiện 87 lần trong `server`, 66 trong `durable`, 30 trong `protocol`, 1 mỗi package ở `client` và `telemetry`; `ReturnType<` xuất hiện 11 lần trong `durable`, 3 trong `chord`, 1 trong `client`; `new Promise(` xuất hiện 3 lần trong `durable` và 2 trong `server`; `console.` xuất hiện 3 lần trong `evals`. Riêng `durable` mang 66 + 11 + 3 = 80 vi phạm qua một cổng chỉ grep `@earendil-works` và `from \"vitest\"`. Tài liệu không nêu để sửa cái nào.",
+  "evidence": "Ma trận `grep -ro <mẫu> <pkg>/src` trong /Users/tranquangdang21/Projects/pi-ref/packages: chord `{private:0, ReturnType<:3}`, protocol `{private:30, ReturnType<:0}`, server `{private:87, ReturnType<:0, new Promise(:2}`, client `{private:0, ReturnType<:1}`, durable `{private:66, ReturnType<:11, new Promise(:3}`, telemetry `{private:1, ReturnType<:0}`, evals `{private:0, ReturnType<:0, console.:3}`. Mẫu cụ thể: `durable/src/env/node.ts:149,296,485` (`return new Promise((resolve) => {`) — AGENTS.md bắt buộc `Promise.withResolvers()`; `evals/src/cli.ts:172,190,191` (`console.log(...)`) — AGENTS.md cấm `console.*` khi TUI/RPC còn sống; `chord/src/node/bundle.ts:118`, `chord/src/node/package.ts:57,182` (`Awaited<ReturnType<typeof build>>`) — AGENTS.md cấm `ReturnType<>` tuyệt đối.",
+  "fix": "Thêm một hàng mới vào cuối bảng, trước dòng \"**Cả đợt migrate xong khi nào.**\": \"| `AGENTS.md` (áp cho cả 7) | `grep -rnE '\\bprivate \\b' packages/{chord,protocol,server,client,durable,telemetry,evals}/src` == 0; `grep -rn 'ReturnType<' .../src` == 0; `grep -rn 'new Promise(' .../src` == 0; `grep -rn 'await import(' .../src` == 0; `grep -rn 'console\\.' packages/evals/src` == 0. | Số đếm thật trên `src/` ở d6af72e: `private` 87 (server) + 66 (durable) + 30 (protocol) + 1 + 1; `ReturnType<` 11 (durable) + 3 (chord) + 1 (client); `new Promise(` 3 (durable) + 2 (server); `console.` 3 (evals). Không cổng nào hiện nay grep các mẫu này ngoài GATE 1b của `protocol`. |\"",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 15",
+  "claim": "\"Đợt này xong khi cả bảy package — `chord`, `protocol`, `server`, `client`, `durable`, `telemetry`, `evals` — đã nằm trong cây và `bun run check:ts` xanh.\"",
+  "why_wrong": "Định nghĩa hoàn thành này mâu thuẫn với chính bảng ngay phía trên nó. Bảng ghi GATE 2 của `protocol`, `bun test packages/server` và `bun test packages/evals` là **blocking**. Theo tiêu chí dòng 15, một cây có đủ bảy package và `check:ts` xanh sẽ được tuyên bố \"xong\" trong khi 39 test của `server` và 4 file của `evals` chưa từng chạy. Dòng 3 của chính file này lại nói \"Không dòng nào được coi là đã xanh\". Người đọc sẽ dừng ở `check:ts` và đóng gói.",
+  "evidence": "Bảng ở dòng 8, 9, 13 đều ghi rõ `blocking`: GATE 2 \"(blocking, CURRENTLY BLOCKED)\", `bun test packages/server` \"(blocked until ...)\", và `evals` \"once ninja is installed and natives are built, `bun test packages/evals` passes 4/4 files\". Tôi đã xác nhận `bun run check:ts` exit 0 ngay bây giờ, tức tiêu chí dòng 15 là điều kiện yếu hơn hẳn.",
+  "fix": "Thay đoạn đó bằng: \"**Cả đợt migrate xong khi nào.** Đợt này xong khi cả bảy package đã nằm trong cây, `bun run check:ts` xanh, **và** mọi cổng `bun test` trong bảng trên đã có kết quả — 28 case `protocol`, 41 case `server`, `durable`, và 4/4 file `evals`. `check:ts` xanh một mình KHÔNG đủ: nó không chạy một test nào. Không phải khi bảy PR đã mở. Bảy PR có thể cùng mở trong khi `chord` chưa có mặt, lúc đó `protocol` (2 symbol `JsonValue`, `isJsonValue`), `server` (10 symbol) và `client` (16 symbol từ `chord`) đều không biên dịch được. Trạng thái đích là một cây, không phải một danh sách PR.\"",
+  "file": "back3"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 7 (hàng `chord`)",
+  "claim": "\"dù `test_files` liệt kê 21 mục (20 file test cộng `packages/chord/test/helpers.ts`)\"",
+  "why_wrong": "Trong 21 mục của `test_files` chỉ có 19 file kết thúc bằng `.test.ts`; phần còn lại là HAI file phụ trợ, không phải một: `test/delta-tracker/retention.worker.ts` và `test/helpers.ts`. Có hai worker/fixture phụ thì người đọc sẽ tính nhầm số file test thật, và sẽ bỏ sót việc phải xử lý `retention.worker.ts` (một worker thật, được `retention.test.ts` spawn).",
+  "evidence": "Đếm trong light.json: `*.test.ts count: 19`; `non-.test.ts: ['packages/chord/test/delta-tracker/retention.worker.ts', 'packages/chord/test/helpers.ts']`. Xác nhận trên cây thật: `find /Users/tranquangdang21/Projects/pi-ref/packages/chord/test -name '*.test.ts' | wc -l` → `19`.",
+  "fix": "Sửa thành: \"dù `test_files` liệt kê 21 mụu — 19 file test (`.test.ts`), cộng `test/helpers.ts` và `test/delta-tracker/retention.worker.ts`\".",
+  "file": "back3"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 11 (hàng `durable`, cuối phần \"bằng chứng cụ thể\") và dòng 21",
+  "claim": "\"bản ghi này không ghi điều kiện chặn cho nó, trong khi hai bản ghi khác (`protocol`, `server`) ghi rõ mọi `bun test` bị chặn cho tới khi có `ninja` và build được `packages/natives`\" — và dòng 21: \"`durable` thì chưa ai ghi điều kiện chặn cho `bun test packages/durable` — đó là khoảng trống, không phải dấu hiệu test chạy được.\"",
+  "why_wrong": "Hai chỗ sai theo hai hướng khác nhau. (a) Đếm sai: có BA bản ghi ghi điều kiện `ninja`, không phải hai — `evals` cũng ghi \"once ninja is installed and natives are built\". Chính dòng 21 của cùng file cũng liệt kê ba package (`protocol`, `server`, `evals`), nên file tự mâu thuẫn. (b) Điều kiện 3 của `durable` không phải khoảng trống — nó chạy được. Đồ thị phụ thuộc của `durable` chỉ gồm `chord`, node builtin, và đúng MỘT import `pi-ai` trong `src/types.ts` mà đã viết `import type` nên bị erase lúc runtime. Nên `bun test packages/durable` chạy được ngay.",
+  "evidence": "`grep -rn '@earendil-works/pi-ai' packages/durable/src` trong pi-ref → chỉ một dòng: `src/types.ts:3:import type { Context, Draft, JsonValue } ...` / `import type { Message } from \"@earendil-works/pi-ai\";` (chữ `type` xác nhận bị erase). `grep -rhoE 'from \"[^\".][^\"]*\"' durable/src durable/test` → không có `pi-tui`, `pi-agent-core`, `pi-utils`. Gate của `evals` trong light.json: \"once ninja is installed and natives are built, `bun test packages/evals`\".",
+  "fix": "Thay phần cuối của hàng `durable` bằng: \"Điều kiện 3 là một cổng `bun test` và CHẠY ĐƯỢC: `durable` chỉ import `chord` + node builtin, và import `pi-ai` duy nhất (`src/types.ts:3`) là `import type` nên bị erase lúc runtime. Ba bản ghi ghi điều kiện `ninja` là `protocol`, `server` và `evals` — không phải hai.\"",
+  "file": "back3"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 15",
+  "claim": "\"`server` (11 symbol)\"",
+  "why_wrong": "Con số 11 không tái lập được dưới bất kỳ cách đếm hợp lý nào. `server` import đúng 10 symbol từ `@earendil-works/chord` (đây mới là con số có ý nghĩa, vì câu đang nói là \"thiếu `chord` thì không biên dịch được\"). Con số 16 của `client` thì đúng. Vì hai số nằm cạnh nhau trong cùng một so sánh, người đọc sẽ tin cả hai đều đã đếm.",
+  "evidence": "Đếm theo từng câu lệnh import (có xử lý import nhiều dòng) trong /Users/tranquangdang21/Projects/pi-ref/packages: `server <- @earendil-works/chord` → **10** symbol: JsonValue, RemoteServiceError, RemoteServiceErrorCode, ServiceCall, ServiceProviderUpdate, ServiceStateEncoder, createServiceStateEncoder, decodeServiceControlCall, parseServiceCall, parseServiceSubscriptionSnapshot. `server <- pi-protocol` → 22; `protocol <- chord` → 2 ✓; `client <- chord` → **16** ✓. Không có subpath chord nào trong `server`: `grep -rhoE '\"@earendil-works/[^\"]+\"' server/src server/test | sort | uniq -c` chỉ cho `8 \"@earendil-works/chord\"`, `7 \".../pi-agent-core\"`, `8 \".../pi-protocol\"`.",
+  "fix": "Sửa thành: \"`server` (10 symbol) và `client` (16 symbol)\".",
+  "file": "back3"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 10 (hàng `client`)",
+  "claim": "\"`why_this_position` nói rõ 8/33 test không viết được nếu chưa có `server`; 25 case còn lại cũng không cổng nào đụng tới.\"",
+  "why_wrong": "Mẫu số 33 không tái lập: `client` chỉ có 27 test. Không có vòng lặp hay `.each` nào sinh thêm test. Vì vậy phần \"25 case còn lại\" mà tài liệu tự suy ra cũng sai — con số đúng phải là 19.",
+  "evidence": "`grep -coE '\\b(it|test)\\('` trên /Users/tranquangdang21/Projects/pi-ref/packages/client: `test/client.test.ts:15`, `test/unix-transport.test.ts:4`, `test/unix.test.ts:8` → tổng **27**. `grep -nE '\\b(it|test)\\.(skip|todo|only|each|failing)' test/*.test.ts` → rỗng; các vòng `for`/`map` tìm thấy đều là dọn dẹp socket/temp dir, không sinh test.",
+  "fix": "Sửa thành: \"`why_this_position` nói rõ 8/33 test không viết được nếu chưa có `server`; đếm lại trên cây nguồn `client` có 27 test (`client.test.ts` 15, `unix-transport.test.ts` 4, `unix.test.ts` 8), không phải 33 — nên phần còn lại là 19 chứ không phải 25. Cũng không có `test.each` hay vòng lặp sinh test nào. 27 test đó không cổng nào đụng tới.\"",
+  "file": "back3"
+ },
+ {
+  "severity": "minor",
+  "location": "toàn bộ file — mục \"Định nghĩa hoàn thành\"",
+  "claim": "File định nghĩa điều kiện hoàn thành cho việc thêm bảy package vào cây, nhưng không có điều kiện changelog nào.",
+  "why_wrong": "AGENTS.md bắt buộc mục changelog cho mọi thay đổi người-dùng-thấy, và thêm bảy package publishable (mỗi package một `packages/*/CHANGELOG.md`) là thay đổi người-dùng-thấy rõ ràng. Vì đây là bảng \"Định nghĩa hoàn thành\", người đọc sẽ dùng chính bảng này để kết luận đợt migrate đã xong — và sẽ không bao giờ nhớ viết changelog.",
+  "evidence": "`grep -niE 'changelog' .lavish-wip/m1b-md/90-back3.md` → không có kết quả nào. Mặt định của repo: `scripts/fix-changelogs.ts` và `fix:ts:changelogs` trong package.json root, tức changelog là một phần của quy trình đã được cơ chế hoá.",
+  "fix": "Thêm một hàng cuối vào bảng: \"| `CHANGELOG` | Cả bảy package có mục dưới `## [Unreleased]` trong `packages/<tên>/CHANGELOG.md`, mỗi mục một dòng, dẫn đầu bằng điều người dùng thấy (ví dụ `Added chord, protocol, server, client, durable, telemetry, evals`). | Nội dung mục và vị trí mục. Không điều kiện nào ở trên bắt buộc điều này, nên đợt có thể đóng với 0 mục changelog. |\"",
+  "file": "back3"
+ }
+]

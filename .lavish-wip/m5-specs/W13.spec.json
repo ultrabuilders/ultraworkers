@@ -1,0 +1,280 @@
+{
+  "id": "W13",
+  "title": "Quét tài liệu — changelog chỉ khi được yêu cầu",
+  "wave": "Wave 6",
+  "one_line": "Lượt cuối, chạy sau khi bề mặt đã ngừng chuyển động: đổi token hiển thị `omp` trong 93 file `.md` văn xuôi, thêm cột tương thích cho đúng MỘT bí danh `ULTRAWORKERS_*` mới vào `docs/environment-variables.md`, và không đụng vào bất kỳ file changelog nào.",
+  "user_visible_effect": "Người đọc tài liệu không còn thấy tên cũ trong văn xuôi: lệnh được ghi trong README và 82 file trong `docs/` được gọi bằng tên mới. Bảng biến môi trường nói rõ `PI_*`/`OMP_*` vẫn hoạt động vĩnh viễn và tên mới nào thắng tên cũ, nên người dùng đặt biến trong shell profile không bị hỏng. KHÔNG có thay đổi nào tới `packages/*/CHANGELOG.md` hay `LICENSE` — nếu xuất hiện một mục changelog do lần đổi tên này, đó là hành vi bị cấm và phải revert.",
+  "files_touched": [
+    {
+      "path": "scripts/rename/docs-legacy-allowlist.txt",
+      "action": "create",
+      "change": "Tạo allow-list dạng text: mỗi dòng là MỘT đường dẫn `.md` được phép vẫn chứa token hiển thị `omp` sau khi đổi tên. Không header, không số thứ tự, `LC_ALL=C sort`. Ban đầu seed bằng 93 dòng — kết quả của lệnh gate A ở `verification` chạy trên HEAD `84cbac9`.",
+      "verified": false,
+      "note": "CHƯA TỒN TẠI. `ls scripts/rename/` trả về `No such file or directory`; thư mục do W7 tạo. Đây là artifact bắt buộc — không có nó thì gate không kiểm được gì và mọi mục dưới đây trở thành lời hứa miệng. Số 93 đã đo thật (xem `verification`), nhưng phải seed lại tại thời điểm W13 chạy vì W7 đã đổi 4107 file có thể làm bề mặt này dịch chuyển."
+    },
+    {
+      "path": "scripts/rename/check-docs-rename.ts",
+      "action": "create",
+      "change": "Script gate, exit code khác 0 khi có vi phạm. Ba kiểm tra, in `FAIL <rule> <path>` cho từng vi phạm rồi `process.exit(1)`: (A) mọi file `.md` còn chứa token `omp` phải nằm trong allow-list; (B) mọi tên `ULTRAWORKERS_*` đọc trong code (`process.env.X` / `Bun.env.X`) phải xuất hiện trong `docs/environment-variables.md`, và mọi tên `ULTRAWORKERS_*` trong doc phải được code đọc; (C) `git diff --name-only -- 'packages/*/CHANGELOG.md'` phải rỗng. Không dùng `console.log` ràng buộc — script này chạy ở CI nên `console.error` cho phần FAIL và `process.exit(1)` là hợp lệ (nó là binary CLI, không phải mã TUI/RPC/SDK); nếu muốn đúng luật tuyệt đối thì dùng `logger` từ `@oh-my-pi/pi-utils`.",
+      "verified": false,
+      "note": "CHƯA TỒN TẠI. File mới nên nằm trong `scripts/` để `check:tools` (oxlint + oxfmt) của repo tự quét — `package.json` có `check:tools => oxlint . && oxfmt --check '...scripts/**/*.ts'`, nên không cần cấu hình thêm. Đây KHÔNG phải `bun test`: nó là checker có exit code, chạy được khi toàn bộ test suite bị chặn."
+    },
+    {
+      "path": "docs/environment-variables.md",
+      "action": "modify",
+      "change": "Thêm cột tương thích vào các bảng biến, và thêm đúng MỘT dòng cho `ULTRAWORKERS_CONFIG_DIR`. File có 648 dòng và 11 bảng với 4 kiểu header khác nhau (dòng 37, 117, 128, 191, 203, 220, 232, 244, 260, 270 và các bảng sau) — mỗi bảng phải thêm cột, không chỉ bảng đầu. Cột mới đặt sau cột `Variable` với header `New name`.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: `wc -l docs/environment-variables.md` = 648; `grep -cE '^\\| .(PI|OMP)_[A-Z0-9_]+' docs/environment-variables.md` = 100 — con số 100 của plan ĐÚNG. Nhưng số 11 bảng là do tôi liệt kê, plan không nói; plan chỉ nói 'thêm cột tương thích' cho 100 biến mà không nêu cấu trúc bảng."
+    },
+    {
+      "path": "docs/environment-variables.md:29",
+      "action": "modify",
+      "change": "Sửa câu mô tả cơ chế mirror sẵn có. Dòng 29 hiện ghi: 'every `OMP_*` key is mirrored to its `PI_*` alias, and that mirrored value replaces a same-file `PI_*` value'. Câu này mô tả hành vi THẬT trong code, không phải thương hiệu — nhưng nó là chỗ duy nhất trong file giải thích cơ chế tương thích, nên đây là chỗ đúng để nói rõ `ULTRAWORKERS_CONFIG_DIR` thắng `PI_CONFIG_DIR` và cả hai đều được giữ.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG cả hai vế: doc dòng 29 nói mirror `OMP_*` → `PI_*`; code `packages/utils/src/env.ts:277-282` làm đúng vậy (`for (const k in result) if (k.startsWith(\"OMP_\")) result[\\`PI_${k.slice(4)}\\`] = result[k];`). Nghĩa là cơ chế bí danh CHO BIẾN ĐÃ TỒN TẠI — W13 không cần phát minh 100 bí danh mới, chỉ cần tài liệu hoá bí danh thật. Plan không nhắc cơ chế này."
+    },
+    {
+      "path": "packages/coding-agent/src/prompts/internal-urls/omp.md",
+      "action": "modify",
+      "change": "KHÔNG ĐỔI TÊN FILE. Chỉ xem xét nội dung nếu bản thân `omp://` là tên hiển thị cần đổi — và khi đó việc đổi phải là đổi SCHEME, thuộc W9 (tên binary + selector), không thuộc W13. Xem `open_questions` #2.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG — đây là phát hiện quan trọng nhất mà plan không có. File này được import THEO ĐƯỜNG DẪN tại `packages/coding-agent/src/internal-urls/omp-protocol.ts:10`: `import ompDoc from \"../prompts/internal-urls/omp.md\" with { type: \"text\" };`. Đổi tên file là `bun run check:ts` đỏ ngay. Nội dung file là: '`omp://`: harness docs, AVOID unless asked.'"
+    },
+    {
+      "path": ".omp/commands/cleanup.md, .omp/commands/fix-issues.md, .omp/commands/release.md, .omp/commands/review-prs.md, .omp/commands/triage.md, .omp/skills/semantic-compression/SKILL.md, .omp/skills/system-prompts/SKILL.md, .omp/skills/system-prompts/small-models.md, .omp/skills/tool-prompt-optimization/SKILL.md",
+      "action": "modify",
+      "change": "KHÔNG chạm. 9 file `.md` này KHÔNG phải tài liệu — chúng là prompt corpus nạp lúc chạy, cố ý nằm trong thư mục dot. Chúng nằm NGOÀI bề mặt tài liệu của W13.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: `git ls-files '.omp/**/*.md' | wc -l` = 9. Chúng là runtime asset — `packages/coding-agent/src/compress/index.ts:58` ghi rõ: 'prompt corpora live under dot directories such as `.omp/commands`'. Một lệnh sed chạy trên 'mọi file .md' sẽ nuốt cả 9 file này."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/input-controller.ts:2515",
+      "action": "modify",
+      "change": "KHÔNG thuộc W13 (đây là `.ts`, thuộc W8b). Ghi lại vì `.omp.md` ở đó là ĐUÔI FILE TẠM và là legacy keep — không ai được đổi nó trong lúc quét tài liệu.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: dòng 2515 dùng extension `.omp.md` cho file editor tạm; `packages/coding-agent/test/external-editor.test.ts:91,99` khẳng định `omp-editor-123.omp.md` trên Windows. Ba vị trí này phải giữ nguyên."
+    },
+    {
+      "path": "README.md",
+      "action": "modify",
+      "change": "Văn xuôi thương hiệu. 42 lượt token `omp` (biểu thức đã ghim ở plan §2.1) và 23 lượt `@oh-my-pi/`. Đây là file được đọc nhiều nhất trong lượt này — sửa tay theo ngữ cảnh, KHÔNG sed, vì nó chứa cả câu chào, cả tên lệnh trong code block.",
+      "verified": true,
+      "note": "ĐÃ ĐẾM: `git grep -ohE '(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)' -- README.md | wc -l` = 42; `git grep -c '@oh-my-pi/' -- README.md` = 23; file dài 701 dòng."
+    },
+    {
+      "path": "AGENTS.md",
+      "action": "modify",
+      "change": "Sửa có chọn lọc và PHẢI hỏi trước. 3 lượt token `omp` (biểu thức §2.1) và 9 dòng chứa `@oh-my-pi/`. AGENTS.md là file coding agent đọc khi làm việc trong repo này — sửa nó đổi hành vi agent, không phải tài liệu.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG và ĐÚNG với plan: quy tắc 'scope không bao giờ hardcode trong TS' được viết trung tính về thương hiệu, nhưng file KHÔNG trung tính — nó hardcode `@oh-my-pi/pi-catalog/<module>`, `@oh-my-pi/pi-utils`, `@oh-my-pi/pi-tui`, `@oh-my-pi/pi-natives/vcs`, ``~/.omp/logs/omp.YYYY-MM-DD.log`` và 2 URL attribution `https://github.com/can1357/oh-my-pi/issues/...`. Plan nói 'hãy kiểm tra, đừng giả định' — tôi đã kiểm tra: CẦN sửa, 11 dòng."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "action": "modify",
+      "change": "1 dòng: tiêu đề dòng 1 `# Contributing to omp`. Dòng 84 có `OMP` viết hoa, KHÔNG khớp biểu thức §2.1 (viết thường) — nhưng là attribution pháp lý nên xem lại cùng lúc.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: `grep -nE 'oh.my.pi|\\bomp\\b|ultraworker' CONTRIBUTING.md` → dòng 1 và dòng 84. Đây là file mà plan liệt kê là mang thương hiệu trong văn xuôi, và plan đúng — nhưng chỉ 1 dòng thật sự, không phải một lượt quét đáng kể."
+    },
+    {
+      "path": "packages/*/CHANGELOG.md",
+      "action": "modify",
+      "change": "KHÔNG SỬA. 14 file changelog tồn tại; 13 file chứa `@oh-my-pi/`; 11 file chứa token `omp`. AGENTS.md: phần đã phát hành là bất biến, và mục changelog chỉ được thêm khi được yêu cầu rõ ràng. Lần đổi tên này KHÔNG phải lúc đó.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: `git ls-files 'packages/*/CHANGELOG.md' | wc -l` = 14 (plan và bảng §2.2 nói 13 ở một chỗ — nói rõ 14, trong đó 13 có scope; `packages/natives/CHANGELOG.md` là file không có scope). Đây là cạm bẫy số một của W7: `git grep -o '@oh-my-pi/' -- .` quét tới changelog và viết lại phần đã phát hành."
+    },
+    {
+      "path": "LICENSE",
+      "action": "modify",
+      "change": "KHÔNG ĐỔI. 3 dòng bản quyền nêu tên tác giả: `Copyright (c) 2025 Mario Zechner`, `Copyright (c) 2025-2026 Can Bölük`, `Copyright (c) 2026 Stencil Labs, Inc.`. Không tên sản phẩm nào ở đây.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: `grep -nE 'oh-my-pi|omp|Copyright' LICENSE` → đúng 3 dòng, tên tác giả upstream. Khớp N10 của bảng `do_not_rename` (plan dòng 13272). Tác giả không phải tên sản phẩm."
+    },
+    {
+      "path": "docs/extension-loading.md:231",
+      "action": "modify",
+      "change": "KHÔNG SỬA Ở W13. Dòng này thuộc sở hữu của W8a (plan dòng 13841 nói rõ W8a phải viết lại nó sau khi M2 chốt `exports` map). W13 chỉ ghi chú, không chạm.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG nội dung dòng 231: mô tả `onLoad` hook viết lại `@mariozechner/*` và `@earendil-works/*`, và các shim legacy trong `src/extensibility/legacy-pi-ai-shim.ts` / `legacy-pi-coding-agent-shim.ts`. Đây là tài liệu hoá HỢP ĐỒNG nên phải viết tay, không sed. Xem `risk` #1 — sở hữu kép."
+    },
+    {
+      "path": "docs/porting-from-pi-mono.md:46-51",
+      "action": "modify",
+      "change": "KHÔNG SỬA Ở W13. Thuộc sở hữu của W8a (cùng lý do trên). Chỉ ghi chú.",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG: dòng 46-50 là 5 dòng map `@mariozechner/pi-*` → `@oh-my-pi/pi-*`; dòng 51 nói về scope `@earendil-works/*`. Sau W7 sáu map trong này sẽ sai. Nhưng W8a đã nhận sở hữu."
+    },
+    {
+      "path": "13 file .md chứa URL github.com/can1357/oh-my-pi",
+      "action": "modify",
+      "change": "CHƯA QUYẾT ĐỊNH — xem `open_questions` #1. 24 lượt URL `https://github.com/can1357/oh-my-pi/...` nằm trong 13 file `.md` (ngoài changelog và file kế hoạch). Bảng `do_not_rename` (N1–N17) KHÔNG có hàng nào phủ URL GitHub, và không work item nào sở hữu chúng.",
+      "verified": true,
+      "note": "ĐÃ ĐẾM: `git grep -ohE 'github\\.com/[A-Za-z0-9_.-]+/oh-my-pi' -- '*.md' ':!packages/*/CHANGELOG.md' ...` → 24 lượt, 13 file. Cùng mẫu đó có 54 file `.ts` — tức là bề mặt này rộng hơn riêng W13. GitHub giữ redirect khi repo được đổi tên nên URL cũ KHÔNG gãy, nhưng tài liệu sẽ trỏ tới tên cũ vĩnh viễn. Đây là khoảng trống thật trong plan, không phải chi tiết nhỏ."
+    },
+    {
+      "path": "docs/ (82 file ở cấp đỉnh, 134 tính mọi cấp)",
+      "action": "modify",
+      "change": "Quét văn xuôi. 43 file trong `docs/` chứa `@oh-my-pi/`; 89 file trong `docs/` chứa token `omp`. File nhiều nhất: `docs/settings.md` (43 lượt omp), `docs/cli-reference.md` (24), `docs/auth-broker-gateway.md` (23), `docs/marketplace.md` (15), `docs/collab.md` (15), `docs/local-models.md` (14), `docs/stream.md` (13).",
+      "verified": true,
+      "note": "ĐÃ KIỂM CHỨNG 82 và 134 — plan ĐÚNG cả hai. Đã kiểm tra KHÔNG có bộ sinh tài liệu nào ghi vào `docs/` (không có mkdocs/docusaurus/astro/docsify; `package.json` không có script `gen:*` nào nhắm `docs/`; `git grep -ln 'docs/cli-reference|docs/settings.md|docs/providers.md' -- '*.ts'` rỗng). Vậy tài liệu là thủ công → sed được, nhưng phải sửa tay theo ngữ cảnh."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "KHÔNG bắt đầu cho tới khi ba điều kiện sau đều đạt, và nói ra điều kiện nào chưa đạt nếu chưa: (a) `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` trả về khác 0 — tôi đo được 0, nghĩa là W4 CHƯA land; (b) `ls scripts/rename/keep-list.txt scripts/rename/disposition.tsv` tồn tại — hiện `scripts/rename/` không có, cả hai lệnh đều `No such file or directory`; (c) `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` ĐÃ được W8a viết lại — kiểm bằng `git log --oneline -- docs/extension-loading.md`, nếu W8a chưa chạy thì hai dòng đó vẫn còn tên cũ và W13 không được chạm vào.",
+      "anchor": "Điều kiện mở W13. Plan chỉ ghi 'Phụ thuộc: tất cả mục trước; M2 cho hai tài liệu hợp đồng' — không đủ cụ thể để chặn. Ba mục trên là bản kiểm được."
+    },
+    {
+      "n": 2,
+      "instruction": "Chốt danh sách loại trừ TRƯỚC khi chạm file nào, và commit nó. Tạo `scripts/rename/docs-legacy-allowlist.txt`. Seed bằng kết quả lệnh ở `verification` mục A (93 dòng trên HEAD `84cbac9`), trừ 10 file runtime-asset: `packages/coding-agent/src/prompts/internal-urls/omp.md` và 9 file dưới `.omp/`. Nếu con số 93 lệch với lúc bạn chạy, dùng con số đo được TẠI THỜI ĐIỂM CHẠY và ghi lại con số đó — đừng ép về 93.",
+      "anchor": "allow-list là thứ làm cho gate đỏ được. Plan không có file này; plan đưa lệnh kiểm là `bun run check`, và typecheck không nói gì về nội dung markdown."
+    },
+    {
+      "n": 3,
+      "instruction": "ĐỔI TÊN BIẾN MÔI TRƯỜNG TRONG `docs/environment-variables.md` — nhưng đổi đúng MỘT tên, không phải 100. Thêm cột `New name` vào mỗi bảng. Với 99 dòng `PI_*`/`OMP_*`, cột `New name` ghi chính xác tên hiện tại, và CHỈ `PI_CONFIG_DIR` mang giá trị `ULTRAWORKERS_CONFIG_DIR` (cộng thêm, thắng). Sửa dòng 29 để nói rõ cơ chế mirror `OMP_*` → `PI_*` vẫn chạy và `ULTRAWORKERS_CONFIG_DIR` thắng `PI_CONFIG_DIR`. KHÔNG đổi tên bất kỳ `PI_*`/`OMP_*` nào — N16 giữ chúng vĩnh viễn.",
+      "anchor": "docs/environment-variables.md, 648 dòng, 100 dòng biến, 11 bảng. NGUY HIỂM: bảng §2.2 hàng 21 của plan nói '100 dòng phải bổ sung tên mới' và W13 nói 'mỗi biến phải có một dòng nêu tên mới tương ứng' — đọc thẳng thì ra phát minh 100 bí danh `ULTRAWORKERS_*` mới, tức thêm 100 chỗ đọc env trong code mà KHÔNG work item nào sở hữu. Sửa dòng 29 nói rõ đây là tài liệu hoá cơ chế CÓ SẴN."
+    },
+    {
+      "n": 4,
+      "instruction": "Sửa văn xuôi thương hiệu, file từng file, KHÔNG chạy sed trên cả `.md`. Bắt đầu từ 10 file nhiều nhất đã đếm ở `files_touched` (`docs/settings.md` 43, `README.md` 36, `docs/cli-reference.md` 24, `docs/auth-broker-gateway.md` 23, `docs/marketplace.md` 15, `docs/collab.md` 15, `docs/local-models.md` 14, `docs/stream.md` 13, `docs/skills/authoring-extensions.md` 13, `docs/toolconv/hermes.md` 12) rồi mới tới phần đuôi. Với mỗi lượt `omp` phân loại: tên lệnh trong code block (đổi), tên hiển thị trong văn xuôi (đổi), đường dẫn `~/.omp/...` (xem bước 5), hay legacy keep (giữ, ghi vào allow-list kèm lý do).",
+      "anchor": "93 file / 549 lượt sau khi trừ changelog và file kế hoạch. Sửa tay bắt buộc vì đây là văn xuôi: `README.md` vừa có tên lệnh trong code block vừa có câu chào."
+    },
+    {
+      "n": 5,
+      "instruction": "GIỮ `.omp` trong đường dẫn, KHÔNG đổi thành `.ultraworkers`. `docs/environment-variables.md` dòng 18-21 mô tả `~/.omp/agent/.env` và `~/.omp/.env` là nơi dotenv thật sự được đọc. Sau W6 sẽ có HAI thư mục cùng tồn tại (dual-root của W4), nên câu này phải nói rõ thư mục nào là thư mục THẬT tại thời điểm đọc, thay vì đổi tên. Tương tự cho mọi đường dẫn `~/.omp` và mọi literal `.omp` trong 90 file `.md` (647 lượt).",
+      "anchor": "N14 của bảng `do_not_rename` giữ thư mục `.omp` cấp project. Kế hoạch §5 (đọc ở dòng ~13200, mục 1) nói rõ W13 phải chạy SAU W6 'để mọi tài liệu được viết khi cả hai thư mục đã tồn tại'. Nếu bạn đổi `.omp` thành `.ultraworkers` trong doc, tài liệu sẽ mô tả một thư mục mà bản cài cũ không có."
+    },
+    {
+      "n": 6,
+      "instruction": "KHÔNG chạm 14 file `packages/*/CHANGELOG.md` và `KHÔNG chạm `LICENSE`. 13 file changelog chứa `@oh-my-pi/` và 11 chứa token `omp`; tất cả đều thuộc vùng bất biến hoặc phần đã phát hành. `LICENSE` có 3 dòng tên tác giả, không có tên sản phẩm.",
+      "anchor": "AGENTS.md mục Changelog: 'New entries always go under ## [Unreleased]', phần đã phát hành là bất biến. N10 giữ dòng bản quyền. Sai lầm lớn nhất của W13 là thêm một mục changelog vì lần đổi tên này hướng tới người dùng — AGENTS.md cấm, trừ khi người dùng nói rõ."
+    },
+    {
+      "n": 7,
+      "instruction": "Chạy gate. Nếu gate A đỏ, KHÔNG xoá dòng khỏi allow-list để làm nó xanh trừ khi bạn đã phân loại lượt đó thành legacy keep VÀ ghi lý do. Allow-list là danh sách DUYỆT, không phải nơi chôn thứ chưa xử lý. Nếu một file còn trong allow-list nhưng đã hết token `omp`, `comm -13` sẽ báo — đó là nhánh đỏ ngược và cần giữ.",
+      "anchor": "Ba gate ở mục `gate`. Chạy cả ba, không chỉ gate A."
+    }
+  ],
+  "code_shape": "Không có code sản phẩm nào. W13 chỉ tạo HAI artifact mới và sửa markdown. (1) `scripts/rename/docs-legacy-allowlist.txt`: text, một đường dẫn mỗi dòng, không header, `LC_ALL=C sort`, đường dẫn tương đối từ gốc repo, KHÔNG có dòng rỗng và KHÔNG có dòng trùng. Mỗi dòng phải có lý do — dùng định dạng `<đường_dẫn>  # <lý do>` giống `scripts/rename/keep-list.txt` mà W7 sẽ tạo, để hai danh sách đọc giống nhau. Vì có phần `# giải thích`, gate phải cắt phần sau `#` trước khi so sánh, nếu không mọi dòng đều hỏng. (2) `scripts/rename/check-docs-rename.ts`: script đọc allow-list, bỏ phần `#` và khoảng trắng thừa, dựng `Set<string>`; chạy ba quy tắc A/B/C ở mục `gate`; in mỗi vi phạm ra luồng lỗi; `process.exit(1)` nếu có bất kỳ vi phạm nào, `process.exit(0)` nếu không. Vì file nằm trong `scripts/`, `check:tools` của repo (oxlint + oxfmt) tự quét — không cần thêm cấu hình. (3) `docs/environment-variables.md`: thêm cột `New name` ngay sau cột `Variable` trong CẢ 11 bảng, không chỉ bảng đầu — mỗi bảng có header riêng ở dòng 37, 117, 128, 191, 203, 220, 232, 244, 260, 270 và các bảng còn lại tới hết file. Giá trị của cột: 99 dòng ghi lại chính tên cũ; `PI_CONFIG_DIR` (dòng 523) ghi `ULTRAWORKERS_CONFIG_DIR`. Sửa dòng 29 để mô tả cơ chế mirror `OMP_*` → `PI_*` đang chạy thật trong `packages/utils/src/env.ts:277-282`.",
+  "test_contract": "KHÔNG viết test `bun test` — và đây là kết luận ĐÚNG, không phải sự lười. AGENTS.md cấm hai thứ liên quan: 'wording/defaults — NEVER assert prompt/UI boilerplate, a default literal', và cấm source-grep. Một test đọc `docs/environment-variables.md` rồi `expect(text).toContain('ULTRAWORKERS_CONFIG_DIR')` đúng nghĩa là kiểm tra hình dạng câu chữ, và sẽ đỏ khi người ta reflow bảng mà không đổi ý nghĩa. Thay vào đó, bảo vệ hợp đồng tài liệu bằng CHECKER CÓ EXIT CODE (`scripts/rename/check-docs-rename.ts`), vì nó bỏ qua hình thức và chỉ ép đúng ba điều: (A) mọi file `.md` còn mang token thương hiệu phải nằm trong allow-list đã duyệt; (B) mọi tên `ULTRAWORKERS_*` đọc trong code phải có trong doc, và mọi tên `ULTRAWORKERS_*` trong doc phải được code đọc — đây là DoD 'không có biến mới nào mồ côi' của plan, ở dạng chạy được; (C) không file changelog nào bị sửa. Checker chạy được khi toàn bộ `bun test` đang bị chặn trên máy này, nên nó là hàng phòng thủ thật sự chứ không phải bước trang trí. Nếu cơ sở hạ tầng CI của repo không chạy script trong `scripts/` tùy ý thì nối nó vào job `check:tools` — kiểm trước khi viết.",
+  "test_files": [],
+  "verification": "Tất cả số dưới đây tôi đã chạy thật trên HEAD `84cbac9`, macOS, 2026-09-27. Chạy lại để xác nhận, và ghi con số bạn đo được vào allow-list thay vì tin con số của tôi.\n\nA) Bề mặt thật của W13 (loại changelog + 5 file kế hoạch ở gốc):\n   P='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'\n   git grep -lE \"$P\" -- '*.md' ':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | sort   ->  93 FILE, 549 lượt\n   git grep -cE \"$P\" -- '*.md' ':!packages/*/CHANGELOG.md' ... (bỏ -l) | sort -t: -k2 -rn | head -25   -> xem `files_touched`\n\nB) Bề mặt scope còn lại sau khi trừ changelog + kế hoạch:\n   git grep -l '@oh-my-pi/' -- '*.md' ':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l   ->  66\n\nC) Cột tương thích (giữ nguyên 100 — số này plan ĐÚNG):\n   grep -cE '^\\| .(PI|OMP)_[A-Z0-9_]+' docs/environment-variables.md   ->  100\n   grep -nE '^\\| *Variable' docs/environment-variables.md   ->  11 dòng header bảng\n\nD) Vùng bất biến (kỳ vọng 0 thay đổi):\n   git diff --name-only -- 'packages/*/CHANGELOG.md' | wc -l   ->  0\n   git diff --name-only -- LICENSE | wc -l   ->  0\n\nE) Asset runtime phải sống sót (cổng âm — đỏ nếu file biến mất hoặc tên đổi):\n   git grep -n 'internal-urls/omp.md' -- '*.ts'   ->  phải vẫn ra `packages/coding-agent/src/internal-urls/omp-protocol.ts:10`\n   git ls-files '.omp/**/*.md' | wc -l   ->  phải bằng 9\n\nF) Kiểm tra kiểu chạy, không phải kiểm tra nội dung:\n   bun run check:ts   ->  tôi chạy được, exit 0, ~56s trên máy này. Dùng làm tín hiệu chính vì `bun test` đang bị chặn (`Failed to load pi_natives native addon for darwin-arm64`). Nếu bạn cần build native: `brew install ninja` TRƯỚC, rồi `bun --cwd=packages/natives run build` — thiếu ninja thì CMake dừng với `CMAKE_MAKE_PROGRAM is not set`.",
+  "gate": "Ba quy tắc, chạy CẢ BA, và cả ba đều phải đỏ được. Dùng script `scripts/rename/check-docs-rename.ts`; dưới đây là bản một dòng để kiểm cục bộ.\n\nQUY TẮC A — không còn token thương hiệu ngoài allow-list:\n  P='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'\n  { git grep -lE \"$P\" -- '*.md' ':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' || true; } \\\n    | LC_ALL=C sort > /tmp/w13-actual.txt\n  { sed 's/[[:space:]]*#.*$//' scripts/rename/docs-legacy-allowlist.txt | sed '/^$/d' | LC_ALL=C sort; } > /tmp/w13-allowed.txt\n  comm -23 /tmp/w13-actual.txt /tmp/w13-allowed.txt      # rỗng = XANH, có dòng = ĐỎ\n  comm -13 /tmp/w13-actual.txt /tmp/w13-allowed.txt      # rỗng = XANH, có dòng = ĐỎ (dòng allow-list đã hết hiệu lực)\n  VÌ SAO ĐỎ ĐƯỢC: thêm một file `.md` mới mang thương hiệu, hoặc quên gỡ một file khỏi allow-list sau khi đã đổi tên, đều làm `comm` in ra dòng. `|| true` là BẮT BUỘC — `git grep` exit 1 khi không khớp, nếu nối bằng `&&` thì `comm` bị bỏ qua và gate luôn xanh, tức là gate không phân biệt được 'đã làm' với 'lệnh không chạy'. Đây đúng là lỗi mà yêu cầu cảnh báo.\n\nQUY TẮC B — biến môi trường không mồ côi, hai chiều (DoD 'không có biến mới nào mồ côi'):\n  comm -13 <(git grep -ohE '(process\\.env|Bun\\.env)\\.ULTRAWORKERS_[A-Z0-9_]+' -- '*.ts' | grep -oE 'ULTRAWORKERS_[A-Z0-9_]+' | LC_ALL=C sort -u) \\\n          <(grep -ohE 'ULTRAWORKERS_[A-Z0-9_]+' docs/environment-variables.md | LC_ALL=C sort -u)\n  Baseline tôi đo được: phía code 0, phía doc 0 -> `comm` rỗng -> XANH. Nó đỏ đúng lúc cần: W4 thêm `ULTRAWORKERS_CONFIG_DIR` vào code mà W13 quên ghi vào doc, hoặc doc nói một tên mà không chỗ nào đọc. Đây là hợp đồng quan sát được, không phải kiểm tra hình thức.\n\nQUY TẮC C — changelog bất biến:\n  git diff --name-only -- 'packages/*/CHANGELOG.md' | grep -q . && echo 'FAIL: changelog bị sửa' && exit 1\n  Baseline 0 dòng. Đỏ ngay khi có ai thêm một mục changelog 'vì lần đổi tên này hướng tới người dùng' — đúng cái sai lầm AGENTS.md cấm mà plan nêu là rủi ro số một.\n\nCỔNG KẾT: quy tắc A rỗng cả hai chiều, quy tắc B rỗng, quy tắc C rỗng, và `bun run check:ts` exit 0. LƯU Ý VỀ `bun run check` MÀ PLAN CHỈ ĐỊNH: đó là `bun run --parallel check:ts check:rs`, cần cargo, và typecheck không nói gì về nội dung markdown. Giữ nó như điều kiện phụ, đừng để nó thay cho ba quy tắc trên.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "W7 — scope `@oh-my-pi/` đã đổi trên 4107 file; nếu chưa, W13 sẽ sửa scope lần thứ hai bằng tay trên 66 file `.md`",
+    "W4 — `ULTRAWORKERS_CONFIG_DIR` phải tồn tại trong code trước khi W13 ghi nó vào doc. Tôi đo `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` = 0, tức W4 CHƯA land",
+    "W8a — SỞ HỮU `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` (plan dòng 13841). W13 KHÔNG được chạm hai dòng này",
+    "W9 — tên binary mới đã chốt, vì tên lệnh trong code block của `docs/` phải khớp tên thật",
+    "W6 — `CONFIG_DIR_NAME` đã lật, vì §5 của plan yêu cầu tài liệu được viết KHI CẢ HAI thư mục `~/.omp` và `~/.ultraworkers` đã tồn tại; nếu không, mọi câu về thư mục config trong doc sẽ mô tả một thế giới chưa tồn tại",
+    "W10 — CI/Docker/brew/nix đã đổi tên, để tài liệu cài đặt không hướng dẫn sai tên artifact",
+    "M2 — exports map đã chốt trên main; nếu chưa thì `docs/extension-loading.md` mô tả một bản đồ đang sửa"
+  ],
+  "blocks": [
+    "Cổng phát hành của M5 — không ký/n notarize được cho tới khi tài liệu không còn mô tả tên cũ như thể đó là tên hiện hành",
+    "ĐIỀU KIỆN KẾT THÚC 'một grep token `omp` đứng riêng trên `.md` chỉ trả về tập legacy có chủ đích' của plan §ĐỊNH NGHĨA HOÀN THÀNH"
+  ],
+  "effort": "S theo bảng effort của plan (1 ngày công) — và con số đó ĐÚNG, với điều kiện là bỏ qua bước số 3. Ba việc nặng nhất theo thứ tự: (1) cột tương thích trong `docs/environment-variables.md` — 100 dòng trên 11 bảng, mỗi bảng header khác nhau, sửa tay; (2) phân loại 549 lượt trên 93 file, không phải lượt nào giống nhau; (3) 24 URL GitHub trên 13 file nếu quyết định ở `open_questions` #1 là có đổi. Nếu W4 chưa land thì cột tương thích không có nội dung và phần này chỉ còn 1 dòng — đó là lý do bước 1 là điều kiện chặn chứ không phải lời khuyên.",
+  "risk": "1. SỞ HỮU KÉP VỚI W8a — nghiêm trọng nhất và chưa ai giải quyết. `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` được W13 nêu ở dòng 13975 VÀ được W8a nhận ở dòng 13841. Hai kỹ sư sửa cùng hai dòng trong cùng milestone. Cách sửa: một bên chịu trách nhiệm, ghi tên bên đó vào `keep_refs` trong `disposition.tsv`, bên kia bỏ qua. Tôi chọn W8a chịu trách nhiệm vì W8a đã nêu điều kiện 'chỉ sau khi M2 chốt exports map' — W13 không có điều kiện đó.\n2. THÊM MỤC CHANGELOG — sai lầm plan đã cảnh báo và tôi xác nhận là có thật. 14 file changelog, 13 file có `@oh-my-pi/`, 11 file có token `omp`. Quy tắc C ở `gate` chặn nó bằng exit code thay vì bằng ý thức.\n3. CHẠY SED TRÊN MỌI FILE `.md` — sẽ nuốt 10 asset runtime. `packages/coding-agent/src/prompts/internal-urls/omp.md` được import theo đường dẫn tại `omp-protocol.ts:10`; đổi tên là typecheck đỏ. 9 file dưới `.omp/` là prompt corpus nạp lúc chạy (`compress/index.ts:58` ghi rõ chúng nằm trong thư mục dot). Cả hai đều nằm trong tập 93 file mà một lệnh `git grep -lE ... -- '*.md'` không lọc ra — lọc bằng đường dẫn là bắt buộc.\n4. ĐỔI `.omp` THÀNH `.ultraworkers` TRONG DOC — sẽ khiến tài liệu mô tả thư mục mà bản cài cũ không có. 647 lượt `.omp` trên 90 file `.md` là bẫy. N14 giữ thư mục `.omp` cấp project, và W4 giữ dual-root, nên câu đúng là 'đọc theo thứ tự ưu tiên, thư mục cũ vẫn được đọc' chứ không phải 'thư mục là X'.\n5. PHÁT MINH 100 BÍ DANH `ULTRAWORKERS_*` — bẫy đọc nhầm. §2.2 hàng 21 nói '100 dòng phải bổ sung tên mới' và W13 nói 'mỗi biến phải có một dòng nêu tên mới tương ứng'. Đọc thẳng thì đó là 100 chỗ đọc env MỚI trong code, không work item nào sở hữu, và trái N16. Sự thật đã kiểm chứng: cơ chế mirror `OMP_*` → `PI_*` ĐÃ TỒN TẠI (`env.ts:277-282`) và doc đã mô tả nó ở dòng 29. W13 tài liệu hoá cơ chế có sẵn và thêm đúng MỘT tên mới.\n6. GATE KHÔNG ĐỎ ĐƯỢC — rủi ro quy trình. `bun run check` mà plan chỉ định là typecheck + cargo; nó xanh dù W13 chưa làm gì. Và nếu nối `git grep` với `comm` bằng `&&`, `git grep` exit 1 khi sạch làm `comm` không chạy, và gate luôn xanh. Đã ghi `|| true` trong `gate`.",
+  "open_questions": [
+    "URL `github.com/can1357/oh-my-pi` có được đổi không? 24 lượt trên 13 file `.md` và 54 file `.ts`. Bảng `do_not_rename` N1–N17 KHÔNG có hàng nào phủ nó, và không work item nào sở hữu. GitHub giữ redirect khi repo đổi tên nên URL cũ không gãy — nghĩa là đây là việc KHÔNG GÃY, cũng chính vì thế dễ bị bỏ sót vĩnh viễn. Cần người dùng trả lời: repo GitHub có được đổi tên trong M5 không? Nếu có, W13 cập nhật 13 file `.md` và phần `.ts` phải có chủ sở hữu riêng (không thuộc W13). Nếu không, thêm một hàng N mới vào `do_not_rename` với lý do.",
+    "`omp://` là tên hiển thị cần đổi không? `packages/coding-agent/src/prompts/internal-urls/omp.md` giữ tài liệu harness và được import theo đường dẫn. Nếu đổi thì đổi SCHEME, thuộc W9, và phải giữ alias cho scheme cũ. Nếu giữ thì cần một hàng trong `do_not_rename`. W13 không tự quyết.",
+    "9 file `.md` dưới `.omp/` và `internal-urls/omp.md` có được tính vào 'tài liệu' không? Tôi khuyến nghị KHÔNG và đã loại chúng khỏi allow-list ở bước 2. Nhưng nếu chúng được tínm vào thì tổng bề mặt là 103 chứ không phải 93, và phải có người chịu trách nhiệm riêng cho chúng — không phải W13.",
+    "Ai sửa `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51`? Câu hỏi sở hữu kép ở `risk` #1. Tôi đề xuất W8a, vì W8a đã ghi điều kiện phụ thuộc M2 còn W13 thì không.",
+    "`scripts/rename/check-docs-rename.ts` có được nối vào job CI nào? Repo có `check:tools` (oxlint + oxfmt) chạy trong `bun run check`, nhưng đó là lint chứ không phải gate nội dung. Cần biết job nào sẽ gọi nó, nếu không thì gate chỉ chạy khi ai đó nhớ chạy tay — tức là gate hữu ích nhưng không ép ai.",
+    "Cột `New name` trong `docs/environment-variables.md` có phản ánh cơ chế mirror `OMP_*` → `PI_*` (đã có) hay chỉ ánh xạ `ULTRAWORKERS_CONFIG_DIR`? Tôi đề xuất cột chỉ ghi TÊN, và sửa dòng 29 để giải thích cơ chế. Nếu cột ghi cả quan hệ thắng/thua thì phải quyết định rõ điều gì thắng gì cho TỪNG biến, và đó là câu hỏi lớn hơn W13."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "§2.2 hàng 7 và W13 (dòng 13978): '723 lượt token `omp` trên 105 file' trong `.md`.",
+      "verdict": "SAI",
+      "correction": "Trên HEAD `84cbac9`, biểu thức đã ghim ở §2.1 cho 1293 lượt trên 109 file. Nếu trừ 13 file changelog và 5 file kế hoạch ở gốc (chúng không thuộc W13 vì bất biến / không phải tài liệu sản phẩm), bề mặt thật của W13 là 549 lượt trên 93 file. Con số để vào allow-list là 93, không phải 105.",
+      "evidence": "P='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'; `git grep -ohE \"$P\" -- '*.md' | wc -l` = 1293; `git grep -lE \"$P\" -- '*.md' | wc -l` = 109; thêm `':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md'` thì ra 549 / 93. Con số 723 không tái lập được bằng bất kỳ biến thể nào của biểu thức đã ghim."
+    },
+    {
+      "claim": "W13 dòng 13975: 'Có 603 file markdown được track'.",
+      "verdict": "SAI",
+      "correction": "612 file markdown được track. Lệnh: `git ls-files '*.md' | wc -l`. Chênh 9 file — khớp đúng với 9 file runtime dưới `.omp/` mà tôi phát hiện, nhiều khả năng số cũ đếm trước khi chúng được thêm.",
+      "evidence": "`git ls-files '*.md' | wc -l` = 612; `git ls-files '.omp/**/*.md' | wc -l` = 9."
+    },
+    {
+      "claim": "W13 dòng 13975: '79 chứa `@oh-my-pi/`'.",
+      "verdict": "SAI",
+      "correction": "84 file `.md` chứa `@oh-my-pi/`. Sau khi trừ 13 file changelog (bất biến) và 5 file kế hoạch ở gốc, còn 66 file — đó mới là bề mặt scope thật của W13.",
+      "evidence": "`git grep -l '@oh-my-pi/' -- '*.md' | wc -l` = 84; `git grep -l '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' | wc -l` = 13; `git ls-files '*.md' | grep -cE 'MILESTONE_[0-9]_EXECUTION_PLAN\\.md$|^COMPREHENSIVE_PLAN'` = 5; 84 − 13 − 5 = 66."
+    },
+    {
+      "claim": "W13 dòng 13975: '82 trong `docs/` ở cấp đỉnh (134 nếu tính mọi cấp)'.",
+      "verdict": "ĐÚNG",
+      "correction": "Giữ nguyên. Lưu ý kỹ thuật: `git ls-files 'docs/*.md'` KHÔNG cho ra 82 — dấu `*` của git pathspec khớp cả dấu `/`, nên lệnh đó ra 134. Muốn 82 phải lọc bằng `grep -E '^docs/[^/]+\\.md$'`.",
+      "evidence": "`git ls-files '*.md' | grep -cE '^docs/[^/]+\\.md$'` = 82; `git ls-files '*.md' | grep -cE '^docs/.+\\.md$'` = 134."
+    },
+    {
+      "claim": "W13 dòng 13977 và §2.2 hàng 21: `docs/environment-variables.md` liệt kê 100 biến `PI_*`/`OMP_*`.",
+      "verdict": "ĐÚNG",
+      "correction": "Giữ nguyên. Nhưng phải thêm: file có 11 bảng với header riêng, và cột tương thích phải thêm vào CẢ 11, không chỉ bảng đầu. Plan không nói cấu trúc bảng nên dễ làm thiếu.",
+      "evidence": "`grep -cE '^\\| .(PI|OMP)_[A-Z0-9_]+' docs/environment-variables.md` = 100; `wc -l` = 648; `grep -nE '^\\| *Variable'` ra các dòng 37, 117, 128, 191, 203, 220, 232, 244, 260, 270 và các bảng còn lại."
+    },
+    {
+      "claim": "W13: '`docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` đã thuộc W8'.",
+      "verdict": "ĐÚNG VỀ NỘI DUNG, SAI VỀ SỞ HỮU",
+      "correction": "Hai neo dòng chính xác — tôi đã mở và xác nhận nội dung khớp. Nhưng W8a (plan dòng 13841) đã NHẬN SỞ HỮU chúng ràng rõ, trong khi W13 lại liệt kê lại. Phải chọn một chủ sở hữu. Đề xuất W8a.",
+      "evidence": "`sed -n '231p' docs/extension-loading.md` trả về câu về `onLoad` hook và các shim legacy; `sed -n '46,51p' docs/porting-from-pi-mono.md` trả về 5 dòng map `@mariozechner/pi-*` → `@oh-my-pi/pi-*` cộng dòng `@earendil-works/*`. Plan dòng 13841 (W8a): '`docs/extension-loading.md:231` cùng `docs/porting-from-pi-mono.md:46-51` phải được viết lại'."
+    },
+    {
+      "claim": "W13 dòng 13978 liệt kê `CONTRIBUTING.md` như file mang thương hiệu trong văn xuôi.",
+      "verdict": "ĐÚNG NHƯNG QUÁ NHỎ ĐỂ LÀ CÁI RIÊNG",
+      "correction": "Chỉ 1 dòng thật sự khớp biểu thức §2.1: dòng 1 `# Contributing to omp`. Dòng 84 có `OMP` viết hoa, không khớp biểu thức viết thường. Không cần một mục riêng — gộp vào lượt văn xuôi.",
+      "evidence": "`grep -nE 'oh.my.pi|\\bomp\\b|ultraworker' CONTRIBUTING.md` → dòng 1, dòng 84; `git grep -ohE \"$P\" -- CONTRIBUTING.md | wc -l` = 1."
+    },
+    {
+      "claim": "W13 dòng 13975: 'quy tắc scope không bao giờ hardcode trong TS của AGENTS.md giữ cách diễn đạt trung lập về thương hiệu — hãy kiểm tra, đừng giả định là cần sửa'.",
+      "verdict": "NỬA ĐÚNG",
+      "correction": "Câu đó về MỘT quy tắc thì đúng. Nhưng AGENTS.md nói chung KHÔNG trung lập về thương hiệu — nó cần sửa. 11 dòng mang tên cũ: 4 đường dẫn import `@oh-my-pi/pi-*`, `~/.omp/logs/omp.YYYY-MM-DD.log`, `__omp_worker_*` selector, `omp --smoke-test`, `omp-stats`, và 2 URL attribution `github.com/can1357/oh-my-pi`. Sửa AGENTS.md là đổi hành vi của coding agent, nên cần hỏi trước.",
+      "evidence": "`grep -nE 'oh-my-pi|\\bomp\\b' AGENTS.md` ra 15 dòng khớp (`grep -c` = 15; trong đó 3 lượt khớp biểu thức §2.1 và 9 dòng có `@oh-my-pi/`), ở các dòng 19, 24, 52, 54, 60, 62, 66, 69, 83, 150, 220, 227, 235, 337, 338."
+    },
+    {
+      "claim": "W13 dòng 13976 và N11: '`packages/*/CHANGELOG.md`' được nhắc như một mục đơn.",
+      "verdict": "ĐÚNG VỀ NGUYÊN TẮC, SAI VỀ SỐ",
+      "correction": "Có 14 file changelog, không phải 13. 13 file chứa `@oh-my-pi/` (`packages/natives/CHANGELOG.md` là file không có scope) và 11 file chứa token `omp`. Con số 13 xuất hiện ở plan dòng 13828 và khớp với '13 file có scope' — nhưng W13 nói 'packages/*/CHANGELOG.md' chung chung, nên khi đếm phải nói rõ 14 tổng / 13 có scope.",
+      "evidence": "`git ls-files 'packages/*/CHANGELOG.md' | wc -l` = 14; `git grep -l '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' | wc -l` = 13; `git grep -lwE 'omp' -- 'packages/*/CHANGELOG.md' | wc -l` = 11."
+    },
+    {
+      "claim": "W13 dòng 13983: 'Lệnh: `bun run check`' là cổng nghiệm thu.",
+      "verdict": "SAI — KHÔNG ĐỎ ĐƯỢC",
+      "correction": "`bun run check` là `bun run --parallel check:ts check:rs`: typecheck + cargo. Cả hai đều xanh dù W13 chưa sửa một dòng nào, và không cái nào đọc nội dung markdown. Nó không phân biệt được 'đã làm' với 'chưa làm'. Thay bằng ba quy tắc ở mục `gate`; giữ `bun run check:ts` như điều kiện phụ vì nó bắt được lỗi import nếu ai đó đổi tên `internal-urls/omp.md`.",
+      "evidence": "`node -e \"console.log(require('./package.json').scripts.check)\"` → `bun run --parallel check:ts check:rs`; `check:ts` → `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`; `check:tools` → `oxlint . && oxfmt --check ...`. Tôi chạy `bun run check:ts` được exit 0 sau ~56s. `check:rs` cần cargo."
+    },
+    {
+      "claim": "W13 dòng 13982: 'Test cần viết: không có test. Nội dung tài liệu không phải hợp đồng runtime quan sát được.'",
+      "verdict": "ĐÚNG VỀ KẾT LUẬN, THIẾU MỘT NỬA",
+      "correction": "Đúng là không viết `bun test` — AGENTS.md cấm assert trên chữ của file, và đúng là DoD 'không có biến mới nào mồ côi' của plan KHÔNG thể kiểm bằng `bun run check`. Nhưng kết luận 'không có test' kéo theo việc KHÔNG CÓ GÌ ÉP AI, và đó là chỗ hởng. Thay bằng checker có exit code `scripts/rename/check-docs-rename.ts` chạy được ngay cả khi `bun test` đang bị chặn trên máy này.",
+      "evidence": "AGENTS.md mục Testing: 'Bad: wording/defaults. NEVER assert prompt/UI boilerplate' và cấm source-grep. Plan dòng 14042 nêu DoD hai chiều cho họ `PI_*`/`OMP_*`, mà `bun run check` không đụng tới. Baseline đo được: `git grep -ohE '(process\\.env|Bun\\.env)\\.ULTRAWORKERS_[A-Z0-9_]+' -- '*.ts'` = 0, nên quy tắc B xanh ngay bây giờ và đỏ đúng lúc W4 land mà W13 bỏ sót doc."
+    },
+    {
+      "claim": "W13 giả định toàn bộ 603 file `.md` là văn xuôi có thể sed.",
+      "verdict": "SAI — THIẾU MỘT LOẠI FILE NGUY HIỂM",
+      "correction": "Ít nhất 10 file `.md` được track KHÔNG phải tài liệu mà là asset nạp lúc chạy. `packages/coding-agent/src/prompts/internal-urls/omp.md` được import theo đường dẫn — đổi tên file là `bun run check:ts` đỏ. 9 file dưới `.omp/commands/` và `.omp/skills/` là prompt corpus, cố ý nằm trong thư mục dot. Chúng nằm trong tập 93 file của lệnh `git grep -- '*.md'`, nên phải loại theo ĐƯỜNG DẪN, không phải theo phần mở rộng.",
+      "evidence": "`packages/coding-agent/src/internal-urls/omp-protocol.ts:10`: `import ompDoc from \"../prompts/internal-urls/omp.md\" with { type: \"text\" };`. `git ls-files '.omp/**/*.md' | wc -l` = 9. `packages/coding-agent/src/compress/index.ts:58`: '`dot: true` — prompt corpora live under dot directories such as `.omp/commands`'. Ngoài ra `.omp.md` còn là đuôi file tạm tại `input-controller.ts:2515` và trong `packages/coding-agent/test/external-editor.test.ts:91,99` — ba vị trí phải giữ nguyên."
+    },
+    {
+      "claim": "W13 dòng 13977: cần 'thêm cột tương thích: mỗi biến phải có một dòng nêu tên mới tương ứng', và §2.2 hàng 21: '100 dòng phải bổ sung tên mới'.",
+      "verdict": "SAI — NẾU ĐỌC THẲNG SẼ PHÁT MINH 100 BÍ DANH MỚI",
+      "correction": "Cơ chế bí danh cho biến môi trường ĐÃ TỒN TẠI và đã được tài liệu hoá: `parseEnvFile` mirror mọi khoá `OMP_*` sang `PI_*`, và dòng 29 của chính file doc nói đúng điều đó. W4 chỉ thêm MỘT tên mới (`ULTRAWORKERS_CONFIG_DIR`). Vậy cột tương thích nên ghi lại cơ chế có sẵn, và chỉ một dòng mang tên mới. Đọc 'mỗi biến phải có tên mới' thành 100 tên mới là 100 chỗ đọc env trong code mà không work item nào sở hữu, và trái N16.",
+      "evidence": "`packages/utils/src/env.ts:277-282`: `// OMP_ overrides PI_` rồi `for (const k in result) { if (k.startsWith(\"OMP_\")) result[\\`PI_${k.slice(4)}\\`] = result[k]; }`. `docs/environment-variables.md:29`: 'every `OMP_*` key is mirrored to its `PI_*` alias, and that mirrored value replaces a same-file `PI_*` value'. `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` = 0 — W4 chưa land."
+    },
+    {
+      "claim": "W13: không có việc gì với URL `github.com/can1357/oh-my-pi` (24 lượt trong 13 file `.md`, 54 file `.ts`).",
+      "verdict": "KHOẢNG TRỐNG TRONG PLAN",
+      "correction": "Bề mặt này không thuộc hàng nào của bảng `do_not_rename` N1–N17 và không work item nào sở hữu. Vì GitHub giữ redirect khi repo được đổi tên nên URL cũ KHÔNG gãy — đó là lý do dễ bị bỏ sót vĩnh viễn, và AGENTS.md dùng đúng mẫu URL đó làm ví dụ attribution trong mục Changelog (dòng 337-338). Cần câu hỏi mở, không cần quyết ngay trong W13.",
+      "evidence": "`git grep -ohE 'github\\.com/[A-Za-z0-9_.-]+/oh-my-pi' -- '*.md' ':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | sort | uniq -c` → 24 lượt, toàn bộ là `github.com/can1357/oh-my-pi`; `git grep -lE 'github\\.com/[A-Za-z0-9_.-]+/oh-my-pi' -- '*.md' ... | wc -l` = 13; cùng mẫu trong `*.ts` = 54 file. Bảng N1–N17 ở plan dòng 13266-13282 không có hàng nào nhắc URL."
+    },
+    {
+      "claim": "W13 dòng 13980: 'Phụ thuộc: tất cả mục trước; M2 cho hai tài liệu hợp đồng.'",
+      "verdict": "QUÁ MƠ HỒ ĐỂ LÀM ĐIỀU KIỆN CHẶN",
+      "correction": "'Tất cả mục trước' không kiểm được bằng máy. Thay bằng ba điều kiện cụ thể có lệnh: (a) `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` khác 0 — hiện bằng 0, tức W4 chưa land; (b) `scripts/rename/keep-list.txt` và `scripts/rename/disposition.tsv` tồn tại — hiện thư mục `scripts/rename/` không có; (c) `git log --oneline -- docs/extension-loading.md` cho thấy W8a đã chạm file. Thiếu (a) thì cột tương thích không có nội dung và phần việc nặng nhất của W13 biến mất trong im lặng.",
+      "evidence": "`git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts' | wc -l` = 0 (0 file khớp). `ls scripts/rename/` → `No such file or directory (os error 2)`; `ls scripts/rename/disposition.tsv scripts/rename/keep-list.txt` → cả hai `No such file or directory`."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m5-specs/W13.spec.json"
+}

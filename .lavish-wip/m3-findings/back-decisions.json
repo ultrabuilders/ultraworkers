@@ -1,0 +1,74 @@
+[
+ {
+  "severity": "major",
+  "location": "Dải D, hàng 29 — cột \"câu hỏi\" (`component.ts:3064`)",
+  "claim": "Hàng 29 trích `showHookStatus` là \"(`component.ts:3064`, hiện mặc định `true`)\" và tự sửa lại: \"thực tế setting đã tồn tại và 3067 là dấu ngoặc đóng\".",
+  "why_wrong": "Cả hai số dòng đều sai. `:3064` là dấu ngoặc đóng `}` của một khối if trước đó, không phải chỗ khai báo setting. Dòng chứa mặc định `true` là `:3066` (`const showHooks = this.#settings.showHookStatus ?? true;`). Và `:3067` cũng không phải \"dấu ngoặc đóng\" — `:3067` là `if (showHooks && this.#sortedHookStatuses.length > 0) {`, dấu ngoặc đóng của khối đó là `:3069`. Hàng này tự cảnh báo đúng bệnh lý này rồi lại mắc lại: người đọc tin `:3064` sẽ nhìn thấy một dấu ngoặc và kết luận setting không tồn tại.",
+  "evidence": "`git grep -n \"\" -- packages/tui/src/status-line/component.ts | sed -n '3064p;3066p;3067p;3069p'` → `:3064: }` / `:3066: const showHooks = this.#settings.showHookStatus ?? true;` / `:3067: if (showHooks && this.#sortedHookStatuses.length > 0) {` / `:3069: }`",
+  "fix": "Đảo `showHookStatus` (`component.ts:3066`, hiện mặc định `true`) sang mặc định false để một status hook không render hai lần không? — và bỏ câu \"thực tế setting đã tồn tại và 3067 là dấu ngoặc đóng\", thay bằng: \"thực tế setting đã tồn tại ở `:3066` (`?? true`); `:3064` là dấu ngoặc đóng của khối if trước, `:3067` là lệnh `if` đọc setting.\"",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "major",
+  "location": "Dải D, hàng 45 — cột \"câu hỏi\" (`session-color.ts:36`)",
+  "claim": "Hàng 45 nêu \"Hằng số hiện có duy nhất của repo là `ACCENT_MIN_CONTRAST = 3` (`session-color.ts:36`, WCAG AA large text)\".",
+  "why_wrong": "`:36` là dòng doc-comment (`/** Minimum contrast ratio (WCAG AA large text) ... */`), không phải dòng khai báo hằng số. Hằng số nằm ở `:37`. Người đọc mở tới `:36` sẽ thấy một chú thích chứ không thấy hằng số, và có thể kết luận neo sai — trong khi neo đúng, chỉ lệch một dòng.",
+  "evidence": "`git grep -n \"\" -- packages/tui/src/theme/session-color.ts | sed -n '36p;37p'` → `:36: /** Minimum contrast ratio (WCAG AA large text) between a light-theme accent and its surface. */` / `:37: const ACCENT_MIN_CONTRAST = 3;`",
+  "fix": "Hằng số hiện có duy nhất của repo là `ACCENT_MIN_CONTRAST = 3` (`session-color.ts:37`, doc-comment WCAG AA large text ở `:36`).",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "major",
+  "location": "Dải C, hàng 22 — cột \"câu hỏi\" (`ui-helpers.ts:663`)",
+  "claim": "Hàng 22 hỏi \"`chat-transcript-builder.ts:507` và `ui-helpers.ts:663` có trong scope A6 không? Chúng là check phía result, không bao giờ gọi collapse predicate.\"",
+  "why_wrong": "`:663` không phải dòng mà check bắt đầu. Check `isReadGroupResult` được khai báo tại `:662`; `:663` chỉ là dòng tiếp trong biểu thức (`message.toolName === \"read\" &&`). So sánh với `chat-transcript-builder.ts:507` — đó là dòng khai báo `const isReadGroupResult = ...` — thì `ui-helpers.ts` phải trích `:662` mới đối xứng. Người đọc mở `:663` thấy một phép so sánh chứ không thấy tên biến, và có thể nghĩ check nằm ở chỗ khác.",
+  "evidence": "`git grep -n \"\" -- packages/coding-agent/src/modes/utils/ui-helpers.ts | sed -n '662p;663p'` → `:662: const isReadGroupResult =` / `:663: message.toolName === \"read\" &&`. Đối chiếu: `git grep -n \"const isReadGroupResult\" -- packages/tui/src/chat/chat-transcript-builder.ts packages/coding-agent/src/modes/utils/ui-helpers.ts` → `chat-transcript-builder.ts:507` và `ui-helpers.ts:662`.",
+  "fix": "`chat-transcript-builder.ts:507` và `ui-helpers.ts:662` có trong scope A6 không? Chúng là check phía result, không bao giờ gọi collapse predicate.",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "major",
+  "location": "Dải B hàng 19 vs Dải B hàng 20 — cột \"câu hỏi\" (số palette của biến thể S)",
+  "claim": "Hàng 19 nói lưới regression của biến thể S là 101 theme; hàng 20 nói \"99 palette phải đụng tới dù chọn gì\".",
+  "why_wrong": "Hai hàng cùng mô tả biến thể S nhưng đưa hai con số khác nhau (101 vs 99) cho cùng một phạm vi quét, và không hàng nào phân biệt hai khái niệm. Sự thật đã kiểm: `defaults/*.json` có đúng 99 file, còn `getBuiltinThemes()` trả về 101 (dark.json + light.json + 99 defaults). Nếu harness của S quét `defaults/*.json` thì đúng là 99; nếu quét `getBuiltinThemes()` thì đúng là 101. Bảng đang lẫn hai con số này, và 101 chính là con số nặng kết luận của hàng 19 (\"lưới regression yếu hơn hẳn biến thể S (101)\") — tức là con số quyết định hướng nghiêng của cả hàng bị đặt sai ngữ cảnh.",
+  "evidence": "`ls packages/tui/src/theme/defaults/*.json | wc -l` → 99. `git grep -n \"\" -- packages/tui/src/theme/loader.ts | sed -n '18,25p'` → `BUILTIN_THEMES = { dark, light, ...defaultThemes }` và `getBuiltinThemes()` trả về `BUILTIN_THEMES`. `grep -c '\\.json\"' packages/tui/src/theme/defaults/index.ts` → 99 import. Vậy getBuiltinThemes() = 2 + 99 = 101.",
+  "fix": "Hàng 19: \"...M mua parity bằng một harness chỉ kiểm 2 theme người chọn tay, tức lưới regression yếu hơn hẳn biến thể S — harness của S quét `getBuiltinThemes()` (101 theme = dark + light + 99 `defaults/*.json`), còn bản kiểm kê khoá bắt buộc của plan chỉ chạm 99 file trong `defaults/`.\" Hàng 20 giữ nguyên 99 nhưng thêm rõ: \"99 palette trong `defaults/` phải đụng tới dù chọn gì (`ls packages/tui/src/theme/defaults/*.json | wc -l` → 99); nếu harness quét `getBuiltinThemes()` thì con số là 101.\"",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "minor",
+  "location": "Dải B, hàng 15 — cột \"câu hỏi\" (attach.ts:244-246)",
+  "claim": "Hàng 15 nêu \"tham chiếu keychain duy nhất trong package là obfuscator payload browser-profile tại `packages/coding-agent/src/tools/browser/attach.ts:244-246`, không liên quan.\"",
+  "why_wrong": "Không phải \"duy nhất\". `packages/coding-agent/src/exec/bash-executor.ts:353` cũng nhắc tới keychain (trong comment giải thích hành vi của zsh `!`). Kết luận chính của hàng — repo không dùng keyring API nào để lưu secret — vẫn đúng, nhưng phát biểu \"duy nhất\" là sai và bị bác bữ bởi một `git grep` đơn giản.",
+  "evidence": "`git grep -n \"keytar\\|keychain\\|safeStorage\" -- packages/coding-agent/src` → `bash-executor.ts:353` (comment), `attach.ts:244`, `attach.ts:246`, `attach.ts:276`.",
+  "fix": "tham chiếu keychain duy nhất có ý nghĩa trong package là obfuscator payload browser-profile tại `packages/coding-agent/src/tools/browser/attach.ts:244-246` (cộng `:276`), không liên quan; `bash-executor.ts:353` chỉ nhắc tên keychain trong một comment giải thích hành vi của zsh, không gọi API nào.",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "minor",
+  "location": "Dải B, hàng 16 — cột \"câu hỏi\" (`manager.ts:929-957`)",
+  "claim": "Hàng 16 nêu \"`manager.ts:929-957` là một hotspot row đang bị thay\".",
+  "why_wrong": "Khoảng 929-957 là con số trong bảng hotspot của plan, nhưng plan đã tự sửa lại chính nó: ba phương thức kết thúc ở 937, 949 và 960, không phải 957. Bảng này trích nguyên số cũ mà không mang theo phần sửa, nên người đọc bị gửi tới một khoảng kết thúc sai.",
+  "evidence": "`grep -n \"manager.ts:929-957\" COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` → dòng 7729/8494: \"CONFIRMED_WITH_DRIFT — the range ends at 960, not 957: `getPluginSettings` 929-937, `setPluginSetting` 942-949, `deletePluginSetting` 954-960.\" Kiểm trực tiếp: `git grep -n -E 'async (getPluginSettings|setPluginSetting|deletePluginSetting)' -- packages/coding-agent/src/extensibility/plugins/manager.ts` → 929, 942, 954.",
+  "fix": "`manager.ts:929-960` là một hotspot row đang bị thay (plan ghi 929-957 nhưng đã tự sửa: ba phương thức kết thúc ở 937/949/960).",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "minor",
+  "location": "Dải B, hàng 19 — cột \"câu hỏi\" (\"design PARITY thiết kế\")",
+  "claim": "Hàng 19 viết \"Phần còn lại của M là PARITY thiết kế với CCB\".",
+  "why_wrong": "Hai từ tiếng Anh (\"PARITY\", \"thiết kế\" — cái sau là phiên âm tiếng Việt của design) lẫn trong một cụm, thành lặp nghĩa. Cả bảng đều viết tiếng Việt; đây là sót.",
+  "evidence": "Đọc trực tiếp dòng 40 của file: \"Phần còn lại của M là PARITY thiết kế với CCB, không phải tính đúng\".",
+  "fix": "Phần còn lại của M là parity thiết kế với CCB, không phải tính đúng.",
+  "file": "back-decisions"
+ },
+ {
+  "severity": "minor",
+  "location": "Dải D, hàng 31 — cột \"vì sao nó chặn\" (\"house-style\", \"correctness\")",
+  "claim": "Hàng 31 viết \"Đây là house-style, không phải correctness.\"",
+  "why_wrong": "Hai từ tiếng Anh còn sót trong một bảng viết tiếng Việt. Không sai nội dung, chỉ trình bày.",
+  "evidence": "Đọc trực tiếp dòng 62 của file.",
+  "fix": "Đây là quy ước nhà (house-style), không phải vấn đề đúng-sai.",
+  "file": "back-decisions"
+ }
+]

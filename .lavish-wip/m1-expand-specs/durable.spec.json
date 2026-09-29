@@ -1,0 +1,1964 @@
+{
+ "id": "durable",
+ "title": "Migrate @earendil-works/pi-durable -> @oh-my-pi/pi-durable (chep code, doi scope)",
+ "source_path": "/Users/tranquangdang21/Projects/pi-ref/packages/durable",
+ "source_files": 63,
+ "source_bytes": 807033,
+ "one_line": "Chep nguyen 63 file / 807,033 byte cua packages/durable (durable conversation + task + document runtime) vao packages/durable, doi 78 lan @earendil-works/ -> @oh-my-pi/, giai quyet 11 va cham voi code omp da co truoc do khi moi chay duoc.",
+ "why_copy_not_reimplement": "CHENH LECH SO LUONG: 63 file / 807,033 byte / 9,024 dong src, trong do 1520 dong (src/testing/storage-conformance.ts) chi la bo kiem chung dung chung cho 3 back-end storage, va 114 KB docs/pico-v5.md la dac ta normative 2,400 dong. Bat buoc bao tri tu la 4 invariant cua giao dich (commit nguyen tuyet doi; chi cong bo document sau khi commit thanh cong; moi tien do nhin thay deu ben vung; khong co duong cong bo bay loi) xung quanh 1,231 dong ma may - de lai nghiem thuc se ngay lap tuc sinh loi tiep canh ma khong co test nao bat. KHI SU TAI SUA: pi-ref la 1 commit squash (git log --oneline | wc -1 = 1, 1,935 file), nen KHONG co diff nao de 'cap nhat' - chi co copy. GIA TRI CONG: durable KHONG phai ban sao cua phien ban cua omp. pi-ref packages/agent/ co 117 file src, omp packages/agent/ chi 50, va CHI 5 ten file trung nhau - agent-loop.ts 26KB (pi) vs 148KB (omp), agent.ts 19KB vs 74KB, types.ts 19KB vs 51KB. durable la suc tach ra TICH LUY TRONG PI sau khi omp da phat trien tiep: ba noi gop 3 thu, tong 20KB source, va no cham truc tiep vao mot trong nhung thu omp da manh nhat. KHONG TOI THIEU: he thong nay da duoc dung THAT truoc khi tach (Server, pi-protocol, pi-evals deu import no). No la mot persistence runtime da kiem chung, khong phai mot ban thiet ke. CHUP KY CHON LUC: 3 adapter storage (Memory/Jsonl/Sqlite) cung mot bo 1520 dong test, dung nguyen ve nghiep nang, thi dua sang noi khac se ton that hon muc loi ghi lai.",
+ "public_api": [
+  {
+   "symbol": "defineDoc",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:38-53",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Overload set chon scope->token. Khong co o omp; ban moi."
+  },
+  {
+   "symbol": "defineDocFamily",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:59-79",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Overload set nhet. Moi."
+  },
+  {
+   "symbol": "ReadAfterWrite",
+   "kind": "class",
+   "source_anchor": "src/errors.ts:2",
+   "target_anchor": "packages/durable/src/errors.ts",
+   "already_exists_in_omp": false,
+   "note": "Loi giao dich doc-sau-khi-ghi. Moi."
+  },
+  {
+   "symbol": "StorageRejected",
+   "kind": "class",
+   "source_anchor": "src/errors.ts:10",
+   "target_anchor": "packages/durable/src/errors.ts",
+   "already_exists_in_omp": false,
+   "note": "Loi bi back-end tu choi batch. Moi."
+  },
+  {
+   "symbol": "createSession",
+   "kind": "function",
+   "source_anchor": "src/session/session.ts:37",
+   "target_anchor": "packages/durable/src/session/session.ts",
+   "already_exists_in_omp": false,
+   "note": "Diem vao cua Session kernel. Moi."
+  },
+  {
+   "symbol": "SessionKernel",
+   "kind": "class",
+   "source_anchor": "src/session/session.ts:47",
+   "target_anchor": "packages/durable/src/session/session.ts",
+   "already_exists_in_omp": false,
+   "note": "Khong export tu index; noi bo. Moi."
+  },
+  {
+   "symbol": "MemoryStorage",
+   "kind": "class",
+   "source_anchor": "src/storage/memory.ts:215",
+   "target_anchor": "packages/durable/src/storage/memory.ts",
+   "already_exists_in_omp": false,
+   "note": "Storage trong bo 772 dong. Moi."
+  },
+  {
+   "symbol": "JsonObject",
+   "kind": "type",
+   "source_anchor": "src/types.ts:6",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM hinh dang - xem collisions[]."
+  },
+  {
+   "symbol": "Id",
+   "kind": "type",
+   "source_anchor": "src/types.ts:11",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Nominal brand tren number. Moi."
+  },
+  {
+   "symbol": "ConversationId",
+   "kind": "type",
+   "source_anchor": "src/types.ts:18",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "EntryId",
+   "kind": "type",
+   "source_anchor": "src/types.ts:19",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskId",
+   "kind": "type",
+   "source_anchor": "src/types.ts:20",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SubmissionId",
+   "kind": "type",
+   "source_anchor": "src/types.ts:21",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentId",
+   "kind": "type",
+   "source_anchor": "src/types.ts:22",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Seq",
+   "kind": "type",
+   "source_anchor": "src/types.ts:27",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Commit sequence dan nhat. Moi."
+  },
+  {
+   "symbol": "ROOT_CONVERSATION_ID",
+   "kind": "const",
+   "source_anchor": "src/types.ts:30",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Gia tri 1 gan voi brand. Moi."
+  },
+  {
+   "symbol": "LatestConversationSemantics",
+   "kind": "type",
+   "source_anchor": "src/types.ts:33",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "RewindableConversationSemantics",
+   "kind": "type",
+   "source_anchor": "src/types.ts:40",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentSemantics",
+   "kind": "type",
+   "source_anchor": "src/types.ts:47",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "CommonDocDefinition",
+   "kind": "type",
+   "source_anchor": "src/types.ts:54",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocDefinition",
+   "kind": "type",
+   "source_anchor": "src/types.ts:65",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocFamilyDefinition",
+   "kind": "type",
+   "source_anchor": "src/types.ts:68",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocToken",
+   "kind": "interface",
+   "source_anchor": "src/types.ts:77",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocFamilyToken",
+   "kind": "interface",
+   "source_anchor": "src/types.ts:83",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SessionDocToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:88",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ConversationDocToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:89",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "RewindableConversationDocToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:93",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskDocToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:97",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SessionDocFamilyToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:99",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ConversationDocFamilyToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:104",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "RewindableConversationDocFamilyToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:109",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskDocFamilyToken",
+   "kind": "type",
+   "source_anchor": "src/types.ts:114",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskDefinition",
+   "kind": "type",
+   "source_anchor": "src/types.ts:123",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Task",
+   "kind": "interface",
+   "source_anchor": "src/types.ts:136",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskOptions",
+   "kind": "type",
+   "source_anchor": "src/types.ts:141",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ConversationOwnership",
+   "kind": "type",
+   "source_anchor": "src/types.ts:151",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ConversationRecord",
+   "kind": "type",
+   "source_anchor": "src/types.ts:154",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ContextEdit",
+   "kind": "type",
+   "source_anchor": "src/types.ts:169",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "EntryRecord",
+   "kind": "type",
+   "source_anchor": "src/types.ts:185",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "EntryDraft",
+   "kind": "type",
+   "source_anchor": "src/types.ts:203",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SubmissionRecord",
+   "kind": "type",
+   "source_anchor": "src/types.ts:217",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SubmissionCreate",
+   "kind": "type",
+   "source_anchor": "src/types.ts:284",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskOutcomeError",
+   "kind": "type",
+   "source_anchor": "src/types.ts:291",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskOutcome",
+   "kind": "type",
+   "source_anchor": "src/types.ts:298",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskState",
+   "kind": "type",
+   "source_anchor": "src/types.ts:335",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskRecord",
+   "kind": "type",
+   "source_anchor": "src/types.ts:376",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentRecord",
+   "kind": "type",
+   "source_anchor": "src/types.ts:390",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentCreate",
+   "kind": "type",
+   "source_anchor": "src/types.ts:429",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Page",
+   "kind": "type",
+   "source_anchor": "src/types.ts:436",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Cursor",
+   "kind": "type",
+   "source_anchor": "src/types.ts:442",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ConversationQuery",
+   "kind": "type",
+   "source_anchor": "src/types.ts:445",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "EntryQuery",
+   "kind": "type",
+   "source_anchor": "src/types.ts:451",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TaskQuery",
+   "kind": "type",
+   "source_anchor": "src/types.ts:460",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentPoint",
+   "kind": "type",
+   "source_anchor": "src/types.ts:469",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentAddress",
+   "kind": "type",
+   "source_anchor": "src/types.ts:472",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentQuery",
+   "kind": "type",
+   "source_anchor": "src/types.ts:480",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentContent",
+   "kind": "type",
+   "source_anchor": "src/types.ts:487",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentCopySource",
+   "kind": "type",
+   "source_anchor": "src/types.ts:500",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StoredDocument",
+   "kind": "type",
+   "source_anchor": "src/types.ts:506",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageWrite",
+   "kind": "type",
+   "source_anchor": "src/types.ts:513",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Tx",
+   "kind": "interface",
+   "source_anchor": "src/types.ts:535",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Session",
+   "kind": "interface",
+   "source_anchor": "src/types.ts:607",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Storage",
+   "kind": "interface",
+   "source_anchor": "src/types.ts:665",
+   "target_anchor": "packages/durable/src/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Result",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:5",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Khong phai pi Result. Moi."
+  },
+  {
+   "symbol": "ok",
+   "kind": "function",
+   "source_anchor": "src/env/index.ts:7",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "err",
+   "kind": "function",
+   "source_anchor": "src/env/index.ts:11",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "getOrThrow",
+   "kind": "function",
+   "source_anchor": "src/env/index.ts:15",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "getOrUndefined",
+   "kind": "function",
+   "source_anchor": "src/env/index.ts:20",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "toError",
+   "kind": "function",
+   "source_anchor": "src/env/index.ts:24",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM ten - omp co san o packages/utils/src/type-guards.ts:15."
+  },
+  {
+   "symbol": "FileKind",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:34",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "FileErrorCode",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:36",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "FileError",
+   "kind": "class",
+   "source_anchor": "src/env/index.ts:46",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ExecutionErrorCode",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:58",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ExecutionError",
+   "kind": "class",
+   "source_anchor": "src/env/index.ts:66",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "FileInfo",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:76",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TextLine",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:84",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TextLineReader",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:89",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "FileSystem",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:95",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputRetention",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:136",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputLimits",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:138",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputCaptureOptions",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:144",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputTruncation",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:149",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputMetadata",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:151",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputView",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:157",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellOutputUpdate",
+   "kind": "type",
+   "source_anchor": "src/env/index.ts:161",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellExecResult",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:167",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ShellExecOptions",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:171",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Shell",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:180",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM ten - omp co Shell la string-union 'bash'|'zsh'|'fish' tai packages/coding-agent/src/cli/completion-gen.ts:20."
+  },
+  {
+   "symbol": "ExecutionEnv",
+   "kind": "interface",
+   "source_anchor": "src/env/index.ts:189",
+   "target_anchor": "packages/durable/src/env/index.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "NodeExecutionEnv",
+   "kind": "class",
+   "source_anchor": "src/env/node.ts:438",
+   "target_anchor": "packages/durable/src/env/node.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi. 963 dong, doc lai bang node:child_process."
+  },
+  {
+   "symbol": "SqliteValue",
+   "kind": "type",
+   "source_anchor": "src/storage/sqlite/database.ts:2",
+   "target_anchor": "packages/durable/src/storage/sqlite/database.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SqliteStatement",
+   "kind": "interface",
+   "source_anchor": "src/storage/sqlite/database.ts:8",
+   "target_anchor": "packages/durable/src/storage/sqlite/database.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SqliteDatabase",
+   "kind": "interface",
+   "source_anchor": "src/storage/sqlite/database.ts:26",
+   "target_anchor": "packages/durable/src/storage/sqlite/database.ts",
+   "already_exists_in_omp": false,
+   "note": "Facade dong bo de adapter Bun/Node cung hieu."
+  },
+  {
+   "symbol": "SqliteStorage",
+   "kind": "class",
+   "source_anchor": "src/storage/sqlite/storage.ts:166",
+   "target_anchor": "packages/durable/src/storage/sqlite/storage.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi. 809 dong."
+  },
+  {
+   "symbol": "SqliteMigration",
+   "kind": "type",
+   "source_anchor": "src/storage/sqlite/migrations.ts:3",
+   "target_anchor": "packages/durable/src/storage/sqlite/migrations.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "SQLITE_MIGRATIONS",
+   "kind": "const",
+   "source_anchor": "src/storage/sqlite/migrations.ts:85",
+   "target_anchor": "packages/durable/src/storage/sqlite/migrations.ts",
+   "already_exists_in_omp": false,
+   "note": "Chi 1 migration version 1."
+  },
+  {
+   "symbol": "CURRENT_SQLITE_SCHEMA_VERSION",
+   "kind": "const",
+   "source_anchor": "src/storage/sqlite/migrations.ts:87",
+   "target_anchor": "packages/durable/src/storage/sqlite/migrations.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "applySqliteMigrations",
+   "kind": "function",
+   "source_anchor": "src/storage/sqlite/migrations.ts:92",
+   "target_anchor": "packages/durable/src/storage/sqlite/migrations.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "NodeSqliteDatabase",
+   "kind": "class",
+   "source_anchor": "src/storage/sqlite/node.ts:40",
+   "target_anchor": "packages/durable/src/storage/sqlite/node.ts",
+   "already_exists_in_omp": false,
+   "note": "Adapter node:sqlite. Xung dot voi AGENTS.md - xem collisions[]."
+  },
+  {
+   "symbol": "openNodeSqliteDatabase",
+   "kind": "function",
+   "source_anchor": "src/storage/sqlite/node.ts:91",
+   "target_anchor": "packages/durable/src/storage/sqlite/node.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "openNodeSqliteStorage",
+   "kind": "function",
+   "source_anchor": "src/storage/sqlite/node.ts:116",
+   "target_anchor": "packages/durable/src/storage/sqlite/node.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "NodeSqliteStorageOptions",
+   "kind": "type",
+   "source_anchor": "src/storage/sqlite/node.ts:9",
+   "target_anchor": "packages/durable/src/storage/sqlite/node.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "JsonlStorage",
+   "kind": "class",
+   "source_anchor": "src/storage/jsonl/storage.ts:240",
+   "target_anchor": "packages/durable/src/storage/jsonl/storage.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi. 840 dong."
+  },
+  {
+   "symbol": "JsonlStorageOptions",
+   "kind": "type",
+   "source_anchor": "src/storage/jsonl/storage.ts:75",
+   "target_anchor": "packages/durable/src/storage/jsonl/storage.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "JsonlCorruptionError",
+   "kind": "class",
+   "source_anchor": "src/storage/jsonl/storage.ts:80",
+   "target_anchor": "packages/durable/src/storage/jsonl/storage.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "JsonlStoragePoisonedError",
+   "kind": "class",
+   "source_anchor": "src/storage/jsonl/storage.ts:87",
+   "target_anchor": "packages/durable/src/storage/jsonl/storage.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "openNodeJsonlStorage",
+   "kind": "function",
+   "source_anchor": "src/storage/jsonl/node.ts:6",
+   "target_anchor": "packages/durable/src/storage/jsonl/node.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "createExpectAssertions",
+   "kind": "function",
+   "source_anchor": "src/testing/assertions.ts:17",
+   "target_anchor": "packages/durable/src/testing/assertions.ts",
+   "already_exists_in_omp": false,
+   "note": "Cau hinh vitest; dung lai nguyen."
+  },
+  {
+   "symbol": "ExpectLike",
+   "kind": "type",
+   "source_anchor": "src/testing/assertions.ts:3",
+   "target_anchor": "packages/durable/src/testing/assertions.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "registerStorageConformance",
+   "kind": "function",
+   "source_anchor": "src/testing/runner.ts:12",
+   "target_anchor": "packages/durable/src/testing/runner.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageConformanceRunner",
+   "kind": "interface",
+   "source_anchor": "src/testing/runner.ts:5",
+   "target_anchor": "packages/durable/src/testing/runner.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "createStorageConformance",
+   "kind": "function",
+   "source_anchor": "src/testing/storage-conformance.ts:90",
+   "target_anchor": "packages/durable/src/testing/storage-conformance.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi. 1520 dong - bo conformance lon nhat."
+  },
+  {
+   "symbol": "StorageConformanceAssertions",
+   "kind": "interface",
+   "source_anchor": "src/testing/types.ts:3",
+   "target_anchor": "packages/durable/src/testing/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageConformanceProvider",
+   "kind": "type",
+   "source_anchor": "src/testing/types.ts:12",
+   "target_anchor": "packages/durable/src/testing/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageConformanceOptions",
+   "kind": "type",
+   "source_anchor": "src/testing/types.ts:14",
+   "target_anchor": "packages/durable/src/testing/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageConformanceCase",
+   "kind": "type",
+   "source_anchor": "src/testing/types.ts:19",
+   "target_anchor": "packages/durable/src/testing/types.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageBenchmarkScale",
+   "kind": "type",
+   "source_anchor": "src/testing/storage-benchmark.ts:17",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "STORAGE_MEMORY_SCALES",
+   "kind": "const",
+   "source_anchor": "src/testing/storage-benchmark.ts:24",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TIMING_SCALE",
+   "kind": "const",
+   "source_anchor": "src/testing/storage-benchmark.ts:29",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "storageBenchmarkPrimaryRecordCount",
+   "kind": "function",
+   "source_anchor": "src/testing/storage-benchmark.ts:42",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageBenchmarkDataset",
+   "kind": "type",
+   "source_anchor": "src/testing/storage-benchmark.ts:56",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "seedStorageBenchmark",
+   "kind": "function",
+   "source_anchor": "src/testing/storage-benchmark.ts:89",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageReadBenchmark",
+   "kind": "type",
+   "source_anchor": "src/testing/storage-benchmark.ts:279",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "STORAGE_READ_BENCHMARKS",
+   "kind": "const",
+   "source_anchor": "src/testing/storage-benchmark.ts:285",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "StorageWriteBenchmark",
+   "kind": "type",
+   "source_anchor": "src/testing/storage-benchmark.ts:385",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "seedStorageWriteBenchmark",
+   "kind": "function",
+   "source_anchor": "src/testing/storage-benchmark.ts:392",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "STORAGE_WRITE_BENCHMARKS",
+   "kind": "const",
+   "source_anchor": "src/testing/storage-benchmark.ts:410",
+   "target_anchor": "packages/durable/src/testing/storage-benchmark.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "truncateHead",
+   "kind": "function",
+   "source_anchor": "src/env/utils/truncate.ts:132",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM - xem collisions[]."
+  },
+  {
+   "symbol": "truncateTail",
+   "kind": "function",
+   "source_anchor": "src/env/utils/truncate.ts:220",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM - xem collisions[]."
+  },
+  {
+   "symbol": "truncateLine",
+   "kind": "function",
+   "source_anchor": "src/env/utils/truncate.ts:338",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM - xem collisions[]."
+  },
+  {
+   "symbol": "TruncationResult",
+   "kind": "interface",
+   "source_anchor": "src/env/utils/truncate.ts:15",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM hinh dang - xem collisions[]."
+  },
+  {
+   "symbol": "TruncationOptions",
+   "kind": "interface",
+   "source_anchor": "src/env/utils/truncate.ts:40",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM hinh dang - xem collisions[]."
+  },
+  {
+   "symbol": "DEFAULT_MAX_LINES",
+   "kind": "const",
+   "source_anchor": "src/env/utils/truncate.ts:11",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "VA CHAM gia tri 2000 vs 3000 - xem collisions[]."
+  },
+  {
+   "symbol": "DEFAULT_MAX_BYTES",
+   "kind": "const",
+   "source_anchor": "src/env/utils/truncate.ts:12",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "Cung gia tri 50*1024."
+  },
+  {
+   "symbol": "GREP_MAX_LINE_LENGTH",
+   "kind": "const",
+   "source_anchor": "src/env/utils/truncate.ts:13",
+   "target_anchor": "packages/durable/src/env/utils/truncate.ts",
+   "already_exists_in_omp": false,
+   "note": "Rieng cua durable. Moi."
+  },
+  {
+   "symbol": "utf8ByteLength",
+   "kind": "function",
+   "source_anchor": "src/env/utils/truncate.ts:54",
+   "target_anchor": "packages/durable/src/env/utils/truncate.ts",
+   "already_exists_in_omp": false,
+   "note": "omp chi co ban private trong packages/coding-agent/src/live/protocol.ts:203."
+  },
+  {
+   "symbol": "formatSize",
+   "kind": "function",
+   "source_anchor": "src/env/utils/truncate.ts:115",
+   "target_anchor": "XEM collisions[] - da co o omp",
+   "already_exists_in_omp": true,
+   "note": "omp co formatBytes tai pi-tui/render/render-utils, alias o legacy shim:1596."
+  },
+  {
+   "symbol": "OutputCapture",
+   "kind": "class",
+   "source_anchor": "src/env/utils/output-capture.ts:26",
+   "target_anchor": "packages/durable/src/env/utils/output-capture.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "applyShellOutputUpdate",
+   "kind": "function",
+   "source_anchor": "src/env/utils/output-capture.ts:173",
+   "target_anchor": "packages/durable/src/env/utils/output-capture.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "sanitizeShellOutput",
+   "kind": "function",
+   "source_anchor": "src/env/utils/output-capture.ts:234",
+   "target_anchor": "packages/durable/src/env/utils/output-capture.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "OUTPUT_MIN_EMIT_INTERVAL_MS",
+   "kind": "const",
+   "source_anchor": "src/env/utils/output-capture.ts:6",
+   "target_anchor": "packages/durable/src/env/utils/output-capture.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "OUTPUT_TARGET_BYTES_PER_SECOND",
+   "kind": "const",
+   "source_anchor": "src/env/utils/output-capture.ts:7",
+   "target_anchor": "packages/durable/src/env/utils/output-capture.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "AdaptivePublisher",
+   "kind": "class",
+   "source_anchor": "src/env/utils/adaptive-publisher.ts:18",
+   "target_anchor": "packages/durable/src/env/utils/adaptive-publisher.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "AdaptivePublisherOptions",
+   "kind": "interface",
+   "source_anchor": "src/env/utils/adaptive-publisher.ts:1",
+   "target_anchor": "packages/durable/src/env/utils/adaptive-publisher.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "AnyDocDefinition",
+   "kind": "type",
+   "source_anchor": "src/documents.ts:82",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "AnyDocToken",
+   "kind": "type",
+   "source_anchor": "src/documents.ts:92",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ResolvedAddress",
+   "kind": "type",
+   "source_anchor": "src/documents.ts:101",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "resolveAddress",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:108",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "addressId",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:136",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "documentCreate",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:147",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "checkRecordScope",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:167",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "checkRecordVersion",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:178",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "materializeDocument",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:192",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "materializeDocumentValue",
+   "kind": "function",
+   "source_anchor": "src/documents.ts:197",
+   "target_anchor": "packages/durable/src/documents.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "idFromNumber",
+   "kind": "function",
+   "source_anchor": "src/ids.ts:4",
+   "target_anchor": "packages/durable/src/ids.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "seqFromNumber",
+   "kind": "function",
+   "source_anchor": "src/ids.ts:9",
+   "target_anchor": "packages/durable/src/ids.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "Transaction",
+   "kind": "class",
+   "source_anchor": "src/session/transaction.ts:150",
+   "target_anchor": "packages/durable/src/session/transaction.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi. 879 dong."
+  },
+  {
+   "symbol": "TransactionHost",
+   "kind": "interface",
+   "source_anchor": "src/session/transaction.ts:87",
+   "target_anchor": "packages/durable/src/session/transaction.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "DocumentCommitChange",
+   "kind": "type",
+   "source_anchor": "src/session/transaction.ts:56",
+   "target_anchor": "packages/durable/src/session/transaction.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "LoadedDocument",
+   "kind": "type",
+   "source_anchor": "src/session/transaction.ts:78",
+   "target_anchor": "packages/durable/src/session/transaction.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "CommitPublication",
+   "kind": "type",
+   "source_anchor": "src/session/publications.ts:13",
+   "target_anchor": "packages/durable/src/session/publications.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "CommitChange",
+   "kind": "type",
+   "source_anchor": "src/session/publications.ts:10",
+   "target_anchor": "packages/durable/src/session/publications.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "TableCommitChange",
+   "kind": "type",
+   "source_anchor": "src/session/publications.ts:5",
+   "target_anchor": "packages/durable/src/session/publications.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "ForkDocumentCopy",
+   "kind": "type",
+   "source_anchor": "src/session/forks.ts:20",
+   "target_anchor": "packages/durable/src/session/forks.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  },
+  {
+   "symbol": "prepareForkDocumentCopies",
+   "kind": "function",
+   "source_anchor": "src/session/forks.ts:26",
+   "target_anchor": "packages/durable/src/session/forks.ts",
+   "already_exists_in_omp": false,
+   "note": "Moi."
+  }
+ ],
+ "scope_rewrites": [
+  {
+   "from": "@earendil-works/chord",
+   "to": "@oh-my-pi/chord",
+   "occurrences": 24,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/chord/delta",
+   "to": "@oh-my-pi/chord/delta",
+   "occurrences": 12,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/chord/context",
+   "to": "@oh-my-pi/chord/context",
+   "occurrences": 16,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/pi-ai",
+   "to": "@oh-my-pi/pi-ai",
+   "occurrences": 4,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/pi-durable",
+   "to": "@oh-my-pi/pi-durable",
+   "occurrences": 22,
+   "verified": true
+  }
+ ],
+ "new_dependencies": [
+  {
+   "name": "@oh-my-pi/chord",
+   "version": "0.87.1 (workspace)",
+   "why": "52 lan import. Cung cap Context/Draft/JsonValue/Op/copyJson/track/apply/applyImmutableBatches/awaitWithContext/withoutAbortSignal/BACKGROUND_CONTEXT/withAbortSignal. KHONG the de co chay durable.",
+   "already_in_omp": false,
+   "license": "MIT"
+  },
+  {
+   "name": "@oh-my-pi/pi-ai",
+   "version": "workspace",
+   "why": "CHI 1 import type: Message tai src/types.ts:3, dung trong ContextEdit.replace.messages va EntryRecord.model. Shape giong het omp packages/ai/src/types.ts:1199.",
+   "already_in_omp": true,
+   "license": "MIT"
+  }
+ ],
+ "collisions": [
+  {
+   "what": "TruncationResult - cung ten, KHAC HINH DANG. durable (src/env/utils/truncate.ts:15) bat buoc co 11 truong: content, truncated:boolean, truncatedBy:'lines'|'bytes'|null, totalLines, totalBytes, outputLines:number, outputBytes:number, lastLinePartial:boolean, firstLineExceedsLimit:boolean, maxLines:number, maxBytes:number. omp (packages/tui/src/tools/streaming-output.ts:105) co 16 truong nhung 9 trong do la OPTIONAL, KHONG co maxLines/maxBytes, va them 6 truong middle-truncation (elidedBytes/elidedLines/headLines/tailLines/partialByteWindows) + truncatedBy chap nhan them 'middle'.",
+   "pi_anchor": "src/env/utils/truncate.ts:15-45",
+   "omp_anchor": "packages/tui/src/tools/streaming-output.ts:105-126",
+   "resolution": "GIU omp. Khong cat sang phia durable. durable bo wrapper rieng de bo sung 2 truong maxLines/maxBytes vao ket qua cua pi-tui, vi src/env/utils/output-capture.ts:203 DOC current.truncation.maxBytes de tinh do do quet overlap. Cach nay giu 1 hinh dang duy nhat trong repo va khong phai sua 1576 dong streaming-output.ts da dung boi ca TUI."
+  },
+  {
+   "what": "DEFAULT_MAX_LINES - cung ten, KHAC GIA TRI. durable = 2000, omp = 3000. Day la observable: mot lenh shell 2500 dong se bi durable cat, khong bi omp cat.",
+   "pi_anchor": "src/env/utils/truncate.ts:11",
+   "omp_anchor": "packages/tui/src/tools/streaming-output.ts:10",
+   "resolution": "GIU omp (3000). durable luon truyen limits.tuong minh qua OutputCapture (src/env/utils/output-capture.ts:46-47), nen default it khi duong danh tinh. Bat buoc neu muon giu 2000 thi truyen ro rang, khong dua vao constant."
+  },
+  {
+   "what": "truncateLine - cung ten, KHAC MARKER va KHAC DEFAULT. durable cat o 500 (GREP_MAX_LINE_LENGTH) va chen '... [truncated]'; omp cat o 512 (DEFAULT_MAX_COLUMN) va chen '\u2026', kem materializeString() de intern string cua Bun.",
+   "pi_anchor": "src/env/utils/truncate.ts:338-345",
+   "omp_anchor": "packages/tui/src/tools/streaming-output.ts:285-293",
+   "resolution": "GIU omp. Do lai 2500/3000 dong, dung de hien thi, khong phai contract duy tri. N\u1ebfu can han 500 thi truyen 500."
+  },
+  {
+   "what": "Shell - cung ten, KHAC Y NGHIA ho\u00e0n to\u00e0n. durable la INTERFACE (exec + cleanup) tai src/env/index.ts:180; omp la STRING-UNION 'bash'|'zsh'|'fish' tai packages/coding-agent/src/cli/completion-gen.ts:20.",
+   "pi_anchor": "src/env/index.ts:180-187",
+   "omp_anchor": "packages/coding-agent/src/cli/completion-gen.ts:20",
+   "resolution": "KHONG sua gi ca hai ben - o cac package khac nhau nen khong conflict. NHUNG chan canh: bao dam KHONG bao gio merge durable/env vao mot barrel chung voi pi-coding-agent. Giu nguyen."
+  },
+  {
+   "what": "Context - cung ten, KHAC Y NGHIA. durable import Context tu chord (context nen / huy) o src/types.ts:1; omp Context tai packages/ai/src/types.ts:1476 la {systemPrompt, messages, tools, inactiveTools} - context cua mot request model.",
+   "pi_anchor": "src/types.ts:1, src/session/session.ts:1",
+   "omp_anchor": "packages/ai/src/types.ts:1476-1483",
+   "resolution": "KHONG doi ten. durable nhap DUNG tu @oh-my-pi/chord nen khong bao gio nhap Context tu pi-ai. Khi wiring lai trong omp, phai truyen chord Context (BACKGROUND_CONTEXT) - truyen nham pi-ai Context se loi type, day la bien canh bao phai ghi vao README."
+  },
+  {
+   "what": "JsonObject - cung ten, KHAC HINH DANG. durable: { [key: string]: JsonValue } voi JsonValue tu chord (src/types.ts:6); omp: Record<string, unknown> (packages/ai/src/utils/schema/types.ts:1).",
+   "pi_anchor": "src/types.ts:6",
+   "omp_anchor": "packages/ai/src/utils/schema/types.ts:1",
+   "resolution": "GIU durable. Rieng durable KHONG import JsonObject tu pi-ai nen khong conflict truc tiep. Nh\u01b0ng BAT BUOC khong re-export ca hai vao cung mot barrel - neu can, dat lai ten thanh DurableJsonObject o khi bien gioi."
+  },
+  {
+   "what": "toError - cung ten, cung chuc nang, KHAC XU LY. durable (src/env/index.ts:24) thu Error -> string -> JSON.stringify -> String; omp (packages/utils/src/type-guards.ts:15) co san.",
+   "pi_anchor": "src/env/index.ts:24-32",
+   "omp_anchor": "packages/utils/src/type-guards.ts:15",
+   "resolution": "DUNG BAN CUA omp. Xoa ham trong durable, import { toError } tu @oh-my-pi/pi-utils. AGENTS.md: 'Search first: grep for the operation before implementing it. Two implementations of the same thing is a bug.'"
+  },
+  {
+   "what": "formatSize - cung ten, khac ham. durable la helper in kich thuoc byte (src/env/utils/truncate.ts:115); omp co formatBytes trong pi-tui/render/render-utils, da duoc alias o packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts:1596.",
+   "pi_anchor": "src/env/utils/truncate.ts:115-130",
+   "omp_anchor": "packages/tui/src/render/render-utils.ts (qua alias legacy-pi-coding-agent-shim.ts:1596)",
+   "resolution": "DUNG BANG formatBytes cua omp. Xoa ham rieng khi cat truncate.ts. Giu utf8ByteLength vi omp chi co ban private trong mot file khong xuat."
+  },
+  {
+   "what": "Node SQLite adapter dung node:sqlite, con omp dung bun:sqlite o 51 file src (git grep -l 'bun:sqlite' -- 'packages/*/src/**' = 51). AGENTS.md quy dinh Bun truoc Node.",
+   "pi_anchor": "src/storage/sqlite/node.ts:3-4 (import DatabaseSync tu node:sqlite)",
+   "omp_anchor": "packages/catalog/src/model-cache.ts:5, packages/coding-agent/src/session/agent-storage.ts:1 (bun:sqlite), pi-utils openSqliteDatabaseSync",
+   "resolution": "VIET adapter bun:sqlite moi cho SqliteDatabase facade (src/storage/sqlite/database.ts:26) - facade 31 dong nen adapter moi ~60 dong, re dung 100% SqliteStorage 809 dong. Giu ban node:sqlite sau phia subpath /storage/sqlite/node de khong pha API cong khai."
+  },
+  {
+   "what": "NodeExecutionEnv dung node:child_process spawn; repo chi con 1 file duy nhat dung node:child_process (packages/metaharness/src/runner.ts). AGENTS.md quy 'Bun Over Node' va cam spawn shell khi co API.",
+   "pi_anchor": "src/env/node.ts:1 (spawn tu node:child_process)",
+   "omp_anchor": "packages/metaharness/src/runner.ts:1 (duy nhat con lai)",
+   "resolution": "Doi sang Bun.spawn. Day la file nguy hiem nhat cua package (963 dong, streaming + spill + adaptive publish). LAM MOT PR RIENG, khong gop voi migration, de 14 test hien co lam mang an toan."
+  },
+  {
+   "what": "Vi tri dat: omp packages/agent/ va pi-ref packages/agent/ CHI giao 5 ten file tren 50 (omp) vs 117 (pi), va ca 5 deu lech khoi doi luong lon (agent-loop.ts 148KB omp vs 26KB pi). durable la suc EXTEND cua pi, khong phai ban sao.",
+   "pi_anchor": "packages/agent/src/harness/{session,utils} (pi) vs packages/agent/src (omp)",
+   "omp_anchor": "packages/agent/src/ (omp)",
+   "resolution": "Dat durable o packages/durable/ (moi) - KHONG bao gio ghi de packages/agent/. Cung bo cac dac ta trong pi packages/agent/src/harness/utils/{truncate,output-capture,adaptive-publisher}.ts la TIEN THAN cua durable, nen khi migrate agent phai khop - da ghi vao open_questions."
+  }
+ ],
+ "files_to_copy": [
+  {
+   "path": "package.json",
+   "bytes": 2475,
+   "action": "copy-then-rewrite",
+   "rewrite": "Viet lai: ten -> @oh-my-pi/pi-durable; bo 'source' condition va 'dist' (omp xuat src/index.ts truc tiep); bo devDeps shx+vitest; them 2 dep @oh-my-pi/chord + @oh-my-pi/pi-ai; them 'check:types' script; doi 'repository.url' sang github.com/can1357/oh-my-pi; doi 'build' -> KHONG co (khong dist)."
+  },
+  {
+   "path": "tsconfig.build.json",
+   "bytes": 339,
+   "action": "skip",
+   "rewrite": "Khong can: omp khong bien dich dist, tsconfig workspace lo. Xem steps[] buoc 1."
+  },
+  {
+   "path": "vitest.config.ts",
+   "bytes": 604,
+   "action": "skip",
+   "rewrite": "Xoa: omp dung bun:test. Alias chuyen sang tsconfig paths + package.json exports."
+  },
+  {
+   "path": "vitest.benchmark.config.ts",
+   "bytes": 285,
+   "action": "skip",
+   "rewrite": "Xoa: bench chuyen sang packages/durable/bench/*.bench.ts theo convention omp."
+  },
+  {
+   "path": "README.md",
+   "bytes": 4404,
+   "action": "copy-then-rewrite",
+   "rewrite": "Doi 11 lan @earendil-works/ -> @oh-my-pi/; bo doan 'npm run bench:storage'; them muc CHANGELOG/LICENSE phap ly; bo 'vitest/jest' vi du sang bun:test."
+  },
+  {
+   "path": "CHANGELOG.md",
+   "bytes": 1387,
+   "action": "copy-then-rewrite",
+   "rewrite": "Giu lai, them muc '### Added' duoi ## [Unreleased] theo convention omp."
+  },
+  {
+   "path": "src/index.ts",
+   "bytes": 1240,
+   "action": "copy-then-rewrite",
+   "rewrite": "Doi thanh star re-export theo AGENTS.md (hien la named re-export 62 dong). Giu nguyen danh sach export."
+  },
+  {
+   "path": "src/types.ts",
+   "bytes": 27019,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope: L1,L2 @earendil-works/chord -> @oh-my-pi/chord; L3 @earendil-works/pi-ai -> @oh-my-pi/pi-ai. Ngoai ra dung nguyen."
+  },
+  {
+   "path": "src/documents.ts",
+   "bytes": 7888,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope (L1 chord, L2 chord/delta) -> @oh-my-pi/chord. Ngoai ra nguyen v\u0103n."
+  },
+  {
+   "path": "src/errors.ts",
+   "bytes": 555,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co import, khong co scope."
+  },
+  {
+   "path": "src/ids.ts",
+   "bytes": 377,
+   "action": "copy-verbatim",
+   "rewrite": "Chi import type tu ./types.ts."
+  },
+  {
+   "path": "src/session/session.ts",
+   "bytes": 10105,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope (L1-2 chord, L2 chord/context, L3 chord/delta). Dung ES #private co san."
+  },
+  {
+   "path": "src/session/transaction.ts",
+   "bytes": 32484,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope (L1 chord, L2 chord/delta)."
+  },
+  {
+   "path": "src/session/forks.ts",
+   "bytes": 2912,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope (L1 chord)."
+  },
+  {
+   "path": "src/session/publications.ts",
+   "bytes": 585,
+   "action": "copy-verbatim",
+   "rewrite": "Chi import tu ../types.ts va ./transaction.ts."
+  },
+  {
+   "path": "src/storage/memory.ts",
+   "bytes": 28693,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope (L1 chord, L2 chord/delta)."
+  },
+  {
+   "path": "src/storage/sqlite/storage.ts",
+   "bytes": 29659,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope (L1 chord, L2 chord/delta)."
+  },
+  {
+   "path": "src/storage/sqlite/database.ts",
+   "bytes": 1318,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope, khong co node import."
+  },
+  {
+   "path": "src/storage/sqlite/migrations.ts",
+   "bytes": 5230,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope."
+  },
+  {
+   "path": "src/storage/sqlite/index.ts",
+   "bytes": 263,
+   "action": "copy-then-rewrite",
+   "rewrite": "Chuyen named re-export sang star (AGENTS.md). Khong co scope."
+  },
+  {
+   "path": "src/storage/sqlite/node.ts",
+   "bytes": 3756,
+   "action": "copy-then-rewrite",
+   "rewrite": "KHONG doi scope. NHUNG sua runtime: bo node:sqlite/node:fs/node:path (AGENTS.md 'Bun Over Node') -> dung openSqliteDatabaseSync tu @oh-my-pi/pi-utils, hoac viet adapter bun:sqlite moi. Xem collisions[]."
+  },
+  {
+   "path": "src/storage/jsonl/storage.ts",
+   "bytes": 29888,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope (L1 chord)."
+  },
+  {
+   "path": "src/storage/jsonl/node.ts",
+   "bytes": 583,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope (L1 chord)."
+  },
+  {
+   "path": "src/storage/jsonl/index.ts",
+   "bytes": 125,
+   "action": "copy-then-rewrite",
+   "rewrite": "Chuyen sang star re-export."
+  },
+  {
+   "path": "src/env/index.ts",
+   "bytes": 6010,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope (L1 chord)."
+  },
+  {
+   "path": "src/env/node.ts",
+   "bytes": 30551,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope (L21 chord). HAM bien doi lon nhat cua package: node:child_process/node:crypto/node:fs/node:os/node:path/node:url -> Bun.spawn, Bun.write, node:fs/promises cho phan con lai."
+  },
+  {
+   "path": "src/env/utils/truncate.ts",
+   "bytes": 9916,
+   "action": "copy-then-rewrite",
+   "rewrite": "KHONG copy thuan. Cat phan trung voi @oh-my-pi/pi-tui/tools/streaming-output.ts; chi giu rieng GREP_MAX_LINE_LENGTH, utf8ByteLength, formatSize va bo wrapper de bo sung truong maxLines/maxBytes vao TruncationResult. Xem collisions[]."
+  },
+  {
+   "path": "src/env/utils/output-capture.ts",
+   "bytes": 9131,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope (L1 chord). Sua L203: doc current.truncation.maxBytes - truong nay khong ton tai tren shape cua omp, phai bo sung hoac tinh lai tu limits."
+  },
+  {
+   "path": "src/env/utils/adaptive-publisher.ts",
+   "bytes": 2677,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope. Y nguyen hinh dang so voi pi-ref agent/harness/utils/adaptive-publisher.ts."
+  },
+  {
+   "path": "src/testing/index.ts",
+   "bytes": 720,
+   "action": "copy-then-rewrite",
+   "rewrite": "Chuyen sang star re-export."
+  },
+  {
+   "path": "src/testing/types.ts",
+   "bytes": 790,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope."
+  },
+  {
+   "path": "src/testing/assertions.ts",
+   "bytes": 1229,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope. Kieu 'ExpectLike' trung lap voi bun:test nen giu nguyen."
+  },
+  {
+   "path": "src/testing/runner.ts",
+   "bytes": 878,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope."
+  },
+  {
+   "path": "src/testing/storage-conformance.ts",
+   "bytes": 54178,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope (L1 chord, L2 chord/context, L3 chord/delta)."
+  },
+  {
+   "path": "src/testing/storage-benchmark.ts",
+   "bytes": 13994,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope (L1 chord, L2 chord/context)."
+  },
+  {
+   "path": "test/session-support.ts",
+   "bytes": 4926,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope (L1 chord, L2 chord/context) + L3 pi-durable self-import. doi vitest -> bun:test neu co."
+  },
+  {
+   "path": "test/session-documents.test.ts",
+   "bytes": 27086,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/session-definitions.test.ts",
+   "bytes": 4654,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. doi 'vitest' -> 'bun:test'; expectTypeOf can xem xet bo (xem test_contract)."
+  },
+  {
+   "path": "test/session-checkpoints-migrations.test.ts",
+   "bytes": 24698,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/session-forks.test.ts",
+   "bytes": 26608,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/session-tables.test.ts",
+   "bytes": 18204,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/types.test.ts",
+   "bytes": 8227,
+   "action": "copy-then-rewrite",
+   "rewrite": "doi 'vitest' -> 'bun:test'. File nay chi kiem tra kieu -> phai viet lai thanh type-level hoac bo; AGENTS.md cam test 'echo'."
+  },
+  {
+   "path": "test/memory-storage.test.ts",
+   "bytes": 1356,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/sqlite-storage.test.ts",
+   "bytes": 21367,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/sqlite-facade.test.ts",
+   "bytes": 6576,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/sqlite-migrations.test.ts",
+   "bytes": 5427,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/jsonl-storage.test.ts",
+   "bytes": 40744,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope. doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/storage-runtime-boundary.test.ts",
+   "bytes": 2020,
+   "action": "copy-then-rewrite",
+   "rewrite": "doi 'vitest' -> 'bun:test'."
+  },
+  {
+   "path": "test/env-node.test.ts",
+   "bytes": 39230,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. doi 'vitest' + 'vi' -> 'bun:test' (vi.useFakeTimers -> jest.setSystemTime / Bun equivalent)."
+  },
+  {
+   "path": "test/env-node-spill.test.ts",
+   "bytes": 3306,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. doi 'vitest' + 'vi' -> 'bun:test'."
+  },
+  {
+   "path": "test/env-output-capture.test.ts",
+   "bytes": 11423,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. doi 'vitest' + 'vi' -> 'bun:test' (file nay dung vi.setSystemTime nhieu nhat)."
+  },
+  {
+   "path": "test/env-truncate.test.ts",
+   "bytes": 8681,
+   "action": "copy-then-rewrite",
+   "rewrite": "doi 'vitest' -> 'bun:test'. Phai viet lai: phan lon khong con hieu luc sau khi cat trung voi pi-tui."
+  },
+  {
+   "path": "test/env-adaptive-publisher.test.ts",
+   "bytes": 3776,
+   "action": "copy-then-rewrite",
+   "rewrite": "doi 'vitest' + 'vi' -> 'bun:test'."
+  },
+  {
+   "path": "test/fixtures/delete-buffer.ts",
+   "bytes": 156,
+   "action": "copy-then-rewrite",
+   "rewrite": "Fixture de xoa globalThis.Buffer. Kiem tra con phu hop voi Bun truoc khi giu."
+  },
+  {
+   "path": "test/fixtures/utf8-byte-length-without-buffer.ts",
+   "bytes": 438,
+   "action": "copy-then-rewrite",
+   "rewrite": "Fixture de test utf8ByteLength khi khong co Buffer."
+  },
+  {
+   "path": "test/storage-memory.ts",
+   "bytes": 8486,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. Script chay bang 'node --experimental-strip-types' -> doi sang bun."
+  },
+  {
+   "path": "test/storage.bench.ts",
+   "bytes": 7088,
+   "action": "copy-then-rewrite",
+   "rewrite": "2 dong scope. vitest bench -> chuyen sang packages/durable/bench/*.bench.ts (Bun bench)."
+  },
+  {
+   "path": "test/scratch.ts",
+   "bytes": 6871,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope. Script viet tay - xem xet bo, khong phai test contract."
+  },
+  {
+   "path": "docs/pico-v5.md",
+   "bytes": 114252,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope. 114 KB - doc normative giu nguyen."
+  },
+  {
+   "path": "docs/pico-v5-chord-usage.md",
+   "bytes": 18156,
+   "action": "copy-then-rewrite",
+   "rewrite": "3 dong scope."
+  },
+  {
+   "path": "docs/pico-v5-handoff.md",
+   "bytes": 26391,
+   "action": "copy-then-rewrite",
+   "rewrite": "1 dong scope."
+  },
+  {
+   "path": "docs/pico-v5-live-registries.md",
+   "bytes": 25169,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope."
+  },
+  {
+   "path": "docs/chord-delta-findings.md",
+   "bytes": 19469,
+   "action": "copy-verbatim",
+   "rewrite": "Khong co scope."
+  }
+ ],
+ "steps": [
+  {
+   "n": 1,
+   "instruction": "TAO KHUNG. mkdir -p packages/durable/{src/{session,storage/{sqlite,jsonl},env/utils,testing},test,docs,bench}. Khong bat buoc la `cp -r` ca thu muc - tao dung cau truc de khong keo theo vitest.config.ts, vitest.benchmark.config.ts, tsconfig.build.json (3 file se bi lo).",
+   "anchor": "packages/durable/ (moi)"
+  },
+  {
+   "n": 2,
+   "instruction": "PHAP LY - BAT BUOC LAM TRUOC KHI COPY FILE NAO. Tao packages/durable/LICENSE = verbatim ban MIT o pi-ref/ root LICENSE (Copyright (c) 2025 Mario Zechner), dung dung 21 dong MIT chuan. KHONG sua dong nao. Day la dieu kien de viec chep hop phap.",
+   "anchor": "packages/durable/LICENSE"
+  },
+  {
+   "n": 3,
+   "instruction": "CHEP 29 file src/ nguyen van, dung `git show d6af72e:packages/durable/<path>` de ghi ra (khong dung cp -r de khong keo file rac). 312,754 byte, 9,024 dong.",
+   "anchor": "packages/durable/src/"
+  },
+  {
+   "n": 4,
+   "instruction": "CHEP 23 file test/ cung cach. 281,348 byte.",
+   "anchor": "packages/durable/test/"
+  },
+  {
+   "n": 5,
+   "instruction": "CHEP 5 file docs/ cung cach. 203,437 byte. KHONG bo docs - 114 KB dac ta normative la bang chung hien trang.",
+   "anchor": "packages/durable/docs/"
+  },
+  {
+   "n": 6,
+   "instruction": "CHEP README.md va CHANGELOG.md. 4,404 + 1,387 byte.",
+   "anchor": "packages/durable/{README,CHANGELOG}.md"
+  },
+  {
+   "n": 7,
+   "instruction": "DOI SCOPE. 78 lan, dung `grep -rl '@earendil-works/' packages/durable | xargs sed -i '' 's|@earendil-works/|@oh-my-pi/|g'`. 24 chord + 12 chord/delta + 16 chord/context + 4 pi-ai + 22 pi-durable. KIEM CHUNG: `grep -rc '@earendil-works/' packages/durable` phai ra 0 o moi dong.",
+   "anchor": "tat ca 57 file co scope"
+  },
+  {
+   "n": 8,
+   "instruction": "GIAI QUYET TRUNG TEN - BUOC NGUY HIEM NHAT. Xoa src/env/utils/truncate.ts va viet lai: import truncateHead/truncateTail/truncateLine/TruncationResult/TruncationOptions tu @oh-my-pi/pi-tui/tools, giu rieng GREP_MAX_LINE_LENGTH + utf8ByteLength, va boc 'enhance' tra ve them maxLines/maxBytes cho moi ket qua.Sua src/env/utils/output-capture.ts:203 de doc maxBytes tu limits thay vi tu truncation. Xem collisions[0..2].",
+   "anchor": "src/env/utils/truncate.ts, src/env/utils/output-capture.ts:203"
+  },
+  {
+   "n": 9,
+   "instruction": "DUNG LAI TAI DUNG. Xoa ham toError (src/env/index.ts:24-32) va formatSize (src/env/utils/truncate.ts:115-130); import { toError } tu @oh-my-pi/pi-utils va { formatBytes as formatSize } tu @oh-my-pi/pi-tui/render/render-utils. AGENTS.md: 'Missing capability? Extend the central helper - do not fork its logic locally.'",
+   "anchor": "src/env/index.ts, src/env/utils/truncate.ts"
+  },
+  {
+   "n": 10,
+   "instruction": "BARREL -> STAR. src/index.ts (62 dong named re-export), src/storage/sqlite/index.ts, src/storage/jsonl/index.ts, src/testing/index.ts: chuyen sang `export * from` theo AGENTS.md. Giun nguyendanhsach ten export.",
+   "anchor": "src/index.ts, src/storage/{sqlite,jsonl}/index.ts, src/testing/index.ts"
+  },
+  {
+   "n": 11,
+   "instruction": "VIET package.json theo convention omp: ten @oh-my-pi/pi-durable, KHONG co truong 'source' condition, KHONG co 'dist' - exports tro thang vao ./src/*.ts nhu packages/utils va packages/tui. 10 subpath: '.', './env', './env/node', './storage/memory', './storage/jsonl', './storage/jsonl/node', './storage/sqlite', './storage/sqlite/node', './testing', './package.json'. Dependencies: @oh-my-pi/chord + @oh-my-pi/pi-ai. DevDeps: KHONG vitest, KHONG shx. Scripts: 'check:types'. Khong 'build'.",
+   "anchor": "packages/durable/package.json"
+  },
+  {
+   "n": 12,
+   "instruction": "KHONG can tsconfig rieng. tsconfig.workspace.json da duoc omp quet toan bo packages/*/src. Chi can them '@oh-my-pi/pi-durable' vao catalog root package.json de resolve workspace dep (version 18.3.3 nhu cac package khac).",
+   "anchor": "package.json (root) catalog, tsconfig.workspace.json"
+  },
+  {
+   "n": 13,
+   "instruction": "CHUYEN TEST SANG bun:test. 19 file co `from 'vitest'` -> `from 'bun:test'`. AGENTS.md cam `mock.module()` - may su dung `vi` o durable (da kiem tra: KHONG co mock.module, chi co vi.useFakeTimers/vi.setSystemTime/vi.advanceTimersByTime trong 4 file: env-node, env-node-spill, env-output-capture, env-adaptive-publisher).",
+   "anchor": "18 file trong test/"
+  },
+  {
+   "n": 14,
+   "instruction": "Viet lai test/vi. bang bun:test. omp da co 176 file dung `import { afterEach, beforeEach, describe, expect, it } from 'bun:test'` va nhieu file dung setSystemTime, nen co mau san de noi.",
+   "anchor": "4 file dung vi.*"
+  },
+  {
+   "n": 15,
+   "instruction": "XOA 3 file config: tsconfig.build.json, vitest.config.ts, vitest.benchmark.config.ts. Chuyen test/storage.bench.ts + test/storage-memory.ts sang packages/durable/bench/*.bench.ts theo convention omp (packages/agent/bench/*.bench.ts).",
+   "anchor": "packages/durable/bench/"
+  },
+  {
+   "n": 16,
+   "instruction": "DE CUOI HA (chua lam trong PR nay): doc lai 11 file docs + README, doi 11 lan @earendil-works/ -> @oh-my-pi/, them muc '## [Unreleased] ### Added' vao CHANGELOG theo convention omp, them muc PHAP LY tro ve LICENSE vao README.",
+   "anchor": "packages/durable/{docs/,README.md,CHANGELOG.md}"
+  },
+  {
+   "n": 17,
+   "instruction": "GATE. `bun run check:ts` phai exit 0. Sau do `bun test packages/durable` - LUON Y CHI DUNG 51 file src da dung sqlite trong omp, con durable them 1 file adapter bun:sqlite; xem gate_can_fail.",
+   "anchor": "toan repo"
+  }
+ ],
+ "test_contract": "HOP DONG QUAN SAT DUOC, 5 nhom, moi nhom mot test that tai chuc nang quan sat duoc - khong test 'code chay duoc':\n(1) COMMIT NGUYEN TUUYET DOI. Commit mot Session, tat ca ghi vao Memory/Jsonl/Sqlite phai nhin thay mot commit. Bang bo 3 backend cung mot script la bang chung tot nhat - day la ca test goc cua storage-conformance.ts (1520 dong) va nen GIU NGUYEN VERBATIM.\n(2) TAI. `ReadAfterWrite` nem khi doc sau ghi; `StorageRejected` lam Session van chay. Day la hai error class duy nhat.\n(3) MIGRATION VAN BAN. document version N duoc doc voi definition version M<N va khong co `migrate` -> throw; co `migrate` -> gia tri da migrate. Nhanh khong loi la thuong vong nhat cua moi chang schema.\n(4) AS-OF / FORK. `snapshotAsOf` tai mot EntryId cu hon phai tra ve dung gia tri lich su, va fork mot conversation tai entry giua phai giu dung ancestry. Chi 'latest' thi khong duoc co asOf.\n(5) SCOPE MISMATCH. Truy cap mot doc token 'session' vao ban ghi da luu co scope 'conversation' -> TypeError. La hanh vi doc sai nhat, va cung la noi 2 va cham Context/Scope se lo hong.\nCHAM DIEM RIENG - ENV. truncate: cat 2500 dong, ca 3000 (omp) va 2000 (durable) deu phai ra ket qua DUNG; dau la 'lines' hay 'bytes' la observable. output-capture: emit byte-rate + adaptive publisher phai boc duoc trong khi luong dat gioi han.\nKHONG copy 2 loai test: (a) vi.g. assert.storage phai doi duoc mang an toan - dau la do thay the bat buoc; (b) test/type.test.ts chi kiem kieu tinh, va expectTypeOf thieu kha nang trong bun - theo AGENTS.md 'Bad: static echo' va 'Compile-time guarantees -> type checks, KHONG runtime placeholders', nen hoac bien thanh type test trong tsconfig, hoac bo.\nKHONG duoc vit test moi cho cac thu chay 'constructor copy dung fixture' - cam theo AGENTS.md.",
+ "test_files": [
+  "packages/durable/test/session-tables.test.ts",
+  "packages/durable/test/session-documents.test.ts",
+  "packages/durable/test/session-checkpoints-migrations.test.ts",
+  "packages/durable/test/session-forks.test.ts",
+  "packages/durable/test/session-definitions.test.ts",
+  "packages/durable/test/types.test.ts",
+  "packages/durable/test/session-support.ts",
+  "packages/durable/test/memory-storage.test.ts",
+  "packages/durable/test/jsonl-storage.test.ts",
+  "packages/durable/test/sqlite-storage.test.ts",
+  "packages/durable/test/sqlite-facade.test.ts",
+  "packages/durable/test/sqlite-migrations.test.ts",
+  "packages/durable/test/storage-runtime-boundary.test.ts",
+  "packages/durable/test/env-node.test.ts",
+  "packages/durable/test/env-node-spill.test.ts",
+  "packages/durable/test/env-output-capture.test.ts",
+  "packages/durable/test/env-truncate.test.ts",
+  "packages/durable/test/env-adaptive-publisher.test.ts",
+  "packages/durable/test/fixtures/delete-buffer.ts",
+  "packages/durable/test/fixtures/utf8-byte-length-without-buffer.ts",
+  "packages/durable/test/storage-memory.ts",
+  "packages/durable/test/storage.bench.ts",
+  "packages/durable/test/scratch.ts",
+  "packages/durable/src/testing/storage-conformance.ts"
+ ],
+ "verification": "1. `grep -rc '@earendil-works/' packages/durable` -> tat ca 0 (78 lan, da do bang git grep -o).\n2. `bun run check:ts` -> exit 0 (baseline da do: 24.5s wall / 79s user).\n3. `bun test packages/durable` -> xanh. GHI Y: `bun test` toan repo bi chan vi native addon pi-natives chua build; lenh g\u1ee1 chan la `bun --cwd=packages/natives run build` NHUNG no that bai thieu `ninja` -> phai `brew install ninja` truoc. Cach khong can build: chi chay `bun test packages/durable`.\n4. `bun --cwd=packages/durable run check:types` -> exit 0.\n5. Kiem tra khong con node-only trong code chay: `grep -rn 'node:sqlite\\|node:child_process' packages/durable/src` -> chi con duoc trong src/storage/sqlite/node.ts va src/env/node.ts NEU quyet dinh giu ban node sau (buoc 16/17). Neu doi sang Bun het -> phai ra 0.\n6. Kiem tra khong co `from 'vitest'` con: `grep -rn \"from 'vitest'\" packages/durable` -> 0.\n7. Doc lai file JSON dac ta xong de xac nhan JSON hop le.",
+ "gate": "1. `bun run check:ts` == 0. THAT BAI NEU: con import sai scope, con named re-export trong barrel, con doc field khong ton tai tren shape cua pi-tui (vi du maxBytes), con thieu export trong package.json.\n2. `grep -rc '@earendil-works/' packages/durable` == 0 dong. THAT BAI NEU: con s\u00f3t.\n3. `bun test packages/durable` xanh. THAT BAI NEU: h\u00e0nh vi khac truoc/sau cat trung voi pi-tui - nhat la totalLines dem sai khi content ket thuc bang '\\n' va dau truncatedBy.\n4. `ls packages/durable/LICENSE` va `cmp packages/durable/LICENSE <(git -C pi-ref show d6af72e:LICENSE)` == 0. THAT BAI NEU: con sua hoac quen ban quyen.\n5. `grep -rn 'from \"vitest\"' packages/durable` == 0. THAT BAI NEU: con file test chua chuyen.\n6. `ls packages/durable/tsconfig.build.json packages/durable/vitest.config.ts` == khong ton tai. THAT BAI NEU: quen xoa.",
+ "gate_can_fail": true,
+ "effort": "5-7 ngay cong. Copy 2 phut, viec that su la: giai quyet 11 va cham (buoc 8-9, ~1.5 ngay), chuyen 19 file test tu vitest sang bun:test kem 4 file dung vi.* fake timers (buoc 13-14, ~1 ngay), viet package.json theo convention source-exports (buoc 11-12, ~0.5 ngay), adapter bun:sqlite moi (buoc sau, ~0.5 ngay), doc lai docs/README (buoc 16, ~0.5 ngay), gate va vong lap (buoc 17, ~1 ngay). Task nao KHONG nam trong uoc luong nay: NodeExecutionEnv -> Bun.spawn (963 dong) va storage-benchmark -> Bun bench, ca hai da tach thanh PR rieng.",
+ "risk": "CAO. (1) PHAI CO CHORD TRUOC - 52 import, 12 symbol, khong the bien dich khi chua co. (2) VA CHAM TRUNCATION - durable va pi-tui cung ten truncateHead/truncateTail/truncateLine/TruncationResult/TruncationOptions nhung KHAC HINH DANG va KHAC HANH VI: durable dem totalLines bo newline trailing, omp dem bang countNewlines+1, nen 'a\\nb\\n' ra 2 dong o durable va 3 o omp; durable tien trong truncatedBy, omp uu tien byte; output-capture.ts:203 DOC truncation.maxBytes - truong nay KHONG TON TAI tren shape cua omp. Giai quyet: giu omp, durable boc them. (3) 4 file test dung vi.useFakeTimers/vi.setSystemTime/vi.advanceTimersByTime - moi quy tac sang khu khac nhau, phai viet lai. (4) 2 file 963 + 840 dong la streaming/process I/O, hong khi doi runtime. (5) 118 KB dac ta normative di kem - neu chang contract ma khong doi code, test se xanh nham. (6) omp packages/agent/ da tro khac xa pi (5/117 ten file trung) - dung co so do rat co bien lang durable se ghi de no.",
+ "open_questions": [
+  "CHORD. 52 import tro vao @oh-my-pi/chord, chua ton tai o omp. Phai migrate chord TRUOC durable. Bao gio durable co the dich chuyen khong? Khong - thi thieu 8 symbol: Context, Draft, JsonValue, Op, copyJson, track, apply, applyImmutableBatches, awaitWithContext, withoutAbortSignal, BACKGROUND_CONTEXT, withAbortSignal. Phai khop dung chu ky pi: chord phai ra truoc, durable sau.",
+  "OMITTED: O HEAD pi-ref (d6af72e) 12 package, omp co 4 trung ten (agent, ai, coding-agent, tui), con 8 KHAC ten. Task ghi 7 - 8 la dung neu tinh session-backends/sqlite-node la package rieng (no co package.json ten '@earendil-works/pi-session-backend-sqlite-node' va phu thuoc durable). Xac nhan so 7 hay 8 truoc khi chot ke hoach chung.",
+  "TACH BIEN CHOT. 51 file src cua omp da dung bun:sqlite. durable them storage/sqlite voi schema rieng (conversations/entries/tasks/submissions/documents) trong mot DB rieng. Neu muon dung chung DB voi cac store hien co, se phai viet migration noi bo - tang rui ro gap 2 lan. De mac dinh: DB rieng, ghi ro trong README.",
+  "NodeExecutionEnv: giu node:child_process hay doi sang Bun.spawn trong cung PR? Da quyet o spec nay: TACH RA, PR rieng. De nghi cho roadmap chung.",
+  "test/types.test.ts va expectTypeOf: chuyen thanh type test trong tsconfig hay bo han? Da quyet: bo, va ghi ro ly do trong test_contract.",
+  "Cach chay 18 file test khi CHUA build pi-natives: `bun test packages/durable` co chay doc lap khong, hay con import lai pi-tui/pi-utils (co pi-native)? PI-TUI va PI-UTILS deu phai kiem tra. Neu co, thi `brew install ninja` la buoc bat buoc truoc khi chay test.",
+  "LICENSE: omp dat LICENSE cho TUNG package (packages/agent/LICENSE, packages/ai/LICENSE) va ca root LICENSE deu ghi 'Copyright (c) 2025 Mario Zechner'. Ban LICENSE rieng cho durable nen dung nguyen 21 dong MIT cua pi-ref, hay ghep them 3 dong copyright cua omp nhu root? De nghi: dung nguyen 21 dong + them 'Copyright (c) 2025-2026 Can Boluk' va 'Copyright (c) 2026 Stencil Labs, Inc.' cho khop root - nhung day la quyet dinh cua chu so hu, khong tu quyet.",
+  "Suy nghi: durable/CHANGELOG.md la changelog cua pi-ref, khong phai cua omp. Co nen giu lich su cua pi hay bat dau '## [Unreleased]' moi? De nghi giu - no la bang chong nguon."
+ ],
+ "documents_ts": {
+  "tai_lieu": "packages/durable/src/documents.ts (207 dong, 7,888 byte)",
+  "noi_dung": "M1 goi day la 'nua document' va tu thanh la diem khong co bang chung duy nhat trong milestone. DOC LA KY: no KHONG phai mot phan document. No la LOP PHAI - noi doc cac Dinh nghia (definitions) thanh dia chi luu (address) va kiem tra chung (validation). Ha tang that su - Session, Transaction, va ca 3 storage backend - deu goi qua no. Khong co no thi khong co gi chay duoc.\n\nBA KHA NANG CU THE:\n1. PHAN GIAI DA NANG (tu 2 overload thanh 1). `defineDoc` va `defineDocFamily` co 4 overload moi: scope 'session', scope 'conversation' + history 'latest', scope 'conversation' + history 'rewindable', scope 'task'. Kieu tr ve khac nhau (SessionDocToken / ConversationDocToken / RewindableConversationDocToken / TaskDocToken). Nghe doi la `tx.doc(MyToken)` se KHONG bi chay khi token va ban ghi da luu lech scope - do la dinh nghia tai thoi gian bien dich, khong phai kiem tra runtime.\n2. DIA CHI LUON ON DINH. `resolveAddress` bien danh sach tham so thanh mot `DocumentAddress` (kind + scope + key), roi `addressId` bien no thanh chuoi JSON dinh dang `[[kind, scopeKind, owner, key]]` lam KEY cua Map. Hai thu doan nay la thu gi Session giu trong `#documents`. Hieu qua: mot tai lieu tai MOT dia chi logic nao do co DUNG MOT the he chuoi, nen duoc tra ve nhanh, va MOT dia chi co the BIO TAI LAI nhieu lan (mo moi lai cua so voi ID moi).\n3. MIGRATION CO GA. `checkRecordVersion` nem neu ban ghi moi hon definition, va nem them neu ban ghi CUU hon ma definition khong co `migrate`. `materializeDocument` chay `migrate(value, fromVersion)` roi copy lai. Day la noi chang schema an toan xay ra, va la thu nguyen duy nhat quyet dinh ban ghi cu co dung duoc hay khong.",
+  "nguoi_dung_thay_gi": "1. KHONG BAO GIO MAT LICH SU KHI NGAT MAY. Mot tai lieu co ban ghi hien tai + ban ghi da retired (`createdAt`/`retiredAt` bang Seq cua tung commit). Doc lai `DocumentPoint = Seq | 'current'` - ban co the mo bang 'trang thai tai commit so N'. Day la ca hai chu 'durable' va 'rewindable' ghep lai.\n2. FORK MOT CUOC CHOI NHEO, TAI MOT CAU THOI GIAN BAT KY. `fork: 'asOf'` + `snapshotAsOf(token, conversationId, entryId)` tra ve TAI LIEU TAI MOT `EntryId` bat ky trong quau he, khong phai tai luc ban tao fork. Nghia la: quay lai va xem '15 phut truoc, bo qua nhung gi toi vua sua, agent dang lam gi' - mot tinh nang ma phan lon he thong agent khong co. Tinh nang nay chi co neu tai lieu CHI LUU 'latest'.\n3. TAI LIEU CO CHAP LUONG VA GIAI HAN THEO PHAM VI. Mot tai lieu gan voi mot `TaskId` hay mot `ConversationId` se bi `retireDoc` dong lai khi pham vi do ket thuc - ban khong phai don dep thu cong.\n4. KHU VUC DEMO CHO NGUOI DUNG: MOT `todo` hay mot `notes` cua phien chat, sua duoc giu nguyen khi may bi kill, va doc lai duoc o bat ky commit nao. Khong dung de giu rat nhieu thu it quan trong.",
+  "co_bang_chung_khong": "CO. file nay khong phai ly thuyet. Nguon co 3 test nen truc tiep vao no: test/session-documents.test.ts (27,086 byte, 2 import) phu 5 nhom hop dong; test/session-checkpoints-migrations.test.ts (24,698 byte) phu va migrate + checkpoint; test/session-forks.test.ts (26,608 byte) phu va fork + asOf; va con nua trong src/testing/storage-conformance.ts (1,520 dong) dung chung cho 3 backend. Tong 4 file do la 78,392 byte test cho 7,888 byte code - ti le 10:1. CAI CANH XAC: storage-conformance.ts CHUA 3 file test voi 3 backend cua 12 dang chay; chay con 1 backend khong chung minh gi. Bat buoc chay ca 3.\n\nLUU Y CHO M1: task mo ta durable la 'nua document' co ve KHONG CHINH XAC. 'Nua document' co the dung o y nghia NO khong cai dat gi (khong hook, khong scheduler, khong UI). NHUNG chuc nang nguoi dung thay - doc as-of, fork, pham vi - thi day, va co bang chung. Phan CHUA co trong repo nay la lop tren: Scheduler (docs/pico-v5.md muc 5.4), Submissions va Inbox (muc 6), Hooks + bang Tools (muc 7), va cac Built-in tasks (muc 8). Dac ta 2,400 dong viet ca nhung cai do nhung CHUA co code. Hay noi ro: durable = HA TANG DUOC XAC NHAN, con he thong task day du thi chua.",
+  "canh_bao_khi_migrate": "`documents.ts` KHONG dung gi den omp nen sao chep + doi 2 dong scope (chord, chord/delta) la du. NHUNG no la noi tao sinh 2 xung dot ma BAN BO QUA: (a) `checkRecordScope` so sanh `record.scope.kind` va `definition.scope`, va `documentCreate` la ban ghi SCOPE co ban ghi HISTORY/FORK - khi wiring vao code omp dang dung pi-ai `Context`, hay truyen nham se bien thanh loi so sanh ky tu duong; (b) `materializeDocument` goi `copyJson` cua chord - HAM NAY PHAI DUOC DUNG DUNG, khong duoc the bang `structuredClone`, vi no giu nguyen tinh bat bien cua chord ma `track()` sau do do."
+ },
+ "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m1-expand-specs/durable.spec.json"
+}

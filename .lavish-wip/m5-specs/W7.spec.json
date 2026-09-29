@@ -1,0 +1,252 @@
+{
+  "id": "W7",
+  "title": "Đổi npm scope: 4107 file, 16 manifest, 12 mục gốc",
+  "wave": "Wave 3",
+  "one_line": "Đổi tiền tố npm scope `@oh-my-pi/` → `@ultraworkers/` trên 4118 file / 17212 lượt (không phải 4107/17169), giữ nguyên cả 16 basename, tái sinh `bun.lock` bằng `bun install`, và không đụng 13 file changelog (N11) hay 5 tài liệu kế hoạch.",
+  "user_visible_effect": "Sau W7, mọi import nội bộ trong repo trỏ tới `@ultraworkers/*`. Bản `bun run check:ts` in ra `@ultraworkers/pi-ai:check:types` thay vì `@oh-my-pi/pi-ai:check:types`, `bun install` sinh `node_modules/@ultraworkers/*` là symlink vào `packages/`, và `bun.lock` không còn chuỗi scope cũ. Người dùng cuối chưa thấy gì khác: tên binary vẫn là `omp`, thư mục cấu hình vẫn là `.omp`, và extension viết từ scope cũ vẫn resolve được (W2 giữ bí danh). Đổi tên hiển thị xuất hiện ở W8b/W9.",
+  "files_touched": [
+    {
+      "path": "packages/agent/package.json, packages/ai/package.json, packages/browser-relay/package.json, packages/catalog/package.json, packages/coding-agent/package.json, packages/collab-web/package.json, packages/metaharness/package.json, packages/mnemopi/package.json, packages/natives/package.json, packages/omptype/package.json, packages/snapcompact/package.json, packages/stats/package.json, packages/tui/package.json, packages/typescript-edit-benchmark/package.json, packages/utils/package.json, packages/wire/package.json",
+      "action": "modify",
+      "change": "Đổi scope trong trường `name` và trong mọi mục dependencies/peerDependencies/devDependencies/optionalDependencies trỏ tới package nội bộ: `@oh-my-pi/X` → `@ultraworkers/X`. KHÔNG đổi basename sau dấu `/` (N17). Tổng 90 lượt `@oh-my-pi/` trong 16 manifest.",
+      "verified": true,
+      "note": "`git grep -l '\"name\": \"@oh-my-pi/' -- '**/package.json'` trả về đúng 16 file, khớp N17. Phân nhóm đã kiểm chứng: 10 tên `pi-*` (pi-agent-core, pi-ai, pi-catalog, pi-coding-agent, pi-metaharness, pi-mnemopi, pi-natives, pi-tui, pi-utils, pi-wire), 2 tên thương hiệu cũ (omp-stats, omptype), 4 tên không thuộc họ nào (browser-relay, collab-web, snapcompact, typescript-edit-benchmark). Bốn tên nhóm 3 dễ rơi khỏi danh sách nhất — chúng không chứa `pi` lẫn `omp`. Xem plan_corrections C4."
+    },
+    {
+      "path": "package.json",
+      "action": "modify",
+      "change": "12 mục ghim trong `catalog` đổi scope: `@oh-my-pi/omp-stats`, `omptype`, `pi-agent-core`, `pi-ai`, `pi-catalog`, `pi-coding-agent`, `pi-mnemopi`, `pi-natives`, `pi-tui`, `pi-utils`, `pi-wire`, `snapcompact` (tất cả đều pin `18.3.3`).",
+      "verified": true,
+      "note": "`git grep -n '@oh-my-pi/' -- package.json` trả về đúng 12 dòng, liên tiếp từ :19 đến :30. Con số 12 của plan là ĐÚNG. Lưu ý catalog chỉ ghim 12 trong 16 manifest — `browser-relay`, `collab-web`, `pi-metaharness`, `typescript-edit-benchmark` không có mục ghim. Đừng 'sửa cho đủ 16'."
+    },
+    {
+      "path": "bun.lock",
+      "action": "modify",
+      "change": "Tái sinh bằng `bun install`. 122 lượt `@oh-my-pi/` hiện có sẽ đổi scope. TUYỆT ĐỐI không sửa tay.",
+      "verified": true,
+      "note": "`git grep -c '@oh-my-pi/' -- bun.lock` = 122. Đây là file sinh; sửa tay là sai lầm thứ ba mà plan nêu. Sau `bun install`, `git grep -c '@oh-my-pi/' -- bun.lock` phải trả 0."
+    },
+    {
+      "path": "packages/natives/native/loader-state.js",
+      "action": "modify",
+      "change": "Dòng :70 đổi `` require_.resolve(`@oh-my-pi/pi-natives-${platformTag}/package.json`) `` → scope mới. Dòng :12 (comment) và :119 (comment) cũng đổi theo.",
+      "verified": true,
+      "note": "ĐÂY LÀ RỦI RO NẶNG NHẤT MÀ PLAN KHÔNG NÊU. Đây là resolve tới package ĐÃ PHÁT HÀNH trên registry (sáu leaf package `@oh-my-pi/pi-natives-<tag>`), không phải workspace package. Xem plan_corrections C5 và open_questions Q1 — đổi scope ở đây trước khi leaf package được publish dưới scope mới sẽ khiến `require_.resolve` ném, `catch { return null }` chạy, và loader rơi im lặng sang nhánh dự phòng khác. Không có lỗi nào được ném."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "action": "modify",
+      "change": "2 lượt: `tarball=\"$(npm view @oh-my-pi/...)\"` và comment 'Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages'.",
+      "verified": true,
+      "note": "Dòng :326 `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball` là bằng chứng rằng sáu leaf package sống trên registry. Ngoài ra `omp-kata` ở :148,:191 thuộc N12 — sed không chạm tới vì không chứa `@oh-my-pi/`."
+    },
+    {
+      "path": "scripts/install.sh, scripts/install.ps1, scripts/install-tests/run-ci.sh, scripts/install-tests/tarball.dockerfile",
+      "action": "modify",
+      "change": "Đổi scope trong lệnh cài đặt (tổng 25 lượt: run-ci.sh 21, tarball.dockerfile 2, install.sh 1, install.ps1 1).",
+      "verified": true,
+      "note": "Đây là đường cài từ tarball — nếu bỏ sót, `ci:test:install-methods` hỏng mà typecheck vẫn xanh."
+    },
+    {
+      "path": "nix/bun.nix",
+      "action": "modify",
+      "change": "16 lượt scope trong định nghĩa nix.",
+      "verified": true,
+      "note": "Không có typecheck nào phủ nix. Đếm riêng để không bị bỏ sót."
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/before-compaction.jsonl, packages/coding-agent/test/fixtures/large-session.jsonl",
+      "action": "modify",
+      "change": "181 lượt (132 + 49) trong transcript session đã ghi, gồm cả một URL registry `https://registry.npmjs.org/@oh-my-pi/pi-coding-agent/...`.",
+      "verified": true,
+      "note": "TRANSCRIPT ĐÃ GHI = LỊCH SỬ, không phải danh tính. Cùng lớp với `gallery-fixtures/segments.ts` mà W8 phải phán xét. Plan không nhắc tới 2 file này. Quyết định mặc định ở đây: SỬA (chúng là fixture được test đọc, để scope cũ nghĩa là fixture mô tả một thế giới không còn tồn tại). Nhưng đây là phán đoán — xem open_questions Q2."
+    },
+    {
+      "path": ".omp/skills/tool-prompt-optimization/SKILL.md, .omp/skills/tool-prompt-optimization/scripts/probe.ts, .omp/skills/tool-prompt-optimization/scripts/probe-builtin.ts",
+      "action": "modify",
+      "change": "3 file / 10 lượt. PHẢI sửa — đây là code thật (import statement trong probe scripts), không phải tên thư mục.",
+      "verified": true,
+      "note": "N14 chỉ khoá TÊN THƯ MỤC `.omp` (N14: `getProjectAgentDir()` đọc `CONFIG_DIR_NAME`), KHÔNG khoá nội dung bên trong. Loại trừ 3 file này sẽ làm skill vỡ. Xem plan_corrections C6."
+    },
+    {
+      "path": "(4100 file còn lại trong tập in-scope)",
+      "action": "modify",
+      "change": "Đổi `@oh-my-pi/` → `@ultraworkers/` bằng một pass cơ học duy nhất. Không có ngoại lệ theo từng file trong tập này.",
+      "verified": true,
+      "note": "4118 file in-scope − 16 manifest − `package.json` gốc − `bun.lock` = 4100. Phân bố: 4005 `.ts`, 84 `.md`, 12 `.tsx`, 4 `.py`, 2 `.rs`, 2 `.sh`, 1 mỗi `.yml`/`.ps1`/`.nix`/`.js`/`.dockerfile`/`.lock`. 3 file Rust (`crates/pi-edit/.../mod.rs`, `crates/pi-shell/.../bun.rs`) và `packages/metaharness/agent/omp_local.py` KHÔNG được typecheck bởi `check:ts` — phải đếm riêng."
+    },
+    {
+      "path": "packages/coding-agent/test/npm-scope-resolution.test.ts",
+      "action": "create",
+      "change": "Test mới. Ba invariant, xem test_contract.",
+      "verified": false,
+      "note": "Chưa tồn tại. Đây là test DUY NHÁT thuộc W7. Test tương đương của W2 do W2 sở hữu — KHÔNG lặp lại ở đây."
+    },
+    {
+      "path": "scripts/rename/keep-list.txt",
+      "action": "create",
+      "change": "KHÔNG tạo ở W7. Đây là ĐIỀU KIỆN MỞ của W7 — file phải tồn tại trên `main`, đã được một người duyệt không phải người viết, trước khi bất kỳ lệnh sed nào chạy.",
+      "verified": true,
+      "note": "`ls scripts/rename/` hiện KHÔNG tồn tại (exit 2, thư mục không có). W7 bị chặn cho tới khi nó tồn tại. Đây không phải việc của W7 — nhưng W7 phải dừng và báo nếu nó thiếu."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "scripts/rename/keep-list.txt",
+      "instruction": "DỪNG và kiểm tra điều kiện mở. Ba điều phải đồng thời đúng trước khi đụng file nào: (a) `scripts/rename/keep-list.txt` tồn tại trên `main`; (b) nó đã được một người duyệt không phải người viết; (c) W2 đã merge — tức `CANONICAL_PI_SCOPE` tại `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:796` đã trỏ scope mới và `PI_SCOPE_ALIASES` tại `:802` đã giữ chuỗi scope cũ vĩnh viễn. Nếu bất kỳ điều nào chưa đúng: DỪNG, không sửa dòng nào, báo lại. Đây là chặn cứng, không phải cảnh báo."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:796",
+      "instruction": "Xác nhận bằng mắt (không source-grep vào test) rằng hai chuỗi scope của W2 KHÔNG có dấu `/` ở cuối: `CANONICAL_PI_SCOPE` và mọi phần tử của `PI_SCOPE_ALIASES` đều là dạng trần. Đây là lý do pass của W7 không chạm tới chúng, và cũng là lý do W2 phải đứng trước. Nếu bất kỳ chuỗi nào đã mang dấu `/`, pass của W7 sẽ phá cơ chế tương thích — DỪNG và báo lại."
+    },
+    {
+      "n": 3,
+      "anchor": "<repo root>",
+      "instruction": "Chụp baseline TRƯỚC mọi thay đổi, ghi ra /tmp, không để trong repo:\n\n  git grep -c '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' > /tmp/w7-changelog-baseline.txt\n  git grep -lE '\"oh-my-pi\"' -- . > /tmp/w7-bare-baseline.txt\n  git grep -o '@oh-my-pi/' -- . > /tmp/w7-all-hits-baseline.txt\n  git rev-parse HEAD > /tmp/w7-head-baseline.txt\n\nBaseline thứ nhất PHẢI là 13 file / 85 lượt (đã kiểm chứng ở HEAD `84cbac9`). Nếu không, cây đã đổi — dừng và đếm lại."
+    },
+    {
+      "n": 4,
+      "anchor": "<repo root>",
+      "instruction": "Tạo file danh sách in-scope từ `git ls-files` (KHÔNG dùng `git grep -- .` để sinh danh sách — nó sẽ kéo theo chính các file loại trừ). Lệnh chuẩn, chạy đúng nguyên văn:\n\n  git ls-files -z \\\n    ':(exclude)packages/*/CHANGELOG.md' \\\n    ':(exclude).lavish-wip/**' \\\n    ':(exclude)COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' \\\n    ':(exclude)MILESTONE_*_EXECUTION_PLAN.md' \\\n  | xargs -0 grep -l -F '@oh-my-pi/' > /tmp/w7-inscope-files.txt\n\nKỳ vọng tại HEAD `84cbac9`: **4118 dòng**. Chạy lại tại thời điểm thực thi và ghi con số thật vào commit message; con số 4118 chỉ đúng ở `84cbac9`."
+    },
+    {
+      "n": 5,
+      "anchor": "<repo root>",
+      "instruction": "Đếm chuỗi và ghi ra. Đây là bước BẮT BUỘC trước khi sửa — một lệnh trên 4118 file không thể hoàn tác nếu sai:\n\n  xargs -a /tmp/w7-inscope-files.txt grep -o -F '@oh-my-pi/' | wc -l\n\nKỳ vọng tại HEAD `84cbac9`: **17212**. Dừng nếu lệch."
+    },
+    {
+      "n": 6,
+      "anchor": "<repo root>",
+      "instruction": "CHẠY THỬ KHÔNG GHI (dry run) và đọc kết quả bằng mắt:\n\n  xargs -a /tmp/w7-inscope-files.txt sed -i '' -e 's|@oh-my-pi/|@ultraworkers/|g' --dry-run \\\n    2>/dev/null || xargs -a /tmp/w7-inscope-files.txt perl -pi -e 's{\\@oh-my-pi/}{@ultraworkers/}g' --dry-run 2>/dev/null || true\n\nNếu `sed -i ''` (kiểu BSD/macOS) không khả dụng thì dùng `perl -pi -e`. Chốt một công cụ, không trộn hai công cụ. Mục đích của bước này là xác nhận công cụ xử lý được đúng 4118 file với tên file có ký tự lạ (`.omp/skills/...`), KHÔNG phải để xem nội dung."
+    },
+    {
+      "n": 7,
+      "anchor": "<repo root>",
+      "instruction": "PASS DUY NHẤT. Dùng đúng danh sách từ bước 4, dùng đúng công cụ đã chốt ở bước 6:\n\n  xargs -a /tmp/w7-inscope-files.txt perl -pi -e 's{\\@oh-my-pi/}{@ultraworkers/}g'\n\nSau đó ĐỌC LẠI 3 file đại diện bằng mắt và xác nhận scope đã đổi đúng: `packages/ai/package.json` (dòng name), `package.json` (một trong 12 mục ghim), `packages/coding-agent/src/index.ts` (một import). KHÔNG chạy pass thứ hai — pass thứ hai là thứ làm hỏng việc này."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/agent/package.json … packages/wire/package.json (16 manifest)",
+      "instruction": "XÁC MINH, KHÔNG SỬA. Pass ở bước 7 đã phủ cả 16 trường `name` và 12 mục ghim. Chứng minh bằng:\n\n  git grep -l '\"name\": \"@oh-my-pi/' -- '**/package.json'   # phải trả RỖNG\n  git grep -n '\"name\": \"@ultraworkers/' -- '**/package.json' | wc -l   # phải bằng 16\n  git grep -n '\"@ultraworkers/' -- package.json | wc -l            # phải bằng 12\n  git grep -n '\"@oh-my-pi/' -- package.json                        # phải trả RỖNG\n\nDanh sách 16 basename sau dấu `/` phải Y NGUYÊN: pi-agent-core, pi-ai, pi-catalog, pi-coding-agent, pi-metaharness, pi-mnemopi, pi-natives, pi-tui, pi-utils, pi-wire, omp-stats, omptype, browser-relay, collab-web, snapcompact, typescript-edit-benchmark. Nếu bất kỳ basename nào đổi, hoàn tác và báo lại — đó là vi phạm N17."
+    },
+    {
+      "n": 9,
+      "anchor": "bun.lock",
+      "instruction": "Tái sinh lockfile, KHÔNG sửa tay:\n\n  bun install\n\nSau đó `git grep -c '@oh-my-pi/' -- bun.lock` phải trả 0, và `git diff --stat bun.lock` phải cho thấy thay đổi. Nếu `bun install` sửa thêm file ngoài `bun.lock` (ví dụ `package.json`), kiểm tra kỹ từng file đó — nó có thể là dấu hiệu một `name` manifest lệch với mục ghim catalog."
+    },
+    {
+      "n": 10,
+      "anchor": "node_modules/@ultraworkers",
+      "instruction": "Chứng minh phân giải tới WORKSPACE chứ không phải bản registry — đây là hợp đồng sạch cài mà plan yêu cầu, và là thứ typecheck KHÔNG bắt được (node_modules hiện tại là symlink hoist nên typecheck xanh ngay cả khi `name` sai). Sau `bun install`:\n\n  ls -l node_modules/@ultraworkers | head -20\n  node -e 'const fs=require(\"fs\");for(const d of fs.readdirSync(\"node_modules/@ultraworkers\")){const p=fs.realpathSync(\"node_modules/@ultraworkers/\"+d);if(!p.includes(\"/packages/\")){console.log(\"NOT WORKSPACE:\",d,p)}}'\n\nLệnh thứ hai phải in RA RỖNG. In ra bất kỳ dòng nào nghĩa là package đó bị tải từ registry thay vì link workspace — tức một `name` manifest chưa khớp với mục ghim, và bản cài sạch sẽ hỏng. Tham chiếu hình dạng hiện tại: `node_modules/@oh-my-pi/*` là symlink trỏ `../../packages/<name>`."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/coding-agent/test/npm-scope-resolution.test.ts",
+      "instruction": "Viết test mới theo test_contract bên dưới. Ba invariant, mỗi test một invariant. TUYỆT ĐỐI KHÔNG source-grep file implementation, KHÔNG dùng `mock.module()`. Chạy được bằng `bun test` khi native addon đã build (xem verification về trạng thái môi trường)."
+    },
+    {
+      "n": 12,
+      "anchor": "<repo root>",
+      "instruction": "Chạy cổng, theo đúng thứ tự ở mục `gate`. Ghi kết quả TỪNG cổng vào commit message, kể cả cổng không chạy được — một cổng bị chặn môi trường phải được ghi là `NOT RUN — environment blocked`, TUYỆT ĐỐI không ghi là `pass`."
+    },
+    {
+      "n": 13,
+      "anchor": "packages/*/CHANGELOG.md",
+      "instruction": "KHÔNG thêm, KHÔNG sửa, KHÔNG sắp xếp lại bất kỳ mục changelog nào, trong bất kỳ package nào. AGENTS.md nói các phần đã phát hành là bất biến và 13 file changelog là giữ có chủ ý (N11). Cổng B ở mục `gate` là thứ bảo vệ điều này — nếu cổng B đỏ, pass đã quét nhầm changelog và phải hoàn tác."
+    }
+  ],
+  "code_shape": "// Không có code TypeScript mới do W7 viết. W7 là một pass thay chuỗi cơ học\n// trên 4118 file, cộng một file test.\n//\n// Hình dạng duy nhất cần giữ nguyên — dòng RỦI RO trong loader-state.js (:70):\n//\n//   function resolveLeafPackageDir(platformTag) {\n//     try {\n//       const require_ = createRequire(import.meta.url);\n//       //   @oh-my-pi/pi-natives-<tag>  ->  @ultraworkers/pi-natives-<tag>\n//       // ^ KHÔNG phải workspace package: sáu leaf package này được PUBLISH lên\n//       //   registry. Đổi scope ở đây trước khi chúng tồn tại dưới scope mới\n//       //   khiến require_.resolve() ném, `catch { return null }` chạy, và loader\n//       //   rơi im lặng sang nhánh dự phòng. KHÔNG có lỗi nào được ném.\n//       return path.dirname(require_.resolve(`@ultraworkers/pi-natives-${platformTag}/package.json`));\n//     } catch {\n//       return null;\n//     }\n//   }\n//\n// Hình dạng thứ hai — manifest sau khi đổi (basename giữ nguyên, N17):\n//\n//   packages/ai/package.json       \"name\": \"@ultraworkers/pi-ai\"\n//   packages/stats/package.json    \"name\": \"@ultraworkers/omp-stats\"\n//   packages/browser-relay/…       \"name\": \"@ultraworkers/browser-relay\"\n//\n// Ba họ tên dưới MỘT scope. Đó là hệ quả có chủ ý của N17, không phải sơ suất.\n//\n// Lệnh duy nhất được chạy trên toàn bộ tập:\n//   xargs -a /tmp/w7-inscope-files.txt perl -pi -e 's{\\@oh-my-pi/}{@ultraworkers/}g'\n//\n// Một pass. KHÔNG có pass thứ hai cho basename, KHÔNG có pass cho token `omp`\n// (đó là W8b, 585 file, cần bảng quyết định từng file).",
+  "test_contract": "Ba invariant, mỗi cái một test, tất cả trong `packages/coding-agent/test/npm-scope-resolution.test.ts`.\n\n(1) PHÂN GIẢI TỚI WORKSPACE, KHÔNG PHẢI REGISTRY. Hợp đồng quan sát được: một specifier scope mới phải resolve tới thư mục workspace trong chính repo này. Dùng `import.meta.resolve(\"@ultraworkers/pi-utils\")` và assert đường dẫn resolve nằm dưới `<repo>/packages/`. Lỗi bị chặn: manifest `name` đã đổi nhưng `exports` map hoặc mục ghim catalog chưa khớp, khiến bản cài sạch kéo package từ registry thay vì link workspace. Test này KHÔNG bắt được bằng typecheck khi `node_modules` đã hoist — đó là lý do nó tồn tại.\n\n(2) MANIFEST VÀ MỤC GHIM CATALOG PHẢI KHỚP NHAU. Hợp đồng quan sát được: mỗi tên trong `package.json` `catalog` phải tồn tại như `name` của đúng một workspace package. Duyệt `packages/*/package.json` + `package.json` gốc lúc chạy, so tập tên. Lỗi bị chặn: một manifest đổi scope còn mục ghim không đổi (hoặc ngược lại) — typecheck vẫn xanh, `bun install` vẫn chạy, nhưng lockfile ghi sai và bản cài sạch hỏng. Đây là quan hệ giữa hai file, không phải so một hằng số với chính nó.\n\n(3) BASENAME GIỮ NGUYÊN. Hợp đồng quan sát được: sau khi đổi scope, phần sau dấu `/` của cả 16 `name` vẫn đúng như trước, và registry đọc `@ultraworkers/pi-ai`, `@ultraworkers/omp-stats`, `@ultraworkers/browser-relay` dưới MỘT scope. Lỗi bị chặn: một tên nhóm 3 (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`) bị đổi theo trong lúc đổi scope — chúng không chứa `pi` lẫn `omp` nên không hướng dẫn 'đổi cái mang thương hiệu cũ' nào chạm tới, và đổi chúng sẽ phá `PI_PACKAGE_NAMES` (`legacy-pi-compat.ts:805`).\n\nKHÔNG viết: test source-grep (đọc file rồi `toContain` vào text — bị cấm), test khẳng định chuỗi scope là hằng số, test `expect(true).toBe(true)`, và KHÔNG lặp lại test tương đương của W2 (thuộc W2 sở hữu).",
+  "test_files": [
+    "packages/coding-agent/test/npm-scope-resolution.test.ts (mới — 3 invariant: workspace resolution, manifest↔catalog agreement, basename preserved)"
+  ],
+  "verification": "MÔI TRƯỜNG (đã kiểm chứng bằng lệnh thật trên máy này, HEAD `84cbac9`):\n\n- `bun run check:ts` chạy được và exit 0 ở HEAD — đo baseline thật: oxlint+oxfmt sạch (5445 file), rồi 14 workspace `check:types` đều Done. Banner in ra `@oh-my-pi/pi-ai:check:types` … `@oh-my-pi/typescript-edit-benchmark:check:types`. Sau W7 banner phải đọc `@ultraworkers/...`. Đây là tín hiệu quan sát được rõ nhất.\n- `bun run check` KHÔNG dùng làm cổng: nó là `bun run --parallel check:ts check:rs`, cần cargo, chưa xác minh ở đây.\n- `bun test` BỊ CHẶN: native addon chưa build, mọi test báo `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64`.\n- Lệnh gỡ chặn `bun --cwd=packages/natives run build` THẤT BẠI: `CMake Error: CMake was unable to find a build program corresponding to \"Ninja\". CMAKE_MAKE_PROGRAM is not set.` Phải có `brew install ninja` TRƯỚC, rồi build, rồi `bun test` mới chạy. Bất kỳ đặc tả nào dạy lệnh build mà bỏ qua `brew install ninja` là dạy một lệnh không chạy được.\n\nVÌ VẬY: ba cổng dưới đây được chia làm CỔNG CHẠY ĐƯỢC (A, B, C, D — mỗi cổng đỏ được thật) và CỔNG BỊ CHẶN MÔI TRƯỜNG (E). Cổng E phải được ghi `NOT RUN — environment blocked`, không bao giờ ghi `pass`.",
+  "gate": "CHẠY THEO ĐÚNG THỨ TỰ. Dừng ngay khi cổng đầu tiên đỏ.\n\n── GATE 0 — ĐIỀU KIỆN MỞ (đỏ được) ──\n  test -f scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list.txt missing — W7 is BLOCKED'; exit 1; }\n  git grep -q 'CANONICAL_PI_SCOPE' packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts || { echo 'GATE 0 FAIL: W2 not landed'; exit 1; }\n  Phân biệt được: không có keep-list là BLOCKED, không phải 'chưa xong'.\n\n── GATE A — RESIDUE TRONG TẬP IN-SCOPE (đỏ được) ──\n  test \"$(xargs -a /tmp/w7-inscope-files.txt grep -c -F '@oh-my-pi/' 2>/dev/null | wc -l)\" -eq 0 || { echo 'GATE A FAIL: leftover scope in in-scope set'; exit 1; }\n  Phân biệt được: đỏ ⇒ pass chưa phủ hết tập, HOẶC danh sách in-scope đã cũ. Cả hai đều là lỗi thật.\n\n── GATE B — N11 CHANGELOG KHÔNG BỊ ĐỤNG (đỏ được, chống tự lừa) ──\n  git grep -c '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' > /tmp/w7-changelog-after.txt\n  diff /tmp/w7-changelog-baseline.txt /tmp/w7-changelog-after.txt || { echo 'GATE B FAIL: CHANGELOG was rewritten — released sections are immutable'; exit 1; }\n  Baseline PHẢI là 13 file / 85 lượt. Đây là cổng quan trọng nhất của W7: Gate A KHÔNG bắt được chuyện sed đã quét changelog (changelog bị viết sạch thì Gate A vẫn xanh vì changelog vốn đã nằm ngoài tập in-scope — nhưng nếu ai đó lỡ xoá exclusion thì Gate A im lặng và Gate B đỏ). Hai cổng soi hai lỗi khác nhau.\n\n── GATE C — CROSS-CHECK DẠNG TRẦN (đỏ được) ──\n  git grep -lE '\"oh-my-pi\"' -- . > /tmp/w7-bare-after.txt\n  diff /tmp/w7-bare-baseline.txt /tmp/w7-bare-after.txt || { echo 'GATE C FAIL: bare form drifted — W7 must not touch it (W8 owns it)'; exit 1; }\n  Baseline PHẢI là 16 file. Grep sạch trên dạng có `/` KHÔNG chứng minh gì về dạng trần — đây là cổng bù cho đúng cái lỗ đó.\n\n── GATE D — TYPECHECK + BANNER (đỏ được) ──\n  bun run check:ts                                                   # phải exit 0\n  bun run check:ts 2>&1 | grep -q '@ultraworkers/.*check:types'    # phải có\n  ! bun run check:ts 2>&1 | grep -q '@oh-my-pi/.*check:types'       # phải không có\n  Cổng này phân biệt 'scope đã đổi thật' (banner đổi) với 'check pass vì node_modules cũ vẫn còn' (banner không đổi).\n\n── GATE E — BỘ TEST TS: NOT RUN, ENVIRONMENT BLOCKED ──\n  Không chạy được ở máy này. Ghi vào commit message đúng ba chữ:\n      test:ts = NOT RUN — environment blocked (pi_natives native addon not built)\n  Gỡ chặn: brew install ninja && bun --cwd=packages/natives run build && bun run test:ts\n  TUYỆT ĐỐI không ghi 'pass' cho cổng này khi nó chưa chạy. Nếu CI có runner đã build native addon thì chạy `bun run test:ts` ở đó và dán kết quả vào PR.\n\n── GATE F — BỔ SUNG (khuyến nghị, chạy được) ──\n  node -e 'const fs=require(\"fs\");for(const d of fs.readdirSync(\"node_modules/@ultraworkers\")){const p=fs.realpathSync(\"node_modules/@ultraworkers/\"+d);if(!p.includes(\"/packages/\")){console.log(\"NOT WORKSPACE:\",d,p)}}' | grep . && { echo 'GATE F FAIL: registry copy instead of workspace link'; exit 1; }\n  Cổng cài sạch rẻ: bắt được lỗi mà typecheck không bắt.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "W2 (CỨNG) — CANONICAL_PI_SCOPE / PI_SCOPE_ALIASES phải đã đặt xuống. Hai chuỗi scope mà pass của W7 không chạm tới chính là cơ chế tương thích. Chạy W7 trước W2 phá canonicaliser extension một cách im lặng.",
+    "W1 — để vị trí wire đã chạy bằng hằng số và không bị cuốn vào pass.",
+    "scripts/rename/keep-list.txt tồn tại trên main, đã được một người duyệt khác người viết (chưa có ở HEAD 84cbac9 — thư mục scripts/rename/ chưa tồn tại).",
+    "Cổng ngoài repo G3 của plan §8: scope `@ultraworkers` đã tồn tại và được sở hữu."
+  ],
+  "blocks": [
+    "W8a — 15/16 file dạng trần; Gate C của W7 bàn giao một danh sách baseline sạch cho nó.",
+    "W8b — 585 file token `omp`; bảng disposition.tsv cần biết chính xác tập nào đã đổi scope.",
+    "W9 — đổi tên binary; phụ thuộc bin khai báo trong manifest đã đổi scope.",
+    "W12 — release stub; phụ thuộc tên package trong lockfile.",
+    "M5 DoD cuối — dòng DoD về zero-hit `@oh-my-pi/` chỉ đóng được sau khi mọi wave scope chạy xong."
+  ],
+  "effort": "S theo thao tác gõ (một lệnh `perl -pi` trên 4118 file), M theo kiểm chứng. Phần công việc thật KHÔNG phải là lệnh sửa — nó là chụp baseline, dựng danh sách in-scope, đếm trước, chạy thử không ghi, và chứng minh 5 cổng. Nếu bỏ qua phần đếm và chạy thử, đây là việc không thể hoàn tác khi sai.",
+  "risk": "Sai lầm 1 — CHẠY TRƯỚC W2. Đúng thứ tự mà các lượt trước ngụ ý, và nó phá canonicaliser extension một cách im lặng. Đây là chặn cứng ở Gate 0.\n\nSai lầm 2 — ĐỔI SCOPE TRONG MANIFEST MÀ BỎ SÓT MỤC PHỤ THUỘC. Lỗi này typecheck ĐƯỢC với node_modules hiện tại (tôi đã xác minh `node_modules/@oh-my-pi/*` là symlink trỏ vào `packages/`) và chỉ hỏng trên bản cài sạch. Tổng 90 lượt trong 16 manifest, không chỉ 16 dòng `name`.\n\nSai lầm 3 — TỰ SỬA `bun.lock`. Phải chạy `bun install`.\n\nSai lầm 4 — ĐỂ W7 TỰ QUYẾT BASENAME. 16 basename tách ba nhóm; bốn tên nhóm 3 (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`) dễ rơi khỏi danh sách nhất vì không mang chữ `pi` lẫn chữ `omp`. Đổi chúng phá `PI_PACKAGE_NAMES`.\n\nSai lầm 5, NẶNG NHẤT VỀ MẶT LUẬT REPO — ĐỂ MẪU `git grep -o '@oh-my-pi/' -- .` QUÉT TỚI CHANGELOG. Nó viết lại 85 mục trong 13 file thuộc phần đã phát hành, phần AGENTS.md nói là bất biến, và làm hỏng chính keep-list mà DoD kiểm. Gate B chống đúng cái này.\n\nSai lầm 6, MỚI, KHÔNG CÓ TRONG PLAN — `loader-state.js:70` resolve tới sáu leaf package ĐÃ PHÁT HÀNH trên registry. Đổi scope ở đó trước khi leaf package tồn tại dưới scope mới ⇒ `require_.resolve` ném ⇒ `catch { return null }` ⇒ loader rơi im lặng. Không có lỗi nào được ném, không có test nào đỏ. Đây là phần thất bại im lặng đắt nhất của W7.\n\nSai lầm 7, MỚI — `.lavish-wip/specs/*.spec.json` (13 file workflow scratch đã bị commit) và 5 tài liệu kế hoạch (332 lượt) không nằm trong bất kỳ danh sách loại trừ nào của plan. Mẫu toàn-repo của plan sẽ viết lại chúng. Tôi đã đưa chúng ra khỏi tập in-scope.\n\nSai lầm 8, MỚI — LOẠI NHẦM `.omp/skills/**`. N14 khoá TÊN THƯ MỤC `.omp`, không khoá nội dung. 3 file đó là code thật với import statement; loại chúng làm skill vỡ.\n\nSai lầm 9, MỚI — ĐỂ CỔNG 'test pass' xanh trong khi `bun test` không chạy. Trên máy này mọi test báo `0 pass / 1 fail / 1 error`. Một cổng báo xanh vì không chạy là cổng không có tác dụng.",
+  "open_questions": [
+    "Q1 (chặn W7 hoặc phải trả lời trước khi merge) — Sáu leaf package `@oh-my-pi/pi-natives-<tag>` được publish từ CI (`.github/workflows/ci.yml:326` chạy `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball`). Chúng đã được publish dưới scope MỚI chưa? Nếu chưa, `loader-state.js:70` KHÔNG được đổi trong W7 — hoặc W7 phải đi kèm một bước publish leaf package, hoặc sáu tên leaf package phải vào `do_not_rename`. Đây là câu hỏi duy nhất trong W7 có thể gây hỏng im lặng ở người dùng cuối.",
+    "Q2 (phán đoán, cần một người quyết) — Hai transcript đã ghi `packages/coding-agent/test/fixtures/before-compaction.jsonl` (132) và `large-session.jsonl` (49) chứa 181 lượt scope cũ, kể cả một URL registry. Chúng là LỊCH SỬ (cùng lớp với `gallery-fixtures/segments.ts` mà W8 phải phán xét) hay là fixture mà test đọc và phải cập nhật? Mặc định của tôi: SỬA, vì test đọc chúng như dữ liệu đầu vào. Nhưng nếu chúng được coi là bản ghi phiên thật thì phải giữ, và đó là một ngoại lệ phải nêu tường minh trong keep-list chứ không được để mặc định.",
+    "Q3 — 5 tài liệu kế hoạch (`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` + `MILESTONE_1..4_EXECUTION_PLAN.md`, 332 lượt) và 13 file `.lavish-wip/specs/*.spec.json` (68 lượt) là bản ghi về việc đổi tên, không phải sản phẩm. Tôi đã loại chúng khỏi tập in-scope. Nếu ý kiến là phải viết lại chúng (ví dụ để tài liệu phản ánh tên mới), thì đó là một work item riêng, không phải để lẫn vào W7 — vì viết lại chúng làm bảng §2.3 của chính kế hoạch thành dối.",
+    "Q4 — Scope `@ultraworkers` đã được ai sở hữu chưa? Đây là cổng G3 của plan §8, nằm NGOÀI repo. Nếu chưa có, toàn bộ W7 là vô nghĩa và 17212 lượt viết là việc không cần thiết."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Lượt 1 chạy trên 4107 file chứa 17169 lượt `@oh-my-pi/`.",
+      "verdict": "stale",
+      "correction": "Tại HEAD `84cbac9` (nhánh milestone-1) con số thật là **4149 file / 17697 lượt** cho toàn bộ file theo dõi. Sau khi loại N11 (13 changelog / 85 lượt), `.lavish-wip/**` (13 file / 68 lượt) và 5 tài liệu kế hoạch (5 file / 332 lượt), tập in-scope đề xuất là **4118 file / 17212 lượt**. Dùng 4118/17212, không dùng 4107/17169. Trong tập in-scope: 18 file là manifest + lock (16 `packages/*/package.json` + `package.json` gốc + `bun.lock`), 4100 file còn lại là mã và tài liệu.",
+      "evidence": "`git grep -l '@oh-my-pi/' -- . | wc -l` = 4149; `git grep -o '@oh-my-pi/' -- . | wc -l` = 17697. Tập in-scope đếm bằng script với `git ls-files` + bốn `:(exclude)` = 4118 file / 17212 lượt."
+    },
+    {
+      "claim": "Các mục kiểm chứng của plan được xác nhận trên HEAD `5873776`.",
+      "verdict": "unverifiable",
+      "correction": "Commit `5873776` KHÔNG tồn tại trong repo này: `git cat-file -t 5873776` trả `fatal: Not a valid object name`. Không claim nào ghim vào SHA đó kiểm lại được. Lấy lại toàn bộ mốc bằng `git rev-parse HEAD` tại thời điểm thực thi. Đáng chú ý: mốc N11 (13 file / 85 lượt) VẪN đúng ở `84cbac9` — drift nằm ở phần ngoài changelog, không nằm ở changelog.",
+      "evidence": "`git cat-file -t 5873776` → `fatal: Not a valid object name 5873776`; `git rev-list --count 5873776..HEAD` → `fatal: unknown revision`. HEAD hiện tại: `84cbac9`."
+    },
+    {
+      "claim": "Rủi ro sai lầm thứ hai: 'đổi scope trong manifest mà bỏ sót khóa subpath của `exports` map hoặc một mục `peerDependencies`'.",
+      "verdict": "partly-wrong",
+      "correction": "Vế `exports` map KHÔNG đúng và không cần lo. Tôi đã kiểm tra: mọi khóa subpath trong `exports` đều là đường dẫn tương đối (`./compaction`, `./error`, `./*`) chứ không phải scope, và repo KHÔNG có trường `imports` ở bất kỳ manifest nào. Nên không có khóa subpath nào mang scope. Vế `peerDependencies` thì ĐÚNG và còn lớn hơn plan nghĩ: 90 lượt trong 16 manifest, không phải 16 dòng `name`. Rủi ro thật là bỏ sót mục phụ thuộc, và nó chỉ lộ ra trên bản cài sạch.",
+      "evidence": "`git grep -n '\"\\./' -- 'packages/*/package.json'` trả toàn khóa tương đối; `git grep -ln '\"imports\"' -- 'packages/*/package.json'` trả rỗng; `git grep -o '@oh-my-pi/' -- 'packages/*/package.json' package.json | wc -l` = 90."
+    },
+    {
+      "claim": "16 basename sau dấu `/` tách ba nhóm: 10 `pi-*`, 2 thương hiệu cũ, 4 không thuộc họ nào (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`).",
+      "verdict": "confirmed",
+      "correction": "Giữ nguyên, và con số này là thứ plan làm đúng nhất. Tôi đã liệt kê đủ 16 `name` từ manifest thật và phân nhóm khớp N17 chính xác. Bổ sung: catalog ở `package.json` gốn chỉ ghim 12 trong 16 — `browser-relay`, `collab-web`, `pi-metaharness`, `typescript-edit-benchmark` không có mục ghim. Đừng 'sửa cho đủ 16' ở bước 8.",
+      "evidence": "`git grep -n '\"name\": \"@oh-my-pi/' -- '**/package.json'` trả đúng 16 dòng; `git grep -n '@oh-my-pi/' -- package.json` trả đúng 12 dòng, liên tiếp :19–:30."
+    },
+    {
+      "claim": "Plan liệt kê loại trừ cứng: `@mariozechner/*`, `@earendil-works/*`, `@sinclair/typebox`, `node_modules`, `packages/*/CHANGELOG.md`, và toàn bộ `do_not_rename`.",
+      "verdict": "overstated",
+      "correction": "Ba scope nước ngoài và `node_modules` KHÔNG THỂ bị vi phạm: mẫu `@oh-my-pi/` là chuỗi literal có dấu `/` ở cuối, nên về mặt cấu trúc nó không khớp `@mariozechner/`, `@earendil-works/`, `@sinclair/typebox`; `git grep` cũng không đi vào `node_modules`. Loại trừ thật sự có tác dụng chỉ có hai: `packages/*/CHANGELOG.md` (85 lượt) và 4 manifest ví dụ của N2 — nhưng tôi đã kiểm và 4 manifest N2 có **0** lượt `@oh-my-pi/`, nên chúng cũng không cần loại trừ. Nói cách khác: rủi ro thật của W7 nằm ở tập file KHÔNG ai liệt kê (`.lavish-wip/`, 5 tài liệu kế hoạch, 2 transcript `.jsonl`), chứ không nằm ở danh sách loại trừ mà plan nhấn mạnh.",
+      "evidence": "Số lượt: `@mariozechner/` = 34, `@earendil-works/` = 77, `@sinclair/typebox` = 25 — nhưng mẫu không thể khớp chúng. `git grep -c '@oh-my-pi/'` trên cả 4 file N2 = 0."
+    },
+    {
+      "claim": "Dạng trần `\"oh-my-pi\"` nằm trong 15 file (W8a).",
+      "verdict": "stale",
+      "correction": "Ở HEAD `84cbac9` có **16** file khớp `git grep -lE '\"oh-my-pi\"' -- .`. File thứ 16 là `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` — chính tài liệu kế hoạch. Plan tự đếm ngoài chính nó. Không thuộc phạm vi W7 (sed của W7 chỉ khớp dạng có `/`), nhưng Gate C của W7 bàn giao baseline 16 file cho W8a, và W8a nên biết là có file thứ 16 đó.",
+      "evidence": "`git grep -lE '\"oh-my-pi\"' -- . | wc -l` = 16; danh sách gồm 15 file plan liệt kê cộng `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`."
+    },
+    {
+      "claim": "Ba bước sau pass 1 — đổi 16 trường `name`, cập nhật 12 mục ghim, tạo lại `bun.lock` — được trình bày như các chỉnh sửa riêng.",
+      "verdict": "misleading",
+      "correction": "Không có chỉnh sửa tay nào trong ba bước đó: mẫu `@oh-my-pi/` đã phủ cả 16 trường `name`, cả 12 mục ghim, và cả 90 lượt phụ thuộc trong manifest. Chúng phải được viết lại thành bước XÁC MINH, không phải bước SỬA — vì nếu kỹ sư hiểu là 'sửa tay 16 dòng name' sau pass, họ sẽ tạo ra một pass thứ hai, và đó chính là sai lầm phá N17 mà plan cảnh báo. Tôi đã viết lại thành bước 8 (verify, 4 lệnh kiểm, không sửa) và bước 9 (`bun install` cho `bun.lock`).",
+      "evidence": "`git grep -c '@oh-my-pi/' -- 'packages/*/package.json'` cho từng file đều > 1 (coding-agent 12, snapcompact 6, tui 9, agent 8, metaharness 8) — tức phần lớn lượt không nằm ở dòng `name`."
+    },
+    {
+      "claim": "Rủi ro lớn nhất về mặt quy tắc repo là để mẫu `git grep -o '@oh-my-pi/' -- .` quét tới `packages/*/CHANGELOG.md`.",
+      "verdict": "confirmed-and-understated",
+      "correction": "Đúng, và tôi đã dựng Gate B chống đúng điều đó. Nhưng còn một nhóm thứ hai mà plan không nhắc tới và cũng sẽ bị mẫu toàn-repo quét: 13 file `.lavish-wip/specs/*.spec.json` (68 lượt, workflow scratch đã bị commit) và 5 tài liệu kế hoạch (332 lượt). Cộng lại 400 lượt ngoài danh sách — lớn hơn nhiều so với 85 lượt changelog mà plan coi là rủi ro lớn nhất.",
+      "evidence": "`git grep -l '@oh-my-pi/' -- .lavish-wip` trả 13 file; `git grep -c '@oh-my-pi/' -- 'MILESTONE_*'` cho 112 lượt trên 4 file, suy ra `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` có 220 lượt."
+    },
+    {
+      "claim": "Lệnh nghiệm thu của W7: `bun install && bun run check && bun run test:ts`.",
+      "verdict": "unverifiable",
+      "correction": "Không chạy được trên máy này. `bun run test:ts` là `bun scripts/ci-test-ts.ts local-ts` và `bun test` bị chặn bởi native addon chưa build (`Failed to load pi_natives native addon for darwin-arm64`); `bun --cwd=packages/natives run build` thất bại vì thiếu `ninja` (`CMake was unable to find a build program corresponding to \"Ninja\"`). `bun run check` còn gọi thêm `check:rs` cần cargo, chưa xác minh. Tôi đã thay bằng `bun run check:ts` (đã đo exit 0 ở HEAD) và tách cổng test thành Gate E ghi rõ `NOT RUN — environment blocked`. Cần dạy kèm `brew install ninja` trước bất kỳ lệnh build nào.",
+      "evidence": "`bun run check:ts` exit 0 ở HEAD `84cbac9` (14/14 workspace `check:types` Done, oxfmt sạch 5445 file). Lỗi native addon và ninja đã được xác nhận bằng lệnh thật trên máy này."
+    },
+    {
+      "claim": "Plan không nói gì về `loader-state.js:70` và sáu leaf package `@oh-my-pi/pi-natives-<tag>`.",
+      "verdict": "gap-in-plan",
+      "correction": "Đây là phần thất bại im lặng đắt nhất của W7 và plan bỏ sót nó. `packages/natives/native/loader-state.js:70` gọi `require_.resolve(`@oh-my-pi/pi-natives-${platformTag}/package.json`)`. Sáu tên leaf package này KHÔNG nằm trong repo — chúng được publish lên registry (`.github/workflows/ci.yml:326` chạy `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball`, và :1035 nói rõ 'Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages'). Đổi scope trong loader TRƯỚC khi leaf package tồn tại dưới scope mới ⇒ `require_.resolve` ném ⇒ `catch { return null }` chạy ⇒ loader rơi sang nhánh dự phòng khác, không một lỗi nào được ném, không một test nào đỏ. W7 không tự giải quyết được; cần câu trả lời của open_question Q1 trước khi merge.",
+      "evidence": "`git grep -n 'pi-natives-' -- . ':!bun.lock'` → `.github/workflows/ci.yml:326,1035` và `packages/natives/native/loader-state.js:70`. `git ls-files 'packages/natives*/package.json'` chỉ trả `packages/natives/package.json` — không có manifest leaf package nào trong repo."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m5-specs/W7.spec.json"
+}

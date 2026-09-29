@@ -1,0 +1,275 @@
+{
+  "id": "s4",
+  "title": "Wave 4 — Plugin surface: secret-setting masking, tool-renderer gap pin, working-message sanitization, key-hint strip",
+  "wave": "Sóng 4 — Bề mặt plugin, chờ M2",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/s4.spec.json",
+  "one_line": "Four small plugin-surface fixes: stop a secret plugin setting from painting itself in the enum row, pin the tool-renderer-override gap with a real fixture plugin, sanitize the plugin-supplied working message, and let a plugin contribute a key-hint strip. Three of the four are unblocked today; only the secret-persistence half waits on M2 WI-8a.",
+  "user_visible_effect": "A plugin setting marked `secret: true` no longer shows its value when it is an enum, and no longer repaints the plaintext after you pick a new value. A plugin's working message can no longer punch a tab-shaped hole in the TUI. A plugin can add a keyboard hint to the status row. Separately, a test now proves a plugin CAN override the built-in grep tool renderer today, so a future refactor cannot quietly close that seam without turning CI red.",
+
+  "one_line_why_this_is_the_whole_job": "Wave 4 is four independent seams, not one feature. A4 is split by its own dependency: the display half touches only the TUI overlay and is unblocked; the persistence half rewrites `setPluginSetting` and is blocked on M2 WI-8a, which is rewriting the exact same three methods onto a new Settings substrate. B1, B2 and B3 add no public API — B1 only *pins* an existing gap with a fixture so a refactor cannot silently close it, and B2/B3 are UI-context methods that already exist on `ExtensionUIContext` and are already wired end to end.",
+
+  "files_touched": [
+    {
+      "path": "packages/tui/src/components/settings-list.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "Add an optional `displayValue?: string` to `SettingItem` (interface at :24-43). Make the paint path (:515) and the search corpus (:97) read `item.displayValue ?? item.currentValue`. This is what makes secret masking survive a submenu selection.",
+      "note": "The repaint-on-select leak at :797 (`item.currentValue = selectedValue`) is the reason a build-time-only mask is not enough. The plan never saw this."
+    },
+    {
+      "path": "packages/tui/src/overlays/plugin-settings.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "In `buildPluginConfigItems` (:138-207), set `displayValue: displayValue` (the mask computed at :152) on the enum branch item (:162-182) and on the existing string/number branch item (:183-203).",
+      "note": "Plan said the `secret?: boolean` flag and the enum fix are at :30 and :166. Flag is at :31 AND ALREADY EXISTS. Enum leak is at :167, not :166 (:166 is the `description` line)."
+    },
+    {
+      "path": "packages/coding-agent/test/plugin-settings-secret.test.ts",
+      "action": "create",
+      "verified": false,
+      "change": "New test: enum secret is masked in the rendered row, stays masked after a selection round-trip, and a non-secret enum is unaffected.",
+      "note": "Named by the plan. Lives in coding-agent/test per the plan, but see open_questions #1 — the units under test are all in packages/tui."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/plugins/manager.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "BLOCKED — do not touch in this wave. After M2 WI-8a, `setPluginSetting` (:942-949) must refuse to persist a `secret: true` value verbatim. Today it writes the value as-is and calls `#saveRuntimeConfig` at :948.",
+      "note": "`grep -c secret manager.ts` → 0, confirmed. The manifest already declares the flag at plugins/types.ts:63 and the manager ignores it."
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/tool-renderer-override/index.ts",
+      "action": "create",
+      "verified": false,
+      "change": "Fixture plugin entry. `import { toolRenderers } from \"@oh-my-pi/pi-tui/tools\"` then assign `toolRenderers.grep` a renderer shorter than the built-in `grepToolRenderer`, with both required `renderCall` and `renderResult` members. No package.json needed.",
+      "note": "Must have BOTH renderCall and renderResult (ToolRenderer at tui/src/tools/renderer.ts:71-78); `inline: true` optional. Loaded by PATH via loadExtensions, never by a static import in the test."
+    },
+    {
+      "path": "packages/coding-agent/test/plugin-tool-renderer-override.test.ts",
+      "action": "create",
+      "verified": false,
+      "change": "New test: loads the fixture directory through `loadExtensions`, asserts the override took, plus the three pinned invariants (export map resolves, registry is mutable at runtime, loader remap yields the same module instance).",
+      "note": "Plan is emphatic and correct: the test must not statically import the fixture, or the module-identity assertion becomes a tautology."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/interactive-mode.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "B2 only: sanitize in `setWorkingMessage` (:6645-6660) — run the plugin string through `replaceTabs` and `truncateToWidth` before handing it to `loadingAnimation.setMessage` (:6655) or storing it as `#pendingWorkingMessage` (:6659). Default-restore path at :6646-6651 already works; leave it.",
+      "note": "Plan pointed at :424 for the default; DEFAULT_WORKING_MESSAGE is at :427."
+    },
+    {
+      "path": "packages/coding-agent/test/extension-working-message.test.ts",
+      "action": "create",
+      "verified": false,
+      "change": "New test: a working message containing a real tab and a 500-char string produces output with no tab byte and display width inside the row budget; `undefined` restores the default; setting the same string twice requests one render.",
+      "note": "The `undefined` and dedupe assertions ALREADY PASS today. Only the tab/width assertion is red."
+    },
+    {
+      "path": "packages/tui/src/chrome/keybinding-hints.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "B3: add the hint-strip entry point next to the existing hint helpers `boundKeys` (:33-36) and `appKey` (:44-47).",
+      "note": "Plan said :29 and :42 — both are JSDoc comment lines, not code."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "B3: add the plugin hint field to the `ExtensionUIContext` literal (:120-…), next to `setStatus` at :128 and `setWorkingMessage` at :129. Response path must call `this.ctx.ui.requestRender()` the way `setHookStatus` does at :593.",
+      "note": "Plan said :120 for setWorkingMessage and :586 for requestRender. Actual: :129 and :593."
+    },
+    {
+      "path": "packages/coding-agent/test/extension-status-hint-strip.test.ts",
+      "action": "create",
+      "verified": false,
+      "change": "New test: hint strip names the key and its action in a mode with non-default keys, respects the width ladder, and is absent in RPC / ACP / headless.",
+      "note": "Named by the plan."
+    }
+  ],
+
+  "code_shape": "// packages/tui/src/components/settings-list.ts — the structural fix.\n// `currentValue` today does double duty: it is painted AND round-tripped into\n// submenu()/values.indexOf(). Splitting the painted copy out is what stops a\n// selection from repainting plaintext (see :797).\nexport interface SettingItem {\n  id: string;\n  label: string;\n  description?: string;\n  warning?: string;\n  /** Round-trip value. Fed to submenu() and values.indexOf(); may be secret. */\n  currentValue: string;\n  /** Painted + searched instead of currentValue when set. Use for masked secrets. */\n  displayValue?: string;\n  values?: string[];\n  submenu?: (currentValue: string, done: (selectedValue?: string) => void) => Component;\n  changed?: boolean;\n  heading?: boolean;\n}\n\n// :97  — search must not index the secret either\nexport function getSettingItemFilterText(item: SettingItem): string {\n  let text = `${item.label} ${item.id} ${item.displayValue ?? item.currentValue}`;\n  ...\n}\n\n// :515 — paint path\nconst valuePlain = truncateToWidth(String(item.displayValue ?? item.currentValue ?? \"\"), valueMaxWidth, Ellipsis.Omit);\n\n// packages/tui/src/overlays/plugin-settings.ts — in buildPluginConfigItems only.\n// :152 FROZEN — this stays the single place a secret is masked.\nconst displayValue = schema.secret && currentValue ? \"••••••••\" : String(currentValue ?? \"(not set)\");\n\n// enum branch (:162-182) — add the field, do NOT change currentValue\n} else if (schema.type === \"enum\") {\n  items.push({\n    id: `config:${key}`,\n    label: `  ${key}`,\n    description: schema.description || `Configure ${key}`,\n    currentValue: String(currentValue ?? schema.default ?? \"\"),  // unchanged: round-trip\n    displayValue,                                               // added: painted\n    submenu: (cv, done) => createConfigEnumPanel(key, ..., cv, ...),  // unchanged: preselect still works\n  });\n}\n\n// packages/coding-agent/src/modes/interactive-mode.ts — B2, sanitize at the boundary\nsetWorkingMessage(message?: string): void {\n  if (message === undefined) {\n    this.#pendingWorkingMessage = undefined;\n    if (this.loadingAnimation) this.loadingAnimation.setMessage(DEFAULT_WORKING_MESSAGE);\n    return;\n  }\n  const safe = truncateToWidth(replaceTabs(message), WORKING_MESSAGE_MAX_WIDTH);\n  if (this.loadingAnimation) { this.loadingAnimation.setMessage(safe); return; }\n  this.#pendingWorkingMessage = safe;\n}\n",
+
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "A4-DISPLAY. In `packages/tui/src/components/settings-list.ts`, add `displayValue?: string` to `SettingItem` (interface :24-43). Then change exactly two read sites to `item.displayValue ?? item.currentValue`: the paint at :515 and the search corpus in `getSettingItemFilterText` at :97. Do not touch :795 (submenu round-trip), :797 (reassign on select), :804 (values cycle), or :318 (updateValue) — those must keep reading and writing the real value. This split is the whole fix: it makes the mask survive a selection because :797 reassigns `currentValue`, never `displayValue`.",
+      "anchor": "packages/tui/src/components/settings-list.ts:24-43, :97, :515"
+    },
+    {
+      "n": 2,
+      "instruction": "A4-DISPLAY. In `buildPluginConfigItems`, add `displayValue,` to BOTH the enum branch item and the existing string/number branch item. Leave `currentValue` exactly as it is in both. Do NOT add a `secret?: boolean` field to `PluginSettingSchema` — it already exists at line 31, and the manifest-side flag already exists at `packages/coding-agent/src/extensibility/plugins/types.ts:63`.",
+      "anchor": "packages/tui/src/overlays/plugin-settings.ts:152, :162-182, :183-203"
+    },
+    {
+      "n": 3,
+      "instruction": "A4-DISPLAY. Freeze the three existing protections as regression assertions, do not modify them: the mask at :152, the `empty: \"cancel\"` policy at :669 (NOT :662), and `initialValue: !schema.secret ? currentValue : undefined` at :668. `createConfigInputPanel` has exactly one caller (:190) and `form.ts:296-303` routes an empty submit to `onCancel` before `onSubmit` — that pair is what stops a blank save from blanking a stored secret. Do not refactor the submit path.",
+      "anchor": "packages/tui/src/overlays/plugin-settings.ts:668-669; packages/tui/src/components/form.ts:296-303"
+    },
+    {
+      "n": 4,
+      "instruction": "A4-DISPLAY. Write `packages/coding-agent/test/plugin-settings-secret.test.ts` (see test_contract). Run it. It must be green BEFORE any M2 work — if it needs WI-8a to pass, the split is wrong.",
+      "anchor": "packages/coding-agent/test/plugin-settings-secret.test.ts"
+    },
+    {
+      "n": 5,
+      "instruction": "B1. Create `packages/coding-agent/test/fixtures/tool-renderer-override/index.ts`. It must import `{ toolRenderers }` from `@oh-my-pi/pi-tui/tools` and assign `toolRenderers.grep` a renderer implementing BOTH `renderCall` and `renderResult`, whose result line is distinguishable from the built-in. No `package.json` — with no manifest the loader falls back to `indexNames: [\"index.ts\", \"index.js\"]` at loader.ts:527 via the precedence at directory-resolution.ts:102-110. Assert the override through a real `loadExtensions([dir], cwd)` call, never a static import.",
+      "anchor": "packages/coding-agent/test/fixtures/tool-renderer-override/index.ts"
+    },
+    {
+      "n": 6,
+      "instruction": "B1. Write `packages/coding-agent/test/plugin-tool-renderer-override.test.ts` with the three pinned invariants. CRITICAL: under `bun test`, `USE_BUNDLED_PI_MODULES` (legacy-pi-compat.ts:20) is FALSE, so only the file-namespace source branch at :2736 runs and the virtual-namespace remap at :2742 is dead. Assert module identity through the SOURCE branch. Do NOT set `PI_BUNDLED=1` to force :2742 — the constant is read once at import time and doing so breaks from the first line. Do not grep `packages/tui/package.json` to check the export map; AGENTS.md bans source-grepping. Check it by resolver behavior.",
+      "anchor": "packages/coding-agent/test/plugin-tool-renderer-override.test.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "B2. In `setWorkingMessage` (interactive-mode.ts:6645-6660), sanitize the plugin string with `replaceTabs` then `truncateToWidth` before both sinks (`loadingAnimation.setMessage` at :6655, `#pendingWorkingMessage` at :6659). Take the width budget from `PREVIEW_LIMITS` in `@oh-my-pi/pi-tui`; do not invent a number. Leave the `undefined` branch (:6646-6651) alone — it already restores the default. Do not refactor the sanitizer into a new pass; the constraint is the reason for a test, not a refactor budget.",
+      "anchor": "packages/coding-agent/src/modes/interactive-mode.ts:6645-6660"
+    },
+    {
+      "n": 8,
+      "instruction": "B2. Write `packages/coding-agent/test/extension-working-message.test.ts`. Expect TWO of its three assertions to already pass before step 7: `undefined` restoring the default works today, and the dedupe works today because `loader.ts:145-152` guards `if (message === this.message) return;`. Assert the dedupe at the boundary anyway — it is currently three frames deep in a TUI component, and a future refactor of loader.ts would drop it silently. Only the tab/width assertion should be red before step 7.",
+      "anchor": "packages/coding-agent/test/extension-working-message.test.ts"
+    },
+    {
+      "n": 9,
+      "instruction": "B3. Add the hint-strip entry point to `packages/tui/src/chrome/keybinding-hints.ts` beside `boundKeys` (:33-36) and `appKey` (:44-47). Add the plugin-contributed hint field to the `ExtensionUIContext` literal in `extension-ui-controller.ts` (the object starts at :120; `setStatus` is at :128, `setWorkingMessage` at :129). The response path MUST call `this.ctx.ui.requestRender()` — copy the shape of `setHookStatus` at :591-594, which calls it at :593. Driving only the component will not push a frame and the test will hang.",
+      "anchor": "packages/tui/src/chrome/keybinding-hints.ts:33-47; packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:128-129, :591-594"
+    },
+    {
+      "n": 10,
+      "instruction": "B3. Write `packages/coding-agent/test/extension-status-hint-strip.test.ts`. Cover: a mode with non-default keys (vim normal, or bash input mode) renders the hint naming key and action; the width ladder is respected; and the strip is ABSENT in RPC, ACP and headless. Confirm first that the `status` id is genuinely present in the union — it is, at `packages/tui/src/status-line/schema.ts:4` — but present in NO preset, which is exactly why B3 does not need it and why the plan's 'C1 blocker' is wrong.",
+      "anchor": "packages/coding-agent/test/extension-status-hint-strip.test.ts; packages/tui/src/status-line/schema.ts:4"
+    },
+    {
+      "n": 11,
+      "instruction": "A4-PERSIST — DEFERRED, DO NOT START IN THIS WAVE. After M2 WI-8a lands, `manager.ts` `setPluginSetting` (:942-949) must stop persisting a `secret: true` value verbatim into `omp-plugins.lock.json` via `#saveRuntimeConfig`. Re-derive the anchor then: WI-8a rewrites getPluginSettings (:929), setPluginSetting (:942) and deletePluginSetting (:954) onto a new Settings substrate, so :942-949 WILL NOT BE THE RIGHT LINE. Ship it as its own commit with its own day of budget. Do not fold it into the display half — the plan's total at section 6 counts only the display half.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:942-949 (AFTER WI-8a: re-locate)"
+    }
+  ],
+
+  "test_contract": "Four contracts, one per item, each with a named failure mode.\n\nA4-DISPLAY — 'a plugin setting marked secret never shows its value'. Consumer: a user reading the settings panel. Regression it defends: the mask survives a round-trip. The test builds the settings items for a plugin whose manifest declares an enum setting with `secret: true` and a known value, asserts the painted row contains the mask and not the value, then drives the submenu select callback and asserts the row STILL contains the mask. The second half is the point: a build-time-only mask is red here, because settings-list.ts:797 reassigns `currentValue` on select. Also assert a non-secret enum still shows its value — that is the negative contract proving the mask is conditional, not a blanket '•'. Finally assert the existing protections by driving the string form path with an empty submit and checking the stored secret is byte-unchanged (this passes today; keep it as a regression pin on the `empty: \"cancel\"` + `initialValue: undefined` pair, which is what stops a blank save from erasing a secret).\n\nB1 — 'a plugin can override a built-in tool renderer, and the seam stays open'. Consumer: any plugin author, plus the loader's module-identity guarantee. The test loads the fixture directory by path through `loadExtensions` and asserts `toolRenderers.grep` is the fixture's, not the built-in `grepToolRenderer` (tui/src/tools/grep.ts:241). Then three pinned invariants: (a) `@oh-my-pi/pi-tui/tools` still resolves through the export map, checked by the RESOLVER's behavior and not by reading package.json; (b) the `toolRenderers` record is still extensible at runtime — assign then restore in `afterEach` so this file cannot poison another; (c) the loader remap still hands the plugin-side import the SAME module object the host holds, asserted with `===` on the module object each side receives. The whole mechanism is module identity, so this must run under a real plugin load, not an in-process import — a static import of the fixture would make (c) a tautology.\n\nB2 — 'a plugin working message cannot break TUI layout'. Consumer: every user with a plugin installed. Assert a message containing a real tab and 500 characters renders with no 0x09 byte anywhere in the output and a display width inside the row budget. Assert `undefined` restores the default. Assert setting the same string twice requests one render — this is the anti-cache-thrash gate, and it currently holds only because of a guard inside loader.ts.\n\nB3 — 'a plugin can contribute a key hint, and only in interactive TUI'. Consumer: a user in vim normal mode. Assert the status row names the non-default key and its action; assert the width ladder is respected; assert the strip is ABSENT in RPC, ACP and headless. Absence assertions are load-bearing here, not decorative.",
+
+  "test_files": [
+    "packages/coding-agent/test/plugin-settings-secret.test.ts",
+    "packages/coding-agent/test/plugin-tool-renderer-override.test.ts",
+    "packages/coding-agent/test/extension-working-message.test.ts",
+    "packages/coding-agent/test/extension-status-hint-strip.test.ts",
+    "packages/coding-agent/test/fixtures/tool-renderer-override/index.ts"
+  ],
+
+  "verification": "AVAILABLE TODAY:\n  bun run check:ts\n    Exits 0 on a clean tree (verified at HEAD 808b365, ~5 min wall, dominated by pi-catalog at 292s). This is the ONLY gate that runs in this environment.\n\nBLOCKED TODAY:\n  bun test packages/coding-agent/test/plugin-settings-secret.test.ts \\\n         packages/coding-agent/test/plugin-tool-renderer-override.test.ts \\\n         packages/coding-agent/test/extension-working-message.test.ts \\\n         packages/coding-agent/test/extension-status-hint-strip.test.ts\n    Fails before running a single assertion with:\n      error: Failed to load pi_natives native addon for darwin-arm64.\n    Verified directly. The four test files must still be WRITTEN and their assertions reviewed, but they cannot be executed until `bun run build:native` (or equivalent) produces packages/natives/native/pi_natives.darwin-arm64.node. Do not report this wave as verified on the strength of check:ts alone — check:ts does not run a single assertion.\n\nAFTER the native addon is built, the plan's per-item command collapses to the one above.",
+
+  "gate": "All four items are DONE when, in one commit each: (1) `bun run check:ts` exits 0; (2) the four named test files exist and each defends the contract above; (3) once the addon is built, all four test files pass; (4) for A4 the mask assertion holds BOTH before and after a submenu selection round-trip — a mask that only holds on first render is NOT done; (5) for B1 the three pinned invariants hold through the SOURCE remap branch only, and the fixture is loaded by path rather than statically imported; (6) A4-PERSIST is either shipped against the post-WI-8a write path or explicitly left out of this wave with the deferral recorded in the PR — it must never be silently folded into the display commit.\n\nThe load-bearing half of the wave is item (4). An engineer who masks at build time only will produce a green first-render test and a shipped leak on the second interaction.",
+
+  "gate_can_fail": "Yes. Three of the four gates are genuinely red before the work and green after. (A4) the round-trip assertion is red on a clean tree because settings-list.ts:797 reassigns `currentValue` on select, repainting the plaintext — a build-time-only mask does not turn it green. (B2) the tab-byte assertion is red because setWorkingMessage (:6645-6660) passes the plugin string to `loadingAnimation.setMessage` with zero sanitization. (B3) the hint-strip assertions are red because no such entry point exists. (B1) is the weakest gate and must be treated as such: it pins an already-working mechanism, so it is green before AND after on a clean tree. Its value is purely as a tripwire against a future refactor closing the seam — it cannot fail because of anything done in this wave, and it should not be counted as evidence that B1 accomplished work. The 'static echo' risk is real here and is why the fixture must be loaded by path: a static import would make the module-identity assertion vacuously true.",
+
+  "depends_on": [
+    "M2 WI-8a — BLOCKS A4-PERSIST ONLY (manager.ts:942-949). A4-display, B1, B2 and B3 are unblocked.",
+    "M2 (wave-level) — as the plan states, the boundary between 'M2 gives the plugin system' and 'M2 gives these exact extension points' is not visible from this repo. The one seam that IS visible is status line, and it is not M2's: schema.ts is a closed 27-id union, status-line/index.ts is a 6-line barrel with zero register*, and setStatus is wired end to end. That is why M3-C1 was removed from M3 and B3 is not C1-blocked.",
+    "M2 A8 — for B3's tmux-stub assertion only, the one assertion that proves two items landed in the right order. If A8 has not landed, ship B3 without that single assertion rather than blocking the whole item."
+  ],
+
+  "blocks": [
+    "A4-PERSIST cannot ship until this wave's A4-display half is landed, because the display mask without the persistence fix gives false assurance.",
+    "M4/M5 hand-off debt item #4 — 'should the tool-renderer seam be promoted to a public registerToolRenderer API'. B1 pins the existing gap; it deliberately does NOT forge the API. That decision belongs to M4/M5."
+  ],
+
+  "effort": "~4 days total, deliberately not pooled. A4-display ~1 day and is the cheapest unblock in the wave — do it first, on its own. B1 ~1 day, and the day goes into the three pinned assertions and picking the right remap branch, not into writing code: B1 changes ZERO lines of core. B2 ~1 day. B3 ~1 day, the cheapest of the three M2-blocked items to lift off the schedule. A4-PERSIST is a SEPARATE item worth ~1 day, and the plan's section-6 total counts only the display half — do not merge the two into one schedule box. Do not cut A4-PERSIST's day to pay for anything else in this wave; the plan calls it a real bug on both of its lines.",
+
+  "risk": "The single most likely way to get this wrong is treating A4 as a one-line display fix. `secret?: boolean` already exists in BOTH the TUI schema (plugin-settings.ts:31) and the plugin manifest (plugins/types.ts:63), so there is nothing to add, and the obvious one-line change — mask the enum's `currentValue` at :167 — produces a passing first-render test and a shipped leak, because settings-list.ts:797 reassigns `currentValue` the moment the user picks a value, and the same reassignment also breaks the submenu preselection (createConfigEnumPanel feeds `currentValue` straight into SelectFormField). The mask only holds if it is structural, i.e. a separate painted field that the update path never touches. Second-place risk: on B1, an engineer sets `PI_BUNDLED=1` to exercise the remap at legacy-pi-compat.ts:2742 as the plan's dossier anchor suggests. That constant is read once at import, and under `bun test` the virtual-namespace branch is dead anyway — forcing it breaks from the first line.",
+
+  "open_questions": [
+    "A4-DISPLAY test location. All four units under test live in packages/tui (settings-list.ts, plugin-settings.ts), but the plan names packages/coding-agent/test/plugin-settings-secret.test.ts. The seam is real — buildPluginConfigItems takes a PluginSettingsManager, and a coding-agent test can construct one against a temp dir — so this is a house-style call, not a correctness one. Follow the plan unless packages/tui/test already has a settings-list harness; whichever is chosen, the test must not import the fixture by a path the runtime does not use.",
+    "A4-PERSIST destination, and the plan gets this wrong in a way that costs real time. The plan states the repo has no secret store to fall back to, and infers from a grep for `keytar|keychain|safeStorage|encrypt` that none exists. It does: `~/.omp/agent/secrets.yml` and `<cwd>/.omp/secrets.yml`, loaded at `packages/coding-agent/src/secrets/index.ts:163-168`, backed by SecretObfuscator and a per-install key at `~/.omp/agent/secret-placeholder.key` (secrets/index.ts:16-53), documented at `docs/secrets.md:35-42`. The grep missed it because the store is a YAML file, not a keyring API. So the choice is NOT 'invent somewhere to put it' — it is: route secret plugin settings into secrets.yml, or give the Settings registry a secret-marked tier. A human must pick. The tradeoff is real: settings are typed and validated by the registry, secrets.yml is a separate untyped format, and routing through it means plugin settings stop being validated like everything else. Do not let A4-PERSIST start until this is answered.",
+    "Does A4-PERSIST even want a separate persistence tier, or is encrypt-at-rest the honest answer? secrets.yml is plaintext on disk with reversible placeholders for the MODEL path; it is a redaction system, not a vault. If a plugin secret is an API token, secrets.yml is still plaintext to anything that can read the file. This is a scope question for whoever owns the item, and it is out of scope for this wave.",
+    "B3's tmux-stub assertion (the one that proves A8 ordering) is dropped if A8 has not landed. Confirm with the A8 owner whether to defer the whole item or just that assertion; the plan treats the ordering proof as load-bearing, which argues for deferring."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "`secret?: boolean` at plugin-settings.ts:30 is a thing to add for A4.",
+      "verdict": "WRONG — it already exists",
+      "correction": "The flag is already present at line 31, and the manifest-side flag is already present at packages/coding-agent/src/extensibility/plugins/types.ts:63 (`PluginSettingBase`, documented 'If true, mask value in UI and logs'). There is no schema work in A4-display. The defect is narrower than the plan states: exactly one branch fails to honor the flag.",
+      "evidence": "awk NR>=25&&NR<=35 packages/tui/src/overlays/plugin-settings.ts → 31| secret?: boolean;  — and git grep -n secret -- packages/coding-agent/src/extensibility/plugins/types.ts → 63| secret?: boolean;"
+    },
+    {
+      "claim": "The enum secret bug is at plugin-settings.ts:166.",
+      "verdict": "OFF BY ONE",
+      "correction": "Line 166 is `description: schema.description || \\`Configure ${key}\\``. The unmasked read is line 167: `currentValue: String(currentValue ?? schema.default ?? \"\")`. Point the engineer at 167.",
+      "evidence": "awk NR>=160&&NR<=172 packages/tui/src/overlays/plugin-settings.ts → 166| description: …  167| currentValue: String(currentValue ?? schema.default ?? \"\"),"
+    },
+    {
+      "claim": "plugin-settings.ts:187 is the string branch that already masks correctly — freeze it.",
+      "verdict": "MISLEADING ANCHOR — the invariant is elsewhere",
+      "correction": "Line 187 is another `description:` line. The masking itself happens once, at line 152: `const displayValue = schema.secret && currentValue ? \"••••••••\" : String(currentValue ?? \"(not set)\")`, and is consumed at line 188 (`currentValue: displayValue`). The invariant to freeze is 151-152, not 187.",
+      "evidence": "git grep -n secret -- packages/tui/src/overlays/plugin-settings.ts → 31, 152, 667, 668. Only 152 masks; 188 and 167 are the two consumers, and only 188 consumes the mask."
+    },
+    {
+      "claim": "The `empty: \"cancel\"` policy is at plugin-settings.ts:662.",
+      "verdict": "OFF BY 7",
+      "correction": "It is at line 669, inside `createConfigInputPanel` (:650-…). Line 662 is the `TextFormField` construction. Pair it with line 668 (`initialValue: !schema.secret ? currentValue : undefined`) — the two together, not `empty` alone, are what stop a blank save from erasing a stored secret.",
+      "evidence": "awk NR>=655&&NR<=670 packages/tui/src/overlays/plugin-settings.ts → 667| secret: schema.secret,  668| initialValue: !schema.secret ? currentValue : undefined,  669| empty: \"cancel\","
+    },
+    {
+      "claim": "The repo has no secret store to fall back to, so A4-PERSIST must invent somewhere to put the value.",
+      "verdict": "WRONG — a store exists and the plan's grep missed it",
+      "correction": "There IS one: `~/.omp/agent/secrets.yml` (global) and `<cwd>/.omp/secrets.yml` (project), loaded by `packages/coding-agent/src/secrets/index.ts:163-168`, backed by `SecretObfuscator` and a per-install key at `~/.omp/agent/secret-placeholder.key` (secrets/index.ts:16-53, written mode 0o600 with a create-race guard). Documented at `docs/secrets.md:35-42`. The plan grepped for `keytar|keychain|safeStorage|encrypt` and concluded none existed — but the store is a YAML file, not a keyring API, so the grep returned only unrelated hits. The A4-PERSIST question is therefore NOT 'where do we put it' but 'do we route to secrets.yml, or give the Settings registry a secret-marked tier'. Caveat the plan did not state: secrets.yml is plaintext on disk and is a MODEL-REDACTION system, not a vault, so it does not by itself make a plugin API token safe at rest. See open_questions #2 and #3.",
+      "evidence": "awk NR>=160&&NR<=170 packages/coding-agent/src/secrets/index.ts → 167| const projectPath = path.join(cwd, \".omp\", \"secrets.yml\");  168| const globalPath = path.join(agentDir, \"secrets.yml\");  — and docs/secrets.md:41-42 table rows 'Global | ~/.omp/agent/secrets.yml' / 'Project | <cwd>/.omp/secrets.yml'."
+    },
+    {
+      "claim": "Masking the enum's `currentValue` at build time fixes the leak.",
+      "verdict": "INCOMPLETE — the fix must be structural, and the plan never saw why",
+      "correction": "`SettingItem.currentValue` does double duty: it is painted AND round-tripped. settings-list.ts:797 reassigns `item.currentValue = selectedValue` inside the submenu done-callback, so a build-time mask repaints the plaintext the moment the user picks a value. It also breaks preselection, because createConfigEnumPanel (:624-647) feeds `currentValue` straight into `SelectFormField({ items: values.map(...), currentValue })` — a masked value matches no item. The correct fix is to split the painted copy out: add `displayValue?: string` to `SettingItem` (settings-list.ts:24-43), read `item.displayValue ?? item.currentValue` at the paint site (:515) and the search corpus (:97), and leave :795 / :797 / :804 / :318 reading and writing the real value. This is the one finding in this wave that the plan missed entirely, and it is the difference between a shipped fix and a green test.",
+      "evidence": "packages/tui/src/components/settings-list.ts → 34| currentValue: string;  97| let text = `${item.label} ${item.id} ${item.currentValue}`;  515| const valuePlain = truncateToWidth(String(item.currentValue ?? \"\"), …);  795| this.#submenuComponent = item.submenu(item.currentValue, (selectedValue?: string) => {  797| item.currentValue = selectedValue;  804| const currentIndex = item.values.indexOf(item.currentValue);  — plus packages/tui/src/overlays/plugin-settings.ts:633-638 (createConfigEnumPanel → SelectFormField currentValue)."
+    },
+    {
+      "claim": "B2: 'no core change needed'; sanitizer is the only constraint.",
+      "verdict": "CORRECT on substance, but two of the three planned assertions already pass",
+      "correction": "The gap is real and confirmed: setWorkingMessage (interactive-mode.ts:6645-6660) hands the plugin string straight to `loadingAnimation.setMessage` with no replaceTabs and no truncation. But the plan's other two checks are already green today — `undefined` restores the default at :6646-6651, and the same-string-twice dedupe holds because loader.ts:145-152 guards `if (message === this.message) return;`. Keep both assertions anyway, but know that only the tab/width assertion is red before the fix, and that the dedupe currently depends on a guard three frames below the plugin boundary. `setWorkingMessage` is at :6645, not the :424 the plan gives for DEFAULT_WORKING_MESSAGE (that constant is at :427).",
+      "evidence": "awk NR>=6640&&NR<=6680 packages/coding-agent/src/modes/interactive-mode.ts → 6645| setWorkingMessage(message?: string): void {  6647| this.#pendingWorkingMessage = undefined;  6649| this.loadingAnimation.setMessage(DEFAULT_WORKING_MESSAGE);  6655| this.loadingAnimation.setMessage(message);  6659| this.#pendingWorkingMessage = message;  427| const DEFAULT_WORKING_MESSAGE = \"Working…\";  — and packages/tui/src/components/loader.ts:145-152 (the dedupe guard)."
+    },
+    {
+      "claim": "extension-ui-controller.ts:120 is the setWorkingMessage tap, :119 is setStatus, :586 is where requestRender lives.",
+      "verdict": "ALL THREE OFF",
+      "correction": ":120 is `const uiContext: ExtensionUIContext = {` (the object literal opens there). The setWorkingMessage wiring is at :129 and setStatus at :128. requestRender is not at :586 — :586 closes `showToolError`; the real call is `this.ctx.ui.requestRender()` at :593 inside `setHookStatus` (:591-594). The plan's warning that requestRender lives in the controller and not in StatusLineComponent is CORRECT and is the trap that hangs a B3 test; just point at :593.",
+      "evidence": "awk NR>=110&&NR<=130 → 120| const uiContext: ExtensionUIContext = {  128| setStatus: (key, text) => this.setHookStatus(key, text),  129| setWorkingMessage: message => this.ctx.setWorkingMessage(message), ;  awk NR>=575&&NR<=595 → 586| }  591| setHookStatus(key: string, text: string | undefined): void {  593| this.ctx.ui.requestRender();"
+    },
+    {
+      "claim": "`ExtensionUIContext` is at extensions/types.ts:100-340.",
+      "verdict": "WRONG RANGE",
+      "correction": "`export interface ExtensionUIContext` is at line 235 and the interface closes at line 350. Lines 96-130 are the type-only import block above it. A 100-340 range points an engineer at imports and cuts off the interface's tail.",
+      "evidence": "git grep -n 'interface ExtensionUIContext' -- packages/coding-agent/src → packages/coding-agent/src/extensibility/extensions/types.ts:235;  and awk NR>=330&&NR<=350 → 350| } (closing brace of the interface)."
+    },
+    {
+      "claim": "Dossier anchor correction: `legacy-pi-compat.ts:2657` is resolveLegacyPiSpecifier, `:2736` is the onResolve filter, the real remap is `:2742`.",
+      "verdict": "VERIFIED CORRECT — carry it forward",
+      "correction": "All three confirmed at HEAD. Also confirmed the practical consequence the plan draws: `USE_BUNDLED_PI_MODULES` at :20 is `isCompiledBinary() || Boolean(process.env.PI_BUNDLED)`, false under `bun test`, so the :2736 file-namespace source branch is the only one that runs and :2742's virtual-namespace remap is dead in tests. One adjacent nit: the plan's `:2752-2754` for the bundled-host remap points at the tail of the onResolve; the onLoad that backs it is at :2753-2756.",
+      "evidence": "awk NR>=2728&&NR<=2760 → 2736| build.onResolve({ filter: LEGACY_PI_SPECIFIER_FILTER, namespace: \"file\" }, resolveLegacyPiSpecifier);  2742| resolveBundledVirtualSpecifier(args.path, BUNDLED_HOST_NAMESPACE),  2753| build.onLoad({ filter: /.*/, namespace: BUNDLED_HOST_NAMESPACE }, …;  awk NR>=15&&NR<=25 → 20| const USE_BUNDLED_PI_MODULES = isCompiledBinary() || Boolean(process.env.PI_BUNDLED);  awk NR>=2650&&NR<=2665 → 2657| function resolveLegacyPiSpecifier(…"
+    },
+    {
+      "claim": "The TUI export map `./*` → `./src/*.ts` lives at packages/tui/package.json:93-96.",
+      "verdict": "OFF BY ONE",
+      "correction": "It is at :94-97. Same for `./tools` at :86-89 and `./status-line` at :90-93, which the B1 fixture import depends on.",
+      "evidence": "awk NR>=85&&NR<=105 packages/tui/package.json → 94| \"./*\": {  95| \"types\": \"./src/*.ts\",  96| \"import\": \"./src/*.ts\"  97| },"
+    },
+    {
+      "claim": "B3 is blocked on the `status` id being absent from the preset.",
+      "verdict": "CORRECT but sharper than stated",
+      "correction": "Both halves check out and the conclusion (B3 is not C1-blocked) is right. Sharpen it: the id `status` IS in the closed union at `packages/tui/src/status-line/schema.ts:4`, and is absent from every preset's left/right segment list in presets.ts (:5, :16, :26, :36, :59). So `setHookStatus` is fully wired in code (component.ts:959-970) and merely unreachable by default. component.ts:963 already has an equality guard (`if (this.#hookStatuses.get(key) === text) return;`) and :969 invalidates the render cache. Also confirmed: `status-line/index.ts` is a 6-line barrel with zero `register*`, so the registration seam genuinely is not M2's to give.",
+      "evidence": "awk NR<=30 packages/tui/src/status-line/schema.ts → 4| \"status\", (27 ids total, 2-30);  git grep -c '\"status\"' -- packages/tui/src/status-line/presets.ts → 0;  awk NR>=955&&NR<=970 packages/tui/src/status-line/component.ts → 959| setHookStatus(  963| if (this.#hookStatuses.get(key) === text) return;  969| this.#invalidateStatusLineRenderCache();"
+    },
+    {
+      "claim": "keybinding-hints.ts:29 and :42 are the two hint sites B3 touches.",
+      "verdict": "BOTH POINT AT JSDoc, NOT CODE",
+      "correction": "Line 29 is inside the doc comment for `boundKeys`; line 42 is inside the doc comment for `appKey`. The functions themselves are `boundKeys` at :33-36 and `appKey` at :44-47. An engineer editing 'line 29' edits a comment and gets a no-op that still typechecks.",
+      "evidence": "awk '{printf \"%d| %s\\n\", NR, $0}' packages/tui/src/chrome/keybinding-hints.ts → 29| * Keys bound to `action`, or `fallback` …  33| export function boundKeys(…  42| /** Primary key bound to an app action …  44| export function appKey(…"
+    },
+    {
+      "claim": "Status-line is not M2's seam, so M3-C1 was correctly removed from M3 and wave 4 is gated on M2.",
+      "verdict": "VERIFIED — the wave-level framing is sound",
+      "correction": "Confirmed independently. The status-line surface is a closed 27-id union (schema.ts:2-30), the barrel has no `register*`, and `setStatus` is wired end to end (extension-ui-controller.ts:128 → :591-594 → component.ts:959-970). The one thing to carry forward as a live correction rather than a settled fact: A4 is NOT uniformly M2-blocked. Its display half is unblocked and is the cheapest unblock in the wave. Reading the wave header alone and deferring all four items would cost a day of avoidable waiting — which is why the plan flagged A4 as the exception.",
+      "evidence": "awk NR<=35 packages/tui/src/status-line/schema.ts → 2| export const STATUS_LINE_SEGMENT_IDS = [ … 30| ] as const;  ;  cat packages/tui/src/status-line/index.ts → 6 star re-exports, no register*;  git grep -n setHookStatus -- packages/tui/src → packages/tui/src/status-line/component.ts:959 only."
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+[
+ {
+  "severity": "blocking",
+  "location": "00-front.md:79-80 (mục \"Không làm gì\"), mâu thuẫn với 00-front.md:43-44 và :94-97",
+  "claim": "\"Không thêm cổng `bun test` cho **hai mục bối cảnh**\" — một mục trong danh sách lệnh cấm của chính tài liệu này.",
+  "why_wrong": "Mục bối cảnh thứ nhất CHÍNH LÀ ctx1, và cổng load-bearing của nó là hai file test. Cùng tài liệu này nói ngược ở hai chỗ khác, và light.json xác nhận phe đúng: ctx1.gate (2) = \"Both new test files pass once the addon is built. (2) is the leg that matters; without it this item is a doc with aspirations\" — tức cổng đỏ được của ctx1 CHÍNH LÀ hai file test đó. Đọc mục 79 như một luật cứng, người đọc sẽ bỏ `status-line-segment-closure.test.ts` và `status-line-segment-picker.test.ts`, biến ctx1 thành đúng cái \"tài liệu có tham vọng\" mà dòng 95-96 cảnh báo. Đây là lỗi nguy hiểm nhất của tài liệu vì nó nằm trong danh sách cấm.",
+  "evidence": "00-front.md:79-80: \"**Không thêm cổng `bun test` cho hai mục bối cảnh.** ctx2 nói thẳng: không có hành vi runtime ở đó để bảo vệ, và một test chiếm chỗ sẽ vi phạm AGENTS.md.\" — nhưng 00-front.md:43-44: \"mục bối cảnh ctx1 biến chúng thành hai test (`status-line-segment-closure.test.ts` và `status-line-segment-picker.test.ts`) để đỏ nếu có ai đó mở nửa seam về sau\", và 00-front.md:95-96: \"Với ctx1, người viết nói thẳng: không có nó thì mục đó chỉ là một tài liệu có tham vọng\". light.json ctx1.gate (2): \"Both new test files pass once the addon is built. (2) is the leg that matters; without it this item is a doc with aspirations.\" Cả hai file test hiện đều chưa tồn tại: `[ -e packages/tui/test/status-line-segment-closure.test.ts ]` -> absent; `[ -e packages/coding-agent/test/status-line-segment-picker.test.ts ]` -> absent. Lý do light.json nêu (ctx2.gate) chỉ áp dụng cho ctx2, không áp dụng cho ctx1.",
+  "fix": "Thay dòng 79-80 bằng: \"- **Không thêm cổng `bun test` cho ctx2.** ctx2 nói thẳng: không có hành vi runtime ở đó để bảo vệ, và một test chiếm chỗ sẽ vi phạm AGENTS.md. (ctx1 thì ngược lại: chính nó là cổng — xem dòng trên.)\"",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "major",
+  "location": "00-front.md:89-90",
+  "claim": "\"đo tại HEAD 808b365: exit 0, cả **12** package type-check Done\"",
+  "why_wrong": "Con số 12 sai. Đây là bằng chứng duy nhất mà §\"Điều kiện tiên quyết\" dùng để chứng minh \"check:ts chạy xanh mà không cần addon\" (phần đúng), nên một người review đối chiếu sẽ tưởng phần đo đã cũ và mất niềm tin vào toàn bộ mục bối cảnh. Đáng chú ý: chính plan cũng ghi 15, còn 00-front ghi 12 — hai văn bản cùng nói về một lần đo ở 808b365 mà không khớp nhau.",
+  "evidence": "Chạy thật: `bun run check:ts` -> EXIT=0, `grep -c \"check:types .*Done\"` = **16**. Đối chiếu độc lập: 16 package khai báo script `check:types` (`for p in packages/*/package.json; do jq -e '.scripts[\"check:types\"]' \"$p\"; done | wc -l` = 16). Plan tự ghi 15 ở bốn dòng (COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:6201, :7351, :8373, :8393 — \"đã chạy trên HEAD 808b365: cả 15 package Done, exit 0\"), cũng sai so với 16. Vì `git diff --name-only 808b365..HEAD` chỉ trả về 2 file .md, số package không thể đã đổi giữa hai commit — nên 12 sai ngay tại thời điểm nó được ghi.",
+  "fix": "Thay \"đo tại HEAD 808b365: exit 0, cả 12 package type-check Done\" bằng: \"đo lại tại HEAD e040a60: exit 0, cả 16 package type-check Done\" (hoặc bỏ hẳn con số: \"đo tại HEAD: exit 0, mọi package type-check đều Done\" — con số này bay hơi theo thêm/bớt package và không mang hợp đồng nào).",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "major",
+  "location": "00-front.md:90 và 00-front.md:198",
+  "claim": "Dấu baseline \"HEAD 808b365\" dùng hai lần (:90 cho phép đo check:ts, :198 cho Q6 chưa trả lời) — 808b365 không còn là HEAD.",
+  "why_wrong": "Tài liệu tự dán nhãn mọi phép đo của mình bằng một commit đã bị đẩy lùi 2 bước, và file mà các spec neo theo số dòng đã dài thêm 1507 dòng kể từ đó. Hệ quả cụ thể: các khoảng số dòng trong plan mà s1/s2/s3 trích dẫn đã chết — chúng giờ trỏ vào nội dung M1/M2. Tệ hơn, 00-front.md:101-103 và :227-229 đã tự nhận ra đúng lớp trôi neo này (\"mọi mục trích dẫn neo §1–§2 thừa hưởng cùng một lớp trôi neo đó\", \"đừng chép neo từ văn xuôi của kế hoạch\") nhưng lại không ghim lại baseline của chính nó.",
+  "evidence": "`git rev-parse --short HEAD` = **e040a60**, không phải 808b365. `git diff --name-only 808b365..HEAD` = COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md, MILESTONE_2_EXECUTION_PLAN.md. `wc -l COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` = 11741 ở HEAD so với 10234 ở 808b365. light.json s2.wave ghim \"plan lines 7294-7346\" (sóng 2) và s3.wave ghim \"plan lines 7347-7360\" (sóng 3); s1.blocks ghim \"The item at plan:7401-7405\". Kiểm chứng ở HEAD: `sed -n '7294,7296p;7345,7347p'` -> nội dung bảng corrections của M2 (\"gate_can_fail: true\", \"| `types.ts:1806-1816` ... STALE-LINE\"); `sed -n '7399,7406p'` -> mục 4-6 về capability registry của M2. Sóng M3 thật sự nằm ở: `grep -nE \"^### Sóng [1-6]\" COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` -> 8749 / 8801 / 8854 / 8868 / 8917 / 8956.",
+  "fix": "Thay cả hai chỗ. Ở :90 dùng: \"không cần addon (đo lại tại HEAD e040a60: exit 0, cả 16 package type-check Done)\". Ở :198 dùng: \"| Q6 | Câu hỏi niềm tin cho C2 — chưa ai trả lời tại HEAD e040a60 | C2 (D2 không chặn) |\". Và thêm một dòng ngay sau bảng \"Thứ tự thực hiện\": \"**Ghim lại baseline.** Các neo số dòng trong đặc tả (`plan lines 7294-7346`, `7347-7360`, `plan:7401-7405`) được chốt ở 808b365; ở HEAD e040a60 file plan đã dài 10234 -> 11741 dòng và sóng M3 đã dời sang 8749/8801/8854/8868/8917/8956. Phải chạy lại lệnh trước khi dùng.\"",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "major",
+  "location": "00-front.md:108-110",
+  "claim": "\"Cổng P0/P1 là loại **duy nhất** không thể đỏ.\"",
+  "why_wrong": "Đây chính là câu trả lời của tài liệu cho câu hỏi quan trọng nhất (\"cổng có thực sự đỏ được không\"), và nó đang trả lời quá lạc quan. light.json tự thừa nhận ít nhất bốn chân cổng nữa không đỏ được, trong đó có chân mà chính §\"Điều kiện tiên quyết\" của 00-front.md (:94-97) đã nói là không thay thế được. Một người audit độ tin cậy của kế hoạch sẽ kết luận sai rằng chỉ có 2 quyết định của con người là không kiểm chứng được, và sẽ tin quá nhiều vào ctx1/s2/s4.",
+  "evidence": "light.json ctx1.gate_can_fail: \"The honest weakness: leg (3), the doc, cannot fail automatically. A stale line number in prose produces no red anywhere\". light.json s2.gate_can_fail (g): \"(g) cannot be automated at all, which is why it is a gate rather than a step\" — và s2.gate (a) là bảng đo ba số thật cho từng terminal, cũng không tự đỏ. light.json s4.gate (6): \"A4-PERSIST is either shipped ... or explicitly left out of this wave with the deferral recorded in the PR\" — kiểm tra lúc review PR. light.json tail1.gate (5): lưới ký §8.6 — một quyết định ký tay. Ngoài ra light.json ctx1.gate_can_fail còn tự mâu thuẫn: mô tả union<->registry/silent-drop/picker là \"a genuine two-source cross-check ... produces a concrete diff\" trong khi ctx1 nội bộ nó chỉ có HAI file test — closure.test.ts và picker.test.ts.",
+  "fix": "Thay dòng 108-110 bằng: \"- **P0/P1 không phải là loại duy nhất không thể đỏ.** Chúng là quyết định của con người, không phải code, và một câu trả lời chưa ghi lại trông y hệt một câu trả lời đã ghi lại cho tới khi ai đó mở đặc tả ra kiểm. Ba chân cổng nữa cũng không tự đỏ và cần nói thẳng: chân (3) của ctx1 (tài liệu — số dòng sai trong văn xuôi không báo đỏ ở đâu cả), cổng (a)+(g) của s2 (bảng đo thật + hai câu hỏi người), và cổng (6) của s4 (kiểm tra lúc review PR). Đó là lý do tail2 đòi một hàng trong §10 có người phụ trách và hạn chót — và vì sao ctx1 được giao hai file test: để các bất biến load-bearing nằm trong phần chạy được, không nằm trong phần văn xuôi.\"",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "major",
+  "location": "00-front.md:13-29 (\"## Mục tiêu\") so với 00-front.md:31-32",
+  "claim": "\"## Mục tiêu\" liệt kê 6 lời hứa người-dùng-thấy, phủ sóng 1, 2, 3, 4 và 6 — **không có sóng 5**.",
+  "why_wrong": "light.json có ĐÚNG 6 spec có `user_visible_effect` thật (s1, s2, s3, s4, s5, s6) và 4 spec \"none — internal\". 00-front.md tự nói \"bốn trong mười mục ... thuần nội bộ\" — nghĩa là 6 mục còn lại là người dùng thấy được — nhưng Mục tiêu chỉ phủ 5. Người đọc Mục tiêu sẽ không bao giờ biết M3 ship một segment status-line mới (`cache_hit_rate`) và một hàng status do lệnh shell của chính người dùng, tức là hai thứ M3 thực sự giao. Với người đọc đang quyết định duyệt milestone, đây là thiếu sót làm sai thứ tự ưu tiên.",
+  "evidence": "light.json: `jq '[.[] | select(.user_visible_effect | test(\"none\"))] | length'` = 4 → user-visible = 10-4 = **6** spec. s5.user_visible_effect: \"C2: after `omp plugin link` plus flipping its `enabled` setting to true, the stdout of the user's own command appears once in the status row on each documented trigger; with the setting absent or false the status row is byte-identical to a session where the plugin was never loaded.\"; s5.one_line nêu D2 là \"`cache_hit_rate` segment that reports the same hit percentage the existing `cache_hit` segment already computes\". Cả hai đều là giao hàng người dùng thấy. 00-front.md:31-32 tự đếm \"bốn trong mười mục\" nội bộ, hàm ý 6 mục còn lại có hậu quả nhìn thấy — nhưng 6 gạch đầu dòng Mục tiêu chỉ map về 5 sóng (sóng 2 chiếm 2 gạch).",
+  "fix": "Chèn thêm một gạch đầu dòng vào §Mục tiêu, sau gạch về MCP (để thứ tự theo sóng): \"- **Hai hàng trạng thái mới từ plugin và quota.** D2 thêm segment `cache_hit_rate` báo đúng tỉ lệ hit mà `cache_hit` đã tính (không countdown, không nhãn TTL); C2 là plugin mẫu chạy lệnh shell của chính người dùng — **ship nhưng tắt mặc định**, nên thiếu `enabled` hoặc `enabled: false` đều cho hàng status byte-identical với phiên chưa từng load plugin. C2 được phép trượt nếu Q6 chưa có câu trả lời; D2 thì không.\" Và sửa :31-32 cho khớp: \"bốn trong mười mục của kế hoạch (hai mục bối cảnh, §7–§8, §9–§11) thuần nội bộ — chúng không thêm gì cho người dùng, chúng làm cho sáu mục còn lại đáng tin.\"",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "minor",
+  "location": "00-front.md:56",
+  "claim": "\"...nằm trong `mcp/types.ts`, `mcp/client.ts`, `mcp/manager.ts` cùng **ba** chính sách per-mode (interactive / ACP / RPC / headless)\"",
+  "why_wrong": "Đếm \"ba\" rồi liệt kê bốn. Người đọc sẽ không biết chính sách thứ tư có nằm trong commit không chia hay không — đây lại đúng cái câu hỏi mà sóng 3 cảnh báo là không được chia.",
+  "evidence": "00-front.md:56 liệt kê 4 chính sách trong ngoặc. light.json s3.effort: \"the per-mode policy for interactive / ACP / RPC / headless\" — cũng 4. light.json s3.files có 3 file chế độ (modes/interactive-mode.ts, modes/acp/acp-agent.ts, modes/rpc/rpc-mode.ts); headless không có file riêng, nên \"ba\" có thể là ám chỉ 3 file — nhưng văn bản viết \"ba chính sách\" chứ không phải \"ba file\".",
+  "fix": "Thay \"ba chính sách per-mode\" bằng: \"bốn chính sách per-mode (interactive / ACP / RPC / headless — headless không có file riêng nhưng vẫn phải trả lời, và câu trả lời của nó nằm trong commit không chia)\".",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "minor",
+  "location": "00-front.md:110",
+  "claim": "\"Đó là lý do **ctx2/tail2** đòi một hàng trong §10 có người phụ trách và hạn chót.\"",
+  "why_wrong": "Gán yêu cầu cho ctx2, một mục mà light.json nói rõ không có phụ thuộc nào và không có hàng §10 nào. Cụm \"ctx2/tail2\" trông như một đường dẫn nên càng dễ đọc nhầm thành một mục.",
+  "evidence": "light.json ctx2.depends_on = [] (rỗng), ctx2.gate và ctx2.gate_can_fail không nhắc §10, tên người phụ trách hay hạn chót. Yêu cầu này nằm ở light.json tail2.gate: \"§10's table must contain a row for P0 and a row for P1 with a named owner and a deadline before A1 starts\".",
+  "fix": "Thay \"ctx2/tail2\" bằng: \"tail2\" (và giữ nguyên phần sau).",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "minor",
+  "location": "00-front.md:150",
+  "claim": "\"`packages/coding-agent/test/interactive-mode-status.test.ts` phải xanh **không sửa**\"",
+  "why_wrong": "\"không sửa\" mạnh hơn hợp đồng mà light.json đặt ra. light.json nói file này được SỬA, chỉ là các khẳng định sẵn có không được đổi. Người đọc hiểu đúng nghĩa đen sẽ bị cấm thêm khẳng định RENDER-LOCATION (cổng (d) của s2) vào đúng file mà light.json dành cho nó.",
+  "evidence": "light.json s2.files ghi \"packages/coding-agent/test/interactive-mode-status.test.ts [modify,verified]\" — tức là file nằm trong danh sách sửa. light.json s2.gate (e) phát biểu hẹp hơn nhiều: \"passes UNCHANGED in its existing assertions (the `toHaveLength(2)` / `toHaveLength(5)` cases). If A7 had to edit those, the unkeyed branch's behavior changed\".",
+  "fix": "Thay \"phải xanh **không sửa**\" bằng: \"phải xanh với các khẳng định sẵn có của nó **không bị sửa** (`toHaveLength(2)` / `toHaveLength(5)`); file vẫn được phép thêm khẳng định mới\".",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ },
+ {
+  "severity": "minor",
+  "location": "00-front.md:7-8 so với 00-front.md:31 và :127",
+  "claim": "Header liệt kê: \"16 work item ... trong 6 sóng, hai mục bối cảnh chạy trước sóng 1, và phần đuôi **§7–§8**\" — bỏ sót §9–§11.",
+  "why_wrong": "Header vì vậy liệt kê 9 mục (6+2+1) trong khi tài liệu ngay dòng 31 nói \"mười mục\" và dòng 127 có thêm hàng `tail2 §9–§11`. Người đọc đếm mục kế hoạch sẽ ra 9 và tưởng thiếu một mục.",
+  "evidence": "00-front.md:7-8: \"Milestone gồm 16 work item (A1–A9, B1–B3, C2, D1–D3) trong 6 sóng, hai mục bối cảnh chạy trước sóng 1, và phần đuôi §7–§8.\" Đếm: 6+2+1 = 9. 00-front.md:31: \"bốn trong **mười** mục của kế hoạch (hai mục bối cảnh, §7–§8, §9–§11)\"; 00-front.md:127 có hàng \"tail2 §9–§11\". light.json xác nhận 10 spec: `jq length` = 10, wave_tag gồm \"1\"..\"6\" cộng \"Bối cảnh (trước sóng 1)\" ×2 cộng \"7-8 (đuôi)\" và \"9-11 (back matter)\".",
+  "fix": "Thay \"và phần đuôi §7–§8\" ở dòng 8 bằng: \"và phần đuôi §7–§8 cùng §9–§11\".",
+  "file": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-md/00-front.md"
+ }
+]

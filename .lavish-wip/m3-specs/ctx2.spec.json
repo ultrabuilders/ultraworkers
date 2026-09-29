@@ -1,0 +1,227 @@
+{
+  "id": "ctx2",
+  "title": "§3–5 verified anchor ledger — inverted value, component map, and the seven core openings",
+  "wave": "context (pre-wave) — read by all 16 M3 work items before any is scheduled",
+  "one_line": "Re-verify every file:line the plan cites in M3 §3, §4 and §5 against the real tree, and hand the implementer a corrected anchor table so no one loses an hour to a stale line.",
+  "user_visible_effect": "none — internal",
+  "files_touched": [
+    {
+      "path": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md",
+      "action": "modify",
+      "change": "Read-only source of §3 (line 7114), §4 (7145-7178), §4.1 (7180-7183), §5 (7185-7241). NOT edited by this item — the corrections below are the authoritative form; folding them back into the plan is a separate, later step.",
+      "verified": true,
+      "note": "Confirmed line 7042 is `# MILESTONE 3`, not milestone 2 as the task text claims. `grep -n '^# MILESTONE'` returns only 291 (M1), 7042 (M3), 9057 (M6)."
+    },
+    {
+      "path": ".lavish-wip/m3-specs/ctx2.spec.json",
+      "action": "create",
+      "change": "This document — the corrected anchor ledger and the fail-able re-verification gate.",
+      "verified": true,
+      "note": "Sibling dir of m2-specs/ which already holds 14 WI-N.spec.json files in this exact shape."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Read plan lines 7044-7241 to get the M3 wave framing plus §3/§4/§4.1/§5 in one pass. Do NOT read the file whole — it is 1.1 MB.",
+      "anchor": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7044-7241"
+    },
+    {
+      "n": 2,
+      "instruction": "Confirm the real HEAD before trusting any '@ HEAD 5873776' claim in the plan. `git rev-parse HEAD` returns 808b365, and `git branch --show-current` returns milestone-1. Treat every plan-relative line number as unverified until reproduced.",
+      "anchor": "git rev-parse HEAD"
+    },
+    {
+      "n": 3,
+      "instruction": "Verify the §2 premise that no plugin can reach the renderer: assert `toolRenderers` is a writable non-frozen record at tools/index.ts:35, that the `./*` export map resolves to `./src/*.ts`, and that the status-line barrel exports no `register*`. All three confirmed — `grep -rn register packages/tui/src/status-line/` returns zero hits.",
+      "anchor": "packages/tui/src/tools/index.ts:35"
+    },
+    {
+      "n": 4,
+      "instruction": "Verify the frozen status-line catalog: count 27 ids in STATUS_LINE_SEGMENT_IDS, confirm `status` is index 1 and `usage` index 23, and confirm CUSTOM_STATUS_LINE_DEFAULTS (schema.ts:36-42) contains neither. All three confirmed by reading schema.ts:1-42.",
+      "anchor": "packages/tui/src/status-line/schema.ts:1-42"
+    },
+    {
+      "n": 5,
+      "instruction": "Read all seven presets in full and record which ids appear. Confirmed: no preset contains `usage`, and no preset contains `status` either — which is the whole basis of the §4.1 width-ladder hazard.",
+      "anchor": "packages/tui/src/status-line/presets.ts:5,16,26,36,59,84,96"
+    },
+    {
+      "n": 6,
+      "instruction": "Verify the §3 inverted-value rows one at a time, recording for each: claim / verdict / corrected line. Roughly half the plan's line numbers are off by 1-5; two are off by 28-50; three substantive claims (ctrl+o site count, keyHint caller count, colorblind schema keys) are outright wrong. Do not carry any of them forward unverified.",
+      "anchor": "packages/tui/src/status-line/segments.ts:864-913"
+    },
+    {
+      "n": 7,
+      "instruction": "Verify the O1 evidence claim by reading the existing test, not the plan's summary of it. The proof that hook statuses render without a `status` segment id is `makeComponent({ showHookStatus: true })` (no segment list) asserting two hook-status lines at width 8.",
+      "anchor": "packages/coding-agent/test/status-line-settings-cache.test.ts:374-381"
+    },
+    {
+      "n": 8,
+      "instruction": "Verify the §4.1 harness claim: all three files exist, and packages/tui/package.json declares no dependency on @oh-my-pi/pi-coding-agent, so a StatusLineComponent test genuinely cannot live in packages/tui/test/. Confirmed — deps are omptype / pi-agent-core / pi-ai / pi-catalog / pi-natives / pi-utils / pi-wire / snapcompact.",
+      "anchor": "packages/coding-agent/test/helpers/status-line.ts:6"
+    },
+    {
+      "n": 9,
+      "instruction": "Verify the §4 component map's three 'must build' rows that carry real risk — mouse wheel (mouse.ts:39/46/74/87), MCP request switch (manager.ts:1032-1040 + client.ts:101-103 capabilities), and the form classes (form.ts:104/270/352). All anchors confirmed; the manager switch really does throw -32601 on the default branch.",
+      "anchor": "packages/coding-agent/src/mcp/manager.ts:1039"
+    },
+    {
+      "n": 10,
+      "instruction": "Verify the O5 locked seam. Confirm all three consumption sites live in packages/tui (read-tool-group.ts:59, chat-transcript-builder.ts:443, :507) and that no read-collapse predicate exists anywhere yet. Also check the alternative the plan did not mention: getTool is ALREADY in ChatTranscriptBuilderDeps at :67 and used at :475, so the builder can already resolve an AgentTool by name.",
+      "anchor": "packages/tui/src/chat/chat-transcript-builder.ts:65-77"
+    },
+    {
+      "n": 11,
+      "instruction": "Verify the §5.1 core-surface accounting: 7 surfaces, 5 with no plausible registration seam, A6 the only injection point with an owner, A9 deliberately absent. Then verify the negative claims that make them credible — keybinding-hints.ts, keybindings.ts and app-keybindings.ts each contain 0 occurrences of 'tmux'.",
+      "anchor": "packages/tui/src/chrome/keybinding-hints.ts:57,70,78"
+    },
+    {
+      "n": 12,
+      "instruction": "Run the gate (see verification): ~45 anchor assertions. Every assertion must pass. Any failure means the tree moved under this spec and the ledger must be refreshed before any M3 work item is scheduled.",
+      "anchor": ".lavish-wip/m3-specs/ctx2.spec.json"
+    }
+  ],
+  "code_shape": "",
+  "test_contract": "This is a context item, so there is no runtime contract and no test file to add — inventing one would violate AGENTS.md's ban on placeholder tests. The contract is different in kind: every anchor in this ledger must be REPRODUCIBLE by a real command, and the gate is a re-runnable assertion script (below) that exits non-zero if any anchor drifts.\n\nThe consumer is a human engineer on Monday who will type the plan's line numbers into an editor. If a line number in this ledger is wrong, they open the wrong function and spend ~an hour before noticing. If the gate is not fail-able, a wrong ledger looks exactly like a right one. That is the whole reason the gate below exists and the reason it is stated as executable assertions rather than prose.\n\nWhat the engineer sees if this item regresses: they edit `extension-ui-controller.ts:148` expecting `setHeader` and land in the middle of `setTheme`; they add `usage` to `presets.ts` and cannot find `toolRenderers`; they chase '6 ctrl+o sites' and find 22, and assume the tree is broken rather than the plan.",
+  "test_files": [
+    "packages/coding-agent/test/status-line-overflow.test.ts",
+    "packages/coding-agent/test/status-line-settings-cache.test.ts",
+    "packages/coding-agent/test/helpers/status-line.ts"
+  ],
+  "verification": "Environment, verified on 2026-09-27 at HEAD 808b365 on branch milestone-1:\n\n  bun test packages/coding-agent/test/status-line-overflow.test.ts\n    -> 0 pass / 1 fail / 1 error. 'Failed to load pi_natives native addon for darwin-arm64'.\n    => bun test IS BLOCKED. Do not gate M3 work on it until `bun --cwd=packages/natives run build` succeeds.\n\n  bun run --filter './packages/tui' --if-present check:types\n    -> '@oh-my-pi/pi-tui check:types: Exited with code 0'. The substitute gate WORKS without the addon.\n\nTHE GATE — paste this block into a file and run it with bash or zsh.\nMust print 60 OK / 0 FAIL and exit 0.\n\n```sh\ncd /Users/tranquangdang21/Projects/ultraworkers\nfail=0\na(){ if [ \"$2\" = \"$3\" ]; then echo \"OK   $1\"; else echo \"FAIL $1: want '$3' got '$2'\"; fail=$((fail+1)); fi; }\na tui.ts:949          \"$(sed -n '949p' packages/tui/src/tui.ts | grep -c 'setFrameProvider(provider')\" 1\na composer.ts:302     \"$(sed -n '302p' packages/tui/src/prompt/composer.ts | grep -c 'this.ui.setFrameProvider(this)')\" 1\na frameprovider-calls \"$(grep -rn 'setFrameProvider' packages/ | grep -v '/test/' | wc -l | tr -d ' ')\" 2\na frameprovider-tests \"$(grep -rn 'setFrameProvider' packages/ | grep '/test/' | wc -l | tr -d ' ')\" 37\na tools/index.ts:35   \"$(sed -n '35p' packages/tui/src/tools/index.ts | grep -c 'export const toolRenderers')\" 1\na tools/index.ts:46   \"$(sed -n '46p' packages/tui/src/tools/index.ts | grep -c 'grep: grepToolRenderer')\" 1\na exportmap-wildcard  \"$(sed -n '94,97p' packages/tui/package.json | grep -cF './src/*.ts')\" 2\na segid-count         \"$(awk 'NR>=3 && NR<=29 && NF' packages/tui/src/status-line/schema.ts | wc -l | tr -d ' ')\" 27\na segid-status-idx    \"$(awk 'NR>=3 && NR<=29 && NF{n++; if($0~/status/) print n-1}' packages/tui/src/status-line/schema.ts)\" 1\na segid-usage-idx     \"$(awk 'NR>=3 && NR<=29 && NF{n++; if($0~/usage/) print n-1}' packages/tui/src/status-line/schema.ts)\" 23\na statusline-register \"$(grep -rc 'register' packages/tui/src/status-line/ | grep -v ':0' | wc -l | tr -d ' ')\" 0\na preset-default      \"$(sed -n '5p' packages/tui/src/status-line/presets.ts | grep -c 'default:')\" 1\na preset-minimal      \"$(sed -n '16p' packages/tui/src/status-line/presets.ts | grep -c 'minimal:')\" 1\na preset-compact      \"$(sed -n '26p' packages/tui/src/status-line/presets.ts | grep -c 'compact:')\" 1\na preset-full         \"$(sed -n '36p' packages/tui/src/status-line/presets.ts | grep -c 'full:')\" 1\na preset-nerd         \"$(sed -n '59p' packages/tui/src/status-line/presets.ts | grep -c 'nerd:')\" 1\na preset-ascii        \"$(sed -n '84p' packages/tui/src/status-line/presets.ts | grep -c 'ascii:')\" 1\na preset-custom       \"$(sed -n '96p' packages/tui/src/status-line/presets.ts | grep -c 'custom:')\" 1\na no-preset-has-usage \"$(grep -c 'usage' packages/tui/src/status-line/presets.ts)\" 0\na defaults-no-usage   \"$(sed -n '36,42p' packages/tui/src/status-line/schema.ts | grep -c 'usage\\|status')\" 0\na ladder-rightpop     \"$(sed -n '2705p' packages/tui/src/status-line/component.ts | grep -c 'right.pop()')\" 1\na sethookstatus       \"$(sed -n '959p' packages/tui/src/status-line/component.ts | grep -c 'setHookStatus(key')\" 1\na hookstatus-push     \"$(sed -n '3066p' packages/tui/src/status-line/component.ts | grep -c 'showHookStatus ?? true')\" 1\na status-segment      \"$(sed -n '197p' packages/tui/src/status-line/segments.ts | grep -c 'const statusSegment')\" 1\na cachehit-formula    \"$(sed -n '729p' packages/tui/src/status-line/segments.ts | grep -c 'cacheRead + cacheWrite + input')\" 1\na vim-segment         \"$(sed -n '804p' packages/tui/src/status-line/segments.ts | grep -c 'const vimSegment')\" 1\na usage-segment-start \"$(sed -n '864p' packages/tui/src/status-line/segments.ts | grep -c 'const usageSegment')\" 1\na usage-segment-end   \"$(sed -n '913p' packages/tui/src/status-line/segments.ts | grep -c '^};')\" 1\na wheel-3-sites       \"$(grep -rn 'wheel \\* 3' packages/tui/src/ | wc -l | tr -d ' ')\" 7\na wheel-2-sites       \"$(grep -rn 'wheel \\* 2' packages/tui/src/ | wc -l | tr -d ' ')\" 1\na parsesgrmouse       \"$(sed -n '39p' packages/tui/src/mouse.ts | grep -c 'export function parseSgrMouse')\" 1\na wheel-erasure       \"$(sed -n '46p' packages/tui/src/mouse.ts | grep -c 'as 1 | -1')\" 1\na handlewheel-sig     \"$(sed -n '74p' packages/tui/src/mouse.ts | grep -c 'handleWheel(delta: -1 | 1)')\" 1\na routeselect-mouse   \"$(sed -n '87p' packages/tui/src/mouse.ts | grep -c 'target.handleWheel(event.wheel)')\" 1\na loader-trailer-fld  \"$(sed -n '32p' packages/tui/src/components/loader.ts | grep -c '#trailer?')\" 1\na loader-settrailer   \"$(sed -n '141p' packages/tui/src/components/loader.ts | grep -c 'setTrailer(trailer:')\" 1\na interactive-trailer \"$(sed -n '6624p' packages/coding-agent/src/modes/interactive-mode.ts | grep -c 'setTrailer')\" 1\na watchdog-class      \"$(sed -n '57p' packages/tui/src/loop-watchdog.ts | grep -c 'export class LoopWatchdog')\" 1\na watchdog-phase      \"$(sed -n '123p' packages/tui/src/loop-watchdog.ts | grep -c 'takeRecentLoopPhase')\" 1\na mcp-switch         \"$(sed -n '1032p' packages/coding-agent/src/mcp/manager.ts | grep -c '#handleServerRequest')\" 1\na mcp-throw           \"$(sed -n '1039p' packages/coding-agent/src/mcp/manager.ts | grep -c '\\-32601')\" 1\na mcp-caps            \"$(sed -n '102p' packages/coding-agent/src/mcp/client.ts | grep -c 'roots: { listChanged: false }')\" 1\na readcollapse-fn     \"$(sed -n '41p' packages/tui/src/chat/read-tool-group.ts | grep -c 'export function readArgsCollapseIntoGroup')\" 1\na readcollapse-use    \"$(sed -n '59p' packages/tui/src/chat/read-tool-group.ts | grep -c 'readArgsCollapseIntoGroup(content.arguments)')\" 1\na builder-deps        \"$(sed -n '65p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'export interface ChatTranscriptBuilderDeps')\" 1\na builder-ctor        \"$(sed -n '101p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'constructor(deps: ChatTranscriptBuilderDeps)')\" 1\na builder-hardcode1   \"$(sed -n '443p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'content.name === \"read\"')\" 1\na builder-hardcode2   \"$(sed -n '507p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'message.toolName === \"read\"')\" 1\na builder-gettool     \"$(sed -n '67p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'getTool?:')\" 1\na formfield           \"$(sed -n '104p' packages/tui/src/components/form.ts | grep -c 'export class FormField')\" 1\na textformfield       \"$(sed -n '270p' packages/tui/src/components/form.ts | grep -c 'export class TextFormField')\" 1\na selectformfield     \"$(sed -n '352p' packages/tui/src/components/form.ts | grep -c 'export class SelectFormField')\" 1\na followbottom        \"$(sed -n '47p' packages/tui/src/chat/transcript-browser.ts | grep -c 'followBottom?: boolean')\" 1\na noticereg           \"$(sed -n '313p' packages/coding-agent/src/modes/controllers/event-controller.ts | grep -c 'notice: e => this.#handleNotice')\" 1\na handlenotice        \"$(sed -n '1250p' packages/coding-agent/src/modes/controllers/event-controller.ts | grep -c '#handleNotice(event')\" 1\na showstatus          \"$(sed -n '143p' packages/coding-agent/src/modes/utils/ui-helpers.ts | grep -c 'showStatus(message: string')\" 1\na sethdr-noop         \"$(sed -n '157,158p' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts | grep -c 'setFooter: () => {},')\" 1\na palettes            \"$(ls packages/tui/src/theme/defaults/*.json | wc -l | tr -d ' ')\" 99\na tui-dep-on-agent    \"$(grep -c 'pi-coding-agent' packages/tui/package.json)\" 0\na overflow-test       \"$(test -f packages/coding-agent/test/status-line-overflow.test.ts && echo 1 || echo 0)\" 1\necho \"failures: $fail\"\n[ \"$fail\" -eq 0 ]\n```\n",
+  "gate": "Run the assertion script in `verification` verbatim from the repo root. DONE means it prints `failures: 0` and exits 0 — i.e. all 60 anchors in this ledger still resolve to the exact symbol they name, at HEAD 808b365.\n\nThe script is fail-able by construction, not by intent: 7 of the 60 assertions are the CORRECTED line numbers, which differ from the plan's. If an implementer had instead trusted the plan and written the assertions from IT, those 7 would go red on the first run — which is the point (verified: swapping 4 of them back to the plan's values yields exit 1 with exactly 4 FAIL). It also guards the tree moving under the ledger (e.g. `a usage-segment-end` fails the moment the usage segment grows or shrinks).\n\nExplicitly OUT of scope for this gate: `bun test`, which cannot run (native addon absent). Do not add a test-file gate to a context item — there is no runtime behavior here to defend, and a placeholder test would violate AGENTS.md.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [
+    "A1 — add usage to a preset",
+    "A2 — declare the elicitation capability",
+    "A3 — mouse wheel acceleration model",
+    "A4 — plugin secret enum mask + storage",
+    "A5 — event-loop stall indicator trailer",
+    "A6 — transcript group membership predicate",
+    "A7 — transient notice buffer",
+    "A8 — tmux-aware key hints",
+    "A9 — daltonized theme palettes",
+    "B1 — tool renderer override",
+    "B2 — working-message plugin",
+    "B3 — key hint strip",
+    "C2 — shell command status segment",
+    "D1 — MCP elicitation form",
+    "D2 — cache hit-rate segment",
+    "D3 — overlay scroll chrome"
+  ],
+  "effort": "S — read 198 lines of plan, run ~30 verification commands, write this ledger. Half a day.",
+  "risk": "The risk is NOT that this ledger is wrong — every anchor in it was reproduced by a real command. The risk is that a later milestone section (which I did not read) re-derives the same claims from the PLAN instead of from this file, reintroducing the stale line numbers (7 of them are large enough to land in the wrong function — e.g. `interactive-mode.ts:6674` vs the real :6624, and the colorblind row pointing at `statusLineGit*` keys that have nothing to do with the token the branch adjusts) and the 3 wrong substantive claims. ctx2 is only useful if it is the single source of truth for M3 anchors, so the follow-on step is to fold these corrections back into COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md rather than leave two disagreeing documents.\n\nThe specific trap: three claims LOOK like minor numeric slips but are not. (a) '6 ctrl+o sites' is really 22 `expandKeyHint()` + 25 `formatExpandHint()` call sites — undercounting makes the row read as 'thin coverage' when it is saturation, which could prompt someone to build a redundant helper. (b) 'keyHint has no caller' is wrong; it has 4, and only `appKeyHint` is dead — B3's justification is weaker than the plan states. (c) the colorblind row cites statusLineGit* schema keys, which have nothing to do with the one token the branch actually adjusts; an engineer following it would edit the wrong part of the theme schema.",
+  "open_questions": [
+    "M2-OQ3 (registerStatusLineSegment) is unresolved and blocks D2 + C2 and, through WI-7, the whole `ModeDefinition.statusLine` shape. NOTE: `packages/tui/test/status-line-extension-mode.test.ts`, cited by the plan as M2-WI-7's test, DOES NOT EXIST in the tree. It is a future artifact blocked on that question — do not go looking for it, and do not let its absence read as a regression.",
+    "O5 is marked CHỐT (locked) in the plan, but a simpler alternative exists that the plan does not mention: `getTool?: (name: string) => AgentTool | undefined` is ALREADY in ChatTranscriptBuilderDeps (chat-transcript-builder.ts:67) and already used at :475, and `AgentTool` is already importable in pi-tui from `@oh-my-pi/pi-agent-core`. The builder could therefore read a membership flag off the resolved tool itself instead of being handed a predicate. A human must decide whether to keep the locked predicate-injection seam or reopen it — I did not overturn a locked decision on my own.",
+    "Row 21 (plugin secret stored plaintext at manager.ts:942-949) is gated by M2 WI-8a because manager.ts:929-957 is a hotspot row in M2's table and is being replaced. Confirm that gating before anyone opens manager.ts in M3 — otherwise two milestones touch the same function in the same wave.",
+    "§4.1 says building a second harness inside packages/tui/test/ is 'banned by this document'. That framing is the plan's own reasoning, not an AGENTS.md rule. The underlying fact is solid and independently sufficient (pi-tui has no pi-coding-agent dependency, and git grep for pi-coding-agent under packages/tui/test/ returns nothing), so the conclusion holds without the invented prohibition."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Task framing: 'Milestone 2 occupies lines 7042-7692', repo at 'git HEAD 5873776'.",
+      "verdict": "wrong",
+      "correction": "Line 7042 is `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, and real HEAD is 808b365 on branch milestone-1. There is no '# MILESTONE 2' header in the file at all — `grep -n '^# MILESTONE'` returns only 291 (M1), 7042 (M3), 9057 (M6). The output directory (.lavish-wip/m3-specs/) is correct; only the milestone label and the SHA are stale.",
+      "evidence": "`grep -n '^# MILESTONE' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`; `git rev-parse HEAD` -> 808b365; `git branch --show-current` -> milestone-1"
+    },
+    {
+      "claim": "`packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:148-149` — setHeader and setFooter are `() => {}` no-ops.",
+      "verdict": "stale",
+      "correction": "The no-ops are at :157-158, nine lines lower. `setStatus` is at :128 (plan says :119) and `setWorkingMessage` at :129 (plan says :120). The claim itself is fully correct; only the line numbers moved.",
+      "evidence": "`grep -n 'setHeader|setFooter|setStatus|setWorkingMessage' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` -> 128, 129, 157, 158"
+    },
+    {
+      "claim": "omp already emits `(ctrl+o to expand)` at 6 sites: execution-shared.ts:87, eval.ts:680, eval.ts:814, ttsr-notification.ts:86/:117/:119.",
+      "verdict": "wrong",
+      "correction": "The COUNT is wrong by a wide margin. There are 22 `expandKeyHint()` call sites (defined at render/render-utils.ts:205) plus 25 `formatExpandHint()` call sites (render/render-utils.ts:305) — the hint is behind a shared helper and reaches far more surfaces than the plan lists, including inspector-panel.ts (8 sites alone), github.ts, lsp.ts, memory.ts, web-search.ts. Two of the six cited lines are exact (eval.ts:680, :814); the other four are off by 1-2 (execution-shared.ts:89, ttsr-notification.ts:87, :118, :120). Direction of the error matters: omp has MORE of this than the plan credits, so the 'do nothing' action is even more clearly correct.",
+      "evidence": "`grep -rn 'expandKeyHint()' packages/tui/src/ | grep -v 'export function' | wc -l` -> 22; same for formatExpandHint -> 25; defs at render/render-utils.ts:205 and :305"
+    },
+    {
+      "claim": "`keyHint` (keybinding-hints.ts:29) and `appKeyHint` (:42) have NO caller; `rawKeyHint` (:53) is in use.",
+      "verdict": "wrong",
+      "correction": "Two of three facts are wrong. Line numbers are keyHint :57, appKeyHint :70, rawKeyHint :78. And `keyHint` is NOT callerless — it has 4 call sites (e.g. overlays/history-search.ts:199). Only `appKeyHint` is genuinely dead at 0. B3's premise that 'two helpers were written and never used' is therefore half wrong: one dead helper, not two.",
+      "evidence": "per-helper call-site counts — keyHint 4, appKeyHint 0, rawKeyHint 5, editorKey 75, editorKeys 27, boundKeys 3, interruptKey 13"
+    },
+    {
+      "claim": "The colorblind branch's git-lock keys are declared at `packages/tui/src/theme/schema.ts:77-78` with fallback `:140-141`.",
+      "verdict": "wrong",
+      "correction": "Those lines are `statusLineGitClean`/`statusLineGitDirty` and have nothing to do with colorblind mode. The branch adjusts exactly one token, `resolvedColors.toolDiffAdded` (theme/loader.ts:153-157), whose schema keys are `toolDiffAdded` at schema.ts:53 (union) and :116 (defaults record). An engineer following the plan's anchor would edit the wrong part of the theme schema. The 'one token only' claim itself is CORRECT — the adjustment is a single `resolvedColors.toolDiffAdded = adjustHsv(...)` write.",
+      "evidence": "`grep -n 'toolDiffAdded' packages/tui/src/theme/schema.ts` -> 53, 116; `sed -n '77,78p;140,141p'` -> statusLineGitClean/statusLineGitDirty; theme/loader.ts:153-157"
+    },
+    {
+      "claim": "`packages/coding-agent/src/modes/interactive-mode.ts:6674` already installs `setTrailer(() => this.#workingRowTrailer())`.",
+      "verdict": "stale",
+      "correction": "The real call site is :6624, fifty lines earlier. The substance of the claim is fully confirmed and load-bearing: loader.ts:141 `setTrailer` accepts a SINGLE callback, and the coding-agent occupant therefore must be MERGED with any new stall indicator, not stacked. This is the sharpest row in the §5.1 table and its anchor must be right.",
+      "evidence": "`grep -rn 'setTrailer' packages/ --include='*.ts'` -> only loader.ts:141 (definition) and interactive-mode.ts:6624 (call); `#workingRowTrailer` defined at :1013"
+    },
+    {
+      "claim": "Notice events are routed at `event-controller.ts:308` into `#handleNotice` at `:1244-1251`.",
+      "verdict": "stale",
+      "correction": "The registration is at :313 (`notice: e => this.#handleNotice(e)`) and the method starts at :1250. The plan's cited range 1244-1251 actually begins inside a different method (`markBackgroundTaskCalls`), so following it lands on the wrong function. The routing claim is otherwise correct.",
+      "evidence": "`grep -n 'notice:' packages/coding-agent/src/modes/controllers/event-controller.ts` -> 313; `:1250` is `async #handleNotice(event: ...)`"
+    },
+    {
+      "claim": "`packages/tui/src/status-line/segments.ts:864-895` — the 5-window usage segment, registered at :865.",
+      "verdict": "stale",
+      "correction": "The segment STARTS at :864 with `id: \"usage\"` at :865, both exactly as claimed, but it ENDS at :913, not :895. Every substantive claim holds: five windows (5h/1d/7d/mo/resetCredits) plus tier, per-window reset clocks, and `visible: false` when no window is present. Only the range end is wrong.",
+      "evidence": "`sed -n '864,913p' packages/tui/src/status-line/segments.ts`; first `^};` at or after 864 is at 913"
+    },
+    {
+      "claim": "A4 must fix the plugin secret leak: enum rendered plaintext at `plugin-settings.ts:166` and stored plaintext at `manager.ts:942-949`; the `secret?: boolean` flag is not in the M2 plan.",
+      "verdict": "partly stale",
+      "correction": "The two bugs are real but the fix is far smaller than the plan implies, and the flag it says is absent is already in the tree. `secret?: boolean` EXISTS at packages/coding-agent/src/extensibility/plugins/types.ts:63 and packages/tui/src/overlays/plugin-settings.ts:31, and the display mask is already implemented at plugin-settings.ts:152 (`schema.secret && currentValue ? \"••••••••\" : ...`). So A4 is a ONE-LINE fix — the enum branch at :167 uses raw `String(currentValue ?? schema.default ?? \"\")` where it should use `displayValue` — reusing a mask that already works for the string branch at :188. The plan's grep for 'secret' across the M2 plan text returning 0 IS confirmed, which means M2 will replace this store without knowing the flag exists; that is the real risk here, not the missing flag. Line numbers: enum is :167 not :166, string branch :188 not :187.",
+      "evidence": "`grep -rn 'secret' packages/coding-agent/src/extensibility/plugins/types.ts packages/tui/src/overlays/plugin-settings.ts` -> types.ts:63, plugin-settings.ts:31/152/667/668; `awk 'NR>=4000 && NR<=7041' <plan> | grep -c secret` -> 0"
+    },
+    {
+      "claim": "O5 is locked: inject a `readCollapsesIntoGroup` predicate from coding-agent into the tui builder, because 3 of 4 consumption sites live in packages/tui which cannot depend on pi-coding-agent.",
+      "verdict": "confirmed, with an unmentioned alternative",
+      "correction": "The dependency-direction argument is fully confirmed: packages/tui/package.json declares no @oh-my-pi/pi-coding-agent dependency (deps are omptype / pi-agent-core / pi-ai / pi-catalog / pi-natives / pi-utils / pi-wire / snapcompact) and `git grep -l pi-coding-agent -- packages/tui/test/` returns nothing. All three injection points exist and are unstubbed: chat-transcript-builder.ts:65-77 (deps interface, closes at 77 not 76), :101 (constructor), :443 and :507 (the two hardcoded `=== \"read\"` sites), and read-tool-group.ts:59. What the plan does not mention: `getTool?: (name: string) => AgentTool | undefined` is ALREADY in the deps at :67 and already used at :475, and `AgentTool` is already imported from `@oh-my-pi/pi-agent-core` at :14 — so the builder can already resolve a tool by name and read a membership flag directly, without any injection at all. I did not overturn the locked decision; this is raised as an open question instead.",
+      "evidence": "read-tool-group.ts:41/:59; chat-transcript-builder.ts:14, :65-77, :101, :443, :475, :507; `grep -c 'pi-coding-agent' packages/tui/package.json` -> 0; no `readCollapsesIntoGroup` symbol exists anywhere in packages/"
+    },
+    {
+      "claim": "§4.1: the A1 test must live in packages/coding-agent/test/, not packages/tui/test/, and the harness is status-line-overflow.test.ts plus StatusLineTestComponents.",
+      "verdict": "confirmed",
+      "correction": "Fully confirmed, and it is the single most load-bearing harness claim in §3-5. All three files exist. status-line-overflow.test.ts already imports resetSettingsForTest, does `Settings.init({ inMemory: true })`, and pulls statusLineHost from coding-agent — exactly the coupling that makes a tui-local test impossible. StatusLineTestComponents is at helpers/status-line.ts:6. One off-by-one: the O1 evidence test is status-line-settings-cache.test.ts:374-381, not :373-380 — the describe block is at 374 and the assertion `expect(component.render(8)).toEqual([\"Ponytail\", \"$0.04 (…\"])` is at 380. The proof works because `makeComponent({ showHookStatus: true })` passes NO segment ids, and no preset contains `status`, so both output lines prove hook statuses render through the separate path at component.ts:3066-3068 rather than through the status segment.",
+      "evidence": "ls confirms all three files; status-line-settings-cache.test.ts:374-381; component.ts:3066-3068 = `const showHooks = this.#settings.showHookStatus ?? true`"
+    },
+    {
+      "claim": "The status-line width ladder at component.ts:2687-2745 shrinks session_name, then `right.pop()` at :2705, then path, then drops left segments right-to-left; index in rightSegments is the only priority lever.",
+      "verdict": "confirmed (range end understated)",
+      "correction": "Every step and every cited line is exact — session_name truncation at :2688-2703, `right.pop()` at :2705, path shrink at :2709-2740, left drop via leftOverflowDropIndex at :2752-2757. The block actually runs to :2758, so the plan's cited range stops 13 lines early. The operational consequence stands and is the most valuable single finding in §3-5: preset `default` has rightSegments `[\"session_name\"]`, so appending `usage` makes it the first element dropped at narrow widths, and since `usage` is the widest segment in the catalog the quota silently disappears at 80 columns while the (truncated) session name survives. That is why A1's gate must be a NEGATIVE contract — usage must still render at 80 columns with full context — not a positive 'it renders' check.",
+      "evidence": "presets.ts:7 `rightSegments: [\"session_name\"]`; component.ts:2687-2758; `grep -c 'usage' packages/tui/src/status-line/presets.ts` -> 0"
+    },
+    {
+      "claim": "MCP: manager.ts:1032-1040 handles only ping and roots/list and throws -32601 on default; client.ts:100-104 declares only the roots capability; manager.ts has one type-only pi-tui import.",
+      "verdict": "confirmed",
+      "correction": "All three exact. `#handleServerRequest` is at :1032, the `throw Object.assign(new Error(...), { code: -32601 })` is at :1039, and the only pi-tui reference in manager.ts is the type-only import at :46 — confirming the manager structurally cannot open a form. The capabilities block is :101-103 rather than :100-104 (the plan's range also swallows protocolVersion), which is a harmless over-bracket. This row correctly blocks D1 and A2 into one commit (O3+O4), and correctly warns that advertising a capability without a handler is worse than today's silence.",
+      "evidence": "manager.ts:1032/:1039/:46; client.ts:101-103"
+    },
+    {
+      "claim": "acp-agent.ts:295-410 is a working local implementation of schema→form, and both critique rounds were wrong to reject it.",
+      "verdict": "confirmed — the plan's correction is right",
+      "correction": "The plan is right and the dossier was wrong. `elicitFormFromAcpClient` is declared at acp-agent.ts:314 and calls `connection.unstable_createElicitation(...)` at :358 — it is an OUTBOUND bridge that packages a schema and asks a remote editor. It renders no local form. It is a good reference for lifecycle (abort, timeout, late-response drop, listener cleanup) and worthless as a reference for schema→form rendering, which is new work for D1. Worth stating plainly because a reader who skipped the correction would otherwise try to reuse it.",
+      "evidence": "`grep -n 'elicitFormFromAcpClient|unstable_createElicitation' packages/coding-agent/src/modes/acp/acp-agent.ts` -> 295 (doc), 314 (fn), 358, 389, 507, 1879"
+    },
+    {
+      "claim": "Minor off-by-one group: schema.ts segments, chat-transcript-builder.ts deps range, agent-transcript-viewer.ts handleScroll, settings.ts showHookStatus, theme/loader.ts COLORBLIND_ADJUSTMENT, settings.ts cfgColorBlindMode, ui-helpers.ts showStatus, package.json export map, cacheHit segment end, status segment end.",
+      "verdict": "stale",
+      "correction": "None of these change a decision, but carry the corrected numbers: statusSegment 197-211 (not 212); cacheHitSegment 718-738 (not 737); ChatTranscriptBuilderDeps 65-77 (not 76); #handleScroll 516-535 (not 515-534); cfgStatusLineShowHookStatus 264-267 with `default: true` at 267 (not 262-265); COLORBLIND_ADJUSTMENT at theme/loader.ts:146 (not 145); cfgColorBlindMode at settings.ts:109 (not 108); UiHelpers.showStatus 143-164 (not 141-160) — the method body checks the last two chatContainer children and patches in place at :152-157, with the 'avoid log spam' comment at :141, so the plan's SUBSTANCE is right and only the range is shifted; the `./*` export map is package.json:94-97 (not 93-96).",
+      "evidence": "each verified by sed -n on the cited file; see the gate script in `verification` for the machine-checked subset"
+    },
+    {
+      "claim": "Counts verified exactly and carried forward unchanged: 7 preset lines (5,16,26,36,59,84,96), 27 segment ids with status at 1 and usage at 23, 99 palettes, 7 `event.wheel * 3` sites + 1 `* 2` site, 1 non-test setFrameProvider call site with 37 test hits, grep -c tmux = 0,0,0 across three files, 3 of 4 read-group consumers in tui, form.ts:104/270/352, transcript-browser.ts:47, types.ts:235/267/264-277, interactive-mode.ts:424, grep.ts:241, builtin-session.ts:434, tmux.ts:5/48-49, loop-watchdog.ts:57/123-124, loader.ts:32/107-113/141, message-notice.ts:37, read-tool-group.ts:41, session-color.ts:2, docs/tui-core-renderer.md:107 and :174.",
+      "verdict": "confirmed",
+      "correction": "Every one reproduced. Two are worth re-stating as load-bearing because the §5.1 table's credibility rests on them: (1) `setHeader`/`setFooter` are no-ops and the plugin surface cannot reach the main display area; (2) docs/tui-core-renderer.md:107 ('The renderer never probes the user's scroll position') and :174 ('...or forks history policy') are the written invariant that hard-limits D3 to the overlay viewer. Also confirmed: the palette count is exactly 99 via the glob form `ls packages/tui/src/theme/defaults/*.json | wc -l`, and MessageNoticeComponent has no timeout, no buffer and no key field — only `#expanded` and `#toolActivityVisible` — so it must stay permanently-visible and must NOT be reused as the A7 transient-notice sink.",
+      "evidence": "see the gate script in `verification`; docs/tui-core-renderer.md:107 and :174 read directly"
+    },
+    {
+      "claim": "`packages/tui/test/status-line-extension-mode.test.ts` is M2 WI-7's test, unwritable until M2-OQ3 is answered.",
+      "verdict": "confirmed, but the file does not exist",
+      "correction": "The reasoning is right and the blocking claim holds, but a reader could waste time hunting for the file. `ls` confirms packages/tui/test/status-line-extension-mode.test.ts does not exist. It is a future artifact gated on M2-OQ3, and its absence is NOT a regression. D2 and C2 must be written after M2-OQ3 lands, and their negative contract must be derived from whichever of M2's two directions is chosen — prefixed ids with bare ids rejected (direction 1), or a map fallback where unregistered ids are accepted at render time (direction 2). The plan's point that an M3-authored third mechanism would contradict whichever M2 picks is the correct framing and should survive into the D2/C2 specs.",
+      "evidence": "`ls packages/tui/test/status-line-extension-mode.test.ts` -> No such file or directory; packages/tui/src/status-line/index.ts exports only component/metrics/presets/segments/separators/types"
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/ctx2.spec.json"
+}

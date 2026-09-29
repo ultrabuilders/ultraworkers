@@ -1,0 +1,472 @@
+[
+ {
+  "id": "WI-0",
+  "title": "Chốt và viết ra extension trust model (quyết định, không code)",
+  "wave": "1",
+  "wave_tag": "1",
+  "one_line": "Write one ADR that ratifies or overturns how oh-my-pi treats extension code that arrives with a cloned project — no code, no build, no test — because the trust posture has already shipped implicitly, and a posture nobody wrote down is one nobody can change without breaking every third-party author.",
+  "user_visible_effect": "None on its own.",
+  "files": [
+   "docs/extension-trust-model.md [create,verified]",
+   "docs/extensions.md [modify,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 3,
+  "depends_on": [],
+  "blocks": [
+   "WI-10 — canonical authoring surface. Blocked because M2-OQ2 changes what 'canonical' MEANS for a third-party author; building a public authoring surface on an unwritten trust posture freezes the wrong contract. Wave 1 orders WI-0 strictly before WI-10 for this reason.",
+   "WI-7 — registerMode mode registry. Blocked because the registry is built on top of the capability layer, and whether capabilities are extension-reachable depends on the trust answer.",
+   "WI-11 — per-extension state persistence. Blocked because a per-extension store must know what a per-extension trust level is before it can persist anything keyed to it.",
+   "WI-12 — MCP contribution architecture. Blocked because MCP servers contributed by an extension need an approval-parity answer, and approval parity is a function of the trust posture.",
+   "M2 acceptance item 9 (§11.3) — 'Hai ADR đã merge (WI-0, WI-10)'. The milestone cannot close with this ADR absent, and that acceptance item fails on any of: (a) no ADR file for WI-0 in the tree; (b) the ADR does not answer `ctx.exec`; (c) the M2-OQ2 answer is not literally YES / NO / DEFERRED.",
+   "M2 acceptance item 12 (§11.3) — the `outsider-extension` fixture, which is loaded through the real install path at BOTH project and user scope precisely because this trust answer is undecided, and which therefore must be green under whichever posture the ADR picks."
+  ],
+  "effort": "S — half a day of design plus writing the ADR, which matches the plan's own 'S để quyết định' rating. That estimate holds only if the author resists expanding the document into an enforcement design; enforcement is explicitly M–L and explicitly outside M2. Add roughly two extra hours over the naive estimate for step 2, because tracing the project-scope plugin path is research the plan never did and the answer changes the urgency of the decision. Implementation cost, for planning only, is M–L depending on the option chosen — and it is outside M2 but NOT outside the programme: it is a mandatory prerequisite for any marketplace work, and M2-OQ7 binds whoever eventually does that work to the option this ADR selects.",
+  "risk": "Deferral — and it is the comfortable failure the plan's own risk register predicted.",
+  "n_questions": 6,
+  "n_corrections": 9,
+  "gate": "DONE means all five of the following hold. (1) docs/extension-trust-model.md exists in the tree and names a decider and a date. (2) ONE maintainer reads it and answers the three acceptance questions from the text alone, without asking the author: do project-local extensions load unconditionally, get gated, or not load; is `ctx.exec` gated separately or deliberately outside; does `isProjectTrusted()` become a real value or stay a stub returning true. (3) The ADR's decision is one of the exact words A, B or C, and its answer to `ctx.exec` is present as a quotable sentence — a deferral scoped as 'neither, we do not have a posture' is NOT one of the three options and fails. (4) `git diff --stat` touches exactly three files and NO TypeScript file. (5) The enforcement item carries a NAME, an OWNER and a DATE, and the ADR names the already-shipped project-scope plugin path as an input the decision had to consider. This gate FAILS if: no ADR file is in the tree; the ADR does not answer the `ctx.exec` question; the decision is not one of the three literal options; any `.ts` file appears in the diff; or the enforcement item is still unassigned at M2 close.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-1",
+  "title": "Assign per-runner timer and model-provider ownership to the extension that created them, and release them on suspend",
+  "wave": "Wave 2 — commit 1 (timers) ONLY. Commit 2 (providers + resume) is Wave 4 and is specified here but MUST NOT be implemented in the Wave 2 PR.",
+  "wave_tag": "2",
+  "one_line": "When an extension is disabled, the background intervals it scheduled and the model provider it registered stop taking effect — and both come back when it is enabled again.",
+  "user_visible_effect": "Disabling an extension in settings now actually stops it.",
+  "files": [
+   "packages/coding-agent/src/extensibility/extensions/managed-timers.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/runner.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/loader.ts [modify,verified]",
+   "packages/coding-agent/src/sdk.ts [modify,verified]",
+   "packages/coding-agent/src/config/model-registry.ts [modify,verified]",
+   "packages/coding-agent/test/extension-suspend-teardown.test.ts [create,UNVERIFIED]"
+  ],
+  "n_files": 7,
+  "depends_on": [],
+  "blocks": [
+   "WI-9 — the unload inventory cannot scan resources that have no owner, so it needs timers and provider capability state already tagged",
+   "WI-5 commit 2-3 — tool admission and capability state are built on the same trust-and-ownership contract",
+   "Wave 4 gate — every later M2 wave treats suspend as trustworthy; this is the prerequisite that makes it so"
+  ],
+  "effort": "Commit 1: XS — roughly 20-25 changed production lines across 3 existing files, no new files, no public API change. Commit 2: S — a ~2-line new field on the `Extension` interface, a ~4-line fill in one drain block, and a ~6-line insertion in `reconcileExtensionSources`, plus a new test file. Total with the test file: roughly 120 changed lines.",
+  "risk": "Missing an OWNER ASSIGNMENT POINT, not missing a mechanism.",
+  "n_questions": 5,
+  "n_corrections": 9,
+  "gate": "Three assertions. (1) and (3) fail on today's HEAD and go green with the work; (2) passes vacuously on HEAD and only becomes a real gate once commit 1 lands (see plan_corrections #7 — do NOT report it as red-before / green-after).\n(1) TIMER DEAD AFTER SUSPEND — an extension schedules `ctx.setInterval` from a `session_start` EVENT handler, is suspended via `setSuspendedExtensions`, and its callback is observed NOT to fire while the session is still alive. The assertion is on the callback counter, never on an internal field being emptied, because a 'fix' that never started the timer also empties the field. Two extensions schedule timers; suspending one must leave the other's still firing.\n(2) TIMER ALIVE AFTER RESUME — the same extension is resumed, its handler re-runs, and the newly scheduled callback fires again. This blocks commit 1 being satisfied by a timer that is never started.\n(3) PROVIDER GONE AFTER SUSPEND — an extension calls `pi.registerProvider`; after the suspend reconcile the provider name no longer resolves through `ModelRegistry` and `registry.authStorage.keys.source(name)` is `undefined`; after resume both are back.\nGates 1 and 3 fail on HEAD. Gate 2 passes vacuously on HEAD (nothing is ever cleared) — it is a regression guard for commit 1, and it becomes a real gate the moment commit 1 lands. See plan_corrections #7.\nCommand: `bun --cwd=packages/natives run build` once (bun test is 0-pass without the addon), then `cd packages/coding-agent && bun run check:types` (0 new errors; baseline is currently 0 errors, exit 0), then `bun test test/extension-suspend-teardown.test.ts test/model-registry-runtime-cleanup.test.ts test/extensions-runner.test.ts` (>= 4 passing in the new file, 0 failures, NOT '0 pass' plus the pi_natives addon error).",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-2",
+  "title": "Deterministic extension load order, and collision resolution made explicit",
+  "wave": "M2 wave 2 (shippable; WI-2 splits into 2 PRs — the sort is a real behavior change and goes alone, the diagnostic rides along)",
+  "wave_tag": "2",
+  "one_line": "Extensions are now always loaded in sorted path order instead of whatever order the filesystem happened to hand back, and when two extensions register the same tool name the winner is both a documented rule and a diagnostic that names both sides.",
+  "user_visible_effect": "Two plugins that register the same tool name resolve to the same one on every machine, every run, and after every reinstall — instead of silently flipping with directory layout.",
+  "files": [
+   "packages/coding-agent/src/extensibility/extensions/loader.ts [modify,verified]",
+   "packages/coding-agent/src/discovery/helpers.ts [modify,verified]",
+   "packages/coding-agent/src/capability/fs.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/runner.ts [modify,verified]",
+   "packages/coding-agent/test/extension-load-order-determinism.test.ts [create,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 7,
+  "depends_on": [],
+  "blocks": [
+   "WI-7 (wave 5 registerMode) — hard prerequisite. The mode registry creates order-sensitive registrations of its own, so it must land on top of a defined order, not on filesystem order.",
+   "WI-6 (wave 4) — the wave table states WI-6 needs WI-2's collision rule settled before it can safely change priority ordering."
+  ],
+  "effort": "S. Two sorts, one private collector, one exported interface, one doc paragraph, one new test file, one changelog line. The sort half is well under an hour; the test is the bulk of it because the fixture has to be built so that it actually discriminates.",
+  "risk": "MEDIUM, and it is a real behavior change rather than a defect fix — that is the whole reason the plan splits this into two PRs.",
+  "n_questions": 4,
+  "n_corrections": 7,
+  "gate": "Four-part, and every part is able to go red.\n\n(1) TYPE: `bun run check:ts` exits 0. Goes red if the diagnostic interface is exported wrong, the top-level type import is missing, or an `any` leaks in.\n\n(2) ROW 1 DISCRIMINATES: with the fix reverted, row 1 reports a winner that is NOT `ext-h`. This is only a real gate because the test first proves its own fixture premise — it reads the fixture directory with `fs.readdirSync` (the same primitive `resolveExtensionDirectory` uses at directory-resolution.ts:114) and refuses to proceed if readdir already happens to return lexical order, in which case the assertion would be vacuous and would pass on an implementation that sorts nothing.\n\n(3) ROW 2 DISCRIMINATES: with `#collectToolNameCollisions` removed, row 2 gets zero diagnostics and goes red on `paths` and on the message substring check.\n\n(4) NO REGRESSION: `bun test test/extensions-discovery.test.ts` stays green, and `test/extension-loader-concurrency.test.ts` stays green — that file is the standing guard that `loadExtensions` imports concurrently while binding factories in path order, and the loader sort must not disturb it.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-3",
+  "title": "Event relay exhaustive, compile-checked",
+  "wave": "3 — close the two places the machine lies about itself (WI-3, WI-5 commit 1). WI-3 is 2 commits, ships alone; independent of WI-1 and WI-2, parallelizable. Sole coupling: the shared file `session/agent-session.ts` with M2-OQ6 (46-overload -> module-declared `Events` interface question, decide before touching either) and the one-word `export` on `extensions/runner.ts`.",
+  "wave_tag": "3",
+  "one_line": "Replace the 19-branch if/else chain that forwards session events to extensions with a declared lookup table whose key union is a named 19-member subset, so a new event kind cannot be added to the session without either getting a forwarding arm or failing the type check.",
+  "user_visible_effect": "none directly — no behaviour change.",
+  "files": [
+   "packages/coding-agent/src/extensibility/extensions/runner.ts [modify,verified]",
+   "packages/coding-agent/src/session/agent-session.ts [modify,verified]",
+   "packages/coding-agent/src/session/agent-session.ts [modify,verified]",
+   "packages/coding-agent/test/extension-event-relay-exhaustive.test.ts [create,verified]"
+  ],
+  "n_files": 4,
+  "depends_on": [],
+  "blocks": [],
+  "effort": "S — a few hours. One word in `runner.ts`, one 19-arm table, a four-line dispatcher, a five-line comment rewrite, one test file. The plan's 'S-M' rating is inflated by the `model_changed` product decision; the mechanical half is genuinely S and the compiler does the checking.",
+  "risk": "THE LIKELY WAY TO GET THIS WRONG: reaching for the plan's literal sketch — `satisfies Record<RelayableEventKind, (event: AgentSessionEvent) => RunnerEmitEvent | undefined>` — which is wrong twice over.",
+  "n_questions": 3,
+  "n_corrections": 9,
+  "gate": "`bun run check:ts` exits 0. This is the load-bearing gate and it is genuinely load-bearing: if an implementer adds a name to `RelayableEventKind` without an arm, the mapped type demands the missing property and tsgo fails. If they write the bare `Record<RelayableEventKind, (event: AgentSessionEvent) => ...>` form from the plan's sketch, every arm that touches a variant-specific field fails to compile. If they use `HookEvent` as the key type, the `Extract` collapses to `never` and the table fails. Second gate, once the addon is built: `cd packages/coding-agent && bun test test/extension-event-relay-exhaustive.test.ts` exits 0 with exactly 1 passing test.",
+  "gate_can_fail": "YES for `check:ts`, and it is the gate that matters. Three concrete red states: (1) add `\"model_changed\"` to `RelayableEventKind` without an arm -> TS2741 missing property, tsgo exits non-zero. (2) delete the `turn_end` arm -> same. (3) rename a `satisfies TurnEndEvent` annotation to a wrong event interface -> TS2322 on the object literal. It has been observed green at HEAD (`bun run check:ts` -> exit 0) so it is demonstrably live. NO for the `bun test` half today: the native addon is not built, so the whole suite reports 0 pass regardless of the code. That half is a real gate only after `bun run build:native`; until then do not treat its silence as green."
+ },
+ {
+  "id": "WI-4",
+  "title": "Đóng backdoor `toolRenderers` — `Object.freeze` + `Readonly` ở tầng kiểu",
+  "wave": "2 (M2 wave 2 — 'Làm cho disable trung thực': WI-1 nửa timer, WI-2, WI-4. Ba work item độc lập, không mục nào chặn mục nào. XS–S, ~3 ngày cho cả wave, WI-4 là XS.)",
+  "wave_tag": "2",
+  "one_line": "Make the built-in tool-renderer registry read-only so no plugin can silently repaint every tool's transcript for the whole process — while keeping the one supported way to supply a renderer (a tool definition that carries its own render function) working exactly as before.",
+  "user_visible_effect": "None for core oh-my-pi: every built-in renderer renders byte-identically, because a fully-populated object literal that nobody mutates behaves identically once frozen, and all 14 in-repo consumers are reads.",
+  "files": [
+   "packages/tui/src/tools/index.ts [modify,verified]",
+   "packages/tui/test/tool-renderers-frozen.test.ts [create,verified]",
+   "packages/coding-agent/test/extension-tool-renderer-registration.test.ts [create,verified]",
+   "packages/tui/package.json [modify,verified]"
+  ],
+  "n_files": 4,
+  "depends_on": [],
+  "blocks": [
+   "WI-7 (registerMode — M2 wave 5). The plan's explicit ordering: land WI-4 first so the unload work has a complete inventory of what must be released. A frozen global has nothing to release, which is what makes WI-7's resource audit tractable."
+  ],
+  "effort": "XS — and smaller than the plan's own XS, because the change itself is two lines in one file. The bulk of the time is the two test files, and both are blocked on an environment condition rather than on design. Verified end to end in this session: the two-line change compiles clean in both consuming packages, passes lint and format, and the write-rejection was demonstrated failing as intended.",
+  "risk": "The single most likely way to get this wrong is treating 'the tests are red' as 'my change is broken' and either deleting the tests or reverting the freeze to make them runnable.",
+  "n_questions": 3,
+  "n_corrections": 6,
+  "gate": "DONE when, in order:\n\n  (a) `bun run --cwd packages/tui check:types` is green AND `bun run --cwd packages/coding-agent check:types` is green with the freeze applied. This is the only gate in this environment that can fail, and it is not a weak gate: it is the one that proves the `Readonly` annotation is what turns a future `toolRenderers.x = y` into a compile error rather than a runtime surprise.\n\n  (b) `git grep -nE 'toolRenderers\\[[^]]*\\] *=|toolRenderers\\.[A-Za-z_$]+ *=' -- packages` still returns zero hits — i.e. the change introduced no writer.\n\n  (c) Both new test files exist and are committed even though they cannot execute here. They are the regression pin for whoever builds the addon next; deleting them because they are red is the failure mode this item is most likely to fall into.\n\n  (d) NOT a gate: whether `bun test` passes. It cannot, in this checkout, for reasons that predate this work item. If the engineer reports 'tests are red', check whether the red is the missing native addon before investigating their change.\n\n  On `gate_can_fail`: yes, and it was demonstrated rather than assumed. With the `Readonly` annotation applied, injecting a single line `toolRenderers.probe_backdoor = toolRenderers.bash;` into `packages/tui/src/chat/tool-execution.ts:355` makes `bun run --cwd packages/tui check:types` exit 1 with `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` That probe was run, captured, and the tree was reverted (`git status` clean apart from the untracked spec output). Without the `Readonly` annotation this gate would be structurally incapable of failing — `Object.freeze` on its own leaves the declared type writable, so the check passes and the backdoor reopens silently. That is the whole reason step 2 asks for both halves.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-5",
+  "title": "Capability registry has an owner, has unregister, and has a real reset",
+  "wave": "Spans two waves: commit 1 in wave 3 (unconditional), commits 2-3 in wave 4 (gated on M2-OQ2 from wave 1)",
+  "wave_tag": "3–4",
+  "one_line": "Rename the capability registry's `reset` to the truthful `invalidateAllCaches`, add a separate `resetRegistry()` that really does drop capability definitions, then give registered providers an owning `sourceId` and an `unregisterProvidersForSource()` so a suspended extension's contributions are actually released.",
+  "user_visible_effect": "Commit 1 is invisible but stops a landmine: every future reader of the capability registry is told what `reset` actually does.",
+  "files": [
+   "packages/coding-agent/src/capability/index.ts [modify,verified]",
+   "packages/coding-agent/src/main.ts [modify,verified]",
+   "packages/coding-agent/src/sdk.ts [modify,verified]",
+   "packages/coding-agent/src/session/agent-session.ts [modify,verified]",
+   "packages/coding-agent/src/session/session-tools.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/ssh-command-controller.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/selector-controller.ts [modify,verified]",
+   "packages/coding-agent/src/slash-commands/builtin-marketplace.ts [modify,verified]",
+   "packages/coding-agent/src/slash-commands/helpers/ssh.ts [modify,verified]",
+   "packages/coding-agent/test/capability/reset-contract.test.ts [create,verified]",
+   "packages/coding-agent/test/capability/provider-source-attribution.test.ts [create,verified]"
+  ],
+  "n_files": 11,
+  "depends_on": [
+   "WI-1 commit 1 (wave 2) — both add an owner-tagged teardown call to the SAME suspend branch of `reconcileExtensionSources`. Do not write that branch twice; whoever lands second EXTENDS it, never re-creates it. Verify at HEAD 808b365 that WI-1 has not already claimed it.",
+   "WI-0 (wave 1) — its M2-OQ2 answer ('is the capability registry extension-reachable?') decides whether attribution is worth building now. Commits 2-3 are gated on it; commit 1 is not."
+  ],
+  "blocks": [
+   "WI-6 (wave 4) — the plan states WI-6 needs a settled tool-set story, and WI-5 is what settles ownership of the provider set.",
+   "WI-9 (wave 7) — unload needs a full resource inventory, and this item is what adds an owner to capability state."
+  ],
+  "effort": "S for commit 1, M for commits 2-3. Three commits, three PRs. Commit 1 is mechanical (8 import lines, 12 call sites, 1 comment) but the type checker will enumerate every caller for you. Commits 2-3 are ~40 lines of new registry code plus one line in a hot path.",
+  "risk": "The single most likely way to get this wrong is the FORBIDDEN option: making `reset()` also clear the `capabilities` map.",
+  "n_questions": 6,
+  "n_corrections": 12,
+  "gate": "Three gates, in order.\n\n(1) After commit 1: `bun run check:ts` is green AND `git grep -n resetCapabilities -- packages/coding-agent/src` returns zero hits. The type checker is what makes the rename safe — a missed call site is a compile error, not a silent behavior change, which is why commit 1 is S rather than M.\n\n(2) Row 2 of reset-contract.test.ts is red on HEAD and green only after `resetRegistry()` exists and really clears `capabilities`. This is the rejectable row: if it cannot be made to go red before the fix, the fix has not been pinned.\n\n(3) After commits 2-3: `bun run check:ts` green, both new test files green, and the full coding-agent suite still green — the last one specifically proves that a test file calling `resetRegistry()` does not poison any other file.\n\nENVIRONMENT CAVEAT, verified not assumed: at HEAD 808b365 `bun run check:ts` passes (all 15 packages green) but `bun test` cannot run at all — the native addon is unbuilt, so even the pre-existing unrelated `test/capability/rule-agents.test.ts` reports `0 pass / 1 fail` with 'Failed to load pi_natives native addon for darwin-arm64'. So today only gate (1)'s type-check half and the grep half are runnable. Build the addon with `bun --cwd=packages/natives run build` to unlock the test halves. There is a decent chance the two new tests escape the addon problem, because `capability/index.ts` does not import `@oh-my-pi/pi-natives` (unlike `discovery/helpers.ts:4`, which is what breaks the existing test) — but `capability/index.ts` does pull `./fs`, `../extensibility/settings` and `../config/model-settings`, and I could not verify those transitively. Run the test early and find out; if it is blocked, say so in the PR instead of claiming coverage you did not execute.\n\nWHY THIS GATE CAN FAIL: Yes, on both halves. The type-check half fails the moment a single one of the 12 call sites or 8 import lines is missed, because the renamed export no longer exists — that is a hard compile error, not a soft warning, and it is what makes the 8-file rename safe to do without reading every file. The test half fails on HEAD for a concrete, demonstrated reason: `resetRegistry` is not exported at HEAD, so row 2 cannot even resolve, let alone pass. And row 1 is a live tripwire against the forbidden option: it is green today and goes red the instant someone adds `capabilities.clear()` to the fs-cache function, which is exactly the mistake the plan spends a paragraph forbidding. The one thing this gate does NOT cover is the behavioral claim in the PR description — since no production code path registers a capability provider with a sourceId (verified: all 84 `registerProvider` calls are module-level in `src/discovery/`), the `sdk.ts` suspend-branch call to `unregisterProvidersForSource` is inert at ship time and the tests exercise the registry API directly. Do not let the PR claim that toggling an extension now releases its providers in practice; it lays the seam, nothing more.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-6",
+  "title": "Tool admission table — a declarative single source of truth for which tools reach the model",
+  "wave": "4",
+  "wave_tag": "4",
+  "one_line": "Replace the 25-branch `if (name === …)` ladder inside `isToolAllowed` with one `Map` of tool-name → admission rule, so a built-in tool's admission is a single data entry instead of a position in a chain, and make the four parallel tool-name declarations provably agree.",
+  "user_visible_effect": "none directly — the exact same set of tools reaches the model before and after.",
+  "files": [
+   "packages/coding-agent/src/tools/index.ts [modify,verified]",
+   "packages/coding-agent/src/tools/tool-admission.ts [create,UNVERIFIED]",
+   "packages/coding-agent/test/tools/tool-admission-table.test.ts [create,UNVERIFIED]",
+   "packages/coding-agent/src/tools/essential-tools.ts [modify,verified]",
+   "packages/coding-agent/src/sdk.ts [modify,verified]",
+   "packages/coding-agent/src/tools/builtin-names.ts [modify,verified]"
+  ],
+  "n_files": 6,
+  "depends_on": [
+   "WI-2 (collision rules settled — registration order becomes order-sensitive once the admission table is declarative)",
+   "WI-5 (the tool-set table the mode registry will draw from, so it starts from a single declaration)"
+  ],
+  "blocks": [
+   "the first built-in → extension extraction under WI-6 / WI-8a (the plan's stated purpose: turning a four-file change into a mechanical one)",
+   "WI-8a (settings ownership) — first extraction lands on the table"
+  ],
+  "effort": "M (~1.5 days). Mostly careful mechanical work plus a characterization test that must be written and proven green BEFORE the refactor, not after.",
+  "risk": "The `isToolAllowed` closure captures eleven values (`session`, `restrictToolNames`, `requestedTools`, `includeYield`, `enableLsp`, `goalEnabled`, `externalThinkingActive`, `allowEval`, and every `cfg*.get(session.settings)` read).",
+  "n_questions": 3,
+  "n_corrections": 11,
+  "gate": "The characterization test from steps 2-6, written and committed BEFORE the refactor, green both before and after. Concretely, all six branch rows plus the extension-tool row plus the prototype-safety row must pass against BOTH the 25-branch chain and the table. Add a manual one-time audit: diff the resolved `.names` for all 33 tool names across a settings×depth matrix (taskDepth 0 and 1 × gates-all-off and gates-all-on × memory backend `hindsight`/`mnemopi`/`local`) between the pre-refactor commit and the post-refactor commit — the two must be byte-identical. This is the check the plan asks for and it is the one that catches a dropped closure capture, which no assertion in the test file can catch by itself.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-7",
+  "title": "registerMode: top-level mode registry, co-designed with the status-line seam",
+  "wave": "5 (M2 wave 5 — registerMode: phần việc thực chất của M2)",
+  "wave_tag": "5",
+  "one_line": "Extension authors get one `pi.registerMode` call that installs a mode (tools, settings gate, enter/exit, write policy, and a visible status-line chip) instead of hand-rolling 15 KB of mode machinery, and the five built-in modes are re-registered through that same path without changing behaviour.",
+  "user_visible_effect": "Nothing changes for a user who never installs a third-party mode — the five built-in modes render, gate and block writes exactly as they do today.",
+  "files": [
+   "packages/coding-agent/src/modes/mode-registry.ts [create,verified]",
+   "packages/coding-agent/src/modes/index.ts [modify,verified]",
+   "packages/coding-agent/src/plan-mode/write-policy.ts [create,verified]",
+   "packages/coding-agent/src/tools/plan-mode-guard.ts [modify,verified]",
+   "packages/coding-agent/src/tools/write.ts [modify,verified]",
+   "packages/coding-agent/src/modes/types.ts [modify,verified]",
+   "packages/coding-agent/src/modes/interactive-mode.ts [modify,verified]",
+   "packages/coding-agent/src/session/agent-session.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/loader.ts [modify,verified]",
+   "packages/tui/src/status-line/types.ts [modify,verified]",
+   "packages/tui/src/status-line/schema.ts [modify,verified]",
+   "packages/tui/src/status-line/segments.ts [modify,verified]",
+   "packages/coding-agent/src/modes/status-line-host.ts [modify,verified]",
+   "packages/coding-agent/examples/extensions/plan-mode.ts [delete,verified]",
+   "packages/coding-agent/test/plan-mode/write-policy.test.ts [create,verified]",
+   "packages/coding-agent/test/modes/mode-registry.test.ts [create,verified]",
+   "packages/tui/test/status-line-extension-mode.test.ts [create,verified]",
+   "packages/coding-agent/test/fixtures/outsider-extension/index.ts [create,verified]",
+   "packages/coding-agent/test/fixtures/outsider-extension/package.json [create,verified]",
+   "packages/coding-agent/test/extension-outsider-install.test.ts [create,verified]"
+  ],
+  "n_files": 21,
+  "depends_on": [
+   "WI-1 — a suspended mode must actually stop; otherwise mode suspension inherits the live timer bug",
+   "WI-2 — mode ordering must be deterministic before modes become order-sensitive; today the mode segment's priority chain is the only ordering, and WI-7's `order` field has to come from this",
+   "WI-5 — modes need capability state that can actually be released (registry ownership + source attribution for unload)",
+   "WI-6 — the tool-set table, since `ModeDefinition.initialToolSet` depends on the admission rules it settles",
+   "WI-10 — which write surface modes answer on"
+  ],
+  "blocks": [
+   "M2-OQ3 close-out — the status-line seam answer is produced by this work item's step 0",
+   "M3 item 5 / O2 — the M3 status-line segment work consumes the seam this item freezes, and must not re-open it",
+   "§11.2 item 12 wave-5 leg — the fixture's `pi.registerMode` row is the only row that closes in wave 5"
+  ],
+  "effort": "L — a multi-PR milestone, not one change. Budget 5-8 PRs across 4-5 weeks: (1) writePolicy extraction, (2) registry core, (3) accessor pairs on the seven fields, (4) the M2-OQ3 seam + its test, (5) wrap plan mode, (6) wrap goal/vibe/loop/prewalk, (7) registerMode on ExtensionAPI + delete the example, (8) the outsider fixture + install test. Step 1 must be written before the registry exists.",
+  "risk": "Silently regressing the plan-mode write guard — the one thing in M2 that can corrupt user data.",
+  "n_questions": 5,
+  "n_corrections": 7,
+  "gate": "DONE means all four hold. (1) `bun run check:ts` exits 0. (2) The seam-2 grep still reports exactly 51 lines across 21 files with zero hand-edits, and the seam-1 grep still shows the six booleans at modes/types.ts:189-194. (3) A mode registered from OUTSIDE the repo — packages/coding-agent/test/fixtures/outsider-extension/, loaded via `discoverAndLoadExtensions([], tempProjectDir)` and not via `configuredPaths` — appears in the mode registry carrying a non-optional `statusLine`, renders a chip in the status line's `mode` segment, denies a working-tree write while allowing a `local://` write, and the extension runs with empty `result.errors`. (4) `examples/extensions/plan-mode.ts` no longer exists.\n\nCAVEAT ON THIS GATE'S CREDIBILITY TODAY: `bun test` is currently blocked repo-wide by the missing native addon, so the test halves of this gate are red for a reason unrelated to the work. Build the addon before treating any test signal here as real.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-8a",
+  "title": "Route plugin settings through Settings as a namespaced overlay (Option A)",
+  "wave": "7 of 8 (M2) — alongside WI-8b and WI-9; depends on nothing, deliberately held here per §5.1 C",
+  "wave_tag": "7",
+  "one_line": "Plugin settings stop living in two side-channel JSON files and start living inside the existing Settings layers under a reserved `plugins.<id>.<key>` namespace, so a plugin setting gets the same six-layer tiering (runtime → overlay → project → global → parent → default, plus env) that core settings already get, and `provenance()` can name which layer won.",
+  "user_visible_effect": "Plugin settings become editable in the normal settings panel with a visible source layer, and can be overridden by an environment variable the plugin declares.",
+  "files": [
+   "packages/coding-agent/src/extensibility/settings.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/plugins/manager.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/plugins/loader.ts [modify,verified]",
+   "packages/coding-agent/test/config/plugin-settings-provenance.test.ts [create,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,UNVERIFIED]"
+  ],
+  "n_files": 5,
+  "depends_on": [],
+  "blocks": [
+   "WI-8b (Option B, `pi.registerSetting`) — explicitly gated on this item. The reason is concrete: 8b's blocker 2 is that a setting id is a bare string with no namespace enforcement, so an extension can collide with a core id, and `register()` throws at `config/registry.ts:787`, breaking at load rather than degrading. The namespace helper built in step 1 IS that enforcement.",
+   "WI-11 / WI-12 (M2 wave 8, design-only) — both reason about the second-store problem that this item removes. The plan's own note at line 5994 calls an MCP-contribution design 'exactly the second-store problem that WI-8a Option A exists to solve'.",
+   "WI-9 (unload) — indirectly. Only after this item lands is plugin settings state owned by a subsystem with a single substrate that unload can actually clean up."
+  ],
+  "effort": "M (~2-3 days). The plan calls it M with LOW risk; I would raise the risk to MEDIUM and keep M, because the plan under-counts the surface: it names six files and misses `loader.ts:474`, and its risk analysis rests entirely on the provenance test catching the failure, when the more likely failure is the untested resurrection and delete-semantics cases. The typing work (schema→definition adapter, `envFallback` asymmetry, the append-only registry) is more subtle than the plan's 'substrate, not API' framing suggests.",
+  "risk": "Registering plugin settings dynamically at load time into a registry that has NO unregister (`byId.set` at `config/registry.ts:789` is its only mutation; `resetRegistryForTest` at :953 touches only `effects`).",
+  "n_questions": 5,
+  "n_corrections": 9,
+  "gate": "DONE means all four of: (1) `bun run check:ts` is green; (2) `bun test test/config/plugin-settings-provenance.test.ts` passes all three rows — the two migration rows and the env/provenance row; (3) `bun test test/plugin-config.test.ts test/plugin-config-validate.test.ts test/config/settings-registry.test.ts` is still green; (4) the migration has been manually exercised in the stated order against a real temp project containing a hand-written `.omp/plugin-overrides.json`, and a value deleted from the new store is still gone after a second run (the resurrection check from step 7). Note that (2) cannot be evaluated in this environment until the native addon is built — treat (1) as the only immediately executable gate and (2)-(4) as blocked, not as passing.",
+  "gate_can_fail": "YES for the type check and the test rows. The provenance row is a real red-to-green: on HEAD there is no `plugins.*` handle to call `provenance()` on at all, so it cannot pass before the work is done. The two migration rows are real red-to-green: on HEAD the new substrate does not exist, and a migration that read only ONE of the two legacy files would leave row 1 or row 2 red. The gate would NOT catch: a migration that runs but re-runs on every start and resurrects deleted keys (only the manual step-7 check in (4) catches that), a wrong-but-plausible env variable name (the row uses whatever name the fixture declares, so a naming slip is invisible to the suite — hence the naming rule must be written down in step 3 and reviewed, not left to the test), and the `deletePluginSetting` semantic change (no row asserts it). Those three are the honest gaps in this gate."
+ },
+ {
+  "id": "WI-8b",
+  "title": "Expose `pi.registerSetting` so an extension declares its own config key (Option B)",
+  "wave": "7 (settings ownership and the real unload seam: WI-8a, WI-8b, WI-9)",
+  "wave_tag": "7",
+  "one_line": "An extension can call `pi.registerSetting(definition)` at load time to declare a namespaced, typed, env-aware config key that behaves exactly like a core setting — visible and editable in the settings panel, reportable through the six provenance layers, and removable when the extension unloads.",
+  "user_visible_effect": "A third-party extension ships its own settings: the key appears in the settings panel under the location M2-OQ4 picks, editing it writes to the normal settings layers (runtime/overlay/project/global), an env var can override it, and the panel shows which layer won.",
+  "files": [
+   "packages/coding-agent/src/config/registry.ts [modify,verified]",
+   "packages/coding-agent/src/config/all-settings.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/loader.ts [modify,verified]",
+   "packages/coding-agent/src/config/settings-ui.ts [verify-only,verified]",
+   "packages/tui/src/overlays/settings-defs.ts [verify-only,verified]",
+   "packages/tui/src/overlays/settings-selector.ts [verify-only,verified]",
+   "packages/coding-agent/test/config/extension-registered-setting.test.ts [create,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 9,
+  "depends_on": [
+   "WI-8a — hard prerequisite, not an improvement. The namespaced substrate must exist first: `registerOwned` refuses a bare id, and an extension key with no namespace collides with core ids through a plain string comparison at registry.ts:787. The plan is explicit that this is a precondition, and I confirm it: there is no owner, no namespace enforcement and no way to remove a key today.",
+   "M2-OQ4 — the panel-placement decision. Not a code dependency but a blocking one: steps 5-7 and test row 3 are not implementable until it is answered, and answering it after exposing the API is the plan's named silent-and-permanent failure."
+  ],
+  "blocks": [
+   "WI-9 (real unload seam) — cannot complete its 11-bucket inventory unless extension-registered settings are an identifiable, removable bucket. WI-8b contributes the bucket; WI-9 sweeps it.",
+   "M2-OQ8 (per-extension state substrate, WI-11) — a decided answer here (overlay inside `Settings` vs a separate store) determines whether WI-11's state lands next to these keys or in a second store."
+  ],
+  "effort": "L. The public API surface is one method; the real work is the four blockers plus two the plan missed (owner-scoped unregistration and prepared-rebind idempotence, both verified below). Roughly: M for owner-scoped registry + invalidation, M for the loader/API/typing path, S–M for the panel placement once M2-OQ4 is decided (M if the panel becomes data-driven, S if extension keys land under the existing Plugins tab), S for tests. Do not start steps 5–7 before the M2-OQ4 decision lands — see open_questions.",
+  "risk": "The dominant failure is silent and permanent, exactly as the plan says: expose `registerSetting` while the panel still cannot show the key, and the extension author gets no error, the user gets no UI, and nothing in CI goes red.",
+  "n_questions": 4,
+  "n_corrections": 9,
+  "gate": "Conjunction of two halves. (a) `bun run check:ts` — runnable today, verified green on HEAD; it goes red the moment `ExtensionAPI` declares `registerSetting` and `ConcreteExtensionAPI` does not implement it, because the class is declared `implements ExtensionAPI` (loader.ts:179). (b) `cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts` — BLOCKED in this environment until the native addon is built (`bun --cwd=packages/natives run build`); verified blocked on HEAD with `0 pass / 1 fail / 1 error` and `Failed to load pi_natives native addon for darwin-arm64`. All four test rows fail on HEAD by construction: row 1 and row 2 call `pi.registerSetting`, which does not exist, so the file does not even type-check. Rows 1, 2 and 4 are also runnable WITHOUT the extension loader at all (they go through `register`/`lookup`/`Setting.provenance` directly with a temp `Settings`), so once the addon is built they need no session, no TUI and no fixture on disk.",
+  "gate_can_fail": "Yes, but state the split honestly. The type-check half genuinely fails: adding `registerSetting` to `ExtensionAPI` without implementing it on `ConcreteExtensionAPI` is a compile error, and a mismatched `SettingDefinition` return type is too. It will NOT catch the two things that actually break users — an unnamespaced id, and a registered key the panel never renders. Those are carried entirely by test rows 1, 3 and 4, and row 3 cannot be written until M2-OQ4 is answered. So the gate is real but it is not the whole gate, and the panel row is the only thing standing between this item and the plan's named \"silent and permanent\" failure."
+ },
+ {
+  "id": "WI-9",
+  "title": "Seam unload, khác hẳn suspend — add ExtensionRunner.unloadExtension() that drops an extension from the registry and releases exactly its own buckets and its own fallback trampolines",
+  "wave": "Wave 7 (last position, after WI-8a and WI-8b). Wave 7 is 'Sở hữu của settings và seam unload thật', M–L, ~2.5 weeks, 4 PRs. The plan places WI-9 last in M2 because the resource inventory it asserts is only complete after waves 2 and 4 have given owner-ship to timers, providers and capability state.",
+  "wave_tag": "7",
+  "one_line": "Add a real unload path for extensions: today 'disable' only suspends (an extension keeps its module state, its per-extension registration buckets and its installed fallback trampolines), so we add ExtensionRunner.unloadExtension(path) that removes the extension from the runner's registry, disposes exactly that extension's file-write/file-delete trampolines, and drops that extension's runtime flag values — deliberately different from setSuspendedExtensions, which keeps state on purpose so resume needs no rewire.",
+  "user_visible_effect": "none yet — internal.",
+  "files": [
+   "packages/coding-agent/src/extensibility/extensions/runner.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/loader.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/main.ts [modify,verified]",
+   "packages/coding-agent/test/extension-unload.test.ts [create,verified]"
+  ],
+  "n_files": 5,
+  "depends_on": [
+   "WI-1 (strict, BOTH halves) — do not build unload before suspend is correct, or unload inherits timer and provider leaks. Verified: managed-timers.ts:22-68 `ManagedTimers` is a flat runner-wide `Set<Timer>` with only `clear(handle)` and `clearAll()`; there is no per-extension timer ownership today, so unload cannot release an extension's timers until WI-1 adds it.",
+   "WI-1 provider half (wave 4) — the existing `unregisterProvider(name, sourceId)` at types.ts:1745 already keys by sourceId, i.e. extension path. That is the precedent the flagValues shape change should mirror.",
+   "WI-4 (wave 2) — so wave 7 has a complete inventory of resources to release.",
+   "WI-5 (wave 3 commit 1) — so the all-runner resource inventory is complete. Specifically `reset()` must already be unconditional."
+  ],
+  "blocks": [
+   "WI-12 (M2 wave 8, design-only, deferred) — the plan states WI-12 cannot be designed without WI-9."
+  ],
+  "effort": "M — larger than it looks. The bucket teardown itself is ~20 lines; the two prerequisites (per-extension flag values, per-extension fallback disposers) are the real work, and the test matrix is 15 rows because AGENTS.md requires one row per distinct contract.",
+  "risk": "A half-real unload that leaks.",
+  "n_questions": 4,
+  "n_corrections": 10,
+  "gate": "IMPORTANT — the gate can only fail PARTIALLY, and that must be said plainly. `bun run check:ts` genuinely goes red if any call site of the flagValues reshape is missed (there are four writers and three of them are outside loader.ts), and it goes red if `#fileFallbackDisposers` is re-keyed without updating disposeFileFallbacks. But check:ts is completely green with all 15 test rows deleted, so it cannot by itself certify the bucket-teardown behavior. The discriminating gate is row (a) half (ii) plus row (b): a mutation that drains the buckets but skips the trampoline disposer, or that deletes the wrong flagValues entry, is invisible to check:ts and is caught only by the test run — which cannot execute until the native addon is built. Until then this item is authored-but-unverified and must be reported that way, not marked done on a green check:ts. DONE requires ALL of: (1) `bun run check:ts` exits 0 — the only gate that is actually runnable on this machine today, and it covers the four-file type migration (types.ts:1739, loader.ts:101/184/265/293, runner.ts:537/1094, main.ts:2210) which is where a missed call site would show up; (2) packages/coding-agent/test/extension-unload.test.ts exists with all 15 rows, 11 of them one-per-bucket, and each row's discriminating mutation is written down in the test file as a comment; (3) `bun test test/extension-unload.test.ts` reports 15 pass / 0 fail — THIS IS CURRENTLY BLOCKED by the unbuilt native addon and must not be claimed green; (4) grep confirms no remaining flat `.flagValues.set(name, ...)` / `.flagValues.get(name)` writer or reader anywhere under packages/coding-agent/src. Note that (1) alone is NOT sufficient evidence of completion: check:ts is fully green with the entire test file deleted, so (3) is the gate that can actually fail on a half-finished unload.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-10",
+  "title": "Chốt một bề mặt viết chuẩn (tài liệu quyết định, không code)",
+  "wave": 1,
+  "wave_tag": "1",
+  "one_line": "Write one ADR that ranks the five extension writing surfaces, marks the compat-only ones frozen, and answers M2-OQ2 in literally one of the words YES / NO / DEFERRED — changing no runtime code and adding no test.",
+  "user_visible_effect": "none at runtime — the diff is three markdown files and no TypeScript.",
+  "files": [
+   "docs/extension-writing-surfaces.md [create,verified]",
+   "docs/extensions.md [modify,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 3,
+  "depends_on": [
+   "WI-0 — extension trust model. HARD dependency and a hard stop: M2-OQ2 changes what 'canonical' means for a third-party author, so writing the surface ranking on an unwritten trust posture freezes the wrong contract and every later posture change becomes a breaking change for authors who already shipped. WI-0 is also the sibling item that owns the paired ADR filename and the same CHANGELOG file."
+  ],
+  "blocks": [
+   "WI-7 — registerMode mode registry. Blocked because the plan's own M2-OQ2 blast-radius text names it first: the mode registry must be built ON the capability layer or BESIDE it, and the answer is only knowable once extension-reachability is decided. Wave 5 also depends on waves 1-4 having landed.",
+   "WI-11 — per-extension state persistence. Blocked because a per-extension store must know whether a capability-per-extension exists before it can pick a substrate to persist keyed to it.",
+   "WI-12 — MCP contribution architecture. Blocked for the same reason — the plan's wave-8 note is explicit that WI-10 must say which surface an MCP contribution belongs to.",
+   "M2 acceptance item 9 (§11.3) — 'Hai ADR đã merge (WI-0, WI-10), và M2-OQ2 đã được trả lời bằng YES / NO / DEFERRED'. Fails on any of: no ADR file in the tree; the M2-OQ2 answer is not literally one of the three words. The plan is explicit that this item has no test and must not pretend to have one.",
+   "M2 acceptance item 10 (§11.3) — no §4.3 boundary silently deleted. The closer walks §4.3 row by row adding a 'still present / replaced by a decision at line …' column and lets no cell through blank; this ADR is what fills the Capability row's cell.",
+   "M3 — §11.x notes M3 needs one settled authoring surface (M2-OQ1/OQ2/OQ7) before it can start."
+  ],
+  "effort": "S — half a day, matching the plan's own 'S để quyết định'. That estimate holds only if the author resists expanding the document into an enforcement design: enforcement is M–L and explicitly outside M2. Add roughly an hour over the naive estimate for step 3, because the correct marker set is four `fallow-ignore-next-line code-duplication` sites and the plan names only two, so the superset argument has to be rebuilt from the tree rather than copied. Implementation cost of the decision, for planning only, is HIGH and is outside M2 — that asymmetry, not the writing, is the argument for doing this first.",
+  "risk": "The comfortable failure is a deferral wearing the costume of a decision, and it has a specific signature: a document that lists six surfaces, assigns each a descriptive adjective, and never says which one is canonical for new work.",
+  "n_questions": 5,
+  "n_corrections": 9,
+  "gate": "DONE means all five hold. (1) docs/extension-writing-surfaces.md exists, and names a decider and a date. (2) A maintainer who has read nothing else can answer three questions from the text alone, without asking the author: which surface is CANONICAL for new work; which are COMPATIBILITY-ONLY and frozen; and whether the capability registry is extension-reachable. (3) The M2-OQ2 answer is one of exactly three words — YES, NO, or DEFERRED — and is greppable as a standalone line, not implied by surrounding prose. (4) `git diff --stat` shows exactly three files, none of them TypeScript. (5) The legacy shims are named with their real line counts and an explicit statement that removing them is a separate breaking-change project outside M2. This gate FAILS if: no ADR file is in the tree; the six-surface table lists surfaces without choosing among them; the M2-OQ2 answer is absent or is any fourth wording such as 'TBD', 'under discussion', or 'it depends'; docs/extensions.md still carries its old three-surface answer beside the new one; any .ts file appears in the diff; or the shims are described as removable within M2. Note the honest limit of this gate: nothing in CI can enforce any of it. Markdown is outside every lint and typecheck glob in package.json, there is no markdown linter, and there is no docs index to break. The gate is a human read, and it must be run as one — a green CI run on this branch means nothing about whether this item is done.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-11",
+  "title": "Per-extension state persistence (design only, gated on WI-8 and WI-9)",
+  "wave": "8",
+  "wave_tag": "8",
+  "one_line": "Write one design document that decides where a plugin's own key-value state lives, and do not build it — because the cleanup half of the answer is not implementable until WI-9 gives extensions a real unload, and a store built before that has to have a lifecycle bolted onto it later, which costs more than designing one with a lifecycle now.",
+  "user_visible_effect": "None.",
+  "files": [
+   "docs/extension-state-persistence.md [create,UNVERIFIED]",
+   "docs/extensions.md [modify,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 3,
+  "depends_on": [
+   "WI-8 (specifically WI-8a's substrate decision, Option A) — soft dependency, resolvable now. WI-8a routes plugin SETTINGS through `Settings` as a namespaced overlay. WI-11 asks the same substrate question about plugin STATE and the plan's whole point is that the two have DIFFERENT answers. This dependency is soft because the WI-11 document is required to argue that difference explicitly, and it can be written before WI-8a lands — but if WI-8a has already landed, read `manager.ts:929-960` first, because that code is the concrete precedent for what 'the wrong substrate' looks like and the document is much stronger citing real migrated code than predicting it.",
+   "WI-9 (wave 7) — HARD dependency for the BUILD, none for the DESIGN. The plan's whole argument is that cleanup-on-uninstall is not implementable without a real unload, and this was VERIFIED: `git grep -n 'async unload|unloadExtension|#unload' -- packages/coding-agent/src/extensibility/` returns ZERO hits. The only unregister seam in the entire extension API is `unregisterProvider` (`types.ts:1578`) — a single narrow provider unregistration, not a general teardown. The design document can and must be written now; the build cannot start until WI-9 lands.",
+   "WI-0 / WI-10 (wave 1) — soft, ordering only. The plan's wave table has wave 1 (trust model, canonical authoring surface) strictly before wave 8 because M2-OQ2 (does the capability registry ever become extension-reachable) changes what 'canonical' MEANS for a third-party author, and a per-extension store is a canonical authoring surface. If wave 1 has not landed, the design doc must flag that its recommendation is conditional on the trust posture and must not be written as if `ctx.state` would have a settled trust level."
+  ],
+  "blocks": [
+   "The unowned build of a per-extension state store — which the plan (§8.2) requires be NAMED and DATED before M2 closes, and which no milestone currently claims. The plan's own words: 'Có kéo build này vào M2 hay không, ai làm, ở milestone nào — cả ba đều chưa được gán'. This design document is what makes that name-and-date obligation concrete.",
+   "WI-9 (wave 7) — only weakly, and only as a constraint, not a blocker. WI-9's unload arm has to know what to clean, and the store does not exist yet, so WI-9 can proceed without this item. The dependency is one-directional: this item's BUILD needs WI-9, not the other way round. Do not let this be read as a reason to reorder wave 7.",
+   "M3 (per plan §11.3: 'M3 cần: một bề mặt authoring đã chốt ... và một `unload` thật để cài/gỡ không rò'). A decided substrate is a precondition for M3 authoring surfaces; an undecided one means M3 rediscovers the question with less context than this item has.",
+   "M4 (per plan §11.3: ownership that can be verified — every registration traceable to an extension, every run-lifetime resource owned and released on teardown). A state store with no owner is a direct M4 violation, which is why the ownership unit in step 5 is not optional detail."
+  ],
+  "effort": "S for the design, matching the plan's 'S mỗi cái' rating for wave 8. Half a day of research plus a day of writing is the realistic number, not four hours, because step 2 (auditing what an extension can do today) is research the plan never did and it changes what the document has to say. The build is M and is NOT in this item and NOT in M2. Be aware the plan's own wave table calls wave 8 'S mỗi cái, không build' while §8.2 says the build is unowned and must be named and dated before M2 closes — those are consistent only if you read 'S' as covering the document alone, which is how this spec reads it.",
+  "risk": "Building it before WI-9 — the plan names this correctly and it is the whole risk.",
+  "n_questions": 5,
+  "n_corrections": 7,
+  "gate": "DONE means all six of the following hold.\n\n(1) `git diff --name-only | grep -c '\\.ts$'` returns 0. Zero TypeScript files touched. A design item that ships an edit to `types.ts` has failed regardless of what the prose says.\n\n(2) `docs/extension-state-persistence.md` exists, and it RANKED three substrates and recommended one. Grep step 3 and 4 above must produce hits. The failure this prevents is a document that names a winner without naming what it beat, which reads as an oversight rather than a decision.\n\n(3) The document names a concrete on-disk path (grep step 7) and a concrete ownership unit — per extension identity, keyed by install path, matching `extension.flags` at `loader.ts:263` and explicitly NOT `runtime.flagValues` at `loader.ts:265`. A document that says the path will be decided later has deferred the decision instead of making it.\n\n(4) Both future contracts are written down in the present tense (step 6), and the second one states what happens to values on rename rather than only asserting that a rename must not orphan them. An unstated rename policy is the whole hole a reader will fall into.\n\n(5) The deferral is recorded: the build is named as unowned, WI-9 is named as its technical precondition, and the text does NOT use the phrase 'Phase 4/5' or any other phase label (the plan has no phase concept and explicitly forbids writing one). Additionally: if the text mentions pulling the build into M2, it must state that green WI-9 is necessary and not sufficient.\n\n(6) The maintainer answers all five questions in verification step 8 from the document's text alone. This is the human-review gate the plan asks for ('Review người tài liệu thiết kế') and the ONLY gate — there is no automated substitute and pretending otherwise is how this item gets closed while producing prose nobody checked.\n\nNote what is NOT part of the gate: `bun run check:ts` passing proves nothing about this item and must not be cited as evidence; no test may be added, because the plan's stated reason is that cleanup-on-uninstall is not implementable until WI-9 lands, so a test written now would be exactly the placeholder AGENTS.md forbids.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "WI-12",
+  "title": "Let extensions contribute MCP servers — DESIGN ONLY, no build under M2",
+  "wave": "8 (Thiết kế hoãn: lưu trạng thái extension và MCP — WI-11, WI-12. S mỗi cái, không build)",
+  "wave_tag": "8",
+  "one_line": "Write a decision document that picks one of two architectures for letting a loaded extension hand an MCP server to the core manager — the recommended one registers a server descriptor that core's existing manager instantiates — and state the approval and trust rules out loud, because this item ships a decision and not a line of code.",
+  "user_visible_effect": "none — internal.",
+  "files": [
+   "docs/mcp-server-contribution-by-extensions.md [create,verified]",
+   "docs/extensions.md [modify,verified]",
+   "docs/mcp-config.md [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/mcp/manager.ts [modify,verified]",
+   "packages/coding-agent/src/capability/mcp.ts [modify,verified]",
+   "packages/coding-agent/src/modes/components/extensions/dashboard-runtime.ts [modify,verified]",
+   "packages/tui/src/overlays/extensions/extension-dashboard.ts [modify,verified]"
+  ],
+  "n_files": 8,
+  "depends_on": [
+   "WI-0 — the extension trust model must be decided and written first. Verified as not merely open but stubbed: `isProjectTrusted(): boolean` is declared at extensions/types.ts:494 and :561 and implemented as `() => true` at extensions/runner.ts:1264 and session/agent-session.ts:7406. An extension-contributed MCP server inherits that check, and today it cannot fail.",
+   "WI-10 — must state, as an explicit YES/NO/DEFERRED, which of the five (or six) write surfaces is canonical for MCP contribution. This design doc is not allowed to quietly become that answer; if it does, WI-10 has been pre-empted."
+  ],
+  "blocks": [
+   "Nothing inside M2. The build this design unblocks is unowned per §8.2 and must be given a name and a deadline before M2 closes — that assignment is a human decision this spec does not make."
+  ],
+  "effort": "S to write (a decision document plus a pointer line, half a day), M to build — and the build is NOT scheduled under M2 by this item, it only becomes possible after WI-0 and WI-10 land.",
+  "risk": "Writing the design as if the approval question were already settled.",
+  "n_questions": 5,
+  "n_corrections": 6,
+  "gate": "DONE when all five hold. (a) `docs/mcp-server-contribution-by-extensions.md` exists and contains, as findable text, all six required parts listed in files_touched row 1 — in particular a trust tier stated as ONE sentence a reviewer can disagree with, and the approval-parity proposition written against the real tiers rather than assumed. (b) `git diff --stat HEAD` lists exactly the three docs paths and nothing under `packages/` — a source change here means the item was built instead of designed, which §8.2 puts outside M2 with no owner. (c) The document's premise matches the tree: it says package-level DECLARATIVE contribution already ships (three providers, omp-plugins.ts:423 / agent-plugins.ts:335 / claude-plugins.ts:737) and the gap is IMPERATIVE runtime contribution. If the document says extensions cannot contribute MCP servers at all, it is wrong and must be corrected — a reviewer who knows the codebase will stop reading there. (d) A human maintainer answered the trust tier and the credential question in the open issues or the document itself, by name, and the document records who and when. An unanswered trust tier is NOT a pass, even with everything else green. (e) A maintainer other than the author read the document and could answer from it, without reading code, the question 'if I install an extension that registers an MCP server, what happens to my network and my credentials?' — if they cannot, the document is not finished regardless of its length.\n\nThe acceptance product is a decision a maintainer can review, not a passing build. There is nothing in the tree to test, and pretending otherwise would convert an S into an M.",
+  "gate_can_fail": "Yes, on four of the five clauses, and it is worth being precise about which. Clause (b) fails hard and mechanically: touch any file under packages/ and `git diff --stat HEAD` shows it. Clause (c) fails if the document repeats the plan's overstatement — that is a real check because the plan's own text contains the error and an engineer following it faithfully will reproduce it. Clause (d) fails only if a human is disciplined; nothing mechanical detects an unanswered trust tier, which is exactly why it is written as a hard clause rather than a suggestion. Clause (e) fails only on a human read.\n\nWhat the gate CANNOT catch, and the spec should not pretend otherwise: it cannot detect a design that names a trust tier and is wrong about it, and it cannot detect the design being quietly turned into a build plan by a later reader who skims the 'not decided here' section. That is the human dependency §11.3's assignment requirement exists for. The one mechanical counterweight is clause (b), which catches the most common failure — someone 'just adding the method' because the design made it look easy."
+ },
+ {
+  "id": "WI-13",
+  "title": "ui.setHeader / ui.setFooter stop swallowing silently, and hook widgets get an owner",
+  "wave": "Wave 6 of 8 in M2. TWO PRs, and they are gated differently. PR 1 = the two throw sites + `test/extension-ui-header-footer.test.ts`; this is the only thing the wave-6 gate runs. PR 2 = the owner half (per-extension widget maps + per-extension UI context + remount instead of global wipe); it is NOT gated at wave 6, but it MUST land before WI-9 (wave 7) so WI-9's 11-bucket unload inventory has something to enumerate.",
+  "wave_tag": "6",
+  "one_line": "An extension author who calls `ctx.ui.setHeader(...)` — on the TUI or on a headless run — now gets a real error naming the method and pointing at `setWidget`/`setEditorComponent` instead of nothing at all; and every hook widget is filed under the extension that set it, so removing one extension no longer takes everyone else's widget with it and pressing `/new` no longer blanks a still-running extension's widget.",
+  "user_visible_effect": "Two things a user can actually notice.",
+  "files": [
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/runner.ts [modify,verified]",
+   "packages/coding-agent/src/modes/interactive-mode.ts [modify,verified]",
+   "packages/coding-agent/src/session/agent-session.ts [modify,verified]",
+   "packages/coding-agent/src/modes/acp/acp-agent.ts [modify,verified]",
+   "packages/coding-agent/test/extension-ui-header-footer.test.ts [create,verified]",
+   "packages/coding-agent/test/extension-unload.test.ts [create,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 9,
+  "depends_on": [],
+  "blocks": [
+   "WI-9 (wave 7) — the owner half of PR 2 must land first, or WI-9's unload inventory has no way to enumerate or release hook widgets. This is §5.1 H: land before WI-9."
+  ],
+  "effort": "PR 1 (throw sites + wave-6 test file): S. Two object-literal members become throwing methods, one shared error-message helper, one new test file of two rows. PR 2 (owner half): M, not S. The widget maps change shape, the TUI `uiContext` object literal becomes a factory, `ExtensionRunner` gains a new per-extension context constructor, and the global wipe becomes a per-extension remount across FIVE call sites spread over two byte-identical duplicated handler blocks. PR 2 is only M-sized if you also retain the widget's factory/content — see the plan_corrections entry on that, because the current maps discard it and a remount is otherwise impossible.",
+  "risk": "The single most likely way to get this wrong is shipping PR 1 and closing the wave.",
+  "n_questions": 6,
+  "n_corrections": 9,
+  "gate": "PR 1 (this is the wave-6 gate) is DONE when all four hold. (a) `bun run check:ts` is green. (b) `bun test test/extension-ui-header-footer.test.ts` reports 2 passing tests. (c) `grep -rn 'setFooter: () => {}\\|setHeader: () => {}' packages/coding-agent/src` returns ZERO hits — no silent pair survives anywhere, at any of the four sites. (If the ACP open question is decided as 'ACP's silence is correct', clause (c) narrows to three sites and the decision must be recorded in the PR; it must not be narrowed silently.) (d) The two tests were each observed to FAIL on HEAD before the fix; if they passed on HEAD they are proving nothing.\n\nThe gate CAN go red on a partial fix, which is the property that makes it worth having. Fixing only `extension-ui-controller.ts:157-158` and missing the other three leaves six hits and clause (c) does not pass. Reverting either throwing site to a silent no-op makes clause (b) fail, because both tests call methods that must throw. Clause (d) is what separates a real gate from a decorative one: a test that passes on HEAD proves nothing, so both rows must be run against HEAD first.\n\nThe one thing the wave-6 gate CANNOT catch is the missing owner half. If PR 1 ships and PR 2 is never started, every clause above is satisfied, §11.1's fifth test goes green, and the frame still holds widgets belonging to extensions that were removed, while `/new` still blanks a running extension's widget. That gap is closed by the §5.1 H ordering constraint (land before WI-9), which is a human check, not a command.\n\nPR 2 (owner half, lands before WI-9) is DONE when: `bun run check:ts` is green, PR 1's two tests still pass, the widget maps are per-extension with content retained, all FIVE remount call sites were converted (controller :246, :307, :478, :536 and interactive-mode :6020 — count them, do not eyeball them), the comment block at runner.ts:756-777 no longer contradicts the new optional parameter, and the manual `/new` check in step 14 was performed and reported. PR 2 ships WITHOUT tests for the owner behavior by design — WI-9 writes rows (3)(4)(5) — so its PR description must say that plainly rather than implying coverage it does not have.",
+  "gate_can_fail": true
+ }
+]

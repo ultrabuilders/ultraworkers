@@ -1,0 +1,74 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 14, hàng W7, Gate A",
+  "claim": "W7 Gate A: `test \"$(xargs -a /tmp/w7-inscope-files.txt grep -c -F '@oh-my-pi/' 2>/dev/null | wc -l)\" -eq 0` — cổng bắt scope cũ còn sót trong tập in-scope, được mô tả là đỏ được.",
+  "why_wrong": "Đây là cổng SỐ MỘT của W7, và nó XANH VÔ ĐIỀU KIỆN trên máy này. (1) `xargs -a` là cờ GNU; macOS dùng BSD xargs nên in `xargs: invalid option -- a` ra stderr và exit 1 — `2>/dev/null` nuốt mất, `wc -l` ra 0, `-eq 0` thành đúng. (2) Ngay cả khi xargs chạy được, `grep -c` với nhiều file in ra `file:0` cho file sạch, nên `wc -l` đếm SỐ DÒNG chứ không phải số dương — tập file toàn sạch vẫn ra N>0 và cổng đỏ giả. Hai lỗi cùng hướng: lỗi (1) làm cổng luôn xanh, lỗi (2) làm cổng luôn đỏ. Cổng không phân biệt được 'đã làm' với 'lệnh không chạy' — đúng thứ mà file này tự tuyên bố là tiêu chuẩn.",
+  "evidence": "`xargs -a` fail: `xargs -a /tmp/w7-inscope-files.txt echo ARG` → `xargs: invalid option -- a` (stderr bị 2>/dev/null che). Chứng minh cổng xanh khi CÓ residue thật: `printf 'packages/utils/package.json\\n' > /tmp/w7-inscope-files.txt` (file này có 2 lượt `@oh-my-pi/`), chạy đúng lệnh cổng → in `GATE A: PASS (GREEN)`. Chứng minh lỗi `grep -c`: `xargs grep -c -F '@oh-my-pi/' < /tmp/w7-inscope-files.txt` với 2 file in `packages/utils/package.json:2` và `packages/utils/src/dirs.ts:1` — file không khớp vẫn in `file:0`, nên `wc -l` không bao giờ về 0 trên tập >1 file. Bản sửa đã thử cả ba trạng thái: dirty→RED, clean→GREEN, thiếu baseline→RED.",
+  "fix": "Gate A: `test -s /tmp/w7-inscope-files.txt || { echo 'GATE A FAIL: baseline in-scope thiếu — chụp trước khi sửa'; exit 1; }` rồi `xargs grep -F -c '@oh-my-pi/' < /tmp/w7-inscope-files.txt 2>/dev/null | awk -F: '$NF>0' | grep . && { echo 'GATE A FAIL: còn scope cũ trong tập in-scope'; exit 1; }` — bỏ `-a` (dùng redirect `<`, chạy được cả BSD lẫn GNU xargs) và lọc `$NF>0` để file `0` không tính. Đã chạy thử: tập dính→RED, tập sạch→GREEN, thiếu baseline→RED.",
+  "file": "back3"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 18, hàng W10, cột \"Bằng chứng cụ thể\"",
+  "claim": "`git grep -n 'PI:dev' -- Dockerfile.robomp python/robomp/docker-compose.yml package.json` ra 4 dòng, một tag.",
+  "why_wrong": "Chuỗi `PI:dev` không tồn tại ở đâu trong repo. Tag thật là `oh-my-pi/pi:dev` (chữ `pi` thường, nằm sau dấu gạch ngang trong tên scope). `git grep` phân biệt hoa thường, nên lệnh trả về 0 dòng và exit 1 — cổng đỏ ngay từ cây sạch, và vẫn đỏ sau khi làm đúng. Người đọc sẽ đi sửa Docker/Compose để 'làm cổng xanh', tức là đổi một tag vốn đúng. Số '4 dòng' cũng sai: với chuỗi đúng có 7 dòng.",
+  "evidence": "`git grep -n 'PI:dev' -- Dockerfile.robomp python/robomp/docker-compose.yml package.json` → không in gì, `EXIT=1`. `git grep -n 'oh-my-pi/pi:dev' -- <cùng 3 file>` → in 7 dòng: Dockerfile.robomp:5, :12, :19; package.json:139, :140, :148; docker-compose.yml:23. `git grep -n 'PI:dev' | wc -l` → 0 trên toàn repo.",
+  "fix": "Thay bằng: `git grep -n 'oh-my-pi/pi:dev' -- Dockerfile.robomp python/robomp/docker-compose.yml package.json` phải ra **7 dòng, một tag duy nhất**; và thêm phép kiểm một-tag: `[ \"$(git grep -oh 'oh-my-pi/pi:dev' -- Dockerfile.robomp python/robomp/docker-compose.yml package.json | sort -u | wc -l)\" -eq 1 ]` — phải in đúng 1.",
+  "file": "back3"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 10, hàng W4, lệnh gate thứ hai",
+  "claim": "`cd ../.. && bun test ./packages/utils/test/install-id.test.ts ./packages/utils/test/profiles.test.ts ./packages/utils/test/dirs-python-gateway.test.ts ./packages/coding-agent/test/discovery/pi-config-dir.test.ts`",
+  "why_wrong": "Lệnh này GỘP ba file utils (chạy được) với một file coding-agent (bị chặn). File bị chặn làm cả lệnh exit 1 trước khi W4 làm bất cứ việc gì, và sẽ exit 1 sau khi W4 làm đúng — đúng mẫu 'cổng đỏ vĩnh viễn mà vết đỏ không mang thông tin' mà chính file này gọi tên ở hàng W5. Tệ hơn: cổng vẫn PHÂN BIỆT ĐƯỢC — 23 test utils pass, chỉ 1 fail — nên người đọc dễ thấy 'phần lớn xanh' và tưởng chỉ thiếu addon. Lưu ý mâu thuẫn nội bộ: W5 trong cùng file ghi rõ lệnh tương tự phải bị loại khỏi cổng vì lý do này, còn W4 thì không.",
+  "evidence": "Chạy đúng lệnh: `23 pass / 1 fail / 1 error`, `REAL_EXIT=1` (thoát pipe để lấy exit thật, không phải `$?` của `tail`). Test fail là `packages/coding-agent/test/discovery/pi-config-dir.test.ts` với `Failed to load pi_natives native addon for darwin-arm64`; file này import `@oh-my-pi/pi-coding-agent/config` nên kéo theo addon. Chạy riêng: `bun test ./packages/coding-agent/test/discovery/pi-config-dir.test.ts` → `0 pass / 1 fail / 1 error`.",
+  "fix": "Chia thành hai lệnh và ghi rõ trạng thái: (1) CỔNG CHẠY ĐƯỢC — `cd packages/utils && bun test ./test/install-id.test.ts ./test/profiles.test.ts ./test/dirs-python-gateway.test.ts` (phải 0 fail). (2) CỔNG BỊ CHẶN, ghi `NOT RUN — environment blocked (pi_natives native addon)`, gỡ chặn bằng `brew install ninja && bun --cwd=packages/natives run build`: `cd packages/coding-agent && bun test test/discovery/pi-config-dir.test.ts`. Tuyệt đối không để hai file ở cùng một lệnh `bun test`.",
+  "file": "back3"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 12 (W6) và dòng 13 (W6a), cột \"Bằng chứng cụ thể\"",
+  "claim": "W6: `git grep -n CONFIG_DIR_NAME -- 'packages/**/*.ts'` không còn hit nào là project-root join. W6a: hit còn lại chỉ được thuộc ba loại được phép (home-root, so sánh với chính nó, re-export).",
+  "why_wrong": "Cổng này không kiểm được, và nếu chạy đúng nghĩa thì bốn site project-root join sẽ đỏ mà không mục nào sở hữu. Bốn site đó nằm trong HAI file test mà W6, W6a và toàn bộ gates.json đều không nhắc tới: `packages/coding-agent/test/sdk-system-prompt-template.test.ts:23` (`path.join(cwd, CONFIG_DIR_NAME, \"SYSTEM_TEMPLATE.md\")` với `cwd` là thư mục project) và `packages/coding-agent/test/system-prompt-template.test.ts:42,111,126` (`tempDir.join(\"project\", CONFIG_DIR_NAME)`, và vòng lặp `[CONFIG_DIR_NAME, \".agents\"]` dò trên thư mục project). Người review làm theo W6a sẽ phải tự quyết sửa hai file không ai duyệt, hoặc bỏ qua — và bỏ qua thì chính là hành vi sai đã được sinh ra, vì W6a nói rõ mục đích là làm cho việc ghép project-root trở thành quyết định có chủ ý chứ không phải tai nạn.",
+  "evidence": "`git grep -n CONFIG_DIR_NAME -- 'packages/**/*.ts'` → 24 hit. Lọc ra các hit project-root join: `packages/coding-agent/src/modes/controllers/omfg-controller.ts:285`, `packages/coding-agent/test/sdk-system-prompt-template.test.ts:23`, `packages/coding-agent/test/system-prompt-template.test.ts:42`, `packages/utils/src/dirs.ts:590`. `grep -c \"sdk-system-prompt-template\\|system-prompt-template\" .lavish-wip/m5-md/90-back3.md` → 0; `grep -c \"sdk-system-prompt-template\" .lavish-wip/m5-index/gates.json` → 0. Ba hit W6a cho phép (help-extra.ts:66, config.ts:135, legacy-pi-coding-agent-shim.ts:1592) đều tồn tại đúng dòng.",
+  "fix": "Bổ sung vào hàng W6a một điều khoản thứ tư bắt buộc: hai file `sdk-system-prompt-template.test.ts` và `system-prompt-template.test.ts` phải được W6a sửa sang `PROJECT_DIR_NAME` tại đúng 4 dòng (`:23`, `:42`, `:111`, `:126`) và được liệt kê trong cột test_files của W6a với nhãn MODIFIED. Đồng thời sửa câu \"chỉ còn ba loại hit được phép\" thành \"chỉ còn bốn loại: home-root, so sánh với chính nó, re-export, và project-root join đã chuyển sang `PROJECT_DIR_NAME`\".",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 16, hàng W8b, cột \"Bằng chứng cụ thể\"",
+  "claim": "check-disposition.ts phủ cả ba scope: 599 file display-token, 94 file `\".omp\"`, 16 file literal trần.",
+  "why_wrong": "Hai trong ba con số đo trên phạm vi KHÁC NHAU một cách im lặng, trong khi 599 đo trên `*.ts`. Số 94 là toàn repo; nếu checker chạy `*.ts` như phần còn lại của W8b thì nó chỉ thấy 71 — thiếu 23 file, trong đó có `crates/pi-natives/src/crash_handler.rs` và `crates/pi-natives/src/oauth_callback/darwin.rs`, đúng hai file mà W4 nêu là không có test và bắt buộc phải đọc tay. Số 16 là toàn repo; trên `*.ts` chỉ có 14. Người đọc sẽ hiểu cả ba là cùng một phạm vi và tin rằng 23 file ngoài TS đã được bảo vệ.",
+  "evidence": "`git grep -lE '(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)' -- '*.ts' | wc -l` → 599. `git grep -lF '\".omp\"' -- '*.ts' | wc -l` → 71 nhưng `git grep -lF '\".omp\"' -- . | wc -l` → 94; 23 file chênh lệch nằm ở crates/ (4), scripts/ (12), python/ (2), packages/natives/native/loader-state.js, docs/task-agent-discovery.md, và 2 file kế hoạch. `git grep -lE '\"oh-my-pi\"' -- '*.ts' | wc -l` → 14 nhưng toàn repo → 16 (chênh đúng `docs/provider-quirks.md` và file kế hoạch).",
+  "fix": "Ghi rõ phạm vi từng con số và thêm phần phủ ngoài TS: 'phủ cả ba scope: 599 file display-token và 71 file `\".omp\"` trong `*.ts`; 94 file `\".omp\"` và 16 file literal trần trên toàn repo — 23 file `.omp` nằm ngoài `*.ts` (crates/ 4, scripts/ 12, python/ 2, packages/natives/native/loader-state.js, docs/task-agent-discovery.md) phải có hàng riêng trong bảng'. Nếu checker chỉ quét `*.ts`, phải nói rõ 23 file đó thuộc W4 và W13 chứ không thuộc W8b.",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 31, mục \"Những điều chưa được kiểm chứng\"",
+  "claim": "W7 Gate B chụp baseline changelog 13 file / 85 lượt; con số này được lặp lại ở dòng 14 và 37.",
+  "why_wrong": "Con số 85 là số LƯỢT (`git grep -o`), nhưng lệnh Gate B ghi vào file là `git grep -c` — đếm DÒNG. Tổng `-c` là 71, không phải 85. Người thực hiện sẽ chụp baseline, nhìn thấy các con số cộng lại là 71, tưởng baseline sai, và sửa lại con số hoặc bỏ kiểm. Vì file này tự đặt nhiệm vụ là nơi chống lại con số bịa, một con số tự mâu thuẫn với lệnh sinh ra nó là đúng loại lỗi cần bắt.",
+  "evidence": "`git grep -c '@oh-my-pi/' -- 'packages/*/CHANGELOG.md'` cho 13 dòng, cộng `awk -F: '{s+=$NF}'` ra **71**. `git grep -o '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' | wc -l` ra **85** (đúng 13 file: agent 17, ai 21, catalog 7, natives 7, utils 9, tui 6, coding-agent 4, collab-web 2, mnemopi 2, omptype 3, snapcompact 3, stats 3, wire 1). Vì `git grep -c` in `path:dòng` và `path` không chứa `:`, `cut -d: -f2` tách đúng — nhưng tổng vẫn là 71.",
+  "fix": "Đổi mọi chỗ ghi '13 file / 85 lượt' thành '13 file / 71 dòng khớp' và thêm câu giải thích trong ngoặc: '(85 là số lượt khi dùng `git grep -o`; Gate B dùng `git grep -c` nên con số đúng là 71 dòng)'. Cụ thể sửa dòng 14 và dòng 37.",
+  "file": "back3"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 9, hàng W3, cột \"Điều kiện phải đúng\"",
+  "claim": "18 khẳng định ghim literal cũ trong bốn file test đã chuyển sang derive.",
+  "why_wrong": "Con số 18 không tái lập được. Đếm lại: `composer-shape-preview.test.ts` có 7 khẳng định `toContain(\"omp\")` chứ không phải 4 như gates.json liệt kê (`:45, :49, :54, :59` bỏ sót `:65, :70, :76`); `desktop-notify.test.ts` có 9 dòng `\"omp\"` và đúng là 9 khẳng định; `logger-contract.test.ts` có 4 chỗ khớp gates.json nhưng thêm 4 dòng nữa cũng ghim tên cũ (`:105` tên file log, `:183` đường dẫn `.omp/logs`, `:286` danh sách tên file log, `:313` basename log); `dirs.test.ts` chỉ có 1. Tổng khẳng định thật là 21, không phải 18. Người thực hiện đối chiếu \"18 khẳng định\" với danh sách 18 dòng sẽ bỏ sót 3 dòng ở composer-shape-preview và 4 dòng ở logger-contract, rồi báo xanh.",
+  "evidence": "`grep -c 'toContain(\"omp\")' packages/tui/test/composer-shape-preview.test.ts` → **7** (dòng 45, 49, 54, 59, 65, 70, 76), trong khi gates.json W3 chỉ liệt `:45, :49, :54, :59`. `grep -c '\"omp\"' packages/tui/test/desktop-notify.test.ts` → 9. `grep -n 'omp' packages/utils/test/logger-contract.test.ts` → 11 dòng, trong đó 7 dòng là pin giá trị (77, 105, 135, 183, 286, 296, 313, 333). `grep -n 'omp' packages/utils/test/dirs.test.ts` → 2 dòng (52 là tên thư mục tạm, 82 là khẳng định). Tổng khẳng định ghim giá trị: 7 + 9 + 8 + 1 = 25 theo cách đếm rộng, 21 theo cách đếm hẹp — không cách nào ra 18.",
+  "fix": "Đổi '18 khẳng định' thành '21 khẳng định' và liệt kê đủ: `composer-shape-preview.test.ts` 7 chỗ (`:45, :49, :54, :59, :65, :70, :76`), `desktop-notify.test.ts` 9 chỗ (`:114, :117, :132, :144, :147, :153, :163, :166, :202`), `logger-contract.test.ts` 4 chỗ định danh (`:77, :135, :296, :333`) CỘNG 4 chỗ ghim giá trị cùng loại (`:105, :183, :286, :313`), `dirs.test.ts` 1 chỗ (`:82`). Sửa đồng thời danh sách trong gates.json W3 `test_files` cho khớp.",
+  "file": "back3"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 33, mục \"Môi trường chặn test\"",
+  "claim": "Môi trường chặn test: W4, W6, W6a đo được `bun test packages/utils/test/dirs.test.ts` ra 6 pass và `install-id.test.ts` ra 5 pass.",
+  "why_wrong": "Phần này đúng và đáng giữ. Ghi lại để chốt: hai con số này tái lập được, và ranh giới package-scoped mà file vẽ ra (utils chạy được, coding-agent không) là đúng thực tế. Điểm cần bổ sung cho người đọc là ranh giới nằm ở ĐÁI DỦNG IMPORT chứ không ở tên package: `packages/coding-agent/test/discovery/pi-config-dir.test.ts` nằm trong coding-agent và bị chặn, còn `packages/utils/test/*` thì không — nhưng nếu ai đó thêm một import chạm addon vào một file utils, ranh giới sẽ dịch mà không có gì báo.",
+  "evidence": "`bun test packages/utils/test/dirs.test.ts` → `6 pass / 0 fail / 9 expect() calls`. `bun test ./packages/utils/test/install-id.test.ts` → `5 pass / 0 fail / 11 expect() calls`. `bun test packages/utils/test/logger-contract.test.ts` → `12 pass / 1 fail` (bị addon kéo theo). `command -v ninja` → rỗng, xác nhận `brew install ninja` là bắt buộc trước.",
+  "fix": "Không cần sửa con số. Thêm một câu vào cuối đoạn: 'Ranh giới không nằm ở tên package mà ở đái dựng import: một file trong `packages/utils/test/` chạm `@oh-my-pi/pi-natives` là bị chặn ngay, nên trước khi tin một lệnh `bun test` là chạy được, hãy chạy nó một lần và đọc exit code chứ không suy từ vị trí file.'",
+  "file": "back3"
+ }
+]

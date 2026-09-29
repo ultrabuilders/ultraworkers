@@ -1,0 +1,230 @@
+{
+  "id": "M4-4",
+  "title": "ChangeResult + withFileLock + atomicWriteJson trích ra",
+  "wave": "M4 Wave B — Ghi trạng thái bền vững và sự thật của bảng settings (shippable: false)",
+  "one_line": "Plugin enable/disable/setting writes become a locked read-modify-write that reports back whether the change actually landed on disk, and the ad-hoc atomic-JSON writer becomes one shared utility.",
+  "user_visible_effect": "Toggling a plugin in /settings now returns a real answer instead of an unconditional void: the caller learns whether the lockfile actually changed and whether the running session picked it up. A second writer can no longer silently clobber a first writer's plugin toggle. Note that M4 Wave B is `shippable: false` (plan section 6.2) — this is an observable behaviour change and may not ship until M4's single changelog decision is authorized.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/extensibility/plugins/manager.ts",
+      "action": "modify",
+      "change": "Replace `#saveRuntimeConfig()` (lines 148-151) with a locked read-modify-write helper; add the exported `ChangeResult` interface; change `setEnabled` (874-881), `setEnabledFeatures` (898-920), `setPluginSetting` (942-949) and `deletePluginSetting` (954-961) to return `Promise<ChangeResult>`; convert all nine call sites (668, 724, 855, 880, 919, 948, 958, 1221, 1231) to pass their mutation into the locked section instead of mutating the memoized object first.",
+      "verified": true,
+      "note": "VERIFIED. All nine call-site line numbers reproduce exactly (git grep -n 'saveRuntimeConfig'). `setPluginSetting` spans 942-949 with the save at :948 — the plan's collision claim about M3-A4 is correct. `#ensureConfigLoaded` is 141-146 and memoizes `this.#runtimeConfig` per instance. `#readRuntimeConfigAt` is the private fresh reader used by `#loadRuntimeConfig` (138). Two private writers also convert: `#removeInvalidFeature` (1216-1225) and `#removeOrphanedConfig` (1227-1233) — both already `return true`/`return false` so the new shape should preserve that boolean."
+    },
+    {
+      "path": "packages/tui/src/overlays/plugin-settings.ts",
+      "action": "modify",
+      "change": "Widen the three mutator signatures on `PluginSettingsManager` (line 68) from `Promise<void>` to `Promise<ChangeResult>`: `setEnabled` (:72), `setEnabledFeatures` (:74), `setPluginSetting` (:75). Update the overlay call sites at :776, :786, :790 (and :823) to consume the result.",
+      "verified": true,
+      "note": "VERIFIED. Interface is exactly 7 methods with exactly 3 mutators (setEnabled/setEnabledFeatures/setPluginSetting) as the plan claims. The interface starts at :68; the plan's ':67-75' includes the JSDoc line at 67, so the range is right in substance. This is a genuine cross-package structural contract: `packages/coding-agent/src/extensibility/plugins/settings-host.ts:14-27` does `manager: new PluginManager(cwd)`, so PluginManager structurally satisfies PluginSettingsManager. Adding a method to one side only is a type error — which is the good kind of trap."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/plugins/marketplace/registry.ts",
+      "action": "modify",
+      "change": "Delete the local `atomicWriteJson` (lines 44-71) and import the shared one from `@oh-my-pi/pi-utils` instead. Its two callers — `writeMarketplacesRegistry` (:95) and `writeInstalledPluginsRegistry` (:128) — keep their signatures.",
+      "verified": true,
+      "note": "VERIFIED span. The plan says 44-70; the function's closing brace is at line 71 (line 70 closes the inner catch). git grep confirms the definition at :44 and exactly two call sites (:95, :128) plus the definition. Delete the definition, not the callers."
+    },
+    {
+      "path": "packages/utils/src/atomic-write.ts",
+      "action": "create",
+      "change": "New central module exporting `atomicWriteJson(filePath: string, data: unknown): Promise<void>` — write to a sibling temp file, then `fs.rename` into place, with the Windows EPERM unlink-then-rename fallback and tmp cleanup on unexpected errors, moved verbatim from registry.ts.",
+      "verified": false,
+      "note": "Does not exist yet — create. git grep for `atomicWrite` finds no existing central implementation in packages/utils, so this is the first one and there is nothing to merge with. See open question 4 on the fixed `.tmp` suffix."
+    },
+    {
+      "path": "packages/utils/src/index.ts",
+      "action": "modify",
+      "change": "Add `export * from \"./atomic-write\";` in alphabetical position (after `./async`, before `./binary`) to keep the barrel sorted.",
+      "verified": true,
+      "note": "VERIFIED. The barrel already has `export * from \"./file-lock\";` (line 7) and is alphabetically ordered, so the new export slots directly under `export * from \"./async\";`. AGENTS.md requires a star re-export here, not a named one."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/plugins/marketplace/manager.ts",
+      "action": "modify",
+      "change": "OPTIONAL / scope decision. `#writeRuntimeConfig` (923-925) is a second runtime-config writer with the identical read-modify-write shape and no lock; route it through `atomicWriteJson` (and consider the same lock treatment).",
+      "verified": true,
+      "note": "VERIFIED, and NOT mentioned anywhere in the plan text. The plan's own risk 2 says 'extracting atomicWriteJson while other call sites still write files by hand leaves two implementations' — this is exactly that call site. `setPluginEnabled` (:686) writes through this path, not through PluginManager's lockfile, which also settles part of open question 2."
+    },
+    {
+      "path": "packages/coding-agent/src/cli/plugin-cli.ts",
+      "action": "modify",
+      "change": "Surface the new `ChangeResult` on the four mutating commands: `setEnabled` (:1038), `setEnabledFeatures` (:761), `setPluginSetting` (:906), `deletePluginSetting` (:917).",
+      "verified": true,
+      "note": "VERIFIED as the full production blast radius. All four are bare `await manager.x(...)` today, so widening the return type is source-compatible and the CLI compiles unchanged — but if the point of ChangeResult is that callers act on it, these four are the callers. The plan never names this file; without touching it, the new return value is discarded everywhere outside the TUI."
+    },
+    {
+      "path": "packages/coding-agent/test/plugin-runtime-config-lock.test.ts",
+      "action": "create",
+      "change": "New test file: two-instance contention, required negative control, changed=false branches, and the throw path. See test_contract.",
+      "verified": false,
+      "note": "Does not exist yet. Follow the isolation pattern in `packages/coding-agent/test/plugin-config.test.ts:19-33` (spyOn on the piUtils namespace for getPluginsDir / getPluginsLockfile / getProjectDir / getProjectPluginOverridesPath, `mock.restore()` in afterEach, `removeWithRetries` in cleanup). Never `mock.module()`."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "Add entries under the existing empty `## [Unreleased]` for the user-visible change: setEnabled et al. now report whether the change landed and whether a restart is required.",
+      "verified": true,
+      "note": "VERIFIED. `## [Unreleased]` exists at line 3 and is currently empty. The plan (section 6.2) forbids this work from writing its own changelog entry — the entry is blocked behind M4's single changelog decision covering Waves B, C and D. Do NOT add the entry in this PR; track it."
+    },
+    {
+      "path": "packages/tui/CHANGELOG.md",
+      "action": "modify",
+      "change": "Same blocked changelog entry for the `PluginSettingsManager` return-type change (an exported-interface breaking change for out-of-repo implementors).",
+      "verified": true,
+      "note": "VERIFIED to exist (215 KB). Same block as above — record the entry, do not write it. The breaking surface is real: `packages/tui/package.json` line 94 exports the `./*` wildcard, so `PluginSettingsManager` is reachable by any external consumer."
+    },
+    {
+      "path": "packages/utils/CHANGELOG.md",
+      "action": "modify",
+      "change": "Add an `### Added` entry for the new shared `atomicWriteJson` util once the changelog gate opens.",
+      "verified": true,
+      "note": "VERIFIED to exist (43 KB). The util itself is internal plumbing, so this entry is the least user-facing of the three and may be droppable at the changelog decision."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "package.json:32 (packages/natives/package.json)",
+      "instruction": "Build the native addon FIRST — `bun --cwd=packages/natives run build`. Without it every test in this item is unrunnable, because `packages/utils/src/file-lock.ts:9` imports `FileLock` from `@oh-my-pi/pi-natives` and any test that touches `withFileLock` dies with 'Failed to load pi_natives native addon for darwin-arm64'. Confirm with `bun test packages/utils/test/file-lock.test.ts` going from 0 pass / 1 fail to green before writing any code."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/extensibility/plugins/marketplace/registry.ts:44-71",
+      "instruction": "Create `packages/utils/src/atomic-write.ts` and move the `atomicWriteJson` body into it verbatim (the 2-space JSON stringify plus trailing newline, the `${filePath}.tmp` temp path, the `fs.rename`, the EPERM unlink-then-rename fallback, and the tmp cleanup on unexpected errors). Keep the existing `(err as NodeJS.ErrnoException).code === \"EPERM\"` cast — it is not `any` and AGENTS.md permits it. Add `export * from \"./atomic-write\";` to the utils barrel in alphabetical position. Then delete the original from registry.ts:44-71 and point its two callers at the shared import."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:148-151",
+      "instruction": "Add the exported `ChangeResult` interface (`{ changed: boolean; application: \"applied\" | \"restart-required\" }`) to manager.ts. Add the private `#mutateConfig(mutate, application)` helper (see code_shape) that opens `withFileLock(getPluginsLockfile(), ...)`, re-reads the config from disk INSIDE the lock via the existing `#loadRuntimeConfig()`, snapshots it, applies the caller's mutation to the fresh object, diffs to compute `changed`, adopts the fresh object as `this.#runtimeConfig`, and writes with `atomicWriteJson` only when `changed`. Delete `#saveRuntimeConfig`. Import `withFileLock` and `atomicWriteJson` from `@oh-my-pi/pi-utils` at the top level — no inline imports."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:874-961",
+      "instruction": "Convert the four public mutators to the new shape. This is the mechanical part and the part the plan gets wrong: each one currently mutates the memoized `this.#runtimeConfig` and THEN calls save. You must move the mutation INSIDE the callback — leave a `config.plugins[name].enabled = enabled` sitting outside the lock and the helper will read fresh state, apply nothing, diff nothing, and report `changed: false` while silently dropping the write. `deletePluginSetting` (:954) currently guards its save behind `if (config.settings[name])`; drop the guard and let the diff produce `changed: false` for the missing-key case."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:668,724,855,880,919,948,958,1221,1231",
+      "instruction": "Convert the remaining five writers — install (:668), uninstall (:724), link (:855), `#removeInvalidFeature` (:1221), `#removeOrphanedConfig` (:1231) — to pass their mutation into `#mutateConfig`. The two private helpers already return booleans; keep that shape and return the `ChangeResult` alongside rather than replacing it. After this step `git grep -n saveRuntimeConfig -- packages/` must return zero hits — that is the mechanical proof the refactor is complete."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/tui/src/overlays/plugin-settings.ts:72,74,75",
+      "instruction": "Widen the three `PluginSettingsManager` mutator return types to `Promise<ChangeResult>` and import the type. Where should the type come from is open question 1 — if tui cannot import from coding-agent (it cannot; the dependency runs the other way), declare it in tui and have coding-agent's manager satisfy it structurally, exactly as the interface is satisfied today. Then consume the result at the overlay call sites (:776, :786, :790, :823)."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/src/cli/plugin-cli.ts:761,906,917,1038",
+      "instruction": "Make the four CLI mutating commands act on the result instead of discarding it — at minimum report `application: \"restart-required\"` so a user who toggles a plugin from the shell learns the running session did not change. This is user-visible and belongs in the changelog entry."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/test/plugin-runtime-config-lock.test.ts",
+      "instruction": "Write the tests per test_contract. Non-negotiable: the negative control. Without it the two-instance test proves nothing, because two commands on ONE instance already both land (the memoized object is shared) — the plan is right about this and it is the single easiest way to ship a green test suite that guards nothing."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:942-949",
+      "instruction": "Reconcile with M3-A4. Either M3-A4 has not landed — in which case this PR and M3-A4 must be one PR or have an explicit merge order, because both rewrite setPluginSetting — or it has landed and this step is a rebase. Whichever way, `grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` must be 0 before and after; that is M3's regression guard and it is already 0 at baseline, so it guards a future regression rather than proving anything today."
+    },
+    {
+      "n": 10,
+      "anchor": "verification block",
+      "instruction": "Run the full gate. Do not mark done until every command below passes. `bun run check:ts` currently passes clean on this tree — if it goes red, the tui/coding-agent interface drift is real and must be fixed here, not deferred."
+    }
+  ],
+  "code_shape": "// ── packages/coding-agent/src/extensibility/plugins/manager.ts ─────────────\n\n/** Outcome of a plugin-config mutation, as observed on disk. */\nexport interface ChangeResult {\n\t/** False when the mutation was a no-op, so nothing was written. */\n\tchanged: boolean;\n\t/** Whether the running session already reflects the write. */\n\tapplication: \"applied\" | \"restart-required\";\n}\n\nclass PluginManager {\n\t// Replaces the old #saveRuntimeConfig():\n\t//   await this.#ensureConfigLoaded();\n\t//   await Bun.write(getPluginsLockfile(), JSON.stringify(this.#runtimeConfig, null, 2));\n\t//\n\t// The WHOLE read-modify-write runs inside the lock. The mutation is a\n\t// callback, not something already applied to this.#runtimeConfig — applying it\n\t// before calling this helper is the bug that silently discards every write.\n\tasync #mutateConfig(\n\t\tmutate: (config: PluginRuntimeConfig) => void,\n\t\tapplication: ChangeResult[\"application\"],\n\t): Promise<ChangeResult> {\n\t\treturn withFileLock(getPluginsLockfile(), async () => {\n\t\t\t// Fresh read INSIDE the lock. Reusing #ensureConfigLoaded() here would\n\t\t\t// hand back the per-instance memo and defeat the whole exercise.\n\t\t\tconst fresh = await this.#loadRuntimeConfig();\n\t\t\tconst before = JSON.stringify(fresh, null, 2);\n\n\t\t\tmutate(fresh);\n\n\t\t\tconst changed = before !== JSON.stringify(fresh, null, 2);\n\t\t\t// Adopt the fresh object as this instance's memo so a later read on the\n\t\t\t// same instance sees what is actually on disk, not a stale snapshot.\n\t\t\tthis.#runtimeConfig = fresh;\n\t\t\tif (changed) await atomicWriteJson(getPluginsLockfile(), fresh);\n\t\t\treturn { changed, application };\n\t\t});\n\t}\n\n\tasync setEnabled(name: string, enabled: boolean): Promise<ChangeResult> {\n\t\treturn this.#mutateConfig(\n\t\t\tconfig => {\n\t\t\t\tif (!config.plugins[name]) {\n\t\t\t\t\tthrow new Error(`Plugin ${name} not found in runtime config`);\n\t\t\t\t}\n\t\t\t\tconfig.plugins[name].enabled = enabled;\n\t\t\t},\n\t\t\t\"restart-required\", // see open question 1\n\t\t);\n\t}\n\n\tasync deletePluginSetting(name: string, key: string): Promise<ChangeResult> {\n\t\t// The old `if (config.settings[name])` guard is gone: a missing key now\n\t\t// produces changed:false through the diff instead of through a branch.\n\t\treturn this.#mutateConfig(config => {\n\t\t\tif (config.settings[name]) delete config.settings[name][key];\n\t\t}, \"applied\");\n\t}\n}\n\n// ── packages/utils/src/atomic-write.ts ───────────────────────────────────────\n// Moved verbatim from marketplace/registry.ts:44-71. The EPERM cast is a\n// NodeJS.ErrnoException cast, not `any`.\nexport async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {\n\tconst content = `${JSON.stringify(data, null, 2)}\\n`;\n\tconst tmpPath = `${filePath}.tmp`;\n\tawait Bun.write(tmpPath, content);\n\ttry {\n\t\tawait fs.rename(tmpPath, filePath);\n\t} catch (err) {\n\t\tif ((err as NodeJS.ErrnoException).code === \"EPERM\") {\n\t\t\ttry {\n\t\t\t\tawait fs.unlink(filePath);\n\t\t\t} catch {\n\t\t\t\t// Target may not exist — that's fine\n\t\t\t}\n\t\t\tawait fs.rename(tmpPath, filePath);\n\t\t} else {\n\t\t\ttry {\n\t\t\t\tawait fs.unlink(tmpPath);\n\t\t\t} catch {\n\t\t\t\t// Best effort\n\t\t\t}\n\t\t\tthrow err;\n\t\t}\n\t}\n",
+  "test_contract": "Defends three named contracts.\n\n(1) LOST-UPDATE ELIMINATION. Observable contract: after two independent PluginManager instances (each holding its OWN memoized config, both pointed at the same lockfile) run setEnabled concurrently, the JSON on disk contains BOTH changes. If it regresses, the user sees a plugin toggle silently vanish because another writer touched the lockfile first — the exact failure that motivated M4-4.\n\n    Test geometry is load-bearing and the plan is right about it. `#ensureConfigLoaded` (manager.ts:141-146) memoizes `this.#runtimeConfig` per instance, so two setEnabled calls on ONE instance mutate one shared object and the second write necessarily contains both changes EVEN WITH THE LOCK ENTIRELY REMOVED. A single-instance test is therefore green on the unfixed code and defends nothing. The test must construct two PluginManager instances and assert each loads its own config. Note that `getPluginsLockfile` is a GLOBAL path (~/.omp/plugins/omp-plugins.lock.json via dirs.ts:652), NOT cwd-derived, so both instances must be pointed at one temp lockfile via the spyOn pattern.\n\n(2) THE NEGATIVE CONTROL — mandatory, without it (1) proves nothing. Re-run scenario (1) against the PRE-fix algorithm, written out inline in the test as a plain mutate-then-Bun.write helper with no lock, and assert the disk file contains only ONE of the two changes. This is the row that makes (1) meaningful: it demonstrates the failure the lock removes, using the real file, the real path, and the real algorithm.\n\n    Implementation constraint: drive this with an inline re-implementation, NOT by patching PluginManager. AGENTS.md bans `mock.module()` outright, and patching the class to remove its own lock would be the same kind of lie. The inline helper writes the same bytes to the same spied lockfile — that is a real reproduction, not a mock.\n\n(3) ChangeResult SEMANTICS, one test per branch:\n    - setEnabled to the value it already holds returns changed:false and leaves the file bytes untouched. (Distinct outcome from the success path — this is the branch that proves `changed` is observed on disk rather than echoing a returned flag.)\n    - deletePluginSetting on an absent key returns changed:false.\n    - setEnabled on an unknown plugin still rejects with /not found in runtime config/ AND leaves the file untouched — proving the throw happens inside the lock before any write, so a failed call cannot corrupt the lockfile.\n    - setEnabled returns application: 'restart-required' (the no-HMR path).\n\nAlso assert, for the extracted helper: atomicWriteJson leaves no `.tmp` sibling behind and produces parseable JSON with the trailing newline. The Windows EPERM fallback is NOT testable on darwin-arm64 — do not fake it with a source grep or a forced errno; state it as untested here.\n\nFull-suite safety: use the exact isolation pattern from packages/coding-agent/test/plugin-config.test.ts:19-33 — `spyOn(piUtils, 'getPluginsDir'|'getPluginsLockfile'|'getProjectDir'|'getProjectPluginOverridesPath')` in beforeEach, `mock.restore()` in afterEach, `fs.mkdtemp` under `os.tmpdir()` and `removeWithRetries` for cleanup. No file-wide mutation of `Bun.*` or `process.env`.\n\nAGENTS.md compliance: every test here names a consumer-observable failure mode. Do not add a test that only asserts the constructor or the file exists. Do NOT source-grep manager.ts or registry.ts to prove the refactor happened — the `git grep saveRuntimeConfig` check in step 5 is a human checklist item, not a test.",
+  "test_files": [
+    "packages/coding-agent/test/plugin-runtime-config-lock.test.ts (new)",
+    "packages/utils/test/file-lock.test.ts (existing — must go green once the addon is built; it is the regression net for withFileLock itself)",
+    "packages/coding-agent/test/plugin-config.test.ts (existing — must stay green; it constructs PluginManager against the same spied lockfile and is the nearest thing to an integration net for this change)"
+  ],
+  "verification": "# 1. Unblock first — the addon is NOT built in this environment.\nbun --cwd=packages/natives run build\n\n# 2. Prove the unblock worked (currently: 0 pass, 1 fail, pi_natives addon error).\nbun test packages/utils/test/file-lock.test.ts\n\n# 3. This item's tests.\nbun test packages/coding-agent/test/plugin-runtime-config-lock.test.ts\n\n# 4. Nearest existing net — must stay green.\nbun test packages/coding-agent/test/plugin-config.test.ts\n\n# 5. Types + lint + format. Passes clean on the current tree; must still pass after.\nbun run check:ts\n\n# 6. Mechanical completeness checks (human checklist, not tests).\ngit grep -n 'saveRuntimeConfig' -- packages/            # expect ZERO hits\ngit grep -c 'secret' packages/coding-agent/src/extensibility/plugins/manager.ts   # expect 0 (M3's guard)\ngit grep -n 'atomicWriteJson' -- packages/               # expect ONE definition, in packages/utils\n\n# NOTE: `bun test packages/coding-agent/test/ && bun check` as written in the plan is\n# NOT sufficient. `bun check` runs check:ts in parallel with check:rs and the Rust\n# side is a separate toolchain; use `bun run check:ts` for the TS gate and run the\n# addon build first. Without step 1 the whole suite reports 0 pass.",
+  "gate": "All six verification steps pass, in order, with the addon built. Concretely, a reviewer must be able to show: (a) `bun test packages/utils/test/file-lock.test.ts` is green — it is 0 pass / 1 fail right now, so this alone is a real, currently-red gate; (b) the new test file passes AND its negative-control test asserts that the unlocked algorithm really does lose an update (temporarily delete `withFileLock` from `#mutateConfig` and confirm the contention test goes red — a gate that has never been seen red is not a gate); (c) `git grep -n saveRuntimeConfig -- packages/` returns zero hits; (d) `git grep -n atomicWriteJson -- packages/` shows exactly one definition, in packages/utils; (e) `grep -c secret .../manager.ts` is 0; (f) `bun run check:ts` is green, which is what actually catches the tui/coding-agent interface drift the plan warns about.\n\nDONE additionally requires a human decision on open question 1 (who owns `application`), because the plan's model for that type lives in a repo that does not exist here.",
+  "gate_can_fail": "Yes, and three of the six steps are red today. Step 1-2 fail right now: the native addon is unbuilt, `withFileLock` imports `FileLock` from `@oh-my-pi/pi-natives` (file-lock.ts:9), and `bun test packages/utils/test/file-lock.test.ts` reports `0 pass, 1 fail` with 'Failed to load pi_natives native addon for darwin-arm64' — verified by running it. Step 3 fails because the file does not exist. Step 5 is a genuine gate: it currently passes clean, and it is precisely what turns the tui interface drift into a build failure rather than a runtime surprise. The one step that is NOT self-validating is 6 — grep counts are a human checklist, not a test; if someone reorders the refactor so `#saveRuntimeConfig` is renamed rather than removed, the greps stay green while the lock is silently absent. The contention test with its negative control is the only real defense, and step 2 of the gate (delete the lock, watch it go red) is what proves that defense is live.",
+  "depends_on": [
+    "Native addon build: `bun --cwd=packages/natives run build` — a hard prerequisite, not a nicety. withFileLock is unusable and untestable without it.",
+    "M3-A4 (merge-order only, not a code dependency): M3-A4 rewrites the same setPluginSetting range 942-949. The plan requires same-PR or an explicit merge order; two independent patches will silently undo each other."
+  ],
+  "blocks": [
+    "M4-6 — touches the same packages/tui/src/overlays/ package; the plan mandates one review, two commits.",
+    "M4's single changelog decision (plan section 6.2) — Wave B is shippable:false and cannot ship before that gate, which also covers Waves C and D.",
+    "Wave B completion generally — M4-4 and M4-6 are not independent PRs because both change the same structural interface."
+  ],
+  "effort": "M by the plan's own estimate. Realistically M-L: the mechanical part is large (nine call sites change shape, not just two signatures), and the test cannot be written or run until the native addon is built, which is a real chunk of wall-clock on a cold machine.",
+  "risk": "The single most likely way to get this wrong is implementing the plan's words literally: 'wrap #saveRuntimeConfig in withFileLock and re-read the config inside the lock.' All nine call sites mutate the memoized `this.#runtimeConfig` BEFORE calling save — verified, e.g. setEnabled at 874-881 does `config.plugins[name].enabled = enabled;` then `await this.#saveRuntimeConfig();`. If you put a re-read inside the lock and write what comes back, the re-read CLOBBERS the caller's just-applied mutation. The result is a lock that serializes perfectly, a test that could still go green if you also kept the old object, and 100% of writes silently dropped in production. The mutation must move inside the locked section as a callback; there is no way to add the lock around the existing save and keep the existing call sites. Second-order risk: making `changed` an in-memory flag (`return changed` from the setter) rather than a disk-observed diff would make every test pass and the field meaningless — AGENTS.md calls this out explicitly and the plan calls it out too.",
+  "open_questions": [
+    "Who decides `application: 'applied' | 'restart-required'`? `PluginManager` has no HMR knowledge and the string has zero referents in this repo (git grep 'restart-required' → 0 hits). The overlay path does only a PARTIAL reload: settings-selector.ts:1329 → selector-controller.ts:305-312 calls clearPluginRootsAndCaches + refreshSkillState + refreshSlashCommandState + resetCapabilities, but does NOT call `refreshAgentDiscovery`, which the real `reloadPlugins` does (acp-agent.ts:2167). So a toggle arguably half-applies. A human must decide: (a) PluginManager always returns 'restart-required' and the overlay upgrades to 'applied' when it knows a reload ran, (b) the value is computed at the tui layer, or (c) 'applied' is claimed once refreshAgentDiscovery is added to the settings path. The plan's model for this type is `packages/boot/plugin-manager/src/types.ts:111-114` — which DOES NOT EXIST in this repo (see plan_corrections).",
+    "Is `PluginSettingsMarketplaceManager.setPluginEnabled` in scope for the return-type change? The plan lists it as 'the fourth mutator', but it is implemented by a DIFFERENT class — `MarketplaceManager` at marketplace/manager.ts:686 — and writes the marketplace registry, not the plugins lockfile. It never touches `#saveRuntimeConfig`. It shares only the tui overlay package. Widening its return type is a separate breaking change with its own changelog weight.",
+    "Is `MarketplaceManager.#writeRuntimeConfig` (marketplace/manager.ts:923-925) in scope? It is a second runtime-config writer with the identical read-modify-write shape, no lock, and it does not go through `atomicWriteJson`. The plan never mentions it, but leaving it untouched is precisely the 'two implementations' violation the plan's own risk 2 warns about.",
+    "Should the extracted `atomicWriteJson` keep the FIXED `${filePath}.tmp` suffix, or move to the hardened `${filePath}.${process.pid}.${random}.tmp` form that packages/ai/src/auth-broker/snapshot-cache.ts:93 uses? A shared temp name is safe only while every writer of a given file takes the same lock — which is true for the lockfile after this change but NOT for the two marketplace registries, which do not lock. Worth deciding before the util becomes central.",
+    "Changelog sequencing: the plan (section 6.2) says M4 ships as ONE changelog decision covering Waves B, C and D, and that this plan never writes its own entries. So the three CHANGELOG.md edits above are placeholders to track, not work to do now. Confirm that reading before anyone adds an entry.",
+    "Does the `secret` guard belong in this PR's gate at all? `grep -c secret manager.ts` is already 0 at baseline, so it cannot distinguish 'M3-A4 landed' from 'M3-A4 never existed'. If M3-A4 lands after this PR, the guard is still worth keeping — but it should be described as a M3 guard this PR must not break, not as evidence about M3-A4's state."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Chi tiết (b): 'Bọc #saveRuntimeConfig trong withFileLock và đọc lại config bên trong lock' — wrap the existing save in the lock and re-read inside it.",
+      "verdict": "WRONG — implementing this literally drops 100% of writes",
+      "correction": "The mutation must move INSIDE the locked section as a callback. All nine call sites mutate the memoized `this.#runtimeConfig` before calling save (verified: setEnabled 874-881 does `config.plugins[name].enabled = enabled;` then saves). Re-reading inside the lock and writing the re-read result discards the caller's just-applied mutation. The correct shape is a single `#mutateConfig(mutate, application)` helper that does read → apply callback → diff → write entirely inside `withFileLock`, and every one of the nine sites changes shape. There is no version of this change where the existing call sites survive intact.",
+      "evidence": "sed -n '874,881p' packages/coding-agent/src/extensibility/plugins/manager.ts and sed -n '130,151p' of the same file — the mutate-then-save ordering is present at every site, and #ensureConfigLoaded (141-146) is what hands out the shared object."
+    },
+    {
+      "claim": "`packages/boot/plugin-manager/src/types.ts:111-114` models the ChangeResult type, `packages/boot/plugin-manager/src/index.ts:772/774/787` is the execution precedent, and `packages/boot/config-editor/src/index.ts:127-129` is the rollback precedent.",
+      "verdict": "NOT IN THIS REPO — external reference only",
+      "correction": "`packages/boot/` does not exist here. `ls packages/` returns: agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire. All three are citations to the upstream/reference project (dsh). Legitimate as design precedent, but the engineer must not spend time hunting for them locally, and the ChangeResult type must be defined from scratch in this repo rather than copied.",
+      "evidence": "ls packages/ — no `boot` entry. Verified against the current tree at HEAD 808b365."
+    },
+    {
+      "claim": "`restart-required` is asserted by the test, and `setEnabled` should report it 'when there is no HMR path'.",
+      "verdict": "UNDERSPECIFIED — no HMR path is a partial reload, and the type has zero referents",
+      "correction": "`restart-required` does not appear anywhere in the repo (0 hits). And the settings overlay's reload is demonstrably partial: settings-selector.ts:1329 → selector-controller.ts:305-312 calls clearPluginRootsAndCaches, refreshSkillState, refreshSlashCommandState and resetCapabilities, but NOT `refreshAgentDiscovery` — which the real `reloadPlugins` does at acp-agent.ts:2167. So the honest answer for the current overlay path is 'partially applied', and the binary `applied | restart-required` cannot express it. This is a human decision, not an implementation detail. See open question 1.",
+      "evidence": "git grep 'restart-required' → 0 hits; sed -n '303,312p' packages/coding-agent/src/modes/controllers/selector-controller.ts vs sed -n '2163,2169p' packages/coding-agent/src/modes/acp/acp-agent.ts."
+    },
+    {
+      "claim": "`PluginSettingsMarketplaceManager.setPluginEnabled` is the fourth mutator, also in this overlay package.",
+      "verdict": "MISLEADING — different class, different file, not a lockfile writer",
+      "correction": "It is implemented by `MarketplaceManager` at packages/coding-agent/src/extensibility/plugins/marketplace/manager.ts:686, not by `PluginManager`, and it writes the marketplace registry via `atomicWriteJson`, never through `#saveRuntimeConfig`. It is not one of the nine writers. It only shares the tui overlay package, so widening its return type is an independent breaking decision.",
+      "evidence": "git grep -n setPluginEnabled — implementation at marketplace/manager.ts:686; the nine `#saveRuntimeConfig` call sites are all in manager.ts and none is reachable from it."
+    },
+    {
+      "claim": "Trích `atomicWriteJson` from `marketplace/registry.ts:44-70`.",
+      "verdict": "OFF BY ONE at the end",
+      "correction": "The function spans 44-71. Line 70 closes the inner catch; line 71 is the function's closing brace. Delete through 71.",
+      "evidence": "grep -n 'async function atomicWriteJson' → 44; sed -n '70,72p' shows `\\t}` then `}` then blank."
+    },
+    {
+      "claim": "Kiểm bề mặt export wildcard `packages/tui/package.json:93-96` trước khi ship.",
+      "verdict": "OFF BY ONE",
+      "correction": "The `./*` wildcard export block is at lines 94-97.",
+      "evidence": "grep -n '\"\\./\\*\"' packages/tui/package.json → 94; sed -n '88,100p' shows the block opening at 94 with types/import on 95-96 and the closing brace on 97. The conclusion the plan draws (PluginSettingsManager is reachable by external consumers) still holds."
+    },
+    {
+      "claim": "M3-A4's evidence is `grep -c secret manager.ts` → 0.",
+      "verdict": "ALREADY 0 AT BASELINE — it is a regression guard, not evidence",
+      "correction": "The count is 0 right now on HEAD 808b365, so it cannot distinguish 'M3-A4 landed' from 'M3-A4 never existed'. Keep it as a guard this PR must not break, but do not read it as a statement about M3-A4's state. The genuine collision is that both patches rewrite setPluginSetting at 942-949 — that claim is CORRECT and independently verified.",
+      "evidence": "`grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` → 0. The 942-949 range is confirmed by `async setPluginSetting` at 942 and `await this.#saveRuntimeConfig();` at 948."
+    },
+    {
+      "claim": "Lệnh: `bun test packages/coding-agent/test/ && bun check`.",
+      "verdict": "INSUFFICIENT AND WILL NOT RUN AS WRITTEN",
+      "correction": "`bun test` reports 0 pass until the native addon is built, and this item makes that worse than a general problem: `withFileLock` itself imports `FileLock` from `@oh-my-pi/pi-natives` at file-lock.ts:9, so the code under test is now directly addon-dependent. Add `bun --cwd=packages/natives run build` as step 0. Also prefer `bun run check:ts` over `bun check` for the TS gate — `bun check` fans out to check:rs as well, and the Rust toolchain is a separate concern from this item.",
+      "evidence": "Ran `bun test packages/utils/test/file-lock.test.ts` → '0 pass, 1 fail', 'Failed to load pi_natives native addon for darwin-arm64'. `find packages/natives -name '*.node'` → empty. `bun run check:ts` → clean across all 16 packages."
+    },
+    {
+      "claim": "Nine call sites, with the first seven being public mutators (install / uninstall / link / setEnabled / setEnabledFeatures / setPluginSetting / deletePluginSetting).",
+      "verdict": "VERIFIED — and one caller is missing from the plan",
+      "correction": "All nine line numbers reproduce exactly: 668 (install), 724 (uninstall), 855 (link), 880 (setEnabled), 919 (setEnabledFeatures), 948 (setPluginSetting), 958 (deletePluginSetting), 1221 (#removeInvalidFeature), 1231 (#removeOrphanedConfig). What the plan misses is the CONSUMER side: `packages/coding-agent/src/cli/plugin-cli.ts` calls setEnabledFeatures (:761), setPluginSetting (:906), deletePluginSetting (:917) and setEnabled (:1038). All four are bare `await manager.x(...)`, so they compile unchanged after the widening — which means the new return value is silently discarded outside the TUI unless this PR also surfaces it there.",
+      "evidence": "git grep -n 'saveRuntimeConfig' (9 hits, all as listed); git grep -n '\\.setEnabled(|\\.setEnabledFeatures(|\\.deletePluginSetting(|\\.setPluginSetting(' across packages/ excluding tests."
+    },
+    {
+      "claim": "`withFileLock` at `packages/utils/src/file-lock.ts:70` — đã xác nhận có mặt; cross-process by construction (abstract Unix socket / named mutex / flock).",
+      "verdict": "VERIFIED EXACTLY",
+      "correction": "Nothing to correct. `export async function withFileLock<T>` is at line 70; the doc comment at lines 1-6 says verbatim 'Linux uses abstract Unix sockets, Windows uses named mutexes, and other Unix platforms use `flock(2)` on `${filePath}.lock`' — the plan's paraphrase is accurate. Recording this as confirmed because the plan's central safety claim rests on it: a test asserting mutual exclusion between two instances in one process is a valid exercise of this lock, because contention is on the OS handle, not on JS-level state.",
+      "evidence": "Read of packages/utils/src/file-lock.ts in full (100 lines); existing precedent tests at packages/utils/test/file-lock.test.ts and packages/utils/test/fixtures/file-lock-holder.ts."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m4-specs/M4-4.spec.json"
+}

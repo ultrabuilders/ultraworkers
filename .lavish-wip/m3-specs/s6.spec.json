@@ -1,0 +1,159 @@
+{
+  "id": "s6",
+  "title": "M3-A9 — Daltonized colorBlindMode: remap the whole semantic color set, not just toolDiffAdded",
+  "wave": "Sóng 6",
+  "one_line": "Today colorBlindMode recolors exactly one token (the green in added-diff lines); this widens it to the five semantic green/red/amber tokens that actually collide for a red-green colorblind reader, remapping each to a distinct target hue band, and adds a contrast regression harness that checks every builtin theme instead of eyeballing one.",
+  "user_visible_effect": "With Color-Blind Mode on, a red-green colorblind reader can now tell added-diff lines apart from success ticks, from a clean git status, and from an error — today only added-diff lines change, so `success` and `statusLineGitClean` stay green and still read as 'added line' at a glance. Every theme keeps its own character because the remap carries each palette's own lightness and chroma, so `titanium` stays as muted as it was. With Color-Blind Mode off nothing changes at all, byte for byte. The setting's description in the Appearance tab becomes honest about covering more than diffs.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/s6.spec.json",
+  "effort": "S (~1 day). The plan's M variant (~5 days) was justified by 'you must audit 99 palettes first' — that audit is DONE below and comes back clean, which removes the stated blocker for the S variant. Remaining M-only work is two hand-tuned themes, which is design parity with the reference, not a correctness fix; see open_questions.",
+  "risk": "Applying one uniform hue delta to five tokens collides them. Red is h=0; the existing +60 delta sends it to h=60 (yellow), which is exactly where `statusLineGitDirty` already lives — so a naive 'add error, success, statusLineGitClean, statusLineGitDirty to the same branch' patch would make error and dirty-git render the same color, a regression that is invisible in review and obvious to the user it was meant to help. This is precisely the failure the plan says the reference avoids by shipping two hand-tuned themes. The fix is to remap each token to a distinct TARGET hue band, not to add one more token to a fixed delta.",
+  "depends_on": [],
+  "blocks": [],
+  "plan_corrections": [
+    {
+      "claim": "`statusLineGitClean`/`statusLineGitDirty` are declared at `packages/tui/src/theme/schema.ts:77-78` 'with a fallback at :140-141', so a missing key would silently skip the adjustment.",
+      "verdict": "STALE / MISLEADING",
+      "correction": "The line numbers are right, but :140-141 is NOT a fallback. Both lines sit inside `THEME_COLOR_RECORD` (schema.ts:89), which exists only to build `VALID_THEME_COLORS` (schema.ts:152) for `isValidThemeColor` (schema.ts:156). It is a validation allowlist, not a default-color layer. There is no default-filling layer anywhere: `resolveThemeColors` (color.ts:64-73) iterates only keys present in the palette, and `theme-class.ts:167-169` drops any key failing `isValidThemeColor` via `continue`. A missing key therefore yields an ABSENT color, not a fallback color — so the implementer must not expect a missing key to render as something reasonable.",
+      "evidence": "`git grep -n THEME_COLOR_RECORD -- packages/tui/src` → only two hits: schema.ts:89 (definition) and schema.ts:152 (`const VALID_THEME_COLOR_RECORD = new Set(...)` → VALID_THEME_COLORS). `sed -n '64,73p' packages/tui/src/theme/color.ts` shows `resolveThemeColors` looping `Object.entries(colors)` only. `sed -n '167,169p' packages/tui/src/theme/theme-class.ts` → `if (!isValidThemeColor(key)) continue;`."
+    },
+    {
+      "claim": "The small patch 'must come with a 99-palette inventory checking each key exists and is a hex string' because 'a missing or non-hex key silently ignores the adjustment'.",
+      "verdict": "VERIFIED TRUE, AND THE AUDIT IS NOW DONE — it comes back clean",
+      "correction": "I ran the inventory the plan demanded. All 99 palettes in `packages/tui/src/theme/defaults/` contain `toolDiffAdded`, `success`, `error`, `statusLineGitClean`, and `statusLineGitDirty`. None is missing, so no key is silently skipped. One nuance the plan misses: the raw JSON is mostly `var:` indirection, not literal hex — e.g. onyx.json has `\"toolDiffAdded\": \"$emerald\"` with `vars.emerald = \"#6fb37f\"`. `resolveVarRefs` (color.ts:49-62) resolves those at `resolveThemeColors`, which runs at loader.ts:151 BEFORE the colorBlindMode branch reads them at :153. So the branch always sees resolved hex and the existing `startsWith(\"#\")` guard holds on all 99. The silent-skip risk is therefore real only for a 256-color number or `\"\"` value, which can come from a user-authored custom theme, not a builtin.",
+      "evidence": "Script over `packages/tui/src/theme/defaults/*.json` asserting all four keys present: output is a single line `99 True`. `sed -n '16p;23p;51p;74p' packages/tui/src/theme/defaults/onyx.json` → `\"emerald\": \"#6fb37f\"`, `\"success\": \"$emerald\"`, `\"toolDiffAdded\": \"$emerald\"`, `\"statusLineGitClean\": \"$emerald\"`. `ls packages/tui/src/theme/defaults/*.json | wc -l` → 99."
+    },
+    {
+      "claim": "The regression harness should run across 'all 99 palettes'.",
+      "verdict": "INCOMPLETE — 99 is the wrong number",
+      "correction": "`BUILTIN_THEMES` (loader.ts:18-22) is `dark.json` + `light.json` + the 99 `defaults/*.json`, i.e. 101 themes. `dark` and `light` are the two the app actually boots with when no theme is configured, and they are not in the defaults directory. A harness that globs `defaults/*.json` misses exactly the two themes most users see. Iterate `getBuiltinThemes()` (loader.ts:24) instead, which is the same map the picker uses.",
+      "evidence": "`sed -n '18,26p' packages/tui/src/theme/loader.ts` → `const BUILTIN_THEMES: Record<string, ThemeJson> = { dark: darkThemeJson, light: lightThemeJson, ...(defaultThemes as Record<string, ThemeJson>) };` followed by `export function getBuiltinThemes() { return BUILTIN_THEMES; }`."
+    },
+    {
+      "claim": "The new themes are 'selectable from ThemePicker like any normal theme'.",
+      "verdict": "STALE — no ThemePicker exists in this repo",
+      "correction": "`git grep -rn 'ThemePicker|theme-picker' -- packages/` returns nothing. Theme selection is `setTheme` / `previewTheme` (theme.ts:211 / :248) driven by `getAvailableThemes` (loader.ts:29) and the `cfgThemeDark` / `cfgThemeLight` settings (settings.ts:58). A theme is 'just a theme' when it is imported in `packages/tui/src/theme/defaults/index.ts` and added to the `defaultThemes` object literal — that is the whole registration cost, and it needs no picker change. This matters only for the M variant, which is why the S variant below touches no UI file at all.",
+      "evidence": "`git grep -rn 'ThemePicker|theme-picker' -- packages/ | grep -v test` → empty. `tail -15 packages/tui/src/theme/defaults/index.ts` shows the object literal keyed by theme name (`titanium: titanium,`)."
+    },
+    {
+      "claim": "The global `colorBlindMode` flag is 'wired from packages/coding-agent/src/modes/settings.ts:108'.",
+      "verdict": "RIGHT AREA, WRONG LINE AND INCOMPLETE — there are four consumer sites, not one",
+      "correction": "settings.ts:109-120 is the declaration: `export const cfgColorBlindMode = register({ id: \"colorBlindMode\" ... })` with `id` at :110 and `effect(cfgColorBlindMode, setColorBlindMode)` at :120. Line 108 is the blank line above it. But the actual hand-off into `createTheme` is at `main.ts:1909` via `applyStartupComposerPreferences({ theme: { colorBlindMode: cfgColorBlindMode.get(settingsInstance) } })`, and there are two more consumers: `modes/setup.ts:90-92` and `cli/gallery-cli.ts:29` / `commands/git.ts:13`. A reader who follows only settings.ts:108 will not find the wiring to the TUI.",
+      "evidence": "`sed -n '1907,1912p' packages/coding-agent/src/main.ts` → `colorBlindMode: cfgColorBlindMode.get(settingsInstance),` inside the `theme: {` object. `sed -n '90,92p' packages/coding-agent/src/modes/setup.ts` → `get colorBlindMode() { return cfgColorBlindMode.get(ctx.settings); }`."
+    },
+    {
+      "claim": "OKLCH primitives `hexToOklch, oklchCusp, oklchToHex, relativeLuminance` are available, imported from `@oh-my-pi/pi-utils` (session-color.ts:2).",
+      "verdict": "VERIFIED TRUE",
+      "correction": "No change needed. All four exist and are exported from `packages/utils/src/color.ts` at lines 320, 392, 423, 471. Note for the implementer: `loader.ts:3` imports `adjustHsv` from the SUBPATH `@oh-my-pi/pi-utils/color`, not the barrel — keep new color imports on the subpath to match. `oklchToHex` gamut-maps by chroma bisection and clamps, so it always returns valid 6-digit hex and never needs a post-check.",
+      "evidence": "`git grep -n 'export function hexToOklch|export function oklchCusp|export function oklchToHex|export function relativeLuminance' -- packages/utils/src` → color.ts:320, :392, :423, :471. `sed -n '3p' packages/tui/src/theme/loader.ts` → `import { adjustHsv } from \"@oh-my-pi/pi-utils/color\";`."
+    },
+    {
+      "claim": "Tests live at `packages/tui/test/*.test.ts`; tui has 221 test files.",
+      "verdict": "VERIFIED (count is now 222)",
+      "correction": "Convention holds and matters: `find packages/tui/src -name '*.test.ts' | wc -l` returns 0, confirming nothing is colocated. A new `*.test.ts` under `packages/tui/src/` would never be run. The count drifted from 221 to 222 since the plan was written; use the count only as a sanity check, never as an acceptance number.",
+      "evidence": "`find packages/tui -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` → 222. `find packages/tui/src -name '*.test.ts' | wc -l` → 0. Existing neighbors to read first: `packages/tui/test/settings-list-theme.test.ts` (uses `initTheme()` in `beforeAll`), `theme-color-mode.test.ts`, `theme-auto-detection.test.ts`."
+    }
+  ],
+  "open_questions": [
+    "S or M? The plan insists this be decided before planning and warns against defaulting to the cheap version, on the grounds that the cheap version does not equal the reference's two hand-tuned themes. My recommendation is the opposite, for a specific reason: the plan's stated justification for M was the 99-palette audit, and that audit is now done and clean (see plan_corrections #2). M's remaining benefit is design PARITY with CCB, not correctness — and M buys that parity with a harness that then only checks 2 hand-picked themes, a strictly weaker regression net than the S variant's 101. Ship S now; file M as design follow-up. If a human still wants parity, the honest scope is two new JSON files in `defaults/` plus a designer pass plus an accessibility review — not a code change.",
+    "Exact target hues. The code_shape below proposes blue ~250 for the green family, magenta ~350 for error, amber ~80 for dirty-git. Those are my estimates, not measured. Before shipping, someone who is actually red-green colorblind should confirm 250/350/80 are distinguishable to them, and confirm the two amber/orange dirty-git bands that the audit found (orange, amber, gold, bronze, coral, ember variants) still read as 'warning' and not as 'error' at 350.",
+    "Should `statusLineGitDirty` change at all? Under pure deuteranopia the load-bearing confusion is red vs green. Once green becomes blue, red stays distinguishable, so dirty-git (amber) arguably needs no remap. I remap it anyway so it is separated from error by hue, but a human should confirm that is an improvement and not just a second change.",
+    "Contrast threshold. The repo's only existing constant is `ACCENT_MIN_CONTRAST = 3` (session-color.ts:36, WCAG AA large text). The status line is small text, so AA body (4.5:1) is the defensible gate. Confirm — 4.5 may make some of the 101 existing themes red on day one, which turns a feature PR into a 101-palette remediation project."
+  ],
+  "files_touched": [
+    {
+      "path": "packages/tui/src/theme/daltonize.ts",
+      "action": "create",
+      "change": "New module holding the hue-band target table and the `daltonizeHex` transform. Kept out of loader.ts so the transform is unit-testable without constructing a full Theme, and so loader.ts keeps a single import change.",
+      "verified": true,
+      "note": "Does not exist today. Create it. Must import hexToOklch/oklchCusp/oklchToHex from the `@oh-my-pi/pi-utils/color` SUBPATH (matching loader.ts:3), not the barrel, and must top-level-import them — no inline `await import()`."
+    },
+    {
+      "path": "packages/tui/src/theme/loader.ts",
+      "action": "modify",
+      "change": "Replace the single-token branch at lines 153-158 (currently: `if (colorBlindMode) { const added = resolvedColors.toolDiffAdded; if (typeof added === \"string\" && added.startsWith(\"#\")) { resolvedColors.toolDiffAdded = adjustHsv(added, COLORBLIND_ADJUSTMENT); } }`) with a loop over the DALTONIZE_TARGET_HUE table calling daltonizeHex. Also delete the now-unused `COLORBLIND_ADJUSTMENT` const at line 146 and its doc comment at line 145, and drop `adjustHsv` from the line-3 import if nothing else in the file uses it.",
+      "verified": true,
+      "note": "Line numbers confirmed by `grep -n`: `:142` is `colorBlindMode?: boolean;` in CreateThemeOptions, `:146` is `const COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 };`, `:148` is `export function createTheme`, `:151` is `const resolvedColors = resolveThemeColors(...)`, `:153` is `if (colorBlindMode) {`, `:156` is the `adjustHsv` assignment. The branch runs AFTER var resolution, which is why the remap sees hex. IMPORTANT: the remap must stay where it is — moving it before line 151 would apply it to unresolved `$var` strings and break every theme."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/settings.ts",
+      "action": "modify",
+      "change": "Update the user-facing description string at line 117 from \"Use blue instead of green for diff additions\" to something that covers the widened set, e.g. \"Remap diff, success, error and git-status colors for red-green colorblind readability\". Leave the id, type, default, tab, group and label untouched.",
+      "verified": true,
+      "note": "`sed -n '109,120p'` confirms the block: `id` at :110, `label: \"Color-Blind Mode\"` at :116, `description` at :117, `effect(cfgColorBlindMode, setColorBlindMode)` at :120. The description currently understates the feature and would become a lie after this change."
+    },
+    {
+      "path": "packages/tui/test/daltonized-theme.test.ts",
+      "action": "create",
+      "change": "New test file defending the positive remap contract and the negative identity contract (details in test_contract).",
+      "verified": false,
+      "note": "Does not exist. Path follows the repo convention — `find packages/tui/src -name '*.test.ts' | wc -l` is 0, so a colocated file would never run. Read `packages/tui/test/settings-list-theme.test.ts` first for the `initTheme()`-in-`beforeAll` idiom."
+    },
+    {
+      "path": "packages/tui/test/theme-contrast-harness.test.ts",
+      "action": "create",
+      "change": "New test file that runs the WCAG contrast gate across every builtin theme from `getBuiltinThemes()` (101, not 99).",
+      "verified": false,
+      "note": "Does not exist. The plan says 'one contrast regression harness across 99 palettes'; the correct source is `getBuiltinThemes()` (loader.ts:24) which also covers `dark` and `light`. If the implementer prefers a single file, folding this into daltonized-theme.test.ts is acceptable — but the assertions must stay distinct per AGENTS.md 'don't duplicate coverage across abstraction levels'."
+    }
+  ],
+  "code_shape": {
+    "language": "typescript",
+    "packages/tui/src/theme/daltonize.ts": "import { hexToOklch, oklchCusp, oklchToHex } from \"@oh-my-pi/pi-utils/color\";\n\n/**\n * Hue band each semantic token is remapped INTO when colorBlindMode is on.\n *\n * These are TARGETS, not a delta. A uniform +60deg shift sends `error`\n * (red, h=0) to h=60 -- exactly where `statusLineGitDirty` already sits --\n * so a single shared offset would make those two render identically, which\n * is the specific confusion this mode exists to remove.\n */\nexport const DALTONIZE_TARGET_HUE = {\n\ttoolDiffAdded: 250, // green -> blue; the original motivation, unchanged in effect\n\tsuccess: 250,\n\tstatusLineGitClean: 250,\n\terror: 350, // red -> magenta, clear of both blue and amber\n\tstatusLineGitDirty: 80, // amber re-pinned away from the new error magenta\n} as const satisfies Record<string, number>;\n\nexport type DaltonizeKey = keyof typeof DALTONIZE_TARGET_HUE;\n\n/** Cap chroma so a vivid source green does not become a neon blue. */\nconst MAX_CHROMA = 0.16;\n\n/** Only a full 6-digit hex is remapped; 256-color indices and \"\" pass through. */\nconst HEX6 = /^#[0-9a-f]{6}$/i;\n\n/**\n * Carry the source color's lightness and most of its chroma into the target\n * hue band, so every palette keeps its own weight (titanium stays muted).\n */\nexport function daltonizeHex(hex: string, targetHue: number): string {\n\tif (!HEX6.test(hex)) return hex;\n\tconst source = hexToOklch(hex);\n\tconst chroma = Math.min(source.c, oklchCusp(targetHue).c, MAX_CHROMA);\n\t// oklchToHex gamut-maps by chroma reduction and clamps, so the result is\n\t// always a valid 6-digit hex -- no post-check needed.\n\treturn oklchToHex({ l: source.l, c: chroma, h: targetHue });\n}",
+    "packages/tui/src/theme/loader.ts (replacing lines 145-146 and 153-158)": "import { daltonizeHex, DALTONIZE_TARGET_HUE } from \"./daltonize\";\n\n// (delete: the COLORBLIND_ADJUSTMENT const and its doc comment)\n\n\tif (colorBlindMode) {\n\t\t// Runs AFTER resolveThemeColors, so every value here is a resolved hex\n\t\t// rather than a `$var` indirection. Keep it in this order.\n\t\tfor (const [key, targetHue] of Object.entries(DALTONIZE_TARGET_HUE)) {\n\t\t\tconst value = resolvedColors[key];\n\t\t\tif (typeof value === \"string\") {\n\t\t\t\tresolvedColors[key] = daltonizeHex(value, targetHue);\n\t\t\t}\n\t\t}\n\t}",
+    "notes": [
+      "`resolvedColors` is typed `Record<keyof T, string | number>` from `resolveThemeColors`, so indexing it with a plain string key will not typecheck as-is. If TS complains, widen to a `Record<string, string | number>` local view of it rather than casting to `any` -- AGENTS.md forbids `any`.",
+      "`adjustHsv` (the current transform) is HSV and non-perceptual: it shifts saturation by a fixed factor and ignores gamut, so a saturated source can clip. The OKLCH path carries L and C into a gamut-checked target, which is why the existing `COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 }` is deleted rather than reused.",
+      "Do NOT put a hue table in `packages/catalog/src/compat/rules/*.kdl`. AGENTS.md scopes that tree to MODEL and PROVIDER policy, not TUI theme colors. There is no `gen:compat` step for this file."
+    ]
+  },
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Read the two nearest existing tests first: packages/tui/test/settings-list-theme.test.ts (the `initTheme()`-in-`beforeAll` idiom and how theme colors are asserted) and packages/tui/test/theme-color-mode.test.ts (how ColorMode is pinned in a test without depending on the host terminal).",
+      "anchor": "packages/tui/test/settings-list-theme.test.ts:1"
+    },
+    {
+      "n": 2,
+      "instruction": "Create packages/tui/src/theme/daltonize.ts with DALTONIZE_TARGET_HUE, the HEX6 guard, and daltonizeHex, exactly as in the code_shape above. Top-level import from the `@oh-my-pi/pi-utils/color` subpath. No `any`, no `ReturnType<>`, no inline imports.",
+      "anchor": "packages/tui/src/theme/daltonize.ts (new)"
+    },
+    {
+      "n": 3,
+      "instruction": "In loader.ts delete the COLORBLIND_ADJUSTMENT const and its comment (lines 145-146), and drop `adjustHsv` from the line-3 import if a grep of the file shows no other use (there is none today; `git grep adjustHsv -- packages/tui/src/theme/loader.ts` returns only lines 3 and 156, both of which this change removes).",
+      "anchor": "packages/tui/src/theme/loader.ts:145"
+    },
+    {
+      "n": 4,
+      "instruction": "Replace the single-token colorBlindMode branch (lines 153-158) with the loop over DALTONIZE_TARGET_HUE shown in the code_shape. Do not move it above line 151 -- resolveThemeColors must run first.",
+      "anchor": "packages/tui/src/theme/loader.ts:153"
+    },
+    {
+      "n": 5,
+      "instruction": "Update the Color-Blind Mode description at settings.ts:117 to reflect the widened token set. Do not change the id, type, default, tab, group, or label -- other surfaces key off those.",
+      "anchor": "packages/coding-agent/src/modes/settings.ts:117"
+    },
+    {
+      "n": 6,
+      "instruction": "Write packages/tui/test/daltonized-theme.test.ts with the three contracts in test_contract: (a) the five tokens are remapped, (b) every remapped value is a valid 6-digit hex, (c) with colorBlindMode omitted the Theme is byte-identical to the pre-change output across all 101 builtin themes.",
+      "anchor": "packages/tui/test/daltonized-theme.test.ts (new)"
+    },
+    {
+      "n": 7,
+      "instruction": "Write packages/tui/test/theme-contrast-harness.test.ts: iterate Object.entries(getBuiltinThemes()), build a colorBlindMode:true theme for each, and assert each remapped fg token clears its paired bg at the threshold agreed in open_questions. Pairs: toolDiffAdded/success over toolSuccessBg, error over toolErrorBg, statusLineGitClean and statusLineGitDirty over statusLineBg. Compute the ratio locally as (L1 + 0.05) / (L2 + 0.05) from relativeLuminance -- note there is NO existing contrastRatio helper in the repo, only relativeLuminance (packages/utils/src/color.ts:471).",
+      "anchor": "packages/tui/test/theme-contrast-harness.test.ts (new)"
+    },
+    {
+      "n": 8,
+      "instruction": "Run `bun run check:ts` (verified green at HEAD 808b365 before this change). Then `bun test packages/tui/test/daltonized-theme.test.ts packages/tui/test/theme-contrast-harness.test.ts` -- which will report 0 pass / 'Failed to load pi_natives native addon for darwin-arm64' until the addon is built. Confirm the failure is the addon and not an assertion, by checking the error text.",
+      "anchor": "n/a"
+    }
+  ],
+  "test_files": [
+    "packages/tui/test/daltonized-theme.test.ts",
+    "packages/tui/test/theme-contrast-harness.test.ts"
+  ],
+  "test_contract": "Three contracts, each with a named observable failure.\n\n(1) POSITIVE COVERAGE. With colorBlindMode on, all five tokens in DALTONIZE_TARGET_HUE differ from their colorBlindMode-off values. Consumer-visible failure: a red-green colorblind user enables Color-Blind Mode, the success tick and the clean-git indicator stay green, and they read a successful tool call as an added diff line -- the exact misread this setting is supposed to prevent. Assert by building a Theme from a known palette both ways and comparing the five token values, not by asserting the literal output hex (the hues are a human decision, per open_questions, so pinning them would make every future tweak a test edit).\n\n(2) EVERY OUTPUT IS A VALID HEX. After createTheme with colorBlindMode on, each of the five tokens matches /^#[0-9a-f]{6}$/i, for all 101 builtin themes. Consumer-visible failure: a theme throws inside Bun.color at render time, or the TUI emits a broken SGR sequence and the diff view corrupts. This is the check that would have caught a number or empty-string value sneaking through the remap -- today guarded only by startsWith(\"#\").\n\n(3) NEGATIVE IDENTITY -- the strongest and cheapest. With colorBlindMode omitted or false, every token of every builtin theme is byte-identical to the value before this change. Consumer-visible failure: a user who never enabled Color-Blind Mode gets a silently different UI after an upgrade. This is the contract that makes the change safe to ship, and it is what pins the branch to 'only when the flag is set'.\n\n(4) CONTRAST, across all 101 builtin themes, for the five pairs listed in step 7. Consumer-visible failure: after enabling the mode, the dirty-git indicator becomes unreadable against the status-line background in some theme. This is the only test that generalizes past the five tokens -- it is the regression net the 101-palette sweep exists to provide.\n\nPer AGENTS.md: no `mock.module()`, no `mock.*` at all, no source-grep of any .ts file, no `expect(true).toBe(true)`, no bare `not.toThrow()`, no non-empty-string assertions. If the two files get folded into one, keep these four assertions distinct -- they defend different regressions.",
+  "verification": "bun run check:ts\nbun test packages/tui/test/daltonized-theme.test.ts packages/tui/test/theme-contrast-harness.test.ts\n\nBaseline confirmed at HEAD 808b365: `bun run check:ts` passes (all 15 packages Done, pi-tui 6.67s). `bun test` is BLOCKED in this environment -- the native addon is not built, so it reports `0 pass / 1 fail / 1 error` with 'Failed to load pi_natives native addon for darwin-arm64'. Build the addon before trusting any `bun test` result; a red run is not evidence of a real failure until that is resolved.",
+  "gate": "Three gates, all able to fail.\n\nG1 (can fail): `bun run check:ts` exits non-zero if the DALTONIZE_TARGET_HUE indexing of `resolvedColors` does not typecheck, or if the new module violates the no-`any` / top-level-import rules. It was green at baseline, so a red is attributable to this change.\n\nG2 (can fail): the contrast-4.5 harness goes red if any of the 101 builtin themes has a remapped token that fails its paired-background ratio. This gate is expected to be the expensive one -- it will likely surface themes that were already marginal before this change, and those become the remediation list rather than a reason to lower the threshold silently.\n\nG3 (can fail, and is the one that matters): the negative-identity test goes red if the colorBlindMode branch is moved above `resolveThemeColors` (which would apply the remap to unresolved `$var` strings and change every theme regardless of the flag), if the branch is widened to a path that runs when the flag is false, or if the remap mutates shared state that leaks into the flag-off theme. All three are easy mistakes and all three are invisible in review.\n\nA gate that cannot fail would be 'the file exists' or '99 palettes were iterated' -- neither proves the remap happened or that the flag still gates it.",
+  "gate_can_fail": true
+}

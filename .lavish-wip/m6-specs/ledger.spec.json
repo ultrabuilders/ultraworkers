@@ -1,0 +1,215 @@
+{
+ "id": "M6-LEDGER",
+ "title": "Sổ bài học M6 §1–2 — xác minh ba nguồn tham chiếu, anchor omp, và cổng trôi dữ liệu",
+ "wave": "M6 wave 0 — the ledger. It precedes and feeds all fifteen live M6 work items (W1, W2, W3, W4a, W4b, W5, W6, W7, W8, W9, W10, W12a, W12b, W13, W14); W11 was dropped by the plan itself. Nothing in M6 can start until the anchors this ledger registers resolve, because every W* item opens by citing a `file:line` from §2.",
+ "one_line": "Turn the §1–2 lesson ledger from a prose research artifact into a machine-checked register: re-verify every `file:line` it cites against the omp tree, mark every reference-side anchor explicitly unavailable until the three upstream repos are actually fetched and pinned, and ship a `--check` script so anchor drift turns the build red instead of silently handing Monday an engineer a line that says something else.",
+ "user_visible_effect": "none — internal. No runtime, CLI, TUI, or protocol behavior changes; `bun run check:ts` stays green with byte-identical output. What changes is that M6 stops being able to cite a line that does not say what the plan claims it says. The visible effect is process-shaped: W1–W14 get a register they can trust and a script that fails loudly when it stops being trustworthy, instead of a research document whose citations are unchecked.",
+ "effort": "S — roughly one engineer-day, and roughly 60% of it is writing the two data files rather than code. Concretely: ~150 lines for `scripts/verify-m6-ledger.ts` (the same shape as the already-blessed `scripts/gen-clippy-bazelrc.ts --check`, which is 58 lines of comment plus logic and has no unit test), ~60 lines for the verifier's own behavior test, and the rest is transcribing the ~52 omp-side anchors verified in this session into `docs/m6/anchors.json` with a content fingerprint per anchor. The genuinely unknown cost is NOT in this estimate: pinning the three reference trees requires network access and a decision that has not been made yet (see open_questions), and if that decision goes the other way the reference half of the ledger ships marked-unavailable rather than verified, which is a smaller job, not a larger one.",
+ "risk": "The single most likely way to get this wrong is treating an unresolvable reference anchor as a probably-fine one and moving on. The plan's own track record in this repo argues hard against that: of the ~52 omp-side anchors checked in this session — the half of the ledger that was actually checkable — 8 were materially stale, including two off by more than 140 lines. The reference half is the half nobody checked, and it carries citations at the same level of asserted precision. An engineer who skips the fetch and assumes correctness imports 40+ phantom line numbers into fifteen downstream work items, and the failure surfaces days later as 'the plan told me to put the deny arm before line 255 and line 255 is in the middle of a different function'. The second most likely mistake is reaching for a `bun test` file that greps implementation source for a string. AGENTS.md bans that, it would not survive a rename, and the blessed `gen-clippy-bazelrc.ts --check` precedent carries no test at all. The third is wiring the check into `.github/workflows/ci.yml` and then making the item's gate depend on that push landing — the gate must be the script's exit code, which is reproducible locally, not a shared-workflow change nobody can verify in this session.",
+ "code_shape": "// scripts/verify-m6-ledger.ts — same contract shape as scripts/gen-clippy-bazelrc.ts --check:\n// exit 0 when the tree still matches the register, exit 1 (with a named diff) when it does not.\n// No `any`, no `ReturnType<>`, no inline imports, Bun APIs only, top-level imports.\n\nimport * as path from \"node:path\";\n\nexport interface Anchor {\n\t/** 1-based line number. */\n\treadonly line: number;\n\t/** Substring that MUST appear on that line, for drift detection. */\n\treadonly contains: string;\n\t/** \"omp\" = resolvable in this repo today. \"reference\" = lives in an un-fetched upstream tree. */\n\treadonly source: \"omp\" | \"reference\";\n\t/** For source === \"reference\": which tree, and whether it is pinned yet. */\n\treadonly tree?: \"codex-ref\" | \"opencode-ref\" | \"gajae-ref\";\n\t/** Absolute-ish repo-relative path. */\n\treadonly path: string;\n\t/** Free text: what the anchor is cited FOR, so drift triage has context. */\n\treadonly purpose: string;\n}\n\nexport interface Register {\n\t/** The omp commit every omp-side anchor was verified against. */\n\treadonly verifiedAtCommit: string;\n\treadonly anchors: readonly Anchor[];\n}\n\nexport interface CheckResult {\n\treadonly anchor: Anchor;\n\treadonly status: \"ok\" | \"drift\" | \"missing-file\" | \"unavailable-reference\";\n\treadonly detail: string;\n}\n\nexport function checkAnchor(anchor: Anchor, root: string): CheckResult; // pure: no I/O beyond Bun.file\nexport function main(argv: readonly string[]): number; // --check => 0 on all ok, else 1\n",
+ "test_contract": "The observable contract: `bun scripts/verify-m6-ledger.ts --check` exits 0 when every register entry with `source: \"omp\"` resolves to a line that still contains its recorded `contains` substring, and exits 1 naming every entry that does not — including entries whose file no longer exists. A second, weaker contract: entries with `source: \"reference\"` never contribute a failure, but a run that has any of them MUST print an explicit `unavailable-reference` line, so 'unchecked' can never be mistaken for 'checked'. Consumer: every one of the fifteen live M6 work items opens by citing a register entry as its starting `file:line`. If this regresses, the consumer sees an editor open on a line that does not contain the code the plan told it to modify — which is not a theoretical risk, it is the observed state of 8 of the ~52 anchors as the plan currently writes them. A second, quieter consumer: a reviewer diffing a W* PR against the ledger must be able to tell a moved anchor from an unrelated edit.",
+ "gate_can_fail": true,
+ "gate": "DONE when, in order:\n\n  (a) `bun scripts/verify-m6-ledger.ts --check` exits 1 and the failure list contains AT LEAST these eight, by name, because they are the plan's own stale anchors: `mcp-command-controller.ts:2209` (real: 2226), `mcp-command-controller.ts:397` (real: 399), `agent-session.ts:4432` (real: 4462), `input-controller.ts:644` (real: 588), `ci.yml:531` (real: 752), `release.ts:168` (real: 310), `executor.ts:4259` (real: 4282), `tools/index.ts:431` (real: 437). This is the item's central red and it is reproduced, not assumed: every one of the eight was confirmed stale by a real command in this session (see each entry in plan_corrections for the exact command and the real line). A checker that exits 0 on this register is broken, not passing.\n\n  (b) After the register is corrected to the verified lines, `bun scripts/verify-m6-ledger.ts --check` exits 0, with every `source: \"reference\"` entry still printing its `unavailable-reference` line.\n\n  (c) `bun run check:ts` is green. Verified green in this session at HEAD 808b365 with no changes applied.\n\n  (d) `bun test test/m6-ledger-verifier.test.ts` passes. NOTE this is NOT blocked by the missing native addon — the checker and its test touch only `Bun.file` and `node:path`, importing nothing from `@oh-my-pi/pi-natives`. Demonstrated in this session: a pure `bun test` file outside the repo ran `1 pass` with the addon absent. The blanket 'bun test reports 0 pass' caveat applies to files that transitively load the addon, not to this one.\n\n  (e) NOT a gate: whether the three reference trees are ever fetched. That is an open question, not this item's blocker. The item is done when the reference half is marked unavailable and a human owns the decision.\n\n  On gate_can_fail: yes, and it fails for real. Step (a) is a red that the plan's own text produces — the register as-written, populated verbatim from §2, is guaranteed to fail because the plan is demonstrably wrong about 8 of its checkable anchors. Step (b) then proves the checker is not merely always-red: correcting the 8 lines turns it green. A checker that could only ever return 1 would satisfy (a) and be useless; requiring both directions is what makes this a gate rather than a decoration.",
+ "verification": "Must pass, in this order:\n\n  1. `bun scripts/verify-m6-ledger.ts --check` — exits 1 against the plan's anchors as written (the eight named in the gate), exits 0 after the register is corrected to the verified lines.\n  2. `bun run check:ts` — green. Confirmed green at HEAD 808b365 in this session, before any change.\n  3. `bun test test/m6-ledger-verifier.test.ts` — passes; not addon-blocked (see gate (d)).\n\nCommands used to re-derive the drift table from scratch, if the register is questioned:\n  - `git grep -n 'reloadServers' -- packages/coding-agent/src/modes/controllers/mcp-command-controller.ts`  -> definition at 2225, guard at 2226\n  - `grep -n 'constructor(private ctx: InteractiveModeContext)' .../mcp-command-controller.ts`              -> 399\n  - `grep -n 'resolveApproval' -- packages/coding-agent/src/session/agent-session.ts`                          -> 4462\n  - `grep -n 'showDebugSelector' -- .../modes/controllers/input-controller.ts`                              -> 588\n  - `grep -n 'gen-clippy-bazelrc' .github/workflows/ci.yml`                                                -> 752\n  - `grep -n 'Unreleased' scripts/release.ts`                                                             -> heading rewrite at 310-311\n  - `grep -n 'AsyncJobManager' -- packages/coding-agent/src/task/executor.ts`                                -> 4282\n  - `grep -n 'AsyncJobManager' -- packages/coding-agent/src/tools/index.ts`                                 -> 5, 437, 440\n  - `grep -c '\"gen:' package.json`                                                                        -> 13 (plan says 11)\n  - `grep -n 'onDebug' -- packages/tui/src/tui.ts`                                                          -> 798 (plan says 797)\n  - `ls -d codex-ref opencode-ref gajae-ref`                                                               -> all three MISSING\n\n  Blocker, stated plainly: `bun test` for any file that transitively imports `@oh-my-pi/pi-natives` cannot run in this checkout ('Failed to load pi_natives native addon for darwin-arm64'). That does not apply to this item's own test.",
+ "files_touched": [
+  {
+   "path": "docs/m6/anchors.json",
+   "action": "create",
+   "change": "The machine-readable register. Shape: `{ verifiedAtCommit, anchors[] }`, each anchor `{ path, line, contains, source, tree?, purpose }`. Seed it with the ~52 omp-side anchors verified in this session, each carrying the CORRECTED line number from this spec (never the plan's). Every one of the 24 §2 lesson rows that cites an omp file gets at least one entry; rows whose citations are all reference-side get an entry per citation with `source: \"reference\"` and a `tree` of `codex-ref` / `opencode-ref` / `gajae-ref`. `verifiedAtCommit` is `808b365409fa36719c38319a041c0e612b4e702b`.",
+   "verified": true,
+   "note": "`docs/` exists and is not excluded from the workspace. `git ls-files | grep -i wire-schema` shows no `wire-schema.ts`, and `grep -n 'gen:wire' package.json` returns nothing — confirming the plan's W8 targets are genuinely new, not renamed. The commit hash was read from `git rev-parse HEAD` in this session; note the harness brief claimed 5873776, which is wrong (see plan_corrections)."
+  },
+  {
+   "path": "docs/m6/lesson-ledger.md",
+   "action": "create",
+   "change": "The human-readable ledger, derived from `anchors.json` (not hand-maintained beside it — the JSON is the single source of truth, and this file is where the §1 provenance and §2 verdict text lives). It carries three things §2 of the plan does not: (1) §1 provenance — for each of the three reference trees, its upstream URL, the exact fetch command, and its status `UNAVAILABLE (not fetched)` until pinned; (2) the drift table — every anchor whose line moved from the plan, plan-line -> verified-line; (3) the reproducibility status per license claim. Keep it honest about which claims are reproduced and which are inherited-on-faith.",
+   "verified": true,
+   "note": "The omp-side §1 claims ARE reproducible and were reproduced: `LICENSE:1` is `MIT License`, `LICENSE:3-5` are the three copyright lines (Mario Zechner 2025, Can Bölük 2025-2026, Stencil Labs Inc. 2026), `package.json:5` is `\"license\": \"MIT\"`, and exactly 16 `packages/*/package.json` declare `\"MIT\"`. The three reference license claims (codex Apache-2.0, opencode MIT, gajae MIT) are NOT reproducible here and must ship marked unverified — asserting them as read would repeat exactly the error this item exists to stop."
+  },
+  {
+   "path": "scripts/verify-m6-ledger.ts",
+   "action": "create",
+   "change": "The checker. ~150 lines. Reads `docs/m6/anchors.json`, and for every entry: if `source === \"reference\"` print one `unavailable-reference` line naming the tree and continue (never a failure, always visible); otherwise read the file with `Bun.file()`, and if the file is missing emit `missing-file`, if the file has fewer than `line` lines or the line does not contain `contains`, emit `drift` with expected-vs-actual. Print a summary and return 1 if any omp-side entry failed, else 0. `--check` is the only mode. Follow `scripts/gen-clippy-bazelrc.ts` for the shape — same header comment, same exit-code convention — and match its precedent of having NO unit test for the happy path (see test_files for the one test that does exist and why it is testing the checker, not the source).",
+   "verified": true,
+   "note": "`scripts/gen-clippy-bazelrc.ts` exists and is the pattern the plan itself names in lesson 13 ('Mẫu đã có sẵn'). Its doc comment at :13-14 states the two modes verbatim: `bun scripts/gen-clippy-bazelrc.ts` rewrites, `bun scripts/gen-clippy-bazelrc.ts --check` 'exit 1 when the file is stale'. `git ls-files | grep -i clippy-bazelrc` returns that one file and no test — so 'no test' is the established convention here, not an omission to fix."
+  },
+  {
+   "path": "test/m6-ledger-verifier.test.ts",
+   "action": "create",
+   "change": "New root-level `test/` directory (it does not exist today — `ls test/` is empty) because the script under test is a root script, not a package one. ~60 lines, two cases, both about the CHECKER's behavior on a synthetic register written to a temp dir: (1) a register with one anchor whose `contains` does not match the real file makes `checkAnchor` return `drift`; (2) a register whose only entry is `source: \"reference\"` returns `unavailable-reference` and is NOT counted as a failure. That second case is the one that matters: it is the difference between 'the checker is green' and 'the checker has nothing to check'.",
+   "verified": true,
+   "note": "Deliberately NOT a source-grep test. It writes its own fixture and asserts on `checkAnchor`'s return value, so it survives a rename in the implementation and asserts behavior rather than source text — which is the AGENTS.md line between a real test and a banned one. `bunfig.toml` `pathIgnorePatterns` excludes `docs/**` and `python/**` but not `test/**`, so a root `bun test` will pick this up."
+  },
+  {
+   "path": "package.json",
+   "action": "modify",
+   "change": "Add one script next to the existing `gen:*` block: `\"check:m6-ledger\": \"bun scripts/verify-m6-ledger.ts --check\"`. Do not wire it into the existing `check` or `check:ts` targets — those are the repo-wide type gate and this is a milestone-scoped artifact check; coupling them would make every unrelated change depend on M6's register staying fresh.",
+   "verified": true,
+   "note": "`package.json:93-94` hold `\"check\": \"bun run --parallel check:ts check:rs\"` and `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"`. `grep -c '\"gen:' package.json` returns 13, not the 11 the plan claims — record the real number in the ledger."
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "action": "modify",
+   "change": "Optional and separable: add a step running `bun scripts/verify-m6-ledger.ts --check` alongside the existing `bun scripts/gen-clippy-bazelrc.ts --check` at line 752. This is the lesson-13 pattern applied to a new artifact. It is NOT part of the gate — the gate is the script's local exit code, because a shared-workflow change cannot be verified from this session and must not be able to block the item.",
+   "verified": true,
+   "note": "`grep -n 'gen-clippy-bazelrc' .github/workflows/ci.yml` -> line 752, with `run: bun scripts/gen-clippy-bazelrc.ts --check`. The plan cites 531; that is stale by 221 lines. The pattern it describes is real and present, just somewhere else. For contrast, `grep -rn 'git diff --exit-code' package.json .github/workflows/` returns ZERO hits, which confirms the plan's lesson-13 claim that no `gen:*` script is currently gated by a diff check."
+  }
+ ],
+ "steps": [
+  {
+   "n": 1,
+   "anchor": "packages/coding-agent/src/tools/bash.ts:514",
+   "instruction": "Re-run the whole drift table before writing a line of the register — do not trust this document's numbers on Monday, they are a snapshot of HEAD 808b365. Run the twelve commands listed in `verification` and record actual output. Any anchor whose result differs from the table below means the tree moved since this spec was written: prefer the fresh output, and update this spec's plan_corrections before proceeding. Sanity-check the first one by hand: `sed -n '514,516p' packages/coding-agent/src/tools/bash.ts` must print the `criticalCommand` const, the `if (!compoundSegments && criticalCommand)` guard, and a `return` with NO `policy` field. That absent `policy` field is the whole mechanism lesson 2 is about, so confirm it with your eyes before building anything on it."
+  },
+  {
+   "n": 2,
+   "anchor": "docs/m6/anchors.json",
+   "instruction": "Create the register and populate the omp-side half from the drift table. For each anchor, `contains` must be a short substring unique enough on that line to detect drift but not so long it breaks on an unrelated reformat — a good default is the distinctive identifier, not the whole line. Worked examples from this session, all confirmed: `packages/coding-agent/src/tools/bash.ts` line 514 contains `CRITICAL_BASH_PATTERNS.some(pattern => pattern.test(command))`; line 545 contains `Critical pattern detected`; `packages/coding-agent/src/tools/approval.ts` line 255 contains `if (mode === \"yolo\")`; line 267 contains `combinedUserPolicy ?? \"allow\"`; `packages/tui/src/tui.ts` lines 522, 1761, 1953, 2510, 2665 are the five render call sites lesson 9 names — all five confirmed at exactly those lines; `packages/coding-agent/src/collab/guest.ts:508` and `packages/collab-web/src/lib/client.ts:324` both contain `this.#welcomed = true;`, in different packages, exactly as lesson 18 claims. Use the CORRECTED line numbers throughout; where this spec and the plan disagree, this spec is right and the difference is in plan_corrections."
+  },
+  {
+   "n": 3,
+   "anchor": "docs/m6/anchors.json",
+   "instruction": "Populate the reference-side half — every `codex-ref/…`, `opencode-ref/…`, and `gajae-ref/…` citation in §2 — as `source: \"reference\"` with the right `tree` and NO line-number verification claim. First confirm they are genuinely absent: `ls -d codex-ref opencode-ref gajae-ref` returns all three MISSING, and `git ls-files | grep -E 'codex-ref|opencode-ref|gajae-ref'` returns nothing, so they are not submodules, not vendored, and not gitignored-but-present. Roughly half of §2's citations are reference-side, which means about half of the ledger is unfalsifiable today. That is the honest state; write it down rather than quietly dropping those rows or, worse, presenting them at the same confidence as the verified omp half."
+  },
+  {
+   "n": 4,
+   "anchor": "docs/m6/lesson-ledger.md",
+   "instruction": "Write the §1 provenance section. For each of the three reference trees record: upstream URL, the exact command to fetch it, the commit it should be pinned to, and status `UNAVAILABLE (not fetched)`. Record the omp license findings as REPRODUCED with their line evidence (`LICENSE:1`, `LICENSE:3-5`, `package.json:5`, 16 packages declaring MIT, `deny.toml` allow-list, `THIRD-PARTY-NOTICES.txt` at 22901 lines). Record the three reference license claims as UNVERIFIED-pending-fetch — the plan asserts codex is Apache-2.0, opencode MIT, gajae MIT, and this session could not read a single one of those LICENSE files. Carry forward the plan's one genuinely sharp warning, which IS about the target and IS checkable: do not open `packages/coding-agent/src/config/settings.ts:294` when looking for the approval default — that line is `const result: RawSettings = {};`. The real one is `packages/coding-agent/src/tools/settings.ts:294`, `default: \"yolo\",`, inside `cfgToolsApprovalMode` registered at :290. Both confirmed."
+  },
+  {
+   "n": 5,
+   "anchor": "scripts/verify-m6-ledger.ts",
+   "instruction": "Write the checker. Read `scripts/gen-clippy-bazelrc.ts` first — match its header-comment style, its `--check` exit-code convention, and its habit of naming the exact command in the doc comment. Then implement `checkAnchor` and `main` per code_shape. Three rules that are easy to get wrong and that the gate depends on: (a) a `reference` entry must print and be counted separately from failures, so a run with zero omp-side anchors and fifty reference anchors is loudly vacuous rather than quietly green; (b) a missing file is a failure, not a skip — a deleted file is exactly the drift an engineer must be told about; (c) a line beyond end-of-file is a failure. Use `Bun.file()` and `node:path` only. No `any`, no `ReturnType<>`, no inline imports, and no `console.log` restriction applies here (this is a standalone CLI script that exits without entering the TUI) but prefer `process.stderr.write` for the failure list so stdout stays parseable."
+  },
+  {
+   "n": 6,
+   "anchor": "test/m6-ledger-verifier.test.ts",
+   "instruction": "Write the two-case test described in files_touched. Point `checkAnchor` at a temp dir you populate yourself — do NOT point it at real repo files, because a test whose result depends on production source drifting is a source-grep test wearing a costume. Case 1: write a temp file whose content does not contain the anchor's `contains`, assert `status === \"drift\"`. Case 2: assert a `source: \"reference\"` anchor yields `status === \"unavailable-reference\"` and is not counted as a failure. Add `afterEach` cleanup of the temp dir. Per AGENTS.md, no `mock.module()`, and `vi.restoreAllMocks()` if you spy at all (you should not need to — there is nothing to mock). Then run `bun test test/m6-ledger-verifier.test.ts` and confirm it passes; this file must NOT import anything from `@oh-my-pi/pi-natives` or it will hit the addon blocker."
+  },
+  {
+   "n": 7,
+   "anchor": "package.json",
+   "instruction": "Add the `check:m6-ledger` script. Do not touch `check` or `check:ts` — the gate is the script invoked directly, and coupling the repo-wide type gate to a milestone artifact would make unrelated PRs fail on M6 bookkeeping. Then optionally add the CI step next to `.github/workflows/ci.yml:752`. If you do add it, keep it as its own `run:` step and do not restructure the surrounding job — a reviewer must be able to see the one-line addition in isolation."
+  },
+  {
+   "n": 8,
+   "anchor": "docs/m6/lesson-ledger.md",
+   "instruction": "Close the loop: run `bun scripts/verify-m6-ledger.ts --check` and paste its output into the ledger as the recorded baseline. Then write the drift table — every anchor where the plan's line differs from the verified line — into both the ledger and the spec's own downstream notes, because W1, W3, W4b, W5, W10, W12a, W12b and W14 each cite at least one of the eight stale anchors and will otherwise be implemented against the wrong line. Finally, state the three open questions (fetch authority, artifact permanence, AGPL counsel) in the ledger as explicit unowned items so they surface on Monday rather than being discovered mid-W3."
+  }
+ ],
+ "plan_corrections": [
+  {
+   "claim": "The brief frames lines 9057-9797 as 'Milestone 2 ... eight waves', at git HEAD 5873776.",
+   "verdict": "WRONG on all three counts",
+   "correction": "Line 9057 is `# MILESTONE 6 — Bài học từ Codex, OpenCode và gajae-code`. There are not eight waves; §3 defines W1, W2, W3, W4a, W4b, W5, W6, W7, W8, W9, W10, W11 (explicitly dropped), W12a, W12b, W13, W14 — fifteen live items, which matches the plan's own count of '15 mục còn sống'. And HEAD is 808b365409fa36719c38319a041c0e612b4e702b on branch milestone-1, not 5873776. The `.lavish-wip/m6-specs/` output path and the empty sibling `m2-specs/` (already populated with WI-0..WI-13) both confirm M2 is finished and this is M6.",
+   "evidence": "`sed -n '9057p'` -> the MILESTONE 6 heading. `git rev-parse HEAD` -> 808b365409fa36719c38319a041c0e612b4e702b. `git status` -> branch milestone-1. `ls .lavish-wip/m2-specs/` -> 15 WI files present; `ls .lavish-wip/m6-specs/` -> empty."
+  },
+  {
+   "claim": "`codex-rs/execpolicy/src/decision.rs:9-16`, `codex-rs/process-hardening/src/lib.rs:7,12`, `opencode-ref/packages/plugin/src/source.ts:16,35-37`, `gajae-ref/packages/tui/src/tui.ts:762`, `gajae-ref/.gitattributes:55`, `gajae-ref/crates/pi-shell/src/fixup.rs`, and the rest of the reference-side citations across §2.",
+   "verdict": "UNVERIFIABLE — the trees do not exist in this checkout",
+   "correction": "None of the three reference trees is present. Every reference-side anchor in the ledger — roughly half of all citations, including the entire mechanism column for lessons 1, 3, 6, 7, 9, 11, 16, 17, 22, 23 and 24 — cannot be checked. The plan's §1 license table (codex Apache-2.0 at `codex-rs/Cargo.toml:166`; opencode MIT at `package.json:145`; gajae MIT) is equally unreadable, as is §5's overlap measurement (110/5007, 53/4325, 221 .kdl files) and §6's bubblewrap/LGPL finding. Do not encode any of it as fact until the trees are fetched and pinned. This is the single biggest reason this item exists.",
+   "evidence": "`ls -d codex-ref opencode-ref gajae-ref` -> all three MISSING. `git ls-files | grep -E 'codex-ref|opencode-ref|gajae-ref'` -> no hits, so they are not submodules or vendored copies. `cat .gitmodules` -> does not exist."
+  },
+  {
+   "claim": "Lesson 8: `mcp-command-controller.ts:2209-2213` returns early when `ctx.mcpManager` is undefined; `:397` is the constructor taking `InteractiveModeContext`.",
+   "verdict": "STALE — both wrong, first by ~17 lines",
+   "correction": "`reloadServers` is DEFINED at line 2225, and its guard `if (!this.ctx.mcpManager) { return; }` is at 2226-2228. The constructor is at 399, not 397. The lesson's substance is entirely correct and reproduces exactly: `grep -c MCPManager packages/coding-agent/src/modes/rpc/rpc-mode.ts` returns 0, so RPC genuinely does not own an MCPManager and W4a/W4b's split stands. Only the line numbers moved.",
+   "evidence": "`grep -n 'reloadServers' -- .../mcp-command-controller.ts` -> calls at 1346, 1607, 1938, 1947, 2085, 2120; definition at 2225. `sed -n '2225,2228p'` -> `async reloadServers(): Promise<void> {` / `if (!this.ctx.mcpManager) {` / `return;`. `grep -n 'constructor(private ctx: InteractiveModeContext)'` -> 399. `grep -c MCPManager .../rpc/rpc-mode.ts` -> 0."
+  },
+  {
+   "claim": "Lesson 2: `agent-session.ts:4432` hardcodes `resolveApproval(ctx.tool, approvalArgs, \"yolo\", userPolicies)`.",
+   "verdict": "STALE — off by 30",
+   "correction": "The call is at line 4462. The claim itself reproduces: it does hardcode the literal `\"yolo\"` as the third argument.",
+   "evidence": "`grep -n 'resolveApproval' -- packages/coding-agent/src/session/agent-session.ts` -> import at 222, call at 4462."
+  },
+  {
+   "claim": "Lesson 10: the debug overlay is `ctx.showDebugSelector()` at `input-controller.ts:644`.",
+   "verdict": "STALE — off by 56",
+   "correction": "The assignment `this.ctx.ui.onDebug = () => this.ctx.showDebugSelector();` is at line 588. The companion anchor in the same lesson, `tui.ts:797` for the `onDebug?: () => void` doc comment, is at 798 — off by 1. The key-press handler at `tui.ts:2291` (`matchesKey(data, \"shift+ctrl+d\") && this.onDebug`) is EXACT, and the `tui.ts:2292` invocation is the next line.",
+   "evidence": "`grep -n 'showDebugSelector' -- .../modes/controllers/input-controller.ts` -> 588. `grep -n 'onDebug' -- packages/tui/src/tui.ts` -> 798, 2291, 2292."
+  },
+  {
+   "claim": "Lesson 13: `.github/workflows/ci.yml:531` runs `bun scripts/gen-clippy-bazelrc.ts --check`.",
+   "verdict": "STALE — off by 221",
+   "correction": "The step is at line 752. The pattern the lesson describes is real and is the right precedent; only the line moved. Separately, the lesson's count of gated scripts is wrong in the other direction: `grep -c '\"gen:' package.json` returns 13, not 11 — so the ungated-script count is 13, and the 'no `gen:*` is gated by a diff check' negative still holds exactly.",
+   "evidence": "`grep -n 'gen-clippy-bazelrc' .github/workflows/ci.yml` -> 752 (`run: bun scripts/gen-clippy-bazelrc.ts --check`). `grep -rn 'git diff --exit-code' package.json .github/workflows/` -> zero hits, confirming the negative. `grep -c '\"gen:' package.json` -> 13."
+  },
+  {
+   "claim": "Lesson 21: `scripts/release.ts:168-170` inserts a new version heading beneath a live `## [Unreleased]`.",
+   "verdict": "STALE — off by ~141, and lines 168-170 are a different subsystem",
+   "correction": "Lines 168-170 are CI-run gating logic (`decision.kind === \"none\"` -> 'No CI run found on HEAD or its last ... first-parent ancestors'). The changelog heading rewrite is at 310-311: `content.replace(\"## [Unreleased]\", `## [${version}] - ${date}`)` followed by a second replace that re-inserts a fresh `## [Unreleased]` above it, inside `updateChangelogsForRelease` (declared at 297). The lesson's reasoning is unaffected — the hazard it describes is real, and `.gitattributes:56` `packages/*/CHANGELOG.md merge=union` is EXACT.",
+   "evidence": "`grep -n 'Unreleased' scripts/release.ts` -> 285, 286, 303, 304, 310, 311. `sed -n '168,170p'` -> CI-failure branch. `sed -n '309,312p'` -> the two replace calls. `grep -n 'merge=union' .gitattributes` -> 56."
+  },
+  {
+   "claim": "Lesson 20: `tools/index.ts:431-434` bans `AsyncJobManager.instance()` by comment while `task/executor.ts:4259` still calls it '200 lines later, same package', and ACP hosts many sessions at `acp-agent.ts:617`.",
+   "verdict": "PARTLY STALE — both line numbers wrong, the path is wrong, and '200 lines' is off by an order of magnitude",
+   "correction": "The banning comment is at 437-438 (`Tools MUST use this instead of AsyncJobManager.instance() so a secondary session never borrows the owning session's manager by accident`), with the import at 5 and the field at 440. The violating call is at `executor.ts:4282` — that is ~3,845 lines after, not 200, which materially changes how a reviewer reads the lesson. The ACP file is at `packages/coding-agent/src/modes/acp/acp-agent.ts`, NOT `packages/coding-agent/src/acp-agent.ts`; its `#sessions = new Map<string, ManagedSessionRecord>()` is at 616 (`export class AcpAgent` at 613). Note also that `acp-agent.ts` contains NO `AsyncJobManager` reference at all, so it evidences the multi-session host but not a manager claim — do not let a downstream spec cite it as one.",
+   "evidence": "`grep -n 'AsyncJobManager' -- .../tools/index.ts` -> 5, 437, 440. `grep -n 'AsyncJobManager' -- .../task/executor.ts` -> 13, 4282. `git ls-files | grep acp-agent` -> packages/coding-agent/src/modes/acp/acp-agent.ts. `sed -n '610,618p'` -> class decl 613, #sessions 616. `grep -n 'AsyncJobManager\\|jobManager' .../acp-agent.ts` -> no hits."
+  },
+  {
+   "claim": "Lesson 14: three hand-maintained copies of one contract — `wire/src/index.ts`, `rpc-types.ts`, `protocol.py` — with `StopReason` identical at `wire/src/index.ts:51` and `protocol.py:21`.",
+   "verdict": "VERIFIED — the strongest-cited row in the table",
+   "correction": "Keep the plan's title correction (only the INTERSECTION is duplicated) — it is right and important. All anchors check out exactly: `StopReason` at wire:51 and protocol.py:21, byte-identical unions. File sizes match (16K / 22K / 61K), `rpc-types.ts:7-18` is exactly the type-import block, and `protocol.py:3-7` is exactly the runtime-import block. The two targets are genuinely new: no `wire-schema.ts` exists and no `gen:wire` script is defined.",
+   "evidence": "`grep -n 'StopReason' packages/wire/src/index.ts` -> 51, 86. `grep -n 'StopReason' python/omp-rpc/src/omp_rpc/protocol.py` -> 21, 559. `sed -n '1,20p' .../rpc-types.ts` -> imports at 7-18. `sed -n '1,10p' protocol.py` -> imports at 3-7. `git ls-files | grep -i wire-schema` -> only unrelated files. `grep -n 'gen:wire' package.json` -> no hits."
+  },
+  {
+   "claim": "Lesson 15: two 'real violations' at `tools/ask.ts:1` and `collab/protocol.ts:26` are not real — neither file exists under `packages/collab-web`.",
+   "verdict": "VERIFIED — negative claim reproduces exactly",
+   "correction": "The plan's refusal to let a passing boundary test be read as proof of completion is correct and is the single best piece of reasoning in the whole table. `packages/collab-web` has exactly 78 `.ts`/`.tsx` files, and `find` for `ask.ts` or `protocol.ts` returns nothing. Carry this discipline forward: an absent file is not a finding, and a green test is not evidence the thing it was checking is fixed.",
+   "evidence": "`find packages/collab-web -name '*.ts' -o -name '*.tsx' | wc -l` -> 78. `find packages/collab-web -name 'ask.ts' -o -name 'protocol.ts'` -> no output. `ls packages/collab-web/src` -> app.tsx, components, env.d.ts, lib, main.tsx, styles, tool-render."
+  },
+  {
+   "claim": "Lesson 17: a raw grep for `ping|pong|heartbeat|keepalive` over relay-client.ts + wire/src/index.ts gives 5 raw hits, all the English words 'keeping'/'Bookkeeping' at lines 107, 124, 204, 402, 535; a word-boundary search gives 0.",
+   "verdict": "VERIFIED on substance, STALE on line numbers",
+   "correction": "The counts and the character of the result are exactly right: 5 raw hits, all 'keeping'/'Bookkeeping', and `grep -wE` returns 0. That is the lesson — a raw grep returning 0 is not evidence of absence, and here it nearly produced the opposite false positive. The five lines are 144, 161, 242, 439, 602, not 107/124/204/402/535.",
+   "evidence": "`grep -rniE 'ping|pong|heartbeat|keepalive' packages/coding-agent/src/collab/relay-client.ts packages/wire/src/index.ts | wc -l` -> 5, at lines 144, 161, 242, 439, 602. Same command with `-w` -> 0."
+  },
+  {
+   "claim": "Lesson 12/18/16 anchors on the collab surface: `export/html/index.ts:15`, `collab/guest.ts:508`, `collab-web/src/lib/client.ts:324`, `wire/src/index.ts:397`.",
+   "verdict": "VERIFIED — all four exact",
+   "correction": "Nothing to fix. `index.ts:15` is the `import toolViewsJsPath from \"./tool-views.generated.js\"` line, confirming lesson 12's claim that the un-gated bundler output lands in every HTML session export. `guest.ts:508` and `collab-web/src/lib/client.ts:324` are both `this.#welcomed = true;` in different packages, exactly as lesson 18 states. `COLLAB_PROTO = 3` is at wire:397. Lesson 18's negative also holds: `packages/coding-agent/src/collab/` has no `client.ts` (the directory holds controller, crypto, display-name, guest, host, protocol, registry, relay-client, replication-shrink, settings).",
+   "evidence": "`sed -n '15p' .../export/html/index.ts` -> the tool-views import. `grep -n '#welcomed' .../collab/guest.ts` -> 508. `grep -n 'welcomed' packages/collab-web/src/lib/client.ts` -> 324. `grep -n COLLAB_PROTO packages/wire/src/index.ts` -> 397. `ls packages/coding-agent/src/collab/` -> 10 files, no client.ts."
+  },
+  {
+   "claim": "Lesson 19: `grep -c python .github/workflows/ci.yml` = 0; `package.json:135` defines `test:py` running two pytest suites; `python/omp-rpc/tests/` has 4 files at 69KB/24KB/9.4KB/1.2KB.",
+   "verdict": "VERIFIED — every number exact",
+   "correction": "No correction needed, which is worth stating because it is unusual. The `test:py` line is at 135 verbatim, the CI file contains zero occurrences of 'python', and the four test files match the claimed sizes exactly. The lesson's caution — that `test:py` is two suites under one name and the `robomp` half is out of scope — is the right call and should carry into W13's spec.",
+   "evidence": "`grep -n 'test:py' package.json` -> 135. `grep -c python .github/workflows/ci.yml` -> 0. `ls -la python/omp-rpc/tests/` -> test_client.py 69K, test_host_uris.py 9.4K, test_protocol.py 24K, test_user_group.py 1.2K."
+  },
+  {
+   "claim": "The plan's §7 risk note: `tools/settings.ts:294` is `default: \"yolo\"` inside `register(...)` declared at `:290` — and explicitly, do not open `config/settings.ts:294` by mistake.",
+   "verdict": "VERIFIED — including the disambiguation trap",
+   "correction": "Both are right. `tools/settings.ts:290` is `export const cfgToolsApprovalMode = register({` and `:294` is `default: \"yolo\",`. `config/settings.ts:294` is indeed `const result: RawSettings = {};` — unrelated. This is the most useful single disambiguation in the plan and it should be copied into the ledger, because two files in this repo both have a line 294 and the wrong one is silent.",
+   "evidence": "`sed -n '290p;294p' packages/coding-agent/src/tools/settings.ts` -> the register call and `default: \"yolo\",`. `sed -n '294p' packages/coding-agent/src/config/settings.ts` -> `const result: RawSettings = {};`. `grep -n yolo packages/coding-agent/src/tools/settings.ts` -> 289, 293, 294, 314."
+  },
+  {
+   "claim": "Lesson 11: `omp` has no crash-diagnostics equivalent — `ls packages/utils/src/ | grep -i crash` returns empty.",
+   "verdict": "VERIFIED",
+   "correction": "Confirmed empty, so W6 is genuinely a port and not a dedup. The gajae-side file list and line counts (crash-journal.ts 292, crash-fingerprint.ts 294, crash-redaction.ts 90) remain unverifiable — see the missing-reference-trees correction. The lesson's design note stands and is the right one: where the hook goes is omp's decision, not an inherited obligation.",
+   "evidence": "`ls packages/utils/src/ | grep -i crash` -> no output, exit 1. `ls packages/utils/src/` -> no crash-* file present."
+  }
+ ],
+ "depends_on": [],
+ "blocks": [
+  "W1 — cites bash.ts:514-516, bash.ts:545, approval.ts:255, settings.ts:294 (all verified exact here, but the register is what keeps them true)",
+  "W3 — cites loader.ts flagValues write site; the delta-checkpoint constraint depends on the register recording the shared-Map write path",
+  "W4a / W4b — cite mcp-command-controller.ts, whose anchors are the two most stale in the table (2226 not 2209, 399 not 397)",
+  "W5 — cites five tui.ts render sites (522, 1761, 1953, 2510, 2665, all exact) plus tui.ts:798 onDebug",
+  "W8 — cites package.json gen:* script count (13, not 11) and the ci.yml gate precedent at 752",
+  "W10 — cites collab/guest.ts:508, collab-web client.ts:324, wire/src/index.ts:397 COLLAB_PROTO, and the lesson-17 grep discipline",
+  "W12a / W12b — cite tools/index.ts:437-438 and executor.ts:4282, both of which moved",
+  "W13 — cites package.json:135 test:py and the zero-python-in-CI negative",
+  "W14 — cites .gitattributes:56 (exact) and scripts/release.ts (310-311, not 168-170)",
+  "W2 and W6 — blocked differently: W2 is already cut down by the plan, W6's omp-side premise (no crash files) is verified but its source side is not"
+ ],
+ "test_files": [
+  "test/m6-ledger-verifier.test.ts"
+ ],
+ "open_questions": [
+  "Where do the three reference trees come from, and who pins them? None of codex-ref, opencode-ref, gajae-ref exists in this checkout — not vendored, not a submodule, not gitignored-but-present. Roughly half of §2's citations and all of §1's license table, §5's overlap measurement, and §6's bubblewrap/LGPL finding are therefore unfalsifiable today. Until someone supplies three upstream URLs and three commit pins, the honest ledger ships them as UNAVAILABLE. This is a decision, not a blocker: the item is completable with the reference half marked unchecked, and marking it is strictly better than the current state, where they read as verified.",
+  "Is the ledger a committed artifact or an ephemeral `.lavish-wip` scratch file? This matters more than it looks. If `docs/m6/anchors.json` is committed, the checker has something stable to verify and the register rots loudly. If it lives in `.lavish-wip`, it is thrown away and W1–W14 in three weeks are citing line numbers with no drift protection at all. The plan gives no guidance. RECOMMENDATION: commit under `docs/m6/` — it is documentation of verified facts, it is small, and the whole value of the item evaporates if it is throwaway.",
+  "Does the gajae AGPL question need counsel before anyone clones that tree? §1 rates gajae 'high' risk and §6 explicitly says MuPDF/AGPL is 'NOT declared removed by their own notice' and asks for confirmation before M6 is finalized. Cloning a public repo to read it is not the same act as porting from it, and this item's ledger work is reading-only — so I do not think it blocks. But a human should confirm that distinction before W3/W5/W6 port gajae code, and before anyone adds it to CI as a fetched dependency.",
+  "Should the ledger's checker be wired into CI at all, or left as a manual `bun run check:m6-ledger`? Wiring it in (alongside ci.yml:752) is what makes drift loud for everyone; leaving it manual keeps a shared workflow file out of this diff. I lean toward wiring it, but it is a repo-convention call rather than a technical one, and the gate deliberately does not depend on it either way."
+ ],
+ "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m6-specs/ledger.spec.json"
+}

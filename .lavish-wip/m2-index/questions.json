@@ -1,0 +1,278 @@
+[
+ {
+  "id": "WI-5",
+  "q": "THE FORBIDDEN OPTION — do not do this, and know why. Making `reset()` also clear the `capabilities` map is the obvious 'fix' and it bricks the whole process. All 14 `defineCapability` calls are `export const x = defineCapability(...)` at module scope, and ESM evaluates each module exactly once — no later import re-runs them. So after the first `reset()`, `getCapability` and `loadCapability` return `undefined`/throw for ALL 14 capabilities across every one of the 12 call sites (`/clear`, resume-with-chdir, the reconcile loop, ssh session switches, marketplace install, …). It is a silent, stack-trace-free, process-wide failure. The ONLY sanctioned shape is: keep the fs-only function, rename it to say what it does, and add a separate `resetRegistry()` for the registry. The test row that catches this mistake is row 1 of `reset-contract.test.ts` — it passes on HEAD and fails the moment someone adds `capabilities.clear()` to `reset()`."
+ },
+ {
+  "id": "WI-5",
+  "q": "What should the fs-only function be renamed to? The plan says 'rename to be correct' but does not pick a name. Recommendation: `invalidateAllCaches()`. It is the honest sibling of the existing `invalidate(filePath, cwd?)` at `capability/index.ts:572`, it says 'caches' (plural) because it clears both the content and directory caches, and it does not collide with the existing `resetCapabilityForTests` at `:561`. The alternative `clearFsCaches()` collides in spirit with the already-imported `clearFsCache` alias from `./fs` at `capability/index.ts:11`. Either is defensible — but pick one and apply it to all 8 imports and 12 call sites."
+ },
+ {
+  "id": "WI-5",
+  "q": "Should the `resetCapabilities` local alias survive the rename? Recommendation: NO. All 8 files currently write `import { reset as resetCapabilities }`, and the alias is the second half of the lie — the name `resetCapabilities` is what makes the reconcile loop read as if it releases capabilities. After renaming, use the truthful name directly at all 12 call sites. This also forces you to touch `sdk.ts:3528`, whose comment ('resetCapabilities() clears the fs cache at those boundaries') must be updated to match."
+ },
+ {
+  "id": "WI-5",
+  "q": "Same `providerId` registered by two different sources — who wins? The plan does not address it and it is a real design hole. `providerMeta` (`:40`) is first-write-wins and `providerCapabilities` (`:37`) is keyed by providerId alone, so neither can distinguish two owners. Recommendation: mirror ModelRegistry exactly — `providerSourceByName` is one-to-one, last registration wins, and `registerProvider` evicts the previous owner from its set (copy `model-registry.ts:3010-3015`). Known accepted cost, identical to ModelRegistry's shipped behavior: if source A and source B both register provider 'claude' and B wins, suspending B deletes the provider even though A still declares it. Today this is vacuous (nothing registers per source), and it only becomes load-bearing when WI-10 makes the registry extension-reachable. If you would rather not accept that, the alternative is a refcount per (capabilityId, providerId) — but that is a second, invented shape, and the plan explicitly forbids inventing one."
+ },
+ {
+  "id": "WI-5",
+  "q": "Should `registerProvider` without a `sourceId` evict an existing source owner? Recommendation: NO — a source-less registration adds to the array but neither claims nor clears attribution. All 84 existing calls are source-less module-level registrations that run once at import; letting them evict would orphan a source-owned provider on any re-evaluation. This is a decision, not an accident; put it in the doc comment."
+ },
+ {
+  "id": "WI-5",
+  "q": "Gate question for the engineer: can the two new tests run BEFORE the Rust native addon is built? If yes, commit 2-3 can be validated this week instead of waiting on the build. Check it by running `bun test test/capability/reset-contract.test.ts` immediately after writing it. If it fails on the addon, say so in the PR rather than claiming test coverage you could not execute."
+ },
+ {
+  "id": "WI-12",
+  "q": "TRUST TIER — the one that must be answered in the document, not deferred: an MCP server contributed by a loaded extension lands in which tier, and who authorizes the connection? Concretely, is it (a) same tier as a project `.mcp.json` server, i.e. auto-connect on load, (b) same tier as a user-scope server but gated on the extension being trusted, so it inherits WI-0's answer, or (c) always require an explicit per-server user grant before the first connect. This is not a detail: (a) means any loaded extension can open an outbound network connection to an arbitrary URL with no prompt, which is a materially larger blast radius than registering a tool. If the document picks (a) without saying so in those words, it has not answered the question. Note the current stub makes all three look identical in code today — see the isProjectTrusted correction — so the choice is invisible until someone changes the stub."
+ },
+ {
+  "id": "WI-12",
+  "q": "Does the descriptor have to be declared at load time only, or can a live extension register a server later (from a tool call, an event handler)? The plan does not say. Declarative-only (load-time) is strictly smaller and is what the existing package path does; imperative-late is what 'extension' usually implies and it is the case that forces a runtime `connectServers` call on a hot path. Recommend load-time-only in the document and say why — a late register is a new event on the manager, and that is WI-7's registerMode problem wearing a different hat."
+ },
+ {
+  "id": "WI-12",
+  "q": "Credential ownership: a contributed server with `auth.type === \"oauth\"` needs a credential slot. The core OAuth store is keyed by server URL (`mcpOAuthCredentialIdsForServerUrl`, mcp/oauth-credentials.ts:24) and the refresh path writes back through `refreshManagedMcpOAuthCredential` (:105) / `refreshStoredManagedMcpOAuthCredential` (:159). If an extension may contribute an OAuth server, an extension-authored `url` can collide with a user's existing credential id for that URL. The document must say whether contributed servers are ineligible for managed OAuth, or whether credential resolution is namespaced per extension. Leaving this unstated is how a third-party extension ends up reading a user's token for a URL it chose."
+ },
+ {
+  "id": "WI-12",
+  "q": "Enable/disable semantics: today the dashboard toggle for a non-native, non-mcp-json source deliberately does NOT write the source file — `#writableMcpSourcePath` (packages/tui/src/overlays/extensions/extension-dashboard.ts:449-453) allowlists exactly `native` and `mcp-json` and returns `undefined` otherwise, so the toggle falls through to the user-level `disabledServers` / `enabledServers` denylist/allowlist in `setMcpServerEnabled` (mcp/config-writer.ts:333-380, the trailing else-branch). A descriptor-contributed server lands in that same bucket. Confirm that is the intended UX (a per-user off switch that survives the extension being present) rather than an extension-owned `enabled` flag that the user's toggle must not be able to override."
+ },
+ {
+  "id": "WI-12",
+  "q": "Does this design decide the write surface, or does it defer to WI-10? The plan lists WI-10 as a dependency, and this document should state the MCP answer as a PROPOSAL to be reconciled with WI-10 rather than as a settled canonical-surface claim. If WI-10 has already landed by the time this is written, this is a one-line reconciliation instead — check before writing."
+ },
+ {
+  "id": "WI-3",
+  "q": "PRODUCT — `model_changed`: ship an extension hook or not? The spec's default is NO: leave it out of `RelayableEventKind` and keep the comment pointer. A hook fires on every model switch including retry-fallback on the error path, and `setModel` is on the hot path. If the answer is yes, it is commit 2 and must land with a real arm — never a name in the union with an empty arm."
+ },
+ {
+  "id": "WI-3",
+  "q": "PRODUCT/REVIEW — the latent `#turnIndex` bug surfaced by this refactor: `this.#turnIndex++` (agent-session.ts:4630) currently sits BEHIND the `if (!runner.hasHandlers(event.type)) return;` guard at 4610. When no extension has registered a `turn_end` handler, `#turnIndex` therefore never increments, so the `turnIndex` handed to `turn_start`/`turn_end` handlers stays 0 for the whole session and `turn_id` at 4561 (`Math.max(0, this.#turnIndex - 1)`) is always 0. The spec PRESERVES this behaviour exactly so WI-3 stays a zero-diff mechanical commit. Fixing it is a separate, small, behaviour-changing commit with its own runtime test. Should it be filed as a follow-up item, and does anyone want it in M2 at all?"
+ },
+ {
+  "id": "WI-3",
+  "q": "REVIEW — is keeping `agent_end` as a documented `async () => undefined` arm acceptable, or should `agent_end` be dropped from `RelayableEventKind` (18 keys) since it has no payload from the session path? The spec keeps it at 19 to match the current branch count and to force a future author to confront the routing decision; the TUI sets a precedent for no-op arms (`event-controller.ts:286`, `:356`). A reviewer who disagrees only has to delete one key and one arm."
+ },
+ {
+  "id": "WI-8a",
+  "q": "`deletePluginSetting` changes meaning. Today it deletes the key outright from the merged store. `handle.unset()` clears the GLOBAL layer only (`unsetGlobalValue`, `config/settings.ts:845`), so a project-layer value correctly resurfaces — that is the right tiering, but it is a behaviour change for `omp plugin config unset` (`cli/plugin-cli.ts:917`). Does 'unset' mean 'forget my global override' (correct tiering, accept the change) or 'remove everywhere' (needs a second project-layer write path)? A human must decide; it is user-visible."
+ },
+ {
+  "id": "WI-8a",
+  "q": "Which Settings layer is the durable home for a plugin setting? The plan says 'overlay' and never names the layer. Global (`handle.set` → `config.yml`) is what the typed core path does and the only one that persists without new machinery, but it puts machine-written third-party keys in a file users hand-edit. The plan itself flags this tension at line 5946 ('Settings is user-edited YAML and is probably the WRONG substrate for internal plugin state'). If the answer is 'not the global layer', this item grows a new store and the whole 'second store' framing changes."
+ },
+ {
+  "id": "WI-8a",
+  "q": "Should the migration marker be a Settings-layer key or a dedicated marker file? A marker file is simpler and cannot be edited away by a user cleaning their config; a Settings key is one less file. Either is defensible — but it must be a deliberate choice, not an accident, because a user who deletes it gets a resurrected-settings bug."
+ },
+ {
+  "id": "WI-8a",
+  "q": "Should a plugin setting be allowed to declare `envFallback`? The naming rule in step 3 covers the opt-IN; it says nothing about the opt-out-that-inverts-priority. Letting a third-party plugin declare `envFallback: true` means its env var yields to a project file, which is probably the opposite of what a plugin author intends."
+ },
+ {
+  "id": "WI-8a",
+  "q": "What happens to `ProjectPluginOverrides.disabled` and `.features`? This item migrates `settings` only. `.omp/plugin-overrides.json` survives with two of its three fields, so the file is NOT removed. Confirm that is intended rather than half-finished."
+ },
+ {
+  "id": "WI-4",
+  "q": "Should the `Readonly<>` type annotation land in WI-4 or wait for the 'WI-4b' the plan keeps deferring it to? The plan's own later sections (around its lines 7866 and 8076) admit that `Object.freeze` alone carries no enforcement mechanism and that the constraint must come from the type — but WI-4b appears nowhere in the M2 wave table, so today nothing owns it. Evidence gathered here says the type half is free: `Readonly<Record<string, ToolRenderer>>` type-checks clean against all 14 consumers in both packages, and it turns a write into TS2542. RECOMMENDATION: land it here, inside WI-4, and close WI-4b as 'already done'. This is a decision, not a blocker — if the reviewer disagrees, dropping it is a one-token revert and the freeze still stands on its own."
+ },
+ {
+  "id": "WI-4",
+  "q": "Who builds the native addon, and when? Both test files for this item — and a large fraction of the repo's test suite — are blocked on `packages/natives/native/pi_natives.darwin-arm64.node`, and bazel is not installed in this environment, so the documented build command cannot run here. This is not specific to WI-4, but WI-4 is the first M2 work item to hit it, and its stated verification command is therefore unrunnable. A M2-wide decision on 'tests that require the addon' versus 'tests that do not' would unblock several waves at once."
+ },
+ {
+  "id": "WI-4",
+  "q": "Is the value import of `@oh-my-pi/pi-natives` at `packages/tui/src/theme/theme.ts:3` worth splitting so that theme-dependent tests can run without the addon? That single import is what makes the entire tool-renderer registry unloadable in this environment — every renderer takes a `Theme`, so every renderer module transitively loads the addon. Out of scope for WI-4 and probably not worth it on its own merits, but it is the root cause and it is cheap to name now."
+ },
+ {
+  "id": "WI-9",
+  "q": "How do CLI-supplied flag values survive the `flagValues` reshape? `runner.ts:1098 setFlagValue(name, value)` and `main.ts:2210 extensionsResult.runtime.flagValues.set(name, value)` are both extension-less writes, and `runner.ts:1094 getFlagValues()` returns a flat `Map<string, boolean|string>`. Under `Map<extensionPath, Map<flagName, value>>` there is no obvious home for a user-typed `--flag=value`. Two candidates: (a) a separate `flagValueOverrides: Map<string, boolean|string>` layer that wins at read time and is untouched by unload; (b) `setFlagValue` fans out to every declaring extension's inner map, and `getFlagValues()` flattens on read. (a) is cleaner and means a user-set value survives unloading the extension that merely supplied the *default* — which is what a user expects. A human must pick; do not invent it."
+ },
+ {
+  "id": "WI-9",
+  "q": "Does anything outside the CLI genuinely need `getFlagValues()` to stay flat, or can it become a flatten-over-`this.extensions` at the read boundary only? `cli/extension-flags.ts:11 ExtensionFlagSink` only needs `getFlags()` and `setFlagValue()`, so the flatten can stay inside the runner — but confirm no SDK consumer reads `runtime.flagValues` directly before changing the type."
+ },
+ {
+  "id": "WI-9",
+  "q": "Should `unloadExtension` return the removed `Extension` (so a caller could re-add it) or `boolean`? The plan says nothing. `boolean` is the smaller surface and matches `isExtensionActive`'s shape; returning the object invites a re-add path nobody has designed."
+ },
+ {
+  "id": "WI-9",
+  "q": "Is a reload (unload + load) in scope for WI-9, or strictly unload? The plan defers cache-busting and calls module cache a follow-up — but see plan_corrections: cache-busting already exists and is already per-load, so if reload IS in scope it inherits the existing mechanism for free and the follow-up disappears. If reload is NOT in scope, WI-9 is purely teardown and there is no module-graph work at all."
+ },
+ {
+  "id": "WI-13",
+  "q": "Option (A) vs (B) is not yet a decision, it is a recommendation. The plan recommends (B) — make both throw and point at the two methods that work — and I have found no evidence anyone accepted it. Confirm in writing before PR 1 starts. If (A) is chosen instead, `packages/tui` gains new public API and §4.2 must be amended explicitly; it must not slip in as an implementation detail."
+ },
+ {
+  "id": "WI-13",
+  "q": "Session-switch behavior: the plan mandates remount (dispose the old widget, re-invoke the factory on the newly opened session). Confirm that is right, because it means a widget factory is called more than once per session and a factory closing over session state must tolerate that. The alternative — keeping the widget across the switch without re-invoking — is not what the plan says, so do not drift into it without a decision."
+ },
+ {
+  "id": "WI-13",
+  "q": "Widget key collision across two extensions. The plan says a collision must be 'reported, not silently overwritten', but does not say what 'reported' means. Options: `logger.warn` and last-writer-wins; or reject the second call the same way `setHeader` now throws. Test row (5) has to assert one specific outcome, so this must be settled before the row is written."
+ },
+ {
+  "id": "WI-13",
+  "q": "Does `setStatus` get per-extension ownership in the same PR? `setHookStatus` at `extension-ui-controller.ts:591-592` forwards to `this.ctx.statusLine.setHookStatus(key, text)`, and the status line keeps its own key map outside this controller. It is out of WI-13's stated scope, but it means `setWidget` and `setStatus` will have different collision and ownership semantics after PR 2. That asymmetry should be a decision, not an accident."
+ },
+ {
+  "id": "WI-13",
+  "q": "Test row (3) ('the widget actually appears in the frame') needs a fixture loaded through `discoverAndLoadExtensions(configuredPaths, cwd, eventBus?, disabledExtensionIds?, options?)` — `packages/coding-agent/src/extensibility/extensions/loader.ts:668-677`. The plan says 'an extension fixture' without saying whether it must be the out-of-repo `outsider-extension` fixture from §11.2 item 12 (which does not exist yet) or a test-local temp fixture. Pick one; if it is the outsider fixture, row (3) is blocked behind item 12 and belongs in wave 7 with the other two rows, not wave 6."
+ },
+ {
+  "id": "WI-13",
+  "q": "ACP mode is a scope decision, not a mechanical fix. `createAcpExtensionUiContext` (`modes/acp/acp-agent.ts:425`) stubs `setHeader`/`setFooter` at `:581-582`, and its own JSDoc at `:409-424` says that surface 'remains stubbed — ACP clients render those themselves or not at all'. So there are two defensible answers: (i) ACP has no frame, so it should throw the same no-frame message as the other non-TUI paths and the JSDoc gets updated; or (ii) ACP genuinely has a frame concept owned by the client, in which case silence is correct and the JSDoc stays, but then §11.1's fifth test is not satisfied on ACP and that has to be written down. Option (i) is the one consistent with the rest of this work item, but it is a behavior change to a documented mode and must be decided, not assumed. The gate clause below assumes (i)."
+ },
+ {
+  "id": "WI-2",
+  "q": "Does the post-sort apply to EXPLICITLY configured paths too? Sorting `allPaths` wholesale (the plan's choice, and what step 1 implements) means a user who writes `extensions: [\"b-ext\", \"a-ext\"]` in settings and relies on b-ext winning now gets a-ext. Sorting only the ambient/discovered entries and preserving configured order would honor intent better but makes the rule harder to state and the test fixture would have to use the ambient path. The plan settled on wholesale; this needs a human to confirm before the PR is opened, because it is the one part of WI-2 a user could reasonably call a regression."
+ },
+ {
+  "id": "WI-2",
+  "q": "Should the 8-extension fixture's degenerate-premise check hard-fail or skip? Hard-failing is honest and is what the plan chose, but on a filesystem whose readdir happens to return lexical order the row goes red on a platform that is not broken. Skipping silently reintroduces the exact vacuous pass the plan was written to prevent. A third option — assert the winner name unconditionally and record the premise in the failure text only — trades a rare red for a permanently weaker test on some platforms. Pick one before writing the test."
+ },
+ {
+  "id": "WI-2",
+  "q": "The linked-module sort at helpers.ts:763 has no observable coverage in this WI's fixture, because the fixture exercises the configured-directory path (which the loader post-sort already fixes). Gate step (3) above proves the two sorts are not redundant but cannot prove the helpers.ts sort does anything. Options: build a second fixture that forces `discoverExtensionModulePaths`'s linked-directory branch (symlinked subdirectory containing index.ts, which native glob does not descend into), or accept that the helpers.ts sort rests on a code-reading argument and say so in the PR. This needs a human decision because the second fixture is most of the remaining test effort."
+ },
+ {
+  "id": "WI-2",
+  "q": "Does `getCommandDiagnostics()` have out-of-repo consumers (published SDK, downstream forks)? `git grep -rn \"getCommandDiagnostics\" -- packages/` matches only the definition at runner.ts:1206, so nothing IN this repo needs updating — but widening its element type is still a published-API surface change. Confirm the SDK's public exports before widening rather than relying on the in-repo grep alone."
+ },
+ {
+  "id": "WI-7",
+  "q": "M2-OQ3 — HOW does an extension-registered mode reach the status line? This BLOCKS step 6 and cannot be decided by the implementer. The plan analysed three options at §7.4 and explicitly did NOT choose. The four constraints any answer must satisfy, all verified against HEAD: the 27-member union at schema.ts:2-30 stays closed; a registered mode renders inside the existing `mode` segment at segments.ts:364, not as a new id; the plan→prewalk→goal→vibe→loop priority chain (segments.ts:369-403) is preserved with its order supplied by the registry; `ModeDefinition.statusLine` is required. The plan leans toward option 3 ('mode segment reads id from ModeRegistry') as the only one meeting all four, but §7.4 notes option 3 does NOT cover a mode wanting a segment outside `mode` — if that is wanted later, all three options must reopen. Decision owner: whoever owns WI-10 / the M2 design review. Needed before step 6, not before step 0."
+ },
+ {
+  "id": "WI-7",
+  "q": "Should the writePolicy control user-facing error TEXT, or only the flags? This spec puts message text in core (a `WritePolicy` is allow/deny flags; the guard owns the `ToolError` strings) so an extension cannot inject prose into a tool error. The alternative lets each mode word its own refusal, which is friendlier and is what a shipped example would want. Security-flavoured default, product-flavoured alternative — a human picks."
+ },
+ {
+  "id": "WI-7",
+  "q": "Does `ModeContext` expose a UI affordance at all? This spec makes it narrow (session, settings, setActiveTools, notify) and hands no TUI handle, because a registered mode's self-drawn area is exactly what WI-13 defines and it lands in wave 6. If a mode is expected to render more than a status-line chip at wave 5, the context needs a seam now rather than in wave 6."
+ },
+ {
+  "id": "WI-7",
+  "q": "Does the fixture's second leg really need to be a separate commit? The plan's reasoning is sound (tsconfig includes test, so one `registerSetting` line reddens check:ts and the && never reaches the tests) and this spec follows it. Confirm with whoever owns WI-8b that the wave-5 and M2-close gates stay two separate commands rather than one tolerant one."
+ },
+ {
+  "id": "WI-7",
+  "q": "Should the five built-in modes be registered with their existing `order` values sourced from WI-2, or does WI-2 produce a separate artifact this item must read? Step 7 depends on WI-2's output being a concrete, stable order. If WI-2 lands a diagnostic-only ordering with no canonical list, step 7 has no order to assign and the status-line priority becomes a second, competing source of truth."
+ },
+ {
+  "id": "WI-1",
+  "q": "RESUME AND TIMERS — the real design decision, and the plan does not answer it. Clearing on suspend is unambiguous. What happens on resume is not: `setSuspendedExtensions`'s resume branch only flips a Set membership, so a resumed extension's background work is gone until its handler next runs. A polling extension therefore stops polling forever after one disable/enable cycle, silently. Three options: (a) accept it and document that a resumed extension re-establishes its own background work on its next event — cheapest, and what this spec's test case 2 assumes; (b) have the resume branch re-emit a synthetic startup event so handlers rebuild their subscriptions — more correct, larger, and arguably belongs to WI-7's lifecycle work; (c) remember cleared timers and re-arm them on resume, which contradicts the whole point of clearing. A human must pick before the code is written. This spec is written for (a) and flags it rather than hiding it."
+ },
+ {
+  "id": "WI-1",
+  "q": "COMMIT 2 — does the resume re-registration need a `refreshRuntimeProviders()` afterwards? The cold paths in sdk.ts:1010, :2499 and cli/models-cli.ts:364 all call it after registering, and this is the one register site that would not. The counter-argument is that `reconcileExtensionSources` is a settings-listener hot path and `clearSourceRegistrations` already forces a static-model reload. The spec assumes NO refresh (keep the hot path cheap). Confirm or overrule."
+ },
+ {
+  "id": "WI-1",
+  "q": "COMMIT 2 — `restrictToolNames` asymmetry. The `syncExtensionSources` / `clearSourceRegistrations` pair at sdk.ts:2481-2486 sits inside `if (!restrictToolNames)`, but the retention-record fill at 2487-2492 sits OUTSIDE it. So in a restricted-tool-name session, providers are still registered and still recorded, while the prune never ran. This is pre-existing and out of scope, but the new call in `reconcileExtensionSources` will run in restricted sessions too, which means restricted sessions get a prune they never had. Confirm that is desirable rather than surprising."
+ },
+ {
+  "id": "WI-1",
+  "q": "COMMIT 2 — should the retention record be cleared if the extension calls `pi.unregisterProvider`? `ExtensionRuntime.unregisterProvider` (loader.ts:108-111) removes an entry from `pendingProviderRegistrations`, which is drained. After the drain it is a no-op. A later resume would re-register a provider the extension explicitly withdrew. Probably rare, but the fix is a line (filter the record on unregister) and it is unclear whether it is worth the surface."
+ },
+ {
+  "id": "WI-1",
+  "q": "COMMIT 1 — is the `UNOWNED_TIMERS` sentinel from step 6 acceptable, or should `createContext`'s timer helpers throw? A sentinel that silently produces ownerless timers preserves the current behaviour for the trampolines' pre-`#ownTimers` callers and the two existing unit tests. Throwing would surface any future missed owner point immediately but breaks the four existing tests at test/extensions-runner.test.ts:3956-4070 that construct a context directly. The spec recommends the sentinel; a human should ratify it."
+ },
+ {
+  "id": "WI-10",
+  "q": "MUST BE DECIDED BY A HUMAN, NOT BY THE ENGINEER WRITING THE DOC: which of the three words is the M2-OQ2 answer. The spec deliberately does not pick one. Picking it would repeat the failure this item exists to prevent — a decision made by accident, inside a document, by someone who was only supposed to be recording it. Prepare the choice; do not make it."
+ },
+ {
+  "id": "WI-10",
+  "q": "If the answer is DEFERRED rather than YES or NO: DEFERRED is only defensible with a named owner and a named milestone. A deferral without both is indistinguishable from not answering, and it fails gate condition (3). Settle the owner and the milestone BEFORE writing the word, or write YES or NO instead."
+ },
+ {
+  "id": "WI-10",
+  "q": "COORDINATION WITH WI-0 (same wave, same reviewer, two of the same three files): agree the ADR filename convention so the pair reads as a set — WI-0's spec chose docs/extension-trust-model.md, so docs/extension-writing-surfaces.md is the matching name. Also note WI-0's spec cites the changelog anchor as 'line 1057, the #7955 entry under ## [18.1.16]', which is stale: the current released heading is '## [18.3.3] - 2026-09-27' at line 5. Two items editing the same file in the same wave will conflict on the context lines."
+ },
+ {
+  "id": "WI-10",
+  "q": "Do custom-commands/ and the plugin manifest get a status word of their own, or are they folded into 'extensions'? The plan lists them as two of the five separate surfaces and the tree backs that up — they are genuinely distinct directories with distinct loaders. This spec assumes five separate rows; if the maintainer collapses them, the collapse must be argued in the document, not made silently by omission."
+ },
+ {
+  "id": "WI-10",
+  "q": "Does the ADR need to name which existing docs are now subordinate (docs/hooks.md, docs/custom-tools.md), or is redirecting only docs/extensions.md:901 enough? Recommend the minimum — three files — and let a follow-up widen it, so the diff stays reviewable."
+ },
+ {
+  "id": "WI-6",
+  "q": "Should the four always-admitted names (read, write, edit, yield) get explicit `() => true` rows, or stay absent and rely on the `?? true` default? I specified explicit rows so the table is a complete description of admission, but a reviewer may reasonably argue absent-is-more-honest since they had no rule before. This is a style call with no behavioural difference — pick one and note it."
+ },
+ {
+  "id": "WI-6",
+  "q": "Does the prototype-safety row (an extension tool literally named `toString` / `__proto__`) belong in this PR, or is it a separate hardening item? It is a genuine new risk introduced by the refactor, so it should be in scope — but it widens the PR's surface from 'refactor' to 'refactor + hardening'."
+ },
+ {
+  "id": "WI-6",
+  "q": "Is `SESSION_MANAGED_BUILTIN_TOOL_NAMES` in scope for WI-6, or does it belong to the WI-5 tool-set table? The plan does not mention it; I found it while looking for untyped parallel declarations and it is the same class of problem."
+ },
+ {
+  "id": "WI-0",
+  "q": "A, B, or C? This is the decision itself and it belongs to a human maintainer, not to this spec. Nothing downstream of WI-0 can be finalised until it is written down."
+ },
+ {
+  "id": "WI-0",
+  "q": "Is `ctx.exec` inside the gate's scope (M2-OQ5)? The ADR must answer this explicitly; 'it follows from the module decision' is not an answer."
+ },
+ {
+  "id": "WI-0",
+  "q": "Does the ADR RATIFY or OVERTURN the already-released no-gate posture? Ratifying is documentation. Overturning is a user-visible behaviour change that supersedes a released changelog entry (CHANGELOG.md:1057, under `## [18.1.16]`) — that is a much larger decision than the plan's 'S, half a day' implies, and it needs a changelog entry and an issue link, not just a doc."
+ },
+ {
+  "id": "WI-0",
+  "q": "Who owns enforcement, and by when? The plan states no milestone in the entire programme owns it, including M3. This ADR must attach a NAME, an OWNER and a DATE. Who is that person, and what is the date?"
+ },
+ {
+  "id": "WI-0",
+  "q": "Should docs/extension-loading.md also get a trust section? The shipped comment at types.ts:548-561 sends readers to that file, and that file is currently completely silent on trust (`grep -i trust docs/extension-loading.md` returns nothing) — a live dangling pointer to a document that does not answer the question it is cited for."
+ },
+ {
+  "id": "WI-0",
+  "q": "Does the project-scope marketplace path (step 2) need to be brought INTO M2 rather than left to the unowned enforcement item? It is already shipped and already unguarded, so treating it as future work is a scheduling risk, not just an ownership risk."
+ },
+ {
+  "id": "WI-11",
+  "q": "CHANGELOG — does a design-only wave-8 item get a changelog entry? The sibling WI-0 spec added one; this spec's default is not to. The substance differs: WI-0's trust model constrains what third-party authors may rely on TODAY, while WI-11's design doc governs a primitive that does not exist, so no author is being held to anything by it. A maintainer should decide once for both and apply it to WI-0 and WI-12 as well. Default if undecided: no entry, per AGENTS.md's 'user-facing' scoping."
+ },
+ {
+  "id": "WI-11",
+  "q": "ON-DISK PATH — `~/.omp/extensions-state/<extension-id>.json` is the shape this spec proposes, following the existing `getPluginsDir()` conventions and sitting alongside `getPluginsLockfile` (`packages/utils/src/dirs.ts:652-654`). A maintainer may want a different home (inside the extension's own directory, or one file per extension with a shared index). What is NOT acceptable is leaving the path undecided — that converts a design item into a deferral wearing a design item's clothes."
+ },
+ {
+  "id": "WI-11",
+  "q": "M2-OQ2 — the plan's own §10 says M2-OQ2 (does the capability registry ever become extension-reachable: YES / NO / DEFERRED) blocks 'substrate của WI-11/WI-12'. If M2-OQ2 is still open when this document is written, the document must state that its recommendation is conditional on the answer rather than silently assuming one. If M2-OQ2 is closed, cite the answer and say whether it changes the recommendation."
+ },
+ {
+  "id": "WI-11",
+  "q": "SCOPE OF 'RENAME' — the plan's second future contract is 'một setting được đổi tên không làm mồ côi một giá trị' (a renamed setting does not orphan a value). For a state store, keys are chosen by the extension, so the interesting case is the extension's OWN identity changing (id, or install path when the user moves it), not a key rename. A maintainer must decide what happens on identity change: refuse it, migrate the values, or document them as abandoned. The document cannot state the contract without this answer."
+ },
+ {
+  "id": "WI-11",
+  "q": "MIGRATION OF TODAY'S DIY FILES — extensions already shipping (if any) have written their own files under `~/.omp` or `cwd`. Does a future store adopt them, or start clean? The plan is silent. The defensible default is 'start clean, no adoption' — there is no way to know which file belongs to which extension — but the maintainer should say so explicitly in the document rather than leaving it implied, because 'we will migrate later' is the kind of sentence that becomes a breaking change nobody planned."
+ },
+ {
+  "id": "WI-8b",
+  "q": "M2-OQ4 — where does an extension key render? Three options in the plan (data-driven panel / under the existing Plugins tab / a dynamic tab). DECIDE, DO NOT DISCOVER IN CODE. Two verified constraints narrow it: `SettingTab` is a closed ten-literal union (settings-defs.ts:4-15) and `TAB_GROUPS` is a static record (:52-88), so \"a dynamic tab per extension\" requires changing both; and the existing Plugins tab is a PLUGIN (npm/marketplace) surface built from `plugin-settings.ts` with its own `PluginSettingsHost`, not an extension surface — putting extension keys there merges two different things under one tab. GĐ6 is right that this decision must also cover the schema-backed search at settings-selector.ts:848-860, not only the tab list at :431-440."
+ },
+ {
+  "id": "WI-8b",
+  "q": "What makes a stable namespace slug for an extension? `Extension.path` is the path the user typed and is NOT stable — `omp --extension /abs/path` and a config entry spell it differently. `Extension.resolvedPath` (loader.ts:471, set from the absolute path) IS stable across rebinds and restarts, but embeds a machine-local path in a config key that persists in a shared settings file — bad for a checked-in project config. There is no manifest field on `Extension` (types.ts:1802-1817) to hang an author-declared id off, and no existing id-derivation helper (`git grep -n 'extensionId|slugExtension|normalizeExtensionId'` returns nothing). The marketplace has `buildPluginId(name, marketplace)` at `extensibility/plugins/marketplace/types.ts:29` as a shape precedent, but plugins get their id from a manifest and extensions do not. A human must pick: author-declared manifest id, resolved-path hash, or basename. Do not invent one."
+ },
+ {
+  "id": "WI-8b",
+  "q": "Should the env variable for an extension key be author-chosen or derived? WI-8a settled this for plugins (`OMP_<PLUGIN_ID>_<KEY>`, uppercase, `-`/`.` → `_`, declared explicitly in `SettingDefinition.env`, never auto-generated) and verified the layer is opt-in at registry.ts:476-480. WI-8b should inherit that decision unchanged rather than re-derive it — but confirm WI-8a actually landed it as written before coding against it."
+ },
+ {
+  "id": "WI-8b",
+  "q": "Should re-registering the same key by the same owner be a silent no-op or a throw? I specified no-op, because `bindPreparedExtensions` (loader.ts:491-520) rebinds one prepared extension to a child session and re-runs its factory, and that is a tested contract (`test/extension-prepared-rebind.test.ts`). But no-op silently masks a genuine double-declaration inside one extension. A human may prefer throw-on-second-declaration-in-one-bind with a separate rebind-detection path; the plan does not address this at all."
+ }
+]

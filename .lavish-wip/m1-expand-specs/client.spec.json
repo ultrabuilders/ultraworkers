@@ -1,0 +1,538 @@
+{
+  "id": "client",
+  "title": "Migrate @earendil-works/pi-client -> @oh-my-pi/pi-client by verbatim copy + scope/extension/vitest/private/promise rewrite; it is a NEW capability, not a duplicate of omp's RPC or collab transports",
+  "source_path": "/Users/tranquangdang21/Projects/pi-ref/packages/client",
+  "source_files": 19,
+  "source_bytes": 70483,
+  "one_line": "pi-client is a TRANSPORT-NEUTRAL, REQUEST/RESPONSE, SERVER-ROUTED remote-session client: it owns a byte-transport abstraction (`ByteTransport`/`ByteTransportFactory`), a state-machine `Connection` (disconnected -> connecting -> connected) that performs a `hello` handshake and verifies the physical endpoint's logical `serverId`, a request-correlation table keyed by `request-N`, `AbortSignal` cancellation that sends a protocol-level `cancel` frame (not just a local reject), out-of-band `attachment` re-routing events keyed by `{serverId, sessionId, attachmentId}`, and a `ByteTransport`-backed Unix-domain-socket implementation plus a concurrent read-only socket-discovery prober. 479-line `client.ts` + 245-line `connection.ts` + 299-line `unix.ts` = 1023 lines of stateful lifecycle code where the ordering obligations (handshake-before-data, drain-before-`sent`, snapshot-hydration-before-update-delivery, `targetIsCurrent` before unsubscribe) are the whole value and are invisible in a type signature. omp has no equivalent: `modes/rpc/rpc-client.ts` is a NEWLINE-DELIMITED-JSON STDIO client that SPAWNS its own child process and has no handshake, no serverId verification, no transport abstraction, no attachment routing, and no CBOR; `collab/relay-client.ts` `CollabSocket` is a WEBSOCKET PEER-TO-PEER room client with AES-GCM sealed frames and exponential-backoff reconnect, which is a different wire, a different trust model, and the wrong direction (it is a collab peer, not a routed RPC consumer). This package is therefore a NEW capability for omp, not a skip candidate -- but it is also the 3rd leaf in the dependency chain and cannot land until chord and protocol land.",
+  "why_copy_not_reimplement": "Four reasons, each naming a contract a rewrite would silently drop. (1) The lifecycle ordering is the contract and it is invisible in types. `connection.ts:143-161` fails the connection with 'Received server data before the client hello was sent' only when `state === 'connecting' && !transport`; `connection.ts:182-185` symmetrically fails on a server hello received before the client transport exists. A reimplementation that treats handshake as 'await connect() then start reading' passes every happy-path test and drops both guards. (2) `client.ts:250-261,300` implements the abort/cancel race correctly: `sendCancel()` early-returns unless `sent && connected`, and after the frame is actually written, `if (aborted) sendCancel()` fires the cancel for an abort that landed DURING the synchronous send. Inverting either condition leaks an orphan request on the server, and the leak is only observable under a real abort-during-write race, which no unit test can force deterministically without the very send hook being rewritten. (3) The subscription hydration protocol in `client.ts:191-236,304-332` is a two-queue barrier: wire updates that arrive before the snapshot is hydrated are parked in `queuedWireUpdates` and replayed through the SAME decoder in order (`client.ts:198-202`), decoded updates park in `queued` until `start()` is called, and `subscribeService` throws `DisconnectedError` if the listener map entry was replaced while the subscribe request was in flight (`client.ts:210`). Three queues, one decoder, an ordering guarantee -- reimplementing this is re-deriving it from the bugs. (4) `unix.ts:109-145` and `186-234` implement a byte-transport with a pending-bytes high-water mark, a serialized `#writeTail`, and a write that must wait for BOTH the socket write callback AND (if the socket applied backpressure) the `drain` event, resolving on whichever completes last. That is ~120 lines of subtle I/O sequencing whose failure mode is a hung promise, not a wrong answer. A from-scratch port would ship a version that resolves on the write callback alone and silently corrupts framed messages under backpressure. Copying preserves it; the rewrite surface afterwards is 25 import specifiers and 3 test-runner imports, not the logic.",
+  "public_api": [
+    {
+      "symbol": "Client",
+      "kind": "class",
+      "source_anchor": "packages/client/src/client.ts:62 -- `export class Client {`",
+      "target_anchor": "packages/client/src/client.ts:62 (same line, after the 4 specifier rewrites on L19, L30)",
+      "already_exists_in_omp": false,
+      "note": "0 exported `Client` in any omp barrel. omp has 57 files matching the word `Client` but every one is a longer name: `AuthBrokerClient` (packages/ai/src/auth-broker/client.ts:129), `AnthropicHttpClient` (packages/ai/src/providers/anthropic-client.ts:208), `AnthropicMessagesClient` (:191), `DapClient` (packages/coding-agent/src/dap/client.ts:54), `RpcClient` (packages/coding-agent/src/modes/rpc/rpc-client.ts). Verified: `git grep -n 'export class Client\\b|export { Client|export type { Client' -- 'packages/*'` returns nothing. The bare name is free. Copy verbatim; all 12 members use ES `#private` already (L63-74), so the class-privacy rule needs no edit."
+    },
+    {
+      "symbol": "createClientServiceTransport",
+      "kind": "function",
+      "source_anchor": "packages/client/src/client.ts:448 -- `export function createClientServiceTransport(`",
+      "target_anchor": "packages/client/src/client.ts:448",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Adapts a lazily-resolved `RpcTarget` into a chord `RemoteServiceTransport`. New. The 448-line `Client` is the ONLY thing that would consume it, and it is not consumed until chord lands -- so this export compiles only after the chord package exists."
+    },
+    {
+      "symbol": "ServerError",
+      "kind": "class",
+      "source_anchor": "packages/client/src/errors.ts:3 -- `export class ServerError extends Error {`",
+      "target_anchor": "packages/client/src/errors.ts:3",
+      "already_exists_in_omp": false,
+      "note": "0 exported `ServerError` in omp. New. Carries a `ProtocolErrorCode` from pi-protocol. NOTE: pi's coding-agent imports it under an ALIAS (`import { ServerError as ClientServerError }`) precisely because it also has its own `ServerError` -- that aliasing happens in the coding-agent spec, not here. Inside this package the bare name is unambiguous."
+    },
+    {
+      "symbol": "DisconnectedError",
+      "kind": "class",
+      "source_anchor": "packages/client/src/errors.ts:13 -- `export class DisconnectedError extends Error {`",
+      "target_anchor": "packages/client/src/errors.ts:13",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Accepts an optional `cause`, which `unix.ts:266` depends on: discovery treats `error instanceof DisconnectedError && error.cause === undefined` as a stale socket. Dropping the cause wiring makes dead sockets throw during discovery instead of being filtered."
+    },
+    {
+      "symbol": "ClientDisposedError",
+      "kind": "class",
+      "source_anchor": "packages/client/src/errors.ts:20 -- `export class ClientDisposedError extends Error {`",
+      "target_anchor": "packages/client/src/errors.ts:20",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "toError",
+      "kind": "function",
+      "source_anchor": "packages/client/src/errors.ts:27 -- `export function toError(error: unknown): Error {`",
+      "target_anchor": "DELETE the local definition; import from `@oh-my-pi/pi-utils`",
+      "already_exists_in_omp": true,
+      "note": "EXACT DUPLICATE, byte-for-byte equivalent. omp: packages/utils/src/type-guards.ts:15 -- `export function toError(value: unknown): Error { return value instanceof Error ? value : new Error(String(value)); }`, re-exported from packages/utils/src/index.ts:41 via `export * from \"./type-guards\"`. omp's AGENTS.md Central Utilities rule is explicit: 'Two implementations of the same thing is a bug even when both work.' Because `errors.ts` is NOT the package barrel, dropping the local definition and importing `toError` from `@oh-my-pi/pi-utils` changes no public surface -- but you must also keep `toDisconnectedError` exported from this module, because `connection.ts:10` and `unix.ts:11` import it from here. See the collision entry."
+    },
+    {
+      "symbol": "toDisconnectedError",
+      "kind": "function",
+      "source_anchor": "packages/client/src/errors.ts:31 -- `export function toDisconnectedError(error: unknown): DisconnectedError {`",
+      "target_anchor": "packages/client/src/errors.ts:31 (post-deletion, becomes the new L23)",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Idempotent: returns the input unchanged when it is already a `DisconnectedError`. Keep it in this package -- it is protocol-specific (wraps transport failures into the client's own error type), not a general utility."
+    },
+    {
+      "symbol": "ByteTransport",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/transport.ts:1 -- `export interface ByteTransport {`",
+      "target_anchor": "packages/client/src/transport.ts:1",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Two members: `send(chunk: Uint8Array): Promise<void>` and `close(): void`. This is the seam that makes the whole package transport-neutral. Do NOT rename it to match anything in omp -- there is nothing to match."
+    },
+    {
+      "symbol": "ByteTransportHandlers",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/transport.ts:8 -- `export interface ByteTransportHandlers {`",
+      "target_anchor": "packages/client/src/transport.ts:8",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. The doc comment on `ByteTransportFactory` states the contract the unix implementation relies on: 'Exactly one terminal handler is expected.'"
+    },
+    {
+      "symbol": "ByteTransportFactory",
+      "kind": "type",
+      "source_anchor": "packages/client/src/transport.ts:18 -- `export type ByteTransportFactory = (handlers: ByteTransportHandlers) => ByteTransport | Promise<ByteTransport>;`",
+      "target_anchor": "packages/client/src/transport.ts:18",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "ConnectionState",
+      "kind": "type",
+      "source_anchor": "packages/client/src/types.ts:5 -- `export type ConnectionState = \"disconnected\" | \"connecting\" | \"connected\";`",
+      "target_anchor": "packages/client/src/types.ts:5",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Three-state union, no fourth 'failed' state -- a failed connection returns to `disconnected` carrying the error on the state-change event (connection.ts:239)."
+    },
+    {
+      "symbol": "ConnectionStateChange",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/types.ts:7 -- `export interface ConnectionStateChange {`",
+      "target_anchor": "packages/client/src/types.ts:7",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. `{ state: ConnectionState; error?: Error }` -- the optional error is the ONLY channel by which a connection failure reaches the application; nothing throws asynchronously."
+    },
+    {
+      "symbol": "Unsubscribe",
+      "kind": "type",
+      "source_anchor": "packages/client/src/types.ts:12 -- `export type Unsubscribe = () => void;`",
+      "target_anchor": "packages/client/src/types.ts:12",
+      "already_exists_in_omp": false,
+      "note": "PARTIAL NAME OVERLAP, no code collision. 3 omp files contain the word `Unsubscribe` but every hit is prose: packages/coding-agent/src/mcp/client.ts:425 is a JSDoc line ('* Unsubscribe from resource update notifications.'), packages/coding-agent/src/extensibility/hooks/runner.ts:149 is a `@returns Unsubscribe function` tag, packages/coding-agent/src/mcp/manager.ts:505,1685 are inline comments. omp exports no type by this name. New."
+    },
+    {
+      "symbol": "ListenerErrorHandler",
+      "kind": "type",
+      "source_anchor": "packages/client/src/types.ts:13 -- `export type ListenerErrorHandler = (error: Error) => void;`",
+      "target_anchor": "packages/client/src/types.ts:13",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. The doc comment on `ClientOptions.onListenerError` names the safety property: subscriber failures are reported without being allowed to corrupt client state -- enforced by the try/catch at client.ts:441-443."
+    },
+    {
+      "symbol": "AttachmentChangeListener",
+      "kind": "type",
+      "source_anchor": "packages/client/src/types.ts:14 -- `export type AttachmentChangeListener = (attachment: SessionTarget | undefined) => void;`",
+      "target_anchor": "packages/client/src/types.ts:14",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. This is the durable-address concept omp has no vocabulary for: omp's 5 `attachment*` hits are all TUI composer file attachments (packages/tui/src/prompt/composer-attachments.ts:175,177,221,225 -- `attachment://` markers), a completely different thing. Rename on sight would be WRONG; keep pi's name."
+    },
+    {
+      "symbol": "ServiceSubscription",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/types.ts:16 -- `export interface ServiceSubscription {`",
+      "target_anchor": "packages/client/src/types.ts:16",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. The `start()` method's doc comment ('Begin ordered update delivery after the caller has installed the snapshot') documents the hydration barrier that client.ts:216-220 implements."
+    },
+    {
+      "symbol": "ClientOptions",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/types.ts:25 -- `export interface ClientOptions {`",
+      "target_anchor": "packages/client/src/types.ts:25",
+      "already_exists_in_omp": false,
+      "note": "PARTIAL NAME OVERLAP, no code collision. 2 omp files match: packages/coding-agent/src/discovery/builtin-rules/ts-import-type.md:24,31,35 and ts-no-deprecated-leftovers.md:26,36 -- all of them are EXAMPLE CODE inside lint-rule documentation strings, not compilable modules. omp exports no type by this name. New."
+    },
+    {
+      "symbol": "Connection",
+      "kind": "class",
+      "source_anchor": "packages/client/src/connection.ts:41 -- `export class Connection {`",
+      "target_anchor": "packages/client/src/connection.ts:41",
+      "already_exists_in_omp": false,
+      "note": "0 exported `Connection` in omp (verified `git grep -n 'export class Connection\\b|export { Connection' -- 'packages/*'` is empty; 20 files use the word but all are local variables or a `#server` field). NOT in the package barrel -- index.ts exports only from client.ts/errors.ts/transport.ts/types.ts -- so it is de-facto internal. Copy verbatim; all 8 members already use `#`."
+    },
+    {
+      "symbol": "PromiseResolvers",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/promise.ts:1 -- `export interface PromiseResolvers<T> {`",
+      "target_anchor": "DELETE the whole file",
+      "already_exists_in_omp": true,
+      "note": "SUPERSEDED. The file's own doc comment says 'Remove in favor of `Promise.withResolvers()` when the repository's TypeScript lib baseline moves to ES2024.' omp HAS moved: `Promise.withResolvers` is used at packages/agent/src/agent-loop.ts (3 sites), packages/agent/src/agent.ts (3), packages/agent/src/pause.ts (2), packages/agent/src/live-steering.ts:1, packages/agent/src/speculative-execution.ts:1. omp's AGENTS.md makes it mandatory: 'Promises: use `Promise.withResolvers()` instead of `new Promise((resolve, reject) => ...)`.' Do not copy promise.ts. Its two call sites -- client.ts:248 and connection.ts:72 -- become `const { promise, resolve, reject } = Promise.withResolvers<T>();`, and the `type PromiseResolvers` import on connection.ts:11 is deleted."
+    },
+    {
+      "symbol": "createPromiseResolvers",
+      "kind": "function",
+      "source_anchor": "packages/client/src/promise.ts:8 -- `export function createPromiseResolvers<T>(): PromiseResolvers<T> {`",
+      "target_anchor": "DELETE the whole file",
+      "already_exists_in_omp": true,
+      "note": "SUPERSEDED by `Promise.withResolvers<T>()`, same as above. Deleting promise.ts removes one of the five `new Promise(` sites in src/."
+    },
+    {
+      "symbol": "UnixTransportOptions",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/unix.ts:19 -- `export interface UnixTransportOptions {`",
+      "target_anchor": "packages/client/src/unix.ts:19",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Exported from the `./unix` SUBPATH, not the barrel. `{ path: string; maxPendingBytes?: number }`."
+    },
+    {
+      "symbol": "UnixServerRoute",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/unix.ts:24 -- `export interface UnixServerRoute {`",
+      "target_anchor": "packages/client/src/unix.ts:24",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. `{ serverId: ServerId; path: string }` -- uses pi-protocol's branded `ServerId`, which is why unix.ts cannot typecheck before the protocol package lands."
+    },
+    {
+      "symbol": "DiscoverUnixServersOptions",
+      "kind": "interface",
+      "source_anchor": "packages/client/src/unix.ts:29 -- `export interface DiscoverUnixServersOptions {`",
+      "target_anchor": "packages/client/src/unix.ts:29",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. The `timeoutMs` doc comment records the 1000 ms default that unix.ts:14 declares as `DEFAULT_DISCOVERY_TIMEOUT_MS`."
+    },
+    {
+      "symbol": "discoverUnixServers",
+      "kind": "function",
+      "source_anchor": "packages/client/src/unix.ts:37 -- `export async function discoverUnixServers(options: DiscoverUnixServersOptions): Promise<UnixServerRoute[]>`",
+      "target_anchor": "packages/client/src/unix.ts:37",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New, and it is the one function in this package that constructs a full `Client` internally (unix.ts:240) purely to run a handshake. Its failure-filter set at L262-273 is a contract in itself: timeout, ProtocolValidationError, cause-less DisconnectedError, version ServerError, and ENOENT/ECONNREFUSED/ECONNRESET/EPIPE/ETIMEDOUT are all silently omitted; anything else rejects the whole discovery. Lose one code and a dead endpoint aborts discovery for every socket in the directory."
+    },
+    {
+      "symbol": "createUnixTransportFactory",
+      "kind": "function",
+      "source_anchor": "packages/client/src/unix.ts:88 -- `export function createUnixTransportFactory(options: UnixTransportOptions): ByteTransportFactory {`",
+      "target_anchor": "packages/client/src/unix.ts:88",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Returns a factory, not a transport -- every connect attempt gets a fresh socket, which is what lets `Client.reconnect()` (client.ts:134) work after a failure. Also note it validates `process.platform !== \"win32\"` (L99); omp has the same guard pattern at packages/coding-agent/src/blob-broker/daemon.ts:76,115, so this is idiomatic, not foreign."
+    }
+  ],
+  "scope_rewrites": [
+    {
+      "from": "@earendil-works/pi-protocol",
+      "to": "@oh-my-pi/pi-protocol",
+      "occurrences": 12,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/chord",
+      "to": "@oh-my-pi/chord",
+      "occurrences": 6,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-client",
+      "to": "@oh-my-pi/pi-client",
+      "occurrences": 6,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-ai",
+      "to": "@oh-my-pi/pi-ai",
+      "occurrences": 2,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-telemetry",
+      "to": "@oh-my-pi/pi-telemetry",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-agent-core",
+      "to": "@oh-my-pi/pi-agent-core",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "from \"./X.ts\" (relative specifiers carrying a .ts extension)",
+      "to": "from \"./X\" (extension dropped -- omp resolves extensionless; verified: packages/wire/src/index.ts:8-12 uses `export * from \"./errors\"`, and `git grep -c 'from \"\\./[^\"]*\\.ts\"' -- 'packages/*/src/**'` returns only 2 unrelated hits)",
+      "occurrences": 25,
+      "verified": true
+    },
+    {
+      "from": "from \"vitest\"",
+      "to": "from \"bun:test\"",
+      "occurrences": 3,
+      "verified": true
+    }
+  ],
+  "new_dependencies": [
+    {
+      "name": "@oh-my-pi/chord",
+      "version": "18.3.3 (workspace catalog, matching every other omp package -- add a line to the root package.json `workspaces.catalog` block)",
+      "why": "Hard dep, 16 named symbols across 4 files. src/client.ts:2-18 imports createServiceCatalogueCall, createServiceStateDecoder, createServiceSubscribeCall, createServiceUnsubscribeCall, JsonValue, parseServiceCall, parseServiceCatalogue, parseWireServiceProviderUpdate, parseWireServiceSubscriptionSnapshot, RemoteServiceTransport, ServiceCall, ServiceCatalogueEntry, ServiceMode, ServiceProviderUpdate, ServiceStateDecoder, ServiceSubscriptionSnapshot; src/client.ts:19 additionally imports BACKGROUND_CONTEXT from the SUBPATH `@oh-my-pi/chord/context`; src/types.ts:1 imports ServiceSubscriptionSnapshot; test/client.test.ts:1 imports BACKGROUND_CONTEXT from the same subpath; test/unix-transport.test.ts:4 imports parseServiceCall. client.ts cannot typecheck without all 16 -- createClientServiceTransport's return type IS chord's `RemoteServiceTransport`.",
+      "already_in_omp": false,
+      "license": "MIT (Copyright (c) 2025 Mario Zechner) -- the same notice the omp root LICENSE already carries at line 3 and THIRD-PARTY-NOTICES.txt:227. Also note: chord is the package that pulls the repo's only new EXTERNAL dependency, `esbuild` (verified absent from omp node_modules), which is why client must land strictly AFTER chord."
+    },
+    {
+      "name": "@oh-my-pi/pi-protocol",
+      "version": "18.3.3 (workspace catalog)",
+      "why": "Hard dep, 22 named symbols across 5 files -- the widest surface of any package in this migration. src/client.ts:20-30 imports AttachmentEnvelope, encodeClientMessage, isServerId, ProtocolValidationError, ResponseEnvelope, RpcTarget, ServerHello, ServiceEventEnvelope, SessionTarget; src/connection.ts:2-9 imports DEFAULT_MAX_FRAME_LENGTH, encodeClientMessage, PROTOCOL_VERSION, ProtocolValidationError, ServerHello, ServerMessage, ServerMessageDecoder; src/unix.ts:4-9 imports DEFAULT_MAX_FRAME_LENGTH, isServerId, ProtocolValidationError, ServerId; src/errors.ts:1 imports ProtocolError, ProtocolErrorCode; src/types.ts:2 imports RpcTarget, SessionTarget; test/client.test.ts:2-7 imports encodeCbor, encodeFrame, encodeServerMessage, PROTOCOL_VERSION, ProtocolValidationError; test/support.ts:1-7 imports ClientMessage, ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION, ServerMessage; test/unix-transport.test.ts:5 imports ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION. The branded `ServerId` in `UnixServerRoute` means the ./unix subpath is un-typecheckable without it.",
+      "already_in_omp": false,
+      "license": "MIT (Copyright (c) 2025 Mario Zechner) -- same notice as the root LICENSE line 3."
+    },
+    {
+      "name": "@oh-my-pi/pi-utils",
+      "version": "18.3.3 (workspace catalog)",
+      "why": "Already in omp, but this is the first package in the migration to declare a NEW dependency on it. Needed for exactly one symbol: `toError`, to replace pi's local byte-identical copy at src/errors.ts:27. Without it the package ships a second implementation of a helper the Central Utilities rule forbids.",
+      "already_in_omp": true,
+      "license": "MIT (Copyright (c) 2025-2026 Can Bölük, Copyright (c) 2026 Stencil Labs, Inc.) -- omp first-party, not a third-party notice."
+    }
+  ],
+  "collisions": [
+    {
+      "what": "`toError(error: unknown): Error` -- pi-client's local helper vs omp's canonical one in pi-utils. EXACT functional duplicates, and the only true code collision in the package.",
+      "pi_anchor": "packages/client/src/errors.ts:27 -- `export function toError(error: unknown): Error { return error instanceof Error ? error : new Error(String(error)); }`",
+      "omp_anchor": "packages/utils/src/type-guards.ts:15 -- `export function toError(value: unknown): Error { return value instanceof Error ? value : new Error(String(value)); }`, re-exported by packages/utils/src/index.ts:41 (`export * from \"./type-guards\"`) so the public specifier is `import { toError } from \"@oh-my-pi/pi-utils\"`",
+      "resolution": "REPLACE, do not duplicate. Delete the definition at src/errors.ts:27-29, add `import { toError } from \"@oh-my-pi/pi-utils\";` at the top of errors.ts, and keep `toDisconnectedError` (which calls it) exported from the same module -- connection.ts:10 and unix.ts:11 both import it from \"./errors\". This changes NO public surface: `toError` is not in the index.ts barrel today, and must not be added to it. Rationale is omp's own Central Utilities rule ('Two implementations of the same thing is a bug even when both work'). The one behavioural difference to be aware of: pi's parameter is named `error`, omp's is `value` -- irrelevant at runtime, and no call site uses named arguments, so nothing breaks."
+    },
+    {
+      "what": "`PromiseResolvers<T>` / `createPromiseResolvers<T>()` -- pi's hand-rolled resolver pair, and its own source file says it should be deleted.",
+      "pi_anchor": "packages/client/src/promise.ts:1-16 (whole file), whose line 7 doc comment reads: 'Remove in favor of `Promise.withResolvers()` when the repository's TypeScript lib baseline moves to ES2024.'",
+      "omp_anchor": "`Promise.withResolvers` is already the house idiom: packages/agent/src/agent-loop.ts (3 uses), packages/agent/src/agent.ts (3), packages/agent/src/pause.ts (2), packages/agent/src/live-steering.ts:1, packages/agent/src/speculative-execution.ts:1. omp AGENTS.md: 'Promises: use `Promise.withResolvers()` instead of `new Promise((resolve, reject) => ...)`.'",
+      "resolution": "DELETE promise.ts entirely; do not copy it. Two call sites to rewrite: src/client.ts:248 `const { promise, resolve, reject } = createPromiseResolvers<T>();` -> `Promise.withResolvers<T>()`, and src/connection.ts:72 `const handshake = createPromiseResolvers<ServerHello>();` -> `Promise.withResolvers<ServerHello>()`. Then delete the `type PromiseResolvers` specifier from the connection.ts:11 import (it becomes `import { createPromiseResolvers, type PromiseResolvers } from \"./promise.ts\"` -> drop the whole line, since promise.ts no longer exists). Net effect: the file count drops from 8 src files to 7, and `toError` is the only errors.ts export that changes. The three remaining `new Promise(` sites in src/ (unix.ts:109, unix.ts:188, unix.ts:251) KEEP their form -- they resolve from socket events and timeouts, not from a two-value resolver, so `withResolvers` does not apply."
+    },
+    {
+      "what": "`ReturnType<typeof setTimeout>` at src/unix.ts:247 -- a banned construct, and the only one in the package.",
+      "pi_anchor": "packages/client/src/unix.ts:247 -- `let timeout: ReturnType<typeof setTimeout> | undefined;`",
+      "omp_anchor": "N/A as a collision -- this is a rule violation, not a name clash. omp AGENTS.md: 'NEVER use `ReturnType<>` -- use the actual type name.' The idiomatic omp spelling is visible at packages/coding-agent/src/collab/relay-client.ts:100 (`#retryTimer: NodeJS.Timeout | undefined;`).",
+      "resolution": "REWRITE to `let timeout: NodeJS.Timeout | undefined;`. Verified this is the ONLY `ReturnType<` in src/ or test/ (single hit). The variable is used at L252 (`timeout = setTimeout(...)`) and L256 (`timeout.unref()`), both of which are Node-compatible, so `NodeJS.Timeout` types correctly and preserves `.unref()`."
+    },
+    {
+      "what": "4 `private` field/method declarations in test/support.ts -- banned by omp's class-privacy rule.",
+      "pi_anchor": "packages/client/test/support.ts:14 (`private handlers?`), :15 (`private decoder`), :16 (`private readonly messageWaiters`), :76 (`private resolveMessageWaiters()`), plus 20 `this.X` references at L23,24,28,30,44(x2),51,55,56,60,61,65,66,71,72,77,78,80",
+      "omp_anchor": "N/A as a collision -- rule violation. omp AGENTS.md: 'Class privacy: use ES `#private` fields; leave externally accessible members bare. No `private`/`protected`/`public` keyword on fields or methods, except on constructor parameter properties.'",
+      "resolution": "REWRITE the 4 declarations to `#handlers?`, `#decoder`, `#messageWaiters`, `#resolveMessageWaiters()` and update all 20 `this.X` sites to `this.#X`. This is the ONLY file in the package that needs it: `grep -n '^\\s*\\(private\\|public\\|protected\\)\\s'` over src/ and test/ returns hits in test/support.ts only -- all 8 src files already use ES `#` exclusively (verified: client.ts L63-74 has 12 `#` fields, connection.ts L42-45, unix.ts L148-153, L162-165). Note `MemoryByteServer`'s `messages` and `serverId` and `clientCloseCount` are public and must STAY public -- the tests read them."
+    },
+    {
+      "what": "The bare class name `Client` and `Connection`. Not a collision in omp's code, but the highest-confusion risk in the migration because omp has 57 files containing the word `Client` and 20 containing `Connection`.",
+      "pi_anchor": "packages/client/src/client.ts:62 (`export class Client`), packages/client/src/connection.ts:41 (`export class Connection`)",
+      "omp_anchor": "Every omp hit is a strictly longer or unrelated name. Examples: `AuthBrokerClient` (packages/ai/src/auth-broker/client.ts:129), `AnthropicHttpClient` (packages/ai/src/providers/anthropic-client.ts:208), `AnthropicMessagesClient` (:191), `AnthropicUserProfilesClient` (:115), `CodexWebSocketTransportError` (packages/ai/src/providers/openai-codex-responses.ts:5092), `DapClient` (packages/coding-agent/src/dap/client.ts:54), `MCPWrappedTool` (packages/coding-agent/src/exa/mcp-client.ts:312), `HindsightApi` (packages/coding-agent/src/hindsight/client.ts:238), `IdaDatabase` (packages/coding-agent/src/ida/client.ts:152), and `RpcClient` (packages/coding-agent/src/modes/rpc/rpc-client.ts) -- which is the closest analogue by role.",
+      "resolution": "KEEP pi's names verbatim. Verified zero omp exports of either bare name: `git grep -n 'export class Client\\b|export { Client|export type { Client' -- 'packages/*'` and the `Connection` equivalent both return empty. The real hazard is a FUTURE file that imports both pi-client's `Client` and coding-agent's `RpcClient`; if that happens, alias at the import site (`import { Client as RemoteSessionClient }`) rather than renaming the migrated class. Upstream name fidelity is the point of a copy-based migration -- do not 'improve' these names."
+    },
+    {
+      "what": "`ServerError` and `ProtocolErrorCode`/`ProtocolError` -- the class name pi's own coding-agent has to alias around.",
+      "pi_anchor": "packages/client/src/errors.ts:3 (`export class ServerError extends Error { readonly code: ProtocolErrorCode; ... }`), src/errors.ts:1 (imports `type ProtocolError, ProtocolErrorCode` from pi-protocol)",
+      "omp_anchor": "0 exported `ServerError` in omp. `ProtocolError` matches exactly 1 file (packages/coding-agent/src/eval/py/runner.py:2246,2256) and both hits are a Python docstring and a string literal `\"ename\": \"ProtocolError\"` -- not TypeScript. `ProtocolErrorCode` has 0 refs.",
+      "resolution": "KEEP BOTH verbatim; no conflict today. The forward-looking note belongs to the coding-agent spec, not this one: upstream pi's coding-agent already imports this exact class under an alias (`import { ServerError as ClientServerError } from \"@earendil-works/pi-client\"` at packages/coding-agent/src/experimental/server.ts:14 and test/experimental-remote-runtime.test.ts:6), because that package defines its own `ServerError`. When omp's coding-agent starts consuming this package it must repeat that aliasing. Do NOT pre-emptively rename here -- the name is correct in isolation and renaming it would break the alias contract upstream already established."
+    },
+    {
+      "what": "The package name `@oh-my-pi/pi-client` and its intended consumer path `@oh-my-pi/pi-coding-agent/client`.",
+      "pi_anchor": "packages/client/package.json:2 (`\"name\": \"@earendil-works/pi-client\"`), and packages/coding-agent/src/client/index.ts:1 in the pi repo (`export * from \"@earendil-works/pi-client\";`)",
+      "omp_anchor": "packages/coding-agent/package.json has NO `./client` subpath in its exports map (verified: the full export list runs `.`, `./*`, `./async`, `./autoresearch`, `./capability`, `./cli/*`, ... `./web/*`, `./prompts/*`, `./*.js` -- no `./client`), and packages/coding-agent/src/ does NOT contain a `client/` directory.",
+      "resolution": "NO EDIT to omp's coding-agent in this step -- that is the coding-agent spec's job. But RECORD the reserved path here so the two specs agree: when coding-agent is wired, it gets `packages/coding-agent/src/client/index.ts` containing `export * from \"@oh-my-pi/pi-client\";` plus a `\"./client\"` entry in its exports map. That re-export is a star re-export, which satisfies omp's barrel rule. Until then this package has zero consumers in omp, which is a fact the risk section depends on."
+    },
+    {
+      "what": "`ClientOptions`, `Unsubscribe` -- partial name overlaps that are documentation prose, not code.",
+      "pi_anchor": "packages/client/src/types.ts:25 (`ClientOptions`), :12 (`Unsubscribe`)",
+      "omp_anchor": "`ClientOptions`: 2 files -- packages/coding-agent/src/discovery/builtin-rules/ts-import-type.md:24,31,35 and ts-no-deprecated-leftovers.md:26,36, all inside example-code strings for lint rules. `Unsubscribe`: 3 files -- packages/coding-agent/src/mcp/client.ts:425 (JSDoc prose), packages/coding-agent/src/extensibility/hooks/runner.ts:149 (`@returns` tag), packages/coding-agent/src/mcp/manager.ts:505,1685 (inline comments).",
+      "resolution": "NO ACTION. omp exports no type by either name; all matches are inside string literals and comments, which cannot produce an ambiguous import. Listed here only so a later reviewer who greps these names does not mistake the hits for a real collision."
+    }
+  ],
+  "files_to_copy": [
+    {
+      "path": "packages/client/src/client.ts",
+      "bytes": 14332,
+      "action": "copy-then-rewrite",
+      "rewrite": "5 specifier edits, all mechanical. L18 `\"@earendil-works/chord\"` -> `\"@oh-my-pi/chord\"`; L19 `\"@earendil-works/chord/context\"` -> `\"@oh-my-pi/chord/context\"` (subpath preserved -- chord's exports map must carry a `./context` entry); L30 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"`; L31 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"` (the second occurrence, on the import that continues to L41) -- careful, the L20-30 block is one `import { ... } from` statement, so this is ONE scope edit spanning the closing line; L32 `\"@earendil-works/pi-client\"` -> `\"@oh-my-pi/pi-client\"`. Then drop `.ts` from 4 relative specifiers: L31 `\"@earendil-works/pi-client\"` block's trailing `\".../client.ts\"` (relative) -> `\"./client\"`, L32 `from \"./errors.ts\"` -> `from \"./errors\"`, L33 `from \"./promise.ts\"` -> DELETE (see the promise.ts collision -- the import goes away entirely, and the `#request` body at L248 becomes `Promise.withResolvers<T>()`), L34-41 `from \"./types.ts\"` -> `from \"./types\"`. Also L32 imports `toError` from \"./errors.ts\" -- that named import stays but its definition now comes from pi-utils (see the toError collision). Everything else -- all 479 lines including the 12 `#private` fields, the `Symbol.asyncDispose` method at L394, the two-queue hydration barrier at L191-236, and the abort/cancel race at L250-261 -- copies byte-for-byte."
+    },
+    {
+      "path": "packages/client/src/connection.ts",
+      "bytes": 7691,
+      "action": "copy-then-rewrite",
+      "rewrite": "5 specifier edits. L9 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"`; L10 `from \"./errors.ts\"` -> `from \"./errors\"`; L11 `from \"./promise.ts\"` -> DELETE the whole line (promise.ts is not copied; the import carries both `createPromiseResolvers` and `type PromiseResolvers`); L12 `from \"./transport.ts\"` -> `from \"./transport\"`; L13 `from \"./types.ts\"` -> `from \"./types\"`. Then L72 `const handshake = createPromiseResolvers<ServerHello>();` -> `const handshake = Promise.withResolvers<ServerHello>();`. That is the complete edit list -- all 245 lines otherwise copy byte-for-byte, including the `ConnectionLifecycle` discriminated union (L23-30), the `MAX_UINT32` guard at L50-56, and the handshake-order guards at L146-148 and L182-185 which are the package's most important correctness surface."
+    },
+    {
+      "path": "packages/client/src/errors.ts",
+      "bytes": 965,
+      "action": "copy-then-rewrite",
+      "rewrite": "1 scope edit + 1 replacement + 1 import. L1 `from \"@earendil-works/pi-protocol\"` -> `from \"@oh-my-pi/pi-protocol\"`. L27-29: DELETE `export function toError(error: unknown): Error { return error instanceof Error ? error : new Error(String(error)); }` and add `import { toError } from \"@oh-my-pi/pi-utils\";` at the top. L31-34 `toDisconnectedError` stays and keeps calling the now-imported `toError`. `ServerError` (L3-11), `DisconnectedError` (L13-18), `ClientDisposedError` (L20-25) copy verbatim -- all three set `this.name` explicitly, which is the pattern omp uses. After the edits the file is ~33 lines exporting 4 symbols instead of 5."
+    },
+    {
+      "path": "packages/client/src/unix.ts",
+      "bytes": 9703,
+      "action": "copy-then-rewrite",
+      "rewrite": "6 specifier edits + 1 banned-construct fix. L9 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"`; L10 `from \"./client.ts\"` -> `from \"./client\"`; L11 `from \"./errors.ts\"` -> `from \"./errors\"`; L12 `from \"./transport.ts\"` -> `from \"./transport\"`. L247 `let timeout: ReturnType<typeof setTimeout> | undefined;` -> `let timeout: NodeJS.Timeout | undefined;` (omp bans `ReturnType<>`). That is all -- the 299 lines otherwise copy byte-for-byte, including `UnixByteTransport`'s `#writeTail` serialization (L153, L171-176), the pending-bytes watermark (L166-169), the callback-AND-drain write resolver (L186-234), the 16-way concurrent probe pool (L61-82), the `lstat` ENOENT skip at L69-74, and the 9-way error filter at L262-273. All `node:fs/promises` / `node:net` / `node:path` imports are already namespace-or-named Node builtins in the form omp expects (`import { lstat, readdir } from \"node:fs/promises\"` at L1, `import { createConnection, type Socket } from \"node:net\"` at L2, `import { join } from \"node:path\"` at L3) -- no edit needed."
+    },
+    {
+      "path": "packages/client/src/types.ts",
+      "bytes": 1139,
+      "action": "copy-then-rewrite",
+      "rewrite": "3 specifier edits, no logic changes. L1 `from \"@earendil-works/chord\"` -> `from \"@oh-my-pi/chord\"`; L2 `from \"@earendil-works/pi-protocol\"` -> `from \"@oh-my-pi/pi-protocol\"`; L3 `from \"./transport.ts\"` -> `from \"./transport\"`. All 32 lines of type declarations copy byte-for-byte -- every doc comment is load-bearing (the `onListenerError` isolation contract, the `start()` hydration-barrier contract, the `serverId` logical-vs-physical identity contract, the 1000 ms discovery default)."
+    },
+    {
+      "path": "packages/client/src/transport.ts",
+      "bytes": 727,
+      "action": "copy-verbatim",
+      "rewrite": "NONE. 18 lines, zero imports, zero scope strings, zero `.ts` specifiers, zero banned constructs. It is already the exact form omp wants. The doc comments (ordering guarantee on `send`, idempotence guarantee on `close`, the exactly-one-terminal-handler contract on the factory) are the specification the unix implementation is written against."
+    },
+    {
+      "path": "packages/client/src/index.ts",
+      "bytes": 428,
+      "action": "copy-then-rewrite",
+      "rewrite": "CONVERTS TO A FULL STAR BARREL. pi's version uses 4 explicit named re-export statements (L1 `export { Client, createClientServiceTransport } from \"./client.ts\"`, L2 `export { ClientDisposedError, DisconnectedError, ServerError } from \"./errors.ts\"`, L3 `export type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from \"./transport.ts\"`, L4-12 a multiline `export type {...} from \"./types.ts\"`). omp's rule: 'Barrel exports: prefer `export * from \"./module\"` over named re-exports, including `export type { ... } from. In pure `index.ts` barrels, use star re-exports even for single-specifier cases.' Rewrite the whole 12-line file as four star re-exports, dropping `.ts`: `export * from \"./client\";` / `export * from \"./errors\";` / `export * from \"./transport\";` / `export * from \"./types\";`. This is safe because the export sets are disjoint -- client.ts exports {Client, createClientServiceTransport}, errors.ts exports {ServerError, DisconnectedError, ClientDisposedError, toError, toDisconnectedError}, transport.ts exports {ByteTransport, ByteTransportHandlers, ByteTransportFactory}, types.ts exports 8 types, and `connection.ts`/`unix.ts` are NOT in the barrel. One consequence to accept deliberately: the star form newly EXPORTS `toError` and `toDisconnectedError` from the package root, where pi's explicit list did not. That is the desired end state anyway (toError is pi-utils' and comes from there), but if strict barrel parity with upstream matters more, use `export * from \"./errors\"` and accept the widened surface -- do NOT reintroduce a named list, the rule forbids it."
+    },
+    {
+      "path": "packages/client/test/client.test.ts",
+      "bytes": 13677,
+      "action": "copy-then-rewrite",
+      "rewrite": "The largest test file (384 lines) and the one needing the most edits. Specifiers: L1 `\"@earendil-works/chord/context\"` -> `\"@oh-my-pi/chord/context\"`; L2-7 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"`; L9 `from \"vitest\"` -> `from \"bun:test\"`; L16 `from \"../src/index.ts\"` -> `from \"../src/index\"`; L17 `from \"./support.ts\"` -> `from \"./support\"`. Runner API: L136 `await vi.waitFor(() => expect(updates.map(({ type }) => type)).toEqual([\"state\"]))` and L155 `await vi.waitFor(() => expect(updates).toHaveLength(3))` -- bun:test has NO `vi.waitFor`, so BOTH must become a bounded poll helper. omp has no `waitFor` in pi-utils (verified: `git grep -n 'export .*waitFor|export .*until(' -- 'packages/utils/src/**'` returns nothing), so write a LOCAL `async function waitFor(assertion: () => void, timeoutMs = 1000)` in this test file that polls on `Bun.sleep(5)` and throws the last assertion error on expiry. Drop `vi` from the L9 import. Also convert the constructor-parameter `private` in `MemoryByteServer` per the support.ts entry -- that class lives in support.ts, not here, so this file only needs the import change. All 20 `test(...)` / `describe(...)` blocks port unchanged; each one is already contract-level (see test_contract)."
+    },
+    {
+      "path": "packages/client/test/support.ts",
+      "bytes": 2303,
+      "action": "copy-then-rewrite",
+      "rewrite": "Specifiers: L1-7 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"`; L8 `from \"../src/index.ts\"` -> `from \"../src/index\"`. Privacy (the reason this file is flagged separately): L14 `private handlers?: ByteTransportHandlers;` -> `#handlers?`, L15 `private decoder = new ClientMessageDecoder();` -> `#decoder`, L16 `private readonly messageWaiters: Array<{ count: number; resolve: () => void }> = [];` -> `#messageWaiters`, L76 `private resolveMessageWaiters(): void {` -> `#resolveMessageWaiters()`. Then update all 20 `this.X` references: L23,24,28,30,44(x2),51,55,56,60,61,65,66,71,72,77,78,80. LEAVE BARE the public members `messages` (L10), `serverId` (L11), `clientCloseCount` (L12) and the public methods `connect` (L22), `waitForMessages` (L48), `send` (L54), `sendRaw` (L59), `disconnect` (L64), `error` (L70) -- the tests read all of them. L51 `new Promise((resolve) => this.messageWaiters.push(...))` keeps its form (single-value, no reject -- `withResolvers` does not apply)."
+    },
+    {
+      "path": "packages/client/test/unix-transport.test.ts",
+      "bytes": 4765,
+      "action": "copy-then-rewrite",
+      "rewrite": "Specifiers: L4 `\"@earendil-works/chord\"` -> `\"@oh-my-pi/chord\"`; L5 `\"@earendil-works/pi-protocol\"` -> `\"@oh-my-pi/pi-protocol\"`; L6 `from \"vitest\"` -> `from \"bun:test\"`; L7 `from \"../src/index.ts\"` -> `from \"../src/index\"`; L8 `from \"../src/unix.ts\"` -> `from \"../src/unix\"`. All 5 tests port unchanged. The `afterEach` block (L27-48) tears down sockets, servers and temp dirs -- keep it EXACTLY, it is what makes these tests full-suite safe under omp's rule about long-lived resource leaks. The `new Promise<void>` sites at L27 (server.listen) and L39 (server.close) are event-driven and keep their form."
+    },
+    {
+      "path": "packages/client/test/unix.test.ts",
+      "bytes": 6513,
+      "action": "copy-then-rewrite",
+      "rewrite": "Specifiers: L6 `from \"vitest\"` -> `from \"bun:test\"`; L7 `\"../../server/src/server.ts\"`, L8 `\"../../server/src/testing/host.ts\"`, L9 `\"../../server/src/transports/unix/listener.ts\"` -> these three become PACKAGE specifiers `\"@oh-my-pi/pi-server\"`, `\"@oh-my-pi/pi-server/testing/host\"`, `\"@oh-my-pi/pi-server/transports/unix/listener\"` (extensionless, cross-package) -- which REQUIRES the server package to have landed AND to export those subpaths. L10 `from \"../src/unix.ts\"` -> `from \"../src/unix\"`. This is the file that makes client the 3rd package in the chain: it cannot be written until server exists, so if server is sequenced later, port this file LAST within client. Its 8 tests all port unchanged, including the `fork(new URL(\"fixtures/stale-socket-server.mjs\", import.meta.url), [path], { ... })` at L126 which needs the fixture file (next entry) at the same relative path. Note the module-level `Set`s at L10-14 (tempDirectories, servers, rawServers, rawSockets, children) and the `afterEach` at L183+ -- that is the full-suite-safety story for this file and it must survive the port intact."
+    },
+    {
+      "path": "packages/client/test/fixtures/stale-socket-server.mjs",
+      "bytes": 246,
+      "action": "copy-verbatim",
+      "rewrite": "NONE. 9 lines of plain JS, no imports of migrated code, no scope strings, only `node:net` and `process.argv`. It is forked by unix.test.ts:126 and must live at the same relative path for that `new URL(...)` to resolve."
+    },
+    {
+      "path": "packages/client/package.json",
+      "bytes": 1196,
+      "action": "copy-then-rewrite",
+      "rewrite": "Do NOT copy verbatim -- omp's package.json shape differs structurally. Build it against packages/wire/package.json as the template. Required edits: L2 `\"name\"` -> `\"@oh-my-pi/pi-client\"`; DELETE `\"main\": \"./dist/index.js\"` and `\"types\": \"./dist/index.d.ts\"` -- omp publishes source, so main/types point at `./src/index.ts`; the `exports` map becomes omp's house shape, i.e. `\".\": {types,import}` -> `./src/index.ts`, plus a `\"./unix\"` subpath -> `./src/unix.ts` (the `./unix` subpath is load-bearing: it is how `createUnixTransportFactory` and `discoverUnixServers` are reached, and it is what keeps the `node:net` import out of Node consumers that only want the transport-neutral client) and a `\"./package.json\"` passthrough; `sideEffects: false` is fine to keep. DELETE the whole `scripts` block and replace with omp's four: `check` (`oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts' && bun run check:types`), `check:types` (`tsgo -p tsconfig.json --noEmit`), `lint`, `fmt` -- copy those verbatim from packages/wire/package.json. `check:types` MUST be present or the package is silently skipped by the root gate (`bun run --filter './packages/*' --sequential --if-present check:types`). `dependencies`: `@earendil-works/chord` -> `@oh-my-pi/chord` and `@earendil-works/pi-protocol` -> `@oh-my-pi/pi-protocol`, both at `catalog:` like every other omp package. DELETE the `devDependencies` block entirely: `shx` and `vitest` are both wrong for omp (Bun needs no clean script; tests are `bun test`). Add `\"@oh-my-pi/pi-utils\": \"catalog:\"` for the `toError` import. DELETE `tsconfig.build.json`'s twin `dist` machinery by replacing it with the two-file tsconfig pattern below. `engines`: `node >=22.19.0` -> `bun >=1.3.14`."
+    },
+    {
+      "path": "packages/client/tsconfig.json",
+      "bytes": 0,
+      "action": "skip",
+      "rewrite": "DO NOT COPY pi's tsconfig.build.json or tsconfig.test.json (293 + 560 bytes) -- both are vestigial pi-monorepo artifacts. pi's build config maps `@earendil-works/pi-protocol` to `../protocol/dist/index.d.ts` (a BUILT path) and its test config maps four sibling packages to their `src/`. omp has neither a `dist` convention nor a monorepo-relative `paths` convention: workspace resolution is Bun's own (see packages/wire/package.json, which exports `./src/index.ts` directly and whose tsconfig is a 4-line file extending `../tsconfig.workspace.json` with `\"include\": [\"src\", \"test\"]`). WRITE a new 4-line packages/client/tsconfig.json matching packages/wire/tsconfig.json exactly. The new file counts as created, not copied."
+    },
+    {
+      "path": "packages/client/vitest.config.ts",
+      "bytes": 463,
+      "action": "skip",
+      "rewrite": "DELETE, do not port. Its entire content is vitest wiring: `environment: \"node\"`, GITHUB_ACTIONS reporter selection, and a `resolve.alias` that maps `@earendil-works/pi-protocol` to `../protocol/src/index.ts` plus `conditions: [\"source\"]`. None of it applies: omp runs `bun test`, Bun resolves workspace packages natively with no alias table, and `bun test`'s default environment already provides node builtins. Porting it would add a config file that configures a test runner omp does not use."
+    },
+    {
+      "path": "packages/client/LICENSE",
+      "bytes": 1073,
+      "action": "copy-then-rewrite",
+      "rewrite": "LEGAL OBLIGATION -- see step 1. New file. Copy /Users/tranquangdang21/Projects/pi-ref/LICENSE verbatim, then insert omp's two additional copyright lines after Mario Zechner's, reproducing the root LICENSE's exact 3-line order. Final form: `MIT License` / blank / `Copyright (c) 2025 Mario Zechner` / `Copyright (c) 2025-2026 Can Bölük` / `Copyright (c) 2026 Stencil Labs, Inc.` / blank / the unmodified MIT permission text. This is byte-identical to the omp root LICENSE (verified by diff: root LICENSE = pi LICENSE + 2 inserted lines at position 4-5, nothing else changed) and matches the shape of every other packages/*/LICENSE. packages/client/LICENSE must exist BEFORE the first copied source byte lands."
+    },
+    {
+      "path": "packages/client/README.md",
+      "bytes": 4178,
+      "action": "copy-then-rewrite",
+      "rewrite": "6 scope-string edits (L1, and 5 more in the three fenced code samples at the `Client.connect`, `createUnixTransportFactory`, and `discoverUnixServers` examples). Substantive rewrite required beyond the scope swap: pi's README opens by calling the protocol 'experimental' and says 'Typed server and Session APIs are provided by Chord service bindings owned by the application' -- retarget that framing to omp, and add a line stating that `@oh-my-pi/pi-client` currently has NO consumer in omp (the `RemoteSession` controller lives in pi's coding-agent, whose equivalent is a separate work item). Keep the transport-handler contract list, the Unix-discovery semantics paragraph, and the `maxFrameLength`/`maxPendingBytes` closing paragraph verbatim -- those are behavioural contracts, not marketing."
+    },
+    {
+      "path": "packages/client/CHANGELOG.md",
+      "bytes": 722,
+      "action": "skip",
+      "rewrite": "DO NOT COPY. pi's file is 33 lines of empty `## [0.x.y]` version headings (a release-history stub) plus two 0.84.0-era entries that reference upstream PR numbers (#7708) that mean nothing in omp. Per omp AGENTS.md the changelog is authored fresh under `## [Unreleased]` at PR time. Copy the STRUCTURE only: `# Changelog`, blank, `## [Unreleased]`, blank, `### Added`, blank, `- Added the transport-neutral remote-session client ... ([#XXXX](https://github.com/can1357/oh-my-pi/pull/XXXX))` -- with the PR number filled in once assigned, and the contributor credit line appended if the change is externally contributed."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "LEGAL FIRST, before a single source byte is written. Copy /Users/tranquangdang21/Projects/pi-ref/LICENSE to packages/client/LICENSE and insert omp's two copyright lines after Mario Zechner's, so the file reads: Copyright (c) 2025 Mario Zechner / Copyright (c) 2025-2026 Can Bölük / Copyright (c) 2026 Stencil Labs, Inc. This is byte-identical to the omp root LICENSE and matches every other packages/*/LICENSE. The MIT permission notice must be reproduced in full and unedited -- that text IS the permission, and paraphrasing it voids the grant. Do this before the copy so the notice exists the moment the first copied byte lands; retrofitting attribution afterwards is how it gets lost. Also add a one-line entry for `@earendil-works/pi-client` to the pi-derived section of THIRD-PARTY-NOTICES.txt, following the format of the existing entry at line 227 (which already covers pi's pi-natives work with the identical Mario Zechner line).",
+      "anchor": "packages/client/LICENSE (new), THIRD-PARTY-NOTICES.txt (append near line 227)"
+    },
+    {
+      "n": 2,
+      "instruction": "BEFORE starting, confirm the gate is green on the current tree so a later failure is unambiguously yours: `bun run check:ts` from /Users/tranquangdang21/Projects/ultraworkers must exit 0. Measured on this machine: 34.2s wall, exit 0. Record that number; the post-migration run must be the same command with the same exit code.",
+      "anchor": "root package.json:94 (`check:ts`)"
+    },
+    {
+      "n": 3,
+      "instruction": "VERIFY THE PREREQUISITES ARE LANDED, and if not, stop and sequence this work later. This package is the 3rd leaf of the 7-package migration and its mandatory order is: chord -> protocol -> server -> client. It hard-depends on @oh-my-pi/chord (16 symbols) and @oh-my-pi/pi-protocol (22 symbols); it additionally hard-depends on @oh-my-pi/pi-server for THREE SUBPATHS used only by test/unix.test.ts (`@oh-my-pi/pi-server`, `@oh-my-pi/pi-server/testing/host`, `@oh-my-pi/pi-server/transports/unix/listener`). There is no partial path: not one of the 8 src files typechecks without chord and protocol. If chord is missing, esbuild is also still missing (verified absent from omp node_modules) and that blocks chord first.",
+      "anchor": "packages/client/package.json `dependencies`, packages/chord/, packages/protocol/, packages/server/"
+    },
+    {
+      "n": 4,
+      "instruction": "Create the package skeleton: `mkdir -p packages/client/src packages/client/test/fixtures`. Do NOT copy pi's tsconfig.build.json, tsconfig.test.json, or vitest.config.ts (see files_to_copy). Write a new 4-line packages/client/tsconfig.json copied from packages/wire/tsconfig.json -- `{\"extends\": \"../tsconfig.workspace.json\", \"include\": [\"src\", \"test\"]}` -- which is how the root `check:ts` discovers and typechecks the package.",
+      "anchor": "packages/client/tsconfig.json (new)"
+    },
+    {
+      "n": 5,
+      "instruction": "Write packages/client/package.json from the packages/wire/package.json template, NOT from pi's. Points that matter: name `@oh-my-pi/pi-client`; main/types point at `./src/index.ts` (omp ships source, never dist); exports map has `.` -> ./src/index.ts, `./unix` -> ./src/unix.ts, and `./package.json`; scripts are omp's four (check / check:types / lint / fmt) with `check:types` set to `tsgo -p tsconfig.json --noEmit` so the root gate picks the package up; dependencies are `@oh-my-pi/chord`, `@oh-my-pi/pi-protocol`, `@oh-my-pi/pi-utils` all at `catalog:`; no devDependencies (drop vitest and shx); engines `bun >=1.3.14`. Then add the matching catalog lines to the root package.json `workspaces.catalog` block so `catalog:` resolves.",
+      "anchor": "packages/client/package.json (new), root package.json `workspaces.catalog`"
+    },
+    {
+      "n": 6,
+      "instruction": "Copy the 7 source files verbatim -- NO EDITS YET. src/transport.ts, src/types.ts, src/errors.ts, src/connection.ts, src/unix.ts, src/client.ts, src/index.ts. Skip src/promise.ts entirely (do not copy it; it is deleted in step 8). 33718 bytes across 7 files. Do not reformat, do not let the editor reflow tabs, do not 'fix' anything yet -- a clean copy makes the step-8 diff reviewable and makes a missing edit obvious.",
+      "anchor": "packages/client/src/{transport,types,errors,connection,unix,client,index}.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "Delete packages/client/src/promise.ts from the copy. It is superseded: its own doc comment says to remove it once the lib baseline reaches ES2024, omp's baseline is there (Promise.withResolvers is used across packages/agent), and omp's AGENTS.md makes it mandatory. Do not keep a local shim.",
+      "anchor": "packages/client/src/promise.ts (deleted)"
+    },
+    {
+      "n": 8,
+      "instruction": "Apply the source rewrites, in this order, then stop and read the diff before continuing. (a) SCOPE: 2x `@earendil-works/pi-protocol` and 1x `@earendil-works/chord` and 1x `@earendil-works/chord/context` in client.ts; 1x pi-protocol in connection.ts, errors.ts, types.ts; 1x pi-protocol + 1x pi-client + 1x pi-utils in unix.ts (pi-utils is new); 1x pi-protocol in errors.ts. (b) EXTENSIONS: drop `.ts` from all 25 relative specifiers (`from \"./X.ts\"` -> `from \"./X\"`, `from \"../src/index.ts\"` -> `from \"../src/index\"`). (c) PROMISE: client.ts L248 `createPromiseResolvers<T>()` -> `Promise.withResolvers<T>()`; connection.ts L72 the same; delete the now-dangling `import ... from \"./promise.ts\"` line in both files. (d) UTILS: delete the `toError` definition from errors.ts and import it from `@oh-my-pi/pi-utils`; keep `toDisconnectedError` exported from errors.ts. (e) BARREL: rewrite index.ts as four star re-exports (`export * from \"./client\"` / `\"./errors\"` / `\"./transport\"` / `\"./types\"`) -- omp's barrel rule forbids the named-list form pi uses. (f) TYPES: unix.ts L247 `ReturnType<typeof setTimeout>` -> `NodeJS.Timeout`. After this step, `grep -rn 'ReturnType<\\|private \\|@earendil-works/\\|from \"\\./[^\"]*\\.ts\"' packages/client/src/` must return ZERO hits.",
+      "anchor": "packages/client/src/** (25 extension + 9 scope + 2 promise + 1 barrel + 1 ReturnType edits)"
+    },
+    {
+      "n": 9,
+      "instruction": "Copy the 5 test files verbatim, then convert them. Specifiers first: 6x pi-protocol and 2x chord/chord-context and 1x pi-client across the three test files; drop `.ts` from the 8 relative specifiers (including unix.test.ts's 3 cross-package ones, which additionally change from `../../server/src/...` paths to `@oh-my-pi/pi-server` subpaths). Runner: replace `from \"vitest\"` with `from \"bun:test\"` in all 3 test files, and DROP `vi` from client.test.ts's import -- bun:test has no `vi`. Then fix the 2 `vi.waitFor` call sites (client.test.ts L136, L155): omp has no `waitFor` helper in pi-utils, so add a small LOCAL `waitFor` in client.test.ts that polls `Bun.sleep(5)` until the assertion passes or a 1000 ms budget expires, then rethrows. Do not add a shared utility for two call sites. Then convert MemoryByteServer's 4 `private` declarations and 20 `this.X` references to `#` per the files_to_copy entry, leaving `messages`/`serverId`/`clientCloseCount` and the 6 public methods bare. Keep every `describe`/`test` block, every `afterEach`, and the module-level resource `Set`s exactly as they are -- they are the full-suite-safety mechanism omp's testing rules require.",
+      "anchor": "packages/client/test/{client.test.ts,support.ts,unix-transport.test.ts,unix.test.ts,fixtures/stale-socket-server.mjs}"
+    },
+    {
+      "n": 10,
+      "instruction": "Verify the rewrite is complete with grep, before running any compiler. All four must come back empty: `grep -rn '@earendil-works' packages/client/` (expect 0), `grep -rn 'from \"[.][^\"]*\\.ts\"' packages/client/src packages/client/test` (expect 0), `grep -rn 'ReturnType<' packages/client/src` (expect 0), `grep -rn 'vitest' packages/client/` (expect 0). And these must be non-zero: `grep -rn 'private ' packages/client/test/support.ts` (expect 0 after the # conversion) and `grep -rn 'Promise.withResolvers' packages/client/src` (expect 2 -- client.ts and connection.ts). A non-empty result on any 'expect 0' line means step 8 or 9 missed a site; fix it here rather than letting the compiler find it.",
+      "anchor": "packages/client/**"
+    },
+    {
+      "n": 11,
+      "instruction": "Run the type gate: `bun run check:ts` from the repo root. It must exit 0. A NEW package with a `check:types` script is picked up automatically by the root's `--filter './packages/*' --sequential --if-present check:types`, so a green run proves the package actually compiled -- if the package were silently skipped, the gate would also be green, so confirm the output line `@oh-my-pi/pi-client:check:types` appears. Expect roughly 22-38 new symbols to be unresolved on the first run (chord or protocol symbol drift) -- that is a real signal, not noise.",
+      "anchor": "root package.json:94"
+    },
+    {
+      "n": 12,
+      "instruction": "Run the tests: `cd packages/client && bun test`. All 4 test files should pass. Environment caveat for this machine: `bun test` at the repo root is currently BLOCKED because the native addon has not been built, and the unblock command `bun --cwd=packages/natives run build` FAILS without ninja (`brew install ninja` first). Verify whether that is still true before treating a root-level test failure as a regression -- if the native addon is still unbuildable here, record the client package's test result as obtained via the package-local invocation and state plainly in the PR that the root suite could not be run on this machine and why. Do NOT claim a green root suite you did not observe.",
+      "anchor": "packages/client/test/**"
+    },
+    {
+      "n": 13,
+      "instruction": "Run the formatter and linter, which are part of the gate: `bun run fix:tools` (or at minimum `oxfmt packages/client/src/**/*.ts packages/client/test/**/*.ts` then `oxlint packages/client`). The formatter will normalize the copied pi formatting to omp's `.oxfmtrc.json` (useTabs true, tabWidth 3, printWidth 120, arrowParens avoid) -- pi is already tab-indented so this should be a light touch, but pi's `errors.ts` and the copied files may reflow. Re-read any file the formatter changed, because it can re-wrap the long import blocks you edited in step 8. Then re-run step 11's gate to confirm formatting did not break compilation.",
+      "anchor": ".oxfmtrc.json, .oxlintrc.json"
+    },
+    {
+      "n": 14,
+      "instruction": "Write packages/client/README.md (6 scope edits + retarget the 'experimental' framing + a line stating the package has no omp consumer yet) and the fresh CHANGELOG.md (`## [Unreleased]` / `### Added` / one line, PR number filled in at submission). Do not copy pi's version-history stub. Then do a final `git status` review confirming the change is exactly: 7 src files, 5 test files, package.json, tsconfig.json, LICENSE, README.md, CHANGELOG.md, plus the root package.json catalog lines -- and that tsconfig.build.json, tsconfig.test.json, vitest.config.ts, and src/promise.ts are all absent.",
+      "anchor": "packages/client/README.md, packages/client/CHANGELOG.md"
+    }
+  ],
+  "test_contract": "Four test files, 27504 bytes, 33 test cases. They convert to bun:test but every assertion survives, because the assertions are already contract-level -- each names an externally observable protocol outcome, and none of them is a source-grep, a fixture echo, or a wiring check. Reading the titles is the fastest way to see this: 'connects only to the expected logical server' (serverId verification), 'updates attachment state from out-of-band server routing' (attachment envelope), 'buffers service updates until the subscription snapshot arrives' (the two-queue hydration barrier -- the highest-value test in the package), 'correlates out-of-order generic service responses' (request-ID correlation independent of arrival order), 'exposes bounded server errors' (ProtocolError -> ServerError.code), 'does not send a pre-aborted untyped RPC request' and 'cancels one untyped RPC request without disconnecting' (the abort/cancel contract), 'rejects server data delivered before the client hello is sent' (the handshake-ordering guard), 'rejects typed handshake errors and closes the transport', 'rejects pending requests and reconnects through a fresh transport', 'reports transport failures without leaving requests pending', 'disconnects on invalid or truncated server framing' (CBOR framing errors surface as disconnect), 'disconnects when a response has no matching request' (orphan-response detection), 'carries a complete Client handshake and request over a real Unix socket' (the end-to-end transport proof), 'reports truncated final frames through Client', 'ignores malformed entries, non-sockets, and mismatched servers' and 'times out an unresponsive socket without deleting it' and 'limits concurrent probes to 16' and 'ignores an endpoint that closes before its handshake' (the discovery contract, including the 16-way cap), 'rejects invalid Unix transport options' and 'rejects connection attempts to missing sockets'. These are precisely the behaviors a rewrite would silently lose, which is the argument in why_copy_not_reimplement. Three conversion obligations, all mechanical: (1) `from \"vitest\"` -> `from \"bun:test\"` in 3 files; (2) the 2 `vi.waitFor` call sites (client.test.ts L136, L155) become a LOCAL bounded-poll `waitFor` helper -- omp has none in pi-utils, and adding a shared utility for two call sites would be over-engineering; the helper must rethrow the last assertion error on expiry, not silently pass, or it converts a real regression into a green test; (3) `MemoryByteServer`'s 4 `private` declarations -> `#`, with its 20 `this.X` references updated, while `messages`/`serverId`/`clientCloseCount` and the 6 public methods stay bare. Compliance with omp's testing rules is preserved by construction: no `mock.module()` anywhere (the tests use a hand-written in-memory `ByteTransport`, which is stronger), no source-grep assertions, no `not.toThrow()`-only cases, no duplicated rows, and the module-level `Set`s plus `afterEach` teardown in both Unix test files keep them full-suite safe. One test needs a package that is NOT client: unix.test.ts's 8 discovery tests import pi-server's real `Server`, `createTestServerServices`, and `createUnixListener` -- if server lands after client, that file must be written last or the discovery tests must be deferred, and this must be stated explicitly in the PR rather than discovered by CI.",
+  "test_files": [
+    "packages/client/test/client.test.ts",
+    "packages/client/test/support.ts",
+    "packages/client/test/unix-transport.test.ts",
+    "packages/client/test/unix.test.ts",
+    "packages/client/test/fixtures/stale-socket-server.mjs"
+  ],
+  "verification": "BYTE ACCOUNTING, so the totals reconcile without arithmetic by the reader. The 19 source files / 70483 bytes decompose as: 33718 B of shipped source actually copied (7 files -- the 8th src file, promise.ts at 582 B, is deliberately deleted in step 7), 27504 B of tests copied verbatim (5 files), 7412 B of metadata (6 files, of which only package.json 1196 B and README.md 4178 B are ported), plus 1073 B of NEW LICENSE. files_to_copy lists 18 entries summing to 70121 B, which is 70483 - 1073 (new LICENSE) - 0 (new tsconfig.json) - 1435, and 1435 is exactly the three intentionally-skipped files: tsconfig.build.json 293 + tsconfig.test.json 560 + src/promise.ts 582. Nothing in the source tree is unaccounted for. The gate is `bun run check:ts` from /Users/tranquangdang21/Projects/ultraworkers. BASELINE MEASURED ON THIS MACHINE: exit 0, 34.2s wall (88.97s user, 5.76s system, 277% cpu) -- note this is slower than the ~29s figure in the brief, so treat 22-40s as the passing band and investigate anything above 60s. The gate runs `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`, so it (a) lints and format-checks the whole tree via oxlint + oxfmt, and (b) typechecks every package that declares a `check:types` script. Because it is `--if-present`, a package with a missing or misspelled `check:types` script is SILENTLY SKIPPED and the gate still passes -- so verifying the gate is not sufficient on its own: also confirm the output contains an `@oh-my-pi/pi-client:check:types` line, and confirm the script exists in packages/client/package.json. Tests are `cd packages/client && bun test`. ENVIRONMENT BLOCKER, stated plainly: on this machine `bun test` at the repo root is currently blocked because the native addon is not built, and the documented unblock `bun --cwd=packages/natives run build` FAILS because `ninja` is not installed (`brew install ninja` required first). If that is still true at execution time, the client package's own suite can still be run package-locally (it imports no native code -- it depends only on node:net/node:fs/node:path plus chord and protocol), but the ROOT suite cannot be claimed green, and the PR must say so rather than assert a result nobody observed. Additional pre-flight greps, each of which must return zero hits after the migration: `grep -rn '@earendil-works' packages/client/`; `grep -rn 'from \"[.][^\"]*\\.ts\"' packages/client/src packages/client/test`; `grep -rn 'ReturnType<' packages/client/src`; `grep -rn 'vitest' packages/client/`; and `ls packages/client/src/promise.ts packages/client/vitest.config.ts packages/client/tsconfig.build.json packages/client/tsconfig.test.json` must all report 'No such file'. Positive controls that must be non-zero: `grep -rn 'Promise.withResolvers' packages/client/src` -> 2; `grep -rn 'private ' packages/client/test/support.ts` -> 0 with `grep -rc '#handlers' packages/client/test/support.ts` -> 1. Finally, re-read LICENSE and confirm the 3-line copyright block and the full unmodified MIT permission text are present BEFORE opening the PR -- that check is the one that cannot be retrofitted cheaply if a reviewer misses it.",
+  "gate": "bun run check:ts",
+  "gate_can_fail": true,
+  "effort": "Small in code, real in coordination. 19 source files / 70483 bytes total, of which only 7 files / 33718 bytes are shipped source and 5 files / 27504 bytes are tests; the remaining 6 files / 7412 bytes are metadata that is mostly deleted rather than ported (tsconfig.build.json, tsconfig.test.json, vitest.config.ts, CHANGELOG.md all skipped; package.json, README.md rewritten). The mechanical edit surface is roughly 25 extension drops + 9 scope swaps + 2 promise call sites + 1 promise file deleted + 1 toError dedup + 1 barrel rewrite + 1 ReturnType fix + 4 private-to-# declarations with 20 reference updates + 3 vitest-to-bun:test imports + 2 vi.waitFor rewrites ~= 70 discrete edits across 12 files, all mechanical and all enumerable from the files_to_copy table. Realistically 1.5-2 hours including the gate runs. The coordination cost exceeds the coding cost: this package cannot start until chord and protocol land, and 8 of its 33 tests cannot even be written until server lands, so the schedule is set by the 7-package ordering, not by this package's size.",
+  "risk": "LOW on correctness, MEDIUM on sequencing -- and the two are separable. CORRECTNESS is low because the risky logic is never retyped, only re-addressed: the handshake-order guards, the abort/cancel race, the subscription hydration barrier, and the write backpressure resolver are all copied byte-for-byte, and every edit is an import specifier, a privacy modifier, a promise constructor, or a type name. The one real behavioural change is deleting pi's `toError` in favour of pi-utils', and those two functions are semantically identical (`instanceof Error ? passthrough : new Error(String(x))`), so the blast radius is zero. The genuinely dangerous failure mode is not a compile error but a SILENT behavioural regression if someone 'improves' the copied code while porting it -- e.g. simplifying the abort path to a bare local reject (leaking an orphan request on the server), or resolving `#write` on the socket write callback alone (corrupting framed messages under backpressure). Mitigation is procedural: copy first, edit only the enumerated lines, and read the step-8 diff line by line. SEQUENCING is the medium risk, and it has two parts. (1) Hard dependency on chord and protocol: 38 imported symbols, zero of which exist in omp today; not one of the 8 src files typechecks without them, and chord in turn drags in `esbuild`, which is absent from omp's node_modules. (2) Soft dependency on server for 8 of 33 tests: test/unix.test.ts imports three pi-server subpaths. If server is sequenced after client, that file has to be written last -- plan for it rather than discovering it. Two further, smaller risks worth naming. FIRST, the barrel conversion has a visible side effect: replacing pi's explicit export list with four star re-exports newly exposes `toError` and `toDisconnectedError` on the package root, which pi did not export. This is intended (toError now comes from pi-utils) but it is a real API-surface widening and a reviewer should be told, not left to find. SECOND, zero consumers: nothing in omp imports this package yet (pi's consumer is its own coding-agent experimental runtime, and omp's coding-agent has no `src/client/` and no `./client` subpath). That is fine for a leaf package but it means the gate is the ONLY automated check on this code -- so if `check:types` is misspelled the package is silently skipped, the gate passes, and a broken package ships green. Guard against exactly that by asserting the `@oh-my-pi/pi-client:check:types` line appears in the output, as step 11 requires.",
+  "open_questions": [
+    "Does pi's coding-agent `RemoteSession` controller (packages/coding-agent/src/client/index.ts in pi, plus src/experimental/client-runtime.ts and src/experimental/services/connection.ts) belong in a later omp work item, or is it in scope for the coding-agent spec that re-exports this package as `@oh-my-pi/pi-coding-agent/client`? pi's client package is useless without it, so if the coding-agent spec does not adopt it, this migration ships an unused package. That decision belongs to the coding-agent spec and must be recorded there, not here.",
+    "test/unix.test.ts needs three pi-server subpaths (`@oh-my-pi/pi-server`, `.../testing/host`, `.../transports/unix/listener`). Will pi-server keep those subpath exports in omp, or will omp collapse them into a single barrel? If they are collapsed, that test file needs a rewrite to the new shape and its 8 discovery tests become substantially more than a mechanical port. Confirm against the server spec before scheduling client.",
+    "Is `@earendil-works/chord/context` (a subpath, not a bare specifier) preserved under `@oh-my-pi/chord/context`? client.ts:19 and test/client.test.ts:1 both import `BACKGROUND_CONTEXT` from it. It resolves inside the pi repo only because chord's exports map carries a `./context` entry. The chord spec must preserve that subpath or these 2 imports break.",
+    "The four 0.87.1-versioned pi packages this migration touches all pin `engines.node >=22.19.0`, but omp pins `engines.bun >=1.3.14`. unix.ts is the only place this could bite (node:net, node:fs/promises, socket `.unref()`/`.drain`). Confirm the target Bun version supports `NodeJS.Timeout` as a type and that `fork()` in the test fixture works under `bun test` -- `bun test` does not run vitest's process model, so the stale-socket-server.mjs fork at unix.test.ts:126 is the most likely test to need rework.",
+    "Should the 4 omitted files (tsconfig.build.json, tsconfig.test.json, vitest.config.ts, CHANGELOG.md) be recorded as intentional skips in the PR description, or is a silent omission acceptable? This spec says omit them deliberately; the PR should say so, because a reviewer diffing against pi will see 4 fewer files and may read it as an accident.",
+    "The 2 occurrences of `@earendil-works/pi-ai` and 1 each of `@earendil-works/pi-telemetry` / `@earendil-works/pi-agent-core` exist ONLY in pi's tsconfig.test.json, which this spec deletes. So those 4 scope strings need no rewrite at all -- but if a later decision resurrects a test tsconfig, they must be rewritten then. Confirm the deletion is intended so nobody later greps for un-rewritten `@earendil-works` strings and reports them as misses."
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m1-expand-specs/client.spec.json"
+}

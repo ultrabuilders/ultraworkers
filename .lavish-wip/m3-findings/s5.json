@@ -1,0 +1,119 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 26 (bước 3) và dòng 175 (bảng \"Đính chính so với plan\")",
+  "claim": "Plan ghi `--extension` ở flag-tables.ts:216 và `--trusted-extension` ở :218 là SAI mỗi cái một dòng; đặc tả \"sửa\" thành :215 và :217, và nói :216 là alias `-e`.",
+  "why_wrong": "Ngược lại hoàn toàn. Plan ĐÚNG cả hai số. Dòng 215 là cờ khác hẳn (`\"--hook\"`), dòng 217 là alias `-e`. Người đọc bảng \"Đính chính\" sẽ tin rằng plan sai và sửa file theo số của đặc tả — chính là cái rủi ro mà chính dòng cảnh báo của đặc tả mô tả. Bước 3 lặp lại cả hai lỗi.",
+  "evidence": "sed -n '205,232p' packages/coding-agent/src/cli/flag-tables.ts: 215 `},` (đóng \"--hook\"), 216 `\"--extension\": setExtension,`, 217 `\"-e\": setExtension,`, 218 `\"--trusted-extension\": (result, value) => {`. `git diff 808b365..HEAD -- packages/coding-agent/src/cli/flag-tables.ts` rỗng → không dịch chuyển giữa lúc đo và bây giờ.",
+  "fix": "Bảng đính chính, dòng 175 — thay toàn bộ bằng: `| \\`--extension\\` ở \\`flag-tables.ts:216\\`; \\`--trusted-extension\\` ở \\`:218\\`. | **ĐÚNG** — cả hai trích dẫn của plan đều khớp, không có lệch dòng nào. | \\`flag-tables.ts:216\\` là \\`\"--extension\": setExtension\\`, \\`:217\\` là alias \\`\"-e\"\\`, \\`:218\\` là \\`\"--trusted-extension\"\\`. Dòng \\`215\\` thuộc cờ khác hẳn (\\`\"--hook\"\\`) — đừng chạm vào nó. |`\nBước 3 (dòng 26) — thay cụm trong ngoặc bằng: `cờ đẩy vào \\`trustedExtensions\\` tại \\`flag-tables.ts:218\\` (\\`--extension\\` ở \\`:216\\`, alias \\`-e\\` ở \\`:217\\`) — plan ghi đúng cả hai, không lệch dòng nào — rồi \\`main.ts:1659-1660\\``",
+  "file": "s5"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 64-81 (khối code, C2) và dòng 135-144 (\"Cổng hoàn thành\")",
+  "claim": "Code shape viết `pi.on(\"session_start\", async ctx => { ... ctx.cwd ... ctx.ui.setStatus(...) })` — một tham số.",
+  "why_wrong": "Handler có HAI tham số. `SessionStartEvent` chỉ là `{ type: \"session_start\" }`, không có `cwd` lẫn không có `ui`. Viết một tham số nghĩa là `ctx` bị bind vào event, nên `ctx.cwd` là `undefined` và `ctx.ui` không tồn tại — đoạn này không biên dịch được. Tệ hơn: `packages/coding-agent/tsconfig.json` chỉ include `[\"src\",\"test\",\"scripts\"]`, nên `examples/` KHÔNG được `bun run check:ts` kiểm tra kiểu. Lỗi này lọt qua đúng cái cổng mà tài liệu dựng lên.",
+  "evidence": "git grep: `types.ts:1242: export type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContext) => Promise<R | void> | R | void;`; `shared-events.ts:29-31: export interface SessionStartEvent { type: \"session_start\"; }`; `types.ts:454: ui: ExtensionUIContext;` và `types.ts:466: cwd: string;` (thuộc `ExtensionContext` bắt đầu ở 452). `packages/coding-agent/tsconfig.json` → include: src, test, scripts.",
+  "fix": "Trong khối code, thay `  pi.on(\"session_start\", async ctx => {` bằng `  pi.on(\"session_start\", async (_event, ctx) => {`, và thêm ngay dưới khối đó một dòng chú thích: `// Handler là (event, ctx) — xem ExtensionHandler tại extensions/types.ts:1242. Cần cả hai tham số:`\nĐồng thời thêm vào cột \"đã kiểm chứng?\" của dòng `examples/extensions/user-shell-status/index.ts`: `LƯU Ý: \\`packages/coding-agent/tsconfig.json\\` chỉ include \\`src\\`, \\`test\\`, \\`scripts\\` — \\`examples/\\` KHÔNG được \\`bun run check:ts\\` kiểm tra kiểu. Cổng (1) không bắt được lỗi trong file này; phải soi thủ công hoặc thêm \\`examples\\` vào include.`",
+  "file": "s5"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 1 (tiêu đề), dòng 3 (Sóng / phạm vi), dòng 153 (Chặn) — mâu thuẫn với dòng 171",
+  "claim": "Tiêu đề, dòng phạm vi và dòng \"Chặn\" đều khẳng định sóng này là người tiêu thụ đầu tiên của seam M2; bảng \"Đính chính\" ở dòng 171 lại nói các mục này KHÔNG tiêu thụ seam đó.",
+  "why_wrong": "Đây là mâu thuẫn nội bộ chưa được lan tỏa. Người đọc phần đầu tài liệu (và người quyết định lịch) sẽ hiểu là phải chờ M2-OQ3 mới bắt đầu, trong khi phần \"Đính chính\" cùng phần \"Phụ thuộc\" nói rõ D2 làm được ngay hôm nay dưới 2 trong 3 phương án. Hai hướng dẫn trái ngược trong cùng một file.",
+  "evidence": "Đọc trực tiếp s5.md dòng 1: \"## Sóng 5 — người tiêu thụ đầu tiên của seam status line M2 chốt\"; dòng 3: \"Hai mục status line vốn được xếp vào vị trí người tiêu thụ đầu tiên của seam M2 chốt\"; dòng 153: \"Sóng này tiêu thụ một seam, nó không mở seam nào.\"; dòng 171: \"| \\`registerStatusLineSegment\\` là seam của M2 và hai mục của sóng này là người tiêu thụ đầu tiên... | **SAI VỀ BẢN CHẤT** — seam có thật, nhưng các mục này không tiêu thụ nó. |\"",
+  "fix": "Dòng 1, thay tiêu đề bằng: `## Sóng 5 — C2 (plugin ví dụ bị tắt mặc định) + D2 (segment tỉ lệ hit)`\nDòng 3, thay cụm đầu bằng: `**Sóng / phạm vi:** M3 wave 5. Hai mục status line sau đây — C2 và D2 — plan xếp vào vị trí người tiêu thụ đầu tiên của seam M2, nhưng kiểm chứng ở §Đính chính cho thấy chúng **không** tiêu thụ seam đó: C2 đi qua \\`ctx.ui.setStatus\\` đã nối sẵn từ trước, D2 chỉ là một bổ sung vào union lõi.`\nDòng 153, thay câu thứ hai bằng: `Sóng này không tiêu thụ seam nào và cũng không mở seam nào.`",
+  "file": "s5"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 24 (bước 1, \"Plan (dòng 7435)\" và neo 7659), dòng 35 (bước 12, neo 7420)",
+  "claim": "Cả ba neo trỏ vào COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md (7435, 7659, 7420) được trình bày như đã kiểm chứng.",
+  "why_wrong": "Plan đã dài ra từ 10234 lên 11741 dòng giữa lúc đo và HEAD hiện tại (e040a60). Cả ba con số giờ trỏ vào nội dung không liên quan. Bước 1 lại dùng \"dòng 7435\" như căn cứ để ra lệnh DỪNG — người đọc mở neo đó sẽ thấy một khối lệnh shell, không phải yêu cầu Q6.",
+  "evidence": "`git show 808b365:COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | wc -l` = 10234; `wc -l` hiện tại = 11741; `git diff --stat 808b365..HEAD -- COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` = 4298 insertions, 2791 deletions. Tại 808b365, sed 7420/7435/7659 khớp đúng nội dung. Tại HEAD: 7420 → đoạn về vị trí file test; 7435 → khối `git diff --stat`; 7659 → dòng `git status --porcelain`. Nội dung thật nay nằm ở: `grep -n 'Câu trả lời này chặn C2'` → 9166; `grep -n 'không viết dòng spawn nào của C2 trước khi Q6'` → 8942; `grep -n 'id lạ vẫn bị từ chối'` → 8927.",
+  "fix": "Bước 1: thay `(dòng 7435)` bằng `(dòng 8942)` và `Neo: \\`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7659\\`` bằng `Neo: \\`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9166\\``.\nBước 12: thay `Neo: \\`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7420\\`` bằng `Neo: \\`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8927\\`.\nThêm vào §Đính chính một dòng mới đầu bảng: `| Các số dòng trỏ vào \\`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md\\` (7435, 7659, 7420) và mọi câu \"đã kiểm chứng tại HEAD 808b365\". | CŨ. | Plan dài 10234 → 11741 dòng từ 808b365 tới HEAD e040a60. Đo lại ở e040a60: 7435 → 8942, 7659 → 9166, 7420 → 8927. Mọi neo trong plan phải neo theo câu đầu tiên khớp, không theo số. |`",
+  "file": "s5"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 29 (bước 6, neo types.ts:263), dòng 30 (bước 7, chuỗi \"types.ts:263 -> ...\"), dòng 177 (bảng đính chính)",
+  "claim": "Đặc tả khẳng định plan trích `types.ts:264` cho khai báo `setStatus` là lệch một, rằng `:264` là \"một dòng trống\", và sửa thành `types.ts:263`.",
+  "why_wrong": "Ngược lại. Dòng 264 CHÍNH LÀ dòng khai báo `setStatus`; dòng 263 là dòng JSDoc ngay phía trên. Plan đúng, đặc tả sai. Cùng một lớp lỗi với dòng 175: bảng \"Đính chính\" sửa một trích dẫn đúng thành sai, khiến người đọc mất lòng tin vào đúng số còn lại. Lỗi này lan sang cả neo của bước 6 và chuỗi render path ở bước 7.",
+  "evidence": "sed -n '250,280p' packages/coding-agent/src/extensibility/extensions/types.ts: 263 `/** Set status text in the footer/status bar. Pass undefined to clear. */`, 264 `setStatus(key: string, text: string | undefined): void;`. `git show 808b365:...types.ts | sed -n '262,265p'` cho kết quả y hệt → không dịch chuyển. Plan ở HEAD dòng 8870 và 9147 cũng gọi `types.ts:264-277` là vùng `setStatus` → `setHeader`.",
+  "fix": "Bảng đính chính, dòng 177 — thay toàn bộ bằng: `| Dispatch của \\`ExtensionUIContext\\` ở \\`types.ts:264\\`; khai báo \\`setStatus\\` nằm tại neo đó. | **ĐÚNG** — \\`:264\\` chính là dòng khai báo. | \\`types.ts:264\\` là \\`setStatus(key: string, text: string | undefined): void;\\`; \\`:263\\` là dòng JSDoc ngay phía trên, \\`:265\\` là dòng trống. Giữ nguyên \\`:264\\`. |`\nBước 6 (dòng 29): thay neo `Neo: \\`packages/coding-agent/src/extensibility/extensions/types.ts:263\\`` bằng `Neo: \\`packages/coding-agent/src/extensibility/extensions/types.ts:264\\``.\nBước 7 (dòng 30) và dòng 171: thay mọi `types.ts:263` trong chuỗi render path bằng `types.ts:264`.",
+  "file": "s5"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 140 (cổng 4) và dòng 144 (đoạn \"Cổng này có thực sự đỏ được không\")",
+  "claim": "\"DONE nghĩa là đủ cả bốn điều sau, và mỗi điều đều tự đi được đỏ\"; cổng (4) là `git grep -n \"examples/extensions\" -- packages/coding-agent/src` trả về 0 hits.",
+  "why_wrong": "Cổng (4) không thể đỏ từ bất cứ việc gì của sóng này. Không file nào trong bảng \"File cần chạm tới\" nằm dưới `packages/coding-agent/src` — hai file tạo trong `examples/`, một trong `test/`, hai trong `packages/tui/src/status-line/`, một trong `packages/tui/test/`, hai dòng \"không đổi\". Không có đường nào để cổng này chuyển sang đỏ. Nó là một kiểm tra luôn xanh, được tính vào \"bốn cổng tự đỏ được\".",
+  "evidence": "Đọc bảng \"File cần chạm tới\" ở dòng 13-20: đường dẫn duy nhất dưới `packages/coding-agent/src` là... không có. `git grep -n 'examples/extensions' -- packages/coding-agent/src` exit=1 (0 hits) — nhưng đó là trạng thái hiện tại, không phải thứ sóng này có thể làm đỏ.",
+  "fix": "Dòng 140, thay mục 4 bằng: `4. \\`git grep -n \"examples/extensions\" -- packages/coding-agent/src\\` vẫn trả về 0 hits — đây là **hàng rào bảo trì**, không phải cổng: không file nào của sóng này nằm dưới \\`packages/coding-agent/src\\`, nên nó không thể đỏ từ công việc hiện tại. Nêu rõ điều đó trong PR thay vì tính nó là một trong bốn cổng.`\nDòng 144, thay câu `Cổng (4) đỏ nếu bất kỳ thứ gì trong src từng tham chiếu thư mục examples, việc đó sẽ âm thầm làm plugin tự nạp và phá hỏng bảo đảm bất hoạt-mặc-định.` bằng `Hàng rào (4) không đỏ được từ sóng này vì không file nào sóng này viết nằm dưới \\`packages/coding-agent/src\\`; nó chỉ bắt được một hồi quy ở sóng sau. Ba cổng thật sự ép điều gì đó là (1), (2) và (3).`",
+  "file": "s5"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 5, dòng 31 (bước 8b), dòng 99 — \"mỗi trigger đã được tài liệu hóa\"",
+  "claim": "Bước 8(b) yêu cầu \"chạy từng trigger đã được tài liệu hóa\", xuất hiện ba lần trong tài liệu, nhưng danh sách trigger không được nêu ở bất kỳ đâu — và code shape chỉ đăng ký `session_start`.",
+  "why_wrong": "Plan liệt kê bốn trigger: tin nhắn assistant cuối, permission mode, vim mode, đổi model. `session_start` không nằm trong bốn cái đó. Người triển khai đọc tài liệu này sẽ viết một plugin chỉ bắt `session_start`, rồi bước 8(b) bảo họ \"chạy từng trigger\" — không có danh sách nào để chạy. Bước 8(e) lại nhắc \"một loạt message event\" mà code shape không hề đăng ký. Test (b) và (e) vì thế không viết được.",
+  "evidence": "`sed -n '8940p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`: \"...kích hoạt từng điều kiện chạy lại đã tài liệu hoá (tin nhắn assistant cuối, permission mode, vim mode, đổi model)...\". `grep -n 'trigger' .lavish-wip/m3-md/sections/s5.md` → 4 lần (dòng 5, 30, 31, 99), không lần nào liệt kê. Code shape dòng 65: `pi.on(\"session_start\", async ctx => {`.",
+  "fix": "Bước 8(b), thay `chạy từng trigger đã được tài liệu hóa` bằng: `chạy **từng trigger đã được tài liệu hoá trong plan** — tin nhắn assistant cuối, permission mode, vim mode, đổi model — và khẳng định chuỗi đó xuất hiện đúng một lần ở mỗi trigger. LƯU Ý: \\`session_start\\` KHÔNG nằm trong bốn trigger đó; khối code ở §Hình dạng code chỉ minh hoạ cổng opt-in trên một event, extension thật phải đăng ký đủ bốn.`\nDòng 5 và dòng 99, thay `ở mỗi trigger đã được tài liệu hóa` / `mỗi trigger đã được tài liệu hóa cho ra đúng một cập nhật hiển thị` bằng `ở từng trigger trong bốn trigger plan nêu (tin nhắn assistant cuối, permission mode, vim mode, đổi model)`.",
+  "file": "s5"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 33 (bước 10) và dòng 144",
+  "claim": "\"Khẳng định parity tỉ lệ của nó đỏ nếu có một phép tính hit rate thứ hai được viết ra thay vì uỷ quyền.\"",
+  "why_wrong": "Bước 10 chính đặc tả ra `cache_hit_rate: cacheHitSegment` — cùng một object. Với cùng một object thì \"cùng tỉ lệ\" là hệ quả của danh tính object, không phải của phép tính nào, nên phép tính bất khả bác bỏ và không bao giờ đỏ. Nếu người triển khai lỡ viết một phép tính thứ hai ĐÚNG, cổng vẫn xanh — cổng chỉ bắt được phép tính thứ hai SAI. Cổng được mô tả là bắt được \"lỗi có khả năng thứ hai\" thì không đúng.",
+  "evidence": "s5.md dòng 47-48: `// packages/tui/src/status-line/segments.ts:919 — SEGMENTS is an exhaustive` + `//   cache_hit_rate: cacheHitSegment,   // reuse the object at segments.ts:718-738`. `segments.ts:919` xác nhận `Record<StatusLineSegmentId, StatusLineSegment>`; `renderSegment` chỉ tra `SEGMENTS[id]` rồi gọi `segment.render(ctx)` (`segments.ts:950-954`).",
+  "fix": "Dòng 144, thay câu `Khẳng định parity tỉ lệ của nó đỏ nếu có một phép tính hit rate thứ hai được viết ra thay vì uỷ quyền — đó là lỗi có khả năng thứ hai.` bằng: `Khẳng định parity tỉ lệ chỉ bắt được phép tính thứ hai **sai**, không bắt được phép tính thứ hai đúng — dưới hình dẫn `cache_hit_rate: cacheHitSegment` mà bước 10 chỉ định, hai id cùng trỏ một object nên phép tính thứ hai đúng vẫn xanh. Nếu muốn cổng thật sự ép \"một phép tính duy nhất\", hãy giao việc đó cho type test hoặc review, không phải cho phép tính parity.`",
+  "file": "s5"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 18, dòng 34 (bước 11), dòng 99 (Hợp đồng test)",
+  "claim": "D2 test phải có \"một chốt hồi quy rằng segment mới không đọc hằng số đồng hồ tường\" / \"segment không đọc hằng số đồng hồ tường nào\".",
+  "why_wrong": "Đây không phải một hợp đồng quan sát được. AGENTS.md cấm source-grep; cách duy nhất để khẳng định \"đọc hằng số nào\" là đọc text file implementation — tức là dạng test bị cấm. Nếu viết bằng hành vi thì nó chỉ lặp lại đúng khẳng định \"không có đếm ngược\" đã liệt kê sẵn, vi phạm luật cấm hàng trùng. Tệ nhất, dưới hình dẫn của chính bước 10 (`cache_hit_rate: cacheHitSegment`) mệnh đề này hưng vô nghĩa: cùng một object, không có \"segment mới\" riêng nào có thể đọc đồng hồ.",
+  "evidence": "AGENTS.md mục Testing Guidance: \"**Never source-grep.** A test that reads an implementation file (\\`.ts\\`/\\`.rs\\`/build script) and asserts on its _text_\" và \"**Bad: duplicate rows.** Parameterized/loop rows MUST each cover a distinct branch\". `segments.ts:718-738` cho thấy `cacheHitSegment` chỉ đọc `ctx.usageStats`, không đọc `ctx.now` — nên mọi test hành vi về đồng hồ đều xanh khi không cần.",
+  "fix": "Bước 11 (dòng 34), bỏ vế cuối `và một chốt hồi quy rằng segment mới không đọc hằng số đồng hồ tường — segment sẵn có chỉ đọc \\`ctx.usageStats\\`, và D2 không được đưa vào một chiếc đồng hồ.` và thay bằng: `Không thêm một test riêng cho \"không đọc đồng hồ\": dưới hình dẫn một-object của bước 10, \\`cache_hit_rate\\` và \\`cache_hit\\` là cùng một object nên mệnh đề đó không có nội dung quan sát được, và mọi cách viết nó đều rơi vào source-grep bị AGENTS.md cấm. Hợp đồng âm \"hàng không chứa đếm ngước và không chứa nhãn TTL\" đã phủ đúng cái rủi ro đó.`\nDòng 99, bỏ vế `và segment không đọc hằng số đồng hồ tường nào — đây là chốt hồi quy chống việc đếm ngược bị đưa trở lại.`\nDòng 18 (bảng file), sửa cột \"thay đổi\" thành: `New test for D2: same-rate parity with \\`cache_hit\\`, the no-countdown/TTL-label negative contract, and the zero-contribution-when-no-usage contract.`",
+  "file": "s5"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 16 (bảng file) và dòng 42 (khối code)",
+  "claim": "\"Mảng union nằm ở dòng 2-29 (\\`] as const;\\` ở 29); \\`1-32\\` của plan cũng bao phủ type \\`StatusLineSegmentId\\` dẫn xuất ở 31-32.\"",
+  "why_wrong": "Lệch mỗi thứ một dòng, trong đúng cột \"đã kiểm chứng?\". Mảng là 2-30, `] as const;` ở 30; type dẫn xuất ở 33 (JSDoc ở 32). Bản thân số \"27 thành viên\" thì đúng.",
+  "evidence": "sed -n '1,35p' packages/tui/src/status-line/schema.ts: 30 `] as const;`, 32 JSDoc, 33 `export type StatusLineSegmentId = ...`. Đếm bằng regex trên mảng `as const`: 27 phần tử ✓. `git show 808b365:packages/tui/src/status-line/schema.ts` cho kết quả giống hệt → không dịch chuyển. WI-7 của M2 ghi \"union 27 phần tử ở schema.ts:2-30\" — cùng kết luận.",
+  "fix": "Dòng 16, thay `Mảng union nằm ở dòng 2-29 (\\`] as const;\\` ở 29); \\`1-32\\` của plan cũng bao phủ type \\`StatusLineSegmentId\\` dẫn xuất ở 31-32.` bằng `Mảng union nằm ở dòng 2-30 (\\`] as const;\\` ở 30); \\`1-33\\` của plan cũng bao phủ type \\`StatusLineSegmentId\\` dẫn xuất ở 32-33.`\nDòng 42 (khối code), thay `// packages/tui/src/status-line/schema.ts:2-29 — add to the closed union:` bằng `// packages/tui/src/status-line/schema.ts:2-30 — add to the closed union:`",
+  "file": "s5"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 13 (bảng file) và dòng 27 (bước 4)",
+  "claim": "\"\\`packages/coding-agent/examples/extensions/with-deps/package.json\\` có \\`\"omp\": {\"extensions\": [\"./index.ts\"]}\\` ở dòng 7-11.\"",
+  "why_wrong": "Khối `omp` là dòng 6-10, không phải 7-11. Hình dáng nội dung thì đúng. Neo `:7` ở bước 4 vẫn dùng được vì 7 đúng là dòng `\"extensions\": [`.",
+  "evidence": "grep -n trên file: 6 `\"omp\": {`, 7 `\"extensions\": [`, 8 `\"./index.ts\"`, (9 `]`, 10 `},`).",
+  "fix": "Dòng 13, thay `ở dòng 7-11` bằng `ở dòng 6-10 (dòng 7 là \\`\"extensions\": [\\`)`.",
+  "file": "s5"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 113 (Xác minh) và dòng 180 (bảng đính chính)",
+  "claim": "\"Đã kiểm chứng xanh tại HEAD 808b365 (cả 16 package đều Done)\" và \"HEAD thật là 808b365 ... Mọi số dòng trong đặc tả này đã được đo lại tại 808b365.\"",
+  "why_wrong": "HEAD đã đi tiếp. Nội dung vẫn đúng — tôi chạy lại `bun run check:ts` và nó xanh với đúng 16 package — nhưng câu chữ ghim một mốc đã cũ, và câu \"mọi số dòng đã được đo lại tại 808b365\" giờ là cam kết không còn đúng với ba neo trỏ vào plan (xem phát hiện về 7435/7659/7420).",
+  "evidence": "`git log --oneline -1` → e040a60, nhánh milestone-1. `bun run check:ts` chạy thật: exit 0, 16 dòng `@oh-*/check:types | Done` (browser-relay, collab-web, omp-stats, omptype, pi-agent-core, pi-ai, pi-catalog, pi-coding-agent, pi-metaharness, pi-mnemopi, pi-natives, pi-tui, pi-utils, pi-wire, snapcompact, typescript-edit-benchmark).",
+  "fix": "Dòng 113, thay `Đã kiểm chứng xanh tại HEAD 808b365 (cả 16 package đều Done).` bằng `Đã kiểm chứng xanh tại HEAD e040a60 (cả 16 package đều Done, exit 0).`\nDòng 180, thay `HEAD thật là 808b365 (\"docs(plan): fold the spec-verified M1 execution plan into the upgrade plan\"), trên nhánh \\`milestone-1\\`. Mọi số dòng trong đặc tả này đã được đo lại tại 808b365.` bằng `HEAD thật tại lần rà này là e040a60 (\"docs(m2): execution plan for milestone 2, spec-verified against the tree\"), trên nhánh \\`milestone-1\\`. Các số dòng trong source không dịch chuyển giữa 808b365 và e040a60 (chỉ plan đổi), nhưng các số dòng trỏ vào plan thì có — xem dòng đính chính về 7435/7659/7420.`",
+  "file": "s5"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 57-59 (khối code) và dòng 14 (bảng file)",
+  "claim": "Code shape import \\`getPluginSettings\\` từ \\`../../../src/extensibility/plugins/loader\\` và \\`ExtensionAPI\\` từ \\`../../../src/extensibility/extensions/types\\`.",
+  "why_wrong": "Không example nào trong repo đi đường này — tất cả import từ specifier công khai. Đặc tả lại chỉ thị \"Sao chép nguyên hình khối `omp` từ example `with-deps`\", nên người triển khai sẽ bắt chước manifest nhưng bị bỏ lỡ quy ước import. Nguyên nhân sâu hơn: `getPluginSettings` không có export công khai, nên đây là lối thoát duy nhất — điều tài liệu chưa nói ra và cũng không đưa vào \"Cần người quyết\".",
+  "evidence": "`git grep -n 'from \"\\.\\./\\.\\./\\.\\./src' -- packages/coding-agent/examples/` exit=1 (0 hit). `with-deps/index.ts:7` và `hello.ts:6` đều là `import type { ExtensionAPI } from \"@oh-my-pi/pi-coding-agent\";`. `packages/coding-agent/src/index.ts` export `./extensibility/extensions` (dòng 25) nhưng KHÔNG export `./extensibility/plugins`; `git grep -n getPluginSettings -- packages/` chỉ ra định nghĩa duy nhất ở `loader.ts:474`, mọi tham chiếu còn lại là method của `PluginManager`.",
+  "fix": "Sau dòng 59 trong khối code, thêm dòng chú thích: `// LƯU Ý: ví dụ khác import từ \"@oh-my-pi/pi-coding-agent\". getPluginSettings chưa có export công khai (src/index.ts không re-export ./extensibility/plugins), nên đường import sâu này là lối thoát duy nhất — nó chạm vào nội bộ host. Cân nhắc ghi vào PR và xem lại khi M2 đóng gói plugin API.`\nVà thêm một mục vào §Cần người quyết: `- **\\`getPluginSettings\\` chưa có export công khai.** Nó chỉ tồn tại ở \\`packages/coding-agent/src/extensibility/plugins/loader.ts:474\\`, và \\`src/index.ts\\` không re-export \\`./extensibility/plugins\\`. Plugin buộc phải import đường sâu \\`../../../src/...\\` — lệch quy ước của mọi example khác. Có nên đưa nó vào public API ở M2 không?`",
+  "file": "s5"
+ }
+]

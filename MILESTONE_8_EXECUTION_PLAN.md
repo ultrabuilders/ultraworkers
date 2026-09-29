@@ -75,9 +75,10 @@ Cài mới xong, chạy tool không hỏi. `CROSS_REPO_COMPARISON.md:895` đã �
 |---|---|---|---|
 | **W1** | `FileSystemSandboxPolicy` — writable-root + read-deny | **L** | 1 |
 | **W2** | `NetworkSandboxPolicy` — egress allowlist | **M** | 2 |
-| **W3** | `tools.approvalMode` mặc định `yolo` → `write` | **S** | 0 |
+| ~~**W3**~~ | ~~`tools.approvalMode` mặc định `yolo` → `write`~~ | ~~S~~ | ~~0~~ |
 | **W4** | Path rule khai báo được bằng YAML (`deny: ["**/.env", "/etc/**"]`) | **S** | 1 |
 | **W5** | `tools.approval.eval` — chặn đường thoát thứ hai | **S** | 0 |
+| ~~W3~~ | ~~`tools.approvalMode` `yolo` → `write`~~ **BỎ (2026-09-29)** — omp không cần; mặc định cài giữ nguyên | ~~S~~ | — |
 | **W6** | **Tiếp nhận `WI-20` / `GAP-M2-13`** — trust enforcement theo thư mục dự án | **L** | 3 |
 | **W7** | Trạng thái ba ngày cho cổng containment: allow / deny / **không-đo-được** | **S** | 3 |
 | **W8** | Sandbox của code do model viết (`eval` / code mode) | **S–M** | 4 |
@@ -90,7 +91,7 @@ Cài mới xong, chạy tool không hỏi. `CROSS_REPO_COMPARISON.md:895` đã �
 | **Containment tầng OS (W1, W2) — DEFER (2026-09-29)** | Chủ sở hữu đã chốt hoãn. Xem bên dưới. |
 | Không nâng `CRITICAL_BASH_PATTERNS` thành containment | Đó là M1 W6, và nó là *approval*, không phải *isolation*. Trộn hai tầng là lỗi kiến trúc. |
 | Không sửa `spawn-policy.ts` | M6:1412 nói rõ nó **đúng** và không được sửa. M8 dùng nó làm đầu vào. |
-| Không bỏ `yolo` ngay | W3 là quyết định sản phẩm, cần sign-off bằng văn bản. Không tự ý đổi hành vi cài mặc định. |
+| **Không đổi mặc định `yolo`** | W3 đã bị bỏ (2026-09-29) — chủ sở hữu: omp không cần. Mặc định cài giữ nguyên, ghi rõ trong `docs/approval-mode.md`. |
 | Không dùng code của `omo` (`SUL-1.0`, non-sublicensable) | Mượn **hình dạng cổng**, không mượn dòng code. |
 
 ---
@@ -105,7 +106,7 @@ Chủ sở hữu đã chốt: **hoãn containment tầng OS.** Đây là câu qu
 
 | ID | Vì sao vẫn giữ |
 |---|---|
-| `W3` mặc định approval `yolo` → `write` | 3 dòng code + doc. Là quyết định sản phẩm, không phải hạ tầng. |
+| ~~`W3` mặc định approval `yolo` → `write`~~ **BỎ (2026-09-29)** | Chủ sở hữu: *"sai cái này omp có k cần làm"*. Mặc định `yolo` **giữ nguyên**. Hệ quả: `docs/approval-mode.md` ghi rõ đây là quyết định, và `W5` (chặn `eval`) nặng tương đối hơn — vì dưới `yolo`, `bash.patterns` không chặn được lệnh chạy qua `eval`. |
 | `W4` path rule khai báo bằng YAML | Rẻ, không cần kernel, và là thứ **duy nhất** chặn được `eval` chạy code không kiểm chứng. |
 | `W5` `tools.approval.eval` | Đóng đường thoát thứ hai mà `docs/approval-mode.md:72` nêu tên. S, và là lỗ hổng sống. |
 | `W7` trạng thái ba ngày cho cổng | XS. Không có nó thì mọi cổng của M1–M7 đỏ giả đều không phân biệt được với đỏ thật. |
@@ -134,7 +135,7 @@ Chủ sở hữu đã chốt: **hoãn containment tầng OS.** Đây là câu qu
 
 | Wave | Nội dung | Cổng |
 |---|---|---|
-| **0** | W3 (mặc định approval) + W5 (chặn `eval`) | Cả hai là thay đổi **hành vi mặc định** → cần sign-off sản phẩm bằng văn bản, không phải quyết kỹ thuật |
+| **0** | ~~W3 (mặc định approval) — ĐÃ BỎ~~ + W5 (chặn `eval`) | Còn lại W5 — thay đổi **hành vi mặc định** nên cần sign-off sản phẩm bằng văn bản, không phải quyết kỹ thuật |
 | **1** | W1 (filesystem) trên **Linux** + W4 (path rule YAML) | `sandbox.exec()` trả về `ENOSYS`/`unsupported` trên nền tảng chưa hỗ trợ — **không** được im lặng trả `allow` |
 | **2** | W2 (network) trên Linux | Độc lập W1 về mặt code, nhưng cùng bắt buộc W7 |
 | **3** | W6 (tiếp nhận `WI-20`) + W7 (ba ngày) | W6 **cố ý** nằm ngoài M2 — `MILESTONE_2_EXECUTION_PLAN.md:44` cấm |

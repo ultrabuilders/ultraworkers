@@ -87,28 +87,28 @@
 
     <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
-        <div class="text-2xl font-bold">8</div>
-        <div class="text-xs text-base-content/60">tài liệu kế hoạch</div>
-      </div>
-      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
-        <div class="text-2xl font-bold">55.131</div>
-        <div class="text-xs text-base-content/60">dòng kế hoạch</div>
+        <div class="text-2xl font-bold">11</div>
+        <div class="text-xs text-base-content/60">tài liệu kế hoạch <span class="line-through opacity-50">8</span></div>
       </div>
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
         <div class="text-2xl font-bold text-success">4</div>
         <div class="text-xs text-base-content/60">câu hỏi còn lại <span class="line-through opacity-50">6</span></div>
       </div>
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
-        <div class="text-2xl font-bold text-warning">~211</div>
-        <div class="text-xs text-base-content/60">quyết định chờ chốt</div>
+        <div class="text-2xl font-bold text-warning">18</div>
+        <div class="text-xs text-base-content/60">quyết định mới ở M8–M10</div>
       </div>
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
         <div class="text-2xl font-bold text-error">51</div>
         <div class="text-xs text-base-content/60">rủi ro đã ghi nhận</div>
       </div>
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
-        <div class="text-2xl font-bold text-success">50</div>
-        <div class="text-xs text-base-content/60">claim sai đã bị bác</div>
+        <div class="text-2xl font-bold text-success">234</div>
+        <div class="text-xs text-base-content/60">claim sai đã bị bác <span class="line-through opacity-50">50</span></div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold text-warning">0</div>
+        <div class="text-xs text-base-content/60">xác nhận bằng runtime</div>
       </div>
     </div>
 
@@ -123,6 +123,7 @@
 
   <!-- ============================== NAV ============================== -->
   <nav class="mb-10 flex flex-wrap gap-2" aria-label="Mục lục">
+    <a class="btn btn-sm btn-primary" href="#da-thay-doi">0 · Đã thay đổi</a>
     <a class="btn btn-sm btn-ghost" href="#muc-tieu">1 · Mục tiêu</a>
     <a class="btn btn-sm btn-ghost" href="#thu-tu">2 · Thứ tự làm</a>
     <a class="btn btn-sm btn-ghost" href="#seam">3 · Quyết định chặn</a>
@@ -134,6 +135,68 @@
     <a class="btn btn-sm btn-ghost" href="#doi-chieu">9 · Đối chiếu lại</a>
     <a class="btn btn-sm btn-ghost" href="#xong">10 · Xong là gì</a>
   </nav>
+
+  <!-- ============================== 0 · ĐÃ THAY ĐỔI ============================== -->
+  <section id="da-thay-doi" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">0 · Đã thay đổi kể từ lần review đầu</h2>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Bản này đã qua hai vòng tra (227 agent, rồi 276 agent — tổng <strong>234 claim bị bác</strong>)
+      và ba lần commit. Dưới đây là phần thay đổi so với những gì bạn đã đọc.
+    </p>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="card card-border border-success/40 bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Đã chốt</h3>
+          <ul class="vlist list-disc pl-5 text-sm">
+            <li><strong>Câu 1 — phương án (i)</strong>: mọi thứ là plugin, giữ nguyên slogan. Hệ quả bắt buộc: WI-10 phải công khai danh sách core nhỏ được tin, và chọn (i) <em>không</em> phải lý do để hoãn WI-0.</li>
+            <li><strong>Câu 2 — ranh giới pháp lý</strong>: mượn UI/UX tự do, không dùng tên/logo/nhãn hiệu "Claude Code"; dòng còn giữ là không <em>dán code</em> từ cây không giấy phép — và dòng đó không liên quan gì tới logo.</li>
+            <li><strong>npm scope = <code class="mono">@ultraworkers</code></strong>. <code class="mono">@ultracode</code> và <code class="mono">@ultrawork</code> đã bị chiếm.</li>
+            <li><strong>Format keep-list</strong> = phương án (b), với ba sửa bắt buộc (bỏ neo <code class="mono">^\.omp/</code> — nó khớp 0 dòng và làm <code class="mono">sed</code> lỗi cứng).</li>
+            <li><strong>M3 không phụ thuộc <code class="mono">@opentui/core</code></strong>. Cổng giấy phép đóng; còn lại đúng một câu: nó có chạy được trong omp không (chưa ai <code class="mono">bun add</code>).</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Ba milestone mới — không milestone nào trước đó sở hữu chúng</h3>
+          <ul class="vlist list-disc pl-5 text-sm">
+            <li><strong>M8 — Containment</strong>, 9 item. M6 từng ghi "chưa xây trong M6" rồi đẩy ra ngoài phạm vi, nhưng không work item nào nhận. Còn M2:3849 viết thẳng "KHÔNG ĐƯỢC BIẾN THÀNH SANDBOX" — ba tài liệu, ba thế chỗ, không khớp nhau.</li>
+            <li><strong>M9 — Orchestration</strong>, 7 item. 29 file đã có dưới <code class="mono">src/task/</code>, <strong>không work item nào phát triển</strong>. Cái thiếu là bốn quyết định, không phải code.</li>
+            <li><strong>M10 — Hợp đồng bền</strong>, 13 item. M4 ở tầng cổng CI, M6 ở tầng kỷ luật quy trình; <strong>giữa hai tầng đó omp trống</strong>.</li>
+          </ul>
+          <p class="text-sm text-base-content/70 mt-2">
+            Tên M8/M9 từng bị hai đề xuất độc lập tranh cùng một tên — giờ đã ghi lại lịch sử để không lặp lại.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert alert-error mt-4">
+      <div>
+        <h3 class="font-bold">Bốn claim sai đã bị bác bỏ — và một cái đang sắp đỏ</h3>
+        <ul class="vlist list-disc pl-5 text-sm mt-1">
+          <li><strong>Tiền đề code-mode của M6 sai, không chỉ số liệu.</strong> omp đã có adapter 198 dòng chạy thật; con số 30K là hạ tầng native của codex. Không phải milestone — còn 4 hạng mục S.</li>
+          <li><strong>"Không có cell buffer" sai một nửa.</strong> Cell buffer có thật ở <code class="mono">packages/utils/src/vterm/buffer.ts</code>, trên đường sống. Cái không có là <em>damage</em>, và lưới ô nằm ngoài <code class="mono">Component</code>.</li>
+          <li><strong>Danh sách core thiếu chính thứ nó phải giữ.</strong> <code class="mono">ExtensionUIContext.custom()</code> tra nguyên instance <code class="mono">TUI</code> cho factory plugin, nên <code class="mono">setFrameProvider</code> không bị chặn — và nó không có mặt trong danh sách sáu bề mặt của WI-10.</li>
+          <li><strong>⚠️ Chưa sửa được, vì cần bạn chốt:</strong> WI-4 đóng băng <code class="mono">toolRenderers</code>, M3-B1 ghim nó là writable. <code class="mono">registerToolRenderer</code> có <strong>0 hit</strong> ở cả M4 và M5 — không ai nhận. Nó chỉ lộ ra khi type test của WI-4 chạy cùng gate của B1, tức đúng lúc cả hai đều tưởng mình xong.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="alert alert-warning alert-soft mt-4">
+      <div>
+        <h4 class="font-bold text-sm">Cảnh báo chung cho mọi mục trên trang này</h4>
+        <p class="text-sm mt-1">
+          <code class="mono">bun test</code> không chạy được trên máy này (thiếu native addon
+          <code class="mono">pi_natives.win32-x64.node</code>). <strong>Không phát hiện nào trong hai vòng
+          tra đã được xác nhận bằng runtime</strong> — tất cả là đọc tĩnh có phản biện. Một suite đỏ ở
+          đây không phải test fail; đó đúng là trường hợp mà M10 W7 sinh ra để phân biệt.
+        </p>
+      </div>
+    </div>
+  </section>
 
   <!-- ============================== 1 · MỤC TIÊU ============================== -->
   <section id="muc-tieu" class="anchor-offset mb-14">
@@ -1524,25 +1587,29 @@
                 element: event.currentTarget, data: { items: selected } }
             );">
       <div class="card-body space-y-1">
-        <label class="label cursor-pointer justify-start gap-3 py-1">
-          <input type="checkbox" name="items" value="X-M5-KEEPLIST" data-label="Đặt tên và phê duyệt keep-list (do_not_rename.tsv hay keep-list.txt, một file hay hai) — ba cổng đều kiểm keep-list.txt" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
-          <span class="label-text"><strong>M5</strong> — Đặt tên và phê duyệt <code class="mono">keep-list.txt</code>. Ba cổng đều kiểm đúng tên file này.</span>
+        <label class="label cursor-pointer justify-start gap-3 py-1 opacity-60">
+          <input type="checkbox" disabled checked class="checkbox checkbox-success">
+          <span class="label-text"><strong>M5</strong> — npm scope: <strong>đã chốt <code class="mono">@ultraworkers</code></strong>. Còn lại: <code class="mono">npm org create</code> (miễn phí, tức thì) và chuyện tên trùng với một tổ chức GitHub khác (~195k sao).</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3 py-1 opacity-60">
+          <input type="checkbox" disabled checked class="checkbox checkbox-success">
+          <span class="label-text"><strong>M6</strong> — <code class="mono">@opentui/core</code>: <strong>đã đóng</strong>. MIT ở tầng JS, cộng Apache-2.0 (wuffs) và patent grant (libwebp) ở tầng native. M3 không phụ thuộc nó, nên cổng không còn chặn layout.</span>
         </label>
         <label class="label cursor-pointer justify-start gap-3 py-1">
-          <input type="checkbox" name="items" value="X-M5-NPMSCOPE" data-label="Quyền sở hữu npm scope @ultraworkers" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
-          <span class="label-text"><strong>M5</strong> — Quyền sở hữu npm scope <code class="mono">@ultraworkers</code>. Chặn toàn bộ wave 3.</span>
-        </label>
-        <label class="label cursor-pointer justify-start gap-3 py-1">
-          <input type="checkbox" name="items" value="X-M6-OPENTUI" data-label="@opentui/core@0.5.12 — cổng đầu tiên trước khi chốt layout" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
-          <span class="label-text"><strong>M6</strong> — <code class="mono">@opentui/core@0.5.12</code>: cổng đầu tiên phải đóng trước khi chốt bất kỳ layout nào.</span>
+          <input type="checkbox" name="items" value="X-M5-KEEPLIST" data-label="keep-list.txt: format đã chốt phương án (b), còn cần hai người để viết và duyệt" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M5</strong> — <code class="mono">keep-list.txt</code>: <strong>format đã chốt</strong> (phương án b, ba sửa bắt buộc). File vẫn chưa có, và cần <strong>hai người</strong> — người viết khác người duyệt.</span>
         </label>
         <label class="label cursor-pointer justify-start gap-3 py-1">
           <input type="checkbox" name="items" value="X-M6-GAPD1" data-label="GAP-D1 — có chặn 127.0.0.1 theo mặc định không" data-disposition="quyết-định" class="checkbox checkbox-primary">
           <span class="label-text"><strong>M6</strong> — <code class="mono">GAP-D1</code>: có chặn <code class="mono">127.0.0.1</code> theo mặc định không? Chặn sẽ phá mọi MCP server local.</span>
         </label>
         <label class="label cursor-pointer justify-start gap-3 py-1">
-          <input type="checkbox" name="items" value="X-M4-DOCTOR" data-label="M4 — GAP-M4-15: hooks trong .claude/settings.json biến mất không một lời" data-disposition="quyết-định" class="checkbox checkbox-primary">
-          <span class="label-text"><strong>M4</strong> — <code class="mono">GAP-M4-15</code>: hooks trong <code class="mono">.claude/settings.json</code> biến mất không một lời.</span>
+          <input type="checkbox" name="items" value="X-M4-DOCTOR" data-label="M4 — omp doctor chưa tồn tại; chặn cả GAP-M4-15 lẫn GAP-M4-16" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M4</strong> — <code class="mono">omp doctor</code> chưa tồn tại: <code class="mono">runDoctorChecks</code> chỉ có <strong>1 hit toàn repo</strong>, chính là dòng định nghĩa. Nó là tiền đề tuyệt đối của cả <code class="mono">GAP-M4-15</code> lẫn <code class="mono">GAP-M4-16</code>.</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3 py-1">
+          <input type="checkbox" name="items" value="X-M3-OPENTUI-RUN" data-label="M3 — @opentui/core có chạy được trong omp không (chưa ai bun add)" data-disposition="đo-trước-khi-dùng" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M3</strong> — <code class="mono">@opentui/core</code> có chạy được trong omp không? DLL/FFI trên Windows chưa biết; chưa ai <code class="mono">bun add</code>.</span>
         </label>
         <div class="card-actions justify-end pt-2">
           <button type="submit" class="btn btn-primary btn-sm">Gửi danh sách việc chặn</button>

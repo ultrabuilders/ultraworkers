@@ -824,6 +824,41 @@ public licenses.
 
 Creative Commons may be contacted at creativecommons.org.
 
+-------------------------------------------------------------------------------
+packages/tui/src/stdin-buffer.ts
+packages/tui/test/stdin-buffer.test.ts
+
+These files are based on code from OpenTUI (https://github.com/anomalyco/opentui),
+which is not a dependency of this project: the derivation was made by reading the
+upstream source, and no part of the OpenTUI distribution is vendored, bundled, or
+redistributed here. The header comment in `stdin-buffer.ts` records the upstream
+origin; this entry reproduces the full MIT permission notice, which that header
+carries only in its copyright half.
+
+  Copyright (c) 2025 opentui
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+=======================================================================
+
 BUN / NPM DEPENDENCY INVENTORY
 ==============================
 This inventory is traversed from bun.lock, not from the host node_modules tree.

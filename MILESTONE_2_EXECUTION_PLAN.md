@@ -91,6 +91,18 @@ Một lưu ý nữa về độ tin cậy của gate: nhiều gate trong kế ho�
 
 ### Wave 1 — Hai ADR, không dòng code nào
 
+> **Quyết định kiến trúc đã chốt (2026-09-29): phương án (i) — "mọi thứ là plugin".**
+> Chủ sở hữu chọn giữ nguyên slogan, vẫn chấp nhận một core nhỏ được tin cậy, thay vì phương án
+> (ii) "mọi thứ trừ một core nhỏ đã tuyên bố tin cậy". Câu hỏi đã đóng. Xem
+> `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` § *CĂNG THẮNG CẦN CHỐT* cho ba hệ quả bắt buộc.
+>
+> **Hệ quả trực tiếp lên wave này:** vì (i) giữ nguyên slogan, **WI-10 phải công khai danh sách
+> core nhỏ được tin** — những gì nằm dưới app shell (`setFrameProvider`, cell buffer / damage rect)
+> không thể là plugin, nên ở lại trong core, và phải được **viết ra tên** chứ không suy ra sau. Một
+> thay đổi trong danh sách đó là breaking change với tác giả extension đã xuất bản.
+> Chọn (i) **không** phải lý do để hoãn WI-0: "mọi thứ là plugin" càng đúng theo nghĩa đen thì
+> plugin càng chính là bề mặt tấn công, nên trust gate càng phải chốt.
+
 **Bàn giao:** hai tài liệu quyết định trong `docs/`, mỗi cái nêu người quyết và ngày, và ba file markdown được chạm — không file TypeScript nào.
 
 **Gồm:** WI-0 (extension trust model) và WI-10 (bề mặt viết chuẩn). WI-10 phụ thuộc cứng của WI-0, và thứ tự là bắt buộc: M2-OQ2 đổi nghĩa của chữ "canonical" đối với một tác giả bên thứ ba, nên viết bảng xếp hạng bề mặt lên một tư thế tin cậy chưa viết ra là đóng băng sai hợp đồng, và mọi thay đổi tư thế về sau trở thành breaking change với những tác giả đã xuất bản.

@@ -200,7 +200,7 @@ Bằng chứng ba tầng:
 "@opentui/keymap": "catalog:",
 "@opentui/solid": "catalog:",
 ```
-Root `package.json` (dòng 55-57) ghim phiên bản: **`@opentui/core` 0.5.12**.
+Root `package.json` (dòng 55-57) ghim phiên bản: **`@opentui/core` 0.4.5**. *(Đính chính 2026-09-29: bản trước ghi `0.5.12`. `packages/catalog` của opencode khai `@opentui/core: "0.4.5"`; `0.5.12` là `dist-tags.latest` mà không phải cái opencode ghim. Trục version là nơi nghĩa vụ pháp lý đổi — xem mục "Những điều chưa được kiểm chứng".)*
 
 **Tầng 2 — repo có công cụ nâng cấp riêng cho engine đó**, tức nó là thứ được quản trị có chủ đích, không phải phụ thuộc lạc:
 ```
@@ -531,7 +531,7 @@ $ git ls-files 'packages/*/package.json' | xargs grep -h '"license"' | sort | un
 
 ## 9. `unknowns` — những chỗ phải đo thêm trước khi quyết
 
-1. **Giấy phép `@opentui/core@0.5.12` chưa biết.** `node_modules` không có trong repo tham chiếu. Nếu M3 cân nhắc dùng, phải tra riêng — MIT của opencode **không** phủ dependency của opencode.
+1. ~~**Giấy phép `@opentui/core@0.5.12` chưa biết.**~~ **ĐÃ ĐÓNG (2026-09-29)** bằng cách tải tarball và đọc `package/LICENSE` bên trong, hash khớp `dist.integrity`: **MIT ở tầng JS**, **+ Apache-2.0 (wuffs) và patent grant (libwebp) ở tầng native**. Không copyleft ở tầng nào. Xem mục "Những điều chưa được kiểm chứng" § cuối. *Thu hẹp (không xoá):* `package/LICENSE` **không** phủ 8 platform package native + các grammar wasm nằm trong chính core.
 2. **Chưa biết `@opentui/core` làm gì ngoài flexbox.** Không cài node_modules nên chưa đọc được engine: có renderer riêng không, có thay thế được `packages/tui` của omp không, bundle bao nhiêu. Đây là ẩn số lớn nhất của cả M3.
 3. **`merman` vs mermaid Rust của omp: phạm vi phủ không chắc ngang nhau.** opencode có `gantt`/`gitgraph`/`sequence`/`state`/`timeline`; omp grep thấy `flowchart`/`er`/`class`. Chưa đếm diagram type nào omp thiếu.
 4. **Chưa biết `console`/`app`/`web` có thành phần nào tái dùng được cho CLI không.** Đo mới thấy bề mặt (`package.json`, exports); chưa đọc code.
@@ -1298,7 +1298,7 @@ const SESSION_CONTENT_PREFERRED_WIDTH = 64
 
 **Đã đo được, không còn là câu hỏi nữa.** (1) opencode **có** flexbox và dùng nó rất nhiều (`flexDirection` xuất hiện ở hàng chục site trong `packages/tui`) — nó chỉ không chứa engine trong repo mình; tiền đề "opencode không có flexbox nên ta phải tự xây" sai ở chỗ quan trọng nhất. (2) `packages/tui` của opencode là **454 file / 103.964 dòng**, không phải 245/39.771. (3) codex **là** Codex của OpenAI (origin trùng tên, `Copyright 2025 OpenAI` trong cả LICENSE lẫn NOTICE), Apache-2.0 nên chép được — nhưng 758 file `.ts/.tsx` trong đó **734 là sinh tự động**, chỉ 24 file tay viết trong `sdk/typescript`. (4) Ranh giới ngôn ngữ của omp là quyết định đúng và **không nên di chuyển**: `core` + `tui` của codex là 851K dòng để đổi ngôn ngữ chứ không đổi contract. (5) Approval của omp đã hoàn chỉnh — 3 tầng tool, 3 chế độ, 1.471 dòng test. (6) omp đã đi trước ở model catalog (221 file KDL kiểm toán được, so với blob JSON 405 KB của codex và `models.json` phẳng của gajae). (7) Mật độ test của gajae là 53% file / 48% dòng, nhưng đó là mật độ chứ không phải chất lượng.
 
-**Chưa đo được — đừng tưởng đã biết.** (1) **Giấy phép `@opentui/core@0.5.12` chưa kiểm chứng**: repo tham chiếu không có `node_modules`, và MIT của opencode không phủ dependency của opencode. (2) **`@opentui/core` làm gì ngoài flexbox** — có renderer riêng không, bundle bao nhiêu, có thay thế được `packages/tui` của omp không. Đây là ẩn số lớn nhất của cả M3, và hàng 1 + hàng 4 **không thể chốt** khi nó còn nguyên. (3) codex `code-mode` (4 crate, 104 file, ~30K dòng) **chưa được đánh giá** — nếu đúng nghĩa là thay tool-call bằng code, đây là ứng viên milestone lớn. (4) `ext/` của codex (17 crate con, 275 file) chưa đo API surface, nên chưa biết là plugin mở rộng bên ngoài hay nội bộ. (5) Chênh lệch thật giữa gajae và pin `a85bd522` **chưa diff**; local clone là 1 commit squash nên không phán đoán được ai nghĩ ra cái gì. (6) Tỉ lệ test của crate `core` codex chưa đo; môi trường đo chỉ là checkout Darwin, chưa hành vi Windows sandbox hay WSL.
+**Chưa đo được — đừng tưởng đã biết.** (1) ~~**Giấy phép `@opentui/core@0.5.12` chưa kiểm chứng**~~ **ĐÃ ĐÓNG 2026-09-29** — xem mục cuối; và quyết định rồi là M3 **không** phụ thuộc nó, nên cổng này không còn chặn layout. Cái còn lại chưa đo: **nó có chạy được trong omp không** — chưa ai `bun add`, DLL/FFI trên Windows chưa biết. (2) **`@opentui/core` làm gì ngoài flexbox** — đã đo một phần: không phải thư viện layout mà là **framework TUI trọn vẹn** (`createCliRenderer`, 25 `renderables/*.d.ts`, `Markdown`, `Audio`, `parser.worker.js` 172 KB, Yoga export từ entry chính); tải win32-x64 4,02 MiB, giải nén 19,20 MiB, cài kèm peer cứng ~25,8 MiB. Còn lại chưa đo: có thay thế được `packages/tui` của omp không — và câu trả lời có lẽ là không, vì 98,4% dòng của `packages/tui` là tầng ứng dụng mà opentui không có. (3) codex `code-mode` (4 crate, 104 file, ~30K dòng) **chưa được đánh giá** — nếu đúng nghĩa là thay tool-call bằng code, đây là ứng viên milestone lớn. (4) `ext/` của codex (17 crate con, 275 file) chưa đo API surface, nên chưa biết là plugin mở rộng bên ngoài hay nội bộ. (5) Chênh lệch thật giữa gajae và pin `a85bd522` **chưa diff**; local clone là 1 commit squash nên không phán đoán được ai nghĩ ra cái gì. (6) Tỉ lệ test của crate `core` codex chưa đo; môi trường đo chỉ là checkout Darwin, chưa hành vi Windows sandbox hay WSL.
 
 ---
 
@@ -1879,7 +1879,7 @@ Mục này ngắn vì nó nên ngắn. Nhưng nó là mục quan trọng nhất 
 
 Phía omp thì **yếu hơn nữa**: ba file audit không ghim commit nào của chính repo này, mọi số đo bên omp lấy từ cây nguồn cục bộ ở nhánh `milestone-1`. Đó là khoảng trống của chính tài liệu, không phải của người đo.
 
-**`@opentui/core`.** Giấy phép đã được xác nhận **MIT qua metadata npm và README** — nhưng đó là tầng bằng chứng yếu hơn việc đọc `LICENSE` trong một bản cài. Và **chưa ai thử cài nó**. Chưa biết nó chạy được trong omp hay không: có thay thế được `packages/tui` không, bundle bao nhiêu, đụng native addon nào. Đây là **cổng đầu tiên phải đóng trước khi chốt bất kỳ layout nào** — vì `opencode.md` §0 đã sửa tiền đề của M3: opencode không phải "không có flexbox", nó **mua** flexbox từ `@opentui/core@0.5.12`. Lưu ý mâu thuẫn chưa giải quyết: `opencode.md` §9 mục 1-2 vẫn ghi giấy phép này là *chưa biết*; nếu tầng metadata là đủ thì phải sửa §9, nếu không thì mục "Những điều chưa được kiểm chứng" ở trên đang nói quá.
+**`@opentui/core`.** ~~Giấy phép đã được xác nhận **MIT qua metadata npm và README**~~ — **ĐÃ KIỂM CHỨNG Ở TẦNG ARTIFACT (2026-09-29), và kết luận tinh chính (xem bên dưới).**
 
 **Tiền đề môi trường cho cổng kiểm của M3 (`bun test packages/tui`): cần addon native.** Đây **không phải hạn chế của máy** — đây là *một bước build còn thiếu*. Trên máy sạch, `bun test packages/coding-agent/test/**` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64`. Làm một lần là xong:
 

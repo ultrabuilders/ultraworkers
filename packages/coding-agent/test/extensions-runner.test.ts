@@ -2543,6 +2543,10 @@ describe("ExtensionRunner", () => {
 				},
 				undefined,
 				{
+					// A test UI: the runner needs to know whether one is attached,
+					// and it now reads that off the context rather than comparing
+					// against a sentinel.
+					hasUI: true,
 					select,
 					confirm: async () => false,
 					input: async () => undefined,

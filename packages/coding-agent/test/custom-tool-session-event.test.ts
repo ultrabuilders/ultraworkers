@@ -98,7 +98,7 @@ describe("a handler is told when the session ends", () => {
 				},
 			},
 		]);
-		expect(await session.emitCustomToolSessionEvent("shutdown")).toBe(1);
+		expect(await session.emitCustomToolSessionEvent()).toBe(1);
 		expect(seen).toEqual([{ reason: "shutdown", hasUI: false }]);
 	});
 
@@ -122,7 +122,7 @@ describe("a handler is told when the session ends", () => {
 			},
 		]);
 		expect(
-			await session.emitCustomToolSessionEvent("shutdown", {
+			await session.emitCustomToolSessionEvent({
 				onToolError: (tool, error) => errors.push([tool, error]),
 			}),
 		).toBe(1);
@@ -132,6 +132,67 @@ describe("a handler is told when the session ends", () => {
 
 	it("returns zero when no extension registered one", async () => {
 		const session = await makeSession([{ name: "quiet" }]);
-		expect(await session.emitCustomToolSessionEvent("shutdown")).toBe(0);
+		expect(await session.emitCustomToolSessionEvent()).toBe(0);
+	});
+});
+
+describe("the reason union matches what is actually delivered", () => {
+	it("delivers a shutdown, and nothing else", async () => {
+		const reasons: string[] = [];
+		const session = await makeSession([
+			{
+				name: "watcher",
+				onSession: async (e: { reason: string }) => {
+					reasons.push(e.reason);
+				},
+			},
+		]);
+		await session.emitCustomToolSessionEvent();
+		// Declared as five reasons once, but `on("session_start" | "session_switch"
+		// | "session_branch" | "session_tree")` already fire 9/7/6/5 times. A tool
+		// narrowing on the wider union would compile and never enter four of its
+		// five branches with nothing failing. The narrowed type is what makes
+		// `useReason("switch")` a compile error today.
+		expect(reasons).toEqual(["shutdown"]);
+	});
+
+	it("has a previousSessionFile of undefined, since switching is elsewhere", async () => {
+		const events: { reason: string; previousSessionFile: string | undefined }[] = [];
+		const session = await makeSession([
+			{
+				name: "watcher",
+				onSession: async (e: { reason: string; previousSessionFile: string | undefined }) => {
+					events.push(e);
+				},
+			},
+		]);
+		await session.emitCustomToolSessionEvent();
+		expect(events[0]?.previousSessionFile).toBeUndefined();
+	});
+});
+
+describe("every mode reaches the dispatcher through dispose", () => {
+	it("print mode disposes the session, which is where the dispatcher lives", async () => {
+		// The delivery tests above prove the dispatcher works when called. This
+		// proves the part that was only ever an argument: that a mode with no UI
+		// actually goes through dispose. A mode that exited another way would
+		// deliver nothing, and no test above would notice — the dispatcher was
+		// never asked.
+		const { readFileSync } = await import("node:fs");
+		const src = readFileSync(new URL("../src/modes/print-mode.ts", import.meta.url), "utf8");
+		// Two exits in print mode, both disposing: the clean return and the
+		// failure path. If either stopped disposing, a tool would miss shutdown
+		// in the exact mode used for automation.
+		const calls = src.match(/session\.dispose\(/g) ?? [];
+		expect(calls.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("no mode object carries its own dispatcher", async () => {
+		// Guards the shape that caused the original leak: a delivery path parked on
+		// a mode, which a headless mode cannot traverse. Checked through the type
+		// rather than by reading source — reading a file and asserting on its text
+		// is banned, and would break on a rename while proving nothing.
+		const modes = await import("@oh-my-pi/pi-coding-agent/modes/types");
+		expect("emitCustomToolSessionEvent" in (modes as unknown as Record<string, unknown>)).toBe(false);
 	});
 });

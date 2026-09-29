@@ -158,8 +158,9 @@ import type {
 } from "../extensibility/extensions";
 import { emitSessionShutdownEvent, TOP_LEVEL_AGENT } from "../extensibility/extensions";
 import { ManagedTimers } from "../extensibility/extensions/managed-timers";
+import { noOpUIContext } from "../extensibility/extensions/runner";
 import { createExtensionModelQuery } from "../extensibility/extensions/model-api";
-import type { CompactOptions, ContextUsage, OutputFormat } from "../extensibility/extensions/types";
+import type { CompactOptions, ContextUsage, OutputFormat, ToolSessionEvent } from "../extensibility/extensions/types";
 import type { CustomCommandContext } from "../extensibility/custom-commands/types";
 import { SkillDescriptionCatalog } from "../extensibility/skill-descriptions";
 import type { Skill, SkillWarning } from "../extensibility/skills";
@@ -176,7 +177,6 @@ import { shutdownMnemopiEmbedClient } from "../mnemopi/embed-client";
 import { getMnemopiSessionState, type MnemopiSessionState, setMnemopiSessionState } from "../mnemopi/state";
 import { MAGIC_KEYWORDS, type MagicKeywordContext, type MagicKeywordId } from "../modes/magic-keywords";
 import { containsMagicKeyword } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
-import { theme } from "@oh-my-pi/pi-tui/theme";
 import { parseTurnBudget } from "../modes/turn-budget";
 import { computeNonMessageTokens } from "@oh-my-pi/pi-tui/status-line/context-usage";
 import { type PlanApprovalDetails, resolveApprovedPlan } from "../plan-mode/approved-plan";
@@ -531,35 +531,6 @@ const EXPERIMENTAL_CONTEXT_REQUIRED_TOOLS: Record<string, true> = {
 // ============================================================================
 // Constants
 // ============================================================================
-
-const noOpUIContext: ExtensionUIContext = {
-	select: async (_title, _options, _dialogOptions) => undefined,
-	confirm: async (_title, _message, _dialogOptions) => false,
-	input: async (_title, _placeholder, _dialogOptions) => undefined,
-	notify: () => {},
-	onTerminalInput: () => () => {},
-	setStatus: () => {},
-	setWorkingMessage: () => {},
-	setWidget: () => {},
-	setTitle: () => {},
-	custom: async () => undefined as never,
-	setEditorText: () => {},
-	pasteToEditor: () => {},
-	getEditorText: () => "",
-	editor: async () => undefined,
-	addAutocompleteProvider: () => {},
-	get theme() {
-		return theme;
-	},
-	getAllThemes: () => Promise.resolve([]),
-	getTheme: () => Promise.resolve(undefined),
-	setTheme: _theme => Promise.resolve({ success: false, error: "UI not available" }),
-	setFooter: () => {},
-	setHeader: () => {},
-	setEditorComponent: () => {},
-	getToolsExpanded: () => false,
-	setToolsExpanded: () => {},
-};
 
 // ============================================================================
 // AgentSession Class
@@ -5345,7 +5316,7 @@ export class AgentSession implements SettingsScope {
 		// tool holding a resource open never heard about shutdown at all. This is
 		// the path every mode shares, because it is dispose() itself.
 		try {
-			await this.emitCustomToolSessionEvent("shutdown");
+			await this.emitCustomToolSessionEvent();
 		} catch (error) {
 			logger.warn("Custom tool onSession shutdown dispatch failed", { error: String(error) });
 		}
@@ -12145,13 +12116,15 @@ export class AgentSession implements SettingsScope {
 	 * a presenter; the others pass nothing and the error is logged, because a
 	 * non-interactive run has nowhere to show a chat bubble.
 	 */
-	async emitCustomToolSessionEvent(
-		reason: "start" | "switch" | "branch" | "tree" | "shutdown",
-		options?: { previousSessionFile?: string; onToolError?: (tool: string, error: string) => void },
-	): Promise<number> {
+	async emitCustomToolSessionEvent(options?: {
+		onToolError?: (tool: string, error: string) => void;
+	}): Promise<number> {
 		const runner = this.#extensionRunner;
 		if (!runner) return 0;
-		const event = { reason, previousSessionFile: options?.previousSessionFile };
+		// Only shutdown reaches a tool: the other four reasons are delivered through
+		// `on("session_start" | "session_switch" | "session_branch" | "session_tree")`,
+		// which already fire on every path that matters.
+		const event: ToolSessionEvent = { reason: "shutdown", previousSessionFile: undefined };
 		const uiContext = runner.getUIContext();
 		let delivered = 0;
 		for (const registeredTool of runner.getAllRegisteredTools() ?? []) {

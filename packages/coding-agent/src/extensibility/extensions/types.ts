@@ -240,6 +240,13 @@ export type AutocompleteProviderFactory = (current: AutocompleteProvider) => Aut
 // and may be invoked from event handlers that have already taken the agent
 // loop's lock — hooks intentionally cannot.
 export interface ExtensionUIContext {
+	/**
+	 * Whether a real UI is attached. Carried on the context rather than inferred
+	 * by the caller: inference meant comparing against a module-private sentinel,
+	 * which silently reports the wrong answer as soon as a second sentinel
+	 * exists — and one did. A handler now reads the same object it was handed.
+	 */
+	readonly hasUI: boolean;
 	/** True when selector timeouts start only after the dialog is presented. */
 	timeoutStartsOnPresentation?: boolean;
 	/** Show a selector and return the selected label, even when an option also includes a description. */
@@ -621,12 +628,28 @@ export interface ToolRenderResultOptions {
 	spinnerFrame?: number;
 }
 
-/** Session event for tool onSession lifecycle */
+/**
+ * Session event for a tool's `onSession` lifecycle.
+ *
+ * Only `"shutdown"` is delivered. It was declared as five reasons, but the other
+ * four already have their own path: `on("session_start")`, `on("session_switch")`,
+ * `on("session_branch")` and `on("session_tree")` fire 9, 7, 6 and 5 times
+ * respectively. A tool that narrowed on the wider union would compile and then
+ * never enter its own branch for four of the five cases, with nothing failing.
+ *
+ * A tool author wanting the other four uses `on()`, which is the event API and
+ * already covers them. Narrowing what is *received* is close to free — a tool only
+ * consumes the value.
+ */
 export interface ToolSessionEvent {
-	/** Reason for the session event */
-	reason: "start" | "switch" | "branch" | "tree" | "shutdown";
-	/** Previous session file path, or undefined for "start" and "shutdown" */
-	previousSessionFile: string | undefined;
+	/** Why the session is ending. */
+	readonly reason: "shutdown";
+	/**
+	 * Previous session file path. Always undefined here: the field belongs to
+	 * the switch event, which is delivered through `on("session_switch")`.
+	 * Kept so a handler can read one shape across both channels.
+	 */
+	readonly previousSessionFile: undefined;
 }
 
 /** Shell invocation details supplied to a registered tool's environment hook. */

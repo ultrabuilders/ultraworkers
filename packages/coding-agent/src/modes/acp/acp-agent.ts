@@ -429,6 +429,10 @@ export function createAcpExtensionUiContext(
 ): ExtensionUIContext {
 	const supportsForm = clientCapabilities?.elicitation?.form != null;
 	return {
+		// A client that cannot present a form cannot receive a dialog, however
+		// the surface is built. This is the same answer runner.hasUI() would give,
+		// stated where the capability is known rather than inferred later.
+		hasUI: supportsForm,
 		select: async (title, options, dialogOptions) => {
 			if (!supportsForm) return undefined;
 			const value = await elicitFromAcpClient(

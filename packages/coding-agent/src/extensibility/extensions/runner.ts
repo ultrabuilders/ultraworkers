@@ -442,7 +442,8 @@ export async function emitSessionShutdownEvent(extensionRunner: ExtensionRunner 
 	}
 }
 
-const noOpUIContext: ExtensionUIContext = {
+export const noOpUIContext: ExtensionUIContext = {
+	hasUI: false,
 	select: async (_title, _options, _dialogOptions) => undefined,
 	confirm: async (_title, _message, _dialogOptions) => false,
 	input: async (_title, _placeholder, _dialogOptions) => undefined,
@@ -1022,7 +1023,10 @@ export class ExtensionRunner {
 	}
 
 	hasUI(): boolean {
-		return this.#uiContext !== noOpUIContext;
+		// Read it off the context rather than comparing against a sentinel: a second
+		// sentinel elsewhere would make a reference comparison report the wrong answer
+		// with nothing failing.
+		return this.#uiContext.hasUI;
 	}
 
 	getExtensionPaths(): string[] {

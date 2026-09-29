@@ -831,6 +831,10 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	 * Extension UI context that uses the RPC protocol.
 	 */
 	class RpcExtensionUIContext implements ExtensionUIContext {
+		// A real UI surface, reached over RPC: the client renders the dialog, the
+		// agent blocks. So this is UI, and reporting otherwise would tell a
+		// handler to skip work it can in fact do.
+		readonly hasUI = true;
 		constructor(
 			private pendingRequests: Map<string, PendingExtensionRequest>,
 			private output: (obj: RpcResponse | RpcExtensionUIRequest | object) => void,

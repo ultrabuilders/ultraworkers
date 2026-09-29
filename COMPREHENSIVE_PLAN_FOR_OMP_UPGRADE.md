@@ -26251,25 +26251,25 @@ Xếp theo mức độ chặn. **Câu 1 phải có câu trả lời trước khi
   hướng đã chốt và nó đã ở phía thận trọng. Trả lời khi tiện; **không** dùng nó làm lý do hoãn
   M3, và **không** dùng nó để mở rộng phạm vi chép.
 
-### 3. Chính sách trust cho plugin (WI-0 của M2)
+### 3. ✅ CHÍNH SÁCH TRUST CHO PLUGIN (WI-0 CỦA M2) — ĐÃ CHỐT (2026-09-29), theo mặc định
 
-- **Vì sao chặn:** hiện **không có trust gate nào**, extension project-local tải không điều kiện,
-  `ctx.exec` trao quyền thực thi tùy ý, và suspend không gỡ provider (credential còn lại). Ở mô
-  hình "every plugin" thì đây là lỗ hổng.
-- **Mặc định nếu không trả lời:** extension project-local **không** tự động load; phải được
-  người dùng cho phép tường minh, và `ctx.exec` bị từ chối với extension không tin cậy.
+- **Đã chốt:** extension project-local **không** tự động load; phải được người dùng cho phép **tường minh**; `ctx.exec` bị **từ chối** với extension không tin cậy. Câu hỏi đã đóng.
+- **Vì sao chặn:** hiện **không có trust gate nào**, `ctx.exec` trao quyền thực thi tùy ý, và suspend không gỡ provider (credential còn lại). Ở mô hình "every plugin" thì đây là lỗ hổng.
+- **Nối với Câu 1:** Câu 1 đã chọn phương án (i), và (i) **không** phải lý do để hoãn WI-0 — slogan đúng nghĩa đen hơn thì plugin càng chính là bề mặt tấn công, nên trust gate càng phải được chốt.
+- **Phần cài enforcement vẫn nằm ngoài M2**, và nay thuộc **M8 W6** (`MILESTONE_8_EXECUTION_PLAN.md`): `isProjectTrusted()` vẫn là `() => true` tại `extensibility/extensions/runner.ts:1293` và `session/agent-session.ts:7552`.
 
-### 4. Có cập nhật changelog không?
+### 4. ✅ CẬP NHẬT CHANGELOG — ĐÃ CHỐT (2026-09-29): **không**
 
-- **Mặc định:** không — theo AGENTS.md, chỉ khi được yêu cầu tường minh.
+- Theo `AGENTS.md`, chỉ khi được yêu cầu tường minh. Câu hỏi đã đóng.
 
-### 5. Gộp 8 chỗ mới phát hiện trong M1 vào scope M1, hay để làm follow-up?
+### 5. ✅ GỘP 8 CHỖ MỚI PHÁT HIỆN TRONG M1 — ĐÃ CHỐT (2026-09-29): sửa 5, phần còn lại để follow-up
 
-- **Mặc định:** sửa 5 chỗ đã nằm trong blast radius, phần còn lại để follow-up.
+- **Sửa 5 chỗ** đã nằm trong blast radius; **3 chỗ còn lại để follow-up**. Câu hỏi đã đóng.
 
-### 6. Gộp ba khai báo `HandlerFn` trùng nhau?
+### 6. ✅ GỘP BA KHAI BÁO `HandlerFn` TRÙNG NHAU — ĐÃ CHỐT (2026-09-29): **để yên**
 
-- **Mặc định:** để yên — dọn dẹp không liên quan mà thay đổi tình cờ chạm tới.
+- Dọn dẹp không liên quan mà thay đổi tình cờ chạm tới. Câu hỏi đã đóng.
+
 
 ---
 

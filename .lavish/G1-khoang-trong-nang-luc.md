@@ -46,7 +46,7 @@ Chỉ **hai** việc đủ lớn để mở milestone. Phần còn lại ở m�
 ### M9 — Orchestration: từ 29 file sẵn có đến một chiến lược
 
 - **Phạm vi.** Registry agent → chính sách ủy quyền (ai được gọi, với ngân sách gì, dừng khi nào) → gom kết quả con → handoff giữa các run. Bám sẵn `spawn-policy.ts` (đang đúng, **không sửa** — M6:1412), `parallel.ts`, `workpool.ts`, `structured-subagent.ts`.
-- **Cỡ.** **XL**, nhưng phần 1 (registry + policy + budget kế thừa `task.softRequestBudget`) làm được trước và độc lập.
+- **Cỡ.** **XL**, nhưng phần 1 (registry + policy + budget kế thừa `task.softRequestBudget`) làm được trước và độc lập. **[Đính chính 2026-09-29: framing gốc sai.]** 29 file `src/task/*` là hệ thống multi-agent **đã ship và đang được bảo trì** (13.695 dòng, test theo issue, `omp-command.ts` spawn subprocess thật) — không phải mồ côi. M9 không đề xuất xây nó; M9 đề xuất thêm một lớp quyết định phía trên. Bỏ M9 không bỏ code nào chết.
 - **Vì sao phục vụ mục tiêu.** "workflow tốt" là nhãn này; 29 file đã tồn tại nhưng 0/84 work item phát triển chúng.
 
 ---

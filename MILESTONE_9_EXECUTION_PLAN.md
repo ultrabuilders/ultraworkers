@@ -1,6 +1,14 @@
 # KẾ HOẠCH THỰC THIỆN — MILESTONE 9: ORCHESTRATION (TỪ 29 FILE SẴN CÓ ĐẾN MỘT CHIẾN LƯỢC)
 
-> **Vì sao file này tồn tại.** omp **đã có** 29 file dưới `packages/coding-agent/src/task/`: `spawn-policy.ts`, `parallel.ts`, `workpool.ts`, `isolation-runner.ts`, `structured-subagent.ts`, `persisted-revive.ts`, `worktree.ts`. Chúng **không thiếu**. Cái thiếu là quyết định: agent nào được gọi, với ngân sách nào, dừng khi nào, và kết quả con gộp lại thành cái gì. Mục tiêu chương trình có *"workflow tốt"* trong đó — và 29 file đó **không có work item nào phát triển**.
+> **Đính chính framing (2026-09-29) — bản đầu của file này đọc sai đã đọc 29 file này.**
+>
+> `src/task/*` **không phải mồ côi.** Đó là **hệ thống multi-agent đã ship và đang được bảo trì**: 29 file, **13.695 dòng** (`executor.ts` 4.463 · `index.ts` 1.594 · `name-generator.ts` 1.577 · `worktree.ts` 1.069 · `structured-subagent.ts` 835 · `isolation-runner.ts` 801 · `workpool.ts` 666), có test thật theo issue (`test/rpc-subagents.test.ts`, `test/sdk-subagent-auth-inheritance.test.ts`, `test/issue-2750-subagent-runtime-fallback.test.ts`, `test/issue-985-subagent-auth-fallback.test.ts`, `test/collab/guest-subagent-badge.test.ts`), và `omp-command.ts` resolve binary `omp` để **spawn subprocess thật**.
+>
+> Câu "không có work item nào phát triển chúng" của bản đầu **đúng về mặt kỹ thuật nhưng ngụ ý sai**: nó gợi ý đây là việc bỏ dở cần người làm tiếp. Sự thật là ngược lại — **không có kế hoạch nào sửa hoặc mở rộng nó, vì nó không phải thứ chương trình upgrade đang đụng tới.**
+>
+> **M9 không đề xuất xây hệ thống này.** Nó đề xuất thêm **một lớp quyết định phía trên**: registry (agent nào tồn tại) · chính sách ủy quyền (ai được gọi, với ngân sách nào, dừng khi nào) · gom kết quả con · handoff giữa các lần chạy. Đó là **năng lực mới**, không phải sửa cái hỏng.
+>
+> **Hệ quả cho quyết định có giữ M9 hay không:** bỏ M9 **không bỏ code nào chết** — hệ thống vẫn chạy, vẫn có test, vẫn được sửa bug khi issue về. Nó chỉ có nghĩa là không có kế hoạch nào *mở rộng* nó. Đây là câu hỏi phạm vi của chủ sở hữu, không phải vấn đề kỹ thuật.
 >
 > `GAP-M6-09` là cổng **chặn** (95 dòng predicate), không phải orchestration. `spawn-policy.ts` được ghi trong M6 là **đúng** và **không được sửa** (`MILESTONE_6_EXECUTION_PLAN.md:1412`). M9 bám vào, không viết lại.
 
@@ -109,7 +117,7 @@ Câu 4 là cái quyết định "workflow" có thật hay không. Không có nó
 
 ## Những điều chưa được kiểm chứng
 
-1. **Chưa đọc 29 file.** Đợt sweep này chỉ **liệt kê tên** (`git ls-files`) và xác nhận chúng tồn tại. Không file nào được mở để đọc nội dung. Phần lớn "cái đã có" trong mục tiêu là suy từ tên file — **đó là bằng chứng yếu nhất trong tài liệu này**, và nó là thứ đầu tiên cần làm trước khi chốt bất kỳ work item nào ở §Phạm vi.
+1. **Chưa đọc nội dung 29 file.** Đợt sweep ban đầu chỉ **liệt kê tên**; sau đó đã đếm dòng (`13.695` tổng) và **liệt kê test** để xác nhận đây là hệ thống đang chạy, không phải mồ côi. Nhưng **không file nào được mở để đọc logic**. Nên "cái đã có" trong mục tiêu vẫn là suy từ **tên + test + dòng**, chưa phải từ hành vi. Đây vẫn là bằng chứng yếu nhất trong file, và là thứ đầu tiên cần làm trước khi chốt bất kỳ work item nào ở §Phạm vi.
 2. **Chưa chạy gì.** `bun test` không chạy được trên máy này.
 3. **`task.softRequestBudget` chưa được mở xem.** Tên nó xuất hiện trong kế hoạch M6 nhưng chưa ai trích dòng nguồn trong cây.
 4. **VCS chưa được đọc.** Cỡ W7 là XL nếu phải làm thật; con số 12.500 dòng là tổng kích thước backend, **không** phải số việc còn lại.

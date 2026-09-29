@@ -77,6 +77,10 @@ export function resolveThemeJson(name: string): ThemeJson | undefined {
 
 export async function getAvailableThemes(): Promise<string[]> {
 	const themes = new Set<string>(Object.keys(getBuiltinThemes()));
+	// Registered themes belong in the list the user picks from. Without this they
+	// resolve only if someone types the exact name, which makes the registry
+	// reachable but not usable.
+	for (const name of REGISTERED_THEMES.keys()) themes.add(name);
 	const customThemesDir = getCustomThemesDir();
 	try {
 		const files = await fs.promises.readdir(customThemesDir);
@@ -102,6 +106,14 @@ export async function getAvailableThemesWithPaths(): Promise<ThemeInfo[]> {
 	// Built-in themes (embedded, no file path)
 	for (const name of Object.keys(getBuiltinThemes())) {
 		result.push({ name, path: undefined });
+	}
+
+	// Themes an extension registered — no file on disk, so `path` stays
+	// undefined, same as a built-in.
+	for (const name of REGISTERED_THEMES.keys()) {
+		if (!result.some(themeInfo => themeInfo.name === name)) {
+			result.push({ name, path: undefined });
+		}
 	}
 
 	// Custom themes

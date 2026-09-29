@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 // seam the barrel exports, and a registry reachable only by deep path is the
 // same dead seam this bead exists to remove.
 import { getBuiltinThemes, getRegisteredThemes, registerTheme, resolveThemeJson } from "@oh-my-pi/pi-tui";
+import { getAvailableThemes, getAvailableThemesWithPaths } from "@oh-my-pi/pi-tui/theme/loader";
 import { isLightTheme } from "@oh-my-pi/pi-tui/theme/theme";
 
 // Contract: an extension contributes a theme, and a name collision with a
@@ -92,5 +93,29 @@ describe("a registered theme is classified like its content", () => {
 		// And a dark one stays dark, so the fix is not just "everything is light".
 		registerTheme("reg-dark-clone", getBuiltinThemes().dark);
 		expect(isLightTheme("reg-dark-clone")).toBe(false);
+	});
+});
+
+describe("a registered theme is listed, not just resolvable", () => {
+	it("appears in both listings the theme picker reads", async () => {
+		// Being resolvable is not the same as being usable. Before this, a
+		// registered theme resolved only if someone typed its exact name, so the
+		// picker never offered it and the registry was reachable but inert.
+		expect(registerTheme("reg-listed", theme("#090909"))).toBe(true);
+		expect(await getAvailableThemes()).toContain("reg-listed");
+		const listed = await getAvailableThemesWithPaths();
+		expect(listed.map(t => t.name)).toContain("reg-listed");
+		// No file on disk, so it is listed the way a built-in is.
+		expect(listed.find(t => t.name === "reg-listed")?.path).toBeUndefined();
+	});
+
+	it("does not list a name a built-in already claims", async () => {
+		// A built-in and a registered theme of the same name are one entry, not
+		// two — a picker showing both would apply whichever sorted first and
+		// look broken.
+		const builtinName = Object.keys(getBuiltinThemes()).at(-1) as string;
+		registerTheme(builtinName, theme("#ff00ff"));
+		const listed = await getAvailableThemesWithPaths();
+		expect(listed.filter(t => t.name === builtinName)).toHaveLength(1);
 	});
 });

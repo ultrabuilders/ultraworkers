@@ -1892,6 +1892,26 @@ Phía omp thì **yếu hơn nữa**: ba file audit không ghim commit nào của
 
 **`@opentui/core`.** ~~Giấy phép đã được xác nhận **MIT qua metadata npm và README**~~ — **ĐÃ KIỂM CHỨNG Ở TẦNG ARTIFACT (2026-09-29), và kết luận tinh chính (xem bên dưới).**
 
+
+**ĐÃ ĐO THẬT (2026-09-29, thư mục tạm NGOÀI repo, Bun 1.4.2 / Windows 11) — cổng đóng hoàn toàn:**
+
+| Phép đo | Kết quả |
+|---|---|
+| `bun add @opentui/core@0.5.12` | **2,92s**, 12 package, không lỗi |
+| `import("@opentui/core")` | **OK — 279 export**; `Yoga` là object, `createCliRenderer` là function |
+| **Yoga flexbox thật** | `flexGrow:1 + minWidth:0` → width **80**; `width:20` → left **80**. **Tầng native chạy đúng.** |
+| `createCliRenderer` | **Khởi tạo thật** và phát chuỗi điều khiển terminal thật (ẩn cursor, hỏi capability `?2026$p`, vào alt screen), tự nhận diện `opentui-notifications` |
+| Footprint | **50 MiB** đã cài (core 14 MiB · native win32-x64 6,2 MiB · phần còn lại là deps) |
+| License đọc từ **bản cài** | `core/LICENSE` = MIT nguyên văn; native mang `LICENSE-GHOSTTY`, `LICENSE-LCMS2`, `LICENSE-LIBWEBP`, `LICENSE-STB`, `LICENSE-WUFFS`, `PATENTS-LIBWEBP` |
+
+**Hai số trong tài liệu này phải sửa:** footprint **25,8 → 50 MiB**; và cặp số "4,02 MiB tải / 19,20 MiB giải nén" chỉ đúng cho **win32-x64**, không phải mọi nền tảng.
+
+**DLL/FFI trên Windows KHÔNG phải vấn đề** — cả hai đều chạy. Câu "chưa ai thử cài nó" ở phần trên **hết hiệu lực**.
+
+**Điều chủ sở hữu nói thẳng về ưu tiên:** *"vấn đề UI dùng cái nào chả được — quan trọng là tái tạo được UI/UX của Claude Code."* Đọc được như: đừng để quyết định chọn thư viện layout chi phối; **tiêu chí là khả năng tái tạo UX**, không phải hệ thống layout.
+
+**Dữ kiện nền, đo trên mạng cùng ngày:** `earendil-works/pi` **không** phụ thuộc `@opentui/core`, không có `yoga`, không có flexbox — **0 hit** trong `bun.lock` của nó. `@earendil-works/pi-tui` chỉ có hai dependency (`get-east-asian-width`, `marked`) và tự viết native N-API/prebuilds cho ba nền tảng. Vì `packages/tui` của omp **chính là** `pi-tui` đổi scope, nên câu "opencode **mua** flexbox từ opentui" là **đối lập, không phải tiền lệ** — omp đã đứng trên nền tảng mà `pi` chứng minh chạy được.
+
 **Tiền đề môi trường cho cổng kiểm của M3 (`bun test packages/tui`): cần addon native.** Đây **không phải hạn chế của máy** — đây là *một bước build còn thiếu*. Trên máy sạch, `bun test packages/coding-agent/test/**` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64`. Làm một lần là xong:
 
 ```bash

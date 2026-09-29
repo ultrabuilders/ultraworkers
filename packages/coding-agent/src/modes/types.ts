@@ -38,6 +38,7 @@ import type { TokenRateMeter } from "../utils/token-rate";
 import type { AssistantMessageComponent } from "@oh-my-pi/pi-tui/chat/assistant-message";
 import type { BashExecutionComponent } from "@oh-my-pi/pi-tui/chat/bash-execution";
 import type { CustomEditor } from "@oh-my-pi/pi-tui/prompt/custom-editor";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import type { EvalExecutionComponent } from "@oh-my-pi/pi-tui/chat/eval-execution";
 import type { HookEditorComponent } from "@oh-my-pi/pi-tui/overlays/hook-editor";
 import type { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
@@ -283,7 +284,7 @@ export interface InteractiveModeContext {
 	/** Stack extension autocomplete behavior on top of the built-in editor provider. */
 	addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
 	setEditorComponent(
-		factory: ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
+		factory: ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
 	): void;
 
 	// UI helpers
@@ -604,7 +605,7 @@ export interface InteractiveModeContext {
 	showHookNotify(message: string, type?: "info" | "warning" | "error"): void;
 	showHookCustom<T>(
 		factory: (
-			tui: TUI,
+			tui: ExtensionTUISurface,
 			theme: Theme,
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,

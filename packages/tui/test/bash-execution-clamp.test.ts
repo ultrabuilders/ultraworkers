@@ -1,8 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { BashExecutionComponent } from "@oh-my-pi/pi-tui/chat/bash-execution";
 import { getThemeByName, setThemeInstance, type Theme } from "@oh-my-pi/pi-tui/theme";
-import type { TUI } from "@oh-my-pi/pi-tui";
 import { visibleWidth } from "@oh-my-pi/pi-tui";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui/tui";
 
 const MAX_DISPLAY_LINE_CHARS = 4000;
 let darkTheme: Theme;
@@ -14,7 +14,7 @@ beforeAll(async () => {
 });
 
 describe("BashExecutionComponent #clampDisplayLine", () => {
-	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as TUI;
+	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as ExtensionTUISurface;
 
 	beforeEach(() => {
 		setThemeInstance(darkTheme);

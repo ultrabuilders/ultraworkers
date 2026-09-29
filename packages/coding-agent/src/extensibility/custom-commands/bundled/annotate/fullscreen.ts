@@ -1,4 +1,4 @@
-import type { TUI } from "@oh-my-pi/pi-tui";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import { AnnotationOverlay } from "@oh-my-pi/pi-tui/overlays/annotation-overlay";
 import type { CustomCommandContext } from "../../../../extensibility/custom-commands/types";
 import type {
@@ -17,15 +17,22 @@ const ANNOTATION_OVERLAY_OPTIONS = {
 	mouseTracking: false,
 } as const;
 
-async function editAnnotationDraft(tui: TUI, draft: string, commit: (text: string | null) => void): Promise<void> {
+async function editAnnotationDraft(
+	tui: ExtensionTUISurface,
+	draft: string,
+	commit: (text: string | null) => void,
+): Promise<void> {
 	const editor = getEditorCommand();
 	if (!editor) throw new Error("Set $VISUAL or $EDITOR to edit an annotation externally.");
-	tui.stop();
+	// Hand the terminal to the editor, not to a stopped TUI: stop() tears down the
+	// render engine and the debug server, so coming back from it would have to
+	// restart the whole TUI while this overlay is still mounted.
+	tui.suspendInput();
 	try {
 		commit(await openInEditor(editor, draft, { extension: ".md" }));
 	} finally {
-		tui.start();
-		tui.requestRender(true);
+		tui.resumeInput();
+		tui.requestRender();
 	}
 }
 

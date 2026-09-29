@@ -74,6 +74,7 @@ import { appKey, editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import { formatModelString, type ResolvedModelRoleValue } from "../config/model-resolver";
 import { isSettingsInitialized, Settings, settings } from "../config/settings";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import type {
 	AutocompleteProviderFactory,
 	ContextUsage,
@@ -6727,7 +6728,9 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	setEditorComponent(
-		factory: ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
+		factory:
+			| ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor)
+			| undefined,
 	): void {
 		const previousEditor = this.editor;
 		const previousText = previousEditor.getText();
@@ -7929,7 +7932,7 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	showHookCustom<T>(
 		factory: (
-			tui: TUI,
+			tui: ExtensionTUISurface,
 			theme: Theme,
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,

@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
-import { getKeybindings, setKeybindings, type TUI } from "@oh-my-pi/pi-tui";
+import { getKeybindings, setKeybindings, type ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import type { NativeChild, NativeNode } from "@oh-my-pi/pi-tui/native/node";
 import { AnnotationOverlay } from "@oh-my-pi/pi-tui/overlays/annotation-overlay";
 import type { CodeReviewOverlayResult, ReviewDiffFile } from "@oh-my-pi/pi-tui/overlays/annotation-types";
@@ -135,7 +135,7 @@ describe("review overlays under a native surface", () => {
 		};
 		let result: CodeReviewOverlayResult | undefined;
 		const overlay = new AnnotationOverlay(
-			{ requestRender() {} } as unknown as TUI,
+			{ requestRender() {} } as unknown as ExtensionTUISurface,
 			darkTheme!,
 			getKeybindings() as KeybindingsManager,
 			[file],
@@ -163,7 +163,7 @@ describe("review overlays under a native surface", () => {
 	it("code review: a disabled paste action ignores activation", () => {
 		const onComplete = vi.fn();
 		const overlay = new AnnotationOverlay(
-			{ requestRender() {} } as unknown as TUI,
+			{ requestRender() {} } as unknown as ExtensionTUISurface,
 			darkTheme!,
 			getKeybindings() as KeybindingsManager,
 			[],

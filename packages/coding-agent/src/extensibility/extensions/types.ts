@@ -63,9 +63,9 @@ import type {
 	Component,
 	EditorTheme,
 	KeyId,
+	ExtensionTUISurface,
 	OverlayHandle,
 	OverlayOptions,
-	TUI,
 } from "@oh-my-pi/pi-tui";
 import type { logger as PiLogger } from "@oh-my-pi/pi-utils";
 import type { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
@@ -287,7 +287,7 @@ export interface ExtensionUIContext {
 	/** Show a custom component with keyboard focus. */
 	custom<T>(
 		factory: (
-			tui: TUI,
+			tui: ExtensionTUISurface,
 			theme: Theme,
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
@@ -333,7 +333,7 @@ export interface ExtensionUIContext {
 	 * required by interactive mode.
 	 */
 	setEditorComponent(
-		factory: ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
+		factory: ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
 	): void;
 
 	/** Get the current theme for styling. */

@@ -33,7 +33,7 @@ import {
 	padding,
 	routeSgrMouseInput,
 	sliceByColumn,
-	type TUI,
+	type ExtensionTUISurface,
 	truncateToWidth,
 	visibleWidth,
 } from "../index";
@@ -82,7 +82,7 @@ export interface BranchVariantPath {
 }
 
 export interface RewindSelectorDeps {
-	ui: TUI;
+	ui: ExtensionTUISurface;
 	getTool?: (name: string) => AgentTool | undefined;
 	/** Whether the active registry entry came from a built-in factory. */
 	isBuiltInTool?: (name: string) => boolean;
@@ -174,7 +174,7 @@ export class RewindSelectorComponent implements Component {
 		this.#builder = this.#replay(tail);
 		this.#selected = Math.max(0, this.#targets.length - 1);
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.deps.ui.terminal?.rows || process.stdout.rows || 40,
+			getHeight: () => this.deps.ui.viewportSize.rows || process.stdout.rows || 40,
 			frame: context => this.#frame(context.contentWidth),
 		});
 	}

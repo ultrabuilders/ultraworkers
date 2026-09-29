@@ -4,7 +4,7 @@ import type { TspKind, TspPickerProps, TspProps } from "@oh-my-pi/pi-wire";
 import type { SessionMessageEntryLike } from "../src/chat/transcript-entry";
 import type { DescribeContext, NativeChild, NativeNode } from "../src/native/node";
 import { setNativeRendering } from "../src/native/state";
-import type { TUI } from "../src/index";
+import type { ExtensionTUISurface } from "../src/index";
 import { CopySelectorComponent } from "../src/overlays/copy-selector";
 import { RewindSelectorComponent } from "../src/overlays/rewind-selector";
 import { TreeSelectorComponent, type TreeSelectorNode } from "../src/overlays/tree-selector";
@@ -18,7 +18,7 @@ const pickerCx: DescribeContext = {
 	feature: () => true,
 };
 const genericCx: DescribeContext = { ...pickerCx, supports: (kind: TspKind) => kind !== "picker" };
-const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as TUI;
+const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as ExtensionTUISurface;
 
 beforeAll(async () => {
 	await initTheme(false);

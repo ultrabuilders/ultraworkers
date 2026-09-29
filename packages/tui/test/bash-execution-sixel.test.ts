@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:
 import { BashExecutionComponent } from "@oh-my-pi/pi-tui/chat/bash-execution";
 import { getThemeByName, setThemeInstance, type Theme } from "@oh-my-pi/pi-tui/theme";
 import { sanitizeWithOptionalSixelPassthrough } from "@oh-my-pi/pi-tui/render/sixel";
-import type { TUI } from "@oh-my-pi/pi-tui";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 
 const SIXEL = "\x1bPqabc\x1b\\";
@@ -17,7 +17,7 @@ beforeAll(async () => {
 describe("BashExecutionComponent SIXEL sanitization", () => {
 	const originalForceProtocol = Bun.env.PI_FORCE_IMAGE_PROTOCOL;
 	const originalAllowPassthrough = Bun.env.PI_ALLOW_SIXEL_PASSTHROUGH;
-	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as TUI;
+	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as ExtensionTUISurface;
 
 	beforeEach(() => {
 		setThemeInstance(darkTheme);
@@ -86,7 +86,7 @@ describe("BashExecutionComponent SIXEL sanitization", () => {
 });
 
 describe("BashExecutionComponent streaming throttle", () => {
-	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as TUI;
+	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as ExtensionTUISurface;
 
 	beforeEach(() => {
 		setThemeInstance(darkTheme);
@@ -149,7 +149,7 @@ describe("BashExecutionComponent streaming throttle", () => {
 });
 
 describe("BashExecutionComponent expand footer", () => {
-	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as TUI;
+	const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as ExtensionTUISurface;
 
 	beforeEach(() => {
 		setThemeInstance(darkTheme);

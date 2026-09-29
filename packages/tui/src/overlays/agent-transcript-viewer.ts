@@ -16,7 +16,6 @@
 import type * as fs from "node:fs";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { TspSpan, TspTone } from "@oh-my-pi/pi-wire";
-import type { Component, TUI } from "../tui";
 import { Editor } from "../components/editor";
 import { matchesKey } from "../keys";
 import { routeSgrMouseInput } from "../mouse";
@@ -28,6 +27,8 @@ import type { AgentLifecycleLike } from "./agent-hub-types";
 import type { AgentHubRegistry, AgentStatus } from "./agent-hub-types";
 import type { SessionMessageEntryLike } from "../chat/transcript-entry";
 import type { ObservableSession, SessionObserverRegistry } from "./session-observer-registry";
+import type { ExtensionTUISurface } from "../tui";
+import type { Component } from "../tui";
 import { getEditorTheme, theme } from "../theme/theme";
 import { matchesSelectDown, matchesSelectUp } from "../keybinding-matchers";
 import type { AgentHubRemote } from "./agent-hub";
@@ -65,7 +66,7 @@ export interface AgentTranscriptViewerDeps {
 	observers?: SessionObserverRegistry;
 	/** Revive+prompt path for messageable local agents. Lazy to avoid touching the global. */
 	lifecycle?: () => AgentLifecycleLike;
-	ui: TUI;
+	ui: ExtensionTUISurface;
 	getTool?: (name: string) => AgentTool | undefined;
 	/** Whether the active registry entry came from a built-in factory. */
 	isBuiltInTool?: (name: string) => boolean;
@@ -202,7 +203,7 @@ export class AgentTranscriptViewer implements Component {
 			requestRender: deps.requestRender,
 		});
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.#deps.ui.terminal?.rows || process.stdout.rows || 40,
+			getHeight: () => this.#deps.ui.viewportSize?.rows || process.stdout.rows || 40,
 			frame: context => this.#frame(context),
 			followBottom: true,
 		});

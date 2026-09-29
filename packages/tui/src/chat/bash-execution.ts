@@ -7,7 +7,7 @@ import { Image } from "../components/image";
 import type { Loader } from "../components/loader";
 import { Text } from "../components/text";
 import { getImageDimensions, imageFallback, ImageProtocol, TERMINAL } from "../terminal-capabilities";
-import { Container, type TUI } from "../tui";
+import { Container, type ExtensionTUISurface } from "../tui";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import type { Terminal as XtermTerminalType } from "@oh-my-pi/pi-utils/vterm";
 import { theme } from "../theme/theme";
@@ -17,6 +17,7 @@ import { resolveImageOptions } from "../render/render-utils";
 import { OutputPane } from "../render/output-pane";
 import { loadXtermTerminal, readTerminalRows, styleTerminalRow } from "../tools/terminal-output";
 import { getSixelLineMask, isSixelPassthroughEnabled, sanitizeWithOptionalSixelPassthrough } from "../render/sixel";
+import type { TUI } from "../tui";
 import {
 	buildExecutionFrame,
 	buildStatusFooter,
@@ -45,10 +46,10 @@ const MAX_PTY_QUEUE_CHUNKS = 512;
 let nextBashExecutionId = 0;
 
 /** PTY size for `!` commands: the execution frame's inner content area. */
-export function bashPtyViewport(ui: TUI): { cols: number; rows: number } {
+export function bashPtyViewport(ui: ExtensionTUISurface): { cols: number; rows: number } {
 	return {
-		cols: Math.max(20, (ui.terminal?.columns ?? 80) - 2),
-		rows: Math.max(5, (ui.terminal?.rows ?? 24) - 4),
+		cols: Math.max(20, ui.viewportSize.columns - 2),
+		rows: Math.max(5, ui.viewportSize.rows - 4),
 	};
 }
 
@@ -70,7 +71,7 @@ export class BashExecutionComponent extends Container {
 	#contentContainer: Container;
 	#outputPane: OutputPane;
 	#headerText: Text;
-	#ui: TUI;
+	#ui: ExtensionTUISurface;
 	// PTY replay state: raw terminal bytes stream into a headless xterm and the
 	// display lines are re-read from its screen+scrollback (same pipeline as
 	// `launch` logs), so color survives and CR/cursor movement render correctly.
@@ -93,7 +94,7 @@ export class BashExecutionComponent extends Container {
 	readonly #native = new Memo();
 	readonly #nativeImages = new NativeImageCache();
 
-	constructor(command: string, ui: TUI, excludeFromContext = false) {
+	constructor(command: string, ui: ExtensionTUISurface, excludeFromContext = false) {
 		super();
 		this.#command = command;
 		this.#ui = ui;
@@ -101,7 +102,7 @@ export class BashExecutionComponent extends Container {
 		// Use dim border for excluded-from-context commands (!! prefix)
 		const colorKey = excludeFromContext ? "dim" : "bashMode";
 		this.#colorKey = colorKey;
-		const { contentContainer, loader } = buildExecutionFrame(this, ui, colorKey);
+		const { contentContainer, loader } = buildExecutionFrame(this, ui as unknown as TUI, colorKey);
 		this.#contentContainer = contentContainer;
 		this.#loader = loader;
 		this.#outputPane = new OutputPane(theme, {

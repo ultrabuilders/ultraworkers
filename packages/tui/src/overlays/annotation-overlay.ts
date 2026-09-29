@@ -6,7 +6,7 @@ import {
 	padding,
 	replaceTabs,
 	ScrollView,
-	type TUI,
+	type ExtensionTUISurface,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
@@ -178,7 +178,7 @@ export class AnnotationOverlay implements Component {
 	/** Body the memoized root was built from. */
 	#nativeRootBody: NativeBody | undefined;
 
-	readonly #tui: TUI;
+	readonly #tui: ExtensionTUISurface;
 	readonly #theme: Theme;
 	readonly #keybindings: KeybindingsManager;
 	readonly #files: readonly ReviewDiffFile[];
@@ -186,7 +186,7 @@ export class AnnotationOverlay implements Component {
 	readonly #callbacks: OverlayCallbacks;
 
 	constructor(
-		tui: TUI,
+		tui: ExtensionTUISurface,
 		theme: Theme,
 		keybindings: KeybindingsManager,
 		files: readonly ReviewDiffFile[],
@@ -194,14 +194,14 @@ export class AnnotationOverlay implements Component {
 		callbacks: CodeReviewOverlayCallbacks,
 	);
 	constructor(
-		tui: TUI,
+		tui: ExtensionTUISurface,
 		theme: Theme,
 		keybindings: KeybindingsManager,
 		source: TextReviewSource,
 		callbacks: TextReviewOverlayCallbacks,
 	);
 	constructor(
-		tui: TUI,
+		tui: ExtensionTUISurface,
 		theme: Theme,
 		keybindings: KeybindingsManager,
 		filesOrSource: readonly ReviewDiffFile[] | TextReviewSource,

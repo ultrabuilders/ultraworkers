@@ -5,7 +5,7 @@
 
 import type { Loader } from "../components/loader";
 import { Text } from "../components/text";
-import { Container, type TUI } from "../tui";
+import { Container, type ExtensionTUISurface } from "../tui";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import { highlightCode, theme } from "../theme/theme";
 import type { OutputArtifactError } from "../tools/streaming-output";
@@ -23,6 +23,7 @@ import {
 	resolveExecutionStatus,
 } from "./execution-shared";
 import { code, span } from "../native/describe";
+import type { TUI } from "../tui";
 import { type DescribeContext, type NativeNode, type NativeUiEvent, rootToggleExpanded } from "../native/node";
 import { Memo } from "../native/memo";
 
@@ -65,14 +66,14 @@ export class EvalExecutionComponent extends Container {
 		return new Text(headerLines.join("\n"), 1, 0);
 	}
 
-	constructor(code: string, ui: TUI, excludeFromContext = false, language: EvalExecutionLanguage = "python") {
+	constructor(code: string, ui: ExtensionTUISurface, excludeFromContext = false, language: EvalExecutionLanguage = "python") {
 		super();
 		this.#code = code;
 		this.#excludeFromContext = excludeFromContext;
 		this.#language = language;
 
 		const colorKey: ExecutionColorKey = this.#excludeFromContext ? "dim" : "pythonMode";
-		const { contentContainer, loader } = buildExecutionFrame(this, ui, colorKey);
+		const { contentContainer, loader } = buildExecutionFrame(this, ui as unknown as TUI, colorKey);
 		this.#contentContainer = contentContainer;
 		this.#loader = loader;
 		this.#outputPane = new OutputPane(theme, {

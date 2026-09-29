@@ -756,6 +756,75 @@ export function coalesceAdjacentSgr(line: string): string {
 }
 
 /**
+ * The surface an extension is given when it builds a custom component.
+ *
+ * This is deliberately NOT {@link TUI}. The TUI class is the product's own
+ * render engine: handing it to an extension would expose 37 methods that belong
+ * to the host alone, including `setFrameProvider` (a bounded frame provider the
+ * product owns) and `resetDisplay` (a destructive scrollback reset that is never
+ * part of ordinary rendering). An extension holding the real class could reset
+ * the terminal, swap the frame provider, or inject debug input, none of which is
+ * part of the component contract.
+ *
+ * What remains is the part that is genuinely a component's: mount children, mark
+ * the subtree dirty, and read the frame cost. That is enough to build and compose
+ * a component without giving the host's internals away.
+ */
+export interface ExtensionTUISurface extends Container {
+	/**
+	 * Ask for a repaint on the next frame. `force` rewrites the whole viewport
+	 * instead of relying on the differ — needed when something outside the row
+	 * model changed what is on screen, e.g. an external editor wrote a file.
+	 */
+	requestRender(force?: boolean): void;
+	/**
+	 * Ask for an ordinary (non-forced) repaint. Identical to
+	 * `requestRender()` with no argument; the explicit name reads better at a
+	 * call site that is repainting one component rather than the frame.
+	 */
+	requestComponentRender(component: Component): void;
+	/** Render synchronously, now. Intended for measurement, not for the hot path. */
+	renderNow(): void;
+	/** Present `component` as an overlay. Returns a handle to hide or re-show it. */
+	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle;
+	/** Remove an overlay previously passed to {@link showOverlay}. */
+	hideOverlay(component: Component): void;
+	/** True when `component` is currently mounted as an overlay. */
+	hasOverlay(component: Component): boolean;
+	/** Which component holds keyboard focus, if any. `null` when nothing is focused. */
+	getFocused(): Component | null;
+	/**
+	 * Size of the drawable area in terminal cells, at the time of the call.
+	 *
+	 * Dimensions only — not the Terminal itself. A component sizing itself to
+	 * the window needs these; writing escape sequences does not, and handing over
+	 * the Terminal would let an extension drive the tty directly.
+	 */
+	readonly viewportSize: { readonly columns: number; readonly rows: number };
+	/**
+	 * The image budget in force, so a component that embeds images can ask
+	 * whether one more would be dropped rather than guessing from a constant
+	 * that the user may have changed.
+	 */
+	readonly imageBudget: ImageBudget;
+	/**
+	 * Stop reading terminal input, leaving rendering running, and hand the
+	 * terminal to something else — an external `$EDITOR`, for instance.
+	 *
+	 * This is deliberately not `stop()`. `stop()` tears down the render engine,
+	 * the debug server and the native bridge; a component that wanted to open an
+	 * editor would then have to restart the whole TUI to get it back, and any
+	 * other overlay mounted at the same time would lose its engine. Pair with
+	 * {@link resumeInput} once the external editor has exited.
+	 */
+	suspendInput(): void;
+	/** Undo {@link suspendInput}. */
+	resumeInput(): void;
+	/** Milliseconds the last frame took to paint, for a component deciding its own budget. */
+	readonly lastFrameCostMs: number;
+}
+
+/**
  * TUI - Main class for managing terminal UI with differential rendering
  */
 export class TUI extends Container {
@@ -1143,6 +1212,15 @@ export class TUI extends Container {
 	/** Component currently receiving keyboard input, if any. */
 	getFocused(): Component | null {
 		return this.#focusedComponent;
+	}
+
+	/**
+	 * Drawable area in terminal cells, read live. Dimensions only: a component
+	 * sizing itself needs these, and handing over the Terminal would let it
+	 * drive the tty directly.
+	 */
+	get viewportSize(): { readonly columns: number; readonly rows: number } {
+		return { columns: this.terminal.columns, rows: this.terminal.rows };
 	}
 	/** Last viewport successfully written by the renderer, for debug inspection. */
 	getDebugPaint():
@@ -2056,6 +2134,24 @@ export class TUI extends Container {
 		this.terminal.enableInput?.();
 		this.#querySixelSupport();
 		this.#queryCellSize();
+	}
+
+	/**
+	 * Hand the terminal to something else while rendering keeps running — an
+	 * external `$EDITOR`, for instance. Bytes arriving meanwhile are not read, so
+	 * they land in the editor rather than being parsed as keybindings; the ones
+	 * already queued are drained first so a key held down across the switch does
+	 * not fire a command when input resumes.
+	 */
+	suspendInput(): void {
+		if (this.#stopped || this.#inputDeferred) return;
+		this.#inputDeferred = true;
+		this.terminal.drainInput(50);
+	}
+
+	/** Undo {@link suspendInput}, replaying anything typed while suspended. */
+	resumeInput(): void {
+		this.enableInput();
 	}
 
 	addStartListener(listener: StartListener): () => void {

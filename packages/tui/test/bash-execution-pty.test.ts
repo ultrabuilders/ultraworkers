@@ -2,9 +2,15 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { BashExecutionComponent } from "@oh-my-pi/pi-tui/chat/bash-execution";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
 import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
-import type { TUI } from "@oh-my-pi/pi-tui";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 
-const ui = { requestRender: () => {}, requestComponentRender: () => {} } as unknown as TUI;
+const ui = {
+	requestRender: () => {},
+	requestComponentRender: () => {},
+	// BashExecutionComponent sizes its PTY viewport from the surface, not the
+	// terminal object: it asks for dimensions only, never for escape sequences.
+	viewportSize: { columns: 100, rows: 40 },
+} as unknown as ExtensionTUISurface;
 
 // Condition-driven poll, not a fixed wait: xterm's write pipeline completes on
 // its own internal scheduling (no promise/event exposed to the component), so

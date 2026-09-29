@@ -6,7 +6,7 @@ import { Image } from "../components/image";
 import { Spacer } from "../components/spacer";
 import { Text } from "../components/text";
 import { getImageDimensions, ImageProtocol, imageFallback, TERMINAL } from "../terminal-capabilities";
-import { type Component, Container, type TUI } from "../tui";
+import { type Component, Container, type ExtensionTUISurface } from "../tui";
 import { truncateToWidth } from "../utils";
 import { getProjectDir, isRecord, logger, sanitizeText } from "@oh-my-pi/pi-utils";
 import type { Theme } from "../theme/theme";
@@ -184,7 +184,7 @@ export interface ToolExecutionUi {
 	requestRender(): void;
 	requestComponentRender(component: Component): void;
 	resetDisplay(): void;
-	imageBudget?: TUI["imageBudget"];
+	imageBudget?: ExtensionTUISurface["imageBudget"];
 }
 
 export interface ToolExecutionOptions {

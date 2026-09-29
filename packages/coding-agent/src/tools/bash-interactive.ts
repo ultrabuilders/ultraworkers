@@ -46,7 +46,7 @@ export async function runInteractiveBashPty(
 				const component = new BashInteractiveOverlayComponent(
 					options.command,
 					uiTheme,
-					() => tui.terminal.rows,
+					() => tui.viewportSize.rows,
 					XtermTerminal,
 					{ resize: (columns, rows) => session.resize(columns, rows) },
 				);
@@ -70,8 +70,8 @@ export async function runInteractiveBashPty(
 						});
 					})();
 				};
-				const cols = Math.max(20, tui.terminal.columns - 2);
-				const rows = Math.max(5, tui.terminal.rows - 4);
+				const cols = Math.max(20, tui.viewportSize.columns - 2);
+				const rows = Math.max(5, tui.viewportSize.rows - 4);
 				component.setHandlers(
 					data => {
 						try {

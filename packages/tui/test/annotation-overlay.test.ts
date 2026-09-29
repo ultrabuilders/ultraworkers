@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, afterEach, it } from "bun:test";
 import { stripVTControlCharacters } from "node:util";
 import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
-import { getKeybindings, setKeybindings, type TUI } from "@oh-my-pi/pi-tui";
+import { getKeybindings, setKeybindings, type ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import { getThemeByName, setThemeInstance, type Theme } from "@oh-my-pi/pi-tui/theme";
 import { AnnotationOverlay, type AnnotationOverlayCallbacks } from "@oh-my-pi/pi-tui/overlays/annotation-overlay";
 import type {
@@ -48,12 +48,12 @@ function makeTextOverlay(
 	return new AnnotationOverlay(makeTui(), darkTheme!, getKeybindings() as KeybindingsManager, source, { onComplete });
 }
 
-function makeTui(): TUI {
+function makeTui(): ExtensionTUISurface {
 	return {
 		requestRender() {},
 		stop() {},
 		start() {},
-	} as unknown as TUI;
+	} as unknown as ExtensionTUISurface;
 }
 
 function diffFile(path: string, hunkHeader: string, rows: ReviewDiffFile["rows"]): ReviewDiffFile {

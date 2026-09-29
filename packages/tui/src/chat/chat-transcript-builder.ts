@@ -13,7 +13,7 @@
  */
 import type { AgentMessage, AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { Usage } from "@oh-my-pi/pi-ai";
-import { type Component, type TUI } from "../tui";
+import { type Component, type ExtensionTUISurface, type TUI } from "../tui";
 import type { AdvisorMessageDetails } from "./messages";
 import { COLLAB_PROMPT_MESSAGE_TYPE, type CollabPromptDetails } from "./messages";
 import { chatTranscriptDisplayPreferences as displayPreferences } from "./display-preferences";
@@ -72,7 +72,7 @@ import { createUsageRowBlock, TurnUsageTally, turnElapsedMs } from "../overlays/
 import { CollapsedSyntheticMessageComponent, UserMessageComponent } from "./user-message";
 
 export interface ChatTranscriptBuilderDeps {
-	ui: TUI;
+	ui: ExtensionTUISurface;
 	getTool?: (name: string) => AgentTool | undefined;
 	/** Whether the active registry entry came from a built-in factory. */
 	isBuiltInTool?: (name: string) => boolean;
@@ -496,7 +496,7 @@ export class ChatTranscriptBuilder {
 					showImages: displayPreferences.showImages,
 				},
 				this.#deps.getTool?.(content.name),
-				this.#deps.ui,
+				this.#deps.ui as unknown as TUI,
 				this.#deps.cwd,
 				content.id,
 			);

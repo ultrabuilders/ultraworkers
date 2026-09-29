@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - `ExtensionTUISurface` — the narrowed surface an extension receives for building a component, with `requestRender`, `requestComponentRender`, overlay mounting, focus, `viewportSize`, `imageBudget` and `suspendInput` / `resumeInput`
+- `registerTheme(name, theme)` adds a theme at runtime, exported from the package root so an extension can reach it. A name that collides with a built-in is refused and logged rather than silently resolving to the built-in
 ### Added
 
 - Added Tern Surface Protocol (TSP) integration for native terminal rendering

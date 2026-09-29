@@ -2,4 +2,5 @@
 export * from "../lang-from-path";
 export * from "./session-color";
 export * from "./shimmer";
+export * from "./loader";
 export * from "./theme";

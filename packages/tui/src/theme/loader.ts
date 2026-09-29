@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { adjustHsv } from "@oh-my-pi/pi-utils/color";
 import { getCustomThemesDir } from "@oh-my-pi/pi-utils/dirs";
 import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
+import { logger } from "@oh-my-pi/pi-utils";
 import { detectColorMode, resolveThemeColors } from "./color";
 import darkThemeJson from "./dark.json" with { type: "json" };
 import { defaultThemes } from "./defaults";
@@ -23,6 +24,55 @@ const BUILTIN_THEMES: Record<string, ThemeJson> = {
 
 export function getBuiltinThemes(): Record<string, ThemeJson> {
 	return BUILTIN_THEMES;
+}
+
+/**
+ * Themes contributed by extensions, keyed by name.
+ *
+ * Registered rather than discovered from disk, because an extension already has
+ * a registration API and a themes directory would make loading order — and
+ * therefore which theme wins — depend on filesystem order.
+ */
+const REGISTERED_THEMES = new Map<string, ThemeJson>();
+
+/**
+ * Add a theme. Returns false when the name is already taken by a built-in or by
+ * an earlier registration — the caller can then warn, because a silently
+ * dropped theme is the failure this registry exists to make visible.
+ */
+export function registerTheme(name: string, theme: ThemeJson): boolean {
+	if (name.length === 0 || name !== name.trim()) return false;
+	if (name in BUILTIN_THEMES) {
+		// The built-in wins, and saying so is the whole point: an extension whose
+		// theme silently never appears is indistinguishable from one the user
+		// mistyped the name of.
+		logger.warn("Theme name collides with a built-in theme; the built-in is used", { name });
+		return false;
+	}
+	if (REGISTERED_THEMES.has(name)) {
+		logger.warn("Theme name already registered; the first registration is kept", { name });
+		return false;
+	}
+	REGISTERED_THEMES.set(name, theme);
+	return true;
+}
+
+/** Themes an extension registered, in registration order. */
+export function getRegisteredThemes(): ReadonlyMap<string, ThemeJson> {
+	return REGISTERED_THEMES;
+}
+
+/**
+ * Resolve a theme name to its definition, extension themes included.
+ *
+ * Built-in wins on a name collision, and the loser is reported rather than
+ * dropped in silence: a theme that never loads and a theme that was never
+ * registered look identical to a user, and only one of them is a bug they can
+ * report.
+ */
+export function resolveThemeJson(name: string): ThemeJson | undefined {
+	if (name in BUILTIN_THEMES) return BUILTIN_THEMES[name];
+	return REGISTERED_THEMES.get(name);
 }
 
 export async function getAvailableThemes(): Promise<string[]> {
@@ -107,10 +157,8 @@ function parseThemeJson(name: string, content: string): ThemeJson {
 }
 
 export async function loadThemeJson(name: string): Promise<ThemeJson> {
-	const builtinThemes = getBuiltinThemes();
-	if (name in builtinThemes) {
-		return builtinThemes[name];
-	}
+	const registered = resolveThemeJson(name);
+	if (registered) return registered;
 	const customThemesDir = getCustomThemesDir();
 	const themePath = path.join(customThemesDir, `${name}.json`);
 	try {
@@ -123,10 +171,8 @@ export async function loadThemeJson(name: string): Promise<ThemeJson> {
 
 /** Load a theme definition synchronously for the first terminal frame. */
 export function loadThemeJsonSync(name: string): ThemeJson {
-	const builtinThemes = getBuiltinThemes();
-	if (name in builtinThemes) {
-		return builtinThemes[name];
-	}
+	const registered = resolveThemeJson(name);
+	if (registered) return registered;
 	const themePath = path.join(getCustomThemesDir(), `${name}.json`);
 	try {
 		return parseThemeJson(name, fs.readFileSync(themePath, "utf8"));

@@ -101,7 +101,10 @@ function convertToLegacyConfig(server: MCPServer): MCPServerConfig {
  * @param options Load options
  */
 export async function loadAllMCPConfigs(cwd: string, options?: LoadMCPConfigsOptions): Promise<LoadMCPConfigsResult> {
-	const enableProjectConfig = options?.enableProjectConfig ?? true;
+	// A project-scope mcp.json travels with the repository. Defaulting this on lets a cloned
+	// repo start arbitrary processes and run `!command` env/header values, so it stays off
+	// unless the user opts in.
+	const enableProjectConfig = options?.enableProjectConfig ?? false;
 	const filterExa = options?.filterExa ?? true;
 	const filterBrowser = options?.filterBrowser ?? false;
 

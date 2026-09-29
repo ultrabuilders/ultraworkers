@@ -1,0 +1,3414 @@
+# KẾ HOẠCH THỰC THIỆN — MILESTONE 3: BỀ MẶT NGƯỜI DÙNG KIỂU CLAUDE CODE
+
+Cả chương trình hướng tới một coding agent duy nhất, mọi thứ là plugin. M1 đã làm `omp` thành strict
+superset của `earendil-works/pi`; M2 cắt các seam để mọi thứ lắp ghép được. M3 mang trải nghiệm
+người dùng của Claude Code sang — và đây là chỗ luận điểm đó được kiểm chứng hoặc bị bác bỏ, vì
+M3 là milestone đầu tiên chạm đúng những bề mặt mà luận điểm "mọi thứ là plugin" đòi phải mở.
+Milestone gồm 22 work item (A1–A9, B1–B9, C2, D1–D3) trong 6 sóng, hai mục bối cảnh chạy trước
+sóng 1, phần đuôi §7–§8 cùng §9–§11, và sáu mục bổ sung `GAP-M3-B4` → `GAP-M3-B9` từ sổ khoảng trống
+(đặt ở phần bổ sung sau Sóng 6 — **không** phải một sóng thứ bảy; mỗi mục tự nêu sóng của nó).
+
+M3 port **ý tưởng**, không port code. Claude Code đóng, và §8 của kế hoạch nói thẳng nó không cấp
+giấy phép nào cho phần bề mặt này — nên ở đây không có lời hứa nào về việc sao chép.
+
+## Wave 0 — đo trước khi viết, đã đổi cả kế hoạch này
+
+Chủ sở hữu yêu cầu: *"chắc chắn port 100% UI Claude Code như là 1 plugin vào omp"*. M3 vốn viết cho
+một mục tiêu khác, nên trước khi viết tiếp, ba lượt đo đã chạy. Phần này ghi kết quả và **thay đổi
+phạm vi M3 theo đo**, không phải theo giả định.
+
+### Ràng buộc pháp lý đã chốt, không mở lại
+
+Nguồn là `claude-code-best/claude-code`, tựa đề tự nó là **"Reverse-engineered Anthropic Claude Code
+CLI"**. Repo đó **không cấp quyền ở gốc** *(đính chính 2026-09-29: câu cũ "không có file `LICENSE` ở bất kỳ path nào" là **sai** — `packages/workflow-engine/LICENSE` có tồn tại (MIT, 1.073 byte) và `packages/acp-link` khai `"license": "MIT"` không kèm file. Cách viết đúng: **root không cấp quyền cụm; 2/20 manifest là carve-out MIT hẹp (đo lại trên cây đã clone), và không cái nào thuộc phần M3 port**)*, `package.json` ở gốc không khai `license`, và bản **đã phát hành lên npm** (`claude-code-best@2.8.4`) cũng có **0 trường `license`** — tức đường phân phối cũng đóng, không chỉ đường nguồn; README gõ
+*"This project is for educational and research purposes only. All rights to Claude Code belong to
+Anthropic."* — xem [§2.0 của phần này trong plan tổng](COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md#ràng-buộc-pháp-lý-đã-chốt-không-mở-lại).
+
+Hệ quả: **đọc để hiểu thì được, chép dòng nào thì KHÔNG, và viết lại bằng ngôn ngữ omp thì được.**
+Mọi mục dưới đây đều theo ranh giới đó.
+
+### "Port 100% UI" — ba nghĩa, hai bị loại bằng số đo
+
+| Hướng | Kết luận | Bằng chứng |
+|---|---|---|
+| (a) Chạy app Ink của CCB như tiến trình con | **Loại** | CCB không phải thư viện UI mà là **agent thứ hai**: 558.328 LOC; `src/screens/REPL.tsx` dài 6.684 dòng tự quản lý session; và nó **tự giành terminal** — `setRawMode` ở `packages/@ant/ink/src/components/App.tsx:317` *(đính chính 2026-09-29: neo cũ ghi `App.tsx:317`, nhưng `src/components/App.tsx` chỉ có **36 dòng** — dòng 317 chỉ tồn tại trong bản vendor `packages/@ant/ink/`, khai `name: "@anthropic/ink"`, `private: true`, **không có trường `license`**. Tức bằng chứng pháp lý của M3 đang trỏ vào một fork vendor không cấp quyền — đã đo lại: 36 dòng với 780 dòng, dòng 317 là `stdin.setRawMode(true);`)*, alternate screen, 52 file ghi thẳng `process.stdout`, 20 file đọc `process.stdin` |
+| (b) Nhúng Ink (React) vào bên trong omp | **Loại** | Không chỉ vì bundle. `packages/tui/src/tui.ts:224` định nghĩa `Component { render(width): readonly string[]; handleInput?; invalidate?; dispose? }` — **mệnh lệnh, không VDOM, không reconciler**. Ink là cây React-retained trên yoga. Cả hai hệ đều tin mình sở hữu stdin + scroll region + raw mode + synchronized output trên cùng một tty, nên output hỏng **theo cấu trúc**, không phải đôi khi. Chặn là **hợp đồng render**, không phải kích thước bundle. |
+| (c) Viết lại component trên TUI của omp | **Khả thi** | Nhưng phải định nghĩa lại "100%" — xem ngay dưới |
+
+### Chặn thật không phải bundle, mà là layout
+
+Đo 418 component của CCB trong `src/components`:
+
+| Loại | file | LOC |
+|---|---|---|
+| **presentational** | **174** | **12.519** |
+| stateful (có React hook) | 92 | 12.190 |
+| logic — dialog gắn agent/MCP/settings của CCB | 152 | 45.936 |
+
+Nhưng con số quyết định **không phải 174**:
+
+> **229/418 file (52.770 LOC) phụ thuộc prop flex.** `flexDirection` **774 lần**, `gap` 226,
+> `paddingX` 82, `flexShrink` 52, `minWidth` 41, `borderStyle` 40, `justifyContent` 34.
+
+Và phía omp: `Box` có constructor `(paddingX = 1, paddingY = 1, bgFn?, border?)` tại
+`packages/tui/src/components/box.ts:56` — **không có `flexDirection`, `flexGrow`, `flexShrink`,
+`flexWrap`, `justifyContent`, `alignItems`, `gap`, hay sizing prop nào**. Đo: `flexDirection` **0 file**
+trong `packages/tui/src`; `yoga-layout` **0 file**.
+
+Nghĩa là **774 site `flexDirection` mới là chi phí port thật**. Đây là quyết định đòn bẩy cao nhất
+của M3: *xây một layout engine flexbox trong `packages/tui`, hay chấp nhận compose string row từng
+component*.
+
+**Đính chính quan trọng — tôi đã đo sai một lần, và kết luận sai đi làm thay đổi quyết định này.**
+
+Ban đầu tôi báo *"opencode ship TUI 39.771 dòng **không có flexbox**, nên có thể không cần engine"*. **Sai.**
+`git ls-files | grep -ci flexbox` = 0 chỉ nói **không có file tên `flexbox`** — còn prop thì dùng **269
+site**. opencode **mua** flexbox từ engine của bên thứ ba. Đây đúng là dạng lỗi đã ghi trong
+`.lavish-wip/LESSONS.md`: một phép đo đứng thay cho nội dung thật.
+
+Và khi tra đúng chỗ, câu trả lời tốt hơn nhiều so với cả hai hướng tôi đã cân nhắc:
+
+| | Engine layout | Giấy phép | Quy mô |
+|---|---|---|---|
+| `opencode` | **`@opentui/core@0.4.5`** — lõi Zig, TS bindings, C ABI, layout bằng **yoga-layout 3.2.1** | **MIT** (tầng JS) · **+ Apache-2.0 + patent grant ở tầng native** — xem mục "Những điều chưa được kiểm chứng" | 13.420 star · 174,7K lượt/tuần · *"OpenCode dùng nó ở production"* |
+| `ccb` | `@anthropic/ink` (fork) — React, cũng trên **yoga** | *không có LICENSE* | — |
+| `omp` | **không có** | — | — |
+
+**Cả hai đều đứng trên cùng một engine: `yoga-layout`, MIT.**
+
+Vậy câu hỏi đúng **không phải** "xây 774 site flexDirection bằng tay", và cũng **không** là "tự viết
+layout engine". Ba lựa chọn thật:
+
+| | Lựa chọn | Cán đồ |
+|---|---|---|
+| **(i)** | Dùng **chỉ `yoga-layout`** (MIT) và nối vào renderer sẵn có của omp, thêm flex vào `Box` | Cán nhỏ nhất: giữ `Component.render(): string[]`, giữ `box.ts`, chỉ thêm engine. Đổi 774 site CCB thành prop thật |
+| **(ii)** | Dùng trọn `@opentui/core` | Thay **cả renderer** của omp (189.051 dòng) — vì OpenTUI tự render, tự phân giải, tự cập nhật cell. Không phải việc thêm, mà là việc thay |
+| **(iii)** | Tiếp tục compose string row tay | 774 site, và mỗi component tự chịu trách nhiệm căn chỉnh. Đắt và dễ vỡ |
+
+**(i) là hướng đáng chọn nhất theo đo**, vì nó lấy đúng thứ còn thiếu (layout engine) mà không đổi thứ
+đang chạy (renderer). Nhưng đây là **quyết định của chủ sở hữu**, không phải kết luận kỹ thuật —
+nó đụng tới 189.051 dòng TUI.
+
+**Ràng buộc đo được:** `yoga-layout@3.2.1` là native/WASM và cần load đồng bộ hoặc qua FFI. Kiểm tra
+xem omp có thể chịu được điều đó **trước khi** chốt (i). Một cổng nhỏ: thêm `yoga-layout`, dựng một
+`Box` có `flexDirection`, và xem `bun test packages/tui` còn xanh không.
+
+Tầng widget thì omp **đã phủ gần hết** — `packages/tui/src/index.ts` export 31 module component:
+`select-list`, `settings-list`, `editor` (165 KB), `markdown` (150 KB), `image`, `kitty-graphics`,
+`scroll-view`/`viewport`, `render`/`code-cell`, `tool-card`, `loader`, `progress-bar`, `tree-view`,
+`table`, `tab-bar`, `form`, `wizard-step`. Thiếu đúng **một thứ**: layout engine.
+
+### Phần thật của "100%" — còn 174 file presentational, trong đó 108 không dùng flex
+
+Thứ tự ưu tiên, xếp theo **tỉ lệ presentational chứ không theo LOC**:
+
+`messages/` (32/45) → `agents/` (16/29) → `EffortPanel`, `sandbox`, `design-system`, `Spinner`,
+`LogoV2`; **hoãn** `mcp/` (2/14) và `permissions/` (15/53) vì đó là dialog, không phải UI.
+
+### M3 thật sự còn việc gì: 7 seam, không phải 22 work item
+
+Đo lại từng work item của M3 trên cây thật. Sáu hàng cuối là **mục bổ sung** từ sổ khoảng trống
+(`GAP-REGISTER-2.md`), đo cùng cách:
+
+| Hạng mục | Loại | Seam phải mở |
+|---|---|---|
+| A1 usage preset | **CÓ SẴN** | không — `usage` đã có id + renderer, chỉ thiếu ở 0/7 preset |
+| A2 capability elicitation | **MỞ LÕI** | key `elicitation` + `case` trong manager |
+| A3 wheel accel | **MỞ LÕI** | `mouse-wheel.ts` (file mới) |
+| A4 secret mask | **CÓ SẴN** | không — `plugin-settings.ts:152` đã mask |
+| A5 stall | **MỞ LÕI** | bề mặt render mới |
+| A6 read predicate | **MỞ LÕI** | predicate mới trong module 872 dòng đã có chủ sở hữu |
+| A7 notice | **MỞ LÕI** | container mới trong mảng bố cục |
+| A8 tmux hint | **CÓ SẴN** | không |
+| A9 daltonize | **MỞ LÕI** | `daltonize.ts` (file mới) + mở rộng loader |
+| B1 renderer pin | **CÓ SẬN** | không — ghim lỗ hổng, 0 dòng core |
+| B2 working msg | **CÓ SẬN** | không — 3 chặng đã nối |
+| B3 key-hint | **CÓ SẬN** | không |
+| C2 user shell | **CÓ SẬN** | trượt vì Q6 (cổng quyền lực), không vì thiếu seam |
+| D1 elicitation form | **MỞ LÕI** | method giao thức MCP mới |
+| D2 cache-hit | **CÓ SẬN — ĐÃ SHIP** | không |
+| D3 scroll chrome | **CÓ SẬN** | không |
+| GAP-M3-B4 báo trùng phím | **CÓ SẬN** | không — `getConflicts()` có thật, chỉ thiếu consumer |
+| GAP-M3-B5 ưu tiên + hạn sống notice | **MỞ LÕI** | hai trục mới trên `ShowStatusOptions` |
+| GAP-M3-B6 chế độ inline | **MỞ LÕI** | trạng thái hiển thị thứ hai ở tầng terminal |
+| GAP-M3-B7 overlay remap phím | **CÓ SẬN** | không — store + merge + phát hiện xung đột đã đủ |
+| GAP-M3-B8 công tắc mẹ animation | **MỞ LÕI** | một seam chung cho mọi hiệu ứng + probe |
+| GAP-M3-B9 hot-swap renderer | **MỞ LÕI** | chọn renderer ở mức ứng dụng |
+
+**MỞ LÕI = 11 · CÓ SẴN = 11 · 32/34 file đích đã tồn tại** (con số file đo cho 16 mục gốc, không tính sáu mục bổ sung). Đếm lại từ chính bảng trên: 22 hàng, 11 hàng `MỞ LÕI` và 11 hàng `CÓ SẴN` (trong đó 8 hàng viết `CÓ SẬN` — cùng nghĩa, sai dấu). Con số `10 / 12` từng ghi ở đây là sai và đã bị bảng tự phủ nhận.
+
+#### Ba phát hiện làm thay đổi kế hoạch
+
+**1. D2 đã ship, dưới tên khác.** `cacheHitSegment` (`segments.ts:718-738`) đã tính đúng
+`cacheRead/(cacheRead+cacheWrite+input)*100` — đúng tỉ lệ hit mà D2 định thêm, đúng biên đoạn. Và
+`presets.ts:40` đã bật `"cache_hit"` trong preset `full`. **D2 là bí danh thứ hai cho một số đang
+hiển thị.** Nên bỏ D2, hoặc hạ xuống một dòng preset gộp vào commit của A1.
+
+**2. `registerStatusLineSegment` không tồn tại, nhưng thứ nó định đăng ký thì có đủ.** Đo: 0 hit trong
+`packages/` (2 hit còn lại đều là **tài liệu kế hoạch**). Nhưng thư mục `status-line/` có **13 file ·
+5.776 LOC**, `STATUS_LINE_SEGMENT_IDS` là union **27 phần tử** (`schema.ts:2-30`), `SEGMENTS` có
+**27 renderer** (`segments.ts:919-947`), và `setStatus` có **74 call site**. Thiếu không phải
+status line — thiếu **một hàm đăng ký runtime**. omp đăng ký bằng union biên dịch đóng thay vì registry.
+
+**3. A2 không thể mở một mình — và đây là rủi ro âm thầm chung.** Khai báo capability làm server **bắt
+đầu gửi** `elicitation/create`; chưa có handler thì rơi vào nhánh `default:` và ném `-32601`. Đây là
+seam duy nhất **bắt buộc chung commit với D1**.
+
+Rủi ro âm thầm chung cho mọi thay đổi status line: `renderSegment` (`:949-953`) trả
+`{content:"", visible:false}` khi thiếu entry — **không throw**. Thêm union member mà quên registry
+⇒ **segment biến mất im lặng, không có dòng đỏ nào**. Cần một khẳng định
+`ALL_SEGMENT_IDS.length === STATUS_LINE_SEGMENT_IDS.length` trong test, để cái im lặng thành đỏ.
+
+### Ràng buộc thứ tự và chặn M2
+
+- **A2 + D1 phải là MỘT commit.** Không tách.
+- A3 trước D3 (cùng file `agent-transcript-viewer.ts`).
+- 9 mục "có sẵn" chạy song song được, 0 ràng buộc giữa chúng.
+- **Không work item M3 nào bị M2 chặn vì lý do seam.** Chỉ A4-PERSIST (thuộc M2 WI-8a) và C2 (Q6 —
+  cổng quyền lực, không phải kỹ thuật).
+
+### Ba thứ CCB có mà omp không, đều nhỏ và port sạch
+
+1. **Spinner biết mình đang treo.** `useStalledAnimation.ts:42` coi là treo khi >3s không có token mới
+   **và** không có tool đang chạy; cường độ leo dần 0→1 trong 2s; miễn báo khi đang có tool chạy; tôn
+   trọng `reducedMotion`. Phía omp, `components/loader.ts` chỉ là bộ đếm khung — **không biết token có
+   đến không**. Và `loop-watchdog.ts` **không phải** thứ này: nó đo trễ event-loop để chẩn đoán hiệu
+   năng, không phải thứ người dùng thấy.
+2. **Tự dò cuộn chuột có hoạt động không, rồi degrade kèm gợi ý.** `fullscreen.ts:180-195` chạy
+   `tmux show -Av mouse`; và comment `:169-179` giải thích vì sao họ **cố ý không tự sửa** —
+   `tmux set mouse on` đổi hành vi chuột cho *mọi pane anh em* (vim, less, htop) và rò rỉ lúc
+   kill-pane. Phía omp, `tmux.ts` chỉ 52 dòng DCS passthrough, `grep` chuột = **0 hit**.
+3. **Ba quy tắc supersession** trong `useVoice.ts`: thay tại chỗ thay vì append (`:833`), so giá
+   trị trước khi setState (`:836`, `:854`), và generation counter để bỏ kết quả async cũ (`:870`). Cả
+   ba đều là quy tắc, không phải widget.
+
+### Ba mục đã gọi tên — kết quả đo làm đổi phạm vi
+
+- **Wheel acceleration: CCB KHÔNG có.** `defaultBindings.ts:211-212` là `wheelup: 'scroll:lineUp'` —
+  đúng 1 dòng mỗi notch, không hệ số. A3 vì thật ra là **sửa mâu thuẫn nội bộ của omp**
+  (`agent-transcript-viewer.ts:470` cuộn `wheel*3`, còn `select-list.ts:229` ghi "một bước mỗi
+  notch"). Đáng làm, nhưng **không phải port** — và cũng **không phải vì CCB dạy được gì**.
+- **Colorblind: CCB CÓ** — `ThemePicker.tsx:78,82`, hai theme daltonized. Đây là thứ duy nhất trong ba
+  mục mà thật sự có thể học.
+- **Supersession: không có hệ thống chung** ở CCB, chỉ 3 quy tắc như trên.
+
+## Mục tiêu
+
+Sau M3, người dùng nhận được:
+
+- **Status line hiện hạn mức.** Segment quota (tier, cửa sổ 5h/1d/7d/tháng, mốc reset credit) xuất
+  hiện trong các preset bảo trì chọn, và vẫn còn trên màn hình ở 80 cột.
+- **Cuộn bằng chuột cảm thấy đồng nhất.** Cuộn nhanh bằng wheel `clicky` tăng tốc như trackpad đã
+  luôn tăng, thay vì bị đóng cứng 3 dòng mỗi notch, kèm setting `ui.mouseWheelSpeedMultiplier`.
+- **Hàng trạng thái tạm thời không còn cuộn mất.** Dòng trạng thái mới có key nên thay dòng cũ thay vì
+  trôi đi vĩnh viễn; overlay transcript agent có divider "chưa đọc" bấm được để nhảy ngược lại.
+- **MCP server hỏi được người dùng.** Một server spec-compliant giờ hỏi được câu hỏi giữa phiên và
+  nhận lại câu trả lời thật — `decline`, `cancel`, `timeout` là ba giá trị khác nhau trên wire.
+- **Setting bí mật của plugin không tự vẽ ra.** Ô liệt kê kiểu enum không còn hiện giá trị, và không
+  còn vẽ lại plaintext sau khi bạn chọn giá trị mới.
+- **Màu an toàn cho người mật thị đỏ–lục.** Với Color-Blind Mode, dòng diff thêm phân biệt được với
+  dấu thành công, với git status sạch, và với lỗi — hôm nay chỉ dòng diff thêm đổi màu, nên `success`
+  và `statusLineGitClean` vẫn xanh và vẫn đọc thành "dòng thêm" lướt qua.
+
+Phần còn lại **vô hình** và nên nói thẳng: bốn trong mười mục của kế hoạch (hai mục bối cảnh, §7–§8,
+§9–§11) thuần nội bộ — chúng không thêm gì cho người dùng, chúng làm cho các mục còn lại đáng tin.
+C2 là ví dụ rõ nhất: plugin mẫu được **ship nhưng tắt mặc định**, nên mặc định status row phải
+byte-identical với một phiên chưa từng load plugin.
+
+## Vì sao M3 không thể là "port Claude Code"
+
+Ba điều, cả ba đều phải nói trước khi viết dòng code M3 đầu tiên.
+
+**Cái gì đóng.** Bề mặt plugin của status line đang đóng, và đóng kiểu không thể lấn: `schema.ts` là
+một union 27 id đã niêm phong, `status-line/index.ts` là barrel 6 dòng không có `register*` nào, còn
+`setStatus` đã đi dây end to end. Hai claim "bề mặt plugin đóng" ấy không được để nằm trong văn xuôi —
+mục bối cảnh ctx1 biến chúng thành hai test (`status-line-segment-closure.test.ts` và
+`status-line-segment-picker.test.ts`) để đỏ nếu có ai đó mở nửa seam về sau. Hệ quả trực tiếp có mặt
+ngay trong kế hoạch: M3-C1 bị gỡ khỏi M3, và B3 không bị C1 chặn.
+
+**Cái gì đảo ngược.** Framing "cell buffer" và "pre-styled ANSI" trong bản brief gốc **không có bằng
+chứng nào ở bất cứ đâu**; dossier chưa từng phân tích tương thích runtime CCB-engine với omp-plugin.
+Mục (4) của `docs/plugin-surface-closure.md` — "what this does not prove" — phải sống nguyên. Xoá nó là
+tự nhập lại claim chưa kiểm chứng mà chính mục đó sinh ra để cách ly.
+
+**Cái gì phải mở core trước.** Seam status line chưa tồn tại: `registerStatusLineSegment` không có ở bất
+kỳ đâu trong `packages/**`, các hit duy nhất nằm trong tài liệu kế hoạch. Nên C2 và D2 không tiêu thụ
+seam đó, và dưới phương án 2 hoặc 3 của M2-OQ3 thì cả hai đều không bị chặn. Ngược lại, A2 + D1 buộc
+phải mở core: khai báo capability và handler là **một commit không chia**, nằm trong `mcp/types.ts`,
+`mcp/client.ts`, `mcp/manager.ts` cùng bốn chính sách per-mode (interactive / ACP / RPC / headless —
+headless không có file riêng nhưng vẫn phải trả lời, và câu trả lời của nó nằm trong commit không chia).
+
+Port code sẽ vỡ ở đúng chỗ này: cả ba điều trên đều là về *bề mặt*, mà bề mặt thì đang đóng. Claude
+Code đóng và §8 không cấp giấy phép, nên port code nghĩa là nhập một hợp đồng runtime mà chưa ai kiểm
+chứng là tương thích. Port ý tưởng nghĩa là port cái người dùng quan sát được, rồi dựng lại từ seam
+đã kiểm chứng — và đó là lý do mục ctx1 phải là lá đầu tiên chạy, trước cả khi lên lịch.
+
+## Không làm gì
+
+- **Không sao chép, không dịch, không suy ra từ cây Claude Code.** `docs/clean-room-policy.md` ở §7–§8
+  mang bốn hàng phân loại với neo đã sửa; lưới ký của nó hiện các mục §8.6 1/3/4/5 là **OPEN**, không
+  được âm thầm tick. `CONTRIBUTING.md:82-91` mới chỉ yêu cầu quyền gửi, chưa nêu hiểm hại cụ thể — đó
+  chính là lỗ hổng §8.6 #5 chỉ ra, và nó chỉ đóng lại được bằng câu trả lời của con người.
+- **Không thêm test grep cho invariant `setFrameProvider` một call site.** Vắng mặt nó là một phần của
+  cổng: thấy một test grep-based cho nó trong diff nghĩa là mục đó sai, không phải thiếu.
+- **Không để C2 đi kèm countdown.** D2 báo đúng tỉ lệ hit mà `cache_hit` đã tính; phần S của ước lượng
+  là hệ quả của việc từ chối countdown, không phải giấy phép để mở lại nửa bị cắt. Đây là cách sai dễ
+  xảy ra nhất, vì bản tham chiếu có sẵn countdown và nó đi cùng hit rate trong cùng một mảng.
+- **Không đúc API công khai cho tool-renderer.** B1 pin cái khe đang có và sửa **0 dòng core**; quyết
+  định có nâng thành `registerToolRenderer` không thuộc M3, nó là nợ bàn giao M4/M5 #4.
+- **Không gộp A4-PERSIST vào commit hiển thị.** Nó chờ M2 WI-8a (`manager.ts:942-949`) và là một mục
+  riêng ~1 ngày. Che mask hiển thị mà chưa sửa phần lưu là cho người dùng một sự yên tâm giả.
+- **Không cộng C1** — nó không còn tồn tại trong kế hoạch này.
+- **Không thêm cổng `bun test` cho ctx2.** ctx2 nói thẳng: không có hành vi runtime ở đó để bảo vệ,
+  và một test chiếm chỗ sẽ vi phạm AGENTS.md. (ctx1 thì ngược lại: chính nó là cổng — xem dòng trên.)
+- **Không biến cổng grep thành test grep.** Đây là rủi ro chủ đạo của tail1: G4/G4b là cổng
+  source-grep, chúng không được biến thành một file test grep.
+- **C2 được phép trượt nếu Q6 chưa có câu trả lời.** Đây là chỉ dẫn của chính kế hoạch; ship trên một
+  tiền đề không nói ra còn tệ hơn là trượt.
+
+## Điều kiện tiên quyết
+
+**Tiền đề môi trường: addon native — ĐÃ build tại cây này, đo lại ngày 2026-09-29.** `packages/natives/native/pi_natives.darwin-arm64.node` có mặt (185 MB), `bun run check:ts` exit 0, và `bun test packages/tui/test/` chạy đủ 222/222 file. Vì vậy mọi câu kiểu "trên máy sạch `bun test` chết" nêu dưới đây là **tiền đề tái lập được, KHÔNG phải sự thật hiện hành**: nó mô tả đúng một máy *chưa* build, và chỉ máy đó mới đỏ. Đừng đọc chúng là trạng thái của cây bạn đang đứng. Nếu `ls packages/natives/native/pi_natives.darwin-arm64.node` trả về một file thì bạn đã ở phía sau của tiền đề, và bước dưới là để dựng lại nó khi cần:
+
+```bash
+brew install ninja                              # 1.13.2
+bun --cwd=packages/natives run build            # exit 0, sinh pi_natives.darwin-arm64.node
+```
+
+Sau đó **toàn bộ suite chạy**: `bun test packages/utils/test/` báo 743 pass / 10 skip / 0 fail (753 test, 80 file), và `bun test packages/coding-agent/test/mcp-config-scope-dedup.test.ts` báo 8 pass / 0 fail. `bun run check:ts` thì **không cần bước này** — nó xanh ở mọi HEAD đã đo (exit 0, cả 16 package type-check Done).
+
+Phần lớn cổng của M3 là cổng test, nên bước build một lần ở trên là tiền đề cho tất cả. Sau khi build, mọi lệnh `bun test` nêu trong tài liệu này đều chạy được.
+
+**Một lần chạy test đỏ TRƯỚC khi build addon không phải là tín hiệu.** Nó không phân biệt được "thay
+đổi của tôi làm hỏng" với "thiếu addon". Với ctx1, người viết nói thẳng: không có nó thì mục đó chỉ là
+một tài liệu có tham vọng. Nếu addon build không được, ctx1 kẹt ở chân (2) và việc đúng là **báo lên**,
+không phải vòng qua.
+
+**Điều kiện riêng của M3**, ngoài môi trường:
+
+- Hai mục bối cảnh (ctx1, ctx2) phải có mặt trước khi lên lịch s1–s6. ctx2 chặn cả 16 work item gốc; ctx1
+  chặn theo kiểu tiền đề — mục S1 đang điều hướng bằng số dòng của kế hoạch và đã phải sửa giữa chừng,
+  nên mọi mục trích dẫn neo §1–§2 thừa hưởng cùng một lớp trôi neo đó.
+  **Sáu mục bổ sung `GAP-M3-B4` → `GAP-M3-B9` không chờ ctx2**: chúng mang neo riêng trong từng
+  đặc tả, và mỗi cái đều đã được đối chiếu lại tên file lúc viết.
+- **P0 và P1 phải đóng bằng văn bản trước khi sóng 1 bắt đầu.** Sóng 1 nói thẳng: "Before ANY code is
+  written". P0 là provenance đặc tả của A8 cộng vị trí bằng chứng, và bằng chứng đó **không được**
+  là checkout chưa track ở `~/Projects/claude-code-ref`. P1 là preset nào nhận `usage`; A1 không bắt
+  đầu được nếu thiếu nó.
+- **P0/P1 không phải là loại duy nhất không thể đỏ.** Chúng là quyết định của con người, không phải
+  code, và một câu trả lời chưa ghi lại trông y hệt một câu trả lời đã ghi lại cho tới khi ai đó mở đặc
+  tả ra kiểm. Ba chân cổng nữa cũng không tự đỏ và cần nói thẳng: chân (3) của ctx1 (tài liệu — số
+  dòng sai trong văn xuôi không báo đỏ ở đâu cả), cổng (a)+(g) của s2 (bảng đo thật + hai câu hỏi
+  người), và cổng (6) của s4 (kiểm tra lúc review PR). Đó là lý do tail2 đòi một hàng trong §10 có
+  người phụ trách và hạn chót — và vì sao ctx1 được giao hai file test: để các bất biến load-bearing
+  nằm trong phần chạy được, không nằm trong phần văn xuôi.
+
+## Thứ tự thực hiện
+
+Nhìn tổng quan trước đã:
+
+| Mục | Nội dung | Cỡ | Chặn bởi |
+| --- | --- | --- | --- |
+| ctx1 | `docs/plugin-surface-closure.md` + 2 test đóng bề mặt | ~1 ngày | gì cả (chân (2) cần addon) |
+| ctx2 | Sổ neo đã kiểm chứng cho §3–§5, 60 neo | S, nửa ngày | gì cả |
+| Sóng 1 | A1, A8, A6, A5 | ~6 ngày | P0, P1 |
+| Sóng 2 | A3, A7, D3 | ~6–7 ngày | D3 chờ A3 (cùng file) |
+| Sóng 3 | A2 + D1, một commit | ~5 ngày | gì cả |
+| Sóng 4 | A4-display, B1, B2, B3 (+A4-PERSIST riêng) | ~4 ngày (+1) | A4-PERSIST chờ M2 WI-8a |
+| Sóng 5 | C2, D2 | ~3–4 ngày | C2 chờ Q6 |
+| Sóng 6 | A9 | S, ~1 ngày | gì cả |
+| tail1 §7–§8 | script cổng + `docs/clean-room-policy.md` | S, nửa ngày | sau sóng 6 |
+| tail2 §9–§11 | rủi ro, câu hỏi mở, định nghĩa xong | ~2 ngày | song song sóng 6 |
+| bổ sung GAP-M3-B4 | báo trùng phím lúc nạp — cùng sóng với B3 | S, ~1 ngày | A7 merge trước; **không** chờ ctx2 |
+| bổ sung GAP-M3-B5 | ưu tiên + hạn sống cho hàng thông báo | S, 0,5–1 ngày | **A7** (cùng vùng `ui-helpers.ts:143`) |
+| bổ sung GAP-M3-B6 | chế độ inline, giữ scrollback của terminal | M, 1–1,5 ngày | PR riêng, **sau khi M3 ổn định**; xung đột `terminal.ts` với B9 |
+| bổ sung GAP-M3-B7 | overlay remap phím tắt trong TUI | S–M, 1–1,5 ngày | **B4 merge trước** (dùng chung hàm cảnh báo) |
+| bổ sung GAP-M3-B8 | công tắc mẹ animation + probe reduced-motion | S, <0,5 ngày (+S nếu probe) | B7; phần probe phải chốt trước khi viết dòng nào |
+| bổ sung GAP-M3-B9 | hot-swap hai renderer, có dock | M, ~1,5 ngày | **M1 W15** (cứng); thứ tự merge với B6 chưa chốt |
+
+Tổng phần code ~25–27 ngày công cho 16 work item gốc; ~4 ngày cho toàn bộ phần bối cảnh và phần đuôi.
+Sáu mục bổ sung cộng thêm **~6–7,5 ngày** (1 + 0,5–1 + 1–1,5 + 1–1,5 + <0,5 + 1,5), và chúng **không
+cộng vào ngân sách của sáu sóng** vì không mục nào trong sáu sóng chờ chúng. Tổng cả milestone ~31–35 ngày công
+nếu cả hai nhóm đều làm.
+
+**Ghim lại baseline.** Các neo số dòng trong đặc tả (`plan lines 7294-7346`, `7347-7360`,
+`plan:7401-7405`) được chốt ở 808b365; ở HEAD e040a60 file plan đã dài 10234 -> 11741 dòng và sóng M3
+đã dời sang 8749/8801/8854/8868/8917/8956. Phải chạy lại lệnh trước khi dùng.
+
+**Hai mục bối cảnh, trước sóng 1.** Chạy song song được với nhau — cả hai đều không có phụ thuộc
+trên. ctx2 nhanh và tự chứa (chạy script khẳng định in `failures: 0`; 7 trong 60 khẳng định là số dòng
+đã sửa, nên ai viết từ kế hoạch sẽ thấy đỏ ngay lần chạy đầu). ctx1 lâu hơn nửa ngày và chân (2) của
+nó treo trên addon. Sau khi cả hai xong, mọi mục S1–S6 điều hướng bằng một nguồn neo đúng thay vì số
+dòng của kế hoạch.
+
+**Sóng 1 — bốn khoảng mở nhỏ.** Bàn giao: preset có quota, tmux prefix hiện trong keybinding hints,
+quyết định nhóm read-tool đến từ một predicate có dữ liệu ở cả bảy chỗ, và chỉ báo stall theo pha
+kèm breakdown frame-time. Cần có trước: P0 + P1 đóng bằng văn bản. Sau khi kết thúc: năm file test
+xanh, `bun run check:ts` exit 0, và mọi neo trong đặc tả được kiểm lại lúc code chứ không tin bản kế
+hoạch. Riêng A8: test phải **chứng minh** đã đi vào nhánh tmux thật, vì guard `isBunTestRuntime()`
+ở `tmux.ts:49` làm cho một bản test xanh mà không kiểm tra gì rất dễ xảy ra — vì vậy bộ test bắt buộc
+phải có một khẳng định rằng nhánh tmux thực sự được vào.
+
+**Sóng 2 — UX cảm nhận được ngay.** A3 và A7 không phụ thuộc gì; D3 phải đến **sau** A3 vì cùng sửa
+`packages/tui/src/overlays/agent-transcript-viewer.ts` và hằng số wheel (:470) nằm ngay vùng đó — làm
+D3 trước nghĩa là sửa hằng số hai lần trong một file. Sau khi kết thúc: bảng đo có **ba số thật cho
+mỗi terminal** (Ghostty, Terminal.app, VS Code, Cursor) và `MEASURED_THRESHOLDS` giữ đúng những số
+đó; con số 200/1500/5 trong kế hoạch là placeholder, ship nguyên xi là hỏng cổng. Ba file test mới
+phải thực sự chạy; `packages/coding-agent/test/interactive-mode-status.test.ts` phải xanh với các
+khẳng định sẵn có của nó **không bị sửa** (`toHaveLength(2)` / `toHaveLength(5)`); file vẫn được phép
+thêm khẳng định mới, vì nếu A7 buộc phải đụng vào đó thì nhánh unkeyed đã đổi hành vi; và grep
+`wheel * [0-9]` cùng
+`delta * 3` dưới `packages/tui/src` phải trả 0 hit. Từ sóng này trở đi, mọi bề mặt cuộn mới phải đi qua
+`packages/tui/src/mouse-wheel.ts` chứ không tự nhân thêm một hệ số.
+
+**Sóng 3 — MCP elicitation, không chia.** Không có phụ thuộc nào, nên chạy song song với sóng 1 và 2
+được. ~5 ngày là **một đơn vị không tách**; khai báo capability và handler là hai commit thì tính là
+chưa xong, và test `elicitation-capability.test.ts` tồn tại chính để bản build nửa vời thất bại thay vì
+review thấy ổn. Sau khi kết thúc: test đi cả hai chiều, với nửa âm khẳng định `code === -32601` khi
+ép elicit lên manager không có handler.
+
+**Sóng 4 — bề mặt plugin.** Ba trong bốn mục mở được ngay hôm nay; chỉ A4-PERSIST chờ M2 WI-8a. Sau
+khi kết thúc: bốn file test tồn tại và xanh; khẳng định mask của A4 phải đúng **cả trước và sau** một
+vòng chọn submenu (nó đỏ trên cây sạch vì `settings-list.ts:797` gán lại `currentValue` khi select, tức
+tự vẽ lại plaintext — một mask chỉ lúc build sẽ không làm nó xanh); B1 pin qua **nhánh SOURCE remap**
+và fixture phải được nạp **bằng đường dẫn**, không import tĩnh, nếu không khẳng định module-identity
+thành đúng vô điều kiện. Nói thẳng: cổng của B1 là cổng yếu nhất — nó xanh trước và sau, chỉ là
+cảnh báo lại cho một refactor tương lai đóng khe, đừng tính nó là bằng chứng B1 đã làm việc.
+
+**Sóng 5 — người tiêu thụ đầu tiên của seam M2 chốt.** D2 không bị chặn (nó không tiêu thụ
+`registerStatusLineSegment`; dưới phương án 2 và 3 của M2-OQ3 thì C2 cũng vậy). C2 bị Q6 chặn. Sau
+khi kết thúc: D2 có ba hợp đồng âm — hàng render không chứa countdown và không chứa nhãn TTL, tỉ lệ
+của segment mới bằng đúng tỉ lệ của `cache_hit` trên usage giống nhau, và không có usage thì segment
+không đóng góp gì. C2: **case đầu tiên là case tắt** — thiếu key `enabled` và `enabled: false` đều
+sinh zero spawn và cho status row byte-identical với baseline không có plugin. Và
+`git grep -n "examples/extensions"` dưới `src` phải là 0 hit, nếu không plugin sẽ tự load và phá vỡ
+bảo đảm "inert by default".
+
+**Sóng 6 — màu an toàn.** Không phụ thuộc, không chặn ai, chạy song song từ đầu. Sau khi kết thúc:
+cổng quan trọng nhất là test **negative-identity** — nó đỏ nếu nhánh `colorBlindMode` bị nhấc lên trên
+`resolveThemeColors` (lúc đó remap chạy trên chuỗi `$var` chưa resolve và đổi mọi theme bất kể cờ),
+nếu nhánh được mở rộng sang một đường chạy khi cờ tắt, hoặc nếu remap mutate trạng thái dùng chung
+rò vào theme khi cờ tắt. Cả ba đều dễ phạm và cả ba đều vô hình khi review. Harness tương phản 4.5
+được kỳ vọng là cổng đắt nhất: nó nhiều khả năng sẽ lộ ra các theme vốn đã sát ngưỡng, và đó là danh
+sách cần sửa, không phải lý do hạ ngưỡng trong im lặng.
+
+**Còn chạy song song được cái gì.** Từ sau ctx1/ctx2, **S1, S2, S3, S6 không phụ thuộc lẫn nhau** —
+bốn sóng này có thể chạy đồng thời hoàn toàn. S4 mở được ngay, chỉ A4-PERSIST tách ra. S5 tách D2 ra
+chạy được. tail2 viết song song với sóng 6 và cần có đặc tả của s1/s4/s5/s6 để ghép, nhưng cổng
+P0/P1 vẫn phải đóng trước khi s1 bắt đầu. tail1 là hàng cuối: nó tiêu thụ s1, s4, s5, s6 và không sóng
+nào chờ nó.
+
+## Quyết định cần chốt trước khi code
+
+| Mã | Câu hỏi | Chặn cái gì |
+| --- | --- | --- |
+| P0 | Provenance đặc tả của A8: black-box hay omp-native? Bằng chứng ở đâu — và **không phải** checkout chưa track `~/Projects/claude-code-ref` | A8, cả sóng 1 |
+| P1 | `usage` vào cả bảy preset hay chỉ `full` + `nerd`? Nêu tên từng preset | A1, cả sóng 1 |
+| Q6 | Câu hỏi niềm tin cho C2 — chưa ai trả lời tại HEAD e040a60 | C2 (D2 không chặn) |
+| — | Hai kiểm tra `toolName === "read"` phía kết quả (`chat-transcript-builder.ts:507`, `ui-helpers.ts:663`) có nằm trong phạm vi A6 không? | A6 |
+| — | `acp-event-mapper.ts:645` có phải một chỗ gán nhóm read không? | A6 |
+| — | Ngữ nghĩa tăng tốc `handleWheel`, và setting mới có chỉ nằm trong file cấu hình không? Cả hai đổi hành vi quan sát được | A3 |
+
+## Quyết định cần bạn chốt
+
+| Mã | Câu hỏi | Hậu quả nếu để ngỏ |
+| --- | --- | --- |
+| M2-OQ3 | Cơ chế đăng ký mở rộng status line, ba nhánh | §11 viết ba nhánh; C2/D2 vô hại dưới phương án 2–3 |
+| Q7 | A9 theo biến thể S hay M | Chặn §11 clause 9 và câu "M3-C2 được trượt" |
+| M2 WI-8a | Đường ghi sau khi `manager.ts:942-949` đổi | A4-PERSIST không ship, phải ghi deferral trong PR |
+| Q-A | Trả lời người cho §8.6 #5 | `CONTRIBUTING.md` không có addendum; câu licensing gốc phải sống nguyên |
+| — | C2 có trượt hay không, nếu Q6 chưa có | Có quyết định thì đóng; không có thì trượt |
+
+## Quy ước khi đọc
+
+Văn xuôi tiếng Việt, giữ nguyên mọi đường dẫn, neo `file:line`, tên định danh, câu lệnh và tên file
+test. Kiểm tra kiểu bằng `bun check` và `bun test`; **không bao giờ** `tsc` — dự án cấm. Trong test,
+không bao giờ source-grep một file implementation: test phải chạy code rồi khẳng định hợp đồng quan
+sát được, vì đọc text của file rồi `expect(src).toContain(...)` là test cách code trông chứ không
+phải cách nó chạy, và nó vẫn xanh khi hành vi đã hỏng. Không dùng `mock.module()` — nó mutate
+registry module toàn cục và rò sang các file khác; spy trên đối tượng module đã import rồi
+`vi.restoreAllMocks()` trong `afterEach`. Mọi thứ hiển thị trong TUI đều phải sanitize: `replaceTabs`,
+`truncateToWidth`, `shortenPath`, `PREVIEW_LIMITS` — kể cả ở nhánh lỗi, vì message lỗi hay nhúng nguyên
+file và chính nó phá terminal. Chính sách model/provider không được viết trong TypeScript: nó nằm ở cây
+`.kdl` trong `packages/catalog/src/compat/rules/`, rồi sinh ra bằng `bun run gen:compat` và commit
+`rules.json` cùng lúc.
+
+Và một điều nối từng đặc tả của M3: **đừng chép neo từ văn xuôi của kế hoạch.** tail1 đo được bảy neo
+`* 3` trong §7.1 đều sai (lệch +1 đến +13), và `usage-dashboard.ts:753` thực ra là 759. Mọi neo phải
+được chốt lại bằng một câu lệnh chạy thật trên cây hiện tại.
+
+
+---
+
+
+## Bối cảnh (1/2) — phát hiện mở đầu và vì sao bề mặt plugin không port được
+
+**Sóng / phạm vi:** Context (pre-wave) — chạy **trước sóng 1**. S1–S6 đều viện dẫn các claim của mục này làm tiền đề, nên độ trôi neo ở đây sẽ bị thừa hưởng âm thầm bởi mọi đặc tả phía sau.
+
+**Effort:** ~1 engineer-day. Khoảng 0.5 ngày cho `docs/plugin-surface-closure.md` — các câu lệnh xác minh đã được liệt kê sẵn trong khối Xác minh, nên công việc là chép lại output đã kiểm chứng chứ không phải suy diễn lại. Khoảng 0.5 ngày cho hai file test, và con số đó đã hào phóng: cả hai bám sát quy ước sẵn có (`status-line-cache-hit.test.ts` đã import `renderSegment` và dựng `SegmentContext`; `createGallerySegmentContext` tại `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:24` đưa sẵn một context hoàn chỉnh, tất định thay vì 40 dòng fixture tự viết). Nếu `items.values` của register trong settings không bị với tới được từ ngoài module, cộng thêm +0.25 ngày và chuyển sang assert qua config entry đã resolve — việc này đã được ghi ở bước 10 chứ không phải phát hiện lúc thứ sáu giờ.
+
+Tác động ra ngoài: **không có** — nội bộ. Tài liệu là tham chiếu kỹ thuật; các test khẳng định hành vi đã tồn tại và không đổi bất kỳ output hiển thị nào. Lợi ích đối với người dùng là gián tiếp và đến từ S1 trở đi: vì sự đóng kín đã được ghim bằng test, một kỹ sư M3 thử con đường plugin và nhận kết quả nửa vời nửa vời sẽ gặp một test đỏ có tên nêu rõ catalog đã đóng, thay vì mất một ngày vào ngõ cụt.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `docs/plugin-surface-closure.md` | tạo | Tài liệu mới: mục tiêu cùng sáu loại trừ ở tầng quyết định; ba phát hiện mở đầu; ba lý do port bằng plugin thất bại; và một mục "what this does NOT prove". Mọi neo mang theo số dòng đã đối chiếu lại tại HEAD 808b365, chứ không theo lời plan nói. Năm trong mười hai neo dòng của plan sai; tài liệu này ghi lại số đúng để không kỹ sư S1–S6 nào điều hướng bằng một con số cũ. | Có — `verified: true`. Tiền lệ là `docs/tui-core-renderer.md`, mà chính plan cũng dẫn ở `:107` và `:174` làm thẩm quyền viết cho bất biến scroll của renderer — cùng một hình dạng: một bất biến văn xuôi mà các đặc tả về sau trích dẫn theo dòng. Kiểm chứng trực tiếp: `docs/tui-core-renderer.md:107` đúng là `The renderer never probes the user's scroll position.` và `:174` đúng là `8. The renderer never probes terminal scroll position or forks history policy`. Cả hai chính xác như plan nói. |
+| `packages/tui/test/status-line-segment-closure.test.ts` | tạo | Test mới ghim hai catalog status-line đã đóng vào nhau. (a) Mọi id trong `STATUS_LINE_SEGMENT_IDS` có một entry trong `SEGMENTS`, và mọi khoá của `SEGMENTS` nằm trong hợp — hợp và sổ đăng ký được duy trì bằng tay trong hai file khác nhau, mà chưa có gì kiểm tra mối nối đó. (b) `renderSegment` với một id không có entry trong sổ đăng ký trả về `{ content: "", visible: false }` chứ không ném lỗi, và bộ lọc overflow của `StatusLineComponent` tại `component.ts:2590` và `:2603` loại nó khỏi thanh mà không cảnh báo — đúng cái biến mất âm thầm mà một hợp bị nới nửa vời tạo ra. (c) Ba thứ tự được duy trì bằng tay thống nhất với nhau. | Có — `verified: true`. `packages/tui/test/` tồn tại và quy ước đã đối chiếu với `packages/tui/test/status-line-cache-hit.test.ts:1-25`, vốn đã import `renderSegment` từ `../src/status-line/segments`, dựng `SegmentContext`, và gọi `initTheme()` trong `beforeAll`. Bám đúng hình dạng đó. **Tiền đề môi trường:** addon **đã build ở cây này** (đo 2026-09-29), nên file này chạy được ngay. Nhánh "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó `bun test` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64` (đã chạy `bun test packages/tui/test/status-line-model.test.ts` và tái hiện). Đó không phải hạn chế của máy, mà là thiếu một bước build: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). |
+| `packages/coding-agent/test/status-line-segment-picker.test.ts` | tạo | Test mới ghim catalog đã đóng thứ ba: từ vựng mà picker cấu hình đưa ra. `cfgStatusLineLeftSegments` / `cfgStatusLineRightSegments` đăng ký với `items: { values: STATUS_LINE_SEGMENT_IDS }`, nên picker tương tác chỉ có thể trình bày id thuộc hợp đã đóng băng. Test khẳng định một segment id có trong `SEGMENTS` nhưng vắng mặt khỏi `values` của picker là một lỗi được gọi đích danh, và rằng giá trị mặc định đã đăng ký bằng `CUSTOM_STATUS_LINE_DEFAULTS` (mặc định cấu hình và từ vựng picker không thể trôi khỏi nhau). | Có — `verified: true`. Neo đã kiểm chứng trực tiếp: `packages/coding-agent/src/modes/settings.ts:280` và `:287` đều mang `items: { values: STATUS_LINE_SEGMENT_IDS, label: "status line segment" }`, với `default: CUSTOM_STATUS_LINE_DEFAULTS.left` / `.right` ở dòng liền trước. `packages/coding-agent/test/` đã có 16 file `status-line-*.test.ts`, nên tên và vị trí khớp. |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` | sửa — **cố ý KHÔNG sửa** | Plan là file được track, nhưng nó thuộc sở hữu của workflow assemble M1/M2 và các đặc tả S1–S6 đã mang plan_corrections riêng. Sửa nó ở đây sẽ đụng độ với workflow đó. Các đính chính nằm trong đặc tả này và trong `docs/plugin-surface-closure.md`. | Có — `verified: true`. Được track (`git ls-files` khớp đúng 1 file); không nằm trong gitignore. Cố ý để nguyên — xem câu hỏi mở O1, hỏi maintainer nên sửa luôn hay để plan làm bản ghi lịch sử. |
+
+### Các bước
+
+1. **Không làm gì khác trước khi đọc bước này:** neo §1–2 của plan cũ **sai 5 trong 12**. Số đúng, tất cả đã đối chiếu lại tại HEAD 808b365: bản ghi `toolRenderers` ở `packages/tui/src/tools/index.ts:35` (plan đúng); subpath export `./*` ở `packages/tui/package.json:94-97` (plan ghi 93-96; 93 là dấu ngoặc đóng của entry `./status-line` liền trước, 97 là dấu ngoặc đóng của chính entry này); `STATUS_LINE_SEGMENT_IDS` mở ở `packages/tui/src/status-line/schema.ts:2` và đóng `] as const;` ở `:30` — **không phải** 1-32; `CUSTOM_STATUS_LINE_DEFAULTS` ở `schema.ts:36-42` (plan đúng); bảy preset ở `packages/tui/src/status-line/presets.ts:5,16,26,36,59,84,96` (plan đúng chính xác, đủ cả bảy); `setFooter`/`setHeader` no-op ở `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:157` và `:158` — **không phải** 148-149, lệch chín; `#handleServerRequest` ở `packages/coding-agent/src/mcp/manager.ts:1032` với lệnh ném `-32601` ở `:1039` (plan đúng); `capabilities:` ở `packages/coding-agent/src/mcp/client.ts:101` với `roots: { listChanged: false }` ở `:102` — **không phải** 100-104; import chỉ-kiểu `pi-tui` ở `packages/coding-agent/src/mcp/manager.ts:46` (plan đúng); `elicitFormFromAcpClient` ở `packages/coding-agent/src/modes/acp/acp-agent.ts:314` (plan đúng); `setFrameProvider` ở `packages/tui/src/tui.ts:949` (plan đúng); call site không phải test duy nhất ở `packages/tui/src/prompt/composer.ts:302` — **không phải** 301, lệch một.
+
+2. **Viết `docs/plugin-surface-closure.md`**, cấu trúc thành bốn mục theo đúng thứ tự này. (1) Mục tiêu và các trường đợp loại: port các *hành vi* UX của CCB — đo tốc độ cuộn, bộ đệm thông báo có chồng lấn, gợi ý phím tự hiện, dải trạng thái hạn mức, biểu mẫu elicitation của MCP, chrome cuộn overlay, theme an toàn cho người mù màu — trong khi **không** fork `packages/tui`, **không** port `@anthropic/ink`, **không** port một React reconciler, **không** port một máy trạng thái alt-screen, **không** port khung hộp thoại của CCB, và **không** port chọn đoạn văn bằng chuột. Sáu trường đợp loại này ở tầng quyết định, không phải trì hoãn. (2) Ba phát hiện mở đầu, mỗi cái kèm neo đã kiểm chứng. (3) Ba lý do port bằng plugin thất bại, mỗi cái kèm neo đã kiểm chứng. (4) Một mục ngắn "what this does not prove" — xem bước 6, đây chính là mục mà §2.4 của plan lập luận và nó phải sống sót vào tài liệu.
+
+3. **Trong mục (2), ghi phát hiện 1 một cách chính xác, và sửa cơ chế mà plan nói.** Plan bảo `toolRenderers` "sống sót nhờ export map `./*` -> `./src/*.ts` tại `package.json:93-96` **cộng với** một loader remap về instance của host". Một nửa đúng, một nửa không. Subpath export `./*` là có thật (`package.json:94-97`) và nó mang tính nạng cấp thiết. Nhưng lập luận của plan vẫn sai, và sai vì một lý do khác với cái plan nêu. Extension loader CÓ một remap pi-tui: `PI_PACKAGE_NAMES` tại `legacy-pi-compat.ts:805` liệt kê `pi-tui`, nên `LEGACY_PI_SPECIFIER_FILTER` (`:837`) khớp cả `@oh-my-pi/pi-tui` lẫn mọi subpath của nó; và `__buildLegacyPiPackageRootOverrides()` (`:1024`) ghim riêng package-root `@oh-my-pi/pi-tui` vào `LEGACY_PI_TUI_SHIM_PATH` (`:969-971`, module `legacy-pi-tui-shim.ts`). Bản ghi đó chỉ thay mặt trước ở package root, và shim lại `export * from "@oh-my-pi/pi-tui"`, nên nó KHÔNG tạo ra một instance thứ hai của bất cứ module nào. Đó là lý do lập luận của plan sai: không phải vì không có remap, mà vì remap duy nhất có mặt không chạm tới `@oh-my-pi/pi-tui/tools` — subpath mà `toolRenderers` thật sự nằm trên. Cơ chế thật của lỗ thoát vẫn là phân giải module thông thường: subpath export ánh xạ `@oh-my-pi/pi-tui/tools` tới đúng tệp tuyệt đối mà host cũng import, Bun cache module theo đường dẫn đã phân giải, nên cả hai bên gọi nhận cùng một module instance, do đó cùng một bản ghi mutable. Hãy viết điều đó. **Đừng** viết "một loader remap làm nó chạy", nhưng cũng đừng viết "không có nhánh pi-tui nào".
+
+4. **Trong mục (3), viết lý do 1 (catalog status-line đã đóng), kèm phần bổ sung mà plan bỏ sót — đây là đính chính quan trọng nhất của mục này.** Plan lập luận rằng hợp ở `schema.ts:2-30` bị đóng băng và barrel không có `register*`. Đúng, nhưng thiếu: có một catalog đóng thứ HAI mà plan không bao giờ nhắc, tại `packages/tui/src/status-line/segments.ts:919` — `export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment>`, một record được đánh kiểu đầy đủ liệt kê toàn bộ 27 renderer. Vì nó là `Record<StatusLineSegmentId, ...>`, chính TypeScript buộc lần sửa thứ hai: thêm một id vào hợp và build sẽ hỏng cho tới khi có renderer tương ứng. Đó là thứ biến sự đóng kín thành thứ do trình biên dịch cưỡng chế chứ không chỉ là khẳng định bằng văn bản, và nó là một lập luận mạnh hơn nhiều so với cái plan đưa ra. Cũng hãy ghi lại điểm phải sửa thứ ba mà plan bỏ sót: `packages/coding-agent/src/modes/settings.ts:280` và `:287` đăng ký các picker cấu hình với `items: { values: STATUS_LINE_SEGMENT_IDS }`, nên một extension không thể làm một segment mới xuất hiện trong picker mà không sửa cả coding-agent. Ba file duy trì bằng tay, một trong ba được trình biên dịch canh giữ.
+
+5. **Ghi thêm, trong cùng mục đó, chỗ duy nhất mà việc duy trì bằng tay rò rỉ.** `packages/tui/src/status-line/segments.ts:957` đọc `export const ALL_SEGMENT_IDS: StatusLineSegmentId[] = Object.keys(SEGMENTS) as StatusLineSegmentId[]` — một ép kiểu `as`, không phải một phép suy ra có kiểm. Nó chảy tới `getSegmentGalleryInventory()` tại `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:19`. Vậy nên chiều union→registry được trình biên dịch kiểm, còn chiều registry→danh-sách-id thì chỉ được khẳng định. Chính bất đối xứng ấy là mối nối yếu mà một người đóng góp tương lai sẽ khai thác, và nó chính xác là thứ mà test mới ở bước 8 ghim.
+
+6. **Viết lý do 2 (bộ chuyển yêu cầu MCP đã đóng) và lý do 3 (một cửa frame + một bất biến scroll được viết ra) vào mục (3), rồi viết mục (4) "what this does not prove".** Lý do 2: `#handleServerRequest` tại `manager.ts:1032` xử lý `ping` và `roots/list`, còn nhánh mặc định ném `-32601` ở `:1039`; `client.ts:101-102` khai báo duy nhất `roots: { listChanged: false }`; tham chiếu pi-tui duy nhất của `manager.ts` là một import chỉ-kiểu ở `:46`, nên lớp buộc phải trả lời JSON-RPC không có quyền truy cập UI. Lý do 3: `setFrameProvider` được định nghĩa tại `tui.ts:949`, đúng một call site không phải test ở `composer.ts:302` — bất cứ thứ gì muốn móc vào vòng lặp render đều phải đi qua `Composer`, và không có lối vòng nào cho một overlay tự quản lý. Mục (4) phải nêu các giới hạn mà §2.4 của plan lập luận: hồ sơ khảo sát chưa bao giờ phân tích tính tương thích runtime giữa render engine của CCB và hợp đồng plugin của omp, và **KHÔNG** có bằng chứng nào ở bất cứ đâu cho các claim "cell buffer" hay "pre-styled ANSI" từ bản brief gốc. Đừng ngoại suy quá ba neo mà không mở file.
+
+7. **Ghi lại đính chính về acp-agent trong mục (3)**, vì đó là một claim mà kỹ sư tương lai sẽ lỡ hành động theo. Hồ sơ khảo sát gọi `packages/coding-agent/src/modes/acp/acp-agent.ts:295-410` là "a working implementation of exactly this on the same form layer" và hai vòng phản biện đã bác bỏ điều đó. Sự bác bỏ đó là đúng, và plan giữ nó là đúng. Hãy nêu rõ hướng: `elicitFormFromAcpClient` mở ở `acp-agent.ts:314`, nhận một schema đã có hình dạng, và gọi `connection.unstable_createElicitation()` ở `:358` để hỏi một trình soạn thảo **từ xa**. Nó chỉ đi ra ngoài và không render biểu mẫu cục bộ nào. Nó là một tham chiếu tốt cho vòng đời — abort, timeout, vệ sinh listener, accept/decline — còn nửa schema→biểu mẫu là công việc mới.
+
+8. **Viết `packages/tui/test/status-line-segment-closure.test.ts`.** Import `STATUS_LINE_SEGMENT_IDS` và `CUSTOM_STATUS_LINE_DEFAULTS` từ `../src/status-line/schema`, và `{ SEGMENTS, ALL_SEGMENT_IDS, renderSegment }` từ `../src/status-line/segments`. Gọi `initTheme()` trong `beforeAll`, y như `status-line-cache-hit.test.ts` làm. Ba test: (1) đầy đủ theo cả hai chiều — mọi id trong hợp là một khoá của `SEGMENTS`, và mọi khoá của `SEGMENTS` nằm trong hợp; báo cáo id phạm pháp **có tên**, vì đó là toàn bộ ý nghĩa. (2) `ALL_SEGMENT_IDS` chứa đúng các thành viên của hợp, cùng thứ tự, ghim phép ép `as` tại `segments.ts:957`. (3) `renderSegment` với một id vắng mặt khỏi `SEGMENTS` trả về `{ content: "", visible: false }` và không ném lỗi — gọi qua một phép ép kiểu để test thực sự chạm lỗ hổng runtime mà một hợp bị nới sẽ mở ra, và ghi chú trong comment rằng chính phép ép ấy là điểm mấu chốt.
+
+9. **Trong cùng file test đó, thêm test nêu đích danh hậu quả người dùng thấy**, để chế độ hỏng của sự đóng kín trở nên dễ đọc thay vì trừu tượng. Dựng một `SegmentContext` đầy đủ — sao chép hình dạng từ `createGallerySegmentContext` tại `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:24`, đây là context đầy đủ tất định đã dựng sẵn cho các bản xem trước biệt lập, thay vì tự cuộn tay — rồi khẳng định rằng một segment id không render ra gì sẽ bị **loại khỏi** thanh đã lắp ráp, chứ không phải được render thành một khoảng trống nhìn thấy được. Đây chính là hành vi tại `packages/tui/src/status-line/component.ts:2590` và `:2603`, nơi `if (rendered.visible && rendered.content)` bỏ qua nó. Hợp đồng được đặt tên: khi ai đó nới hợp mà quên renderer, segment lặng lẽ biến mất khỏi status line và không gì cảnh báo. Đó là hỏng hóc mà test này sinh ra để làm nổi bật.
+
+10. **Viết `packages/coding-agent/test/status-line-segment-picker.test.ts`.** Import `cfgStatusLineLeftSegments` và `cfgStatusLineRightSegments` từ `../src/modes/settings`, và `STATUS_LINE_SEGMENT_IDS` cùng `CUSTOM_STATUS_LINE_DEFAULTS` từ `@oh-my-pi/pi-tui/status-line/schema` (các test của coding-agent đã dùng specifier gói rồi, ví dụ `packages/coding-agent/src/modes/settings.ts:10`). Khẳng định (a) `items.values` của mỗi register là hợp — không id nào tới được picker mà hợp không nêu tên; (b) giá trị mặc định đã đăng ký bằng `CUSTOM_STATUS_LINE_DEFAULTS.left` / `.right` tương ứng, để mặc định cấu hình và từ vựng picker không thể trôi khỏi nhau; (c) một id có trong `SEGMENTS` nhưng thiếu khỏi `values` của picker được báo cáo **có tên**. Nếu hình dạng công khai của register trong settings khiến `items.values` khó với tới, hãy assert qua config entry đã resolve thay vì đào vào nội bộ — test này bảo vệ từ vựng của picker, không phải cách bố trí trường của register.
+
+11. **KHÔNG** viết test khẳng định `setFrameProvider` có đúng một call site không phải test. Đó là hình dạng source-grep bị cấm dưới AGENTS.md: nó đọc một file triển khai và khẳng định trên văn bản của file, nó vỡ vì một refactor vô hại, và nó vẫn xanh trong khi hành vi đã hỏng. Plan đã chạy `grep -rn "setFrameProvider" packages/ | grep -v "/test/"` như một lệnh nghiên cứu và nhận 39 tổng / 37 trong test — đó là một phát hiện để ghi vào tài liệu, không phải một test để commit. Tương tự cho việc barrel không có `register*` (một grep trên cả thư mục) và cho việc hợp có 27 thành viên (một hằng số nướng sẵn). Giữ ba thứ đó làm văn xuôi trong tài liệu; giữ sự khớp của hai catalog, từ vựng của picker, và hành vi loại-im-lặng làm test.
+
+12. **KHÔNG** khẳng định trong các test mới rằng `CUSTOM_STATUS_LINE_DEFAULTS` chứa cả `status` lẫn `usage` thì đều không có. Plan nói đó như một sự thật ở thì hiện tại và nó đúng hôm nay (đã kiểm chứng: `schema.ts:40-41` — left là vim/model/mode/path/git/pr, right là session_name/token_total/cost/context_pct, không status, không usage), nhưng mục A1 của Sóng 1 là ứng viên để bật `usage` trong preset, và một test hard-code mặc định hôm nay là một quả mìn cho chính công việc đi sau. Nếu muốn một test ghim mặc định, nó thuộc về S1, viết sau câu trả lời P1 của maintainer, khẳng định câu trả lời đó chứ không phải hiện trạng. Đặc tả này cố ý bỏ trống chỗ đó.
+
+13. **Móc tài liệu vào các đặc tả sóng bằng cách trích dẫn, đừng sửa chúng.** Mỗi sóng S1–S6 nên có thể thay một tham chiếu dòng của plan bằng `docs/plugin-surface-closure.md`. Ở cuối, xác nhận tài liệu chứa đúng một dòng "verified at" nêu HEAD 808b365 và ngày hôm nay, để người đọc sáu tuần sau biết các neo đã được kiểm tra một lần và vào lúc nào, và biết phải kiểm lại chứ không tin.
+
+14. **Chạy phần xác minh.** `bun run check:ts` phải exit 0 — đã chạy trong checkout này tại HEAD 808b365 và nó pass, cả mười sáu package đều báo Done, định dạng sạch trên 5445 file. `bun test` cần addon native: trên máy sạch nó chết ở bước import với `Failed to load pi_natives native addon for darwin-arm64` (đã tái hiện trên `packages/tui/test/status-line-model.test.ts`), nhưng đây là **tiền đề môi trường chứ không phải hạn chế của máy** — build một lần là xong: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). Sau đó chạy hai file test mới. **Đừng** báo ctx1 là xong chỉ vì `check:ts` pass — `check:ts` không thực thi một khẳng định nào, mà toàn bộ giá trị của mục này nằm ở các bất biến có thể thực thi.
+
+### Hình dạng code
+
+```typescript
+// packages/tui/test/status-line-segment-closure.test.ts — sketch, not final.
+// The cast in test 3 is deliberate and commented: exercising the id that
+// is IN THE TYPE but has no renderer is the exact hole a widened union opens.
+import { beforeAll, describe, expect, it } from "bun:test";
+import { CUSTOM_STATUS_LINE_DEFAULTS, STATUS_LINE_SEGMENT_IDS } from "../src/status-line/schema";
+import { ALL_SEGMENT_IDS, SEGMENTS, renderSegment } from "../src/status-line/segments";
+import type { SegmentContext, StatusLineSegmentId } from "../src/status-line/types";
+import { initTheme } from "../src/theme";
+
+beforeAll(async () => { await initTheme(); });
+
+describe("status-line segment catalogs are closed and mutually consistent", () => {
+  it("every union id has a renderer and every renderer is a union id", () => {
+    const union = new Set<string>(STATUS_LINE_SEGMENT_IDS);
+    const missing = STATUS_LINE_SEGMENT_IDS.filter(id => !Object.hasOwn(SEGMENTS, id));
+    const extra = Object.keys(SEGMENTS).filter(k => !union.has(k));
+    // Name the offenders: a bare length assertion tells the next engineer nothing.
+    expect({ missing, extra }).toEqual({ missing: [], extra: [] });
+  });
+
+  it("ALL_SEGMENT_IDS mirrors the union in order (segments.ts:957 is an `as` cast)", () => {
+    expect(ALL_SEGMENT_IDS).toEqual([...STATUS_LINE_SEGMENT_IDS]);
+  });
+
+  it("an id with no renderer renders empty instead of throwing", () => {
+    const ghost = "ghost_segment" as StatusLineSegmentId; // the hole, on purpose
+    expect(renderSegment(ghost, ctx)).toEqual({ content: "", visible: false });
+  });
+});
+
+// packages/coding-agent/test/status-line-segment-picker.test.ts — sketch, not final.
+// Resolve each register through its public settings entry, addressed by id — not
+// through the register's field layout. The contract is "what the picker can
+// present", not how `register()` happens to store it. The helper names below are
+// placeholders for whatever accessor settings.ts really exposes; if `items.values`
+// turns out to be unreachable from outside the module, take the config-entry
+// fallback that step 10 already names.
+describe("settings picker vocabulary is the frozen union", () => {
+  it("the left picker offers exactly the frozen union, and names any outsider", () => {
+    expect([...offeredValuesOf("statusLine.leftSegments")]).toEqual([...STATUS_LINE_SEGMENT_IDS]);
+    expect(namedOfferedIdsOutside("statusLine.leftSegments", new Set(STATUS_LINE_SEGMENT_IDS))).toEqual([]);
+  });
+  it("the right picker offers exactly the frozen union", () => {
+    expect([...offeredValuesOf("statusLine.rightSegments")]).toEqual([...STATUS_LINE_SEGMENT_IDS]);
+    expect(namedOfferedIdsOutside("statusLine.rightSegments", new Set(STATUS_LINE_SEGMENT_IDS))).toEqual([]);
+  });
+  it("registered defaults come from CUSTOM_STATUS_LINE_DEFAULTS", () => {
+    expect(resolveDefault("statusLine.leftSegments")).toEqual(CUSTOM_STATUS_LINE_DEFAULTS.left);
+    expect(resolveDefault("statusLine.rightSegments")).toEqual(CUSTOM_STATUS_LINE_DEFAULTS.right);
+  });
+});
+// (c) của bước 10 chính là `namedOfferedIdsOutside`, và cả hai picker đều phải được
+// kiểm chứ, không chỉ picker bên trái.
+```
+
+### Hợp đồng test
+
+Hai file, một ý tưởng: bề mặt segment của status-line là một tập **ĐÓNG**, và hai test mới bảo vệ sự đóng kín đó ở đúng ba chỗ mà một người đóng góp thật sự sẽ phá.
+
+`packages/tui/test/status-line-segment-closure.test.ts` bảo vệ sự khớp union↔registry. Hai catalog được duy trì bằng tay trong hai file (`schema.ts:2-30` và `segments.ts:919`) và cho tới giờ chẳng có gì kiểm tra mối nối giữa chúng; ràng buộc duy nhất là chú thích `Record<StatusLineSegmentId, ...>` bắt được việc nới hợp lúc biên dịch nhưng không bắt được trôi registry. Hỏng hóc người dùng thấy nếu nó hồi quy: ai đó thêm một segment id, build vẫn xanh, và segment **LẶNG LẼ BIẾN MẤT** khỏi status line — `renderSegment` trả `{ content: "", visible: false }` tại `segments.ts:950-953`, và `component.ts:2590` / `:2603` loại nó qua `if (rendered.visible && rendered.content)` mà không cảnh báo, không log, không gì cả. Người dùng thấy một status line đang lặng lẽ thiếu một trường mà họ đã cấu hình. Test thứ hai ghim `ALL_SEGMENT_IDS` với hợp, đóng lại phép ép `as StatusLineSegmentId[]` tại `segments.ts:957` hiện đang khiến chiều ngược lại không được kiểm, và thứ đó chảy vào gallery inventory tại `cli/gallery-fixtures/segments.ts:19`.
+
+`packages/coding-agent/test/status-line-segment-picker.test.ts` bảo vệ catalog thứ ba, thứ mà plan không bao giờ nhắc: `settings.ts:280` và `:287` đăng ký các picker với `items: { values: STATUS_LINE_SEGMENT_IDS }`, nên UI cấu hình tương tác chỉ có thể trình bày id thuộc hợp đã đóng băng. Hỏng hóc người dùng thấy nếu nó hồi quy: một segment render hoàn hảo trong gallery lại không bao giờ chọn được trong UI cấu hình thật, và một maintainer thêm segment mới chỉ phát hiện điều đó bằng cách tự tay thử. Khẳng định về mặc định bắt được cặp trôi đi kèm — mặc định cấu hình và từ vựng picker không thỏa thuận với nhau nghĩa là `statusLine.leftSegments` mặc định thành một thứ mà picker không hiển thị được.
+
+**Cố ý KHÔNG test**, và lý do: bất biến "đúng một call site `setFrameProvider` không phải test", bất biến "barrel không có `register*`", và bảng đếm "hợp có 27 thành viên" đều là những phát hiện có thật, nhưng mỗi cái rơi vào hình dạng source-grep / hằng-số-nướng-sẵn bị cấm dưới AGENTS.md — chúng đọc một file triển khai hoặc một hằng số và khẳng định trên văn bản của nó, chúng vỡ vì một refactor vô hại, và chúng vẫn xanh trong khi hành vi đã hỏng. Chúng thuộc về tài liệu dưới dạng văn xuôi. Tương tự, nội dung hiện tại của `CUSTOM_STATUS_LINE_DEFAULTS` **không** được khẳng định: A1 của Sóng 1 có thể hợp lệ thay đổi chúng, và việc ghim mặc định hôm nay là một quả mìn cho công việc đi sau.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+Đã chạy trong checkout này tại HEAD 808b365 và nó **PASS** (exit 0): định dạng sạch trên 5445 file, rồi cả mười sáu package đều báo Done — `pi-tui` 2.27s, `pi-coding-agent` 7.80s, `pi-metaharness` 15.45s là những cái chậm nhất. Đặc tả S1 nhắc lệnh này có thể vượt chín phút tuỳ máy; hãy tính thời gian cho việc đó và đừng giết sớm.
+
+```bash
+bun test packages/tui/test/status-line-segment-closure.test.ts packages/coding-agent/test/status-line-segment-picker.test.ts
+```
+
+**Tiền đề môi trường — đừng diễn giải thất bại đó là một khiếm khuyết trong công việc này.** Addon native là thứ duy nhất có thể chặn, và **tại cây này nó đã build** (đo 2026-09-29: `pi_natives.darwin-arm64.node` 185 MB, `bun test packages/tui/test/` chạy đủ 222/222 file). Nhánh "trên máy sạch" chỉ mô tả máy *chưa* build: ở đó runner báo 0 pass / 1 fail / 1 error với `Failed to load pi_natives native addon for darwin-arm64` tại `packages/natives/native/index.js:23`, và điều đó đã được tái hiện trên một test **không sửa đổi** có sẵn (`packages/tui/test/status-line-model.test.ts`) — chứng minh nó là vấn đề môi trường chứ không phải do hai file mới. Build một lần là gỡ: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) — đây là một **bước build còn thiếu**, không phải hạn chế của máy này. Hai file này phải được chạy, và ctx1 không xong cho tới khi chúng đã chạy.
+
+Đối chiếu lại neo — đây mới là bàn giao thật sự; chạy lại trước khi tin bất kỳ số dòng nào trong tài liệu:
+
+```bash
+git grep -n 'export const toolRenderers' -- packages/tui/src/tools/index.ts
+sed -n '93,98p' packages/tui/package.json
+sed -n '1,5p;28,32p;36,42p' packages/tui/src/status-line/schema.ts
+git grep -n 'export const STATUS_LINE_PRESETS\|^\t[a-z]*: {' -- packages/tui/src/status-line/presets.ts
+git grep -n 'setFooter: () => {}\|setHeader: () => {}' -- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts
+git grep -n 'export const SEGMENTS\|ALL_SEGMENT_IDS\|export function renderSegment' -- packages/tui/src/status-line/segments.ts
+git grep -n 'STATUS_LINE_SEGMENT_IDS' -- packages/coding-agent/src/modes/settings.ts
+git grep -n '#handleServerRequest' -- packages/coding-agent/src/mcp/manager.ts
+git grep -n 'capabilities:' -- packages/coding-agent/src/mcp/client.ts
+git grep -n 'pi-tui' -- packages/coding-agent/src/mcp/manager.ts
+git grep -n 'elicitFormFromAcpClient' -- packages/coding-agent/src/modes/acp/acp-agent.ts
+git grep -n 'setFrameProvider' -- packages/tui/src/tui.ts packages/tui/src/prompt/composer.ts
+git grep -n 'never probes' -- docs/tui-core-renderer.md
+```
+
+### Cổng hoàn thành
+
+Cả bốn chân đều xanh, và không chân nào được thỏa bằng `check:ts` một mình.
+
+1. `bun run check:ts` exit 0 — đã kiểm chứng trong checkout này tại HEAD 808b365.
+2. Cả hai file test mới pass một khi addon được build. (2) là chân đều mang theo mục này; thiếu nó, mục này chỉ là một tài liệu có tham vọng.
+3. `docs/plugin-surface-closure.md` tồn tại và mọi số dòng trong đó do một câu lệnh trong khối xác minh sinh ra **trong lần thực hiện này**, chứ không chép từ plan. Đảm chéo năm neo đã biết là trôi: 2-30 (không phải 1-32) cho hợp, 157/158 (không phải 148-149) cho `setFooter`/`setHeader`, 302 (không phải 301) cho call site trong composer, 101-102 (không phải 100-104) cho MCP capabilities, và 94-97 (không phải 93-96) cho subpath export.
+4. Mục (4) "what this does not prove" của tài liệu sống sót nguyên vẹn — cụ thể là hồ sơ khảo sát chưa bao giờ phân tích tính tương thích runtime giữa engine CCB và plugin của omp, và KHÔNG có bằng chứng nào ở bất cứ đâu cho cách đóng khung "cell buffer" hay "pre-styled ANSI" từ bản brief gốc. Nếu một biên tập viên tương lai xoá mục đó, họ vừa nhập lại claim chưa kiểm chứng mà mục này sinh ra để cách ly.
+
+**KHÔNG** thêm test cho bất biến "một call site `setFrameProvider`". Sự vắng mặt của nó là một phần của cổng: nếu một test dạng grep cho nó xuất hiện trong diff, mục này sai chứ không chỉ thiếu.
+
+Cổng này **có thể đỏ được**, và chân (2) là chân mang theo mục. Test union↔registry là một kiểm tra chéo hai nguồn thật, không phải vẻ lặp: `STATUS_LINE_SEGMENT_IDS` và `SEGMENTS` là hai literal được duy trì tách biệt ở các file khác nhau, nên một hồi quy ở bất kỳ bên nào — một id thêm vào một bên mà không thêm vào bên kia, một khoá registry bị xoá, `ALL_SEGMENT_IDS` bị đảo thứ tự — sẽ tạo ra một diff cụ thể nêu tên id phạm pháp. Test loại-im-lặng sẽ đỏ ngay khi guard `if (!segment)` của `renderSegment` bị gỡ, hoặc bộ lọc `if (rendered.visible && rendered.content)` của `component.ts` thay đổi — đúng cái khoảnh khắc một segment sẽ bắt đầu hiện thành khoảng trống nhìn thấy được thay vì biến mất. Test picker sẽ đỏ nếu một segment được thêm vào `SEGMENTS` mà không vào từ vựng cấu hình — một sai lầm thật và rất dễ xảy ra, vì hai bên nằm ở hai package khác nhau.
+
+Điểm yếu trung thực: chân (3), tức tài liệu, **không** tự đỏ được. Một số dòng cũ trong văn xuôi không sinh ra chỗ đỏ nào; cổng cho nó là con người chạy lại khối xác minh. Điều đó là cố hữu với một bàn giao tài liệu, và đó là lý do các chân có thể thực thi được làm nhiệm vụ mang các bất biến còn tài liệu thì chỉ ghi lại các neo.
+
+### Phụ thuộc
+
+- **Không có gì.** Mục này không phụ thuộc phía trên và là thứ đầu tiên nên làm — mọi đặc tả S1–S6 trích dẫn cách đặt khung của nó làm tiền đề, nên làm nó sau cùng chính là cách biến một neo cũ thành bảy.
+- **Chỉ với chân (2):** một native addon đã build — `brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0. Ngoài phạm vi trách nhiệm của kỹ sư khi sửa; đó là một tiền đề môi trường dùng chung bởi mọi đặc tả M3. Sau khi build, chân (2) chạy được. Nếu build không được, ctx1 bị kẹt ở chân (2) và điều đó nên được báo lên chứ không vòng qua.
+
+**Chặn:** S1–S6. Không phải qua một phụ thuộc cứng mà qua tiền đề: đặc tả S1 vốn đã điều hướng bằng số dòng của plan và đã được sửa giữa chừng (plan_corrections của chính nó ghi các dòng không-đụng-tới 1819/1821/1896 thực ra là 1830/1832/1907, +11). Mọi đặc tả sóng trích dẫn một neo §1–§2 sẽ thừa hưởng đúng lớp trôi ấy, trừ khi mục này đến trước và tra cho chúng một nguồn đã sửa. Cụ thể là mục A1 về status-line của S1, qua câu hỏi P1 (preset nào thêm `usage`) — `CUSTOM_STATUS_LINE_DEFAULTS` hiện tại cố ý bị để ngoài phạm vi test ở đây, chính để A1 không bị chặn bởi mục này. Không có gì bị chặn bởi ctx1. Nó là một lá.
+
+### Rủi ro
+
+Cách dễ sai nhất là **test quá mức**: với tay tới một test dạng grep cho bất biến "đúng một call site `setFrameProvider` không phải test", hoặc một khẳng định đếm 27 thành viên của hợp, vì cả hai đều có vẻ như đang ghim lập luận của plan. Cả hai là hình dạng source-grep / hằng-số-nướng-sẵn bị cấm dưới AGENTS.md — chúng đọc một file triển khai hoặc một literal và khẳng định trên văn bản của nó, chúng vỡ vì một refactor vô hại (thêm một frame provider thứ hai ở S4 sẽ biến bộ xanh thành đỏ mà không có thay đổi hành vi nào), và chúng vẫn xanh trong khi hành vi thật sự đã hỏng. Chính plan đã chạy lệnh grep đó như một lệnh nghiên cứu và ghi lại 39 tổng / 37 trong test; đã chạy lại và số đó vẫn đúng. Đó là một phát hiện, không phải một test. Bước 11 tồn tại để chặn điều này, và cổng nêu sự vắng mặt của nó là một phần của hợp đồng.
+
+Rủi ro bậc hai thì nhẹ hơn nhưng tốn hơn: giao tài liệu mà thiếu test sự khớp của hai catalog, vì tài liệu "chứng minh" sự đóng kín bằng trích dẫn. Nếu sau này ai đó thêm một segment id và build vẫn xanh, thì claim đóng kín mà cả milestone này được thiết kế quanh nó là sai, và không gì bắt được. Chân có thể thực thi mới là bàn giao; tài liệu là biên nhận.
+
+### Cần người quyết
+
+- **O1 (quy trình, stakes thấp):** có nên sửa tại chỗ `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` với sáu neo đã trôi, hay để nó làm bản ghi lịch sử với `docs/plugin-surface-closure.md` làm nguồn đã sửa? Đặc tả này **KHÔNG** đụng vào plan — đó là một file được track thuộc sở hữu của workflow assemble M1/M2, và sửa nó ở đây có nguy cơ đụng độ với workflow đó. Cần một quyết định của maintainer. Nếu không ai trả lời: để plan yên, vì tiền lệ của M1 đã là "fold the spec-verified plan into the upgrade plan" thành một commit riêng.
+- **O2 (phạm vi, cần maintainer):** tài liệu có nên bao phủ thêm hai phần bổ sung của M3 mà hiện chỉ nhắc thoáng qua — dải trạng thái hạn mức và biểu mẫu elicitation của MCP — hay bám chặt vào lập luận "vì sao không phải một plugin"? Cả hai đều là chủ đề §2 và cả hai đều thuộc các sóng sau. Mặc định: bám chặt §1–§2, vì một tài liệu bối cảnh mà lớn dần thành tài liệu thiết kế sẽ không còn là thứ các sóng trích dẫn.
+- **O3 (phụ thuộc, báo lên nếu nó chặn):** addon native là tiền đề môi trường dùng chung — nó **đã build được** trên máy này (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0), nên chân (2) của cổng chạy được. Câu hỏi còn lại là: hai file test có được kỳ vọng sẽ chạy thật trước khi công việc M3 bắt đầu, hay viết và giao mà chưa thực thi? Câu trả lời thành thật cho hiện tại: đừng đánh dấu ctx1 xong chỉ vì `check:ts` pass — `check:ts` thực thi không một khẳng định nào, mà toàn bộ giá trị của mục này nằm ở các bất biến có thể thực thi.
+- **O4 (stakes thấp, dành cho người phụ trách WI-7 của M2):** §2.1 trao mối segment của status-line cho M2 WI-7 + M2-OQ3 thay vì mở lại nó trong M3. Đặc tả này xác minh mối đó là đóng và ghim nó; nó **KHÔNG** quyết câu hỏi ấy. Hãy xác nhận rằng việc ghim sự đóng kín ở đây không tiền chiếm WI-7 — theo cách viết hiện tại thì không, vì một test khẳng định hai catalog khớp nhau sẽ vẫn xanh sau khi WI-7 mở một mối nối, miễn là WI-7 cập nhật cả hai catalog. Nếu WI-7 được kỳ vọng sẽ thêm một hàm `register*`, thì lệnh grep barrel ở bước 11 là chỗ cần đổi.
+
+### Đính chính so với plan
+
+| claim của plan | verdict | correction |
+| --- | --- | --- |
+| `packages/tui/src/status-line/schema.ts:1-32` (`STATUS_LINE_SEGMENT_IDS` … `as const`; `status` ở chỉ số 1, `usage` ở chỉ số 23) | **STALE** — khoảng dòng sai, số đếm đúng | Hợp mở ở `schema.ts:2` (dòng 1 là doc comment `/** Status line segment identifiers accepted by custom status-line settings. */`) và đóng bằng `] as const;` ở `schema.ts:30`. Dùng **2-30**. Mọi thứ khác trong claim đúng tuyệt đối: 27 giá trị, `status` ở chỉ số 1, `usage` ở chỉ số 23 — đã đếm các literal. Bằng chứng: `git grep -n 'STATUS_LINE_SEGMENT_IDS = \[\|^] as const;' -- packages/tui/src/status-line/schema.ts` trả về 2 và 30. `awk 'NR>=2 && NR<=31' packages/tui/src/status-line/schema.ts \| grep -c '^\t"'` trả về 27. |
+| `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:148-149` — `setHeader` và `setFooter` là `() => {}` | **STALE** — lệch chín dòng | `setFooter` ở `:157` và `setHeader` ở `:158`. Bản thân claim đúng và vẫn mang tính nạng cấp thiết: cả hai là mũi tên no-op, và đó là lý do bề mặt plugin không với tới được vùng hiển thị chính. Bằng chứng: `git grep -n 'setFooter: () => {}\|setHeader: () => {}' -- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` trả về 157 và 158. |
+| **Đúng một call site không phải test**: `packages/tui/src/prompt/composer.ts:301` — `this.ui.setFrameProvider(this)`. Tổng số 39 hit, 37 trong `packages/tui/test/`. | **LỆCH MỘT** ở dòng; số đếm **CHÍNH XÁC** | Call site là `composer.ts:302`, không phải `:301`. Định nghĩa ở `packages/tui/src/tui.ts:949` là đúng. Số đếm đúng tuyệt đối: 39 lần xuất hiện, 2 trong `src/`, 37 trong `packages/tui/test/`. Bằng chứng: `git grep -c setFrameProvider -- packages/` cho `composer.ts:1, tui.ts:1, emergency-restore-altscreen:1, history-frame-plan:16, image-budget:13, paint-listener:1, resize-alt-toggle-echo:3, resize-conpty-warp:1, resize-multiplexer-anchor:1, resize-preserved-clear:1` — cộng lại là 39, trong đó 37 nằm ở `test/`. |
+| `packages/coding-agent/src/mcp/client.ts:100-104` — `capabilities` chỉ khai báo `roots: { listChanged: false }` | **STALE** — lệch một | `capabilities:` ở `client.ts:101` và `roots: { listChanged: false }` ở `:102`. Claim nội dung đúng tuyệt đối và đã kiểm chứng: hai dòng đó là toàn bộ tập capability client khai báo, và đó là lý do `#handleServerRequest` chỉ có thể bị hỏi `ping` hoặc `roots/list`. Bằng chứng: `git grep -n 'capabilities:' -- packages/coding-agent/src/mcp/client.ts` trả về 101 là hit đầu tiên, bên trong `initializeConnection`. |
+| Lỗ thoát `toolRenderers` sống sót nhờ export map `./*` -> `./src/*.ts` tại `packages/tui/package.json:93-96` **cộng với loader remap về instance của host** | **SAI MỘT NỬA** — cơ chế bị gán nhầm | Export map là có thật và nằm ở `package.json:94-97`, không phải 93-96 (93 là dấu ngoặc đóng của entry `./status-line`). Nhưng extension loader CÓ một remap pi-tui, và plan hàm ý không có. Thứ tồn tại là `installLegacyPiSpecifierShim()` tại `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:2727`, được cài ở `extensions/loader.ts:59`, với bộ lọc `onResolve` là `LEGACY_PI_SPECIFIER_FILTER` tại `legacy-pi-compat.ts:837` — một shim specifier `@oh-my-pi/*` legacy khái quát, cùng một shim TypeBox tại `:873` và các namespace virtual/host đã đóng gói. Nhánh riêng cho pi-tui có thật: `PI_PACKAGE_NAMES` (`:805`) liệt kê `pi-tui` nên bộ lọc khớp cả package root lẫn mọi subpath, và `__buildLegacyPiPackageRootOverrides()` (`:1024`) ghim package-root `@oh-my-pi/pi-tui` vào `LEGACY_PI_TUI_SHIM_PATH` (`:969-971`, module `legacy-pi-tui-shim.ts`). Nhưng bản ghi đó chỉ thay mặt trước ở package root và shim lại re-export chính `@oh-my-pi/pi-tui`, nên nó không tạo instance thứ hai và không phủ `@oh-my-pi/pi-tui/tools`. Lý do thật một plugin dùng chung đối tượng `toolRenderers` của host chỉ là phân giải module thông thường: subpath export ánh xạ `@oh-my-pi/pi-tui/tools` tới đúng tệp tuyệt đối mà host cũng import, và Bun cache theo đường dẫn đã phân giải, nên cả hai bên gọi nhận cùng một module instance, do đó cùng một bản ghi mutable. Hãy nêu cơ chế thật — một kỹ sư đi tìm phép remap sẽ không thấy và có thể sai là kết luận rằng lỗ thoát đã vỡ. Bằng chứng: `git grep -rn 'pi-tui' -- packages/coding-agent/src/extensibility/` cho 80 hit: phần lớn là import kiểu/giá trị thông thường trong các custom command đã đóng gói (`custom-tools/types.ts:21`, `custom-commands/bundled/annotate/*`, v.v.), nhưng còn có nhánh remap thật nêu trên. `git grep -n 'LEGACY_PI_SPECIFIER_FILTER' -- packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts` trả về 837 (định nghĩa), 1058 (chặn trong `resolveLegacyPiSpecifier`) và 2736 (đăng ký `onResolve`); bộ lọc TypeBox là một dòng riêng, `TYPEBOX_SPECIFIER_FILTER` tại `:873` dùng ở `:2737`. |
+| Lập luận chung của §2.1: hợp bị đóng băng, barrel không có `register*`, và `CUSTOM_STATUS_LINE_DEFAULTS` bỏ sót cả `status` lẫn `usage` — do đó một plugin phải sửa core để thêm một segment | **ĐÚNG NHƯNG THIẾU** — neo mạnh nhất đang thiếu | Cả ba sub-claim đều kiểm chứng được (barrel re-export đúng `component/metrics/presets/segments/separators/types` và `git grep register` trên toàn bộ thư mục status-line không trả về gì; `CUSTOM_STATUS_LINE_DEFAULTS` tại `schema.ts:36-42` là left=[vim,model,mode,path,git,pr], right=[session_name,token_total,cost,context_pct]). Nhưng plan không bao giờ nhắc catalog đóng thứ hai, và đó mới là thứ thật sự làm cho sự đóng kín được trình biên dịch cưỡng chế: `packages/tui/src/status-line/segments.ts:919` khai báo `export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment>` liệt kê cả 27 renderer. Vì chú thích là exhaustive, nới hợp chính là **LỖI BUILD** cho tới khi có renderer — trình biên dịch, chứ không phải quy ước, mới là cổng. Một điểm phải sửa thứ ba cũng bị bỏ sót: `packages/coding-agent/src/modes/settings.ts:280` và `:287` đăng ký các picker cấu hình với `items: { values: STATUS_LINE_SEGMENT_IDS }`, nên một extension không thể làm segment mới hiện trong UI mà không sửa cả coding-agent. Ba catalog duy trì bằng tay, không phải một; một trong ba do type checker canh giữ. Bằng chứng: `sed -n '915,947p' packages/tui/src/status-line/segments.ts` cho thấy Record với 27 khoá theo thứ tự hợp. `git grep -n 'STATUS_LINE_SEGMENT_IDS' -- packages/coding-agent/src/modes/settings.ts` trả về 280 và 287. `git grep -rn register -- packages/tui/src/status-line/` không trả về gì. |
+| §2.4 / cách đóng khung của hồ sơ: "omp plugin contract trả về ANSI đã định kiểu sẵn với không có cell buffer", và việc phân tích tính tương thích runtime giữa render engine của CCB và hợp đồng plugin của omp | **KHÔNG ĐƯỢC HỖ TRỢ** — plan từ chối nó là đúng, và điều này đáng giữ nguyên văn | Đã kiểm chứng: hồ sơ khảo sát chỉ nhắc `@anthropic/ink` và `React reconciler` như các trường đợp loại phạm vi và không chứa phân tích nào về cell buffer hay ANSI định kiểu sẵn. Sự từ chối ngoại suy của §2.4 là đúng và phải sống sót vào tài liệu nguyên văn. Ghi nhận bất đối xứng duy nhất thực sự có neo và không có trong plan: `segments.ts:957` suy ra `ALL_SEGMENT_IDS` từ `SEGMENTS` bằng một ép `as StatusLineSegmentId[]` thay vì một phép suy ra có kiểm, và nó chảy tới `getSegmentGalleryInventory()` tại `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:19` — nên chiều union→registry được trình biên dịch kiểm còn chiều registry→danh-sách-id thì chỉ được khẳng định. Đó là mối nối yếu thật, và nó chính là thứ test mới ghim. Bằng chứng: `sed -n '955,957p' packages/tui/src/status-line/segments.ts` cho thấy `export const ALL_SEGMENT_IDS: StatusLineSegmentId[] = Object.keys(SEGMENTS) as StatusLineSegmentId[];`. `git grep -n 'getSegmentGalleryInventory' -- packages/coding-agent/src/cli/gallery-fixtures/segments.ts` trả về 19, trả về `[...ALL_SEGMENT_IDS]`. |
+| §2.1: "bảy kiểu separator, và thang độ rộng ba bậc" | **KIỂM CHỨNG MỘT PHẦN** — số separator đúng, thang độ rộng không được hỗ trợ | Bảy kiểu separator kiểm chứng được: `STATUS_LINE_SEPARATOR_VALUES` tại `schema.ts:48-56` đúng là powerline, powerline-thin, slash, pipe, block, none, ascii. Nhưng không tìm thấy hằng số tầng độ rộng nào trong `packages/tui/src/status-line/component.ts` — các tìm kiếm WIDTH, BREAKPOINT, TIER và so sánh độ rộng không trả về gì ngoài một comment vô liên hệ về scoped tiers. Hãy bỏ cụm "three-tier width scale" khỏi tài liệu thay vì diễn giải lại thành một câu gần đó cũng không trích dẫn được. Nếu hành vi độ rộng quan trọng phía dưới, hãy suy ra lại từ đường overflow tại `component.ts:2580-2610`, nơi các segment được render rồi loại bỏ bởi `if (rendered.visible && rendered.content)`. Bằng chứng: `sed -n '48,56p' packages/tui/src/status-line/schema.ts` liệt kê bảy giá trị. `git grep -n 'WIDTH\|BREAKPOINT\|widthTier\|TIER' -- packages/tui/src/status-line/component.ts packages/tui/src/status-line/types.ts` không trả về gì. |
+| §1: "chỉ 6 trên 15 hạng mục thực sự phụ thuộc M2 (A4, B1, B2, B3, và C2 + D2 qua câu trả lời M2-OQ3). 9 hạng mục có thể bắt đầu ngay hôm nay." | **CHƯA KIỂM CHỨNG ĐƯỢC TỪ PHẠM VI CỦA MỤC NÀY** — đã gắn cờ, không mang tiếp | Phép đếm này phụ thuộc vào kho danh mục hạng mục ở §5 và §6, và vào cách WI-7 của M2 giải quyết, tất cả đều nằm ngoài khoảng 7044-7113 được giao. Chỉ xác nhận được rằng M2-OQ3 là có thật và được mô tả tại `plan:6675` là "a mode registered by an extension touches the closed StatusLineSegmentId union", và rằng nó được tham chiếu chéo từ `plan:4439` như một chặn cứng. Đặc tả này **KHÔNG** xác nhận độc lập con số 6-trên-15, các ID hạng mục A4/B1/B2/B3/C2/D2, hay cách chia 8-core/4-plugin/3-in-tree. **Đừng trích số này từ mục này** — nó chưa được kiểm chứng. Hãy đối chiếu với §5/§6 trước khi nó xuất hiện trong bất kỳ bàn giao nào; con số mang tính nạng cấp thiết cho cách đóng khung của milestone và là claim duy nhất trong §1 mà không tái lập được. Bằng chứng: `git show 808b365:COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md \| grep -n 'M2-OQ3'` trả về **25** hit (4439, 5424, 6461, 6675, 6785, 6917, 7054, 7056, 7086, 7133, 7155, 7156, 7185, 7197, 7200, 7238, 7330, 7412, 7420, 7432, 7442, 7640, 7656, 7658, 7678) — trong đó chỉ **7054**, **7056** và **7086** nằm trong khoảng 7044-7113 của mục này, mọi hit còn lại nằm ngoài. Vì danh mục hạng mục và câu trả lời M2-OQ3 đều nằm ngoài khoảng đó, hàng này không kết luận gì về con số 6-trên-15. Con số 6-trên-15 xuất hiện **hai** lần, tại `plan:7054` và `plan:7640`, và cả hai đều dẫn tới kho danh mục ở mục 5 và mục 6 — ngoài khoảng 7044-7113 được giao. |
+
+
+---
+
+
+## Bối cảnh (2/2) — sổ neo đã kiểm chứng cho §3–§5
+
+Mục này không mang lại hiệu ứng gì cho người dùng — nó là công việc nội bộ.
+
+**Sóng / phạm vi:** context (pre-wave) — đọc bởi cả 16 mục công việc M3 trước khi bất kỳ mục nào được xếp lịch.
+
+**Effort:** S — đọc 198 dòng plan, chạy ~30 lệnh kiểm chứng, viết sổ neo này. Nửa ngày.
+
+**Một dòng:** Xác minh lại mọi file:line mà plan trích ở M3 §3, §4 và §5 so với cây thật, rồi đưa cho người triển khai một bảng neo đã sửa, để không ai phải mất một giờ vì một dòng cũ.
+
+Mục "Đính chính so với plan" ở cuối tài liệu này — 17 dòng — KHÔNG phải phần phụ. Với hai mục bối cảnh (ctx1, ctx2), chính chúng là phần đính chính: 7 trong số các neo đã bị plan ghi sai đủ lớn để người đọc mở nhầm hàm.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` | sửa | Nguồn chỉ-đọc của §1 (dòng 8551), §2 (8581), §3 (8621), §4 (8644), §4.1 (8673), §5 (8685), §5.1 (8719-8741). KHÔNG bị mục này sửa — các đính chính bên dưới mới là dạng có thẩm quyền; việc gấp chúng ngược lại vào plan là một bước riêng, để sau. | có |
+| `.lavish-wip/m3-specs/ctx2.spec.json` | tạo | Bản thân tài liệu này — sổ neo đã sửa và cổng kiểm chứng có thể đỏ. | có |
+
+Ghi chú kèm theo:
+
+- Với `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`: đã xác nhận dòng 8549 là `# MILESTONE 3`, không phải milestone 2 như văn bản nhiệm vụ nói. `grep -n '^# MILESTONE'` trả về 299 (M1), 4173 (M2), 8549 (M3), 10564 (M6) — LƯU Ý: ở HEAD 808b365 lệnh này trả về 291/7042/9057 và file KHÔNG có header M2; commit e040a60 đã chèn kế hoạch thực thiện M2 vào, nên mọi số dòng của plan trong sổ này đã trôi.
+- Với `.lavish-wip/m3-specs/ctx2.spec.json`: thư mục anh em của `m2-specs/`, vốn đã chứa sẵn 14 file `WI-N.spec.json` đúng hình dạng này.
+
+### Các bước
+
+1. Đọc dòng 8551-8741 của plan để lấy trong một lượt khung sóng M3 cùng §3/§4/§4.1/§5. KHÔNG đọc cả file — nó dài 1.1 MB. Neo: `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8551-8741`.
+2. Xác nhận HEAD thật trước khi tin bất kỳ claim nào kiểu `@ HEAD 5873776` trong plan. `git rev-parse HEAD` trả về e040a60, và `git branch --show-current` trả về milestone-1. Coi mọi số dòng tương đối trong plan là chưa kiểm chứng cho tới khi tái lập được. Neo: `git rev-parse HEAD`.
+> ⛔ **TIỀN ĐỀ NÀY TỪNG MÂU THUẪN WI-4 CỦA M2 (đính chính 2026-09-29) — ĐÃ CHỐT, đọc khối ✅ ngay dưới trước khi đọc khối này.**
+> Bước này **từng** assert `toolRenderers` là **record ghi được, không đóng băng**. Nhưng `WI-4` của M2 yêu cầu `Object.freeze` + `Readonly` trên đúng registry đó (`MILESTONE_2_EXECUTION_PLAN.md:2608`, `:2636`, `:2658`). M3:258 đẩy quyết định sang "nợ bàn giao M4/M5 #4" — mà `grep -c registerToolRenderer` trên cả M4 và M5 → **0 và 0**, nên **không milestone nào nhận**. Merge M2 trước M3 làm đỏ. **Cả hai vế của dòng trên đã hết hiệu lực:** quyết định đã đóng ở khối ✅ kế tiếp theo phương án (i), nên tiền đề của bước 3 đã viết lại thành "registry là `Readonly` + đóng băng" và mâu thuẫn với WI-4 không còn tồn tại. Giữ khối này lại chỉ để nhắc vì sao bước 3 không được viết theo bản gốc.
+> **Câu hỏi đã chốt:** plugin có được sở hữu renderer của built-in không? **(i)** đóng băng không ngoại lệ → bước này phải đổi tiền đề; **(ii)** đóng băng + một đường đăng ký tường minh do WI-9 sở hữu → bước này đổi từ "ghi trực tiếp" sang gọi đường đăng ký, giữ bất biến mà B1 cần mà không cần sửa WI-4. Chốt ở bảng quyết định của M2, **không** chốt lại ở đây.
+
+> ✅ **ĐÃ CHỐT (2026-09-29): phương án (i) — KHÔNG được ghi đè renderer của built-in tool mà plugin không sở hữu.**
+> WI-4 của M2 đóng băng trọn vẹn, và **bước này phải viết lại**: assert registry là `Readonly` + đóng băng
+> tại `tools/index.ts:35`, thay vì assert nó là record ghi được. Fixture B1 **không được gán trực tiếp**
+> vào registry nữa — nó phải đi qua `ToolDefinition` (`renderCall`/`renderResult`).
+> Lý do chốt: **0 writer trong repo hôm nay** (13 tham chiếu, tất cả là lượt đọc), nên không consumer
+> nào trong repo cần quyền ghi. Phương án "đóng băng + đường đăng ký" bị loại vì `WI-9` **không** sở hữu
+> `toolRenderers` — 0 hit trong `M2:5211-5640`.
+> **Còn treo:** có plugin ngoài repo nào đang mutate registry không — repo không có dữ liệu hệ sinh thái
+> plugin, và không suy ra được từ code. Thêm nữa, chưa quan sát được extension trong binary compile có
+> nhận đúng instance của host hay không (`/$bunfs/` qua `bundledModuleVirtualSpecifier`; bảng override
+> chỉ khoá package root, không subpath nào).
+
+3. Kiểm chứng tiền đề của §2 ~~rằng không plugin nào chạm tới được renderer: assert `toolRenderers` là record ghi được, không đóng băng~~ **rằng registry là `Readonly` + đóng băng**, tại `tools/index.ts:35`; bản đồ export `./*` trỏ tới `./src/*.ts`; và barrel của status-line không export `register*` nào. Cả ba đều đã xác nhận — `grep -rn register packages/tui/src/status-line/` trả về không kết quả. Neo: `packages/tui/src/tools/index.ts:35`.
+4. Kiểm chứng catalog status-line đã đóng băng: đếm 27 id trong `STATUS_LINE_SEGMENT_IDS`, xác nhận `status` ở chỉ số 1 và `usage` ở chỉ số 23, và xác nhận `CUSTOM_STATUS_LINE_DEFAULTS` (`schema.ts:36-42`) chứa không cái nào trong hai cái đó. Cả ba đều đã xác nhận bằng cách đọc `schema.ts:1-42`. Neo: `packages/tui/src/status-line/schema.ts:1-42`.
+5. Đọc trọn cả bảy preset và ghi lại id nào xuất hiện. Đã xác nhận: không preset nào chứa `usage`, và cũng không preset nào chứa `status` — đó chính là toàn bộ nền tảng của mối nguy hiểm width-ladder ở §4.1. Neo: `packages/tui/src/status-line/presets.ts:5,16,26,36,59,84,96`.
+6. Kiểm chứng từng dòng giá trị-đảo của §3, ghi lại cho từng dòng: claim / verdict / dòng đã sửa. Khoảng một nửa số dòng trong plan lệch 1-5; hai dòng lệch 28-50; ba claim mang tính thực chất (số điểm ctrl+o, số nơi gọi keyHint, khóa schema colorblind) sai hoàn toàn. Không mang dòng nào trong số đó sang mà chưa kiểm chứng. Neo: `packages/tui/src/status-line/segments.ts:864-913`.
+7. Kiểm chứng claim bằng chứng của O1 bằng cách đọc test sẵn có, chứ không đọc phần tóm tắt của plan về nó. Bằng chứng cho thấy hook status hiển thị được mà không cần segment id `status` là `makeComponent({ showHookStatus: true })` (không truyền danh sách segment nào) khẳng định hai dòng hook-status ở độ rộng 8. Neo: `packages/coding-agent/test/status-line-settings-cache.test.ts:335-343`.
+8. Kiểm chứng claim về harness của §4.1: cả ba file đều tồn tại, và `packages/tui/package.json` không khai báo phụ thuộc nào vào `@oh-my-pi/pi-coding-agent`, nên một test `StatusLineComponent` thật sự không thể nằm trong `packages/tui/test/`. Đã xác nhận — các dep là omptype / pi-agent-core / pi-ai / pi-catalog / pi-natives / pi-utils / pi-wire / snapcompact. Neo: `packages/coding-agent/test/helpers/status-line.ts:6`.
+9. Kiểm chứng ba dòng "must build" có rủi ro thật trong bản đồ thành phần của §4 — mouse wheel (`mouse.ts:39/46/74/87`), MCP request switch (`manager.ts:1032-1040` + capabilities ở `client.ts:101-103`), và các form class (`form.ts:104/270/352`). Mọi neo đều đã xác nhận; switch của manager thật sự ném `-32601` ở nhánh default. Neo: `packages/coding-agent/src/mcp/manager.ts:1039`.
+10. Kiểm chứng seam đã khoá của O5. Xác nhận cả ba nơi tiêu thụ nằm trong `packages/tui` (`read-tool-group.ts:59`, `chat-transcript-builder.ts:443`, `:507`) và rằng hiện chưa tồn tại predicate read-collapse nào ở bất cứ đâu. Đồng thời kiểm phương án mà plan không nhắc tới: `getTool` ĐÃ nằm trong `ChatTranscriptBuilderDeps` ở `:67` và đã dùng ở `:475`, nên builder vốn đã có thể resolve một `AgentTool` theo tên. Neo: `packages/tui/src/chat/chat-transcript-builder.ts:65-77`.
+11. Kiểm chứng phần kiểm kê mặt lõi của §5.1: 7 surface, trong đó 5 không có đường đăng ký nào khả dĩ, A6 là điểm tiêm duy nhất có chủ sở hữu, A9 cố ý vắng mặt. Rồi kiểm chứng các claim phủ định làm cho chúng đáng tin: `keybinding-hints.ts`, `keybindings.ts` và `app-keybindings.ts` mỗi file chứa 0 lần xuất hiện chuỗi `tmux`. Neo: `packages/tui/src/chrome/keybinding-hints.ts:57,70,78`.
+12. Chạy cổng (xem mục Xác minh): đủ 63 khẳng định neo, không khẳng định nào được bỏ. Mọi khẳng định phải qua. Bất kỳ khẳng định nào hỏng nghĩa là cây đã dịch chuyển dưới sổ neo này và sổ phải được làm mới trước khi bất kỳ mục công việc M3 nào được xếp lịch. Neo: `.lavish-wip/m3-specs/ctx2.spec.json`.
+
+### Hợp đồng test
+
+Đây là một mục bối cảnh, nên không có hợp đồng runtime nào và không có file test nào để thêm — bịa ra một file sẽ vi phạm lệnh cấm placeholder test của AGENTS.md. Hợp đồng ở đây khác loại: **mọi neo trong sổ này phải TÁI LẬP ĐƯỢC bằng một lệnh thật**, và cổng là một script khẳng định chạy lại được (bên dưới), exit khác 0 nếu bất kỳ neo nào trôi.
+
+Người tiêu dùng là một kỹ sư ngồi máy vào thứ Hai, sẽ gõ số dòng của plan vào trình soạn thảo. Nếu một số dòng trong sổ này sai, họ mở nhầm hàm và mất khoảng một giờ trước khi nhận ra. Nếu cổng không có khả năng đỏ, một sổ sai trông y hệt một sổ đúng. Đó là toàn bộ lý do cổng dưới đây tồn tại, và là lý do nó được viết dưới dạng khẳng định thực thi chứ không phải văn xuôi.
+
+Điều người kỹ sư thấy nếu mục này hồi quy: họ sửa `extension-ui-controller.ts:148` mong đợi `setHeader` và rơi vào giữa `setTheme`; họ thêm `usage` vào `presets.ts` và không tìm thấy `toolRenderers`; họ đuổi theo "6 ctrl+o sites" rồi thấy 22, và tưởng cây bị hỏng thay vì nghĩ là plan sai.
+
+Ba file test được dẫn đường trong sổ này (không sửa, không thêm):
+
+- `packages/coding-agent/test/status-line-overflow.test.ts`
+- `packages/coding-agent/test/status-line-settings-cache.test.ts`
+- `packages/coding-agent/test/helpers/status-line.ts`
+
+### Xác minh
+
+Môi trường, kiểm chứng ngày 2026-09-27 tại HEAD e040a60 trên nhánh milestone-1, và **đo lại 2026-09-29** ở cây này:
+
+```bash
+bun test packages/coding-agent/test/status-line-overflow.test.ts
+  -> chạy được NGAY ở cây này (addon đã build). Nhánh "máy sạch" bên dưới là tiền đề tái lập được,
+     KHÔNG phải trạng thái hiện tại — nó chỉ xảy ra khi thiếu đúng file 'pi_natives.darwin-arm64.node',
+     và lúc đó lệnh chết ở bước import với 'Failed to load pi_natives native addon for darwin-arm64'.
+  => Build một lần là gỡ: brew install ninja && bun --cwd=packages/natives run build
+     Sau đó cổng M3 được đặt lên lệnh này như bình thường.
+
+bun run --filter './packages/tui' --if-present check:types
+  -> '@oh-my-pi/pi-tui check:types: Exited with code 0'. Cổng thay thế CHẠY ĐƯỢC mà không cần addon.
+```
+
+**CỔNG — dán khối dưới đây vào một file rồi chạy bằng bash hoặc zsh. Phải in ra 63 OK / 0 FAIL và exit 0.**
+
+```sh
+cd /Users/tranquangdang21/Projects/ultraworkers
+fail=0
+a(){ if [ "$2" = "$3" ]; then echo "OK   $1"; else echo "FAIL $1: want '$3' got '$2'"; fail=$((fail+1)); fi; }
+a tui.ts:949          "$(sed -n '949p' packages/tui/src/tui.ts | grep -c 'setFrameProvider(provider')" 1
+a composer.ts:302     "$(sed -n '302p' packages/tui/src/prompt/composer.ts | grep -c 'this.ui.setFrameProvider(this)')" 1
+a frameprovider-nontest-hits "$(grep -rn 'setFrameProvider' packages/ | grep -v '/test/' | wc -l | tr -d ' ')" 2
+a frameprovider-tests "$(grep -rn 'setFrameProvider' packages/ | grep '/test/' | wc -l | tr -d ' ')" 37
+a tools/index.ts:35   "$(sed -n '35p' packages/tui/src/tools/index.ts | grep -c 'export const toolRenderers')" 1
+a tools/index.ts:46   "$(sed -n '46p' packages/tui/src/tools/index.ts | grep -c 'grep: grepToolRenderer')" 1
+a exportmap-wildcard  "$(sed -n '94,97p' packages/tui/package.json | grep -cF './src/*.ts')" 2
+a segid-count         "$(awk 'NR>=3 && NR<=29 && NF' packages/tui/src/status-line/schema.ts | wc -l | tr -d ' ')" 27
+a segid-status-idx    "$(awk 'NR>=3 && NR<=29 && NF{n++; if($0~/status/) print n-1}' packages/tui/src/status-line/schema.ts)" 1
+a segid-usage-idx     "$(awk 'NR>=3 && NR<=29 && NF{n++; if($0~/usage/) print n-1}' packages/tui/src/status-line/schema.ts)" 23
+a statusline-register "$(grep -rc 'register' packages/tui/src/status-line/ | grep -v ':0' | wc -l | tr -d ' ')" 0
+a preset-default      "$(sed -n '5p' packages/tui/src/status-line/presets.ts | grep -c 'default:')" 1
+a preset-minimal      "$(sed -n '16p' packages/tui/src/status-line/presets.ts | grep -c 'minimal:')" 1
+a preset-compact      "$(sed -n '26p' packages/tui/src/status-line/presets.ts | grep -c 'compact:')" 1
+a preset-full         "$(sed -n '36p' packages/tui/src/status-line/presets.ts | grep -c 'full:')" 1
+a preset-nerd         "$(sed -n '59p' packages/tui/src/status-line/presets.ts | grep -c 'nerd:')" 1
+a preset-ascii        "$(sed -n '84p' packages/tui/src/status-line/presets.ts | grep -c 'ascii:')" 1
+a preset-custom       "$(sed -n '96p' packages/tui/src/status-line/presets.ts | grep -c 'custom:')" 1
+a no-preset-has-usage "$(grep -c 'usage' packages/tui/src/status-line/presets.ts)" 0
+a defaults-no-usage   "$(sed -n '36,42p' packages/tui/src/status-line/schema.ts | grep -c 'usage\|status')" 0
+a ladder-rightpop     "$(sed -n '2705p' packages/tui/src/status-line/component.ts | grep -c 'right.pop()')" 1
+a sethookstatus       "$(sed -n '959p' packages/tui/src/status-line/component.ts | grep -c 'setHookStatus(key')" 1
+a hookstatus-push     "$(sed -n '3066p' packages/tui/src/status-line/component.ts | grep -c 'showHookStatus ?? true')" 1
+a status-segment      "$(sed -n '197p' packages/tui/src/status-line/segments.ts | grep -c 'const statusSegment')" 1
+a cachehit-formula    "$(sed -n '729p' packages/tui/src/status-line/segments.ts | grep -c 'cacheRead + cacheWrite + input')" 1
+a vim-segment         "$(sed -n '804p' packages/tui/src/status-line/segments.ts | grep -c 'const vimSegment')" 1
+a usage-segment-start "$(sed -n '864p' packages/tui/src/status-line/segments.ts | grep -c 'const usageSegment')" 1
+a usage-segment-end   "$(sed -n '913p' packages/tui/src/status-line/segments.ts | grep -c '^};')" 1
+a wheel-3-sites       "$(grep -rn 'wheel \* 3' packages/tui/src/ | wc -l | tr -d ' ')" 7
+a wheel-2-sites       "$(grep -rn 'wheel \* 2' packages/tui/src/ | wc -l | tr -d ' ')" 1
+a parsesgrmouse       "$(sed -n '39p' packages/tui/src/mouse.ts | grep -c 'export function parseSgrMouse')" 1
+a wheel-erasure       "$(sed -n '46p' packages/tui/src/mouse.ts | grep -c 'as 1 | -1')" 1
+a handlewheel-sig     "$(sed -n '74p' packages/tui/src/mouse.ts | grep -c 'handleWheel(delta: -1 | 1)')" 1
+a routeselect-mouse   "$(sed -n '87p' packages/tui/src/mouse.ts | grep -c 'target.handleWheel(event.wheel)')" 1
+a loader-trailer-fld  "$(sed -n '32p' packages/tui/src/components/loader.ts | grep -c '#trailer?')" 1
+a loader-settrailer   "$(sed -n '141p' packages/tui/src/components/loader.ts | grep -c 'setTrailer(trailer:')" 1
+a interactive-trailer "$(sed -n '6624p' packages/coding-agent/src/modes/interactive-mode.ts | grep -c 'setTrailer')" 1
+a watchdog-class      "$(sed -n '57p' packages/tui/src/loop-watchdog.ts | grep -c 'export class LoopWatchdog')" 1
+a watchdog-phase      "$(sed -n '123p' packages/tui/src/loop-watchdog.ts | grep -c 'takeRecentLoopPhase')" 1
+a mcp-switch         "$(sed -n '1032p' packages/coding-agent/src/mcp/manager.ts | grep -c '#handleServerRequest')" 1
+a mcp-throw           "$(sed -n '1039p' packages/coding-agent/src/mcp/manager.ts | grep -c '\-32601')" 1
+a mcp-caps            "$(sed -n '102p' packages/coding-agent/src/mcp/client.ts | grep -c 'roots: { listChanged: false }')" 1
+a readcollapse-fn     "$(sed -n '41p' packages/tui/src/chat/read-tool-group.ts | grep -c 'export function readArgsCollapseIntoGroup')" 1
+a readcollapse-use    "$(sed -n '59p' packages/tui/src/chat/read-tool-group.ts | grep -c 'readArgsCollapseIntoGroup(content.arguments)')" 1
+a builder-deps        "$(sed -n '65p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'export interface ChatTranscriptBuilderDeps')" 1
+a builder-ctor        "$(sed -n '101p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'constructor(deps: ChatTranscriptBuilderDeps)')" 1
+a builder-hardcode1   "$(sed -n '443p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'content.name === "read"')" 1
+a builder-hardcode2   "$(sed -n '507p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'message.toolName === "read"')" 1
+a builder-gettool     "$(sed -n '67p' packages/tui/src/chat/chat-transcript-builder.ts | grep -c 'getTool?:')" 1
+a formfield           "$(sed -n '104p' packages/tui/src/components/form.ts | grep -c 'export class FormField')" 1
+a textformfield       "$(sed -n '270p' packages/tui/src/components/form.ts | grep -c 'export class TextFormField')" 1
+a selectformfield     "$(sed -n '352p' packages/tui/src/components/form.ts | grep -c 'export class SelectFormField')" 1
+a followbottom        "$(sed -n '47p' packages/tui/src/chat/transcript-browser.ts | grep -c 'followBottom?: boolean')" 1
+a noticereg           "$(sed -n '313p' packages/coding-agent/src/modes/controllers/event-controller.ts | grep -c 'notice: e => this.#handleNotice')" 1
+a handlenotice        "$(sed -n '1250p' packages/coding-agent/src/modes/controllers/event-controller.ts | grep -c '#handleNotice(event')" 1
+a showstatus          "$(sed -n '143p' packages/coding-agent/src/modes/utils/ui-helpers.ts | grep -c 'showStatus(message: string')" 1
+a sethdr-noop         "$(sed -n '157,158p' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts | grep -c 'setFooter: () => {},')" 1
+a palettes            "$(ls packages/tui/src/theme/defaults/*.json | wc -l | tr -d ' ')" 99
+a tui-dep-on-agent    "$(grep -c 'pi-coding-agent' packages/tui/package.json)" 0
+a overflow-test       "$(test -f packages/coding-agent/test/status-line-overflow.test.ts && echo 1 || echo 0)" 1
+a plan-m3-header   "$(sed -n '8549p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -c '^# MILESTONE 3')" 1
+a plan-m3-sec3     "$(sed -n '8621p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -c '^## 3\.')" 1
+a plan-m3-sec5     "$(sed -n '8685p' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -c '^## 5\.')" 1
+echo "failures: $fail"
+[ "$fail" -eq 0 ]
+```
+
+### Cổng hoàn thành
+
+Chạy nguyên văn script khẳng định trong mục Xác minh, từ thư mục gốc repo. DONE nghĩa là nó in ra `failures: 0` và exit 0 — tức cả 63 neo trong sổ này vẫn resolve đúng ký hiệu mà chúng nêu tên, tại HEAD e040a60.
+
+Script có khả năng đỏ **theo cấu tạo, không theo ý định**: 6 trong số 63 khẳng định mang một số dòng đã sửa so với plan, và **5** trong số đó đỏ ngay nếu dùng giá trị của plan — `usage-segment-end` (913→895), `interactive-trailer` (6624→6674), `noticereg` (313→308), `handlenotice` (1250→1244), `sethdr-noop` (157,158→148,149). Nếu người triển khai thay vì tin plan và viết khẳng định từ CHÍNH plan, 5 cái đó sẽ đỏ ngay lần chạy đầu — đó là chính là điểm (đã kiểm chứng: hoán 5 trong số chúng lại về giá trị của plan cho exit 1 với đúng 5 FAIL). Còn `exportmap-wildcard` thì **không** đỏ dưới giá trị nào, vì `grep -c './src/*.ts'` trong 94-97 và trong 93-96 đều ra 2 — đừng tính nó vào bằng chứng độ đỏ. Nó cũng chẳng chứng minh được khoảng: khối thật là `package.json:94-97`, mở đầu ở 94. Cổng cũng đã bắt được nhánh drift thứ hai — số dòng trỏ vào chính `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` — qua ba khẳng định `plan-m3-header`, `plan-m3-sec3`, `plan-m3-sec5`; bằng chứng ở đoạn kế tiếp.
+
+**Ngoài phạm vi rõ ràng** của cổng này: `bun test`. Đừng thêm cổng file test vào một mục bối cảnh — ở đây không có hành vi runtime nào để bảo vệ, và một placeholder test sẽ vi phạm AGENTS.md. (Lý do không phải là `bun test` không chạy được: cổng này là cổng grep, và `bun test` chạy được sau khi build addon.)
+
+Cổng này **có thực sự đỏ được không?** Có. Bằng chứng nằm ở chính con số 6: 6 khẳng định mang số dòng đã sửa so với plan, 5 trong số đó đỏ thật dưới giá trị của plan, và bằng chứng thực nghiệm ghi lại là hoán 5 trong số chúng về giá trị của plan thì exit 1 với đúng 5 FAIL. Ba khẳng định neo plan (`plan-m3-header`, `plan-m3-sec3`, `plan-m3-sec5`) là câu trả lời cho chính nhánh drift đã làm hỏng sổ này: chúng xanh ở số của e040a60 và đỏ ở số của 808b365.
+
+### Phụ thuộc
+
+- `depends_on`: không — mục này đứng trước sóng, không cần gì.
+
+- `blocks` — 16 mục sau đây, tất cả đều phải đọc sổ này trước khi được xếp lịch:
+  A1 — add usage to a preset · A2 — declare the elicitation capability · A3 — mouse wheel acceleration model · A4 — plugin secret enum mask + storage · A5 — event-loop stall indicator trailer · A6 — transcript group membership predicate · A7 — transient notice buffer · A8 — tmux-aware key hints · A9 — daltonized theme palettes · B1 — tool renderer override · B2 — working-message plugin · B3 — key hint strip · C2 — shell command status segment · D1 — MCP elicitation form · D2 — cache hit-rate segment · D3 — overlay scroll chrome
+
+### Rủi ro
+
+Rủi ro KHÔNG phải là sổ này sai — mọi neo trong đó đã được tái lập bằng lệnh thật. Rủi ro là một mục milestone sau này (mà tôi không đọc) sẽ dựng lại cùng những claim đó từ PLAN thay vì từ file này, làm số dòng cũ quay lại (trong đó có 7 cái đủ lớn để rơi vào nhầm hàm — ví dụ `interactive-mode.ts:6674` so với :6624 thật, và dòng colorblind trỏ vào các khóa `statusLineGit*` chẳng liên quan gì tới token mà nhánh đó điều chỉnh) cùng 3 claim mang tính thực chất bị sai. ctx2 chỉ hữu dụng nếu nó là nguồn sự thật duy nhất cho các neo M3, nên bước tiếp theo là gấp các đính chính này ngược lại `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` thay vì để lại hai tài liệu mâu thuẫn.
+
+Cái bẫy cụ thể: ba claim TRÔNG như những trượt số nhỏ nhưng không phải. (a) "6 ctrl+o sites" thật ra là 22 nơi gọi `expandKeyHint()` + 25 nơi gọi `formatExpandHint()` — đếm thiếu làm dòng đó đọc ra như "độ phủ mỏng" trong khi thực ra là bão hòa, điều có thể khiến ai đó xây một helper trùng lặp. (b) "`keyHint` không có nơi gọi nào" là sai; nó có 4, và chỉ `appKeyHint` mới chết — lý do của B3 yếu hơn plan nói. (c) dòng colorblind trích các khóa schema `statusLineGit*`, vốn không liên quan gì tới token duy nhất mà nhánh đó điều chỉnh; kỹ sư làm theo neo đó sẽ sửa nhầm phần của theme schema.
+
+### Cần người quyết
+
+- **M2-OQ3 (`registerStatusLineSegment`) chưa giải quyết và chặn D2 + C2**, và qua WI-7, chặn luôn hình dạng `ModeDefinition.statusLine`. GHI CHÚ: `packages/tui/test/status-line-extension-mode.test.ts`, mà plan viện dẫn là test của M2 WI-7, **KHÔNG TỒN TẠI** trong cây. Đó là một artifact tương lai bị chặn bởi câu hỏi đó — đừng đi tìm nó, và đừng để sự vắng mặt của nó bị đọc thành hồi quy.
+- **O5 được đánh dấu CHỐT (locked) trong plan, nhưng tồn tại một phương án đơn giản hơn mà plan không nhắc**: `getTool?: (name: string) => AgentTool | undefined` ĐÃ nằm trong `ChatTranscriptBuilderDeps` (`chat-transcript-builder.ts:67`) và đã dùng ở `:475`, và `AgentTool` đã import được trong pi-tui từ `@oh-my-pi/pi-agent-core`. Vậy builder có thể đọc thẳng cờ membership từ tool đã resolve, thay vì phải được đưa một predicate. **Một con người phải quyết** giữ seam inject-predicate đã khoá hay mở lại nó — tôi không tự ý lật một quyết định đã khoá.
+- **Dòng 21 (plugin secret lưu plaintext tại `manager.ts:942-949`) bị gate bởi M2 WI-8a** vì `manager.ts:929-957` là một dòng hotspot trong bảng của M2 và đang bị thay thế. Hãy xác nhận việc gate đó trước khi bất kỳ ai mở `manager.ts` trong M3 — nếu không, hai milestone sẽ cùng chạm vào một hàm trong cùng một sóng.
+- **§4.1 nói rằng việc dựng harness thứ hai bên trong `packages/tui/test/` là "banned by this document".** Cách diễn đạt đó là lập luận riêng của plan, không phải quy tắc AGENTS.md. Sự thật nền tảng thì vững và tự đủ để giữ kết luận (`pi-tui` không có phụ thuộc `pi-coding-agent`, và `git grep pi-coding-agent` dưới `packages/tui/test/` không trả về gì), nên kết luận vẫn đứng vững mà không cần lệnh cấm bị bịa ra.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Khung nhiệm vụ: "Milestone 2 chiếm dòng 7042-7692", repo ở "git HEAD 5873776". | wrong | Dòng 7042 KHÔNG còn là `# MILESTONE 3` — ở HEAD e040a60 nó là `### Phụ thuộc` giữa kế hoạch M2. `grep -n '^# MILESTONE'` trả về 299 (M1), 4173 (M2), 8549 (M3), 10564 (M6): header `# MILESTONE 2` ĐÃ tồn tại (commit e040a60 thêm kế hoạch thực thiện M2). HEAD thật là e040a60 trên nhánh milestone-1. Ghi chú lịch sử: ở HEAD 808b365 — nơi sổ này được viết — con số 291/7042/9057 và việc thiếu header M2 ĐÚNG; đính chính này đã bị chính commit e040a60 vượt qua. |
+| `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:148-149` — `setHeader` và `setFooter` là no-op `() => {}`. | stale | Các no-op nằm ở :157-158, thấp hơn chín dòng. `setStatus` ở :128 (plan nói :119) và `setWorkingMessage` ở :129 (plan nói :120). Bản thân claim hoàn toàn đúng; chỉ có số dòng đã dịch chuyển. |
+| omp đã phát `(ctrl+o to expand)` ở 6 điểm: `execution-shared.ts:87`, `eval.ts:680`, `eval.ts:814`, `ttsr-notification.ts:86/:117/:119`. | wrong | **SỐ ĐẾM sai rất nhiều.** Có 22 nơi gọi `expandKeyHint()` (định nghĩa tại `render/render-utils.ts:205`) cộng 25 nơi gọi `formatExpandHint()` (`render/render-utils.ts:305`) — gợi ý nằm sau một helper dùng chung và chạm tới nhiều surface hơn hẳn plan liệt kê, gồm `inspector-panel.ts` (một mình 8 điểm), `github.ts`, `lsp.ts`, `memory.ts`, `web-search.ts`. Hai trong sáu dòng trích là chính xác (`eval.ts:680`, `:814`); bốn dòng còn lại lệch 1-2 (`execution-shared.ts:89`, `ttsr-notification.ts:87`, `:118`, `:120`). **Chiều của sai số quan trọng**: omp có NHIỀU hơn thứ plan ghi công, nên hành động "không làm gì" lại càng đúng hơn. |
+| `keyHint` (`keybinding-hints.ts:29`) và `appKeyHint` (:42) KHÔNG có nơi gọi nào; `rawKeyHint` (:53) đang dùng. | wrong | Hai trong ba sự thật sai. Số dòng là `keyHint` :57, `appKeyHint` :70, `rawKeyHint` :78. Và `keyHint` KHÔNG phải không có nơi gọi — nó có 4 nơi gọi (ví dụ `overlays/history-search.ts:199`). Chỉ `appKeyHint` mới thật sự chết ở 0. Tiền đề của B3 rằng "hai helper được viết ra rồi không dùng" vì vậy sai một nửa: **một** helper chết, không phải hai. |
+| Các khóa git-lock của nhánh colorblind khai báo tại `packages/tui/src/theme/schema.ts:77-78` với fallback `:140-141`. | wrong | Những dòng đó là `statusLineGitClean`/`statusLineGitDirty` và không liên quan gì tới colorblind mode. Nhánh đó điều chỉnh **đúng một** token, `resolvedColors.toolDiffAdded` (`theme/loader.ts:153-157`), các khóa schema của nó là `toolDiffAdded` tại `schema.ts:53` (union) và `:116` (record defaults). Kỹ sư làm theo neo của plan sẽ sửa nhầm phần của theme schema. Bản thân claim "chỉ một token" thì ĐÚNG — phép điều chỉnh là một lệnh ghi duy nhất `resolvedColors.toolDiffAdded = adjustHsv(...)`. |
+| `packages/coding-agent/src/modes/interactive-mode.ts:6674` đã cài `setTrailer(() => this.#workingRowTrailer())`. | stale | Nơi gọi thật là :6624, sớm hơn năm mươi dòng. Bản chất claim được xác nhận đầy đủ và mang tính quyết định: `loader.ts:141` `setTrailer` chỉ nhận **một** callback, nên chủ sở hữu bên coding-agent do đó buộc phải được **GỘP** với bất kỳ chỉ báo stall mới, không phải xếp chồng. Đây là dòng sắc nhất trong bảng §5.1 và neo của nó phải đúng. |
+| Sự kiện notice được định tuyến tại `event-controller.ts:308` vào `#handleNotice` ở `:1244-1251`. | stale | Đăng ký nằm ở :313 (`notice: e => this.#handleNotice(e)`) và phương thức bắt đầu ở :1250. Khoảng `:1244-1251` mà plan trích thật ra **bắt đầu bên trong một phương thức khác** (`markBackgroundTaskCalls`), nên làm theo nó sẽ rơi vào sai hàm. Claim về định tuyến thì nếu không nói cách khác vẫn đúng. |
+| `packages/tui/src/status-line/segments.ts:864-895` — segment usage 5 cửa sổ, đăng ký tại :865. | stale | Segment **BẮT ĐẦU** ở :864 với `id: "usage"` ở :865, đúng y như claim, nhưng nó **KẾT THÚC** ở :913, không phải :895. Mọi claim mang tính thực chất đều đứng vững: năm cửa sổ (5h/1d/7d/mo/resetCredits) cộng tier, đồng hồ reset theo từng cửa sổ, và `visible: false` khi không có cửa sổ nào. Chỉ đầu khoảng sai. |
+| A4 phải sửa rò rỉ plugin secret: enum render plaintext tại `plugin-settings.ts:166` và lưu plaintext tại `manager.ts:942-949`; cờ `secret?: boolean` không có trong plan M2. | partly stale | Hai bug là thật, nhưng cách sửa nhỏ hơn nhiều so với plan ám chỉ, và cờ mà plan nói là thiếu **đã có sẵn trong cây**. `secret?: boolean` TỒN TẠI tại `packages/coding-agent/src/extensibility/plugins/types.ts:63` và `packages/tui/src/overlays/plugin-settings.ts:31`, và mặt nạ hiển thị đã được cài tại `plugin-settings.ts:152` (`schema.secret && currentValue ? "••••••••" : ...`). Vậy A4 là bản sửa **MỘT DÒNG** — nhánh enum ở :167 dùng `String(currentValue ?? schema.default ?? "")` thô thay vì dùng `displayValue` — tái sử dụng một mặt nạ vốn đã chạy được cho nhánh string ở :188. Phép grep của plan tìm "secret" trong toàn văn plan M2 trả về 0 **đã được xác nhận**, nghĩa là M2 sẽ thay kho này mà không biết cờ đã tồn tại; đó mới là rủi ro thật ở đây, chứ không phải cờ thiếu. Số dòng: enum là :167 không phải :166, nhánh string :188 không phải :187. |
+| O5 đã khoá: inject một predicate `readCollapsesIntoGroup` từ coding-agent vào builder của tui, vì 3/4 nơi tiêu thụ nằm trong packages/tui vốn không thể phụ thuộc pi-coding-agent. | confirmed, with an unmentioned alternative | Lập luận về hướng phụ thuộc được xác nhận đầy đủ: `packages/tui/package.json` không khai báo phụ thuộc `@oh-my-pi/pi-coding-agent` nào (dep là omptype / pi-agent-core / pi-ai / pi-catalog / pi-natives / pi-utils / pi-wire / snapcompact) và `git grep -l pi-coding-agent -- packages/tui/test/` không trả về gì. Cả ba điểm tiêm đều tồn tại và chưa được stub: `chat-transcript-builder.ts:65-77` (interface deps, đóng ở 77 chứ không phải 76), `:101` (constructor), `:443` và `:507` (hai chỗ hardcode `=== "read"`), và `read-tool-group.ts:59`. Điều plan không nhắc: `getTool?: (name: string) => AgentTool \| undefined` ĐÃ có trong deps ở :67 và đã dùng ở :475, và `AgentTool` đã được import từ `@oh-my-pi/pi-agent-core` ở :14 — nên builder vốn đã có thể resolve tool theo tên và đọc thẳng cờ membership, **không cần inject gì cả**. Tôi không lật quyết định đã khoá; điều này được nêu như một câu hỏi mở. |
+| §4.1: test của A1 phải nằm ở `packages/coding-agent/test/`, không phải `packages/tui/test/`, và harness là `status-line-overflow.test.ts` cộng `StatusLineTestComponents`. | confirmed | Xác nhận đầy đủ, và đây là claim harness mang tải trọng nhất của §3-§5. Cả ba file đều tồn tại. `status-line-overflow.test.ts` đã import `resetSettingsForTest`, làm `Settings.init({ inMemory: true })`, và lấy `statusLineHost` từ coding-agent — đúng cái ràng buộc khiến một test cục bộ trong tui là bất khả thi. `StatusLineTestComponents` nằm ở `helpers/status-line.ts:6`. Một lệch 1: test bằng chứng O1 là `status-line-settings-cache.test.ts:374-381`, không phải :373-380 — khối `describe` ở 374 và khẳng định `expect(component.render(8)).toEqual(["Ponytail", "$0.04 (…"])` ở 380. Bằng chứng có tác dụng vì `makeComponent({ showHookStatus: true })` KHÔNG truyền segment id nào, và không preset nào chứa `status`, nên cả hai dòng đầu ra chứng minh hook status hiển thị qua đường riêng tại `component.ts:3066-3068` chứ không qua status segment. |
+| Thang độ rộng status-line tại `component.ts:2687-2745` thu nhỏ `session_name`, rồi `right.pop()` ở :2705, rồi path, rồi loại các segment bên trái từ phải sang trái; chỉ số trong `rightSegments` là đòn bẩy ưu tiên duy nhất. | confirmed (range end understated) | **Mọi bước và mọi dòng trích đều chính xác** — cắt `session_name` tại :2688-2703, `right.pop()` tại :2705, thu nhỏ path tại :2709-2740, loại bên trái qua `leftOverflowDropIndex` tại :2752-2757. Khối thật ra chạy tới :2758, nên khoảng plan trích dừng sớm 13 dòng. Hệ quả vận hành vẫn đứng vững và là phát hiện đáng giá nhất của §3-§5: preset `default` có `rightSegments` là `["session_name"]`, nên khi nối thêm `usage` nó thành phần tử đầu tiên bị loại ở độ rộng hẹp, và vì `usage` là segment rộng nhất catalog, hạn mức biến mất lặng lẽ ở 80 cột trong khi session name (đã bị cắt) vẫn sống sót. Đó là lý do cổng của A1 phải là **hợp đồng phủ định** — usage vẫn phải hiển thị ở 80 cột với ngữ cảnh đầy đủ — chứ không phải kiểm tra dương "nó hiển thị". |
+| MCP: `manager.ts:1032-1040` chỉ xử lý ping và roots/list và ném -32601 ở nhánh default; `client.ts:100-104` khai báo chỉ capability roots; `manager.ts` có một import pi-tui chỉ kiểu. | confirmed | Cả ba chính xác. `#handleServerRequest` ở :1032, `throw Object.assign(new Error(...), { code: -32601 })` ở :1039, và tham chiếu pi-tui duy nhất trong `manager.ts` là import chỉ-kiểu ở :46 — xác nhận rằng manager về mặt cấu trúc không thể mở một form. Khối capabilities là :101-103 chứ không phải :100-104 (khoảng của plan nuốt luôn `protocolVersion`), đây là một ngoặc-rộng vô hại. Dòng này đúng khi buộc D1 và A2 vào cùng một commit (O3+O4), và đúng khi cảnh báo rằng quảng bá một capability mà không có handler thì tệ hơn sự im lặng của hôm nay. |
+| `acp-agent.ts:295-410` là một triển khai cục bộ đang chạy của schema→form, và cả hai vòng phản biện đều sai khi loại nó. | confirmed — plan's correction is right | Plan đúng, dossier sai. `elicitFormFromAcpClient` được khai báo tại `acp-agent.ts:314` và gọi `connection.unstable_createElicitation(...)` ở :358 — nó là một cầu nối **ĐI RA**, đóng gói một schema và hỏi một trình soạn thảo từ xa. Nó không render form cục bộ nào. Nó là tài liệu tham khảo tốt cho **vòng đời** (abort, timeout, loại response đến trễ, dọn listener) và vô dụng như tài liệu tham khảo cho schema→form rendering, đó là việc mới với D1. Đáng nói thẳng vì người đọc bỏ qua đính chính sẽ định thử tái sử dụng nó. |
+| Nhóm lệch-1 nhỏ: các segment trong `schema.ts`, khoảng deps của `chat-transcript-builder.ts`, `handleScroll` của `agent-transcript-viewer.ts`, `showHookStatus` của `settings.ts`, `COLORBLIND_ADJUSTMENT` của `theme/loader.ts`, `cfgColorBlindMode` của `settings.ts`, `showStatus` của `ui-helpers.ts`, bản đồ export của `package.json`, cuối segment cacheHit, cuối segment status. | stale | Không cái nào đổi được quyết định nào, nhưng hãy mang số đã sửa: `statusSegment` 197-211 (không phải 212); `cacheHitSegment` 718-738 (không phải 737); `ChatTranscriptBuilderDeps` 65-77 (không phải 76); `#handleScroll` 517-535 (không phải 515-534) — dòng 516 là dòng cuối của doc comment, không phải dòng khai báo; `cfgStatusLineShowHookStatus` 264-267 với `default: true` ở 267 (không phải 262-265); `COLORBLIND_ADJUSTMENT` tại `theme/loader.ts:146` (không phải 145); `cfgColorBlindMode` tại `settings.ts:109` (không phải 108); `UiHelpers.showStatus` 143-164 (không phải 141-160) — thân phương thức kiểm tra hai phần tử cuối của `chatContainer` và vá tại chỗ ở :152-157, với comment "avoid log spam" ở :141, nên **BẢN CHẤT** của plan là đúng và chỉ có khoảng bị dịch; bản đồ export `./*` là `package.json:94-97` (không phải 93-96). |
+| Các số đếm được xác minh chính xác và mang nguyên vẹn sang: 7 dòng preset (5,16,26,36,59,84,96), 27 segment id với status ở 1 và usage ở 23, 99 palette, 7 điểm `event.wheel * 3` + 1 điểm `* 2`, 1 nơi gọi + 1 dòng định nghĩa setFrameProvider ngoài test (tổng 2 dòng khớp, cổng đếm cả hai) với 37 hit trong test, `grep -c tmux` = 0,0,0 trên ba file, 3/4 nơi tiêu thụ read-group nằm trong tui, `form.ts:104/270/352`, `transcript-browser.ts:47`, `types.ts:235/267/264-277`, `interactive-mode.ts:424`, `grep.ts:241`, `builtin-session.ts:434`, `tmux.ts:5/48-49`, `loop-watchdog.ts:57/123-124`, `loader.ts:32/107-113/141`, `message-notice.ts:37`, `read-tool-group.ts:41`, `session-color.ts:2`, `docs/tui-core-renderer.md:107` và `:174`. | confirmed | Từng cái đều tái lập được. Hai cái đáng nói lại như mang tải trọng vì bảng §5.1 đứng trên chúng: (1) `setHeader`/`setFooter` là no-op và bề mặt plugin không thể chạm tới vùng hiển thị chính; (2) `docs/tui-core-renderer.md:107` ("The renderer never probes the user's scroll position") và `:174` ("...or forks history policy") là bất biến viết ra giới hạn cứng D3 chỉ còn ở overlay viewer. Cũng đã xác nhận: số palette đúng là 99 qua dạng glob `ls packages/tui/src/theme/defaults/*.json \| wc -l`, và `MessageNoticeComponent` không có timeout, không có buffer, không có trường key — chỉ có `#expanded` và `#toolActivityVisible` — nên nó phải ở lại vĩnh viễn hiển thị và **KHÔNG** được tái dùng làm nơi chứa notice tạm thời của A7. |
+| `packages/tui/test/status-line-extension-mode.test.ts` là test của M2 WI-7, không viết được cho tới khi M2-OQ3 được trả lời. | confirmed, nhưng file không tồn tại | Lập luận đúng và claim về việc bị chặn vẫn đứng vững, nhưng người đọc có thể phí công đi tìm file. `ls` xác nhận `packages/tui/test/status-line-extension-mode.test.ts` không tồn tại. Đó là một artifact tương lai bị gate bởi M2-OQ3, và sự vắng mặt của nó **KHÔNG phải** hồi quy. D2 và C2 phải được viết sau khi M2-OQ3 hạ cánh, và hợp đồng phủ định của chúng phải bắt nguồn từ hướng nào trong hai hướng của M2 được chọn — id có tiền tố bị từ chối khi gặp id trần (hướng 1), hay một map fallback nơi id chưa đăng ký vẫn được chấp nhận tại thời điểm render (hướng 2). Luận điểm của plan rằng một cơ chế thứ ba do M3 viết sẽ mâu thuẫn với bất cứ thứ gì M2 chọn là cách diễn đạt đúng và nên sống sót sang đặc tả D2/C2. |
+
+#### Bằng chứng cho từng dòng đính chính
+
+Theo đúng thứ tự các dòng trong bảng trên:
+
+1. `grep -n '^# MILESTONE' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` -> 299, 4173, 8549, 10564 (ở HEAD e040a60; ở 808b365 là 291, 7042, 9057 và không có M2); `git rev-parse HEAD` -> e040a60; `git branch --show-current` -> milestone-1
+2. `grep -n 'setHeader|setFooter|setStatus|setWorkingMessage' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` -> 128, 129, 157, 158
+3. `grep -rn 'expandKeyHint()' packages/tui/src/ | grep -v 'export function' | wc -l` -> 22; `grep -rn 'formatExpandHint(' packages/tui/src/ | grep -v 'export function' | wc -l` -> 25 (hàm này có tham số nên mẫu phải là `formatExpandHint(` chứ không phải `formatExpandHint()`); defs tại `render/render-utils.ts:205` và `:305`
+4. Số nơi gọi theo từng helper — keyHint 4, appKeyHint 0, rawKeyHint 5, editorKey 75, editorKeys 27, boundKeys 3, interruptKey 13
+5. `grep -n 'toolDiffAdded' packages/tui/src/theme/schema.ts` -> 53, 116; `sed -n '77,78p;140,141p'` -> statusLineGitClean/statusLineGitDirty; `theme/loader.ts:153-157`
+6. `grep -rn 'setTrailer' packages/ --include='*.ts'` -> chỉ `loader.ts:141` (định nghĩa) và `interactive-mode.ts:6624` (nơi gọi); `#workingRowTrailer` định nghĩa ở :1013
+7. `grep -n 'notice:' packages/coding-agent/src/modes/controllers/event-controller.ts` -> 313; `:1250` là `async #handleNotice(event: ...)`
+8. `sed -n '864,913p' packages/tui/src/status-line/segments.ts`; `^};` đầu tiên tại hoặc sau 864 nằm ở 913
+9. `grep -rn 'secret' packages/coding-agent/src/extensibility/plugins/types.ts packages/tui/src/overlays/plugin-settings.ts` -> types.ts:63, plugin-settings.ts:31/152/667/668; `awk 'NR>=4000 && NR<=7041' <plan> | grep -c secret` -> 0
+10. `read-tool-group.ts:41/:59`; `chat-transcript-builder.ts:14, :65-77, :101, :443, :475, :507`; `grep -c 'pi-coding-agent' packages/tui/package.json` -> 0; không có ký hiệu `readCollapsesIntoGroup` nào tồn tại trong packages/
+11. `ls` xác nhận cả ba file; `status-line-settings-cache.test.ts:374-381`; `component.ts:3066-3068` = `const showHooks = this.#settings.showHookStatus ?? true`
+12. `presets.ts:7` `rightSegments: ["session_name"]`; `component.ts:2687-2758`; `grep -c 'usage' packages/tui/src/status-line/presets.ts` -> 0
+13. `manager.ts:1032/:1039/:46`; `client.ts:101-103`
+14. `grep -n 'elicitFormFromAcpClient|unstable_createElicitation' packages/coding-agent/src/modes/acp/acp-agent.ts` -> 295 (doc), 314 (fn), 358, 389, 507, 1879
+15. Mỗi cái đều được xác minh bằng `sed -n` trên file được trích; xem script cổng trong mục Xác minh cho tập con được kiểm bằng máy
+16. Xem script cổng trong mục Xác minh; `docs/tui-core-renderer.md:107` và `:174` đọc trực tiếp
+17. `ls packages/tui/test/status-line-extension-mode.test.ts` -> No such file or directory; `packages/tui/src/status-line/index.ts` chỉ export component/metrics/presets/segments/separators/types
+
+
+---
+
+
+## Sóng 1 — bốn khoảng mở nhỏ, không chặn gì
+
+**Sóng / phạm vi:** Sóng 1. Bốn hạng mục độc lập nhau, không cái nào chặn cái nào: **A1** bật đoạn hạn ngạch `usage` trong những preset status-line mà người duy trì chọn; **A8** làm tiền tố tmux hiện ra trong gợi ý phím ở footer; **A6** rút quyết định "tool call có thuộc nhóm read hay không" về một vị từ duy nhất dựa trên dữ liệu, dùng ở cả bảy chỗ; **A5** làm lộ chỉ báo stall có tên pha cùng một bảng phân rã thời gian khung hình theo từng pha. Không hạng mục nào thuộc A1, A5 hay A6 phụ thuộc vào hạng mục khác trong sóng này. A6 không có phụ thuộc bên ngoài nào — câu hỏi về seam O5 mà plan nêu đã được đóng và gỡ khỏi §10 #9.
+
+**Hiệu ứng người dùng thấy:** status line hiện đoạn hạn ngạch (tier, các cửa sổ 5h/1d/7d/monthly, credit resets) trong những preset được chọn, và vẫn còn trên màn hình ở 80 cột. Gợi ý ở footer: dưới tmux với binding tiền tố kiểu ctrl+b, gợi ý hiện `ctrl+b ctrl+b` thay vì `ctrl+b`, nên việc nhân đôi không còn là điều bất ngờ. Transcript: các lần đọc liên tiếp có tool khác chen giữa thì gom nhóm nhất quán, dù transcript được render trực tiếp hay dựng lại từ lịch sử khi reload. Loader/TUI: một khối đồng bộ dài cho biết chính pha nào có tên đã gây ra nó, và một khung hình bình thường sau đó sẽ xoá chỉ báo đó.
+
+**Effort:** ~6 engineer-days: A1 ~1 ngày, A8 ~1 ngày, A6 ~2 ngày, A5 ~2 ngày. Các con số ước lượng từng hạng mục trong plan đều đã đứng vững qua kiểm chứng. Hai chỗ nên dành nhiều hơn mức phẳng: fixture loader của A5 (bắt buộc phải ra hàng nhiều dòng, ~nửa ngày chỉ riêng nó) và việc chụp baseline byte-identical cho các preset nằm ngoài tập P1 của A1 — rắc rối hơn nhiều so với việc thêm một chuỗi.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/status-line/presets.ts` | sửa | A1 — thêm chuỗi `"usage"` vào leftSegments/rightSegments của các preset mà cổng quyết định P1 chọn. Không có việc cài đặt segment: segment đã tồn tại và đã được đăng ký. | Có. Cả bảy dòng preset trong plan đều CHÍNH XÁC: default:5, minimal:16, compact:26, full:36, nerd:59, ascii:84, custom:96 — kiểm từng cái bằng `grep -n`. Không preset nào hiện liệt kê `"usage"`. |
+| `packages/tui/src/status-line/schema.ts` | sửa | A1 — chỉ khi P1 có gồm `custom`: nối `"usage"` vào `CUSTOM_STATUS_LINE_DEFAULTS.right`. KHÔNG thêm `"usage"` vào `STATUS_LINE_SEGMENT_IDS`; nó đã ở đó rồi. | Có. `"usage"` đã nằm ở `schema.ts:26` trong `STATUS_LINE_SEGMENT_IDS` (khối bắt đầu từ dòng 2). `CUSTOM_STATUS_LINE_DEFAULTS` trải dòng 36-42, đúng như plan — mở neo ở 36 là đúng, không cần đính chính. |
+| `packages/coding-agent/test/status-line-usage-preset.test.ts` | tạo | A1 — test MỚI, render StatusLineComponent thật cho từng preset ở bề rộng 200/120/80/60. | Có. Thư mục đã tồn tại; file thì chưa. Lấy khuôn theo `packages/coding-agent/test/status-line-overflow.test.ts`, file này chắc chắn tồn tại và đã có factory `createCtx` với `usage: null` ở đuôi — mở rộng hình dạng đó thay vì viết cái mới. |
+| `packages/tui/src/chrome/keybinding-hints.ts` | sửa | A8 — thêm MỘT hàm gợi ý prefix-aware mới sau `appKey` (dòng 47). Thuần mã mới; không viết lại các helper phím editor. | Có. Plan trích `:10-55` và gọi file này là "46 dòng". Thực tế file 80 dòng, và dòng 10-55 là import cộng editorKey/editorKeys/boundKeys/interruptKey/appKey/keyHint. `grep -c tmux` trên file này, `packages/tui/src/keybindings.ts` và `packages/tui/src/app-keybindings.ts` trả về 0, 0, 0 — xác nhận bằng chứng của chính plan rằng đây là mã mới, và mâu thuẫn với dòng "Sửa" của plan. |
+| `packages/tui/test/tmux-key-hints.test.ts` | tạo | A8 — test MỚI. Phải dùng `vi.spyOn` trên namespace module đã import + `vi.restoreAllMocks()` trong `afterEach`. | Có. `packages/tui/test/` tồn tại với hơn 40 file test. Không có file test tmux nào sẵn. `mock.module()` bị AGENTS.md cấm (rò registry, oven-sh/bun#12823). |
+| `packages/tui/src/chat/read-tool-group.ts` | sửa | A6 — thêm một vị từ thành viên được export gộp điều kiện tên với điều kiện collapse sẵn có, rồi dùng nó tại :59. | Có. Vị từ mà plan không nêu tên là `readArgsCollapseIntoGroup`, định nghĩa tại `read-tool-group.ts:41` (dòng của plan CHÍNH XÁC). Dòng 59 là `if (content.name !== "read" \|\| !readArgsCollapseIntoGroup(content.arguments)) return undefined;` (dòng của plan CHÍNH XÁC). |
+| `packages/tui/src/chat/chat-transcript-builder.ts` | sửa | A6 — một chỗ cơ học tại :443; một CÂU HỎI MỞ tại :507 (xem open_questions). | Có. Dòng 443: `if (content.name === "read" && readArgsCollapseIntoGroup(content.arguments)) {` — plan CHÍNH XÁC. Dòng 507: `const isReadGroupResult = message.toolName === "read" && (!pending \|\| pending instanceof ReadToolGroupComponent);` — plan CHÍNH XÁC, nhưng đây là phía RESULT và KHÔNG gọi vị từ collapse. Chuyển đổi nó là thay đổi ngữ nghĩa, không phải cơ học. |
+| `packages/coding-agent/src/modes/utils/ui-helpers.ts` | sửa | A6 — một chỗ cơ học tại :553; một CÂU HỎI MỞ tại :663. | Có. PLAN ĐÃ CŨ: nói :551 và :661, thực tế là :553 và :663 (cùng lệch 2). Dòng 553 ghép điều kiện tên với vị từ. Dòng 663 là `message.toolName === "read" &&` trần ở phía result, không gọi vị từ nào. |
+| `packages/coding-agent/src/modes/controllers/event-controller.ts` | sửa | A6 — hai chỗ thành viên tại :1357 và :1695. KHÔNG ĐỤNG :1830, :1832, :1907. | Có. PLAN ĐÃ CŨ: nói :1344 và :1684, thực tế là :1357 (name guard ở :1350) và :1695. Phần MUST-STAY-PUT cũng đã cũ: plan nói :1819/:1821/:1896, thực tế là :1830/:1832/:1907 (cùng lệch +11) — đây là read result nội tuyến và :1830 là #inlineReadToolImages; chuyển đổi chúng sẽ phá vỡ render ảnh inline. Trôi KHÔNG đều: +13 ở 1344→1357 nhưng +11 ở cả bốn neo còn lại (1684→1695, 1819→1830, 1821→1832, 1896→1907). Đừng dịch chung một hệ số — tra từng dòng bằng grep như đã làm ở đây. |
+| `packages/tui/src/loop-watchdog.ts` | sửa | A5 — thêm bề mặt chỉ báo stall theo pha có tên trên LoopWatchdog (khai báo class ở :57) và tiếp tục tiêu thụ `takeRecentLoopPhase()` ở :123. | Có. Plan :57 trỏ vào `export class LoopWatchdog {` (đã kiểm chứng) — chỗ thêm field rất ổn. Plan :123-124 là CHÍNH XÁC (`const phase = takeRecentLoopPhase();` nằm ở :123). |
+| `packages/utils/src/loop-phase.ts` | sửa | A5 — mở rộng phase stack để ghi thời gian theo từng pha, không chỉ tên phase hiện tại/gần đây. | Có. `takeRecentLoopPhase` nằm ở `loop-phase.ts:45` (plan CHÍNH XÁC). Nó xoá ô "recent" ở mỗi lần gọi, nên một khoảng không thuộc pha nào không bị gán nhầm — bộ cộng dồn theo pha mới phải giữ nguyên tính chất đó. |
+| `packages/tui/src/components/loader.ts` | sửa | A5 — render chỉ báo stall theo pha có tên, và bày tày chi phí khung hình theo từng pha trong vùng trailer. | Có. Cả ba neo của plan CHÍNH XÁC: :32 `#trailer?: () => string \| undefined;`, :107-113 khối render `if (this.#trailer && lines.length > 1)`, :141 `setTrailer(...)`. Ràng buộc `lines.length > 1` là có thật, và một fixture test sinh ra hàng một dòng sẽ pass vô nghĩa. Consumer sẵn có ở :170 (`this.#ui?.lastFrameCostMs ?? 0`) là chỗ tự nhiên để bày tày phân rã. |
+| `packages/tui/src/tui.ts` | sửa | A5 — tách `#lastFrameCostMs` thành bảng phân rã theo từng pha, cộng lại đúng bằng tổng hiện có. | Có. CẢ BỐN neo của plan CHÍNH XÁC: :930 `new LoopWatchdog()`, :1035-1036 getter `get lastFrameCostMs()`, :2105 và :2204 hai lệnh gán `this.#lastFrameCostMs = this.#renderScheduler.now() - start;`. Field khai báo ở :811; consumer sẵn có ở :2187 (`Math.min(TUI.#MAX_ADAPTIVE_RENDER_MS, this.#lastFrameCostMs * 2)`). |
+| `packages/coding-agent/src/modes/interactive-mode.ts` | sửa | A5 — gộp chỉ báo stall vào giá trị `#workingRowTrailer` ĐANG CÓ. Không gọi `setTrailer` lần thứ hai. | Có. PLAN ĐÃ CŨ: nói :6674, thực tế là :6624 (`this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());`) — lệch 50. `#workingRowTrailer` định nghĩa ở :1013 và cũng được dùng ở :1022 bởi `renderIdleStatusHud` — nhưng đó KHÔNG phải tiền lệ cho ràng buộc `lines.length > 1` của loader: hàm đó là hàng status của `StatusHudContainer` (:606), chỉ chạy khi `childLines.length === 0`, tức khi loader không có dòng nào. |
+| `packages/tui/test/loop-watchdog.test.ts` | sửa | A5 — MỞ RỘNG file sẵn có bằng gán stall theo pha có tên. | Có. File tồn tại, đã xác nhận tại `packages/tui/test/loop-watchdog.test.ts`. |
+| `packages/tui/test/loader-stall-trailer.test.ts` | tạo | A5 — test MỚI cho chỉ báo pha có tên trong hàng loader và bảng phân rã thời gian khung hình. | Có. `packages/tui/test/` tồn tại; file này chưa. Fixture loader mới sinh ra hàng thực sự NHIỀU DÒNG là phần khó nhất của hạng mục này — dành nửa ngày cho riêng fixture, đúng như plan cảnh báo. |
+| `packages/tui/test/read-group-membership.test.ts` | tạo | A6 — test MỚI phủ CẢ đường render trực tiếp LẪN đường dựng lại transcript trong một test. | Có. Chưa tồn tại. Yêu cầu "một test phủ cả hai đường" chính là điểm mấu chốt: một chỗ thành viên bị bỏ sót sẽ tạo ra transcript gom nhóm khác nhau giữa lúc render trực tiếp và lúc dựng lại, mà không lỗi biên dịch nào hay test đường đơn nào bắt được. |
+
+### Các bước
+
+1. **CỔNG — lấy câu trả lời P1 bằng văn bản từ người duy trì TRƯỚC KHI viết bất kỳ dòng code nào cho A1:** `usage` vào cả bảy preset, hay chỉ vào tập `full` + `nerd`? Ghi câu trả lời nguyên văn vào work item A1 trong kế hoạch đã track, nêu TÊN CHÍNH XÁC từng preset nhận `usage` — không được để dạng "một tập con". Không ghi vào file đặc tả sinh tự động trong `.lavish-wip/`: thư mục đó chưa được track nên không sống sót cùng commit và người review sẽ không thấy. Không bắt đầu A1 khi P1 còn mở; preset `default` chính là thứ mọi người dùng hiện tại nhìn thấy ngày đầu tiên, mà `usage` là đoạn rộng nhất trong catalog. *(anchor: plan:8756 (dòng P1 trong bảng cổng, sóng 1), plan:8760 (vì sao không thể mặc định), plan:9162 (câu hỏi mở §10 #2 mà P1 trích lại))*
+
+2. **CỔNG — lấy câu trả lời P0 bằng văn bản cho A8:** đặc tả nhân đôi tiền tố tmux là black-box (quan sát trên sản phẩm đã phát hành chạy dưới tmux) hay omp-native (thiết kế tại đây), và bằng chứng nằm ở đâu? Ghi `spec: black-box` hoặc `spec: omp-native` cùng vị trí bằng chứng vào work item A8 của kế hoạch đã commit. KHÔNG trỏ bằng chứng về `~/Projects/claude-code-ref` — checkout đó không được track (`git -C <oh-my-pi> ls-files | grep -i claude-code-ref` trả về rỗng) và plan loại trừ tường minh nó ở §8.2 dòng 9067, §9 #10 dòng 9149 và §11 #11 dòng 9190 — KHÔNG phải §10 #10, mục đó hỏi chính sách MCP elicitation ở headless/SDK và không liên quan. A8 không được bắt đầu khi P0 còn mở. *(anchor: plan:8755 (dòng P0 trong bảng cổng, sóng 1), plan:9080 (dòng spec black-box/omp-native của A8), plan:9067 (mục 8.2: "không phải đầu vào build"))*
+
+3. **A1 — đọc `packages/tui/src/status-line/segments.ts:864-900` và `packages/tui/src/status-line/types.ts:187-201` trước khi sửa bất cứ thứ gì**, để xác nhận segment render tier / fiveHour / daily / sevenDay / monthly / resetCredits và trả về `visible:false` khi `ctx.usage` là null. Bước này tồn tại để bạn không đi tìm một phần cài đặt segment để viết. *(anchor: `packages/tui/src/status-line/segments.ts:864`)*
+
+4. **A1 — thêm đúng chuỗi `"usage"` vào mảng segment của chính xác các preset P1 nêu, trong file này.** Chèn vào mảng `rightSegments` ngay cạnh các segment liên quan hạn ngạc khác (`cost`, `context_pct`) để áp lực bề rộng nằm đúng chỗ cảnh báo §4.1 của plan mong đợi. Để nguyên hoàn toàn mọi preset nằm ngoài tập P1 — không format lại, không sắp xếp lại. *(anchor: `packages/tui/src/status-line/presets.ts:5,16,26,36,59,84,96`)*
+
+5. **A1 — nếu và chỉ khi P1 có gồm preset `custom`**, nối `"usage"` vào `CUSTOM_STATUS_LINE_DEFAULTS.right` ở dòng 41. Khối object trải dòng 36-42, đúng như plan. Không đụng `STATUS_LINE_SEGMENT_IDS` — `"usage"` đã ở dòng 26. *(anchor: `packages/tui/src/status-line/schema.ts:36`)*
+
+6. **A1 — tạo `packages/coding-agent/test/status-line-usage-preset.test.ts` bằng cách sao khuôn harness từ `status-line-overflow.test.ts`:** file đó đã import `resetSettingsForTest`, `Settings`, `StatusLineComponent`, `statusLineHost`, `SegmentContext`, `initTheme` và `StatusLineTestComponents`, và factory `createCtx` của nó đã kết thúc bằng `usage: null`. Thêm một override `usage` vào factory đó. Giữ test trong `packages/coding-agent/test/` — `packages/tui` không khai báo phụ thuộc nào vào `coding-agent`, nên harness không thể import từ `packages/tui/test/`. *(anchor: `packages/coding-agent/test/status-line-overflow.test.ts:1-30` (imports), `:99` (usage: null))*
+
+7. **A1 — trong test mới, dựng StatusLineComponent thật cho từng preset và render ở bề rộng 200, 120, 80 và 60 với usage context đầy đủ** (tier, fiveHour, daily, sevenDay, monthly, resetCredits). Khẳng định ở 200 cột rằng cả năm cửa sổ cùng tier đều hiện; khẳng định ở 80 cột rằng đoạn hạn ngạch VẪN còn; khẳng định rằng với `ctx.usage` null thì hàng render ra giống hệt byte-for-byte hàng trước thay đổi; và khẳng định segment `status` không xuất hiện ở preset nào, cũng như một status hook render đúng một lần. *(anchor: `packages/coding-agent/test/status-line-usage-preset.test.ts` (mới))*
+
+8. **A1 — thêm hợp đồng phủ định của P1 KHÔNG dựa vào literal đóng băng:** với mọi preset nằm NGOÀI tập P1, khẳng định (i) `leftSegments` và `rightSegments` của preset đó KHÔNG chứa chuỗi `"usage"`, và (ii) hai mảng đó BẰNG ĐÚNG danh sách id được liệt kê tường minh trong test. Không chép nguyên output render ra literal — một literal copy từ output hiện tại sẽ đi theo mọi thay đổi và luôn xanh, vi phạm AGENTS.md ("success passthrough"/"static echo"). Cũng đừng checkout commit cha để render: đó là đọc cây khác với HEAD, không phải kiểm chứng trên cây đang làm. *(anchor: `packages/coding-agent/test/status-line-usage-preset.test.ts` (mới))*
+
+9. **A8 — thêm MỘT hàm export mới vào `keybinding-hints.ts`**, đặt sau `appKey` ở dòng 47, hàm nhận một key hint đã định dạng và trả về dạng nhân đôi tiền tố khi (a) tiến trình đang ở trong tmux theo `isInsideTmux()`, (b) binding gốc là một phím tiền tố của tmux, và (c) binding đó không tự nó là một tiền tố. Ở mọi trường hợp còn lại nó phải trả về phím trần không đổi, kể cả khi dò tmux ném lỗi hoặc probe hết thời gian chờ. Chỉ dùng `isInsideTmux()` (`tmux.ts:5`) — KHÔNG dùng `resolveTmuxClientTerminalName()` (`tmux.ts:48`): cái sau có timeout 500ms, SIGKILL và ghi nhớ ở module scope, nên gọi nó trên mỗi lần render gợi ý sẽ treo footer nửa giây. Hàng đính chính ở mục cuối nêu cùng lý do này; hình dạng code trước đây trái với nó và đã được sửa. Không sửa `editorKey`/`editorKeys`/`boundKeys`/`interruptKey`/`appKey`/`keyHint`/`rawKeyHint`. *(anchor: `packages/tui/src/chrome/keybinding-hints.ts:47` (chèn sau), :1-80 (cả file))*
+
+10. **A8 — tạo `packages/tui/test/tmux-key-hints.test.ts`.** Dùng `vi.spyOn` trên namespace object đã import và gọi `vi.restoreAllMocks()` trong `afterEach`; `mock.module()` bị cấm. **QUAN TRỌNG:** test phải chứng minh nó thực sự đi vào nhánh tmux, chứ không phải nhánh fallback. `resolveTmuxClientTerminalName` trả về null dưới `isBunTestRuntime()` tại `tmux.ts:49`, nên một test chỉ đặt `process.env.TMUX` sẽ đi nhánh fallback và chứng minh không điều gì. Ngoài ra, hãy hiểu đúng vị trí cái bẫy: `tmux.ts:49` chặn bằng `isBunTestRuntime()` TRƯỚC khi chạm dòng 50, nên dưới `bun test` biến `cachedClientTerminalName` ở `tmux.ts:21` KHÔNG BAO GIỜ được gán — không có rủi ro "case trước đầu độc case sau". Hệ quả thực tế ngược lại: muốn test nhánh tmux thật thì phải spy `resolveTmuxClientTerminalName` trả về một tên giả, và khi đã spy thì bộ nhớ đệm không còn ý nghĩa. Đừng viết test nào dựa vào việc "đặt TMUX rồi để probe tự chạy". *(anchor: `packages/tui/src/tmux.ts:49` (cái bẫy), :21 (bộ nhớ đệm mà plan bỏ sót))*
+
+11. **A8 — khẳng định bốn hành vi:** dưới tmux với binding tiền tố ctrl+b thì gợi ý là `ctrl+b ctrl+b` trong khi phím trả về cho lớp input vẫn chỉ là một `ctrl+b`; ngoài tmux thì không có gì đổi; một binding không phải tiền tố thì dưới tmux vẫn không đổi; và khi probe hỏng (không có binary tmux, hoặc probe timeout) thì gợi ý rơi về phím trần thay vì ném lỗi. *(anchor: `packages/tui/test/tmux-key-hints.test.ts` (mới))*
+
+12. **A6 — trong `read-tool-group.ts`, thêm một vị từ export gộp hai điều kiện đang lặp ở các chỗ cơ học**, ví dụ `export function isGroupedReadToolCall(name: string, args: unknown): boolean { return name === "read" && readArgsCollapseIntoGroup(args); }`, đặt ngay dưới `readArgsCollapseIntoGroup` ở dòng 41. Giữ `readArgsCollapseIntoGroup` ở trạng thái export — các chỗ gọi khác vẫn cần nó. *(anchor: `packages/tui/src/chat/read-tool-group.ts:41`)*
+
+13. **A6 — chuyển năm chỗ thực sự cơ học sang vị từ mới:** `read-tool-group.ts:59` (đảo thành `!isGroupedReadToolCall(...)`), `chat-transcript-builder.ts:443`, `ui-helpers.ts:553`, `event-controller.ts:1357` (name guard ở :1350), và `event-controller.ts:1695`. Chỉ dùng số của plan như một hướng dẫn định hướng — dòng đã kiểm chứng nằm ở trên, plan lệch 2 ở `ui-helpers` và lệch 11-13 ở `event-controller`. *(anchor: `read-tool-group.ts:59`, `chat-transcript-builder.ts:443`, `ui-helpers.ts:553`, `event-controller.ts:1357`, `event-controller.ts:1695`)*
+
+14. **A6 — ĐỪNG ĐỤNG:** `event-controller.ts:1830`, `:1832`, `:1907` (read result nội tuyến; :1830 là `#inlineReadToolImages` — chuyển đổi chúng sẽ phá vỡ render ảnh inline). **HỎI TRƯỚC, đừng chuyển mù:** `chat-transcript-builder.ts:507` và `ui-helpers.ts:663` là kiểm tra `toolName === "read"` phía result mà không bao giờ gọi vị từ collapse. Plan gộp chúng vào cùng bảy chỗ thành viên, nhưng chúng trả lời một câu hỏi khác. Cũng hãy kiểm tra `acp-event-mapper.ts:645`, một so sánh `read` mà plan hoàn toàn không nhắc tới, và phải kết luận rõ ràng là thuộc hay không thuộc. *(anchor: `event-controller.ts:1830,1832,1907` (để yên), `chat-transcript-builder.ts:507` + `ui-helpers.ts:663` + `acp-event-mapper.ts:645` (hỏi))*
+
+15. **A6 — tạo `packages/tui/test/read-group-membership.test.ts` với MỘT test phủ cả hai đường.** Đánh dấu một tool không phải read là thành viên nhóm, gọi nó hai lần với một tool khác chen giữa, và khẳng định header đếm cả hai. Rồi dựng lại transcript từ lịch sử và khẳng định kết quả GIỐNG HỆT. Chính khẳng định dựng lại đó là thứ duy nhất bắt được một chỗ bị bỏ sót: một chỗ thành viên còn thiếu sẽ tạo ra transcript gom khác nhau lúc render trực tiếp và lúc reload — một thất bại im lặng, không lỗi biên dịch. *(anchor: `packages/tui/test/read-group-membership.test.ts` (mới))*
+
+16. **A6 — thêm hợp đồng phủ định vào chính test đó:** một tool không được đánh dấu thì render đứng riêng, không bị gộp vào nhóm. *(anchor: `packages/tui/test/read-group-membership.test.ts` (mới))*
+
+17. **A5 — mở rộng `loop-phase.ts` để thời gian của một pha được ghi lại lúc push/pop, chứ không chỉ tên của nó.** Giữ nguyên tính chất sẵn có: `takeRecentLoopPhase()` xoá ô "recent" ở mỗi lần gọi, để một khối không thuộc pha nào sau đó không bao giờ bị quy sai cho một pha đã kết thúc. *(anchor: `packages/utils/src/loop-phase.ts:45`)*
+
+18. **A5 — phơi bày pha vừa phát hiện từ `LoopWatchdog` để loader có thể gọi tên nó.** Giữ nguyên lời gọi `takeRecentLoopPhase()` ở dòng 123; phân loại CPU-versus-sleep quanh nó không liên quan và không được đổi. *(anchor: `packages/tui/src/loop-watchdog.ts:57` (bề mặt), :123 (giữ nguyên))*
+
+19. **A5 — render chỉ báo pha có tên trong hàng loader.** Tuân thủ ràng buộc sẵn có ở `loader.ts:107` rằng trailer chỉ được vẽ khi `lines.length > 1`. Seam trailer đã tồn tại ở `loader.ts:32` và `setTrailer` ở :141 — bạn không cần seam mới. *(anchor: `packages/tui/src/components/loader.ts:32,107,141`)*
+
+20. **A5 — trong `interactive-mode.ts`, GỘP chỉ báo stall vào giá trị mà `#workingRowTrailer` (định nghĩa ở :1013) đã trả về** — hoặc vào một wrapper mỏng cài ở :6624. KHÔNG gọi `setTrailer` lần thứ hai; chỗ đó đã bị chiếm rồi. KHÔNG dùng `renderIdleStatusHud` ở :1022 làm tiền lệ: đó là hàng status của `StatusHudContainer` (:606), được `#renderLines` gọi khi `childLines.length === 0` — tức khi loader KHÔNG có dòng nào, và nó trả `["", padded]` làm thân hàng riêng, không phải để lách ràng buộc `lines.length > 1` của loader. Ràng buộc thật nằm trong `LoaderComponent.render()` (`loader.ts:92` khởi tạo `lines = [""]` rồi push, `loader.ts:107` mới vẽ trailer), và không có seam nào cho phép thêm phần tử. Việc bắt buộc là bảo đảm hàng loader thật sự dài hơn một dòng trước khi chỉ báo stall được gộp vào — đó là lý do fixture ở bước 22 phải tạo hàng nhiều dòng. *(anchor: `packages/coding-agent/src/modes/interactive-mode.ts:6624` (cài đặt), :1013 (đích gộp))*
+
+21. **A5 — tách chi phí khung hình trong `tui.ts`.** `#lastFrameCostMs` được khai báo ở :811, đọc qua getter ở :1035-1036, và gán ở :2105 cùng :2204. Đưa vào một bảng phân rã theo từng pha CỘNG LẠI bằng tổng hiện có trong sai số cho phép — hợp đồng là một sự phân rã, không phải một chiếc đồng hồ thứ hai. Giữ các consumer hiện có (`tui.ts:2187` adaptive floor, `loader.ts:170`) chạy được. *(anchor: `packages/tui/src/tui.ts:811,1035,2105,2204`)*
+
+22. **A5 — mở rộng `packages/tui/test/loop-watchdog.test.ts` cho gán stall theo pha có tên, và tạo `packages/tui/test/loader-stall-trailer.test.ts` cho chỉ báo cùng bảng phân rã.** Fixture loader BẮT BUỘC phải tạo ra hàng nhiều hơn một dòng, nếu không mọi khẳng định về trailer đều pass vô nghĩa; dành nửa ngày cho riêng fixture đó. Cũng phải phủ trường hợp hoàn toàn KHÔNG có hàng công việc nào. *(anchor: `packages/tui/test/loop-watchdog.test.ts` (mở rộng), `packages/tui/test/loader-stall-trailer.test.ts` (mới))*
+
+23. **A5 — khẳng định hai hành vi:** kích hoạt một khối đồng bộ dài hơn ngưỡng từ bên trong một pha CÓ TÊN và khẳng định hàng loader hiện chỉ báo stall mang theo tên của pha đó, rồi khẳng định một khung hình bình thường ngay sau đó XOÁ nó. Còn với bảng phân rã khung hình, khẳng định các giá trị theo từng pha cộng lại bằng tổng hiện có trong sai số cho phép. *(anchor: `packages/tui/test/loader-stall-trailer.test.ts` (mới))*
+
+### Hình dạng code
+
+```typescript
+// packages/tui/src/chat/read-tool-group.ts — A6, added directly below line 41
+// The one place that answers "does this tool call collapse into the group?" from data
+// rather than from a hard-coded name comparison repeated at each call site.
+export function isGroupedReadToolCall(name: string, args: unknown): boolean {
+	return name === "read" && readArgsCollapseIntoGroup(args);
+}
+
+// read-tool-group.ts:59 — mechanical inversion, the plan's line is exact
+if (!isGroupedReadToolCall(content.name, content.arguments)) return undefined;
+
+// chat-transcript-builder.ts:443 — plan's line is exact
+if (isGroupedReadToolCall(content.name, content.arguments)) {
+
+// event-controller.ts:1357 — plan says 1344; the name guard sits at 1350
+if (isGroupedReadToolCall(renderToolName, content.arguments)) {
+
+// --- NOT converted, and not convertible without a product call ---
+// event-controller.ts:1830 / :1832 / :1907  — inline read RESULTS, not membership.
+//   :1830 is #inlineReadToolImages; converting these breaks inline image rendering.
+// chat-transcript-builder.ts:507, ui-helpers.ts:663 — result-side `toolName === "read"`
+//   that never calls the collapse predicate. The plan calls these membership sites;
+//   they answer a different question. Ask before touching.
+
+// packages/tui/src/chrome/keybinding-hints.ts — A8, new function after line 47.
+// Appends; the editor-key helpers above it are untouched.
+import { isInsideTmux } from "../tmux";
+
+/**
+ * Double a tmux prefix in a formatted hint so the footer shows the keystrokes the
+ * outer tmux actually needs. Under tmux with a prefix binding, `ctrl+b` is sent as
+ * `ctrl+b ctrl+b` while the key we hand back stays a single `ctrl+b`.
+ *
+ * Every non-tmux case — no prefix binding, outside tmux — returns the bare key.
+ * Never throws and never probes: isInsideTmux is a single-line Boolean over
+ * env.TMUX, so this is safe to call on every hint render.
+ */
+export function prefixAwareKeyHint(hint: string, isPrefixBinding: boolean): string {
+	if (!isPrefixBinding || !isInsideTmux()) return hint;
+	return `${hint} ${hint}`;
+}
+
+// A5 seam, merged not stacked — interactive-mode.ts:1013 and :6624
+// setTrailer is ALREADY installed at :6624 with this working row trailer.
+// Fold the stall indicator into the returned value; never call setTrailer twice.
+#workingRowTrailer(): string | undefined {
+	const rate = this.#tokenRateLabel();
+	const title = this.#workingTitleTrailer();
+	const stall = this.#loopStallIndicator(); // new, undefined when not stalled
+	const parts = [rate, title, stall].filter((p): p is string => p !== undefined && p.length > 0);
+	return parts.length > 0 ? parts.join("  ") : undefined;
+}
+
+// The loader only draws a trailer when lines.length > 1 (loader.ts:107).
+// There is NO in-repo precedent to copy: renderIdleStatusHud at :1022 is the
+// StatusHudContainer's own status row, called when childLines.length === 0,
+// and it cannot satisfy the loader's constraint. The only job here is to keep
+// the loader row genuinely multi-line — which is why the step-22 fixture must.
+```
+
+### Hợp đồng test
+
+Bốn hợp đồng độc lập, mỗi hạng mục một cái. Nếu hồi quy, người dùng thấy như sau.
+
+**A1** — hợp đồng quan sát được: một preset status-line có liệt kê `usage` render đoạn hạn ngạch ở 200 cột (cả năm cửa sổ cùng tier) và VẪN render ở 80 cột; một preset mà `ctx.usage` là null render ra output giống từng byte với bản dựng trước thay đổi; và mọi preset nằm ngoài tập P1 render ra output giống từng byte với trước thay đổi. Người dùng gặp hồi quy sẽ thấy chỉ báo hạn ngạch biến mất âm thầm ở bề rộng hẹp, hoặc tệ hơn — thấy hàng `default` của mọi người dùng hiện tại đổi hình dạng ngay khi nâng cấp. Đây là hạng mục duy nhất trong sóng mà một sai sót lộ ra với mọi người dùng ngay ngày đầu tiên. File: `packages/coding-agent/test/status-line-usage-preset.test.ts`.
+
+**A8** — hợp đồng quan sát được: dưới tmux với binding tiền tố ctrl+b, gợi ý footer được render ra đọc là `ctrl+b ctrl+b` trong khi phím đưa lại cho lớp input vẫn chỉ là một `ctrl+b`; ngoài tmux, với binding không phải tiền tố, và khi probe hỏng, gợi ý là phím trần và không ném gì. Hồi quy ở đây là một footer nói dối người dùng về thứ họ phải bấm. File: `packages/tui/test/tmux-key-hints.test.ts`.
+
+**A6** — hợp đồng quan sát được: một tool không phải read đã được đánh dấu, gọi hai lần với một tool khác chen giữa, được header nhóm đếm là HAI trên đường chạy TRỰC TIẾP, và transcript dựng lại từ lịch sử sinh ra output giống từng byte. Nửa dựng lại là nửa mang tải trọng: một chỗ thành viên bị bỏ sót tạo ra transcript gom nhóm khác nhau lúc render trực tiếp và lúc reload — một thất bại im lặng, không lỗi biên dịch, không tín hiệu test, chỉ lộ ra khi người dùng mở lại một phiên cũ. Nửa phủ định: một tool không được đánh dấu vẫn render đứng riêng. File: `packages/tui/test/read-group-membership.test.ts`.
+
+**A5** — hợp đồng quan sát được: một khối đồng bộ dài hơn ngưỡng, được kích hoạt từ bên trong một pha CÓ TÊN, làm cho hàng loader hiện chỉ báo stall nêu tên pha đó, và một khung hình bình thường ngay sau đó sẽ xoá nó. Rời nhau, các giá trị thời gian khung hình theo từng pha CỘNG LẠI bằng tổng hiện có trong sai số cho phép — một sự phân rã, không phải một chiếc đồng hồ thứ hai. Hồi quy hoặc là một cơn stall vô hình đúng lúc cần thấy, hoặc là một chỉ báo không bao giờ tắt. File: `packages/tui/test/loader-stall-trailer.test.ts` và `packages/tui/test/loop-watchdog.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+Lệnh này đã chạy lại ở HEAD `808b365` (nhánh milestone-1) và PASS với exit code 0. Nó KHÔNG chậm: chạy nền xong trong 35 giây, không tới mức cần chạy nền. Hãy chạy thẳng giữa các hạng mục. Nếu máy bạn tải nặng và nó kéo dài, chạy nền và chờ exit code; đừng kill sớm. Theo bằng chứng ghi lại trong đặc tả, `check:ts` là `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types` (`package.json:94`); dự án cấm gọi `tsc` trực tiếp, nên đừng thay thế nó bằng `tsc`/`npx tsc`.
+
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Nhánh "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó runner chết ngay ở bước import kèm `Failed to load pi_natives native addon for darwin-arm64`; đó là **tiền đề môi trường tái lập được**, không phải hạn chế của máy và không phải tín hiệu đỏ của công việc. Nếu máy bạn chưa có: build một lần bằng `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). Sau đó toàn bộ lệnh test dưới đây chạy được.
+
+Khi addon đã build, các lệnh test theo từng hạng mục là:
+
+```bash
+bun test packages/coding-agent/test/status-line-usage-preset.test.ts
+bun test packages/tui/test/tmux-key-hints.test.ts
+bun test packages/tui/test/read-group-membership.test.ts
+bun test packages/tui/test/loop-watchdog.test.ts packages/tui/test/loader-stall-trailer.test.ts
+```
+
+### Cổng hoàn thành
+
+Cả năm file test đều pass, và mọi neo trong đặc tả này phải được đối chiếu lại với cây mã lúc thực hiện thay vì tin lấy từ plan. Cụ thể: (a) test status-line mới render mọi preset ở 200/120/80/60 với usage context đầy đủ, cho thấy đoạn hạn ngạch còn sống sót ở 80 cột, và cho thấy output giống từng byte cho cả trường hợp `ctx.usage=null` lẫn mọi preset ngoài tập P1; (b) test tmux thực sự đi vào nhánh tmux thật — được chứng minh, không phải giả định — và phủ luôn fallback khi probe hỏng; (c) test read-group pass với đường chạy trực tiếp và đường dựng lại được khẳng định giống nhau; (d) test loader dùng một hàng thực sự nhiều dòng và phủ cả trường hợp không có hàng công việc; (e) `bun run check:ts` exit 0.
+
+Trước khi viết DÒNG CODE NÀO: P1 đã được trả lời bằng văn bản và ghi lại (A1 sẽ không bắt đầu nếu chưa có), và P0 đã được trả lời bằng văn bản kèm nguồn gốc spec và vị trí bằng chứng đã ghi, mà vị trí bằng chứng đó KHÔNG phải checkout chưa track `~/Projects/claude-code-ref` (A8 sẽ không bắt đầu nếu chưa có).
+
+**Cổng có thực sự đỏ được không?** Có, ở chân mọi nhánh. Test A1 và A6 khẳng định byte render, nên một đoạn hạn ngạch thiếu ở 80 cột, một hàng preset `default` bị đổi, hay một cách gom khác nhau giữa transcript trực tiếp và dựng lại — mỗi cái đều cho ra một diff cụ thể. Test A8 đỏ nếu tiền tố không được nhân đôi dưới tmux hoặc nếu một trường hợp không-tmux thay đổi — và chốt chặn `isBunTestRuntime()` ở `tmux.ts:49` nghĩa là rất dễ viết một phiên bản test xanh trong khi không kiểm chứng gì cả, nên bộ test bắt buộc phải có một khẳng định rằng nhánh tmux thực sự đã được đi vào chứ không được tin vào màu xanh. Test loader của A5 đỏ nếu fixture rơi về một dòng, vì trailer bị bỏ qua hoàn toàn từ hai dòng trở xuống. Cổng DUY NHẤT không thể đỏ là P0/P1: đó là quyết định của con người, không phải code, và một câu trả lời chưa ghi trông y hệt một câu trả lời đã ghi cho tới khi ai đó mở file đặc tả ra kiểm.
+
+### Phụ thuộc
+
+- **P1** — câu trả lời bằng văn bản của người duy trì về việc `usage` vào cả bảy preset hay chỉ vào tập `full` + `nerd`. CHẶN CỨNG A1. Câu trả lời phải nằm trong work item A1 của kế hoạch đã commit, không nằm trong `.lavish-wip/`.
+- **P0** — câu trả lời bằng văn bản của người duy trì về nguồn gốc spec của A8 (black-box hay omp-native) cùng vị trí bằng chứng. CHẶN CỨNG A8. Câu trả lời phải nằm trong work item A8 của kế hoạch đã commit, không nằm trong `.lavish-wip/`.
+- Câu trả lời về việc hai kiểm tra `toolName === "read"` phía result (`chat-transcript-builder.ts:507`, `ui-helpers.ts:663`) có nằm trong phạm vi A6 không.
+- Câu trả lời về việc `acp-event-mapper.ts:645` có phải một chỗ thành viên read-group không.
+
+**Chặn:** hạng mục M3-B3 tại `plan:8907-8912`, mà plan nói nó phụ thuộc M2 + A8 và gọi là rẻ nhất trong năm hạng mục bị M2 chặn. Không mục nào ở A1, A5 hay A6 phụ thuộc vào sóng này. A6 không có phụ thuộc bên ngoài.
+
+### Rủi ro
+
+Cách nhiều khả năng nhất để làm sai là A6 chuyển một chỗ lẽ ra không nên chuyển, hoặc bỏ sót một chỗ lẽ ra nên. Hai cái bẫy cụ thể, cả hai đã kiểm chứng trong cây mã. Thứ nhất: các dòng "phải đứng yên" của plan (1819, 1821, 1896) đều sai lệch +11 — số thật là 1830, 1832, 1907 — và 1830 là `#inlineReadToolImages`, nên một người đi theo số dòng của plan sẽ đáp thẳng vào đúng các chỗ ảnh inline và phá vỡ render ảnh inline, điều mà không lỗi biên dịch nào báo. Thứ hai: plan gọi cả bảy chỗ là "thành viên", nhưng `chat-transcript-builder.ts:507` và `ui-helpers.ts:663` là kiểm tra `toolName === "read"` phía result, không bao giờ gọi vị từ collapse; chuyển đổi chúng là thay đổi hành vi chứ không phải khử trùng lặp. Cả hai thất bại đều im lặng — transcript chỉ đơn giản gom khác nhau, và chỉ khi reload.
+
+Kẻ vế hai: A8 ship ra xanh mà không chứng minh gì. `resolveTmuxClientTerminalName` trả về null dưới `isBunTestRuntime()` tại `tmux.ts:49`, nên một test chỉ đặt `process.env.TMUX` sẽ lặng lẽ đi nhánh fallback. Cộng thêm nữa, `tmux.ts:21` ghi nhớ kết quả probe trong module state với không có export reset, nên một test sớm có thể đầu độc mọi case sau đó trong cùng tiến trình. Câu trả lời sai ở đây là một footer báo sai người dùng phải bấm phím nào.
+
+### Cần người quyết
+
+- **P1 (chặn A1):** cả bảy preset, hay chỉ `full` + `nerd`? Cần câu trả lời bằng văn bản của người duy trì trước dòng code A1 đầu tiên. Lưu ý rằng `default` là thứ mọi người dùng hiện tại nhìn thấy ngày đầu tiên, và `usage` là đoạn rộng nhất trong catalog — đây là quyết định sản phẩm lần chạy đầu, không phải quyết định kỹ thuật.
+- **P0 (chặn A8):** quy ước nhân đôi tiền tố tmux là black-box (quan sát trên sản phẩm đã phát hành chạy dưới tmux) hay omp-native (thiết kế tại đây), và bằng chứng nằm ở đâu? Bằng chứng phải nằm trong work item A8 của kế hoạch đã commit, không nằm ở checkout chưa track `~/Projects/claude-code-ref`.
+- `chat-transcript-builder.ts:507` và `ui-helpers.ts:663` có thuộc phạm vi A6 không? Chúng là kiểm tra phía result mà không bao giờ gọi vị từ collapse. Đọc của tôi là chúng thuộc nhóm phải-đứng-yên, điều đó sẽ làm A6 là năm chỗ cơ học chứ không phải bảy — nhưng đó là quyết định của người duy trì, không phải của người thực hiện.
+- `acp-event-mapper.ts:645` (`if (raw === undefined || toolName !== "read") return raw;`) có phải một chỗ thành viên read-group không? Plan không nhắc tới nó. Nó trông mang tính ACP, nhưng phải được kết luận rõ ràng là thuộc hay không thuộc thay vì lặng lẽ bỏ qua.
+- Hợp đồng phủ định của A1: có nên đổi `showHookStatus` (`component.ts:3064`, hiện mặc định là true) thành mặc định false để một status hook không render hai lần không? Plan đóng khung đây là cách tắt một đường đi tại `component.ts:3067`; thực tế setting đã tồn tại và 3067 là dấu ngoặc đóng. Đổi mặc định là quyết định sản phẩm ảnh hưởng mọi người dùng, và nằm ngoài phạm vi sóng này trừ khi có ai đó nhận việc đó một cách tường minh.
+- A5: bộ cộng dồn chi phí khung hình theo từng pha nên nằm ở đâu — một phần mở rộng của `loop-phase.ts`, hay một module mới? `loop-phase.ts:45` nằm trong `packages/utils` và được giữ cho nhẹ; thêm một kho thời gian vào đó làm rộng bán kính ảnh hưởng. Cần một quyết định trước bước 17.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| A1 — "bảy định nghĩa preset tại :5, :16, :26, :36, :59, :84, :96; cộng `packages/tui/src/status-line/schema.ts:36-42`" gợi ý rằng cần làm việc ở schema để `usage` khả dụng. | CORRECTED | Segment `usage` đã tồn tại trọn vẹn từ đầu đến cuối. Nó nằm trong `STATUS_LINE_SEGMENT_IDS` ở `schema.ts:26`, được cài là `usageSegment` ở `segments.ts:864`, và được đăng ký trong segment map ở `segments.ts:943`. A1 chỉ cần thêm chuỗi `"usage"` vào các mảng segment của các preset trong tập P1; hợp đồng phủ định cho preset NGOÀI tập P1 được viết bằng assert cấu trúc trên `leftSegments`/`rightSegments`, không phải bằng literal byte đóng băng (xem bước 8) — không có segment nào để viết. Một người đọc "bật segment usage" có thể đốt thời gian đi săn một phần cài đặt vốn đã được ship. Bằng chứng: `grep -n '"usage"' packages/tui/src/status-line/schema.ts` → 26:usage; `sed -n '864,870p' packages/tui/src/status-line/segments.ts` → `const usageSegment: StatusLineSegment = { id: "usage", render(ctx) {`; `grep -n 'usage: usageSegment'` → 943. |
+| A1 — `packages/tui/src/status-line/schema.ts:36-42` làm chỗ sửa. | CONFIRMED | Số của plan ĐÚNG. `CUSTOM_STATUS_LINE_DEFAULTS` mở ở dòng 36 và đóng ở dòng 42; dòng 43 trống, 44-45 là `CONTEXT_LINE_MODE_VALUES` / `ContextLineMode`. Đặc tả trước đây báo "36-45" là do đọc nhầm phạm vi của lệnh sed, không phải do plan sai. Bằng chứng: `cat -n packages/tui/src/status-line/schema.ts \| sed -n '36,45p'` → 36 `export const CUSTOM_STATUS_LINE_DEFAULTS: {` … 42 `};` / 43 (trống) / 44 `export const CONTEXT_LINE_MODE_VALUES = [...]` / 45 `export type ContextLineMode = ...`. |
+| A1 — "component.ts:3066-3068 đã in mọi hook status ... phải tắt hoặc mặc định-tắt đường dẫn component.ts:3067". | CORRECTED | Việc render hook-status ĐÃ được một setting chi phối. `component.ts:3064` đọc `const showHooks = this.#settings.showHookStatus ?? true;` và 3065 kiểm tra nó; lệnh push nằm ở 3066. Dòng 3067 là dấu ngoặc đóng, không phải một đường đi để tắt. Không có cơ chế tắt mới nào cần xây — quyết định sản phẩm, nếu ai đó nhận, là có đổi mặc định `showHookStatus` hiện tại từ true hay không. Đó là thay đổi tầm nhìn ngày đầu của mọi người dùng và nằm ngoài phạm vi sóng này. Bằng chứng: `sed -n '3064,3067p' packages/tui/src/status-line/component.ts` → `const showHooks = this.#settings.showHookStatus ?? true;` / `if (showHooks && this.#sortedHookStatuses.length > 0) {` / `lines.push(...this.#sortedHookStatuses.map(...));` / `}`. |
+| A8 — "Sửa: packages/tui/src/chrome/keybinding-hints.ts:10-55" và "Một file, 46 dòng". | STALE | File dài 80 dòng, không phải 46, và dòng 10-55 chẳng chứa logic prefix nào để sửa — chúng là khối import cộng `editorKey`, `editorKeys`, `boundKeys`, `interruptKey`, `appKey` và `keyHint`. Hàm mới nên được nối sau `appKey` ở dòng 47. Bảng bằng chứng của chính plan tự thừa nhận điều này: nó ghi `grep -c tmux` = 0/0/0 và phân loại A8 là "thuần là mã core mới", điều mâu thuẫn với chính dòng "Sửa" của nó. Hãy theo bằng chứng, đừng theo dòng chỗ sửa. Bằng chứng: `wc -l packages/tui/src/chrome/keybinding-hints.ts` → 80; `cat -n` cho thấy `appKey` đóng ở 47 và `keyHint` ở 57; `grep -c tmux` trên `keybinding-hints.ts`, `keybindings.ts`, `app-keybindings.ts` → 0, 0, 0 (xác nhận đúng con số của plan). |
+| A8 — bẫy test bắt buộc của plan chỉ bao trùm ngắn mạch `isBunTestRuntime()` tại `tmux.ts:49`. | CORRECTED | Cái bẫy thật nằm ở CHÍNH dòng 49, và nó đã vô hiệu hoá cả hai vế. Vì return sớm ở 49 đứng trước dòng 50, dưới `bun test` `cachedClientTerminalName` (`tmux.ts:21`) không bao giờ được gán — nên vế "một test sớm đầu độc mọi case sau" là rủi ro giả đối với môi trường test. Điều đặc tả bỏ sót và cần nói rõ là: test muốn vào nhánh tmux buộc phải spy `resolveTmuxClientTerminalName` trả về giá trị giả; nếu không có spy đó, mọi assertion về nhân đôi tiền tố đều xanh vô nghĩa. Bằng chứng: `cat -n packages/tui/src/tmux.ts \| sed -n '48,52p'` → 49 return null (`isBunTestRuntime`), 50 mới là chỗ ghi bộ nhớ đệm. |
+| A8 — "phát hiện tmux đã có sẵn ở tmux.ts:5, :48-49" (bằng chứng của plan cho việc không phải phát minh ra cách dò). | CONFIRMED | Cả hai neo đều chính xác và seam thực sự tái dùng được. `isInsideTmux(env = Bun.env)` ở `tmux.ts:5` là toàn bộ primitive dò — một Boolean một dòng trên `env.TMUX`, không probe, không timeout, không đường ném lỗi, nên gọi nó ở mọi lần render gợi ý đều an toàn. `resolveTmuxClientTerminalName(env = Bun.env)` ở `tmux.ts:48`, với chốt chặn `isBunTestRuntime()` ở :49, là probe nặng hơn (timeout 500ms, SIGKILL, có ghi nhớ). Hãy dùng cái thứ nhất cho đường gợi ý; chỉ với tới cái thứ hai khi gợi ý cần phân biệt terminfo của chính tmux với terminfo của client. Lưu ý đây là các năng lực KHÁC NHAU — plan gom chúng làm một seam, và chọn nhầm thì hoặc tốn một tiến trình con mỗi khung hình, hoặc lặng lẽ tắt tính năng đang được kiểm thử. Bằng chứng: `grep -n 'export function\|isBunTestRuntime\|cachedClientTerminalName' packages/tui/src/tmux.ts` → 5 (isInsideTmux), 10/15 (wrapper passthrough), 21 (bộ nhớ đệm), 48 (resolveTmuxClientTerminalName), 49 (chốt chặn isBunTestRuntime), 50-51 (gán bộ nhớ đệm). |
+| A6 — "predicate đã có ở packages/tui/src/chat/read-tool-group.ts:41" (dòng đúng, tên không bao giờ được nêu). | CORRECTED | Vị từ tên là `readArgsCollapseIntoGroup`, và nó chỉ nhận `args: unknown` — nó KHÔNG làm phần kiểm tra tên. Số dòng chính xác, nhưng vì plan không nêu tên, một người grep tên kiểu thành viên (`isReadToolGroupMember` và tương tự) sẽ không thấy gì và có thể kết luận rằng seam không tồn tại. Nó có: dòng 41, và nó là nửa dựa trên dữ liệu của mọi quyết định thành viên. Bằng chứng: `grep -n readArgsCollapseIntoGroup` → `read-tool-group.ts:41` `export function readArgsCollapseIntoGroup(args: unknown): boolean`; thân hàm ở :42-48 là `readArgsTarget` / `splitUrlScheme` / `internalUrlSchemeSpec`. |
+| A6 — "so sánh cứng tại ... ui-helpers.ts:551 và :661". | STALE | Dòng thật là 553 và 663 — cùng lệch +2. `ui-helpers.ts:553` là chỗ cơ học (`if (renderToolName === "read" && readArgsCollapseIntoGroup(content.arguments)) {`). `ui-helpers.ts:663` là `message.toolName === "read" &&` phía result, không gọi vị từ nào — xem mục đính chính phân loại sai bên dưới. Bằng chứng: `grep -n 'name === "read"' packages/coding-agent/src/modes/utils/ui-helpers.ts` → 553, 663. |
+| A6 — "so sánh cứng tại ... event-controller.ts:1344 và :1684". | STALE | Dòng thật là 1357 và 1695 — lệch +13 và +11 tương ứng. Ở 1350 nằm name guard trần `if (renderToolName === "read") {` với lời gọi vị từ ở 1357. Ở 1695 kiểm tra tên và vị từ nằm cùng một dòng. Cả ba đều lệch +11 — khớp với +11 ở 1684→1695, nhưng KHÔNG khớp với +13 ở 1344→1357. Trôi không đều, nên phải tra từng dòng. Bằng chứng: `grep -n readArgsCollapseIntoGroup packages/coding-agent/src/modes/controllers/event-controller.ts` → 14 (import), 1357, 1695; `grep -n 'renderToolName === "read"'` → 1350, 1695. |
+| A6 — "Phải đứng yên: event-controller.ts:1819, :1821, :1896". | STALE | Dòng thật là 1830, 1832 và 1907 — cùng lệch +11, trùng với trôi của hai chỗ bên trên. Điều này quan trọng hơn một con số cũ thường thấy: 1830 là lời gọi `#inlineReadToolImages`, và 1832 là `#clearReadToolCall` tương ứng. Một người tin số của plan sẽ đáp vào đây và phá vỡ render ảnh inline, điều mà không lỗi kiểu nào báo. Chỉ dẫn nội dung của plan (để yên chúng) là đúng và đáng giữ; chỉ có số là sai. Bằng chứng: `grep -n 'event.toolName === "read"' packages/coding-agent/src/modes/controllers/event-controller.ts` → 1830, 1832, 1907; dòng 1830 là `if (event.toolName === "read") this.#inlineReadToolImages(event.toolCallId, event.result);`. |
+| A6 — cả bảy chỗ được liệt kê đều là chỗ thành viên read-group cần chuyển đổi. | CORRECTED | Chỉ có năm là cơ học. `chat-transcript-builder.ts:507` (`message.toolName === "read" && (!pending \|\| pending instanceof ReadToolGroupComponent)`) và `ui-helpers.ts:663` (`message.toolName === "read" &&`) không bao giờ gọi vị từ collapse — chúng kiểm tra KẾT QUẢ của một lần đọc, và gộp chúng vào một vị từ thành viên dùng chung sẽ thay đổi hành vi chứ không phải khử trùng lặp. Lập luận "phải đứng yên" của chính plan (đọc đặc biệt vì chúng trả về ảnh) áp dụng cho hai chỗ này y như cho ba chỗ nội tuyến. Tôi đọc A6 là năm chỗ cơ học cộng ba chỗ phải-đứng-yên cộng hai chỗ cần người duy trì phán — nhưng người thực hiện không được tự giải quyết một cách đơn phương. Bằng chứng: `sed -n '507p' chat-transcript-builder.ts` → `const isReadGroupResult = message.toolName === "read" && (!pending \|\| pending instanceof ReadToolGroupComponent);`; grep cho thấy chỉ 443 trong file đó và chỉ 553 trong `ui-helpers.ts` gọi `readArgsCollapseIntoGroup`. |
+| A6 — danh sách chỗ thành viên là đầy đủ. | UNVERIFIED (cần một phán quyết) | Plan không nhắc tới `packages/coding-agent/src/modes/acp/acp-event-mapper.ts:645`, vốn đọc `if (raw === undefined \|\| toolName !== "read") return raw;`. Nó trông mang tính ACP hơn là gom nhóm transcript, nhưng nó là một so sánh `read` trong cây `modes` và phải được kết luận rõ ràng là thuộc hay không thuộc thay vì lướt qua. Bằng chứng: `grep -rn 'toolName !== "read"' packages/coding-agent/src/modes/` → `acp-event-mapper.ts:645` (hit duy nhất ngoài các file gom nhóm transcript). |
+| A5 — "packages/coding-agent/src/modes/interactive-mode.ts:6674 đã cài setTrailer(() => this.#workingRowTrailer())" (bản đính chính của plan với cách đóng khung trong dossier). | STALE | Lệnh cài đặt nằm ở dòng 6624, không phải 6674 — lệch 50. Chỉ dẫn nội dung của plan là đúng và quan trọng: ô trailer đã bị chiếm, nên chỉ báo stall phải được GỘP vào giá trị mà `#workingRowTrailer` trả về (định nghĩa ở :1013) chứ không được cài bằng một lời gọi `setTrailer` thứ hai. Hãy dùng 6624. Không có tiền lệ nào cho việc này: `renderIdleStatusHud` ở :1022 là hàng status của `StatusHudContainer` (:606), được gọi khi `childLines.length === 0`, và trả `["", padded]` làm thân hàng riêng — nó không lách được ràng buộc `lines.length > 1` của `loader.ts:107`. Bằng chứng: `grep -n 'setTrailer\|workingRowTrailer' packages/coding-agent/src/modes/interactive-mode.ts` → 6624 (cài đặt), 1013 (định nghĩa), 1023 (dùng lại trong `renderIdleStatusHud`). |
+| A5 — chín neo: loop-watchdog.ts:123-124, loop-phase.ts:45, loader.ts:32, loader.ts:107-113, loader.ts:141, tui.ts:930, tui.ts:1035-1036, tui.ts:2105, tui.ts:2204. | CONFIRMED | Cả chín đều đúng tuyệt đối. Đây là hạng mục chính xác nhất trong sóng — con số sai duy nhất trong A5 là neo đính chính dossier ở 6674. Các neo thêm mà plan không liệt kê nhưng người thực hiện cần: `tui.ts:811` (`#lastFrameCostMs = 0`), `tui.ts:2187` (consumer của adaptive floor), `loop-watchdog.ts:57` (`export class LoopWatchdog {`, chỗ thêm field của plan), và `loader.ts:170` (`this.#ui?.lastFrameCostMs ?? 0`, chỗ tự nhiên để bày tày bảng phân rã). Bằng chứng: `grep -n 'takeRecentLoopPhase\|lastFrameCostMs\|setTrailer'` trên `loop-watchdog.ts`, `tui.ts`, `loop-phase.ts`, `loader.ts`, `interactive-mode.ts` → 123 (watchdog), 45 (loop-phase), 32/107/141/170 (loader), 811/930/1035/1036/2105/2187/2204 (tui). |
+| A5 — "loader.ts:107 chỉ render trailer khi lines.length > 1", nên fixture phải dựng hàng nhiều dòng nếu không các khẳng định sẽ pass vô nghĩa. | CONFIRMED | Đã kiểm chứng nguyên văn: `if (this.#trailer && lines.length > 1) {` tại `loader.ts:107`. Cái bẫy là có thật và plan đúng khi nhắc tới nó. Cảnh báo áp dụng đối xứng cho mọi trường hợp không có hàng công việc, mà plan cũng yêu cầu. Bằng chứng: `sed -n '107,113p' packages/tui/src/components/loader.ts` → `if (this.#trailer && lines.length > 1) {` / `const trailer = this.#trailer();` / `if (trailer) {`. |
+| Repo đang ở git HEAD 5873776 (theo task brief). | STALE | HEAD thực tế trên nhánh milestone-1 là `808b365409fa36719c38319a041c0e612b4e702b`. Điều này không làm thay đổi neo nào ở trên — tất cả đều đã được kiểm chứng trên 808b365 — nhưng một người checkout 5873776 để khớp brief sẽ nhận được một cây khác. Bằng chứng: `git log --oneline -1` → 808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan; `git rev-parse HEAD` → 808b365409fa36719c38319a041c0e612b4e702b. |
+| Cả bốn file test mà plan tham chiếu là file anh/chị em/đã tồn tại đều có mặt. | CONFIRMED | `status-line-overflow.test.ts`, `status-line-settings-cache.test.ts`, `helpers/status-line.ts` (export `StatusLineTestComponents` với track/dispose) và `packages/tui/test/loop-watchdog.test.ts` đều tồn tại. Test A1 có thể sao trực tiếp harness overflow — nó đã import `StatusLineComponent`, `statusLineHost`, `initTheme` và `StatusLineTestComponents`, và factory `createCtx` của nó đã kết thúc bằng `usage: null`, nên việc mở rộng thêm một override usage là thay đổi nhỏ chứ không phải viết harness từ đầu. Bằng chứng: `test -e` trên cả bốn đường dẫn → EXISTS; `sed -n '1,30p' status-line-overflow.test.ts` cho thấy các import và khuôn beforeAll/afterAll; `status-line.ts:6` `export class StatusLineTestComponents`. |
+| Môi trường: `bun test` cần addon native; `bun run check:ts` không cần addon và là đường xác minh. | CONFIRMED | Đã xác nhận rằng `bun test` cần native addon, và `check:ts` là một script thật (`package.json:94`, `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`). Chạy `bun run check:ts` trên HEAD 808b365 và nó PASS với exit code 0. Cổng này KHÔNG chậm: lần chạy đo được hoàn tất trong 35 giây, nên hãy chạy thẳng giữa các hạng mục thay vì đặt nền. Bằng chứng: `grep -n '"check:ts"' package.json` → 94; `bun run check:ts` báo completed, exit code 0, log 23 dòng, tổng thời gian đo 35s. Phần addon: build một lần bằng `brew install ninja` + `bun --cwd=packages/natives run build` (exit 0) là suite chạy hết. |
+
+
+---
+
+
+## Sóng 2 — UX cảm nhận được ngay
+
+**Sóng / phạm vi:** sóng 2. Cả sóng đúng ba hạng mục, không thêm gì: **A3** (tăng tốc cuộn bằng bánh xe), **A7** (hàng thông báo tạm có khoá để thay thế nhau), **D3** (vạch chưa đọc trong trình xem transcript). Cả ba đều là thay đổi người dùng thấy được ngay trong phiên tương tác.
+
+**Effort:** kế hoạch giao L/~5 ngày cho A3, M/~3 cho A7, M/~2 cho D3 — tổng khoảng 10 ngày cho cả sóng. Ước lượng sau khi đối chiếu với cây mã sát thực tế hơn: **8,5–9 ngày** (5 của A3 + 2,5–3 của A7 + 1 của D3). Nếu chỉ tính ngày viết mã thì **5,5 ngày** — phần đo đạc của A3 là 3,5 ngày lịch không nén được và phải giữ nguyên. Chênh lệch nằm hẳn ở D3 và ở phần đo đạc của A3. D3 khó nhất (neo theo chỉ số tin nhắn, sống sót qua đổi bề rộng) **đã có sẵn** (`ChatTranscriptBuilder.rowForEntry` → `ScrollRangeAnchor` → `ScrollView.revealRange`), nên D3 là việc vẽ + gắn phím, khoảng S/1 ngày chứ không phải M/2. 5 ngày của A3 là thật, nhưng chỉ ~1,5 ngày là viết mã: bảng đo là thời gian lịch không nén được, và kế hoạch đúng khi nói không nên chia cho hai người. A7 là 3 ngày và nên giữ ở 2,5–3: phần mã nhỏ, nhưng chứng minh hàng composer và hàng transcript không bao giờ trộn lẫn là toàn bộ ngân sách. Rủi ro thật của sóng không phải effort — mà là phần đo của A3 không bao giờ xảy ra và số giữ chỗ được ship.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/mouse-wheel.ts` | tạo | Module MỚI: mô hình bánh xe thuần (`resolveWheelDelta`), bản ghi `WheelThresholds` chứa các giá trị đã đo, vỏ `WheelAccelerationState` theo từng pane kèm `reset()`, và `setWheelSpeedMultiplier` / `wheelSpeedMultiplier` cho override của người dùng. Đặt cạnh `packages/tui/src/mouse.ts`. | có — chưa tồn tại; `packages/tui/package.json` có mục export `./*` nên `@oh-my-pi/pi-tui/mouse-wheel` resolve được không cần sửa package.json; `packages/tui/src/index.ts:59` là `export * from "./mouse"` |
+| `packages/tui/src/mouse.ts` | sửa | Thêm trường `now: number` vào `SgrMouseEvent` (dòng 12) và tham số thứ ba tuỳ chọn cho `parseSgrMouse(data, now = Date.now())` (dòng 39) và `routeSgrMouseInput(data, handler, now?)` (dòng 61), để đường giải mã là nơi duy nhất gắn timestamp. Nới `SelectListMouseTarget.handleWheel` (dòng 74) từ `(delta: -1 \| 1)` thành `(delta: number, now?: number)` và cho `routeSelectListMouse` (dòng 85) chuyển tiếp `event.now`. | có — đọc trọn file (110 dòng). `SgrMouseEvent` hôm nay đúng **bảy** trường (button, col, row, release, wheel, motion, leftClick), KHÔNG có timestamp; `parseSgrMouse` ở :39 chỉ nhận `data`; `routeSelectListMouse` ở :87 gọi `target.handleWheel(event.wheel)` |
+| `packages/tui/src/apps/git/sidebar.ts` | sửa | Dòng 896: đổi `handleWheel(delta: number): void` thành `handleWheel(delta: number, now?: number): void`; dòng 897 thay `this.#scrollView.scroll(delta * 3)` bằng lời gọi mô hình đã phân giải, để pane phải của git-tui thôi cuộn với hằng số ×3 viết cứng. | có — `sed -n '890,900p'` xác nhận :896-897 |
+| `packages/tui/src/apps/git/git-tui.ts` | sửa | Dòng 695: chuyển tiếp timestamp — `this.#sidebar.handleWheel(event.wheel, event.now)`. Dòng 697: thay `this.#pane.scrollBy(event.wheel * 3)` bằng lời gọi mô hình, để pane CHÍNH tăng tốc. | có — `sed -n '685,700p'` xác nhận :695 là nhánh pane phải, :697 là `scrollBy` của pane chính |
+| `packages/tui/src/overlays/agent-transcript-viewer.ts` | sửa | A3: dòng 470, thay `this.#browser.scroll(event.wheel * 3)` bằng lời gọi mô hình. D3: vùng quanh :470 không đổi; vạch chưa đọc và pill được vẽ trong `#frame` (dòng 576-613) dùng `this.#builder.rowForEntry(firstUnreadEntryId)` đã có sẵn, cộng một key handler mới điều hướng tới `this.#browser.revealEntry(...)`. | có — đọc trọn đường vẽ; `sed -n '460,480p'` xác nhận :470; `sed -n '505,545p'` xác nhận `#handleScroll` ở :517-535; `sed -n '576,613p'` xác nhận `#frame` dựng `anchor: ScrollRangeAnchor` ở :597-608 |
+| `packages/tui/src/overlays/plan-review-overlay.ts` | sửa | Dòng 580: thay `this.#scrollView.scroll(event.wheel * 3)` bằng lời gọi mô hình; giữ nguyên `this.#captureScrollProgress()` (dòng 581) ngay sau đó. | có — kế hoạch ghi :581, thực tế là :580; `#handleMouse` đi ra qua `routeSgrMouseInput` ở :577 |
+| `packages/tui/src/overlays/rewind-selector.ts` | sửa | Dòng 245: thay `if (this.#browser.scroll(event.wheel * 3)) this.deps.requestRender();` bằng lời gọi mô hình, giữ nguyên hợp đồng "một notch ở hai đầu không vẽ lại" — việc vẽ lại vẫn phải còn điều kiện hoá theo việc cuộn có thật sự dịch chuyển hay không. | có — kế hoạch ghi :232, thực tế là :245 (trôi 13 dòng); `transcript-browser.ts:175-180` `scroll(delta)` trả `false` khi offset không đổi, nên cổng này sống được miễn là mô hình trả về số dòng chứ không phải boolean |
+| `packages/tui/src/overlays/copy-selector.ts` | sửa | Dòng 214: giống rewind-selector — lời gọi mô hình, giữ cổng vẽ lại `if (this.#browser.scroll(...))`. | có — kế hoạch ghi :212, thực tế là :214 |
+| `packages/tui/src/apps/debug/raw-sse.ts` | sửa | Dòng 168: thay `this.#frame.scroll(event.wheel * 3)` bằng lời gọi mô hình, giữ nguyên bảo vệ `this.#frame.isBodyFrameRow(event.row)` ở dòng 167 và `this.#onUpdate?.()` ở dòng 169. | có — kế hoạch ghi :167, thực tế là :168; `#handleMouse` bắt đầu ở :166 |
+| `packages/tui/src/apps/debug/log-viewer.ts` | sửa | Dòng 639: thay `this.#frame.scroll(event.wheel * 3)` bằng lời gọi mô hình. Giữ `this.#statusMessage = undefined;` (dòng 638) TRƯỚC phép cuộn — đó là tác dụng phụ vẫn phải bắn trên mọi notch, dù có tăng tốc hay không. | có — kế hoạch ghi :638, thực tế là :639; `#handleMouse` ở :636, bảo vệ `isBodyFrameRow` ở :637, xoá `statusMessage` ở :638, `onUpdate` ở :640 |
+| `packages/tui/src/overlays/usage-dashboard.ts` | sửa | Dòng 759: thay `this.#scrollBy(event.wheel * 2)` bằng lời gọi mô hình. Đây là site ×2 duy nhất; nó trở thành cùng một mô hình với các site ×3 — chính điều đó là ý nghĩa, các hệ số khác nhau chỉ vì tình cờ. | có — kế hoạch ghi :753, thực tế là :759; `handleInput` ở :755 đi qua `routeSgrMouseInput` ở :757 |
+| `packages/coding-agent/src/modes/settings.ts` | sửa | Đăng ký `cfgUiMouseWheelSpeedMultiplier = register({ id: "ui.mouseWheelSpeedMultiplier", type: "number", default: 1, validate: raw => { if (typeof raw !== "number" \|\| !Number.isFinite(raw) \|\| raw <= 0) throw new Error(...) } })` và thêm `effect(cfgUiMouseWheelSpeedMultiplier, setWheelSpeedMultiplier);` — đúng cặp `register` + `effect` đã dùng cho `cfgTuiMaxInlineImageColumns` ở dòng 334-341. | có — `sed -n '330,341p'` cho thấy mẫu được cho phép; `validate?: (raw: unknown) => void` tồn tại ở `packages/coding-agent/src/config/registry.ts:112` và được gọi (được phép ném) ở :666 và :680; pi-tui KHÔNG phụ thuộc coding-agent, nên hướng đẩy là bắt buộc |
+| `packages/coding-agent/src/modes/utils/ui-helpers.ts` | sửa | A7: thêm và export `export interface ShowStatusOptions { dim?: boolean; immediate?: boolean; invalidates?: readonly string[]; fold?: boolean; key?: string }` ngay trên class; đổi chữ ký ở dòng 143 thành `showStatus(message: string, options?: ShowStatusOptions): void`; bên trong phương thức rẽ nhánh — thông báo không có `key` giữ nguyên đường `chatContainer` hiện tại từng byte, thông báo có `key` đi vào hàng đợi có khoá. Dòng 1035 (`Session compacted ${times}`) trở thành thông báo có khoá với khoá ổn định. | có — đọc dòng 130-164, chữ ký ở :143 (kế hoạch ghi :141); `git grep ShowStatusOptions` trả 0 kết quả trong `packages/**` nên tên này thật sự mới; `git grep -c 'showStatus('` cộng lại 332 dòng trên 34 file, khớp "~300" của kế hoạch; thông báo compaction ở ui-helpers.ts:1035, KHÔNG ở event-controller |
+| `packages/coding-agent/src/modes/controllers/event-controller.ts` | sửa | `#handleNotice` (dòng 1250) định tuyến nhánh `info` qua `showStatus(message, { key })` để hai thông báo cùng nghĩa thay thế nhau; nhánh `error` và `warning` giữ nguyên gọi `showError`/`showWarning` không đụng tới, vì lỗi và cảnh báo là bền vững và không được bị một dòng info sau đẩy ra. | có — đọc dòng 1250-1259; kế hoạch ghi 1244-1251, thực tế 1250-1259 (lệnh gọi `notice: e => this.#handleNotice(e)` ở :313); sự kiện `notice` là `{ type: "notice", level, message, source }` — định nghĩa tại `packages/coding-agent/src/session/agent-session.ts:2812` qua `emitNotice` ở :2810 — và hôm nay không mang khoá, nên khoá phải được quyết ở đây chứ không đọc ra từ sự kiện |
+| `packages/coding-agent/src/modes/interactive-mode.ts` | sửa | A7: thêm `this.noticeContainer = new Container()` cạnh các container bố cục khác (bên cạnh khoá dựng `hookWidgetContainerAbove` ở dòng 1453-1454) và chèn `this.noticeContainer` vào mảng bố cục ở dòng 1728, ngay trước `this.hookWidgetContainerAbove`. Truyền nó qua `InteractiveModeContext` (types.ts) và đưa cho `UiHelpers` qua tham số constructor `InteractiveModeContext` sẵn có. | có — neo của kế hoạch `interactive-mode.ts:3181` cho "coding-agent đã đổ nội dung vào chrome composer" là SAI (`sed -n '3170,3195p'` cho thấy dòng đó nằm trong `syncRunningSubagentBadge` / `#composerHint`, không có wiring chrome nào). Wiring chrome thật ở :3054-3068, mảng `Container` thật dựng ở :1700-1732. `Container.clear()` tồn tại ở `packages/tui/src/tui.ts:481` |
+| `packages/coding-agent/src/modes/types.ts` | sửa | Khai báo `noticeContainer: Container` cạnh `hookWidgetContainerAbove` (khai báo ở dòng 126), và thêm các trường registry thông báo có khoá cạnh `lastStatusSpacer` / `lastStatusText` (dòng 261-262). | có — `grep -n` xác nhận `hookWidgetContainerAbove: Container;` ở :126 và `lastStatusSpacer` / `lastStatusText` ở :261/:262 |
+| `packages/tui/test/wheel-acceleration.test.ts` | tạo | MỚI: test bảng cho `resolveWheelDelta` trên một dòng notch tổng hợp — wheel có răng cưa (ba notch cho một detent vật lý vẫn ở 1 dòng), ramp liên tục (cách nhau 20 ms thì leo tới trần; cách nhau 500 ms thì giữ ở 1), phát hiện bounce (đảo chiều rồi đảo lại trong cửa sổ bounce ĐÃ ĐO thì bật chế độ wheel; không có sự kiện trong khoảng idle-reset ĐÃ ĐO thì tắt), dòng không đảo chiều không bao giờ bật chế độ wheel, gộp cùng lô trong cửa sổ batch ĐÃ ĐO, và override nhân đúng một lần. | có — test hàm thuần, không cần terminal lẫn instance TUI; vì vậy đây là test mô hình thuần chứ không phải test wiring |
+| `packages/tui/test/mouse.test.ts` | sửa | MỞ RỘNG. Trước hết phải sửa hai chỗ: **`expect(parseSgrMouse("\x1b[<0;5;9M")).toEqual({...})` ở :19-27** và **literal `baseEvent: SgrMouseEvent` ở :101-109** (dòng 101 khai, 109 đóng) đều vỡ ngay khi `SgrMouseEvent` có thêm trường `now`. Rồi thêm phủ phủ: `routeSelectListMouse` chuyển tiếp `event.now` cho `handleWheel` như đối số thứ hai. | có — đọc trọn file (145 dòng); `SgrMouseEvent` hôm nay đúng **bảy** trường, `parseSgrMouse` ở :39 chỉ nhận `data`, `routeSelectListMouse` ở :87 gọi `target.handleWheel(event.wheel)`; đã chạy `bun test packages/tui/test/mouse.test.ts` → 13 pass, 0 fail, 38 lời gọi expect() |
+| `packages/coding-agent/test/notice-queue.test.ts` | tạo | MỚI: thay thế thông báo có khoá (một thông báo có khoá ưu tiên thấp, rồi một thông báo `immediate` mà `invalidates` gọi khoá của nó — cái thứ nhất biến mất khỏi hiển thị và không bao giờ quay lại), `fold` gom vào một hàng duy nhất, không ghi đè hàng đợi khi thông báo tới lúc một thông báo khác đang hiện, hợp đồng vị trí hiển thị (thông báo có khoá nằm trong children của notice container và VẮNG mặt khỏi `chatContainer.children`; thông báo không khoá vẫn ở `chatContainer.children`), validation từ chối `0` và số âm, và một test tích hợp chạy một compaction thật qua `EventController` khẳng định chỉ ra ĐÚNG MỘT thông báo tạm. | có — nằm trong coding-agent chứ không phải pi-tui: `UiHelpers` là class trong coding-agent, `#handleNotice` là method của EventController, fixture `createInteractiveModeContext` ở `packages/coding-agent/test/helpers/interactive-mode-context.ts:192` (12.260 byte) đã cấp sẵn `chatContainer` (:202, một `TranscriptContainer`), một `present` mount vào nó (:274), và `ui.requestRender` (:204) |
+| `packages/coding-agent/test/interactive-mode-status.test.ts` | sửa | MỞ RỘNG: thêm một test khẳng định `showStatus` không khoá vẫn rơi vào `chatContainer` với đúng hình dạng hai con (spacer + text). Đây là canh gác hồi quy cho luật "đừng gộp hai nhánh" của kế hoạch, và nó phải tiếp tục pass mà không đổi. | có — đã tồn tại và đã khẳng định đúng điều đó: `expect(ctx.chatContainer.children).toHaveLength(2)` ở lần `showStatus` thứ nhất và thứ hai, và `toHaveLength(5)` khi có thứ gì xen vào. Đọc trọn file: phía không-khoá đã được phủ; A7 không được phá nó |
+| `packages/tui/test/transcript-viewer-scroll-chrome.test.ts` | tạo | MỚI: cuộn lên, thêm một tin nhắn, khẳng định vạch xuất hiện với đúng số chưa đọc và kích hoạt nó quay về đáy; đổi bề rộng terminal qua ít nhất ba bề rộng trong lúc đang cuộn và khẳng định dấu vẫn chỉ đúng tin nhắn đó; và khẳng định transcript trần render giống hệt từng byte khi có chrome. | có — nằm cạnh `packages/tui/test/transcript-container.test.ts` (24 KB) và `transcript-outline-row-cache.test.ts` |
+
+### Các bước
+
+1. **A3 BƯỚC 0 — LÀM TRƯỚC KHI VIẾT DÒNG MÃ NÀO.** Chạy bảng đo trên bốn terminal thật (Ghostty, Terminal.app, VS Code, Cursor). Với mỗi cái, ghi lại: (a) một detent vật lý sinh ra bao nhiêu báo cáo wheel SGR, (b) khoảng cách giữa hai báo cáo khi trackpad cuộn liên tục, (c) một detent có phát ra cặp đảo chiều rồi đảo lại không và cặp đó kéo dài bao lâu, (d) sau khoảng im lặng bao lâu thì terminal ngừng gửi. Ghi ba con số kết quả vào work item với tên `WHEEL_BATCH_WINDOW_MS`, `WHEEL_BOUNCE_WINDOW_MS`, `WHEEL_IDLE_RESET_MS`, cộng trần ramp. Ba con số 200/1500/5 của kế hoạch là giữ chỗ, không phải đặc tả. Không viết một dòng TypeScript nào trước khi bảng này tồn tại — không có nó thì không tune được mô hình và không ghim được test. *(neo: `packages/tui/src/mouse-wheel.ts`)*
+
+2. **A3 BƯỚC 1 — tạo module.** Hàm thuần `resolveWheelDelta(notches, thresholds)` biến một dòng notch tổng hợp thành `{ rows, source }`; một bản ghi `WheelThresholds` (batchWindowMs, bounceWindowMs, idleResetMs, maxRowsPerNotch) để các giá trị đã đo nằm trong một hằng duy nhất được export; một vỏ mỏng `WheelAccelerationState` có `reset()` giữ lịch sử notch và đưa cho hàm thuần; và `setWheelSpeedMultiplier` / `wheelSpeedMultiplier` cho override của người dùng, áp dụng đúng một lần, sau mô hình. Giữ nó là một hàm cộng một vỏ trạng thái mỏng — rủi ro lớn nhất của kế hoạch là một cái ramp mà lag lại cảm thấy tệ hơn một hằng số sai. *(neo: `packages/tui/src/mouse-wheel.ts`)*
+
+3. **A3 BƯỚC 2 — gắn đồng hồ.** Thêm `now: number` vào `SgrMouseEvent`; cho `parseSgrMouse` và `routeSgrMouseInput` một tham số `now` tuỳ chọn ở cuối, mặc định `Date.now()`; nới `SelectListMouseTarget.handleWheel` thành `(delta: number, now?: number)`; và cho `routeSelectListMouse` truyền `event.now`. Giữ `now` tuỳ chọn trên `handleWheel` để một target bỏ qua nó vẫn biên dịch được — nhưng xem câu hỏi mở: khuyến nghị là KHÔNG tăng tốc các target dạng danh sách, khi đó việc nới này là toàn bộ thay đổi với chúng. *(neo: `packages/tui/src/mouse.ts`)*
+
+4. **A3 BƯỚC 3 — chuyển từng site hằng số, và đếm lại sau mỗi lần:** agent-transcript-viewer.ts:470, plan-review-overlay.ts:580, rewind-selector.ts:245, copy-selector.ts:214, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639 (tất cả ×3) và usage-dashboard.ts:759 (×2). Ở rewind-selector và copy-selector, việc vẽ lại vẫn còn điều kiện hoá theo cuộn có thật sự dịch chuyển — `transcript-browser.ts:175-180` `scroll()` trả false khi offset không đổi, nên hãy truyền một SỐ DÒNG qua đó, không phải boolean. *(neo: `packages/tui/src/overlays/agent-transcript-viewer.ts:470`)*
+
+5. **A3 BƯỚC 4 — site thứ chín.** Thay `delta * 3` trong `handleWheel` bằng lời gọi mô hình và nới chữ ký ở :896 để nhận `now`. Đây là site mà grep `event.wheel * N` nào cũng bỏ sót, và đó là lý do pane PHẢI của git-tui hôm nay cũng là ×3 — `:695` uỷ quyền cho nó. Thêm một instance `WheelAccelerationState` cho mỗi pane: sidebar một cái, pane chính của git-tui một cái. Chia sẻ một instance giữa các pane là rủi ro thứ hai mà kế hoạch nêu tên: cuộn sidebar sẽ nạp sẵn đà cho pane kia. *(neo: `packages/tui/src/apps/git/sidebar.ts:897`)*
+
+6. **A3 BƯỚC 5 — khai báo cửa thoát hiểm.** Đăng ký `ui.mouseWheelSpeedMultiplier` (type number, default 1) với `validate` ném lỗi khi gặp 0, số âm và giá trị không hữu hạn, rồi nối bằng `effect(cfgUiMouseWheelSpeedMultiplier, setWheelSpeedMultiplier)` đúng như `cfgTuiMaxInlineImageColumns` làm ở :334-341. Trước khi viết khối `ui:`, hãy đọc câu hỏi mở: một `UiNumber` không có `options` bị CỐ Ý giấu khỏi bảng cài đặt, nên setting này theo đặc tả chỉ nằm trong file cấu hình. *(neo: `packages/coding-agent/src/modes/settings.ts`)*
+
+7. **A7 BƯỚC 1 — đặt tên cho kiểu tuỳ chọn và giữ chữ ký tương thích.** Khai báo và export `ShowStatusOptions` (dim, immediate, invalidates, fold, key), đổi kiểu tham số tại chỗ. Cả 332 dòng gọi `showStatus(...)` sẵn có phải biên dịch được mà không đụng tới — đó là toàn bộ ý nghĩa của việc đặt tên kiểu thay vì đổi hình dạng. Rẽ nhánh bên trong phương thức: không có `key` nghĩa là đường `chatContainer` hôm nay, từng byte y như cũ; có `key` nghĩa là hàng đợi có khoá. Không bao giờ gộp hai nhánh. *(neo: `packages/coding-agent/src/modes/utils/ui-helpers.ts:143`)*
+
+8. **A7 BƯỚC 2 — dựng nhà cho hàng có khoá.** Thêm một `noticeContainer` riêng cạnh các container bố cục khác và đặt nó vào mảng bố cục ngay trước `hookWidgetContainerAbove`. KHÔNG dùng lại `hookWidgetContainerAbove`: `ExtensionUIController.#renderHookWidgetContainer` (khai báo ở extension-ui-controller.ts:387) gọi `container.clear()` ở extension-ui-controller.ts:393 mỗi lần dựng lại hook widget, nên một hàng thông báo đặt ở đó bị xoá âm thầm. Cũng KHÔNG định tuyến thông báo qua top chrome của composer — `syncComposerShape` ở interactive-mode.ts:3054-3068 đưa cho editor một `TopBorderProvider` trả về chuỗi đã dựng sẵn từ `StatusLineComponent.getTopBorder` / `getBandTopBorder` / `getStandaloneTopBorder`; không có hàng component nào để nhét vào. *(neo: `packages/coding-agent/src/modes/interactive-mode.ts:1728`)*
+
+9. **A7 BƯỚC 3 — cài bốn ngữ nghĩa tuỳ chọn trong nhánh có khoá.** `key` mặc định bằng chính message để hành vi sửa tại chỗ hôm nay còn sống; `invalidates` gỡ mọi thông báo đang xếp hàng có khoá hiệu dụng khớp, so với khoá của ĐÍCH — nên muốn đuổi một thông báo không khoá thì phải truyền đúng chuỗi message của nó; `fold` với cùng một khoá thì nối thêm vào hàng sẵn có thay vì thêm hàng mới; `immediate` bỏ qua hàng đợi và áp `invalidates` của nó một cách đồng bộ. Rồi biến thông báo compaction thành có khoá với một khoá ổn định, để các lần compaction lặp lại thay thế nhau thay vì chồng lên nhau. *(neo: `packages/coding-agent/src/modes/utils/ui-helpers.ts:1035`)*
+
+10. **A7 BƯỚC 4 — định tuyến sự kiện thông báo.** `#handleNotice` giữ nguyên `showError` và `showWarning` (bền vững, không được bị đuổi) và cho nhánh `info` một khoá, để hai thông báo cùng loại thay thế nhau. Sự kiện `notice` hôm nay không mang khoá, nên khoá được chọn ở đây chứ không đọc ra từ sự kiện. *(neo: `packages/coding-agent/src/modes/controllers/event-controller.ts:1250`)*
+
+11. **D3 BƯỚC 1 — ĐỪNG dựng cơ chế neo mới; nó đã có sẵn.** `ChatTranscriptBuilder.rowForEntry(entryId)` (chat-transcript-builder.ts:138-144) ánh xạ một entry id sang hàng logic, `#frame` đã biến nó thành `ScrollRangeAnchor` ở :597-608, và `ScrollView.revealRange` / `hasRevealedRange` / `logicalRowAt` (scroll-view.ts:292 / :284 / :243) đã làm neo-theo-chỉ-số-tin-nhắn kèm neo lại. D3 là: theo dõi entry id chưa đọc đầu tiên, vẽ một vạch chiều cao cố định cùng pill đếm số tại `rowForEntry(firstUnreadEntryId)`, và thêm một phím để hiện entry mới nhất. Neo lại theo chênh lệch chiều cao không cần mã mới vì `revealRange` đã suy ra lại viewport từ neo ở mỗi lần render. *(neo: `packages/tui/src/overlays/agent-transcript-viewer.ts:597`)*
+
+12. **D3 BƯỚC 2 — đừng đụng `#handleScroll`.** Các phím pager (g/G/j/k cùng sự uỷ quyền `handleScrollKey`) đã tồn tại và đã nắm offset; chrome mới là chuyện render, không phải chuyện điều hướng. Không chạm vào hai bất biến renderer trong docs/tui-core-renderer.md:107 và :174 — một overlay neo trên hàng logic không dò scrollback của terminal, nhưng cũng đừng làm nhoè câu chữ đó. *(neo: `packages/tui/src/overlays/agent-transcript-viewer.ts:517`)*
+
+13. **A3 + D3 + A7 BƯỚC 4 — viết test.** Ba file mới và hai file mở rộng, theo thứ tự công việc đi vào: mô hình wheel (thuần, không terminal), wiring mouse (gồm hai sửa chữa bắt buộc cho các khẳng định bằng-phép-bằng sẵn có và literal `baseEvent`), hàng đợi thông báo (gồm test tích hợp compaction và hợp đồng vị trí hiển thị), và chrome cuộn transcript. Rồi khẳng định byte-identity của transcript: transcript trần phải render giống hệt khi có chrome. *(neo: `packages/tui/test/wheel-acceleration.test.ts`)*
+
+14. **KIỂM TRA CUỐI (không phải test — chạy tay một lần, dán kết quả vào work item).** `grep -rn 'wheel \* [0-9]' packages/tui/src --include='*.ts'` phải trả 0 kết quả và `grep -rn 'delta \* 3' packages/tui/src --include='*.ts'` phải trả 0 kết quả. Con số đáng giữ là chín: tám hằng số cộng một site trong `handleWheel`. Kế hoạch nói rõ rằng không grep `event.wheel * N` nào là bộ đếm đủ — hôm nay nó trả 8 trong khi số site ×3 thật là 9. *(neo: `packages/tui/src/apps/git/sidebar.ts:897`)*
+
+### Hình dạng code
+
+```typescript
+// packages/tui/src/mouse-wheel.ts  (new)
+// The pure part decides rows-per-notch. The shell holds per-pane history. Nothing
+// here imports a terminal, a TUI, or coding-agent.
+
+/** One wheel notch as observed on the wire. */
+export interface WheelNotch {
+	/** -1 up, 1 down. Always a unit direction; magnitude is the model's to choose. */
+	readonly direction: -1 | 1;
+	/** Milliseconds from one monotonic clock, across the whole gesture. */
+	readonly at: number;
+}
+
+/** How the terminal is reporting: a detented wheel or a continuous trackpad. */
+export type WheelSource = "detented" | "continuous";
+
+/**
+ * The three measured numbers plus the ramp ceiling. Values come from the
+ * measurement table recorded in the work item (plan step 1) — NOT from the
+ * plan's placeholders.
+ */
+export interface WheelThresholds {
+	/** Notches closer together than this collapse into one. */
+	readonly batchWindowMs: number;
+	/** An opposite-direction pair inside this window means a physical detent. */
+	readonly bounceWindowMs: number;
+	/** Silence longer than this clears the gesture. */
+	readonly idleResetMs: number;
+	/** Ceiling for the continuous ramp. */
+	readonly maxRowsPerNotch: number;
+	/** Rows a detented wheel reports per physical detent. */
+	readonly detentRows: number;
+}
+
+export const MEASURED_THRESHOLDS: WheelThresholds = {
+	batchWindowMs: /* MEASURED */,
+	bounceWindowMs: /* MEASURED */,
+	idleResetMs: /* MEASURED */,
+	maxRowsPerNotch: /* MEASURED */,
+	detentRows: 1,
+};
+
+/** Result of running the model over a notch stream. */
+export interface ResolvedWheel {
+	/** Rows to scroll for the LAST notch in the stream. */
+	readonly rows: number;
+	readonly source: WheelSource;
+}
+
+/**
+ * Pure. `notches` is the gesture history oldest-first; the last element is the
+ * notch being resolved. Returns a row COUNT, never a boolean — callers that
+ * gate a repaint on "did it actually move" compare offsets themselves
+ * (transcript-browser.ts:175-180 does exactly this).
+ */
+export function resolveWheelDelta(notches: readonly WheelNotch[], thresholds: WheelThresholds): ResolvedWheel;
+
+/** User override, pushed in from coding-agent via settings.ts `effect()`. */
+export function setWheelSpeedMultiplier(value: number): void;
+export function wheelSpeedMultiplier(): number;
+
+/**
+ * Thin per-pane shell. One instance per scrollable pane — a shared instance
+ * lets scrolling one pane preload momentum for another.
+ */
+export class WheelAccelerationState {
+	constructor(thresholds?: WheelThresholds);
+	/** Rows to scroll for a fresh notch stamped `now`. Applies the user override once, last. */
+	rows(direction: -1 | 1, now: number): number;
+	/** Clear gesture history. Call on focus change, pane switch, and overlay open. */
+	reset(): void;
+}
+
+// packages/tui/src/mouse.ts — the clock the model needs (lines 12, 39, 61, 74, 85)
+export interface SgrMouseEvent {
+	// ...bảy trường có sẵn, không đổi...
+	/** Decode-time milliseconds. The single timestamp source for wheel acceleration. */
+	now: number;
+}
+
+export function parseSgrMouse(data: string, now?: number): SgrMouseEvent | null;
+export function routeSgrMouseInput(data: string, handler: SgrMouseHandler, now?: number): boolean;
+
+export interface SelectListMouseTarget {
+	/** Widened from `-1 | 1`: the model returns a row count. `now` is optional so
+	 *  targets that ignore it still satisfy the interface. */
+	handleWheel(delta: number, now?: number): void;
+	// ...rest unchanged...
+}
+
+// packages/coding-agent/src/modes/utils/ui-helpers.ts:143 — A7
+export interface ShowStatusOptions {
+	/** Existing anonymous `{ dim?: boolean }`, now named. */
+	dim?: boolean;
+	/** Bypass the queue, show at once, and drop everything in `invalidates`. */
+	immediate?: boolean;
+	/** Keys to evict when this notice shows. Compared against the TARGET's key. */
+	invalidates?: readonly string[];
+	/** Same key: append to the existing row instead of adding one. */
+	fold?: boolean;
+	/** Identity. Defaults to `message` so today's in-place-edit behavior is kept. */
+	key?: string;
+}
+
+// packages/coding-agent/src/modes/settings.ts — the escape hatch
+export const cfgUiMouseWheelSpeedMultiplier = register({
+	id: "ui.mouseWheelSpeedMultiplier",
+	type: "number",
+	default: 1,
+	validate: raw => {
+		if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+			throw new Error("ui.mouseWheelSpeedMultiplier must be a positive number (0 and negatives are rejected)");
+		}
+	},
+});
+effect(cfgUiMouseWheelSpeedMultiplier, setWheelSpeedMultiplier);
+```
+
+### Hợp đồng test
+
+Bốn hợp đồng, mỗi hợp đồng một file, không hợp đồng nào thừa.
+
+**(1) `packages/tui/test/wheel-acceleration.test.ts` bảo vệ MÔ HÌNH:** cho một dòng notch tổng hợp cùng các ngưỡng ghi trong bảng đo, số dòng trả về đúng bằng giá trị đã đặc tả. Wheel có răng cưa → ba notch cho một detent vật lý vẫn ở 1 dòng mỗi notch, không bao giờ 3. Liên tục ở ~20 ms → leo tới trần; ở 500 ms → giữ ở 1. Đảo chiều rồi đảo lại bên trong cửa sổ bounce đã đo → bật chế độ wheel; không có sự kiện trong khoảng idle-reset đã đo → tắt. Một dòng không có nhịp đảo chiều thì không bao giờ bật chế độ wheel. Các notch gần hơn cửa sổ batch đã đo thì tính một lần. `ui.mouseWheelSpeedMultiplier = 0.5` nhân delta đã tăng tốc đúng MỘT lần (một lần áp kép là vô hình trong test mô hình nhưng nhân đôi tốc độ cho người dùng). **Nếu hồi quy ở đây, người dùng sẽ cảm thấy tốc độ cuộn sai trên chính phần cứng của họ và không có cách nào báo cho bạn biết — chỉ bảng ngưỡng mới bắt được.**
+
+**(2) `packages/tui/test/mouse.test.ts` bảo vệ WIRING:** `routeSelectListMouse` đưa `event.now` cho `handleWheel` như đối số thứ hai, và `parseSgrMouse` đóng dấu một `now` suy ra từ đồng hồ được tiêm vào thay vì tự gọi `Date.now()` bên trong (để test khẳng định được đúng giá trị). Hai khẳng định có sẵn — `toEqual` ở :19-27 là khẳng định bằng phép bằng trên **bảy** trường, và literal `baseEvent` ở :101-109 là một literal phải thoả mãn interface — cả hai là canary: nếu một thay đổi tương lai làm rơi trường khỏi một trong các đường dựng sự kiện, chúng sẽ đỏ.
+
+**(3) `packages/coding-agent/test/notice-queue.test.ts` bảo vệ HAI hợp đồng, và cái thứ hai mới là cái quan trọng.** Thứ nhất: thay thế và gộp — một thông báo có khoá ưu tiên thấp, sau đó là một thông báo `immediate` mà `invalidates` gọi tên khoá của nó, sẽ gỡ cái đầu khỏi hiển thị vĩnh viễn; cùng một khoá đăng ba lần với `fold` thì gom vào đúng một hàng; một thông báo tới lúc một thông báo khác đang hiện thì xếp hàng chứ không ghi đè. Thứ hai, và KHÔNG THỎA THIỆN ĐƯỢC: HỢP ĐỒNG VỊ TRÍ HIỂN THỊ — một thông báo có khoá xuất hiện trong children của notice container và VẮNG mặt khỏi `chatContainer.children`; một thông báo không khoá vẫn ở `chatContainer.children` y như cũ. Thiếu khẳng định đó thì build vẫn xanh trong khi ai đó render cả hai nhánh vào transcript — đúng thay đổi hành vi không được yêu cầu mà kế hoạch cấm. Thêm một test tích hợp chạy một compaction thật qua `EventController` và khẳng định chỉ ra ĐÚNG MỘT thông báo tạm, và một test validation chứng minh 0 và số âm bị từ chối chứ không bị áp dụng.
+
+**(4) `packages/tui/test/transcript-viewer-scroll-chrome.test.ts` bảo vệ DẤU:** cuộn lên, thêm một tin nhắn, vạch hiện với đúng số chưa đọc, kích hoạt nó quay về đáy; đổi bề rộng terminal qua ít nhất ba bề rộng TRONG LÚC đang cuộn và dấu vẫn chỉ đúng tin nhắn đó; và transcript trần render giống hệt từng byte khi có chrome. Test bề rộng là lý do cả hạng mục này tồn tại — một header chrome có chiều cao biến thiên sẽ dịch chuyển viewport mỗi lần reflow dù offset không đổi. **Nếu hồi quy ở đây, vạch sẽ trượt sang sai tin nhắn ngay lần đầu người dùng đổi kích thước cửa sổ giữa lúc đang cuộn, và không gì khác bắt được.**
+
+### Xác minh
+
+CHẠY ĐƯỢC NGAY HÔM NAY. Baseline lập ngày 2026-09-27 trên nhánh `milestone-1` tại `808b365`.
+
+1. `bun run check:ts` — ĐÃ KIỂM CHỨNG XANH trên cây chưa sửa gì: oxlint + oxfmt sạch trên 5445 file, và cả 16 tác vụ `check:types` của package đều Done (pi-tui 2.29s, pi-coding-agent 8.19s). Đây là cổng chạy được hôm nay.
+
+2. `bun test packages/tui/test/mouse.test.ts` — ĐÃ KIỂM CHỨNG CHẠY ĐƯỢC NGAY: `13 pass, 0 fail, 38 expect() calls, Ran 13 tests across 1 file`. (Thời gian chạy dao động 22–32ms giữa các lần, nên không ghim vào tài liệu.)
+
+3. **`bun test` cần addon native — và addon đã build ở cây này.** Đo lại 2026-09-29: `bun test packages/tui/test/` chạy đủ **222/222 file** (2807 pass / 5 skip / 8 fail, 2820 test, 61.63s) — không file nào chết vì addon. Con số "205 trong 222 file chết, chỉ 17 file thuần mới chạy" là phép đo **trước khi build**, và nó chỉ tái lập được trên máy thiếu `packages/natives/native/pi_natives.darwin-arm64.node` — đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là toàn bộ 222 file chạy. Trong đúng các file sóng này cần: `mouse.test.ts` chạy được **cả khi chưa build** (13 pass — nó chỉ import `../src/mouse`, module giải mã thuần), còn `packages/coding-agent/test/interactive-mode-status.test.ts` — file mà cổng (c) và cổng (e) đều dựa vào — và `packages/tui/test/transcript-container.test.ts` (file lân cận mà D3 khai sẽ ngồi cạnh) thì **không**: trên máy chưa build chúng báo `0 pass, 1 fail` với chính lỗi đó. Cả ba chạy được sau khi build. Trong ba file test MỚI, `wheel-acceleration.test.ts` (hàm thuần) không cần addon; `notice-queue.test.ts` và `transcript-viewer-scroll-chrome.test.ts` dựng component nên cần addon.
+   **BƯỚC 0 BẮT BUỘC, chạy trước mọi việc khác:** `bun --cwd=packages/natives run build` (cần Rust toolchain), rồi chạy lại `bun test packages/coding-agent/test/interactive-mode-status.test.ts` và xác nhận nó **xanh trước** khi sửa một dòng A7 nào. Nếu không build được thì cổng (c) và cổng (e) không đỏ được, và mọi kết luận về A7 trong sóng này là bằng chứng suông.
+
+4. Sau khi hiện thực, theo thứ tự:
+
+```bash
+bun run check:ts
+bun test packages/tui/test/wheel-acceleration.test.ts packages/tui/test/mouse.test.ts
+bun test packages/coding-agent/test/notice-queue.test.ts packages/coding-agent/test/interactive-mode-status.test.ts
+bun test packages/tui/test/transcript-viewer-scroll-chrome.test.ts
+```
+
+5. Lệnh `bun check && bun test ...` của kế hoạch phải là `bun run check:ts`, không phải `bun check` — `bun check` còn chạy `check:rs`, cần Rust toolchain và không liên quan tới sóng này.
+
+6. Kiểm tra grep thủ công, không phải test (AGENTS.md cấm source-grep bên trong test; đây là một lần kiểm tra tay một lần, kết quả ghi vào work item):
+
+```bash
+grep -rn 'wheel \* [0-9]' packages/tui/src --include='*.ts'   # expect 0 hits
+grep -rn 'delta \* 3' packages/tui/src --include='*.ts'        # expect 0 hits
+```
+
+### Cổng hoàn thành
+
+XONG khi, theo thứ tự:
+
+- **(a)** Bảng đo tồn tại trong work item với ba con số thật cho mỗi terminal (Ghostty, Terminal.app, VS Code, Cursor), và `MEASURED_THRESHOLDS` trong `packages/tui/src/mouse-wheel.ts` giữ đúng những giá trị đó. Ba số 200/1500/5 của kế hoạch là giữ chỗ; ship chúng khi chưa đo là hỏng cổng này.
+- **(b)** `bun run check:ts` xanh.
+- **(c)** `bun test packages/tui/test/wheel-acceleration.test.ts packages/tui/test/mouse.test.ts packages/coding-agent/test/notice-queue.test.ts packages/coding-agent/test/interactive-mode-status.test.ts packages/tui/test/transcript-viewer-scroll-chrome.test.ts` xanh — với ba file mới thực sự chạy, không phải bị skip.
+- **(d)** Khẳng định VỊ TRÍ HIỂN THỊ có mặt và pass: thông báo có khoá nằm trong notice container VÀ vắng mặt khỏi `chatContainer.children`; thông báo không khoá vẫn ở `chatContainer.children`.
+- **(e)** `packages/coding-agent/test/interactive-mode-status.test.ts` pass KHÔNG ĐỔI ở các khẳng định sẵn có của nó (các ca `toHaveLength(2)` / `toHaveLength(5)`). Nếu A7 phải sửa chúng, hành vi của nhánh không-khoá đã đổi — đó là hỏng cổng, không phải sửa test.
+- **(f)** Kiểm tra grep thủ công trả 0 kết quả cho `wheel * [0-9]` và cho `delta * 3` dưới `packages/tui/src`.
+- **(g)** Một con người đã trả lời tường minh hai câu hỏi mở (ngữ nghĩa tăng tốc cho `handleWheel`, và setting mới có chỉ config-file hay không) — cả hai đều đổi hành vi quan sát được, nên không cái nào được tự mình quyết.
+
+**Cổng này có thực sự đỏ được không: Có, và từng điều khoản đỏ vì một lý do khác nhau.** (a) đỏ nếu người thực hiện sao chép số giữ chỗ của kế hoạch thay vì đo — các con số nhìn thấy được ngay trong diff. (b) đỏ vì bất kỳ lỗi kiểu nào, kể cả việc nới `SgrMouseEvent` chạm vào hơn 20 bản thực thi `routeMouse`. (c) đỏ nếu một file test thiếu, rỗng, hoặc khẳng định của nó rỗng rỗng. (d) là điều khoản bắt đúng kiểu hỏng mà kế hoạch cảnh báo: một bản dựng nơi ai đó render cả nhánh có khoá lẫn nhánh không khoá vào transcript vẫn xanh hoàn hảo nếu thiếu nó. (e) là điều khoản bắt thay đổi hành vi không được yêu cầu đối với 332 call site sẵn có — chính các khẳng định có sẵn là dây cảm triền. (f) đỏ nếu bỏ sót một site, và đây là kiểm tra DUY NHẤT bắt được site thứ chín, vì không grep `event.wheel * N` nào với tới `delta * 3` bên trong `handleWheel`. (g) không thể tự động hoá bằng cách nào, và vì thế nó là một cổng chứ không phải một bước.
+
+### Phụ thuộc
+
+- **M3-A3:** không. Kế hoạch nói rõ hạng mục này không phụ thuộc gì, và đã kiểm tra không có gì trên đường đi của nó bị chặn.
+- **M3-A7:** không. Đã kiểm chứng `registerStatusLineSegment` không tồn tại ở bất kỳ đâu trong `packages/**` (các kết quả grep duy nhất nằm trong tài liệu kế hoạch), nên quyết định của kế hoạch là không ghép vào seam M2-OQ3 là đúng và không tốn gì.
+- **M3-D3:** M3-A3 phải xuống TRƯỚC — cùng chạm một file, `packages/tui/src/overlays/agent-transcript-viewer.ts`, và dòng wheel (:470) nằm ngay trong vùng lân cận `#frame`. Làm D3 trước nghĩa là hằng số wheel bị sửa hai lần trong cùng một file.
+
+**Chặn:**
+
+- M3-A3 và M3-A1 nên đi cùng nhau qua review (chỉ dẫn của chính kế hoạch), để không có hai thay đổi UX cùng lơ lửng một lúc.
+- M3-D3 bị M3-A3 chặn (cùng file).
+- Bất kỳ hạng mục sóng sau nào tự thêm bề mặt cuộn phải định tuyến qua `packages/tui/src/mouse-wheel.ts` thay vì tạo ra hệ số nhân thứ hai — đó là luật "hai hiện thực của cùng một thứ là một bug" của AGENTS.md áp vào tốc độ cuộn.
+
+### Rủi ro
+
+Cách sai khả dĩ nhất là chấp nhận cách đóng khung của kế hoạch rằng sáu bản thực thi `handleWheel` được "tăng tốc" cùng với chín site cuộn. Chúng không phải cùng một thứ, và từng cái đều đã được kiểm chứng: `SelectList.handleWheel` gọi `this.#selection.move(delta)` (select-list.ts:229-231), `SettingsList.handleWheel` gọi `this.#moveSelection(delta, false)` (settings-list.ts:241-247), `AgentHub.handleWheel` làm `this.#selectedActivityRow + delta` (agent-hub.ts:1254), `SessionSelector` và `OAuthSelector` gọi `this.#menu.move(delta, false)`, còn `ExtensionList` gọi `#moveSelectionUp()` / `#moveSelectionDown()` (extension-list.ts:597-600). Đó là các thao tác CHỌN đúng một dòng, không phải cuộn. Nhân chúng với 3 khiến một notch bánh xe lặng lẽ nhảy qua hai dòng mà người dùng chưa từng thấy đi, trong một danh sách nơi con trỏ có thể đang tô sáng chính dòng họ sắp bấm. Kế hoạch không bao giờ định nghĩa ngữ nghĩa tăng tốc cho chúng, và cả phần rủi ro của chính nó toàn nói về độ trễ cuộn. Tệ hơn, danh sách call site chuyển tiếp của kế hoạch không đầy đủ — ngoài `routeSelectListMouse` còn năm chỗ nữa sẽ lặng lẽ giữ hành vi cũ: oauth-selector.ts:422, session-selector.ts:1134, settings-selector.ts:689 (đi tới `handleWheel` qua `handleWheelAt` ở settings-list.ts:249-256), extension-dashboard.ts:282, và git-tui.ts:695. Khuyến nghị là chỉ tăng tốc CHÍN site cuộn, để sáu bộ chuyển vị trí con nguyên một dòng, và trả lời câu hỏi mở 1 trước khi bất kỳ ai viết thay đổi interface.
+
+### Cần người quyết
+
+- **CÂU HỎI MỞ 1 — CHẶN.** "Tăng tốc" nghĩa là gì với sáu bản thực thi `handleWheel(delta: -1 | 1)`, khi từng bản thực thi đều là thao tác CHỌN một dòng chứ không phải cuộn (đã kiểm chứng: select-list.ts:229, settings-list.ts:241, agent-hub.ts:1247, session-selector.ts:588, oauth-selector.ts:407, extension-list.ts:597)? Khuyến nghị: KHÔNG tăng tốc chúng. Giữ một notch = một dòng cho phần chọn, và chỉ áp mô hình cho chín site cuộn. Nếu chủ sản phẩm vẫn muốn tăng tốc danh sách, nó cần một quyết định riêng, một trần thấp hơn nhiều và riêng cho nó — và năm call site chuyển tiếp kia cũng phải được cập nhật, nếu không hành vi sẽ không nhất quán giữa các overlay.
+- **CÂU HỎI MỞ 2 — CHẶN với hình dạng của setting.** `ui.mouseWheelSpeedMultiplier` theo đặc tả là `type: "number"` không kèm `ui.options`, và `registry.ts:42-43` nói rằng một setting dạng số không có options bị CỐ Ý giấu khỏi bảng cài đặt. Nên theo đặc tả nó chỉ nằm trong file cấu hình. Điều đó có chấp nhận được cho một "cửa thoát hiểm" không, hay nó cần một submenu các giá trị rời rạc để người dùng thật sự tới được? Nếu nó ở lại chỉ trong file cấu hình, hãy nói rõ trong mục changelog, vì người dùng đọc câu "có một setting" sẽ đi tìm nó trong bảng cài đặt và không thấy.
+- **CÂU HỎI MỞ 3 — không chặn nhưng phải quyết ngay bây giờ.** Trần tăng tốc nên là số nguyên số dòng mỗi notch hay số thực? Mọi bộ tiêu thụ hiện tại đều cắt cụt (`scroll-view.ts:352` làm `Math.trunc(delta)`), nên một trần số thực sẽ bị làm tròn xuống âm thầm mỗi lần gọi, và một cái ramp đi từ 1→2→3 sẽ không bao giờ rơi vào giữa bước. Số nguyên là mặc định an toàn hơn; xác nhận trước khi viết mô hình.
+- **CÂU HỎI MỞ 4 — mang tiếp từ kế hoạch, tuyệt đối KHÔNG chặn.** Một dòng trạng thái tạm có khoá đã cuộn ra khỏi tầm nhìn có cũng nên được ghi vĩnh viễn vào transcript không, hay transcript là bản ghi đầy đủ và thông báo chỉ là phần cộng thêm. Kế hoạch để ngỏ và ghi chú đúng rằng nó không chặn Sóng 2 — A7 chỉ cần giữ hành vi transcript hiện có của nhánh không-khoá.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Neo dòng của A3: agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638, usage-dashboard.ts:753, và bảy site handleWheel ở mouse.ts:74, agent-hub.ts:1244, session-selector.ts:586, oauth-selector.ts:407, extension-list.ts:597, select-list.ts:229, settings-list.ts:239. | STALE — 11/15 neo sai; **4/15 đúng**: mouse.ts:74, oauth-selector.ts:407, extension-list.ts:597, select-list.ts:229 | Thực tế: agent-transcript-viewer.ts:470, copy-selector.ts:214, plan-review-overlay.ts:580, rewind-selector.ts:245, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639, usage-dashboard.ts:759, sidebar.ts:896-897 (tám neo bánh xe, CẢ TÁM sai); agent-hub.ts:1247, session-selector.ts:588, settings-list.ts:241 (ba sai). **Bốn neo kế hoạch nói mà cây cũng vậy, đừng "sửa" chúng**: `mouse.ts:74`, `oauth-selector.ts:407`, `extension-list.ts:597`, `select-list.ts:229`. Số lượng thì đúng (7 ×3 + 1 ×2 + 1 `delta*3` riêng = 9). Bằng chứng: `grep -rn 'handleWheel(delta: -1 \| 1): void {' -r packages/tui/src` → oauth-selector.ts:407, session-selector.ts:588, extension-list.ts:597, agent-hub.ts:1247, select-list.ts:229, settings-list.ts:241; `grep -rn 'wheel \* 3' packages/tui/src` → 7 kết quả ở 470/580/245/214/697/168/639; `wheel \* 2` → 1 ở usage-dashboard.ts:759; `delta \* 3` → 1 ở sidebar.ts:897. |
+| `routeSelectListMouse` "truyền timestamp của sự kiện xuống" sau khi `SelectListMouseTarget.handleWheel` nhận tham số thời gian. | WRONG — sự kiện không có timestamp để truyền | `SgrMouseEvent` (mouse.ts:12) có bảy trường và không có trường thời gian; `parseSgrMouse(data)` không nhận đồng hồ; `routeSgrMouseInput(data, handler)` không nhận đồng hồ. A3 phải THÊM đồng hồ vào đường giải mã trước khi bất cứ thứ gì có thể được chuyển tiếp. Đây là việc thật mà kế hoạch không ngân sách, và nó là bước khiến cách đóng khung "chỉ cần thêm một tham số tuỳ chọn" trở nên sai. Bằng chứng: đọc trọn mouse.ts (110 dòng). Dòng 12 `export interface SgrMouseEvent {` → **bảy** trường button/col/row/release/wheel/motion/leftClick, đóng ở :32. Dòng 39 `export function parseSgrMouse(data: string)`. Dòng 61 `routeSgrMouseInput(data: string, handler: SgrMouseHandler)`. Dòng 87 `target.handleWheel(event.wheel);`. |
+| Thêm tham số thời gian vào interface của chuột giữ interface cũ chạy được nhờ tham số tuỳ chọn có mặc định, "nên không cần sửa sáu file cùng lúc". | INCOMPLETE — sáu bản thực thi không phải là toàn bộ call site | Còn năm call site chuyển tiếp mà kế hoạch không bao giờ liệt kê, mỗi cái sẽ tiếp tục chỉ truyền `event.wheel` và do đó giữ hành vi chưa tăng tốc — một sự không nhất quán giữa các overlay chứ không phải một sự tương thích: oauth-selector.ts:422 (`this.handleWheel(event.wheel)`), session-selector.ts:1134, settings-selector.ts:689 (→ `handleWheelAt` ở settings-list.ts:249-256, chuyển tiếp tới `handleWheel` ở :254), extension-dashboard.ts:282, git-tui.ts:695. `routeSelectListMouseWithTopBorder` (chrome/select-list-mouse-routing.ts:4-11) là bộ chuyển tiếp thứ sáu truyền nguyên sự kiện, nên nó chỉ an toàn vì chính sự kiện mang theo thời gian. Bằng chứng: `grep -rn 'handleWheel' packages/tui/src --include='*.ts'` → 16 dòng, tách thành **8 khai báo** (mouse.ts:74, oauth-selector.ts:407, agent-hub.ts:1247, session-selector.ts:588, extension-list.ts:597, select-list.ts:229, settings-list.ts:241, sidebar.ts:896) và **8 call site** (mouse.ts:87, oauth-selector.ts:422, session-selector.ts:1134, settings-selector.ts:689, extension-dashboard.ts:282, git-tui.ts:695, cộng `handleWheelAt` settings-list.ts:249 và :254 bị grep bắt trùng chuỗi). Siết bằng `handleWheel(` cho 14 dòng = 8 khai báo + 6 call site. Danh sách sáu của kế hoạch chỉ phủ 6 trong 8 khai báo — thiếu chính `mouse.ts:74` và `sidebar.ts:896`. |
+| Mở rộng `mouse.test.ts` cho phần wiring. | UNDERSTATED — hai khẳng định hiện có vỡ hoàn toàn | `expect(parseSgrMouse("\x1b[<0;5;9M")).toEqual({...bảy trường...})` ở mouse.test.ts:19-27 là khẳng định bằng phép bằng trên toàn bộ sự kiện, và `const baseEvent: SgrMouseEvent` ở :101-109 là một literal phải thoả mãn interface. Thêm trường bắt buộc `now` làm vỡ cả hai. Câu "mở rộng file này" của kế hoạch không nhắc tới việc sửa chúng. Bằng chứng: đọc trọn packages/tui/test/mouse.test.ts (145 dòng); `bun test` trên đó → 13 pass, 0 fail, 38 lời gọi expect(). |
+| Hàng thông báo có khoá của A7 là "một hàng composer bình thường đi qua đường chrome sẵn có", và `coding-agent` đã đổ nội dung ở đó tại `interactive-mode.ts:3181`. | WRONG — chrome composer không có hàng component để nhét vào, và neo đó trỏ sang code không liên quan | Top chrome của composer là một CHUỖI ĐÃ DỰNG SẴN do status line sở hữu: `syncComposerShape` (interactive-mode.ts:3050-3071) cài `this.editor.setTopBorderProvider(w => this.statusLine.getTopBorder(w))` (hoặc `getBandTopBorder` / `getStandaloneTopBorder`), và `EditorTopBorder` (composer/types.ts:33-40) là `{ content: string; width: number; revision?: number }` — một chuỗi, không phải chỗ cắm cho một Component. Kết luận (không ghép với M2 `registerStatusLineSegment`) vẫn đúng, nhưng cơ chế không phải "đường chrome sẵn có". Nhà đúng là một Container MỚI riêng trong mảng bố cục, và đó cũng là thứ giữ cho hợp đồng "không nằm trong transcript" trở nên bắt được và kiểm thử được. Riêng điều đó, interactive-mode.ts:3181 nằm trong `syncRunningSubagentBadge` / `#composerHint` và không liên quan gì tới chrome. Bằng chứng: `sed -n '3040,3100p' interactive-mode.ts`; `sed -n '30,45p' packages/tui/src/components/composer/types.ts`; `sed -n '3170,3195p' interactive-mode.ts`; `grep -n 'setTopBorderProvider\|setTopBorder(' packages/tui/src/components/editor.ts`. |
+| Dùng `hookWidgetContainerAbove` (hoặc một hàng tương đương sẵn có phía trên composer) cho hàng thông báo. | KHÔNG có trong kế hoạch, và là cái bẫy nếu ai đó suy ra | `hookWidgetContainerAbove` ĐÚNG là container "hàng ngay trên composer" thật (dựng ở interactive-mode.ts:1453-1454, đặt vào bố cục ở :1728, khai báo trên context ở types.ts:126) — nhưng `ExtensionUIController.#renderHookWidgetContainer` (khai báo ở extension-ui-controller.ts:387) gọi `container.clear()` ở :393 mỗi lần dựng lại hook widget, nên một hàng thông báo đặt ở đó bị xoá âm thầm mỗi khi một hook widget thay đổi. Hãy dùng một container riêng mới. Bằng chứng: `sed -n '1435,1470p'` và `sed -n '1715,1735p' interactive-mode.ts`; `sed -n '379,407p' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` cho thấy `container.clear()` ở :393. |
+| Test tích hợp compaction của A7 nhắm `#handleNotice` trong event-controller; thông báo compaction thuộc đường đó. | STALE — thông báo compaction nằm ở ui-helpers, không phải event-controller | `this.ctx.showStatus(`Session compacted ${times}`)` nằm ở ui-helpers.ts:1035, bên trong đường render của session-context, không phải trong EventController. `#handleNotice` ở event-controller.ts:1250-1259 (kế hoạch ghi 1244-1251) và chỉ xử lý sự kiện `notice`, vốn là `{ type, level, message, source }` không có khoá. Test tích hợp "chạy một compaction thật" nên đi qua đường ui-helpers:1035; thay đổi `#handleNotice` là một sửa đổi riêng, nhỏ hơn, cho nhánh `info` một khoá còn để error và warning trên các renderer bền vững sẵn có của chúng. Bằng chứng: `grep -n 'Session compacted' packages/coding-agent/src/modes/utils/ui-helpers.ts` → :1035. `sed -n '1250,1259p' event-controller.ts`. `sed -n '2802,2813p' packages/coding-agent/src/session/agent-session.ts` cho `emitNotice`. |
+| Phần khó nhất của D3 là chứng minh một dấu neo theo chỉ số tin nhắn sống sót qua reflow ở ba bề rộng giữa lúc cuộn; công việc là "neo theo chỉ số, neo lại theo chênh lệch chiều cao, và chrome chiều cao cố định". | OVERSTATED — cơ chế neo đã tồn tại và chạy tốt | `ChatTranscriptBuilder.rowForEntry(entryId)` (chat-transcript-builder.ts:138-144) ánh xạ entry id sang hàng logic; viewer đã dựng `ScrollRangeAnchor` từ nó ở agent-transcript-viewer.ts:597-608; `ScrollView` đã cung cấp `revealRange` (scroll-view.ts:292), `hasRevealedRange` (:284), `logicalRowAt` (:243), `localRowFor` (:252); và `getScrollOffset()` đã là offset hàng logic chứ không phải pixel. Viewer dùng tất cả những thứ đó hôm nay cho entry anchor của nó. Do đó D3 là việc vẽ và gắn phím — theo dõi entry id chưa đọc đầu tiên, vẽ một vạch chiều cao cố định và pill đếm số tại hàng của nó, thêm một phím để hiện entry mới nhất — chứ không phải một hệ thống neo mới. Neo lại qua reflow không cần mã mới vì `revealRange` suy ra lại viewport từ neo ở mỗi lần render. Điều này hạ D3 từ M/2 ngày xuống khoảng S/1 ngày, và test bề rộng trở thành canh gác hồi quy trên cơ chế sẵn có thay vì toàn bộ rủi ro của hạng mục. Bằng chứng: `sed -n '130,150p' packages/tui/src/chat/chat-transcript-builder.ts`; `sed -n '236,242p' packages/tui/src/chat/transcript-browser.ts` (`if (frame.body.anchor && this.#scrollView.revealRange(...))`); `grep -n 'revealRange\|hasRevealedRange\|logicalRowAt\|localRowFor\|getScrollOffset' packages/tui/src/components/scroll-view.ts` → :284, :292, :243, :252, :229. |
+| D3 sửa `packages/tui/src/chat/transcript-browser.ts:39-48`. | MISLEADING ANCHOR — đúng file, sai vùng | Dòng 39-48 là interface `TranscriptBrowserOptions` — đúng chỗ để THÊM một option mới, nhưng không phải nơi trạng thái cuộn nằm. Trạng thái là `#scrollView` (khai báo transcript-browser.ts:108, dựng :118) và mọi hành vi offset/anchor đều được uỷ quyền cho nó. Ai đọc :39-48 với hy vọng tìm bộ máy cuộn sẽ không thấy gì. Bằng chứng: `sed -n '30,60p' packages/tui/src/chat/transcript-browser.ts` cho thấy `export interface TranscriptBrowserOptions` ở :38-49 với `getHeight`, `frame`, `minimumBodyRows`, `followBottom`. `grep -n '#scrollView' packages/tui/src/chat/transcript-browser.ts` → :108, :118, :124, :130, :130, :176-261. |
+| Override tăng tốc của A3 là một setting có tên mà người dùng tới được; nó là "một setting có tên, không phải một ý tưởng". | INCOMPLETE — theo đặc tả nó không tới được từ bảng cài đặt | `registry.ts:41-44` nói rằng một `UiNumber` không có `options` KHÔNG có biểu diễn UI — "intentional hide". Vậy `ui.mouseWheelSpeedMultiplier` với `type: "number"` và không có options không hiện ở đâu trong bảng và chỉ nằm trong file cấu hình. Yêu cầu validation thì CÓ hỗ trợ và rất dễ: `validate?: (raw: unknown) => void` tồn tại ở registry.ts:112 và được phép ném (:666, :680). Hướng đẩy cũng đã chốt: coding-agent phụ thuộc @oh-my-pi/pi-tui và pi-tui không phụ thuộc coding-agent, nên mẫu được cho phép là `register` + `effect(cfg, setWheelSpeedMultiplier)` đúng như `cfgTuiMaxInlineImageColumns` làm ở settings.ts:334-341. Bằng chứng: `sed -n '30,60p' packages/coding-agent/src/config/registry.ts` cho UiNumber; `grep -n 'validate' packages/coding-agent/src/config/registry.ts` → :112, :666, :680; `sed -n '330,341p' packages/coding-agent/src/modes/settings.ts`; kiểm tra phụ thuộc trong package.json của cả hai package. |
+| `bun test` hiện báo 0 pass kèm "Failed to load pi_natives native addon for darwin-arm64" và phải coi là bị chặn. | PARTLY FALSE — lỗi có thật, nhưng "bị chặn" là kết luận sai | Lỗi addon là có thật trên máy sạch, nhưng nó là **một bước build còn thiếu**, không phải hạn chế của máy: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là toàn suite chạy. Ngoài ra `mouse.test.ts` đã chạy được ngay cả khi chưa build, vì nó chỉ import `../src/mouse`. Bằng chứng trạng thái **trước khi build addon**: vòng lặp `for f in packages/tui/test/*.test.ts; do bun test "$f"; done` → 205 blocked / 17 chạy; `bun test packages/coding-agent/test/interactive-mode-status.test.ts` → 0 pass / 1 fail với `Failed to load pi_natives native addon for darwin-arm64`. Sau khi build, cả hai chạy. (`bun run check:ts` xanh hoàn toàn và không cần addon — oxlint + oxfmt trên 5445 file, cả 16 task `check:types` Done.) |
+| Lệnh xác minh của kế hoạch là `bun check && bun test ...`. | WRONG SCRIPT cho repo này | `bun check` chạy `check:ts` VÀ `check:rs` (Rust). Hãy dùng `bun run check:ts` — đó là cổng chỉ-TypeScript, không cần Rust toolchain, và là thứ thực sự xác minh sóng này. Bằng chứng: scripts trong package.json gốc: `"check": "bun run --parallel check:ts check:rs"`, `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types"`. AGENTS.md cũng nói không bao giờ dùng tsc/npx tsc — luôn `bun check` — nhưng với một sóng chỉ-TypeScript thì bản hẹp hơn `check:ts` là trường hợp đúng của luật đó. |
+| A3: "8 site hằng số + 1 site `delta*3` riêng"; D3: "overlay đã có phím pager ở :515-534"; A7: "composer/types.ts:57, :93, band.ts:14, message-notice.ts:37"; A7: "ui-helpers.ts:141-160". | CORRECT — đã kiểm chứng chính xác, không cần đính chính | Ghi lại để người thực hiện biết neo nào đáng tin: số site (7 ×3 + 1 ×2 + 1 riêng = 9) là đúng; `#handleScroll` nằm ở :517-535 (con số :515 của kế hoạch trỏ vào dòng trống, doc comment thật ở :516); `composer/types.ts:57` là `topBorder?: EditorTopBorder;`, `:93` là `readonly statusAttachment:`; `composer/band.ts:14` là `statusAttachment: "top-band"`; `message-notice.ts:37` là `export class MessageNoticeComponent extends Container {`; các bất biến docs ở `docs/tui-core-renderer.md:107` và `:174` là hai câu "never probes scroll position". `ui-helpers.ts` là 143-164, không phải 141-160. `ShowStatusOptions` không tồn tại (`git grep` chỉ trả về tài liệu kế hoạch); `registerStatusLineSegment` không tồn tại; **332 dòng gọi `showStatus(` trên 34 file** và fixture `createInteractiveModeContext` 12 KB tại test/helpers/interactive-mode-context.ts:192 đều đúng như kế hoạch nói. Bằng chứng: từng cái được xác nhận bằng `sed -n` trên file được nêu và `grep -n` cho symbol; `git grep -c 'showStatus(' -- 'packages/**/*.ts'` cộng lại 332 trên **34** file; `git grep ShowStatusOptions` và `git grep registerStatusLineSegment` không có kết quả trong mã nguồn. |
+
+
+---
+
+
+## Sóng 3 — cặp giao thức, nguyên tử
+
+**Sóng / phạm vi:** Sóng 3 của milestone 3 (`### Sóng 3 — Cặp giao thức, nguyên tử`, dòng 8854-8867 của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` tại HEAD `e040a60`; harness gọi nhầm đoạn này là M2 — nó là M3). Mục này gộp hai việc thành **một** commit duy nhất: A2 (khai báo capability elicitation) và D1 (handler trả lời). Không tách.
+
+**Hiệu ứng người dùng thấy:** omp bắt đầu trả lời `elicitation/create` từ MCP server bằng một form nhiều trường thật, và decline / cancel tới server bằng hai giá trị phân biệt được, còn timeout phải được ánh xạ có chủ ý sang một action của union MCP (`cancel` là ứng viên mặc định) chứ không rơi về `undefined`. Trước đó server thậm chí không bao giờ hỏi, vì omp chưa từng khai báo capability trong bắt tay `initialize`. Sau đó nó hỏi, người dùng thấy một form ở vùng composer, và chọn 'decline' được báo về server là decline chứ không phải một submission rỗng. Mặt kia là cố ý: khai báo capability mà không có handler sẽ khiến mọi server hay dò xét nhận `-32601`, tệ hơn hẳn im lặng — nên hai nửa phải cùng đi.
+
+**Effort:** L, ~5 ngày như một đơn vị không chia nhỏ. A2 (phần khai báo capability) thật sự chỉ vài dòng, một khi đã có kiểu. D1 là toàn bộ chi phí: thiết kế điểm tiêm manager→UI, chính sách theo từng mode cho interactive / ACP / RPC / headless, ba outcome phân biệt trên wire, khử nhiễm chuỗi không tin cậy do server gửi, và hai file test mới cùng một fixture. Không chia nhỏ ước lượng này — plan nói rõ đây là mục duy nhất trong M3 không nên bị cắt ngân sách để trả cho việc khác, vì làm sai thứ tự sẽ tạo ra một lỗi giao thức mà người dùng nhìn thấy.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/mcp/types.ts` | sửa | Thêm `elicitation?: Record<string, never>` vào `MCPClientCapabilities` (interface ở dòng 196-200), và thêm bốn kiểu tự viết tay `MCPElicitProperty`, `MCPElicitRequest`, `MCPElicitOutcome`, `MCPElicitationHandler` ngay cạnh nó. | Có. `sed -n '190,226p'` xác nhận `MCPClientCapabilities` hiện có đúng ba thành viên (roots, sampling, experimental) — không có elicitation. `MCP_PROTOCOL_VERSION` là `"2025-11-25"` ở dòng 175, thuộc bản đã bao gồm elicitation, nên không cần bump protocol. `toJsonRpcError` ở dòng 500-512 đã giữ một `code` dạng số lấy từ Error đã ném — đó là lý do nhánh mặc định `-32601` sẵn có vẫn tới được server nguyên vẹn. |
+| `packages/coding-agent/src/mcp/client.ts` | sửa | Thêm `elicitation: {}` vào literal `capabilities` trong params `initialize` (dòng 101-103). | Có. Neo của plan `client.ts:100-104` chính xác — đó là toàn bộ literal `MCPInitializeParams`, với `capabilities` ở 101-103. Bản sửa này tự nó vô hại nếu thiếu field ở `types.ts`; TypeScript từ chối key thừa, đó là tín hiệu thứ tự hữu ích. |
+| `packages/coding-agent/src/mcp/manager.ts` | sửa | Thêm field `#elicitationHandler`, setter `setElicitationHandler(handler: MCPElicitationHandler \| undefined)`, và một nhánh `elicitation/create` trong `#handleServerRequest` (dòng 1032-1040) trả `-32601` khi chưa cài handler. Đổi tên tham số `_params` thành `params` — nay nó đã được dùng. | Có. Neo `manager.ts:1032-1040` chính xác: `async #handleServerRequest(method: string, _params: unknown)` ở 1032, `case "ping"` 1034, `case "roots/list"` 1036, lệnh ném `-32601` ở 1039. Cả hai điểm nối `onRequest` (dòng 741-742 và 1548-1549) đã uỷ quyền cho method này nên không điểm nào cần sửa. Tham chiếu `pi-tui` duy nhất trong cả file là dòng 46, `import type { MCPToolDetails } from "@oh-my-pi/pi-tui/tools/mcp"` — chỉ kiểu, xác nhận manager hôm nay không có đường seam UI. |
+| `packages/coding-agent/src/modes/interactive-mode.ts` | sửa | Cài handler trong `initHooksAndCustomTools()` (`interactive-mode.ts:7385-7387`), nơi `this.#extensionUiController` chắc chắn đã dựng ở dòng 1493 — KHÔNG cài ở 1357. | Có. `mcpManager?: MCPManager` khai báo ở dòng 1137, gán từ tham số constructor ở dòng 1306, gán vào field ở dòng 1356, và `this.mcpManager?.setAuthHandler((serverName, challenge) => new MCPCommandController(this).handleMCPAuthChallenge(...))` nằm ở 1357-1359. **Cảnh báo:** 1357 nằm trong constructor (constructor bắt đầu ở 1300), còn `this.#extensionUiController = new ExtensionUiController(this)` chỉ chạy ở dòng 1493 — sau 1357 tới 136 dòng. Cài handler ở 1357 là đọc một field `readonly` chưa gán: lỗi "used before being assigned" của TypeScript và `undefined` lúc chạy. Ngoài ra field là `#extensionUiController`; không có binding trần nào tên `extensionUiController` trong scope. `initHooksAndCustomTools()` ở 7385-7387 là chỗ cài đúng, và nó được `await` từ `init()` ở dòng 1870. |
+| `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` | sửa | Thêm presenter `showElicitationForm(request: MCPElicitRequest): Promise<MCPElicitOutcome>` dựng trên `#presentDialog` sẵn có, ủy quyền phần dựng field cho `McpElicitationFormComponent` ở file mới, mount vào `ctx.editorContainer` kèm `ctx.ui.setFocus` + `ctx.ui.requestRender`. | Có. `#dialogActive` / `#dialogQueue` ở dòng 92-93; `constructor(private ctx: InteractiveModeContext)` ở dòng 100; object literal `uiContext` ở 120-162; `#showLocalAskDialog` ở 657-760 (khuôn mount/settle/restore/cleanup để sao chép); `#presentDialog` ở 1281-1337. Dùng `#presentDialog` là bắt buộc chứ không phải chuyện thẩm mỹ — nó là thứ xếp elicitation sau một permission prompt đang mở, thay vì để cả hai tranh nhau `editorContainer`. File này đã dài 1342 dòng và đã chứa presenter, nên component form thuộc về file riêng, không nhồi vào đây. |
+| `packages/coding-agent/src/modes/acp/acp-agent.ts` | sửa | Thêm một hàm anh em giữ nguyên action của `elicitFormFromAcpClient` (bản hiện có trả `undefined` cho cả decline lẫn cancel), rồi cài làm handler của manager ngay cạnh `manager.setOnToolsChanged` ở dòng 2688. | Có. JSDoc của `elicitFormFromAcpClient` bắt đầu ở dòng 294, hàm ở 314, và chỗ nén mất thông tin nằm ở dòng 375 — `if (!isAcceptedElicitation(response) \|\| !response.content) return undefined;` — với helper thu hẹp `isAcceptedElicitation` ở dòng 402. Chỗ nén đó đúng là mất phân biệt trên wire mà mục này sinh ra để chặn, nên không thể tái dùng nguyên xi. `CreateElicitationResponse` trong `packages/utils/src/acp/protocol.ts:440-443` đã mang ba action `accept \| decline \| cancel` — nhưng là union ba arm, arm thứ ba là `action: string` không ràng buộc, nên phải thu hẹp qua một type guard (xem `isAcceptedElicitation` ở `acp-agent.ts:402`) chứ không so thẳng `response.action === "decline"`. Thông tin đã có sẵn; chỉ kiểu trả về làm mất nó. `new MCPManager(...)` ở dòng 2667. |
+| `packages/coding-agent/src/modes/rpc/rpc-mode.ts` | sửa | Thêm một loại request RPC chuyển tiếp `MCPElicitRequest` tới RPC client và resolve với `MCPElicitOutcome` giữ nguyên action; cài lên wiring manager tương đương đường ACP trong RPC mode. | Có. `requestRpcEditor` ở dòng 600, `class RpcExtensionUIContext implements ExtensionUIContext` ở dòng 831, khởi tạo ở dòng 1016. Đây là bản chiếu của đường ACP. Chuỗi tên request RPC chính xác là một câu hỏi mở — xem mục Cần người quyết. |
+| `packages/coding-agent/test/fixtures/elicitation-mcp.ts` | tạo | MCP server stdio độc lập chạy được, nói JSON-RPC phân tách bằng newline; cổng theo capability mà client khai báo (xem Hợp đồng test); spawn bằng `{ type: "stdio", command: process.execPath, args: [FIXTURE_PATH] }` y hệt cách `mcp-manager-notification-listeners.test.ts:15-17` làm. | Có. Thư mục `test/fixtures/` tồn tại và đã có đúng khuôn cần dùng: `notifications-mcp.ts` là một MCP server stdio độc lập chạy được, export hằng số mà test import, và chỉ khởi động khi chạy như module entry. Nó cũng phát `notifications/tools/list_changed` ngay sau `notifications/initialized` — đó là tín hiệu sẵn sàng mà Test 1b dùng. Fixture phải cổng trên capability client quảng bá — xem Hợp đồng test. |
+| `packages/coding-agent/test/mcp/elicitation-capability.test.ts` | tạo | Cổng khả năng + handler, chạy qua manager và transport thật; nửa âm khẳng định `-32601`. | Có. `packages/coding-agent/test/mcp/` tồn tại và đã chứa test MCP. LƯU Ý: đừng dùng `packages/coding-agent/test/mcp-roots-list.test.ts` làm khuôn — đó là một specification test tự dựng lại shape cục bộ và tự nói ra điều đó trong chính comment của nó ("Does not exercise the actual transport methods — changes to #handleMessage won't fail this test. Tests the contract, not the wiring"). Nó không phải tiền lệ cho một wiring test. |
+| `packages/coding-agent/test/mcp/elicitation-form.test.ts` | tạo | Phủ nửa D1: render form, cổng trường bắt buộc, che secret, và ba outcome phân biệt. | Có. Cùng thư mục với file trên. |
+| `packages/coding-agent/src/modes/controllers/mcp-elicitation-form.ts` | tạo | Component TUI dựng từ `FormField` / `TextFormField` / `SelectFormField` bên trong `Form` sẵn có của `packages/tui/src/components/form.ts` (không sửa file TUI nào), nhận `{ onAccept, onDecline, onCancel, tui, sanitize }`, và chịu trách nhiệm che `writeOnly` + bỏ giá trị secret khỏi mọi dòng render. | Chưa kiểm chứng — file chưa tồn tại; các thành phần dùng tới đã kiểm chứng: `FormField` `form.ts:104`, `TextFormField` `form.ts:270` (có `secret?`/`emptyError?`/`validate?` ở 255-259), `SelectFormField` `form.ts:352`, `formTheme` `packages/tui/src/chrome/form-theme.ts:5`. Thư mục `packages/coding-agent/src/modes/controllers/` đã tồn tại và đã chứa các controller anh em. |
+
+### Các bước
+
+Các neo ghi *(chưa kiểm chứng)* là dòng mà đặc tả nêu nhưng chưa đối chiếu với cây thật — phải tự mở file xác nhận trước khi sửa.
+
+1. **Khai báo kiểu.** Trong `packages/coding-agent/src/mcp/types.ts`, thêm `elicitation?: Record<string, never>` vào interface `MCPClientCapabilities` (dòng 196-200). Rồi thêm `MCPElicitProperty` / `MCPElicitRequest` / `MCPElicitOutcome` / `MCPElicitationHandler` ngay cạnh nó. Đừng import bất cứ thứ gì từ MCP SDK — grep `'modelcontextprotocol'` trong `package.json` trả về 0 hit trên toàn workspace, nên cả stack MCP là hand-rolled và các kiểu này phải tự viết ở đây. Export chúng ra khỏi module (barrel của `mcp` re-export `types.ts` bằng star, nên không cần sửa barrel). Neo: `packages/coding-agent/src/mcp/types.ts:196`.
+2. **Thêm ô chứa handler.** Trong `packages/coding-agent/src/mcp/manager.ts`, thêm field `#elicitationHandler?: MCPElicitationHandler` ngay cạnh `#authHandler` (dòng 272) và một method `setElicitationHandler(handler: MCPElicitationHandler | undefined): void` ngay cạnh `setAuthHandler` (dòng 525-527). Dùng `#field` trần cùng method trần — không từ khoá `private`, theo AGENTS.md. Neo: `packages/coding-agent/src/mcp/manager.ts:525`.
+3. **Rẽ nhánh `elicitation/create`.** Sửa `#handleServerRequest`: đổi tên tham số thứ hai từ `_params` thành `params` (nay nó đã được dùng) và thêm nhánh `case "elicitation/create"` giữa `roots/list` và `default`. Nhánh này phải ném đúng hình dạng `-32601` mà nhánh `default` ném khi `#elicitationHandler` là `undefined`. Đừng nới kiểu tham số thành `any` — hãy cast bên trong nhánh. Neo: `packages/coding-agent/src/mcp/manager.ts:1032`.
+4. **Xác nhận không transport nào cần sửa.** `#handleServerRequest` riêng của `StdioTransport` đã bọc lời gọi uỷ quyền trong try/catch và đổi một lệnh ném thành error response qua `toJsonRpcError` (`packages/coding-agent/src/mcp/transports/stdio.ts:718-729`), và `toJsonRpcError` đã nhấc một `code` dạng số khỏi Error đã ném (`packages/coding-agent/src/mcp/types.ts:500-512`). Hãy kiểm tra `sse.ts:341` và `http.ts:719` *(chưa kiểm chứng)* có cùng hình dạng không. Nếu bất kỳ transport nào không có, transport đó cần đúng hai dòng catch đó trước khi coi mục này là xong. Neo: `packages/coding-agent/src/mcp/transports/stdio.ts:718`.
+5. **Khai báo capability trong bắt tay.** Trong `packages/coding-agent/src/mcp/client.ts`, thêm `elicitation: {}` vào literal `capabilities`, xếp sau `roots` cho dễ đọc. Bản này tự nó vô hại — đừng lo tới nó cho tới khi bước 6 tồn tại. Neo: `packages/coding-agent/src/mcp/client.ts:101`.
+6. **Viết presenter của interactive mode.** Thêm `showElicitationForm(request: MCPElicitRequest): Promise<MCPElicitOutcome>` vào `ExtensionUiController`, ủy quyền phần dựng field cho `McpElicitationFormComponent` ở file mới `packages/coding-agent/src/modes/controllers/mcp-elicitation-form.ts`, cài nó thành `this.#presentDialog(undefined, settle => { ... })` và sao chép về cấu trúc từ `#showLocalAskDialog` (dòng 657-760): dựng các field, `ctx.editorContainer.clear()`, `addChild`, `ctx.ui.setFocus`, `ctx.ui.requestRender()`, và trả về một cleanup gọi `dispose`, `clear`, khôi phục `ctx.editor` rồi focus lại nó. Đừng bịa ra đường mount thứ hai. Neo: `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:1281`.
+7. **Ánh xạ property của schema sang primitive form sẵn có — đừng dựng widget form mới.** `string` -> `TextFormField`; `number` -> `TextFormField` với `validate` dạng số; `boolean` -> `SelectFormField` với Yes/No; `array`/`enum` -> `SelectFormField` (nhiều lựa chọn khi property không nằm trong `required` và schema cho phép). Dùng lại `formTheme` từ `@oh-my-pi/pi-tui/chrome/form-theme` đúng cách `plugin-settings.ts` làm, đừng tự dựng theme cục bộ. Neo: `packages/tui/src/components/form.ts:104` *(chưa kiểm chứng)*.
+8. **Cưỡng chế ba hành vi trên form (giả định `writeOnly` — xem câu hỏi DẤU HIỆU SECRET).** (a) Một property nằm trong `required` chặn submit tới khi khác rỗng — dùng `empty: "reject"` của `TextFormField` cộng một callback `validate`, đi qua `submit()` ở `form.ts:296-317` (nhánh `empty === "reject"` ở 304-307, `validate` ở 311). (b) Một property mang `writeOnly: true` (dấu hiệu secret của MCP) render với `secret: true`, không bao giờ được điền sẵn bằng giá trị đã lưu, và giá trị của nó KHÔNG BAO GIỜ được chuyển cho `ctx.editor` cũng không nằm trong bất kỳ transcript component nào. (c) Escape/cancel resolve `{ action: "cancel" }`; một điều khiển 'decline' cố ý resolve `{ action: "decline" }`. Đây phải là hai hành động người dùng phân biệt được và chạm tới riêng biệt — nếu form chỉ có một affordance huỷ thì mục này chưa xong. Neo: `packages/tui/src/overlays/plugin-settings.ts:667` *(chưa kiểm chứng)*.
+9. **Khử nhiễm mọi chuỗi được render.** `title`, `description`, `message` và `enumNames` do server gửi là dữ liệu không tin cậy: áp `replaceTabs` và `truncateToWidth` từ các tiện ích render của TUI cho từng chuỗi, trên cả đường nhãn field lẫn đường báo lỗi, và rút gọn bất kỳ giá trị nào trông giống đường dẫn. Không chuỗi server thô nào được tới một đường render mà chưa khử nhiễu. Neo: `packages/tui/src/components/form.ts:6` *(chưa kiểm chứng)*.
+10. **Nối interactive mode.** Cài handler trong `initHooksAndCustomTools()` (`interactive-mode.ts:7385-7387`), ngay sau `await this.#extensionUiController.initHooksAndCustomTools()`: `this.mcpManager?.setElicitationHandler(request => this.#extensionUiController.showElicitationForm(request))`. Bắt buộc cài ở đó, **không** cài cạnh `setAuthHandler`: lệnh gọi `setAuthHandler` ở dòng 1357 nằm giữa constructor (bắt đầu ở 1300) và `this.#extensionUiController = new ExtensionUiController(this)` ở 1493 — đọc field `readonly` ở 1357 là dùng-trước-khi-gán, vừa là lỗi TypeScript vừa là `undefined` lúc chạy. Method này được `await` từ `init()` ở dòng 1870, nên handler có mặt trước khi một server nào kịp elicit, và không cần đường ống mới (mode đã giữ manager: field ở 1137, gán ở 1356). Neo: `packages/coding-agent/src/modes/interactive-mode.ts:7385`.
+11. **Nối ACP.** Thêm một hàm anh em của `elicitFormFromAcpClient` trả về action đầy đủ của `CreateElicitationResponse` thay vì `undefined`, tái dùng đúng thân xử lý abort/timeout/dọn listener (copy đi; đừng refactor hàm hiện có, vì `elicitFormFromAcpClient` có đúng **hai** call site, `acp-agent.ts:389` và `:507` — `grep -n 'elicitFormFromAcpClient' packages/coding-agent/src/modes/acp/acp-agent.ts` — phụ thuộc vào nó). Cài nó qua `manager.setElicitationHandler(...)` ngay cạnh `manager.setOnToolsChanged` ở dòng 2688. Neo: `packages/coding-agent/src/modes/acp/acp-agent.ts:314`.
+12. **Nối RPC.** Thêm loại request và method trên `RpcExtensionUIContext`, soi theo `requestRpcEditor` (`rpc-mode.ts:600`). Resolve với `{ action, content? }`, không bao giờ với `undefined` hay một object rỗng, để decline phân biệt được với cancel trên RPC wire. Neo: `packages/coding-agent/src/modes/rpc/rpc-mode.ts:600`.
+13. **DỪNG trước khi viết nhánh headless/SDK.** Câu hỏi 10 ở mục 10 của plan chưa được trả lời, và đó là một quyết định giao thức mà người dùng nhìn thấy, không phải chi tiết lập trình. Hai đáp án sai tự nhiên — treo request vô hạn, và âm thầm tự động decline — đều quan sát được ở tầng giao thức. Hãy lấy câu trả lời, ghi vào open_questions của đặc tả này, rồi mới cài. Nếu câu trả lời là 'auto-decline', việc decline phải được ghi qua `logger` kèm tên server và message của request, và nó vẫn phải là `{ action: "decline" }` thật trên wire, không phải một lỗi. Neo: `packages/coding-agent/src/sdk.ts:2274` *(chưa kiểm chứng)*.
+14. **Thêm fixture test.** Tạo một MCP server stdio độc lập chạy được làm ba việc: (1) ghi lại client capabilities từ params `initialize`; (2) phơi một tool `elicit` mà handler `tools/call` phát `elicitation/create` như một request server->client CHỈ khi `clientCapabilities.elicitation` có mặt, chờ response, và trả chính response đó làm kết quả tool — còn khi capability vắng mặt thì trả `{ sent: false }`; (3) phơi một tool `elicit_unconditionally` luôn phát, mô phỏng một server bỏ qua capability đã khai báo. Sao chép khung JSON-RPC phân tách bằng newline từ `test/fixtures/notifications-mcp.ts`. Neo: `packages/coding-agent/test/fixtures/notifications-mcp.ts:1` *(chính file đã kiểm chứng, dòng `:1` thì chưa)*.
+15. **Viết `elicitation-capability.test.ts`.** Ba khối trên cùng fixture, trong một cwd tạm, với `manager.disconnectAll()` và `removeSyncWithRetries` trong `afterEach`. **Test 1 (hợp đồng âm — handler vắng):** dựng một manager thật trên đường manager+transport thật, KHÔNG gọi `setElicitationHandler`, gọi tool `elicit` và khẳng định kết quả tool mang lỗi JSON-RPC `code === -32601`; rồi gọi `elicit_unconditionally` và khẳng định cùng `code === -32601`. **Đừng assert `{ sent: false }` ở đây** — sau bước 5 `client.ts` luôn khai báo `elicitation: {}` trong params `initialize` (đó là literal duy nhất dựng params, `client.ts:99-108`), nên fixture luôn phát `elicitation/create`; đó chính là lỗi giao thức cần chặn. **Test 1b (hợp đồng âm — capability vắng):** spawn `elicitation-mcp.ts` trực tiếp bằng `Bun.spawn`, KHÔNG đi qua `MCPManager` (vì sau bước 5 không còn client nào bỏ được capability), gửi `initialize` thô với `capabilities: {}` rồi `tools/call` `elicit`, đọc dòng `notifications/tools/list_changed` mà fixture phát ra để biết tool đã sẵn sàng, và khẳng định kết quả là `{ sent: false }`. Ghi rõ trong spec rằng nửa này cố tình đi ngoài manager, vì nửa âm của hợp đồng "cổng" chỉ quan sát được ở đó. **Test 2:** cài một handler giả, gọi `elicit`, khẳng định fixture thấy `sent: true` và kết quả tool là `{ action: "accept", content: {...} }` của handler, không đổi. Cũng khẳng định trong test 2 rằng params `initialize` mà fixture ghi lại có chứa `elicitation`. Neo: `packages/coding-agent/test/mcp/elicitation-capability.test.ts`.
+16. **Viết `elicitation-form.test.ts`.** Test trực tiếp với presenter, dẫn nó bằng một `InteractiveModeContext` giả theo cách các test controller anh em làm — đừng `mock.module` bất cứ thứ gì. Bao phủ: một property bắt buộc chặn submit khi còn rỗng và thành công một khi được điền; một property `writeOnly` được render có che và giá trị của nó không xuất hiện trên bất kỳ dòng render nào; decline và cancel resolve thành hai action khác nhau; một form bị timeout resolve thành action đã chốt ở câu trả lời TIMEOUT, khác `undefined`; và một handler ném lỗi được trình bày thành lỗi JSON-RPC chứ không phải một rejection không xử lý. Neo: `packages/coding-agent/test/mcp/elicitation-form.test.ts`.
+
+### Hình dạng code
+
+```typescript
+// ---- packages/coding-agent/src/mcp/types.ts (add beside MCPClientCapabilities, line 196) ----
+// There is NO @modelcontextprotocol/sdk dependency anywhere in this workspace
+// (grep across every package.json returns 0 hits) — MCP is hand-rolled, so these
+// types are authored here, not imported.
+export interface MCPClientCapabilities {
+	roots?: { listChanged?: boolean };
+	sampling?: Record<string, never>;
+	/** Present only once an elicitation handler can actually answer. */
+	elicitation?: Record<string, never>;
+	experimental?: Record<string, unknown>;
+}
+
+/** One property of an `elicitation/create` requestedSchema. */
+export interface MCPElicitProperty {
+	type: "string" | "number" | "boolean" | "array";
+	title?: string;
+	description?: string;
+	// If the DẤU HIỆU SECRET answer picks `format: "password"` over `writeOnly`,
+	// this arm is the only line that has to change.
+	format?: "email" | "uri" | "date" | "date-time" | "password";
+	minLength?: number;
+	maxLength?: number;
+	minimum?: number;
+	maximum?: number;
+	enum?: Array<string | number | boolean>;
+	enumNames?: string[];
+	default?: string | number | boolean;
+	/** Secret. Render masked; the value never reaches the transcript. */
+	writeOnly?: boolean;
+}
+
+export interface MCPElicitRequest {
+	method: "elicitation/create";
+	message: string;
+	requestedSchema: {
+		type: "object";
+		properties: Record<string, MCPElicitProperty>;
+		required?: string[];
+	};
+}
+
+export type MCPElicitContentValue = string | number | boolean | string[];
+
+/**
+ * Three MCP actions, three wire values: accept / decline / cancel. There is
+ * deliberately no `undefined` arm: `undefined` is how the ACP bridge
+ * (acp-agent.ts:375) already collapses decline and cancel together, and that is
+ * the loss this type exists to prevent. A timeout is not a fourth arm — MCP's
+ * action union has three members, so a timeout must resolve to one of them,
+ * chosen deliberately (see open question TIMEOUT).
+ */
+export type MCPElicitOutcome =
+	| { action: "accept"; content: Record<string, MCPElicitContentValue> }
+	| { action: "decline" }
+	| { action: "cancel" };
+
+export type MCPElicitationHandler = (request: MCPElicitRequest) => Promise<MCPElicitOutcome>;
+
+// ---- packages/coding-agent/src/mcp/manager.ts ----
+// Third member of the setAuthHandler / setOnToolsChanged family: a single-slot
+// optional callback the owning mode installs. Single slot on purpose — see the
+// subagent-reuse guard at sdk.ts:4934 (`if (mcpManager && !options.mcpManager)`)
+// for proof that one manager can be shared by more than one session.
+#elicitationHandler?: MCPElicitationHandler;
+
+setElicitationHandler(handler: MCPElicitationHandler | undefined): void {
+	this.#elicitationHandler = handler;
+}
+
+// #handleServerRequest, manager.ts:1032. Note `_params` -> `params`: it is used now.
+async #handleServerRequest(method: string, params: unknown): Promise<unknown> {
+	switch (method) {
+		case "ping":
+			return {};
+		case "roots/list":
+			return this.#getRoots();
+		case "elicitation/create": {
+			// No handler => -32601, identical to the default arm. This is the arm that
+			// makes the half-shipped state detectable instead of merely unlikely.
+			if (!this.#elicitationHandler) {
+				throw Object.assign(new Error(`Unsupported server request: ${method}`), { code: -32601 });
+			}
+			return await this.#elicitationHandler(params as MCPElicitRequest);
+		}
+		default:
+			throw Object.assign(new Error(`Unsupported server request: ${method}`), { code: -32601 });
+	}
+}
+
+// ---- packages/coding-agent/src/modes/interactive-mode.ts:7385 (initHooksAndCustomTools) ----
+// NOT beside setAuthHandler: that call sits at 1357, INSIDE the constructor
+// (which starts at 1300), while `this.#extensionUiController` is only built at
+// 1493 — reading the field at 1357 is a use-before-assignment. This method is
+// awaited from init() at 1870, so the controller is guaranteed live by the time
+// a server can elicit. Note the field is `#extensionUiController`; there is no
+// binding named `extensionUiController` in this scope.
+async initHooksAndCustomTools(): Promise<void> {
+	await this.#extensionUiController.initHooksAndCustomTools();
+	this.mcpManager?.setElicitationHandler(
+		request => this.#extensionUiController.showElicitationForm(request),
+	);
+}
+
+// ---- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts ----
+// MUST go through #presentDialog (line 1281) so the form queues behind whatever
+// is already up (#dialogActive / #dialogQueue, lines 92-93) instead of both
+// fighting over ctx.editorContainer.
+showElicitationForm(request: MCPElicitRequest): Promise<MCPElicitOutcome> {
+	return this.#presentDialog<MCPElicitOutcome>(undefined, settle => {
+		const form = new McpElicitationFormComponent(request.requestedSchema, {
+			onAccept: content => settle({ action: "accept", content }),
+			onDecline: () => settle({ action: "decline" }),
+			onCancel: () => settle({ action: "cancel" }),
+			tui: this.ctx.ui,
+			// Field labels and descriptions are server-supplied: replaceTabs +
+			// truncateToWidth before any render path, including the error path.
+			sanitize: (text: string) => truncateToWidth(replaceTabs(text), TRUNCATE_LENGTHS.CONTENT),
+		});
+		this.ctx.editorContainer.clear();
+		this.ctx.editorContainer.addChild(form);
+		this.ctx.ui.setFocus(form);
+		this.ctx.ui.requestRender();
+		return () => {
+			form.dispose();
+			this.ctx.editorContainer.clear();
+			this.ctx.editorContainer.addChild(this.ctx.editor);
+			this.ctx.ui.setFocus(this.ctx.editor);
+			this.ctx.ui.requestRender();
+		};
+	});
+}
+```
+
+### Hợp đồng test
+
+Hai hợp đồng quan sát được từ bên ngoài, mỗi cái có một bên tiêu dùng hỏng rõ rệt khi hồi quy.
+
+**(1) CỔNG.** Một MCP server không được hỏi được trừ khi omp đã khai báo capability, và khi omp ĐÃ khai báo thì cùng request đó phải được trả lời. Bên tiêu dùng: chính MCP server đó. Nếu cổng thiếu, server bắt đầu hỏi một client không trả lời được; nếu handler thiếu, server bỏ qua cổng sẽ nhận `-32601` — tệ hơn hẳn cái im lặng hiện tại. Nửa âm chính là thứ biến trạng thái nửa-vỏ thành một suite đỏ thay vì một lượt review dễ dàng qua: một manager không handler phải trả `-32601` cho một `elicitation/create` bị ép. Nửa còn lại — fixture phải báo `sent: false` khi capability vắng mặt trong params `initialize` — **cố tình quan sát ngoài `MCPManager`**, bằng cách spawn fixture thật và gửi `initialize` thô với `capabilities: {}`; sau bước 5 không còn client nào bỏ được capability, nên đó là chỗ duy nhất nửa âm này còn quan sát được. Nếu hồi quy, người tiêu dùng là server thấy câu hỏi của mình bị bỏ rơi, hoặc thấy một lỗi giao thức thay cho câu trả lời.
+
+**(2) KẾT QUẢ PHÂN BIỆT TRÊN WIRE.** decline và cancel phải tới server dưới dạng hai giá trị phân biệt được, và timeout phải được ánh xạ có chủ ý sang một action của union MCP (`cancel` là ứng viên mặc định) chứ không rơi về `undefined`. Bên tiêu dùng: server, vốn thường rẽ nhánh theo action. Một hồi quy làm decline trở thành submission rỗng là thứ vô hình với người dùng và đúng là lỗi giao thức mà mục này sinh ra để chặn — vì vậy phải khẳng định ở tầng wire, không phải trên một boolean trả về. Lưu ý action union của MCP có đúng ba thành viên, nên timeout KHÔNG phải arm thứ tư: nó phải rơi vào một action đã chọn có chủ đích (xem câu hỏi TIMEOUT). Ngoài ra: một property `required` chặn submit; một property `writeOnly` bị che trong phần render VÀ giá trị của nó không bao giờ tới transcript; và một handler ném lỗi phải hiện ra thành lỗi JSON-RPC chứ không phải một rejection không xử lý.
+
+Cả hai hợp đồng đều được kích qua một `MCPManager` thật và một transport stdio thật, đối với một fixture server được spawn, chứ không qua một shape dựng lại cục bộ — ngoại lệ duy nhất là nửa `sent: false` của hợp đồng (1), đi bằng `Bun.spawn` thẳng vào fixture với lý do nêu ở trên. `packages/coding-agent/test/mcp-roots-list.test.ts` TUYỆT ĐỐI KHÔNG phải khuôn ở đây — nó tự khai trong chính comment rằng nó không kích phần wiring. Các file test:
+
+- `packages/coding-agent/test/mcp/elicitation-capability.test.ts`
+- `packages/coding-agent/test/mcp/elicitation-form.test.ts`
+- `packages/coding-agent/test/fixtures/elicitation-mcp.ts`
+
+### Xác minh
+
+```bash
+bun run check:ts
+
+# bị chặn cho tới khi addon native được build:
+#   bun test packages/coding-agent/test/mcp/elicitation-capability.test.ts packages/coding-agent/test/mcp/elicitation-form.test.ts
+#
+# Baseline đã kiểm chứng ở HEAD e040a60: `bun run check:ts` XANH (oxlint + oxfmt + tsgo trên cả
+# 16 package, exit 0 — đo lại 2026-09-29 ở cây này, vẫn 16/16 Done, exit 0). `bun test` cần addon
+# native, và addon ĐÃ build ở cây này. Hai dòng dưới mô tả máy CHƯA build, không phải cây bạn đang
+# đứng — ở đó lệnh chết ở bước import với `Failed to load pi_natives native addon for darwin-arm64`
+# (packages/natives/native/pi_natives.darwin-arm64.node missing)
+# Đó là lỗi môi trường, KHÔNG phải tín hiệu đỏ của công việc, và KHÔNG phải hạn chế của máy.
+# Build addon một lần là xong (bước này là điều kiện (0) của Cổng hoàn thành — xem mục đó):
+#   brew install ninja
+#   bun --cwd=packages/natives run build
+#
+# Sau khi build, chạy thêm hai file có sẵn dễ hồi quy nhất:
+#   bun test packages/coding-agent/test/mcp-roots-list.test.ts
+#   bun test packages/coding-agent/test/mcp-manager-notification-listeners.test.ts
+```
+
+Tuyệt đối không dùng `tsc` — dự án cấm.
+
+### Cổng hoàn thành
+
+Cả bốn điều kiện sau phải đồng thời đúng, và mỗi cái có thể đỏ độc lập.
+
+0. Native addon đã build: `brew install ninja` rồi `bun --cwd=packages/natives run build`, và `ls packages/natives/native/pi_natives.darwin-arm64.node` trả về một file. Bước này **là tiền đề môi trường, không phải hạn chế của máy** — nó build được và đã build xong. Trên máy sạch chưa build, mọi `bun test` báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`, và đó là lỗi môi trường, KHÔNG phải tín hiệu đỏ của công việc. Không thể lấy bất kỳ tín hiệu nào từ (2) và (3) trước khi (0) xanh.
+1. `bun run check:ts` xanh. Nó đỏ khi có một kiểu tự viết tay không thoả các shape MCP hand-rolled, khi có một `any` mà AGENTS.md cấm, khi có từ khoá `private` trên field của class, hoặc khi thiếu một import ở top level.
+2. `packages/coding-agent/test/mcp/elicitation-capability.test.ts` xanh với một fixture được spawn thật, chứng minh cả ba chiều: manager không handler trả `code === -32601` cho một lần hỏi bị ép, fixture từ chối hỏi (`{ sent: false }`) khi một `initialize` thô khai báo `capabilities: {}`, VÀ nhận được một câu trả lời thật khi handler đã cài. Nửa `sent: false` đi ngoài `MCPManager` có chủ đích — xem Hợp đồng test (1).
+3. `packages/coding-agent/test/mcp/elicitation-form.test.ts` xanh, chứng minh decline và cancel là hai giá trị phân biệt trên wire, rằng một timeout rơi vào action đã chốt chứ không phải `undefined`, rằng `required` chặn submit, và rằng giá trị `writeOnly` không bao giờ tới transcript.
+
+Chỉ coi mục này XONG khi (0)+(1)+(2)+(3) cùng xanh trên cùng một cây. Khai báo capability ở một commit và giao handler ở commit sau là TUYỆT ĐỐI KHÔNG xong — test ở (2) tồn tại chính là để bản nửa-vỏ đỏ chứ không qua được review.
+
+Cổng này có thực sự đỏ được không? **Có.** `gate_can_fail: true`, và cả bốn nhánh đều đỏ độc lập: (0) đỏ khi addon native chưa build, (1) đỏ về kiểu/lint, (2) đỏ ngay ở trạng thái nửa-vỏ — đây là nhánh quan trọng nhất, vì nó biến "thiếu handler" từ một điều kiện review bằng mắt thành một suite đỏ, (3) đỏ nếu ai đó làm decline và cancel cùng một giá trị.
+
+### Phụ thuộc
+
+Không. `depends_on` rỗng.
+
+Mục này **chặn**:
+
+- Danh sách chặn thật sự rỗng. `depends_on` rỗng và cả hai nửa A2/D1 đi cùng một commit, nên không có hạng mục M3 nào khác chờ mục này. (M3-D2 là segment tỉ lệ hit cache ở `packages/tui/`, độc lập; M3-C2 là dải trạng thái gọi shell ở `packages/coding-agent/test/user-shell-status-line.test.ts`, cũng độc lập; M3-B1 là ghim tool-renderer, độc lập.) Điều mà mục này chặn là chiều ngược lại: cho tới khi nó đáp xuống, bất kỳ chữ nào trong tài liệu milestone mà nói omp hỗ trợ MCP elicitation là sai.
+- Bất kỳ công việc M4/M5 tương lai nào giả định rằng một MCP server có thể hỏi người dùng điều gì đó.
+
+### Rủi ro
+
+Giao capability trước handler. Đây là thay đổi đòn bẩy lớn nhất trong milestone và vì thế dễ đáp xuống một mình rồi gọi là xong nhất: diff là một dòng trong `client.ts`, nó vẫn pass type-check, và nó làm omp trông có năng lực hơn. Mọi server tuân thủ spec hay dò xét lúc đó bắt đầu nhận `-32601` từ `manager.ts:1039` — một lỗi giao thức nhìn thấy được, ở nơi hôm nay nó đơn giản là không bao giờ hỏi. Rủi ro bậc hai mới là thứ plan đánh giá thấp: cầu nối ACP tại `acp-agent.ts:375` đã nén decline và cancel thành `undefined`, nên cách cài hiển nhiên nhất — tái dùng `elicitFormFromAcpClient` cho mode ACP và lấy mode interactive làm hình mẫu theo nó — âm thầm cài lại đúng cái phân biệt ba chiều mà mục này tồn tại để giữ. Hãy viết kiểu kết quả trước, rồi bắt mọi mode tạo ra nó.
+
+### Cần người quyết
+
+- **CHÍNH SÁCH HEADLESS/SDK** (mục 10 của plan, câu 10 — chưa trả lời, và người cài KHÔNG được đoán). omp làm gì khi một MCP server elicit ở chế độ headless/SDK mà không có bề mặt tương tác? Hai đáp án sai tự nhiên — treo request vô hạn, và âm thầm tự động decline — đều hiện ra ở tầng giao thức. Mặc định đề xuất đưa trước một con người: auto-decline kèm `logger.warn` nêu tên server và message của request, và làm nó thành `{ action: "decline" }` thật trên wire chứ không phải một lỗi — cộng thêm một handler lập trình tuỳ chọn để người nhúng SDK không bị kẹt với điều đó. Xác nhận trước bước 13.
+- **DẤU HIỆU SECRET.** Trường bí mật được đánh dấu bằng `writeOnly: true` của MCP, bằng `format: "password"`, hay bằng một phần mở rộng riêng của omp? MCP spec dùng writeOnly. Xác nhận cái nào thực tế server ngoài đời gửi trước khi bước 8 hard-code nó; sai chỗ này nghĩa là secret hiện ra văn bản thô.
+- **RE-ELICITATION TRONG ACP.** Ở mode ACP, manager được tạo cho mỗi phiên được quản lý (`acp-agent.ts:2667`) và cầu nối chiều ra đã có sẵn. Handler có nên tái dùng `unstable_createElicitation` nguyên văn, hay các lần elicit phát sinh từ MCP nên bỏ qua editor client và xử lý tại chỗ? Đây là hai UX rất khác nhau và plan không nói.
+- **TÊN REQUEST RPC.** Tên method RPC chính xác và hình dạng payload để chuyển tiếp một elicitation tới RPC client chưa được định nghĩa. `rpc-mode.ts:600` (`requestRpcEditor`) là hình dạng để soi theo, nhưng tên method cần một quyết định vì client RPC khoá theo tên đó.
+- **TIMEOUT.** Một form elicitation có nên hết giờ hay không? Cầu nối của ACP tôn trọng `dialogOptions.timeout`; request MCP không mang timeout riêng, nên cần một mặc định tường minh (và plan đòi timeout phải là kết quả wire thứ BA phân biệt, nghĩa là giá trị phải được chọn có chủ ý chứ không được thừa kế một cách mơ hồ thành 'undefined').
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Harness task text nói "Milestone 2 occupies lines 7042 to 7692" của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`, và rằng s3 là một mục của milestone 2. | SAI — nhãn milestone sai; khoảng dòng cũng đã trôi theo HEAD. | Ở HEAD hiện tại, `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE` nằm ở dòng 8549 và `### Sóng 3 — Cặp giao thức, nguyên tử` ở dòng 8854 (sóng 3 chiếm 8854-8867; dòng 8868 là `### Sóng 4`). Tức là **đây là mục của M3, không phải M2**, và chính đường dẫn đầu ra của harness (`.lavish-wip/m3-specs/`) cũng khớp M3. Hãy coi đây là mục của M3; không gì trong đặc tả phụ thuộc vào M2. Lưu ý: ở commit `808b365` (trước khi khối MILESTONE 2 được ghép vào) hai con số này là 7042 và 7347 — đó là mốc mà harness dẫn; mọi neo dòng của plan trong tài liệu này đã cập nhật sang `e040a60`. *Bằng chứng:* `sed -n '8549p'` trả về `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`; `grep -n 'Sóng 3'` trả về `8854:### Sóng 3 — Cặp giao thức, nguyên tử`; `git show 808b365:COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md \| grep -n 'Sóng 3'` -> `7347`. |
+| Harness task text nói repo ở "git HEAD 5873776". | SAI. | HEAD là `e040a60`, trên nhánh `milestone-1`. Không neo nào của plan phụ thuộc vào SHA này, nhưng một SHA cũ trong bàn giao mời tới một `git checkout` sai. *Bằng chứng:* `git log --oneline -1` -> `e040a60 docs(m2): execution plan for milestone 2, spec-verified against the tree`; `git rev-parse HEAD` -> `e040a607c44f6cb49893020b494ce02d0b5cd1b7`. |
+| Plan §2.2 / sóng 3 D1: "Phải thiết kế điểm tiêm manager→UI, ví dụ một callback request tuỳ chọn do mỗi mode cấp lúc khởi tạo manager, theo đúng cách `ExtensionUIContext` được tiêm hôm nay." | NỬA SAI — cái ẩn dụ ExtensionUIContext là sai; thiết kế callback thì đúng, và nó đã có sẵn trong cây. | Cây đã có đúng cái đường seam mà plan nói phải thiết kế: `MCPManager.setAuthHandler(handler: MCPAuthHandler \| undefined)` tại `manager.ts:525-527`, một callback manager→UI tuỳ chọn một ô, do interactive mode cài ở `interactive-mode.ts:1357` và uỷ quyền vào một controller. `setElicitationHandler` là thành viên thứ ba đúng nghĩa của gia đình đó — thêm nó cạnh `setAuthHandler`, đừng dựng cơ chế tiêm mới. Nửa `ExtensionUIContext` của ẩn dụ sai vì hai lý do: interface đó không có method `form`, và nó chảy theo hướng session->mode (mỗi mode tự dựng và đẩy vào qua `setToolUIContext` ở `sdk.ts:3975`), không phải manager->UI. Thêm `form()` vào đó sẽ là một thay đổi API extension công khai, theo lập luận O2 của chính plan, thuộc địa bàn M2. *Bằng chứng:* `sed -n '525,527p' packages/coding-agent/src/mcp/manager.ts` là thân `setAuthHandler`; `sed -n '1356,1359p' packages/coding-agent/src/modes/interactive-mode.ts` là chỗ cài đặt; `grep -n 'askDialog' packages/coding-agent/src/extensibility/extensions/types.ts` chỉ trả về `askDialog` tuỳ chọn ở dòng 252 — không có method `form` nào trên `ExtensionUIContext`. |
+| Plan sóng 3: "A2 ... Nửa A2 chỉ vài dòng" (A2 chỉ vài dòng). | ĐÁNH GIÁ THẤP — nó là hai file, và một file là file kiểu. | Literal `capabilities` trong `client.ts` là ba dòng, nhưng `MCPClientCapabilities` ở `types.ts:196-200` có đúng ba thành viên (roots, sampling, experimental) và không có `elicitation`, nên kiểu cũng phải mở rộng. Hơn nữa, vì không có phụ thuộc `@modelcontextprotocol/sdk` ở bất kỳ đâu trong workspace, các kiểu request/result/outcome phải tự viết tay từ spec 2025-11-25 — không có kiểu SDK nào để import. Vẫn nhỏ thật, nhưng không phải một file. *Bằng chứng:* `sed -n '196,200p' packages/coding-agent/src/mcp/types.ts` cho thấy interface ba thành viên; `grep -rn 'modelcontextprotocol' package.json packages/*/package.json` trả về 0 hit; `sed -n '175p'` cho thấy `MCP_PROTOCOL_VERSION = "2025-11-25"`. |
+| Plan sóng 3 D1: "ACP dùng lại cầu nối chiều ra sẵn có" (ACP tái dùng cầu nối chiều ra). | SAI như đã viết — tái dùng sẽ phá hỏng hợp đồng mà mục này lập ra. | `elicitFormFromAcpClient` (`acp-agent.ts:314`) đã nén decline và cancel thành `undefined` ở dòng 375. Nó là một tài liệu tham chiếu vòng đời rất tốt (đua abort, timeout, `onTimeout`, dọn listener, chặn response đến muộn) nhưng kiểu trả về của nó là mất thông tin, và cổng của chính plan đòi ba kết quả wire phân biệt. Hãy thêm một hàm anh em giữ nguyên action; đừng refactor hàm hiện có, vì hai call site khác phụ thuộc vào nó. *Bằng chứng:* `sed -n '375p'` là `if (!isAcceptedElicitation(response) \|\| !response.content) {` rồi `return undefined;`; helper thu hẹp ở dòng 402; `CreateElicitationResponse` trong `packages/utils/src/acp/protocol.ts:440-443` là union ba arm mang ba action `accept \| decline \| cancel`, nhưng arm thứ ba là `action: string` không ràng buộc. Ngoài ra `elicitFormFromAcpClient` có đúng hai call site, `acp-agent.ts:389` và `:507` (`grep -n 'elicitFormFromAcpClient' packages/coding-agent/src/modes/acp/acp-agent.ts`). |
+| Plan §2.2: "manager không có quyền mở form ... Chỗ cần trả lời JSON-RPC nằm trong một class không thể với tới UI." | ĐÃ KIỂM CHỨNG — mang sang nguyên vẹn. | Xác nhận chính xác. Tham chiếu `pi-tui` duy nhất trong `manager.ts` là dòng 46, `import type { MCPToolDetails } from "@oh-my-pi/pi-tui/tools/mcp"` — import chỉ kiểu. Manager thật sự không thể mở form hôm nay, và đó là lý do một setter là bắt buộc. *Bằng chứng:* `grep -n 'pi-tui' packages/coding-agent/src/mcp/manager.ts` trả về đúng một dòng, 46. |
+| Neo sóng 3: `client.ts:100-104` và `manager.ts:1032-1040`. | ĐÃ KIỂM CHỨNG — cả hai chính xác, không trôi. | `client.ts` 100-104 là literal `MCPInitializeParams` với `capabilities` ở 101-103. `manager.ts` 1032-1040 là toàn bộ `#handleServerRequest`, với lệnh ném `-32601` ở 1039. Ngoài ra đã xác minh cả hai điểm nối `onRequest` (`manager.ts:741-742` cho lần kết nối đầu, `1548-1549` cho lần kết nối lại) đều đã uỷ quyền cho method này nên không điểm nào cần đổi, và rằng `toJsonRpcError` (`types.ts:500-512`) cùng try/catch của StdioTransport (`stdio.ts:718-729`) đã mang một `-32601` bị ném tới server — không cần sửa transport nào. *Bằng chứng:* `sed -n '100,104p'`, `sed -n '1032,1040p'`, `sed -n '735,750p'`, `sed -n '1540,1560p'`, `sed -n '500,512p'` và `sed -n '718,729p'` của các file tương ứng. |
+| Vị trí test của sóng 3: MỚI `packages/coding-agent/test/mcp/elicitation-capability.test.ts` và `.../elicitation-form.test.ts`. | VỊ TRÍ ỔN, THÊM CẢNH BÁO VỀ KHUÔN. | Thư mục `packages/coding-agent/test/mcp/` tồn tại và là nơi đúng. Nhưng đừng sao chép `packages/coding-agent/test/mcp-roots-list.test.ts` — nó là một specification test tự dựng lại shape cục bộ và tự nói ra điều đó: "Does not exercise the actual transport methods — changes to #handleMessage won't fail this test. Tests the contract, not the wiring." Khuôn đúng là `packages/coding-agent/test/mcp-manager-notification-listeners.test.ts` cộng `packages/coding-agent/test/fixtures/notifications-mcp.ts`: một server stdio độc lập chạy được, spawn với `{ type: 'stdio', command: process.execPath, args: [FIXTURE_PATH] }`, đối với một `MCPManager` thật trong cwd tạm. *Bằng chứng:* các comment tự giải thích nằm ở đầu mỗi describe block trong `mcp-roots-list.test.ts`; cấu hình spawn là `function serverConfig(): MCPServerConfig { return { type: "stdio", command: BUN_EXEC, args: [FIXTURE_PATH] }; }` ở dòng **15-17** của `mcp-manager-notification-listeners.test.ts` (`const FIXTURE_PATH` ở dòng 10, `const BUN_EXEC = process.execPath` ở dòng 11; dòng 18 là dòng trống). |
+| Harness: "Verify with `bun run check:ts` (which does not need the addon) and treat `bun test` as blocked until the addon is built." | ĐÃ KIỂM CHỨNG — cả hai nửa đều tái lập được. | `bun run check:ts` xanh tại HEAD `e040a60` (oxlint "All matched files use the correct format" + tsgo trên cả 16 package, exit 0). Trên máy sạch chưa build addon, `bun test packages/coding-agent/test/mcp/request-id.test.ts` báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`, thiếu `packages/natives/native/pi_natives.darwin-arm64.node`. Gỡ bằng `brew install ninja` + `bun --cwd=packages/natives run build` (exit 0) — đây là một bước build còn thiếu, không phải hạn chế của máy. *Bằng chứng:* cả hai lệnh đã chạy; output được dẫn ở mục Xác minh. |
+| Plan không hề nói form elicitation có bắt buộc phải xếp hàng sau các dialog khác hay không. | THIẾU — một lỗi thật đang chờ xảy ra. | Một MCP server có thể elicit vào bất kỳ lúc nào, kể cả khi một permission prompt hoặc một ask dialog đã chiếm `ctx.editorContainer`. Presenter của interactive mode BẮT BUỘC phải dựng trên `ExtensionUiController.#presentDialog` (dòng 1281), vì nó đi qua cổng `#dialogActive` / `#dialogQueue` (dòng 92-93). Trình bày form thẳng vào `editorContainer` — cái hiển nhiên sẽ gõ ra — khiến hai bề mặt tranh nhau focus, và bên thua là bên người dùng đang trả lời dở. *Bằng chứng:* `sed -n '1281,1337p'` cho thấy nhánh xếp hàng của `#presentDialog` (`if (this.#dialogActive) { this.#dialogQueue.push(startPresentation); } else { startPresentation(); }`); `sed -n '92,93p'` cho thấy hai field đó. |
+
+
+---
+
+
+## Sóng 4 — bề mặt plugin, chỉ A4-PERSIST chờ M2
+
+**Sóng / phạm vi:** Sóng 4. Bốn khe độc lập, không phải một tính năng: A4 (mask secret của plugin setting), B1 (ghim khoảng trống override tool-renderer), B2 (làm sạch working message do plugin cung cấp), B3 (cho phép plugin đóng góp một dải gợi ý phím).
+
+**Effort:** ~4 ngày, cố ý không gộp. A4-display ~1 ngày và là mở khoá rẻ nhất của sóng — làm trước, một mình. B1 ~1 ngày, và ngày đó nằm ở ba khẳng định ghim và việc chọn đúng nhánh remap, không phải ở viết code: B1 sửa KHÔNG dòng lõi nào. B2 ~1 ngày. B3 ~1 ngày, và KHÔNG bị M2 chặn — là mục duy nhất của sóng chưa có bất kỳ cổng đỏ nào trên cây sạch, nên làm ngay sau A4 để lấy bằng chứng thật sớm. A4-PERSIST là một mục RIÊNG ~1 ngày — tổng ở mục 6 của plan chỉ tính nửa hiển thị, đừng gộp hai thứ vào một ô lịch. Đừng cắt ngày của A4-PERSIST để trả cái khác trong sóng này; plan gọi nó là một bug thật trên cả hai dòng của nó.
+
+### Tóm tắt
+
+Wave 4 là bốn khe độc lập, không phải một tính năng. A4 tự nó bị chia bởi phụ thuộc của chính nó: nửa hiển thị chỉ chạm vào overlay TUI và không bị chặn; nửa lưu trữ viết lại `setPluginSetting` và bị chặn bởi M2 WI-8a — vốn đang viết lại chính ba phương thức đó trên một substrate Settings mới. B1, B2, B3 không thêm API công khai nào: B1 chỉ *ghim* một khoảng trống đã có bằng một fixture để một đợt refactor không thể lặng lẽ đóng lại khe đó, còn B2/B3 là các phương thức ngữ cảnh UI đã tồn tại trên `ExtensionUIContext` và đã được nối hết từ đầu đến cuối.
+
+**Hiệu ứng người dùng thấy:** một plugin setting được đánh dấu `secret: true` không còn hiện giá trị của nó khi là enum, và không còn vẽ lại bản rõ sau khi bạn chọn giá trị mới. Working message của plugin không còn đấm thủng một lỗ hổng hình tab trong TUI. Một plugin có thể thêm một gợi ý bàn phím vào dòng trạng thái. Riêng về phần kiểm thử, nay có một test chứng minh plugin CÓ THễ override tool renderer tích hợp ngay hôm nay, nên một refactor tương lai không thể đóng khe đó mà không làm CI đỏ. (Lưu ý nghiệm thu: trên máy sạch chưa build addon, không một khẳng định nào của bốn file test này chạy được — cả bốn đều chết trước khi vào assertion. Đó là **tiền đề môi trường**, không phải hạn chế của máy: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là cả bốn file chạy. Hiệu ứng người dùng thấy ở trên là kết quả ĐÍCH, chưa được quan sát.)
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/components/settings-list.ts` | sửa | Thêm `displayValue?: string` tuỳ chọn vào `SettingItem` (interface ở :24-43). Cho đường vẽ (:515) và corpus tìm kiếm (:97) đọc `item.displayValue ?? item.currentValue`. Chính thứ này làm mask secret sống sót qua một lần chọn trong submenu. | Có |
+| `packages/tui/src/overlays/plugin-settings.ts` | sửa | Trong `buildPluginConfigItems` (:138-207), đặt `displayValue: displayValue` (mask tính ở :152) lên item nhánh enum (:162-182) và lên item nhánh string/number sẵn có (:183-203). | Có |
+| `packages/coding-agent/test/plugin-settings-secret.test.ts` | tạo | Test mới: enum secret bị mask trong dòng đã render, vẫn bị mask sau một vòng chọn–đọc lại, và enum không phải secret không bị ảnh hưởng. | **Chưa kiểm chứng** — file chưa tồn tại (xem Cần người quyết #1: các đơn vị bị test đều nằm ở packages/tui) |
+| `packages/coding-agent/src/extensibility/plugins/manager.ts` | sửa — **BỊ CHẶN, đừng đụng trong sóng này** | Sau M2 WI-8a, `setPluginSetting` (:942-949) phải từ chối lưu nguyên văn một giá trị `secret: true`. Hôm nay nó ghi giá trị as-is và gọi `#saveRuntimeConfig` ở :948. | Có |
+| `packages/coding-agent/test/fixtures/tool-renderer-override/index.ts` | tạo | Entry của fixture plugin. `import { toolRenderers } from "@oh-my-pi/pi-tui/tools"` rồi gán `toolRenderers.grep` một renderer ngắn hơn `grepToolRenderer` tích hợp, có đủ cả `renderCall` và `renderResult`. Không cần package.json. | **Chưa kiểm chứng** — file chưa tồn tại |
+| `packages/coding-agent/test/plugin-tool-renderer-override.test.ts` | tạo | Test mới: nạp thư mục fixture qua `loadExtensions`, khẳng định override đã ăn, cộng ba bất biến được ghim (export map phân giải được, registry gán được lúc runtime, loader remap trả về cùng một module instance). | **Chưa kiểm chứng** — file chưa tồn tại |
+| `packages/coding-agent/src/modes/interactive-mode.ts` | sửa | Chỉ B2: làm sạch trong `setWorkingMessage` (:6645-6660) — chạy chuỗi của plugin qua `replaceTabs` rồi `truncateToWidth` trước khi đưa cho `loadingAnimation.setMessage` (:6655) hoặc lưu làm `#pendingWorkingMessage` (:6659). Nhánh khôi phục mặc định ở :6646-6651 đã chạy đúng; đừng đụng. | Có |
+| `packages/coding-agent/test/extension-working-message.test.ts` | tạo | Test mới: một working message chứa tab thật và một chuỗi 500 ký tự tạo ra output không có byte tab nào và bề rộng hiển thị nằm trong ngân sách dòng; `undefined` khôi phục mặc định; đặt cùng chuỗi hai lần chỉ yêu cầu một lần render. | **Chưa kiểm chứng** — file chưa tồn tại |
+| `packages/tui/src/chrome/keybinding-hints.ts` | sửa | B3: thêm entry point của dải gợi ý cạnh các helper gợi ý sẵn có `boundKeys` (:33-36) và `appKey` (:44-47). | Có |
+| `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` | sửa | B3: thêm field gợi ý của plugin vào literal `ExtensionUIContext` (:120-…), cạnh `setStatus` ở :128 và `setWorkingMessage` ở :129. Đường phản hồi phải gọi `this.ctx.ui.requestRender()` đúng như `setHookStatus` làm ở :593. | Có |
+| `packages/coding-agent/test/extension-status-hint-strip.test.ts` | tạo | Test mới: dải gợi ý nêu tên phím và hành động của nó trong một mode có phím không mặc định, tôn trọng thang bề rộng, và vắng mặt trong RPC / ACP / headless. | **Chưa kiểm chứng** — file chưa tồn tại |
+
+Cột "đã kiểm chứng" phân biệt hai loại: sáu file nguồn đã được đối chiếu với cây thật ở HEAD `e040a60` (cây `packages/` giống hệt `808b365`, nên các số dòng đã kiểm vẫn đúng), còn năm file test là file **cần tạo**, chưa tồn tại nên không có neo nào để kiểm chứng. Các neo ở các mục dưới đây trỏ tới những file không nằm trong bảng (ví dụ `loader.ts`, `legacy-pi-compat.ts`, `secrets/index.ts`) đều đã được đối chiếu bằng lệnh tại HEAD `808b365`.
+
+### Các bước
+
+1. **A4-DISPLAY.** Trong `packages/tui/src/components/settings-list.ts`, thêm `displayValue?: string` vào `SettingItem` (interface :24-43). Rồi đổi **đúng hai** chỗ đọc sang `item.displayValue ?? item.currentValue`: chỗ vẽ ở :515 và corpus tìm kiếm trong `getSettingItemFilterText` ở :97. Đừng đụng :795 (vòng round-trip của submenu), :797 (gán lại khi chọn), :804 (duyệt `values`), hay :318 (`updateValue`) — những chỗ đó **phải** tiếp tục đọc và ghi giá trị thật. Chính phép tách này là toàn bộ cách sửa: nó làm mask sống sót qua một lần chọn, vì :797 gán lại `currentValue`, không bao giờ gán `displayValue`.
+   Neo: `packages/tui/src/components/settings-list.ts:24-43, :97, :515`
+
+2. **A4-DISPLAY.** Trong `buildPluginConfigItems`, thêm `displayValue,` vào **cả** item nhánh enum lẫn item nhánh string/number sẵn có. Để nguyên `currentValue` ở cả hai. **KHÔNG** thêm field `secret?: boolean` vào `PluginSettingSchema` — nó đã tồn tại ở dòng 31, và cờ phía manifest đã tồn tại ở `packages/coding-agent/src/extensibility/plugins/types.ts:63`.
+   Neo: `packages/tui/src/overlays/plugin-settings.ts:152, :162-182, :183-203`
+
+3. **A4-DISPLAY.** Đóng băng ba lớp bảo vệ sẵn có thành khẳng định hồi quy, **không sửa chúng**: mask ở :152, policy `empty: "cancel"` ở :669 (KHÔNG phải :662), và `initialValue: !schema.secret ? currentValue : undefined` ở :668. `createConfigInputPanel` có đúng một caller (:190) và `form.ts:296-303` định tuyến một submit rỗng về `onCancel` trước `onSubmit` — chính cặp đó ngăn một lần lưu rỗng xoá mất secret đã lưu. Đừng refactor đường submit.
+   Neo: `packages/tui/src/overlays/plugin-settings.ts:668-669; packages/tui/src/components/form.ts:296-303`
+
+4. **A4-DISPLAY.** Viết `packages/coding-agent/test/plugin-settings-secret.test.ts` (xem Hợp đồng test). Chạy nó. Nó phải xanh **trước** bất kỳ việc gì của M2 — nếu nó cần WI-8a mới xanh, thì phép tách đã sai.
+   Neo: `packages/coding-agent/test/plugin-settings-secret.test.ts`
+
+5. **B1.** Tạo `packages/coding-agent/test/fixtures/tool-renderer-override/index.ts`. Nó phải import `{ toolRenderers }` từ `@oh-my-pi/pi-tui/tools` và gán `toolRenderers.grep` một renderer hiện thực **cả** `renderCall` lẫn `renderResult`, có dòng kết quả phân biệt được với bản tích hợp. Không có `package.json` — không manifest thì loader rơi về `indexNames: ["index.ts", "index.js"]` ở `packages/coding-agent/src/extensibility/extensions/loader.ts:527` qua thứ tự ưu tiên ở `directory-resolution.ts:102-110`. Khẳng định override qua một lệnh gọi `loadExtensions([dir], cwd)` thật, không bao giờ bằng static import.
+   Neo: `packages/coding-agent/test/fixtures/tool-renderer-override/index.ts`
+
+6. **B1.** Viết `packages/coding-agent/test/plugin-tool-renderer-override.test.ts` với ba bất biến được ghim. **QUAN TRỌNG:** dưới `bun test`, `USE_BUNDLED_PI_MODULES` (`legacy-pi-compat.ts:20`) là FALSE, nên chỉ nhánh source namespace-file tại :2736 chạy và remap virtual-namespace tại :2742 là code chết. Hãy khẳng định module identity qua nhánh SOURCE. **KHÔNG** đặt `PI_BUNDLED=1` để ép :2742 — hằng số đó được đọc một lần lúc import và làm vậy sẽ hỏng ngay từ dòng đầu. **KHÔNG** grep `packages/tui/package.json` để kiểm export map; AGENTS.md cấm source-grep. Hãy kiểm nó bằng hành vi của resolver.
+   Neo: `packages/coding-agent/test/plugin-tool-renderer-override.test.ts`
+
+7. **B2.** Trong `setWorkingMessage` (`interactive-mode.ts:6645-6660`), làm sạch chuỗi của plugin bằng `replaceTabs` rồi `truncateToWidth` trước **cả hai** chỗ nhận (`loadingAnimation.setMessage` ở :6655, `#pendingWorkingMessage` ở :6659). Lấy ngân sách bề rộng từ `TRUNCATE_LENGTHS` (cùng file `render-utils.ts`, đã được import sẵn ở :156 của chính file này) — `CONTENT` là ứng viên hợp lý cho một dòng trạng thái. **KHÔNG** dùng `PREVIEW_LIMITS`: nó chỉ chứa ngân sách DÒNG và PHẦN TỬ, không có field bề rộng nào. Đừng tự bịa hằng số mới. Để nguyên nhánh `undefined` (:6646-6651) — nó đã khôi phục mặc định. Đừng refactor sanitizer thành một lượt mới; ràng buộc này là lý do để có test, không phải ngân sách refactor.
+   Neo: `packages/coding-agent/src/modes/interactive-mode.ts:6645-6660`
+
+8. **B2.** Viết `packages/coding-agent/test/extension-working-message.test.ts`. Hãy kỳ vọng **hai** trong ba khẳng định của nó đã xanh trước bước 7: `undefined` khôi phục mặc định đã chạy đúng hôm nay, và dedupe khi lặp lại cùng chuỗi cũng đã chạy vì `packages/tui/src/components/loader.ts:145-152` canh `if (message === this.message) return;`. Vẫn khẳng định dedupe ở biên — nó hiện nằm sâu ba khung hình bên trong một component TUI, và một refactor tương lai của `packages/tui/src/components/loader.ts` sẽ làm rơi nó trong im lặng. Chỉ khẳng định tab/bề rộng được kỳ vọng đỏ trước bước 7.
+   Neo: `packages/coding-agent/test/extension-working-message.test.ts`
+
+9. **B3.** Thêm entry point của dải gợi ý vào `packages/tui/src/chrome/keybinding-hints.ts` bên cạnh `boundKeys` (:33-36) và `appKey` (:44-47). Thêm field gợi ý do plugin đóng góp vào literal `ExtensionUIContext` trong `extension-ui-controller.ts` (object mở đầu tại :120; `setStatus` ở :128, `setWorkingMessage` ở :129). Đường phản hồi **PHẢI** gọi `this.ctx.ui.requestRender()` — hãy sao đúng hình dạng của `setHookStatus` ở :591-594, bản đó gọi ở :593. Chỉ điều khiển component sẽ không đẩy được frame và test sẽ treo.
+   Neo: `packages/tui/src/chrome/keybinding-hints.ts:33-47; packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:128-129, :591-594`
+
+10. **B3.** Viết `packages/coding-agent/test/extension-status-hint-strip.test.ts`. Phủ: một mode có phím không mặc định (vim normal, hoặc bash input mode) render ra gợi ý nêu tên phím và hành động; thang bề rộng được tôn trọng; và dải gợi ý **VẮNG MẶT** trong RPC, ACP và headless. Hãy xác nhận trước rằng id `status` thực sự có trong union — có, ở `packages/tui/src/status-line/schema.ts:4` — nhưng có trong KHÔNG preset nào, và đó chính xác là lý do B3 không cần nó, cũng là lý do "C1 blocker" của plan là sai.
+    Neo: `packages/coding-agent/test/extension-status-hint-strip.test.ts; packages/tui/src/status-line/schema.ts:4`
+
+11. **A4-PERSIST — HOÃN, ĐỪNG BẮT ĐẦU TRONG SÓNG NÀY.** Sau khi M2 WI-8a hạ cánh, `setPluginSetting` trong `manager.ts` (:942-949) phải ngừng lưu nguyên văn một giá trị `secret: true` vào `omp-plugins.lock.json` qua `#saveRuntimeConfig`. Hãy xác định lại neo vào lúc đó: WI-8a viết lại `getPluginSettings` (:929), `setPluginSetting` (:942) và `deletePluginSetting` (:954) lên một substrate Settings mới, nên :942-949 **SẼ KHÔNG CÒN LÀ DÒNG ĐÚNG**. Ship nó thành một commit riêng với một ngày ngân sách riêng. Đừng gộp vào nửa hiển thị — tổng ở mục 6 của plan chỉ tính nửa hiển thị.
+    Neo: `packages/coding-agent/src/extensibility/plugins/manager.ts:942-949 (AFTER WI-8a: re-locate)`
+
+### Hình dạng code
+
+```ts
+// packages/tui/src/components/settings-list.ts — the structural fix.
+// `currentValue` today does double duty: it is painted AND round-tripped into
+// submenu()/values.indexOf(). Splitting the painted copy out is what stops a
+// selection from repainting plaintext (see :797).
+export interface SettingItem {
+  id: string;
+  label: string;
+  description?: string;
+  warning?: string;
+  /** Round-trip value. Fed to submenu() and values.indexOf(); may be secret. */
+  currentValue: string;
+  /** Painted + searched instead of currentValue when set. Use for masked secrets. */
+  displayValue?: string;
+  values?: string[];
+  submenu?: (currentValue: string, done: (selectedValue?: string) => void) => Component;
+  changed?: boolean;
+  heading?: boolean;
+}
+
+// :97  — search must not index the secret either
+export function getSettingItemFilterText(item: SettingItem): string {
+  let text = `${item.label} ${item.id} ${item.displayValue ?? item.currentValue}`;
+  ...
+}
+
+// :515 — paint path
+const valuePlain = truncateToWidth(String(item.displayValue ?? item.currentValue ?? ""), valueMaxWidth, Ellipsis.Omit);
+
+// packages/tui/src/overlays/plugin-settings.ts — in buildPluginConfigItems only.
+// :152 FROZEN — this stays the single place a secret is masked.
+const displayValue = schema.secret && currentValue ? "••••••••" : String(currentValue ?? "(not set)");
+
+// enum branch (:162-182) — add the field, do NOT change currentValue
+} else if (schema.type === "enum") {
+  items.push({
+    id: `config:${key}`,
+    label: `  ${key}`,
+    description: schema.description || `Configure ${key}`,
+    currentValue: String(currentValue ?? schema.default ?? ""),  // unchanged: round-trip
+    displayValue,                                               // added: painted
+    submenu: (cv, done) => createConfigEnumPanel(key, ..., cv, ...),  // unchanged: preselect still works
+  });
+}
+
+// packages/coding-agent/src/modes/interactive-mode.ts — B2, sanitize at the boundary
+setWorkingMessage(message?: string): void {
+  if (message === undefined) {
+    this.#pendingWorkingMessage = undefined;
+    if (this.loadingAnimation) this.loadingAnimation.setMessage(DEFAULT_WORKING_MESSAGE);
+    return;
+  }
+  const safe = truncateToWidth(replaceTabs(message), TRUNCATE_LENGTHS.CONTENT);
+  if (this.loadingAnimation) { this.loadingAnimation.setMessage(safe); return; }
+  this.#pendingWorkingMessage = safe;
+}
+```
+
+### Hợp đồng test
+
+Bốn hợp đồng, mỗi mục một cái, mỗi cái một hình thức hỏng đặt tên.
+
+**A4-DISPLAY — "một plugin setting được đánh dấu secret không bao giờ hiện giá trị của nó".** Người tiêu dùng: một người đọc bảng cài đặt. Hồi quy mà nó phòng: mask sống sót qua một vòng chọn–đọc lại. Test dựng các setting item cho một plugin mà manifest khai báo một enum setting với `secret: true` và một giá trị đã biết, khẳng định dòng đã vẽ chứa mask chứ không chứa giá trị, rồi kích hoạt callback select của submenu và khẳng định dòng **VẪN** chứa mask. Nửa thứ hai mới là điểm mấu chốt: một mask chỉ áp dụng lúc build sẽ đỏ ở đây, vì settings-list.ts:797 gán lại `currentValue` khi chọn. Cũng khẳng định một enum không phải secret vẫn hiện giá trị của nó — đó là hợp đồng phủ định chứng minh mask có điều kiện, không phải một dấu "•" trải khắp. Cuối cùng khẳng định các lớp bảo vệ sẵn có bằng cách chạy đường form string với một submit rỗng và kiểm tra secret đã lưu không đổi một byte (điều này xanh ngay hôm nay; giữ nó làm pin hồi quy cho cặp `empty: "cancel"` + `initialValue: undefined` — chính cặp đó ngăn một lần lưu rỗng xoá mất secret).
+Tệp: `packages/coding-agent/test/plugin-settings-secret.test.ts`
+
+**B1 — "một plugin có thể override tool renderer tích hợp, và khe đó vẫn mở".** Người tiêu dùng: bất kỳ tác giả plugin nào, cộng bảo đảm module-identity của loader. Test nạp thư mục fixture theo đường dẫn qua `loadExtensions` và khẳng định `toolRenderers.grep` là của fixture, không phải `grepToolRenderer` tích hợp (`tui/src/tools/grep.ts:241`). Rồi ba bất biến được ghim: (a) `@oh-my-pi/pi-tui/tools` vẫn phân giải được qua export map, kiểm bằng **hành vi của RESOLVER** chứ không bằng cách đọc package.json; (b) record `toolRenderers` vẫn mở rộng được lúc runtime — gán rồi khôi phục trong `afterEach` để file này không đầu độc file khác; (c) remap của loader vẫn trao cho import phía plugin **cùng** một module object mà phía host đang giữ, khẳng định bằng `===` trên chính module object mỗi bên nhận. Toàn bộ cơ chế là module identity, nên cái này phải chạy dưới một lần nạp plugin thật, không phải một import in-process — static import của fixture sẽ biến (c) thành mệnh đề đúng-vô-nghĩa.
+Tệp: `packages/coding-agent/test/plugin-tool-renderer-override.test.ts`, fixture `packages/coding-agent/test/fixtures/tool-renderer-override/index.ts`
+
+**B2 — "working message của plugin không thể phá vỡ bố cục TUI".** Người tiêu dùng: mọi người dùng có plugin cài đặt. Khẳng định một message chứa tab thật và 500 ký tự hiển thị mà không có byte 0x09 nào ở bất cứ đâu trong output, và bề rộng hiển thị nằm trong ngân sách dòng. Khẳng định `undefined` khôi phục mặc định. Khẳng định đặt cùng một chuỗi hai lần chỉ yêu cầu một lần render — đây là cổng chống thrash cache, và hôm nay nó đúng nhờ một canh bên trong `packages/tui/src/components/loader.ts`.
+Tệp: `packages/coding-agent/test/extension-working-message.test.ts`
+
+**B3 — "một plugin có thể đóng góp một gợi ý phím, và chỉ trong TUI tương tác".** Người tiêu dùng: một người ở vim normal mode. Khẳng định dòng trạng thái nêu tên phím không mặc định và hành động của nó; khẳng định thang bề rộng được tôn trọng; khẳng định dải gợi ý **VẮNG MẶT** trong RPC, ACP và headless. Các khẳng định vắng mặt ở đây mang tính gánh trọng, không phải trang trí.
+Tệp: `packages/coding-agent/test/extension-status-hint-strip.test.ts`
+
+### Xác minh
+
+```bash
+# TIỀN ĐỀ MÔI TRƯỜNG — build addon native một lần, rồi mọi cổng test đều chạy:
+#   brew install ninja
+#   bun --cwd=packages/natives run build   # exit 0
+# KHÔNG có cổng nào "không chạy được trên máy này" — thiếu đúng một bước build.
+
+bun run check:ts
+#   Exits 0 on a clean tree (verified at HEAD e040a60, ~24s wall warm / ~2 min cold;
+#   pi-catalog 2.3s). Needs no addon.
+
+bun test packages/coding-agent/test/plugin-settings-secret.test.ts \
+         packages/coding-agent/test/plugin-tool-renderer-override.test.ts \
+         packages/coding-agent/test/extension-working-message.test.ts \
+         packages/coding-agent/test/extension-status-hint-strip.test.ts
+#   Runs now — the addon above is already built on this tree. What follows describes
+#   a machine BEFORE that step, i.e. the conditional premise, not this tree: there most
+#   (not all) test files in the repo die at import, e.g.
+#     bun test packages/coding-agent/test/bash-executor.test.ts → 0 pass, 1 fail, 1 error
+#     bun test packages/tui/test/apply-patch-preview-render.test.ts → 0 pass, 1 fail, 1 error
+#   Same error for both: `Failed to load pi_natives native addon for darwin-arm64`.
+#   Not universal even there: `bun test packages/tui/test/` still ran 17 of 222 files.
+#   The four test files must still be WRITTEN and their assertions reviewed. Do not report this
+#   wave as verified on the strength of check:ts alone — check:ts does not run a single assertion.
+```
+
+### Cổng hoàn thành
+
+Cả bốn mục DONE khi, mỗi mục một commit: (1) `bun run check:ts` exit 0; (2) bốn file test có tên nêu trên tồn tại và mỗi file bảo vệ đúng hợp đồng ở trên — nhưng chỉ ba file của A4, B2, B3 là ba cổng đỏ được thật, tức đỏ trước công việc và xanh sau đó; (3) một khi addon đã build, cả bốn file test đều pass; (4) với A4, khẳng định mask đúng **cả trước và sau** một vòng chọn trong submenu — một mask chỉ giữ ở lần render đầu KHÔNG phải là xong; (5) với B1, ba bất biến được ghim đều đúng qua **chỉ** nhánh remap SOURCE, và fixture được nạp bằng đường dẫn chứ không static import — nhưng đây là cổng XANH TRƯỚC VÀ SAU, là quả ngựa báo động, KHÔNG phải bằng chứng tiến độ; B1 không được tính là một mục đã hoàn thành việc gì; (6) A4-PERSIST hoặc được ship trên đường ghi sau WI-8a, hoặc bị ghi rõ ra khỏi sóng này với việc hoãn được ghi trong PR — nó không bao giờ được gộp lặng lẽ vào commit hiển thị.
+
+Nửa mang tải trọng của sóng là mục (4). Người chỉ mask lúc build sẽ tạo ra một test lần-render-đầu xanh và một rò rỉ đã ship ở lần tương tác thứ hai.
+
+Cổng **có** thực sự đỏ được: Ba trong bốn cổng đỏ thật trước công việc và xanh sau đó. (A4) khẳng định round-trip đỏ trên cây sạch vì settings-list.ts:797 gán lại `currentValue` khi chọn, vẽ lại bản rõ — một mask chỉ lúc build không làm nó xanh. (B2) khẳng định byte tab đỏ vì `setWorkingMessage` (:6645-6660) đưa thẳng chuỗi của plugin cho `loadingAnimation.setMessage` mà không làm sạch gì. (B3) các khẳng định về dải gợi ý đỏ vì không tồn tại entry point nào như thế. (B1) là cổng yếu nhất và phải được đối xử như vậy: nó ghim một cơ chế vốn đã chạy, nên trên cây sạch nó xanh **trước và sau**. Giá trị của nó thuần là quả ngựa báo động chống một refactor tương lai đóng lại khe đó — nó không thể đỏ vì bất cứ thứ gì làm trong sóng này, và không nên được tính là bằng chứng rằng B1 đã hoàn thành việc gì. Rủi ro "static echo" là có thật ở đây, và đó là lý do fixture bắt buộc phải được nạp bằng đường dẫn: static import sẽ làm khẳng định module-identity trở nên đúng-vô-nghĩa. Vì vậy, nếu cần một danh sách cổng đỏ được để tương lai so sánh, hãy ghi A4/B2/B3 — ba cổng đó — và loại B1 khỏi danh sách đó.
+
+### Phụ thuộc
+
+- **M2 WI-8a** — CHẶN **A4-PERSIST ONLY** (`manager.ts:942-949`). A4-display, B1, B2 và B3 thì không bị chặn.
+- **M2 (cấp sóng)** — như plan nói, ranh giới giữa "M2 trao hệ thống plugin" và "M2 trao đúng những extension point này" không nhìn thấy từ repo này. Khe duy nhất **có** nhìn thấy là status line, và nó không thuộc M2: schema.ts là một union 27 id đóng, status-line/index.ts là một barrel 6 dòng không có `register*` nào, và `setStatus` đã được nối hết từ đầu đến cuối. Đó là lý do M3-C1 đã bị gỡ khỏi M3 và B3 không bị C1 chặn.
+- **M2 A8** — chỉ cho khẳng định tmux-stub của B3, khẳng định duy nhất chứng minh hai mục đã hạ cánh đúng thứ tự. Nếu A8 chưa hạ cánh, hãy ship B3 mà thiếu đúng khẳng định đó thay vì chặn cả mục.
+
+**Chặn:**
+
+- A4-PERSIST không thể ship cho tới khi nửa A4-display của sóng này đã hạ cánh, vì mask hiển thị mà không có cái sửa lưu trữ tạo ra cảm giác an toàn giả.
+- Mục nợ bàn giao M4/M5 #4 — "có nên nâng khe tool-renderer thành một API công khai `registerToolRenderer` không". B1 ghim khoảng trống sẵn có; nó cố ý **KHÔNG** chế tác API đó. Quyết định thuộc về M4/M5.
+
+### Rủi ro
+
+Cách dễ sai nhất: coi A4 là một sửa hiển thị một dòng. `secret?: boolean` đã tồn tại ở **cả** schema phía TUI (`plugin-settings.ts:31`) lẫn plugin manifest (`plugins/types.ts:63`), nên không có gì để thêm, và thay đổi một dòng hiển nhiên — mask `currentValue` của enum tại :167 — tạo ra một test lần-render-đầu pass và một rò rỉ đã ship, vì settings-list.ts:797 gán lại `currentValue` ngay khi người dùng chọn một giá trị, và cùng phép gán lại đó còn phá preselection (createConfigEnumPanel đưa `currentValue` thẳng vào SelectFormField). Mask chỉ giữ được nếu nó mang tính cấu trúc, tức một field vẽ riêng mà đường cập nhật không bao giờ chạm tới. Rủi ro nhìp hai: ở B1, một người đặt `PI_BUNDLED=1` để chạy remap tại `legacy-pi-compat.ts:2742` như neo dossier của plan gợi ý. Hằng số đó được đọc một lần lúc import, và dưới `bun test` nhánh virtual-namespace vốn đã chết — ép nó sẽ hỏng ngay từ dòng đầu.
+
+### Cần người quyết
+
+- **Vị trí test A4-DISPLAY — ĐÃ CÓ câu trả lời trong cây, không cần chờ người.** Cả bốn đơn vị bị test đều nằm ở packages/tui (`settings-list.ts`, `plugin-settings.ts`), nhưng cả HAI vị trí đều đã có sẵn harness: `packages/tui/test/settings-list.test.ts` (19KB) đã dựng `testTheme` trả về text thô và assert trên `list.render(width).join("\n")` — đủ cho phần assert vẽ; và `packages/coding-agent/test/modes/components/plugin-list-marketplace.test.ts:334-360` đã dựng manifest có `settings` + `spyOn(manager, "getPluginSettings")` rồi render — đúng khuôn, chỉ cần đổi `type: "boolean"` thành `type: "enum"` + `secret: true`. Lưu ý quyết định kỹ thuật: `buildPluginConfigItems` (`plugin-settings.ts:138`) KHÔNG export, nên test ở coding-agent không gọi nó trực tiếp được — phải đi qua `MarketplacePluginDetailComponent` (:474) hoặc `PluginDetailComponent` (:352). Khuyến nghị: đặt test ở `packages/coding-agent/test/modes/components/` cạnh file marketplace hiện có, để tái dùng đúng cái `initTheme()` + `spyOn` seam đã chạy. Dù chọn cái nào, test không được import fixture bằng một đường dẫn mà runtime không dùng.
+- **Đích đến của A4-PERSIST, và plan sai ở đâm theo cách tốn thời gian thật.** Plan nói repo không có secret store để lui về, và suy từ một lần grep `keytar|keychain|safeStorage|encrypt` rằng không tồn tại. Có tồn tại: `~/.omp/agent/secrets.yml` và `<cwd>/.omp/secrets.yml`, nạp ở `packages/coding-agent/src/secrets/index.ts:163-168`, dựa trên `SecretObfuscator` và một khoá theo từng bản cài ở `~/.omp/agent/secret-placeholder.key` (`secrets/index.ts:16-53`), tài liệu ở `docs/secrets.md:35-42`. Grep bỏ sót vì store là một file YAML, không phải một API keyring. Nên lựa chọn **KHÔNG** phải là "bịa ra chỗ để đặt" — mà là: định tuyến secret của plugin vào `secrets.yml`, hay cho registry Settings một tầng đánh dấu secret. Cần một người chọn. Cái giá đánh đổi là thật: settings được registry định kiểu và kiểm tra, còn secrets.yml là một định dạng riêng không định kiểu, và đi qua nó nghĩa là plugin settings thôi được kiểm tra như mọi thứ khác. Đừng để A4-PERSIST bắt đầu trước khi câu này được trả lời.
+- **A4-PERSIST có thật sự cần một tầng lưu trữ riêng không, hay encrypt-at-rest mới là câu trả lời trung thực?** secrets.yml là bản rõ trên đĩa với placeholder đảo ngược được cho đường MODEL; nó là một hệ thống che bớt, không phải một vault. Nếu một secret của plugin là API token, secrets.yml vẫn là bản rõ đối với bất cứ thứ gì đọc được file. Đây là câu hỏi phạm vi cho người phụ trách mục đó, và nằm ngoài phạm vi sóng này.
+- **Khẳng định tmux-stub của B3** (khẳng định chứng minh thứ tự A8) bị bỏ nếu A8 chưa hạ cánh. Hãy hỏi chủ sở hữu A8 xem nên hoãn cả mục hay chỉ riêng khẳng định đó; plan coi bằng chứng về thứ tự là mang tải trọng, điều đó lập luận rằng nên hoãn.
+
+### Đính chính so với plan
+
+Cột "claim" dẫn nguyên văn điều plan nói, giữ nguyên đường dẫn và số dòng để neo còn đúng.
+
+| claim | verdict | correction | bằng chứng |
+| --- | --- | --- | --- |
+| `secret?: boolean` at plugin-settings.ts:30 is a thing to add for A4. | SAI — đã tồn tại sẵn | Cờ đã có ở dòng 31, cờ phía manifest đã có ở `packages/coding-agent/src/extensibility/plugins/types.ts:63` (`PluginSettingBase`, tài liệu hoá "If true, mask value in UI and logs"). Không có việc schema nào trong A4-display. Khiếm khuyết hẹp hơn plan nói: đúng một nhánh không tôn trọng cờ. | `awk NR>=25&&NR<=35 packages/tui/src/overlays/plugin-settings.ts` → 31\| secret?: boolean; — và `git grep -n secret -- packages/coding-agent/src/extensibility/plugins/types.ts` → 63\| secret?: boolean; |
+| The enum secret bug is at plugin-settings.ts:166. | LỆCH MỘT | Dòng 166 là `description: schema.description \|\| \`Configure ${key}\``. Chỗ đọc không mask là dòng 167: `currentValue: String(currentValue ?? schema.default ?? "")`. Hãy chỉ người thực hiện vào 167. | `awk NR>=160&&NR<=172 packages/tui/src/overlays/plugin-settings.ts` → 166\| description: … 167\| currentValue: String(currentValue ?? schema.default ?? ""), |
+| plugin-settings.ts:187 is the string branch that already masks correctly — freeze it. | NEO GỢI Ý — bất biến nằm ở chỗ khác | Dòng 187 lại là một dòng `description:`. Bản thân việc mask xảy ra đúng một lần, ở dòng 152: `const displayValue = schema.secret && currentValue ? "••••••••" : String(currentValue ?? "(not set)")`, và được tiêu thụ ở dòng 188 (`currentValue: displayValue`). Bất biến cần đóng băng là 151-152, không phải 187. | `git grep -n secret -- packages/tui/src/overlays/plugin-settings.ts` → 31, 152, 667, 668. Chỉ 152 mask; 188 và 167 là hai nơi tiêu thụ, và chỉ 188 tiêu thụ mask. |
+| The `empty: "cancel"` policy is at plugin-settings.ts:662. | LỆCH BẢY | Nó ở dòng 669, bên trong `createConfigInputPanel` (:650-…). Dòng 662 là dựng `TextFormField`. Hãy ghép nó với dòng 668 (`initialValue: !schema.secret ? currentValue : undefined`) — chính hai dòng đó, chứ không riêng `empty`, mới ngăn một lần lưu rỗng xoá secret đã lưu. | `awk NR>=655&&NR<=670 packages/tui/src/overlays/plugin-settings.ts` → 667\| secret: schema.secret, 668\| initialValue: !schema.secret ? currentValue : undefined, 669\| empty: "cancel", |
+| The repo has no secret store to fall back to, so A4-PERSIST must invent somewhere to put the value. | SAI — một store có tồn tại và lần grep của plan bỏ sót | Có: `~/.omp/agent/secrets.yml` (global) và `<cwd>/.omp/secrets.yml` (project), do `packages/coding-agent/src/secrets/index.ts:163-168` nạp, dựa trên `SecretObfuscator` và một khoá theo từng bản cài ở `~/.omp/agent/secret-placeholder.key` (`secrets/index.ts:16-53`, ghi ở mode 0o600 kèm canh tranh đua khi tạo). Tài liệu ở `docs/secrets.md:35-42`. Plan grep `keytar\|keychain\|safeStorage\|encrypt` rồi kết luận không có — nhưng store là một file YAML, không phải API keyring, nên grep chỉ trả về các kết quả không liên quan. Câu hỏi của A4-PERSIST vì thế KHÔNG phải "đặt ở đâu" mà là "định tuyến sang secrets.yml, hay cho registry Settings một tầng đánh dấu secret". Lưu ý plan không nói: secrets.yml là bản rõ trên đĩa và là hệ thống CHE BỚT cho MODEL, không phải vault, nên bản thân nó không làm cho API token của plugin an toàn lúc nghỉ. Xem Cần người quyết #2 và #3. | `awk NR>=160&&NR<=170 packages/coding-agent/src/secrets/index.ts` → 167\| const projectPath = path.join(cwd, ".omp", "secrets.yml"); 168\| const globalPath = path.join(agentDir, "secrets.yml"); — và `docs/secrets.md:41-42`, các dòng bảng "Global \| ~/.omp/agent/secrets.yml" / "Project \| <cwd>/.omp/secrets.yml". |
+| Masking the enum's `currentValue` at build time fixes the leak. | CHƯA ĐỦ — cách sửa phải mang tính cấu trúc, và plan không thấy vì sao | `SettingItem.currentValue` kiêm hai việc: nó vừa được vẽ vừa được round-trip. settings-list.ts:797 gán lại `item.currentValue = selectedValue` bên trong done-callback của submenu, nên một mask lúc build sẽ vẽ lại bản rõ ngay khi người dùng chọn một giá trị. Nó còn phá luôn preselection, vì createConfigEnumPanel (:624-647) đưa `currentValue` thẳng vào `SelectFormField({ items: values.map(...), currentValue })` — một giá trị đã mask không khớp item nào. Cách sửa đúng là tách bản vẽ ra: thêm `displayValue?: string` vào `SettingItem` (settings-list.ts:24-43), đọc `item.displayValue ?? item.currentValue` ở chỗ vẽ (:515) và corpus tìm kiếm (:97), và để :795 / :797 / :804 / :318 tiếp tục đọc và ghi giá trị thật. Đây là phát hiện duy nhất trong sóng mà plan bỏ lỡ hoàn toàn, và nó là khác biệt giữa một cách sửa đã ship và một test xanh. | `packages/tui/src/components/settings-list.ts` → 34\| currentValue: string; 97\| let text = \`${item.label} ${item.id} ${item.currentValue}\`; 515\| const valuePlain = truncateToWidth(String(item.currentValue ?? ""), …); 795\| this.#submenuComponent = item.submenu(item.currentValue, (selectedValue?: string) => { 797\| item.currentValue = selectedValue; 804\| const currentIndex = item.values.indexOf(item.currentValue); — cộng `packages/tui/src/overlays/plugin-settings.ts:633-638` (createConfigEnumPanel → SelectFormField currentValue). |
+| B2: "no core change needed"; sanitizer is the only constraint. | ĐÚNG về nội dung, nhưng hai trong ba khẳng định plan định đã xanh | Khoảng trống là thật và đã xác nhận: `setWorkingMessage` (interactive-mode.ts:6645-6660) đưa thẳng chuỗi của plugin cho `loadingAnimation.setMessage` không có replaceTabs và không cắt. Nhưng hai kiểm tra còn lại của plan đã xanh ngay hôm nay — `undefined` khôi phục mặc định ở :6646-6651, và dedupe khi lặp lại cùng chuỗi giữ được vì `packages/tui/src/components/loader.ts:145-152` canh `if (message === this.message) return;`. Vẫn giữ cả hai khẳng định, nhưng phải biết rằng chỉ khẳng định tab/bề rộng là đỏ trước cách sửa, và rằng dedupe hiện phụ thuộc vào một canh trong `packages/tui/src/components/loader.ts` nằm ba khung hình dưới biên plugin. `setWorkingMessage` ở :6645, không phải :424 mà plan đưa cho DEFAULT_WORKING_MESSAGE (hằng số đó ở :427). | `awk NR>=6640&&NR<=6680 packages/coding-agent/src/modes/interactive-mode.ts` → 6645\| setWorkingMessage(message?: string): void { 6647\| this.#pendingWorkingMessage = undefined; 6649\| this.loadingAnimation.setMessage(DEFAULT_WORKING_MESSAGE); 6655\| this.loadingAnimation.setMessage(message); 6659\| this.#pendingWorkingMessage = message; 427\| const DEFAULT_WORKING_MESSAGE = "Working…"; — và `packages/tui/src/components/loader.ts:145-152` (canh dedupe). |
+| extension-ui-controller.ts:120 is the setWorkingMessage tap, :119 is setStatus, :586 is where requestRender lives. | CẢ BA SAI | :120 là `const uiContext: ExtensionUIContext = {` (object literal mở ở đó). Nối `setWorkingMessage` ở :129 và `setStatus` ở :128. `requestRender` không ở :586 — :586 đóng `showToolError`; lệnh gọi thật là `this.ctx.ui.requestRender()` ở :593 bên trong `setHookStatus` (:591-594). Cảnh báo của plan rằng requestRender nằm ở controller chứ không ở StatusLineComponent là ĐÚNG và chính là cái bẫy làm treo test B3; chỉ cần trỏ sang :593. | `awk NR>=110&&NR<=130` → 120\| const uiContext: ExtensionUIContext = { 128\| setStatus: (key, text) => this.setHookStatus(key, text), 129\| setWorkingMessage: message => this.ctx.setWorkingMessage(message), ; `awk NR>=575&&NR<=595` → 586\| } 591\| setHookStatus(key: string, text: string \| undefined): void { 593\| this.ctx.ui.requestRender(); |
+| `ExtensionUIContext` is at extensions/types.ts:100-340. | SAI KHOẢNG | `export interface ExtensionUIContext` nằm ở dòng 235 và interface đóng ở dòng 350. Dòng 96-130 là khối import chỉ-kiểu nằm phía trên. Một khoảng 100-340 chỉ người thực hiện vào vùng import và cắt mất phần đuôi của interface. | `git grep -n 'interface ExtensionUIContext' -- packages/coding-agent/src` → `packages/coding-agent/src/extensibility/extensions/types.ts:235`; và `awk NR>=330&&NR<=350` → 350\| } (dấu ngoặc đóng của interface). |
+| Dossier anchor correction: `legacy-pi-compat.ts:2657` is resolveLegacyPiSpecifier, `:2736` is the onResolve filter, the real remap is `:2742`. | ĐÃ XÁC NHẬN ĐÚNG — mang sang tiếp | Cả ba đều đúng ở HEAD. Cũng đã xác nhận hệ quả thực tế mà plan rút ra: `USE_BUNDLED_PI_MODULES` ở :20 là `isCompiledBinary() \|\| Boolean(process.env.PI_BUNDLED)`, false dưới `bun test`, nên nhánh source namespace-file :2736 là nhánh duy nhất chạy và remap virtual-namespace ở :2742 là code chết trong test. Một nhịch nhỏ bên cạnh: `:2752-2754` mà plan dùng cho remap bundled-host trỏ vào phần đuôi của onResolve; onLoad nền cho nó ở :2753-2756. | `awk NR>=2728&&NR<=2760` → 2736\| build.onResolve({ filter: LEGACY_PI_SPECIFIER_FILTER, namespace: "file" }, resolveLegacyPiSpecifier); 2742\| resolveBundledVirtualSpecifier(args.path, BUNDLED_HOST_NAMESPACE), 2753\| build.onLoad({ filter: /.*/, namespace: BUNDLED_HOST_NAMESPACE }, …; `awk NR>=15&&NR<=25` → 20\| const USE_BUNDLED_PI_MODULES = isCompiledBinary() \|\| Boolean(process.env.PI_BUNDLED); `awk NR>=2650&&NR<=2665` → 2657\| function resolveLegacyPiSpecifier(… |
+| The TUI export map `./*` → `./src/*.ts` lives at packages/tui/package.json:93-96. | LỆCH MỘT | Nó ở :94-97. Tương tự, `./tools` ở :86-89 và `./status-line` ở :90-93, mà import của fixture B1 phụ thuộc vào. | `awk NR>=85&&NR<=105 packages/tui/package.json` → 94\| "./*": { 95\| "types": "./src/*.ts", 96\| "import": "./src/*.ts" 97\| }, |
+| B3 is blocked on the `status` id being absent from the preset. | ĐÚNG nhưng sắc hơn plan nói | Cả hai nửa đều khớp và kết luận (B3 không bị C1 chặn) là đúng. Nói sắc hơn: id `status` **CÓ** trong union đóng ở `packages/tui/src/status-line/schema.ts:4`, và vắng mặt khỏi danh sách segment trái/phải của mọi preset trong presets.ts (:5, :16, :26, :36, :59). Vậy nên `setHookStatus` đã nối đầy đủ trong code (component.ts:959-970) và chỉ đơn giản là không tới được mặc định. component.ts:963 đã có canh so sánh bằng (`if (this.#hookStatuses.get(key) === text) return;`) và :969 vô hiệu cache render. Cũng đã xác nhận: `status-line/index.ts` là một barrel 6 dòng không có `register*` nào, nên khe đăng ký quả thật sự không thuộc M2. | `awk NR<=30 packages/tui/src/status-line/schema.ts` → 4\| "status", (27 id, 2-30); `git grep -c '"status"' -- packages/tui/src/status-line/presets.ts` → 0; `awk NR>=955&&NR<=970 packages/tui/src/status-line/component.ts` → 959\| setHookStatus( 963\| if (this.#hookStatuses.get(key) === text) return; 969\| this.#invalidateStatusLineRenderCache(); |
+| keybinding-hints.ts:29 and :42 are the two hint sites B3 touches. | CẢ HAI TRỎ VÀO JSDOC, KHÔNG PHẢI CODE | Dòng 29 nằm trong doc comment của `boundKeys`; dòng 42 nằm trong doc comment của `appKey`. Bản thân các hàm là `boundKeys` ở :33-36 và `appKey` ở :44-47. Người sửa "dòng 29" sẽ sửa một comment và nhận về một no-op vẫn typecheck. | `awk '{printf "%d\| %s\n", NR, $0}' packages/tui/src/chrome/keybinding-hints.ts` → 29\| * Keys bound to `action`, or `fallback` … 33\| export function boundKeys(… 42\| /** Primary key bound to an app action … 44\| export function appKey(… |
+| Status-line is not M2's seam, so M3-C1 was correctly removed from M3 and wave 4 is gated on M2. | ĐÃ XÁC NHẬN — cách đóng khung cấp sóng là đúng | Đã xác nhận độc lập. Bề mặt status-line là một union 27 id đóng (schema.ts:2-30), barrel không có `register*` nào, và `setStatus` đã nối hết từ đầu đến cuối (extension-ui-controller.ts:128 → :591-594 → component.ts:959-970). Điều duy nhất cần mang sang như một đính chính còn sống chứ không phải một sự thật đã chốt: A4 KHÔNG bị M2 chặn đồng đều. Nửa hiển thị của nó không bị chặn và là mở khoá rẻ nhất của sóng. Chỉ đọc tiêu đề sóng rồi hoãn cả bốn mục sẽ tốn một ngày chờ đợi không cần thiết — và đó là lý do plan đã đánh dấu A4 là ngoại lệ. | `awk NR<=35 packages/tui/src/status-line/schema.ts` → 2\| export const STATUS_LINE_SEGMENT_IDS = [ … 30\| ] as const; ; `cat packages/tui/src/status-line/index.ts` → 6 star re-exports, không có register*; `git grep -n setHookStatus -- packages/tui/src` → `packages/tui/src/status-line/component.ts:959` only. |
+
+
+---
+
+
+## Sóng 5 — C2 (plugin ví dụ bị tắt mặc định) + D2 (segment tỉ lệ hit)
+
+**Sóng / phạm vi:** M3 wave 5. Hai mục status line sau đây — C2 và D2 — plan xếp vào vị trí người tiêu thụ đầu tiên của seam M2, nhưng kiểm chứng ở §Đính chính cho thấy chúng **không** tiêu thụ seam đó: C2 đi qua `ctx.ui.setStatus` đã nối sẵn từ trước, D2 chỉ là một bổ sung vào union lõi. C2 — một example plugin đã đóng gói nhưng bị tắt mặc định, chạy lệnh shell của chính người dùng và hiển thị stdout của lệnh đó trong status row; D2 — một segment `cache_hit_rate` báo đúng tỉ lệ hit mà segment `cache_hit` sẵn có đã tính, không có đếm ngược TTL.
+
+Hiệu ứng người dùng thấy: với C2, sau `omp plugin link` cộng với việc bật setting `enabled` thành true, stdout của lệnh của chính người dùng xuất hiện đúng một lần trong status row ở từng trigger trong bốn trigger plan nêu (tin nhắn assistant cuối, permission mode, vim mode, đổi model); khi setting vắng mặt hoặc false, status row giống hệt từng byte so với một phiên mà plugin chưa từng được nạp. Với D2, người dùng đặt `cache_hit_rate` trong preset status line của họ sẽ thấy đúng tỉ lệ cache-hit mà `cache_hit` hiện ra — không bao giờ có đếm ngược, không bao giờ có nhãn TTL.
+
+**Effort:** C2: M, ~3 ngày, phần lớn thời gian nằm ở danh sách kiểm thử chứ không phải ở code (một manifest, một file extension, và khoảng chín hành vi riêng biệt cần ghim). D2: S, ~1 ngày — thêm một thành viên union, một entry registry, một file test. Cả sóng ~3-4 ngày. Mức S của D2 là HỆ QUẢ của việc từ chối đếm ngược, không phải một ước lượng miễn phí; đừng dùng nó làm giấy phép để mở rộng lại nửa bị cắt.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/examples/extensions/user-shell-status/package.json` | tạo | Manifest plugin mới. Trường `omp` khai báo `extensions: ["./index.ts"]` và schema boolean `settings.enabled` với `default: false`. Hình dáng sao chép từ example `with-deps` đã kiểm chứng: khối `omp` của nó đúng là `{"extensions":["./index.ts"]}`. | Có. Mẫu: `packages/coding-agent/examples/extensions/with-deps/package.json` có `"omp": {"extensions": ["./index.ts"]}` ở dòng 6-10 (dòng 7 là `"extensions": [`). `files` trong `packages/coding-agent/package.json:41` đã có `"examples"`, nên nó đi kèm tarball npm mà KHÔNG cần sửa package.json. |
+| `packages/coding-agent/examples/extensions/user-shell-status/index.ts` | tạo | Bản thân extension. Đọc opt-in của chính nó qua `getPluginSettings`; `enabled` thiếu hoặc khác `true` thì return trước khi tiến trình nào được tạo ra. Chỉ sau cái cổng đó mới spawn lệnh của người dùng và đẩy stdout qua `ctx.ui.setStatus(key, text)`. Phải dùng logger tập trung, tuyệt đối không `console.*` (TUI đang sống). | Có. Đường đọc setting: `getPluginSettings(pluginName, cwd)` tại `packages/coding-agent/src/extensibility/plugins/loader.ts:474-482` trả `{...global, ...project}`; khoá vắng mặt cho ra `undefined`, nên cổng bắt buộc là `settings.enabled === true`, không bao giờ là kiểm tra truthiness. LƯU Ý: `packages/coding-agent/tsconfig.json` chỉ include `src`, `test`, `scripts` — `examples/` KHÔNG được `bun run check:ts` kiểm tra kiểu. Cổng (1) không bắt được lỗi trong file này; phải soi thủ công hoặc thêm `examples` vào include. |
+| `packages/coding-agent/test/user-shell-status-line.test.ts` | tạo | Test mới cho C2. Hợp đồng tắt-âm trước, rồi mới tới đường bật, các đường lỗi, việc gộp (coalescing), và các hợp đồng sanitize/chiều rộng. | Có. Test thuộc về `packages/coding-agent/test/`, KHÔNG phải `packages/tui/test/` — người tiêu thụ của seam nằm ở package coding-agent và dependency chỉ chạy theo hướng đó. |
+| `packages/tui/src/status-line/schema.ts` | sửa | Thêm id `cache_hit_rate` mới vào union đóng `STATUS_LINE_SEGMENT_IDS`. | Có. Mảng union nằm ở dòng 2-30 (`] as const;` ở 30); `1-33` của plan cũng bao phủ type `StatusLineSegmentId` dẫn xuất ở 32-33. Đếm lại: đúng 27 thành viên hiện tại, nên D2 thành 28. Khớp với con số "27 mục" của plan. |
+| `packages/tui/src/status-line/segments.ts` | sửa | Thêm entry `cache_hit_rate` vào registry `SEGMENTS`, uỷ quyền render cho `cacheHitSegment` sẵn có, để trong file chỉ có đúng một chỗ tính hit rate. | Có. `SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment>` ở dòng 919 — là Record exhaustive nên TypeScript bắt buộc phải có entry mới. Phép tính sẵn có là `cacheHitSegment` ở dòng 718-738 (plan ghi `718-737` là phần thân; object literal đóng ở 738). `ALL_SEGMENT_IDS` ở 957 là `Object.keys(SEGMENTS)`, nên gallery inventory tự nhặt id mới, không cần sửa gallery. |
+| `packages/tui/test/status-line-cache-hit-rate.test.ts` | tạo | Test mới cho D2: parity cùng tỉ lệ với `cache_hit`, hợp đồng âm không-có-đếm-ngược, và hợp đồng không-đóng-góp-khi-không-có-usage. | Có. Test anh em `packages/tui/test/status-line-cache-hit.test.ts` đã tồn tại (2.0 KB) — hãy đọc nó trước; đó là test anh em, không phải bản thay thế. |
+| `packages/catalog/src/compat/rules/` | sửa (thực tế: canh, KHÔNG đổi) | NO CHANGE. Đây là cái canh, không phải một việc. Plan định tuyến mọi TTL vào cây KDL; D2 cố ý không ship TTL nên không có gì để khai báo. Sửa bất cứ thứ gì ở đây là dấu hiệu một cái đếm ngược đã lọt ngược vào. | Có. Ghi lại như một hành động phi để người triển khai không đi tìm một trục KDL để điền. AGENTS.md cấm sửa tay compat JSON đã sinh; không áp dụng ở đây vì không có rule nào để thêm. |
+| `packages/coding-agent/package.json` | sửa (thực tế: KHÔNG cần đổi) | NO CHANGE REQUIRED. Đã ship thư mục example mới rồi. | Có. `files` ở dòng 41 là `"examples"`, đã kiểm chứng. Plan nói đúng rằng thư mục example là kênh phân phối duy nhất đi kèm tarball; nửa đóng gói đã xong sẵn. |
+
+### Các bước
+
+1. **DỪNG LẠI và đọc điều này trước khi viết bất kỳ dòng code nào.** §10 Q6 (trust) là blocker cứng cho C2 và nó **CHƯA ĐƯỢC TRẢ LỜI** tại HEAD 808b365. Plan (dòng 8942) yêu cầu câu trả lời phải được chép nguyên văn vào work item, và phải nêu PHẠM VI của nó: nó chỉ phủ C2, hay còn phủ mọi artifact khác mà M2 đưa cho code plugin (đáng chú ý là `ExtensionUIContext` còn sống)? Nếu Q6 không có câu trả lời, C2 trượt. **Đừng viết dòng spawn nào.** D2 không bị ảnh hưởng và có thể tiến hành. Neo: `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9166`.
+2. **Xác nhận tiền đề của blocker đó trong source thay vì tin số dòng của plan.** Đọc hai comment interface phát biểu rằng OMP không có cổng trust theo thư mục, và hai call site hard-code giá trị trả về. Chúng ở `types.ts:487-494` và `types.ts:548-562`, cùng `runner.ts:1264` / `agent-session.ts:7406` — KHÔNG phải `types.ts:462-470` và `:528-532` của plan, hai dải đó rơi vào các method interface không liên quan. Neo: `packages/coding-agent/src/extensibility/extensions/types.ts:487`.
+3. **Xác nhận `--trusted-extension` là công cụ của harness, không phải cổng trust cho người dùng cuối:** cờ đẩy vào `trustedExtensions` tại `flag-tables.ts:218` (`--extension` ở `:216`, alias `-e` ở `:217`) — plan ghi đúng cả hai, không lệch dòng nào — rồi `main.ts:1659-1660` đặt `disableExtensionDiscovery = true` cùng một allowlist đường dẫn tuyệt đối. Ghi điều này vào PR để reviewer thấy blocker đã được kiểm tra chứ không phải giả định. Neo: `packages/coding-agent/src/cli/flag-tables.ts:218`.
+4. **Tạo thư mục plugin kèm manifest.** Sao chép nguyên hình khối `omp` từ example `with-deps`. Khai báo `extensions: ["./index.ts"]` và khai báo `settings.enabled` là setting boolean với `default: false`. Default-false chính là toàn bộ câu chuyện an toàn — khoá thiếu phải được coi là tắt, không phải bật. Neo: `packages/coding-agent/examples/extensions/with-deps/package.json:7`.
+5. **Viết cổng opt-in của extension TRƯỚC, trước phần spawn.** Import `getPluginSettings` từ plugins loader (top-level import, không dynamic import theo AGENTS.md) và return sớm trừ khi `settings.enabled === true`. Dùng `=== true`, không kiểm tra truthiness: `getPluginSettings` gộp override global và project rồi trả `undefined` cho khoá vắng mặt. Neo: `packages/coding-agent/src/extensibility/plugins/loader.ts:474`.
+6. **Chỉ sau bước 5, mới thêm phần spawn.** Chạy nó mà không chặn đường render: lệnh phải được phép treo, và status row phải tiếp tục render trong lúc đó. Đẩy stdout qua `ctx.ui.setStatus(key, text)` dưới một khoá ổn định duy nhất để các lần lặp thay thế chứ không tích luỹ. Dùng `logger.*` cho mọi thứ chẩn đoán — `console.*` làm hỏng TUI. Neo: `packages/coding-agent/src/extensibility/extensions/types.ts:264`.
+7. **Trước khi viết test C2, đọc hết đường render để test khẳng định đúng hợp đồng thật:** `setStatus` được nối ở `extension-ui-controller.ts:128` → `controller.ts:591-594` (gọi `statusLine.setHookStatus` rồi `requestRender()` ở `:593`) → `component.ts:958-971`, nơi lưu vào một Map khoá theo status key, sắp xếp, và vô hiệu hoá render cache. Vì key là khoá Map, một trigger lặp lại với text giống hệt sẽ short-circuit ở `component.ts:963` — đó là điều làm cho "đúng một lần" trở thành sự thật. Neo: `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:591`.
+8. **Viết test C2 theo thứ tự này.** (a) TẮT-ÂM TRƯỚC: với không có khoá `enabled`, rồi lại với `enabled: false`, khẳng định zero spawn và status row đã render giống hệt từng byte so với một baseline chụp được khi plugin chưa từng nạp. (b) Sau đó bật và trỏ setting vào một lệnh in ra một chuỗi đã biết; chạy **từng trigger đã được tài liệu hoá trong plan** — tin nhắn assistant cuối, permission mode, vim mode, đổi model — và khẳng định chuỗi đó xuất hiện đúng một lần. LƯU Ý: `session_start` KHÔNG nằm trong bốn trigger đó; khối code ở §Hình dạng code chỉ minh hoạ cổng opt-in trên một event, extension thật phải đăng ký đủ bốn. (c) Lệnh exit khác 0 vẫn render. (d) Lệnh không bao giờ thoát vẫn render — đây là hợp đồng im-lặng-thất-bại và là case đơn lẻ quan trọng nhất. (e) Một loạt message event dồn dập gộp thành một lần gọi. (f) Lệnh in 10.000 ký tự, và lệnh in ra tab, đều render đã sanitize và nằm trong chiều rộng. Neo: `packages/coding-agent/test/user-shell-status-line.test.ts`.
+9. **Làm cho khẳng định (f) bám vào chuỗi sanitizer đã tồn tại thay vì thêm sanitization mới:** segment `status` gọi `sanitizeStatusText`, rơi xuống `sanitizeDisplaySingleLine` → `sanitizeDisplayText` → `replaceTabs(sanitizeText(text))`, rồi gộp các chuỗi newline liên tiếp và trim. Chú ý kỹ: chuỗi này KHÔNG có chặn trên độ dài — chiều rộng được ép sau đó bởi `truncateToWidth` tại `component.ts:3068` và bởi row layout. Vậy hãy khẳng định **ROW** nằm trong chiều rộng; đừng khẳng định sanitizer đã cắt. Neo: `packages/tui/src/status-line/segments.ts:201`.
+10. **Với D2, thêm id mới vào union đóng, rồi thêm entry tương ứng vào Record `SEGMENTS`.** Uỷ quyền render cho object `cacheHitSegment` sẵn có thay vì tính lại, để trong file chỉ có một phép tính hit rate chứ không phải hai phép tính có thể trôi lệch nhau. Neo: `packages/tui/src/status-line/schema.ts:2`.
+11. **Viết test D2.** Khẳng định, với cùng bộ fixture usage, rằng segment mới báo CÙNG tỉ lệ với `cache_hit` (đây chính là thứ chứng minh không có phép tính thứ hai). Rồi tới các hợp đồng âm: hàng đã render không chứa đếm ngược và không chứa nhãn TTL; khi không có dữ liệu usage thì segment không đóng góp gì thay vì đoán. Không thêm một test riêng cho "không đọc đồng hồ": dưới hình dẫn một-object của bước 10, `cache_hit_rate` và `cache_hit` là cùng một object nên mệnh đề đó không có nội dung quan sát được, và mọi cách viết nó đều rơi vào source-grep bị AGENTS.md cấm. Hợp đồng âm "hàng không chứa đếm ngược và không chứa nhãn TTL" đã phủ đúng cái rủi ro đó. Neo: `packages/tui/test/status-line-cache-hit-rate.test.ts`.
+12. **Quyết định hợp đồng âm cho C2/D2 từ điều M2-OQ3 thực sự đã quyết, không phải từ văn bản dossier gốc.** Plan nói rõ rằng claim "unknown ids are rejected" không điều kiện của dossier khớp với KHÔNG phương án nào trong ba phương án và không được phép test. Nếu OQ3 chọn phương án tiền tố `core:`/`ext:`, id literal của D2 sẽ đổi và D2 phải được viết sau đó; dưới hai phương án còn lại, D2 không bị chặn ngay hôm nay. Neo: `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8927`.
+13. **Chạy cổng.** `bun test` cần addon native: build một lần bằng `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là chạy được — đây là tiền đề môi trường, không phải hạn chế của máy. Nếu chưa build, runner báo 0 pass / 1 fail với `Failed to load pi_natives native addon for darwin-arm64`; tin kết quả test nào sau khi build. Song song, `bun run check:ts` không cần addon và chính là check thực sự kích hoạt Record `SEGMENTS` exhaustive. Neo: `package.json:94`.
+
+### Hình dạng code
+
+```typescript
+// D2 — one computation, two ids. Delegate; never recompute.
+// packages/tui/src/status-line/schema.ts:2-30 — add to the closed union:
+//   "cache_hit",
+//   "cache_hit_rate",   // NEW: same rate, no countdown, no TTL label
+//
+// packages/tui/src/status-line/segments.ts:919 — SEGMENTS is an exhaustive
+// Record<StatusLineSegmentId, StatusLineSegment>, so tsgo forces this entry:
+//   cache_hit_rate: cacheHitSegment,   // reuse the object at segments.ts:718-738
+//
+// Note: cacheHitSegment already renders a percentage only:
+//   const total = cacheRead + cacheWrite + input;
+//   const rate = (cacheRead / total) * 100;
+// There is no countdown in it today. D2 must not add one.
+
+// C2 — the opt-in gate, written before the spawn.
+// packages/coding-agent/examples/extensions/user-shell-status/index.ts
+import { getPluginSettings } from "../../../src/extensibility/plugins/loader";
+import { logger } from "@oh-my-pi/pi-utils";
+import type { ExtensionAPI } from "../../../src/extensibility/extensions/types";
+// LƯU Ý: ví dụ khác import từ "@oh-my-pi/pi-coding-agent". getPluginSettings chưa có export công khai (src/index.ts không re-export ./extensibility/plugins), nên đường import sâu này là lối thoát duy nhất — nó chạm vào nội bộ host. Cân nhắc ghi vào PR và xem lại khi M2 đóng gói plugin API.
+
+const PLUGIN_NAME = "user-shell-status";
+const STATUS_KEY = "user-shell";
+
+export default function activate(pi: ExtensionAPI): void {
+  pi.on("session_start", async (_event, ctx) => {
+    // Handler là (event, ctx) — xem ExtensionHandler tại extensions/types.ts:1242. Cần cả hai tham số:
+    // Gate FIRST. getPluginSettings returns undefined for an absent key, so this
+    // must be === true — a truthiness check would treat undefined as off but a
+    // string "false" as on.
+    const settings = await getPluginSettings(PLUGIN_NAME, ctx.cwd);
+    if (settings.enabled !== true) return;      // <-- the entire safety contract
+
+    const command = settings.command;
+    if (typeof command !== "string" || command.length === 0) return;
+
+    // Spawn non-blocking. A command that never exits must not wedge the row.
+    // Never console.* here — the TUI is alive.
+    logger.debug("user-shell-status running", { command });
+    // ... spawn, then:
+    ctx.ui.setStatus(STATUS_KEY, firstLine(stdout));
+  });
+}
+
+// C2 manifest — packages/coding-agent/examples/extensions/user-shell-status/package.json
+// {
+//   "name": "user-shell-status",
+//   "version": "1.0.0",
+//   "type": "module",
+//   "omp": {
+//     "extensions": ["./index.ts"],
+//     "settings": {
+//       "enabled": { "type": "boolean", "default": false, "description": "..." }
+//     }
+//   }
+// }
+```
+
+### Hợp đồng test
+
+C2 bảo vệ trên hết một hợp đồng: "plugin này ship ra ở trạng thái bất hoạt." Với `enabled` vắng mặt và với `enabled: false`, không tiến trình nào bao giờ được tạo ra, và status row đã render giống hệt từng byte so với một baseline chụp được khi plugin chưa từng nạp. Người tiêu dùng cài plugin này và không bao giờ chạm vào setting sẽ thấy **không hề thay đổi hành vi**; nếu điều đó hồi quy, lệnh shell của người dùng bắt đầu chạy ở mọi message trong mọi phiên. Các case ở đường bật bảo vệ các hợp đồng bù lại: mỗi trigger trong bốn trigger plan nêu (tin nhắn assistant cuối, permission mode, vim mode, đổi model) cho ra đúng một cập nhật hiển thị; exit khác 0 vẫn cập nhật; một lệnh treo vẫn để row render được (hợp đồng im-lặng-thất-bại — không có nó, một lệnh hỏng chỉ biểu hiện như một status bar lặng lẽ ngừng cập nhật, và case không-thoát chính là thứ chứng minh đường render không bị chặn trên một tiến trình con); các loạt event dồn dập gộp về một lần gọi; và output 10.000 ký tự cộng output chứa tab render đã sanitize và nằm trong chiều rộng của row. D2 bảo vệ: segment mới báo cùng hit rate với `cache_hit` với cùng đầu vào usage, chứng minh không có phép tính thứ hai nào có thể trôi lệch; hàng không chứa đếm ngược và không chứa nhãn TTL (đó chính là toàn bộ ý nghĩa của mục này — đếm ngược trong bản tham chiếu là một TTL giả, reset mỗi lần nhận response API mới, nên port nó sẽ ship một con số sai một cách tự tin dưới một thang màu đọc ra là "cache sắp hết hạn"); khi không có dữ liệu usage thì segment không đóng góp gì thay vì đoán. Người tiêu dùng thấy gì nếu một trong hai hồi quy: với C2, những lệnh shell mà người dùng chưa từng cho phép chạy; với D2, một con số sức khoẻ cache sai một cách tự tin đúng vào tình huống mà người dùng đang nhìn nó.
+
+Tên file test: `packages/coding-agent/test/user-shell-status-line.test.ts`, `packages/tui/test/status-line-cache-hit-rate.test.ts`.
+
+### Xác minh
+
+**Tiền đề môi trường** — `bun test` cần addon native, và đây là **tiền đề tái lập được, không phải hạn chế của máy này**. Đã kiểm chứng: trên máy sạch chưa build, `bun test packages/tui/test/status-line-cache-hit.test.ts` trả về `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64`. Build một lần là xong: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0), sau đó file này chạy được.
+
+Chạy được ngay hôm nay, không cần addon:
+
+```bash
+bun run check:ts
+```
+
+Đã kiểm chứng xanh tại HEAD e040a60 (cả 16 package đều Done, exit 0). Đây chính là check thực sự kích hoạt Record `SEGMENTS` exhaustive của D2, vì một entry registry bị thiếu là lỗi kiểu chứ không phải lỗi runtime.
+
+Sau khi addon đã build:
+
+```bash
+brew install ninja   # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja.
+#   Thiếu nó, lệnh ngay dưới exit 1 với "CMake was unable to find a build program
+#   corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set."
+bun --cwd=packages/natives run build
+bun test packages/coding-agent/test/user-shell-status-line.test.ts
+bun test packages/tui/test/status-line-cache-hit-rate.test.ts
+bun test packages/tui/test/status-line-cache-hit.test.ts   # test anh em, phải giữ xanh (không phép tính thứ hai, không phân kỳ)
+bun run check:ts
+```
+
+Cũng cần kiểm tra bằng tay trước khi merge C2:
+
+```bash
+git grep -n "examples/extensions" -- packages/coding-agent/src   # phải trả về 0 hits
+```
+
+Đặc tính định nghĩa của thư mục example là nó đi kèm tarball và KHÔNG tự nạp; một dòng tham chiếu duy nhất từ `src` sẽ khiến plugin tự nạp vào mọi phiên và phá vỡ hợp đồng bất hoạt-mặc-định.
+
+### Cổng hoàn thành
+
+DONE nghĩa là đủ cả bốn điều sau; ba cổng đầu tự đi được đỏ, điều thứ tư là hàng rào bảo trì (xem ghi chú ở chính mục đó):
+
+1. `bun run check:ts` exit 0 — đây là cổng biên dịch của D2, và nó mang tính nặng thật sự: `SEGMENTS` là `Record<StatusLineSegmentId, StatusLineSegment>` exhaustive, nên quên entry registry cho thành viên union mới là lỗi kiểu mà check này bắt được.
+2. Với native addon đã build, test D2 xanh gồm cả ba hợp đồng âm của nó: hàng đã render không chứa đếm ngược và không chứa nhãn TTL; tỉ lệ của segment mới bằng tỉ lệ của `cache_hit` với cùng usage; và với không có dữ liệu usage thì segment không đóng góp gì.
+3. Với addon đã build, test C2 xanh và case ĐẦU TIÊN của nó là case tắt-âm — không có khoá `enabled` và `enabled: false` đều cho ra zero spawn cùng status row giống hệt từng byte với baseline plugin-vắng-mặt.
+4. `git grep -n "examples/extensions" -- packages/coding-agent/src` vẫn trả về 0 hits — đây là **hàng rào bảo trì**, không phải cổng: không file nào của sóng này nằm dưới `packages/coding-agent/src`, nên nó không thể đỏ từ công việc hiện tại. Nêu rõ điều đó trong PR thay vì tính nó là một trong bốn cổng.
+
+**VÀ**, chỉ riêng cho C2: câu trả lời Q6 về trust được viết vào work item kèm phạm vi của nó. Nếu Q6 chưa có câu trả lời, C2 được phép trượt — đó là chỉ dẫn của chính plan, và ship nó trên một tiền đề không nêu thì tệ hơn là trượt.
+
+Cổng này có thực sự đỏ được không: **Có, và cụ thể chứ không mang tính hình thức.** Cổng (1) đỏ ngay khi một id mới được thêm vào union đóng mà không có entry `SEGMENTS` tương ứng, vì Record là exhaustive — đó là một lớp lỗi thật không có detector nào khác. Khẳng định chống-đếm-ngược của cổng (2) đỏ nếu bất kỳ ai đưa lại một TTL, đây là cách sai khả năng nhất của mục này, vì bản tham chiếu mà ta đang port CÓ đếm ngược và thèm muốn port theo là rất dễ hiểu. Khẳng định parity tỉ lệ chỉ bắt được phép tính thứ hai **sai**, không bắt được phép tính thứ hai đúng — dưới hình dẫn `cache_hit_rate: cacheHitSegment` mà bước 10 chỉ định, hai id cùng trỏ một object nên phép tính thứ hai đúng vẫn xanh. Nếu muốn cổng thật sự ép "một phép tính duy nhất", hãy giao việc đó cho type test hoặc review, không phải cho phép tính parity. Khẳng định không-có-usage của nó đỏ nếu segment chia mà không chặn mẫu số bằng 0. Case tắt-âm của cổng (3) mạnh nhất trong ba cổng thật: nó đỏ nếu extension mặc định khoá `enabled` thiếu thành true, nếu nó kiểm tra truthiness thay vì `=== true`, hoặc nếu phần spawn được viết trước cổng — và vì nó còn so với baseline plugin-vắng-mặt, nó bắt được cả biến thể tinh vi khi plugin spawn nhưng vô hại. Case lệnh-không-thoát đỏ nếu phần spawn được await trên đường render. Hàng rào (4) không đỏ được từ sóng này vì không file nào sóng này viết nằm dưới `packages/coding-agent/src`; nó chỉ bắt được một hồi quy ở sóng sau. Ba cổng thật sự ép điều gì đó là (1), (2) và (3). Giới hạn thành thật duy nhất: cổng (2) và (3) không chạy được cho tới khi native addon được build, nên cho tới đó chỉ cổng (1) thực sự đang ép điều gì đó.
+
+### Phụ thuộc
+
+- **M2-OQ3** — quyết định ba hướng cho status line (plan §7.4: prefixed union / contributor Map / mode-reads-ModeRegistry). **CÓ ĐIỀU KIỆN và yếu hơn mức plan nói:** xem plan_corrections #4 và #5. D2 và C2 hoàn toàn không tiêu thụ `registerStatusLineSegment`, nên dưới phương án 2 và 3 thì không cái nào bị chặn.
+- **§10 Q6** — câu hỏi trust. **Blocker cứng chỉ cho C2.** Chưa được trả lời tại HEAD 808b365.
+- **M2 WI-7 (`registerMode`)** — chỉ ở chỗ OQ3 được quyết tại đó; không mã nào từ WI-7 được import bởi bất kỳ mục nào.
+- **M3-A1** — plan liệt kê A1 là dependency của C2. **Chưa kiểm chứng là dependency code thật**; hãy coi như một sở thích sắp xếp lịch, không phải ràng buộc thứ tự build.
+
+**Chặn:** Không gì trong M3. Sóng này không tiêu thụ seam nào và cũng không mở seam nào. Cụ thể nó **KHÔNG** chặn M3-C1, vì M3-C1 không còn tồn tại trong plan này nữa.
+
+### Rủi ro
+
+Cách sai khả năng nhất là port cả đếm ngược của bản tham chiếu bên cạnh hit rate của nó, vì hai thứ đó đi cùng nhau trong source đang được sao chép. Cái đếm ngược đó là `CACHE_TTL_MS - (now - lastResetAt)`, với `lastResetAt` reset mỗi lần nhận response API mới — một TTL giả, nằm dưới một thang màu đọc ra là "cache sắp hết hạn". Bản gốc ship một con số sai một cách tự tin. Ship nó ở đây tái tạo đúng cái khiếm khuyết mà mục này sinh ra để tránh, và việc nhắc tới `packages/catalog/src/compat/rules/` trong plan chính là đầu mối: một TTL sẽ cần được khai báo ở đó, và D2 không khai báo gì. Khả năng sai thứ hai: viết phần spawn của C2 trước cổng opt-in, hoặc test truthiness cho `settings.enabled` — `getPluginSettings` trả `undefined` cho khoá vắng mặt, nên `=== true` là dạng an toàn duy nhất. Cả hai đều bị bắt bởi hợp đồng tắt-âm, và đó là lý do nó được viết trước.
+
+### Cần người quyết
+
+- **§10 Q6** — câu chuyện trust cho artifact M3 trong một project không có cổng trust. **CHƯA TRẢ LỜI, và nó CHẶN C2.** Câu trả lời phải được chép vào work item này và phải nêu phạm vi một cách tường minh: nó chỉ phủ C2, hay còn phủ mọi artifact khác mà M2 đưa cho code plugin (đáng chú ý là `ExtensionUIContext` còn sống, vì các lần ghi của nó đi vòng qua sàn chi phí frame, nắp 30fps, và backpressure thích ứng)? Chưa trả lời nghĩa là C2 trượt — đó là chỉ dẫn của chính plan, không phải một cách đọc thận trọng của nó.
+- **M2-OQ3** — M2 chốt phương án nào trong ba. Vẫn còn được liệt kê là chưa giải quyết và vẫn chặn bước 6 của WI-7 trong `.lavish-wip/m2-specs/WI-7.spec.json`. Plan nghiêng về phương án 3 nhưng cố ý không chọn, và ghi rõ phương án 3 KHÔNG phủ trường hợp một mode muốn một segment nằm ngoài `mode`. Chỉ cần nó để viết hợp đồng âm đúng, và để biết id literal của D2 có phải tiền tố `core:` hay không.
+- **Có `runDoctorChecks` cần được để mắt ở đây không?** Nó được định nghĩa tại `packages/coding-agent/src/extensibility/plugins/doctor.ts:5` và được barrel re-export ở `index.ts:3`, và có **ZERO** call site trên toàn repo. Plan dùng nó làm bằng chứng rằng `src/extensibility/plugins/` là library code chứ không phải kênh phân phối plugin — điều đó đúng và tôi đã xác nhận. Dead code thấy lỡ tay, cố ý KHÔNG đưa vào phạm vi sóng này.
+- **Bản cài đặt trùng lặp có sẵn, phát hiện lúc kiểm chứng sanitizer:** `sanitizeStatusText` được export đúng một lần từ `packages/tui/src/chrome/shared.ts:9` và lại được định nghĩa riêng tại `packages/tui/src/overlays/annotation-overlay.ts:121`. AGENTS.md coi hai bản cài đặt của cùng một thứ là bug kể cả khi cả hai đều chạy. Ngoài phạm vi sóng này; ghi ra đây để nó không bị rơi mất.
+- **`getPluginSettings` chưa có export công khai.** Nó chỉ tồn tại ở `packages/coding-agent/src/extensibility/plugins/loader.ts:474`, và `src/index.ts` không re-export `./extensibility/plugins`. Plugin buộc phải import đường sâu `../../../src/...` — lệch quy ước của mọi example khác. Có nên đưa nó vào public API ở M2 không?
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Các số dòng trỏ vào `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (7435, 7659, 7420) và mọi câu "đã kiểm chứng tại HEAD 808b365". | CŨ. | Plan dài 10234 → 11741 dòng từ 808b365 tới HEAD e040a60. Đo lại ở e040a60: 7435 → 8942, 7659 → 9166, 7420 → 8927. Mọi neo trong plan phải neo theo câu đầu tiên khớp, không theo số. |
+| Tiền đề trust nằm ở `packages/coding-agent/src/extensibility/extensions/types.ts:462-470`, và "xem thêm `:528-532`". | SAI — cũ quá ~25 và ~20 dòng; cả hai dải được trích dẫn rơi vào method interface không liên quan. | Lập luận "no per-directory trust gate" nằm ở `types.ts:487-494` ("OMP performs no project-trust gating — project-level settings and extensions load unconditionally — so this always returns `true`") và comment đồng hành dài hơn ở `types.ts:548-562`. Hai bản cài đặt hard-code giá trị trả về là `runner.ts:1264` và `agent-session.ts:7406`, cả hai đều `isProjectTrusted: () => true`. **Nội dung hoàn toàn đúng và tôi đã tái tạo được; chỉ số dòng là sai.** |
+| `registerStatusLineSegment` là seam của M2 và hai mục của sóng này là người tiêu thụ đầu tiên, cả hai đều viết sau khi M2-OQ3 có câu trả lời. | **SAI VỀ BẢN CHẤT** — seam có thật, nhưng các mục này không tiêu thụ nó. | `git grep -n registerStatusLineSegment -- packages/` trả về 0 hit toàn repo, nên seam đúng là chưa xây (plan đúng khi đã bỏ M3-C1). Nhưng cả C2 lẫn D2 đều không chạm vào nó. C2 đi qua `ctx.ui.setStatus`, vốn **đã** được nối đầy đủ (`types.ts:264` -> `controller.ts:128` -> `controller.ts:591-594` -> `component.ts:958-971`). D2 là một bổ sung vào union lõi. Điều M2-OQ3 thực sự quyết cho sóng này chỉ là **hợp đồng âm** — chuyện gì xảy ra với một id mà không ai đăng ký. Hãy viết các mục; đừng chặn chúng sau seam. |
+| `setStatus` được nối ở `extension-ui-controller.ts:119`; `requestRender` ở `extension-ui-controller.ts:586`. | Sai số dòng; cảnh báo xung quanh thì ĐÚNG và đáng giữ. | Nối thực tế ở `controller.ts:128` (`setStatus: (key, text) => this.setHookStatus(key, text)`), và `setHookStatus` trải từ `controller.ts:591-594` với `this.ctx.ui.requestRender()` ở `:593`. Cảnh báo của plan — rằng `requestRender` nằm trên controller và KHÔNG nằm trên `StatusLineComponent`, nên một test chỉ chạy component sẽ treo — là ĐÚNG và tôi đã xác nhận. Cũng lưu ý controller nằm ở `src/modes/controllers/`, không phải dưới `extensibility/`. |
+| D2 bị chặn bởi M2-OQ3. | **NÓI QUÁ** — nhiều nhất là bị chặn có điều kiện, và chỉ dưới một trong ba phương án. | D2 sửa union **lõi**, và không extension nào đóng góp segment vào đó. Dưới phương án 2 (contributor Map) hoặc phương án 3 (mode đọc ModeRegistry) thì union lõi không bị đụng tới và D2 làm được ngay hôm nay. Chỉ dưới phương án 1 thì tập id lõi mới bị viết lại thành template literal tiền tố `core:`, điều đó sẽ đổi id literal của D2. Nên: tiến hành D2 trừ khi OQ3 đã hạ cánh ở phương án 1. |
+| Trường `omp` của manifest được đọc ở `manager.ts:256`, với hai đường khác ở `:622` và `:845`. | **THIẾU** — cả ba đều đúng, và có đường thứ tư. | 256, 622 và 845 đều có thật và đều đọc `pkg.omp \|\| pkg.pi \|\| {...}`. Có đường thứ tư ở `manager.ts:1084` (`const manifest: PluginManifest \| undefined = pluginPkg.omp \|\| pluginPkg.pi;`, lưu ý nó có thể undefined). Nếu người triển khai rà "mọi nơi manifest được đọc", 1084 phải được tính vào nếu không phần rà sẽ thiếu. |
+| `--extension` ở `flag-tables.ts:216`; `--trusted-extension` ở `:218`. | **ĐÚNG** — cả hai trích dẫn của plan đều khớp, không có lệch dòng nào. | `flag-tables.ts:216` là `"--extension": setExtension`, `:217` là alias `"-e"`, `:218` là `"--trusted-extension"`. Dòng `215` thuộc cờ khác hẳn (`"--hook"`) — đừng chạm vào nó. |
+| `--trusted-extension` đặt `options.disableExtensionDiscovery = true` tại `main.ts:1658-1659`. | LỆCH MỘT — nội dung đúng. | Hai phép gán nằm ở `main.ts:1659-1660`; `:1658` là dấu `});` đóng `.map()` ngay phía trên. Bản thân claim — rằng nó tắt discovery và thay bằng allowlist đường dẫn tuyệt đối, khiến nó là công cụ của harness chứ không phải cổng cho người dùng cuối — là đúng. |
+| Dispatch của `ExtensionUIContext` ở `types.ts:264`; khai báo `setStatus` nằm tại neo đó. | **ĐÚNG** — `:264` chính là dòng khai báo. | `types.ts:264` là `setStatus(key: string, text: string \| undefined): void;`; `:263` là dòng JSDoc ngay phía trên, `:265` là dòng trống. Giữ nguyên `:264`. |
+| Overlay đọc schema của settings tại `packages/tui/src/overlays/plugin-settings.ts:143`. | LỆCH MỘT. | Lệnh đọc là `const schemaSettings = plugin.manifest.settings;` ở `plugin-settings.ts:144`, với một early return ở `:145`. Cùng file, xuống một dòng. |
+| `packages/tui/package.json:39-48` không khai dependency nào tới coding-agent; chiều ngược lại ở `packages/coding-agent/package.json:545`. | ĐÚNG về bản chất; lệch một dòng ở dải của tui. | Khối `dependencies` của tui là `:40-49`. Nó liệt kê omptype, pi-agent-core, pi-ai, pi-catalog, pi-natives, pi-utils, pi-wire, snapcompact — không có coding-agent, xác nhận quy tắc đặt vị trí file test. Chiều ngược lại đúng chính xác: `@oh-my-pi/pi-tui` ở `coding-agent/package.json:545`. |
+| HEAD là 5873776. | CŨ. | HEAD thật tại lần rà này là e040a60 ("docs(m2): execution plan for milestone 2, spec-verified against the tree"), trên nhánh `milestone-1`. Các số dòng trong source không dịch chuyển giữa 808b365 và e040a60 (chỉ plan đổi), nhưng các số dòng trỏ vào plan thì có — xem dòng đính chính về 7435/7659/7420. |
+| Việc sanitize và giới hạn chiều rộng của C2 là công việc mà mục này phải làm (output tab, 10.000 ký tự). | **ĐỊNH KHUNG SAI** — hợp đồng đã tồn tại; C2 chỉ cần không phá nó. | Segment `status` **ĐÃ** chạy mọi hook status qua `sanitizeStatusText` -> `sanitizeDisplaySingleLine` -> `sanitizeDisplayText` -> `replaceTabs(sanitizeText(text))`, rồi gộp chuỗi newline và trim. Chiều rộng được ép riêng bởi `truncateToWidth` tại `component.ts:3068` và bởi row layout. Một điểm tinh vi mà test phải nắm: chuỗi sanitizer KHÔNG có chặn trên độ dài, nên hãy khẳng định **ROW** nằm trong chiều rộng — đừng khẳng định sanitizer đã cắt. Test của C2 do đó khẳng định một hợp đồng có sẵn vẫn đúng với nội dung do plugin cung cấp, đó là cách diễn đạt mạnh và trung thực hơn là "thêm sanitization". |
+| D2 là "thêm một id vào union đóng". | **NÓI THIỂU** — union không phải chỉnh sửa duy nhất, dù trình biên dịch sẽ báo cho bạn. | `SEGMENTS` tại `segments.ts:919` là `Record<StatusLineSegmentId, StatusLineSegment>` exhaustive, nên thêm thành viên union mà không có entry registry là lỗi KIỂU — tốt, `bun run check:ts` bắt được mà không cần addon. Tin tốt cho bán kính ảnh hưởng: `ALL_SEGMENT_IDS` là `Object.keys(SEGMENTS)`, nên inventory của gallery CLI tự nhặt id mới, và `variantsFor` của gallery có nhánh `default:`, nên cũng không cần sửa gallery. |
+
+
+---
+
+
+## Sóng 6 — theme tương phản mù màu
+
+**Sóng / phạm vi:** Sóng 6. `colorBlindMode` hôm nay chỉ tô lại đúng một token (màu xanh lá ở dòng diff thêm). Sóng này mở rộng nó thành năm token ngữ nghĩa xanh lá / đỏ / hổ phách thực sự va chạm với người đọc mù màu đỏ–xanh lá, remap từng token sang một dải hue đích khác nhau, và thêm một harness hồi quy tương phản quét **từng** theme builtin thay vì soi một theme bằng mắt.
+
+**Effort:** **S (~1 ngày).** Bản M của plan (~5 ngày) được biện minh bằng lý do "trước hết phải kiểm kê 99 palette" — phần kiểm kê đó **đã xong** ở dưới đây (đủ khoá, nhưng lộ ra 2 theme không dựng được), nên lý do nêu đó không còn chặn bản S. Phần việc chỉ còn lại thuộc bản M là hai theme được chỉnh tay — đó là chất lượng thiết kế ngang bằng với bản tham chiếu, không phải một lỗi đúng-sai cần sửa; xem mục **Cần người quyết**.
+
+**Hiệu ứng người dùng thấy:** Với Color-Blind Mode bật, người đọc mù màu đỏ–xanh lá giờ phân biệt được dòng diff thêm với dấu tick thành công, với git status sạch, và với một lỗi. Hôm nay chỉ dòng diff thêm đổi màu, nên `success` và `statusLineGitClean` vẫn xanh lá và vẫn đọc ra là "dòng thêm" khi liếc mắt. Mỗi theme giữ nguyên tính cách của riêng nó, vì phép remap mang theo lightness và chroma của chính palette đó, nên `titanium` vẫn dịu dàng như trước. Với Color-Blind Mode tắt, không có gì thay đổi, từng byte. Mô tả của thiết lập trong tab Appearance trở nên trung thực: nó phủ nhiều hơn là chỉ diff.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/theme/daltonize.ts` | tạo | Module mới chứa bảng dải hue đích và phép biến đổi `daltonizeHex`. Cố ý để ngoài `loader.ts` để phép biến đổi unit-test được mà không phải dựng cả một `Theme`, và để `loader.ts` chỉ phải đổi đúng một dòng import. Phải import `hexToOklch`/`oklchCusp`/`oklchToHex` từ **subpath** `@oh-my-pi/pi-utils/color` (khớp `loader.ts:3`), không phải barrel, và phải top-level import — không `await import()`. | ✅ có (file chưa tồn tại hôm nay; phải tạo) |
+| `packages/tui/src/theme/loader.ts` | sửa | Thay nhánh một-token ở dòng 153-158 bằng vòng lặp qua bảng `DALTONIZE_TARGET_HUE` gọi `daltonizeHex`. Xoá hẳn const `COLORBLIND_ADJUSTMENT` ở dòng 146 cùng doc comment ở dòng 145, và bỏ `adjustHsv` khỏi import ở dòng 3 nếu không chỗ nào khác trong file dùng tới. | ✅ có |
+| `packages/coding-agent/src/modes/settings.ts` | sửa | Đổi chuỗi mô tả ở dòng 117 từ `"Use blue instead of green for diff additions"` sang thứ bao hàm tập token đã mở rộng, ví dụ `"Remap diff, success, error and git-status colors for red-green colorblind readability"`. Không đụng id, type, default, tab, group, label. | ✅ có |
+| `packages/tui/test/daltonized-theme.test.ts` | tạo | File test mới giữ hợp đồng remap dương và hợp đồng đồng nhất khi tắt (chi tiết ở **Hợp đồng test**). | ❌ chưa kiểm chứng — file chưa tồn tại |
+| `packages/tui/test/theme-contrast-harness.test.ts` | tạo | File test mới chạy cổng tương phản WCAG trên **mọi** theme builtin lấy từ `getBuiltinThemes()` (101, không phải 99) — trong đó 99 dựng được, `onyx` và `light-prism` phải được thu thập vào `skipped` và assert bằng đúng danh sách đó. | ❌ chưa kiểm chứng — file chưa tồn tại |
+
+Hai file test mới phải đặt theo quy ước repo: `find packages/tui/src -name '*.test.ts' | wc -l` trả về 0, tức không có gì được đặt cạnh mã nguồn — một file `*.test.ts` đặt dưới `packages/tui/src/` sẽ không bao giờ chạy. Đọc `packages/tui/test/settings-list-theme.test.ts` trước để nắm idiom `initTheme()` trong `beforeAll`. Nếu người triển khai thích gộp còn một file, gộp vào `daltonized-theme.test.ts` là chấp nhận được — nhưng các assertion phải giữ là bốn khối tách biệt.
+
+### Các bước
+
+1. **Đọc hai test gần nhất trước.** `packages/tui/test/settings-list-theme.test.ts` (idiom `initTheme()` trong `beforeAll`, và cách assert màu theme) và `packages/tui/test/theme-color-mode.test.ts` (cách ghim `ColorMode` trong test mà không phụ thuộc terminal của host). Neo: `packages/tui/test/settings-list-theme.test.ts:1`.
+2. **Tạo `packages/tui/src/theme/daltonize.ts`** với `DALTONIZE_TARGET_HUE`, chặn `HEX6`, và `daltonizeHex`, đúng y như khối code bên dưới. Import top-level từ subpath `@oh-my-pi/pi-utils/color`. Không `any`, không `ReturnType<>`, không inline import. Neo: `packages/tui/src/theme/daltonize.ts` (mới).
+3. **Trong `loader.ts`, xoá** const `COLORBLIND_ADJUSTMENT` cùng comment của nó (dòng 145-146), và bỏ `adjustHsv` khỏi import ở dòng 3 nếu grep thấy không còn chỗ dùng khác (hôm nay không có: `git grep adjustHsv -- packages/tui/src/theme/loader.ts` chỉ trả về dòng 3 và dòng 156, cả hai đều bị thay đổi này gỡ bỏ). Neo: `packages/tui/src/theme/loader.ts:145`.
+4. **Thay nhánh `colorBlindMode` một-token** (dòng 153-158) bằng vòng lặp qua `DALTONIZE_TARGET_HUE` như trong khối code bên dưới. **Không** dời nó lên trên dòng 151 — `resolveThemeColors` phải chạy trước. Neo: `packages/tui/src/theme/loader.ts:153`.
+5. **Cập nhật mô tả Color-Blind Mode** tại `packages/coding-agent/src/modes/settings.ts:117` cho khớp tập token đã mở rộng. Không đổi id, type, default, tab, group, label — các bề mặt khác khoá vào những thứ đó. Neo: `packages/coding-agent/src/modes/settings.ts:117`.
+6. **Viết `packages/tui/test/daltonized-theme.test.ts`** với ba hợp đồng ở mục **Hợp đồng test**: (a) năm token đều bị remap, (b) mọi giá trị sau remap là hex 6 chữ số hợp lệ, (c) khi bỏ `colorBlindMode`, `Theme` byte-for-byte giống đầu ra trước thay đổi trên toàn bộ 101 theme builtin. Ở mọi chỗ dựng theme, **luôn truyền `{ mode: "truecolor" }`** vào `createTheme` — `createTheme` mặc định gọi `detectColorMode()` (`color.ts:15`) đọc môi trường máy chạy, nên để mặc định thì "byte-for-byte" ở hợp đồng (c) phụ thuộc terminal của người chạy test. Đây cũng là cách `packages/coding-agent/test/theme-islight.test.ts:24` làm. Neo: `packages/tui/test/daltonized-theme.test.ts` (mới).
+7. **Viết `packages/tui/test/theme-contrast-harness.test.ts`:** duyệt `Object.entries(getBuiltinThemes())`. **Nhưng phải thu thập danh sách trước, vì 2 theme không dựng được**: với mỗi `[name, json]`, `try { createTheme(json, { mode: "truecolor" }) } catch { skipped.push(name) }`. `onyx` và `light-prism` rơi vào `skipped` (xem đính chính #2). Test phải assert `skipped` **bằng đúng danh sách đó** chứ không bỏ qua im lặng — một theme thứ ba hỏng thì test đỏ. Mọi phép so sánh bên dưới chạy trên `101 - skipped.length` theme. Rồi dựng một theme `colorBlindMode:true` cho từng theme đã dựng được, và assert mỗi token fg đã remap đủ tương phản với bg ghép của nó ở ngưỡng đã thống nhất ở **Cần người quyết**. Các cặp: `toolDiffAdded`/`success` trên `toolSuccessBg`, `error` trên `toolErrorBg`, `statusLineGitClean` và `statusLineGitDirty` trên `statusLineBg`. Tính tỉ lệ theo `(L1 + 0.05) / (L2 + 0.05)` từ `relativeLuminance` (`packages/utils/src/color.ts:471`, trả `number | undefined`) — **không cần viết mới**: repo đã có đúng helper này, `contrastRatio(foreground, background)` ở `packages/coding-agent/test/issue-9712-obsidian-muted-contrast.test.ts:8`, và nó xử lý sẵn cả nhánh `relativeLuminance === undefined` mà công thức `(L1 + 0.05) / (L2 + 0.05)` bỏ sót. Đọc nó rồi copy. Neo: `packages/tui/test/theme-contrast-harness.test.ts` (mới).
+8. **Chạy kiểm chứng.** `bun run check:ts` (đã xanh ở HEAD `808b365` trước thay đổi này). Rồi `bun test packages/tui/test/daltonized-theme.test.ts packages/tui/test/theme-contrast-harness.test.ts` — build addon một lần trước (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0). Trên máy sạch chưa build, cả hai báo 0 pass / `Failed to load pi_natives native addon for darwin-arm64`; nếu gặp chuỗi đó, hãy xác nhận nó là addon chứ không phải assertion bằng cách đọc chữ trong thông báo lỗi, rồi build và chạy lại.
+
+**Các điểm cần canh khi gõ tay (không có trong các bước trên, nhưng bắt buộc để không phá build):**
+
+- `resolvedColors` được định kiểu là `Record<keyof T, string | number>` từ `resolveThemeColors`, nên index nó bằng một khóa `string` thuần sẽ không typecheck. Nếu TS báo lỗi, hãy mở rộng thành một local view kiểu `Record<string, string | number>` thay vì ép kiểu `any` — AGENTS.md cấm `any`.
+- `adjustHsv` (phép biến đổi hiện tại) là HSV và không phải chiếu lược: nó dịch saturation theo một hệ số cố định và bỏ qua gamut, nên một nguồn bão hoà có thể bị clip. Đường đi OKLCH mang cả L và C vào một đích đã kiểm gamut — đó là lý do `COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 }` bị **xoá** chứ không tái dùng.
+- **Không** đặt bảng hue vào `packages/catalog/src/compat/rules/*.kdl`. AGENTS.md quy cây đó cho chính sách MODEL và PROVIDER, không phải màu theme TUI. Không có bước `gen:compat` nào cho file này.
+- Nhánh remap **phải ở nguyên chỗ cũ**: nó chạy sau `resolveThemeColors` (`loader.ts:151`), vốn là thứ giải các tham chiếu `$var`, nên nhánh luôn nhìn thấy hex đã giải. Chuyển nó lên trước dòng 151 sẽ áp remap lên các chuỗi `$var` chưa giải và làm hỏng mọi theme.
+
+### Hình dạng code
+
+`packages/tui/src/theme/daltonize.ts`:
+
+```ts
+import { hexToOklch, oklchCusp, oklchToHex } from "@oh-my-pi/pi-utils/color";
+
+/**
+ * Hue band each semantic token is remapped INTO when colorBlindMode is on.
+ *
+ * These are TARGETS, not a delta. A uniform +60deg shift sends `error`
+ * (red, h=0) to h=60 -- exactly where `statusLineGitDirty` already sits --
+ * so a single shared offset would make those two render identically, which
+ * is the specific confusion this mode exists to remove.
+ */
+export const DALTONIZE_TARGET_HUE = {
+	toolDiffAdded: 250, // green -> blue; the original motivation, unchanged in effect
+	success: 250,
+	statusLineGitClean: 250,
+	error: 350, // red -> magenta, clear of both blue and amber
+	statusLineGitDirty: 80, // amber re-pinned away from the new error magenta
+} as const satisfies Record<string, number>;
+
+export type DaltonizeKey = keyof typeof DALTONIZE_TARGET_HUE;
+
+/** Cap chroma so a vivid source green does not become a neon blue. */
+const MAX_CHROMA = 0.16;
+
+/** Only a full 6-digit hex is remapped; 256-color indices and "" pass through. */
+const HEX6 = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Carry the source color's lightness and most of its chroma into the target
+ * hue band, so every palette keeps its own weight (titanium stays muted).
+ */
+export function daltonizeHex(hex: string, targetHue: number): string {
+	if (!HEX6.test(hex)) return hex;
+	const source = hexToOklch(hex);
+	const chroma = Math.min(source.c, oklchCusp(targetHue).c, MAX_CHROMA);
+	// oklchToHex gamut-maps by chroma reduction and clamps, so the result is
+	// always a valid 6-digit hex -- no post-check needed.
+	return oklchToHex({ l: source.l, c: chroma, h: targetHue });
+}
+```
+
+`packages/tui/src/theme/loader.ts` (thay thế dòng 145-146 và 153-158):
+
+```ts
+import { daltonizeHex, DALTONIZE_TARGET_HUE } from "./daltonize";
+
+// (delete: the COLORBLIND_ADJUSTMENT const and its doc comment)
+
+	if (colorBlindMode) {
+		// Runs AFTER resolveThemeColors, so every value here is a resolved hex
+		// rather than a `$var` indirection. Keep it in this order.
+		for (const [key, targetHue] of Object.entries(DALTONIZE_TARGET_HUE)) {
+			const value = resolvedColors[key];
+			if (typeof value === "string") {
+				resolvedColors[key] = daltonizeHex(value, targetHue);
+			}
+		}
+	}
+```
+
+### Hợp đồng test
+
+Bốn hợp đồng, mỗi cái một dấu hiệu quan sát được có tên. File test: `packages/tui/test/daltonized-theme.test.ts` và `packages/tui/test/theme-contrast-harness.test.ts`.
+
+1. **PHỦ DƯƠNG.** Với `colorBlindMode` bật, cả năm token trong `DALTONIZE_TARGET_HUE` đều khác giá trị khi tắt. Nếu hồi quy, người dùng mù màu đỏ–xanh lá bật Color-Blind Mode, dấu tick thành công và chỉ báo git sạnh vẫn xanh lá, và họ đọc một lệnh tool thành công thành một dòng diff thêm — đúng cái đọc sai mà thiết lập này sinh ra để chặn. Assert bằng cách dựng `Theme` từ một palette đã biết theo cả hai chiều rồi so năm giá trị token, **không** assert chuỗi hex kết quả (hue là quyết định của con người, theo mục **Cần người quyết**, nên ghim nó sẽ biến mỗi tinh chỉnh sau này thành một lần sửa test). **Ngoại lệ đã đo, phải khoét ra:** `light-monochrome` có cả năm token vô sắc (`#404040`/`#2d2d2d`/`#525252`, chroma OKLCH = 0.0000) nên phép remap trả về đúng giá trị cũ; `dark-poimandres` và `light-poimandres` đã mang `error = #d0679d` ở h=349.8, trùng dải đích 350. Vì vậy hợp đồng phải là: token đổi **HOẶC** nguồn vô sắc (chroma < 0.01) **HOẶC** nguồn đã nằm trong dải đích (|h nguồn − h đích| < 2°). Ba trường hợp trên là đúng ba ngoại lệ đó — đừng nới lỏng thành "phần lớn thay đổi".
+2. **MỌI ĐẦU RA LÀ HEX HỢP LỆ.** Sau `createTheme` với `colorBlindMode` bật, mỗi trong năm token khớp `/^#[0-9a-f]{6}$/i`, trên toàn bộ các theme builtin dựng được (99 trong 101 — hai theme không dựng được, xem **Cần người quyết** và đính chính #2). Nếu hồi quy, một theme ném lỗi bên trong `Bun.color` lúc render, hoặc TUI phát ra một chuỗi SGR hỏng và khung nhìn diff bị vỡ. Đây chính là cái kiểm bắt được một giá trị số hoặc chuỗi rỗng lọt qua phép remap — hôm nay chỉ được chặn bằng `startsWith("#")`.
+3. **ĐỒNG NHẤT KHI TẮT — mạnh nhất và rẻ nhất.** Với `colorBlindMode` bị bỏ qua hoặc `false`, mọi token của mọi theme dựng được khớp **bảng baseline** `packages/tui/test/fixtures/theme-colorblind-baseline.json`, sinh MỘT LẦN TRƯỚC thay đổi rồi commit lại, có dạng `{ "<theme>": { "<token>": "<hex>" } }` cho 5 token remap + 3 nền ghép. Không có bảng này thì cách duy nhất còn lại là so `omitted` với `false` — hai lời gọi của cùng một nhánh, tức một test luôn xanh, mà AGENTS.md cấm. Nếu hồi quy, một người dùng chưa bao giờ bật Color-Blind Mode nhận ra một UI khác đi trong im lặng sau khi nâng cấp. Đây là hợp đồng làm cho thay đổi này an toàn để phát hành, và nó ghim nhánh vào "chỉ khi cờ được bật".
+4. **TƯƠNG PHẢN**, trên toàn bộ 99 theme builtin dựng được (101 trừ `skipped`, xem bước 7), cho năm cặp liệt kê ở bước 7. Nếu hồi quy, sau khi bật chế độ, chỉ báo git bẩn trở nên không đọc được trên nền status line ở một theme nào đó. Đây là test duy nhất khái quát hoá được ra ngoài năm token — nó chính là lưới hồi quy mà vòng quét 101 palette sinh ra.
+
+Theo AGENTS.md: không `mock.module()`, không `mock.*` nào cả, không source-grep bất kỳ file `.ts` nào, không `expect(true).toBe(true)`, không `not.toThrow()` trần, không assertion "chuỗi không rỗng". Nếu hai file bị gộp còn một, bốn assertion trên vẫn phải tách bạch — chúng phòng thủ những hồi quy khác nhau.
+
+### Xác minh
+
+```bash
+bun run check:ts
+bun test packages/tui/test/daltonized-theme.test.ts packages/tui/test/theme-contrast-harness.test.ts
+```
+
+Baseline đã xác nhận ở HEAD `808b365`: `bun run check:ts` pass, và **đo lại 2026-09-29 ở cây này cho cùng con số đó: cả 16 package Done, exit 0** (con số `15` từng ghi ở đây là sai và đã bị ba chỗ khác trong chính tài liệu này phủ nhận — xem dòng `Điều kiện tiên quyết` và hàng `tail1-9`). `bun test` cần addon native, và addon **đã build ở cây này**; nếu máy bạn thì build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là chạy được — đây là **tiền đề môi trường tái lập được, không phải hạn chế của máy này**. Trên máy sạch chưa build, nó báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`; một lần chạy đỏ như vậy không phải bằng chứng của một lỗi thật.
+
+### Cổng hoàn thành
+
+Ba cổng, cả ba đều có thể đỏ.
+
+- **G1 (có thể đỏ):** `bun run check:ts` (`check:tools` = `oxlint .` + `oxfmt --check`, rồi `tsgo -p tsconfig.json --noEmit` cho từng package) thoát mã khác 0 nếu phép index `DALTONIZE_TARGET_HUE` vào `resolvedColors` không typecheck, nếu `adjustHsv` còn sót trong import dòng 3, hoặc nếu file mới sai format. Nó **không** bắt được `any`: `.oxlintrc.json:23` đặt `"typescript/no-explicit-any": "off"` và không có luật nào cấm dynamic import — hai luật đó vẫn phải canh bằng mắt, đừng viết G1 như thể máy canh được.
+- **G2 (có thể đỏ):** cổng là **tương đối**, không phải tuyệt đối: một cặp chỉ đỏ nếu tỉ lệ sau remap THẤP HƠN tỉ lệ của chính cặp đó trước khi bật `colorBlindMode`. Lý do: đo thật trên 99 theme dựng được ở ngưỡng tuyệt đối 4.5, **63 theme đã vượt ngưỡng ở ít nhất một cặp NGAY CẢ TRƯỚC thay đổi này** (63 → 62 sau remap), và remap làm **0** cặp tụt, **4** cặp lên. Một cổng `≥4.5` tuyệt đối vì thế đỏ sẵn và không bao giờ xanh được; cổng tương đối thì xanh ngay mà vẫn bắt được hồi quy thật.
+- **G3 (có thể đỏ):** test đồng nhất khi tắt đỏ — dựa trên bảng baseline của hợp đồng 3 — nếu nhánh `colorBlindMode` bị mở rộng sang một đường chạy khi cờ là `false`, hoặc nếu remap mutate trạng thái dùng chung rò rỉ sang theme khi tắt cờ. Cả hai đều là lỗi dễ mắc và cả hai đều vô hình khi review. **G3 không bắt được** trường hợp nhánh bị dời lên trên `resolveThemeColors`: nhánh ấy vẫn nằm trong `if (colorBlindMode)`, và `HEX6` khiến `daltonizeHex("$emerald", 250)` trả về nguyên bản, nên theme khi tắt cờ vẫn y hệt. Trường hợp dời nhánh thuộc về **hợp đồng 1**, và sẽ đỏ vì cả năm token không đổi.
+
+Một cổng không thể đỏ sẽ là "file tồn tại" hoặc "đã duyệt 99 palette" — không cái nào chứng minh phép remap đã xảy ra hay rằng cờ vẫn còn canh nó.
+
+Cổng này **thật sự đỏ được**: `gate_can_fail` là `true`, và cả ba cổng đều dựa trên một kiểm tra cụ thể có thể quan sát — mã thoát của trình kiểm tra kiểu, một tỉ lệ tương phản dưới ngưỡng, và một khác biệt byte trên theme khi cờ tắt.
+
+### Phụ thuộc
+
+Không. `depends_on` rỗng và `blocks` rỗng — sóng này không chặn cũng không bị chặn bởi sóng nào khác.
+
+### Rủi ro
+
+Áp một delta hue đồng nhất lên năm token là chúng va chạm. Đỏ nằm ở h=0; delta `+60` sẵn có đưa nó tới h=60 (vàng), và đó **chính là** nơi `statusLineGitDirty` đang nằm — nên một bản vá cẩu thả kiểu "cứ thêm `error`, `success`, `statusLineGitClean`, `statusLineGitDirty` vào cùng một nhánh" sẽ khiến lỗi và git-bẩn hiển thị cùng một màu: một hồi quy vô hình khi review nhưng lộ ra ngay với chính người dùng mà nó sinh ra để giúp. Đây đúng là sự cố mà plan nói bản tham chiếu né tránh bằng cách phát hành hai theme chỉnh tay. Cách sửa là remap từng token sang một dải hue ĐÍCH riêng, chứ không phải thêm một token nữa vào một delta cố định.
+
+Rủi ro còn lại đã được nêu ở **Cần người quyết** và là rủi ro thuần người, không phải rủi ro code: ba hue đích `250` / `350` / `80` là ước lượng chứ chưa đo, và chưa ai mù màu đỏ–xanh lá thật đã xác nhận chúng phân biệt được.
+
+### Cần người quyết
+
+- **S hay M?** Plan nhấn mạnh phải quyết điều này trước khi lập kế hoạch và cảnh báo đừng mặc định chọn bản rẻ, với lý do bản rẻ không tương đương hai theme chỉnh tay của bản tham chiếu. Khuyến nghị ở đây là ngược lại, vì một lý do cụ thể: lý do plan nêu cho M là việc kiểm kê 99 palette, và việc kiểm kê đó nay đã xong và đủ khoá (xem đính chính #2 bên dưới, nơi nó cũng lộ ra 2 theme không dựng được). Phần lợi còn lại của M là **chất lượng thiết kế** ngang bằng với CCB, không phải tính đúng đắn — và M mua được sự ngang bằng đó bằng một harness rồi chỉ kiểm 2 theme do người chọn tay, tức một lưới hồi quy yếu hơn hẳn 101 theme của bản S. Hãy phát hành S bây giờ; ghi M thành việc thiết kế theo sau. Nếu vẫn muốn có sự ngang bằng, phạm vi trung thực là hai file JSON mới trong `defaults/` cộng một lượt thiết kế cộng một đợt review khả năng tiếp cận — không phải một thay đổi code.
+- **Hue đích chính xác.** Khối code bên dưới đề xuất xanh ~250 cho họ xanh lá, magenta ~350 cho lỗi, hổ phách ~80 cho git-bẩn. Đó là ước lượng của đặc tả, không phải số đo. Trước khi phát hành, một người thật sự mù màu đỏ–xanh lá cần xác nhận 250/350/80 phân biệt được với họ, và xác nhận hai dải hổ phách/cam của git-bẩn mà kiểm kê tìm thấy (các biến thể orange, amber, gold, bronze, coral, ember) vẫn đọc ra là "cảnh báo" chứ không phải "lỗi" ở 350.
+- **`statusLineGitDirty` có nên đổi không?** Dưới deuteranopia thuần, cái nhầm lẫn mang tính quyết định là đỏ đối xanh lá. Một khi xanh lá thành xanh, đỏ vẫn phân biệt được, nên git-bẩn (hổ phách) có thể không cần remap. Dù vậy vẫn remap, để nó tách khỏi lỗi bằng hue; một người thật nên xác nhận đó là một cải thiện chứ không chỉ là một thay đổi thứ hai.
+- **Ngưỡng tương phản.** Repo đã có sẵn hai hằng số: `ACCENT_MIN_CONTRAST = 3` (`session-color.ts:37`, WCAG AA chữ lớn) và `MIN_TEXT_CONTRAST = 4.5` (`packages/coding-agent/test/issue-9712-obsidian-muted-contrast.test.ts:6`) — tức 4.5 đã là tiền lệ của chính repo cho chữ nhỏ. Status line là chữ nhỏ, nên AA body (4.5:1) là cổng có cơ sở. Cần xác nhận — 4.5 có thể làm một số theme trong số 101 sẵn có ngay từ đầu chuyển đỏ, biến một PR tính năng thành một dự án cứu chữa 101 palette. Phần còn cần quyết không phải "4.5 có đáng chọn không" mà là: áp cổng tương đối ở trên (một cặp chỉ đỏ nếu tỉ lệ sau remap THẤP HƠN trước khi bật `colorBlindMode`), hay chọn một ngưỡng tuyệt đối thấp hơn và chấp nhận nó vô nghĩa với 63 palette vốn đã dưới ngưỡng.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| `statusLineGitClean`/`statusLineGitDirty` được khai báo ở `packages/tui/src/theme/schema.ts:77-78` "kèm fallback ở :140-141", nên một khoá thiếu sẽ lặng lẽ bỏ qua phép điều chỉnh. | STALE / MISLEADING | Số dòng đúng, nhưng :140-141 **không phải** fallback. Cả hai dòng nằm bên trong `THEME_COLOR_RECORD` (`schema.ts:89`), thứ chỉ tồn tại để dựng `VALID_THEME_COLORS` (`schema.ts:152`) cho `isValidThemeColor` (`schema.ts:156`). Đó là danh sách cho phép kiểm tra, không phải lớp màu mặc định. Không có lớp lấp giá trị mặc định ở bất kỳ đâu: `resolveThemeColors` (`packages/tui/src/theme/color.ts:64-73`) chỉ duyệt những khoá có mặt trong palette, và `theme-class.ts:167-169` loại mọi khoá trượt `isValidThemeColor` bằng `continue`. Một khoá thiếu vì thế cho ra một màu **vắng mặt**, không phải một màu fallback — nên người triển khai không được kỳ vọng một khoá thiếu sẽ hiển thị ra thứ gì đó chấp nhận được. |
+| Bản vá nhỏ "phải kèm một bản kiểm kê 99 palette kiểm từng khoá tồn tại và là chuỗi hex" vì "một khoá thiếu hoặc không phải hex sẽ lặng lẽ bỏ qua phép điều chỉnh". | VERIFIED TRUE, **PHẦN KIỂM KÊ ĐÃ XONG — KHOÁ ĐỦ, NHƯNG 2 THEME KHÔNG DỰNG ĐƯỢC** | Tôi đã chạy đúng bản kiểm kê mà plan đòi. Cả 99 palette trong `packages/tui/src/theme/defaults/` đều chứa `toolDiffAdded`, `success`, `error`, `statusLineGitClean` và `statusLineGitDirty`. Không palette nào thiếu, nên không khoá nào bị lặng lẽ bỏ qua. Một tinh tiết plan bỏ sót: JSON thô chủ yếu là gián tiếp `var:`, không phải hex viết tay — ví dụ `onyx.json` có `"toolDiffAdded": "$emerald"` với `vars.emerald = "#6fb37f"`. `resolveVarRefs` (`packages/tui/src/theme/color.ts:46-62`) giải các tham chiếu đó tại `resolveThemeColors`, vốn chạy ở `loader.ts:151` **trước** khi nhánh `colorBlindMode` đọc chúng ở :153. Vậy nhánh luôn nhìn thấy hex đã giải và chốt chặn `startsWith("#")` hiện hữu đúng trên cả 99. **Nhưng kiểm kê này chỉ đếm SỐ HIỆU DIỆN của khoá — nó không chạy `resolveThemeColors`.** Chạy nguyên văn `resolveVarRefs`/`resolveThemeColors` (`packages/tui/src/theme/color.ts:46-73`) trên cả 99 thì **2 theme ném lỗi**: `onyx` (63 tham chiếu `$var` không tìm thấy, lỗi đầu tiên `Variable reference not found: $vein`) và `light-prism` (`Variable reference not found: muted`). Cả hai đều nằm trong `defaults/` và đều được đăng ký (`defaults/index.ts:94`/`:195` và `:79`/`:180`). Nên `createTheme` **ném** trước khi tới nhánh `colorBlindMode`, và chốt chặn `startsWith("#")` hiện hữu chỉ đúng trên **97** trong 99. Rủi ro bỏ sót lặng lẽ vì thế chỉ thật sự tồn tại với một số màu 256 màu hoặc giá trị `""` — thứ có thể đến từ theme tuỳ chỉnh do người dùng soạn, không phải theme builtin. |
+| Harness hồi quy nên chạy trên "toàn bộ 99 palette". | INCOMPLETE — 99 là con số sai | `BUILTIN_THEMES` (`loader.ts:18-22`) là `dark.json` + `light.json` + 99 file `defaults/*.json`, tức **101** theme. `dark` và `light` chính là hai theme ứng dụng thật sự khởi động khi chưa cấu hình theme, và chúng không nằm trong thư mục defaults. Một harness quét `defaults/*.json` sẽ bỏ sót đúng hai theme mà đa số người dùng thấy. Hãy duyệt `getBuiltinThemes()` (`loader.ts:24`) — cùng một map mà bộ chọn theme dùng. |
+| Các theme mới "chọn được từ ThemePicker như mọi theme bình thường". | STALE — không có ThemePicker nào trong repo này | `git grep -rn 'ThemePicker\|theme-picker' -- packages/` không trả về gì. Việc chọn theme là `setTheme` / `previewTheme` (`theme.ts:211` / `:248`) điều khiển bởi `getAvailableThemes` (`loader.ts:29`) và các thiết lập `cfgThemeDark` / `cfgThemeLight` (`settings.ts:58`). Một theme "chỉ là một theme" khi nó được import trong `packages/tui/src/theme/defaults/index.ts` và thêm vào object literal `defaultThemes` — đó là toàn bộ chi phí đăng ký, và không cần sửa bộ chọn nào. Điều này chỉ liên quan tới bản M, và đó là lý do bản S ở đây không đụng tới file UI nào. |
+| Cờ toàn cục `colorBlindMode` được "nối từ packages/coding-agent/src/modes/settings.ts:108". | ĐÚNG VÙNG, SAI DÒNG VÀ THIẾU — có bốn chỗ tiêu thụ, không phải một | `settings.ts:109-120` là khai báo: `export const cfgColorBlindMode = register({ id: "colorBlindMode" ... })` với `id` ở :110 và `effect(cfgColorBlindMode, setColorBlindMode)` ở :120. Dòng 108 là dòng trống phía trên. Nhưng chỗ bàn giao thật sự vào `createTheme` là `main.ts:1909` qua `applyStartupComposerPreferences({ theme: { colorBlindMode: cfgColorBlindMode.get(settingsInstance) } })`, và còn hai chỗ tiêu thụ nữa: `modes/setup.ts:90-92` và `cli/gallery-cli.ts:29` / `commands/git.ts:13`. Người đọc chỉ bám theo settings.ts:108 sẽ không tìm ra chỗ nối dây xuống TUI. |
+| Nguyên thủy OKLCH `hexToOklch, oklchCusp, oklchToHex, relativeLuminance` có sẵn, import từ `@oh-my-pi/pi-utils` (session-color.ts:2). | VERIFIED TRUE | Không cần sửa gì. Cả bốn đều tồn tại và được export từ `packages/utils/src/color.ts` tại các dòng 320, 392, 423, 471. Lưu ý cho người triển khai: `loader.ts:3` import `adjustHsv` từ **subpath** `@oh-my-pi/pi-utils/color`, không phải barrel — hãy giữ các import màu mới trên subpath để khớp. `oklchToHex` gamut-map bằng cách chia đôi chroma rồi kẹp, nên luôn trả về hex 6 chữ số hợp lệ và không cần kiểm tra hậu kỳ. |
+| Test nằm ở `packages/tui/test/*.test.ts`; tui có 221 file test. | VERIFIED (số đếm nay là 222) | Quy ước vẫn đúng và điều đó có ý nghĩa: `find packages/tui/src -name '*.test.ts' \| wc -l` trả về 0, xác nhận không có gì đặt cạnh. Một file `*.test.ts` mới dưới `packages/tui/src/` sẽ không bao giờ được chạy. Số đếm đã trôi từ 221 sang 222 kể từ khi plan được viết; hãy chỉ dùng làm kiểm tra sơ bộ, không bao giờ làm số chấp nhận. Hàng xóm hiện có nên đọc trước: `packages/tui/test/settings-list-theme.test.ts` (dùng `initTheme()` trong `beforeAll`), `theme-color-mode.test.ts`, `theme-auto-detection.test.ts`. |
+
+
+---
+
+
+**Sáu mục bổ sung từ sổ khoảng trống (`GAP-M3-B4` → `GAP-M3-B9`) — KHÔNG phải một sóng thứ bảy.** Sáu mục dưới đây đến từ `.lavish-wip/GAP-REGISTER-2.md`, không phải từ kế hoạch gốc. Chúng **không lập thành một sóng mới**: sổ đặt B4 vào Sóng 4 (cùng sóng với B3) và B5 vào Sóng 2 (ngay sau A7), còn B6 ghi rõ là PR riêng, sau khi M3 ổn định, không gộp vào sóng nào đang bay. Vì vậy mỗi mục dưới đây tự mang dòng **Sóng / phạm vi** nói rõ nó đứng ở đâu, và thứ tự merge của chúng với sáu sóng gốc nằm ở **Phụ thuộc** của từng mục, không phải ở thứ tự sáu mục này với nhau. Câu "`tail1` §7–§8 chạy sau Sóng 6, **không phải một sóng thứ bảy**" giữ nguyên sau khi thêm sáu mục này. Hai mục là phần mở rộng trên một mục đã có (B5 mở hai trục còn lại của `ShowStatusOptions` mà A7 đã dựng; B8 làm lớp trên `cfgDisplayShimmer` đã có), bốn mục kia là miền bề mặt thuần. Pháp lý ở cả sáu mục là **CHỈ MANG Ý TƯỞNG, không chép dòng nào** — lý do cụ thể nằm ở từng mục.
+
+---
+
+## GAP-M3-B4 — Đưa `getConflicts()` ra khỏi phòng thí nghiệm: báo trùng phím lúc nạp
+
+**Sóng / phạm vi:** Bổ sung cho **Sóng 4**, cùng sóng với B3. Nguồn `cc.96`.
+
+**Hiệu ứng người dùng thấy:** nếu `keybindings.yml` bind `ctrl+k` cho cả `interrupt` lẫn `scrollDown`, phiên đó lên lõi với một cảnh báo nói rõ phím nào đang tranh với phím nào, thay vì cả hai cùng chạy và không một dòng nào nói cho biết cái thứ hai đã chết.
+
+**Effort:** S — khoảng 1 ngày.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/chrome/keybinding-hints.ts` | sửa | B4 — thêm MỘT hàm thuần `formatConflictWarning(conflicts)` ngay cạnh `appKey`, trả chuỗi nhiều dòng, mỗi dòng là key + danh sách hành vi tranh nhau. Bắt buộc đi qua `replaceTabs` / `truncateToWidth` / `shortenPath` / `PREVIEW_LIMITS` theo AGENTS.md vì đây là text đi ra TUI. Thuần mã; không đụng các helper phím editor sẵn có. | Có. `grep -n 'export function appKey\|export function boundKeys\|export function keyHint'` → `boundKeys` `:33`, `appKey` `:44` (đóng ở `:47`), `keyHint` `:57`. File dài 80 dòng, khớp với đính chính s1-8 đã có trong kế hoạch này. `grep -c tmux` trên file này = 0, xác nhận đây là mã mới. |
+| `packages/coding-agent/src/modes/interactive-mode.ts` | sửa | B4 — MỘT call site lúc nạp, ngay sau `KeybindingsManager.create()`. Nếu `getConflicts()` khác rỗng thì đẩy qua `showWarning`, **không** qua `showStatus`. Panel `/keybindings` là việc riêng — **đừng gộp**. | Có. `grep -n 'KeybindingsManager.create' packages/coding-agent/src/modes/interactive-mode.ts` → `:1596` (`logger.time("InteractiveMode.init:keybindings", () => KeybindingsManager.create())`). `showWarning` có thật và là bền vững: `ui-helpers.ts:1068` `showWarning(warningMessage: string, options?: { hideWithToolActivity?: boolean }): void` — khác `showStatus` (`:143`) vốn nằm trên đường thông báo có khoá mà `invalidates` của A7 dọn. |
+| `packages/tui/src/keybindings.ts` | **KHÔNG SỬA** | Thuật toán `#rebuild()` không được đụng tới — mục này chỉ thêm consumer. `canonicalKeyId` + `addKeyAliases` giữ nguyên. | Có. `sed -n '190p;222p;247p;252p;317p'` → `canonicalKeyId` `:190`, `addKeyAliases` `:222`, `export class KeybindingsManager` `:247`, `#conflicts: KeybindingConflict[]` `:252`, `getConflicts()` `:317`. |
+| `packages/tui/test/keybinding-conflict-warning.test.ts` | tạo | B4 — test MỚI cho cảnh báo lúc nạp và cho hàm format thuần. | Có. `packages/tui/test/` tồn tại (hàng xóm: `packages/tui/test/keybindings.test.ts:38` là nơi duy nhất hôm nay gọi `getConflicts()`). File mới này chưa tồn tại. |
+
+### Các bước
+
+1. **Đọc `#rebuild()` (`:259-278`) trước khi viết gì.** Bước này tồn tại để bạn không đi viết lại một thuật toán đã đúng. Mục này chỉ thêm nơi tiêu thụ; `canonicalKeyId` (`:190`) + `addKeyAliases` (`:222`) phải giữ nguyên, nếu không số liệu trùng sẽ sai — một key escape và một key thật sẽ bị báo trùng giả.
+
+2. **Viết `formatConflictWarning` trong `chrome/keybinding-hints.ts`**, hàm thuần, không I/O, không đụng `KeybindingsManager`. Nó nhận `KeybindingConflict[]` và trả chuỗi nhiều dòng. Đây là hàm mà GAP-M3-B7 sẽ dùng lại làm consumer thứ hai — viết nó thành hàm thuần ngay từ đầu là lý do hai nơi cảnh báo trùng nhìn giống nhau.
+
+3. **Chạy qua sanitizer của AGENTS.md trước khi trả về.** `replaceTabs` / `truncateToWidth` / `shortenPath` / `PREVIEW_LIMITS` — đây là text đi ra TUI, và AGENTS.md cấm áp dụng sanitization cho "đường hạnh phúc" thay vì mọi đường, kể cả đường lỗi. Không có số ad-hoc.
+
+4. **Thêm call site lúc nạp trong `interactive-mode.ts`**, ngay sau `KeybindingsManager.create()` (`:1596`). Đi qua `showWarning`, **không** đi qua `showStatus`: đây là lỗi cấu hình cần sống sót, và `showStatus` nằm trên đường mà `invalidates` của A7 quét.
+
+5. **Viết test.** Ba khẳng định: (a) `getConflicts()` trả về phần tử khi hai action cùng nhận một key, và mảng rỗng khi không; (b) chuỗi `formatConflictWarning` cho một xung đột nêu **tên key** và **tên cả hai hành vi** — báo cáo có tên là toàn bộ ý nghĩa của cảnh báo; (c) call site lúc nạp đẩy qua `showWarning` chứ không phải `showStatus`. Thêm một khẳng định phủ định cho hợp đồng quan trọng nhất của mục này: **không có xung đột thì không có dòng cảnh báo nào** — im lặng là hành vi đúng, và một bản triển khai luôn in sẽ huấn luyện người dùng bỏ qua nó.
+
+### Hợp đồng test
+
+**B4** — hợp đồng quan sát được: một `keybindings.yml` bind trùng một key lên hai hành vi thì phiên lên lõi với một cảnh báo nêu đích danh key đó và cả hai hành vi; một `keybindings.yml` sạch thì không có dòng cảnh báo nào; và hàm format cho ra **cùng một chuỗi** ở cả hai nơi tiêu thụ sau này. Hồi quy ở đây là âm thầm và đúng kiểu nguy hiểm nhất: cả hai binding cùng chạy, cái thứ hai chết, và không một dòng nào nói cho biết — người dùng bấm phím và tự kết luận omp bị treo. Hợp đồng phủ định quan trọng ngang hợp đồng dương: **cảnh báo phải im khi không có xung đột**, vì cảnh báo thừa là cách nhanh nhất để dạy người dùng bỏ qua cảnh báo. File: `packages/tui/test/keybinding-conflict-warning.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import kèm `Failed to load pi_natives native addon for darwin-arm64`; đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Nếu máy bạn chưa có: build một lần là xong — `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0); sau đó lệnh dưới chạy được. **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`** — `check:ts` là `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types` (`package.json:94`).
+
+Khi addon đã build:
+
+```bash
+bun test packages/tui/test/keybinding-conflict-warning.test.ts
+```
+
+### Cổng hoàn thành
+
+Test mới pass, và `bun run check:ts` exit 0. Cụ thể: (a) test chứng minh cảnh báo xuất hiện khi có xung đột, nêu tên key + tên cả hai hành vi, và **vắng mặt** khi không có; (b) call site lúc nạp đi qua `showWarning` chứ không phải `showStatus`; (c) thuật toán `#rebuild()` chưa bị sửa — khẳng định số phần tử trả về cho một bộ binding trùng phải giống hệt hôm nay, đó là bằng chứng rằng mục này chỉ thêm consumer.
+
+**Cổng có thực sự đỏ được không?** Có. Cổng (a) đỏ nếu hàm format bỏ tên hành vi, hoặc nếu cảnh báo in ra ở một config sạch. Cổng (c) đỏ nếu ai đó "tối ưu" `#rebuild()` trong lúc đi qua — đó là cách sai nhiều khả năng nhất của mục này, vì thấy một mảng conflict ở đó rất dễ nghĩ là đã có sẵn nên sửa cho "đẹp". Cổng DUY NHẤT không thể đỏ là câu hỏi ở *Cần người quyết*: một câu trả lời chưa ghi trông y hệt câu đã ghi cho tới khi ai đó mở đặc tả ra kiểm.
+
+### Phụ thuộc
+
+- **Không chặn M2.** Không cùng file với A3/D3. Không bị Q6 chặn.
+- **A7 phải merge trước, không phải sau.** Lý do là kỹ thuật, không phải lịch sự: cảnh báo đi qua `showWarning` (`ui-helpers.ts:1068`) vì đó là nhánh bền vững, còn `showStatus` (`:143`) là đường mà `invalidates` của A7 quét và dọn. Làm ngược thứ tự thì cảnh báo cấu hình biến mất đúng lúc A7 dọn hàng.
+- **GAP-M3-B7 phụ thuộc ngược lại vào B4** — xem mục đó. Đây là quan hệ hai chiều về thứ tự merge, và lý do là kỹ thuật: B7 là consumer thứ hai của cùng dữ liệu conflict và phải dùng **cùng một hàm format**, nếu không người dùng thấy hai kiểu cảnh báo xung đột khác nhau ở hai nơi và cái sai là cái thứ hai.
+- Có thể chạy song song với A1/A8/A6/A5 của Sóng 1 nếu cổng trống.
+
+### Rủi ro
+
+Cách nhiều khả năng nhất để làm sai là **sửa `#rebuild()`**. `getConflicts()` đã có sẵn và đúng; đọc một mảng conflict rồi thấy "chỗ này đáng sửa" là rất dễ, và sửa nó phá đúng thứ mà mục này cần giữ: `canonicalKeyId` + `addKeyAliases` loại nốt escape/alias, nếu mất chúng thì một key escape và một key thật bị báo trùng giả và người dùng mất niềm tin vào cảnh báo ngay lần đầu. Kẻ vế hai là **chọn sai kênh hiển thị**: đi qua `showStatus` thì cảnh báo nằm đúng chỗ mà A7 dọn, và thất bại chỉ lộ ra sau khi A7 đã merge — tức nó đỏ ở thời điểm không ai đang nhìn vào nó. Kẻ vế ba, ngược lại: in cảnh báo cả khi không có xung đột. Đó không phải lỗi hiển thị, đó là lỗi huấn luyện — người dùng học được cách bỏ qua dòng cảnh báo, và cảnh báo thật đầu tiên cũng biến mất theo.
+
+### Cần người quyết
+
+- **GAP-D7** (xem `GAP-REGISTER-2.md` §4) — câu hỏi quyết của mục này. Chưa có mặc định — cần bạn quyết. Mọi bản sửa khác trong kế hoạch này đều ghi cảnh báo dạng nguyên văn lúc nạp; nếu D7 chốt một bề mặt khác (ví dụ chỉ báo trong panel thay vì cảnh báo lúc nạp) thì bước 4 ở trên phải viết lại, nhưng `formatConflictWarning` ở bước 2 vẫn giữ nguyên vì B7 cần nó.
+- Có nên cảnh báo **mọi** xung đột, hay chỉ xung đột mà người dùng gần như chắc chắn không cố ý (cùng key trên hai hành vi cùng nhóm)? Sổ khoảng trống không trả lời câu này và cũng không nêu mặc định — cần bạn quyết.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "`getConflicts()` không có nơi tiêu thụ nào ngoài chính test của nó" (claim đầu vào của sổ khoảng trống, được sửa ngay trong chính sổ). | CORRECTED — kết luận không đổi | `git grep -rn getConflicts` cho **nhiều hơn 2 hit** nếu quét toàn repo, nhưng phần dư là `packages/mnemopi/src/core/veracity-consolidation.ts:360`, một class khác hoàn toàn (`Conflict[]` cho fact-collision) **có** call site thật. Bản của `packages/tui/src/keybindings.ts` vẫn đúng 2 hit: định nghĩa `:317` và `packages/tui/test/keybindings.test.ts:38`. Kết luận "chỉ có test là nơi tiêu thụ" đứng vững — nhưng đừng dùng `git grep` toàn repo làm bằng chứng cho nó, vì nó trả về số gây hiểu nhầm. Bằng chứng: `git grep -rn 'getConflicts' -- packages/tui packages/coding-agent` → đúng 2 dòng nêu trên. |
+| Kế hoạch gốc của M3 không hề nhắc tới `KeybindingsManager`, `getConflicts()` hay một cảnh báo xung đột phím. | CONFIRMED — đây là mục mới, không phải đính chính của mục cũ | `grep -n 'getConflicts\|conflict' MILESTONE_3_EXECUTION_PLAN.md` trả **0 hit** trước khi sáu mục này được thêm. Không có work item nào đã có trong M3 trùng chủ đề, nên đây là việc mới chứ không phải việc viết lại. |
+| "Một hàm thuần trong `packages/tui/src/chrome/keybinding-hints.ts` cạnh `appKey` (`:47`)". | CORRECT — nhưng nói rõ quy ước số dòng | `appKey` **khai báo** ở `:44` và **đóng** ở `:47`; `boundKeys` ở `:33`, `keyHint` ở `:57`. Sổ khoảng trống trỏ `:47` là dòng đóng ngoặc, và đây cũng chính là cách đọc mà đính chính `s1-8` trong kế hoạch này đã dùng. Hàm mới nối sau `appKey` — không phải chèn vào giữa `boundKeys` và `appKey`. Bằng chứng: `grep -n 'export function' packages/tui/src/chrome/keybinding-hints.ts` → 33, 44, 57, 70. |
+| "Cảnh báo phải đi qua `showWarning` nên A7 phải merge trước, không phải sau." | CONFIRMED | `showWarning` tồn tại và là một bề mặt riêng: `packages/coding-agent/src/modes/utils/ui-helpers.ts:1068` `showWarning(warningMessage: string, options?: { hideWithToolActivity?: boolean }): void`. `showStatus` ở `:143` hôm nay nhận đúng `{ dim?: boolean }` và là đường mà A7 đang dựng hàng đợi có khoá với `invalidates`. Hai bề mặt này không bị dọn giống nhau, nên chọn sai là cảnh báo biến mất sau A7. Bằng chứng: `grep -n 'showStatus\|showWarning\|showError' packages/coding-agent/src/modes/utils/ui-helpers.ts` → 143 (showStatus), 1063 (showError), 1068 (showWarning). |
+| File test cho mục này. | ĐỀ XUẤT CỦA ĐẶC TẢ, không phải của sổ khoảng trống | Sổ khoảng trống không đặt tên file test. `packages/tui/test/keybinding-conflict-warning.test.ts` là tên đặt tả này chọn, theo quy ước của Sóng 1 (tên file mô tả hợp đồng, không mô tả hàm). Hàng xóm đã có: `packages/tui/test/keybindings.test.ts:38`. |
+
+---
+
+## GAP-M3-B5 — Bật trục ưu tiên và hạn sống cho hàng thông báo tạm
+
+**Sóng / phạm vi:** Bổ sung cho **Sóng 2**, ngay sau A7. Nguồn `cc.81`.
+
+**Hiệu ứng người dùng thấy:** một thông báo tạm có `key` tự biến mất sau một hạn thay vì nằm vĩnh viễn tới khi bị thông báo khác đuổi; và khi nhiều loại cùng lúc thì thứ nào thắng là do mức ưu tiên khai báo, không phải do thứ tự gọi.
+
+**Effort:** S — 0,5–1 ngày.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/modes/utils/ui-helpers.ts` | sửa | B5 — mở rộng `ShowStatusOptions` với `priority?: number` và `ttlMs?: number`, cộng một bộ so sánh ưu tiên và một hẳn giờ hết hạn, vào **đúng nhánh có-khoá mà A7 đã dựng**. AGENTS.md cấm `new Promise(r => setTimeout(r, ms))` — hẳn giờ đi qua đường sleep đã được chấp nhận. | Có. `sed -n '143p'` → `showStatus(message: string, options?: { dim?: boolean }): void` — **đúng một tham số `dim`**, không tham số ưu tiên, không tham số hạn. Khớp chính xác với phát hiện của sổ khoảng trống. Ngoài ra `git grep ShowStatusOptions -- packages` trả 0 kết quả trong mã nguồn, nên đây là kiểu A7 sẽ tạo ra chứ không phải kiểu có sẵn. |
+| `packages/coding-agent/src/modes/interactive-mode.ts` | sửa | B5 — dùng hai trục mới ở ít nhất một call site thật, để `priority` và `ttlMs` không phải tuỳ chọn chết. Vùng sửa là quanh dòng 1728. | Có — vùng này là chỗ A7 đã sửa, nên làm song song nghĩa là sửa một file hai lần trong hai commit liên tiếp. Đó là lý do B5 phải **sau** A7 chứ không phải cùng lúc. |
+| `packages/tui/src/chrome/message-notice.ts` | **KHÔNG SỬA** | TTL là cơ chế ở tầng `ui-helpers.ts`, **không** phải một timer thứ hai bên trong component. `MessageNoticeComponent` giữ nguyên hai field sẵn có (`#expanded`, `#toolActivityVisible`). | Có. `sed -n '37p' packages/tui/src/chrome/message-notice.ts` → `export class MessageNoticeComponent extends Container {`. `grep -n 'expiresIn\|autoHide\|dismiss\|setTimeout'` trên `message-notice.ts` và `ui-helpers.ts` → 0 hit, xác nhận cả hai trục đều thật sự vắng chứ không phải "ở nơi khác". |
+| `packages/coding-agent/test/notice-ttl-priority.test.ts` | tạo | B5 — test MỚI cho hai trục. **Không** nhét vào `notice-queue.test.ts` của A7: hợp đồng byte-identity của nhánh không-có-khoá thuộc về file đó, và B5 không được làm mờ nó. | Có. `packages/coding-agent/test/notice-queue.test.ts` là file A7 đang tạo (chưa tồn tại hôm nay). File mới này cũng chưa tồn tại. |
+
+### Các bước
+
+1. **Đọc lại khoản byte-identity của A7 trước.** Điều khoản của A7 là: **nhánh không-có-khoá phải giữ nguyên từng byte**. B5 nằm trong nhánh có-khoá và không được làm mờ điều khoản đó. Bước này tồn tại để bạn không sửa `ui-helpers.ts:143` rồi vô tình đổi cả đường không-khoá khi đang ở trong file.
+
+2. **Khai `priority?: number` và `ttlMs?: number`** trên `ShowStatusOptions` mà A7 đã đặt tên. Cả hai phải **tuỳ chọn** — 332 dòng gọi `showStatus(...)` sẵn có phải biên dịch được mà không đụng tới, và đó là toàn bộ ý nghĩa của việc A7 đặt tên kiểu thay vì đổi hình dạng.
+
+3. **Viết hàm thuần `shouldReplaceNotice(incoming, queued)`** — so sánh ưu tiên, thuần-tình, không chạm state. Đây là hàm test được không cần dựng cả hàng đợi; đừng viết nó thành một nhánh `if` nội tuyến trong phương thức, vì khi đó không có cách nào khẳng định thứ tự ưu tiên mà không dựng nguyên cả chuỗi sự kiện.
+
+4. **Thêm hết hạn theo hẳn giờ** vào nhánh có-khoá, dùng cơ chế sleep của repo (AGENTS.md cấm `new Promise(r => setTimeout(r, ms))` và cấm `setTimeout` promise thủ công). Hết hạn phải **xoá khỏi hàng đợi**, không chỉ ẩn đi — một notice đã hết hạn mà vẫn nằm trong hàng đợi sẽ quay lại và đuổi một thông báo mới hơn.
+
+5. **Dùng hai trục ở ít nhất một call site thật** trong `interactive-mode.ts`. Một tuỳ chọn không ai truyền vào là một tuỳ chọn chết và sẽ bị xoá trong lần refactor kế tiếp; call site đầu tiên nên là thông báo compaction mà A7 đã biến thành có-khoá, vì nó vừa là thông báo dài vừa là thông báo lặp lại.
+
+6. **Viết test** ở file mới, không đụng `notice-queue.test.ts`.
+
+### Hợp đồng test
+
+**B5** — hợp đồng quan sát được: hai thông báo có-khoá cùng lúc với `priority` khác nhau thì thứ ưu tiên cao hơn thắng **bất kể thứ tự gọi** — đảo thứ tự gọi thì kết quả phải là kết quả; một thông báo có `ttlMs` hết hạn thì biến mất khỏi hàng đợi và **không quay lại đuổi** một thông báo mới hơn; và một thông báo không có `key` vẫn render **giống từng byte** với bản dựng trước khi B5 chạm vào. Nửa cuối là hợp đồng quan trọng nhất của mục này: A7 đặt điều khoản byte-identity cho nhánh không-có-khoá, và B5 là mục duy nhất trong Sóng 2 có thể làm mờ nó. Hồi quy ở đây là **âm thầm và hiếm**: một thông báo thừa không ai bận tâm, nên hỏng sẽ không ai thấy cho tới khi một thông báo quan trọng không bao giờ xuất hiện. File: `packages/coding-agent/test/notice-ttl-priority.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Build một lần là xong: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+
+Khi addon đã build:
+
+```bash
+bun test packages/coding-agent/test/notice-ttl-priority.test.ts packages/coding-agent/test/notice-queue.test.ts
+```
+
+Hai file cùng chạy là bắt buộc: file thứ hai của A7 phải vẫn xanh **không sửa một khẳng định nào**, vì đó là bằng chứng B5 không đụng nhánh byte-identity.
+
+### Cổng hoàn thành
+
+Hai file test cùng xanh, `bun run check:ts` exit 0. Cụ thể: (a) ưu tiên thắng bất kể thứ tự gọi, có khẳng định phủ định đảo thứ tự; (b) hết hạn **xoá khỏi hàng đợi**, và một thông báo đã hết hạn không đuổi được thông báo mới hơn; (c) `notice-queue.test.ts` của A7 xanh mà không sửa một khẳng định nào; (d) hợp đồng byte-identity của nhánh không-có-khoá vẫn đúng.
+
+**Cổng có thực sự đỏ được không?** Có. Cổng (a) đỏ nếu so sánh ưu tiên rơi về thứ tự gọi — đó chính là hành vi hôm nay, nên một bản triển khai "cho có" sẽ xanh vô nghĩa nếu thiếu nửa phủ định đảo thứ tự. Cổng (b) đỏ nếu hết hạn chỉ ẩn chứ không xoá. Cổng (c) là cổng mạnh nhất và là thứ tách B5 khỏi "làm thêm chút cho A7": nó đỏ ngay nếu B5 chạm vào nhánh không-có-khoá. Không có cổng nào ở đây là cổng con người.
+
+### Phụ thuộc
+
+- **A7 bắt buộc.** B5 sửa `ui-helpers.ts` quanh dòng 143 và `interactive-mode.ts` quanh 1728 — đúng vùng A7 đã sửa. Làm song song nghĩa là sửa một file hai lần trong hai commit liên tiếp, và commit sau phải hiểu tại sao commit trước đã đặt điều khoản byte-identity.
+- Không có phụ thuộc nào khác trong M3. B5 không chặn M2.
+
+### Rủi ro
+
+Cách nhiều khả năng nhất để làm sai là **làm mờ điều khoản byte-identity của A7**. A7 cài bốn trục và giữ nhánh không-có-khoá nguyên vẹn để 332 call site hiện có không đổi hành; B5 thêm hai trục vào cùng một phương thức và rất dễ vô tình chạm nhánh kia khi đang sửa file. Kẻ vế hai là **hết hạn chỉ ẩn chứ không xoá** — thông báo biến mất khỏi màn hình nhưng vẫn nằm trong hàng đợi và sẽ quay lại đuổi một thông báo mới hơn, tức là hạn sống hoá thành trì hoãn vô hạn đúng lúc nó tưởng đã hết. Kẻ vế ba, ngược lại, là viết hai trục rồi không ai truyền vào: `priority` và `ttlMs` trở thành tuỳ chọn chết và bị xoá trong lần refactor kế tiếp mà không ai thấy người dùng mất gì.
+
+### Cần người quyết
+
+- Thứ tự khi hai thông báo **bằng ưu tiên**: thông báo mới thắng, hay thông báo đang hiện thắng? Sổ khoảng trống nêu cơ chế `shouldReplaceNotice(incoming, queued)` — tên hàm cho thấy lời giải ngầm là "incoming thắng", nhưng đó là **suy luận từ tên hàm**, không phải quyết định đã chốt. Cần bạn xác nhận.
+- `ttlMs` có nên có một mặc định cho thông báo có-khoá không, hay bắt buộc phải truyền tường minh? Mặc định âm thầm là một thay đổi hành cho mọi call site có-khoá hiện có; không có mặc định thì hai call site có thể sống mãi và đó là điều B5 định sửa. Cả hai đều hợp lý, cả hai đều thay đổi thứ người dùng thấy.
+- Đơn vị của `priority` là số nguyên không giới hạn hay một enum nhỏ? Sổ khoảng trống nói `priority?: number` và không nói gì thêm. Số nguyên tự do dễ dùng nhưng dễ so sánh sai; enum nhỏ tự tài liệu hoá nhưng thêm một loại vào miền setting. Cần bạn quyết trước bước 3.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "A7 đã cài 4 trong 5 trục của cc.81 (`key`, `invalidates`, `fold`, `immediate`)". | CONFIRMED | `ShowStatusOptions` mà đặc tả A7 khai trong khối "Hình dạng code" của Sóng 2 đúng là có đúng bốn trục đó, cộng `dim` có sẵn từ hôm nay. Không trục thứ năm nào đã tồn tại. Bằng chứng: khối code của A7 trong kế hoạch này khai `dim`, `immediate`, `invalidates`, `fold`, `key`. |
+| "`showStatus` hôm nay nhận **đúng** `{ dim?: boolean }`". | CONFIRMED | `sed -n '143p' packages/coding-agent/src/modes/utils/ui-helpers.ts` → `showStatus(message: string, options?: { dim?: boolean }): void`. Không tham số ưu tiên, không tham số hạn, không gì khác. Đây là phép đo trực tiếp trên cây, không phải suy đoán. |
+| "`grep 'expiresIn\|autoHide\|dismiss\|setTimeout'` trên `chrome/message-notice.ts` và `ui-helpers.ts` → **0 hit**." | CONFIRMED | Chạy lại cả hai file: 0 hit. Hai trục của B5 thật sự vắng, không phải "đã có ở nơi khác". `sed -n '37p' packages/tui/src/chrome/message-notice.ts` → `export class MessageNoticeComponent extends Container {`, và class đó chỉ có `#expanded` cùng `#toolActivityVisible`. |
+| "`MessageNoticeComponent` giữ nguyên hai field sẵn có; TTL là cơ chế ở tầng `ui-helpers.ts`, **không** phải một timer thứ hai bên trong component." | CONFIRMED | Bổ sung một lý do vì sao điều khoản này quan trọng: hai timer cùng quản lý một hàng nghĩa là phải có một cái để huỷ cái kia khi thông báo bị thay, và không có gì trong `MessageNoticeComponent` hôm nay biết về vòng đời hàng đợi. Timer thứ hai là một chiếc đồng hồ không chủ sở hữu. |
+| "B5 sửa `ui-helpers.ts` quanh dòng 143 và `interactive-mode.ts` quanh 1728". | Cần đối chiếu lại lúc code | `:143` đã kiểm chứng đúng. `:1728` của `interactive-mode.ts` **chưa** được kiểm chứng trong lượt này và không có câu lệnh nào trong sổ khoảng trống chỉ ra nó là gì — hãy `grep -n` lại vùng đó trước khi sửa, vì số dòng của kế hoạch đã trôi ở nhiều chỗ (xem bảng đính chính tổng ở cuối tài liệu này: `interactive-mode.ts:6674` thực tế là `:6624`). Đừng tin số, hãy tra từng dòng bằng `grep` như các đặc tả khác đã làm. |
+| File test cho mục này. | ĐỀ XUẤT CỦA ĐẶC TẢ, không phải của sổ khoảng trống | Sổ khoảng trống không đặt tên file. `packages/coding-agent/test/notice-ttl-priority.test.ts` là tên đặc tả này chọn, và nó **cố ý tách khỏi** `notice-queue.test.ts` của A7: hợp đồng byte-identity thuộc về file của A7, để B5 chen vào đó là cách nhanh nhất để làm mờ chính điều khoản mà bước 1 của mục này nhắc phải giữ. |
+
+---
+
+## GAP-M3-B6 — Thoát alt-screen: một chế độ inline giữ scrollback để terminal selection/copy thật sự hoạt động
+
+**Sóng / phạm vi:** **PR riêng, sau khi M3 ổn định. Không gộp vào sóng nào đang bay.** Nguồn `codex.118` + `codex.134` (hai mục, một cơ chế).
+
+**Hiệu ứng người dùng thấy:** một cờ để chạy `omp` không vào alt-screen, để lựa chọn và copy bằng chuột của terminal thật sự hoạt động; lựa chọn được nhớ cho lần chạy sau.
+
+**Effort:** M — khoảng 1–1,5 ngày.
+
+Đây là bề mặt người dùng thuần, nằm đúng miền M3, và M3 là nơi duy nhất đang có người đọc `terminal.ts` và có cổng kiềm multi-viewport. **Nhưng KHÔNG gộp vào sóng đang bay:** `?1049h/l` là **điều kiện tiên quyết của mọi overlay fullscreen và của virtualized scrollback** — một thay đổi sai ở đây làm đỏ hàng loạt test TUI theo kiểu khó chẩn đoán nhất.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/terminal.ts` | sửa | B6 — đưa `DisplayMode = "alt-screen" \| "inline"` vào tầng terminal. `altScreenActive` trở thành **một nhánh của nó** chứ không phải một `let` độc lập, và bắt buộc phải xử lý `?1049h` khi khởi động lẫn khi fullscreen overlay mở/đóng **giữa chừng**. | Có. `sed -n '271p'` → `let altScreenActive = false;`. `:410` → `terminal.write(\`${keyboardExit}\x1b[?1049l\`)`; `:433` → `(altScreenActive ? "\x1b[?1049l\x1b[?1l\x1b>\x1b[<u" : "") + // Leave alt; reset main keyboard`; `:2273` → `if (data.lastIndexOf("\x1b[?1049") > idx) {`. Cả ba đúng như sổ khoảng trống ghi. |
+| `packages/tui/src/components/image.ts` | canh — KHÔNG ĐỔI HÀNH | Chọn surface theo alt/screen để vẽ ảnh (`:278-298`). Ở chế độ inline phải cho ra một quyết định **có tên**, không được im lặng rơi về một nhánh. | Có. `grep -n 'altScreen\|1049' packages/tui/src/components/image.ts` → `:171`, `:254`, `:258`, `:267`, `:278` ("Pass `altScreen: true` when the frame is painted on the alternate buffer"). Đường dẫn thật là `packages/tui/src/components/image.ts` (không phải `packages/tui/src/image.ts`). |
+| `packages/coding-agent/src/config/registry.ts` | sửa | B6 — MỘT setting id mới cho chế độ hiển thị, và một entry `/tui` ghi vào settings để lần chạy sau nhớ lựa chọn. Cờ `--inline` / `--display=inline` là nửa `codex.118`. | Có. `grep -oE '"tui\.[a-zA-Z.]+"' packages/coding-agent/src/config/all-settings.ts` → **rỗng**: hôm nay không có nhóm setting `tui.*` nào, nên đây là id đầu tiên của nhóm. Chốt chặn `assertKnownSettingPaths` nằm ở `packages/coding-agent/src/config/settings.ts:225` và được gọi ở `:632`. |
+| `packages/tui/test/inline-display-mode.test.ts` | tạo | B6 — test MỚI cho nhánh inline và cho hợp đồng "tắt cờ thì hành vi y hệt hôm nay". | Có. `packages/tui/test/` tồn tại. File chưa tồn tại. |
+
+### Các bước
+
+1. **Đọc `terminal.ts:410-433` và `tui.ts:1497`/`:1547` trước khi sửa gì.** Đây là toàn bộ bề mặt alt-screen hiện có: `TerminalOverlay` thoát alt screen khi overlay fullscreen đóng lại, `?1000/?1003` mouse tracking tắt theo, và `tui.ts` bật/ tắt alt screen quanh một lần repaint khi resize. Bạn đang thêm một **trạng thái thứ hai** mà toàn bộ vòng đời render phải tôn trọng — đọc trước là để không phát minh lại đường đã có.
+
+2. **Khai `DisplayMode` ở tầng terminal** và làm `altScreenActive` thành một nhánh của nó. Xử lý `?1049h` ở **cả hai** thời điểm: lúc khởi động, và giữa chừng khi một overlay fullscreen mở rồi đóng. Điểm thứ hai là chỗ dễ sót: overlay mở trong khi inline vẫn phải trả về đúng trạng thái mà nó tìm thấy.
+
+3. **Thêm cờ `--inline` / `--display=inline` và một setting id mới**, cộng một entry `/tui` để lựa chọn được nhớ. Setting id mới **phải đi qua `assertKnownSettingPaths`** như mọi setting khác, nếu không nó sẽ không chặn được typo path.
+
+4. **Ở chế độ inline: bỏ qua các guard `?1049` và giữ nguyên mọi thứ khác** — bracketed paste, mouse, DCS passthrough cho tmux. Chọn terminal thì phải còn scrollback của chính terminal; đó là toàn bộ giá trị của chế độ này. Đừng tắt chuột cùng alt-screen: người dùng chọn chế độ inline chính là để dùng chuột.
+
+5. **Viết test** phủ cả hai chiều của hợp đồng.
+
+### Hợp đồng test
+
+**B6** — hợp đồng quan sát được: ở chế độ inline, không có escape `?1049h` nào được ghi ra vào stream, và một overlay fullscreen mở rồi đóng **giữa chừng** không để lại trạng thái alt-screen mồ côi; ở chế độ mặc định, output giống từng byte với hôm nay. Nửa phủ định là nửa mang tải trọng: mặc định phải **không đổi một byte**, vì đây là thứ mọi người dùng hiện tại nhìn thấy. Hồi quy ở đây không phải "giao diện trông khác" — nó là **một hàng loạt test TUI đỏ theo kiểu khó chẩn đoán nhất**, vì `?1049h/l` là điều kiện tiên quyết của mọi overlay fullscreen và của virtualized scrollback. File: `packages/tui/test/inline-display-mode.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+**LƯU Ý:** `bun test packages/tui` cần addon native (M6). Đây **không phải cổng đỏ toàn cục và không phải hạn chế của máy này**: `packages/tui/test/mouse.test.ts` chạy được 13/13 ngay cả khi chưa build, còn những file import `pi_natives` thì 0/1 cho tới khi build. Lối ra là `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) — sau đó toàn suite chạy. **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+
+Khi addon đã build:
+
+```bash
+bun test packages/tui/test/inline-display-mode.test.ts
+bun test packages/tui/test/
+```
+
+Lệnh thứ hai là bắt buộc, không phải tùy chọn: nó là cách phát hiện một lỗi loại "một overlay fullscreen hỏng âm thầm" mà một test của riêng B6 không thấy.
+
+### Cổng hoàn thành
+
+`bun run check:ts` exit 0; toàn bộ `packages/tui/test/` xanh; và bốn điều được bảo toàn ở bước 6 dưới đây đều còn nguyên văn. **Mục này không được nhận mình xong khi cổng còn đỏ** — nếu `bun test packages/tui` còn đỏ vì addon thì cổng đó **chưa chạy**, chứ không phải cổng đỏ.
+
+**Cổng có thực sự đỏ được không?** Có, và mạnh. Cổng byte-identity của chế độ mặc định đỏ ngay nếu bất kỳ thứ gì rò sang đường mặc định. Cổng overlay mở/đóng giữa chừng đỏ nếu trạng thái alt-screen bị bỏ mồ côi — và đó là loại lỗi chỉ lộ ra khi người dùng mở một overlay sau khi đã ở inline một lúc. Điểm yếu thật của cổng này: nó là **cổng người** ở phần "terminal selection/copy thật sự hoạt động" — một test không chứng minh được rằng chuột của terminal đã chọn đúng đoạn. Phần đó phải báo cáo tay trong PR.
+
+### Phụ thuộc
+
+- **Sau khi M3 ổn định.** Không gộp vào sóng nào đang bay.
+- **Xung đột phải nói trước với GAP-M3-B9:** mục đó cũng chạm `terminal.ts`, cùng vùng. B6 đổi mô hình alt-screen, B9 thêm renderer thứ hai. Hai mục phải có **thứ tự merge rõ ràng**; nếu gộp, một lỗi ở đây làm đỏ cả hai cùng lúc và không tách được.
+- Cổng đỏ của mục này phụ thuộc native addon (M6).
+
+### Rủi ro
+
+`?1049h/l` là **điều kiện tiên quyết của mọi overlay fullscreen và của virtualized scrollback**. Một thay đổi sai ở đây không hỏng một tính năng, nó hỏng hàng chục và theo kiểu khó chẩn đoán nhất — hỏng nằm ở tầng escape sequence nên mọi triệu chứng đều trông giống nhau. Kẻ vế hai là chỉ xử lý `?1049h` lúc khởi động mà bỏ qua thời điểm overlay fullscreen mở/đóng **giữa chừng**; đó là lỗi im lặng, chỉ hiện ra khi người dùng đã ở inline và mở một overlay. Kẻ vế ba là **tắt chuột cùng alt-screen**: người dùng chọn chế độ inline chính là để dùng chuột, nên tắt nó là trao một lựa chọn mà không có ý nghĩa. Kẻ vế bốn, ngược lại, là làm chế độ này **trở thành mặc định** — đó là thay đổi hành người dùng thấy và phải có changelog entry (xem *Cần người quyết*).
+
+### Cần người quyết
+
+- **GAP-D11** (xem `GAP-REGISTER-2.md` §4) — điều khoản bắt buộc của mục này: chế độ inline **KHÔNG được trở thành mặc định**. Đó là thay đổi hành người dùng thấy và phải có changelog entry. Sổ đã chốt điều khoản này; câu hỏi còn mở là **tên setting và tên entry `/tui`**, vì hôm nay chưa có nhóm `tui.*` nào để bám theo và tên đặt sai thì phải đổi sau khi đã có người dùng.
+- Mức phụ thuộc chặn của `docs/keybindings`-style tài liệu không có ở đây, nhưng: khi setting đổi giữa hai lần chạy, cần cảnh báo cho người dùng biết rằng lựa chọn chỉ có tác dụng sau lần khởi động tiếp theo không? Chế độ hiển thị là thứ **không thể** đổi giữa chừng một phiên mà không phá vỡ transcript.
+- Mức hỗ trợ: bao nhiêu terminal thật đã thử chế độ inline trước khi coi là xong? Sổ yêu cầu nói thẳng đây là cổng đỏ, nhưng không đặt ngưỡng.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "`grep -rniE 'no-alt-screen\|noAltScreen\|--inline' packages/coding-agent/src/cli* packages/coding-agent/src/cli.ts` → **0 hit**." | CONFIRMED | Chạy lại trên `packages/coding-agent/src/cli.ts` và thư mục `packages/coding-agent/src/cli`: 0 hit. Không có cờ nào tắt alt screen. |
+| "`grep -oE '\"tui\\.[a-zA-Z.]+\"' packages/coding-agent/src/config/all-settings.ts` → **rỗng**." | CONFIRMED | Chạy lại: rỗng. Hôm nay không có nhóm setting `tui.*` nào để chọn chế độ hiển thị. Đây là id đầu tiên của nhóm, nên tên phải được chốt (xem *Cần người quyết*). |
+| "`grep -rn 'scrollback' packages/tui/src` → chỉ trả về `altScreenActive` tại `terminal.ts:271`, các guard `?1049` ở `:410/:433/:2273`, và `image.ts:278-298`." | CORRECTED — kết luận không đổi, danh sách đầy đủ hơn | `grep -rn 'scrollback' packages/tui/src` **không** chỉ trả về ba nơi đó. Còn có `tui.ts:60`, `:128`, `:132`, `:185`, `:305`, `:413`, cùng `terminal.ts:2134`, `terminal-capabilities.ts:691`, `:838`, `:1063`. Đây đều là khái niệm về **native terminal scrollback** — `ResizeScrollbackMode` được khai ở `tui.ts:314`, `clearScrollback` ở `tui.ts:186` và `:306` — **không phải hai renderer của app**. Nên kết luận "không có khái niệm chọn renderer ở mức ứng dụng" vẫn đúng, nhưng lập luận phải dựa trên việc đọc **nội dung** của từng hit chứ không dựa vào việc lệnh trả về ba dòng. Ba neo mà sổ nêu đều đúng: `terminal.ts:271` là `let altScreenActive = false;`, `:410` và `:433` là hai chỗ ghi escape, `:2273` là chỗ dò `?1049` trong dữ liệu vào. |
+| "`image.ts:278-298` chọn surface theo alt/screen để vẽ ảnh." | CORRECT — cần sửa đường dẫn | File thật là `packages/tui/src/components/image.ts`, không phải `packages/tui/src/image.ts`. `:278` là doc-comment "Pass `altScreen: true` when the frame is painted on the alternate buffer". Cùng file còn có `:171`, `:254`, `:258`, `:267` — toàn bộ là vòng đời `?1049h` của graphics store, và cả vòng đời đó phải được cân nhắc ở chế độ inline. |
+| "`tui.ts:1497` `setAltScreenActive(true)`, đóng ở `:1547`" (claim của GAP-M3-B9 về cùng vùng file). | CONFIRMED | `sed -n '1497p;1547p' packages/tui/src/tui.ts` → `setAltScreenActive(true);` rồi `setAltScreenActive(false);`. Đây là repaint tạm khi resize, và B6 phải giữ nó hoạt động ở **cả hai** chế độ. |
+| "Khoảng cách: SỬA CHO KHỚP — không có kiến trúc nào của omp nghiêng về một mô hình hiển thị khác." | CONFIRMED | Đúng, và đây là lý do mục này rẻ hơn vẻ ngoài: không có gì phải gỡ ra, chỉ có một trạng thái thứ hai phải tôn trọng. Phần đắt không nằm ở mã mà nằm ở việc **không** làm hỏng các guard sẵn có — `OverlayFocusOwner` và cơ chế `preFocus`, bracketed paste chuẩn hoá về một sự kiện (kèm cap 64 MiB chống mất end-marker), DCS passthrough cho tmux và BEL fallback cho Zellij trong `desktop-notify.ts`, cùng mọi guard `?1049` sẵn có. **Đổi tên biến không được đổi hành.** |
+| "chế độ inline KHÔNG được trở thành mặc định" + changelog entry. | CHỐT — không phải câu hỏi mở | Đây là **điều khoản bắt buộc** của mục, không phải một lựa chọn để cân. Phần còn mở là tên setting và tên entry `/tui`, không phải mặc định. |
+
+---
+
+## GAP-M3-B7 — Trình remap phím tắt ngay trong TUI: sửa `keybindings.yml` mà không cần rời phiên
+
+**Sóng / phạm vi:** bổ sung, **sau GAP-M3-B4**, thứ tự merge ghi rõ. Nguồn `codex.103`.
+
+**Hiệu ứng người dùng thấy:** remap một phím tắt mà không phải mở trình soạn, sửa YAML, rồi khởi động lại; và nếu remap tạo ra xung đột thì cảnh báo hiện ngay tại chỗ, không phải lần chạy sau.
+
+**Effort:** S–M — khoảng 1–1,5 ngày. Overlay gần như thuần: chọn + ghi + reload, không có thuật toán mới.
+
+Là một overlay TUI mới nên thuộc M3 theo miền bề mặt. Nhưng **KHÔNG gộp vào Sóng 1/2 của M3**: GAP-M3-B4 đang sửa `keybindings.ts` quanh `#rebuild()` và `getConflicts()`, và overlay mới **cần chính dữ liệu conflict đó** để cảnh báo ngay khi người dùng tạo ra xung đột mới.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/overlays/keybinding-editor.ts` | tạo | B7 — overlay mới, dựng trên `SelectList` sẵn có (dùng lại, **không tạo bản thứ hai**) và trên `boundKeys` / `appKey` trong `chrome/keybinding-hints.ts`. Luồng: chọn action → bấm phím → ghi vào `keybindings.yml` qua đường ghi có sẵn → rebuild → nếu `#conflicts` không rỗng thì hiện cảnh báo **NGAY tại chỗ**. **Bắt buộc** có đường XOÁ một remap (đặt về mặc định) — overlay chỉ thêm mà không xoá thì sau vài lần remap là không dùng được. Overlay mới **KHÔNG được tự ý thêm keybinding mới**; nó chỉ remap những action đã có. | Có. `ls packages/tui/src/overlays/ \| grep -iE 'key\|bind'` → **rỗng**, và thư mục có **65** overlay, nên đây là overlay thứ 66 chứ không phải sửa một cái có sẵn. `grep -n 'export function boundKeys\|export function appKey' packages/tui/src/chrome/keybinding-hints.ts` → `:33` và `:44` — đúng hai helper sẵn có để dựng lên. |
+| `packages/tui/src/chrome/keybinding-hints.ts` | dùng lại, KHÔNG SỬA | B7 dùng `formatConflictWarning` mà B4 đã viết, để hai nơi cảnh báo trùng nhìn giống nhau. | Có. Xem mục B4. Hàm format chỉ tồn tại sau khi B4 merge — đây chính là lý do kỹ thuật của thứ tự merge. |
+| `docs/keybindings.md` | sửa | B7 — tài liệu phải mô tả màn hình sửa mới. | Có — sổ khoảng trống ghi `docs/keybindings.md` là phần omp **ĐÃ có** và rất tốt. Giữ nguyên phần định dạng file và cơ chế migrate `keybindings.json` khi viết. |
+| `packages/tui/test/keybinding-editor.test.ts` | tạo | B7 — test MỚI cho luồng chọn → bấm phím → ghi → rebuild → cảnh báo. | Có. `packages/tui/test/` tồn tại; file chưa tồn tại. Hàng xóm: `packages/tui/test/keybindings.test.ts`. |
+
+### Các bước
+
+1. **KHÔNG sửa `#rebuild()`** và không đụng `canonicalKeyId` + `addKeyAliases`. Thuật toán không đổi. Bỏ hai hàm alias thì **số đếm xung đột sai**: một phím escape và một phím thật sẽ bị báo trùng giả — đúng cảnh báo GAP-M3-B4 đã viết.
+
+2. **Đọc đường ghi có sẵn của `keybindings.yml` trước.** `app-keybindings.ts:392` khai `const KEYBINDINGS_YML = "keybindings.yml";` và `:592-593` nạp từ `agentDir/keybindings.yml`, có migrate `keybindings.json` cũ. Overlay phải ghi qua **đường đó**, không phải đường riêng, và phải giữ nguyên định dạng file cùng cơ chế migrate.
+
+3. **Dựng overlay trên `SelectList` sẵn có.** AGENTS.md cấm hai bản thể hiện của cùng một thứ; một list chọn thứ hai trong thư mục 65 overlay là đúng loại lỗi đó.
+
+4. **Nối cảnh báo xung đột vào đúng hàm của B4** (`formatConflictWarning`), ngay tại chỗ sau khi rebuild. Đây là consumer thứ hai, và nó **phải** dùng cùng một hàm format — nếu không, người dùng sẽ thấy hai kiểu cảnh báo xung đột khác nhau ở hai nơi, và cái sai là cái thứ hai.
+
+5. **Áp sanitization của AGENTS.md lên mọi text overlay này**: `replaceTabs` / `truncateToWidth` / `shortenPath` / `PREVIEW_LIMITS`. Đây là text đi ra TUI, không phải ngoại lệ.
+
+6. **Thêm đường XOÁ một remap** (đặt về mặc định) vào cùng luồng đó. Không phải tính năng phụ — overlay chỉ thêm mà không xoá thì sau vài lần remap là không dùng được, và đó là hỏng theo thời gian chứ không phải hỏng ngay.
+
+### Hợp đồng test
+
+**B7** — hợp đồng quan sát được: chọn một action đã tồn tại, bấm một phím, `keybindings.yml` đổi và lần `KeybindingsManager.create()` sau đọc đúng remap đó; đặt lại về mặc định thì `keybindings.yml` không còn remap; và tạo ra một xung đột thì cảnh báo hiện ngay tại chỗ với **cùng văn bản** mà B4 dùng lúc nạp. Hợp đồng phủ định quan trọng ngang: overlay **không** tạo được một action mới chỉ bằng cách remap. Hồi quy ở đây nguy hiểm vì nó **im lặng theo thời gian**: overlay chỉ-thêm không xoá khiến người dùng sau vài lần remap không còn dùng nổi overlay, và không có tín hiệu nào cho biết vì sao. File: `packages/tui/test/keybinding-editor.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Lối ra nếu máy bạn chưa có: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+
+Khi addon đã build:
+
+```bash
+bun test packages/tui/test/keybinding-editor.test.ts packages/tui/test/keybinding-conflict-warning.test.ts
+```
+
+Hai file cùng chạy là bắt buộc: test của B4 chứng minh `formatConflictWarning` không bị đổi hành bởi consumer thứ hai.
+
+### Cổng hoàn thành
+
+Hai file test cùng xanh, `bun run check:ts` exit 0. Cụ thể: (a) remap rồi đọc lại cho ra đúng phím đã bấm; (b) đặt về mặc định thì remap biến mất khỏi `keybindings.yml`; (c) xung đột sinh ra hiện cảnh báo tại chỗ với **cùng chuỗi** mà B4 dùng — khẳng định này là hợp đồng liên-mục, và nó đỏ nếu ai đó viết hàm format thứ hai; (d) `docs/keybindings.md` mô tả màn hình mới và định dạng YAML + migrate `keybindings.json` còn nguyên vẹn; (e) overlay không tạo được action mới.
+
+**Cổng có thực sự đỏ được không?** Có. Cổng (c) là cổng mạnh nhất và là thứ **chứng minh** quan hệ giữa hai mục: nếu có hai hàm format, cổng đỏ. Cổng (b) đỏ nếu đường xoá remap bị bỏ sót. Cổng (a) đỏ nếu ghi file không đi qua đường ghi có sẵn và lần đọc sau không thấy remap. Cổng (d) chỉ đỏ được ở mức người đọc — văn bản không sinh đỏ ở đâu cả.
+
+### Phụ thuộc
+
+- **B4 phải merge trước, và lý do là kỹ thuật chứ không phải lịch sự.** B4 đưa `getConflicts()` ra khỏi phòng thí nghiệm bằng cách thêm một consumer cảnh báo lúc nạp; overlay này là **consumer thứ hai** và phải dùng **CÙNG một hàm format** để cảnh báo trùng nhìn giống nhau. Nếu không, người dùng sẽ thấy **hai kiểu cảnh báo xung đột khác nhau ở hai nơi**, và cái sai là cái thứ hai.
+- B4 trước B7 còn vì lý do thứ hai, thuần kỹ thuật: cả hai cùng nằm trong `keybindings.ts` quanh `#rebuild()` / `getConflicts()`.
+- Không gộp vào Sóng 1/2 của M3. Không phụ thuộc M2.
+
+### Rủi ro
+
+Cách nhiều khả năng nhất để làm sai là **viết hàm cảnh báo thứ hai**. Overlay cảm thấy tự nhiên là chỗ để cảnh báo, và viết một hàm mới ở đó dễ hơn là import hàm của B4 — nhưng kết quả là người dùng thấy hai kiểu cảnh báo xung đột ở hai nơi và cái sai là cái thứ hai. Kẻ vế hai là **đụng `#rebuild()`** vì đang viết overlay trên đúng vùng mà B4 vừa sửa; bỏ `canonicalKeyId` + `addKeyAliases` thì số đếm xung đột sai và cảnh báo trùng giả làm mất niềm tin ngay lần đầu. Kẻ vế ba là **bỏ đường xoá remap** vì nó không nằm trong yêu cầu tối thiểu — và hỏng hóc đó chỉ hiện ra sau vài lần remap, tức ngoài đời. Kẻ vế bốn là dựng `SelectList` thứ hai trong thư mục đã có 65 overlay, vi phạm đúng điều AGENTS.md coi là bug.
+
+### Cần người quyết
+
+- Overlay có được phép **thêm** một action mới không, hay chỉ remap action đã có? Sổ đã chốt "KHÔNG được tự ý thêm keybinding mới" như một điều khoản bảo toàn — vậy câu hỏi còn mở là có một đường riêng, có điều kiện, để tạo action mới, hay không có đường nào cả. Đây là câu hỏi phạm vi, và nó quyết định overlay có cần một chế độ soạn thứ hai hay không.
+- Ghi remap có cần xác nhận của người dùng không, khi phím mới **đã** được gán cho một action khác? Đây là thao tác phá remap hiện tại, và sổ không nêu.
+- Đường xoá remap nên là một mục riêng trong danh sách, hay một phím tắt trong cùng màn hình? Sổ yêu cầu đường xóa tồn tại nhưng không nói hình dạng.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Kế hoạch gốc M3 không hề nhắc một overlay sửa phím tắt. | CONFIRMED — mục mới | Trước khi sáu mục này được thêm, `grep -n 'keybinding' MILESTONE_3_EXECUTION_PLAN.md` chỉ trả về một dòng duy nhất trong bảng đính chính tổng: "Sóng 2 … `A7: 'composer/types.ts:57', ':93', 'band.ts:14', 'message-notice.ts:37'`". Đó là neo của A7 về phím tắt trong *composer*, không phải một bề mặt sửa. Không work item nào trùng chủ đề. |
+| "`TUI_KEYBINDINGS` → 4 hit: `keybindings.ts:58`, `keybindings.ts:348`, `app-keybindings.ts:18`/`:87`." | Chưa đối chiếu lại trong lượt này | Bốn vị trí này **chưa** được chạy lại khi viết đặc tả này. Sổ đã đo; hãy `git grep -n TUI_KEYBINDINGS -- packages` lúc code. Nội dung của claim vẫn đúng theo sổ: store có thật, merge có thật, phát hiện xung đột có thật — chỉ thiếu UI trên đúng cái store đó. |
+| "`app-keybindings.ts:392` `const KEYBINDINGS_YML = \"keybindings.yml\"` và `:592-593` — nạp từ `agentDir/keybindings.yml`, có migrate `keybindings.json` cũ." | CONFIRMED ở điểm neo chính | `sed -n '392p' packages/tui/src/app-keybindings.ts` → `const KEYBINDINGS_YML = "keybindings.yml";`. Cặp `:592-593` chưa đối chiếu lại trong lượt này — hãy tra bằng `grep` trước khi sửa. Hệ quả thực tế vẫn đúng và quan trọng: overlay phải ghi qua đường ghi có sẵn đó và **phải giữ nguyên định dạng file cùng cơ chế migrate `keybindings.json`**. |
+| "65 overlay trong `packages/tui/src/overlays/`, và `grep -iE 'key\|bind'` trên đó → rỗng." | CONFIRMED | `ls packages/tui/src/overlays/ \| wc -l` → **65**; `ls packages/tui/src/overlays/ \| grep -icE 'key\|bind'` → **0**. Không có overlay sửa phím nào, và con số 65 khớp đúng với sổ. |
+| "`grep -rn 'keybindings' packages/coding-agent/src/slash-commands/` chỉ trả về 2 import `formatKeyHint` (`builtin-collaboration.ts:3`, `builtin-modes.ts:3`)". | Chưa đối chiếu lại trong lượt này | Hai import này chỉ dùng để **ghi nhãn phím**, không phải để sửa. Kết luận "chỉ dùng để GHI NHÃN phím, không có màn hình nào để SỬA" đã được xác nhận độc lập bằng việc thư mục 65 overlay không có file nào khớp `key\|bind` — đó là bằng chứng mạnh hơn. Hãy chạy lại `grep` cụ thể lúc code nếu cần trích dẫn. |
+| "B4 phải merge trước, và lý do là kỹ thuật chứ không phải lịch sự." | CONFIRMED | Sổ nêu hai lý do kỹ thuật và cả hai đều đúng: (1) hai nơi cảnh báo phải dùng **cùng một hàm format** để trùng nhìn giống nhau — nếu không, cái sai là cái thứ hai; (2) cả hai cùng nằm trong `keybindings.ts` quanh `#rebuild()` và `getConflicts()`, nên làm cùng lúc là sửa một vùng trong hai commit liên tiếp. |
+| "Khoảng cách: SỬA CHO KHỚP — store, merge, phát hiện xung đột đã đủ; chỉ thiếu UI trên đúng cái store đó." | CONFIRMED | Đúng, và đó là lý do Effort là S–M chứ không phải M: không có thuật toán mới, chỉ có chọn + ghi + reload. Overlay gần như thuần. |
+
+---
+
+## GAP-M3-B8 — Một công tắc mẹ cho animation, và một lần dò reduced-motion để tắt mặc định khi không chắc
+
+**Sóng / phạm vi:** bổ sung, cùng miền bề mặt TUI, **sau GAP-M3-B7**. Nguồn `codex.112`.
+
+**Hiệu ứng người dùng thấy:** một công tắc tắt **mọi** hiệu ứng cùng lúc, không phải chỉ shimmer; và trên thiết bị có tín hiệu, hệ thống mặc định không động.
+
+**Effort:** S — dưới 0,5 ngày cho phần công tắc mẹ. Phần probe: **S nếu terminal có tín hiệu, và "không làm gì" nếu không có.**
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/modes/settings.ts` | sửa | B8 — setting mẹ `tui.animations` với `on \| off \| auto`, đặt cạnh `cfgDisplayShimmer`. `off` phải tắt **mọi** hiệu ứng chứ không chỉ shimmer — nghĩa là phải đi qua **một seam chung** thay vì set từng component. Đây là phần **chắc chắn làm được**. | Có. `grep -n 'cfgDisplayShimmer' packages/coding-agent/src/modes/settings.ts` → `:530` (`register({`) và `:547` (`effect(cfgDisplayShimmer, setShimmerMode);`). Cơ chế nối setting → hiệu ứng **đã có và đã chạy thật**, nên phần công tắc mẹ chỉ là một lớp trên. |
+| `packages/tui/src/theme/shimmer.ts` | canh — KHÔNG ĐỔI HÀNH | `setShimmerMode` giữ nguyên; công tắc mẹ là **LỚP TRÊN, không phải lớp thay**. Nhánh `disabled` phải **tiếp tục render mọi tier bằng màu thấp** chứ không được biến thành render rỗng — tắt animation không được đồng nghĩa mất thông tin. | Có. `packages/tui/src/theme/shimmer.ts:31` → `export type ShimmerMode = "classic" \| "kitt" \| "disabled";` và `:36` `setShimmerMode`. `:163` là doc-comment của hàm kiểm tra trạng thái — **xem đính chính bên dưới, tên hàm trong sổ khoảng trống đã trôi**. |
+| (seam chung hiệu ứng) | tạo hoặc mở rộng | B8 phần 1 cần một **seam chung** để `off` tắt mọi hiệu ứng. Vị trí chính xác phải chốt ở bước 2 — đây là quyết định còn mở. | Chưa kiểm chứng. Sổ chỉ nêu rằng phải đi qua một seam chung chứ không chỉ ra file. `grep -rniE 'animations\|enableSpinner\|reduceMotion\|disableAnimation' packages/coding-agent/src packages/tui/src` → 3 hit, **cả ba đều cục bộ**: `chat/tool-execution.ts:180` (một dòng comment "stop its animations" — lệnh dừng của một component), `theme/shimmer.ts:163`, và một dòng trong `THIRD-PARTY-NOTICES.txt`. Không có tầng quyết định chung nào. |
+| `packages/tui/test/animation-master-switch.test.ts` | tạo | B8 — test MỚI cho công tắc mẹ. | Có. `packages/tui/test/` tồn tại. File chưa tồn tại. |
+
+### Các bước
+
+1. **Chốt phần probe TRƯỚC khi viết dòng nào.** Đây là điều sổ nói thẳng và phải nói rõ: phần thứ hai **KHÔNG chắc chắn làm được**. Trên terminal thường **không có tín hiệu screen reader đáng tin**, vì vậy `auto` phải mặc định là **bật**, và probe chỉ là **tối ưu cho thiết bị có terminal hỗ trợ**. Đây là tính năng trợ năng ở mức *best-effort*; ghi nó là accessibility guarantee là một lời hứa giả thứ hai trong cùng một chương trình.
+
+2. **Cài phần chắc chắn làm được trước: setting mẹ `tui.animations`** với `on | off | auto`, đặt cạnh `cfgDisplayShimmer` (`:530`) và nối bằng đúng hình dạng `effect(...)` mà `settings.ts:547` đã dùng. `off` phải đi qua **một seam chung** chứ không set từng component — đó là toàn bộ ý nghĩa của "công tắc mẹ", và set từng component là cách làm nó thành một bản thứ hai cùng làm một việc.
+
+3. **`tui.animations` mới phải đi qua `assertKnownSettingPaths`** như mọi setting khác, nếu không nó sẽ không chặn được typo path. Chốt chặn nằm ở `packages/coding-agent/src/config/settings.ts:225`, gọi ở `:632`.
+
+4. **Giữ nguyên lớp dưới.** `setShimmerMode` và `cfgDisplayShimmer` không đổi; công tắc mẹ là lớp trên. Nhánh `disabled` của `shimmer.ts` phải **tiếp tục render mọi tier bằng màu thấp** chứ không được trở thành render rỗng.
+
+5. **Chỉ viết probe sau khi câu hỏi ở bước 1 có câu trả lời**, và khi viết thì probe chạy **đúng một lần** rồi nhớ, trả về **một giá trị có tên** chứ không phải boolean, để khi không xác định được thì hệ thống **im lặng** thay vì giả định có. Nguyên tắc "unknown ⇒ im lặng" là phán quyết chung, lấy từ opencode, không phải từ codex.
+
+### Hợp đồng test
+
+**B8** — hợp đồng quan sát được: với `tui.animations: "off"`, **mọi** hiệu ứng đều dừng chứ không chỉ shimmer; với `"on"`, hành vi khớp từng byte với hôm nay; và với `"auto"` trên một terminal không có tín hiệu, hệ thống **im lặng theo mặc định bật** chứ không giả định. Hợp đồng phủ định quan trọng nhất và dễ bỏ sót nhất: `off` **không** được biến shimmer thành render rỗng — nhánh `disabled` vẫn phải hiện mọi tier bằng màu thấp, vì tắt animation không được đồng nghĩa mất thông tin. File: `packages/tui/test/animation-master-switch.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Lối ra nếu máy bạn chưa có: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+
+Khi addon đã build:
+
+```bash
+bun test packages/tui/test/animation-master-switch.test.ts
+```
+
+### Cổng hoàn thành
+
+Test mới xanh, `bun run check:ts` exit 0. Cụ thể: (a) `off` dừng mọi hiệu ứng chứ không chỉ shimmer; (b) `on` cho output giống từng byte với hôm nay; (c) `auto` mặc định **bật** khi không xác định được, và probe chạy **đúng một lần**; (d) nhánh `disabled` của `shimmer.ts` vẫn render mọi tier bằng màu thấp, không phải chuỗi rỗng.
+
+**Cổng có thực sự đỏ được không?** Có. Cổng (d) là cổng đỏ trong im lặng: biến `disabled` thành render rỗng thì build vẫn xanh và mọi test typecheck vẫn xanh, nhưng người dùng mất thông tin ngay khi tắt animation — tức là hỏng đúng lúc họ chọn tính năng an toàn. Cổng (a) đỏ nếu công tắc mẹ chỉ set từng component và bỏ sót một hiệu ứng nào đó — đây là hỏng **không bao giờ tự hiện**, vì hiệu ứng bị bỏ sót vẫn chạy và không ai báo. Nhớ rằng **cổng này không đỏ được cho phần probe** nếu terminal không có tín hiệu — và đó không phải lỗi của cổng, đó là giới hạn đã nói thẳng.
+
+### Phụ thuộc
+
+- **Sau GAP-M3-B7.**
+- Không có phụ thuộc cứng nào khác trong M3. Setting mẹ không phụ thuộc B7 về mặt kỹ thuật; nó cùng miền bề mặt TUI nên sổ xếp sau cho thứ tự merge.
+- Probe (nếu làm) phụ thuộc terminal có hỗ trợ hay không — phải chốt trước khi viết dòng nào.
+
+### Rủi ro
+
+Cách nhiều khả năng nhất để làm sai là **hứa quá nhiều về probe**. Khả năng thật trên terminal thường là không có tín hiệu screen reader đáng tin, nên một probe trả về "có" khi không chắc sẽ **tắt animation của người không cần tắt** — và người đó không có cách nào biết vì sao. Kẻ vế hai là biến nhánh `disabled` thành render rỗng: đó là cách hiểu sai trực giác nhất của "tắt animation", và nó lấy mất thông tin của người dùng đúng lúc họ bật chế độ dễ chịu hơn. Kẻ vế ba là làm công tắc mẹ bằng cách **set từng component** — nó vẫn chạy, vẫn trông đúng lúc bật, và bỏ sót một hiệu ứng nào đó mà không có gì báo. Kẻ vế bốn là viết probe trả về **boolean**, biến "không xác định" thành "false" — tức biến im lặng thành giả định, đúng ngược với nguyên tắc mà mục này dựa vào.
+
+### Cần người quyết
+
+- **Probe có làm hay không, ở mức nào.** Đây là câu hỏi lớn nhất của mục và nó **phải được chốt trước dòng code đầu tiên**. Phương án "không làm gì" hoàn toàn trung thực: `auto` mặc định bật, không có probe, không mất gì — chỉ mất cơ hội tối ưu cho một thiết bị mà ta chưa biết là có.
+- Nếu làm probe: tín hiệu nào được coi là đáng tin, và một giá trị **không xác định** có khác một giá trị "không có" không? Sổ nói rõ probe phải trả **một giá trị có tên** chứ không phải boolean, nhưng chưa nêu tên các giá trị.
+- Tên setting: `tui.animations` là tên sổ dùng. Hôm nay chưa có nhóm `tui.*` nào, nên tên này sẽ là tiền lệ đầu tiên của nhóm — đặt sai thì phải đổi sau khi đã có người dùng.
+- Phạm vi của `off`: tắt **mọi** hiệu ứng, hay chỉ những hiệu ứng đã đi qua seam chung? Sổ nói `off` phải tắt mọi hiệu ứng, nhưng nếu còn component nào nằm ngoài seam thì "mọi" là một lời hứa không giữ được và nên nói thẳng phạm vi thay vì im lặng.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "`isShimmerAnimationsActive()` trả false đúng khi disabled" và "phải giữ nguyên `isShimmerAnimationsActive()`". | STALE — tên hàm đã trôi | Hàm này **không tồn tại**. `git grep -rn 'isShimmerAnimationsActive' -- packages` trả **0 hit**. Tên thật là **`shimmerEnabled()`**, khai ở `packages/tui/src/theme/shimmer.ts:163` với doc-comment "Whether shimmer animations are active (any mode other than `disabled`)" và thân `return activeMode !== "disabled";` ở `:164`. Một người grep theo tên sẽ không thấy gì và có thể kết luận sai rằng cơ chế kiểm tra không tồn tại. Nội dung của điều khoản bảo toàn vẫn đúng, chỉ có tên là sai. |
+| "Phần omp ĐÃ có, nhiều hơn codex ở đúng tầng này: `ShimmerMode = \"classic\" \| \"kitt\" \| \"disabled\"` (`shimmer.ts:31`) đã được nối thật vào một setting qua `effect(cfgDisplayShimmer, setShimmerMode)` (`modes/settings.ts:547`), và hàm kiểm tra trả false đúng khi disabled." | CORRECTED | Ba neo **đều đúng**: `theme/shimmer.ts:31` là `export type ShimmerMode = "classic" \| "kitt" \| "disabled";`, `modes/settings.ts:547` là `effect(cfgDisplayShimmer, setShimmerMode);`, và `cfgDisplayShimmer` khai ở `:530`. Chỉ có **tên hàm kiểm tra** là sai (`isShimmerAnimationsActive` không tồn tại; thật là `shimmerEnabled` tại `theme/shimmer.ts:163`). Đường dẫn cũng cần sửa cho đủ: file là `packages/tui/src/theme/shimmer.ts`, không phải `packages/tui/src/shimmer.ts`. Kết luận giữ nguyên: cơ chế nối setting → hiệu ứng đã có và đã chạy thật, nên phần công tắc mẹ là một lớp trên chứ không phải việc mới. |
+| "Đề xuất gốc nói *'dùng `OnceLock` — `git grep OnceLock -- packages/tui/src` cho thấy khuôn đã có'*. **Đo lại: `OnceLock` → 0 hit trong `packages/tui/src`.** Probe phải viết mới." | CONFIRMED | Chạy lại `git grep -c 'OnceLock' -- packages/tui/src` → không có file nào khớp, tức 0 hit. Toàn repo chỉ có 2 chú thích (`packages/ai/src/providers/openai-codex-responses.ts:552`, `packages/natives/native/index.d.ts:666`), cả hai mô tả codex-Rust chứ không phải khuôn dùng lại được. Nếu ai đó tin claim đầu vào sẽ đi tìm một lớp bọc cache sẵn có và không tìm thấy. Đây là đính chính mẫu của mục này và nó nên được giữ nguyên văn. |
+| "`grep -rniE 'screen.?reader\|screenReader\|reduced.?motion\|prefers-reduced' packages/tui/src` → **đúng 1 hit**, và nó là **một CÂU CHÚ THÍCH**." | CONFIRMED | `grep -rniE 'screen.?reader\|screenReader\|reduced.?motion\|prefers-reduced' packages/tui/src --include='*.ts'` → đúng một dòng: `packages/tui/src/chat/assistant-message.ts:507` — `// text label keeps the pulse descriptive for terminals and screen readers.` Đó là một câu chú thích, **không phải probe**. Không có probe nào. |
+| "`grep -rniE 'animations\|enableSpinner\|reduceMotion\|disableAnimation' packages/coding-agent/src packages/tui/src` → 3 hit, cả ba đều **cục bộ**." | CONFIRMED | Chạy lại trên hai thư mục nguồn: 2 hit — `packages/tui/src/chat/tool-execution.ts:180` (`/** Seal the block as final history and stop its animations. */`, tức lệnh dừng của **một** component) và `packages/tui/src/theme/shimmer.ts:163` (doc-comment của `shimmerEnabled`). Hit thứ ba nằm trong `THIRD-PARTY-NOTICES.txt` nên lệnh giới hạn trong `src` không thấy — con số 3 của sổ là đúng khi tính cả file notices. Cả ba đều cục bộ; không có tầng quyết định chung. |
+| "Nói thẳng trong PR, không bán như một đảm bảo: trên terminal thường **KHÔNG có tín hiệu screen reader đáng tin** … `auto` phải mặc định là **bật**." | CHỐT — đây là kỷ luật viết, không phải tuỳ chọn | Giữ nguyên văn. Đây là điều phân biệt mục này với một claim accessibility thông thường, và nó thuộc về phần *Đính chính* chứ không phải phần *Cần người quyết* — chỉ có **mức độ** của probe mới là câu hỏi mở. |
+| Kế hoạch gốc M3 không có mục animation nào. | CONFIRMED — mục mới, có một chỗ liên quan | Trước khi sáu mục này được thêm, `grep -n 'animation\|shimmer\|reduced' MILESTONE_3_EXECUTION_PLAN.md` trả **đúng một** dòng, ở mục "Ba thứ CCB có mà omp không": "trọng `reducedMotion`. Phía omp, `components/loader.ts` chỉ là bộ đếm khung — **không biết token có đến không**". Đó là phát hiện về **spinner biết mình đang treo**, một work item khác, và nó nói về `reducedMotion` của CCB chứ không phải công tắc mẹ. Không trùng chủ đề với GAP-M3-B8. |
+
+---
+
+## GAP-M3-B9 — Hot-swap hai renderer: scrollback tự cuộn ↔ viewport cố định có dock
+
+**Sóng / phạm vi:** bổ sung, **sau M1 W15** (transcript search, wave 7). Nguồn `pi.87`.
+
+**Hiệu ứng người dùng thấy:** chuyển giữa hai cách hiển thị transcript — một cách để terminal tự cuộn, một cách là viewport cố định có chỗ neo — mà không phải khởi động lại.
+
+**Effort:** M — khoảng 1,5 ngày **nếu** giới hạn ở hot-swap state + một preset dock; **L** nếu thêm horizontal pan.
+
+**Phụ thuộc CỨNG:** M1 W15 (transcript search, wave 7) — đó là nơi `TranscriptBrowser` sinh ra. **Renderer thứ hai tồn tại thì mới có cái để swap.**
+
+M3 là milestone bề mặt người dùng, và đây là thay đổi bề mặt thuần tuý — không có thay đổi nào khác của TUI.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `packages/tui/src/tui.ts` | sửa | B9 — chọn renderer ở mức ứng dụng. omp hôm nay chỉ dùng alt-screen cho **hai** việc: repaint tạm khi resize và các app fullscreen dựng lại. | Có. `sed -n '1497p;1547p' packages/tui/src/tui.ts` → `setAltScreenActive(true);` rồi `setAltScreenActive(false);`. **Phải giữ** `ResizeScrollbackMode` ba nhánh (`tui.ts:314`, và `#resizeScrollbackMode` ở `:910`, khởi tạo qua `#initialResizeScrollbackMode()` ở `:932`) cùng `clearScrollback` (`:186`, `:306`) — đó là **hợp đồng với native terminal scrollback** mà người dùng cuộn lại được. |
+| `packages/tui/src/chat/transcript-browser.ts` | sửa hoặc dùng lại | Phần sử dụng được là `ChatTranscriptBuilder` + `TranscriptBrowser` mà W15 mang vào. Cấu trúc state/render của `pi` phụ thuộc layout model mà omp **không có**. | Có. `TranscriptBrowserOptions` nằm ở `transcript-browser.ts:38-49`; `#scrollView` khai ở `:108`, dựng ở `:118`. Lưu ý: đây là **MISLEADING ANCHOR** đã được ghi trong bảng đính chính tổng của kế hoạch này (mục `s2`/D3) — `:39-48` là chỗ để **thêm option**, không phải nơi trạng thái cuộn nằm. |
+| `packages/tui/test/renderer-hot-swap.test.ts` | tạo | B9 — test MỚI cho hot-swap và cho escape hatch. | Có. `packages/tui/test/` tồn tại. File chưa tồn tại. |
+
+### Các bước
+
+1. **Đọc `ResizeScrollbackMode` và `clearScrollback` trước khi sửa gì.** Đây là cái bẫy số một của mục này: chúng là **hợp đồng với native terminal scrollback**, không phải chi tiết hiển thị. Hot-swap renderer không được chặn scrollback của chính terminal.
+
+2. **THIẾT KẾ LẠI trên nền W15, không chép từ `pi`.** Cấu trúc state/render của `pi` phụ thuộc layout model mà omp không có. Phần sử dụng được là `ChatTranscriptBuilder` + `TranscriptBrowser` mà W15 đã mang vào. Pháp lý: thiết kế mới, không chép file renderer nào của `pi`.
+
+3. **Giới hạn phạm vi ở hot-swap state + MỘT preset dock.** Nếu thêm horizontal pan thì Effort nhảy từ M lên L, và đó là một quyết định phạm vi chứ không phải một chi tiết kỹ thuật.
+
+4. **Cài escape hatch ngay từ đầu, không để sau.** Nếu chết ở chế độ dock thì người dùng **mất transcript** — tệ hơn nhiều so với bình thường, vì nó xảy ra đúng lúc người dùng đang cần đọc lại. Đây là điều khoản an toàn dữ liệu, không phải tiện ích.
+
+5. **Ghi thứ tự merge với GAP-M3-B6 trước khi bắt đầu.** Cả hai chạm `terminal.ts`, cùng vùng. B6 đổi mô hình alt-screen, B9 thêm renderer thứ hai.
+
+### Hợp đồng test
+
+**B9** — hợp đồng quan sát được: chuyển sang viewport cố định rồi chuyển lại, nội dung transcript **giống từng byte** ở cả hai chế độ và sau khi reload; `ResizeScrollbackMode` vẫn còn đủ ba nhánh và `clearScrollback` vẫn hoạt động; và **escape hatch luôn thoát được** mà không mất transcript. Hợp đồng phủ định là nửa mang tải trọng: chế độ dock **không được** chặn scrollback của chính terminal. Hồi quy ở đây là loại tệ nhất của mục này — không phải "trông khác", mà là **mất dữ liệu đúng lúc người dùng đang cần đọc lại**, và escape hatch là thứ duy nhất đứng giữa. File: `packages/tui/test/renderer-hot-swap.test.ts`.
+
+### Xác minh
+
+```bash
+bun run check:ts
+```
+
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Lối ra nếu máy bạn chưa có: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+
+Khi addon đã build:
+
+```bash
+bun test packages/tui/test/renderer-hot-swap.test.ts
+```
+
+### Cổng hoàn thành
+
+Test mới xanh, `bun run check:ts` exit 0. Cụ thể: (a) nội dung transcript giống từng byte ở cả hai renderer, trực tiếp **và** sau khi dựng lại từ lịch sử; (b) `ResizeScrollbackMode` còn đủ ba nhánh và `clearScrollback` còn chạy; (c) escape hatch thoát được khỏi chế độ dock mà transcript còn nguyên; (d) nếu horizontal pan **không** nằm trong phạm vi, điều đó được ghi rõ trong PR thay vì để mơ hồ.
+
+**Cổng có thực sự đỏ được không?** Có. Cổng (a) đỏ nếu hai renderer cho ra transcript khác nhau — và nửa "sau khi reload" mới là nửa khó, vì chỉ kiểm đường render trực tiếp là bỏ sót đúng lỗi mà Sóng 1 đã gặp với A6. Cổng (b) đỏ nếu ai đó gộp hai renderer thành một đường scroll duy nhất. Cổng (c) **không** đỏ được bằng assert tĩnh — nó là hợp đồng người: phải thử thoát khỏi chế độ dock bằng tay và báo cáo lại trong PR. Đừng viết một test `not.toThrow()` cho nó.
+
+### Phụ thuộc
+
+- **M1 W15 (transcript search, wave 7) — PHỤ THUỘC CỨNG.** Đó là nơi `TranscriptBrowser` sinh ra. Renderer thứ hai tồn tại thì mới có cái để swap. Mục này không bắt đầu được trước W15.
+- **GAP-M3-B6** — cùng chạm `terminal.ts`, cùng vùng. Hai mục phải có **thứ tự merge rõ ràng**: B6 đổi mô hình alt-screen, B9 thêm renderer thứ hai. Nếu gộp, một lỗi ở đây làm đỏ cả hai cùng lúc và không tách được. Sổ chưa chốt mục nào đứng trước; đây là câu hỏi cần người quyết.
+- Không có phụ thuộc nào trong M3 khác.
+
+### Rủi ro
+
+Cách nhiều khả năng nhất để làm sai là **chặn scrollback của chính terminal**. `ResizeScrollbackMode` (`tui.ts:314`) và `clearScrollback` (`:186`, `:306`) là hợp đồng với native terminal scrollback, và chúng trông rất giống chi tiết hiển thị khi đọc lướt. Gộp chúng vào một renderer thứ hai là thay đổi mà người dùng chỉ thấy khi họ cuộn ngược lại đọc — tức đúng lúc họ cần nó nhất. Kẻ vế hai là **không có escape hatch** hoặc có một cái chỉ thoát được UI chứ không thoát được trạng thái: chết ở chế độ dock nghĩa là mất transcript, tệ hơn nhiều so với bình thường. Kẻ vế ba là **copy cấu trúc state/render của `pi`**: nó phụ thuộc layout model mà omp không có, nên bản sao sẽ mang theo một giả định mà không có gì ở đây hỗ trợ. Kẻ vế bốn là để phạm vi trôi vào horizontal pan và biến Effort từ M thành L giữa chừng mà không ai quyết.
+
+### Cần người quyết
+
+- **Thứ tự merge B6 ↔ B9.** Cả hai chạm `terminal.ts`. Sổ ghi "phải có thứ tự merge rõ ràng" nhưng **không chốt mục nào trước**. Đây là câu hỏi cần người quyết, và trả lời sai tốn một vòng đỏ không tách được.
+- Horizontal pan có trong phạm vi không? Chênh lệch là M (~1,5 ngày) với L. Nếu không chốt trước, phạm vi sẽ trôi theo thời gian thay vì theo quyết định.
+- Escape hatch là gì cụ thể — một phím tắt, một lệnh slash, hay cả hai? Yêu cầu là "phải có"; hình dạng thì chưa ai chốt.
+- Vị trí của preset dock: dính vào cạnh phải, cạnh trái, hay chọn được? "Một preset dock" trong sổ nói **một**, nên câu hỏi là preset nào là mặc định.
+
+### Đính chính so với plan
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| "omp chỉ dùng alt-screen cho **HAI** việc: repaint tạm khi resize (`tui.ts:1497` `setAltScreenActive(true)`, đóng ở `:1547`) và các app fullscreen dựng lại." | CONFIRMED | `sed -n '1497p;1547p' packages/tui/src/tui.ts` → `setAltScreenActive(true);` rồi `setAltScreenActive(false);`. Vế thứ hai được xác nhận ở `terminal.ts:410-433` (overlay fullscreen thoát alt screen khi đóng lại, mouse tracking tắt theo). Cả hai neo đều đúng như sổ ghi. |
+| "`grep -rniE 'scrollback\|fixedDock\|dockViewport\|hotSwapRenderer\|swapRenderer'` chỉ trả về các khái niệm về **native terminal scrollback** (`tui.ts:128,132,185,305,314` …), **không phải hai renderer của app**." | CORRECTED — danh sách đầy đủ hơn, kết luận không đổi | Lệnh đó còn trả về nhiều hơn năm dòng đó: `tui.ts:60` và `:413`, `terminal.ts:2134`, `terminal-capabilities.ts:691`, `:838`, `:1063`. Tất cả đều là khái niệm về **native terminal scrollback** — `ResizeScrollbackMode` khai ở `tui.ts:314`, `clearScrollback` ở `:186` và `:306`. Năm dòng mà sổ nêu đều đúng và cũng đều là scrollback của terminal. Nhưng lập luận phải dựa trên **nội dung** của từng hit, không dựa trên việc lệnh trả về đúng năm dòng — cùng cái bẫy đã ghi ở mục GAP-M3-B6. Điểm quan trọng cần giữ: **không có khái niệm chọn renderer ở mức ứng dụng**, và `tui.ts` chưa có từ nào trong bốn từ khoá `fixedDock`/`dockViewport`/`hotSwapRenderer`/`swapRenderer`. |
+| D3 sửa `packages/tui/src/chat/transcript-browser.ts:39-48`. | MISLEADING ANCHOR — đúng file, sai vùng | Đã được ghi trong bảng đính chính tổng của kế hoạch này (mục `s2`), và B9 dùng chung file đó nên cần lặp lại: `transcript-browser.ts:38-49` là interface `TranscriptBrowserOptions` — đúng chỗ để **THÊM** một option mới, nhưng **không phải** nơi trạng thái cuộn nằm. Trạng thái là `#scrollView` (khai ở `:108`, dựng ở `:118`). Ai đọc `:39-48` với hy vọng tìm bộ máy cuộn sẽ không thấy gì. Bằng chứng: `grep -n '#scrollView' packages/tui/src/chat/transcript-browser.ts` → 108, 118, và các use-site trong 176-261. |
+| "Phần sử dụng được là `ChatTranscriptBuilder` + `TranscriptBrowser` mà W15 đã mang vào." | CHƯA THỂ ĐỐI CHIẾU — phụ thuộc W15 chưa tới | `TranscriptBrowser` trong cây hôm nay là của D3 (Sóng 2), chưa phải của W15. Câu này mô tả trạng thái **sau khi** M1 W15 merge, nên không thể kiểm chứng được hôm nay. Coi nó là một giả định phải xác nhận lại sau W15, không phải một neo đã đo. |
+| "Pháp lý: thiết kế mới. Không chép file renderer nào của `pi`." | CHỐT | Giữ nguyên văn. Lập luận đằng sau nó là cụ thể và đúng: cấu trúc state/render của `pi` phụ thuộc layout model mà omp **không có**, nên đây là THIẾT KẾ LẠI trên nền W15 chứ không phải port. |
+| "Phải có escape hatch. Nếu chết ở chế độ dock thì người dùng **mất transcript**." | CHỐT — điều khoản an toàn dữ liệu | Đây là điều khoản bắt buộc, không phải tuỳ chọn phạm vi. Hình dạng của escape hatch chưa ai chốt (xem *Cần người quyết*), nhưng sự tồn tại của nó thì không điều kiện. |
+| Kế hoạch gốc M3 không có mục renderer-swap nào. | CONFIRMED — mục mới | Trước khi sáu mục này được thêm, `grep -n 'hot-swap\|hotSwap\|swapRenderer' MILESTONE_3_EXECUTION_PLAN.md` trả **0 hit**; `TranscriptBrowser` chỉ xuất hiện trong bảng đính chính tổng ở mục D3, về vạch chưa đọc chứ không phải về chọn renderer. Không trùng chủ đề. |
+
+
+
+---
+## Cổng chấp nhận và pháp lý (§7–§8) — phần đuôi milestone
+
+Biến mười ba cổng chấp nhận viết bằng văn xuôi ở §7.1 thành **một script duy nhất** người review chạy từ repo root, và biến bảng phân loại bốn dòng ở §8 thành **một tài liệu** mà bảo trì viên thực sự ký được. Không gì được ship cho tới khi script nói `XANH`.
+
+**Hiệu ứng người dùng thấy:** không có. Đây là việc nội bộ — không đường dẫn runtime, không UI, không prompt. Thứ duy nhất người dùng từng có thể nhận ra là khi các cổng bị sai, vì một cổng đỏ chặn một bản phát hành lẽ ra đã được ship, hoặc một thay đổi wheel-ramp hỏng lẽ ra đã bị bắt.
+
+**Sóng / phạm vi:** §7–8 — **đuôi milestone**, chạy sau Sóng 6, **không phải một sóng thứ bảy**. Nó không nằm trong sáu sóng của M3 (xem mục *Cần người quyết*, câu SCOPE).
+
+**Effort:** **S** — khoảng nửa ngày. Một script shell (~120 dòng kể cả tám stub test-gate), một tài liệu markdown (~150 dòng), một phụ lục CONTRIBUTING tùy chọn tám dòng. Không code runtime, không dependency mới, không prompt, không thay đổi model/provider. Cái giá nằm ở việc **đọc** chứ không phải viết: các neo của §7.1/§8 trong plan phần lớn đã cũ, và từng cái đều phải ghim lại vào cây trước khi mã hoá được.
+
+### File cần chạm tới
+
+| path | hành động | thay đổi | đã kiểm chứng? |
+| --- | --- | --- | --- |
+| `scripts/m3-acceptance-gates.sh` | tạo | Toàn bộ nửa máy-kiểm-tra-được của §7.1, dạng chạy được. Một script shell, `set -uo pipefail` (**không** `set -e` — xem bước 2), chạy từ repo root. Mã hoá **mười ba** cổng (G1–G11, G4b, G12) đúng như plan dòng 8988–9029 định nghĩa. In một dòng `XANH`/`DO` cho mỗi cổng, một lý do khi đỏ, và exit khác 0 nếu bất kỳ cổng nào đỏ. Cố ý là `.sh`, không phải `.ts` và không phải `*.test.ts` — xem ghi chú source-grep của AGENTS.md trong mục *Rủi ro*. | **Có.** `ls scripts/ \| grep -iE 'gate\|accept\|m3\|check-'` hôm nay chỉ trả `check-spoofed-versions.ts` — chưa có script cổng nào. Cổng thực thi duy nhất trong cả plan là khối `bash` nội tuyến ở `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9011-9026` (G5), xác nhận bằng `sed -n '9011,9026p'`. Shell cũng là chính định dạng của plan: các cổng được viết dạng bash ở đó, và plan mô tả chúng là được dán từ repo root, tức thời điểm review, không phải CI. |
+| `docs/clean-room-policy.md` | tạo | Nửa §8 hiện chỉ là văn xuôi. Mang: (a) bảng phân loại bốn dòng A3/A7/A8/D2 từ bảng §8.2 của plan, dòng 9076-9081 (bốn hàng A7/D2/A8/A3; ở bản `808b365` là 7569-7574 — con số 7620-7625 trỏ vào §9 RỦI RO, không phải bảng này) dưới dạng **SIGN-OFF GRID** có cột ký; (b) các nghĩa vụ của §8.4 phát lại thành luật mà người triển khai có thể bị buộc tuân thủ; (c) luật về provenance của §8.5 cho bất cứ thứ gì thực sự đi vào oh-my-pi từ một upstream cho phép. Nói rõ tài liệu này không phải ý kiến pháp lý, và các mục 1, 3, 4 của §8.6 vẫn là những chữ ký của con người chưa trả lời. | **Có.** `ls docs/ \| grep -iE 'licen\|clean\|attribut\|third\|notice\|contribut\|legal\|provenance'` trả 0 kết quả — hôm nay trong `docs/` không có tài liệu licensing, provenance hay clean-room nào. Lỗ hổng 8.6 #5 là có thật và hiện chưa đóng. |
+| `CONTRIBUTING.md` | sửa | **CÓ ĐIỀU KIỆN** — chỉ khi con người trả lời §8.6 #5 là "yes, add the addendum". Thêm một mục con `## Clean-room provenance` vào khối `## Contribution licensing` sẵn có, nêu đích danh rủi ro cụ thể (cây mã nguồn độc quyền bị dịch ngược) mà văn bản hiện tại không nêu. KHÔNG sửa tại chỗ dòng 82-91; câu sẵn có là đúng và phải sống nguyên văn. | **Có.** `sed -n '82,91p' CONTRIBUTING.md` xác nhận trích dẫn của plan là chính xác: "You must have the right to submit your contribution and must preserve applicable copyright, license, attribution, and notice material." Nó đòi quyền được đóng góp nhưng không nêu rủi ro cụ thể nào — đó chính xác là khoảng trống mà 8.6 #5 chỉ ra. Nếu câu trả lời là "no", để nguyên file này và ghi quyết định vào lưới ký của tài liệu. |
+
+### Các bước
+
+1. **~~DỪNG lại, lấy hai câu trả lời của con người trước khi viết bất kỳ cổng nào~~ — ĐÃ THU HẸP (2026-09-29).** **Q-A (§8.6 #5) vẫn chặn** và trả lời bình thường: có viết chính sách clean-room ra thành file `docs/`, thành phụ lục CONTRIBUTING, hay cả hai? **Q-B (§8.6 #1) KHÔNG còn chặn** — xem bên dưới.
+
+   > **Ranh giới pháp lý đã chốt (2026-09-29):** **mượn UI/UX thì tự do**; **không** dùng tên, logo hay nhãn hiệu "Claude Code" ở bất kỳ đâu trong sản phẩm. Ranh giới còn lại — và nó **không liên quan gì tới logo** — là không **dán dòng code** từ `claude-code-ref`, vì cây đó không có LICENSE nào cả. Logo là vấn đề *nhãn hiệu*; dán code từ một cây không có giấy phép là vấn đề *khác*. Tài liệu này vốn đã giữ đúng ranh giới đó (§8: *"Không sao chép, không dịch, không suy ra từ cây Claude Code"*) — việc chốt hôm nay là **ghi rõ đó là toàn bộ ranh giới**, không phải một cổng chặn đang mở.
+   >
+   > **Hệ quả cho bước 1:** viết cổng ngay. Lưới ký của `docs/clean-room-policy.md` **vẫn** phải hiện §8.6 #1 là `OPEN` và tài liệu **vẫn không được** khẳng định clean-room status cho tới khi có người đọc Terms — nhưng đó là lời khai trung thực trong một tài liệu đã đứng ở phía thận trọng, **không** phải lý do hoãn. Q-B là câu hỏi *tra cứu*, không phải câu hỏi *định hướng*; **không** dùng nó để mở rộng phạm vi chép. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9112-9119`
+
+2. **Tạo `scripts/m3-acceptance-gates.sh`** với một helper duy nhất `gate <id> <description> <command...>` chạy lệnh, in `  XANH <id>` hoặc `  DO   <id>  <why-it-is-red>`, và cộng dồn một bộ đếm thất bại. Exit 1 ở cuối nếu bộ đếm khác 0. **Không** để một cổng đơn lẻ abort cả lượt chạy — người review cần cả mười ba kết quả trong một lượt, và `set -e` trên một lệnh trần sẽ giấu mười hai cái còn lại. Dùng `set -uo pipefail` và xử lý thất bại tường minh bên trong helper. Giữ nguyên vốn từ XANH/DO mà plan đã dùng để đầu ra **diff được** với plan dòng 8988-9029. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8988-8989`
+
+3. **Mã hoá bốn cổng COUNT trước**, vì chúng là những cái duy nhất đang đỏ hôm nay và do đó là những cái duy nhất chứng minh được script có thể fail. **G4:** assert `{ grep -rn 'event\.wheel \* [0-9]' packages/tui/src --include='*.ts'; grep -rn 'delta \* [0-9]' packages/tui/src --include='*.ts'; } | grep -v '^packages/tui/src/mouse-wheel\.ts:' | wc -l` == 0. Hôm nay kỳ vọng **9**. **G4b:** với từng file trong **CHÍN** file ở bước 4, assert `grep -q 'mouse-wheel' <file>`. Hôm nay kỳ vọng **0/9**. **G5:** dán nguyên văn khối của plan từ dòng 9011 (nó vốn đã trả left=7, kept=3, và in từng dòng theo site để một cổng đỏ chỉ tên thủ phạm). **G10:** dùng dạng **ĐÃ SỬA** từ bước 5, không dùng dạng nguyên văn của plan. Chạy thử toàn script và xác nhận nó báo đúng `G4 DO`, `G4b DO`, `G5 DO`, `G10 XANH` **trước khi** thêm bất cứ thứ gì khác. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9011-9026`
+
+4. **Mã hoá CHÍN file G4b lấy từ cây, không lấy từ plan** — danh sách của plan có số dòng cũ và phần văn xuôi đếm số của nó tự mâu thuẫn với bảng của chính nó. Chín file, đã kiểm chứng: `packages/tui/src/overlays/agent-transcript-viewer.ts:470`, `packages/tui/src/overlays/plan-review-overlay.ts:580`, `packages/tui/src/overlays/rewind-selector.ts:245`, `packages/tui/src/apps/debug/log-viewer.ts:639`, `packages/tui/src/overlays/usage-dashboard.ts:759`, `packages/tui/src/overlays/copy-selector.ts:214`, `packages/tui/src/apps/git/sidebar.ts:897`, `packages/tui/src/apps/debug/raw-sse.ts:168`, `packages/tui/src/apps/git/git-tui.ts:697`. Tám file dùng `event.wheel * 3`, `usage-dashboard` dùng `event.wheel * 2`, và `sidebar.ts` là trường hợp lạ dùng `delta * 3` — **chính vì vậy cổng phải quét CẢ HAI mẫu**. Assert cả chín file đều import `mouse-wheel`; hôm nay không file nào, nên cổng này đỏ **vì lý do đúng**. — neo `packages/tui/src/apps/git/sidebar.ts:897`
+
+5. **Mã hoá G10 ở dạng ĐÃ SỬA.** Lệnh nguyên văn của plan `grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` hôm nay trả về **2**, và cả hai hit đều là comment nói rõ bộ test KHÔNG dùng nó. Một cổng đỏ trên một cây đúng sẽ huấn luyện người review bỏ qua nó — đúng thất bại mà plan chẩn đoán cho G4. Dùng `grep -rnE 'mock\.module\(' packages/coding-agent/test packages/tui/test | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)'` và assert 0. Đã kiểm chứng: lệnh này trả 0 hôm nay. Thêm **G12**, cổng contamination từ §8.5, giới hạn phạm vi `packages/ scripts/ docs/` và **loại trừ tường minh** `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` cùng `.lavish-wip/` — một grep toàn repo hôm nay trả 5 hit, **TẤT CẢ** nằm trong tài liệu plan đã commit, đó là mệnh đề đúng về plan và báo động giả về sản phẩm. Giá trị kỳ vọng 0. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8998`
+
+6. **Mã hoá tám cổng TEST (G1, G2, G3, G6, G7, G8, G9, G11)** dưới dạng kiểm tra *tồn tại + pass* trên đúng các file test mà sóng tương ứng đã nêu — **không** tự dựng lại thân của chúng, các spec anh em sở hữu phần đó. Mỗi cổng là `test -f <path>` **VÀ** `bun test <path>` exit 0, với thông báo đỏ nói rõ sóng nào phải đến trước. **G6** assert thêm rằng `packages/coding-agent/test/mcp/elicitation-capability.test.ts` tồn tại; hôm nay nó **không** (đã kiểm chứng), nên G6 đỏ cho tới khi A2/D1 đến — điều đó là đúng. **G8** phải assert fixture của loader render ra hàng **NHIỀU DÒNG** — `packages/tui/src/components/loader.ts:107` chỉ render trailer khi `lines.length > 1`, nên một fixture một dòng làm cho phép assert trở nên vô nghĩa. **G9** đọc `docs/tui-core-renderer.md:107` và `:174`, cả hai hôm nay đều có và đúng. — neo `packages/tui/src/components/loader.ts:107`
+
+7. **Viết `docs/clean-room-policy.md`.** Mục 1 = lưới ký bốn dòng (A3 omp-native shape + hằng số đo lại; A7 omp-native; A8 black-box + omp-native; D2 omp-native) với cột chữ ký/ngày còn trống, chép từ bảng của plan nhưng với cột neo **ĐÃ KIỂM CHỨNG LẠI** trên cây — ba neo của plan sai (`ui-helpers.ts:141`→`143`, `settings.ts:108`→`110`, `usage-dashboard.ts:753`→`759`). Mục 2 = các nghĩa vụ của §8.4 dưới dạng danh sách làm/không-làm. Mục 3 = những gì thực sự đi vào oh-my-pi từ một upstream cho phép đòi hỏi (văn bản license được ghi lại, dòng copyright, một mục thêm vào file notices). Mục 4 = các chữ ký còn mở của con người (8.6 #1, #3, #4, #5) đánh dấu `OPEN`. **Không** nêu `claude-code-ref` ở bất cứ đâu trong tài liệu như một đầu vào build; §8.4 cấm pin commit của nó, và một tài liệu có pin nó trở thành chính cái thứ được pin, theo tham chiếu. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9116-9134`
+
+8. **Đưa phụ lục `CONTRIBUTING.md` vào** *chỉ khi* Q-A của bước 1 yêu cầu. Chạy script một lần cuối và **dán toàn bộ đầu ra không sửa một chữ** vào mô tả PR. Một gate script mà đầu ra của nó bị diễn giải lại trong review là một gate bị tranh luận thay vì được đọc. — neo `CONTRIBUTING.md:82`
+
+### Hình dạng code
+
+Bản phác thảo dưới đây chỉ mã hoá **năm** cổng COUNT (G4, G4b, G5, G10, G12). Tám cổng TEST (G1, G2, G3, G6, G7, G8, G9, G11) được thêm ở bước 6 bằng tám lời gọi `gate_test <id> <path> <wave>`; bản phác thảo chỉ để người đọc thấy **hình dạng** helper, và `grep -c gate_test` trên bản phác thảo này trả đúng **1** — chính dòng định nghĩa, không có call site nào. Mỗi cổng, kể cả G4b, in **đúng một** dòng.
+
+```bash
+#!/usr/bin/env bash
+# M3 acceptance gates — run from the repo root: ./scripts/m3-acceptance-gates.sh
+# Each gate states what it asserts and what a red result MEANS. Gates that are
+# red today are red for three DIFFERENT reasons, and the reason must be printed:
+#   (a) the work is not done yet      — G4, G4b, G5
+#   (b) the native addon has not been built yet — G1/G2/G3 and the tmux gate.
+#       Build it once (`brew install ninja && bun --cwd=packages/natives run build`)
+#       and (b) disappears entirely.
+#   (c) a not-yet-written test file   — G6, G7, G8, G9, G11
+# Collapsing (b) or (c) into (a) is a lie the reviewer cannot detect.
+# Do not 'fix' a red gate by editing it.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+FAILED=0
+fail() { printf '  DO   %-4s %s\n' "$1" "$2"; FAILED=$((FAILED + 1)); }
+ok()   { printf '  XANH %-4s %s\n' "$1" "$2"; }
+
+gate_eq() { # gate_eq <id> <expected> <actual> <what-it-means-when-red>
+  if [ "$3" -eq "$2" ]; then ok "$1" "$3/$2"; else fail "$1" "$3 (muc $2) — $4"; fi
+}
+
+# --- G4: no raw wheel multiplier survives outside the shared module -----------
+WHEEL=$( { grep -rn 'event\.wheel \* [0-9]' packages/tui/src --include='*.ts'
+           grep -rn 'delta \* [0-9]'     packages/tui/src --include='*.ts'; } \
+         | grep -v '^packages/tui/src/mouse-wheel\.ts:' | wc -l | tr -d ' ')
+gate_eq G4 0 "$WHEEL" "mot literal con lai; overlay ramp canh khong ramp"
+
+# --- G4b: all nine sites import the shared module -----------------------------
+WHEEL_FILES=( packages/tui/src/overlays/agent-transcript-viewer.ts
+              packages/tui/src/overlays/plan-review-overlay.ts
+              packages/tui/src/overlays/rewind-selector.ts
+              packages/tui/src/apps/debug/log-viewer.ts
+              packages/tui/src/overlays/usage-dashboard.ts
+              packages/tui/src/overlays/copy-selector.ts
+              packages/tui/src/apps/git/sidebar.ts
+              packages/tui/src/apps/debug/raw-sse.ts
+              packages/tui/src/apps/git/git-tui.ts )
+miss=()
+for f in "${WHEEL_FILES[@]}"; do grep -q 'mouse-wheel' "$f" || miss+=("$f"); done
+if [ ${#miss[@]} -eq 0 ]; then ok G4b "9/9"
+else fail G4b "thieu import: ${miss[*]}"; fi
+
+# --- G5: read-group membership (plan lines 9011-9026, verbatim) ---------------
+hits=$(grep -nE '[!=]== "read"' \
+  packages/tui/src/chat/read-tool-group.ts \
+  packages/tui/src/chat/chat-transcript-builder.ts \
+  packages/coding-agent/src/modes/utils/ui-helpers.ts \
+  packages/coding-agent/src/modes/controllers/event-controller.ts)
+left=$(printf '%s\n' "$hits" | grep -v 'event-controller\.ts:[0-9]*:.*event\.toolName === "read"' | wc -l | tr -d ' ')
+kept=$(printf '%s\n' "$hits" | grep -c 'event\.toolName === "read"')
+printf '%s\n' "$hits"   # in the remaining sites so a red gate names the culprit
+if [ "$left" -eq 0 ] && [ "$kept" -eq 3 ]; then ok G5 "left=0 kept=3"
+else fail G5 "membership con lai=$left (muc 0) | inline giu nguyen=$kept (muc 3)"; fi
+
+# --- G10: no mock.module() calls (CALL form; the corpus documents the ban) ---
+MM=$(grep -rnE 'mock\.module\(' packages/coding-agent/test packages/tui/test \
+      | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' | wc -l | tr -d ' ')
+gate_eq G10 0 "$MM" "mock.module() global registry leak sang file khac"
+
+# --- G12: no reference-tree contamination in shipped source -------------------
+CONTAM=$(grep -rn 'claude-code-best' packages/ scripts/ docs/ 2>/dev/null | grep -v node_modules | wc -l | tr -d ' ')
+gate_eq G12 0 "$CONTAM" "van con tham chieu cay dich nguoc trong ma ship"
+
+# --- G1,G2,G3,G6,G7,G8,G9,G11: file exists AND passes ------------------------
+gate_test() { # gate_test <id> <test-path> <which-wave>
+  if [ ! -f "$2" ]; then fail "$1" "thieu $2 — can $3"
+  elif bun test "$2" >/dev/null 2>&1; then ok "$1" "$2"
+  else fail "$1" "FAIL $2 — xem contract cua $3"; fi
+}
+
+exit $(( FAILED > 0 ))
+```
+
+### Hợp đồng test
+
+**Mục này không ship `*.test.ts` mới, và đó là kết quả ĐÚNG** — lập luận bên dưới là một phát hiện, không phải một lối tắt.
+
+**(1)** Các cổng ở §7.1 là source grep. AGENTS.md cấm source-grep trong test một cách dứt khoát: *"A test that reads an implementation file (.ts/.rs/build script) and asserts on its text — `expect(src).toContain("someCall()")` … is banned. It tests how code _looks_, not what it _does_."* G4, G4b, G5 và G10 chính là các phép đếm `grep -rn`. Đặt chúng vào một `*.test.ts` sẽ đúng cái hình dạng bị cấm. Plan đã nhìn thấy một nửa vấn đề — ghi chú G5 của nó nói phép grep "bổ sung cho" test hành vi chứ không thay thế nó. Nên nửa grep thuộc về một script shell người review chạy, còn nửa hành vi thuộc về các file test mà spec anh em đã chỉ định. Không bên nào thuộc về một file mới được viết ở đây.
+
+**(2)** Một hợp đồng pháp lý duy nhất tail1 có thể sở hữu thực sự đã có người sở hữu. `scripts/ci-release-publish.ts:97` export `legalPayloadFiles(license)`, `:100` trả payload, `:102` **ném** `Unsupported package license` khi license thiếu hoặc không phải MIT. `scripts/ci-release-publish.test.ts:144-145` assert cả hai nhánh ném. Vậy nên "mọi package phát hành đều khai một license" **đã** được cưỡng chế tại thời điểm publish và **đã** có test. AGENTS.md: *"Don't duplicate coverage across abstraction levels. If an integration test already proves the behavior, drop the narrower unit test that restates it."* Thêm một test license ở đây sẽ là phần trùng lặp chỉ có thể thối.
+
+**(3)** Nếu hồi quy, người tiêu dùng thấy gì: lượt chạy cổng của người review **mất đi độ tin cậy**. Dạng hỏng không phải crash — nó là một cổng xanh mà không có nghĩa gì, hoặc một cổng đỏ trên một cây đúng khiến cả đội tự đánh dấu qua cổng. Cả hai đều im lặng. G10 ở dạng nguyên văn của plan đã ở trạng thái thứ hai ngay hôm nay (2 hit, cả hai là comment) — đó là lý do bước 5 sửa nó trước khi viết bất cứ dòng nào.
+
+Phần cứng vững do đó là **SCRIPT cộng exit code của nó**, và cổng dưới đây được **đo**, không được *khẳng định bằng văn xuôi*.
+
+### Xác minh
+
+```bash
+# All from repo root. T1 is the load-bearing one: it is red today and must go green when A3 lands.
+
+# T1 — G4 + G4b: nine wheel multipliers exist today; all nine must import the shared module.
+{ grep -rn 'event\.wheel \* [0-9]' packages/tui/src --include='*.ts'
+  grep -rn 'delta \* [0-9]'     packages/tui/src --include='*.ts'; } \
+  | grep -v '^packages/tui/src/mouse-wheel\.ts:' | wc -l
+# TODAY: 9. MUST BE: 0 after M3-A3.
+
+# T2 — CHẠY SAU KHI tạo xong `scripts/m3-acceptance-gates.sh` ở bước 2.
+# Hôm nay file này chưa tồn tại, nên lệnh dưới đây trả `No such file or directory`
+# — đó là đúng, không phải cổng đỏ.
+./scripts/m3-acceptance-gates.sh; echo "exit=$?"
+# SAU KHI TẠO, kỳ vọng: G4 DO, G4b DO, G5 DO, G10 XANH, exit=1.
+# SAU KHI A6: G5 XANH. SAU KHI A3: G4 + G4b XANH.
+
+# T3 — G5's two-sided arithmetic still holds (7 membership, 3 inline today).
+hits=$(grep -nE '[!=]== "read"' packages/tui/src/chat/read-tool-group.ts \
+  packages/tui/src/chat/chat-transcript-builder.ts \
+  packages/coding-agent/src/modes/utils/ui-helpers.ts \
+  packages/coding-agent/src/modes/controllers/event-controller.ts)
+printf '%s\n' "$hits" | grep -vc 'event\.toolName === "read"'   # TODAY: 7, MUST BE: 0
+printf '%s\n' "$hits" | grep -c  'event\.toolName === "read"'    # TODAY: 3, MUST STAY: 3
+
+# T4 — G10 corrected form is clean (the plan's literal form is NOT; it returns 2).
+grep -rnE 'mock\.module\(' packages/coding-agent/test packages/tui/test \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' | wc -l   # MUST BE: 0
+
+# T5 — G12 contamination is clean once scoped off the plan document.
+grep -rn 'claude-code-best' packages/ scripts/ docs/ | grep -v node_modules | wc -l  # MUST BE: 0
+
+# T6 — the whole milestone typechecks (does not need the native addon; verified exit 0 at HEAD e040a60).
+bun run check:ts
+
+# T7 — the native addon (`brew install ninja` then `bun --cwd=packages/natives run build`,
+#     exit 0) is ALREADY built on this tree as of 2026-09-29, so the below run as written.
+#     A machine WITHOUT that step reports 0 pass with 'Failed to load pi_natives native
+#     addon for darwin-arm64' — that is the conditional premise, not this tree.
+bun test packages/tui/test/mouse.test.ts packages/tui/test/loop-watchdog.test.ts \
+          packages/coding-agent/test/status-line-overflow.test.ts \
+          packages/coding-agent/test/status-line-settings-cache.test.ts \
+          packages/coding-agent/test/mcp/elicitation-capability.test.ts \
+          packages/tui/test/read-group-membership.test.ts \
+          packages/tui/test/daltonized-theme.test.ts
+
+# T8 — the published-package licence contract still holds (already enforced upstream; asserted here as a smoke check only).
+for f in packages/*/package.json; do python3 -c "import json;d=json.load(open('$f'));assert d.get('license')=='MIT','$f'"; done
+```
+
+Dự án cấm `tsc`/`npx tsc`; T6 dùng `bun run check:ts`.
+
+### Cổng hoàn thành
+
+`DONE` nghĩa là cả năm điều sau, và mỗi điều có thể fail độc lập:
+
+1. **`./scripts/m3-acceptance-gates.sh`** tồn tại, chạy được từ repo root, in một dòng `XANH`/`DO` cho mỗi cổng, và exit 1. **NGAY KHI TẠO XONG, nó sẽ EXIT 1 — các con số bên dưới đã đo từng lệnh trên cây này, chưa đo ở cấp script vì script chưa tồn tại.** Đỏ vì **việc chưa làm**: G4 = 9 (cần 0), G4b = 0/9 (cần 9/9), G5 `left`=7 (cần 0), G6 thiếu `elicitation-capability.test.ts`. Đỏ vì **addon chưa build** (KHÔNG phải vì việc, và KHÔNG phải hạn chế của máy): G1/G2/G3 và cổng tmux chạy `bun test` trên `status-line-overflow.test.ts`, `status-line-settings-cache.test.ts`, `loop-watchdog.test.ts`; trên máy sạch chưa build, cả ba đều chết với `Failed to load pi_natives native addon for darwin-arm64` (0 pass / 1 fail). Build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là nhóm đỏ này biến mất hoàn toàn. Hai file test status-line **đã tồn tại**, nên G1-G3 sẽ vẫn đỏ sau khi s1 đếi cho tới khi addon được build. Đỏ vì **chưa tới**: `elicitation-capability.test.ts`, `read-group-membership.test.ts`, `daltonized-theme.test.ts` chưa tồn tại. Trong bảy file của T7, trên máy sạch đúng **một** file xanh (`mouse.test.ts`, 13/13); sau khi build thì cả bảy chạy. Script phải in lý do theo loại này, không gộp chung một thông điệp "chưa làm".
+2. **G4 và G4b nêu đủ CHÍN site** với số dòng đúng, đã kiểm chứng bằng `git grep` trên cây — **KHÔNG** phải danh sách của plan, trong đó cả bảy neo `* 3` đều cũ (`agent-transcript-viewer` 469→470, `copy-selector` 212→214, `plan-review-overlay` 581→580, `rewind-selector` 232→245, `git-tui` 693→697, `raw-sse` 167→168, `log-viewer` 638→639) và `usage-dashboard.ts:753` thực ra là 759.
+3. **G10 dùng dạng lời gọi** và trả 0, còn dạng nguyên văn của plan bị gọi tên trong một comment là sai (2 hôm nay, cả hai là comment).
+4. **`bun run check:ts`** exit 0. Đo tại HEAD `e040a60`: exit 0, cả **16** package type-check đều `Done`. (Con số 12 là số package **published**, xem hàng cuối bảng *Đính chính* — không phải số package `check:ts` type-check.)
+5. **`docs/clean-room-policy.md`** tồn tại, mang đủ bốn dòng phân loại với neo đã sửa, và lưới ký của nó hiện các mục §8.6 1/3/4/5 đúng trạng thái thật của chúng — `OPEN`, chứ không bị tick âm thầm. Nếu con người đã trả lời Q-A, `CONTRIBUTING.md` mang phụ lục và câu licensing gốc của nó sống nguyên văn.
+
+**Cổng này có thực sự đỏ được không? Có — theo ba cách độc lập, tất cả đều đo trên cây này chứ không suy luận.**
+
+- **THỨ NHẤT:** các cổng đỏ trước khi có việc. G4 = 9 (cần 0), G4b = 0/9 (cần 9/9), G5 `left` = 7 (cần 0), file G6 vắng. **Nếu ai đó đưa script vào mà sáng thứ Hai các cổng ra xanh, các cổng đó hỏng** — đó chính là thất bại mà cổng này được thiết kế để bắt, và nó là cùng một bệnh lý mà plan chẩn đoán trong chính ghi chú viết lại của G4: *"the old gate self-adjusted and could not distinguish A3 done from A3 not done"*.
+- **THỨ HAI:** G10 bắt được chính lỗi lịch sử của nó. Dạng nguyên văn của plan trả 2 trên một cây hoàn toàn đúng, vì hai file test chứa comment giải thích chúng **không** dùng mock.module. Người review hoặc vá cổng, hoặc đánh dấu qua. Dạng đã sửa trả 0.
+- **THỨ BA:** một neo cũ bị bắt. Bảy số dòng `* 3` của plan đều sai (lệch từ +1 đến +13). Một script chép từ văn xuôi của plan thay vì từ cây sẽ grep chín file ở chín dòng sai; nếu một chỉnh sửa sau này làm chúng dịch chuyển, nửa kiểm tra tồn tại vẫn pass trong khi ý định thì lặng lẽ mất. Bước 4 cấm chép từ văn xuôi đúng vì lý do đó.
+
+**Cái cổng này KHÔNG làm:** nó không chứng minh độ trung thành giao diện. §7.2 nói thẳng bằng chính chữ của plan — *"phần này không thể chứng minh bằng máy"* — và nửa đó vẫn thuộc về con người. Người review đọc `XANH` trên cả mười ba cổng **chưa học được điều gì** về việc wheel ramp có cảm giác đúng trên Ghostty hay không, và tài liệu phải nói điều đó ngay tại nơi bốn phán đoán của con người trong §7.2 nằm.
+
+### Phụ thuộc
+
+**`depends_on`:**
+
+- **s1 (Sóng 1)** — sở hữu các file test status-line mà G1/G2/G3 assert trên đó. Cả hai file **đã tồn tại** hôm nay, nên chúng không đỏ vì thiếu s1 — chúng đỏ vì `pi_natives` chưa build. Build addon một lần là chúng chạy. Không có s1 thì chúng vẫn đỏ, nhưng **không** vì lý do đó.
+- **s4 (Sóng 4)** — sở hữu test MCP elicitation mà G6 assert trên đó, và dải key-hint mà hợp đồng tmux của G11 bắt nguồn từ đó.
+- **s5 (Sóng 5)** — sở hữu nửa D2: G7 là cổng **PHỦ ĐỊNH** trên phần việc s5 đưa vào, nên nó chỉ có nghĩa **một khi** s5 đã đưa vào đoạn segment TTL đã đăng ký mà nó **không được** đọc.
+- **s6 (Sóng 6)** — sở hữu harness tương phản 99-palette. Cổng G cho A9 trong §7.1 là hành vi, không phải phép đếm, nên harness của s6 **là** hiện vật; tail1 không dựng lại nó.
+
+**`blocks`:**
+
+- **Sign-off milestone.** §11 "ĐỊNH NGHĨA HOÀN THÀNH" của plan không thể được đánh giá cho tới khi tồn tại **một lượt chạy cổng duy nhất** — hiện nay mười ba cổng chỉ là văn xuôi mà người review phải tự lắp lại bằng tay, và lắp tay bằng tay chính là nơi các cổng bị bỏ sót.
+- **§8.6 #5** (có viết chính sách clean-room ra không) bị chặn bởi câu trả lời con người ở bước 1, và chừng nào chưa có câu trả lời thì không gì ngăn một người đóng góp tương lai chép từ một cây bị dịch ngược — `CONTRIBUTING.md:82-91` đòi "the right to submit" nhưng không nêu rủi ro cụ thể nào, đó chính là khoảng trống mà §8.6 #5 chỉ ra.
+- **Không chặn gì ở phía trên.** tail1 tiêu thụ các sóng; không sóng nào chờ nó.
+
+### Rủi ro
+
+**Rủi ro chi phối** là một cổng source-grep lặng lẽ biến thành một **test** source-grep. AGENTS.md cấm source-grep trong test bằng ngôn ngữ tuyệt đối, và bốn trong số mười ba cổng là phép đếm `grep -rn`. Nước đi trông tự nhiên — "làm cho cổng được CI cưỡng chế" — sẽ đưa chúng vào một `*.test.ts` và vi phạm quy tắc **trong khi trông như** làm milestone mạnh lên. Các cổng ở lại là script người review chạy; cưỡng chế CI sẽ cần một cơ chế khác (một lint rule hoặc oxlint rule — AGENTS.md nêu tường minh đó là chỗ ở của các bất biến cấu trúc).
+
+**Rủi ro thứ hai, và cái tốn kém nhất:** mã hoá một neo cũ. **Mười** tham chiếu dòng mà bảng *Đính chính* liệt kê đều sai: tám neo `* 3`/`* 2` ở §7.1 (lệch −1 đến +13) và hai neo `ui-helpers.ts:141` / `settings.ts:108` ở §8.2 (lệch +2), nên người review lướt qua sẽ không bắt được. Ba trường hợp còn lại nêu ở đây — `loader.ts:107`, `segments.ts`, `keybinding-hints.ts` — không phải số dòng sai mà là **tên trần nhập nhằng**, xem hàng cuối của bảng: `loader.ts:107` nói `packages/tui/src/components/loader.ts` trong khi một `loader.ts` **KHÁC** nằm ở `packages/tui/src/theme/loader.ts`, và phần thảo luận §7.1/§8.2 xen kẽ hai file đó; một grep chạy nhầm loader.ts sẽ **khớp âm thầm không cái gì cả**.
+
+**Rủi ro thứ ba, mang tính thủ tục:** bốn phán đoán của con người trong §7.2 và năm chữ ký của con người trong §8.6 là những phần script không làm được, và chúng lại là những phần dễ bị tick mờ đi nhất một khi đã có script in ra xanh. Tài liệu phải giữ chúng **hiện ra mắt** ở trạng thái `OPEN`. Một lượt chạy cổng xanh là bằng chứng rằng mười ba tính chất cơ học đang đứng vững; nó **không** phải bằng chứng rằng việc làm ấy hợp pháp hay rằng giao diện cảm thấy đúng, và lưới ký không được làm mờ ranh giới đó.
+
+### Cần người quyết
+
+- **§8.6 #5 (CON NGƯỜI, chặn bước 1):** chính sách clean-room được viết thành file `docs/`, thành phụ lục `CONTRIBUTING.md`, hay cả hai? Plan cân nhắc cả hai và không chọn cái nào. Đây là câu trả lời năm phút từ bảo trì viên, và nó đổi **một** file trong `files_touched` của mục này.
+- **§8.6 #1 (CON NGƯỜI, không giải quyết được trong repo):** đã có ai đọc Commercial Terms hiện hành của Anthropic về reverse engineering, derivative works và UI simulation chưa? Plan nói rõ người nghiên cứu **KHÔNG** đã đọc. Câu *"All rights to Claude Code belong to Anthropic"* là tự đại diện của CCB, không phải một lần đọc đã kiểm chứng về điều khoản upstream. Chừng nào chưa trả lời, lưới ký của tài liệu hiện mục này là `OPEN` và tài liệu **không** khẳng định clean-room status.
+- **§8.6 #4 (CON NGƯỜI):** có nên buộc code nằm ngoài lock tự khai báo để nó tới được file notices không? Hóa ra đây là một câu hỏi **khác** với cách plan đóng khung — xem mục *Đính chính so với plan*. Cần một quyết định về việc có thêm một manifest do người duy trì, hay luật clean-room đơn thuần đã đủ.
+- **GATE OWNERSHIP:** có nên nối gate script vào CI hay không, hay để nó là script người review chạy? Mục này giữ nó ở dạng reviewer-run vì cưỡng chế CI cho một source grep chính là hình dạng AGENTS.md cấm. Nếu cần cưỡng chế CI, chỗ ở đúng là một oxlint rule cho các bất biến cấu trúc và một test thật cho các thuộc tính hành vi — đó là một hạng mục việc khác.
+- **SCOPE:** tail1 là một phần của định nghĩa "xong" của milestone 3, hay một đợt đóng hàng riêng? Nó không thuộc sáu sóng. Nếu là đóng hàng, nó chạy một lần ở cuối và vài cổng sẽ **đỏ vĩnh viễn** (G6 nếu A2/D1 bị cắt khỏi phạm vi); nếu là một cổng áp cho mọi sóng, tính chất "đỏ trước" phải được giữ **cho từng sóng** chứ không phải một lần.
+
+### Đính chính so với plan
+
+Số dòng plan trong mục này lấy theo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` tại HEAD `e040a60`; commit `e040a60` đã chèn kế hoạch M2 và dịch mọi neo M3 **+1507 dòng** so với `808b365`.
+
+| claim | verdict | correction |
+| --- | --- | --- |
+| Task brief: *"Milestone 2 occupies lines 7042 to 7692"* và *"the eight waves are described at the wave descriptions inside that range."* | **WRONG on both counts.** | Dòng 8549 là `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, không phải milestone 2. Phạm vi đó chứa **SÁU** sóng, không phải tám: Sóng 1 (8749), Sóng 2 (8801), Sóng 3 (8854), Sóng 4 (8868), Sóng 5 (8917), Sóng 6 (8956). Thư mục đầu ra `.lavish-wip/m3-specs/` và trường `wave` của mọi spec anh em đều ủng hộ plan, không ủng hộ brief. Mục này được coi là M3 xuyên suốt. (Số dòng brief nêu là của bản `808b365`; ở HEAD hiện tại phạm vi tương ứng là **8549–9199**. `sed -n '8549p'` in ra header MILESTONE 3; `grep -n '^### Sóng'` trả đúng sáu hit trong phạm vi.) |
+| §7.1 G10: *"`grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` trong diff phải trả 0"* | **WRONG as literally written — nó ĐỎ trên một cây hoàn toàn đúng hôm nay.** | Lệnh grep mẫu trần trả về **2**. Cả hai hit đều là comment trong các suite tường thuật rõ là **không** dùng nó: `packages/coding-agent/test/tools/lsp-regressions.test.ts:111` và `packages/tui/test/loop-watchdog-wiring.test.ts:13`. Cổng viết như vậy fail trên một cây đã tuân thủ quy tắc hoàn hảo. Đây đúng là hình dạng cổng tự phá hủy mà bản thân plan chẩn đoán cho G4 (*"the old gate self-adjusted"*). Dạng lời gọi — `grep -rnE 'mock\.module\('` lọc bỏ dòng comment — trả **0**, và đó là dạng bước 5 mã hoá. |
+| §7.1 văn xuôi (dòng 9007; ở bản `808b365` là 7500): *"G4 trả `8` (7 `* 3` + 1 `* 2`)"*, trong khi bảng §7.1 ở hai đoạn trước nói đếm là **"9" hôm nay**. | **Văn xuôi SAI và tự mâu thuẫn với bảng của chính nó.** | Con số là **9**, và bảng là đúng. Phân rã: 7 × `event.wheel * 3`, 1 × `event.wheel * 2` (`usage-dashboard`), và 1 × `delta * 3` (`apps/git/sidebar.ts`) — văn xuôi quên mất sidebar, đúng cái site mà đoạn ngay trên nó chỉ ra là lý do cổng phải quét hai mẫu. Con số 8 là *"8 hằng số trong 8 file M3-A3 liệt kê"*, là con số khác với 9 mà grep trả về. Chạy đúng pipeline hai mẫu của plan trả về 9. |
+| §7.1 dòng 9001 (ở bản `808b365` là 7494) liệt kê bảy site `* 3` là `agent-transcript-viewer.ts:469`, `copy-selector.ts:212`, `plan-review-overlay.ts:581`, `rewind-selector.ts:232`, `git-tui.ts:693`, `raw-sse.ts:167`, `log-viewer.ts:638`; và nêu `usage-dashboard.ts:753` cho `* 2`. | **Cả TÁM** số dòng đều cũ. | Thực tế: `agent-transcript-viewer.ts:470`, `plan-review-overlay.ts:580`, `rewind-selector.ts:245`, `log-viewer.ts:639`, `usage-dashboard.ts:759`, `copy-selector.ts:214`, `raw-sse.ts:168`, `git-tui.ts:697` — cộng `packages/tui/src/apps/git/sidebar.ts:897` cho `delta * 3`. Lệch từ −1 đến +13. **Tập** là đúng (bảy `* 3` cộng một `* 2` cộng `delta * 3` của sidebar) — đó là lý do phần thực chất sống sót qua năm vòng review trong khi neo thì không. Bước 4 dựng lại danh sách từ cây. |
+| §8.5: *"bước sinh chỉ đi qua `bun.lock`"* — lỗ hổng là bước sinh chỉ đi qua lockfile, nên code vendored ngoài lock không bao giờ tới được `THIRD-PARTY-NOTICES.txt`. | **MATERIALLY WRONG về cơ chế; kết luận (có thứ chưa được phủ) thì vẫn sống.** | Repo này **không có bước sinh nào**. `THIRD-PARTY-NOTICES.txt` là file 22.901 dòng được git-track và tự gọi mình là "generated" trong header của chính nó, nhưng không gì sinh ra nó — `scripts/ci-release-publish.ts:94` chỉ nêu đường dẫn và `:100` **STAGE** file đã commit vào tarball của từng package qua `legalPayloadFiles(license)`. `.github/workflows/ci.yml` chỉ nhắc đường dẫn trong các danh sách ignore/artifact. Vậy lỗ hổng §8.5 **không thể** đóng bằng cách nới rộng một generator, vì không có generator; nó chỉ có thể đóng bằng một manifest do người duy trì, đúng là thứ mà §8.6 #4 phải quyết. Riêng ví dụ minh hoạ của plan thì sai cho repo này: `packages/@ant/*` là một cây claude-code-ref (không có thư mục nào như vậy ở đây), và §8.3 đã đóng nó bằng *"Không package nào trong sối này là tài liệu tham khảo cho một port UI/UX"*. (`git ls-files --error-unmatch THIRD-PARTY-NOTICES.txt` thành công, `wc -l` = 22901; `ls packages/@ant` → không có thư mục nào.) |
+| §8.5: *"`claude-code-best` grep trên toàn bộ `.ts`/`.md`/`.json` của đích không có hit thật (chỉ hai false positive — `glyph-bundle.json:140` và `light-canyon.json:7`)"*. | **Kết luận đúng; cả hai chi tiết được nêu đều cũ.** | Hai false positive được nêu **không còn tồn tại** — `grep -c 'claude-code-best'` trả 0 ở **cả hai** file. Và một grep toàn repo hôm nay trả **5** hit, **TẤT CẢ** nằm trong chính `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (dòng 8553, 9048, 9110, 11522, 11523) — một mệnh đề đúng về tài liệu plan, một báo động giả về sản phẩm. Giới hạn đúng phạm vi `packages/ scripts/ docs/` thì con số là 0. Bước 5 mã hoá G12 với phạm vi đó, loại trừ tường minh plan và `.lavish-wip/`; một cổng toàn repo sẽ đỏ vĩnh viễn vì một lý do không liên quan gì đến code. |
+| §8.2 phân loại A7 với `ui-helpers.ts:141` (showStatus), D2 với `segments.ts:718-737`, A8 với `keybinding-hints.ts:10-55` và `tmux.ts:5`/`:48-49`; §6 A9 với `loader.ts:142`/`:153-157`, `settings.ts:108`, `session-color.ts:2`, `schema.ts:77-78`/`:140-141`. | **MIXED — ba cái sai, phần còn lại đã kiểm chứng chính xác.** | **SAI:** `ui-helpers.ts:141` → `showStatus` thực ra ở `:143`. `settings.ts:108` → `colorBlindMode` thực ra ở `packages/coding-agent/src/modes/settings.ts:110`. `segments.ts` phải phân giải thành `packages/tui/src/status-line/segments.ts` (có một `segments.ts` thứ hai ở `packages/coding-agent/src/cli/gallery-fixtures/`); bên trong nó `cacheHitSegment` **có** bắt đầu ở `:718`, nên khoảng đó ổn. `schema.ts` cũng là tên trần: nó phải là `packages/tui/src/theme/schema.ts` — `packages/tui/src/status-line/schema.ts` là file thứ hai và chỉ có 57 dòng, nên `:77-78`/`:140-141` không tồn tại ở đó. **ĐÃ KIỂM CHỨNG CHÍNH XÁC:** `loader.ts:142` (cờ colorBlindMode), `loader.ts:153-157` (nhánh điều chỉnh), `session-color.ts:2` (import OKLCH), `packages/tui/src/theme/schema.ts:77-78` (statusLineGitClean/Dirty), `packages/tui/src/theme/schema.ts:140-141` (fallback của chúng), `tmux.ts:48-49` (resolveTmuxClientTerminalName + chốt chặn isBunTestRuntime), `event-controller.ts:1244-1251` (chứa `#handleNotice` ở `:1250`), `manager.ts:1039` (lỗ ném −32601 mà G6 phụ thuộc), `docs/tui-core-renderer.md:107` và `:174` (cả hai bất biến của G9), `LICENSE:1` và `package.json:5`, và cả năm neo THIRD-PARTY-NOTICES.txt (8, 827, 835, 1053, 10804). **Quy tắc rút ra từ chính hàng này:** `segments.ts`, `schema.ts`, `settings.ts`, `loader.ts` đều là **tên trần** — mọi script và mọi tài liệu sinh ra từ mục này phải mang **đường dẫn đầy đủ** cho cả bốn. |
+| §7.1 G8: *"`loader.ts:107` chỉ render trailer khi `lines.length > 1`"*. | **ĐÚNG, nhưng đường dẫn mơ hồ một cách nguy hiểm.** | Site là `packages/tui/src/components/loader.ts:107` — `if (this.#trailer && lines.length > 1) {`. Một file **KHÁC** cũng tên `loader.ts` nằm ở `packages/tui/src/theme/loader.ts`, và chính file đó là cái mà hàng A9 của §8.2 thảo luận, nên hai mục dùng cùng một tên file trần cho code không liên quan. Bất kỳ lệnh grep nào chạy nhầm loader.ts sẽ không khớp gì và cổng sẽ pass một cách rỗng. Cả script lẫn tài liệu phải mang **đường dẫn đầy đủ**. |
+| Environment brief: *"native addon chưa được build, nên `bun test` hiện báo 0 pass … coi `bun test` là bị chặn cho tới khi addon được build."* | **ĐÚNG VỀ LỖI, SAI Ở HAI ĐIỂM KHÁC.** | Lỗi là có thật và chuỗi lỗi chính xác — bất kỳ test nào import dây chuyền `@oh-my-pi/pi-natives` đều chết với *"Failed to load pi_natives native addon for darwin-arm64"* trên máy sạch (ví dụ `packages/coding-agent/test/mcp/request-id.test.ts` → 0 pass, 1 fail). Nhưng nó **giới hạn theo FILE**: `packages/tui/test/mouse.test.ts` pass **13/13** ngay cả khi chưa build. Và, thứ hai, nó **không phải hạn chế của máy** — đây là một bước build còn thiếu, `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là toàn suite chạy. Vậy các test TUI tránh được module natives là chạy được ngay, và người triển khai **không nên** giả định cả suite tắt. `bun run check:ts` được xác nhận là dùng được — đo exit 0 tại HEAD `e040a60` với cả **16** package type-check `Done` (con số 12 là số package **published**, xem hàng cuối bảng này). |
+| §6.8: *"`find packages/tui -name '*.test.ts' … \| wc -l` → **221**; `find packages/coding-agent …` → **1511**"*. | **Trôi dạng hình thức; claim về QUY ƯỚC bên dưới hoàn toàn đã kiểm chứng.** | Số đếm nay là **222** và **1520**. Điều đáng giữ lại là quy ước vẫn đúng như đã nêu: test nằm ở `packages/<pkg>/test/`, với `packages/coding-agent/test/mcp/` cho việc MCP, và **KHÔNG** file test nào nằm cạnh mã nguồn của nó — `ls packages/tui/src/overlays/*.test.ts` không khớp gì. Đường dẫn file ở bước 6 tuân theo quy ước đó. |
+| §8.5: *"cả 12 package xuất bản đều khai MIT"* và §7.2's *"the reference tree is not the judging standard"*. | **ĐÃ KIỂM CHỨNG, kèm một bổ sung hữu ích.** | Cả **16** workspace package đều khai `license: "MIT"`; **12** là published (không private) và **4** là private — con số 12 package xuất bản của plan là chính xác. Bổ sung: đây không chỉ là quy ước, nó **được cưỡng chế tại thời điểm publish**. `scripts/ci-release-publish.ts:97` `legalPayloadFiles()` ném ở `:102` khi license thiếu hoặc không phải MIT, và `scripts/ci-release-publish.test.ts:144-145` assert cả hai nhánh ném. Đó là lý do tail1 không thêm test license nào của riêng mình. |
+
+
+---
+
+
+## Rủi ro và cách sai dễ nhất
+
+Ba cách M3 nhiều khả năng đi sai nhất, xếp theo xác suất:
+
+1. **Cổng xanh mà không kiểm chứt gì.** Không phải phỏng đoán — bằng chứng đã nằm sẵn trong cây này. Pin B1 (s4) xanh trên cả cây sạch lẫn sau khi sửa, nên nó không thể chứng minh B1 đã làm gì. Guard `isBunTestRuntime()` tại `tmux.ts:49` (s1) cho phép viết một test tmux xanh mà không bao giờ đi vào nhánh tmux. Dạng chữ nghĩa của G10 trả về 2 trên một cây hoàn toàn đúng, chỉ vì hai file test có comment giải thích chúng KHÔNG dùng `mock.module`.
+2. **Chép neo cũ từ văn xuôi kế hoạch.** Số dòng đã trôi: bảy neo `* 3` trong kế hoạch sai hết (lệch **−1 đến +13**; riêng `plan-review-overlay` neo kế hoạch nằm **cao hơn** thực tế một dòng), `usage-dashboard.ts:753` thực ra là 759. Bản gốc của kế hoạch liệt 7 site `* 3`; cây có 9 (7 `* 3` + 1 `* 2` ở `usage-dashboard.ts:759` + 1 `delta * 3` ở `sidebar.ts:897`). Kế hoạch đã sửa số này và xây G4 quanh nó — đó là lý do G4 phải quét **hai** mẫu — nên bảy neo `* 3` và `usage-dashboard.ts:753` còn sót lại là loại trôi âm thầm hơn, không phải loại đếm thiếu. Mọi đặc tả sóng đều mượn tiền đề của ctx1/ctx2, nên làm ctx sau sẽ biến một neo hỏng thành bảy.
+3. **Câu hỏi của người bị trả lời ngầm bằng code.** P0/P1 chặn cứng sóng 1, Q6 chặn cứng C2, M2-OQ3 chặn sóng 5. Câu trả lời chưa ghi trông y hệt câu đã ghi cho tới khi ai đó mở file đặc tả ra kiểm. s5 nói thẳng: nếu Q6 chưa có, C2 được phép TRƯỢT — ship trên tiền đề không nói ra còn tệ hơn trượt.
+
+**Trước khi đọc bảng:** mọi cổng gọi `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là tất cả chạy được — đây là **tiền đề môi trường dùng chung, tái lập được, không phải hạn chế của máy này**. ctx2 ghi rõ `bun test` nằm ngoài phạm vi cổng của nó, ctx1 dừng ở chân (2) chính vì thế, và s5 thừa nhận chỉ cổng (1) mới thật sự siết. Trạng thái đó phải báo lên chứ không vòng qua. Một test đỏ lúc addon chưa build không chứng minh điều gì; test xanh cũng vậy, vì nó có thể chỉ là một test rỗng chạy được.
+
+| work item / sóng | rủi ro | cách giảm |
+| --- | --- | --- |
+| ctx1, s1, s4, tail1, tail2 — *cổng không có sức phủ* | Cổng xanh vì nó không chạm đúng thứ cần kiểm: fixture gấp thành một dòng thì trailer của A5 bị bỏ qua, test tmux không vào nhánh tmux, B1 xanh trước và sau. | Bắt cổng từng đỏ trước khi sửa; xanh sáng thứ Hai = cổng hỏng. tail1 đã đo được ngay: G4=9 (cần 0), G4b=0/9, G5 left=7, G6 file chưa tồn tại. Test tmux phải assert nhánh đã vào; B1 không được tính là bằng chứng. Không thêm test grep cho invariant "đúng một call site" của ctx1 — nếu nó lọt vào diff thì mục đó sai. |
+| ctx2, ctx1, s1, tail1, tail2 — *neo cũ chép từ văn xuôi kế hoạch* | Một số dòng sai lệch làm người đọc sửa nhầm chỗ hoặc săn một vi phạm cóc móc; ở ctx1 sáu neo lệch đã biết (union 2-30 chứ không phải 1-32, MCP capabilities 101-103 chứ không phải 100-104 — dải 100-104 của kế hoạch nuốt luôn protocolVersion). `90-back2b.md:37` đang phán 100-104 là chính xác: cần chọn một định nghĩa (100-104 là cả literal `MCPInitializeParams`, 101-103 mới là khối `capabilities`) rồi dùng thống nhất khắp bộ back matter. | Chạy ctx1 + ctx2 trước mọi sóng. Chưa có script nào để chạy: `bun .lavish-wip/m3-md/check-anchors.mjs` hôm nay exit 1 với `Module not found` — đỏ vì script chưa được viết, **không** phải đỏ vì neo trôi. Cổng này chỉ có sức phủ sau khi tail2 dựng xong script (light.json ghi `[create,UNVERIFIED]`), và khi đó nó phải vừa trả 0 vừa **đã từng** trả 1 trên đầu vào sai. Số neo kiểm phải hàng chục, không phải 0. Mọi neo ghi trong đặc tả phải do lệnh trong khối verification sinh ra trong chính task đó, không chép từ kế hoạch. |
+| s1, s2, s4, s5, s6 — *câu hỏi của người bị trả lời ngầm* | P0/P1, hai câu hỏi hành vi của s2, Q6, M2-OQ3, và quyết định S-vs-M của A9 đều đổi hành vi quan sát được, nhưng không cái nào có dạng đỏ nếu bị bỏ qua. | P0/P1 bằng văn bản trước khi s1 viết dòng code đầu tiên. Q6 chưa có thì C2 trượt, không ship trên tiền đề nói miệng. A4-PERSIST hoặc ship trên write path hậu M2 WI-8a, hoặc ghi rõ trong PR là đã hoãn — không bao giờ gộp lặng vào commit display. |
+| s3, s4, s5 — *ship nửa* | Khai báo capability trước handler; mask secret lúc build rồi `settings-list.ts:797` gán lại `currentValue` lúc select nên rò rỉ ở lần tương tác thứ hai; port kèm countdown của bản tham chiếu. | Mỗi cổng nêu sẵn phần còn lại nên đỏ. s3 chỉ xong khi (1)(2)(3) xanh trên cùng một cây. s4 giữ assertion mask sau cả vòng chọn trong submenu. s5 giữ ba hợp đồng phủ định: không countdown, tỉ lệ bằng `cache_hit`, không dữ liệu thì không góp gì. |
+| s1 (A6), s2 (A3/A7/D3), s5 — *vượt biên danh sách site* | Sửa cả chỗ không nên sửa, **hoặc bỏ sót sáu `handleWheel` — chúng CÓ nằm trong nhóm tăng tốc của A3 (kế hoạch 8804/8808) nhưng không cổng nào phủ**: G4/G4b và lệnh audit ở cột kế bên chỉ quét 9 site nhân hằng số, không chạm 6 site kia. Site thứ chín (`delta * 3` trong thân `handleWheel`) thì grep `event.wheel * N` không bao giờ chạm tới. | s1 assert nhánh live và nhánh rebuild cho ra cùng kết quả. s2 chạy audit thủ công trả 0 hit cho `wheel * [0-9]` và `delta * 3` dưới `packages/tui/src` — và phải kiểm riêng 6 site `handleWheel` kia, vì lệnh trên không chạm tới chúng. |
+| s2 (A3), s3, s4 (A4-PERSIST) — *cắt ngày của mụt quan trọng nhất* | Ngân sách số của kế hoạch là dự đoán; bảng đo của A3 là thời gian lịch không nén được, và s3 là mục kế hoạch cấm ra ngân sách. | Để s3 là một khối ~5 ngày không chia, sửa sai thứ tự thì người dùng thấy lỗi giao thức. `MEASURED_THRESHOLDS` trong `packages/tui/src/mouse-wheel.ts` phải là số đo thật; 200/1500/5 của kế hoạch là số giữ chỗ, ship nguyên xi là fail cổng. |
+| tail1, ctx1 — *pháp lý clean-room* | Đây là rủi ro nặng nhất M3 và không sửa được bằng test. Chính sách clean-room chưa tồn tại: `CONTRIBUTING.md:82-91` đòi "quyền nộp bài" mà không nêu rủi ro cụ thể, nên chưa có gì chặn một người đóng góp sao chép từ cây đã đảo ngược. Khung "cell buffer" / "pre-styled ANSI" của dossier gốc không có bằng chứng nào, và không tài liệu nào phân tích tương thích runtime CCB-engine/omp-plugin. | `docs/clean-room-policy.md` với lưới ký hiện trạng thái thật của §8.6 #1/3/4/5 là OPEN, không tick vội. Giữ nguyên mục (4) "what this does not prove" của ctx1 — xóa nó là nạp lại đúng claim chưa kiểm chứng mà mục đó sinh ra để cách ly. |
+
+Ngay cả khi cả bảng này được xử lý hết, `XANH` trên mười hai cổng (G1–G11 cộng G4b) vẫn không nói gì về việc bánh xe có chạm đúng hay không: §7.2 của kế hoạch tự nói "phần này không thể chứng minh bằng máy", và bốn phán đoán người ở đó phải được đánh giá ngoài script. Trước khi ai đánh giá M3, mười hai cổng đang là văn xuôi phải lắp tay mỗi lần — và lắp tay là chỗ cổng bị bỏ sót.
+
+
+---
+
+
+## Bảng quyết định cần bạn chốt
+
+52 câu mở, trải trên 10 spec (6 câu mới đến từ sáu mục bổ sung `GAP-M3-B4` → `GAP-M3-B9`). Bảng chia bốn dải theo mức chặn; đọc dải A và B là đủ để gõ code, dải C và D trả sau cũng kịp. Trong dải A và B có năm cặp câu hỏi lặp lại từ hai spec khác nhau và **là một câu trả lời duy nhất**: hàng 1 + 2 (cổng P0), hàng 3 + 6 (cổng P1), hàng 10 + 11 (chính sách elicitation headless), hàng 14 + 15 (đích persist của A4), hàng 19 + 20 (A9 S hay M).
+
+Ký hiệu:
+
+- **[P]** — cổng P0/P1, chặn sóng 1, không thể đỏ: một câu trả lời chưa ghi lại trông y hệt câu đã ghi lại tới khi ai mở đặc tả ra kiểm.
+- **[PHÁP LÝ]** — liên quan tới điều khoản thương mại hoặc cơ sở pháp lý của phần port.
+- **[PORT]** — quyết định "có nên tiếp tục port hay không", nặng hơn hẳn phần còn lại.
+
+Cột cuối chỉ ghi mặc định khi chính câu hỏi nêu ra mặc định. Nơi câu hỏi không nêu, ghi "chưa có mặc định — cần bạn quyết" chứ không điền một mặc định hợp lý.
+
+### Dải A — Cổng P0/P1, chặn sóng 1, không thể đỏ (3)
+
+| # | work item / sóng | câu hỏi | vì sao nó chặn | mặc định nếu không trả lời |
+| --- | --- | --- | --- | --- |
+| 1 | `tail2` §9–11 — cổng P0 **[P]** **[PHÁP LÝ]** | Với A3, A7, A8, D2: nguồn đặc tả là `black-box` hay `omp-native`, và bằng chứng đặt ở đâu? | Sóng 1 nói thẳng "Before ANY code is written". Đây là cơ sở pháp lý cho toàn bộ phần port, nên bằng chứng phải nằm trong work item, không phải checkout chưa track ở `~/Projects/claude-code-ref`. | §8.2 đề xuất A7=omp-native, D2=omp-native, A8=black-box+omp-native, A3=omp-native-shape-plus-remeasured-constants — mới là đề xuất, chưa ai ký. |
+| 2 | Sóng 1 / `A8` — cổng P0 **[P]** **[PHÁP LÝ]** | Quy ước nhân đôi tmux prefix là `black-box` (quan sát trên sản phẩm đã ship dưới tmux) hay `omp-native` (thiết kế ở đây)? Bằng chứng đặt ở đâu? | A8 không viết test nổi tới khi có câu trả lời bằng văn bản. Cùng một cổng P0 như hàng 1, nhìn từ phía `s1`. | chưa có mặc định — cần bạn quyết |
+| 3 | `tail2` §9–11 — cổng P1 **[P]**, dẫn tới Sóng 1 / `A1` | `usage` vào cả bảy preset status-line hay một tập con — nêu tên từng preset. Có tính preset `custom` (`packages/tui/src/status-line/presets.ts:96-103`, spread `CUSTOM_STATUS_LINE_DEFAULTS` từ `schema.ts:36-42`) không? | A1 không bắt đầu được. Phải nói to "loại `custom`" — nếu không, câu trả lời "full và nerd" trông như đã đầy đủ và âm thầm bỏ sót `custom` trên danh sách cũ. | chưa có mặc định — cần bạn quyết |
+
+### Dải B — Chặn việc lên lịch hoặc viết code của một sóng (17)
+
+| # | work item / sóng | câu hỏi | vì sao nó chặn | mặc định nếu không trả lời |
+| --- | --- | --- | --- | --- |
+| 4 | `tail1` §7–8 — mốc dài nhất trong cả bảng **[PHÁP LÝ]** | Đã có ai đọc Commercial Terms hiện hành của Anthropic về reverse engineering, derivative works và UI simulation chưa? Câu trả lời của nghiên cứu là CHƯA. | Lưới sign-off giữ ở OPEN và tài liệu không assert clean-room. Dòng "All rights to Claude Code belong to Anthropic" là tự-representation của CCB, không phải đọc điều khoản upstream. Không giải quyết được trong repo — mở ngay, cần người ngoài đọc. | sign-off giữ ở OPEN, tài liệu không assert clean-room |
+| 5 | `tail2` §9–11 — M2 exit criterion, chặn sóng 4 + sóng 5 **[PORT]** | `ExtensionUIContext` có đạt đúng hình dạng M2 mô tả (setHeader/setFooter là no-op, specifier remap làm cho `toolRenderers` reachable) không? Nếu không, B1, B2, B3, C2 và D2 trượt và sóng 4 không khởi động độc lập được. | Kế hoạch gọi đây là rủi ro lịch trình lớn nhất. `tail2` chỉ đặt nó lên đầu bảng với một tên chủ sở hữu, không tự giải quyết được. | chưa có mặc định — cần bạn quyết |
+| 6 | Sóng 1 / `A1` — cùng cổng P1 với hàng 3 | Bảy preset hay chỉ `full` + `nerd`? `default` là thứ mọi người dùng hiện tại thấy ngày đầu, `usage` là đoạn rộng nhất catalog. Đây là quyết định sản phẩm lần chạy đầu, không phải kỹ thuật. | P1, chặn A1 trước dòng code đầu tiên. | chưa có mặc định — cần bạn quyết |
+| 7 | Sóng 5 / `C2` | §10 Q6 — câu chuyện trust cho artifact M3 trong một dự án không có trust gate. Câu trả lời phải chép vào work item và phải nêu rõ phạm vi: chỉ C2, hay cả mọi artifact khác M2 giao cho code plugin — đáng chú ý là `ExtensionUIContext` sống, ghi của nó đi vòng frame-cost floor, trần 30fps và adaptive backpressure? | Chưa trả lời thì C2 trượt. Đó là chỉ dẫn của chính kế hoạch, không phải một cách đọc thận trọng hơn. | chưa có mặc định — cần bạn quyết |
+| 8 | Sóng 5 / `D2` (+ `C2`) qua M2 WI-7 | M2-OQ3 — M2 chốt phương án nào trong ba? Vẫn chặn WI-7 step 6 trong `.lavish-wip/m2-specs/WI-7.spec.json`. Phương án 3 không phủ được mode muốn một segment nằm ngoài `mode`. | Cần để viết negative contract đúng, và để biết id literal của D2 có phải `core:`-prefixed hay không. | kế hoạch nghiêng phương án 3 nhưng cố tình không chọn |
+| 9 | `ctx2` — cùng M2-OQ3, nhìn từ phía sổ neo | M2-OQ3 (`registerStatusLineSegment`) chặn D2 + C2 và qua WI-7 chặn cả hình dạng `ModeDefinition.statusLine`. Ghi chú: `packages/tui/test/status-line-extension-mode.test.ts` mà kế hoạch dẫn là test của M2-WI-7 KHÔNG TỒN TẠI trong cây. | File test đó là artifact tương lai bị chặn bởi chính câu hỏi này — đừng đi tìm, và đừng để sự vắng mặt của nó đọc thành regression. | chưa có mặc định — cần bạn quyết |
+| 10 | Sóng 3 / `D1` — chính sách headless/SDK cho MCP elicitation | Khi một MCP server elicitation trong chế độ headless/SDK không có bề mặt tương tác, omp làm gì? Hai câu trả lời sai tự nhiên — treo request vô hạn, và âm thầm auto-decline — đều thấy được ở tầng protocol. | §11 clause 4 nói hành vi theo chính sách đã chốt, nên DoD của D1 không đo được tới khi viết ra. | chưa có mặc định — cần bạn quyết |
+| 11 | Sóng 3 / `A2` + `D1` — cùng câu hỏi, nhìn từ phía `s3` | HEADLESS/SDK POLICY (kế hoạch mục 10, câu 10) — chưa trả lời, và người implement không được đoán. | Cần chốt trước step 13. | đề xuất trong câu: auto-decline kèm `logger.warn` nêu tên server và nội dung request, trả `{ action: "decline" }` thật trên wire chứ không phải error, cộng một handler lập trình được opt-in để người nhúng SDK không bị kẹt |
+| 12 | Sóng 2 / `A3` | "Acceleration" nghĩa là gì cho sáu bản hiện thực `handleWheel(delta: -1 \| 1)`, khi cả sáu đều là một dòng SELECTION chứ không phải scroll (`select-list.ts:229`, `settings-list.ts:241`, `agent-hub.ts:1247`, `session-selector.ts:588`, `oauth-selector.ts:407`, `extension-list.ts:597`)? | OPEN QUESTION 1, chặn. Nếu muốn tăng tốc cho selection thì cần một trần thấp hơn nhiều, một quyết định riêng, và cả năm call site forwarding còn lại — nếu không, hành vi lệch nhau giữa các overlay. | đề xuất trong câu: KHÔNG tăng tốc — một notch một dòng; mô hình chỉ áp cho chín scroll site |
+| 13 | Sóng 2 / `A3` | `ui.mouseWheelSpeedMultiplier` đặc tả là `type: "number"` không kèm `ui.options`, và `registry.ts:42-43` nói một setting dạng số không có options bị CỐ TÌNH ẩn khỏi panel. Chấp nhận vậy cho một "escape hatch", hay cần một submenu giá trị rời để người dùng thực sự tới được? | OPEN QUESTION 2, chặn hình dạng của setting. Nếu giữ config-file-only thì phải nói trong changelog — người đọc câu "có setting" sẽ tìm trong panel mà không thấy. | chưa có mặc định — cần bạn quyết |
+| 14 | Sóng 4 / `A4-PERSIST` | Đích đến cho phần persist: đẩy secret setting của plugin vào `secrets.yml`, hay cho Settings registry một tầng được đánh dấu secret? Kế hoạch sai khi kết luận repo không có secret store. | Store có thật: `~/.omp/agent/secrets.yml` và `<cwd>/.omp/secrets.yml`, nạp ở `packages/coding-agent/src/secrets/index.ts:163-168`, khoá mỗi bản cài ở `~/.omp/agent/secret-placeholder.key` (`secrets/index.ts:16-53`), mô tả ở `docs/secrets.md:35-42`. Đánh đổi thật: setting được registry kiểu và validate, còn secrets.yml là định dạng riêng không kiểu — đi qua nó thì setting plugin mất validate. | chưa có mặc định — cần bạn quyết |
+| 15 | Sóng 4 / `A4-PERSIST` — cùng quyết định, nhìn từ phía `tail2` | Nửa persist của A4: "cái gì được gõ thẳng ra đĩa". Câu hỏi cho rằng repo không có secret store để lùi về — `grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` → 0 (đã kiểm), và tham chiếu keychain duy nhất có ý nghĩa trong package là obfuscator payload browser-profile tại `packages/coding-agent/src/tools/browser/attach.ts:244-246` (cộng `:276`), không liên quan; `bash-executor.ts:353` chỉ nhắc tên keychain trong một comment giải thích hành vi của zsh, không gọi API nào. | Tiền đề của hàng này đã bị hàng 14 bác bỏ. Trả lời hàng 14 là trả lời hàng này. | chưa có mặc định — câu hỏi tự nói "a decision with no default" |
+| 16 | `ctx2` → Sóng 4 / `A4-PERSIST` — gate M2 WI-8a | Row 21 (plugin secret lưu plaintext tại `manager.ts:942-949`) bị gate bởi M2 WI-8a vì `manager.ts:929-960` là một hotspot row đang bị thay (plan ghi 929-957 nhưng đã tự sửa: ba phương thức kết thúc ở 937/949/960). Xác nhận gate đó trước khi ai mở `manager.ts` ở M3. | Nếu không confirm, hai milestone đụng cùng một hàm trong cùng một sóng. | gate theo M2 WI-8a |
+| 17 | `tail1` §7–8 — phạm vi | `tail1` là một phần của definition of done của milestone 3, hay một close-out riêng? Nó không thuộc sáu sóng. | Nếu là close-out thì chạy một lần cuối và vài cổng đỏ vĩnh viễn (G6 nếu A2/D1 bị descope); nếu là cổng mỗi sóng thì phải giữ đúng property đỏ-trước theo từng sóng. | chưa có mặc định — cần bạn quyết |
+| 18 | Sóng 4 / `B3` — phụ thuộc Sóng 1 / `A8` | Assertion tmux-stub của B3 (cái chứng minh thứ tự A8) bị bỏ nếu A8 chưa land. Defer toàn bộ item hay chỉ assertion đó? Hỏi đúng chủ sở hữu A8. | Kế hoạch coi bằng chứng thứ tự là load-bearing, điều đó nghiêng về defer. | defer toàn bộ B3 |
+| 19 | Sóng 6 / `A9` | S hay M? Kế hoạch đòi chốt trước khi lên lịch và cảnh báo đừng default sang bản rẻ, với lý do là bản rẻ không bằng hai theme chỉnh tay của bản tham chiếu. | Lý do kế hoạch nêu cho M là audit 99 palette, và audit đó nay đã xong và sạch. Phần còn lại của M là parity thiết kế với CCB, không phải tính đúng — và M mua parity bằng một harness chỉ kiểm 2 theme người chọn tay, tức lưới regression yếu hơn hẳn biến thể S — harness của S quét `getBuiltinThemes()` (101 theme = dark + light + 99 `defaults/*.json`), còn bản kiểm kê khoá bắt buộc của plan chỉ chạm 99 file trong `defaults/`. Nếu vẫn muốn parity, phạm vi trung thực là hai file JSON mới trong `defaults/` cộng một vòng designer và một vòng accessibility review, không phải đổi code. | chưa có mặc định — cần bạn quyết (hàng này nghiêng S, hàng 20 nghiêng M) |
+| 20 | `tail2` §9–11 — cùng quyết định, nhìn từ phía lịch trình | A9 S hay M, chủ sở hữu là người xếp lịch, hạn trước khi A9 được lên lịch — mở rộng token list hiện có, hay sinh hai theme chỉnh tay qua OKLCH primitives đã có ở `packages/tui/src/theme/session-color.ts:2`? | Chênh bốn ngày (S ~1 ngày, M ~5 ngày) — đó là lý do phải quyết thay vì default, không phải vì S rẻ. 99 palette trong `defaults/` phải đụng tới dù chọn gì (`ls packages/tui/src/theme/defaults/*.json \| wc -l` → 99); nếu harness quét `getBuiltinThemes()` thì con số là 101. | M, ~5 ngày (S là ~1 ngày) — hàng 19 lập luận ngược lại |
+
+### Dải C — Chặn một bước bên trong item, không chặn việc bắt đầu (8)
+
+| # | work item / sóng | câu hỏi | vì sao nó chặn | mặc định nếu không trả lời |
+| --- | --- | --- | --- | --- |
+| 21 | `tail1` §7–8 — chặn step 1 | §8.6 #5 — chính sách clean-room viết thành một file trong `docs/`, một phụ lục trong `CONTRIBUTING.md`, hay cả hai? | Kế hoạch cân hai bên rồi không chọn bên nào. Câu trả lời năm phút của bạn, và nó đổi đúng một file trong `files_touched` của đặc tả này. | chưa có mặc định — cần bạn quyết |
+| 22 | Sóng 1 / `A6` | `chat-transcript-builder.ts:507` và `ui-helpers.ts:662` có trong scope A6 không? Chúng là check phía result, không bao giờ gọi collapse predicate. | Đọc hiện tại của câu hỏi: chúng thuộc nhóm must-stay-put, A6 còn năm site cơ học thay vì bảy — nhưng đó là quyết định của người bảo trì, không phải của người implement. | chưa có mặc định — cần bạn quyết |
+| 23 | Sóng 1 / `A6` | `acp-event-mapper.ts:645` (`if (raw === undefined \|\| toolName !== "read") return raw;`) có phải một site thành viên read-group không? Kế hoạch không nhắc. | Nó trông ACP-specific, nhưng phải được loại vào hoặc ra tường minh chứ không được bỏ qua im lặng. | chưa có mặc định — cần bạn quyết |
+| 24 | Sóng 1 / `A5` — chặn trước step 17 | Bộ cộng frame-cost theo pha đặt ở đâu — mở rộng `loop-phase.ts`, hay một module mới? `loop-phase.ts:45` nằm trong `packages/utils` và cố ý nhẹ; thêm timing store vào đó làm nở blast radius. | Cần một quyết định trước step 17. | chưa có mặc định — cần bạn quyết |
+| 25 | Sóng 3 / `A2` — chặn trước step 8 | Field secret được đánh dấu bằng `writeOnly: true` của MCP, bằng `format: "password"`, hay bằng một extension riêng của omp? | Step 8 hard-code nó; chọn sai nghĩa là secret render ra plaintext. Cần xác nhận các server ngoài đời thật sự gửi gì. | `writeOnly: true` (MCP spec dùng cái này) |
+| 26 | Sóng 3 / `A2` | Tên RPC method và payload shape để forward một elicitation sang RPC client chưa được định nghĩa. `rpc-mode.ts:600` (`requestRpcEditor`) là shape để noi theo, nhưng tên method thì phải có quyết định. | RPC client key off tên đó, nên đặt sau khi ship là breaking. | chưa có mặc định — cần bạn quyết (shape thì noi theo `rpc-mode.ts:600`) |
+| 27 | Sóng 3 / `A2` | Form elicitation có timeout không? Bridge của ACP tôn trọng `dialogOptions.timeout`; request MCP không mang timeout riêng. | Kế hoạch bắt timeout phải là một kết quả wire thứ BA khác biệt, nên giá trị phải chọn có chủ ý chứ không thừa hưởng làm `undefined`. | chưa có mặc định — cần bạn quyết |
+| 28 | `ctx1` — chặn chân (2) của cổng | Chân (2) cần addon native. Addon **build được** (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) — đây là tiền đề môi trường, không phải hạn chế của máy. Câu hỏi còn lại: hai file test có được kỳ vọng chạy thật trước khi M3 bắt đầu, hay viết và ship chưa chạy với blockage được ghi lại? | Giá trị của mục này nằm ở các bất biến có thể chạy được. Chốt chặn: không được tick ctx1 xong chỉ dựa vào `check:ts` — `check:ts` chạy không khẳng định nào. | chưa có mặc định — cần bạn quyết; nhưng chốt chặn là không tick xong chỉ dựa vào `check:ts` |
+
+### Dải D — Không chặn (24)
+
+| # | work item / sóng | câu hỏi | vì sao nó chặn | mặc định nếu không trả lời |
+| --- | --- | --- | --- | --- |
+| 29 | Sóng 1 / `A1` — negative contract | Có đảo `showHookStatus` (`component.ts:3066`, hiện mặc định `true`) sang mặc định false để một status hook không render hai lần không? | Không chặn — nhưng đừng đọc nhầm kế hoạch. Kế hoạch mô tả nó là tắt một path ở `component.ts:3067`; thực tế setting đã tồn tại ở `:3066` (`?? true`); `:3064` là dấu ngoặc đóng của khối if trước, `:3067` là lệnh `if` đọc setting. Đảo mặc định là quyết định sản phẩm chạm mọi người dùng. | không ai nhận thì không đụng — câu hỏi nói nằm ngoài sóng này |
+| 30 | Sóng 2 / `A3` | Trần acceleration là số nguyên rows-per-notch hay float? | Không chặn, nhưng phải chốt ngay. Mọi consumer hiện tại đều truncate (`scroll-view.ts:352` làm `Math.trunc(delta)`), nên float bị floor âm thầm mỗi call và ramp 1→2→3 không bao giờ đáp giữa bước. | integer |
+| 31 | Sóng 4 / `A4-display` | Test đặt ở đâu — cả bốn unit dưới test đều nằm trong packages/tui (`settings-list.ts`, `plugin-settings.ts`), còn kế hoạch lại gọi tên `packages/coding-agent/test/plugin-settings-secret.test.ts`. | Seam là thật: `buildPluginConfigItems` nhận một `PluginSettingsManager`, và một test ở coding-agent dựng được nó với một temp dir. Đây là house-style, không phải correctness. Theo kế hoạch trừ khi `packages/tui/test` đã có harness settings-list; dù chọn gì, test không được import fixture bằng một đường dẫn mà runtime không dùng. | theo kế hoạch — `packages/coding-agent/test/plugin-settings-secret.test.ts` |
+| 32 | `ctx2` — O5 | O5 đánh dấu CHỐT, nhưng có một phương án đơn giản hơn mà kế hoạch không nhắc: `getTool?: (name: string) => AgentTool \| undefined` đã nằm trong `ChatTranscriptBuilderDeps` (`chat-transcript-builder.ts:67`) và đã dùng ở `:475`, và `AgentTool` đã import được trong pi-tui từ `@oh-my-pi/pi-agent-core`. | Không chặn. Cần người quyết giữ seam predicate-injection đã chốt hay mở lại — một quyết định đã CHỐT thì không bị đảo trên tay. | giữ O5 như đã chốt |
+| 33 | `ctx2` — §4.1 | §4.1 nói dựng một harness thứ hai bên trong `packages/tui/test/` là "banned by this document". Khung đó là lý luận riêng của kế hoạch, không phải một quy tắc AGENTS.md. | Không chặn. Sự thật nền vững và tự đủ (pi-tui không có phụ thuộc pi-coding-agent, và `git grep` cho `pi-coding-agent` dưới `packages/tui/test/` không ra gì), nên kết luận vẫn đứng vững không cần lệnh cấm bịa ra. | giữ kết luận — không dựng harness thứ hai trong `packages/tui/test/`; chỉ bỏ câu "banned by this document" |
+| 34 | `ctx1` — O1 | Sửa tại chỗ sáu neo đã trôi trong `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`, hay để nguyên làm bản ghi lịch sử với `docs/plugin-surface-closure.md` làm nguồn đã sửa? | Không chặn, rẻ. Đặc tả này KHÔNG chạm plan — nó là một file có track thuộc về workflow M1/M2, sửa ở đây là đua với workflow đó. | để nguyên plan — tiền lệ M1 đã là "fold spec-verified plan vào upgrade plan" như một commit riêng |
+| 35 | `ctx1` — O2 | Tài liệu có phủ thêm hai bổ sung M3 đã kiểm chứng mà hiện chỉ nhắc thoáng qua — quota status band và MCP elicitation form — hay bám sát luận điểm "why not a plugin"? | Không chặn. Cả hai đều là chủ đề §2 và đều thuộc sóng sau. | bám sát §1–§2 — một context doc lớn thành design doc thì thôi làm thứ mà các sóng cite |
+| 36 | `ctx1` — O4, dành cho chủ M2 WI-7 | Xác nhận rằng việc pin closure ở đây không pre-empt WI-7. §2.1 đã trao seam status-line segment cho M2 WI-7 + M2-OQ3; mục này chỉ xác minh seam đã đóng và pin lại, không ra quyết định. | Không chặn. Theo cách viết hiện tại thì không pre-empt, vì một test khẳng định hai catalog khớp nhau vẫn xanh sau khi WI-7 mở seam — miễn WI-7 cập nhật cả hai catalog. | chưa có mặc định — cần bạn quyết (nếu WI-7 dự kiến thêm một hàm `register*`, dòng `grep` ở step 11 là dòng đổi) |
+| 37 | Sóng 2 / `A7` | Một keyed transient status đã scroll khỏi view có nên được ghi vĩnh vào transcript không, hay transcript là bản ghi đầy đủ và notice chỉ cộng thêm lên? | Không chặn — kế hoạch nói đúng và ghi rõ nó không chặn sóng 2; A7 chỉ cần giữ nguyên hành vi transcript của nhánh không key. | chưa có mặc định — cần bạn quyết (cùng câu hỏi với hàng 38) |
+| 38 | `tail2` §9–11 → Sóng 2 / `A7` — cùng câu hỏi, nhìn từ phía back matter | Một transient notice có để lại một bản ghi transcript bền vững không? | Chủ sở hữu là người bảo trì, không chặn A7. Hai hành vi khác nhau khi người dùng scroll ngược. Kế hoạch cố ý không để câu này chặn A7, và `tail2` cũng không nên. | chưa có mặc định — cần bạn quyết |
+| 39 | Sóng 3 / `A2` | Trong ACP mode, manager được tạo mỗi managed session (`acp-agent.ts:2667`) và outbound bridge đã tồn tại. Handler có dùng lại `unstable_createElicitation` nguyên văn, hay elicitation sinh từ MCP bỏ qua editor client và xử lý tại chỗ? | Hai UX rất khác nhau và kế hoạch không nói. | chưa có mặc định — cần bạn quyết |
+| 40 | Sóng 4 / `A4-PERSIST` — ngoài phạm vi sóng | A4-PERSIST có cần một tầng persist riêng, hay encrypt-at-rest mới là câu trả lời trung thực? `secrets.yml` là plaintext trên đĩa với placeholder đảo ngược cho phần MODEL — nó là hệ redaction, không phải vault. | Không chặn — câu hỏi phạm vi cho người sở hữu item, nằm ngoài phạm vi sóng này. | chưa có mặc định — cần bạn quyết |
+| 41 | Sóng 5 — ngoài phạm vi | `runDoctorChecks` (`packages/coding-agent/src/extensibility/plugins/doctor.ts:5`, re-export ở barrel `index.ts:3`) có đáng được để mắt ở đây không? Nó có ZERO call site trong toàn repo. | Không chặn. Kế hoạch dùng nó làm bằng chứng cho việc `src/extensibility/plugins/` là library code chứ không phải kênh phân phối plugin — điều đó đúng. Dead code thấy lúc đi ngang, cố ý KHÔNG vào scope ở đây. | ngoài phạm vi sóng này — câu hỏi nói rõ |
+| 42 | Sóng 5 — ngoài phạm vi | `sanitizeStatusText` được export một lần từ `packages/tui/src/chrome/shared.ts:9` và được định nghĩa riêng tại `packages/tui/src/overlays/annotation-overlay.ts:121`. AGENTS.md coi hai bản hiện thực của cùng một thứ là bug kể cả khi cả hai đều chạy. | Không chặn — ngoài phạm vi sóng này, ghi ra để khỏi thất lạc. | ngoài phạm vi sóng này — câu hỏi nói rõ |
+| 43 | Sóng 6 / `A9` — trước khi ship | Hue đích cụ thể. `code_shape` dưới đề xuất blue ~250 cho họ xanh, magenta ~350 cho error, amber ~80 cho dirty-git — đó là ước lượng, không phải số đo. | Không chặn việc code nhưng chặn ship: cần người thật sự mù màu đỏ-lục xác nhận 250/350/80 phân biệt được, và xác nhận hai dải dirty-git màu amber/orange mà audit tìm ra (orange, amber, gold, bronze, coral, ember) vẫn đọc là "cảnh báo" chứ không phải "lỗi" ở 350. | blue ~250 / magenta ~350 / amber ~80 — ước lượng, chưa đo |
+| 44 | Sóng 6 / `A9` | `statusLineGitDirty` có cần đổi không? Dưới deuteranopia thuần, nhầm lẫn mang tính tải là đỏ với xanh; xanh đổi thành xanh lam thì đỏ vẫn phân biệt được, nên dirty-git (amber) lý lẽ không cần remap. | Không chặn. Câu hỏi vẫn remap để tách khỏi error bằng hue, nhưng cần người xác nhận đó là một cải thiện chứ không chỉ là một thay đổi thứ hai. | remap như câu hỏi đề xuất, tách khỏi error bằng hue; cần người xác nhận |
+| 45 | Sóng 6 / `A9` | Ngưỡng contrast. Hằng số hiện có duy nhất của repo là `ACCENT_MIN_CONTRAST = 3` (`session-color.ts:37`, doc-comment WCAG AA large text ở `:36`). Status line là chữ nhỏ, nên AA body (4.5:1) là cổng defend được. | Không chặn nhưng phải confirm: 4.5 có thể làm đỏ một phần trong 101 theme sẵn có ngay từ ngày đầu, biến một feature PR thành dự án remediation 101 palette. | chưa có mặc định — cần bạn quyết; câu hỏi đề xuất 4.5:1 thay cho `ACCENT_MIN_CONTRAST = 3` |
+| 46 | `tail2` §9–11 → Sóng 4 / `B1` — câu của M4/M5, không phải của M3 | M4/M5 có nên mint một `ExtensionAPI.registerToolRenderer` thật không? | Không chặn M3. B1 ở lại là một lỗ hổng có pinning test. Giới hạn trung thực phải được lặp lại: một pinning test phát hiện một refactor cố ý phá cơ chế, nó không chặn một cái phá vô tình — plugin dựng trên lỗ hổng vẫn có thể vỡ. | giữ B1 là lỗ hổng + pinning test |
+| 47 | `tail2` §9–11 → Sóng 2 / `A3` | Git sidebar và raw-SSE debug viewer có vào mô hình tăng tốc dùng chung không? | Bỏ SSE viewer ra thì debug app tự mâu thuẫn. Bất đối xứng cần lưu ý: site thứ 9 là `packages/tui/src/apps/git/sidebar.ts:897` dùng `delta * 3`, không phải `event.wheel * N` — đó chính là lý do G4 phải chạy cả hai lệnh grep. | có, cả hai (mặc định: yes) |
+| 48 | `tail2` §9–11 — tiền đề | Hai tuyên bố chưa kiểm chứng từ brief gốc, vẫn chưa kiểm chứng: "8 of 8 subsystems" và "pre-styled ANSI / no cell buffer", cộng phương pháp đếm đứng sau "7 of 9". | Không cái nào có trong kế hoạch và không cái nào được vào back matter. Cần một feasibility report có tên, hoặc xoá. Tuyên bố thứ ba cùng họ — `setFrameProvider` có đúng một non-test call site — đã kiểm và đã gộp vào kế hoạch. | không đưa vào back matter; hoặc có feasibility report được đặt tên, hoặc xoá |
+| 49 | `tail1` §7–8 | Code nằm ngoài lock có bị bắt buộc tự khai báo để tới được notices file không? | Không chặn. Hoá ra đây là một câu hỏi khác với cách kế hoạch đặt ra — xem plan_corrections. | chưa có mặc định — cần bạn quyết (thêm một manifest do người giữ tay, hay chỉ dựa vào luật clean-room) |
+| 50 | `tail1` §7–8 — gate ownership | Có nên đưa gate script vào CI không, hay để là script người review chạy tay? | Không chặn. Đặc tả này giữ reviewer-run vì CI enforcement cho một source grep đúng là hình dạng AGENTS.md cấm. Nếu muốn CI enforcement thì chỗ đúng là một oxlint rule cho bất biến cấu trúc và một test thật cho bất biến hành vi — một work item khác. | reviewer-run — đặc tả giữ nguyên như vậy |
+| 51 | bổ sung `GAP-M3-B4` — **GAP-D7** | Cảnh báo trùng phím lúc nạp đi qua `showWarning` (nhánh bền vững) hay một bề mặt khác? Và có báo **mọi** xung đột, hay chỉ xung đột người dùng gần như chắc chắn không cố ý? | Không chặn việc bắt đầu — B4 không phụ thuộc M2, không cùng file với A3/D3, không bị Q6 chặn. Nhưng nó phải **merge sau A7**, vì cảnh báo đi qua `showWarning` (`ui-helpers.ts:1068`) chính là vì `showStatus` (`:143`) nằm trên đường mà `invalidates` của A7 dọn. | chưa có mặc định — cần bạn quyết |
+| 52 | bổ sung `GAP-M3-B6` — **GAP-D11** | Tên setting và tên entry `/tui` cho chế độ inline là gì? | Không chặn — B6 là PR riêng sau khi M3 ổn định. **Điều khoản bắt buộc đã chốt**: chế độ inline KHÔNG được trở thành mặc định, và phải có changelog entry. Hôm nay chưa có nhóm setting `tui.*` nào, nên tên này là tiền lệ đầu tiên của nhóm — đặt sai thì phải đổi sau khi đã có người dùng. | chưa có mặc định — cần bạn quyết |
+
+
+---
+
+
+## Đính chính so với plan tổng
+
+Phần 1 của 2. **68 đính chính** cho ctx1, ctx2, s1, tail1, tail2 — trong đó 66 đính chính từ đặc tả và 2 đính chính do chính lượt rà soát phát hiện thêm. Phần 2 có 66, tổng **134**.
+
+| work item / sóng | claim của plan | verdict | đính chính |
+| --- | --- | --- | --- |
+| **phạm vi** | Doc này đo trên cây `808b365` với `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` tại commit đó | Đã lệch | Viết lại |
+| Số dòng plan | M3 ở 7042, sóng ở 7242…7449, G4 ở 7493/7499, "6 trên 15" ở 7054 | **Sai hết.** `e040a60` viết lại plan (+7089/−2791). Hôm nay: M3 ở **8549**, sóng ở **8749/8801/8854/8868/8917/8956**, G4 ở **8991**, văn xuôi "8" của G4 ở **9007**, "6 trên 15" ở **8561** và **9147**, `claude-code-best` ở **8553/9048/9110/11522/11523**. | Bỏ mọi số dòng plan khỏi doc. Thay bằng neo theo **tên**: `grep -n '^# MILESTONE 3' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`, `grep -n 'G4 — A3 âm tính' …`, `grep -n '6 trên 15' …`. Tên bền qua các lần viết lại; số dòng thì không. |
+| **s1 — sóng 1** | | | |
+| s1-1 · A1 | Cần làm schema work để segment `usage` có mặt | CORRECTED | Segment đã có đủ end to end: `STATUS_LINE_SEGMENT_IDS` ở `schema.ts:26`, hiện thực `usageSegment` ở `segments.ts:864`, đăng ký trong segment map ở `segments.ts:943`. A1 thuần là thêm chuỗi `"usage"` vào mảng preset — không có segment nào để viết. Người đọc "bật segment usage" sẽ mất thời gian săn một hiện thực vốn đã có. |
+| s1-2 · A1 | `packages/tui/src/status-line/schema.ts:36-42` là edit site | **CONFIRMED — 36-42 đúng, hãy bỏ mọi "đính chính" dòng cho hạng mục này** | `CUSTOM_STATUS_LINE_DEFAULTS` mở ở 36 và đóng bằng `};` ở **42**. 43 trống, 44 là `CONTEXT_LINE_MODE_VALUES`, 45 là `export type ContextLineMode`. Một bản đính chính trước đã "sửa" 36-42 thành 36-45; đó là sai, và hai hàng ctx1-6 + tail2-12 trong bảng này vẫn ghi 36-42 đúng. Giữ 36-42. |
+| s1-3 · A1 | "component.ts:3066-3068 đã in mọi hook status … phải tắt hoặc mặc định-tắt đường dẫn component.ts:3067" | CORRECTED | Đường render hook status **ĐÃ có cổng**, ở `packages/tui/src/status-line/component.ts:3066-3069`: 3066 đọc `const showHooks = this.#settings.showHookStatus ?? true;`, 3067 kiểm tra, 3068 push, 3069 đóng khối. (Một bản đo trước ghi 3064-3067 — lệch 2 dòng; `sed -n '3064,3067p'` in ra hai dấu `}` rồi mới tới `const showHooks`.) Không có cơ chế tắt mới nào để dựng; quyết định sản phẩm nếu có là có đổi default `showHookStatus` từ `true` không — thay đổi màn hình ngày đầu của mọi người dùng, ngoài phạm vi sóng này. |
+| s1-4 · A8 | "Sửa: `keybinding-hints.ts:10-55`" và "một file, 46 dòng" | STALE | File dài 80 dòng, và 10-55 không chứa logic prefix nào để sửa — đó là import cộng `editorKey`, `editorKeys`, `boundKeys`, `interruptKey`, `appKey`, `keyHint`. Hàm mới nối sau `appKey` ở dòng 47. Bảng evidence của chính plan tự ghi `grep -c tmux` = 0/0/0 và phân loại A8 là 'thuần là mã core mới', mâu thuẫn với dòng "Sửa" của nó. Theo evidence, không theo dòng edit-site. |
+| s1-5 · A8 | Bẫy test bắt buộc chỉ phủ short-circuit `isBunTestRuntime()` ở tmux.ts:49 | CORRECTED | Còn một cái bẫy thứ hai, không ai nhắc: `tmux.ts:21` giữ một memo module-level `cachedClientTerminalName` không có export reset. Test nào resolve probe một lần là giá trị đóng băng cho cả process và mọi case sau âm thầm đọc kết quả cache. Plan cảnh báo test chỉ-when-TMUX thì chứng minh được gì; nó không cảnh báo rằng một test spy đúng vẫn có thể bị thứ tự case làm hỏng. Phải đưa vào spec, nếu không test sẽ ship không đáng tin. |
+| s1-6 · A8 | "phát hiện tmux đã có sẵn ở tmux.ts:5, :48-49" | CONFIRMED | Cả hai neo chính xác và seam thật sự tái dùng được. `isInsideTmux(env = Bun.env)` ở tmux.ts:5 là toàn bộ primitive phát hiện — Boolean một dòng trên `env.TMUX`, không probe, không timeout, không nhánh throw, nên gọi mỗi lần render hint là an toàn. `resolveTmuxClientTerminalName(env = Bun.env)` ở tmux.ts:48, với guard `isBunTestRuntime()` ở :49, là probe nặng (timeout 500ms, SIGKILL, memoize). Dùng cái thứ nhất cho hint path; chỉ chạm cái thứ hai nếu hint cần phân biệt terminfo của tmux với terminfo của client. Đây là HAI năng lực khác nhau — plan gộp làm một, và chọn sai thì hoặc tốn một subprocess mỗi frame, hoặc âm thầm tắt tính năng đang được test. |
+| s1-7 · A6 | "predicate đã có ở `read-tool-group.ts:41`" (đúng dòng, không nêu tên) | CORRECTED | Predicate tên là `readArgsCollapseIntoGroup`, và nó chỉ nhận `args: unknown` — không làm phần kiểm tra tên. Số dòng đúng, nhưng vì plan không nêu tên, người grep theo tên kiểu membership (`isReadToolGroupMember` và tương tự) sẽ không ra gì và có thể kết luận seam không tồn tại. Nó có: dòng 41, và là nửa data-driven của mọi quyết định membership. |
+| s1-8 · A6 | "so sánh cứng tại ui-helpers.ts:551 và :661" | STALE | Thật là 553 và 663 — cùng lệch +2. `ui-helpers.ts:553` là site cơ học (`if (renderToolName === "read" && readArgsCollapseIntoGroup(content.arguments)) {`). `ui-helpers.ts:663` là site phía result, `message.toolName === "read" &&`, không gọi predicate — xem s1-11. |
+| s1-9 · A6 | "so sánh cứng tại event-controller.ts:1344 và :1684" | STALE | Thật là 1357 và 1695 — lệch +13 và +11. Ở 1350 là guard rời `if (renderToolName === "read") {`, lời gọi predicate ở 1357. Ở 1695 tên và predicate nằm cùng một dòng. Trôi đều lên trên cho thấy file đã dài thêm phía trên các site này kể từ lúc plan được viết. |
+| s1-10 · A6 | "Phải đứng yên: event-controller.ts:1819, :1821, :1896" | STALE | Thật là 1830, 1832 và 1907 — cùng lệch +11 như hai site trên. Nguy hiểm hơn một con số cũ thường: 1830 là lời gọi `#inlineReadToolImages`, 1832 là `#clearReadToolCall` tương ứng. Người tin số của plan sẽ đáp xuống đây và làm hỏng render ảnh inline, mà không type nào báo. Mệnh lệnh "để yên" thì đúng và nên giữ; chỉ số thì sai. |
+| s1-11 · A6 | Cả bảy site liệt kê đều là membership site để chuyển đổi | CORRECTED | Chỉ năm là cơ học. `chat-transcript-builder.ts:507` (`message.toolName === "read" && (!pending \|\| pending instanceof ReadToolGroupComponent)`) và `ui-helpers.ts:663` (`message.toolName === "read" &&`) không gọi collapse predicate — chúng test KẾT QUẢ của một read, và gộp chúng vào một predicate membership dùng chung sẽ đổi hành vi chứ không phải khử trùng. Lập luận "để yên" của chính plan (read đặc biệt vì trả ảnh) áp dụng y như cho hai site này như cho ba site inline. Đọc A6 như: năm site cơ học + ba để yên + hai cần maintainer ruling. Nhưng người triển khai không được tự quyết. |
+| s1-12 · A6 | Danh sách membership site là đầy đủ | CHƯA XÁC MINH (cần một phán quyết) | Plan không nhắc `packages/coding-agent/src/modes/acp/acp-event-mapper.ts:645`, nơi đọc `if (raw === undefined \|\| toolName !== "read") return raw;`. Trông nó ACP-specific hơn là transcript-grouping, nhưng đó là một so sánh `read` trong cây modes và phải được ruling rõ ràng vào hoặc ra, không được lướt qua. |
+| s1-13 · A5 | "interactive-mode.ts:6674 đã cài setTrailer(() => this.#workingRowTrailer())" | STALE | Cài ở dòng 6624, lệch 50. Mệnh lệnh thì đúng và quan trọng: ô trailer đã có chủ, nên stall indicator phải MERGE vào giá trị mà `#workingRowTrailer()` trả về (định nghĩa ở :1013) chứ không cài bằng lời gọi `setTrailer` thứ hai. Thêm: `renderIdleStatusHud` ở :1023 đã giải yêu cầu nhiều dòng của loader bằng cách trả một mảng hai phần tử — tiền lệ trong repo cho bước 20. |
+| s1-14 · A5 | Chín neo: loop-watchdog.ts:123-124, loop-phase.ts:45, loader.ts:32, :107-113, :141, tui.ts:930, :1035-1036, :2105, :2204 | CONFIRMED | Cả chín đều đúng, nhưng ghi rõ full path cho `loop-phase.ts:45` — nó nằm ở `packages/utils/src/loop-phase.ts`, **không** phải trong `packages/tui`. Đây là work item chính xác nhất của sóng — sai số duy nhất trong A5 là neo sửa framing của dossier ở 6674. Các neo plan chưa nêu mà người triển khai vẫn cần: `tui.ts:811` (`#lastFrameCostMs = 0`), `tui.ts:2187` (consumer của adaptive floor), `loop-watchdog.ts:57` (`export class LoopWatchdog {`, site thêm field), `loader.ts:170` (`this.#ui?.lastFrameCostMs ?? 0`, chỗ tự nhiên để lộ phần breakdown). |
+| s1-15 · A5 | "loader.ts:107 chỉ render trailer khi lines.length > 1", nên fixture phải dựng hàng nhiều dòng nếu không assertion sẽ pass vacuously | CONFIRMED | Đúng nguyên văn: `if (this.#trailer && lines.length > 1) {` tại loader.ts:107. Bẫy có thật và plan gọi đúng. Cảnh báo áp dụng đối xứng cho mọi case no-working-row, mà plan cũng yêu cầu. |
+| s1-16 | "Repo ở git HEAD 5873776" (theo task brief) | STALE — và con số của chính hàng này cũng đã cũ | Cây đã đi tiếp: HEAD hiện tại là `e040a60` (`docs(m2): execution plan for milestone 2, spec-verified against the tree`), không phải `808b365` như brief cũng không phải con số spec này ghi lúc đo. `e040a60` **chỉ chạm** `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` và `MILESTONE_2_EXECUTION_PLAN.md`, nên **toàn bộ neo source trong bảng này vẫn đúng y như đo**; chỉ các số dòng trỏ vào plan là đã lệch (xem hàng `phạm vi`). Người đọc cứ ở HEAD, đừng checkout theo SHA nào cả. Trùng ctx2-1. |
+| s1-17 | Cả bốn file test mà plan gọi là sibling/existing đều có | CONFIRMED — nhưng **cả ba file harness nằm ở phía bị chặn** | `status-line-overflow.test.ts`, `status-line-settings-cache.test.ts`, `helpers/status-line.ts` (export `StatusLineTestComponents` với track/dispose) và `packages/tui/test/loop-watchdog.test.ts` đều tồn tại. Test của A1 có thể copy thẳng harness overflow — nó đã import `StatusLineComponent`, `statusLineHost`, `initTheme`, `StatusLineTestComponents`, và factory `createCtx` của nó đã kết thúc bằng `usage: null`, nên thêm override usage là thay đổi nhỏ chứ không phải dựng harness từ đầu. **Nhưng** `status-line-overflow.test.ts` nằm ở `packages/coding-agent/test/`, tức đúng phía mà addon chặn (tail2-16), và không có file tương ứng trong `packages/tui/test/`; `packages/tui/test/loop-watchdog.test.ts` cũng fail 0/1. "Copy thẳng" chỉ là lời khuyên về hình dạng code, không phải về việc cổng chạy được hôm nay. |
+| s1-18 | Môi trường: `bun test` bị chặn; `bun run check:ts` không cần addon và là đường verify | **PARTLY WRONG — cổng thật rộng hơn `check:ts`** | Môi trường: `bun test` **cần addon native** — build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là mọi cổng chạy (xem tail2-16) — và `bun check` **rộng hơn `check:ts`**. Đo hôm nay: `bun run check:ts` exit 0, 16 package type-check Done. Nhưng cổng thật của cả work item là `bun check && bun test <file>` (plan §6, 15 dòng `*Lệnh:*`), và `bun check` = `check:ts` **+ `check:rs`** (package.json:93). Nên mỗi work item có **ba** nguồn đỏ tách bạch: addon chưa build, toolchain Rust, và việc thật. Khi một cổng đỏ, hãy tách trước: `bun run check:ts` một mình để loại Rust; build addon để loại nhóm thứ nhất; chỉ phần còn lại mới là lỗi của hạng mục. Cổng `check:ts` cũng là cổng chậm: nó không xong trong 9 phút và chỉ hoàn tất ở chế độ nền. Trùng tail1-9, tail2-16. |
+| **tail1** | | | |
+| tail1-1 | "Milestone 2 occupies lines 7042 to 7692" và "the eight waves" | **SAI CẢ HAI ĐẾM.** | Dòng 7042 là `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, không phải milestone 2. Khoảng đó chứa SÁU sóng, không phải tám: Sóng 1 (7242), Sóng 2 (7294), Sóng 3 (7347), Sóng 4 (7361), Sóng 5 (7410), Sóng 6 (7449). Thư mục đầu ra `.lavish-wip/m3-specs/` và trường `wave` của mọi spec anh em đều ủng hộ plan, không ủng hộ brief. Xử lý toàn bộ spec này như M3. Trùng tail2-1, ctx2-1. |
+| tail1-2/tail2-2 · §7.1 G10 | `grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` trong diff phải trả 0 | **SAI — đỏ trên cây hoàn toàn đúng**; dạng thay thế đã đo | Dạng thô trả 2, cả hai đều là comment cảnh báo chính thực hành đó: `packages/coding-agent/test/tools/lsp-regressions.test.ts:111` và `packages/tui/test/loop-watchdog-wiring.test.ts:13`. Cổng viết như vậy đỏ trên một cây chưa từng vi phạm — đúng là hình dạng cổng tự tát mà plan tự chẩn đoán cho G4. **Dạng mang đi là** `git grep -rn 'mock\.module(' -- packages/coding-agent/test packages/tui/test` (có dấu ngoặc mở) — đo hôm nay rc=1, tức 0 hit. Đừng dùng đồng thời cả hai dạng: một luật, một lệnh. Đây là dạng step 5 mã hóa. |
+| tail1-3 · §7.1 G4 | Văn xuôi nói "G4 trả `8` (7 `* 3` + 1 `* 2`)", bảng hai đoạn trước nói "**9** hôm nay" | Văn xuôi SAI và tự mâu thuẫn với chính bảng của nó. | Số là 9 và bảng đúng. Phân rã: 7 × `event.wheel * 3`, 1 × `event.wheel * 2` (usage-dashboard), và 1 × `delta * 3` (apps/git/sidebar.ts) — văn xuôi quên sidebar, chính là site mà đoạn ngay trên nó nhấn mạnh là lý do cổng phải quét hai pattern. Con số 8 là "8 hằng trong 8 file M3-A3 liệt kê", khác số của grep. |
+| tail1-4 · §7.1 dòng 7493 | Bảy site `* 3` là agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638; và usage-dashboard.ts:753 cho `* 2` | **Cả tám** số dòng đều cũ. | Thật là agent-transcript-viewer.ts:470, copy-selector.ts:214, plan-review-overlay.ts:580, rewind-selector.ts:245, log-viewer.ts:639, usage-dashboard.ts:759, raw-sse.ts:168, git-tui.ts:697. Lệch từ −1 tới +13. Tập file thì đúng — bảy `* 3` cộng một `* 2` cộng `delta * 3` của sidebar — nên substance sống sót qua năm vòng review còn neo thì không. Step 4 suy lại danh sách từ cây. Trùng tail2-10. |
+| tail1-5 · §8.5 | "bước sinh chỉ đi qua `bun.lock`" — lỗ hổng là bước sinh chỉ đi qua lockfile, nên code vendored ngoài lock không bao giờ tới được THIRD-PARTY-NOTICES.txt | SAI VỀ CƠ CHẾ; kết luận (còn thứ gì đó chưa phủ) thì sống sót | Repo này không có bước sinh nào. `THIRD-PARTY-NOTICES.txt` là file 22.901 dòng do tay quản lý, được git track, tự gọi mình là "generated" trong header, nhưng không có gì sinh ra nó — `scripts/ci-release-publish.ts:94` chỉ nêu đường dẫn và :100 chỉ STAGE file đã commit vào tarball qua `legalPayloadFiles(license)`. `.github/workflows/ci.yml` chỉ nhắc đường dẫn trong các danh sách ignore/artifact. Vì thế lỗ hổng §8.5 không thể đóng bằng cách nới một generator — không có generator; chỉ đóng được bằng manifest do tay giữ, đúng việc §8.6 #4 phải quyết. Riêng ví dụ minh hoạ của plan thì sai repo này: `packages/@ant/*` là cây claude-code-ref (không có thư mục đó), và §8.3 đã đóng nó bằng "Không package nào trong sối này là tài liệu tham khảo cho một port UI/UX". |
+| tail1-6 · §8.5 | grep `claude-code-best` toàn bộ `.ts`/`.md`/`.json` của đích không có hit thật, chỉ hai false positive là glyph-bundle.json:140 và light-canyon.json:7 | Kết luận đúng; cả hai chi tiết đưa ra đều cũ. | Hai false positive cũ không còn tồn tại — `grep -c 'claude-code-best'` trả 0 ở CẢ HAI file. Và grep toàn repo nay trả 5 hit, TẤT CẢ nằm trong COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md (dòng 7046, 7541, 7603, 10015, 10016) — một mệnh đề đúng về tài liệu plan, một báo động giả về sản phẩm. Giới hạn đúng là `packages/ scripts/ docs/` thì đếm 0. Step 5 mã hóa G12 với scope đó, loại plan và `.lavish-wip/`; cổng toàn repo sẽ đỏ vĩnh viễn vì một lý do không liên quan gì tới code. |
+| tail1-7 · §8.2 và §6 | Neo: ui-helpers.ts:141, segments.ts:718-737, keybinding-hints.ts:10-55, tmux.ts:5/:48-49; loader.ts:142/:153-157, settings.ts:108, session-color.ts:2, schema.ts:77-78/:140-141 | **SAI LẪN ĐÚNG** — ba cái sai, còn lại đúng tuyệt đối. | SAI: `ui-helpers.ts:141` → `showStatus` ở :143 (xem tail2-6). `settings.ts:108` → `colorBlindMode` ở :110. `segments.ts` phải phân giải rõ là `packages/tui/src/status-line/segments.ts` (có `segments.ts` thứ hai ở `packages/coding-agent/src/cli/gallery-fixtures/`); trong file đúng, `cacheHitSegment` bắt đầu ở :718 nên khoảng đó ổn. ĐÚNG CHÍNH XÁC: `loader.ts:142` (cờ colorBlindMode), `loader.ts:153-157` (nhánh điều chỉnh — tail2-13 nói khối thật là 153-158), `session-color.ts:2` (import OKLCH), `schema.ts:77-78` (statusLineGitClean/Dirty), `schema.ts:140-141` (fallback của chúng), `tmux.ts:48-49`, `event-controller.ts:1250` (`#handleNotice`; dải plan trích 1244-1251 cắt nhầm vào `markBackgroundTaskCalls`), `manager.ts:1039` (lỗi −32601 mà G6 phụ thuộc) — đầy đủ là `packages/coding-agent/src/mcp/manager.ts:1039` (`code: -32601` trong `throw Object.assign(new Error(...))`); **không phải** `extensibility/plugins/manager.ts`, bản đó grep `32601` trả rỗng, và còn một bản thứ ba ở `extensibility/plugins/marketplace/manager.ts`, `docs/tui-core-renderer.md:107` và `:174` (cả hai bất biến G9; 106 là dòng trống), `LICENSE:1`, `package.json:5`, và cả năm neo THIRD-PARTY-NOTICES.txt (8, 827, 835, 1053, 10804). |
+| tail1-8 · §7.1 G8 | "`loader.ts:107` chỉ render trailer khi `lines.length > 1`" | ĐÚNG, nhưng đường dẫn mơ hồ một cách nguy hiểm. | Site là `packages/tui/src/components/loader.ts:107` — `if (this.#trailer && lines.length > 1) {`. Một file KHÁC tên loader.ts nằm ở `packages/tui/src/theme/loader.ts`, và đó là file mà dòng A9 của §8.2 đang bàn, nên hai mục dùng cùng một tên rút gọn cho code không liên quan. Grep chạy nhầm file sẽ không khớp gì và cổng pass vacuously. Cả script lẫn doc phải mang full path. |
+| tail1-9 | "native addon chưa build, nên `bun test` báo 0 pass … coi `bun test` là bị chặn tới khi addon build" | ĐÚNG VỀ LỖI, SAI Ở HAI ĐIỂM — và kết luận rút ra còn đảo ngược | Lỗi có thật và câu chữ chính xác — bất kỳ test nào import transitively `@oh-my-pi/pi-natives` đều chết với 'Failed to load pi_natives native addon for darwin-arm64' trên máy sạch (ví dụ `packages/coding-agent/test/mcp/request-id.test.ts` → 0 pass, 1 fail). Nhưng nó THEO TỪNG FILE, không phải toàn cục — và hệ quả thì ngược với cái hàng này đoán. Đo **trước khi build addon**: toàn bộ `packages/tui/test` cho **149 pass / 205 fail / 205 errors** trên 354 test, tức **58% bị chặn**; 222 − 205 ⇒ **17 file vẫn chạy được**, và `packages/tui/test/mouse.test.ts` (13/13) là file được nêu tên nhiều nhất chứ không phải file duy nhất — cụm "chạy được *duy nhất*" từng ghi ở đây mâu thuẫn với chính 205 của hàng này và đã bị sửa. Đo **sau khi build** (2026-09-29, cây này): 222/222 file chạy, 2807 pass / 5 skip / 8 fail. Thứ hai, đây **không phải hạn chế của máy** — `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là 205 file kia chạy. Người triển khai không nên giả định cả suite đang tắt, cũng không nên giả định phía tui thì mở. `bun run check:ts` dùng được — đo exit 0 tại HEAD 808b365 với cả **16** package type-check Done (12 là con số package *xuất bản* ở tail1-11, đừng lẫn). Trùng s1-18, tail2-16. |
+| tail1-10 · §6.8 | "find packages/tui … → **221**; find packages/coding-agent … → **1511**" | Trôi dạng hình thức; luận điểm QUY ƯỚC bên dưới thì đã kiểm chứng trọn vẹn. | Số nay là 222 và 1520. Điều đáng giữ là quy ước vẫn đúng như đã nói: test nằm ở `packages/<pkg>/test/`, phần MCP là `packages/coding-agent/test/mcp/`, và KHÔNG test file nào nằm cạnh source — `ls packages/tui/src/overlays/*.test.ts` không khớp gì. Đường dẫn file ở step 6 bám quy ước đó. Trùng tail2-15. |
+| tail1-11 · §8.5, §7.2 | "cả 12 package xuất bản đều khai MIT" và 'the reference tree is not the judging standard' | ĐÃ KIỂM CHỨNG, kèm một bổ sung hữu ích. | Cả 16 package workspace đều khai `license: "MIT"`; 12 được publish (không private) và 4 private — con số 12 là chính xác. Bổ sung: đây không chỉ là quy ước mà bị cưỡng chế lúc publish. `scripts/ci-release-publish.ts:100` `legalPayloadFiles()` throw khi license thiếu hoặc không MIT, và `scripts/ci-release-publish.test.ts:143-146` assert cả hai throw. Đó là lý do tail1 không thêm test license riêng. |
+| **ctx1** | | | |
+| ctx1-1 | `schema.ts:1-32` khai union (`STATUS_LINE_SEGMENT_IDS` … `as const`; `status` ở index 1, `usage` ở index 23) | CŨ — dải dòng lệch, số đếm đúng | Union mở ở schema.ts:2 (dòng 1 là doc comment) và đóng bằng `] as const;` ở :30. Dùng 2-30. Mọi thứ còn lại trong claim đúng tuyệt đối: 27 giá trị, `status` ở index 1, `usage` ở index 23 — đã đếm từng literal. Trùng tail2-12. |
+| ctx1-2 | `extension-ui-controller.ts:148-149` — `setHeader` và `setFooter` là `() => {}` | CŨ — lệch chín dòng | `setFooter` ở :157 và `setHeader` ở :158. Claim đúng và còn load-bearing: cả hai là arrow rỗng — đó là lý do bề mặt plugin không chạm được vùng hiển thị chính. Trùng ctx2-2. |
+| ctx1-3 | "đúng một call site không phải test": `composer.ts:301` — `this.ui.setFrameProvider(this)`; tổng 39 hit, 37 trong `packages/tui/test/` | LỆCH MỘT dòng; số đếm CHÍNH XÁC | Call site là composer.ts:302, không phải :301. Định nghĩa ở `packages/tui/src/tui.ts:949` thì đúng. Số đếm đúng tuyệt đối: 39 lần xuất hiện, 2 trong src/, 37 trong packages/tui/test/. |
+| ctx1-4 | `mcp/client.ts:100-104` — `capabilities` chỉ khai `roots: { listChanged: false }` | CŨ — lệch một | `capabilities:` ở client.ts:101 và `roots: { listChanged: false }` ở :102. Claim nội dung đúng và đã verify: hai dòng đó là toàn bộ tập capability client khai, đó là lý do `#handleServerRequest` chỉ có thể bị hỏi ping hoặc roots/list. |
+| ctx1-5 | Escape hatch `toolRenderers` sống nhờ export map `./*` → `./src/*.ts` ở `packages/tui/package.json:93-96` **cộng với** loader remap về instance của host | SAI MỘT NỬA — cơ chế bị gán nhầm | Export map có thật và nằm ở package.json:94-96, không phải :93-96 (93 là dấu `}` đóng entry `./status-line`). Nhưng KHÔNG có remap pi-tui nào trong extension loader, và plan ám chỉ có. Cái thật là `installLegacyPiSpecifierShim()` ở `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:2727`, cài ở `extensions/loader.ts:59`, với filter `LEGACY_PI_SPECIFIER_FILTER` ở :837 — một shim generic cho specifier legacy `@oh-my-pi/*`, cạnh một shim TypeBox ở :873 và các namespace virtual/host đã bundle. Nó không có nhánh riêng nào cho pi-tui. Lý do thật một plugin dùng chung object `toolRenderers` của host là module resolution thuần: subpath export map ánh `@oh-my-pi/pi-tui/tools` tới cùng file tuyệt đối mà host import, Bun cache theo resolved path, nên cả hai bên nhận một module instance và một record mutable. Phải nói đúng cơ chế — người đi tìm cái remap sẽ không thấy và có thể kết luận sai escape hatch đã hỏng. |
+| ctx1-6 · §2.1 | Union bị đóng, barrel không có `register*`, và `CUSTOM_STATUS_LINE_DEFAULTS` thiếu cả `status` lẫn `usage` — nên plugin buộc phải sửa core để thêm segment | ĐÚNG NHƯNG THIẾU — thiếu neo mạnh nhất | Cả ba sub-claim verify: barrel chỉ re-export component/metrics/presets/segments/separators/types và `git grep register` trong cả thư mục status-line trả về rỗng; `CUSTOM_STATUS_LINE_DEFAULTS` ở schema.ts:36-42 là left=[vim,model,mode,path,git,pr], right=[session_name,token_total,cost,context_pct]. Nhưng plan không nhắc catalog đóng thứ hai, và đó mới là thứ làm cho việc đóng trở nên compiler-enforced: `segments.ts:919` khai `export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment>` với đủ 27 renderer. Vì chú thích là exhaustive, nới union là BUILD ERROR cho tới khi có renderer — compiler, không phải quy ước, là cổng. Còn một site phải sửa nữa cũng bị bỏ sót: `modes/settings.ts:280` và :287 đăng ký picker với `items: { values: STATUS_LINE_SEGMENT_IDS }`, nên extension không hiện được segment mới trong UI nếu không sửa cả coding-agent. Ba catalog do tay giữ; một cái do type checker canh. |
+| ctx1-7 · §2.4 | "omp plugin contract trả ANSI đã style, không có cell buffer", và phân tích tương thích runtime giữa render engine CCB và plugin contract của omp | KHÔNG CÓ CƠ SỞ — plan từ chối nó là đúng, và điều này đáng giữ nguyên văn | Dossier chỉ nhắc `@anthropic/ink` và `React reconciler` như phạm vi loại trừ, không có phân tích cell-buffer hay pre-styled-ANSI nào. Sự từ chối suy diễn ở §2.4 là đúng và phải sống sót nguyên văn vào doc. Ghi lại bất đối xứng có neo thật mà plan thiếu: `segments.ts:957` suy ra `ALL_SEGMENT_IDS` từ SEGMENTS bằng cast `as StatusLineSegmentId[]` thay vì một phép suy ra có kiểm tra, và nó chảy tới `getSegmentGalleryInventory()` ở `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:19` — nên chiều union→registry được compiler canh còn chiều registry→danh sách id thì chỉ assert. Đó là seam thật, và là thứ test mới ghim. |
+| ctx1-8 · §2.1 | "bảy kiểu separator, và thang độ rộng ba bậc" | KIỂM CHỨNG MỘT PHẦN — số bảy separator đứng vững, còn thang độ rộng thì không có cơ sở | Bảy kiểu separator verify: `STATUS_LINE_SEPARATOR_VALUES` ở schema.ts:48-56 đúng là powerline, powerline-thin, slash, pipe, block, none, ascii. Nhưng KHÔNG có hằng bậc độ rộng nào trong `component.ts` — tìm WIDTH, BREAKPOINT, TIER và các phép so sánh width đều không có, chỉ ra một comment về scoped tiers. Bỏ cụm "thang độ rộng ba bậc" khỏi doc, đừng diễn đạt lại thành câu gần nghĩa mà cũng không cite được. Nếu hành vi độ rộng có ý nghĩa, suy lại từ overflow path ở component.ts:2580-2610, nơi segment được render và bị bỏ qua bởi `if (rendered.visible && rendered.content)`. |
+| ctx1-9 · §1 | "chỉ 6 trên 15 hạng mục thực sự phụ thuộc M2 (A4, B1, B2, B3, và C2 + D2 qua câu trả lời M2-OQ3). 9 hạng mục có thể bắt đầu ngay hôm nay" | KHÔNG KIỂM CHỨNG ĐƯỢC TỪ KHOẢNG CỦA TÔI — đã gắn cờ, không mang tiếp | Phép đếm này phụ thuộc inventory ở §5 và §6 và cách M2 WI-7 giải quyết, đều nằm ngoài khoảng 7044-7113 mà spec này được giao. Chỉ xác nhận M2-OQ3 là thật và được mô tả ở plan:6675 là "a mode registered by an extension touches the closed StatusLineSegmentId union", cùng được tham chiếu chặn từ plan:4439. KHÔNG xác nhận con số 6-trên-15, các id A4/B1/B2/B3/C2/D2, hay split 8-core/4-plugin/3-in-tree. Đừng cite số này từ spec này; phải đối chiếu §5/§6 trước khi nó xuất hiện ở bất kỳ deliverable nào — nó là con số mang tính định hướng cho framing của milestone. Lưu ý tail2-3 và tail2-4 đưa ra kết luận trái chiều về A4. |
+| **tail2** | | | |
+| tail2-1 | Framing: "Milestone 2 occupies lines 7042 to 7692 of that file." | sai | 7042-7692 là MILESTONE 3, không phải milestone 2. Dòng 7042 là heading `# MILESTONE 3 — BỀ MẶT UI/UX KIẾU CLAUDE CODE` và dòng 7692 là `# 13. M4 — DeepSeek-Harness-derived core and plugin workflow`. M2 chiếm 4165-7041. Thư mục đầu ra item này ghi vào (`.lavish-wip/m3-specs/`) là đúng; chỉ nhãn milestone trong framing lệch một. Mọi thứ trong work item — §9 RỦI RO, §10 CÂU HỎI MỞ, §11 ĐỊNH NGHĨA HOÀN THÀNH — là back matter M3, như chính nội dung tiếng Việt đã lộ ra. Trùng tail1-1, ctx2-1. |
+| tail2-2 | §11 clause 10 và §7 gate G10: `grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` trong diff phải trả 0. | gộp vào hàng `tail1-2/tail2-2` ở trên | Hôm nay nó trả 2, và cả hai hit là comment cảnh báo chống chính thực hành đó. Một cổng đỏ trước khi làm gì, trên một cây chưa từng vi phạm, không phải cổng. Dạng mang đi là `git grep -rn 'mock\.module(' -- packages/coding-agent/test packages/tui/test` (có dấu ngoặc mở), đo rc=1. Mang dạng đã sửa vào cả §7.1 và §11 clause 10, và nói trong 90-back3.md vì sao bản gốc sai để người đọc sau không "khôi phục" nó. Trùng tail1-2. |
+| tail2-3 · §9 risk #9 | "6 trên 15 hạng mục thực thi (A4, B1, B2, B3, C2, D2) vẫn không thể bắt đầu cho tới khi M2 xong" | tự mâu thuẫn — plan nói ngược lại hai trăm dòng trước | A4 không bị chặn. A4 trong §6 nói phần hiển thị (`plugin-settings.ts:30`, `:166`) "không chặn gì" và thuộc sóng 1, và §4 dòng 20 nói y hệt. Chỉ nửa lưu (`manager.ts:942-949`) bị chặn, và bị chặn bởi M2 WI-8a cụ thể — không phải bởi "M2 xong". Bảng phân bổ công sức của chính §6 đã đồng ý: "7 ngày ở 5 hạng mục bị M2 chặn — B1, B2, B3, C2, D2", với A4 nằm trong nhóm 27 không chặn là "nửa hiển thị". Tập bị chặn đúng là năm. Viết §9 với con số năm, và cho A4 một dòng hai-nửa riêng để phần ship ở sóng 1 không bị giam theo phần không ship được. |
+| tail2-4 | §9 risk #9 / §10 #1: ranh giới M2/M3 nhìn thấy được từ repo này, nên 6 trên 15 hạng mục "vẫn không thể bắt đầu" | sai một phần, và phóng đại theo hướng ngược lại | Tiền đề "ranh giới M2/M3 … nhìn thấy được từ repo này" chính là luận điểm của plan, và mọi sự kiện nền của nó đều verify: 27 id đóng, một barrel thuần, không `register*` ở đâu, và vùng ExtensionUIContext mà plan gọi là phình lại của M2. Giữ nguyên nửa đó. Chỉ sửa số đếm và thành phần, theo mục ngay trên. |
+| tail2-5 | §10 #6 và §8.2: "isProjectTrusted() luôn trả true vì project-level settings và extensions nạp vô điều kiện (`types.ts:462-470`, `:528-532`)" | claim xác nhận, cả hai neo đều cũ | Claim đúng và đã được kiểm độc lập. Các trích dẫn thì không: `types.ts:455-475` là `mode` / `getContextUsage` / `cwd` / `sessionManager`, và `types.ts:522-536` là `setTimeout` / `clearTimer` / `addAdditionalContext`. Hai khai báo `isProjectTrusted` ở types.ts:494 và :561; hai implementation trả về literal `true` ở `packages/coding-agent/src/extensibility/extensions/runner.ts:1264` và `packages/coding-agent/src/session/agent-session.ts:7406`. Cite bốn dòng đó. Hệ quả cho C2 không đổi: câu hỏi trust ở §10 #6 là thật và vẫn chặn C2. |
+| tail2-6 | §8.2 (dòng A7) và §4 dòng 8: "showStatus tại ui-helpers.ts:141" và dedupe ở "ui-helpers.ts:141-160" | sai cả đường dẫn lẫn số dòng, và plan tự nhất quán bất thống nhất về đường dẫn | File nằm ở `packages/coding-agent/src/modes/utils/ui-helpers.ts` — đoạn `utils/` bị thiếu trong cách plan trích — và `showStatus` khai ở dòng 143, không phải 141. Khối bash G5 ở §7.1 của chính plan lại dùng full path đúng, nên hai nửa tài liệu không thống nhất. Dùng full path mọi nơi — đó là dạng cổng thực thi đã dựa vào. Trùng tail1-7, s1-8. |
+| tail2-7 | §4 dòng 8 và §8.2 (dòng A7): "#handleNotice tại event-controller.ts:1244-1251" | cũ — plan trích 1244-1251, thực là 1250; 1244-1247 là method khác | `#handleNotice` khai ở **1250**, không phải 1249. 1244-1247 là `markBackgroundTaskCalls`, 1248 trống, 1251 là thân method. Câu này đã đo lại và **chốt ở 1250** — tail1-7 và ctx2-7 trong bảng này cũng nói 1250, nên mâu thuẫn đã được giải quyết, không cần đo lần nữa. Cổng đăng ký `notice: e => this.#handleNotice(e)` ở :313 là đúng và giữ nguyên. |
+| tail2-8 | §4 dòng 4 và §5 O7: ô trailer "đã bị chiếm bởi interactive-mode.ts:6674" | cũ — lệch năm mươi dòng, và dòng được trích là dấu đóng khối | Lời gọi `setTrailer` duy nhất ngoài định nghĩa nằm ở `packages/coding-agent/src/modes/interactive-mode.ts:6624`. Dòng 6674 là `}`. CLAIM được xác nhận và load-bearing (A5 phải merge với chủ cũ chứ không xếp thêm một cái nữa) — chỉ số sai, và sai đủ nhiều để chỉ tìm ra bằng grep chứ không bằng đọc. Trùng s1-13, ctx2-6. |
+| tail2-9 | §6 (A4) và §4 dòng 21: "plugin-settings.ts:662 (empty: "cancel")" là guard phải để yên | cũ — lệch bảy dòng | `empty: "cancel"` ở `packages/tui/src/overlays/plugin-settings.ts:669`; dòng 662 là `const field = new TextFormField({`. Hành vi của guard đã xác nhận và có ý nghĩa: `form.ts:296-303` đưa một submit toàn khoảng trắng về `onCancel` trước khi `onSubmit` bao giờ được gọi — đó là lý do hợp đồng "empty submit still cancels" ở §11 clause 5 đã pass hôm nay. Trích kèm `form.ts:295-301` trong bảng sửa của plan lệch một; `submit()` được khai ở 296. |
+| tail2-10 | §7 G4 văn xuôi liệt site hằng: agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638, usage-dashboard.ts:753 | **Tập file đúng tuyệt đối, không số dòng nào đúng** | Bảy file `* 3` và một file `* 2` đúng và đủ — 7 + 1 = 8 site hằng, cộng `sidebar.ts:897` dùng `delta * 3` là thứ chín, mà chính văn xuôi G4 lại nói đúng. Nhưng cả tám số dòng đều sai: thật là 470, 214, 580, 245, 697, 168, 639 và 759. SỐ của cổng không đổi (G4 vẫn in 9), nên đây là lỗi tài liệu chứ không phải lỗi cổng — nhưng §11 clause 2 và risk register đều cite những số này, nên phải sửa cùng nhau. Lệch từ -1 tới +13 nên người đọc không thể suy ra độ dịch. Trùng tail1-4. |
+| tail2-11 | §7 G4: lệnh phủ định loại "packages/tui/src/mouse-wheel.ts" | xác nhận, và hiện là một loại trừ không khớp gì đáng nói ra | File đó hôm nay không tồn tại — nó là module A3 sẽ tạo, nên `grep -v` đang bất lực và sẽ có tác dụng sau A3. Phần back matter nên nói rõ, vì người đọc cổng hôm nay thấy một loại trừ không khớp gì và có thể kết luận cổng hỏng. |
+| tail2-12 | §8.2 và §4 dòng 13: "packages/tui/src/status-line/schema.ts:1-32 khai union đóng 27 id" | xác nhận, dải hơi rộng, và điều đó quan trọng với P1 | 27 id là chính xác. Literal mảng trải dòng 2-30; dòng 1 là doc comment, 30 là `] as const;`, 32 là doc comment của kiểu dẫn xuất. Riêng và hệ trọng hơn: `CUSTOM_STATUS_LINE_DEFAULTS` chiếm đúng schema.ts:36-42, và preset `custom` spread nó. Vì §10 câu 2 (P1) hỏi preset nào thêm `usage`, hình dạng câu trả lời phụ thuộc một sự kiện plan chỉ nhắc qua — người đọc "cả bảy preset" rồi sửa `presets.ts:96` sẽ không đổi gì được render. §10 phải hỏi sao cho maintainer buộc phải trả lời dứt khoát cho `custom`. Trùng ctx1-1. |
+| tail2-13 | §5.1: nhánh colorBlindMode ở "packages/tui/src/theme/loader.ts:142-157"; §6 (A9) lặp lại "loader.ts:142" cho cờ và ":153-157" cho nhánh | cũ ở hai đầu; nội dung thì đã xác nhận | Khối if là dòng 153-158; 153-157 là khối thiếu dấu `}` đóng. Dòng 142 là field `colorBlindMode?: boolean` trong interface `CreateThemeOptions`, không phải nhánh. Dòng **146** (`COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 }`) đúng; 145 là dòng JSDoc của nó. Nội dung §10 câu 7 — "chỉ điều chỉnh đúng một token" — đúng tuyệt đối và là lý do A9 tồn tại. |
+| tail2-14 | Plan không phân biệt MCP elicitation với ACP elicitation; §4 dòng 16 và DoD clause 4 đọc như thể elicitation vắng hẳn khỏi cây | một thiếu sót sẽ khiến người triển khai D1 hiểu sai | MCP elicitation thực sự vắng — `git grep -n elicitation -- packages/coding-agent/src/mcp packages/coding-agent/test/mcp` không trả gì — nên cả hai nửa A2/D1 đều là việc thật, đúng cái mà luận điểm nguyên tử của plan dựa vào. Nhưng `elicitation` đã có trong bề mặt ACP, ở dạng form URL-mode với trường `elicitationId` riêng trên năm vị trí type. Người triển khai grep prior art sẽ tới đó và có thể tái dùng tên trường. Ghi rõ phân biệt trong 90-back3.md và trong work item của D1: elicitation của ACP là protocol khác với hình dạng khác; của MCP là một form, và các primitive form tái dùng được của repo nằm ở `packages/tui/src/components/form.ts:104`, `:270`, `:352`. |
+| tail2-15 · §6.8 | "find packages/tui … → 221; find packages/coding-agent … → 1511" | cũ lần lượt 1 và 9; quy ước mà các con số ấy chống lưng thì đã xác nhận | Số thực tế hôm nay là 222 và 1520. Điều các số ấy chống lưng thì đúng và nên giữ: test nằm ở `packages/<pkg>/test/`, không bao giờ cạnh source — `ls packages/tui/src/overlays/*.test.ts` không khớp gì. Người đặt test cạnh source tạo ra một file runner không bao giờ thấy. Giữ quy tắc; bỏ hoặc đo lại các số, và ghi ngày đo. Trùng tail1-10. |
+| tail2-16 | Framing: "the native addon is not built, so `bun test` currently reports 0 pass … treat `bun test` as blocked until the addon is built." | **quá rộng theo một chiều, và số đo còn đảo ngược kết luận** | Đo **trước khi build addon**: toàn bộ `packages/tui/test` cho **149 pass / 205 fail / 205 errors** trên 354 test — cả 205 lỗi đều là `Failed to load pi_natives native addon for darwin-arm64`. Nên **58% suite tui bị chặn**, không phải "phần lớn kiểm chứng được". Riêng `packages/tui/test/loop-watchdog.test.ts` — file mà lệnh `*Lệnh:*` của A5 trỏ tới — cũng fail 0/1. Tệ hơn: harness overflow mà A1 sẽ copy (`packages/coding-agent/test/status-line-overflow.test.ts`) nằm ở phía bị chặn, và không có file tương ứng trong `packages/tui/test/`. File tui chạy được không có addon chỉ là `mouse.test.ts` (13/13) — đúng một file trong 222. Nhưng toàn bộ số đo trên đo ở trạng thái **chưa build**, và đó là **tiền đề tái lập được chứ không phải hạn chế của máy**: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là cả 222 file chạy. Hệ quả cho kế hoạch kiểm chứng: **mọi work item sóng 1–3 cần build addon một lần trước, rồi coi là kiểm chứng được**; phần chạy được ngay cả chưa build chỉ là các cổng grep (G4, G10, G12) và `check:ts`. Mục "Những điều chưa được kiểm chứng" ở §11 phải mang split này, vì nó quyết định maintainer tin cổng nào vào thứ Hai. Trùng tail1-9, s1-18. |
+| tail2-17 · §9 risk #1 | Inventory "thiếu gì ở omp" của vòng trước sai ba chỗ — quota 5 cửa sổ, working-message override và stall watchdog đã tồn tại | xác nhận — cả ba đều tồn tại, và đó chính là lý do A1 là việc nối dây một ngày | Cả ba verify. Bộ đọc quota `usageSegment` ở `packages/tui/src/status-line/segments.ts:864` render tier cộng năm cửa sổ — 5h, 1d, 7d, mo và resetCredits — với chính sách round-vs-floor và phút-vs-giờ tại call site. Working-message override khai ở `packages/coding-agent/src/extensibility/extensions/types.ts:267` (`setWorkingMessage(message?: string)`). Loop watchdog tồn tại ở `packages/tui/src/loop-watchdog.ts:57` với ngưỡng ở :123-124. Viết §9 theo hướng cho người đọc biết ba câu hỏi đầu ("quota có không", "plugin có set được working message không", "đã có stall detector chưa") đã được trả lời — đó là lý do cả mục rủi ro đáng viết. |
+| tail2-18 · §9 risk #4 | Override tool-renderer sống trên export-map wildcard cộng một loader remap, và một barrel refactor hay một `Object.freeze` sẽ phá nó một cách âm thầm | xác nhận, và mạnh hơn cách plan nói | Cơ chế đúng như mô tả và hiện không có `Object.freeze` nào ở gần đó. `toolRenderers` là một `Record` mutable phẳng ở `packages/tui/src/tools/index.ts:35`, đi qua export `"./tools"` và wildcard `"./*"` tại `package.json:93-96`; remap phía host là `setXdevRendererLookup(name => toolRenderers[name])` ở `tools/index.ts:73`, một tham chiếu sống thứ hai bắt buộc phải thấy mọi mutation. `grep` ở `tools/index.ts:46` và remap loader ở `legacy-pi-compat.ts:2742` và `:2752-2754` đều verify. Kết luận rằng B1 phải ship một pinning test trong cùng commit là đúng, và caveat của chính plan — pinning test bắt được break có chủ ý, không bắt được break ngoài ý muốn — thuộc về risk row. |
+| tail2-19 · §9 risk #5 | Transcript chính không có scroll state, nên D3 phải nằm trong overlay viewer | xác nhận | Không có scroll state nào trong đường transcript chính, và bất biến được viết hai lần trong `docs/tui-core-renderer.md` — phát biểu bằng lời ở :107 và bất biến 8 ở :174, cả hai cấm dò vị trí scroll của terminal hay tách chính sách lịch sử. Cả hai neo **đều đúng** (106 là dòng trống). Một bản đo trước đặt câu mở đầu ở 106 — sai, và đáng lẽ phải bác bản đo đó chứ không phải bác tail1-7. Vì vậy §11 clause 8 là cổng kiểm được bằng máy (G9), không phải phán đoán. |
+| tail2-20 | §4 dòng 18: "right.pop() tại :2705" là cơ chế quyết định segment status-line nào chết trước khi cột hết | xác nhận tuyệt đối — đây là sự kiện mang tính quyết định dưới hợp đồng độ rộng của §11 clause 1 | Dòng 2705 là `right.pop();` bên trong vòng `while (totalWidth() > topFillWidth && right.length > 0)` ở 2704. Nên thêm `usage` ở CUỐI `rightSegments` làm nó là thứ đầu tiên bị bỏ khi dòng hẹp, trong khi `context_pct` và `cost` bên trái sống sót. Đó là toàn bộ lý do §11 clause 1 đòi quota segment vẫn phải render ở 80 cột chứ không chỉ "có mặt trong preset". Cite :2704-2707 để điều kiện vòng lặp đi cùng lệnh pop. |
+| **ctx2** | | | |
+| ctx2-1 | Framing: "Milestone 2 occupies lines 7042-7692", repo ở "git HEAD 5873776" | sai | 7042 là `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, và HEAD khi đo là 808b365, nay đã ở `e040a60` (xem s1-16). Không hề có header "# MILESTONE 2" trong file — `grep -n '^# MILESTONE'` chỉ trả 299 (M1), 4173 (M2), 8549 (M3), 10564 (M6). Thư mục đầu ra (.lavish-wip/m3-specs/) đúng; chỉ nhãn milestone và SHA là cũ. Trùng tail1-1, tail2-1, s1-16. |
+| ctx2-2 | `extension-ui-controller.ts:148-149` — setHeader và setFooter là no-op `() => {}` | cũ | Các no-op ở :157-158, thấp hơn chín dòng. `setStatus` ở :128 (plan nói :119) và `setWorkingMessage` ở :129 (plan nói :120). Bản thân claim đúng hoàn toàn; chỉ số dòng đã dịch. Trùng ctx1-2. |
+| ctx2-3 | "omp đã phát `(ctrl+o to expand)` ở 6 site: execution-shared.ts:87, eval.ts:680, eval.ts:814, ttsr-notification.ts:86/:117/:119" | sai | SỐ SAI khá xa. Có 22 call site `expandKeyHint()` (định nghĩa ở `render/render-utils.ts:205`) cộng 25 call site `formatExpandHint()` (`render/render-utils.ts:305`) — hint nằm sau một helper chung và với tới nhiều bề mặt hơn hẳn plan ghi, gồm inspector-panel.ts (8 site riêng), github.ts, lsp.ts, memory.ts, web-search.ts. Hai trong sáu dòng nêu đúng (eval.ts:680, :814); bốn cái còn lại lệch 1-2 (execution-shared.ts:89, ttsr-notification.ts:87, :118, :120). Hướng của lỗi có ý nghĩa: omp có NHIỀU hơn plan ghi nhận, nên hành động "không làm gì" càng rõ là đúng. |
+| ctx2-4 | "`keyHint` (keybinding-hints.ts:29) và `appKeyHint` (:42) không có caller; `rawKeyHint` (:53) đang dùng" | sai | Hai trong ba mệnh đề sai. Số dòng là `keyHint` :57, `appKeyHint` :70, `rawKeyHint` :78. Và `keyHint` KHÔNG phải callerless — nó có 4 call site (ví dụ `overlays/history-search.ts:199`). Chỉ `appKeyHint` thật sự chết, 0 caller. Tiền đề của B3 rằng "hai helper được viết ra rồi không dùng" vì thế sai một nửa: một helper chết, không phải hai. |
+| ctx2-5 | Khoá git-lock của nhánh colorblind khai ở `packages/tui/src/theme/schema.ts:77-78` với fallback `:140-141` | sai | Những dòng đó là `statusLineGitClean`/`statusLineGitDirty` và không liên quan gì tới colorblind mode. Nhánh điều chỉnh đúng một token, `resolvedColors.toolDiffAdded` (`theme/loader.ts:153-157`), khoá schema của nó là `toolDiffAdded` ở schema.ts:53 (union) và :116 (record defaults). Người theo neo của plan sẽ sửa nhầm phần theme schema. Mệnh đề "chỉ một token" thì ĐÚNG — phép điều chỉnh là một lần ghi `resolvedColors.toolDiffAdded = adjustHsv(...)`. Lưu ý tail1-7 gọi đúng 77-78 là statusLineGitClean/Dirty, nên đây là hai spec nói về hai file schema khác nhau. |
+| ctx2-6 | `interactive-mode.ts:6674` đã cài `setTrailer(() => this.#workingRowTrailer())` | cũ | Call site thật là :6624, sớm hơn năm mươi dòng. Nội dung claim được xác nhận và load-bearing: `loader.ts:141` `setTrailer` nhận MỘT callback, nên chủ của coding-agent buộc phải MERGE với stall indicator mới chứ không xếp chồng. Đây là dòng sắc nhất trong bảng §5.1 và neo của nó phải đúng. Trùng s1-13, tail2-8. |
+| ctx2-7 | Notice event được định tuyến ở `event-controller.ts:308` vào `#handleNotice` ở `:1244-1251` | cũ | Việc đăng ký nằm ở :313 (`notice: e => this.#handleNotice(e)`) và method bắt đầu ở :1250. Dải plan trích bắt đầu bên trong một method khác (`markBackgroundTaskCalls`), nên theo nó sẽ tới nhầm hàm. Mệnh đề định tuyến thì đúng. tail2-7 ghi 1249 là sai — đã đo lại và chốt ở **1250** (1249 là dòng trống), xem tail2-7. |
+| ctx2-8 | `segments.ts:864-895` — segment usage năm cửa sổ, đăng ký ở :865 | cũ | Segment BẮT ĐẦU ở :864 với `id: "usage"` ở :865, đúng như đã nói, nhưng KẾT THÚC ở :913, không phải :895. Mọi claim nội dung vẫn đúng: năm cửa sổ (5h/1d/7d/mo/resetCredits) cộng tier, đồng hồ reset riêng từng cửa sổ, và `visible: false` khi không có cửa sổ nào. Chỉ đầu khoảng sai. Trùng s1-1, tail2-17. |
+
+Phần lớn các mục trên thuộc cùng một loại: **số dòng đã cũ** — cây dài thêm dưới chân plan trong khi neo giữ nguyên. Loại đó đã nói một câu ở các dòng đánh dấu STALE; phần còn lại của nhóm được liệt kê gọn ở từng dòng, mỗi dòng giữ đúng một kiểu riêng khi nó khác loại chung. Một nhóm nhỏ thuộc loại thứ hai — **cơ chế bị gán sai** (ctx1-5 gán remap không tồn tại, tail1-5 giả định một bước sinh không có) — thì sai ở tầng khác: claim đúng nhưng lý do sai, nên phải sửa lý do chứ không chỉ sửa số.
+
+Hai cổng trong §7.1 viết sai theo cách tự tát: G10 grep `mock.module` (tail1-2, tail2-2) và phần văn xuôi của G4 đếm 8 thay vì 9 (tail1-3) — cả hai đỏ hoặc sai trên một cây chưa làm gì cả. Số của G4 vẫn là 9 (tail2-10).
+
+Câu trả lời cho câu hỏi cổng nào chạy được hôm nay: **chỉ các cổng grep và `check:ts`**. Đo lại hôm nay — G4 trả `9`, G10 ở dạng đã sửa (có dấu ngoặc mở) trả `0`, G12 trong phạm vi `packages/ scripts/ docs/` trả `0`, và `bun run check:ts` exit 0 với 16 package type-check Done. **Không** cổng test nào của A1/A5/A6/A8/A9/D3 chạy được: `packages/tui/test` fail 205/354 vì addon (tail2-16), và `bun check` kéo cả `check:rs` nên còn một nguồn đỏ thứ hai không liên quan tới addon (s1-18). Trước khi kết luận một hạng mục hỏng, hãy tách ba nguồn đỏ này ra.
+
+### Bằng chứng (phần 1/2)
+
+Các lệnh dưới đây chạy lại được nguyên trạng ở `e040a60`. Mọi neo **source** trong bảng vẫn đúng. Mọi neo **dòng plan** đã lệch — hãy tra theo tên mục, không theo số dòng.
+
+- **phạm vi** — `git log --oneline -3` -> e040a60, 808b365, 33d6e33; `git show --stat HEAD | tail -3` -> `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | 7089 +++++++++---` và `MILESTONE_2_EXECUTION_PLAN.md | 4367 +++++`. `grep -n '^# MILESTONE' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` -> 299 / 4173 / **8549** / 10564. `grep -n '^### Sóng'` -> 8749 / 8801 / 8854 / 8868 / 8917 / 8956. `grep -n 'event\\.wheel'` -> 8991 (G4), `sed -n '9007p'` -> văn xuôi "G4 trả `8` (7 `* 3` + 1 `* 2`)". `grep -n '6 trên 15'` -> 8561, 9147. `grep -n 'claude-code-best'` -> 8553, 9048, 9110, 11522, 11523. Số cũ trong bảng (7042/7692/4165/7493/7499/7054) giờ trỏ vào `### Phụ thuộc`, dòng trống, `### 5. Phần M1 …`, và các dòng bảng M2.
+- **s1-1** — `grep -n '"usage"' packages/tui/src/status-line/schema.ts` -> 26:usage; `sed -n '864,870p' packages/tui/src/status-line/segments.ts` -> `const usageSegment: StatusLineSegment = { id: "usage", render(ctx) {`; `grep -n 'usage: usageSegment'` -> 943.
+- **s1-2** — `awk 'NR>=36 && NR<=45 {printf "%d|%s\n", NR, $0}' packages/tui/src/status-line/schema.ts` -> 42 là `};` (đóng `CUSTOM_STATUS_LINE_DEFAULTS`), 43 trống, 44 là `CONTEXT_LINE_MODE_VALUES`, 45 là `export type ContextLineMode`.
+- **s1-3** — `awk 'NR>=3066 && NR<=3069 {printf "%d|%s\n", NR, $0}' packages/tui/src/status-line/component.ts` -> 3066 `const showHooks = this.#settings.showHookStatus ?? true;` / 3067 `if (showHooks && this.#sortedHookStatuses.length > 0) {` / 3068 `lines.push(...)` / 3069 `}`. Lệnh cũ `sed -n '3064,3067p'` in ra hai dấu `}` rồi mới tới `const showHooks`, nên không tái lập được.
+- **s1-4** — `wc -l packages/tui/src/chrome/keybinding-hints.ts` -> 80; `cat -n` cho thấy `appKey` đóng ở 47 và `keyHint` ở 57; grep -c tmux on keybinding-hints.ts, keybindings.ts, app-keybindings.ts -> 0, 0, 0 (xác nhận con số mà chính plan ghi).
+- **s1-5** — `sed -n '18,22p' packages/tui/src/tmux.ts` -> `const CLIENT_TERMTYPE_TIMEOUT_MS = 500;` / `let cachedClientTerminalName: string | null | undefined;`; dòng 48-51 cho thấy memo chỉ được gán, không bao giờ bị vô hiệu hoá.
+- **s1-6** — `grep -n 'export function\|isBunTestRuntime\|cachedClientTerminalName' packages/tui/src/tmux.ts` -> 5 (`isInsideTmux`), 10/15 (wrapper chuyển tiếp), 21 (memo), 48 (`resolveTmuxClientTerminalName`), 49 (guard `isBunTestRuntime`), 50-51 (gán memo).
+- **s1-7** — grep -n readArgsCollapseIntoGroup -> read-tool-group.ts:41 `export function readArgsCollapseIntoGroup(args: unknown): boolean`; thân hàm ở :42-48 là `readArgsTarget` / `splitUrlScheme` / `internalUrlSchemeSpec`.
+- **s1-8** — grep -n '=== "read" &&' packages/coding-agent/src/modes/utils/ui-helpers.ts -> 553, 663. (Mẫu cũ trong bản đo trước là `name === "read"`, viết `name` chữ thường nên trả **0 hit** dù kết quả 553/663 là đúng.)
+- **s1-9** — grep -n readArgsCollapseIntoGroup packages/coding-agent/src/modes/controllers/event-controller.ts -> 14 (import), 1357, 1695; `grep -n 'renderToolName === "read"'` -> 1350, 1695.
+- **s1-10** — grep -n 'event.toolName === "read"' packages/coding-agent/src/modes/controllers/event-controller.ts -> 1830, 1832, 1907; dòng 1830 là `if (event.toolName === "read") this.#inlineReadToolImages(event.toolCallId, event.result);`.
+- **s1-11** — sed -n '507p' chat-transcript-builder.ts -> `const isReadGroupResult = message.toolName === "read" && (!pending || pending instanceof ReadToolGroupComponent);`; grep cho thấy chỉ 443 trong file đó và chỉ 553 trong ui-helpers.ts gọi readArgsCollapseIntoGroup.
+- **s1-12** — grep -rn 'toolName !== "read"' packages/coding-agent/src/modes/ -> acp-event-mapper.ts:645 (hit duy nhất ngoài các file transcript-grouping).
+- **s1-13** — grep -n 'setTrailer\|workingRowTrailer' packages/coding-agent/src/modes/interactive-mode.ts -> 6624 (cài), 1013 (định nghĩa), 1023 (dùng lại bên trong renderIdleStatusHud).
+- **s1-14** — `grep -rn 'takeRecentLoopPhase' packages --include='*.ts' | grep -v node_modules | grep -v /test/` -> `packages/tui/src/loop-watchdog.ts:2` (import), `:123` (gọi), và `packages/utils/src/loop-phase.ts:45` (`export function takeRecentLoopPhase(): string | undefined`); `ls packages/tui/src/loop-phase.ts` -> No such file. grep -n 'takeRecentLoopPhase\|lastFrameCostMs\|setTrailer' across loop-watchdog.ts, tui.ts, loop-phase.ts, loader.ts, interactive-mode.ts -> 123 (watchdog), 45 (loop-phase), 32/107/141/170 (loader), 811/930/1035/1036/2105/2187/2204 (tui).
+- **s1-15** — sed -n '107,113p' packages/tui/src/components/loader.ts -> `if (this.#trailer && lines.length > 1) {` / `const trailer = this.#trailer();` / `if (trailer) {`.
+- **s1-16** — git log --oneline -1 -> e040a60 docs(m2): execution plan for milestone 2, spec-verified against the tree; git rev-parse HEAD -> e040a607c44f6cb49893020b494ce02d0b5cd1b7; git show --stat HEAD -> chỉ COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md (+7089/−2791) và MILESTONE_2_EXECUTION_PLAN.md (+4367), nên neo source không đổi.
+- **s1-17** — test -e trên cả bốn đường dẫn -> EXISTS, nhưng `ls packages/tui/test/status-line-overflow.test.ts` -> No such file; harness overflow 18 KB nằm ở `packages/coding-agent/test/`. status-line.ts:6 `export class StatusLineTestComponents`.
+- **s1-18** — grep -n '"check"' package.json -> 93 `bun run --parallel check:ts check:rs`; `check:ts` ở :94, `check:rs` ở :96. `grep -c 'check:types *| Done' /tmp/omp-checkts.log` -> 16, exit 0. `grep -cE '^\- \*Lệnh:\* .bun check && bun test' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` -> 15 (8770, 8779, 8789, 8799, 8828, 8842, 8852, 8866, 8882, 8896, 8905, 8915, 8944, 8954, 8969).
+- **tail1-1** — `sed -n '7042p'` in ra header MILESTONE 3; `grep -n '^### Sóng' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` trả đúng sáu hit trong khoảng; spec anh em s1/s4/s5/s6 đều mang giá trị `wave` bắt đầu bằng 'Sóng' hoặc 'M3 wave'.
+- **tail1-2** — `grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` -> 2 hit, cả hai đều là văn xuôi. `grep -rnE 'mock\.module\(' ... | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' | wc -l` -> 0.
+- **tail1-3** — Chạy đúng pipeline hai mẫu của plan trả 9; `{ grep -rn 'event\.wheel \* [0-9]' ...; grep -rn 'delta \* [0-9]' ...; } | grep -v '^packages/tui/src/mouse-wheel\.ts:' | wc -l` -> 9.
+- **tail1-4** — `grep -rn 'event\.wheel \* [0-9]\|delta \* [0-9]' packages/tui/src --include='*.ts' | grep -v mouse-wheel` -> chín hit, tám trong số đó tại đúng các số đã nêu; site thứ chín là `packages/tui/src/apps/git/sidebar.ts:897` (`delta * 3`) — chính là site mà văn xuôi G4 quên, xem tail1-3.
+- **tail1-5** — `git ls-files --error-unmatch THIRD-PARTY-NOTICES.txt` thành công (được track, `wc -l` = 22901); `grep -rn 'THIRD-PARTY\|bun.lock\|lockfile' scripts/ci-release-publish.ts` chỉ khớp dòng 94 — không có tham chiếu lockfile nào trong cả file; `ls packages/@ant` -> no such directory.
+- **tail1-6** — `grep -rn 'claude-code-best' --include='*.ts' --include='*.md' --include='*.json' . | grep -v node_modules | grep -v '^\./\.lavish-wip'` -> 5 hit, tất cả đều ở COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md; `grep -rn 'claude-code-best' packages/ scripts/ docs/ | wc -l` -> 0.
+- **tail1-7** — `git grep -n showStatus -- packages/coding-agent/src/modes/utils/ui-helpers.ts` -> 143; `git grep -n colorBlindMode -- packages/coding-agent/src/modes/settings.ts` -> 110; `sed -n '138,160p' packages/tui/src/theme/loader.ts`; `sed -n '712,740p' packages/tui/src/status-line/segments.ts`; `sed -n '44,52p' packages/tui/src/tmux.ts`; `grep -n 'PYTHON DEPENDENCY DISTRIBUTION ROLE\|BUN / NPM DEPENDENCY INVENTORY\|BUNDLED/DISTRIBUTED (97)\|BUNDLED/DISTRIBUTED PACKAGE LICENSE\|RUST RUNTIME DEPENDENCY LICENSES' THIRD-PARTY-NOTICES.txt` -> all five lines as claimed. Full path cho neo G6: `find packages -name 'manager.ts' -not -path '*/node_modules/*'` -> ba file (`mcp/manager.ts`, `extensibility/plugins/manager.ts`, `extensibility/plugins/marketplace/manager.ts`); `grep -n '32601' packages/coding-agent/src/extensibility/plugins/manager.ts` -> rỗng; `grep -rn '32601' packages --include='*.ts' | grep -v node_modules | grep -v /test/` -> `packages/coding-agent/src/mcp/manager.ts:1039` là hit duy nhất dạng `code: -32601` trong một throw của MCP.
+- **tail1-8** — `grep -rn 'lines.length > 1' packages/coding-agent/src packages/tui/src --include='*.ts'` trả 10 hit; cái của loader là `packages/tui/src/components/loader.ts:107`.
+- **tail1-9** (đo **trước khi** build addon) — `bun test packages/tui/test` -> '149 pass / 205 fail / 205 errors / 533 expect() calls / Ran 354 tests across 222 files'; `bun test packages/tui/test 2>&1 | grep -c 'pi_natives native addon'` -> 205, tức **toàn bộ** lỗi đều là addon. `bun test packages/tui/test/mouse.test.ts` -> '13 pass / 0 fail' (file tui chạy được duy nhất); `bun test packages/coding-agent/test/mcp/request-id.test.ts` -> '0 pass / 1 fail'; `bun run check:ts` -> exit 0, 16 package `check:types | Done`. Sau khi build addon (`brew install ninja` + `bun --cwd=packages/natives run build`, exit 0) cả 222 file chạy.
+- **tail1-10** — `find packages/tui -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` -> 222; tương tự cho packages/coding-agent -> 1520; `ls packages/tui/src/overlays/*.test.ts` -> 'no matches found'.
+- **tail1-11** — Quét manifest từng package trên `packages/*/package.json`; `sed -n '141,146p' scripts/ci-release-publish.test.ts` cho thấy `expect(() => legalPayloadFiles(undefined)).toThrow('Unsupported package license: <missing>')`.
+- **ctx1-1** — `git grep -n 'STATUS_LINE_SEGMENT_IDS = \[\|^] as const;' -- packages/tui/src/status-line/schema.ts` trả 2 và 30. `awk 'NR>=2 && NR<=31' packages/tui/src/status-line/schema.ts | grep -c '^\t"'` trả 27.
+- **ctx1-2** — `git grep -n 'setFooter: () => {}\|setHeader: () => {}' -- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` trả 157 và 158.
+- **ctx1-3** — `git grep -c setFrameProvider -- packages/` cho composer.ts:1, tui.ts:1, emergency-restore-altscreen:1, history-frame-plan:16, image-budget:13, paint-listener:1, resize-alt-toggle-echo:3, resize-conpty-warp:1, resize-multiplexer-anchor:1, resize-preserved-clear:1 — cộng lại 39, trong đó 37 nằm trong test/.
+- **ctx1-4** — `git grep -n 'capabilities:' -- packages/coding-agent/src/mcp/client.ts` trả 101 là hit đầu, bên trong initializeConnection.
+- **ctx1-5** — `git grep -rn 'pi-tui' -- packages/coding-agent/src/extensibility/` chỉ cho thấy import type/value thông thường bên trong custom command đã bundle (custom-tools/types.ts:21, custom-commands/bundled/annotate/*, v.v.) và không có remap hook nào. `git grep -n 'LEGACY_PI_SPECIFIER_FILTER' -- packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts` trả 837 (định nghĩa) và 2737 (dùng trong thiết lập plugin).
+- **ctx1-6** — `sed -n '915,947p' packages/tui/src/status-line/segments.ts` cho thấy Record với 27 khóa theo thứ tự union. `git grep -n 'STATUS_LINE_SEGMENT_IDS' -- packages/coding-agent/src/modes/settings.ts` trả 280 và 287. `git grep -rn register -- packages/tui/src/status-line/` trả rỗng.
+- **ctx1-7** — `sed -n '955,957p' packages/tui/src/status-line/segments.ts` cho thấy `export const ALL_SEGMENT_IDS: StatusLineSegmentId[] = Object.keys(SEGMENTS) as StatusLineSegmentId[];`. `git grep -n 'getSegmentGalleryInventory' -- packages/coding-agent/src/cli/gallery-fixtures/segments.ts` trả 19, trả về `[...ALL_SEGMENT_IDS]`.
+- **ctx1-8** — `sed -n '48,56p' packages/tui/src/status-line/schema.ts` liệt kê bảy giá trị. `git grep -n 'WIDTH\|BREAKPOINT\|widthTier\|TIER' -- packages/tui/src/status-line/component.ts packages/tui/src/status-line/types.ts` trả rỗng.
+- **ctx1-9** — `grep -n 'M2-OQ3' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` trả 10 hit (4439, 5424, 6461, 6675, 6785, 6917, 7054, 7086, 7113) — tất cả ngoài 7044-7113 trừ hai hit trong chính khoảng của tôi. Con số 6-trên-15 xuất hiện đúng một lần, ở 7054, with its supporting inventory elsewhere.
+- **tail2-1** — `grep -n '^# '` trên plan trả 4165:'# 11 — M2: Composable, loadable extensions...', 7042:'# MILESTONE 3 — BỀ MẶT UI/UX KIẾU CLAUDE CODE', 7692:'# 13. M4 — DeepSeek-Harness-derived core and plugin workflow'.
+- **tail2-2** — `git grep -rn 'mock.module' -- packages/coding-agent/test packages/tui/test` -> 2 hit, cả hai đều là prose: packages/coding-agent/test/tools/lsp-regressions.test.ts:111 và packages/tui/test/loop-watchdog-wiring.test.ts:13 (rc=0). `git grep -rn 'mock\.module(' -- packages/coding-agent/test packages/tui/test` -> rc=1, 0 hit. Đây là dạng mang đi.
+- **tail2-3** — Plan line 7384 (A4 size): 'S, ~1 ngày cho nửa hiển thị ... đó là phần **không chặn gì** và làm được ngay ở sóng 1'. Plan line 7388: 'Nửa **lưu** (`manager.ts:942-949`; hàng bản đồ 21) **chặn đúng M2 WI-8a**'. §4 row 20: 'Cổng riêng: không chặn gì ... Làm được ở sóng 1'.
+- **tail2-4** — `grep -rn register packages/tui/src/status-line/` -> không khớp. `packages/tui/src/status-line/index.ts` là sáu star re-export và không gì khác. `STATUS_LINE_SEGMENT_IDS` in packages/tui/src/status-line/schema.ts:2-30 giữ đúng 27 id (đã đếm: pi, status, model, mode, path, git, pr, subagents, token_in, token_out, token_total, token_rate, cost, context_pct, context_total, time_spent, time, session, hostname, cache_read, cache_write, cache_hit, session_name, usage, collab, stream, vim). types.ts:264-277 does span setStatus through setHeader.
+- **tail2-5** — `grep -rn isProjectTrusted packages/` -> runner.ts:1264 'isProjectTrusted: () => true,' và agent-session.ts:7406 'isProjectTrusted: () => true,' cộng hai khai báo kiểu. Hai file test đã assert nó: packages/coding-agent/test/extension-context-project-trust.test.ts:14 và packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts:19,24.
+- **tail2-6** — `find packages/coding-agent/src -name 'ui-helpers*'` -> đúng một hit, packages/coding-agent/src/modes/utils/ui-helpers.ts. `sed -n '138,146p'` on packages/coding-agent/src/modes/ui-helpers.ts -> 'No such file or directory'. Line 143 -> 'showStatus(message: string, options?: { dim?: boolean }): void {'.
+- **tail2-7** — `awk 'NR>=1248 && NR<=1251 {printf "%d|%s\n", NR, $0}' packages/coding-agent/src/modes/controllers/event-controller.ts` -> 1248 `}`, 1249 **trống**, 1250 `async #handleNotice(event: Extract<AgentSessionEvent, { type: "notice" }>): Promise<void> {`, 1251 `const message = event.source ? ...`. 1244-1247 là `markBackgroundTaskCalls`. `grep -n 'notice:'` -> 313.
+- **tail2-8** — `grep -rn setTrailer packages/` -> đúng hai hit: interactive-mode.ts:6624 'this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());' và packages/tui/src/components/loader.ts:141 (định nghĩa). `sed -n '6670,6678p'` -> 6674 là '}'.
+- **tail2-9** — `grep -n 'empty: "cancel"' packages/tui/src/overlays/plugin-settings.ts` -> 669. `sed -n '294,304p' packages/tui/src/components/form.ts` -> 296 'submit(): void {', 298 'if (value.trim().length === 0) {', 299 'const empty = this.#options.empty ?? "submit";', 300 'if (empty === "cancel") {', 301 'this.#options.onCancel();'.
+- **tail2-10** — Lệnh G4 của plan `{ grep -rn "event\.wheel \* [0-9]" ...; grep -rn "delta \* [0-9]" ...; } | grep -v mouse-wheel | wc -l` -> 9, với hit tại agent-transcript-viewer.ts:470, usage-dashboard.ts:759, plan-review-overlay.ts:580, rewind-selector.ts:245, copy-selector.ts:214, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639, sidebar.ts:897.
+- **tail2-11** — `ls packages/tui/src/mouse-wheel.ts` -> VẮNG. Lệnh G4 vẫn trả 9, tức phần loại trừ không bỏ sót gì.
+- **tail2-12** — `sed -n '1,45p' packages/tui/src/status-line/schema.ts` — mảng mở ở 2, 27 dòng id đi sau, đóng ở 30; `CUSTOM_STATUS_LINE_DEFAULTS` at 36-42; `CONTEXT_LINE_MODE_VALUES` at 44. `sed -n '96,103p' packages/tui/src/status-line/presets.ts` — custom: { leftSegments: [...CUSTOM_STATUS_LINE_DEFAULTS.left], rightSegments: [...CUSTOM_STATUS_LINE_DEFAULTS.right], ... }.
+- **tail2-13** — `sed -n '138,160p' packages/tui/src/theme/loader.ts` -> 142 'colorBlindMode?: boolean;', 145 '/** HSV adjustment to shift green toward blue for colorblind mode (red-green colorblindness) */', 146 'const COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 };', 153 'if (colorBlindMode) {', 154 'const added = resolvedColors.toolDiffAdded;', 156 'resolvedColors.toolDiffAdded = adjustHsv(added, COLORBLIND_ADJUSTMENT);', 157 '}', 158 '}'.
+- **tail2-14** — `git grep -n elicitation -- packages/coding-agent/src/mcp packages/coding-agent/test/mcp` -> 0 hit, rc=0. `git grep -n elicitation -- packages/utils/src/acp/protocol.ts` -> 150 'elicitation?: { form?: Record<string, unknown>; url?: Record<string, unknown> };', 426, 437, 444, 447, tất cả đều mang `elicitationId`. Cũng có ở packages/utils/src/acp/connection.ts, packages/coding-agent/src/sdk.ts, packages/coding-agent/src/modes/acp/acp-agent.ts, và ba tài liệu.
+- **tail2-15** — `find packages/tui -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` -> 222. `find packages/coding-agent -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` -> 1520. `ls packages/tui/src/overlays/*.test.ts` -> 'no matches found'.
+- **tail2-16** (đo **trước khi** build addon) — `bun test packages/tui/test` -> '149 pass / 205 fail / 205 errors / Ran 354 tests across 222 files'; `... | grep -c 'pi_natives native addon'` -> 205. `bun test packages/tui/test/loop-watchdog.test.ts` -> '0 pass / 1 fail / 1 error' (đúng file lệnh `*Lệnh:*` của A5 trỏ tới, plan:8799). `bun test packages/tui/test/status-line-cache-hit.test.ts` -> '0 pass / 1 fail / 1 error'. `bun test packages/tui/test/mouse.test.ts` -> '13 pass / 0 fail / 38 expect() calls'. `ls packages/tui/test/status-line-overflow.test.ts` -> ABSENT, còn `packages/coding-agent/test/status-line-overflow.test.ts` -> EXISTS (18 KB), tức harness A1 nằm ở phía bị chặn. packages/natives/package.json scripts.build -> 'bun ../../scripts/bazel-natives.ts host --dest native'. Build addon một lần (`brew install ninja` + `bun --cwd=packages/natives run build`) là các file trên chạy hết.
+- **tail2-17** — `sed -n '864,900p' packages/tui/src/status-line/segments.ts` -> 'const usageSegment: StatusLineSegment = {' và năm site formatQuotaWindow/push. `sed -n '264,268p' types.ts` -> 267 'setWorkingMessage(message?: string): void;'. `sed -n '55,58p' packages/tui/src/loop-watchdog.ts` -> 57 'export class LoopWatchdog {'; `sed -n '121,126p'` -> 123 'if (blockedMs > this.#thresholdMs) {'.
+- **tail2-18** — `sed -n '25,80p' packages/tui/src/tools/index.ts` -> 35 'export const toolRenderers: Record<string, ToolRenderer> = {', 46 'grep: grepToolRenderer,', 73 'setXdevRendererLookup(name => toolRenderers[name]);'. `grep -n Object.freeze packages/tui/src/tools/index.ts` -> không có. `sed -n '92,97p' packages/tui/package.json` -> ánh xạ wildcard `"./*"`.
+- **tail2-19** — `grep -rn 'scrollOffset|scrollTop|scroll_state' packages/tui/src/chat/chat-transcript-builder.ts packages/tui/src/chrome/transcript-container.ts` -> không có output. `awk 'NR>=105 && NR<=108 {printf "%d|%s\n", NR, $0}' docs/tui-core-renderer.md` -> 106 **trống**, 107 'The renderer never probes the user's scroll position. This keeps updates safe'. `grep -n 'never probes' docs/tui-core-renderer.md` -> 107 và 174 ('8. The renderer never probes terminal scroll position or forks history policy').
+- **tail2-20** — `sed -n '2703,2707p' packages/tui/src/status-line/component.ts` -> 2704 'while (totalWidth() > topFillWidth && right.length > 0) {', 2705 'right.pop();'.
+- **ctx2-1** — `grep -n '^# MILESTONE' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` -> 299 / 4173 / 8549 / 10564 (đo lại ở e040a60; bản ghi lúc đo ở 808b365 là 291 / 7042 / 9057). `git rev-parse HEAD` -> e040a607c44f6cb49893020b494ce02d0b5cd1b7; `git branch --show-current` -> milestone-1.
+- **ctx2-2** — `grep -n 'setHeader|setFooter|setStatus|setWorkingMessage' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` -> 128, 129, 157, 158.
+- **ctx2-3** — `grep -rn 'expandKeyHint()' packages/tui/src/ | grep -v 'export function' | wc -l` -> 22; tương tự với formatExpandHint -> 25; định nghĩa ở render/render-utils.ts:205 và :305.
+- **ctx2-4** — số call site theo từng helper — keyHint 4, appKeyHint 0, rawKeyHint 5, editorKey 75, editorKeys 27, boundKeys 3, interruptKey 13.
+- **ctx2-5** — `grep -n 'toolDiffAdded' packages/tui/src/theme/schema.ts` -> 53, 116; `sed -n '77,78p;140,141p'` -> statusLineGitClean/statusLineGitDirty; theme/loader.ts:153-157.
+- **ctx2-6** — `grep -rn 'setTrailer' packages/ --include='*.ts'` -> chỉ loader.ts:141 (định nghĩa) và interactive-mode.ts:6624 (lời gọi); `#workingRowTrailer` định nghĩa ở :1013.
+- **ctx2-7** — `grep -n 'notice:' packages/coding-agent/src/modes/controllers/event-controller.ts` -> 313; `:1250` là `async #handleNotice(event: ...)`.
+- **ctx2-8** — `sed -n '864,913p' packages/tui/src/status-line/segments.ts`; `^};` đầu tiên từ 864 trở đi nằm ở 913.
+
+
+---
+
+
+## Đính chính so với plan tổng (tiếp)
+
+Phần 2 của 2, gồm 66 đính chính còn lại (tổng cả hai phần: 134). Cột đầu ở đây ghi work item thật (A1, D2, S5…)
+thay vì mã spec, vì phần 1 đã ghi mã spec (ctx1-1, s1-3, tail1-2…) — cùng một danh sách, hai
+cách ghi khác nhau để mỗi phần tự đọc được.
+
+| work item / sóng | claim của plan | verdict | đính chính |
+| --- | --- | --- | --- |
+| A4 / ctx2 | Enum render plaintext tại `plugin-settings.ts:166`, lưu plaintext tại `manager.ts:942-949`; cờ `secret?: boolean` không có trong plan M2. | partly stale | Hai bug có thật, nhưng fix nhỏ hơn nhiều: cờ **đã có** ở `packages/coding-agent/src/extensibility/plugins/types.ts:63` và `packages/tui/src/overlays/plugin-settings.ts:31`, và mask đã chạy ở `plugin-settings.ts:152`. A4 là fix **một dòng** — nhánh enum ở `:167` dùng thẳng `String(currentValue ?? schema.default ?? "")`, phải dùng `displayValue`. Số dòng: enum là `:167` không phải `:166`, nhánh string là `:188` không phải `:187`. `grep -rn 'secret' packages/coding-agent/src/extensibility/plugins/types.ts packages/tui/src/overlays/plugin-settings.ts` -> types.ts:63, plugin-settings.ts:31/152/667/668; `awk 'NR>=4000 && NR<=7041' <plan> \| grep -c secret` -> 0 |
+| O5 / ctx2 | Khoá: tiêm predicate `readCollapsesIntoGroup` từ coding-agent vào builder của tui, vì 3/4 nơi dùng nằm ở `packages/tui` không phụ thuộc được pi-coding-agent. | confirmed, with an unmentioned alternative | Lập luận hướng phụ thuộc đúng hoàn toàn: `packages/tui/package.json` không khai báo `@oh-my-pi/pi-coding-agent` và `git grep -l pi-coding-agent -- packages/tui/test/` rỗng. Ba điểm tiêm đều tồn tại: `chat-transcript-builder.ts:65-77` (deps interface, đóng ở 77), `:101`, `:443` và `:507`, `read-tool-group.ts:59`. **Mở chưa nói:** `getTool?: (name: string) => AgentTool \| undefined` **đã có** ở deps `:67`, đã dùng ở `:475`, và `AgentTool` đã import từ `@oh-my-pi/pi-agent-core` ở `:14` — builder đã có thể tự tra cứu tool và đọc cờ membership mà không cần tiêm gì. Quyết định đã khoá không bị đảo; nêu như câu hỏi mở. |
+| A1 (test harness) / ctx2 | Test A1 phải nằm ở `packages/coding-agent/test/`, không phải `packages/tui/test/`; harness là `status-line-overflow.test.ts` + `StatusLineTestComponents`. | confirmed | Xác nhận trọn vẹn, đây là claim harness nặng nhất của §3-5. Cả ba file tồn tại. `status-line-overflow.test.ts` đã import `resetSettingsForTest`, gọi `Settings.init({ inMemory: true })` và lấy `statusLineHost` từ coding-agent — đúng cái ràng buộc làm test tui-local bất khả thi. `StatusLineTestComponents` ở `helpers/status-line.ts:6`. Lệch một dòng: test bằng chứng O1 là `status-line-settings-cache.test.ts:374-381` (describe ở 374, assertion `expect(component.render(8)).toEqual(["Ponytail", "$0.04 (…"])` ở 380). Bằng chứng đúng vì `makeComponent({ showHookStatus: true })` không truyền segment id nào, và không preset nào chứa `status`. |
+| A1 (thang độ rộng) / ctx2 | Thang rộng status-line ở `component.ts:2687-2745`: cắt `session_name`, rồi `right.pop()` ở `:2705`, rồi path, rồi bỏ left segment từ phải sang; chỉ số thứ tự trong `rightSegments` là đòn bẩy ưu tiên. | confirmed (range end understated) | Mọi bước và dòng đều đúng: cắt session_name `:2688-2703`, `right.pop()` `:2705`, cắt path `:2709-2740`, bỏ left qua `leftOverflowDropIndex` `:2752-2757`. Khối thật chạy tới `:2758`, nên range của plan dừng sớm 13 dòng. Hệ quả vận hành: preset `default` có `rightSegments: ["session_name"]`, nên khi thêm `usage` nó là phần tử đầu bị bỏ ở độ rộng hẹp; vì `usage` là segment rộng nhất catalog nên quota biến mất âm thầm ở 80 cột còn tên phiên (đã cắt) thì sống sót. Vì vậy gate của A1 phải là **hợp đồng phủ định** — usage vẫn render ở 80 cột với context đầy đủ. `presets.ts:7 rightSegments: ["session_name"]`; `component.ts:2687-2758`; `grep -c 'usage' packages/tui/src/status-line/presets.ts` -> 0 |
+| D1/A2 (MCP) / ctx2 | `manager.ts:1032-1040` chỉ xử lý ping và roots/list, ném -32601 ở default; `client.ts:100-104` chỉ khai roots; manager.ts có một import type-only pi-tui. | confirmed | Cả ba chính xác. `#handleServerRequest` ở `:1032`, `throw Object.assign(new Error(...), { code: -32601 })` ở `:1039`, tham chiếu pi-tui duy nhất trong manager.ts là import type-only ở `:46`. Khối capabilities là `:101-103` không phải `:100-104` (range plan nuốt luôn protocolVersion) — over-bracket vô hại. Dòng này đúng khi gộp D1 và A2 vào một commit (O3+O4). `manager.ts:1032/:1039/:46`; `client.ts:101-103` |
+| D1 (ACP) / ctx2 | `acp-agent.ts:295-410` là một bản cài schema→form chạy được, và cả hai vòng phê bình đều sai khi loại. | confirmed — plan đúng | `elicitFormFromAcpClient` khai ở `acp-agent.ts:314`, gọi `connection.unstable_createElicitation(...)` ở `:358` — đây là cầu nối **chiều ra**, đóng gói schema rồi hỏi editor từ xa, không render form cục bộ. Tham chiếu tốt cho vòng đời (abort, timeout, drop late-response, dọn listener), vô dụng cho schema→form — đó là việc mới của D1. `grep -n 'elicitFormFromAcpClient\|unstable_createElicitation' ...` -> 295, 314, 358, 389, 507, 1879 |
+| Nhóm lệch-một-dòng / ctx2 | schema.ts segments, deps range, `handleScroll`, `showHookStatus`, `COLORBLIND_ADJUSTMENT`, `cfgColorBlindMode`, `ui-helpers.showStatus`, package.json export map, cacheHit, status segment. | stale | Không cái nào đổi quyết định, nhưng lấy số đã sửa: statusSegment **197-211** (không phải 212); cacheHitSegment **718-738** (không phải 737); `ChatTranscriptBuilderDeps` **65-77** (không phải 76); `#handleScroll` **516-535** (không phải 515-534); `cfgStatusLineShowHookStatus` **264-267**, `default: true` ở 267 (không phải 262-265); `COLORBLIND_ADJUSTMENT` ở `theme/loader.ts:146` (không phải 145); `cfgColorBlindMode` ở `settings.ts:109` (không phải 108); `UiHelpers.showStatus` **143-164** (không phải 141-160) — thân hàm kiểm tra hai con cuối của `chatContainer` và vá tại chỗ ở `:152-157`, comment 'avoid log spam' ở `:141`, nên **nội dung** plan đúng, chỉ range lệch; export map `./*` là `package.json:94-97` (không phải 93-96). Mỗi cái đã kiểm bằng `sed -n` trên file được trích. |
+| Các con số mang nguyên trạng / ctx2 | 7 dòng preset; 27 segment id với `status` ở 1 và `usage` ở 23; 99 palette; 7 site `event.wheel * 3` + 1 site `* 2`; 1 site setFrameProvider ngoài test + 37 hit test; `grep -c tmux` = 0,0,0; 3/4 consumer read-group ở tui; `form.ts:104/270/352`; `transcript-browser.ts:47`; `types.ts:235/267/264-277`; `interactive-mode.ts:424`; `grep.ts:241`; `builtin-session.ts:434`; `tmux.ts:5/48-49`; `loop-watchdog.ts:57/123-124`; `loader.ts:32/107-113/141`; `message-notice.ts:37`; `read-tool-group.ts:41`; `session-color.ts:2`; `docs/tui-core-renderer.md:107` và `:174`. | confirmed | Tái lập được từng cái. Hai cái đáng nói lại vì bảng §5.1 đứng trên chúng: (1) `setHeader`/`setFooter` là no-op và bề mặt plugin không với tới vùng hiển thị chính; (2) `docs/tui-core-renderer.md:107` ('The renderer never probes the user''s scroll position') và `:174` ('...or forks history policy') là bất biến viết ra giới hạn D3 về overlay viewer. Thêm: đếm palette đúng 99 qua glob `ls packages/tui/src/theme/defaults/*.json \| wc -l`, và `MessageNoticeComponent` không có timeout, không buffer, không trường key — chỉ `#expanded` và `#toolActivityVisible` — nên phải ở lại vĩnh viễn và **không** được tái dùng làm bồn notice tạm của A7. |
+| D2/C2 (test) / ctx2 | `packages/tui/test/status-line-extension-mode.test.ts` là test của M2 WI-7, chưa viết được tới khi M2-OQ3 có câu trả lời. | confirmed, but the file does not exist | Lập luận đúng và claim chặn vẫn đúng, nhưng `ls packages/tui/test/status-line-extension-mode.test.ts` -> No such file or directory. Đây là artifact tương lai gated trên M2-OQ3; việc thiếu **không phải** hồi quy. D2 và C2 viết sau khi M2-OQ3 chốt, và hợp đồng phủ định phải rút ra từ hướng M2 chọn: id có prefix bị id trần từ chối (hướng 1), hoặc fallback map chấp nhận id chưa đăng ký lúc render (hướng 2). `packages/tui/src/status-line/index.ts` chỉ export component/metrics/presets/segments/separators/types. |
+| A3 (neo dòng) / s2 | Neo: `agent-transcript-viewer.ts:469`, `copy-selector.ts:212`, `plan-review-overlay.ts:581`, `rewind-selector.ts:232`, `git-tui.ts:693`, `raw-sse.ts:167`, `log-viewer.ts:638`, `usage-dashboard.ts:753`, và sáu site handleWheel ở `mouse.ts:74`, `agent-hub.ts:1244`, `session-selector.ts:586`, `oauth-selector.ts:407`, `extension-list.ts:597`, `select-list.ts:229`, `settings-list.ts:239`. | **STALE — 13/15 neo sai**; chỉ `mouse.ts:74` và `extension-list.ts:597` đúng | Thật: `agent-transcript-viewer.ts:470`, `copy-selector.ts:214`, `plan-review-overlay.ts:580`, `rewind-selector.ts:245`, `git-tui.ts:697`, `raw-sse.ts:168`, `log-viewer.ts:639`, `usage-dashboard.ts:759`, `sidebar.ts:896-897`; `agent-hub.ts:1247`, `session-selector.ts:588`, `settings-list.ts:241`. Đếm vẫn đúng (7 ×3 + 1 ×2 + 1 delta*3 riêng = 9) — chỉ số dòng đã dời. `grep -rn 'wheel \* 3' packages/tui/src --include='*.ts'` -> 7 hit tại 470/580/245/214/697/168/639; `'wheel \* 2'` -> 1 hit tại `usage-dashboard.ts:759`; `grep -rn 'handleWheel'` -> sáu bản cài tại `oauth-selector.ts:407`, `session-selector.ts:588`, `extension-list.ts:597`, `sidebar.ts:896`, `agent-hub.ts:1247`, `select-list.ts:229`, `settings-list.ts:241` |
+| A3 (`routeSelectListMouse`) / s2 | `routeSelectListMouse` 'truyền timestamp của sự kiện xuống' sau khi `SelectListMouseTarget.handleWheel` nhận tham số thời gian. | **WRONG — sự kiện không có timestamp** | `SgrMouseEvent` (`mouse.ts:12`) có sáu trường, không có trường thời gian; `parseSgrMouse(data)` không nhận clock; `routeSgrMouseInput(data, handler)` không nhận clock. A3 phải **thêm clock vào đường decode** trước khi cái gì được chuyển xuống. Đây là việc thật mà plan không ngân sách, và nó làm hỏng cách nói 'chỉ thêm một tham số tuỳ chọn'. Đọc trọn `mouse.ts` (110 dòng): `:12` mở interface, đóng `:32`; `:39` `parseSgrMouse`; `:61` `routeSgrMouseInput`; `:87` `target.handleWheel(event.wheel);` |
+| A3 (tham số tuỳ chọn) / s2 | Thêm tham số thời gian giữ được interface cũ qua tham số mặc định tuỳ chọn, 'nên không cần sửa sáu file cùng lúc'. | **INCOMPLETE — sáu bản cài không phải toàn bộ nơi gọi** | Có năm nơi chuyển tiếp mà plan không liệt kê; mỗi cái vẫn chỉ truyền `event.wheel` nên vẫn giữ hành vi không tăng tốc — tức bất nhất **giữa các overlay**, không phải tương thích: `oauth-selector.ts:422` (`this.handleWheel(event.wheel)`), `session-selector.ts:1134`, `settings-selector.ts:689` (-> `handleWheelAt` tại `settings-list.ts:249`, gọi tiếp `handleWheel` ở `:254`), `extension-dashboard.ts:282`, `git-tui.ts:695`. `routeSelectListMouseWithTopBorder` (`chrome/select-list-mouse-routing.ts:4-11`) là người chuyển tiếp thứ sáu, truyền cả event nên chỉ an toàn vì chính event mang theo thời gian. `grep -rn 'handleWheel' packages/tui/src --include='*.ts'` -> 16 hit: 7 khai báo, 9 nơi gọi; danh sách sáu của plan chỉ phủ khai báo. |
+| A3 (`mouse.test.ts`) / s2 | Mở rộng `mouse.test.ts` cho phần wiring. | **UNDERSTATED — hai assertion sẵn có vỡ ngay** | `expect(parseSgrMouse("\x1b[<0;5;9M")).toEqual({...sáu trường...})` ở `mouse.test.ts:22-32` là assertion bằng trên **cả** event, và `const baseEvent: SgrMouseEvent` ở `:126-134` là literal phải thỏa interface. Thêm một trường bắt buộc sẽ phá cả hai. Câu 'mở rộng file này' của plan không nói tới việc sửa chúng. Đọc trọn `mouse.test.ts` (140 dòng); `bun test` -> 13 pass, 0 fail, 38 lời gọi `expect()`. |
+| A7 (hàng notice) / s2 | Hàng notice có key của A7 là 'một dòng composer bình thường đi qua chrome path sẵn có', và `coding-agent` đã drop nội dung ở `interactive-mode.ts:3181`. | **WRONG — chrome composer không có hàng component, và neo trỏ sang code không liên quan** | Chrome trên của composer là **chuỗi pre-render** do status line sở hữu: `syncComposerShape` (`interactive-mode.ts:3050-3071`) cài `this.editor.setTopBorderProvider(w => this.statusLine.getTopBorder(w))` (hoặc `getBandTopBorder` / `getStandaloneTopBorder`), và `EditorTopBorder` (`composer/types.ts:33-40`) là `{ content: string; width: number; revision?: number }` — chuỗi, không phải chỗ cho Component. Kết luận (đừng gắn vào `registerStatusLineSegment` của M2) vẫn đúng, nhưng cơ chế không phải 'chrome path sẵn có'. Chỗ đúng là **Container riêng mới** trong mảng layout — cũng chính là cái giữ cho hợp đồng 'không nằm trong transcript' kiểm chứng được. Riêng `interactive-mode.ts:3181` nằm trong `syncRunningSubagentBadge` / `#composerHint`, không liên quan chrome. `sed -n '3040,3100p'`; `sed -n '30,45p' packages/tui/src/components/composer/types.ts`; `sed -n '3170,3195p'`; `grep -n 'setTopBorderProvider\|setTopBorder(' packages/tui/src/components/editor.ts` |
+| A7 (`hookWidgetContainerAbove`) / s2 | Dùng `hookWidgetContainerAbove` (hoặc một hàng trên composer tương đương) cho hàng notice. | **KHÔNG CÓ TRONG PLAN, và là cái bẫy nếu ai đoán** | `hookWidgetContainerAbove` **đúng** là container 'hàng trên composer' (dựng ở `interactive-mode.ts:1453-1454`, đặt vào layout ở `:1728`, khai trên context tại `types.ts:126`) — nhưng `ExtensionUIController.#renderHookWidgetContainer` gọi `container.clear()` ở `extension-ui-controller.ts:394` mỗi lần dựng lại hook widget, nên hàng notice đặt ở đó bị **xoá âm thầm** mỗi khi một hook widget đổi. Dùng container riêng mới. `sed -n '1435,1470p'` và `sed -n '1715,1735p'`; `sed -n '379,407p' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` cho `container.clear()` ở `:394` |
+| A7 (test compaction) / s2 | Test tích hợp compaction của A7 nhắm `#handleNotice` trong event-controller; notice compaction thuộc đường đó. | **STALE — notice compaction nằm ở ui-helpers** | `this.ctx.showStatus(\`Session compacted ${times}\`)` ở `ui-helpers.ts:1035`, trong đường render của session-context, không phải EventController. `#handleNotice` ở `event-controller.ts:1250-1259` (plan nói 1244-1251) và chỉ xử lý event `notice` là `{ type, level, message, source }`, không có key. Test 'chạy compaction thật' nên đi qua đường `ui-helpers.ts:1035`; thay đổi `#handleNotice` là một sửa nhỏ riêng — cho nhánh `info` một key, để error và warning trên renderer bền hiện có. `grep -n 'Session compacted' .../ui-helpers.ts` -> :1035; `sed -n '1250,1259p' event-controller.ts`; `sed -n '2802,2813p' packages/coding-agent/src/session/agent-session.ts` cho `emitNotice` |
+| D3 (mức độ khó) / s2 | Khó lõi của D3 là chứng minh một marker neo theo chỉ số message sống sót qua reflow ở ba độ rộng giữa lúc cuộn; công việc là 'neo theo chỉ số, neo lại theo delta chiều cao, và chrome cao cố định'. | **OVERSTATED — cơ chế neo đã có và chạy** | `ChatTranscriptBuilder.rowForEntry(entryId)` (`chat-transcript-builder.ts:138-144`) tra id entry → hàng logic; viewer đã dựng `ScrollRangeAnchor` từ đó ở `agent-transcript-viewer.ts:597-608`; `ScrollView` đã có `revealRange` (`scroll-view.ts:292`), `hasRevealedRange` (`:284`), `logicalRowAt` (`:243`), `localRowFor` (`:252`); và `getScrollOffset()` đã là offset theo hàng logic chứ không phải pixel. Viewer dùng hết những thứ đó cho entry anchor. D3 vì thế là việc render + phím — theo dõi id entry chưa đọc đầu tiên, vẽ divider cao cố định và pill đếm tại hàng của nó, thêm một phím để reveal entry mới nhất — chứ không phải hệ thống neo mới. Neo lại qua reflow không cần code mới vì `revealRange` suy ra lại viewport từ anchor mỗi lần render. Hạ D3 từ M/2 ngày xuống khoảng S/1 ngày; test độ rộng trở thành chốt hồi quy cho máy có sẵn thay vì rủi ro chính. |
+| D3 (neo vùng) / s2 | D3 sửa `packages/tui/src/chat/transcript-browser.ts:39-48`. | **MISLEADING ANCHOR — đúng file, sai vùng** | 39-48 là interface `TranscriptBrowserOptions` — đúng chỗ để **thêm** option mới, nhưng không phải nơi state cuộn nằm. State là `#scrollView` (khai `transcript-browser.ts:108`, dựng `:118`); mọi hành vi offset/anchor đều ủy quyền cho nó. Ai đọc `:39-48` với kỳ vọng thấy máy cuộn sẽ không thấy gì. `sed -n '30,60p'` cho `TranscriptBrowserOptions` ở `:38-49` với `getHeight`, `frame`, `minimumBodyRows`, `followBottom`; `grep -n '#scrollView'` -> :108, :118, :124, :130, :130, :176-261 |
+| A3 (setting tốc độ cuộn) / s2 | Override tăng tốc của A3 là một setting có tên, người dùng tới được; 'là một setting có tên, không phải một ý tưởng'. | **INCOMPLETE — đúng như đặc tả thì không tới được từ panel settings** | `registry.ts:41-44` nói `UiNumber` không có `options` thì **không có** đại diện UI — 'intentional hide'. Nên `ui.mouseWheelSpeedMultiplier` với `type: "number"` không options sẽ không hiện ở panel, chỉ nằm trong file config. Yêu cầu validate thì có sẵn và dễ: `validate?: (raw: unknown) => void` ở `registry.ts:112`, được phép ném (`:666`, `:680`). Hướng đẩy setting cũng đã chốt: coding-agent phụ thuộc `@oh-my-pi/pi-tui` và ngược lại không, nên khuôn mẫu được cho phép là `register` + `effect(cfg, setWheelSpeedMultiplier)` y hệt `cfgTuiMaxInlineImageColumns` ở `settings.ts:334-341`. `sed -n '30,60p' packages/coding-agent/src/config/registry.ts`; `grep -n 'validate'` -> :112, :666, :680; `sed -n '330,341p' packages/coding-agent/src/modes/settings.ts` |
+| Sóng 2 (môi trường test) / s2 | `bun test` hiện báo 0 pass kèm 'Failed to load pi_natives native addon for darwin-arm64' và phải coi là bị chặn. | **FALSE for this wave's tests** | `bun test packages/tui/test/mouse.test.ts` chạy được ngay: 13 pass, 0 fail, 38 lời gọi `expect()`, 26ms. Lỗi addon chỉ áp cho suite nạp nó một cách gián tiếp, và nó là **tiền đề môi trường** — build một lần (`brew install ninja` + `bun --cwd=packages/natives run build`, exit 0) là sóng này kiểm chứng được hết. `bun run check:ts` xanh hoàn toàn trên cây chưa sửa (oxlint + oxfmt trên 5445 file, cả 16 check kiểu đều Done). Output: '13 pass / 0 fail / Ran 13 tests across 1 file. [26.00ms]'; 'All matched files use the correct format. Finished in 575ms on 5445 files'. |
+| Lệnh kiểm chứng / s2 | Lệnh kiểm chứng của plan là `bun check && bun test ...`. | **WRONG SCRIPT for this repo** | `bun check` chạy cả `check:ts` lẫn `check:rs` (Rust). Dùng `bun run check:ts` — chỉ TypeScript, không cần toolchain Rust, và đúng là thứ kiểm chứng sóng này. Root package.json: `"check": "bun run --parallel check:ts check:rs"`, `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types"`. AGENTS.md cũng nói không dùng tsc/npx tsc — nhưng với sóng chỉ-TypeScript thì `check:ts` là bản thu hẹp đúng của câu đó. |
+| Các neo đã xác nhận của sóng 2 / s2 | A3: '8 site hằng + 1 site delta*3 riêng'; D3: 'overlay đã có phím pager ở :515-534'; A7: `composer/types.ts:57`, `:93`, `band.ts:14`, `message-notice.ts:37`; A7: `ui-helpers.ts:141-160`. | **CORRECT — đúng tuyệt đối, không cần sửa** | Ghi lại để người thực thi biết neo nào đáng tin: số site (7 ×3 + 1 ×2 + 1 riêng = 9) đúng; `#handleScroll` ở `:517-534` (plan trỏ `:515` vào doc comment, vô hại); `composer/types.ts:57` là `topBorder?: EditorTopBorder;`, `:93` là `readonly statusAttachment:`; `composer/band.ts:14` là `statusAttachment: "top-band"`; `message-notice.ts:37` là `export class MessageNoticeComponent extends Container {`; bất biến doc ở `docs/tui-core-renderer.md:107` và `:174`. `ui-helpers.ts` là 143-164 không phải 141-160. `ShowStatusOptions` **không tồn tại** (`git grep` chỉ trả về plan); `registerStatusLineSegment` không tồn tại; 332 dòng gọi `showStatus(` và fixture 12 KB `createInteractiveModeContext` tại `test/helpers/interactive-mode-context.ts:192` đều đúng như plan. `git grep -c 'showStatus(' -- 'packages/**/*.ts'` cộng lại = 332 trên 19 file; `git grep ShowStatusOptions` và `git grep registerStatusLineSegment` không có hit trong source. |
+| Nhãn milestone (sóng 3) / s3 | Văn bản harness nói 'Milestone 2 occupies lines 7042 to 7692' của `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`, và s3 là work item của milestone 2. | **WRONG — khoảng dòng đúng, nhãn milestone sai** | Dòng 7042 là `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, không phải milestone 2. Dòng 7347 là `### Sóng 3 — Cặp giao thức, nguyên tử` — sóng 3 của M3. Chính output path của harness (`.lavish-wip/m3-specs/`) cũng nghiêng về M3. Coi đây là item M3; không gì trong spec phụ thuộc M2. `sed -n '7042p'`; `grep -n 'Sóng 3'` -> 7347. |
+| HEAD (sóng 3) / s3 | Văn bản harness nói repo ở 'git HEAD 5873776'. | **WRONG.** | HEAD là `808b365`, trên nhánh `milestone-1`. Không neo nào trong plan phụ thuộc SHA này, nhưng SHA cũ trong bàn giao mời tới một `git checkout` sai. `git log --oneline -1` -> `808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan`; `git rev-parse HEAD` -> `808b365409fa36719c38319a041c0e612b4e702b` |
+| D1 (điểm tiêm manager→UI) / s3 | Plan §2.2 / sóng 3 D1: 'Phải thiết kế điểm tiêm manager→UI, ví dụ một callback request tuỳ chọn do mỗi mode cấp lúc khởi tạo manager, theo đúng cách `ExtensionUIContext` được tiêm hôm nay.' | **HALF WRONG — ẩn dụ ExtensionUIContext sai; thiết kế callback thì đúng, và đã có sẵn** | Repo đã có đúng đường may mà plan nói phải thiết kế: `MCPManager.setAuthHandler(handler: MCPAuthHandler \| undefined)` ở `manager.ts:525-527` — một callback manager→UI tuỳ chọn một slot, được interactive mode cài ở `interactive-mode.ts:1357` rồi ủy quyền vào controller. `setElicitationHandler` là thành viên thứ ba của cùng họ — thêm cạnh `setAuthHandler`, **đừng** dựng cơ chế tiêm mới. Nửa `ExtensionUIContext` sai vì hai lý do: interface đó không có method `form`, và nó chạy session→mode (mỗi mode dựng rồi đẩy vào qua `setToolUIContext` tại `sdk.ts:3975`), không phải manager→UI. Thêm `form()` vào đó là thay đổi API extension công khai, theo lập luận O2 của chính plan thuộc địa M2. `sed -n '525,527p' packages/coding-agent/src/mcp/manager.ts`; `sed -n '1356,1359p' .../interactive-mode.ts`; `grep -n 'askDialog' .../extensions/types.ts` chỉ trả về `askDialog` tuỳ chọn ở 252 — không có method `form` nào trên `ExtensionUIContext` |
+| A2 (kích thước) / s3 | Sóng 3 của plan: 'A2 ... Nửa A2 chỉ vài dòng'. | **UNDERSTATED — hai file, một trong đó là file types** | Literal `capabilities` trong `client.ts` ba dòng, nhưng `MCPClientCapabilities` ở `types.ts:196-200` có đúng ba thành viên (roots, sampling, experimental) và không có `elicitation`, nên phải mở rộng type. Và vì không có phụ thuộc `@modelcontextprotocol/sdk` ở bất kỳ đâu trong workspace, các type request/result/outcome phải tự viết theo spec 2025-11-25 — không có SDK type nào để import. Vẫn nhỏ, chỉ là không phải một file. `sed -n '196,200p' packages/coding-agent/src/mcp/types.ts`; `grep -rn 'modelcontextprotocol' package.json packages/*/package.json` -> 0 hit; `sed -n '175p'` -> `MCP_PROTOCOL_VERSION = "2025-11-25"` |
+| D1 (dùng lại ACP) / s3 | Sóng 3 D1 của plan: 'ACP dùng lại cầu nối chiều ra sẵn có'. | **WRONG as written — dùng lại sẽ phá hỏng chính hợp đồng item này sinh ra để thiết lập** | `elicitFormFromAcpClient` (`acp-agent.ts:314`) đã gộp decline và cancel thành `undefined` tại dòng 375. Nó là tham chiếu vòng đời xuất sắc (đua abort, timeout, `onTimeout`, dọn listener, chặn late-response) nhưng kiểu trả về là **mất thông tin**, trong khi gate của chính plan đòi ba kết quả wire phân biệt. Thêm một hàm anh em giữ action; **đừng** refactor hàm hiện có, ba nơi gọi khác đang phụ thuộc vào nó. `sed -n '375p'` là `if (!isAcceptedElicitation(response) \|\| !response.content) {` rồi `return undefined;`; helper thu hẹp ở dòng 402; `CreateElicitationResponse` trong `packages/utils/src/acp/protocol.ts` đã mang `action: "accept" \| "decline" \| "cancel"` |
+| D1 (manager không mở được form) / s3 | Plan §2.2: 'manager không có quyền mở form ... Chỗ cần trả lời JSON-RPC nằm trong một class không thể với tới UI.' | **VERIFIED — mang nguyên** | Xác nhận tuyệt đối. Tham chiếu `pi-tui` duy nhất trong `manager.ts` là dòng 46, `import type { MCPToolDetails } from "@oh-my-pi/pi-tui/tools/mcp"` — type-only. Manager thật sự không thể mở form hôm nay, đó là lý do cần một setter. `grep -n 'pi-tui' packages/coding-agent/src/mcp/manager.ts` trả về đúng một dòng, 46. |
+| Neo sóng 3 / s3 | Neo của sóng 3: `client.ts:100-104` và `manager.ts:1032-1040`. | **VERIFIED — cả hai chính xác, không trôi** | `client.ts` 100-104 là literal `MCPInitializeParams` với `capabilities` ở 101-103. `manager.ts` 1032-1040 là `#handleServerRequest` trọn vẹn, `throw` -32601 ở 1039. Ngoài ra xác nhận cả hai site `onRequest` (`manager.ts:741-742` cho kết nối đầu, 1548-1549 cho reconnect) đã ủy quyền cho method này nên không phải sửa, và `toJsonRpcError` (`types.ts:500-512`) cùng try/catch riêng của StdioTransport (`stdio.ts:718-729`) đã mang lỗi -32601 ném đi tới server — không cần sửa transport. `sed -n '100,104p'`, `'1032,1040p'`, `'735,750p'`, `'1540,1560p'`, `'500,512p'`, `'718,729p'`. |
+| Vị trí test MCP / s3 | Vị trí test của sóng 3: MỚI `packages/coding-agent/test/mcp/elicitation-capability.test.ts` và `.../elicitation-form.test.ts`. | **LOCATION FINE, thêm cảnh báo khuôn mẫu** | Thư mục `packages/coding-agent/test/mcp/` tồn tại và là chỗ đúng. Nhưng **đừng** sao chép `packages/coding-agent/test/mcp-roots-list.test.ts` — đó là test đặc tả, tự cài lại shape cục bộ và nói rõ trong chính comment của nó: 'Does not exercise the actual transport methods — changes to #handleMessage won't fail this test. Tests the contract, not the wiring.' Khuôn mẫu đúng là `packages/coding-agent/test/mcp-manager-notification-listeners.test.ts` cộng `packages/coding-agent/test/fixtures/notifications-mcp.ts`: một stdio server độc lập chạy được, spawn với `{ type: 'stdio', command: process.execPath, args: [FIXTURE_PATH] }` đối với MCPManager thật trong cwd tạm. Comment tự giải thích nằm ở đầu mỗi describe; cấu hình spawn là `function serverConfig(): MCPServerConfig { return { type: "stdio", command: BUN_EXEC, args: [FIXTURE_PATH] }; }` ở dòng 17-19 của mcp-manager-notification-listeners.test.ts. |
+| Harness kiểm chứng (sóng 3) / s3 | Harness: 'Verify with `bun run check:ts` (which does not need the addon) and treat `bun test` as blocked until the addon is built.' | **VERIFIED — cả hai nửa tái lập được** | `bun run check:ts` xanh tại HEAD 808b365 (oxlint + oxfmt + tsgo, coding-agent trong 11.00s). Trên máy sạch chưa build, `bun test packages/coding-agent/test/mcp/request-id.test.ts` báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`, thiếu `packages/natives/native/pi_natives.darwin-arm64.node`. Mở khoá bằng `brew install ninja` + `bun --cwd=packages/natives run build` (exit 0) — đây là một bước build còn thiếu, không phải hạn chế của máy. |
+| D1 (xếp hàng dialog) / s3 | Plan không nói liệu form elicitation có phải xếp hàng sau các dialog khác không. | **OMISSION — một bug đang chờ xảy ra** | MCP server có thể elicit bất cứ lúc nào, kể cả khi một permission prompt hay một ask dialog đã nắm `ctx.editorContainer`. Presenter tương tác **bắt buộc** phải dựng trên `ExtensionUiController.#presentDialog` (dòng 1281), vì nó đi qua cổng `#dialogActive` / `#dialogQueue` (dòng 92-93). Trình bày form thẳng vào `editorContainer` — thứ dễ viết nhất — làm hai bề mặt giành focus, và thua là thứ người dùng đang trả lời. `sed -n '1281,1336p'` cho nhánh queue của `#presentDialog` (`if (this.#dialogActive) { this.#dialogQueue.push(startPresentation); } else { startPresentation(); }`); `sed -n '92,93p'` cho hai trường. |
+| A4 (cờ `secret`) / s4 | `secret?: boolean` ở `plugin-settings.ts:30` là thứ cần thêm cho A4. | **WRONG — nó đã có** | Cờ đã có ở dòng 31, và cờ phía manifest đã có ở `packages/coding-agent/src/extensibility/plugins/types.ts:63` (`PluginSettingBase`, ghi chú 'If true, mask value in UI and logs'). Không có việc schema nào trong A4-display. Khiếm khuyết hẹp hơn nhiều: **đúng một nhánh** không tôn trọng cờ. `awk NR>=25&&NR<=35 packages/tui/src/overlays/plugin-settings.ts` -> 31\| ` secret?: boolean;`; `git grep -n secret -- .../plugins/types.ts` -> 63\| ` secret?: boolean;` |
+| A4 (neo enum) / s4 | Bug secret của enum ở `plugin-settings.ts:166`. | **OFF BY ONE** | Dòng 166 là `description: schema.description \|\| \`Configure ${key}\``. Lần đọc không mask là dòng 167: `currentValue: String(currentValue ?? schema.default ?? "")`. Chỉ người kỹ thuật vào 167. `awk NR>=160&&NR<=172 ...` -> 166\| description: …  167\| currentValue: String(currentValue ?? schema.default ?? ""), |
+| A4 (nhánh string) / s4 | `plugin-settings.ts:187` là nhánh string đã mask đúng — đóng băng nó. | **MISLEADING ANCHOR — bất biến nằm chỗ khác** | Dòng 187 lại là một dòng `description:`. Việc mask xảy ra đúng một lần, ở dòng 152: `const displayValue = schema.secret && currentValue ? "••••••••" : String(currentValue ?? "(not set)")`, và được tiêu thụ ở dòng 188 (`currentValue: displayValue`). Bất biến cần đóng băng là 151-152, không phải 187. `git grep -n secret -- packages/tui/src/overlays/plugin-settings.ts` -> 31, 152, 667, 668; chỉ 152 mask; 188 và 167 là hai nơi tiêu thụ, và chỉ 188 dùng mask. |
+| A4 (`empty: "cancel"`) / s4 | Chính sách `empty: "cancel"` ở `plugin-settings.ts:662`. | **OFF BY 7** | Nó ở dòng 669, bên trong `createConfigInputPanel` (:650-…). Dòng 662 là lần dựng `TextFormField`. Hãy ghép nó với dòng 668 (`initialValue: !schema.secret ? currentValue : undefined`) — **hai dòng cùng nhau**, chứ không phải `empty` một mình, mới chặn một lần lưu rỗng xoá mất secret đã lưu. `awk NR>=655&&NR<=670 ...` -> 667\| secret: schema.secret,  668\| initialValue: !schema.secret ? currentValue : undefined,  669\| empty: "cancel", |
+| A4-PERSIST / s4 | Repo không có secret store nào để dựa vào, nên A4-PERSIST phải bịa ra chỗ để đặt giá trị. | **WRONG — có store, và grep của plan bỏ sót** | Có: `~/.omp/agent/secrets.yml` (global) và `<cwd>/.omp/secrets.yml` (project), nạp bởi `packages/coding-agent/src/secrets/index.ts:163-168`, dựa trên `SecretObfuscator` và một khoá mỗi lần cài ở `~/.omp/agent/secret-placeholder.key` (secrets/index.ts:16-53, ghi mode 0o600 kèm chốt race khi tạo). Tài liệu ở `docs/secrets.md:35-42`. Plan grep `keytar\|keychain\|safeStorage\|encrypt` rồi kết luận không có — nhưng store là file YAML chứ không phải API keyring nên grep chỉ trả về hit không liên quan. Câu hỏi của A4-PERSIST vì thế không phải 'đặt ở đâu' mà 'chuyển sang secrets.yml, hay cho registry của Settings một tầng đánh dấu secret'. Cảnh báo plan không nêu: secrets.yml là **plaintext trên đĩa** và là hệ thống che số của MODEL, không phải vault, nên bản thân nó không làm cho một API token của plugin an toàn khi lưu trữ. Xem open_questions #2 và #3. `awk NR>=160&&NR<=170 packages/coding-agent/src/secrets/index.ts` -> 167\| `const projectPath = path.join(cwd, ".omp", "secrets.yml");`  168\| `const globalPath = path.join(agentDir, "secrets.yml");` — và các dòng bảng `docs/secrets.md:41-42` 'Global \| ~/.omp/agent/secrets.yml' / 'Project \| <cwd>/.omp/secrets.yml'. |
+| A4 (bản chất fix) / s4 | Mask `currentValue` của enum lúc build thì hết rò. | **INCOMPLETE — fix phải mang tính cấu trúc, và plan không thấy vì sao** | `SettingItem.currentValue` làm hai việc: nó được vẽ **và** được round-trip. `settings-list.ts:797` gán lại `item.currentValue = selectedValue` trong submenu done-callback, nên mask lúc build sẽ vẽ lại plaintext ngay khi người dùng chọn giá trị. Nó cũng phá preselection, vì `createConfigEnumPanel` (:624-647) đưa thẳng `currentValue` vào `SelectFormField({ items: values.map(...), currentValue })` — một giá trị đã mask không khớp item nào. Fix đúng là tách bản vẽ ra: thêm `displayValue?: string` vào `SettingItem` (`settings-list.ts:24-43`), đọc `item.displayValue ?? item.currentValue` tại nơi vẽ (:515) và trong corpus tìm kiếm (:97), và để :795 / :797 / :804 / :318 tiếp tục đọc/ghi giá trị thật. Đây là phát hiện duy nhất của sóng mà plan bỏ hẳn, và nó là khác biệt giữa một fix được ship và một test xanh. `settings-list.ts` -> 34\| `currentValue: string;`  97\| `let text = \`${item.label} ${item.id} ${item.currentValue}\`;`  515\| `const valuePlain = truncateToWidth(String(item.currentValue ?? ""), …`  795\| `this.#submenuComponent = item.submenu(item.currentValue, (selectedValue?: string) => {`  797\| `item.currentValue = selectedValue;`  804\| `const currentIndex = item.values.indexOf(item.currentValue);` — cộng `plugin-settings.ts:633-638` (createConfigEnumPanel → `SelectFormField currentValue`). |
+| B2 (sanitize) / s4 | B2: 'no core change needed'; sanitizer là ràng buộc duy nhất. | **CORRECT về nội dung, nhưng 2 trong 3 assertion đã xanh** | Lỗ hổng có thật và đã xác nhận: `setWorkingMessage` (`interactive-mode.ts:6645-6660`) đưa thẳng chuỗi của plugin cho `loadingAnimation.setMessage`, không `replaceTabs`, không cắt. Nhưng hai kiểm tra còn lại của plan đã xanh hôm nay — `undefined` khôi phục mặc định ở :6646-6651, và dedupe khi lặp lại cùng chuỗi giữ được vì `loader.ts:145-152` chặn `if (message === this.message) return;`. Vẫn giữ cả hai assertion, nhưng biết trước chỉ assertion tab/độ rộng là đỏ trước khi fix, và dedupe hiện phụ thuộc một guard nằm ba khung dưới ranh giới plugin. `setWorkingMessage` ở :6645, không phải :424 mà plan gán cho `DEFAULT_WORKING_MESSAGE` (hằng đó ở :427). `awk NR>=6640&&NR<=6680 ...` -> 6645\| `setWorkingMessage(message?: string): void {`  6647\| `this.#pendingWorkingMessage = undefined;`  6649\| `this.loadingAnimation.setMessage(DEFAULT_WORKING_MESSAGE);`  6655\| `this.loadingAnimation.setMessage(message);`  6659\| `this.#pendingWorkingMessage = message;`  427\| `const DEFAULT_WORKING_MESSAGE = "Working…";` — và `packages/tui/src/components/loader.ts:145-152`. |
+| B3 (tap ở controller) / s4 | `extension-ui-controller.ts:120` là tap `setWorkingMessage`, `:119` là `setStatus`, `:586` là nơi có `requestRender`. | **ALL THREE OFF** | `:120` là `const uiContext: ExtensionUIContext = {` (object literal mở ở đó). Wiring `setWorkingMessage` ở `:129`, `setStatus` ở `:128`. `requestRender` không ở `:586` — `:586` đóng `showToolError`; lời gọi thật là `this.ctx.ui.requestRender()` ở `:593` bên trong `setHookStatus` (:591-594). Cảnh báo của plan rằng `requestRender` nằm ở controller chứ không ở StatusLineComponent là **đúng** và chính là cái bẫy làm treo một test B3; chỉ cần trỏ `:593`. `awk NR>=110&&NR<=130` -> 120\| `const uiContext: ExtensionUIContext = {`  128\| `setStatus: (key, text) => this.setHookStatus(key, text),`  129\| `setWorkingMessage: message => this.ctx.setWorkingMessage(message),` ;  `awk NR>=575&&NR<=595` -> 586\| `}`  591\| `setHookStatus(key: string, text: string \| undefined): void {`  593\| `this.ctx.ui.requestRender();` |
+| Sóng 4 (vị trí interface) / s4 | `ExtensionUIContext` nằm ở `extensions/types.ts:100-340`. | **WRONG RANGE** | `export interface ExtensionUIContext` ở dòng 235, interface đóng ở dòng 350. Dòng 96-130 là khối import type-only phía trên. Một range 100-340 chỉ người kỹ thuật vào imports và cắt mất phần đuôi của interface. `git grep -n 'interface ExtensionUIContext' -- packages/coding-agent/src` -> `.../extensions/types.ts:235`;  `awk NR>=330&&NR<=350` -> 350\| `}` (dấu đóng của interface). |
+| Neo `legacy-pi-compat.ts` / s4 | Sửa neo dossier: `legacy-pi-compat.ts:2657` là `resolveLegacyPiSpecifier`, `:2736` là filter `onResolve`, remap thật là `:2742`. | **VERIFIED CORRECT — mang nguyên** | Cả ba xác nhận tại HEAD. Cũng xác nhận hệ quả thực tế plan rút ra: `USE_BUNDLED_PI_MODULES` ở `:20` là `isCompiledBinary() \|\| Boolean(process.env.PI_BUNDLED)`, false dưới `bun test`, nên nhánh source namespace file ở `:2736` là nhánh duy nhất chạy và remap virtual-namespace ở `:2742` **chết** trong test. Một điểm nhỏ lân cận: `:2752-2754` của plan cho remap bundled-host trỏ vào phần đuôi của `onResolve`; `onLoad` nâng đỡ nó ở `:2753-2756`. `awk NR>=2728&&NR<=2760` -> 2736\| `build.onResolve({ filter: LEGACY_PI_SPECIFIER_FILTER, namespace: "file" }, resolveLegacyPiSpecifier);`  2742\| `resolveBundledVirtualSpecifier(args.path, BUNDLED_HOST_NAMESPACE),`  2753\| `build.onLoad({ filter: /.*/, namespace: BUNDLED_HOST_NAMESPACE }, …;`  `awk NR>=15&&NR<=25` -> 20\| `const USE_BUNDLED_PI_MODULES = isCompiledBinary() \|\| Boolean(process.env.PI_BUNDLED);`  `awk NR>=2650&&NR<=2665` -> 2657\| `function resolveLegacyPiSpecifier(` |
+| Export map của tui / s4 | Export map `./*` -> `./src/*.ts` nằm ở `packages/tui/package.json:93-96`. | **OFF BY ONE** | Nó ở `:94-97`. Tương tự, `./tools` ở `:86-89` và `./status-line` ở `:90-93` — hai cái sau là import của fixture B1 phụ thuộc. `awk NR>=85&&NR<=105 packages/tui/package.json` -> 94\| `"./*": {`  95\| `"types": "./src/*.ts",`  96\| `"import": "./src/*.ts"`  97\| `},` |
+| B3 (ràng buộc) / s4 | B3 bị chặn vì id `status` vắng mặt khỏi preset. | **CORRECT nhưng sắc hơn phát biểu** | Cả hai nửa đúng và kết luận (B3 không bị C1 chặn) đúng. Nói rõ hơn: id `status` **có** trong union khép kín ở `packages/tui/src/status-line/schema.ts:4`, và vắng trong danh sách left/right segment của mọi preset trong `presets.ts` (:5, :16, :26, :36, :59). Nên `setHookStatus` đã nối dây đầy đủ trong code (`component.ts:959-970`) và chỉ đơn giản là không tới được mặc định. `component.ts:963` đã có guard bằng (`if (this.#hookStatuses.get(key) === text) return;`) và `:969` vô hiệu render cache. Cũng xác nhận: `status-line/index.ts` là barrel 6 dòng, không có `register*` nào, nên seam đăng ký quả thực sự không phải của M2. `awk NR<=30 packages/tui/src/status-line/schema.ts` -> 4\| `"status",` (27 id, 2-30);  `git grep -c '"status"' -- .../presets.ts` -> 0;  `awk NR>=955&&NR<=970 .../component.ts` -> 959\| `setHookStatus(`  963\| `if (this.#hookStatuses.get(key) === text) return;`  969\| `this.#invalidateStatusLineRenderCache();` |
+| B3 (hint sites) / s4 | `keybinding-hints.ts:29` và `:42` là hai site hint mà B3 chạm tới. | **BOTH POINT AT JSDoc, NOT CODE** | Dòng 29 nằm trong doc comment của `boundKeys`; dòng 42 nằm trong doc comment của `appKey`. Bản thân hàm là `boundKeys` ở :33-36 và `appKey` ở :44-47. Người kỹ thuật sửa 'dòng 29' sẽ sửa một comment và nhận một no-op vẫn typecheck. `awk '{printf "%d\| %s\n", NR, $0}' packages/tui/src/chrome/keybinding-hints.ts` -> 29\| `* Keys bound to \`action\`, or \`fallback\` …`  33\| `export function boundKeys(`  42\| `/** Primary key bound to an app action …`  44\| `export function appKey(` |
+| Sóng 4 (định khung theo sóng) / s4 | Status-line không phải seam của M2, nên M3-C1 đã bị gỡ khỏi M3 và sóng 4 gated trên M2. | **VERIFIED — cách đóng khung theo sóng là đúng** | Xác nhận độc lập. Bề mặt status-line là union khép kín 27 id (`schema.ts:2-30`), barrel không có `register*`, và `setStatus` đã nối dây hết (extension-ui-controller.ts:128 -> :591-594 -> component.ts:959-970). Điều duy nhất phải mang sang như đính chính còn sống thay vì sự thật đã chốt: **A4 không bị chặn đồng loạt bởi M2**. Nửa hiển thị của nó không bị chặn và là cách gỡ chặn rẻ nhất sóng này. Chỉ đọc tiêu đề sóng rồi hoãn cả bốn item sẽ tốn một ngày chờ không cần thiết — đó là lý do plan đánh dấu A4 là ngoại lệ. `awk NR<=35 .../schema.ts` -> 2\| `export const STATUS_LINE_SEGMENT_IDS = [ …`  30\| `] as const;`  ;  `cat packages/tui/src/status-line/index.ts` -> 6 star re-export, không `register*`;  `git grep -n setHookStatus -- packages/tui/src` -> `.../status-line/component.ts:959` |
+| S5 (tiền đề trust) / s5 | Tiền đề trust nằm ở `packages/coding-agent/src/extensibility/extensions/types.ts:462-470`, và 'xem thêm `:528-532`'. | **WRONG — cũ ~25 và ~20 dòng; cả hai range rơi vào method không liên quan** | Lập luận 'không có cổng trust theo thư mục' nằm ở `types.ts:487-494` ('OMP performs no project-trust gating — project-level settings and extensions load unconditionally — so this always returns `true`') và comment bạn kèm dài hơn ở `types.ts:548-562`. Hai bản cài hard-code giá trị trả về là `runner.ts:1264` và `agent-session.ts:7406`, đều `isProjectTrusted: () => true`. **Nội dung** hoàn toàn đúng và tôi tái lập được; chỉ số dòng sai. `sed -n '483,500p'` và `'548,565p'`; `git grep -n isProjectTrusted -- packages/coding-agent/src` trả về đúng hai call site cộng hai khai báo ở :494 và :561. |
+| S5 (`registerStatusLineSegment`) / s5 | `registerStatusLineSegment` là seam của M2 và hai item của sóng này là những consumer đầu tiên, cả hai viết sau khi M2-OQ3 có câu trả lời. | **SUBSTANTIVELY WRONG — seam có tồn tại và các item không tiêu thụ nó** | `git grep -n registerStatusLineSegment -- packages/` trả về **0 hit** toàn repo, nên seam quả thực sự chưa dựng (plan đúng khi đã gỡ M3-C1). Nhưng **không** C2 lẫn D2 chạm vào nó. C2 đi qua `ctx.ui.setStatus`, vốn **đã** nối dây trọn (types.ts:263 -> controller.ts:128 -> controller.ts:591-594 -> component.ts:958-971). D2 là một bổ sung vào union lõi. Điều M2-OQ3 thật sự quyết cho sóng này chỉ là **hợp đồng phủ định** — chuyện gì xảy ra với một id không ai đăng ký. Cứ viết item; **đừng** gate chúng sau seam. `git grep -c registerStatusLineSegment -- packages/` = 0 hit. `git grep -n setStatus -- packages/coding-agent/src` cho chuỗi sống kết thúc ở component.ts:958. |
+| S5 (dòng wiring) / s5 | `setStatus` nối dây ở `extension-ui-controller.ts:119`; `requestRender` ở `extension-ui-controller.ts:586`. | **WRONG số dòng; cảnh báo xung quanh thì ĐÚNG và đáng giữ** | Wiring ở `controller.ts:128` (`setStatus: (key, text) => this.setHookStatus(key, text)`), và `setHookStatus` trải `controller.ts:591-594` với `this.ctx.ui.requestRender()` ở `:593`. Cảnh báo của plan — `requestRender` nằm trên controller chứ **không** nằm trên `StatusLineComponent`, nên một test chỉ chạy component sẽ treo — là **đúng** và tôi đã xác minh. Thêm nữa controller nằm ở `src/modes/controllers/`, không phải dưới `extensibility/`. `sed -n '578,600p'`; `git grep -n requestRender -- .../extension-ui-controller.ts` cho 6 site, trong đó :593 là site của status line. |
+| D2 (ràng buộc M2) / s5 | D2 bị chặn trên M2-OQ3. | **OVERSTATED — nhiều nhất là chặn có điều kiện, và chỉ dưới một trong ba lựa chọn** | D2 sửa **union lõi**, và không extension nào đóng góp segment vào đó. Dưới lựa chọn 2 (Map của contributor) hoặc lựa chọn 3 (mode đọc ModeRegistry) union lõi không bị đụng và D2 làm được ngay hôm nay. Chỉ dưới lựa chọn 1 thì tập id lõi mới bị viết lại thành template literal có tiền tố `core:`, khiến id literal của D2 đổi. Vậy: cứ tiến hành D2 trừ khi OQ3 đã chốt là lựa chọn 1. Union chỉ là mảng `as const` phẳng ở `schema.ts:2-29` với 27 thành viên, không liên quan đường contributor của extension nào; không có seam `register*` để chặn. |
+| S5 (audit manifest) / s5 | Trường manifest `omp` được đọc ở `manager.ts:256`, với hai đường khác ở `:622` và `:845`. | **INCOMPLETE — cả ba đúng, có thêm một cái nữa** | 256, 622 và 845 đều thật và đều đọc `pkg.omp \|\| pkg.pi \|\| {...}`. Có thêm một chỗ ở `manager.ts:1084` (`const manifest: PluginManifest \| undefined = pluginPkg.omp \|\| pluginPkg.pi;`, lưu ý nó có thể undefined). Nếu người thực thi audit 'mọi nơi manifest được đọc', 1084 phải vào, nếu không audit sẽ thiếu. `git grep -n 'const manifest: PluginManifest' -- packages/coding-agent/src/extensibility/plugins/manager.ts` trả về 256, 622, 845, 1084. |
+| S5 (cờ CLI) / s5 | `--extension` ở `flag-tables.ts:216`; `--trusted-extension` ở `:218`. | **WRONG by one line each** | `--extension` ở `:215` và `:216` là alias `-e`. `--trusted-extension` ở `:217`, không phải `:218`. Ai viết script sửa theo số này sẽ chạm nhầm cờ. `sed -n '205,230p' flag-tables.ts`. |
+| S5 (`--trusted-extension`) / s5 | `--trusted-extension` đặt `options.disableExtensionDiscovery = true` tại `main.ts:1658-1659`. | **OFF BY ONE — nội dung đúng** | Hai lệnh gán nằm ở `main.ts:1659-1660`; `:1658` là dấu `});` đóng `.map()` ngay trên. Chính claim — rằng nó tắt discovery và thay bằng allowlist đường tuyệt đối, nên là công cụ cho harness chứ không phải cổng cho người dùng cuối — là đúng. `sed -n '1650,1665p' main.ts`. |
+| S5 (dispatch interface) / s5 | Dispatch của `ExtensionUIContext` ở `types.ts:264`; khai báo `setStatus` nằm ở neo đó. | **OFF BY ONE — :264 là dòng trống** | `setStatus(key, text)` được khai ở `types.ts:263`, bên trong interface `ExtensionUIContext` (vùng lân cận plan trích là `264-277` thì đúng). `sed -n '250,285p' extensions/types.ts`. |
+| S5 (đọc schema) / s5 | Overlay đọc schema settings tại `packages/tui/src/overlays/plugin-settings.ts:143`. | **OFF BY ONE** | Lệnh đọc là `const schemaSettings = plugin.manifest.settings;` ở `plugin-settings.ts:144`, với `return` sớm ở :145. Cùng file, xuống một dòng. `git grep -n schema -- packages/tui/src/overlays/plugin-settings.ts`. |
+| S5 (hướng phụ thuộc) / s5 | `packages/tui/package.json:39-48` không khai báo phụ thuộc coding-agent; hướng ngược lại ở `packages/coding-agent/package.json:545`. | **CORRECT về nội dung; lệch một dòng ở range của tui** | Khối `dependencies` của tui là :40-49. Nó liệt kê omptype, pi-agent-core, pi-ai, pi-catalog, pi-natives, pi-utils, pi-wire, snapcompact — không coding-agent, xác nhận quy tắc đặt test file. Hướng ngược lại đúng tuyệt đối: `@oh-my-pi/pi-tui` ở `coding-agent/package.json:545`. `grep -n '"@oh-my-pi/pi-tui"' packages/tui/package.json` (vắng) và `sed -n '540,550p'` trên manifest của coding-agent. |
+| S5 (HEAD) / s5 | HEAD là 5873776. | **STALE.** | HEAD thật là `808b365` ('docs(plan): fold the spec-verified M1 execution plan into the upgrade plan'), trên nhánh `milestone-1`. Mọi số dòng trong spec này đã đo lại ở 808b365. `git log --oneline -1`. |
+| S5 / C2 (sanitize) | Sanitize và giới hạn độ rộng của C2 là việc item phải làm (tab, 10.000 ký tự). | **MISFRAMED — hợp đồng đã tồn tại; C2 chỉ cần không phá nó** | Segment `status` **đã** chạy mọi hook status qua `sanitizeStatusText` -> `sanitizeDisplaySingleLine` -> `sanitizeDisplayText` -> `replaceTabs(sanitizeText(text))`, rồi gộp các lần xuống dòng liên tiếp và trim. Độ rộng được ép riêng bởi `truncateToWidth` tại `component.ts:3068` và bởi layout hàng. Một điểm tinh mà test phải nắm: chuỗi sanitizer **không** có trần độ dài, nên hãy assert **HÀNG** nằm trong độ rộng — đừng assert rằng sanitizer đã cắt. Test của C2 vì thế assert một hợp đồng có sẵn giữ được với nội dung do plugin cung cấp, cách diễn đạt mạnh và trung thực hơn 'thêm sanitize'. `packages/tui/src/chrome/shared.ts:9`, `packages/tui/src/overlays/extensions/display-text.ts`, `segments.ts:201`, `component.ts:3068`. |
+| S5 / D2 (union) | D2 là 'thêm một id vào union khép kín'. | **UNDERSTATED — union không phải sửa duy nhất, dù compiler sẽ báo** | `SEGMENTS` ở `segments.ts:919` là `Record<StatusLineSegmentId, StatusLineSegment>` liệt kê đầy đủ, nên thêm một thành viên union mà không có registry entry là **lỗi kiểu** — tốt, `bun run check:ts` bắt được, không cần addon. Tin tốt cho bán kính ảnh hưởng: `ALL_SEGMENT_IDS` là `Object.keys(SEGMENTS)` nên kho CLI tự nhận id mới, và `variantsFor` của gallery có nhánh `default:` nên cũng không cần sửa gallery. `segments.ts:919`, :957; `packages/coding-agent/src/cli/gallery-fixtures/segments.ts` (nhánh `default:` ở cuối `variantsFor`). |
+| S6 (fallback màu) | `statusLineGitClean`/`statusLineGitDirty` khai ở `packages/tui/src/theme/schema.ts:77-78` 'với fallback ở :140-141', nên thiếu key sẽ lặng lẽ bỏ qua adjustment. | **STALE / MISLEADING** | Số dòng đúng, nhưng :140-141 **KHÔNG** phải fallback. Cả hai dòng nằm trong `THEME_COLOR_RECORD` (`schema.ts:89`), thứ chỉ tồn tại để dựng `VALID_THEME_COLORS` (`schema.ts:152`) cho `isValidThemeColor` (`:156`). Đó là allowlist kiểm tra, không phải tầng màu mặc định. Không có tầng điền mặc định nào ở bất cứ đâu: `resolveThemeColors` (`color.ts:64-73`) chỉ duyệt key có trong palette, và `theme-class.ts:167-169` loại mọi key fail `isValidThemeColor` bằng `continue`. Một key thiếu vì thế cho màu **VẮNG MẶT**, không phải màu fallback — nên người thực thi không được kỳ vọng key thiếu sẽ hiện ra thứ gì đó hợp lý. `git grep -n THEME_COLOR_RECORD -- packages/tui/src` -> đúng hai hit: `schema.ts:89` (định nghĩa) và `schema.ts:152` (`new Set(...)` -> `VALID_THEME_COLORS`). `sed -n '64,73p' packages/tui/src/theme/color.ts` cho `resolveThemeColors` chỉ duyệt `Object.entries(colors)`. `sed -n '167,169p' .../theme-class.ts` -> `if (!isValidThemeColor(key)) continue;` |
+| S6 (kiểm kê palette) | Bản vá nhỏ 'phải kèm kiểm kê 99 palette, kiểm từng key tồn tại và là chuỗi hex' vì 'key thiếu hoặc không phải hex sẽ lặng lẽ bỏ qua adjustment'. | **VERIFIED TRUE, và kiểm kê ĐÃ XONG — kết quả sạch** | Tôi đã chạy đúng kiểm kê plan đòi. Cả 99 palette trong `packages/tui/src/theme/defaults/` đều có `toolDiffAdded`, `success`, `error`, `statusLineGitClean`, `statusLineGitDirty`. Không palette nào thiếu, nên không key nào bị lặng lẽ bỏ qua. Một điểm tinh plan bỏ sót: JSON thô phần lớn là gián tiếp `var:`, không phải hex literal — ví dụ onyx.json có `"toolDiffAdded": "$emerald"` với `vars.emerald = "#6fb37f"`. `resolveVarRefs` (`color.ts:49-62`) giải các gián tiếp đó ở `resolveThemeColors`, vốn chạy ở `loader.ts:151` **trước** nhánh colorBlindMode đọc chúng ở :153. Nên nhánh luôn thấy hex đã giải và guard `startsWith("#")` sẵn có giữ được trên cả 99. Rủi ro lặng lẽ bỏ qua chỉ thật với số 256 màu hoặc giá trị `""`, thứ có thể đến từ theme tuỳ biến do người dùng tự viết, không phải theme tích hợp. Script quét `packages/tui/src/theme/defaults/*.json` assert đủ bốn key: output một dòng `99 True`. `sed -n '16p;23p;51p;74p' .../onyx.json` -> `"emerald": "#6fb37f"`, `"success": "$emerald"`, `"toolDiffAdded": "$emerald"`, `"statusLineGitClean": "$emerald"`. `ls packages/tui/src/theme/defaults/*.json \| wc -l` -> 99. |
+| S6 (harness theme) | Harness hồi quy nên chạy trên 'toàn bộ 99 palette'. | **INCOMPLETE — 99 là con số sai** | `BUILTIN_THEMES` (`loader.ts:18-22`) là `dark.json` + `light.json` + 99 file `defaults/*.json`, tức **101** theme. `dark` và `light` là đúng hai theme app thật sự boot vào khi chưa cấu hình theme, và chúng không nằm trong thư mục defaults. Harness glob `defaults/*.json` thì bỏ mất đúng hai theme mà đa số người dùng thấy. Hãy duyệt `getBuiltinThemes()` (`loader.ts:24`) — cùng cái map mà picker dùng. `sed -n '18,26p' packages/tui/src/theme/loader.ts` -> `const BUILTIN_THEMES: Record<string, ThemeJson> = { dark: darkThemeJson, light: lightThemeJson, ...(defaultThemes as Record<string, ThemeJson>) };` rồi `export function getBuiltinThemes() { return BUILTIN_THEMES; }`. |
+| S6 (đăng ký theme) | Theme mới 'chọn được từ ThemePicker như mọi theme bình thường'. | **STALE — không có ThemePicker trong repo này** | `git grep -rn 'ThemePicker\|theme-picker' -- packages/` trả về rỗng. Chọn theme là `setTheme` / `previewTheme` (`theme.ts:211` / `:248`), điều khiển bởi `getAvailableThemes` (`loader.ts:29`) và các setting `cfgThemeDark` / `cfgThemeLight` (`settings.ts:58`). Một theme 'chỉ là một theme' khi nó được import trong `packages/tui/src/theme/defaults/index.ts` và thêm vào object literal `defaultThemes` — đó là toàn bộ chi phí đăng ký, và không cần sửa picker. Điều này chỉ quan trọng với biến thể M, và vì thế biến thể S bên dưới không chạm file UI nào. `git grep -rn 'ThemePicker\|theme-picker' -- packages/ \| grep -v test` -> rỗng. `tail -15 packages/tui/src/theme/defaults/index.ts` cho object literal khoá theo tên theme (`titanium: titanium,`). |
+| S6 (`colorBlindMode`) | Cờ global `colorBlindMode` được 'nối từ packages/coding-agent/src/modes/settings.ts:108'. | **RIGHT AREA, WRONG LINE và INCOMPLETE — có bốn nơi tiêu thụ chứ không phải một** | `settings.ts:109-120` là phần khai báo: `export const cfgColorBlindMode = register({ id: "colorBlindMode" ... })` với `id` ở :110 và `effect(cfgColorBlindMode, setColorBlindMode)` ở :120. Dòng 108 là dòng trống ngay trên. Nhưng chỗ bàn giao thật vào `createTheme` là `main.ts:1909` qua `applyStartupComposerPreferences({ theme: { colorBlindMode: cfgColorBlindMode.get(settingsInstance) } })`, và còn hai nơi tiêu thụ nữa: `modes/setup.ts:90-92` và `cli/gallery-cli.ts:29` / `commands/git.ts:13`. Người đọc chỉ bám `settings.ts:108` sẽ không tìm ra đường nối xuống TUI. `sed -n '1907,1912p' packages/coding-agent/src/main.ts` -> `colorBlindMode: cfgColorBlindMode.get(settingsInstance),` bên trong object `theme: {`. `sed -n '90,92p' packages/coding-agent/src/modes/setup.ts` -> `get colorBlindMode() { return cfgColorBlindMode.get(ctx.settings); }`. |
+| S6 (OKLCH) | Primitive OKLCH `hexToOklch, oklchCusp, oklchToHex, relativeLuminance` có sẵn, import từ `@oh-my-pi/pi-utils` (`session-color.ts:2`). | **VERIFIED TRUE** | Không cần sửa. Cả bốn tồn tại và được export từ `packages/utils/src/color.ts` ở dòng 320, 392, 423, 471. Lưu ý cho người thực thi: `loader.ts:3` import `adjustHsv` từ **subpath** `@oh-my-pi/pi-utils/color`, không phải barrel — giữ import màu mới trên subpath để khớp. `oklchToHex` gamut-map bằng chia đôi chroma rồi clamp, nên luôn trả hex 6 chữ số hợp lệ và không cần kiểm tra hậu kỳ. `git grep -n 'export function hexToOklch\|export function oklchCusp\|export function oklchToHex\|export function relativeLuminance' -- packages/utils/src` -> color.ts:320, :392, :423, :471. `sed -n '3p' packages/tui/src/theme/loader.ts` -> `import { adjustHsv } from "@oh-my-pi/pi-utils/color";`. |
+| S6 (quy ước test) | Test nằm ở `packages/tui/test/*.test.ts`; tui có 221 file test. | **VERIFIED (giờ là 222)** | Quy ước giữ được và quan trọng: `find packages/tui/src -name '*.test.ts' \| wc -l` trả về 0, xác nhận không có gì đặt cạnh mã nguồn. Một `*.test.ts` mới dưới `packages/tui/src/` sẽ **không bao giờ** được chạy. Con số đã trôi từ 221 lên 222 kể từ khi plan viết; dùng nó chỉ để đối chiếu, không bao giờ làm ngưỡng chấp nhận. `find packages/tui -name '*.test.ts' -not -path '*/node_modules/*' \| wc -l` -> 222. `find packages/tui/src -name '*.test.ts' \| wc -l` -> 0. Hàng xóm cần đọc trước: `packages/tui/test/settings-list-theme.test.ts` (dùng `initTheme()` trong `beforeAll`), `theme-color-mode.test.ts`, `theme-auto-detection.test.ts`. |
+
+
+---
+
+
+## Định nghĩa hoàn thành
+
+Mỗi dòng là một cổng có thể đỏ. Cổng xanh trên một sóng không kéo theo sóng khác xanh.
+
+| spec / sóng | điều kiện phải đúng | bằng chứng cụ thể |
+| --- | --- | --- |
+| S1 | 5 test file xanh; mọi neo trong spec được đối chiếu lại với cây lúc code chứ không tin bản kế hoạch; P1 trả lời bằng văn bản trước khi A1 bắt đầu, P0 trả lời kèm nguồn đặc tả + vị trí bằng chứng, không phải checkout chưa track `~/Projects/claude-code-ref` | `bun run check:ts` exit 0; 4 lệnh `bun test` phủ 5 file trong `verification`; preset có `usage` vẫn vẽ đoạn quota ở 80 cột, `ctx.usage=null` và preset ngoài tập P1 khớp byte với bản cũ; dưới tmux chân hiện `ctrl+b ctrl+b` còn key trả về vẫn là một `ctrl+b`; transcript dựng lại khớp byte đường sống; hàng loader nhiều dòng báo stall đúng tên phase rồi tự tắt |
+| S2 | Bảng đo có 3 con số thật cho từng terminal (Ghostty, Terminal.app, VS Code, Cursor) và `MEASURED_THRESHOLDS` trong `packages/tui/src/mouse-wheel.ts` mang đúng các số đó — 200/1500/5 trong bản kế hoạch là số giữ chỗ, giao nguyên xi là trượt cổng; `check:ts` xanh; 5 test file của sóng — kể cả `wheel-acceleration.test.ts` và `notice-queue.test.ts` — thật sự thực thi chứ không bị skip | `{ grep -rn 'event\.wheel \* [0-9]' packages/tui/src --include='*.ts'; grep -rn 'delta \* [0-9]' packages/tui/src --include='*.ts'; } \| grep -v '^packages/tui/src/mouse-wheel\.ts:' \| wc -l` → 0 hit (hôm nay **9**). Phải loại `mouse-wheel.ts` vì đó chính là module A3 tạo ra; và phải quét `delta \* [0-9]`, không phải `delta \* 3`, nếu không một site `delta * 2` sẽ lọt; notice có key nằm trong notice container và **không** có trong `chatContainer.children`, notice không key vẫn còn nguyên; `interactive-mode-status.test.ts` xanh mà không sửa một khẳng định nào; hai câu hỏi mở đã có người trả lời bằng văn bản |
+| S3 | `check:ts` xanh; cổng MCP hoạt động theo cả hai chiều; `decline` / `cancel` / `timeout` là ba giá trị phân biệt được | `bun test packages/coding-agent/test/mcp/elicitation-capability.test.ts packages/coding-agent/test/mcp/elicitation-form.test.ts`; fixture không có capability thì bị từ chối, có thì nhận câu trả lời thật; nửa âm trả `code === -32601`; `required` chặn submit; `writeOnly` không lọt vào transcript |
+| S4 | `check:ts` exit 0; 4 test file tồn tại và xanh; mask của setting `secret` giữ **cả trước và sau** vòng chọn submenu; B1 đủ ba bất biến qua nhánh remap SOURCE với fixture nạp bằng đường dẫn; A4-PERSIST hoặc giao kèm đường ghi sau WI-8a, hoặc ghi rõ trì hoãn trong PR | `bun test packages/coding-agent/test/plugin-settings-secret.test.ts packages/coding-agent/test/plugin-tool-renderer-override.test.ts packages/coding-agent/test/extension-working-message.test.ts packages/coding-agent/test/extension-status-hint-strip.test.ts`; setting không phải secret vẫn hiện giá trị (chứng minh mask có điều kiện) |
+| S5 | `check:ts` exit 0 — đây là cổng duy nhất thật sự ràng buộc `SEGMENTS` vì nó là `Record` hết, thêm id vào union mà quên entry là đỏ kiểu; D2 xanh với ba hợp đồng âm; C2 xanh và **ca đầu là ca tắt**; câu trả lời Q6 viết vào work item kèm phạm vi — **Q6 chưa có thì C2 được phép trượt**, và ship trên một tiền đề không nói ra thì tệ hơn là trượt (xem 90-back1a §3) | `bun test packages/coding-agent/test/user-shell-status-line.test.ts packages/tui/test/status-line-cache-hit-rate.test.ts`; hàng không có đếm ngược, không có nhãn TTL, tỉ lệ bằng `cache_hit` khi usage giống nhau, không có usage thì không đóng góp gì; `status-line-cache-hit.test.ts` (anh em) vẫn xanh; `git grep -n "examples/extensions" -- packages/coding-agent/src` → 0 hit |
+| S6 | `check:ts` xanh; khi bật `colorBlindMode`, cả 5 token `DALTONIZE_TARGET_HUE` khác hẳn giá trị khi tắt trên toàn bộ 101 theme; mọi token sau remap khớp `/^#[0-9a-f]{6}$/i`; 5 cặp màu nền đạt tỉ lệ tương phản 4.5 | `bun test packages/tui/test/daltonized-theme.test.ts packages/tui/test/theme-contrast-harness.test.ts`; **hợp đồng âm mạnh nhất**: tắt hoặc bỏ trống cờ thì mọi token mọi theme khớp byte với trước thay đổi |
+| ctx1 | `docs/plugin-surface-closure.md` tồn tại và mọi số dòng trong đó do lệnh trong khối `verification` sinh ra lúc làm việc, không chép từ kế hoạch; mục (4) "điều này không chứng minh được gì" còn nguyên; **không** có test grep nào cho bất biến `setFrameProvider` — sự vắng mặt đó là một phần của cổng | 5 nhóm neo đã trôi phải đọc 2-30, 157/158, 302, 101-102, 94-96 — cộng 8 neo ở tail1 thành đúng 13 chỗ; `bun test packages/tui/test/status-line-segment-closure.test.ts packages/coding-agent/test/status-line-segment-picker.test.ts` |
+| ctx2 | Script khẳng định 60 neo chạy từ repo root in ra `failures: 0` và exit 0 tại HEAD 808b365; 7 trong 60 là số dòng **đã sửa**, khác bản kế hoạch | Khối `sh` nguyên văn trong trường `verification`; đổi 4 neo về số của kế hoạch → exit 1 với đúng 4 dòng FAIL. `bun test` nằm ngoài phạm vi cổng này |
+| tail1 | `./scripts/m3-acceptance-gates.sh` tồn tại, chạy từ repo root, in một dòng XANH/DO cho mỗi cổng, và **hôm nay exit 1**; G4/G4b nêu đủ 9 điểm với số dòng lấy từ `git grep` trên cây; G10 dùng dạng có dấu ngoặc và trả 0; `docs/clean-room-policy.md` có đủ 4 dòng phân loại và lưới ký §8.6 mục 1/3/4/5 ở trạng thái OPEN | Đo được: G4 = 9 (cần 0), G4b = 0/9 (cần 9/9), G5 `left=7 kept=3` (cần `left=0` **và** `kept=3`; `left>0` là sót site membership, `kept<3` là đã xoá nhầm site inline ảnh — cổng phải đỏ được theo cả hai chiều), G6 thiếu file. Dạng literal của G10 trả 2 vì hai file test có comment giải thích là không dùng `mock.module` |
+| tail2 | `bun .lavish-wip/m3-md/check-anchors.mjs` exit 0 **và đã từng thấy exit 1**, với số neo kiểm tra hàng chục chứ không phải 0; `python3 .lavish-wip/assemble-m3.py` từ chối chạy khi lắp một phần bị cụt; `git grep -rn 'mock\.module(' -- packages/coding-agent/test packages/tui/test` trả 0, và dạng chưa sửa **không được dùng làm cổng** ở 90-back1.md/90-back2.md — dạng đó được trích dẫn trong bảng corrections là đúng (hôm nay 6 hit: 90-back1a.md ×1, 90-back2a.md ×5) và đó là chỗ duy nhất nó được phép xuất hiện; §10 có dòng cho P0 và P1 với người phụ trách + hạn trước khi A1 bắt đầu; §11 có điều khoản nêu M3-C2 trượt và điều khoản nói A9 không được trượt | Chưa script nào tồn tại: `find` toàn cây không ra `check-anchors.mjs` lẫn `assemble-m3.py` (`.lavish-wip/` mới chỉ có `assemble-m1.py`/`assemble-m2.py`) — chân (1) và (2) phải được dựng ra rồi mới chứng minh được là không tự thỏa. Chỉ G4 (9) và G5 (`left=7`) là đã đo thật và đã đỏ sẵn. |
+| bổ sung B4–B9 | `bun run check:ts` exit 0; **6 file test mới** tồn tại và xanh — `keybinding-conflict-warning`, `notice-ttl-priority`, `inline-display-mode`, `keybinding-editor`, `animation-master-switch`, `renderer-hot-swap`; cảnh báo xung đột phím dùng **cùng một hàm format** ở cả hai nơi (lúc nạp và trong overlay); nhánh không-có-khoá của A7 vẫn khớp từng byte; thuật toán `#rebuild()` chưa bị sửa; chế độ mặc định của `inline-display-mode` khớp từng byte với hôm nay; M1 W15 đã merge | Sáu lệnh `bun test` tương ứng. **Cổng người, không phải cổng máy:** B6 phải thử tay rằng selection/copy của terminal thật sự hoạt động ở chế độ inline, B8 phải nói rõ trong PR rằng probe là best-effort chứ không phải accessibility guarantee, B9 phải thử tay escape hatch. Không mục nào trong sáu mục này được tick xong chỉ dựa vào `check:ts` — nó không chạy một khẳng định nào. |
+| **Toàn M3** | Cả 11 cổng trên xanh **trên cùng một cây**; `bun run check:ts` exit 0; native addon đã build để các lệnh `bun test` thật sự chạy; P0, P1, hai câu hỏi mở S2, Q6 và Q-A đã có chủ sở hữu + hạn bằng văn bản; phần độ trung thành UI đã được người ký. `check:ts` một mình **không đủ** — nó không chạy một khẳng định nào | Sóng nào đỏ thì M3 chưa xong, kể cả khi 10 sóng/hạng mục kia xanh. Đặc biệt S3: tuyên bố capability và giao handler là hai commit, coi như chưa xong |
+
+## Những điều chưa được kiểm chứng
+
+- **Milestone này mới chỉ được đặc tả, chưa được thực hiện.** Toàn bộ nội dung sinh ra bằng cách đọc cây mã và chạy lệnh, không phải bằng cách làm công việc. Chưa work item nào được code. Các cổng trong bảng trên **chưa lần nào chạy trên một cây đã có công việc**. Riêng phần đo thì đã chạy: ctx2 in `failures: 0` với 60/60 OK, G4 = 9, G5 = `left=7 kept=3`. Các con số "đo được" trong cột bằng chứng (G4 = 9, G4b = 0/9, G5 `left=7`, G6 thiếu file) là phép đo trên cây chưa có công việc: chúng chứng minh cổng không tự thỏa, không chứng minh công việc sẽ đúng.
+
+- **Phần độ trung thành UI là cổng người, không phải cổng CI.** §7.2 của bản kế hoạch tự nói phần này không chứng minh được bằng máy. Ngưỡng cuộn bánh xe ở S2 bắt buộc phải đo tay trên từng terminal rồi mới điền vào `MEASURED_THRESHOLDS`. Một lượt cổng với 12 dòng XANH (mục 7.1 của bản kế hoạch liệt kê 12 cổng: G1–G11 cộng G4b) không nói gì về việc bánh xe có chạm đúng trên Ghostty hay không. Cùng loại, các cổng người còn lại: P0, P1 (S1), hai câu hỏi mở ở S2, Q6 ở S5, Q-A ở tail1.
+
+- **Tiền đề native addon — ĐÃ build ở cây này, đo lại 2026-09-29.** `packages/natives/native/pi_natives.darwin-arm64.node` có mặt (185 MB); `bun run check:ts` exit 0 với cả **16** package `check:types` Done; `bun test packages/tui/test/` chạy đủ **222/222 file** (2807 pass / 5 skip / 8 fail). Vì vậy mọi câu "cần build một lần trước" trong tài liệu này là **tiền đề tái lập được, không phải trạng thái hiện tại và không phải hạn chế của máy**: lối ra cho máy thiếu file là `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0), và trên máy đó `bun test` báo `Failed to load pi_natives native addon for darwin-arm64`. Ngay cả trước khi build, tình trạng này **không phải toàn cục** — 17/222 file vẫn chạy, trong đó `packages/tui/test/mouse.test.ts` 13/13 — nên xem từng file, không gộp. Hệ quả: cổng test của S1, S3, S4, S5, S6 và ctx1 là kiểm chứng được ngay trên cây này. Riêng S5 nói thẳng rằng tới lúc đó chỉ còn cổng (1) là thật sự ràng buộc.
+
+- **Neo `file:line` là ảnh chụp tại một thời điểm.** 60 neo của ctx2 và mọi neo ở ctx1/tail1 chụp ở HEAD 808b365, nhánh `milestone-1`, ngày 2026-09-27. Bộ neo đã trôi sẵn 13 chỗ so với bản kế hoạch (cả 7 neo `* 3` lệch **−1 đến +13** — `plan-review-overlay.ts` là neo duy nhất lệch ngược: kế hoạch 581, cây thật 580; `usage-dashboard.ts:753` thực ra là 759) — tức có sẵn một tập neo sai để sao chép. Ngay cả số package được báo cho cùng một lệnh `check:ts` cũng chưa thống nhất giữa các spec (12, 15, 16); chỉ chạy thật một lần mới biết.
+
+- **Điểm chưa chắc, gọi thẳng tên:**
+  - P0/P1 là quyết định của người, không script nào làm đỏ được. Một câu trả lời chưa ghi lại trông y hệt một câu trả lời đã ghi, cho tới khi ai đó mở đúng file đặc tả ra kiểm.
+  - Chân (4) của tail2 — mọi tuyên bố trong bảng corrections phải tái lập được — là **kỷ luật, không phải script**: có thể thỏa mãn bằng cách khẳng định điều sai.
+  - Chân (3) của ctx1 — tài liệu — không thể đỏ tự động. Số dòng sai trong văn xuôi không sinh đỏ ở đâu cả; cổng của nó là người chạy lại khối `verification`.
+  - B1 trong S4 là cổng yếu nhất: nó ghim một cơ chế **đã chạy được**, nên xanh cả trước và sau. Không cái gì trong sóng này làm nó đỏ, và không nên tính nó là bằng chứng B1 đã làm được việc gì.
+  - Test tmux ở S1: chốt chặn `isBunTestRuntime()` tại `packages/tui/src/tmux.ts:49` khiến rất dễ viết ra một phiên bản test **xanh mà không kiểm chứng gì**. Bộ test bắt buộc phải có một khẳng định rằng nhánh tmux thật sự đã được đi qua, không được tin vào màu xanh.
+  - Ngưỡng 200/1500/5 trong bản kế hoạch là **số giữ chỗ**; S2 coi việc giao nguyên xi là trượt cổng, và không ai đo được chúng hôm nay.
+  - Ngược lại, G4 (9) và G5 (`left=7`) đã đỏ sẵn nên là cổng thật. Một cổng viết kiểu "số đếm không đổi" thì tự thỏa và phải viết ngược lại — bản kế hoạch tự lập luận dài về điều này rồi tự trái ở G10.

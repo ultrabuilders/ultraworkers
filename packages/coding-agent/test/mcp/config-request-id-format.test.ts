@@ -62,10 +62,13 @@ afterEach(async () => {
 	await removeWithRetries(tempCwd);
 });
 
+// These fixtures are project-scope files, which are no longer loaded by default
+// (a cloned repo must not be able to start processes). This suite is about config
+// parsing and transport wiring, not about trust, so it opts in explicitly.
 async function loadFrom(file: string, mcpServers: Record<string, unknown>) {
 	await Bun.write(path.join(tempCwd, file), JSON.stringify({ mcpServers }));
 	clearFsCache();
-	const { configs } = await loadAllMCPConfigs(tempCwd);
+	const { configs } = await loadAllMCPConfigs(tempCwd, { enableProjectConfig: true });
 	return configs;
 }
 
@@ -134,6 +137,7 @@ for (const [provider, file] of [
 			}),
 		);
 		const { configs } = await loadAllMCPConfigs(tempCwd, {
+			enableProjectConfig: true,
 			extensionRoots: {
 				explicit: provider === "plugin" ? [path.join(tempCwd, "plugin")] : [],
 				mode: "explicit-only",

@@ -7224,27 +7224,44 @@ kích thước byte** (SHA-256), đường dẫn tương đối trong từng pac
 
 | | Tài liệu ghi (đo trên `d6af72e`) | **Đo lại @ `4259686d`** |
 |---|---|---|
-| Giống hệt từ byte | 0 | **0** ✓ (giữ nguyên) |
+| Giống hệt từ byte | 0 | **0** ✓ |
 | Chỉ có ở `pi` | 685 | **1.270** |
 | Chỉ có ở omp | 2.046 | **4.318** |
-| Cùng đường dẫn, khác nội dung | 70 | **1.415** |
+| Cùng đường dẫn, khác nội dung | 70 | **145** |
 
-Tách phần **mã chạy** khỏi phần **ví dụ / test / bench / docs**:
+> **ĐÍNH CHÍNH ĐÍNH CHÍNH (2026-09-29, lượt 2) — lỗi đo của chính mục này đã được sửa.** Lượt đo đầu
+> ghi *"cùng đường dẫn, khác nội dung = **1.415**"*. Con số đó sai: nó bằng đúng **tổng số file
+> `.ts`/`.tsx` của `pi`**, tức kế hoạch đo đã đẩy nhầm *toàn bộ file của pi* vào ô "cùng đường dẫn,
+> khác nội dung" thay vì chỉ những file thật sự trùng đường dẫn. Số đúng là **145**, và nó **tự kiểm
+> khớp cả hai vế**: `chỉ-ở-pi 1.270 + giống 0 + khác 145 = 1.415` (đúng tổng phía `pi`) và
+> `chỉ-ở-omp 4.318 + giống 0 + khác 145 = 4.463` (đúng tổng phía omp).
+> **Bốn số `chỉ có ở pi` / `chỉ có ở omp` / `giống hệt` từ lượt đo đầu là ĐÚNG — chỉ ô "khác nội
+> dung" bị sai.**
+>
+> Bốn package, phân rã ô 145: `coding-agent` **64** · `tui` **43** · `ai` **29** · `agent` **9**.
 
-| | Chỉ có ở `pi` | Khác nhau |
-|---|---|---|
-| **src/prod** | **601** | **657** |
-| example / test / bench / docs | 669 | 758 |
+**Hệ quả cho "parity sẽ lệch" — và nó đảo chiều cả giả định của M1 Phần A:**
 
-**Hệ quả cho "parity sẽ lệch":** 657 file là tập phán đoán thật, **không phải 70**. Và trong đó
-tập trọng tâm là `agent/src/harness` 106 · `coding-agent/src/core` 94 · `ai/src/providers` 92 ·
-`coding-agent/src/modes` 64 · `coding-agent/src/experimental` 52 · `ai/src/api` 39.
-Bảng phân loại từng file: `PI_OMP_FILE_DECISIONS.md`.
+```
+1.270 file  chỉ có ở pi   → nhưng 905/1.572 file trong toàn universe là example/test/docs
+  145 file  cùng path, khác → KẾT QUẢ ĐO ĐƯỢC: KEEP_OMP ~340 · PORT 47 · COPY_PI 7 · SKIP ~1.180
+4.318 file  chỉ có ở omp  → GIỮ
+```
+
+**Con số đáng chú ý nhất: `COPY_PI` chỉ 7, còn `KEEP_OMP` ~340.** Vì ở phần chung, **phía lệch là
+phía `omp`, và đó là lợi thế** — `ai/src/providers/anthropic.ts`: pi 59 dòng, omp **5.888**;
+`tui.ts`: pi 1.493, omp **3.633**; `openai-codex-responses`: pi 1.697, omp **5.261**.
+
+**Tức: với 4 package dùng chung, `omp` là HẬU DUỆ của `pi`, không phải tiền thân.** Chép bản của `pi`
+đè lên sẽ là **hồi quy**. Câu *"chép thì không thể trôi khỏi `pi`"* chỉ đúng cho **6 package kia** —
+nơi omp **chưa có gì** để mà chép đè.
+
+Bảng phân loại đầy đủ: `PI_OMP_FILE_DECISIONS.md`.
 
 **Nguyên tắc rút ra, và nó đảo chiều cách M1 Phần A đang làm:** *parity* bằng cách tự viết
-từng work item là cách **đã thất bại** — không một file nào giống byte sau nhiêu năm fork, vì
-viết tay thì trôi. Chép thì **không thể trôi khỏi `pi`**. Với 601 file chỉ có ở `pi`, đáp án là
-chép; 657 file phải đối chiếu từng cặp.
+từng work item là cách **đã thất bại** — không một file `.ts`/`.tsx` nào giống byte sau nhiêu năm
+fork. Nhưng với 4 package dùng chung, chép **không** phải lời giải: chỉ 7 file đáng chép, và chỗ
+khác `omp` đã đi xa hơn.
 
 ### `pi` giờ có **14** package, không phải 12
 

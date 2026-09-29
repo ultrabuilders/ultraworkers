@@ -23,7 +23,7 @@ import type {
 	TspSpan,
 	TspTreeNode,
 } from "@oh-my-pi/pi-wire";
-import { Container, type OverlayHandle, type TUI } from "../tui";
+import { Container, type ExtensionTUISurface, type OverlayHandle } from "../tui";
 import { matchesKey } from "../keys";
 import { routeSelectListMouse, routeSgrMouseInput, type SelectListMouseTarget } from "../mouse";
 import { padding, visibleWidth, wrapTextWithAnsi } from "../utils";
@@ -287,7 +287,7 @@ export interface AgentHubDeps<TRecord extends AgentRecordLike = AgentRecordLike>
 	/** Host message bus supplying unread counts. */
 	irc: IrcBusLike;
 	/** TUI handle for transcript components; tests omit it and get a render-only stub. */
-	ui?: TUI;
+	ui?: ExtensionTUISurface;
 	/** Tool lookup for transcript renderers (labels, custom render functions). */
 	getTool?: (name: string) => AgentTool | undefined;
 	/** Whether the active registry entry came from a built-in factory. */
@@ -437,7 +437,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 	#detailAgentId: string | undefined;
 
 	// Transcript-viewer launch deps (passed through to AgentTranscriptViewer).
-	#ui: TUI;
+	#ui: ExtensionTUISurface;
 	#getTool: ((name: string) => AgentTool | undefined) | undefined;
 	#isBuiltInTool: ((name: string) => boolean) | undefined;
 	#getMessageRenderer: ((customType: string) => MessageRenderer | undefined) | undefined;
@@ -477,12 +477,18 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		this.#hubKeys = deps.hubKeys;
 		this.#remote = deps.remote;
 		this.#loadingPersistedSubagents = !this.#remote && Boolean(deps.sessionFile?.endsWith(".jsonl"));
+		// The fallback supplies only what a static render calls, and is typed as
+		// the narrowed surface rather than cast to `TUI`: casting wider would
+		// claim it has `setFrameProvider` and `resetDisplay`, which it does not.
 		this.#ui =
 			deps.ui ??
 			({
 				requestRender: () => deps.requestRender(),
 				requestComponentRender: () => deps.requestRender(),
-			} as unknown as TUI);
+				viewportSize: { columns: 80, rows: 24 },
+				getFocused: () => null,
+				setFocus: () => {},
+			} as unknown as ExtensionTUISurface);
 		this.#getTool = deps.getTool;
 		this.#isBuiltInTool = deps.isBuiltInTool;
 		this.#getMessageRenderer = deps.getMessageRenderer;
@@ -547,7 +553,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 	}
 
 	override render(width: number): readonly string[] {
-		const termHeight = this.#ui.terminal?.rows || process.stdout.rows || 40;
+		const termHeight = this.#ui.viewportSize?.rows ?? process.stdout.rows ?? 40;
 		const frame = (
 			this.#section === "activity"
 				? this.#renderActivityTable(width, termHeight)
@@ -665,7 +671,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		viewer?.dispose();
 		this.#transcriptViewer = undefined;
 		if (!this.#disposed) {
-			if (typeof this.#ui.setFocus === "function") this.#ui.setFocus(this);
+			this.#ui.setFocus(this);
 			this.#requestRender();
 		}
 	}

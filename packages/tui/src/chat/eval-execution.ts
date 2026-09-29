@@ -23,7 +23,6 @@ import {
 	resolveExecutionStatus,
 } from "./execution-shared";
 import { code, span } from "../native/describe";
-import type { TUI } from "../tui";
 import { type DescribeContext, type NativeNode, type NativeUiEvent, rootToggleExpanded } from "../native/node";
 import { Memo } from "../native/memo";
 

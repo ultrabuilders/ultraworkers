@@ -17,7 +17,6 @@ import { resolveImageOptions } from "../render/render-utils";
 import { OutputPane } from "../render/output-pane";
 import { loadXtermTerminal, readTerminalRows, styleTerminalRow } from "../tools/terminal-output";
 import { getSixelLineMask, isSixelPassthroughEnabled, sanitizeWithOptionalSixelPassthrough } from "../render/sixel";
-import type { TUI } from "../tui";
 import {
 	buildExecutionFrame,
 	buildStatusFooter,

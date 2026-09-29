@@ -10,7 +10,6 @@ import { ansi256ToHex, resolveThemeColors, resolveVarRefs } from "./color";
 import {
 	type CreateThemeOptions,
 	createTheme,
-	getBuiltinThemes,
 	loadTheme,
 	loadThemeJson,
 	loadThemeJsonSync,

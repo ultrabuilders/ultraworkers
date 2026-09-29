@@ -8,7 +8,7 @@
  * having to provoke each state through a live agent session.
  */
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
-import type { TUI } from "@oh-my-pi/pi-tui";
+import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import { getProjectDir } from "@oh-my-pi/pi-utils";
 import { Settings } from "../config/settings";
 import { ToolExecutionComponent } from "@oh-my-pi/pi-tui/chat/tool-execution";
@@ -185,11 +185,15 @@ export async function renderGalleryState(
 	const componentName = fixture.customRendered ? name : (fixture.renderer ?? name);
 	const tool = fakeToolFor(componentName, fixture);
 	const streamingArgs = state === "streaming" ? (fixture.streamingArgs ?? fixture.args) : fixture.args;
-	// The component only calls `requestRender`/`requestComponentRender` (via
-	// its loader) during a static render; `imageBudget` is consulted solely
-	// when images render, which the gallery disables. A cast avoids
-	// constructing a real terminal.
-	const ui = { requestRender() {}, requestComponentRender() {} } as unknown as TUI;
+	// Cast to the narrowed surface, not to `TUI`. The component only calls
+	// `requestRender`/`requestComponentRender` during a static render, and
+	// `imageBudget` is consulted solely when images render, which the gallery
+	// disables. Casting to the wider `TUI` would claim the fake satisfies
+	// `setFrameProvider` and `resetDisplay`, which it does not.
+	const ui = {
+		requestRender() {},
+		requestComponentRender() {},
+	} as unknown as ExtensionTUISurface;
 	const component = new ToolExecutionComponent(
 		componentName,
 		streamingArgs,

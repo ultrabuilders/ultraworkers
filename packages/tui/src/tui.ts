@@ -814,6 +814,8 @@ export interface ExtensionTUISurface extends Container {
 	start(options?: { deferInput?: boolean }): void;
 	/** Which component holds keyboard focus, if any. `null` when nothing is focused. */
 	getFocused(): Component | null;
+	/** Move keyboard focus to `component`, or drop it when passed `null`. */
+	setFocus(component: Component | null): void;
 	/**
 	 * Size of the drawable area in terminal cells, at the time of the call.
 	 *

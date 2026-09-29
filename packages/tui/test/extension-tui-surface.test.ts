@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { TUI, type Component, type ExtensionTUISurface } from "@oh-my-pi/pi-tui";
+import { TUI, type ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 
 // Contract: `TUI` satisfies the narrowed surface an extension receives, and
 // that surface does not grow back into the product's own engine.

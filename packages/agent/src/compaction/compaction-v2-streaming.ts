@@ -24,6 +24,7 @@ import {
 	resolveOpenAIRequestSetup,
 } from "@oh-my-pi/pi-ai/providers/openai-shared";
 import { captureOpenAIHttpError } from "@oh-my-pi/pi-ai/utils/openai-http";
+import { isBedrockOpenAIUrl } from "@oh-my-pi/pi-catalog/hosts";
 import {
 	applyCodexResidencyHeader,
 	CODEX_BASE_URL,
@@ -33,6 +34,7 @@ import {
 	OPENAI_HEADERS,
 } from "@oh-my-pi/pi-catalog/wire/codex";
 import { $env, isUnexpectedSocketCloseMessage, logger, stringifyJson } from "@oh-my-pi/pi-utils";
+import { prepareBedrockCompactionRequest } from "./bedrock";
 
 // ============================================================================
 // Types & Configuration
@@ -115,7 +117,15 @@ export function getCompactionV2Endpoint(model: Model): string | undefined {
 export function shouldUseCompactionV2Streaming(
 	model: Model,
 ): model is Model<"openai-responses" | "azure-openai-responses" | "openai-codex-responses"> {
-	if (model.remoteCompaction?.v2StreamingEnabled !== true) return false;
+	const v2StreamingEnabled = model.remoteCompaction?.v2StreamingEnabled;
+	if (v2StreamingEnabled === false) return false;
+	// Amazon Bedrock's OpenAI routes accept `compaction_trigger` without an opt-in.
+	if (
+		v2StreamingEnabled !== true &&
+		!(compactionV2Api(model) === "openai-responses" && isBedrockOpenAIUrl(model.baseUrl))
+	) {
+		return false;
+	}
 	return getCompactionV2Endpoint(model) !== undefined;
 }
 
@@ -270,12 +280,19 @@ export async function requestCompactionV2Streaming(
 		preferWebsockets?: boolean;
 	},
 ): Promise<CompactionV2Response> {
+	let fetchImpl: FetchImpl = options?.fetch ?? globalThis.fetch;
+	if (isBedrockOpenAIUrl(model.baseUrl)) {
+		({
+			model,
+			apiKey,
+			fetch: fetchImpl,
+		} = await prepareBedrockCompactionRequest(model, apiKey, options?.fetch, signal));
+	}
 	const endpoint = getCompactionV2Endpoint(model);
 	if (!endpoint) {
 		throw new Error(`Model ${model.id} does not support V2 streaming compaction`);
 	}
 
-	const fetchImpl = options?.fetch ?? globalThis.fetch;
 	const retryWait = options?.retryWait ?? ((delayMs: number) => Bun.sleep(delayMs));
 	const isCodexResponses = compactionV2Api(model) === "openai-codex-responses" || model.provider === "openai-codex";
 	const codexMetadata =
@@ -597,6 +614,14 @@ function handleCompactionV2Event(
 	if (type === "response.failed" || type === "response.incomplete") {
 		throw new Error(formatCompactionV2Failure(event, type));
 	}
+
+	// A standalone `error` event terminates the stream. Keep its status so a
+	// deterministic 4xx (e.g. context_too_large) is not retried as a dropped stream.
+	if (type === "error") {
+		const message = formatCompactionV2Failure(event, type);
+		const status = numberField(event, "status");
+		throw status === undefined ? new Error(message) : new AIError.ProviderHttpError(message, status);
+	}
 }
 
 function parseCompactionV2Usage(event: Record<string, unknown>): CompactionV2Usage | undefined {
@@ -629,8 +654,9 @@ function formatCompactionV2Failure(event: Record<string, unknown>, type: string)
 		: response && isRecord(response.error)
 			? response.error
 			: undefined;
-	const message = error ? stringField(error, "message") : undefined;
-	const code = error ? (stringField(error, "code") ?? stringField(error, "type")) : undefined;
+	// Responses `error` events carry code/message at the top level.
+	const message = stringField(error ?? event, "message");
+	const code = error ? (stringField(error, "code") ?? stringField(error, "type")) : stringField(event, "code");
 	return `V2 compaction stream ${type}${code ? ` (${code})` : ""}${message ? `: ${message}` : ""}`;
 }
 

@@ -7211,6 +7211,65 @@ plan tổng là bản khảo sát ban đầu.
 > **mục 5 `durable` là TÀI LIỆU THAM KHẢO, NGOÀI PHẠM VI** — không ai được làm theo các bước dưới nó.
 > Tham chiếu dạng `MILESTONE_1B_EXECUTION_PLAN.md:dòng` trong tài liệu cũ giờ trỏ vào chính file này.
 
+## ĐIỀU CHỈNH PHẠM VI 2026-09-29 — đo lại trên `pi` @ `4259686d`, và 14 package thay vì 12
+
+> **Đọc mục này trước mọi thứ khác trong Phần B.** Nó ghi đè các con số đo trước đây, và
+> ghi đè bằng phép đo chạy thật trên **cây `pi` clone tại máy**, không phải số của tài liệu cũ.
+
+**Bối cảnh đo.** `pi` HEAD `4259686d9290c0d73ae7192b796aee3e530a9779` (2026-09-29 10:51), clone
+shallow. omp `d97b008c6e`. Đối chiếu từng file `.ts`/`.tsx` trên 4 package dùng chung, so **cả
+kích thước byte** (SHA-256), đường dẫn tương đối trong từng package.
+
+### Số đo cũ **sai**, và sai nhiều
+
+| | Tài liệu ghi (đo trên `d6af72e`) | **Đo lại @ `4259686d`** |
+|---|---|---|
+| Giống hệt từ byte | 0 | **0** ✓ (giữ nguyên) |
+| Chỉ có ở `pi` | 685 | **1.270** |
+| Chỉ có ở omp | 2.046 | **4.318** |
+| Cùng đường dẫn, khác nội dung | 70 | **1.415** |
+
+Tách phần **mã chạy** khỏi phần **ví dụ / test / bench / docs**:
+
+| | Chỉ có ở `pi` | Khác nhau |
+|---|---|---|
+| **src/prod** | **601** | **657** |
+| example / test / bench / docs | 669 | 758 |
+
+**Hệ quả cho "parity sẽ lệch":** 657 file là tập phán đoán thật, **không phải 70**. Và trong đó
+tập trọng tâm là `agent/src/harness` 106 · `coding-agent/src/core` 94 · `ai/src/providers` 92 ·
+`coding-agent/src/modes` 64 · `coding-agent/src/experimental` 52 · `ai/src/api` 39.
+Bảng phân loại từng file: `PI_OMP_FILE_DECISIONS.md`.
+
+**Nguyên tắc rút ra, và nó đảo chiều cách M1 Phần A đang làm:** *parity* bằng cách tự viết
+từng work item là cách **đã thất bại** — không một file nào giống byte sau nhiêu năm fork, vì
+viết tay thì trôi. Chép thì **không thể trôi khỏi `pi`**. Với 601 file chỉ có ở `pi`, đáp án là
+chép; 657 file phải đối chiếu từng cặp.
+
+### `pi` giờ có **14** package, không phải 12
+
+Hai package mới, chưa có mặt trong bất kỳ tài liệu kế hoạch nào:
+
+| Package | Quy mô | Vì sao quan trọng |
+|---|---|---|
+| **`codemode`** | 14 file | README: *"Runs model-written JavaScript in a QuickJS VM (compiled to WebAssembly) where the only capability is calling tools."* — **đây chính là câu trả lời cho câu hỏi "code do model viết có ambient authority thật không"**, mà trước đây để ngỏ. Cơ chế là **cấp quyền bằng cách không cấp**: VM riêng, không `process`, không `fs`, không network. 14 file, MIT, chép được. Xem thêm W8 của M8. |
+| **`mcp`** | 25 file | MCP client độc lập, không phụ thuộc SDK chính thức, transport-neutral + stdio + Streamable HTTP. omp đã có MCP → đây là việc parity, không phải chép mới. |
+
+Quy mô 12 package cũ (để so): `coding-agent` 727 · `ai` 362 · `agent` 232 · `tui` 94 · `durable` 71 ·
+`chord` 59 · `session-backends` 27 · `evals` 23 · `server` 23 · `client` 13 · `protocol` 12 · `telemetry` 8.
+
+### Sandbox của `pi` là **ví dụ trong docs, không phải code đã ship**
+
+`agent/docs/mobile-handoff/02-plugins/02-sandbox/src/` có `membrane.ts`, `leak.ts`,
+`escape-audit.ts`, `iso-vs-ctx.ts`, `demo-facet.ts` — nghe đúng nhu cầu containment. Nhưng
+`grep -rn "02-sandbox" agent/src` → **0 hit**: không mã nguồn nào import nó.
+
+**Nghĩa là:** containment tầng OS mà chương trình đã defer — `pi` **cũng không có bản đã ship**
+để chép. Không có tiền lệ. Điều đó củng cố quyết định defer, và nghĩa là W1/W2 của M8 không có
+nguồn để mượn khi mở lại.
+
+---
+
 ## ĐIỀU CHỈNH PHẠM VI 2026-09-28 — 7 package xuống 6, và một tầng bị thiếu
 
 > **Đọc mục này trước mọi thứ khác trong file.** Nó ghi đè hai con số và một tiền đề xuất hiện bên dưới.

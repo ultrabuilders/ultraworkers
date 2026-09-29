@@ -269,8 +269,18 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	registerOutputFormat(format: OutputFormat): void {
 		const id = format.id;
-		if (id.length === 0 || id !== id.trim()) {
-			throw new TypeError("Output format id must be a non-empty trimmed string");
+		// Charset, not just trimming: the id becomes part of the output filename
+		// (`<session-stem>.<id>`), so an id containing a separator would let a
+		// registration write outside the directory the caller resolved. Rejecting
+		// the characters is cheaper than sanitising the name afterwards, and it
+		// keeps the id usable verbatim as a CLI value.
+		if (!OUTPUT_FORMAT_ID_PATTERN.test(id)) {
+			throw new TypeError(`Output format id must match ${OUTPUT_FORMAT_ID_PATTERN} (got ${JSON.stringify(id)})`);
+		}
+		if (format.extension !== undefined && !OUTPUT_FORMAT_EXTENSION_PATTERN.test(format.extension)) {
+			throw new TypeError(
+				`Output format extension must match ${OUTPUT_FORMAT_EXTENSION_PATTERN} (got ${JSON.stringify(format.extension)})`,
+			);
 		}
 		if (this.extension.outputFormats.has(id)) {
 			// Two extensions claiming one id would make the exported bytes depend
@@ -477,6 +487,10 @@ async function bindExtension(
 /**
  * Create an Extension from an inline factory function.
  */
+/** Format ids become filenames, so no separators, dots or whitespace. */
+const OUTPUT_FORMAT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const OUTPUT_FORMAT_EXTENSION_PATTERN = /^\.[A-Za-z0-9]+$/;
+
 export async function loadExtensionFromFactory(
 	factory: ExtensionFactory,
 	cwd: string,

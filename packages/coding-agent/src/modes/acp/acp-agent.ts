@@ -58,6 +58,7 @@ import { buildSkillPromptMessage, parseSkillInvocation } from "../../extensibili
 import { MCPManager } from "../../mcp/manager";
 import type { MCPServerConfig } from "../../mcp/types";
 import { loadAllExtensions } from "../../modes/components/extensions/state-manager";
+import { getAvailableThemesWithPaths } from "@oh-my-pi/pi-tui";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 import { normalizePlanTitle, type PlanApprovalDetails, resolveApprovedPlan } from "../../plan-mode/approved-plan";
 import { autosaveApprovedPlan } from "../../plan-mode/plan-autosave";
@@ -602,7 +603,9 @@ export function createAcpExtensionUiContext(
 		get theme() {
 			return theme;
 		},
-		getAllThemes: async () => [],
+		// Was a stub returning []. ACP clients could set a theme by name but could
+		// never discover one, including a theme another extension registered.
+		getAllThemes: async () => getAvailableThemesWithPaths(),
 		getTheme: async () => undefined,
 		setTheme: async () => ({ success: false, error: "Theme changes are unavailable in ACP mode" }),
 		getToolsExpanded: () => false,

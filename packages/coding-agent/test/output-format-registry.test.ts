@@ -214,3 +214,49 @@ function makeSession(sessionFile: string) {
 		getLeafId: () => "m1",
 	} as never;
 }
+
+describe("format ids cannot escape the output directory", () => {
+	async function register(id: string, extension?: string) {
+		const { ExtensionRuntime, loadExtensionFromFactory } =
+			await import("@oh-my-pi/pi-coding-agent/extensibility/extensions/loader");
+		const { EventBus } = await import("@oh-my-pi/pi-coding-agent/utils/event-bus");
+		let thrown: unknown;
+		await loadExtensionFromFactory(
+			(api: ExtensionAPI) => {
+				try {
+					api.registerOutputFormat({ id, extension, mimeType: "x/y", format: () => bytes("x") });
+				} catch (e) {
+					thrown = e;
+				}
+			},
+			"/ext",
+			new EventBus(),
+			new ExtensionRuntime(),
+			"traversal-probe",
+		);
+		return thrown;
+	}
+
+	it("rejects an id carrying a path separator", async () => {
+		// The id becomes part of the output filename, so `../../../x` would write
+		// outside the directory the caller resolved. Trimming alone did not stop
+		// it: a separator is a perfectly trimmed string.
+		expect(await register("../../../victim.cfg")).toBeInstanceOf(TypeError);
+		expect(await register("a/b")).toBeInstanceOf(TypeError);
+		expect(await register("a b")).toBeInstanceOf(TypeError);
+		expect(await register("")).toBeInstanceOf(TypeError);
+	});
+
+	it("rejects an extension carrying a separator", async () => {
+		// The extension is the other half of the filename, and `extension` is
+		// optional precisely so a caller can leave it off and get `.<id>`.
+		expect(await register("ok", ".md/../../x")).toBeInstanceOf(TypeError);
+		expect(await register("ok", ".md")).toBeUndefined();
+	});
+
+	it("accepts the names a real format would use", async () => {
+		for (const id of ["markdown", "json", "org.example.pdf", "ok.v2"]) {
+			expect(await register(id)).toBeUndefined();
+		}
+	});
+});

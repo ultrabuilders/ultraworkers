@@ -58,6 +58,7 @@ import {
 import { RpcSessionEventForwarder } from "./rpc-session-events";
 import { isRpcSessionSettled, RpcSessionSettleWatcher } from "./rpc-session-settle";
 import { RpcSubagentRegistry, readRpcSubagentTranscript } from "./rpc-subagents";
+import { getAvailableThemesWithPaths } from "@oh-my-pi/pi-tui";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -985,7 +986,9 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 		}
 
 		getAllThemes(): Promise<{ name: string; path: string | undefined }[]> {
-			return Promise.resolve([]);
+			// Was a stub returning []. A client driving the TUI over RPC had no way
+			// to see the built-in themes, let alone one an extension registered.
+			return getAvailableThemesWithPaths();
 		}
 
 		getTheme(_name: string): Promise<Theme | undefined> {

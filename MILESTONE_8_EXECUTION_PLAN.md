@@ -150,11 +150,11 @@ Chủ sở hữu đã chốt: **hoãn containment tầng OS.** Đây là câu qu
 | # | Quyết định | Vì sao chặn | Ai chốt |
 |---|---|---|---|
 | 1 | ~~**Sandbox có thực sự là thứ sản phẩm này cần không?**~~ **✅ ĐÃ CHỐT (2026-09-29): DEFER.** Chủ sở hữu quyết **hoãn containment tầng OS**. Xem *Phạm vi sau quyết định defer* bên dưới. | ~~Đây là câu hỏi chặn toàn bộ M8.~~ **Đã đóng.** | Maintainer, bằng văn bản ✅ |
-| 2 | Mặc định `tools.approvalMode` đổi `yolo` → `write`? | Đổi hành vi cài mặc định. Chốt sau thì không sửa ngược được mà không phá người đã quen. M1 W6 từng bị trì hoãn vì lý do này. | Maintainer, bằng văn bản |
+| 2 | ~~Mặc định `tools.approvalMode` đổi `yolo` → `write`?~~ **✅ ĐÃ CHỐT (2026-09-29): KHÔNG — giữ `yolo`.** Chủ sở hữu: *"sai cái này omp có k cần làm"*. W3 bỏ khỏi M8. | Đã đóng. Hệ quả ghi trong `docs/approval-mode.md`: dưới `yolo`, `bash.patterns` **không** chặn được lệnh chạy qua `eval` — nên W5 nặng tương đối hơn trước. | Maintainer ✅ |
 | 3 | `eval` có được quyền spawn shell không? | W5 chặn nó là thay đổi hành vi. Nếu `eval` **cần** spawn shell thì W8 phải làm trước W5, ngược thứ tự. | Maintainer + kỹ sư tool |
 | 4 | W6 có nhận `WI-20` từ M2 không, hay M2 giữ? | M2:44 nói thẳng phần thực thi **nằm ngoài M2**. Chuyển nó cần một dòng owner + ngày trong bảng quyết định M2. | Maintainer |
-| 5 | Trục nào làm trước — filesystem hay network? | Cả hai đều cùng cỡ nghiệp vụ nhưng khác rủi ro. Network chặn dễ thấy hơn; filesystem chặn nhiều hơn. | Kỹ sư, sau khi câu 1 |
-| 6 | `omp doctor` in trạng thái containment theo định dạng nào? | Nó là chỗ duy nhất để in ra, và nó chưa tồn tại (`grep -c 'name: "doctor"'` → 0). Cần khớp với W18 của M1. | Kỹ sư M1 + kỹ sư M8 |
+| 5 | ~~Trục nào làm trước — filesystem hay network?~~ **Vô nghĩa sau defer** | Cả W1 và W2 đều thuộc phần đã hoãn. Tái mở chỉ khi containment tầng OS quay lại phạm vi. | — |
+| 6 | `omp doctor` in trạng thái trust/approval theo định dạng nào? | Nó là chỗ duy nhất để in ra, và nó chưa tồn tại (`grep -c 'name: "doctor"'` → 0). Cần khớp với W18 của M1. | Kỹ sư M1 + kỹ sư M8 |
 | 7 | Đường dẫn rule YAML khai ở đâu? | `.omp/config.yml` hay file riêng? Ảnh hưởng tới việc `config migrate` của M5 W5 có phải xử lý không. | Kỹ sư, sau câu 1 |
 
 ---

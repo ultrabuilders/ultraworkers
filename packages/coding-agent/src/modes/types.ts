@@ -583,10 +583,6 @@ export interface InteractiveModeContext {
 	 * `AskTool.execute()` call.
 	 */
 	getToolUIContext(): ExtensionUIContext | undefined;
-	emitCustomToolSessionEvent(
-		reason: "start" | "switch" | "branch" | "tree" | "shutdown",
-		previousSessionFile?: string,
-	): Promise<void>;
 	setHookWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void;
 	setHookStatus(key: string, text: string | undefined): void;
 	showHookSelector(

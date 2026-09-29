@@ -554,35 +554,6 @@ export class ExtensionUiController {
 	}
 
 	/**
-	 * Emit session event to all extension tools.
-	 */
-	async emitCustomToolSessionEvent(
-		reason: "start" | "switch" | "branch" | "tree" | "shutdown",
-		previousSessionFile?: string,
-	): Promise<void> {
-		const event = { reason, previousSessionFile };
-		const uiContext = this.ctx.session.extensionRunner?.getUIContext();
-		if (!uiContext) {
-			return;
-		}
-		const runner = this.ctx.session.extensionRunner;
-		for (const registeredTool of runner?.getAllRegisteredTools() ?? []) {
-			if (registeredTool.definition.onSession) {
-				try {
-					await registeredTool.definition.onSession(event, {
-						...runner!.createContext(),
-						ui: uiContext,
-						hasUI: true,
-						compact: instructionsOrOptions => this.#compactSession(instructionsOrOptions),
-					});
-				} catch (err) {
-					this.showToolError(registeredTool.definition.name, err instanceof Error ? err.message : String(err));
-				}
-			}
-		}
-	}
-
-	/**
 	 * Show a tool error in the chat.
 	 */
 	showToolError(toolName: string, error: string): void {

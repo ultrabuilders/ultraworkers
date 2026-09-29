@@ -5339,6 +5339,16 @@ export class AgentSession implements SettingsScope {
 		} catch (error) {
 			logger.warn("Failed to emit session_shutdown event", { error: String(error) });
 		}
+		// The tool-level `onSession` handler, which is a different contract from
+		// the `session_shutdown` hook above. It used to be reachable only through
+		// the interactive UI controller, so in `print`, `rpc` and `json` mode a
+		// tool holding a resource open never heard about shutdown at all. This is
+		// the path every mode shares, because it is dispose() itself.
+		try {
+			await this.emitCustomToolSessionEvent("shutdown");
+		} catch (error) {
+			logger.warn("Custom tool onSession shutdown dispatch failed", { error: String(error) });
+		}
 
 		// Stop fallback extension timers before aborting deferred work they could enqueue.
 		this.#fallbackExtensionTimers?.clearAll();
@@ -12151,9 +12161,11 @@ export class AgentSession implements SettingsScope {
 				await onSession(event, {
 					...runner.createContext(),
 					ui: uiContext,
-					// A mode with no UI passes no context; the handler decides whether
-					// it can work without one rather than being skipped for it.
-					hasUI: uiContext !== undefined,
+					// Ask the runner, do not infer it. In a mode with no UI the runner
+					// hands out a no-op context rather than undefined, so checking
+					// `uiContext !== undefined` reports hasUI true in `print` and
+					// `rpc` — telling a handler it can draw when it cannot.
+					hasUI: runner.hasUI(),
 				});
 				delivered++;
 			} catch (err) {

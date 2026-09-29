@@ -1893,6 +1893,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#signalTeardown = createSessionTeardown({
 			getDraftText: () => this.#inputController.getDraftText(),
 			beginDispose: () => this.session.beginDispose(),
+			// dispose() already dispatches the tool-level `onSession` shutdown, so
+			// this teardown must not dispatch a second time — a handler that
+			// releases a resource would see two shutdowns and free it twice.
+			emitSessionEvent: async () => {},
 			saveDraft: text => this.sessionManager.saveDraft(text),
 			disposeSession: async reason => {
 				await this.#btwController.dispose();
@@ -7875,13 +7879,6 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	getToolUIContext(): ExtensionUIContext | undefined {
 		return this.#extensionUiController.getToolUIContext();
-	}
-
-	emitCustomToolSessionEvent(
-		reason: "start" | "switch" | "branch" | "tree" | "shutdown",
-		previousSessionFile?: string,
-	): Promise<void> {
-		return this.#extensionUiController.emitCustomToolSessionEvent(reason, previousSessionFile);
 	}
 
 	setHookWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void {

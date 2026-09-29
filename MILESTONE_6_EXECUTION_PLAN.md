@@ -1881,7 +1881,16 @@ Phía omp thì **yếu hơn nữa**: ba file audit không ghim commit nào của
 
 **`@opentui/core`.** Giấy phép đã được xác nhận **MIT qua metadata npm và README** — nhưng đó là tầng bằng chứng yếu hơn việc đọc `LICENSE` trong một bản cài. Và **chưa ai thử cài nó**. Chưa biết nó chạy được trong omp hay không: có thay thế được `packages/tui` không, bundle bao nhiêu, đụng native addon nào. Đây là **cổng đầu tiên phải đóng trước khi chốt bất kỳ layout nào** — vì `opencode.md` §0 đã sửa tiền đề của M3: opencode không phải "không có flexbox", nó **mua** flexbox từ `@opentui/core@0.5.12`. Lưu ý mâu thuẫn chưa giải quyết: `opencode.md` §9 mục 1-2 vẫn ghi giấy phép này là *chưa biết*; nếu tầng metadata là đủ thì phải sửa §9, nếu không thì mục "Những điều chưa được kiểm chứng" ở trên đang nói quá.
 
-**Cổng kiểm của M3 (`bun test packages/tui`) còn bị chặn một phần bởi native addon.** Hệ quả trực tiếp: con số "omp: 0 file snapshot, 233 file test" mới chỉ mô tả **cây nguồn**, chưa chứng minh 233 file test đó chạy xanh. Nên chiến lược snapshot mà `codex.md` §6 khuyến nghị **chưa thể kiểm chứng là chạy được** cho tới khi cổng này mở.
+**Tiền đề môi trường cho cổng kiểm của M3 (`bun test packages/tui`): cần addon native.** Đây **không phải hạn chế của máy** — đây là *một bước build còn thiếu*. Trên máy sạch, `bun test packages/coding-agent/test/**` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64`. Làm một lần là xong:
+
+```bash
+brew install ninja                     # 1.13.2
+bun --cwd=packages/natives run build   # exit 0, sinh pi_natives.darwin-arm64.node
+```
+
+Sau đó **toàn bộ suite chạy**, đã đo lại: `bun test packages/utils/test/` → **743 pass / 10 skip / 0 fail** (753 test, 80 file); `bun test packages/coding-agent/test/mcp-config-scope-dedup.test.ts` → **8 pass / 0 fail**. `bun run check:ts` thì **không** cần bước này.
+
+Còn đúng, và là điều duy nhất còn đúng từ câu cũ: con số *"omp: 0 file snapshot, 233 file test"* chỉ mô tả **cây nguồn** — nó không nói 233 file test đó xanh, và chiến lược snapshot mà `codex.md` §6 khuyến nghị vẫn **chưa được ai chạy tới để chứng minh là chạy được**. Cái còn thiếu là **kết quả chạy**, không phải khả năng chạy.
 
 **Có tìm ra điều gì trong `unknowns` không — có, 21 mục (7 mỗi audit).** Rút gọn còn những cái có khả năng đổi kết luận:
 

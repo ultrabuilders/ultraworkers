@@ -15,7 +15,7 @@ import { md } from "../native/describe";
 import type { DescribeContext, NativeNode } from "../native/node";
 import type { SymbolTheme } from "../symbols";
 import { TERMINAL } from "../terminal-capabilities";
-import type { Component, StablePrefixReporter } from "../tui";
+import type { Component } from "../tui";
 import {
 	applyBackgroundToLine,
 	Ellipsis,
@@ -1750,7 +1750,7 @@ function splitPushedHighlightLines(pushed: string): string[] {
 	return lines;
 }
 
-export class Markdown implements Component, StablePrefixReporter {
+export class Markdown implements Component {
 	#text: string;
 	// Suffix of #text a future append could still complete into a match
 	// (see trailingOsc8Partial); drives the append-only fast path.
@@ -1943,46 +1943,6 @@ export class Markdown implements Component, StablePrefixReporter {
 		return this.#transientRenderCache ? (this.#streamPrefixText ?? "") : "";
 	}
 
-	/**
-	 * Row count of the frozen leading portion of the last render — the
-	 * `StablePrefixReporter` contract, so the engine can re-render from the first
-	 * changed row instead of from row 0.
-	 *
-	 * Derived from the same `#streamPrefixText` that `getLastRenderStableText`
-	 * reports, so the two can never disagree.
-	 *
-	 * The count is the height of a render of the PREFIX ALONE, not a scan of the
-	 * full render: a block boundary does not line up with a row boundary (one
-	 * paragraph can wrap to five rows, and a blank line between blocks renders to
-	 * no row at all), so the only sound way to count is to render the prefix and
-	 * take its height. A row-count estimate here would let the engine skip rows
-	 * that the open tail can still rewrite.
-	 */
-	get stablePrefixRows(): number {
-		if (!this.#transientRenderCache) return 0;
-		const prefix = this.#streamPrefixText;
-		const tokenCount = this.#streamPrefixTokens?.length ?? 0;
-		if (prefix === undefined || prefix.length === 0 || tokenCount === 0) return 0;
-		// The prefix must still be a real prefix of the text being rendered, or the
-		// frozen tokens describe an older state and any count is a guess.
-		const text = this.#cachedText;
-		if (text === undefined || !text.startsWith(prefix)) return 0;
-		if (this.#cachedWidth === undefined) return 0;
-		// Reuse the rows the streaming renderer already produced for the frozen
-		// tokens. Re-deriving them would cost a second pass over the prefix every
-		// frame, which is the O(n²) the streaming path exists to avoid.
-		const paddingX = this.#ignoreTight ? this.#paddingX : getPaddingX(this.#paddingX);
-		const cache = this.#matchingStreamPrefixLineCache(
-			text,
-			prefix,
-			this.#renderSignature(this.#cachedWidth, paddingX),
-		);
-		if (cache && cache.tokenCount === tokenCount) return cache.lines.length;
-		// The cache has not caught up with the newest frozen block. Claiming
-		// nothing is the safe answer: a caller that skips a row still being
-		// rewritten shows text changing under a row it called final.
-		return 0;
-	}
 
 	get transientRenderCache(): boolean {
 		return this.#transientRenderCache;

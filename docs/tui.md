@@ -34,7 +34,7 @@ export interface Component {
 }
 ```
 
-Render results are component-owned and immutable to callers. An unchanged component may (and should) return the **same array reference** it returned last time; it must return a new array whenever content changes. Reference equality enables container memoization and stable-prefix work avoidance. A component that mutates a previously returned array in place must also implement `StablePrefixReporter` and report how many leading rows survived unchanged; `Markdown` does, via `stablePrefixRows`.
+Render results are component-owned and immutable to callers. An unchanged component may (and should) return the **same array reference** it returned last time; it must return a new array whenever content changes. Reference equality enables container memoization and stable-prefix work avoidance. A streaming component reports its own frozen boundary as source text rather than a row count — `Markdown` does this via `getLastRenderStableText()`, which the chat transcript uses to publish only settled bytes. The engine itself needs no row count: it copies each component's array into its own prepared buffer and diffs those by content, so returning a fresh array on change is what keeps a frame correct.
 
 `Focusable` is separate:
 

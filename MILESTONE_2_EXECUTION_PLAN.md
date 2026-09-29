@@ -253,6 +253,61 @@ Với WI-8a: ba dòng của `plugin-settings-provenance.test.ts` xanh (hai dòng
 
 ---
 
+## WI-A…WI-E — năm seam chặn luận điểm, chưa có chủ (đề xuất 2026-09-29)
+
+> **Trạng thái: ĐỀ XUẤT, chờ owner duyệt.** Năm mục dưới đây do một đợt quét đúng trục
+> *"cái gì đang hardcode trong core mà extension không có đường nào chạm tới"* phát hiện. Chúng **không
+> phải tính năng mới** — chúng là phần *de-hardcode* mà luận điểm của chương trình đòi hỏi, và
+> chưa work item nào trong toàn bộ 10 tài liệu sở hữu.
+>
+> **Đo trên ~40 bề mặt người dùng chạm tới:** 13 bề mặt **đã có seam thật** (có consumer gọi tới,
+> không chỉ hàm `register*` khai trên type). **27 chỗ còn lại** không có đường hoặc có seam rỗng.
+> Trong đó **6 chặn trực tiếp luận điểm "mọi thứ là plugin"**, và **chỉ 2 trong 6 có work item**
+> (WI-7, WI-13) — **cả hai đều chưa có code**. Bốn cái còn lại: bảng verb CLI · registry theme ·
+> handle app-shell · từ vựng session event.
+>
+> **Cách đọc đúng:** extension **không** nằm trong sandbox — chúng chạy cùng tiến trình. Nên không
+> mục nào ở đây là *"plugin kỹ thuật không thể làm X"*; tất cả là *"plugin không có đường có cấu trúc,
+> được công bố, và hiện trong UI/schema để làm X"*. Nếu chấp nhận monkeypatch là đủ, phần lớn các
+> mục này tự biến mất — nhưng khi đó luận điểm cũng không còn gì để nói.
+
+| ID | Seam | Cỡ | Chặn luận điểm | Bằng chứng chống lại "thêm hàm là xong" |
+|---|---|---|---|---|
+| **WI-A** | `registerSubcommand` — bảng verb top-level | M | **Có** | `packages/utils/src/cli.ts:434-437` tự viết *"No filesystem scanning, no plugin system, no package.json reading."*; `cli-commands.ts:314-335` hardcode **9 tên verb của plugin** trong `RESERVED_TOP_LEVEL_WORDS` để tự vá #2935/#4845 — **core phải liệt kê từ ngữ plugin, nên core không thể là plugin** |
+| **WI-B** | `registerTheme` + chính sách shadow | S | **Có** | 4 nơi cùng luật "built-in thắng", không ngoại lệ, không cảnh báo; shim tự viết *"themes are silently dropped (OMP has no session-level themes surface)"* |
+| **WI-C** | Thu hẹp handle `TUI` | M | **Có** | `ui.custom()` tra **nguyên class thật** `TUI extends Container` — 33 method riêng + 8 kế thừa, gồm `setFrameProvider` (*"product-owned bounded frame provider"*) và `resetDisplay` (*"never from ordinary rendering"*). Test dựng fake `ui` chỉ **5 member** rồi ép `as unknown as`; contract khai **41** |
+| **WI-D** | Registry định dạng đầu ra | M | **Có** | `agent-session.ts:11931` `exportToHtml(...)`, cả hai call site hardcode HTML; không tham số format, không registry |
+| **WI-E** | Từ vựng session event + đưa `onSession` ra khỏi TUI | M | **Có** | `onSession` chỉ có **một** call site (`extension-ui-controller.ts:567`), chỉ interactive mode — ở `print`/`rpc`/`json` nhánh shutdown **không bao giờ chạy** ⇒ **rò resource thật, không phải thiếu tính năng** |
+
+### Bẫy cụ thể của WI-A
+
+`cli-commands.ts:289-295` dựng `SUBCOMMAND_NAMES` **một lần lúc module load**. Mảng `commands` export
+không `readonly`, nên ai cũng tưởng push vào là xong — nhưng `isSubcommand` đọc Set **đã đóng**,
+`resolveCliArgv` vẫn forward thành prompt. **Fix tối thiểu sẽ sinh ra một seam trông như có nhưng
+không chạy.** Và vòng đời: `cli.ts:607` dispatch → dynamic import → `loadExtensions` chạy **sau** khi
+argv đã định tuyến xong.
+
+### Tiền lệ đã có trong chính codebase
+
+`cli/extension-flags.ts:27-29`: *"let a registered flag shadow a same-named built-in … **No built-in
+name list to maintain**."* Cơ chế shadow **đã có**; bảng verb chưa từng được áp. Cùng kiểu:
+`pi` đã có `pi.registerMcpServer()` (`packages/coding-agent/src/core/mcp-servers.ts`, 237 dòng) —
+cái mà quét ghi là omp còn thiếu.
+
+### Ẩn số của WI-A — chưa đo được
+
+`registerSubcommand` cần extension **đã load**; mà load cần session đầy đủ. Nếu vậy có thể phải
+tách **hai giai đoạn load** (giai đoạn rẻ chỉ đọc manifest top-level verb, giai đoạn đầy đủ sau
+routing), và `cli.ts` phải tách đôi. **Chưa đo chi phí thật.**
+
+### Wave gợi ý
+
+`WI-A` sau WI-6 (dùng chung bảng quyết định trùng tên) · `WI-C` sau WI-10 (sau khi viết bề mặt
+chuẩn) · `WI-B`, `WI-D` độc lập · `WI-E` phần *rò resource* làm trước phần *registry*.
+
+---
+
+
 ## Quyết định cần chốt trước khi code
 
 > ⛔ **MÂU THUẪN CROSS-MILESTONE, PHẢI CHỐT TRƯỚC KHI WI-4 MERGE (thêm 2026-09-29).**

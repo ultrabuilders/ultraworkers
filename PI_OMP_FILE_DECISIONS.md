@@ -490,3 +490,30 @@ Ba rủi ro cụ thể, theo mức độ:
 
 
 
+
+---
+
+## 6. Đính chính sau (2026-09-29) — hai verdict tạm đã được giải quyết
+
+Hai mục dưới đây được chấm **khi file của `pi` đã biến mất khỏi đĩa**, nên verdict ban đầu là tạm.
+Đã clone lại `pi` và đo lại:
+
+| Mục | Verdict tạm | **Kết quả sau khi clone lại** |
+|---|---|---|
+| `core/mcp-servers.ts` | SKIP (tạm) | **SKIP là đúng** — nhưng lý do khác: `pi` **có** `pi.registerMcpServer()` (237 dòng), và `omp` **không có file này** vì đã xoá cả thư mục `coding-agent/src/core/` (flatten 252 file, 23/01/2026). Nó là **chỉ-có-ở-pi**, không phải "khác nội dung". |
+| `core/model-config.ts` | SKIP (tạm) | **SKIP là đúng** — cùng lý do: thuộc thư mục `core/` đã bị xoá khỏi omp. |
+
+**Lo ngại "omp đang bỏ 3 năng lực MCP thật" — KHÔNG ĐÚNG.** Đã kiểm trên toàn cây `pi`:
+
+| Khả năng | `pi` (toàn cây) | `omp` |
+|---|---|---|
+| `completions/complete` | **0 hit** | **0 hit** |
+| `logging/setLevel` | **0 hit** | **0 hit** |
+| `elicitation` | không có trong `mcp-servers.ts` | **có** — `modes/acp/acp-agent.ts`, `sdk.ts` (qua ACP) |
+
+Hai cái đầu **không phải khả năng nào `pi` có mà `omp` thiếu** — chúng không tồn tại ở cả hai.
+`elicitation` thì `omp` đã có, chỉ là qua ACP chứ không phải MCP.
+
+**Lưu ý thêm về tính ổn định của phép đo:** `pi` đã đi tiếp trong **cùng một ngày** — HEAD
+`4259686d` (lúc đo bảng này) → `4df1574` (lúc đóng hai verdict tạm). Đây là lý do mọi con số đo
+phải ghi kèm SHA, và lý do M3 cấm pin SHA trong *chính sách* nhưng M6 nên pin trong *hồ sơ đo*.

@@ -88,7 +88,19 @@
 		"web/mojeek",
 		"web/public"
 	],
-	"speech": ["local/kokoro", "xai/grok-tts", "xai-oauth/grok-tts"],
-	"dictation": ["local/parakeet-tdt-0.6b-v3"],
-	"judge": ["typesafe/jev-latest", "openrouter/~typesafe/jev-latest", "@tiny", "@smol", "@default"]
+	"speech": [
+		"local/kokoro",
+		"xai/grok-tts",
+		"xai-oauth/grok-tts"
+	],
+	"dictation": [
+		"local/parakeet-tdt-0.6b-v3"
+	],
+	"judge": [
+		"typesafe/jev-latest",
+		"openrouter/~typesafe/jev-latest",
+		"@tiny",
+		"@smol",
+		"@default"
+	]
 }

@@ -1,6 +1,6 @@
 # KẾ HOẠCH TỔ CHỨC LẠI PACKAGE — ĐỘ MỊN CỦA `pi`
 
-Tài liệu này **không thuộc sáu milestone**. Nó là điều kiện tiên quyết để `MILESTONE_1B_EXECUTION_PLAN.md`
+Tài liệu này **không thuộc sáu milestone**. Nó là điều kiện tiên quyết để `MILESTONE_1_EXECUTION_PLAN.md (Phần B)`
 thật sự rẻ và an toàn: nếu 169 file từ `pi` không biết rơi vào đâu, thì mỗi lần chép là một dự án
 riêng.
 

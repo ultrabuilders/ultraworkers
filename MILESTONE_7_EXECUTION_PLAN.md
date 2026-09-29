@@ -78,7 +78,7 @@ phải con số của "3 work item" mà bản thảo đầu đặt ra.
   ở dòng 653 bên trong nhánh *"Explicitly configured paths"*. Sửa nó là đổi **hành vi khám phá
   extension toàn cục** của omp, không phải thêm một builtin.
 - **Không chép tầng session của `pi` hay `senpi`.** Cả hai đều hard-fail khi JSONL hỏng; omp
-  đang tự lành. Xem `MILESTONE_1B_EXECUTION_PLAN.md` mục 5.
+  đang tự lành. Xem `MILESTONE_1_EXECUTION_PLAN.md (Phần B)` mục 5.
 - **KHÔNG LÀM warm prompt cache — upstream 18.4.0 đã làm xong, trong lúc tài liệu này được viết.**
   Work item WARM (mức sóng 1) bị gỡ khỏi đợt này sau khi merge upstream. Bằng chứng:
   `packages/ai/CHANGELOG.md:37` ghi: *"Removed the stream-level Anthropic prompt-cache keep-alive …

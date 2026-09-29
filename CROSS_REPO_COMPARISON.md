@@ -49,7 +49,7 @@ optional peerDependency của `@google/genai`, không phải code của `pi`. `p
 Vòng đời extension của `pi` là `core/extensions/` — **4.506 dòng**, tự quản lý. Ai thật sự phụ thuộc
 `chord`: `durable` 35 file · `server` 9 · `client` 5.
 
-Nên "chép `chord` để có vòng đời extension" là **sai đích**. Đã sửa trong `MILESTONE_1B_EXECUTION_PLAN.md`.
+Nên "chép `chord` để có vòng đời extension" là **sai đích**. Đã sửa trong `MILESTONE_1_EXECUTION_PLAN.md (Phần B)`.
 
 ### 4. `senpi` là fork của `pi` — nên M1B có hai nguồn, không phải một.
 
@@ -60,7 +60,7 @@ senpi ghi **cả** Mario Zechner (upstream) lẫn Yeongyu Kim, và cả hai đ�
 
 Hệ quả: M1B chép 7 package từ `pi` — nhưng `senpi` **cũng** có 6/7 package đó, và là bản đang được
 đội người dùng thật duy trì. Câu hỏi "chép từ đâu" giờ có hai đáp án và chưa chốt được.
-Xem `SENPI_FINDINGS.md` và mục 5 của `MILESTONE_1B_EXECUTION_PLAN.md`.
+Xem `SENPI_FINDINGS.md` và mục 5 của `MILESTONE_1_EXECUTION_PLAN.md (Phần B)`.
 
 ## Hai việc thật, tìm ra khi so chứ không phải khi đọc
 
@@ -86,7 +86,7 @@ Cả hai nằm trong **code của chính omp**, và cả hai đều do so sánh 
   thoát nào ngoài việc ném.
 
 Nên trong 5 repo, omp đứng đầu ở đúng trục "chịu được file hỏng" — và **chép nguyên xi session layer
-của `pi` sẽ làm nó tệ đi**. Đã sửa `MILESTONE_1B_EXECUTION_PLAN.md` mục 5, và đánh dấu lại dòng
+của `pi` sẽ làm nó tệ đi**. Đã sửa `MILESTONE_1_EXECUTION_PLAN.md (Phần B)` mục 5, và đánh dấu lại dòng
 `src/storage/jsonl/storage.ts` trong bảng chép.
 
 ## Nơi omp thắng — và đừng để ai xóa

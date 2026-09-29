@@ -286,14 +286,14 @@ Không dùng `tsc` — AGENTS.md cấm.
 
 | # | ID | Milestone | Phụ thuộc | Work item | Wave | Effort |
 |---|---|---|---|---|---|---|
-| 1 | **M1** | Bao trọn `pi`: parity + nền tảng vòng đời | — | 17 | 8 | L (~4 tuần, ~20 engineer-days) |
+| 1 | **M1** | Bao trọn `pi` — **Phần A**: parity + nền tảng vòng đời · **Phần B** (gộp từ M1B, 2026-09-29): port 6 package | — | 17 (Phần A) + 6 package (Phần B) | 8 (A) | L (~4 tuần phần A) |
 | 2 | **M2** | Composable extensions thay hardcoded core | M1 | 15 | 8 | ~8–10 engineer-weeks |
 | 3 | **M3** | Claude Code UI/UX | M2 | 16 | 6 | L (9/15 hạng mục thực thi làm được ngay hôm nay; 16 nếu tính cả A9) |
 | 4 | **M4** | Kỷ luật & workflow theo deepseek-harness | M2 | 4 | 3 | M (2.5–3 tuần cho phần core) |
 | 5 | **M5** | Rebrand `ultraworkers` | M1–M4 | 16 | 6 | L (phần lớn là **phân phối**, không phải code) |
 | 6 | **M6** | Bài học từ codex / opencode / gajae | M1–M5 | 15 | 5 | S+M (~4–6 ngày XS/S, +2–3 tuần M) |
 
-`R0` không phải tiền đề của M1 — nó là tiền đề của `M1B`, theo `PACKAGE_REORGANIZATION_PLAN.md:3`.
+`R0` không phải tiền đề của M1 — nó là tiền đề của **Phần B của M1** (gộp từ `M1B` ngày 2026-09-29), theo `PACKAGE_REORGANIZATION_PLAN.md:3`. Bảy tài liệu kế hoạch thay vì tám: `MILESTONE_1_EXECUTION_PLAN.md` nay chứa cả hai phần.
 
 ### Đường găng thẽ
 
@@ -514,7 +514,7 @@ Mario Zechner), nên chép rẻ hơn và ít rủi ro pháp lý hơn tái tạo;
 > **Năng lực người dùng quan sát được mà `durable` mang, không mất đi: đó là một tầng chịu lỗi, và omp
 > đã có một tầng chịu lỗi mạnh hơn.** Không phải "thiếu thay thế" — là **có sẵn thứ tốt hơn**.
 >
-> Hệ quả cho phạm vi: **`MILESTONE_1B_EXECUTION_PLAN.md` rút từ 7 package xuống 6, tiết kiệm 21.093 dòng.**
+> Hệ quả cho phạm vi: **`MILESTONE_1_EXECUTION_PLAN.md (Phần B)` rút từ 7 package xuống 6, tiết kiệm 21.093 dòng.**
 > Cổng mở bắt buộc trước khi tin: chạy lại `grep -rn "from.*durable"` trên cây `pi` và đối chiếu
 > `8/8 file byte-identical` — đừng chép số của SENPI mà không đo lại.
 
@@ -4957,7 +4957,7 @@ thì không.** Đó là giới hạn thật của tài liệu này.
 
 ### 2. Thay thế cho `session-backends` chỉ được đối chiếu theo TÊN và BỀ MẶT
 
-`chord` **không còn bị loại** — nó được chép (vị trí 1 trong M1B). `durable` **không chép** — package
+`chord` **không còn bị loại** — nó được chép (vị trí 1 trong Phần B của M1). `durable` **không chép** — package
 chết. `session-backends` vẫn là thứ duy nhất chưa có quyết định, và nó là thứ duy nhất còn bị loại
 khỏi M1 với lập luận "đã có thay thế trực tiếp". Cái thật sự được kiểm là **file thay thế tồn tại** và
 **phủ năng lực được nêu tên**. Chưa ai so `tương đương hành vi` giữa thay thế và bản gốc. Nên câu
@@ -23701,7 +23701,7 @@ phải con số của "3 work item" mà bản thảo đầu đặt ra.
   ở dòng 653 bên trong nhánh *"Explicitly configured paths"*. Sửa nó là đổi **hành vi khám phá
   extension toàn cục** của omp, không phải thêm một builtin.
 - **Không chép tầng session của `pi` hay `senpi`.** Cả hai đều hard-fail khi JSONL hỏng; omp
-  đang tự lành. Xem `MILESTONE_1B_EXECUTION_PLAN.md` mục 5.
+  đang tự lành. Xem `MILESTONE_1_EXECUTION_PLAN.md (Phần B)` mục 5.
 - **KHÔNG LÀM warm prompt cache — upstream 18.4.0 đã làm xong, trong lúc tài liệu này được viết.**
   Work item WARM (mức sóng 1) bị gỡ khỏi đợt này sau khi merge upstream. Bằng chứng:
   `packages/ai/CHANGELOG.md:37` ghi: *"Removed the stream-level Anthropic prompt-cache keep-alive …

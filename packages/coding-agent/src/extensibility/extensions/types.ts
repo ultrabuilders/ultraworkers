@@ -1517,6 +1517,17 @@ export interface ExtensionAPI {
 		},
 	): void;
 
+	/**
+	 * Contribute a transcript format for the surfaces that render a whole
+	 * session: `/export`, the view-session command, the RPC `export` verb and
+	 * the collaboration share command. All four took HTML only.
+	 *
+	 * Throws when `format.id` is empty or untrimmed, and when a format with that
+	 * id is already registered — silently letting the later one win would make
+	 * the exported bytes depend on load order.
+	 */
+	registerOutputFormat(format: OutputFormat): void;
+
 	/** Set the display label for this extension, or set a label on a specific entry. */
 	setLabel(entryIdOrLabel: string, label?: string | undefined): void;
 
@@ -1772,6 +1783,42 @@ export interface ExtensionFlag {
 	extensionPath: string;
 }
 
+/**
+ * A transcript format an extension contributes, for the surfaces that render a
+ * whole session: `/export`, the view-session command, the RPC `export` verb and
+ * the collaboration share command.
+ *
+ * All four built those surfaces as literal HTML, so an extension had no way to
+ * offer markdown, or a format for a consumer that already has a renderer. They
+ * pass an `id` to the exporter instead.
+ */
+export interface OutputFormat {
+	/** Format id, e.g. `markdown`. Non-empty and trimmed. */
+	readonly id: string;
+	/** File extension including the dot, e.g. `.md`. Defaults to `.<id>`. */
+	readonly extension?: string;
+	/** MIME type for the produced bytes. */
+	readonly mimeType: string;
+	/**
+	 * Render the session. `context` carries the messages and the theme names the
+	 * built-in HTML format uses, so a format that wants the same palette can
+	 * read it instead of loading the settings again.
+	 *
+	 * Returning the bytes is the whole contract: the caller writes them to the
+	 * path it resolved from `extension` and reports that path back. A formatter
+	 * must not write files itself — then a failure would leave the caller
+	 * reporting a path that does not exist.
+	 */
+	format(context: OutputFormatContext): Promise<Uint8Array> | Uint8Array;
+}
+
+/** What a formatter is given: the transcript plus the resolved theme names. */
+export interface OutputFormatContext {
+	readonly entries: readonly unknown[];
+	readonly darkTheme?: string;
+	readonly lightTheme?: string;
+}
+
 export interface ExtensionShortcut {
 	shortcut: KeyId;
 	description?: string;
@@ -1900,6 +1947,7 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	outputFormats: Map<string, OutputFormat>;
 }
 
 /**

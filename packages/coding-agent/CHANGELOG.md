@@ -5,6 +5,10 @@
 
 - Extensions building a custom component or a custom editor now receive a narrowed TUI surface instead of the render engine itself. They keep component composition, repaint scheduling, overlay mounting, focus, viewport dimensions and the image budget; they no longer receive `setFrameProvider`, `resetDisplay` or the terminal object.
 - `suspendInput()` / `resumeInput()` hand the terminal to an external editor without stopping the render engine.
+- `registerOutputFormat` lets an extension contribute a transcript format. The exporter takes a
+  `formatId` and the registered formats, so a caller can produce markdown or any other shape
+  instead of only HTML. An unknown id falls back to HTML; a formatter that throws propagates
+  rather than silently writing HTML under the name the caller asked for
 ### Added
 
 - Added `compat.bedrockMessagesApi` to `models.yml`, so Claude reached through a proxy or an `ANTHROPIC_BASE_URL` reroute to Bedrock's `/anthropic` API gets Bedrock request shaping and on-demand compaction; `false` opts a Bedrock URL out ([#13311](https://github.com/can1357/oh-my-pi/pull/13311)).

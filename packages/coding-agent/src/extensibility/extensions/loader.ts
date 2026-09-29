@@ -54,6 +54,7 @@ import type {
 	SourceInfo,
 	ToolDefinition,
 	ToolInfo,
+	OutputFormat,
 } from "./types";
 
 installLegacyPiSpecifierShim();
@@ -266,6 +267,20 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		}
 	}
 
+	registerOutputFormat(format: OutputFormat): void {
+		const id = format.id;
+		if (id.length === 0 || id !== id.trim()) {
+			throw new TypeError("Output format id must be a non-empty trimmed string");
+		}
+		if (this.extension.outputFormats.has(id)) {
+			// Two extensions claiming one id would make the exported bytes depend
+			// on which one loaded last, so the second registration is refused
+			// rather than silently winning.
+			throw new TypeError(`Output format '${id}' is already registered`);
+		}
+		this.extension.outputFormats.set(id, format);
+	}
+
 	registerMessageRenderer<T>(customType: string, renderer: MessageRenderer<T>): void {
 		this.extension.messageRenderers.set(customType, renderer as MessageRenderer);
 	}
@@ -382,6 +397,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		fileWriteFallbackHandlers: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
+		outputFormats: new Map(),
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),

@@ -159,7 +159,7 @@ import type {
 import { emitSessionShutdownEvent, TOP_LEVEL_AGENT } from "../extensibility/extensions";
 import { ManagedTimers } from "../extensibility/extensions/managed-timers";
 import { createExtensionModelQuery } from "../extensibility/extensions/model-api";
-import type { CompactOptions, ContextUsage } from "../extensibility/extensions/types";
+import type { CompactOptions, ContextUsage, OutputFormat } from "../extensibility/extensions/types";
 import type { CustomCommandContext } from "../extensibility/custom-commands/types";
 import { SkillDescriptionCatalog } from "../extensibility/skill-descriptions";
 import type { Skill, SkillWarning } from "../extensibility/skills";
@@ -12120,12 +12120,18 @@ export class AgentSession implements SettingsScope {
 	 * @param outputPath Optional output path
 	 * @param useUserThemes Bundle the dark and light TUI themes selected in settings
 	 */
-	async exportToHtml(outputPath?: string, useUserThemes = false): Promise<string> {
+	async exportToHtml(
+		outputPath?: string,
+		useUserThemes = false,
+		options?: { formatId?: string; formats?: ReadonlyMap<string, OutputFormat> },
+	): Promise<string> {
 		// Lazy import: the export module embeds the HTML template and pre-built
 		// tool renderers as text; only `/export` should pay that load.
 		const { exportSessionToHtml } = await import("../export/html");
 		return exportSessionToHtml(this.sessionManager, this.state, {
 			outputPath,
+			formatId: options?.formatId,
+			formats: options?.formats,
 			palette: useUserThemes ? "theme" : "web",
 			themeNames: useUserThemes
 				? {

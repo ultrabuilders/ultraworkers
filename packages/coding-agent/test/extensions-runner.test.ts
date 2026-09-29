@@ -4543,6 +4543,8 @@ describe("ExtensionRunner", () => {
 				fileWriteFallbackHandlers: [],
 				fileDeleteFallbackHandlers: [],
 				messageRenderers: new Map(),
+
+				outputFormats: new Map(),
 				composerShapes: new Map(),
 				commands: new Map(),
 				flags: new Map(),

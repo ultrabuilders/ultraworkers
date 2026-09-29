@@ -16,6 +16,7 @@ import markedJsPath from "./vendor/marked.min.js" with { type: "file" };
 // run automatically by root `prepare` on install and by `prepack` at publish.
 import toolViewsJsPath from "./tool-views.generated.js" with { type: "file" };
 import { webExportThemeVars } from "./web-palette";
+import type { OutputFormat } from "../../extensibility/extensions/types";
 
 export { type ExportThemeNames, parseExportArgs } from "./args";
 
@@ -61,6 +62,13 @@ export interface ExportOptions {
 	themeNames?: ExportThemeNames;
 	/** Embed subagent session transcripts found next to the session file (default true). */
 	includeSubSessions?: boolean;
+	/**
+	 * Formats an extension registered, keyed by id. Omit for the built-in HTML,
+	 * which stays byte-identical to what this produced before formats existed.
+	 */
+	formats?: ReadonlyMap<string, OutputFormat>;
+	/** Which registered format to produce. Ignored when `formats` has no such id. */
+	formatId?: string;
 }
 
 /** Parse a color string to RGB values. */
@@ -287,9 +295,26 @@ export async function exportSessionToHtml(
 		if (Object.keys(subSessions).length > 0) sessionData.subSessions = subSessions;
 	}
 
+	const stem = `${APP_NAME}-session-${path.basename(sessionFile, ".jsonl")}`;
+	const format = opts.formatId ? opts.formats?.get(opts.formatId) : undefined;
+
+	if (format) {
+		// A registered format owns its bytes and its own failure. Falling back to
+		// HTML when it throws would hand the user a file of the wrong shape under
+		// the name they asked for, which is worse than an error.
+		const bytes = await format.format({
+			entries: sessionData.entries,
+			darkTheme: opts.themeNames?.dark,
+			lightTheme: opts.themeNames?.light,
+		});
+		const outputPath = opts.outputPath || `${stem}${format.extension ?? `.${format.id}`}`;
+		await Bun.write(outputPath, bytes);
+		return outputPath;
+	}
+
 	const palette = opts.palette ?? (opts.themeName ? "theme" : "web");
 	const html = await generateHtml(sessionData, palette, opts.themeNames, opts.themeName);
-	const outputPath = opts.outputPath || `${APP_NAME}-session-${path.basename(sessionFile, ".jsonl")}.html`;
+	const outputPath = opts.outputPath || `${stem}.html`;
 
 	await Bun.write(outputPath, html);
 	return outputPath;

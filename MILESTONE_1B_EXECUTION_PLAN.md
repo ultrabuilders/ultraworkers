@@ -1038,6 +1038,185 @@ Rủi ro thứ ba: toàn bộ `src/delta/` là 44% phần `src/` và là lý do 
 - Có muốn một `JsonValue`/`isJsonValue` dùng chung ở `@oh-my-pi/pi-utils` để thay cho sáu định nghĩa của omp cộng hai cái của chord (va chạm #2 và #3) không? Lần migrate này cố ý không hợp nhất — cả bốn package anh em đều import bản của chord và chúng nhất quán với nhau. Nhưng sự phân kỳ là có thật: packages/coding-agent/src/secrets/obfuscator.ts:72 chấp nhận `| undefined` trong nhánh object, những bản kia thì không, và packages/ai/src/judgment/types.ts:17 dùng biến thể readonly. Nên có người nhận riêng việc dọn dẹp đó.
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__1.md`. Nguồn `/Users/tranquangdang21/Projects/pi-ref` @ `d6af72e18` (`packages/chord`, 62 file / 690 344 byte); đích `packages/chord` — **hiện chưa tồn tại** trong `ultraworkers/packages/`. Ngày kiểm 2026-09-29 · bun 1.3.14 · tsgo từ `node_modules/.bin/tsgo`.
+
+**Cảnh báo neo — đọc trước khi gõ.** 148 neo của bảng *Bề mặt công khai* và 62 kích thước byte của bảng *File cần chép* **đều đúng** (khớp từng dòng, khớp từng byte). Nhưng **9 neo dòng trong mục này trỏ sai**, và sai ở đúng những chỗ quyết định cổng có đỏ hay không:
+
+| neo trong tài liệu | thật |
+| --- | --- |
+| `test/delta-tracker/retention.test.ts:81` | file chỉ có **34 dòng**; `:1` import, `:24` `spawnSync`, `:26` worker path |
+| `packages/coding-agent/src/session/agent-session.ts:4983` | `:5104` |
+| `packages/coding-agent/src/session/agent-session.ts:5218` | `:5346` |
+| `packages/coding-agent/src/extensibility/extensions/runner.ts:1347` | `:1376` |
+| `packages/ai/src/types.ts:1476` (`Context`) | `:1465` |
+| `packages/coding-agent/src/eval/judgment-bridge.ts:47` | `:53` |
+| `packages/ai/src/providers/cursor.ts:4643` | `:4681` |
+| `bun.lock:1455` | `:1440` — và file này sinh tự động, đừng dùng làm neo |
+| `pi-ref` chưa có trong cây khi W2 chạy | giờ có, ở `d6af72e18` — phần "unverifiable" của W2 **đã hết hiệu lực**, nhưng kết luận "giữ 4 vòng rút của omp" vẫn đúng |
+
+Bốn dòng đầu chính là bốn vòng rút drain mà mục *Cần người quyết* ngay phía trên đang hỏi. Hai số khác cũng đã trôi: "355 import trần" cho `omptype`+`utils` đo lại là **167** (`omptype/src`+`test`), **85** (`utils/src`), **252** cả hai (phần "0 import tương đối có đuôi" thì đúng); "bun test packages/omptype/test → 1139 pass / 52 todo / 0 fail" hôm nay là **1056 pass / 0 fail / 85 file**.
+
+**Bảng điểm sửa.** Cột TRƯỚC trích nguyên văn từ file nguồn; `<TAB>` = ký tự tab thật.
+
+Manifest:
+
+| đường/dẫn | symbol / khoá | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `packages/chord/package.json` | `name` | `"name": "@earendil-works/chord",` (nguồn `:2`) | `"name": "@oh-my-pi/chord",` |
+| | `version` | `"version": "0.87.1",` (nguồn `:3`) | `"version": "18.4.0"` — **không phải `18.3.3`**, xem cạm bẫy 1 |
+| | `main` / `types` | `"main": "./dist/index.js",` / `"types": "./dist/index.d.ts",` (nguồn `:6-7`) | cả hai → `"./src/index.ts"` |
+| | `exports` | 5 subpath tường minh + `"./package.json"` (nguồn `:8-35`) | `{".":{types:"./src/index.ts",import:"./src/index.ts"},"./*":{types:"./src/*.ts",import:"./src/*.ts"},"./*.js":"./src/*.ts"}` |
+| | `files` | `["dist","README.md","src/delta/README.md"]` (nguồn `:37-41`) | `["src","README.md","CHANGELOG.md","LICENSE"]` |
+| | `scripts` | `clean`/`build`/`test`/`prepublishOnly` (nguồn `:42-47`) | bỏ `clean`+`build`+`prepublishOnly`; `test` → `bun test --parallel`; thêm `check`, `check:types`, `lint`, `fix`, `fmt` y hệt `packages/omptype/package.json` |
+| | `author` | `"author": "Earendil Works",` (nguồn `:55`) | `{"name":"Stencil Labs, Inc.","url":"https://stencil.so"}` |
+| | `repository.url` | `"url": "git+https://github.com/earendil-works/pi.git",` (nguồn `:59`) | `"git+https://github.com/can1357/oh-my-pi.git"`, `directory: "packages/chord"` |
+| | `engines` | `{"node": ">=22.19.0"}` (nguồn `:62-64`) | `{"node": ">=20", "bun": ">=1.3.14"}` (khớp `omptype`) |
+| | `dependencies` | `{"esbuild": "0.28.2"}` (nguồn `:65-67`) | giữ nguyên |
+| | `devDependencies` | `{"shx":"0.4.0","vitest":"4.1.9"}` (nguồn `:68-71`) | `{"@types/bun":"catalog:"}` |
+| | `sideEffects` | `false` (nguồn `:36`) | giữ `false` (`omptype` không đặt khoá này — đúng như kế hoạch ghi) |
+| `package.json` (gốc) | `workspaces.catalog` | `"diff": …,` ngay trước `"fastembed": …,` | chèn `"esbuild": "0.28.2",` giữa hai khóa đó |
+| `packages/chord/LICENSE` | — | không tồn tại ở nguồn; `pi-ref/LICENSE` 1069 byte, **byte cuối là `.` (0x2E), không có newline** | `Copyright (c) 2025 Mario Zechner` (dòng đầu) → `Copyright (c) 2025-2026 Can Bölük` → `Copyright (c) 2026 Stencil Labs, Inc.`, có newline kết thúc |
+| `packages/chord/tsconfig.json` | — | không tồn tại ở nguồn (nguồn chỉ có `tsconfig.build.json` 209 byte) | 133 byte, clone `packages/omptype/tsconfig.json` |
+
+Bốn kiểu viết lại cơ học:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 25 file `src/` | import tương đối | `from "./api.ts"` / `from "../services/loopback.ts"` (84 specifier) | bỏ hậu tố (84) |
+| 19 file `test/` | import tương đối | `from "../src/….ts"` (35 specifier) | bỏ hậu tố (35) |
+| 7 file | chuỗi scope | `@earendil-works/chord` (24 lần) + `@earendil-works/pi-` (2 lần ở `boundary.test.ts`) | `@oh-my-pi/chord` / `@oh-my-pi/pi-` |
+| 5 file `src/` | thụt lề | thụt lề 4-space (98 dòng: `api.ts` 3, `context/index.ts` 6, `delta/index.ts` 73, `index.ts` 2, `types.ts` 14) | tab (oxfmt, `useTabs:true` `tabWidth:3`) |
+
+Ba `ReturnType<>` + một cấu trúc promise:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `src/node/bundle.ts:118` | kết quả build esbuild | `<TAB>let result: Awaited<ReturnType<typeof build>>;` | `<TAB>let result: BuildResult;` + `import type { BuildResult } from "esbuild"` ở top-level |
+| `src/node/package.ts:57` | stat package.json | `<TAB>let candidateStats: Awaited<ReturnType<typeof stat>>;` | `<TAB>let candidateStats: Stats;` |
+| `src/node/package.ts:182` | stat entry | `<TAB><TAB>let entryStats: Awaited<ReturnType<typeof stat>>;` | `<TAB><TAB>let entryStats: Stats;` + `import type { Stats } from "node:fs"` ở top-level |
+| `src/context/index.ts:98-116` | `awaitWithContext` | `<TAB>return new Promise<T>((resolve, reject) => {` … (thân 15 dòng) | `const { promise, resolve, reject } = Promise.withResolvers<T>();` … giữ nguyên `{once:true}`, gỡ listener ở **cả hai** nhánh, reject với `abortError(signal)` |
+
+`retention.test.ts` — viết lại worker spawn (dòng neo trong tài liệu SAI, xem cạm bẫy 2):
+
+| dòng thật | TRƯỚC | SAU |
+| --- | --- | --- |
+| `:1` | `import { spawnSync } from "node:child_process";` | xóa dòng; dùng `Bun.spawnSync` |
+| `:24-28` | `const child = spawnSync(process.execPath, ["--expose-gc", fileURLToPath(new URL("./retention.worker.ts", import.meta.url)), scenario], { encoding: "utf8", timeout: 60_000 });` | `const child = Bun.spawnSync([process.execPath, "--expose-gc", workerPath, scenario], { stdout: "pipe", stderr: "pipe" });` |
+| `:26` | `"./retention.worker.ts"` | `"./retention.worker"` (bỏ hậu tố) |
+| `:29` | `expect(child.error, child.stderr).toBeUndefined();` | **xoá hẳn** — `Bun.spawnSync` không có `.error` |
+| `:30` | `expect(child.status, `${child.stdout}\n${child.stderr}`).toBe(0);` | `expect(child.exitCode, `${child.stdout}\n${child.stderr}`).toBe(0);` — `Bun.spawnSync` có `exitCode`, **không có `status`** |
+
+Export-star ambiguity — kế hoạch chỉ sai đối tác:
+
+| đường/dẫn | TRƯỚC | SAU |
+| --- | --- | --- |
+| `src/types.ts:4-5` | `export type { RemoteServiceError } from "./services/errors.ts";`<br>`export type { RemoteServiceProvider } from "./services/provider.ts";` | giữ nguyên (đây là chỗ đúng cần xử lý) |
+| `src/index.ts:4-85` | 8 khối re-export **có tên** | 6 khối runtime → `export * from`; `export type { Draft } from "./delta/index"` giữ nguyên dạng type-only; khối `./types.ts` → `export * from "./types"` |
+
+**Không có va chạm nào với `services/wire.ts`** — `wire.ts` export **không** `RemoteServiceProvider` lẫn không `RemoteServiceError`. Va chạm thật là giữa `export * from "./types"` với `export * from "./services/errors"` và `export * from "./services/provider"` (index.ts đã star hai cái đó ở `:15-20` và `:21-26`). Nếu bỏ nhầm re-export trong `wire.ts` thì vẫn còn TS2308.
+
+Bốn vòng rút drain của omp — **KHÔNG đụng**:
+
+| đường/dẫn | dòng thật | nội dung | hành động |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/session/agent-session.ts` | **5104**, **5346** (tài liệu ghi 4983, 5218) | `for (const dispose of this.#disposers.splice(0)) dispose();` | giữ nguyên |
+| `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` | 112 (đúng) | `for (const dispose of this.#composerShapeDisposers.splice(0)) dispose();` | giữ nguyên |
+| `packages/coding-agent/src/extensibility/extensions/runner.ts` | **1376** (tài liệu ghi 1347) | `for (const dispose of this.#fileFallbackDisposers.splice(0)) dispose();` | giữ nguyên |
+
+**Các bước có neo đã kiểm.**
+
+1. **`packages/chord/LICENSE` trước mọi dòng mã.** Chép nguyên văn `pi-ref/LICENSE` (1069 byte), nối thêm hai dòng của omp, thêm newline cuối. Kiểm: `head -4 packages/chord/LICENSE` phải in `MIT License` / trống / `Copyright (c) 2025 Mario Zechner` / `Copyright (c) 2025-2026 Can Bölük`.
+2. **esbuild.** Chèn `"esbuild": "0.28.2"` vào `workspaces.catalog` giữa `"diff"` và `"fastembed"`, rồi `bun install`. Kiểm: `ls -d node_modules/esbuild` phải ra. *(đã xác minh hôm nay: `node_modules/esbuild` vắng; dấu vết duy nhất trong lockfile là optional-peer của vite `^0.27.0 \|\| ^0.28.0` mà 0.28.2 thỏa)*
+3. **Chép 30 file `src/`** (29 `.ts` + `src/delta/README.md`), giữ nguyên cây thư mục `context/ delta/ facets/ node/ services/`.
+4. **Bỏ hậu tố `.ts`:** 84 specifier trong `src/`, 35 trong `test/` (bỏ benchmark). `sed -E 's|from "(\.\.?/[^"]*)\.ts"|from "\1"|g'`.
+5. **Chuyển 3 barrel sang `export * from`** — `src/index.ts` 8 khối, `src/node.ts` 4 khối, `src/bundler.ts` 5 khối. Xử lý ambiguity ở mục bảng phía trên, **không** phải wire.ts.
+6. **Viết lại 24 chuỗi scope** trong 7 file: `package.json` 2, `README.md` 9, `src/delta/README.md` 3, `src/node/bundle-loader.ts` 3 (dòng 329/330/333), `src/node/bundle.ts` 2 (dòng 97), `test/bundle.test.ts` 3, `test/boundary.test.ts` 2 (làm ở bước 12).
+7. **Ba `ReturnType<>`** ở `src/node/bundle.ts:118`, `src/node/package.ts:57`, `src/node/package.ts:182` → `BuildResult` / `Stats`, import top-level.
+8. **`Promise.withResolvers`** ở `src/context/index.ts:102`, thân hàm `:98-116`.
+9. **`packages/chord/package.json`** theo bảng manifest, version **18.4.0**.
+10. **`packages/chord/tsconfig.json`** 133 byte, clone `packages/omptype/tsconfig.json`. Không chép `tsconfig.build.json` của nguồn.
+11. **Chép 21 file test**, đổi 19 dòng `from "vitest"` → `from "bun:test"`.
+12. **`vi.waitFor` × 10** — `test/services.test.ts:601,725,733,757` và `test/facets.test.ts:142,154,185,190,278,286` (đã đếm đúng 10, đúng dòng). `bun:test` **không có** `vi.waitFor` và **không có** `expect.poll` (đã probe: `typeof vi.waitFor === "undefined"`, `typeof expect.poll === "undefined"`; `vi.fn` và `it.each` thì có). Thay bằng vòng poll tay.
+13. **Viết lại `retention.test.ts`** theo bảng trên + đổi 2 chuỗi `@earendil-works/pi-` ở `test/boundary.test.ts:15` và `:26`.
+14. **Hai README + CHANGELOG**, rồi `bun run fmt` + `bun run lint` trong package.
+15. **Đăng ký package vào `scripts/ci-test-ts.ts`** — thêm `"packages/chord"` vào mảng `fastWorkspacePackages` (dòng ~88). **Bước này không có trong tài liệu gốc và là bắt buộc**, xem phần cổng bên dưới.
+16. **Chạy cổng** — xem phần cổng bên dưới.
+
+**Hợp đồng test.** 21 file · **35 nhóm `describe()`** · **298 khối** (đã đếm lại từng file, khớp tuyệt đối với tài liệu: 73/23/15/50/21/9/6/10/23/24/8/2/9/1/6/7/5/4/2).
+
+| file | khối | hợp đồng bảo vệ | hồi quy ⇒ người dùng thấy gì |
+| --- | --- | --- | --- |
+| `test/delta-tracker/tracker.test.ts` | 73 | thứ tự nhân quả CRDT, đồng nhất revision, chia sẻ cấu trúc | hai phiên sửa cùng một tài liệu mà không ghi đè lẫn nhau |
+| `test/delta-apply-immutable.test.ts` | 9 | `__proto__` / `constructor` / `prototype` phải **ném** `UnsafePathError` | ô nhiễm prototype vào object của tiến trình |
+| `test/facets.test.ts` + `facet-loader.test.ts` | 15 + 10 | `dispose()` rút **ngược**, cô lập lỗi từng effect, gộp >1 thành `AggregateError` | facet không giải phóng tài nguyên khi một effect ném |
+| `test/service-wire.test.ts` | 8 | 11 parser trên `unknown` từ chối input dị hình | client/server lệch schema âm thầm, message rơi im lặng |
+| `test/bundle.test.ts` | 6 | `@oh-my-pi/chord` vẫn external sau khi đổi scope | bundle nhúng **hai bản** runtime, tăng bộ nhớ và phá singleton |
+| `test/boundary.test.ts` | 2 | không specifier `@earendil-works/` nào tới được entry đã phát hành | import trong tài liệu không resolve được |
+| `test/state-fuzz.test.ts` | 1 | fuzzing phải khẳng định kết quả **có biên** hoặc lỗi nêu tên | `not.toThrow()` trần bị bác trong review |
+| `test/delta-tracker/retention.test.ts` | 2 | 14 kịch bản GC, spawn worker | tracker giữ revision đã chết, bộ nhớ phình theo phiên |
+| `test/context.test.ts` | 6 | `awaitWithContext` bỏ qua việc bỏ listener ở nhánh reject | AbortSignal rò rỉ listener sau vài nghìn lần gọi |
+
+Quy tắc áp cho cả 21: không `mock.module()`; không `vi.` nào mà `bun:test` không có; không `node:child_process`; không source-grep; `vi.restoreAllMocks()` trong `afterEach`.
+
+**Cổng có đỏ được không — trả lời thẳng: cổng 1 chỉ đỏ được MỘT NỬA, và cổng CI hiện không tồn tại.**
+
+Cổng 1 — `bun run check:ts` (gốc repo). Script thật: `check:tools && bun run --filter './packages/*' --sequential --if-present check:types`. Đã đo trực tiếp:
+
+| việc bị bỏ sót | `check:ts` có bắt? | bằng cách nào (đã chạy thật) |
+| --- | --- | --- |
+| sót hậu tố `.ts` | ✅ **CÓ** | `tsgo --noEmit` → `error TS5097`, **exit 1**. Đã dựng lại đúng chuỗi tsconfig (`extends tsconfig.base.json`, không `allowImportingTsExtensions`) và chạy: giữ đuôi → exit 1; bóc đuôi → exit 0. |
+| thụt lề 4-space | ✅ **CÓ** | `oxfmt --check` → `Format issues found`, **exit 1** (đo trực tiếp, không qua pipe) |
+| export-star trùng tên | ✅ **CÓ** | `tsgo` → TS2308 |
+| **3 `ReturnType<>`** | ❌ **KHÔNG** | `tsgo` exit **0** với `Awaited<ReturnType<typeof stat>>` nguyên vẹn. `.oxlintrc.json` không có luật nào cấm `ReturnType`; `typescript/no-explicit-any` còn bị đặt `"off"`. |
+| **`new Promise` → `withResolvers`** | ❌ **KHÔNG** | `tsgo` exit **0**. Không có luật lint nào. |
+| **còn sót `@earendil-works/chord`** | ❌ **KHÔNG** | chuỗi nằm trong array literal và so sánh chuỗi — typecheck hợp lệ. Chỉ `grep` tay và `test/boundary.test.ts` bắt được. |
+| `node:child_process` còn sót | ❌ **KHÔNG** | oxlint không cấm |
+| `oxlint` nói bất cứ gì | ❌ | `categories.correctness: "warn"` và lệnh không có `--deny-warnings` → **oxlint exit 0 dù có warning** (đo trực tiếp) |
+
+Cổng 2 — `bun test packages/chord/test`. **Có đỏ được.** Đo trực tiếp: chạy một file test cố ý hỏng trong `packages/omptype/test/` → `bun test` **exit 1**, `1 fail`. Bộ lọc thư mục chạy được từ gốc repo. Nhưng nó **chỉ bảo vệ bạn trên máy này**.
+
+Cổng 3 — **CI KHÔNG chạy test của chord. Đây là lỗ hổng thật.** `scripts/ci-test-ts.ts` dùng **danh sách package viết cứng**, không có dynamic discovery:
+
+- `fastWorkspacePackages` (dòng ~88) = `omptype, utils, catalog, ai, snapcompact, agent, mnemopi`
+- `nativeAndIntegrationPackages` (dòng ~99) = `natives, tui, collab-web, typescript-edit-benchmark`
+- `localOnlyWorkspacePackages` (dòng ~108) = `python/robomp/web`
+
+`.github/workflows/ci.yml:613` chạy `bun run ci:test:ts:workspace` → mode `workspace` → **chỉ** `fastWorkspacePackages`. **Nếu làm đúng 16 bước mà bỏ qua bước 15, `packages/chord` không nằm trong bất kỳ danh sách nào.** Hệ quả: 298 khối test xanh trên máy của bạn, **CI không bao giờ chạy chúng**, và một hồi quy ở tháng sau sẽ xanh tràn. Đây đúng là "cổng luôn xanh tệ hơn không có cổng" — một PR ghi "test-VERIFIED" mà CI không hề kiểm.
+
+Lệnh bắt buộc phải chạy trước khi kết luận PR xong:
+
+```bash
+# 1. đăng ký package (bước 15) — nếu chưa, cổng CI là giả
+grep -q '"packages/chord"' scripts/ci-test-ts.ts
+
+# 2. hai lệnh này phải đều exit 0
+cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts
+cd /Users/tranquangdang21/Projects/ultraworkers && bun test packages/chord/test
+```
+
+Bổ sung: thêm `packages/chord` vào `fastWorkspacePackages` là đủ, vì cả `ci:test:ts:workspace` (CI) lẫn `test`/`test:ts` (cục bộ) đều đi qua cùng một mảng.
+
+Cổng 4 đề xuất (đỏ được, chi phí ~1 dòng) — vì 4 mục trong bảng trên không ai bắt được, thêm vào `packages/chord/package.json`:
+
+```json
+"check:ci": "grep -rqn 'earendil-works' src test && exit 1 || exit 0"
+```
+
+Rồi thêm `&& bun run check:ci` vào script `check` của package. `check:ts` gọi `check:types` chứ không gọi `check`, nên phải thêm vào `check:types` hoặc sửa `scripts/ci-test-ts.ts` — **cần người quyết**.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Version `18.3.3` trong tài liệu đã cũ.** Hôm nay **mọi** package trong repo đều ở `18.4.0` (`omptype`, `wire`, `utils`, `tui`, `ai`, `agent`, `catalog` — đã đọc từng `package.json`). Đặt chord ở `18.3.3` sẽ tạo một package lệch phiên bản ngay từ commit đầu.
+2. **Neo `retention.test.ts:81` không tồn tại.** File chỉ có **34 dòng**. `node:child_process` ở **dòng 1**, `spawnSync(...)` ở **dòng 24**, specifier `./retention.worker.ts` ở **dòng 26**. Đọc dòng 81 sẽ không ra gì.
+3. **`Bun.spawnSync` không có `.status` và không có `.error`.** Đo trực tiếp trên bun 1.3.14: `Bun.spawnSync` trả `{ exitCode, stdout, stderr, success, resourceUsage, pid }`; `"status" in result === false`, `"error" in result === false`. Viết `expect(child.status, …).toBe(0)` sẽ fail với `undefined`. Tệ hơn: `expect(child.error, child.stderr).toBeUndefined()` sẽ **xanh vĩnh viễn** vì `undefined === undefined` — biến một assert thành no-op. Ngoài ra `spawnSync` của Node nhận `encoding: "utf8"` và `timeout`; `Bun.spawnSync` dùng `stdout: "pipe"` và không có `timeout` tương đương. Tham số thứ ba của `it.each` (`:32`, `65_000`) là timeout của vitest — kiểm tra `bun:test` có tôn trọng nó không trước khi giữ.
+4. **Đối tác của export-star conflict.** Tài liệu nói `types.ts` và `services/wire.ts` cùng lộ `RemoteServiceProvider`/`RemoteServiceError`. **Sai.** `wire.ts` không export cái nào. `types.ts:4-5` mới là nơi re-export cả hai (type-only), và nó va chạm với `services/errors.ts` + `services/provider.ts` — hai module **đã** được star ở `index.ts:15-20` và `:21-26`. Bỏ nhầm chỗ thì TS2308 vẫn còn.
+5. **Đừng "hòa giải" bốn vòng rút drain.** `src/facets/host.ts:125-142` (đã đọc) rút ngược + `throw errors[0]` / `AggregateError`. Bốn vòng rút trong omp là forward + không try/catch. Chúng **cố ý khác nhau**: `beginDispose()` chạy ở `session-teardown.ts:70`, **trước** `await deps.saveDraft(draftText)` ở `:72`, nên một vòng rút ném lỗi biến rò rỉ tài nguyên có điều kiện thành mất bản nháp không điều kiện. Khi chord đã nằm trong cây, cách "sửa" trông hợp lý nhất là đấu bốn vòng rút ấy qua host.ts — đó là **hồi quy**. Chốt bằng `git diff --stat`: PR này phải **0 dòng** dưới `packages/coding-agent`.
+6. **`test/boundary.test.ts` sẽ xanh một cách rỗng nếu bỏ sót.** Nếu còn `@earendil-works/pi-` trong file mà đổi phần mềm, test vẫn xanh vì nó kiểm tra chuỗi **cũ** không xuất hiện — và chuỗi mới thì không ai kiểm. Đổi **cả hai** dòng 15 và 26, đừng đổi logic assert.
+
+Còn treo, cần người quyết: ai giữ quyền đăng ký `packages/chord` vào `scripts/ci-test-ts.ts` (thiếu nó thì cổng CI là giả); cổng grep chuỗi scope ở mục cổng 4 có được chấp nhận không; `test/boundary.test.ts` có vượt luật "no source-grep" không; `TODO_CONTEXT` (`src/context/index.ts:56`, đã đọc) giữ tên hay đổi; 6 file benchmark + `PLANNING.md` (~87 KB) chép ở đợt sau không.
+
 ---
 
 
@@ -1264,6 +1443,209 @@ Không phải rủi ro, nhưng đáng nói để đóng câu hỏi: **va chạm 
 
 - **Va chạm gần giống giữa `ProtocolError` (type) và `ProtocolValidationError` (class).** Tên của upstream thật sự gây rối và spec này giữ nguyên văn vì phân biệt đó là hợp đồng lỗi của package: một cái là giá trị đi qua wire, cái kia là class ném cục bộ. Đổi tên bất cái nào cũng là API break cho mọi spec downstream trong đợt (cả `server` và `client` đều import từ barrel này). Hãy để chủ sở hữu xác nhận chấp nhận tên gây rối thay vì đổi tên TRƯỚC khi PR, vì đổi tên sau khi `server`/`client` đã đáp gấp 10 lần công việc.
 
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__2.md`. Nguồn `/Users/tranquangdang21/Projects/pi-ref` HEAD — `packages/protocol`, 17 file, 55.559 byte (đã đo lại: `find . -type f | wc -l` = 17, `find . -type f -exec cat {} + | wc -c` = 55559).
+
+**Cảnh báo neo.** 30 dòng `private`, 15 specifier `.ts` (12 src + 3 test), 36 symbol ở `protocol.ts`, 28 `test(` / 12 `test.each` / 75 `expect(` / 4 `describe`, con số 133 = 82 + 15 + 36, và 386 `expect()` calls — **đều đúng khi đo lại, không cần sửa**. Nhưng **9 neo dòng trong mục này trỏ sai**, lệch từ 1 đến 6 dòng:
+
+| # | Kế hoạch ghi | Dòng đó thật sự là | Đúng là | Vì sao hỏng |
+| --- | --- | --- | --- | --- |
+| 1 | `protocol.ts:16` — `return Check(ServerIdSchema, value);` | dòng trống | **`protocol.ts:18`** | lệch 2; kế hoạch tự mâu thuẫn với bảng bề mặt công khai |
+| 2 | `protocol.ts:20` — `export type ProtocolError` | dòng trống | **`protocol.ts:26`** | lệch 6; bảng bề mặt công khai của chính kế hoạch đã ghi `:26` |
+| 3 | `codec.ts:11` — `export class ProtocolValidationError` | `} from "./protocol.ts";` | **`codec.ts:13`** | lệch 2 |
+| 4 | `codec.ts:25` — `export function parseServerMessage` | `}` | **`codec.ts:27`** | lệch 2 |
+| 5 | `framing.ts:29` — `encodeFrame(payload: Uint8Array): Uint8Array` | `if (!(payload instanceof Uint8Array)) throw new TypeError(…)` | **`framing.ts:28`** | lệch 1; bảng bề mặt công khai đã ghi `:28` |
+| 6 | `cbor/options.ts:24` — `CborError` | dòng trống | **`cbor/options.ts:25`** | lệch 1 |
+| 7 | `cbor/options.ts:29` — text decoder `fatal: true` | `}` | **`cbor/options.ts:33`** | lệch 4; (`:32-33` ở bảng bề mặt công khai thì đúng) |
+| 8 | `packages/ai/src/providers/cursor.ts:889` — `log("error", "parseServerMessage", …)` | `sawTurnEnded = true;` | **`cursor.ts:892`** | lệch 3 |
+| 9 | `typebox.ts:121-141` — `Type.Integer` với `minimum` | `TObject` / `CompatRuntime` | **`typebox.ts:518`** (Integer) và **`:258`/`:264`** (minimum) | trỏ nhầm vùng |
+
+Ba chỗ nữa sai về **nội dung**, không phải về dòng: kế hoạch bảo `Type.Unsafe<JsonValue>(Type.Unknown())` chạy được (sai — TS2345), bảo LICENSE là "22 dòng, 1.143 byte" (đúng byte, **sai số dòng**: thật là **23**), và bảo chord "không export `JsonValue` từ root index" (sai — `packages/chord/src/index.ts:14` và `:60` đều có).
+
+**Bảng điểm sửa.** "TRƯỚC" trích nguyên văn từ file đã mở ở `pi-ref`; "SAU" là hình dạng sau khi sửa.
+
+`src/` — 8 file, 15 specifier + 30 `private` + 3 import scope + 1 schema engine:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/protocol.ts:1` | scope | `import type { JsonValue } from "@earendil-works/chord";` | `import type { JsonValue } from "@oh-my-pi/chord";` |
+| `src/protocol.ts:2` | schema engine | `import Type, { type Static } from "typebox";` | `import { type Static, Type } from "@oh-my-pi/omptype/typebox";` — **BẮT BUỘC là named import**, xem cạm bẫy 1 |
+| `src/protocol.ts:3` | `Check` | `import { Check } from "typebox/value";` | xoá hẳn |
+| `src/protocol.ts:8` | `OpaqueJsonValueSchema` | `const OpaqueJsonValueSchema = Type.Unsafe<JsonValue>(Type.Unknown());` | `const OpaqueJsonValueSchema = Type.Unsafe<JsonValue>();` — bắt buộc, xem cạm bẫy 2 |
+| `src/protocol.ts:18` | `isServerId` | `	return Check(ServerIdSchema, value);` | `	return !(ServerIdSchema(value) instanceof type.errors);` (thêm `import { type } from "@oh-my-pi/omptype";` ở đầu file) |
+| `src/codec.ts:1` | scope | `import { isJsonValue } from "@earendil-works/chord";` | `import { isJsonValue } from "@oh-my-pi/chord";` |
+| `src/codec.ts:2` | `Check` | `import { Check } from "typebox/value";` | xoá hẳn |
+| `src/codec.ts:21` | `parseClientMessage` | `if (!Check(ClientMessageSchema, value) \|\| !isJsonValue(value)) {` | `if (ClientMessageSchema(value) instanceof type.errors \|\| !isJsonValue(value)) {` — **giữ nguyên vế `\|\| !isJsonValue(value)`** |
+| `src/codec.ts:28` | `parseServerMessage` | `if (!Check(ServerMessageSchema, value) \|\| !isJsonValue(value)) {` | `if (ServerMessageSchema(value) instanceof type.errors \|\| !isJsonValue(value)) {` |
+| `src/codec.ts:3,4,11` | relative | `from "./cbor/index.ts"` / `"./framing.ts"` / `"./protocol.ts"` | bỏ hậu tố `.ts` |
+| `src/cbor/decoder.ts:8` | relative | `} from "./options.ts";` | `} from "./options";` |
+| `src/cbor/encoder.ts:10` | relative | `} from "./options.ts";` | `} from "./options";` |
+| `src/cbor/index.ts:1,2,9` | relative | `"./decoder.ts"` / `"./encoder.ts"` / `"./options.ts"` | bỏ hậu tố `.ts` |
+| `src/index.ts:1,2,3,22` | relative | `"./cbor/index.ts"` / `"./codec.ts"` / `"./framing.ts"` / `"./protocol.ts"` | bỏ hậu tố `.ts` |
+| `src/cbor/decoder.ts:11,12,13,26,88,112,119,145,152` | 9 field/method `private` | `private readonly bytes: Uint8Array;` … `private readBytes(length: number): Uint8Array {` | `#bytes` … `#readBytes` |
+| `src/cbor/encoder.ts:13,14,15,68` | 4 `private` | `private buffer: Uint8Array;` … `private ensureCapacity(additionalBytes: number): void {` | `#buffer` … `#ensureCapacity` |
+| `src/framing.ts:45,46,47,48,49,50,51,52,53,141` | 10 `private` | `private readonly header = new Uint8Array(FRAME_HEADER_LENGTH);` … `private fail(message: string): never {` | `#header` … `#fail` (141 là **method**, xem cạm bẫy 3) |
+| `src/codec.ts:66,67,68,69,70,107,124` | 7 `private` | `private failed = false;` … `private readonly decoder: ValidatedMessageDecoder<ServerMessage>;` | `#failed` … `#decoder` |
+| `src/cbor/options.ts` | 4 const + 3 type + `resolveOptions` | `export const UINT32_BASE = …` … `export function resolveOptions(…)` | **chép nguyên văn, sửa 0 dòng** |
+
+`test/` — 3 file, đúng 6 sửa đổi, không sửa gì khác:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `test/cbor/cbor.test.ts:1` | runner | `import { describe, expect, test } from "vitest";` | `… from "bun:test";` |
+| `test/cbor/cbor.test.ts:9` | relative | `} from "../../src/index.ts";` | `} from "../../src";` |
+| `test/framing.test.ts:1` | runner | `import { describe, expect, test } from "vitest";` | `… from "bun:test";` |
+| `test/framing.test.ts:2` | relative | `import { DEFAULT_MAX_FRAME_LENGTH, encodeFrame, FrameDecoder, FrameError } from "../src/index.ts";` | `… from "../src";` |
+| `test/protocol.test.ts:1` | runner | `import { describe, expect, test } from "vitest";` | `… from "bun:test";` |
+| `test/protocol.test.ts:20` | relative | `} from "../src/index.ts";` | `} from "../src";` |
+
+Bảng `knownVectors` (`test/cbor/cbor.test.ts:23` mở mảng, 34 entry ở dòng 24–57), helper `fromHex`/`toHex`, fixture `clientHello`/`serverHello` (`test/protocol.test.ts:22-27`, UUIDv4 `00000000-0000-4000-8000-000000000001`), và `test/framing.test.ts:73` (`expect(() => decoder.end()).not.toThrow();`) — **chép nguyên văn, không sửa một ký tự**.
+
+Hồ sơ package:
+
+| đường/dẫn | TRƯỚC (pi-ref) | SAU |
+| --- | --- | --- |
+| `LICENSE` (mới) | không có trong `packages/protocol`; lấy từ `/Users/tranquangdang21/Projects/pi-ref/LICENSE` (1.069 byte, 21 dòng, dòng cuối **không** có newline) | 4 dòng header (`MIT License` / trống / `Copyright (c) 2025 Mario Zechner` / trống) + 17 dòng thân permission lấy nguyên văn từ dòng 5 hết của pi. **Đo được: 1.143 byte, 23 dòng.** Xem cạm bẫy 4. |
+| `package.json` | `"name": "@earendil-works/pi-protocol"` (dòng 2), `"@earendil-works/chord": "^0.87.1"` + `"typebox": "1.3.27"` (dòng 42-43), `"main": "./dist/index.js"`, `"test": "vitest --run"`, `"clean": "shx rm -rf dist"`, `"build": "tsc -p tsconfig.build.json"`, `"engines": { "node": ">=22.19.0" }` | `name` → `@oh-my-pi/pi-protocol`; `version` → **`18.4.0`**; `main`/`types` → `./src/index.ts` + wildcard `"./*"` và `"./*.js"`; khối 5 script của omp với `check:types` = `tsgo -p tsconfig.json --noEmit`; deps `@oh-my-pi/chord: "catalog:"` (**không** thêm `typebox`); devDeps `@types/bun: "catalog:"`; `engines.bun: ">=1.3.14"`; `sideEffects: false`; `repository.url` → `git+https://github.com/can1357/oh-my-pi.git`, `directory: packages/protocol`; author Stencil Labs; `files: ["src","README.md","CHANGELOG.md"]` |
+| `tsconfig.json` (mới) | không có | clone `packages/wire/tsconfig.json` nguyên văn: `{ "extends": "../tsconfig.workspace.json", "include": ["src", "test"] }` (đã đọc, 74 byte) |
+| `tsconfig.publish.json` (mới) | không có | clone `packages/wire/tsconfig.publish.json` nguyên văn (339 byte, `outDir: "dist/types"`) |
+| `vitest.config.ts` | 298 byte | **XOÁ** |
+| `tsconfig.build.json` | 209 byte, `"build": "tsc -p tsconfig.build.json"` | **XOÁ** (AGENTS.md cấm `tsc`) |
+| `tsconfig.test.json` | 220 byte, `"types": ["node", "vitest"]` | **XOÁ** |
+| `README.md` | 3.447 byte, dòng 1 `# @earendil-works/pi-protocol`, dòng 15 chứa `` `@earendil-works/chord` ``, dòng 29 `} from "@earendil-works/pi-protocol";` | 3 thay scope; thêm 2 đoạn (bộ ba `PROTOCOL_VERSION`; attestation CBOR tự viết); sửa claim "experimental" ở dòng 3 và 41; ghi rõ `ProtocolError` vs `ProtocolValidationError` |
+| `CHANGELOG.md` | 976 byte, lịch sử release của pi | THAY: `# Changelog` + `## [Unreleased]` + `Added length-framed CBOR RPC envelopes (@oh-my-pi/pi-protocol).` |
+| root `package.json` | `workspaces.catalog` có 12 mục `@oh-my-pi/*` | thêm `"@oh-my-pi/chord": "18.4.0"` và `"@oh-my-pi/pi-protocol": "18.4.0"` |
+
+**Các bước có neo đã kiểm.** Mọi neo dưới đây đã mở và đọc; nội dung trích là nguyên văn từ file thật.
+
+**Bước 0 — CẦN NGƯỜI QUYẾT, chặn bước 4.** Schema engine: `typebox@1.3.27` hay `@oh-my-pi/omptype/typebox`? **Đo được câu trả lời: OMPTYPE compile sạch, typebox là đường lùi.** Port thật trong thư mục tạm, `tsgo --noEmit` sạch 0 lỗi sau 3 sửa ở bảng trên. Nên: **chọn omptype**. Nếu chủ sở hữu vẫn giữ typebox thì bỏ qua bước 4 và giữ `import { Check } from "typebox/value"`, thêm `"typebox": "1.3.27"`.
+
+**Câu hỏi mở #2 của kế hoạch (`JsonValue`/`isJsonValue` sống ở đâu) — đã tự trả lời được, không cần hỏi.** Kế hoạch nói: *"export cái trước từ root index nhưng không export cái sau"*. **SAI.** Đo thật ở `pi-ref`: `packages/chord/src/index.ts:14` → `export { type CopyJsonOptions, copyJson, isJsonValue } from "./json.ts";` và `packages/chord/src/index.ts:60` → `JsonValue,` (trong khối `export type { … }`). Cả hai đều ở root barrel — dòng 1 của `protocol.ts` chép sang là `@oh-my-pi/chord` là đúng, không cần subpath.
+
+**Bước 1 — SCAFFOLD.** `mkdir -p packages/protocol/src/cbor packages/protocol/test/cbor`. KHÔNG tạo `package.json` ở bước này (xem cạm bẫy 6).
+
+**Bước 2 — PHÁP LÝ, chạy TRƯỚC mọi thứ.** Dựng `packages/protocol/LICENSE`. Lệnh dựng (đã chạy thử, ra đúng 1.143 byte / 23 dòng):
+
+```bash
+L=/Users/tranquangdang21/Projects/pi-ref/LICENSE
+{ printf 'MIT License\n\n'
+  sed -n '3p' "$L"
+  printf 'Copyright (c) 2025-2026 Can Bölük\nCopyright (c) 2026 Stencil Labs, Inc.\n\n'
+  sed -n '5,$p' "$L"; } > packages/protocol/LICENSE
+```
+
+**Bước 3 — CHÉP 5 file không phụ thuộc, theo thứ tự từ dưới lên.** `src/cbor/options.ts` → `src/cbor/encoder.ts` → `src/cbor/decoder.ts` → `src/cbor/index.ts` → `src/framing.ts`. Rồi: bỏ hậu tố `.ts` ở `decoder.ts:8`, `encoder.ts:10`, `cbor/index.ts:1,2,9`; đổi **23** `private` → `#` (decoder 9 ở `:11,12,13,26,88,112,119,145,152`; encoder 4 ở `:13,14,15,68`; framing 10 ở `:45-53,141`). `options.ts` sửa 0 dòng. Rồi `bun run fmt` trong package.
+
+**Bước 4 — CHÉP `src/protocol.ts`, áp quyết định schema engine.** Chỉ 3 dòng `:1-3` + `:8` + `:18` đổi. Sau đó `bun run check:ts`. **Đã đo: `StrictObject` ở `:9-10` typecheck SẠCH.** Rủi ro thật nằm ở `:8`, xem cạm bẫy 2.
+
+**Bước 5 — CHÉP `src/codec.ts`.** 4 nhóm: scope `:1`, bóc `.ts` ở `:3,4,11`, 2 call site `Check` ở `:21` và `:28` (giữ vế `||`), 7 `private` ở `:66,67,68,69,70,107,124`. Giữ nguyên latch `failed` (`:80`, `:88`, `:95`), cap 500 ký tự của `boundedErrorMessage` (`:36`), và 3 nhánh re-throw `error instanceof ProtocolValidationError` (`:50`, `:89`, `:100`).
+
+**Bước 6 — CHÉP `src/index.ts`.** Bỏ `.ts` ở 4 specifier. Danh sách named export **chép nguyên văn** ở dòng **4-22** (không phải 3-22 — dòng 3 là `export * from "./framing.ts";`). Không thêm `JsonValue`, không thêm `ClientMessageSchema`/`ServerMessageSchema`.
+
+**Bước 7 — CHÉP 3 file test.** Đúng 6 sửa đổi ở bảng trên. Không sửa gì khác. Xác nhận: `grep -rc 'vitest' packages/protocol` → 0.
+
+**Bước 8 — SOẠN `package.json` + 2 tsconfig.** Theo bảng hồ sơ package. Chưa `bun install`.
+
+**Bước 9 — ĐĂNG KÝ workspace.** Thêm 2 khoá catalog vào `workspaces.catalog` của root. `bun install`, commit `bun.lock` kèm source. *LƯU Ý:* bước này chỉ chạy được sau khi `chord` (work item 1) đã có trong cây. Nếu chưa, dừng ở bước 8 và chạy GATE 1b + GATE 3 — cả hai không cần chord.
+
+**Bước 10 — TÀI LIỆU.** `README.md` 3 thay scope + 2 đoạn mới + sửa claim "experimental" (`README.md:3` và `:41`) + 1 dòng phân biệt `ProtocolError`/`ProtocolValidationError`. `CHANGELOG.md` thay lịch sử.
+
+**Bước 11 — GATE 1.** **Bước 12 — GATE 2.**
+
+**Hợp đồng test.** Đo lại từ file thật, không lấy lại từ kế hoạch:
+
+| file | call site `test(` | khối `test.each` | case lúc chạt | `expect(` | `describe(` |
+| --- | --- | --- | --- | --- | --- |
+| `test/cbor/cbor.test.ts` | 6 | 3 (34 + 13 + 29 entry) | **82** | 20 | 1 (`CBOR codec`) |
+| `test/framing.test.ts` | 9 | 2 (2 + 4 entry) | **15** | 17 | 1 (`binary framing`) |
+| `test/protocol.test.ts` | 13 | 7 (3+3+5+2+3+4+3 entry) | **36** | 38 | 2 |
+| **TỔNG** | **28** | **12** | **133** | **75** | **4** |
+
+**Đã chạy thật con số này** trên bản chép trong thư mục tạm, chỉ áp đúng 6 sửa đổi cơ học của bước 7 + `typebox@1.3.27` thật + shim `isJsonValue` lấy nguyên văn từ chord: `133 pass` / `0 fail` / `386 expect() calls` / `Ran 133 tests across 3 files.`; per-file `82 pass` / `15 pass` / `36 pass`. **Khớp tuyệt đối với kế hoạch.**
+
+Ngoại lệ đã biết, tên ra để reviewer không phải tự săn: `test/framing.test.ts:73` là `expect(() => decoder.end()).not.toThrow();` trần — thuộc loại AGENTS.md cấm. Giữ nguyên: nó là hợp đồng âm thật (`end()` trên stream rỗng không ném) và đứng ngay dưới khẳng định dương ở dòng 72 `expect(decoder.push(new Uint8Array())).toEqual([]);`.
+
+| hồi quy | người dùng/peer thấy gì |
+| --- | --- |
+| `framing.test.ts:52` `handles every split point across a frame` | `FrameDecoder` trả về frame **sai** khi chunk của socket bị cắt ở một offset lẻ — message của server bị decode hỏng, chết cả stream chứ không chỉ một frame. |
+| `framing.test.ts:62` `copies payload bytes instead of retaining or aliasing input chunks` | Sửa byte trong buffer đã đưa cho `push` làm đổi message đã trả — tin nhắn trong lịch sử bị bóp méo sau khi đã hiển thị. |
+| `framing.test.ts:85` `rejects an oversized declared length as soon as its header is complete` | Peer gửi header 4 byte khai payload 4 GB làm decoder cấp phát 4 GB **trước khi** payload tới — hết OOM. |
+| `protocol.test.ts:99` `rejects non-JSON opaque payloads` | Wire bắt đầu chấp nhận `Uint8Array`, `NaN`, `undefined`, cycle, prototype. Đây là case duy nhất đứng sau `isJsonValue` khi schema engine hạ `Type.Unsafe` xuống `type.unknown` — **bỏ vế `\|\| !isJsonValue(value)` là mất hàng rào này**. |
+| `protocol.test.ts:205` `rejects unknown messages and fields` | Envelope `additionalProperties:false` hỏng → server nhận `{type:"hello", version:8, extra:true}` mà không báo lỗi; đây là hợp đồng chống tương thích ngược duy nhất. |
+| `protocol.test.ts:176` `accepts a successful void response without a result field` | `ok:true` bắt buộc phải kèm `result` → mọi RPC trả về rỗng bị từ chối. |
+| `cbor.test.ts:87` `["array hole", new Array(1)]` | Encoder chấp nhận lỗ hổng mảng; giá trị đọc ra khác giá trị ghi vào. |
+| `cbor.test.ts:74` `preserves a leading Unicode BOM and treats __proto__ as data` | `__proto__` trên wire trở thành prototype pollution thay vì dữ liệu. |
+| `cbor.test.ts:47` `[-0, "fb8000000000000000"]` | `-0` bị encode thành số nguyên `0` → phân biệt được bị mất. |
+
+**Không thêm test nào.** Nếu sau khi chép còn hành vi chưa phủ, thêm một case khẳng định kết quả quan sát được; **tuyệt đối không** assert trên text của file `.ts` (AGENTS.md cấm source-grep).
+
+**Cổng có đỏ được không — trả lời thẳng: GATE 1 và GATE 1b đỏ được ngay hôm nay; GATE 2 thì kế hoạch nói sai, nó đỏ được NGAY BÂY GIỜ chứ không phải "bị chặn vì chord chưa đáp".**
+
+GATE 1 — chặn, chạy được ngay hôm nay:
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts
+```
+
+**Có đỏ được không? CÓ, và đã bằng chứng bằng cách làm hỏng nó.** `check:ts` = `check:tools` (oxlint + oxfmt) + `tsgo --noEmit` cho từng package. Đã chạy `tsgo` trên bản port `protocol.ts` với **default import sai** (`import Type, { type Static } from "@oh-my-pi/omptype/typebox"`) và nó bắn **35 lỗi TS2339** dòng 7/8/9/10/12/23/30/31/…; với `Type.Unsafe<JsonValue>(Type.Unknown())` sai tham số thì **TS2345**. Lỗi cổng bị bắt ở tầng type, không lọt xuống test. Baseline đo hôm nay: **16 package có `check:types`** — sau thay đổi phải là **17**, và `@oh-my-pi/pi-protocol:check:types` phải hiện trong danh sách.
+
+GATE 1b — chặn, 6 grep cơ học:
+
+```bash
+git grep -c '@earendil-works/' -- packages/protocol                      # -> 0
+grep -rn 'from "\.[^"]*\.ts"' packages/protocol/src packages/protocol/test # -> 0
+grep -rn '^\s*private ' packages/protocol/src                             # -> 0
+grep -rn 'vitest' packages/protocol                                       # -> 0
+grep -rnE ': any|<any>|ReturnType<|await import\(' packages/protocol/src   # -> 0
+head -4 packages/protocol/LICENSE | sed -n '3p'                            # -> Copyright (c) 2025 Mario Zechner
+```
+
+**Có đỏ được không? CÓ, đã đo cả hai chiều.** Hôm nay (package chưa có): `git grep -c` → exit 1; `grep -rn` trên thư mục không tồn tại → exit 2; `head -4` → exit 1. Tất cả **ĐỎ**. Trên bản chép đúng: 0 hit ở cả 4 grep đầu. Sau khi cố ý làm hỏng (để sót một hậu tố `.ts` trong `codec.ts` và một `private` trong `encoder.ts`): `.ts` = 1 hit, `private` = 30 hit → **ĐỎ**.
+
+GATE 2 — chạy được ngay khi `chord` có mặt:
+
+```bash
+bun test packages/protocol     # mong 133 pass: 82 CBOR, 15 framing, 36 protocol
+```
+
+**Có đỏ được không? CÓ — nhưng phải nói thẳng một điều mà kế hoạch nói sai.** Kế hoạch ghi GATE 2 là "BỊ CHẶN VÌ CHORD CHƯA ĐÁP". **Đo thật hôm nay: `bun test packages/protocol` trả exit 1**, không phải 0 — bun in `The following filters did not match any test files` rồi exit **1**. Nên cổng này **ĐỎ NGAY BÂY GIỜ**.
+
+**Nhưng exit code một mình là cổng nửa vời.** Chạy `bun test packages/wire` — package có **0 file test** — cũng exit 1. Nghĩa là lệnh bắt được "không có test", nhưng **không** bắt được "thiếu 1 trong 3 file test". Chép sót `test/cbor/cbor.test.ts` thì vẫn exit 0 với 51 pass. Đó đúng là loại an toàn giả. Vì vậy **GATE 2 phải kiểm SỐ, không chỉ exit code**:
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers
+# (1) đủ 3 file test
+test "$(find packages/protocol/test -name '*.test.ts' | wc -l | tr -d ' ')" = 3 || { echo "RED: thiếu file test"; exit 1; }
+# (2) đúng số case, không phải chỉ "exit 0"
+out=$(bun test packages/protocol 2>&1); echo "$out"
+echo "$out" | grep -q '^ 133 pass' || { echo "RED: không phải 133 pass"; exit 1; }
+echo "$out" | grep -q '^ 0 fail'   || { echo "RED: có test fail"; exit 1; }
+```
+
+Kiểm phủ định (chứng minh phần bỏ sót ở bước 6 được giữ) — **đỏ được ngay**:
+
+```bash
+grep -c 'ClientMessageSchema\|ServerMessageSchema' packages/protocol/src/index.ts  # -> 0
+grep -c 'export const ClientMessageSchema' packages/protocol/src/protocol.ts       # -> 1
+```
+
+GATE 3 (thay cho `oxlint` chạy tay) — **đỏ được**, đã chạy thật trên bản chép: exit 0, đúng **1 warning** cố ý — `test/cbor/cbor.test.ts:87:18: warning unicorn(no-new-array): Do not use new Array(singleArgument)` trên `new Array(1)`. Đây là fixture "array hole", **giữ nguyên, đừng sửa** (sửa nó là xoá một case hợp đồng). Các warning còn lại đến từ `node_modules/typebox` — chỉ xuất hiện trên **đường lùu typebox**.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`import Type` (default) là sai, và kế hoạch bảo làm đúng cái sai đó.** `packages/omptype/src/typebox.ts:545` là `export default { Type };` — default export là **một object `{ Type }`**, không phải builder. Chép đúng lời kế hoạch (`import Type, { type Static } from "@oh-my-pi/omptype/typebox"`) sinh **35 lỗi TS2339** kiểu `Property 'String' does not exist on type '{ Type: {…} }'`. Dạng đúng là **named import** — cũng là dạng cả 5 call site thật trong omp đang dùng: `packages/coding-agent/src/extensibility/legacy-typebox.ts:4-10` (`Type as OmpType`), `test/extensions-runner.test.ts:8`, `test/agent-session-queued-policy.test.ts:3`, `test/hook-tool-wrapper-input.test.ts:7`. → `import { type Static, Type } from "@oh-my-pi/omptype/typebox";`
+2. **Chỗ vỡ THẬT là `protocol.ts:8`, không phải `StrictObject`.** Kế hoạch ghi: *"generic `StrictObject` ở dòng 10 là construct DUY NHẤT chưa xác minh"*. **Đo thật: `StrictObject` ở `:9-10` typecheck sạch.** Cái vỡ là dòng 8: `Type.Unsafe<JsonValue>(Type.Unknown())` → **TS2345**: `Argument of type 'CompatRuntime<unknown>' is not assignable to parameter of type 'Record<string, unknown>'`. Vì `tUnsafe` của omptype (`typebox.ts:509-513`) nhận **một raw JSON Schema document**, không phải một schema. Comment của chính nó nói: *"Raw JSON Schema is accepted for source compatibility but is not retained or validated."* → `const OpaqueJsonValueSchema = Type.Unsafe<JsonValue>();` (bỏ tham số). Sau 3 sửa này `tsgo --noEmit` **sạch 0 lỗi**. Hành vi không đổi: cả hai đều ra `type.unknown`, và hàng rào thật vẫn là `|| !isJsonValue(value)`.
+3. **`framing.ts:141` là METHOD, không phải field.** `private fail(message: string): never {` → `#fail(message: string): never {`. Biến nó thành dạng field là hỏng class. Nó chỉ được gọi từ `push` (`:78`, `:136`) và `end` (`:136`) nên không đổi caller nào. Ngược lại, 9 `private` ở `decoder.ts` và 4 ở `encoder.ts` đều là field/method thường, thay máy móc được.
+4. **LICENSE: đúng byte, sai số dòng.** Kế hoạch nói "22 dòng, 1.143 byte". **Đo thật: 1.143 byte ✓ nhưng 23 dòng.** Lý do: `packages/wire/LICENSE` và `packages/omptype/LICENSE` đều là 22 dòng vì chỉ có **2** dòng copyright; thêm dòng của Mario Zechner thành **3** → 23. Đừng dùng "22" làm tiêu chí nghiệm thu. Tiêu chí đúng là `head -4` phải cho `Copyright (c) 2025 Mario Zechner` ở dòng 3.
+5. **Catalog là `18.4.0`, không phải `18.3.3`.** Kế hoạch nói `18.3.3` ở cả bảng `package.json` và bước 8. Đọc root `package.json` hôm nay: **cả 12** mục `@oh-my-pi/*` trong `workspaces.catalog` đều là `18.4.0`. Dùng `18.3.3` sẽ tạo một phiên bản lệch với cả repo. (Kế hoạch cũng nói "cạnh 11 mục" — thực tế là 12.)
+6. **Đăng ký `package.json` sớm sẽ che mất lỗi thật.** Khoảnh khắc `packages/protocol/package.json` tồn tại, bun bắt đầu resolve dependency của nó — mà `@oh-my-pi/chord` chưa có. Lỗi resolution sẽ thay thế lỗi thật (`@earendil-works/*` còn sót, `private` còn sót).
+7. **Đừng "DRY" hai bản `MAX_UINT32`.** `cbor/options.ts:2` (`export const`) và `framing.ts:2` (`const`, **không** export). Bản của framing không bao giờ ra barrel. Đừng hợp nhất — nếu thêm `export` vào `framing.ts` thì nó sẽ đi qua `export * from "./framing.ts"` ở `src/index.ts:3` (dòng này **đã tồn tại sẵn**, không phải "sẽ mới"). Hệ quả tương tự: `textEncoder`/`textDecoder` ở `options.ts:32-33` phải giữ nguyên `export` **trong module** nhưng không được đưa vào named re-export của `cbor/index.ts:3-9`.
+8. **`readItem` trong `decoder.ts` có nhánh `default` bắt buộc giữ.** `decoder.ts:83-84` `default: throw new CborError("Malformed CBOR major type");` — nhánh này chỉ chạy được với major type 0–7 đã exhaust, nên trông như dead code nhưng là hàng rào. Đừng gộp với `readArgument`'s `default` ở `:140-141` khi đang dọn.
+9. **Bản đo của kế hoạch về `omptype` lệch ở 3 chỗ; đừng dùng làm tiêu chí.** `Type.Integer` **không** ở `typebox.ts:121-141` (đó là `TObject` và `CompatRuntime`); nó ở **`:518`**, và `minimum` được xử lý ở **`:258`/`:264`**. Kế hoạch nói facade "dùng trong production bởi `legacy-typebox.ts` và 4 file test" — thực tế có **5 file src** dùng nó (`legacy-typebox.ts`, `custom-tools/types.ts`, `hooks/types.ts`, `extensions/types.ts`, `custom-commands/types.ts`) cộng 4 file test. Kế hoạch nói "grep toàn packages: 0 lần `ProtocolError`" — thực tế **1**, trong `packages/coding-agent/src/eval/py/runner.py:2246, 2256` (một docstring + chuỗi `ename` của Python). Không có va chạm TypeScript, nên kết luận của kế hoạch vẫn đúng, nhưng con số thì sai.
+10. **`rejects non-JSON opaque payloads` không có case "prototype".** Kế hoạch liệt kê "(số không finite, byte array, `undefined`, prototype, cycle)". Test thật (`protocol.test.ts:108-113`) có **4** case: `byte array`, `non-finite number`, `undefined property`, `cycle`. Không có prototype. Case `__proto__` nằm ở `cbor.test.ts:74` (khác file, khác tầng). Đừng viết thêm test để "bù" — bổ sung thêm là lệch khỏi bản chép nguyên văn.
+11. **Ba chi tiết nhỏ.** `src/index.ts` khối named export là dòng **4-22**, không phải 3-22. `attestation.ts` dài **91 dòng** (đúng), nhưng vùng CBOR helper là `:12-47` — `cborMap` ở `:40` **nằm ngoài** dải `:11-37` mà kế hoạch ghi; `cborHeader(64, …)` ở `:71` thì đúng. Bảng `knownVectors` (`cbor.test.ts:23-58`) chỉ chứa **cặp surrogate** (`:53`); case **surrogate đơn** nằm ở test từ chối `:109` (`expect(() => encodeCbor("\ud800")).toThrow(/Unicode/i)`), không nằm trong bảng vector.
 
 ---
 
@@ -1528,6 +1910,211 @@ KHÔNG phải rủi ro: cuộc chạm với `collab-web` và `metaharness`. Đo,
 - Hai barrel `index.ts` (`transports/unix/index.ts`, `testing/index.ts`) dùng named re-export ở nơi AGENTS.md ưu tiên `export * from` trong barrel index thuần. Chuyển chúng sang star sẽ mới export `@internal` `UnixByteConnection` từ `./unix`, đổi public API. Spec giữ named re-export và gọi lệch lệch ra trong PR thay vì âm thầm nới bề mặt — nhưng nếu chủ sở hữu muốn tuân thủ AGENTS.md nghiêm, cách sửa là xoá claim trong comment export `@internal` và chấp nhận barrel rộng hơn.
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__3.md`. Nguồn `/Users/tranquangdang21/Projects/pi-ref/packages/server` (HEAD = `d6af72e18`, MIT, © 2025 Mario Zechner) → `packages/server` của omp. Ngày kiểm 2026-09-29.
+
+**Cảnh báo neo.** 40/40 neo bảng *Bề mặt công khai*, toàn bộ cột `bytes` và số dòng bảng *File cần chép* (29 file; tổng 16 file `src` = **67.005 B** ✓, toàn 29 file = **115.351 B** ✓), **57** hậu tố `.ts`, **23** scope rewrite, **87** khai báo `private`, **41** test case — **đều tái lập được chính xác, không cần sửa**. Nhưng **12 điểm sai lệch**, trong đó một cái **bỏ sót chặn GATE 2**:
+
+| # | Kế hoạch nói | Cây thật nói | Mức |
+| --- | --- | --- | --- |
+| 1 | `server.ts`: "5 specifier `.ts` tương đối (dòng 32, 34, 35, 37, 38, 39, 40)" — 7 số cho 5 specifier | Mệnh đề `from "./x.ts"` nằm ở dòng **36, 37, 38, 39, 40**. 32/34/35 nằm trong khối import nhiều dòng | Sai neo |
+| 2 | `session-router.ts`: "Dòng 8 dùng field `private readonly` xuyên suốt" | `:8` là `class SessionCleanupError extends AggregateError {}` — **không** có `private` nào. Field `private readonly` ở **35–41** (bước 6 nói đúng) | Câu tàn dư |
+| 3 | `test/protocol.test.ts`: trích `import { afterEach, describe, expect, test } from "vitest"` | `:2` thật là `import { afterEach, expect, test } from "vitest"` — **không có `describe`** (file có 0 `describe()`) | Trích sai |
+| 4 | Bảng dependency: catalog `chord 18.3.3`, `pi-protocol 18.3.4`, `pi-agent-core 18.3.3` | Catalog omp hôm nay là **18.4.0** cho mọi khoá `@oh-my-pi/pi-*` | Số cũ |
+| 5 | Va chạm 2: "`packages/agent/src/index.ts` chỉ export **18** module phẳng" | File có **17** dòng `export *` — và chính danh sách kế hoạch liệt kê ra cũng đúng 17 tên | Lệch 1 |
+| 6 | Bước 11 + "Hợp đồng test": gate chỉ grep `vi.`; mọi matcher `expect` đều có trong `bun:test` | **`expect.poll` ×7** trong `conformance.test.ts:179,198,217,218,318,376,393` không có trong `bun:test` | **BỎ SÓT chặn GATE 2** |
+| 7 | `types.ts` copy note (a): "bỏ **cả hai** dòng import upstream" | Dòng 1 (`JsonValue`, `ServiceCall`, `ServiceProviderUpdate`) là load-bearing, phải **giữ**. Chỉ dòng 2 bị xoá. Bước 10(a) nói đúng — hai mục mâu thuẫn nhau | Mâu thuẫn nội bộ |
+| 8 | "`Deferred` — omp không có class nào như vậy (**đo được 0 match**)" | `grep -rn 'class Deferred' packages/` → **7** (`DeferredCommandPreview`, `DeferredDiagnostics`, `DeferredMCPTool`, `DeferredRenderScheduler` ×3, `DeferredOpenWebSocket`). Chỉ `class Deferred *[{<]` mới = 0. Kết luận thì đúng, lệnh đo thì không tái lập được | Đo bẩn |
+| 9 | Bước 6: 87 khai báo `private` trên 5 file `src/` | `test/unix-connection.test.ts:13` còn `private writeCallback?:` — class field trong **file test**, ngoài tầm quét | Bỏ sót |
+| 10 | Bước 7: "9 chỗ `new Promise` trong 5 file" | Đúng cho `src/`, nhưng `test/server.test.ts:47` là chỗ thứ 10 trong tập chép | Bỏ sót |
+| 11 | "`bun.lock:216`" + `@sinclair/typebox@0.34.52` | `:216` là dòng range `"^0.34.0"`; bản resolve `0.34.52` nằm ở `bun.lock:898` | Nhỏ |
+| 12 | "cả **7** file test chuyển sang `bun:test`" | Chỉ **6** file `.ts` import `vitest`; file thứ 7 trong `test/` là `fixtures/stale-socket-server.mjs` | Nhỏ |
+
+Còn một mâu thuẫn lớn hơn nằm ở chỗ khác: mục *Cổng hoàn thành* nói cả hai nhánh đỏ được *ngay hôm nay*, còn Bước 1 nói phải có `packages/chord` + `packages/protocol` trước. Đo hôm nay: `ls -d packages/chord packages/protocol packages/server` → **cả ba đều `No such file or directory`**. Một trong hai câu đó phải sai, và cây thật nghiêng về phía Bước 1.
+
+**Bảng điểm sửa.** Trước hết, **không có file nào của `pi-server` tồn tại ở omp hôm nay**. Vì vậy "TRƯỚC" của mọi dòng dưới đây là **trạng thái trong cây `pi-ref`**, và "SAU" là trạng thái ở `packages/server` sau khi chép. Đây là một lần **chép**, không phải một lần sửa; phần "sửa" là tầng viết lại cơ học bắt buộc.
+
+| đường/dẫn | symbol / hàm cụ thể | TRƯỚC (trích từ file thật) | SAU (hình dạng sau khi sửa) |
+| --- | --- | --- | --- |
+| `src/errors.ts` | `RemoteServiceErrorCode` import | `import type { RemoteServiceErrorCode } from "@earendil-works/chord";` (`:1`) | `import type { RemoteServiceErrorCode } from "@oh-my-pi/chord";` — thân 56 dòng còn lại **nguyên văn** |
+| `src/listener.ts` | `ByteConnectionAcceptor` import | `import type { ByteConnectionAcceptor } from "./connection.ts";` (`:1`) | `from "./connection"`; 8 dòng còn lại nguyên văn |
+| `src/connection.ts` | 3 import + `ConnectionState.handshakeTimeout` | `:1` chord, `:2` pi-protocol, `:4` `from "./types.ts"`; `:30` `handshakeTimeout: NodeJS.Timeout;` | 3 scope/hậu tố đổi; `:30` → `handshakeTimeout: Timer;` |
+| `src/types.ts` | `MaybePromise` | `:15` `export type MaybePromise<T> = T \| Promise<T>;` | `export type { MaybePromise } from "@oh-my-pi/pi-utils/acp/protocol";` — bỏ hẳn dòng 15 |
+| `src/types.ts` | import dòng 2 (agent-core) + `SessionMetadata` | `:1` `import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@earendil-works/chord";`<br>`:2` `import type { Context, SessionMetadata } from "@earendil-works/pi-agent-core";` | **giữ nguyên dòng 1** (chỉ đổi scope) + thêm dòng `import type { Context } from "@oh-my-pi/chord/context";`; **xoá dòng 2**; **thêm interface 6 trường** `SessionMetadata` nguyên văn từ `pi-ref/packages/agent/src/harness/session/types.ts:473-480` |
+| `src/server.ts` | import block | `:1-10` `} from "@earendil-works/chord";`<br>`:11` `import { BACKGROUND_CONTEXT, type SessionMetadata, TODO_CONTEXT, withAbortSignal } from "@earendil-works/pi-agent-core";`<br>`:12-30` `} from "@earendil-works/pi-protocol";`<br>`:36-40` `} from "./connection.ts";` … `from "./types.ts";` | 3 scope đổi; **5** mệnh đề `from "./x.ts"` ở dòng **36, 37, 38, 39, 40** bỏ hậu tố. 576 dòng, **thân logic không đổi một dòng** |
+| `src/server.ts` | 33 khai báo `private` | `:51-65` 15 field + 18 method (`:103,183,208,223,262,298,306,406,417,438,452,474,489,504,512,523,531,539`) | `#host`, `#listeners`, … và `#startInternal()`, `#closeInternal()`, … |
+| `src/server.ts` | `Server.closed` deferred | `:88` `this.closed = new Promise((resolve, reject) => {` | `const { promise, resolve, reject } = Promise.withResolvers<void>(); this.closed = promise;` |
+| `src/session-router.ts` | 18 khai báo `private` | `:35-41` 7 field + 11 method (`:108,146,160,199,216,224,234,254,262,276,302`) | `#` |
+| `src/session-router.ts` | `randomUUID` | `:1` `import { randomUUID } from "node:crypto";` | `import * as crypto from "node:crypto";` + call site thành `crypto.randomUUID()` |
+| `src/transports/unix/listener.ts` | import node | `:1` `node:crypto`, `:2` `import type { Stats } from "node:fs"`, `:3` `import { chmod, link, lstat, mkdir, rename, unlink } from "node:fs/promises"`, `:4` `node:net`, `:5` `node:path` | mọi import **value** thành namespace (`import * as fs from "node:fs/promises"` …) + qualify ~25 call site; `import type { Stats }` giữ nguyên (type-only) |
+| `src/transports/unix/listener.ts` | `UnixListener` + `UnixByteConnection` | 19 field ở `:30-39` + `:192-200`, 6 method ở `:95,126,136,147,181,270` | `#` |
+| `src/transports/unix/listener.ts` | `get closed()` (getter **công khai**) | `:208` `get closed(): boolean { return this.closedValue; }` | **KHÔNG đổi.** `UnixByteConnection implements ByteConnection`, mà `connection.ts:8` khai `readonly closed: boolean`; đổi thành `#get` phá TS2420 và làm `server.ts` + `session-router.ts` hỏng theo |
+| `src/transports/unix/listener.ts` | `NodeJS.Timeout` | `:342` `let timer: NodeJS.Timeout \| undefined;` | `let timer: Timer \| undefined;` (quy ước omp, xem `metaharness/src/server.ts:193` `#syncTimer: Timer \| undefined`) |
+| `src/transports/unix/listener.ts` | `NodeJS.ErrnoException` | `:353` `socket.once("error", (error: NodeJS.ErrnoException) => {` | **giữ nguyên** — type khác, chỉ dùng trong callback, typecheck vẫn xanh |
+| `src/transports/unix/index.ts` | barrel | 4 dòng named re-export: `export { getUnixSocketPath } from "./address.ts";` … | bỏ `.ts`; **giữ named re-export**, KHÔNG chuyển `export *` |
+| `src/transports/unix/preset.ts` | `SessionMetadata` | `:1` `import type { SessionMetadata } from "@earendil-works/pi-agent-core";` | import từ `../../types` |
+| `src/testing/host.ts` | `MemorySessionRepo` | `:2` `import type { Context, Session, SessionMetadata } from "@earendil-works/pi-agent-core";`<br>`:3` `import { BACKGROUND_CONTEXT, MemorySessionRepo } from "@earendil-works/pi-agent-core";`<br>`:153` `readonly repo = new MemorySessionRepo({ now: () => 1 });` | `Context` từ `../../chord/context`, `SessionMetadata` từ `../../types`; **xoá `MemorySessionRepo`**, thay bằng shim `TestSessionRepo` nội file (xem bước 8) |
+| `src/testing/host.ts` | `Deferred<T>` | `:7-20` class 14 dòng với `private resolvePromise!: (value: T) => void;` ở `:9` | giữ hình dạng `new Deferred<T>()` + `.promise` + `.resolve()` (3 chỗ dùng ở `conformance.test.ts:403-405`), thân dựng lại trên `Promise.withResolvers<T>()` |
+| `test/conformance.test.ts` | `expect.poll` | `:179` `await expect.poll(() => releaseCount).toBe(1);` (**7 chỗ**: `:179, :198, :217, :218, :318, :376, :393`) | `await pollUntil(() => releaseCount === 1, Date.now() + 5_000);` — `expect.poll` **không có trong `bun:test`** |
+| `test/unix-connection.test.ts` | `vi.waitFor` | `:48` `await vi.waitFor(() => expect(socket.writableLength).toBe(1));`<br>`:60` `await vi.waitFor(() => expect(socket.ended).toBe(true));` | `await pollUntil(() => socket.writableLength === 1, Date.now() + 5_000);` — copy y hệt helper tại `packages/coding-agent/test/bash-executor.test.ts:62` |
+| `test/unix-connection.test.ts` | `ControlledSocket.writeCallback` | `:13` `private writeCallback?: (error?: Error \| null) => void;` | `#writeCallback` — **nằm ngoài đợt quét 87 khai báo của bước 6** |
+| `test/*.test.ts` (6 file) | import `vitest` | `test/protocol.test.ts:2` `import { afterEach, expect, test } from "vitest";` | `from "bun:test"` |
+| `package.json` | manifest | 1314 B, `main: "./dist/index.js"`, `build: tsc -p tsconfig.build.json`, `clean: shx rm -rf dist`, `test: vitest --run`, `engines.node: ">=22.19.0"` | **KHÔNG CHÉP — viết mới** |
+| `THIRD-PARTY-NOTICES.txt` | mục `packages/server/NOTICE` | file hiện có 1.0 MB; mục `crates/pi-shell/NOTICE` ở `:250` là mẫu format | thêm mục mới, cùng commit với file source đầu tiên |
+
+**Các bước có neo đã kiểm.**
+
+**Bước 1 — CỔNG TIỀN ĐIỀU KIỆN (dừng nếu chưa đủ).** Cả ba mắt xích phải có trước khi file nào chạm đất: `packages/chord`, `packages/protocol`, và một quyết định về `SessionMetadata`. Đo hôm nay: `ls -d packages/chord packages/protocol packages/server` → cả ba đều `No such file or directory`. Cây omp có **16** package. Kiểm: `ls packages/chord/src/index.ts packages/protocol/src/index.ts` — phải in ra cả hai đường dẫn.
+
+**Bước 2 — Ghi nguồn gốc TRƯỚC file đầu tiên.** Tạo `packages/server/NOTICE`, dòng đầu `Derived from earendil-works/pi packages/server @ d6af72e (MIT, Copyright (c) 2025 Mario Zechner).` rồi kèm **toàn văn** MIT text. Đã xác minh: `git -C /Users/tranquangdang21/Projects/pi-ref log --oneline -1` → `d6af72e18 docs(durable): clarify scratch examples` — mã `d6af72e` trong NOTICE là **thật**; `head -3 .../pi-ref/LICENSE` → `MIT License` / `Copyright (c) 2025 Mario Zechner`. Đồng thời thêm mục `packages/server/NOTICE` vào `THIRD-PARTY-NOTICES.txt` theo format mục `crates/pi-shell/NOTICE` ở `:250`. Đây là nghĩa vụ MIT và là **cổng cứng**: NOTICE phải nằm trong **cùng commit** với file source đầu tiên.
+
+**Bước 3 — Khung package.**
+
+```
+mkdir -p packages/server/src/transports/unix packages/server/src/testing packages/server/test/fixtures
+```
+
+`packages/server/tsconfig.json` — đã đối chiếu `packages/agent/tsconfig.json` từng dòng, nội dung khớp:
+
+```json
+{
+	"extends": "../tsconfig.workspace.json",
+	"include": [
+		"src",
+		"test"
+	]
+}
+```
+
+Đo: `grep -l 'tsconfig.workspace.json' packages/*/tsconfig.json | wc -l` → **16**. `grep -l 'tsconfig.base.json' packages/*/tsconfig.json` → **0**. Vậy "đừng extends thẳng `tsconfig.base.json`" là đúng. KHÔNG port `tsconfig.build.json` (209 B) lẫn `tsconfig.test.json` (560 B).
+
+**Bước 4 — `package.json` mới + catalog.** Không chép `pi-ref/packages/server/package.json` (1314 B). Soạn mới theo mẫu `packages/agent/package.json`: `name` `@oh-my-pi/pi-server`; `author` `{ "name": "Stencil Labs, Inc.", "url": "https://stencil.so" }`; `contributors` `["Mario Zechner"]`; `license` `MIT`; `repository.directory` `packages/server`; `engines` `{ "bun": ">=1.3.14" }` (đo được **16/16**); `main`/`types` → `./src/index.ts`; `exports`: `.` → `./src/index.ts`, `./testing` → `./src/testing/index.ts`, `./unix` → `./src/transports/unix/index.ts`; 6 script chép nguyên văn từ `packages/agent/package.json`; `devDependencies` chỉ `@types/bun` — **BỎ `shx@0.4.0` và `vitest@4.1.9`** (đo được: grep mọi `package.json` → **0 hit**; `grep -c vitest package.json` gốc → **0**); `dependencies` toàn bộ ghim `catalog:`; `files` `["src", "README.md", "CHANGELOG.md"]` (bỏ nó thì `npm pack` sẽ không đóng gói `src`). Rồi thêm 3 package anh em vào `workspaces.catalog` của `package.json` GỌC và `bun install`. Đo hiện tại: catalog có 56 khoá, và **không** có `@oh-my-pi/chord`, `@oh-my-pi/pi-protocol`, `@oh-my-pi/pi-server`. **Cảnh báo phiên bản:** kế hoạch ghi `18.3.3` / `18.3.4` — con số đó **đã cũ**; ghi `18.4.0`.
+
+**Bước 5 — Chép 16 file `src/`, đợt cơ học.** Giữ nguyên layout. Hai phép đo đã kiểm lại: `grep -rhoE 'from "\.[^"]*\.ts"' src test --include='*.ts' | wc -l` → **57** ✓; `grep -rho '@earendil-works/…' src test --include='*.ts' | wc -l` → **23** ✓. Chia nhỏ 23 scope occurrence: **pi-protocol 8, pi-agent-core 7, chord 8, pi-server 0, pi-ai 0, pi-telemetry 0**. Con số **toàn package 38** cũng tái lập được: pi-protocol 11, pi-agent-core 10, chord 9, pi-server 4, pi-ai 3, pi-telemetry 1; 15 occurrence nằm trong 4 file bị bỏ. 15 + 23 = 38 ✓.
+
+**Bước 6 — Đợt quét ES `#private`: 87 khai báo trên 5 file.** Đo lại: `grep -c 'private '` cho `server.ts` 33, `session-router.ts` 18, `unix/listener.ts` 25, `testing/client.ts` 7, `testing/host.ts` 4 → **87** ✓; ngoài 5 file đó, `private` trong `src/` = **0**. Mọi dòng trong danh sách của kế hoạch đều đúng:
+
+- `src/server.ts`: 15 field ở `:51-65`, 18 method ở `:103, :183, :208, :223, :262, :298, :306, :406, :417, :438, :452, :474, :489, :504, :512, :523, :531, :539`
+- `src/session-router.ts`: 7 field ở `:35-41`, 11 method ở `:108, :146, :160, :199, :216, :224, :234, :254, :262, :276, :302`
+- `src/transports/unix/listener.ts`: 19 field ở `:30-39` + `:192-200`, 6 method ở `:95, :126, :136, :147, :181, :270`
+- `src/testing/client.ts`: 7 field ở `:29-35`
+- `src/testing/host.ts`: 4 field ở `:9, :40, :41, :158`
+
+Quy tắc: `private readonly x` → `#x`, `private async x(...)` → `#x(...)`. Không cái nào là constructor parameter property, nên **cả 87** đều chuyển. **KHÔNG đụng `get closed()` ở `unix/listener.ts:208`**. Hình dạng đích ở omp: `metaharness/src/server.ts:189` `#store`, `:190` `#children`, `:194` `#server`.
+
+**Bước 7 — Đợt quét `Promise`: 9 chỗ trong `src/`, 8 chuyển.** `grep -rn 'new Promise' src test` trả **10** kết quả: 9 trong `src/`, 1 trong `test/server.test.ts:47`. Chuyển **8** sang `Promise.withResolvers()`: `src/server.ts:88` · `unix/listener.ts:61, :238, :274, :339, :376` · `src/testing/client.ts:177` · `src/testing/host.ts:12`. **GIỮ** `src/testing/client.ts:104` — `return new Promise((resolve, reject) => this.waiters.add({ predicate, resolve, reject }));` resolve một giá trị tính từ predicate; `withResolvers` không biểu đạt được. Để lại một dòng comment nói lý do. Đổi `NodeJS.Timeout` → `Timer` ở **hai** chỗ: `connection.ts:30` và `unix/listener.ts:342`; `:353` là `NodeJS.ErrnoException` — type khác, có thể để nguyên.
+
+**Bước 8 — Chuẩn hoá import node-module → namespace.** `unix/listener.ts:1-5` → `import * as …` + qualify call site (~25 chỗ). `session-router.ts:1` → `crypto.randomUUID()`. `unix/address.ts:1` → `path.join`. `testing/client.ts:1-2` → namespace. `import type { Stats } from "node:fs"` (`:2`) giữ nguyên — type-only.
+
+**Bước 9 — Va chạm số 1: `MaybePromise`.** Xoá `src/types.ts:15` và thay bằng `export type { MaybePromise } from "@oh-my-pi/pi-utils/acp/protocol";`. Đã mở `packages/utils/src/acp/protocol.ts:9` — **khớp từng byte**. Đường dẫn resolve được: `packages/utils/package.json` có khoá `"./*": { "types": "./src/*.ts", "import": ./src/*.ts" }`. Public API của `pi-server` giữ nguyên — `src/index.ts:4` vẫn `export * from "./types"`. Đây là sửa đổi cố ý **duy nhất không nguyên văn** trên một public symbol, và nó thuần type. Thêm `@oh-my-pi/pi-utils` vào dependencies.
+
+**Bước 10 — Va chạm số 2 và 3: `SessionMetadata` + `TestSessionRepo`.**
+
+*(a)* Xoá `src/types.ts:2`. **Giữ `src/types.ts:1`.** Thêm interface 6 trường nguyên văn, đã mở và đọc từ `pi-ref/packages/agent/src/harness/session/types.ts:473-480`:
+
+```ts
+export interface SessionMetadata {
+	id: string;
+	createdAt: number;
+	storageVersion: number;
+	cwd?: string;
+	parentSessionId?: string;
+	legacyParentSessionPath?: string;
+}
+```
+
+Đo lý do: `grep -rn 'SessionMetadata' packages/agent/src` → **0 hit**; `packages/agent/src/index.ts` có **17** dòng `export *` và **không** có `harness/`; `grep -rn 'MemorySessionRepo' packages/` → **0 hit**.
+
+*(b)* Trong 4 file src import `Context` / `BACKGROUND_CONTEXT` / `TODO_CONTEXT` / `withAbortSignal` từ agent-core → trỏ sang `@oh-my-pi/chord/context`. Đã mở `pi-ref/packages/agent/src/harness/context.ts:14-25` để kiểm: nó re-export từ `@earendil-works/chord/context` (`:12`). Sau (a)+(b), `pi-server` **không còn phụ thuộc `pi-agent-core`**.
+
+*(c)* `src/testing/host.ts:2` và `:3` — bỏ `MemorySessionRepo` và `Session`. `:153` `readonly repo = new MemorySessionRepo({ now: () => 1 });` thay bằng shim `TestSessionRepo` nội file ~30 dòng: `Map<string, SessionMetadata>` + shim `Session` in-memory, ba phương thức list/open/create, giữ **nguyên** hành vi 0-match / >1-match / 1-match. Hợp đồng này đã ghim bằng test — `test/conformance.test.ts:334` (`reports an unknown session without creating a Harness` → `resolves.toMatchObject({ ok: false, error: { code: "session_not_found" } })` + `expect(host.harnesses.size).toBe(0)`), `:346` (`rejects an ambiguous session ID…`), `:321` (`rejects requests addressed to another server before repository access` — ghim đúng thứ tự "sai serverId bị từ chối **trước** mọi tra cứu repository", khớp `server.ts:346`).
+
+*(d)* `Deferred` (`:7-20`) → `Promise.withResolvers()`. Giữ đúng 2 thành viên public (`readonly promise`, `resolve()`) + 1 private (`resolvePromise`); `withResolvers` sinh thêm `reject` và ta **bỏ** nó, vì `Deferred` cố ý chỉ resolve một chiều. **LƯU Ý phạm vi:** `Deferred` là public API (`src/testing/index.ts:3` re-export nó) và `test/conformance.test.ts:403-405` dùng trực tiếp 3 lần → **giữ nguyên hình dạng `new Deferred<T>()`**, đừng sửa 3 chỗ dùng.
+
+**Bước 11 — Chép 7 file `test/`, chuyển sang `bun:test`.**
+
+| file (pi-ref) | dòng | `test()` | import `vitest` | scope | `.ts` tương đối |
+| --- | --- | --- | --- | --- | --- |
+| `test/conformance.test.ts` | 502 | **20** | `:3` | `:1` chord, `:2` agent-core | **5** |
+| `test/protocol.test.ts` | 168 | **6** | `:2` | `:1` pi-protocol | **3** |
+| `test/server.test.ts` | 127 | **6** | `:5` | `:4` pi-protocol | **5** |
+| `test/listener.test.ts` | 52 | **2** | `:1` | không có | **3** |
+| `test/unix.test.ts` | 143 | **6** | `:5` | không có | **3** |
+| `test/unix-connection.test.ts` | 65 | **1** | `:4` | `:3` pi-protocol | **1** |
+| `test/fixtures/stale-socket-server.mjs` | 9 | — | không có (fixture) | không có | — |
+
+**Tổng 41** — đã đếm lại từ khai báo `test()`: 20+6+6+2+6+1 = 41 ✓. Viết lại thì phải rà trước khi chạy bất cứ thứ gì: `grep -rn 'mock.module' packages/server/test` → 0; `grep -rn 'from "vitest"' packages/server/test` → 0; `grep -rn 'vi\.' packages/server/test` → 0; **`grep -rn 'expect\.poll' packages/server/test` → 0** ← *bổ sung, kế hoạch thiếu mục này*; `grep -rn 'readFileSync\|Bun.file' packages/server/test` → 0.
+
+**Bước 12 — GATE 1: `bun run check:ts`.** Script thật, đã đọc từ `package.json` gốc:
+
+```
+check:ts: bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types
+check:tools: oxlint . && oxfmt --check 'packages/*/src/**/*.{ts,tsx}' 'packages/*/{test,bench,examples,scripts}/**/*.ts' 'packages/*/*.ts' 'scripts/**/*.ts'
+```
+
+Ghi chú đã kiểm: không glob nào trong `check:tools` khớp `.mjs`, nên `test/fixtures/stale-socket-server.mjs` không bị `oxfmt --check` chạm; và `.oxlintrc.json:55` là `"**/*.mjs"` trong `ignorePatterns`.
+
+**Bước 13 — GATE 2: `bun test packages/server`, kỳ vọng đúng 41.** Chuỗi phụ thuộc không chạm `@oh-my-pi/pi-natives` — không cần build native addon.
+
+**Bước 14 — CHANGELOG + README + commit.** `packages/server/CHANGELOG.md` mới: chỉ `# Changelog` + `## [Unreleased]` + `### Added`. **KHÔNG chép** CHANGELOG của pi (1567 B, 0.80.3 → 0.87.1) — tooling release của omp hoàn tất `[Unreleased]` và sẽ cố hoà giải heading version nước ngoài. `README.md`: 5 scope (`:1`, `:19`, `:26`+`:27`, `:77`); ví dụ chạy được gọi `MemorySessionRepo` — thứ omp không có — nên viết lại theo `TestSessionRepo` mới; thêm mục "không phải collab-web, không phải metaharness". Commit source + NOTICE + CHANGELOG + `package.json` gốc + `bun.lock` **CÙNG NHAU**.
+
+**Hợp đồng test.** Bảy file, **41 case**, tất cả ở mức hợp đồng. Không static echo, không success passthrough, không source-grep, không `mock.module()`.
+
+- **`test/conformance.test.ts` (502 dòng, 20 case, 2 describe)** — hợp đồng định tuyến attachment. *Nếu hồi quy:* một client remote-presentation mất session của nó, hoặc nói chuyện với một session đã chết. Cụ thể — attachment bị release **trước** khi service call bay settle (đóng nhầm session đang bận); request thiếu `{sessionId, attachmentId}` không bị chặn bằng `session_not_attached`; `attachmentId` cũ sau khi đổi Session vẫn được chấp nhận; request sai `serverId` đi thẳng vào repository; session lạ dựng `Harness` thừa thay vì trả `session_not_found`; `sessionId` mơ hồ trả `session_ambiguous`; một `Harness` đã terminated vẫn nhận attach; shutdown không đóng mọi routed handle.
+- **`test/protocol.test.ts` (168 dòng, 6 case)** — framing/bắt tay trên `ByteConnection` in-memory thuần. *Nếu hồi quy:* một client trên đường truyền chậm/mất gói thấy một session nửa vời parse.
+- **`test/server.test.ts` (127 dòng, 6 case)** — option và vòng đời. *Nếu hồi quy:* một launcher cấu hình sai phục vụ một server nửa vời thay vì hỏng ngay lúc boot.
+- **`test/listener.test.ts` (52 dòng, 2 case)** — ghép: mọi listener đều start; listener thứ N hỏng thì 1..N-1 bị đóng. *Nếu hồi quy:* server nhiều transport chạy với nửa vòng transport.
+- **`test/unix.test.ts` (143 dòng, 6 case)** — an toàn filesystem trên socket thật trong thư mục tạm. *Nếu hồi quy:* **server xoá file của người dùng**. Đây là bộ test sắc nhất trong package. Dùng socket `node:net` thật + tiến trình con `fixtures/stale-socket-server.mjs`.
+- **`test/unix-connection.test.ts` (65 dòng, 1 case)** — backpressure/thứ tự đóng. *Nếu hồi quy:* client đọc EOF trước khi đọc được lỗi.
+
+**Sau khi viết lại, hợp đồng KHÔNG ĐỔI:** cùng 41 khẳng định, cùng tên, cùng bảo đảm quan sát được. Hai việc mổ bắt buộc: `vi.waitFor` ×2 và `expect.poll` ×7.
+
+**Cổng có đỏ được không — trả lời thẳng: GATE 1 và GATE 3 đỏ được, GATE 4 đỏ được NGAY HÔM NAY, GATE 2 đỏ được *sau* bước 1. Không cổng nào luôn xanh.**
+
+GATE 1 — chặn:
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts
+```
+
+**CÓ ĐỎ ĐƯỢC.** Cơ chế: `check:types` chạy `tsgo -p tsconfig.json --noEmit` cho từng package. Nếu `@oh-my-pi/pi-protocol` hoặc `@oh-my-pi/chord` chưa tồn tại → **TS2307** trên chính tên đó. Nếu còn sót import `@earendil-works/*` → TS2307/TS2792. Nếu bước 10 chưa áp → `SessionMetadata` unresolved. Đỏ trong cả ba trường hợp, và **tự chỉ đúng nguyên nhân**. Đo nền: 16 package, exit 0.
+
+GATE 2 — `bun test packages/server`, kỳ vọng đúng 41. **CÓ ĐỎ ĐƯỢC, nhưng KHÔNG phải "ngay hôm nay".** Kế hoạch viết: *"cả hai nhánh đều đỏ được ngay hôm nay: nhánh test không cần addon native"*. **Câu này sai và phải sửa.** Hôm nay `packages/server` không tồn tại, `packages/chord` và `packages/protocol` cũng không — `bun test packages/server` sẽ báo "0 files" hoặc không resolve `@oh-my-pi/chord`, tức **đỏ vì hạ tầng, không phải vì migrate**. Chạy nó hôm nay cho cảm giác an toàn giả. Viết lại cho đúng:
+
+> GATE 2 đỏ được **ngay khi tiền điều kiện bước 1 đáp** (`packages/chord` và `packages/protocol` đã có). Nó không cần `brew install ninja` — đo được `bun test packages/omptype` xanh 1139 pass / 0 fail dù addon chưa build. Đỏ được theo ba đường độc lập: (1) số case ≠ 41 ⇒ một lần viết lại đã bỏ hoặc nhân đôi case; (2) `expect.poll` còn sót ⇒ `TypeError: expect(...).poll is not a function`, 7/20 case conformance đỏ; (3) `vi.waitFor` còn sót ⇒ `TypeError: vi.waitFor is not a function`, đỏ GATE 2. Trước khi đáp điều kiện thì **không được chạy và không được tính là xanh**.
+
+GATE 3 — cơ học, rẻ:
+
+```bash
+grep -rn '@earendil-works/' packages/server | wc -l                     # phải in 0
+grep -rnoE 'from "\.[^"]*\.ts"' packages/server/src packages/server/test | wc -l   # phải in 0
+```
+
+**CÓ ĐỎ ĐƯỢC.** Đếm chính xác. Hai con số nền đã đo trên cây nguồn: **38** occurrence scope toàn package (15 trong 4 file bị bỏ → **23** trong tập chép) và **57** hậu tố `.ts` trong tập chép. Đây là kiểm chứng build, **không** mã hoá thành file test (AGENTS.md cấm test source-grep).
+
+GATE 4 — pháp lý:
+
+```bash
+ls packages/server/NOTICE
+grep -n 'd6af72e' packages/server/NOTICE | head -1
+grep -n 'packages/server/NOTICE' THIRD-PARTY-NOTICES.txt
+```
+
+**CÓ ĐỎ ĐƯỢC.** Ba lệnh, ba điều kiện, tất cả đều là so sánh chuỗi/file tồn tại — không có cách nào "xanh giả". Đây là **cổng đỏ được duy nhất chạy được ngay hôm nay**, vì nó không cần `chord`/`protocol`. Nên bắt đầu work item bằng nó.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`expect.poll` là cạm bẫy số một, và kế hoạch đã BỎ SÓT nó.** `grep -rn 'expect.poll' test/` trả **7 kết quả**, tất cả trong `conformance.test.ts:179,198,217,218,318,376,393`. `expect.poll` là API **chỉ có ở vitest** (2.0+), **không có trong `bun:test`**. Đây là 7/20 case conformance. Sửa: viết một `pollUntil(predicate, deadlineMs)` cục bộ trong `conformance.test.ts` (copy y hệt `packages/coding-agent/test/bash-executor.test.ts:62`) và thay cả 7 chỗ. **Thêm `grep -rn 'expect\.poll' packages/server/test` phải 0 vào danh sách gate của bước 11.**
+2. **`get closed()` là cái bẫy ngược lại: sửa thì vỡ.** Trong 87 khai báo `#private` có đúng một cái **không được** đụng tới: `unix/listener.ts:208`. Nhưng `UnixByteConnection implements ByteConnection` và `connection.ts:8` bắt buộc `readonly closed: boolean`. Đổi thành `#get closed()` → TS2420, rồi `server.ts` và `session-router.ts` hỏng theo. Đừng quét bằng regex, hãy làm theo danh sách.
+3. **Đợt cơ học đủ chưa thì GATE 3 bắt được, nhưng GATE 1 mới bắt được phần còn lại.** 23 scope rewrite + 57 hậu tố `.ts` là con số đúng, nhưng nó **không** phủ 6 đợt quét tay: 87 `#private`, 8 `Promise.withResolvers`, ~25 call site namespace, 1 `SessionMetadata` interface, 1 `TestSessionRepo` shim, 8 `expect.poll`, 2 `vi.waitFor`, 1 `Timer`. Đừng chạy GATE 3 xanh rồi tưởng xong.
+4. **`Deferred` là public API đang bị giữ bằng tay.** Nếu bạn "cho đúng chuẩn" bằng cách xoá class và đổi 3 chỗ dùng sang `withResolvers`, bạn vừa phá public API vừa phải sửa cam kết "cùng 41 khẳng định". Giữ class, chỉ đổi thân nó. Và đừng thêm `reject`.
+5. **Trong 5 symbol agent-core, 4 chỉ là re-export của chord.** Nếu bạn đọc `import { BACKGROUND_CONTEXT, type SessionMetadata, ... } from "pi-agent-core"` và kết luận "cần `pi-agent-core`", bạn sẽ kéo cả package này vào một cuộc hoà giải lớn hơn nhiều. Chỉ `SessionMetadata` là khái niệm agent-core thật, và nó là một interface 6 trường.
+6. **`pi-server` KHÔNG phải là `collab-web` và KHÔNG phải là `metaharness`.** `createUnixListener` là nơi **duy nhất** trong package tiêu thụ `node:net`; không HTTP, không WebSocket, không MCP ở bất cứ đâu. Nghệ thuật lân cận thật ở omp là `packages/coding-agent/src/collab/registry.ts` (**762 dòng** — đã đếm) và `src/tiny/jsonl-socket.ts` (**49 dòng** — đã đếm). **Không refactor chúng sang `pi-server`.** Ghi khác biệt vào README để câu hỏi này đóng luôn.
+7. **Cản trở thật sự nằm ngoài package này.** `pi-protocol` cần `typebox@1.3.27`. `grep -n 'typebox' package.json` (root omp) → **0 hit**; `bun.lock:216` chỉ có `"@sinclair/typebox": "^0.34.0"` và nó là transitive của package khác (bản resolve `0.34.52` ở `bun.lock:898`), không tái dùng được. Đây là một **chuỗi**, không phải một chi tiết. Đừng mất cả ngày vì nó.
+8. **Hai barrel giữ named re-export là CỐ Ý, không phải sơ suất.** `AGENTS.md` ưu tiên `export * from` trong barrel thuần. Đổi `transports/unix/index.ts` sang star sẽ **vô tình export `UnixByteConnection`** — class đang đánh dấu `@internal Exported only for transport-level verification` và cố ý không re-export, với `test/unix-connection.test.ts` deep-import nó. Giữ named re-export, ghi lệch quy tắc vào PR. Cùng lý do cho `src/testing/index.ts`.
+
+
 ---
 
 
@@ -1755,6 +2342,369 @@ Hai rủi ro nhỏ hơn đáng gọi tên. **THỨ NHẤT**, việc chuyển bar
 - Bốn package pin phiên bản 0.87.1 của pi mà lần migrate này chạm tới đều pin `engines.node >=22.19.0`, còn omp pin `engines.bun >=1.3.14`. `unix.ts` là nơi duy nhất điều này có thể cắn (node:net, node:fs/promises, `.unref()`/`.drain` của socket). Hãy xác nhận phiên bản Bun đích hỗ trợ `NodeJS.Timeout` như một kiểu và rằng `fork()` trong test fixture chạy được dưới `bun test` — `bun test` không chạy mô hình tiến trình của vitest, nên `stale-socket-server.mjs` fork tại `unix.test.ts:126` là test nhiều khả năng nhất phải làm lại.
 - Bốn file bị bỏ (tsconfig.build.json, tsconfig.test.json, vitest.config.ts, CHANGELOG.md) có nên được ghi lại là các lần bỏ CÓ CHỦ Ý trong mô tả PR không, hay im lặng là chấp nhận được? Đặc tả này nói bỏ có chủ ý; PR nên nói thẳng, vì một reviewer diff với pi sẽ thấy thiếu 4 file và có thể đọc đó như tai nạn.
 - Hai lần `@earendil-works/pi-ai` và mỗi lần một `@earendil-works/pi-telemetry` / `@earendil-works/pi-agent-core` chỉ tồn tại TRONG `tsconfig.test.json` của pi, mà đặc tả này xoá. Nên bốn chuỗi scope đó không cần viết lại gì cả — nhưng nếu sau này một quyết định nào hồi sinh tsconfig test, chúng phải được viết lại lúc đó. Xác nhận việc xoá là có chủ ý, để không ai sau này grep các chuỗi `@earendil-works` chưa viết lại rồi báo là sót.
+
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__4.md`. Cây nguồn `/Users/tranquangdang21/Projects/pi-ref/packages/client` (19 file, 70.483 byte — đã đo lại, khớp tuyệt đối). **Trạng thái cây đích lúc viết phiếu:** `packages/{chord,protocol,server,client}` đều **CHƯA TỒN TẠI** ở omp. `packages/wire` là khuôn duy nhất sẵn có. `esbuild` vắng mặt trong `node_modules`. Đây là điều kiện tiên quyết, không phải phát hiện mới.
+
+**Cảnh báo neo — đọc trước khi gõ.** 118 neo đã kiểm: **113 đúng, 5 sai**. Các con số lớn trong đặc tả — 19 file / 70.483 byte, bảng 18 dòng = 70.192 byte, 7 file src = 34.985 byte, 5 file test = 27.504 byte, `promise.ts` = 582 byte, 25 symbol công khai, 16 specifier tương đối trong `src/`, 9 trong `test/`, 8 site scope trong `src/`, 21 symbol pi-protocol, 17 symbol chord, 12 field `#` ở `client.ts:63-74`, 4 khai báo `private` và 18 tham chiếu `this.X` trên 17 dòng, 21+4+3 call site namespace, 3 `Promise.withResolvers` site idiom ở omp, 15/16 package khai `@types/bun` — **đều đúng khi đo lại**. Bảng *Bề mặt công khai* 25 dòng khớp 25/25 vị trí thật.
+
+**Hai lỗi chặn** (sẽ làm cổng ĐỎ khi bắt đầu gõ), chi tiết ở bảng điểm sửa: **LỖI A** — `toError` không chỉ được dùng trong `errors.ts` mà còn là import ở `client.ts:32` và `connection.ts:10`; **LỖI B** — `PromiseResolvers<ServerHello>` còn được dùng như **TYPE** ở `connection.ts:25` và `:29` (`ConnectionLifecycle`).
+
+Ngoài ra 5 con số sai trong đặc tả: số test là **27** (15 + 4 + 8) chứ không phải 25; `client.test.ts` có **17** khối (15 test + 2 describe) chứ không phải 20; `unix-transport.test.ts` có **4** test chứ không phải 3; `package.json` neo là dòng **90** chứ không phải 94; class `Client` là L62–**L445** = **418 dòng** (448 là dòng của `createClientServiceTransport`); và cổng đo `grep -rc '#handlers'` cho **10**, không phải 1 — vì `grep -c` đếm DÒNG, không đếm lần xuất hiện (11 lần).
+
+**Bảng điểm sửa.** Mọi "TRƯỚC" dưới đây trích từ file thật. Mọi "SAU" là hình dạng sau khi sửa.
+
+**LỖI A — `toError` sẽ biến thành symbol không tồn tại, làm vỡ 2 file khác.** Đặc tả (bước 8(d)) nói: *"xoá định nghĩa `toError` khỏi errors.ts và import nó từ `@oh-my-pi/pi-utils`"*. Nhưng `toError` KHÔNG chỉ được dùng bên trong `errors.ts` — nó là import ở hai file khác:
+
+```
+src/client.ts:32      import { ClientDisposedError, DisconnectedError, ServerError, toError } from "./errors.ts";
+src/connection.ts:10  import { DisconnectedError, ServerError, toDisconnectedError, toError } from "./errors.ts";
+```
+
+và được gọi ở `client.ts:259, 295, 440` + `connection.ts:154, 197, 222`. Nếu làm đúng như đặc tả — xoá `export function toError` khỏi `errors.ts` và thay bằng `import { toError } from "@oh-my-pi/pi-utils"` (import **không** re-export) — thì `client.ts` và `connection.ts` vẫn import tới một tên không còn được export. `tsgo` đỏ ở 2 file, và `bun test` đỏ vì `errors.ts` không còn `toError` cho `toDisconnectedError` dùng. **Sửa đúng (thêm vào bước 8(d)):**
+
+| file | dòng | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `src/connection.ts` | 10 | `import { DisconnectedError, ServerError, toDisconnectedError, toError } from "./errors.ts";` | `import { DisconnectedError, ServerError, toDisconnectedError } from "./errors";` **+ thêm dòng mới** `import { toError } from "@oh-my-pi/pi-utils";` |
+| `src/client.ts` | 32 | `import { ClientDisposedError, DisconnectedError, ServerError, toError } from "./errors.ts";` | `import { ClientDisposedError, DisconnectedError, ServerError } from "./errors";` **+ thêm dòng mới** `import { toError } from "@oh-my-pi/pi-utils";` |
+
+Tổng cộng thêm **2 dòng import**, không phải 1. Đây là lý do cột "bytes" của bảng không đổi — nó đếm file nguồn của pi.
+
+**LỖI B — `PromiseResolvers` là TYPE, không chỉ là hàm.** Đặc tả nói: *"Rồi xoá specifier `type PromiseResolvers` khỏi import ở `connection.ts:11` (**dòng import đó trở thành rỗng** vì `promise.ts` không còn tồn tại)"*. **Sai.** `PromiseResolvers<ServerHello>` được dùng như một **kiểu** ở hai chỗ khác trong `connection.ts`:
+
+```
+connection.ts:25  | ({ state: "connecting"; handshake: PromiseResolvers<ServerHello> } & ActiveConnection)
+connection.ts:29        handshake: PromiseResolvers<ServerHello> | undefined;
+```
+
+Đó là `ConnectionLifecycle` (L23–30), kiểu trạng thái của cả connection. Xoá import mà không thay 2 chỗ dùng đó ⇒ `tsgo` đỏ. Đặc tả cũng tự mâu thuẫn ở chỗ khác: bảng file cần chép nói `connection.ts` chép nguyên văn *"kể cả `ConnectionLifecycle` (L23-30)"*. Không thể vừa giữ nguyên vừa xoá import. **Sửa đúng:** thay `PromiseResolvers<ServerHello>` → `PromiseWithResolvers<ServerHello>` ở **L25 và L29**, rồi mới xoá cả dòng import L11. `PromiseWithResolvers<T>` là interface global của lib ES2024 — đã xác nhận có trong `node_modules/@typescript/native-preview-darwin-arm64/lib/lib.es2024.promise.d.ts:17`, và omp đã dùng tên này trần ở `packages/agent/src/pause.ts:27` và `packages/ai/src/auth-broker/remote-store.ts:281`.
+
+`src/client.ts` — 14332 byte, 479 dòng:
+
+| dòng | symbol | TRƯỚC (nguyên văn từ file) | SAU |
+| --- | --- | --- | --- |
+| 18 | import chord | `} from "@earendil-works/chord";` | `} from "@oh-my-pi/chord";` |
+| 19 | `BACKGROUND_CONTEXT` | `import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";` | `import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";` |
+| 30 | import protocol | `} from "@earendil-works/pi-protocol";` | `} from "@oh-my-pi/pi-protocol";` |
+| 31 | `Connection` | `import { Connection } from "./connection.ts";` | `import { Connection } from "./connection";` |
+| 32 | `toError` — **LỖI A** | `import { ClientDisposedError, DisconnectedError, ServerError, toError } from "./errors.ts";` | `import { ClientDisposedError, DisconnectedError, ServerError } from "./errors";`<br>**+ dòng mới:** `import { toError } from "@oh-my-pi/pi-utils";` |
+| 33 | `createPromiseResolvers` | `import { createPromiseResolvers } from "./promise.ts";` | **xoá hẳn dòng** |
+| 41 | import types | `} from "./types.ts";` | `} from "./types";` |
+| 248 | `#request` | `const { promise, resolve, reject } = createPromiseResolvers<T>();` | `const { promise, resolve, reject } = Promise.withResolvers<T>();` |
+
+Giữ nguyên văn: 12 field `#` ở L63–74, `[Symbol.asyncDispose]` ở L394, `reconnect()` ở L134, `createClientServiceTransport` ở L448.
+
+`src/connection.ts` — 7691 byte, 245 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 9 | import protocol | `} from "@earendil-works/pi-protocol";` | `} from "@oh-my-pi/pi-protocol";` |
+| 10 | `toError` — **LỖI A** | `import { DisconnectedError, ServerError, toDisconnectedError, toError } from "./errors.ts";` | `import { DisconnectedError, ServerError, toDisconnectedError } from "./errors";`<br>**+ dòng mới:** `import { toError } from "@oh-my-pi/pi-utils";` |
+| 11 | promise | `import { createPromiseResolvers, type PromiseResolvers } from "./promise.ts";` | **xoá hẳn dòng** (nhưng xem LỖI B) |
+| **25** | `ConnectionLifecycle` — **LỖI B** | `\| ({ state: "connecting"; handshake: PromiseResolvers<ServerHello> } & ActiveConnection)` | `... handshake: PromiseWithResolvers<ServerHello> } & ActiveConnection)` |
+| **29** | `ConnectionLifecycle` — **LỖI B** | `handshake: PromiseResolvers<ServerHello> \| undefined;` | `handshake: PromiseWithResolvers<ServerHello> \| undefined;` |
+| 12 | import transport | `import type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport.ts";` | `... from "./transport";` |
+| 13 | import types | `import type { ConnectionState, ConnectionStateChange } from "./types.ts";` | `... from "./types";` |
+| 72 | handshake resolver | `const handshake = createPromiseResolvers<ServerHello>();` | `const handshake = Promise.withResolvers<ServerHello>();` |
+
+Giữ nguyên văn: `ConnectionLifecycle` L23–30 (ngoài 2 sửa type ở trên), chốt `MAX_UINT32` L50–56, hai chốt thứ tự handshake L146–148 và L182–185, `onStateChange({ state: "disconnected", error })` ở L239.
+
+`src/errors.ts` — 965 byte, 34 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 1 | scope | `import type { ProtocolError, ProtocolErrorCode } from "@earendil-works/pi-protocol";` | `import type { ProtocolError, ProtocolErrorCode } from "@oh-my-pi/pi-protocol";` |
+| — | `toError` | (không có) | **+ dòng mới ngay dưới L1:** `import { toError } from "@oh-my-pi/pi-utils";` |
+| 27–29 | `toError` | `export function toError(error: unknown): Error {`<br>`    return error instanceof Error ? error : new Error(String(error));`<br>`}` | **xoá 3 dòng** |
+| 31–34 | `toDisconnectedError` | `export function toDisconnectedError(error: unknown): DisconnectedError {`<br>`    const cause = toError(error);`<br>`    return cause instanceof DisconnectedError ? cause : new DisconnectedError(cause.message, cause);`<br>`}` | giữ nguyên văn, `.ts` đã bỏ từ chép |
+
+Kết quả: **32 dòng** (34 − 3 + 1), xuất **4 symbol** thay vì 5.
+
+`src/unix.ts` — 9703 byte, 299 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 1 | namespace | `import { lstat, readdir } from "node:fs/promises";` | `import * as fs from "node:fs/promises";` |
+| 3 | namespace | `import { join } from "node:path";` | `import * as path from "node:path";` |
+| 9 | scope | `} from "@earendil-works/pi-protocol";` | `} from "@oh-my-pi/pi-protocol";` |
+| 10 | `Client` | `import { Client } from "./client.ts";` | `import { Client } from "./client";` |
+| 11 | errors | `import { DisconnectedError, ServerError } from "./errors.ts";` | `import { DisconnectedError, ServerError } from "./errors";` |
+| 12 | transport | `import type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport.ts";` | `... from "./transport";` |
+| 47 | call site | `names = await readdir(directory);` | `names = await fs.readdir(directory);` |
+| 56 | call site | `return isServerId(serverId) ? [{ serverId, path: join(directory, name) }] : [];` | `... path: path.join(directory, name) }] : [];` |
+| 69 | call site | `if (!(await lstat(candidate.path)).isSocket()) continue;` | `if (!(await fs.lstat(candidate.path)).isSocket()) continue;` |
+| 247 | `timeout` | `let timeout: ReturnType<typeof setTimeout> \| undefined;` | `let timeout: NodeJS.Timeout \| undefined;` |
+
+`node:net` (L2) **KHÔNG đổi**. Giữ nguyên văn: `process.platform === "win32"` guard L99, `new Promise<ByteTransport>` L109, bể dò 16 probe L61–82, bỏ qua ENOENT qua `lstat` L69–74, `UnixByteTransport` L147–235, `#writeTail` L153, ngưỡng byte tồn đọng L166–169, `new Client({...})` trong probe L240, `new Promise<never>` timeout L251, `.unref()` L256, bộ lọc lỗi 9 nhánh L262–273 (bao gồm `error instanceof DisconnectedError && error.cause === undefined` ở L266).
+
+`src/types.ts` — 1139 byte, 32 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 1 | scope | `import type { ServiceSubscriptionSnapshot } from "@earendil-works/chord";` | `import type { ServiceSubscriptionSnapshot } from "@oh-my-pi/chord";` |
+| 2 | scope | `import type { RpcTarget, SessionTarget } from "@earendil-works/pi-protocol";` | `import type { RpcTarget, SessionTarget } from "@oh-my-pi/pi-protocol";` |
+| 3 | transport | `import type { ByteTransportFactory } from "./transport.ts";` | `import type { ByteTransportFactory } from "./transport";` |
+
+Doc comment mang tính ràng buộc: L20 `/** Begin ordered update delivery after the caller has installed the snapshot. */`, L27 `/** Logical server identity expected at the physical endpoint. */`, L30 `/** Reports subscriber failures without allowing them to corrupt client state. */`.
+
+`src/transport.ts` — 727 byte, 18 dòng — **CHÉP NGUYÊN VĂN, KHÔNG SỬA GÌ**.
+
+`src/index.ts` — 428 byte, 12 dòng — **VIẾT LẠI TOÀN BỘ**. TRƯỚC (12 dòng, nguyên văn):
+
+```ts
+export { Client, createClientServiceTransport } from "./client.ts";
+export { ClientDisposedError, DisconnectedError, ServerError } from "./errors.ts";
+export type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport.ts";
+export type {
+    AttachmentChangeListener,
+    ClientOptions,
+    ConnectionState,
+    ConnectionStateChange,
+    ListenerErrorHandler,
+    ServiceSubscription,
+    Unsubscribe,
+} from "./types.ts";
+```
+
+SAU (4 dòng):
+
+```ts
+export * from "./client";
+export * from "./errors";
+export * from "./transport";
+export * from "./types";
+```
+
+Hệ quả có chủ ý: package root **mới** phơi bày `toDisconnectedError` (pi không export nó ở barrel tường minh). `toError` **không** xuất hiện — sau LỖI A nó chỉ là import trong `errors.ts`, `client.ts`, `connection.ts`, mà `export *` không bao giờ re-export tên được import. **Suy ra API đúng bằng MỘT tên; nói với reviewer.**
+
+`src/promise.ts` — 582 byte, 16 dòng — **KHÔNG CHÉP**. Doc comment L7 nói: `/** Remove in favor of Promise.withResolvers() when the repository's TypeScript lib baseline moves to ES2024. */`. Baseline của omp **đã ở đó** (`"lib": ["ES2024", "DOM.AsyncIterable"]` trong `tsconfig.base.json`).
+
+`test/support.ts` — 2303 byte, 84 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 7 | scope | `} from "@earendil-works/pi-protocol";` | `} from "@oh-my-pi/pi-protocol";` |
+| 8 | specifier | `import type { ByteTransport, ByteTransportHandlers } from "../src/index.ts";` | `... from "../src/index";` |
+| 14 | `#handlers` | `    private handlers?: ByteTransportHandlers;` | `    #handlers?: ByteTransportHandlers;` |
+| 15 | `#decoder` | `    private decoder = new ClientMessageDecoder();` | `    #decoder = new ClientMessageDecoder();` |
+| 16 | `#messageWaiters` | `    private readonly messageWaiters: Array<{ count: number; resolve: () => void }> = [];` | `    #messageWaiters: Array<{ count: number; resolve: () => void }> = [];` |
+| 76 | `#resolveMessageWaiters` | `    private resolveMessageWaiters(): void {` | `    #resolveMessageWaiters(): void {` |
+
+18 tham chiếu `this.X` trên **17 dòng** (L23, 24, 28, 30, 44, 51, 55, 56, 60, 61, 65, 66, 71, 72, 77, 78, 80) → `this.#X`. L44 chứa **hai** tham chiếu. **ĐỂ TRẦN** các thành viên công khai — test đọc tất cả: `messages` (L11), `serverId` (L12), `clientCloseCount` (L13), và các method `connect` (L22), `waitForMessages` (L49), `send` (L54), `sendRaw` (L59), `disconnect` (L64), `error` (L70). L51 `return new Promise((resolve) => this.messageWaiters.push({ count, resolve }));` giữ nguyên dạng.
+
+`test/client.test.ts` — 13677 byte, 384 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 1 | chord subpath | `import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";` | `import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";` |
+| 8 | protocol | `} from "@earendil-works/pi-protocol";` | `} from "@oh-my-pi/pi-protocol";` |
+| 9 | runner | `import { describe, expect, test, vi } from "vitest";` | `import { describe, expect, test } from "bun:test";` |
+| 16 | specifier | `} from "../src/index.ts";` | `} from "../src/index";` |
+| 17 | specifier | `import { MemoryByteServer } from "./support.ts";` | `import { MemoryByteServer } from "./support";` |
+| 136 | `vi.waitFor` | `await vi.waitFor(() => expect(updates.map(({ type }) => type)).toEqual(["state"]));` | `await waitFor(() => expect(updates.map(({ type }) => type)).toEqual(["state"]));` |
+| 155 | `vi.waitFor` | `await vi.waitFor(() => expect(updates).toHaveLength(3));` | `await waitFor(() => expect(updates).toHaveLength(3));` |
+
+Thêm helper **CỤC BỘ** (đặc tả cấm tạo utility dùng chung cho 2 call site):
+
+```ts
+async function waitFor(assertion: () => void, timeoutMs = 1000): Promise<void> {
+    const deadline = Bun.nanoseconds() + timeoutMs * 1e6;
+    let lastError: unknown;
+    for (;;) {
+        try {
+            assertion();
+            return;
+        } catch (error) {
+            lastError = error;
+        }
+        if (Bun.nanoseconds() > deadline) throw lastError;
+        await Bun.sleep(5);
+    }
+}
+```
+
+`test/unix-transport.test.ts` — 4765 byte, 147 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 1 | namespace | `import { mkdtemp, rm } from "node:fs/promises";` | `import * as fs from "node:fs/promises";` |
+| 3 | namespace | `import { join } from "node:path";` | `import * as path from "node:path";` |
+| 4 | chord | `import { parseServiceCall } from "@earendil-works/chord";` | `import { parseServiceCall } from "@oh-my-pi/chord";` |
+| 5 | protocol | `import { ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION } from "@earendil-works/pi-protocol";` | `... from "@oh-my-pi/pi-protocol";` |
+| 6 | runner | `import { afterEach, describe, expect, test } from "vitest";` | `import { afterEach, expect, test } from "bun:test";` (**bỏ `describe`** — file này KHÔNG có `describe` nào) |
+| 7 | specifier | `import { Client } from "../src/index.ts";` | `import { Client } from "../src/index";` |
+| 8 | specifier | `import { createUnixTransportFactory } from "../src/unix.ts";` | `import { createUnixTransportFactory } from "../src/unix";` |
+| 16 | call site | `const directory = await mkdtemp(join("/tmp", "pi-client-transport-"));` | `const directory = await fs.mkdtemp(path.join("/tmp", "pi-client-transport-"));` |
+| 18 | call site | `return join(directory, "pi.sock");` | `return path.join(directory, "pi.sock");` |
+| 45 | call site | `await Promise.all([...tempDirectories].map((directory) => rm(directory, { recursive: true, force: true })));` | `... fs.rm(directory, { ... }) ...` |
+
+Giữ nguyên văn: 4 test, `afterEach` L33–47, `new Promise<void>` ở L27 và L39. `node:net` L2 không đổi.
+
+`test/unix.test.ts` — 6513 byte, 184 dòng:
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| 3 | namespace | `import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";` | `import * as fs from "node:fs/promises";` |
+| 5 | namespace | `import { join } from "node:path";` | `import * as path from "node:path";` |
+| 6 | runner | `import { afterEach, describe, expect, test } from "vitest";` | `import { afterEach, describe, expect, test } from "bun:test";` |
+| 7 | server | `import { Server as RuntimeServer } from "../../server/src/server.ts";` | `import { Server as RuntimeServer } from "@oh-my-pi/pi-server";` |
+| 8 | server | `import { createTestServerServices } from "../../server/src/testing/host.ts";` | `import { createTestServerServices } from "@oh-my-pi/pi-server/testing/host";` |
+| 9 | server | `import { createUnixListener } from "../../server/src/transports/unix/listener.ts";` | `import { createUnixListener } from "@oh-my-pi/pi-server/transports/unix/listener";` |
+| 10 | specifier | `import { discoverUnixServers } from "../src/unix.ts";` | `import { discoverUnixServers } from "../src/unix";` |
+| 19, 33, 89, 95, 107, 108, 114, 115, 116, 125, 136, 142, 146, 153, 166, 179, 180 | 21 call site | `join(`, `mkdtemp(`, `rm(`, `writeFile(`, `mkdir(`, `lstat(` | `path.join(`, `fs.mkdtemp(`, `fs.rm(`, `fs.writeFile(`, `fs.mkdir(`, `fs.lstat(` |
+
+`node:child_process` L1 và `node:net` L4 **KHÔNG đổi**. Giữ nguyên văn: 8 test, 5 `Set` cấp module (L12–16), `afterEach` L70–…, `fork(new URL("fixtures/stale-socket-server.mjs", import.meta.url), [path], {` ở **L126**.
+
+`test/fixtures/stale-socket-server.mjs` — 246 byte, 9 dòng — **CHÉP NGUYÊN VĂN**.
+
+`package.json` (mới, dựng từ `packages/wire/package.json`): `name` `"@oh-my-pi/pi-client"`; `main`/`types` `"./src/index.ts"`; `exports` `"."` → `./src/index.ts`, `"./unix"` → `./src/unix.ts`, `"./package.json"` → `./package.json`; 5 script chép nguyên văn từ wire; `dependencies` `@oh-my-pi/chord`, `@oh-my-pi/pi-protocol`, `@oh-my-pi/pi-utils` — cả ba `"catalog:"`; `devDependencies` chỉ `"@types/bun": "catalog:"`; `engines` `{"bun": ">=1.3.14"}`; `sideEffects` `false`. **XOÁ hẳn** khối `scripts` của pi — nó chứa `build: tsc -p tsconfig.build.json` và `typecheck: tsc -p tsconfig.test.json`, mà AGENTS.md cấm `tsc` tuyệt đối.
+
+`tsconfig.json` (mới, 4 dòng — chép từ `packages/wire/tsconfig.json`):
+
+```json
+{
+	"extends": "../tsconfig.workspace.json",
+	"include": ["src", "test"]
+}
+```
+
+`LICENSE` (mới, 1144 byte) — **LÀM TRƯỚC MỌI BYTE NGUỒN**. Chép `/Users/tranquangdang21/Projects/pi-ref/LICENSE` rồi chèn hai dòng sau dòng của Mario Zechner. Dạng cuối khớp byte-identical với 4 file pi-derived (`packages/{agent,ai,coding-agent,tui}/LICENSE`, đều 1144 byte — đã đo). Tám package first-party (`catalog`, `mnemopi`, `natives`, `omptype`, `snapcompact`, `stats`, `utils`, `wire`) đều 1111 byte và **không** mang dòng Mario Zechner — đừng lấy wire làm khuôn cho file này. Đồng thời thêm một dòng `@earendil-works/pi-client` vào phần pi-derived của `THIRD-PARTY-NOTICES.txt`, theo mẫu mục ở **dòng 227**.
+
+`README.md` (mới, 4178 byte) — 5 sửa scope: dòng 1 `# @earendil-works/pi-client` → `# @oh-my-pi/pi-client`; dòng 6, 51, 52, 64 đổi `from "@earendil-works/pi-client"` và `from "@earendil-works/pi-client/unix"` sang `@oh-my-pi/…`. Ngoài phép đổi scope: định hướng lại khung "experimental" (L3, L36) cho omp, và **thêm một dòng** nói `@oh-my-pi/pi-client` hiện KHÔNG có consumer nào trong omp. Giữ nguyên danh sách hợp đồng transport handler (L38–42).
+
+`CHANGELOG.md` (mới) — **KHÔNG CHÉP stub của pi** (33 dòng, phần lớn là tiêu đề phiên bản rỗng, cộng hai mục 0.84.0 tham chiếu PR upstream #7708). Soạn mới dưới `## [Unreleased]`.
+
+**Các bước có neo đã kiểm.**
+
+1. **Pháp lý trước.** Chép `pi-ref/LICENSE` → `packages/client/LICENSE` + 2 dòng bản quyền omp. Thêm dòng vào `THIRD-PARTY-NOTICES.txt` quanh **L227**. Neo: `THIRD-PARTY-NOTICES.txt:227` (đã đọc: `Copyright (c) 2025 Mario Zechner`).
+2. **Ghi lại baseline cổng.** `bun run check:ts` từ `/Users/tranquangdang21/Projects/ultraworkers` phải exit 0 trước khi bắt đầu. Neo: `package.json:90` — `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types"`.
+3. **Xác nhận tiền đề.** Dừng nếu chưa có. Đã đo: `packages/{chord,protocol,server}` MISSING, `esbuild` MISSING trong `node_modules`.
+4. **Khung package.** `mkdir -p packages/client/src packages/client/test/fixtures`. Viết `tsconfig.json` 4 dòng khớp `packages/wire/tsconfig.json`.
+5. **Viết `package.json`** từ `packages/wire/package.json`. Thêm 3 dòng catalog vào `package.json:12` (`"catalog": {`) — version catalog thật là **`18.4.0`**, không phải 18.3.3 như đặc tả ghi.
+6. **Chép nguyên văn 7 file src.** `transport, types, errors, connection, unix, client, index` = 34.985 byte (đã đo). Không `promise.ts`.
+7. **Không tạo `promise.ts`.**
+8. **Sửa src**, theo thứ tự:
+   - (a) SCOPE — 8 site: `client.ts:18,19,30`; `connection.ts:9`; `errors.ts:1`; `types.ts:1,2`; `unix.ts:9`.
+   - (b) EXTENSIONS — bỏ `.ts` khỏi **16** specifier tương đối trong `src/` (đo: `grep -rho 'from "\.[^"]*\.ts"' src/ | wc -l` → 16).
+   - (c) PROMISE — `client.ts:248` → `Promise.withResolvers<T>()`; `connection.ts:72` → `Promise.withResolvers<ServerHello>()`; **và sửa LỖI B**: `connection.ts:25,29` → `PromiseWithResolvers<ServerHello>` trước khi xoá import L11.
+   - (d) UTILS — **và sửa LỖI A**: thêm `import { toError } from "@oh-my-pi/pi-utils";` vào **`errors.ts`, `client.ts:32`, `connection.ts:10`** (3 file, không phải 1); xoá định nghĩa ở `errors.ts:27-29`.
+   - (e) BARREL — `index.ts` thành 4 star re-export.
+   - (f) TYPES — `unix.ts:247` → `NodeJS.Timeout`.
+   - (g) NAMESPACE — `unix.ts:1,3` + 3 call site.
+   - **Đọc diff từng dòng trước khi đi tiếp.**
+9. **Chép + chuyển 5 file test.** Specifier: 3 protocol (`support.ts:7`, `client.test.ts:8`, `unix-transport.test.ts:5`), 2 chord (`client.test.ts:1`, `unix-transport.test.ts:4`). Bỏ `.ts` khỏi **9** specifier tương đối. Namespace: `unix.test.ts:3,5` (**21** call site) + `unix-transport.test.ts:1,3` (**4** call site). Runner → `bun:test`. Thêm `waitFor` cục bộ vào `client.test.ts`. Chuyển 4 `private` + 18 `this.X` của `support.ts`.
+10. **Grep tiền kiểm** — xem phần hợp đồng test.
+11. **`bun run check:ts`** — phải thấy dòng `@oh-my-pi/pi-client:check:types` trong output.
+12. **`cd packages/client && bun test`** — 27/27.
+13. **Formatter + linter.** `bun run fix:tools`. Đọc lại mọi file formatter đổi.
+14. **Viết `README.md` + `CHANGELOG.md`**, rà `git status`: đúng 7 file src + 5 file test + `package.json` + `tsconfig.json` + `LICENSE` + `README.md` + `CHANGELOG.md` + dòng catalog ở package.json gốc. `tsconfig.build.json`, `tsconfig.test.json`, `vitest.config.ts`, `src/promise.ts` vắng mặt.
+
+**Hợp đồng test.**
+
+| file | số khối `test()` | `describe()` | tổng |
+| --- | --- | --- | --- |
+| `test/client.test.ts` | 15 | 2 | 17 |
+| `test/unix-transport.test.ts` | 4 | 0 | 4 |
+| `test/unix.test.ts` | 8 | 1 | 9 |
+| | | | **27** |
+
+**Đặc tả ghi "25/25 test case pass (14 + 3 + 8)" — SAI. Số thật là 27 (15 + 4 + 8).** Đã đếm bằng `grep -n 'test('` trên từng file và liệt kê từng dòng.
+
+Các case và điều người dùng thấy nếu hồi quy (tên test lấy nguyên văn từ file):
+
+- `requires a canonical UUIDv4 server identity` — hồi quy: một endpoint vật lý sai vẫn kết nối được và client tự tin nói chuyện với server khác.
+- `connects only to the expected logical server` — hồi quy: nhầm server là route được mọi tin nhắn tới sai máy.
+- `buffers service updates until the subscription snapshot arrives` — hồi quy: decoder nhận update trước state nền và sinh state hỏng.
+- `cancels one untyped RPC request without disconnecting` — hồi quy: abort đóng luôn transport, mất mọi request đang chờ.
+- `rejects pending requests and reconnects through a fresh transport` — `Client.reconnect()` (`client.ts:134`) phải lấy socket MỚI qua factory. Hồi quy: dùng lại socket đã chết, reconnect âm thầm không làm gì.
+- `rejects server data delivered before the client hello is sent` — hồi quy: chấp nhận frame trước hello, đọc state chưa khởi tạo.
+- `disconnects on invalid or truncated server framing` — hồi quy: decoder nuốt frame cắt, treu im lặng thay vì báo.
+- `rejects pending requests after disconnect or disposal` — hồi quy: promise treo vĩnh viễn, không có `await` nào bao giờ quay lại.
+- `rejects truncated final frames through Client` (unix-transport) — hồi quy: chỉ kiểm tra frame hoàn chỉnh.
+- `rejects connection attempts to missing sockets` — socket không tồn tại phải reject, không treo.
+- `limits concurrent probes to 16` (`unix.test.ts:149`) — hồi quy: một thư mục 500 socket làm 500 kết nối cùng lúc.
+- `ignores stale sockets without deleting them` — probe sạn bị bỏ qua qua `lstat` ENOENT và **không** xoá file socket.
+- `ignores an endpoint that closes before its handshake` — filter 9 nhánh ở `unix.ts:262-273`. Hồi quy: một mã lỗi bị sót khiến **toàn bộ** discovery reject, chặt mọi socket trong thư mục.
+- `propagates unexpected filesystem errors` — `ENOTDIR` phải nổi lên, không bị nuốt. Đây là case âm tính giữ filter im lặng với lỗi thật.
+
+Grep tiền kiếm (mỗi cái phải rỗng sau khi migrate — đã chạy trên cây `pi` để xác nhận chúng **không rỗng ngay từ đầu**, tức là có thật sự canh):
+
+```bash
+grep -rn '@earendil-works' packages/client/            # 0  (đo trên pi: 13)
+grep -rn 'from "[.][^"]*\.ts"' packages/client/src packages/client/test   # 0  (pi: 25)
+grep -rn 'ReturnType<' packages/client/src             # 0  (pi: 1 — unix.ts:247)
+grep -rn 'vitest' packages/client/                    # 0  (pi: 3)
+grep -n 'tsc ' packages/client/package.json           # 0  (pi: 2)
+ls packages/client/src/promise.ts packages/client/vitest.config.ts \
+   packages/client/tsconfig.build.json packages/client/tsconfig.test.json   # "No such file" ×4
+```
+
+Đối chứng dương: `grep -rn 'Promise.withResolvers' packages/client/src` → **2**.
+
+> **SỬA MỘT CON SỐ TRONG ĐẶC TẢ:** đặc tả viết `grep -rc '#handlers' packages/client/test/support.ts` → `1`. **`grep -c` đếm DÒNG, không đếm lần xuất hiện.** Sau khi chuyển `#`, `this.#handlers` nằm trên **10 dòng** (L23, 44, 55, 56, 60, 61, 65, 66, 71, 72 — L44 có hai lần, tổng 11 lần xuất hiện). Muốn đếm lần xuất hiện thì dùng `grep -o '#handlers' packages/client/test/support.ts | wc -l` → **11**.
+
+**Cổng có đỏ được không — trả lời thẳng: cổng gốc KHÔNG đỏ trên phần quan trọng nhất. Cần thêm một lớp B để nó thật sự đỏ.**
+
+Cổng như đặc tả viết:
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers
+bun run check:ts
+cd packages/client && bun test
+```
+
+Phần **ĐỎ ĐƯỢC**: `check:tools` chạy `oxlint .` và `oxfmt --check` trên `packages/*/src/**` và `packages/*/{test,bench,examples,scripts}/**` — lint sai, sai format, `private` sót, `ReturnType<` sót, `@earendil-works` sót, `.ts` sót đều bị bắt. `oxfmt --check` cũng bắt sai thụt độ.
+
+Phần **KHÔNG ĐỎ ĐƯỢC**: `--if-present` nghĩa là package không khai `check:types` (hoặc sai chính tả) bị **bỏ qua lặng lẽ**, cổng vẫn xanh. Một package hỏng đi xanh. Và với `client` nó còn tệ hơn vì **`check:ts` không kiểm tra hành vi nào cả**: toàn bộ logic rủi ro (chốt thứ tự handshake, cuộc đua abort/cancel, bộ phân giải backpressure, filter 9 nhánh) là code chép nguyên văn, nên typecheck không bao giờ đỏ vì nó. Cổng (2) `bun test` **ĐỎ ĐƯỢC thật** — 27 test chạy socket thật, fork tiến trình thật, timeout thật.
+
+Cổng viết lại, để ĐỎ THẬT — cổng (1) giữ nguyên như một lớp lint, **thêm hai lớp bắt được thứ nó bỏ qua**:
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers
+
+# Lớp A — cổng gốc, phải exit 0
+bun run check:ts
+
+# Lớp B — chứng minh package KHÔNG bị --if-present bỏ qua.
+bun run --filter '@oh-my-pi/pi-client' check:types
+test -f packages/client/package.json
+node -e 'const s=require("./packages/client/package.json").scripts;
+         if(!s?.["check:types"]) { console.error("check:types MISSING — --if-present sẽ bỏ qua im lặng"); process.exit(1); }
+         if(JSON.stringify(s).includes("tsc ")) { console.error("tsc bị cấm"); process.exit(1); }
+         console.log("check:types present:", s["check:types"]);'
+
+# Lớp C — cổng hành vi: 27 test trên socket thật
+cd packages/client && bun test
+```
+
+**Lớp B là câu trả lời cụ thể cho "cổng này có đỏ được không":** không phải bằng việc *nhìn* output có dòng `@oh-my-pi/pi-client:check:types`, mà bằng cách **gọi thẳng `check:types` không có cờ `--if-present`**. **Bằng chứng Lớp B thật sự đỏ được — đã chạy, không phải suy luận:**
+
+| phép kiểm | kết quả | exit |
+| --- | --- | --- |
+| `bun run --filter '@oh-my-pi/pi-wire' check:types` (package có thật) | `@oh-my-pi/pi-wire check:types: Exited with code 0` | **0** |
+| `bun run --filter '@oh-my-pi/pi-nonexistent-zzz' check:types` | `error: No packages matched the filter` | **1** |
+| `tsgo -p <tsconfig lỗi> --noEmit` với `export const x: number = "not a number"` | `error TS2322: Type 'string' is not assignable to type 'number'.` | **1** |
+
+Cả ba chiều đã kiểm. Điểm mấu chốt là hàng thứ hai: **package không tồn tại trả exit 1**, nên Lớp B không thể xanh trong im lặng khi `packages/client` chưa được tạo hoặc bị đặt sai tên. Khi thực thi, để tự chứng minh Lớp B đỏ được: sửa `packages/client/tsconfig.json` thành sai (đổi `extends` sang đường dẫn không tồn tại), chạy Lớp B, quan sát exit ≠ 0, rồi trả lại.
+
+**Còn `bun test` ở cấp root?** Đặc tả ghi môi trường đã được gỡ 2026-09-29 sau `brew install ninja` + build natives: `bun test packages/utils` → 743 pass / 10 skip / 0 fail. **Chưa chạy lại** trong phiếu này. Nếu lúc thực thi suite root vẫn đỏ vì native addon, hãy ghi kết quả theo lời gọi cục bộ gói và nói thẳng trong PR. **Đừng nói suite root xanh khi bạn không quan sát được điều đó.**
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`toError` không chỉ là hàm của `errors.ts` — nó là import ở 2 file khác (LỖI A).** Đây là cái bẫy số 1. Xoá `export` khỏi `errors.ts` mà không sửa hai dòng đó là `tsgo` đỏ ngay. Import không re-export — đó là mấu chốt.
+2. **`PromiseResolvers` là TYPE ở `ConnectionLifecycle`, không chỉ là hàm (LỖI B).** Xoá import `connection.ts:11` mà không sửa L25/L29 là `tsgo` đỏ. Nhớ `Promise.withResolvers()` giải quyết **call site**; nó không tự động đổi **type annotation**. Tên thay thế là `PromiseWithResolvers` (khác `Promise.withResolvers` một chữ `P` và không có dấu chấm) — và omp đã dùng nó trần ở `packages/agent/src/pause.ts:27`.
+3. **Cổng gốc không đỏ trên phần quan trọng nhất.** `--if-present` nuốt package không có `check:types`. Thêm nữa, `client` là package **copy nguyên văn** — không có typecheck nào bắt được hồi quy hành vi trong code chép. Đó là lý do Lớp B tồn tại.
+4. **Số test trong đặc tả sai (25 → 27), và số khối trong `client.test.ts` sai (20 → 17).** Ai đó chạy `bun test` thấy 27/27 rồi tưởng plan sai sẽ đi tìm test bị mất — hoặc tệ hơn, chấp nhận 25/25 vì "25 là con số plan nói". Cả hai đều tệ.
+5. **`grep -c` đếm DÒNG, không đếm lần xuất hiện.** Cổng `grep -rc '#handlers' → 1` sẽ cho 10.
+6. **Đếm đúng 8 site scope, không phải "8 import statement".** `client.ts:20-30` là MỘT câu lệnh `import {` mở ở L20 và đóng ở L30, và `connection.ts:2-9` tương tự. Sửa ở dòng đóng, xoá cả khối 11 dòng sẽ mất 9 symbol.
+7. **`unix.ts` là file duy nhất chạm `NodeJS.Timeout` và `node:net`.** `unix.ts:247` là `ReturnType<` DUY NHẤT của cả gói (đã đo: `grep -rn 'ReturnType<' src/ test/` → 1 hit). Kiểu đúng là `NodeJS.Timeout` — xem mẫu thật ở `packages/coding-agent/src/collab/relay-client.ts:100`. `.unref()` ở L256 cần kiểu này.
+8. **`test/unix.test.ts` là file biến client thành gói thứ 3 trong chuỗi.** Nó import ba subpath của `@oh-my-pi/pi-server`. Nếu server chưa có hoặc đã gộp subpath, file này không viết được. Kiểm tra exports map của server **trước khi** xếp lịch.
+9. **`fork()` + `process.send` trong `bun test`.** `bun test` không chạy mô hình tiến trình của vitest. `stale-socket-server.mjs` fork tại `unix.test.ts:126` và dùng `process.send` là test **nhiều khả năng nhất phải làm lại**. Fixture phải giữ nguyên đường dẫn tương đối để `new URL(..., import.meta.url)` resolve được.
+10. **`DisconnectedError` mang `cause` tuỳ chọn, và `unix.ts:266` phụ thuộc vào điều đó.** `error instanceof DisconnectedError && error.cause === undefined` là cách duy nhất phân biệt socket chết với lỗi thật. Bỏ dây `cause` ⇒ socket chết ném lỗi giữa lúc discovery thay vì bị lọc đi, và `ignores an endpoint that closes before its handshake` đỏ.
+11. **Suy ra sự vắng mặt bằng `grep` hẹp rồi đem ra khẳng định về cả hệ thống.** Với câu hỏi "omp có làm được không", hãy **chạy nó** đừng grep. Cụ thể ở đây: đừng kết luận "`bun test` ở cấp package sẽ chạy được" chỉ vì không thấy import native — hãy chạy.
+12. **Đừng "cải thiện" code đã chép.** Chế độ hỏng nguy hiểm nhất không phải lỗi compile mà là hồi quy hành vi **lặng lẽ**: đơn giản hoá đường abort thành reject thuần cục bộ (rò một request mồ côi phía server), hoặc phân giải `#write` chỉ trên callback ghi socket (hỏng framed message dưới backpressure). Chép trước, chỉ sửa đúng các dòng đã liệt kê, đọc diff từng dòng.
 
 
 ---
@@ -2390,6 +3340,243 @@ Cổng đỏ được — cả hai lớp. `bun test packages/telemetry/` CHẠY 
 - pi dùng `'single quotes'` trong các đoạn mã README còn omp dùng tab + dấu nháy kép. Các snippet README (L72, L139, L186, L219) mang tính minh hoạ, không được biên dịch — xác nhận omp có muốn đổi sang dấu nháy kép cho nhất quán, hay để nguyên như pi đã viết.
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__5.md` (tên file giữ hậu tố `__5` theo lệnh giao việc, nhưng **nội dung là của mục `## 6. telemetry`** trong kế hoạch này — không phải của `## 5. durable`, vốn ghi rõ NGOÀI PHẠM VI). Nguồn `/Users/tranquangdang21/Projects/pi-ref/packages/telemetry/` (12 file); đích `packages/telemetry/` — **chưa tồn tại**, `git status` sạch. Riêng 8 file code = 40 555 byte ✓, tổng 12 file = 62 831 byte ✓.
+
+**Cảnh báo neo — 14 chỗ sai, trong đó một chỗ sai về CƠ CHẾ cổng và ba chỗ lệch cả trăm dòng.**
+
+| # | Kế hoạch nói | Cây thật | Ảnh hưởng |
+|---|---|---|---|
+| 1 | Version `18.3.3` (bước 9 + "Cần người quyết") | omp đang ở **`18.4.0`** — cả 12 package `@oh-my-pi/*` | **Sửa ngay.** Ghi `18.3.3` tạo package lệch version, `bun run release` sẽ loạn. Dùng `18.4.0`. |
+| 2 | Chèn catalog "giữa `@oh-my-pi/pi-tui` và `@oh-my-pi/pi-utils`" (bước 11) | Alphabet: `pi-natives` < **`pi-telemetry`** < `pi-tui` (`te` < `tu`) | Chèn sai chỗ. Đúng là **giữa `@oh-my-pi/pi-natives` và `@oh-my-pi/pi-tui`**. |
+| 3 | Bảng rewrite: `from "./index.ts"` **3**, `from "./memory.ts"` **3** | Đo thật: **2** và **2** (tổng 16, không phải 18) | Đếm sai ở 2 dòng. Danh sách 16 dòng ở bước 3 thì đúng. |
+| 4 | "TS5097 KHÔNG nổ lên" / "cổng KHÔNG bắt được sót bước 3" (bước 3 + Rủi ro) | `tsgo` exit **1**, TS5097 ở 7 chỗ | Sai về cơ chế. Bước 3 **có** cổng đỏ (7/16). |
+| 5 | `packages/agent/src/telemetry.ts:181` = `TelemetrySpanKind` | Thật là **`:189`** | Lệch 8 dòng. |
+| 6 | `packages/agent/src/telemetry.ts:466` = helper `startSpan` | Thật là **`:476`** (`function startSpan(`) | Lệch 10 dòng. |
+| 7 | `packages/agent/src/telemetry.ts:500` = `telemetry.tracer.startSpan(...)` | Thật là **`:512`** | Lệch 12 dòng. |
+| 8 | `packages/agent/src/telemetry.ts:2100` = `setSpanAttribute(...)` | Thật là **`:2223`** | Lệch 123 dòng. |
+| 9 | `packages/agent/src/telemetry.ts:2106` = dòng re-export | L2106 là `ToolsOkCount = "omp.gen_ai.agent.tools.ok.count",`. Khối re-export thật ở **`:2229`** | Đúng nội dung nhưng lệch 123 dòng — cùng hệ số với #8, #10, nên cả ba neo đều lệch đúng một lần thêm code. |
+| 10 | `packages/agent/src/telemetry.ts` "2114 dòng" | **2237** dòng | Sai 123 dòng. |
+| 11 | `packages/coding-agent/src/telemetry-export-otlp.ts:399` dùng `AttributeValue` | `:399` là `try {`. `AttributeValue` dùng ở **`:25`** (import) và **`:393`** | Lệch 6 dòng. |
+| 12 | `packages/coding-agent/test/extensions-runner.test.ts:5` là tiền lệ `expectTypeOf` | Dòng đó không có `expectTypeOf`; cả omp có **0** occurrence | Tiền lệ bịa. Kết luận vẫn đúng (đã chạy thật) nhưng phải tự kiểm. |
+| 13 | `bun --cwd=packages/natives run build` "không chạy được (thiếu ninja)" | **Đã được sửa trong kế hoạch** bởi agent khác, sau khi đo thật | ~~Không còn là sai~~. Build thành công 1m22s. |
+| 14 | `packages/stats` `db.ts 74 KB, parser.ts 19 KB, trace.ts 41 KB` | `db.ts` **59 KB**, `parser.ts` **24 KB**, `trace.ts` **42 KB** | Mô tả sai, không ảnh hưởng gõ. |
+
+**Neo ĐÚNG, đã xác nhận** (để không phải tra lại): `packages/agent/src/telemetry.ts:44`, `packages/coding-agent/src/telemetry-export-otlp.ts:25`, `packages/agent/src/index.ts:24` (`export * from "./telemetry";`), toàn bộ 9 neo `run-summary.test.ts`, `packages/utils/src/abortable.ts:1`, `packages/ai/test/fixtures/completion-retention.ts:1`, `packages/omptype/test/ark/realWorld.test.ts:2`, `packages/coding-agent/test/storage-errors.test.ts:35`, `packages/wire/tsconfig.json:1-4`, `packages/wire/LICENSE:3-4`, `THIRD-PARTY-NOTICES.txt:18,22,24-30`, `.oxfmtrc.json:4,10`, `tsconfig.base.json:6,14`. Bảng *Bề mặt công khai*: **38 dòng, đếm được đúng 38 ✓.**
+
+**Bảng điểm sửa.** Mọi dòng TRƯỚC trích nguyên văn từ file thật ở `pi-ref`.
+
+Bỏ đuôi `.ts` — 16 specifier, mọi cái đều bắt được bằng `grep`:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+|---|---|---|---|
+| `src/noop.ts:1` | import type | `import type { SpanOptions, TelemetryContext, TelemetrySpan } from "./index.ts";` | `... from "./index";` |
+| `src/index.ts:24` | re-export noop | `export { NOOP_TELEMETRY_CONTEXT } from "./noop.ts";` | `export * from "./noop";` (đồng thời đổi barrel) |
+| `src/index.ts:356` | re-export type | `export type { RecordedTelemetryEvent, RecordedTelemetrySpan } from "./memory.ts";` | bị **xoá**, gộp vào 357 |
+| `src/index.ts:357` | re-export memory | `export { InMemoryTelemetryContext } from "./memory.ts";` | `export * from "./memory";` |
+| `src/memory.ts:8` | import type | `} from "./index.ts";` | `} from "./index";` |
+| `src/memory.ts:9` | import noop | `import { NOOP_TELEMETRY_CONTEXT } from "./noop.ts";` | `import { NOOP_TELEMETRY_CONTEXT } from "./noop";` |
+| `src/testing/index.ts:1` | barrel | `export { createTelemetryAdapterConformance } from "./conformance.ts";` | `export * from "./conformance";` |
+| `src/testing/index.ts:6` | barrel | `} from "./types.ts";` | bị **xoá**, gộp vào dòng 1 |
+| `src/testing/types.ts:1` | import type | `import type { TelemetryContext } from "../index.ts";` | `... from "../index";` |
+| `src/testing/types.ts:2` | import type | `import type { RecordedTelemetrySpan } from "../memory.ts";` | `... from "../memory";` |
+| `src/testing/conformance.ts:2` | import type | `import type { SpanAttributes, SpanOptions, SpanStatus, TelemetrySpan } from "../index.ts";` | `... from "../index";` |
+| `src/testing/conformance.ts:3` | import type | `import type { RecordedTelemetrySpan } from "../memory.ts";` | `... from "../memory";` |
+| `src/testing/conformance.ts:8` | import type | `} from "./types.ts";` | `} from "./types";` |
+| `test/telemetry.test.ts:13` | import | `} from "../src/index.ts";` | `} from "../src/index";` |
+| `test/conformance.test.ts:2` | import | `import { InMemoryTelemetryContext, type SpanAttributes } from "../src/index.ts";` | `... from "../src/index";` |
+| `test/conformance.test.ts:3` | import | `import { createTelemetryAdapterConformance, type TelemetryAdapterFixture } from "../src/testing/index.ts";` | `... from "../src/testing/index";` |
+
+Quy tắc barrel — 2 file:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+|---|---|---|---|
+| `src/testing/index.ts` | barrel | 6 dòng: `export { createTelemetryAdapterConformance } from "./conformance.ts";` + `export type {` … `} from "./types.ts";` | đúng 2 dòng: `export * from "./conformance";` / `export * from "./types";` |
+| `src/index.ts:24` | noop re-export | `export { NOOP_TELEMETRY_CONTEXT } from "./noop.ts";` | `export * from "./noop";` |
+| `src/index.ts:356-357` | memory re-export | 2 dòng `export type {...}` + `export {...}` | 1 dòng `export * from "./memory";` |
+
+**Tương đương đã kiểm bằng đếm, không bằng mắt:** `noop.ts` export 1 tên, `memory.ts` export 3, `conformance.ts` export 1, `types.ts` export 3. Dạng star ra đúng 4 + 4 tên. Và **đã chạy thật: bộ test 15/15 xanh với dạng star.**
+
+`private` → `#private` — đúng 1 field:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+|---|---|---|---|
+| `src/memory.ts:193` | field `state` | `	private readonly state: InMemoryTelemetryState = {` | `	#state: InMemoryTelemetryState = {` |
+| `src/memory.ts:200` | `startSpan` body | `		return startInMemorySpan(this.state, undefined, options, callback);` | `		return startInMemorySpan(this.#state, undefined, options, callback);` |
+| `src/memory.ts:205` | `getSpans` body | `		return this.state.spans.map((span) => ({` | `		return this.#state.spans.map((span) => ({` |
+
+Hai method công khai `startSpan` (`:199`) và `getSpans` (`:204`) giữ dạng trần. **Đây là toàn bộ thay đổi privacy của package** — sau khi sửa, `grep -rnE 'private |protected |public ' src` phải ra 0 hit.
+
+Đổi test runner — 2 dòng:
+
+| đường/dẫn | TRƯỚC | SAU |
+|---|---|---|
+| `test/telemetry.test.ts:1` | `import { describe, expect, expectTypeOf, it } from "vitest";` | `import { describe, expect, expectTypeOf, it } from "bun:test";` |
+| `test/conformance.test.ts:1` | `import { describe, expect, it } from "vitest";` | `import { describe, expect, it } from "bun:test";` |
+
+Không `vi`, không `mock`, không global nào khác. **`expectTypeOf` CÓ thật trong `bun:test` — đã kiểm thực nghiệm**, viết và chạy: `bun test v1.3.14 → 1 pass / 0 fail`. Nhưng tiền lệ mà kế hoạch dẫn thì SAI — thực tế `grep -rln "expectTypeOf" packages/*/test packages/*/src` → **0 file**. Suy ra: work item này là chỗ **đầu tiên** dùng `expectTypeOf` trong omp → càng không được bỏ dòng import đó.
+
+Xoá 2 assertion vô nghĩa:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+|---|---|---|---|
+| `test/telemetry.test.ts:71` | `compileTimeFailures` #1 | `		expectTypeOf(compileTimeFailures).toBeFunction();` | **xoá** (giữ `const compileTimeFailures = ...` ở `:60`) |
+| `test/telemetry.test.ts:152` | `compileTimeFailures` #2 | `		expectTypeOf(compileTimeFailures).toBeFunction();` | **xoá** (giữ binding ở `:138`) |
+
+Hợp đồng thật là **9 comment `@ts-expect-error`** bên trong 2 closure đó: 4 trong closure thứ nhất (`:62, :64, :66, :68`), 5 trong closure thứ hai (`:140, :143, :145, :147, :149`).
+
+Thay 5 `not.toThrow()` trần bằng kết quả quan sát được:
+
+| đường/dẫn | TRƯỚC | SAU (hình dạng) |
+|---|---|---|
+| `test/telemetry.test.ts:55` | `expect(() => JSON.stringify(schema)).not.toThrow();` | `expect(JSON.stringify(schema)).toBe(<chuỗi definition mong đợi>)` — chứng minh serialize **đúng**, không chỉ "không ném" |
+| `test/telemetry.test.ts:122-124` | `expect(() =>`<br>`  createTypedSpanStarter(telemetryContext, unreadable([operationSchema, requestSchema] as const)),`<br>`).not.toThrow();` | gán `const unreadableStarter = createTypedSpanStarter(...)`, rồi `expect(await unreadableStarter("operation", { kind: "read" }, () => 42)).toBe(42)` |
+| `test/telemetry.test.ts:192` | `expect(() => span.addEvent("event", attributes)).not.toThrow();` | callback `return sentinel` sau cả 3 lời gọi; `expect(await result).toBe(sentinel)` |
+| `test/telemetry.test.ts:193` | `expect(() => span.setAttributes(attributes)).not.toThrow();` | (cùng sentinel) |
+| `test/telemetry.test.ts:194` | `expect(() => span.setStatus(status)).not.toThrow();` | (cùng sentinel) |
+
+> **8 lời gọi `doesNotThrow(...)` trong `src/testing/conformance.ts` thì ĐỂ YÊN** — đó là code thư viện trong một export được publish, không phải assertion test của omp. Vị trí: `:212`, `:228`, `:229`, `:230`, `:289`, `:290`, `:291`, `:306` (đếm bằng `grep -n doesNotThrow` — khớp 100%).
+
+`package.json` — dựng lại, không đổi token:
+
+| mục | TRƯỚC (`pi-ref/packages/telemetry/package.json`) | SAU (theo khuôn `packages/wire/package.json`) |
+|---|---|---|
+| `name` | `"@earendil-works/pi-telemetry"` (L2) | `"@oh-my-pi/pi-telemetry"` |
+| `version` | `"0.87.1"` (L3) | **`18.4.0`** — không phải `18.3.3` |
+| `description` | `"Vendor-neutral telemetry contracts and typed schema utilities for pi"` (L4) | `"... for omp"` |
+| `author` | `"Mario Zechner"` (L33) | `{ "name": "Stencil Labs, Inc.", "url": "https://stencil.so" }` |
+| `main` / `types` | `./dist/index.js` / `./dist/index.d.ts` (L6-7) | `./src/index.ts` / `./src/index.ts` |
+| `exports` | 2 entry trỏ `./dist/*` (L8-17) | `{".": {types,import} → "./src/index.ts", "./testing": {...} → "./src/testing/index.ts"}` |
+| `files` | `["dist","README.md"]` (L18-21) | xem cạm bẫy 7 |
+| `scripts` | `clean`/`build`/`test`/`prepublishOnly` (L22-27) | `check` / `check:types` (`tsgo -p tsconfig.json --noEmit`) / `lint` (`oxlint .`) / `fix` / `fmt` |
+| `engines` | `{"node": ">=22.19.0"}` (L40-42) | `{"bun": ">=1.3.14"}` |
+| `devDependencies` | `{"@types/node": "22.19.19", "vitest": "4.1.9"}` (L43-46) | `{"@types/bun": "catalog:"}` |
+| `dependencies` | không có | không có |
+| `repository.url` | `git+https://github.com/earendil-works/pi.git` (L37) | `git+https://github.com/can1357/oh-my-pi.git` + `directory` |
+| `homepage` / `bugs` | không có | `https://omp.sh` / `.../issues` |
+| `keywords`, `license` | giữ | giữ nguyên |
+
+**Đặc biệt:** `"build": "tsc -p tsconfig.build.json"` (L24) phải **xoá hẳn** — AGENTS.md cấm `tsc` tuyệt đối.
+
+`tsconfig.build.json` → `tsconfig.json`: file `packages/telemetry/tsconfig.build.json` (209 B, 8 dòng) **xoá**; tạo mới `packages/telemetry/tsconfig.json` với thân `{ "extends": "../tsconfig.workspace.json", "include": ["src", "test"] }` (4 dòng, khuôn `packages/wire/tsconfig.json` — đã mở).
+
+`LICENSE` — file MỚI, byte-tái-lập-được. `/Users/tranquangdang21/Projects/pi-ref/LICENSE` đo được: **1069 byte**, 21 dòng text, **không kết thúc bằng newline** (`tail -c1` → `2e`). Sau khi nối 2 dòng copyright của omp (mỗi dòng có newline = 74 byte): `1069 + 74 = 1143` ✓. **Bố cục bắt buộc:** dòng `Copyright (c) 2025 Mario Zechner` của Mario phải đứng **đầu tiên**, nguyên văn, không sửa không đảo.
+
+**Các bước có neo đã kiểm.**
+
+**1. PHÁP LÝ TRƯỚC, trước khi ghi bất kỳ byte code nào.** Tạo `packages/telemetry/LICENSE`: `cp` nguyên văn `pi-ref/LICENSE`, rồi nối 2 dòng copyright omp. Vì file pi không có newline cuối, dễ nhất là viết lại file bằng `Bun.write` với nội dung ghép tay và `join("\n")`. **Đặt thông báo TRƯỚC khi chép code** — gắn thông báo sau là cách ghi công bị thất lạc. *Kiểm:* `grep -c 'Copyright (c) 2025 Mario Zechner' packages/telemetry/LICENSE` → `1`; `wc -c` → `1143`. *Neo:* `pi-ref/LICENSE:3`, `packages/wire/LICENSE:3-4`.
+
+**2. Tạo `packages/telemetry/{src,src/testing,test}` và chép nguyên văn 8 file (40555 B).** Không sửa gì ở bước này — kể cả chưa format.
+
+**3. Bỏ đuôi `.ts` khỏi 16 specifier** — danh sách đủ 16 dòng ở bảng trên. *Đã đo:* `grep -rnoE 'from "\.[^"]*\.ts"' src test` → đúng 16 dòng.
+
+**4. Áp quy tắc barrel.** `src/testing/index.ts` → đúng 2 dòng. `src/index.ts:24` → `export * from "./noop";`, `:356-357` → gộp `export * from "./memory";`. *Đếm tương đương:* 1 (noop) + 3 (memory) = 4; 1 (conformance) + 3 (types) = 4.
+
+**5. `private` → `#private`.** Đúng 3 dòng (`memory.ts:193,200,205`). *Sau bước này:* `grep -rnE 'private |protected |public ' packages/telemetry/src/` phải ra **0 hit**.
+
+**6. Đổi test runner, 2 dòng** (`test/telemetry.test.ts:1`, `test/conformance.test.ts:1`).
+
+**7. Xoá 2 assertion vô nghĩa** (`test/telemetry.test.ts:71,152`).
+
+**8. Thay 5 `not.toThrow()` trần** (`test/telemetry.test.ts:55,122-124,192-194`). **Để yên:** 8 `doesNotThrow` trong `src/testing/conformance.ts`.
+
+**9. Viết `packages/telemetry/package.json`**. **BẮT BUỘC:** phải có script `check:types` — xem phần cổng, đây là bẫy cổng lớn nhất của work item này.
+
+**10. Viết `packages/telemetry/tsconfig.json`** (4 dòng). **Không** port `tsconfig.build.json`.
+
+**11. Đăng ký vào `package.json` gốc, mục `workspaces.catalog`** — vị trí chữ cái xem cảnh báo neo #2. Không sửa glob `workspaces.packages` (`packages/*` đã phủ), không cần path mapping.
+
+**12. Viết lại `CHANGELOG.md`** theo khuôn omp. **Không** chép 11 heading có ngày của pi (`0.84.0` → `0.87.1` — đã đếm: 11).
+
+**13. Viết lại `README.md`** — 13 occurrence scope (`README.md:1,36,72,139,159,180,186,219,326,369,370,371,380` — đã đọc từng dòng); `:365` (`## Pi Package Integration`), `:373`/`:381` (hàng rào code block), `:447`/`:460` (`## Development`), `:462`/`:464` (`## License` / `MIT`).
+
+**14. Thêm entry vào `THIRD-PARTY-NOTICES.txt`** dưới heading `TRACKED VENDORED CODE AND ASSET NOTICES`, theo đúng format entry `crates/vendor/brush-core/LICENSE`. *Neo:* `THIRD-PARTY-NOTICES.txt:18, :22, :24-30`.
+
+**15. `oxfmt` TRƯỚC khi chạy cổng.**
+
+```bash
+bunx oxfmt 'packages/telemetry/src/**/*.{ts,tsx}' 'packages/telemetry/test/**/*.ts'
+```
+
+*Đã đo:* đúng **5/8 file** cần format — `src/index.ts`, `src/memory.ts`, `src/testing/conformance.ts`, `test/conformance.test.ts`, `test/telemetry.test.ts`. Lý do: `.oxfmtrc.json:4` `printWidth: 120` và `:10` `arrowParens: "avoid"`. *Sau khi format:* `doesNotThrow` ở `conformance.ts` đi từ `:228-230` → `:219-221`. Đừng tra neo bằng số dòng sau bước 15.
+
+**16. CỔNG.** Xem phần cổng.
+
+**Hợp đồng test.** Hai file, cùng sang `bun:test`, cùng ở mức hợp đồng.
+
+`packages/telemetry/test/telemetry.test.ts` — 5 test:
+
+| # | test | hợp đồng bảo vệ | **người dùng thấy gì nếu hồi quy** |
+|---|---|---|---|
+| 1 | `preserves serializable definitions and infers exact attributes` (`:30`) | `defineTelemetrySchema` trả **chính** đối số; definition sống sót qua `JSON.stringify`; 4 `@ts-expect-error` chứng minh tập khoá đóng | adapter phát span với khoá thuộc tính **sai chính tả hoặc chưa khai báo**; nếu type cũng hỏng thì build đỏ ở `@ts-expect-error` thành `TS2578` |
+| 2 | `combines schema vocabularies and binds child starters to their parent spans` (`:74`) | starter trên 2 schema rời nhau resolve về `42` với chuỗi `parentId` operation→request; 5 `@ts-expect-error` chứng minh tên trùng / tên union / thuộc tính lệch schema đều là lỗi biên dịch | span con không gắn được vào span cha → cây trace đứt |
+| 3 | `admits callbacks synchronously and reuses one inert span` (`:157`) | no-op context nhận callback **đồng bộ**, `startSpan` con trả **cùng object span**, span đóng băng | callback bị đẩy sang microtask → mọi code đo "đã vào chưa" trong callback sai lệch 1 tick |
+| 4 | `preserves synchronous and asynchronous rejection values` (`:173`) | giá trị bị từ chối giữ **nguyên danh tính** cho cả throw đồng bộ lẫn async rejection | `catch` trong code ứng dụng nhận `undefined` thay vì lỗi thật |
+| 5 | `does not inspect or retain telemetry payloads` (`:187`) | sau bước 8: callback trả sentinel và sentinel resolve ⇒ context no-op **không hề inspect** proxy `unreadable` (proxy ném ở `get`) | context no-op đọc payload → ném exception lúc runtime trên telemetry nên bị bỏ qua |
+
+`packages/telemetry/test/conformance.test.ts` — 10 test: 9 case từ `createTelemetryAdapterConformance` (`conformance.ts:61`) chạy trên `InMemoryTelemetryContext`, đếm đủ 9 — `callback lifecycle`: `admits once synchronously and preserves the result` (`:65`), `preserves synchronous and asynchronous rejection values` (`:87`); `status`: `uses last explicit status without automatic overwrite` (`:142`); `recording`: `merges attributes and records ordered events` (`:184`), `ignores failed attribute calls atomically` (`:206`), `makes calls after settlement inert` (`:220`); `parentage`: `records nested and concurrent child relationships` (`:246`); `passivity`: `suppresses unreadable telemetry payload failures` (`:274`), `ignores failed status calls atomically` (`:301`). Cộng 1 test riêng: `returns detached snapshots without exposing mutable recording state` (`conformance.test.ts:23`).
+
+**Tổng: 5 + 10 = 15 test.** Đã đo: `bun test` in `15 pass / 0 fail / 23 expect() calls`. Khớp tuyệt đối với con số `15 pass` trong kế hoạch.
+
+AGENTS.md cấm `not.toThrow()` trần trong `test/` — 5 thay thế ở bước 8 là **bắt buộc**, không phải sở thích văn phong. 9 `doesNotThrow` trong `src/testing/` **không** thuộc diện.
+
+**Cổng có đỏ được không — trả lời thẳng: CÓ, thật, và ba lớp bổ sung cho nhau — không lớp nào thừa. Nhưng có BA ĐIỂM MÙ phải nói thẳng.**
+
+Đã **tiêm hồi quy thật** vào cây rồi đo lại. Bảng dưới là số đo, không phải phỏng đoán:
+
+| hồi quy tiêm vào | `bun test` | `tsgo` | `oxfmt --check` |
+|---|---|---|---|
+| chép nguyên văn, **chưa migrate gì** | 🟢 **15/0 XANH** | 🔴 TS5097 ×7 + TS2307 ×2 | 🔴 5 file |
+| bỏ qua riêng bước 6 (vitest→bun:test) | 🟢 **XANH — MÙ** | 🔴 TS2307 ×2 | — |
+| bỏ 9/16 đuôi `.ts` (các import **type-only**) | 🟢 xanh | 🟢 **XANH — MÙ** | — |
+| bỏ 7/16 đuôi `.ts` (import giá trị) | 🟢 xanh | 🔴 TS5097 ×7 | — |
+| vô hiệu hoá `ExactTelemetryAttributes` (`index.ts:140-141`) | 🟢 xanh (mù) | 🔴 `TS2578 Unused '@ts-expect-error'` tại `test/telemetry.test.ts:143` | — |
+| gỡ 3 chốt ghi-sau-settlement (`memory.ts:135,143,151`) | 🔴 **1 fail** — `recording > makes calls after settlement inert` | 🟢 xanh | — |
+| gỡ chốt settle hai-lần (`memory.ts:88`) | 🟢 **XANH — MÙ** | 🟢 **XANH — MÙ** | — |
+| sai định dạng | 🟢 xanh | 🟢 xanh | 🔴 đỏ |
+
+Ba điểm mù:
+
+1. **`bun test` một mình MÙ với việc đổi runner.** Bun tự alias `vitest` → `bun:test` khi chạy test — chép nguyên văn (vẫn `import … from "vitest"`, `vitest` **không hề nằm trong `node_modules`**) mà `bun test` vẫn ra `15 pass`. Chỉ `tsgo` mới bắt được. → **Phải chạy CẢ HAI.**
+2. **`tsgo` MÙ với 9/16 đuôi `.ts`.** TS5097 chỉ nổ trên import/export **giá trị** viết trong **một dòng**. 9 specifier còn lại đều là `import type` / `export type` hoặc nằm ở dòng tiếp của khối import nhiều dòng ⇒ TypeScript xoá chúng trước khi resolve. → **grep thủ công là bắt buộc.**
+3. **Cả hai cổng đều MÙ với chốt settle hai-lần (`memory.ts:88`).** Gỡ `if (span.settled) return;` trong `settleSpan` ⇒ `bun test` 15/0, `tsgo` exit 0. Đây là **lỗ hổng thật trong bộ case được port**, và kế hoạch **không nhắc tới nó**.
+
+**Sửa một tuyên bố sai trong kế hoạch:** kế hoạch viết *"đã thử lại — giữ nguyên đuôi `.ts` vẫn typecheck sạch … **TS5097 KHÔNG nổ lên.**"*. **SAI.** Đã chạy lại với đúng chuỗi kế thừa thật của repo (`packages/telemetry/tsconfig.json` → `packages/tsconfig.workspace.json` → `tsconfig.base.json`): `tsgo` exit **1**, in `error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.` ở 7 chỗ. Bước 3 **có cổng đỏ**, đừng vì tin kế hoạch mà bỏ. Nhưng đừng tin ngược lại là 16/16 đều bị bắt — vẫn phải grep.
+
+**Cạm bẫy cổng lớn nhất: `--if-present` làm cổng tắt im lặng.** `check:ts` chạy `bun run --filter './packages/*' --sequential --if-present check:types`; `--if-present` nghĩa là **package không có script `check:types` thì bị bỏ qua, im lặng, không báo**. Đã đo cả hai vế: có một lỗi type thật trong `packages/telemetry/src/memory.ts`, **không có** `packages/telemetry/package.json` ⇒ cổng type exit **0** (hoàn toàn mù với package mới). Thêm `package.json` có `check:types` ⇒ cùng lỗi đó, cổng exit **1**, in `src/memory.ts(198,3): error TS1068`. ⇒ **Bước 9 không phải việc giấy tờ — nó là công tắc bật cổng.** Nếu định dừng giữa chừng, hãy viết `package.json` sớm.
+
+Grep khép vòng (không thay thế được cổng nào):
+
+```bash
+grep -rn 'earendil' packages/telemetry/                        # 0
+grep -rn 'vitest' packages/telemetry/                          # 0
+grep -rnE 'private |protected |public ' packages/telemetry/src/ # 0
+grep -rnoE 'from "\.[^"]*\.ts"' packages/telemetry/            # 0
+grep -rn 'not\.toThrow()' packages/telemetry/test/             # 0
+grep -c 'Copyright (c) 2025 Mario Zechner' packages/telemetry/LICENSE  # 1
+wc -c packages/telemetry/LICENSE                               # 1143
+grep -c 'check:types' packages/telemetry/package.json          # 1   <- bật cổng type
+```
+
+Dòng cuối không có trong kế hoạch — thêm vào.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`startSpan` nghĩa ngược nhau, và cả hai đều tên `startSpan`.** Bên pi: `startSpan(options, callback) => Promise<T>` — span **chỉ sống trong callback**. Bên omp: helper module-private `function startSpan(` (`packages/agent/src/telemetry.ts:476`) và `telemetry.tracer.startSpan(` (`:512`) — span **tồn tại ngoài callback**. Cùng tên, mô hình thời gian sống ngược nhau. Mối nguy thật sự là một file tương lai import cả hai — file đó **không được alias import nào về tên trần `startSpan`**.
+2. **Ba tên trùng với `@opentelemetry/api`, và giữ tên là đúng.** `AttributeValue`, `SpanOptions`, `SpanStatus` đều đã tồn tại trong omp với hình dạng khác. **Đừng "thống nhất"** — của pi là hợp đồng callback-scoped, của OTEL là kiểu wire span immediate. Nếu ai đó sau này thêm `export * from "@oh-my-pi/pi-telemetry"` vào `packages/agent/src/index.ts`, nó đụng `export * from "./telemetry"` sẵn có ở `index.ts:24` ⇒ **ambiguous star export**. Ràng buộc này phải mang sang spec của `packages/agent`.
+3. **`index.ts:140-141` là dòng quan trọng nhất và dễ mất nhất của cả package.** `export type ExactTelemetryAttributes<Expected, Actual extends Expected> = Actual & Record<Exclude<keyof Actual, keyof Expected>, never>;` Đừng viết lại, đừng rút gọn xuống một dòng, đừng đổi thứ tự. Đã thử **xoá vế `Record<…, never>`** ⇒ `tsgo` đỏ `TS2578 Unused '@ts-expect-error' directive` tại `test/telemetry.test.ts:143`. Đây là dòng duy nhất trong package được typecheck canh giữ bằng cơ chế directive.
+4. **`memory.ts:88` là lỗ hổng thật, không ai nhắc tới.** `settleSpan` mở đầu bằng `if (span.settled) return;` — chốt **idempotency khi settle hai lần**. Ba chốt còn lại (`:135, :143, :151`) **có** được case che, nhưng chốt `:88` thì **không case nào quan sát**: gỡ đi, cả `bun test` lẫn `tsgo` vẫn xanh. Nếu bạn thấy ai đó "dọn code" dòng đó, đó là hồi quy âm thầm.
+5. **`oxfmt` làm dịch số dòng, và 8 `doesNotThrow` nằm trong vùng đó.** Sau khi chạy `oxfmt`, đừng còn tra neo bằng số dòng của file `pi`.
+6. **Copy đã giữ tab. Tab KHÔNG phải nguồn diff.** `.oxfmtrc.json:2-3` đặt `useTabs: true`, `tabWidth: 3`. Nếu `oxfmt --check` đỏ, nguyên nhân là `printWidth: 120` / `arrowParens: "avoid"`, không phải thụt lề.
+7. **`files` trong manifest: kế hoạch dặn xoá, khuôn `wire` thì giữ.** `packages/wire/package.json:38-42` **có** `files: ["src","README.md","CHANGELOG.md"]`, và nó tồn tại chính vì thế. Nếu telemetry sẽ publish, **giữ `files` và đặt `["src", "README.md", "CHANGELOG.md"]`**; nếu internal thì xoá cũng được. Đây là chỗ dễ "làm theo đúng kế hoạch" rồi âm thầm đóng gói cả test vào bản publish.
+8. **`L50-186` của `memory.ts` không được đụng, và đó là phần khó nhất.** Khối đó chứa toàn bộ logic settlement / atomicity / passivity — mỗi `try/catch` quanh một ghi đều ăn nuốt lỗi. Chép sai ở đây là thay đổi hành vi im lặng.
+9. **Vế pháp lý không hoàn tác được, nên nó là bước 1 chứ không phải việc phụ ở bước 13.** Ghi công mà gắn sau khi đã chép code là cách ghi công bị thất lạc.
+10. **Zero người dùng, nên hỏng âm thầm là chuyện thật.** 35/38 symbol có 0 ref trong omp. Bán kính nổ giới hạn trong `packages/telemetry` và không thể làm hỏng CLI — nhưng cũng nghĩa là **không có tín hiệu nào ngoài cổng báo bạn**.
+
+Còn treo, cần người quyết: `@oh-my-pi/pi-telemetry` hay `@oh-my-pi/omp-telemetry`; publish hay internal (quyết định này quyết định giữ hay xoá `files`); version; schemas của pi có mang sang không; và `packages/agent/src/telemetry.ts` có phải là adapter mà conformance suite chấm.
+
+
 ---
 
 
@@ -2655,6 +3842,276 @@ Cổng CÓ thực sự đỏ được — `gate_can_fail: true`. Nó đỏ theo 
 - Ba file test phụ thuộc `ModelRuntime` bị hoãn đi đâu — một package theo dõi riêng, hay một TODO có dấu vết trong README của package mới? Chúng không thể xoá (chúng mã hoá những hợp đồng thật đối với một bề mặt mà omp chưa có) và không ghi lại thì người sau sẽ phải suy ra lại rằng `ModelRuntime` là thứ đang thiếu.
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__6.md` (tên file giữ hậu tố `__6` theo lệnh giao việc, nhưng **nội dung là của mục `## 7. evals`** trong kế hoạch này). Nguồn `/Users/tranquangdang21/Projects/pi-ref` @ `d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31`; đích `/Users/tranquangdang21/Projects/ultraworkers` (branch `milestone-1`).
+
+**Cảnh báo neo — lệch tiêu đề, hai chỉ thị SAI sẽ hỏng runtime, và cả bảng neo omp trôi ~9–123 dòng.**
+
+*Lệch tiêu đề:* lệnh giao việc yêu cầu work item `## 6. evals`, nhưng trong kế hoạch `## 6` là `telemetry`; `evals` là **`## 7. evals`**. Phiếu này viết cho section `evals`. Nếu cần tra `telemetry`, đó là phiếu khác.
+
+*Hai chỉ thị trong kế hoạch sẽ hỏng file nếu chép nguyên văn:*
+
+| tài liệu nói | thực tế |
+| --- | --- |
+| `report.ts`: "L4 `node:util` `styleText` → `Bun.styleText`" | `Bun.styleText` là `undefined` trên Bun 1.3.14. `node:util` `styleText` hoạt động |
+| `report.ts`, `docker.ts`, `cli.ts`, `harness.ts`: `createHash` → `Bun.hash` | `Bun.hash` là wyhash 64-bit trả **BigInt**, không phải sha256 hex |
+| `report.ts`: "0 chỗ `createHash` trong file này sau khi đổi import — hãy kiểm chứng" | **Sai.** `report.ts:130` vẫn gọi `createHash("sha256").update(identity).digest("hex")`. Đếm đúng: 9 dòng chứa `createHash` toàn package (report 2, cli 2, docker 3, harness 2) — con số 9 đúng, nhưng kết luận "0 trong file này" sai |
+
+Đã kiểm chứng bằng `bun -e`. Sửa: giữ `node:util` `styleText`; dùng `new Bun.CryptoHasher("sha256")` (cho output giống hệt `node:crypto` — đã so).
+
+*Năm neo chỉ định sai vị trí:*
+
+| tài liệu nói | thực tế |
+| --- | --- |
+| "L6 `await requireEvalAuthFile(...)` → thêm `await`" | `cli.ts:6` là câu `import { buildImages, … } from "./docker.ts";`. Lời gọi thật ở **`cli.ts:129`**: `const authPath = requireEvalAuthFile(selectedModel.provider);` |
+| "L3 name `@earendil-works/pi-evals` → `@oh-my-pi/pi-evals`" | `package.json:2` là `"name": "@earendil-works/pi-evals",`. L3 là `"version"`. |
+| "`DOCUMENTATION_EVAL_TOOLS` \| const \| `src/harness.ts:484`" | `:484` là JSDoc; const ở **`:485`** |
+
+*Toàn bộ neo phía omp trong `sdk.ts` đều cũ:*
+
+| tài liệu nói | thực tế |
+| --- | --- |
+| `CreateAgentSessionOptions` kéo `sdk.ts:495-809` | **`498-821`** |
+| `customTools` (L591) | **`603`** — `customTools?: (CustomTool \| ToolDefinition)[];` |
+| `extensions` (L593) | **`605`** — `extensions?: ExtensionFactory[];` |
+| `agentDir?: string` (L501) | **`504`** |
+| `toolNames` (L692), `restrictToolNames` (L694) | **`704`**, **`706`** |
+| `createAgentSession` (L1485) | **`1497`** |
+| `readStoredCredential` ở `legacy-pi-coding-agent-shim.ts:1469` | **`1478`** — `export function readStoredCredential(provider: string): AuthCredential \| undefined` |
+| `defineTool` ở `...shim.ts:457` | **`458`** |
+| `get extensionRunner` ở `session/agent-session.ts:12155` | `:12155` là `toggleAdvisorEnabled(): boolean`. Getter thật ở **`12342`** |
+| `BeforeAgentStartEvent` `types.ts:783-790` | **`803-810`**, `systemPrompt: string[]` ở **`:809`** |
+| `BeforeAgentStartEventResult` `types.ts:1194-1198` | **`1215-1219`**, `systemPrompt?: string[]` ở **`:1218`** |
+| `ExtensionFactory` `types.ts:1660` | `:1660` là `ProviderModelConfig`. `ExtensionFactory` ở **`1685`** |
+| `emitBeforeAgentStart` `runner.ts:1874-1913` | **`1903`**; `hasHandlers("before_agent_start")` ở **`1908`**, không phải `1879` |
+| `PI_CODING_AGENT_DIR` đọc ở `utils/src/dirs.ts:446` | `:446` là dòng mở JSDoc. Đọc env thật ở **`:456`** và **`:476`** |
+
+Mọi **khẳng định chữ ký** đều đúng: `customTools` nhận object không nhận tên ✓; `toolNames?: string[]` và `restrictToolNames?: boolean` tồn tại ✓; `grep -c noTools sdk.ts` → **0** ✓.
+
+*Số đếm sai:* "`vitest-evals` \| 7" → thật **13** ngoài README, **18** tính cả README (trong đó **9** là import). "13 chỗ `from 'vitest'`" → **10** `from "vitest";` đúng nghĩa; con số 13 là `from "vitest` (21) trừ `from "vitest-evals` (8). "`packages/coding-agent/src/eval/` là 59 file (56 `.ts` …)" → **60 file**: 57 `.ts` + 2 `.py` + 1 `.txt`. "senpi **bỏ 25 file** của pi" (dòng 381) → câu này sai theo nghĩa đen: `senpi-ref/packages/evals` có 25 file nhưng là package vitest **hoàn toàn khác**.
+
+*Chi tiết nhỏ:* `entrypoint.ts` — `:31` là hằng `codingAgentDir`, danh sách `["package.json", "npm-shrinkwrap.json", "dist/index.js"]` ở `:32`; "nhánh `with_docs` … L55-62 ném `Missing documentation`" → vòng lặp ở `:55-60`, lệnh ném ở **`:61`**. `tsconfig.json` của pi: `"extends": "../../tsconfig.json"` (dòng 2) — chỉ thị dùng `../tsconfig.workspace.json` vẫn đúng.
+
+*Đã kiểm và KHỚP, không cần sửa:* 30 file / 133.025 byte ✓, **cả 30 con số byte** ✓; `plan.ts` đủ 6 neo; `report.ts` đủ 16 neo (dài đúng 483 dòng); `docker.ts` đủ 6 neo (kể cả regex escape ở `:164`); `acme-server.ts` đủ 11 neo; `configured-runtime.ts` đủ 8 neo. Tất cả rename count khớp: `PI_PROVIDER` 16, `PI_MODEL` 16, `PI_CODING_AGENT_DIR` 5, `PI_EVAL_VARIANT` 10, `PI_EVAL_SANDBOX_UID` 5, `PI_EVAL_SANDBOX_GID` 5, `PI_EVAL_CONTAINER` 3, `PI_EVAL_RUNS_PER_VARIANT` 3, `PI_EVAL_ARTIFACT_UID` 3, `PI_EVAL_ARTIFACT_GID` 3, `PI_EVAL_ARTIFACT_DIR` 3, `PI_SESSION_SNAPSHOT_ARTIFACT` + `piSessionJsonl` 7, `pi-eval-` 11, `/repo/packages/evals/` 10, `autoevals` 2. `Configure this running Pi installation` × 4 ✓; `Pi documentation (read only` × 2 ✓. omp: 16/16 package có `check` + `check:types` ✓; 10/16 dùng `bun test --parallel` ✓; `fastWorkspacePackages` tại `scripts/ci-test-ts.ts:88` ✓; `session.reload()` `:10225` ✓; `session.abort()` `:8766` ✓; `BUILTIN_TOOL_NAMES` ở `builtin-names.ts:1-32` ✓, 5/6 tên tool có thật, `ls` không có ✓; `packages/ai/src/utils/` rỗng ✓; `pi-ref/LICENSE:3` = `Copyright (c) 2025 Mario Zechner` ✓.
+
+**Bảng điểm sửa.** Mọi ô "TRƯỚC" trích nguyên văn từ file thật.
+
+File chép nguyên văn (không sửa dòng nào):
+
+| đường/dẫn đích | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `packages/evals/src/plan.ts` | toàn file (59 dòng, 2215 byte) | không có import nào | giữ nguyên byte. `DOCUMENTATION_VARIANTS` ở L1, `parseDiscoveredCases` L21-37, `createTaskPlan` L39-59, `isRecord` private L17-19 |
+| `packages/evals/.gitignore` | toàn file (7 byte) | `.eval/` | giữ nguyên |
+| `packages/evals/docker/Dockerfile.dockerignore` | toàn file (68 byte, 7 dòng) | `.git`, `**/.eval`, `**/node_modules`, `**/dist`, `**/coverage`, `**/.env`, `**/.env.*` | giữ nguyên |
+
+`src/report.ts` — chép rồi sửa **4 dòng**, không phải 6:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `packages/evals/src/report.ts:1` | import | `import { createHash } from "node:crypto";` | **GIỮ NGUYÊN** |
+| `packages/evals/src/report.ts:4` | `styleText` | `import { styleText } from "node:util";` | **GIỮ NGUYÊN.** `Bun.styleText` không tồn tại. |
+| `packages/evals/src/report.ts:5` | `ReportCase` | `import type { ReportCase } from "@vitest-evals/core";` | `import type { ReportCase } from "./report-io.ts";` |
+| `packages/evals/src/report.ts:6` | seam reader | `import { readReportWorkspace, readVitestJsonReportFile } from "@vitest-evals/core/node";` | `import { readReportWorkspace, readVitestJsonReportFile } from "./report-io.ts";` |
+| `packages/evals/src/report.ts:130` | `persistSession` | `createHash("sha256").update(identity).digest("hex"),` | **giữ nguyên** — kế hoạch nói "0 chỗ `createHash` trong file này", đó là SAI |
+
+Ngoài 4 dòng import: **không đổi gì**. `summarizeEvalObservations` (L359-413), `formatEvalComparisonReport` (L436-483), `classifyCaseStatus` (L101-106), `erroredObservation` (L118-120), `readTaskObservation` (L136-189) đều là hàm thuần hoặc đã đúng kiểu.
+
+`src/docker.ts` — chép rồi Bun-ify:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `src/docker.ts:1` | `spawnSync` | `import { spawnSync } from "node:child_process";` | `import { $ } from "bun";` |
+| `src/docker.ts:2` | `createHash` | `import { createHash } from "node:crypto";` | **giữ `node:crypto`** |
+| `src/docker.ts:3` | fs sync API | `import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";` | `import * as fs from "node:fs/promises";` (namespace import theo AGENTS.md) |
+| `src/docker.ts:23-31` | `execute()` | `function execute(command, args, capture = false): { status: number; stdout: string }` trả `{ status: result.status ?? 1, stdout: capture ? result.stdout : "" }` | `async function execute(...): Promise<string>` dùng `` await $`${cmd} ${args}`.cwd(packageRoot).quiet().nothrow() `` rồi `if (exitCode !== 0) throw ...`; gộp 2 nhánh `capture` thành 1. Call sites: `requireSuccess` L33-36, `buildImages` L55, `discoverCases` L151, `runTask` L172 |
+| `src/docker.ts:38-61` | `buildImages` | `` const prefix = `pi-evals-${createHash("sha256").update(repositoryRoot).digest("hex").slice(0, 12)}` `` | `` const prefix = `omp-evals-${sha256(repositoryRoot).slice(0, 12)}` `` với `sha256()` là helper `new Bun.CryptoHasher("sha256")` |
+| `src/docker.ts:67-89` | `requireEvalAuthFile` | `export function requireEvalAuthFile(provider: string): string {` + `if (!existsSync(path) \|\| !statSync(path).isFile())` + `JSON.parse(readFileSync(path, "utf8"))` | `export async function requireEvalAuthFile(provider: string): Promise<string>`; `await fs.stat(path)` trong try/catch `isEnoent`; `await Bun.file(path).text()`. **Sửa đúng một chỗ gọi: `src/cli.ts:129`** |
+| `src/docker.ts:67-71` | default agent dir | `join(homedir(), ".pi", "agent")` | `join(homedir(), ".omp", "agent")` |
+| `src/docker.ts:97` | `mkdirSync` | `mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });` | `await fs.mkdir(outputDirectory, { recursive: true, mode: 0o700 });` → `dockerArgs` thành `async` |
+| `src/docker.ts:108-113` | env prefix | `PI_EVAL_ARTIFACT_DIR`, `PI_EVAL_RUNS_PER_VARIANT`, `PI_EVAL_SANDBOX_UID`, `PI_EVAL_SANDBOX_GID`, `PI_PROVIDER`, `PI_MODEL` | `OMP_EVAL_*`, `OMP_PROVIDER`, `OMP_MODEL` |
+| `src/docker.ts:121` | secret mount | `target=/run/pi-eval-secrets/auth.json` | `target=/run/omp-eval-secrets/auth.json` |
+| `src/docker.ts:156-159` | `taskDirectoryName` | `return createHash("sha256").update(identity).digest("hex");` | `return sha256(identity);` (Bun.CryptoHasher) |
+| `src/docker.ts:174` | `runTask` return | `return existsSync(reportPath) ? reportPath : undefined;` | `return (await Bun.file(reportPath).exists()) ? reportPath : undefined;` → `runTask` thành `async` |
+
+`runTask` chuyển `async` kéo theo `discoverCases` và `cli.ts`. Giữ nguyên `createDockerContext` (L126-135), `BuiltImages` (L12), và regex escape tên test ở **L164**.
+
+`src/cli.ts` — chép rồi sửa:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `src/cli.ts:1` | crypto | `import { createHash, randomUUID } from "node:crypto";` | giữ `randomUUID`; `createHash` → `sha256()` helper |
+| `src/cli.ts:2` | `globSync` | `import { globSync } from "node:fs";` | dùng `Bun.Glob` hoặc giữ — xác minh trước khi gõ |
+| `src/cli.ts:4-5` | path/url | `import { dirname, relative, resolve } from "node:path";` / `import { fileURLToPath } from "node:url";` | `import.meta.dir` thay cho `dirname(fileURLToPath(import.meta.url))` ở L88 |
+| `src/cli.ts:88` | `packageRoot` | `const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");` | `const packageRoot = resolve(import.meta.dir, "..");` |
+| `src/cli.ts:101` | `normalizeDiscoveredFile` | `const prefix = "/repo/packages/evals/";` | template literal ghép `containerRepoRoot` — suy ra từ `packageRoot`, không hardcode |
+| `src/cli.ts:129` | auth call | `const authPath = requireEvalAuthFile(selectedModel.provider);` | `const authPath = await requireEvalAuthFile(selectedModel.provider);` — **đây là dòng 129, không phải L6** |
+| `src/cli.ts:163` | `protocolDigest` | `const protocolDigest = createHash("sha256").update(protocolText).digest("hex");` | `const protocolDigest = sha256(protocolText);` — **byte phải giống hệt**, digest này ràng buộc report với plan |
+| `src/cli.ts:172, 190, 191` | `console.log` | 3 lời gọi `console.log` | **GIỮ `console.*`.** Đây là CLI độc lập thoát ra không vào TUI — ngoại lệ được AGENTS.md tài liệu hoá |
+| `src/cli.ts:192` | exit code | `if (report.blockedPairs.length > 0) process.exitCode = 1;` | giữ nguyên — hợp đồng "cặp bị chặn ⇒ exit ≠ 0" |
+
+`src/harness.ts` — file sẽ hỏng, đây là bảng sửa chính:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `src/harness.ts:1-7` | builtin node | `createHash` / `node:fs` / `node:fs/promises` / `node:os` / `node:path` / `node:perf_hooks` | `Bun.hash`→`Bun.CryptoHasher`; `fs/promises` cho readdir/mkdir/rm; `Bun.nanoseconds()` thay `performance.now()` ở L278/461/468 |
+| `src/harness.ts:8` | `contentText` | `import { contentText, InMemoryCredentialStore } from "@earendil-works/pi-ai";` | `InMemoryCredentialStore` từ `@oh-my-pi/pi-ai`; `contentText` từ file local `./content-text.ts` (pi-ai của omp **không có** `utils/text.ts`) |
+| `src/harness.ts:9` | `getCurrentSystemPrompt` | `import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";` | `./system-prompt.ts` (file local) |
+| `src/harness.ts:13,14,16,17` | không tồn tại ở omp | `createAgentSessionFromServices`, `createAgentSessionServices`, `InlineExtension`, `ModelRuntime` | **xoá hết**; thay bằng `createAgentSession` + `ExtensionFactory` |
+| `src/harness.ts:53-54` | `PiCodingAgentHarnessOptions` | `noTools?: CreateAgentSessionOptions["noTools"];`<br>`tools?: CreateAgentSessionOptions["tools"];` | `noTools?: boolean;`<br>`tools?: string[];` — omp không có key `tools`/`noTools` nào (`grep -c noTools packages/coding-agent/src/sdk.ts` → **0**) |
+| `src/harness.ts:314` | `readStoredCredential` | `const storedCredential = readStoredCredential(selection.provider, authPath);` (2 tham số) | omp chỉ có 1 tham số (`legacy-pi-coding-agent-shim.ts:1478`). **KHÔNG dùng bản omp** — nó đọc `~/.omp/agent/auth.json` thật. Resolve tường minh: `await Bun.file(authPath).text()` rồi tự parse |
+| `src/harness.ts:316-327` | `ModelRuntime` | `await ModelRuntime.create({ credentials })` … `getModel` / `getAuth` / `setRuntimeApiKey` | trỏ `ModelRegistry` + `AuthStorage` của omp, hoặc cắt hẳn và để `models.*` eval ở ngoài phạm vi |
+| `src/harness.ts:351-352` | options forwarding | `tools: options.tools,`<br>`noTools: options.noTools,` | `toolNames: options.tools ?? DOCUMENTATION_EVAL_TOOLS,`<br>`restrictToolNames: true,`<br>`// KHÔNG map vào customTools — option đó nhận (CustomTool \| ToolDefinition)[], không nhận tên` |
+| `src/harness.ts:295-298` | `before_agent_start` | `pi.on("before_agent_start", ({ systemPrompt }) => { forcedSystemPrompt = transform(systemPrompt); return { systemPrompt: forcedSystemPrompt }; })` | giữ nguyên tên hook; chỉ đổi `transform(systemPrompt)` → `transform(systemPrompt.join("\n"))` vì omp trả `string[]` |
+| `src/harness.ts:485` | `DOCUMENTATION_EVAL_TOOLS` | `export const DOCUMENTATION_EVAL_TOOLS = ["read", "write", "edit", "grep", "find", "ls"] as const;` | bỏ `"ls"` (không tồn tại ở omp) → `["read", "write", "edit", "grep", "find"]`, hoặc thay bằng `"glob"`. **Ghi rõ trong README nếu bỏ** |
+| `src/harness.ts:526-528` | container chốt | `if (process.env.PI_EVAL_CONTAINER !== "1" \|\| !resolveSandboxIdentity()) {` | `OMP_EVAL_CONTAINER` |
+| `src/harness.ts:262, 265` | `verifySystemPrompt` | `systemPrompt.includes("\n<rules>\n")` / `systemPrompt.includes("\n<docs>\nPi documentation (read only")` | **phải suy ra lại từ prompt thật của omp** |
+| `src/harness.ts:495-496, 501-502` | `excludePiDocumentation` | `const documentationStartMarker = "\n<docs>\n";` / `const documentationEndMarker = "\n</docs>";` / `defaultPrompt.lastIndexOf("\n<cwd>\n")` | **cả 3 marker đều không có trong prompt omp** (đo: 0 hit `<docs>` và `<cwd>` trong `packages/coding-agent/src/prompts/`). Chuyển sang `doc-lift.ts` và suy ra lại |
+| `src/harness.ts:83` | `applyIsolatedEnvironment` | `const overrides = { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir };` | `PI_CODING_AGENT_DIR` là biến **omp thật sự đọc** (`packages/utils/src/dirs.ts:456` và `:476`). Tốt hơn: bỏ hẳn env, truyền `agentDir: isolatedAgentDir` vào `createAgentSession` (`sdk.ts:504`) |
+
+`evals/acme-server.ts` — chép rồi sửa:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `evals/acme-server.ts:1` | server | `import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";` | `Bun.serve` (không `http.createServer`) |
+| `evals/acme-server.ts:3-12` | 9 hằng export | `OPENAI_PROVIDER_ID` … `STREAM_API_DOCUMENTATION` | **port nguyên văn 9 hằng** |
+| `evals/acme-server.ts:51-58` | `AcmeServer` | `start/stop/reset/origin/baseUrl/validRequestReceived` | **hình dạng không được đổi** — 4 chỗ gọi + 1 test phụ thuộc |
+| `evals/acme-server.ts:133, 138-140` | bind | `server = createServer(...)` … `const address = server.address();` … `address.port` | `server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch })` → `server.port` |
+| `evals/acme-server.ts:134-137` | Promise | `await new Promise<void>((resolve, reject) => { server?.once("error", reject); server?.listen(0, "127.0.0.1", resolve); });` | `Bun.serve` bind đồng bộ → bỏ hẳn promise này |
+| `evals/acme-server.ts:144` | Promise | `await new Promise<void>((resolve, reject) => server?.close((error) => (error ? reject(error) : resolve())));` | `await server.stop();` |
+
+File test (4 file) — mỗi file đúng MỘT dòng đổi:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `test/plan.test.ts:1` | runner | `import { describe, expect, it } from "vitest";` | `import { describe, expect, it } from "bun:test";` |
+| `test/comparison.test.ts:1` | ANSI strip | `import { stripVTControlCharacters } from "node:util";` | giữ nguyên — hoạt động dưới Bun |
+| `test/comparison.test.ts:2` | runner | `import { describe, expect, it } from "vitest";` | `import { describe, expect, it } from "bun:test";` |
+| `test/report.test.ts:1-3` | fs | `node:fs/promises` + `node:os` + `node:path` | tương đương Bun |
+| `test/report.test.ts:4` | runner | `import { afterEach, describe, expect, it } from "vitest";` | `from "bun:test"` — **thêm `it.each` chạy sẵn dưới bun** (`it.each(["skipped","todo","disabled"])` ở L106) |
+| `test/report.test.ts:47` | container path | `name: "/repo/packages/evals/evals/example.docs.eval.ts",` | suy ra từ `packageRoot` |
+| `test/report.test.ts:30` | tmpdir prefix | `mkdtemp(join(tmpdir(), "pi-eval-report-test-"))` | `"omp-eval-report-test-"` |
+| `test/report.test.ts` | fixture | `meta: scoredMeta({...})` nhúng vào `assertionResults[].meta` | **phải giữ nguyên hình dạng này** — seam `report-io.ts` đọc đúng nó và cả 32 case xanh |
+| `test/acme-server.test.ts:1` | runner | `import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";` | `from "bun:test"` |
+
+File mới (8 file, tất cả 0 byte ở nguồn):
+
+| đường/dẫn đích | nội dung bắt buộc |
+| --- | --- |
+| `packages/evals/src/report-io.ts` | `ReportCase` + `readReportWorkspace` + `readVitestJsonReportFile`. **`readReportWorkspace` phải trả `{ workspace: { cases } }`, không phải `{ cases }`** — `report.ts:142` giải ra `const [{ workspace }, rawReport] = loaded`. Viết sai một lần thì 8/32 case đỏ. |
+| `packages/evals/src/harness-types.ts` | port `vitest-evals/harness`: `Harness`, `HarnessContext`, `JsonValue`, `SimpleHarnessResult`, `TranscriptEvent`, `UsageSummary`, `createHarness`, `normalizeHarnessRun`, `normalizeRecord`, `attachHarnessRunToError`, `toJsonValue` |
+| `packages/evals/src/content-text.ts` | `contentText(content, separator?)` — port từ pi `packages/ai/src/utils/text.ts:6` |
+| `packages/evals/src/system-prompt.ts` | `getCurrentSystemPrompt(messages)` — port từ pi `packages/ai/src/utils/transcript.ts:99` |
+| `packages/evals/src/doc-lift.ts` | bộ cắt docs + `verifySystemPrompt`, dựng lại marker từ prompt omp (**đừng chép marker của pi**) |
+| `packages/evals/src/index.ts` | barrel `export * from "./plan"` v.v. Pi **không có** file này — đây là phần thêm |
+| `packages/evals/NOTICE` | MIT nguyên văn từ `/Users/tranquangdang21/Projects/pi-ref/LICENSE` (dòng 3: `Copyright (c) 2025 Mario Zechner`) + commit `d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31` + danh sách file thích nghi. Khuôn: `crates/pi-shell/NOTICE` |
+| `packages/evals/tsconfig.json` | `{"extends": "../tsconfig.workspace.json", "include": ["src", "test", "evals"]}` — **không** khai `types` (ghi đè `["bun","assets"]` của `tsconfig.base.json` sẽ mất khai báo asset) |
+
+`package.json`:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `package.json:2` | name | `"name": "@earendil-works/pi-evals",` | `"@oh-my-pi/pi-evals"` — **ở dòng 2, không phải L3** |
+| `package.json:7` | clean | `"clean": "shx rm -rf .eval",` | `"clean": "rm -rf .eval"` (`shx` KHÔNG thêm) |
+| `package.json:8` | eval | `"eval": "npm run eval:host && npm run eval:docs --",` | `"eval": "bun run eval:host && bun run eval:docs --"` |
+| `package.json:9` | eval:host | `"eval:host": "vitest run --config vitest.evals.config.ts --project host",` | `"eval:host": "bun test"` |
+| `package.json:10` | eval:docs | `"eval:docs": "node --experimental-strip-types src/cli.ts",` | `"eval:docs": "bun src/cli.ts"` |
+| `package.json:11` | test | `"test": "vitest run --config vitest.test.config.ts"` | `"test": "bun test --parallel"` |
+| `package.json:13-22` | devDeps | 8 mục gồm `@types/node`, `@vitest-evals/core`, `autoevals`, `shx`, `vitest`, `vitest-evals` | bỏ 5 mục vitest-family + `shx`; `@types/bun` lấy từ catalog |
+| `package.json` | scripts mới | không có | **bắt buộc**: `"check:types": "tsgo -p tsconfig.json --noEmit"` và `"check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts' && bun run check:types"` — khuôn đã kiểm ở `packages/omptype/package.json`; 16/16 package đều có |
+| `scripts/ci-test-ts.ts:88` | `fastWorkspacePackages` | mảng 8 phần tử bắt đầu `"packages/omptype",` | thêm `"packages/evals",` — không có dòng này, test tồn tại nhưng CI không bao giờ chạy |
+
+**Các bước có neo đã kiểm.**
+
+1. **Dựng khung + chép 3 file nguyên văn.** `packages/evals/{src,evals,test,docker,scripts}`. Copy `src/plan.ts` (2215 byte, 59 dòng), `.gitignore` (7 byte), `docker/Dockerfile.dockerignore` (68 byte).
+2. **Viết `packages/evals/NOTICE`.** Lấy nguyên văn `MIT License` + `Copyright (c) 2025 Mario Zechner` từ `/Users/tranquangdang21/Projects/pi-ref/LICENSE` dòng 1-3, cộng commit `d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31`. Theo khuôn `crates/pi-shell/NOTICE`.
+3. **Viết `tsconfig.json` + `package.json`.** Khuôn 16/16 package. Workspaces gốc là `packages/*` nên `packages/evals` tự khớp, **không sửa `package.json` gốc**.
+4. **Port `src/report.ts` + viết `src/report-io.ts` seam.** Đây là việc làm **trước** `harness.ts` vì nó là code giá trị cao nhất và chỉ bị chặn bởi một seam. Chỉ 4 dòng import đổi. Danh sách field `readTaskObservation` đọc, lấy từ `report.ts:123` và `:136-189`: `status`, `fullName`, `harness.run.usage.{provider,model,inputTokens,outputTokens,totalTokens,toolCalls,metadata.cacheReadTokens,metadata.cacheWriteTokens,metadata.estimatedCostUsd}`, `harness.run.timings.totalMs`, `harness.run.errors`, `harness.run.artifacts[piSessionJsonl]`, `eval.avgScore`.
+5. **Port `src/docker.ts` + `src/cli.ts` cùng lúc** (`cli.ts` gọi mọi export của `docker.ts`). Đổi `spawnSync` sang Bun Shell (dấu backtick kép của Bun Shell), fs sync → `Bun.file`/`fs/promises`, `requireEvalAuthFile` thành `async` và **await ở `cli.ts:129`**. Giữ 3 `console.log` ở L172/190/191. Suy ra tiền tố container ở `cli.ts:101` thay vì hardcode.
+6. **Viết 4 module phụ cục bộ**: `harness-types.ts`, `content-text.ts`, `system-prompt.ts`, `doc-lift.ts`. Với `doc-lift.ts`: **đừng chép marker của pi** — đo thật cho thấy `"\n<docs>\n"`, `"\n<rules>\n"`, `"\n<cwd>\n"` đều không có trong `packages/coding-agent/src/prompts/system/system-prompt.md` (0 hit `<docs>`; `<rules>` chỉ xuất hiện ở `prompts/tools/computer.md:41`, `prompts/system/orchestrate-notice.md:8`, `prompts/system/custom-system-prompt.md:54`).
+7. **Port `src/harness.ts`.** File này sẽ hỏng typecheck ngay. Kiểm chắc trước: `session.reload()` tồn tại (`agent-session.ts:10225`), `session.abort()` tồn tại (`agent-session.ts:8766`).
+8. **Port `evals/acme-server.ts`.** `Bun.serve`, bỏ 2 `new Promise`, `stop()`. Giữ nguyên hình dạng `AcmeServer` và 9 hằng export.
+9. **Port 4 file test + đăng ký CI.** Chỉ đổi dòng `from "vitest"` → `from "bun:test"`. Thêm `"packages/evals"` vào `fastWorkspacePackages` tại `scripts/ci-test-ts.ts:88`.
+10. **HOÃN** (không port trong PR này): 5 suite eval, `docker/Dockerfile`, `docker/install-runtime.mjs`, `docker/entrypoint.ts`, 2 config vitest, `evals/configured-runtime.ts`, `test/configured-runtime.test.ts`, `test/harness.test.ts`.
+11. **Trước commit đầu tiên:** diff `files[]` của `packages/coding-agent` với tập docs mà cánh `without_docs` cắt, và ghi ánh xạ vào README package. Thêm mục `## [Unreleased]` trong `packages/evals/CHANGELOG.md`.
+
+**Hợp đồng test.** 4 file, 32 case, tất cả chạy được ngay trên máy không cần Docker.
+
+| file | case | cái gì phải đúng | người dùng thấy gì nếu hồi quy |
+| --- | --- | --- | --- |
+| `test/plan.test.ts` | 4 | `parseDiscoveredCases` từ chối tên không có `"<eval set> > <case>"`, từ chối identity trùng; `createTaskPlan` xen kẽ thứ tự cánh theo `runNumber`; từ chối model identity không có `/` | plan sinh ra task sai thứ tự cánh → lift tính trên cohort bị lệch trung tâm, và **không** có lỗi nào được in ra |
+| `test/comparison.test.ts` | 4 | một cặp bị chặn (thiếu/trùng/skip/pending/không chấm/lỗi) ⇒ `blockedPairs` liệt kê, `controlPassRate`/`treatmentPassRate` = `null`, `lift` = `null`; `total: null` chứ không phải `0` | báo cáo in ra lift tính trên mẫu số bị rút âm thầm — một hồi quy trông như **miễn phí** |
+| `test/report.test.ts` | 11 (trong đó 1 `it.each` sinh 3) | `readTaskObservation` chuẩn hoá vitest JSON thành `EvalObservation`, lưu session artifact, và trả `errored` cho mọi lệch identity/status/model; `classifyCaseStatus` map `skipped/todo/disabled → skipped`, `failed → errored` | một field telemetry đổi tên trong `report-io.ts` ⇒ mọi quan sát thành `'errored'` và case biến mất khỏi report **không kèm lỗi** |
+| `test/acme-server.test.ts` | 5 | server giả từ chối phân biệt `404/405/415/400/422/401`; không ghi nhận probe khi credential sai | eval provider chấm một request không hợp lệ là hợp lệ → số đo provider sai mà vẫn xanh |
+
+**Phần KHÔNG được test** (theo luật AGENTS.md): constructor lưu option, hằng số có giá trị này, report không rỗng, file tồn tại. **Không source-grep. Không `mock.module()`.** `applyIsolatedEnvironment` mutate `process.env`; nếu sau này viết test harness, dùng `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach` từng test.
+
+**Cổng có đỏ được không — trả lời thẳng: CÓ, bốn cách độc lập, tất cả đã kiểm. Nhưng cổng đó KHÔNG bắt được thứ quan trọng nhất, và có những cổng KHÔNG BAO GIỜ đỏ được — nói thẳng.**
+
+Cổng như kế hoạch viết:
+
+```bash
+bun run check:ts && bunx oxlint packages/evals
+bun test packages/evals
+grep -rn '@earendil-works' packages/evals    # phải 0 hit
+grep -rn 'from "vitest' packages/evals       # phải 0 hit
+grep -c 'Copyright (c) 2025 Mario Zechner' packages/evals/NOTICE   # phải 1
+```
+
+1. `check:ts` đỏ khi `tools`/`noTools` còn trỏ vào key không tồn tại ở omp. Kiểm chứng: `grep -c noTools packages/coding-agent/src/sdk.ts` → **0**.
+2. `grep -rn '@earendil-works' packages/evals` đỏ khi sót tiền tố. Nguồn có **14** chỗ `@earendil-works/pi-coding-agent` + **7** `@earendil-works/pi-ai` + **1** `@earendil-works/pi-evals`.
+3. `grep -rn 'from "vitest' packages/evals` đỏ khi sót runner. Nguồn có **10** import `from "vitest";` + 2 `from "vitest/config"` + 9 `from "vitest-evals"`.
+4. `NOTICE` đỏ khi thiếu giấy phép.
+
+**Đã chạy thật cổng 2, không chỉ lý thuyết.** Chép 4 file test + `plan.ts` + `report.ts` + `acme-server.ts` vào thư mục tạm, đổi `vitest` → `bun:test`, viết seam `report-io.ts`, chạy: `32 pass` / `0 fail` / `62 expect() calls` / `Ran 32 tests across 4 files. [39.00ms]`. Không cần ninja, không build `packages/natives`. Cổng này **thật**.
+
+**Cổng MỚI-1 và MỚI-2** — cổng trên xanh **ngay cả khi `doc-lift.ts` cắt hụt hoàn toàn**:
+
+```bash
+# Cổng MỚI-1: marker docs phải là của omp, không phải của pi
+grep -rn 'Pi documentation (read only' packages/evals/src   # phải 0 hit
+grep -rnF '<docs>' packages/evals/src                      # phải 0 hit
+grep -rnF '<cwd>' packages/evals/src                       # phải 0 hit
+
+# Cổng MỚI-2: mọi tên tool trong DOCUMENTATION_EVAL_TOOLS phải tồn tại ở omp
+bun -e 'import {BUILTIN_TOOL_NAMES} from "./packages/coding-agent/src/tools/builtin-names.ts";
+       const t=["read","write","edit","grep","find"];
+       const m=t.filter(x=>!(BUILTIN_TOOL_NAMES as readonly string[]).includes(x));
+       if(m.length) { console.error("tool không tồn tại:", m); process.exit(1); }'
+```
+
+Cổng MỚI-1 đỏ được vì `Pi documentation (read only` xuất hiện **2 lần** trong nguồn (`harness.ts:265`, `harness.test.ts:77`) và chép nó sang sẽ fail ngay. Cổng MỚI-2 đỏ được vì `ls` — chuỗi đó **không** nằm trong `BUILTIN_TOOL_NAMES`.
+
+**Cổng KHÔNG đỏ được — nói thẳng:**
+
+| cổng | trạng thái | vì sao |
+| --- | --- | --- |
+| `bun test packages/evals` **chứng minh phép so sánh chạy được** | **KHÔNG THỂ** | `createPiDocumentationEvalHarness` từ chối chạy trừ khi `OMP_EVAL_CONTAINER=1` + cặp uid/gid sandbox (`harness.ts:526-528`), và mọi cánh doc cần credential provider thật + 2 ảnh Docker đã build |
+| probe smoke kiểu `omp --smoke-test` | **KHÔNG CÓ** | entrypoint container không được job CI nào chạm tới |
+| `bun test packages/evals` chạm tới `Dockerfile` / `entrypoint.ts` | **KHÔNG BAO GIỜ** | đồ thị import của cả 4 file test chỉ gồm node builtins + `plan.ts` + `report.ts` + `report-io.ts` + `acme-server.ts` |
+
+**Viết nguyên văn câu này vào PR, không bỏ:**
+
+> PR này không chứng minh phép so sánh behavior chạy được. Nó chứng minh package biên dịch, lint sạch và qua 32 test đơn vị không cần Docker. Toàn bộ nhánh Docker bị hoãn.
+
+Hai điều kiện không nằm trong lệnh nào: `packages/evals` phải xuất hiện trong `fastWorkspacePackages` (`scripts/ci-test-ts.ts:88`); và `packages/evals/NOTICE` phải chứa nguyên văn dòng `Copyright (c) 2025 Mario Zechner`.
+
+**Cạm bẫy riêng của mục này**, xếp theo mức độ phá hoại nếu làm sai.
+
+1. **`doc-lift.ts` sẽ no-op im lặng — cạm bẫy số 1.** `harness.ts:495-496` dùng `"\n<docs>\n"` và `"\n</docs>"`; `:501` dùng `"\n<cwd>\n"`; `:262` dùng `"\n<rules>\n"`; `:265` dùng `"\n<docs>\nPi documentation (read only"`. Đo prompt thật của omp: **0 hit `<docs>`, 0 hit `<cwd>`** trong toàn bộ `packages/coding-agent/src/prompts/`. Hệ quả: `excludePiDocumentation` ném `"Default Pi system prompt has no Pi documentation section"` (cành control chết, nhìn thấy được) — hoặc tệ hơn, nếu bạn viết lại quá "chung chung" để không ném, nó trả về prompt không đổi và **cánh control vẫn đầy đủ tài liệu**: lift luôn bằng 0 và mọi kết luận về docs là sai. Cánh Docker bị hoãn nên PR này không bắt được.
+2. **`Bun.styleText` không tồn tại. Chép đúng hướng dẫn của kế hoạch sẽ làm hỏng file.** Đã chạy: `typeof Bun.styleText === "undefined"` trên Bun 1.3.14. **Giữ `import { styleText } from "node:util"`** ở `report.ts:4`.
+3. **`Bun.hash` KHÔNG phải sha256.** `Bun.hash("x")` trả `4738888789374899184n` — wyhash 64-bit trả **BigInt**, không phải hex digest. Thay `createHash("sha256")` bằng `Bun.hash` sẽ phá 4 chỗ: tên ảnh Docker (`docker.ts:39`), tên thư mục session (`docker.ts:158`), thư mục artifact (`report.ts:130`), và tệ nhất là **`protocolDigest`** (`cli.ts:163`). Dùng `new Bun.CryptoHasher("sha256")` — đã kiểm: cho output **giống hệt byte** với `node:crypto`.
+4. **Rò credential — khiếm khuyết duy nhất gây thiệt hại thật.** `harness.ts:314` gọi `readStoredCredential(selection.provider, authPath)` (2 tham số). Bản của omp là 1 tham số và đọc `AuthStorage.create()` — tức đúng `~/.omp/agent/auth.json` của người phát triển, rồi đẩy vào container và hạ xuống uid 65532. Bản chép sẽ **không biên dịch** (điều tốt). Nguy hiểm là ai đó "sửa" cho xong bằng cách bỏ đối số thứ hai. Quy tắc một dòng: **không bao giờ gọi `readStoredCredential` của omp từ harness.** Resolve `authPath` tường minh rồi tự đọc file.
+5. **Đừng thêm vitest để "cho chạy không đổi".** Đây là lối tắt hấp dẫn nhất. 4 file test port bằng **một dòng import mỗi file** — nó xanh 32/32. Thêm vitest tạo ra hai hệ test với config, vòng đời và pipeline CI khác nhau.
+6. **`ls` không tồn tại ở omp — nhưng nó xuất hiện ở HAI chỗ.** `harness.ts:485` (`DOCUMENTATION_EVAL_TOOLS`) và `evals/documentation-audit.eval.ts:39` (`tools: ["read", "grep", "find", "ls", TOOL_NAME]`). Kế hoạch chỉ nói chỗ đầu. Chỗ thứ hai cũng phải sửa nếu file đó được port.
+7. **`tsconfig` — `include` KHÔNG hợp nhất, nó bị thay thế.** Kế hoạch nói `tsconfig.workspace.json` "đã có sẵn `include`/`exclude` — không cần lặp lại 5 glob của pi". Đúng một nửa: `include` ở tsconfig **ghi đè** chứ không hợp nhất. Khai `"include": ["src", "test", "evals"]` ở package là đúng — nhưng phải hiểu là **thay**, không phải **bổ sung**. Quên `evals` thì typecheck bỏ qua cả thư mục eval.
+8. **Đừng để cánh control âm thầm chạy thiếu tool.** Nếu bỏ `ls` mà không ghi, phép so sánh là giữa hai bên được trang bị khác nhau — đúng loại vi phạm giao thức im lặng mà chính các eval này sinh ra để ngăn. Ghi vào README.
+9. **`report-io.ts` phải trả `{ workspace: { cases } }`.** `report.ts:142` giải `const [{ workspace }, rawReport] = loaded`. Viết `{ cases }` trong lần đầu và **8/32 case đỏ** với `TypeError: undefined is not an object`. Chi tiết nhỏ, hậu quả lớn, và không có type nào bắt được nếu seam viết nhanh.
+10. **`readTaskObservation` nuốt lỗi.** `report.ts:142-144` có `.catch(() => undefined)` trên `Promise.all`. Một seam `report-io.ts` throw sẽ biến thành `outcome: "errored"` cho **mọi** case — báo cáo vẫn in ra, exit code vẫn đúng, nhưng toàn bộ cohort bị chặn và lift = `null`. Test phải khẳng định case scored thật sự được chấm, không chỉ khẳng định "không throw".
+
+Còn treo, cần người quyết: coding-agent của omp có tự thêm provider/model vào bản cài của chính nó được không (câu trả lời này **chặn quyết định phạm vi** — trả lời trước khi port bất kỳ suite nào); có nên viết test hẹp cho các phần thuần của `src/harness.ts` không; `@oh-my-pi/pi-evals` có đúng không; nhánh Docker sống hay chết ở lát cắt đầu; 3 file test phụ thuộc `ModelRuntime` hoãn đi đâu.
+
+
 ---
 
 
@@ -2811,6 +4268,199 @@ LOW, nhưng cả ba loại dưới đây đều **thành công âm thầm** — 
   nên cổng của chúng nằm ngay trong từng mục chứ không thêm dòng vào bảng đó.
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__GAP-M1B-1.md`. Cây tham chiếu để đối chiếu: `/Users/tranquangdang21/Projects/pi-ref`. Trạng thái cây lúc viết phiếu: `milestone-1`, HEAD `65cc6c1`, Bun 1.3.14, Node v26.3.0.
+
+**Cảnh báo neo — mười một neo. Bảy đúng, bốn sai — trong đó một sai nghiêm trọng (`cost.ts`), và ba sai lệch nhẹ.**
+
+| # | Neo trong work item | Kết quả |
+| --- | --- | --- |
+| 1 | `packages/utils/src/module-timer.ts` (6.3 KB, `Bun.plugin` `build.onLoad`) | ✅ đúng (6 502 B = 6.3 KB; `plugin`/`build.onLoad` ở 134–150) |
+| 2 | `packages/utils/src/timing-buffer.ts` (1.6 KB) | ✅ đúng (1 616 B) |
+| 3 | `logger.ts:524` drain buffer vào cây log | ⚠️ lệch nhẹ — 524 là dòng **doc comment**; drain thật ở 530/532 |
+| 4 | `package.json:75` `"dev:timing"` | ✅ đúng, trùng khớp từng ký tự |
+| 5 | `package.json:90` (`check:ts`) và `:91` (`check:tools`) | ✅ đúng |
+| 6 | `grep -rniE 'entry.?graph\|...'` → 0 hit | ✅ đúng (exit 1, không output) |
+| 7 | `scripts/check-entry-graphs.mjs` ở `pi` (5.3 KB) | ✅ tồn tại, 5 478 B; **nhưng cơ chế không chép được nguyên văn** |
+| 8 | `scripts/cost.ts` ở `pi` (5.3 KB) | ❌ **hỏng nặng** — file tồn tại, nhưng nó là báo cáo **chi phí tiền API**, không phải cổng module-graph |
+| 9 | `agent-treeshake-smoke-entry.ts` / `browser-smoke-entry.ts` "chạm `experimental/`" | ❌ sai lý do — không file nào chạm `experimental/`; cả `pi` lẫn omp đều **không có** thư mục này |
+| 10 | `packages/omptype/LICENSE` làm hình mẫu | ⚠️ lệch nhẹ — omptype/LICENSE **không** có dòng Zechner; 4 LICENSE đã port mới có |
+| 11 | `.oxlintrc.json` `ignorePatterns` (rủi ro 3) | ⚠️ lệch nhẹ — 26 mục, không phải 24; và `**/*.mjs` **đã** nằm trong đó |
+
+Vì sao `cost.ts` hỏng nặng: đã đọc **toàn bộ 183 dòng**. Nó làm gì: người dùng chạy `cost.ts -d <thư mục> -n <số ngày>`; mã hoá đường dẫn thành tên session (`--<đường-dẫn-thay-/-` ở `:32-36`), đọc `~/.pi/agent/sessions/<tên>/*.jsonl` (`:38-40`), lọc `entry.type === "message"` && `entry.message.role === "assistant"` && `entry.message?.usage?.cost` (`:92-94`), cộng `cost.total` theo ngày × provider (`:113-118`), in bảng `TOTALS BY PROVIDER` và `GRAND TOTAL` (`:170-183`). Đó là **báo cáo chi phí token LLM theo ngày**. Không có `walk`, không có `SPEC`, không có `maxFiles`, không có `budget`. Kiểm chéo: `find` trên cả 7 cây tham chiếu → chỉ `pi-ref` và `senpi-ref`, và `senpi-ref/scripts/cost.ts` **giống hệt**. `git log -- scripts/cost.ts` trong `pi-ref` cho 2 commit, cả hai đều về lint/deps. **Nguồn gốc của nhầm lẫn nhiều khả năng là tên file** — `cost.ts` nghe như "cost of the module graph". Nó không phải.
+
+**Bảng điểm sửa.** Mọi cột TRƯỚC trích từ file thật, đã mở và đọc.
+
+`package.json`:
+
+| path | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `package.json:75` | `scripts.dev:timing` | `"dev:timing": "PI_TIMING=x bun --cwd=packages/coding-agent --preload ../utils/src/module-timer.ts src/cli.ts",` | **không đổi** — đây là hợp đồng phải bảo toàn |
+| `package.json:90` | `scripts.check:ts` | `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types",` | `"check:ts": "bun run check:entry-graphs && bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types",` |
+| `package.json` | `scripts.check:entry-graphs` | *(không có)* | `"check:entry-graphs": "node scripts/check-entry-graphs.mjs",` — dòng mới, đặt cạnh `check:tools` ở `:91` |
+
+> **Vì sao nối vào `check:ts` chứ không phải `check:tools`:** `check:tools` là `oxlint . && oxfmt --check …` (`:91`). Cổng không phải linter, không phải formatter. Đặt nó ở đầu `check:ts` nghĩa là cổng chạy **trước cả** lint — graph phình to thì báo đỏ sớm, không mất 30 giây oxlint trước rồi mới đỏ.
+
+`scripts/check-entry-graphs.mjs` (chép từ `pi`, rồi sửa):
+
+| path | symbol | TRƯỚC (từ `pi-ref/scripts/check-entry-graphs.mjs`) | SAU |
+| --- | --- | --- | --- |
+| `:18` | `ROOT` | `const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");` | không đổi — đã đúng vì file nằm ở `scripts/` |
+| `:21-28` | `WORKSPACE` | 6 khoá `@earendil-works/chord`, `@earendil-works/pi-ai`, `@earendil-works/pi-durable`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-telemetry`, `@earendil-works/pi-tui` | khoá `@oh-my-pi/*` của omp: `pi-ai`→`packages/ai/src`, `pi-agent-core`→`packages/agent/src`, `pi-tui`→`packages/tui/src`, `pi-utils`→`packages/utils/src`, `pi-catalog`→`packages/catalog/src`. **Bỏ** `chord`/`durable`/`telemetry` (chưa có trong omp) |
+| `:34-44` | `BUDGETS` | khoá theo **exports-subpath** (`"./utils/*"`, `"./harness/context"`, …) đọc từ `manifest.exports` | **thay toàn bộ** bằng danh sách **entrypoint file** đọc từ `scripts/entry-graph-baseline.json` — vì cơ chế `manifest.exports` không áp dụng cho `src/cli.ts` |
+| `:46` | `SPEC` | `/(?:^\|\n)\s*(?:import\|export)\s+(?!type\s)([^;]*?\sfrom\s*)?["']([^"']+)["']/g` | **phải sửa** — regex này **không** match `await import("…")`. Đây là cạm bẫy số một của mục này |
+| `:100-135` | vòng lặp driver | `for (const [pkgDir, budgets] of Object.entries(BUDGETS))` … đọc `manifest.exports?.[entry]` | đọc entry list từ baseline file, `walk()` từng entry, so `graph.length` với `maxFiles` |
+| `:137-141` | kết thúc | `console.error(`\n${failures} entry-point budget violation(s).`); process.exit(1);` / `console.log("Entry point graphs are within budget.");` | giữ nguyên **và in thêm tên entry + số thực tế vs ngưỡng** |
+
+`scripts/entry-graph-baseline.json` (tạo mới): JSON gồm `entries[]` (path + `maxFiles`) và `provisional: true`.
+
+`LICENSE` (hình mẫu): dòng 3 `Copyright (c) 2025 Mario Zechner` — giữ **nguyên dòng này ở vị trí đầu**, nối thêm hai dòng của omp. Dòng kết quả (khớp đúng hình dạng `packages/ai/LICENSE:3-5`):
+
+```
+Copyright (c) 2025 Mario Zechner
+Copyright (c) 2025-2026 Can Bölük
+Copyright (c) 2026 Stencil Labs, Inc.
+```
+
+Không chép:
+
+| path | lý do (đã kiểm) |
+| --- | --- |
+| `scripts/cost.ts` | **Sai đối tượng** — nó là báo cáo chi phí token, không có `walk`/`SPEC`/`maxFiles`/`budget` |
+| `scripts/agent-treeshake-smoke-entry.ts` | không chạm `experimental/`; nó import `@earendil-works/pi-agent-core` — tên package của `pi`, không resolve trong omp |
+| `scripts/browser-smoke-entry.ts` | không chạm `experimental/`; import `@earendil-works/pi-client`, `@earendil-works/pi-protocol` — cả hai không tồn tại trong omp |
+
+**Các bước có neo đã kiểm.** Thứ tự này cố ý: **pháp lý trước, code sau, ngưỡng cuối cùng.**
+
+**Bước 1 — Pháp lý, trước khi có dòng code nào được đặt xuống.** Tạo `LICENSE` ở gốc repo. Lấy nguyên văn 21 dòng MIT từ `/Users/tranquangdang21/Projects/pi-ref/LICENSE` (dòng 3 là `Copyright (c) 2025 Mario Zechner`). Hình dẫn chính xác là `packages/ai/LICENSE:1-5` — **không** phải `packages/omptype/LICENSE` như work item ghi.
+
+**Bước 2 — Chép `check-entry-graphs.mjs` rồi sửa ngay.** Chép file 141 dòng vào `scripts/`. Giữ nguyên shebang `#!/usr/bin/env node` và docblock ở `:2-12` — docblock đó là lý do file tồn tại, sửa nó là mất lý do. Sửa `WORKSPACE` (`:21-28`) sang tên package omp. **Không** sửa `walk()` (`:69-82`) và **không** sửa `resolveSpec()` (`:48-67`) ngoài phần khoá workspace — chúng đã đúng.
+
+**Bước 3 — Sửa `SPEC` để nhìn thấy `await import("…")`** ← **bắt buộc**. Không sửa bước này thì cổng đo **4 cạnh** trên tổng **40 cạnh thật** của `src/cli.ts` (đã đếm: regex gốc chạy trên `packages/coding-agent/src/cli.ts` → 4 hit; `grep -c "await import("` → 36). Một cổng đo sai 10 lần là cổng không có.
+
+**Bước 4 — Thay `BUDGETS` bằng baseline file, và viết baseline file.** Driver cũ đọc `manifest.exports?.[entry]` (`:104`). `src/cli.ts` **không** nằm trong exports map của omp — đã kiểm: `packages/coding-agent/package.json` có 119 khoá exports, `"./cli"` **không** trong đó (chỉ có `"./cli/*"` trỏ `./src/cli/*.ts`); `src/cli.ts` chỉ được trỏ tới bởi `bin.omp = "src/cli.ts"` (`:28`). Baseline **phải** ghi `provisional: true`.
+
+**Bước 5 — Nối cổng vào `package.json`.** Thêm `check:entry-graphs` và tiền tố nó vào `check:ts` (`:90`). Không đụng `dev:timing` (`:75`). Không đụng `check:tools` (`:91`).
+
+**Bước 6 — Chứng minh cổng đỏ được TRƯỚC khi kết luận mình xong.** Không tin `check:ts` xanh. Đây là bước duy nhất trong cả phiếu mà work item gọi là "quan trọng nhất", nên nó ở cuối, không ở giữa.
+
+**Bước 7 — Chạy lại `dev:timing` và DÁN BẰNG CHỨNG.** `bun run dev:timing` (`:75`). Bằng chứng phải là cây `--- Startup timings (hierarchical) ---`, **không phải** "exit 0".
+
+**Hợp đồng test.** Không có file `bun:test` nào. Đây là **hợp đồng của một cái cổng**, và nó phải đỏ được. Ba điều kiện, mỗi điều kiện là một lệnh và một quan sát.
+
+Cổng đỏ được và in ra con số:
+
+```bash
+# nhớ lại ngưỡng, hạ xuống 1, chạy lại, khôi phục
+node -e "const f='scripts/entry-graph-baseline.json';const j=require('./'+f);j.entries[0].maxFiles=1;require('fs').writeFileSync(f,JSON.stringify(j,null,2))"
+bun run check:entry-graphs; echo "exit=$?"
+```
+
+**Phải thấy:** exit khác 0, và output có dạng
+
+```
+packages/coding-agent/src/cli.ts reaches 15 files, budget 1
+    packages/ai/src/types.ts
+    packages/catalog/src/effort.ts
+    …
+```
+
+**Hồi quy = người dùng thấy gì:** một PR thêm `export *` vào một barrel trên đường tới `cli.ts` vẫn merge được, và ba tháng sau người đó tự hỏi vì sao `omp` khởi động chậm hơn — không có gì trong lịch sử CI chỉ ra nguyên nhân. Đây đúng là thứ GAP-M1B-5 cần để chứng minh cải thiện.
+
+> Con số **15** ở trên không phải phỏng đoán. Đã chạy bản sao nguyên văn `walk()` của `pi` (cùng `SPEC`, cùng `resolveSpec`) trên cây omp: `packages/coding-agent/src/cli.ts -> 15 files`. Con số này sẽ **thay đổi** sau M1B port — đó là lý do baseline phải chụp đúng thời điểm.
+
+Đường đo không bị cổng nuốt: preload vẫn được nạp. Bằng chứng dạng mạnh nhất, không cần chạy tới TUI: `PI_TIMING=x bun --cwd=packages/coding-agent --preload ../utils/src/module-timer.ts -e 'import("packages/utils/src/module-timer.ts")'` không ném lỗi **và** `globalThis[Symbol.for("omp.moduleLoadBuffer")]` tồn tại sau khi preload. *Hồi quy:* `dev:timing` in ra một cái cây trống rỗng hoặc báo `(no markers)`, và không ai phát hiện cho tới khi GAP-M1B-5 cố chứng minh một PR tối ưu có tác dụng — bằng chứng duy nhất đã biến mất.
+
+Ranh giới luật giữ nguyên: quét (grep) được phép **trong cổng**, không bao giờ trong test; không `mock.module()`; không khẳng định kiểu "chuỗi không rỗng" hay "dài hơn trước" khi không có consumer phía sau.
+
+**Cổng có đỏ được không — trả lời thẳng: CÓ, nhưng nó đỏ được cho hồi quy module-graph và KHÔNG đỏ được cho thứ khác.**
+
+Cổng chính:
+
+```bash
+# từ gốc repo
+bun run check:entry-graphs        # một mình
+bun run check:ts                  # qua cổng
+```
+
+Cơ chế đỏ nằm ở `check-entry-graphs.mjs:137-140` (giữ nguyên khi chép):
+
+```js
+if (failures > 0) {
+    console.error(`\n${failures} entry-point budget violation(s).`);
+    process.exit(1);
+}
+```
+
+`failures` tăng ở hai chỗ, cả hai đều **fail-closed** — không có đường nào đi vòng: `:119-125` — `graph.length > budget.maxFiles` → in **toàn bộ danh sách file** vượt ngưỡng; `:126-132` — một mẫu `forbid` chạm đúng → in **từng file** vi phạm. Không có `catch` nuốt lỗi, không có `continue` khi resolve thất bài.
+
+**Đây là câu trả lời quan trọng nhất của phiếu, nên nói thẳng phần đáng lưu ý:** cổng này **không** đo thời gian, **không** đo bộ nhớ, **không** bắt được việc thêm một `await import()` làm chậm khởi động. `dev:timing` đo thời gian; `check-entry-graphs.mjs` đo **số file**. Ai đọc báo cáo cổng phải hiểu đó là hai thước đo khác nhau, không phải hai cách đo cùng một thứ.
+
+Baseline — có đỏ được, nhưng chỉ sau khi chốt thời điểm. Ngưỡng nằm trong file **đã commit**, không hard-code trong script: một ngưỡng nằm trong code là một ngưỡng mà lần refactor sau sẽ sửa để "cho qua" mà không ai để ý. Ba phương án trong sổ:
+
+| | phương án | hậu quả |
+| --- | --- | --- |
+| (a) | chụp ở HEAD hôm nay | cổng đỏ ngay lần chạy đầu; phản ứng tự nhiên là nới ngưỡng → cổng chết |
+| (b) | chụp sau M1 merge **và** sau sóng port đầu tiên | đúng, nhưng trì hoãn; cổng bỏ lọt đúng sóng nó sinh ra để bắt |
+| (c) | chụp ở HEAD **và** đánh dấu `provisional: true` trong chính file, chỉnh khi port xong | cổng đỏ sớm, có điều kiện |
+
+**Khuyến nghị (c)**, với điều kiện bắt buộc: dòng `provisional` phải nằm trong file baseline, và phải có **cơ chế ép cổng báo "ngưỡng tạm"** khi nó đang provisional — nếu không, `"provisional": true` chỉ là một chữ trong JSON mà không ai đọc, tức là tương đương phương án (a) với thêm một dòng JSON. Hình dạng cổng phải có:
+
+```
+scripts/entry-graph-baseline.json
+  "provisional": true,
+  "capturedAt": "<ngày>",
+  "capturedAfter": "M1 merge chưa xong — ngưỡng tạm, chốt lại sau sóng port đầu",
+  "entries": [ { "path": "packages/coding-agent/src/cli.ts", "maxFiles": 15 }, … ]
+```
+
+và khi `provisional === true`, exit code phải là **riêng** (ví dụ 2).
+
+**Nhưng exit 2 thì `check:ts` sẽ đỏ theo** — vì `check:ts` (`:90`) nối bằng `&&`, nên bất kỳ exit khác 0 nào cũng làm toàn bộ `check:ts` đỏ. Người đọc phải biết điều này **trước**, không phải sau:
+
+> Chốt (c) **không** có nghĩa "cổng xanh trong lúc tạm". Nghĩa là "cổng đỏ **có lý do**, và lý do được ghi rõ trong output". Đỏ vì ngưỡng tạm vẫn hơn xanh vì không có ngưỡng — vì phải sửa mới xanh, và việc sửa đó để lại dấu vết trong `git diff`. Nếu muốn cổng **xanh** trong lúc provisional thì phải exit 0 nhưng in cảnh báo ra stderr. **Không khuyến nghị** — đó là chính là cổng "luôn xanh" mà chính work item này gọi là tệ hơn không có cổng.
+
+Cổng "cổng đã vào" — **trả 0 hit trước, phải ≥ 1 hit sau**:
+
+```bash
+grep -rniE 'entry.?graph|bundle.?budget|startup.?budget|graph.?cost' package.json scripts/ .github/
+```
+
+Đã chạy trên cây hiện tại: **exit 1, không output** — khớp `0 hit` trong work item. Sau khi nối cổng, lệnh này phải trả ít nhất một hit. Đây là cách **duy nhất** chứng minh cổng đã vào mà không cần một bài test source-grep — vốn bị *Quy ước khi đọc* cấm.
+
+Cổng lint/format — **cổng này không tự được lint**, và phải nói thẳng. `check:tools` (`:91`) chỉ oxfmt `'scripts/**/*.ts'` — **`.ts`, không phải `.mjs`**. Và `.oxlintrc.json:55` có `"**/*.mjs"` trong `ignorePatterns`. **Hệ quả trực tiếp: file `scripts/check-entry-graphs.mjs` sẽ không được oxlint quét, cũng không được oxfmt kiểm tra định dạng.** Đây không phải rủi ro giả định — đây là hành vi đã kiểm từ cấu hình hiện có. Hai lựa chọn:
+
+1. **Viết cổng bằng `.ts`, không phải `.mjs`.** `scripts/**/*.ts` đã nằm trong glob oxfmt, và oxlint sẽ quét nó. Đổi cách gọi thành `bun scripts/check-entry-graphs.ts`. Pháp lý vẫn giữ nguyên. Đánh đổi: mất hình dạng "chép nguyên văn `.mjs`" — nhưng bước 3–4 của phiếu này đã viết lại phần lõi của cổng rồi. Cổng đã không còn là bản chép.
+2. **Giữ `.mjs` và sửa `ignorePatterns`.** Không khuyến nghị: đụng `ignorePatterns` là cái bẫy GAP-M1-19 đã ghi, và nó tắt rule cho **mọi** file khác khớp glob.
+
+Nếu vẫn muốn giữ `.mjs`, thì **phải** thêm `'scripts/**/*.mjs'` vào glob oxfmt ở `check:tools:91` và **không** thêm gì vào `ignorePatterns`.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`SPEC` của `pi` không thấy `await import()` — và `cli.ts` của omp TOÀN BỘ là dynamic import.** Đây là cái dễ làm sai nhất, vì nó **không biểu hiện bằng lỗi**. Script chạy, exit 0, in "Entry point graphs are within budget." — và con số nó bảo vệ là sai. `pi-ref/scripts/check-entry-graphs.mjs:46`:
+
+```js
+const SPEC = /(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^;]*?\sfrom\s*)?["']([^"']+)["']/g;
+```
+
+`import\s+` — dấu cách bắt buộc sau `import`. `await import("./x")` có `import(` ngay, không có khoảng trắng, nên **không** khớp. Đã đếm trên cây thật:
+
+```
+STATIC  (regex của pi thấy):  4   ["@oh-my-pi/pi-utils/dirs","@oh-my-pi/pi-utils/worker-host","./cli/profile-bootstrap","./cli/worker-selectors"]
+DYNAMIC (regex của pi BỎ QUA): 36
+tổng cạnh thật: 40
+```
+
+Tỉ lệ **4 trên 40**. Đây không phải chi tiết nhỏ: `packages/coding-agent/src/cli.ts:572` có chú thích giải thích đúng lý do — *"Intentional exception to the static-import convention: this latency boundary keeps the TUI graph out of worker, subcommand, help, and version launches."* Kiến trúc của omp **cố tình** giữ graph lớn ra khỏi đường tĩnh. Cổng đo ngược lại đúng cái thứ mà kiến trúc đó giấu. Không sửa `SPEC` thì cổng bảo vệ một thứ không tồn tại. Vì sao dễ làm sai: copy-paste `SPEC` từ `pi` trông đúng, chạy thì xanh, và người implementer không có lý do gì để nghi ngờ một regex mà mình vừa chép từ nguồn đáng tin.
+2. **Cơ chế `manifest.exports` không áp dụng cho entrypoint CLI.** Driver gốc (`:101-110`) đi qua `manifest.exports?.[entry]` và báo đỏ nếu export không tồn tại. `src/cli.ts` không có trong exports map. Bản chép nguyên văn sẽ **đỏ ngay ở dòng đầu tiên** với thông báo "declares no export". Work item nói *"ngoài danh sách entry không có gì để repoint"* — đúng một nửa. Nửa kia: có một **thứ nữa** phải repoint, đó là cả driver, không chỉ danh sách.
+3. **Bằng chứng `dev:timing` mà work item yêu cầu, chạy sai sẽ không ra cây.** `printTimings()` được gọi ở `packages/coding-agent/src/main.ts:2442` và `:2489` — **trong `main.ts`, không phải `cli.ts`**, và sau khi scope model đã resolve. Đã chạy thật: `bun run dev:timing --version` in `omp/18.4.0`, **không** có cây timings; `--help` in help dài, **không** có cây; không arg thì mở TUI, cần model đã cấu hình; `--print "…"` với agent dir rỗng thì dừng ở `No models available.`. Nghĩa là: **"exit 0" ở đây không phải bằng chứng, và `--version`/`--help` cũng không phải.** Người implementer chạy `--version`, thấy exit 0, ghi "không vỡ" và đóng ticket. Cách kiểm chắc chắn hơn, không cần model: preload có guard ở `module-timer.ts:108` (`if (process.env.PI_TIMING)`) và đẩy vào buffer qua `moduleLoadBuffer()` (`timing-buffer.ts:30-38`). Kiểm tra symbol tồn tại là bằng chứng preload còn sống.
+4. **`cost.ts` — file sai, và nó sẽ cho kết quả nghe rất hợp lý.** Chạy thì in ra bảng `$12.3456` rất đẹp, rất giống "cổng ngân sách". Người implementer chép nó vào, chạy thấy in ra số, tưởng xong. Không có gì trong output đó liên quan đến module-graph.
+5. **`logger.ts:524` trỏ sai 6 dòng, chỉ tới doc comment.** Drain thật nằm ở `:530` (`function spliceModuleLoadBuffer(): void {`), `:532` (`const events = drainModuleLoadEvents();`), chỗ gọi `:443`, và import `:19`. Nội dung mà tài liệu mô tả là **đúng**; chỉ **số dòng** lệch. Neo đúng cho hành vi: `packages/utils/src/logger.ts:443`.
+6. **`.oxlintrc.json` `ignorePatterns` — 26 mục, không phải 24.** `require('./.oxlintrc.json').ignorePatterns.length` → **26**; khối đó chiếm `:31-58`. Không quan trọng cho kết luận, nhưng có một điều quan trọng mà work item **không** nói và nó làm yếu rủi ro 3: `**/*.mjs` **đã** nằm trong `ignorePatterns` (`:55`). Rủi ro thật không phải "ai đó thêm nhầm" — mà là **không ai thêm gì cả và cổng vẫn nằm ngoài lint, âm thầm**.
+7. **Hai smoke entry bị loại vì lý do sai.** `grep -n "experimental"` trên cả hai → **0 hit**; `find . -maxdepth 3 -name experimental` trong `pi-ref` và trong omp → **không có thư mục nào**. Lý do thật để loại vẫn có: chúng import tên package của `pi`, không resolve trong omp. **Kết luận giữ nguyên, lý do phải viết lại** — vì lý do sai sẽ khiến người đọc đi tìm một thư mục `experimental/` không tồn tại. Hệ quả phụ đáng lưu: câu hỏi "cần một smoke entry tương đương cho omp không?" — câu trả lời là **không cần**, vì `packages/coding-agent/src/cli.ts` **đã là** một entry thật, có trong `bin.omp`, và là entry đáng đo nhất.
+
+
 ---
 
 
@@ -2957,6 +4607,200 @@ LOW–MEDIUM. Rủi ro cơ học thấp và tự báo lại: `check:ts` bắt ph
   này chỉ ghi lại hệ quả của nó ở nơi sẽ xảy ra.
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__GAP-M1B-2.md`. Ngày kiểm 2026-09-29; mọi trích dẫn đã mở file thật và đọc, mọi số đo đã chạy thật.
+
+**Cảnh báo neo — đọc phần này trước.** Work item này **viết sai 4 chỗ so với mã nguồn thật**, và 3 trong 4 chỗ sai đó làm cho cổng **không thể đỏ** hoặc **đỏ vì lý do sai**. Đây là loại lỗi nguy hiểm nhất: triển khai đúng theo văn bản sẽ tạo ra 4 cổng trông như có nhưng **một cổng chết, một cổng đỏ ngay vì 134 false positive, và hai cổng đỏ vì 62+41 false positive**.
+
+| # | Điều tài liệu khẳng định | Thực tế đo được | Hậu quả |
+|---|---|---|---|
+| A | `check-lockfile-commit` là cổng thứ 4, nối vào `check:ts` | omp **không có** `package-lock.json` (dùng `bun.lock`); script hardcode `package-lock.json` ở 3 chỗ | **Cổng chết vĩnh viễn** — không bao giờ đỏ được |
+| B | `check-ts-relative-imports` chặn import relative mang `.ts`; cần allowlist 2 hit `.d.ts` | Script chỉ soi specifier kết thúc bằng `.js` (regex `\.js(?:[?#].*)?$`). Chạy thật trên omp: **41 hit, 0 hit nào là `.d.ts`** | Allowlist 2 hit `.d.ts` **bảo vệ một sự cố không thể xảy ra**; điều kiện 223 dòng `.ts` **không cổng nào canh** |
+| C | "chép 4 script + 1 test" | `check-runtime-deps.mjs:19` import `./release-packages.mjs`, file đó lại import `./package-workspaces.mjs` | Bảng "hình dạng port" **thiếu 2 file** |
+| D | Chạy 4 script trên cây omp sẽ xanh (sau khi sửa filter) | Chạy nguyên bản: pinned-deps **152 đỏ** (134 do `catalog:`), runtime-deps **63 đỏ** (62 do `bun:*`), ts-relative **41 đỏ** | Cổng đỏ ngay lần chạy đầu, **không phải vì 2 hit `.d.ts`** như tài liệu dự đoán |
+
+Riêng điểm D là tin tốt: đỏ ngay lần chạy đầu vẫn là hành vi cổng tốt. Nhưng **nguyên nhân đỏ phải đúng**, nếu không người implementer sẽ "sửa cho xanh" bằng cách xoá 2 import hợp lệ (đúng cái bẫy tài liệu lo) — hoặc tệ hơn, bằng cách xoá hàng loạt import thật.
+
+Bảng neo còn lại (đã kiểm): `package.json:90` ✅, `package.json:91` ✅, `tools/browser/prelude-definition.ts:5` ⚠️ *dòng đúng, kết luận sai* (dòng 5 là `import browserDeclarations from "./declarations.d.ts" with { type: "text" };` — có thật, nhưng cổng không bao giờ soi `.d.ts`), `tools/computer/prelude-definition.ts:3` ⚠️ tương tự, `.oxlintrc.json` `ignorePatterns` "24 dòng" ❌ (26 phần tử, dòng 31–58), `packages/omptype/LICENSE` ✅ (22 dòng), kích thước 4 script + 1 test ✅ cả 5 (2238 / 5095 / 5067 / 3991 / 3351 bytes), `packages/{chord,protocol,server,client}/src` ✅ vắng, "grep 6 cổng → 0 hit" ✅.
+
+**Bảng điểm sửa.** Cột TRƯỚC trích nguyên văn từ file đã mở.
+
+`scripts/check-pinned-deps.mjs` (chép từ `pi-ref`, 2238 B):
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+|---|---|---|---|
+| `scripts/check-pinned-deps.mjs:30` | `isNonRegistrySpecifier` | `/^(?:workspace:\|file:\|link:\|portal:\|git\+\|github:\|git:\|https?:\|ssh:\|git:\/\/)/` | phải thêm `catalog:` — **bắt buộc** |
+| `scripts/check-pinned-deps.mjs:26` | `isInternalWorkspaceDependency` | `return name.startsWith("@earendil-works/pi-") \|\| internalPackageNames.has(name);` | phải nhận `@oh-my-pi/*` (**16/16**), không phải `@oh-my-pi/pi-*` |
+| `scripts/check-pinned-deps.mjs:7` | `internalPackageNames` | `const internalPackageNames = new Set(["@earendil-works/chord"]);` | `new Set([])` — omp không có `chord` |
+
+Bằng chứng chạy thật (`node scripts/check-pinned-deps.mjs` từ gốc omp, chưa sửa):
+
+```
+TOTAL FAILURES: 152
+of which catalog:: 134
+```
+
+18 lỗi còn lại là nợ pin thật: `.omp/tools/package.json` (`@napi-rs/canvas ^1.0.8`, `kitty-vt-wasm ^0.2.0`); `packages/coding-agent/examples/extensions/with-deps/package.json` (`ms`); `packages/metaharness/package.json` (`@stencil-hq/vibemon`, và `clsx,d3-scale,d3-shape,motion,react,react-dom,tailwind-merge`); `packages/omptype/package.json` (`@sinclair/typebox`).
+
+`scripts/check-runtime-deps.mjs` (chép từ `pi-ref`, 5095 B):
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+|---|---|---|---|
+| `scripts/check-runtime-deps.mjs:19` | import | `import { getPublicWorkspacePackages } from "./release-packages.mjs";` | **thêm 2 file** `release-packages.mjs` + `package-workspaces.mjs`, hoặc gộp lại thành 1 |
+| `scripts/check-runtime-deps.mjs:38` | `checkSpecifier` | `if (specifier.startsWith(".") \|\| specifier.startsWith("/") \|\| isBuiltin(specifier)) return;` | phải coi `bun` và `bun:*` là builtin — **bắt buộc** |
+| `scripts/check-runtime-deps.mjs:4` | `isBuiltin` | `import { isBuiltin } from "node:module";` | giữ, nhưng thêm nhánh Bun **trước** khi gọi nó |
+| `scripts/check-runtime-deps.mjs:91` | fallback | `configPath: existsSync(configPath) ? configPath : resolve(directory, fallbackConfigName),` | omp có **0/16** `tsconfig.build.json` → cả 16 package đi fallback |
+
+Bằng chứng chạy thật (`node scripts/check-runtime-deps.mjs` từ gốc omp, chưa sửa):
+
+```
+EXIT=1
+TOTAL failure lines: 63
+  62  →  "bun is not declared" / "bun:sqlite" / "bun:ffi" / "bun:jsc"  (false positive)
+   1  →  packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:742:
+        omp-legacy-pi-modules is not declared in @oh-my-pi/pi-coding-agent's runtime dependencies
+```
+
+Chỉ **1 trong 63** là lỗi thật.
+
+`scripts/check-ts-relative-imports.mjs` (chép từ `pi-ref`, 3351 B):
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+|---|---|---|---|
+| `scripts/check-ts-relative-imports.mjs:38` | `isRelativeJavaScriptSpecifier` | `return /^\.\.?\//.test(specifier) && /\.js(?:[?#].*)?$/.test(specifier);` | **đây là chỗ làm đảo ngược toàn bộ work item.** Regex soi `.js`, không soi `.ts` |
+| `scripts/check-ts-relative-imports.mjs:27` | `collectTypescriptFiles` | `if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {` | file `.d.ts` bị loại khỏi tập thu thập; nhưng `.d.ts` **specifier** vẫn lọt nếu nằm trong file `.ts` |
+| `scripts/check-ts-relative-imports.mjs:102` | message | `console.error("Relative .js imports are not allowed in non-declaration .ts files:");` | giữ nguyên — nó nói đúng sự thật, tài liệu thì không |
+
+Bằng chứng chạy thật (`node scripts/check-ts-relative-imports.mjs` từ gốc omp, chưa sửa):
+
+```
+EXIT=1
+TOTAL failures: 41
+=== any .d.ts specifier flagged? ===
+0            <-- .d.ts KHÔNG BAO GIỜ bị flag
+=== hits trong đúng 2 file tài liệu nhắc ===
+  packages/coding-agent/src/tools/browser/prelude-definition.ts:7:31: ./prelude.js
+  packages/coding-agent/src/tools/computer/prelude-definition.ts:5:32: ./prelude.js
+```
+
+41 hit phân bố: `packages/natives` 19, `packages/coding-agent` 12, `packages/tui` 6, `scripts` gốc 2, `packages/ai` 1, `crates` 1.
+
+`package.json`:
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+|---|---|---|---|
+| `package.json:90` | `check:ts` | `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types",` | nối **3** cổng (không phải 4) |
+| `package.json:91` | `check:tools` | `"check:tools": "oxlint . && oxfmt --check 'packages/*/src/**/*.{ts,tsx}' ... 'scripts/**/*.ts'",` | **không đổi** |
+| `package.json:109` | `ci:check:full` | `"ci:check:full": "bun run check:ts",` | **không đổi** — đã là cổng CI thật |
+
+`check:ts` là cổng CI thật: `.github/workflows/ci.yml:190` chạy `bun run ci:check:full`, mà `ci:check:full` → `check:ts`. Nối vào `check:ts` **là** đưa vào CI.
+
+`scripts/check-lockfile-commit.mjs` (chép từ `pi-ref`, 3991 B) — **CỔNG CHẾT**:
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+|---|---|---|---|
+| `scripts/check-lockfile-commit.mjs:5` | `allowValue` | `const allowValue = process.env.PI_ALLOW_LOCKFILE_CHANGE;` | đổi tên env sang tiền tố omp |
+| `scripts/check-lockfile-commit.mjs:34` | `getLockfilePackageChanges` | `const before = readJsonFromGit("HEAD:package-lock.json");` | `bun.lock` — và `bun.lock` **không phải JSON** |
+| `scripts/check-lockfile-commit.mjs:35` | `getLockfilePackageChanges` | `const after = readJsonFromGit(":package-lock.json");` | như trên |
+| `scripts/check-lockfile-commit.mjs:82` | gate | `if (!stagedFiles.includes("package-lock.json")) { process.exit(0); }` | không bao giờ kích hoạt vì omp không có file đó |
+| `scripts/check-lockfile-commit.mjs:51` | `isWorkspacePackagePath` | `return lockPath.startsWith("packages/");` | giữ |
+
+Bằng chứng: `ls package-lock.json` → **không tồn tại**; omp chỉ có `bun.lock`, `Cargo.lock`, `flake.lock`, `MODULE.bazel.lock`. Chạy script trên omp: `EXIT=0`. Thêm nữa, trong chính `pi` cổng này **không nằm trong CI**:
+
+```
+pi package.json "check": ... && npm run check:pinned-deps && npm run check:runtime-deps
+                       && npm run check:ts-imports && ...          <-- không có lockfile
+pi .husky/pre-commit: node scripts/check-lockfile-commit.mjs      <-- chỉ ở đây
+grep -rn 'check-lockfile-commit' pi-ref/.github/  → 0 hit
+```
+
+Nó là **git pre-commit hook**, không phải cổng CI. Dùng nó trong CI là vô nghĩa về mặt kiến trúc: CI không có staged index.
+
+**Các bước có neo đã kiểm.** Thứ tự này **khác** thứ tự trong work item. Work item bảo "đặt allowlist 2 hit `.d.ts` ngay khi chép" — việc đó vô nghĩa vì `.d.ts` không bao giờ bị flag. Thay vào đó phải chạy cổng **trước**, đọc danh sách đỏ thật, rồi mới quyết định allowlist gì.
+
+1. **Đặt pháp lý trước.** Tạo `scripts/LICENSE` theo khuôn `packages/omptype/LICENSE` (22 dòng): dòng `MIT License`, trống, rồi dòng tác giả gốc **trước**, dòng omp **sau**. Root `LICENSE:3` là `Copyright (c) 2025 Mario Zechner` — giữ làm dòng đầu.
+2. **Chép 7 file, không phải 5.** `check-pinned-deps.mjs`, `check-runtime-deps.mjs`, `check-runtime-deps.test.mjs`, `check-lockfile-commit.mjs`, `check-ts-relative-imports.mjs` **+ `release-packages.mjs` + `package-workspaces.mjs`**. Hai file cuối là bắt buộc vì `check-runtime-deps.mjs:19` import `release-packages.mjs`, và `release-packages.mjs:3` import `package-workspaces.mjs`.
+3. **Sửa `catalog:` trước tiên** ở `check-pinned-deps.mjs:30`. Đây là false positive lớn nhất (134/152). omp dùng Bun workspace catalog: `grep -h '"catalog:"' packages/*/package.json package.json | wc -l` → **127**; `package.json:182` là `"typescript": "catalog:"`.
+4. **Sửa scope nội bộ** ở `check-pinned-deps.mjs:26-27`. Dùng `@oh-my-pi/` làm tiền tố chung, **không** dùng `@oh-my-pi/pi-`. Lý do: trong 16 package của omp có **6** tên không bắt đầu bằng `pi-`: `@oh-my-pi/browser-relay`, `@oh-my-pi/collab-web`, `@oh-my-pi/omptype`, `@oh-my-pi/snapcompact`, `@oh-my-pi/omp-stats`, `@oh-my-pi/typescript-edit-benchmark`. Port theo mẹo tiền tố `pi-` sẽ bỏ sót 6/16.
+5. **Chạy `check-pinned-deps` lần đầu, đọc 18 lỗi còn lại.** Quyết định từng cái: pin cứng, hoặc đưa vào allowlist có lý do ghi bên cạnh. `.omp/tools/package.json` nên loại khỏi phạm vi quét (nó nằm trong `.oxlintrc.json:42` `"**.omp/**"`).
+6. **Thêm nhánh Bun builtin** vào `check-runtime-deps.mjs:38`, **trước** khi gọi `isBuiltin` của `node:module` — vì `node:module` không biết `bun`, `bun:sqlite`, `bun:ffi`, `bun:jsc`. Đây là 62/63 lỗi.
+7. **Quyết định về `tsconfig.build.json` trước khi chạy `check-runtime-deps`.** omp có `0/16` package nào có file này, nên cả 16 đều rơi vào `fallbackConfig = { include: ["src/**/*"] }` (dòng 22-23). Hệ quả: nhánh *"excluded from build but imported by it"* (dòng 118-120) trở nên **vô nghĩa**. Hoặc tạo `tsconfig.build.json` cho 16 package, hoặc **ghi rõ trong PR**. Đừng để người sau tưởng nó đang canh.
+8. **Chạy `check-ts-relative-imports` lần đầu, đọc 41 lỗi.** Xử lý theo nhóm, KHÔNG theo danh sách 2 file của tài liệu:
+   - `packages/natives` (19) — chủ yếu `test/` và `bench/` import `../native/*.js` trong khi native là build artifact Rust. Cần allowlist theo thư mục, không theo dòng.
+   - `packages/coding-agent/src` (12) — gồm `src/export/html/index.ts:12,15`, nơi `.oxlintrc.json:53` đã ignore thư mục html.
+   - `crates/pi-natives/tools/bench-natives.ts:7` — Rust crate, ngoài phạm vi TS.
+   - `./prelude.js` trong 2 file prelude — đây mới là hit **thật** ở 2 file tài liệu nhắc, ở dòng **7** và **5**, không phải 5 và 3.
+9. **Quyết định số phận `check-lockfile-commit` — KHÔNG nối vào `check:ts`.** Ba lựa chọn: (a) **Bỏ hẳn** khỏi phạm vi, ghi lý do; (b) **Viết lại cho `bun.lock`** và thành git hook, không phải CI gate (`bun.lock` là text JSONC, không phải JSON thuần nên `JSON.parse` ở dòng 14 sẽ vỡ); (c) Giữ nguyên bản chép như một `pre-commit` hook chết — **không chọn**.
+10. **Nối 3 cổng vào `package.json:90`.** Không thêm file script nào vào `.oxlintrc.json`.
+11. **Nối `check-runtime-deps.test.mjs` vào runner.** File dùng `node:test` + `node:assert/strict` + `spawnSync`; omp dùng `bun test` (`package.json:85` `"test": "bun scripts/ci-test-ts.ts local"`). omp hiện có **0** file `*.test.mjs`. Nếu không nối, file test chép sang là code chết.
+
+**Hợp đồng test.**
+
+`scripts/check-runtime-deps.test.mjs` (chép từ `pi-ref`, 5067 B, 110 dòng) — ba case:
+
+| test | fixture | kỳ vọng |
+|---|---|---|
+| `rejects undeclared imports even when the workspace package exists` (dòng 28) | `packages/server/package.json` tồn tại, nhưng `example` không khai | `status === 1`, stderr khớp `src[\\/]index\.ts:1: @earendil-works\/pi-server\/unix is not declared` |
+| `accepts runtime declarations, builtins, self imports, relative imports, and erased types` (dòng 36) | deps + optional + peer khai đủ | `status === 0` |
+| `rejects dev-only dependencies, side-effect imports, mixed exports, and literal runtime loads` (dòng 57) | chỉ `devDependencies` | `status === 1` |
+
+**Port bắt buộc:** fixture dựng cây trong `mkdtemp(join(tmpdir(), "pi-runtime-deps-"))` (dòng 12) và tên package `@earendil-works/pi-server` (dòng 29-30, 33) → đổi sang `@oh-my-pi/pi-server`, prefix tmpdir thành `omp-runtime-deps-`.
+
+**Case phải thêm cho omp** (không có trong bản `pi`): import `bun:sqlite` và `bun` phải **xanh** (exit 0). Đây là hợp đồng giữ nhánh Bun ở bước 6 — không có case này thì ai đó xoá nhánh Bun ở lần refactor sau cũng không ai biết.
+
+**Người dùng thấy gì nếu hồi quy:** `bun test scripts/check-runtime-deps.test.mjs` đỏ ở case `accepts ... builtins ...` vì `bun:sqlite` bị coi là dependency chưa khai → cổng đỏ trên cây thật với 62 dòng, hoặc xanh im lặng vì ai đó thêm `bun:sqlite` vào `dependencies` của mọi package cho xanh.
+
+Hợp đồng của 3 cổng còn lại (không có file test): **bắt buộc** phải chứng minh thủ công rằng mỗi cổng đỏ được.
+
+- `check-pinned-deps` đỏ được: thêm một dep `^1.0.0` vào bất kỳ `package.json` nào → exit 1. Đừng chấp nhận "cổng chạy xanh" là bằng chứng.
+- `check-ts-relative-imports` đỏ được: thêm `import x from "./y.js"` vào một file `.ts` bất kỳ → exit 1. **Đừng dùng `import x from "./y.ts"` làm bằng chứng — cổng sẽ vẫn xanh** và người đọc tưởng cổng canh `.ts`.
+- `check-runtime-deps` đỏ được: cover bằng `.test.mjs` ở trên.
+
+**Điều người dùng thấy nếu hồi quy:** một PR thêm `import "lodash"` vào `packages/tui/src/...` mà không khai `lodash` vào `packages/tui/package.json` vẫn merge được.
+
+**Điều KHÔNG được làm trong test:** không `mock.module()`, không assertion kiểu "dài hơn"/"không rỗng", không source-grep. Riêng ở đây: **không** viết test kiểu `expect(grep_output).toContain(...)` cho `check-ts-relative-imports` — quét là việc của cổng, không phải của test.
+
+**Cổng có đỏ được không — trả lời thẳng: BA cổng đỏ được. Cổng thứ tư (`check-lockfile-commit`) KHÔNG ĐỎ ĐƯỢC, và đó là phần quan trọng nhất của phiếu.**
+
+Cổng chính:
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers && bun run ci:check:full
+```
+
+(`.github/workflows/ci.yml:190` → `package.json:109` → `package.json:90`.)
+
+`check-pinned-deps` — **ĐỎ ĐƯỢC, sau khi sửa `catalog:`**. Có đỏ được ngay lập tức, không cần dựng fixture — chạy nguyên bản `pi-ref` lên cây omp: **exit 1, 152 dòng đỏ**. Đó chính là bằng chứng nó đỏ được. Sau khi thêm `catalog:` vào `isNonRegistrySpecifier` và đổi scope sang `@oh-my-pi/`, còn 18 dòng — mỗi dòng phải được pin hoặc allowlist có chú thích. **Nếu không sửa `catalog:`:** 134 dòng đỏ toàn là `found catalog:`; người implementer sẽ đọc đó là lỗi thật và đi pin 127 chỗ — tệ hơn nhiều so với không có cổng.
+
+`check-runtime-deps` — **ĐỎ ĐƯỢC, sau khi thêm nhánh Bun**. Chạy nguyên bản: **exit 1, 63 dòng**, trong đó 1 dòng là lỗi thật (`legacy-pi-compat.ts:742` → `omp-legacy-pi-modules`). Sau khi coi `bun`/`bun:*` là builtin, cổng phải **xanh** trên cây hiện tại, và **đỏ** khi ai đó thêm import không khai. Xanh trên cây hiện tại là điều kiện bắt buộc — nó chứng minh nhánh Bun đã đúng. Fail-closed: dòng 110 `if (diagnostics.length > 0) throw new Error(...)` ném lỗi thay vì bỏ qua, và dòng `process.exit(1)` khi có failure. **Cảnh báo phải nói ra trong PR:** vì 0/16 package có `tsconfig.build.json`, nhánh "excluded from build" (dòng 118) **không canh gì cả**. Đừng ghi cổng này "canh export boundary" — nó không.
+
+`check-ts-relative-imports` — **ĐỎ ĐƯỢC, nhưng KHÔNG canh thứ tài liệu nói**. Chạy nguyên bản lên omp → **exit 1, 41 dòng**. Sau khi allowlist hợp lệ, phải chứng minh đỏ bằng cách thêm `import x from "./y.js"` vào file `.ts`. **Cổng này có canh được điều kiện 223 dòng `.ts` không? KHÔNG.** Bằng chứng quyết định: `grep -rn 'from "\.[^"]*\.ts"' --include="*.ts" pi-ref/packages | wc -l` → **4943**. Chính `pi` có 4943 dòng import relative `.ts` mà cổng của `pi` vẫn xanh. Cổng này về bản chất **không thể** canh `.ts`. **Vậy 2 hit `.d.ts` trong tài liệu là gì?** Là allowlist cho một sự cố không tồn tại. 2 file đó **có** xuất hiện trong output — nhưng ở `browser/prelude-definition.ts:7` và `computer/prelude-definition.ts:5`, với specifier `./prelude.js`. Dòng 5 và 3 mà tài liệu trích (specifier `./declarations.d.ts`) không bao giờ bị flag.
+
+`check-lockfile-commit` — **KHÔNG ĐỎ ĐƯỢC. Nói thẳng và viết lại.** Đây là phần quan trọng nhất của phiếu. Ba lý do độc lập, mỗi lý do đủ để giết nó:
+
+1. omp **không có** `package-lock.json`. Script tham chiếu tên file đó ở dòng 34, 35, 82. Không có file ⇒ `stagedFiles.includes("package-lock.json")` luôn false ⇒ dòng 83 `process.exit(0)`.
+2. Trong CI không có staged index. Ngay cả với `package-lock.json`, dòng 77-84 đọc `git diff --cached` sẽ rỗng trong CI.
+3. Trong chính `pi`, cổng này **không nằm trong `check:`** — nó chỉ chạy ở `.husky/pre-commit`. `grep -rn 'check-lockfile-commit' pi-ref/.github/` → **0 hit**.
+
+Đo trên omp: `node scripts/check-lockfile-commit.mjs` → `EXIT=0`.
+
+**Vì sao đây là loại lỗi tệ nhất:** một cổng luôn xanh tạo cảm giác an toàn giả. Người review thấy "lockfile-commit đã được nối" thì tin rằng thay đổi lockfile ngoài ý muốn bị chặn. Không bị chặn. Đây đúng là trường hợp tài liệu tự cảnh báo ở §5, và nó đã xảy ra trong chính văn bản này.
+
+**Viết lại thành cổng đỏ được, hoặc bỏ:** phương án khuyến nghị — **bỏ khỏi phạm vi, ghi lý do trong PR.** omp dùng Bun (`package.json:205` `"packageManager": "bun@>=1.4"`) và có `bun.lock`. Cổng bảo vệ một định dạng repo không tồn tại. Nếu muốn giữ: phải viết lại cho `bun.lock` (text, không phải JSON thuần — dòng 14 `JSON.parse(git(["show", ref]))` sẽ vỡ) **và** cài nó ở tầng git hook (`.husky/pre-commit` hoặc `core.hooksPath`), **không** nối vào `check:ts`. **Không** chọn phương án "chép nguyên bản cho khớp hình dạng port" — đó là mua hình thức bằng một cổng chết.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Dễ làm sai nhất: tin allowlist 2 hit `.d.ts` và xoá import hợp lệ.** Tài liệu cảnh báo đúng về hậu quả, sai về nguyên nhân. Cổng sẽ không bao giờ đỏ vì 2 dòng `.d.ts` đó. Nó sẽ đỏ vì 41 dòng `.js`. Nhưng kịch bản xấu vẫn xảy ra, chỉ khác hình dạng: implementer thấy output đỏ, thấy `prelude-definition.ts:7 ./prelude.js` nằm ngay cạnh `prelude-definition.ts:5 ./declarations.d.ts` mà tài liệu đã dặn "đừng xoá", và xoá luôn cả import `.js` bên cạnh. Hậu quả: browser/computer prelude mất phần JS runtime. Đây là loại hỏng **âm thầm** — `codeModeDeclarations` và `javascript` là hai chỗ khác nhau trong object trả về (`prelude-definition.ts:23` và `:24`), nên xoá `javascript` không làm hỏng type check. **Cách tránh:** in ra danh sách 41 dòng, phân loại từng dòng theo *thư mục* (không theo dòng), và ghi lý do cho mỗi nhóm vào allowlist.
+2. **`ignorePatterns` — bẫp đã được vô hiệu hoá một cách âm thầm.** Tài liệu nói: *"Đặt cổng ngoài `ignorePatterns` 24 dòng sẵn có"*. Hai vấn đề: **đếm sai** (`ignorePatterns` ở `.oxlintrc.json:31-58` có **26** phần tử); và **bẫp đã tự vô hiệu** — `.oxlintrc.json:55` đã có `"**/*.mjs"`. Cổng sẽ viết bằng `.mjs` nên **đã** nằm ngoài lint sẵn. Không ai hề lint 4 file cổng này. Nếu muốn có, phải thêm `.mjs` vào glob oxfmt, **không** phải bỏ chúng khỏi `ignorePatterns`. Ngoài ra `.oxlintrc.json:53` đã ignore `packages/coding-agent/src/export/html/**`, đúng một trong 12 hit ở `packages/coding-agent`; nếu port bằng `oxlint` để lọc thì nhớ gate này dùng TypeScript API, không dùng oxlint.
+3. **Port theo mẹo tiền tố `pi-` sẽ bỏ sót 6/16 package.** Đây là loại lỗi "chạy xanh nhưng canh thiếu" — tệ nhất về mặt im lặng. Cách an toàn: đọc danh sách tên package từ `package.json` workspaces thay vì khớp tiền tố.
+4. **`catalog:` là nguyên nhân đỏ lớn nhất, không phải dấu `^`.** `bunfig.toml` có `exact = true`, tức Bun **đã** càiu hồn pinning cho lúc install. Nhưng cổng đọc `package.json`, không đọc `bun.lock` — nên nó vẫn thấy 127 `catalog:` và 18 dấu `^`. Cổng này và `bun install` đang kiểm hai thứ khác nhau. Ghi rõ điều này trong PR, nếu không người sau sẽ tưởng cổng thừa vì `exact = true` đã lo.
+5. **Test chép sang sẽ chết nếu không nối runner.** `check-runtime-deps.test.mjs` dùng `node:test`. omp dùng `bun test` (`package.json:85`), và `package.json:87` `test:scripts` liệt kê tên file `.ts` tường minh. omp có **0** file `*.test.mjs`. Không nối thì không test nào chạy, và tài liệu vẫn ghi "file đó nằm trong hình dạng port" — trông như đã có test.
+6. **Chi phí thật.** Ba cổng dùng `typescript/unstable/ast` + `typescript/unstable/sync`. Đã kiểm trên omp: `typescript@7.0.2`, cả ba import đều resolve (`API` là function, `SyntaxKind.ImportKeyword === 101`). Đây là **API preview** — nó có thể đổi tên giữa các bản TS. Vì `bunfig.toml` không pin `typescript` cứng (root `package.json:182` là `catalog:`), **một lần bump catalog là 4 cổng hỏng cùng lúc**.
+
+Còn treo, cần người quyết: `catalog:` xử lý thế nào; 18 dòng pin thật — pin cứng hay allowlist, và `.omp/tools/package.json` có bị loại khỏi phạm vi không; `tsconfig.build.json` cho 16 package hay chấp nhận nhánh exclude vô dụng; `check-lockfile-commit`: bỏ hay viết lại cho `bun.lock` ở tầng git hook; 41 hit `.js` — làm sạch luôn trong PR này hay tách work item riêng (nghiêng về riêng).
+
+
 ---
 
 
@@ -3090,6 +4934,180 @@ LOW về cỡ, MEDIUM về hậu quả — đây là mục nhỏ nhất trong b�
 - **Nó là mảnh còn thiếu của một đường đã có nửa.** Đây là lý do nó đứng ở M1B chứ không phải ở
   M6 hay M7: phần đọc đã có, phần khôi phục thì chưa, và phần đọc mà không có phần khôi phục thì
   chỉ là "chụp rồi quên".
+
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__GAP-M1B-3.md`. Nguồn `pi.46` → `/Users/tranquangdang21/Projects/pi-ref`; đích `packages/utils/src/env.ts` trong cây `ultraworkers`.
+
+**Cảnh báo neo — 9 neo được mở và đọc. 6 đúng, 3 hỏng. Ba neo hỏng nằm ở chỗ quyết định nhất — phần pháp lý và phần test.**
+
+| # | Neo trong work item | Trạng thái | Bằng chứng |
+|---|---|---|---|
+| 1 | `packages/utils/src/env.ts:114` = `readLaunchEnv()` | ✅ ĐÚNG | `sed -n '114p'` → `function readLaunchEnv(): ReadonlyMap<string, string> \| undefined {` |
+| 2 | `packages/utils/src/env.ts:134` = lời gọi | ✅ ĐÚNG | `sed -n '134p'` → `const launchEnvValues = readLaunchEnv();` |
+| 3 | `pi …/src/bun/restore-sandbox-env.ts` = 36 dòng | ✅ ĐÚNG | `wc -l` → `36 restore-sandbox-env.ts` |
+| 4 | `pi …/src/bun/sandbox-env-setup.ts` = 4 dòng | ✅ ĐÚNG | `wc -l` → `4 sandbox-env-setup.ts` |
+| 5 | `packages/coding-agent/src/bun` không tồn tại | ✅ ĐÚNG | `ls -d` → `No such file or directory` |
+| 6 | `bun run check:ts` | ✅ ĐÚNG | `package.json:90` |
+| 7 | **`BPI_EXECVE`** | ❌ **HỎNG** | `rg -n "BPI_EXECVE" /Users/tranquangdang21/Projects/pi-ref` → **0 kết quả**. Cờ này không tồn tại ở `pi`. |
+| 8 | **"Không có file test nào đi kèm ở phía `pi`"** | ❌ **HỎNG** | `pi/packages/coding-agent/test/restore-sandbox-env.test.ts` tồn tại, 77 dòng, 3 case. |
+| 9 | **`packages/omptype/LICENSE` là hình mẫu + "dòng Zechner phải nằm ĐẦU"** | ❌ **HỎNG (tự mâu thuẫn)** | `head -4 packages/omptype/LICENSE` → `Can Bölük` / `Stencil Labs`. **Không có Zechner.** |
+
+**Neo 7 — `BPI_EXECVE` là bịa.** Chỗ thật trong `pi` là hai guard, đọc nguyên văn từ `pi-ref/packages/coding-agent/src/bun/restore-sandbox-env.ts:20-23`:
+
+```ts
+	if (!process.versions?.bun) return;
+
+	// If process.env already has entries, nothing to fix.
+	if (Object.keys(process.env).length > 0) return;
+```
+
+Hệ quả: **đừng tạo cờ `BPI_EXECVE`.** Đó là một biến không có đọc giả nào, thêm vào chỉ để phục vụ một cái cổng không tồn tại. Guard thứ hai (`process.env` đã có phần tử → thoát sớm) chính là cơ chế làm cho "trước dotenv" trở thành điều kiện khởi động chứ không phải điều kiện tiện lợi. Câu hỏi "giữ tên cờ hay đổi" trong mục *Cần người quyết* của kế hoạch **tự động tan** khi neo này hỏng: không có tên cờ nào để giữ.
+
+Guard "no-op trên macOS/Windows" cũng **không nằm ở chỗ tưởng**. Trong `pi` nó không phải `if (process.platform === "linux")`; nó là `try { readFileSync("/proc/self/environ") } catch {}` ở dòng 25-35 — không có `/proc/self/environ` thì `readFileSync` ném, `catch` nuốt, hàm trả về im lặng. Giữ nguyên `try/catch`; đừng "viết lại cho rõ" thành nhánh platform.
+
+**Neo 8 — "không có test ở phía `pi`" là sai.** File có thật: `pi-ref/packages/coding-agent/test/restore-sandbox-env.test.ts`, 3 case: `does nothing when not running under bun` / `does nothing when process.env already has entries` / `restores environment from /proc/self/environ when bun env is empty`. **Nhưng test của `pi` không chép được nguyên văn** — nó viết cho **vitest**, dùng `vi.mock("node:fs", …)` ở dòng 5 để chặn `readFileSync`, và dùng `Object.defineProperty(process, "versions", …)` để giả chạy-không-dưới-Bun. Cả ba đều bị cấm hoặc vô hiệu trong omp: omp **không có vitest** (0 hit trong mọi `package.json`); đường tương đương gần nhất của `vi.mock("node:fs")` trong `bun:test` là `mock.module()`, mà AGENTS.md cấm tuyệt đối; và `Object.defineProperty(process, "versions", …)` là biến đột `process.*` ở cả file test, trái luật "Tests must be full-suite safe". Nên **không** chép test của `pi`. Phải viết lại trên seam khác.
+
+**Neo 9 — LICENSE tự mâu thuẫn.** Work item trỏ `packages/omptype/LICENSE` làm hình mẫu **và** bắt "dòng Zechner phải nằm ĐẦU". `head -4 packages/omptype/LICENSE` cho:
+
+```
+MIT License
+
+Copyright (c) 2025-2026 Can Bölük
+Copyright (c) 2026 Stencil Labs, Inc.
+```
+
+Không có Zechner. Kiểm chéo toàn bộ cây omp cho `Zechner` → chỉ có ở `LICENSE:3`, `packages/coding-agent/LICENSE:3`, `packages/tui/LICENSE:3`, `packages/agent/LICENSE:3`, `packages/ai/LICENSE:3` và `packages/coding-agent/src/tools/browser/relay/extension-assets/LICENSE.txt:3` — tức là các package gốc của omp. `packages/utils/LICENSE` (package **đích** của mục này) cũng **không có** Zechner, giống hệt `omptype`. Đọc đúng thì hướng của work item là nhất quán; chỉ có **câu lệnh kiểm** là sai. Lệnh `head -4 <file LICENSE sau khi tạo>  # dòng Zechner phải nằm ĐẦU` phải sửa thành `head -4 packages/utils/LICENSE` và kiểm dòng **Can Bölük**.
+
+Ngoài ra, work item nhắc `getBunSandboxEnvValue()` trong `packages/ai/src/utils/provider-env.ts` qua comment của file `pi`. Xác minh: file đó **có** ở `pi` (`pi-ref/packages/ai/src/utils/provider-env.ts:15`), và omp **không có**. Đây không phải neo hỏng — chỉ là bối cảnh cho việc đồng bộ phải giữ.
+
+**Bảng điểm sửa.** Trích "TRƯỚC" từ file thật vừa mở.
+
+| `đường/dẫn` | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `packages/utils/src/env.ts` | `readLaunchEnv` (`:114`) | `function readLaunchEnv(): ReadonlyMap<string, string> \| undefined {` | giữ nguyên, không đụng |
+| `packages/utils/src/env.ts` | `launchEnvValues` (`:134`) | `const launchEnvValues = readLaunchEnv();` | `const launchEnvValues = readLaunchEnv();`<br>`restoreSandboxEnv();`<br>`const projectEnvNamesLoadedByOmp = new Set<string>();` |
+| `packages/utils/src/env.ts` | `restoreSandboxEnv` (mới) | *(không có)* | `export function restoreSandboxEnv(readEnviron: () => string = readProcEnviron): void` — thân hàm chép nguyên văn từ `pi`, dán ở trên `readLaunchEnv` |
+| `packages/utils/src/env.ts` | `readProcEnviron` (mới, riêng) | *(không có)* | `function readProcEnviron(): string { return fs.readFileSync("/proc/self/environ", "utf-8"); }` — tách riêng **một mục đích duy nhất**: để test thay thế seam này mà không cần `mock.module()` |
+| `packages/utils/test/env.test.ts` | `describe("restoreSandboxEnv")` (mới) | *(không có)* | 3 case |
+| `packages/utils/LICENSE` | — | `Copyright (c) 2025-2026 Can Bölük` (dòng 3) | **không đổi** — work item này không dán file mới, nên không có LICENSE mới để tạo |
+
+**Dòng "SAU" ở `:134` là một dòng thêm, không phải một khối.** Đó là toàn bộ thay đổi hành vi. Mọi thứ khác là dán nguyên văn.
+
+**Các bước có neo đã kiểm.**
+
+**Bước 1 — Pháp lý trước, nhưng kết luận ngược với câu chữ kế hoạch.** Kế hoạch yêu cầu tạo `LICENSE` mới theo mẫu `packages/omptype/LICENSE`. Kiểm tra cho thấy `packages/utils/LICENSE` **đã tồn tại** (22 dòng, MIT, Can Bölük + Stencil Labs) và là đúng mẫu cho package đích. Không có tệp mới ⇒ **không có LICENSE mới để tạo**. Xác nhận bằng `head -4 packages/utils/LICENSE`. Nếu sau này mục này dán thêm tệp mới, quy tắc bắt dòng Zechner áp cho tệp đó, không cho file này.
+
+**Bước 2 — Dán thân hàm, ngay TRÊN `readLaunchEnv`.** Dán khối từ `pi-ref/packages/coding-agent/src/bun/restore-sandbox-env.ts:15-36` vào `packages/utils/src/env.ts`, đặt **trên** dòng `function readLaunchEnv()…` (dòng 114) — vì `readLaunchEnv` sẽ gọi tới `readProcEnviron` mà hàm đó định nghĩa. Giữ nguyên hai guard (dòng 20 và 23 của file `pi`) và `try/catch` (dòng 25-35). Giữ nguyên khối comment (dòng 1-11 của file `pi`) **trừ** dòng 8-10 — dòng đó bảo "keep in sync với `getBunSandboxEnvValue()` ở `packages/ai/src/utils/provider-env.ts`", một file mà omp không có. Giữ dòng 2 (URL lỗi Bun) và dòng 4-6 (mô tả lỗi).
+
+**Bước 3 — Một tham số duy nhất, để test có seam.** Sửa đúng một dòng so với bản `pi`:
+
+```ts
+// TRƯỚC (pi, nguyên văn, dòng 26):
+		const data = readFileSync("/proc/self/environ", "utf-8");
+// SAU (omp):
+		const data = readEnviron();
+```
+
+và `import { readFileSync } from "node:fs"` (dòng 13 của file `pi`) **không** dán — `env.ts` đã có `import * as fs from "node:fs"` ở dòng 1. `readProcEnviron` là chỗ duy nhất gọi `fs.readFileSync`. Sai lệch này phải ghi vào mô tả PR, không được lặng lẽ: nó là lý do test viết được bằng `bun:test` mà không `mock.module()`.
+
+**Bước 4 — Nối vào đúng chỗ, và viết lý do tại chỗ nối.** Chèn `restoreSandboxEnv();` giữa dòng 134 và dòng 135 của `packages/utils/src/env.ts`:
+
+```ts
+const launchEnvValues = readLaunchEnv();
+// MUST run before dotenv: restoreSandboxEnv() no-ops as soon as process.env has
+// entries, so a call placed after dotenv autoload would silently restore nothing.
+// See oven-sh/bun#27802.
+restoreSandboxEnv();
+const projectEnvNamesLoadedByOmp = new Set<string>();
+```
+
+Hàm dotenv thật của omp không phải một lời gọi module-scope: nó là `parseEnvFile(path.join(cwd, ".env"))` ở dòng 160 và `expandDotenvValues` ở dòng 137, cả hai đều bên trong `filterChildShellEnvInternal` và chạy **trễ**, theo lời gọi. Nghĩa là "trước dotenv" ở omp là điều kiện **thỏa sẵn về mặt cấu trúc**, không phải thứ phải tranh đấu. Ghi điều đó vào chú thích, vì người đọc sau sẽ không có bối cảnh `pi` để tự suy ra.
+
+**Bước 5 — Đồng bộ `readLaunchEnv` với seam mới.** Dòng 118 của `packages/utils/src/env.ts` hiện gọi thẳng `fs.readFileSync("/proc/self/environ", "utf8")` — chú ý `utf8`, không phải `utf-8`. Đổi nó qua `readProcEnviron()` để hai đường đọc `/proc/self/environ` dùng chung **một** chỗ, và test chỉ cần kiểm soát một seam. Giữ nguyên `try {} catch {}` rỗng ở dòng 123.
+
+**Bước 6 — Không tạo `packages/coding-agent/src/bun/`, không chép `cli.ts` / `runtime-setup.ts`.** Xác minh nguồn: `pi-ref/packages/coding-agent/src/bun/` chứa đúng 4 tệp — `cli.ts` (4 dòng, chỉ là 3 dòng `import`), `runtime-setup.ts` (9 dòng, chỉnh Bedrock/OAuth + `process.title`), và 2 tệp đang port. Đích omp không có `src/bun/` và không được tạo. Riêng `runtime-setup.ts` dòng 8 gọi `registerBunOAuthFlows()` — hàm không tồn tại ở omp; chép nó là vỡ build ngay.
+
+**Bước 7 — Chạy lại đường quanh `readLaunchEnv`.** Mục tiêu: chứng minh **chỉ có phục hồi, không có thay đổi hành vi quan s được của việc chụp môi trường trước dotenv**. `launchEnvValues` được dùng ở `packages/utils/src/env.ts:158, :161, :175, :200, :216` — không dòng nào bị đụng. Chạy `bun test packages/utils/test/env.test.ts` phải vẫn xanh **22 pass** (đo được lúc viết phiếu này), chứ không phải 25 — 22 là trạng thái trước, 25 là trạng thái sau khi thêm 3 case.
+
+**Hợp đồng test.** Tệp: `packages/utils/test/env.test.ts` — thêm vào tệp sẵn có, **không tạo tệp mới**. Bộ ba `describe`/`it` mới, đặt cạnh `describe("getDbBusyTimeoutMs")` sẵn có ở `:32`.
+
+**Case 1 — `no-ops when the launch environment is unreadable`.** Gọi `restoreSandboxEnv(() => { throw new Error("ENOENT: /proc/self/environ"); })` với `process.env` không đổi. Khẳng định: **không ném**, và `process.env` y hệt trước đó. → *Người dùng thấy gì nếu hồi quy:* `omp` ném lỗi lúc khởi động trên macOS và Windows — hai sàn họ dùng hằng ngày — trong khi Linux vẫn xanh hoàn toàn vì `/proc/self/environ` thật sự tồn tại. Đây là hồi quy đắt nhất của mục này, và nó là hồi quy **âm thầm**: type check vẫn xanh.
+
+**Case 2 — `no-ops when process.env already has entries`.** Đặt `process.env.RESTORE_SANDBOX_ENV_TEST = "1"` (dọn trong `finally`), gọi `restoreSandboxEnv(() => "FOO=bar\0")`. Khẳng định `process.env.FOO` **không** được tạo, và `process.env` giữ nguyên. → *Hồi quy:* hàm ghi đè biến đã có bằng bản `/proc` cũ hơn, phá vỡ `OMP_PROFILE`/`PI_CONFIG_DIR`/`PATH` mà người dùng đã đặt tay.
+
+**Case 3 — `restores the launch environment when process.env is empty`.** Xoá sạch `process.env` (lưu bản sao trước), gọi `restoreSandboxEnv(() => "FOO=bar\0BAZ=qux\0")`. Khẳng định `FOO === "bar"`, `BAZ === "qux"`, và mảng giữa `==` bị bỏ qua. Phục hồi `process.env` trong `finally`/`afterEach`. → *Hồi quy:* biến môi trường vẫn bị sandbox nuốt — đúng cái lỗi mục này sinh ra để chữa, và nó **không ném, không cảnh báo**, nên không ai thấy nếu không có test này.
+
+**Ba case này chạy được trên mọi sàn, không cần mock, không cần đổi `process.platform`, không cần `mock.module()`.** Đó là toàn bộ lý do tham số `readEnviron` ở bước 3 tồn tại. Không có `it.skipIf(process.platform === …)` nào ở đây — nếu có, case 1 và 3 sẽ bị bỏ qua trên chính CI Linux của omp (`ci.yml` chỉ có `ubuntu-22.04` và runner `omp-kata`; Windows chỉ xuất hiện ở job cross-compile binary, không chạy test).
+
+**Về "thứ tự trước/sau dotenv là quan sát được" — phải nói thẳng thay vì làm cho nó có vẻ đã phủ.** Work item đòi một khẳng định chứng minh **giá trị cuối cùng quan sát được sau dotenv**. Kiểm tra cây thật cho thấy yêu cầu đó **không thỏa mãn được ở dạng test đơn vị**. `restoreSandboxEnv()` không đọc dotenv, không ghi dotenv, và không có quan hệ nào với `expandDotenvValues` (`packages/utils/src/env.ts:137`) hay `parseEnvFile` (dòng 160). Nó chỉ ghi vào `process.env` từ `/proc/self/environ`. Vì vậy một test khẳng định "giá trị cuối cùng sau dotenv" sẽ khẳng định về `expandDotenvValues`, tức là **không có gì thay đổi ở đây**. Test đó xanh trước và xanh sau khi port — một cổng luôn xanh, tệ hơn không có cổng. Điều kiện "trước dotenv" thật ra là điều kiện **thỏa sẵn về cấu trúc**, và cách chứng minh nó không phải bằng test hành vi mà bằng vị trí: lời gọi nằm ở `packages/utils/src/env.ts`, còn toàn bộ đường dotenv nằm trong `filterChildShellEnvInternal` (dòng 153), được gọi **sau**. Không cần test cho điều mà cấu trúc đã bảo đảm. Ba case ở trên là phần có thể hồi quy; phần thứ tự là phần **phải review bằng mắt**, và đó là lý do bước 4 bắt ghi chú thích tại call site.
+
+**Cổng có đỏ được không — trả lời thẳng: cổng 1 KHÔNG đỏ được cho lỗi của mục này. Cổng 2 và 3 đỏ được. Cổng 4 phải viết lại mới đỏ được. Cổng 5 chỉ đỏ được trên sàn đang chạy, không tự động hoá cho cả ba sàn.**
+
+| Cổng | Lệnh | Đỏ được? |
+| --- | --- | --- |
+| 1 | `bun run check:ts` | **Không** cho lỗi của mục này — giữ như cổng rẻ, đừng tính là bằng chứng |
+| 2 | `bun test packages/utils/test/env.test.ts` → phải `25 pass` | **Có** — cổng chính |
+| 3 | `! ls -d packages/coding-agent/src/bun` | **Có** — bảo vệ "không tạo `src/bun/`" |
+| 4 | `awk 'NR>=134 && NR<=137' packages/utils/src/env.ts` | **Có** — thu hẹp vị trí từ 491 dòng xuống 4 |
+| 5 | `bun packages/coding-agent/src/cli.ts --version` | **Có** trên sàn đang chạy (không-Linux thật); **không** tự động hoá cho cả ba sàn |
+
+Cổng 1 — `bun run check:ts`. Đo lại: `package.json:90` → `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`. Cổng này bắt được: dán nhầm tệp, import hỏng, sai kiểu, `mock.module()` bị lint chặn, format lệch. Cổng này **không** bắt được đúng thứ mục này cảnh báo: nếu `restoreSandboxEnv()` viết `readFileSync("/proc/self/environ")` mà không bọc `try/catch`, `tsgo` vẫn exit 0, `oxlint` vẫn sạch, và chỉ có test ở case 1 hoặc một lần chạy thật trên macOS mới đỏ. **Cổng xanh ở đây không mang thông tin.**
+
+Cổng 2 — `bun test packages/utils/test/env.test.ts`. **ĐỎ ĐƯỢC CÓ.** Đây là cổng thật của mục này. Đo nền trước khi sửa: `22 pass / 0 fail`. Ngưỡng đỏ viết thành lệnh, không viết thành lời:
+
+```bash
+bun test packages/utils/test/env.test.ts
+# phải: 25 pass / 0 fail  (22 cũ + 3 mới)
+```
+
+Số pass là con trỏ, không phải con số. Nếu kết quả là `22 pass` sau khi đã thêm 3 case, thì 3 case đó **không chạy** — skip hoặc filter sai — và cổng đang xanh vì không có gì được kiểm.
+
+Cổng 3 — `ls -d packages/coding-agent/src/bun`. **ĐỎ ĐƯỢC CÓ, và đây là cổng giữ được duy nhất.** Lệnh phải **thất bại** (exit ≠ 0, in `No such file or directory`) sau khi port. Nếu nó in ra một đường dẫn, thư mục đã bị tạo sai. Viết thành lệnh có kiểm:
+
+```bash
+! ls -d packages/coding-agent/src/bun 2>/dev/null   # exit 0 khi thư mục KHÔNG tồn tại
+```
+
+Cổng 4 — thứ tự quanh dotenv. Lệnh trong kế hoạch: `grep -n 'readLaunchEnv\|launchEnvValues' packages/utils/src/env.ts`. **KHÔNG ĐỎ ĐƯỢC.** Lệnh này in ra dòng nào chứa chuỗi, và cả trước lẫn sau khi port nó đều in `114`, `134`, `158`, `161`, `175`, `200`, `216`. Nó xanh trước và xanh sau. Giữ nó như một trợ giúp **đọc**, đừng gọi nó là cổng. Viết lại thành:
+
+```bash
+# restoreSandboxEnv() phải nằm GIỮA dòng 134 và dòng 135 — tức là trước mọi
+# lời gọi filterChildShellEnvInternal, nơi toàn bộ đường dotenv của omp chạy.
+awk 'NR>=134 && NR<=137' packages/utils/src/env.ts
+```
+
+Cổng 5 — "startup chạy được trên cả ba sàn". Đây là cổng hoàn thành mà kế hoạch nêu, và **nó không kiểm được trong CI của omp**. Kiểm chéo: `.github/workflows/ci.yml` chỉ có `runs-on: ubuntu-22.04` và runner tự phục vụ `omp-kata`; chữ "windows" chỉ xuất hiện ở job cross-compile binary (`ci.yml:810,821,824,849`), job đó build `.exe` chứ không chạy test. Không có macOS runner, không có Windows runner. Viết lại cho đỏ được trên máy đang chạy:
+
+```bash
+# macOS: /proc/self/environ KHÔNG tồn tại → đây là case 1 ở điều kiện thật,
+# không phải qua mock. Đỏ khi khôi phục lỗi startup.
+bun packages/coding-agent/src/cli.ts --version
+```
+
+**ĐỎ ĐƯỢC CÓ, và mạnh hơn test** — vì trên chính máy này `/proc/self/environ` thật sự vắng, nên lệnh này chạy đúng nhánh không-Linux bằng dữ liệu thật. Nó bắt được thứ mà `check:ts` không bắt: một `try/catch` bị bỏ, một guard `process.versions.bun` bị viết sai, một import cycle làm module fail dưới Bun. Ba sàn thật vẫn chưa tự động hoá; nếu cần, `scripts/install-tests/run-ci.sh:35` và `scripts/ci-macos-sign.sh:118` là hai chỗ đã có sẵn để móc vào.
+
+**Cạm bẫy riêng của mục này**, xếp theo mức độ đắt nếu làm sai.
+
+1. **Dán vào `env.ts:135` là ĐÚNG, nhưng `env.ts:135` không phải chỗ sớm nhất — và `dirs.ts` đã đóng băng trước đó.** Đây là cạm bẫy lớn nhất, và nó **không nằm trong kế hoạch**. `packages/utils/src/env.ts:5` là `import { getAgentDir, getConfigRootDir, getProjectDir, refreshDirsFromEnv } from "./dirs";`. Trong ESM, các `import` được nâng lên và thân module của `./dirs` **chạy trước** thân `env.ts`. Mà `packages/utils/src/dirs.ts` đọc `process.env` ở **mức module**:
+
+```
+dirs.ts:459   let dirs = new DirResolver({ agentDirOverride: resolveActiveAgentDirOverride(), ...
+dirs.ts:475   let preProfileAgentDirEnv = resolvePreProfileAgentDir(activeProfile, process.env.PI_CODING_AGENT_DIR, ...)
+```
+
+và `dirs.ts:448-451` `resolveActiveAgentDirOverride()` đọc `process.env.PI_CODING_AGENT_DIR` / `process.env.OMP_PROFILE`. Comment ở `dirs.ts:485-494` nói thẳng: resolver **"froze at import time"** và `env.ts` phải gọi `refreshDirsFromEnv()` sau khi nạp `.env` để vá lại.
+
+Nghĩa là: `restoreSandboxEnv()` ở `env.ts:135` chạy **sau** khi `dirs.ts` đã chụp `PI_CODING_AGENT_DIR` và profile từ một `process.env` còn rỗng. Hàm khôi phục `~/.omp` cho mọi thứ đọc env *sau đó* — nhưng **không** cho `dirs`. Đây là giới hạn thật của hình dạng port mà kế hoạch chọn, và nó không nổ, không cảnh báo, không đỏ cổng nào. **Cách xử lý: ghi nó ra, đừng giấu nó.** Thêm vào chú thích call site một câu nói rõ `dirs.ts` đã đóng băng trước. Nếu muốn sửa thật thì phải dán vào một module **không có import nào đọc env lúc load** và được import sớm hơn `dirs` — đó là thay đổi kiến trúc, vượt quá "40 dòng, gần như không sửa" mà kế hoạch hứa, nên **không** làm trong mục này.
+2. **Tạo `BPI_EXECVE` vì kế hoạch bảo tạo.** Đây là cái bẫy dễ nhất vì kế hoạch đặt nó trong mục *Cần người quyết* — người đọc dễ cảm thấy cờ này là thật và phải quyết định giữ hay đổi tên. Không có gì trong `pi` đọc nó. Thêm nó = thêm biến chết. **Không tạo.**
+3. **Chép `runtime-setup.ts` "cho đủ".** Nó chỉ 9 dòng và trông vô hại. Dòng 8 của nó gọi `registerBunOAuthFlows()` — không tồn tại ở omp. Chép là vỡ `check:ts` ngay lập tức. `cli.ts` 4 dòng của `pi` thì chỉ là 3 dòng `import` trỏ `../cli.ts` — chép nó vào omp tạo một entrypoint thứ hai, vi phạm luật worker của `AGENTS.md` (một entry duy nhất, `cli.ts` tự khai báo làm worker host).
+4. **Chép `import { readFileSync } from "node:fs"` (dòng 13 của file `pi`) vào `env.ts`.** `env.ts:1` đã có `import * as fs from "node:fs"`. Hai cách đọc `/proc/self/environ` trong cùng một tệp, và `AGENTS.md` nói thẳng: *"Two implementations of the same thing is a bug even when both work."* Bước 5 của phiếu này gộp về `readProcEnviron()` để tránh đúng điều đó.
+5. **Test mới viết bằng `it.skipIf(process.platform === "win32")`.** `env.test.ts:291` đã có đúng mẫu này — và nó **sẽ làm hỏng cổng 2**. Ba case ở §4 dùng seam `readEnviron` nên không cần bất kỳ `skipIf` nào — không thêm.
+6. **`Object.defineProperty(process, "versions", …)` để bắt chước `pi`.** Trong omp nó là biến đột `process.*` ở cả file test — `AGENTS.md` cấm khi đã có seam hẹp hơn, và ở đây đã có. Nếu buộc phải giữ case "không chạy dưới Bun", dùng `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach` như luật của `AGENTS.md`, **không** `defineProperty`.
+7. **Đọc `head -4 packages/omptype/LICENSE` rồi kết luận sai.** File mẫu đúng, câu lệnh kiểm sai. Đọc `packages/utils/LICENSE` — cùng mẫu, không Zechner, và đó là file của package đích.
+
+**Phần tệ nhất nếu làm theo kế hoạch nguyên văn:** ba dòng `BPI_EXECVE` / "không có file test ở phía `pi`" / "dòng Zechner phải nằm ĐẦU" trong kế hoạch sẽ đưa người gõ sai. Cả ba đều dẫn tới cùng một kết cục: một bản port **trông đúng** — có cờ, có LICENSE, `check:ts` xanh, `ls -d packages/coding-agent/src/bun` đỏ đúng — và **không khôi phục được biến nào, trên sàn nào**. `BPI_EXECVE` không ai đọc nên không ai thấy; test không có nên không có gì xanh; Zechner vắng mặt nên cổng `head -4` báo "đúng" cho người không biết dòng đó vốn không tồn tại.
 
 
 ---
@@ -3240,6 +5258,150 @@ MEDIUM — không phải vì việc viết code khó, mà vì cả hai hướng 
   nào ở mục *Va chạm với thứ omp đã có*.
 - **Nó là mục duy nhất trong bốn cái không chép gì.** Ba mục kia đều là chép rồi sửa và đều có nghĩa
   vụ attribution; mục này là làm mới, nên PR của nó không kèm dòng ghi công nào.
+
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+Phiếu đầy đủ nằm ở `.lavish-wip/impl/MILESTONE_1B_EXECUTION_PLAN__GAP-M1B-5.md`. Ngày kiểm 2026-09-29; cây `/Users/tranquangdang21/Projects/ultraworkers` @ `milestone-1` (`65cc6c1`).
+
+**Cảnh báo neo — đọc trước mọi thứ khác.** Bốn neo dòng trong work item **đều đúng, từng chữ**. Nhưng khi dựng module graph thật và cắt thử bốn import đó, **thay đổi không làm giảm module graph — 0 module rời đi, 0 byte rời đi.**
+
+```
+BEFORE: 168 modules   AFTER (cắt cả 4 value-import): 169 modules   DELTA: +1
+  gitlab-duo.ts           before:IN   after:IN   ← VẪN CÒN NẠP
+  gitlab-duo-workflow.ts  before:IN   after:IN   ← VẪN CÒN NẠP
+  google-auth.ts          before:IN   after:IN   ← VẪN CÒN NẠP
+  kimi.ts                 before:IN   after:IN   ← VẪN CÒN NẠP
+```
+
+**Việc này không thể làm như tài liệu mô tả.** Không phải vì khó, mà vì `stream.ts` không phải lá duy nhất của bốn module đó — có **hai đường khác** kéo chúng lại, và một trong hai đường là **vòng tuần hoàn `stream.ts ↔ provider`**. Hai hệ quả trực tiếp:
+
+1. **Cổng hoàn thành của tài liệu không thể đỏ.** Nó đòi "con số tốt hơn baseline", mà con số đó **bất biến** trước và sau.
+2. **Mục này là làm mới — nhưng đã có sẵn một bản mẫu rất giống ở `pi`.** `pi-ref` có trọn một hệ `*.lazy.ts` với đúng cái cơ chế giải quyết chỗ kẹt của omp. Tài liệu ghi *"không có tệp nào ở `pi` để chép cho riêng mảng này"* — **điều đó sai**.
+
+Bảng kiểm lại neo, 13 mục: **8 đúng, 4 sai, 1 phụ thuộc.**
+
+| # | neo trong tài liệu | trạng thái | ghi chú |
+| --- | --- | --- | --- |
+| 1 | `packages/ai/src/stream.ts:29` | ✅ ĐÚNG | `import { streamGitLabDuo } from "./providers/gitlab-duo";` |
+| 2 | `packages/ai/src/stream.ts:30` | ✅ ĐÚNG | dấu `…` che `type GitLabDuoWorkflowOptions` |
+| 3 | `packages/ai/src/stream.ts:32` | ✅ ĐÚNG | `import { getVertexAccessToken } from "./providers/google-auth";` |
+| 4 | `packages/ai/src/stream.ts:35` | ✅ ĐÚNG | `import { streamKimi } from "./providers/kimi";` |
+| 5 | `register-builtins` ">12 provider" | ✅ ĐÚNG | 13 namespace import ở `:17–:29` |
+| 6 | `api-registry.ts` + `getCustomApi` = kỹ thuật lazy | ❌ SAI MỘT NỬA | `api-registry.ts:91` là `Map.get` thuần, không lazy. Lazy thật ở `registry/hooks/*.ts` (22 chỗ / 4 file) |
+| 7 | "không có tệp nào ở `pi` để chép" | ❌ SAI | `pi-ref/packages/ai/src/api/lazy.ts:46-61` `lazyStream` + 13 file `*.lazy.ts` |
+| 8 | "không có nghĩa vụ attribution" | ⚠️ PHỤ THUỘC | đúng nếu không chép; sai nếu chép `lazyStream` (MIT, Zechner) |
+| 9 | `AGENTS.md` mục cấm inline import | ✅ ĐÚNG | `AGENTS.md:46` |
+| 10 | `bun run check:ts` | ✅ ĐÚNG | `package.json:90` |
+| 11 | Cổng entry-graph GAP-M1B-1 | ❌ CHƯA TỒN TẠI | `scripts/check-entry-graphs.mjs` không có; grep → 0 hit |
+| 12 | Quy tắc "phạm vi ngoại lệ là MỘT file" | ❌ KHÔNG THỂ ĐÚNG | 22 chỗ `() => import(` đã tồn tại trong 4 file, trước khi mục này bắt đầu |
+| 13 | "4 value-import này nạp code không liên quan lúc import" | ⚠️ ĐÚNG NHƯNG VÔ DỤNG | cắt cả 4 ⇒ **0 module rời**, 4 module vẫn `IN GRAPH` |
+
+Bốn neo dòng nằm trong khối `:25–:39` của `stream.ts`, xen kẽ với 8 `import type` (`:25,26,27,28,31,33,34,36`). Chỉ 4 dòng kia là **value-import**; 8 dòng còn lại là type-only nên `verbatimModuleSyntax` (`tsconfig.base.json:13`) loại khi build — chúng không kéo module nào vào runtime.
+
+**Đường kéo lại — đây là lý do việc không chạy được.** Đã dựng closure value-import tĩnh từ `stream.ts` (168 module), rồi **cắt thử cả 4 dòng** trong chính cây (file tạm đặt cùng thư mục để relative import vẫn resolve) và dựng lại. Kết quả:
+
+```
+providers/gitlab-duo.ts  (đường ngắn nhất còn lại, 5 cạnh):
+  0. stream.ts
+  1. providers/synthetic.ts          ← stream.ts:39  import { streamSynthetic }
+  2. providers/openai-anthropic-shim.ts  ← synthetic.ts:17
+  3. stream.ts                       ← openai-anthropic-shim.ts:12  import { ANTHROPIC_THINKING, mapAnthropicToolChoice } from "../stream"
+  4. providers/gitlab-duo.ts
+
+providers/kimi.ts (cùng hình):
+  stream.ts → synthetic.ts → openai-anthropic-shim.ts → stream.ts → providers/kimi.ts
+
+providers/gitlab-duo-workflow.ts (cùng hình):
+  stream.ts → synthetic.ts → openai-anthropic-shim.ts → stream.ts → providers/gitlab-duo-workflow.ts
+
+providers/google-auth.ts (4 cạnh, không qua vòng):
+  stream.ts → providers/register-builtins.ts  ← stream.ts:54
+           → providers/google-vertex.ts      ← register-builtins.ts:25
+           → providers/google-auth.ts         ← google-vertex.ts:6
+```
+
+**(a) Vòng tuần hoàn `stream.ts ↔ provider`.** 9 provider value-import ngược lại `../stream`: `openai-anthropic-shim.ts:12`, `gitlab-duo.ts:5`, `google.ts:2`, `azure-openai-responses.ts:3`, `ollama.ts:4`, `openai-codex-responses.ts:26`, `openai-responses.ts:4`, `anthropic.ts:20`, `openai-completions.ts:11`. Chỉ cần một cặp (`stream.ts` → `synthetic.ts` → `openai-anthropic-shim.ts` → `stream.ts`) là cả ba module gitlab/kimi quay lại. Cắt import ở `stream.ts` **không cắt được vòng** — phải cắt ở `synthetic.ts:17` hoặc ở `openai-anthropic-shim.ts:12`.
+
+**(b) Đường vòng qua `register-builtins`.** `stream.ts:54` value-import `register-builtins`, và `register-builtins.ts:25` value-import `google-vertex`, và `google-vertex.ts:6` value-import `getVertexAccessToken`. Nên `google-auth` nằm trong graph **dù `stream.ts:32` có bị xoá hay không**. Cách duy nhất cắt được: `google-vertex.ts` cũng phải lazy, hoặc `register-builtins` phải lazy.
+
+**Bảng điểm sửa.**
+
+| path | symbol | TRƯỚC (nguyên văn từ file thật) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `packages/ai/src/stream.ts:29` | `streamGitLabDuo` | `import { streamGitLabDuo } from "./providers/gitlab-duo";` | xoá dòng; call site `:953` và `:1472` gọi qua `lazyStream(model, async () => (await loadGitLabDuo()).streamGitLabDuo(...))` |
+| `packages/ai/src/stream.ts:30` | `streamGitLabDuoWorkflow` + `type GitLabDuoWorkflowOptions` | `import { type GitLabDuoWorkflowOptions, streamGitLabDuoWorkflow } from "./providers/gitlab-duo-workflow";` | **TÁCH HAI DÒNG**: giữ `import type { GitLabDuoWorkflowOptions } from "./providers/gitlab-duo-workflow";` (type-only, `:967` còn dùng), bỏ phần value; call site `:964` và `:1486` đi qua `lazyStream` |
+| `packages/ai/src/stream.ts:32` | `getVertexAccessToken` | `import { getVertexAccessToken } from "./providers/google-auth";` | xoá dòng; call site `:736` (`await` sẵn) → `const { getVertexAccessToken } = await loadGoogleAuth();` |
+| `packages/ai/src/stream.ts:35` | `streamKimi` | `import { streamKimi } from "./providers/kimi";` | xoá dòng; call site `:1504` đi qua `lazyStream` |
+| `packages/ai/src/providers/google-vertex.ts:6` | `getVertexAccessToken` | `import { getVertexAccessToken } from "./google-auth";` | **BẮT BUỘC** — không sửa dòng này thì `google-auth` vẫn nạp qua `register-builtins:25`. Đổi thành lazy trong `streamGoogleVertex` (`:90`) |
+| `packages/ai/src/providers/openai-anthropic-shim.ts:12` | `ANTHROPIC_THINKING, mapAnthropicToolChoice` | `import { ANTHROPIC_THINKING, mapAnthropicToolChoice } from "../stream";` | **BẮT BUỘC** — cắt chỗ vòng tuần hoàn. Chọn một trong hai: (i) dời 2 symbol này sang một module trung lập không import ngược, hoặc (ii) `stream.ts` gọi `streamSynthetic` cũng qua `lazyStream` |
+| `packages/ai/src/providers/synthetic.ts:17` | `streamOpenAIAnthropicShim` | `} from "./openai-anthropic-shim";` | chỉ sửa nếu chọn phương án (ii) ở dòng trên |
+| `packages/ai/src/registry/transports.ts` **(tệp MỚI)** | `PROVIDER_TRANSPORTS` | — | registry value duy nhất chứa `() => import(...)`; **mọc quanh 4 provider**; export `loadGitLabDuo()`, `loadGitLabDuoWorkflow()`, `loadGoogleAuth()`, `loadKimi()` + `lazyStream()` (port từ `pi/api/lazy.ts:46`) |
+| `AGENTS.md:46` | luật cấm inline import | `- **NEVER use inline imports** — no await import(), no import("pkg").Type in type positions, no dynamic type imports. Always top-level.` | thêm một câu ngoại lệ **giới hạn theo tên file**: `packages/ai/src/registry/transports.ts` là nơi duy nhất được phép `() => import(...)`, và chỉ để nạp provider transport theo nhu cầu |
+
+**Các bước có neo đã kiểm.**
+
+**Bước 0 — Chốt quyết định attribution (chặn bước 1).** Chép `lazyStream` từ `pi` ⇒ có nghĩa vụ MIT; tự viết lại ⇒ không có. Phải chốt trước khi viết dòng nào.
+
+**Bước 1 — Chờ GAP-M1B-1 có baseline.** Xác nhận hiện trạng: `ls scripts/check-entry-graphs.mjs` → *No such file or directory*; `grep -rniE 'entry.?graph|bundle.?budget|startup.?budget|graph.?cost' package.json scripts/ .github/` → **0 hit**. Cổng **chưa tồn tại**. Baseline phải chụp sau sóng port, không phải ở HEAD hôm nay.
+
+**Bước 2 — Tạo `packages/ai/src/registry/transports.ts`.** Chứa `PROVIDER_TRANSPORTS` và `lazyStream`. `lazyStream` là phần khó: `streamGitLabDuo` (`gitlab-duo.ts:90`), `streamGitLabDuoWorkflow` (`gitlab-duo-workflow.ts:423`) và `streamKimi` (`kimi.ts:32`) đều trả `AssistantMessageEventStream` **đồng bộ** — không `async`. `await import()` bên trong một hàm đồng bộ là bất khả thi. Lấy nguyên văn `pi-ref/packages/ai/src/api/lazy.ts:46-61`, `createSetupErrorMessage` ở `:4-23`, `forwardStream` ở `:31-39`.
+
+**Bước 3 — Sửa `stream.ts:29,30,32,35`.** Nhớ `:30` phải **tách** type và value (`:967` còn dùng `GitLabDuoWorkflowOptions`). Call site cần sửa: `:736` (getVertex), `:953`, `:964` (gitlab duo), `:1472`, `:1486` (workflow), `:1504` (kimi).
+
+**Bước 4 — Cắt hai đường vòng. Đây là bước quyết định mục này còn ích hay không.** `google-vertex.ts:6` + `:90` — nếu bỏ qua, `google-auth` vẫn nạp qua `register-builtins:25`. `openai-anthropic-shim.ts:12` hoặc `synthetic.ts:17` — nếu bỏ qua, cả ba module gitlab/kimi quay lại qua vòng.
+
+**Bước 5 — Bọc lỗi, nêu đúng tên provider.** Đây là điều kiện âm bắt buộc. `createSetupErrorMessage` của `pi` (`lazy.ts:4-23`) đã điền `api`/`provider`/`model` từ `model` vào message, nhưng `errorMessage` vẫn là `error.message` thô — tức là **"Cannot find module" vẫn lọt lên**. Phải ghi đè phần này: khi `load` ném lỗi, message phải chứa tên provider cụ thể (`gitlab-duo`, `gitlab-duo-agent`, `google-vertex`, `kimi-code`).
+
+**Bước 6 — Ghi ngoại lệ vào `AGENTS.md:46` cùng lúc với code.** Giới hạn bằng **tên file**, không ghi chung chung "lazy import được phép ở provider" — câu đó không kiểm chứng được ở lần review sau.
+
+**Bước 7 — Đo lại, đối chiếu baseline.** Dùng cổng của GAP-M1B-1.
+
+**Hợp đồng test.** Tệp mới: `packages/ai/test/provider-transport-lazy.test.ts` (viết mới — không có tệp nào để chép cho mảng này). Dùng `bun:test`, `describe/expect/it/vi`.
+
+**Case 1 — hợp đồng tích cực, đủ 4 provider.** Với mỗi provider trong `{gitlab-duo, gitlab-duo-agent, google-vertex, kimi-code}`, gọi `stream(model, context, options)` rồi drain, khẳng định stream kết thúc bằng event `done` (không phải `error`). *Hồi quy:* provider biến mất — `stream` trả về stream ngay nhưng kết thúc bằng `error`, và người dùng thấy provider của họ ngừng hoạt động sau một refactor không liên quan.
+
+**Case 2 — hợp đồng âm bắt buộc, lỗi phải nêu tên provider.** Chặn loader của một provider, rồi khẳng định `errorMessage` **chứa tên provider** và **không chứa** `Cannot find module`. Đây là case tách tối ưu khỏi lỗi. *Hồi quy:* người dùng thấy `Cannot find module '.../providers/kimi'` và không cách nào đoán ra đó là provider nào.
+
+**Case 3 — lazy thật sự lazy, quan sát được.** Khởi tạo một lần, đo side effect: sau khi gọi `stream()` cho provider A rồi lại provider B, module của B **chưa** được nạp cho tới khi stream của B thực sự chạy. Không `mock.module()`. Cách làm đúng: dùng seam của `Bun.plugin` onLoad có phạm vi hẹp, hoặc đếm bằng cờ set trong chính registry, hoặc — đơn giản và chắc nhất — **đo bằng module graph tĩnh** ở case 4.
+
+**Case 4 — graph tĩnh không còn chứa 4 module.** Đây là case chống hồi quy cho **cả cơ chế**, và nó bắt được đúng hai đường vòng ở phần trên. Dùng `Bun.build({ entrypoints: ["…/packages/ai/src/stream.ts"], target: "bun" })` rồi đọc `outputs[0].imports`, khẳng định `imports` **không** chứa `gitlab-duo`, `gitlab-duo-workflow`, `google-auth`, `kimi`. Đây là đọc **graph đã build**, không phải quét văn bản nguồn — nên **không** vi phạm lệ "Never source-grep". *Hồi quy:* ai đó thêm lại một value-import ở bất kỳ đâu trong vòng, module quay lại graph, test đỏ.
+
+**Vệ sinh test (AGENTS.md):** không `mock.module()`; `vi.restoreAllMocks()` trong `afterEach`; không đột biến `Bun.*`/`process.env` ở cả file; không assert kiểu "chuỗi không rỗng" / "dài hơn trước".
+
+**Cổng có đỏ được không — trả lời thẳng: cổng trong tài liệu KHÔNG đỏ được. Cổng thật là test case 4, và nó đỏ được NGAY ở cây hiện tại.**
+
+| # | Lệnh | Đỏ được không? |
+| --- | --- | --- |
+| 1 | `bun run check:ts` | **Có** — nhưng chỉ bắt lỗi kiểu, không bắt hồi quy hiệu năng |
+| 2 | `bun run dev:timing` | **Có** — đo được, nhưng **không tự đỏ**; cần baseline |
+| 3 | Cổng entry-graph của GAP-M1B-1 | **Hiện chưa tồn tại** |
+
+Tài liệu đòi: *"`bun run check:ts` exit 0 **và** cổng entry-graph chạy với con số tốt hơn baseline"*. Đó **không phải một cổng** — đó là một phép đo kèm hy vọng. Nó không đỏ được theo bất kỳ nghĩa nào: ai cũng có thể merge một PR **không cải thiện gì** mà mọi dòng đều xanh. Đây đúng là *"một cổng luôn xanh tệ hơn không có cổng, vì nó tạo cảm giác an toàn giả"* — và với mục này nó còn tệ hơn thông thường, vì phần đo cho thấy con số đó **bất biến** trước và sau khi sửa đúng theo tài liệu.
+
+**Viết lại cho đỏ được — cổng thật:**
+
+> **Cổng của GAP-M1B-5 là `test/provider-transport-lazy.test.ts` case 4.** Khẳng định: module graph tĩnh build từ `packages/ai/src/stream.ts` **không chứa** `providers/gitlab-duo`, `providers/gitlab-duo-workflow`, `providers/google-auth`, `providers/kimi`. Cổng này đỏ được ngay lần chạy đầu tiên trên cây hiện tại — đã đo: cả bốn đều `IN GRAPH` ở HEAD `65cc6c1`. Thêm lại **một** value-import ở bất kỳ đâu trong vòng cũng làm nó đỏ.
+
+Đây là một điểm tốt của mục này mà tài liệu không nói: **vì 4 module hiện vẫn nằm trong graph dù đã có lazy registry ở tầng OAuth, cổng đỏ sẵn ngay** — không phải phải nới ngưỡng, không phải chờ baseline. Và nó bắt được đúng hai đường vòng, tức là nó bắt được thứ mà "con số tốt hơn baseline" không bắt được.
+
+Giữ cổng 1 và 2 như **hàng phụ** (không phải hàng định nghĩa): `check:ts` bắt lỗi kiểu; `dev:timing` cung cấp **con số** để đưa vào mô tả PR, nhưng không ai assert số đó. Và ghi rõ trong PR: *con số giảm được bao nhiêu* — đó là thông tin cho người đọc, không phải tiêu chí nghiệm thu.
+
+Cổng hoàn thành (viết lại): **Đỏ được** = case 4, đỏ ngay ở cây hiện tại. **Kèm theo** = `bun run check:ts` exit 0. **Thông tin, không phải tiêu chí** = `bun run dev:timing` chạy được, con số entry-graph giảm, ghi vào mô tả PR. **Bỏ** = cổng entry-graph của GAP-M1B-1 như tiêu chí nghiệm thu — nó chưa tồn tại, và khi có nó cũng chỉ đo tổng ngân sách chứ không chứng minh riêng mục này.
+
+**Cạm bẫy riêng của mục này**, xếp theo mức độ dễ làm sai.
+
+1. **Sửa xong 4 dòng, tưởng xong, thực tế 0 module rời đi.** Đây là cạm bẫy số một và nó **đã được chứng minh bằng đo**. `stream.ts` không phải lá duy nhất. Hai đường vòng: `register-builtins.ts:25 → google-vertex.ts:6 → google-auth`, và vòng tuần hoàn `stream.ts:39 → synthetic.ts:17 → openai-anthropic-shim.ts:12 → stream.ts`. **Đừng tin grep "chỉ có stream.ts import"** — grep không thấy đường vòi bắc qua 2-3 file.
+2. **`await import()` không dùng được trong hàm đồng bộ — và cả ba provider đều đồng bộ.** `streamGitLabDuo`, `streamGitLabDuoWorkflow`, `streamKimi` đều khai `): AssistantMessageEventStream {` — trả về **ngay**, không phải `Promise`. `streamDispatch` (`stream.ts:934`) và `streamSimpleRequest` (`stream.ts:1254`) cũng vậy. Sửa nhanh nhất — biến chúng thành `async` — **phá hợp đồng của `stream()`** (`stream.ts:910`, hợp đồng đồng bộ mà agent và `cache-warmer.ts:480` dùng). Đây chính là lý do `lazyStream` tồn tại trong `pi`. Và omp **đã có** đúng mẫu này rồi — `packages/ai/src/stream.ts:1342` (`void (async () => {`) và `providers/ollama.ts:454`, `providers/apple-foundation-models.ts:266`, `providers/pi-native-client.ts:154`.
+3. **Bỏ qua dòng `:30` thì vỡ kiểu.** Dòng đó gộp **type và value**: `import { type GitLabDuoWorkflowOptions, streamGitLabDuoWorkflow } from …`. Xoá cả dòng thì `:967` (`} as GitLabDuoWorkflowOptions);`) hỏng. Phải tách: giữ `import type`, bỏ phần value.
+4. **`createSetupErrorMessage` của `pi` KHÔNG đáp ứng điều kiện âm của tài liệu.** Nó điền `api`/`provider`/`model` vào *object*, nhưng `errorMessage` vẫn là `error.message` thô (`lazy.ts:20`) — tức `Cannot find module` **vẫn lọt lên**. Phải ghi đè, không chép nguyên xi.
+5. **Quy tắc "một file" của tài liệu đã sai sẵn trước khi bắt đầu.** `rg -c '() => import(' packages/ai/src` ở HEAD trả về **22 chỗ trong 4 file** (`registry/hooks/{api-key,custom,oauth-code,device-code}.ts`). Sau khi làm xong mục này sẽ là ~26 chỗ trong 5 file. Lệnh `grep -rn '() => import(' packages/ai/src` **không bao giờ** chứng minh được "một file" — nó trả về ≥22 hit ngay bây giờ. Phải viết lại thành: *không file nào ngoài `registry/hooks/*` và `registry/transports.ts` được chứa `() => import(`*.
+6. **Cổng của GAP-M1B-1 chưa tồn tại.** `ls scripts/check-entry-graphs.mjs` → *No such file*; grep → 0 hit. Bước 1 của mục này là **chờ một thứ chưa có**. Nếu ai đó chạy phiếu này hôm nay, bước 1 không thoả được.
+7. **Attribution.** Tài liệu khẳng định "không có nghĩa vụ attribution" — chỉ đúng nếu **không chép gì từ `pi`**. Nhưng `pi` có sẵn đúng cái `lazyStream` giải quyết cạm bẫy 2. Chép nó ⇒ MIT với `Copyright (c) 2025 Mario Zechner` phải nằm ở dòng đầu. Quyết định này phải chốt trước khi viết dòng code đầu tiên.
+
+**Ghi chú về con số 168:** đó là **module cục bộ** trong closure value-import, đo bằng cách duyệt `import`/`export … from` không bắt đầu bằng `type`. Nó không phải ms, và không phải số module mà `PI_TIMING` sẽ báo — `PI_TIMING` đo thời gian thật. Dùng 168 để **chứng minh cấu trúc graph**; dùng `dev:timing` để lấy **ms**.
+
+Còn treo, cần người quyết: có chép `lazyStream` từ `pi` không (khuyến nghị: **chép** — 15 dòng, MIT, viết lại chỉ để tránh attribution là tốn kém hơn giá trị); cổng entry-graph của GAP-M1B-1 khi nào có, và có chấp nhận chạy không có nó không; phạm vi ngoại lệ ghi ở `AGENTS.md:46` thế nào; và cắt vòng tuần hoàn có nằm trong phạm vi mục này không (không cắt thì mục này **không đem lại lợi ích gì**).
 
 
 ---

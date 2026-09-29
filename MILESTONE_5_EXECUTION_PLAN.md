@@ -481,6 +481,126 @@ Cũng đừng để thay đổi `APP_NAME` của W3 lọt vào đây: `WIRE_NAME
 | `acp-agent.ts:656` (`name: "oh-my-pi"`) nên được đưa vào wire set của W1 hoặc được khoá bằng test — plan gọi đây là N5 và để lựa chọn mở. | ĐÃ GIẢI QUYẾT — phương án thứ hai của plan đã được thoả bởi code sẵn có, còn phương án thứ nhất thì sai. | Đừng đưa `"oh-my-pi"` qua `WIRE_NAME`. Đó là tên package npm có scope, là một danh tính khác với token trần `"omp"`, và một hằng số tên `WIRE_NAME` giữ một tên có scope sẽ mô tả sai bản chất của hằng số — cùng lập luận AGENTS.md dùng khi phân biệt danh sách basename package với danh sách scope. Phương án thay thế của plan ("khẳng định bằng test rằng nó cố ý đứng yên") đã có sẵn: `acp-initialize-conformance.test.ts:233-238` khẳng định `expect(response.agentInfo).toEqual(expect.objectContaining({ name: "oh-my-pi", title: "omp", version: VERSION }))`. Vậy yêu cầu của plan là "đừng để nó rơi vào khoảng trống" được đáp ứng bằng cách để yên dòng 656 và để test đó làm việc của nó. Dòng 656 không cần sửa và không cần test mới; nó chỉ cần đặc tả nói rõ như vậy — và đó chính là thứ giải quyết nó. |
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Trạng thái (nguyên văn từ phiếu):** phần lớn neo đúng, nhưng **7 nhóm neo sai/đã lỗi thời** và **1 cổng không thể đỏ được** (cổng 5). Hai lỗi nghiêm trọng nhất: `acp-agent.ts:656` không phải `"oh-my-pi"` như kế hoạch nói, và toàn bộ môi trường "chưa build addon" đã lỗi thời.
+
+Bảy nhóm neo lệch, đã mở từng file và đọc:
+
+| Neo trong kế hoạch | Sai lệch | Sự thật trên cây |
+| --- | --- | --- |
+| `dirs.ts:21` là `export const APP_NAME`; `APP_URL` ở 24; `CONFIG_DIR_NAME` ở 27; `USER_AGENT` ở 36 | lệch 1 dòng | 21 là JSDoc; `APP_NAME` ở **22**; `APP_URL` **25**; `CONFIG_DIR_NAME` **28**; `USER_AGENT` **37** |
+| `acp-agent.ts:656` là `name: "oh-my-pi"` | sai về **nội dung** | 656 là `name: "omp",` — cùng token trần, không phải tên có scope |
+| `acp-initialize-conformance.test.ts:233-238` khoá `{ name, title, version }` | thiếu một khoá | chỉ khoá `{ title: "omp", version: VERSION }` — **không có** khoá `name` |
+| `title: "omp"` ở `acp-initialize-conformance.test.ts:237` | lệch 2 dòng | ở dòng **235** |
+| Quyết định N5 ("test sẵn có đã khoá cả hai, nên không cần dòng code nào") | **sai lật đầu** | chỉ khoá `title`; `agentInfo.name` không test nào khoá |
+| `hindsight-bank.test.ts` khoá ở 82, 102, 108, 114, 136, 210, 220, 277, 278 (9 chốt) | đếm thừa | 7 chốt thật: **82, 95, 101, 107, 123, 191, 201** |
+| `warp-events.test.ts:111` là chốt vàng duy nhất | thiếu một | có chốt thứ hai ở **:770** (`agent: "omp"` trong `toEqual` của OSC `permission_request`) |
+
+Bảng điểm sửa — cột TRƯỚC lấy nguyên văn từ file thật, đã mở và đọc:
+
+| `đường/dẫn` | symbol | TRƯỚC (nguyên văn từ file) | SAU (hình dạng sau khi sửa) |
+| --- | --- | --- | --- |
+| `packages/utils/src/dirs.ts` (chèn **sau dòng 22**) | `WIRE_NAME` (mới) | *(không có)* — dòng 22 hiện là `export const APP_NAME: string = "omp";`, dòng 23 là trống | thêm 1 khối JSDoc 1 dòng + `export const WIRE_NAME: string = "omp";` |
+| `packages/coding-agent/src/dap/session.ts:3` | import `@oh-my-pi/pi-utils` | `import { logger, ptree, untilAborted } from "@oh-my-pi/pi-utils";` | `import { logger, ptree, untilAborted, WIRE_NAME } from "@oh-my-pi/pi-utils";` |
+| `packages/coding-agent/src/dap/session.ts:1465` | `#buildInitializeArguments` | `clientID: "omp",` | `clientID: WIRE_NAME,` |
+| `packages/coding-agent/src/dap/session.ts:1466` | `#buildInitializeArguments` | `clientName: "omp",` | `clientName: WIRE_NAME,` |
+| `packages/coding-agent/src/blob-broker/uploaders-legacy.ts` (sau dòng 1) | import mới | *(không có — file không hề có import `@oh-my-pi/pi-utils`)* | `import { WIRE_NAME } from "@oh-my-pi/pi-utils";` |
+| `packages/coding-agent/src/blob-broker/uploaders-legacy.ts:236` | `createPuushUploader` → `upload` | `const body = multipartFile(request, "f", { k: apiKey, z: "omp" });` | `const body = multipartFile(request, "f", { k: apiKey, z: WIRE_NAME });` |
+| `packages/coding-agent/src/modes/warp-events.ts:4` | import `@oh-my-pi/pi-utils/dirs` | `import { VERSION } from "@oh-my-pi/pi-utils/dirs";` | `import { VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils/dirs";` |
+| `packages/coding-agent/src/modes/warp-events.ts:59` | chú thích giải thích | `// Warp resolves this via CLIAgent.command_prefix(); OhMyPi is "omp".` | `// Warp resolves this via CLIAgent.command_prefix(); the value is the wire contract, see WIRE_NAME.` |
+| `packages/coding-agent/src/modes/warp-events.ts:60` | `emit()` → `body` | `agent: "omp",` | `agent: WIRE_NAME,` |
+| `packages/coding-agent/src/modes/acp/acp-agent.ts:5` | import `@oh-my-pi/pi-utils` | `import { getBlobsDir, isEnoent, logger, type postmortem, VERSION } from "@oh-my-pi/pi-utils";` | `import { getBlobsDir, isEnoent, logger, type postmortem, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";` |
+| `packages/coding-agent/src/modes/acp/acp-agent.ts:657` | `initialize()` → `agentInfo` | `title: "omp",` | `title: WIRE_NAME,` |
+| `packages/coding-agent/src/modes/acp/acp-agent.ts:656` | `initialize()` → `agentInfo` | `name: "omp",` | **KHÔNG ĐỔI** — xem cạm bẫy bên dưới |
+| `packages/coding-agent/src/hindsight/bank.ts:25` | import `@oh-my-pi/pi-utils` | `import { logger } from "@oh-my-pi/pi-utils";` | `import { logger, WIRE_NAME } from "@oh-my-pi/pi-utils";` |
+| `packages/coding-agent/src/hindsight/bank.ts:29` | `DEFAULT_BANK_NAME` | `const DEFAULT_BANK_NAME = "omp";` | `const DEFAULT_BANK_NAME = WIRE_NAME;` |
+| `packages/utils/test/wire-name.test.ts` | file mới | *(chưa tồn tại — đúng như thiết kế)* | 1 import + 1 `it()` + 1 `expect()` |
+
+**Không được đụng** (đã kiểm, cần giữ nguyên byte): `dirs.ts:22` `APP_NAME`, `dirs.ts:25` `APP_URL`, `dirs.ts:28` `CONFIG_DIR_NAME`, `dirs.ts:37` `USER_AGENT`, `hindsight/bank.ts:30-32` `PROJECT_TAG_PREFIX`/`UNKNOWN_PROJECT`/`MISSION_SET_CAP`, `hindsight/settings.ts:172`, `catalog/src/wire/codex.ts:52`, và toàn bộ `packages/coding-agent/test/`.
+
+Các bước có neo đã kiểm (dùng số dòng mà phiếu đã mở và đọc):
+
+1. **`packages/utils/src/dirs.ts`, chèn sau dòng 22** — kế hoạch ghi dòng 21, lệch 1. Dòng 21 là JSDoc, hằng số ở 22. Chèn vào khoảng trống giữa 22 và 23. Không cần sửa barrel: `packages/utils/src/index.ts:5` là `export * from "./dirs";` nên `WIRE_NAME` tự re-export. Giá trị **phải** là chuỗi `"omp"` — không viết `"ultraworkers"`, không dẫn xuất từ `APP_NAME`, không làm bí danh của `APP_NAME`.
+2. **`packages/coding-agent/src/modes/warp-events.ts`, dòng 4, 59, 60** — đã đọc 1–10 và 50–70, cả ba neo đúng. `git grep -n '"omp"'` trên file này phải **không có hit** (cả dòng 59 lẫn 60).
+3. **`packages/coding-agent/src/modes/acp/acp-agent.ts`, dòng 5, 657** — đã đọc 1–10 và 644–665, hai neo đúng. Đã đọc 653–659: 655 là `agentInfo: {`, **656 là `name: "omp",`**, 657 là `title: "omp",`, 658 là `version: VERSION,`. Dòng 656 **không đụng**. Dòng 648 là `name: "Set up omp in terminal"` — văn xuôi hướng tới người dùng, thuộc W3/W8b, đừng đụng.
+4. **`packages/coding-agent/src/blob-broker/uploaders-legacy.ts`, dòng 236 + import mới** — đã đọc 1–15 và 230–242, dòng 236 đúng. `grep -n "pi-utils"` trên file trả về **rỗng**, xác nhận đây là dòng import mới thật sự; đặt sau `node:buffer`, trước các import cục bộ. Sau khi sửa, `git grep -n '"omp"'` trên file phải **không có hit**.
+5. **`packages/coding-agent/src/hindsight/bank.ts`, dòng 25, 29** — đã đọc 1–60, cả hai neo đúng. Dòng 30–32 giữ nguyên. Sau khi sửa, `git grep -n '"omp"'` trên file phải **không có hit**. **KHÔNG** đổi `packages/coding-agent/src/hindsight/settings.ts:172` — đã đọc, là `export const cfgHindsightRetainContext = register({ id: "hindsight.retainContext", type: "string", default: "omp" });`.
+6. **`packages/coding-agent/src/dap/session.ts`, dòng 3, 1465, 1466** — đã đọc 1–6 và 1458–1475, cả ba neo đúng. Không cần dòng import mới: `@oh-my-pi/pi-utils` khai ở `packages/coding-agent/package.json:546` (`"@oh-my-pi/pi-utils": "catalog:"`) và barrel `packages/utils/src/index.ts:5` re-export qua `dirs`. Đây là vị trí **duy nhất** trong năm không có test vàng.
+7. **`packages/utils/test/wire-name.test.ts` (TẠO MỚI)** — kế hoạch tự mâu thuẫn ở bước này: nó bảo import từ `../src/dirs` rồi lại nói "khớp với kiểu của `dirs.test.ts`". Đã đọc `dirs.test.ts:6-14`: file đó import từ `"@oh-my-pi/pi-utils/dirs"`, **không phải** đường dẫn tương đối. Cả hai quy ước đều tồn tại trong `packages/utils/test/`; `../src/<mod>` là đa số (`acp.test.ts:11`, `chalk.test.ts:2`, `dates.test.ts:2`, `dom.test.ts:4`, `math-delimiters.test.ts:2`, `fs-open.test.ts:6-7`) → **dùng `../src/dirs`**. Đúng **một** khẳng định; không source-grep, không `mock.module()`, không import gì từ `packages/coding-agent`.
+8. **repo-wide** — `git add -A && git diff --cached --stat`. Danh sách file đổi phải đúng **7 đường dẫn, không hơn**: `packages/utils/src/dirs.ts`, `packages/coding-agent/src/dap/session.ts`, `packages/coding-agent/src/blob-broker/uploaders-legacy.ts`, `packages/coding-agent/src/modes/warp-events.ts`, `packages/coding-agent/src/modes/acp/acp-agent.ts`, `packages/coding-agent/src/hindsight/bank.ts`, `packages/utils/test/wire-name.test.ts` (mới). `packages/catalog/src/wire/codex.ts:52` phải **KHÔNG** nằm trong danh sách. Rồi chạy `bun run check:ts`.
+9. **CHANGELOG** — **KHÔNG** thêm mục nào vào `packages/utils/CHANGELOG.md`: thay đổi vô hình với người dùng.
+
+Hợp đồng test — file mới: `packages/utils/test/wire-name.test.ts`, đúng một `it()` khoá `WIRE_NAME === "omp"`.
+
+| Test file | Trạng thái | Khóa cái gì | Đã chạy? |
+| --- | --- | --- | --- |
+| `packages/utils/test/wire-name.test.ts` | **MỚI** | `WIRE_NAME === "omp"` — hằng số dùng chung còn giữ đúng byte | chưa (chưa tồn tại) |
+| `packages/coding-agent/test/modes/warp-events.test.ts:111` | CÓ SẴN, **KHÔNG ĐỔI** | `agent: "omp"` trong `JSON.stringify` chính xác của thân OSC 777 | **24 pass / 0 fail** |
+| `packages/coding-agent/test/modes/warp-events.test.ts:770` | CÓ SẴN, **KHÔNG ĐỔI** | `agent: "omp"` lần thứ hai, trong `toEqual` của OSC `permission_request` | cùng lần chạy trên |
+| `packages/coding-agent/test/acp-initialize-conformance.test.ts:235` | CÓ SẴN, **KHÔNG ĐỔI** | `title: "omp"` qua `objectContaining` | cùng lần chạy |
+| `packages/coding-agent/test/blob-uploaders-self-hosted-legacy.test.ts:342` | CÓ SẴN, **KHÔNG ĐỔI** | `form.get("z") === "omp"` | cùng lần chạy |
+| `packages/coding-agent/test/hindsight-bank.test.ts:82,95,101,107,123,191,201` | CÓ SẴN, **KHÔNG ĐỔI** | 7 bank id dẫn xuất: `"omp"`, `"omp-proj"`, `"omp-unknown"`, `"omp-general"`, `"omp"`, `"omp-myrepo"`, `"omp-bare-repo.git"` | cùng lần chạy |
+
+Đã chạy thật: `bun test packages/coding-agent/test/modes/warp-events.test.ts` → 24 pass 0 fail (106 `expect()`); và `bun test` trên ba file kia → 42 pass 0 fail (210 `expect()`).
+
+**Bốn test vàng phải được giữ nguyên từng byte — dùng chuỗi trần, KHÔNG chuyển sang so sánh với `WIRE_NAME`.** Nếu một test khẳng định `emitted === WIRE_NAME`, thì đặt `WIRE_NAME = "ultraworkers"` khiến nó đỏ-xanh trong khi cả năm tích hợp đều hỏng. Hằng số là thứ **đang được đổi tên**; chuỗi trần mới là **hợp đồng**.
+
+**Khoảng trống đã biết, nói thẳng:** vị trí DAP (`dap/session.ts:1465-1466`) không có test trực tiếp — `#buildInitializeArguments` là method ES `#private` chỉ đi tới qua toàn bộ đường khởi chạy `DapSessionManager`, và repo không có file test DAP nào (chỉ có `packages/coding-agent/test/dap-write-sink-flush.typecheck.ts`, 258 byte, đã xác nhận tồn tại). Được đóng gián tiếp: cả năm vị trí đọc cùng một hằng số. **Không** dựng harness DAP cho mục này.
+
+**Người dùng thấy gì nếu hồi quy:** nếu `WIRE_NAME` bị đặt thành `"ultraworkers"`, **không có lỗi nào được ném ra**. Một terminal Warp ngừng gán sự kiện cho omp; một client ACP hiện sai agent title; một DAP debug adapter không còn nhận ra yêu cầu initialize của chúng ta; một lượt tải lên puush bị từ chối hoặc bị ghi dưới một tác giả lạ; và mọi ký ức Hindsight sẵn có rơi vào một bank mà người dùng không còn truy cập được.
+
+Cổng có đỏ được không — **3 trên 5**. Cổng 5 của kế hoạch **không bao giờ có thể xanh** và phải viết lại; giữ nguyên câu đó, đừng làm nó trông xanh hơn.
+
+| Cổng | Lệnh | Đỏ được? |
+| --- | --- | --- |
+| (1) cổng mang tải | `bun test packages/utils/test/wire-name.test.ts` | **ĐỎ ĐƯỢC** ✅ — đỏ ngay khi `WIRE_NAME` khác `"omp"`. Đã kiểm chứng bằng cách tạm đặt `"ultraworkers"`, xác nhận một lần đỏ, hoàn nguyên. |
+| (2) kiểu | `bun run check:ts` | **ĐỎ ĐƯỢC** ✅ — script có thật ở `package.json:90`. Baseline tại HEAD `47720fd`: **exit code 0**, cả 13 package `check:types` đều Done, nên đỏ sau khi sửa là lỗi của W1 chứ không phải nợ tồn đọng. |
+| (3) khoá vàng còn nguyên | `git diff HEAD --stat -- packages/coding-agent/test/ packages/catalog/` | **ĐỎ ĐƯỢC, nhưng phải viết lại** ⚠️ — bản gốc `git diff packages/coding-agent/test/ packages/catalog/` *không* bắt được việc thêm một file test mới khi file đó đã `git add`. Phải dùng `--cached`-sau-HEAD như trên. |
+| (4) phạm vi | `git add -A && git diff --cached --stat` | **ĐỎ ĐƯỢC** ✅ — đỏ nếu danh sách file đổi khác 7 đường dẫn. |
+| (5) quét sạch chuỗi trần | bản gốc của kế hoạch | **KHÔNG THỂ ĐỎ ĐƯỢC** 🚨 — phải viết lại. Xem bên dưới. |
+
+Vì sao cổng (5) không bao giờ xanh: baseline đo được là
+
+```
+$ git grep -n '"omp"' -- packages/coding-agent/src/modes/acp/acp-agent.ts
+packages/coding-agent/src/modes/acp/acp-agent.ts:656:				name: "omp",
+packages/coding-agent/src/modes/acp/acp-agent.ts:657:				title: "omp",
+```
+
+Hai hit. Chỉ 657 được sửa, 656 được lệnh **giữ nguyên**. Vậy cổng luôn đỏ → hoặc kỹ sư sửa 656 (đúng thứ bị cấm), hoặc bỏ qua cổng. Cả hai đều tệ. Bản viết lại cho đỏ được:
+
+```bash
+# (5a) Bốn file có thể sạch hoàn toàn — đỏ nếu còn sót:
+git grep -n '"omp"' -- \
+  packages/coding-agent/src/dap/session.ts \
+  packages/coding-agent/src/blob-broker/uploaders-legacy.ts \
+  packages/coding-agent/src/modes/warp-events.ts \
+  packages/coding-agent/src/hindsight/bank.ts
+# mong đợi: KHÔNG có hit
+
+# (5b) acp-agent.ts: đúng MỘT hit còn lại, và nó phải là `name:`, không phải `title:`
+git grep -n '"omp"' -- packages/coding-agent/src/modes/acp/acp-agent.ts
+# mong đợi: ĐÚNG 1 dòng, dòng 656, nội dung `name: "omp",`
+```
+
+Cổng này đỏ thật: nếu kỹ sư gộp 656 vào, hoặc bỏ sót một hit nào đó, hoặc sửa 656 thành `WIRE_NAME` khiến còn 0 hit — cả ba đều đỏ.
+
+⚠️ **Cổng chạy được ngay hôm nay, không cần build gì thêm.** Kế hoạch nói máy chưa build addon; điều đó **không còn đúng**. `packages/natives/native/pi_natives.darwin-arm64.node` đã tồn tại (185 MB, build 07:32), `ninja` đã cài ở `/opt/homebrew/bin/ninja`, và cả bốn test vàng đều xanh (24 + 42 = 66 test, 0 fail). Toàn bộ khối "cần addon native / `brew install ninja` / `bun --cwd=packages/natives run build`" trong kế hoạch là **thừa** — bỏ qua nó.
+
+Mục này XONG khi **cả năm** điều sau đúng: (1) `bun test packages/utils/test/wire-name.test.ts` **ĐỎ** nếu `WIRE_NAME !== "omp"`; (2) `bun run check:ts` **XANH**; (3) `git diff HEAD --stat -- packages/coding-agent/test/ packages/catalog/` **RỖNG**; (4) `git add -A && git diff --cached --stat` liệt kê **đúng 7** đường dẫn và `packages/catalog/src/wire/codex.ts` không nằm trong đó; (5) cổng (5a)+(5b): bốn file sạch, `acp-agent.ts` còn **đúng một** hit ở dòng 656 với nội dung `name:`.
+
+Cạm bẫy riêng của mục này — dễ làm sai nhất là **`acp-agent.ts:656`**, và nó làm hỏng cả một quyết định đã được đóng trong đặc tả.
+
+Kế hoạch khẳng định 656 là `name: "oh-my-pi"` và rằng test đã khoá cả `name` lẫn `title`. Đã mở và đọc cả hai; cả hai khẳng định đều sai (xem bảng neo ở trên). Hệ quả: **lý do kế hoạch đưa ra để không được đụng 656 là sai** — "đó là tên package npm có scope, không cùng danh tính với token trần" không có cơ sở, vì 656 là **chính** token trần. Đừng dùng lý do đó để biện minh. `agentInfo.name` không có test nào khoá, nên nó sẽ đổi im lặng khi W7/W9 đổi tên. Cách gõ đúng: sửa **chỉ dòng 657**, để 656 nguyên, để cổng (5b) khoá hành đó.
+
+Biến thể thứ hai tệ không kém: gõ nhầm `"ultraworkers"` vào `WIRE_NAME` vì tên mới nằm ngay đó trong mô tả milestone — cả năm tích hợp đổi danh tính cùng lúc và **không gì ném lỗi**. Hoặc thấy bốn test vàng đỏ rồi "giúp" viết lại chúng để so với `WIRE_NAME` — làm thế thì việc đổi tên trở nên vô hình với bộ test mãi mài, phá hủy đúng mục đích của cả mục. Cổng (3) sinh ra chính vì thế.
+
+Ngoài ra, phải **báo cáo chứ không sửa**: `dirs.ts:1105` còn một giá trị wire `"omp"` thứ hai mà kế hoạch bỏ sót (`getAppName()` đọc `OMP_APP_NAME` rồi fallback `"omp"`), và nó đi ra ngoài qua `packages/ai/src/providers/pi-native-client.ts:127` (header `"x-omp-app"`) cùng `packages/ai/src/auth-broker/remote-store.ts:1415`. Ngoài ra còn `packages/tui/src/terminal-capabilities.ts:1436` (`const OSC99_APP_NAME = "omp";`) đi ra tại dòng 1535 qua trường `f=` của dòng meta OSC 99 — cùng họ với trường `agent` của OSC 777 mà W1 **có** đưa vào. Đừng lặng lẽ thêm chúng vào W1 (kế hoạch cấm vị trí thứ sáu) và đừng lặng lẽ bỏ qua, nếu không lệnh quét `sed` của W7 và đợt quét display-token của W8b sẽ thành thứ tự quyết định.
+
+Cuối cùng: **đừng để `WIRE_NAME` thành bí danh của `APP_NAME`.** Nếu không, việc đổi tên hiển thị ở W3 sẽ lặng lẽ kéo theo giá trị wire — đúng thứ mà `dirs.ts:1103-1105` đang minh hoạ là có thật.
+
+
 ---
 
 
@@ -689,6 +809,131 @@ Rủi ro thứ ba: **"giúp thêm" 10 basename còn thiếu** vào `PI_PACKAGE_N
 | W2 phải đứng trước W7 vì hai chuỗi scope đó là thứ mà sed của W7 'không với tới', nên cơ chế tương thích phải có sẵn trước (plan:8781, plan:8784 'W2 (cứng)'). | **đúng-một-phần** | Claim về cơ chế thì đúng, nhưng lý do sed-sẽ-đè thì không phải là ràng buộc vận hành, và trộn hai thứ lại dẫn tới thứ tự sai. Mẫu của W7 là `@oh-my-pi/` **có dấu gạch chéo cuối**; cả `"@oh-my-pi"` (`:796`) lẫn `"oh-my-pi"` (`:802`) đều không chứa dấu gạch chéo cuối, nên sed chắc chắn không thể chạm vào dòng nào — đúng như chính plan nói ở 8503 và 8964. Ràng buộc thật là ràng buộc **resolve được**: W2b chỉ hợp lệ khi scope `@ultraworkers` đã tồn tại, tức sau đợt đổi tên manifest của W7. Phần thực sự phụ thuộc thứ tự là W2a: việc mở rộng bảng alias chính là thứ giữ cho plugin scope cũ tiếp tục được canonicalize xuyên suốt lúc đổi tên W7, và nửa đó quả thực cần đứng trước W7. Tách work item ra là để tách ràng buộc thứ tự thật khỏi thứ chỉ là mối quan tâm vệ sinh sed. Bằng chứng: `git grep -n 'CANONICAL_PI_SCOPE\|PI_SCOPE_ALIASES'` ở HEAD: chỉ `legacy-pi-compat.ts:796,802` trong source — cả hai đều ở dạng bare-quoted, không dấu gạch chéo cuối. Dòng 8503 và dòng 8964 của plan đều nói mẫu sed có dấu gạch chéo cuối và dạng bare cần grep riêng. |
 | Work-item brief nói repo đang ở git HEAD 5873776. | **cũ** | HEAD hiện tại là `1454dc0` trên nhánh `milestone-1` (`docs: record the two architecture decisions — move all of pi, and re-cut packages`), tức 5 commit sau `808b365`. Nhánh đúng; SHA trong brief thì không. Cả hai file mà W2 chạm vào KHÔNG đổi giữa `808b365` và `1454dc0` — `git diff --stat 808b365..HEAD -- packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts packages/coding-agent/test/pi-scope-aliases.test.ts` không ra gì — nên mọi neo mà spec này trích (`:796`, `:802`, `:805`, `:807`, `:808`, `:837`, `:951-953`, `:1057-1069`, `:1077`, `:1144-1149`, `:1453-1466`, `:751-754`) vẫn đúng. Đừng mất thời gian đi tìm một commit tên 5873776. Bằng chứng: `git rev-parse --short HEAD` → `1454dc0`; `git branch --show-current` → `milestone-1`; `git rev-list --count 808b365..HEAD` → `5`; `git cat-file -t 5873776` → `fatal: Not a valid object name 5873776`. |
 | `PI_PACKAGE_NAMES` (`:805`) giữ danh sách package mà canonicalizer phục vụ, nên thêm `ultraworkers` vào scope hàm ý danh sách đó cũng phải theo scope mới (cách hiểu ngầm từ ngoặc ở plan:8678). | **đúng-như-nguyên-văn, đáng ghim lại** | `PI_PACKAGE_NAMES` là danh sách BASENAME của các package do host bundle, và cố ý tách rời khỏi danh sách scope. Nó chứa 6 mục trong khi repo publish 16 package có scope, nên 10 basename đang publish — `pi-catalog`, `pi-metaharness`, `pi-mnemopi`, `pi-wire`, `omp-stats`, `omptype`, `snapcompact`, `browser-relay`, `collab-web`, `typescript-edit-benchmark` — chưa từng khớp `LEGACY_PI_SPECIFIER_FILTER` và không được canonicalize. W2 không thay đổi điều đó, và test của spec này cố ý không khẳng định gì về chúng, để quyết định nằm đúng chỗ N17 đã đặt. Hãy nói điều này trong phần mô tả PR, vì chính sự lệch (6 với 16) là thứ dễ bịt ai đó «sửa cho đàng hoàng» một cách thiện chí trong lúc review. Bằng chứng: `legacy-pi-compat.ts:805` liệt kê đúng 6 basename `pi-*`; `for f in packages/*/package.json; do grep -m1 '"name"' ...; done` trả về đúng 16 tên package có scope. Một mô phỏng xác nhận `@ultraworkers/omp-stats` KHÔNG khớp filter sau W2. |
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo:** mọi neo vẫn đúng — đã mở và đọc từng dòng ở HEAD thật `47720fd` (`milestone-1`), **không dòng nào trôi**. Cái lỗi thời không nằm ở số dòng mà nằm ở chỗ khác: **toàn bộ tiền đề "máy chưa build addon" đã hết hiệu lực**, và đó là lý do lớn nhất khiến kỹ sư bỏ qua đúng những cổng đang bảo vệ mục này. Ngoài ra có ba chỗ kế hoạch nói sai về **hành vi**, không phải về số dòng — xem bảng dưới.
+
+| Chỗ trong kế hoạch | Sai ở đâu | Sự thật trên cây |
+| --- | --- | --- |
+| «Trên máy **chưa build**, `bun test` báo `0 pass / 1 fail` với `Failed to load pi_natives native addon`»; «`bun test` bị chặn cho tới khi addon native được build»; cả khối `brew install ninja` + `bun --cwd=packages/natives run build` | **CŨ, đã hết hiệu lực** | Addon đã build: `packages/natives/native/pi_natives.darwin-arm64.node` tồn tại (185 MB, 2026-09-29 07:32); `ninja` đã có ở `/opt/homebrew/bin/ninja`. `cd packages/coding-agent && bun test test/pi-scope-aliases.test.ts` → **1 pass / 0 fail / 2 expect() calls, 548ms**. Xóa toàn bộ phần tiền đề này khỏi kế hoạch khi triển khai. |
+| «Kỳ vọng: `1 pass, 0 fail`» (khối verification) | **mâu thuẫn nội bộ với chính nó** | cùng mục đó lại ghi `→ 8 pass / 0 fail`. Số thật là **1 pass / 0 fail**: `CASES` có 7 phần tử nhưng chỉ có **một** khối `it()` duy nhất (`:129`) chứa toàn bộ; thêm ca thứ 8 vẫn là 1 pass. Con số 8 là đếm ca, không phải đếm test. |
+| HEAD là `1454dc0` | **CŨ** | HEAD thật là `47720fd` trên `milestone-1`. Tuy nhiên mọi neo vẫn đúng. |
+| «Cần một số dòng chuẩn» cho `result.errors` (mục «Cần người xác nhận» — spec tự ghi là mâu thuẫn 129/130/131) | **đã giải được** | Trong file thật: `:129` là dòng mở `it(...)`, `:130` là `const result = await loadExtensions(...)`, `:131` là `expect(result.errors).toEqual([])`, `:134` là dòng đóng `it`. Dòng **chứng minh** assertion là **131**. Dùng **131** cho mọi câu lệnh grep theo dòng. |
+| «`Mọi nơi dùng CANONICAL_PI_SCOPE nằm ở `:952`, `:963`, `:970`, `:1022-1024` và `:1068`» | **ĐÚNG** | `grep -n CANONICAL_PI_SCOPE` trả về đúng 8 hit: 796 (định nghĩa), 952, 963, 970, 1022, 1023, 1024, 1068. Không có site thứ hai ngoài file. `PI_SCOPE_ALIASES` chỉ có 2 hit: 802 và 807. |
+| «`bun run check:ts` … Mất ~25 giây» | **lạc quan** | Đo thật: **97.58s**. Chênh ~4×, nhưng vẫn exit 0 và 16/16 package sạch. Đừng đặt ngưỡng thời gian vào cổng. |
+| «Comment ở 789-795 … vẫn đúng ở thời điểm này [W2a]» | **đúng ở W2a, SAI ở W2b — spec không đề cập** | Dòng 791 nói «or the canonical @oh-my-pi scope itself». Sau khi W2b flip `CANONICAL_PI_SCOPE` sang `@ultraworkers`, `@oh-my-pi` **không còn là canonical**, nên câu này thành sai. Đây là một bước bị bỏ sót; **thêm nó vào W2b**. |
+
+Bảng điểm sửa — cột TRƯỚC lấy nguyên văn từ file thật. Không sửa dòng nào khác ngoài hai dòng dưới.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:802` | `PI_SCOPE_ALIASES` | `const PI_SCOPE_ALIASES = ["oh-my-pi", "mariozechner", "earendil-works"] as const;` | `const PI_SCOPE_ALIASES = ["ultraworkers", "oh-my-pi", "mariozechner", "earendil-works"] as const;` — **W2a** |
+| `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:796` | `CANONICAL_PI_SCOPE` | `const CANONICAL_PI_SCOPE = "@oh-my-pi";` | `const CANONICAL_PI_SCOPE = "@ultraworkers";` — **W2b, chỉ sau W7** |
+| `packages/coding-agent/test/pi-scope-aliases.test.ts:43` | `CASES` | `const CASES: readonly AliasCase[] = [` … 7 phần tử … `];` | thêm một phần tử `{ id: "ultraworkers-utils", aliasSpecifier: "@ultraworkers/pi-utils", canonicalPath: canonicalUtils, symbol: "logger" }` — **W2b** |
+| `packages/coding-agent/test/pi-scope-aliases.test.ts:96-100` | `package.json` của probe plugin | `JSON.stringify({ name: "alias-probe-plugin", version: "1.0.0", pi: { extensions: ["./dist/extension.ts"] } })` | thêm `peerDependencies: { "@oh-my-pi/pi-utils": "*", "@ultraworkers/pi-utils": "*", "@mariozechner/pi-utils": "*" }` — **W2b** |
+
+**Dòng cố ý KHÔNG đụng tới** (đã đọc và xác nhận nội dung): `:805` `const PI_PACKAGE_NAMES = ["pi-agent-core", "pi-ai", "pi-coding-agent", "pi-natives", "pi-tui", "pi-utils"] as const;` — 6 **basename**; `:807` `const PI_SCOPE_ALTERNATION = PI_SCOPE_ALIASES.join("|");` và `:808` `const PI_PACKAGE_ALTERNATION = PI_PACKAGE_NAMES.join("|");` — giá trị dẫn xuất, tự tính lại; `:837` `const LEGACY_PI_SPECIFIER_FILTER = new RegExp(...)` — nội suy cả hai, không cần sửa.
+
+Các bước có neo đã kiểm — W2a (sóng 1, tự đóng gói được một mình):
+
+1. **`legacy-pi-compat.ts:802`** — thêm `"ultraworkers"` làm phần tử **đầu tiên** của `PI_SCOPE_ALIASES`. Đọc dòng 802 trước khi sửa; nó chứa đúng chuỗi 3 phần tử ở cột "TRƯỚC". Giữ nguyên `CANONICAL_PI_SCOPE` ở `:796`. Không đụng `:805`, không đụng `:808`.
+2. **Không thêm ca test nào ở W2a.** Lý do mà spec nêu («cột canonical-path dựng từ `Bun.resolveSync` ở phạm vi module, dòng 24-34, không có gì để resolve tới») **không đúng** — một ca `@ultraworkers` tái dùng `canonicalUtils` sẵn có ở `:29` và không cần resolve scope mới. Đã chạy thật: ca đó **xanh ngay ở W2a**.
+3. **Trước khi commit** — chạy hai grep ở mục cổng bên dưới và xác nhận `git diff` chỉ chạm đúng một dòng source, không chạm `:805`.
+
+W2b (chỉ sau khi W7 pass 1 đã merge và `bun install` đã chạy lại):
+
+4. **`legacy-pi-compat.ts:796`** — đổi `CANONICAL_PI_SCOPE` sang `"@ultraworkers"`. Đây là toàn bộ nội dung của W2b; `:802` đã xong ở W2a.
+5. **`pi-scope-aliases.test.ts:43`** — nối thêm một ca vào `CASES`: `{ id: "ultraworkers-utils", aliasSpecifier: "@ultraworkers/pi-utils", canonicalPath: canonicalUtils, symbol: "logger" }`. `canonicalUtils` đã có sẵn ở `:29`. Bộ khung ở `:109-117` tự sinh phép khẳng định identity.
+6. **`pi-scope-aliases.test.ts:96-100`** — thêm trường `peerDependencies` vào `package.json` của probe plugin, liệt kê mọi alias scope đang thử. Không loader nào đọc trường này để quyết định resolve — nó **chứng minh bằng phủ định** rằng việc resolve đến từ canonicalizer của host, không phải từ một peer được cài cục bộ.
+7. **Sửa comment ở `:789-795`** (bước bị bỏ sót, không có trong kế hoạch) — dòng 791 nói «or the canonical @oh-my-pi scope itself», thành sai ngay khi W2b flip canonical. Comment ở `:798-801` vẫn đúng, không cần sửa.
+8. **Trước khi coi W2b là xong** — kiểm tra bằng mắt đường đi của binary đã compile, vì không test in-process nào chạm tới được. `loadBundledModule` ném `omp:legacy-pi-shim: no bundled module registered for <key>` tại `:752-754`; registry khoá theo `manifest.name` (`scripts/legacy-pi-virtual-module.ts:126` — đã đọc: `addEntry(manifest.name, ...)`). Xác nhận rename manifest của W7 nằm trong cùng nhánh: `git grep -m1 '"name"' -- packages/utils/package.json` phải in `@ultraworkers/pi-utils`.
+
+Hợp đồng test — **file:** `packages/coding-agent/test/pi-scope-aliases.test.ts` (đã tồn tại, 135 dòng — **không tạo file mới**; `test/extension-scope-canonicalization.test.ts` mà kế hoạch đặt tên không tồn tại và không nên thêm).
+
+Cơ chế: `CASES` ở `:43` sinh ra một probe plugin. Với mỗi ca, `:109-117` phát ra:
+
+```
+import { <symbol> as alias<idx> }     from "<aliasSpecifier>";
+import { <symbol> as canonical<idx> } from "<đường dẫn tuyệt đối từ Bun.resolveSync>";
+if (alias<idx> !== canonical<idx>) throw new Error("...did not remap to the bundled copy...");
+```
+
+Đây là **identity của object**, không phải so sánh chuỗi với hằng số — nên nó không thể xanh một cách hụt lực.
+
+| ca | aliasSpecifier | canonicalPath | symbol | thuộc |
+| --- | --- | --- | --- | --- |
+| `ultraworkers-utils` (mới) | `@ultraworkers/pi-utils` | `canonicalUtils` (`:29`) | `logger` | **W2b** |
+| `ohmypi-utils` (đã có, `:53`) | `@oh-my-pi/pi-utils` | `canonicalUtils` | `logger` | regression guard |
+| `ohmypi-coding-agent` (đã có, `:54-59`) | `@oh-my-pi/pi-coding-agent` | `canonicalCodingAgent` (`:24`) | `isToolCallEventType` | regression guard |
+
+Đã chạy thật trên cây này, 5 trạng thái, không suy đoán: HEAD (chưa làm gì) → `1 pass / 0 fail`; W2b ca test + W2a chưa W2b → `1 pass / 0 fail` (ca `@ultraworkers` xanh ở W2a như spec nói); W2b ca test chưa W2a → `0 pass / 1 fail` với `Cannot find module '@ultraworkers/pi-utils'`; W2b canonical flip mà chưa W7 → `0 pass / 1 fail`; W2a làm rơi `"oh-my-pi"` khỏi alias → `0 pass / 1 fail`.
+
+**Điều người dùng thấy gì nếu hồi quy:**
+
+1. **Host trả cho plugin một bản sao thứ hai.** Tool do host đăng ký trở nên vô hình với phía plugin; `pi-natives` bị link hai lần → đôi addon native trong cây của người dùng.
+2. **Chiều ngược — alias mất `@oh-my-pi`.** Mọi extension hiện hữu viết theo scope cũ chết lúc plugin-load với module-not-found. Đây là **lỗi runtime, không phải lỗi build**, nên không có gì trong CI bắt được cho tới khi một người dùng thật thử nạp một plugin thật.
+3. **W2b đi trước W7.** Ở chế độ dev: `getResolvedSpecifier` (`:1077`) ném, `try/catch` ở `:1144-1149` nuốt lỗi, shim bị bypass âm thầm — plugin scope cũ vẫn chạy được nhưng **chỉ tình cờ**, qua việc Bun tự resolve `@oh-my-pi/*` từ workspace root. **Đã tái hiện:** khi flip canonical mà chưa W7, 6 ca `@oh-my-pi` cũ **vẫn xanh**, chỉ ca `@ultraworkers` mới đỏ — đúng cơ chế nuốt lỗi mà spec mô tả.
+
+Cổng có đỏ được không — **W2a: có, nhưng CHỈ nhờ grep; W2b: có, theo hai đường độc lập, cả hai đã được tái hiện.**
+
+Cổng W2a (chạy được ngay):
+
+```bash
+bun run check:ts
+# Kỳ vọng: exit 0. ĐÃ CHẠY THẬT: exit 0, 16/16 workspace package typecheck sạch.
+# Thời gian đo được: 97.58s (spec ghi "~25 giây" — lạc quan; con số thực tế ở đây gần 100s).
+
+git grep -n 'PI_SCOPE_ALIASES = \["ultraworkers", "oh-my-pi"' -- packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts
+# Kỳ vọng: đúng một hit ở dòng 802. Ở HEAD: exit 1, không hit (ĐỎ, đúng — W2a chưa làm).
+
+git grep -nF 'const CANONICAL_PI_SCOPE = "@oh-my-pi";' -- packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts
+# Kỳ vọng: đúng một hit ở dòng 796. Ở HEAD: đã xác nhận hit 796.
+```
+
+**Điểm phải nói thẳng:** W2a cố ý không thêm ca test nào, nên **không có cổng runtime nào bắt được W2a**. `check:ts` bỏ qua hoàn toàn: hai hằng số là `as const` dùng trong `new RegExp` và template string, nên đổi giá trị không tạo ra bất kỳ lỗi type nào. Đã xác nhận: `bun run check:ts` xanh ở cả ba trạng thái, kể cả trạng thái W2a làm rơi `"oh-my-pi"` khỏi danh sách alias. Vì vậy grep là toàn bộ cổng. Cả hai grep đã được chạy thật ở cả ba trạng thái: HEAD → grep (1) không hit **ĐỎ**, grep (2) hit 796 **XANH**; W2a đúng → grep (1) hit 802 **XANH**, grep (2) **XANH**; W2a mất `"oh-my-pi"` → grep (1) không hit **ĐỎ**, grep (2) **XANH**.
+
+**Sửa cho cổng W2a mạnh hơn (khuyến nghị).** Grep (1) là một `git grep` exit-code, không phải một assertion — ai đó đổi pattern là cổng xanh trong khi bắt được gì cả. Thay bằng một assertion thật, thêm vào file test sẵn có, chạy được **ngay hôm nay** vì ca dùng `canonicalUtils` đã có sẵn:
+
+```typescript
+// packages/coding-agent/test/pi-scope-aliases.test.ts
+import { PI_SCOPE_ALIASES } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/legacy-pi-compat";
+// ...
+it("keeps every historical scope in the alias table", () => {
+    expect(PI_SCOPE_ALIASES).toEqual(["ultraworkers", "oh-my-pi", "mariozechner", "earendil-works"]);
+});
+```
+
+Cổng này **ĐỎ ĐƯỢC thật** ở cả ba trạng thái, và nó đỏ bằng *hành vi quan sát được* thay vì bằng mẫu grep. Nó cũng đóng lại đúng lỗ hổng mà spec tự nêu: «nếu dùng mẫu `"@oh-my-pi"` thay vì khớp trực tiếp dòng `PI_SCOPE_ALIASES`, cổng sẽ luôn xanh và bắt được gì cả».
+
+Cổng W2b (sau W7):
+
+```bash
+cd packages/coding-agent && bun test test/pi-scope-aliases.test.ts
+# Kỳ vọng: 1 pass / 0 fail. ĐÃ CHẠY THẬT ở HEAD: 1 pass / 0 fail, 2 expect() calls, 548ms.
+
+git grep -m1 '"name"' -- packages/utils/package.json
+# Sau W7, PHẢI in @ultraworkers/pi-utils.
+# Ở HEAD: in @oh-my-pi/pi-utils (đúng — W7 chưa merge).
+```
+
+Hai đường đỏ đã được tái hiện: (1) **Flip canonical mà mất `@oh-my-pi` khỏi alias** → các ca sẵn có ở `:53` và `:54-59` nạp plugin import `@oh-my-pi/pi-utils` / `@oh-my-pi/pi-coding-agent`; resolve dừng, `result.errors` khác rỗng, `expect(result.errors).toEqual([])` ở `:131` thất bại. (2) **W2b đi trước W7** → `Bun.resolveSync` ném bên trong probe sinh ra chứ không ở phạm vi module test, nên file vẫn đánh giá được, `result.errors` khác rỗng, `expect(result.errors).toEqual([])` thất bại, với đúng thông điệp `Cannot find module '@ultraworkers/pi-utils'`.
+
+Lệnh thứ hai (`git grep -m1 '"name"'`) là con dấu ngón tay thứ ba: nó không đỏ được bằng hành vi runtime, nhưng nó bắt được trường hợp mà cả hai cổng runtime đều xanh — canonical đã flip, alias đủ, nhưng manifest chưa được đổi tên. Trong `bun test` (chế độ source) trường hợp đó **vẫn đỏ**, nên đây là lưới an toàn thừa cho binary đã compile, nơi registry khoá theo `manifest.name`.
+
+Cạm bẫy riêng của mục này — nặng nhất là **đưa W2b lên trước W7**, và đặc tả đã đánh giá đúng là nặng hơn cả rủi ro kế hoạch tự nêu.
+
+Cơ chế dev: `remapLegacyPiSpecifier` (`:1057-1069`) viết lại mọi scope được chấp nhận thành `${CANONICAL_PI_SCOPE}/...`, nên `@oh-my-pi/pi-utils` → `@ultraworkers/pi-utils`. `getResolvedSpecifier` (`:1077`) gọi `Bun.resolveSync` và ném. `try/catch` ở `:1144-1149` nuốt lỗi. **Đã đo:** `bun -e 'Bun.resolveSync("@ultraworkers/pi-utils", process.cwd())'` → `Cannot find module '@ultraworkers/pi-utils'`, trong khi cùng lệnh với `@oh-my-pi/pi-utils` → `/Users/tranquangdang21/Projects/ultraworkers/packages/utils/src/index.ts`.
+
+Cơ chế binary đã compile: `LEGACY_PI_AI_SHIM_PATH` (`:951-953`) trở thành `omp-legacy-pi-bundled:@ultraworkers/pi-ai`, còn registry vẫn khoá `@oh-my-pi/pi-ai` (`scripts/legacy-pi-virtual-module.ts:126`). `loadBundledModule` (`:752-754`) ném. Crash cứng trên **mọi** lần load extension bị bundle — không test in-process nào chạm tới được. Vì vậy bước 8 là một phép kiểm tra bằng mắt, không phải một test.
+
+**Cạm bẫy thứ hai — đọc nhầm hành vi của `try/catch` là "mọi thứ vẫn chạy".** Khi tái hiện W2b-trước-W7, 6 ca `@oh-my-pi` cũ **vẫn xanh**. Trông có vẻ "chạy được rồi". Không phải — chúng xanh vì Bun tự resolve `@oh-my-pi/*` từ workspace root sau khi canonicalizer đã chết. Đây đúng là cái hại trùng module mà kế hoạch mô tả, chỉ đến theo đường ngược. Test đỏ **không** có nghĩa là mọi thứ hỏng; nó báo rằng scope mới không resolve được.
+
+**Cạm bẫy thứ ba — tạo file test mới mà kế hoạch đặt tên.** `test/pi-scope-aliases.test.ts` đã tồn tại và đã khẳng định đúng hợp đồng bằng identity của object. Một file thứ hai là mẫu trùng coverage mà AGENTS.md cấm, và nó sẽ trôi lệch.
+
+**Cạm bẫy thứ tư — "giúp thêm" 10 basename còn thiếu** vào `PI_PACKAGE_NAMES` khi đang mở file ra. Trông như làm nốt công việc, nhưng đó là quyết định sản phẩm khác (N17). Sự lệch 6-vs-16 là thứ dễ bị một người review thiện chí «sửa cho đàng hoàng». Nêu rõ trong mô tả PR để không ai làm.
+
+**Cạm bẫy thứ năm — tin rằng `check:ts` bảo vệ W2a.** Nó không bảo vệ gì cả: xanh ở cả ba trạng thái, kể cả khi W2a làm rơi scope cũ. Đây là lý do cổng grep của kế hoạch cần được thay bằng assertion thật.
 
 ## Cần người xác nhận
 
@@ -934,6 +1179,195 @@ Sai lầm thứ hai: chỉ đổi APP_NAME mà quên `logger.ts:256`. Lý do c�
 | Plan nêu `filenamePrefix` phải đổi nhưng không giải thích vì sao. | Đúng kết luận, thiếu lý do — bổ sung để kỹ sư không tối ưu hoá bằng cách bỏ qua nó. | Lý do cứng: `getLogPath()` (`dirs.ts:620-622`) ĐÃ dựng tên từ APP_NAME, và `stderr-guard.ts:105` dùng nó làm đích redirect stderr mặc định. Nếu chỉ đổi APP_NAME mà để `filenamePrefix:"omp"`, stderr sẽ bị ghi vào một file mà không ai đọc, còn `report-bundle.ts:208,253` (đóng gói log để báo bug) và `main.ts:285` (dòng gợi ý log cho người dùng) trỏ sang file trống. Bằng chứng: `sed -n '619,622p' packages/utils/src/dirs.ts` → `return path.join(getLogsDir(), \`${APP_NAME}.${localDay(date)}.${pid}.log\`);`. `packages/utils/src/stderr-guard.ts:105` `const redirectPath = options?.redirectPath ?? getLogPath();`. |
 | Yêu cầu: không được dùng `ReturnType<>`, không `any`, không inline import, ES `#private`, `logger` thay `console.*`, `bun check` chứ không phải `tsc`. | Đã kiểm tra — không có xung đột nào trong diff này. | Giữ nguyên. Lưu ý thêm một quy tắc ít ai nhớ: sau khi đổi tên, doc comment tại `dirs.ts:609` ("log files are named `omp.<day>.<pid>.log`") thành sai — nên sửa luôn trong cùng commit (comment, không phải test). Bằng chứng: `sed -n '607,614p' packages/utils/src/dirs.ts`. Ngoài ra import surface đã có sẵn ở mọi nơi: `packages/utils/src/index.ts:5` `export * from "./dirs"`; `logger.ts:17` đã import `{ getLogsDir }` từ `"./dirs"`; `packages/tui/src/setup/wizard-overlay.ts:8` và `packages/coding-agent/src/cli/args.ts:5` đã dùng đúng pattern import APP_NAME. Không có chu trình import vì `dirs.ts` không import logger (`grep 'from "./logger"' packages/utils/src/dirs.ts` → rỗng). |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo — đọc trước khi gõ dòng đầu tiên.** W3 có **34 neo**, đã mở từng dòng bằng `sed -n "<n>p"` / `rg -n` / `sed -n '<a>,<b>p'`. **Nguyên nhân gốc của mọi sai lệch:** W3 ghi "đã kiểm chứng lại bằng `git diff --name-only 808b365..HEAD` → rỗng". Câu đó **không còn đúng** — lệnh đó giờ trả về 4 file khác 0:
+
+```
+$ git diff --name-only 808b365..HEAD -- <11 file W3 chạm tới>
+packages/tui/test/desktop-notify.test.ts
+packages/utils/src/dirs.ts
+packages/utils/test/dirs.test.ts
+packages/utils/test/logger-contract.test.ts
+```
+
+`dirs.ts` **+28 dòng**, `dirs.test.ts` **+14**, `logger-contract.test.ts` **−41**, `desktop-notify.test.ts` **−6**. Mọi neo trong 4 file đó đã trượt. Riêng `dirs.ts` trượt **tới 20 dòng**.
+
+Các neo HỎNG, phải tự tìm lại khi gõ:
+
+| Neo trong W3 | Nội dung thật ở dòng đó | Vị trí ĐÚNG | Sai lệch |
+| --- | --- | --- | --- |
+| `dirs.ts:21` (`APP_NAME`) | `/** App name (e.g. "omp") */` | **`:22`** `export const APP_NAME: string = "omp";` | +1 |
+| `dirs.ts:24` (`APP_URL`) | doc comment của `APP_URL` | `:25` | +1 |
+| `dirs.ts:27` (`CONFIG_DIR_NAME`) | doc comment | `:28` | +1 |
+| `dirs.ts:36` (`USER_AGENT`) | doc comment | `:37` | +1 |
+| `dirs.ts:360` (`appRoot`) | comment `// is decided at first activation…` | **`:370`** `const appRoot = path.join(value, APP_NAME);` | **+10** |
+| `dirs.ts:609` (doc comment log) | `return dirs.rootSubdir("reports", "state");` | **`:619`** | **+10** |
+| `dirs.ts:620-622` (`getLogPath`) | phần đuôi doc comment `localDay` | **`:630-631`** | **+10** |
+| `dirs.ts:621` | doc comment | **`:631`** | +10 |
+| `dirs.ts:748` (autoqa.db) | doc comment browser-profiles | **`:758-760`** (`getAutoQaDbPath`) | +10 |
+| `dirs.ts:890/894` (cache) | `:890` = doc comment `last-changelog-version`; `:894` trống | cache thật ở `:740, :755, :788, :807, :912, :916` (grep `"cache"`) | **sai nội dung** |
+| `dirs.ts:956` (`getCrashLogPath`) | `return dirs.agentSubdir(agentDir, "memories", "state");` | **`:975-976`** | **+19** |
+| `dirs.ts:960` (`getDebugLogPath`) | `export function getTerminalSessionsDir` | **`:980-981`** | +20 |
+| `dirs.ts:983` (secret-placeholder.key) | dòng trống | **`:1003-1006`** | +20 |
+| `dirs.ts:990` (run/daemons) | ` */` | **`:1015-1017`** | +25 |
+| `dirs.ts:1078` (doc `OMP_APP_NAME`) | `}` đóng hàm | **`:1098`** doc comment `getAppName` | +20 |
+| `dirs.ts:1085` (`return value ? value : "omp";`) | `return path.join(getAgentDir(), "ssh.json");` | **`:1105`** | **+20** |
+| `dirs.ts:1083-1086` (code shape) | — | **`:1104-1105`** | +21 |
+| `main.ts:285` (dòng gợi ý log) | `function armStartupWatchdog(): void {` | **`:293`** | +8 |
+| `logger-contract.test.ts:77` | `.sort();` | **`:76`** | +1 |
+| `logger-contract.test.ts:105` | `const expected = [` | **`:104`** | +1 |
+| `logger-contract.test.ts:135` | `});` | **`:134`** | +1 |
+| `logger-contract.test.ts:286` | `expect(await logFileNames(…)).toEqual(expectedNames);` | **`:285`** | +1 |
+| `logger-contract.test.ts:296` | `const audit = JSON.parse(await fs.readFile(auditPath, "utf8"))` | **`:295`** | +1 |
+| `logger-contract.test.ts:313` | `const rotatedName = \`${baseName}.1\`;` | **`:312`** | +1 |
+| `logger-contract.test.ts:333` | `) as AuditFile;` | **`:332`** | +1 |
+| `logger-contract.test.ts:38-73` (`runScenario`) | — | **`:34-72`** | +4 |
+| `dirs.test.ts:82` | dòng trống | **`:96`** | **+14** |
+| `desktop-notify.test.ts:114,117,132,144,147,153,163,166,202` | `:114`=`]);`, `:117`=`expect(`, `:202`=`expect(opts.stdin)…` | **`:108, 111, 126, 138, 141, 147, 157, 160, 196`** | **+6** |
+| `remote-store.ts:1314-1315` (khoá usage) | `#raceWithSignal<T>(…)` | **`:1415-1417`** | **+101** |
+| `relay/server.ts:55` (DEFAULT_GROUP) | — | **`packages/coding-agent/src/tools/browser/relay/server.ts:55`** | kế hoạch ghi thiếu `src/tools/browser/` |
+
+**Hệ quả:** đếm literal trong `desktop-notify.test.ts` vẫn là **9** và trong `dirs.test.ts` vẫn là **2**. Tổng assertion ghim literal vẫn **24** như W3 nói — nhưng tọa độ sai. **Đừng tin số dòng trong W3** — dùng `grep -n '"omp"' <file>` rồi sửa theo kết quả.
+
+Ngoài ra, tiền đề "máy chưa build addon" trong W3 **sai**: ở HEAD `47720fd` (commit tên chính là *"docs(plans): the native addon is built, so 'bun test is blocked' is false"*) `ls packages/natives/native/pi_natives.darwin-arm64.node` tồn tại, `which ninja` → `/opt/homebrew/bin/ninja`, và tất cả bốn file test đã chạy thật xanh. **Kỹ sư KHÔNG cần chạy Bước 0 build addon. Bỏ nó khỏi PR. Đừng dán đoạn "cổng 2/3 CHƯA TỪNG CHẠY" vào PR — nó không đúng.**
+
+Bảng điểm sửa — TRƯỚC trích nguyên văn từ file thật (đã `sed -n` đọc). **Tổng: 28 dòng sửa, 11 file.**
+
+| # | Đường/dẫn | Symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- | --- |
+| 1 | `packages/utils/src/dirs.ts:22` | `APP_NAME` | `export const APP_NAME: string = "omp";` | `export const APP_NAME: string = "<TÊN-MỚI>";` |
+| 2 | `packages/utils/src/dirs.ts:370` | `appRoot` trong `resolveIf` | `const appRoot = path.join(value, APP_NAME);` | `const appRoot = path.join(value, XDG_DIR_NAME);` — **chỉ khi Cổng 0 trả lời (b)** |
+| 3 | `packages/utils/src/dirs.ts:619` | doc `localDay` | `* the rotating sink's file naming: log files are named \`omp.<day>.<pid>.log\`` | `* the rotating sink's file naming: log files are named \`<APP_NAME>.<day>.<pid>.log\`` |
+| 4 | `packages/utils/src/dirs.ts:976` | `getCrashLogPath` | `return dirs.agentSubdir(agentDir, "omp-crash.log", "state");` | `return dirs.agentSubdir(agentDir, \`${APP_NAME}-crash.log\`, "state");` |
+| 5 | `packages/utils/src/dirs.ts:1105` | `getAppName` | `return value ? value : "omp";` | `return value ? value : APP_NAME;` |
+| 6 | `packages/utils/src/logger.ts:17` | import | `import { getLogsDir } from "./dirs";` | `import { APP_NAME, getLogsDir } from "./dirs";` |
+| 7 | `packages/utils/src/logger.ts:56-57` | 2 regex prune | `const PROCESS_LOG_PATTERN = /^omp\.(…)$/;`<br>`const PROCESS_AUDIT_PATTERN = /^\.omp\.(…)$/;` | `const APP_NAME_RE = APP_NAME.replace(/[.*+?^${}()\|[\]\\]/g, "\\$&");`<br>`const PROCESS_LOG_PATTERN = new RegExp(\`^${APP_NAME_RE}\\.(\\d{4}-\\d{2}-\\d{2})\\.(\\d+)\\.log(?:\\.(\\d+))?$\`);`<br>`const PROCESS_AUDIT_PATTERN = new RegExp(\`^\\.${APP_NAME_RE}\\.(\\d+)-audit\\.json$\`);` |
+| 8 | `packages/utils/src/logger.ts:256` | `makeFileTransport` | `filenamePrefix: "omp",` | `filenamePrefix: APP_NAME,` |
+| 9 | `packages/utils/src/logger.ts:260` | `makeFileTransport` | `auditFile: path.join(logsDir, \`.omp.${process.pid}-audit.json\`),` | `auditFile: path.join(logsDir, \`.${APP_NAME}.${process.pid}-audit.json\`),` |
+| 10 | `packages/coding-agent/src/cli/commands/init-xdg.ts:1,5` | shadow | `const APP_NAME = "omp";` | xoá dòng 5, thêm `import { APP_NAME } from "@oh-my-pi/pi-utils";` ở dòng 1 |
+| 11 | `packages/tui/src/desktop-notify.ts:29` | shadow | `const APP_NAME = "omp";` | xoá, thêm `import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";` |
+| 12 | `packages/tui/src/terminal-capabilities.ts:2` | import | `import { $env, … } from "@oh-my-pi/pi-utils/env";` | thêm `import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";` (dòng mới, không sửa dòng 2) |
+| 13 | `packages/tui/src/terminal-capabilities.ts:45` | `CMUX_NOTIFICATION_TITLE` | `const CMUX_NOTIFICATION_TITLE = "omp";` | `const CMUX_NOTIFICATION_TITLE = APP_NAME;` |
+| 14 | `packages/tui/src/terminal-capabilities.ts:1436` | `OSC99_APP_NAME` | `const OSC99_APP_NAME = "omp";` | `const OSC99_APP_NAME = APP_NAME;` |
+| 15 | `packages/tui/src/terminal-capabilities.ts:1450` | `osc99Id` | `return sanitizeOsc99Id(id) \|\| \`omp-${nextOsc99NotificationId++}\`;` | `return sanitizeOsc99Id(id) \|\| \`${APP_NAME}-${nextOsc99NotificationId++}\`;` |
+| 16 | `packages/tui/src/overlays/composer-shape-preview.ts:45` | `PREVIEW_TITLE` | `const PREVIEW_TITLE = "omp";` | `const PREVIEW_TITLE = APP_NAME;` + import |
+| 17 | `packages/utils/test/dirs.test.ts:96` | `describe("dated log path")` | `expect(path.basename(getLogPath(date, 123))).toBe("omp.2026-05-31.123.log");` | `expect(path.basename(getLogPath(date, 123))).toBe(\`${APP_NAME}.2026-05-31.123.log\`);` |
+| 18 | `logger-contract.test.ts:76` | `logFileNames` | `.filter(name => /^omp\.\d{4}-\d{2}-\d{2}\.\d+\.log(?:\.\d+)?$/.test(name))` | `.filter(name => new RegExp(\`^${APP_NAME}\\.\\d{4}-\\d{2}-\\d{2}\\.\\d+\\.log(?:\\.\\d+)?$\`).test(name))` |
+| 19 | `logger-contract.test.ts:104` | expect tên file | `expect(log.name).toBe(\`omp.2026-01-01.${result.pid}.log\`);` | `expect(log.name).toBe(\`${APP_NAME}.2026-01-01.${result.pid}.log\`);` |
+| 20 | `logger-contract.test.ts:134` | audit | `expect(await fs.readFile(path.join(result.primaryDir, \`.omp.${result.pid}-audit.json\`), "utf8")).not.toBe("");` | đổi `.omp.` → `` `.${APP_NAME}.` `` |
+| 21 | `logger-contract.test.ts:285` | expectedNames | `const expectedNames = [2,3,4,5,6].map(day => \`omp.2026-01-0${day}.${result.pid}.log\`);` | `… \`${APP_NAME}.2026-01-0${day}.${result.pid}.log\` …` |
+| 22 | `logger-contract.test.ts:295` | auditPath | `const auditPath = path.join(result.primaryDir, \`.omp.${result.pid}-audit.json\`);` | `` `.${APP_NAME}.${result.pid}-audit.json` `` |
+| 23 | `logger-contract.test.ts:312` | baseName | `const baseName = \`omp.2026-01-01.${result.pid}.log\`;` | `` `${APP_NAME}.2026-01-01.${result.pid}.log` `` |
+| 24 | `logger-contract.test.ts:332` | audit read | `await fs.readFile(path.join(result.primaryDir, \`.omp.${result.pid}-audit.json\`), "utf8"),` | `` `.${APP_NAME}.${result.pid}-audit.json` `` |
+| 25 | `packages/tui/test/desktop-notify.test.ts:108,111,126,138,141,157,160,196` | argv literals | `"omp",` (8 chỗ) | `APP_NAME,` |
+| 26 | `packages/tui/test/desktop-notify.test.ts:147` | title literal | `expect(buildDesktopNotifyCommand(gdbus, { title: "omp", body: "ping", urgency: "low" })).toEqual([` | `title: APP_NAME,` |
+| 27 | `packages/tui/test/composer-shape-preview.test.ts:45,49,54,59,65,70,76` | 7 assertion | `expect(box).toContain("omp");` | `expect(box).toContain(APP_NAME);` |
+| 28 | `packages/tui/test/terminal-capabilities.test.ts` | test OSC99 mới | *(chưa có)* | thêm `it` mới + `afterEach` gọi `setOsc99Supported(false)` |
+
+Import cần thêm vào từng file test — tất cả subpath đã tồn tại, đã kiểm:
+
+| File | Import sẽ thêm | Subpath có tồn tại? |
+| --- | --- | --- |
+| `utils/test/dirs.test.ts` | `APP_NAME` vào khối import sẵn có từ `@oh-my-pi/pi-utils/dirs` (`:6-14`) | ✅ (`"./*": "./src/*.ts"` trong `packages/utils/package.json:39-42`) |
+| `utils/test/logger-contract.test.ts` | `import { APP_NAME } from "@oh-my-pi/pi-utils";` | ✅ |
+| `tui/test/desktop-notify.test.ts` | `import { APP_NAME } from "@oh-my-pi/pi-utils";` | ✅ (`packages/tui/package.json:46` đã phụ thuộc `@oh-my-pi/pi-utils`) |
+| `tui/test/composer-shape-preview.test.ts` | `import { APP_NAME } from "@oh-my-pi/pi-utils";` | ✅ |
+| `tui/test/terminal-capabilities.test.ts` | thêm `setOsc99Supported` vào khối import từ `@oh-my-pi/pi-tui/terminal-capabilities` (`:5-…`) | ✅ |
+
+Các bước có neo đã kiểm:
+
+**Bước 0 — DỪNG, chốt 2 quyết định (cổng chặn, không phải việc làm sau).**
+
+1. **Tên mới của `APP_NAME` là gì?** W3 nói "Plan không nêu. Kỹ sư cần chốt". Giá trị này xuất hiện ở 6 file nguồn + 4 file test. Không tự chọn.
+2. **XDG blast radius.** `dirs.ts:370` là `const appRoot = path.join(value, APP_NAME);` và chỉ dùng XDG khi `fs.existsSync(appRoot)`. Đổi `APP_NAME` ⇒ `$XDG_DATA_HOME/<tên-mới>` chưa tồn tại ⇒ rơi về `~/.omp`. Chọn: **(a)** chấp nhận rủi ro (XDG là opt-in); **(b)** tách `XDG_DIR_NAME = "omp"` đóng băng, dùng ở `dirs.ts:370`, `APP_NAME` chỉ cho hiển thị — **khuyến nghị**; **(c)** trì hoãn W3 tới W6. Nếu chọn **(b)**: thêm `export const XDG_DIR_NAME: string = "omp";` ngay dưới `APP_NAME` ở `dirs.ts:22`, và sửa bảng điểm #2.
+
+**Bước 1 — `dirs.ts`, 4 chỗ (neo đã kiểm: `:22`, `:619`, `:976`, `:1105`).** Sửa theo bảng điểm #1, #3, #4, #5. Nếu Bước 0 = (b) thì thêm #2. **Không** đụng `CONFIG_DIR_NAME` (`dirs.ts:28`), `APP_URL` (`:25`), `USER_AGENT` (`:37`).
+
+**Bước 2 — `logger.ts`, 3 chỗ + 2 regex (neo đã kiểm: `:17`, `:56`, `:57`, `:256`, `:260`).** Sửa #6, #7, #8, #9. **Bắt buộc cùng commit** với Bước 1 — xem cạm bẫy B. Escape regex bằng `APP_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")` để tên mới có ký tự regex không vỡ.
+
+**Bước 3 — Xoá 2 hằng số shadow (neo đã kiểm: `init-xdg.ts:5`, `desktop-notify.ts:29`).** `init-xdg.ts`: xoá dòng 5, thêm import ở dòng 1 (trước `import * as fs`); 3 chỗ dùng ở `:17` tự theo. `desktop-notify.ts`: xoá dòng 29 (giữ doc comment dòng 28); 4 chỗ dùng ở `:114, :116, :141, :154` tự theo.
+
+**Bước 4 — `terminal-capabilities.ts` + `composer-shape-preview.ts` (neo đã kiểm: `tc:45/:1436/:1450`, `csp:45`).** `terminal-capabilities.ts`: thêm import `APP_NAME` từ `@oh-my-pi/pi-utils/dirs`; sửa #13, #14, #15. Dấu gạch nối nằm **ngoài** hằng số: `` `${APP_NAME}-${nextOsc99NotificationId++}` ``. `composer-shape-preview.ts`: sửa #16 + import; 4 chỗ dùng ở `:62, :64, :66, :111` tự theo.
+
+**Bước 5 — 4 file test, derive từ `APP_NAME` (KHÔNG ghim lại literal).** `dirs.test.ts:96` → #17 (1 chỗ); `logger-contract.test.ts:76, 104, 134, 285, 295, 312, 332` → #18–#24 (**7 chỗ**); `desktop-notify.test.ts:108, 111, 126, 138, 141, 147, 157, 160, 196` → #25, #26 (**9 chỗ**); `composer-shape-preview.test.ts:45, 49, 54, 59, 65, 70, 76` → #27 (**7 chỗ**). Giữ nguyên cấu trúc assertion — chỉ thay chuỗi, để test vẫn kiểm tra **định dạng lệnh** chứ không chỉ echo hằng số.
+
+**Bước 6 — Thêm MỘT test OSC99 vào `terminal-capabilities.test.ts`.**
+
+```typescript
+import { APP_NAME } from "@oh-my-pi/pi-utils";
+// bổ sung setOsc99Supported vào khối import terminal-capabilities sẵn có
+
+afterEach(() => setOsc99Supported(false));   // module singleton — BẮT BUỘC
+
+it("labels OSC 99 notifications with the application name", () => {
+	setOsc99Supported(true);
+	const osc = new TerminalInfo("base", null, true, true, NotifyProtocol.Osc99);
+	const formatted = osc.formatNotification({ title: "T", body: "B" });
+	expect(formatted).toContain(`f=${Buffer.from(APP_NAME, "utf8").toString("base64")}`);
+	expect(formatted).toContain(`i=${APP_NAME}-1`);
+});
+```
+
+Đường đi đã xác minh: `setOsc99Supported` (`terminal-capabilities.ts:1418`) → `osc99CapabilitiesConfirmed` (`:1415`) → `formatNotification` chỉ rẽ vào `formatOsc99Notification` khi `notifyProtocol === Osc99 && osc99CapabilitiesConfirmed` (`:226`) → `meta` dựng ở `:1535`. `nextOsc99NotificationId` bắt đầu từ `1` (`:1437`) nên `i=${APP_NAME}-1` là đúng. Constructor `TerminalInfo` xác nhận tại `:137-145` (`notifyProtocol` là tham số thứ 5, default `NotifyProtocol.Bell`) → không cần export thêm.
+
+**Bước 7 — Changelog.** Thêm vào `packages/utils/CHANGELOG.md` và `packages/tui/CHANGELOG.md`, mục `### Changed` dưới `## [Unreleased]`: `Renamed the application display name to <tên-mới>; desktop notification title, OSC99 app name/notification id, setup-composer title and rotating log file prefix now derive from a single APP_NAME constant.` Nếu M5 đã gom changelog về một mục riêng cho cả milestone, ghi rõ "đã gom" để kỹ sư không tự quyết.
+
+Hợp đồng test — 4 file sửa + 1 file thêm test:
+
+| File | Việc | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- |
+| `packages/utils/test/logger-contract.test.ts` | CẬP NHẬT 7 chỗ (`:76, :104, :134, :285, :295, :312, :332`) | `stderr-guard.ts:105` redirect stderr vào `<tên>.<ngày>.<pid>.log`, nhưng khi người dùng báo lỗi, `report-bundle.ts:208/253` đóng gói **file rỗng**; dòng gợi ý ở `main.ts:293` chỉ tới file trống. Người dùng mất toàn bộ log khi cần debug. |
+| `packages/utils/test/dirs.test.ts` | CẬP NHẬT `:96` | `getLogPath()` trả basename khác basename rotating sink sinh ra ⇒ log bị ghi vào file không ai đọc. |
+| `packages/tui/test/desktop-notify.test.ts` | CẬP NHẬT 9 chỗ (`:108, 111, 126, 138, 141, 147, 157, 160, 196`) | Toast desktop mang tên cũ trong khi app đã đổi tên — đúng lỗi "đổi tên tới mọi nơi trừ chỗ người dùng nhìn thấy". |
+| `packages/tui/test/composer-shape-preview.test.ts` | CẬP NHẬT 7 chỗ (`:45, 49, 54, 59, 65, 70, 76`) | Khung setup-composer hiện tên session tạm là `"omp"` cứng, không đổi theo `APP_NAME`. |
+| `packages/tui/test/terminal-capabilities.test.ts` | THÊM 1 test OSC99 | Terminal OSC99 nhận `f=<base64("omp")>` và `i=omp-1` ⇒ app đã tên mới vẫn tự nhận diện là tên cũ trên terminal hỗ trợ OSC 99. |
+
+**Case cụ thể:** (1) đồng bộ basename giữa `getLogPath()` và `RotatingFileSink#setActivePath` cho cùng `(day, pid)`; (2) argv notify-send chứa `APP_NAME` ở `--app-name` và ở title fallback; gdbus chứa `APP_NAME` ở đúng vị trí app-name; (3) OSC99 phát `f=base64(APP_NAME)` và `i=<APP_NAME>-1`.
+
+**Không test:** không source-grep `.ts` (AGENTS.md cấm), không đọc `logger.ts` để khẳng định tên file (`makeFileTransport` ở `:251` không export; `setTransports` ở `:304` trả void), không `mock.module()`.
+
+Cổng có đỏ được không — **cả 3 cổng lệnh đều ĐỎ ĐƯỢC thật và ĐÃ chạy được ngay** ở HEAD hiện tại.
+
+- **Cổng 0 — chặn (không phải lệnh, nhưng chặn mọi thứ).** Hai quyết định ở Bước 0 phải có trả lời bằng văn bản trước khi sửa dòng nào. Không có câu trả lời ⇒ dừng.
+- **Cổng 1 — `bun run check:ts`** (`package.json:90`). **ĐỎ ĐƯỢC:** có. Đỏ khi còn hằng số shadow trong `init-xdg.ts`/`desktop-notify.ts`, import sai subpath, hoặc chu trình import. Về chu trình: `grep 'from "./logger"' packages/utils/src/dirs.ts` → **rỗng**, nên không có chu trình. *Tốn ~10 phút (pi-catalog 298s).*
+- **Cổng 2 — 4 file test + file mới. ĐỎ ĐƯỢC, và đã xác nhận chạy được trên máy này, không cần build gì thêm:**
+
+```bash
+cd packages/utils && bun test test/logger-contract.test.ts test/dirs.test.ts test/stderr-guard.test.ts
+cd packages/tui   && bun test test/desktop-notify.test.ts test/terminal-capabilities.test.ts test/composer-shape-preview.test.ts
+```
+
+Đã chạy thật: `desktop-notify.test.ts` → 17 pass 0 fail; `composer-shape-preview.test.ts` → 4 pass 0 fail; `logger-contract.test.ts` → 12 pass 0 fail; `dirs.test.ts` → 6 pass, 1 skip, 0 fail. Cổng này đỏ khi sửa nguồn mà bỏ sót file test — đúng lỗi W3 cảnh báo. **24 assertion ghim literal** là hợp đồng (7 logger-contract + 1 dirs + 9 desktop-notify + 7 composer-shape-preview).
+
+- **Cổng 3 — `bun run ci:test:smoke`** (`package.json:119`). **ĐỎ ĐƯỢC:** có — đỏ khi CLI không khởi động hoặc worker không spawn. Đã tồn tại `--smoke-test` tại `packages/coding-agent/src/cli.ts:137`.
+- **Cổng 4 — thủ công, KHÔNG tự đỏ được. Cổng này KHÔNG tự đỏ được** — không test tự động nào bắt được:
+
+```bash
+PI_CONFIG_DIR=.omp bun packages/coding-agent/src/cli.ts
+ls ~/.omp/logs     # (b) tiều tố mới; (c) file mới vẫn bị prune sau khi tiến trình chết
+```
+
+Nếu bỏ bước 5a (2 regex), file log mới **không bao giờ bị prune**: `pruneStaleProcessLogs` (`logger.ts:77`) lấy `pidText` từ chính `PROCESS_LOG_PATTERN`/`PROCESS_AUDIT_PATTERN` rồi `if (!pidText) continue`. `RotatingFileSink#maxFiles: 5` (`rotating-file.ts:153-157`) **không** cứu được. Nếu Bước 0 = (b): đặt `XDG_DATA_HOME`/`STATE`/`CACHE` trỏ vào thư mục tạm **đã có sẵn** thư mục con tên `"omp"`, chạy lại omp, xác nhận nó **vẫn** dùng thư mục cũ.
+
+- **Cổng 5 — phải nói ra trong mô tả PR (không phải lệnh).** Sau khi đổi tên, file `omp.*` cũ **không còn khớp regex** ⇒ prune-stale bỏ qua ⇒ chúng nằm lại vĩnh viễn, không tự thu hồi. Kỹ sư dọn `~/.omp/logs/omp.*` thủ công một lần. **KHÔNG được viết trong PR rằng "file cũ tự biến mất".**
+
+Cổng 4 là lỗ hổng thật duy nhất còn lại, và nó **không** nên được gọi là cổng nếu không kèm câu hỏi bắt buộc trong PR: *"bạn đã kiểm `ls ~/.omp/logs` sau khi đổi tên và xác nhận file mới vẫn bị prune chưa?"*
+
+Cạm bẫy riêng của mục này — dễ làm sai nhất là **`APP_NAME` không chỉ là tên hiển thị, nó là đường dẫn**. Đây là cạm bẫy số 1 và là lý do Bước 0 là cổng chặn. `dirs.ts:370` dựng XDG app root bằng chính hằng số này, chỉ dùng XDG khi `fs.existsSync(appRoot)`. Đổi tên ⇒ `$XDG_DATA_HOME/<tên-mới>` chưa tồn tại ⇒ rơi về `~/.omp`. Hậu quả: sessions biến mất khỏi tầm tay, và **secret-placeholder.key bị sinh lại thì giải mã secret cũ hỏng** (`dirs.ts:1003-1006`). W3 đã nêu đúng; chỉ là neo `:360` sai — phải dùng `:370`.
+
+**B. Quên `logger.ts` ⇒ stderr ghi vào file không ai đọc.** `getLogPath()` (`dirs.ts:631`) **đã** dựng tên từ `${APP_NAME}`. Nếu đổi `APP_NAME` mà để `filenamePrefix: "omp"`, `stderr-guard.ts:105` ghi vào `<tên-mới>.<ngày>.<pid>.log` còn `report-bundle.ts:208,253` + `main.ts:293` trỏ tới `omp.…` trống. **Ba thay đổi phải cùng một commit:** `APP_NAME` + `filenamePrefix` + `auditFile`.
+
+**C. Bỏ bước 5a (2 regex) là loại lỗi im lặng đắt nhất trong W3.** `PROCESS_LOG_PATTERN`/`PROCESS_AUDIT_PATTERN` (`logger.ts:56-57`) ghim cứng `omp`. `pruneStaleProcessLogs` (`:77`) lấy `pidText` từ chính chúng rồi `continue` nếu rỗng. Đổi `filenamePrefix` mà không đụng regex ⇒ **mọi** file log/audit mới không bao giờ bị prune, log tích tụ vô hạn, không ai báo lỗi, không test nào đỏ. Ngược lại nếu để nguyên regex cũ thì file `omp.*` cũ vẫn khớp và vẫn bị `fs.rmSync` **xoá vĩnh viễn**. Đây là lý do bắt buộc escape regex bằng `APP_NAME_RE`.
+
+**D. `getAppName()` là danh tính wire, KHÔNG phải tên hiển thị.** Nó là giá trị header `x-omp-app` (`packages/ai/src/providers/pi-native-client.ts:127`) **và** một thành phần của khoá gộp usage (`packages/ai/src/auth-broker/remote-store.ts:1415-1417`). Đổi `APP_NAME` ⇒ usage trước và sau lần đổi tên **không gộp được**; tổng usage đã ghi không tự dồn. Đây là lý do `depends_on: W1`. Cần người quyết: chấp nhận và ghi rõ vào PR, hay đóng băng `getAppName()` về `"omp"`. **Không được tự quyết.**
+
+**E. Đếm sai sẽ để sót literal.** Con số 24 là đúng (7 + 1 + 9 + 7), nhưng **tọa độ đã trượt**: `logger-contract.test.ts` lệch đúng 1 dòng mọi chỗ, `dirs.test.ts` lệch 14, `desktop-notify.test.ts` lệch 6.
+
+**F. `PREVIEW_TITLE` và `getCrashLogPath` là 2 literal kế hoạch bỏ sót** — W3 đã đưa vào scope, đúng. Nhưng khi sửa `getCrashLogPath` (`dirs.ts:976`), lưu ý người anh em `getDebugLogPath` (`:980-981`) **đã** dùng `` `${APP_NAME}-debug.log` `` — sửa cho khớp. Doc comment ở `:619` cũng phải sửa, nếu không tài liệu sai ngay sau khi đổi tên.
+
+**G. Đừng sửa `packages/coding-agent/src/tools/browser/relay/server.ts:55`.** W3 đã quyết để NGOÀI scope (`const DEFAULT_GROUP = { title: "omp", color: "cyan" }`) — đó là nhãn chrome trình duyệt, không phải tên ứng dụng. Nó sẽ là literal trùng lặp thứ 10; nếu sau này muốn dọn thì mở work item riêng.
+
 ## Cần người xác nhận
 
 - Mâu thuẫn nhỏ giữa metadata của đặc tả và nơi lưu: trường `written_to` trong `W3.spec.json` trỏ tới `.lavish-wip/m5-specs/W3.spec.json`, trong khi bản thân file đặc tả nằm ở `.lavish-wip/m5-index/specs/W3.spec.json` và mục Markdown này được ghi vào `.lavish-wip/m5-md/sections/W3.md`. Ba đường dẫn khác nhau cho cùng một đơn vị tài liệu — cần chốt một đường dẫn chuẩn trước khi lắp ghép.
@@ -1133,6 +1567,150 @@ Biện pháp chủ yếu nằm ở cổng: một khẳng định red-before-gree
 | Phân giải danh sách ứng viên theo tồn tại trước, rồi cache — sao chép khuôn đã có ở `MAIN_CONFIG_FILENAMES` (dirs.ts:30). | KHUÔN KHÔNG CUNG CẤP PHẦN CACHING, và chính phần caching là nửa rủi ro. | `MAIN_CONFIG_FILENAMES` chỉ là một mảng tên file có thứ tự với vòng lặp first-hit-wins ở nơi gọi (`settings.ts:2129`, `auth-broker/discover.ts:198`) — nó không kiểm tra tồn tại lúc nạp module và không cache gì cả. Vậy thứ tự là khuôn dùng lại được, còn cache là một cơ chế mới W4 phải thiết kế. Nó phải được xoá từ cả bốn nơi mà module đóng băng trạng thái thư mục, nếu không tám file test gán `process.env.PI_CONFIG_DIR` lúc chạy sẽ đọc một root cũ. Bằng chứng: `dirs.ts:30` `export const MAIN_CONFIG_FILENAMES = ["config.yml", "config.yaml"] as const;` — một hằng số, không logic. Nơi tiêu thụ lặp và trả về ở lần nạp đầu: `settings.ts:2129-2133` `for (const filename of MAIN_CONFIG_FILENAMES) { ... if (loaded) return { settings: loaded, configPath }; }`. Các đường rebuild sẽ vứt lại cache: `refreshDirsFromEnv` ở `:485`, `setAgentDir` ở `:502`, `setProfile` ở `:541`, cộng thêm `let dirs = new DirResolver({...})` lúc import ở `:449`. Danh sách 8 nơi gán env lúc chạy nằm ở bước 6. |
 | Cổng là `bun run check && (cd packages/utils && bun test test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts test/config-dir-write-root.test.ts)`. | CHẠY ĐƯỢC — tiền tố `./` chỉ để đổi thông báo lỗi, không ảnh hưởng exit code; tiền đề môi trường đằng sau nó là sai. | Bỏ dấu `./` ở đầu mỗi đường dẫn thì Bun coi đối số là bộ lọc tên chứ không phải đường dẫn — nhưng cả hai dạng đều cho cùng kết quả: file thiếu thì exit 1, file thật thì 5 test và exit 0, nên tiền tố không bắt buộc, chỉ đổi câu thông báo lỗi (Bun tự gợi ý dùng `./`). Riêng về sau, sau khi build addon thì `bun test` không còn bị chặn: toàn bộ `packages/utils` báo `743 pass / 10 skip / 0 fail`. Lớp đỏ 16 file từng do addon thiếu đã biến mất hoàn toàn — đó là **thiếu một bước build**, không phải hạn chế của máy. `bun run check` không giống `bun run check:ts` và nặng hơn nhiều — nhưng phải thêm lại `check:rs` thành lệnh riêng, vì W4 sửa hai file Rust và không còn lệnh nào trong cổng bắt được lỗi Rust nếu thiếu nó (`check` = `bun run --parallel check:ts check:rs`, còn `check:ts` hoàn toàn không có Rust). `check:ts` exit 0 và là tín hiệu nên dùng. Bằng chứng: `bun test packages/utils/test/install-id.test.ts` -> 5 pass / 0 fail / 11 lời gọi `expect()`. `bun test packages/utils/test/dirs-python-gateway.test.ts` -> 2 pass / 0 fail. Toàn bộ `packages/utils` -> 743 pass / 10 skip / 0 fail sau khi build addon; con số `658 pass / 2 skip / 17 fail / 16 errors` là của máy **chưa build**, cùng một nguyên nhân addon `pi_natives` thiếu, và đã hết. `bun test test/config-dir-dual-root.test.ts` (thiếu) -> exit 1; `bun test ./test/install-id.test.ts` (thật) -> exit 0. `bun run check:ts` -> exit 0. |
 | Neo dòng: thân `getInstallId` nằm "ngay dưới :1090"; comment orphan-profile ở :341-352. | NEAR MISS — cả hai đều rơi vào đúng vùng nhưng không trúng chỗ. | `getInstallId` được khai báo ở `:1104` (doc comment mở ở `:1092`), nên `:1090` sớm quá 14 dòng. Khối comment orphan-profile chạy `:340-355` với từ "orphaning" ở `:348`, nên khoảng của plan cắt mất phần đầu. Mọi neo W4 khác trong plan đã xác minh chính xác: `:27`, `:30`, `:114-116`, `:297-298`, `:302-305`, `:360`, `:384`, `:589-591`, `:1076`, `:1083-1086`. Bằng chứng: `grep -n` trên `packages/utils/src/dirs.ts`: `export function getInstallId(): string` -> 1104; `// XDG is a Linux convention` -> 340; "orphaning" -> 348; `const appRoot = path.join(value, APP_NAME)` -> 360; `// XDG flattens the agent/` -> 384. |
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Cây `dirs.ts` đã **trôi +20 dòng** so với lúc đặc tả được viết: commit `f804d66` ("Sync from upstream omp 18.4.0") thêm 24 dòng / xoá 4 dòng. Ba hunk chèn nằm ở ba vị trí khác nhau, nên **độ lệch không đều** — đây là lý do không được tin bất kỳ neo nào của `dirs.ts` mà không mở file. File nay **1177 dòng, không phải 1157**. Riêng `dirs.ts` có **21 trong 26 neo lệch** (+1 đến +20). Đừng tin số dòng trong bất kỳ tài liệu kế hoạch nào cho file này — `grep -n` theo tên symbol rồi đọc.
+
+| Symbol | Đặc tả ghi | Thực tế | Lệch | Nội dung thật ở dòng thực tế |
+| --- | --- | --- | --- | --- |
+| `CONFIG_DIR_NAME` | `:27` | **`:28`** | +1 | `export const CONFIG_DIR_NAME: string = ".omp";` (`:27` là doc comment) |
+| `MAIN_CONFIG_FILENAMES` | `:30` | **`:31`** | +1 | (`:30` là doc comment) |
+| `getBaseConfigRoot` | `:114-116` | **`:115-117`** | +1 | `:114` doc comment, `:115` khai báo, `:116` `return path.join(os.homedir(), getConfigDirName());` |
+| `getProfileConfigRoot` | `:119` | **`:119`** | **0 ✓** | `function getProfileConfigRoot(profile: string \| undefined): string {` |
+| khối comment orphan-profile | `:340-355` | **`:350-364`** | +10 | `:350` = `// XDG is a Linux convention. On supported platforms, default profile state` |
+| chữ "orphaning" | `:348` | **`:358`** | +10 | |
+| `resolveIf` | `:358-372` | **`:365-382`** | +7…+10 | `const resolveIf = (envVar: string) => {` |
+| `const appRoot = path.join(value, APP_NAME)` | `:360` | **`:370`** | +10 | đúng nội dung |
+| comment XDG-flattens | `:384` | **`:394`** | +10 | `// XDG flattens the agent/ prefix: ~/.omp/agent/sessions → $XDG_DATA_HOME/omp/sessions` |
+| `class DirResolver` | `:331+` | **`:329`** | −2 | constructor ở `:340` |
+| `let dirs = new DirResolver({...})` | `:449` | **`:459-462`** | +10 | |
+| `refreshDirsFromEnv` | `:485` | **`:495`** | +10 | |
+| `setAgentDir` | `:502` | **`:512`** | +10 | |
+| `setProfile` | `:541` | **`:551`** | +10 | |
+| `getProjectAgentDir` | `:589-591` | **`:598-601`** | +9 | `:600` = `return path.join(cwd, CONFIG_DIR_NAME);` |
+| `INSTALL_ID_FILE` | `:1076` | **`:1096`** | +20 | `const INSTALL_ID_FILE = "install-id";` |
+| `getAppName` | `:1083-1086` | **`:1103-1106`** | +20 | `:1105` = `return value ? value : "omp";` |
+| `getInstallId` | `:1104-1152` | **`:1124-1172`** | +20 | doc comment mở ở `:1110` |
+| `__resetInstallIdCacheForTests` | `:1155` | **`:1175`** | +20 | |
+| `getConfigDirName` | `:297-298` | **`:307-308`** | +10 | `:308` = `return process.env.PI_CONFIG_DIR \|\| CONFIG_DIR_NAME;` |
+| `getConfigAgentDirName` | `:302-305` | **`:311-315`** | +9 | `:314` = `return profile ? path.join(getConfigDirName(), "profiles", profile, "agent") : \`${getConfigDirName()}/agent\`;` |
+| dùng `getBaseConfigRoot` | `:1008` | **`:1028`** | +20 | |
+| dùng `getBaseConfigRoot` | `:1106` | **`:1126`** | +20 | `const filePath = path.join(getBaseConfigRoot(), INSTALL_ID_FILE);` |
+
+Các neo mà đặc tả **không** nêu nhưng cần biết: `getConfigRootDir` ở **`:507`**, `__resetProfileSnapshotForTests` ở **`:530`**, `__resetDirsFromEnvForTests` ở **`:544`**, `getPluginsDir` ở **`:644-648`**.
+
+Các file khác — neo **chính xác tuyệt đối**, không cần dịch số dòng: `discovery/helpers.ts:42, :45, :47, :1032, :1034, :1049, :1079`; `crash_handler.rs:48, :49, :269, :286, :293-296, :344`; `collab/registry.ts:29, :167`; `docs/environment-variables.md:523`; `docs/install-id.md:18`; `marketplace/project-scope.test.ts:148`; `settings.ts:2129-2133`; `discover.ts:198` — tất cả ✓. **Ngoại lệ duy nhất:** `darwin.rs:446` trong đặc tả **SAI** — `:446` là `.home`; fallback literal `.omp` nằm ở **`:444`**, lệch 2 dòng, đủ để sửa nhầm.
+
+Ba sai lệch khác, ghi ra không sửa: (1) «plan dòng 13677» và «plan dòng 14025» — `MILESTONE_5_EXECUTION_PLAN.md` chỉ có **4808 dòng**, cả hai số nằm ngoài file; chúng trỏ vào bản gốc `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (dòng 16844 và 16934, đã kiểm, nội dung khớp ý). (2) Census «69 lượt / 26 file» — lệnh `git grep -o 'PI_CONFIG_DIR' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md'` hôm nay cho **146 lượt / 27 file**; số 69/26 chỉ đúng khi loại **thêm 8 file kế hoạch MILESTONE_*.md**. Công thức tái lập trong đặc tả **không tái lập được con số của chính nó**. (3) «Bốn file W4 chạm tới không cần addon» — `dirs.ts:17` **nay đã import** `import { expandWindowsLongPath } from "@oh-my-pi/pi-natives/path";`. Kết luận "không cần addon" **vẫn đúng trên macOS/Linux** vì `native/path.js:14` short-circuit `process.platform === "win32" ? nativePathFn(...) : path` và `loadNative()` chỉ được gọi bên trong `nativePathFn` — nhưng lý do đã khác, và **trên Windows CI thì cần addon**. Đừng viết vào PR rằy ba file test "không phụ thuộc addon" một cách tuyệt đối.
+
+Bảng điểm sửa — cột TRƯỚC trích nguyên văn từ file thật:
+
+| Đường dẫn | Symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `packages/utils/src/dirs.ts:28` | `CONFIG_DIR_NAME` + hằng mới | `export const CONFIG_DIR_NAME: string = ".omp";` | Giữ nguyên. Thêm ngay dưới: `const LEGACY_CONFIG_DIR_NAME = ".omp";` và `const CONFIG_DIR_CANDIDATES = [CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME] as const;` — theo đúng khuôn `MAIN_CONFIG_FILENAMES` ở `:31` |
+| `packages/utils/src/dirs.ts:307-308` | `getConfigDirName` | `return process.env.PI_CONFIG_DIR \|\| CONFIG_DIR_NAME;` | Chuỗi ưu tiên tường minh: `ULTRAWORKERS_CONFIG_DIR` → `PI_CONFIG_DIR` → `getConfigReadRootName()` → `getConfigWriteRootName()` |
+| `packages/utils/src/dirs.ts` (mới, trước `:307`) | `getConfigDirCandidates` | — | `export function getConfigDirCandidates(): string[]` — thuần, không I/O, không cache. Nguồn duy nhất cả hai phía rút ra |
+| `packages/utils/src/dirs.ts` (mới) | `getConfigReadRootName` | — | Ứng viên đầu tiên tồn tại dưới `os.homedir()`, cache suốt tiến trình; không ứng viên nào thì trả write root |
+| `packages/utils/src/dirs.ts` (mới) | `getConfigWriteRootName` | — | Trả **tên mới** vô điều kiện. **Không** được trả `CONFIG_DIR_NAME` — xem cạm bẫy bên dưới |
+| `packages/utils/src/dirs.ts` (mới) | `__resetConfigDirCacheForTests` | — | Đặt tên sau `__resetInstallIdCacheForTests` (`:1175`) |
+| `packages/utils/src/dirs.ts:495` | `refreshDirsFromEnv` | `export function refreshDirsFromEnv(): void { dirs = new DirResolver({...}); }` | Thêm `__resetConfigDirCacheForTests();` **trước** khi dựng resolver mới |
+| `packages/utils/src/dirs.ts:512` | `setAgentDir` | `export function setAgentDir(dir: string): void {` | Thêm reset cache ở đầu thân |
+| `packages/utils/src/dirs.ts:551` | `setProfile` | `export function setProfile(profile: string \| undefined): void {` | Thêm reset cache ở đầu thân |
+| `packages/utils/src/dirs.ts:115-117` | `getBaseConfigRoot` | `return path.join(os.homedir(), getConfigDirName());` | Giữ tên + ngữ nghĩa **đọc** (`registry.ts:29/167` import nó). Thêm `getBaseConfigWriteRoot()` trả về write root |
+| `packages/utils/src/dirs.ts:1124-1172` | `getInstallId` | `const filePath = path.join(getBaseConfigRoot(), INSTALL_ID_FILE);` | Đọc ứng viên theo thứ tự; nếu thấy UUID hợp lệ ở legacy thì **ghi lại xuống write root** rồi trả về. Giữ nguyên `UUID_RE`, `O_CREAT\|O_EXCL`, unlink-trước-`O_EXCL`, fallback bộ nhớ |
+| `packages/utils/src/dirs.ts:370` | `resolveIf` appRoot | `const appRoot = path.join(value, APP_NAME);` | Thử `ultraworkers` rồi `omp` (không dấu chấm) — tập XDG, **không dùng chung** với tập home |
+| `packages/utils/src/dirs.ts:600` | `getProjectAgentDir` | `return path.join(cwd, CONFIG_DIR_NAME);` | `return path.join(cwd, PROJECT_CONFIG_DIR_NAME);` — hằng ghim, cố ý giữ `".omp"` |
+| `packages/coding-agent/src/discovery/helpers.ts:1032,1034,1049,1079` | 4 tra cứu registry tương đối project | `path.join(dir, getConfigDirName(), "plugins", "installed_plugins.json")` | `path.join(dir, PROJECT_CONFIG_DIR_NAME, "plugins", "installed_plugins.json")`. **Giữ nguyên** `:42`/`:45` (home) và `:47` |
+| `crates/pi-natives/src/crash_handler.rs:269` | `logs_dir` | `let config_override = std::env::var_os("PI_CONFIG_DIR");` | `std::env::var_os("ULTRAWORKERS_CONFIG_DIR").or_else(\|\| std::env::var_os("PI_CONFIG_DIR"))`. Giữ nguyên `.filter(\|s\| !s.is_empty())` ở `:285`/`:343` |
+| `crates/pi-natives/src/oauth_callback/darwin.rs:439-444` | `legacy_recovery_path` | `.get("PI_CONFIG_DIR").map(\|value\| value.trim()).filter(...).unwrap_or(".omp");` | `.get("ULTRAWORKERS_CONFIG_DIR").or_else(\|\| context.env.get("PI_CONFIG_DIR"))` rồi giữ nguyên `.map/.filter/.unwrap_or` |
+| `docs/environment-variables.md:523` | hàng `PI_CONFIG_DIR` | `Config root dirname under home (default .omp)` | Thêm hàng `ULTRAWORKERS_CONFIG_DIR` ngay trên, nêu "wins over `PI_CONFIG_DIR`"; sửa hàng cũ thành "permanent legacy alias" |
+
+Các bước có neo đã kiểm — mọi neo `dirs.ts` dưới đây là **số dòng thật ở HEAD `47720fd`**, đã mở và đọc:
+
+0. **Điều kiện tiên quyết — W3 CHƯA merge, và điều đó chặn W4.** `dirs.ts:22` vẫn là `export const APP_NAME: string = "omp";`. W4 phải ghi đúng tên mới vào write root; nếu W4 chạy trước W3 thì tên "mới" ở phía XDG chưa tồn tại. Cần chốt tên mới trước khi viết dòng đầu tiên.
+1. `dirs.ts:28` — thêm hằng legacy `".omp"` + tập ứng viên có thứ tự (tên mới trước, legacy sau), ngay cạnh `CONFIG_DIR_NAME`. Khuôn thứ tự: `MAIN_CONFIG_FILENAMES` ở `:31`. **Đừng** lật `CONFIG_DIR_NAME` — W6 sở hữu việc đó.
+2. `dirs.ts:307` (ngay trên `getConfigDirName`) — thêm `getConfigDirCandidates()`: thuần, không I/O, không cache.
+3. `dirs.ts:307` — thêm `getConfigReadRootName()` (first-existing dưới home, cache, rơi về write root) và `__resetConfigDirCacheForTests()`.
+4. Ngay cạnh hàm ở bước 3 — thêm `getConfigWriteRootName()`: trả tên mới vô điều kiện, không hỏi fs, không hỏi cache.
+5. `dirs.ts:307-308` — nối lại `getConfigDirName()` thành chuỗi ưu tiên tường minh.
+6. `dirs.ts:495`, `:512`, `:551` — gọi `__resetConfigDirCacheForTests()` từ `refreshDirsFromEnv()`, `setAgentDir()`, `setProfile()`. **Bắt buộc.**
+7. `dirs.ts:115-117` — tách `getBaseConfigRoot()` thành biến thể đọc (giữ tên) và biến thể ghi. `registry.ts:29`/`:167` import tên cũ; đừng đổi ngữ nghĩa nó.
+8. `dirs.ts:1124-1172` — làm lại `getInstallId()`: đọc ứng viên theo thứ tự, ghi vào write root. Giữ nguyên `UUID_RE` (`:1108`), `O_CREAT|O_EXCL`, unlink-trước-`O_EXCL`, fallback bộ nhớ.
+9. `dirs.ts:365-382` — mở rộng `resolveIf` thử `ultraworkers` rồi `omp` dưới cả ba `XDG_*_HOME`. Giữ nguyên nhánh `profilePath` và comment ở `:350-364` đúng như cũ. **Tập XDG không có dấu chấm; tập home có.**
+10. `dirs.ts:600` — hằng ghim cho thư mục cấp project, cố ý giữ `".omp"`; `getProjectAgentDir()` trả nó. Ghi lý do vào `do_not_rename`.
+11. `helpers.ts:1032`, `:1034`, `:1049`, `:1079` — thay `getConfigDirName()` bằng hằng ghim project. Giữ nguyên `:42`/`:45`; `:47` đã đúng sẵn.
+12. `crash_handler.rs:269` — đọc `ULTRAWORKERS_CONFIG_DIR` trước `PI_CONFIG_DIR`. Giữ `.filter(|s| !s.is_empty())` ở `:285`/`:343` và `DEFAULT_CONFIG_DIR` ở `:49`.
+13. `darwin.rs:439-444` — cùng thứ tự ưu tiên; giữ `.trim()`, bộ lọc rỗng, `unwrap_or(".omp")`.
+14. Viết ba file test mới trong `packages/utils/test/`.
+15. `docs/environment-variables.md:523` — thêm hàng mới, sửa hàng cũ. **Dừng — KHÔNG thêm changelog.**
+
+Hợp đồng test:
+
+| File | Case | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- |
+| `packages/utils/test/config-dir-dual-root.test.ts` (mới) | Chỉ root legacy tồn tại → phân giải dưới nó. Cả hai → root mới thắng. Không root nào → mặc định tên mới. Một case riêng ghim tập ứng viên XDG hai cách viết. | Cài cũ biến manh; hoặc người dùng mới bị đẩy vào `.omp` |
+| `packages/utils/test/install-id-legacy-read.test.ts` (mới) | Cắm UUID vào đường legacy, phân giải với root mới rỗng → **chính UUID đó** quay lại **và** root mới giờ chứa nó | Bảng chi phí lặng lẽ khởi động lại. Đây là hồi quy không tạo ra lỗi nào |
+| `packages/utils/test/config-dir-write-root.test.ts` (mới) | Hợp đồng 3: cả hai root tồn tại → đọc vào legacy, ghi vào mới. Hợp đồng 4: `PI_CONFIG_DIR`=A + `ULTRAWORKERS_CONFIG_DIR`=B → ra B; bỏ biến mới → ra A; bỏ cả hai → rơi vào tập ứng viên | Đặt nhầm hai biến → chỉ người dùng tới thư mục rỗng, không in gì |
+| `packages/utils/test/install-id.test.ts` (đã có) | **PASS KHÔNG ĐỔI** | Lưới hồi quy: chứng minh việc nối lại resolver không phá hợp đồng single-root |
+
+Luật áp dụng: `spyOn` + `vi.restoreAllMocks()` trong `afterEach`; **không** `mock.module()`; **không** đột biến `process.env` sống lâu. Khẳng định đường dẫn đã phân giải / UUID trả về / byte trên đĩa — không đọc file cài đặt rồi khẳng định lại trên văn bản của nó.
+
+Cổng có đỏ được không — **CÓ, đã chạy thật.** Chạy từ thư mục gốc repo.
+
+```bash
+# Tiền đề: addon đã build trên máy này (packages/natives/native/pi_natives.darwin-arm64.node tồn tại,
+# `which ninja` -> /opt/homebrew/bin/ninja). Nếu build trên máy mới:
+#   brew install ninja && bun --cwd=packages/natives run build
+bun run check:ts
+bun run check:rs
+cd packages/utils && bun test ./test/config-dir-dual-root.test.ts ./test/install-id-legacy-read.test.ts ./test/config-dir-write-root.test.ts
+cd ../.. && bun test ./packages/utils/test/install-id.test.ts ./packages/utils/test/profiles.test.ts ./packages/utils/test/dirs-python-gateway.test.ts ./packages/coding-agent/test/discovery/pi-config-dir.test.ts ./packages/coding-agent/test/marketplace/project-scope.test.ts
+```
+
+| Kiểm chứng | Kết quả thực tế ở `47720fd` |
+| --- | --- |
+| File-missing vs file-thật | `bun test ./test/config-dir-dual-root.test.ts` (chưa tồn tại) → **EXIT=1**; `bun test ./test/install-id.test.ts` (thật) → **EXIT=0**. Lệnh phân biệt được "chưa cài" với "đã cài và xanh" |
+| `bun run check:ts` | **exit 0** |
+| `bun test packages/utils/test/install-id.test.ts` | **5 pass / 0 fail / 11 expect()** |
+| `bun test ./test/dirs-python-gateway.test.ts` | **2 pass / 0 fail** |
+| Toàn bộ `packages/utils` | **743 pass / 10 skip / 0 fail** (753 test, 80 file, 15.5s) |
+| `pi-config-dir.test.ts` | **4 pass / 0 fail** |
+| `marketplace/project-scope.test.ts` | **7 pass / 0 fail** |
+
+**Năm cơ chế làm cổng đỏ** (đặc tả nêu là dự kiến; dưới đây đã đối chiếu lại với cây thật): (a) `getInstallId()` sinh UUID mới thay vì đọc legacy → hợp đồng (2) đỏ. (b) Ba hàm rebuild không gọi reset cache → tám file test gán `PI_CONFIG_DIR` lúc chạy đọc root đóng băng và đỏ. **Đã xác nhận cả 8 file tồn tại và đều gán env lúc chạy**: `coding-agent/test/discovery/pi-config-dir.test.ts:14`, `coding-agent/test/profile-cli.test.ts:57`, `coding-agent/test/sdk-session-isolation.test.ts:64`, `stats/test/helpers/temp-agent.ts:44`, `tui/test/keybindings-migration.test.ts:247`, `utils/test/dirs-python-gateway.test.ts:40`, `utils/test/install-id.test.ts:31`, `utils/test/profiles.test.ts:65`. (c) Bốn chỗ `helpers.ts:1032/1034/1049/1079` còn gọi `getConfigDirName()` → `project-scope.test.ts` đỏ; **negative control đúng là cố ý để lại một trong bốn chỗ**, không phải lật `getConfigWriteRootName()`. (d) Dùng chung một tập ứng viên cho home (có dấu chấm) và XDG (trần) → hợp đồng (1) đỏ, **nhưng chỉ khi `XDG_*_HOME` được đặt**. (e) Bỏ qua hai file Rust → **không test nào đỏ**. Đường này không có test harness; phải đọc hai hunk.
+
+**Phát hiện quan trọng về tính đỏ được của cổng — đã chạy thật, probe sống-đối-lập-đóng-băng.** Đặt `process.env.PI_CONFIG_DIR = ".probe-a"` **sau** khi import rồi đọc accessor:
+
+```
+getConfigDirName()      = ".probe-a"                    // sống
+getBaseConfigRoot()     = "/Users/.../.probe-a"         // sống
+getConfigRootDir()      = "/Users/.../.omp"             // ĐÓNG BĂNG
+getConfigAgentDirName() = ".probe-a/agent"              // sống
+```
+
+Đây là bằng chứng thực thi cho bước 6: module **đã** chứa hai hành vi đối nghịch. `getConfigRootDir()` (`:507`) trả `dirs.configRoot`, được dựng lúc nạp module ở `:459`. Bất kỳ cache nào thêm vào tên config-root mà không được xoá ở bốn đường rebuild sẽ tạo ra loại hỏng thứ ba.
+
+Cạm bẫy riêng của mục này — bẫy lớn nhất là **`getConfigWriteRootName()` trả về tên chưa tồn tại**. Sau W4 mà chưa W6, `CONFIG_DIR_NAME` vẫn là `".omp"` (`dirs.ts:28`). Nếu kỹ sư viết `return CONFIG_DIR_NAME;` — dù chỉ một dòng, dù "đúng" về mặt DRY — thì write root **bằng đúng** tên legacy, hợp đồng (3) và (4) đỏ, và **không có gì trong bộ test cũ đỏ**. Đây chính là cái bẫy mà đặc tả gọi là "sai lầm làm W6 không còn gì để review", nhưng ở dạng nguy hiểm hơn: lật sớm thì lộ, trả về hằng hiện tại thì **âm thầm**. Write root phải là **literal tên tương lai**, không phải hằng đang tồn tại.
+
+**`getConfigRootDir()` không tự đi theo — năm đường ghi vẫn rơi vào root cũ.** Nó **không** gọi `getBaseConfigRoot()` lúc chạy; nó trả `dirs.configRoot`, đã đóng băng từ lúc nạp module. Đặc tả bước 7 chỉ nói tách `getBaseConfigRoot()` — điều đó **không** di chuyển `getConfigRootDir()`. Năm call site sau đều là **đường ghi**: `packages/ai/src/auth-broker/discover.ts:57` (ghi `auth-broker.token`), `packages/coding-agent/src/cli/auth-broker-cli.ts:87` (ghi `auth-broker.token`), `packages/coding-agent/src/cli/auth-gateway-cli.ts:73` (ghi `auth-gateway.token`), `packages/coding-agent/src/collab/guest.ts:449` (ghi replica phòng collab), `packages/stats/src/db.ts:119` (`mkdir` config root). (Chỉ `packages/utils/src/env.ts:289` là đường đọc.) **Đặc tả không nói W4 phải làm gì với năm chỗ này.** Đây là lỗ hổng thật: sửa xong W4, người dùng vẫn thấy session/token ghi vào `~/.omp` trong khi `omp` nghĩ nó đang ghi vào `~/.ultraworkers`. Hoặc đưa chúng qua write root, hoặc ghi rõ ra rằng W6 xử lý — nhưng phải là một quyết định, không phải im lặng.
+
+**Ba tên cho một thứ, và cái thứ ba đã hoạt động một cách nửa vời.** `parseEnvFile` tại `packages/utils/src/env.ts:277-282` mirror **mọi** khoá `OMP_*` sang `PI_*`. Nghĩa là `OMP_CONFIG_DIR` trong một file `.env` **đã** hoạt động như bí danh của `PI_CONFIG_DIR` ngày hôm nay — nhưng chỉ trong `.env`, **không** phải biến shell thật (`git grep 'OMP_CONFIG_DIR'` → 0 hit trong mã). `docs/environment-variables.md:25` mô tả cơ chế mirror nhưng không nói giới hạn "trong .env". Tên `ULTRAWORKERS_CONFIG_DIR` **không** tham gia mirror (chỉ `OMP_` mới được mirror). Hệ quả: sau W4 sẽ có **ba** tên trỏ cùng một chỗ, một trong số đã hoạt động theo cách khác với hai cái kia. Bước 15 nên nói rõ phạm vi này; nếu không, tài liệu sẽ mô tả ba bí danh trong khi mã chỉ đọc hai.
+
+**Xung đột sở hữu `docs/environment-variables.md` với W13.** W13 sẽ viết lại **cùng file đó**: sửa dòng 25 và thêm cột `New name` vào 29 bảng. Hợp đồng hai chiều của W13: không được có `ULTRAWORKERS_*` trong mã mà không có dòng trong doc, và ngược lại. W4 phải làm **cả hai** cùng commit.
+
+**Bẫy nền tảng: `darwin.rs` không bao giờ chạy trên CI Linux.** Đường OAuth recovery chỉ chạy macOS. CI Linux xanh **không** có nghĩa hunk đó đúng. Nói thẳng trong PR thay vì ám chỉ một lần chạy xanh đã phủ nó.
+
+**Bẫy ngôn ngữ: hai tập ứng viên khác nhau.**
+
+```
+home:  ['.ultraworkers', '.omp']   // có dấu chấm, từ CONFIG_DIR_NAME
+xdg:   ['ultraworkers',  'omp']    // trần, từ path.join(value, APP_NAME)
+```
+
+Dùng chung một tập là sai đúng với một trong hai. Thêm nữa, tập XDG chỉ được nhìn thấy khi `XDG_*_HOME` được đặt **và** `dirs.ts:363` kiểm tra `process.platform === "linux" || "darwin"`.
+
+Cuối cùng, **đừng lấn tay với W5/W6**: không lật `CONFIG_DIR_NAME` (W6 sở hữu), không di chuyển thư mục (W5 sở hữu `config migrate`).
 
 ## Cần người xác nhận
 
@@ -1379,6 +1957,140 @@ Xếp theo mức độ tệ. (1) **CỔNG XANH MÀ CÔNG VIỆC CHƯA LÀM, NẾ
 | Không phải claim của plan, nhưng là một thiếu sót của plan có chi phí trực tiếp: không gì trong plan nói một helper move an toàn với EXDEV đã tồn tại trong cây. | THIẾU SÓT — helper đã tồn tại và AGENTS.md cấm fork nó | `gc-cli.ts:528` đã hiện thực đúng cái move mà work item này cần, gồm cả fallback qua thiết bị: mkdir thư mục cha đích, `fs.rename`, và khi `code === "EXDEV"` thì `fs.cp(…, { recursive: true })` + `fs.rm(…, { recursive: true, force: true })` cho thư mục hoặc `copyFile` + `unlink` cho file. Nó private ở cấp module nên vô hình với ai đó đang viết file mới — đó đúng là cách một bản hiện thực thứ hai xuất hiện. AGENTS.md nói thẳng đây là một bug: "Two implementations of the same thing is a bug even when both work" và "Missing capability? Extend the central helper … don't fork its logic locally." Trường hợp xuyên thiết bị không phải lý thuyết cho work item này — base root và các root XDG có thể nằm trên hai volume khác nhau, và một cái rename trần để lại người dùng ở trạng thái migrate dở. Bằng chứng: `sed -n '528,546p' packages/coding-agent/src/cli/gc-cli.ts`; `git grep -rn 'movePath' -- packages/` đúng ba dòng. Xử lý EXDEV là một pattern được công nhận khắp repo: `session/session-manager.ts:235,300,2017,2054`, `lsp/edits.ts:364`, `internal-urls/url-filesystem.ts:407`. |
 | Ghi chú của W4 rằng `PI_CONFIG_DIR` giữ "**68 lượt / 25 file** (16 file `.ts`)". | LỠI THỜI — số đo không khớp | Không phải bề mặt phụ thuộc của work item này, nhưng được ghi lại vì nó được đo trong lúc kiểm chứng và tính đúng đắn của W5 phụ thuộc vào việc `PI_CONFIG_DIR` tiếp tục chạy (N16: tiền tố `PI_*`/`OMP_*` được giữ vĩnh viễn). Toàn repo: **78 lượt xuyên 27 file**. Chỉ `.ts`: **52 lượt xuyên 17 file**. Con số 68/25/16 của plan lệch 10 hit và 2 file so với toàn repo. Không gì trong W5 phụ thuộc vào con số chính xác, nhưng một ngân sách `sed` ở phía sau dựa trên 68 sẽ quét thiếu. Bằng chứng: `git grep -n 'PI_CONFIG_DIR' -- . \| wc -l` → 78; `git grep -l 'PI_CONFIG_DIR' -- . \| wc -l` → 27; `git grep -n 'PI_CONFIG_DIR' -- '*.ts' \| wc -l` → 52; `git grep -l 'PI_CONFIG_DIR' -- '*.ts' \| wc -l` → 17. Giới hạn trong `packages/`: 53 lượt xuyên 18 file. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo:** 39 neo, **26 đúng**, **13 sai** (bảng dưới). Ngoài ra **6 phát biểu trong W5 bị bác bởi đo đạc** — riêng mục "đối chứng" đã làm đổi bản chất cổng.
+
+| neo trong W5 | W5 nói nó là gì | Thực tế | Nên trỏ tới |
+| --- | --- | --- | --- |
+| `dirs.ts:21` | `APP_NAME` | `/** App name (e.g. "omp") */` | `dirs.ts:22` |
+| `dirs.ts:27` | `CONFIG_DIR_NAME` | `/** Config directory name (e.g. ".omp") */` | `dirs.ts:28` |
+| `dirs.ts:114-115` | thân `getBaseConfigRoot()` | 114 = doc, 115 = chữ ký | `dirs.ts:115-117` |
+| `dirs.ts:355` | chốn `linux \|\| darwin` | dòng comment | `dirs.ts:365` |
+| `dirs.ts:360` | `const appRoot = path.join(value, APP_NAME);` | dòng comment | `dirs.ts:370` |
+| `dirs.ts:297` (bước 1) | điểm W4 chạm | `*/` | `dirs.ts:307-309` |
+| `utils/package.json:36-39` | export `"./*"` | khối `"./ar"` | `package.json:39-42` |
+| `package.json:94` (bước 8) | script `check:ts` | `"lint:ts": …` | `package.json:90` |
+| `config-cli.ts:93-101` | vòng lặp flag | 93 = `const positionalArgs` | `config-cli.ts:94-101` |
+| `config-cli.ts:93` | nhánh `--json` | `}` đóng khối trước | `config-cli.ts:96-97` |
+| `render-utils.ts:902` | `shortenPath` | không phải hàm đó | `render-utils.ts:926` |
+| `config-cli.test.ts:12-16` | `interface CliProcessResult` | dòng trắng ở 12 | `config-cli.test.ts:13-17` |
+| `config-cli.test.ts:19-28` | `runCliProcess` | thiếu dòng đóng | `config-cli.test.ts:19-29` |
+
+Sáu phát biểu bị bác: `dirs.ts` "có zero import `@oh-my-pi/pi-natives`" — **sai**, `dirs.ts:17` có. "File này KHÔNG chạy được trên máy này" (test CLI) — **sai**, `config-cli.test.ts` → 11 pass, EXIT=0. "`bun test …config-cli.test.ts` → 0 pass / 1 fail" — **sai**, 11 pass. "`bun --cwd=packages/natives run build` FAIL nếu thiếu ninja" — `ninja` đã có ở `/opt/homebrew/bin/ninja`; addon đã build. "`check:ts` ~40s wall" — **97s**. "Bỏ sót site flag ⇒ `--apply` lặng lẽ không tồn tại" — site đó nằm trong `parseConfigArgs`, **zero caller**.
+
+Bảng điểm sửa — trích TRƯỚC từ file thật. Mọi dòng file dùng TAB (`useTabs: true, tabWidth: 3`) — kể cả dòng bạn thêm.
+
+`packages/coding-agent/src/cli/config-cli.ts` — 8 sửa (một commit):
+
+| dòng | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| 8 | import barrel | `import { APP_NAME, getAgentDir, isRecord } from "@oh-my-pi/pi-utils";` | `import { APP_NAME, executeConfigMigration, getAgentDir, isRecord, planConfigMigration } from "@oh-my-pi/pi-utils";` |
+| 20 | `ConfigAction` | `export type ConfigAction = "list" \| "get" \| "set" \| "reset" \| "path" \| "init-xdg";` | `… \| "init-xdg" \| "migrate";` |
+| 26–28 | `ConfigCommandArgs.flags` | `flags: {` / `json?: boolean;` / `};` | `flags: {` / `apply?: boolean;` / `json?: boolean;` / `};` |
+| 66 | `VALID_ACTIONS` | `const VALID_ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg"];` | `… "init-xdg", "migrate"];` |
+| 96–97 | `parseConfigArgs` nhánh `--json` | `if (arg === "--json") {` / `result.flags.json = true;` | thêm `} else if (arg === "--apply") {` / `result.flags.apply = true;` — **xem cảnh báo bên dưới: site này là code chết** |
+| 182–184 | `switch (cmd.action)` | `case "init-xdg":` / `await initXdg();` / `break;` | thêm sau dòng 184, trước `}` ở 185: `case "migrate":` / `await handleMigrate(cmd.flags);` / `break;` |
+| 414 | `printConfigHelp()` | `  init-xdg           Initialize XDG Base Directory structure` | thêm `  migrate            Move config roots to the new name (dry run; add --apply to move)` — **2 SPACE, khớp khối help** |
+| sau 184 | `handleMigrate` (mới) | — | `async function handleMigrate(flags: { json?: boolean; apply?: boolean }): Promise<void>` — handler duy nhất ghi xuống filesystem |
+
+`packages/coding-agent/src/commands/config.ts` — 4 sửa:
+
+| dòng | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| 10 | `ACTIONS` | `const ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg"];` | `… "init-xdg", "migrate"];` |
+| 32 | `static flags` | `json: Flags.boolean({ description: "Output JSON" }),` | thêm TAB-TAB: `apply: Flags.boolean({ description: "Perform the migration (default is a dry run)" }),` |
+| 45 | `cmd.flags` | `flags: {` / `json: flags.json,` / `},` | `flags: {` / `apply: flags.apply,` / `json: flags.json,` / `},` |
+
+Không thêm arg, không thêm positional. `migrate` không nhận key, không nhận value.
+
+`packages/utils/src/index.ts` — 1 sửa: dòng 4/5, barrel `export * from "./color";` / `export * from "./dirs";` → chèn giữa `export * from "./config-migrate";` — **bảng chữ cái: `color` < `config-migrate` < `dirs`**.
+
+`packages/coding-agent/src/cli/gc-cli.ts` — xoá 1, trỏ lại 2: dòng 528–546 `movePath` (private) `async function movePath(source: string, destination: string): Promise<void> {` … `}` (19 dòng, đã đọc trọn) → **XOÁ**, nội dung chuyển sang `packages/utils/src/fs-move.ts` + `export`. Kèm `codeOf` (định nghĩa tại `gc-cli.ts:222`) — xem cạm bẫy bên dưới. Dòng 673 `await movePath(sourceArtifacts, destArtifacts);` và dòng 682 `await movePath(move.destination, move.source);` **không đổi dòng này**; chỉ thêm import `movePath` từ `@oh-my-pi/pi-utils/fs-move`. `git grep -n 'movePath' -- packages/` hôm nay trả về **đúng ba dòng** trên; sau W5 phải là ba dòng nữa (hai call + một import), không phải bốn.
+
+File tạo mới:
+
+| path | nội dung |
+| --- | --- |
+| `packages/utils/src/fs-move.ts` | `export async function movePath(source, destination): Promise<void>` — lift nguyên văn 19 dòng `gc-cli.ts:528-546` |
+| `packages/utils/src/config-migrate.ts` | `MigrationKind`, `MigrationMove`, `MigrationConflict`, `MigrationPlan`, `MigrationOptions`, `planConfigMigration`, `executeConfigMigration`. **Không** `console.*`, **không** đọc `os.homedir()` / `process.env` / `process.platform` bên trong |
+| `packages/coding-agent/src/cli/commands/config-migrate.ts` | renderer mỏng: `console.*` + `shortenPath` + `truncateToWidth`. Đây là file **duy nhất** được phép `console.*` |
+| `packages/utils/test/config-migrate.test.ts` | cổng chính, 6 case |
+| `packages/coding-agent/test/config-migrate-cli.test.ts` | test CLI subprocess — **nay đã chạy được** |
+
+Các bước có neo đã kiểm — mỗi neo đã mở và đọc; số dòng trong ngoặc là số **thật** khi neo trong W5 sai:
+
+**Bước 0 — tiền đề (bị chặn).** `git grep -n 'getConfigWriteRoot\|getConfigDirCandidates' -- packages/utils/src/dirs.ts` → **không trả về gì**. W4 chưa xuống đất. Theo chính quy tắc bước 1 của W5: **dừng**. Điểm neo thật cho vị trí W4 sẽ chạm là `dirs.ts:307-309` (`getConfigDirName`), không phải `dirs.ts:297` (dòng đó là `*/`).
+
+**Bước 1 — `packages/utils/src/config-migrate.ts`: `planConfigMigration` một mình.** Năm neo đã sửa: `dirs.ts:114-115` → **`115-117`**; `dirs.ts:355` → **`365`** (`if ((process.platform === "linux" || process.platform === "darwin") && isDefault) {`); `dirs.ts:360` → **`370`** (`const appRoot = path.join(value, APP_NAME);`); `dirs.ts:21` → **`22`**; `dirs.ts:27` → **`28`**. Hai cặp tên độc lập — `CONFIG_DIR_NAME` có dấu chấm (`.omp`), `APP_NAME` không (`omp`). Dùng chung một cặp làm cả ba root XDG trỏ tới `$XDG_*_HOME/.omp`, vốn không bao giờ tồn tại, nên rơi vào nhánh "vắng" và bị bỏ qua im lặng.
+
+**Bước 2 — `packages/utils/test/config-migrate.test.ts`, chỉ case plan-only.** Chạy `bun test packages/utils/test/config-migrate.test.ts` → phải thoát 0. Chạy lại lúc file còn chưa có → thoát 1 (đã đo).
+
+**Bước 3 — `packages/utils/src/fs-move.ts`.** Lift `gc-cli.ts:528-546` nguyên văn, `export` nó. Xoá bản private. Thêm import ở `gc-cli.ts`. **Không** chạy `bun test packages/coding-agent/test/` ở bước này.
+
+**Bước 4 — `executeConfigMigration`.** Duyệt `plan.moves` và **không gì khác**. `movePath` ném lỗi → báo, đếm, dừng; **không** xoá nguồn khi chưa di chuyển xong.
+
+**Bước 5 — `packages/utils/src/index.ts`.** Chèn `export * from "./config-migrate";` giữa dòng 4 và 5.
+
+**Bước 6 — 12 sửa ở `config-cli.ts` + `config.ts`, MỘT commit, rồi ĐẾM 8 VÀ 4.** Lưu ý quan trọng về cái đếm: tám site của `config-cli.ts` **không phải** tám cổng đỏ được. `noImplicitReturns` không có trong bất kỳ tsconfig nào của repo (đã `rg` toàn repo, 0 hit), `.oxlintrc.json` không có luật exhaustiveness, `runConfigCommand` trả `Promise<void>` nên `switch` thiếu case biên dịch im lặng, và `VALID_ACTIONS: ConfigAction[]` vẫn typecheck như tập con sau khi nới union. Đếm là **nghĩa vụ review**, đọc diff.
+
+**Bước 7 — `packages/coding-agent/src/cli/commands/config-migrate.ts`.** `shortenPath` thật ở `packages/tui/src/render/render-utils.ts:926` (**W5 ghi 902 — sai**). Tham chiếu tiền lệ: `init-xdg.ts:21` (đúng) dùng `dir.replace(os.homedir(), "~")` — đó chính là thứ đừng chép.
+
+**Bước 8 — `bun run check:ts`.** Neo thật: `package.json:90` (**W5 ghi 94 — sai**, 94 là `"lint:ts"`). Đo: exit 0, **97s** wall (W5 ghi ~40s).
+
+**Bước 9 — `bun test packages/utils/test/config-migrate.test.ts`, 6 case xanh, chạy lại lần hai vẫn 0.**
+
+**Bước 10 — cấm.** Không đụng W6. `CONFIG_DIR_NAME` thật ở `dirs.ts:28` (**W5 ghi 27 — sai**).
+
+Hợp đồng test — `packages/utils/test/config-migrate.test.ts`, 6 case (cổng chính). Tất cả dùng thư mục tạm dưới `os.tmpdir()`, `home`/`env`/`platform` tổng hợp truyền qua đối số. **Không** đổi `process.env` ở cấp file, **không** `mock.module()`, **không** vá `Bun.*`, **không** đọc `~/.omp` thật. Import engine bằng subpath `from "@oh-my-pi/pi-utils/config-migrate"` — tiền lệ đã chạy: `packages/utils/test/install-id.test.ts:5-13` import `from "@oh-my-pi/pi-utils/dirs"`.
+
+| # | case | assert | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- | --- |
+| 1 | dry run không đổi gì | gieo config + session + `profiles/<tên>` + UUID `install-id`; sau `planConfigMigration` mọi path vẫn còn | gõ `config migrate` để xem trước rồi mất sạch settings |
+| 2 | apply di chuyển mọi root | gieo base root + **ba** XDG root, tên XDG là `omp` **không dấu chấm**; `moved === 4`; mỗi path cũ biến mất, path mới có nội dung | người đã chạy `init-xdg` giữ một bộ cài nửa vời, state bị bỏ lại dưới tên cũ |
+| 3 | apply lần hai là no-op | `moves.length === 0`, cây sau đó giống từng byte | người chạy lại vì sợ bị đè dữ liệu ở root mới |
+| 4 | cả hai root tồn tại = conflict | rơi vào `conflicts` **không** rơi vào `moves`; cả hai marker sống | hai bản cài lặng lẽ nối vào một thư mục, không backup, không hỏi |
+| 5 | `install-id` sống sót | đọc UUID cũ, apply, đọc UUID mới, **hai chuỗi bằng nhau** và khớp giá trị gieo | họ thành bản cài mới, broker và lịch sử chi phí quay về zero |
+| 6 | profile có tên đi cùng root | gieo `<root>/profiles/work/agent/`, apply, assert thư mục hiện diện và đọc được dưới root mới | profile có tên resolve về thư mục rỗng, tưởng đã mất lịch sử |
+
+Hình dạng thật của các path: `install-id` — `dirs.ts:1096` `const INSTALL_ID_FILE = "install-id";`, ghi tại `dirs.ts:1126` `path.join(getBaseConfigRoot(), INSTALL_ID_FILE)`. Profile — `dirs.ts:313-315` `getConfigAgentDirName()`: `path.join(getConfigDirName(), "profiles", profile, "agent")`.
+
+**Hai case thêm** (vòng lặp tham số hoá ở đây là đúng vì mỗi dòng một đường code): biến XDG không set → không root XDG nào trong plan; `platform: "win32"` → cũng không (chốn ở `dirs.ts:365`). **KHÔNG thêm:** test assert action list chứa `"migrate"`, test assert help text, hay bất kỳ source-grep nào lên file hiện thực — đúng là static-echo mà AGENTS.md cấm.
+
+`packages/coding-agent/test/config-migrate-cli.test.ts` — 3 case: `omp config migrate` được chấp nhận + in plan + không đụng đĩa; `--apply` thì di chuyển; `--apply` lần hai báo 0 moves và thoát 0. Harness tái dùng được, đã đọc: `packages/coding-agent/test/config-cli.test.ts` — import dòng 1-6 ✓ (trong đó `resetSettingsForTest` từ `config/settings.ts:3746` ✓, lớp `TempDir` tại `packages/utils/src/temp.ts:6` ✓), `const cliEntry = path.join(import.meta.dir, "..", "src", "cli.ts")` ở dòng 11, `interface CliProcessResult` ở **13-17** (W5 ghi 12-16), `runCliProcess` ở **19-29** (W5 ghi 19-28), gọi `Bun.spawn([process.execPath, cliEntry, ...args])` ở dòng 20. Assert trên argv và output của tiến trình con. **Đừng** giả định binary `omp` trên PATH.
+
+Cổng có đỏ được không — bốn cổng, **ba đỏ được, một KHÔNG**. Cổng D thủ công KHÔNG tự đỏ được — phải có người chạy; ghi nó vào PR như một mục nghiệm thu, đừng ghi như một lệnh đã pass.
+
+| cổng | lệnh | đỏ được? | bằng cách nào | đo được hôm nay |
+| --- | --- | --- | --- | --- |
+| A (chính) | `bun test packages/utils/test/config-migrate.test.ts` | **CÓ** | file vắng → EXIT=1; hiện thực sai → case 2/3/4 đỏ | EXIT=1 khi vắng ✓ |
+| A′ (đối chứng) | `bun test packages/utils/test/install-id.test.ts` | n/a | chứng minh "xanh" ở A là xanh thật | 5 pass, EXIT=0 ✓ |
+| B | `bun run check:ts` | **CÓ, nhưng yếu** | bỏ sót site → typecheck **không** đỏ. Đỏ được vì syntax/typing sai thật | EXIT=0, 97s ✓ |
+| C | `bun test packages/coding-agent/test/config-migrate-cli.test.ts` | **CÓ** | file vắng → EXIT=1; CLI không nhận `migrate` → usage error | chạy được ✓ (**W5 nói ngược lại**) |
+| D | nghiệm thu tay | **KHÔNG** | cần người | — |
+
+Cổng C: W5 nói KHÔNG dùng được; đo thì **NGƯỢC LẠI — nó chạy được, và nên được thăng lên làm cổng thứ hai**. `bun test packages/coding-agent/test/config-cli.test.ts` → **11 pass / 0 fail / 40 expect, EXIT=0**. Addon native **đã build**; lệnh `brew install ninja` + `bun --cwd=packages/natives run build` trong phần *Xác minh* của W5 là **việc đã xong** — chạy lại là thừa. Cổng C đỏ được theo đúng nghĩa và phân biệt được "W5 sai" với "W5 xong" **ngay bây giờ**, không cần tiền đề nào.
+
+**Cảnh báo vận hành trước khi chạy cổng B: dừng lại và làm sạch working tree.** Lần chạy đầu tiên của phiếu **ĐỎ** — không phải vì W5, mà vì `packages/coding-agent/test/pi-scope-aliases.test.ts` bị sửa trong working tree lúc đó và `oxfmt --check` fail. Khi cây sạch, `bun run check:tools` xanh ("All matched files use the correct format") và `check:ts` exit 0. Có tiếng rì rào `oxlint` warning ở `mcp-project-config-not-trusted-by-default.test.ts:19` (`getConfigRootDir` imported nhưng không dùng) — đó là **warning**, `oxlint` vẫn exit 0. Đỏ vì file người khác đang sửa là cách tệ nhất để "cổng đỏ được" bị hiểu sai.
+
+**Đối chứng mà W5 dựa vào — đã hỏng, đừng trích lại.** W5 lập luận cổng phải nằm ở `packages/utils` và **phải** import bằng subpath, vì "import barrel kéo `@oh-my-pi/pi-natives` vào đồ thị". Đã kiểm bằng hai file thăm dò: `import { APP_NAME } from "@oh-my-pi/pi-utils";` (barrel) → **1 pass / 0 fail, EXIT=0**; `import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";` (subpath) → **1 pass / 0 fail, EXIT=0**. Cả hai đều chạy. Lý do W5 nêu đã không còn tác dụng vì addon đã build, và lý do **cụ thể** W5 đưa ra cũng sai ngay từ đầu (xem phát biểu bị bác ở trên). Danh sách 4 file utils import pi-natives của W5 (`file-lock.ts:9`, `mermaid-ascii.ts:1`, `procmgr.ts:3`, `ptree.ts:10`) thì **ĐÚNG**; chỉ có `dirs.ts` bị bỏ sót khỏi danh sách, và chính nó là file W5 dùng làm bằng chứng. → Import subpath **vẫn nên giữ**, nhưng **đừng viết nó vào PR như một ràng buộc kỹ thuật bắt buộc** — nó không bắt được gì trên máy này.
+
+Cạm bẫy riêng của mục này — bốn site flag, chỉ **một** trong bốn là gánh thật. `parseConfigArgs` (`config-cli.ts:72`) và `printConfigHelp` (`config-cli.ts:405`) đều có **zero caller** — đã `rg` toàn `packages/`, chỉ thấy chính dòng định nghĩa. Đường thật cho `omp config migrate --apply` là `commands/config.ts` → `Config.run()` → `static flags` → `runConfigCommand(cmd)`, và class này được nạp tại `packages/coding-agent/src/cli-commands.ts:99`. Hệ quả: site thêm `else if (arg === "--apply")` vào `parseConfigArgs` là **code chết**. W5 nói bỏ sót nó nghĩa là "`--apply` lặng lẽ không tồn tại"; điều đó **sai** — bỏ sót nó chỉ nghĩa là `parseConfigArgs` không cập nhật. Vẫn nên sửa (giữ hai parser đồng bộ), nhưng **đừng dùng nó làm bằng chứng** rằng `--apply` đã nối. Bằng chứng đúng là hai site trong `commands/config.ts` và `handleMigrate` nhận `cmd.flags.apply`.
+
+**`printConfigHelp` dùng 2 SPACE, phần còn lại dùng TAB.** `cat -A` cho thấy các dòng lệnh help bắt đầu bằng hai SPACE, trong khi code xung quanh là TAB. Dòng 414 phải viết bằng **2 SPACE** cho khớp cột. Nhưng `.oxfmtrc.json` đặt `useTabs: true, tabWidth: 3` và `oxfmt --check` (chạy trong `check:tools`, tiền thề của cổng B) đang pass file này vì nội dung nằm trong template literal mà oxfmt không đụng tới. Viết bằng TAB sẽ **lệch cột** nhưng không làm oxfmt đỏ; viết bằng SPACE trong code thì oxfmt đỏ. → Cân đối 2 SPACE theo hàng 414, nhưng **đừng** chỉ vì thế mà dùng SPACE cho `apply:` trong `static flags` hay `apply: flags.apply,` trong `cmd` — hai chỗ đó phải là TAB. Bằng chứng: `sed -n '32p' commands/config.ts | hexdump -C` → `09 09 6a 73 6f 6e` (hai TAB rồi `json:`), và `grep -cP '^\t'` → 35 với `grep -cP '^    '` → 0.
+
+**`movePath` không lift một mình được — nó dùng `codeOf`.** `codeOf` định nghĩa tại `gc-cli.ts:222`: `function codeOf(error: unknown): string | undefined { return typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : undefined; }`. Lift `movePath` mà không mang theo `codeOf` (hoặc viết lại inline) là build break. `gc-cli.ts` vẫn cần `codeOf` cho code khác — kiểm tra trước khi xoá.
+
+**W4 chưa xuống đất, và bước 1 của W5 nói phải dừng.** `getConfigWriteRoot` và `getConfigDirCandidates` đều không tồn tại. `APP_NAME` vẫn là `"omp"` (`dirs.ts:22`), `CONFIG_DIR_NAME` vẫn là `".omp"` (`dirs.ts:28`). Engine của W5 nhận `oldBaseName`/`newAppName` qua tham số nên **không** phụ thuộc kỹ thuật vào symbol của W4; sự phụ thuộc là về **tên**: `newBaseName` phải là `".ultraworkers"` và `newAppName` phải là `"ultraworkers"`, và hai giá trị đó chỉ được chốt ở W6 và W3. Vì W6 **cố ý** chạy sau, tới lúc W5 chạy thì tên mới vẫn chưa tồn tại trong hằng số. → Đây là mâu thuẫn thứ tự thật sự trong W5, không phải chi tiết vụn vặt. Cách thoát sạch: **hard-code hai tên trong test** (`".omp"`/`"omp"` và `".ultraworkers"`/`"ultraworkers"` — chúng là hằng số của test, không phải bịa tên trong mã sản phẩm), và để `handleMigrate` truyền tên từ `dirs.ts`. Nhưng khi đó `migrate` sẽ là no-op vì `CONFIG_DIR_NAME` còn là `".omp"` — tức là **`--apply` sẽ không làm gì cho tới khi W6 lật tên**. Phải nói thẳng điều này trong mô tả PR; nếu không, test xanh sẽ bị đọc là "tính năng chạy" trong khi nó không chạy.
+
+**Neo `dirs.ts:27` trỏ vào doc comment — đừng sửa nhầm.** `:27` là `/** Config directory name (e.g. ".omp") */`; khai báo ở **28**. Nếu kỹ sư tin neo và ghi vào dòng 27, họ chèn text vào giữa một doc comment — và ở W6, hậu quả là hằng số **không** đổi trong khi review vẫn tưởng đã đổi.
+
+**Ba nơi trong W5 tự mâu thuẫn với nhau về addon.** Cùng một tài liệu, ba câu không thể đồng thời đúng: dòng 1164 *"File này KHÔNG chạy được trên máy này."*; dòng 1340 *"Trên máy chưa build addon nó thoát 1"*; và dòng 1556 (mục W6, đã được sửa) *"Native addon **đã** được build"*. Đo đạc ủng hộ câu thứ ba. W5 là phần **chưa** được sửa — khi viết PR, đừng dẫn lại dòng 1164 hay 1340.
+
+**`install-id` nằm ở base root, không nằm ở XDG root.** `getInstallId()` ghi vào `path.join(getBaseConfigRoot(), INSTALL_ID_FILE)` (`dirs.ts:1126`). Case 5 chỉ nên seed và assert trên **base** root. Nếu cũng seed `install-id` dưới XDG root, bạn đang test thứ không tồn tại — và case đó sẽ xanh vì lý do sai.
+
+**Cùng một tên cho cả XDG lúc gieo = test xanh trong khi hành vi thật hỏng.** Đây là bẫy tinh vi nhất của W5 và kế hoạch đã gọi tên đúng. Nếu gieo XDG root bằng `path.join(xdgHome, oldBaseName)` (tức `.omp`) thay vì `path.join(xdgHome, "omp")`, case 2 vẫn xanh — vì engine tìm `path.join(xdgHome, oldAppName)` sẽ không thấy gì và bỏ qua, còn `moved` vẫn bằng… 1, không phải 4, nên case **có** đỏ. Nhưng nếu đồng thời nới lỏng assert, nó xanh im lặng. Gieo đúng `omp` không dấu chấm cho XDG, `.omp` có dấu chấm cho base.
+
 ## Cần người xác nhận
 
 Bốn chỗ spec mâu thuẫn với chính nó. Không tự sửa ở trên — cần người quyết định trước khi gõ code.
@@ -1603,6 +2315,162 @@ Sai lầm thứ ba là lật `CONFIG_DIR_NAME` trước khi trỏ lại các cal
 - *Đính chứng 5:* `ls` trên ba đường dẫn đó trả về "No such file or directory" cho cả ba. `package.json:93` là `"check": "bun run --parallel check:ts check:rs"` và `:94` là `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types"`.
 - *Đính chứng 6:* Các dòng 8136, 8585 của plan, và đoạn chi tiết của W5 (~8712) đều nêu `~/.ultraworkers` là root mới.
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo — ba kết quả làm thay đổi bản chất công việc.**
+
+1. **Có một lần đọc project-root thứ NĂM mà W6 không biết, và nó không nằm ở `helpers.ts:47`.** Nó nằm ở `discovery/helpers.ts:1032, 1034, 1049, 1079`, dùng `getConfigDirName()` (getter HOME root) để dựng đường dẫn **project root**. Cổng grep mà W6 tự định nghĩa (`git grep -n 'CONFIG_DIR_NAME'`) **về nguyên tắc không thể thấy nó**, vì nó không chứa chuỗi `CONFIG_DIR_NAME`.
+2. **Ma trận cổng đã đo thật**, mỗi site một lần quên. Kết quả: W6 đo **sai** hai claim của mình — site `helpers.ts:47` **có** cổng đỏ mạnh (10 test), và site `config.ts:12` **hoàn toàn không có** cổng đỏ nào (0 test).
+3. **Baseline đã sạch:** 113 pass / 0 fail trên 9 file cổng. Nên mọi failure nào xuất hiện sau khi sửa đều do chính W6, không phải nợ cũ.
+
+**Lưu ý đầu tiên:** W6 ghim `1454dc0` làm điều kiện tiên quyết. HEAD thật là `47720fd`. `packages/utils/src/dirs.ts` đã **trượt 10 dòng** (1177 dòng) — **mọi neo `dirs.ts` trong W6 đều lệch.** Đừng gõ theo số dòng của W6.
+
+`packages/utils/src/dirs.ts` — toàn bộ hỏng, lệch +1 đến +10:
+
+| Neo W6 | Kết quả thật | Verdict |
+| --- | --- | --- |
+| `:27` = `CONFIG_DIR_NAME` | `export const CONFIG_DIR_NAME: string = ".omp";` | **HỎNG — dòng 28** |
+| `:589-591` = `getProjectAgentDir` | `export function getProjectAgentDir(cwd: string = getProjectDir()): string {` / `return path.join(cwd, CONFIG_DIR_NAME);` / `}` | **HỎNG — 599-601** |
+| `:590` = phép join | dòng **600** | **HỎNG — dòng 600** |
+| `:297-298` = `getConfigDirName` | `export function getConfigDirName(): string {` / `return process.env.PI_CONFIG_DIR \|\| CONFIG_DIR_NAME;` | **HỎNG — 307-308** |
+| `:360` = join XDG | dòng **370** (`const appRoot = path.join(value, APP_NAME);`) | **HỎNG — dòng 370** |
+| `:24` = `APP_URL` | `export const APP_URL: string = "https://omp.sh/";` | **HỎNG — dòng 25** |
+| `:36` = `USER_AGENT` | `export const USER_AGENT = \`omp/${VERSION}\`;` | **HỎNG — dòng 37** |
+| (W6 không nhắc) `APP_NAME` | `export const APP_NAME: string = "omp";` | dòng 22, ghi để W3 |
+
+Docblock đi kèm dòng 28 cũng phải sửa, W6 không nhắc: `sed -n '27p'` → `/** Config directory name (e.g. ".omp") */` — nó **tự mâu thuẫn** sau khi hằng số lật.
+
+Các file khác: `omfg-controller.ts` **đúng cả 3** (`:2` import, `:285` rules path, `:38` literal; `#resolveTarget` mở đầu ở dòng **277**, thân 284-288 — W6 viết "283-288", lệch 1, không nguy hiểm). `config.ts` **đúng** (`:12`, `:84-87`, `:90-93`, `:147-149`, `:224-232`). `discovery/helpers.ts:6` và `:47` **đúng**. `legacy-pi-coding-agent-shim.ts` docblock `:1587-1591` → **HỎNG, thật là `:1596-1600`**; export `:1592` → **HỎNG, thật là `:1601`**. `package.json:94-95` / `:93-94` → **HỎNG**, thật là `"check"` @ **89**, `"check:ts"` @ **90**, `"check:rs"` @ **92**.
+
+Test file: `legacy-pi-cli-exports.test.ts:14` ✓, `omfg-controller.test.ts:15, :178, :198, :216` ✓, `agent-session-rules-reload.test.ts:89,156` ✓, `pi-config-dir.test.ts:38` ✓, `system-prompt-template.test.ts:42,111,126` ✓, `sdk-system-prompt-template.test.ts:23` ✓, `extensions-discovery.test.ts:23` ✓. **Hỏng:** `agent-session-concurrent.test.ts:1630` → **1597**; `advisor-toggle.test.ts:268,272` → **262, 266**; `extensions-discovery.test.ts:149,747,767,792` → **136, 651, 671, 696**.
+
+**File được W6 dẫn vào cổng nhưng không tồn tại:** `packages/coding-agent/test/discovery/monorepo-skills.test.ts` → `No such file or directory`. File gần nhất là `agents-monorepo-skills.test.ts`, nhưng nó có **0 literal `.omp`** và **0 hit `SOURCE_PATHS`** — nó **không** phủ site `helpers.ts:47`. W6 dùng nó làm "phủ thật" của site đó; phủ thật thực tế là ba file khác.
+
+Tiền đề môi trường: addon `packages/natives/native/pi_natives.darwin-arm64.node` tồn tại (185 MB) — cổng `coding-agent` chạy thật. Cả ba file test W4 đều `MISSING` — W4 chưa bàn giao, cổng phải đỏ. `ls scripts/rename` → `No such file or directory`. `bun run check:ts` → `EXIT=0`.
+
+**Phát hiện lớn: lần đọc project-root thứ NĂM.** W6 nói có **BỐN**; có **NĂM**. `resolveActiveProjectRegistryPath` (`helpers.ts:1025-1055`, docblock tại 1012-1024 gọi nó là "single source of truth for active project root" — nó cấp `install`, `uninstall`, `list`, `upgrade`, `discovery`, `doctor`) dùng `getConfigDirName()` ở dòng 1032, 1034, và 1049 (pass 2 neo `.git`); `resolveOrDefaultProjectRegistryPath` dùng nó ở dòng 1079. **Tại sao nguy hiểm hơn ba site kia:** 3 test trả về `null` → plugin đã cài ở cấp project biến mất im lặng; nhưng 1 test trả về `<tmp>/.ultraworkers/plugins/installed_plugins.json` — tệ hơn nhiều: resolver **đi lên tới `~/.ultraworkers`** và trả chính registry của HOME làm registry của project. Đây đúng là cái alias mà docblock tại 1075-1077 cảnh báo ("producing duplicates / disambiguation errors"). Tức là W6, nếu bỏ sót site 5, **không chỉ mất dữ liệu — nó tạo ra alias hai registry mà chính code này đã được viết để tránh.** `listClaudePluginRoots` gọi hàm đó ở dòng **1145** rồi dựng `projectRoot` từ kết quả ở dòng **1146** → project entry bị bóp méo, 1 test đỏ.
+
+Bảng điểm sửa — mọi trích dẫn lấy từ file thật ở `47720fd`, đã `sed -n` từng dòng:
+
+| # | Đường dẫn | Symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- | --- |
+| 1 | `packages/utils/src/dirs.ts:27-28` | `CONFIG_DIR_NAME` + docblock | `/** Config directory name (e.g. ".omp") */`<br>`export const CONFIG_DIR_NAME: string = ".omp";` | `/** Config directory name (e.g. ".ultraworkers") */`<br>`export const CONFIG_DIR_NAME: string = ".ultraworkers";` |
+| 2 | `packages/utils/src/dirs.ts` (ngay sau 28) | `PROJECT_DIR_NAME` **mới** | — không tồn tại | `export const PROJECT_DIR_NAME: string = ".omp";` kèm docblock nói rõ cố ý KHÔNG derive từ `CONFIG_DIR_NAME` |
+| 3 | `packages/utils/src/dirs.ts:600` | `getProjectAgentDir` | `return path.join(cwd, CONFIG_DIR_NAME);` | `return path.join(cwd, PROJECT_DIR_NAME);` |
+| 4 | `packages/coding-agent/src/modes/controllers/omfg-controller.ts:2` | import | `import { CONFIG_DIR_NAME, prompt } from "@oh-my-pi/pi-utils";` | `import { PROJECT_DIR_NAME, prompt } from "@oh-my-pi/pi-utils";` |
+| 5 | `…/omfg-controller.ts:285` | `#resolveTarget` | `filePath: path.join(this.ctx.sessionManager.getCwd(), CONFIG_DIR_NAME, "rules", \`${ruleName}.md\`),` | `filePath: path.join(this.ctx.sessionManager.getCwd(), PROJECT_DIR_NAME, "rules", \`${ruleName}.md\`),` |
+| 6 | `packages/coding-agent/src/discovery/helpers.ts:6` | import | `CONFIG_DIR_NAME,` | `PROJECT_DIR_NAME,` |
+| 7 | `…/discovery/helpers.ts:47` | `SOURCE_PATHS.native.projectDir` | `projectDir: CONFIG_DIR_NAME,` | `projectDir: PROJECT_DIR_NAME,` |
+| **8** | **`…/discovery/helpers.ts:1032`** | `resolveActiveProjectRegistryPath` | `const stat = await fs.promises.stat(path.join(dir, getConfigDirName()));` | `const stat = await fs.promises.stat(path.join(dir, PROJECT_DIR_NAME));` |
+| **9** | **`…/discovery/helpers.ts:1034`** | `resolveActiveProjectRegistryPath` | `return path.join(dir, getConfigDirName(), "plugins", "installed_plugins.json");` | `return path.join(dir, PROJECT_DIR_NAME, "plugins", "installed_plugins.json");` |
+| **10** | **`…/discovery/helpers.ts:1049`** | `resolveActiveProjectRegistryPath` (pass 2) | `return path.join(dir, getConfigDirName(), "plugins", "installed_plugins.json");` | `return path.join(dir, PROJECT_DIR_NAME, "plugins", "installed_plugins.json");` |
+| **11** | **`…/discovery/helpers.ts:1079`** | `resolveOrDefaultProjectRegistryPath` | `return path.join(cwd, getConfigDirName(), "plugins", "installed_plugins.json");` | `return path.join(cwd, PROJECT_DIR_NAME, "plugins", "installed_plugins.json");` |
+| 12 | `packages/coding-agent/src/config.ts:4` | import | `import { CONFIG_DIR_NAME, getConfigAgentDirName, getProjectDir } from "@oh-my-pi/pi-utils";` | thêm `PROJECT_DIR_NAME` vào danh sách (giữ `CONFIG_DIR_NAME` — dòng 135 vẫn cần) |
+| 13 | `packages/coding-agent/src/config.ts:11-16` | `priorityList` | `const priorityList = [`<br>`	{ dir: CONFIG_DIR_NAME, globalAgentDir: getConfigAgentDirName },`<br>`	{ dir: ".claude" },` … | Tách: `USER_PRIORITY` (giữ `{ dir: CONFIG_DIR_NAME, globalAgentDir: getConfigAgentDirName }` + `.claude`/`.codex`/`.gemini`) và `PROJECT_PRIORITY` (`PROJECT_DIR_NAME`, `.claude`, `.codex`, `.gemini`) |
+| 14 | `packages/coding-agent/src/config.ts:84` | `USER_CONFIG_BASES` | `const USER_CONFIG_BASES = priorityList.map(({ dir, globalAgentDir }) => ({` | `.map` trên `USER_PRIORITY` |
+| 15 | `packages/coding-agent/src/config.ts:90` | `PROJECT_CONFIG_BASES` | `const PROJECT_CONFIG_BASES = priorityList.map(({ dir }) => ({` | `.map` trên `PROJECT_PRIORITY` |
+| 16 | `packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts:14` | assertion | `expect(CONFIG_DIR_NAME).toBe(".omp");` | import shim thành `SHIM_CONFIG_DIR_NAME` + import `CONFIG_DIR_NAME, PROJECT_DIR_NAME` từ `@oh-my-pi/pi-utils`, rồi:<br>`expect(SHIM_CONFIG_DIR_NAME).toBe(CONFIG_DIR_NAME);`<br>`expect(SHIM_CONFIG_DIR_NAME).not.toBe(PROJECT_DIR_NAME);` |
+| 17 | `packages/coding-agent/test/discovery/pi-config-dir.test.ts:38` | assertion | `expect(result[0]).toEqual({ path: expected, source: ".omp", level: "user" });` | `expect(result[0]).toEqual({ path: expected, source: CONFIG_DIR_NAME, level: "user" });` |
+| 18 | `packages/utils/test/project-dir-name-pinned.test.ts` | **tạo mới** | — không tồn tại | xem bước 9 |
+| 19 | `packages/utils/CHANGELOG.md:3` | `[Unreleased]` | `## [Unreleased]` rồi thẳng `## [18.3.1] - 2026-09-25` | thêm `### Changed` + một dòng entry |
+| 20 | `scripts/rename/do_not_rename.tsv` | **tạo mới** | thư mục không tồn tại | **BỎ QUA — xem cạm bẫy bên dưới, chưa được tạo** |
+
+**Dòng 8-11 không có trong W6.** **Hai dòng W6 không nêu nhưng phải xử lý:** `dirs.ts:27` (docblock tự mâu thuẫn) và `config.ts:135` phải **giữ nguyên** `CONFIG_DIR_NAME` — đây là phép so sánh home-root, đổi nó sang `PROJECT_DIR_NAME` sẽ làm hỏng cờ bật/tắt user source.
+
+**Cổng cứng: W4 và W5 phải xong trước.**
+
+```bash
+ls packages/utils/test/config-dir-dual-root.test.ts \
+   packages/utils/test/install-id-legacy-read.test.ts \
+   packages/utils/test/config-dir-write-root.test.ts
+```
+
+Hôm nay cả ba **không tồn tại** → W6 **chưa được bắt đầu**. Cho tới khi chúng có, việc lật này không có đường quay lại dữ liệu người dùng. **Không** chạy bước kiểm `HEAD == 1454dc0` của W6 — HEAD thật là `47720fd`, và việc chạy lại `grep` đã xong rồi. Dùng bảng ở trên, đừng dùng số dòng của W6.
+
+Các bước có neo đã kiểm — thứ tự này là **nghĩa vụ, không phải sở thích**. Thứ tự của W6 ("lật hằng số SAU CÙNG") là đúng và phải giữ. Mở rộng thêm một ràng nữa: **trỏ lại site 5 cùng đợt với site 3**, vì cùng một file, cùng một import, và cùng một câu hỏi "cái này là home hay project".
+
+1. `dirs.ts:28` — thêm `PROJECT_DIR_NAME = ".omp"` ngay dưới `CONFIG_DIR_NAME`, kèm docblock nói nó cố ý **không** derive từ `CONFIG_DIR_NAME`, thư mục này thường đã commit vào repo người dùng, và đổi tên nó là viết lại working tree của họ chứ không phải đổi tên sản phẩm. Giữ docblock ngắn.
+2. `dirs.ts:600` — `getProjectAgentDir` trả `PROJECT_DIR_NAME`. Chữ ký và tham số mặc định **giữ nguyên**.
+3. `omfg-controller.ts:2` + `:285` — import + `#resolveTarget` sang `PROJECT_DIR_NAME`. **Đã kiểm:** `const PROJECT_OPTION = "This project (.omp/rules)"` ở dòng 38 là literal, KHÔNG dựng từ hằng số → giữ nguyên `.omp`. Dán câu này vào commit message.
+4. `discovery/helpers.ts:6`, `:47`, **`:1032`, `:1034`, `:1049`, `:1079`** — tất cả sang `PROJECT_DIR_NAME`. **Giữ nguyên** `getConfigDirName()` ở dòng **42** và **45** (getter `userBase`/`userAgent` — HOME root, phải đi theo cơ chế phân giải ứng viên của W4). Sự bất đối xứng này **là** toàn bộ thiết kế.
+5. `config.ts:4`, `:11-16`, `:84`, `:90` — tách `priorityList` thành hai danh sách. Giữ `CONFIG_DIR_NAME` trong `USER_PRIORITY` và trong phép so sánh dòng 135.
+6. **Chỉ bây giờ** lật `dirs.ts:28` thành `".ultraworkers"` (và sửa docblock 27).
+7. Sửa hai test (dòng 16, 17 của bảng trên).
+8. `packages/utils/CHANGELOG.md` — thêm entry. Dòng 3 là `## [Unreleased]`, dòng 5 thẳng `## [18.3.1] - 2026-09-25` — hiện `[Unreleased]` **rỗng**. Thêm `### Changed` rồi một dòng: `New config, sessions and settings are now written to ~/.ultraworkers instead of ~/.omp. Existing installs are read from both; run `+"`omp config migrate`"+` to move your data. Project-level .omp directories are unchanged and keep working.` Chưa có issue → thay `NNN` sau khi mở issue. **Đây là mục dễ quên nhất** vì nó trông như việc nội bộ, nhưng nó đổi danh tính trên đĩa của người dùng.
+9. Viết `packages/utils/test/project-dir-name-pinned.test.ts` — theo đúng quy ước `packages/utils/test/dirs.test.ts`: `bun:test`, `TempDir`/`fs.mkdtemp`, `afterEach(() => vi.restoreAllMocks())`, **không** `mock.module()`, **không** mutate `process.env` bằng file-wide hook, **không** source-grep. Hai case, và **case thứ hai là toàn bộ giá trị của test**: (1) `PROJECT_DIR_NAME` được ghim `".omp"` và **đã phân kỳ** với `CONFIG_DIR_NAME` — `expect(PROJECT_DIR_NAME).toBe(".omp");` và `expect(CONFIG_DIR_NAME).not.toBe(PROJECT_DIR_NAME);`; nếu hai hằng số bao giờ trở lại bằng nhau, có ai đó đã lật cả project root. (2) Tạo **CẢ HAI** trong cùng một project tạm: một thư mục `.omp/rules` **và** một thư mục tên theo `CONFIG_DIR_NAME` mới, rồi khẳng định `getProjectAgentDir()` phân giải về `.omp` — thư mục thứ hai biến assertion thành một test **thứ tự ưu tiên** thật, không phải một phản chiếu hằng số. Bổ sung khuyến nghị (không bắt buộc, nhưng đây là site đã hỏng một lần rồi): thêm case thứ ba khẳng định `resolveActiveProjectRegistryPath()` vẫn trả `<project>/.omp/plugins/installed_plugins.json` khi project chỉ có `.omp`. `@oh-my-pi/pi-utils` không export hàm này (nó thuộc `coding-agent`), nên case này phải nằm ở `packages/coding-agent/test/discovery/project-registry-pinned.test.ts`.
+
+Hợp đồng test — ma trận cổng **ĐO THẬT, từng site một lần** (bỏ sót đúng một site, các site khác đã trỏ đúng, rồi chạy 9 file cổng; mọi thay đổi đã revert, cây hiện sạch). **Baseline: `113 pass / 0 fail / 113 tests across 9 files`.**
+
+| Site bị bỏ sót | Vị trí thật | Test đỏ **riêng cho site này** | Số |
+| --- | --- | --- | ---: |
+| — (không bỏ sót gì) | — | 0 | **0** |
+| **Site 1** | `dirs.ts:600` `getProjectAgentDir` | `extensions-discovery.test.ts` × 4, `advisor-toggle.test.ts` × 1 | **5** |
+| **Site 2** | `omfg-controller.ts:285` | `omfg-controller.test.ts` — "invalidates the discovery cache after saving" | **1** |
+| **Site 3** | `discovery/helpers.ts:47` | `mcp-config-scope-dedup.test.ts` × 4, `agent-session-rules-reload.test.ts` × 4, `builtin-rules-md.test.ts` × 2 | **10** |
+| **Site 4** | `config.ts:12` `priorityList` | **KHÔNG CÓ** | **0** |
+| **Site 5** *(W6 không biết)* | `discovery/helpers.ts:1032,1034,1049,1079` | `project-scope.test.ts` — `resolveActiveProjectRegistryPath` × 4 + `listClaudePluginRoots` × 1 | **5** |
+| *(không phải site)* | 2 test cần sửa theo | `pi-config-dir.test.ts:38`, `legacy-pi-cli-exports.test.ts:14` | 2 |
+
+Sau khi trỏ đúng cả 5 site, chỉ còn đúng 2 failure — **hai test mà W6 đã nói phải sửa**. Đó là bằng chứng ma trận là đủ. **Ba đính chính so với W6, đo được:** claim (a) của W6 vượt quá thực tế (viết bỏ sót `dirs.ts:590` làm "hàng chục test" — **đo: 5**); claim (c) của W6 **SAI** (viết "không test nào bắt được" — **đo: 10 test đỏ**); `config.ts:12` hoàn toàn không có cổng (**đo: 0**).
+
+Cổng có đỏ được không — **cổng 0-5 đều đỏ được, nhưng cổng 1 rất yếu và cổng 5 phải biết đọc kết quả.**
+
+- **Cổng 0 — tiền đề (phải xanh trước khi đọc kết quả cổng 3/4):** `ls packages/natives/native/pi_natives.darwin-arm64.node`. Ngày nay **xanh** (185 MB). Nếu đỏ, cổng 3 và 4 không phải cổng — chúng chỉ báo lỗi load addon. Không được ghi "xong" khi cổng 0 đỏ.
+- **Cổng 1 — typecheck:** `bun run check:ts`. Đo hôm nay: **exit 0**. Đây là cổng **yếu** — nó bắt được import hỏng, hằng số chưa tồn tại, subpath sai; **không** bắt được đổi giá trị, đổi đường dẫn. Đừng báo nó là bằng chứng cho site 1-5. (`package.json:90`, không phải `:94-95`.)
+- **Cổng 2 — ba file test của W4 (ĐỎ ĐƯỢC, vì chúng chưa tồn tại):** đỏ hôm nay là **thông tin, không phải nhiễu** — nó đỏ cho tới khi W4 bàn giao, và xanh **khi và chỉ khi** W4 xong.
+- **Cổng 3 — 9 file test, sửa đúng 2 test trong đó trước:**
+
+```bash
+cd packages/coding-agent && bun test --timeout 20000 \
+  test/modes/controllers/omfg-controller.test.ts \
+  test/agent-session-rules-reload.test.ts \
+  test/advisor-toggle.test.ts \
+  test/extensions-discovery.test.ts \
+  test/discovery/builtin-rules-md.test.ts \
+  test/discovery/pi-config-dir.test.ts \
+  test/mcp-config-scope-dedup.test.ts \
+  test/extensibility/legacy-pi-cli-exports.test.ts \
+  test/marketplace/project-scope.test.ts
+```
+
+Kỳ vọng: **111 pass / 0 fail**. Đỏ được? **Có, thật** — ma trận đo 5/1/10/0/5 test đỏ theo từng site. `project-scope.test.ts` và `mcp-config-scope-dedup.test.ts` **không được rút khỏi danh sách này**: chúng là phủ duy nhất của site 5 và site 3.
+
+- **Cổng 4 — test mới:** `cd packages/utils && bun test test/project-dir-name-pinned.test.ts`
+- **Cổng 5 — thay cổng grep cũ của W6.** Cổng cũ là `git grep -n 'CONFIG_DIR_NAME' -- 'packages/**/*.ts'`. Nó **về nguyên tắc mù với site 5**. Dùng cả hai:
+
+```bash
+# 5a — không còn project-root join nào đọc bằng hằng số home-root
+git grep -n 'CONFIG_DIR_NAME' -- 'packages/**/*.ts'
+git grep -n 'getConfigDirName()' -- 'packages/*/src/**/*.ts'
+```
+
+Đỏ được? **Có, nếu bạn biết đọc kết quả.** Sau khi sửa, `getConfigDirName()` chỉ còn **đúng 2 hit**: `helpers.ts:42` và `helpers.ts:45`. Bất kỳ hit thứ ba nào ở `packages/*/src/**` là project-root đang đọc bằng getter home-root. Đó là một phép kiểm có tiêu chuẩn rõ ràng, không cần phán đoán. Danh sách hit `CONFIG_DIR_NAME` sau khi sửa, đã đo: `dirs.ts:28` định nghĩa; `dirs.ts:308` thân hàm; `config.ts:4` import; `config.ts:12` `USER_PRIORITY`; `config.ts:135` phép so sánh; `legacy-pi-coding-agent-shim.ts:1601` re-export; `cli/help-extra.ts:66` chuỗi help — home-root hiển thị, **W6 không nhắc hit này**; `omfg-controller.ts:2` và `discovery/helpers.ts:6` phải **biến mất**; `omfg-controller.ts:285` và `discovery/helpers.ts:47` phải **biến mất**; `config.ts` `PROJECT_PRIORITY` phải **xuất hiện** dưới tên `PROJECT_DIR_NAME`.
+- **Cổng 6 — `config.ts:12` không có cổng tự động, nên thêm một cái:** `cd packages/coding-agent && bun test test/discovery/pi-config-dir.test.ts -t "project"`. Sau khi sửa dòng 38, hãy thêm một case cụ thể: `getConfigDirs("commands", { project: true })` trả về `source` là `".omp"` (kể cả khi `CONFIG_DIR_NAME` đã là `".ultraworkers"`). **Không có case này thì site 4 vẫn là 0 cổng đỏ.**
+
+Điều người dùng thấy gì nếu hồi quy:
+
+| Hồi quy | Người dùng thấy |
+| --- | --- |
+| Bỏ sót site 1 | Mở repo đã dùng nhiều tháng → thư mục `extensions/`, `hooks/`, `settings.json` cấp project biến mất; ứng dụng cư xử như vừa cài |
+| Bỏ sót site 2 | Rules cấp project lưu xong báo "đã lưu" nhưng **không còn đọc lại được** — rule chết ngay sau khi ghi |
+| Bỏ sót site 3 | `RULES.md` cấp project, `mcp.json` cấp project và skill lock cấp project không được tìm thấy |
+| Bỏ sót site 4 | Config/commands/MCP cấp project trả về rỗng — **không dòng lỗi nào** |
+| **Bỏ sót site 5** | **Plugin đã cài ở cấp project biến mất khỏi `omp plugin list`; tệ hơn, resolver leo lên `~/.ultraworkers` và trả registry của HOME làm registry của project → `install`/`uninstall`/`doctor` đọc và ghi nhầm file, sinh duplicate và disambiguation error** |
+
+Cạm bẫy riêng của mục này — **`do_not_rename.tsv`: đừng tạo trong W6.** W6 yêu cầu tạo `scripts/rename/do_not_rename.tsv` + hàng N14. **Cả ba GATE 0 của W7/W8a/W8b đều kiểm `keep-list.txt`, không kiểm `do_not_rename.tsv`.** Tạo `do_not_rename.tsv` thì **không GATE 0 nào xanh**, và lượt `sed` của W7 — vốn nạp `keep-list.txt` — sẽ không thấy hàng N14 của bạn. Đây là cổng luôn xanh tệ hơn không có cổng. (Mâu thuẫn nội bộ của kế hoạch về file này: W6 viết «§2.3 định nghĩa `do_not_rename` là bảng 17 dòng nhưng không ghim đường dẫn file nào» — **sai**, bảng `## do_not_rename` của chính kế hoạch **có** ghim `scripts/rename/do_not_rename.tsv` với trạng thái `[create,UNVERIFIED]`; nhưng cùng kế hoạch đó liệt kê câu hỏi "do_not_rename.tsv hay keep-list.txt: một hay hai file" là câu hỏi mở **chặn trước sóng 2** — mà W6 nằm trong sóng 2.)
+
+Cũng **đừng tạo schema `scope=project` tự do**. Nếu bảng không phân biệt được `.omp` cấp project với `.omp` cấp HOME, lượt sed sẽ chặn luôn `~/.omp` → `~/.ultraworkers` và toàn bộ W4/W5/W6 trở nên vô nghĩa. Schema phải có cột `scope` và W7 phải chỉ loại trừ khi `scope=project`. **Cách làm đúng ở đây:** đưa lý do ghim vào **docblock của `PROJECT_DIR_NAME`** và vào commit message, rồi ghi một quyết định mở trong PR. Việc tạo file registry thuộc W7/W8b.
+
+**`dirs.ts` trượt 10 dòng — đừng tin số dòng của W6.** Nếu gõ đúng `sed -n '590p'` theo W6, bạn đọc trúng `export function getProfileRootDir(profile: string | undefined): string {` — một hàm hợp lệ, có chữ ký đẹp, **không hề báo lỗi**, và sửa vào đó là hỏng profile thay vì hỏng project dir. Đây là loại lỗi âm thầm đắt nhất. Dùng `grep -n` theo tên symbol.
+
+**Đừng lật hằng số trước khi trỏ lại call site.** W6 đã nói, và đây là bẫy thứ ba theo thứ tự dễ sai. Thêm một lý do đo được: nếu lật trước, **cả 5 site** cùng hỏng cùng lúc, và ma trận mất hết khả năng phân biệt — bạn sẽ thấy 23 test đỏ và không biết site nào chưa trỏ. Với ma trận để chẩn đoán được, bạn **phải** sửa từng site một và chạy lại.
+
+**`config.ts:12` là site nguy hiểm nhất theo nghĩa "không ai thấy".** Nó **không có test đỏ nào** (đo: 0). Nó trông y hệt một cách dùng home-root vì mang `globalAgentDir: getConfigAgentDirName`. Cổng grep cũ sẽ thấy nó và bắt bạn **phải phân loại thủ công** — đây là cổng duy nhất trong W6 là việc rà soát của con người chứ không phải của máy. Đừng báo `check:ts` xanh là bằng chứng cho site này. Sửa nó bằng cách tách hai danh sách, **không** sửa bằng cách thêm một entry `{ dir: PROJECT_DIR_NAME }` vào `priorityList` — vì `USER_CONFIG_BASES` sẽ sinh ra một `<home>/.omp` giả.
+
+**Đừng sửa 4 dòng thành công mà bỏ site 5.** Bạn có thể làm đúng 4 site mà W6 nêu, chạy cổng 3, thấy `project-scope.test.ts` đỏ 5 test — rồi tưởng là "nhiễu" và sửa test. Đừng. Đọc lại phát hiện lớn: một trong năm failure là `Received: ".../.ultraworkers/plugins/installed_plugins.json"` — resolver đang trả registry của HOME làm registry của project. **Sửa test, đừng sửa kỳ vọng.**
+
+**`config.ts:135` phải giữ `CONFIG_DIR_NAME`** — `if (name !== CONFIG_DIR_NAME && !isUserSourceEnabled(name.replace(/^\./, "")))` là phép so sánh home-root, bảo user source của omp không bị tắt bởi toggle của nguồn khác. Đổi sang `PROJECT_DIR_NAME` sẽ làm mọi toggle user source hành xử sai. Cùng lý do: `helpers.ts:42` và `:45` phải giữ `getConfigDirName()`.
+
 ## Cần người xác nhận
 
 Các điểm dưới đây là **mâu thuẫn nội tại của chính spec**, không phải kết quả đối chiếu với source. Không tự sửa — nêu ra đây.
@@ -1820,9 +2688,132 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
 | Ghi chú môi trường: "`bun test` bị CHẶN — native addon chưa build, mọi test báo 0 pass / 1 fail / 1 error với Failed to load pi_natives native addon for darwin-arm64." | SAI như mệnh đề chung — đúng cho packages/coding-agent/test/, sai cho packages/utils/test/. | Blocker giới hạn theo package, không phải toàn cục, và nó là **tiền đề tái lập được** chứ không phải giới hạn của máy. Đo trên máy **chưa build** ở HEAD 1454dc0: `bun test packages/utils/test/dirs.test.ts` -> 6 pass, 0 fail, 9 expect() calls, 121ms; `bun test packages/utils/test/install-id.test.ts` -> 5 pass, 0 fail, 11 expect() calls, 115ms; `bun test packages/coding-agent/test/config/settings-reload.test.ts` -> 0 pass, 1 fail, 1 error. Nguyên nhân: `packages/utils/src/dirs.ts` chỉ import node:fs, node:os, node:path và `../package.json` của chính nó — không có đường nào tới native addon. Sau khi build addon thì cả hai package đều chạy (`bun test packages/utils/test/` -> 743 pass / 10 skip / 0 fail). Hệ quả với spec này, đúng thứ harness đã hỏi: một test đặt trong `packages/coding-agent/test/` sẽ **không đỏ được trên máy chưa build** — đúng sự nhầm lẫn "xong vs test không chạy" cần tránh. Test mới của W6a vì thế đặt ở `packages/utils/test/`. Điều này cũng nghĩa là câu "bun run check:ts là tín hiệu chính" của harness không phải tín hiệu dùng được duy nhất — một tín hiệu đỏ/xanh thật sự tồn tại cho package sở hữu work item này. Bằng chứng: các lần chạy trực tiếp nêu trên. Danh sách import của dirs.ts xác nhận qua `sed -n '1,17p' packages/utils/src/dirs.ts` (node:fs, node:os, node:path, ../package.json, ./fs-error). |
 | Plan line 13199 / N14: "The project-level .omp root (see W6a — recommendation is keep it) ... must go into do_not_rename." | ĐÚNG, và cây code làm lập luận cụ thể hơn cách plan phát biểu. | `.omp` cấp project của chính repo này được git theo dõi với 14 file, nên thất bại mà W6a ngăn chặn không phải chuyện giả định cho codebase này: một cú flip sẽ phá `.omp/commands` của chính maintainer (5 file markdown: cleanup, fix-issues, release, review-prs, triage), `.omp/skills` (6 file trải rộng ở semantic-compression, system-prompts, tool-prompt-optimization) và `.omp/tools` (3 file: package.json, bun.lock, tui.ts). Plan coi project root là mối quan tâm chung của người dùng; nó còn là chính cấu hình làm việc của repo này. Dòng do_not_rename là bắt buộc dù thế nào. Bằng chứng: `git ls-files \| grep '^\.omp/'` -> 14 đường dẫn, liệt kê đầy đủ. `ls -la .omp` -> commands/, skills/, tools/. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Plan viết neo cho `1454dc0` — **đã trượt**; HEAD khi kiểm chứng là `47720fd`. `dirs.ts` dài **1177 dòng, không phải 1157**. Bảng đính chính đầy đủ (khớp tuyệt đối không cần dịch số dòng): `discovery/helpers.ts:47`, import dòng 6, userBase 42, userAgent 45, getProjectPath 127–131; `omfg-controller.ts:285`, import dòng 2; `config.ts:12`, `:135`; `help-extra.ts:3`, `:66`; `legacy-pi-cli-exports.test.ts:14`; `sdk-system-prompt-template.test.ts:10, 22, 23`; `system-prompt-template.test.ts:4, 42, 111, 126`; `omfg-controller.test.ts:15, 178, 198`; `agent-session-rules-reload.test.ts:89, 156`; `extensions-discovery.test.ts:23`; 5 project getter trong dirs.ts: `1056, 1061, 1066, 1075, 1083`.
+
+Các neo HỎNG: `dirs.ts:590` = phép join → **dòng 600** (hàm bắt đầu ở 599, không phải 589); `dirs.ts:27` → **dòng 28**; `dirs.ts:298` → **dòng 308**; `dirs.ts:360` → **dòng 370**; `APP_NAME`/`APP_URL`/`MAIN_CONFIG_FILENAMES`/`USER_AGENT` lần lượt **22, 25, 31, 37**; `config.ts:84` `USER_CONFIG_BASES` → **85**, `:90` `PROJECT_CONFIG_BASES` → **91**; shim `1588,1589,1592` → **1597, 1598, 1601** (file ở `src/extensibility/`, dài 1658); `extensions-discovery.test.ts:149, 747, 767, 792` → **HỎNG CẢ 4** (file chỉ dài 768 nên 792 vượt EOF; call site `getProjectAgentDir` thật: **23, 136, 651, 671, 696**); `advisor-toggle.test.ts:268, 272` → **HỎNG CẢ 2**, thật là **262, 266**; `dirs.test.ts:52-60` (rm trong finally) → `fs.rmSync` thật ở **dòng 74**, trong `finally` ở 73–75; `dirs.test.ts:17-20` → `afterEach` ở **18**, `vi.restoreAllMocks()` ở **19**, `setProjectDir` ở 20. Cùng bảng: `getConfigWriteRoot`/`getConfigDirCandidates` **KHÔNG tồn tại** → W4 chưa land; `APP_NAME` vẫn `"omp"` → W3 chưa land; `bun test` **không** bị chặn, addon đã build, cả 4 nhóm đối chứng âm chạy xanh; `dirs.test.ts` cho `6 pass`, **`1 skip`**, 0 fail, 9 expect(); `.omp/` có **16** file tracked (5 cmd, **8** skills, 3 tools) chứ không phải 14 (5, 6, 3); 24 hit `CONFIG_DIR_NAME` trong `packages/**/*.ts` — **khớp** (15 hit ngoài test).
+
+Bảng điểm sửa — mọi dòng TRƯỚC được trích từ file thật tại `47720fd`:
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `packages/utils/src/dirs.ts` (chèn sau dòng 28) | `PROJECT_DIR_NAME` (mới) | *không tồn tại* — `grep -n PROJECT_DIR_NAME -- '*.ts'` → **NO HITS** | `export const PROJECT_DIR_NAME: string = ".omp";` kèm docblock nói rõ cố ý **không** suy ra từ `CONFIG_DIR_NAME` |
+| `packages/utils/src/dirs.ts:600` | `getProjectAgentDir` | `return path.join(cwd, CONFIG_DIR_NAME);` | `return path.join(cwd, PROJECT_DIR_NAME);` |
+| `packages/coding-agent/src/discovery/helpers.ts:47` | `SOURCE_PATHS.native.projectDir` | `projectDir: CONFIG_DIR_NAME,` | `projectDir: PROJECT_DIR_NAME,` |
+| `packages/coding-agent/src/discovery/helpers.ts:6` | import | `CONFIG_DIR_NAME,` | thêm `PROJECT_DIR_NAME,` giữ `CONFIG_DIR_NAME` |
+| `packages/coding-agent/src/modes/controllers/omfg-controller.ts:285` | `#resolveTarget()` | `filePath: path.join(this.ctx.sessionManager.getCwd(), CONFIG_DIR_NAME, "rules", \`${ruleName}.md\`),` | `filePath: path.join(this.ctx.sessionManager.getCwd(), PROJECT_DIR_NAME, "rules", \`${ruleName}.md\`),` |
+| `packages/coding-agent/src/modes/controllers/omfg-controller.ts:2` | import | `import { CONFIG_DIR_NAME, prompt } from "@oh-my-pi/pi-utils";` | `import { PROJECT_DIR_NAME, prompt } from "@oh-my-pi/pi-utils";` (bỏ `CONFIG_DIR_NAME` — không còn dùng) |
+| `packages/coding-agent/test/sdk-system-prompt-template.test.ts:10` | import | `import { CONFIG_DIR_NAME, TempDir } from "@oh-my-pi/pi-utils";` | `import { PROJECT_DIR_NAME, TempDir } from "@oh-my-pi/pi-utils";` |
+| `packages/coding-agent/test/sdk-system-prompt-template.test.ts:23` | `withSession` | `await Bun.write(path.join(cwd, CONFIG_DIR_NAME, "SYSTEM_TEMPLATE.md"), nativeTemplate);` | `await Bun.write(path.join(cwd, PROJECT_DIR_NAME, "SYSTEM_TEMPLATE.md"), nativeTemplate);` |
+| `packages/coding-agent/test/system-prompt-template.test.ts:4` | import | `import { __resetDirsFromEnvForTests, CONFIG_DIR_NAME, getConfigAgentDirName, TempDir } from "@oh-my-pi/pi-utils";` | đổi `CONFIG_DIR_NAME` → `PROJECT_DIR_NAME` |
+| `packages/coding-agent/test/system-prompt-template.test.ts:42` | `withDiscoveryHome` | `projectConfig: tempDir.join("project", CONFIG_DIR_NAME),` | `projectConfig: tempDir.join("project", PROJECT_DIR_NAME),` |
+| `packages/coding-agent/test/system-prompt-template.test.ts:111` | vòng lặp template | `for (const directory of [CONFIG_DIR_NAME, ".agents"]) {` | `for (const directory of [PROJECT_DIR_NAME, ".agents"]) {` |
+| `packages/coding-agent/test/system-prompt-template.test.ts:126` | vòng lặp template | `for (const directory of [CONFIG_DIR_NAME, ".agents"]) {` | `for (const directory of [PROJECT_DIR_NAME, ".agents"]) {` |
+| `packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts:14` | pin literal | `expect(CONFIG_DIR_NAME).toBe(".omp");` | khẳng định ràng buộc: giá trị re-export từ package root legacy **là** hằng home-root và **không phải** `PROJECT_DIR_NAME` |
+| `packages/coding-agent/src/config.ts:12` | `priorityList` | `{ dir: CONFIG_DIR_NAME, globalAgentDir: getConfigAgentDirName },` | `{ dir: PROJECT_DIR_NAME, globalAgentDir: getConfigAgentDirName },` — **chỉ sau khi có quyết định của con người** |
+| `scripts/rename/keep-list.txt` | (tạo mới) | *không tồn tại* — `ls scripts/rename` → `No such file or directory` | một dòng neo vị trí project + lý do `#` |
+| `packages/utils/test/project-dir-name-pinned.test.ts` | (tạo mới) | *không tồn tại* | 4 khẳng định, xem hợp đồng test |
+
+**KHÔNG sửa (đã mở và đọc, xác nhận đúng nguyên trạng):** `dirs.ts:308` `return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;` là lần đọc **home-root**, thuộc W4/W6; `dirs.ts:598` `/** Get the project-local config directory (.omp). */` — docblock vẫn đúng sau khi sửa; `help-extra.ts:66` `PI_CODING_AGENT_DIR        - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)` — home-root, đi theo cú flip của W6, **sửa thành `PROJECT_DIR_NAME` sẽ in ra một đường dẫn sai**; `config.ts:135` `if (name !== CONFIG_DIR_NAME && !isUserSourceEnabled(name.replace(/^\./, ""))) {` — so sánh với chính hằng, phải theo flip; `extensibility/legacy-pi-coding-agent-shim.ts:1601` `export { CONFIG_DIR_NAME } from "@oh-my-pi/pi-utils";` — re-export phải bám theo home-root.
+
+Các bước có neo đã kiểm — mỗi neo dưới đây đã được mở và đọc:
+
+1. **Ghi baseline trước khi đụng code.** Chạy và LƯU output: `cd packages/utils && bun test test/dirs.test.ts test/install-id.test.ts`. Đo thật tại `47720fd`: `11 pass, 1 skip, 0 fail, 20 expect() calls`. Lưu ý: kế hoạch ghi "6 pass / 0 fail" cho `dirs.test.ts` — đúng về pass nhưng **thiếu 1 skip** (đo được `6 pass, 1 skip, 0 fail, 9 expect() calls`). Nếu không tái lập được, dừng.
+2. **Thêm `PROJECT_DIR_NAME` vào `dirs.ts`** — neo `dirs.ts:28`, đã đọc, đúng là `export const CONFIG_DIR_NAME: string = ".omp";`. Chèn ngay sau nó. Docblock phải nói bằng văn xuôi: đây là tên thư mục config cấp project, tương đối với project root; cố ý KHÔNG suy ra từ `CONFIG_DIR_NAME`; thư mục này thường nằm trong repo người dùng và được commit vào git nên đổi tên nó là viết lại working tree của họ chứ không phải di chuyển trạng thái máy-local. **Không đụng** `dirs.ts:22`, `:25`, `:31`, `:37`, `:308`.
+3. **Trỏ lại `getProjectAgentDir`** — neo `dirs.ts:600`, hàm bắt đầu ở 599. Sau khi sửa, `grep -n 'return path.join(cwd, CONFIG_DIR_NAME)' packages/utils/src/dirs.ts` phải **không hit**. `grep -n CONFIG_DIR_NAME packages/utils/src/dirs.ts` vẫn ra **3** hit (28 khai báo, 308 home-root, + dòng docblock mới ở bước 2) — **3 là đúng, 4 là bước 3 bị bỏ sót**.
+4. **Trỏ lại HAI call site ngoài `dirs.ts` mà kế hoạch gốc không nêu tên.** (a) `discovery/helpers.ts:47` — nó được `getProjectPath()` ở dòng 127–131 tiêu thụ dưới dạng `return path.join(ctx.cwd, paths.projectDir, subpath);` — một lần đọc project-root **không đi qua** `getProjectAgentDir()`. Để nguyên `userBase` (dòng 42) và `userAgent` (dòng 45) đọc `getConfigDirName()` — đó là home-root, thuộc W4. (b) `omfg-controller.ts:285` — đường ghi rules phạm vi project trong `#resolveTarget()` (hàm bắt đầu ở 277).
+5. **Trả lời open question 1 rồi quét lại toàn bộ bề mặt.** `config.ts:12` — `priorityList` nạp vào **cả** `USER_CONFIG_BASES` (dòng **85**) và `PROJECT_CONFIG_BASES` (dòng **91**) từ cùng một giá trị `dir`. Dòng 135 so `name !== CONFIG_DIR_NAME` để quyết định opt-in của user source. Quét: `git grep -n 'CONFIG_DIR_NAME' -- 'packages/**/*.ts'` cho **24** hit (đã đo), 9 trong test. Sau khi sửa, mọi hit còn lại bắt buộc thuộc đúng bốn loại: (i) home-root use (`help-extra.ts:66`, logic user-base trong `config.ts`), (ii) so sánh với chính hằng (`config.ts:135`), (iii) re-export (`legacy-pi-coding-agent-shim.ts:1601` + hai dòng comment 1597–1598), (iv) project-root join trong test đã trỏ lại.
+6. **Viết `packages/utils/test/project-dir-name-pinned.test.ts`.** Đặt ở `packages/utils/test/` — package này chạy được **không cần build addon**. Không `mock.module()`. Không mutate `process.env`/`process.platform` — `getProjectAgentDir` nhận cwd làm tham số, đó là seam hẹp. Dọn thư mục tạm trong thân test bằng `fs.rmSync(root, { recursive: true, force: true })` trong `finally` (mẫu: `dirs.test.ts:74`), và `vi.restoreAllMocks()` trong `afterEach` (mẫu: `dirs.test.ts:18-19`).
+7. **Nới lỏng pin literal.** `legacy-pi-cli-exports.test.ts:14` — `expect(CONFIG_DIR_NAME).toBe(".omp");`. Thay bằng khẳng định ràng buộc home-root-vs-project-root. Giữ nguyên import symbol thật — đây là hợp đồng xuất ra, không phải source-grep. **Đừng xoá hẳn.**
+8. **Tạo dòng do_not_rename.** `scripts/rename/` chưa tồn tại. Tạo `scripts/rename/keep-list.txt` theo định dạng `<pattern>  # <reason>`. Mục cần thêm dùng mẫu **neo theo vị trí project**, KHÔNG dùng `.omp` trần: `^\.omp/  # project-level directory usually committed to git; renaming it rewrites the user's working tree rather than moving machine-local state`. Nếu một work item anh em đã tạo file, append thay vì ghi đè.
+9. **Chạy cổng và chứng minh cổng đỏ được** — xem mục cổng bên dưới.
+
+Hợp đồng test — file mới `packages/utils/test/project-dir-name-pinned.test.ts`, 4 khẳng định:
+
+1. `PROJECT_DIR_NAME === ".omp"` — hợp đồng giá trị.
+2. `expect([CONFIG_DIR_NAME, PROJECT_DIR_NAME]).toEqual([CONFIG_DIR_NAME, ".omp"])` — **pin cặp có thứ tự**, khẳng định gánh trọng lượng. Vế phải tự tham chiếu `CONFIG_DIR_NAME` nên hằng home-root không bị ghim cứng (W6 lật nó, khẳng định vẫn xanh); vế trái bắt đúng một lỗi: ai đó hợp nhất `PROJECT_DIR_NAME` theo tên home root. **Không test sẵn nào trong repo làm điều này.**
+3. **Phân giải dưới đối thủ** — cwd tạm chứa `.omp/` đã commit vẫn phân giải vào đó khi một thư mục mang tên home-root MỚI nằm ngay cạnh. Đây là lời gọi hàm thật và so sánh giá trị trả về, **không** phải so sánh chuỗi.
+4. **Cả năm project getter** dựa trên `getProjectAgentDir` đều nằm dưới `.omp` đã ghim: `getProjectModulesDir` (`dirs.ts:1056`), `getProjectPromptsDir` (`:1061`), `getProjectPluginOverridesPath` (`:1066`), `getMCPConfigPath('project')` (`:1075`), `getSSHConfigPath('project')` (`:1083`).
+
+**KHÔNG viết** `expect(PROJECT_DIR_NAME).not.toBe(CONFIG_DIR_NAME)` ở đây: tại thời điểm W6a merge hai hằng còn **bằng nhau**, khẳng định đó đỏ ngay khi viết ra. Phân kỳ là hợp đồng của W6.
+
+Các test sẵn có — nhóm đối chứng âm, **KHÔNG được sửa** (đã đọc và xác nhận các literal): `omfg-controller.test.ts:15` `const PROJECT_OPTION = "This project (.omp/rules)";`, `:178` assertion phủ định, `:198` `const rulesDir = path.join(harness.projectDir, ".omp", "rules");`; `agent-session-rules-reload.test.ts:89` và `:156`; `extensions-discovery.test.ts:23` `extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");`; `advisor-toggle.test.ts:262` và `:266` `path.join(getProjectAgentDir(projectA|projectB), "settings.json"),`.
+
+**Người dùng thấy gì nếu hồi quy:** họ mở một repo đã dùng nhiều tháng và settings, rules, skills, hooks của project biến mất. Không lỗi nào in ra, không cảnh báo thiếu cấu hình nào hiện, app cư xử như vừa cài mới — kể cả một lần đăng nhập lại im lặng. Chi tiết làm nó khó chịu: nhãn `This project (.omp/rules)` **vẫn hiện** trong UI trong khi chỉ tới một thư mục không tồn tại.
+
+Cổng có đỏ được không — **CÓ, và đã quan sát nó đỏ bằng tay ở cả ba call site.** Nhưng trước hết: **tiền đề "addon chưa build" đã hết hiệu lực.** `packages/natives/native/pi_natives.darwin-arm64.node` tồn tại, `ninja` có ở `/opt/homebrew/bin/ninja`, và toàn bộ nhóm đối chứng âm của coding-agent chạy xanh. Cổng **không** được giữ điều kiện "addon chưa build" làm tiền đề — làm vậy là giữ một cổng có thể báo xanh giả.
+
+Đo thật ở `47720fd`, tất cả đều **EXIT 1 khi đúng-không-còn-gì** hoặc **không hit khi đúng**:
+
+```bash
+# 1. types
+bun run check:ts
+
+# 2. test mới + nhóm sẵn có của utils (tiền tố ./ BẮT BUỘC — xem cạm bẫy cổng)
+cd packages/utils && bun test ./test/project-dir-name-pinned.test.ts \
+  ./test/dirs.test.ts ./test/install-id.test.ts
+
+# 3. dirs.ts:600 đã trỏ lại — không còn project-root join nào đọc CONFIG_DIR_NAME
+! grep -n 'return path.join(cwd, CONFIG_DIR_NAME)' packages/utils/src/dirs.ts
+#    tương đương, dễ review nhất:
+#    grep -n CONFIG_DIR_NAME packages/utils/src/dirs.ts  -> đúng 3 hit (28 khai báo, 308 home-root, docblock)
+
+# 4. quét toàn bộ bề mặt — mọi project-root join phải đã đổi sang PROJECT_DIR_NAME
+git grep -n 'CONFIG_DIR_NAME' -- 'packages/**/*.ts'
+
+# 5. nhóm đối chứng âm của coding-agent (chạy được, đã build)
+bun test packages/coding-agent/test/modes/controllers/omfg-controller.test.ts
+bun test packages/coding-agent/test/extensions-discovery.test.ts
+bun test packages/coding-agent/test/advisor-toggle.test.ts
+bun test packages/coding-agent/test/agent-session-rules-reload.test.ts
+
+# 6. keep-list
+test -f scripts/rename/keep-list.txt && grep -n '^\^\\\.omp/.*#' scripts/rename/keep-list.txt
+
+# 7. phủ định: hằng ghim hỏng thì phải đỏ
+#    tạm đặt PROJECT_DIR_NAME = ".ultraworkers", chạy lại (2) -> phải đỏ. khôi phục.
+```
+
+Đã thực sự phá từng call site trên cây thật và đo lại, rồi hoàn nguyên (đã xác minh `git status` sạch):
+
+| phá gì | kết quả đo được |
+| --- | --- |
+| `dirs.ts:600` → `".omp-renamed-probe"` | `extensions-discovery` **31 pass / 4 FAIL**; `advisor-toggle` **42 pass / 1 FAIL**; `omfg-controller` 3/0; `agent-session-rules-reload` 6/0 |
+| `omfg-controller.ts:285` → `".omp-renamed-probe"` | `omfg-controller.test.ts` **2 pass / 1 FAIL** |
+| `helpers.ts:47` → `".omp-renamed-probe"` | `extensions-discovery.test.ts` **31 pass / 4 FAIL** |
+
+Sau khi hoàn nguyên: cả bốn file test trở lại xanh hoàn toàn, `md5` `dirs.ts` khớp trước khi phá, `git status` sạch.
+
+**Đính chính một tuyên bố của kế hoạch.** Kế hoạch nói bỏ qua bước 3 (để `CONFIG_DIR_NAME` ở `dirs.ts:600`) làm **`omfg-controller.test.ts` và `agent-session-rules-reload.test.ts` đỏ**. **Đo thật thì cả hai vẫn XANH** khi phá `dirs.ts:600`. Lý do: chúng không dùng `getProjectAgentDir()`; chúng tự `path.join(..., ".omp", "rules")` bằng literal rồi so với output của `omfg-controller.ts:285`, vốn cũng tự join bằng literal. Hai site đó chỉ đỏ khi **chính dòng 285 của `omfg-controller.ts`** bị phá. Đừng tick xanh `omfg-controller`/`agent-session-rules-reload` như bằng chứng cho việc sửa `dirs.ts` — bằng chứng đúng cho `dirs.ts:600` là `extensions-discovery` + `advisor-toggle`.
+
+Cạm bẫy riêng của mục này — **bẫy cổng: `bun test` KHÔNG đỏ khi file không tồn tại.** Đây là bẫy nguy hiểm nhất và nó giết chính cổng:
+
+```
+$ bun test test/this-file-does-not-exist.test.ts
+ note: Tests need ".test" ... filename
+EXIT=0                      # ← XANH, dù file không tồn tại
+$ bun test ./test/this-file-does-not-exist.test.ts
+ Test filter ... had no matches
+EXIT=1                      # ← ĐỎ đúng
+```
+
+Lệnh cổng trong kế hoạch (`bun test test/project-dir-name-pinned.test.ts test/dirs.test.ts test/install-id.test.ts test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts`) **thiếu tiền tố `./`**, nên nó báo `11 pass / 1 skip / 0 fail` **ngay cả khi `project-dir-name-pinned.test.ts` chưa tồn tại và cả hai file của W4 cũng chưa tồn tại**. Đã chạy đúng lệnh đó và nó xanh. Đó là cổng luôn-xanh tệ hơn không có cổng. Đã viết lại ở trên với `./` bắt buộc. Hệ quả: `config-dir-dual-root.test.ts` và `install-id-legacy-read.test.ts` của W4 **chưa tồn tại** (W4 chưa land) — chúng nên ở cổng của W4; W6a chỉ cần hai file utils nêu ở trên.
+
+Ngoài ra: **đừng tin lời kế hoạch rằng W6a là một dòng ở `dirs.ts:590`.** Sai. Ba call site project-root tồn tại và cả ba đều đã được chứng minh gánh trọng lượng bằng phá–đo–hoàn nguyên thật ở trên. Bỏ bất kỳ site nào trong ba site đó là hỏng âm thầm, và site nào hỏng thì hỏng theo kiểu riêng.
+
+**`.omp` trần trong keep-list là lỗi âm thầm, không phải lỗi nổ.** Nó khớp `~/.omp` lẫn `<repo>/.omp/`, chặn nhầm việc W6/W7 đổi tên home root — đúng hậu quả ngược với mục tiêu của W6. `dirs.ts:28` và `dirs.ts:600` đang dùng **cùng một chuỗi** `".omp"`, nên đây không phải lo lắng giả định.
+
+**Quyết định `config.ts:12` là quyết định sản phẩm, không phải refactor.** `priorityList` nạp cả user-base lẫn project-base từ một `dir`. Để nguyên thì mục project trong `PROJECT_CONFIG_BASES` âm thầm thành `.ultraworkers` khi W6 lật — một thay đổi hành vi tầng project nằm trong một cuộc đổi tên hằng, và làm sai trông y hệt làm không gì. Phải có người trả lời trước khi merge.
+
+**Pin cặp trông thừa nhưng không thừa.** Khẳng định giá trị đã ghim `".omp"`; pin cặp vẫn đỏ khi ai đó hợp nhất `PROJECT_DIR_NAME` theo tên home root — chế độ hỏng mà **không test sẵn nào** trong repo bắt được. Từ W6 trở đi, hình thức đúng của refactor đó chính là `PROJECT_DIR_NAME = CONFIG_DIR_NAME`.
+
+**`.omp/` của chính repo này không phải chuyện giả định.** Đo được **16** file git-tracked dưới `.omp/`: `commands/` 5, `skills/` 8, `tools/` 3. (Kế hoạch ghi "14 file" và "`skills/` 6 file" — đã lệch.) Flip project root sẽ phá chính cấu hình làm việc của repo này trên máy của maintainer.
+
+Cuối cùng, **một cảnh báo thực tế:** trong lúc soạn phiếu này, working tree bị một tiến trình khác sửa dưới chân — `dirs.ts` và 3 file khác nhận W6/W6a edits rồi bị hoàn nguyên. Nếu gõ W6a song song với tiến trình khác đang sửa cùng cây, hãy `git status` trước khi bắt đầu và sau mỗi bước sửa. Phiếu này chỉ mô tả trạng thái sạch tại `47720fd`.
+
 
 ---
-
 
 ## W7. Đổi npm scope — lượt cơ học trên hàng nghìn file (sóng 3)
 
@@ -2249,6 +3240,205 @@ Nếu plan tổng nói sai, người đọc phải thấy đó. Bảng dưới l
 | Lệnh nghiệm thu của W7: `bun install && bun run check && bun run test:ts`. | `unverifiable` ở dạng nguyên bản, nhưng **không phải vì giới hạn của máy**. | `bun run test:ts` là `bun scripts/ci-test-ts.ts local-ts` và nó **cần addon native**: trên máy chưa build thì `bun test` báo `Failed to load pi_natives native addon for darwin-arm64`. `bun --cwd=packages/natives run build` trước đây thất bại vì thiếu `ninja` (`CMake was unable to find a build program corresponding to "Ninja"`) — sau `brew install ninja` thì **exit 0**, và `test:ts` chạy được. `bun run check` còn gọi thêm `check:rs` cần cargo, chưa xác minh. Đã thay bằng `bun run check:ts` (đã đo exit 0 ở HEAD) và tách cổng test thành Gate E, ghi `NOT RUN — environment blocked` **chỉ khi** bước build thực sự chưa exit 0. Cần dạy kèm `brew install ninja` trước bất kỳ lệnh build nào (xem mục Xác minh). |
 | Plan không nói gì về `loader-state.js:70` và sáu leaf package `@oh-my-pi/pi-natives-<tag>`. | `gap-in-plan` | Đây là phần thất bại im lặng đắt nhất của W7 và plan bỏ sót nó. `packages/natives/native/loader-state.js:70` gọi `require_.resolve(`@oh-my-pi/pi-natives-${platformTag}/package.json`)`. Sáu tên leaf package này KHÔNG nằm trong repo — chúng được publish lên registry (`.github/workflows/ci.yml:326` chạy `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball`, và :1035 nói rõ 'Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages'). Đổi scope trong loader TRƯỚC khi leaf package tồn tại dưới scope mới ⇒ `require_.resolve` ném ⇒ `catch { return null }` chạy ⇒ loader rơi sang nhánh dự phòng khác, không một lỗi nào được ném, không một test nào đỏ. W7 không tự giải quyết được; cần câu trả lời của Q1 trước khi merge. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Kết luận trước tiên: W7 KHÔNG nên chạy ở HEAD đo.** Ba chặn đỏ độc lập: keep-list chưa có, W2 chưa merge, scope `@ultraworkers` chưa tồn tại trên registry — và Q1 đã được trả lời bằng đo thật là "chưa", nên `loader-state.js:70` sẽ hỏng im lặng nếu đổi.
+
+**Cảnh báo neo.** Kế hoạch viết neo cho `HEAD 1454dc0`; HEAD khi đo là `47720fd`. Mọi con số trong tài liệu đã cũ — chạy lại và ghi số thật vào commit message:
+
+| # | tài liệu nói | cây thật tại `47720fd` | mức độ |
+| --- | --- | --- | --- |
+| 1 | `HEAD 1454dc0` | `HEAD 47720fd`. `84cbac9`, `106eb3e` còn tồn tại; `5873776` vẫn **không tồn tại** (`fatal: Not a valid object name`) | ảnh hưởng mọi con số dưới đây |
+| 2 | tập in-scope **4118** file | **4114** | −4 |
+| 3 | tập in-scope **17212** lượt | **17252** | +40 |
+| 4 | nhóm còn lại **4100** file / **17000** lượt | **4096** file / **17040** lượt | −4 / +40 |
+| 5 | phân bố 4005 `.ts`, 66 `.md`, 12 `.tsx`, 1 `.js` | `3999 .ts · 70 .md · 9 .tsx · 4 .py · 2 .sh · 2 .rs · 2 .jsonl · 2 .json · 2 .js · 1 .yml · 1 .ps1 · 1 .nix · 1 .dockerfile` = 4096 | phân bố đã dời |
+| 6 | 12 mục ghim đều pin **`18.3.3`** | tất cả pin **`18.4.0`** | con số trong bảng điểm sửa |
+| 7 | changelog baseline **13** file / 85 lượt | **14** file / 85 lượt (`browser-relay/CHANGELOG.md` có 0 lượt) | số file; con số 85 vẫn đúng |
+| 8 | dạng trần nằm ở 16 file, "file thứ 16 là `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`" | vẫn 16 file nhưng thành phần đã đổi: nay gồm `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`, **`MILESTONE_5_EXECUTION_PLAN.md`**, **`RESEARCH_DSH_OMO_2026-09-28.md`**, **`RESEARCH_FINDINGS_2026-09-28.md`** + 12 file nguồn/test | Gate C là `diff` nên vẫn chạy đúng; nhưng W8a đọc "15 file" của tài liệu sẽ đếm sai |
+| 9 | GATE E bị chặn môi trường vì addon chưa build | addon **đã build** (185 MB), `ninja` + `cmake` đã cài, `bun test packages/omptype/test/` → **1056 pass / 0 fail** | **GATE E phải chạy thật** |
+| 10 | build cần `ninja` qua CMake | script build của `packages/natives` là `bun ../../scripts/bazel-natives.ts host --dest native` (Bazel) | mô tả sai; vô hại vì cả hai tool đã có |
+| 11 | **Q1** — "sáu leaf package đã publish dưới scope mới chưa?" | **ĐÃ ĐO, CÂU TRẢ LỜI LÀ CHƯA:** `npm view @ultraworkers/pi-natives-linux-x64` → `404 Not Found`; `npm view @oh-my-pi/pi-natives-linux-x64` → **`18.4.2`** | **chặn merge** |
+| 12 | **Q4** — scope `@ultraworkers` đã được sở hữu chưa? | **CHƯA:** `npm view @ultraworkers/pi-ai` → `404`; `@ultraworkers/omp-stats` → `404` | **chặn toàn bộ W7** |
+| 13 | không nhắc `packages/natives/scripts/gen-npm-packages.ts` | file này **có trong tập in-scope** và `:93` ghi cứng `name: \`@oh-my-pi/pi-natives-${tag}\`` (2 lượt). Pass **SẼ** đổi nó. | đây là **cần trình bày duy nhất** cho Q1: cơ chế publish leaf package |
+| 14 | `:103`/`:113` của `gen-npm-packages.ts` | `url: "git+https://github.com/can1357/oh-my-pi.git"` — **không khớp mẫu** (thiếu dấu `/` sau `pi`) ⇒ pass không đụng, scope cũ **còn sót** | cần quyết: để lại hay sửa tay ngoài pass (sửa tay sẽ vi phạm lọc ở Bước 7b) |
+| 15 | Bước 5 đưa lệnh `xargs -a …` | **lệnh hỏng trên macOS** — đã đo: `xargs: invalid option -- a` → 0. Bước 6 hardcode `17212` cũng làm dry-run **ĐỎ GIẢ** ở cây hiện tại | dùng bản `tr \| xargs -0` ở bước đếm |
+
+Bảng điểm sửa — `TRƯỚC` trích nguyên văn từ file thật tại `HEAD 47720fd`:
+
+| đường/dẫn | symbol / vùng | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `packages/ai/package.json:2` | trường `name` | `"name": "@oh-my-pi/pi-ai",` | `"name": "@ultraworkers/pi-ai",` |
+| `packages/stats/package.json:3` | trường `name` | `"name": "@oh-my-pi/omp-stats",` | `"name": "@ultraworkers/omp-stats",` |
+| `packages/browser-relay/package.json:3` | trường `name` | `"name": "@oh-my-pi/browser-relay",` | `"name": "@ultraworkers/browser-relay",` |
+| `packages/ai/package.json:152-154` | mục phụ thuộc | `"@oh-my-pi/omptype": "catalog:",` | `"@ultraworkers/omptype": "catalog:",` |
+| `package.json:19-30` | `workspaces.catalog`, 12 mục | `"@oh-my-pi/omp-stats": "18.4.0",` | `"@ultraworkers/omp-stats": "18.4.0",` |
+| `package.json:19-30` | 4 basename **không** có mục ghim | *(vắng mặt)* | *(vẫn vắng mặt — KHÔNG thêm)* |
+| `packages/coding-agent/src/index.ts:5-10` | import | `export * as zod from "@oh-my-pi/omptype/zod";` | `export * as zod from "@ultraworkers/omptype/zod";` |
+| `bun.lock` | lockfile (122 lượt) | `"@oh-my-pi/pi-ai@workspace:packages/ai"` | `"@ultraworkers/pi-ai@workspace:packages/ai"` — **tái sinh bằng `bun install`, không sửa tay** |
+| **`packages/natives/native/loader-state.js:70`** | `resolveLeafPackageDir` | `return path.dirname(require_.resolve(\`@oh-my-pi/pi-natives-${platformTag}/package.json\`));` | ⚠️ **CỔNG BỊ CHẶN, KHÔNG ĐỔI Ở W7** — xem Q1 bên dưới |
+| `packages/natives/native/loader-state.js` | 10 dòng còn lại: `:12`, `:119`, `:715`, `:722`, `:753`, `:795`, `:797`, `:800`, `:803`, `:844` | 12 lượt | `@oh-my-pi/` → `@ultraworkers/` (văn bản người dùng đọc + comment) |
+| **`packages/natives/scripts/gen-npm-packages.ts:93`** | `buildLeafManifest` — **KHÔNG CÓ TRONG TÀI LIỆU** | `name: \`@oh-my-pi/pi-natives-${tag}\`,` | `name: \`@ultraworkers/pi-natives-${tag}\`,` |
+| `packages/natives/scripts/gen-npm-packages.ts:103,113` | `repository.url`, README | `git+https://github.com/can1357/oh-my-pi.git` | ⚠️ **KHÔNG khớp mẫu `@oh-my-pi/` (không có dấu `/` ở cuối) — pass KHÔNG đụng tới.** Cần quyết riêng. |
+| `.github/workflows/ci.yml:326` | fetch addon native | `tarball="$(npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball)"` | `tarball="$(npm view @ultraworkers/pi-natives-linux-x64@latest dist.tarball)"` |
+| `.github/workflows/ci.yml:1035` | comment publish | `# Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages once` | `# Publishes the six @ultraworkers/pi-natives-<tag> leaf packages once` |
+| `scripts/install.sh:14` | `PACKAGE=` | `PACKAGE="@oh-my-pi/pi-coding-agent"` | `PACKAGE="@ultraworkers/pi-coding-agent"` |
+| `scripts/install.ps1:28` | `$Package =` | `$Package = "@oh-my-pi/pi-coding-agent"` | `$Package = "@ultraworkers/pi-coding-agent"` |
+| `scripts/install-tests/run-ci.sh` | 21 lượt | (đã đếm) | đổi scope |
+| `scripts/install-tests/tarball.dockerfile:43,131` | registry mirror + `bun add` | `'@oh-my-pi/*':` · `bun add @oh-my-pi/pi-coding-agent --registry http://localhost:4873` | `'@ultraworkers/*':` · `bun add @ultraworkers/pi-coding-agent --registry …` |
+| `nix/bun.nix:660+` | 16 dòng định nghĩa nix | `"@oh-my-pi/browser-relay" = copyPathToStore ../packages/browser-relay;` | `"@ultraworkers/browser-relay" = …` |
+| `.omp/skills/tool-prompt-optimization/scripts/probe.ts:28-31` | **code thật** | `import { completeSimple } from "@oh-my-pi/pi-ai";` | `import { completeSimple } from "@ultraworkers/pi-ai";` |
+| `.omp/skills/tool-prompt-optimization/scripts/probe-builtin.ts:21-23` | **code thật** | `import { toolWireSchema } from "@oh-my-pi/pi-ai";` | `import { toolWireSchema } from "@ultraworkers/pi-ai";` |
+| `.omp/skills/tool-prompt-optimization/SKILL.md:12,42` | doc skill | `` `@oh-my-pi/pi-ai` `completeSimple` `` | đổi scope |
+| `packages/coding-agent/test/fixtures/before-compaction.jsonl` | 649 lượt | kể cả `https://registry.npmjs.org/@oh-my-pi/pi-coding-agent/…` | ⚠️ **CHỜ Q2** |
+| `packages/coding-agent/test/fixtures/large-session.jsonl` | 161 lượt | transcript | ⚠️ **CHỜ Q2** |
+| `packages/coding-agent/test/npm-scope-resolution.test.ts` | **TẠO MỚI** | *(chưa tồn tại — đã kiểm)* | file test 3 invariant, xem hợp đồng test |
+| `scripts/rename/keep-list.txt` | **ĐIỀU KIỆN MỞ** | *(chưa tồn tại — `ls scripts/rename/` exit 2)* | phải có trên `main` + được duyệt trước khi gõ |
+
+Tổng đã kiểm đếm: 16 manifest `packages/*/package.json` (16 file / 78 lượt) + `package.json` gốc 12 mục ghim (1 / 12) + `bun.lock` (1 / 122) = **18 file / 212 lượt**; tập còn lại (mã + tài liệu) **4096 file / 17040 lượt**; **TỔNG tập in-scope 4114 file / 17252 lượt**.
+
+**Vì sao pass phải là MỘT lệnh, không phải nhiều.** Mẫu `s{\@oh-my-pi/}{@ultraworkers/}g` **không** chạm: dạng trần `"oh-my-pi"` (W8a sở hữu — `legacy-pi-compat.ts:802`, `zai.ts:25`, `exa.ts:26`, `oauth-flow.ts:629`, `telemetry-export-otlp.ts:51`, `gallery-fixtures/segments.ts:33,164`, `docs/provider-quirks.md`); `@mariozechner/*`, `@earendil-works/*`, `@sinclair/typebox`; `node_modules/` (`git ls-files` không theo dõi); `git+https://github.com/can1357/oh-my-pi.git` (không có dấu `/` ngay sau `pi` ⚠️). Mẫu **có** chạm: mọi `name`, mọi mục dependencies/peerDependencies/devDependencies/optionalDependencies, mọi mục ghim catalog, mọi import, mọi chuỗi trong thông báo lỗi, mọi dòng `.nix`/`.sh`/`.ps1`/`.dockerfile`.
+
+Các bước có neo đã kiểm — mỗi neo **đã mở và đọc**; nội dung trích nguyên văn từ `sed -n "<n>p"`:
+
+1. **DỪNG. Kiểm ba điều kiện mở (chặn cứng).** Ba điều phải **đồng thời** đúng; sai một là DỪNG, không sửa dòng nào. (a) `scripts/rename/keep-list.txt` tồn tại trên `main`, đã được người khác duyệt — ❌ **CHƯA CÓ**, `ls scripts/rename/` → `No such file or directory`, exit 2. (b) W2 đã merge: `CANONICAL_PI_SCOPE` trỏ scope mới — ❌ **CHƯA**, dòng 796 đọc nguyên văn `const CANONICAL_PI_SCOPE = "@oh-my-pi";`. (c) `PI_SCOPE_ALIASES` giữ scope cũ vĩnh viễn — ✅ dòng 802 đọc nguyên văn `const PI_SCOPE_ALIASES = ["oh-my-pi", "mariozechner", "earendil-works"] as const;`. → **W7 bị CHẶN ở HEAD hiện tại**; cả (a) và (b) đều chưa thoả.
+2. **Xác nhận bằng mắt hai chuỗi scope của W2.** Đọc `legacy-pi-compat.ts:796` và `:802`. Cả hai phải là **dạng trần, KHÔNG có dấu `/` ở cuối** — đã xác nhận ✅ cả hai. Đây là lý do pass `s{\@oh-my-pi/}{@ultraworkers/}g` **không chạm** chúng: mẫu cần dấu `/` ngay sau `pi`. Nếu W2 thêm dấu `/`, pass sẽ phá cơ chế tương thích — DỪNG.
+3. **Chụp baseline TRƯỚC mọi thay đổi, ra `/tmp`:**
+
+```bash
+extract_released() { awk '/^## \[Unreleased\]/{u=1} /^## \[/{if(u&&$0!~/Unreleased/){u=0}} !u{print}' "$1"; }
+for f in $(git ls-files 'packages/*/CHANGELOG.md'); do
+  printf '%s:%s\n' "$f" "$(extract_released "$f" | grep -c -o -F '@oh-my-pi/' || true)"
+done > /tmp/w7-changelog-baseline.txt
+git grep -lE '"oh-my-pi"' -- . > /tmp/w7-bare-baseline.txt
+git grep -o -F '@oh-my-pi/' -- . | wc -l > /tmp/w7-all-hits-baseline.txt
+git rev-parse HEAD > /tmp/w7-head-baseline.txt
+```
+
+Đo tại `47720fd`: changelog đã phát hành **14 file / 85 lượt** (kỳ vọng tài liệu 13 file); dạng trần **16 file**; tổng lượt toàn repo **18545**; `HEAD` = `47720fd`. Baseline thứ tư là **MỐC HOÀN TÁC** dùng ở bước 7b; baseline thứ ba dùng ở GATE A2. Cả hai phải dùng, không chụp rồi bỏ.
+
+4. **Sinh danh sách in-scope từ `git ls-files`.** **KHÔNG** dùng `git grep -- .` để sinh danh sách — nó kéo chính các file loại trừ vào tập.
+
+```bash
+git ls-files -z \
+  ':(exclude)packages/*/CHANGELOG.md' \
+  ':(exclude).lavish-wip/**' \
+  ':(exclude)COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' \
+  ':(exclude)MILESTONE_*_EXECUTION_PLAN.md' \
+  | xargs -0 grep -l -F '@oh-my-pi/' > /tmp/w7-inscope-files.txt
+```
+
+Đo tại `47720fd`: **4114** dòng (tài liệu ghi 4118 — sai 4).
+5. **Đếm trước khi sửa.** ⚠️ **LỆNH TRONG TÀI LIỆU Ở BƯỚC NÀY HỎNG TRÊN macOS — đã đo:** `xargs -a /tmp/w7-inscope-files.txt grep -o -F '@oh-my-pi/' | wc -l` → `xargs: invalid option -- a` → **0**. `/usr/bin/xargs` trên macOS là BSD, từ chối cờ `-a`. **Dùng bản này:** `tr '\n' '\0' < /tmp/w7-inscope-files.txt | xargs -0 grep -o -F '@oh-my-pi/' | wc -l`. Đo: **17252** (tài liệu ghi 17212).
+6. **Chạy thử KHÔNG GHI trên bản sao.**
+
+```bash
+rm -rf /tmp/w7-dry && mkdir -p /tmp/w7-dry
+tar -cf - -T /tmp/w7-inscope-files.txt | (cd /tmp/w7-dry && tar -xf -)
+( cd /tmp/w7-dry && tr '\n' '\0' < /tmp/w7-inscope-files.txt \
+    | xargs -0 perl -pi -e 's{\@oh-my-pi/}{@ultraworkers/}g' ) \
+  || { echo 'DRY RUN FAIL: perl không xử lý hết tập file — DỪNG'; exit 1; }
+git diff --quiet || { echo 'DRY RUN FAIL: cây thật bị đụng — DỪNG'; exit 1; }
+```
+
+Đã kiểm chứng cơ chế này chạy thật (trên lát 50 file đầu): `tar OK` → `perl OK` → scope cũ trong bản sao về `0`. Ba điều phải **ĐỎ ĐƯỢC** ở đây, và cả ba đều đỏ được: `perl` báo lỗi trên một file; bản sao còn sót scope cũ; cây thật bị đụng. **KHÔNG** dùng `xargs -a`, **KHÔNG** dùng cờ `--dry-run` (không tồn tại ở BSD sed lẫn perl), **KHÔNG** để `|| true` ở cuối. Bản cũ luôn trả 0 vì cả hai vế chết trước khi gọi `perl` — người đọc thấy exit 0 và kết luận "công cụ đã kiểm chứng" trong khi không lệnh nào chạy. Đây đúng là mẫu **cổng báo xanh vì không chạy**. Chốt **một** công cụ: nếu `sed -i ''` (kiểu BSD) không khả dụng thì dùng `perl -pi -e`. Không trộn.
+7. **PASS DUY NHẤT:** `tr '\n' '\0' < /tmp/w7-inscope-files.txt | xargs -0 perl -pi -e 's{\@oh-my-pi/}{@ultraworkers/}g'`. Nếu lệnh báo lệnh sai (`xargs: invalid option`), **DỪNG NGAY**. Sau đó **ĐỌC LẠI 3 file bằng mắt**: `packages/ai/package.json:2` → `"name": "@ultraworkers/pi-ai",`; `package.json:19` → `"@ultraworkers/omp-stats": "18.4.0",`; `packages/coding-agent/src/index.ts:5` → `export * as zod from "@ultraworkers/omptype/zod";`. **KHÔNG chạy pass thứ hai** — pass thứ hai là thứ phá N17.
+8. **Đường hoàn tác (đọc TRƯỚC khi chạy pass ở bước 7).** `test -s /tmp/w7-head-baseline.txt || { echo 'BLOCKED: chưa chụp baseline ở bước 3'; exit 1; }` rồi `git diff --quiet && git diff --cached --quiet || { echo 'BLOCKED: cây đang bẩn — commit hoặc stash trước khi chạy pass'; exit 1; }`. **LỆNH HOÀN TÁC DUY NHẤT — dán nguyên văn vào commit message: `git restore --worktree --staged -- . && git clean -fd`**. Sau pass, kiểm chứng pass **ĐÚNG**, không chỉ "không còn sót" (bốn kiểm: mọi dòng diff phải thuần túy là thay scope; lượt scope cũ trong tập in-scope = 0; số file đổi = số dòng của `/tmp/w7-inscope-files.txt`; không dòng nào lẫn cả hai scope). ⚠️ Lọc `grep -vE '@(oh-my-pi|ultraworkers)/'` **sẽ bắt dòng `:103` của `gen-npm-packages.ts`** (`git+https://github.com/can1357/oh-my-pi.git` — không có dấu `/` sau `pi`) **nếu** pass có đụng tới nó. Mẫu không khớp nên pass không đụng — nhưng dòng đó **vẫn còn scope cũ** sau W7. **Người review:** diff của W7 do đúng **một người khác** người chạy pass đọc; người review ký tên vào commit message. Không ai tự duyệt diff của pass mình chạy.
+9. **XÁC MINH 16 manifest, KHÔNG SỬA.** `git grep -l '"name": "@oh-my-pi/' -- '**/package.json'` phải RỖNG; `git grep -n '"name": "@ultraworkers/' -- '**/package.json' | wc -l` = 16; `git grep -n '"@ultraworkers/' -- package.json | wc -l` = 12; `git grep -n '"@oh-my-pi/' -- package.json` phải RỖNG. **16 basename sau dấu `/` phải Y NGUYÊN** (đã đọc từ 16 manifest thật): `browser-relay · collab-web · omp-stats · omptype · pi-agent-core · pi-ai · pi-catalog · pi-coding-agent · pi-metaharness · pi-mnemopi · pi-natives · pi-tui · pi-utils · pi-wire · snapcompact · typescript-edit-benchmark`. **Bốn tên KHÔNG có mục ghim catalog — đã kiểm bằng `package.json` thật:** `browser-relay · collab-web · pi-metaharness · typescript-edit-benchmark` → đừng "sửa cho đủ 16" ở bước này; GATE kiểm `= 12`, không phải `= 16`.
+10. **Tái sinh lockfile, KHÔNG sửa tay:** `bun install`. Sau đó `git grep -c '@oh-my-pi/' -- bun.lock` phải trả 0 và `git diff --stat bun.lock` phải cho thấy thay đổi (đo hiện tại: 122 lượt / 106 dòng). Nếu `bun install` sửa thêm file ngoài `bun.lock`, kiểm kỹ từng file — dấu hiệu một `name` manifest lệch mục ghim catalog.
+11. **Chứng minh phân giải tới WORKSPACE, không phải registry** (script `node -e` ở GATE F, chạy trên `node_modules/@ultraworkers`; phải **THOÁT 0 và in ra rỗng**; dòng `NOT WORKSPACE` = package bị tải từ registry thay vì link workspace). Hình dạng tham chiếu đã kiểm: `node_modules/@oh-my-pi/pi-agent-core ⇒ ../../packages/agent`, `omp-stats ⇒ ../../packages/stats`, `omptype ⇒ ../../packages/omptype`, … (symlink, không phải thư mục thật).
+12. **Viết test mới** `packages/coding-agent/test/npm-scope-resolution.test.ts` — **đã kiểm: file này CHƯA TỒN TẠI.**
+13. **Chạy cổng theo đúng thứ tự.** Ghi kết quả **TỪNG cổng** vào commit message. Cổng bị chặn môi trường ghi `NOT RUN — environment blocked`. **TUYỆT ĐỐI không ghi `pass` cho cổng chưa chạy.**
+14. **Changelog: phần đã phát hành là BẤT BIẾN.** ❌ KHÔNG sửa / sắp xếp lại bất kỳ mục nào dưới header đã phát hành, trong bất kỳ package nào (14 file / 85 lượt đã đo). ✅ Khối `## [Unreleased]` ĐƯỢC thêm mục — AGENTS.md **bắt buộc** thêm cho thay đổi user-facing: đổi scope npm trên registry là user-facing rõ ràng. Mục bắt buộc, mỗi dòng một câu: *các package đã đăng ký trong `catalog` đổi tên phát hành từ `@oh-my-pi/X` sang `@ultraworkers/X`, basename sau dấu `/` giữ nguyên (N17).* Đừng đặt mục đó trong phần đã phát hành.
+
+Hợp đồng test — một file duy nhất: **`packages/coding-agent/test/npm-scope-resolution.test.ts`** (đã kiểm: **chưa tồn tại**). Ba invariant, mỗi cái một test.
+
+**Nếu hồi quy, người dùng thấy gì?** Người dùng cài sạch từ tarball hoặc registry, `bun install` kéo package từ registry thay vì link workspace, mọi import nội bộ hỏng — **typecheck xanh trên máy kỹ sư, bản cài của người dùng vỡ**. Ba test chặn đúng ba đường thoát đó.
+
+| # | invariant | cách khẳng định | lỗi bị chặn | vì sao typecheck KHÔNG bắt |
+| --- | --- | --- | --- | --- |
+| 1 | Phân giải tới workspace | `import.meta.resolve("@ultraworkers/pi-utils")` → assert đường dẫn nằm dưới `<repo>/packages/` | manifest `name` đã đổi nhưng `exports` map hoặc mục ghim catalog lệch → bản cài sạch kéo từ registry | `node_modules` hiện tại là symlink hoist nên typecheck xanh ngay cả khi `name` sai |
+| 2 | Manifest khớp mục ghim catalog | duyệt `packages/*/package.json` + `package.json` gốc lúc chạy; so **tập** tên trong `workspaces.catalog` với **tập** `name` | một manifest đổi scope còn mục ghim không đổi (hoặc ngược lại) → lockfile ghi sai, bản cài sạch hỏng | quan hệ giữa hai file, không phải so một hằng số với chính nó |
+| 3 | Basename còn host bundle phân giải được | mọi basename trong `PI_PACKAGE_NAMES` (`legacy-pi-compat.ts:805`) còn tồn tại là phần sau `/` của một `name` workspace; `PI_PACKAGE_ALTERNATION` (`:808`) khớp `name` đó dưới scope mới | một basename bị đổi theo trong lúc đổi scope — rủi ro riêng của W7 là nhóm 4 tên không mang `pi` lẫn `omp` (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`); đổi chúng phá `PI_PACKAGE_NAMES`, khiến `LEGACY_PI_SPECIFIER_FILTER` (`:837`) không khớp specifier extension, và extension cũ âm thầm nạp bản native trùng lặp từ npm thay vì bản bundle trong host | quan hệ giữa bảng phân giải và manifest |
+
+**Nếu W2 đã có test phủ `PI_PACKAGE_NAMES` → bỏ invariant 3 khỏi W7 và ghi "thuộc W2".** Không lặp test của W2. **KHÔNG viết:** test source-grep (đọc file rồi `toContain` vào text); test khẳng định chuỗi scope là hằng số; `expect(true).toBe(true)`, `not.toThrow()` trần, kiểm "non-empty"; `mock.module()`. **Ranh giới quan trọng:** đọc một manifest rồi `JSON.parse` nó là đọc **DỮ LIỆU**, không phải source-grep. Cái bị cấm là `expect(rawText).toContain("…")` trên text thô của một file implementation.
+
+Cổng có đỏ được không — **tất cả 8 cổng đều đỏ được, và không cổng nào là cổng luôn xanh.** Chạy theo đúng thứ tự; **dừng ngay khi cổng đầu tiên đỏ.**
+
+**GATE 0 — điều kiện mở. ĐỎ ĐƯỢC, đã chạy thật, cả ba nhánh đều phân biệt được:**
+
+```bash
+test -f scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list.txt missing — W7 is BLOCKED'; exit 1; }
+grep -qE '^const CANONICAL_PI_SCOPE = "@ultraworkers";' packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts \
+  || { echo 'GATE 0 FAIL: W2 not landed (CANONICAL_PI_SCOPE vẫn trỏ scope cũ)'; exit 1; }
+grep -qE 'PI_SCOPE_ALIASES = \[.*"oh-my-pi"' packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts \
+  || { echo 'GATE 0 FAIL: PI_SCOPE_ALIASES đã mất scope cũ — phá extension tương thích'; exit 1; }
+```
+
+| nhánh | trạng thái tại `47720fd` | kết quả |
+| --- | --- | --- |
+| keep-list | `ls scripts/rename/` → `No such file or directory`, exit 2 | **ĐỎ** (đúng — W7 bị BLOCKED) |
+| `CANONICAL_PI_SCOPE` | `:796` = `"@oh-my-pi"` | **ĐỎ** (đúng — W2 chưa merge) |
+| `PI_SCOPE_ALIASES` | `:802` giữ `"oh-my-pi"` | **XANH** (đúng — cơ chế tương thích còn nguyên) |
+
+**Phân biệt được:** không có keep-list là **BLOCKED**, không phải "chưa xong". Bản cũ dùng `git grep -q 'CANONICAL_PI_SCOPE' <path>` — kiểm **SỰ TỒN TẠI của tên hằng**, không kiểm **GIÁ TRỊ**; đã chạy: bản cũ trả **exit 0 (XANH)** ở HEAD hiện tại, tức đúng trạng thái GATE 0 sinh ra để chặn. Cổng cũ **xanh khi W2 chưa merge VÀ xanh khi W2 đã merge** → không chặn được. Dùng `grep` trên file thay vì `git grep <path>`.
+
+**GATE A — residue trong tập in-scope. ĐỎ ĐƯỢC, đã kiểm chứng bằng bộ dữ liệu thật, cả hai chiều:** `tr '\n' '\0' < /tmp/w7-inscope-files.txt | xargs -0 grep -l -F '@oh-my-pi/' | grep . && { echo 'GATE A FAIL: leftover scope in in-scope set'; exit 1; }` — 2 file, 1 file còn scope cũ → **ĐỎ** ✅; cùng 2 file đã sạch → **XANH** ✅. **Hai lỗi của bản cũ đã đo và đã sửa:** (1) `xargs -a` là cờ GNU — BSD xargs từ chối, KHÔNG chạy grep, in 0 dòng; `wc -l` = 0 ⇒ `test 0 -eq 0` ĐÚNG ⇒ **cổng xanh trên cây bẩn**. (2) Ngay cả khi bỏ `xargs -a`, `grep -c` in **MỘT DÒNG CHO MỖI FILE** kể cả file sạch (`clean1.txt:0`); đã đo trên cây sạch: `wc -l` = 2 ⇒ `test … -eq 0` luôn FALSE ⇒ **cổng đỏ trên cây hoàn toàn sạch**. Bản cũ đỏ khi sạch và xanh khi bẩn. **Phân biệt được:** đỏ ⇒ pass chưa phủ hết tập, HOẶC danh sách in-scope đã cũ. Cả hai là lỗi thật.
+
+**GATE A2 — tổng lượt scope cũ toàn repo không đổi hướng. ĐỎ ĐƯỢC:** so số với baseline, lệch là đỏ. Cổng này soi thứ GATE A không thấy: **file NGOÀI tập in-scope bị thêm scope cũ**. ⚠️ Bắt buộc phải dùng `/tmp/w7-all-hits-baseline.txt` từ bước 3; tài liệu viết `cat … | tr -d ' '` — chạy được, chỉ là thừa một `cat`.
+
+**GATE B — N11 changelog không bị đụng. ĐỎ ĐƯỢC:** `diff` hai file baseline. Đây là cổng quan trọng nhất của W7: **GATE A KHÔNG bắt được** chuyện pass đã quét changelog (changelog vốn nằm ngoài tập in-scope nên Gate A vẫn xanh), nhưng nếu ai đó lỡ xoá exclusion thì Gate B đỏ. Hai cổng soi hai lỗi khác nhau. Cổng cố tình chỉ soi **phần đã phát hành**, vì AGENTS.md nói "Never modify already-released sections" — nếu nó so toàn bộ file thì chính mục `[Unreleased]` mà AGENTS.md bắt buộc thêm cho W7 sẽ làm cổng đỏ.
+
+**GATE C — cross-check dạng trần. ĐỎ ĐƯỢC:** `diff` danh sách file; baseline đã đo **16 file**. Grep sạch trên dạng có `/` KHÔNG chứng minh gì về dạng trần — đây là cổng bù cho đúng cái lỗ đó. Bàn giao danh sách này cho W8a.
+
+**GATE D — typecheck + banner. ĐỎ ĐƯỢC:** ba điều kiện, mỗi cái một `exit 1`, trên **cùng một** lần chạy output — `test $rc -eq 0`, banner phải chứa `@ultraworkers/.*check:types`, banner **không** được chứa `@oh-my-pi/.*check:types`. Đã kiểm: `check:ts` = `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`; có **đúng 16** workspace có `check:types` (`agent ai browser-relay catalog coding-agent collab-web metaharness mnemopi natives omptype snapcompact stats tui typescript-edit-benchmark utils wire`). **Phân biệt được:** "scope đã đổi thật" (banner đổi) vs "check pass vì `node_modules` cũ vẫn còn" (banner không đổi). Bản cũ chạy `check:ts` **ba lần** và dòng đầu không có `|| { …; exit 1; }` nên hai lệnh grep vẫn chạy tiếp sau khi `check:ts` in lỗi.
+
+**GATE E — bộ test TS: `bun run test:ts`. ĐỎ ĐƯỢC. ⚠️ TÀI LIỆU NÓI CỔNG NÀY BỊ CHẶN MÔI TRƯỜNG — ĐIỀU ĐÓ KHÔNG CÒN ĐÚNG. ĐÃ ĐO:** `packages/natives/native/pi_natives.darwin-arm64.node` **185 MB, đã build**; `which ninja cmake` → `/opt/homebrew/bin/ninja`, `/opt/homebrew/bin/cmake` — **cả hai đã cài**; `bun test packages/omptype/test/` → **`1056 pass / 0 fail`** trong 647 ms. Addon **đã build** (commit `47720fd` đã sửa đúng điều này ở M1/M1B/M2/M3/M4, nhưng **chưa sửa ở M5**). **Không được ghi `NOT RUN — environment blocked` cho cổng này ở máy này. Chạy nó.**
+
+**GATE F — mọi package dưới scope mới phải là symlink workspace. ĐỎ ĐƯỢC, đã chạy thật, phân biệt được cả ba trạng thái:** `node_modules/@ultraworkers` chưa tồn tại → in `GATE F FAIL: node_modules/@ultraworkers missing — ENOENT`, **exit 1** ✅; scope dir đầy symlink workspace → in **rỗng**, **exit 0** ✅; package bị tải từ registry → in `NOT WORKSPACE: <n> <path>`, **exit 1** ✅. Bản cũ viết `node -e '…' | grep . && { …; exit 1; }` và **không bao giờ xanh**: `grep .` trả 1 khi producer không in dòng nào, `&&` trả chính 1 đó — nên cả trường hợp ĐÚNG cũng đỏ, còn ENOENT cũng đỏ nhưng không in thông điệp. Bản mới để chính script node quyết định exit code.
+
+| cổng | đỏ được? | bằng cách nào | đã chạy thật? |
+| --- | --- | --- | --- |
+| GATE 0 | ✅ | 3 nhánh `exit 1`, phân biệt BLOCKED / W2-chưa-merge / alias-mất | ✅ cả 3 |
+| GATE A | ✅ | `grep -l \| grep .` trên tập thật | ✅ cả 2 chiều |
+| GATE A2 | ✅ | so tổng lượt với baseline | ⬜ chưa chạy (cần sau pass) |
+| GATE B | ✅ | `diff` hai file baseline | ✅ phần sinh baseline |
+| GATE C | ✅ | `diff` danh sách 16 file | ✅ phần sinh baseline |
+| GATE D | ✅ | 3 `exit 1` trên một lần chạy output | ⬜ chưa chạy (cần sau pass) |
+| GATE E | ✅ | `bun run test:ts` đỏ khi test hỏng | ✅ **không còn bị chặn** |
+| GATE F | ✅ | chính script node quyết exit code | ✅ cả 3 trạng thái |
+
+**Ba câu hỏi còn treo, và trạng thái đã đo.**
+
+**Q1 — leaf package `@oh-my-pi/pi-natives-<tag>` đã publish dưới scope mới chưa? → CHƯA.** Đã đo: `@ultraworkers/pi-natives-linux-x64` → 404; `@oh-my-pi/pi-natives-linux-x64` → 18.4.2. Hệ quả trực tiếp: nếu chạy pass hôm nay, `loader-state.js:70` sẽ trở thành `require_.resolve('@ultraworkers/pi-natives-${platformTag}/package.json')` — **nguồn scope đó chưa có trên registry**. `require_.resolve` ném → `catch { return null }` (đã đọc, `loader-state.js:67-73`) → loader rơi im lặng sang nhánh dự phòng. **Không lỗi nào được ném, không test nào đỏ.** Ba lựa chọn, chọn một trước khi merge: **(i)** Để `loader-state.js:70` **KHÔNG** đổi ở W7 (thêm vào `do_not_rename`), đổi scope ở một work item sau. **(ii)** W7 đi kèm một bước **publish sáu leaf package dưới scope mới** (`gen:npm` tại `packages/natives/package.json:42` + `release_native_leaves` tại `ci.yml:1039`) — nhưng kể cả khi đó, giữa thời điểm merge W7 và lần release đầu tiên vẫn có cửa sổ hỏng. **(iii)** Sửa `resolveLeafPackageDir` để **thử scope mới, rồi fallback scope cũ** — thay đổi hành vi, cần test riêng, không thuộc hình dạng "một pass cơ học" của W7. Lưu ý: `gen-npm-packages.ts:93` **đã nằm trong tập in-scope**, nên nếu chọn (i) thì **phải loại nó ra khỏi tập** — nếu không, pass vẫn đổi tên package publish trong khi loader không đổi, và lần release tới sẽ phát hành dưới scope mới trong khi loader vẫn tìm scope cũ. **Đây là mâu thuẫn nội tại của lựa chọn (i) nếu không loại file.**
+
+**Q2 — hai transcript `.jsonl` là lịch sử hay fixture?** Đã xác nhận tồn tại và số lượt: `before-compaction.jsonl` **649** (132 dòng), `large-session.jsonl` **161** (49 dòng), tổng **810**. Vẫn cần một người quyết. Nếu "giữ": thêm `':(exclude)packages/coding-agent/test/fixtures/*.jsonl'` vào bước 4 và đếm lại (**4112 file / 16442 lượt**). Nếu "sửa": không thêm exclude, pass phủ cả hai, GATE A/B/C không ảnh hưởng.
+
+**Q3/Q4 — scope `@ultraworkers` CHƯA tồn tại trên npm** (`@ultraworkers/pi-ai` → 404; `@ultraworkers/omp-stats` → 404). Đây là cổng G3 của kế hoạch, nằm NGOÀI repo. Chưa thoả ⇒ toàn bộ W7 là việc viết 17252 lượt mà chưa có chỗ để phát hành.
+
+Cạm bẫy riêng của mục này — **`loader-state.js:70` là thất bại im lặng đắt nhất.** Đã đo: scope đích **404 trên registry**. `catch { return null }` nuốt lỗi, không test nào đỏ, typecheck vẫn xanh.
+
+**Chạy trước W2** phá canonicaliser extension một cách im lặng — chặn cứng ở GATE 0, và GATE 0 **đang đỏ** tại `47720fd`.
+
+**Bỏ sót mục phụ thuộc trong manifest.** 78 lượt trong 16 manifest + 12 ở ghim, không chỉ 16 dòng `name`. Lỗi này typecheck **ĐƯỢC** với `node_modules` hiện tại (symlink hoist) và chỉ hỏng trên bản cài sạch.
+
+**Tự sửa `bun.lock`** — phải chạy `bun install`.
+
+**Để W7 tự quyết basename.** 16 basename tách ba nhóm; bốn tên nhóm 3 (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`) dễ rơi khỏi danh sách vì không mang chữ `pi` lẫn `omp`. Đổi chúng phá `PI_PACKAGE_NAMES` (`:805`) → `LEGACY_PI_SPECIFIER_FILTER` (`:837`) không khớp → extension cũ âm thầm nạp bản native trùng lặp từ npm thay vì bản bundle trong host.
+
+**Cho mẫu toàn-repo quét CHANGELOG.** 14 file / 85 lượt phần đã phát hành — AGENTS.md nói bất biến. GATE B chống đúng cái này.
+
+**Nhóm không ai liệt kê:** `.lavish-wip/specs/*.spec.json`, các tài liệu kế hoạch, `RESEARCH_*.md`, và 2 transcript `.jsonl`. Bước 4 đã loại trừ 4 mẫu đầu; **2 transcript phải quyết trước (Q2).**
+
+**Loại nhầm `.omp/skills/**`.** N14 khoá **TÊN THƯ MỤC** `.omp`, không khoá nội dung. Ba file đó là code thật với import statement — đã đọc `probe.ts:28-31`, `probe-builtin.ts:21-23`. Loại chúng làm skill vỡ.
+
+**Để cổng "test pass" xanh trong khi `bun test` không chạy.** Ở máy này addon **đã build** nên cổng chạy thật. Nhưng nếu gặp máy chưa build: chặn là **chọn lọc theo bề mặt import, không phải toàn cục** — chỉ file import `pi_natives` mới đỏ. Ghi `NOT RUN — environment blocked` **chỉ khi** build thực sự chưa exit 0. Tuyệt đối không ghi `pass` cho cổng chưa chạy.
+
+**Chạy pass thứ hai để "sửa ngược".** Pass `perl -pi` trên 4114 file không hoàn tác được bằng trực giác. Mốc hoàn tác là `git restore --worktree --staged -- . && git clean -fd` dán nguyên văn vào commit message.
+
+**Tin số của tài liệu** — 4118/17212/17000/13 đều đã cũ. Đặc biệt **đừng dùng `xargs -a`** — nó không tồn tại trên `/usr/bin/xargs` của macOS và sẽ âm thầm làm cổng xanh.
+
+
 ## Cần người xác nhận
 
 Hai chỗ đã đo lại và đóng (mục 1 và 2), một chỗ còn cần một người xác nhận (mục 3). Các con số ở trên đã được sửa theo kết quả đo, không sửa theo suy đoán.
@@ -2583,6 +3773,212 @@ Phân biệt được: W8b Gate 0 dùng lệnh ghi "15 file" cho `scope=bare-oh-
 | "W7 đẩy 585 file .ts có token `omp` sang 'làm theo từng file'" và W8a là 15 file dạng trần; ranh giới của W8a là phần literal dạng trần mà sed scope của W7 KHÔNG chạm tới. | partly-wrong | Ranh giới ĐÚNG ở CẤP LÍNH, SAI ở CẤP FILE. Lệnh scope của W7 là `perl -pi -e 's{\@oh-my-pi/}{@ultraworkers/}g'` — nó không thể nào chứa được một literal dùng trong, nên 23 lượt này đều sống sau. NHƯNG 14/15 file trong bảng W8a CŨNG chứa dạng có dấu `/`: chỉ có `packages/ai/src/registry/oauth/zai.ts` có bằng 0 lượt scope; 14 file còn lại có từ 1 đến 16 lượt (acp-lazy-startup 16, acp-initialize-conformance 10, acp-agent 8, legacy-pi-compat 7, cursor-exec-modern và zai-oauth 6 mỗi file, web-search-exa 6, segments 5, oauth-flow 5, telemetry 4, git-hosting 2, exa 2, oauth-flow.test 2, provider-quirks 1). Nghĩa là W7 ĐÃ sửa 14/15 file của W8a, và chỉ một file duy nhất là W8a sở hữu toàn bộ. Hai hệ quả phải nói rõ: (1) Gate C của W7 (so sánh tập dạng trần) là thứ bảo vệ W8a — W8a mà chạy trước sẽ làm nó đỏ; (2) khi review W8a, phải so sánh với baseline W8a chứ KHÔNG phải với `main`, nếu không sẽ thấy 14 file có hơn trăm hàng thay đổi của W7 trộn vào diff của W8a. Chỉ có một file (`zai.ts`) mà W8a sửa mà W7 không đụng. Bằng chứng: vòng `for f in <15 file>; do grep -c -F '@oh-my-pi/' $f; done` cho 0,1,6,6,5,7,5,8,4,2,10,16,2,2,6 theo thứ tự bảng; `git grep -l '@oh-my-pi/' -- . \| wc -l` = 4149 với 17697 lượt. |
 | W8a phụ thuộc "W2, và M2 đã merge cho phần tài liệu". | gap-in-plan | Danh sách phụ thuộc thiếu W7, và đây là phụ thuộc CỨNG chứ không chỉ thứ tự thời gian. Gate C của W7 chụp baseline dạng trần rồi so sánh sau pass; nếu W8a đổi một literal dạng trần trước, Gate C đó và W7 không thể merge, đồng thời W8a cũng không thể chạy. Các file tài liệu mà plan giao cho W8a (`docs/extension-loading.md:231`, `docs/porting-from-pi-mono.md:46-51`) cũng không có literal dạng trần — `grep -cE '"oh-my-pi"'` trên cả hai đều bằng 0, chúng chỉ có dạng có dấu `/` thuộc W7. Nghĩa là phần tài liệu của W8a là sửa VĂN XUÔI sau W7, không phải thay chuỗi; chạy một pass thay chuỗi ở bước 10 sẽ không có gì để thay. Bằng chứng: `grep -cE '"oh-my-pi"' docs/extension-loading.md docs/porting-from-pi-mono.md` → 0 và 0; `awk 'NR>=228 && NR<=232'` → dòng 231 là bullet về `onLoad` hook với `@oh-my-pi/pi-catalog/models` và `@mariozechner/*`; `awk 'NR>=44 && NR<=52' docs/porting-from-pi-mono.md` → dòng 46-50 là bảng 5 map `@mariozechner/pi-*` → `@oh-my-pi/pi-*`. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Kết luận quan trọng nhất: cây đã trôi khỏi commit nền `84cbac9` mà kế hoạch dùng để đếm.** Ba file ACP không còn literal nào, và ba file kế hoạch/nghiên cứu mới đã được thêm vào repo. **Cổng A và cổng B của kế hoạch, viết nguyên văn, sẽ đỏ trên cây hiện tại dù công việc đã làm đúng** — phần dưới đây viết lại chúng cho đỏ được. Kết quả kiểm lại neo: 25/35 đúng nguyên vẹn · **10 neo hỏng**.
+
+Nguồn gốc của toàn bộ lệch: work item được đối chiếu ở `84cbac9`; HEAD khi đo là `47720fd`, **12 commit sau**, trong đó `f804d66` (sync upstream) xoá 3 literal và `14f2c1f` thêm chính file kế hoạch vào repo.
+
+| # | neo trong work item | thực tế @ `47720fd` | nguyên nhân | ảnh hưởng |
+| --- | --- | --- | --- | --- |
+| 1 | `acp-agent.ts:656` = `agentInfo.name = "oh-my-pi"` | dòng 656 là `name: "omp",` — **không còn literal dạng trần** | upstream `f804d66` đã đổi | **Cổng B đỏ ngay**, săn nhầm; hàng N5 của bảng quyết định không còn đối tượng; 3/15 file của baseline biến mất |
+| 2 | `acp-initialize-conformance.test.ts:235` = `agentInfo.name === "oh-my-pi"` | dòng 235 là `title: "omp",`; khẳng định `name` đã bị xoá | cùng commit | hàng pin của bảng quyết định không tồn tại; "5 file pin" thực chất còn **3** |
+| 3 | `acp-lazy-startup.test.ts:375` = `expect.objectContaining({ name: "oh-my-pi" })` | dòng 375 là `protocolVersion: 1,`; dòng `agentInfo: …` đã bị xoá | cùng commit | như #2 |
+| 4 | `docs/provider-quirks.md:1706` | dòng 1706 **rỗng**; literal thật ở **1710** | `docs/provider-quirks.md` +5/-1 kể từ baseline (thêm mục Z.AI) | **Cổng B đỏ ngay** tại một vị trí không liên quan |
+| 5 | `web-search-exa.test.ts:608` | literal ở dòng **577** | file rút ngắn 31 dòng | đọc sai dòng trong bảng quyết định; cổng tương lai theo số dòng sẽ hỏng |
+| 6 | `cursor-exec-modern.test.ts:1474` | dòng **1450** | file rút ngắn | như #5 |
+| 7 | `cursor-exec-modern.test.ts:1482` | dòng **1458** | file rút ngắn | như #5 |
+| 8 | `git-hosting.test.ts:214` | dòng **152** | file rút ngắn 62 dòng | như #5 |
+| 9 | `git-hosting.test.ts:222` | dòng **160** | như trên | như #5 |
+| 10 | `git-hosting.test.ts:254, 263` | dòng **192, 201** | như trên | như #5 |
+
+Các sai lệch đo được khác (không phải neo hỏng, nhưng làm work item sai):
+
+| claim | số trong work item | số đo được @ `47720fd` | lệch |
+| --- | --- | --- | --- |
+| số dòng baseline Cổng A | 15 | **107** với lệnh nguyên văn của kế hoạch; **20** khi loại 4 file tài liệu | +92 / +5 |
+| số lượt baseline | 23 | **143** nguyên văn; **20** code thật | +120 / −3 |
+| số file | 15 | **15** nguyên văn — nhưng **cùng số, khác tập**: 12 file mã của W8a + `MILESTONE_5_EXECUTION_PLAN.md` + 2 file nghiên cứu | trùng số, sai nội dung |
+| số file quyết định | 15 | **12** còn literal | −3 |
+| ngưỡng Cổng H | `>= 15` | `>= 12` | −3 |
+| `test/pi-scope-aliases.test.ts` "CHƯA kiểm chứng" | chưa xác minh | **đã tồn tại**, 5.3 KB, describe ở 85, 1 `it()` ở 129 | — |
+| `initTelemetryExport()` (bước 8) | không tham số | `initTelemetryExport(exportEnabled: boolean)` — thiếu `true` | lỗi type |
+| Cổng G "không chạy được trên máy này" | `NOT RUN` | addon đã build, test chạy 9 pass / 1 pass | claim sai |
+| "7 giá trị wire giữ nguyên" | 7 | 6 hàng `keep-wire` thật (N7, N5✗, N8, N18, N19, N20) — N5 không còn; hàng thứ 7 là `keep-doc` | số lệch |
+
+Bảng điểm sửa:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn từ file) | SAU |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:33` | `activeRepo.relativeRepoRoot` | `relativeRepoRoot: "oh-my-pi",` | `relativeRepoRoot: "ultraworkers",` |
+| `packages/coding-agent/src/cli/gallery-fixtures/segments.ts:164` | `worktree.projectName` | `worktree: { projectName: "oh-my-pi", worktreeName: "gallery-reference" },` | `worktree: { projectName: "ultraworkers", worktreeName: "gallery-reference" },` |
+| `scripts/rename/keep-list.txt` (W7 tạo; **hiện chưa tồn tại**) | ba hàng mới | — | `packages/ai/src/registry/oauth/zai.ts  # N18: tên khóa gửi lên Z.AI qua businessLogin; đổi là tạo khoá khác trong tài khoản người dùng`<br>`packages/coding-agent/src/web/search/providers/exa.ts  # N19: header x-exa-source; đổi làm mất credit traffic attribution, không lỗi cục bộ`<br>`packages/coding-agent/src/mcp/oauth-flow.ts  # N20: client_name trong đăng ký client động RFC 7591; là danh tính consent + allowlist của provider` |
+| `packages/coding-agent/test/otel-service-name-probe.ts` (TẠI MỚI, ~60 dòng) | probe tiến trình con | — | Bản sao `otel-resource-probe.ts` bỏ `OTEL_SERVICE_NAME` + `OTEL_RESOURCE_ATTRIBUTES`, export 1 span, kiểm `service.name` fallback |
+| `packages/coding-agent/test/telemetry-export.test.ts:129-133` | `probes[]` | `["resource attributes", "./otel-resource-probe.ts"],` | thêm `["fallback service name", "./otel-service-name-probe.ts"],` |
+| `packages/coding-agent/test/telemetry-export.test.ts:149-153` | `expect(Object.fromEntries(results))` | `"resource attributes": 0,` | thêm `"fallback service name": 0,` |
+| `packages/coding-agent/test/pi-scope-aliases.test.ts:129` | `it("remaps every aliased pi-* scope …")` | describe hiện chỉ có **1** `it()` — không có ca "không scope" | thêm 1 `it()` mới: import đến bằng scope cũ và import đến không scope phải phân giải về CÙNG một package host |
+
+**Không đổi (đã đọc, đã giữ):** `telemetry-export-otlp.ts:51`, `legacy-pi-compat.ts:802`, `zai.ts:25`, `exa.ts:26`, `oauth-flow.ts:629`; `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` (0 literal dạng trần — chỉ sửa văn xuôi sau W7); 5 file test pin + 2 file test fixture.
+
+Các bước có neo đã kiểm:
+
+**Bước 1 — DỪNG, kiểm 4 điều kiện mở. Cả bốn đều CHƯA thoả trên cây hiện tại.** (a) W7 merged — `git grep -l '@ultraworkers/pi-catalog' -- packages/catalog/package.json` → **ABSENT**, `packages/catalog/package.json:2` vẫn là `"name": "@oh-my-pi/pi-catalog"`. (b) W2 merged — `legacy-pi-compat.ts:796` là `const CANONICAL_PI_SCOPE = "@oh-my-pi";`, symbol có nhưng **giá trị chưa đổi**. (c) keep-list duyệt — `test -f scripts/rename/keep-list.txt` → **MISSING**. (d) M2 merged — không kiểm được từ cây; giả định chưa. Hệ quả: **W8a chưa được chạy.**
+
+**Bước 2 — Chụp baseline.** **Sửa bắt buộc so với kế hoạch.** Kế hoạch dùng `':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md'` một mình và kỳ vọng "15 dòng / 23 lượt". Câu đó **chỉ đúng tại `84cbac9`**. Đo tại `47720fd`: lệnh nguyên văn của kế hoạch → **107 dòng / 143 lượt / 15 file**; lệnh loại 4 file tài liệu → **20 dòng / 20 lượt / 12 file** — 12 file đó đúng là 12 file mã mà W8a sở hữu, và 20 lượt = 20 lượt code thật.
+
+```bash
+git grep -nE '"oh-my-pi"' -- . \
+  ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' \
+  ':!MILESTONE_5_EXECUTION_PLAN.md' \
+  ':!RESEARCH_DSH_OMO_2026-09-28.md' \
+  ':!RESEARCH_FINDINGS_2026-09-28.md' > /tmp/w8a-bare-baseline.txt
+git rev-parse HEAD > /tmp/w8a-head-baseline.txt
+```
+
+**Bước 3 — Đối chiếu bảng quyết định.** Bảng quyết định của kế hoạch **đúng 12/15 hàng**; 3 hàng ACP đã bị upstream đổi trước khi W8a kịp chạy. Không thêm hàng mới, không bỏ hàng nào.
+
+**Bước 4 — Sửa DUY NHẤT file nguồn:** `packages/coding-agent/src/cli/gallery-fixtures/segments.ts`, hai dòng, tay hoặc editor, **không sed** (file này còn 5 lượt `@oh-my-pi/` mà W7 sở hữu — một sed không phân biệt được). Kiểm sau khi sửa: `grep -n 'ultraworkers'` cho đúng 2 dòng; `grep -c -F '@oh-my-pi/'` vẫn **5**; `grep -n '/workspace/oh-my-pi'` vẫn **2 dòng 31,32**.
+
+**Bước 5 — KHÔNG sửa 6 literal còn lại:** `telemetry-export-otlp.ts:51` (N7) · `legacy-pi-compat.ts:802` (N8, của W2) · `zai.ts:25` (N18) · `exa.ts:26` (N19) · `oauth-flow.ts:629` (N20) · `docs/provider-quirks.md:1710` (tài liệu của N18 — **không phải 1706**). **Không có dòng ACP nào nữa:** `acp-agent.ts:656` đã là `name: "omp"`; `acp-initialize-conformance.test.ts:235` và `acp-lazy-startup.test.ts:375` đã bỏ hẳn khẳng định. Không có gì để giữ — cũng không có gì để làm.
+
+**Bước 6 — KHÔNG sửa 5 file test pin + 2 file fixture.** Pin: `packages/ai/test/zai-oauth.test.ts:109,437,444` · `packages/coding-agent/test/oauth-flow.test.ts:81` · `packages/coding-agent/test/tools/web-search-exa.test.ts:577` (không phải 608). Fixture: `packages/ai/test/cursor-exec-modern.test.ts:280,1450,1458` · `packages/coding-agent/test/tools/web-scrapers/git-hosting.test.ts:152,160,192,201`. Tổng: W8a sửa **0 dòng** của 5 file pin và 2 file fixture.
+
+**Bước 7 — Thêm 3 hàng N18/N19/N20 vào keep-list.** Mỗi hàng một dòng, `#` bắt buộc. Không sửa, không xoá, không sắp xếp lại hàng N1–N17.
+
+**Bước 8 — Tạo `packages/coding-agent/test/otel-service-name-probe.ts`.** Copy cấu trúc từ `packages/coding-agent/test/otel-resource-probe.ts:1-65` (đã đọc đầy đủ). Giữ nguyên: `Bun.serve({ port: 0 })` nhận `POST …/v1/traces` (21-34), `process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (36), `await initTelemetryExport(true)` (40 — **bắt buộc truyền `true`**, kế hoạch viết `initTelemetryExport()` không tham số, sai chữ ký `telemetry-export.ts:71`), `isTelemetryExportEnabled()` (41), `trace.getTracer(...).startSpan(...)` + `span.end()` (47-49), `await flushTelemetryExport()` (51), `body.toString("latin1")` + `const has = (s: string) => payload.includes(s)` (55-56), in `PROBE: RECEIVED` / `PROBE: NO_EXPORT` (62), `process.exit(0|1)` (64). Ba khác biệt bắt buộc so với probe gốc: (1) **KHÔNG** có `process.env.OTEL_SERVICE_NAME`; (2) **KHÔNG** có `process.env.OTEL_RESOURCE_ATTRIBUTES`; (3) phép kiểm `has("oh-my-pi")` — **đúng giá trị constant của N7**, không hardcode chuỗi khác. (Kế hoạch bắt kiểm `has("ultraworkers-fallback-marker")` trong khi N7 là `keep-wire` ⇒ marker đó **không bao giờ khớp**, probe in `PROBE: NO_EXPORT` vĩnh viễn và Cổng G đỏ vĩnh viễn. Marker đúng là chính giá trị của N7.)
+
+**Bước 9 — Nối probe vào `telemetry-export.test.ts`.** Thêm một cặp `["fallback service name", "./otel-service-name-probe.ts"]` vào mảng `probes` (129-133) và một khoá `"fallback service name": 0` vào `expect(Object.fromEntries(results)).toEqual({…})` (149-153). Giữ nguyên `Bun.spawn([process.execPath, probe], { env: { ...process.env }, … })` (137-144) — nó là thứ loại các biến OTEL kế thừa mà `beforeEach` (30-32) đã dọn. Timeout: describe hiện là `20_000` (154); **đã đo** `bun test packages/coding-agent/test/telemetry-export.test.ts` chạy 9 test trong **545ms** ở cây sạch. Thêm probe thứ tư không cần nới; nếu vẫn nới thì ghi con số đo vào commit, đừng ghi "chưa đo".
+
+**Bước 10 — Phần tài liệu (sau M2).** `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` — đã đọc, **cả hai có 0 literal dạng trần**. Sau W7 dòng 46-50 tự động đọc `@mariozechner/… → @ultraworkers/…`. Việc còn lại là **sửa văn xuôi cho khỏi lỗi thời**, không chạy pass thay chuỗi.
+
+**Bước 11 — KHÔNG đụng changelog.**
+
+**Bước 12 — Chạy cổng theo thứ tự, dừng ở cổng đỏ đầu tiên.** Ghi kết quả TỪNG cổng vào commit message.
+
+Hợp đồng test — hợp đồng duy nhất: **một lần đổi tên cơ học không được âm thầm dịch chuyển một giá trị wire dạng trần.**
+
+**Invariant 1 — PIN TELEMETRY (nhánh fallback).** File mới `otel-service-name-probe.ts` + một cặp trong `telemetry-export.test.ts`. Điều người dùng thấy nếu hồi quy: **không có gì đỏ ở đâu cả.** `SERVICE_NAME` không được export (`grep '^export' telemetry-export-otlp.ts` → chỉ 4 dòng export, không có nó), không test nào chạm tới, nên đổi tên ở đó **xanh hoàn toàn**; hậu quả là bảng chi phí telemetry tách làm hai service và không ai biết cho tới khi telemetry đã bật trên máy thật. Đây là lỗ hổng duy nhất trong 6 literal còn lại. Ca này **bắt buộc là nhánh fallback, không phải nhánh precedence**: `otel-resource-probe.ts` đã tồn tại để chứng minh `OTEL_SERVICE_NAME` THẮNG (dòng 37 đặt biến, dòng 59 comment nói rõ, dòng 60 `precedence = has("svc-probe") && !has("should-lose")`). Sửa nó để khẳng định fallback là **phá hợp đồng precedence**; test sẽ xanh trong khi không còn bảo vệ đúng thứ gì.
+
+**Invariant 2 — PHÂN GIẢI SCOPE KHÔNG GHI CHÈ.** `packages/coding-agent/test/pi-scope-aliases.test.ts` — file **đã tồn tại** (5.3 KB), describe ở dòng 85, hiện chỉ có **một** `it()` ở dòng 129. Thêm ca thứ hai. Điều người dùng thấy nếu hồi quy: xoá `"oh-my-pi"` khỏi `PI_SCOPE_ALIASES` (`legacy-pi-compat.ts:802`) làm **mọi extension cũ hỏng bằng module-not-found lúc load plugin** — ở máy người dùng, lúc chạy extension của họ, không phải lúc test.
+
+**Cấm tuyệt đối:** source-grep file implementation; `mock.module()` (rò `Bun` global — [oven-sh/bun#12823](https://github.com/oven-sh/bun/issues/12823)); assert lại 20 literal trong 7 file test; thêm test cho `segments.ts` (không có hợp đồng quan sát được nào đứng sau nó).
+
+Cổng có đỏ được không — **cả tám cổng có đường đỏ riêng; ba cổng của kế hoạch (A, B, C) cần sửa trước khi dùng, lý do đo được bên dưới.** Trạng thái môi trường đã đo: native addon **ĐÃ BUILD** (`./packages/natives/native/pi_natives.darwin-arm64.node` tồn tại); `ninja`/`cmake`/`cargo` đều có trong PATH; `bun test test/telemetry-export.test.ts` → **9 pass / 0 fail, 545ms**; `bun test test/pi-scope-aliases.test.ts` → **1 pass / 0 fail, 615ms**. ⇒ Cổng G **CHẠY ĐƯỢC**; kế hoạch ghi "không chạy được trên máy này" là **sai** — commit `47720fd` ngay trên đầu cây đã sửa đúng điều đó cho phần khác của kế hoạch. Không được ghi `NOT RUN — environment blocked` cho Cổng G.
+
+**Cổng 0 — ĐIỀU KIỆN MỞ (đỏ được, và đang đỏ).** Bốn nhánh đỏ độc lập; ba nhánh sau **đang đỏ trên cây hiện tại** — nghĩa là cổng này thật sự phân biệt được "W8a chưa làm" với "W8a làm xong". Đã chạy thử: `keep-list.txt` MISSING, `@ultraworkers/pi-catalog` ABSENT.
+
+```bash
+git grep -qF 'PI_SCOPE_ALIASES = ["oh-my-pi", "mariozechner", "earendil-works"]' \
+  packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts \
+  || { echo 'GATE 0 FAIL: N8 alias da bi pham'; exit 1; }
+test -f scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list.txt missing'; exit 1; }
+grep -q 'N7' scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list chua qua duyet W7'; exit 1; }
+git grep -q '@ultraworkers/pi-catalog' -- packages/catalog/package.json \
+  || { echo 'GATE 0 FAIL: W7 chua merge'; exit 1; }
+```
+
+> **Sửa so với kế hoạch.** Cổng 0 của kế hoạch kiểm `git grep -q 'CANONICAL_PI_SCOPE'` để đòi W2 merged. Câu đó **luôn xanh** vì `CANONICAL_PI_SCOPE` đã tồn tại ở dòng 796 kể từ trước, chỉ là giá trị chưa đổi — nó kiểm "symbol tồn tại", không kiểm "W2 đã merge". Đã đo: câu đó PASSES ở `47720fd` dù `CANONICAL_PI_SCOPE` vẫn là `"@oh-my-pi"`.
+
+**Cổng A — TẬP FILE TRÒN VẸN (đã viết lại cho đỏ được).** Đỏ được? Có. Đã chạy thử: câu nguyên văn của kế hoạch cho **107 dòng** thay vì 15. Cổng đó vẫn kỹ thuật "đỏ được" (một W8a đúng vẫn cho diff rỗng), nhưng nó **so sánh 107 dòng trong đó 87 dòng là văn xuôi kế hoạch** — mọi lần sửa plan sau này đều làm nó đỏ, và nó không còn chứng minh điều gì về W8a. Bốn mẫu loại ở trên đưa nó về đúng 20 dòng code thật.
+
+```bash
+git grep -nE '"oh-my-pi"' -- . \
+  ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' \
+  ':!MILESTONE_5_EXECUTION_PLAN.md' \
+  ':!RESEARCH_DSH_OMO_2026-09-28.md' \
+  ':!RESEARCH_FINDINGS_2026-09-28.md' > /tmp/w8a-bare-after.txt
+diff /tmp/w8a-bare-baseline.txt /tmp/w8a-bare-after.txt \
+  || { echo 'GATE A FAIL: W8a them/xoa literal o file ngoai bang quyet dinh'; exit 1; }
+```
+
+**Cổng B — LITERAL GIỮ NGUYÊN (đã viết lại cho đỏ được).** Đỏ được? Có — nhưng **bản của kế hoạch thì không chạy được trên cây này**, đã đo:
+
+| vị trí của kế hoạch | kết quả thật |
+| --- | --- |
+| `telemetry-export-otlp.ts:51` | ok |
+| `acp-agent.ts:656` | **FAIL** — dòng đó giờ là `name: "omp",`, không còn literal nào |
+| `legacy-pi-compat.ts:802` | ok |
+| `zai.ts:25` | ok |
+| `exa.ts:26` | ok |
+| `oauth-flow.ts:629` | ok |
+| `docs/provider-quirks.md:1706` | **FAIL** — dòng 1706 **rỗng**; literal thật ở dòng **1710** |
+
+Hai lỗi này **khác nhau về bản chất** và cả hai đều nguy hiểm: `acp-agent.ts:656` đỏ vì **cây đã đổi**, không phải vì ai đó phá — sẽ dạy kỹ sư săn nhầm; `provider-quirks.md:1706` đỏ vì file **dài thêm 4 dòng** từ lần commit tài liệu — đây là loại neo "đúng lúc viết, hỏng khi file lớn thêm", dễ tái diễn với mọi file tài liệu. Về độ nhạy của phép so: kế hoạch nói `case` khớp literal có dấu nháy kép nên bắt được cả sed nối hậu tố; **đã kiểm chứng bằng thí nghiệm** với `"oh-my-pi"` và `"oh-my-pi-ultraworkers"` — chỉ khớp vế trước. Bản viết lại dùng **1710** và bỏ dòng ACP:
+
+```bash
+check() { # file line expected-substring
+  got=$(sed -n "$2p" "$1")
+  case "$got" in
+    *"$3"*) return 0 ;;
+    *) echo "GATE B FAIL: $1:$2 mat gia tri '$3'"; got="$got"; return 1 ;;
+  esac
+}
+check packages/coding-agent/src/telemetry-export-otlp.ts 51 '"oh-my-pi"' || exit 1
+check packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts 802 '"oh-my-pi"' || exit 1
+check packages/ai/src/registry/oauth/zai.ts 25 '"oh-my-pi"' || exit 1
+check packages/coding-agent/src/web/search/providers/exa.ts 26 '"oh-my-pi"' || exit 1
+check packages/coding-agent/src/mcp/oauth-flow.ts 629 '"oh-my-pi"' || exit 1
+check docs/provider-quirks.md 1710 '"oh-my-pi"' || exit 1
+echo 'GATE B: 6 gia tri wire van nguyen'
+```
+
+**Cổng C — KHÔNG CHẠM FILE NGOÀI DANH SÁCH (đỏ được, có một lỗi cấu hình).** Đỏ được? Có. Nhưng nó **luôn đỏ** cho tới khi cả 5 file kia thật sự bị chạm — bốn điều kiện mở + Cổng 0 đều BLOCKED. Ba tài liệu ở bước 10 không có trong danh sách này, nên nếu bước 10 sửa file thật thì Cổng C đỏ. **Chốt một trong hai trước khi gõ** — nếu bước 10 chạy sau W8a ở một commit riêng, bỏ nó khỏi phạm vi Cổng C; nếu chạy chung thì phải thêm 2 dòng `docs/...` vào `w8a-expected.txt`. Đây chính là mâu thuẫn mà work item tự ghi nhận và vẫn chưa giải quyết.
+
+```bash
+BASE=$(cat /tmp/w8a-head-baseline.txt)
+git diff --name-only "$BASE"..HEAD | sort > /tmp/w8a-touched.txt
+printf '%s\n' \
+  'packages/coding-agent/src/cli/gallery-fixtures/segments.ts' \
+  'packages/coding-agent/test/otel-service-name-probe.ts' \
+  'packages/coding-agent/test/telemetry-export.test.ts' \
+  'packages/coding-agent/test/pi-scope-aliases.test.ts' \
+  'scripts/rename/keep-list.txt' | sort > /tmp/w8a-expected.txt
+diff /tmp/w8a-expected.txt /tmp/w8a-touched.txt \
+  || { echo 'GATE C FAIL: W8a cham file ngoai danh sach da duyet'; exit 1; }
+```
+
+**Cổng D — HAI DÒNG GALLERY (đỏ được, một khẳng định thừa).** Khẳng định đầu tiên của kế hoạch — `test "$(… | wc -l)" -eq 1` — **đỏ trên một cây chưa đổi gì**, đã đo: `numstat` rỗng ⇒ `wc -l` = 0 ≠ 1. Cổng đỏ ở đây là hành vi mong muốn, nhưng thông báo của nó sẽ chỉ ra chuyện không liên quan. Bản dưới tách rõ: file chưa đổi và file đổi sai số dòng là hai lỗi khác nhau.
+
+```bash
+BASE=$(cat /tmp/w8a-head-baseline.txt)
+read add del file <<<"$(git diff --numstat "$BASE"..HEAD -- packages/coding-agent/src/cli/gallery-fixtures/segments.ts)"
+[ "$file" = "packages/coding-agent/src/cli/gallery-fixtures/segments.ts" ] || { echo "GATE D FAIL: file khong doi"; exit 1; }
+[ "$add" = "2" ] && [ "$del" = "2" ] || { echo "GATE D FAIL: phai doi DUNG 2 dong (add=$add del=$del)"; exit 1; }
+```
+
+**Cổng E — KEEP-LIST ĐÃ CÓ 3 HÀNG MỚI (đỏ được, đã kiểm chứng).** Đã chạy thử cả hai nhánh: thiếu hàng → `FAIL` với đúng tên hàng; hàng thiếu `#` → awk in thông báo và **exit 1**. Hai sửa nhỏ so với kế hoạch: `^$n` thay vì `$n` (tránh khớp nhầm `N180`), và `END { exit found?1:0 }` thay vì `exit 1` trong thân vòng lặp (`exit 1` trong awk dừng ngay, bỏ sót các hàng sai phía sau; `END` thì quét hết rồi mới báo).
+
+```bash
+for n in N18 N19 N20; do
+  grep -q "^$n" scripts/rename/keep-list.txt || { echo "GATE E FAIL: thieu hang $n"; exit 1; }
+done
+awk -F'#' '/^N1[89]|^N20/ && NF < 2 { print "GATE E FAIL: hang khong co phan # ly do: " $0; found=1 } END { exit found?1:0 }' \
+  scripts/rename/keep-list.txt || exit 1
+```
+
+**Cổng F — TYPECHECK (đỏ được):** `bun run check:ts` (oxlint + oxfmt --check + check:types cho 16 package). `check:ts` khai báo ở `package.json:90`. **TUYỆT ĐỐI không dùng `tsc` / `npx tsc`** — AGENTS.md cấm, và kế hoạch cũng đã tự sửa sang `check:ts`.
+
+**Cổng G — BỘ TEST (CHẠY ĐƯỢC, đỏ được):** `bun test packages/coding-agent/test/telemetry-export.test.ts packages/coding-agent/test/pi-scope-aliases.test.ts`. Đỏ được? Có, và nó **đã chạy được** — addon đã build, `ninja` có mặt. Đo trên cây sạch: 9 pass / 0 fail (545ms) và 1 pass / 0 fail (615ms). Đừng ghi `NOT RUN — environment blocked`; nếu một máy khác thật sự chưa build addon thì mới ghi đúng ba chữ ấy, nhưng **không phải trên máy này**.
+
+**Cổng H — BẢNG QUYẾT ĐỊNH CỦA W8b:** `awk -F'\t' '$1=="bare-oh-my-pi"' scripts/rename/disposition.tsv | wc -l` phải `>= 12` (ngưỡng đổi từ 15 xuống **12**, và phải loại **4** file tài liệu, không phải 1). File `scripts/rename/disposition.tsv` hiện chưa tồn tại — đúng như thiết kế, W7 mới tạo. Nếu W8b chưa chạy thì bỏ cổng này, đừng ghi xanh.
+
+Cạm bẫy riêng của mục này — **cây đã trôi khỏi commit nền của chính work item, theo cả hai chiều.** Ba file ACP mất literal (upstream `f804d66` đã đổi `agentInfo.name` sang `"omp"` và xoá hai khẳng định test), ba file kế hoạch/nghiên cứu mới xuất hiện trong repo. Nếu kỹ sư tin bảng "15 file / 23 lượt" và cổng A/B nguyên văn, họ sẽ săn ba lỗi không tồn tại và bỏ sót ba lỗi có. Đây là lý do cây phải được đo lại, không đọc lại số trong tài liệu.
+
+**Ba hàng keep-list nặng hơn hai dòng rename** — cơ chế cụ thể là: `N18/N19/N20` **không có mục nào trong bảng `N1–N17`**, nên kỹ sư chỉ đọc keep-list mà không đọc phần này sẽ **không biết phải giữ chúng** và sẽ đổi. Đổi `"oh-my-pi"` ở `zai.ts:25` tạo một khoá thứ hai trong tài khoản Z.AI của người dùng — không ném lỗi, chỉ âm thầm tách dữ liệu. Đổi `client_name` ở `oauth-flow.ts:629` có thể khiến Figma từ chối client trong allowlist. Cả hai đều thất bại ở nơi không ai nhìn thấy.
+
+**Sửa nhầm `otel-resource-probe.ts` thay vì tạo probe anh em.** File đó đặt `OTEL_SERVICE_NAME = "svc-probe"` (dòng 37) và tồn tại chính để chứng minh biến môi trường thắng giá trị fallback (59-60). Sửa nó để khẳng định fallback là phá hợp đồng precedence: test sẽ **xanh** trong khi không còn bảo vệ đúng thứ gì — xanh giả, tệ hơn đỏ.
+
+**Marker của probe mâu thuẫn với quyết định N7** — kế hoạch bắt kiểm `has("ultraworkers-fallback-marker")` trong khi N7 là `keep-wire`. Marker đúng là `"oh-my-pi"` — cùng giá trị với `telemetry-export-otlp.ts:51`, không phải chuỗi thứ hai.
+
+**`initTelemetryExport()` thiếu tham số.** Kế hoạch viết `await initTelemetryExport()`. Chữ ký thật ở `telemetry-export.ts:71` là `initTelemetryExport(exportEnabled: boolean)` — bắt buộc `initTelemetryExport(true)`. Gọi không tham số là lỗi type, `check:ts` đỏ.
+
+**Đừng chạy `sed` trên `segments.ts`.** File đó chứa cùng lúc 2 literal dạng trần (33, 164 — việc của W8a) và 5 lượt `@oh-my-pi/` (việc của W7). Một `sed` không phân biệt được, và sẽ **hoàn nguyên công việc của W7**. Sửa tay.
+
+**`/workspace/oh-my-pi` ở dòng 31-32 không thuộc W8a.** Nó là dạng trần không có dấu nháy kép, `sed` scope của W7 không chạm tới, và thuộc W8b. Nhưng nó **có một test quan sát được**: `packages/coding-agent/test/modes/components/status-line/component.test.ts:176` khẳng định `expect(text).not.toContain("/workspace/oh-my-pi")`. Đổi dòng 31-32 sẽ không làm test đỏ (khẳng định `not.toContain` vẫn đúng với giá trị mới) — nghĩa là **đổi nó là thay đổi không ai canh**, và cũng nghĩa là đừng đụng vào nó ở W8a.
+
+**Review bằng `git diff main..HEAD` là thấy bẩn.** 14/15 file trong bảng W8a cũng chứa dạng có dấu `/` mà W7 đã đổi (đo: `acp-lazy-startup` 16, `acp-initialize-conformance` 10, `acp-agent` 8, `legacy-pi-compat` 7, `zai-oauth` 6, `cursor-exec-modern` 6, `web-search-exa` 6, `segments` 5, `oauth-flow` 5, `telemetry` 4, `exa` 2, `git-hosting` 2, `oauth-flow.test` 2, `provider-quirks` 1; chỉ `zai.ts` có 0). Review phải so `git diff $(cat /tmp/w8a-head-baseline.txt)..HEAD`.
+
+
 ## Cần người xác nhận
 
 Bốn chỗ đặc tả tự mâu thuẫn với chính nó. Không tự sửa ở trên — cần người quyết trước khi gõ.
@@ -2840,6 +4236,203 @@ Cổng này **có thực sự đỏ được không:** đặc tả khai `gate_ca
 | W11 (mục nghiệm thu phụ thuộc của W8b) phạm vi 68 file test, và W8b được mô tả như thể toàn bộ 585 file là việc của riêng nó. | SAI Ở CON SỐ, VÀ BỎ SÓT MỘT VA CHẠM SỞ HỮU NGUYÊN TẺ. | Tập W11 tính lại được là **70 file** (61 file có `".omp"` + 9 file có `__omp_worker_`), không phải 68. Quan trọng hơn con số: **226 trong 599 file của W8b là file test**, và **24 file trong số đó trùng với tập 70 file của W11**. Danh sách loại trừ mà W8b nêu (7 mục do_not_rename + selector + `".omp"`) không hề nhắc tới file test, trong khi 38% tập 599 là file test và W11 ở wave 5 — sau W8b. Đây là khoảng trống thật trong kế hoạch chứ không phải sai số: không ai đã nói W8b và W11 chia tay tập file test thế nào. Bằng chứng: `git grep -lE '"\.omp"' -- 'packages/**/test/**' \| wc -l` → 61; `git grep -l '__omp_worker_' -- 'packages/**/test/**' \| wc -l` → 9; hợp nhất hai tập → 70. Lọc tập 599 bằng `(^/\|(test\|tests)/\|\.test\.ts$)` → 226. `comm -12 <(tập W11) <(tập file test của W8b) \| wc -l` → 24, gồm `packages/coding-agent/test/acp-agent.test.ts`, `packages/coding-agent/test/modes/...`, `packages/utils/test/logger-contract.test.ts` và 21 file khác. 373 + 226 = 599. |
 | Các neo `dirs.ts:21,24,27,30,36` và `getConfigDirName()` tại `dirs.ts:298` mà M5 dùng làm trung tâm toàn bộ việc đổi tên. | ĐÚNG TOÀN BỘ. Đã mở file và đối chiếu từng dòng. | Không cần sửa. Ghi lại ở đây vì đây là nhóm neo duy nhất của M5 còn nguyên vẹn, và vì nó là đối chứng cho các con số đã trôi ở trên: cấu trúc của cây không đổi, chỉ số lượng file khớp biểu thức đã tăng lên. Bằng chứng: `sed -n '15,40p' packages/utils/src/dirs.ts` cho dòng 21 `export const APP_NAME: string = "omp";`, dòng 24 `export const APP_URL: string = "https://omp.sh/";`, dòng 27 `export const CONFIG_DIR_NAME: string = ".omp";`, dòng 30 `export const MAIN_CONFIG_FILENAMES = ["config.yml", "config.yaml"] as const;`, dòng 36 `export const USER_AGENT = \`omp/${VERSION}\`;`. `sed -n '294,302p'` cho dòng 298 `return process.env.PI_CONFIG_DIR \|\| CONFIG_DIR_NAME;`. Ngoài ra `dirs.ts:1084` là `const value = process.env.OMP_APP_NAME?.trim();` trong `getAppName()`. |
 | Giao việc bàn giao: "`bun run check:ts` chạy được: exit 0 sau ~29 giây trên máy rảnh". | Exit 0 thì đúng, con số 29 giây thì SAI trong lần chạy lạnh. (Lỗi này nằm ở giao việc bàn giao, không phải trong plan.) | Lần chạy lạnh ngày 2026-09-28 cho thấy riêng gói `typescript-edit-benchmark` đã mất 211.83s và `pi-metaharness` 152.51s. Khoảng 29 giây chỉ đúng khi bộ nhớ đệm kiểu của từng gói đã ấm. Kỹ sư chạy lần đầu và thấy lệnh còn chạy sau vài phút sẽ tưởng treo và giết nhầm. Bằng chứng: `bun run check:ts` → exit 0 với các dòng `@oh-my-pi/typescript-edit-benchmark:check:types \| Done in 211.83s`, `@oh-my-pi/pi-metaharness:check:types \| Done in 152.51s`, `@oh-my-pi/pi-tui:check:types \| Done in 74.87s`, `@oh-my-pi/snapcompact:check:types \| Done in 21.15s`. |
+
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo lớn nhất của mục này: cây đã trôi rất xa so với HEAD mà đặc tả đo.** `git diff --stat 1454dc0 HEAD -- '*.ts'` → **796 file, +12780/−21813**. Mọi con số trong kế hoạch (599/1853, 26, 94, 280, 14, 61, 24, 373/226) đều **sai** ở HEAD hôm nay. Kỹ sư **không được** dùng bất kỳ con số nào trong kế hoạch làm kỳ vọng cứng — bảng «số đo lại» bên dưới là con số đúng dùng được.
+
+Số đo lại tại HEAD `47720fd` — thay toàn bộ con số của kế hoạch (đo từ repo root; `git grep` không có pathspec thì chỉ quét thư mục đang đứng):
+
+| đại lượng | kế hoạch (HEAD `1454dc0`) | **đo thật** |
+| --- | --- | --- |
+| file `.ts` có token `omp` | 599 | **607** |
+| lượt token `omp` | 1853 | **1867** |
+| file test / file nguồn | 226 / 373 | **227 / 380** |
+| file có cả token lẫn `".omp"` | 26 | **27** |
+| file có cả token lẫn selector | 11 | **11** (đúng) |
+| file chỉ thuần hiển thị | 562 | **564** |
+| A ∪ B ∪ C | 42 | **43** |
+| literal `".omp"` toàn repo — lượt / file | 280 / 94 | **401 / 94** |
+| file test có `".omp"` | 61 | **60** |
+| tập W11 (hợp nhất 2 tập test) | 70 | **69** |
+| W11 ∩ tập test của W8b | 24 | **25** |
+| file `.ts` chứa `"oh-my-pi"` | 14 | **11** |
+| selector non-test — dòng / file | 30 / 14 | **30 / 14** (đúng) |
+| chuỗi selector phân biệt | 21 | **21** (đúng) |
+| file có ≥2 lượt (`-oE`) | 318 | **321** |
+| file có ≥2 dòng (`-cE`) | 310 | **312** |
+| file trong 607 chứa literal `"omp"` | 98 | **98** (đúng) |
+| `update-cli.test.ts` lượt / dòng | 59 / 58 | **59 / 58** (đúng) |
+| 202 file test chưa gán | — | **207** (227 − 4 B − 21 C + 6 chồng) |
+| `git log --format='%ae' \| sort \| uniq -c` | 7 + 1 | **30 + 8** |
+
+`401` lượt `".omp"` toàn repo (kế hoạch ghi 280) phần lớn đến từ **chính các file kế hoạch**: `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` 81 lượt, `MILESTONE_5_EXECUTION_PLAN.md` 77 lượt. Đây chính là bẫy «tài liệu tự nhiễm» mà `open_questions[1]` của W8a đã cảnh báo — **mọi lệnh đếm phải có `:!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`**, kể cả khi tính `scope=display-token`. Phân bố theo gói: coding-agent 426, ai 59, tui 47, utils 14, catalog 12, stats 10, metaharness 10, natives 5, wire 3, browser-relay 3, omptype 2, agent 2, `scripts/` 11, và 1 file trong `.omp/` của chính repo (`.omp/tools/tui.ts`).
+
+Bảng điểm sửa — ba file `scripts/rename/` tạo mới (đề xuất của đặc tả, **chưa tồn tại**: `ls scripts/rename/` → `No such file or directory`; đây là khoảng trống thật):
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `scripts/rename/disposition.tsv` | header TSV 6 cột | *(file không tồn tại)* | dòng header đúng một dòng, tab phân cách, không quote, không dòng comment: `scope⇥path⇥hits⇥disposition⇥reason⇥keep_refs` |
+| `scripts/rename/check-disposition.ts` | `parseDisposition` / `checkPre` / `checkPost` | *(file không tồn tại)* | xem bảng dưới |
+| `scripts/rename/README.md` | schema 6 cột + từ vựng + quy trình duyệt | *(file không tồn tại)* | mô tả từ vựng `scope`/`disposition`, quy tắc `hits`, và ai duyệt ở bước nào |
+| `scripts/rename/check-disposition.ts` | `OMP_TOKEN_ERE` | *(chưa có)* | hằng số `'…'` ở trên; **cấm `\b` và `\<`** |
+| 380 file nguồn + 227 file test | token `omp` đứng riêng | `… "omp" …` | giá trị tên hiển thị mới, **theo từng hàng của bảng** |
+| `packages/utils/src/dirs.ts` | `APP_NAME` | `export const APP_NAME: string = "omp";` | đọc/ghi qua hằng số đã đổi của W1 |
+| `packages/coding-agent/src/cli/commands/init-xdg.ts` | `APP_NAME` | `const APP_NAME = "omp";` | đọc hằng số từ `dirs.ts` |
+| `packages/tui/src/desktop-notify.ts` | `APP_NAME` | `const APP_NAME = "omp";` | đọc hằng số từ `dirs.ts` |
+| `packages/tui/src/terminal-capabilities.ts` | `CMUX_NOTIFICATION_TITLE` | `const CMUX_NOTIFICATION_TITLE = "omp";` | đọc hằng số từ `dirs.ts` |
+
+**ĐỪNG chạy `sed` trên 607 file.** Đó chính là kịch bản tai nạn mục này sinh ra để chặn.
+
+Hình dạng `check-disposition.ts`:
+
+```typescript
+export type Disposition = "rename" | "keep-wire" | "keep-path" | "keep-worker-selector" | "keep-doc-name";
+export type Scope = "display-token" | "dot-omp-literal" | "bare-oh-my-pi" | "app-name-literal";
+
+export interface DispositionRow {
+  scope: Scope;
+  path: string;
+  hits: number;
+  disposition: Disposition;
+  reason: string;
+  keepRefs: string[];
+}
+
+export function parseDisposition(text: string): { rows: DispositionRow[]; violations: string[] };
+export function checkPre(rows: DispositionRow[], treeHits: Map<string, number>): string[];
+export function checkPost(rows: DispositionRow[], treeHits: Map<string, number>): string[];
+
+const OMP_TOKEN_ERE = '(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)';
+```
+
+**Biểu thức đếm — cái duy nhất được phép dùng.** Vì sao cấm `\b`: đo lại hôm nay trên `packages/utils/src/dirs.ts` — `git grep -cE '\bomp\b'` → **không in dòng nào, exit 1**; `command grep -cE '\bomp\b'` → **105**; `command grep -cE '[[:<:]]omp'` → **105**; biểu thức đã ghin đếm DÒNG → **19 dòng**, đếm LƯỢT (`-oE`) → **21 lượt**. Một cổng viết bằng `git grep -E '\bomp\b'` **luôn xanh** vì không khớp gì. Đó là loại cổng nguy hiểm nhất: nó không đỏ khi sai.
+
+**Cột `hits` — mỗi disposition một biểu thức.** Đây là quyết định thiết kế quan trọng nhất. ERE đã ghin **cố ý loại `_` và `.`** ở ranh giới trước `omp`, nên nó **không thấy** selector lẫn literal `.omp`. Đo lại: trên 11 file Nhóm B có **26 selector nhưng 31 lượt ERE**; trên 27 file Nhóm C có **73 literal nhưng 85 lượt ERE**; `dirs.ts` có **4 literal `".omp"` mà ERE tính 0 lượt** cho lớp đó.
+
+| `disposition` | biểu thức đo `hits` |
+| --- | --- |
+| `rename` | `git grep -oE '(^\|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]\|$)' -- <path> \| wc -l` |
+| `keep-wire` | cùng ERE trên |
+| `keep-worker-selector` | `git grep -o '__omp_worker_' -- <path> \| wc -l` |
+| `keep-path` | `git grep -oE '"\.omp"' -- <path> \| wc -l` |
+| `keep-doc-name` | không dùng trong `scope=display-token` (tài liệu là `.md`, thuộc W13) |
+
+Bất biến kiểm: **tổng `hits` mọi hàng cùng `path` = tổng lượt thật của file đó**. Đo bằng `-oE`, **không** bằng `-cE` (cái sau đếm DÒNG — 321 vs 312 ở trên là bằng chứng).
+
+Các bước có neo đã kiểm:
+
+**Bước 0 — DỪNG nếu W1/W2/W3 chưa trên `main`.** Kiểm: `git log --oneline -1` trên `main` phải chứa ba work item. **Đã kiểm rồi:** ở HEAD `47720fd` (branch `milestone-1`) `dirs.ts:22` **vẫn là** `export const APP_NAME: string = "omp";` — tức W1 **chưa** đổi hằng số trung tâm. Bước 0 **chưa thỏa**.
+
+**Bước 1 — Sinh lại danh sách từ cây hiện tại.** Chạy từ repo root. Đã kiểm: 607 file / 1867 lượt tại `47720fd`. **Bẫy đã tái lập:** `git grep` không có pathspec thì chỉ quét thư mục đang đứng; chạy từ `.lavish-wip/m5-specs/` trả 0. Cổng phải **từ chối chạy** khi cwd không phải gốc repo, thay vì im lặng trả 0.
+
+```bash
+E='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'
+git grep -lE "$E" -- '*.ts' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | sort > /tmp/w8b-files.txt
+wc -l < /tmp/w8b-files.txt
+git grep -oE "$E" -- '*.ts' | wc -l
+```
+
+**Bước 2 — Tạo khung bảng.** `fs.mkdir("scripts/rename", { recursive: true })` trong script, **không** spawn shell. Header đúng một dòng, tab phân cách, **không dòng comment** (parser phải bỏ qua comment là chỗ dễ sót lỗi; mọi giải thích nằm ở `README.md` và cột `reason`).
+
+**Bước 3 — Điền bảng theo thứ tự rủi ro, không alphabet.** Nhóm A (5 file chứa giá trị wire) — tất cả **đã mở và đối chiếu, 5/5 MATCH** với ERE đã ghin:
+
+| path:line | nội dung thật | khớp ERE? | disposition |
+| --- | --- | --- | --- |
+| `packages/catalog/src/wire/codex.ts:52` | `ORIGINATOR_CODEX: "omp",` | MATCH | `keep-wire`, `keep_refs=N3` |
+| `packages/coding-agent/src/dap/session.ts:1465` | `clientID: "omp",` | MATCH | `keep-wire`, `keep_refs=N4` |
+| `packages/coding-agent/src/dap/session.ts:1466` | `clientName: "omp",` | MATCH | (cùng hàng) |
+| `packages/coding-agent/src/blob-broker/uploaders-legacy.ts:236` | `const body = multipartFile(request, "f", { k: apiKey, z: "omp" });` | MATCH | `keep-wire`, `keep_refs=N5` |
+| `packages/coding-agent/src/modes/warp-events.ts:60` | `agent: "omp",` | MATCH | `keep-wire`, `keep_refs=N6` |
+| `packages/ai/src/providers/gitlab-duo-workflow.ts:2232` | `serverName: "omp",` | MATCH | `keep-wire`, `keep_refs=N7` |
+
+Nhóm B: 11 file chứa `__omp_worker_` → `keep-worker-selector`, `keep_refs=W9`; trong đó `packages/coding-agent/src/cli.ts` có 8 selector, `packages/coding-agent/test/executable-fallback.test.ts` có 8. Nhóm C: 27 file chứa cả `".omp"` → `keep-path`, `keep_refs=W4`; 6 file nguồn đã mở: `agents-cli.ts`, `config.ts`, `task/discovery.ts`, `tools/browser/storage-state.ts`, `dirs.ts`, `scripts/session-stats/audit.ts`. Nhóm D: 227 file test; 24 đã nằm trong B/C → **25** còn lại chưa gán. Nhóm E: 380 file nguồn; 18 đã nằm trong A/B/C (5 + 7 + 6 — **đã đếm lại, đúng**) → **362** chưa gán. **Các nhóm KHÔNG cộng lại thành 607:** A ∪ B ∪ C đo được **43** file (kế hoạch ghi 42). 43 là lớp ghi đè; D/E là cách cắt test-vs-nguồn; 607 là kiểm tra bao phủ cuối cùng.
+
+**Bước 4 — CHỐT hai file có `omp` mà KHÔNG khớp biểu thức đã ghim. ⚠ PHẦN NÀY ĐÃ LỖI THỜI.** Kế hoạch nói hai file này là **no-match**: `acp-agent.ts:656` (ghi `name: "oh-my-pi"`) và `telemetry-export-otlp.ts:51` (ghi `SERVICE_NAME = "oh-my-pi"`). Đo lại hôm nay: `acp-agent.ts:656` là `name: "omp",` — **MATCH**, **đã đổi** bởi commit `f804d66` («Sync from upstream omp 18.4.0», diff `- name: "oh-my-pi",` → `+ name: "omp",`). Hàng này **không còn là no-match**; nó thuộc Nhóm A (`keep-wire`). `telemetry-export-otlp.ts:51` vẫn là `const SERVICE_NAME = "oh-my-pi";` — no-match, đúng như kế hoạch. Cả hai file vẫn còn trong tập 607 (đã kiểm bằng `grep -qxF`). Cái kế hoạch nói đúng và vẫn giữ nguyên giá trị: **bảo vệ theo TÊN FILE không bảo vệ đúng DÒNG** — cổng phải so từng hàng, không so từng file.
+
+**Bước 5 — Chia `hits` cho TỪNG hàng** theo bảng biểu thức ở trên. `keep-worker-selector` và `keep-path` **KHÔNG dùng ERE**. Số ở cột `hits` lấy từ `-oE`, không phải `-cE`.
+
+**Bước 6 — Đổi tên đúng các lượt `disposition=rename`.** Thứ tự an toàn: (a) hằng số trung tâm + 5 literal nhân bản, (b) 380 file nguồn, (c) 227 file test. Mỗi lần sửa là sửa **một quyết định đã ghi ở bảng**. Ba literal `const APP_NAME = "omp"` / `CMUX_NOTIFICATION_TITLE = "omp"` thuộc W1 nhưng nằm trong tập 607 — **đã mở và xác nhận, cả ba đúng:** `init-xdg.ts:5`, `desktop-notify.ts:29`, `terminal-capabilities.ts:45`. Ghi `W1` vào cột `reason` của các hàng đó và nêu trong PR rằng ba dòng bị W1 và W8b cùng chạm.
+
+**Bước 7 — Cổng nghiệm thu 1:** `bun scripts/rename/check-disposition.ts --stage=pre`. **Bước 8 — Cổng nghiệm thu 2:** `--stage=post`. **Bước 9 — Typecheck:** `bun run check:ts` (đã kiểm `package.json:90`; đặc tả ghi neo này cho `test:ts` — **sai**, `test:ts` nằm ở dòng **86**). **Bước 10 — Chứng minh cổng đỏ được:** ba phá hỏng có chủ đích, mỗi lần ghi exit code thật vào PR. Không làm thì `gate_can_fail = false`. **Bước 11 — `bun run test:ts`** (xem cổng 3 bên dưới). **Bước 12 — Rà lại bảng SAU khi W9 merge:** sau khi W9 đổi tên selector, chạy lại `--stage=post` và cập nhật cột `hits` của các hàng `keep-worker-selector`.
+
+Danh sách neo hỏng — **đọc trước khi gõ**. 27 neo đã kiểm: 18 đúng, 9 hỏng. **Không có neo nào chỉ sai số dòng mà vẫn nói đúng nội dung: 9 cái hỏng hoặc trôi hẳn, hoặc chết.**
+
+| neo trong đặc tả | trạng thái | vị trí đúng / nội dung thật |
+| --- | --- | --- |
+| `packages/coding-agent/src/modes/acp/acp-agent.ts:656` | **HỎNG** | Vẫn ở dòng 656 nhưng nội dung **đã đổi**: nay là `name: "omp",` (MATCH ERE), không phải `name: "oh-my-pi"`. Đổi bởi `f804d66`. Bước 4 viết sai. |
+| `packages/coding-agent/src/telemetry-export-otlp.ts:51` | đúng | `const SERVICE_NAME = "oh-my-pi";` — vẫn no-match. |
+| `packages/utils/src/dirs.ts:21` | **HỎNG (lệch 1)** | `21` nay là docblock. Khai báo ở **`22`**: `export const APP_NAME: string = "omp";` |
+| `packages/utils/src/dirs.ts:24` | **HỎNG (lệch 1)** | `24` là docblock. Khai báo ở **`25`**: `export const APP_URL: string = "https://omp.sh/";` |
+| `packages/utils/src/dirs.ts:27` | **HỎNG (lệch 1)** | `27` là docblock. Khai báo ở **`28`**: `export const CONFIG_DIR_NAME: string = ".omp";` (giá trị **vẫn** `.omp`) |
+| `packages/utils/src/dirs.ts:30` | **HỎNG (lệch 4)** | Khai báo ở **`34`**: `export const MAIN_CONFIG_FILENAMES = ["config.yml", "config.yaml"] as const;` |
+| `packages/utils/src/dirs.ts:36` | **HỎNG (lệch 4)** | `36` là docblock. Khai báo ở **`40`**: `export const USER_AGENT = \`omp/${VERSION}\`;` |
+| `packages/utils/src/dirs.ts:298` | **HỎNG (lệch 12)** | `298` nay là `export function getSafeProjectCwd(): string {`. `getConfigDirName()` ở **`310`**, `return process.env.PI_CONFIG_DIR \|\| CONFIG_DIR_NAME;` ở **`311`**. |
+| `packages/utils/src/dirs.ts:1084` | **HỎNG (lệch 23)** | `1084` nay là `if (scope === "user") {`. `const value = process.env.OMP_APP_NAME?.trim();` ở **`1107`**. |
+| `package.json:90` | **HỎNG (gán nhầm)** | Đặc tả ghi neo này cho `"test:ts"`. Dòng 90 thật là `"check:ts"`. `"test:ts"` ở dòng **`86`**: `"test:ts": "bun scripts/ci-test-ts.ts local-ts",` |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:13361` (`grep -n '^\| N1 \|'`) | **HỎNG (không còn tồn tại)** | `grep -n '^\| N1 \|'` trả **rỗng** — bảng N1–N17 **không ở dạng bảng markdown** ở HEAD này; mục `do_not_rename` ở dòng **16895** mô tả nó bằng văn xuôi và trỏ tới bảng `keep-list.txt` / `do_not_rename.tsv` (cả hai đều chưa tồn tại). **Đây là neo chết** — dùng `sed -n '16895,16910p'` thay. |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:14183` | **HỎNG (trôi)** | `grep -n 'W8b không quy ra ngày được'` → **`19392`** và **`21690`**. |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:13968` | **HỎNG (trôi)** | `grep -n 'W1, W2, W3 (hằng số đã ổn định)'` → **`19409`** và **`19444`**. |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:14107` | **HỎNG (trôi)** | `grep -n 'Tách thành hai pass với exclusion list'` → **`19430`** và **`21614`**. |
+
+Hợp đồng test — tên file: `scripts/rename/check-disposition.ts` (cổng), tùy chọn `scripts/rename/check-disposition.test.ts`. Nếu viết test: nó **phải gọi hàm export của checker**, không tự dựng lại logic — hai bản sao của cùng một bộ kiểm là hai bộ kiểm, một bản sẽ trôi. Cấm `mock.module()`.
+
+| # | Hợp đồng | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- |
+| 1 | Không file nào trong tập 607 bị bỏ sót khỏi bảng | tên hiển thị còn sót tên cũ ở một góc UI; người dùng thấy `omp` thay vì tên mới |
+| 2 | Không hàng nào giữ mà không có lý do và căn cứ | một giá trị **wire** bị đổi nhầm → cài đặt / extension / dashboard chi phí đang chạy hỏng **mà không có lỗi nào được ném ra** |
+| 3 | Số `hits` là số thật (tổng theo `path` = tổng lượt thật) | một lượt không được tính vào hàng nào → quyết định "giữ" biến thành "không ai để ý" |
+| 4 | Sau khi đổi, hệ quả đúng như bảng nói | đổi quá tay vào giá trị wire, **hoặc** bỏ sót một lượt trong file hỗn hợp — trường hợp mà nếu `hits` chỉ đếm theo file thì lượt bỏ sót bị che bởi lượt giữ hợp lệ |
+
+Ranh giới phải giữ được: **xoá bảng → script ĐỎ; bảng đầy đủ và khớp → script XANH.** Đó là một mệnh đề đúng–sai, không phải một sự kiện. Script đọc một **bảng dữ liệu đã duyệt**, không phải mã nguồn, và khẳng định quan hệ toàn vẹn giữa bảng đó và cây — cùng hình thức với `scripts/fix-changelogs.ts` sẵn có (đã kiểm: file tồn tại, 37 KB).
+
+Cổng có đỏ được không — **cổng chính CÓ ĐỎ ĐƯỢC về mặt cấu trúc, NHƯNG CHƯA CÓ BẰNG CHỨNG THỰC NGHIỆM.** Cả hai chế độ đều có đường thoát `process.exit(1)` và in vi phạm ra stdout — nhưng **cả ba file `scripts/rename/` đều chưa tồn tại**, nên cổng **chưa từng chạy lần nào**, đừng nói là từng đỏ. `check-disposition.ts` chưa được viết, chưa được thử, chưa biết nó có parse đúng hay không. **Bằng chứng duy nhất được chấp nhận:** ba exit code thật ở bước 10. Không có chúng thì `gate_can_fail = false` và mục này **không được coi là đã nghiệm thu**.
+
+| | `--stage=pre` | `--stage=post` |
+| --- | --- | --- |
+| Lệnh | `bun scripts/rename/check-disposition.ts --stage=pre` | `bun scripts/rename/check-disposition.ts --stage=post` |
+| ĐỎ khi | thiếu hàng cho file nào trong tập 607; hàng trỏ tới `path` không tồn tại; `reason` trống; `disposition` ngoài từ vựng; `hits` lệch với đo bằng biểu thức ứng với `disposition` của chính hàng đó; `keep_refs` rỗng khi `disposition` bắt đầu bằng `keep-`; `keep_refs` khác rỗng khi `disposition=rename`; tổng `hits` theo `path` lệch tổng lượt thật; số file trong bảng ≠ số file `git grep` trả về | mỗi hàng `rename` còn ≠ 0 lượt; mỗi hàng `keep-*` còn ≠ đúng `hits` |
+| Cơ chế đỏ | in từng vi phạm ra stdout rồi `process.exit(1)` | như cột trái |
+
+**Điều kiện duyệt KHÔNG làm đỏ — và đây là điểm phải nói thẳng:** nếu `git log --format='%ae' -- scripts/rename/disposition.tsv` chỉ trả về MỘT địa chỉ, cổng vẫn XANH và chỉ in `WARN: bảng tự duyệt — chưa có người duyệt thứ hai`. Lý do không chặn: lịch sử git hôm nay là **30 `e2e@example.com` + 8 `tranquangdang21@gmail.com`**, identity đang cấu hình là `E2E`, nên điều kiện ≥2 địa chỉ sẽ đỏ **vĩnh viễn** trên máy này và W8b sẽ không bao giờ ship được phần hiển thị. → **Hệ quả phải nói ra:** với 607 quyết định, bảng này **dễ trở thành một danh sách tự khai**. Đó không phải rủi ro giả định — nó là kết quả tất yếu khi không có người duyệt thứ hai.
+
+**Cổng 2 — `bun run check:ts`. Có ĐỎ ĐƯỢC KHÔNG: Có, nhưng thấp.** Nó đỏ khi có lỗi kiểu. Nó **KHÔNG** thấy một literal sai — một hàng `rename` bị bỏ sót vẫn typecheck xanh. Vì vậy nó là cổng thứ hai, **không phải cổng chính**.
+
+**Cổng 3 — `bun run test:ts` — ⚠ KẾ HOẠCH ĐÃ LỖI THỜI.** Kế hoạch nói: «Trên máy **chưa build** addon thì lệnh đó ĐỎ: `3 chunks passed / 185 failed`», và `command -v ninja` → rỗng. **Đo lại hôm nay:** `command -v ninja` → `/opt/homebrew/bin/ninja` (**đã cài**); `pi_natives.darwin-arm64.node` tồn tại, 185 MB; `bun -e 'await import("@oh-my-pi/pi-natives")'` → `addon OK, exports: 128` — **addon nạp được**; commit `47720fd` chính là *"docs(plans): the native addon is built, so 'bun test is blocked' is false"*. → **Addon ĐÃ build. Tiền đề đã được gỡ.** Cổng 3 **không còn đỏ sẵn vì hạ tầng**. Lập luận của kế hoạch («đỏ TRƯỚC và SAU giống nhau nên không phân biệt được») **mất hiệu lực**. Cổng 3 giờ là cổng thật, phải chạy và báo cáo kết quả; nếu nó đỏ thì đỏ vì việc đổi tên, không phải vì hạ tầng. **Phải chạy lại và cập nhật kết luận này trước khi báo xong.**
+
+**Cổng không được chạy sai:**
+
+```bash
+# SAI — luôn xanh vì git grep -E không hiểu \b
+git grep -cE '\bomp\b' -- packages/utils/src/dirs.ts   # → không in dòng nào, exit 1
+
+# ĐÚNG
+git grep -cE '(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)' -- packages/utils/src/dirs.ts   # → 19 dòng
+```
+
+Ngoài ra: **đừng chạy `git grep` không có pathspec từ thư mục con** — trả 0 và trông y hệt cây đã sạch. Và lưu ý: `grep` trong shell zsh của phiên này là **shell function → ugrep 7.8.4**; dùng `command grep` khi cần BSD grep.
+
+Cạm bẫy riêng của mục này — **`sed` đại trà trên 607 file.** Một lệnh sed token sẽ đổi cả tên hiển thị lẫn giá trị wire lẫn selector worker trong một lần, và **không ai kiểm tra được** — vì trước khi bảng quyết định tồn tại, không có danh sách nào trong repo nói cái gì được phép đổi.
+
+**File hỗn hợp che lỗi.** 27 file có cả lượt đổi lẫn lượt giữ, 11 file có cả token lẫn selector. Nếu `hits` chỉ đếm theo **file**, một lượt đổi bị bỏ sót bị lượt giữ hợp lệ che đi và cổng **vẫn xanh**. Vì vậy `hits` bắt buộc tách theo lớp `disposition`, và cổng phải so **từng hàng**, không so từng file.
+
+**`-cE` đếm DÒNG, `-oE` đếm LƯỢT.** 321 vs 312 ở tập 607; `update-cli.test.ts` 59 lượt trên 58 dòng. Cột `hits` lấy từ `-oE`.
+
+**Bẫy regex của máy này.** `git grep -E` **không** hiểu `\b` là ranh giới từ; `grep -E` thì có. Cổng viết bằng `\b` **luôn xanh**.
+
+**`git grep` không có pathspec thì chỉ quét thư mục đang đứng** — chạy từ `.lavish-wip/m5-specs/` trả **0 file, 0 lượt**, trông y hệt cây đã sạch. Cổng phải **từ chối chạy** khi cwd không phải gốc repo.
+
+**Tài liệu kế hoạch tự nhiễm vào mọi lệnh đếm.** `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` tự chứa 81 lượt `".omp"` và 20 lượt `"oh-my-pi"`. Mọi lệnh `git grep ... -- .` phải có `:!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`. Đây là lý do 401 ≠ 280.
+
+**`hits = 1` là khả năng lớn, KHÔNG phải luôn luôn.** Trong `update-cli.test.ts`, các lượt `omp/18.0.6-canary.1` (User-Agent) và `".local/bin/omp"` **không** khớp ERE — vì `/` và `.` nằm trong lớp loại `[^a-zA-Z0-9_./-]` trước `omp`. Phải bảo vệ bằng hàng riêng (`scope=dot-omp-literal` / `keep-path`), **không** bằng `hits` của `scope=display-token`. Người viết bảng phải mở từng file và tách, **không** suy ra `hits` từ `grep -c`.
+
+**Va chạm sở hữu với W11.** 227/607 là file test; **25** file trong đó trùng tập 69 file của W11. Nếu W8b đổi literal trước, W11 làm lại; tệ hơn, nếu W8b đổi một khẳng định literal thành giá trị **sai**, W11 kế thừa cái sai đó và test **vẫn xanh**.
+
+**Thứ tự với W9.** W8b (wave 3) gán selector là `keep-worker-selector`/`keep_refs=W9`, nhưng W9 ở **wave 4, tế hơn**. 11 file chứa cả hai. Phải rà lại bảng sau khi W9 merge (bước 12), nếu không cổng wave 4 sẽ đỏ vì lý do không ai hiểu.
+
+**Bảng tự duyệt.** 607 quyết định do một người tự duyệt = bảng quyết định trở thành danh sách tự khai. Cổng cố tình **không** đỏ vì thiếu người duyệt thứ hai — nghĩa là cơ chế an toàn ở đây **chỉ là quy ước**, không phải cổng. PR phải ghi rõ tên người đã đọc.
+
 
 ## Cần người xác nhận
 
@@ -3311,6 +4904,236 @@ KHÔNG bao giờ hấp thụ im lặng một đính chính: nếu kế hoạch t
 | Số 13 file trong tiêu đề W9 bao trọn bề mặt selector. | Thiếu hai đích test mà CHÍNH kế hoạch đã nhắc tên chung: `test/eval/worker-core.test.ts` (30 lượt) và `test/fixtures/computer-worker-cli-selector.ts` + `test/eval/process-entry-import.test.ts` (mỗi cái 1). | Nhưng cả ba KHÔNG nên đổi: `worker-core.test.ts` dùng `__omp_worker_core_gate` là tên thuộc tính `globalThis`, `__omp_worker_test` trong `executable-fallback.test.ts` (8 lượt) là argv tùy ý, `__omp_worker_does_not_exist` là selector cố ý sai. Ba file test `issue-1606/3031/7352-repro.test.ts` chỉ chứa selector trong DOCBLOCK. Đã đưa thành Cần người quyết mục 6. |
 | Không có gì trong repo ngoài 13 file selector chứa chuỗi này. | SAI — có một file KHÔNG PHẢI selector thật, và `sed` toàn repo sẽ bắt nó. | `crates/pi-natives/src/utok/claude/testdata/fixtures.json` có 5 lượt `__omp_worker_` nằm trong trường `"text"` của một snapshot tokenizer (dòng 2919 chứa nguyên văn AGENTS.md). Nó KHÔNG phải mã. Đừng sed nó: fixture đo hành vi tokenizer trên văn bản thật, đổi nội dung là đổi điều kiện thứ chứ không phải đổi sản phẩm. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Tên mới đã chốt:** `ultraworkers` → `APP_NAME` = `"ultraworkers"`, `WORKER_HOST_SELECTOR_PREFIX` = `"__ultraworkers_worker_"`, bin = `ultraworkers`. Mọi dòng `TRƯỚC` dưới đây được trích từ file thật ở `HEAD` (`milestone-1`, `47720fd`) — không có trích dẫn nào từ trí nhớ.
+
+**Cảnh báo neo — danh sách neo HỎNG, đặc tả ghi sai và đây là vị trí đúng:**
+
+| đặc tả ghi | thực tế | dùng số nào |
+| --- | --- | --- |
+| `packages/stats/src/aggregator.ts:130` (bảng file + bước 5) | `:130` là `}` — dòng đóng interface `WorkerHandle` | **`:142`** |
+| `packages/stats/src/aggregator.ts:121-125` (docblock "zero runtime dependency") | `:121` là comment về JSON parse; docblock ở 132–138, câu "keeps zero runtime dependency" ở **`:137`** | `:137` |
+| `packages/stats/src/aggregator.ts:186-189` (docblock darwin) | docblock darwin ở 197–201 | `:197-201` |
+| `packages/stats/src/aggregator.ts:193-194` (`if darwin return`) | `:193` là comment; hàm `smokeTestSyncWorker` ở **`:205`**, early return ở **`:206`** | `:205-206` |
+| `packages/stats/package.json:27` | `:27` trống/nội dung khác | **`:30-31`** (`"bin": {` / `"omp-stats": "./src/index.ts"`) |
+| `packages/coding-agent/src/cli/update-cli.ts:1135` | `:1135` là `? await collectInstalledPackageNames(globalNodeModulesDir)` | **`:1137`** |
+| `package.json:123` (`ci:test:smoke`, lặp 3 lần trong đặc tả) | `:123` là `"stats:sync": "python3 …"` | **`:119`** |
+| `packages/utils/src/dirs.ts:21` (`APP_NAME`) | `:21` là JSDoc `/** App name (e.g. "omp") */` | **`:22`** |
+| `scripts/ci-release-publish.ts:436` (`omp-pack-`) | lệch 2 | **`:438`** |
+| `scripts/ci-release-publish.ts:165` (mô tả nội dung) | đặc tả nói `{ dir: "packages/omptype", … }`; thật là `{ dir: "packages/utils", kind: "typescript" },` | hướng đúng, **nội dung sai** |
+| `test/worker-selector.test.ts:24,41` (`__omp_worker_does_not_exist`) | thật ở **`:23, :26, :40`** | 3 lượt, không phải 2 |
+| `test/worker-selector.test.ts:3` (import native addon) | `import { isPidRunning } from "@oh-my-pi/pi-utils/procmgr";` | đúng dòng, nhưng **máy này đã build nên không đỏ** |
+| khối code shape: import `worker-selectors` ở `cli.ts:36-44 (đã có)` | import thật ở **`:33-42`** | `:33-42` |
+| `cli.ts:136-179` và `:151-179` | `runSmokeTest` trọn 136–180; 14 lời gọi ở 151–178 | `136-180` / `151-178` |
+| `task/omp-command.ts:21-23` (điều kiện `.ts`/`.js`) | khối là **20–23**, điều kiện ở **21–22** | `20-23` |
+
+Con số trong đặc tả KHÔNG tái lập được: baseline **97** lượt → **91** (đúng phạm vi) / **228** (đúng lệnh của đặc tả); `test/eval/worker-core.test.ts` **30** → **24**; `test/worker-selector.test.ts` "**2** × `does_not_exist`" → **8** tổng (3 `does_not_exist` + 4 `js_eval_process` + 1 comment); "45 lượt test-sentinel" → **48**; 13 file / 24 vị trí (§3.5) → nguồn thật **14 file / 30 vị trí**, toàn repo (trừ file kế hoạch) **28 file / 91 lượt**. Các con số **đúng**: "13/16 selector trên darwin", `completion-gen.ts` 109 lượt `omp`, 58 nằm trong "completion"/"complete", 29 token thương hiệu thật, "không token `omp` đứng riêng nào" (đo `rg -o '(^|[^a-zA-Z0-9_])omp([^a-zA-Z0-9_]|$)'` → **0**, mạnh hơn đặc tả nói), "13 token `omp` đứng riêng trong `profile-alias.ts`". **Sai trên máy này:** "tầng 3 BỊ CHẶN vì thiếu ninja / addon chưa build" — `ninja` ở `/opt/homebrew/bin/ninja`, addon đã build, `worker-selector.test.ts` **7 pass / 0 fail**.
+
+Bốn mâu thuẫn nội bộ của đặc tả, đã giải quyết bằng đo: (1) `JS_EVAL_PROCESS_ARG` — bước 4 bảo import từ `context-manager`; khối code bảo **KHÔNG** import vì nó là `const` trần. **Đo: `const` trần, không `export`** → phải thêm `export`. (2) `TEXT_PREDICT_WORKER_ARG` — hai khối cho hai vị trí; **đo: `:21`**, khối code đúng. (3) Ca hợp đồng 4 bị yêu cầu viết mới, nhưng `profile-alias.test.ts:263` **đã là** ca đó và **đã đỏ được** nếu marker đổi. (4) "Ba lớp" vs "bốn lớp" rủi ro.
+
+**Phạm vi cây tham chiếu:** đã kiểm 7 cây (`pi-ref`, `deepseek-harness`, `codex-ref`, `opencode-ref`, `gajae-ref`, `claude-code-ref`, `senpi-ref`) — `rg -c 'omp_worker_'` → **0 ở cả 7**. W9 là thay đổi **thuần của cây omp**.
+
+Bảng điểm sửa — `TRƯỚC` = nguyên văn từ file thật:
+
+Nguồn duy nhất của tiền tố: `packages/utils/src/worker-host.ts:4` `export const WORKER_HOST_SELECTOR_PREFIX = "__omp_worker_";` → `export const WORKER_HOST_SELECTOR_PREFIX = "__ultraworkers_worker_";`. `:7-9` `isWorkerHostSelector()` **không đụng tới** — nó đọc hằng số, nên tự theo.
+
+Tám hằng selector (`packages/coding-agent/src/cli/worker-selectors.ts` — thêm 1 dòng import ở đầu, rồi 8 dòng):
+
+| dòng | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `:9` | `BLOB_BROKER_WORKER_ARG` | `export const BLOB_BROKER_WORKER_ARG = "__omp_worker_blob_broker";` | ``export const BLOB_BROKER_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}blob_broker`;`` |
+| `:11` | `COMPUTER_WORKER_ARG` | `... = "__omp_worker_computer";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}computer`;`` |
+| `:13` | `DAEMON_BROKER_WORKER_ARG` | `... = "__omp_worker_daemon_broker";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}daemon_broker`;`` |
+| `:15` | `IDA_HOST_WORKER_ARG` | `... = "__omp_worker_ida_host";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}ida_host`;`` |
+| `:17` | `LSP_MUX_WORKER_ARG` | `... = "__omp_worker_lsp_mux";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}lsp_mux`;`` |
+| `:19` | `STATS_ACTIVITY_WORKER_ARG` | `... = "__omp_worker_stats_activity";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}stats_activity`;`` |
+| `:21` | `TEXT_PREDICT_WORKER_ARG` | `... = "__omp_worker_text_predict";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}text_predict`;`` |
+| `:23` | `TERMINAL_OUTPUT_WORKER_ARG` | `... = "__omp_worker_terminal_output";` | ``... = `${WORKER_HOST_SELECTOR_PREFIX}terminal_output`;`` |
+
+> **`TEXT_PREDICT` ở `:21`, `TERMINAL_OUTPUT` ở `:23`** — đo đã giải quyết mâu thuẫn giữa hai khối của đặc tả: khối "Hình dạng code" đúng, bảng "File cần chạm tới" ghi chéo.
+
+`cli.ts` — xoá 5 khai báo trùng, dựng 3 hằng còn lại:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/cli.ts:31` | import | `import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";` | thêm `WORKER_HOST_SELECTOR_PREFIX` vào **cùng** import (không tạo import thứ hai) |
+| `packages/coding-agent/src/cli.ts:182` | `TINY_WORKER_ARG` | `const TINY_WORKER_ARG = "__omp_worker_tiny_inference";` | **xoá**; thêm `import { TINY_WORKER_ARG } from "./tiny/title-protocol";` |
+| `packages/coding-agent/src/cli.ts:183` | `STATS_SYNC_WORKER_ARG` | `const STATS_SYNC_WORKER_ARG = "__omp_worker_stats_sync";` | ``const STATS_SYNC_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stats_sync`;`` |
+| `packages/coding-agent/src/cli.ts:184` | `TAB_WORKER_ARG` | `const TAB_WORKER_ARG = "__omp_worker_tab";` | ``const TAB_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tab`;`` |
+| `packages/coding-agent/src/cli.ts:185` | `JS_EVAL_WORKER_ARG` | `const JS_EVAL_WORKER_ARG = "__omp_worker_js_eval";` | ``const JS_EVAL_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}js_eval`;`` |
+| `packages/coding-agent/src/cli.ts:186` | `JS_EVAL_PROCESS_ARG` | `const JS_EVAL_PROCESS_ARG = "__omp_worker_js_eval_process";` | **xoá**; `import { JS_EVAL_PROCESS_ARG } from "./eval/js/context-manager";` — **PHẢI export trước** |
+| `packages/coding-agent/src/cli.ts:187` | `STT_WORKER_ARG` | `const STT_WORKER_ARG = "__omp_worker_stt";` | **xoá**; `import { STT_WORKER_ARG } from "./stt/asr-client";` |
+| `packages/coding-agent/src/cli.ts:188` | `TTS_WORKER_ARG` | `const TTS_WORKER_ARG = "__omp_worker_tts";` | **xoá**; `import { TTS_WORKER_ARG } from "./tts/tts-client";` |
+| `packages/coding-agent/src/cli.ts:189` | `MNEMOPI_EMBED_WORKER_ARG` | `const MNEMOPI_EMBED_WORKER_ARG = "__omp_worker_mnemopi_embed";` | **xoá**; `import { MNEMOPI_EMBED_WORKER_ARG } from "./mnemopi/embed-client";` |
+
+`runWorkerEntrypoint()` (`:191`–`:~305`) **không sửa một nhánh `if` nào** — đã đếm: đúng **16** nhánh `if (arg === …)`, dùng đủ 16 tên qua scope.
+
+Năm bản trùng ở file khác — bỏ khai báo, dùng chung:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/stt/asr-client.ts:72` | `STT_WORKER_ARG` | `export const STT_WORKER_ARG = "__omp_worker_stt";` | xoá dòng; thêm `export { STT_WORKER_ARG } from "../cli/worker-selectors";` (dùng ở `:80`) |
+| `packages/coding-agent/src/tts/tts-client.ts:135` | `TTS_WORKER_ARG` | `export const TTS_WORKER_ARG = "__omp_worker_tts";` | xoá; re-export như trên |
+| `packages/coding-agent/src/mnemopi/embed-client.ts:38` | `MNEMOPI_EMBED_WORKER_ARG` | `export const MNEMOPI_EMBED_WORKER_ARG = "__omp_worker_mnemopi_embed";` | xoá; re-export như trên |
+| `packages/coding-agent/src/tiny/title-protocol.ts:20` | `TINY_WORKER_ARG` | `export const TINY_WORKER_ARG = "__omp_worker_tiny_inference";` | xoá; re-export như trên |
+| `packages/coding-agent/src/eval/js/context-manager.ts:130` | `JS_EVAL_PROCESS_ARG` | `const JS_EVAL_PROCESS_ARG = "__omp_worker_js_eval_process";` | ``export const JS_EVAL_PROCESS_ARG = `${WORKER_HOST_SELECTOR_PREFIX}js_eval_process`;`` (dùng ở `:1023`) |
+
+Ba literal thô (nơi hỏng im lặng):
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/eval/js/context-manager.ts:1010` | `spawnBunWorker` | `? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_js_eval"] })` | `? new Worker(hostEntry, { type: "module", argv: [JS_EVAL_WORKER_ARG] })` |
+| `packages/coding-agent/src/tools/browser/tab-supervisor.ts:1615` | `spawnTabWorker` | `? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_tab"] })` | `? new Worker(hostEntry, { type: "module", argv: [TAB_WORKER_ARG] })` |
+| `packages/stats/src/aggregator.ts:142` | `createSyncWorker` | `return new Worker(hostEntry, { type: "module", argv: ["__omp_worker_stats_sync"] });` | ``return new Worker(hostEntry, { type: "module", argv: [`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`] });`` |
+
+**Chỗ lấy hằng số cho hai dòng đầu — đặc tả bỏ trống, đây là câu trả lời:** `cli.ts:184` và `cli.ts:185` là `const` trần **không export**, nên `tab-supervisor.ts` và `context-manager.ts` không lấy được từ `cli.ts` mà không tạo vòng import. Lời giải đúng: **chuyển cả ba** `TAB_WORKER_ARG`, `JS_EVAL_WORKER_ARG`, `STATS_SYNC_WORKER_ARG` **vào `cli/worker-selectors.ts`** và export chúng từ đó. Đã kiểm vòng import: `cli/worker-selectors.ts` chỉ import `@oh-my-pi/pi-utils/worker-host` — nó là module lá. Dòng thứ ba: `packages/stats` **không được** import từ `pi-coding-agent` — docblock `aggregator.ts:132-138` nói rõ "keeps zero runtime dependency on `@oh-my-pi/pi-coding-agent`". Dựng từ `WORKER_HOST_SELECTOR_PREFIX` import từ `@oh-my-pi/pi-utils/worker-host`, đúng như `workerHostEntry` đã được import ở `aggregator.ts:3`.
+
+Ba khai báo bin + fallback PATH:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `scripts/ci-release-publish.ts:186` | `publishBin` | `publishBin: { omp: "dist/cli.js" },` | `publishBin: { ultraworkers: "dist/cli.js" },` |
+| `packages/coding-agent/package.json:28` | `bin` | `"omp": "src/cli.ts"` | `"ultraworkers": "src/cli.ts"` |
+| `packages/coding-agent/src/task/omp-command.ts:11` | `DEFAULT_CMD` | `const DEFAULT_CMD = process.platform === "win32" ? "omp.cmd" : "omp";` | ``const DEFAULT_CMD = process.platform === "win32" ? `${APP_NAME}.cmd` : APP_NAME;`` + thêm `import { APP_NAME } from "@oh-my-pi/pi-utils";` |
+| `packages/coding-agent/src/subprocess/worker-client.ts:131` | `resolveExecutablePath` | `$which("omp", { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }),` | `$which(APP_NAME, { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }),` |
+
+`omp-command.ts:15` `const envCmd = $env.PI_SUBPROCESS_CMD;` — **GIỮ NGUYÊN** (N16 đóng băng họ tiền tố `PI_*`). `resolveWorkerSpawnCmd` (`worker-client.ts:169-178`) chỉ chuyển tiếp chuỗi, không sửa. **Không đổi (đã đọc, đã ghi nhận):** `packages/coding-agent/package.json:13` `"homepage": "https://omp.sh"` (N9 chặn tới khi có domain); `:538` `"@oh-my-pi/omp-stats": "catalog:"` (N17 giữ basename, W7 đổi scope); `scripts/ci-release-publish.ts:438` `path.join(os.tmpdir(), "omp-pack-")` — thư mục tạm; `subprocess/worker-client.ts:203` (comment `~/.omp/agent/cache` — `CONFIG_DIR_NAME`, W6 mới lật), `:384` (`"omp-worker-stderr-"` — thư mục tạm), `:548` (comment `--smoke-test`); `crates/pi-natives/src/utok/claude/testdata/fixtures.json` — 5 lượt, tất cả nằm trong trường `"text"` của snapshot tokenizer. **KHÔNG sed** — đổi nội dung là đổi điều kiện thử của tokenizer, không phải đổi sản phẩm.
+
+`profile-alias.ts` — tách hai lớp. File này có **13** token `omp` đứng riêng, nằm trên 9 dòng. **Lớp A — ĐỔI:** `:30-33` `DEFAULT_ALIAS_COMMAND` (`display: "omp",` / `posix: "omp",` / `fish: "omp",` / `powerShell: "omp",`) → cả 4 thành `APP_NAME`; `:157-158` chốt chặn shadow (`if (normalized.toLowerCase() === "omp") {` + `throw new Error('Invalid alias "omp". Refusing to shadow the base omp command.');`) → **CẦN NHÁNH THỨ HAI**: `const base = APP_NAME.toLowerCase();` rồi `if (normalized.toLowerCase() === base \|\| normalized.toLowerCase() === "omp") {` và `` throw new Error(`Invalid alias "${aliasName}". Refusing to shadow the base ${APP_NAME} command.`); ``; `:292` fish function `` `function ${aliasName} --wraps omp --description 'OMP profile ${profile}'` `` → `` `function ${aliasName} --wraps ${APP_NAME} --description '…'` ``. **Lớp B — ĐÓNG BĂNG (khuyến nghị mặc định):** `:286-287` và `:309-310` marker `# >>> omp profile alias: ${aliasName} >>>` / `# <<< … <<<` — `upsertBlock()` (`:308`) đọc ngược marker này từ file rc của người dùng; `:268` `return posixJoinUnc(configHome, "fish", "conf.d", "omp-profiles.fish");` — file sinh ra đã nằm trong `conf.d` của máy người dùng. Đổi marker ⇒ `content.indexOf(start)` trả `-1` ⇒ `upsertBlock` **append** block thứ hai mỗi lần chạy `--alias`, và block cũ (vẫn gọi `command omp`) không bao giờ bị dọn.
+
+`completion-gen.ts` — **KHÔNG cần sửa để đổi tên lệnh.** Đo: `rg -o 'omp'` → **109**; `rg -oi 'complet[a-z]*'` → **58**; `rg -o '_omp[a-z_]*' | wc -l` → **29**; và `rg -o '(^|[^a-zA-Z0-9_])omp([^a-zA-Z0-9_]|$)' | wc -l` → **0**. Con số **0** là quan trọng nhất: **không có token `omp` đứng riêng nào trong file**. Tên lệnh đến qua `commands/completions.ts:29` — `const config: CliConfig = { bin: APP_NAME, version: VERSION, commands: map };`. W3 đã làm xong phần lớn việc của W9 ở đây. 29 token còn lại là **tên hàm shell** trong script sinh ra (`_omp`, `_omp_root`, `_omp_call`, `_omp_tools`, `_omp_models_list`, `_omp_commands`, `_omp_cmd_*`, `_omp_comma`, `__fish_omp_no_subcommand`). Đổi hay không là quyết định thẩm mỹ, **không có rủi ro kỹ thuật** vì fish chỉ dùng chuỗi `-n` làm điều kiện. Nếu đổi, nhớ `completion-gen.ts:447` ghi rõ quy ước file autoload của zsh tên là `_omp`.
+
+Năm dòng comment mô tả selector (tùy chọn nhưng W9 đã chạm file rồi): `blob-broker/server.ts:2` `` * Worker entry for the project-shared blob daemon (`__omp_worker_blob_broker`). ``; `mnemopi/embed-client.ts:122` `` * `__omp_worker_mnemopi_embed` child (issue #7352). On expiry the embed fails ``; `mnemopi/embed-worker.ts:4`; `stats/activity-worker.ts:4`; `predict/daemon.ts:3` `` * `__omp_worker_text_predict`, started through the `text-predict` global broker). `` (**Riêng `predict/daemon.ts:3` không có trong kế hoạch cũ.**)
+
+Tài liệu: `AGENTS.md:52` (4 selector) và `:57` (`argv: ["__omp_worker_<name>"]`) → tên mới. **`AGENTS.md:62` — CÂU SAI, PHẢI SỬA (không phải tuỳ chọn):** đo thật `runSmokeTest()` (`cli.ts:136-180`) gọi **14** `await smokeTest*` (151,152,166,167,168,170,171,172,173,174,175,176,177,178) phủ **13/16** selector trên darwin; câu hiện tại ghi "spawns the stats sync worker and the tiny-model subprocess" — đây là nguồn gốc của con số "2/15" mà kế hoạch lặp lại. `packages/coding-agent/DEVELOPMENT.md:52` → tên mới (1 lượt). `docs/tools/ida.md:14` — **chỉ sửa `__omp_worker_ida_host`, giữ `omp.ida.<id>`**. `packages/stats/CHANGELOG.md:263` `- Renamed \`__omp_stats_sync_worker\` to \`__omp_worker_stats_sync\`.` — **KHÔNG SỬA**, mục đã phát hành là bất biến.
+
+Các bước có neo đã kiểm:
+
+**Bước 0 — Chốt ba quyết định trước khi viết dòng nào.** Ghi vào PR, không sửa file kế hoạch: (a) `DEFAULT_CMD` ở `omp-command.ts:11` có suy ra từ `APP_NAME` không → **có**, phương án (b); (b) marker `profile-alias.ts:286-287,309-310` và tên file `:268` đóng băng hay đổi → **đóng băng**; (c) `omp-stats` (`packages/stats/package.json:30-31`) có thuộc W9 không → **không**, để W10/W12.
+
+**Bước 1 — Chụp baseline THẬT, đừng tin con số 97.** `git grep -o '__omp_worker_' -- . ':!*EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l` (và hai lệnh `-l` / `-oh … sort -u`). **Đo được hôm nay: 91 / 28 / 21.** Con số **97** trong đặc tả **KHÔNG tái lập được** vì lệnh ghi trong đặc tả chỉ loại `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` mà quên chính `MILESTONE_5_EXECUTION_PLAN.md` — file đó chứa 137 lượt. Chạy đúng lệnh của đặc tả cho **228 / 29 / 22**. Ghi baseline đo được vào PR.
+
+**Bước 2 — Đổi hằng số nhỏ, KHÔNG đụng test.** Cùng một lần sửa: `worker-host.ts:4`; 8 hằng ở `worker-selectors.ts:9,11,13,15,17,19,21,23`; 3 hằng còn lại ở `cli.ts:183,184,185`; ba khai báo bin; `worker-client.ts:131`; `profile-alias.ts:30-33` + `:157-158` + `:292`. **TUYỆT ĐỐI KHÔNG chạy `sed` toàn repo trên `__omp_worker_`** — nó sẽ bắt `fixtures.json` (5 lượt), `test/eval/worker-core.test.ts` (24 lượt), `test/executable-fallback.test.ts` (8 lượt) và ba docblock issue-repro. Đó là 44 lượt không nên đổi.
+
+**Bước 3 — Chuyển 3 hằng spawn-site vào `worker-selectors.ts`, rồi xoá 5 khai báo trùng ở `cli.ts`.** Thêm vào `worker-selectors.ts` (cùng file 8 hằng trên) `export const STATS_SYNC_WORKER_ARG = \`${WORKER_HOST_SELECTOR_PREFIX}stats_sync\`;`, `export const TAB_WORKER_ARG = \`${WORKER_HOST_SELECTOR_PREFIX}tab\`;`, `export const JS_EVAL_WORKER_ARG = \`${WORKER_HOST_SELECTOR_PREFIX}js_eval\`;` — rồi ở `cli.ts` xoá `:182`–`:189` (8 dòng) và thay bằng import từ `./cli/worker-selectors` + 5 import mới. Ở 5 file kia: xoá dòng khai báo, thay bằng re-export hoặc template. Sau bước này: `git grep -c '__omp_worker_' -- packages/coding-agent/src/cli.ts` → **0**.
+
+**Bước 4 — Xoá ba literal thô:** (1) `context-manager.ts:1010` → `argv: [JS_EVAL_WORKER_ARG]`; (2) `tab-supervisor.ts:1615` → `argv: [TAB_WORKER_ARG]`; (3) `aggregator.ts:142` → `` argv: [`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`] `` (import từ `@oh-my-pi/pi-utils/worker-host`; **KHÔNG** import từ `cli.ts`). Điều kiện kết thúc: lệnh ở cổng phải trả **0 dòng**.
+
+**Bước 5 — Chạy lệnh khép nắm (đây là CỔNG).** `git grep -n '__omp_worker_' -- 'packages/**/*.ts' ':!*test*' | grep -v '^\S*: *\*'`. Hôm nay nó trả **26 dòng**. Sau W9 nó phải trả **0**.
+
+**Bước 6 — Cập nhật 5 dòng comment.**
+
+**Bước 7 — Viết ca test parity MỚI, rồi CHỨNG MINH NÓ ĐỎ TRƯỚC.** Tạo `packages/coding-agent/test/worker-selector-parity.test.ts`. Sau khi viết xong: tạm đổi `WORKER_HOST_SELECTOR_PREFIX` về `"__omp_worker_"`, chạy test → phải **ĐỎ**; đổi lại `"__ultraworkers_worker_"` → phải **XANH**. Chưa làm bước chứng minh này thì chưa được tính là có test.
+
+**Bước 8 — Cập nhật hai file test đang ghim chữ cũ.** `packages/utils/test/worker-host.test.ts:24-26` (3 khẳng định) và `packages/coding-agent/test/profile-alias.test.ts`. Thêm hai ca chốt chặn alias: tên đúng tên lệnh mới bị **TỪ CHỐI**, tên gần giống được **CHẤP NHẬN**.
+
+**Bước 9 — Ghi danh sách CỐ Ý GIỮ vào PR.** 48 lượt trong 9 file test (`test/eval/worker-core.test.ts` **24**, `test/worker-selector.test.ts` **8**, `test/executable-fallback.test.ts` **8**, `test/worker-host.test.ts` **3**, `test/issue-{7352,3031,1606}-repro.test.ts` 1 mỗi file, `test/fixtures/computer-worker-cli-selector.ts` 1, `test/eval/process-entry-import.test.ts` 1) + 5 lượt trong `fixtures.json`. `__omp_worker_does_not_exist` **phải giữ nguyên** — nó CỐ Ý sai; đổi nó thành tên mới biến ca "unknown selector" thành ca "selector hợp lệ" và làm hỏng đúng thứ nó đang bảo vệ.
+
+**Bước 10 — Sửa tài liệu, gồm câu sai ở `AGENTS.md:62`.**
+
+**Bước 11 — Chạy cổng.** Không thêm mục changelog ở bất kỳ package nào trừ khi được yêu cầu tường minh.
+
+Hợp đồng test — file MỚI `packages/coding-agent/test/worker-selector-parity.test.ts`:
+
+```ts
+import { describe, expect, it } from "bun:test";
+import { WORKER_HOST_SELECTOR_PREFIX, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";
+import * as selectors from "../src/cli/worker-selectors";
+import { STT_WORKER_ARG } from "../src/stt/asr-client";
+import { TTS_WORKER_ARG } from "../src/tts/tts-client";
+import { MNEMOPI_EMBED_WORKER_ARG } from "../src/mnemopi/embed-client";
+import { TINY_WORKER_ARG } from "../src/tiny/title-protocol";
+
+// Sau bước 3, cả 16 đều export từ worker-selectors; spread đủ 16.
+// Nếu bạn giữ bước 3 ở dạng "3 hằng vẫn ở cli.ts", dựng 3 giá trị dưới đây
+// từ WORKER_HOST_SELECTOR_PREFIX và thêm vào mảng — test vẫn bắt được lệch.
+const ALL_16 = [...Object.values(selectors)];   // phải ra đúng 16
+
+describe("worker selector parity", () => {
+	it("mọi selector khai báo đều khớp tiền tố — 16/16", () => {
+		expect(ALL_16).toHaveLength(16);
+		for (const arg of ALL_16) expect(isWorkerHostSelector(arg)).toBeTrue();
+	});
+	it("tiền tố dùng đúng thương hiệu mới, không phải thương hiệu cũ", () => {
+		expect(WORKER_HOST_SELECTOR_PREFIX).toBe("__ultraworkers_worker_");
+		expect(isWorkerHostSelector("__omp_worker_stats_sync")).toBeFalse();  // HÀNG ÂM
+	});
+	it("không selector nào trùng nhau", () => {
+		expect(new Set(ALL_16).size).toBe(16);
+	});
+});
+```
+
+| hợp đồng | ca | điều người dùng thấy nếu hồi quy |
+| --- | --- | --- |
+| **1 — tính toàn vẹn tiền tố** | 16/16 khớp + hàng âm | CLI lên mà không có tab, không sync stats, không eval JS, không đọc tab trình duyệt — **không có thông báo lỗi nào** |
+| **2 — tính duy nhất** | `new Set(ALL_16).size === 16` | hai selector trùng nội dung; `isWorkerHostSelector` trả `true` cho cả hai nên lớp lỗi này không bị bắt bởi hợp đồng 1 |
+
+**Chứng minh hàng âm sống (bắt buộc trước khi tính DONE):** đổi `WORKER_HOST_SELECTOR_PREFIX` về `"__omp_worker_"`, chạy test → phải **ĐỎ**; đổi lại → **XANH**.
+
+`packages/utils/test/worker-host.test.ts:24-26` — cập nhật: `:24` `expect(WORKER_HOST_SELECTOR_PREFIX).toBe("__omp_worker_");` → `("__ultraworkers_worker_")`; `:25` `expect(isWorkerHostSelector("__omp_worker_stats_sync")).toBeTrue();` → `("__ultraworkers_worker_stats_sync")`; `:26` `expect(isWorkerHostSelector("__omp_worker_computer")).toBeTrue();` → `("__ultraworkers_worker_computer")`. Dòng `:27` (`"--version"` → false) và `:28` (`undefined` → false) **giữ nguyên**.
+
+`packages/coding-agent/test/profile-alias.test.ts` — hợp đồng 3 và 4: (3a) alias tên đúng `ultraworkers` (và `ULTRAWORKERS`) bị **TỪ CHỐI**, giữ nguyên việc từ chối `omp`/`OMP` — chốt chặn phải có **nhánh thứ hai**; (3b) alias tên gần giống (ví dụ `ultraworkers-x`) được **CHẤP NHẬN** — một chốt chặn viết sai thành `startsWith` sẽ xanh ở 3a và **đỏ** ở 3b, đây là ca duy nhất phân biệt được chốt chặn thật với một chuỗi hardcode; (4) *(đã có sẵn)* ca `:263` "replaces a previous block for the same alias" — **đặc tả nói "thêm ca thứ tư" nhưng CA NÀY ĐÃ TỒN TẠI VÀ ĐÃ ĐỎ ĐƯỢC**: nó đưa vào block marker CŨ rồi khẳng định `not.toContain("--profile=old")`; nếu ai đó đổi marker ở `:286-287`, `upsertBlock` sẽ append block thứ hai, `--profile=old` **vẫn còn**, và ca này **ĐỎ**. Không cần viết ca mới; chỉ cần **bảo đảm nó vẫn xanh** sau W9. Nếu hồi quy 3: `--alias` tạo một profile tên trùng binary của chính người dùng, và mọi lời gọi `omp --profile=X` bắt đầu chạy lệnh không phải ý mình. Nếu hồi quy 4: mỗi lần chạy `--alias` lại tích thêm một định nghĩa alias trùng trong `.zshrc`, và block cũ gọi `command omp` không bao giờ được dọn.
+
+**File KHÔNG được sửa:** `test/executable-fallback.test.ts` — `__omp_worker_test` là argv tùy ý, chỉ để `resolveWorkerSpawnCmd` chuyển tiếp (8 lượt); `test/eval/worker-core.test.ts` — `__omp_worker_core_gate` là tên thuộc tính `globalThis` (`:105`), không liên quan worker host (24 lượt); `test/issue-{1606,3031,7352}-repro.test.ts` — chỉ nằm trong docblock (1 mỗi file); `test/fixtures/computer-worker-cli-selector.ts:3`, `test/eval/process-entry-import.test.ts:33` — argv thật, chuyển sang import hằng số **nếu muốn**, không bắt buộc, không sai. **Cấm trong test:** KHÔNG source-grep file nguồn; KHÔNG `mock.module()`; KHÔNG khẳng định `fn(x) === x` cho hằng số; KHÔNG thêm mục changelog.
+
+Cổng có đỏ được không — **CÁC TẦNG CŨ KHÔNG, và đây là điều quan trọng nhất của mục này.** Ma trận đã dựng từ mã thật:
+
+| hồi quy | T1 `check:ts` | T2 worker-host + profile-alias | T3 worker-selector + parity | T4 smoke |
+| --- | --- | --- | --- | --- |
+| Xoá khai báo mà quên import | **ĐỎ** (lỗi kiểu) | xanh | xanh | xanh |
+| Tạo vòng import `cli.ts` ↔ `context-manager.ts` | **ĐỎ** | xanh | xanh | xanh |
+| Đổi tiền tố, quên sửa `worker-host.test.ts:24-26` | xanh | **ĐỎ** | xanh | **ĐỎ** |
+| Một trong 16 hằng còn tiền tố cũ | xanh | xanh | **ĐỎ** (ca parity) | **ĐỎ** nếu smoke phủ |
+| `DEFAULT_ALIAS_COMMAND` chưa đổi | xanh | **ĐỎ** | xanh | xanh |
+| Chốt chặn alias mất nhánh thứ hai | xanh | xanh (xanh **giả**) | xanh | xanh |
+| **`aggregator.ts:142` để sót `__omp_worker_stats_sync`** | xanh | xanh | **xanh** | **XANH trên darwin** |
+| **`tab-supervisor.ts:1615` để sót `__omp_worker_tab`** | xanh | xanh | **xanh** | **XANH** (không smoke nào gọi `tab`) |
+
+**Hai chỗ hỏng im lặng mà đặc tả tự gọi là "nơi hỏng im lặng" — `stats_sync` và `tab` — đều có thể bị bỏ sót mà CẢ BỐN TẦNG VẪN XANH trên darwin.** Lý do đo được: `smokeTestSyncWorker` (`aggregator.ts:205`) có `if (process.platform === "darwin") return;` ở **dòng 206** — smoke không bao giờ chạm tới `stats_sync` trên macOS; `tab` không có lời gọi `smokeTest*` nào (`cli.ts:151-178` không có dòng nào nhắc `tab`); ca parity **không** so `aggregator.ts:142` hay `tab-supervisor.ts:1615` với bất cứ thứ gì — nó dựng chúng từ tiền tố, nên nó chỉ chứng minh "16 hằng đã export khớp tiền tố", **không** chứng minh "ba spawn site dùng hằng số".
+
+Ngoài ra: **TẦNG 1 KHÔNG bắt được tiền tố.** `check:ts` là cổng KIỂU; một chuỗi literal sai vẫn là `string` hợp lệ — typecheck không đỏ. Đặc tả nói tầng 1 đỏ khi "còn tên hằng cũ sót lại trong phạm vi nguồn": đúng cho **tên định danh** đã xoá, **sai** cho **chuỗi thương hiệu**. Và một lỗ hổng nữa: **tầng 2 KHÔNG bắt được chốt chặn alias mất nhánh thứ hai** — ca `:324` ("refuses to shadow the base omp command case-insensitively") chỉ liệt kê `["omp", "OMP"]`, nên nó xanh cả khi nhánh `"ultraworkers"` đã bị xoá. Đó chính là lý do hợp đồng 3b tồn tại.
+
+**Cổng đã viết lại để đỏ được** — thêm **TẦNG 2.5** giữa tầng 2 và tầng 3. Đây là lệnh của đặc tả, nâng lên thành cổng:
+
+```bash
+# ===== TẦNG 2.5 — KHẮP NẮM HAI LỖ HỔNG CỦA TẦNG 3 VÀ TẦNG 4 =====
+git grep -n '__omp_worker_' -- 'packages/**/*.ts' ':!*test*' | grep -v '^\S*: *\*'
+# PASS = 0 dòng.  FAIL = BẤT KỲ dòng nào.
+# ĐÃ ĐO Ở HEAD SẠN: 26 dòng (8 ở cli.ts:182-189, 8 ở worker-selectors.ts:9-23,
+# 1 ở worker-host.ts:4, 1 ở context-manager.ts:130, 1 ở context-manager.ts:1010,
+# 1 ở embed-client.ts:38, 1 ở stt/asr-client.ts:72, 1 ở title-protocol.ts:20,
+# 1 ở tab-supervisor.ts:1615, 1 ở tts-client.ts:135, 1 ở aggregator.ts:142).
+# Sau W9: 0. Cả 5 dòng comment đã được bước 6 sửa nên cũng về 0.
+```
+
+**Vì sao đây là cổng ĐỎ ĐƯỢC và là lựa chọn đúng:** sau bước 4, trong `.ts` nguồn không còn lý do hợp lệ nào để `__omp_worker_` tồn tại — mọi selector đã dựng từ tiền tố, mọi comment đã sửa. Vì vậy tiêu chí PASS là **"0 dòng"**, KHÔNG phải "khớp danh sách cho trước". Đây là lệnh shell chạy tay / trong CI, **không phải `bun test`** — AGENTS.md cấm source-grep trong test, và `plan_corrections` của đặc tả tự nói đúng: "nó phải là script trong `scripts/`, không phải test".
+
+Cổng cuối cùng, đủ 5 tầng: TẦNG 1 `bun run check:ts`; TẦNG 2 `bun test packages/utils/test/worker-host.test.ts` + `cd packages/coding-agent && bun test test/profile-alias.test.ts`; TẦNG 2.5 lệnh grep ở trên (phải rỗng); TẦNG 3 `cd packages/coding-agent && bun test test/worker-selector.test.ts test/worker-selector-parity.test.ts`; TẦNG 4 `bun run ci:test:smoke`; TẦNG 5 đối chiếu với baseline đo ở bước 1 (91 / 28 / 21), giải thích **TỪNG** chênh lệch bằng danh sách ở bước 9.
+
+**Hai tin tốt phủ định đặc tả:** (1) `which ninja` → `/opt/homebrew/bin/ninja`. **Ninja ĐÃ có sẵn.** Addon native **ĐÃ build**. `worker-selector.test.ts` chạy **7 pass / 0 fail**, không đỏ; `worker-host.test.ts` **4 pass / 0 fail**; `profile-alias.test.ts` **23 pass / 0 fail**; `bun run ci:test:smoke` **exit 0, in ra "smoke-test: ok"**. Tiền đề `brew install ninja` + `bun --cwd=packages/natives run build` trong tầng 3 của đặc tả là **thừa trên máy này** — và báo cáo "test failed" vì chưa build là **sai**. (2) `ci:test:smoke` (`package.json:119`, **không phải `:123`**) chạy được và xanh ngay.
+
+**Khi viết báo cáo, bắt buộc ghi rõ độ phủ của tầng 4:** trên darwin là **13/16** — thiếu `stats_sync` (`aggregator.ts:206` return sớm), `tab` và `js_eval_process` (không có lời gọi smoke nào tới). Trên Linux 14/16. **KHÔNG được viết "smoke xanh nghĩa là selector đã đúng".** **ĐIỀU CẤM:** không dùng `tsc`/`npx tsc` — cổng kiểu là `bun run check:ts`. Không chấp nhận `grep sạch` làm bằng chứng ở tầng 5 — 53 lượt sentinel (48 test + 5 `fixtures.json`) phải **CỐ Ý** còn lại.
+
+Cạm bẫy riêng của mục này — **pháp lý file rc, cạm bẫy lớn nhất, và kế hoạch cũ không nhắc tới.** `profile-alias.ts:286-287` và `:309-310` khai báo marker `# >>> omp profile alias: <tên> >>>`; `upsertBlock()` (`:308`) **đọc ngược** marker này từ `.zshrc`/`.bashrc`/`.fish` của người dùng. Đổi chuỗi marker ⇒ `indexOf` trả `-1` ⇒ **append** block thứ hai mỗi lần chạy `--alias`, và block cũ (vẫn gọi `command omp`) không bao giờ bị dọn. **ĐÓNG BĂNG marker.** Đây là bẫy "hai lớp danh tính": tên hiển thị đổi được, chuỗi nhận diện trên đĩa người dùng thì không. Lưu ý: ca test `:263` **đã** bảo vệ điều này và **đã đỏ được** — hãy giữ nó xanh, đừng viết ca mới.
+
+**Sai chỗ lấy hằng số ở hai spawn site.** `TAB_WORKER_ARG` (`cli.ts:184`) và `JS_EVAL_WORKER_ARG` (`cli.ts:185`) là `const` trần không export. Nếu làm đúng lời đặc tả ("thay literal bằng hằng") mà chuyển 3 hằng này vào `worker-selectors.ts`, bạn sẽ **xoá** chúng khỏi `cli.ts` theo bước 3 — và `cli.ts:223,236` hết tên để so sánh. **Thứ tự đúng: chuyển 3 hằng vào `worker-selectors.ts` TRƯỚC, rồi mới xoá ở `cli.ts`.**
+
+**Đừng `sed` toàn repo.** `__omp_worker_` xuất hiện trong `fixtures.json` của tokenizer Rust (5 lượt, trường `"text"` của snapshot), `test/eval/worker-core.test.ts` (24 lượt), `test/executable-fallback.test.ts` (8 lượt) và ba docblock issue-repro. `sed` sẽ đổi **53 lượt không nên đổi** và làm hỏng điều kiện thử của tokenizer.
+
+**Đừng tin `check:ts` bắt được tiền tố.** Nó là cổng kiểu. Nếu bạn tin tầng 1 và bỏ tầng 2.5, bạn sẽ giao một diff mà **mọi cổng đều xanh** nhưng `stats_sync` và `tab` đã chết.
+
+**Ba dòng trong `package.json` trùng nhau về nghĩa.** `:28` là bin (đổi), `:13` là homepage (N9 chặn), `:538` là dependency scope (N17/W7). Cùng một file, dễ sửa nhầm hàng.
+
+**`update-cli.ts:1137`** phân loại cài đặt dựa trên tên đường dẫn: `if (packageNames.size === 0 && !path.basename(cacheDir).toLowerCase().includes("omp")) return undefined;`. Ngoài W9 (thuộc W10/W12) nhưng **phải biết trước khi ai đó chạy sed toàn repo**.
+
+**`docs/tools/ida.md:14` chứa hai thứ.** Sửa `__omp_worker_ida_host`; **giữ nguyên** `omp.ida.<id>` — đó là danh tính runtime/socket, không nằm trong danh sách wire N4.
+
+**`PI_SUBPROCESS_CMD` (`omp-command.ts:15`) là bất biến vĩnh viễn.** N16 đóng băng họ tiền tố `PI_*`. Đừng "cho nhất quán" mà đổi.
+
+
+
 ## Cần người xác nhận
 
 Các điểm dưới đây là **mâu thuẫn bên trong chính đặc tả này**, không phải mâu thuẫn với kế hoạch tổng. Chúng được ghi lại nguyên trạng, không tự sửa:
@@ -3507,6 +5330,273 @@ Cao nhất là `Dockerfile.robomp` — `ARG PI_BASE=oh-my-pi/pi:dev` tại dòng
 | §2.3: keep-list sống ở `scripts/rename/keep-list.txt` và là tiền đề của W7. | chưa kiểm chứng — thư mục chưa tồn tại | `scripts/rename/` KHÔNG tồn tại trong cây hiện tại. Đây là tiền đề của W7 theo plan, nhưng W10 cũng không thể chạy nếu chưa có: không có keep-list thì không có gì để loại trừ, và bước 1 của đặc tả này là dừng lại chờ nó. Ngoài ra §2.3 nói "đã kiểm chứng trên HEAD 5873776" trong khi HEAD thật của máy này là `1454dc0` — con số SHA trong plan đã cũ. Bằng chứng: `ls -la scripts/rename/` → `No such file or directory`. `git log --oneline -1` → `1454dc0 docs: record the two architecture decisions…`. |
 | Ghi chú đầu bài: work item W10 nằm ở dòng 13919–13939 của plan. | sai | Dòng 13919–13939 là W7 và W8a. W10 (bản CI/release/Docker/homebrew/nix) nằm ở dòng 14017–14026. Ngoài ra plan dùng lại ID `W10` BA LẦN: (1) dòng 14017 — CI/release/Docker/homebrew/nix, Wave 4, là mục này; (2) dòng 2451 — hợp đồng telemetry adapter, Wave 4; (3) dòng 14645 — watchdog collab transport. Ba mục khác nhau hoàn toàn. Bất kỳ ticket nào khoá theo chữ `W10` sẽ đụng nhau. Bằng chứng: `grep -n '^#### W10' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` → 14017. `grep -n '^## W10' …` → 2451. `grep -n '^### W10' …` → 14645. `sed -n '13919p;13930p' …` → W7 và W8a. |
 
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Số neo đã mở đọc: 256 · Đúng: 231 · Hỏng: 25.** Kế hoạch tự nhận bằng chứng chạy trên `1454dc0` — **đã cũ**; HEAD khi kiểm chứng là `47720fd` (branch `milestone-1`). Đặc tả gốc rất kỹ: toàn bộ neo trong `ci.yml`, `flake.nix`, `nix/home-manager.nix`, `install.sh`, `install.ps1`, `run-ci.sh`, 4 Dockerfile, `.github/actions/*` đều chính xác tuyệt đối. Nhưng có **3 lớp lỗi** mà kỹ sư gõ theo sẽ hỏng: (a) 25 neo hỏng tập trung ở `nix/package.nix` / `update-cli.ts` / `package.json` / `dirs.ts` / `Cargo.toml`; (b) danh sách dòng CẦN ĐỔI trong `ci.yml` thiếu **9 dòng thật**; (c) **cổng đo được 35 pass, không phải 37**, và cổng có thể đơn giản hơn nhiều vì addon đã build.
+
+**Bảng neo hỏng — đọc trước khi gõ.** 25 neo sai. **Không neo nào trong số này chỉ lệch 1–2 dòng:** `nix/package.nix` lệch **+5 đến +6** trên toàn bộ 17 dòng còn lại, nên sửa "cho gần đúng" là sửa sai dòng.
+
+| Anchor trong kế hoạch | Dòng thật | Nội dung thật ở dòng thật | Ghi chú |
+| --- | --- | --- | --- |
+| `package.json:91` | **87** | `"test:scripts": "bun test scripts/ci-test-ts.test.ts …"` | 91 là `check:tools`. Đây là dòng quan trọng nhất của W10 vì nó là thay đổi `package.json` duy nhất. |
+| `packages/coding-agent/src/cli/update-cli.ts:1206` | **1208** | ``return `${APP_NAME}-${os}-${archName}.exe`;`` | 1206 là dòng trống. |
+| `packages/coding-agent/src/cli/update-cli.ts:1208` | **1210** | ``return `${APP_NAME}-${os}-${archName}`;`` | Cả hai neo kế hoạch đều lệch +2. |
+| `packages/utils/src/dirs.ts:24` | **25** | `export const APP_URL: string = "https://omp.sh/";` | 24 là dòng comment. |
+| `packages/utils/src/dirs.ts:36` | **37** | ``export const USER_AGENT = `omp/${VERSION}`;`` | 36 là dòng comment. |
+| `scripts/ci-release-publish.ts:165` | **186** | `publishBin: { omp: "dist/cli.js" },` | 165 là `{ dir: "packages/utils", kind: "typescript" },`. |
+| `Cargo.toml:30` | **31** | `homepage = "https://omp.sh/"` | 30 là `authors = [...]`. |
+| `Cargo.toml:31` | **32** | `repository = "https://github.com/can1357/oh-my-pi"` | |
+| `nix/package.nix:198` | **204** | `echo "Compiling OMP"` | |
+| `nix/package.nix:208` | **214** | `install -Dm755 packages/coding-agent/dist/omp "$out/bin/omp"` | |
+| `nix/package.nix:209` | **215** | `install -Dm644 LICENSE "$out/share/doc/omp/LICENSE"` | |
+| `nix/package.nix:210` | **216** | `install -Dm644 THIRD-PARTY-NOTICES.txt "$out/share/doc/omp/THIRD-PARTY-NOTICES.txt"` | |
+| `nix/package.nix:213` | **219** | `# The addon is gzip-compressed inside the compiled binary, so its linked` | false-positive EN |
+| `nix/package.nix:227` | **233** | `remove-references-to -t ${bun} "$out/bin/omp"` | |
+| `nix/package.nix:230` | **236** | `# Prebuilt addons that omp bun-installs into its cache at first use` | false-positive EN |
+| `nix/package.nix:244` | **250** | `# wrapProgram: the wrapper replaces $out/bin/omp with a script and moves the ELF` | |
+| `nix/package.nix:245` | **251** | `# to $out/bin/.omp-wrapped.` | |
+| `nix/package.nix:247` | **253** | `patchelf --add-needed libstdc++.so.6 "$out/bin/omp"` | |
+| `nix/package.nix:248` | **254** | `wrapProgram "$out/bin/omp" \` | |
+| `nix/package.nix:256` | **262** | `# above and the autoPatchelfHook RPATH pass that follows it do. bun --compile` | false-positive EN |
+| `nix/package.nix:263` | **269** | ``# `.omp-wrapped`.`` | |
+| `nix/package.nix:265` | **271** | `bun ${../scripts/fix-dt-verdef.ts} "$out/bin/.omp-wrapped"` | |
+| `nix/package.nix:273` | **277** | `# Capture rather than pipe into grep: piping masks a signal death of omp` | |
+| `nix/package.nix:275` | **281** | `smokeOutput="$(HOME="$TMPDIR" "$out/bin/omp" --smoke-test)"` | |
+| `nix/package.nix:277` | **283** | `BUN_BE_BUN=1 "$out/bin/omp" -e \` | |
+| `nix/package.nix:282` | **288** | `env -u LD_LIBRARY_PATH BUN_BE_BUN=1 "$out/bin/omp" -e \` | |
+| `nix/package.nix:286` | **293** | `patchelf --print-needed "$out/bin/.omp-wrapped" \| grep -q '^libstdc\+\+\.so\.6$'` | |
+| `nix/package.nix:296` | **302** | `env -u LD_LIBRARY_PATH BUN_BE_BUN=1 "$out/bin/omp" -e \` | |
+| `nix/package.nix:305` | **311** | `homepage = "https://omp.sh";` | |
+| `nix/package.nix:308` | **314** | `mainProgram = "omp";` | |
+
+Neo `nix/package.nix:98` (`pname = "omp-bun-runtime-template";`) và `:115` (`pname = "omp";`) là **hai neo duy nhất đúng** trong file này.
+
+**Ba tuyên bố "không có hit" trong kế hoạch là SAI:**
+
+| Kế hoạch nói | Thật |
+| --- | --- |
+| `nix/nixos-module.nix`: "Xác nhận không có hit `omp` trực tiếp" | Có **3 hit**: `:9` `cfg = config.programs.omp;`, `:12` `options.programs.omp = {`, `:18` `defaultText = … "inputs.omp.packages.…"`. Đặc biệt `:12` là **tên option thứ hai** `programs.omp` — bản NixOS của option home-manager. Quyết định "giữ `programs.omp`" phải phủ cả file này, không chỉ `home-manager.nix`. |
+| `nix/dev-shell.nix`: "Xác nhận không có hit `omp` trực tiếp" | Có 1 hit: `:18` `name = "omp-dev";` (cosmetic). |
+| Bảng "File cần chạm tới" có **30 dòng** | Bảng có **33 dòng**. Trong đó 2 dòng tự ghi "KHÔNG SỬA" ⇒ phạm vi sửa thật = **31 file** + 1 file tạo mới. Bước review yêu cầu "đảm bảo số file khớp 30 dòng" sẽ **bắt nhầm một diff đúng**. |
+
+Bảng điểm sửa — nhóm ĐỔI, tên asset release (producer + consumer, CÙNG MỘT COMMIT):
+
+| path | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `scripts/ci-release-build-binaries.ts` | `outfile` (producer, 8 dòng) | `outfile: "packages/coding-agent/binaries/omp-darwin-arm64",` (`:37`) | `outfile: "packages/coding-agent/binaries/<NEW>-darwin-arm64",` — cùng hình dạng ở `:44,51,58,65,72,79,86` |
+| `scripts/ci-update-brew-formula.ts` | `const targets` | `const targets = ["omp-darwin-arm64", "omp-darwin-x64", "omp-linux-arm64", "omp-linux-x64"];` (`:120`) | `["<NEW>-darwin-arm64", …]` |
+| `scripts/ci-update-brew-formula.ts` | `url` (4 cặp) | `url "https://github.com/${REPO}/releases/download/v#{version}/omp-darwin-arm64",` (`:76`) | đổi tiền tố giống `:81,89,94` |
+| `scripts/ci-update-brew-formula.ts` | `sha256` (4 dòng) | `sha256 "${sums["omp-darwin-arm64"]}"` (`:78`) | đổi giống `:83,91,96` |
+| `scripts/ci-update-brew-formula.ts` | `def install` | `bin.install Dir["omp-*"].first => "omp"` (`:101`) | `Dir["<NEW>-*"].first => "<NEW>"` |
+| `scripts/ci-update-brew-formula.ts` | chmod | `(bin/"omp").chmod 0555` (`:102`) | `(bin/"<NEW>").chmod 0555` |
+| `scripts/ci-update-brew-formula.ts` | completions | `generate_completions_from_executable(bin/"omp", "completions", …)` (`:104`) | `bin/"<NEW>"` |
+| `scripts/ci-update-brew-formula.ts` | `test do` | `assert_match version.to_s, shell_output("#{bin}/omp --version")` (`:109`) | `#{bin}/<NEW> --version` |
+| `scripts/ci-update-brew-formula.test.ts` | fixture `SUMS` | `"omp-darwin-arm64": "darwin_arm64_sha",` … (`:5-8`) | đổi 4 khoá |
+| `scripts/ci-update-brew-formula.test.ts` | vòng lặp assertion | `for (const arch of ["omp-darwin-arm64", "omp-darwin-x64", "omp-linux-arm64", "omp-linux-x64"]) {` (`:21`) | đổi 4 phần tử |
+| `scripts/ci-update-brew-formula.test.ts` | regex HOME redirect | `/with_env\(HOME: buildpath\) do\n\s+generate_completions_from_executable\(bin\/"omp", …` (`:35`) | `bin\/"<NEW>"` |
+
+`.github/workflows/ci.yml` — **25 dòng thật, không phải 21**:
+
+| symbol | TRƯỚC (nguyên văn) | SAU | dòng |
+| --- | --- | --- | --- |
+| `binary_path` | `binary_path: packages/coding-agent/binaries/omp-linux-x64,` | đổi tiền tố | 776, 785, 793, 802, 810, 821, 909, 922 |
+| shim trong container | `docker run --rm -v "$binary:/usr/local/bin/omp:ro" alpine:3.22 sh -ec '` | `/usr/local/bin/<NEW>:ro` | 864 |
+| **gọi shim** | `… XDG_DATA_HOME="$runtime_dir/xdg" omp --version` | `<NEW> --version` | **867** ⚠ *kế hoạch bỏ sót* |
+| **gọi shim** | `… XDG_DATA_HOME="$runtime_dir/xdg" omp --smoke-test` | `<NEW> --smoke-test` | **868** ⚠ *kế hoạch bỏ sót* |
+| upload artifact | `name: omp-binary-${{ matrix.target_id }}` | `name: <NEW>-binary-…` | 873, 994 |
+| upload artifact (win) | `name: omp-binary-win32-arm64` | `name: <NEW>-binary-win32-arm64` | 1019 |
+| **download pattern** | `pattern: omp-binary-*` | `pattern: <NEW>-binary-*` | **1162** ⚠ *bỏ sót — đổi 873/994/1019 mà bỏ 1162 = artifact không được tải về* |
+| smoke dir | `$runtimeDir = Join-Path $env:RUNNER_TEMP "omp-smoke"` | `"<NEW>-smoke"` | 1024 |
+| **gọi binary Windows** | `& "packages/coding-agent/binaries/omp-windows-arm64.exe" --version` | đổi tiền tố | **1030** ⚠ *bỏ sót — job smoke Windows đỏ nếu quên* |
+| **gọi binary Windows** | `& "packages/coding-agent/binaries/omp-windows-arm64.exe" --smoke-test` | đổi tiền tố | **1032** ⚠ *bỏ sót* |
+| glob upload | `packages/coding-agent/binaries/omp-* \` | `<NEW>-*` | 1175, 1185 |
+| **codesign** | `codesign --verify --strict --verbose=4 ./omp-darwin-arm64` | `./<NEW>-darwin-arm64` | 1210, 1211 |
+| **notarize** | `HOME=… ./omp-darwin-arm64 --version` | `./<NEW>-darwin-arm64` | 1213 |
+| **notarize** | `HOME=… ./omp-darwin-arm64 --smoke-test` | `./<NEW>-darwin-arm64` | **1214** ⚠ *bỏ sót* |
+| **adhoc check** | `if codesign -dvvv ./omp-darwin-arm64 2>&1 \| grep -qE "flags=.*adhoc\|Signature=adhoc"; then` | `./<NEW>-darwin-arm64` | **1218** ⚠ *bỏ sót* |
+| **spctl** | `spctl -a -t exec -vv ./omp-darwin-arm64 \|\| echo "spctl non-zero …"` | `./<NEW>-darwin-arm64` | **1225** ⚠ *bỏ sót* |
+| browser-relay zip | `packages/browser-relay/dist/omp-browser-relay-extension.zip \` | `<NEW>-browser-relay-extension.zip` | 1176, 1186 |
+| brew formula | `bun scripts/ci-update-brew-formula.ts "…" --out homebrew-tap/Formula/omp.rb` | `Formula/<NEW>.rb` | 1321 |
+| **brew diff-check** | `if git diff --quiet -- Formula/omp.rb; then` | `Formula/<NEW>.rb` | **1323** ⚠ *bỏ sót — đổi 1321 mà bỏ 1323 ⇒ job luôn "không có diff" ⇒ tap không bao giờ được commit* |
+| brew commit | `commit -m "omp ${{ … release-tag }}" -- Formula/omp.rb` | đổi cả message lẫn path | 1329 |
+
+**Quan trọng — 3 dòng `oh-my-pi` trong ci.yml KHÔNG thuộc W10:** `:326` (`npm view @oh-my-pi/pi-natives-linux-x64@latest`) và `:1035` (comment về `@oh-my-pi/pi-natives-<tag>`) là **npm scope** → thuộc W7. Kế hoạch xếp chúng vào nhóm ĐỔI; đổi chúng ở W10 là sửa sang tên scope mà W7 chưa quyết. **Xếp vào GIỮ, chờ W7.**
+
+Installer (đường cài primary):
+
+| path | symbol | TRƯỚC | SAU | dòng |
+| --- | --- | --- | --- | --- |
+| `scripts/install.sh` | `install_binary` | `BINARY="omp-${PLATFORM}-${ARCH}"` | `BINARY="<NEW>-${PLATFORM}-${ARCH}"` | 241 |
+| `scripts/install.sh` | dựng URL | `BINARY_URL="https://github.com/${REPO}/releases/download/${LATEST}/${BINARY}"` | giữ nguyên hình dạng | 266 |
+| `scripts/install.sh` | ghi file | `curl … "$BINARY_URL" -o "${INSTALL_DIR}/omp"` | `-o "${INSTALL_DIR}/<NEW>"` | 268 |
+| `scripts/install.sh` | chmod | `chmod +x "${INSTALL_DIR}/omp"` | `"${INSTALL_DIR}/<NEW>"` | 269 |
+| `scripts/install.sh` | smoke | `if ! SMOKE_OUTPUT="$("${INSTALL_DIR}/omp" --version 2>&1)"; then` | `"${INSTALL_DIR}/<NEW>"` | 276 |
+| `scripts/install.sh` | báo lỗi | `echo "✗ omp was downloaded to ${INSTALL_DIR}/omp but cannot start:"` | đổi cả hai vế | 278 |
+| `scripts/install.sh` | báo lỗi musl | `… Install them, then re-run 'omp':` | `'…'` | 282 |
+| `scripts/install.sh` | báo thành công | `echo "✓ Installed omp to ${INSTALL_DIR}/omp"` | đổi cả hai | 293 |
+| `scripts/install.sh` | thông báo | `echo "✓ Installed omp via bun"` / `echo "Run 'omp' to get started!"` | đổi | 214, 215 |
+| `scripts/install.sh` | thông báo PATH | `echo "Run 'omp' to get started!"` / `echo "Add ${INSTALL_DIR} to your PATH, then run 'omp'"` | đổi | 297, 298 |
+| `scripts/install.ps1` | `$BinaryName` | `$BinaryName = "omp-windows-$NativeArchitecture.exe"` | `"<NEW>-windows-$NativeArchitecture.exe"` | 49 |
+| `scripts/install.ps1` | `$OutPath` | `$OutPath = Join-Path $InstallDir "omp.exe"` | `"<NEW>.exe"` | 308 |
+| `scripts/install.ps1` | thông báo | `Write-Host "[OK] Installed omp via bun"` / `"Run 'omp' to get started!"` / `"[OK] Installed omp to $OutPath"` / `"… then run 'omp' to get started!"` | đổi | **277, 281, 312, 325, 327** ⚠ *kế hoạch chỉ nêu 5/10 dòng* |
+
+**Hợp đồng hai vế (bắt buộc):** `install.sh:241` sinh **TÊN ASSET**, `install.sh:268` ghi **TÊN NHỊ PHÂN**. Tách = người dùng tải đúng file nhưng nhận tên file cũ (hoặc ngược lại) → 404 hoặc shim hỏng. `scripts/musl-release.test.ts` bắt đúng hợp đồng này.
+
+Docker (hai file CÙNG LÚC):
+
+| path | dòng | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `Dockerfile` | 3 | `# oh-my-pi — pi image` | header |
+| `Dockerfile` | 13, 14, 17, 18, 21, 186 | `#     docker build -t oh-my-pi/pi:dev .` … `docker run --rm oh-my-pi/pi:dev --help` | tag mới |
+| `Dockerfile` | 180 | `> /usr/local/bin/omp \` | `> /usr/local/bin/<NEW>` |
+| `Dockerfile` | 181 | `&& chmod +x /usr/local/bin/omp` | `<NEW>` |
+| `Dockerfile` | 216 | `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/omp"]` | `<NEW>` |
+| `Dockerfile.robomp` | 5 | ``# Extends `pi-base` (from /Dockerfile, default target oh-my-pi/pi:dev) and adds`` | tag mới |
+| `Dockerfile.robomp` | 12 | `#     bun run pi:image   # build oh-my-pi/pi:dev first` | tag mới |
+| `Dockerfile.robomp` | **19** | `ARG PI_BASE=oh-my-pi/pi:dev` | `ARG PI_BASE=<ORG>/<NEW>:<TAG>` |
+| `Dockerfile.robomp` | 41 | `FROM ${PI_BASE} AS runtime` | giữ `${PI_BASE}`; **stage tên `runtime`, KHÔNG phải `pi-base`** |
+| `Dockerfile.dockerignore` | 1 | ``# Build context for the pi-root `Dockerfile` (oh-my-pi/pi:dev). Shadows`` | tag mới |
+
+**Quan trắc đã kiểm:** `Dockerfile` có stage `pi-base` (`:118 FROM python:3.12-slim-bookworm AS pi-base`) và `pi-runtime` (`:189 FROM pi-base AS pi-runtime`); target mặc định là `pi-runtime` (FROM cuối). `Dockerfile.robomp:19` trỏ `oh-my-pi/pi:dev` = tag của target mặc định. Nếu đổi tên stage `pi-base` ở `Dockerfile` mà không sửa `:189 FROM pi-base`, image không build được. **Không đụng** `.dockerignore:32`, `Dockerfile.dockerignore:27`, `Dockerfile.robomp.dockerignore:32` — đều là `.omp/plugins/`, path thuộc W4/W6.
+
+Nix (dùng SỐ DÒNG THẬT):
+
+| path | dòng thật | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- | --- |
+| `nix/package.nix` | **98** ✓ | `pname` | `pname = "omp-bun-runtime-template";` | `<NEW>-bun-runtime-template` |
+| `nix/package.nix` | **115** ✓ | `pname` | `pname = "omp";` | `pname = "<NEW>";` — **phải khớp `flake.nix:103,106,107`** |
+| `nix/package.nix` | 204 | log | `echo "Compiling OMP"` | `echo "Compiling <NEW>"` |
+| `nix/package.nix` | 214 | install | `install -Dm755 packages/coding-agent/dist/omp "$out/bin/omp"` | `dist/<NEW>` → `$out/bin/<NEW>` |
+| `nix/package.nix` | 215 | install | `install -Dm644 LICENSE "$out/share/doc/omp/LICENSE"` | `$out/share/doc/<NEW>/LICENSE` |
+| `nix/package.nix` | 216 | install | `install -Dm644 THIRD-PARTY-NOTICES.txt "$out/share/doc/omp/THIRD-PARTY-NOTICES.txt"` | `$out/share/doc/<NEW>/…` |
+| `nix/package.nix` | 233 | remove-refs | `remove-references-to -t ${bun} "$out/bin/omp"` | `$out/bin/<NEW>` |
+| `nix/package.nix` | 250, 251 | comment | `# wrapProgram: the wrapper replaces $out/bin/omp …` / `# to $out/bin/.omp-wrapped.` | cosmetic |
+| `nix/package.nix` | 253 | patchelf | `patchelf --add-needed libstdc++.so.6 "$out/bin/omp"` | `$out/bin/<NEW>` |
+| `nix/package.nix` | 254 | wrapProgram | `wrapProgram "$out/bin/omp" \` | `$out/bin/<NEW>` |
+| `nix/package.nix` | 269 | comment | ``# `.omp-wrapped`.`` | cosmetic |
+| `nix/package.nix` | 271 | fix-dt-verdef | `bun ${../scripts/fix-dt-verdef.ts} "$out/bin/.omp-wrapped"` | `$out/bin/.<NEW>-wrapped` |
+| `nix/package.nix` | 277, 279 | comment | `# … masks a signal death of omp` / `# … surfaces omp's` | false-positive EN, BỎ QUA |
+| `nix/package.nix` | 281 | smoke | `smokeOutput="$(HOME="$TMPDIR" "$out/bin/omp" --smoke-test)"` | `$out/bin/<NEW>` |
+| `nix/package.nix` | 283, 288, 302 | exec | `BUN_BE_BUN=1 "$out/bin/omp" -e \` | `$out/bin/<NEW>` |
+| `nix/package.nix` | 293 | patchelf | `patchelf --print-needed "$out/bin/.omp-wrapped" \| grep -q '^libstdc\+\+\.so\.6$'` | `.<NEW>-wrapped` |
+| `nix/package.nix` | **311** | `homepage` | `homepage = "https://omp.sh";` | quyết định domain (chung với `ci-update-brew-formula.ts:15`) |
+| `nix/package.nix` | **314** | `mainProgram` | `mainProgram = "omp";` | `mainProgram = "<NEW>";` |
+| `flake.nix` | 103, 106, 107 | attr | `omp = packageFor system;` / `inherit omp;` / `default = omp;` | `<NEW> = packageFor system;` … |
+| `flake.nix` | 114 | `apps.program` | `program = "${self.packages.${system}.default}/bin/omp";` | `/bin/<NEW>` |
+| `flake.nix` | 117 | `apps` | `omp = self.apps.${system}.default;` | `<NEW>` |
+| `flake.nix` | 174, 177 | check tên | `pkgs.runCommand "omp-module-evaluation" { }` / `pkgs.runCommand "omp-bun-lock" {` | `"<NEW>-module-evaluation"`, `"<NEW>-bun-lock"` |
+| `flake.nix` | 188, 195 | attr | `omp = self.packages.${system}.default;` | `<NEW>` |
+| `flake.nix` | 199, 201 | module | `homeManagerModules.omp = self.homeManagerModules.default;` / `nixosModules.omp = …` | `.default` giữ nguyên (người dùng gọi bằng tên) |
+
+**Neo ghép phải khớp:** `flake.nix:171` `assert homeManagerEvaluation.config.home.activation ? ompConfig;` ↔ `nix/home-manager.nix:53` `home.activation.ompConfig = …`. Đổi một vế ⇒ `nix flake check` đỏ. **Khuyến nghị giữ cả hai.**
+
+Nhóm GIỮ — không đổi một byte:
+
+| path | dòng | nội dung | vì sao giữ |
+| --- | --- | --- | --- |
+| `.github/workflows/ci.yml` | 159, 229, 285, 513, 567, 598, 621, 639, 657, 675, 695, 711 | `runs-on: … 'omp-kata'` / `runs-on: omp-kata` | nhãn runner scale set ARC đăng ký ngoài repo |
+| `.github/workflows/ci.yml` | 85, 108, 186, 573 | comment tiếng Anh chứa `omp-kata` | prose |
+| `.github/workflows/ci.yml` | 34 | `branches: [main, omp2]` | trigger filter — hỏi maintainer, đừng tự xoá |
+| `.github/workflows/ci.yml` | 578 | `# rulesets are off for main/omp2)…` | comment |
+| `.github/actionlint.yaml` | 2, 6 | ``# runner scale set … `runs-on: omp-kata` `` / `      - omp-kata` | allowlist nhãn; **actionlint KHÔNG chạy trong CI** (đã kiểm: `grep -rn 'actionlint' .github/workflows/ scripts/ package.json` → rỗng) |
+| `.github/actions/bun-install/action.yml` | 5, 6, 16, 54, 95, 104 | comment prose về runner image | |
+| `.github/actions/bazel-cache/action.yml` | 7 | `omp-kata jobs use the cluster remote cache.` | |
+| `.github/actions/bazel-natives/action.yml` | 5 | comment | |
+| `.github/actions/native-artifacts/action.yml` | 6 | comment | |
+| `.github/workflows/bazel-cache-warm.yml` | 97 | comment | |
+| `.dockerignore` | 32 | `.omp/plugins/` | path, W4/W6 |
+| `Dockerfile.dockerignore` | 27 | `.omp/plugins/` | path |
+| `Dockerfile.robomp.dockerignore` | 32 | `.omp/plugins/` | path |
+| `scripts/install.ps1` | 29 | `$env:LOCALAPPDATA\omp` | path |
+| `scripts/install.ps1` | 149 | `Join-Path $env:USERPROFILE ".omp\agent"` | path |
+| `scripts/install.ps1` | 225 | `"omp-install-" + [System.Guid]::NewGuid()…` | path tạm |
+| `nix/home-manager.nix` | 57, 58 | `run mkdir -p "$HOME/.omp/agent"` / `run install -m 600 ${configFile} "$HOME/.omp/agent/config.yml"` | path, W4/W6 |
+| `nix/home-manager.nix` | 9, 14 | `cfg = config.programs.omp;` / `options.programs.omp = {` | **option người dùng viết trong `home.nix`** |
+| `nix/nixos-module.nix` | 9, 12, 18 | `cfg = config.programs.omp;` / `options.programs.omp = {` / `defaultText = … "inputs.omp.packages.…"` | **cùng option, bản NixOS** — kế hoạch nói file này "không có hit", SAI |
+| `nix/dev-shell.nix` | 18 | `name = "omp-dev";` | cosmetic, có thể giữ |
+| `nix/home-manager.nix` | 11, 20, 28 | `yaml.generate "omp-config.yml" …` / `defaultText = … "inputs.omp.packages.…"` / ``{file}`~/.omp/agent/config.yml` `` | 11 = tên file Nix sinh ra, chỉ dùng bởi `:58`; 20/28 = text hiển thị |
+| `packages/utils/src/dirs.ts` | 22 | `export const APP_NAME: string = "omp";` | thuộc W1/W3 — nhưng **đây là gốc của toàn chuỗi tên** |
+| `packages/utils/src/dirs.ts` | 25, 37 | `APP_URL = "https://omp.sh/"` / ``USER_AGENT = `omp/${VERSION}` `` | thuộc N9 |
+
+**BỎ QUA — false-positive tiếng Anh (12 lượt / 11 dòng trong `ci.yml`).** Đã đo: `grep -o 'omp' .github/workflows/ci.yml | wc -l` → **65**; `grep -c 'omp'` → **62 dòng**. Trong đó 12 lượt / 11 dòng là tiếng Anh: `:163` `compliance` · `:166` `compiled` · `:200` `compares` · `:296` `Compute` · `:814` `cross-compiled` · `:849` `--compile` + `cross-compile.` · `:891` `cross-compiles` · `:892` `cross-compiles` · `:948` `compressing` · `:1006` `--compile` · `:1106` `completion`. Lưu ý `Compute` VIẾT HOA và `compares` (không phải `computes` — `grep -c 'computes' .github/workflows/ci.yml` → 0). Brand thật = 53 lượt / 51 dòng. **Bỏ qua thêm 8 dòng trong `nix/package.nix`:** 142 `libgcc_s` · 219 `gzip-compressed` · 236 `omp bun-installs` · 262 `bun --compile` · 269 `` `.omp-wrapped` `` · 277 `death of omp` · 279 `surfaces omp's` · 251/250 là comment mô tả dòng 254/271 (ĐỔI KÈM, cosmetic).
+
+**Và 8 dòng trong `scripts/install-tests/settings-session.ts`** — kế hoạch gọi đây là "9 lượt `omp` … sửa phần tên lệnh, GIỮ phần path `.omp`". **Sai cả hai vế:** file này **không có tên lệnh nào** (binary đến qua `argv` ở `:8 const cli = process.argv.slice(2)…`) và **không có path `.omp` nào** (`agentDir` ở `:12` nằm trong thư mục tạm). 8/9 hit là tiếng Anh: `:17` *c**omp**letes* · `:39` `chat.**comp**letion.chunk` · `:73` `openai-**comp**letions` · `:112` `pr**omp**tTemplates` · `:152`,`:153` `sessions[0].pr**omp**t(…)` · `:214` `did not c**omp**lete`. Chỉ `:10 "omp-settings-session-"` là brand thật. **`sed 's/omp/<NEW>/g'` trên file này sẽ hỏng 8 chỗ.**
+
+Các bước có neo đã kiểm:
+
+> **Bước 0 (MỚI — chặn).** `scripts/rename/` **chưa tồn tại** (đã kiểm: `ls scripts/rename/` → `No such file or directory`). Bước 1 của kế hoạch là DỪNG chờ nó. Nhưng W10 đóng góp 4 mục keep-list (`omp-kata`, `https://omp.sh`, `programs.omp`, tên nhị phân installer). **Chốt trước:** W10 được tạo file này trong chính commit đó, hay chờ W7?
+
+1. **DỪNG** — xác nhận `scripts/rename/keep-list.txt` tồn tại và do người duyệt khác viết. Trạng thái: **chưa tồn tại**.
+2. **Thêm tấm chắn homebrew TRƯỚC khi đổi tên.** `package.json:87` (⚠ **không phải :91**) — chèn `scripts/ci-update-brew-formula.test.ts` vào `"test:scripts"`, trước `scripts/release.test.ts`. Chạy `bun test scripts/ci-update-brew-formula.test.ts` → phải xanh **trước** khi đổi bất kỳ tên nào. Bằng chứng nền đã chạy: **2 pass / 0 fail** (⚠ kế hoạch ghi 3).
+3. **Chụp baseline asset.** `git grep -n 'outfile: "packages/coding-agent/binaries/' scripts/ci-release-build-binaries.ts > /tmp/w10-assets-before.txt`. Neo: `ci-release-build-binaries.ts:37,44,51,58,65,72,79,86` (8 literal `omp-*`; thứ tự thật: darwin-arm64, darwin-x64, **linux-x64(51)**, **linux-arm64(58)**, linux-musl-x64, linux-musl-arm64, windows-x64.exe, windows-arm64.exe).
+4. **ĐỔI TÊN ASSET — CẢ HAI VẾ CÙNG MỘT COMMIT.** Producer: 8 dòng `outfile`. Consumer: `ci-update-brew-formula.ts:76,78,81,83,89,91,94,96,101,102,104,109,120` **+ fixture `ci-update-brew-formula.test.ts:5,6,7,8,21,35`**. `update-cli.ts` **không sửa** (đọc `APP_NAME` ở `:1208,:1210`).
+5. **ĐỔI DOCKER — hai file CÙNG LÚC.** `Dockerfile:3,13,14,17,18,21,180,181,186,216` + `Dockerfile.robomp:5,12,19` + `Dockerfile.dockerignore:1`. Bắt buộc `Dockerfile.robomp:19 ARG PI_BASE` trỏ tới tag mà `Dockerfile` build ra (target mặc định `pi-runtime`, `Dockerfile:189`). Kiểm: `grep -n 'ARG PI_BASE\|FROM ${PI_BASE}\|^FROM ' Dockerfile Dockerfile.robomp` rồi đối chiếu tay từng cặp.
+6. **GIỮ NHIỀU HƠN MỌI.** `git grep -n '\.omp' -- .dockerignore Dockerfile.dockerignore Dockerfile.robomp.dockerignore nix/home-manager.nix` → phải khớp baseline.
+7. **ĐỔI NIX.** `nix/package.nix` — dùng **SỐ DÒNG THẬT**, không phải số trong kế hoạch. `flake.nix:103,106,107,114,117,171,174,177,188,195,199,201`. `pname` (`:115`) và `mainProgram` (`:314`) phải khớp attr ở `flake.nix:103`. `flake.nix:171` ↔ `nix/home-manager.nix:53` là khoá ghép.
+8. **ĐỔI INSTALLER.** `install.sh:241,266,268,269,276,278,282,293,214,215,297,298` + `install.ps1:49,308,277,281,312,325,327`. Giữ `install.ps1:29,149,225`. ⚠ **Phải sửa cùng lúc `scripts/musl-release.test.ts:87,88`.**
+9. **CHỐT CHỒNG LẤN TRƯỚC KHI CODE.** `scripts/install-tests/run-ci.sh` mang ba thứ: tên tarball theo scope (`:164,170,173,190,196,199,206,221,222` → W7), tên nhị phân (`:94,95,103,235` → W9), ma trận cài (→ W10). **Hợp đồng hai file:** `OMP_INSTALL_TEST_SKIP_NATIVE_BUILD` đọc ở `run-ci.sh:86`, đặt ở `ci.yml:723` (đã kiểm: `OMP_INSTALL_TEST_SKIP_NATIVE_BUILD: "1"`) — sửa cả hai cùng lúc, nếu không CI **âm thầm build native thay vì bỏ qua**.
+10. **ĐỔI CI.** Dùng BẢNG QUYẾT ĐỊNH ở trên, **không dùng `sed`**. Nhóm GIỮ: 12 dòng `runs-on:` + 4 comment `omp-kata`, `:34`, `:578`, 2 npm scope `:326,:1035`, 12 false-positive EN.
+11. **XÁC NHẬN NHIỀU HƠN MỘT Ở `.github/`.** `grep -rn 'omp-kata' .github/` → phải ra **28 dòng trên 7 file** (ci.yml 16, actionlint.yaml 2, bun-install 6, bazel-cache 1, bazel-natives 1, native-artifacts 1, bazel-cache-warm 1). Vì **không có tấm chắn tự động nào** cho nhãn runner, bắt buộc `git diff .github/ | grep -i kata` trước khi merge.
+12. **ĐỐI CHIẾU ASSET HAI VẾ.** Chạy assertion ở mục cổng — nó bắt được **cả hai chiều** (đã thử: đổi tên producer `:37` → in `MISSING producer outfile: [ "omp-darwin-arm64" ]`, exit 1).
+13. Cập nhật keep-list 4 mục, chạy `git grep -c -f scripts/rename/keep-list.txt`.
+14. Chạy cổng. **Kỳ vọng 35 pass, không phải 37** (đã đo).
+15. **MA TRẬN CÀI ĐẶT** — `bash scripts/install-tests/run-ci.sh`. Sau khi chạy: `git diff --quiet HEAD -- packages/natives/package.json`. Script có `trap restore_workspace` ở `:14-18` nhưng **đừng tin nó** — so với `HEAD` để bắt cả phần đã staged. Trên máy này: `docker` có, `podman` không.
+
+Hợp đồng test — **không viết test mới** (AGENTS.md cấm bản sao). Nhưng danh sách file test của kế hoạch **thiếu 3 file đang assert trực tiếp vào những thứ W10 đổi** — bỏ sót là cổng đỏ ngay ở commit đầu tiên:
+
+| file test | dòng | assert gì | nếu hồi quy, người dùng thấy gì |
+| --- | --- | --- | --- |
+| `scripts/musl-release.test.ts` **⚠ kế hoạch không liệt kê** | `:87` | `expect(result.stdout).toContain("Downloading omp-linux-musl-x64...")` | đổi `install.sh:241` mà quên test ⇒ `curl` tải tên cũ ⇒ **`curl … \| sh` 404 cho mọi người dùng Linux** |
+| `scripts/musl-release.test.ts` **⚠** | `:88` | `expect(await Bun.file(path.join(installDir, "omp")).text())` | đổi `install.sh:268` (tên file ghi) mà quên ⇒ binary được tải về tên khác, `omp` trong PATH không chạy được |
+| `scripts/musl-release.test.ts` | `:71` | fake curl ghi `echo "omp v1.0.0"` | fixture |
+| `scripts/ci-update-brew-formula.test.ts` | `:5-8,21,35` | fixture `SUMS` + regex `bin/"omp"` | **`brew install` sống vỡ** — công thức không còn khớp sha |
+| `scripts/ci-release-build-binaries.test.ts` | `:19,21,23,25` | `expect(output).toContain("… outfile=packages/coding-agent/binaries/omp-windows-x64.exe")` | producer Windows lệch |
+| `scripts/ci-release-publish.test.ts` | — | bản đồ bin (11 test) | npm `bin` lệch |
+| `scripts/release.test.ts` | — | (16 test) | |
+| `scripts/musl-release.test.ts` | — | (2 test) | |
+| `packages/coding-agent/test/update-cli.test.ts` **⚠ kế hoạch không liệt kê** | `:418,442,968,1025,1455,1670` (+ URL repo `can1357/oh-my-pi` ở `:969,1456`) | `binaryName` hardcode | đổi `APP_NAME` ở W1/W3 ⇒ **`bun test packages/coding-agent` đỏ**, updater test hỏng |
+
+**Điều người dùng thấy nếu hồi quy, theo kịch bản thật nhất:** đổi tên asset ở producer mà không đổi consumer (hoặc ngược lại) ⇒ người cài mới chạy `curl -fsSL https://omp.sh/install | sh` và nhận **`curl: (22) The requested URL returned error: 404`**; người dùng Homebrew nhận `curl: (22) … 404` từ `CurlDownloadStrategy`, hoặc `SHA256 mismatch`. Cả hai đều **ở đường cài primary**, không phải đường dev.
+
+Cổng có đỏ được không — cổng của kế hoạch **ĐỎ ĐƯỢC, nhưng kỳ vọng ghi sai**. Đã chạy thật trên `47720fd`: `bun run check:ts` → **exit 0** (~75 s); 5 file test → **`35 pass / 0 fail` / 98 expect / 3.26 s** — ⚠ **không phải 37** (số thật từng file: `ci-release-build-binaries` 4 · `musl-release` 2 · `ci-release-publish` 11 · `release` **16** (kế hoạch ghi 17) · `ci-update-brew-formula` **2** (kế hoạch ghi 3)); assertion → `asset map ok: 8 produced, 4 consumed`, **exit 0**; `git diff --quiet HEAD -- packages/natives/package.json` → exit 0.
+
+**Lý do kỳ vọng 37 là sai:** 37 là kết quả của `bun run test:scripts` (**5 file khác** — gồm `ci-test-ts.test.ts`, không có `ci-update-brew-formula.test.ts`). Cổng của kế hoạch đổi danh sách 5 file nhưng giữ nguyên con số của danh sách cũ. Phép tính thật: 4+2+11+16+2 = **35**. **Lý do "bỏ `test:scripts` vì thiếu addon" đã lỗi thời:** trên máy này `bun run test:scripts` chạy **37 pass / 0 fail** (addon đã build — commit `47720fd` ghi rõ: *"the native addon is built, so 'bun test is blocked' is false"*); `scripts/ci-test-ts.test.ts` chạy **4 pass / 0 fail**.
+
+Cổng viết lại cho đúng (khuyến nghị dùng bản này) — gọi `bun run test:scripts && bun run check:ts && bun -e '…'` với assertion `asset map ok` giống hệt ở trên, rồi `&& git diff --quiet HEAD -- packages/natives/package.json`. Sau khi làm bước 2 (`ci-update-brew-formula.test.ts` vào `test:scripts`), kỳ vọng là **39 pass / 0 fail** (4 ci-test-ts + 4 + 2 + 11 + 16 + 2). `bun run test:scripts` tự động phủ nhánh homebrew sau khi thêm file — đúng mục tiêu của bước 2, và không tạo ra một danh sách 5 file phải đồng bộ thủ công.
+
+| phần | bắt được hồi quy nào | đã kiểm chứng |
+| --- | --- | --- |
+| `bun run test:scripts` (6 file) | asset lệch consumer (đổi URL/sha/fixture trong `ci-update-brew-formula.ts`) | kế hoạch đã thử: đổi `:76` → đỏ |
+| assertion `asset map ok` | asset lệch producer (đổi 1 `outfile`) — **chiều nguy hiểm, mà 6 file test KHÔNG bắt** | **đã thử trên bản sao: `MISSING producer outfile: [ "omp-darwin-arm64" ]`, exit 1** |
+| `bun run check:ts` | type/lint hỏng sau đổi | exit 0 |
+| `git diff --quiet HEAD -- packages/natives/package.json` | `run-ci.sh` để bẩn `package.json` | exit 0 |
+
+**Phạm vi cổng — nói thẳng những gì nó KHÔNG bắt:** **không đọc** `nix/*`, `flake.nix`, `Dockerfile*`, `.github/**`, `scripts/install.ps1`, `scripts/rename/keep-list.txt`. Bắt được `install.sh` **một phần**: `musl-release.test.ts` chạy `sh scripts/install.sh --binary` với curl giả, nên bắt lệch TÊN ASSET ↔ TÊN NHỊ PHÂN ở `install.sh` — **nhưng chỉ nhánh musl, và KHÔNG bắt `install.ps1`**. **Nhãn runner `omp-kata`**: không tấm chắn tự động nào (actionlint không chạy trong CI). **`nix`**: máy này `command -v nix` → **không có** ⇒ `nix flake check` **CHƯA CHẠY**, tuyệt đối không tính là pass. **Ma trận cài**: `docker` có, `podman` không — phải ghi "CHƯA CHẠY" nếu không chạy được.
+
+Cạm bẫy riêng của mục này — **25 neo hỏng, tập trung ở `nix/package.nix` (17/19 lệch +5…+6).** Sửa "cho gần đúng" = sửa sai dòng. Đặc biệt `pname` ở `:115` và `mainProgram` ở `:314` là hai dòng **duy nhất quyết định danh tính package** — sai là đổi tên store path và phá `flake.nix`.
+
+**`sed` không phân biệt sẽ phá 12 hit ở `ci.yml` + 8 ở `nix/package.nix` + 8 ở `settings-session.ts` = 28 dòng.** Riêng `settings-session.ts` nguy hiểm nhất: `prompt`, `completes`, `chat.completion.chunk`, `openai-completions`, `promptTemplates`, `complete` — tất cả chứa `omp`. Dùng **bảng quyết định**, không dùng `sed`.
+
+**9 dòng `ci.yml` mà kế hoạch bỏ sót, trong đó 3 dòng làm job chết âm thầm:** `1162` đổi mà quên ⇒ artifact **không tải về**; `1323` đổi mà quên ⇒ tap **không bao giờ được commit**; `1030`/`1032` ⇒ job smoke Windows đỏ. Ba dòng này **không đỏ ở local, chỉ đỏ trên CI**.
+
+**`ci.yml:326` và `:1035` là npm scope, KHÔNG phải brand.** Kế hoạch xếp vào nhóm ĐỔI — đổi ở W10 là sửa sang tên scope mà W7 chưa quyết. Xếp GIỮ.
+
+**`programs.omp` xuất hiện ở HAI file, không phải một.** Kế hoạch chỉ nêu `nix/home-manager.nix:9,14` và nói `nixos-module.nix` "không có hit" — SAI, `nixos-module.nix:9,12,18` khai báo option thứ hai. Quyết định "giữ" phải phủ cả hai, cộng `flake.nix:151,152,166` (`programs.omp.enable = true;` trong test eval) và `defaultText` chứa `inputs.omp.packages`.
+
+**Hợp đồng ba chân của `install.sh`:** `:241` (tên asset) → `:266` (URL) → `:268` (tên file ghi). Tách vế = 404 cho người dùng. `musl-release.test.ts:87,88` là tấm chắn, nhưng **file đó không nằm trong bảng "File cần chạm tới"** — phải thêm vào diff.
+
+**`OMP_INSTALL_TEST_SKIP_NATIVE_BUILD` là hợp đồng hai file** (`run-ci.sh:86` đọc, `ci.yml:723` đặt). Đổi tên một vế ⇒ CI **âm thầm build native** thay vì bỏ qua — chậm hơn, không đỏ. Đây là loại hỏng không ai thấy.
+
+**`nix flake check` không chạy được trên máy này** (`nix` không có). Toàn bộ rủi ro `pname`/`mainProgram`/`ompConfig` nằm ở đó mà cổng không đụng tới. Ghi "CHƯA CHẠY" vào PR.
+
+**Số file trong diff ≠ 30.** Bảng có 33 dòng, trong đó 2 dòng "KHÔNG SỬA" ⇒ 31 file sửa + 1 file tạo. Nếu còn sửa thêm `scripts/musl-release.test.ts` (bắt buộc) ⇒ **32 sửa + 1 tạo = 33 file**. Bước review của kế hoạch sẽ bắt nhầm một diff đúng. Sửa con số thành **33** trước khi review.
+
+**`OMP_REPO` dùng chung 5 chỗ** — `ci-update-brew-formula.ts:14`, `ci-release-notes.ts:36`, `fix-changelogs.ts:12`, `ci-macos-upload-secrets.sh:32`, `fix-changelogs.test.ts:442`. Không chỗ nào trong CI đặt nó ⇒ **mặc định là thứ duy nhất có tác dụng**. Đổi tên biến là hợp đồng tương thích; đổi mặc định thì nên giữ `OMP_REPO` làm bí danh. `:14` là nơi **mọi URL** ở `:76,81,89,94` lấy repo — bỏ sót nó ⇒ `brew install` vẫn trỏ repo cũ dù asset đã đổi tên.
+
+**Cần người quyết (chưa tự quyết).** `nix/home-manager.nix:9,14` + `nix/nixos-module.nix:9,12,18` — `programs.omp`: **khuyến nghị giữ nguyên, thêm vào `do_not_rename`** với lý do "tên option là config người dùng viết tay, không phải trạng thái máy". `ci-update-brew-formula.ts:15` `HOMEPAGE = "https://omp.sh"` và `nix/package.nix:311` `homepage = "https://omp.sh";` — domain thứ BA đóng attribution; **quyết một lần cho cả hai**; nếu domain mới chưa resolve thì giữ cũ + keep-list. `README.md:40` (`curl -fsSL https://omp.sh/install | sh`) và `:85` (`irm https://omp.sh/install.ps1 | iex`) phụ thuộc domain. `ci.yml:34` `branches: [main, omp2]` + comment `:578` — đã kiểm: trên `origin` không có nhánh `omp2`; **đừng tự ý xoá**, hỏi maintainer. `Cargo.toml:31,32` nằm ngoài bảng file của kế hoạch; `repository` trỏ org khác hẳn — có thể là quyết định có chủ ý, đừng đổi bừa. `scripts/rename/keep-list.txt` — cho phép W10 tạo trong chính commit, hay chờ W7?
+
+
 ## Cần người xác nhận
 
 Các điểm dưới đây là chỗ đặc tả tự mâu thuẫn hoặc để ngỏ phân loại. Không tự sửa ở trên.
@@ -3699,6 +5789,148 @@ Sai lầm thứ năm, thuộc về cổng chứ không phải về test: tin `bu
 | 「bun run test:ts đi qua `scripts/ci-test-ts.ts` và chỉ quét `packages/*` cộng `python/robomp/web`」 | VERIFIED_TRUE | Giữ nguyên. Đây là cơ sở đúng để bắt buộc ghép `bun run test:py` vào cổng — không có lệnh TS nào nhìn thấy `python/**/tests/`. |
 | Cả 5 vị trí wire mà W1 sẽ gom về `WIRE_NAME` | VERIFIED_TRUE | Giữ nguyên, và bổ sung: `WIRE_NAME` hiện KHÔNG tồn tại trong source — nó chỉ xuất hiện trong chính tài liệu kế hoạch. Đây là lý do W11 phụ thuộc W1 theo đúng thứ tự. |
 
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Kết luận ngắn: phía nhận (`update-cli.ts`) đã đúng và không cần sửa.** Việc thật là một override `publishBin` theo từng lần phát hành ở phía sản xuất. **Ba claim trong kế hoạch đã hỏng theo giá trị** — đọc mục neo hỏng bên dưới trước khi gõ.
+
+**Cảnh báo neo — những neo hỏng theo GIÁ TRỊ (không phải số dòng):**
+
+| Neo trong kế hoạch | kế hoạch nói | Thực tế trên HEAD `47720fd` | Ảnh hưởng |
+| --- | --- | --- | --- |
+| `packages/coding-agent/package.json:3` | version `18.3.3` | `"version": "18.4.0",` | **cao** — set stub `18.3.4` là hạ version, giết updater im lặng |
+| "Cổng hoàn thành" Tier 3 | `which ninja` → không có; `brew list ninja` → `No such keg` | `/opt/homebrew/bin/ninja` **có**; `bun --cwd=packages/natives run build` → **exit 0** | **cao** — cả phân tầng cổng 4 tầng dựng trên trạng thái máy đã chết |
+| "Cổng hoàn thành" Tier 3 | `bun run test:scripts` exit 1 vì `ci-test-ts` | **exit 0, 37 pass / 0 fail** (5 file) | **cao** — đừng báo BLOCKED cho tầng 3; nó chạy được |
+| "Cổng hoàn thành" Tier 3 | addon chưa build ⇒ `update-cli.test.ts` exit 1 | **107 pass / 1 skip / 0 fail** (3 file) | **cao** — như trên |
+| `scripts/ci-release-publish.test.ts:212`, `:242` | seam `rewriteManifest(pkg, false)` | `:214` và `:244` | thấp — chỉ lệch 2 dòng, không nằm trên đường sửa |
+| `scripts/ci-release-publish.ts:69` | "Interface `PublishPackage` ở `:69`" | `:49` là `export interface PublishPackage {`; `:69` là **trường** `publishBin?: Readonly<Record<string, string>>;` | thấp |
+| `packages/coding-agent/src/cli/update-cli.ts:183-188` | "docblock hợp đồng stub ở `:183-188`" | docblock đầy đủ là **`:172-188`**; `:183-188` chỉ là đoạn thứ hai | thấp — nhưng `:177` là dòng mang chuỗi stub contract thật |
+| "Hình dạng code", khối `:69` | `publishBin?: Record<string, string>;` | `publishBin?: Readonly<Record<string, string>>;` (có `Readonly`) | thấp |
+| "Hình dạng code", khối `:240` | `export function rewriteManifest(...)` | `export async function rewriteManifest(...)` | thấp — thiếu `async` |
+
+**Neo ĐÚNG (đã mở và đọc):** `ci-release-publish.ts:16,164,165,186,240,243,287,296,298,301` · `update-cli.ts:165,166,189,190,216-222,807,875,884,894-902,895,907` · `update-cli.test.ts:60-79,90` · `test/update-cli.test.ts:642-653,1420-1431` · `update-rename-migration.integration.test.ts` (170 dòng, `:108-120`, `:149-161`) · `package.json:27-29,28` · `ci-macos-sign.sh:35,94-98,103,109,117-118,120-145` · `ci.yml:922,974,1206,1207,1210,1211,1213,1214,1218,1225` · `run-ci.sh:94,103,156` · `ci-release-publish.test.ts:214,244`.
+
+Bảng điểm sửa — TRƯỚC trích từ file thật:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `scripts/ci-release-publish.ts:69` | `PublishPackage.publishBin` | `publishBin?: Readonly<Record<string, string>>;` | **giữ nguyên.** Đây là trường tĩnh, một giá trị cho mọi lần publish của thư mục. Bỏ nó là `:298` ném lỗi và làm `run-ci.sh:156` exit 1. |
+| `scripts/ci-release-publish.ts:186` | phần tử `packages/coding-agent` | `publishBin: { omp: "dist/cli.js" },` | **giữ nguyên vị trí**, giá trị sẽ đổi thành `{ ultraworkers: "dist/cli.js" }` ở W9. Override stub **không** được viết ở đây. |
+| `scripts/ci-release-publish.ts:240` | `rewriteManifest` | `export async function rewriteManifest(pkg: PublishPackage, write: boolean): Promise<PackageManifest> {` | thêm tham số thứ 3 tuỳ chọn: `(pkg, write, binOverride?: Readonly<Record<string,string>>)`. Hai call site 2-arg hiện có (`:287` và hai call trong test) không phải sửa. |
+| `scripts/ci-release-publish.ts:243` | ghi `bin` trong `rewriteManifest` | `if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };` | `if (binOverride) manifest.bin = { ...binOverride }; else if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };` — override thắng, tĩnh làm fallback. |
+| `scripts/ci-release-publish.ts:287` | `preparePackage` | `return rewriteManifest(pkg, !isDryRun);` | `return rewriteManifest(pkg, !isDryRun, releaseBinOverride(pkg.dir));` — nơi duy nhất override theo từng lần phát hành được nối vào đường publish. |
+| `scripts/ci-release-publish.ts:296-298` | `applyPublishBin` | `if (!pkg?.publishBin) throw new Error(\`No publishBin override declared for ${pkgRelDir}\`);` | **không sửa.** Đây là hàm của install-test, không phải đường publish; nó phải tiếp tục đọc `publishBin` tĩnh. |
+| `scripts/ci-release-publish.test.ts:214`, `:244` | hai test `rewriteManifest(pkg, false)` | `const manifest = await rewriteManifest(pkg, false);` (×2) | **không sửa.** Chứng minh tham số thứ 3 là tuỳ chọn. |
+| `scripts/ci-release-publish.test.ts` | test mới | (file không có assertion nào về `bin` — `grep -c 'publishBin\|manifest\.bin'` = **0**) | thêm `describe("stub release bin override")` với 2 case, xem hợp đồng test |
+| `packages/coding-agent/package.json:3` | `version` | `"version": "18.4.0",` | **> 18.4.0**, tuyệt đối không hạ |
+| `packages/coding-agent/package.json:27-29` | `bin` | `"bin": {` / `"omp": "src/cli.ts"` / `},` | giữ nguyên trong repo (source install cần nó). Khối `omp:` stub **không** nằm ở đây — xem quyết định open question 1. |
+| `scripts/ci-macos-sign.sh` | — | — | **không sửa.** Đã tham số hoá theo tên ở `:35`, đã verify ở `:109`. Chỉ chạy lại. |
+| `.github/workflows/ci.yml` | — | 9 hit `omp-darwin-arm64` tại 922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225 | **thuộc W10, không sửa ở đây.** Nhưng W12 không được ký duyệt khi còn 9 hit. |
+| `scripts/install-tests/run-ci.sh:94`, `:103` | — | `cp packages/coding-agent/dist/omp "$BINARY_DIR/omp"` / `smoke_cli "$BUN_INSTALL/bin/omp"` | **thuộc W10, không sửa ở đây.** Thiếu artifact này thì ma trận cài đặt vỡ. |
+
+Các bước có neo đã kiểm:
+
+**Bước 1 — Xác nhận parser rename đã đúng, KHÔNG sửa.** `grep -n 'resolveReleaseDist\|resolveReleaseRename\|isRecord(manifest\.omp)' packages/coding-agent/src/cli/update-cli.ts` — kỳ vọng **đúng 7 dòng**: `165`, `166`, `189`, `190`, `875`, `895`, `907`. `:165` `export function resolveReleaseDist(manifest: unknown): ReleaseDist | undefined {` ✓ · `:166` `if (!isRecord(manifest) || !isRecord(manifest.omp)) return undefined;` ✓ · `:189` `export function resolveReleaseRename(manifest: unknown): ReleaseRename | undefined {` ✓ · `:190` `if (!isRecord(manifest) || !isRecord(manifest.omp)) return undefined;` ✓. Dừng lại **chỉ khi** thiếu một trong bốn dòng trên. Tên key `omp` là `do_not_rename` N1.
+
+**Bước 2 — Đọc coverage sẵn có, đừng viết lại.** `sed -n '60,79p' packages/coding-agent/test/cli/update-cli.test.ts` và `grep -n 'resolveReleaseDist\|resolveReleaseRename' packages/coding-agent/test/update-cli.test.ts`. Case rename-pointer hai chặng đã có ở `test/cli/update-cli.test.ts:60-79`; chốt vòng lặp ở `:90` (`it("ignores a rename pointer that cycles back to an already-visited package", ...)`). Case parser ở `test/update-cli.test.ts:642-653` và `:1420-1431`.
+
+**Bước 3 — Viết test và làm nó ĐỎ trước.** Thêm vào `scripts/ci-release-publish.test.ts` — **dùng đúng hình dạng dưới đây**:
+
+```ts
+describe("stub release bin override", () => {
+	let originalPublishBin: Readonly<Record<string, string>> | undefined;
+	const codingAgent = () => {
+		const pkg = packages.find(entry => entry.dir === "packages/coding-agent");
+		if (!pkg) throw new Error("coding-agent missing from publish set");
+		return pkg;
+	};
+
+	beforeEach(() => {
+		originalPublishBin = codingAgent().publishBin;
+	});
+	afterEach(() => {
+		codingAgent().publishBin = originalPublishBin;
+	});
+
+	// RED hôm nay: :243 ghi đè bin bằng publishBin tĩnh → không còn key `omp`.
+	it("keeps the omp key when the stub release supplies a bin override", async () => {
+		const pkg = codingAgent();
+		pkg.publishBin = { ultraworkers: "dist/cli.js" }; // trạng thái sau W9
+
+		const manifest = await rewriteManifest(pkg, false, { omp: "dist/cli.js" });
+
+		expect(manifest.bin).toEqual({ omp: "dist/cli.js" });
+	});
+
+	// Nhánh đối chiếu: không có override thì bản tên mới đi đúng đường của nó.
+	// Nếu case này không có, một bản cài đặt "luôn giữ omp" sẽ xanh vô lý.
+	it("falls back to the table publishBin when no override is supplied", async () => {
+		const pkg = codingAgent();
+		pkg.publishBin = { ultraworkers: "dist/cli.js" };
+
+		const manifest = await rewriteManifest(pkg, false);
+
+		expect(manifest.bin).toEqual({ ultraworkers: "dist/cli.js" });
+	});
+});
+```
+
+Chạy và **xác nhận ĐỎ**: `bun test scripts/ci-release-publish.test.ts`. Case 1 đỏ hôm nay vì `:243` bỏ qua mọi override. Case 2 xanh sẵn (nhánh fallback là hành vi hiện tại) — đó là đúng, nó là chân đối của case 1. **Đo nền trước khi sửa:** `bun test scripts/ci-release-publish.test.ts` → **11 pass / 0 fail / exit 0**. Vậy một FAIL ở đây là đỏ thật từ thay đổi của bạn, không phải nhiễu môi trường.
+
+**Bước 4 — Quyết open question 1, viết vào COMMIT MESSAGE.** Khối `omp` stub soạn ở đâu? **A. Trong `packages/coding-agent/package.json`** — đơn giản nhất, nhưng mọi lần publish của thư mục đó — kể cả package tên mới — đều mang rename pointer trỏ về chính nó; vòng lặp rename tự trỏ. **B. Tiêm theo từng lần phát hành** — nhiều code hơn, nhưng pointer chỉ đi trên bản cuối dưới tên cũ. Kế hoạch không chọn. **Chọn trong im lặng là cách đưa lựa chọn sai lên production.** Ghi lý do vào commit message, không vào comment. *(Đã kiểm: `packages/coding-agent/package.json:27-29` chỉ có `bin`, **không** có khối `omp:` — `grep -n '"omp"' packages/coding-agent/package.json` trả về đúng một hit, ở dòng 28.)*
+
+**Bước 5 — Cài override `publishBin` theo từng lần phát hành.** Ràng buộc cứng, đã kiểm: `:298` **ném lỗi** khi phần tử `packages[]` không có `publishBin`, và `scripts/install-tests/run-ci.sh:156` gọi `applyPublishBin("packages/coding-agent", true)` không có guard → lỗi đó làm `run-ci.sh` exit 1. **Override phải được thêm BÊN CẠNH `publishBin` tĩnh ở `:186`, không được thay thế nó.** Hình dạng: (1) `rewriteManifest(pkg, write, binOverride?)` — `binOverride` thắng `publishBin`; (2) một hàm nhỏ đọc override theo lần phát hành (env var là lựa chọn ít thay đổi nhất: `ci.yml` set, `applyPublishBin` không set nên không bị ảnh hưởng); (3) nối vào `:287` trong `preparePackage` — **đây là đường publish thật**. **Đừng** nối vào `applyPublishBin` (`:296`) — đó là helper của install-test, và `run-ci.sh:156` sẽ không bao giờ thấy stub.
+
+**Bước 6 — Làm xanh và chạy lại cả bộ script.** `bun test scripts/ci-release-publish.test.ts` → 11 + 2 = 13 pass / 0 fail; `bun run test:scripts` → 5 file, 37 + 2 = 39 pass. **Đo nền 2026-09-29:** `bun run test:scripts` → **exit 0, 37 pass / 0 fail** (5 file). Không kỳ vọng nó đỏ ở `ci-test-ts` như kế hoạch nói — trạng thái đó đã cũ.
+
+**Bước 7 — Tính liên tục dòng version.** Stub phải **> `18.4.0`** (giá trị ở `packages/coding-agent/package.json:3` hôm nay) và không bao giờ hạ. `getLatestRelease` (`update-cli.ts:884`) phân giải version từ manifest cuối trong chuỗi; `shouldForceBinaryUpdate` (`:216-222`) so sánh nó. Một lần hạ version làm mọi lần update so sánh ra là "đã là bản mới nhất": update im lặng không tới, **không lỗi ở bất kỳ đâu, không test đỏ nào**. Đây là sai lầm tốn kém nhất trong work item này.
+
+**Bước 8 — Chặn: W10 phải đã đổi 9 dòng trong `ci.yml`.** `grep -c 'omp-darwin-arm64' .github/workflows/ci.yml` phải **KHÁC 9**. **Đo hôm nay: `9`** — tại 922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225. Nếu còn 9, W12 **không được ký duyệt**: job verify curl 404 vì một lý do không liên quan gì tới chữ ký. Đây là cổng đỏ **thật và có chủ sở hữu rõ ràng** (W10).
+
+**Bước 9 — Ký lại dưới tên file mới (chạy lại, không sửa).** `ci.yml:974` gọi `bash scripts/ci-macos-sign.sh "${{ matrix.binary_path }}"`. Script đã làm `codesign --verify --strict --verbose=4 "$BINARY"` ở `:109`, probe `--version` / `--smoke-test` ở `:117-118`, vòng khứ hồi `notarytool` ở `:120-145`. **Không sửa gì.** Việc thật của W12 ở đây là **chạy lại** dưới tên mới — điều kiện tiên quyết của bản phát hành, không phải việc làm sau.
+
+**Bước 10 — Ngoài repo, BLOCKED.** Ba việc, cả ba đều ngoài repo, cả ba đều chặn thẳng W12: (1) Scope `@ultraworkers` tồn tại và đã được sở hữu? (2) Scope cũ còn phát hành được cho stub? (3) Có danh tính ký Apple? Không có cái nào thì W12 là **BLOCKED** — không đánh dấu xong, không nới rộng phạm vi để lách. Nguồn kiểm tra identity: `scripts/ci-macos-sign.sh:94-98`.
+
+**Bước 11 — Xác minh rename end-to-end với manifest đã phát hành thật.** Cần truy cập registry. Nếu không làm được, **nói rõ trong bàn giao** thay vì thay bằng một test fixture — fixture chứng minh parser, không phải bản phát hành. *(Đã kiểm `update-cli.ts:894-902` — vòng lặp `for (let hop = 0; hop < MAX_RENAME_HOPS; hop++)` → `}`, đóng đúng ở 902.)*
+
+Hợp đồng test — **file:** `scripts/ci-release-publish.test.ts` (thêm vào, không sửa file khác):
+
+| case | assertion | ĐỎ trước / XANH sau |
+| --- | --- | --- |
+| `keeps the omp key when the stub release supplies a bin override` | `rewriteManifest(pkg, false, { omp: "dist/cli.js" })` → `manifest.bin` **bằng** `{ omp: "dist/cli.js" }` khi `pkg.publishBin` đã bị W9 đổi thành `{ ultraworkers: ... }` | **ĐỎ** → xanh |
+| `falls back to the table publishBin when no override is supplied` | không truyền override → `manifest.bin` bằng `{ ultraworkers: "dist/cli.js" }` | xanh sẵn (nhánh fallback là hành vi hiện tại) |
+
+Hai case là **một hợp đồng hai mặt**: override là *theo từng lần phát hành*, không phải "luôn giữ `omp`" và không phải "luôn theo bảng". Bỏ case thứ hai thì một bản cài đặt "luôn giữ `omp`" sẽ xanh vô lý. **Người dùng thấy gì nếu hồi quy:** Case 1 đỏ → manifest stub không có key `omp` → `bun install -g @oh-my-pi/pi-coding-agent` trên một máy đã có `omp` sẽ **xoá lệnh `omp` khỏi PATH**; người dùng type `omp` → `command not found`, không có thông báo nào vì package vẫn cài thành công — nó chỉ không còn mang binary. Case 2 đỏ → mọi lần publish, kể cả bản tên mới, đều mang `bin: { omp: ... }` → người dùng bản mới cài xong vẫn không có lệnh `ultraworkers`, và updater của họ có thể đi vòng rename về chính nó.
+
+**Có phải tautology không?** Không. Case 1 assert một phép biến đổi (đầu vào override → đầu ra `manifest.bin`), không phải một hằng số được echo lại. Nhưng nó chỉ chứng minh **hàm** tôn trọng override — nó **KHÔNG** chứng minh pipeline publish của lần stub thật sự truyền override. Khoảng trống đó đóng bằng bước 11, không đóng được bằng unit test. **Đừng viết một test fixture cho nó và gọi là phủ.** **Không làm:** không thêm case manifest vào `test/cli/update-rename-migration.integration.test.ts` (file 170 dòng, **không có** seam manifest nào — `grep 'manifest\|resolveRelease'` trên file đó trả về **không hit nào**; nó chỉ điều khiển `migrateRenamedInstall` qua `RenameMigrationSteps` ở `:108-120` và `:149-161` với npm/bun thật trên fixture `file:`). Không dùng `mock.module()`. Không source-grep file cài đặt.
+
+Cổng có đỏ được không — **bốn tầng; tầng 2 là tầng phân biệt và CÓ ĐỎ ĐƯỢC, tầng 4 thì KHÔNG ĐỎ ĐƯỢC — báo BLOCKED.**
+
+- **Tier 1 — chạy được, đã đo xanh:** `bun run check:ts` → **exit 0** (2026-09-29). Không cần addon. **CÓ ĐỎ ĐƯỢC KHÔNG?** **Không** — đây là type-check, nó đỏ vì lỗi kiểu, không phải vì hành vi W12. Giữ như smoke, đừng gọi nó là tín hiệu.
+- **Tier 2 — tầng phân biệt, CÓ ĐỎ ĐƯỢC:** `bun test scripts/ci-release-publish.test.ts`. **Đo nền trước khi sửa: 11 pass / 0 fail / exit 0.** Không cần addon, không cần network, không cần credential. Bằng cách nào: case 1 ở bước 3 lấy `pkg` từ `packages[]`, gán `pkg.publishBin = { ultraworkers: "dist/cli.js" }` (trạng thái sau W9), gọi `rewriteManifest(pkg, false, { omp: "dist/cli.js" })`. Hôm nay `:243` không đọc tham số thứ ba — nên `manifest.bin` ra `{ ultraworkers: "dist/cli.js" }` và `expect(manifest.bin).toEqual({ omp: "dist/cli.js" })` **fail**. Đỏ thật, trên máy này, ngay bây giờ, không cần build gì. Vì suite nền xanh sạch (11/11), một FAIL ở đây không thể là nhiễu. **Đây là tầng phân biệt được "xong" với "test chưa chạy được".**
+- **Tier 3 — KHÔNG còn bị chặn (kế hoạch đã lỗi thời).** Đo lại 2026-09-29: `bun --cwd=packages/natives run build` → **exit 0**; `(cd packages/coding-agent && bun test test/cli/update-cli.test.ts test/update-cli.test.ts test/cli/update-rename-migration.integration.test.ts)` → **107 pass / 1 skip / 0 fail**; `bun run test:scripts` → **exit 0, 37 pass / 0 fail** (5 file, gồm cả `ci-test-ts`). `ninja` **đã có** ở `/opt/homebrew/bin/ninja`; kế hoạch ghi "không có" và dựng cả phân tầng cổng lên đó. **Không ghi "BLOCKED" cho tầng này nữa** — chạy thật rồi báo số thật. (Cổng vẫn nên ghi, vì nó bắt hồi quy ngoài W12; nhưng **ĐỎ ĐƯỢC** và đỏ không phải vì W12.)
+- **Tier 4 — ngoài repo, KHÔNG ĐỎ ĐƯỢC, BÁO BLOCKED.** Publish stub lên registry · rename end-to-end với manifest thật · `codesign --verify --strict` trên artifact đã ký lại · tính khả dụng của danh tính Apple. Đây là **checklist**, không phải cổng. Không có lệnh nào trong repo trả exit code theo kết quả của chúng, và không lệnh nào **từng đỏ được**. Đừng ghi chúng vào một "completion gate" — hãy báo `BLOCKED` với lý do và tên người sở hữu credential.
+- **Cổng chặn chéo W10 (đỏ THẬT, có chủ sở hữu):** `grep -c 'omp-darwin-arm64' .github/workflows/ci.yml` phải ≠ 9, và `grep -n 'dist/omp\|BUN_INSTALL/bin' scripts/install-tests/run-ci.sh`. Cổng này **đỏ ngay bây giờ** (đếm được 9) và nó là thật. Nó thuộc W10, nhưng W12 không được ký duyệt khi nó còn đỏ.
+
+Cạm bẫy riêng của mục này — **#1: version trong kế hoạch đã cũ, và đọc sai nó là tốn kém nhất trong W12.** Kế hoạch viết `package.json:3` là `18.3.3`. **Hôm nay nó là `18.4.0`.** Kỹ sư tin kế hoạch sẽ set stub lên `18.3.4` — tức **hạ version**. Đây chính là kịch bản giết người mà cả work item cảnh báo: `shouldForceBinaryUpdate` (`update-cli.ts:216-222`) so sánh version và kết luận "đã là bản mới nhất", update im lặng ngừng tới, **không có lỗi nào và không test đỏ nào**. Người dùng ở tên cũ bị kẹt vĩnh viễn mà không có gì báo cáo. **Đọc `:3` bằng mắt trước khi gõ bất cứ con số nào.**
+
+**#2 — Hai chỗ ghi `manifest.bin` nằm ở hai hàm khác nhau, một cái có điều kiện.** `:243` trong `rewriteManifest` **có** điều kiện; `:301` trong `applyPublishBin` là ghi vô điều kiện. Chúng không cùng một đường. Nối override vào nhầm hàm thì test bước 3 xanh (vì nó gọi `rewriteManifest`) trong khi stub publish thật vẫn mang `bin: { ultraworkers: ... }`. Đường publish thật đi qua `:287` trong `preparePackage`.
+
+**#3 — Test trong kế hoạch thiếu tham số, nên nó sẽ không bao giờ xanh.** Kế hoạch bảo gán `pkg.publishBin = { ultraworkers: ... }` rồi gọi `rewriteManifest(pkg, false)` — hai tham số. Nhưng nếu override đến từ kênh riêng (đó chính là nghĩa của "theo từng lần phát hành"), thì `rewriteManifest` **không có cách nào biết** đây là lần stub. Test sẽ đỏ **cả sau khi cài đặt đúng** — và sẽ tạo ra một vòng lặp sửa vô tận. Hình dạng đúng ở bước 3 truyền override làm tham số thứ ba.
+
+**#4 — Đừng bỏ `publishBin` tĩnh ở `:186` để "cho sạch".** `:298` ném lỗi khi phần tử `packages[]` không có nó, và `run-ci.sh:156` gọi `applyPublishBin("packages/coding-agent", true)` không có guard → `run-ci.sh` exit 1. Nếu buộc phải bỏ, phải sửa `applyPublishBin` **và** `run-ci.sh:156` cùng lúc, và nói rõ trong commit message — không làm lặng lẽ.
+
+**#5 — Nguy cơ `publishBin` là THẬT, nhưng lý do kế hoạch nêu thì SAI.** Kế hoạch (và bảng đính chính của chính nó) mô tả "ghi đè vô điều kiện". Thực tế `:243` **có** điều kiện. Nguy cơ thật là: một `publishBin` tĩnh duy nhất áp cho **mọi** lần publish của thư mục đó — nên ngay khi W9 đổi nó thành `ultraworkers`, stub publish từ chính thư mục đó sẽ mang `bin: { ultraworkers: ... }`. Nguy cơ thật, lý do sai. Kỹ sư đi kiểm tra theo lý do của kế hoạch sẽ kết luận cả nguy cơ cũng sai và bỏ qua bản vá.
+
+**#6 — Stub không mang `dist` sẽ ra một lệnh không có code.** Manifest stub phải có `omp: { rename: {...}, dist: "binary" }`. Cài bằng trình quản lý package mà không có `dist` là người dùng có một lệnh `omp` exit ngay, không báo lỗi.
+
+**#7 — `update-rename-migration.integration.test.ts` là cái bẫy dễ nhất.** File đó đúng là nơi trực giác bảo "thêm case rename vào". Nó **không có seam manifest** — 170 dòng, `grep 'manifest\|resolveRelease'` không trả về hit nào. Thêm case vào đó là viết test trùng coverage trong một file được dựng cho seam khác.
+
+**#8 — Hai neo trong kế hoạch lệch, cùng nằm trong file test.** Kế hoạch ghi seam `rewriteManifest(pkg, false)` ở `:212` và `:242`; thật là **`:214` và `:244`**. Sai 2 dòng — vô hại ở đây vì test mới không đụng chúng, nhưng đừng mở `:212`/`:242` để tìm hiểu.
+
+**Bàn giao — W12 KHÔNG thể ký duyệt khi bất kỳ điều nào sau đây còn đúng:** (1) `grep -c 'omp-darwin-arm64' .github/workflows/ci.yml` **= 9** → cổng codesign xác minh một asset không tồn tại (**thuộc W10**). (2) `run-ci.sh:94` vẫn đòi artifact `dist/omp` mà W9 sẽ đổi tên → ma trận cài đặt vỡ; **cần một quyết định tường minh từ W10: stub mang shim `omp` thật, hay install-test học tên mới** — để ngỏ nghĩa là không mục nào được ký duyệt. (3) Bước 10 (scope, quyền phát hành, danh tính Apple) chưa xác nhận → **BLOCKED**. (4) Open question 1 (khối `omp` soạn ở đâu) chưa quyết và ghi vào commit message.
+
+
 ## Cần người xác nhận
 
 Một điểm còn lại trong đặc tả tự mâu thuẫn, không tự sửa:
@@ -3864,6 +6096,154 @@ Toàn bộ neo trong tài liệu này đã được đối chiếu lại bằng 
 
 
 ---
+
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo:** đo trên HEAD `47720fd` (nhánh `milestone-1`). Đặc tả đo trên `1454dc0`; `git diff --stat 1454dc0 HEAD -- 'packages/*/test/**'` = **643 files changed**, nên toàn bộ bảng số của đặc tả đã cũ. Mọi con số dưới đây chạy lại bằng lệnh thật.
+
+Baseline đo lại (BẮT BUỘC — đặc tả đã hỏng):
+
+| Mẫu | Đặc tả | **Thật (`47720fd`)** | Lệnh |
+| --- | --- | --- | --- |
+| `".omp"` | 217 lượt / 61 file | **195 / 60** | `git grep -oF -- '".omp"' -- 'packages/*/test/**' \| wc -l` |
+| `"omp"` | 200 / 54 | **199 / 54** | `git grep -oF -- '"omp"' -- 'packages/*/test/**' \| wc -l` |
+| `__omp_worker_` | 54 / 9 | **48 / 9** | idem |
+| `_omp/` | 1 | **1** ✓ | idem |
+| `omp-export-theme` | 1 | **1** ✓ | idem |
+| `"oh-my-pi"` | 14 / 7 | **12 / 5** | idem |
+| **Union file** | 128 | **126** | `for pat in …; do git grep -lF -- "$pat" -- 'packages/*/test/**'; done \| sort -u \| wc -l` |
+| **Tổng lượt** | 487 | **456** | cộng sáu dòng trên |
+| `60+9` | 70 | **69** | `comm -12` hai tập = **0** (không giao nhau) ✓ |
+
+Phân bố `.omp` thật: coding-agent **56**, tui 2, ai 1, utils 1 (đặc tả ghi 57/2/1/1). Lệnh một dòng cho cả bảng:
+
+```bash
+for pat in '".omp"' '"omp"' '__omp_worker_' '_omp/' 'omp-export-theme' '"oh-my-pi"'; do
+  printf '%-20s occ=%-5s files=%s\n' "$pat" \
+    "$(git grep -oF -- "$pat" -- 'packages/*/test/**' | wc -l | tr -d ' ')" \
+    "$(git grep -lF -- "$pat" -- 'packages/*/test/**' | wc -l | tr -d ' ')"
+done
+```
+
+Bảng điểm sửa — TRƯỚC trích từ file thật, đã `sed`/`awk` mở đọc:
+
+| Path | Symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `packages/utils/test/worker-host.test.ts` | `WORKER_HOST_SELECTOR_PREFIX` pin | `:24` `expect(WORKER_HOST_SELECTOR_PREFIX).toBe("__omp_worker_");` | **GIỮ NGUYÊN VĂN** |
+| `packages/utils/test/worker-host.test.ts` | `isWorkerHostSelector` | `:25` `expect(isWorkerHostSelector("__omp_worker_stats_sync")).toBeTrue();`<br>`:26` `expect(isWorkerHostSelector("__omp_worker_computer")).toBeTrue();` | `` expect(isWorkerHostSelector(`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`)).toBeTrue(); ``<br>`` expect(isWorkerHostSelector(`${WORKER_HOST_SELECTOR_PREFIX}computer`)).toBeTrue(); `` |
+| `packages/coding-agent/test/worker-selector.test.ts` | `runCli` selector | `:23` `await runCli(["__omp_worker_does_not_exist"]);`<br>`:26` `expect(stderr).toHaveBeenCalledWith("Error: unknown worker selector: __omp_worker_does_not_exist\n");`<br>`:40` `"__omp_worker_does_not_exist",` | Hằng số cục bộ `const INVALID = \`${WORKER_HOST_SELECTOR_PREFIX}does_not_exist\`;` — hậu tố `does_not_exist` **giữ nguyên văn** (test khẳng định selector KHÔNG hợp lệ bị từ chối) |
+| `packages/coding-agent/test/worker-selector.test.ts` | `cmd:` argv | `:65` `cmd: [process.execPath, "packages/coding-agent/src/cli.ts", "__omp_worker_js_eval_process"],`<br>*(tương tự `:86`, `:135`, `:188`)* | `` [`${WORKER_HOST_SELECTOR_PREFIX}js_eval_process`] `` |
+| `packages/coding-agent/test/executable-fallback.test.ts` | `resolveWorkerSpawnCmd` | `:35,:36,:59,:60,:83,:84,:139,:140` — 8 lượt `"__omp_worker_test"` | `` `${WORKER_HOST_SELECTOR_PREFIX}test` `` (hậu tố `test` giữ nguyên — đây là selector tùy ý, không phải selector thật) |
+| `packages/coding-agent/test/eval/process-entry-import.test.ts` | `pingComputerWorker` | `:33` `argv: string[] = ["__omp_worker_computer"],` | `` argv: string[] = [`${WORKER_HOST_SELECTOR_PREFIX}computer`], `` |
+| `packages/coding-agent/test/fixtures/computer-worker-cli-selector.ts` | Worker argv | `:3` `argv: ["__omp_worker_computer"],` | `` argv: [`${WORKER_HOST_SELECTOR_PREFIX}computer`], `` |
+| `packages/coding-agent/test/eval/worker-core.test.ts` | globalThis gate | `:105` `(globalThis as { __omp_worker_core_gate?: … }).__omp_worker_core_gate = {` … (24 lượt / 16 dòng) | **KHÔNG ĐỔI GIÁ TRỊ.** Thêm MỘT dòng comment: đây là globalThis instrument trùng tiền tố, không phải selector |
+| `packages/coding-agent/test/issue-1606-repro.test.ts` | doc comment | `:11` `` * `process.execPath … __omp_worker_tiny_inference` (detached, owning a `` | Sửa chữ hoặc bỏ; ghi `disposition.tsv` `reason=comment-only` |
+| `packages/coding-agent/test/issue-3031-repro.test.ts` | doc comment | `:13` `` * round-trips through `__omp_worker_mnemopi_embed`, and `SIGKILL`s the child `` | Như trên |
+| `packages/coding-agent/test/issue-7352-repro.test.ts` | doc comment | `:6` `` * unreaped `__omp_worker_mnemopi_embed` child. The embed-worker IPC request `` | Như trên |
+| `packages/coding-agent/test/export-html-template.test.ts` | tmpdir prefix | `:26` `const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "omp-html-template-"));` | cosmetic — tuỳ chọn |
+| `packages/coding-agent/test/export-html-template.test.ts` | `bundledDependencyStubs` | `:32` `"@oh-my-pi/pi-utils": 'export const APP_NAME = "omp"; export const isEnoent = () => false;',` | **`APP_NAME` trong chuỗi mock phải theo giá trị mới.** Sai chỗ này → probe biên dịch với specifier không còn phân giải |
+| `packages/coding-agent/test/export-html-template.test.ts` | `THEME_STORAGE_KEY` | `:143` `expect(first).toContain("const THEME_STORAGE_KEY = 'omp-export-theme';");` | **TUYỆT ĐỐI GIỮ NGUYÊN** |
+| `packages/coding-agent/test/modes/warp-events.test.ts` | `agent` field | `:111` `agent: "omp",` | `agent: WIRE_NAME,` (khớp `src/modes/warp-events.ts:60`) |
+| `packages/coding-agent/test/acp-agent.test.ts` | ext method | `:1140` `const result = await harness.agent.extMethod("_omp/sessions/listAll", { limit: 2 });`<br>`:1144` `await expect(harness.agent.extMethod("omp/sessions/listAll", { limit: 2 })).rejects.toThrow(` | `const ACP_EXT_LIST_ALL = "_omp/sessions/listAll";` dùng ở `:1140`. **`:1144` giữ nguyên dạng không tiền tố.** KHÔNG dùng `APP_NAME` |
+| `packages/utils/test/brand-constants.test.ts` | file mới | *(không tồn tại)* | Pin `APP_NAME` = tên mới, `CONFIG_DIR_NAME` = `"." + tên mới`, `WIRE_NAME` = `"omp"` (CŨ, không đổi), `expect(WIRE_NAME).not.toBe(APP_NAME)` |
+| `scripts/ci-rename-test-literals.ts` | file mới | *(không tồn tại)* | Detector: quét `packages/*/test/**`, khớp 6 mẫu, đối chiếu `scripts/rename/disposition.tsv`, exit 1 nếu có hit không có disposition |
+| `scripts/rename/disposition.tsv` | file của W8b | *(không tồn tại)* | W11 chỉ THÊM hàng, mỗi hàng `reason` khác rỗng |
+
+Các bước có neo đã kiểm:
+
+**Bước 0 — Chốt lại baseline** (bảng ở trên).
+
+**Bước 1 — Đối chiếu `do_not_rename` (COMPREHENSIVE_PLAN §2.3).** Ghi kết quả vào `disposition.tsv` cho: root `.omp` cấp project (W6a phương án b — **giữ nguyên**), group và user Unix `omp`, nhãn runner `omp-kata`, layout sandbox `.omp-xdg` + `<.omp-xdg>/{data,state,cache}/omp`, `APP_URL`/`USER_AGENT`. Tập (i) của bước 5 PHẢI loại `.omp` cấp project ra — nó thuộc tập (ii).
+
+**Bước 2 — Chốt danh sách KHÔNG đụng tới.** `packages/coding-agent/test/profile-cli.test.ts` — đã import `APP_NAME` ở `:9`, dùng **một lần** ở `:144` (`expect(output).not.toContain(\`${APP_NAME}/${VERSION}\`);`) *(đặc tả ghi dùng ở `:154,:179,:205` — sai; chỉ có `:144`)*. `packages/coding-agent/test/utils/resume-command.test.ts` — import `:3`, dùng `:14` và `:21` (**đúng với đặc tả**). `packages/coding-agent/test/fixtures/before-compaction.jsonl` — 2.3 MB, 26 dòng chứa `APP_NAME`; transcript lịch sử, đóng băng. Bốn file có `APP_NAME` trong test tree: `export-html-template.test.ts`, `before-compaction.jsonl`, `profile-cli.test.ts`, `resume-command.test.ts` ✓ (đặc tả ghi 4, đúng).
+
+**Bước 3 — Viết pin trước mọi thay đổi khác, hai pha.** `packages/utils/test/brand-constants.test.ts` (chưa tồn tại). Pha (a): chạy ở TÊN CŨ và xác nhận XANH. Hiện tại `packages/utils/src/dirs.ts:22` là `export const APP_NAME: string = "omp";` và `:28` là `export const CONFIG_DIR_NAME: string = ".omp";` — nghĩa là tên mới **chưa** tồn tại; W3 mới đổi chúng. Pin phải xanh với giá trị cũ trước khi bước (b). Pha (b): chỉ sau đó mới đổi giá trị pin sang tên mới. `WIRE_NAME` **không** đổi — đó là cả ý nghĩa của W1.
+
+**Bước 4 — Sửa mock specifier `export-html-template.test.ts:32`.** NẾU sai, probe biên dịch với một specifier không còn phân giải. `:26` tuỳ chọn. **TUYỆT ĐỐI KHÔNG đụng `:143`.**
+
+**Bước 5 — Giữ literal ACP.** `acp-agent.test.ts:1140` giữ `_omp/sessions/listAll`, chuyển thành hằng số cục bộ. `:1144` là case ÂM — `extMethod("omp/sessions/listAll")` không có tiền tố và PHẢI bị từ chối — để nguyên. Nguồn: `packages/coding-agent/src/modes/acp/acp-agent.ts:1135` `case "_omp/sessions/listAll": {`, `:1144` `case "_omp/projects/list": {`, `:1172` `case "_omp/chats/byCwd": {`, `:1180` `case "_omp/usage": {`, `:1189` `case "_omp/extensions": {`, `:1196` `case "_omp/extensions/toggle": {` — **6 case, tất cả literal cứng, không dẫn xuất từ `APP_NAME`.** Tổng cộng 6 literal wire ACP, không phải 7.
+
+**Bước 6 — `warp-events.test.ts:111` → `WIRE_NAME`.** Khớp `packages/coding-agent/src/modes/warp-events.ts:60` `agent: "omp",`. Pin literal của nhóm wire nằm ở `brand-constants.test.ts`.
+
+**Bước 7 — `worker-host.test.ts:25,:26`.** `:24` GIỮ NGUYÊN VĂN. Chạy `bun test packages/utils/test/worker-host.test.ts` → phải in `4 pass` / `0 fail`. **Đã đo: `4 pass / 0 fail`.**
+
+**Bước 8 — Bốn file selector thật** (`worker-selector.test.ts`, `executable-fallback.test.ts`, `eval/process-entry-import.test.ts`, `fixtures/computer-worker-cli-selector.ts`). **Số dòng THẬT** (đặc tả lệch 1 dòng ở cả worker-selector): `worker-selector.test.ts` — `js_eval_process` tại `:65, :86, :135, :188`; `does_not_exist` tại `:23, :26, :40`; comment tại `:6`. `executable-fallback.test.ts` — `:35,:36,:59,:60,:83,:84,:139,:140` (đúng với đặc tả). `eval/process-entry-import.test.ts` — `:33` (đúng). `fixtures/computer-worker-cli-selector.ts` — `:3` (đúng). Hậu tố `does_not_exist` PHẢI giữ nguyên.
+
+**Bước 9 — `eval/worker-core.test.ts`: KHÔNG đổi giá trị.** File dài 584 dòng. 24 lượt `__omp_worker_` trên **16 dòng**: `:105, :115, :154, :155, :172, :182, :241, :242, :257, :275, :309, :310, :349, :364, :410, :411`. Tất cả là `__omp_worker_core_gate` / `__omp_worker_cwd_gate` — globalThis instrument. Thêm MỘT dòng comment. Bước này loại 24/48 lượt 'selector' khỏi ngân sách.
+
+**Bước 10 — Ba lượt doc comment:** `issue-1606-repro.test.ts:11`, `issue-3031-repro.test.ts:13`, `issue-7352-repro.test.ts:6` — cả ba đúng dòng. Ghi `disposition.tsv` với `reason=comment-only`.
+
+**Bước 11 — 60 file / 195 lượt `.omp`, KHÔNG được sed.** Với từng lượt, phân loại vào đúng một trong ba tập: (i) config root của app dưới test → `CONFIG_DIR_NAME` hoặc candidate list hai root của W4; (ii) đường dẫn LEGACY được seed để chứng minh dual-read → **GIỮ LITERAL**, thêm comment nói rõ đây là legacy; (iii) tên trong chuỗi không phải đường dẫn → giữ hoặc đổi tuỳ ngữ nghĩa. Ví dụ thật đã đọc — `packages/utils/test/logger-contract.test.ts`: `:52` `PI_CONFIG_DIR: ".omp",` → tập (i); `:182` `const defaultLogsDir = path.join(result.primaryDir, ".omp", "logs");` → tập (i).
+
+**Bước 11b — 57 file còn lại (199 lượt `"omp"` + 12 lượt `"oh-my-pi"`).** Phân bố `"omp"` đã đối chiếu, **tất cả khớp đặc tả**: `test/update-cli.test.ts` 26 · `test/tools/browser-relay-bridge.test.ts` 20 · `test/hindsight-backend.test.ts` 12 · `utils/test/profiles.test.ts` 10 · `metaharness/test/manager.test.ts` 10 · `test/hindsight-mental-models.test.ts` 10 · `tui/test/desktop-notify.test.ts` 9. Phân bố `"oh-my-pi"` (12 lượt / 5 file), **cũng khớp**: `tools/web-scrapers/git-hosting.test.ts` 4 (`:152,:160,:192,:201`) · `ai/test/zai-oauth.test.ts` 3 (`:109,:437,:444`) · `ai/test/cursor-exec-modern.test.ts` 3 (`:280,:1450,:1458`) · `tools/web-search-exa.test.ts` 1 · `oauth-flow.test.ts` 1. *(Đặc tả ghi `cursor-exec-modern.test.ts:280,1474,1482` và `web-search-exa.test.ts:608` — sai. X-exa-source thật ở `packages/coding-agent/test/tools/web-search-exa.test.ts:577` `expect(headers?.get("x-exa-source")).toBe("oh-my-pi");`. Hai file `acp-initialize-conformance.test.ts` và `acp-lazy-startup.test.ts` mà đặc tả liệt kê không còn chứa `"oh-my-pi"`.)* **Ba literal wire bên thứ ba phải GIỮ:** `oauth-flow.test.ts:81` `expect((registrationPayload as { client_name?: string } | null)?.client_name).toBe("oh-my-pi");`; `tools/web-search-exa.test.ts:577` header `x-exa-source`; `ai/test/cursor-exec-modern.test.ts:280,1450,1458` repo `can1357/oh-my-pi`.
+
+**Bước 12 — Viết detector `scripts/ci-rename-test-literals.ts` (file mới).** Quét `packages/*/test/**`; khớp sáu mẫu; đối chiếu **TỪNG** hit (file + line) với `scripts/rename/disposition.tsv`; exit 1 + in danh sách hit không disposition; exit 0 khi sạch. Chạy nó để chứng minh nó đỏ được. Cảnh báo khi implement: `packages/ai/test/fixtures/harmony-leak-corpus.json` chứa chuỗi `can1357/oh-my-pi` rất dài trong `argJson` — detector phải bỏ qua fixture JSON, nếu không sẽ có hàng dài 1 KB trong `disposition.tsv`.
+
+**Bước 13 — KHÔNG sửa `python/omp-rpc/tests/test_client.py:1044,1061`.** Đã đọc: `:1044` `executable="omp",` và `:1061` `"omp",`. `scripts/ci-test-ts.ts:109-110` xác nhận `// Packages the CI buckets deliberately skip but a local full run should still cover. robomp-web lives under python/robomp and is outside every CI TS bucket.` + `const localOnlyWorkspacePackages = ["python/robomp/web"];` — nên `bun run test:ts` không nhìn thấy `python/**/tests/`. Bắt buộc ghép `bun run test:py` vào cổng.
+
+**Bước 14 — 16 lượt `"omp"` còn lại trong `python/**/tests/`, GIỮ, ghi disposition.** Đã đọc từng dòng (lưu ý: `test_sandbox.py` và `test_worker.py` nằm ở **`python/robomp/tests/`**, không phải `python/omp-rpc/tests/`): **3 lượt group Unix** — `python/omp-rpc/tests/test_user_group.py:36` `group="omp",` · `:40` `assert call.kwargs["group"] == "omp"` · `python/robomp/tests/test_worker.py:465` `assert client_kwargs["extra_groups"] == ["omp"]` → `reason=keep` (do_not_rename §3.4). **6 lượt layout sandbox `.omp-xdg`** — `python/robomp/tests/test_sandbox.py:1072, :1074, :1076` và `:1106, :1108, :1110` → `reason=keep`. **4 lượt `(…/"omp").is_dir()` XDG** — `test_sandbox.py:760`, `:829`, `test_worker.py:345`, `:387` → `reason=keep` (do_not_rename §3.3). **3 lượt `executable="omp"`** — `test_user_group.py:26, :34, :45` → `reason=defer-W13p` (KHÔNG ghi `keep`; W13' sở hữu). Tổng: 3 + 6 + 4 + 3 = **16**, cộng `test_client.py` 2 lượt của W13' = 18. Đã đo `git grep -cF '"omp"' -- 'python/**/tests/**'`: `test_client.py` 2 · `test_user_group.py` 5 · `test_sandbox.py` 8 · `test_worker.py` 3.
+
+Hợp đồng test:
+
+1. **`packages/utils/test/brand-constants.test.ts`** (mới) — tên hiển thị và tên tệp/cấu hình là hai thứ khác nhau. Hồi quy: nếu W1/W3 lỡ đặt `WIRE_NAME` bằng tên mới, pin đỏ và cả Warp terminal / ACP client / DAP adapter / Hindsight bank đổi danh tính cùng lúc mà **không lỗi nào được ném ra**.
+2. **`packages/utils/test/worker-host.test.ts:24`** — tiền tố selector còn được nhận. Hồi quy: đổi tiền tố mà quên một selector ⇒ `isWorkerHostSelector` trả false ⇒ worker im lặng không chạy.
+3. **`packages/coding-agent/test/worker-selector.test.ts`** — selector lạ bị từ chối với exit code khác 0. Hồi quy: selector gõ sai trông giống sức khoẻ.
+4. **`packages/coding-agent/test/acp-agent.test.ts:1140`** — tên ext method ACP là hợp đồng bên thứ ba. Hồi quy: đổi nó ⇒ app không còn nhận lệnh từ host ACP.
+5. **Hai pin đã persist — dùng bản có, KHÔNG tạo file mới:** `export-html-template.test.ts:143` `expect(first).toContain("const THEME_STORAGE_KEY = 'omp-export-theme';");` — nguồn `packages/coding-agent/src/export/html/template.js:4`, đọc/ghi bằng `localStorage`; hồi quy: **mất theme đã lưu của MỌI người dùng hiện hữu, và không có lỗi nào.** Và `acp-agent.test.ts:1140` — test thật sự dispatch method nên nó là pin đúng.
+
+Cấm: không khẳng định nào chỉ đọc hằng số rồi so với chính hằng số đó (`expect(PREFIX).toBe(PREFIX)` là tautology). Detector là script Bun đọc file + nạp TSV, KHÔNG phải test — AGENTS.md cấm source-grep **bên trong test**, không cấm detector CI. Ranh giới này phải nói thẳng trong PR.
+
+Cổng có đỏ được không — **lệnh của đặc tả (`bun run check && bun run test:ts && bun run test:py`) KHÔNG phải cổng đỏ được**: `test:ts` cần addon native, `test:py` cần pytest, `check` kéo cả `check:rs` cần cargo. Lệnh đỏ không phân biệt "W11 chưa làm" với "thiếu tiền đề".
+
+Tầng 1 — chạy được NGAY, đã đo trên `47720fd`:
+
+| # | Lệnh | Kết quả đo | Đỏ được? |
+| --- | --- | --- | --- |
+| 1a | `bun run check:ts` | **exit 0** | ✅ Đỏ được: bắt import hỏng, hằng số chưa tồn tại, `WIRE_NAME` chưa export. **KHÔNG** bắt được hằng số bị đổi SAI GIÁ TRỊ |
+| 1b | `bun test packages/utils/test/worker-host.test.ts` | **4 pass / 0 fail**, 37 ms | ✅ Đỏ được: pin `:24` ghim `"__omp_worker_"`, đổi giá trị pin ⇒ đỏ |
+| 1c | `bun scripts/ci-rename-test-literals.ts` | *(file chưa tồn tại)* | ✅ Đỏ được: lần chạy đầu **exit 1 với 456 hit trên 126 file** |
+
+Tầng 2 — nghiệm thu thật, cần tiền đề: `bun run test:ts` + `bun run test:py` phải cùng chạy, kèm canary bắt buộc: script khẳng định run cho ra **số pass > 0** VÀ **không chứa** chữ ký `Failed to load pi_natives native addon` / `No module named pytest`. Đã đo: `python3 -m pytest --version` → `No module named pytest`, nên `test:py` hiện đỏ vì môi trường.
+
+**Đính chính môi trường — đặc tả đã cũ, và nó ĐẢO chiều một quyết định.** Đặc tả nói addon chưa build nên `worker-selector.test.ts` "0 pass/1 fail/1 error" và nên nâng nó lên tầng 2. **Đo lại trên `47720fd`:** `worker-selector.test.ts` → **7 pass / 0 fail**; `logger-contract.test.ts` → **12 pass / 0 fail**; `omptype/…/array.test.ts` → **2 pass** (đặc tả ghi 24). Hệ quả: (1) `worker-selector.test.ts` **chạy được và xanh ngay** — nâng nó thành **tầng 1**, đây là cổng mạnh nhất của W11 vì nó bảo vệ W9. (2) Câu "chỉ `worker-host.test.ts` chạy được" trong đặc tả **sai** — có ít nhất 3/69 file chạy được. (3) Cổng 1b không còn là cổng selector duy nhất.
+
+**Trả lời thẳng: cổng 1c CÓ, tuyệt đối** — nó đỏ ngay lần chạy đầu (456 hit), đỏ mỗi khi có literal tên cũ mới xuất hiện trong test mà không có hàng disposition. Nó không cần addon, không cần pytest, chạy trong <1s. **NHƯNG cổng 1c KHÔNG bắt được đúng thứ W11 sinh ra để chặn.** Nó chỉ hỏi "hit này có được giải thích không", **không** hỏi "lý do có đúng không". Nếu bạn ghi `reason=dual-read-legacy` cho một lượt thật ra là config root, detector vẫn xanh và test dual-read của W4 vẫn bị viết thành 'root mới tồn tại'. **Không có cổng tự động nào bắt được lỗi đó** — nó cần người đọc `reason`.
+
+**Cổng 1a KHÔNG đỏ được với lỗi chính của W11.** `tsgo` kiểm tra kiểu, không kiểm tra giá trị hằng số. `APP_NAME = "ten-sai"` vẫn typecheck sạch. Vậy nên **cổng duy nhất** bảo vệ giá trị là pin literal ở `brand-constants.test.ts`, và cổng đó chỉ bảo vệ được trong lúc chuyển đổi (pha b của bước 3) — sau khi pin được cập nhật sang tên mới, nó xanh trở lại, đúng như nó phải.
+
+**Sửa lại cổng cho đỏ được thật** — thêm một canary value, thay vì tin `check:ts`:
+
+```bash
+# Cổng 1d — CANARY GIÁ TRỊ: chạy SAU khi mọi thay đổi, TRƯỚC khi commit.
+# Chỉ liệt kê W1 + W6a, tức những giá trị PHẢI giữ nguyên qua M5.
+node -e '
+const fs = require("fs");
+const d = fs.readFileSync("packages/utils/src/dirs.ts", "utf8");
+const bad = [];
+// WIRE_NAME chưa tồn tại trước W1 — chỉ kiểm khi đã có.
+if (/export const WIRE_NAME: string = "(?!omp")/.test(d)) bad.push("WIRE_NAME đã đổi khỏi \"omp\"");
+// CONFIG_DIR_NAME home-root
+if (!/export const CONFIG_DIR_NAME: string = "\.omp"/.test(d) && !process.env.ALLOW_CONFIG_RENAME) bad.push("CONFIG_DIR_NAME đổi khỏi \".omp\"");
+if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+'
+```
+
+Nếu không muốn thêm canary ngoài repo: **bắt buộc** review thủ công diff của `packages/utils/src/dirs.ts` và của `src/dap/session.ts:1465-1466`, `src/blob-broker/uploaders-legacy.ts:236`, `src/modes/warp-events.ts:60`, `src/modes/acp/acp-agent.ts:657`, `src/hindsight/bank.ts:29` — 5 site W1 đã xác minh đúng dòng. **Tiêu chí nghiệm thu duy nhất:** `bun scripts/ci-rename-test-literals.ts` exit 0 **VÀ** cả 3 lệnh tầng 1 xanh **VÀ** một người duy nhất review toàn bộ diff.
+
+Cạm bẫy riêng của mục này — **tin số dòng của đặc tả, rồi `sed` theo.** `worker-selector.test.ts` lệch **đúng 1 dòng ở cả 8 neo**. Đặc tả bảo sửa `:66`; `:66` thật là `cwd: path.resolve(__dirname, "../../.."),` — dòng `:65` mới là `cmd:`. `sed -i '' '66s/…/…/'` sẽ **không hỏng** (không có match) hoặc hỏng nếu bạn viết `c\`. Trước mỗi lệnh sửa hàng loạt, chạy `awk 'NR==<n> {print NR": "$0}' <file>` và ĐỌC kết quả.
+
+**Tin `acp-agent.ts:656` là `name: "oh-my-pi"`.** Nó **không phải**. `:656` là `name: "omp",`, `:657` là `title: "omp",`. Không có chuỗi `"oh-my-pi"` nào trong `acp-agent.ts` (chỉ có import path). Hậu quả nếu tin: bạn sẽ nghĩ `name` đã được W1 giao và sửa nó theo — nhưng W1 **chỉ** phủ `title` ở `:657`. Sửa `name` là đổi wire ACP không được W1 cho phép, và không có test nào bắt.
+
+**Thay literal bằng hằng số hàng loạt.** Bộ test đọc hằng số sẽ XANH với một hằng số bị đổi sai — tệ hơn chính bộ test hardcode mà nó thay thế, vì còn mang lại cảm giác an toàn giả. Đặc biệt nguy hiểm với selector: `WORKER_HOST_SELECTOR_PREFIX` chỉ được `packages/utils/src/worker-host.ts:4` dùng, còn `cli.ts:182-189` vẫn ghi **8 literal hardcode** (`TINY_WORKER_ARG`, `STATS_SYNC_WORKER_ARG`, …). Test dựng `${WORKER_HOST_SELECTOR_PREFIX}js_eval_process` sẽ xanh dù `cli.ts:186` đã trôi. 8 hằng số đó KHÔNG được export — không có cách nào test tự bảo vệ; đó là giới hạn thật, ghi vào disposition.
+
+**Xoá HẾT `.omp` cho sạch.** Phá test dual-read của W4 và xoá tấm chắn chống việc ai đó đổi tên group Unix `omp` trên máy người dùng.
+
+**Chạy pass "đọc hằng số" lên `python/**/tests/`.** Xoá 16/18 lượt phải giữ. Nhớ `test_sandbox.py` / `test_worker.py` ở `python/robomp/tests/`, không phải `python/omp-rpc/tests/`.
+
+**Tin `bun run test:ts` là cổng nghiệm thu mà không build addon.** Ở `47720fd` addon ĐÃ build, nên "đỏ vì thiếu addon" là chuyện quá khứ. Đỏ hôm nay là tín hiệu thật — nhưng `test:py` vẫn đỏ vì thiếu pytest, nên một lần đỏ của `test:py` **không mang thông tin cho W11**.
+
+Điểm trong đặc tả SAI so với cây thật (ghi ra, không sửa trong tài liệu): baseline 217/200/54/14, 128 file, 487 hit → **195/199/48/12, 126 file, 456 hit**; `worker-selector.test.ts` neo `:66,:87,:136,:189` / `:24,:27,:41` / `:7` → lệch **+1** toàn bộ (`:65,:86,:135,:188` / `:23,:26,:40` / `:6`); `worker-core.test.ts` "20 lượt tại 20 dòng" → **24 lượt / 16 dòng** (`:105,115,154,155,172,182,241,242,257,275,309,310,349,364,410,411`); `acp-agent.ts:656` là `name: "oh-my-pi"` (3 chỗ) → `:656` là `name: "omp",`, **không có** `"oh-my-pi"` trong file, tổng literal wire ACP = **6, không phải 7**; `profile-cli.test.ts` dùng APP_NAME ở `:154,:179,:205` → chỉ `:144`; `package.json:135` = `test:py` → `:131`; `package.json:91` = `test:scripts` → `:87`; `logger-contract.test.ts:354` → file chỉ **337 dòng**, `.omp` ở `:52` và `:182`; `cursor-exec-modern.test.ts:280,1474,1482` → `:280, :1450, :1458`; `web-search-exa.test.ts:608` → `:577` (`:608` là `{ status: 200, headers: { "Content-Type": … } }`); `test_sandbox.py` / `test_worker.py` trong `python/omp-rpc/tests/` → ở **`python/robomp/tests/`**; `"oh-my-pi"` ở `acp-initialize-conformance.test.ts` và `acp-lazy-startup.test.ts` → hai file này **không còn** chứa; `blob-broker/uploaders-legacy.ts:236` (đường dẫn ngầm có `collab/`) → `packages/coding-agent/src/blob-broker/uploaders-legacy.ts:236`; `omptype/.../array.test.ts` 24 pass → **2 pass**; "`worker-host.test.ts` là file DUY NHẤT trong 70 chạy được" → sai, ít nhất 3/69 chạy được; `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:13809` → dòng 13809 **trống**. **ĐÚNG** (khớp cây, dùng được nguyên): 6 case `case "_omp/…":` ở `:1135,:1144,:1172,:1180,:1189,:1196`; 5 site wire W1 (`dap/session.ts:1465-1466`, `warp-events.ts:60`, `acp-agent.ts:657`, `hindsight/bank.ts:29`); `blob-broker/uploaders-legacy.ts:236`; `WIRE_NAME` chưa tồn tại trong source; `scripts/ci-test-ts.ts:109-110`; 18 lượt `"omp"` trong `python/**/tests/`; `comm -12` hai tập = 0; 9 file có `__omp_worker_`; 4 file có `APP_NAME`; `before-compaction.jsonl` 2.3 MB, 26 lượt `APP_NAME`; `oauth-flow.test.ts:81`; phân bố `"omp"` 7 file trong bước 11b; phân bố `"oh-my-pi"` 5 file (đúng về số lượng, sai 2/5 về dòng); `python3 -m pytest --version` → `No module named pytest`; `scripts/rename/`, `scripts/ci-rename-test-literals.ts`, `packages/utils/test/brand-constants.test.ts` chưa tồn tại.
 
 
 ## W13. Quét tài liệu — changelog chỉ khi được yêu cầu (sóng 6)
@@ -4114,6 +6494,217 @@ Mục `## [Unreleased]` là nơi duy nhất được phép đổi, và chỉ khi
 | W13: không có việc gì với URL `github.com/can1357/oh-my-pi` (24 lượt trong 13 file `.md`, 54 file `.ts`) | KHOẢNG TRỐNG TRONG PLAN | Bề mặt này không thuộc hàng nào của bảng `do_not_rename` N1–N17 và không work item nào sở hữu. Vì GitHub giữ redirect khi repo được đổi tên nên URL cũ **không** gãy — đó là lý do dễ bị bỏ sót vĩnh viễn, và `AGENTS.md` dùng đúng mẫu URL đó làm ví dụ attribution trong mục Changelog (dòng 337-338). Cần câu hỏi mở, không cần quyết ngay trong W13. Bảng N1–N17 ở plan dòng 13266-13282 không có hàng nào nhắc URL. |
 | W13 dòng 13980: "Phụ thuộc: tất cả mục trước; M2 cho hai tài liệu hợp đồng." | QUÁ MƠ HỒ ĐỂ LÀM ĐIỀU KIỆN CHẶN | "Tất cả mục trước" không kiểm được bằng máy. Thay bằng ba điều kiện cụ thể có lệnh ở `Các bước` mục 1. Thiếu điều kiện (a) thì cột tương thích không có nội dung và phần việc nặng nhất của W13 biến mất trong im lặng. |
 
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Đo đạc:** HEAD `47720fd`, mốc `84cbac9` (cả hai đều tồn tại), macOS, 2026-09-29.
+
+**Cảnh báo neo — bảng đính chính, neo hỏng đã đo:**
+
+| claim trong W13 | thực tế |
+| --- | --- |
+| `git ls-files '.omp/**/*.md' \| wc -l` = 9 | **10** (thêm `.omp/skills/sync-squashed-fork/SKILL.md`) |
+| "2 runtime asset trong tập 93" | **13** |
+| "93 file / 549 lượt tái lập được ở HEAD hiện tại" | đúng ở `84cbac9`; HEAD = **98 / 3284** |
+| 24 URL / 13 file `.md`, 54 file `.ts` | HEAD: **26 / 14**, **52** |
+| 404 lượt `.omp` / 78 file | HEAD: **432 / 82** |
+| 612 file `.md` track | HEAD: **626** |
+| "10 file nhiều nhất" | **11** (tie 12 dòng) |
+| `comm -23 base actual \| wc -l` = ĐỎ nếu khác 0 | **đảo chiều** — đếm thành công, đỏ lúc làm đúng |
+| ngưỡng allow-list 25 dòng | không có lệnh nào ép |
+| Rule C pathspec `packages/*/CHANGELOG.md` | bỏ sót `crates/vendor/napi/CHANGELOG.md` (15 changelog toàn repo) |
+| plan dòng 13266-13282, 13272, 13828, 13841, 13975-13983 | **toàn bộ quá cuối file** (plan dài 4808 dòng) |
+| bảng `do_not_rename` N1–N17 dạng bảng | không còn; mục ở dòng 109 là văn xuôi |
+| `bun run check` là cổng nghiệm thu | không đỏ được; `check:ts` + `check:rs`, không đọc markdown |
+
+**Neo ĐÚNG (không cần sửa tài liệu):** `docs/environment-variables.md:25` · `:29` · `:18-21` · `:523` · `:37` · `:191` · `:270` · `:313` · `:428` · `:490` · `:618` · `packages/utils/src/env.ts:277-282` · `omp-protocol.ts:10` · `internal-urls/omp.md` · `input-controller.ts:2515` · `external-editor.test.ts:91,99` · `compress/index.ts:58` · `docs/extension-loading.md:231` · `docs/porting-from-pi-mono.md:46-51` · `AGENTS.md:19,60,62,227,337-338` · `README.md` (701 dòng, 42 lượt / 36 dòng / 23 `@oh-my-pi/`) · `CONTRIBUTING.md:1,84` · `LICENSE:3-5` · `package.json:89,90,91`.
+
+Bảng điểm sửa — cột TRƯỚC trích nguyên văn từ file thật:
+
+| đường/dẫn | symbol / hàm | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `scripts/rename/docs-legacy-allowlist.txt` | — (tạo mới) | *không tồn tại* | text, 1 đường dẫn/dòng, `<path>  # <lý do>`, `LC_ALL=C sort`, **≤ 25 dòng** |
+| `scripts/rename/check-docs-rename.ts` | — (tạo mới) | *không tồn tại* | Bun script, đọc allow-list (cắt `#`), 3 quy tắc A/B/C, `process.exit(1)` khi có vi phạm |
+| `docs/environment-variables.md:25` | đoạn mô tả cơ chế mirror | `Additional rule inside each .env file: every ` + "`OMP_*`" + ` key is mirrored to its ` + "`PI_*`" + ` alias, and that mirrored value replaces a same-file ` + "`PI_*`" + ` value. This mirroring applies to parsed dotenv files, not arbitrary variables inherited from the parent process.` | giữ nguyên câu này, **nối thêm**: mirror `OMP_*`→`PI_*` vẫn chạy (không phải branding), và `ULTRAWORKERS_CONFIG_DIR` thắng `PI_CONFIG_DIR` |
+| `docs/environment-variables.md` × 29 bảng | header cột `Variable` | `\| Variable                        \| Used for  ... \| Required when  ... \| Notes / precedence  ... \|` (4 cột, dòng 37)<br>`\| Variable                    \| Value type    ... \| Behavior  ... \|` (2 cột, dòng 191)<br>`\| Variable                           \| Setting overridden  ... \| Accepted value / built-in default  ... \|` (3 cột, dòng 490) | thêm cột thứ hai tên `New name` vào **mọi** header, kể cả `Variable group` ở dòng 618 |
+| `docs/environment-variables.md` 100 dòng `PI_*`/`OMP_*` | giá trị cột `New name` | hàng hiện tại, ví dụ dòng 431: `` \| `PI_SMOL_MODEL` \| Ephemeral model-role override for `smol` (CLI `--smol` takes precedence) \| `` | `` \| `PI_SMOL_MODEL` \| `PI_SMOL_MODEL` \| Ephemeral model-role override... \| `` — 99 dòng ghi lại chính tên cũ; **chỉ** `PI_CONFIG_DIR` (dòng 523) ghi `ULTRAWORKERS_CONFIG_DIR` |
+| `README.md` (42 lượt / 36 dòng) | văn xuôi thương hiệu | dòng 2 `alt="omp"`, dòng 98 `` `omp` generates its own completion scripts ``, dòng 102 `eval "$(omp completions zsh)"`, dòng 108 `omp completions fish > ~/.config/fish/completions/omp.fish` | sửa tay từng lượt; ảnh hero và câu chào giữ nguyên cấu trúc, chỉ đổi token hiển thị |
+| `AGENTS.md` (3 lượt / 9 dòng `@oh-my-pi/`) | văn xuôi + quy tắc | dòng 19 `` (`omp stats`) ``, dòng 227 `` `~/.omp/logs/omp.YYYY-MM-DD.log` ``, dòng 62 `omp --smoke-test`; dòng 337-338 `https://github.com/can1357/oh-my-pi/issues/123` | sửa **có hỏi trước** — file này đổi hành vi làm việc, không chỉ tài liệu |
+| `CONTRIBUTING.md:1` | tiêu đề | `# Contributing to omp` | `# Contributing to <tên mới>` — 1 dòng duy nhất |
+| `CONTRIBUTING.md:84` | attribution pháp lý | `A contribution intentionally submitted for inclusion in OMP is licensed under` | **giữ nguyên** (viết hoa, không khớp biểu thức; là tên pháp lý) |
+| `LICENSE:3-5` | copyright | `Copyright (c) 2025 Mario Zechner` / `Copyright (c) 2025-2026 Can Bölük` / `Copyright (c) 2026 Stencil Labs, Inc.` | **không đổi** |
+| `packages/*/CHANGELOG.md` (14 file) | — | 13 chứa `@oh-my-pi/`, 11 chứa token `omp` | **không đổi dòng nào** |
+| `docs/extension-loading.md:231` | — | xem bước 6 | **không chạm** — thuộc W8a |
+| `docs/porting-from-pi-mono.md:46-51` | — | xem bước 6 | **không chạm** — thuộc W8a |
+| 13 file `.md` chứa URL `github.com/can1357/oh-my-pi` | — | `https://github.com/can1357/oh-my-pi/blob/main/assets/hero.png?raw=true` (README:2) | **chưa quyết** — hỏi người dùng |
+
+**Danh sách đầy đủ 29 header bảng** (đã đọc, không đoán) — dòng trong `docs/environment-variables.md`: 37, 117, 128, 191, 203, 220, 232, 244, 260, 270, 281, 291, 313, 335, 342, 352, 389, 395, 403, 413, 428, 490, 519, 539, 560, 576, 593, 605, **618 (`Variable group`)**. Bảy kiểu cột hai: `Default / behavior` (11 bảng), `Behavior` (10), `Used for` (4), `Value type` (1), `Used by` (1), `Setting overridden` (1), `Required?` (1). Số cột: 23 bảng 2 cột, 4 bảng 3 cột, 2 bảng 4 cột.
+
+Các bước — mỗi bước có neo đã kiểm:
+
+**Bước 0 — An toàn (không có neo, nhưng bắt buộc).** Làm trên nhánh riêng. Commit allow-list **trước** khi sửa file tài liệu nào. Mỗi ~10 file thì commit một lần. Quay lại bằng `git checkout HEAD -- <path>` cho từng file.
+
+**Bước 1 — Điều kiện mở: đo lại, đừng tin số của tài liệu.** (a) `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'; echo "exit=$?"` → **không in gì, exit=1 ⇒ W4 CHƯA land**; cột `New name` sẽ có đúng 1 giá trị khác tên cũ. (b) `ls scripts/rename/keep-list.txt scripts/rename/disposition.tsv` → `ls: scripts/rename/: No such file or directory` ⇒ **CHƯA có**. (c) `git log --oneline -1 -- docs/extension-loading.md` → `ecd516f feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers` (một commit duy nhất, không phải W8a) ⇒ **W8a CHƯA chạy**; W13 không được chạm hai dòng đó. **Nếu chưa đạt cả ba: dừng, nói rõ điều kiện nào chưa đạt.** Điều kiện (a) chưa đạt thì phần nặng nhất của W13 (cột tương thích) không có nội dung.
+
+**Bước 2 — Chốt allow-list TRƯỚC, commit nó.** Đo lại bề mặt tại thời điểm chạy — **con số trong tài liệu đã lỗi thời**:
+
+```bash
+P='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'
+EXC=":(exclude)packages/*/CHANGELOG.md"
+EXC="$EXC :(exclude)MILESTONE_*_EXECUTION_PLAN.md"
+EXC="$EXC :(exclude)COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md"
+EXC="$EXC :(exclude)CROSS_REPO_COMPARISON.md"
+EXC="$EXC :(exclude)PACKAGE_REORGANIZATION_PLAN.md"
+EXC="$EXC :(exclude)RESEARCH_*.md"
+EXC="$EXC :(exclude)SENPI_FINDINGS.md"
+git grep -lE "$P" "$BASE" -- '*.md' $EXC | LC_ALL=C sort > /tmp/w13-base.txt
+wc -l < /tmp/w13-base.txt     # 93 tại 84cbac9
+```
+
+Sau khi thêm 5 exclusion mới, tập base là **93 file / 549 lượt** — tái lập được chính xác. **13 dòng allow-list bắt buộc** (tài liệu chỉ nêu 2). Mỗi dòng phải có `# lý do`:
+
+```
+.omp/skills/semantic-compression/SKILL.md                  # runtime asset — prompt corpus dưới thư mục dot
+packages/coding-agent/src/cleanse/prompts/discovery.md     # import theo đường dẫn — cleanse/agent.ts:16
+packages/coding-agent/src/commit/agentic/prompts/system.md # import theo đường dẫn — commit/agentic/agent.ts:16
+packages/coding-agent/src/live/prompts/live-instructions.md# import theo đường dẫn — live/controller.ts:10
+packages/coding-agent/src/prompts/internal-urls/cfg.md     # import theo đường dẫn — cfg-protocol.ts:26
+packages/coding-agent/src/prompts/internal-urls/omp.md     # import theo đường dẫn — omp-protocol.ts:10
+packages/coding-agent/src/prompts/system/system-prompt.md  # import theo đường dẫn — system-prompt.ts:30
+packages/coding-agent/src/prompts/tools/browser.md         # import theo đường dẫn — tools/browser/prelude-definition.ts:2
+packages/coding-agent/src/prompts/tools/find.md            # import theo đường dẫn — tools/jfind/index.ts:16
+packages/coding-agent/src/prompts/tools/glob.md            # import theo đường dẫn — tools/glob.ts:9
+packages/coding-agent/src/prompts/tools/ida.md             # import theo đường dẫn — tools/ida.ts:24
+packages/coding-agent/src/prompts/tools/isolation-error.md # import theo đường dẫn — task/isolation-runner.ts:26
+scripts/session-stats/audit-prompt.md                      # import theo đường dẫn — scripts/session-stats/audit.ts:45
+```
+
+Tổng 13 dòng, dưới ngưỡng 25. **Không** thêm file nào khác mà chưa phân loại.
+
+**Bước 3 — `docs/environment-variables.md`: cột `New name` + sửa dòng 25.** Đã kiểm, tất cả đúng: `:25` là câu `mirrored` (dòng 29 là `---`, **không** phải dòng cần sửa); `:523` = `` | `PI_CONFIG_DIR` | Config root dirname under home (default `.omp`) | `` — dòng duy nhất mang tên mới; `:18-21` mô tả thứ tự đọc dotenv, gồm `` `~/.omp/agent/.env` `` và `` `~/.omp/.env` ``; 648 dòng · 29 bảng · 100 dòng `PI_*`/`OMP_*`; 95/100 dòng biến nằm ở bảng có header từ dòng 270 trở đi (bảng header 428 có 36 dòng biến, header 313 có 17). **Cơ chế mirror đã có sẵn trong code** — `packages/utils/src/env.ts:277-282`, đọc nguyên văn:
+
+```typescript
+	// OMP_ overrides PI_
+	for (const k in result) {
+		if (k.startsWith("OMP_")) {
+			result[`PI_${k.slice(4)}`] = result[k];
+		}
+	}
+```
+
+Nghĩa là W13 **tài liệu hoá cơ chế có sẵn**, không phát minh 100 bí danh mới. Chỉ một dòng mang tên mới.
+
+**Bước 4 — Sửa văn xuôi, file từng file, KHÔNG sed.** Thứ tự theo **số dòng** khớp (đo bằng `git grep -c`): 1. `docs/settings.md` 43 · 2. `README.md` 36 (**42** lượt) · 3. `docs/cli-reference.md` 24 · 4. `docs/auth-broker-gateway.md` 23 · 5. `docs/marketplace.md` 15 · 6. `docs/collab.md` 15 · 7. `docs/local-models.md` 14 · 8. `docs/stream.md` 13 · 9. `docs/skills/authoring-extensions.md` 13 · 10. `docs/toolconv/hermes.md` 12 · 10=. `docs/providers.md` 12. ⚠️ Bảng này có **11 file chứ không phải 10** — `hermes.md` và `providers.md` cùng 12 dòng; tài liệu liệt kê 10 và bỏ sót `providers.md`. Với mỗi lượt, phân loại: tên lệnh trong code block (đổi) · tên hiển thị trong văn xuôi (đổi) · đường dẫn `~/.omp/...` (xem bước 5) · legacy keep (giữ + ghi lý do vào allow-list).
+
+**Bước 5 — GIỮ `.omp` trong đường dẫn.** 404 lượt `.omp` trên 78 file `.md` tại `84cbac9` (đã tái lập). **Không** đổi thành `.ultraworkers` — tài liệu sẽ mô tả thư mục mà bản cài cũ không có. Sau W4 (dual-root vĩnh viễn) câu đúng là: `~/.ultraworkers` được đọc trước, `~/.omp` vẫn được đọc để tương thích.
+
+**Bước 6 — Hai tài liệu hợp đồng: KHÔNG CHẠM.** `docs/extension-loading.md:231` — đã đọc, đúng như tài liệu mô tả (bullet về `onLoad` hook với `@mariozechner/*`, `@earendil-works/*`, `@sinclair/typebox`, và các shim `legacy-pi-ai-shim.ts` / `legacy-pi-coding-agent-shim.ts`). `docs/porting-from-pi-mono.md:46-51` — dòng 46-50 là 5 dòng map `@mariozechner/pi-*` → `@oh-my-pi/pi-*`; dòng 51 nói về scope `@earendil-works/*`. Cả hai thuộc W8a.
+
+**Bước 7 — Chạy gate** (xem mục cổng).
+
+Hợp đồng test — **không viết `bun test`.** Đúng như tài liệu kết luận, và AGENTS.md cấm: assert trên chữ của file là kiểm tra *hình thức*, đỏ khi người ta reflow bảng mà không đổi ý nghĩa. Hợp đồng được bảo vệ bằng **checker có exit code** — và đây là điều người dùng thấy nếu hồi quy:
+
+| Quy tắc | Hồi quy = hành vi quan sát được |
+| --- | --- |
+| **A** | Người đọc tài liệu lại thấy tên cũ ở một file **chưa được duyệt** — hoặc allow-list phình lên vì có người đẩy việc chưa làm xong vào danh sách duyệt thay vì sửa file. |
+| **B** | Người đặt biến trong shell profile thấy một biến **có trong tài liệu nhưng không có tác dụng**, hoặc một biến **chạy thật mà không có ở tài liệu**. Phải kiểm **cả hai chiều**: `comm -23` bắt W4 land `ULTRAWORKERS_CONFIG_DIR` mà W13 quên ghi doc; `comm -13` một mình không bắt được. |
+| **C** | Phần changelog **đã phát hành** bị viết lại vì một lần đổi tên. Đỏ ngay khi có ai thêm mục changelog "vì lần đổi tên này hướng tới người dùng" — đúng cái sai lầm AGENTS.md cấm. |
+
+Checker là thuần Bun, chạy được **không cần addon native** — nên là hàng phòng thủ thật sự kể cả khi `bun test` đang bị chặn.
+
+Cổng có đỏ được không — **cổng như tài liệu viết KHÔNG đỏ được ở trạng thái đầu. Đây là điều quan trọng nhất của mục này.** Đã chạy từng quy tắc ở trạng thái hiện tại (W13 chưa làm gì):
+
+| Cổng | Đỏ được khi nào | Xanh ở trạng thái CHƯA LÀM GÌ? |
+| --- | --- | --- |
+| Quy tắc A (allow-list) | Chỉ khi ai thêm file `.md` mới mang thương hiệu, hoặc quên gỡ file đã sửa xong | **XANH** — seed allow-list bằng toàn bộ 93 dòng thì xanh ngay lập tức |
+| Quy tắc A lệnh thứ ba | **ĐỎ NGƯỢC** — xem bên dưới | **ĐỎ** (nhưng vì lý do sai) |
+| Quy tắc B (biến môi trường) | Chỉ khi W4 land `ULTRAWORKERS_CONFIG_DIR` mà W13 quên ghi doc | **XANH** — baseline đo được: code 0, doc 0, cả hai `comm` rỗng |
+| Quy tắc C (changelog) | Chỉ khi có ai sửa phần đã phát hành | **XANH** — baseline 0 dòng |
+| `bun run check:ts` | Khi ai đó đổi tên `internal-urls/omp.md` (typecheck đỏ) | **XANH** |
+| `bun run check` (lệnh tài liệu chỉ định) | Không bao giờ — nó là `bun run --parallel check:ts check:rs`, không đọc nội dung markdown | **XANH** |
+
+**Ba quy tắc nội dung đều xanh trước khi W13 bắt đầu.** Cổng vì thế không phân biệt được "đã làm" với "chưa làm" — đúng lỗi mà chính tài liệu cảnh báo ở `Cách sai dễ nhất`, nhưng rồi tự viết một cổng mắc đúng lỗi đó.
+
+**Viết lại cho đỏ được — năm sửa.**
+
+**Sửa 1 — lệnh thứ ba của quy tắc A đang đảo chiều.** Tài liệu viết `comm -23 /tmp/w13-base.txt /tmp/w13-actual.txt | wc -l  # ĐỎ nếu khác 0`. Nhưng `comm -23 base actual` đếm **những file đã được đổi tên thành công**. Khác 0 nghĩa là W13 **làm được việc** — đỏ đúng lúc thành công. Điều kiện đỏ đúng là: *mọi file từng mang thương hiệu ở mốc phải hoặc đã sạch, hoặc nằm trong allow-list có lý do*:
+
+```bash
+# ĐỎ khi còn file chưa xử lý — đây là cổng đỏ NGAY từ trạng thái đầu
+comm -23 /tmp/w13-base.txt /tmp/w13-allowed.txt
+```
+
+Với allow-list 13 dòng ở bước 2, lệnh này in ra **80 dòng** ngay lúc bắt đầu ⇒ **ĐỎ**. Khi W13 làm xong 80 file đó, nó rỗng ⇒ **XANH**.
+
+**Sửa 2 — ép ngưỡng 25 dòng bằng máy, không bằng lời.** Tài liệu nói "allow-list không được dài hơn 25 dòng" nhưng không có lệnh nào ép nó:
+
+```bash
+n=$(sed 's/[[:space:]]*#.*$//' scripts/rename/docs-legacy-allowlist.txt | sed '/^$/d' | wc -l)
+[ "$n" -le 25 ] || { echo "FAIL allowlist: $n dòng > 25 — sửa file thay vì thêm vào allow-list"; exit 1; }
+```
+
+Không có lệnh này, quy tắc A xanh với allow-list 93 dòng và W13 trở thành một lượt `echo`.
+
+**Sửa 3 — đóng lỗ `|| true` của chính mình.** Trong lệnh một dòng, `git grep` exit 1 khi sạch. Nếu nối bằng `&&` thì `comm` không chạy và cổng luôn xanh — tức là **cổng không phân biệt "đã làm" với "lệnh không chạy"**. Bắt buộc: `{ git grep -lE "$P" -- '*.md' $EXC || true; } | LC_ALL=C sort > /tmp/w13-actual.txt`.
+
+**Sửa 4 — Rule C bỏ sót một changelog.** Pathspec `'packages/*/CHANGELOG.md'` không phủ `crates/vendor/napi/CHANGELOG.md` (repo có **15** file `*CHANGELOG.md`, không phải 14). Dùng `'*CHANGELOG.md'`.
+
+**Sửa 5 — luôn so với `$BASE`.** `git grep` trên HEAD và `git diff` trần không thấy thay đổi đã commit. `BASE=<commit cha của nhánh W13>`.
+
+**Cổng kết — chạy CẢ BA, cả ba phải xanh, và `check:ts` là điều kiện phụ:**
+
+```bash
+bun scripts/rename/check-docs-rename.ts   # A + B + C + ngưỡng 25 dòng
+bun run check:ts                           # điều kiện phụ, exit 0
+```
+
+`bun run check:ts` đã chạy được ở đây qua `check:tools`: `oxlint . && oxfmt --check … 'scripts/**/*.ts'` — glob `scripts/**/*.ts` ở `package.json:91` nghĩa là script mới trong `scripts/` **tự động** được lint, không cần cấu hình thêm. Kết quả vừa chạy: `Finished in 333ms on 5445 files`, chỉ một warning không liên quan.
+
+**Cổng âm (đỏ khi tài liệu hỏng) — chạy định kỳ:** `git grep -nF 'prompts/internal-urls/omp.md" with' -- '*.ts'` (→ `omp-protocol.ts:10`), `git grep -nF 'prompts/internal-urls/cfg.md" with' -- '*.ts'` (→ `cfg-protocol.ts:26`), `git grep -nF 'prompts/tools/isolation-error.md" with' -- '*.ts'` (→ `isolation-runner.ts:26`); `sed -n '2515p' packages/coding-agent/src/modes/controllers/input-controller.ts` (→ `{ extension: ".omp.md" }`), `sed -n '91p;99p' packages/coding-agent/test/external-editor.test.ts` (→ `omp-editor-123.omp.md`).
+
+Cạm bẫy riêng của mục này — **"2 runtime asset" thực tế là 13, và đây là bẫy chết người.** Tài liệu nói trong tập 93 file chỉ có 2 file là asset nạp lúc chạy. **Sai.** Đã import-từng-dòng từng file trong tập 93: có **13** file mà *đường dẫn file* là một đầu vào build. 12 trong số đó được `import … with { type: "text" }` theo đúng đường dẫn — đổi tên là `check:ts` đỏ ngay:
+
+| file | import tại |
+| --- | --- |
+| `packages/coding-agent/src/prompts/internal-urls/omp.md` | `omp-protocol.ts:10` |
+| `packages/coding-agent/src/prompts/internal-urls/cfg.md` | `cfg-protocol.ts:26` |
+| `packages/coding-agent/src/prompts/system/system-prompt.md` | `system-prompt.ts:30` |
+| `packages/coding-agent/src/prompts/tools/browser.md` | `tools/browser/prelude-definition.ts:2` |
+| `packages/coding-agent/src/prompts/tools/find.md` | `tools/jfind/index.ts:16` |
+| `packages/coding-agent/src/prompts/tools/glob.md` | `tools/glob.ts:9` |
+| `packages/coding-agent/src/prompts/tools/ida.md` | `tools/ida.ts:24` |
+| `packages/coding-agent/src/prompts/tools/isolation-error.md` | `task/isolation-runner.ts:26` |
+| `packages/coding-agent/src/cleanse/prompts/discovery.md` | `cleanse/agent.ts:16` |
+| `packages/coding-agent/src/commit/agentic/prompts/system.md` | `commit/agentic/agent.ts:16` |
+| `packages/coding-agent/src/live/prompts/live-instructions.md` | `live/controller.ts:10` |
+| `scripts/session-stats/audit-prompt.md` | `scripts/session-stats/audit.ts:45` |
+
+Và `.omp/skills/semantic-compression/SKILL.md` (prompt corpus dưới thư mục dot, `compress/index.ts:58` ghi rõ). Toàn repo có ~200 specifier `prompts/*.md` kiểu này — **một lệnh `sed` trên "mọi file `.md"` là thảm họa**, và allow-list 13 dòng ở bước 2 là hàng rào duy nhất đứng giữa. ⚠️ **Cạm bẫn phụ:** `docs/tools/find.md` và `prompts/tools/find.md` trùng tên. Khi grep bằng basename, `docs/tools/find.md` sẽ **báo động giả** là asset. Lọc bằng đường dẫn đầy đủ, không dùng basename.
+
+**Con số bề mặt trong tài liệu đã lỗi thời — nhưng đúng ở mốc cũ.** Đã chạy lại **toàn bộ** số ở mục `Xác minh` trên mốc `84cbac9`: 93 file / 549 lượt / 66 file `@oh-my-pi/` / 404 lượt `.omp` trên 78 file / 24 URL trên 13 file / 612 file `.md` / 82 + 134 docs / 58 + 40 / 13 + 11 changelog / 648 dòng · 100 biến · 29 bảng. **Tất cả khớp tuyệt đối.** Ở HEAD `47720fd` thì **không**:
+
+| đại lượng | tài liệu / `84cbac9` | HEAD `47720fd` | lệch vì |
+| --- | --- | --- | --- |
+| file `.md` trong bề mặt | 93 | **98** | 5 file nghiên cứu/kế hoạch ở gốc repo |
+| lượt `omp` | 549 | **3284** | 5 file đó một mình đóng góp 2734 lượt |
+| URL GitHub | 24 trên 13 file | **26 trên 14** | `RESEARCH_DSH_OMO_2026-09-28.md` |
+| file `.ts` chứa URL | 54 | **52** | — |
+| lượt `.omp` | 404 trên 78 file | **432 trên 82** | — |
+| tổng file `.md` track | 612 | **626** | — |
+
+5 file mới không bị exclusion của tài liệu bắt: `CROSS_REPO_COMPARISON.md`, `PACKAGE_REORGANIZATION_PLAN.md`, `RESEARCH_DSH_OMO_2026-09-28.md`, `RESEARCH_FINDINGS_2026-09-28.md`, `SENPI_FINDINGS.md`. Tập 93 ở mốc là **tập con thật** của tập 98 ở HEAD (0 file nào biến mất) — nghĩa là bề mặt ổn định về thành phần, chỉ là con số thì không. → **Đo lại tại thời điểm chạy, đừng ép về 93/549.**
+
+**Mọi con trỏ "plan dòng NNNNN" trong W13 đã hỏng.** Kế hoạch hiện dài **4808 dòng**; W13 trích `13266-13282`, `13272`, `13828`, `13841`, `13975`–`13983`. `sed -n '13266p' MILESTONE_5_EXECUTION_PLAN.md` → **rỗng**. Hệ quả cụ thể: vì trỏ "W8a sở hữu" không kiểm được, **xung đột sở hữu vẫn có thật** nhưng vị trí thật nằm trong mục `## W8a.` — *"Hai file `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` phải được viết lại"*; **đề xuất của tài liệu là đúng: W8a chịu trách nhiệm.** Và bảng `do_not_rename` N1–N17 **không còn tồn tại ở dạng bảng** (mục `## do_not_rename` nay là văn xuôi + bảng hai-tên-file), nên **mã hàng N1–N17 không tra được nữa** ⇒ mệnh đề "bảng không có hàng nào phủ URL GitHub" **không kiểm chứng được**.
+
+**Sở hữu kép với W8a — vẫn nghiêm trọng nhất.** `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` được W13 nêu **và** W8a nhận. Chọn W8a (nó có điều kiện "chỉ sau khi M2 chốt exports map"; W13 không có). Ghi tên bên kia vào `keep_refs` trong `disposition.tsv`, bên kia bỏ qua. **Đừng sửa hai dòng này ở W13.**
+
+**Đọc thẳng §2.2 sẽ phát minh 100 bí danh mới.** Cột `New name` là cột ghi **tên**, không phải 100 chỗ đọc env mới. Cơ chế mirror `OMP_*` → `PI_*` **đã có** (`env.ts:277-282`) và doc đã mô tả ở dòng 25. W13 chỉ thêm đúng **một** tên mới.
+
+**Thêm mục changelog là sai lầm lớn nhất.** AGENTS.md cấm; quy tắc C chặn bằng exit code, và `## [Unreleased]` là ngoại lệ duy nhất **khi người dùng yêu cầu rõ ràng**.
+
+**Ba câu hỏi chưa có câu trả lời — hỏi trước khi gõ.** (1) **URL `github.com/can1357/oh-my-pi` có đổi không?** 26 lượt / 14 file `.md` + 52 file `.ts`. Không work item nào sở hữu, không hàng nào trong `do_not_rename` phủ. GitHub giữ redirect nên URL không gãy — vì vậy dễ bị bỏ sót vĩnh viễn. (2) **`omp://` có phải tên hiển thị cần đổi không?** Nếu có thì đổi **scheme**, thuộc W9, và phải giữ alias. File `omp.md` không đổi tên ở W13. (3) **`check-docs-rename.ts` nối vào job CI nào?** `check:tools` là lint, không phải gate nội dung. Nếu không nối, gate chỉ chạy khi ai nhớ — hữu ích nhưng không ép ai.
+
+
 ## Cần người xác nhận
 
 Mâu thuẫn nội tại của chính đặc tả, chưa tự sửa:
@@ -4355,6 +6946,162 @@ Nói thẳng để không ai hơi đồ quá chỗ: lần chạy pytest có đi�
 | W13' liệt kê `python/robomp/pyproject.toml:22` (`"omp-rpc>=0.1.0"`) là một trong sáu site distribution-metadata cần đổi, cùng `:6`, `:8` và bốn cái trong `python/omp-rpc/pyproject.toml`. | **Tự mâu thuẫn** — xung đột với mặc định trong bảng open-questions của chính tài liệu đó. | Dòng 22 là một yêu cầu dependency PEP 508 trên tên **distribution** `omp-rpc`, không phải metadata mô tả. Bảng open-questions cuối M5 quyết định tên đó và mặc định được nêu là **GIỮ `omp-rpc` vĩnh viễn**, vì đổi tên phá mọi `pip install omp-rpc` hiện có. Dưới mặc định đó, `:6` giữ tên và `:22` **phải** khớp theo. Đổi `:22` trong khi `:6` ở lại làm dependency của robomp không resolve: `uv pip install` chết lúc resolve và toàn bộ bot không cài được. Cùng kiểu ràng buộc tại `Dockerfile:164` (`pip install /tmp/wheels/omp_rpc-*.whl`, resolve theo tên file wheel) và `python/omp-rpc/pyproject.toml:31` (`package-dir`). Cách đọc đúng: `:22` không phải rename site — nó là hệ quả của một quyết định thuộc bảng open-questions, và dưới mặc định nó là một dòng KEEP nằm giữa danh sách thay đổi. Hàng open-questions trong back-matter M5: "Giữ `omp-rpc` vĩnh viễn, chỉ đổi metadata mô tả (`description`, `keywords`, `Homepage`) và tên lệnh mặc định" — ba trường mô tả, tức là `:8`, `:14`, `:26` chứ **KHÔNG** phải `:22`. |
 | Lệnh của W13': `bun run check && bun run test:py && git grep -n '"omp"' -- 'python/**/*.py'`, và mục "Test cần viết" nói cập nhật `test_client.py:1044,1061` cho khớp. | **Lệnh không phân biệt được thành công với môi trường không chạy được**, và chỉ thị test tạo ra một test không assert gì cả. | Hai khiếm khuyết tách biệt. (1) Lệnh: `bun run test:py` **THẤT BẠI** với `No module named pytest` (exit 1) và `bun run lint:py` **THẤT BẠI** với `ruff: command not found` (exit 127) — cả hai không phân biệt được với một lỗi test thật chỉ qua mã thoát. Tệ hơn, `bun run check` **mù cấu trúc** với item này: `check:ts` lọc `./packages/*` và oxlint chỉ phủ JS/TS, nên không dòng sửa nào dưới `python/**` có thể làm nó đỏ, trong khi `check:rs` cộng thêm một lời gọi toolchain Rust cho công việc không chạm Rust. Cả hai nửa là chi phí mà không có tín hiệu. (2) Test: `test_client.py:1044` truyền `executable="omp"` vào và `:1061` assert `"omp"` ra — một giá trị tường minh được echo lại, thứ AGENTS.md cấm với tư cách success-passthrough. Hoán đổi cả hai chuỗi để lại một test xanh dưới **tên nào**, nên suite xanh mà chưa từng kiểm tra default có dời hay không. Cách sửa: bỏ đối số tường minh và assert default được tính ra — cũng chính là assertion biến đổi mà hợp đồng test của item yêu cầu. |
 | Danh sách lệnh xác minh §3.3: `git grep -n 'omp' -- 'python/**/pyproject.toml'` trả về 15 dòng, đọc thành 2 path-noise + 6 display-branding + 7 distribution/module names; "Đừng đếm 15 làm ngân sách sửa". | **Đúng, và đáng giữ nguyên văn** — nhưng nó không thấy hai bề mặt thật. | Phân rã 15 dòng khớp chính xác: 2 noise (`robomp:63` `"C4"`, `:67` `"E501"`, chỉ khớp vì chính đường dẫn `python/robomp/pyproject.toml` chứa substring `omp`), 6 branding (`omp-rpc:8,14,26` và `robomp:8,22`), 7 distribution/module (`omp-rpc:37` và `robomp:6,34,37,38,41,75`). Chỉ dẫn không coi 15 là ngân sách sửa là đúng và nên được giữ. Cái lệnh không thấy: `python/omp-rpc/pyproject.toml:27,28` mang `https://github.com/can1357/oh-my-pi` trong `Repository` và `Documentation`. Chuỗi trần `oh-my-pi` không chứa substring `omp`, nên grep này bỏ sót — **và không work item nào nhận trách nhiệm**, vì mẫu của W7 là `@oh-my-pi/` có dấu gạch chéo cuối còn W8a giới hạn trong TypeScript. Hai lệnh trả về tập rời nhau, và đó chính là bằng chứng rằng không lệnh nào phủ lệnh kia. |
+
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Ghi chú về neo (đã kiểm từng cái) — đọc trước khi gõ.** Tất cả đã mở và đọc tại HEAD `47720fd`.
+
+**Neo ĐÚNG:** `client.py:455` · `config.py:95` · `docker-compose.yml:80,81` · `.env.example:183,184,185` · `test_client.py:1044,1061` · `AGENTS.md:101,111` · `README.md:48,58,233` · `omp-rpc/pyproject.toml:6,8,14,26,27,28,31` · `robomp/pyproject.toml:6,8,22` · `worker.py:136,145,168,209,211,647,664` · `entrypoint.sh:25,28,29,32,33,53,60,61,65,66,77,78,79,80,81` · `test_user_group.py:26,34,36,40,45` · `test_worker.py:278,290,295,296,341,345,346,387,465` · `test_host_tools.py:28,143,144,145,153,189,4674` · `test_permissions_e2e.py:263` · `tasks.py:364` · `sandbox.py:17,493,500,541,549,567,572,574,584,588,759,899,1047` · `test_sandbox.py:760,829,1072,1074,1076,1106,1108,1110` · `test_worker_smoke.py:4` · `Dockerfile:164,180,216` · `packages/coding-agent/package.json:28` · `scripts/ci-release-publish.ts:186` · `dirs.ts:28`.
+
+**Neo LỆCH** (đều là doc comment, giá trị nằm dòng kế tiếp — nội dung vẫn đúng, chỉ lệch 1 dòng): `dirs.ts:24` → `APP_URL` thật ở **`dirs.ts:25`** (dòng 24 là comment `/** Public homepage ... */`); `dirs.ts:36` → `USER_AGENT` thật ở **`dirs.ts:37`**; `package.json:135` → script `test:py` thật ở **`package.json:131`**. **Đã kiểm, ĐÚNG:** `pyproject.toml:34,37,38,41,75` (robomp) và `:37` (omp-rpc) — `package-dir`, `packages`, `package-data`, `known-first-party`; đây là layout/distribution, không phải rename site. **Số dòng ĐÃ SỬA trong spec (đúng, đã kiểm chứng độc lập):** tám dòng `test_sandbox.py` lệch +1 so với bản gốc; spec đã sửa đúng sang `760, 829, 1072, 1074, 1076, 1106, 1108, 1110`. **File không tồn tại:** `scripts/rename/keep-list.txt` — nhưng kế hoạch tự nói nó là `[create,verified]` ở W7, nên đây là **phụ thuộc tiến, không phải neo hỏng**.
+
+**Toàn bộ số đếm inventory — ĐÃ KIỂM CHỨNG, tất cả khớp tuyệt đối:** `git grep -o '"omp"' -- 'python/**/*.py' | wc -l` → 24 ✅; per-file (8 file) client 1, test_client 2, test_user_group 5, config 1, sandbox 2, worker 2, test_sandbox 8, test_worker 3 ✅; `git grep -n 'ROBOMP_OMP_COMMAND' -- python/` → 5 hit ✅; `git grep -o '\.omp' -- python/ | wc -l` → **108 / 12** ✅; `git grep -lE '"\.omp[a-z0-9.-]*"'` → 6 file ✅; họ `.omp*` có quote — `.omp-xdg` 30, `.omp-tmp` 14, `.omp-session` 10, `.omp` 6, v1.2.3 = 2, v1.2.4 = 1 ✅.
+
+Bảng điểm sửa — mọi văn bản "TRƯỚC" dưới đây trích từ file thật tại HEAD `47720fd`, đã mở và đọc:
+
+Bốn site sinh tên — tất cả đều phải đổi:
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `python/omp-rpc/src/omp_rpc/client.py:455` | `RpcClient.__init__`, tham số `executable` (keyword-only) | `        executable: str = "omp",` | `        executable: str = "ultraworkers",` |
+| `python/robomp/src/config.py:95` | `Settings.omp_command` (pydantic v2 `Field`) | `    omp_command: str = Field("omp", alias="ROBOMP_OMP_COMMAND")` | `    omp_command: str = Field("ultraworkers", alias="ROBOMP_OMP_COMMAND")` |
+| `python/robomp/docker-compose.yml:81` | env của compose service | `      ROBOMP_OMP_COMMAND: omp` | `      ROBOMP_OMP_COMMAND: ultraworkers` |
+| `python/robomp/.env.example:185` | default có tài liệu | `ROBOMP_OMP_COMMAND=omp` | `ROBOMP_OMP_COMMAND=ultraworkers` |
+
+Hai dòng này **KHÔNG đổi** ở `config.py`: tên field `omp_command` và alias `ROBOMP_OMP_COMMAND`. `worker.py:647` đọc nó theo tên field (`        executable=settings.omp_command,`) — đã kiểm chứng `git grep -n 'omp_command' -- python/robomp/src` trả về **đúng 2 hit** (`config.py:95` định nghĩa, `worker.py:647` consumer).
+
+Comment đi kèm bắt buộc sửa:
+
+| đường/dẫn | dòng | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `python/robomp/.env.example` | 183 | `# Path or command name for the omp binary inside the container. The shipped` | nhắc tên binary mới |
+| `python/robomp/.env.example` | 184 | `# image installs a shim that invokes Bun against the mounted pi checkout.` | giữ nguyên (không chứa tên lệnh) |
+| `python/robomp/AGENTS.md` | 111 | ``... exposes `omp` via a `/usr/local/bin/omp` shim; `ROBOMP_OMP_COMMAND=omp` should not need changing.`` | ``...`` shim `<new>`; `ROBOMP_OMP_COMMAND=<new>` khi dựng image mới |
+
+Dòng `AGENTS.md:111` là file agent của gói robomp **tự đọc** — một lời dẫn sai ở đây là lời dẫn sai trong cây, và cổng 2 không bắt được (nó chỉ glob `docker-compose.yml` + `.env.example`).
+
+Metadata mô tả:
+
+| đường/dẫn | dòng | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `python/omp-rpc/pyproject.toml` | 8 | `description = "Typed Python client for the omp coding-agent RPC protocol"` | bỏ chữ "omp" khỏi mô tả |
+| `python/omp-rpc/pyproject.toml` | 14 | `keywords = ["omp", "rpc", "agent", "coding-agent", "jsonl", "stdio"]` | bỏ phần tử `"omp"` |
+| `python/omp-rpc/pyproject.toml` | 26 | `Homepage = "https://omp.sh/"` | **để nguyên** trừ khi N9 đã chốt |
+| `python/robomp/pyproject.toml` | 8 | `description = "Self-hosted GitHub triage/fix bot driving omp --mode rpc"` | `... driving ultraworkers --mode rpc` |
+
+Dòng PHẢI ĐỂ NGUYÊN (nếu đổi là hỏng): `python/omp-rpc/pyproject.toml:6` `name = "omp-rpc"` — tên distribution đã phát hành, quyết định của bảng open-questions; `python/robomp/pyproject.toml:6` `name = "robomp"` — cùng lý do; `python/robomp/pyproject.toml:22` `  "omp-rpc>=0.1.0",` — PEP 508 trên tên distribution `omp-rpc`; đổi `:6` mà giữ `:22` là hỏng ngược lại; `python/omp-rpc/pyproject.toml:31` `package-dir = { "" = "src" }` — layout.
+
+Test — viết lại, KHÔNG đổi tên máy móc:
+
+| đường/dẫn | symbol | TRƯỚC | SAU |
+| --- | --- | --- | --- |
+| `python/omp-rpc/tests/test_client.py:1044` | `test_command_builder_supports_common_rpc_options` | `            executable="omp",` | **xoá hẳn dòng này** (bỏ đối số tường minh để test chạy đúng default thật) |
+| `python/omp-rpc/tests/test_client.py:1061` | cùng test, kỳ vọng `client.command` | `                "omp",` | `                "ultraworkers",` |
+
+Hoán đổi cả hai chuỗi để lại một test xanh dưới **tên nào** và không bảo vệ điều gì.
+
+Các bước — mỗi bước có neo đã kiểm:
+
+**Bước 1 — Lấy tên từ W9, không lấy từ plan này.** Nguồn của tên: `packages/coding-agent/package.json:28` → `		"omp": "src/cli.ts"` (trong khối `"bin"`), và `scripts/ci-release-publish.ts:186` → `		publishBin: { omp: "dist/cli.js" },`. Token ở mọi site phải đúng chuỗi W9 cài. Sửa `python/omp-rpc/src/omp_rpc/client.py:455`. Xác minh file đã sạch: `git grep -c '"omp"' -- python/omp-rpc/src/omp_rpc/client.py` phải **KHÔNG in gì**.
+
+**Bước 2 — `python/robomp/src/config.py:95`.** Chỉ đổi chuỗi default. Xác minh consumer vẫn resolve: `git grep -n 'omp_command' -- python/robomp/src` → đúng 2 hit: `config.py:95`, `worker.py:647`.
+
+**Bước 3 — `python/robomp/docker-compose.yml:81` (bước quyết định item này có làm được gì không).** Dưới header `# --- container-fixed paths ---` (`:80`). Env trong compose service **ĐÈ LÊN** pydantic default ở bước 2 — dừng ở bước 2 thì container được ship vẫn spawn binary cũ, trong khi mọi tiêu chí nghiệm thu dựa trên grep đều báo xong. **Làm bước này trước khi đụng bất kỳ metadata nào.**
+
+**Bước 4 — `python/robomp/.env.example:185`**, kèm hai dòng comment `:183-184`. Đây là site thứ tư phải khớp, và là thứ người dùng nhìn thấy.
+
+**Bước 5 — `python/omp-rpc/tests/test_client.py:1044,1061` — viết lại.** Xoá đối số `executable="omp",` ở `:1044`, đổi `"omp",` ở `:1061` thành `"ultraworkers",`. Đây là **bằng chứng tự động duy nhất** trong toàn repo rằng default đã dời.
+
+**Bước 6 — `python/omp-rpc/pyproject.toml:8,14` (+ `:26` có điều kiện).** `:26` (`Homepage`) cùng giá trị `APP_URL` tại `packages/utils/src/dirs.ts:25` → `export const APP_URL: string = "https://omp.sh/";`. Nếu N9 chưa chốt, **để `:26` nguyên trạng** và ghi rõ lý do trong commit message.
+
+**Bước 7 — `python/robomp/pyproject.toml:8`.** Một dòng. **KHÔNG** đụng `:6` và **KHÔNG** đụng `:22`. Cùng kiểu ràng buộc tại `Dockerfile:164` → `RUN pip install /tmp/wheels/omp_rpc-*.whl && rm -rf /tmp/wheels` (resolve theo tên file wheel đã build).
+
+**Bước 8 — Mở rộng keep-list (W7 sở hữu).** `scripts/rename/keep-list.txt` **không tồn tại trên cây hiện tại** (đã kiểm: `find . -name 'keep-list*'` → không có). Đây là phụ thuộc tiến, không phải neo hỏng. Cần bổ sung bốn nhóm danh tính: Unix group N13 (`entrypoint.sh:25,28,29,32,33,53` + `worker.py:211,664`); `.omp-xdg` / `<xdg_root>/omp` (N15) — đã có trong đặc tả; `.omp-tmp` và `.omp-session*` — đặc tả N15 hiện **thiếu**, phải thêm; và **mục thứ tư** (config dir của CLI dưới agent home, thuộc W4/W6, KHÔNG thuộc N13/N15): `worker.py:145,168,209`, `entrypoint.sh:60,61,65,66,77-81`, `test_worker.py:278,290,295,296`, và — **trong chính các file item này sửa** — `docker-compose.yml:91,105,107` (dòng `:107` là bind mount `${HOME}/.omp/agent/models.container.yml:/srv/agent-home-stage/.omp/agent/models.yml:ro`), `.env.example:102`, `robomp/AGENTS.md:101`, `robomp/README.md:48,58,233`. Cổng 2 không bắt được site nào trong nhóm thứ tư, vì pattern của nó là `ROBOMP_OMP_COMMAND[=:]`.
+
+**Bước 9 — Chạy assertion keep-set đầy đủ, không chỉ tổng.** Xác nhận các keep site giống hệt HEAD **từng byte**.
+
+**Bước 10 — Không đụng `test_user_group.py`.** `test_user_group.py:26,34,36,40,45` và `test_worker.py:465` là lưới tự động **duy nhất** cho quyết định Unix group N13. Bố cục sandbox có **ba** file test giữ lưới, không phải một. Xác minh bằng `git diff --stat` rằng **năm** file test này vắng mặt khỏi thay đổi trước khi commit.
+
+Hợp đồng test:
+
+**(1) DEFAULT ĐÃ DỜI** — sửa `python/omp-rpc/tests/test_client.py::test_command_builder_supports_common_rpc_options`. Dựng `RpcClient()` **không** truyền `executable`, assert `client.command[0] == "ultraworkers"`. Đây là assertion biến đổi trên giá trị code tự tính, không phải kiểm tra tồn tại. **Hồi quy → người dùng thấy gì:** RPC client spawn một lệnh mà không release nào cài; **mọi** lời gọi chết với `FileNotFoundError` ngay ở request đầu tiên.
+
+**(2) OVERRIDE VẪN THẮNG** — test MỚI, phải là case thứ hai tách biệt. Đặt `ROBOMP_OMP_COMMAND` thành giá trị tường minh, nạp `Settings`, assert `settings.omp_command` trả override chứ không phải default. **Hồi quy → người dùng thấy gì:** người đã đặt `ROBOMP_OMP_COMMAND` trên image cũ không thể override được nữa → sự cố toàn diện thay vì lối thoát có tài liệu.
+
+> **Sửa chữa so với đặc tả (ghi ra, không sửa trong tài liệu):** đặc tả nói đặt case override này vào `python/omp-rpc/tests/test_client.py`. **Sai về mặt kỹ thuật** — `omp-rpc` không phụ thuộc `robomp` (đã kiểm: không import chéo nào; `python/robomp/pyproject.toml:22` mới là chiều `robomp → omp-rpc`), nên `test_client.py` không nạp được `Settings`. Nơi đúng là **`python/robomp/tests/test_config.py`** (đã có sẵn `from robomp.config import Settings, reset_settings_cache` ở dòng 6, và fixture `env`/`monkeypatch` dùng `monkeypatch.setenv` ở dòng 23-24). Đặc tả cũng nói "Không có file test mới" — nhưng thêm một hàm vào `test_config.py` **không phải** tạo file mới, nên ràng buộc đó vẫn giữ được.
+
+**(3) CÁC KEEP SET KHÔNG BỊ ĐỤNG** — hợp đồng phủ định. Số đếm **theo từng file** của cổng 1 (`5,2,2,8,3`) cộng số zero trên ba file được đổi. Phần kiểm thử sẵn có trong `test_user_group.py` và `test_worker.py:465` được **giữ lại, không thay thế**. **Hồi quy → người dùng thấy gì:** container không khởi động (`KeyError`), hoặc `Permission denied` trên `/data` cho mọi slot user. **Hai con số phải ghim riêng** (không nằm trong pattern cổng nào, vì cổng 1 chỉ thấy chuỗi `"omp"` có quote): `git grep -c '\.omp' -- python/robomp/tests/test_host_tools.py python/robomp/tests/test_permissions_e2e.py` phải trả về **7 và 1** (đã kiểm chứng: đúng 7 và 1).
+
+**Cố ý KHÔNG test.** Không có gì trong repo này thực thi `docker-compose.yml` → cổng 3 là so khớp chuỗi tĩnh, **không** phải bằng chứng container spawn đúng lệnh. Phải nói thẳng điều này trong PR.
+
+Cổng có đỏ được không — **cổng 1 và 2 đỎ NGAY HÔM NAY (đúng như thiết kế); cổng 3 XANH hôm nay và chỉ kiểm TÍNH NHẤT QUÁN, không kiểm TÍNH ĐÚNG ĐẮN; cổng hành vi cần venv riêng.**
+
+**Cổng 1 — THE SPLIT (tripwire: ĐỎ hôm nay):**
+
+```bash
+CHANGED=$(git grep -c '"omp"' -- python/omp-rpc/src/omp_rpc/client.py python/robomp/src/config.py python/omp-rpc/tests/test_client.py 2>/dev/null | wc -l | tr -d ' ')
+KEPT=$(git grep -c '"omp"' -- python/omp-rpc/tests/test_user_group.py python/robomp/src/worker.py python/robomp/src/sandbox.py python/robomp/tests/test_sandbox.py python/robomp/tests/test_worker.py 2>/dev/null | tr -d ' ' | cut -d: -f2 | paste -sd, -)
+echo "set_i_files_still_matching=$CHANGED keep_counts=$KEPT"
+[ "$CHANGED" = "0" ] && [ "$KEPT" = "5,2,2,8,3" ]
+```
+
+**Đo thật hôm nay:** `set_i_files_still_matching=3 keep_counts=5,2,2,8,3`, **exit 1**. **Có đỏ được không: CÓ** — đã thử tấn công trong repo tạm có commit thật: sửa đúng ba file set-(i) rồi đổi tên nhầm `test_user_group.py` 5→0 và `test_sandbox.py` 8→3. Kết quả `set_i=0 keep=2,2,3,3` → **ĐỎ**. Cổng bắt được.
+
+**Cổng 2 — KHÔNG FILE SHIPPED NÀO GHIM TÊN CŨ (tripwire: ĐỎ hôm nay):**
+
+```bash
+OV=$(git grep -ohE 'ROBOMP_OMP_COMMAND[=:][[:space:]]*[A-Za-z][A-Za-z0-9_-]*' -- python/robomp/docker-compose.yml python/robomp/.env.example | awk -F'[=:] *' '{print $2}' | paste -sd, -)
+echo "shipped_overrides=[$OV]"; [ "$OV" = "ultraworkers,ultraworkers" ]
+```
+
+**Đo thật hôm nay:** `shipped_overrides=[omp,omp]`, **exit 1**. **Có đỏ được không: CÓ** — và đây là cổng **duy nhất ghim đúng tên `ultraworkers`**.
+
+**Cổng 3 — AGREEMENT TÊN BỐN-BÊN (bất biến: XANH hôm nay):**
+
+```bash
+C=$(grep -oE 'executable: str = "[^"]+"' python/omp-rpc/src/omp_rpc/client.py | grep -oE '"[^"]+"' | tr -d '"')
+R=$(grep -oE 'omp_command: str = Field\("[^"]+"' python/robomp/src/config.py | grep -oE '"[^"]+"' | tr -d '"')
+D=$(grep -oE 'ROBOMP_OMP_COMMAND: *[^ ]+' python/robomp/docker-compose.yml | awk '{print $2}')
+E=$(grep -oE 'ROBOMP_OMP_COMMAND=[A-Za-z][A-Za-z0-9_-]*' python/robomp/.env.example | cut -d= -f2)
+echo "client=$C config=$R compose=$D env=$E"
+{ [ -n "$C" ] && [ "$C" = "$R" ] && [ "$C" = "$D" ] && [ "$C" = "$E" ]; }
+```
+
+**Đo thật hôm nay:** `client=omp config=omp compose=omp env=omp`, **exit 0**. **Có đỏ được không: CÓ, nhưng chỉ với một loại lỗi** — đã thử trong bản sao tạm: *đổi nửa vời* (chỉ `client.py` + `config.py`) cho `client=ultraworkers config=ultraworkers compose=omp env=omp` → **exit 1**.
+
+> **Phát hiện quan trọng về cổng 3 — chỉ là kiểm tra TÍNH NHẤT QUÁN, không phải TÍNH ĐÚNG ĐẮN.** Đã thử đổi tên **đồng nhất** cả bốn nguồn sang một tên sai (`pi`): `client=pi config=pi compose=pi env=pi` → **exit 0, XANH**. Cổng 3 sẽ xanh với bất kỳ tên nào, kể cả tên bịa. Cổng 2 là thứ **duy nhất** đỏ trong trường hợp đó (`shipped_overrides=[pi,pi]` → exit 1). → **không được báo cổng 3 là bằng chứng "đã đổi đúng tên"** — nó chứng minh "bốn nơi đọc cùng một tên". Cổng 2 mới là neo tên. Nếu cả hai cùng xanh thì tên đúng **vẫn** là điều kiện của W9, không phải điều cổng nào tự chứng minh được.
+
+**Cổng hành vi (có kiểm tra prefix):**
+
+```bash
+if python3 -m pytest --version >/dev/null 2>&1; then echo READY; else
+  echo "NOT-RUNNABLE: pytest missing."; exit 2; fi
+/tmp/ompw13-venv/bin/python -m pytest -q python/omp-rpc/tests    # 81 passed, 17 subtests
+/tmp/ompw13-venv/bin/python -m pytest -q python/robomp/tests     # 665 passed, 4 skipped
+```
+
+**Đo thật trên máy này (đã build venv và chạy):** `python3 -m pytest --version` → `/opt/homebrew/opt/python@3.14/bin/python3.14: No module named pytest`, **exit 1** → prefix in `NOT-RUNNABLE` và **exit 2**, đúng như đặc tả. `python/omp-rpc/tests` → `81 passed, 17 subtests passed in 3.23s` ✅. `python/robomp/tests` → `665 passed, 4 skipped, 3 warnings in 108.59s` ✅. **Gộp lại** → `4 errors during collection`, đúng 4 module: `No module named 'tests.test_client'`, `tests.test_host_uris`, `tests.test_protocol`, `tests.test_user_group`. Đã xác nhận nguyên nhân: cả hai thư mục đều tên `tests` **và đều có `__init__.py`**, còn thư mục cha (`python/omp-rpc/`, `python/robomp/`) thì **không** có. Đây là lý do `package.json:131` xâu hai lệnh riêng: `"test:py": "python3 -m pytest -x python/omp-rpc/tests && python3 -m pytest -x python/robomp/tests"`.
+
+**Trung thực về những gì KHÔNG bảo vệ:**
+- **`bun run check:ts` mù hoàn toàn với item này.** Đã đọc `package.json:90` và `:91` — không dòng sửa nào dưới `python/**` có thể làm nó đỏ. **Không được báo là bằng chứng cho công việc này.**
+- **`bun run test:py` FAIL** (`No module named pytest`, exit 1) và **`bun run lint:py` FAIL** (`ruff` không có trên PATH, exit 127 — đã kiểm). Cả hai không phân biệt được với lỗi test thật chỉ qua mã thoát.
+- **Không có gì test `docker-compose.yml`.** Cổng 3 là so khớp chuỗi tĩnh.
+
+Cạm bẫy riêng của mục này — **sửa đúng hai dòng nguồn rồi kết luận xong — lỗi có hậu quả lớn nhất.** `docker-compose.yml:81` đè lên pydantic default. Grep `"omp"` rơi đúng 20, mọi tiêu chí nghiệm thu đều qua, container vẫn spawn binary cũ. Vì sao dễ sót: giá trị ở đó **không quote** và nằm **ngay sau tên biến**, nên `git grep '"omp"'` không thấy. *(Ghi chú: số 20 là tổng của **cả** 24 hit trừ 4 chỗ đã đổi — không phải tổng của riêng nhóm keep-set. Nhóm keep-set 5 file là 5+2+2+8+3 = 20 lượt, và `client.py`+`config.py`+`test_client.py` là 4 lượt riêng. Đừng cộng hai lần.)*
+
+**`pyproject.toml:22`** — sắc hơn cả một bản sửa thiếu. Kế hoạch liệt kê nó như rename site trong khi bảng open-questions quyết định GIỮ `omp-rpc`. Đổi cả `:6` và `:22` → `uv pip install` chết lúc resolve, kéo sập toàn bộ bot.
+
+**Quét `.omp` rộng trên `python/**`** — 108 lượt trên 12 file. Trong đó `worker.py:145,168,209` và `entrypoint.sh:60,61,65,66,77-81` quản lý `/srv/agent-home/.omp` (`worker.py:136` → `_AGENT_HOME = Path("/srv/agent-home")`) — **config dir của chính CLI** (`CONFIG_DIR_NAME`, `dirs.ts:28`), không phải bố cục sandbox. Dời chúng làm staging của robomp trỏ vào root CLI không đọc. Giới hạn trong container, vô hình với cả test Python lẫn `check:ts`.
+
+**Tin số dòng của kế hoạch.** Tám tham chiếu `test_sandbox.py` lệch đúng +1. **Đã kiểm chứng:** dòng thật là `760, 829, 1072, 1074, 1076, 1106, 1108, 1110`; bản gốc ghi `759, 828, 1071, 1073, 1075, 1105, 1107, 1109`. Sửa tại số của bản gốc = sửa dòng ngay trên mỗi mục tiêu.
+
+**Đổi tên máy móc `test_client.py:1044,1061`** — yên lặng nhất. Test xanh dưới tên nào; item ship ra mà không có bằng chứng tự động nào rằng default đã dời.
+
+**`AGENTS.md:111` là cây tự đọc** — và cổng 2 không thấy nó (chỉ glob hai file shipped).
+
+**Cổng 3 không kiểm tra tên đúng** (xem mục cổng). Đừng dựa vào nó để kết luận "đã đổi sang `ultraworkers`".
+
 
 ## Cần người xác nhận
 

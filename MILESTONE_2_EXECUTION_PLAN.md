@@ -342,6 +342,88 @@ thì kiểm tra xem omp đã có chưa.
 
 ---
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Neo nào trong thân mục `WI-SESSION-LOG` (dòng 268-313 của plan) được mở và đọc thật. Cây tham chiếu là `~/Projects/deepseek-harness` (toàn bộ neo `packages/core/*` nằm ở đó, **không** có trong omp — trong omp `packages/` có `agent, ai, browser-relay, catalog, coding-agent, collab-web, metaharness, mnemopi, natives, omptype, snapcompact, stats, tui, typescript-edit-benchmark, utils, wire`, **không có `core`**. Đừng tìm trong omp và đừng kết luận "file vô tồn tại").
+
+| neo trong plan | dòng đó nói gì | kết luận |
+| --- | --- | --- |
+| `packages/core/session/src/index.ts:860` | `  deriveMessages(): Message[] {` | ✅ **ĐÚNG Y HẸT** |
+| `packages/core/tools/src/types.ts:37` | ``      * call abandoned in the queue logs nothing. Log-only: `deriveMessages()` `` | ✅ **ĐÚNG Y HẸT** |
+| `packages/core/tools/src/types.ts:52` | ``     * Log-only: `deriveMessages()` ignores it, so sub-calls never re-enter`` | ✅ **ĐÚNG Y HẸT** |
+| `packages/core/agent-loop/src/invariant.ts` (không đánh số dòng) | file 65 dòng, xem bên dưới | ✅ **ĐÚNG, từng câu** |
+| `derivedGeneration` / `derivedNodes` | `session/src/index.ts:840` / `:838` — `private derivedGeneration = 0` / `private derivedNodes = 0` | ✅ **ĐÚNG** |
+| `surfaceOp`: `append` / `replace` | `session/src/types.ts:463-464` — `\| 'append'` / `\| { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq }` | ✅ **ĐÚNG** |
+| chuỗi migration `v0→v1 … v3→v4` | `packages/session/session-format-{catalog,v0-to-v1,v1-to-v2,v2-to-v3,v3-to-v4}` | ✅ **ĐÚNG** |
+| `assistant/chunk` là sự kiện log không chiếu | `grep -n "chunk" packages/core/session/src/types.ts` → **0 hit**. `KNOWN_SESSION_EVENT_TYPES` không có nó | ❌ **NEO HỎNG** |
+| danh sách "kiểu sự kiện bền vững" (15 tên) | `known-event-types.ts:22-82` có **60 tên**; 3 tên plan liệt kê **không có trong đó** | ❌ **NHÃN SAI** |
+
+**`assistant/chunk` không phải sự kiện bền vững của format hiện hành.** Nó chỉ tồn tại ở **codec v0 đã đóng băng**: `session-format-v0-to-v1/src/codec.ts:289` `type: 'assistant/chunk',` và `dispositions.ts:46` `'assistant/chunk': disposition(['turn', 'step', 'chunk']),`. Nghĩa là nó là **input** của migration v0→v1, không phải **output**. Symbol đúng cho ý plan là `assistant/attempt` (`session/src/types.ts:352-355`): *"One model attempt that committed no surface message. The embedded stream preserves a failed, retried, cancelled, or stream-error attempt that reached settlement without fabricating model-visible history."*. **Hậu quả khi gõ:** test invariant dựa trên `assistant/chunk` sẽ **không bao giờ đỏ**, vì lo sự kiện đó không tồn tại trong log của build hiện hành. Đây là loại "cổng luôn xanh" mà chính work item này cảnh báo.
+
+**Danh sách kiểu sự kiện bền vững gộp hai loại thứ khác nhau.** `session/created` (`index.ts:55`), `session/disposed` (`:65`), `session/flush` (`:86`) nằm trong khối `declare module '@deepseek-ai/cordis'` bắt đầu ở `index.ts:38` — chúng là **sự kiện vòng đời của service Cordis**, không phải thành viên `SessionEventMap`, và không cái nào có trong `KNOWN_SESSION_EVENT_TYPES`. Danh sách cũ thiếu **60 − 15 = 45** sự kiện bền vững thật, trong đó có `system/message` (`known-event-types.ts:63`) và `developer/message` (`:37`) — **đúng hai loại sinh ra surface node**, tức là "surface node 0" mà `invariant.ts:45` dựa vào khi kiểm `options.system === undefined`. Bỏ hai tên này là mất đúng cái cặp mà invariant cần.
+
+**`invariant.ts` — plan đọc đúng, từng dòng:** `:20` `// Prepend prevents a short-circuiting replay listener from silencing the check.`; `:21` `ctx.on('llm/stream', (options: GenerateOptions, next) => {`; `:22` `if (!isAgentLoopRequest(options)) return next()`; `:23` `if (!Object.isFrozen(options)) fail('a loop-built request must be frozen')`; `:27` `if (!Object.isFrozen(options.messages)) {`; `:40-42` so `JSON.stringify(options.messages)` với `session.deriveMessages()` và fail với `` `llm request for session "${String(session.id)}" diverges from the dispatch-time durable derivation (log-reconstruction desync)` ``; `:45` ``// The system prompt travels inside `messages` as surface node 0, never as `system`.``; `:56` `}, { global: true, prepend: true })`.
+
+Hai điều plan **không** nhắc nhưng phải biết trước khi gõ: `invariant.ts:24-26` còn đòi `options.sessionId` phải tồn tại và resolve được tới session sống; và `isAgentLoopRequest` ở `:22` là **cổng lọc** — chỉ request của loop mới bị kiểm, request phụ không.
+
+**Đo trên omp — bảng 7 dòng, mỗi dòng gắn đúng một nhãn.** `resume` = **đọc lại từ nguồn** (`session/session-loader.ts:353 loadSessionFile`, `:531 loadSessionMessagesReadOnly` — đọc JSONL, nhưng **không** chạy `transformContext`/`convertToLlm`, nên là một phép chiếu khác hình dạng, không phải một phép dẫn). `fork` = **đang giữ state riêng** (`agent-session.ts:8992 async fork()`, `:9042 await copySessionArtifacts(...)`; `session-maintenance.ts:697-700` thừa nhận bằng văn bản: *"the session file must match the live (pruned) context or file-based forks (`/fork`, `/tan`) and resume rebuild a divergent prefix and cold-miss the provider prompt cache."*). `transcript` = **đọc lại từ nguồn** (`session/session-context.ts:214 isTranscriptEntry`; chỉ **trạng thái trình bày** là của riêng TUI và không quay lại model). `compaction` = **đang giữ state riêng** (`packages/agent/src/compaction/pruning.ts:306` và `:416` gọi `invalidateMessageCache` sau khi sửa message **tại chỗ**; hợp đồng bắt buộc ở `message-cache.ts:19-22`). `cache-state` = **đang giữ state riêng** (6 call site `invalidateMessageCache` rải ở `coding-agent/src/advisor/tool-result-eviction.ts:105`, `session/messages.ts:726`, `session/session-maintenance.ts:843`, `session/prewalk.ts:347`, `compaction/shake.ts:449,460`, `compaction/pruning.ts:306,416`). `telemetry` = **đang giữ state riêng** (`packages/agent/src/run-collector.ts:147`, dựng ở `telemetry.ts:442`). `replay` = **đang giữ state riêng** (`replay-policy.ts:12 filterProviderReplayMessages` — bộ lọc **khác** với `sdk.ts:3917`).
+
+**Con số phải ghi bằng số: `5 / 7` đang giữ state riêng** (fork, compaction, cache-state, telemetry, replay); `2 / 7` đọc lại từ nguồn (resume, transcript). Đọc đúng con số này thì nó **lớn hơn 0**, nên quy tắc dừng ở `plan:322-324` **không kích hoạt**. Nhưng 5/7 không phải bằng chứng cho B: `fork` và `compaction` phân kỳ **có chủ ý và đã được ghi**, `telemetry`/`replay` là bản ghi quan sát chứ không phải nguồn thứ hai để suy ra. **Chỉ `cache-state` là ứng viên thật — và nó là lỗi quên-vô-hại, không phải lệch kiến trúc.**
+
+**Bảng điểm sửa.** Không sửa file nào trong bước đo. Đây là **hình dạng sau** của ba file sẽ chạm ở phương án A (bước 4-6).
+
+| đường/dẫn | symbol | TRƯỚC (trích từ file thật) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `packages/agent/src/agent-loop.ts` | `dispatchChat`, quanh `:1945` | `const streamFunction = streamFn \|\| streamSimple;` | `const streamFunction = wrapWithDerivationInvariant(streamFn ?? streamSimple, config.derivationInvariant);` — mặc định `config.derivationInvariant` là `undefined` nên đường production không đổi hành vi |
+| `packages/agent/src/derivation-invariant.ts` | **tạo mới** | (không có) | `export function assertDerivable(messages: readonly AgentMessage[], from: readonly AgentMessage[], transform: (…) => …, convert: (…) => …): void` — ném `Error` khi `JSON.stringify` hai mảng lệch; không giữ state, không ghi log, không I/O |
+| `packages/agent/src/agent-loop.ts` | `prepareProviderCall` `:1867-1921` | `messages = await config.transformContext(messages, signal);` | giữ nguyên; thêm export `prepareProviderCall` để test gọi lại đúng pipeline thay vì dựng lại |
+| `packages/agent/test/derivation-invariant.test.ts` | **tạo mới** | (không có) | 5 case |
+| `packages/agent/CHANGELOG.md` | `## [Unreleased]` | dòng 3 là `## [Unreleased]`, dòng 4 trống, dòng 5 là `## [18.4.0] - 2026-09-28` | thêm `### Added` ngay dưới dòng 3, một dòng. **KHÔNG** sửa `## [18.4.0]` — đã phát hành, bất biến |
+
+**Các bước có neo đã kiểm.**
+
+1. **Ghi lại số đo, không suy diễn thêm.** Dán nguyên văn kết quả ở mục đo (ba lệnh, ba số `0`) và bảng 7 dòng kèm con số `5 / 7` vào thân mục work item — đây là phần *Định nghĩa hoàn thành* `plan:5376` đã chốt, và là tiền đề của mọi thứ sau.
+2. **Sửa ba sai lệch về dsh trong tài liệu, bằng ghi chú chứ không bằng sửa âm thầm.** `assistant/chunk` → `assistant/attempt`. Danh sách "kiểu sự kiện bền vững" → tách `session/created` / `session/disposed` / `session/flush` ra thành "sự kiện vòng đời Cordis", và thêm `system/message` + `developer/message`. Ghi vào `.lavish-wip/`, **không** sửa `MILESTONE_2_EXECUTION_PLAN.md`.
+3. **Đo con số quyết định trước khi viết dòng nào.** Chạy invariant dưới dạng script tạm trên toàn suite, đếm số lần đỏ. **Nếu số đó là 0, dừng** — ghi thẳng *"không có bằng chứng omp cần B"* theo `plan:322-324` và dừng mục này.
+4. **Viết `packages/agent/src/derivation-invariant.ts`.** Hàm thuần, không I/O. Chỉ so **`Message[]` sau convert** — không so `AgentMessage[]` trước convert, vì `convertToLlm` cố ý bỏ custom type (`agent-session.ts:3293`: *"`convertToLlm` still strips their incomplete thinking from replay"*).
+5. **Cắm vào `agent-loop.ts:1945`, mặc định tắt.** Đường production phải **giống hệt** khi không bật. **Đừng** đặt invariant ở `sdk.ts` hay `agent-session.ts` — đặt ở `packages/agent` để nó kiểm được cả SDK embed lẫn CLI, và để `packages/agent` không phải import ngược từ `coding-agent`.
+6. **Viết test.**
+7. **Một dòng changelog** dưới `## [Unreleased]` của `packages/agent/CHANGELOG.md`, trong một `### Added` mới. **Không commit nếu không được yêu cầu.**
+
+**Hợp đồng test.** File: `packages/agent/test/derivation-invariant.test.ts` (mới), dùng `bun:test` đúng như `packages/agent/test/message-cache.test.ts:1`.
+
+| case | nó bảo vệ điều gì | đỏ khi nào |
+| --- | --- | --- |
+| `round-trip: derive mà không transformContext thì bằng` | đường hạnh phúc cơ bản | ai thêm một bước vào pipeline mà không cập nhật invariant |
+| `transformContext trả về mảng thay thế thì đỏ` | **hợp đồng quan trọng nhất** — bằng chứng cơ học cho "những byte này không tái dựng được" | ai gỡ `transformContext` khỏi chuỗi dẫn |
+| message bị sửa tại chỗ mà không `invalidateMessageCache` thì đỏ | bắt đúng lớp lỗi `message-cache.ts:19-22` mô tả | ai thêm một đường rewrite mà quên invalidate — **lỗi thật, đã có tiền lệ** |
+| ``pruneToolOutputs` chạy rồi `invalidateMessageCache` thì xanh` | nhánh phủ định: cơ chế đúng **không** được báo động | ai làm hỏng chính cơ chế cache |
+| `request đầu tiên của phiên (mảng rỗng) không đỏ` | ranh giới: mảng rỗng ở cả hai phía phải bằng nhau | ai thêm tiền đối chiếu độ dài rỗng |
+
+**Không** thêm: test "constructor copy", test `toBe(x)` cho giá trị do chính test truyền vào, test đếm độ dài tăng, test source-grep (AGENTS.md cấm).
+
+*Người dùng thấy gì nếu hồi quy:* không có gì trực tiếp — đây là invariant chỉ chạy trong test. Nhưng hậu quả là có: khi `transformContext` bắt đầu trả về thứ gì đó mà `#state.messages` không biết, request vẫn đi ra provider bình thường, model trả lời bình thường, và **không ai có bằng chứng** rằng lịch sử phiên và thứ đã gửi đang lệch nhau. Đó đúng là "báo applied nhưng không có gì thay đổi" mà M4-4 nói tới, chỉ ở tầng thấp hơn và hiện vẫn vô hại vì `transformContext` chưa từng được dùng để sửa nội dung.
+
+**Cổng có đỏ được không.**
+
+**Cổng đo** (`grep -rn "deriveMessages" --include='*.ts' packages/ | wc -l` và `grep -rn "llm/stream" --include='*.ts' packages/ | wc -l`, cả hai phải ra **0**): **CÓ, nhưng chỉ bằng trôi chứ không bằng hồi quy hành vi.** Nó đỏ khi ai đó thêm `deriveMessages` hoặc một seam `llm/stream` vào omp. **Đây là một cổng chống trôi, không phải cổng nghiệm thu. Giữ nó, đừng dựa vào nó.**
+
+**Cổng hành vi** (`bun test packages/agent/test/derivation-invariant.test.ts`): **CÓ, và bằng cách cụ thể** — bỏ `transformContext` khỏi chuỗi dẫn ở `agent-loop.ts:1875`, chạy lại, case `transformContext trả về mảng thay thế thì đỏ` phải chuyển từ xanh sang đỏ. **Bắt buộc phải quan sát đỏ trước, rồi khôi phục, rồi quan sát xanh** — một test chỉ được nộp khi đã tự chứng minh mình đỏ được.
+
+**Cổng quyết định sau A — bắt buộc, và là cổng quan trọng nhất của mục này:** `bun test packages/agent packages/coding-agent 2>&1 | tee /tmp/wi-session-log.txt` rồi `grep -c "derivation invariant" /tmp/wi-session-log.txt`. Nó hỏi: invariant mới bắt được **bao nhiêu** lần hỏng trên corpus hiện có, và câu trả lời phải là **một con số viết ra**. Nếu con số là **0**, quy tắc dừng ở `plan:322-324` kích hoạt: ghi thẳng *"không có bằng chứng omp cần B"* và dừng. **Đừng lật mô hình vì nó trông đúng.**
+
+**Preflight bắt buộc**: addon native phải build, nếu không cổng treo chứ không đỏ. **Trên checkout này nó ĐÃ build** — `packages/natives/native/pi_natives.darwin-arm64.node`; đã xác nhận `bun test packages/agent/test/message-cache.test.ts` → **10 pass 0 fail 22 expect() calls [149ms]**. Ghi chú: `.lavish-wip/DECISION-WI-SESSION-LOG.md` dẫn số `913 pass / 1445 fail` tại HEAD `6e8109d` và nói cổng đo "**sẽ không bao giờ thoả**". **Con số đó đã hết hạn** — HEAD hiện tại là `65cc6c1` và addon đã có. **Đừng dùng số cũ làm lý do trì hoãn.** Kiểm tra kiểu: `bun run check:ts`. Không dùng `tsc` / `npx tsc` — AGENTS.md cấm.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`Object.isFrozen` không port được.** `invariant.ts:23,27` kiểm `options` và `options.messages` đã đóng băng. `grep -rn "Object.freeze" --include='*.ts' packages/agent/src packages/ai/src packages/coding-agent/src/session` cho thấy **không có lần nào** đóng băng đường request trong omp. Port nguyên văn ⇒ invariant đỏ trên **mọi** request ⇒ xoá cổng sau một tuần vì "nó ồn". **Đây là cái bẫy đắt nhất: một cổng đỏ 100% là cổng bị xoá, và xoá nó còn tệ hơn là không có.**
+2. **Tên `llm/stream` và `deriveMessages` không tồn tại — đừng tạo chúng chỉ để khớp plan.** Seam thật là `streamFn` (`agent-loop.ts:1945`) và chuỗi `prepareProviderCall`. Đặt tên theo dsh là thêm một lớp gián tiếp không mang thông tin.
+3. **So `Message[]` (sau convert), không phải `AgentMessage[]` (trước convert).** `convertToLlm` cố ý bỏ custom type. So sai phía thì đỏ vĩnh viễn với một lý do **đúng**, tệ hơn hẳn đỏ với lý do sai.
+4. **`transformContext` hợp pháp phải làm đỏ — nhưng chỉ trong test.** Hook `context` và extension `context` được phép sửa messages theo thiết kế (`shared-events.ts:176-179`). Nếu invariant chạy ở production, nó sẽ giết mọi session có hook `context`. Vì vậy nó **phải** là tuỳ chọn, mặc định tắt. **Đừng "tối ưu" `config.derivationInvariant` thành luôn bật.**
+5. **Đừng đọc 5/7 là "cần B".** Bốn trong năm bề mặt giữ state riêng là bằng chứng **cho** một mô hình nhiều nguồn, và một mô hình nhiều nguồn có thể là đúng. Bằng chứng *chống* B là: 2/7 (resume, transcript) đã đọc lại từ nguồn, và `fork` phân kỳ là **có chủ ý, đã được ghi bằng văn bản**. **Chỉ `cache-state` là lỗi thật — và nó là lỗi quên invalidate, sửa được bằng một test, không cần lật mô hình.**
+6. **`WI-SESSION-LOG` và `WI-PRESTEP-1` là hai việc.** `plan:270` nói rõ. Cùng đụng một bề mặt log nhưng **không** gộp. Nếu bạn đang gõ PR cho cái này, **đừng kéo `WI-PRESTEP-1` vào.**
+7. **Cái bẫy của chính tài liệu này:** nó dẫn `packages/core/*` của dsh mà không nói repo nào. Trong omp `packages/` **không có `core`** — mọi neo dsh của work item này chỉ resolve trong `~/Projects/deepseek-harness`.
+
 ## WI-PRESTEP-1. Ghi durable turn khi bị chặn (thêm 2026-09-28, đặt trước M4)
 
 **Vì sao thuộc M2 chứ không thuộc M4.** M4 tuyên bố sản phẩm bàn giao của cả chương trình là câu hỏi
@@ -370,6 +452,90 @@ một việc vá.
 "báo applied nhưng không có gì thay đổi" mà WI này chữa ở tầng thấp hơn.
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo. Thân mục work item KHÔNG có neo `file:line` nào.** Dòng 345–360 của plan chỉ nhắc ba thứ bằng **tên**, không kèm vị trí — nên VIỆC 1 được thực hiện bằng cách **đi tìm chính các symbol mà plan nhắc tới**, đọc dòng thật, rồi ghi lại vị trí đúng.
+
+| Ký hiệu trong plan | Nhân bản | Trạng thái |
+| --- | --- | --- |
+| `` `agent/pre-step` `` | "là một **waterfall event**; listener có thể **reject**" | ✅ **ĐÚNG** |
+| `` `session.deriveMessages()` `` | "mọi request là một phép suy ra thuần tuý từ append-only log" | ✅ **ĐÚNG** |
+| `WI-1 (session log)` (dòng 359) | *Phụ thuộc* | ❌ **HỎNG — trỏ nhầm work item** |
+
+`agent/pre-step` XÁC NHẬN tại `deepseek-harness/packages/core/agent/src/runtime-types.ts`: `:318` `@mode waterfall`, `:319` ` */`, `:320` `'agent/pre-step'(this: Scoped<Agent>, payload: { agent: Agent; messages: UserMessage[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>`. JSDoc kết thúc ở `:319` với đúng một dòng định danh chế độ — đó là bằng chứng cơ học, không phải suy luận. Kiểu quyết định ở `:112-116`: `export type PreStepDecision = | { kind: 'reject' } | { kind: 'enter'; messages: UserMessage[] …`.
+
+`deriveMessages()` XÁC NHẬN tại `deepseek-harness/packages/core/session/src/index.ts:860` — `  deriveMessages(): Message[] {` (đúng như WI-SESSION-LOG dẫn).
+
+**`WI-1 (session log)` — NEO HỎNG.** `grep -n "^## WI-1\." MILESTONE_2_EXECUTION_PLAN.md` → dòng **619**: *"Gán timer và model-provider theo đúng extension đã tạo ra chúng, và thả chúng khi suspend"* — **không liên quan gì tới session log**. Work item mà WI-PRESTEP-1 thực sự phụ thuộc là **WI-SESSION-LOG**, ở dòng **268**: *"## WI-SESSION-LOG. Session log là nguồn sự thật duy nhất (thêm 2026-09-28)"*. > **Ghi ra, không sửa trong plan.** Khi implement, hãy coi `WI-SESSION-LOG` là tiền đề thật. **Nếu theo đúng chữ, WI-PRESTEP-1 sẽ bị chặn vô lý bởi một work item về timer của extension.**
+
+**"Khi reject, một durable turn vẫn được ghi vào session log" — ĐÚNG, NHƯNG CÓ ĐIỀU KIỆN PLAN KHÔNG NÊU.** Cơ chế đúng, đọc tay tại `packages/core/agent-loop/src/agent.ts`: `:305` `this.session.append('turn/start', { turn })` mở turn **trước** khi pre-step chạy; `:316` `const decision = await this.preStep(target, { turn, step })`; `:317-318` `if (decision.kind === 'reject') { turnEnds = { kind: 'blocked' }; return false`; `:365-368` `finally` đóng turn **bất kể điều gì xảy ra**. Lý do ở `packages/core/session/src/types.ts:206` `  blocked: { kind: 'blocked' }`. Hợp đồng quan sát được, viết bằng test ở `packages/core/agent-loop/tests/interception.spec.ts:251-269`: `it('reject closes the claimed prompt turn without a step or model call')` — `expect(log.filter(…).map(e => e.type)).toEqual(['turn/start', 'turn/end'])`, `expect(log.some(e => e.type === 'user/message')).toBe(false)`, `expect(log.some(e => e.type === 'step/start')).toBe(false)`, `expect(reasons).toEqual([{ kind: 'blocked' }])`.
+
+**Điều kiện plan không nêu** — `packages/core/session/src/types.ts:290-297`, JSDoc của `turn/end`: *"The loop **does not await a flush at turn boundaries**: `dsh-session-checkpoint-policy` owns the per-request durability checkpoint, and consumers that read storage after `whenIdle()` flush themselves."* Nghĩa là trong dsh, "durable" nghĩa là **có trong append-only log**, chưa chắc đã nằm trên đĩa. **Câu chữ plan "vẫn truy vết được sau khi restart" là một điều kiện mạnh hơn nhiều so với điều dsh bảo đảm** — và trong omp nó còn mạnh hơn nữa.
+
+**Đo trên cây omp: cái plan gọi là "chỉ là thêm một event" — KHÔNG có nền để thêm.** Bốn lệnh grep, tất cả **rỗng**: `rg -n "deriveMessages" --type ts packages/`, `rg -n "pre-step|preStep|PreStep" --type ts packages/`, `rg -n "turn/start" --type ts packages/`, `rg -n "waterfall" --type ts packages/`. omp **không có** event log turn, **không có** waterfall, **không có** `deriveMessages`. Nó ghi `SessionEntry` (một cây append-only entry, `session-entries.ts:300`) và tái dựng context qua `buildSessionContext` (`session-manager.ts:3115`). **Đây là câu trả lời cho Cổng mở bước 1, và nó thay đổi cỡ ước lượng: đây không phải "thêm một event" — phải thêm một loại entry mới và vá cổng tạo file.**
+
+**Bảng điểm sửa.** Cột TRƯỚC trích **nguyên văn từ file thật** tại HEAD `65cc6c1`. Cột SAU là **hình dạng** sau khi sửa (không phải code hoàn chỉnh).
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `src/session/session-entries.ts` | `SessionEntry` union (`:300`) + entry mới | union hiện bắt đầu `export type SessionEntry =`<br>`\| SessionMessageEntry`<br>`\| ModelUsageEntry` (`:300-302`); `LabelEntry` (`:184-189`) là tiền lệ của một **entry kiểm toán không-message**: `type: "label"; targetId: string; label: string \| undefined;` | Thêm một entry mới theo đúng khuôn `LabelEntry`, cạnh nó: `type: "blocked_turn"`, `reason: BlockedTurnReason`, `text: string` (prompt như đã gõ), `images?: number` (số ảnh đính kèm, **không** nhúng blob), `source: "abort" \| "preflight" \| "policy"`. **KHÔNG** dùng `custom_message`. |
+| `src/session/session-manager.ts` | `#shouldHaveSessionFile()` (`:1137-1139`) | `return this.#forceFileCreation \|\| this.#fileIsCurrent \|\| this.#historyContainsAssistantMessage();` với `#historyContainsAssistantMessage()` (`:1133-1135`) = `return this.#entries.some(isAssistantEntry);` | Thêm một vế: `\|\| this.#historyContainsBlockedTurnEntry()`. Nếu không, lượt bị chặn **đầu tiên của một session mới** không tạo file. |
+| `src/session/session-manager.ts` | `appendMessage` (`:2777-2786`) | `): string {`<br>`const entry: SessionMessageEntry = { type: "message", ...this.#freshEntryFields(), message };`<br>`this.#recordEntry(entry);`<br>`return entry.id;`<br>`}` | Thêm `appendBlockedTurnEntry(input: BlockedTurnInput): string` cùng hình dạng: dựng entry `{ type: "blocked_turn", ...this.#freshEntryFields(), ...input }`, gọi `this.#recordEntry(entry)`, trả `entry.id`. **Tái dùng `#recordEntry`** (`:1580-1595`) để hưởng `#appendToSessionFile` + `#notifyEntryAppended` — không tự viết đường ghi file thứ hai. |
+| `src/session/agent-session.ts` | `prompt()` — nhánh drop (`:7014-7022`) | `outcome.sessionClaimed = dispatched;`<br>`if (!dispatched && message.role === "user") {`<br>`// An abort (Esc) or preflight denial raced turn setup: the prompt never`<br>`// reached the agent or the session file. Hand it back to the host so the`<br>`// user can edit/resubmit instead of losing it (tree/branch can't offer`<br>`// a message that was never persisted).`<br>`this.#promptDropped?.({ text: typedText, images: options?.images });`<br>`}`<br>`if (!dispatched && options?.throwOnDrop) throw new PromptDroppedError();` | Chèn `this.sessionManager.appendBlockedTurnEntry({...})` vào **trước** `this.#promptDropped?.(...)` trong cùng `if`. **Comment phải viết lại vì nó hết đúng**: "never reached the agent or the session file" không còn đúng nữa. |
+| `src/session/agent-session.ts` | `prompt()` — nhánh `AgentStartPolicyChangedError` (`:7003-7008`) | `} catch (error) {`<br>`if (error instanceof AgentStartPolicyChangedError && message.role === "user") {`<br>`this.#promptDropped?.({ text: typedText, images: options?.images });`<br>`}`<br>`throw error;`<br>`}` | Ghi entry ở đây nữa, với `reason: "policy"` — đây là lượt bị chặn bởi `before_agent_start` đổi hệ thống quá `AGENT_START_POLICY_MAX_ATTEMPTS` (hằng ở `:501`), và nó **không** đi qua nhánh `!dispatched`. Thiếu nhánh này là mất đúng trường hợp mà `AgentStartPolicyChangedError` sinh ra. |
+| `src/session/session-context.ts` | `BuildSessionContextOptions` (`:149-155`) + `appendMessage` (`:380-389`) | options: `transcript?: boolean; collapseCompactedHistory?: boolean; keepDanglingToolCalls?: boolean; resolveFrameData?: ...`<br>`appendMessage` hiện bỏ qua entry assistant lỗi khi `!options?.transcript && entry.message.role === "assistant" && (entry.message.retryRecovery \|\| isEmptyErrorTurn(entry.message))` | Thêm `revealBlockedTurns?: boolean` vào options. Trong `appendMessage`, thêm nhánh `else if (entry.type === "blocked_turn" && options?.revealBlockedTurns) { pushMessage(blockedTurnMarkerMessage(entry)) }` — và **chỉ** khi cờ bật. Không bật thì entry rơi qua mọi nhánh và không sinh message, tức **ẩn ở cả hai chế độ**. |
+| `packages/coding-agent/CHANGELOG.md` | `## [Unreleased]` (dòng 3) | dòng 3 = `## [Unreleased]`, dòng 4 trống, dòng 5 = `### Security` (mục duy nhất đang có trong Unreleased), dòng 7 = dòng entry Security, dòng 9 = `## [18.4.0] - 2026-09-28` — **mục đã phát hành, bất biến** | Một dòng ngay dưới `## [Unreleased]`, dạng: `Recorded blocked turns in the session log instead of dropping them silently`. Đặt trong section thích hợp (đây là `Added`; tạo mới nếu chưa có). **Đừng tranh thứ tự section.** Tuyệt đối không chèn vào `## [18.4.0]` trở xuống. |
+
+**Không sửa**: `session/turn-persistence.ts`, `session-loader.ts`, `interactive-mode.ts` — trừ khi bước 6 chọn phương án hiển thị cần tới.
+
+**Các bước có neo đã kiểm.**
+
+1. **Đóng băng hình dạng entry trước khi động tới code.** Đọc `session-entries.ts:184-189` (`LabelEntry`) và `:280-297` (`CustomMessageEntry`) cạnh nhau. Viết entry mới theo khuôn `LabelEntry`, **không** theo khuôn `CustomMessageEntry`. Lý do nằm ngay trong JSDoc `:280-281`: *"Unlike CustomEntry, this **DOES participate in LLM context**."* Một marker "lượt bị chặn" đi vào context model là thứ mà toàn bộ WI-SESSION-LOG đang cố đi ngược lại. *(neo: `session-entries.ts:280`, `:284-285`, `:290-291`)*
+2. **Đóng băng đường ghi.** Đọc `session-manager.ts:1580-1595` (`#recordEntry`) và `:2777-2786` (`appendMessage`). `appendBlockedTurnEntry` phải đi qua `#recordEntry` — không gọi `#appendToSessionFile` trực tiếp, không có đường ghi file riêng. *(neo: `session-manager.ts:1593` là `this.#appendToSessionFile(entry);` bên trong `#recordEntry`)*
+3. **Sửa cổng tạo file — làm bước này TRƯỚC khi nối call site.** Đọc `session-manager.ts:1133-1139`. Nếu không sửa, lượt bị chặn đầu tiên của session mới sẽ nằm trong `#entries` (RAM) và **không** trong file. *(neo: `session-manager.ts:1138`)*
+4. **Nối hai call site drop, không phải một.** Đọc `agent-session.ts:7003-7008` và `:7014-7022` trước khi sửa; cập nhật comment ở `:7016-7019`. *(neo đã kiểm: `agent-session.ts:7003` = `} catch (error) {`, `:7004` = `if (error instanceof AgentStartPolicyChangedError && message.role === "user") {`, `:7005` = `this.#promptDropped?.({ text: typedText, images: options?.images });`, `:7015` = `if (!dispatched && message.role === "user") {`, `:7018` = `this.#promptDropped?.({ text: typedText, images: options?.images });`, `:7020` = `}` đóng if)*
+5. **Thêm cờ mở, không thêm nhánh hiển thị vô điều kiện.** Đọc `session-context.ts:149-155` rồi `:380-389`. Lưu ý chiều: nhánh sẵn có ở `:383-388` đi **ngược** chiều của bạn — nó **ẩn** ở chế độ non-transcript và **hiện** ở chế độ transcript. **Đừng lấy nó làm mẫu**; lấy `custom_message` `display:false` (`session-entries.ts:285-287`, tiêu thụ ở `modes/utils/ui-helpers.ts:196`) làm mẫu cho "có trong log, không hiện". *(neo: `session-context.ts:383`, `:386`; `ui-helpers.ts:196`)*
+6. **Chốt phương án hiển thị và GHI TÊN NGƯỜI QUYẾT.** Ba phương án: (a) lệnh session, ví dụ `/blocked-turns`; (b) tự động hiện trong transcript dạng divider mờ; (c) chỉ hiện qua `/export`. **(a) là mặc định đề xuất** vì nó là phương án duy nhất không thêm hàng vào mọi transcript. Ghi tên người quyết và ngày vào changelog, **không ghi vào code**.
+7. **Chạy cổng, ghi biên bản đỏ-trước/xanh-sau.**
+
+**Hợp đồng test.** File mới: `packages/coding-agent/test/agent-session-blocked-turn-record.test.ts`. Bốn case, mỗi case bảo vệ **một hợp đồng quan sát được khác nhau** — không được gộp, không được lặp lại nhau qua cùng một mock.
+
+| # | Case | Khẳng định | Hợp đồng nó bảo vệ | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- | --- | --- |
+| 1 | **Lượt bị chặn đầu tiên của session mới vẫn tạo file** | Sau khi drop, `existsSync(sessionFile)` là `true`, và đọc lại file ra **một** entry có `type: "blocked_turn"` với `text` khớp prompt đã gõ | Cổng tạo file của bước 3 | Restart xong, mở session đó, và thấy **trống trơn** — lượt bị chặn biến mất sạch. **Đây là hồi quy âm thầm nguy hiểm nhất.** |
+| 2 | **Entry không bao giờ vào context gửi cho model** | `buildSessionContext(entries)` (không truyền options) trả `messages` **không** chứa marker; nhưng `entries` **có** chứa nó | "log ≠ model-visible" | Model bắt đầu trả lời câu hỏi về một lượt mà người dùng chưa từng gửi, hoặc token tăng lên mỗi lượt bị chặn. |
+| 3 | **Transcript mặc định ẩn, bật cờ thì hiện** | `buildSessionContext(entries, undefined, undefined, {})` không có marker; `{ revealBlockedTurns: true }` thì **có** đúng một | Nhánh phủ định của bước 5 | Transcript mặc định lấp đầy những dòng "đã bị chặn" của hàng chục lượt abort, hoặc — ngược lại, tệ hơn — cờ mở bị bỏ sót và người dùng không bao giờ thấy lượt nào. |
+| 4 | **Cả hai call site đều ghi, với `reason` khác nhau** | Nhánh `!dispatched` cho `reason: "abort"`; nhánh `AgentStartPolicyChangedError` cho `reason: "policy"` | Bước 4 — nhánh phủ định của "chỉ nối một chỗ" | Người dùng bấm Esc thì thấy, nhưng một lượt bị chặn bởi chính sách `before_agent_start` thì không — và đó mới là lượt họ cần biết nhất. |
+
+**Cấm tuyệt đối:** đọc file nguồn rồi khẳng định về *chữ* của nó (`expect(src).toContain("appendBlockedTurnEntry")`) — AGENTS.md cấm, và nó xanh trong lúc hành vi đã hỏng. **Case 1 và 2 phải đọc lại file JSONL thật và `buildSessionContext` thật.**
+
+**Cổng có đỏ được không. Cổng như plan viết: KHÔNG đỏ được — trả lời thẳng.** Cổng hoàn thành nguyên văn của plan (`:365-366` và lặp lại ở `:5377`): *"Một lượt bị chặn **vẫn truy vết được sau khi restart**, và transcript mặc định **không** hiển thị nó trừ khi người dùng mở."* Cột "bằng chứng" của bảng `:5377`: *"Đọc lại log của session sau khi restart và thấy lượt bị chặn; transcript mặc định không hiện nó, bật hiển thị thì hiện."* **Vấn đề:** "bật hiển thị" là **một hành động mà plan không định nghĩa** — không có tên lệnh, không có tên cờ, không có tên entry; không có câu lệnh nào trong repo có thể kiểm nó. Vế "sau khi restart" là một thao tác tay — restart một tiến trình để kiểm một entry JSONL là việc **không tự động hoá được**. Nếu giữ nguyên, đây là một cổng **luôn xanh tệ hơn không có cổng**.
+
+**Cổng viết lại — ĐỎ ĐƯỢC.** Đặt tên cụ thể cho cả hai vế, rồi kiểm bằng lệnh thật:
+
+| # | Điều kiện chốt | Lệnh | Đỏ được vì |
+| --- | --- | --- | --- |
+| G1 | Entry tồn tại và có **hai** call site nối vào | `rg -c 'appendBlockedTurnEntry' packages/coding-agent/src/session/agent-session.ts` | Định nghĩa trong `session-manager.ts` cho `>= 1`; hai call site trong `agent-session.ts` cho `>= 3` tổng cộng. Thiếu một nhánh là đỏ. |
+| G2 | Cổng tạo file đã mở cho entry này | `rg -n 'historyContainsBlockedTurnEntry' packages/coding-agent/src/session/session-manager.ts` phải ra **cả hai** dòng: định nghĩa và dòng dùng trong `#shouldHaveSessionFile` | Bám **tên hàm**, không bám từ khoá rời. Chỉ grep `blocked_turn` thì xanh ngay cả khi cổng tạo file vẫn đóng — đúng cái lỗi làm case 1 hỏng. |
+| G3 | Bốn test case tồn tại và **xanh** | `bun test test/agent-session-blocked-turn-record.test.ts` → `4 pass / 0 fail` | Xanh khi xanh. |
+| G4 | Biên bản đỏ-trước được ghi lại | PR body có **ảnh chụp output** của cùng lệnh trên HEAD `65cc6c1` (chưa sửa) | Không có ảnh thì G3 là một lời hứa. **Điều kiện mắt người.** |
+| G5 | Người quyết phương án hiển thị được ghi tên | `rg -n 'Blocked-turn visibility decider' packages/coding-agent/CHANGELOG.md` | Bám **nguyên văn nhãn dòng**, không bám `decider\|owner\|quyết`. Một `grep -i owner` sẽ xanh dù cột còn trống. |
+| G6 | Không lọt `custom_message` | `rg -n 'type: "custom_message".*blocked' packages/coding-agent/src` rỗng | Chặn đúng cái lỗi làm marker lọt vào context model. |
+| G7 | `bun run check:ts` exit 0 | `bun run check:ts; echo $?` | Đỏ thật khi type hỏng. **Không** dùng `tsc`/`npx tsc` — AGENTS.md cấm tuyệt đối. |
+
+**Sáu trên bảy đỏ được bằng máy.** Riêng G4 là ảnh chụp phải do người gửi PR dán — máy không tự sinh được ảnh của một trạng thái quá khứ.
+
+**Cổng này tự bảo vệ tới đâu — nói thẳng.** Mạnh: G1, G2, G3, G6, G7 là kiểm tra cấu trúc và hành vi, đều đỏ được, đều tự động. Yếu: **G4 là ảnh chụp, không phải phép đo** — một PR có thể dán ảnh từ lần chạy thứ hai; cách chắc hơn là chạy lệnh trên HEAD sạch **trước khi** viết dòng đầu tiên, lưu output rồi dán. **Vế "sau khi restart" trong cổng gốc không được cổng nào bảo vệ**: case 1 chỉ chứng minh entry **có trong file**, nó không chứng minh `loadEntriesFromFile` đọc lại được — nếu muốn phủ đúng nghĩa "sau restart", thêm **case 5**: nạp lại qua `loadSessionMessagesReadOnly` (`session-loader.ts:539`, đã kiểm) và khẳng định entry còn đó. **Nên làm** — nó là một dòng, và nó là dòng duy nhất bảo vệ đúng từ "restart" mà plan dùng. **Không cổng nào bảo vệ phần "trừ khi người dùng mở" ở mức con người**: G3 chứng minh cờ hoạt động, không chứng minh một người dùng thật tìm thấy lệnh đó mà không cần đọc mã.
+
+**Cạm bẫy riêng của mục này.** Xếp theo mức độ sát thương nếu làm sai.
+
+1. **Lượt bị chặn đầu tiên của session mới không tạo file, và test của bạn vẫn xanh.** `session-manager.ts:1133-1139`: `#historyContainsAssistantMessage(): boolean { return this.#entries.some(isAssistantEntry); }` và `#shouldHaveSessionFile(): boolean { return this.#forceFileCreation || this.#fileIsCurrent || this.#historyContainsAssistantMessage();`. Lượt bị chặn không có assistant message. Trên một session **đã có** lịch sử thì `#fileIsCurrent` đã true nên entry vẫn xuống đĩa — và test sẽ xanh. Nhưng trên session **mới** — tức đúng tình huống người dùng gặp nhiều nhất — file không tồn tại. **Đây là lý do case 1 phải là lượt đầu tiên của session mới, không phải "thêm một lượt nữa vào session đang chạy". Không có cổng nào bắt được cái này nếu test viết sai.**
+2. **Dùng `custom_message` vì nó có sẵn `display: false`, và lỡ tay làm marker đi vào context model.** `session-entries.ts:280-281` viết rõ: *"Unlike CustomEntry, this **DOES participate in LLM context**."* `display: false` chỉ ẩn ở TUI (`ui-helpers.ts:196`) và ở export (`session-history-format.ts:574`) — nó **không** ẩn khỏi LLM. Đây là cái bẫy nhiều khả năng nhất vì `display: false` trông như đúng cái bạn cần. **Đáp án đúng là entry không thuộc loại message, theo khuôn `LabelEntry` (`:184-189`).**
+3. **Copy chiều của nhánh sẵn có ở `session-context.ts:383-388`.** `if (!options?.transcript && entry.message.role === "assistant" && (entry.message.retryRecovery || isEmptyErrorTurn(entry.message))) { return; }` — nhánh này **ẩn ở non-transcript và hiện ở transcript**, ngược chiều với yêu cầu của bạn. Nó là mẫu gần nhất trong codebase nên rất dễ sao chép nhầm. **Đọc nó để hiểu cơ chế lọc, không để sao chép chiều.**
+4. **Bỏ nhánh `AgentStartPolicyChangedError`.** `agent-session.ts:7004-7008` nằm trong `catch`, tách khỏi nhánh `!dispatched` ở `:7015`. Nếu chỉ nối `!dispatched`, bạn ghi được lượt bị Esc nhưng **không** ghi được lượt bị chính sách `before_agent_start` chặn — **lượt đó mới là lượt mà người dùng cần nhìn thấy nhất, vì nó không phải họ bấm Esc.**
+5. **Tin rằng "durable" trong dsh nghĩa là "đã trên đĩa".** `packages/core/session/src/types.ts:290-297` nói thẳng loop **không** flush tại biên turn. Trong omp, `#appendToSessionFile` (`session-manager.ts:1593`) ghi đồng bộ từng entry, nên omp gần hơn — nhưng **cạm bẫy #1 vẫn phá nó**. Đừng dùng "dsh làm được" làm lý do để bỏ qua bước 3.
+6. **Sửa comment cũ cho khớp code, hoặc để nguyên comment cũ.** `agent-session.ts:7016-7019` đang viết *"the prompt never reached the agent or the session file"*. Sau thay đổi này câu đó **sai**, và nó sai theo hướng khiến người đọc tiếp tục tin rằng không có gì được ghi. Sửa nó cùng lúc — đây là loại bình luận mà `antislop-code` nói phải giữ giá trị, và **giá trị của nó là đúng**.
 
 ## WI-0. Chốt và viết ra mô hình tin cậy cho extension (quyết định, không code)
 
@@ -506,6 +672,75 @@ DONE nghĩa là cả năm điều sau cùng đúng. (1) `docs/extension-trust-mo
 | Xác minh là "Không build, không test" và việc chạy `bun run check:ts` "chạy nó không chứng minh gì về mục này". | **CORRECT**, kèm một bổ sung môi trường mà kỹ sư cần | Giữ nguyên thế đứng không-build — plan đúng rằng `check:ts` không bị ảnh hưởng và không chứng minh gì ở đây. Thêm sự thật để kỹ sư không phí thời gian: `bun test` cần addon native, và trên máy sạch nó báo "0 pass, 1 fail, 1 error" với "Failed to load pi_natives native addon for darwin-arm64" vì binary `packages/natives/native/pi_natives.darwin-arm64.node` vắng mặt. **Đây là một bước build còn thiếu, không phải hạn chế của máy:** `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là xong, và mọi cổng sau đó chạy được. Vì WI-0 không viết test, điều này không đổi gì về mục, nhưng hai test tin cậy hiện có phải được trích dẫn như hợp đồng-bằng-QUAN-SÁT và không được mô tả là đã xanh. |
 | Ngữ cảnh task/repo nói git HEAD là 5873776. | **STALE** — cây đã đi xa | HEAD thực tế là `808b365409fa36719c38319a041c0e612b4e702b` trên nhánh `milestone-1`. Mọi số dòng trong đặc tả này được đối chiếu lại với `808b365`, không phải `5873776`. Nếu cây lại dịch chuyển trước khi bắt tay, hãy chạy lại năm lệnh grep xác minh trong `files_touched[0].note` và trong `plan_corrections` trước khi tin các neo. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Đã mở và đọc **22 neo**: **11 đúng, 11 hỏng**. Đáng chú ý nhất — cả ba neo trong bảng "File cần chạm tới" mà kế hoạch đánh dấu `verified: true` thì **hai hỏng, một đúng một nửa**, nên cột "đã kiểm chứng?" của bảng đó không đáng tin. Cảnh báo môi trường ở mục Xác minh cũng **SAI**: kế hoạch nói addon native không tồn tại và hai file test "hiện không chạy được", nhưng addon **có tồn tại** và hai test đó chạy **3 pass / 0 fail**. Trong năm lệnh grep cổng hoá, **hai lệnh hoạt động đúng, một lệnh đỏ nhầm** trên một bảng 4 cột hoàn toàn đúng.
+
+Neo hỏng, và số thật: `types.ts:561` → khối jsdoc thật là **489–495**, khai báo **496**, dòng 563 là dòng khai báo; `types.ts:1492` → `ctx.exec` thật ở **1516–1517** (1492 là `// Actions` trong vùng `sendMessage`); `runner.ts:1264` → `isProjectTrusted: () => true,` thật ở **1293** (1264 nằm trong jsdoc `createContext`); `agent-session.ts:7406` → thật ở **7552** (7406 là `if (this.isAutoThinking && isUserTurn) {`); `CHANGELOG.md:5` → thật là `### Security`, còn `## [18.3.3] - 2026-09-27` ở **65**; `CHANGELOG.md:7` → `### Added` của 18.3.3 ở **67**; `CHANGELOG.md:1057` → mục **#7955 ở dòng 1117**, không phải 1057; header `## [18.1.16]` kế hoạch ghi 1039 → 1039 là dòng **trống**, `## [18.1.18]` ở **1040**, `## [18.1.16] - 2026-09-09` ở **1099**; `plan:257` → hợp đồng ba câu hỏi thật ở **plan:414–418**; `plan:323` → `### Cần người quyết` của WI-0 ở **plan:486**, M2-OQ5 ở **plan:489**. Lệch nhẹ: `types.ts:487-494` và `:548-561` lệch 1–2 dòng; `helpers.ts:1013-1021` → nội dung walk order thật là **1015–1020**.
+
+Neo ĐÚNG — dùng nguyên số, đừng dò lại: `omp-extension-roots.ts:162`, `helpers.ts:1271-1307`, `helpers.ts:1300`, `helpers.ts:1025`, `loader.ts:19`, `loader.ts:93-95`, `loader.ts:331`, `loader.ts:407`, `CHANGELOG.md:3`. Ba khẳng định phụ cũng đã kiểm và đúng: token `R8` chỉ xuất hiện ở chính câu đó, `docs/extension-loading.md` im lặng hoàn toàn về trust, và `docs/extension-trust-model.md` chưa tồn tại.
+
+**Bảng điểm sửa.**
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `docs/extension-trust-model.md` | toàn file | **không tồn tại** — `lsd: docs/extension-trust-model.md: No such file or directory` | ADR, đúng 8 mục bắt buộc theo thứ tự kế hoạch dòng 381 |
+| `docs/extensions.md:896` | `## Constraints and pitfalls` | `## Constraints and pitfalls` | giữ nguyên; mục **`## Trust`** chèn ngay TRƯỚC nó, 3–4 câu, link `docs/extension-trust-model.md` |
+| `docs/extensions.md` (toàn file) | `isProjectTrusted` | `rg -n -i "^#+ .*trust\|isProjectTrusted" docs/extensions.md` → **không có kết quả nào** | mục Trust mới là nơi đầu tiên trong file nói về thế bài |
+| `packages/coding-agent/CHANGELOG.md:3` | `## [Unreleased]` | `## [Unreleased]` | giữ nguyên |
+| `packages/coding-agent/CHANGELOG.md:5` | mục con đầu tiên của Unreleased | `### Security` | **đã có sẵn** — mục `### Added` MỚI chèn **SAU** khối `### Security`, không phải "ngay dưới `[Unreleased]`" |
+| `packages/coding-agent/CHANGELOG.md:7` | entry MCP thuộc Security | ``- Project-scope MCP config (`mcp.json`, `.mcp.json`, `.omp/mcp.json`) is no longer loaded by default. …`` | giữ nguyên — bất biến |
+| `packages/coding-agent/CHANGELOG.md:1117` | mục #7955 **ĐÃ PHÁT HÀNH** | ``- Fixed legacy Pi extensions failing to load when calling `ctx.isProjectTrusted()` in an event handler; the extension context now exposes it (always `true`, since OMP applies no project-trust gating) ([#7955](https://github.com/can1357/oh-my-pi/issues/7955)).`` | **TUYỆT ĐỐI KHÔNG CHẠM** — thuộc `### Fixed` dưới `## [18.1.16] - 2026-09-09` (dòng 1099) |
+
+Dòng changelog mới theo AGENTS.md: ``- Documented the extension trust model: project-local extensions load unconditionally and `isProjectTrusted()` is a deliberate compatibility stub returning `true` ([#NNNN](https://github.com/can1357/oh-my-pi/issues/NNNN)).``
+
+**Các bước có neo đã kiểm.**
+
+1. Chốt "What ships today": năm câu, mỗi câu một neo.
+2. `ctx.exec` nằm ở đâu — `types.ts:1516-1517`.
+3. Ba phương án, chi phí thật. Hai chỗ hiện thực phải đổi nếu chọn A: `runner.ts:1293`, `agent-session.ts:7552`.
+4. Quyết định: đúng MỘT trong ba chữ A / B / C, viết đúng hình dạng để cổng grep được.
+5. Bảng hạng mục thực thi: bảng **3 cột** `| Item | OWNER | DATE |`.
+6. Ba câu trả lời, dạng khẳng định — neo `omp-extension-roots.ts:162` + `helpers.ts:1271-1307`; `runner.ts:1293` + `agent-session.ts:7552`.
+7. Hệ quả + ghi vào `docs/extensions.md` + changelog. Không commit nếu không được yêu cầu.
+
+**Hợp đồng test.** **Không viết test nào** — đây là quyết định dạng văn bản, AGENTS.md cấm test hình thức, và một tài liệu không có hợp đồng runtime quan sát được. Hợp đồng là: một maintainer **không phải tác giả** mở `docs/extension-trust-model.md` và trả lời được ba câu ở bước 6.
+
+Hai file test có sẵn — và kế hoạch SAI về trạng thái của chúng. Kế hoạch nói "hiện không chạy được"; đã kiểm, addon tồn tại và `bun test test/extension-context-project-trust.test.ts test/issue-7955-extension-project-trusted.test.ts` ra **3 pass / 0 fail**. Cả ba assertion đều xanh: `extension-context-project-trust.test.ts:14`, `issue-7955-extension-project-trusted.test.ts:18-19` và `:24` (command context kế thừa, xác nhận ở `runner.ts:1379-1381` — `createCommandContext()` trả `{ ...this.createContext(), ... }`). Hệ quả cho PR: câu "không được mô tả là đã xanh ở bất kỳ đâu" **không còn có cơ sở** — viết thẳng "3 pass / 0 fail tại HEAD `65cc6c1`" mạnh hơn và nói thật. Nhưng **đừng sửa hai file test**: chúng vẫn là hợp đồng-by-quan-sát, và chúng chỉ chuyển đỏ **khi** câu trả lời thứ ba là "giá trị thật".
+
+Người dùng thấy gì nếu hồi quy: thế bài tin cậy vẫn cứ do ai đó tình cờ viết API extension trước quyết định, một cách vô hình, cho tới khi thế bài buộc phải đổi — lúc đó nó là breaking change với mọi tác giả extension bên thứ ba đã xuất bản dựa trên seam đó, và không có tài liệu nào giải thích họ dựa vào điều gì.
+
+**Cổng có đỏ được không.** **Có — nhưng chỉ 4 trong 7 điều kiện.** Ba điều kiện còn lại không thể đỏ bằng máy, và phiếu không viết lại chúng thành grep giả. Cổng gốc của kế hoạch có **một lệnh hỏng**: lệnh grep OWNER/DATE đầu tiên là regex **theo vị trí**, không phải "cùng một hàng", nên **đỏ nhầm** trên một bảng 4 cột hoàn toàn đúng.
+
+| # | Điều kiện | Lệnh | ĐỎ ĐƯỢC? |
+| --- | --- | --- | --- |
+| G1 | ADR tồn tại, có `Status` + `Decider` + `Date` | `test -f …` + `grep -nE '^\*\*(Status\|Decider\|Date)\*\*:'` | ✅ **CÓ** |
+| G2 | Quyết định là đúng MỘT trong A/B/C | `grep -cE '^\*\*Decision: Option [ABC]\*\*$'` — phải == 1 | ✅ **CÓ** (nhờ hình dạng bắt buộc ở bước 4) |
+| G3 | Câu trả lời `ctx.exec` hiện diện | regex ở `## 5.3` | ✅ **CÓ** — đã thử cả hai chiều |
+| G4 | Bảng enforcement có hàng dữ liệu | lệnh G4 trong khối `bash` ở trên (grep rồi lọc bằng `grep -vE`, regex chứa pipe nên không dán vào ô bảng) | ✅ **CÓ** — đã thử cả hai chiều |
+| G5 | OWNER **và** DATE cùng một hàng | **phải viết lại** — xem bên dưới | ✅ **CÓ** sau khi viết lại |
+| G6 | Đúng ba file, không file `.ts` | `git add -N … && git diff --stat` | ✅ **CÓ** |
+| G7 | Một maintainer **khác** trả lời được ba câu | — | ❌ **KHÔNG** |
+
+G7 không thể đỏ được, và phiếu không bịa cách. Nó là hành vi của con người; cách duy nhất để nó "đỏ" là **thuê một người khác đọc và hỏi**. Đây là điều kiện duy nhất thực sự bắt được tài liệu tốt, và cũng là điều kiện duy nhất phải tốn người.
+
+Vì sao G5 phải viết lại — kèm bằng chứng: lệnh gốc của kế hoạch kiểm **OWNER nằm ở ô thứ hai và DATE ở ô thứ ba**, vì `[^|]*` bị chặn bởi `|`, nên mẫu buộc hai nhãn phải **liền nhau**. Đã chạy cả hai hình dạng: `| Item | OWNER | DATE |` → GREEN (đúng hình dạng lệnh); `| Item | Description | OWNER | DATE |` → **RED, dù đó là bảng đúng**. Đây là loại cổng nguy hiểm hơn cổng luôn xanh: nó dạy tác giả **bóp bảng cho vừa regex** thay vì **điền OWNER**. Bản thay thế vẫn bám nhãn cột nhưng cho phép có cột mô tả ở giữa.
+
+`git add -N` — lỗi, không phải xanh: trước khi ADR tồn tại, lệnh báo `fatal: pathspec 'docs/extension-trust-model.md' did not match any files` và dừng. Đây là hành vi đúng, nhưng đừng dán output `fatal:` vào PR và gọi đó là cổng đỏ.
+
+Cổng KHÔNG có, và không nên thêm: `bun run check:ts` — kế hoạch đã cấm đúng. Không có gì trong cây đổi hành vi, nên nó **không chứng minh được điều gì** về WI-0. Trình nó là bằng chứng là biến một mục quyết định thành mục trông như đã xong.
+
+**Cạm bẫy riêng của mục này.**
+
+- **P1 — Bảng neo đánh dấu `verified: true` nhưng 2/3 sai.** Hai mục CHANGELOG (`:5` và `:7`) và mục `:1057` đều lệch. Nếu tin bảng đó và chèn "ngay dưới `[Unreleased]`" thì sẽ chèn **trên** khối `### Security` đang có, hoặc tệ hơn là tưởng dòng 1057 là mục #7955 rồi sửa nó. **Đọc file, đừng đọc bảng.**
+- **P2 — Regex OWNER/DATE của kế hoạch là theo vị trí, không theo hàng.** Bằng chứng chạy ở trên. Bảng 4 cột rất tự nhiên là đỏ nhầm. Dùng bảng 3 cột, hoặc dùng bản regex đã viết lại.
+- **P3 — Dễ nhầm hai đường làm một sự thật.** Root project của `.omp/extensions` là `<cwd>/.omp` (`omp-extension-roots.ts:162`). Root project của **plugin** là `entry.installPath` (`helpers.ts:1300`) — **không phải** `<cwd>/.omp`. Gộp hai cái làm câu "What ships today" (b) sai, và (b) chính là câu mạnh nhất của cả ADR.
+- **P4 — `### Added` phải chèn SAU khối `### Security`, không phải "ngay dưới nó".** Ngay dưới `## [Unreleased]` (dòng 3) là `### Security` (dòng 5) với một entry dài về MCP project config; chèn `### Added` vào giữa sẽ tách Security khỏi entry của nó. AGENTS.md nói `bun run release` chạy `fix-changelogs` và tự chuẩn hoá thứ tự, nên **đừng tranh luận thứ tự** — cứ chèn sau khối Security và đi tiếp.
+- **P5 — "Test KHÔNG chạy được" là tin cũ.** Đã chạy: **3 pass / 0 fail**, addon native đã build. Viết "chưa chạy được" vào PR là hậu quả không chính đáng và làm giảm độ tin cậy của phần còn lại.
+- **P6 — Chữ "cổng chặn" trong regex là tiếng Việt có dấu.** Regex dùng `cổng chặn` và `nằm (trong|ngoài)`. Nếu ADR viết tiếng Anh ("inside the gate" / "out of scope") thì **cổng đỏ**. Đây là ràng buộc ngôn ngữ thật mà kế hoạch không nói — hoặc viết câu trả lời M2-OQ5 bằng tiếng Việt, hoặc sửa regex. Đừng để tác giả phát hiện việc này ở review.
+- **P7 — `git add -N` là đòn bẩy một chiều.** Sau khi chạy, file ADR ở trạng thái intent-to-add; không `git reset` nếu không muốn. Và nhớ: **không commit**.
+- **P8 — `docs/extension-loading.md` là con trỏ treo.** Jsdoc tại `types.ts:558-559` gửi người đọc tới `docs/extension-loading.md`, và `rg -i trust docs/extension-loading.md` **trả về không cái gì**. Đây là một câu hỏi kế hoạch nêu ở "Cần người quyết" (dòng 492) nhưng **không nằm trong ba file của bảng File cần chạm tới**. Nếu ADR trả lời "extension tải vô điều kiện" mà file này vẫn im lặng, con trỏ vẫn treo — ghi vào ADR rằng việc vá nó là hạng mục thứ hai cần chủ, hoặc sửa luôn, nhưng khi đó cổng "đúng ba file" sẽ đỏ.
+
 ## Cần người xác nhận
 
 Mâu thuẫn nội tại của đặc tả, ghi ra đây thay vì tự sửa:
@@ -615,6 +850,104 @@ Bốn phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Bốn chỗ trong đặc tả sai so với cây thật, và **hai chỗ sai theo hướng làm hỏng việc**:
+
+1. **`packages/tui/src/overlays/hook-editor.ts` không phải là bảng hook.** Nó là **một hộp thoại soạn text nhiều dòng** (277 dòng — con số đúng, nhưng nội dung thì không): `HookEditorComponent extends OverlayPanel implements Focusable`, hai chế độ `hook` và `prompt-style`, xử lý Enter / Ctrl+Q / bracketed paste / Escape / Ctrl+G. Trong file đó **không có bảng, không có cột `enabled`, không có hàng per-handler nào**. Cột trạng thái phải thêm vào `packages/tui/src/overlays/extensions/extension-list.ts`. Nếu bạn gõ theo đặc tả, bạn sẽ sửa một file không liên quan và **không có gì hiện ra**. File được import bởi `advisor-config.ts:36`, `input-controller.ts:22`, `extension-ui-controller.ts:29`, `interactive-mode.ts:214`, `modes/types.ts:40` — toàn bộ là "mở hộp thoại nhập text".
+
+2. **Không bước nào trong 5 bước của đặc tả cài đặt cái "đường nạp hook bị chặn".** Cả "Thay đổi gì" lẫn "Người dùng thấy" đều hứa nó, và cổng (2) nói nó là phần phân biệt — nhưng bước 1 là union, bước 2 là khoá, bước 3 là hash, bước 4 là config, bước 5 là cột hiển thị. **Không bước nào chặn gì cả.** Thêm nữa, file nơi lẽ ra phải chặn (`extensibility/hooks/loader.ts`) **không có trong bảng "File cần chạm tới"**.
+
+3. **Bảng "Đính chính so với plan" tự dẫn đường sai.** Nó gán nhãn STALE cho neo `types.ts:490-494` và `:552-563` rồi bảo dùng neo của WI-0 (`:487-494` / `:548-561`). Đo lại: **neo của chính WI-14 chính xác hơn neo "đính chính"**. Tệ hơn, hai neo `isProjectTrusted` mà WI-14 dùng (`:1293` / `:7552`) là **đúng**, còn hai neo mà đính chính đề xuất (`:1264` / `:7406`) **trỏ vào dòng hoàn toàn khác**.
+
+4. **Có một test trust thứ ba mà đặc tả không nhắc tới:** `packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts` (2 case, cùng khẳng định `isProjectTrusted() === true`). Đặc tả nói "hai file test sẵn có" và cổng (3) chỉ chấm hai. Test thứ ba này cũng phải xanh.
+
+Một claim khác sai: đặc tả bảo khai `HookStateToml` trong `config/settings.ts`. File đó 3798 dòng, là **lớp `Settings`** — merge layer, đọc/ghi, warn-once; nó **không** khai bất kỳ setting nào. Setting ở omp được khai bằng `register()` trong **module domain**.
+
+**Baseline cổng (1) tại HEAD: XANH, exit 0.** Đo thật: `oxfmt: All matched files use the correct format. (5445 files)`; `oxlint: 1 warning only — packages/coding-agent/test/mcp-project-config-not-trusted-by-default.test.ts:19:10 eslint(no-unused-vars): 'getConfigRootDir' is imported but never used`; `16/16 package check:types → Done`; `[exited with code 0]`. Cảnh báo oxlint đó nằm ở file **untracked** của một work stream khác, và là *warning* không phải error. Ghi lại output này trước khi sửa; đó là baseline của bạn.
+
+**Bảng điểm sửa.** Tất cả TRƯỚC trích từ cây thật @ `65cc6c1`, đã mở và đọc.
+
+| đường/dẫn | symbol / vị trí | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/extensibility/hooks/types.ts:390-408` | `HookEvent` | `/**`<br>` * Union of all hook event types.`<br>` */`<br>`export type HookEvent =`<br>`	\| SessionEvent`<br>`… (15 dòng)`<br>`	\| ToolResultEvent;` | **không đổi** — chỉ là chỗ để đặt union mới cạnh |
+| `src/extensibility/hooks/types.ts:409` | dòng trống sau union | (trống) | chèn union mới ở đây, hoặc ngay **trước** docblock 390: `/** Trust state of a hook handler, derived from a content hash. */`<br>`export type HookTrustState = "untrusted" \| "trusted" \| "modified" \| "admin";` |
+| `src/capability/hook.ts:31` | `hookCapability.key` | ``key: hook => `${hook.type}:${hook.tool}:${hook.name}`,`` | **không đổi** — dùng lại làm khoá ổn định. Neo này **chính xác tuyệt đối**, không lệch một ký tự. |
+| `src/capability/hook.ts:12-24` | `interface Hook` | `name; path; type: "pre" \| "post"; tool; level: "user" \| "project"; _source: SourceMeta;` | **không đổi** — nhưng đây là nơi phải **thêm** `trustState` + `currentHash` nếu bạn muốn nó đi theo hook từ discovery tới UI |
+| `src/extensibility/settings.ts:12` | `cfgDisabledExtensions` (hàng khai sẵn) | `export const cfgDisabledExtensions = register({ id: "disabledExtensions", type: "array", default: EMPTY_STRING_ARRAY });` | thêm ngay dưới đây:<br>`export const cfgHookState = register({`<br>`	id: "hooks.state",`<br>`	type: "record",`<br>`	default: EMPTY_HOOK_STATE_RECORD,`<br>`});` |
+| `src/edit/settings.ts:52-57` | `cfgEditModelVariants` — **mẫu per-item record để copy** | `/** Per-model edit variant: model-selector substring (case-insensitive) → edit mode. Config-file only. */`<br>`export const cfgEditModelVariants = register({`<br>`	id: "edit.modelVariants",`<br>`	type: "record",`<br>`	default: EMPTY_STRING_RECORD,`<br>`});` | copy nguyên hình dạng này, đổi `T` thành `HookStateToml` |
+| `src/config/registry.ts:162-166` | `RecordDefinition` | `export interface RecordDefinition<T = unknown> extends DefinitionBase {`<br>`	type: "record";`<br>`	default: Readonly<Record<string, T>>;`<br>`	env?: SettingEnv<Readonly<Record<string, T>>>;`<br>`	ui?: UiBase;`<br>`}` | **không đổi** — `type: "record"` đã được hỗ trợ và đã dùng ở 8 chỗ |
+| `src/config/registry.ts:786-792` | `register` | `export function register<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]> {`<br>``	if (byId.has(definition.id)) throw new Error(`Setting "${definition.id}" is registered twice`);`` | **không đổi** — nhớ: id trùng là throw ngay lúc import |
+| `packages/tui/src/overlays/extensions/types.ts:31` | `ExtensionState` | `export type ExtensionState = "active" \| "disabled" \| "shadowed";` | **tuỳ chọn.** Giữ nguyên và thêm `trustState?: HookTrustState` vào `Extension` (dòng 42) là cách **ít phá vỡ nhất** — `ExtensionState` đang được `switch` không phủ định ở `extension-list.ts:397` và `inspector-panel.ts:655`, thêm biến thái thứ tư sẽ làm `check:ts` đỏ cho mọi switch chưa xử lý |
+| `packages/tui/src/overlays/extensions/types.ts:42-64` | `interface Extension` | `id; kind; name; displayName; description?; trigger?; path; source; state; disabledReason?; shadowedBy?; raw;` | thêm `trustState?: HookTrustState;` (chỉ set cho `kind: "hook"`) |
+| `packages/tui/src/overlays/extensions/extension-list.ts:307-327` | `#renderExtensionRow` | `const stateIcon = shadowed ? … : mcpSnap ? … : this.#getStateIcon(ext.state, masterDisabled);`<br>`let name = sanitizeDisplayLine(ext.displayName);`<br>`const nameWidth = Math.min(24, width - 16);`<br>``let line = `   ${stateIcon} `;`` | thêm badge trust **ngay sau** `stateIcon`, chỉ khi `ext.kind === "hook" && ext.trustState` — `theme.fg("warning", …)` cho `modified`, `success` cho `trusted`, `dim` cho `untrusted` |
+| `packages/tui/src/overlays/extensions/extension-list.ts:393-404` | `#getStateIcon` | `switch (state) { case "active": return theme.fg("success", theme.status.enabled); case "disabled": … case "shadowed": … }` | **không đổi** nếu bạn chọn phương án `trustState?` ở trên |
+| `packages/tui/src/overlays/extensions/inspector-panel.ts:471-482` | `#pushRuntime` | ``if (ext.state !== "active") { lines.push(`  ${this.#getStatusBadge(…)}`); }`` | thêm dòng badge trust cho hook — đây là chỗ **duy nhất** người dùng thấy tên trạng thái bằng chữ, `#getStateIcon` chỉ trả icon |
+| `src/modes/components/extensions/state-manager.ts:231-258` | vòng lặp load hooks | ``const id = makeExtensionId("hook", `${hook.type}:${hook.tool}:${hook.name}`);``<br>`const { state, disabledReason } = resolveState(…);`<br>``extensions.push({ id, kind: "hook", name: hook.name, displayName: hook.name, description: `${hook.type}-${hook.tool}`, trigger: `${hook.type}:${hook.tool}`, path: hook.path, source: sourceFromMeta(hook._source), state, disabledReason, raw: hook });`` | thêm `trustState: resolveHookTrust(hook, cfgHookState.get(settings))` vào object literal |
+| `src/extensibility/hooks/loader.ts:191-209` | `loadHooks` | `export async function loadHooks(paths: string[], cwd: string): Promise<LoadHooksResult> {`<br>`	const hooks: LoadedHook[] = [];`<br>`	const errors: Array<{ path: string; error: string }> = [];`<br>`	for (const hookPath of paths) {`<br>`		const { hook, error } = await loadHook(hookPath, cwd);`<br>`		if (error) { errors.push({ path: hookPath, error }); continue; }`<br>`		if (hook) { hooks.push(hook); }`<br>`	}` | nơi duy nhất một `continue` **thật sự chặn** việc nạp. Đây là chỗ đúng để chặn, và nó đã có sẵn hình dạng "bỏ qua + gom lý do" |
+| `src/extensibility/hooks/loader.ts:220-242` | `discoverAndLoadHooks` | `export async function discoverAndLoadHooks(configuredPaths: string[], cwd: string): Promise<LoadHooksResult> {`<br>`	const allPaths: string[] = [];`<br>`	const seen = new Set<string>();`<br>`… `<br>`	const discovered = await loadCapability<Hook>(hookCapability.id, { cwd });`<br>`	addPaths(discovered.items.map(hook => hook.path));`<br>`	addPaths(configuredPaths.map(p => resolvePath(p, cwd)));`<br>`	return loadHooks(allPaths, cwd);`<br>`}` | đây là chỗ đúng để lọc — nhưng **hàm này không có call site production** |
+| `src/discovery/builtin.ts:679-727` | `loadHooks` (discovery) | `items.push({ name: entry.name, path: hookPath, type: hookType, tool, level, _source: createSourceMeta(PROVIDER_ID, hookPath, level) });` | **đường discovery thật** — chỗ duy nhất trên HEAD mà hook thật sự được tạo ra để hiện lên bảng |
+
+**Các bước có neo đã kiểm.** Bước 1-5 là của đặc tả, giữ nguyên ý. Bước 6-9 là bước **bổ sung** — đặc tả không có chúng, nhưng thiếu chúng thì cổng (2) không bao giờ đỏ.
+
+1. Khai union bốn trạng thái — đặt cạnh `HookEvent` trong `hooks/types.ts`, ngay sau dòng 408 (`| ToolResultEvent;`) hoặc ngay trước docblock ở 390. *(neo: `hooks/types.ts:390-408` — đã xác nhận `HookEvent` là union 15 nhánh)*
+2. Lấy khoá ổn định từ chỗ đã có — `capability/hook.ts:31`, đọc không sửa. **Và** phải khớp với bản chép thứ hai ở `state-manager.ts:235`.
+3. Định nghĩa `currentHash` — hash của **(đường dẫn + nội dung script)**, KHÔNG hash matcher. Đặc tả ghi "Hash của `(type, tool, name, path)`" ở câu đầu rồi "chỉ cần hash đường dẫn + nội dung script" ở câu sau — **hai tuple khác nhau trong cùng một bước**. Đối chiếu: `codex-rs/hooks/src/engine/discovery.rs:775-790`.
+4. Lưu trạng thái cạnh config — nhưng ở `extensibility/settings.ts`, **không** phải `config/settings.ts`. Copy hình dạng `cfgEditModelVariants`. *(neo: `config/registry.ts:162-166` `RecordDefinition`; `edit/settings.ts:52-57`; `config/settings.ts:62` `SettingProvenance` và `:800-809` `getProvenance`, 6 lớp)*
+5. Thêm cột/badge trạng thái vào bảng Extension Control Center — `extension-list.ts`, **KHÔNG phải** `hook-editor.ts`. Icon ở `#renderExtensionRow:307-327`, chữ ở `inspector-panel.ts:471-482`. **Không dựng overlay mới.**
+6. **BỔ SUNG** — nối `trustState` từ config tới bảng, ở `state-manager.ts:231-258`. Không có bước này thì bước 5 hiển thị `undefined` vĩnh viễn.
+7. **BỔ SUNG** — cài cái chặn, ở `hooks/loader.ts:191-209`. **Nhưng đọc cảm bẫy lớn nhất bên dưới trước** — hàm này chưa có call site production.
+8. **BỔ SUNG** — viết một test đỏ trước, chưa đụng source.
+9. **BỔ SUNG** — cập nhật hai chú thích thừa nhận: `extensions/types.ts:490-494` và `:551-563`. **Sửa câu chữ, KHÔNG sửa `isProjectTrusted()`** — nó phải tiếp tục là `() => true` ở `runner.ts:1293` và `agent-session.ts:7552`.
+
+**Hợp đồng test.** **Hợp đồng quan sát được, viết bằng kết quả:** một hook đã được duyệt rồi bị sửa file thì trạng thái của nó **chuyển sang `modified`** và nó **không còn nạp** — thay vì tiếp tục chạy y hệt mà không có tín hiệu nào. *Người dùng thấy gì nếu hồi quy:* họ duyệt một hook một lần, sửa file hook đó (thêm một lệnh, đổi một URL), và **không bao giờ được báo gì** — hook sửa vẫn chạy, mỗi tool call vẫn qua nó, và cách duy nhất phát hiện là đọc log của một tiến trình mà không có gì trong đó. Bảng Extension Control Center vẫn hiện trạng thái `active` như hôm nay.
+
+**File test MỚI** — đặc tả không có: `packages/coding-agent/test/hook-trust-state.test.ts`. Ba case, mỗi case một nhánh khác nhau của bốn trạng thái:
+
+| case | dựng | khẳng định |
+| --- | --- | --- |
+| **1. `untrusted` chặn âm thầm** | fixture hook ở `<tmp>/.omp/hooks/pre/`, chưa từng duyệt | `loadHooks` **không** trả hook trong `hooks[]`; `errors[]` có một mục nói lý do. Đây là case GAP-D3 (a) — chặn không hỏi |
+| **2. `modified` chặn** | duyệt hook (ghim `trustedHash`), rồi **ghi lại file script** (đổi nội dung), nạp lại | trạng thái là `modified`, hook không nạp. Đây là case hồi quy cốt lõi — dựng fixture đúng, xác nhận nó **ĐỎ** vì callback vẫn được leo, rồi mới viết bản sửa |
+| **3. NHÁNH PHỦ ĐỊNH — `trusted` vẫn nạp** | duyệt hook, **không** sửa file, nạp lại | hook **có** trong `hooks[]`, `errors[]` rỗng. Đây là case cổng (2) thật sự dựng lại được |
+
+Ba case này **là** cổng (2) của đặc tả. Không có chúng, "nhánh phủ định" là một câu không kiểm được.
+
+**Ba file test sẵn có đều phải giữ xanh**, và lý do phải nêu trong PR nếu có bất kỳ cái nào xanh *không phải vì lý do dưới đây*: `test/hook-editor.test.ts` (đã có, 20 KB, 28 test **toàn bộ** về soạn text: Enter/Ctrl+Q/bracketed paste/Escape/Ctrl+G/prompt-style gutter — **không test nào về hook list hay trust**; baseline đo **28 pass, 0 fail**) — **không có lý do hợp lệ để chuyển đỏ**; nếu nó đỏ, bạn đã sửa nhầm file. `test/extension-context-project-trust.test.ts` (457 B, 1 test `expect(runner.createContext().isProjectTrusted()).toBe(true);`; baseline **1 pass, 0 fail**). `test/issue-7955-extension-project-trusted.test.ts` (1.1 KB, 2 test) — **thứ ba, đặc tả không nhắc**.
+
+**Cổng có đỏ được không.** Bốn phần như đặc tả, cộng một phần thứ năm. **Ba phần đầu không đỏ được vì lý do đặc tả nêu; phần thứ năm là phần thay thế.**
+
+**(1) TYPE — ĐỎ ĐƯỢC, và baseline hiện tại là XANH.** `bun run check:ts` — đo tại HEAD: **exit 0**. Nó đỏ được vì `check:ts` = `oxlint . && oxfmt --check <globs> && bun run --filter './packages/*' --sequential --if-present check:types` (`package.json:90-91`, mỗi package dùng `tsgo -p tsconfig.json --noEmit`, ví dụ `packages/coding-agent/package.json:523`). Cụ thể nó bắt được: union sai chính tả; `RecordDefinition<T>` dùng sai kiểu; id setting trùng (`register()` **throw lúc import**); và **một trượt format** — `oxfmt` quét cả `packages/*/src/**` lẫn `packages/*/{test,bench,examples,scripts}/**`, nên file test mới viết tay mà không format là đỏ. Đừng chạy `tsc` — AGENTS.md cấm, và script ở đây là `tsgo`.
+
+**(2) NHÁNH PHỦ ĐỊNH — KHÔNG ĐỎ ĐƯỢC. Đây là cổng luôn xanh.** Nó nói *"dưới ngưỡng chặn, mọi thứ phải y hệt hôm nay"* nhưng **không đưa ra lệnh nào**. `check:ts` là cổng biên dịch — nó không quan sát hành vi nạp hook lúc chạy. Và tệ hơn: **không bước nào trong 5 bước của đặc tả cài đặt cái cổng chặn**, nên không có gì để hồi quy. Cổng này sẽ xanh ngay cả khi bạn viết union + cột hiển thị rồi dừng lại. Một cổng luôn xanh tệ hơn không có cổng, vì nó tạo cảm giác an toàn giả. **Viết lại:** `cd packages/coding-agent && bun test test/hook-trust-state.test.ts`. Nó đỏ được: sửa `hook_hash` thành trả một hằng, hoặc bỏ nhánh `Some(_) => Modified`, hoặc đảo điều kiện ở `loadHooks` — cả ba đều làm case 2 hoặc case 1 đỏ. Nó **không** đỏ được nếu bạn chỉ thêm union và cột hiển thị mà không động tới `loader.ts` — và đó chính là lý do nó phải là một lệnh test chạy được, không phải một mô tả.
+
+**(3) HAI TEST SẴN CÓ — ĐỎ ĐƯỢC về mặt cơ khế, nhưng không đỏ được vì lý do đặc tả nêu.** Đỏ được: đổi `isProjectTrusted: () => true` thành `() => false` ở `runner.ts:1293` → cả ba file đỏ ngay. Nhưng tiền đề của đặc tả sai: nó nói hai file này *"được trích dẫn như hợp đồng-bằng-quan-sát"*. Đo: `hook-editor.test.ts` có 28 test và **không test nào** chạm hook list hay trust; thêm badge vào `extension-list.ts` **không thể** làm nó đỏ. **Sửa thành:** đổi nó từ "cho phép chuyển đỏ" thành **"ba file này phải xanh, và xanh *vì* `isProjectTrusted()` vẫn là `() => true`"** — kèm test thứ ba. Chúng là cổng chống-sửa-nhầm, không phải cổng hợp đồng-tin-cậy.
+
+**(4) GIỮ NGUYÊN CHỨC NĂNG SỬA HOOK — ĐỎ ĐƯỢC, nhưng đang bảo vệ sai thứ.** Nó bảo vệ `HookEditorComponent` — hộp thoại soạn text — chứ không phải chức năng sửa hook. Đặc tả tự thừa nhận đây là lần đầu omp có đường nạp bị chặn nên mất chức năng là hồi quy; **đúng ý, sai đối tượng**: chức năng sửa hook sống ở `extension-list.ts` + `inspector-panel.ts`, và chúng được bảo vệ bởi `cd packages/tui && bun test test/extension-inspector.test.ts test/extension-dashboard-state.test.ts test/extension-list-mouse.test.ts`. **Ba file này không có trong đặc tả** và là nơi hồi quy thật sự sẽ xuất hiện. Thêm chúng vào cổng.
+
+**(5) CỔNG VIẾT LẠI — một câu, đủ để thay cả (2) và (3)**
+
+```bash
+bun run check:ts && \
+cd packages/coding-agent && bun test test/hook-trust-state.test.ts && \
+  bun test test/hook-editor.test.ts test/extension-context-project-trust.test.ts \
+          test/issue-7955-extension-project-trusted.test.ts && \
+cd ../tui && bun test test/extension-inspector.test.ts \
+  test/extension-dashboard-state.test.ts test/extension-list-mouse.test.ts
+```
+
+Đỏ được khi: union sai kiểu (tsgo); file mới không format (oxfmt); hash sai hoặc thiếu nhánh `Modified` (case 2); nạp `untrusted` vẫn chạy (case 1); `trusted` bị chặn nhầm (case 3); `isProjectTrusted()` bị đổi (ba file trust); badge làm vỡ inspector/list (ba file tui). `gate_can_fail: true` của đặc tả **giữ nguyên** — nhưng nó chỉ đúng sau khi cổng (2) được thay bằng lệnh ở (2′) và ba file `tui` được thêm vào. **Ở dạng gốc, cổng (2) là cổng luôn xanh.**
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Cái bẫy lớn nhất: "đường nạp hook bị chặn" chưa tồn tại ở HEAD.** Đo lại, không suy đoán: `discoverAndLoadHooks` (`hooks/loader.ts:220`) — `grep -rn "discoverAndLoadHooks" packages/ | grep -v node_modules` trả về **đúng một dòng: chính dòng định nghĩa của nó**. Không call site nào, kể cả test. `new HookRunner(...)` không có kết quả nào trong `src/`; chỉ có trong test (`compaction-hooks.test.ts:110`, `hook-tool-wrapper-input.test.ts:47`). `src/index.ts` (barrel công khai) **không** re-export `./extensibility/hooks`. Các import production duy nhất của `extensibility/hooks/*` đều là **type-only** (`HookUIContext` ở `custom-tools/types.ts:28`, `custom-tools/loader.ts:16`; `HookCommandContext` ở `custom-commands/types.ts:12`). Nghĩa là: ở HEAD này, phần runtime của hệ hook (`loadHooks` / `discoverAndLoadHooks` / `HookRunner` / `HookToolWrapper`) **chỉ được test gọi**. Cái thật sự chạy trong app là **đường khác**: `hookCapability` discovery đẩy `Hook` vào `loadCapability<Hook>("hooks", …)`, rồi `state-manager.ts:233` dựng hàng cho bảng Extension Control Center. *Vì sao dễ sai nhất:* nó nghe hợp lý tuyệt đối. "Chặn đường nạp hook" → tìm hàm nạp hook → thấy `discoverAndLoadHooks` → sửa nó. Bạn sẽ thêm cả enum, cả hash, cả cổng chặn, cả test xanh, và **không một dòng nào thay đổi hành vi của omp** — vì hàm đó không ai gọi. Tệ hơn, bạn sẽ kết luận "trust state đã có" và đóng WI-14. **Trước khi gõ bước chặn, bạn phải trả lời bằng lệnh thật: hook nào thật sự được omp nạp và thật sự chạy ở HEAD này?** Nếu câu trả lời là "không cái nào, ngoài test", thì WI-14 phải được **thu hẹp lại thành state + cột hiển thị** (và nói thẳng trong PR rằng chưa có đường nạp để chặn), hoặc phải kéo việc nối call site vào scope. **Đừng âm thầm coi đây là chi tiết.**
+2. **Sửa nhầm file: `hook-editor.ts` không phải bảng.** Tên file rất hợp lý (277 dòng khớp con số đặc tả), và `hook-selector.ts` (639 dòng) bên cạnh cũng nghe như bảng — nhưng nó cũng là selector trượt dùng cho ask/confirm, **không phải bảng**. Cả hai đều là **hộp thoại tương tác**. Bảng là `extension-list.ts` (667 dòng). **Con số 277 trùng khớp là cái bẫy tệ nhất** — nó khiến bạn tin phần còn lại của câu.
+3. **`HookTrustState` là bản ghi theo hook, không phải setting vô hướng.** `SettingProvenance` (`settings.ts:62`) và `getProvenance` (`settings.ts:800-809`) làm việc trên `setting.segments` — một **đường dẫn**. `HookStateToml` là **bản ghi, khoá theo từng hook**. Nên `getProvenance(cfgHookState)` trả *"lớp nào cung cấp cả bảng `hooks.state`"*, không phải *"lớp nào cung cấp `trustedHash` của hook này"*. Cách thoát đúng: hỏi provenance của **cả bảng** một lần, rồi bên trong tự phân giải 6 lớp theo thứ tự merge mà `getProvenance` đã mã hoá. **Đừng gọi `getProvenance` 6 lần với 6 đường dẫn tự chế.**
+4. **Bước 3 tự mâu thuẫn với chính nó, và lệch khỏi codex theo hướng đúng — nhưng phải nói ra.** Chọn hash **(đường dẫn + nội dung script)**, vì nó mới phát hiện được việc **người dùng sửa file**, và `tool`/`name`/`type` đã nằm trong khoá ổn định ở `capability/hook.ts:31` rồi. Đây cũng là chỗ lệch có chủ đích so với codex: `discovery.rs:775-790` hash **cấu hình hook** (serialize `NormalizedHookIdentity` ra TOML), không phải nội dung script. Chép codex sẽ cho bạn trust state **không bao giờ** chuyển sang `modified` khi người dùng sửa file — tức là đúng cái lỗ hổng mà cả mục này sinh ra để vá. **Ghi chú này vào PR**, vì một người đọc diff sau này sẽ thấy bạn *"bỏ sót `matcher` và `group`"* mà không có lý do.
+5. **`enabled` và trust là hai thứ tách biệt — đừng gộp.** Codex giữ chúng riêng: `hook_enabled` (`discovery.rs:811-813`) đọc `state.enabled`, còn `hook_trust_status` (`discovery.rs:794-809`) đọc `trusted_hash`. Nếu gộp `enabled: false` vào `untrusted`, bạn vừa phá một khả năng có sẵn vừa làm `HookStateToml.enabled` trở thành dead field — vì omp **không có** `disabledHooks`/`enabledHooks` nào cả (`grep` → rỗng). Cơ chế duy nhất tắt hook hôm nay là `disabledExtensions` qua `state-manager.ts:236`.
+6. **`admin` không có nguồn ở omp.** Codex sinh `Managed` từ `is_managed` — một **tầng config do quản trị quản lý**. omp không có tầng đó: `Hook.level` (`capability/hook.ts:22`) chỉ có `"user" | "project"`. Bạn sẽ phải **định nghĩa** `admin` là gì — và câu trả lời thay đổi hành vi chặn (codex cho `Managed` đi thẳng qua cổng ở `discovery.rs:717`). **Đừng để `admin` là một nhánh trả về `true` mà không ai nghĩ tới** — đó là một trạng thái không ai kiểm được, tệ hơn không có.
+7. **Ba chỗ chép chuỗi khoá — sửa một, để lệch hai.** Đo được ba bản: `capability/hook.ts:31` (``key: hook => `${hook.type}:${hook.tool}:${hook.name}`,``), `capability/hook.ts:32` (``toExtensionId: hook => `hook:${hook.type}:${hook.tool}:${hook.name}`,``) và `state-manager.ts:235` (``const id = makeExtensionId("hook", `${hook.type}:${hook.tool}:${hook.name}`);``). Bản ở `state-manager.ts:235` là bản **quyết định `id` của hàng trong bảng** — hàng bạn sẽ gắn badge. Hai bản phải khớp, và **không có gì buộc chúng khớp ở biên dịch**.
+8. **Sửa hai test sẽ xanh là xoá bằng chứng.** Ở đây nó còn nguy hiểm hơn vì **chúng sẽ không chuyển đỏ đúng lý do** — nên sẽ có áp lực tinh thần coi chúng là "nhiễu" và dọn. **Không dọn.** Chúng xanh là bằng chứng `isProjectTrusted()` chưa bị đụng. Nếu bạn phải sửa chúng để xanh, hãy dừng lại và tìm xem mình đã đổi `runner.ts:1293` không.
 
 ## WI-1. Gán timer và model-provider theo đúng extension đã tạo ra chúng, và thả chúng khi suspend
 
@@ -1036,6 +1369,116 @@ Không chặn PR của Wave 2, nhưng phải quyết trước commit 2 (Wave 4):
 | Wave split: commit 1 ships in Wave 2, commit 2 (suspend + resume together) in Wave 4. | CONFIRMED — đặc tả này chỉ chở nửa Wave 2 | Theo chính bảng wave của plan (section 6.1, line 4693) và lập luận nó nêu ở 4866-4869: nửa provider không thể chỉ ship suspend, vì `pendingProviderRegistrations` bị drain phá huỷ bởi cả ba consumer (loader.ts:102/105 khai báo và push; sdk.ts:1009, sdk.ts:2491, cli/models-cli.ts:362 mỗi cái gán lại `[]`), nên một lời gọi lại trần sẽ không đăng ký gì. Plan không ship bất kỳ bước tăng provider chỉ-suspend nào cho người dùng. Vì vậy PR của Wave 2 chỉ chứa các bước 1-7. Evidence: Plan lines 4693, 4860-4869, 4718-4720; `grep -n 'pendingProviderRegistrations' packages/coding-agent/src` -> sdk.ts:1006,1009,2487,2488,2491; cli/models-cli.ts:359,362; loader.ts:102,105 |
 | Environment: `bun test` reports 0 pass because the pi_natives addon is not built. | CONFIRMED — và nay đã gỡ | Đây là **tiền đề tái lập được, không phải hạn chế của máy**: `brew install ninja` rồi `bun --cwd=packages/natives run build` (package script ở `packages/natives/package.json:32`, exit 0, sinh `packages/natives/native/pi_natives.darwin-arm64.node`) là mọi cổng chạy được. Trạng thái **trước** khi build: `bun test test/model-registry-runtime-cleanup.test.ts` -> '0 pass, 1 fail, 1 error' với 'Failed to load pi_natives native addon for darwin-arm64'. Riêng biệt, baseline type sạch và nên được ghi lại: `cd packages/coding-agent && bun run check:types` exit 0 với không lỗi nào tại HEAD, nên cổng là 'zero errors' thật sự, không phải 'no new errors'. Evidence: `bun --cwd=packages/natives run build` -> EXIT=0; `bun test packages/utils/test/` -> 743 pass / 10 skip / 0 fail; `grep -n '"build"' packages/natives/package.json` -> line 32; `bun run check:types` -> EXIT=0 |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Đã mở và đọc từng neo bằng `sed -n "<n>p"` / `grep -n`. Kết luận: **đa số neo trong plan lệch**, và lệch theo cả hai chiều — có neo lệch **+36**, có neo lệch **−88**. Đừng dùng lại số của plan mà không dò lại.
+
+Các neo lệch, dùng số thật:
+
+- `runner.ts`: `#managedTimers` khai báo 518 → **522** (+4); `clearManagedTimers()` gọi 411 → **415** (+4); định nghĩa `clearManagedTimers()` 1336-1337 → **1365-1366** (+29); `setSuspendedExtensions` 947-969 → **976-1000** (+29/+31); cổng `#suspendedExtensions.has(ext)` file-write 779 → **783** (+4), file-delete 798 → **802** (+4); `const ctx = this.createContext()` file-write 780 → **784**, file-delete 799 → **803**; chữ ký `createContext` 1242 → **1270-1277** (+28); 2 arrow property không owner 1304-1305 → **1333-1334**; `createCommandContext()` spread 1350-1352 → **1379-1381**; `#runHandlerWithTimeout` khai báo 1375 → **1404-1412**; lời gọi `createHandlerContext(...)` 1405-1408 → **1434-1438**.
+- `types.ts`: `interface Extension` 1802-1817 → **1827-1842** (+25); `path`/`resolvedPath` 1803-1804 → **1828-1829**; chữ ký public `setInterval`/`setTimeout` 516/522 → **518/524** (+2, nội dung đúng); `interface ProviderConfig` 1589 → **1614** (+25).
+- `sdk.ts`: `reconcileExtensionSources` 4566 → **4602** (+36); `resetCapabilities()` 4571 → **4607** (+36); `await Promise.all([...])` discover 4573-4576 → **4608-4611** (+35); `setSuspendedExtensions` 4579-4581 → **4615-4617** (+36); drain session (COMMIT 2) 2487-2492 → **2500-2505** (+13); `new ExtensionRunner(` 3074 → **3087** (+13); `createAgentSessionScoped` khai báo 1493 → **1505** (+12).
+- `agent-session.ts`: command call 7378 → **7524** (+146) — đây là khoản lệch lớn nhất của mục.
+- `extensions-runner.test.ts`: 4 case "managed timers" 3956-4070 → **3868-3980** (**−88**); `runner.createContext()` trong 4 case 3970/4002/4052 → **3882/3911/3935/3963**, đều −88.
+- `runner.ts:927-929` (`getExtensionPaths`) → **956-958** (+29); `runner.ts:230-241` (`createHandlerContext`) → **233-244** (+3); `loader.ts:374-390` → **374-392** (đúng vị trí).
+
+**Điểm đếm call site — số đã đổi, plan không cập nhật.** `grep -c 'this\.createContext('` là **16**, không phải 15: có call site mới ở `runner.ts:921` trong method mới `emitCacheWarmingDecision` (916-933), dùng chung `ctx` qua `#runHandlerWithTimeout` — đúng loại 12 call site dùng chung, nên **không cần owner riêng**. Tương tự, `#runHandlerWithTimeout` có **13** call site chứ không phải 12. `runner.ts` dài **1992** dòng (plan ghi 73 KB). Danh sách 16 call site: `784, 803, 921, 1381, 1507, 1519, 1558, 1616, 1673, 1704, 1745, 1767, 1848, 1884, 1909, 1966`. **Hệ quả trực tiếp:** gate "vẫn phải in ra 15" sẽ **báo fail vô lý** khi bạn làm đúng. Số đúng là 16 — **đừng "sửa" code cho khớp 15**.
+
+**Claim SAI** (không phải hỏng neo, mà là nội dung sai):
+
+- "`RegisteredCommand` / `ExtensionShortcut` cho phép nối `owner` từ call site" — **SAI một phần**: `types.ts:1251-1256` `RegisteredCommand` = `{ name, description?, getArgumentCompletions?, handler }`, **không có trường owner nào**; `ExtensionShortcut` (1714-1719) **có** `extensionPath: string`.
+- "`agent-session.ts:7378, 7396, 7494` là call site `createCommandContext`" — **SAI**: thật là `7524` (`#tryExecuteExtensionCommand`), `7540-7542` (`#createCommandContext` — khi không có runner thì trả literal context riêng), `7640` (`#tryExecuteCustomCommand`, spread `baseCtx`).
+- "Thêm field vào `Extension` là breaking change" — **ĐÚNG, và còn nặng hơn plan nói**: thêm vào đó **2 test dựng `Extension` literal trực tiếp** sẽ đỏ compile — `test/sdk-credential-disabled-bridge.test.ts:435` và `test/extensions-runner.test.ts:4074`; cả hai phải thêm `registeredProviders: []`.
+- "thiếu addon thì `bun test` báo 0 pass" — đúng về cơ chế, nhưng máy này **đã có addon**: `bun test test/extensions-runner.test.ts -t "managed timers"` chạy thật ra **4 pass, 0 fail**.
+
+Ngoài ra `files_touched` của plan SAI ở một chỗ: plan liệt kê 6 file + 1 file test, thực tế cần **7 file production + 1 file test** — `src/session/agent-session.ts` **KHÔNG CÓ trong plan nhưng BẮT BUỘC phải sửa** (nếu không `check:types` đỏ).
+
+**Bảng điểm sửa.** "TRƯỚC" trích nguyên văn từ file thật tại `65cc6c1`.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/extensibility/extensions/managed-timers.ts:23` | `#timers` | `readonly #timers = new Set<Timer>();` | `readonly #timers = new Map<Timer, Extension>();` |
+| `managed-timers.ts:17` (sau dòng import logger) | import | *(chỉ có)* `import { logger } from "@oh-my-pi/pi-utils";` | thêm `import type { Extension } from "./types";` — phải là `import type` để bị xoá lúc compile, tránh cycle với `types.ts` |
+| `managed-timers.ts:28` | `setInterval` | `setInterval(callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): Timer {` | `setInterval(owner: Extension, callback: ..., ms?: number, ...args: unknown[]): Timer` — thêm tham số đầu `owner`; body đổi `this.#timers.add(timer)` → `this.#timers.set(timer, owner)` |
+| `managed-timers.ts:36` | `setTimeout` | `setTimeout(callback: ..., ms?: number, ...args: unknown[]): Timer {` | `setTimeout(owner: Extension, callback: ..., ms?: number, ...args: unknown[]): Timer`; callback gọi `this.#timers.delete(timer)` (giữ nguyên — một-shot tự gỡ); `add` → `set(timer, owner)` |
+| `managed-timers.ts:51-55` | `clear` | `if (!this.#timers.delete(timer)) return;` | **giữ nguyên.** So khớp danh tính vẫn đúng với `Map` |
+| `managed-timers.ts:58-64` | `clearAll` | `for (const timer of this.#timers) {` | `for (const timer of this.#timers.keys()) {` — `Map` không iterable theo giá trị mặc định |
+| `managed-timers.ts` (mới, cạnh `clearAll`) | `clearFor` | *(không tồn tại)* | `clearFor(owner: Extension): void` — duyệt `for (const [timer, timerOwner] of this.#timers)`, `if (timerOwner !== owner) continue;` rồi `clearInterval` + `clearTimeout` + `delete`. Xoá CẢ interval LẪN timeout |
+| `src/extensibility/extensions/runner.ts` (mới, ngay trước `#runHandlerWithTimeout` ở 1404) | `#ownTimers` | *(không tồn tại)* | `#ownTimers<T extends ExtensionContext>(ctx: T, owner: Extension): T` — `Object.create(ctx)` + `Object.defineProperties` shadow `setInterval`/`setTimeout`/`clearTimer`, mỗi cái `enumerable: true, configurable: true` |
+| `runner.ts:1434-1438` | `createHandlerContext(...)` trong `#runHandlerWithTimeout` | `const handlerContext = createHandlerContext(\n\t\t\t\t\t\t\t\tctx,\n\t\t\t\t\t\t\t\thandlerSignal,` | `createHandlerContext(\n\t\t\t\t\t\t\t\tthis.#ownTimers(ctx, ext),\n\t\t\t\t\t\t\t\thandlerSignal,` — **OWNER POINT 1** |
+| `runner.ts:784` | trampoline file-write | `const ctx = this.createContext();` | `const ctx = this.#ownTimers(this.createContext(), ext);` — **OWNER POINT 2** |
+| `runner.ts:803` | trampoline file-delete | `const ctx = this.createContext();` | `const ctx = this.#ownTimers(this.createContext(), ext);` — **OWNER POINT 3** |
+| `runner.ts:1379-1381` | `createCommandContext` | `createCommandContext(): ExtensionCommandContext {\n\t\treturn {\n\t\t\t...this.createContext(),` | `createCommandContext(owner: Extension): ExtensionCommandContext {\n\t\treturn {\n\t\t\t...this.#ownTimers(this.createContext(), owner),` — **OWNER POINT 4**, BẮT BUỘC |
+| `runner.ts:1333-1335` | 3 arrow property trong `createContext` | `setInterval: (callback, ms, ...args) => this.#managedTimers.setInterval(callback, ms, ...args),` | Phải truyền sentinel scope: `this.#managedTimers.setInterval(UNOWNED_TIMERS, callback, ms, ...args)` |
+| `runner.ts:986-988` | `setSuspendedExtensions` nhánh `if (suspend)` | `this.#suspendedExtensions.add(extension);\n\t\t\t\tsuspended.push(extension);` | `this.#suspendedExtensions.add(extension);\n\t\t\t\tthis.#managedTimers.clearFor(extension);\n\t\t\t\tsuspended.push(extension);` |
+| `src/session/agent-session.ts:7607-7608` | `#fallbackTimers()` | `setInterval: (callback, ms, ...args) => this.#fallbackTimers().setInterval(callback, ms, ...args),` | **KHÔNG có trong plan.** Phải sửa theo cùng cách, nếu không `check:types` đỏ |
+| `test/extension-suspend-teardown.test.ts` | file test mới | *(không tồn tại)* | 2 case cho Wave 2 |
+
+**Các bước có neo đã kiểm.**
+
+1. Viết test đỏ (chưa đụng source).
+2. `managed-timers.ts`: `#timers` thành `Map` — neo `managed-timers.ts:23`, `:28`, `:36`, `:51-55`, `:58-64`.
+3. `runner.ts`: thêm `#ownTimers` — neo `runner.ts:1404` (chèn ngay trước `#runHandlerWithTimeout`).
+4. Nối BỐN điểm owner (rồi tự đếm lại) — `runner.ts:1434-1438`, `runner.ts:784`, `runner.ts:803`, `runner.ts:1379-1381`.
+5. `agent-session.ts`: **KHÔNG CÓ TRONG PLAN, NHƯNG BẮT BUỘC** — neo `agent-session.ts:7607-7608`.
+6. Thả timer khi suspend — neo `runner.ts:986-988` trong `setSuspendedExtensions`.
+7. Sửa hai call site `ManagedTimers` trong `createContext` — neo `runner.ts:1333-1335`, truyền sentinel.
+8. **DỪNG. Đây là hết PR Wave 2.**
+9. Bước 8–11 là COMMIT 2 / WAVE 4 ONLY — ghi chú neo đã đo lại: `sdk.ts:4602`, `:4607`, `:4608-4611`, `:4615-4617`, `:2500-2505`, `:3087`, `types.ts:1827-1842`.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/extension-suspend-teardown.test.ts` (mới, đã xác minh chưa tồn tại).
+
+- **Case 1 — TIMER DEAD AFTER SUSPEND, và timer của extension anh em vẫn sống.** Hai extension A và B, mỗi cái một handler `session_start` gọi `ctx.setInterval` tăng bộ đếm riêng. Emit `session_start` → advance timers → cả hai đếm ≥ 1. `setSuspendedExtensions(ext => ext === A)` → advance 5000. Assert: đếm của A **đứng yên**, đếm của B **TĂNG** qua cùng cửa sổ. So sánh "cùng một tick thì chưa đủ" — B phải chứng minh nó **tiến triển** trong khi A thì không. Session vẫn sống (không được tear down) — đó là điều phân biệt "timer bị clear" với "session chết".
+- **Case 2 — TIMER ALIVE AFTER RESUME.** Suspend A → đếm A đứng yên. Resume A → emit `session_start` **lần nữa** → advance → đếm tăng trở lại. Assert bộ đếm do lần gọi handler **THỨ HAI** tạo ra tăng; test **không được** assert trên handle `Timer` cũ. Phải chứng minh handle cũ thật sự đã mất: giữ tham chiếu tới handle trước-suspend, đẩy thời gian, callback cũ không hồi sinh.
+- **Case 3 — PROVIDER GONE AFTER SUSPEND, và trở lại sau RESUME (Wave 4).** Fixture tái dùng từ `test/model-registry-runtime-cleanup.test.ts:30/34-35/39`. Assert trên bề mặt quan sát được: `registry.find(providerName, modelId)` và `registry.authStorage.keys.source(providerName)`. Sau suspend: `find` là `undefined` **và** `keys.source` là `undefined` (credential bị gỡ, không chỉ overlay model). Sau resume: cả hai defined trở lại. **KHÔNG** assert `#runtimeProvidersBySource` hay field private nào.
+
+Nếu hồi quy, người dùng thấy: plugin đã tắt vẫn polling vô hạn, không lỗi, không log; nếu owner gắn sai thì tắt A giết luôn timer của B; nếu timer không khởi động lại ở resume thì extension polling ngừng polling **vĩnh viễn** sau một vòng tắt/bật, trong im lặng. Với provider: `omp models` vẫn liệt kê provider của plugin đã tắt, API key vẫn nằm trong `authStorage` — "tôi đã tắt plugin" không xoá được credential nó được cấp.
+
+Luật dựng test: **TUYỆT ĐỐI không `mock.module()`** (AGENTS.md cấm — Bun rò rỉ qua file test); dùng `vi.spyOn` trên module object đã import + `vi.restoreAllMocks()` trong `afterEach`. **TUYỆT ĐỐI không source-grep.** `vi.useFakeTimers()` trong `try/finally`. Full-suite safe: không giữ mutation file-wide của `Bun.*` / `process.env`.
+
+**Cổng có đỏ được không.** **Có — nhưng chỉ một nửa, và nửa đó phải nói thẳng.**
+
+```bash
+# 0. MỘT LẦN cho mỗi máy (máy này đã có sẵn addon nên có thể bỏ, nhưng nên chạy).
+bun --cwd=packages/natives run build
+# 1. Types. Baseline đã đo tại 65cc6c1: EXIT=0, không lỗi.
+cd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun run check:types
+# 2. Test mới — case 1 và case 2: 2 passing, 0 failing.
+cd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun test test/extension-suspend-teardown.test.ts
+# 3. Không hồi quy ở 4 case managed timers sẵn có + primitive model registry.
+cd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun test test/extensions-runner.test.ts test/model-registry-runtime-cleanup.test.ts
+```
+
+| Cổng | Đỏ trước / xanh sau? | Vì sao |
+| --- | --- | --- |
+| Case 1 (timer chết sau suspend) | ✅ **ĐỎ thật** | HEAD: `#timers` là `Set<Timer>` không owner (`managed-timers.ts:23`), `setSuspendedExtensions` (976-1000) chỉ chạm `#suspendedExtensions` + splice `extensions` — không chạm timer. Bộ đếm A vẫn leo. |
+| Case 2 (timer sống sau resume) | ❌ **KHÔNG đỏ — pass HỤT** | Trên HEAD chưa sửa gì, không có gì bị xoá, nên interval vẫn nổ xuyên suốt vòng suspend/resume và case pass **vì lý do sai**. Nó chỉ thành cổng thật khi commit 1 đã đất. |
+| `check:types` | ❌ **KHÔNG đỏ — xanh sẵn** | Baseline HEAD = 0 lỗi (đã chạy thật). Đây là cổng "zero errors", không phải "no new errors". |
+| `bun test … extensions-runner` + `model-registry-runtime-cleanup` | ❌ **KHÔNG đỏ — xanh sẵn** | Chúng bảo vệ code cũ, không bảo vệ tính năng mới. |
+| `grep -c 'this\.createContext('` == 15 | ⚠️ **SẼ ĐỎ SAI** | Số thật là **16** (call site mới ở `runner.ts:921`). Cổng này cần viết lại. |
+
+**Kết luận thẳng:** trong 5 lệnh cổng trên, **chỉ một** — `bun test test/extension-suspend-teardown.test.ts` với case 1 — thật sự đỏ trước khi sửa. Ba lệnh còn lại là cổng an toàn, không phải cổng chứng minh.
+
+Ba cổng phải viết lại cho đỏ được. **Cổng A** — thay `grep -c` bằng một kiểm tra hành vi: số 15/16 là con số bị trôi theo code và ngay lúc này **đã sai**; cổng đỏ được là case 1 với extension B chứng minh owner không bị gắn nhầm — nếu `clearFor` quét Map và dừng ở entry đầu, hoặc nếu owner lấy từ context dùng chung, **đếm của B đứng yên và case đỏ**. **Cổng B** — case 2 phải viết sao cho một bản hiện thực commit-1 sai (xoá ở cả nhánh resume, hoặc không bao giờ lên lịch lại) sẽ đỏ: assert **cả hai vế** — sau resume, đếm **tăng** (đã lên lịch lại) **và** handle cũ **không** hồi sinh (đã bị clear). Nếu chỉ assert một vế thì một trong hai lỗi đó lọt. **Cổng C** — gate "diff phải chạm đúng N file" cần viết lại: thật cần **3 file production** cho commit 1 — `managed-timers.ts`, `runner.ts`, **và `session/agent-session.ts`**; nếu `types.ts` xuất hiện → sai, nếu `sdk.ts` xuất hiện → nửa provider lẫn vào. Và `grep -c 'this\.createContext('` phải in 15 → thật là **16**; sửa thành 16, hoặc bỏ gate này và thay bằng Cổng A.
+
+`readonly` trên `#timers` không nhất quán trong đặc tả: `files_touched` ghi `readonly #timers = new Map<…>`, `code_shape` ghi `#timers = new Map<…>`. File thật dòng 23 là `readonly #timers = new Set<Timer>();` — giữ **`readonly`**, chọn `code_shape` là sai.
+
+KHÔNG dùng làm cổng: `bun check` ở gốc repo (chạy `check:rs` cần cargo toolchain); `tsc` / `npx tsc` — AGENTS.md cấm, script là `tsgo -p tsconfig.json --noEmit`.
+
+**Cạm bẫy riêng của mục này.**
+
+- **C1 — Thiếu MỘT điểm gán owner, không phải thiếu cơ chế.** `createContext()` có **16** call site nhưng chỉ **BỐN** có thể gọi đúng tên extension sở hữu: `#runHandlerWithTimeout` (đã nhận `ext`), hai trampoline fallback (đã đóng trên `ext`), và `createCommandContext` (một spread). 12 call site còn lại **dùng chung một `ctx` dựng một lần cho mỗi vòng emit** — `ctx ??= this.createContext()` tại `runner.ts:1507` và `:1519`, cộng mười `const ctx = this.createContext()` trong từng hàm emit riêng. Truyền `ext` vào `createContext()` ở các điểm đó sẽ truyền `undefined` cho mọi extension. **Đây đúng là đường mà một timer `session_start` thật đi qua** — và vì thế test case 1 BẮT BUỘC đi qua `emit`, không đi qua trampoline. Viết test qua trampoline là nó sẽ **pass trên đúng bản hiện thực hỏng** mà nó sinh ra để bắt: bản đó chỉ gán owner ở 784 và 803, bỏ trống 1434.
+- **C2 — `createCommandContext` là SPREAD, `Object.create` không compose được với nó.** `Object.create` shadow hoạt động theo chuỗi prototype, nhưng `{ ...ctx }` copy **own enumerable properties** — nên spread sẽ copy thẳng 3 own property không-owner (1333-1335) và nuốt mọi shadow. Phải bọc `#ownTimers` **TRƯỚC**, spread **SAU**. Làm ngược thứ tự thì `createCommandContext` trả về object mà mọi `ctx.setInterval` đều không có owner.
+- **C3 — `RegisteredCommand` không mang owner (plan đã bỏ sót).** `ExtensionShortcut` **có** `extensionPath` (`types.ts:1718`) nên shortcut dễ; nhưng `RegisteredCommand` (`types.ts:1251-1256`) **không có trường nào** trỏ về extension. Ở `agent-session.ts:7524` bạn chỉ có `command.name`. Đây là việc phát sinh ngoài ước lượng "20-25 dòng".
+- **C4 — `agent-session.ts` có instance `ManagedTimers` thứ hai mà plan không nhắc.** Bỏ qua nó thì `check:types` đỏ ngay — lỗi "lộ ra sớm, tốt". Nhưng nếu sửa nó bằng `this.#ownTimers` thì bạn vừa tạo một dependency sai: context ở 7607 thuộc `AgentSession`, không thuộc runner. Sửa đúng là truyền sentinel.
+- **C5 — `clearFor` phải xoá CẢ interval LẪN timeout.** Một one-shot đang chờ cũng là công việc nền; `clearFor` chỉ lọc `setInterval` thì một `setTimeout(..., 60000)` của plugin đã tắt vẫn nổ sau một phút. `clear()` hiện có gọi **cả hai** `clearInterval` + `clearTimeout` trên cùng handle (dòng 53-54) — `clearFor` phải làm y hệt, không chọn lọc.
+- **C6 — Vòng lặp xoá trong khi duyệt `Map`.** Xoá entry hiện tại giữa lúc duyệt `Map` là hành vi **được định nghĩa**. `for (const [timer, timerOwner] of this.#timers)` rồi `this.#timers.delete(timer)` là an toàn. Đừng dùng `Array.from(this.#timers).forEach(...)` rồi xoá — cũng được, nhưng tốn một mảng.
+- **C7 — Chuỗi `"<timer>"` trong `onError` phải giữ nguyên** khi đổi `#timers` sang `Map`.
+- **C8 — Thứ tự owner point 1 phải ĐÚNG: `#ownTimers` bọc NGOÀI, `createHandlerContext` bọc TRONG.**
+- **C9 — Rủi ro commit 2: bán suspend mà không bán resume.** Nửa provider phải đi cả hai chiều.
+- **C10 — Quyết định còn treo: resume và timers.** Cần chốt trước khi gõ bước 4.
+- **C11 — Quyết định còn treo: sentinel hay ném lỗi** khi `ctx.setInterval` được gọi ngoài owner.
+
 ## Cần người xác nhận
 
 Các điểm dưới đây là mâu thuẫn nội tại của chính đặc tả. Không tự sửa — ghi lại để người đọc quyết.
@@ -1268,6 +1711,96 @@ MỨC TRUNG BÌNH, và nó là một thay đổi hành vi thật chứ không ph
 | `bun test` báo 0 pass kèm lỗi native-addon. | partly-wrong | Khi addon chưa build, nó báo 0 pass / 1 FAIL / 1 error trên mỗi file — file được tính là fail, không phải skip. Nhỏ thôi, nhưng nó cho kỹ sư biết lần chạy test thật sự đỏ chứ không âm thầm rỗng, đó là điều họ cần biết trước khi tưởng một lần chạy xanh. Build addon một lần là câu hỏi này biến mất. Bằng chứng: `brew install ninja` rồi `bun --cwd=packages/natives run build` → exit 0; `bun test packages/utils/test/` → 743 pass / 10 skip / 0 fail. |
 | Sắp xếp `allPaths` là no-op với consumer vì không gì trong codebase phụ thuộc thứ tự hệ file tình cờ. | verified-with-caveat | Đã kiểm chứng — `loadExtensions` (loader.ts:485-487) dùng `Promise.all(paths.map(...))`, giữ nguyên thứ tự đầu vào, và `bindPreparedExtensions` duyệt theo thứ tự đó, nên thứ tự `this.extensions` đúng bằng thứ tự `allPaths`. Nhưng lưu ý: `resolveExtensionDirectory` được gọi với CONFIGURED_EXTENSION_DIRECTORY_OPTIONS, vốn KHÔNG đặt `sortChildren` (chỉ các plugin options tại `extensibility/plugins/loader.ts:290` mới đặt), nên một thư mục được cấu hình gồm các sub-extension là con đường DUY NHẤT mà post-sort ở loader thực sự gánh trọng. Đó đúng là con đường fixture test đi qua, tốt cho coverage, nhưng nghĩa là đường plugin vốn đã sort và không được gì thêm. Bằng chứng: loader.ts:485-487; loader.ts:526-533 `CONFIGURED_EXTENSION_DIRECTORY_OPTIONS` (không sortChildren) so với `extensibility/plugins/loader.ts:287-291` `PLUGIN_EXTENSION_DIRECTORY_OPTIONS` (sortChildren: true); directory-resolution.ts:119 `if (options.sortChildren) children.sort();`. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Trong **47 neo**: **35 đúng, 12 hỏng** (sai dòng), cộng **4 claim môi trường đã lỗi thời** và **1 cổng không bao giờ đỏ**. Mức lệch **không đều**: trong `runner.ts` field lệch `+4` còn các thứ trong `getRegisteredCommands` và `getRegisteredTool` lệch `+27..+29`; `types.ts` lệch **đều `+25`**. Plan tự nhận sai 4 neo `runner.ts`, thực tế sai **6**. **Dùng số thật trong bảng dưới, đừng dùng số trong plan — nếu gõ theo số của plan sẽ sửa nhầm dòng.**
+
+Neo hỏng, dùng vị trí thật: `runner.ts` 481 → **485**; 1186 → **1215**; 1193 → **1222**; khối log reserved 1193–1196 → **1220–1226**; 1206 → **1235**; `getRegisteredTool` 984 → **1012** (doc) / **1013** (sig); doc của nó 983 → **1012**. `types.ts`: 1666 → **1691**; 1668 → **1693**; đóng `RegisteredTool` 1676 → **1701**; `tools: Map<string, RegisteredTool<any, any>>` 1807 → **1832**. `CHANGELOG.md:5` không phải `## [18.3.3]` bất biến mà là `### Security`; mục đã phát hành là `## [18.4.0] - 2026-09-28` ở **dòng 9**.
+
+Hai phát hiện lớn nhất, đọc trước khi gõ bất cứ dòng nào:
+
+1. **Cổng (4) của plan (`extensions-discovery.test.ts` vẫn xanh) là thuốc an thần.** Đã thay `helpers.ts:763` bằng **đúng** cái sort tại chỗ gây hại và chạy lại: **35 pass / 0 fail**. Chạy cả `test/discovery/` + `test/capability/` + `test/skillshare/discovery.test.ts`: **217 pass / 0 fail**. Không test nào sẵn có bắt được cái bẫy mà plan tự gọi là "cách sai dễ nhất".
+2. **`bun test` KHÔNG còn bị chặn.** Plan nói "Bị CHẶN cho tới khi có native addon … 0 pass / 1 fail / 1 error". Đo lại: `bun test test/extension-loader-concurrency.test.ts` → **2 pass / 0 fail / 597ms**. Toàn bộ mục "Xác minh" của plan mô tả một thế giới không còn tồn tại.
+
+Ngoài ra: HEAD thật là **`65cc6c1`**, không phải `808b365`; `## [Unreleased]` **không rỗng** — nó có `### Security` (`:5–7`) với entry về project-scope MCP, nên phải thêm `### Changed` **sau** khối đó.
+
+**Bảng điểm sửa.** Mọi mục "TRƯỚC" trích **nguyên văn** từ cây tại `65cc6c1`.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/extensibility/extensions/loader.ts:660` | `discoverExtensionPaths` → `return allPaths;` | `658\t\t}` / `659\t(blank)` / `660\t\treturn allPaths;` | Chèn ngay trên 660: `allPaths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));` kèm khối comment 6 dòng. Không đụng `addPath` (585–591) và `addPaths`. |
+| `src/discovery/helpers.ts:763` | `discoverLinkedExtensionModuleFiles` | `763\t\tconst entries = await readDirEntries(dir);` | `const entries = [...(await readDirEntries(dir))].sort((a, b) =>\n\t\ta.name < b.name ? -1 : a.name > b.name ? 1 : 0\n\t);` — **bắt buộc có `[...]`**, xem cạm bẫy 1. |
+| `src/extensibility/extensions/types.ts:1701` | `interface RegisteredTool` đóng lại | `1700\t\tsourceInfo: SourceInfo;` / `1701\t}` | Chèn `export interface ExtensionRegistrationDiagnostic` (4 trường) ngay **sau** dòng 1701. |
+| `src/extensibility/extensions/runner.ts:485` | field private `#commandDiagnostics` | `485\t\t#commandDiagnostics: Array<{ type: string; message: string; path: string }> = [];` | `#registrationDiagnostics: ExtensionRegistrationDiagnostic[] = [];` |
+| `src/extensibility/extensions/runner.ts:1215` | reset trong `getRegisteredCommands` | `1215\t\tthis.#commandDiagnostics = [];` | `this.#registrationDiagnostics = [];` |
+| `src/extensibility/extensions/runner.ts:1222` | push reserved-command | `1222\t\t\t\t\tthis.#commandDiagnostics.push({ type: "warning", message, path: ext.path });` | `this.#registrationDiagnostics.push({ type: "warning", message, path: ext.path });` |
+| `src/extensibility/extensions/runner.ts:1232` | đuôi `getRegisteredCommands` | `1232\t\t\treturn [...commands.values()];` | Chèn ngay trên: `this.#registrationDiagnostics.push(...this.#collectToolNameCollisions());` |
+| `src/extensibility/extensions/runner.ts:1235` | `getCommandDiagnostics()` | `1235\t\tgetCommandDiagnostics(): Array<{ type: string; message: string; path: string }> {` / `1236\t\t\treturn this.#commandDiagnostics;` | `getCommandDiagnostics(): ExtensionRegistrationDiagnostic[] { return this.#registrationDiagnostics; }` |
+| `src/extensibility/extensions/runner.ts:36–91` | khối `import type { … } from "./types";` | Khối import nhiều dòng `36\timport type {` … `91\t} from "./types";` | Thêm `ExtensionRegistrationDiagnostic,` vào danh sách (giữ thứ tự alphabet: sau `ExtensionMode,` trước `ExtensionRuntime,` — import **cấp cao nhất**, không inline). |
+| `src/extensibility/extensions/runner.ts:1012` | doc của `getRegisteredTool` | `1012\t\t/** Get the effective registered tool for a name using normal last-extension-wins precedence. */` | Mở rộng thành phát biểu luật (bind theo thứ tự `discoverExtensionPaths` đã sort; bên sort cuối thắng; bên bị che vẫn còn trong `getAllRegisteredTools()`; xung đột do `#collectToolNameCollisions` báo). Thân hàm 1013–1019 **không đổi**. |
+| `src/extensibility/extensions/runner.ts` | method private + getter mới | *(chưa tồn tại)* | Thêm `#collectToolNameCollisions(): ExtensionRegistrationDiagnostic[]` và `getToolCollisionDiagnostics(): ExtensionRegistrationDiagnostic[]` (đặt cạnh `getRegisteredTool` 1012–1019). |
+| `test/extension-load-order-determinism.test.ts` | — | **Chưa tồn tại** (`ls` → `No such file or directory`) | File mới, 3 test. |
+| `CHANGELOG.md:3–7` | `## [Unreleased]` | `3\t## [Unreleased]` / `4\t(blank)` / `5\t### Security` / `7\t- Project-scope MCP config …` | Thêm `### Changed` + 1 dòng, **sau** khối `### Security` đã có. Không có `### Added`. |
+
+Những file **KHÔNG được chạm**: `src/capability/fs.ts` — `readDirEntries` (37–51) trả `dirCache.get(abs) ?? []` (39–41) **theo tham chiếu**, sửa ở đây đảo thứ tự 5 module khác; chỉ đọc (`action: "modify"` trong bảng của plan là **sai**). `src/extensibility/extensions/directory-resolution.ts` — đã có `sortChildren` (119), không liên quan. `src/extensibility/plugins/loader.ts` — đã có `sortChildren: true` (290).
+
+**Các bước có neo đã kiểm.**
+
+1. `loader.ts`, chèn sort — neo `loader.ts:660`.
+2. `helpers.ts`, sort bản sao — neo `helpers.ts:763`.
+3. `types.ts`, khai báo interface — neo `types.ts:1701`.
+4. `runner.ts`, thêm collector — cạnh `getRegisteredTool` 1012–1019.
+5. `runner.ts`, đổi tên field và đẩy kết quả — neo `runner.ts:485`, `1215`, `1222`, `1232`.
+6. `runner.ts`, nới getter + import — neo `runner.ts:1235`, khối import `36–91`.
+7. `runner.ts`, viết luật ra — neo doc `runner.ts:1012`.
+8. Dựng fixture.
+9. Kiểm tiền đề trong test, **TRƯỚC khi spawn**.
+10. Probe dòng 1, hai subprocess.
+11. Dòng 2, trong tiến trình.
+12. Thêm DÒNG 3 (gate cache) — *thay cho `extensions-discovery.test.ts`*.
+13. Changelog — neo `CHANGELOG.md:3–7`.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/extension-load-order-determinism.test.ts` (chưa tồn tại — phải tạo).
+
+- **DÒNG 1 — thứ tự nạp xác định.** Khẳng định `ExtensionRunner#getRegisteredTool("dup")?.extensionPath` === `path.join(extsDir, "ext-h", "index.ts")`, ở **hai** subprocess. *Nếu hồi quy:* hai plugin trùng tên resolve theo readdir tình cờ — cùng một bản cài ra khác kết quả trên APFS vs ext4, đổi trước/sau một lần cài lại, và **hoàn toàn im lặng** (không log, không lỗi, plugin thua trông như chưa từng cài). *Vì sao assert TÊN bên thắng chứ không assert nhất quán:* thứ tự readdir là thuộc tính của **thư mục**, không phải của tiến trình — hai subprocess đọc cùng một thư mục sẽ thấy **cùng** thứ tự, có sort hay không; assert "nhất quán" sẽ xanh trên một cài đặt không sort gì cả. *Vì sao hai subprocess chứ không hai lần gọi trong một tiến trình:* `dirCache` (`fs.ts:5`) + ESM cache đều sống sót lần gọi thứ hai và che đúng thứ tự đang thử.
+- **DÒNG 2 — trùng tên được báo cáo nêu cả hai bên.** Khẳng định `getToolCollisionDiagnostics()` → một bản ghi có `type === "warning"`, `paths.length === 2` đúng hai đường dẫn, và `message` chứa **cả hai** chuỗi đường dẫn dưới dạng substring. *Nếu hồi quy:* tác giả plugin bị ghi đè hoàn toàn không có tín hiệu — UI, log, API đều im, triệu chứng duy nhất là một tool chạy khác với điều source nói. *Vì sao assert `message` chứ không chỉ `paths`:* bảo vệ cả consumer chỉ-đọc-log.
+- **DÒNG 3 — cache cấp module không bị sort tại chỗ.** Khẳng định thứ tự `readDirEntries` trả về **không đổi** sau một lần discovery đi qua nhánh linked. *Nếu hồi quy:* thứ tự của 5 module discovery khác bị đảo trong im lặng — đây là hậu quả **đã đo**, không phải giả định. *Cố ý KHÔNG assert* `allPaths` đã sort: đó là hình dạng mảng nội bộ; danh tính bên thắng mới là hợp đồng, và assert mảng sẽ cho phép làm test xanh bằng cách sort nhầm tầng.
+
+**Cổng có đỏ được không.** Có, nhưng **một cổng trong plan phải bỏ** — và nó là cổng mà plan tự gọi là "phần có tác dụng thật".
+
+```bash
+bun run check:ts
+cd packages/coding-agent
+bun test test/extension-load-order-determinism.test.ts test/extensions-discovery.test.ts
+```
+
+**Không còn cần build native addon** — các bước gỡ chặng trong plan không còn thiết yếu.
+
+| Cổng | Lệnh | Đỏ được? |
+| --- | --- | --- |
+| (1) TYPE | `bun run check:ts` | ✅ CÓ — đo trên cây sạch: **exit 0**. Đỏ nếu interface chẩn đoán export sai, thiếu import type cấp cao nhất, hoặc có `any` lọt vào. |
+| (2) DÒNG 1 | xoá `allPaths.sort` ở `loader.ts:659` | ✅ CÓ — DÒNG 1 phải đỏ, bên thắng là `ext-*` khác `ext-h`. Đây là cổng thật vì DÒNG 1 tự kiểm tiền đề fixture trước (bước 9). |
+| (3) DÒNG 2 | xoá `#collectToolNameCollisions` | ✅ CÓ — DÒNG 2 đỏ. |
+| (4) ~~`extensions-discovery.test.ts`~~ | — | ❌ **KHÔNG BAO GIỜ ĐỎ — đã đo thực nghiệm.** Thay `helpers.ts:763` bằng đúng cái sort tại chỗ gây hại: `test/extensions-discovery.test.ts` → **35 pass / 0 fail**; `test/discovery/ test/capability/ test/skillshare/discovery.test.ts` → **217 pass / 0 fail**. Lý do: các test nhiều extension chỉ assert **độ dài**, không assert thứ tự — `extensions-discovery.test.ts:310` `toHaveLength(2)` và `:401` `toHaveLength(3)`. |
+| (4′) **DÒNG 3** (thay thế) | xoá `[...]` ở `helpers.ts:763` | ✅ CÓ — DÒNG 3 đỏ trên `toEqual(order0)`. |
+| smoke | `bun test test/extension-loader-concurrency.test.ts` | ✅ xanh (không tính là cổng) |
+
+Cách làm DÒNG 3 (đỏ được, và đỏ **đúng lý do**): dựng `<temp>/shared/` chứa 3 subdir tạo theo thứ tự **cố tình không alphabet**; symlink vào thư mục extension để buộc native glob không đi xuống và `discoverLinkedExtensionModuleFiles` chạy (đúng nhánh tại `helpers.ts:763`); **trước** khi discovery chụp `const first = await readDirEntries(shared);` rồi `const order0 = first.map(e => e.name);` — đây là mảng string mới, miễn nhiễm với mutation; gọi `await discoverExtensionPaths([linked], cwd, undefined, { ambient: false });`; **sau** đó `expect(second.map(e => e.name)).toEqual(order0)`. Tiền đề, cùng kỷ luật với bước 9: `expect(order0).not.toEqual([...order0].sort())` — nếu readdir tình cờ ra alphabet thì dòng này vô nghĩa, phải đỏ với message nêu thứ tự thực tế.
+
+Cạm bẫy đã đo ngay trên cây này với cổng (1): `check:ts` = `check:tools && <filter check:types>`, quét **toàn cây 5445 file**; đang có file untracked `packages/coding-agent/test/collab/web-wire.types.ts`. Hiện `check:tools` **vẫn xanh** vì file đó đã đúng format, nhưng bất kỳ file rác `.ts` untracked nào **chưa** format sẽ làm nó đỏ ở `oxfmt` dưới 1 giây, chưa tới `tsgo`. **Đỏ ở đây không mặc định là do thay đổi của bạn** — kiểm tra `git status --porcelain -- packages/` trước.
+
+Chứng minh cổng, chạy trước khi mở PR: (1) với bản sửa đầy đủ, DÒNG 1+2+3 xanh; (2) xoá `allPaths.sort` → DÒNG 1 đỏ; (3) khôi phục, xoá `[...]` ở `helpers.ts:763` → DÒNG 3 đỏ; (4) khôi phục, xoá `#collectToolNameCollisions` → DÒNG 2 đỏ.
+
+**Cạm bẫy riêng của mục này.**
+
+- **Bẫy 1 — sort tại chỗ trên mảng cache (mức CAO, im lặng, đã đo là không test nào bắt).** `readDirEntries` trả `dirCache.get(abs) ?? []` (`fs.ts:39–41`) **theo tham chiếu**. Viết `entries.sort(...)` thay vì `[...entries].sort(...)` sẽ đảo cache cấp module dùng chung với `discovery/builtin.ts:48, 531, 582, 701, 743`, `discovery/cline.ts:23`, `discovery/gemini.ts:195`, `discovery/omp-extension-roots.ts:243`, `discovery/omp-plugins.ts:236`, cộng 3 call site còn lại của chính helpers: `helpers.ts:844, 848, 874`. Không lỗi, không import hỏng. **Đã chứng minh 217 test vẫn xanh.**
+- **Bẫy 2 — giữ tham chiếu mảng thay vì chụp bản sao trong DÒNG 3.** Nếu giữ tham chiếu `first`, sort tại chỗ sẽ mutate **chính** mảng bạn đang giữ, `order0` cũng đổi theo, và phép so sánh luôn bằng → **cổng xanh với code hỏng**. Dễ mắc vì trông tự nhiên.
+- **Bẫy 3 — 12 neo sai, tập trung ở `runner.ts` và `types.ts`.** Mức lệch không đều. Dùng cột vị trí thật ở bảng trên, không dùng số trong plan.
+- **Bẫy 4 — dùng `readDirEntries` để kiểm tiền đề fixture.** `directory-resolution.ts:114` tự làm `fs.readdirSync` thô; `readDirEntries` không được import ở bất kỳ đâu trong file đó. Kiểm bằng nó là xác nhận tiền đề về một đường code fixture **không đi qua**.
+- **Bẫy 5 — chỉ có điều kiện (a) mà thiếu (b).** Thêm `allPaths.sort` vào một cài đặt mà readdir tình cờ ra alphabet vẫn xanh. Cả hai điều kiện đều bắt buộc.
+- **Bẫy 6 — gọi loader hai lần trong cùng tiến trình.** `dirCache` (`fs.ts:5`) + ESM cache sống sót, che đúng thứ tự đang thử. Phải hai subprocess.
+- **Bẫy 7 — đây là đảo hành vi có chủ đích, không phải sửa lỗi.** Người dùng hôm nay đang dựa vào một thứ tự tình cờ; người viết `extensions: ["b-ext", "a-ext"]` trong settings và dựa vào thứ tự đó để thắng sẽ **thấy đảo chiều**. Đó là lý do plan tách WI-2 thành 2 PR — ghi rõ trong changelog.
+
 ## Cần người xác nhận
 
 Hai chỗ đặc tả mâu thuẫn với chính nó, ghi ra đây thay vì tự sửa:
@@ -1374,6 +1907,77 @@ Ba phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Sáu điểm sổ nói **SAI** so với cây thật — ghi ra, không sửa trong tài liệu:
+
+- **S1** — sổ nói `loader.ts` "sửa — Nhận `reason: "reload"` từ call site mới". `rg -n 'reason' packages/coding-agent/src/extensibility/extensions/loader.ts` → **0 hit**. `loader.ts` **không hề có tham số `reason`**. File này gần như không liên quan.
+- **S2** — sổ nói "nhánh `reason: "reload"` trong **loader**". Nhánh nằm trong `types.ts:743` (kiểu) và `runner.ts:1696-1736` (hàm phát). Không có "nhánh" nào trong loader.
+- **S3** — sổ nói "Thiếu đúng hai thứ: một entry slash command và một call site emit". **Thiếu nhiều hơn hai.** `rg -n 'emitResourcesDiscover' packages` → chỉ **một** hit: chính khai báo ở `runner.ts:1696`. **Không có call site nào ở omp** — kể cả `reason: "startup"`.
+- **S4** — sổ ghi "Effort: S — khoảng nửa ngày". S đúng **chỉ khi** phạm vi được thu hẹp đúng. Nếu giữ nguyên phạm vi sổ mô tả (chỉ nối `reason` xuống loader) thì mục này **không làm được gì**: gọi `emitResourcesDiscover` mà bỏ qua kết quả cũng giống hôm nay.
+- **S5** — sổ ghi "Bị chặn cho tới khi có native addon: `bun test` chết ngay ở bước import". **Đã hết hạn.** `bun -e 'import("@oh-my-pi/pi-natives")…'` tại cây này in `natives OK`; `node_modules/@oh-my-pi/pi-natives` là symlink → `packages/natives`, addon đã build sẵn. Lệnh `bun --cwd=packages/natives run build` trong sổ là thừa.
+- **S6** — sổ nói "đã có **bốn** call site … bốn call site sẵn có". Bốn call site là của `/move` (`relocateHeadlessSession` tại `builtin-lifecycle.ts:92`), **không phải** của một lệnh reload.
+
+Neo ĐÚNG, dùng nguyên: `builtin-session.ts:672` = `{ name: "reload", description: "Force reload MCP runtime tools" },`; `builtin-lifecycle.ts:871` = `async function rescopeHeadlessToCwd(runtime: SlashCommandRuntime, cwd: string): Promise<void> {`; `rg -n 'rescopeHeadlessToCwd'` trả `116, 133, 137, 142` (gọi) và `871` (định nghĩa) — đúng bốn call site; `types.ts:743` = `	reason: "startup" | "reload";`; lệnh nằm trong khối `handle: handleMcpAcp` của nhóm MCP. Và bốn call site của `rescopeHeadlessToCwd` **còn làm nhiều hơn bốn việc**: ngoài `reloadForCwd` / `refreshSkillsAndCommands` / `refreshCommands` / `reloadPlugins`, hàm còn gọi `setProjectDir(cwd)`, `rebindMemoryBackendForCwd(runtime.session)`, `clearClaudePluginRootsCache()`, `discoverTitleSystemPromptFile(cwd)`, `runtime.session.setTitleSystemPrompt(p)`.
+
+**Bảng điểm sửa.** Trước hết, ba chỗ phải sửa để tầng giữa tồn tại. Không sửa chúng thì bước 2 vô nghĩa.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn từ file) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `src/extensibility/shared-events.ts:31` | `SessionStartEvent` | `	type: "session_start";`<br>`}` | `type: "session_start";`<br>`	/** Why this session start happened. */`<br>`	reason: "startup" \| "reload" \| "new" \| "resume" \| "fork";`<br>`	/** Previously active session file. Present for "new", "resume", "fork". */`<br>`	previousSessionFile?: string;`<br>`}` |
+| `src/slash-commands/builtin-lifecycle.ts:871` | `rescopeHeadlessToCwd` | `async function rescopeHeadlessToCwd(runtime: SlashCommandRuntime, cwd: string): Promise<void> {`<br>`	setProjectDir(cwd);`<br>`	await runtime.settings.reloadForCwd(cwd);` | Thêm tham số thứ ba **có mặc định** để bốn call site của `/move` không đổi:<br>`async function rescopeHeadlessToCwd(runtime, cwd, reason: ExtensionResourcesReason = "reload"): Promise<void>`<br>+ gọi `await runtime.session.extensionRunner?.emitResourcesDiscover(cwd, reason)` ở **cuối** hàm, sau `await runtime.reloadPlugins()` (dòng 881). |
+| `src/slash-commands/builtin-lifecycle.ts:871` | phạm vi hàm | (không có `export`) | `export async function rescopeHeadlessToCwd(...)` — cần export để entry lệnh mới ở file khác gọi được, hoặc đặt entry lệnh mới **cùng file**. |
+| `src/slash-commands/builtin-marketplace.ts:556` | `BUILTIN_MARKETPLACE_SLASH_COMMANDS` | `{`<br>`	name: "reload-plugins",`<br>`	icon: "restart",`<br>`	description: "Reload all plugins (skills, commands, hooks, tools, agents, MCP)",` | **Không đổi dòng nào.** Đây là lệnh reload-tất-cả **đã có sẵn**. |
+| `src/slash-commands/builtin-session.ts:672` | `name: "reload"` | `			{ name: "reload", description: "Force reload MCP runtime tools" },` | **Không đổi dòng nào** (nếu chọn phương án B). Sổ cấm đổi nghĩa lệnh cũ. |
+
+**Điểm cần thêm tầng giữa — chọn một trong hai.** **A. Sửa dùng `session.extensionRunner`** — `agent-session.ts:12342` đã có sẵn `get extensionRunner(): ExtensionRunner \| undefined { return this.#extensionRunner; }`. `emitResourcesDiscover` trả `skillPaths/promptPaths/themePaths`; **OMP cần chỗ nhận**. `refreshSkillsAndCommands` (`agent-session.ts:5944`) gọi `loadSlashCommands({ cwd, extensionRoots: this.effectiveExtensionRoots })` và `this.#tools.refreshSkills()` — **không có tham số "extra paths", cần thêm**. **B. Chỉ phát, không nhận** — `await runtime.session.extensionRunner?.emitResourcesDiscover(cwd, reason);` và bỏ kết quả.
+
+**Phương án B là cái rẻ, và là cái mà câu "S — nửa ngày" của sổ đang mô tả.** Nhưng nó tạo ra một lời gọi hàm mà kết quả bị vứt. **Nếu chọn B thì phải nói rõ trong PR rằng đây là bước một, và `reason: "reload"` vẫn chưa làm được gì quan sát được** — nghĩa là "cái gì thay đổi quan sát được" phải bị cắt xuống còn "handler chạy lại", không phải "skill mới xuất hiện". Cây tham chiếu cho phương án A là `pi-ref/src/core/agent-session.ts:2944-2981` (`extendResourcesFromExtensions` + `buildExtensionResourcePaths`). OMP không có `ResourceLoader` (`rg -n 'resourceLoader' src` chỉ trả về shim tương thích legacy), nên **A là viết tầng mới, không phải nối dây**.
+
+**Các bước có neo đã kiểm.**
+
+0. Ghi lại trước khi viết: `rescopeHeadlessToCwd` KHÔNG phải tầng reload — neo `builtin-lifecycle.ts:871` (định nghĩa) và `:116, 133, 137, 142` (bốn call site).
+1. Quyết trước: `/reload` cũ hay lệnh mới — neo `builtin-session.ts:672`.
+2. Mở `SessionStartEvent.reason` nếu chọn đi qua `session_start` — neo `types.ts:743`.
+3. Nối `emitResourcesDiscover` vào hàm tái-scope — neo `builtin-lifecycle.ts:871`, gọi ở **cuối** hàm sau `:881`; khai báo emitter ở `runner.ts:1696`.
+4. Thêm entry slash command gọi hàm đó.
+5. Chọn phương án A hay B, và viết nó.
+6. Xác nhận trước khi reload extension đang chạy.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/reload-extension-resources.test.ts` (mới). Khung dựng chép từ `packages/coding-agent/test/reload-plugins-mcp.test.ts` — file này đã có sẵn đúng cái khuôn cần dùng: `createFakeCtx(cwd, settingsValues)` (`:42-66`) trả `{ ctx, mcpManager, session, mcpTools }` với `vi.fn()` sẵn; `runtime: TuiSlashCommandRuntime = { ctx }` (`:86`); `executeBuiltinSlashCommand("/reload-plugins", runtime)` (`:86`); `beforeEach` tạo `fs.mkdtemp` + `setProjectDir`; `afterEach` có `vi.restoreAllMocks()` + `setProjectDir(originalProjectDir)` (`:70-81`) — **giữ nguyên**, đây là ràng buộc "full-suite safe" trong AGENTS.md. Dựng `ExtensionRunner` thật: `new ExtensionRunner([extension], new ExtensionRuntime(), cwd, sessionManager, modelRegistry)` — mẫu từ `extensions-runner.test.ts:4088`.
+
+1. **`/reload` cũ vẫn chỉ làm MCP** — hồi quy âm thầm. Gọi `executeBuiltinSlashCommand("/reload", runtime)`, khẳng định handler `resources_discover` **không** chạy. Case chặn việc đổi nghĩa lệnh cũ.
+2. **Lệnh mới phát `reason: "reload"`** — extension đăng ký `api.on("resources_discover", handler)` ghi lại `event.reason` vào mảng; sau lệnh, `expect(captured).toEqual(["reload"])`. **Case DUY NHẤT chứng minh hợp đồng của work item.**
+3. **`/move` không phát `reason: "reload"`** — hồi quy âm thầm ngược lại. `relocateHeadlessSession` dùng tham số mặc định; khẳng định `/move` đi qua vẫn cho `"startup"` hoặc không phát.
+4. **(chỉ khi chọn phương án A) đường dẫn trả về thực sự được dùng** — handler trả `{ skillPaths: [<đường dẫn thật trong tmpdir>] }`; khẳng định skill đó xuất hiện trong danh sách sau lệnh. Case biến "cái gì thay đổi quan sát được" từ lời hứa thành sự thật.
+
+*Người dùng thấy gì nếu hồi quy:* thiếu case 2 → gõ lệnh reload, không có gì xảy ra, và `emitResourcesDiscover` vẫn là một hàm không ai gọi. Thiếu case 1 → `/reload` đột nhiên nạp lại extension giữa lúc người dùng chỉ muốn refresh MCP — hồi quy **người dùng thấy**, không phải refactor. Thiếu case 3 → `/move` bắt đầu chạy handler `resources_discover` với `reason: "reload"` mỗi lần rollback — hành vi mới, không ai hỏi, không ai test.
+
+**Cổng có đỏ được không.**
+
+**(1) Cổng "nhánh không chết" — KHÔNG ĐỎ ĐƯỢC, phải viết lại.** Sổ dùng `grep -rn 'reason: "reload"' packages --include='*.ts'`; đo được **0 hit, exit code 1**. Đây là cổng văn bản, không phải cổng hành vi: nếu implementation truyền `reason` qua biến, `grep` vẫn ra **0 hit** và cổng báo đỏ trong khi việc đã xong đúng; ngược lại, một dòng `{ reason: "reload" }` chết cũng làm cổng xanh. **Viết lại thành cổng hành vi:** `rg -n 'emitResourcesDiscover' packages/coding-agent/src -g '*.ts' | grep -v 'async emitResourcesDiscover'` — expected **≥1 dòng, và dòng đó phải nằm ngoài `runner.ts`**. Đỏ được **không** nếu không dòng nào; xanh **giả** nếu dòng đó lại là một khai báo. Case test 2 mới là nơi thật sự chứng minh.
+
+**(2) Cổng "không nhân bản tầng reload" — viết sai, phải viết lại.** Sổ đòi `rescopeHeadlessToCwd` "vẫn còn **đúng bốn** call site" — **mâu thuẫn với chính bước 2 của sổ**, vốn bảo thêm entry lệnh gọi lại hàm đó, làm call site thành năm. Một trong hai phải sai. Ý định thật là "đừng dựng tầng reload thứ hai", và điều đó nên kiểm bằng **đếm tên hàm định nghĩa**: `rg -c 'async function rescopeHeadlessToCwd' packages/coding-agent/src/slash-commands/builtin-lifecycle.ts` — expected **1**; và `rg -n 'reloadForCwd|refreshSkillsAndCommands' packages/coding-agent/src/slash-commands/ -g '*.ts'` — expected chỉ còn trong `rescopeHeadlessToCwd`, không có bản sao thứ hai. **ĐỎ ĐƯỢC CÓ**: dựng thêm một hàm reload thứ hai sẽ làm dòng thứ hai trả về file khác.
+
+**(3) Cổng "hành vi lệnh cũ giữ nguyên" — ĐỎ ĐƯỢC.** `grep -rn 'name: "reload"' packages --include='*.ts'` — expected chính xác 1 hit, nội dung phải là `{ name: "reload", description: "Force reload MCP runtime tools" },`. Đo được đúng một hit, `builtin-session.ts:672`. Nhưng nó **không** bắt được việc lệnh cũ bị nối thêm hành mới mà vẫn giữ nguyên dòng metadata — case test 1 mới bắt được cái đó. **Giữ cả hai.**
+
+```bash
+bun run check:ts          # chạy được, không cần native addon
+bun test packages/coding-agent/test/reload-extension-resources.test.ts
+```
+
+**Sổ nói `bun test` chết vì thiếu native addon — điều đó đã hết hạn.**
+
+**`gate_can_fail`:** cổng (1) như sổ viết **không**; sau khi viết lại **có**, nhưng yếu hơn một test. Cổng (2) như sổ viết **không** (mâu thuẫn bước 2 của chính sổ); sau khi viết lại **có**. Cổng (3) **có**.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Cạm bẫy lớn nhất: nối xong mà vẫn không làm được gì quan sát được, và không ai nhận ra.** `emitResourcesDiscover` trả `{ skillPaths, promptPaths, themePaths }`. Ở omp, **không tồn tại chỗ nào nhận ba mảng đó** — `legacy-pi-coding-agent-shim.ts:919` ghi rõ `extendResources` bị bỏ có chủ đích. Nên cách hiểu sai rẻ nhất là: gọi `await runner.emitResourcesDiscover(cwd, "reload")`, bỏ kết quả, thấy cổng grep xanh, ship. Handler chạy, nhưng extension trả về skill mới thì skill đó **không xuất hiện** — và không có gì trong test đỏ, vì test chỉ assert "handler được gọi". **Phải chọn trước giữa A và B và nói rõ trong PR.**
+2. **Cạm bẫy thứ hai: đếm call site để làm cổng.** Sổ tự mâu thuẫn (bước 2 thêm call site, cổng (2) đòi đúng bốn). **Đừng viết cổng đếm call site của một hàm mà chính work item yêu cầu gọi thêm.**
+3. **Cạm bẫy thứ ba: bất đối xứng `handle` / `handleTui`.** `/reload-plugins` hiện dùng `runtime.reloadPlugins()` ở `handle` nhưng `reloadTuiPluginState(ctx)` ở `handleTui`, và đó là **hai hàm khác nhau** với ba bản hiện thực khác nhau theo mode (TUI / ACP / RPC). Lệnh mới chỉ phủ một nhánh là TUI và ACP lệch nhau. `acp-agent.test.ts:1786` đang canh đúng chỗ này cho `/reload-plugins`.
+4. **Cạm bẫy thứ tư: `/reload-plugins` đã tồn tại và làm gần đúng việc này.** Nó ở `builtin-marketplace.ts:556`, có `acpDescription`, có test riêng (`reload-plugins-mcp.test.ts`, ba case). Thêm `/reload-extensions` cạnh nó là **bề mặt thứ ba** cho cùng một việc — câu hỏi này cần trả lời *trước*, không phải sau.
+5. **Cạm bẫy thứ năm: `runtime.session.extensionRunner` là `get` trần, trả `undefined` khi session không có runner.** `agent-session.ts:12342-12344` trả `this.#extensionRunner`, và `sdk.ts:3083-3087` giải thích runner được tạo **vô điều kiện** — nhưng chỉ trong `createAgentSession`. Đường RPC/ACP test-harness có thể không có. Dùng `?.` và **đừng coi `undefined` là lỗi**.
 
 ## WI-3. Bảng relay sự kiện đầy đủ, được trình biên dịch kiểm tra
 
@@ -1701,6 +2305,102 @@ Hai câu hỏi dưới đây không chặn việc bắt đầu commit 1; mặc �
 | `HookEvent` là union 15 phần tử ở `extensibility/hooks/types.ts:393` và thiếu 9 type chỉ-có-relay. | **ĐÃ XÁC NHẬN** — cảnh báo kiểu sắc nhất của plan vẫn đúng | Đã xác minh đúng 15 phần tử (394-408) và số dòng là chính xác. Liệt kê ở đây để người triển khai không phải tự suy lại: SessionEvent, ContextEvent, BeforeAgentStartEvent, AgentStartEvent, AgentEndEvent, TurnStartEvent, TurnEndEvent, AutoCompactionStartEvent, AutoCompactionEndEvent, AutoRetryStartEvent, AutoRetryEndEvent, TtsrTriggeredEvent, TodoReminderEvent, ToolCallEvent, ToolResultEvent. 9 type chỉ-có-relay (message_start/update/end, tool_execution_start/update/end, retry_fallback_applied, retry_fallback_succeeded, goal_updated) vắng mặt — dùng nó làm kiểu khoá làm `Extract` co lại thành `never`.<br>Bằng chứng: `packages/coding-agent/src/extensibility/hooks/types.ts:393-408`. `ExtensionEventType` cũng được xác nhận là không tồn tại: `git grep -n ExtensionEventType -- packages` không trả về gì. |
 | Ghi chú môi trường: `bun test` cần addon native; `bun run check:ts` thì không. | **ĐÃ XÁC NHẬN** — hệ quả đối với cổng đã nêu trong `gate` | Đây là **tiền đề tái lập được**: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là mọi cổng chạy được. Trạng thái trước khi build: `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` → '0 pass, 1 fail, 1 error', 'Failed to load pi_natives native addon for darwin-arm64', gợi ý sửa `bun --cwd=packages/natives run build`. `bun run check:ts` tại HEAD exit 0 (đã kiểm chứng, chạy đầy đủ) và không cần addon. Đừng báo test là pass nếu bạn chưa build addon và chưa thực sự chạy.<br>Bằng chứng: `bun --cwd=packages/natives run build` → exit 0; đầu ra `bun run check:ts` kết thúc bằng `check:types \| Done` của mọi package và `[exited with code 0]`. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Đặc tả WI-3 tự ghi "đã kiểm chứng tại HEAD `808b365`". HEAD bây giờ là **`65cc6c1`** — cây đã dời và **11/24 neo đã hỏng**. Bảng dưới là số thật, đo bằng `sed -n` / `grep -n`, không suy đoán.
+
+Neo hỏng, phải dùng số mới: `extensions/runner.ts:347` → **350** (+3); `RunnerEmitEvent` dùng ở 361, 371, 1364, 1372, 1464 → **365, 375, 1393, 1401, 1493** (+4…+29). `agent-session.ts:4602-4747` (`#emitExtensionEvent`) → **4642-4787** (+40); 19 phép `event.type ===` ở 4604…4740 → **4644, 4651, 4655, 4662, 4671, 4677, 4684, 4697, 4706, 4715, 4724, 4730, 4740, 4749, 4757, 4765, 4771, 4773, 4780** (đều +40); comment `model_changed` 9523-9527 → **9669-9673** (+146; 9674 = `if (isChanging) {`); `#extensionRunner`/`#turnIndex` 837/849 → **857/869** (+20); khối import 139-156 → **139-158** (+2); `turn_id: Math.max(0, this.#turnIndex - 1)` 4561 → **4601** (+40); `#emitAgentEndNotification` 4538-4544 → **4578-4584**; `cloneMessageEndNotification` 612-630 → **642-650** (helper field `…Field` ở 630-639); cầu nối `GoalRuntimeHost.emit` 1916-1920 → **1948-1952**; `setGoalModeState` 6159 → **6296** (+137). `extensions/types.ts:1147` → union bắt đầu **:1140**, `GoalUpdatedEvent` ở **:1168**. `test/agent-session-aside-delivery.test.ts:890-935` → **887-932** (−3); `:29-47` → **36-45**.
+
+Neo ĐÚNG, dùng nguyên: `goals/runtime.ts:456` (`dropGoal()`, và nó emit `goal_updated` với `status: "dropped"`, `state.enabled: false`), `goals/state.ts:4-9`, `extensibility/shared-events.ts:147` → **148** (lệch 1 dòng, chấp nhận được), `agent-session-events.ts:13-80`, `agent/src/types.ts:1197-1219`, `hooks/types.ts:393-408` (đúng 15 phần tử), `event-controller.ts:107-109`, `:284-357` (đóng `} satisfies …;` ở 357), `:287`, `:356`, `:851`, `:74`, và `packages/coding-agent/tsconfig.json` gồm `src`,`test`,`scripts`.
+
+Bốn điều đặc tả SAI so với cây thật, hoặc bỏ sót:
+
+- **(a) Số kiểu sự kiện: 28 / 19 / 9 — đặc tả đúng, đã đếm lại.** `{ agent/src/types.ts 1197-1240 ∪ agent-session-events.ts 13-80 }` → **28 tên**. 9 không relayable: `tool_stream_update`, `model_changed`, `config_warnings_changed`, `advisor_cost_changed`, `advisor_yielded`, `todo_auto_clear`, `irc_message`, `notice`, `thinking_level_changed`.
+- **(b) `bun test` CHẠY ĐƯỢC NGAY — đặc tả đang hedge quá mức.** Addon native **đã có**: `packages/natives/native/pi_natives.darwin-arm64.node`. Đo thật `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` → `1 pass, 0 fail`. Cổng test KHÔNG cần `brew install ninja`, KHÔNG cần build thêm.
+- **(c) `state` trong `GoalUpdatedEvent` là TUỲ CHỌN — bước 12 của đặc tả sẽ KHÔNG typecheck.** `shared-events.ts:148-152` khai báo `state?: GoalModeState;`, và `tsconfig.base.json` bật `"strict": true`. Viết `expect(ev.state.enabled).toBe(false)` trong test là **TS18048 — 'state' is possibly 'undefined'**, và `check:ts` sẽ đỏ. Phải narrow.
+- **(d) `ToolExecutionEndEvent.isError` là BẮT BUỘC trong type mặt extension, và `goal` là nullable.** `types.ts:880-882` là `isError: boolean;` — không phải `isError?: boolean`. Nhánh `tool_execution_end` **phải** giữ `isError: event.isError ?? false`; truyền thẳng `event.isError` sẽ lỗi khi biến thể session của nó là optional. Cùng lúc đó `event.goal` trong `AgentSessionEvent` là `Goal | null` — nhánh `goal_updated` chỉ chuyển tiếp, không được deref.
+
+Ngoài ra `one_line` của đặc tả **nói quá**: nó kết luận rằng một loại sự kiện mới "không thể" được thêm mà không có nhánh tương ứng. Thật là nếu một tên bị bỏ khỏi **cả bảng lẫn union**, **không gì đỏ ở đâu cả** — một sự kiện phiên không ai relay là quyết định sản phẩm hợp lệ. Chiều duy nhất được bảo vệ là chiều ngược lại: thêm một tên vào union mà không có nhánh thì đỏ (`TS2741`, đã đo).
+
+**Bảng điểm sửa.**
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn từ file) | SAU |
+| --- | --- | --- | --- |
+| `packages/coding-agent/src/extensibility/extensions/runner.ts:350` | `RunnerEmitEvent` | `type RunnerEmitEvent = Exclude<` | `export type RunnerEmitEvent = Exclude<` — thêm đúng một từ |
+| `packages/coding-agent/src/session/agent-session.ts:139-158` | khối `import type { … } from "../extensibility/extensions"` | khối hiện có 18 tên: `ExtensionCommandContext, ExtensionRunner, ExtensionUIContext, MessageEndEvent, MessageStartEvent, MessageUpdateEvent, PreparedExtension, SessionBeforeBranchResult, SessionBeforeSwitchResult, SessionBeforeTreeResult, SessionStopEventResult, ToolExecutionEndEvent, ToolExecutionStartEvent, ToolExecutionUpdateEvent, ToolInfo, TreePreparation, TurnEndEvent, TurnStartEvent` | thêm 9 tên: `AgentStartEvent, AutoCompactionStartEvent, AutoCompactionEndEvent, AutoRetryStartEvent, AutoRetryEndEvent, RetryFallbackAppliedEvent, RetryFallbackSucceededEvent, TtsrTriggeredEvent, TodoReminderEvent` |
+| `packages/coding-agent/src/session/agent-session.ts` (ngay sau khối trên) | — | không có dòng này | `import type { GoalUpdatedEvent } from "../extensibility/shared-events";` — **dòng import RIÊNG, bắt buộc** |
+| `packages/coding-agent/src/session/agent-session.ts` (cấp module) | — | không có | `type RelayableEventKind = Extract<AgentSessionEvent["type"], …19 tên…>;` + `type SessionEventRelays = { [E in RelayableEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<RunnerEmitEvent \| undefined> };` |
+| `packages/coding-agent/src/session/agent-session.ts:857-869` (cạnh `#extensionRunner`, `#turnIndex`) | — | không có | `#sessionEventRelay = { …19 nhánh… } satisfies SessionEventRelays;` — **private class field**, không phải biến cục bộ |
+| `packages/coding-agent/src/session/agent-session.ts:4642-4787` | `#emitExtensionEvent` | 146 dòng `if`/`else if`, mở đầu bằng:<br>`async #emitExtensionEvent(event: AgentSessionEvent): Promise<void> {`<br>`	if (!this.#extensionRunner) return;`<br>`	if (event.type === "agent_start") {`<br>`		this.#turnIndex = 0;`<br>`		await this.#extensionRunner.emit({ type: "agent_start" });`<br>`		return;`<br>`	}`<br><br>`	if (!this.#extensionRunner.hasHandlers(event.type)) return;`<br>`	if (event.type === "agent_end") {` … `} else if (event.type === "turn_start") {` | 9 dòng:<br>`async #emitExtensionEvent(event: AgentSessionEvent): Promise<void> {`<br>`	const runner = this.#extensionRunner;`<br>`	if (!runner) return;`<br>`	const arm = this.#sessionEventRelay[event.type as RelayableEventKind] as`<br>`		\| ((event: AgentSessionEvent) => Promise<RunnerEmitEvent \| undefined>)`<br>`		\| undefined;`<br>`	if (!arm) return;`<br>`	if (event.type !== "agent_start" && !runner.hasHandlers(event.type)) return;`<br>`	const payload = await arm(event);`<br>`	if (payload) await runner.emit(payload);`<br>`}` |
+| `packages/coding-agent/src/session/agent-session.ts:4662-4670` | nhánh `turn_end` | `		} else if (event.type === "turn_end") {`<br>`			const hookEvent: TurnEndEvent = {`<br>`				type: "turn_end",`<br>`				turnIndex: this.#turnIndex,`<br>`				message: event.message,`<br>`				toolResults: event.toolResults,`<br>`			};`<br>`			await this.#extensionRunner.emit(hookEvent);`<br>`			this.#turnIndex++;` | trong nhánh: `this.#turnIndex++;` **trước**, rồi `return { type: "turn_end", turnIndex: this.#turnIndex - 1, message: event.message, toolResults: event.toolResults } satisfies TurnEndEvent;` — trừ 1 là bắt buộc |
+| `packages/coding-agent/src/session/agent-session.ts:4651-4654` | nhánh `agent_end` | `		if (event.type === "agent_end") {`<br>``			// `agent_end` extension notification is emitted from the settled``<br>``			// agent_end maintenance path so `session_stop` control hooks are not``<br>`			// blocked by unrelated notification-only work.`<br>`		} else if (…` | `agent_end: async () => undefined,` — **giữ nguyên 3 dòng comment**, chuyển thành comment trên nhánh, thêm câu "đây là quyết định định tuyến, không phải nhánh còn thiếu" |
+| `packages/coding-agent/src/session/agent-session.ts:4685-4691` | nhánh `message_end` | comment 7 dòng: ``// `message_end` is a notification, not a context-rewrite hook. Detach its`` … `// sanitized field-by-field without retaining nested live references.` | **chuyển nguyên văn 7 dòng** vào trong nhánh `message_end`, giữ `cloneMessageEndNotification(event.message)` |
+| `packages/coding-agent/src/session/agent-session.ts:9669-9673` | comment `model_changed` | xem khối `diff` bên dưới (năm dòng comment, chứa backtick nên không đặt trong ô bảng) | 5 dòng — xem cùng khối `diff` |
+| `packages/coding-agent/test/extension-event-relay-exhaustive.test.ts` | file mới | không tồn tại | file test mới, 1 `it()` |
+
+Khối `diff` cho hàng `agent-session.ts:9669-9673` — TRƯỚC là năm dòng comment nguyên văn, SAU là năm dòng thay thế (giữ nguyên lý do await-trong-đường-nóng, chỉ bỏ mệnh đề "không có hook" đã lỗi thời):
+
+```diff
+  // Fan-out uses the synchronous `#emit`, matching `thinking_level_changed`:
+- // `model_changed` has no extension-facing hook (`#emitExtensionEvent`
+- // never maps it), so routing it through `#emitSessionEvent` would only
+- // add an extension-delivery await inside every model switch — including
+- // retry-fallback on the error path.
++ // routing it through `#emitSessionEvent` would add an extension-delivery await
++ // inside every model switch — including retry-fallback on the error path.
++ // `model_changed` is deliberately absent from `RelayableEventKind`; add it
++ // there together with a real relay arm, never on its own.
+```
+
+**Các bước có neo đã kiểm.**
+
+1. Export một từ — neo `runner.ts:350`.
+2. 10 dòng import — neo `agent-session.ts:139-158` (18 tên) + 1 dòng riêng cho `GoalUpdatedEvent`.
+3. Hai kiểu cấp module — `RelayableEventKind` + `SessionEventRelays`.
+4. Private class field — neo `agent-session.ts:857-869`.
+5. Thân method mới — neo `agent-session.ts:4642-4787`, gọm 146 dòng xuống 9.
+6. 19 nhánh, chép nguyên văn — gồm `turn_end` **4662-4670**, `agent_end` **4651-4654**, `message_end` **4685-4691**.
+7. Sửa comment `model_changed` — neo `agent-session.ts:9669-9673`.
+8. File test — `test/extension-event-relay-exhaustive.test.ts`.
+9. Commit — `bun run fmt:ts` một lần **trước** khi chạy `check:ts`.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/extension-event-relay-exhaustive.test.ts`. Đúng **một** `it()`: extension handler đã đăng ký `goal_updated` nhận được đúng MỘT event, mang `goal.id = "g-relay"`, `goal.status = "dropped"`, `state.enabled = false`.
+
+Đường đi của payload (không fixture nào so với chính nó): `GoalRuntime.dropGoal` tự dựng `dropped` và tự đặt `state.enabled: false` (`goals/runtime.ts:461, 467`) → cầu nối `GoalRuntimeHost.emit` (`agent-session.ts:1948-1952`) → `#emitSessionEvent` → `#emitExtensionEvent` → **bảng relay** → `ExtensionRunner.emit` → handler. Relay chỉ di chuyển payload, khẳng định gì.
+
+*Nếu hồi quy, người dùng thấy gì:* mảng `received` rỗng — `pi.on("goal_updated", …)` của tác giả plugin âm thầm không bao giờ bắn. Đây là triệu chứng thật: extension viết đúng, load được, không lỗi, chỉ là không có gì tới. Xảy ra khi tra bảng trượt (sai cast, khoá đảo), khi nhánh trả `undefined` thay vì payload, hoặc khi dispatcher ngừng định tuyến qua `#emitExtensionEvent`. Nếu chỉ payload sai (thiếu trường, sai tên), `toHaveLength(1)` vẫn xanh và các khẳng định về `goal.id` / `goal.status` / `state.enabled` đỏ.
+
+Cái test này CỐ Ý KHÔNG bảo vệ: tính đầy đủ của bảng. Một dòng runtime một sự kiện không thể đỏ khi ai đó thêm một khoá vào bảng, và cũng không thể đỏ khi một tên bị bỏ khỏi `RelayableEventKind`. Hợp đồng đó do `satisfies SessionEventRelays` + `check:ts` gánh, **không** do test này.
+
+**Cổng có đỏ được không.** Cả hai đều **có**, và cả hai đã được đo thật.
+
+```bash
+# cổng chính — chạy được ngay, KHÔNG cần addon native
+bun run check:ts
+# cổng runtime — addon native đã có sẵn trong cây, chạy được ngay
+cd packages/coding-agent && bun test test/extension-event-relay-exhaustive.test.ts
+```
+
+`bun run check:ts`: **CÓ, và đã chứng minh bằng `tsgo` chứ không phải suy đoán** — một file thử với đúng hình dạng type của bảng đã được dựng và chạy `tsgo --noEmit` (xoá sau khi đo). Thêm `"goal_updated"` vào key union không có nhánh → `TS2741: Property 'goal_updated' is missing … but required in type`. Xoá nhánh `turn_end` → `TS2741`. Dùng `Record<RelayableEventKind, (event: AgentSessionEvent) => …>` (phác thảo chữ của plan) → **5 lỗi `TS2339`** vì `message`, `toolResults`, `toolCallId`, `toolName`, `args` không tồn tại trên `AgentSessionEvent`. Dispatch chỉ cast khoá, gọi trực tiếp arm → `TS2345: Argument of type 'AgentSessionEvent' is not assignable to parameter of type 'never'`. Cổng **đang sống**: đã chạy `bun run check:ts` tại HEAD `65cc6c1` → **exit 0**, `check:types | Done in 7.20s`.
+
+`bun test`: **CÓ, và nó ĐỎ ĐƯỢC** — nhưng đặc tả đang hedge quá mức. Addon native đã có, đã chạy thật `test/extension-flag-dispatch.test.ts` → `1 pass, 0 fail, 2 expect() calls`. **Không cần `brew install ninja`, không cần `bun --cwd=packages/natives run build`** — đặc tả nói cần, cây hiện tại thì không. Cổng này đỏ khi khẳng định fail; nó **không** đỏ trong kịch bản "thiếu một khoá trong bảng".
+
+Trạng thái đỏ thứ tư, không nằm trong ba cái trên: `check:ts` chạy `check:tools` (`oxlint .` + `oxfmt --check …`) **trước** `check:types`. Bảng 19 nhánh viết tay sẽ lệch xuống dòng ngay, `oxfmt --check` đỏ trước, và bạn sẽ không bao giờ tới được lỗi kiểu. File test mới cũng nằm trong glob `packages/*/{test,…}/**/*.ts`. **Sau khi viết xong: `bun run fmt:ts` một lần, rồi mới `bun run check:ts`.**
+
+Không dùng `tsc` / `npx tsc` — AGENTS.md cấm. Cổng kiểu là `check:ts`, nó gọi `tsgo -p tsconfig.json --noEmit` (`packages/coding-agent/package.json:523`).
+
+**Cạm bẫy riêng của mục này.** Xếp theo mức khả năng làm sai.
+
+1. **`turn_end`: tăng trước rồi quên trừ 1.** Đây là bẫy âm thầm nhất. Code cũ đọc `turnIndex` **trước** rồi mới `++`; bảng mới `++` trước rồi đọc. Nếu bạn viết `turnIndex: this.#turnIndex` sau khi `++`, **mọi extension nhận `turnIndex` lệch đúng 1 trên mọi lượt** và không có gì đỏ — payload vẫn shape đúng, kiểu vẫn đúng, test `goal_updated` vẫn xanh. Bắt buộc `this.#turnIndex - 1`.
+2. **Bảng đặt trong thân method.** `message_update` chạy mỗi delta (đi qua `agent-session.ts:2934-2936`, đẩy vào `#queueExtensionEvent` không chặn). Object literal 19 closure cấp phát lại mỗi delta là chi phí per-token thật, và không test nào bắt được. Bắt buộc là **private class field**.
+3. **Dùng `Record` trần thay vì mapped type.** Sai theo hai lần cùng lúc: đồng bộ (hai nhánh có mutate `#turnIndex` sẽ không còn chỗ để nằm, khiến `turnIndex` đóng băng ở 0 với mọi extension suốt phiên) và tham số không narrow (5 lỗi `TS2339` — đã đo).
+4. **Thêm `GoalUpdatedEvent` vào khối import từ `../extensibility/extensions`.** Sẽ không resolve. Nó **không** nằm trong bất kỳ block `export type { … } from "../shared-events"` nào của `extensions/types.ts` (chỉ xuất hiện ở dòng 106, thuộc khối `import type`), và không barrel nào `export *` tới `shared-events.ts`. 9 tên kia thì lấy được từ barrel. Phải là một dòng import riêng.
+5. **Cast một lần thay vì hai.** `table[event.type as RelayableEventKind]` có kiểu là **union của 19 kiểu hàm**; gọi nó đòi hỏi đối số gán được cho **giao** các tham số, tức `never` — đã đo `TS2345`. Cast thêm giá trị về một chữ ký rộng. Mẫu: `event-controller.ts:851`.
+6. **Xoá cả comment `model_changed`.** Chỉ mệnh đề "không có hook" là lỗi thời. Hai dòng đầu nói vì sao dùng `#emit` thay vì `#emitSessionEvent` — lý do await-trong-đường-nóng vẫn đúng, xoá đi là vứt mất lý do.
+7. **`state.enabled` trong test.** `GoalUpdatedEvent.state` là **optional**, `goal` là **nullable**, repo bật `strict`. `expect(ev.state.enabled)` là `TS18048`. Phải `ev.state?.enabled` / `ev.goal?.id`.
+
+Hai câu hỏi còn treo, **không chặn commit 1**: (i) **SẢN PHẨM** — `model_changed` có hook không? Mặc định của đặc tả: KHÔNG; nếu có thì commit 2 kèm nhánh thật. (ii) **SẢN PHẨM/REVIEW** — lỗi tiềm ẫn ở `#turnIndex`: `this.#turnIndex++` (nay ở **:4670**) nằm **SAU** chốt `if (!this.#extensionRunner.hasHandlers(event.type)) return;` (**:4650**). Khi không extension nào đăng ký handler `turn_end`, `#turnIndex` không bao giờ tăng, nên `turnIndex` đưa cho handler suốt phiên là 0, và `turn_id` ở **:4601** (`Math.max(0, this.#turnIndex - 1)`) luôn là 0. **Đặc tả GIỮ NGUYÊN đúng hành vi này** để thành commit cơ khọc zero-diff. Sửa là commit riêng, có thay đổi hành vi, kèm test riêng.
+
 ## Cần người xác nhận
 
 Mâu thuẫn nội tại trong chính đặc tả — không tự sửa, nêu ra ở đây:
@@ -1805,6 +2505,83 @@ Ba phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo. Tiền đề của plan SAI, và nó làm hỏng cả hai dòng hợp đồng test.**
+
+Plan lặp đi lặp lại: *"Đăng ký command / shortcut / tool / flag / message-renderer **không** silent drop: chúng đều có chẩn đoán trùng"* và *"Cả hai method mới phải dùng **cùng cơ chế chẩn đoán trùng, cùng thông điệp** với các method đăng ký khác."* **Tiền đề đó sai. Cơ chế chẩn đoán trùng đó không tồn tại.**
+
+Bằng chứng — `grep -nE "duplicat|already (registered|exists|defined)|conflict|collision" packages/coding-agent/src/extensibility/extensions/loader.ts` chỉ trả **một** dòng: `483: * (last-wins collisions, shared runtime flag defaults) stay deterministic.` Dòng 483 là **tài liệu hoá chính sách last-wins**, không phải một chẩn đoán. Người viết plan đã đọc nhầm dòng comment này thành một cơ chế kiểm tra trùng.
+
+Và chính các method mà plan gọi là "đều có chẩn đoán trùng" đều là `Map.set` trần, **không kiểm tra gì**:
+
+| method | dòng | thân hàm | có kiểm tra trùng? |
+| --- | --- | --- | --- |
+| `registerTool` | `loader.ts:216` | `this.extension.tools.set(tool.name, registered);` | KHÔNG |
+| `registerCommand` | `loader.ts:234` | `this.extension.commands.set(name, { name, ...options });` | KHÔNG |
+| `registerShortcut` | `loader.ts:249` | `this.extension.shortcuts.set(shortcut, {…});` | KHÔNG |
+| `registerFlag` | `loader.ts:259` | `this.extension.flags.set(name, {…});` | KHÔNG |
+| `registerMessageRenderer` | `loader.ts:269` | `this.extension.messageRenderers.set(customType, renderer);` | KHÔNG |
+
+Cả 5 đều last-wins im lặng. `grep -n "throw new"` trong `extensions/loader.ts` chỉ có 3 chỗ **không liên quan tới trùng**: `ExtensionRuntimeNotInitializedError` (dòng 114-170, một loạt guard), và 3 throw của `registerComposerShape` (dòng 280/283/286 — kiểm tra id rỗng, label rỗng, và id builtin, **không** kiểm tra hai extension cùng đăng ký một id). Ở nhánh hook, `hooks/loader.ts:114` y hệt, cũng last-wins im lặng (dòng 115).
+
+**Hệ quả trực tiếp lên kế hoạch:** bước 1 (*"Làm mờ trên `registerMessageRenderer` sẵn có, không chép gì từ `pi`"*) **không làm được** — không có gì để làm mờ. DÒNG 1 của hợp đồng test (*"đăng ký trùng renderer trên cùng một entry được báo chẩn đoán trùng, **giống hệt các method đăng ký khác**"*) **không có thông điệp để so sánh**. Cổng (2) (*"báo chẩn đoán trùng **bằng cùng cơ chế và cùng thông điệp** với `registerMessageRenderer`"*) **không bao giờ đỏ được** vì không có thông điệp để khớp. **Đây là câu hỏi cần người quyết, không phải chi tiết để tự suy ra.**
+
+Có **một** chẩn đoán trùng thật trong toàn bộ bề mặt extension, nhưng nó không nằm ở chỗ plan chỉ và không nói về renderer: `runner.ts:1214-1234` (`getRegisteredCommands` — neo **đúng dòng**, nhưng claim sai). Trong nhánh hook, `hooks/loader.ts:114` ✅ ĐÚNG; `types.ts:1475` ✅ ĐÚNG (đúng là **đặc tả** trong interface, đây là chỗ đúng để đặt hai method mới).
+
+Claim "0 hit" của plan là **chính xác**: `grep -rniE 'registerEntryRenderer|registerMarkdownTransformer|markdownTransformer' packages --include='*.ts' | wc -l` → **0**.
+
+Claim "bề mặt render: TUI và ACP" thì **sai**: `getMessageRenderer` chỉ được gọi ở `modes/utils/ui-helpers.ts:257` và `modes/controllers/selector-controller.ts:1090, :1221, :2188`; định nghĩa ở `hooks/runner.ts:185` và `extensions/runner.ts:1200`. `modes/acp/acp-agent.ts` có `extensionRunner` (dòng 2562) nhưng **không** gọi `getMessageRenderer` ở bất kỳ đâu. **Render surface của `registerMessageRenderer` hôm nay là TUI-ONLY.** Điều này không làm hỏng mục tiêu của WI-16, nhưng nó có nghĩa là câu hỏi "mở thêm bề mặt nữa không" của plan đang hỏi về một bề mặt **chưa tồn tại**.
+
+Môi trường: plan nói `bun test` chết vì thiếu native addon. **Sai ở HEAD này** — đã chạy thật `bun test test/extension-flag-dispatch.test.ts` → **1 pass 0 fail 2 expect() calls**; `bun test test/extension-loader-graph-read-dedup.test.ts test/extension-flag-dispatch.test.ts` → **3 pass 0 fail 22 expect() calls**. Và `bun run check:ts` từ **repo root** exit 0. Lưu ý vận hành: `check:ts` là script **root**, không phải của package — `cd packages/coding-agent && bun run check:ts` → `error: Script not found "check:ts"`.
+
+**Bảng điểm sửa.**
+
+| đường/dẫn | symbol | TRƯỚC (trích từ file thật) | SAU (hình dạng sau khi sửa) |
+| --- | --- | --- | --- |
+| `src/extensibility/extensions/types.ts:1475` | `ExtensionAPI.registerMessageRenderer` | `registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;` | giữ nguyên; **thêm** ngay dưới: `registerEntryRenderer<T = unknown>(entryId: string, renderer: EntryRenderer<T>): void;` và `registerMarkdownTransformer(transformer: MarkdownTransformer): void;` |
+| `src/extensibility/extensions/loader.ts:269` | `ConcreteExtensionAPI.registerMessageRenderer` | `registerMessageRenderer<T>(customType: string, renderer: MessageRenderer<T>): void {` / thân: `this.extension.messageRenderers.set(customType, renderer as MessageRenderer);` | giữ nguyên; **thêm** hai method mới, cùng thân `Map.set` last-wins, **không** thêm kiểm tra trùng (nếu Bước 0 chọn (a)) |
+| `src/extensibility/hooks/loader.ts:114` | `HookAPI.registerMessageRenderer` | `registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void {` / thân: `messageRenderers.set(customType, renderer as HookMessageRenderer);` | giữ nguyên; **thêm** hai method mới ở nhánh hook, cùng hình dạng |
+| `src/extensibility/extensions/runner.ts:1214` | `getRegisteredCommands` (mẫu chẩn đoán duy nhất có sẵn) | `if (reserved?.has(command.name)) {` … `this.#commandDiagnostics.push({ type: "warning", message, path: ext.path });` | **thêm** một hàm cùng hình dạng cho entry renderer: so giữa các extension, `#entryRendererDiagnostics` + `getEntryRendererDiagnostics()` (chỉ khi Bước 0 chọn (b)) |
+| `src/modes/utils/ui-helpers.ts:257` | dòng dựng `CustomMessageComponent` | `const renderer = this.ctx.viewSession.extensionRunner?.getMessageRenderer(message.customType);` | nối thêm `applyMarkdownTransformers` **tại đây**, đúng bề mặt TUI, không nối ở tầng session |
+
+Hai type mới khai ở `types.ts` cạnh `MessageRenderer` (quanh `types.ts:1837` nơi `messageRenderers: Map<string, MessageRenderer>` được khai): `export type EntryRenderer<T = unknown> = (entry: T) => readonly TUIBlock[] | null;` và `export type MarkdownTransformer = (markdown: string) => string;`
+
+**Các bước có neo đã kiểm.**
+
+0. **CHỐT CƠ CHẾ TRÙNG TRƯỚC KHI VIẾT DÒNG NÀO.** Đây là bước chặn. **(a) Bám last-wins** như `registerMessageRenderer` thật sự làm: hai method mới cũng `Map.set` im lặng — nhất quán với 5 method anh em, nhưng DÒNG 1 của hợp đồng test **rơi ra** và cổng (2) **bị xoá**. **(b) Thêm cơ chế trùng MỚI** theo mẫu `getRegisteredCommands` (`runner.ts:1214-1234`): so giữa các extension, gom vào `#entryRendererDiagnostics`, phát qua `logger.warn` khi `!hasUI()`. Tốn thêm ~1 ngày so với ước lượng S của plan, và phải trả lời: **có báo trùng cho cả `registerMessageRenderer` cũ không?**
+1. Khai hai type ở `types.ts` — cạnh `MessageRenderer`, quanh `types.ts:1837`.
+2. Khai hai method trong `ExtensionAPI`, ngay dưới `types.ts:1475`. Đây là **điểm neo duy nhất** bảo đảm ranh giới "chỉ TUI" nằm trong kiểu.
+3. Thân method ở `loader.ts:269` — bản sao hình dạng của `registerMessageRenderer` (269-271): `this.extension.entryRenderers.set(entryId, renderer)` và `this.extension.markdownTransformers.push(fn)`. `push` cho transformer là **còn lựa chọn** — nhiều transformer nối tiếp hợp lý hơn last-wins. Sói rõ trong doc.
+4. Thân method ở `hooks/loader.ts:114` — cùng hình dạng, cho `HookAPI`.
+5. **Nối bề mặt. CHỈ ở `ui-helpers.ts:257`.** **Không** nối ở `session/agent-session.ts`, `sdk.ts`, `modes/rpc/rpc-mode.ts`, `modes/acp/`.
+6. Test xung đột. *(Không neo ở bước 6 — mục WI-16 tự ghi `(neo: không)`.)*
+
+**Hợp đồng test.** File: `packages/coding-agent/test/extension-render-registration.test.ts` — **file riêng**, không nhét vào `extensions-runner.test.ts` (file đó đã 131 KB). Lý do gộp của plan không có: WI-16 không chạm `session/agent-session.ts` ở bất kỳ bước nào.
+
+- **DÒNG 1 — "Hai extension cùng đăng ký renderer cho một entry."** `it("reports a duplicate when two extensions register a renderer for the same entry")`. Hai extension, cùng `entryId`. Khẳng định **đúng với lựa chọn ở Bước 0**: (a) last-wins → renderer sau thắng, **không** diagnostic, và test **phải assert sự im lặng đó** (`expect(diagnostics).toEqual([])`) để nó thành hợp đồng có chủ ý chứ không phải sơ suất; (b) có diagnostic → `expect(diagnostics).toHaveLength(1)` và `expect(diagnostics[0].message).toContain(<thông điệp>)`. *Người dùng thấy gì nếu hồi quy:* việc ghi đè renderer của entry mình đang sửa diễn ra âm thầm, hoặc ngược lại một lỗi trùng giả bị ném ra giữa lúc chạy. Cả hai đều là "hỏng không có stack trace của omp".
+- **DÒNG 2 — "Transformer không chạy trên đường RPC/JSON."** `it("leaves the RPC/JSON path as raw data when a markdown transformer is registered")`. Đăng ký transformer trả `"<<<X>>>"`, rồi đọc entry qua đường serialize JSON. Khẳng định `expect(serialized).not.toContain("<<<X>>>")` và `expect(serialized).toContain(<markdown gốc>)`. *Người dùng thấy gì nếu hồi quy:* một client đọc transcript nhận về Markdown đã bị biến đổi, hỏng ở phía client — nơi không có stack trace nào trỏ về omp. **Đây là cái hỏng đắt nhất trong mục này.**
+- **DÒNG 3 (bổ sung, để cổng (2) đỏ được)** — `it("keeps the duplicate diagnostic message identical to the one the other registration methods emit")`. **Chỉ tồn tại nếu Bước 0 chọn (b).** Nếu chọn (a), dòng này **không viết** và cổng (2) bị xoá khỏi mục Cổng.
+
+**Cổng có đỏ được không.**
+
+**Cổng (1) — TYPE.** `bun run check:ts` **từ GỐC repo, không phải từ `packages/coding-agent`**. **CÓ** đỏ được: đã chạy thật tại HEAD `65cc6c1` → exit 0. Đỏ được vì `types.ts` khai `registerMarkdownTransformer` chỉ trong `ExtensionAPI`, và không có consumer nào ngoài TUI nhận nó — thêm một call site gọi nó ở tầng RPC sẽ không có symbol để gọi.
+
+**Cổng (2) — DÒNG XUNG ĐỘT. KHÔNG ĐỎ ĐƯỢC. Phải viết lại.** Nó sẽ xanh vĩnh viễn: so sánh hai thông điệp, trong đó một thông điệp không tồn tại. Viết lại thành một trong hai, tùy Bước 0: **(a)** xoá hẳn cổng (2), dòng 1 của hợp đồng test đổi thành "last-wins, im lặng, có chủ ý" và assert sự im lặng đó; **(b)** `expect(diagnostics[0].message).toBe(<thông điệp cụ thể>)` — đỏ được **vì** thông điệp là hằng số viết trong test, đỏ khi ai đó đổi câu chữ. Nhưng nó **không** còn là so sánh "cùng thông điệp với `registerMessageRenderer`" — **phải nói thẳng** là so với hằng số trong test, và trả lời câu hỏi `registerMessageRenderer` cũ có được báo trùng không.
+
+**Cổng (3) — DÒNG RPC. CÓ đỏ được, nhưng phải chạy đúng chỗ:** `bun test test/extension-render-registration.test.ts`. Đỏ được vì assert `expect(serialized).not.toContain("<<<X>>>")` hỏng **ngay** nếu ai đó nối `applyMarkdownTransformers` vào tầng session thay vì `ui-helpers.ts:257`. **Đây là cổng duy nhất của mục này thật sự bảo vệ ranh giới bề mặt — và nó bảo vệ bằng vị trí call site, không bằng type.** Type chỉ ngăn việc gọi nhầm từ *code mới*; test ngăn việc *di chuyển* transformer xuống tầng dưới.
+
+Cổng kiểm chứng lại trước khi giao: `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` — kỳ vọng 1 pass.
+
+`gate_can_fail: true` trong plan là **sai** với hiện trạng: với (1) và (3) đã đỏ được thật, cổng đã đỏ được. **Chỉ (2) là cổng chết.**
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Cạm bẫy lớn nhất — và nó đã xảy ra với chính plan này: tin `registerMessageRenderer` là khuôn làm mờ.** Plan đọc dòng comment `last-wins collisions … stay deterministic` ở `loader.ts:483` rồi kết luận ngược. Thực tế dòng đó **mô tả** việc không kiểm tra. Cả ba bước đầu của work item đều xây trên chỗ này. Khi gõ, **đọc thân hàm, không đọc tên method và không đọc comment** — 5 method `register*` trông giống hệt nhau nhưng chỉ `registerComposerShape` mới có throw, và throw đó cũng không phải vì trùng.
+2. **"Bề mặt chỉ TUI và ACP" là một ranh giới trên giấy.** ACP không tiêu thụ message renderer hôm nay. Nếu bạn tin ranh giới này và nối transformer vào "tầng chung của TUI+ACP" một cách trừu tượng, bạn sẽ tạo ra một tầng mà không ai tiêu thụ. Hãy nối vào **đúng một chỗ đã đọc và kiểm chứng**: `ui-helpers.ts:257`.
+3. **`registerEntryRenderer` chồng lấn với `registerMessageRenderer`.** `registerMessageRenderer` đã gắn renderer vào một `customType` qua `Map<string, MessageRenderer>`; một `registerEntryRenderer` gắn vào `entryId` là hai keyspace khác nhau trên cùng một bề mặt. Nếu không chốt rõ ranh giới, tác giả extension sẽ không biết dùng cái nào, và khi một entry trở thành `CustomMessageEntry` thì hai renderer sẽ tranh nhau. **Chốt trước khi viết type.**
+4. **Bước 5 của plan không có neo, và bước đó là bước duy nhất làm cho DÒNG 2 thành sự thật.** Bước 5 ghi `(neo: không)`. Viết nó mà không mở `ui-helpers.ts:257` là cách chắc chắn nhất để đặt transformer vào tầng session — chỗ mà nó sẽ chạy trên cả RPC và phá client, đúng cái hỏng mà cả mục này viết ra để tránh.
 
 ## WI-4. Đóng backdoor `toolRenderers` — `Object.freeze` + `Readonly` ở tầng kiểu
 
@@ -1981,6 +2758,80 @@ Cách dễ sai nhất là coi "test đang đỏ" là "thay đổi của tôi h�
 | WI-4 là `Object.freeze(toolRenderers)` — một chốt bảo vệ ở runtime. (Chính các mục sau của plan thừa nhận điều này không mang cơ chế cưỡng chế nào và ràng buộc phải đến từ kiểu, hoãn nửa kiểu lại cho một "WI-4b" không xuất hiện ở bảng wave của M2.) | **UNDERSPECIFIED** — nửa runtime một mình không giao được mục tiêu đã tuyên bố | `Object.freeze` trên một `const` khai báo là `Record<string, ToolRenderer>` là vô hình với `bun check`: một người đóng góp tương lai viết `toolRenderers.grep = x` vẫn type-check và vẫn compile. Mục tiêu của mục này — đóng backdoor để nó không thể âm thầm mở lại — vì thế chỉ được giao một nửa bởi riêng freeze. Hãy thêm annotation kiểu `Readonly`. Nó miễn phí, và điều này đã được kiểm chứng chứ không phải suy luận: với `Readonly<Record<string, ToolRenderer>>` đã đặt, `bun run --cwd packages/tui check:types` và `bun run --cwd packages/coding-agent check:types` đều pass sạch, và một dòng ghi được chèn `toolRenderers.probe_backdoor = toolRenderers.bash;` tại `tool-execution.ts:355` fail với `TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Vì WI-4b không ai sở hữu trong bảng wave, gộp nó vào đây là cách để nó thôi là việc của không ai. WI-4b vốn đã không tồn tại như một work item riêng, và bước 2 của chính WI-4 này đã ra lệnh thay dòng khai báo đó. Vẫn giữ freeze ở runtime — kiểu không chặn nổi một cast. Bằng chứng: đã áp thay đổi hai dòng vào một bản sao tạm, chạy `bun run --cwd packages/tui check:types` → exit 0; `bun run --cwd packages/coding-agent check:types` → exit 0; `bunx oxlint` → sạch; `bunx oxfmt --check` → sạch. Sau đó chèn một dòng ghi và chạy lại type check của tui → `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Cây đã revert; `git status --porcelain` chỉ hiện output spec chưa track. |
 | Export-map wildcard nằm ở `packages/tui/package.json:93-96`. | **STALE** — lệch một dòng | Entry `"./*"` nằm ở dòng **94-97**. Entry `"./tools"` mà các consumer trong repo thực sự resolve qua nằm ở dòng 86, và nó là một entry riêng, tường minh, mà wildcard không che. Bằng chứng: `grep -n '"\./\*"\|"\./tools"' packages/tui/package.json` → 86 cho `"./tools"`, 94 cho `"./*"`, 98 cho `"./components/*"`, 102 cho `"./*.js"`. |
 | Có đúng 14 tham chiếu `toolRenderers` trong repo, trên 5 file, tất cả chỉ-đọc, không có phép gán nào. | **CONFIRMED** — đừng suy diễn lại điều này | Đã chạy lại `git grep -n toolRenderers -- packages` và nhận đúng 14 hit trên đúng 5 file được nêu, đúng những số dòng plan liệt kê. Cũng đã chạy probe writer trên toàn repo và nhận zero hit cho `toolRenderers[x] =`, `toolRenderers.foo =`, và `delete toolRenderers`. Việc plan hạ cấp từ S xuống XS dựa trên bản kiểm kê này là có cơ sở. Bằng chứng: `git grep -n toolRenderers -- packages` → 14 dòng rải ở `gallery-cli.ts`(4), `gallery-cli.test.ts`(2), `apply-patch-renderer.test.ts`(4), `tool-execution.ts`(2), `tools/index.ts`(2). `git grep -n 'toolRenderers\[.*\]\s*=\|delete toolRenderers\|Object.assign(toolRenderers'` → không có hit. |
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Đặc tả tự ghi "đã kiểm trên cây hiện tại", nhưng **7 neo trong 15 đã cũ**, và hai cụm cũ nhất lệch tới 25 dòng:
+
+- `types.ts:1322` — **CŨ HƠN NỮA**: dòng 1322 nay là `on(event: "session_compact", …)`, không phải `tool_execution_end` lẫn không phải tool path. Đo lại: `interface ToolDefinition` ở **638** (plan nói 636); `renderCall?` ở **694** (plan nói 686); `renderResult?` ở **697** (plan nói 689); `registerTool<TParams` ở **1372** (plan nói 1347).
+- `wrapper.ts:54-62` / `54-63` / `54-66` — **CŨ CẢ BA**: dải gán render hook thật là **84-99** (`if (registeredTool.definition.renderCall) {` ở 84, `if (registeredTool.definition.renderResult) {` ở 92, đóng ở 99). Dòng 62 là `export class RegisteredToolAdapter`, 69-70 là khai báo field. `wrapRegisteredTools` ở **141**.
+- `test/tools/apply-patch-renderer.test.ts:8,29,77,90` → thật là **8, 73, 86** (3 hit, không phải 4); "14 hit trên 5 file" → **13 hit trên 5 file**.
+- `packages/tui/package.json:93-96` → thật là **94-97** (`"./*"`); entry `"./tools"` ở dòng **86**.
+
+Neo ĐÚNG, dùng nguyên: `packages/tui/src/tools/index.ts:35`, `:70`, `:73`; `packages/tui/src/tools/xdev.ts:48`; `packages/tui/src/chat/tool-execution.ts:17,355`; `gallery-cli.ts:16,141,307,344` (4 hit); `test/gallery-cli.test.ts:18,79` (2 hit); `packages/tui/src/theme/theme.ts:3`; `packages/tui/tsconfig.json` include `["src","test"]`.
+
+Ngoài ra: plan dành cả một mục "Xác minh" cho việc "cần build native addon" và dựng cổng (c) "hai file test chưa commit được vì chưa chạy được ở đây" — **điều đó đã lỗi thời**. `packages/natives/native/pi_natives.darwin-arm64.node` **đã tồn tại** (185 MB). Đo lại: `bun test test/countdown-timer.test.ts` → 2 pass; `bun test test/tools/apply-patch-renderer.test.ts` → 7 pass. **Cả hai file test trong mục hợp đồng đều chạy và xanh.** `bazel`/`bazelisk` không có trên PATH nhưng `ninja` thì có — và không cần đến.
+
+**Bảng điểm sửa.**
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `packages/tui/src/tools/index.ts:35` | `toolRenderers` (khai báo) | `export const toolRenderers: Record<string, ToolRenderer> = {` | `export const toolRenderers: Readonly<Record<string, ToolRenderer>> = Object.freeze<Record<string, ToolRenderer>>({` |
+| `packages/tui/src/tools/index.ts:70` | đóng object literal | `};` | `});` |
+| `packages/tui/src/tools/index.ts:73` | `setXdevRendererLookup(name => toolRenderers[name]);` | **không đổi** | **không đổi** — closure chỉ-đọc |
+| `packages/tui/test/tool-renderers-frozen.test.ts` | file mới | không tồn tại | 3 test |
+| `packages/coding-agent/test/extension-tool-renderer-registration.test.ts` | file mới | không tồn tại | 1 test |
+| `packages/tui/package.json:94-97` | `"./*"` export-map | **không chạm tới** | **không chạm tới** |
+
+31 entry renderer (dòng 36–69) giữ nguyên — đã đếm: `awk 'NR>=36 && NR<=69' … \| grep -cE '^\t[a-z_]+:'` → `31`.
+
+**Các bước có neo đã kiểm.**
+
+1. Chạy lại kiểm kê zero-writer (tiền đề, phải chạy lại vào ngày làm) — `git grep -n toolRenderers -- packages`.
+2. Sửa dòng khai báo — neo `packages/tui/src/tools/index.ts:35`.
+3. Đóng lời gọi — neo `packages/tui/src/tools/index.ts:70` (đóng literal thành `});`), giữ nguyên dòng 73.
+4. `packages/tui/test/tool-renderers-frozen.test.ts` (file mới, mã đã chạy xanh).
+5. `packages/coding-agent/test/extension-tool-renderer-registration.test.ts` (file mới, mã đã chạy xanh).
+6. Chạy cổng theo đúng thứ tự ở mục cổng.
+
+**Hợp đồng test.** Hai file, **không trùng lặp**: file 1 chứng minh global đã đóng, file 2 chứng minh cánh cửa bên cạnh vẫn mở.
+
+- **(1) `packages/tui/test/tool-renderers-frozen.test.ts` — 3 test.** Mã này đã chạy thật: **3 pass / 0 fail**. (a) `is read-only at the type level, not only at runtime` — một hàm `const _typeOnly = (): void => { … }` **không bao giờ được gọi**, trong đó có `// @ts-expect-error toolRenderers must refuse writes — the backdoor is closed.` rồi `toolRenderers.probe_backdoor = toolRenderers.bash;`. (b) `rejects an out-of-band write from a third-party importer` — `expect(() => { (toolRenderers as Record<string, unknown>).probe_backdoor = toolRenderers.bash; }).toThrow(TypeError)` và `expect((toolRenderers as Record<string, unknown>).probe_backdoor).toBeUndefined()`. (c) `still lets a tool definition's own renderResult override the frozen global`.
+- **(2) `packages/coding-agent/test/extension-tool-renderer-registration.test.ts` — 1 test.** Mã này đã chạy thật: **1 pass / 0 fail**. Bám khuôn `test/issue-13081-extension-renderer-theme-slot.test.ts`. Dựng `ExtensionRuntime` + `loadExtensionFromFactory` đăng ký tool tên `bash` (tên có sẵn) với `renderResult` trả `new Text("EXT-OWNED-RESULT", 0, 0)`, qua `ExtensionRunner` + `wrapRegisteredTools` + `EventBus`, rồi render và khẳng định marker của extension thắng.
+
+**Cổng có đỏ được không.** **Có, nhưng phải đo từng nửa** — đây là phần quan trọng nhất, và hai nửa đỏ **khác nhau**:
+
+```bash
+bun run --cwd packages/tui check:types
+bun run --cwd packages/coding-agent check:types
+bunx oxlint packages/tui/src/tools/index.ts && bunx oxfmt --check packages/tui/src/tools/index.ts
+bun run check:ts
+(cd packages/tui && bun test test/tool-renderers-frozen.test.ts)
+(cd packages/coding-agent && bun test test/extension-tool-renderer-registration.test.ts)
+git grep -nE 'toolRenderers\[[^]]*\] *=|toolRenderers\.[A-Za-z_$]+ *=|delete toolRenderers|Object\.assign\(toolRenderers|Reflect\.(set|defineProperty)\(toolRenderers' -- packages
+```
+
+Kết quả đo trên cây đã vá: lệnh 1 exit 0; lệnh 2 exit 0; lệnh 3 lint 0, `oxfmt --check` "All matched files use the correct format"; lệnh 4 (`check:ts` toàn repo) exit 0; lệnh 5 **3 pass / 0 fail**; lệnh 6 **1 pass / 0 fail**; lệnh 7 **0 hit**. Lệnh 7 phải **rộng hơn mẫu kiểm kê ở bước 1**.
+
+| trạng thái | `check:ts` | `bun test` file (1) |
+| --- | --- | --- |
+| Đầy đủ (`Readonly` + `Object.freeze`) | xanh | 3 pass |
+| **Bỏ `Readonly`, giữ `Object.freeze`** | **ĐỎ** `test/tool-renderers-frozen.test.ts(39,4): error TS2578: Unused '@ts-expect-error' directive.` | **vẫn 3 pass — xanh giả** |
+| **Giữ `Readonly`, bỏ `Object.freeze`** | xanh | **ĐỎ** `Expected constructor: TypeError / Received function did not throw` |
+
+Đọc bảng: **không nửa nào tự đỏ.** Một `Object.freeze` trần, không kèm `Readonly`, là thay đổi **hoàn toàn vô hình** với toàn bộ cổng — type check xanh, ba test xanh, lint xanh. Chỉ có khẳng định `@ts-expect-error` trong test (1) mới biến nó thành đỏ (TS2578). Ngược lại, `Readonly` không kèm `Object.freeze` thì type check xanh và chỉ test runtime bắt được, vì một `const` khai báo kiểu `Readonly` vẫn gán được ở runtime. **Kết luận: giữ cả hai nửa, và giữ cả hai file test.** Bỏ `@ts-expect-error` đi là biến cổng (a) thành xanh giả. Bỏ `Object.freeze` đi là biến test runtime thành cổng duy nhất canh nửa runtime.
+
+KHÔNG phải cổng: `bun test` nói chung **không phải** tiền đề ở checkout này. Lệnh 5 và 6 là regression pin, không phải điều kiện để merge.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Con số kiểm kê trong plan đã cũ (13, không phải 14).** Đo lại hôm nay: file đó có **3 hit tại 8, 73, 86**; tổng là **13 hit trên 5 file**. Cũng lưu ý đính chính #6 của plan tự mâu thuẫn với chính nó: một bản nói "23 module renderer con", một bản nói "20". Chạy `git grep -n toolRenderers -- packages` và **dùng số đo được**, đừng dán danh sách của plan vào PR description.
+2. **"Cần build native addon" đã lỗi thời — cả hai file test chạy được ngay.** Đừng dùng cổng (c) làm lý do để không commit test đỏ.
+3. **Bẫy lớn nhất: đừng viết khẳng định kiểu như một assert runtime thật.** Bản `@ts-expect-error` mà plan viết đặt thẳng vào thân `test()` — đã thử và nó fail với `TypeError: Attempting to define property on object that is not extensible.`, vì file test ESM strict-mode và `Object.freeze` khiến phép gán ném thật. Sửa đúng là bọc vào một hàm **không bao giờ được gọi** — type checker vẫn kiểm tra, runtime không chạy. Đúng nguyên tắc AGENTS.md: "Compile-time guarantees → type checks/type tests, not runtime placeholders."
+4. **`AgentTool.renderResult` nhận BA đối số, không phải bốn.** `packages/agent/src/types.ts:1179` khai báo `(result, options, theme)`. Đối số `args` thứ tư chỉ là tham số nội bộ mà `RegisteredToolAdapter` dùng để gọi `definition.renderResult` (`wrapper.ts:92-99`). Đã thử truyền 4 đối số → `test/extension-tool-renderer-registration.test.ts(69,95): error TS2554: Expected 3 arguments, but got 4.`
+5. **`tool-execution.ts:355` chỉ là một lượt đọc — đừng sửa nó.** `this.#renderer = options.useBuiltInRenderer === false ? undefined : toolRenderers[toolName];`. `Readonly` không đụng tới index-read. Trường `useBuiltInRenderer` trong `ToolExecutionOptions` (`tool-execution.ts:156-160`) là đường thoát thứ hai đã có sẵn và **không** cần thay đổi.
+6. **Đừng gộp việc thu hẹp export-map.** `packages/tui/package.json:94-97` là `"./*"`, và entry `"./tools"` thật sự dùng trong repo nằm ở **dòng 86** — một entry riêng, tường minh, không bị wildcard che. Việc này đổi bề mặt công khai, là câu hỏi mở riêng. Nếu bạn thấy mình đang mở `package.json` thì bạn đang làm sai work item.
+7. **Đừng gộp `"});"` vào một dòng khác** (ví dụ gộp với `write: writeToolRenderer,`); giữ nguyên dòng 73 `setXdevRendererLookup(name => toolRenderers[name]);` — nó là closure chỉ-đọc và phải tiếp tục chạy.
 
 ## Cần người xác nhận
 
@@ -2255,6 +3106,110 @@ Cách dễ sai nhất một lần là lựa chọn BỊ CẤM: làm cho `reset()
 ---
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** HEAD đã dời từ `808b365` (mốc plan dùng để đo) sang **`65cc6c1`**. Bốn file call-site đã trôi. Ngoài ra plan **BỎ SÓT HAI nơi nữa phải sửa**, và **một trong hai nằm ngoài phạm vi grep mà plan dùng làm cổng**.
+
+Neo đã trôi, dùng số thật: `agent-session.ts:112` (import) → **:113** (+1); `main.ts:872` → **:880** (+8); `sdk.ts:3528` (comment) → **:3541** (+13); `sdk.ts:4571` (`resetCapabilities()`) → **:4607** (+36); `sdk.ts:4566` (`reconcileExtensionSources`) → **:4602** (+36); `sdk.ts:4579-4581` (`setSuspendedExtensions`) → **:4615-4617** (+36); `agent-session.ts:5435` / `:5820` / `:8811` → **:5563 / :5948 / :8957** (+128 / +128 / +146); `session-tools.ts:1651` → **:1712** (+61).
+
+Neo ĐÚNG tuyệt đối, dùng nguyên: `capability/index.ts` dài 588 dòng và **không đổi một dòng nào** kể từ `808b365` (`git diff --stat 808b365..HEAD` trả rỗng cho file này), nên **mọi neo của nó trong plan vẫn đúng**: `:11`, `:26`, `:27`, `:34`, `:37`, `:40`, `:43`, `:44`, `:63`, `:71`, `:89`, `:101`, `:459`, `:473`, `:502-522`, `:554-556`, `:561-566`, `:572`. Cùng đúng: `capability/tool.ts:27`; `config/model-registry.ts:303`, `:304`, `:3010`, `:3011-3019`, `:3020-3023`, `:2955`; `extensibility/extensions/loader.ts:363`; `runner.ts:976-977`; `types.ts:1827-1830`; `main.ts:24`; `selector-controller.ts:25`, `:310`; `ssh-command-controller.ts:7`, `:208`, `:369`; `builtin-marketplace.ts:1`, `:36`; `helpers/ssh.ts:2`, `:146`, `:167`; `session-tools.ts:6`.
+
+Hai chỗ plan nói SAI về chính nó: (i) plan viết `clearSourceRegistrations` "mở ở `:2913`; `:2914` là dấu ngoặc mở" — **sai**: `:2913` là dòng `*/` đóng doc comment, **`:2914` mới là chữ ký hàm**; con số gốc của plan mới đúng, bảng đính chính đã làm nó sai đi. (ii) plan viết extension API `registerProvider` ở `types.ts:1570` và `:1743` — thực tế **`:1595`** (`registerProvider(name, config)` — **không** có `sourceId`) và **`:1768`** (`registerProvider(name, config, sourceId)`). Kết luận của plan chỉ đúng một nửa: signature mà extension thấy **không** có `sourceId`; loader tự chèn nó ở `loader.ts:363`.
+
+Đếm lại: **8 import có alias, 12 call site, 14 `defineCapability` cấp module, 84 lời gọi `registerProvider` top-level trong `src/discovery/`, 0 lời gọi lồng trong hàm, `test/capability/` đã có 3 file**. Nhưng **blast radius thật là 10 file, không phải 8** — xem cạm bẫy 2.
+
+Sai về môi trường, đo lại ở `65cc6c1`: native addon **đã build** (`rule-agents.test.ts` ra **4 pass / 0 fail**, không phải `0 pass / 1 fail`); chuỗi import lan truyền **không** chặn test; row 1 của hợp đồng **đã quan sát được XANH ở HEAD** dùng tên cũ `reset`, trái với "chưa bao giờ quan sát".
+
+**Bảng điểm sửa.** Cột TRƯỚC trích nguyên văn từ file thật tại `65cc6c1`.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/capability/index.ts:554-556` | `reset` | `export function reset(): void {`<br>`	clearFsCache();`<br>`}` | `export function invalidateAllCaches(): void {`<br>`	clearFsCache();`<br>`}` + doc comment mới nói rõ KHÔNG phải registry |
+| `src/capability/index.ts:557` (mới) | `resetRegistry` | *(không tồn tại)* | `export function resetRegistry(): void {`<br>`	capabilities.clear();`<br>`}` — chỉ xoá map `capabilities`, không gì khác |
+| `src/capability/index.ts:101` | `registerProvider<T>` | `export function registerProvider<T>(capabilityId: string, provider: Provider<T>): void {` | `export function registerProvider<T>(capabilityId: string, provider: Provider<T>, sourceId?: string): void {` |
+| `src/capability/index.ts:34`-`:44` (chèn sau `:44`) | attribution | *(chỉ có 3 Map ở `:34`/`:37`/`:40` và 2 Set ở `:43`/`:44`)* | `const providersBySource = new Map<string, Set<string>>();`<br>`const providerSourceByName = new Map<string, string>();` |
+| `src/capability/index.ts:101`+ (thêm vào thân) | attribution claim | *(thân hàm chỉ set `providerMeta` + `providerCapabilities` rồi splice theo priority)* | thêm khối `if (sourceId !== undefined) { ... }` mirror `config/model-registry.ts:3010-3023` |
+| `src/capability/index.ts` cạnh `:566` (mới) | `unregisterProvidersForSource` | *(không tồn tại)* | `export function unregisterProvidersForSource(sourceId: string): void` mirror `clearSourceRegistrations` (`model-registry.ts:2914`) |
+| `src/main.ts:24` | import | `import { reset as resetCapabilities } from "./capability";` | `import { invalidateAllCaches } from "./capability";` |
+| `src/sdk.ts:51` | import | `import { loadCapability, reset as resetCapabilities } from "./capability";` | `import { invalidateAllCaches, loadCapability } from "./capability";` |
+| `src/session/agent-session.ts:113` | import | `import { reset as resetCapabilities } from "../capability";` | `import { invalidateAllCaches } from "../capability";` |
+| `src/session/session-tools.ts:6` | import | `import { reset as resetCapabilities } from "../capability";` | `import { invalidateAllCaches } from "../capability";` |
+| `src/modes/controllers/selector-controller.ts:25` | import | `import { reset as resetCapabilities } from "../../capability";` | `import { invalidateAllCaches } from "../../capability";` |
+| `src/modes/controllers/ssh-command-controller.ts:7` | import | `import { reset as resetCapabilities } from "../../capability";` | `import { invalidateAllCaches } from "../../capability";` |
+| `src/slash-commands/builtin-marketplace.ts:1` | import | `import { reset as resetCapabilities } from "../capability";` | `import { invalidateAllCaches } from "../capability";` |
+| `src/slash-commands/helpers/ssh.ts:2` | import | `import { reset as resetCapabilities } from "../../capability";` | `import { invalidateAllCaches } from "../../capability";` |
+
+Mười hai call site, đổi thành `invalidateAllCaches();` — dùng số đã kiểm ở `65cc6c1`: `src/main.ts:880` (+8 so với plan, ngay sau `clearPluginRootsAndCaches();` ở `:879`); `src/sdk.ts:4607` (+36, trong `reconcileExtensionSources`, ngay trước `discoverExtensionPaths`); `src/session/agent-session.ts:5563` (+128, ngay sau `this.sessionManager.appendResetBoundary();` ở `:5562` — đúng ranh giới `/clear`); `:5948` (+128, đầu `refreshSkillsAndCommands()`); `:8957` (+146, trước `refreshBaseSystemPrompt()` sau khi chuyển session); `src/session/session-tools.ts:1712` (+61, đầu `async refreshSkills()`); `selector-controller.ts:310` (lệch 0); `ssh-command-controller.ts:208` và `:369` (lệch 0); `builtin-marketplace.ts:36` (lệch 0); `helpers/ssh.ts:146` và `:167` (lệch 0).
+
+Comment cần viết lại: `src/sdk.ts:3541` (plan ghi `:3528`) — `// resetCapabilities() clears the fs cache at those boundaries, so this observes` → `// invalidateAllCaches() clears the fs cache at those boundaries, so this observes`.
+
+⭐ **HAI NƠI PLAN BỎ SÓT — bắt buộc phải sửa.** Không có `resetCapabilities` trong hai dòng này, nên **grep cổng của plan không bắt được chúng**: `src/discovery/index.ts:70` — `\treset,` là re-export trần từ `"../capability"`, ngay dưới dòng comment `// Cache management` ở `:69` → thành `\tinvalidateAllCaches,`. `test/extension-dashboard-mcp-parity.test.ts:19` — `import { initializeWithSettings, reset as resetDiscoveryCache } from "@oh-my-pi/pi-coding-agent/discovery";` (dùng tại `:241`) → `import { initializeWithSettings, invalidateAllCaches as resetDiscoveryCache } from "@oh-my-pi/pi-coding-agent/discovery";`. Nếu bỏ sót `discovery/index.ts:70`: `tsgo` báo TS2305, nhưng `bun test test/extension-dashboard-mcp-parity.test.ts` sẽ **xanh** vì `reset` đã biến mất khỏi barrel mà file test đó dùng đường khác — hai lỗi này đi vào hai cổng khác nhau. *(Đã loại trừ: `src/modes/rpc/rpc-subagents.ts:101` cũng có `reset,` nhưng đó là biến cục bộ `let reset = false;` ở `:85` trả về trong object literal, không phải re-export.)*
+
+Nối vào hot path (COMMIT 3) — `src/sdk.ts:4615-4617`, `reconcileExtensionSources`, TRƯỚC là <pre>const { suspended, resumed } = extensionRunner.setSuspendedExtensions(\n\textension => governed.has(extension.resolvedPath) && !enabled.has(extension.resolvedPath),\n);</pre> → chèn ngay **sau** `:4617`: <br>`for (const extension of suspended) unregisterProvidersForSource(extension.path);`<br>kèm comment nói thẳng đây là inert và là seam cho WI-10. Dùng `extension.path`, **không** dùng `extension.resolvedPath`.
+
+File test mới: `packages/coding-agent/test/capability/reset-contract.test.ts` (đúng 2 khối `test()`) và `packages/coding-agent/test/capability/provider-source-attribution.test.ts` (đúng 3 khối `test()`). Thư mục `test/capability/` **đã tồn tại**, chứa `fs-special-files.test.ts`, `rule-agents.test.ts`, `rule-buckets.test.ts`. Quy ước import của file sẵn có dùng đường package: `import { clearCache, readFile } from "@oh-my-pi/pi-coding-agent/capability/fs";`. Đường `@oh-my-pi/pi-coding-agent/capability` và `.../capability/tool` resolve được — đã kiểm bằng cách chạy thật: `1 pass / 0 fail`.
+
+**Các bước có neo đã kiểm.**
+
+1. Xác nhận cây trước khi gõ.
+2. Đổi tên export — neo `capability/index.ts:551-556`.
+3. Thêm `resetRegistry()` ngay dưới `invalidateAllCaches()`, trước `resetCapabilityForTests`.
+4. Sửa 8 dòng import + **1 dòng barrel** — bảng ở trên, thêm `discovery/index.ts:70`.
+5. Sửa 12 call site + viết lại comment `sdk.ts:3541`.
+6. Viết `reset-contract.test.ts` — đúng 2 `test()`, **đúng thứ tự** này.
+7. Kiểm M2-OQ2 đã được WI-0 trả lời "the capability registry becomes extension-reachable" (YES).
+8. Kiểm WI-1 commit 1 đã có teardown trong nhánh suspend chưa — ở `65cc6c1` nhánh đó **chưa** có.
+9. Thêm hai Map vào phần Registry State, ngay sau `:44` (trước `/** disabledProviders …`).
+10. Mở rộng `registerProvider` thêm `sourceId?: string`, chèn khối attribution sau khai báo.
+11. Thêm `unregisterProvidersForSource(sourceId)` cạnh khối Cache Management — mirror `model-registry.ts:2914`.
+12. Nối vào `sdk.ts`, chèn ngay sau `:4617` — đã đọc `:4613-4618`.
+13. Viết `provider-source-attribution.test.ts` — 3 `test()`, assert trên danh sách đã phân giải.
+
+**Hợp đồng test.**
+
+`test/capability/reset-contract.test.ts` (2 khối, thứ tự cố định): (1) `invalidateAllCaches()` rồi `getCapability(toolCapability.id)` vẫn defined — *nếu hồi quy*: `/clear`, resume-with-chdir, chuyển phiên ssh và reconcile loop âm thầm ngừng phân giải được cả 14 capability **suốt phần đời còn lại của process**, không stack trace (ESM không đánh giá lại `defineCapability` cấp module). Prompts, rules, hooks, slash commands, skills, tools biến mất và không quay lại. (2) `resetRegistry()` rồi `getCapability(toolCapability.id)` là `undefined` — *nếu hồi quy*: hàm đặt tên là "xoá registry" lại không xoá gì — một lời nói dối mới thay lời nói dối cũ.
+
+`test/capability/provider-source-attribution.test.ts` (3 khối): (a) provider thuộc source X vắng khỏi `getCapabilityInfo(id)?.providers` sau `unregisterProvidersForSource(X)` — *nếu hồi quy*: đóng góp của extension bị tắt vẫn nằm trong capability set; nếu assert vào map nội bộ thay vì danh sách đã phân giải thì test xanh trong khi danh sách vẫn cũ — đó chính là failure mode. (b) hai source trên cùng capability; teardown một cái thì provider của source kia còn — *nếu hồi quy*: tắt một extension lặng lẽ cỡi đóng góp của một extension khác; đây là row chứng minh attribution là thật. (c) sau `resetRegistry()`, provider từ cả hai `sourceId` vẫn còn — *nếu hồi quy*: commit 1 phá đường dọn dẹp của commit 2; row này buộc `resetRegistry()` phải hẹp: không `providerCapabilities`, không `providerMeta`, không mảng `providers`, không map attribution.
+
+Suy giảm được chấp nhận (phải ghi vào doc comment của `resetRegistry`): sau `resetRegistry()`, `getProviderInfo` vẫn duyệt `providerCapabilities` và thấy `capabilities.get(capId) === undefined` nên rơi xuống `priority = 0` (`capability/index.ts:502-522`). Chấp nhận được cho hàm chỉ-tồn-tại-để-test.
+
+**Cổng có đỏ được không.** **Có, nhưng KHÔNG phải vì lý do plan nói, và một nửa của nó đang ĐỎ SẴN ở HEAD vì lý do không liên quan tới WI-5.**
+
+```bash
+# (1) Sau commit 1
+cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts
+git -C /Users/tranquangdang21/Projects/ultraworkers grep -n resetCapabilities -- packages/coding-agent
+git -C /Users/tranquangdang21/Projects/ultraworkers grep -nE '^\s*reset,\s*$' -- packages/coding-agent/src
+git -C /Users/tranquangdang21/Projects/ultraworkers grep -rn 'resetDiscoveryCache' -- packages/coding-agent/test
+```
+
+- **Nửa grep — ĐỎ ĐƯỢC, tin cậy được.** Lệnh đầu trả 0 sau khi đổi tên, và lệnh đầu **ĐỎ NGAY Ở HEAD** (13 dòng) — bằng chứng lệnh có sức phân biệt.
+- ⚠️ **Lệnh grep đầu của plan KHÔNG ĐỦ.** Nó trả 0 trong khi `discovery/index.ts:70` vẫn còn `reset,` và `extension-dashboard-mcp-parity.test.ts:19` vẫn còn `reset as resetDiscoveryCache`. Thêm hai lệnh grep còn lại — chúng **ĐỎ NGAY Ở HEAD** (1 dòng + 2 dòng).
+- ⚠️ **`bun run check:ts` đang ĐỎ ở `65cc6c1`, không liên quan tới WI-5.** Nửa `check:tools` (`oxlint . && oxfmt --check …`) **exit 1** vì `oxfmt` báo định dạng sai ở `packages/tui/test/probe-frozen.test.ts` — một file **untracked** còn sót lại từ WI-4. `oxlint .` riêng lẻ exit **0**. **Hậu quả:** vì `check:ts` chạy `check:tools` trước, nó chết ở oxfmt và **không bao giờ tới nửa type-check** — tức nửa duy nhất thật sự chứng minh việc đổi tên an toàn. Sửa để cổng đỏ được: chạy hai nửa tách bạch — `bunx oxlint .` (exit 0), `bunx oxfmt --check 'packages/*/src/**/*.{ts,tsx}' 'packages/*/{test,bench,examples,scripts}/**/*.ts' 'packages/*/*.ts' 'scripts/**/*.ts'`, rồi `bun run --filter './packages/*' --sequential --if-present check:types`. Nửa type-check đã đo **XANH** tại `65cc6c1`: 16 package, tất cả `Done`, gồm `@oh-my-pi/pi-coding-agent:check:types` (`tsgo -p tsconfig.json --noEmit`, và `tsconfig.json` `include` có `["src","test","scripts"]` nên nó **có** kiểm file test mới). Nếu `probe-frozen.test.ts` vẫn còn, dọn nó trước khi chạy `check:ts` — nó không thuộc WI-5.
+
+**(2) Chứng minh tripwire row 1.** Plan nói row 1 chưa bao giờ được quan sát ở trạng thái xanh vì native addon chưa build — **điều đó không còn đúng ở `65cc6c1`**. Đo thật: `bun test test/capability/rule-agents.test.ts` → **4 pass / 0 fail**; một test file import `../src/capability/index` + `../src/capability/tool` → **1 pass / 0 fail** (chuỗi import lan truyền **không** chặn gì); một test file dùng specifier package, gọi `reset` (tên cũ) rồi assert `getCapability(toolCapability.id)` defined → **1 pass / 0 fail**. Nghĩa là ngay Ở HEAD, row 1 **đã quan sát được XANH** nếu import dùng tên cũ `reset`. Không cần build addon, không cần `bun --cwd=packages/natives run build`. Thứ tự ghim tripwire: (a) tạo `reset-contract.test.ts` với import TÊN MỚI → ĐỎ ở dòng import (TS2305 / SyntaxError); (b) đổi TẠM import của row 1 sang tên cũ `reset` → XANH; (c) tạm thêm `capabilities.clear();` vào `invalidateAllCaches()` → row 1 ĐỎ; (d) gõ bỏ và đổi import về tên mới → XANH. Ghi kết quả (b) và (c) vào PR. **Đây là bằng chứng thật, không phải mô tả.**
+
+**(3) Sau commits 2-3** — `bun run --filter './packages/*' --sequential --if-present check:types`, rồi `bun test test/capability/reset-contract.test.ts test/capability/provider-source-attribution.test.ts`, rồi `bun test` toàn bộ. **CÓ ĐỎ ĐƯỢC — và có thể đánh giá được ngay tại `65cc6c1`.** Không cần build gì thêm. Bước thứ ba là bắt buộc: nó chứng minh `resetRegistry()` trong một file không đầu độc file khác — rủi ro thật mà plan nguồn không nhắc.
+
+| tầng | đỏ được? | bằng cách nào | đo ở `65cc6c1` |
+| --- | --- | --- | --- |
+| grep | ✅ có | export đổi tên → `resetCapabilities` biến mất | **ĐỎ** 13 dòng (13 dòng + 1 + 2 với 2 lệnh bổ sung) |
+| type-check | ✅ có | `tsgo` báo TS2305 khi sót một import | **XANH** (cần tách khỏi `check:tools`) |
+| test | ✅ có | tripwire row 1 + 3 row attribution | **XANH** (addon đã build) |
+| full suite | ✅ có | `resetRegistry()` đầu đốc file khác | chạy được |
+
+**Cổng KHÔNG phủ gì:** claim hành vi trong mô tả PR. Không có đường production nào đăng ký capability provider kèm `sourceId` (đã kiểm: 84 lời gọi, tất cả top-level cấp module trong `src/discovery/`). **Đừng viết trong PR rằng tắt extension giờ đã giải phóng provider của nó.**
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Lựa chọn bị cấm — đừng làm `reset()`/`invalidateAllCaches()` xoá map `capabilities`.** Trông như đó chính là bản sửa. Nó làm brick **cả process, im lặng, không stack trace**: 14 `defineCapability` đều là `export const x = defineCapability(…)` cấp module, ESM đánh giá mỗi module đúng một lần, nên không import nào chạy lại chúng. Sau lần gọi đầu tiên, `getCapability`/`loadCapability` hỏng cho **cả 14** ở **mọi** call site.
+2. ⭐ **Sai lầm dễ nhất khi gõ: tin con số "8 file".** Thực tế là **10 file**. Plan đếm đúng 8 dòng import có alias và 12 call site, nhưng bỏ sót `discovery/index.ts:70` (re-export trần) và `test/extension-dashboard-mcp-parity.test.ts:19` (alias `resetDiscoveryCache`). Không neo nào trong bảng file của plan trỏ tới hai file này. Vì grep cổng của plan chỉ tìm chuỗi `resetCapabilities`, nó sẽ **XANH trong khi hai chỗ đó còn hỏng** — một cổng luôn xanh tệ hơn không có cổng.
+3. **Đừng chạy `bun run check:ts` một khống.** Nó đang đỏ sẵn vì file untracked `packages/tui/test/probe-frozen.test.ts` (tàn dư của WI-4) làm `oxfmt` exit 1, và vì `check:tools` chạy trước nên nửa type-check — thứ duy nhất chứng minh việc đổi tên an toàn — không bao giờ chạy. Đừng dọn file của người khác mà không nói với họ.
+4. **Đừng viết PR "tắt extension giờ giải phóng provider của nó."** Không đúng: 84 lời gọi `registerProvider` đều không có `sourceId`; lời gọi trong nhánh suspend luôn trượt. Đây là seam.
+5. **Đừng lấy `extension.resolvedPath`.** SourceId mà ModelRegistry đã dùng là `extension.path` (`loader.ts:363`). `Extension` có cả hai trường (`types.ts:1827-1830`) và chúng **khác nhau** — `sdk.ts:4616` tự nó so sánh bằng `resolvedPath`, dễ khiến người gõ chọn nhầm.
+6. **Thứ tự hai row trong `reset-contract.test.ts` là bắt buộc.** Đã chứng minh thực nghiệm: state module **được chia sẻ giữa các khối `test()` trong cùng một file**. Row 2 gọi `resetRegistry()` trước sẽ làm row 1 đỏ sai lệch. (Ngược lại, state **không** chia sẻ **giữa các file**.)
+7. **`resetRegistry()` phải giữ hẹp** hoặc row (c) không thể hiện thực: không `providerCapabilities`, không `providerMeta`, không mảng `providers`, không map attribution.
+
 ## WI-6. Bảng admission tool — một nguồn sự thật khai báo duy nhất cho việc tool nào được đưa tới model
 
 **Thay đổi gì:** Thay thế chuỗi 25 nhánh `if (name === …)` bên trong `isToolAllowed` bằng một `Map` duy nhất ánh xạ tên tool → quy tắc admission, để việc một built-in tool có được nhận hay không trở thành **một mục dữ liệu** thay vì **một vị trí trong chuỗi**, và làm cho bốn khai báo tên tool chạy song song trở nên chứng minh được là khớp nhau. **Wave:** 4. **Effort:** M (~1.5 days) — chủ yếu là việc cơ học cẩn thận, cộng một test đặc tính hoá (characterization test) phải được viết và chứng minh xanh **TRƯỚC** khi refactor, không phải sau.
@@ -2482,6 +3437,149 @@ Cái sai thứ ba: dùng `Record` trần thay vì `Map`. Với một object lite
 ---
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** `bun run check:ts` **đang ĐỎ ở HEAD** `65cc6c1`, vì hai lý do **không liên quan gì tới WI-6**:
+
+```
+packages/tui/test/probe-frozen.test.ts   → Format issues found in above 1 files   (oxfmt --check)
+packages/coding-agent/test/extension-tool-renderer-registration.test.ts(69,95):
+    error TS2554: Expected 3 arguments, but got 4.
+```
+
+Cả hai file đều là **untracked** (`git status --porcelain` → `??`), tức WIP của một work stream khác đang nằm trong cây. Nửa còn lại của cổng — `bun run --filter './packages/*' --sequential --if-present check:types` — chạy xanh `Done` cho 7 package rồi chết đúng ở `pi-coding-agent` vì file untracked kia. **Hệ quả:** trước khi sửa bất cứ thứ gì, hãy chạy `bun run check:ts` một lần và **lưu lại output đỏ đó**. Đó là baseline của bạn. Sau khi sửa xong, cổng xanh trở lại đúng bằng chỗ đó — không phải bằng "0 lỗi".
+
+**Sai lệch chung của cả mục:** file đã dài thêm kể từ lúc plan được viết. Mọi neo `index.ts` trong WI-6 lệch **đều +7**; `sdk.ts:1161` lệch **+12**, `sdk.ts:3350` lệch **+13**. Nếu bạn `sed -n '731p'` bạn sẽ đọc trúng nhánh `learn`, không phải dòng mở đầu. Dùng bảng neo đã sửa bên dưới, hoặc grep theo tên.
+
+Ngoài ra, hai tuyên bố trong plan về cổng là **SAI cho cây này**: "Test đặc tính hoá — CẦN ADDON NATIVE, `brew install ninja`, `bun --cwd=packages/natives run build`" → **không cần**, addon đã có sẵn; đã chạy một probe thật gọi `resolveBuiltinToolPlan` với `makeSession` tối thiểu: **3 pass / 0 fail / 493ms**, không lỗi addon. Và "Baseline `bun run check:ts` xanh tại HEAD" → **đỏ**, xem trên.
+
+Đếm lại khối 25 nhánh: **25** dòng khớp `if (name ===` (đúng con số plan nói), **29 tên phân biệt**, trong đó 29 tên **đôi một rời nhau** — không tên nào xuất hiện ở hai nhánh. Con số "tám biến tự do / 23 helper / 26 lần đọc" của plan cũng **chính xác**. Vì vậy **thứ tự nhánh không phải rủi ro** (plan nói đúng khi đính chính) — nhiều nhất một nhánh khớp một `name`, việc cơ học là bất nhạm với thứ tự. **Rủi ro thật là capture**: tám biến tự do thành tám field context, và **một field rơi thì biên dịch vẫn sạch**.
+
+**Bảng điểm sửa.** Tất cả TRƯỚC trích từ cây thật @ `65cc6c1`, đã mở và đọc.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/tools/index.ts:738` (plan ghi 731) | `const isToolAllowed` | `const isToolAllowed = (name: string) => {` | `const isToolAllowed = (name: string) => evaluateToolAdmission(name, admissionCtx);` |
+| `src/tools/index.ts:744-798` (plan ghi 737-791) | 25 nhánh `if (name === …)` | khối thật, xem bên dưới | xoá hết, chuyển thành **33** mục trong `ADMISSION_RULES` |
+| `src/tools/index.ts:800` (plan ghi 793) | đóng closure | `};` | `const admissionCtx: ToolAdmissionContext = { session, restrictToolNames, requestedTools, includeYield, enableLsp, goalEnabled, externalThinkingActive, allowEval };` đặt **trước** dòng `isToolAllowed` |
+| `src/tools/index.ts:618` (plan ghi 611) | `BuiltinToolPlan.isAllowed` | `isAllowed(name: string): boolean;` | **không đổi** |
+| `src/tools/index.ts:813` (plan ghi 806) | object trả về | `return { requestedTools, names, isAllowed: isToolAllowed };` | **không đổi** |
+| `src/tools/index.ts:600` (plan ghi 593) | `ToolName` | `export type ToolName = BuiltinToolName;` | **không đổi** — nhưng đây là lý do `Record<ToolName, …>` **không typecheck** |
+| `src/tools/index.ts:561` (plan ghi 554) | `BUILTIN_TOOLS` | `export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {` | **không đổi** — đã ép buộc exhaustive ở biên dịch rồi |
+| `src/tools/index.ts:806` (plan ghi 799) | cổng lọc | `name => (name in BUILTIN_TOOLS \|\| name in HIDDEN_TOOLS) && isToolAllowed(name),` | **không đổi** — xem cạm bẫy 2, ô nhiễm prototype vẫn còn ở đây |
+| `src/tools/index.ts:808` (plan ghi 801) | nhánh không-explicit | `...Object.keys(BUILTIN_TOOLS).filter(isToolAllowed),` | **không đổi** |
+| `src/tools/index.ts` đầu file, vùng import | — | — | thêm `import { isToolAllowed as evaluateToolAdmission, type ToolAdmissionContext } from "./tool-admission";` |
+| `src/tools/tool-admission.ts` | file mới | `ls` → `No such file or directory` | tạo mới |
+| `src/tools/essential-tools.ts:47` | `defaultLoadModeForToolName` | `return name in ESSENTIAL_BUILTIN_TOOL_NAMES ? "essential" : "discoverable";` | `return Object.hasOwn(ESSENTIAL_BUILTIN_TOOL_NAMES, name) ? "essential" : "discoverable";` |
+| `src/sdk.ts:1173` (plan ghi 1161) | `SESSION_MANAGED_BUILTIN_TOOL_NAMES` | `const SESSION_MANAGED_BUILTIN_TOOL_NAMES = ["manage_skill", "learn", "context_notes", "new_context"];` | `const SESSION_MANAGED_BUILTIN_TOOL_NAMES: readonly BuiltinToolName[] = [...]` (thêm `import type { BuiltinToolName } from "./tools/builtin-names";`) |
+| `src/tools/builtin-names.ts` | — | đã đọc trọn 40 dòng | **KHÔNG SỬA** — `BUILTIN_TOOL_NAMES` ở 2-31 (30 tên), `HIDDEN_TOOL_NAMES` ở 36 (`["yield", "goal", "think"]`). Hai neo plan này đúng sẵn. |
+
+Khối 25 nhánh (nguyên văn tại `index.ts:744-800`, dùng để đối chiếu từng mục):
+
+```
+744		if (name === "goal") {
+745			if (!goalEnabled || restrictToolNames) return false;
+746			const goalState = session.getGoalModeState?.();
+747			return goalState === undefined || goalState.enabled === true || goalState.goal.status === "dropped";
+748		}
+749		if (name === "lsp") return enableLsp && cfgLspEnabled.get(session.settings);
+750		if (name === "bash") return cfgBashEnabled.get(session.settings);
+751		if (name === "eval") return allowEval;
+752		if (name === "debug") return cfgDebugEnabled.get(session.settings);
+753		if (name === "ida") return cfgIdaAvailable.get(session.settings);
+754		if (name === "todo")
+755			return (!includeYield || session.prewalkArmed === true) && cfgTodoEnabled.get(session.settings);
+756		if (name === "glob") return cfgGlobEnabled.get(session.settings);
+757		if (name === "grep") return cfgGrepEnabled.get(session.settings);
+758		if (name === "find") return isFindEnabled(session);
+759		if (name === "github") return cfgGithubEnabled.get(session.settings);
+760		if (name === "ast_grep") return cfgAstGrepEnabled.get(session.settings);
+761		if (name === "ast_edit") return cfgAstEditEnabled.get(session.settings);
+762		if (name === "web_search") return cfgWebSearchEnabled.get(session.settings);
+763		if (name === "security_scan") return cfgSecurityEnabled.get(session.settings);
+764		if (name === "think") return externalThinkingActive;
+765		if (name === "ask") return cfgAskEnabled.get(session.settings);
+766		if (name === "context_notes" || name === "new_context")
+767			return cfgCompactionExperimentalContextManagement.get(session.settings);
+768		if (name === "checkpoint" || name === "rewind")
+769			return (
+770				cfgCheckpointEnabled.get(session.settings) &&
+771				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined)
+772			);
+773		if (name === "wait") {
+774			return (
+775				cfgAsyncEnabled.get(session.settings) ||
+776				(session.enableIrc !== false && isIrcEnabled(session.settings, session.taskDepth ?? 0)) ||
+777				cfgLaunchEnabled.get(session.settings)
+778			);
+779		}
+```
+
+Nguồn import cần dùng cho `tool-admission.ts` (đã kiểm, **không** có vòng lặp runtime): `cfg*` (17 handle) từ `./settings` (neo `index.ts:81-95`); `canSpawnAtDepth` từ `../task/types` (`index.ts:40`); `isIrcEnabled` từ `../irc/messaging` (`index.ts:61`); `isFindEnabled` từ `./jfind` (`index.ts:62`); `BuiltinToolName`, `HiddenToolName` từ `./builtin-names` (`builtin-names.ts:34`, `:38`); `ToolSession` (**type-only**) từ `./index` (`index.ts:208`).
+
+**Các bước có neo đã kiểm.**
+
+1. Ghi baseline cổng — chạy `bun run check:ts 2>&1 \| tail -25`, lưu vào file tạm. Đỏ 2 lỗi ở trên là baseline, không phải lỗi của bạn.
+2. Viết test đặc tính hoá **TRƯỚC** — copy `makeSession` từ `test/issue-5764-registertool-loadmode.test.ts:22-31`.
+3. Dòng (a) `goal` ba chiều — neo `index.ts:744-748`.
+4. Dòng (b) `wait` OR ba chiều — neo `index.ts:773-779`. Bốn tổ hợp: chỉ-async, chỉ-irc, chỉ-launch, tất cả-tắt.
+5. Dòng (c) `checkpoint`+`rewind` theo độ sâu — neo `index.ts:768-772`. **BẪY: bắt buộc `Settings.isolated({ "checkpoint.enabled": true })`**, vì `cfgCheckpointEnabled` có `default: false` (`tools/settings.ts:641-645`).
+6. Dòng (d) `manage_skill` autolearn — neo `index.ts:784-788`, cùng ma trận độ sâu, với `Settings.isolated({ "autolearn.enabled": true })`.
+7. Dòng (e) `learn` = (d) + trục backend — neo `index.ts:789-795`.
+8. Dòng (f) `task` qua `canSpawnAtDepth` — neo `index.ts:796-798`. Đọc `cfgTaskMaxRecursionDepth`, **không** phải vế hạng `taskDepth === 0`. Đây là fork khác; đừng gộp vào (c)/(d).
+9. Dòng extension-tool — `resolveBuiltinToolPlan(s, ["my_ext_tool"])` phải trả `["my_ext_tool"]` trong `.names`.
+10. Dòng prototype-safety — neo `index.ts:806` và `:799`. Khẳng định bằng **boolean**, không phải lọc danh sách.
+11. **Snapshot 33 tên (bắt buộc)** — 33 = `BUILTIN_TOOL_NAMES` (30) + `HIDDEN_TOOL_NAMES` (3). Duyệt ma trận `taskDepth ∈ {0,1}` × `explicit list ∈ {có, không}` × settings (tất cả tắt / tất cả bật / backend `hindsight` / `mnemopi` / `local`).
+12. Commit riêng test, production chưa đụng. Nếu đỏ ở bước này thì `resolveBuiltinToolPlan` đã đổi — dừng lại, đọc lại `index.ts:626-813`.
+13. Tạo `src/tools/tool-admission.ts` — `ToolAdmissionContext` với **đúng tám** field; `ADMISSION_RULES` chú thích `satisfies Record<BuiltinToolName | HiddenToolName, ToolAdmissionRule>` — **union**, 33 mục; `read`/`write`/`edit`/`yield` là `() => true` tường minh.
+14. Export `TOOL_ADMISSION` — `new Map(Object.entries(ADMISSION_RULES))`; lớp bọc `Map` là **có tải trọng**.
+15. Gộp call site — thay khối `index.ts:738-800` bằng `admissionCtx` + một dòng gọi. Giữ **byte-identical** `BuiltinToolPlan.isAllowed` (`index.ts:618`) và object trả về (`index.ts:813`) vì `sdk.ts:3363` gọi nó trong đường reconcile settings.
+16. Kiểm thứ tự mutate `requestedTools` — đo thật, không phỏng đoán.
+17. Tuỳ chọn — `essential-tools.ts:47`: `in` → `Object.hasOwn`.
+18. Tuỳ chọn — `sdk.ts:1173`: thêm chú thích `readonly BuiltinToolName[]`.
+
+**Hợp đồng test.** Tên file: `packages/coding-agent/test/tools/tool-admission-table.test.ts` (tạo mới). File phải giữ xanh: `packages/coding-agent/test/issue-5764-registertool-loadmode.test.ts` (đã chạy: **6 pass / 0 fail**). Bảo vệ: *"tập tool mà một session được nhận không thay đổi khi thang admission trở thành một bảng"*.
+
+*Người dùng thấy gì nếu hồi quy* — một trong hai, không cái nào báo lỗi: **một built-in biến mất khỏi schema tool của model** (không có dòng log, không có exception; model chỉ đơn giản không còn gọi được `checkpoint` / `wait` / `learn`, và người dùng thấy agent "chậm hẳn" hoặc "không nhớ nữa" mà không có manh mối); hoặc **một tool lẽ ra không được đưa cho model lại được đưa** (schema phình, token tăng, và tool đó có thể **viết** — `manage_skill` khi `autolearn` tắt; `memory_edit` khi backend không phải `mnemopi`). Đây là hậu quả nặng hơn: tool ghi được nhận khi nó không nên.
+
+Cụ thể snapshot 33 tên đóng dấu: ngoại lệ `dropped` của `goal`; OR ba chiều của `wait`; vế hạng dùng chung của ba luật phụ thuộc độ sâu; fork `canSpawnAtDepth` của `task`; mặc định-cho-phép cho mọi thứ không phải built-in. Dòng prototype-safety bắt đúng cơ chế `Record` ngây thơ. Dòng extension-tool bắt một bảng khoá theo sai union, hoặc một phép tra cụ thể bỏ sót mặc định `?? true`.
+
+**Cổng có đỏ được không.** **CÓ — ba cơ chế, đã kiểm từng cái.**
+
+```bash
+# 0. BASELINE — chạy TRƯỚC khi sửa, lưu lại output
+bun run check:ts 2>&1 | tail -25
+# 1. Cổng chính
+bun run check:ts 2>&1 | tail -25
+# 2. Test đặc tính hoá + hợp đồng
+cd packages/coding-agent && bun test test/tools/tool-admission-table.test.ts
+# 3. Canh chống độ trôi có sẵn
+cd packages/coding-agent && bun test test/issue-5764-registertool-loadmode.test.ts
+# 4. Cặp bị loại trừ khỏi họ phụ thuộc độ sâu
+cd packages/coding-agent && bun test test/experimental-context-management.test.ts
+```
+
+Tuyệt đối không `tsc` / `npx tsc` — dự án cấm.
+
+| cơ chế | bằng chứng |
+| --- | --- |
+| **(1) Rơi một field context** | Một trong tám field không được đưa vào `admissionCtx` → luật đọc `undefined` → ô tương ứng trong snapshot 33 tên lệch → đỏ. Đây là cơ chế **duy nhất** bắt được lỗi nguy hiểm nhất, và **chỉ** vì có snapshot đó. Sáu dòng (a)-(f) phủ 7/33 tên — rơi `enableLsp` hay `externalThinkingActive` vẫn xanh cả bảy. |
+| **(2) `Map` → `Record` trần** | Đo thật: `TABLE["toString"]` → function, `TABLE["constructor"]` → function, `TABLE["__proto__"]` → object không gọi được → `TypeError`. `expect(isAllowed("toString")).toBe(true)` đỏ vì trả function chứ không phải `true`; `isAllowed("__proto__")` **ném** chứ không chỉ đỏ. |
+| **(3) Khoá bảng theo `ToolName`** | `Record<ToolName, …>` không typecheck vì `goal`/`think` là `HiddenToolName` → `bun run check:types` đỏ ở `pi-coding-agent`. |
+
+Cổng chỉ đỏ được nếu **cả ba** điều sau đúng: (1) snapshot 33 tên được commit với bảng kỳ vọng **đóng băng**, không phải sinh lại ở mỗi lần chạy — nếu không, cổng là **xanh giả**: nó chứng minh code biên dịch được, không chứng minh admission không đổi; (2) dòng prototype-safety dùng `toBe(true)`, **không** dùng `toBeTruthy()` và **không** dùng "có mặt trong `.names`" — vì `function` và `true` đều truthy, chỉ `toBe(true)` mới đỏ; (3) bước 4 (ô `taskDepth=1` / không có danh sách tường minh) được viết và **được giữ** — bỏ nó đi thì cơ chế (1) mất một nửa độ phủ.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Dòng test (c) sẽ TRỐNG nếu bạn quên bật setting.** `cfgCheckpointEnabled` có `default: false` (`tools/settings.ts:641-645`). Với setting **tắt** (mặc định), cả bốn tổ hợp đều trả `false` → dòng (c) không phân biệt được vế hạng `taskDepth === 0 || requestedTools !== undefined`, và test xanh **vì lý do sai**. Cùng cảnh báo áp cho (d) `autolearn.enabled` và (e) `memory.backend`.
+2. **`name in BUILTIN_TOOLS` ở `index.ts:806` vẫn còn ô nhiễm prototype — và `Map` KHÔNG sửa nó.** Đo thật hôm nay: `resolveBuiltinToolPlan(session, ["my_ext_tool", "toString"]).names` → `["toString"]`. Một tool extension tên `toString` **lọt vào `.names`** ngay bây giờ, qua `name in BUILTIN_TOOLS` ở dòng 806 (`in` trên object literal bị ô nhiễm prototype y hệt). `TOOL_ADMISSION` dạng `Map` chỉ sửa **phép tra trong bảng admission**, không đụng tới cổng ở 806. Hệ quả cho test: **đừng** viết dòng extension-tool dưới dạng "tên `toString` phải sống sót" — nó xanh sẵn, xanh sau, và **không kiểm tra gì về admission**. Hợp đồng prototype-safety thật chỉ là ba khẳng định boolean ở bước 10. Việc vá cổng 806 là một work item riêng; ghi vào sổ khoảng trống, đừng gộp vào đây.
+3. **`Record<ToolName, …>` không typecheck — và vì sao.** `index.ts:600` là `export type ToolName = BuiltinToolName;` → 30 tên. Nhưng `goal` và `think` là `HiddenToolName` (`builtin-names.ts:36`) và mang luật **thật**, không phải mặc định. Key phải là `BuiltinToolName | HiddenToolName` (33). Viết theo đúng plan gốc sẽ hoặc làm typecheck hỏng, hoặc âm thầm làm rơi luật `goal` — tức luật ba chiều có ngoại lệ `dropped`, tức chính dòng test (a).
+4. **Tên hàm tự mâu thuẫn giữa bước 8 và bước 9 của plan.** Bước 8 export `isToolAllowed(name, ctx)`; bước 9 lại gọi `evaluateToolAdmission(name, admissionCtx)`. Ngoài ra `index.ts:738` **đã** có một `const isToolAllowed` cục bộ — import thẳng tên sẽ đụng tên. Dùng import alias: `import { isToolAllowed as evaluateToolAdmission, type ToolAdmissionContext } from "./tool-admission";`
+5. **Lý do "tách module riêng để tránh vòng lặp ngược về `index.ts`" trong plan là SAI.** `ToolSession` được định nghĩa tại `index.ts:208`, và code shape của chính plan làm `import type { ToolSession } from "./index"`. Đó là vòng lặp **mức kiểu** (type-only → bị xoá lúc biên dịch, vô hại với runtime). Lý do đúng để tách module là giữ `index.ts` (giờ **973** dòng) không dài thêm ~60 dòng, và cho phép import cfg handle trực tiếp từ `./settings` — đừng viết lý do vòng lặp vào PR.
+6. **Đừng đơn giản hoá `Map` về object trần "cho gọn".** Đó là cơ chế hỏng số 2, và nó **im lặng**: `isAllowed("toString")` trả một `function` — truthy, nên `.names` vẫn "đúng", và mọi phép lọc vẫn cho kết quả giống nhau. Chỉ `toBe(true)` mới thấy. Đừng tối ưu `Map` đi.
+7. **Đừng dồn thời gian vào sắp xếp lại thứ tự nhánh** — 25 nhánh, 29 tên, không tên nào lặp, nên việc cơ học là bất nhạm với thứ tự. Rủi ro thật là **capture**: tám biến tự do thành tám field context, và một field rơi thì biên dịch vẫn sạch.
+8. **`requestedTools` là mảng sống, không phải ảnh chụp.** `ctx.requestedTools` được đọc bằng `!== undefined` ở ba luật. Giữ nguyên tham chiếu. Chụp bản sao (`[...requestedTools]`) sẽ làm sai mọi thứ ở dòng (c)/(d)/(e) mà test vẫn có thể xanh nếu bạn chỉ test depth 0.
+
 ## WI-17. GAP-M2-8 — Giới hạn khối `<skills>` nạp vào system prompt, và thêm `list`/`search` cho `manage_skill` (thêm 2026-09-29, từ sổ khoảng trống)
 
 **Thay đổi gì:** Mọi skill đã được nạp vào system prompt không giới hạn. Mục này đặt **một trần** cho khối `<skills>` và bù lại bằng cách cho model một cách **tìm** danh sách đầy đủ thay vì chỉ được **nạp** nó. Nhờ vậy danh sách đầy đủ luôn *truy cập được*, chỉ không phải *luôn chiếm chỗ*.
@@ -2569,6 +3667,99 @@ Ba phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** **Không có neo nào sai hoàn toàn**, nhưng **sáu trong chín neo sai một phần**, và ba cái sai đó thay đổi việc gõ.
+
+| # | Neo | Trích dòng thật | Verdict |
+| --- | --- | --- | --- |
+| 1 | `prompts/system/system-prompt.md:30-35` là `{{#each skills}} - {{name}}: {{description}} {{/each}}`, **không có trần** | `:30` = `<skills>`, `:31` = `{{#each skills}}`, `:32` = `- {{name}}: {{description}}`, `:33` = `{{/each}}`, `:34` = `</skills>`, `:35` = `{{/if}}` | **ĐÚNG NỘI DUNG, SAI ĐƯỜNG DẪN + LỆCH 1 DÒNG.** File thật là `packages/coding-agent/src/prompts/system/system-prompt.md` (238 dòng), **không có** `prompts/` ở gốc repo — `ls prompts` → `No such file or directory`. Vòng lặp nằm ở **31-33**, không phải 30-35. Claim "không có trần" là **đúng**. |
+| 2 | `config/registry.ts` — nơi đặt "một hằng duy nhất cho ngưỡng trần" | File tồn tại (36 KB). Docstring `:1-4`: *"Settings registry: typed handles for every setting."* Export chính: `register()` `:786`, `Setting` `:455`, `Derived`, `lookup` `:795`, `all` `:800`. | **SAI VỀ BẢN CHẤT — đây là cổng số 1.** Đây **không phải** file hằng. Mọi export ở đây là handle do `register()` sinh ra, hoặc là type của framework setting. Thả `export const MAX_SKILLS = 20` vào đó là một mồ côi nằm ngoài hợp đồng của file. |
+| 3 | `tools/manage-skill.ts:17` = `action: "'create' \| 'update' \| 'delete'"` | `	action: "'create' \| 'update' \| 'delete'",` | **CHÍNH XÁC TỪNG BYTE.** ✓ |
+| 4 | `skill-descriptions.ts` — `MAX_COMPRESSED_WORDS = 12` | `extensibility/skill-descriptions.ts:16` = `const MAX_COMPRESSED_WORDS = 12;` | **CHÍNH XÁC.** ✓ Nhưng diễn giải *"nén description xuống 12 từ"* thì **imprecise**: nó là **cổng từ chối** trong `validCompression` (`:95` `if (line.split(/\s+/).length > MAX_COMPRESSED_WORDS) return null;`) — một bản nén do LLM sinh ra dài hơn 12 từ bị **vứt đi**, rồi lùi về `previewSkillDescription`. Không phải cắt bớt description gốc. Kết luận của tài liệu vẫn đúng. |
+| 5 | `skillful` chuyển khối `<skills>` sang `skillful-notice.md`, vẫn liệt kê tất cả | `prompts/system/skillful-notice.md` chứa `{{#each skills}}` / `- {{name}}: {{description}}` / `{{/each}}` — không trần. Render ở `agent-session.ts:9317` | **ĐÚNG.** ✓ Và điều này sinh ra cạm bẫy 3 bên dưới. |
+| 6 | `git grep -ril 'bm25\|reciprocal.rank\|ngram' -- packages/ crates/` **chỉ trúng** `crates/pi-predict` | Lệnh trả về **44 file**: còn có `crates/pi-natives/src/predict.rs`, 4 file tokenizer JSON, `packages/ai/src/providers/*`, `packages/agent/src/types.ts`, `packages/catalog/src/compat/axes.ts`, `packages/coding-agent/src/predict/*`, `packages/tui/src/prompt/word-completion.ts`… | **SỐ ĐO SAI — kết luận vẫn đúng.** 44 hit đều thuộc ngăn xếp dự đoán token / một literal tool-name / một chuỗi compat-axis; không cái nào là bộ xếp hạng skill. **Kết luận "thiếu ranker" giữ nguyên, con số "chỉ trúng 1 crate" phải bỏ. Không được dùng lại lệnh này làm bằng chứng trong PR.** |
+| 7 | `dynamic_skill_selector/` của codex là **87 file / 22.712 dòng** | Thật là **20 file / 2.703 dòng**. Con số 87/22.712 là của **cả crate `ext/skills`**. | **SAI — phóng đại 8,4×.** Đây là con số **gánh trọng** cho toàn bộ lập luận "đừng port". Cái thật sự cản trở là 2.703 dòng. Lập luận đúng, số sai. (Bonus: "tám bộ ranker" — thư mục có **10** file hiện thực, gần đúng chứ không đúng.) |
+| 8 | `bun test` chết vì thiếu native addon | `pi_natives.darwin-arm64.node` **đã tồn tại**, 185 MB. `bun test packages/coding-agent/test/skill-descriptions.test.ts` → **3 pass / 0 fail**. | **HỎNG (đã hết hạn).** `bun test` chạy được **ngay bây giờ**. Đừng viết lại đoạn gỡ chặng này vào PR. |
+| 9 | `bun run check:ts` chạy được không cần addon | `package.json:90` `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types"`. Chạy thật: `check:tools` OK; `packages/coding-agent` `check:types` → exit 0 | **ĐÚNG.** ✓ |
+
+**Sáu thứ work item KHÔNG nhắc, mà kỹ sư sẽ đụng phải.** (A) **`manage_skill` không tồn tại trong cây mặc định** — `manage-skill.ts:52-55` `static createIf(session) { if (!cfgAutolearnEnabled.get(session.settings)) return null; … }`, và `autolearn/settings.ts:13` `default: false`. (B) **Trần không thể đặt trong template** — `packages/utils/src/prompt.ts` chỉ đăng ký `arg, join, default, ifAny, ifAll, codeblock, xml, escapeXml, len, add, sub, includes, not, jsonStringify`; **không có** helper giới hạn `{{#each}}`. (C) `manage-skill.ts:46` `readonly strict = true;` và comment `:27-30`: *"Kept as a cross-field narrow (not a discriminated union) so the wire schema stays a single root object — strict structured-output mode and the Anthropic tool-schema builder both require that."* (D) `system-prompt.md:28` mở bằng `{{#if skills.length}}`, đóng ở `:35` — nếu trần từng làm ra danh sách rỗng thì **cả khối biến mất**, kể cả dòng `:29`. (E) `docs/tools/manage_skill.md` có bảng `Inputs` liệt kê `action` là `"create" | "update" | "delete"` — **không nằm trong "File cần chạm tới"**. (F) `prompts/tools/manage-skill.md` (prompt model đọc) liệt kê đúng ba action — **cũng không có trong danh sách file**. (G) Đã có sẵn một phần đường tra cứu: `internal-urls/skill-protocol.ts:52-56` báo lỗi kèm `Available: <danh sách tên>`; `:158-163` `complete()` trả `{ value: name, description }` cho **mọi** skill. **Đừng viết lại — dùng `getActiveSkills()` (`extensibility/skills.ts:59`).**
+
+**Bảng điểm sửa.** TRƯỚC trích nguyên văn từ file thật, đã mở đọc.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng sau khi sửa) |
+| --- | --- | --- | --- |
+| `src/prompts/system/system-prompt.md:28-35` | khối `<skills>` trong template | `{{#if skills.length}}`<br>``Matching skill → MUST read `skill://<name>` first.``<br>`<skills>`<br>`{{#each skills}}`<br>`- {{name}}: {{description}}`<br>`{{/each}}`<br>`</skills>`<br>`{{/if}}` | **Dưới trần: y hệt, không đổi một byte.** Vượt trần: thêm một dòng báo đếm phần bị ẩn, dạng `{{#if overflowCount}}…{{/if}}` — số lượng **và** tên các skill bị ẩn, không chỉ số. `len` helper (`:461`) làm được phép so sánh. |
+| `src/config/registry.ts` | — | File là settings registry; **không** có `MAX_SKILLS` | **Không thêm hằng thô ở đây.** `registry.ts` chỉ chứa handle do `register()` sinh ra và type của framework setting — thêm `export const` sẽ phá đúng điều docstring `:1-4` mô tả. Chọn: (a) `register()` thật, có `ui` → thành setting lộ ra được, hoặc (b) hằng ở **file của miền skill**, `extensibility/skill-descriptions.ts` cạnh `MAX_PREVIEW_CHARS`/`MAX_COMPRESSED_CHARS`/`MAX_COMPRESSED_WORDS`. **(b) là lựa chọn đúng** vì ba hằng giới hạn kia đã nằm ở đó. |
+| `src/system-prompt.ts:945-947` | `filteredSkills` | `const filteredSkills = (options.skillDescriptions ?? new SkillDescriptionCatalog()).render(`<br>`    hasSkillReader ? skills.filter(skill => skill.hide !== true) : [],`<br>`);` | Thêm một bước cắt **sau** `.render()`, ngay đây: `const capped = applySkillCap(filteredSkills)`, rồi `skills: capped.shown` + `skillOverflow: capped.hidden` vào `data` (`:979`). Sửa ở đây vì template không có helper giới hạn. |
+| `src/system-prompt.ts:979` | `data.skills` | `		skills: filteredSkills,` | `		skills: cappedSkills,` + một key mới cho phần bị ẩn. |
+| `src/tools/manage-skill.ts:17` | `manageSkillSchema.action` | `	action: "'create' \| 'update' \| 'delete'",` | `	action: "'create' \| 'update' \| 'delete' \| 'list'",` |
+| `src/tools/manage-skill.ts:18` | `manageSkillSchema.name` | `    name: type("string").describe("kebab-case skill name"),` | `    "name?": type("string").describe("kebab-case skill name (required for create/update/delete)"),` — bắt buộc, vì `list` không có một skill duy nhất để đặt tên. |
+| `src/tools/manage-skill.ts:24-32` | `.narrow()` | `        p.action === "delete" \|\|` | `        p.action === "delete" \|\|`<br>`        p.action === "list" \|\|` — và giữ nguyên lời giải thích ở `:27-30` rằng đây **phải** là cross-field narrow, không phải discriminated union. |
+| `src/tools/manage-skill.ts` | `execute()` | `        if (params.action === "delete") {` (`:58`) | Thêm nhánh `list` **trước** nhánh `delete`, trả về `{ name, description }` của các skill khớp `query`, **không** đọc `SKILL.md`. Dùng `getActiveSkills()` — không tự quét. |
+| `src/autolearn/settings.ts:10-21` | `cfgAutolearnEnabled` | `	id: "autolearn.enabled",`<br>`	type: "boolean",`<br>`	default: false,` | **Cần quyết trước khi gõ.** Nếu `list` phải sống cùng cổng autolearn, cột G2 của cổng là **đúng trên giấy, sai trong thực tế**. |
+| `src/prompts/tools/manage-skill.md` | prompt model đọc | ``- `action: "create"` — fails if skill exists.``<br>``- `action: "update"` — overwrites body; fails if skill absent.``<br>``- `action: "delete"` — fails if skill absent.`` | Thêm một bullet ``- `action: "list"` — returns name + description only; `query?` filters. Never returns the body.`` |
+| `docs/tools/manage_skill.md:21` | bảng `Inputs` + `Flow` bước 2 | ``\| `action` \| `"create" \| "update" \| "delete"` \| Yes \| Managed-skill mutation. \|`` | Cập nhật union, đổi `name` thành optional, thêm hàng `query`, thêm một dòng vào `Flow` và một vào `Errors` nếu `list` có thể rỗng. |
+| `src/extensibility/skill-descriptions.ts:16` | `MAX_COMPRESSED_WORDS` | `const MAX_COMPRESSED_WORDS = 12;` | **KHÔNG SỬA.** Giữ nguyên `12`. |
+
+**Các bước có neo đã kiểm.**
+
+0. Chốt hai quyết định chặn (chưa có trong tài liệu, phải chốt trước bước 1).
+1. Chụp baseline byte trước khi sửa gì — neo `system-prompt.md:28-35`.
+2. Viết nhánh phủ định TRƯỚC.
+3. Đặt trần ở **tầng dữ liệu, không ở template** — neo `system-prompt.ts:945-947`, `:979`.
+4. Giữ nguyên `skillful` và `MAX_COMPRESSED_WORDS` — neo `skill-descriptions.ts:16`.
+5. Thêm action `list` — neo `manage-skill.ts:17`, `:18`, `:24-32`, `:58`.
+6. Sửa hai bản mô tả — neo `prompts/tools/manage-skill.md` và `docs/tools/manage_skill.md:21`.
+
+**Hợp đồng test.**
+
+`packages/coding-agent/test/skill-prompt-cap.test.ts` (mới). **Case 1 — Dưới trần, output giống từng byte.** `skills` = 5 mẫu, `CAP` = 20. So sánh **chuỗi render** với baseline chụp ở bước 1 — `toBe`, không phải `toContain`. Đây là nhánh phủ định bắt buộc. *Người dùng thấy gì nếu hồi quy:* **không thấy gì** — đó là chính vấn đề; một refactor "thêm giới hạn" chỉ-đổi-hình-dạng sẽ xanh ở mọi nơi và không đến với ai. **Case 2 — Vượt trần, phần bị ẩn được nói ra.** `skills` = 25, `CAP` = 20: đúng 20 dòng `- <name>: <desc>`, **và** một dòng báo đếm phần bị ẩn. *Nếu hồi quy:* model không hề biết mình đang nhìn một danh sách bị cắt, nên nó dám kết luận "không có skill nào cho việc này" và bỏ qua một skill có thật. **Case 3 — Sàn của trần.** `skills` = 0 và 1: dòng ``Matching skill → MUST read `skill://<name>` first.`` phải còn. *Nếu hồi quy:* session không có skill nào mất luôn hướng dẫn `skill://`, và model biến thành mù đường dẫn nội bộ. **Case 4 — Thứ tự khai báo được giữ.** 25 skill, `CAP` = 20: 20 dòng đầu theo đúng thứ tự đầu vào, không sắp xếp lại. *Nếu hồi quy:* skill được load đầu tiên (thường là skill của chính dự án) biến mất khỏi prompt — đúng cái người dùng cần nhất thì bị cắt.
+
+`packages/coding-agent/test/manage-skill-list.test.ts` (mới). **Case 5** — `action: "list"` trả tên + description và không nạp body; kiểm **cả ba**: text chứa tên, chứa description, và **không** chứa đoạn nào của `SKILL.md` (body mồi: một chuỗi sentinel). *Nếu hồi quy:* lệnh tra cứu nuốt context nhiều hơn cả danh sách gốc. **Case 6** — `query?` lọc, thiếu `query` trả tất cả; khớp không phải tiền tố thì phải trả rỗng, không phải trả tất cả. *Nếu hồi quy:* `query` thành trang trí. **Case 7** — schema từ chối `list` thiếu `query` một cách im lặng, và vẫn là một root object; `action: "create"` thiếu `description` vẫn phải bị `.narrow()` chặn. *Nếu hồi quy:* ở provider strict, một schema không phải single root object làm **hỏng cả lượt gọi model**.
+
+**File sửa thêm (không thêm case mới):** `packages/coding-agent/test/skillful-toggle.test.ts` — giữ nguyên phần chứng minh `skillful` vẫn liệt kê **tất cả**, kể cả khi trần đang bật. Đây là cách khóa cổng G4 bằng hành vi, không bằng lời.
+
+**Cổng có đỏ được không.**
+
+```bash
+# 0 — đọc trước khi gõ (đường dẫn ĐÚNG, khác với tài liệu)
+sed -n '28,35p' packages/coding-agent/src/prompts/system/system-prompt.md
+sed -n '16,32p' packages/coding-agent/src/tools/manage-skill.ts
+sed -n '10,21p' packages/coding-agent/src/autolearn/settings.ts
+sed -n '14,17p' packages/coding-agent/src/extensibility/skill-descriptions.ts
+# 1 — type + lint + format
+bun run check:ts
+# 2 — test
+bun test packages/coding-agent/test/skill-prompt-cap.test.ts \
+          packages/coding-agent/test/manage-skill-list.test.ts \
+          packages/coding-agent/test/skillful-toggle.test.ts \
+          packages/coding-agent/test/system-prompt-inventory.test.ts
+```
+
+`bun test` **đang chạy được** — addon native đã build. Tuyên bố "bị chặn cho tới khi có native addon" **đã hết hạn**; đừng viết lại vào PR. TUYỆT ĐỐI KHÔNG: `npx tsc` / `bunx tsc`.
+
+| Cổng | Đỏ được? | Bằng cách nào — hoặc vì sao không |
+| --- | --- | --- |
+| **G1. Dưới trần, output giống từng byte với HEAD** | **CÓ — mạnh** | `toBe` trên chuỗi render đầy đủ, so với baseline chụp từ cây trước khi sửa. Đỏ khi ai đó dùng `slice(0, N)` vô điều kiện, thêm dòng trống, hoặc đổi whitespace trong `system-prompt.md:28-35`. Đỏ trên **mọi** lần refactor template, đúng như ý đồ. |
+| **G2. Danh sách vẫn tra cứu được** | **CÓ — nhưng chỉ khi bước 0-2 đã giải quyết cổng autolearn** | Case 5 + 6 đỏ khi `list` rỗng, khi trả body, khi `query` không lọc. **Nhưng** nếu `list` vẫn nằm sau `cfgAutolearnEnabled` (mặc định `false`), case 5-6 vẫn xanh trong khi người dùng thật vẫn không có tool. **Vì vậy G2 phải có thêm một case: tool phải xuất hiện ở `createTools()` với `autolearn.enabled = false`.** |
+| **G3. `MAX_COMPRESSED_WORDS = 12` còn nguyên** | **KHÔNG — bằng cách nào cũng không** | `skill-descriptions.test.ts` có 3 test, **không test hằng này**. Đây đúng là loại cổng "luôn xanh tạo cảm giác an toàn giả" mà luật của phiếu cấm. **Viết lại:** thêm vào `skill-descriptions.test.ts` một case giữ `previewSkillDescription` trả nguyên vẹn một description **dài hơn 12 từ** khi compressor trả về thứ dài hơn 12 từ — tức là chứng minh **bằng hành vi** rằng hằng còn tác dụng, không bằng cách đọc hằng. |
+| **G4. Cơ chế chuyển khối `skillful` còn nguyên** | **CÓ** | `skillful-toggle.test.ts` đã tồn tại và đã kiểm hành vi chuyển khối. Thêm một assertion: bật trần + bật `skillful` → notice **vẫn** liệt kê đủ. Đỏ khi ai đó "tiện tay" dọn luôn notice. |
+| **G5. Không port ranker** | **KHÔNG — và không nên có** | Không có cách nào làm một cổng *vắng mặt* đỏ. Đây là hướng dẫn review, không phải gate. Ghi vào checklist review, không ghi vào cổng. |
+
+**Kết luận cổng:** G1, G2 (có điều kiện), G4 đỏ được. **G3 không đỏ được vì không có test nào chạm nó** — đã viết lại ở trên. G5 không phải gate. Nếu bước 0-2 chưa quyết cổng autolearn thì **G2 phải bị gỡ khỏi danh sách cổng cho tới khi quyết xong** — đừng để nó xanh.
+
+**Cạm bẫy riêng của mục này.** Xếp theo mức phá hỏng thật sự.
+
+1. **Cổng autolearn — cái bẫy lớn nhất, và tài liệu không hề nhắc tới.** Nửa `list` mà tài liệu gọi là "**quan trọng hơn** nửa trần" **không tồn tại với người dùng mặc định**. Làm đúng theo tài liệu → trần chạy, đường tra cứu không chạy, mọi thứ dưới trần là mất thông tin thật, và G2 vẫn xanh vì test chỉ gọi tool trực tiếp chứ không kiểm nó được đăng ký. **Phải quyết ở bước 0, trước khi viết dòng schema đầu tiên.**
+2. **Nghĩ trần thuộc về template, rồi đặt nó sai chỗ và không cắt được.** Tài liệu liệt kê `system-prompt.md` là file sửa đầu tiên. Nhưng template không có helper giới hạn `{{#each}}`. Người gõ sẽ mở file, thử `{{#each skills limit=20}}` (Handlebars không có), rồi hoặc tự đăng ký một helper (vi phạm "không nhân bản tiện ích" và đụng file dùng chung) hoặc bỏ mặc. Chỗ đúng là `system-prompt.ts:945`, cạnh chỗ `filteredSkills` được dựng.
+3. **Tưởng trần áp dụng cả cho `skillful`, hoặc tưởng nó là một cơ chế duy nhất.** Hai call site `.render()` **hoàn toàn tách rời**: `system-prompt.ts:945` cho system prompt, và `agent-session.ts:9303-9317` cho notice. Đặt trần ở một chỗ không đụng chỗ kia: khi `skillful` bật, khối `<skills>` biến mất khỏi system prompt nhưng lại hiện nguyên vẹn trong notice — **không tiết kiệm token nào**, và người đọc PR tưởng đã xong. Muốn trần có nghĩa thì phải cắt ở **cả hai**, và phải nói ra trong changelog là ở chế độ nào.
+4. **Thêm action `list` mà phá `strict = true`.** Bản năng tự nhiên khi thêm action thứ tư là viết discriminated union. Làm vậy là **hỏng lượt gọi model**, không phải một lời gọi hỏng. Ngoài ra `name` đang bắt buộc ở `:18` — quên đổi thành `"name?"` thì `list` không bao giờ chạy được.
+5. **Đổng `MAX_COMPRESSED_WORDS` cho "rẻ" — thêm một lý do nữa ngoài lý do tài liệu đã cảnh báo.** Nó còn là **cổng từ chối** (`:95`): bản nén dài hơn 12 từ bị vứt và lùi về `previewSkillDescription`. Hạ `12` xuống `6` làm **mọi** bản nén LLM thất bại và description luôn rơi về bản preview dài — tức làm prompt **dài hơn**, đúng ngược mục tiêu. **Đây là cách sai duy nhất mà hành động sai GIẢM hiệu quả mong muốn thay vì chỉ vô dụng.**
+6. **Tin con số của tài liệu về codex.** `dynamic_skill_selector/` là **20 file / 2.703 dòng**. Lập luận "đừng port" vẫn đúng, nhưng nếu bạn viết "chúng ta tránh được 22.712 dòng" trong PR thì bất kỳ ai mở codex đều thấy sai ngay, và toàn bộ phần cảnh báo mất độ tin cậy. Viết lại thành: *khoảng 2.700 dòng Rust cho 10 biến thể chọn, tồn tại để so sánh chúng với nhau — công việc nghiên cứu, không phải kết quả.*
+7. **Dùng lại lệnh `git grep` làm bằng chứng.** Lệnh trong tài liệu trả về **44 file**, không phải 1. Bỏ câu đó, hoặc chạy lại và dán con số thật.
+8. **Cắt tới 0 là mất luôn hướng dẫn `skill://`.** `system-prompt.md:28` `{{#if skills.length}}` bọc **cả** khối, kể cả dòng `:29`. Một trần cho phép 0 phần tử là xoá luôn câu "MUST read `skill://<name>` first". **Sàn phải là 1**, và cần một case test riêng cho nó.
 
 ## WI-18. GAP-M2-12 — Cổng effect: một tool khai báo được tác động gì, và cổng chặn ở biên thủ tục tác vụ tách khỏi vòng đời của chủ sở hữu (thêm 2026-09-29, từ sổ khoảng trống)
 
@@ -2674,6 +3865,103 @@ Bốn phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Có **9 neo** trong work item. Bảng dưới là kết quả kiểm, không phải phỏng đoán.
+
+| # | Neo trong plan | Kết quả | Verdict |
+| --- | --- | --- | --- |
+| 1 | `packages/agent/src/pause.ts:24` = `AgentPauseGate` | Dòng 24 là `/** Freeze switch shared by every agent loop in the process. See module docs. */` — **comment**, không phải class | **HỎNG — lệch 1 dòng.** `AgentPauseGate` ở **:25** |
+| 2 | `packages/agent/src/pause.ts` (bảng file: "đọc, KHÔNG sửa") | Tồn tại, 107 dòng | **ĐÚNG** |
+| 3 | `packages/agent/src/harness/hooks.ts` | **VÔNG HÌNH trong omp.** Có ở `pi-ref` và `senpi-ref` (533 dòng, hai bản **giống hệt nhau** — `diff` rỗng) | **HỎNG — trỏ nhầm cây** |
+| 4 | `packages/agent/src/kinds/tool.ts` | **VÔNG HÌNH ở mọi cây.** Đường dẫn thật của pi là `packages/agent/src/harness/pico3/kinds/tool.ts` (chỉ có ở `pi-ref`, **không** có ở `senpi-ref`) | **HỎNG — thiếu `harness/pico3/`** |
+| 5 | `docs/approval-mode.md:72` | Đúng câu: `This pattern policy controls approval for the bash tool; it is not process or filesystem containment.` | **ĐÚNG** |
+| 6 | `sed -n '24,40p' packages/agent/src/pause.ts` | Chạy được, in comment + class + các getter | **ĐÚNG** (nhưng comment ở dòng đầu dễ gây hiểu nhầm) |
+| 7 | `sed -n '70,74p' docs/approval-mode.md` | Chạy được; dòng 72 là dòng 3 trong khoảng in ra | **ĐÚNG** |
+| 8 | "Bảng admission của WI-6" (bước 1) | `ls packages/coding-agent/src/tools/tool-admission.ts` → `No such file or directory` | **ĐÚNG (chưa tồn tại là đúng)** |
+| 9 | `pause.ts:24` trong bảng rủi ro dòng 5069 | Cùng neo #1 | **HỎNG — lệch 1 dòng** |
+
+**Điểm quan trọng nhất phát ra từ việc kiểm lại — nằm ngoài danh sách neo.** Sổ khoảng trống ghi *"Khái niệm này không có tệp nào ở `pi` để chép; chỉ là một ranh giới trong `harness/hooks.ts` + `kinds/tool.ts`"* (`GAP-REGISTER-2.md:1043`). **Câu đó sai.** Pi **có** tệp, và nó làm đúng việc mục này sinh ra để làm: `/Users/tranquangdang21/Projects/pi-ref/packages/agent/src/harness/execution/effect-gate.ts` (1.8 KB, 60 dòng). Đọc file thật, từng dòng: `:12` `/** Procedure-facing synchronous admission capability for one drive pass. */`; `:13` `export interface Gate {`; `:18` `/** Owner-facing lifecycle controls for one drive pass. */`; `:19` `export interface GateControl {`; `:30` `/** Create separate procedure-facing and owner-facing views of one effect gate. */`; `:31` `export function createGate(): { gate: Gate; control: GateControl } {`. Hai interface tách **đúng** procedure khỏi owner, và `createGate()` trả về **hai view tách biệt của một cổng**. Đó là ranh giới mà WI-18 gọi là "tách khỏi vòng đời của chủ sở hữu" — nằm ở đây, bằng tên.
+
+Và `hooks.ts` — file mà plan gọi là "nơi biên thủ tục tác vụ" — **tiêu thụ** cổng đó chứ không định nghĩa nó: `:3` `import type { Gate } from "./execution/effect-gate.ts";`; `:43` `/** Invoke one accepted-operation aggregate after synchronously passing its effect gate. */`; `:44` `runWithGate<TName extends HookName>(`; `:50-55` `return gate.admit(() => { … return this.runAdmitted(name, event, admittedContext); });`. Pi còn **tài liệu hoá** ranh giới này: `pi-ref/packages/agent/docs/harness.md:919` (mục `## 4.2 Effect gate`) — *"Procedures receive only `drive.gate`; `Drive` privately retains `GateControl`, and there is no procedure-facing `assertOpen`."* Cùng file liệt kê "complete admission catalog" — 11 hook aggregate, 3 loại provider operation, và `tool.execute` + retry timer. Câu then chốt: **"No other code calls `Gate.admit`."** Đây là **hợp đồng, không phải lời khuyên**.
+
+**Kết luận thiết kế: WI-18 KHÔNG phải thiết kế từ đầu.** Nửa "procedure/owner tách biệt" đã có nguyên mẫu ở pi, MIT, chép được. Nửa "tool khai báo tập effect" thì **không có** ở pi: `ToolDeclaration` (`pi-ref/packages/agent/src/harness/pico3/types.ts:874-881`) có `name`, `description`, `parameters`, `replay`, `output`, `execute` — và **không có field effect nào** (`grep -n "effect"` trên file ra đúng một hit, ở dòng 438, nói về thứ khác). **Nửa đó mới là việc thiết kế thật.** Cả hai điều kiện đều đúng đồng thời: anchor sai **và** claim "không có tệp nào ở pi" sai. **Sửa neo mà giữ claim là giữ một lời hứa giả dẫn tới viết lại cái đã có.**
+
+Một claim nữa: "Tác giả plugin khai báo effect sẽ được hỏi" — ông dùng `ToolDefinition` ở `extensions/types.ts:638`; đó là surface cần thêm `effects?:` cạnh `approval?:` (`:658`), **không phải** `AgentTool`.
+
+Môi trường: plan nói `bun test` "bị chặn cho tới khi có native addon" — **không còn đúng**; `packages/natives/native/pi_natives.darwin-arm64.node` **đã có** (find trả về đường dẫn). Cổng (2) chạy được ngay.
+
+**Bảng điểm sửa.** Cột TRƯỚC trích từ file thật, đã mở.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `packages/agent/src/types.ts:1167` | `AgentTool.approval` | `/** Capability tier declaration used by approval gates. Omitted means "exec". */`<br>`approval?: ToolApproval;` | Giữ nguyên. Thêm ngay bên dưới:<br>`/** Declared effects, asked once as a set at the task-procedure boundary. */`<br>`effects?: readonly ToolEffect[] \| ((args: unknown) => readonly ToolEffect[]);` |
+| `packages/agent/src/types.ts:1011-1024` | `ToolApprovalDecision` | `export type ToolApprovalDecision =`<br>`	\| ToolTier` | Thêm ngay trên, cùng file:<br>`/** Resource classes a tool declares it touches. A gate asks about the whole set at once. */`<br>`export type ToolEffect = "filesystem" \| "network" \| "process" \| "workspace-write";`<br>`export type ToolEffectDeclaration = readonly ToolEffect[] \| ((args: unknown) => readonly ToolEffect[]);` |
+| `packages/coding-agent/src/extensibility/extensions/types.ts:658-659` | `ToolDefinition.approval` | ``/** Tool approval tier. Defaults to `"exec"` when omitted.``<br>`` *  `"read"`: read-only operations. `"write"`: mutations. `"exec"`: code execution. */``<br>`approval?: ToolApproval;` | Thêm `effects?: ToolEffectDeclaration;` — **một field, cùng hình dạng**, để tác giả plugin khai báo được mà không cần import type từ package khác. **Đây là hợp đồng hồi quy quan trọng nhất.** |
+| `packages/coding-agent/src/tools/tool-admission.ts` | `ADMISSION_RULES` (WI-6) | *chưa tồn tại* (`ls` → `No such file or directory`) | Cột effect chung với bảng admission của WI-6 — **một khai báo, không phải hai bảng** |
+| `packages/agent/src/effect-gate.ts` | `createGate` | *chưa tồn tại trong omp* | Cổng procedure/owner, port từ `pi-ref/packages/agent/src/harness/execution/effect-gate.ts:31`, MIT |
+| `docs/approval-mode.md:72` | (đoạn giới hạn) | ``This pattern policy controls approval for the `bash` tool; it is not process or filesystem containment.`` | **Giữ nguyên y nguyên.** Thêm đoạn giới hạn tương ứng cho cổng effect ngay dưới, cùng cấu trúc câu |
+
+**Các bước có neo đã kiểm.**
+
+0. **CHƯA LÀM GÌ CHO TỚI KHI BA CÂU HỎI ở `plan:5139-5141` ĐƯỢC TRẢ LỜI.**
+1. Chờ WI-6. Phụ thuộc cứng — `ls packages/coding-agent/src/tools/tool-admission.ts`.
+2. Khai báo effect — neo `packages/agent/src/types.ts:1011-1024` và `:1167`; `extensions/types.ts:658-659`.
+3. Cổng ở biên thủ tục tác vụ, tách khỏi lifecycle chủ sở hữu — port `createGate()` từ `pi-ref/.../effect-gate.ts:31` vào `packages/agent/src/effect-gate.ts`; nối qua `runWithGate` kiểu `hooks.ts:44-55`. Chuẩn bị xong **trước**, rồi mới `admit`; bọc cả phần chuẩn bị vào trong `admit` là sai. Giữ hợp đồng *"No other code calls `Gate.admit`."*
+4. Ghi giới hạn vào doc. **KHÔNG dùng chữ "sandbox"** — neo `docs/approval-mode.md:72`.
+5. Xếp cạnh GAP-M6-12, KHÔNG gộp.
+
+**Hợp đồng test.** File: `packages/agent/test/effect-gate.test.ts` (thư mục `packages/agent/test/` đã xác nhận tồn tại; noi theo văn phong `agent-loop.test.ts` 253 KB và `agent.test.ts` 61 KB).
+
+| # | Case | Chứng minh cái gì |
+| --- | --- | --- |
+| 1 | `createGate()` trả hai view **không trùng nhau**: `gate` không có `beginAbort`/`close`; `control` không có `admit` | Ranh giới procedure/owner là **hình dạng kiểu**, không phải quy ước. Case quan trọng nhất — nếu chỉ hỏi ở runtime thì một lần gộp nhầm là hỏng vĩnh viễn |
+| 2 | `admit` ném `AbortRequested` khi `control.beginAbort(...)` đã chạy | Cancellation thắng admission |
+| 3 | `admit` ném lỗi closing khi `control.close(err)` đã chạy | Owner đóng cổng thì procedure hỏng đúng lý do |
+| 4 | `gate.signal` abort đúng một lần khi `signalAbort()` | Tín hiệu tới đúng procedure, không tới owner |
+| 5 | Chưa `admit` mà đã `beginAbort` → `admit` vẫn ném; `admit` xong rồi mới `beginAbort` → không ném | **Hai chiều của ranh giới thời gian.** Chỉ case này chứng minh `admit` kiểm *đồng bộ*, không phải khi resolve |
+| 6 | `close` gọi hai lần → không ném lần hai | Idempotence của view chủ sở hữu |
+
+**Case âm bắt buộc (nếu không có case này, feature có thể ship hỏng mà test vẫn xanh):**
+
+| # | Case | Nếu hồi quy, người dùng thấy gì |
+| --- | --- | --- |
+| 7 | Tác giả plugin khai báo `effects: ["filesystem"]` cho một tool **không** khai báo `approval` | Tool cứ bị coi là `exec` và bị hỏi như mọi tool lạ — khai báo của tác giả **bị bỏ qua âm thầm**. Đây là hồi quy đúng như plan mô tả: không có đường nào khác để khai báo ý định |
+| 8 | Tool khai báo `effects` qua **hàm** nhận args, với hai bộ args khác nhau → hai tập effect khác nhau | Cổng hỏi sai tập: hỏi `"network"` cho một lệnh thực tế chỉ đọc file |
+| 9 | Tool khai báo `effects: []` (không chạm gì) → **không** hỏi | Một tool vô hại bị hỏi. Nếu thiếu case này, `[]` và `undefined` rơi vào cùng nhánh và phân biệt được là vô nghĩa |
+
+**Case hợp đồng doc (không source-grep):** chạy `grep -c "sandbox" docs/approval-mode.md` phải bằng `0`, và `grep -n "is not process or filesystem containment" docs/approval-mode.md` phải trả về dòng 72. Đây là kiểm tra **tài liệu phát hành**, chạy trong CI, không phải đọc mã nguồn.
+
+**Bắt buộc theo AGENTS.md:** `spyOn` + `vi.restoreAllMocks()` trong `afterEach`; **không** `mock.module()`. Test phải full-suite safe — cổng là singleton theo hình dạng, nên **mỗi case tạo `createGate()` riêng**, không dùng một singleton dùng chung.
+
+**Cổng có đỏ được không. Có — nhưng case 7/8/9 mới là phần quyết định.**
+
+```bash
+bun run check:ts          # exit 0
+bun test packages/agent/test/effect-gate.test.ts
+grep -c "sandbox" docs/approval-mode.md                                  # 0
+grep -n "is not process or filesystem containment" docs/approval-mode.md  # dòng 72
+```
+
+`check:ts` định nghĩa ở `package.json:90`: `"check:ts": "bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types"`. Chạy được, không cần native addon.
+
+**Cổng (1) `check:ts` KHÔNG đỏ được khi cổng hỏi hỏng sai chỗ**, và đây là điểm dễ tự lừa nhất. Nó chỉ chứng minh **kiểu** đúng. Một triển khai đặt cổng hỏi ở command boundary thay vì biên thủ tục tác vụ — đúng cách sai thứ ba mà plan liệt kê — **vẫn exit 0**, vì hình dạng kiểu là như nhau. Một cổng luôn xanh tệ hơn không có cổng, nên **không được dùng `check:ts` một mình làm bằng chứng.**
+
+**Cổng (2) ĐỎ ĐƯỢC, và đỏ đúng thứ.** Case 7 là câu hỏi: `effects: ["filesystem"]` trên một tool không khai báo `approval` → cổng phải hỏi theo tập effect. Nếu ai đó cắm `effects` vào một nhánh `if` thứ hai bên cạnh `approval`, case 7 **đỏ**, vì nhánh `if` đó không thấy khai báo. Kèm case 8 và case 9, ba case này **ép** effect thành một khai báo thật.
+
+**Cổng (3) ĐỎ ĐƯỢC, và là cổng dễ mất nhất.** Nó kiểm **tài liệu phát hành** — người đọc tài liệu, không phải người đọc mã. Một PR thêm cổng effect mà gọi nó là sandbox sẽ đỏ ở đây.
+
+**Điều kiện tiên quyết, không phải cổng:** ba câu hỏi ở `plan:5139-5141` đều `chưa có mặc định`. Trước khi cổng (2) có ý nghĩa, câu 1 (tập effect lấy tên gì) phải có câu trả lời — nếu không, case 7 assert trên một tập effect chưa ai chốt, và test sẽ bị viết lại.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Dùng lại `AgentPauseGate`.** Nó là cổng PAUSE toàn tiến trình, poll ở hai biên hành động: `packages/agent/src/agent-loop.ts:1292` (trước model call) và `:3274` (trước tool call), cả hai là `if (agentPauseGate.paused) await agentPauseGate.waitUntilResumed(...)`. Nó **không** phân biệt procedure với owner. Dùng lại nó là giữ đúng cái nhầm mà mục này sinh ra để gỡ.
+2. **Tin dòng "không có tệp nào ở pi để chép".** Đã kiểm và **đã sai**. `pi-ref/.../execution/effect-gate.ts` tồn tại, 60 dòng, làm đúng việc này. Tin câu đó sẽ viết lại một cái đã có, và làm mất nguồn MIT.
+3. **Tin đường dẫn trong bảng file.** `packages/agent/src/kinds/tool.ts` và `packages/agent/src/harness/hooks.ts` không tồn tại trong omp. Cả hai trỏ vào cây pi, không phải cây omp. Gõ theo đường dẫn plan sẽ tạo file mới ở chỗ sai, tách khỏi những gì đang thật sự chạy.
+4. **Đặt cổng ở command boundary.** Đây là cách sai thứ ba của plan, và nó **không đỏ cổng (1)**. Chỉ case 7-9 mới bắt được. **Đừng tin `check:ts`.**
+5. **Gọi chữ "sandbox" trong doc hoặc trong thông điệp lỗi.** Đây là lời hứa giả, và lời hứa giả trong approval code là **hậu quả bảo mật, không phải lỗi tài liệu**. `docs/approval-mode.md` hiện có 0 lần dùng chữ đó — **giữ nguyên 0**.
+6. **Coi `check:ts` là bằng chứng cổng hỏi đúng biên.** Nó chỉ chứng minh kiểu.
 
 ## WI-7. registerMode: sổ đăng ký mode cấp cao nhất, thiết kế cùng đường may (seam) của status-line
 
@@ -2980,6 +4268,101 @@ Cổng này **có thực sự đỏ được không: CÓ, nhưng cần tách ph�
 | Thứ chặn status-line là union `StatusLineSegmentId` 27 phần tử đóng ở `schema.ts:2-30` không có seam cho người đóng góp. | right-but-incomplete | Union đúng như mô tả (đã xác minh 27 phần tử). Nhưng nửa khó hơn nằm thấp hơn một tầng: `SegmentContext` (types.ts:75) mang NĂM field mode hardcode riêng biệt — planMode :96, prewalk :100, loopMode :103, goalMode :109, vibeMode :113 — và `modeSegment` giải chúng qua một if-chain 5 nhánh viết tay ở thứ tự ưu tiên cố định (segments.ts:369-407). Một mode từ extension cũng không có field nào ở đó, và if-chain lặng lẽ trả `{ visible: false }` cho bất cứ thứ gì nó không nhận ra. Một thiết kế mở union id nhưng để năm field hardcode vẫn ship ra một mode vô hình, nên bất kỳ câu trả lời nào cho M2-OQ3 đều phải xử lý cả hai nửa. Bằng chứng: `sed -n '96,116p' packages/tui/src/status-line/types.ts` cho thấy năm field. `sed -n '364,410p' packages/tui/src/status-line/segments.ts` cho thấy chuỗi ấy (nhánh plan :369, prewalk :379, goal :385, vibe :390, loop :396-407) và `return { content: "", visible: false };` ở :409. Ngoài lề: `segments.ts:919-947` của plan là record SEGMENTS và CẢ HAI ĐẦU ĐỀU ĐÚNG — :919 mở ra, :947 là `};` đóng; không cần sửa. `id: "mode"` ở :365 (const mở ra ở :364) cũng đúng. |
 | `enforcePlanModeWrite` được "gọi từ tầng tool". | vague-but-not-wrong | Có đúng 4 call site và chúng không đồng nhất: `tools/write.ts:778` (op update), `:814` (đường archive, op update), `:842` (đường sqlite, op update), `:859` (op create). Site archive và sqlite truyền một op working-tree trên path không phải file nguồn thuần, nên mỗi cái cần suy luận riêng về quy tắc `workingTree: allow\|deny` mới. Liệt kê chúng không tốn chi phí gì và ngăn ba trong bốn cái bị giả định là tương đương. Bằng chứng: `git grep -n enforcePlanModeWrite -- packages/` → 4 site trong write.ts, cộng phần định nghĩa ở plan-mode-guard.ts:127 và file test hiện có. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** **49 neo đúng, 18 sai** — và sai thì sai cả hai kiểu: trôi dòng, và **hướng sai** (một neo chỉ đúng khi bạn đọc ngược lại).
+
+Đã trôi, dùng số thật: `interactive-mode.ts:3750-3753` (`#updatePlanModeStatus`) → **:3762-3772**, `setPlanModeStatus` ở **:3770** (+12). `agent-session.ts`: `getPlanModeState` 6132 → **:6269**; `getPrewalkState` 6137 → **:6274**; `getGoalModeState` 6155 → **:6292**; `getVibeModeState` 6163 → **:6300** (đều +137); `codeModeNamespacesInfo` 5852 → **:5980** (+128); `#codeModeState` 1395 → **:1416** (+21). `extensions/types.ts`: `ExtensionAPI` 1256-1582 → **:1277-1607**; `registerTool` 1347 → **:1372**; `registerCommand` 1411 → **:1436**; `registerFlag` 1430 → **:1455**; `setActiveTools` 1501 → **:1526**; comment `ctx.ui` 1376 → **:1401** (đều +25). `plan-mode-guard-local.test.ts:90-127` "năm khẳng định" → **:86-114**, thật ra là **sáu** nhóm khẳng định.
+
+Sai về **nội dung**: `write.ts:814` **không** truyền `{ op: "update" }` phẳng — nó truyền một ternary. `interactive-mode.ts:908-915` không phải 7 field boolean — `:913` là `planModePlanFilePath: string | undefined`.
+
+Sai về **hướng**: neo #17 — plan ghi `packages/coding-agent/src/modes/status-line-host.ts` là nơi "đưa mode đã resolve của registry vào status-line host để segment thấy nó". File đó **chỉ** dựng object policy `StatusLineHost`, **không** dựng `SegmentContext` nào. `SegmentContext` thật được dựng trong `packages/tui/src/status-line/component.ts` tại `#buildSegmentContext` (**:2108**, field mode ở **:2185-2193**) — và `component.ts` **không có trong bảng file của plan**.
+
+Sai về **môi trường**: plan ghi `bun run check:ts` PASS (exit 0), cây làm việc SẠNH, nên cổng này xanh và đi hết tới `check:types`. **Sai tại thời điểm kiểm chứng này** — cây không sạnh và cổng đang đỏ ở `check:tools`. Addon native thì **đã build** (`bun test test/tools/plan-mode-guard-local.test.ts` → **15 pass / 0 fail** ngay bây giờ), nên cảnh báo "build một lần bằng `brew install ninja`" **không áp dụng** ở đây.
+
+49 neo đúng, đáng chú ý: `mode-registry.ts` + `write-policy.ts` chưa tồn tại; `modes/index.ts` 603 B; `src/plan-mode/` đúng 8 file; `plan-mode-guard.ts` `:127`/`:143`/`:148`; `write.ts` `:778`/`:814`/`:842`/`:859` (đúng dòng); `modes/types.ts` `:108`/`:189-194`/`:195-198`; `interactive-mode.ts` `:908`/`:909`/`:975-1000`; **32 chỗ gán trên đúng một file** với đúng số chia theo field; **16 lần đọc `planModePaused`**; `loader.ts:40`; `status-line/types.ts` `:75`/`:96`/`:100`/`:103`/`:109`/`:113`; `schema.ts:2-30` đúng 27; `segments.ts` `:364`/`:365`/`:369-407`/`:409`/`:919`/`:947`; `plan-mode.ts` 549 dòng / 15.153 B với neo `:216`/`:255`/`:301`; `test/plan-mode/` đúng 5 file; `packages/tui/test/` đúng 8 file `status-line-*.test.ts`; `outsider-extension/` + `extension-outsider-install.test.ts` chưa tồn tại; `plugin-extensions-discovery.test.ts` 26 KB; `plan-mode-guard-local.test.ts:33` + ba regex; seam-1 nền 7/0; seam-2 nền 51 dòng / 21 file; `ExtensionAPI` không có member `ui`.
+
+**Bảng điểm sửa.** Mọi ô TRƯỚC là văn bản thật lấy từ file đã mở.
+
+| đường/dẫn | symbol | TRƯỚC (trích từ file thật) | SAU |
+| --- | --- | --- | --- |
+| `src/modes/mode-registry.ts` | `ModeRegistry` | *(file chưa tồn tại — `ls` → No such file)* | file mới: `ModeDefinition` / `WritePolicy` / `ModeStatusLine` / `ModeContext` / `ResolvedMode` + `register()` / `isActive()` / `setActivation()` / `resolvedMode()` / `writePolicy()` / `#sortedIds()` |
+| `src/modes/index.ts` | barrel | `export * from "./rpc/rpc-types";` (dòng cuối cùng trước comment `planSaveFileName`) | thêm `export * from "./mode-registry";` (star re-export, theo luật AGENTS.md) |
+| `src/plan-mode/write-policy.ts` | `checkWritePolicy` | *(file chưa tồn tại)* | file mới: literal `WritePolicy` + `checkWritePolicy(policy, ctx) → "move" \| "delete" \| "workingTree" \| null` |
+| `src/tools/plan-mode-guard.ts` `:127`–`:148` | `enforcePlanModeWrite` | `const state = session.getPlanModeState?.();`<br>`if (!state?.enabled) return;`<br>`if (options?.move) { throw new ToolError("Plan mode: renaming files is not allowed."); }`<br>`if (options?.op === "delete") { throw new ToolError("Plan mode: deleting files is not allowed."); }`<br>`if (await targetsLocalSandbox(session, targetPath, options?.signal)) return;`  ← `:143`<br>`throw new ToolError("Plan mode: the working tree is read-only. Write your plan to a local://<slug>-plan.md file instead.");` | tra `writePolicy` của mode active từ registry → `checkWritePolicy` → ném **đúng ba chuỗi `ToolError` ở trên** theo kind. Thân hàm giữ nguyên; chỉ thay nguồn quyết định allow/deny. |
+| `src/tools/write.ts` | 4 call site `enforcePlanModeWrite` | `:778` `await enforcePlanModeWrite(this.session, path, { op: "update", signal });`<br>`:814` `await enforcePlanModeWrite(this.session, resolvedArchivePath.archivePath, {`<br>`	op: resolvedArchivePath.exists ? "update" : "create",`  ← **không phải** `{ op: "update" }` phẳng<br>`:842` `await enforcePlanModeWrite(this.session, resolvedSqlitePath.sqlitePath, { op: "update", signal });`<br>`:859` `await enforcePlanModeWrite(this.session, path, { op: "create", signal });` | chữ ký lời gọi **không đổi**; bên trong `enforcePlanModeWrite` thôi là tra registry. |
+| `src/modes/types.ts:189`–`:194` | `InteractiveModeContext` (`:108`) | `:189` `planModeEnabled: boolean;` … `:194` `loopModePaused: boolean;` — 6 dòng | **giữ nguyên tên và kiểu** (nó là `interface`, các dòng này phải y nguyên sau bước 4). `:195-198` (`loopPrompt` / `loopLimit` / `loopCondition` / `planModePlanFilePath`) không đụng tới. |
+| `src/modes/interactive-mode.ts:908`–`:915` | 7 field class | `:908` `planModeEnabled = false;`<br>`:909` `planModePaused = false;`<br>`:910` `goalModeEnabled = false;`<br>`:911` `goalModePaused = false;`<br>`:912` `vibeModeEnabled = false;`<br>`:913` `planModePlanFilePath: string \| undefined = undefined;`  ← **không phải boolean**<br>`:914` `loopModeEnabled = false;`<br>`:915` `loopModePaused = false;` | 7 cặp `get`/`set` (14 dòng) trỏ registry. **`:913` phải giữ nguyên là field thô** — nó không thuộc seam boolean. |
+| `src/modes/interactive-mode.ts:3762`–`:3772` | `#updatePlanModeStatus` | `const status = this.planModeEnabled \|\| this.planModePaused ? { enabled: this.planModeEnabled, paused: this.planModePaused } : undefined;`<br>`this.statusLine.setPlanModeStatus(status);`  ← `:3770` | giữ nguyên; **thêm** một đường `setResolvedModeStatus(...)` cạnh đó. |
+| `src/session/agent-session.ts:6269`/`:6274`/`:6292`/`:6300` | 4 accessor | `getPlanModeState(): PlanModeState \| undefined { return this.#planModeState; }`<br>`getPrewalkState(): Prewalk \| undefined { return this.#prewalk.state; }`<br>`getGoalModeState(): GoalModeState \| undefined { return this.#goalModeState; }`<br>`getVibeModeState(): VibeModeState \| undefined { return this.#vibeModeState; }` | giữ **nguyên tên** và **nguyên kiểu trả về** (kể cả `Prewalk \| undefined`, không phải boolean); thân hàm đọc qua registry, vẫn trả `undefined` khi inactive. |
+| `src/extensibility/extensions/types.ts:1277`–`:1607` | `ExtensionAPI` | `:1372` `registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(tool: ToolDefinition<TParams, TDetails>): void;`<br>`:1436` `registerCommand(`<br>`:1455` `registerFlag(`<br>`:1526` `setActiveTools(toolNames: string[]): Promise<void>;` | thêm một dòng cùng khuôn: `registerMode(definition: ModeDefinition): void;` ngay cạnh `registerTool`. **Không** thêm bí danh `ui`. |
+| `src/extensibility/extensions/loader.ts` | bind `registerMode` | `:40` `import { resolvePath, withHostGuard } from "../utils";`<br>`:668` `export async function discoverAndLoadExtensions(configuredPaths: string[], cwd: string, eventBus?: EventBus, disabledExtensionIds?: string[], options: DiscoverExtensionPathOptions = {}): Promise<LoadExtensionsResult>` | bind `registerMode` trên object `pi`; ghi source id chủ sở hữu qua seam provenance mà `:40` đã mở, để unload gỡ đúng mode của extension đó. |
+| `packages/tui/src/status-line/types.ts:75` | `SegmentContext` | `:96` `planMode: {` · `:100` `prewalk: {` · `:103` `loopMode: {` · `:109` `goalMode: {` · `:113` `vibeMode: {` | **thêm MỘT** field `resolvedMode: ResolvedMode \| null` đứng cạnh năm field trên. |
+| `packages/tui/src/status-line/component.ts` | `#buildSegmentContext` (`:2108`, field mode ở `:2185`–`:2193`) và các setter (`:855`–`:897`) | `planMode: this.#planModeStatus,`<br>`loopMode: this.#loopModeStatus,`<br>`prewalk: typeof this.session.getPrewalkState === "function" && this.session.getPrewalkState() ? { enabled: true } : null,`<br>`goalMode: this.#goalModeStatus,`<br>`vibeMode: this.#vibeModeStatus,` | **file này KHÔNG có trong bảng "File cần chạm tới" của plan nhưng bắt buộc phải sửa.** Thêm `#resolvedModeStatus`, một setter `setResolvedModeStatus(...)` theo đúng khuôn `setPlanModeStatus` (`:855`), và một dòng trong `#buildSegmentContext`. |
+| `packages/tui/src/status-line/segments.ts:364` | `modeSegment` | `id: "mode",` (`:365`)<br>`const plan = ctx.planMode;` (`:369`) … `const loop = ctx.loopMode;` (`:396`) … `return { content: "", visible: false };` (`:409`) | đọc `ctx.resolvedMode` **trước**, rồi rơi tiếp xuống chuỗi 5 nhánh cũ `:369`–`:407` **không đổi**. |
+| `packages/tui/src/status-line/schema.ts:2`–`:30` | `STATUS_LINE_SEGMENT_IDS` | 27 phần tử, `"mode"` là phần tử thứ 4 | **không sửa** — cố ý giữ nguyên đóng. |
+| `src/modes/status-line-host.ts` | `statusLineHost` (3.2 KB) | `export const statusLineHost: StatusLineHost<StatusLineHostSession> = { getSettings: () => ({...}), gitEnabled: () => cfgGitEnabled.get(settings), ... }` | plan nói sửa file này để "luồn" mode vào segment. **Thực tế file này chỉ dựng policy `StatusLineHost`, KHÔNG dựng `SegmentContext`.** |
+| `examples/extensions/plan-mode.ts` | ví dụ 549 dòng / 15.153 byte | `:216` `pi.registerFlag("plan", {`<br>`:255` `await pi.setActiveTools(PLAN_MODE_TOOLS);`<br>`:301` `pi.on("tool_call", async event => {` | xoá file; thay bằng ~50 dòng gọi `registerMode`. |
+| `test/plan-mode/write-policy.test.ts` | *(chưa có)* | thư mục `test/plan-mode/` có đúng 5 file: `approved-plan` · `model-transition` · `plan-handoff` · `plan-protection` · `reentry-prompt` | file mới. |
+| `test/modes/mode-registry.test.ts` | *(chưa có)* | thư mục tồn tại | file mới. |
+| `packages/tui/test/status-line-extension-mode.test.ts` | *(chưa có)* | `packages/tui/test/` có đúng 8 file `status-line-*.test.ts` | file mới. |
+| `test/fixtures/outsider-extension/{index.ts,package.json}` | *(chưa có)* | `ls` → No such file or directory | file mới. |
+| `test/extension-outsider-install.test.ts` | *(chưa có)* | `ls` → No such file or directory | file mới, theo kỷ luật cô lập của `test/plugin-extensions-discovery.test.ts` (26 KB, có mặt). |
+
+**Các bước có neo đã kiểm.**
+
+0. Quyết định seam M2-OQ3, **TRƯỚC KHI VIẾT CODE**.
+1. `test/plan-mode/write-policy.test.ts`, viết ở BƯỚC 3, không phải bước 2.
+2. Rút chính sách ghi thành dữ liệu, commit RIÊNG, không đụng registry.
+3. `ModeRegistry` + `ModeDefinition`.
+4. 7 field ở `interactive-mode.ts:908-915` thành cặp accessor — **TÁCH khỏi bước 3** (bước 3 là commit đầu tiên có `ModeRegistry` chạy được).
+5. 4 accessor `AgentSession` lên registry — neo `agent-session.ts:6269`, `:6274`, `:6292`, `:6300`.
+6. Cài seam M2-OQ3.
+7. Nạp registry bằng cách BỌC.
+8. `test/modes/mode-registry.test.ts`.
+9. `registerMode` trên `ExtensionAPI` — neo `types.ts:1277`–`:1607`, thêm dòng cạnh `registerTool` (`:1372`).
+10. Xoá `examples/extensions/plan-mode.ts`.
+11. Fixture "outsider" + test cài đặt.
+
+**Hợp đồng test.** Bốn hợp đồng, mỗi cái tên một thất bại quan sát được.
+
+1. **BẤT ĐẰNG THỨC WRITE-POLICY** — `packages/coding-agent/test/plan-mode/write-policy.test.ts`. Một mode có chính sách chặn ghi vào cây làm việc từ chối một lần ghi `src/foo.ts` **và** chính mode đó chấp nhận một lần ghi `local://slug-plan.md`. Thiếu một nửa là test vẫn xanh trên implementation vốn chặn luôn sandbox. Dẫn qua **policy do registry cấp**, không qua plan mode tích hợp sẵn — phần phủ sẵn đã nằm ở `test/tools/plan-mode-guard-local.test.ts:86-114` và lặp lại là trùng bị cấm. *Hồi quy:* một refactor nâng phép kiểm sandbox lên trên nhánh working-tree sẽ lặng lẽ chặn mất không gian gạch duy nhất còn lại trong lúc plan mode bật; người dùng mất chỗ soạn kế hoạch, không có gì trên UI giải thích. Chiều ngược lại: coding-agent sửa cây làm việc mà người dùng tin là chỉ-đọc — hỏng dữ liệu âm thầm duy nhất của M2.
+2. **TƯƠNG ĐƯƠNG REGISTRY** — `packages/coding-agent/test/modes/mode-registry.test.ts`. Với từng mode trong năm: tập tool sau `enter`, giá trị `mode` báo ngược lại cho extension, kết quả resolve settings-domain — giống bản build trước migrate. *Hồi quy:* một mode lên registry nhưng vào với tập tool khác → một tính năng biến mất lặng lẽ khỏi tầm nhìn của mô hình.
+3. **NHÌN THẤY MODE SEGMENT** — `packages/tui/test/status-line-extension-mode.test.ts`. Một mode do extension đăng ký phải render ra một chip trên status-line. *Hồi quy:* một mode không có chỉ báo bị người dùng đọc là lỗi, vì segment `mode` đã tồn tại ở `segments.ts:364` và họ sẽ mong mode mới xuất hiện ở đó. Đây là thứ duy nhất ngăn mặc định "mode mới không có chỉ báo" ship lặng lẽ.
+4. **CÀI ĐẶT TỪ BÊN NGOÀI** — `packages/coding-agent/test/extension-outsider-install.test.ts`. Extension thật viết ngoài repo, nạp qua đường cài đặt thật, đăng ký mode có `writePolicy`, và mode đó xuất hiện trong registry **kèm** status-line segment, đồng thời extension chạy được (errors rỗng, tool trong bảng tool, command trong registry, hook bắn, widget trong frame). *Hồi quy:* `registerMode` tồn tại nhưng không với tới được bởi bất kỳ thứ gì không nằm trong repo — đúng cái xanh giả mà xoá ví dụ trong repo không loại trừ.
+
+Về chất lượng test (AGENTS.md): không được viết test source-grep. Cổng grep ở phần cổng là **cổng shell**, không phải test. Không assert "registry đã được gọi"; assert trạng thái session quan sát được. Đừng viết `// @ts-expect-error` để giữ một chân sống trong fixture.
+
+**Cổng có đỏ được không.** **Cổng này đỏ được thật ở cả bốn điều kiện** — tốt hơn nhiều so với phần lớn cổng trong kế hoạch này. Nhưng điều kiện 1 phải được **cô lập nhiễu môi trường trước**, nếu không nó là một cổng luôn đỏ, tức là xanh giả theo kiểu khác: người giao việc sẽ quen mắt bỏ qua nó.
+
+Cổng từng mục (tách riêng, KHÔNG xâu bằng `&&`): `(cd packages/coding-agent && bun test test/plan-mode/write-policy.test.ts test/modes/mode-registry.test.ts) ; (cd packages/tui && bun test test/status-line-extension-mode.test.ts)` rồi `bun run check:ts`. Cố ý không xâu `check:ts` vào test: `check:ts` đứng trước `&&` sẽ chặn không cho hai chân test chạy tới mỗi khi nó đỏ, kể cả vì lý do không liên quan tới WI-7.
+
+Cổng nghiệm thu wave 5, tách riêng: `cd packages/coding-agent && bun test test/extension-outsider-install.test.ts`. Lý do tách: `tsconfig.json` có `"include": ["src", "test", "scripts"]` — fixture **có** được typecheck, nên một dòng `pi.registerSetting` làm `check:ts` đỏ và dấu `&&` sẽ chặn không cho test chạy tới.
+
+Cổng seam — chạy lại sau **MỌI** commit ở bước 4-7 (số đo **nền** đã chạy trên HEAD): `grep -n "planModeEnabled\|vibeModeEnabled\|goalModeEnabled\|goalModePaused\|loopModeEnabled\|loopModePaused" packages/coding-agent/src/modes/types.ts` → **189,190,191,192,193,194** (đúng 6 dòng, phải giữ nguyên sau bước 4). `grep -cE "^\t(planModeEnabled|…|loopModePaused) = " packages/coding-agent/src/modes/interactive-mode.ts` → **7** hôm nay; **0** sau bước 4. `grep -cE "^\t(get|set) (…)" …` → **0** hôm nay; **14** sau bước 4. `git grep -n "getPlanModeState\|getGoalModeState\|getVibeModeState\|getPrewalkState" -- packages/coding-agent/src \| grep -v gallery-fixtures \| wc -l` → **51** hôm nay, **21 file**; phải giữ 51 sau từng commit bước 4-7 (13/51 ở `interactive-mode.ts`, 6/51 ở `agent-session.ts`, 4/51 ở `tools/index.ts`). Lệnh grep đầu **một mình không phân biệt được** "đã làm accessor" với "chưa làm gì" — vì `InteractiveModeContext` là `interface`, các dòng `planModeEnabled: boolean;` phải y nguyên sau bước 4; grep đó chỉ đỏ nếu ai đó **đổi tên** field, điều bước 4 cấm. Hai lệnh `grep -c` mới là phần có tín hiệu thật.
+
+| # | điều kiện | đỏ được? | bằng cách nào |
+| --- | --- | --- | --- |
+| 1 | `bun run check:ts` exit 0 | **Có, có tín hiệu thật — nhưng phải cô lập nhiễu** | Đỏ ngay nếu typecheck hỏng. **Tiền đề bắt buộc:** cây phải sạch, hoặc chạy `bunx oxfmt packages/tui/src/tools/index.ts packages/tui/test/probe-frozen.test.ts` một lần cho hết 2 file nhiễu, hoặc chấp nhận đọc `check:tools` tách khỏi `check:types` (`bun run --filter ./packages/coding-agent check:types`). |
+| 2 | seam-2 = 51 dòng / 21 file, không sửa tay | **Có, tuyệt đối** | Lệnh thật, nền đã đo 51/21. Đỏ nếu bất kỳ call site nào bị sửa tay. |
+| 2b | initializer 7→0, accessor 0→14 | **Có, tuyệt đối** | Hai lệnh `grep -c` thật; nền đã đo 7 và 0. |
+| 2c | 6 tên boolean còn nguyên ở `types.ts:189-194` | **Có, nhưng yếu** | Chỉ đỏ khi đổi tên. Giữ như anti-regression, không dựa vào nó làm tín hiệu chính. |
+| 3 | outsider fixture chạy, có mode + status-line segment, `result.errors` rỗng | **Có, mạnh** | Đỏ nếu `registerMode` không tới được registry, nếu segment không render, nếu extension lỗi. Chạy được ngay (addon đã build). |
+| 4 | `examples/extensions/plan-mode.ts` không còn tồn tại | **Có, tuyệt đối** | `test ! -e packages/coding-agent/examples/extensions/plan-mode.ts`. |
+
+**Cổng cố ý KHÔNG có, và đó là điểm cần nói thẳng:** không có gì đỏ nếu `statusLine` bị đặt `optional` trong `ModeDefinition` — kiểu `readonly statusLine?: ModeStatusLine` vẫn compile, vẫn chạy, và chỉ chết ở test 3. Vì vậy **bắt buộc** thêm một assertion tĩnh: `ModeDefinition` khai báo `readonly statusLine: ModeStatusLine;` (không `?`) — điều kiện tiên quyết ghi vào review checklist, vì đó là mặc định "mode không có chỉ báo" mà cả bốn cổng hiện tại đều không bắt được.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Bảng "File cần chạm tới" hướng sai chỗ luồn segment.** `status-line-host.ts` chỉ dựng `export const statusLineHost: StatusLineHost<StatusLineHostSession> = { getSettings, gitEnabled, codexResetFireworksEnabled, … }` — một object **policy**, không có `SegmentContext` nào ở đó. `SegmentContext` thật được dựng trong `component.ts` tại `#buildSegmentContext` (`:2108`), và mọi trạng thái mode đi vào đó qua một setter riêng (`setPlanModeStatus` `:855`, `setLoopModeStatus` `:867`, `setGoalModeStatus` `:881`, `setVibeModeStatus` `:893`). `component.ts` **không có trong bảng file của plan**. Sửa `status-line-host.ts` rồi tưởng xong sẽ ra một field `resolvedMode` luôn `null` và không gì đỏ.
+2. **Bảy field, không phải sáu, và `:913` không phải boolean.** `planModePaused` (`interactive-mode.ts:909`) **không có** trên `InteractiveModeContext` — `grep -c planModePaused modes/types.ts` → **0** — nhưng nó được đọc ở **16 chỗ** và `#updatePlanModeStatus` (`:3770`) đẩy nó thẳng vào status line. Đổi 6 cái kia sang registry mà để `:909` thô thì chip `Plan ⏸` **ngừng cập nhật im lặng**. Đồng thời dải `:908-915` mà plan liệt kê xen `:913` `planModePlanFilePath: string | undefined = undefined;` — đừng biến nó thành accessor.
+3. **Bốn call site trong `write.ts` không đồng nhất, và `:814` không phải `{ op: "update" }`.** Đúng 4 site (`:778`, `:814`, `:842`, `:859`) cộng định nghĩa ở `plan-mode-guard.ts:127`. Nhưng `:814` truyền **một ternary** `op: resolvedArchivePath.exists ? "update" : "create"`. Site này và site `:842` (sqlite) đều là đường ghi với path **không phải file cây làm việc thuần** — phải suy luận riêng từng cái với quy tắc `workingTree`, không giả định chúng tương đương với `:778`.
+4. **32 chỗ gán, tất cả trong một file.** Getter trần **không compile**. Bảy cặp accessor, không phải bảy getter. Và đừng làm bước 4 chung với bước 3 — plan tách là có chủ ý.
+5. **Đừng lặp lại phần phủ đã có.** `test/tools/plan-mode-guard-local.test.ts` (243 dòng) đã khẳng định đủ: create + update trên `local://` qua; `src/foo.ts` + `PLAN.md` bị từ chối `/working tree is read-only/`; delete `/deleting files is not allowed/`; move `/renaming files is not allowed/`. File mới phải bảo vệ một hợp đồng **khác** — chính sách được đánh giá như **dữ liệu qua một mục registry**.
+6. **Fixture phải typecheck, và đó là mâu thuẫn cần biết.** `pi.registerMode` trong fixture sẽ làm `check:types` đỏ **cho tới khi bước 9 xong** — trạng thái bình thường giữa wave, không phải hỏng. Nhưng dòng `pi.registerSetting` thì không được có (đó là việc của WI-8b). Đừng dùng `// @ts-expect-error` để giữ một chân sống — và nên xác nhận điều này với người giữ WI-8b.
+7. **Rủi ro lớn nhất, không phải lỗi biên dịch: hồi quy lặng lẽ chốt ghi của plan mode.** Đây là thứ duy nhất ở M2 có thể làm hỏng dữ liệu người dùng: coding-agent sửa một cái cây làm việc mà người dùng tin là chỉ-đọc, và không có UI nào báo. Hai phòng ngừa bắt buộc, đúng thứ tự: (1) hạ việc rút `writePolicy` thành **một commit riêng trước khi migrate bất kỳ mode nào**, giữ nguyên và xanh toàn bộ `plan-mode-guard-local.test.ts` như bằng chứng; (2) giữ các field trạng thái mode là cặp accessor registry-backed trong **toàn bộ** quá trình migrate, để luôn có đường rollback từng phần. Rủi ro cao thứ hai là ship registry không có câu trả lời nào cho status-line — đó chính là lý do bước 0 tồn tại.
+8. **`settingsDomain` không có ràng buộc kiểu.** `const DOMAINS` ở `config/all-settings.ts:44` **không được export**; file chỉ export `orderedSettings()` ở `:90`. `readonly settingsDomain: string` sẽ compile nhưng không chặn được id sai. Chọn: export union `SettingsDomainId`, hoặc thừa nhận nó là `string` tự do trong đặc tả.
+
 ## Cần người xác nhận
 
 - **Mâu thuẫn thời điểm bên trong chính đặc tả về M2-OQ3.** Bước 0 ghi "DO THIS BEFORE ANY CODE" và "Everything in steps 3+ is gated on this" — tức quyết định phải có trước bước 3. Nhưng câu hỏi mở đầu tiên lại ghi rõ "Needed before step 6, not before step 0", và bước 6 cũng nói "Implement the M2-OQ3 seam per the step-0 decision". Hai chỗ này không thể cùng đúng. Không tự chọn một trong hai: hãy chốt rõ quyết định M2-OQ3 có chặn bước 3 hay chỉ chặn bước 6, vì bước 3 (lõi registry) có thể làm được mà không cần seam status-line.
@@ -3227,6 +4610,103 @@ Cách sai dễ nhất thứ hai: chỉ migrate `manager.ts` và bỏ sót `loade
 | Lớp env là nơi giá trị của test bị biến môi trường ghi đè, và plan nói ra rằng một dòng khẳng định `"env"` mà không có `env` khai báo phải đỏ. | VERIFIED, WITH AN UNSTATED INVERSION THE PLAN MISSES (ĐÚNG, KÈM MỘT ĐẢO NGƯỢC CHƯA NÊU MÀ PLAN BỎ SÓT) | Cả hành vi opt-in lẫn hành vi đỏ-khi-không-khai-báo đều đúng. Điều plan không nhắc là `envFallback`: `#effectiveEnv` (`config/registry.ts:526-535`) làm cho env NHƯỜNG cho bất kỳ lớp nào đã cấu hình khi definition đặt nó, và mặc định là `false` (:480), nên env thắng theo mặc định. Một fixture khai báo `envFallback: true` sẽ khiến giá trị project thắng và `provenance` báo `"project"` — một test đỏ vì hành vi đúng, và đúng là hình dạng sai lầm mà người ta "sửa" bằng cách làm lỏng khẳng định. Đặc tả này nêu nó là cái bẫy ở dòng 3.<br>Bằng chứng: sed `registry.ts:526-535` cho thấy `if (value === undefined \|\| !this.envFallback) return value;` rồi tới nhánh `envFallback === true` và nhánh so sánh chuỗi. registry.ts:480 là `this.envFallback = typeof env === "object" ? (env.fallback ?? false) : false;`. |
 | Rủi ro migration đã được bao phủ trọn vẹn bởi test provenance chạy phân tầng thật. | OVERSTATED (NÓI QUÁ) | Test provenance bảo vệ PHÂN TẦNG, không bảo vệ MIGRATION. Ba dạng lỗi sống sót qua nó: (a) một migration không có marker hoàn thành chạy lại mỗi lần khởi động và hồi sinh các key người dùng đã xoá sau lần chạy đầu — không thể phát hiện bởi một suite chỉ migrate một lần; (b) lớp bền vững mới sai và giá trị được ghi vào nơi đường đọc không hề tham chiếu tới; (c) `deletePluginSetting` lặng lẽ đổi nghĩa từ "xoá thẳng" thành "chỉ xoá lớp global". Vì vậy cổng của đặc tả này thêm một bước thủ công (4) phủ ca hồi sinh khi chạy lại, cùng hai open_question liên quan, thay vì dựa vào test một mình.<br>Bằng chứng: `unsetGlobalValue` (`config/settings.ts:845-859`) chỉ gọi `deleteByPath(this.#global, segments)`; không có thao tác xoá ở lớp project nào trong method đó, và không có thứ tương đương nào tồn tại trong delete vệt phụ cũ. |
 | Môi trường: `bun test` cần addon native; `bun run check:ts` thì không. | XÁC NHẬN, và nay đã gỡ | Đây là **tiền đề tái lập được**: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là nửa test của cổng chạy được. Trạng thái trước khi build: `bun test test/config/settings-registry.test.ts` → `0 pass / 1 fail`, `Cannot find module .../native/pi_natives.darwin-arm64.node`, kèm gợi ý của chính loader `bun --cwd=packages/natives run build`. `bun run check:ts` → sạch, oxlint + oxfmt pass trên 5445 files, cả 16 package `check:types` Done, và không cần addon.<br>Bằng chứng: `bun --cwd=packages/natives run build` → EXIT=0; `bun test packages/utils/test/` → 743 pass / 10 skip / 0 fail. |
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Một neo **đúng vị trí nhưng sai nội dung**, và đó là neo quan trọng nhất của mục:
+
+- Neo "loader.ts:474-482 là **bản sao từng byte** của manager.ts:929-960" — **SAI**. Cùng phép trộn, nhưng **nguồn project khác nhau**: `manager.ts:154` đọc **một** đường (`getProjectPluginOverridesPath` → `<cwd>/.omp/plugin-overrides.json`), còn `loader.ts:62` đọc **bốn** đường (`.omp`, `.claude`, `.codex`, `.gemini` qua `getConfigDirPaths` → `config.ts:162` → vòng lặp trên `PROJECT_CONFIG_BASES` ở `config.ts:90-93`, dựng từ `priorityList` ở `config.ts:11-16`). Ủy nhiệm na là **âm thầm thu hẹp bề mặt đọc**: một người dùng đang đặt override ở `<project>/.claude/plugin-overrides.json` hôm nay đọc được, sau thay đổi thành đọc `{}`. Test 1 của bộ test **không bắt được** vì nó chỉ viết `.omp/`.
+- Cùng kiểu: neo "Đính chính: `loader.ts:474-483`" → thật là **474-482**; file dài **482 dòng**, `:483` **vượt cuối file**, hàm kết thúc ở `:482`.
+
+Các neo trôi, dùng số thật: `packages/utils/src/dirs.ts:652` cho `getPluginsLockfile` → **:662** (`:652` là `getPluginsNodeModules`; `:661` là doc, `:662` là `export function getPluginsLockfile(home?: string): string {`). `dirs.ts:1046` cho `getProjectPluginOverridesPath` → **:1066** (`:1046` nằm trong `getMarketplacesRegistryPath`). `package.json:94` cho `check:ts` → **:90** (`:94` là `"lint:ts"`). `test/config/` "7 file anh em" → thật là **6** file `.test.ts`.
+
+Claim về môi trường đã lỗi thời: "Đã kiểm chứng: `bun test` cần addon native; trạng thái trước khi build: `0 pass / 1 fail`" → **ĐÃ build** trên máy này; `bun test test/config/settings-registry.test.ts` → **18 pass / 0 fail**; `bun test test/plugin-config.test.ts test/plugin-config-validate.test.ts` → **9 pass / 0 fail**.
+
+Drift changelog: `CHANGELOG.md:3` đúng là `## [Unreleased]`, nhưng nó **đã có** `### Security` ở **:5** và mục kế tiếp là `## [18.4.0] - 2026-09-28` ở **:9** — **không phải 18.3.3**. `### Changed` phải chèn **sau** `### Security`, không phải ngay dưới `## [Unreleased]`.
+
+Neo ĐÚNG đã mở và xác nhận, không cần sửa: `extensibility/settings.ts:5`, `:10`; `manager.ts:115-121`, `:148`, `:153`, `:256`, `:622`, `:845`, `:929`, `:942`, `:954`; `loader.ts:474`; `settings-host.ts:14`, `:16`; `selector-controller.ts:266`; `registry.ts:48`, `:95`, `:143`, `:476-480`, `:509`, `:514`, `:515`, `:526-535`, `:716`, `:735`, `:764-765`, `:783-792`, `:787`, `:789`, `:790`, `:795`, `:953`; `settings.ts:53`, `:62`, `:694`, `:800-808`, `:828`, `:845-860`; `all-settings.ts:27`, `:44-79`; `types.ts:48`, `:55`, `:57-93`, `:65`, `:156-163`; `settings-selector.ts:438`, `:431-440`; `plugin-settings.ts:68-76`, `:85-89`, `:147`; `plugin-cli.ts:911`, `:917`; `plugin-config.test.ts:25-28`, `:47-56`, `:62`, `:114-119`; `plugin-config-validate.test.ts:63`, `:116`; `plugin-list-marketplace.test.ts:335`; `settings-registry.test.ts:25-43`; `plugins/index.ts:5`; `loader.ts:48`, `:61`.
+
+Hai claim trong phần "Cần người xác nhận" vẫn còn nguyên và **cả hai cần người quyết TRƯỚC bước 0**: open question 2 (lớp bền vững nào) **phải** có câu trả lời trước bước 0 — vì nó quyết định luôn `#settingsScope()` trả cái gì; open question 1 (`deletePluginSetting` nghĩa là gì) **phải** có câu trả lời trước bước 5.
+
+**Bảng điểm sửa.** Trích TRƯỚC từ file thật.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `src/extensibility/plugins/manager.ts:929-937` | `PluginManager.getPluginSettings` | `const config = await this.#ensureConfigLoaded();`<br>`const global = config.settings[name] \|\| {};`<br>`const projectOverrides = await this.#loadProjectOverrides();`<br>`const project = projectOverrides.settings?.[name] \|\| {};`<br>`// Project settings override global`<br>`return { ...global, ...project };` | `const settings = this.#settingsScope();`<br>`const out: Record<string, unknown> = {};`<br>`for (const [key, schema] of Object.entries(this.#schemaFor(name))) {`<br>`  out[key] = registerPluginSetting(name, toDefinition(key, schema)).get(settings);`<br>`}`<br>`return out;` |
+| `src/extensibility/plugins/manager.ts:942-949` | `PluginManager.setPluginSetting` | `if (!config.settings[name]) { config.settings[name] = {}; }`<br>`config.settings[name][key] = value;`<br>`await this.#saveRuntimeConfig();` | `registerPluginSetting(name, toDefinition(key, this.#schemaFor(name)[key]))`<br>`  .set(this.#settingsScope(), value);` — ghi lớp global qua `config/settings.ts:828`, không còn gọi `#saveRuntimeConfig` |
+| `src/extensibility/plugins/manager.ts:954-960` | `PluginManager.deletePluginSetting` | `if (config.settings[name]) {`<br>`  delete config.settings[name][key];`<br>`  await this.#saveRuntimeConfig();`<br>`}` | `registerPluginSetting(name, toDefinition(key, ...)).unset(this.#settingsScope());` → `unsetGlobalValue` (`config/settings.ts:845`) — **xoá chỉ lớp GLOBAL**, giá trị lớp project hiện lại. **ĐÂY LÀ ĐỔI NGỮ NGHĨA.** |
+| `src/extensibility/plugins/loader.ts:474-482` | `getPluginSettings(pluginName, cwd)` (module-level) | `const runtimeConfig = await loadRuntimeConfig();`<br>`const projectOverrides = await loadProjectOverrides(cwd);`<br>`const global = runtimeConfig.settings[pluginName] \|\| {};`<br>`const project = projectOverrides.settings?.[pluginName] \|\| {};`<br>`return { ...global, ...project };` | ủy nhiệm sang substrate mới. Giữ nguyên chữ ký — nhưng phải **giữ `getConfigDirPaths`** trong đường ủy nhiệm, nếu không bạn thu hẹp bề mặt đọc từ 4 thư mục xuống 1. |
+| `src/extensibility/settings.ts:5` | import của domain | `import { combine, register, type SettingValueOf } from "../config/registry";` | thêm `lookup` (đã export ở `config/registry.ts:795`): `import { combine, lookup, register, type SettingValueOf } from "../config/registry";` |
+| `src/extensibility/settings.ts` (sau :10) | — (chưa tồn tại) | — | thêm `sanitizePluginSegment`, `PLUGIN_SETTINGS_ROOT = "plugins"`, `pluginSettingId`, `registerPluginSetting` (idempotent: `lookup(id)` trước, trả handle cũ nếu trùng) |
+| `src/extensibility/plugins/manager.ts` (mới) | — (chưa tồn tại) | — | `#schemaFor(name)` đọc manifest qua accessor có sẵn ở `:256`; `toDefinition(key, schema)` bộ chuyển schema→definition; `#settingsScope()` trả `Settings`; `migrateLegacyPluginSettings()` idempotent + marker |
+| `test/config/plugin-settings-provenance.test.ts` | — (chưa tồn tại) | — | file mới, 3 test |
+| `test/plugin-config.test.ts:47-56` | test `set initializes missing settings in legacy runtime config` | `const lock = await Bun.file(lockfile).json();`<br>`expect(lock.settings[pluginName]).toEqual({ "autoContext.enabled": true });` | viết lại: value đọc lại qua `getPluginSettings` khớp **VÀ** `provenance(scope) === "global"`, **VÀ** lockfile KHÔNG có khoá `settings` mới |
+| `test/plugin-config.test.ts:114-119` | test `resolves marketplace settings without restoring duplicate list entries` | `await manager.setPluginSetting(pluginName, "mainBranchProtection", false);`<br>`expect(await manager.getPluginSettings(pluginName)).toEqual({ mainBranchProtection: false });` | viết lại theo đường đọc handle mới |
+| `CHANGELOG.md:3` | `## [Unreleased]` | `## [Unreleased]` rồi thẳng `### Security` ở **:5** | thêm `### Changed` (mục mới) — **sau** khối `### Security`, không phải ngay dưới `## [Unreleased]` |
+
+**Các bước có neo đã kiểm.**
+
+0. Quyết định instance `Settings` nào là nhà (BLOCKING, viết ra trước dòng code đầu tiên).
+1. Nguyên thủy namespace + idempotency.
+2. Bộ chuyển schema→definition.
+3. Quy tắc đặt tên biến môi trường (viết ra, review, KHÔNG để test quyết).
+4. Viết `setPluginSetting` TRƯỚC.
+5. `getPluginSettings` + `deletePluginSetting` — neo `manager.ts:929-960`.
+6. Migration đọc CẢ HAI file legacy.
+7. Marker hoàn thành là một yêu cầu đúng đắn.
+8. `loader.ts:474` ủy nhiệm — neo `loader.ts:474-482`.
+9. Để yên tab Plugins và overlay TUI.
+10. Viết test mới — `test/config/plugin-settings-provenance.test.ts`.
+11. Viết lại hai test cũ — neo `plugin-config.test.ts:47-56` và `:114-119`.
+12. Chạy cổng.
+13. Changelog — neo `CHANGELOG.md:3` (chèn sau `### Security` ở `:5`).
+
+**Hợp đồng test.** File: `packages/coding-agent/test/config/plugin-settings-provenance.test.ts` (mới, 3 test). Ba test theo **đúng thứ tự này** — thứ tự mã hoá hợp đồng chống mất dữ liệu.
+
+1. **`reads a value that exists only in the legacy project-overrides file after migration`** — viết `<project>/.omp/plugin-overrides.json` với `settings: { "<plugin>": { <key>: <value> } }`, chạy migration, khẳng định **CẢ HAI**: `getPluginSettings` trả về `<value>` **VÀ** `handle.provenance(scope) === "project"`. *Vì sao quan trọng:* `setPluginSetting` **chưa bao giờ** ghi vào file này — với người dùng đã tự đặt giá trị ở phạm vi project bằng tay, đây là **nơi duy nhất** giá trị tồn tại. Bỏ đường đọc này → mọi cài đặt như vậy âm thầm đọc thành giá trị mặc định: **mất dữ liệu không lỗi nào**.
+2. **`reads a value that exists only in the legacy runtime config after migration`** — viết `settings["<plugin>"]["<key>"]` vào `omp-plugins.lock.json` legacy, chạy migration, khẳng định **CẢ HAI**: giá trị được trả về **VÀ** `provenance(scope) === "global"`.
+3. **`a declared environment variable beats a project-layer value and names itself`** — lớp project đang giữ một giá trị cho key; đặt biến môi trường mà plugin khai trong `definition.env`. Khẳng định **CẢ HAI**: `handle.get(scope)` bằng giá trị suy ra từ env **VÀ** `handle.provenance(scope) === "env"`. Dùng `withEnv` riêng từng test, có lưu/khôi phục.
+
+Bề mặt khẳng định — **BẮT BUỘC**: dùng `Setting.provenance(scope)` tại `config/registry.ts:764-765`. **TUYỆT ĐỐI KHÔNG** dùng `Settings.getProvenance` tại `config/settings.ts:800-808` — nó **không bao giờ** trả `"env"`, dù `"env"` nằm trong union `SettingProvenance` tại `config/settings.ts:62`. **Khẳng định qua sai bề mặt ⇒ xanh trong khi hợp đồng đã hỏng.**
+
+**Cổng có đỏ được không.** **CÓ, nhưng chỉ một nửa. Nửa kia phải nói thẳng là không.**
+
+```bash
+bun run check:ts
+# addon native ĐÃ build trên máy này. Nếu mất, build lại:
+#   brew install ninja && bun --cwd=packages/natives run build   (exit 0)
+cd packages/coding-agent && bun test test/config/plugin-settings-provenance.test.ts
+cd packages/coding-agent && bun test test/plugin-config.test.ts test/plugin-config-validate.test.ts test/config/settings-registry.test.ts
+cd packages/coding-agent && bun test test/modes/components/plugin-list-marketplace.test.ts
+```
+
+TUYỆT ĐỐI KHÔNG `tsc` / `npx tsc`.
+
+**ĐỎ ĐƯỢC, thật:** (1) `check:ts` đỏ khi `toDefinition` không typecheck (thiếu `values` cho enum → `EnumDefinition.values` không optional ở `registry.ts:143`); (2) Test 1 đỏ nếu migration chỉ đọc MỘT trong hai file legacy; (3) Test 3 đỏ nếu `provenance` khẳng định qua `Settings.getProvenance` thay vì `Setting.provenance` — vì `getProvenance` không bao giờ trả `"env"`. **Đây là dòng đỏ mạnh nhất của cổng**; (4) `plugin-config.test.ts:47-56` đỏ ngay khi bước 4 đi vào (khẳng định shape lockfile cũ).
+
+**KHÔNG ĐỎ ĐƯỢC — và đây là điều quan trọng nhất của mục này:**
+
+1. **Migration chạy lại mỗi lần khởi động và HỒI SINH key đã xoá.** Ba test trên chỉ migrate **một lần**; không test nào trong bộ ba phát hiện được. Cổng gốc của plan đã thừa nhận điều này và thêm kiểm tra thủ công. **Giữ nguyên kiểm tra thủ công đó** — đừng thay bằng "thêm một test nữa", vì test thứ tư vẫn không bắt được nếu marker được ghi đúng nhưng nội dung legacy bị sửa sau đó. Cách đúng: chạy migration **hai lần** trong cùng một test, xoá một key ở giữa, rồi chạy lại lần thứ hai và khẳng định key **không** quay lại. Đây là thứ làm cổng đỏ được thật; nếu không làm, cổng phải ghi "không bắt được" và giữ bước thủ công.
+2. **Tên biến môi trường sai-nhưng-hợp-lý.** Dòng test dùng **đúng tên fixture khai báo** ⇒ một lỗi trượt trong cách đặt tên là **vô hình với cả suite**. Đây là lý do quy tắc ở bước 3 phải được **viết ra và review**, không được giao cho test.
+3. **`deletePluginSetting` đổi ngữ nghĩa.** Không dòng test nào khẳng định nó.
+4. **`envFallback: true` trong fixture.** Nếu fixture khai nó, test 3 đỏ **vì hành vi đúng** — và đó là cách dễ nhất để viết một test đỏ vì lý do sai rồi "sửa" bằng cách làm lỏng khẳng định. Fixture **KHÔNG** được khai `envFallback` (`registry.ts:480` mặc định `false`).
+5. **`loader.ts:474` bị bỏ sót.** Không có test nào chạm tới nó (`git grep` xác nhận: **không có caller sản xuất nào**). Bỏ sót ⇒ cổng vẫn xanh. Phải review thủ công diff.
+6. **Lớp bền vững sai.** Nếu `set` ghi vào một lớp mà đường đọc không tham chiếu tới, ba test vẫn có thể xanh nếu đường đọc đi cùng đường ghi. Cổng không bắt được.
+
+**Cổng luôn xanh tệ hơn không có cổng.** Vì vậy: **đừng ghi "pass" cho (2)–(4) nếu chưa build addon và chưa thực sự chạy**. Trên máy này addon **đã** build và hai suite baseline **đã** chạy xanh (`18 pass` và `9 pass`) — nhưng ba test mới thì **chưa tồn tại**, nên (2) hiện **không** có bằng chứng.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Registry chỉ-thêm ⇒ đăng ký động lúc load là một quả mìn.** `register()` ném `Setting "..." is registered twice` tại `config/registry.ts:787`; `byId.set` :789 và `ordered.push` :790 là các đột biến duy nhất; `resetRegistryForTest` :953-956 chỉ chạm `effects`. Lần load thứ hai của cùng một plugin trong một tiến trình — reload, suspend/resume, hay hai `PluginManager` trong một file test — **ném lỗi**. Và đây đúng là thứ WI-1, WI-7 (suspend/resume) và WI-9 (unload) sẽ dựng. `registerPluginSetting` idempotent phải là **bước 1**, trước mọi thứ khác.
+2. **`loader.ts:474` không phải là bản sao "từng byte" — nó đọc NHIỀU thư mục, `manager.ts:153` chỉ đọc MỘT.** Đây là cạm bẫy số 1 khi gõ, và **plan sai ở đây**. Nếu bạn ủy nhiệm `loader.ts:474` na cho một hàm dùng `getProjectPluginOverridesPath`, bạn **âm thầm thu hẹp** bề mặt đọc. Phải hoặc giữ `getConfigDirPaths` trong đường ủy nhiệm, hoặc ghi rõ trong PR rằng hành vi `.claude/.codex/.gemini` bị thu hẹp (và đó là một breaking change phải vào changelog).
+3. **Hai store "đọc-hai-file" nhưng khác phạm vi — cùng một lý do bỏ sót.** Cả hai đều trông giống nhau lúc đọc bằng mắt, nên khi migrate `manager.ts` mà quên `loader.ts` (dễ xảy ra vì `git grep` không thấy caller nào), bạn **tạo lại đúng mô hình "hai đường đọc, bạn migrate một"** mà plan tự đặt là rủi ro chính. Thêm cạm bẫy 2 nữa thành ba lần cắt.
+4. **`envFallback` làm ĐẢO thứ tự ưu tiên.** `#effectiveEnv` (`registry.ts:526-535`) làm env **nhường** cho bất kỳ lớp nào đã cấu hình khi definition đặt nó; mặc định `false` (`:480`).
+5. **`DefinitionBase` không được export, `isCredential` là getter, và `default` không optional.** `registry.ts:88` `interface DefinitionBase` (không có `export`); `SettingDefinition` là union export ở `:170-176`. `isCredential` là `get isCredential(): boolean` (`:509`) — viết `isCredential()` sẽ không typecheck. Và `NumberDefinition.default: number | undefined` (`:135`) **không** optional trong khi `NumberSetting.default?: number` (`types.ts:75`) là optional — manifest không khai `default` sẽ không typecheck nếu truyền thẳng.
+6. **`orderedSettings()` memoize vĩnh viễn.** `all-settings.ts:87` `let ordered: readonly AnySetting[] | undefined;`, `:91` `if (ordered) return ordered;` và **không có đường invalidation**. `createSettingsHost` (`config/settings-ui.ts:54`) và `config-cli.ts:201` đều duyệt `orderedSettings()` ⇒ **cài đặt plugin đăng ký ĐỘNG lúc load sẽ KHÔNG xuất hiện trong bảng cài đặt** sau lần gọi đầu tiên, trừ khi bạn export handle ra khỏi namespace module của một domain trong `DOMAINS` (`all-settings.ts:44-79`) **trước** lần gọi đầu tiên. Điều này mâu thuẫn với câu "Người dùng thấy" của plan ("chỉnh sửa được trong bảng cài đặt thông thường") và với ranh giới WI-8b. **Phải nêu khi trình bày.**
+7. **Xoá `#saveRuntimeConfig` / `#loadProjectOverrides` sớm = mất dữ liệu.** Chúng chính là store đang bị thay thế nhưng là **nguồn đọc duy nhất** cho migration. Bước 6 vẫn cần chúng. Xoá ở bước 4 là bug mất dữ liệu.
+8. **Ba method phải GIỮ NGUYÊN chữ ký, nhưng `loader.ts:474` là hàm `export *` qua barrel** (`plugins/index.ts:5`) — thêm tham số bắt buộc là **breaking change** với extension bên thứ ba, và plan **không** nhắc tới điều này.
+9. **`#schemaFor` phải dùng accessor có sẵn, không mở đường thứ tư tới manifest.** Ba điểm đọc manifest đã có: `manager.ts:256`, `:622`, `:845`. Thêm một chỗ `Bun.file(…).json()` thứ tư là phá luật "không có hai implementations" của AGENTS.md.
+10. **Bốn test sẵn có chạm đường đọc, không phải hai.** Plan liệt kê `plugin-config.test.ts:47-56` và `:114-119`. Thực tế còn có `plugin-config.test.ts:62` (khẳng định `getPluginSettings` trả `{}` khi không có gì) và `plugin-list-marketplace.test.ts:335` (`spyOn(manager, "getPluginSettings").mockResolvedValue({})`).
 
 ## Cần người xác nhận
 
@@ -3551,6 +5031,119 @@ Lỗi chi phối là lỗi âm thầm và vĩnh viễn, đúng như plan nói: m
 | Xác minh là `bun run check:ts && (cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts)`. | đúng như đã viết, nhưng nửa sau cần build addon trước — nói ra trước khi giao | `bun run check:ts` chạy và pass trên HEAD 808b365 (đã kiểm chứng: cả 15 package đều báo Done) và không cần addon. `bun test` cần addon native: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là cả năm dòng test thi hành được. Nếu chưa build thì một test có sẵn trong thư mục đó báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64` và chỉ về `bun --cwd=packages/natives run build` — đó là bước build còn thiếu, không phải hạn chế của máy. Điều này không làm suy yếu công việc — dòng 1, 2 và 4 không cần loader, không cần session, không cần fixture trên đĩa. |
 | WI-8b chỉ phụ thuộc WI-8a; WI-7 không phải phụ thuộc vì không file nào trên đường `registerSetting` biết mode. | confirmed | Đã kiểm chứng độc lập. Không gì trên đường đi nào đọc mode: `registry.ts:786-792` chỉ là sổ sách id thuần, `all-settings.ts:43-77` là danh sách import tĩnh, và danh sách tab của panel là `settings-selector.ts:431-440` cộng `settings-defs.ts:20`. Tiền đề thật sự mà plan đánh giá thấp là M2-OQ4, không phải code nhưng chặn thẳng bước 5-7 và dòng test 3. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Tài liệu tự ghi cột cuối bảng "File cần chạm tới" là `Có — HEAD 808b365`. HEAD thật lúc kiểm là **`65cc6c1`**, và các neo sau **đã hỏng**:
+
+| tài liệu ghi | thật | mức |
+| --- | --- | --- |
+| `types.ts:1256-1582` là span `ExtensionAPI` | `export interface ExtensionAPI` ở **1277**, đóng ở **1607**, khai báo top-level kế tiếp `export interface ProviderConfig` ở **1614** | trôi +21/+25/+25 |
+| *(bảng "Đính chính" tự ghi)* "ExtensionAPI ở :1256, đóng :1582, ProviderConfig ở :1589" | **1277 / 1607 / 1614** | **chính phần đính chính cũng sai** |
+| `types.ts:1430` là `registerFlag` | `registerFlag(` ở **1455**, JSDoc ở **1454** | trôi +25 |
+| `types.ts:1802-1817` là `Extension` | `export interface Extension` ở **1827**, đóng ở **1842** | trôi +25 |
+| `types.ts:1231-1557` (claim gốc của plan) | **1277-1607** | trôi +46/+50 |
+| `all-settings.ts:43-77` là `DOMAINS` | `const DOMAINS` ở **44**, `];` ở **79** | trôi +1/+2 |
+| `all-settings.ts` có **33** entry `DOMAINS` | **34** entry (đếm :45-78) | **đếm sai** |
+| `all-settings.ts:85-89` là memo `ordered` | `let ordered` ở **87**; `:85` là `];` đóng `PLACED_DOMAINS` | trôi +2 |
+| `all-settings.ts:88-123` là `orderedSettings` | **90-125** (file dài 125 dòng) | trôi +2 |
+| `all-settings.ts:92-106` là `domainHandles` | **94-108** | trôi +2 |
+| `test/config/` "giữ bảy file test" | **6** file | đếm sai |
+| `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9923` là chỗ văn xuôi "registered twice" | dòng 9923 là `### Các bước`; các hit thật: **8158, 8224, 8484, 8500, 8502, 10275, 10277, 26017** | trôi |
+| "lệnh không giới hạn phạm vi thì trả **3** kết quả" | `git grep -n "registered twice"` giờ trả nhiều hơn nhiều (kế hoạch + research + docs) | đếm cũ |
+
+Một thiếu hẳn: `createExtension` **không có trong bảng file** — `loader.ts:374-390` là object literal tạo `Extension`, và nó **phải** được thêm `settingIds: []` khi interface đổi, nếu không đó là lỗi type.
+
+Symbol mới đã grep xác nhận là **chưa tồn tại** ở bất kỳ đâu trong `packages/`: `registerOwned` · `unregisterOwned` · `ownedBy` · `ownerOf` · `EXTENSION_ID_PREFIX` · `isExtensionSettingId` · `invalidateOrderedSettings` · `releaseExtensionSettings` — `git grep` → **0 hit**.
+
+Phần đúng giữ nguyên, đã kiểm không đổi: toàn bộ neo `registry.ts` (`:778 :779 :786 :787 :792 :795 :800 :476-480 :764-765 :953`); toàn bộ neo `loader.ts` (`:179 :191-208 :198-200 :259-267 :277-289 :397-414 :417 :438-459 :457 :464-475 :471 :473 :491-520 :497-505`); toàn bộ neo `settings-ui.ts` (`:39-44 :51-68 :53-56 :58-66`); toàn bộ neo `settings-defs.ts` (`:4-15 :20 :33-34 :52-88 :97-111`); toàn bộ neo `settings-selector.ts` (`:431-440 :435 :438 :848-853 :854 :855-860`); `settings.ts:800-808` và `:62`; `model-registry.ts:2914` và `:2955`; `capability/extension-module.ts:28`, `capability/types.ts:204`, `capability/index.ts:192-193`; `marketplace/types.ts:29`; `docs/secrets.md:140`; con số **41** file gọi `register({`; con số **33** kết quả `extensionId|slugExtension|normalizeExtensionId`; con số **5** kết quả `provenance` trong `packages/tui/src/`; con số **29** method của `ExtensionAPI`; sự tồn tại của `test/extension-prepared-rebind.test.ts` và `withEnv` ở `test/config/settings-registry.test.ts:26-43`.
+
+**Bảng điểm sửa.** Cột TRƯỚC trích nguyên văn từ file thật tại HEAD `65cc6c1`.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `src/config/registry.ts:778-779` | `byId` / `ordered` | `const byId = new Map<string, AnySetting>();`<br>`const ordered: AnySetting[] = [];` | giữ nguyên 2 dòng, **thêm** ngay dưới:<br>`const ownerById = new Map<string, string>();`<br>`const idsByOwner = new Map<string, Set<string>>();`<br>`export` `const EXTENSION_ID_PREFIX = "extension.";` |
+| `src/config/registry.ts:786-792` | `register` | ``if (byId.has(definition.id)) throw new Error(`Setting "${definition.id}" is registered twice`);`` | thân chuyển sang hàm mới `registerOwned(owner, definition)`; throw mới nêu **cả id, cả owner hiện tại, cả quy tắc namespace**:<br>`Setting "${id}" is already registered by ${ownerById.get(id) ?? "core"}. Extension setting ids must start with "${EXTENSION_ID_PREFIX}" and be unique across extensions.`<br>`register` giữ **đúng chữ ký cũ** và ủy nhiệm `return registerOwned("core", definition);` |
+| `src/config/registry.ts:795` | `lookup` | `export function lookup(id: string): AnySetting \| undefined {` | không đổi; **thêm cạnh nó** `export function ownedBy(owner: string): readonly string[]` và `export function ownerOf(id: string): string \| undefined` |
+| `src/config/registry.ts:800-802` | `all()` | `return ordered;` | không đổi. LƯU Ý: nó trả **mảng sống**, không trả bản sao — `unregisterOwned` splice thẳng vào nó |
+| `src/config/registry.ts` (mới) | `unregisterOwned` | *(không tồn tại — `git grep -n unregister -- packages/coding-agent/src/config/` chỉ trả 7 hit, tất cả ở `model-registry.ts` cho provider/API/OAuth)* | `export function unregisterOwned(owner: string): string[]` — xoá id khỏi `byId`, `ownerById`, splice khỏi `ordered`, `idsByOwner.delete(owner)`, **trả về** `string[]` id đã gỡ; owner chưa đăng ký gì thì trả `[]` |
+| `src/config/all-settings.ts:87` | `let ordered` | `let ordered: readonly AnySetting[] \| undefined;` | giữ nguyên; **thêm ngay dưới**:<br>`export function invalidateOrderedSettings(): void { ordered = undefined; }` |
+| `src/config/all-settings.ts:90-125` | `orderedSettings` | `…const result: AnySetting[] = [];` … `ordered = result; return result;` | thêm **vòng nối thêm** ngay trước `ordered = result;`: duyệt `all()`, bỏ qua handle nào `seen` đã có, `result.push(handle)` — giữ nguyên `sequence`/`seen`/`placedBefore` |
+| `src/config/all-settings.ts:44` | `DOMAINS` | `const DOMAINS: readonly Readonly<Record<string, unknown>>[] = [` … 34 entry … `];` | **không sửa** — nhưng `invalidateOrderedSettings()` phải được gọi từ **cả** đường add và đường remove của registry, không chỉ một |
+| `src/config/settings-ui.ts:51-68` | `createSettingsHost` | `for (const tab of SETTING_TABS) { for (const setting of orderedSettings()) { const ui = setting.ui; if (ui?.tab !== tab) continue;` | **không sửa** trừ khi M2-OQ4 bắt buộc; đây là nguồn dữ liệu dòng test 3 khẳng định |
+| `src/extensibility/extensions/types.ts:1277` | `interface ExtensionAPI` | `export interface ExtensionAPI {` (đóng ở **1607**, khai báo top-level kế tiếp `export interface ProviderConfig` ở **1614**) | thêm 1 method cạnh `registerFlag` (**1455**):<br>`registerSetting<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]>;`<br>29 method → 30 |
+| `src/extensibility/extensions/types.ts:1827-1842` | `interface Extension` | `… commands: Map<string, RegisteredCommand>;`<br>`flags: Map<string, ExtensionFlag>;`<br>`shortcuts: Map<string, ExtensionShortcut>;` | thêm `readonly settingIds: string[];` vào object literal ở `createExtension` (`loader.ts:374-390`) — nếu quên, đây là lỗi type |
+| `src/extensibility/extensions/loader.ts:179` | `class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime` | y hệt | thêm `registerSetting` là **prototype method** (không phải arrow-function class field) |
+| `src/extensibility/extensions/loader.ts:277-289` | `registerComposerShape` (khuôn mẫu) | `if (id.length === 0 \|\| id !== id.trim()) { throw new TypeError("Composer shape id must be a non-empty trimmed string"); }` … `this.extension.composerShapes.set(id, definition);` | `registerSetting` copy đúng khuôn mẫu này: **validate → throw trước → mutate sau** |
+| `src/extensibility/extensions/loader.ts` (mới) | `extensionSettingOwner(extension)` | *(không tồn tại)* | **CHƯA CHỐT** — xem cạm bẫy 6. Một người phải chọn, đừng tự bịa. |
+| `src/extensibility/extensions/loader.ts` (mới) | `releaseExtensionSettings` | *(không tồn tại)* | `export function releaseExtensionSettings(owner: string): string[]` — gọi `unregisterOwned`, nếu còn id thì `invalidateOrderedSettings()`, trả id đã gỡ. **Chỉ đưa helper vào, để WI-9 nối vào.** |
+| `test/config/extension-registered-setting.test.ts` | *(file mới)* | `ls` → `No such file or directory` | tạo mới |
+| `CHANGELOG.md:3` | `## [Unreleased]` | `## [Unreleased]` rồi thẳng `### Security` — **chưa có `### Added`** | thêm mục `### Added` ngay dưới `## [Unreleased]` (đặt **trước** `### Security`, không sửa `### Security` đã có) |
+
+**Các bước có neo đã kiểm.**
+
+0. Đọc `WI-8a.spec.json` trước, rồi ghi lại 3 điểm nó đã chốt.
+1. `registry.ts:778-779`: owner index.
+2. `registry.ts:786-792`: `registerOwned` + `register` ủy nhiệm.
+3. `registry.ts:794-802` cạnh `lookup`/`all`: `ownedBy` + `ownerOf` + `unregisterOwned`.
+4. `all-settings.ts`: vô hiệu hoá memo + nối thêm handle mồ côi — neo `all-settings.ts:87` và `:90-125`.
+5. `types.ts`: mở API (KHÔNG dùng số dòng của tài liệu) — neo `types.ts:1277`–`:1607`, method cạnh `registerFlag` (`:1455`).
+6. **CHẶN THEO M2-OQ4. Đừng viết.**
+7. `loader.ts`: cài `registerSetting` trên `ConcreteExtensionAPI` — neo `loader.ts:179` (class field `:191-208`), khuôn `registerComposerShape` `:277-289`.
+8. `loader.ts`: `releaseExtensionSettings`.
+9. `createExtension` phải đi theo (KHÔNG có trong bảng file của tài liệu) — neo `loader.ts:374-390`.
+10. `CHANGELOG.md` — neo `CHANGELOG.md:3`.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/config/extension-registered-setting.test.ts` (chưa tồn tại). Thư mục `test/config/` có **6** file. Setup chép từ `test/extension-registered-tool-source-info.test.ts:1-6, 18-43`; `withEnv` chép từ `test/config/settings-registry.test.ts:26-43` — **đừng viết cái thứ hai**. `Settings` thật cho dòng 1/2/4 là `Settings.isolated({...})` — dùng thế này, **không** cần TempDir trên đĩa.
+
+| # | dòng | khẳng định | điều người dùng thấy nếu hồi quy |
+| --- | --- | --- | --- |
+| 1 | **Chỗ trùng được nêu ra, không bị nuốt** | Hai extension khai cùng một id → đúng **một** entry trong `LoadExtensionsResult.errors`, nội dung chứa cả id trùng lẫn câu "phải có namespace". Khẳng định qua `loadExtensions`/`bindPreparedExtensions` + đọc `result.errors`; **KHÔNG** qua `loadExtensionFromFactory` (ném thẳng ở `:473`) | Tác giả extension thứ hai âm thầm thừa kế/đè key của người thứ nhất, và không ai biết id của mình đã bị lấy. Người dùng chỉ thấy key của mình biến mất sau khi cài extension thứ hai. |
+| 2 | **Một setting động là một setting hạng nhất** | Sau khi khai, `lookup(id)` trả handle, `handle.get(scope)` đọc được, `handle.provenance(scope)` trả lớp thắng **không phải `"env"`**. Khẳng định **cả giá trị đã phân giải lẫn lớp**. Dùng `Setting.provenance` (`registry.ts:764-765`), **không** dùng `Settings.getProvenance` (`settings.ts:800-808` — hàm này không bao giờ trả `"env"`) | Key động rơi vào một kho lưu tình cờ vẫn đọc đúng giá trị, nhưng lớp báo sai → người dùng sửa project file xong thấy giá trị không đổi mà không có manh mối nào |
+| 3 | **CÓ MẶT TRONG PANEL — BỊ CHẶN theo M2-OQ4** | Sau khi khai, key phải CÓ trong `createSettingsHost().entries` đúng vị trí M2-OQ4 chọn. **Không bao giờ assert trên DOM, không bao giờ source-grep `settings-selector.ts`** | API mở ra, tác giả không nhận lỗi, **người dùng không có UI nào**, CI xanh. Đây chính là thất bại "âm thầm và vĩnh viễn" mà plan gọi tên. |
+| 4 | **`env` là opt-in** | Key khai `definition.env`: `provenance(scope)` = `"env"` khi biến được set, lớp khác khi unset — khẳng định **cả giá trị lẫn lớp**. Key **không** khai `env`: không bao giờ `"env"` kể cả khi có biến cùng tên được set. Lý do đã kiểm: `registry.ts:478-479` để `#parseEnv` là `undefined` khi thiếu `definition.env` | Overlay vẽ lại năm lớp cũ sẽ pass dòng 1 và dòng 2 trong khi **lặng lẽ mất trọn vẹn** env → biến môi trường set rồi không có tác dụng, người dùng không hiểu vì sao |
+| 5 | **Gỡ được, bật lại được, rebind không ném** | (a) `unregisterOwned(owner)` xoá khỏi `byId`, khỏi `ordered`, khỏi cả hai index owner, **trả về** danh sách id; gọi lại `registerOwned` cùng owner cùng id phải thành công; `orderedSettings()` phải chứa lại key sau `invalidateOrderedSettings()`. (b) Chạy factory hai lần cho cùng owner (mô phỏng `bindPreparedExtensions`) trả **cùng một handle**, không ném | Tắt rồi bật lại extension trong cùng một process → `Setting "X" is registered twice` ngay lúc bật, và key **vĩnh viễn không với tới được**. Đây là lỗ hổng cổng lớn nhất: không dòng nào trong 4 dòng còn lại phủ, và type-check không bắt được vì không gì gọi tới `unregisterOwned` |
+
+Ràng buộc chung cho cả 5 dòng: không `mock.module()` (AGENTS.md cấm tuyệt đối), phải an toàn khi chạy full-suite (dùng owner riêng cho từng test + `afterEach` gọi `unregisterOwned`).
+
+**Cổng có đỏ được không — câu trả lời thẳng: KHÔNG, KHÔNG ĐỦ.** Đây là điểm quan trọng nhất của phiếu này.
+
+```bash
+# (0) Tiền đề — phải xanh trước khi đọc (1) và (2)
+brew install ninja                      # BẮT BUỘC TRƯỚC — cmake build của opusic-sys cần Ninja
+bun --cwd=packages/natives run build
+# (1) Type check
+bun run --filter './packages/coding-agent' --filter './packages/tui' --if-present check:types
+# (2) Test
+cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts
+cd packages/coding-agent && bun test test/config/settings-registry.test.ts   # 41 call site cũ không hồi quy
+```
+
+Cố tình **không** dùng `bun run check:ts` cho (1) — root `check:ts` = `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`, mà `check:tools` = `oxlint . && oxfmt --check …` trên **toàn bộ** cây mọi package, nên đỏ được bởi bất kỳ file nào không liên quan. Thiếu Ninja → exit 1 với `CMake was unable to find a build program corresponding to Ninja. CMAKE_MAKE_PROGRAM is not set.` Thiếu build → `bun test` báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`, và đó **không phải** hồi quy của bạn.
+
+| phần cổng | đỏ được? | bằng cách nào / không bằng cách nào |
+| --- | --- | --- |
+| (1) type check | **CÓ, thật** | Thêm `registerSetting` vào `ExtensionAPI` mà không cài trên `ConcreteExtensionAPI` là lỗi biên dịch — class được khai `implements ExtensionAPI, IExtensionRuntime` tại `loader.ts:179`. Kiểu trả về lệch cũng vậy. Thêm `settingIds` vào `Extension` mà quên `createExtension` (`loader.ts:374-390`) cũng vậy. |
+| (2) dòng 1, 2, 4, 5 | **CÓ, thật** | Dòng 1/2/4 gọi `pi.registerSetting` hoặc `registerOwned` — trên HEAD chúng không tồn tại nên file **không type-check**, tức (1) đã đỏ trước. Sau khi API có, thiếu `invalidateOrderedSettings` làm dòng 5(a) đỏ; `ownerOf` không export làm dòng 1 đỏ. |
+| (2) dòng 3 (panel) | **KHÔNG — bị chặn** | Dòng này **không viết được** cho tới khi M2-OQ4 có câu trả lời. Cổng đòi file test chạy qua, nhưng dòng bắt buộc thì không tồn tại. |
+| **Một bản cài quên `unregisterOwned`** | **KHÔNG, nếu chỉ chạy (1)+(2)** | Đây là lỗ hổng lớn nhất. `check:types` không bắt được vì **không gì trong cây lệnh type-check gọi tới `unregisterOwned`**. Nó chỉ lộ ra ở dòng test 5. |
+
+Viết lại cổng cho đỏ được — thêm (3), và **tách dòng 5 ra file riêng** `test/config/extension-setting-lifecycle.test.ts` để bắt cổng phải chạy **cả hai** file: `bun test test/config/extension-registered-setting.test.ts test/config/extension-setting-lifecycle.test.ts`. Lý do tách: dòng 3 bị chặn, nên một file "5 dòng" hôm nay chỉ chạy được 4. Để dòng 5 nằm trong file riêng, cổng (2) vẫn xanh trong lúc M2-OQ4 chưa có, và **không ai có thể xoá dòng 5 để làm cổng xanh** mà không phá cổng (3).
+
+**Chốt cổng (0) trước (1) trước (2).** Không tuân thủ thứ tự này thì (2) báo `0 pass / 1 fail / 1 error` và bạn sẽ đọc nhầm là hồi quy.
+
+**Cạm bẫy riêng của mục này.** Xếp theo mức độ dễ làm sai.
+
+1. **`code_shape` trong tài liệu KHÔNG BIÊN DỊCH ĐƯỢC** (tài liệu tự nói, ở "Cần người xác nhận"). Khối `ConcreteExtensionAPI.registerSetting` gọi `ownerByIdOf(definition.id)`, một hàm **không tồn tại**. `ownerById` được khai `const` module-level **không export**. Phải chọn: export một accessor (ví dụ `export function ownerOf(id: string): string | undefined`) **hoặc** để `registerOwned` trả kèm owner. Không chọn thì dòng test 1 không viết được và không ai biết vì sao.
+2. **`registerSetting` phải là PROTOTYPE METHOD, không phải class field.** Constructor `loader.ts:201-207` duyệt `ConcreteExtensionAPI.prototype` bằng `Object.getOwnPropertyNames` và chỉ bind những gì có `descriptor?.value` là **function**. Một arrow-function class field nằm trên **instance**, không phải prototype → không được bind → khi extension làm `const { registerSetting } = pi` thì `this` mất. Viết `registerSetting = (d) => {…}` sẽ **type-check xanh** và chỉ chết lúc chạy. Đây là lý do gate (1) không đủ.
+3. **`all()` trả MẢNG SỐNG.** `readonly` chỉ là kiểu, không phải copy. `unregisterOwned` splice vào `ordered` là mutate thẳng cái mà `all()` trả về. Bất kỳ ai cache `all()` sẽ giữ handle đã bị gỡ. Đừng thêm `all()` vào cache dài hạn trong code mới.
+4. **`ordered` tồn tại HAI cái, cùng tên.** `registry.ts:779` `const ordered: AnySetting[] = []` (nguồn thật) và `all-settings.ts:87` `let ordered: readonly AnySetting[] | undefined` (memo). `invalidateOrderedSettings()` chỉ xoá cái thứ hai. Đọc "ordered" mà không nói file nào là nguồn của bug.
+5. **`resetRegistryForTest` KHÔNG dọn `byId`/`ordered`.** `registry.ts:953-956` chỉ chạm `effects` (`unbindEffects(); for (const entry of effects) entry.reset(defaults);`). Một test đăng ký rồi quên `unregisterOwned` sẽ **đầu độc chính file test đó** và các file chạy sau trong cùng process. Bắt buộc `afterEach` gọi `unregisterOwned(owner)` bằng owner riêng của test.
+6. **`resolvedPath` KHÔNG phải slug ổn định.** Đã kiểm `loader.ts:471`: `const extension = createExtension(name, name);` — trên `loadExtensionFromFactory`, `resolvedPath` **bằng đúng `name`**, và mặc định là `"<inline>"`. Hai extension nạp bằng `loadExtensionFromFactory` với cùng một `name` sẽ **có cùng owner**, và nhánh idempotent sẽ âm thầm trả handle của người thứ nhất — đó là last-writer-wins ngược, và dòng test 1 **không bắt được**. Trên `loadExtensions` thì `resolvedPath` là đường tuyệt đối (`loader.ts:417`) → máy-local, tệ cho project config được commit. Khuôn mẫu id-derivation có sẵn: `capability/extension-module.ts:28` `` toExtensionId: ext => `extension-module:${ext.name}` ``, khai ở `capability/types.ts:204`, tiêu thụ ở `capability/index.ts:192-193`. **Một người phải chọn, đừng tự bịa.**
+7. **`EXTENSION_ID_PREFIX = "extension."` LỆCH `plugins.` của WI-8a.** WI-9 sẽ quét cả hai không gian tên trong một bảng kiểm kê 11 bucket. Nếu lệch mà không ghi lý do, WI-9 sẽ bỏ sót một nhánh.
+8. **Dòng test 4 dễ pass vì lý do sai.** Nếu một key **không** khai `env`, `provenance` không trả `"env"` — nhưng nó cũng sẽ không trả `"env"` nếu bạn **quên khai `env` cho cả key kia**. Dòng 4 phải khẳng định **cả hai vế** (có env → `"env"`; không env → không phải `"env"`), và phải khẳng định **giá trị đã phân giải** chứ không chỉ tên lớp.
+9. **`loadExtensionFromFactory` KHÔNG tạo entry `errors`.** Nó ném thẳng ở `loader.ts:473`. Dòng 1 đi qua nó là dòng 1 **chết âm thầm** — test xanh vì không có gì để khẳng định. Chỉ `bindPreparedExtensions` (`:491-520`) mới gom vào `errors` (`:497`, push ở `:505`).
+10. **Mọi số dòng trong `types.ts` và `all-settings.ts` của tài liệu đều đã trôi.** Gõ theo số trong tài liệu sẽ sửa nhầm chỗ.
+
 ## Cần người xác nhận
 
 Ba điểm tự mâu thuẫn trong chính đặc tả, ghi lại chứ không tự sửa:
@@ -3874,6 +5467,125 @@ Còn hai câu nữa không chặn việc bắt đầu nhưng phải trả lời 
 | Tiền đề: `unregisterProvider(name, sourceId)` (`types.ts:1745`) "sẵn đã khóa theo sourceId, nên đổi hình dạng `flagValues` chỉ là phản chiếu tiền lệ có sẵn" | **WRONG PREMISE** | Chữ ký ở `types.ts:1745` có `sourceId`, nhưng **không hiện thực nào dùng nó**. `loader.ts:108` lọc `pendingProviderRegistrations` bằng `registration.name !== name`; `runner.ts:713-715` sau `initialize()` rebind thành một lambda một tham số trỏ thẳng vào `modelRegistry.unregisterProvider(name)`, nên `sourceId` biến mất hoàn toàn. Hệ quả trực tiếp: `unregisterProvider(extensionPath, extensionPath)` **không** gỡ được provider mà extension đăng ký dưới tên khác (ví dụ `pi.registerProvider("anthropic", …)`), và sau khi runner rebind thì nó lại xoá một *model provider* theo tên đường dẫn file. `unregisterProvidersForSource` — thứ plan gọi là deliverable của WI-5 commit 2-3 — **không tồn tại** (`grep -rn 'unregisterProvidersForSource' packages/coding-agent/src/` → rỗng). Phần đúng của hàng: `ManagedTimers` thật sự không có chủ per-extension, và plan đúng khi nói WI-9 không được build trước. |
 | `runner.ts:934-956` (suspend) và `:984-1050` (phóng `onToolRegistered`), `:1031-1035` (disposer theo từng đăng ký) | STALE-LINE (lệch 6-13, vùng vẫn nhận ra) | `setSuspendedExtensions` ở 947 (doc comment 940-946, thân tới 970); `isExtensionActive` ở 937. Chữ ký `onToolRegistered` ở 997, wrapper per-extension ở 1027-1040, và disposer ở 1044-1048, không phải 1031-1035. Đặc tả của plan về disposer đó là đúng: nó đóng trên một mảng `subscriptions` cục bộ và huỷ một lệ `onToolRegistered` trên mọi extension cùng một lúc. |
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Bảng kiểm neo: **53 neo, 17 đúng / 36 lệch**. Mọi neo trong `runner.ts` **từ 970 trở đi lệch ~29 dòng**, mọi neo trong `types.ts` lệch ~25, neo `main.ts` lệch ~8–13. Đừng tin số của plan — `grep -n` lại tên symbol. Đừng tin số của phiếu này một cách mù quáng: nó đã mở và đọc từng dòng ở `65cc6c1`, hãy xác nhận lại một lần trước khi gõ.
+
+Các neo lệch, dùng số thật: `runner.ts:537` → **:541** (+4); `:778` push write → **:781** (`push(`), 782 (`addFileWriteFallback(`) (+3); `:797` push delete → **:800**/801 (+3); `:410` shutdown call → **:414** (+4); `:747` re-init guard → **:751** (+4); `:1346-1348` `disposeFileFallbacks` → **:1375-1377** (+29) — **plan tự mâu thuẫn**: hàng Cordis của chính nó nói `1375-1376`, hàng đó **ĐÚNG**; `:970` → **:999** (`}`) (+29, và neo trỏ vào sai vị trí ngữ nghĩa — đầu chứ không phải cuối); `:947` → **:976**; `:937` `isExtensionActive` → **:966**; `:1094-1096` `getFlagValues` → **:1123-1125** (+29; 1094-1100 là `getComposerShapes()`); `:1098`/`:1099` `setFlagValue` → **:1127-1129**; `:713` rebind provider → **:714-716** (register) / **:717-719** (unregister) (+1..+4, nội dung đúng: `sourceId` bị bỏ); `:997` `onToolRegistered` → **:1026**; `:1027-1040` wrapper per-ext → **:1056-1068**; `:1044-1048` disposer → **:1073-1077**; `:755` skip-guard → **:759**; `:749` → **:753**; `:1304-1306` bộ ba timer → **:1333-1335**. `types.ts:1738` → **:1763**; `:1739` `flagValues` → **:1764**; `:1745` `unregisterProvider` → **:1770** (gap thật là **6 dòng** 1764→1770, không phải "hai dòng bên dưới"); `:1801-1817` `interface Extension` → **:1827-1842**; `:1806-1816` → **:1831-1841**; `:1808` `toolRegistrationListeners` → **:1833**; `:1783` (claim gốc) → **:1833** (+50). `main.ts:2210` `flagValues.set` → **:2223** (+13); `:2207-2212` → **:2220-2225**; `:543-544` "writer thứ tư" → **:551-553** (+8 **VÀ over-claim**). `managed-timers.ts:22-68` → **:22-75** (đúng nội dung, hơi lệch phạm vi; không có `clearExtension`). `package.json:94` (`check:ts`) → **:90** (94 là `"lint:ts"`). Cordis: `fiber.ts:112 / 515 / 120` đúng cả ba; `core/src/utils.ts:26-30` → **`vendor/cordis/src/utils.ts:27-31`** — lệch +1 **VÀ SAI ĐƯỜNG DẪN** (không có `core/` trong cây vendor); `shared.ts:66` `console.log` → **`vendor/logger-console/src/shared.ts:70`** (lệch +4; 66 là `}`).
+
+Neo ĐÚNG — dùng nguyên: `runner.ts:1271` `createContext()`, `runner.ts:1293` `isProjectTrusted` (ghi chú WI-19 nói WI-0 xác minh là `1264` — **SAI**), `runner.ts:1375-1376` FIFO dispose, `runner.ts:490`/`491` (`#loadOrder`/`#suspendedExtensions`), `loader.ts:101`, `:184`, `:179`, `:223`, `:259-267`, `:291-294`; `extensions-runner.test.ts:1-97` harness → thật **:60-95**; `test/extension-unload.test.ts` vắng mặt (xác nhận); `unloadExtension` grep → 0 hit trong `src` + `test`; `getFlagValues` 0 caller; `cli/extension-flags.ts:9`.
+
+Một kết luận của plan **nặng quá**: `unregisterProvidersForSource` rỗng, nhưng kết luận "chưa tồn tại, phải thiết kế mới" thì sai — `model-registry.ts:303-304` **đã có sẵn** index theo source (`#runtimeProvidersBySource: Map<string, Set<string>>`, `#runtimeProviderSourceByName: Map<string, string>`), và `unregisterProvider(providerName)` (`model-registry.ts:2936-2945`) **đã** đọc ngược từ tên về `sourceId` qua `#runtimeProviderSourceByName`. Một `unregisterProvidersForSource(sourceId)` thật là **~5 dòng** trên state có sẵn. Cộng với `loader.ts:366-367` đã truyền đúng `this.extension.path`, toàn bộ chuỗi provider chỉ thiếu đúng hai mảnh. **Hãy đo lại chi phí này trước khi coi nó là blocker.**
+
+**Bảng điểm sửa.** Mọi trích lấy từ file đã mở ở HEAD `65cc6c1`.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU |
+| --- | --- | --- | --- |
+| `runner.ts:541` | `#fileFallbackDisposers` | `#fileFallbackDisposers: Array<() => void> = [];` | `#fileFallbackDisposers = new Map<string, Array<() => void>>();` |
+| `runner.ts:781-797` | push site, write seam | xem khối `diff` bên dưới (TRƯỚC có backtick lồng nên không đặt trong ô bảng) | bucket theo `ext.path`, xem khối `diff` |
+| `runner.ts:800-818` | push site, delete seam | xem khối `diff` bên dưới | tương tự, vào bucket của `ext.path` |
+| `runner.ts:1375-1377` | `disposeFileFallbacks()` | `for (const dispose of this.#fileFallbackDisposers.splice(0)) dispose();` | LIFO + chứa lỗi:<br>`const all = [...this.#fileFallbackDisposers.values()].flat();`<br>`this.#fileFallbackDisposers.clear();`<br>`for (const dispose of all.reverse()) {`<br>`  try { dispose(); } catch (error) { logger.warn(...); }`<br>`}` |
+| `runner.ts:999`→`:1001` | **MỚI** `unloadExtension` | (không có) | `unloadExtension(extensionPath: string): boolean` — trả `boolean`, không trả object |
+| `runner.ts:1123-1125` | `getFlagValues()` | `return new Map(this.runtime.flagValues);` | flatten theo `this.extensions` (đọc mặt, last-writer-wins) |
+| `runner.ts:1127-1129` | `setFlagValue(name, value)` | `this.runtime.flagValues.set(name, value);` | **để ngỏ** — chờ quyết định ở mục câu hỏi mở |
+| `loader.ts:101` | `ExtensionRuntime.flagValues` | `flagValues = new Map<string, boolean \| string>();` | `flagValues = new Map<string, Map<string, boolean \| string>>();` |
+| `loader.ts:184` | `ConcreteExtensionAPI.flagValues` | `readonly flagValues = new Map<string, boolean \| string>();` | **xoá hẳn** (chết) — nhưng phải sửa clause `implements` ở `loader.ts:179` cùng lúc |
+| `loader.ts:263-266` | `registerFlag` | `this.extension.flags.set(name, { name, extensionPath: this.extension.path, ...options });`<br>`if (options.default !== undefined) {`<br>`    this.runtime.flagValues.set(name, options.default);`<br>`}` | giữ guard ở `:264` nguyên vẹn; `:265` thành get-or-create map trong dưới `this.extension.path` |
+| `loader.ts:293` | `getFlag` | `return this.runtime.flagValues.get(name);` | `return this.runtime.flagValues.get(this.extension.path)?.get(name);` — giữ nguyên gate ở **:292** `if (!this.extension.flags.has(name)) return undefined;` |
+| `types.ts:1764` | `ExtensionRuntimeState.flagValues` | `flagValues: Map<string, boolean \| string>;` | `flagValues: Map<string, Map<string, boolean \| string>>;` |
+| `types.ts:1827-1842` | `interface Extension` — **11 bucket** | `handlers` 1831, `tools` 1832, `toolRegistrationListeners?` 1833, `assistantThinkingRenderers` 1834, `fileWriteFallbackHandlers` 1835, `fileDeleteFallbackHandlers` 1836, `messageRenderers` 1837, `composerShapes` 1838, `commands` 1839, `flags` 1840, `shortcuts` 1841 | **KHÔNG đổi.** Chúng đã là per-extension sẵn. Đếm đủ 11 — khớp `code_shape` của plan. |
+| `main.ts:2222-2224` | `extensionFlagSink.setFlagValue` | `setFlagValue: (name, value) => {`<br>`    extensionsResult.runtime.flagValues.set(name, value);`<br>`},` | phải đi qua runner. **Đây là writer phẳng thứ 3 và là writer duy nhất bỏ qua runner.** |
+| `main.ts:551-553` | passthrough thứ hai | `setFlagValue: (name, value) => {`<br>`    runner.setFlagValue(name, value);`<br>`},` | **KHÔNG cần sửa.** Plan gọi đây là "writer thứ tư phải di" — sai. Chữ ký không đổi nên nó typecheck xanh nguyên vẹn. |
+| `test/extension-unload.test.ts` | file mới | *(xác nhận vắng mặt trên HEAD)* | 15 dòng |
+
+Khối `diff` cho hai hàng push site — TRƯỚC gộp mọi disposer vào **một** mảng phẳng, SAU chia theo bucket của `ext.path` (closure bên trong giữ nguyên):
+
+```diff
+  if (ext.fileWriteFallbackHandlers.length > 0) {
+-     this.#fileFallbackDisposers.push(
+-         `addFileWriteFallback(async req => {
++ const bucket = this.#fileFallbackDisposers.get(ext.path) ?? [];
++ bucket.push(addFileWriteFallback(async req => { /* closure giữ nguyên */ }));
++ this.#fileFallbackDisposers.set(ext.path, bucket);
+
+  if (ext.fileDeleteFallbackHandlers.length > 0) {
+-     this.#fileFallbackDisposers.push(
+-         `addFileDeleteFallback(async req => {
++ const bucket = this.#fileFallbackDisposers.get(ext.path) ?? [];
++ bucket.push(addFileDeleteFallback(async req => { /* closure giữ nguyên */ }));
++ this.#fileFallbackDisposers.set(ext.path, bucket);
+```
+
+**Các bước có neo đã kiểm.**
+
+1. Đổi hình dạng `flagValues` thành per-extension (2 chỗ khai báo) — neo `loader.ts:101` và `types.ts:1764`.
+2. Xoá `ConcreteExtensionAPI.flagValues` chết — neo `loader.ts:184`; sửa `loader.ts:179` `implements ExtensionAPI, IExtensionRuntime` → `implements ExtensionAPI` **cùng lúc**.
+3. `registerFlag` ghi vào map trong — neo `loader.ts:263-266` (giữ guard `:264` nguyên vẹn).
+4. `getFlag` đọc map trong, gate giữ nguyên — neo `loader.ts:293` + gate `:292`.
+5. `getFlagValues()` flatten theo `this.extensions` — neo `runner.ts:1123-1125`.
+6. `disposeFileFallbacks()` drain mọi bucket, LIFO, chứa lỗi — neo `runner.ts:1375-1377`.
+7. `unloadExtension(extensionPath: string): boolean` — neo `runner.ts:999`.
+8. KHÔNG phơi `unloadExtension` lên `ExtensionAPI`.
+9. Tạo file test — `test/extension-unload.test.ts`.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/extension-unload.test.ts` (mới). Hợp đồng quan sát được: sau khi `unloadExtension(path)` trả `true`, extension đó **không đóng góp gì** cho runner — vắng trong `getLoadedExtensions()` / `isExtensionActive()`, cả 11 bucket rỗng — trong khi mọi extension **khác** vẫn chạy, và một giá trị flag do extension còn sống khai báo vẫn đọc được. *Nếu hồi quy, người dùng thấy:* lệnh ma, mô tả tool cũ, shortcut chết, flag trùng lặp, hoặc một file-write fallback âm thầm làm trung gian lệnh ghi của họ cho một broker mà họ vừa tắt.
+
+**11 dòng bucket** — mỗi dòng một hợp đồng, mỗi dòng một mutation làm nó đỏ:
+
+| # | bucket | mutation làm dòng này đỏ | import kiểm |
+| --- | --- | --- | --- |
+| 1 | `handlers` | xoá dòng `extension.handlers.clear()` → `runner.hasHandlers("custom_event")` vẫn `true` | `runner.hasHandlers()` |
+| 2 | `tools` | xoá `tools.clear()` → `getAllRegisteredTools()` vẫn chứa tool | `getAllRegisteredTools()` (`runner.ts:1002`) |
+| 3 | `toolRegistrationListeners?` | xoá dòng clear → xem dòng (c) | — |
+| 4 | `assistantThinkingRenderers` | xoá `length = 0` | đọc trực tiếp từ object `Extension` |
+| 5 | `fileWriteFallbackHandlers` | xoá `length = 0` **mà không** rút disposer → xem dòng (a) | — |
+| 6 | `fileDeleteFallbackHandlers` | xoá `length = 0` | — |
+| 7 | `messageRenderers` | xoá `clear()` | — |
+| 8 | `composerShapes` | xoá `clear()` → `getComposerShapes()` (`runner.ts:1095`) vẫn trả shape | `getComposerShapes()` |
+| 9 | `commands` | xoá `clear()` | — |
+| 10 | `flags` | xoá `clear()` → `getFlags()` (`runner.ts:1119`) vẫn còn | `getFlags()` |
+| 11 | `shortcuts` | xoá `clear()` | đọc trực tiếp |
+
+**Dòng (a) — file-write seam, hai nửa:** (i) handler của extension đã bị unload **không** được gọi khi có một lần ghi bị từ chối quyền; (ii) `hasFileWriteFallback()` trở lại `false` — import từ `@oh-my-pi/pi-coding-agent/tools/file-write-fallback`, hàm ở `file-write-fallback.ts:231`. **Nửa (ii) là dòng fail nếu unload rút bucket mà quên disposer của trampoline.** `addFileWriteFallback` (`file-write-fallback.ts:240-246`) trả disposer splice theo `indexOf(handler)`; nếu không gọi nó, registry toàn-tiến-trình vẫn còn entry → `hasFileWriteFallback()` vẫn `true` dù mọi mảng handler đã rỗng.
+
+**Dòng (b) — hai extension cùng tên flag, default khác nhau:** unload một cái, giá trị đọc được phải là default của extension **CÒN LẠI** — không phải `undefined`, không phải giá trị của extension đã bị unload. **Dòng duy nhất bắt được bug xoá nhầm entry.** Mutation: đổi `this.runtime.flagValues.delete(extensionPath)` thành xoá cả `get(ext.path)?.clear()` toàn cục, hoặc `delete` trên tên flag chứ không phải path.
+
+**Dòng (c) — `toolRegistrationListeners`:** listener `onToolRegistered` do extension A đăng ký không bắn khi extension B đăng ký tool sau khi A đã unload. Cơ chế đã mở và đọc: `loader.ts:223` là reader duy nhất; `runner.ts:1069-1071` đăng ký `wrapped` vào `extension.toolRegistrationListeners`; `runner.ts:1073-1077` là disposer đóng trên mảng `subscriptions` cục bộ (khai ở `:1027`), huỷ một lệ đăng ký trên **mọi** extension cùng lúc. ⚠️ Viết dòng này theo **hành vi** (listener không bắn), không theo cơ chế — cơ chế "không còn đăng ký được tool" chỉ đúng ở đường lúc-load; object API của A vẫn giữ `Extension` của A sau unload, nên một closure async đã giữ lại vẫn drain được set của A.
+
+**Dòng BASELINE (có nhãn):** một runner không có extension nào đăng ký fallback thì không cài trampoline nào — `hasFileWriteFallback()` và `hasFileDeleteFallback()` đều `false` ngay từ đầu. Đã mở và xác nhận cơ chế: `runner.ts:759` → `if (ext.fileWriteFallbackHandlers.length === 0 && ext.fileDeleteFallbackHandlers.length === 0) continue;` — skip-guard có sẵn, **dòng này xanh ngay trên HEAD không cần sửa gì.** Giữ lại: nó là điểm sắc nhất của item, và nó làm cho dòng (a)(ii) có nghĩa (đỏ lại **vì** trước đó xanh).
+
+**Quy tắc bắt buộc:** trước khi tick dòng nào, phải viết được mutation nào làm nó đỏ — dưới dạng comment ngay trong file test. Một dòng không trả lời được câu đó không phải là một dòng test.
+
+**Cổng có đỏ được không.**
+
+```bash
+bun run check:ts
+# cổng phân biệt — chạy được ngay hôm nay, addon đã build
+bun test packages/coding-agent/test/extension-unload.test.ts packages/coding-agent/test/extensions-runner.test.ts
+```
+
+**Đã chạy ở HEAD `65cc6c1`: `check:ts` 12/12 package `Done`, exit 0.** Cổng này đỏ được bằng cách bắt được **3 writer phẳng** của `flagValues` (`loader.ts:265`, `runner.ts:1128`, `main.ts:2223`) và bắt được `check:tools` (oxlint + oxfmt — sẽ đỏ vì `disposeFileFallbacks` mới dùng `this.#fileFallbackDisposers.values()` mà nếu quên đổi `clear()` thành `Map.clear()` thì type lệch). Nó **không** bắt được hành vi teardown.
+
+Plan SAI ở đây: nó nói `bun test` **bị chặn** vì thiếu native addon và phải `brew install ninja` + `bun --cwd=packages/natives run build` trước. **Điều đó stale trên máy này — addon đã build sẵn.** Đã chạy: `bun test packages/coding-agent/test/extension-flag-dispatch.test.ts` → **1 pass 0 fail 2 expect() calls** (plan gọi đây là "0 pass / 1 fail"); `bun test packages/coding-agent/test/extensions-runner.test.ts` → **87 pass 0 fail 216 expect() calls**.
+
+**Câu trả lời thẳng: cổng này CÓ ĐỎ ĐƯỢC, ngay bây giờ, không cần build gì.** File mới phải báo **15 pass / 0 fail**; `extensions-runner.test.ts` phải giữ **87 pass / 0 fail** (nếu nó tụt, bạn đã phá hành vi cũ — ví dụ `disposeFileFallbacks` không còn drain hết, hoặc `getFlagValues` đổi hình dạng phá ai đó).
+
+**Cổng phân biệt là dòng (a)(ii) + dòng (b).** Hai mutation này **vô hình với `check:ts`**: rút bucket `fileWriteFallbackHandlers` mà quên gọi disposer → 11 dòng bucket vẫn xanh, chỉ dòng (a)(ii) đỏ; `flagValues.delete(path)` gõ thành xoá nhầm → 11 dòng bucket vẫn xanh, chỉ dòng (b) đỏ. Đó là lý do `check:ts` **không được** tick một mình. "Một cổng luôn xanh tệ hơn không có cổng."
+
+**DONE đòi TẤT CẢ:** (1) `bun run check:ts` exit 0 (12/12 Done); (2) `test/extension-unload.test.ts` tồn tại, đủ **15 dòng**, 11 dòng là một-bucket-mỗi-dòng, và **mutation phân biệt của từng dòng viết dưới dạng comment trong file**; (3) `bun test` file đó báo **15 pass / 0 fail**; (4) `grep -rn "flagValues" packages/coding-agent/src --include='*.ts'` không còn dòng phẳng nào dạng `.set(name, ...)` / `.get(name)` gọi trực tiếp lên `runtime.flagValues`; (5) `runner.ts` **không** còn `Array<() => void>` phẳng nào cho fallback disposer.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Đếm sai số dòng là bẫy lớn nhất, và nó đã xảy ra 27/52 lần.** `runner.ts:1094` — mà plan dùng cho `getFlagValues()` — thật ra là **doc comment của `getComposerShapes()`**.
+2. **Ba dòng "không cần sửa" mà plan nói phải sửa.** Nếu bạn sửa chúng, bạn đang làm việc vô nghĩa và có thể làm hỏng typecheck: `main.ts:551-553` **không** phải writer thứ tư (writer phẳng thật sự là **ba**, không phải bốn); `loader.ts:292` và `loader.ts:264` phải giữ **nguyên vẹn** — chúng là hợp đồng, không phải code thừa; 11 bucket trên `types.ts:1827-1842` **không** đổi hình dạng.
+3. **Xoá `loader.ts:184` mà không sửa clause `implements` là hỏng typecheck.** `IExtensionRuntime` (`types.ts:1821`) extends `ExtensionRuntimeState` (`types.ts:1763`) nên nó yêu cầu `flagValues`.
+4. **`.get()` không xoá gì.** Plan mâu thuẫn nội tại: prose bước 9 yêu cầu "delete `flagValues.get(path)`" (no-op), `code_shape` dùng `.delete(extensionPath)` (đúng). Dùng `.delete()`.
+5. **Xoá `this.extensions` mà quên `#loadOrder` là lỗi âm thìm.** `getLoadedExtensions()` là `#loadOrder ?? this.extensions` (`runner.ts:962`), và `initialize()` cài trampoline qua nó (`runner.ts:753`). Thiếu `splice` ở `#loadOrder` ⇒ một lần mode switch (`runner.ts:751` drain rồi cài lại) **hồi sinh trampoline cho extension đã chết**. Test (a)(ii) sẽ bắt, nhưng chỉ nếu test đó gọi `initialize()` lần hai — phải viết test theo đúng như vậy.
+6. **FIFO không chứa lỗi ở `runner.ts:1376` là lỗi có sẵn, không phải của WI-9.** Một disposer ném làm mồ côi mọi fallback còn lại; `unloadExtension` thừa hưởng đúng lỗi đó. Sửa ở bước 6 tốn 2 dòng, nhưng **đừng biến nó thành refactor lớn** — chỉ `reverse()` + `try/catch` + `logger.warn`.
+7. **Hai câu hỏi mở chặn — cần một con người, đừng tự bịa.** *Câu 1 (chặn dòng test (b)) — giá trị flag do CLI cấp sống sót thế nào?* `runner.ts:1127 setFlagValue` và `main.ts:2223` đều ghi không gắn extension; dưới `Map<path, Map<name, value>>` không có chỗ rõ ràng cho `--flag=value` của người dùng. Ứng viên: **(a)** lớp `flagValueOverrides: Map<string, boolean|string>` riêng, thắng lúc đọc, không bị unload đụng; **(b)** `setFlagValue` fan ra mọi extension khai báo. (a) sạch hơn — một giá trị người dùng đặt phải sống sót sau khi unload extension chỉ cung cấp *default*. **Phải có người chọn trước khi viết dòng (b).** *Câu 2 (chặn đóng item) — `unloadExtension` gỡ provider theo tên nào?* Tên là do extension tự chọn (`pi.registerProvider("anthropic", …)`), nên `(extensionPath, extensionPath)` **không bao giờ khớp**; tệ hơn, sau khi `runner.ts:717-719` rebind, nó lại xoá một *model provider* theo tên đường dẫn file.
+8. **`unloadExtension` phải trả `boolean`, không trả object.** Plan không nói. `boolean` khớp `isExtensionActive` (`runner.ts:966`) và biến double-unload thành no-op. Trả object mời lời một đường add-lại chưa ai thiết kế.
+9. **Đừng đụng module graph.** Cache-busting **đã có sẵn và đã per-load**: `legacy-pi-compat.ts:2099-2104` (`let legacyPiLoadTag = 0;` / `Math.max(legacyPiLoadTag + 1, Date.now())`) và `legacy-pi-compat.ts:2630` (``await import(`${entrySpecifier}?mtime=${nextLegacyPiLoadTag()}`)``).
+
 ## Cần người xác nhận
 
 Ba chỗ đặc tả tự mâu thuẫn hoặc viết mơ hồ. Không tự sửa — ghi lại đây:
@@ -3979,6 +5691,86 @@ Bốn phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Neo của sổ là **đúng**; neo trong bảng "Đính chính" của WI-19 mới sai. Bảng đính chính nói WI-0 ghi neo `runner.ts:1264` / `agent-session.ts:7406` và gọi neo của sổ là STALE — **NGƯỢC LẠI, cả hai đều sai**. Trên `65cc6c1`: `runner.ts:1264` là dòng JSDoc *"names an existing native built-in, the context carries an invokeTool that runs it (see"*, và `agent-session.ts:7406` là *"// Auto thinking: classify this real user turn and set the effective level"* — cả hai **không liên quan gì** tới `isProjectTrusted`. **Neo của sổ (`:1293`, `:7552`) mới đúng. KHÔNG dùng `:1264`/`:7406`.**
+
+Các neo ĐÚNG khác: `createContext()` ở `runner.ts:1271` (thân hàm dài tới `:1350`); `isProjectTrusted` ở `runner.ts:1293` và `agent-session.ts:7552`; `runner.ts:488` `#initialized = false;`, `:869` và `:895` là hai guard; `runner.ts:1355` (`shutdown(): void {`), `:1365` (`clearManagedTimers(): void {`), `:1375` (`disposeFileFallbacks(): void {`) — ba phương thức teardown sẵn có; `runner.ts:1283-1349` thân `createContext()` với **26 thành viên**; `runner.ts:1379-1391` thân `createCommandContext()`; `types.ts:454` `export interface ExtensionContext {`; `test/extension-unload.test.ts` **ĐÚNG là file test của WI-9 và chưa tồn tại**, vị trí đúng là `packages/coding-agent/test/`. Phụ thuộc cứng WI-9 đã đo lại: `grep -rn 'unloadExtension' packages/coding-agent/src --include='*.ts' | grep -v /test/` → **0 hit**.
+
+Các claim còn lại: "không có `invalidated` / `disposed` discriminator nào trên context" — **ĐÚNG** (`grep -n 'invalidat\|DisposedContext\|disposed'` trên `types.ts` → 0 hit; trên `runner.ts` chỉ 2 hit, cả hai trong comment `:1363`, `:1376`). Nhưng "context đã dispose **ném** lỗi ở mọi method" **CẦN LÀM RÕ**: 9 thành viên là **snapshot** lúc tạo (`ui`, `mode`, `hasUI`, `cwd`, `sessionManager`, `modelRegistry`, `agent`, `models`, `memory`) — chúng **không thể** ném vì không còn đọc `#field`.
+
+Cột "cần người quyết" của plan ("getter `model` có ném không") **TRẢ LỜI ĐƯỢC TỪ CÂY**: phải **có** — vì `runner.ts:1281` chụp `model` theo giá trị, nên getter là đường đọc trạng thái sống cuối cùng không bị chặn.
+
+Một việc plan **thiếu — lỗ hổng thật**: `createCommandContext()` ghi đè sau spread. `runner.ts:1382` và `:1389` ghi đè member đã spread ở `:1381`. Không sửa hai dòng này thì lỗi sống và test xanh.
+
+Môi trường: plan (§"Xác minh") nói `bun test` chết vì thiếu native addon — **STALE trên máy này**. `packages/natives/native/pi_natives.darwin-arm64.node` tồn tại; `bun test` chạy được (**3 pass / 0 fail / 239ms**). Không cần `bun --cwd=packages/natives run build` trước khi chạy cổng.
+
+**Bảng điểm sửa.**
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn từ file thật) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `runner.ts:1281` | `getModel` (local của `createContext`) | `const getModel = model ? () => model : this.#getModel;` | Giữ nguyên. **Đây là bẫy:** khi `model` được truyền vào, `getModel` chụp lại `model` theo giá trị và **không** đụng `#getModel` — nên một guard chỉ đặt trên đường `#getModel` sẽ **không** bắt được `ctx.model` mà có `model` cố định. Guard phải nằm ở getter. |
+| `runner.ts:1286` | `getContextUsage` | `getContextUsage: () => this.#getContextUsageFn(),` | `getContextUsage: () => { guard(); return this.#getContextUsageFn(); },` |
+| `runner.ts:1287` | `compact` | `compact: instructionsOrOptions => this.#compactFn(instructionsOrOptions),` | `compact: instructionsOrOptions => { guard(); return this.#compactFn(instructionsOrOptions); },` |
+| `runner.ts:1288` | `getAsyncJobSnapshot` | `getAsyncJobSnapshot: () => this.#getAsyncJobSnapshotFn(),` | bọc guard |
+| `runner.ts:1295-1297` | getter `model` | `get model() {`<br>`	return getModel();`<br>`},` | `get model() {`<br>`	guard();`<br>`	return getModel();`<br>`},` |
+| `runner.ts:1299` | `isIdle` | `isIdle: () => this.#isIdleFn(),` | bọc guard |
+| `runner.ts:1300` | `abort` | `abort: () => this.#abortFn(),` | bọc guard |
+| `runner.ts:1301` | `hasPendingMessages` | `hasPendingMessages: () => this.#hasPendingMessagesFn(),` | bọc guard |
+| `runner.ts:1302` | `shutdown` | `shutdown: () => this.#shutdownHandler(),` | bọc guard |
+| `runner.ts:1303` | `getSystemPrompt` | `getSystemPrompt: () => this.#getSystemPromptFn(),` | bọc guard |
+| `runner.ts:1304` | `runEphemeralTurn` | `runEphemeralTurn: runEphemeralTurn`<br>`	? async options => {`<br>`		if (this.#ephemeralTurnBlocker.getStore()) {` | thêm `guard()` làm dòng đầu tiên trong thân async |
+| `runner.ts:1333-1335` | `setInterval` / `setTimeout` / `clearTimer` | `setInterval: (callback, ms, ...args) => this.#managedTimers.setInterval(callback, ms, ...args),` | bọc guard (3 dòng) |
+| `runner.ts:1337` | `invokeTool` | `invokeTool:`<br>`	delegation !== undefined && this.hasNativeTool(delegation.toolName)` | bọc guard bên trong nhánh arrow |
+| **`runner.ts:1382`** | `createCommandContext` → `getContextUsage` | `getContextUsage: () => this.#getContextUsageFn(),` | **BẮT BUỘC bọc guard.** Dòng này **ghi đè** member đã được spread ở `:1381`. Lỗ hổng thật. |
+| **`runner.ts:1389`** | `createCommandContext` → `compact` | `compact: instructionsOrOptions => this.#compactFn(instructionsOrOptions),` | **BẮT BUỘC bọc guard.** Ghi đè member đã spread. |
+| `runner.ts:488` | `#initialized` (tiền lệ) | `#initialized = false;` | thêm `#contextsDisposed = false;` ngay cạnh, theo đúng tiền lệ sẵn có |
+| **`runner.ts:1293`** | `isProjectTrusted` | `isProjectTrusted: () => true,` | **GIỮ NGUYÊN.** Hợp đồng âm (WI-20). |
+| **`agent-session.ts:7552`** | `isProjectTrusted` | `isProjectTrusted: () => true,` | **GIỮ NGUYÊN.** |
+| `packages/coding-agent/test/extension-unload.test.ts` | — | **không tồn tại** | tạo (cùng PR WI-9) |
+
+**KHÔNG sửa:** `types.ts:496` và `types.ts:563` (`isProjectTrusted(): boolean;`) và `types.ts:454-564` (`ExtensionContext`) — hợp đồng công khai, đã phát hành.
+
+**Các bước có neo đã kiểm.**
+
+0. **CỔNG CẨN. Xác nhận WI-9 đã xuống đất, ngay trong PR này.** Trên `65cc6c1` `grep -rn 'unloadExtension' packages/coding-agent/src --include='*.ts' \| grep -v /test/` trả **0 hit** (đã chạy, exit 1). Nếu sau khi bạn viết xong nó vẫn 0 hit, bạn đã gõ sai việc. *Neo đã kiểm:* `runner.ts:1355`, `:1365`, `:1375`.
+1. Thêm cờ trạng thái trên runner — `#contextsDisposed = false;` ngay cạnh `#initialized = false;` tại `runner.ts:488`. *Neo:* `runner.ts:488`, `:869`, `:895`.
+2. Định nghĩa lỗi có tên — class ở `types.ts` cạnh `ExtensionContext` (`:454`), tên `ExtensionContextDisposedError`, **phải export**. Bắt buộc là class có tên vì lỗi vô danh ở đây trông y hệt bug của extension và bị điều tra sai chỗ.
+3. Bọc guard vào TỪNG method của `createContext()` — 13 vị trí closure (`:1286, 1287, 1288, 1299, 1300, 1301, 1302, 1303, 1304, 1333, 1334, 1335, 1337`) cộng getter `model` (`:1295`). **KHÔNG gom thành một `Proxy`** — `ExtensionContext` có getter `model` và các property thuần, một `Proxy` sẽ thay đổi hình dạng quan sát được của object mà extension nhận. Ba nhóm **không** cần guard và phải nói rõ là cố ý bỏ qua: `ui`/`mode`/`hasUI`/`cwd`/`sessionManager`/`modelRegistry`/`agent` (`:1284-1294`) là **snapshot** lúc tạo; `models` (`:1298`) — `createExtensionModelQuery(...)` chụp `getModel` theo giá trị; `memory` (`:1332`) — `this.#getMemoryFn?.()` đã gọi xong lúc tạo.
+4. Bọc guard vào HAI dòng ghi đè trong `createCommandContext()` — `runner.ts:1382` và `:1389`. *Neo đã kiểm:* `:1379-1391`.
+5. `unloadExtension` chuyển state sang `disposed` — gọi `this.#contextsDisposed = true;` **một lần**. Đây là cờ **toàn runner**, không phải per-extension: khi runner được thay thế, runner cũ đi kèm; cờ per-extension sẽ yêu cầu mỗi context mang id của mình và tra cứu registry — phức tạp hơn, và bản thân việc tra cứu đó là một đường đọc trạng thái mà unload có thể đã phá.
+6. **GIỮ `isProjectTrusted()` trả `true` ở CẢ HAI call site** — `runner.ts:1293` và `agent-session.ts:7552`. **Không** nối trust thật vào đây — đó là WI-20, riêng, effort L, ngoài M2.
+7. Ship CÙNG PR với WI-9. Một PR tháo extension mà để lại context sống là một PR **tạo lỗi mới trong lúc đang đóng lỗi cũ**.
+
+**Hợp đồng test.** File: `packages/coding-agent/test/extension-unload.test.ts` — **tạo mới**, cùng PR với WI-9. Bốn case:
+
+1. **`ctx` cũ ném lỗi có tên sau dispose.** Gọi `ctx.abort()` sau khi `unloadExtension` trả `true` → `expect(() => ctx.abort()).toThrow(ExtensionContextDisposedError)`. Không được là `TypeError`.
+2. **Getter `model` đi qua cùng một kiểm tra.** `expect(() => ctx.model).toThrow(...)`. Case này bắt đúng lỗi ở `runner.ts:1281` — `createContext(model)` chụp `model` theo giá trị, nên guard đặt sai chỗ sẽ xanh ở case 1 và **đỏ** ở case 2.
+3. **Không điều khiển nhầm runner mới.** Dựng runner A, lấy `ctx` của nó, `unloadExtension`, dựng runner B thay thế, rồi gọi `ctx.cwd`/`ctx.abort()` cũ → phải ném. Đây là case **phân biệt** — một implementation chỉ so sánh `this.#generation` chạy đúng khi không có runner mới.
+4. **Hợp đồng âm: `isProjectTrusted()` vẫn trả `true`.** Ba assert này **đã tồn tại và đang xanh** trên `65cc6c1` (đã chạy: **3 pass / 0 fail**): `test/extension-context-project-trust.test.ts:14`, `test/issue-7955-extension-project-trusted.test.ts:19` và `:24` (command context). Chúng phải **tiếp tục xanh**. **Đỏ = đã vô tình biến mục này thành WI-20.**
+
+*Người dùng thấy gì nếu hồi quy:* một extension đã bị gỡ vẫn điều khiển được session; tệ hơn, nó điều khiển **runner mới** — hai extension cùng tên bắt đầu điều khiển lẳng nhau, không có dấu vết nào cho biết vì sao. Hôm nay hành vi này **im lặng**, nên hồi quy cũng im lặng.
+
+**Cổng có đỏ được không.**
+
+**Cổng (1) — TYPE** (`bun run check:ts`). **ĐỎ ĐƯỢC: Có.** Đã chạy trên `65cc6c1`: **exit 0**. Nó đỏ khi thêm `ExtensionContextDisposedError` mà không cập nhật chữ ký, hoặc khi bỏ sót member nào gây lỗi kiểu. Nhưng nó **không** bắt được lỗi logic.
+
+**Cổng (2) — HÀNH VI** (`bun test packages/coding-agent/test/extension-unload.test.ts`). **ĐỎ ĐƯỢC: Có, và đây là cổng thật.** Bốn case ở trên. **Đỏ trước khi sửa — bắt buộc quan sát đỏ trên HEAD, trước khi viết dòng đầu tiên**, rồi xanh sau. **Sửa lại cổng của plan:** plan ghi *"sau dispose, gọi lại bất kỳ method nào của `ctx` cũ ném lỗi có tên"* — "bất kỳ method nào" **không kiểm được** như một câu lệnh, và người ta sẽ pass bằng cách chọn một method dễ. Cổng phải là **danh sách đóng 13 method + getter `model`** (đúng 13 dòng ở Bước 3, cộng `runner.ts:1382` và `:1389` của `createCommandContext`), mỗi cái một dòng, không dòng nào được bỏ trống.
+
+**Cổng (3) — KHÔNG ĐIỀU KHIỂN NHẦM RUNNER MỚI.** **ĐỎ ĐƯỢC: Có** — nhưng chỉ khi case viết đúng: phải dựng **hai runner**. Nếu chỉ dựng một runner rồi dispose, một implementation so sánh `this.#generation` sẽ xanh. Đây là cổng nói "một kiểm tra state chỉ ở một nửa danh sách method sẽ xanh mà không bắt được nó" — và nửa kia ở đây cụ thể là `createCommandContext`.
+
+**Cổng (4) — HỢP ĐỒNG ÂM.** `bun test test/extension-context-project-trust.test.ts test/issue-7955-extension-project-trusted.test.ts` cộng `grep -n 'isProjectTrusted' ...runner.ts ...agent-session.ts`. **ĐỎ ĐƯỢC: Có.** Ba assert `toBe(true)` đỏ nếu ai đó nối trust thật vào; grep đỏ nếu một call site biến mất. Đã xác nhận cả ba assert **xanh trên HEAD** — nên chúng là hợp đồng âm thật, không phải trang giấy.
+
+**Trung thực về độ mạnh của cổng:** `check:ts` là typecheck + oxlint, **không** kiểm bất kỳ hành vi runtime nào. Nếu kỹ sư chỉ chạy cổng (1) và báo xong, cổng (2)(3)(4) đều chưa từng chạy. **Cổng (1) không thay được ba cổng còn lại.**
+
+**Cạm bẫy riêng của mục này.**
+
+1. **`createCommandContext()` ghi đè sau spread, làm lỗi trở nên vô hình.** `runner.ts:1381` là `...this.createContext()`, và `:1382` / `:1389` **ghi đè** hai member vừa được spread. Đã kiểm chứng bằng probe: object spread **không** mang theo getter, và một member bị ghi đè sau spread **hoàn toàn bỏ qua** guard của đối tượng gốc. Hệ quả: sửa đủ 13 closure trong `createContext()` và test vẫn xanh, vì `ctx` của **extension command** vẫn gọi thẳng `this.#compactFn(...)`. Extension command là đường thật — `input-controller.ts:2538` và `agent-session.ts:7524` đều lấy `createCommandContext()`.
+2. **`get model` không đi qua `#getModel` khi có `model` truyền vào.** `runner.ts:1281`: `const getModel = model ? () => model : this.#getModel;` — nhánh đúng **chụp giá trị `model`**, không đụng `#getModel` cả đời. Nếu chỉ đặt guard bên trong `#getModel`, `ctx.model` của một context có model cố định sẽ **không bao giờ** ném. Guard phải nằm ở **getter** (`:1295`), và case 2 phải dùng đúng context đó.
+3. **`agent-session.ts:7552` không phải call site thứ hai cùng loại.** Đúng là có hai dòng `isProjectTrusted: () => true`, nhưng chúng **không cùng loại**: `:7552` nằm trong `#createCommandContext()`, sau một guard tại `:7541` (`if (this.#extensionRunner) { return this.#extensionRunner.createCommandContext(); }`). Nó là **nhánh fallback dựng tay** cho session không có extension runner — và chính comment tại `:7553-7554` nói: *"Used only when the session has no extension runner. `createAgentSession` always builds one (carrying the real identity), so only hand-constructed sessions land here."* Hệ quả: dòng này **không** đi qua `createContext()` nên **không** được hưởng guard; nhưng nó cũng **không cần** guard — nó không đọc `#field` của runner, và nó được dựng lại mỗi lần gọi chứ không phải context sống. Còn `agent-session.ts:7641-7644` làm `{...baseCtx, hasQueuedMessages: baseCtx.hasPendingMessages} as unknown as CustomCommandContext` — **một lần spread nữa, cho custom command. Cùng nguy cơ.**
+4. **`isProjectTrusted` xuất hiện hai lần trong `types.ts`, và một lần đã phát hành.** `types.ts:496` và `:563` đều khai `isProjectTrusted(): boolean;` trong cùng một `ExtensionContext` (bắt đầu `:454`, kết thúc `:564`), với hai doc comment dài khác nhau; `ExtensionCommandContext` (`:574`) `extends` chứ không khai lại. Và `packages/coding-agent/CHANGELOG.md:1117` — mục **ĐÃ PHÁT HÀNH** dưới `## [18.1.16] - 2026-09-09` — nói nguyên văn: *"the extension context now exposes it (always `true`, since OMP applies no project-trust gating)"*. Đổi hành ở đây mà không có changelog entry làm bản ghi đã phát hành trông như bị đảo ngược. (Ghi chú: plan cite `CHANGELOG.md:1057` — **lệch 60 dòng**; `:1057` là mục `compat.stripImageInput` #11697.)
+5. **`AGENTS.md` cấm source-grep trong test.** Không được viết test kiểu `expect(src).toContain("guard")`. Test phải **gọi** `ctx.abort()` và kiểm tra lỗi. Tương tự: đừng khẳng định "13 method đều có guard" bằng cách đếm dòng trong file.
 
 ## WI-10. Chốt một bề mặt viết chuẩn (tài liệu quyết định, không code)
 
@@ -4169,6 +5961,99 @@ Vị trí thật của hai file test chưa tồn tại là `packages/coding-agen
 ---
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** WI-10 **đúng về chất** nhưng **sai về dòng ở gần như mọi neo**. Cụ thể nhất: bốn neo superset đều lệch, `docs/extensions.md` lệch +3 đồng đều, và **toàn bộ số dòng plan trong bảng "Đính chính so với plan" nằm ngoài file** (5894, 5900, 5915, 5898, 5911, 5933, 4734, 6669-6673) — `MILESTONE_2_EXECUTION_PLAN.md` dài **5408** dòng. Toàn bộ các claim "plan dòng NNNN" trong bảng đính chính **không dùng lại được**.
+
+Neo hỏng, dùng vị trí thật: `types.ts:230` → marker **:232**, `export interface ExtensionUIContext` ở **:237**; `types.ts:395` → marker **:397**, `ExtensionContext` ở **:454**; `types.ts:568` → marker **:570**, `ExtensionCommandContext` ở **:574**; `types.ts:1227` (lệch tới **21 dòng**) → marker **:1248**, `export interface RegisteredCommand` ở **:1251**; `types.ts:1256` = `}` đóng `RegisteredCommand` → `export interface ExtensionAPI` ở **:1277**; `types.ts:1660` = `ExtensionFactory` → **:1685**; `types.ts:1570` = dòng JSDoc ví dụ → khai báo method ở **:1595**, một khai báo thứ hai trên interface khác ở **:1768**. `docs/extensions.md:901-909` → mục `## Extensions vs hooks vs custom-tools` ở **:904-912** (tiêu đề 904, `Use the right surface:` 906, ba bullet **908/909/910**, câu kết **912**), lệch đều **+3**; `docs/extensions.md:905` (đính chính 3) là dòng trống, chuỗi "unified system (events + tools + commands + renderers + provider registration)" ở **:908**. `legacy-pi-coding-agent-shim.ts` = 1649 → thật **1658**; `legacy-pi-ai-shim.ts` = 179 → thật **194**; tổng shim 4833 → thật **4857** (1658 + 2783 + 194 + 179 + 43). `package.json:94-95` là `lint:ts`/`lint:tools` — **không có glob nào ở đây**; glob ở **:91** (`check:tools`) và **:99** (`fmt:tools`). Tiêu đề phát hành hiện tại **không** phải `## [18.3.3] - 2026-09-27` ở dòng 5: `## [18.4.0] - 2026-09-28` ở **:9**, `## [18.3.3]` ở **:65**. Neo changelog của WI-0 "dòng 1057" → mục `#7955` ở **:1117**. Số file test khớp `^extension` = 15 → thật **16**. Ràng buộc M2-OQ2 **của WI-5** nằm ở plan **:2037** và **:2217**, không phải 4531-4532. Bán kính M2-OQ2 thật: plan **:230** (hàng trong bảng open-questions) và plan **:473-478** (danh sách `blocks` của WI-0). `sdk.ts:1007`/`:2489` phát lại `pendingProviderRegistrations` → `packages/coding-agent/src/sdk.ts` **không nằm dưới `extensibility/extensions/`**, và số thật là **:1018-1021** và **:2500-2504**.
+
+Neo ĐÚNG, dùng nguyên văn: `docs/extension-trust-model.md` và `docs/extension-writing-surfaces.md` đều **vắng** (file cần tạo). Thư mục: `extensions/` 11 file, `hooks/` 5, `custom-tools/` 4, `custom-commands/` 17, `plugins/` 21. `capability/index.ts` 588 dòng; `:89-96` đúng (`89: export function defineCapability<T>(def: Omit<Capability<T>, "providers">): Capability<T> {` … `96: }`); `:90-92` đúng lệnh ném trùng id; `:34` đúng; `:88` đúng là ` */`. `AGENTS.md` § Testing Guidance bắt đầu dòng **282**; cấm placeholder test ở **:302**; cấm source-grep ở **:312**. `docs/` có đúng **82** file `.md` phẳng; thư mục con chỉ có `tools/`, `toolconv/`, `skills/`. Bốn file `extension-loading.md`, `extensions.md`, `hooks.md`, `custom-tools.md` đều tồn tại. `loader.ts:362` `registerProvider(name: string, config: ProviderConfig): void {` đúng. `extension-ui-controller.ts:87-88` là hai map widget; `:78-79` là helper `toWireSelectOptions`; `:343` `setHookWidget` đúng. Không có fixture `outsider-extension` và `registerMode` grep → **0 hit**. Hai file test `extension-ui-header-footer.test.ts` và `extension-unload.test.ts` chưa tồn tại. 14 capability hằng + 20 capability-provider: `grep -rn 'defineCapability<'` → **15 hit** = 14 + khai báo hàm ở `:89`; `grep -rn '^registerProvider(' | grep -cE 'Capability\.id'` → **20**.
+
+Một phát hiện plan **không hề nhắc tới**: đoạn "Extensions vs hooks vs custom-tools" **đã tồn tại** trong `docs/extensions.md` và đã trả lời một phần câu hỏi M2-OQ2. Nếu tạo ADR mà không sửa mục đó, cây mang **hai câu trả lời xung đột** và người đọc chọn bằng cách mở file nào trước.
+
+**Bảng điểm sửa.** Đúng ba file. TRƯỚC trích nguyên văn từ file thật vừa mở.
+
+| đường/dẫn | symbol / vùng | TRƯỚC (nguyên văn) | SAU (hình dạng sau khi sửa) |
+| --- | --- | --- | --- |
+| `docs/extension-writing-surfaces.md` | — (tạo mới) | Không tồn tại | File mới. Mục ĐẦU TIÊN là bảng 6 dòng `Surface \| Path \| Status \| What it is for \| Evidence`. Ngay dưới bảng, **một dòng đứng riêng**: `Capability registry: <YES\|NO\|DEFERRED>`. Rồi mới tới `## Consequences`. |
+| `docs/extensions.md:904-912` | `## Extensions vs hooks vs custom-tools` | `## Extensions vs hooks vs custom-tools`<br><br>`Use the right surface:`<br><br>``- **Extensions** (`src/extensibility/extensions/*`): unified system (events + tools + commands + renderers + provider registration).``<br>``- **Hooks** (`src/extensibility/hooks/*`): separate legacy event API.``<br>``- **Custom-tools** (`src/extensibility/custom-tools/*`): tool-focused modules; when loaded alongside extensions they are adapted and still pass through extension interception wrappers.``<br><br>`If you need one package that owns policy, tools, command UX, and rendering together, use extensions.` | Tiêu đề giữ nguyên; **thân 8 dòng** thay bằng **tối đa 2 dòng**:<br>`The ranked surface table — which one is canonical, which are frozen for compatibility — is`<br>`` `docs/extension-writing-surfaces.md`. Read that before choosing a surface. `` |
+| `packages/coding-agent/CHANGELOG.md:1-9` | `## [Unreleased]` | `# Changelog`<br><br>`## [Unreleased]`<br><br>`### Security`<br><br>``- Project-scope MCP config (`mcp.json`, `.mcp.json`, `.omp/mcp.json`) is no longer loaded by default. …``<br><br>`## [18.4.0] - 2026-09-28` | Thêm một `### Documentation` (hoặc `### Changed`) **phía trên hoặc phía dưới `### Security`**, chứ không thay thế nó. Ví dụ một dòng: ``- Extension authors now have one page, `docs/extension-writing-surfaces.md`, that ranks the five extension-facing writing surfaces, marks the compatibility-only ones as frozen, and answers whether the capability registry is extension-reachable.`` |
+
+**Các bước có neo đã kiểm.**
+
+1. **CỔNG CẨN. Đừng bắt đầu cho tới khi WI-0 xuống đất.**
+2. Chốt tên file với người viết WI-0, rồi tạo ADR với bảng trạng thái là MỤC ĐẦU TIÊN.
+3. Trích nguyên văn bốn bằng chứng superset.
+4. Trả lời M2-OQ2 bằng đúng một dòng.
+5. Phát biểu LUẬT ĐÃ CHẤP NHẬN.
+6. Danh sách FROZEN, số dòng thật.
+7. Mục "Consequences".
+8. Sửa `docs/extensions.md` — neo **:904-912**.
+9. Chạy cổng, rồi thêm dòng changelog — neo `CHANGELOG.md:1-9` (giữ nguyên `### Security` ở `:5`).
+
+**Hợp đồng test.** **Danh sách file test: RỖNG. Và đó là dự kiến, không phải sơ suất.** Ba lý do độc lập: (1) tài liệu không có hợp đồng runtime quan sát được — `AGENTS.md:302` cấm placeholder test, `AGENTS.md:312` cấm source-grep; (2) bản năng tự nhiên nhất — test khẳng định file ADR tồn tại — **đúng là một source-grep**, bị cấm hẳn; nó sẽ xanh trong khi tài liệu nói sai, đúng cái hỏng mà mục này sinh ra để ngăn; (3) lint/CI không có mảng glob nào chạm markdown, nên "CI xanh" là một phát biểu về **không byte nào** của thay đổi này.
+
+*Nếu hồi quy, người dùng thấy gì:* người tiêu là tác giả extension bên thứ ba và người review. Họ thấy **một cây mang hai câu trả lời xung đột cho cùng câu hỏi** "viết vào bề mặt nào", trong đó câu nào đúng phụ thuộc vào tài liệu họ mở trước. Hoặc họ thấy **một danh sách sáu bề mặt không hề chọn**, mà mọi người đọc lại coi như đã chốt — và kỹ sư tiếp theo dựng một API công khai trên một thái độ chưa ai chọn. Hoặc họ thấy một người đọc chữ "NO" cho M2-OQ2 rồi xoá 4857 dòng shim cũ trong M2.
+
+**Hợp đồng thật là một DANH SÁCH ĐỌC CỦA NGƯỜI REVIEW với năm điều kiện hỏng.** Không trả lời được ba câu hỏi chỉ từ phần chữ, không hỏi tác giả, thì chưa được trao một quyết định.
+
+**Cổng có đỏ được không.** **CÓ — nhưng chỉ với một điều kiện duy nhất: con người đọc. Trong CI tự động thì KHÔNG, và điều đó phải nói thẳng.**
+
+```bash
+ls docs/extension-writing-surfaces.md
+grep -nE 'Capability registry: *(YES|NO|DEFERRED)$' docs/extension-writing-surfaces.md
+git diff --stat
+git diff --name-only | grep -c '\.ts$'   # PHẢI bằng 0
+git diff docs/extensions.md
+git diff packages/coding-agent/CHANGELOG.md
+grep -n '^## \[' packages/coding-agent/CHANGELOG.md | head -2
+```
+
+| Điều kiện hỏng | Lệnh bắt được? | Bằng chứng |
+| --- | --- | --- |
+| ADR không tồn tại | ✅ **CÓ** | `ls` exit ≠ 0 |
+| Câu trả lời M2-OQ2 không phải đúng một trong ba chữ | ✅ **CÓ** | `grep -E '…(YES\|NO\|DEFERRED)$'` không có hit |
+| Diff có file `.ts` | ✅ **CÓ** | `grep -c '\.ts$'` ≠ 0 |
+| `docs/extensions.md` vẫn còn câu trả lời cũ nằm cạnh con trỏ | ⚠️ **MỘT NỬA** | `git diff` cho thấy dòng nào bị xoá — người đọc phải xác nhận **bằng mắt** rằng **không còn** câu trả lời cạnh tranh nào |
+| Danh sách 6 bề mặt liệt kê mà không chọn | ❌ **KHÔNG** | Không có lệnh nào phân biệt "có 6 dòng" với "6 dòng + một lựa chọn". Đây là điều kiện **rủi ro cao nhất và không tự bắt được.** |
+| Shim bị mô tả là gỡ được trong M2 | ❌ **KHÔNG** | Văn bản thuần tuý; không có consumer nào đọc nó. |
+
+**Vì sao chỉ 3/6 điều kiện tự bắt được:** `package.json:91` và `:99` cho thấy mọi glob lint/format đều là `packages/*/src/**/*.{ts,tsx}`, `packages/*/{test,bench,examples,scripts}/**/*.ts` — **không cái nào có `.md`**. Không có markdown linter. Một lần `check:ts` xanh là một phát biểu về **không byte nào** của thay đổi này. `bun test` thì càng không liên quan (cần addon native dưới `packages/natives`).
+
+Sửa lại cổng cho đỏ được — bổ sung ba lệnh bắt ba điều kiện còn lại:
+
+```bash
+# 6. Mỗi dòng của bảng phải mang MỘT từ trạng thái. rows == marked, phải BẰNG NHAU.
+awk -F'|' '/^\|/ && NF>3 {rows++}
+     /CANONICAL|COMPATIBILITY-ONLY|FROZEN|CORE-ONLY|NOT EXTENSION-REACHABLE/ {marked++}
+     END {printf "rows=%d marked=%d\n", rows, marked; exit !(rows>0 && rows==marked)}' \
+  docs/extension-writing-surfaces.md
+
+# 7. Cấm câu trả lời thứ tư. RỖNG nếu tài liệu vẫn còn TBD / TBA / "under discussion" / "it depends".
+grep -niE '\bTBD\b|\bTBA\b|under discussion|it depends|to be decided|còn để bàn' \
+  docs/extension-writing-surfaces.md
+
+# 8. Tài liệu không được tuyên bố shim gỡ được trong M2.
+#    ĐỎ khi KHÔNG có hit (tức tài liệu đã nói đúng sự thật: gỡ là dự án riêng).
+grep -niE 'remove (the )?(legacy )?shim|drop (the )?shim|can be removed' \
+  docs/extension-writing-surfaces.md
+```
+
+Lệnh 6 **bắt được** điều kiện "liệt kê mà không chọn" — thất bại đặc trưng mà WI-10 nêu. Lệnh 7 **bắt được** mọi cách diễn đạt thứ tư thay cho ba chữ.
+
+> **Lưu ý về lệnh 2.** `grep -n 'Capability registry'` mà WI-10 dùng sẽ **xanh sai**: chuỗi đó xuất hiện trong cả dòng của bảng trạng thái (dòng 6) lẫn dòng câu trả lời. Bắt buộc phải neo `$` và `\s*` với `grep -E`, rồi **đọc bằng mắt** phần sau dấu hai chấm — vì `YES` là hậu tố của `DEFERRED`.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Số dòng trong WI-10 đã cũ hơn cây — đừng gõ chúng.** `types.ts:230/395/568/1227` → thật là **232/397/570/1248** (lệch +2, +2, +2, **+21**); `docs/extensions.md:901-909` → thật **904-912**; toàn bộ số dòng plan trong bảng đính chính nằm ngoài file; tổng shim **4857**, không phải 4833.
+2. **`fallow` viết sai sẽ khiến lập luận superset sập.** Mã nguồn: `fallow-ignore-next-line code-duplication` — **hai** chữ `l`. Gõ ba chữ `l` là grep không ra, và người review tưởng bạn bịa bốn bằng chứng.
+3. **Bẫy lớn nhất: đọc chữ "NO" là giấy phép xoá shim.** M2-OQ2 trả lời `NO` **không** có nghĩa là capability registry nên bỏ; nó có nghĩa là **chưa bao giờ** nên mở. Shim cũ là thứ giữ các plugin hiện hành chạy. Gỡ chúng là **dự án breaking-change riêng, có milestone riêng, ngoài M2**. Câu này phải nằm trong chính ADR, ngay cùng nhịp thở với ô M2-OQ2 — không phải ở mục "Consequences" phía cuối.
+4. **Bẫy thứ hai: viết tài liệu trả lời M2-OQ2 hộ người quyết.** WI-10 **cố ý** không chọn sẵn. Ba chữ đó là quyết định của người quyết, không phải của người gõ tài liệu. Chọn hộ = lặp lại đúng thất bại mà mục này sinh ra để ngăn. Hãy đưa lựa chọn cho người quyết, viết ADR sau khi có chữ.
+5. **Bẫy thứ ba: hai câu trả lời cùng tồn tại trong cây.** `docs/extensions.md:904-912` **đã có sẵn** một câu trả lời một phần. Nếu tạo ADR mà không sửa mục đó, cây mang hai câu trả lời xung đột. Đây là phát hiện giá trị cao nhất của lần rà này.
+6. **Bẫy thứ tư: đếm nhầm hai registry khác nhau.** Có **hai** registry cùng tên hàm `registerProvider`: `capability/index.ts` — 14 capability, 20 provider, **core-only** (trừ khi M2-OQ2 = YES); và `config/model-registry.ts` — registry provider **model**, đã extension-reachable qua `pi.registerProvider` (khai báo `extensions/types.ts:1595`, hiện thực `loader.ts:362`, phát lại ở `sdk.ts:1018-1021` và `:2500-2504`). ADR buộc phải nói rõ nó nói registry nào. Nói chung "các registry provider không extension-reachable" là **sai thẳng** — `docs/extensions.md:908` đã nói ngược lại.
+7. **Bẫy thứ năm: `## [Unreleased]` KHÔNG rỗng.** WI-10 nói nó "hiện đang rỗng" và bảo mục kế tiếp là `## [18.3.3] - 2026-09-27` ở dòng 5. Cả hai đều sai: `@3` là `## [Unreleased]`, `@5` là `### Security`, có entry thật ở `@7`, và `## [18.4.0] - 2026-09-28` ở `@9`. **Đừng xoá `### Security`.** Và vì WI-0 cùng sửa file này trong cùng wave, phải thống nhất với người viết WI-0 chỗ đặt bullet.
+8. **Bẫy thứ sáu: chạy `bun run check:ts` rồi tưởng mục này xong.** Tuyệt đối không. Glob ở `package.json:91`/`:99` không có `.md`.
+
 ## WI-11. Lưu trữ trạng thái riêng cho từng extension (chỉ thiết kế, phụ thuộc WI-8 và WI-9)
 
 **Thay đổi gì:** Viết một tài liệu thiết kế duy nhất quyết định trạng thái key-value riêng của một plugin sẽ nằm ở đâu, và không build nó — vì nửa "dọn dẹp" của câu trả lời đó chưa thiết kế được cho tới khi WI-9 trao cho extension một cơ chế unload thật, mà một store dựng trước thời điểm đó sẽ phải có vòng đời gắn vào sau, tốn hơn thiết kế một cái vốn đã có vòng đời.
@@ -4350,6 +6235,103 @@ Cách sai thứ ba, và riêng đúng với cây code này, là viết tài li�
 
 ---
 
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Có **9 neo `types.ts`** trong đặc tả và **không neo nào còn đúng** — tất cả trôi **+2 đến +29**. Mở `types.ts:1489` bạn thấy `// Actions`, không phải `appendEntry`. Kỹ sư mở đúng dòng sẽ nghĩ mình đọc sai cây, rồi bắt đầu nghi ngờ kế hoạch thay vì nghi ngờ số dòng. **Mở bằng tên symbol, không bằng số**: `grep -n "appendEntry" types.ts` → **1514**.
+
+| việc | spec ghi | THẬT | dòng spec ghi thật chứa gì |
+| --- | --- | --- | --- |
+| 6 | `types.ts:1256-1582` (`ExtensionAPI`) | **`types.ts:1277-1607`** | `1256` = `}`; `1582` = ` *       input: ["text", "image"],` |
+| 7 | `types.ts:452-562` (`ExtensionContext`) | **`types.ts:454-563`** | `452` = `}` |
+| 8 | `types.ts:1489` (`appendEntry` ký hiệu) | **`types.ts:1514`** | `1489` = `	// Actions` |
+| 9 | `types.ts:1752` (kiểu handler) | **`types.ts:1777`** | `1752` = `export type SetModelHandler = (model: Model) => Promise<boolean>;` |
+| 10 | `types.ts:1768` (`ExtensionContextActions`) | **`types.ts:1793`** | `1768` = `	registerProvider(name: string, config: ProviderConfig, sourceId: string): void;` |
+| 11 | `types.ts:1578` (`unregisterProvider`) | **`types.ts:1603`** | `1578` = ` *       id: "claude-sonnet-4@20250514",` |
+
+Một con số trong spec lệch 1, vô hại: spec ghi "74 phương thức / 80 khai báo"; đếm lại ở `types.ts:1278-1607` ra **75 phương thức / 81 khai báo / 6 property / 35 tên duy nhất**. Sáu property tên đúng: `logger`, `typebox`, `arktype`, `zod`, `pi`, `events`. **Đừng đưa "74" vào tài liệu như sự thật đo được.**
+
+Và một điều đáng nói: `git grep -n 'async unload\|unloadExtension\|#unload' -- packages/coding-agent/src/extensibility/` → **không hit**. Dọn dẹp lúc uninstall không thiết kế được cho tới khi WI-9 trao một unload thật.
+
+**Bảng điểm sửa.** TRƯỚC / SAU lấy từ file thật, đọc bằng `sed -n "<n>p"` ở HEAD `65cc6c1`.
+
+| đường/dẫn | symbol / vùng | TRƯỚC (nguyên văn từ file) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `docs/extension-state-persistence.md` | file mới | *(không tồn tại — `find . -name "extension-state-persistence.md"` → rỗng)* | File markdown 120–180 dòng, 7 mục: `## Cái gì đang tồn tại hôm nay` → `## Câu hỏi thiết kế` → `## Ba nền tảng` (A/B/C) → `## Hình dạng khuyến nghị` → `## Các hợp đồng bản build sau phải bảo vệ` → `## Trạng thái: đã thiết kế, phần build chưa ai nhận`. **Không `##` cấp 4.** |
+| `docs/extensions.md:702` | `## Session and state patterns` | `## Session and state patterns` (dòng trống) | Dòng tiêu đề **giữ nguyên y nguyên văn**. Chèn ngay DƯỚI nó, trước `For durable extension state:` ở dòng 704, một đoạn 3–5 dòng trỏ `docs/extension-state-persistence.md`. |
+| `docs/extensions.md:704-725` | hướng dẫn `appendEntry` | `For durable extension state:` … `});` cộng khối code đóng nó | **KHÔNG ĐỤNG.** Đây là lời khuyên đúng cho trạng thái phạm vi session. Chỉ chèn, không viết lại, không xoá, không đổi thứ tự. |
+| `packages/coding-agent/CHANGELOG.md:3` | `## [Unreleased]` | `## [Unreleased]` | **Mặc định: KHÔNG ĐỤNG.** Chỉ sửa nếu người duy trì chốt "có". Nếu có, thêm đúng một dòng dưới dòng 3. |
+
+Không có dòng nào khác. **Không** `types.ts`, **không** `loader.ts`, **không** `manager.ts`, **không** `dirs.ts`.
+
+**Các bước có neo đã kiểm.**
+
+1. Chấp nhận lệnh cấm trước khi viết.
+2. Khảo sát hiện trạng, viết TRƯỚC khuyến nghị.
+3. Trích dẫn nền tảng đã ship — neo `types.ts:1514` (`appendEntry`).
+4. Câu hỏi thiết kế, rồi xếp hạng cả ba.
+5. Hình dạng + đường dẫn trên đĩa + đơn vị sở hữu — helper phải đi qua `dirs.rootSubdir(…, "data")`.
+6. Hai hợp đồng tương lai, viết ở thì hiện tại.
+7. Kết bằng phần hoãn.
+8. Đoạn trỏ tới tài liệu trong `docs/extensions.md` — neo `:702`.
+9. Changelog: mặc định KHÔNG thêm — neo `CHANGELOG.md:3`.
+
+**Hợp đồng test.** **Tên file test: `NONE WRITTEN BY THIS ITEM`.** Mục này không tạo file test nào và **không được tạo**. Lý do là nội dung dung, không phải thủ tục: dọn dẹp lúc uninstall không thiết kế được cho tới khi WI-9 trao một unload thật. Một test PASS cho một store chưa tồn tại giống hệt một test PASS cho một store đã ship, với bất kỳ ai đọc CI sau này.
+
+**Năm câu hỏi nghiệm thu** — người duy trì phải trả lời được **từ chữ trong tài liệu, không hỏi tác giả**: (1) nền tảng nào thắng, và **cụ thể vì sao** mỗi nền tảng còn lại bị loại? (2) dữ liệu nằm ở đâu trên đĩa, và quy tắc phân giải đường dẫn là gì (không chỉ một literal `~/`)? (3) chuyện gì xảy ra với trạng thái của một extension khi nó bị unload — và việc unload một extension có để lại giá trị của extension khác đọc được không? (4) chuyện gì xảy ra với các giá trị của nó khi **danh tính extension** đổi (id hoặc đường dẫn cài đặt)? (5) ai nhận phần build, và điều gì chặn nó? Câu nào tài liệu không trả lời được → mục trượt.
+
+**Hai hợp đồng phải định, đang giữ:** tài liệu **không được đọc như đã ship** — không ai đọc nó được tin `pi.state` hay `ExtensionContext.state` tồn tại hôm nay; và tài liệu **không dùng nhãn phase** (plan không có khái niệm phase).
+
+*Người dùng thấy gì nếu hồi quy:* không có tín hiệu CI nào. Người đầu tiên cần trạng thái theo extension sẽ tự dựng store tiện tay — nhiều khả năng là file tự chế dưới `~/.omp` hoặc `cwd` — và store đó sẽ ship ra **không có chủ sở hữu, không có đường dọn dẹp**. Đến lúc WI-9 hạ cánh và muốn dọn những gì một extension đã ghi, store đã có người gọi; gắn quyền sở hữu vào một store đã có người gọi tốn hơn hẳn so với thiết kế một cái có vòng đời ngay từ đầu. Cái giá không nằm ở code — nó nằm ở chỗ một quyết định không ai viết ra sẽ được người cần tính năng đầu tiên tự quyết, và đổi lại sau này là breaking change với mọi tác giả extension đã ship theo nó.
+
+Bù lại: markdown nằm **ngoài mọi glob lint** — `package.json:91` là `oxlint . && oxfmt --check 'packages/*/src/**/*.{ts,tsx}' …`, không glob markdown nào, không markdown linter trong repo. Một lần CI xanh nói **không** được gì về mục này. **Đừng trích `check:ts` xanh làm bằng chứng.**
+
+**Cổng có đỏ được không. CÓ, nhưng CHƯA đủ** — và cổng gốc của spec có một lỗi nghiêm trọng đã được viết lại.
+
+| cổng | đỏ được? | đỏ bằng cách nào — và lỗ hổng |
+| --- | --- | --- |
+| `git status --porcelain \| grep -vE '^\?\? \.lavish-wip/\|^\?\? MILESTONE_2_EXECUTION_PLAN\.md$' \| cut -c4- \| grep -c '\.ts$'` | **CÓ** | Bắt được cả file `.ts` **mới chưa `git add`**, vì `??` vẫn nằm trong porcelain và `cut -c4-` cắt đúng 3 ký tự `?? `. **Lỗ hổng:** bộ lọc chỉ loại `.lavish-wip/` ở trạng thái `??`; nếu ai đó đã `git add` một file dưới `.lavish-wip/`, dòng đó thành `A  .lavish-wip/…` và **không** bị lọc → đỏ giả. Đỏ giả thì an toàn hơn xanh giả, nhưng phải biết để không mất 20 phút đi tìm. |
+| `test -f docs/extension-state-persistence.md` | **CÓ** | File không tồn tại là đỏ. |
+| `grep -cE '\(A\)\|\(B\)\|\(C\)'` ≥ 3 | **CÓ, nhưng yếu** | Đếm **dòng khớp**, không phải mục. Một câu "ta xếp hạng (A), (B), (C)" là đủ để qua mà không hề có lý do loại. |
+| `grep -niE 'khuyến nghị\|recommend'` | **CÓ** | Đỏ khi thiếu TỪ, **không** đỏ khi có từ mà không có quyết định. |
+| `grep -n 'appendEntry'` | **CÓ** | Nền tảng (C) bị bỏ sót → đỏ. Cổng có giá trị cao nhất trong nhóm. |
+| `grep -n -iE 'unload\|WI-9'` | **CÓ** | Bỏ sót điều kiện kỹ thuật → đỏ. |
+| `grep -n -iE 'unowned\|deferred\|không ai nhận\|not owned'` | **CÓ** | Bỏ sót phần "chưa ai nhận" → đỏ. |
+| `grep -n 'dirs.ts'` | **CÓ** | Không gọi tên helper sinh ra đường dẫn → đỏ. |
+| regex `~/` bắt buộc tài liệu có một đường dẫn literal bắt đầu bằng dấu ngã | **CÓ — nhưng nó ép một câu trả lời SAI.** | Xem bên dưới — đây là phát hiện nghiêm trọng nhất của phiếu này. Mẫu regex nguyên văn nằm trong khối `bash` ở dưới. |
+| **5 câu hỏi của người duy trì** | **CÓ, theo cách tự động không làm được** | Đỏ duy nhất khi người duy trì phải quay lại hỏi tác giả. Đây là cổng thật của mục này. |
+
+Cổng `~/` phải viết lại. Cổng gốc **bắt buộc** tài liệu chứa một đường dẫn literal bắt đầu bằng `~/`. Nhưng quy ước mà spec bảo tài liệu tuân theo — `getPluginsDir()` — **không cho ra `~/` trên Linux**: `dirs.ts:644-649` `return dirs.rootSubdir("plugins", "data");`, `dirs.ts:388-392` dựng `#rootDirs` từ `xdgData`, chú thích `dirs.ts:394` nói rõ "XDG flattens the agent/ prefix: `~/.omp/agent/sessions` → `$XDG_DATA_HOME/omp/sessions`". Nghĩa là `~/.omp/extensions-state/<id>.json` đúng trên macOS, và **sai trên Linux** khi `XDG_DATA_HOME` được đặt. **Cổng xanh có thể đi cùng một tài liệu sai trên Linux.** Bản thay thế đỏ được — chạy **cả hai** lệnh sau, mỗi lệnh phải ra ít nhất 1:
+
+```bash
+grep -cE '`~/[^`]+`' docs/extension-state-persistence.md           # >= 1: có đường dẫn literal
+grep -cniE 'XDG|_data_|_state_' docs/extension-state-persistence.md   # >= 1: đường dẫn không phải ~/.omp trên mọi OS
+```
+
+Bốn lỗ hổng cần bịt thêm (DONE #4 hợp đồng đổi tên, DONE #5 cấm nhãn phase, "không đọc như đã ship", và việc `docs/extensions.md` có thực sự được sửa hay không — bốn điều này hiện **không có một lệnh nào canh**):
+
+```bash
+grep -niE 'rename|đổi tên|đổi danh tính' docs/extension-state-persistence.md   # phải có hit
+! grep -niE '\bphase[[:space:]]*[0-9]' docs/extension-state-persistence.md    # có "Phase 4" là đỏ
+! grep -nE '^\s*`?(pi|ctx)\.state`' docs/extension-state-persistence.md        # ví dụ API ở đầu dòng là đỏ
+git diff --name-only -- docs/extensions.md | grep -c .                    # phải = 1
+git diff -- docs/extensions.md | grep -c '^+'                              # > 0
+sed -n '704,725p' docs/extensions.md | grep -c 'appendEntry("com.example.my-extension.state", data)'  # = 1
+```
+
+Và bịt lỗ hổng giả-đỏ của cổng `.ts`: `git status --porcelain | grep -vE '^\?\? \.lavish-wip/|^.. \.lavish-wip/' | grep -vE '^\?\? MILESTONE_2_EXECUTION_PLAN\.md$' | cut -c4- | grep -c '\.ts$'`.
+
+**Câu trả lời cụ thể: cổng này có đỏ được không? — CÓ, nhưng CHƯA đủ.** Sau khi sửa, 14 lệnh trong bản lệnh đầy đủ đều đỏ được theo cơ chế. Nhưng cổng **KHÔNG** thể đỏ được, và không lệnh nào sửa được: **cổng này không đỏ được khi tài liệu có một quyết định sai.** Mười bốn lệnh trên đều là kiểm tra *hình thức* — chúng biết tài liệu có chữ "khuyến nghị", có ba nhãn (A)(B)(C), có `WI-9`. Chúng **không** biết khuyến nghị đó có đúng, có lý do loại có cụ thể hay không, và đường dẫn có đúng trên Linux hay không. Một tài liệu tràn ngập thuật ngữ, xanh cả mười bốn dòng, và vẫn nói sai. Vì vậy **cổng thật duy nhất vẫn là năm câu hỏi của người duy trì**. Đừng để 14 dòng xanh tạo cảm giác an toàn giả cho một mục tài liệu thuần.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Cổng `~/` đẩy bạn viết một đường dẫn sai trên Linux.** `getPluginsDir()` → `dirs.rootSubdir("plugins", "data")` → XDG-aware. Viết `~/.omp/extensions-state/<id>.json` và gọi đó là "theo đúng quy ước `getPluginsDir()`" là một câu **sai ở Linux**. Cách thoát: nêu cả literal lẫn quy tắc phân giải, và thêm một helper cùng dạng với `getPluginsLockfile` (`dirs.ts:662-664`) — helper phải đi qua `dirs.rootSubdir(…, "data")`, không `path.join(home, …)`.
+2. **Sáu neo §/dòng trong spec là trích dẫn vòng — đừng sao chép chúng vào tài liệu.** `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:5961`, `§8.2`, `§10`, `§11.3` (×2), `§6.1`: sáu trong sáu chỉ tồn tại **bên trong chính mục WI-11** (dòng 9155, 9215, 9270, 9272, 9273, 9287/9301). Nếu bạn ghi `"plan ghi nguyên văn: …, COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:5961"` vào tài liệu, bạn đang tự trích dẫn chính mình qua một số dòng nói một thứ khác. Hãy viết: "kế hoạch M2 yêu cầu phần build phải được gọi tên và gán ngày trước khi M2 đóng lại" — không số dòng.
+3. **Mọi neo `types.ts` trong spec đã trôi +2 đến +29.** Có 9 neo và **không neo nào còn đúng**.
+4. **Sketch trông như một diff ba dòng.** `interface ExtensionContext { … state: ExtensionStateStore; }` là thứ dễ nhất trong toàn bộ mục này để gõ thật. Cổng `.ts` sẽ bắt — nhưng chỉ nếu bạn nhớ chạy. Ghi nó ra giấy: `ExtensionContext` cuối cùng có **26** thành viên; thêm một cái nữa là 27, và typecheck sẽ **không** đỏ (đây là một member bình thường của interface).
+5. **Hai `isProjectTrusted()` trong cùng một interface.** `types.ts:496` và `types.ts:563` — khai báo trùng tên, 26 tên duy nhất trên 27 khai báo. Nếu tài liệu liệt kê "thành viên của `ExtensionContext`", hãy đếm **tên duy nhất** (26) và ghi rõ con số 26 là số tên, không phải số dòng khai báo — nếu không, người đọc sẽ tự đếm lại ra 27 và mất bình.
+6. **Tài liệu nằm ngoài mọi thứ CI nhìn thấy.** `package.json:91` chỉ phủ `packages/*/src/**/*.{ts,tsx}` và `packages/*/{test,bench,examples,scripts}/**/*.ts`. Không glob markdown, không markdown linter trong repo. `bun run check:ts` xanh **không** nói được gì về mục này — và dùng nó làm bằng chứng là nhanh nhất để một mục thiết kế trông xong khi nó chưa.
+7. **"Sự vắng mặt" không phải "hành vi quan sát được".** Cám dỗ lớn nhất khi viết phần khảo sát. Không extension ví dụ nào trong repo tự ghi file — nhưng điều đó **không** chứng minh "extension tự tạo file dưới `~/.omp`"; đó là hệ quả có thể đoán trước từ việc không có primitive. Viết đúng ranh giới này, vì phóng đại ở đây chính là thứ khiến tài liệu bị đọc là khảo sát rồi trong khi chưa.
 
 ## WI-12. Cho phép extension đóng góp MCP server — CHỈ THIẾT KẾ, M2 không build
 
@@ -4566,6 +6548,111 @@ Các câu còn lại, cần giải quyết trong tài liệu nhưng không chặ
 
 ---
 
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Bẫy lớn nhất: **đính chính "+25" của chính spec đã thành neo hỏng.** `MILESTONE_2_EXECUTION_PLAN.md:4371` và `:4561` nói độ trôi `types.ts` là **+25 đồng nhất**. Tại `65cc6c1` nó **không còn đồng nhất** — vùng `ToolDefinition` trôi **+2**, vùng `McpNotificationEvent` / event map trôi **+20/+21**, vùng `ExtensionAPI` register block trôi **+21/+25**. Kỹ sư tin "đồng nhất +25" sẽ cộng 25 vào `types.ts:663` và rơi vào `:688` — không có gì ở đó. **Dùng cột "thật" bên dưới, đừng dùng phép cộng.**
+
+| spec ghi | thật | lệch |
+| --- | --- | --- |
+| `:663` `mcpServerName` | **:665** | +2 |
+| `:665` `mcpToolName` | **:667** | +2 |
+| `:658` `ToolDefinition.approval` | **:660** | +2 |
+| `:672` `sourcePath` | **:674** | +2 |
+| `:904` `McpNotificationEvent` | **:924-936** (`type:` 925, `server:` 931, `method:` 933, `params:` 935) | +20 |
+| `:1149` merge vào event map | **:1170** | +21 |
+| `:1256` `ExtensionAPI` | **:1277** | +21 |
+| `:1340` `on("mcp_notification")` | **:1365** | +25 |
+| `:1347` `registerTool` | **:1372** | +25 |
+| `:1379` `registerFileWriteFallback` | **:1404** | +25 |
+| `:1411` `registerCommand` | **:1436** | +25 |
+| `:1421` `registerShortcut` | **:1446** | +25 |
+
+Các neo khác đã hỏng: `extensibility/extensions/runner.ts` 1264 → thật **1293**; `session/agent-session.ts` 7406 → thật **7552**; `docs/extensions.md` 392 → bullet thật **393** (heading 391, 392 là dòng trống); `docs/mcp-config.md` 484-495 → danh sách thật **488-496** (bullet thật `:40`); `mcp/loader.ts` 92-107 → dòng định dạng thật **106**; HEAD 808b365 → thật **65cc6c1**.
+
+Năm sự thật về vòng đời thì **khớp tuyệt đối**, dùng nguyên văn: `mcp/manager.ts:664-669` `connectServers`, `:1242` `disconnectServer`; `:690-696` đóng dấu source; `:700-712` bỏ qua tên đã connect / đang in-flight. Và `mcp/manager.ts:937-941` nói thẳng quyền sở hữu: *"Ownership is matched via `mcpServerName`, never a `mcp__${name}_` name prefix: tool names are lossy-sanitized, so one server's sanitized name can prefix another's (`atlassian` vs `atlassian:atlassian`) and a name with sanitized characters never prefix-matches its own tools at all."* `:942-948` `#replaceServerTools` lọc bằng `t.mcpServerName !== name`.
+
+**Tiền đề nguy hiểm nhất về mặt nội dung:** plan (`:4356`) và bảng đính chính (`:4559`) đều dùng cụm "không thể đóng góp MCP server" như một **sự thật**. Nó chỉ đúng cho **module đã nạp, lúc runtime**. Một extension **package** đã đóng góp server từ lâu qua `.mcp.json` / `mcp.json` — 12 provider đăng ký capability `mcps`, `omp-plugins.ts:423` là bằng chứng trực tiếp.
+
+**Bảng điểm sửa.** Ba dòng DUY NHẤT được chấm. TRƯỚC trích nguyên văn từ file thật tại HEAD `65cc6c1`.
+
+| đường/dẫn | symbol / vị trí | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `docs/mcp-server-contribution-by-extensions.md` | file mới, 6 phần bắt buộc | *không tồn tại* (`ls` → `No such file or directory`) | Văn xuôi, 6 phần theo đúng thứ tự hàng 1 của bảng file trong spec. **KHÔNG phải checklist.** |
+| `docs/extensions.md:393` | bullet `` - `mcp_notification` `` ngay dưới `### MCP notifications` | ``- `mcp_notification` — fired for every JSON-RPC notification received from a connected MCP server, AFTER the manager's own handling of known list/update methods (…). Notifications received before any listener attaches are buffered (bounded FIFO, cap 100, drop-oldest) and drained into the first subscriber — so startup-time frames aren't lost even if the extension binds after MCP discovery.`` | Một bullet MỘT dòng ngay sau bullet đó, cùng hình dạng `-` + backtick + tên + `—`. Nội dung: extension đã nạp KHÔNG thể đóng góp MCP server lúc runtime, và trỏ tới file mới. |
+| `docs/mcp-config.md:40` | bullet nguồn MCP | `- installed Claude marketplace plugins and OMP extension packages that declare MCP servers` | Thêm một dòng ngay sau nó, nói rõ: khai báo ở tầng package ĐÃ CÓ trong cây; đóng góp lúc runtime theo mệnh lệnh đã được thiết kế nhưng chưa build, trỏ tới file mới. |
+| `packages/coding-agent/src/extensibility/extensions/types.ts` | `ExtensionAPI` | — | **KHÔNG SỬA.** Chỉ-đọc. Chạm vào = item đã bị hiện thực hoá. |
+| `packages/coding-agent/src/mcp/manager.ts` | `MCPManager` | — | **KHÔNG SỬA.** Chỉ-đọc. |
+| `packages/coding-agent/src/capability/mcp.ts` | `MCPServer` / `mcpCapability` | — | **KHÔNG SỬA.** Chỉ-đọc. |
+| `packages/coding-agent/src/modes/components/extensions/dashboard-runtime.ts` | `persistMcpToggle` / `applyMcpToggle` | — | **KHÔNG SỬA.** Chỉ-đọc. |
+| `packages/tui/src/overlays/extensions/extension-dashboard.ts` | `#writableMcpSourcePath` | — | **KHÔNG SỬA.** Chỉ-đọc. |
+
+**Các bước có neo đã kiểm.** Mọi dòng `đường/dẫn:dòng` dưới đây là số **đã mở và đọc** tại `65cc6c1`, không phải số trong spec.
+
+0. Chốt lại cây (chặn, phải làm trước tiên) — `git rev-parse --short HEAD` → **65cc6c1** (spec ghi 808b365 → đã trôi).
+1. Đọc lại vị trí thật của năm thành viên MCP-extension (thay bước 3 của spec) — dùng bảng neo ở trên.
+2. Đính chính tiền đề: package **ĐÃ** đóng góp MCP server theo khai báo — neo `omp-plugins.ts:423`.
+3. **CỔNG DỪNG: trust tier phải có câu trả lời bằng văn bản từ con người trước khi viết dòng nào** — neo `mcp/settings.ts:9-21`.
+4. Năm sự thật về vòng đời: không cần vòng đời mới — neo `manager.ts:664`, `:1242`, `:690-696`, `:700-712`, `:937-948`.
+5. Định kiểu descriptor: `MCPServer` TRỪ `_source`, và ba trục policy.
+6. Lập luận chống lại Option B: trích, đừng suy diễn.
+7. Approval-parity với các con số thật, và phát hiện nhánh chết — neo `tool-bridge.ts:656`, `:771`; `tools/approval.ts:369-371`.
+8. Phụ thuộc WI-0 như tiền điều kiện kiểm chứng được — neo `runner.ts:1293` (spec ghi :1264 — lệch +29) và `agent-session.ts:7552` (spec ghi :7406 — lệch +146).
+9. Câu hỏi credential: trả lời hoặc đánh dấu DEFERRED có tên.
+10. Câu hỏi enable/disable: trả lời bằng code.
+11. Câu hỏi level / provenance — đi thẳng vào `state-manager.ts:60`.
+12. Đường loader mà một server được đóng góp phải đi qua — neo `mcp/loader.ts:106`.
+13. Hai dòng trỏ — neo `docs/extensions.md:393` và `docs/mcp-config.md:40`.
+14. Mục "những gì KHÔNG quyết ở đây".
+
+**Hợp đồng test. Không có test dưới M2. Đó là công cụ đúng, không phải lỗ hổng.** Không có dòng source nào đổi nên không có hành vi nào để quan sát; `AGENTS.md` cấm test hình thức. **Cấm tuyệt đối:** không viết test đọc `types.ts` và khẳng định `registerMcpServer` không tồn tại — đó là source grep, bị `AGENTS.md` cấm, và nó biến việc merge tài liệu thành một test fail vào đúng ngày bản build xuống đất.
+
+Phải viết trong tài liệu, ngay bây giờ, làm acceptance contract cho bản build tương lai (`packages/coding-agent/test/extensibility/mcp-contribution.test.ts`):
+
+| case | người dùng thấy gì nếu hồi quy |
+| --- | --- |
+| tool của một MCP server do extension đóng góp phải resolve approval **BẰNG** approval resolve được cho một server cùng tên đóng góp bởi `.mcp.json` | Người dùng bị hỏi approve ở một tier khác với server cùng tên mà họ đã cấu hình bằng file — phân biệt đường đi dựa trên ai đóng góp, không dựa trên server. **Không assert literal `"write"`** — một literal sẽ vẫn pass vào ngày ai đó đổi tier cho tất cả và sẽ không chứng minh gì về parity. |
+| mint tên: `mcp__<server>_<tool>`, `mcpServerName` khớp, `loader.ts:106` sinh `mcp:<server> via <providerName>` | Danh sách tool hiển thị một dòng `mcp:foo via <provider>` sai, hoặc teardown gỡ tool của server khác. |
+| quyết định về nhánh `tools/approval.ts:369-371` | Nếu thiết kế nói nhánh phải với tới được và nó không, người dùng approve một tool mà không thấy dòng "Origin: MCP server tool" — họ không biết mình vừa duyệt cái gì. |
+
+**Cổng có đỏ được không.**
+
+```bash
+cd /Users/tranquangdang21/Projects/ultraworkers
+git status --porcelain -- docs packages
+grep -rn 'registerProvider<MCPServer>\|registerProvider(mcpCapability' packages/coding-agent/src/discovery/ | wc -l   # 12 ✓
+grep -rn 'isProjectTrusted: () => true' packages/coding-agent/src                                                  # 2 ✓
+grep -n 'registerMcp\|registerMcpServer\|McpServer' packages/coding-agent/src/extensibility/extensions/types.ts     # exit 1, 0 hit ✓
+bun run check:ts
+```
+
+| điều khoản | đỏ được? | bằng cách nào |
+| --- | --- | --- |
+| (b) không sửa gì dưới `packages/` | **ĐỎ ĐƯỢC, cơ khế, nhưng ĐANG ĐỎ SẴN** | Chạm bất kỳ file nào dưới `packages/` là `git status --porcelain -- docs packages` hiện ngay. Nhưng ngay lúc này lệnh đó đã trả `?? packages/coding-agent/test/collab/web-wire.types.ts` — file untracked có sẵn từ trước, không liên quan tới WI-12. **Phải chụp baseline trước khi sửa** và so sánh, đừng so với "phải rỗng". |
+| (c) văn bản spec không còn lỗi | **ĐỎ ĐƯỢC** | Đây là phép kiểm thật: `MILESTONE_2_EXECUTION_PLAN.md:4356` và `:4559` vẫn còn câu "extensions KHÔNG thể đóng góp MCP server", trong khi `omp-plugins.ts:423` + `agent-plugins.ts:335` + `claude-plugins.ts:737` nói ngược lại. Tài liệu lặp lại sự nói quá đó là đỏ. Cũng đỏ nếu tài liệu không nói rõ **tier (a) đã bị demote** (`mcp/settings.ts:14`, `default: false`). |
+| (d) trust tier đã được trả lời | **KHÔNG ĐỎ ĐƯỢC bằng máy** | Không có lệnh nào phát hiện một trust tier chưa được trả lời. Đây là một lượt đọc của con người, có tên và thời điểm. |
+| (e) người review khác trả lời được câu hỏi | **KHÔNG ĐỎ ĐƯỢC bằng máy** | Đây là một buổi review thiết kế. |
+
+**Cổng KHÔNG bắt được, và không nên giả vờ ngược lại:** không phát hiện được một thiết kế **nêu đúng tên một trust tier nhưng mô tả sai** tier đó; không phát hiện được việc thiết kế bị lặng lẽ biến thành **kế hoạch build** khi người đọc sau gượt qua mục "không quyết ở đây"; không phát hiện được việc một maintainer trả lời trust tier bằng văn bản rồi không ghi tên/mốc thời gian.
+
+**Cân bằng cơ khế duy nhất là (b)** — bắt lỗi phổ biến nhất: ai đó "cứ thêm cái method thôi" vì tài liệu thiết kế làm nó trông dễ. Một cổng luôn xanh tệ hơn không có cổng, nên nếu phải chọn, giữ (b) và (c) và nói thẳng (d)/(e) là của con người.
+
+**Cổng bổ sung nên thêm** — đỏ được và bắt đúng lỗi của lần chạy này: lưu lại số dòng thật của 5 neo `types.ts` trong tài liệu, rồi kiểm bằng `grep -n 'export interface ExtensionAPI' packages/coding-agent/src/extensibility/extensions/types.ts` khớp con số đã ghi. Nếu không, tài liệu mang neo cũ đi vào M3.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Bẫy lớn nhất: đính chính "+25" của chính spec đã thành neo hỏng.** Không đồng nhất — xem bảng ở trên. **Dùng cột "thật", đừng dùng phép cộng.**
+2. **Cổng GATE 1 trong spec sẽ đỏ, và đỏ theo cách gây hại.** Lệnh xác minh đầu tiên của spec (`plan:4492`) có `expected: 663, 665, 904, 1256, 1340`. Chạy hôm nay ra `665, 667, 924, 1277, 1365`. Nguy hiểm không phải là cổng đỏ — mà là một kỹ sư tưởng code bị lệch và "sửa cho khớp". **Số dòng không phải hợp đồng. Cập nhật expected, không sửa code.**
+3. **`docs/extensions.md:392` trỏ vào một dòng trống.** Bullet `mcp_notification` thật ở **`:393`**; `:392` là dòng trống giữa heading `:391` và bullet. Chèn vào `:392` sẽ tách bullet khỏi heading nó.
+4. **Tiền đề nguy hiểm nhất về mặt nội dung.** Cụm "không thể đóng góp MCP server" chỉ đúng cho **module đã nạp, lúc runtime**. Tài liệu lặp lại cụm đó sẽ khiến một maintainer đóng tài liệu lại ở dòng ba.
+5. **`isProjectTrusted` không phải "hai bề mặt".** Hai khai báo (`:496`, `:563`) là **hai overload trong cùng interface `ExtensionContext` (`:454-564`)**, không phải hai interface. Và doc comment tại `:489-495` / `:551-562` nói thẳng hơn spec nhiều: *"OMP performs no project-trust gating — project-level settings and extensions load unconditionally"*. **Trích nguyên văn doc**, đừng chỉ nói "check không bao giờ fail".
+6. **Trust tier (a) đã bị chính project demote.** `mcp/settings.ts:9-21`: `cfgMcpEnableProjectConfig` có `default: false`, doc nói rõ project-scope `mcp.json` *"lets a cloned repo start processes and run `!command` env values"*. Đề xuất (a) = "cùng tier với `.mcp.json` tầng project" tức là kế thừa một tier **đang tắt theo mặc định**. Spec không hề nhắc — đây là lập luận mạnh nhất để bác (a).
+7. **Tên "approval parity" đọc ngược.** MCP tool bị chặn ở `write` (`tool-bridge.ts:656`, `:771`, hardcode), extension tool mặc định bị chặn ở `exec` (`types.ts:658-660`). **Extension tool chặt hơn.** Tài liệu phải nói thẳng cách đọc này ngược, nếu không bản build sẽ "parity" theo một hướng và hậu quả là mở rộng bán kính phê duyệt.
+8. **Bẫy "an toàn giả": cổng xanh không nói gì.** `bun run check:ts` sẽ xanh vì không có dòng source nào đổi. Nó **không** chứng minh thiết kế đúng. Đừng ghi "CI xanh" vào PR description như bằng chứng.
+9. **File untracked có sẵn dưới `packages/`.** `packages/coding-agent/test/collab/web-wire.types.ts` đang untracked ngay lúc này. Cổng (b) vì vậy **không bao giờ hiện "rỗng"** ở nhánh này. Chụp baseline trước, so sánh sau. **Đừng xoá file của người khác để làm cổng xanh.**
+10. **Đừng viết tài liệu như checklist.** Một tài liệu thiết kế đọc ra như danh sách việc sẽ bị nhầm là kế hoạch build và ai đó sẽ xếp lịch cho nó — mà bản build này **không có chủ sở hữu**. Văn xuôi, có tiêu đề điều kiện, không có ô tick.
+
+**Bảy câu hỏi còn mở, phải mang tới buổi quyết định:** (1) **TRUST TIER (chặn bắt đầu)** — (a) auto-connect như `.mcp.json` project / (b) như user-scope có chặn theo độ tin cậy extension / (c) grant rõ ràng từng server; (a) đã bị demote. (2) **Credential** — server được đóng góp có bị loại khỏi managed OAuth không, hay credential resolution được namespaced theo từng extension? (3) **Level + provenance** — `level` nào, provider id nào, path giả hay rỗng? Nó đi thẳng vào `state-manager.ts:60`. (4) **Enable/disable** — xác nhận UX là công tắc tắt ở tầng user, không phải cờ `enabled` do extension sở hữu. (5) **Approval** — server được đóng góp nhận tier riêng không, và `tools/approval.ts:369-371` có trở nên với tới được không? (6) **Khai báo lúc nạp hay muộn** — khuyến nghị chỉ-lúc-nạp; khai-báo-muộn là một event mới trên manager. (7) **Bề mặt ghi canonical** — YES / NO / DEFERRED, đối chiếu WI-10. Tài liệu này không được âm thầm trở thành câu trả lời.
 
 ## WI-13. `ui.setHeader` / `ui.setFooter` thay vì nuốt im lặng, và widget hook có chủ sở hữu
 
@@ -4840,6 +6927,115 @@ Thứ tư: **coi site ACP là sơ suất thay vì một quyết định**, vì c
 ---
 
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Độ trôi **không đều ngay trong một file**. `runner.ts` trôi +4 ở dải đầu nhưng **+29** từ dòng 948 trở đi; `agent-session.ts` trôi **+18** ở dải đầu nhưng **+146** ở dải 7546; `types.ts` trôi +2; `interactive-mode.ts` trôi +14. Ngoài ra `runner.ts` có **1992** dòng (tài liệu ghi 1963) và `this.createContext(` xuất hiện **16** lần (tài liệu ghi "~12").
+
+| file | tài liệu ghi | thật | lệch |
+| --- | --- | --- | --- |
+| `types.ts` | `WidgetPlacement` `:205` · interface `ExtensionUIContext` `:235` · `setStatus` `:264` · `setWidget` `:270` · JSDoc `setFooter` `:273` · `setFooter` `:276` · `setEditorComponent` `:329-331` · `hasUI: boolean` `:464` | **:207 · :237 · :266 · :272 · :274 · :275 · :331-333 · :466** | đều +2, nội dung đúng |
+| `extension-ui-controller.ts` (1342 dòng) | `:39`, `:87-88`, `:99`, `:130`, **`:157-158`**, `:246`, `:307`, `:343-356`, **`:354`**, `:364-379`, **`:478`**, **`:536`**, `:1210-1220` | tất cả **✅ đúng nguyên** | **KHÔNG dịch** |
+| `runner.ts` | `noOpUIContext` `:415` → **:419**; cặp im lặng `:424-425` → **:428-429**; `#uiContext` `:459` → **:463**; constructor fallback `:640` → **:644**; fallback lúc init `:740` → **:744**; comment `:758` → **:762**; khối comment `:756-777` → **:760-779**; trampoline 1 `:780` → **:784**; trampoline 2 `:799` → **:803** | +4 | |
+| `runner.ts` | `getUIContext()` `:919-921` → **:948-949**; `hasUI()` `:923-925` → **:952-953**; `getExtensionPaths()` `:927-929` → **:956-958**; `createContext(` `:1242` → **:1271**; `ui: this.#uiContext,` `:1255` → **:1284** | **+29** | |
+| `interactive-mode.ts` | `clearHookWidgets()` `:6020` → **:6034**; `initializeHookRunner` `:6269-6270` → **:6283-6284**; `setEditorComponent` `:6273` → **:6287** | +14 | |
+| `agent-session.ts` (12352 dòng) | `noOpUIContext` `:518` → **:536**; cặp im lặng `:540-541` → **:558-559** | +18 | |
+| `agent-session.ts` | dùng tại `:7400` → **:7546**; comment `:7407-7408` → **:7553-7554** | **+146** | |
+| `modes/acp/acp-agent.ts` | JSDoc `:408-423`, `createAcpExtensionUiContext(` `:424`, cặp stub `:581-582` | tất cả ✅ | **KHÔNG dịch** |
+
+Đã kiểm thêm: `hasUI()` (`:952-953`) = `return this.#uiContext !== noOpUIContext;` — **so sánh danh tính**. Constructor `:630-643` cần **5** tham số bắt buộc. Môi trường: `packages/natives/native/pi_natives.darwin-arm64.node` **đã tồn tại**, `ninja` ở `/opt/homebrew/bin/ninja`, và `bun test test/modes/controllers/extension-ui-controller.test.ts` chạy ra **17 pass / 0 fail** — cảnh báo "Failed to load pi_natives native addon" trong tài liệu **không áp dụng ở đây**.
+
+Một claim của tài liệu sai: `hasUI: boolean` ở `types.ts:466` nằm trong `ExtensionContext` (khai báo `:454`), **KHÔNG** phải `ExtensionUIContext` (`:237`).
+
+**Bảng điểm sửa.** Cột TRƯỚC trích nguyên văn từ file ở `65cc6c1`, đã `sed -n` mở đọc.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `src/modes/controllers/extension-ui-controller.ts:157` | `uiContext.setFooter` (đường TUI) | `setFooter: () => {},` | `setFooter: () => { throw new Error(noFrameSurfaceError("setFooter")); },` |
+| `src/modes/controllers/extension-ui-controller.ts:158` | `uiContext.setHeader` (đường TUI) | `setHeader: () => {},` | `setHeader: () => { throw new Error(noFrameSurfaceError("setHeader")); },` |
+| `src/extensibility/extensions/runner.ts:428` | `noOpUIContext.setFooter` | `setFooter: () => {},` | `setFooter: () => { throw new Error(noFrameAtAllError("setFooter")); },` |
+| `src/extensibility/extensions/runner.ts:429` | `noOpUIContext.setHeader` | `setHeader: () => {},` | `setHeader: () => { throw new Error(noFrameAtAllError("setHeader")); },` |
+| `src/session/agent-session.ts:558` | `noOpUIContext.setFooter` (bản thứ hai, tách biệt) | `setFooter: () => {},` | `setFooter: () => { throw new Error(noFrameAtAllError("setFooter")); },` |
+| `src/session/agent-session.ts:559` | `noOpUIContext.setHeader` (bản thứ hai) | `setHeader: () => {},` | `setHeader: () => { throw new Error(noFrameAtAllError("setHeader")); },` |
+| `src/modes/acp/acp-agent.ts:581` | `createAcpExtensionUiContext` → `setFooter` | `setFooter: () => {},` | `setFooter: () => { throw new Error(noFrameAtAllError("setFooter")); },` — **chỉ sau khi quyết định ACP** |
+| `src/modes/acp/acp-agent.ts:582` | `createAcpExtensionUiContext` → `setHeader` | `setHeader: () => {},` | `setHeader: () => { throw new Error(noFrameAtAllError("setHeader")); },` — **chỉ sau khi quyết định ACP** |
+| `src/extensibility/extensions/types.ts:274` | JSDoc `setFooter` | `/** Set a custom footer component, or undefined to restore the built-in footer. */` | JSDoc nói hợp đồng thật: ném lỗi, trỏ `setWidget`/`setEditorComponent` |
+| `src/extensibility/extensions/types.ts:277` | JSDoc `setHeader` | `/** Set a custom header component, or undefined to restore the built-in header. */` | như trên |
+| `src/extensibility/extensions/ui-context-errors.ts` | **TẠO MỚI** | (không tồn tại) | hai hàm `noFrameSurfaceError(method)` và `noFrameAtAllError(method)`, **hai thông điệp khác nhau** |
+| `src/extensibility/extensions/index.ts` | barrel | `export * from "./runner";` … `export * from "./types";` | thêm `export * from "./ui-context-errors";` |
+| `src/modes/controllers/extension-ui-controller.ts:87` | `#hookWidgetsAbove` (PR 2) | `#hookWidgetsAbove = new Map<string, ExtensionUiComponent>();` | `#hookWidgetsAbove = new Map<string, Map<string, HookWidgetEntry>>();` |
+| `src/modes/controllers/extension-ui-controller.ts:88` | `#hookWidgetsBelow` (PR 2) | `#hookWidgetsBelow = new Map<string, ExtensionUiComponent>();` | `#hookWidgetsBelow = new Map<string, Map<string, HookWidgetEntry>>();` |
+| `src/modes/controllers/extension-ui-controller.ts:354` | `setHookWidget` (PR 2) | `target.set(key, this.#createHookWidget(content));` | `target.set(key, { content, component: this.#createHookWidget(content) });` |
+| `src/modes/controllers/extension-ui-controller.ts:1210-1220` | `clearHookWidgets()` (PR 2) | `clearHookWidgets(): void { … this.#hookWidgetsAbove.clear(); this.#hookWidgetsBelow.clear(); this.#rebuildHookWidgets(); }` | thêm `remountHookWidgets()` giữ `content`, dispose rồi dựng lại |
+| `src/modes/interactive-mode.ts:6034` | call site thứ 5 (PR 2) | `this.#extensionUiController.clearHookWidgets();` | `this.#extensionUiController.remountHookWidgets();` |
+| `src/extensibility/extensions/runner.ts:1284` | `createContext()` → `ui` (PR 2) | `ui: this.#uiContext,` | `ui: extensionPath !== undefined ? this.createUIContext(extensionPath) : this.#uiContext,` |
+| `CHANGELOG.md:3` | `[Unreleased]` | `## [Unreleased]` rồi thẳng `## [18.3.3]` | thêm mục dưới `### Fixed` (mục này **chưa tồn tại** ở `65cc6c1`) |
+
+**Các bước có neo đã kiểm.**
+
+**PR 1**
+
+1. Xác nhận cây — `git rev-parse --short HEAD` trả **`65cc6c1`**.
+2. **CỔNG DỪNG: chốt phương án (A) hay (B) bằng văn bản trước khi viết code.**
+3. Viết hai thông điệp lỗi thành helper dùng chung, KHÔNG phải hai string literal.
+4. Site 1/4 (TUI) — neo `extension-ui-controller.ts:157-158`.
+5. Site 2–4/4 (no-frame) — `runner.ts:428-429`; `agent-session.ts:558-559` (bản thứ hai, tách biệt hoàn toàn); `acp-agent.ts:581-582` (**chỉ làm nếu** câu hỏi mở về ACP được quyết định).
+6. Cập nhật JSDoc — neo `types.ts:274` và `:277`.
+7. Viết đúng hai test.
+8. Changelog + chạy cổng — thêm mục dưới `### Fixed` (phải tạo mục này).
+
+**PR 2**
+
+9. Đổi kiểu giá trị của bản đồ để giữ `content` — neo `extension-ui-controller.ts:354`.
+10. Thêm tầng theo từng extension — `Map<extensionPath, Map<string, HookWidgetEntry>>`, neo `:87-88`. **Đừng** hiện thực unload ở đây (`grep -rn "unloadExtension" packages/coding-agent/src` đã chạy, không có).
+11. Object literal `uiContext` (`:119-163`) thành factory nhận `extensionPath`.
+12. `createUIContext(extensionPath)` trong runner + tham số tuỳ chọn cho `createContext()` — neo `runner.ts:1284`.
+13. Xoá toàn cục → remount, tại **NĂM** call site, không phải bốn: `extension-ui-controller.ts:246` (`newSession`, khối `actions` khai báo `:183`), `:307` (`switchSession`, khối 1), `:478` (`newSession`, khối `actions` khai báo `:416`), `:536` (`switchSession`, khối 2), và `interactive-mode.ts:6034` (ngoài controller).
+14. Xác minh bằng tay, và **BẮT BUỘC test** — tài liệu nói PR 2 "ship KHÔNG có test", điều đó **sai**.
+15. Changelog thứ hai + `bun run check:ts` + chạy lại test wave 6. **Land trước WI-9.**
+
+**Hợp đồng test.**
+
+**Dòng (1) — hợp đồng phủ định, đường CÓ UI.** File: `packages/coding-agent/test/modes/controllers/extension-ui-controller.test.ts` (đã có, 509 dòng). Neo đã kiểm: import `ExtensionUiController` ở `:8`; `function makeHarness()` ở `:23`; `const controller = new ExtensionUiController(ctx);` ở `:67`; `async init()` ở `:89-93`. `uiContext` được ghi bởi `setToolUIContext` (`:58-61`), và chính object đó là literal chứa hai stub ở `extension-ui-controller.ts:157-158`. Case: `it('setHeader/setFooter throw instead of drawing nothing')` — `expect(() => ui.setHeader(factory)).toThrow(/setHeader/)`, `toThrow(/setFooter/)`, và **cả hai thông điệp phải nêu CẢ HAI phương thức thay thế** (`/setWidget/`, `/setEditorComponent/`).
+
+> **TUYỆT ĐỐI KHÔNG dựng `ExtensionRunner` rồi gọi `initialize(...)` với context tự chế cho dòng (1).** `getUIContext()` (`runner.ts:948-949`) chỉ trả về đúng object test truyền vào, nên khẳng định trên đó là khẳng định trên **fixture của chính test** — và sẽ xanh ngay trên HEAD.
+
+Đã chạy probe thật trên `65cc6c1`: `ui.setHeader(...)` trả về `undefined`, không ném. Kết quả: `Received function did not throw`. → **Dòng (1) ĐỎ trên HEAD, đã chứng minh bằng chạy thật.**
+
+**Dòng (2) — hợp đồng phủ định, đường no-UI.** File MỚI: `packages/coding-agent/test/extension-ui-header-footer.test.ts` (`ls` → *No such file or directory*). Mẫu dựng runner rẻ nhất trong cây — `test/issue-7955-extension-project-trusted.test.ts:6-11`: `const runtime = { flagValues: new Map(), pendingProviderRegistrations: [] } as unknown as ExtensionRuntime;` rồi `return new ExtensionRunner([], runtime, "/tmp", { getCwd: () => "/tmp" } as never, {} as never);`. Case: `it('no-UI path names ctx.hasUI and reports hasUI() false')` — `expect(() => ui.setHeader(factory)).toThrow(/hasUI/)`, tương tự `setFooter`, và `expect(runner.hasUI()).toBe(false);` — **khẳng định `hasUI()` false là thứ phân biệt dòng này khỏi object literal của TUI**. Thông điệp phải **khác** dòng (1) — nói mode không có frame và bảo chặn bằng `ctx.hasUI`. **Dòng (2) ĐỎ trên HEAD, độc lập với dòng (1)** — nó chạm `runner.ts:428-429`, một object literal khác.
+
+**Điều KHÔNG có test nào che:** widget thực sự xuất hiện trong khung hình; gỡ một extension chỉ gỡ widget của nó; hai extension cùng key được báo cáo. Tài liệu gán chúng cho `test/extension-unload.test.ts` của WI-9 (đã xác nhận file đó không tồn tại — đúng, và `test/fixtures/outsider-extension/` cũng không tồn tại). *Riêng về điều thứ nhị:* đã chạy probe và phát hiện harness hiện tại **không** dựng được widget — `ctx` ở `extension-ui-controller.test.ts:44-65` không có `hookWidgetContainerAbove` / `hookWidgetContainerBelow`; gọi `ui.setWidget(...)` ném `TypeError: undefined is not an object (evaluating 'container.clear')` tại `#renderHookWidgetContainer` (`extension-ui-controller.ts:393:3`). Đây là lý do thật khiến PR 2 "không thể có test" theo tài liệu — và nó **sửa được**.
+
+**Cổng có đỏ được không. PR 1: CÓ — đã chứng minh bằng chạy thật cho cả (b) và (c).**
+
+```bash
+bun run check:ts
+cd packages/coding-agent && bun test test/extension-ui-header-footer.test.ts
+cd packages/coding-agent && bun test test/modes/controllers/extension-ui-controller.test.ts -t 'setHeader/setFooter throw'
+grep -rnE 'set(Header|Footer): *(\(\) *=> *(\{\}|undefined)|[^=]*=>)|set(Header|Footer)\(\) *\{' packages/coding-agent/src   # phải trả ZERO hit
+```
+
+| ĐK | đỏ được bằng cách nào | đã kiểm |
+| --- | --- | --- |
+| (a) `check:ts` xanh | Script có thật ở `package.json:90`; bất kỳ lỗi kiểu nào làm đỏ | ✔ script tồn tại |
+| (b) 2 test pass | `setHeader` trả `undefined`, `toThrow` fail → dòng (1) đỏ. Dòng (2) chạm stub riêng ở `runner.ts:428-429` → đỏ độc lập | ✔ **đã chạy**, môi trường OK |
+| (c) grep zero hit | Hiện trả về **8 hit / 4 site**. Regex thử với 6 chính tả im lặng (`() => {}`, `() => undefined`, `setHeader() {`, `(factory) => {}` ×2) — **bắt hết 6/6** | ✔ **đã chạy** |
+| (d) cả 2 test FAIL trên HEAD | **KHÔNG phải lệnh** — nghĩa vụ quy trình, phải chạy và ghi lại trước khi sửa | ⚠ thủ công |
+
+Đừng thu hẹp regex về một chữ. `setHeader: () => {}` chỉ bắt một chính tả; `setHeader: () => undefined` và `setHeader() {}` đều thoả `ExtensionUIContext` (`types.ts:278`), đều im lặng, đều làm (c) xanh.
+
+**PR 2 — cổng của tài liệu nói KHÔNG THỂ ĐỎ. Tài liệu sai; nó là một cổng luôn xanh.** Tài liệu viết thẳng *"PR 2 ship KHÔNG có test cho hành vi chủ sở hữu, theo thiết kế"*. Đã chạy probe và tìm ra đó **không phải giới hạn của tài liệu, mà là một thiếu sót**: **harness thiếu đúng hai dòng** — `ctx` không có `hookWidgetContainerAbove` / `hookWidgetContainerBelow`. Thêm chúng vào — `Container` **đã được** import ở `:2` — là mở khoá test sở hữu. Đã chạy thử bằng bản vá tạm và đo được trên HEAD: `BEFORE (sau setWidget): [EditorTopGap, Container[Text("line one")]]` → `AFTER (sau clearHookWidgets): [EditorTopGap]` — widget biến mất. **Đây chính là hồi quy `/new` mà tài liệu nói không test được — và nó ĐỎ ĐƯỢC.**
+
+Cổng PR 2 viết lại: (i) `bun run check:ts`; (ii) hợp đồng sở hữu — `bun test test/modes/controllers/extension-ui-controller.test.ts -t 'widget survives session switch'` — **ĐỎ trên HEAD**; (iii) hợp đồng va chạm key — hai `extensionPath` khác nhau, cùng key `"k"` → cả hai widget còn trong frame — **ĐỎ trên HEAD**; (iv) hai test của PR 1 vẫn xanh (chống hồi quy); (v) đếm **NĂM** call site, không liếc mắt: `grep -cn 'remountHookWidgets()'` trên `extension-ui-controller.ts` và `interactive-mode.ts` → **4 + 1 + 1 định nghĩa**.
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Đếm site, đừng tin hai.** Tài liệu nói "hai chỗ ném lỗi"; thực tế có **BỐN** (tám dòng). Hai test vẫn xanh nếu bạn chỉ sửa `extension-ui-controller.ts:157-158` và `runner.ts:428-429`, vì site ACP và `agent-session.ts` không test nào chạm tới. **Đây là lý do điều khoản grep tồn tại** — nó là thứ bắt, không phải thừa.
+2. **Ba trong bốn site không cùng ý định.** `extension-ui-controller.ts:157-158` là sơ suất; `agent-session.ts:558-559` là sơ suất thứ hai. Nhưng `acp-agent.ts:581-582` có JSDoc ở `:408-423` **cố ý** tài liệu hoá sự im lặng là một quyết định thiết kế. Sửa nó máy móc là đảo một quyết định đã có chủ đích mà không hỏi. Nếu quyết định "ACP không có frame, hãy ném lỗi", sửa JSDoc **cùng commit**.
+3. **`hasUI()` là so sánh danh tính.** `runner.ts:952-953` là `return this.#uiContext !== noOpUIContext;`. Dùng `{...this.#uiContext, setWidget: ...}` thì an toàn. **Gán** object theo từng extension trở lại vào `#uiContext` thì `hasUI()` nói dối và test (2) sẽ xanh vì sai lý do.
+4. **Bản đồ widget hiện tại vứt mất `content`.** Đây là lỗi làm cháy kỹ sư nhiều khả năng nhất ở PR 2. `content` là biến cục bộ chết ở `extension-ui-controller.ts:354`; `#createHookWidget` (`:364-379`) đã dựng xong `Container` từ nó. Với nội dung dạng `string[]`, các dòng gốc **không còn đâu**. "Remount bằng cách gọi lại factory" **không viết được** cho tới khi đổi kiểu giá trị của bản đồ. **Đừng viết `remountHookWidgets()` trước bước 9.**
+5. **Thứ tự remount tại `:246` / `:307` / `:478` / `:536`.** Cả bốn đều gọi `clearHookWidgets()` **TRƯỚC** `await this.ctx.session.newSession(...)`. Remount tại đó dựng widget trên session **cũ**. Factory nào đóng trên state của session sẽ render state cũ. **Đây là rủi ro thật, không phải giả định.**
+6. **Đừng mở rộng ra mọi thành viên im lặng.** `setStatus`, `setWidget`, `setWorkingMessage` vẫn là no-op ở cả ba site no-frame. Mở rộng là một thay đổi khác, cần review riêng — và sẽ phá regex của điều khoản (c) theo hướng ngược lại.
+
 ## WI-20. GAP-M2-13 — Cổng tin cậy theo thư mục dự án: `trust.json` ba trạng thái, nạp hai lượt, và re-check ở consumer (thêm 2026-09-29, từ sổ khoảng trống — **CHƯA giao vào M2**)
 
 > **Mục này không thuộc M2, và việc nó nằm ở đây là chủ ý.** WI-0 nói thẳng phần thực thi là M–L và **nằm ngoài M2**; giao nó vào M2 là **chốt ngược chính plan**. Nó được đặt tên ở đây vì WI-0 bước 8 **đòi** hạng mục enforcement mang một TÊN, một CHỦ và một NGÀY, và không milestone nào trong toàn bộ chương trình đặt tên nó. **TÊN của hạng mục đó là mục này.** CHỦ và NGÀY vẫn là câu hỏi mở, và nó là mục duy nhất trong tám mục này phải chờ một quyết định trước khi có dòng code nào.
@@ -4946,6 +7142,104 @@ Bốn phần, và cả bốn đều phải đúng cùng lúc.
 
 ---
 
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo.** Bảng dưới là **kết quả đọc thật**, không phải trích từ trí nhớ. Mọi dòng "Đọc được" đều đã mở file và đọc nội dung.
+
+| # | Neo trong WI-20 | Trạng thái | Nó thực sự nói gì |
+| --- | --- | --- | --- |
+| A1 | `extensions/types.ts:548-561` | ❌ **LỆCH 2 DÒNG** | Dòng 548 là `	): Promise<AgentToolResult<TDetails>>;`, 549 là trống. Comment thật nằm ở **550–562**, khai báo ở **563**. Khoảng 548-561 cắt mất 2 dòng cuối, gồm cả `*/` và chính dòng khai báo mà nó mô tả. **Nội dung thì ĐÚNG**: 551–552 nói *"project-local inputs for the current working directory (extensions, settings, skills, resources)"*. Dùng **`:550-562`** (hoặc `:550-563` nếu muốn kèm khai báo). |
+| A2 | `packages/coding-agent/CHANGELOG.md:1057` (mục **ĐÃ PHÁT HÀNH**) | ❌ **SAI DÒNG, ĐÚNG PHIÊN BẢN** | Dòng 1057 là entry về `providers.cacheRetention` / Anthropic OAuth — không liên quan trust. Entry thật về trust ở **`CHANGELOG.md:1117`**, và nó **đúng** nằm dưới `## [18.1.16] - 2026-09-09` (header ở dòng 1099). Nên phần "đã phát hành" của plan là đúng, chỉ số dòng sai. |
+| A3 | Mục "Đính chính": `types.ts:494` và `:561` | ❌ **CHÍNH BẢN ĐÍNH CHÍNH ĐÃ HỎNG** | `isProjectTrusted(): boolean;` thật ở **496** và **563**. Tức là số của sổ khoảng trống (`:496`, `:563`) **đúng**, còn bảng "Đính chính so với plan" sửa nó thành sai. **Plan đang đính chính ngược.** |
+| A4 | Mục "Đính chính": `runner.ts:1264` | ❌ **HỎNG** | 1264 nằm trong JSDoc của `createContext()` nói về `ctx.invokeTool`. `isProjectTrusted: () => true,` thật ở **`runner.ts:1293`**. |
+| A5 | Mục "Đính chính": `agent-session.ts:7406` | ❌ **HỎNG** | 7406 là comment *"Auto thinking: classify this real user turn…"*. `isProjectTrusted: () => true,` thật ở **`agent-session.ts:7552`**. |
+| A6 | `docs/extension-trust-model.md` — "đọc, KHÔNG sửa ở đợt này" | ⚠️ **KHÔNG TỒN TẠI** | `lsd: docs/extension-trust-model.md: No such file or directory`. Nó là **sản phẩm của WI-0**, chưa có. Không đọc được — nhưng đúng là WI-20 phải chờ WI-0. |
+
+**Các mệnh đề định lượng — đã kiểm, đều ĐÚNG:** `rg -n 'setProjectTrust|trust\.json' packages --glob '*.ts'` → **0 hit** (kể cả trong test — mạnh hơn claim). `rg -n isProjectTrusted packages/coding-agent/{src,test}` → **đúng 4 hit**: `types.ts:496`, `types.ts:563`, `runner.ts:1293`, `agent-session.ts:7552`; cả hai hiện thực đều là closure hằng `isProjectTrusted: () => true,`. Hai test chỉ khẳng định `true` — 3 case / 2 file, tất cả `.toBe(true)` — và chạy **`3 pass, 0 fail`** trên HEAD, nên gate "phải đỏ trước" có ý nghĩa.
+
+**🔴 SAI SO VỚI CÂY THẬT — claim về mã nguồn `pi`.** WI-20 nói: *"**Thiết kế lại, không chép:** `pi` có bốn mục trải trên nhiều file; omp cần **một cơ chế, không phải bốn**."* **Claim này SAI.** `pi` đã làm đúng việc "một cơ chế", trong **một file duy nhất**: `/Users/tranquangdang21/Projects/pi-ref/packages/coding-agent/src/core/trust-manager.ts` — **245 dòng**, xuất `ProjectTrustDecision` (`:9`), `ProjectTrustStoreEntry` (`:11`), `ProjectTrustUpdate` (`:16`), `ProjectTrustOption` (`:21`), `TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES` (`:30`), `getProjectTrustParentPath` (`:60`), `getProjectTrustOptions` (`:66`), `hasTrustRequiringProjectResources` (`:185`), `class ProjectTrustStore` (`:209`, có `get`/`getEntry`/`set`/`setMany`). Phần "trải trên nhiều file" chỉ đúng cho **call site**, không đúng cho **cơ chế**. Hệ quả: khuyến nghị "một cơ chế, không phải bốn" vẫn đúng — nhưng **vì `pi` đã làm vậy**, không phải vì `pi` làm ngược lại. **Ghi vào ADR, đừng sửa file kế hoạch.**
+
+**🔴 SAI — tri-state của plan không phải tri-state của `pi`.** WI-20 đề xuất `resolveProjectTrust(cwd) → "yes" | "no" | "undecided"` (chuỗi). `pi` dùng **`boolean | null`** (`trust-manager.ts:9`), với `null` = chưa có quyết định. Không sai, nhưng là **một quyết định thiết kế phải nói ra**, không phải hệ quả.
+
+**🔴 SAI — có BA danh sách tài nguyên khác nhau, không phải hai.** `types.ts:551-552` (jsdoc omp): `extensions, settings, skills, resources` — **4**. GAP-D12 (trong WI-20): `extensions, settings, skills, prompts, themes, resources` — **6**. `pi` `trust-manager.ts:30-38`: `settings.json, extensions, skills, prompts, themes, SYSTEM.md, APPEND_SYSTEM.md` **+ `.agents/skills` ở cwd hoặc thư mục cha** (`:185-206`) — **7 + 1**. **GAP-D12 phải được tính lại từ 7 mục của `pi`.** Chọn 4 nghĩa là bỏ sót `SYSTEM.md`/`APPEND_SYSTEM.md` — tức là **system prompt của thư mục vẫn nạp khi bị từ chối**, đúng cái lỗ hổng mà `pi` chặn.
+
+**🔴 SAI — claim "bị chặn cho tới khi có native addon".** Addon đã có: `packages/natives/native/pi_natives.darwin-arm64.node`. Cả hai test trust **và** `mcp-project-config-not-trusted-by-default.test.ts` đều chạy xanh (`3 pass`). **Cổng của WI-20 chạy được ngay, không cần build addon.**
+
+**Bảng điểm sửa.** Cột TRƯỚC trích nguyên văn từ file đã mở.
+
+| đường/dẫn | symbol | TRƯỚC (nguyên văn) | SAU (hình dạng) |
+| --- | --- | --- | --- |
+| `src/extensibility/extensions/types.ts:490-492` | jsdoc `ExtensionContext.isProjectTrusted` | `	 * Whether the current project/workspace is trusted. OMP performs no`<br>`	 * project-trust gating — project-level settings and extensions load`<br>``	 * unconditionally — so this always returns `true`. Exposed for`` | `	 * Whether the current project/workspace is trusted, per the saved decision`<br>`	 * for the current working directory. See docs/extension-trust-model.md.` |
+| `src/extensibility/extensions/types.ts:557-561` | jsdoc `HookContext.isProjectTrusted` | ``	 * OMP has no equivalent per-directory trust gate: `.omp/extensions`, `.omp/config.yml`, and``<br>`	 * other project-local inputs are already discovered and loaded unconditionally (see`<br>``	 * `docs/extension-loading.md`). This method exists for compatibility with that upstream surface``<br>``	 * and always returns `true`, truthfully reflecting that OMP already trusts project-local inputs``<br>`	 * by default -- it does not narrow or widen OMP's own security model.` | `	 * Resolves against the saved per-directory decision in the trust store; see`<br>`	 * docs/extension-trust-model.md. Re-read on every call — do not cache.` |
+| `src/extensibility/extensions/types.ts:496, :563` | `isProjectTrusted(): boolean` | `	isProjectTrusted(): boolean;` (hai chữ ký giống hệt nhau) | Giữ nguyên chữ ký. **Không** đổi thành tri-state ở API công khai — `boolean` là hợp đồng với extension viết theo `pi` (xem `trust-manager.ts`/`interactive-mode.ts:2161` của `pi`, vốn cũng trả `boolean`). Tri-state sống **bên trong** `resolveProjectTrust`. |
+| `src/extensibility/extensions/runner.ts:1293` | `ExtensionRunner.createContext` | `			isProjectTrusted: () => true,` | `			isProjectTrusted: () => this.#isProjectTrustedFn(),` |
+| `src/extensibility/extensions/runner.ts:1299` (theo mẫu) | `isIdle` | `			isIdle: () => this.#isIdleFn(),` | giữ nguyên — đây là **mẫu** để bắt chước, không phải dòng cần sửa |
+| `src/session/agent-session.ts:7552` | `AgentSession.#createCommandContext` | `			isProjectTrusted: () => true,` | `			isProjectTrusted: () => resolveProjectTrust(this.sessionManager.getCwd()) === "yes",` |
+| `src/config/settings.ts:653` | `Settings.init` | `		if (globalInstancePromise) return globalInstancePromise;` | **KHÔNG sửa dòng này.** Đây là bẫy. Chỉ *đọc* để hiểu vì sao "nạp hai lượt" không dịch thẳng từ `pi`. |
+| `packages/coding-agent/CHANGELOG.md:3-8` | section `Unreleased` | *(chưa có mục nào về project trust)* | `### Added`<br>``- Project trust: omp now asks once per directory before loading project-local inputs (`.omp/extensions`, `.omp/config.yml`, `.omp/settings.json`, project `SYSTEM.md`/`APPEND_SYSTEM.md`, project `.agents/skills`). The decision is saved per directory in the trust store and `ctx.isProjectTrusted()` returns the real decision instead of a constant `true` ([#NNNN](https://github.com/can1357/oh-my-pi/issues/NNNN)).`` |
+| `packages/coding-agent/CHANGELOG.md:1117` | entry #7955 dưới `## [18.1.16] - 2026-09-09` (header ở dòng 1099) | ``- Fixed legacy Pi extensions failing to load when calling `ctx.isProjectTrusted()` in an event handler; the extension context now exposes it (always `true`, since OMP applies no project-trust gating) ([#7955](…/issues/7955)).`` | **TUYỆT ĐỐI KHÔNG SỬA.** Đã phát hành = bất biến. Mục `Unreleased` ở trên là chỗ ghi công khai. |
+| *(tạo mới)* `src/config/project-trust.ts` | `resolveProjectTrust`, `assertTrusted`, `hasTrustRequiringProjectResources` | *(không tồn tại)* | Một file, export 3 symbol. |
+
+**Các bước có neo đã kiểm.**
+
+0. Chặn: chờ WI-0 chốt danh sách tài nguyên (GAP-D12) — neo `types.ts:550-562`.
+1. Tạo MỘT file cơ chế, không chép `pi` nguyên si — `src/config/project-trust.ts`; tham chiếu `pi-ref/.../trust-manager.ts`.
+2. "Nạp hai lượt" phải được viết lại cho omp, không chép từ `pi` — neo `settings.ts:653`.
+3. Re-check ở consumer: giữ **tham chiếu hàm**, không giữ boolean.
+4. Nối call site thứ hai, và **nhận ra nó không có test nào** — neo `agent-session.ts:7552`.
+5. Chứng minh mâu thuẫn, không chỉ thêm dòng.
+
+**Hợp đồng test.**
+
+**Sửa `packages/coding-agent/test/extension-context-project-trust.test.ts`** (hiện 1 case, `runner` với cwd hằng `"/project"`):
+
+| Case | Contract | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- |
+| `resolves undecided for a directory with no saved decision` | thư mục lạ → `false`, và `hasTrustRequiringProjectResources` báo đúng | clone repo mới → omp **không hỏi** và vẫn nạp `.omp/extensions` |
+| `returns the saved decision for a directory` | ghi `yes` rồi đọc lại → `true`; ghi `no` → `false` | người dùng đã từ chối một thư mục, mở lại lần sau thì omp hỏi lại / nạp lại |
+| `re-reads the decision on every call` | đổi quyết định giữa hai lần gọi, lần sau phải thấy giá trị mới | quyết định đổi giữa session không có tác dụng — im lặng, khó tái hiện |
+
+**Sửa `packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts`** (hiện 2 case): `exposes isProjectTrusted() as a function` (giữ `typeof` assertion) — *nếu hồi quy*: crash `ctx.isProjectTrusted is not a function`, regression #7955 quay lại. Và `command context inherits the same decision as tool context` — `createCommandContext()` trả **cùng** giá trị với `createContext()` — *nếu hồi quy*: command handler và tool handler nhìn thấy hai thế giới khác nhau.
+
+**File mới `packages/coding-agent/test/project-trust.test.ts`** — phần **chưa ai phủ**: `assertTrusted throws for a resource in the decision's blocked list` (*nếu hồi quy:* consumer gọi `assertTrusted` không bao giờ ném → tài nguyên bị chặn vẫn chạy); `assertTrusted does not throw for a trusted project` (*hộp thoại cảnh báo xuất hiện vô nghĩa ở mọi extension*); và `hand-constructed session reports the real decision` cho nhánh fallback `agent-session.ts:7552` (*nếu hồi quy:* **consumer im lặng tin `true` ở một call site và giá trị thật ở call site kia** — hỏng âm thầm, không ai thấy).
+
+**Quy tắc (theo `AGENTS.md` — Testing Guidance):** **không** viết `expect(typeof x).toBe("function")` như contract chính — giữ case `typeof` của #7955 vì nó phòng regression crash, nhưng nó **không** phải bằng chứng trust hoạt động. Case `re-reads the decision on every call` là **test chống chép boolean** — nó là case quan trọng nhất trong file, **đừng bỏ**. Dùng thư mục tạm thật (`fs.mkdtemp`) cho `.omp/`, **không** dùng `"/tmp"` và `"/project"` hằng như hiện tại — trust theo thư mục mà cwd hằng thì mọi case gộp thành một. Không `mock.module()`.
+
+**Cổng có đỏ được không.**
+
+```bash
+rg -n 'setProjectTrust|trust\.json' packages --glob '*.ts'          # 0 hit
+lsd docs/extension-trust-model.md                                    # No such file
+rg -n 'isProjectTrusted: \(\) => true' packages/coding-agent/src     # 0 hit
+bun test packages/coding-agent/test/extension-context-project-trust.test.ts \
+          packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts \
+          packages/coding-agent/test/project-trust.test.ts
+rg -n 'isProjectTrusted' packages/coding-agent/CHANGELOG.md          # 2 hit: 1 cái mới + :1117 cũ
+git diff --stat packages/coding-agent/CHANGELOG.md                   # chỉ được chạm vùng [Unreleased]
+bun run check:ts
+```
+
+**Không cần build native addon.**
+
+| Cổng | Đỏ được? | Bằng cách nào |
+| --- | --- | --- |
+| **(1) Hai call site trả giá trị thật** | ⚠️ **NỬA** | `rg 'isProjectTrusted: \(\) => true'` đỏ được cho `runner.ts:1293`. Nhưng `agent-session.ts:7552` nằm trong nhánh `#createCommandContext()` fallback — **không test nào chạm tới**, nên nó đỏ được **chỉ khi** case `hand-constructed session reports the real decision` trong `project-trust.test.ts` tồn tại. **Không có case đó thì cổng (1) là nửa vời.** |
+| **(2) Hai test sẵn có đỏ trước, rồi đỏ-sau** | ✅ **CÓ** | Cả hai file đều là `.toBe(true)` trên cwd hằng. Chạy `bun test` trên HEAD: **`3 pass, 0 fail`**. Sửa mà quên đổi test → test vẫn xanh và nghĩa là cổng chưa từng đỏ. **Đây là cổng thật sự mạnh nhất.** |
+| **(3) Changelog** | ✅ **CÓ** | `rg -n 'isProjectTrusted' CHANGELOG.md` — hôm nay **1 hit** (dòng 1117); sau khi sửa phải **2 hit**, và `git diff --stat` chỉ được chạm vùng `[Unreleased]`. Kiểm riêng: `git diff` không được chứa dòng 1117. |
+| **(4) `check:ts` exit 0** | ❌ **KHÔNG BAO GIỜ ĐỎ** | Nó chỉ đỏ khi sai kiểu. Một `trust.json` sai schema vẫn typecheck. **Cổng này tạo cảm giác an toàn giả — bỏ nó khỏi danh sách cổng hoàn thành.** |
+
+Viết lại (4): `rg -n "invalid|malformed|corrupt" packages/coding-agent/test/project-trust.test.ts` (chỉ để xác nhận case tồn tại, **không** thay thế việc chạy test), cộng một cổng cho hình dạng dữ liệu: quyết định lưu được là **string, không phải boolean** (ghi `true` thay vì `"yes"` phải bị từ chối khi đọc lại). **Kết luận cổng:** 3 cổng đỏ được (1 nếu bổ sung case, 2, 3), 1 cổng phải bỏ. Giữ nguyên cổng nào không đỏ được thì **xoá nó** — cổng luôn xanh tệ hơn không có cổng.
+
+**Cạm bẫy riêng của mục này.** Xếp theo mức nguy hiểm thật sự.
+
+1. **`agent-session.ts:7552` không có test phủ (nguy hiểm nhất).** Sửa `runner.ts:1293` cho đúng, cả hai test hiện có vẫn xanh, và `:7552` **vẫn trả `true`**. Không ai thấy. Lý do nhánh đó tồn tại là `#createCommandContext` chỉ chạy khi `this.#extensionRunner` là falsy, tức **session tự dựng tay** (comment ở `:7553-7554`: *"`createAgentSession` always builds one … only hand-constructed sessions land here"*). Test hiện có dựng `ExtensionRunner` trực tiếp nên **không bao giờ** đi qua đó.
+2. **Chép `pi` thì leo thư mục cha, và omp cố ý không leo.** `pi` `findNearestTrustEntry` (`trust-manager.ts:44-58`) dòng lên tận `/`. omp: `docs/extension-loading.md:39` — *"cwd-only; it does not walk ancestors."* Chép nguyên logic là tin `~/code/myrepo` vì `~` đã tin. Với cơ chế per-directory mà user sẽ dùng để **từ chối**, đây là lỗi theo hướng nguy hiểm (over-trust), và nó **im lặng** vì không có gì hỏng.
+3. **`Settings` là singleton; "nạp hai lượt" không dịch được.** `settings.ts:653`: `if (globalInstancePromise) return globalInstancePromise;`. Gọi `Settings.init()` lần hai trả về **cùng instance đã nạp project scope**. Người đọc `pi main.ts:586` + `:735` rồi port nguyên sẽ viết `Settings.init()` hai lần và tưởng đã làm xong bước 2. **Bước 2 bắt buộc phải chọn cơ chế thật** (`isolated()` / `overlay()` / gì khác) **và viết lựa chọn vào ADR.**
+4. **Đã có MỘT công tắc trust thứ hai do `5acb674` giao hàng.** Commit `5acb674` *"fix(coding-agent): do not trust project-scope MCP config by default"* đã đặt `mcp.enableProjectConfig` **mặc định `false`** (setting + fallback `??` trong loader). Đây là **boolean opt-out độc lập**, không phải trust theo thư mục. Hệ quả: sau WI-20, omp có **hai** công tắc trust cùng tồn tại — người dùng có thể từ chối thư mục ở `trust.json` nhưng `mcp.enableProjectConfig: true` vẫn nạp `mcp.json` project-scope. **Phải chốt: `trust.json` nuốt `enableProjectConfig`, hay hai cái cùng tồn tại?** Nếu không chốt, WI-20 tạo ra một cổng tin cậy **lủng củng**. (Đã kiểm: `rg -n 'enableProjectConfig' packages --glob '*.ts'` → có ở `sdk.ts:2277,2302,5038`, `modes/controllers/mcp-command-controller.ts:2222,2242`, `modes/components/extensions/dashboard-runtime.ts:57`, và 6 file test.)
+5. **Chép `boolean | null` thành tri-state chuỗi mà không nói.** Cả hai đều ổn, nhưng nếu ADR ghi "theo mẫu `pi`" mà code dùng chuỗi thì người đọc ADR tin nhầm. **Ghi rõ trong ADR.**
+6. **Chốt danh sách 4 hoặc 6 mục thay vì 7.** Chốt 4 mục = bỏ sót `SYSTEM.md` / `APPEND_SYSTEM.md` = system prompt của thư mục vẫn nạp khi bị từ chối. **Đây là lỗ hổng, không phải khác biệt văn phong.**
+7. **Nhầm "chép 4 mục của `pi`" với thật.** Claim trong plan là sai (pi là **một** file). Người đi tìm "bốn mục" sẽ không tìm thấy và có thể kết luận sai rằng tham chiếu không đáng tin, rồi tự thiết kế lại từ đầu.
+
 ## WI-21. GAP-M2-14 — Lệnh cập nhật package đã cài: `omp plugin update`, có kiểm digest trước khi ghi đè (thêm 2026-09-29, từ sổ khoảng trống — **CHƯA giao vào M2**)
 
 > **Mục SỬA MỤC của GAP-M6-15.** Cùng là đường supply-chain của package, khác phần: GAP-M6-15 **ghim nguồn**, mục này là **hành vi người dùng**. **Thứ tự: GAP-M6-15 phải merge trước** — không có nó thì `update` là tải code không xác thực.
@@ -5043,6 +7337,96 @@ Bốn phần.
 
 
 ---
+
+### Phiếu triển khai — đã kiểm trên cây 2026-09-29
+
+**Cảnh báo neo. Hai neo được việc dẫn ĐÚNG, nhưng phần lớn tiền đề của mục SAI, và sai theo cách làm một grep sai báo động đỏ trên một lỗ hổng không tồn tại.**
+
+| Neo trong mục | Kết quả | Verdict |
+| --- | --- | --- |
+| `packages/coding-agent/src/…/git-url.ts:16` | `	pinned: boolean;` — khai báo field trong `export type GitSource` (dòng 4), doc comment dòng 15: `/** True if ref was specified (package won't be auto-updated) */` | **ĐÚNG** |
+| `git-url.ts:184` | `		pinned: Boolean(info.committish \|\| split.ref),` — chỗ **gán** cờ, trong `tryKnownHostSource()` | **ĐÚNG** |
+| `config/registry.ts:789` (namespace của WI-8a) | `	byId.set(definition.id, handle as AnySetting);` | **ĐÚNG** — và đúng nghĩa: đây là biến dạng ghi duy nhất, không có `unregister` |
+| GAP-M6-15 chưa merge | `rg 'sourcePin\|assertPinnedSource' packages/coding-agent/src` → **0 hit** | **ĐÚNG** — thứ tự phụ thuộc là thật |
+| `grep -rniE 'plugins update\|extensions update\|updateExtension\|updatePlugin' packages/coding-agent/src` | 0 hit | **ĐÚNG VỀ CON SỐ, SAI VỀ KẾT LUẬN** — xem D1 |
+
+Ba bước của mục tự ghi `*(neo: không)*` (bước 1, 3, 5). Không có neo nào để kiểm. **Bước 5 là bước *duy nhất* định nghĩa bất biến an toàn, và nó cũng là bước không có neo.**
+
+**D1 — CORRECTION LỚN NHẤT: lệnh update ĐÃ TỒN TẠI, và grep của mục là false-negative.** Mẫu grep trong mục **không trùng tên hàm thật**. Tên thật trong cây là `upgrade*`, và action verb là `"upgrade"` — không phải `update`. Đây là một probe đo sai đối tượng: 0 hit **không** chứng minh thiếu lệnh, nó chỉ chứng minh cây không dùng đúng từ mà người đo tưởng nó dùng. `omp plugin upgrade` **đã có, đã đăng ký, đã test, đã xuất bản**:
+
+| Mắt xích | Neo đã mở | Nội dung |
+| --- | --- | --- |
+| Action trong union | `plugin-cli.ts:39` | `	\| "upgrade";` (dòng cuối của `PluginAction`) |
+| Action trong bảng hợp lệ | `plugin-cli.ts:73` | `	"upgrade",` |
+| Dispatch | `plugin-cli.ts:189-190` | `		case "upgrade":` / `			await handleUpgrade(cmd.args, cmd.flags);` |
+| Handler | `plugin-cli.ts:311` | `async function handleUpgrade(args: string[], flags: PluginCommandArgs["flags"]): Promise<void> {` |
+| Gọi "nâng tất cả" | `plugin-cli.ts:344` | `			const results = await manager.upgradeAllPlugins();` |
+| Ngữ cảnh cảnh báo | `cli-commands.ts:326-327` | `	upgrade:` / `` '`omp upgrade` is not a top-level command. Use `omp plugin upgrade [name@marketplace]` …' `` |
+| Tài liệu | `docs/marketplace.md:71` | `omp plugin upgrade [--scope user\|project] [name@marketplace]` |
+| Đã phát hành | `CHANGELOG.md:739` | ``- `plugin upgrade` on an npm-installed plugin … now points to `omp plugin install <pkg> --force` … ([#11090](…))`` |
+
+Bốn hàm phía dưới tất cả đã tồn tại, đã mở file và đọc: `marketplace/manager.ts:762` `async checkForUpdates(): Promise<Array<{ pluginId: string; scope: "user" | "project"; from: string; to: string }>>`; `:812` `async upgradePlugin(pluginId, scope?)`; `:848` `async upgradePluginAcrossScopes(pluginId)`; `:880` `async upgradeAllPlugins()`. Test đã có và **chạy xanh ngay bây giờ**: `bun test packages/coding-agent/test/marketplace/manager.test.ts` → **62 pass, 0 fail**, gồm `upgradePlugin updates the installed version` (1272), `upgradeAllPlugins upgrades outdated plugins and returns results` (1300), `upgradePluginAcrossScopes …` (1372).
+
+**Hệ quả trực tiếp lên câu hỏi "cần người quyết":** *"Có cần `--all` không, hay chỉ từng cái?"* — **Đã có câu trả lời trong code**: `handleUpgrade` với `pluginId === undefined` gọi `upgradeAllPlugins()`. `omp plugin upgrade` trần **đã là** `--all`. Câu hỏi này **đóng, không cần hỏi**. *"Effort S hay M?"* — **S**, vì transaction đã có sẵn. M chỉ còn nếu người quyết định mở rộng sang cả ba kênh git/URL/local.
+
+**D2 — CORRECTION: transaction đã có sẵn ở đường install.** Mục bước 5 nói update phải là "resolve + tải + verify digest + đổi trỏ" và cảnh báo gộp 4 thành 3 sẽ để lại trạng thái nửa vời. Trên HEAD, 3 trong 4 bước đã có và đã có rollback: `manager.ts:333` `#snapshotInstalledPackage`; `:364` `#rollbackFailedInstall` — khôi phục `package.json` **và** `bun.lock` **và** cây package; `:397` `#validateInstalledExtensions`; `:447` `install()`; `:672-687` `catch (err) { … #rollbackFailedInstall( … } finally { #cleanupSnapshot(…) }`; `:1181` `#reconcileVersionDrift` — một rollback thứ hai, dùng cho `doctor --fix`. Thêm nữa, đường **git re-install đã có sẵn bước nâng**: `manager.ts:591-610` chạy `refreshBunGitCache(gitSource, getPluginsDir())` rồi `Bun.spawn(["bun", "update", actualName])` khi `gitSource && existingActualName`. Nghĩa là **cơ chế "nâng một plugin git đã cài" đã tồn tại** — nó chỉ chưa có lệnh để gọi vào. `docs/plugin-manager-installer-plumbing.md:252` nói thẳng `The plugin manager is not transactional.` — nhưng bảng ngay dưới (256-258) liệt kê ba giai đoạn có rollback thật; "không transaction" **giới hạn ở uninstall và link**, không phải install/update.
+
+**D3 — CORRECTION: `pinned` là field CHẾT, không có consumer nào.** Bốn chỗ gán (`:184`, `:232`, `:268` và chỗ còn lại) — **không có chỗ đọc**. Doc comment ở dòng 15 hứa `package won't be auto-updated` — nhưng không dòng nào thực thi lời hứa đó. Mục đã ghi đúng khi nói "đọc, KHÔNG sửa". **Đây là tin tốt cho bước 4 và tin xấu cho cổng:** bất biến "pinned không tự nhảy version" **đang đúng bằng ngẫu nhiên**. Một implementation nao trôi theo đường marketplace (đã có) sẽ **không hề đụng** tới git, nên test sẽ xanh mà không chứng minh gì.
+
+**D4 — CORRECTION: `upgradeAllPlugins` ĐÃ vi phạm DÒNG 2 ngay hôm nay.** Đây là phát hiện sắc nhất. DÒNG 2 của mục: *"một lần tải hỏng giữa chừng không để lại trạng thái nửa vời"*. Code đã có — `marketplace/manager.ts:877-880` (comment): *"Per-entry failures are skipped — partial success is returned."*; và `:885-893` (thân): `for (const update of updates) { try { const entry = await this.upgradePlugin(…); results.push({…}); } catch { // Skip this entry; partial upgrades are better than none. } }`. **`catch {}` rỗng, nuốt lỗi không log.** Một plugin nâng hỏng giữa chừng **không hề được báo**, và `handleUpgrade` in ra danh sách **trông như thành công toàn bộ**. Đó **chính là** trạng thái nửa vời mà DÒNG 2 cấm — không phải trên đĩa, mà là trong **lời nói với người dùng**. Nên WI-21 không phải "thêm lệnh": nó là **đóng một lỗ hẹn dẫn dữ liệu đã tồn tại**.
+
+**D5 — hạ tầng test KHÔNG bị chặn trên máy này.** Đo thật: `bun test packages/coding-agent/test/marketplace/manager.test.ts` → **62 pass 0 fail 159 expect() calls**; `bun test packages/coding-agent/test/plugin-command.test.ts` → **1 pass 0 fail**; `bun run check:ts` → `[exited with code 0]`. Addon **đã build**. Cả ba cổng chạy được ngay.
+
+**Bảng điểm sửa.**
+
+| đường/dẫn | symbol | TRƯỚC (trích nguyên văn) | SAU (hình dạng sau khi sửa) |
+| --- | --- | --- | --- |
+| `src/cli/plugin-cli.ts:39` | `PluginAction` | `	\| "upgrade";` | giữ nguyên. `upgrade` **đã có**; không thêm action mới. Nếu thêm `update` thì đó là **alias**, và phải thêm vào `VALID_ACTIONS` (`plugin-cli.ts:73`) cùng một lần nữa — hai bảng phải khớp. |
+| `src/cli/plugin-cli.ts:317` | `handleUpgrade` | `	if (pluginId && !parsePluginId(pluginId)) {`<br>``		console.error(chalk.red(`Invalid plugin ID: "${pluginId}". Marketplace plugins upgrade as "name@marketplace".`));``<br>``		console.error(`<br>``			chalk.yellow(\`For an npm-installed plugin, upgrade with: ${APP_NAME} plugin install ${pluginId} --force\`),`<br>`		);`<br>`		process.exit(1);`<br>`	}` | Rẽ nhánh theo **channel** thay vì nhảy thẳng ra `exit(1)`. `parsePluginId` thành một trong ba: **marketplace** → `manager.upgradePlugin` như hiện tại; **npm** → `PluginManager` đường `--force` như hiện tại, **thêm** in dòng nói chỗ này là `reinstall`, không phải `upgrade`; **git / url / local** → đường mới ở `PluginManager.update()`. Cờ `pinned` được đọc **trước** khi gọi `update()`. |
+| `src/extensibility/plugins/manager.ts:447` | `PluginManager.install` | `	async install(specString: string, options: InstallOptions = {}): Promise<InstalledPlugin> {` | **không đổi dòng này.** Thân nó (snapshot `:333` → validate `:397` → catch/rollback `:672-687`) là transaction sẵn có, và `update()` mới phải **gọi lại nó**, không được viết lại. Nếu phải nhân bản snapshot/rollback, đó là dấu hiệu sai cấu trúc — dừng lại. |
+| `src/extensibility/plugins/manager.ts` (mới, cạnh `install` `:447`) | `PluginManager.update` | *(không có)* | Hàm mới. Thân gọi lại `install()` với spec đã resolve + `--force`, nên rollback của `install` áp dụng nguyên vẹn. Trả về kèm một mốc `pinnedSkipped: boolean` để lớp CLI in ra thay vì im lặng. Trả về `null` (không phải throw) khi spec có ref ⇒ caller biết đây là **bỏ qua có chủ ý**, không phải hỏng. |
+| `src/extensibility/plugins/git-url.ts:16` | `GitSource.pinned` | `	/** True if ref was specified (package won't be auto-updated) */`<br>`	pinned: boolean;` | **không sửa `git-url.ts`.** Chỉ **đọc** `source.pinned` ở nơi quyết định. Doc comment này hôm nay là **lời hứa không ai thực thi** — sau PR này nó mới thành đúng. Nếu cần sửa comment thì sửa **sau**, và phải kèm test chứng minh. |
+| `src/extensibility/plugins/marketplace/manager.ts:889-892` | `upgradeAllPlugins` | `			} catch {`<br>`				// Skip this entry; partial upgrades are better than none.`<br>`			}` | `catch (err)` ghi vào mảng thất bại đi cùng kết quả: `{ pluginId, scope, error }`. `handleUpgrade` (`plugin-cli.ts:344`) in mảng thất bại **sau** mảng thành công, và `process.exit(1)` nếu có. Đây là sửa DÒNG 2 — **không** sửa được bằng `check:ts`. |
+| `src/cli/plugin-cli.ts:344-352` | `handleUpgrade`, nhánh không có `pluginId` | `			const results = await manager.upgradeAllPlugins();`<br>`			if (results.length === 0) {`<br>`				console.log("All marketplace plugins are up to date.");` | In thêm khối thất bại. Khi **có** thất bại, dòng `"All … are up to date"` phải **không** được in, và exit code phải khác 0 — nếu không, lệnh vẫn nói dối. **Đây là hợp đồng người dùng thấy, không phải chi tiết in ấn.** |
+| `src/cli/cli-commands.ts:326-327` | bảng hint verb trần | `	upgrade:`<br>``	'`omp upgrade` is not a top-level command. Use `omp plugin upgrade [name@marketplace]` …'`` | Nếu thêm alias `update`, thêm một hàng `update:` trỏ cùng chỗ. Bỏ trống thì `omp update` — và **cả `omp update the deps`** — rơi xuống `launch` như một prompt bình thường, đúng cái lỗi #4845 đã sửa cho `upgrade`. |
+
+**Các bước có neo đã kiểm.**
+
+1. **Đóng ba câu hỏi "cần người quyết" bằng code đã có, đừng hỏi lại.** `--all` đã tồn tại — `plugin-cli.ts:344`. Chỉ còn **một** câu thật sự mở: **git/URL/local có vào phạm vi wave 9 không**. Ghi câu trả lời vào `.lavish-wip/DECISION-*.md` **trước** khi mở file đầu tiên.
+2. **Viết test đỏ trước, và bắt nó đỏ thật.** Dựng `test/plugin-update.test.ts`. Chạy. **Xác nhận đỏ** vì `PluginManager.update` chưa tồn tại. Một lần chạy xanh lúc này nghĩa là test vô nghĩa — dừng lại và viết lại test. *(neo: `manager.ts:447`)*
+3. **Thêm `PluginManager.update()`, cơ thể gọi lại `install()`.** Đừng viết lại snapshot/rollback. `install()` đã có đủ: `manager.ts:333`, `:397`, `:672-687`. Mới chỉ thêm: đọc `source.pinned` (đọc, **không sửa** `git-url.ts:16`) và trả `null` khi pinned.
+4. **Rẽ `handleUpgrade` theo channel.** `plugin-cli.ts:317`. Ba nhánh, mỗi nhánh một test. Nhánh marketplace giữ nguyên hành vi (đã có 62 test xanh — **đừng phá**). *(neo: `marketplace/manager.ts:812`)*
+5. **Sửa `catch {}` ở `upgradeAllPlugins`.** Đây là DÒNG 2, và nó nằm trong code đã có chứ không phải code mới. `marketplace/manager.ts:889`. Bắt buộc kèm: test chứng minh exit code khác 0 và tên plugin hỏng xuất hiện trong output.
+6. **`CHANGELOG.md`, dưới `## [Unreleased]` (dòng 3).** `CHANGELOG.md:739` đã mô tả hành vi `plugin upgrade` hiện tại ở **section đã phát hành** (`18.2.2`) — **đừng sửa dòng đó**, thêm dòng mới.
+
+**Hợp đồng test.** File mới: `packages/coding-agent/test/plugin-update.test.ts`. Harness theo đúng `test/plugin-install-git.test.ts` — `vi.spyOn` sáu getter đường dẫn plugin trong `@oh-my-pi/pi-utils` trỏ vào cây tạm, `vi.spyOn(Bun, "spawn")` để mô phỏng side effect, `afterEach` gọi `vi.restoreAllMocks()`. **Không** dùng `mock.module()` (cấm theo AGENTS.md — rò `bun#12823`).
+
+| # | Ca | Khẳng định | Người dùng thấy gì nếu hồi quy |
+| --- | --- | --- | --- |
+| **1** | **DÒNG 1 — plugin git có ref không bao giờ nhảy version** | Cài `github:u/r#v1`, chạy update với ref đó vẫn còn ở đâu đó trên remote. Assert `update()` trả `{ pinnedSkipped: true }` **và** `Bun.spawn` **không** được gọi với `["bun","update", …]`. Phải assert **cả hai**: trả `null` mà vẫn spawn là trường hợp "báo là bỏ qua nhưng vẫn nâng" — tệ hơn cả im lặng. | Người dùng ghim `v1` để giữ một bản đã duyệt. Một lần `omp plugin upgrade` âm thầm kéo nhánh chính về → code đang chạy đổi mà không ai yêu cầu, và ref trong `package.json` nói dối vì họ vẫn tưởng mình đang ở `v1`. |
+| **2** | **DÒNG 2 — tải hỏng giữa chừng không để lại trạng thái nửa vời** | Cho `Bun.spawn` của `bun install` trả exit 1. Assert `package.json` và `bun.lock` **bằng byte trước**, `node_modules/<name>` còn nguyên, `omp-plugins.lock.json` không đổi. | Registry vẫn trỏ vào một cây package đã bị xoá nửa chừng. Lần `plugin doctor` sau báo đẹp, lần `install` sau không biết đang sửa cái gì. |
+| **3** | **Lỗi nâng-tất-cả không bị nuốt** | `upgradeAllPlugins` với một entry nâng hỏng: assert mảng kết quả **có mục thất bại mang tên plugin**, và lớp CLI **thoát với code ≠ 0** và **không** in `"All marketplace plugins are up to date."` | Im lặng là trường hợp nguy hiểm nhất: `catch {}` ở `manager.ts:891` khiến lệnh in ra danh sách trông như thành công toàn bộ. **Đây là hồi quy đã tồn tại trên HEAD, không phải hồi quy do PR này gây ra.** |
+
+**Không thêm ca nào khác.** Ba ca trên là ba bất biến của mục; ca thứ tư trở đi là "test bao nhiêu thì đủ", và AGENTS.md cấm đúng loại đó.
+
+**Cổng có đỏ được không.** Bốn phần như mục gốc, nhưng **viết lại phần 2 và 3 vì chúng không đỏ được**.
+
+**(1) HAI BẤT BIẾN BẢO MẬT. ĐỎ ĐƯỢC — bằng test ca 1 và ca 2**, cả hai trong `bun test packages/coding-agent/test/plugin-update.test.ts`. *Bẫy:* vì `pinned` hôm nay là field chết, một implementation **không hề đọc** `pinned` vẫn làm test 1 xanh nếu test chỉ assert "version không đổi". Test 1 phải spy `Bun.spawn` và assert **không có** lời gọi `bun update` — đó mới là thứ đỏ khi ai đó bỏ `if (source.pinned) return null`.
+
+**(2) MỘT NAMESPACE. KHÔNG ĐỎ ĐƯỢC. Không có cách nào làm nó đỏ.** `check:ts` không bắt được "bạn ghi bằng đường khác"; nó chỉ bắt được kiểu. Tách `PluginManager` (`manager.ts`) và `MarketplaceManager` (`marketplace/manager.ts`) là **hai substrate khác nhau** ngay từ trước WI-8a. **Viết lại:** đường mới **phải** đi qua `PluginManager.install()` (`manager.ts:447`) — vì đó là nơi duy nhất có snapshot/rollback. Trong ca 2, assert `#snapshotInstalledPackage` có hiệu ứng quan sát được (byte `bun.lock` được khôi phục) — nếu ai đó lách vòng `install()`, dòng đó xanh-mà-vô-nghĩa… **trừ khi** ta khẳng định luôn `Bun.spawn` chỉ được gọi từ dưới `manager.ts:447`.
+
+**(3) THỨ TỰ — GAP-M6-15 merge trước. KHÔNG ĐỎ ĐƯỢC bằng cổng tự động, nhưng đỏ được bằng một kiểm tra thủ công có ghi vào PR:** `rg -n 'sourcePin|assertPinnedSource' packages/coding-agent/src` (hôm nay: 0 hit). Merge PR này khi lệnh đó **còn 0 hit** ⇒ thứ tự bị vi phạm. Ghi kết quả vào mô tả PR. **Đây là cổng có thể đỏ bằng cách con người đọc; nó không tự đỏ, và nói thẳng như vậy còn hơn giả vờ.**
+
+**(4) `check:ts` exit 0. ĐỎ ĐƯỢC, nhưng yếu.** Đã chạy trên HEAD: exit 0. Nó đỏ được **chỉ** khi có lỗi kiểu. Một `update()` ghi sai registry vẫn xanh. **Giữ nó ở cổng, đừng để nó đứng một mình.**
+
+**Cạm bẫy riêng của mục này.**
+
+1. **Cái bẫy lớn nhất: tin cái grep 0 hit.** Mẫu `updateExtension|updatePlugin` là false-negative — tên thật là `upgrade*`. Người gõ PR theo mục này sẽ mở `plugin-cli.ts`, thấy `upgrade` đã có ở dòng 39/73/189/311, và phải đi tìm xem mình đang sửa cái gì. **Việc này tốn nửa ngày nếu không được nói trước.** Nếu ai đó "xác nhận lại" bằng **đúng cái grep cũ**, họ sẽ kết luận sai lần thứ hai.
+2. **Cái bẫy thứ hai: coi DÒNG 1 là miễn phí vì `pinned` không có consumer.** Invariant "pinned không nhảy version" **đang đúng một cách ngẫu nhiên**. Một PR thêm `update()` mà chỉ phủ marketplace sẽ **xanh** mà không đụng tới `pinned` lần nào. **Test ca 1 phải ép đường git đi qua, nếu không nó không chứng minh gì.**
+3. **Cái bẫy thứ ba: tưởng `install()` là một khối nguyên.** Nó không phải. Nó dài ~245 dòng, có **hai** chỗ rollback (`install` ở `:672`, `#reconcileVersionDrift` ở `:1181`) và một nhánh git-riêng (`bun update` ở `:591-610`) chỉ chạy khi `gitSource && existingActualName`. Viết `update()` bằng cách gọi lại `install()` là đúng. **Nhân bản vì "sợ đụng" là sai và tạo hai transaction song song.**
+4. **Cái bẫy thứ tư — nguy hiểm nhất về mặt im lặng: `catch {}` ở `manager.ts:891`.** Nó **trông** như "xử lý lỗi mềm" và review sẽ lướt qua. Thực tế nó là DÒNG 2 bị vi phạm, trên đúng cây code mà mục này định sửa. Người viết PR dễ chỉ tập trung vào đường git mới và **quên dọn chỗ này** — rồi mục lên tiếng "đã bảo đảm transaction" trong khi `omp plugin upgrade` vẫn in ra danh sách toàn-tim mà một phần hỏng.
+5. **Cái bẫy thứ năm: `--all` là câu hỏi đã có đáp án.** Đừng mở một quyết định người dùng cho thứ mà `plugin-cli.ts:344` đã trả lời. Tệ hơn: nếu thêm alias `update` mà quên `cli-commands.ts` (verb trần), thì `omp update the deps` sẽ chạy thành một phiên agent với prompt là "the deps" — đúng lỗi #4845 đã sửa cho `upgrade`.
+6. **Cái bẫy thứ sáu: dùng `bun test` đỏ vì thiếu addon làm lý do.** Trên máy này addon đã build, 62/62 xanh. Một lần đỏ giả ở đây không chứng minh gì và — theo chính bảng rủi ro chung của M2 — là cách sai kinh điển làm mất một bản sửa thật.
 
 ## Rủi ro và cách sai dễ nhất
 

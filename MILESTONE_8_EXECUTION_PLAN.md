@@ -85,10 +85,38 @@ Cài mới xong, chạy tool không hỏi. `CROSS_REPO_COMPARISON.md:895` đã �
 
 | Không đổi | Vì sao |
 | --- | --- |
+| **Containment tầng OS (W1, W2) — DEFER (2026-09-29)** | Chủ sở hữu đã chốt hoãn. Xem bên dưới. |
 | Không nâng `CRITICAL_BASH_PATTERNS` thành containment | Đó là M1 W6, và nó là *approval*, không phải *isolation*. Trộn hai tầng là lỗi kiến trúc. |
 | Không sửa `spawn-policy.ts` | M6:1412 nói rõ nó **đúng** và không được sửa. M8 dùng nó làm đầu vào. |
 | Không bỏ `yolo` ngay | W3 là quyết định sản phẩm, cần sign-off bằng văn bản. Không tự ý đổi hành vi cài mặc định. |
 | Không dùng code của `omo` (`SUL-1.0`, non-sublicensable) | Mượn **hình dạng cổng**, không mượn dòng code. |
+
+---
+
+## ⚠️ Phạm vi sau quyết định DEFER (2026-09-29)
+
+Chủ sở hữu đã chốt: **hoãn containment tầng OS.** Đây là câu quyết định 1, câu hỏi chặn cả milestone.
+
+**Cái được hoãn:** `W1` (`FileSystemSandboxPolicy`) và `W2` (`NetworkSandboxPolicy`) — tức toàn bộ phần cần kernel, syscall hoặc profile OS. Đây là phần mang tên "Containment", nên **tên milestone không còn mô tả đúng nội dung nữa**; xem *Việc cần làm ngay* bên dưới.
+
+**Cái KHÔNG hoãn** — vì chúng không cần kernel, rẻ, và nằm trên đường sẽ đỏ sớm:
+
+| ID | Vì sao vẫn giữ |
+|---|---|
+| `W3` mặc định approval `yolo` → `write` | 3 dòng code + doc. Là quyết định sản phẩm, không phải hạ tầng. |
+| `W4` path rule khai báo bằng YAML | Rẻ, không cần kernel, và là thứ **duy nhất** chặn được `eval` chạy code không kiểm chứng. |
+| `W5` `tools.approval.eval` | Đóng đường thoát thứ hai mà `docs/approval-mode.md:72` nêu tên. S, và là lỗ hổng sống. |
+| `W7` trạng thái ba ngày cho cổng | XS. Không có nó thì mọi cổng của M1–M7 đỏ giả đều không phân biệt được với đỏ thật. |
+| `W8` nhốt code do model viết | Khác W1/W2: cơ chế là **cấp quyền bằng cách không cấp** (realm, không import) — không cần kernel. Và codex làm thế. |
+| `W9` báo trạng thái trong `omp doctor` | S, và là chỗ duy nhất để in ra. |
+
+**Cái cần một chỗ mới: `W6`** (tiếp nhận `WI-20` / `GAP-M2-13` — trust enforcement theo thư mục dự án, cỡ L). Nó **không phải** OS containment — nó là câu trả lời cho **Câu 3 đã chốt** (extension project-local không tự load, `ctx.exec` bị từ chối với extension không tin cậy), và `isProjectTrusted()` vẫn là `() => true` ở `runner.ts:1293` và `agent-session.ts:7552`. `M2:44` cấm đặt nó trong M2. **Nó cần chủ**, hoặc nó sẽ lặp lại đúng số phận của sandbox: bị ba tài liệu nhắc tới và không ai nhận.
+
+### Việc cần làm ngay
+
+1. **Đổi tên M8** — "Containment" giờ mô tả cái đã bị hoãn. Gợi ý: *M8 — Approval & Containment khả dụng* hoặc tách hẳn, để cái đã hoãn không bị hiểu là đang được làm.
+2. **Gán chủ cho `W6`** — nó là phần cài của Câu 3, đã chốt hôm nay.
+3. **Ghi quyết định defer vào `docs/approval-mode.md`** — dòng 72 hiện thừa nhận thiếu containment mà không nói đó là **quyết định**. Chính cái im lặng đó là gốc rễ: đọc tài liệu không ai biết có phải sơ suất hay chủ ý.
 
 ---
 
@@ -118,7 +146,7 @@ Cài mới xong, chạy tool không hỏi. `CROSS_REPO_COMPARISON.md:895` đã �
 
 | # | Quyết định | Vì sao chặn | Ai chốt |
 |---|---|---|---|
-| 1 | **Sandbox có thực sự là thứ sản phẩm này cần không?** | `docs/approval-mode.md:72` thừa nhận thiếu containment nhưng **không nói đó là quyết định**. Nếu maintainer đã chốt approval-only thì M8 rút còn "ghi quyết định vào tài liệu" + W4/W5/W7, còn W1/W2/W6 rút ra. Đây là câu hỏi chặn **toàn bộ** M8. | Maintainer, bằng văn bản |
+| 1 | ~~**Sandbox có thực sự là thứ sản phẩm này cần không?**~~ **✅ ĐÃ CHỐT (2026-09-29): DEFER.** Chủ sở hữu quyết **hoãn containment tầng OS**. Xem *Phạm vi sau quyết định defer* bên dưới. | ~~Đây là câu hỏi chặn toàn bộ M8.~~ **Đã đóng.** | Maintainer, bằng văn bản ✅ |
 | 2 | Mặc định `tools.approvalMode` đổi `yolo` → `write`? | Đổi hành vi cài mặc định. Chốt sau thì không sửa ngược được mà không phá người đã quen. M1 W6 từng bị trì hoãn vì lý do này. | Maintainer, bằng văn bản |
 | 3 | `eval` có được quyền spawn shell không? | W5 chặn nó là thay đổi hành vi. Nếu `eval` **cần** spawn shell thì W8 phải làm trước W5, ngược thứ tự. | Maintainer + kỹ sư tool |
 | 4 | W6 có nhận `WI-20` từ M2 không, hay M2 giữ? | M2:44 nói thẳng phần thực thi **nằm ngoài M2**. Chuyển nó cần một dòng owner + ngày trong bảng quyết định M2. | Maintainer |

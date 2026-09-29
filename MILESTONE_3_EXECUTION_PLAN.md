@@ -20,7 +20,7 @@ phạm vi M3 theo đo**, không phải theo giả định.
 ### Ràng buộc pháp lý đã chốt, không mở lại
 
 Nguồn là `claude-code-best/claude-code`, tựa đề tự nó là **"Reverse-engineered Anthropic Claude Code
-CLI"**. Repo đó **không cấp quyền ở gốc** *(đính chính 2026-09-29: câu cũ "không có file `LICENSE` ở bất kỳ path nào" là **sai** — `packages/workflow-engine/LICENSE` có tồn tại (MIT, 1.073 byte) và `packages/acp-link` khai `"license": "MIT"` không kèm file. Cách viết đúng: **root không cấp quyền cụm; 2/13 package là carve-out MIT hẹp, và không cái nào thuộc phần M3 port**)*, `package.json` ở gốc không khai `license`, và bản **đã phát hành lên npm** (`claude-code-best@2.8.4`) cũng có **0 trường `license`** — tức đường phân phối cũng đóng, không chỉ đường nguồn; README gõ
+CLI"**. Repo đó **không cấp quyền ở gốc** *(đính chính 2026-09-29: câu cũ "không có file `LICENSE` ở bất kỳ path nào" là **sai** — `packages/workflow-engine/LICENSE` có tồn tại (MIT, 1.073 byte) và `packages/acp-link` khai `"license": "MIT"` không kèm file. Cách viết đúng: **root không cấp quyền cụm; 2/20 manifest là carve-out MIT hẹp (đo lại trên cây đã clone), và không cái nào thuộc phần M3 port**)*, `package.json` ở gốc không khai `license`, và bản **đã phát hành lên npm** (`claude-code-best@2.8.4`) cũng có **0 trường `license`** — tức đường phân phối cũng đóng, không chỉ đường nguồn; README gõ
 *"This project is for educational and research purposes only. All rights to Claude Code belong to
 Anthropic."* — xem [§2.0 của phần này trong plan tổng](COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md#ràng-buộc-pháp-lý-đã-chốt-không-mở-lại).
 

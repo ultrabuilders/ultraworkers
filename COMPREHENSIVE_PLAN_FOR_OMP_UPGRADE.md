@@ -292,6 +292,13 @@ Không dùng `tsc` — AGENTS.md cấm.
 | 4 | **M4** | Kỷ luật & workflow theo deepseek-harness | M2 | 4 | 3 | M (2.5–3 tuần cho phần core) |
 | 5 | **M5** | Rebrand `ultraworkers` | M1–M4 | 16 | 6 | L (phần lớn là **phân phối**, không phải code) |
 | 6 | **M6** | Bài học từ codex / opencode / gajae | M1–M5 | 15 | 5 | S+M (~4–6 ngày XS/S, +2–3 tuần M) |
+| 7 | **M7** | Cái riêng của senpi — tách khỏi M5 (2026-09-28) | M2 | 5 | 6 | ~10–12 ngày. **Quan hệ với M6 chưa ghi ở đâu** — cần chủ quyết |
+| 8 | **M8** | Trust Boundaries — trust, approval, enforcement | M2 | 5 | 4 | XS–L. **Containment tầng OS đã DEFER (2026-09-29)**; giữ lại phần không cần kernel |
+
+**Ghi chú về bảng này (2026-09-29):** trước đây bảng chỉ liệt kê M1–M6, nên người đọc tưởng chương
+trình có 6 milestone. M7 và M8 đã tồn tại nhưng không có mặt. M1 nay gộp cả M1B (xem *Phần A / Phần B*
+trong chính file M1). **Cột *Quan hệ* của M7 vẫn trống** — đó là một câu hỏi mở, không phải quan hệ đã
+xác lập.
 
 `R0` không phải tiền đề của M1 — nó là tiền đề của **Phần B của M1** (gộp từ `M1B` ngày 2026-09-29), theo `PACKAGE_REORGANIZATION_PLAN.md:3`. Bảy tài liệu kế hoạch thay vì tám: `MILESTONE_1_EXECUTION_PLAN.md` nay chứa cả hai phần.
 

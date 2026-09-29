@@ -1,7 +1,7 @@
 # KẾ HOẠCH THỰC THIỆN — MILESTONE 1: BAO TRỌN `pi`
 
 > **Gộp 2026-09-29.** Tài liệu này từng là hai: `MILESTONE_1_EXECUTION_PLAN.md` (nền tảng vòng đời
-> và parity) và `MILESTONE_1B_EXECUTION_PLAN.md` (port 6 package từ `pi`). Chúng đã được **gộp lại**
+> và parity) và `MILESTONE_1B_EXECUTION_PLAN.md` (chép các package `pi` còn thiếu). Chúng đã được **gộp lại**
 > vì tách ra làm hai tài liệu khiến người đọc tưởng M1 đã bao trọn `pi` trong khi phần port nằm ở
 > chỗ khác — và chính M1B từng tự viết *"đây là tài liệu DUY NHẤT bao trọn phần còn thiếu của M1"*.
 
@@ -13,7 +13,7 @@
 | Phần | Nội dung |
 |---|---|
 | **A** | Nền tảng vòng đời + parity — **W1–W22**, 8 wave. Bắt đầu ở *Mục tiêu*, kết thúc ở *NHỮNG ĐIỀU CHƯA ĐƯỢC KIỂM CHỨNG*. |
-| **B** | Port 6 package từ `pi` — **mục 1–7** (mục 5 `durable` là *tài liệu tham khảo, ngoài phạm vi*), `WI-ECOSYS-1..3`, `GAP-M1B-1/2/3/5`, sóng 0.5. Bắt đầu ở *ĐIỀU CHỈNH PHẠM VI*. |
+| **B** | Chép package còn thiếu từ `pi` — **mục 1–7** (mục 5 `durable` là *tài liệu tham khảo, ngoài phạm vi*), `WI-ECOSYS-1..3`, `GAP-M1B-1/2/3/5`, sóng 0.5. Bắt đầu ở *ĐIỀU CHỈNH PHẠM VI*. ⚠️ **Phần B này viết khi `pi` còn 12 package; nay `pi` có 14** — `codemode` và `mcp` mới, chưa có mục nào ở đây. Đọc *ĐIỀU CHỈNH PHẠM VI 2026-09-29* trước. |
 
 ---
 
@@ -73,7 +73,7 @@ Mario Zechner), nên chép rẻ hơn và ít rủi ro pháp lý hơn tái tạo;
 | --- | --- |
 | `session-backends` | **Còn để ngỏ** — thứ duy nhất trong ba cái chưa có quyết định. Thay thế hiện tại chỉ được kiểm **theo tên và bề mặt**, chưa chứng minh tương đương hành vi; W16 mới ép chúng trả lời cùng một bộ câu hỏi. |
 | `durable` | **KHÔNG chép** — package chết, 0 file ngoài nó import. Xem khối *Cập nhật 2026-09-28* trong mục *Hai điều không được chôn vùi* ngay dưới đây. |
-| **`chord`** | **CHÉP** — đây là package thứ ba từng ghi "Chưa xác định". Nằm trong sáu package của đợt này, vị trí 1 trong bảng *Thứ tự migrate*. |
+| **`chord`** | **CHÉP** — đây là package thứ ba từng ghi "Chưa xác định". Nằm trong nhóm package của đợt này, vị trí 1 trong bảng *Thứ tự migrate*. |
 
 ### Hai điều không được chôn vùi
 

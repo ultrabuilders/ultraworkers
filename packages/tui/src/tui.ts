@@ -223,9 +223,55 @@ const DEFAULT_RENDER_SCHEDULER: RenderScheduler = {
  * render() calls is the engine's proof that the rows are byte-identical
  * (containers memoize their concatenation on it, and the TUI derives the
  * frame's stable prefix from it). A component that mutates a previously
- * returned array in place must implement {@link RenderStablePrefix} to declare
- * which leading rows survived.
+ * returned array in place must report its own frozen prefix, so the engine knows
+ * which leading rows survived: see {@link StablePrefixReporter}. Streaming
+ * components that append in place implement it as
+ * {@link Markdown.getLastRenderStableText}, which `chat/assistant-message.ts`
+ * consumes to publish only the settled prefix.
  */
+
+/**
+ * Implemented by a component that mutates its previously returned array in
+ * place instead of returning a fresh reference.
+ *
+ * The engine re-renders only from the first row that changed. For a component
+ * that appends, the rows before its stable prefix are settled and will not move
+ * again, so it reports where that boundary is and the engine can skip them.
+ *
+ * The prefix MUST be a prefix of the last returned array, and MUST only grow
+ * while the component appends. Reporting a prefix that later shrinks, or one
+ * longer than the array, would let the engine publish rows that can still change
+ * — the transcript would then show text that gets rewritten underneath the
+ * reader.
+ */
+export interface StablePrefixReporter {
+	/**
+	 * The frozen leading portion of the last returned array, as a row count.
+	 * `0` means nothing is settled yet.
+	 */
+	readonly stablePrefixRows: number;
+}
+
+/**
+ * Narrow a component to one that reports a stable prefix. Returns `null` when
+ * the component does not implement the reporter, which is the common case and
+ * means the engine falls back to re-rendering from row 0.
+ *
+ * Pass `rowCount` (the number of rows actually rendered) to bound the answer: a
+ * reported prefix longer than the render is clamped to the render, because
+ * skipping rows that do not exist would drop text appended later.
+ */
+export function stablePrefixRowsOf(component: Component, rowCount?: number): number | null {
+	const rows = (component as Partial<StablePrefixReporter>).stablePrefixRows;
+	if (typeof rows !== "number" || !Number.isInteger(rows) || rows < 0) return null;
+	// A prefix longer than the render it describes would have the caller skip
+	// rows that do not exist, so text appended later is dropped rather than
+	// revealed. Clamp rather than reject: the value is a performance hint, and
+	// clamping to the full render is exactly "skip nothing".
+	if (rowCount !== undefined && rows > rowCount) return rowCount;
+	return rows;
+}
+
 export interface Component {
 	/** Stable identifier surfaced in the debug tree as kind#id. */
 	debugId?: string;

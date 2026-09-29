@@ -34,7 +34,7 @@ export interface Component {
 }
 ```
 
-Render results are component-owned and immutable to callers. An unchanged component may (and should) return the **same array reference** it returned last time; it must return a new array whenever content changes. Reference equality enables container memoization and stable-prefix work avoidance. A component that mutates a previously returned array in place must also implement `RenderStablePrefix` and report how many leading rows survived unchanged.
+Render results are component-owned and immutable to callers. An unchanged component may (and should) return the **same array reference** it returned last time; it must return a new array whenever content changes. Reference equality enables container memoization and stable-prefix work avoidance. A component that mutates a previously returned array in place must also implement `StablePrefixReporter` and report how many leading rows survived unchanged; `Markdown` does, via `stablePrefixRows`.
 
 `Focusable` is separate:
 

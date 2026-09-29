@@ -7,6 +7,11 @@
 - Added Tern Surface Protocol (TSP) integration for native terminal rendering
 - Redesigned transcript, chat, dashboard, and picker UI components for native wire representation
 - `HookEditorComponent` accepts pasted images when constructed with `acceptImages`; the ask dialog returns them as `customInputImages` / `noteImages` ([#13774](https://github.com/can1357/oh-my-pi/pull/13774) by [@DrFaustus-vic](https://github.com/DrFaustus-vic))
+- `StablePrefixReporter` — a component that mutates its returned array in place reports `stablePrefixRows`, the count of leading rows that can no longer change, so the engine re-renders from the first changed row. `Markdown` implements it.
+
+### Fixed
+
+- `RenderStablePrefix`, named in `docs/tui.md` and in the 15.10.11 changelog entry, has never existed as a type. The stable-prefix mechanism it describes does work — `Markdown.getLastRenderStableText()`, consumed by the chat transcript — under a different name. The docs and the `Component` JSDoc now name `StablePrefixReporter`, and `Markdown` implements it.
 
 ## [18.4.3] - 2026-09-28
 ### Added

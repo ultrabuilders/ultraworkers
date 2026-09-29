@@ -97,9 +97,29 @@ Một lưu ý nữa về độ tin cậy của gate: nhiều gate trong kế ho�
 > `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` § *CĂNG THẮNG CẦN CHỐT* cho ba hệ quả bắt buộc.
 >
 > **Hệ quả trực tiếp lên wave này:** vì (i) giữ nguyên slogan, **WI-10 phải công khai danh sách
-> core nhỏ được tin** — những gì nằm dưới app shell (`setFrameProvider`, cell buffer / damage rect)
-> không thể là plugin, nên ở lại trong core, và phải được **viết ra tên** chứ không suy ra sau. Một
-> thay đổi trong danh sách đó là breaking change với tác giả extension đã xuất bản.
+> core nhỏ được tin** — những gì nằm dưới app shell không thể là plugin, nên ở lại trong core, và
+> phải được **viết ra tên** chứ không suy ra sau. Một thay đổi trong danh sách đó là breaking change
+> với tác giả extension đã xuất bản.
+>
+> ⚠️ **Hai mục danh sách phải ghi tên thật, đo lại 2026-09-29 (đính chính).**
+> **(a) "cell buffer" không nằm trong danh sách này** — nó **tồn tại**: `packages/utils/src/vterm/buffer.ts`
+> (`CellData:17`, `BufferCell:50`, `BufferLine:136`, `BufferView:181`), trên đường render sống qua
+> `packages/tui/src/chat/bash-execution.ts:171`. Cái không tồn tại là **damage**: `grep -rE
+> 'dirty|damage|invalidate|changed' -- packages/utils/src/vterm/` → **0 hit**, và lưới ô đó nằm
+> **ngoài** `Component`. Danh sách phải ghi: *"contract của `Component` không có địa chỉ ô; lưới ô
+> duy nhất (`vterm`) nằm ngoài contract và không có khái niệm damage"*.
+> **(b) Danh sách sáu bề mặt hiện tại không có bất kỳ bề mặt nào là app shell** — và đó là lỗ hổng
+> thật, không phải lỗi diễn đạt: `types.ts:286` và `:332` cùng `hooks/types.ts:130` nhận
+> **`tui: TUI`**, và `extension-ui-controller.ts:1166` gọi `factory(this.ctx.ui, …)` — tức
+> `ExtensionUIContext.custom()` tra **nguyên instance `TUI` thật** cho factory plugin, gồm cả
+> `setFrameProvider` (`tui.ts:949`, public trần, không guard), `injectDebugInput`, `addChild`, `stop`.
+> Nên `setFrameProvider` **không bị chặn**, và chính nó không có mặt trong danh sách core. WI-10 phải
+> có dòng thứ bảy đánh dấu `CORE-ONLY`, và câu hỏi thứ tư vào cổng hoàn thành: *"những gì ở lại
+> trong core là gì"*. Vá rẻ nhất nếu owner muốn: đổi tham số `tui` thày interface hẹn ở **tầng kiểu**
+> (chỉ `requestRender` / `setFocus` / `showOverlay` / đọc theme) rồi xem `tsgo` gãy ở đâu — đúng tinh
+> thần WI-16 dùng cho ranh giới TUI/ACP-vs-RPC.
+> ⚠️ Cổng hiện tại của WI-10 (`awk` ở `:6040`) chỉ đòi `rows == marked`, nên một ADR không nhắc
+> `setFrameProvider` vẫn **xanh cổng**. Cổng phải kiểm nội dung, không chỉ kiểm dòng có mặt.
 > Chọn (i) **không** phải lý do để hoãn WI-0: "mọi thứ là plugin" càng đúng theo nghĩa đen thì
 > plugin càng chính là bề mặt tấn công, nên trust gate càng phải chốt.
 
@@ -234,6 +254,26 @@ Với WI-8a: ba dòng của `plugin-settings-provenance.test.ts` xanh (hai dòng
 ---
 
 ## Quyết định cần chốt trước khi code
+
+> ⛔ **MÂU THUẪN CROSS-MILESTONE, PHẢI CHỐT TRƯỚC KHI WI-4 MERGE (thêm 2026-09-29).**
+> `WI-4` yêu cầu `Object.freeze` + `Readonly` trên registry `toolRenderers` built-in
+> (`:2608`, `:2636`, `:2658`). Nhưng `B1` của M3 lại **ghim nó là writable**: `MILESTONE_3_EXECUTION_PLAN.md:672`
+> yêu cầu assert `toolRenderers` là **"record ghi được, không đóng băng"** tại `tools/index.ts:35`, và
+> đó là một trong ba tiền đề M3 dựa vào. M3:258 đẩy quyết định sang *"nợ bàn giao M4/M5 #4"* — mà
+> `grep -c registerToolRenderer` trên cả `MILESTONE_4_EXECUTION_PLAN.md` và `MILESTONE_5_EXECUTION_PLAN.md`
+> → **0 và 0**. Nghĩa là **không milestone nào nhận**, và merge M2 trước M3 sẽ làm đỏ.
+>
+> **Đây là lỗi đỏ chắc chắn, không phải rủi ro lịch trình.** Nó không tự hiện ra cho tới khi Cả hai type
+> test của WI-4 chạy cùng lúc với gate của B1 — tức là ở điểm sát nhất mà cả hai đều tưởng mình đã xong.
+>
+> **Câu hỏi phải có đúng một câu trả lời:** plugin có được sở hữu renderer của built-in không?
+> - **(i) Đóng băng, không ngoại lệ** — WI-4 giữ nguyên; B1 của M3 phải đổi tiền đề.
+> - **(ii) Đóng băng + một đường đăng ký tường minh** — WI-4 giữ `Object.freeze` trên bản ghi, và M3
+>   đổi từ "ghi trực tiếp" sang gọi đường đăng ký mà WI-9 sở hữu. Đây là lựa chọn đáng cân: nó giữ
+>   bất biến mà B1 cần, mà không cần sửa WI-4.
+>
+> **Ai chốt:** Maintainer. **Chặn:** WI-4. **Không** chốt sau khi WI-4 merge — hợp đồng đã đóng băng
+> thì viết lại là breaking change với tác giả extension đã xuất bản.
 
 Đây là các quyết định phải chốt trước khi viết code. **Ba hàng đầu chặn việc bắt đầu**; hàng thứ tư thì không — nó chặn việc **đóng** M2. Xếp theo số thứ nó chặn nhiều nhất.
 

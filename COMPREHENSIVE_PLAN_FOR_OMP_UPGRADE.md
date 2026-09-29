@@ -164,7 +164,7 @@ Nghiên cứu cho M3 đã chứng minh điều này, và tôi nói thẳng thay 
 
 Lý do: app shell của omp đang đóng (`setFrameProvider` chỉ có **một** call site không phải test
 trong toàn repo), và contract render của plugin là `render(width: number): readonly string[]` trả
-**chuỗi ANSI đã style sẵn** — không có cell buffer, không damage rect. Toàn bộ tầng engine của
+**chuỗi ANSI đã style sẵn** — contract đó **không có địa chỉ ô**, và không có khái niệm damage. *(Đính chính 2026-09-29: bản trước viết "không có cell buffer" — **sai một nửa**. Cell buffer **có** và nằm trên đường render sống: `packages/utils/src/vterm/buffer.ts` (`CellData:17`, `BufferCell:50`, `BufferLine:136`, `BufferView:181`), dùng qua `packages/tui/src/chat/bash-execution.ts:171` `appendPtyChunk()`. Nhưng `grep -rE 'dirty|damage|invalidate|changed' -- packages/utils/src/vterm/` → **0 hit**: lưới ô đó sụp về snapshot toàn hàng sau một boolean `#displayDirty`, và **nằm ngoài** `Component`. Mệnh đề đúng phải hẹn lại như trên — và danh sách "core nhỏ được tin" phải ghi tên thứ **tồn tại**, không ghi tên thứ bịa.)* Toàn bộ tầng engine của
 Claude Code nằm *dưới* cái mặt phẳng mà plugin được phép chạm.
 
 Hai phương án:

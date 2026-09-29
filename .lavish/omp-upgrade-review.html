@@ -1,0 +1,1629 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OMP → ultraworkers — Bảng review kế hoạch nâng cấp</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+  :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+    min-width: 0;
+  }
+  :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+    overflow-wrap: anywhere;
+  }
+  :where(img, svg, video, canvas, iframe) { max-width: 100%; height: auto; }
+
+  html { scroll-behavior: smooth; }
+  body { font-feature-settings: "ss01"; }
+
+  /* --- SVG figure: theme-aware, self-contained --- */
+  .fig { color: var(--color-base-content); }
+  .fig .node-box {
+    fill: var(--color-base-100);
+    stroke: var(--color-base-content);
+    stroke-opacity: .35;
+    stroke-width: 1.5;
+  }
+  .fig .node-critical .node-box {
+    stroke: var(--color-primary);
+    stroke-opacity: .9;
+    stroke-width: 2;
+  }
+  .fig .node-open .node-box {
+    stroke: var(--color-base-content);
+    stroke-opacity: .22;
+    stroke-dasharray: 4 3;
+  }
+  .fig .node-title { fill: var(--color-base-content); font-weight: 700; font-size: 15px; }
+  .fig .node-sub   { fill: var(--color-base-content); fill-opacity: .68; font-size: 11px; }
+  .fig .node-id    { fill: var(--color-primary); font-weight: 800; font-size: 13px; }
+  .fig .edge {
+    fill: none;
+    stroke: var(--color-base-content);
+    stroke-opacity: .45;
+    stroke-width: 1.6;
+  }
+  .fig .edge-critical { stroke: var(--color-primary); stroke-opacity: .85; stroke-width: 2.2; }
+  .fig .edge-unknown { stroke-dasharray: 5 4; stroke-opacity: .4; }
+  .fig .edge-label { fill: var(--color-base-content); fill-opacity: .55; font-size: 10px; }
+  .fig .gate-mark { fill: var(--color-error); }
+  .fig .gate-text { fill: var(--color-error); font-size: 10px; font-weight: 700; }
+  .fig .band { fill: var(--color-success); fill-opacity: .07; stroke: var(--color-success); stroke-opacity: .35; stroke-dasharray: 3 3; }
+  .fig .band-text { fill: var(--color-success); font-size: 11px; font-weight: 600; }
+  .fig .hit { fill: var(--color-base-content); fill-opacity: .0; }
+  .fig [data-node], .fig [data-edge] { cursor: pointer; }
+  .fig [data-node]:hover .hit, .fig [data-edge]:hover .hit { fill: var(--color-primary); fill-opacity: .12; }
+
+  .tab-milestone { white-space: nowrap; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .anchor-offset { scroll-margin-top: 1.5rem; }
+  .vlist > li { margin-bottom: .4rem; }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+
+<!-- ============================== HEADER ============================== -->
+<header class="border-b border-base-content/10 bg-base-200/40">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <span class="badge badge-primary badge-soft">Bảng review — trước khi viết code</span>
+      <span class="badge badge-ghost">branch <code class="mono">milestone-1</code></span>
+      <span class="badge badge-ghost">8 tài liệu kế hoạch</span>
+    </div>
+
+    <h1 class="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+      OMP → <span class="text-primary">ultraworkers</span>
+    </h1>
+    <p class="mt-3 max-w-3xl text-base-content/75 sm:text-lg">
+      Toàn bộ chương trình nâng cấp: <strong>một coding agent duy nhất, mọi thứ là plugin</strong>.
+      Trang này gom tám kế hoạch milestone thành một mặt phẳng review — thứ tự làm, quyết định
+      nào chặn, và cái gì đã bị đo lại rồi bác bỏ.
+    </p>
+
+    <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold">8</div>
+        <div class="text-xs text-base-content/60">tài liệu kế hoạch</div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold">55.131</div>
+        <div class="text-xs text-base-content/60">dòng kế hoạch</div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold text-success">4</div>
+        <div class="text-xs text-base-content/60">câu hỏi còn lại <span class="line-through opacity-50">6</span></div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold text-warning">~211</div>
+        <div class="text-xs text-base-content/60">quyết định chờ chốt</div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold text-error">51</div>
+        <div class="text-xs text-base-content/60">rủi ro đã ghi nhận</div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-2xl font-bold text-success">50</div>
+        <div class="text-xs text-base-content/60">claim sai đã bị bác</div>
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Số liệu lấy từ chính tài liệu kế hoạch. Các mục đánh dấu <span class="badge badge-xs badge-info badge-soft">đã kiểm chứng</span>
+      là mình đã đối chiếu lại trên cây lệnh; còn lại là claim của tài liệu.
+    </p>
+  </div>
+</header>
+
+<main class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+
+  <!-- ============================== NAV ============================== -->
+  <nav class="mb-10 flex flex-wrap gap-2" aria-label="Mục lục">
+    <a class="btn btn-sm btn-ghost" href="#muc-tieu">1 · Mục tiêu</a>
+    <a class="btn btn-sm btn-ghost" href="#thu-tu">2 · Thứ tự làm</a>
+    <a class="btn btn-sm btn-ghost" href="#seam">3 · Quyết định chặn</a>
+    <a class="btn btn-sm btn-ghost" href="#sau-cau-hoi">4 · 5 câu còn lại</a>
+    <a class="btn btn-sm btn-ghost" href="#milestones">5 · Tám milestone</a>
+    <a class="btn btn-sm btn-ghost" href="#phap-ly">6 · Pháp lý</a>
+    <a class="btn btn-sm btn-ghost" href="#rut-troi">7 · Bốn rủi ro</a>
+    <a class="btn btn-sm btn-ghost" href="#da-sua">8 · Tài liệu tự sửa sai</a>
+    <a class="btn btn-sm btn-ghost" href="#doi-chieu">9 · Đối chiếu lại</a>
+    <a class="btn btn-sm btn-ghost" href="#xong">10 · Xong là gì</a>
+  </nav>
+
+  <!-- ============================== 1 · MỤC TIÊU ============================== -->
+  <section id="muc-tieu" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">1 · Mục tiêu, hiện trạng, hành vi mong muốn</h2>
+
+    <div class="mt-6 grid gap-5 lg:grid-cols-3">
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-primary">Mục tiêu</h3>
+          <p class="text-sm leading-relaxed">
+            <code class="mono">oh-my-pi</code> là <strong>strict superset</strong> của
+            <code class="mono">earendil-works/pi</code> — không có gì <code class="mono">pi</code>
+            làm được mà <code class="mono">omp</code> không làm được. Nhưng đó <em>không phải mục tiêu
+            cuối</em>, mà là tiền đề: một năng lực không thể trở thành plugin nếu nó chưa tồn tại.
+          </p>
+          <p class="text-sm leading-relaxed text-base-content/70">
+            Bạn không thể pluggable hoá thứ mà mình chưa có. Nên thứ tự milestone chảy ra từ chính
+            luận điểm đó, không phải xếp theo mức độ nghiêm trọng.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title">Hiện trạng</h3>
+          <ul class="vlist list-disc pl-5 text-sm text-base-content/80">
+            <li><code class="mono">omp</code> đã fork <em>trước khi</em> <code class="mono">pi</code> phát triển thêm — thiếu hẳn cả hệ thống <code class="mono">harness/</code> (58 file chỉ có ở <code class="mono">pi</code>).</li>
+            <li>Bốn package dùng chung đã <strong>phân kỹ 100%</strong>: 0 file giống nhau từ byte.</li>
+            <li>Không có trust gate nào; extension project-local tải không điều kiện.</li>
+            <li><span class="badge badge-xs badge-success badge-soft">đã kiểm chứng</span> <code class="mono">APP_NAME = "omp"</code> — đổi tên M5 <strong>chưa</strong> bắt đầu, dù thư mục repo đã tên <code class="mono">ultraworkers</code>.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title">Hành vi mong muốn</h3>
+          <p class="text-sm leading-relaxed">
+            Một extension viết <strong>bên ngoài repo</strong> cài được, và đăng ký được
+            tool + slash command + config key + lifecycle hook + panel TUI
+            <strong>mà không sửa một dòng core nào</strong>.
+          </p>
+          <p class="text-sm leading-relaxed text-base-content/70">
+            Đó là bài test quyết định duy nhất của toàn bộ chương trình. Mọi milestone trước đó là
+            tiền đề để nó nói được.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 2 · THỨ TỰ ============================== -->
+  <section id="thu-tu" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">2 · Thứ tự làm, và cái gì chạy song song</h2>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Câu hỏi hình này trả lời: <strong>build theo thứ tự nào, và phần nào có thể chạy song song?</strong>
+      Đường găng thẽ thật là <code class="mono">M1 → M2 → {M3, M4} → M5 → M6</code>.
+      M3 và M4 <strong>không phụ thuộc lẫn nhau</strong> — cả hai chỉ cần M2.
+    </p>
+
+    <div class="card card-border mt-6 bg-base-100">
+      <div class="card-body">
+        <div class="overflow-x-auto">
+          <figure class="fig" role="img" aria-labelledby="fig-dep-title">
+            <svg viewBox="0 0 980 340" width="100%" xmlns="http://www.w3.org/2000/svg">
+              <title id="fig-dep-title">Sơ đồ phụ thuộc giữa tám milestone. M1 và M1B dẫn vào M2; M2 dẫn ra M3, M4 và M7; M3 và M4 hợp nhất tại M5; M5 dẫn tới M6. M3 và M4 chạy song song.</title>
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-base-content)" fill-opacity=".55"/>
+              </marker>
+              <marker id="arrow-crit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-primary)" fill-opacity=".9"/>
+              </marker>
+            </defs>
+
+            <!-- parallel band around M3 / M4 -->
+            <rect class="band" x="384" y="18" width="172" height="200" rx="10"/>
+            <text class="band-text" x="470" y="12" text-anchor="middle">chạy song song được</text>
+
+            <!-- edges -->
+            <g data-edge="e-m1-m2">
+              <path class="hit" d="M 160 99 C 185 99 185 144 210 144"/>
+              <path class="edge edge-critical" d="M 160 99 C 185 99 185 144 210 144" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m1b-m2">
+              <path class="hit" d="M 160 189 C 185 189 185 144 210 144"/>
+              <path class="edge edge-critical" d="M 160 189 C 185 189 185 144 210 144" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m2-m3">
+              <path class="hit" d="M 350 144 C 375 144 375 69 400 69"/>
+              <path class="edge edge-critical" d="M 350 144 C 375 144 375 69 400 69" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m2-m4">
+              <path class="hit" d="M 350 144 L 400 144"/>
+              <path class="edge edge-critical" d="M 350 144 L 400 144" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m2-m7">
+              <path class="hit" d="M 350 144 C 375 144 375 219 400 219"/>
+              <path class="edge" d="M 350 144 C 375 144 375 219 400 219" marker-end="url(#arrow)"/>
+              <text class="edge-label" x="336" y="196" text-anchor="end">cần M2</text>
+            </g>
+            <g data-edge="e-m3-m5">
+              <path class="hit" d="M 540 69 C 565 69 565 106 590 106"/>
+              <path class="edge edge-critical" d="M 540 69 C 565 69 565 106 590 106" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m4-m5">
+              <path class="hit" d="M 540 144 C 565 144 565 106 590 106"/>
+              <path class="edge edge-critical" d="M 540 144 C 565 144 565 106 590 106" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m5-m6">
+              <path class="hit" d="M 730 106 L 780 106"/>
+              <path class="edge edge-critical" d="M 730 106 L 780 106" marker-end="url(#arrow-crit)"/>
+            </g>
+            <g data-edge="e-m7-out">
+              <path class="hit" d="M 540 219 C 660 219 660 180 780 180"/>
+              <path class="edge edge-unknown" d="M 540 219 C 660 219 660 180 780 180" marker-end="url(#arrow)"/>
+              <text class="edge-label" x="655" y="205" text-anchor="middle">? quan hệ chưa ghi trong bảng thứ tự</text>
+            </g>
+
+            <!-- nodes -->
+            <g data-node="M1" class="node-critical">
+              <title>M1 — Bao trọn pi: parity và nền tảng vòng đời. 21 work item W1–W22, 8 wave, ~4 tuần. Không có bề mặt người dùng ở 10/21 hạng mục.</title>
+              <rect class="node-box" x="20" y="70" width="140" height="58" rx="8"/>
+              <text class="node-id" x="34" y="92">M1</text>
+              <text class="node-title" x="34" y="110">parity + vòng đời</text>
+              <text class="node-sub" x="34" y="123">21 hạng mục · 8 wave</text>
+            </g>
+            <g data-node="M1B" class="node-critical">
+              <title>M1B — Chuyển toàn bộ pi vào omp. 6 package, 245 file sẽ chép, 64 va chạm. Tách khỏi M1 nhưng cùng pha.</title>
+              <rect class="node-box" x="20" y="160" width="140" height="58" rx="8"/>
+              <text class="node-id" x="34" y="182">M1B</text>
+              <text class="node-title" x="34" y="200">port 6 package</text>
+              <text class="node-sub" x="34" y="213">245 file · 64 va chạm</text>
+            </g>
+            <g data-node="M2" class="node-critical">
+              <title>M2 — Composable extensions. 15 work item, 8 wave, 8–10 engineer-weeks. 69 quyết định chờ chốt — nhiều nhất. Cổng chặn: WI-0 trust và WI-10 canonical authoring surface.</title>
+              <rect class="node-box" x="210" y="115" width="140" height="58" rx="8"/>
+              <text class="node-id" x="224" y="137">M2</text>
+              <text class="node-title" x="224" y="155">composable core</text>
+              <text class="node-sub" x="224" y="168">15 hạng mục · 69 quyết định</text>
+            </g>
+            <g data-node="M3" class="node-critical">
+              <title>M3 — Claude Code UI/UX. 16–17 hạng mục A1–D3, 6 wave, 50 quyết định. Chặn pháp lý: cây tham chiếu không có LICENSE.</title>
+              <rect class="node-box" x="400" y="40" width="140" height="58" rx="8"/>
+              <text class="node-id" x="414" y="62">M3</text>
+              <text class="node-title" x="414" y="80">Claude Code UX</text>
+              <text class="node-sub" x="414" y="93">17 hạng mục · 50 quyết định</text>
+            </g>
+            <g data-node="M4" class="node-critical">
+              <title>M4 — deepseek-harness: kỷ luật, không phải kernel. 4 hạng mục còn lại, 3 wave, 19 quyết định.</title>
+              <rect class="node-box" x="400" y="115" width="140" height="58" rx="8"/>
+              <text class="node-id" x="414" y="137">M4</text>
+              <text class="node-title" x="414" y="155">kỷ luật dsh</text>
+              <text class="node-sub" x="414" y="168">4 hạng mục · 19 quyết định</text>
+            </g>
+            <g data-node="M7" class="node-open">
+              <title>M7 — Cái riêng của senpi. Tách khỏi M5. Khoảng 10–12 ngày. Quan hệ với M6 chưa được ghi trong bảng thứ tự.</title>
+              <rect class="node-box" x="400" y="190" width="140" height="58" rx="8"/>
+              <text class="node-id" x="414" y="212">M7</text>
+              <text class="node-title" x="414" y="230">senpi</text>
+              <text class="node-sub" x="414" y="243">~10–12 ngày</text>
+            </g>
+            <g data-node="M5" class="node-critical">
+              <title>M5 — Rebrand omp thành ultraworkers. 16 hạng mục, 6 wave, 73 quyết định. Đã kiểm chứng: chưa bắt đầu.</title>
+              <rect class="node-box" x="590" y="77" width="140" height="58" rx="8"/>
+              <text class="node-id" x="604" y="99">M5</text>
+              <text class="node-title" x="604" y="117">đổi tên</text>
+              <text class="node-sub" x="604" y="130">16 hạng mục · 73 quyết định</text>
+            </g>
+            <g data-node="M6" class="node-critical">
+              <title>M6 — Bài học từ codex, opencode, gajae. 15 hạng mục, 5 wave. S+M, khoảng 4–6 ngày XS/S cộng 2–3 tuần M.</title>
+              <rect class="node-box" x="780" y="77" width="140" height="58" rx="8"/>
+              <text class="node-id" x="794" y="99">M6</text>
+              <text class="node-title" x="794" y="117">bài học</text>
+              <text class="node-sub" x="794" y="130">15 hạng mục · 5 wave</text>
+            </g>
+
+            <!-- gate on M2 -->
+            <g data-edge="gate-seam">
+              <circle class="gate-mark" cx="203" cy="144" r="7"/>
+              <text class="gate-text" x="203" y="147" text-anchor="middle" font-size="9">!</text>
+              <text class="gate-text" x="196" y="252" text-anchor="end">⛔ phải chốt trước khi cắt seam</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption class="mt-2 text-xs text-base-content/50">
+          Nét đậm là đường găng thẽ. Nét đứt là quan hệ chưa được ghi trong bảng thứ tự — đây là câu hỏi
+          để bạn giải trong vòng review, không phải khẳng định.
+        </figcaption>
+      </div>
+    </div>
+
+    <!-- findings -->
+    <div class="mt-6 grid gap-4 lg:grid-cols-3">
+      <div class="alert alert-warning alert-soft">
+        <div>
+          <h3 class="font-bold">Bảng thứ tự thiếu hai milestone</h3>
+          <p class="text-sm mt-1">
+            Bảng <em>THỨ TỰ MILESTONE</em> trong plan tổng chỉ liệt kê M1–M6. <strong>M1B và M7 không
+            có mặt</strong> — dù chúng là hai tài liệu dài nhất repo sau plan tổng. M1B là phần
+            thật sự của "bao trọn <code class="mono">pi</code>".
+          </p>
+        </div>
+      </div>
+      <div class="alert alert-info alert-soft">
+        <div>
+          <h3 class="font-bold">"Bao trọn pi" bị chia làm hai</h3>
+          <p class="text-sm mt-1">
+            M1 giữ 17 hạng mục W1–W17; M1B giữ phần port 6 package. Tài liệu M1B tự nói đây là
+            <em>"tài liệu DUY NHẤT bao trọn phần còn thiếu của M1"</em>. Người đọc M1 sẽ tưởng
+            phần port đã nằm trong đó.
+          </p>
+        </div>
+      </div>
+      <div class="alert alert-info alert-soft">
+        <div>
+          <h3 class="font-bold">Thiếu implementation sheet</h3>
+          <p class="text-sm mt-1">
+            <span class="badge badge-xs badge-success badge-soft">đã kiểm chứng</span>
+            82 sheet trong <code class="mono">.lavish-wip/impl/</code> chỉ phủ M1 (21), M1B (10),
+            M2 (25), M4 (10), M5 (16). <strong>M3, M6, M7 không có sheet nào</strong> — M3 là
+            milestone nhiều quyết định nhất và bị chặn pháp lý.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 3 · QUYẾT ĐỊNH CHẶN ============================== -->
+  <section id="seam" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">3 · Quyết định chặn toàn bộ chương trình</h2>
+
+    <div class="alert alert-success mt-5">
+      <div>
+        <h3 class="font-bold text-lg">✅ ĐÃ CHỐT (2026-09-29) — phương án (i)</h3>
+        <p class="text-sm mt-1">
+          Chọn <strong>(i): mọi thứ là plugin</strong>, vẫn chấp nhận một core nhỏ được tin cậy.
+          Câu hỏi đã đóng; các tài liệu kế hoạch cần cập nhật theo quyết định này.
+        </p>
+        <p class="text-sm mt-2 text-base-content/70">
+          <strong>Hệ quả cần ghi lại:</strong> vì giữ nguyên slogan, phần "một core nhỏ đã tuyên bố
+          tin cậy" phải được <em>công khai</em> chứ không được để ngầm — và WI-10 (canonical
+          authoring surface) phải nói rõ điều kiện đó cho người viết plugin. Nghiên cứu M3 vẫn
+          đúng về mặt kỹ thuật: app shell đang đóng
+          (<code class="mono">setFrameProvider</code> chỉ có <em>một</em> call site không phải test
+          trong toàn repo) và contract render là
+          <code class="mono">render(width): readonly string[]</code> — không có cell buffer, không
+          damage rect. Chọn (i) nghĩa là <strong>core nhỏ đó phải được tuyên bố và giữ ổn định</strong>,
+          không phải là có thể mở rộng tùy ý về sau.
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-6 grid gap-5 lg:grid-cols-2">
+      <!-- option i -->
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">(i) Mọi thứ là plugin</h3>
+            <span class="badge badge-success">✓ đã chốt</span>
+          </div>
+          <p class="text-sm leading-relaxed">
+            Vẫn chấp nhận một core nhỏ được tin cậy. Giữ nguyên câu slogan.
+          </p>
+          <div class="mt-2 rounded-box bg-base-200 p-3 text-sm">
+            <div class="font-semibold mb-1">Cái giá</div>
+            <p class="text-base-content/75">
+              Người đọc tin rằng mọi thứ đều thay thế được. Khi một người viết extension tìm
+              không ra seam, họ sẽ sửa core — và không có hợp đồng nào ngăn họ.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- option ii -->
+      <div class="card card-border border-primary bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title text-base-content/70">(ii) Mọi thứ <em>trừ</em> một core nhỏ</h3>
+            <span class="badge badge-ghost">không chọn</span>
+          </div>
+          <p class="text-sm leading-relaxed">
+            Mọi thứ <strong>trừ một core nhỏ, đã tuyên bố tin cậy</strong> là plugin — chính xác, và
+            nói ra điều kiện.
+          </p>
+          <div class="mt-2 rounded-box bg-base-200 p-3 text-sm">
+            <div class="font-semibold mb-1">Cái giá</div>
+            <p class="text-base-content/75">
+              Slogan phải viết lại, và phải công khai danh sách core được tin. Đổi lại: WI-0
+              (trust) và WI-10 (ai được viết plugin, viết gì) trở thành câu trả lời bằng văn bản
+              cho cả chương trình.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- queue this decision -->
+    <div class="card card-border mt-6 bg-base-100">
+      <div class="card-body">
+        <h3 class="card-title text-lg">Câu 1 — đã chốt, đổi lại được nếu cần</h3>
+        <p class="text-sm text-base-content/70">
+          Đã chốt phương án (i). Dùng mục này nếu bạn muốn đổi lại — hoặc để ghi lại một lần nữa cho
+          chắc.
+        </p>
+
+        <form data-lavish-question="cau-1-seam"
+              onsubmit="event.preventDefault();
+                const choice = new FormData(event.currentTarget).get('seam');
+                if (!choice) return;
+                window.lavish.queuePrompt(
+                  'Câu 1 — ranh giới kiến trúc: tôi chốt phương án ' + choice + '. Ghi quyết định này vào cả 8 tài liệu kế hoạch và bỏ trạng thái câu hỏi mở tương ứng.',
+                  { tag: 'quyet-dinh', text: 'Ranh giới kiến trúc: ' + choice,
+                    element: event.currentTarget,
+                    data: { question: 'cau-1-seam', answer: choice } }
+                );">
+          <div class="flex flex-col gap-2">
+            <label class="label cursor-pointer justify-start gap-3 rounded-box border border-base-content/10 p-3">
+              <input type="radio" name="seam" value="(i) — mọi thứ là plugin" class="radio radio-primary" checked>
+              <span class="label-text">(i) — mọi thứ là plugin, vẫn chấp nhận một core nhỏ tin cậy
+                <span class="badge badge-xs badge-success badge-soft ml-1">đã chốt 2026-09-29</span>
+              </span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 rounded-box border border-base-content/10 p-3">
+              <input type="radio" name="seam" value="(ii) — mọi thứ trừ một core nhỏ đã tuyên bố tin cậy" class="radio radio-primary">
+              <span class="label-text text-base-content/70">(ii) — mọi thứ trừ một core nhỏ đã tuyên bố tin cậy</span>
+            </label>
+          </div>
+          <div class="card-actions mt-3">
+            <button type="submit" class="btn btn-primary btn-sm">Gửi lại quyết định này</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 4 · 5 CÂU CÒN LẠI ============================== -->
+  <section id="sau-cau-hoi" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">4 · Năm câu hỏi còn lại — mỗi câu đều có mặc định</h2>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Đây là điểm mạnh của bộ kế hoạch: <strong>không câu nào bị bỏ ngỏ trần</strong>. Mỗi câu đều
+      ghi sẵn mặc định và hệ quả nếu chọn sai. Bạn có thể chấp thuận cả loạt, hoặc chỉ ghi đè
+      từng câu.
+    </p>
+
+    <form data-lavish-question="cau-2-6"
+          class="mt-6 grid gap-4 lg:grid-cols-2"
+          onsubmit="event.preventDefault();
+            const selected = [...event.currentTarget.querySelectorAll('input[name=items]:checked')]
+              .map(i => ({ id: i.value, label: i.dataset.label, disposition: i.dataset.disposition }));
+            const notes = document.getElementById('ghi-chu').value.trim();
+            const master = document.getElementById('master-dinh').checked;
+            if (!selected.length && !notes && !master) return;
+            const lines = [];
+            if (master) lines.push('Chấp thuận toàn bộ 5 mặc định.');
+            selected.forEach(s => lines.push('  ' + s.id + ' — ' + s.label));
+            if (notes) lines.push('Ghi chú: ' + notes);
+            window.lavish.queuePrompt(
+              'Câu hỏi 2–6 — quyết định của tôi như sau, áp dụng vào cả 8 tài liệu kế hoạch và bỏ các câu hỏi mở tương ứng.\n' + lines.join('\n'),
+              { tag: 'quyet-dinh', text: lines.join(' · '), element: event.currentTarget,
+                data: { questions: selected, notes: notes, master_default: master } }
+            );">
+
+      <div class="card card-border bg-base-100 lg:col-span-2">
+        <div class="card-body py-4">
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" id="master-dinh" name="master" class="checkbox checkbox-primary">
+            <span class="label-text font-semibold">Chấp thuận các mặc định còn lại (câu 3–6), không ghi đè câu nào</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card card-border border-success/40 bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-success">✓ đã chốt</span>
+            <h3 class="card-title text-base">Câu 2 — Ranh giới pháp lý của M3</h3>
+          </div>
+          <p class="text-sm text-base-content/75">
+            Đã thu hẹp: <strong>chỉ mượn UI/UX</strong>, và không cần để logo Claude Code.
+          </p>
+          <div class="rounded-box bg-base-200 p-3 text-sm space-y-1">
+            <div><span class="badge badge-xs badge-success badge-soft mr-1">được</span> Mượn UI/UX — bố cục, hành vi, tương tác, nguyên lý hiển thị.</div>
+            <div><span class="badge badge-xs badge-error badge-soft mr-1">không</span> Không dùng tên, logo, hay nhãn hiệu "Claude Code" ở bất kỳ đâu trong sản phẩm.</div>
+            <div><span class="badge badge-xs badge-warning badge-soft mr-1">còn lại</span> Không dán dòng code từ cây tham chiếu — <em>không phải vì logo, mà vì cây đó không có LICENSE nào cả</em>. Suy ra yêu cầu từ sản phẩm đã phát hành và tài liệu công khai.</div>
+          </div>
+          <p class="text-sm text-base-content/70">
+            <strong>Vì sao vẫn giữ dòng thứ ba:</strong> <code class="mono">claude-code-ref</code> không
+            có LICENSE, không có trường <code class="mono">license</code>, và tự mô tả là
+            "reverse-engineered / decompiled source restoration". <em>Logo là vấn đề nhãn hiệu;
+            dán code từ một cây không có giấy phép là vấn đề khác.</em> Hai cái này tách bạch — giữ
+            ranh giới này thì M3 vẫn là clean-room về code, và bạn vẫn mượn UI/UX thoải mái.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-error badge-soft">chặn</span>
+            <h3 class="card-title text-base">Câu 3 — Chính sách trust cho plugin (WI-0)</h3>
+          </div>
+          <p class="text-sm text-base-content/75">
+            Hiện <strong>không có trust gate nào</strong>; extension project-local tải không điều
+            kiện, <code class="mono">ctx.exec</code> trao quyền thực thi tùy ý, và suspend không
+            gỡ provider nên credential còn lại.
+          </p>
+          <div class="rounded-box bg-base-200 p-3 text-sm">
+            <span class="font-semibold">Mặc định:</span> extension project-local <strong>không</strong>
+            tự động load; phải được người dùng cho phép tường minh, và <code class="mono">ctx.exec</code>
+            bị từ chối với extension không tin cậy.
+          </div>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" name="items" value="Q3" data-label="Trust policy cho plugin (WI-0 của M2)" data-disposition="chốt-theo-mặc-định" class="checkbox checkbox-primary">
+            <span class="label-text">Chấp thuận mặc định</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Câu 4 — Có cập nhật changelog không?</h3>
+          <div class="rounded-box bg-base-200 p-3 text-sm">
+            <span class="font-semibold">Mặc định:</span> không — theo <code class="mono">AGENTS.md</code>,
+            chỉ khi được yêu cầu tường minh.
+          </div>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" name="items" value="Q4" data-label="Cập nhật changelog" data-disposition="chốt-theo-mặc-định" class="checkbox checkbox-primary">
+            <span class="label-text">Chấp thuận mặc định</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Câu 5 — Gộp 8 chỗ mới phát hiện trong M1?</h3>
+          <div class="rounded-box bg-base-200 p-3 text-sm">
+            <span class="font-semibold">Mặc định:</span> sửa 5 chỗ đã nằm trong blast radius, phần
+            còn lại để follow-up.
+          </div>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" name="items" value="Q5" data-label="Gộp 8 phát hiện mới của M1 vào scope" data-disposition="chốt-theo-mặc-định" class="checkbox checkbox-primary">
+            <span class="label-text">Chấp thuận mặc định</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Câu 6 — Gộp ba khai báo <code class="mono">HandlerFn</code> trùng nhau?</h3>
+          <div class="rounded-box bg-base-200 p-3 text-sm">
+            <span class="font-semibold">Mặc định:</span> để yên — dọn dẹp không liên quan mà
+            thay đổi tình cờ chạm tới.
+          </div>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" name="items" value="Q6" data-label="Gộp ba khai báo HandlerFn trùng" data-disposition="chốt-theo-mặc-định" class="checkbox checkbox-primary">
+            <span class="label-text">Chấp thuận mặc định</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100 lg:col-span-2">
+        <div class="card-body">
+          <label class="label" for="ghi-chu">
+            <span class="label-text font-semibold">Ghi chú / ghi đè (tuỳ chọn)</span>
+          </label>
+          <textarea id="ghi-chu" name="ghi-chu" class="textarea textarea-bordered w-full" rows="3"
+                    placeholder="Ví dụ: câu 3 — cho phép project-local load nhưng chặn ctx.exec khi chưa ký. Câu 5 — gộp hết 8."></textarea>
+          <div class="card-actions justify-between mt-3">
+            <div>
+              <button type="button" class="btn btn-sm btn-outline" onclick="(async (btn) => {
+                const qs = [...document.querySelectorAll('[data-lavish-question]')];
+                const status = btn.parentElement.querySelector('[data-lavish-copy-all-status]');
+                const out = [];
+                for (const q of qs) {
+                  const key = q.getAttribute('data-lavish-question') || 'Question';
+                  const lines = [];
+                  for (const el of q.querySelectorAll('input, select, textarea')) {
+                    if (el.matches(':disabled')) continue;
+                    if (el.closest('[data-lavish-question]') !== q) continue;
+                    const isChoice = el.matches('input[type=checkbox], input[type=radio]');
+                    if (isChoice && !el.checked) continue;
+                    if (el.matches('input[type=button], input[type=submit], input[type=reset], input[type=hidden], input[type=file], input[type=range]')) continue;
+                    const v = el.value.trim();
+                    if (v) lines.push('  ' + (el.name || el.tagName.toLowerCase()) + ': ' + v);
+                  }
+                  if (lines.length) out.push(key + ':\n' + lines.join('\n'));
+                }
+                const text = out.join('\n\n');
+                if (!text) { status.textContent = qs.length ? 'Chưa có câu trả lời nào.' : 'Không có câu hỏi.'; return; }
+                try {
+                  await navigator.clipboard.writeText(text);
+                  status.textContent = 'Đã chép.';
+                } catch {
+                  const man = document.createElement('textarea');
+                  man.value = text; man.rows = 8; man.className = 'textarea textarea-bordered w-full mt-2';
+                  btn.insertAdjacentElement('afterend', man); man.focus(); man.select();
+                  status.textContent = 'Clipboard không dùng được — chép tay bên dưới.';
+                }
+              })(this)">Chép tất cả câu trả lời</button>
+              <span data-lavish-copy-all-status role="status" aria-live="polite" class="text-xs text-base-content/60 ml-2"></span>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Gửi quyết định câu 2–6</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- ============================== 5 · TÁM MILESTONE ============================== -->
+  <section id="milestones" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">5 · Tám milestone</h2>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Mỗi tab ghi phạm vi vào, phạm vi ra, công sức, và những gì phải chốt. Số dòng là độ dài tài
+      liệu kế hoạch — không phải độ dài code.
+    </p>
+
+    <div role="tablist" class="tabs tabs-box tabs-sm mt-6 flex flex-wrap bg-base-200">
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M1" id="ms-1" checked>
+      <label class="tab tab-milestone" for="ms-1">M1</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M1B" id="ms-1b">
+      <label class="tab tab-milestone" for="ms-1b">M1B</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M2" id="ms-2">
+      <label class="tab tab-milestone" for="ms-2">M2</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M3" id="ms-3">
+      <label class="tab tab-milestone" for="ms-3">M3</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M4" id="ms-4">
+      <label class="tab tab-milestone" for="ms-4">M4</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M5" id="ms-5">
+      <label class="tab tab-milestone" for="ms-5">M5</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M6" id="ms-6">
+      <label class="tab tab-milestone" for="ms-6">M6</label>
+      <input type="radio" name="ms" role="tab" class="tab tab-milestone" aria-label="M7" id="ms-7">
+      <label class="tab tab-milestone" for="ms-7">M7</label>
+    </div>
+
+    <!-- M1 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M1 — Bao trọn <code class="mono">pi</code>: parity + nền tảng vòng đời</h3>
+              <p class="text-sm leading-relaxed">
+                Mọi thứ người dùng nhìn thấy phải là một surface có kiểm chứng; mọi thứ chỉ "đúng về
+                bên trong" phải nói thẳng là bên trong. <strong>Không thêm tính năng mới</strong> —
+                nó làm những cái đã hứa chịu được kiểm chứng.
+              </p>
+              <p class="text-sm text-base-content/70">
+                <strong>10 trên 21</strong> work item không có bất kỳ bề mặt người dùng nào — không
+                UI, không output, không đổi hành vi mặc định. Chúng vẫn nằm ở đây vì 4 lý do cụ thể,
+                không phải vì "cho đủ số".
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold">Phải chốt trước khi code (4)</h4>
+              <ul class="vlist list-disc pl-5 text-sm">
+                <li><strong>Mặc định bash critical-pattern dưới <code class="mono">yolo</code></strong> — đổi hành vi chế độ mặc định trên máy người dùng thật. Chốt sau thì không sửa ngược được.</li>
+                <li><strong>Bảng TTL prompt-cache phải có nguồn</strong> — W7 cấp schema, không cấp data. Đo quá ca làm số lần refresh bùng nổ; quá thấp chỉ mất một lần trúng-cache. Sai lệch hai bên không cân bằng.</li>
+                <li><strong>Trục TTL có trùng lặp trục cũ không</strong> — <em>compiler sẽ không bắt lỗi này</em>; cả ba gate vẫn xanh trong khi quyết định thiết kế chưa được đưa ra.</li>
+                <li><strong>Tính tới được của hàng đợi ghi file</strong> — rủi ro cao nhất của W12 là deadlock, phải trả lời trước khi viết helper chứ không phải sau khi test treo.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Công sức</div>
+              <div class="stat-value text-lg">L</div>
+              <div class="stat-desc">~4 tuần · ~20 engineer-days</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Hạng mục / wave</div>
+              <div class="stat-value text-lg">21 / 8</div>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cắt được nếu cần deadline</h4>
+              <p class="text-sm text-base-content/75">
+                <strong>Wave 7 (W14, W15)</strong> — tự chứa, không ai chặn, cả hai đều là bề mặt
+                người dùng thuần tuý. <strong>Không</strong> cắt W1–W6, W9 và Wave 8: W20 đóng một
+                lỗ hổng phê duyệt đang sống.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border border-warning/40 bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Ngoài phạm vi</h4>
+              <p class="text-sm text-base-content/75">
+                <strong>W8 — <code class="mono">providers.promptCacheRefresh</code></strong>: setting
+                này không tồn tại trong repo và sẽ không được dựng. Cổng chi phí prompt-cache đã
+                giải quyết bằng cờ <code class="mono">providers.cacheWarming</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M1B -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M1B — Chuyển toàn bộ <code class="mono">pi</code> vào omp</h3>
+              <p class="text-sm leading-relaxed">
+                Sáu package mà omp chưa có, chép nguyên văn rồi migrate — không phải viết lại từ
+                đầu. <code class="mono">pi</code> là MIT, nên ở đây chép code <em>ít rủi ro pháp lý
+                hơn</em> là tái tạo sạch, và nhanh hơn nhiều.
+              </p>
+              <p class="text-sm text-base-content/70">
+                Thứ tự migrate: <code class="mono">chord</code> → <code class="mono">protocol</code>
+                → <code class="mono">server</code> → <code class="mono">client</code> →
+                <code class="mono">telemetry</code> → <code class="mono">evals</code>.
+                <strong>protocol phải đứng trước server và client.</strong>
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold">Phép đo làm <em>giảm</em> phạm vi</h4>
+              <ul class="vlist list-disc pl-5 text-sm">
+                <li><code class="mono">durable</code> là <strong>package chết</strong> — không package nào ngoài nó import. Chép tầng session của nó là <em>lùi về sau</em> so với <code class="mono">parseJsonlLenient</code> mà omp đang có. <strong>7 package xuống 6, tiết kiệm 21.093 dòng.</strong></li>
+                <li>"Bao trọn <code class="mono">pi</code>" chỉ là <strong>tầng A</strong>. Hệ sinh thái <code class="mono">pi.dev</code> là tầng B và C — và <code class="mono">grep "pi.dev"</code> trên cả 8 tài liệu kế hoạch ra <strong>0 hit</strong>.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="alert alert-warning alert-soft">
+            <div>
+              <h4 class="font-bold text-sm">Chưa có câu trả lời</h4>
+              <p class="text-sm mt-1">
+                Tài liệu ghi rõ <code class="mono">session-backends</code> là <strong>thứ duy nhất
+                còn để ngỏ</strong> trong ba package từng bị từ chối, và thay thế của nó chỉ được kiểm
+                <em>theo tên và theo bề mặt</em> — chưa chứng minh tương đương về hành vi. Câu
+                <strong>"năng lực là như nhau"</strong> không được nói ra như sự thật ở bất kỳ
+                review note hay changelog nào tới khi ai đó chạy conformance suite.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Quy mô</div>
+              <div class="stat-value text-lg">169 file</div>
+              <div class="stat-desc">1.127.593 byte nguồn</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Sẽ chép / va chạm</div>
+              <div class="stat-value text-lg">245 / 64</div>
+              <div class="stat-desc">516 symbol công khai</div>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Số dòng tài liệu</h4>
+              <p class="text-sm text-base-content/75">3.429 dòng · 10 implementation sheet</p>
+              <p class="text-sm text-base-content/70 mt-2">
+                Đây là phần <strong>thật sự</strong> của luận điểm "bao trọn <code class="mono">pi</code>"
+                — nhưng bảng thứ tự milestone trong plan tổng không nhắc tới nó.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M2 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M2 — Composable extensions thay hardcoded core</h3>
+              <p class="text-sm leading-relaxed">
+                Đây là chỗ luận điểm được cài đặt. 15 work item <code class="mono">WI-0 … WI-13</code>
+                trong 8 wave.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border border-primary/40 bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold">Hai hạng mục quyết định luận điểm có thành hay không</h4>
+              <ul class="vlist list-disc pl-5 text-sm mt-1">
+                <li><strong>WI-0 — trust posture.</strong> Phải xếp <em>đầu tiên</em>, không phải một quyết định bên lề. Nếu mọi thứ là plugin thì plugin chính là bề mặt tấn công.</li>
+                <li><strong>WI-10 — canonical authoring surface.</strong> Là <em>sản phẩm chính</em>, không phải task phụ: một người viết plugin được phép và phải làm những gì. <strong>Cắt sai seam ở M2 thì luận điểm không thành.</strong></li>
+              </ul>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cổng hoàn thành</h4>
+              <p class="text-sm text-base-content/75">
+                Một extension viết ngoài repo cài được, và đăng ký được tool + slash command +
+                config key + lifecycle hook + panel TUI <strong>mà không sửa một dòng core nào</strong>.
+                Đó là bài test quyết định duy nhất.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Công sức</div>
+              <div class="stat-value text-lg">8–10 tuần</div>
+              <div class="stat-desc">engineer-weeks</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Quyết định chờ chốt</div>
+              <div class="stat-value text-lg text-warning">69</div>
+              <div class="stat-desc">nhiều nhất trong cả 8 milestone</div>
+            </div>
+          </div>
+          <div class="card card-border border-warning/40 bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cố ý nằm ngoài phạm vi bàn giao</h4>
+              <p class="text-sm text-base-content/75">
+                <code class="mono">WI-20</code> và <code class="mono">WI-21</code> ở wave 9; phần
+                thực thi của WI-0 được ghi là <strong>M–L và nằm ngoài M2</strong>. Bảng "Định nghĩa
+                hoàn thành" <em>cố ý</em> không có hàng cho chúng.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M3 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M3 — Claude Code UI/UX</h3>
+              <p class="text-sm leading-relaxed">
+                17 hạng mục <code class="mono">A1–A9, B1–B3, C1–C2, D1–D3</code> trong 6 wave.
+                <strong>9/15 hạng mục thực thi làm được ngay hôm nay.</strong>
+              </p>
+            </div>
+          </div>
+          <div class="alert alert-warning">
+            <div>
+              <h4 class="font-bold">Ranh giới pháp lý — đã thu hẹp (2026-09-29)</h4>
+              <p class="text-sm mt-1">
+                <strong>Mượn UI/UX thì tự do.</strong> Không cần để logo Claude Code, và không dùng
+                tên/nhãn hiệu "Claude Code" trong sản phẩm.
+              </p>
+              <p class="text-sm mt-2">
+                Chỉ còn một ranh giới, và nó không liên quan gì tới logo:
+                <code class="mono">claude-code-ref</code> — cây tham chiếu M3 định dùng —
+                <strong>không có LICENSE</strong>, không có trường <code class="mono">license</code>,
+                và tự mô tả là <em>"reverse-engineered / decompiled source restoration of Anthropic's
+                official Claude Code CLI"</em> ở bốn chỗ. Vì vậy: <strong>không dán dòng code</strong>
+                từ cây đó; suy ra yêu cầu hành vi từ sản phẩm đã phát hành và tài liệu công khai,
+                dựng trên primitive <code class="mono">packages/tui</code> của chính omp.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Chưa được kiểm chứng</h4>
+              <p class="text-sm text-base-content/75">
+                Bộ acceptance check của M3 so sánh cụ thể với bản phát hành — <strong>phần này
+                không kiểm được bằng máy</strong>, cần người nhìn và quyết.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Quyết định chờ chốt</div>
+              <div class="stat-value text-lg text-warning">50</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Số dòng tài liệu</div>
+              <div class="stat-value text-lg">3.394</div>
+            </div>
+          </div>
+          <div class="alert alert-warning alert-soft">
+            <div>
+              <h4 class="font-bold text-sm">0 implementation sheet</h4>
+              <p class="text-sm mt-1">
+                M3 không có sheet nào trong <code class="mono">.lavish-wip/impl/</code> — dù là
+                milestone nhiều quyết định nhất và bị chặn pháp lý.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M4 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M4 — Kỷ luật &amp; workflow theo deepseek-harness</h3>
+              <p class="text-sm leading-relaxed">
+                Quyết định: <strong>chỉ mượn kỷ luật, không mượn kiến trúc</strong>. Sáu work item
+                đã rời sang M2/M1; còn 4 hạng mục trong wave B/C/D.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border border-primary/40 bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold">Quyết định vẫn đúng, nhưng lý do đã đổi</h4>
+              <p class="text-sm text-base-content/75">
+                Trước đây vì sợ mượn nhầm. Bây giờ vì <strong>mượn kiến trúc Cordis là mượn code của
+                bên thứ ba đã bị fork 22 lần</strong> — mã trong <code class="mono">vendor/</code>
+                không còn là Cordis nguyên bản, đó là cách DeepSeek hiểu Cordis. Cái đáng mượn là
+                bài học về thứ tự ưu tiên, đăng ký fail-loud và tái tải có nối — không phải kernel.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cảnh báo khi mượn</h4>
+              <p class="text-sm text-base-content/75">
+                Mọi đề xuất mượn cơ chế phải đối chiếu <code class="mono">vendor/README.md</code> —
+                sổ 22 sửa đổi cục bộ — <em>trước</em>. Nếu cơ chế xuất hiện trong log đó, đó là
+                <strong>local patch của họ</strong>, không phải thuộc tính framework. Cũng vậy:
+                "mọi thứ của dsh là MIT" là <strong>sai</strong> — có một component BSD 3-Clause mà
+                report bỏ sót; đọc LICENSE của từng subsystem trước khi port.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Công sức</div>
+              <div class="stat-value text-lg">M</div>
+              <div class="stat-desc">2.5–3 tuần cho phần core</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Quyết định chờ chốt</div>
+              <div class="stat-value text-lg">19</div>
+            </div>
+          </div>
+          <div class="card card-border border-success/40 bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cổng hoàn thành đo được</h4>
+              <p class="text-sm text-base-content/75">
+                Đã lấy được các cơ chế nhỏ mà <strong>không</strong> tạo tầng kernel nào mới. Kiểm
+                được: số dòng thêm có trần, và không có package kernel nào xuất hiện.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M5 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M5 — Rebrand: <code class="mono">omp</code> → <code class="mono">ultraworkers</code></h3>
+              <p class="text-sm leading-relaxed">
+                16 hạng mục <code class="mono">W1–W13 + W6a, W8a, W8b, W13′</code> trong 6 wave.
+                Phần lớn công sức là <strong>phân phối, không phải code</strong>.
+              </p>
+            </div>
+          </div>
+          <div class="alert alert-info alert-soft">
+            <div>
+              <h4 class="font-bold text-sm">Đã kiểm chứng — chưa bắt đầu</h4>
+              <p class="text-sm mt-1">
+                <code class="mono">packages/utils/src/dirs.ts:22</code> → <code class="mono">APP_NAME = "omp"</code>,
+                <code class="mono">:28</code> → <code class="mono">CONFIG_DIR_NAME = ".omp"</code>.
+                Thư mục repo đã tên <code class="mono">ultraworkers</code> nhưng danh tính sản phẩm
+                thì chưa — đúng cái nguy cơ "đổi tên vỡ âm thầm" mà M5 cảnh báo.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Bốn nơi <code class="mono">grep</code> trong repo không bắt được</h4>
+              <ul class="vlist list-disc pl-5 text-sm mt-1">
+                <li>Release asset</li>
+                <li>Runner label tự host</li>
+                <li>Package Python</li>
+                <li>User/group Unix</li>
+              </ul>
+              <p class="text-sm text-base-content/70 mt-2">
+                Ngoài ra: <code class="mono">ORIGINATOR_CODEX: "omp"</code> là <strong>hợp đồng bên
+                thứ ba</strong> — hard-code là non-renamable; đổi config root tạo <strong>bốn</strong>
+                root mới; và <code class="mono">~/.omp/install-id</code> phải đọc đường dẫn cũ
+                trước, ghi đường dẫn mới sau.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Quyết định chờ chốt</div>
+              <div class="stat-value text-lg text-warning">73</div>
+              <div class="stat-desc">nhiều thứ hai sau M2</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Số dòng tài liệu</div>
+              <div class="stat-value text-lg">4.808</div>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cổng hoàn thành</h4>
+              <p class="text-sm text-base-content/75">
+                <code class="mono">grep -ri 'oh-my-pi'</code> chỉ còn đúng những chỗ cố ý giữ —
+                changelog đã phát hành, attribution lịch sử.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M6 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M6 — Bài học từ codex / opencode / gajae</h3>
+              <p class="text-sm leading-relaxed">
+                Audit bốn repo, đã kiểm chứng bằng lệnh. 15 hạng mục, 5 wave. Mỗi bài học phải đi qua
+                quyết định <strong>chọn / loại</strong>, và cái được chọn phải xuất hiện thành work
+                item cụ thể — không nằm ở dạng ghi chú.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Tình trạng giấy phép của bốn nguồn</h4>
+              <div class="overflow-x-auto mt-2">
+                <table class="table table-sm">
+                  <thead><tr><th>Nguồn</th><th>Giấy phép</th><th>Hệ quả</th></tr></thead>
+                  <tbody>
+                    <tr><td><code class="mono">opencode</code></td><td>MIT</td><td>Quyết định layout cho M3</td></tr>
+                    <tr><td><code class="mono">openai/codex</code></td><td>Apache-2.0</td><td>Rust + snapshot test; mọi hạng mục là cơ chế để cài lại, không phải code để dán</td></tr>
+                    <tr><td><code class="mono">gajae-code</code></td><td>MIT</td><td>NHƯNG <code class="mono">NOTICE.md</code> khai MuPDF.js <strong>AGPL-3.0-or-later</strong> và nói MIT của repo không thay thế nó</td></tr>
+                    <tr><td><code class="mono">claude-code-best</code></td><td><span class="badge badge-error badge-sm badge-soft">không có LICENSE</span></td><td>Không dùng được như nguồn code</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Công sức</div>
+              <div class="stat-value text-lg">S + M</div>
+              <div class="stat-desc">~4–6 ngày XS/S, +2–3 tuần M</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Số dòng tài liệu</div>
+              <div class="stat-value text-lg">1.892</div>
+            </div>
+          </div>
+          <div class="alert alert-info alert-soft">
+            <div>
+              <h4 class="font-bold text-sm">0 implementation sheet</h4>
+              <p class="text-sm mt-1">M6 có 15 hạng mục nhưng không có sheet nào trong <code class="mono">.lavish-wip/impl/</code>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- M7 -->
+    <div role="tabpanel" class="tab-content mt-5">
+      <div class="grid gap-5 lg:grid-cols-3">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h3 class="card-title">M7 — Cái riêng của senpi</h3>
+              <p class="text-sm leading-relaxed">
+                Tách ra khỏi M5 vì M5 là kế hoạch <em>đổi tên</em>, còn đây là kế hoạch
+                <em>lấy tính năng</em>. Trộn chúng làm nghẽn cả hai.
+              </p>
+              <p class="text-sm text-base-content/70">
+                Rất nhiều thứ người ta tưởng phải port <strong>đã có sẵn trong omp dưới tên khác</strong>.
+                M7 được viết sau khi đo lại, và phép đo lại làm <em>giảm</em> phạm vi ở mọi work item,
+                không work item nào to lên.
+              </p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Sóng thực hiện</h4>
+              <div class="overflow-x-auto mt-2">
+                <table class="table table-sm">
+                  <thead><tr><th>Sóng</th><th>Work item</th><th>Công</th></tr></thead>
+                  <tbody>
+                    <tr><td>0</td><td><strong>W0</strong> pháp lý + ghim nguồn</td><td>~1 ngày</td></tr>
+                    <tr><td>0c</td><td><strong>RCE + rug-pull + hai biên compaction</strong> <code class="mono">GAP-M7-01…04</code></td><td>~3–3,5 ngày</td></tr>
+                    <tr><td>0</td><td><strong>SEAM</strong> — bốn seam API</td><td>~5 ngày</td></tr>
+                    <tr><td>1</td><td><strong>SEAMFREE</strong> — nhóm builtin chạy được ngay</td><td>~1–2 ngày</td></tr>
+                    <tr><td>2</td><td><strong>LOOKAT</strong> — đo lại rồi mới quyết dựng tool hay không</td><td>~0,5 ngày</td></tr>
+                    <tr class="opacity-60"><td class="line-through">—</td><td class="line-through"><strong>WARM</strong> — làm ấm prompt cache</td><td>đã bị gỡ</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-sm text-base-content/70 mt-2">
+                WARM bị gỡ vì <strong>upstream 18.4.0 đã làm xong trước khi kế hoạch kịp đóng</strong>.
+                Người đọc nên tự hỏi mình đang lên kế hoạch cho thứ đã có.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="stats stats-vertical w-full border border-base-content/10 bg-base-200">
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Công sức</div>
+              <div class="stat-value text-lg">~10–12 ngày</div>
+            </div>
+            <div class="stat py-3">
+              <div class="stat-title text-xs">Số dòng tài liệu</div>
+              <div class="stat-value text-lg">2.261</div>
+            </div>
+          </div>
+          <div class="card card-border bg-base-100">
+            <div class="card-body">
+              <h4 class="font-semibold text-sm">Cần người quyết</h4>
+              <ul class="vlist list-disc pl-5 text-sm mt-1">
+                <li><strong>P3</strong> — <code class="mono">model_select</code> có được cho extension <em>thay system prompt</em> không? Nếu ta cũng cho, extension bất kỳ có thể thay toàn bộ prompt của omp.</li>
+                <li><strong>P2</strong> — Entry hay Message? Đặt tiền lệ cho <em>mọi</em> extension sau này.</li>
+                <li><strong>PC</strong> — chi phí mặc định của warm cache. Không có mặc định thì ta đang <em>thiết kế sản phẩm</em>, không phải port.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 6 · PHÁP LÝ ============================== -->
+  <section id="phap-ly" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">6 · Pháp lý — dòng nào được phép chép</h2>
+    <div class="card card-border mt-6 bg-base-100">
+      <div class="card-body">
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr><th>Nguồn</th><th>Giấy phép</th><th>Được làm gì</th><th>Nghĩa vụ</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code class="mono">earendil-works/pi</code></td>
+                <td><span class="badge badge-success badge-soft badge-sm">MIT</span></td>
+                <td>Chép nguyên văn rồi migrate — 6 package</td>
+                <td>Giữ nguyên copyright + permission notice</td>
+              </tr>
+              <tr>
+                <td><code class="mono">deepseek-harness</code></td>
+                <td><span class="badge badge-success badge-soft badge-sm">MIT</span> <span class="text-xs text-base-content/60">+ một component BSD 3-Clause</span></td>
+                <td>Mượn <em>kỷ luật</em>, không mượn kernel</td>
+                <td>Đọc LICENSE từng subsystem; kiểm <code class="mono">vendor/README.md</code> trước</td>
+              </tr>
+              <tr>
+                <td><code class="mono">opencode</code></td>
+                <td><span class="badge badge-success badge-soft badge-sm">MIT</span></td>
+                <td>Quyết định layout cho M3</td>
+                <td>Giữ notice</td>
+              </tr>
+              <tr>
+                <td><code class="mono">openai/codex</code></td>
+                <td><span class="badge badge-info badge-soft badge-sm">Apache-2.0</span></td>
+                <td>Cơ chế để cài lại, không dán code</td>
+                <td>Dán nguyên văn một snippet Rust là phát sinh NOTICE</td>
+              </tr>
+              <tr>
+                <td><code class="mono">gajae-code</code></td>
+                <td><span class="badge badge-success badge-soft badge-sm">MIT</span> <span class="badge badge-error badge-soft badge-sm">+ AGPL</span></td>
+                <td>Chỉ năm file được nêu tên</td>
+                <td><code class="mono">NOTICE.md</code> khai MuPDF.js AGPL-3.0-or-later</td>
+              </tr>
+              <tr class="bg-warning/10">
+                <td><code class="mono">claude-code-ref</code></td>
+                <td><span class="badge badge-error badge-sm">KHÔNG CÓ LICENSE</span></td>
+                <td><strong>Mượn UI/UX tự do</strong> — nhưng không dán dòng code từ cây này</td>
+                <td>Không dùng tên/logo/nhãn hiệu "Claude Code"; suy ra yêu cầu từ sản phẩm đã phát hành</td>
+              </tr>
+              <tr>
+                <td><code class="mono">oh-my-openagent</code></td>
+                <td><span class="badge badge-error badge-soft badge-sm">SUL-1.0</span></td>
+                <td><strong>Không được chép dòng nào</strong></td>
+                <td>Non-sublicensable</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-3 text-sm text-base-content/70">
+          Còn thiếu trong <code class="mono">THIRD-PARTY-NOTICES.txt</code>: hai nhóm không phân
+          phối lại (DOWNLOADED-AT-RUNTIME, BUILD-ONLY) chỉ có mã giấy phép, không kèm toàn văn.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 7 · BỐN RỦI RO ============================== -->
+  <section id="rut-troi" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">7 · Bốn rủi ro có thể làm hỏng dự án</h2>
+    <p class="mt-2 text-base-content/70">Tổng 51 rủi ro đã ghi nhận. Bốn cái dưới đây là loại bỏ qua là mất dự án.</p>
+
+    <div class="mt-6 grid gap-4 sm:grid-cols-2">
+      <div class="card card-border border-error/40 bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center gap-2"><span class="badge badge-error">1</span><h3 class="card-title text-base">M2 cắt sai seam</h3></div>
+          <p class="text-sm text-base-content/75">
+            Phải làm lại M2, M3, M4, M6 <strong>cùng lúc</strong>. Vì vậy WI-0 và WI-10 phải quyết
+            trước, không phải làm sau.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border border-error/40 bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center gap-2"><span class="badge badge-error">2</span><h3 class="card-title text-base">Không có trust gate</h3></div>
+          <p class="text-sm text-base-content/75">
+            Khi plugin ecosystem lớn lên, đây là <strong>lỗ hổng</strong>, không phải nợ kỹ thuật.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border border-error/40 bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center gap-2"><span class="badge badge-error">3</span><h3 class="card-title text-base">Rename M5 vỡ âm thầm</h3></div>
+          <p class="text-sm text-base-content/75">
+            Ở bốn nơi mà <code class="mono">grep</code> trong repo <strong>không bắt được</strong>:
+            release asset, runner label tự host, package Python, user/group Unix.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <div class="flex items-center gap-2"><span class="badge badge-warning">4</span><h3 class="card-title text-base">Dán code từ cây không giấy phép</h3></div>
+          <p class="text-sm text-base-content/75">
+            <span class="badge badge-xs badge-success badge-soft mr-1">đã thu hẹp</span>
+            Không còn là "port từ cây decompile" nói chung. Rủi ro còn lại là
+            <strong>dán dòng code từ <code class="mono">claude-code-ref</code></strong> — một cây
+            không có LICENSE. Mượn UI/UX thì tự do; không dán code, và không dùng logo/tên
+            "Claude Code".
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 8 · TỰ SỬA SAI ============================== -->
+  <section id="da-sua" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">8 · Bộ kế hoạch đã tự bác bỏ 50 claim của chính nó</h2>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Đây là phần đáng đọc nhất nếu bạn đang cân nhắc có tin kế hoạch này hay không. Tài liệu tự kiểm
+      chứng lại các report trước bằng cách đọc source, và <strong>50 claim không giữ được</strong> —
+      8 ở mức high, 20 medium, 22 low. Có những cái sẽ đưa người implementer <em>sang nhầm file</em>.
+    </p>
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Những lỗi đáng nhớ</h3>
+          <ul class="vlist list-disc pl-5 text-sm">
+            <li><strong>Ba fix lifecycle từng được coi là "đã xong" thực ra chưa tồn tại</strong> tại HEAD — tức nền tảng mà M2 xây trên trước đây là ảo. Đây là W1–W3 của M1.</li>
+            <li><strong>Hai cổng hoàn thành của M2 bất khả thi, và cùng một lỗi.</strong> Cả hai đặt cổng "đúng ba file" bằng <code class="mono">git diff</code>, trong khi <code class="mono">AGENTS.md</code> cấm commit nên file mới luôn untracked — mà <code class="mono">git diff</code> không bao giờ thấy untracked. Loại lỗi khiến người đọc tin nhầm là đã làm xong.</li>
+            <li><strong>Lệnh gỡ chặn <code class="mono">bun test</code> trong cả bốn plan là sai</strong>, và suốt phiên đó không ai chạy thử nó một lần.</li>
+            <li><strong>Hai theme trong 99 theme sẵn có ném lỗi khi dựng</strong> — harness quét toàn bộ theme sẽ <em>crash</em> chứ không đỏ.</li>
+            <li><strong>M3 tự mâu thuẫn về số liệu đo</strong>: cùng một lần chạy mà ba tài liệu ghi 12, 15 và 16 package. Số thật là 16.</li>
+            <li><strong>M4 khoá một trong hai writer của cùng một file</strong> — khoá một writer không đóng được lớp trừu tượng read-modify-write.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card card-border border-success/40 bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Nguyên tắc đằng sau</h3>
+          <p class="text-sm text-base-content/75">
+            Khi nguồn không nói, tài liệu ghi rõ là <strong>chưa chắc</strong> thay vì điền bằng nội
+            dung nghe hợp lý:
+          </p>
+          <blockquote class="mt-2 border-l-4 border-primary/50 pl-3 text-sm italic text-base-content/70">
+            "Vì tài liệu sẽ được code theo, một chỗ trống trung thực còn hơn một phỏng đoán trôi."
+          </blockquote>
+          <p class="mt-3 text-sm text-base-content/75">
+            Và một câu chốt về phương pháp, đáng để giữ khi đọc mọi con số trong bộ tài liệu này:
+          </p>
+          <blockquote class="mt-2 border-l-4 border-warning/50 pl-3 text-sm italic text-base-content/70">
+            "Đo lại bằng hai phép trước khi tin một con số. Cả ba vòng nghiên cứu trước sai vì phép đo
+            hỏng trả về 0 rồi đọc thành phát hiện."
+          </blockquote>
+          <p class="mt-3 text-xs text-base-content/55">
+            Giới hạn đã tự nói: kiểm chứng là <em>tĩnh</em> — đọc code, đếm bằng lệnh, đối chiếu.
+            Không có bước nào chạy build hay test.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 9 · ĐỐI CHIẾU LẠI ============================== -->
+  <section id="doi-chieu" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">9 · Đối chiếu lại trên cây lệnh</h2>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Những mục dưới đây là kết quả soi lại các claim gánh cả chương trình, không phải trích lại từ tài
+      liệu. Bốn mục đầu mình đã chạy lại trên cây và xác nhận; phần còn lại đến từ việc đọc kỹ từng
+      kế hoạch.
+    </p>
+
+    <h3 class="mt-8 text-lg font-semibold">A · Claim đã lỗi thời trong chính tài liệu</h3>
+    <div class="mt-3 grid gap-4 lg:grid-cols-2">
+
+      <div class="card card-border border-error/40 bg-base-100">
+        <div class="card-body">
+          <div class="flex items-start gap-2">
+            <span class="badge badge-error badge-soft shrink-0">đã kiểm chứng</span>
+            <h4 class="font-semibold">M6 vẫn mang claim về native addon mà 6 kế hoạch anh em đã sửa</h4>
+          </div>
+          <p class="text-sm text-base-content/75">
+            Commit <code class="mono">47720fd42c</code> build được addon và sửa 295 dòng trên
+            M1, M1B, M2, M3, M4, M5. <strong>M6 không có trong commit đó</strong> — và
+            <code class="mono">MILESTONE_6_EXECUTION_PLAN.md:1884</code> vẫn viết nguyên văn:
+          </p>
+          <blockquote class="border-l-4 border-error/50 pl-3 text-sm italic text-base-content/70">
+            "Cổng kiểm của M3 (<code class="mono">bun test packages/tui</code>) còn bị chặn một phần
+            bởi native addon… Nên chiến lược snapshot mà <code class="mono">codex.md</code> §6 khuyến nghị
+            <strong>chưa thể kiểm chứng là chạy được</strong> cho tới khi cổng này mở."
+          </blockquote>
+          <p class="text-sm text-base-content/75">
+            Dòng đó là lý do được nêu ra để kết luận rằng khuyến nghị chính của M6 chưa kiểm chứng
+            được. Nó đang <strong>hạ thấp kết luận của milestone theo hướng lạc quan quá mức</strong>.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border border-error/40 bg-base-100">
+        <div class="card-body">
+          <div class="flex items-start gap-2">
+            <span class="badge badge-error badge-soft shrink-0">đã kiểm chứng</span>
+            <h4 class="font-semibold">GAP-M7-01 gọi là RCE đang sống, nhưng lỗ hổng đã đóng</h4>
+          </div>
+          <p class="text-sm text-base-content/75">
+            M7 nói <code class="mono">mcp/config.ts:104</code> là
+            <code class="mono">enableProjectConfig ?? true</code> — tức mặc định BẬT. Cây hiện tại:
+          </p>
+          <ul class="text-sm list-disc pl-5 text-base-content/75">
+            <li><code class="mono">mcp/config.ts:107</code> → <code class="mono">options?.enableProjectConfig ?? false</code></li>
+            <li><code class="mono">mcp/settings.ts:14</code> → <code class="mono">default: false</code>, kèm comment gọi đúng mối đe dọa này</li>
+          </ul>
+          <p class="text-sm text-base-content/75">
+            Commit <code class="mono">5acb674475</code> đã sửa nó. Phần thực thi <code class="mono">/bin/sh</code>
+            và carrier ở <code class="mono">manager.ts</code> vẫn còn, nên lỗ hổng chỉ còn trên
+            <strong>đường opt-in</strong>. Đề nghị đổi framing từ "đóng lỗ hổng RCE đang sống" sang
+            <em>defence-in-depth</em> — nếu không, độ ưu tiên của item bị thổi phồng.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <div class="flex items-start gap-2">
+            <span class="badge badge-error badge-soft shrink-0">đã kiểm chứng</span>
+            <h4 class="font-semibold">M4 nói GAP-M1-18 "chưa có trong kế hoạch M1" — có</h4>
+          </div>
+          <p class="text-sm text-base-content/75">
+            <code class="mono">grep -c "GAP-M1-18\|omp doctor" MILESTONE_1_EXECUTION_PLAN.md</code>
+            → <strong>19</strong>, không phải 0. W18 là một mục đã đặc tả đầy đủ, và check list
+            GAP-D4 của nó đã đóng và liệt kê. Bằng chứng đi kèm và con số "phụ thuộc chưa thoả: 4"
+            đều dựa trên tiền đề sai này.
+          </p>
+          <p class="text-sm text-base-content/70">
+            <strong>Chưa ai đối chiếu:</strong> check list của W18 đã chứa
+            <code class="mono">parity patches/*.patch ↔ package.json.patchedDependencies</code> —
+            đúng contract mà sổ bản vá <code class="mono">GAP-M4-10</code> được dựng để giao.
+            <strong>Hai milestone, một cái check, chưa từng được hoà giải.</strong>
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <div class="flex items-start gap-2">
+            <span class="badge badge-error badge-soft shrink-0">đã kiểm chứng</span>
+            <h4 class="font-semibold">Neo kiểm chứng của M5 trỏ vào một commit không tồn tại</h4>
+          </div>
+          <p class="text-sm text-base-content/75">
+            <code class="mono">git cat-file -t 5873776</code> →
+            <code class="mono">fatal: Not a valid object name</code>. Bảng kiểm kê của M5 được lập
+            trên một trạng thái cây <em>không nằm trong lịch sử repo này</em>.
+          </p>
+          <p class="text-sm text-base-content/75">
+            Đây chính là lý do các con số cũ trong M5 <strong>không tự báo mình là cũ</strong> — và vì
+            vậy 18 lần đảo ngược quyết định trong M5 có thể xảy ra mà không báo động.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="mt-10 text-lg font-semibold">B · Rủi ro thật mà kế hoạch tự thừa nhận</h3>
+    <div class="mt-3 grid gap-4 lg:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">M5 · W3 sẽ phá người dùng XDG</h4>
+          <p class="text-sm text-base-content/75">
+            <code class="mono">dirs.ts:370</code> dựng app root bằng
+            <code class="mono">path.join(value, APP_NAME)</code> — nên đổi <em>tên hiển thị</em> cũng
+            di dời <code class="mono">$XDG_{DATA,STATE,CACHE}_HOME/omp</code>: sessions,
+            <code class="mono">secret-placeholder.key</code>, <code class="mono">autoqa.db</code>,
+            <code class="mono">run/daemons</code>. Tiêu chí nghiệm thu của W3 ("config vẫn resolve về
+            root <code class="mono">.omp</code> cũ") <strong>sai với người dùng XDG</strong>.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">M5 · Không có job CI nào build Docker image</h4>
+          <p class="text-sm text-base-content/75">
+            Kế hoạch nói robomp image job "chạy ít nhất nên sẽ bị bỏ sót lâu nhất". Thực tế
+            <strong>CI không build image nào</strong>. Hệ quả trực tiếp: phần xác minh của W10 gần như
+            <em>chạy tay</em> — nó không phải một cổng tự động.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">M6 · Không có trình tự nào</h4>
+          <p class="text-sm text-base-content/75">
+            <code class="mono">grep -cE '^## W[0-9]'</code> → <strong>0</strong>. Cả chín work item
+            đều ghi nguyên văn <em>"Sóng: không xếp — M6 chưa có sóng"</em>. Không wave, không thứ tự
+            ưu tiên, không hướng dẫn cắt deadline. Chỉ có cạnh phụ thuộc từng item.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">M4 · Không bắt đầu từ xanh</h4>
+          <p class="text-sm text-base-content/75">
+            3/6 cổng của M4-4 đang đỏ, cả ba wave đều <code class="mono">shippable: false</code>,
+            4 phụ thuộc chưa thoả. Wave 0 (<code class="mono">M4-DISCIPLINE-1/2/3</code>) phải xong
+            <strong>trước mọi item</strong> wave B/C/D.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">M6 · Lệnh đo của nó không tái lập được con số của nó</h4>
+          <p class="text-sm text-base-content/75">
+            <code class="mono">… | xargs wc -l | tail -1</code> chia thành 4 lô trên Windows/Git-Bash
+            và trả về tổng của lô cuối — <strong>3.929 thay vì 188.515</strong>. Số thì đúng; lệnh
+            công bố thì sai, vi phạm chính điều kiện thoát A của M6.
+          </p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">M1B · <code class="mono">omp plugin install</code> thực ra đã chạy</h4>
+          <p class="text-sm text-base-content/75">
+            Đo thật: 20 package thật trên omp 18.4.1 → <strong>17 cài và load OK</strong>. Tầng A, B
+            và C đều đã tồn tại; phần thiếu là <strong>độ phủ, không phải nền tảng</strong>. Bài học
+            tự ghi: với câu hỏi "omp có làm được không", hãy <em>chạy nó — đừng grep</em>.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="mt-10 text-lg font-semibold">C · Cần người quyết, nằm ngoài repo</h3>
+    <p class="text-sm text-base-content/70">
+      Đây là những việc có <strong>lead time dài nhất</strong> và phần lớn nằm ngoài tầm kiểm soát
+      của kế hoạch. Chúng nên được mở ngay khi milestone bắt đầu, không phải khi tới sóng.
+    </p>
+    <form data-lavish-question="viec-ngoai-repo"
+          class="mt-3 card card-border bg-base-100"
+          onsubmit="event.preventDefault();
+            const selected = [...event.currentTarget.querySelectorAll('input[name=items]:checked')]
+              .map(i => ({ id: i.value, label: i.dataset.label, disposition: i.dataset.disposition }));
+            if (!selected.length) return;
+            window.lavish.queuePrompt(
+              'Mở ngay các việc chặn sau, theo thứ tự tôi chọn. Mỗi việc cần một chủ và một hạn cụ thể trước khi milestone tương ứng bắt đầu.\n' +
+              selected.map(s => '  ' + s.id + ' — ' + s.label).join('\n') +
+              '\n\nTrả về phiếu theo từng ID: đã giao chủ, hoặc hoãn kèm lý do.',
+              { tag: 'tracked-batch', text: 'Mở ' + selected.length + ' việc chặn ngoài repo',
+                element: event.currentTarget, data: { items: selected } }
+            );">
+      <div class="card-body space-y-1">
+        <label class="label cursor-pointer justify-start gap-3 py-1">
+          <input type="checkbox" name="items" value="X-M5-KEEPLIST" data-label="Đặt tên và phê duyệt keep-list (do_not_rename.tsv hay keep-list.txt, một file hay hai) — ba cổng đều kiểm keep-list.txt" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M5</strong> — Đặt tên và phê duyệt <code class="mono">keep-list.txt</code>. Ba cổng đều kiểm đúng tên file này.</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3 py-1">
+          <input type="checkbox" name="items" value="X-M5-NPMSCOPE" data-label="Quyền sở hữu npm scope @ultraworkers" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M5</strong> — Quyền sở hữu npm scope <code class="mono">@ultraworkers</code>. Chặn toàn bộ wave 3.</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3 py-1">
+          <input type="checkbox" name="items" value="X-M6-OPENTUI" data-label="@opentui/core@0.5.12 — cổng đầu tiên trước khi chốt layout" data-disposition="gán-chủ-và-hạn" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M6</strong> — <code class="mono">@opentui/core@0.5.12</code>: cổng đầu tiên phải đóng trước khi chốt bất kỳ layout nào.</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3 py-1">
+          <input type="checkbox" name="items" value="X-M6-GAPD1" data-label="GAP-D1 — có chặn 127.0.0.1 theo mặc định không" data-disposition="quyết-định" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M6</strong> — <code class="mono">GAP-D1</code>: có chặn <code class="mono">127.0.0.1</code> theo mặc định không? Chặn sẽ phá mọi MCP server local.</span>
+        </label>
+        <label class="label cursor-pointer justify-start gap-3 py-1">
+          <input type="checkbox" name="items" value="X-M4-DOCTOR" data-label="M4 — GAP-M4-15: hooks trong .claude/settings.json biến mất không một lời" data-disposition="quyết-định" class="checkbox checkbox-primary">
+          <span class="label-text"><strong>M4</strong> — <code class="mono">GAP-M4-15</code>: hooks trong <code class="mono">.claude/settings.json</code> biến mất không một lời.</span>
+        </label>
+        <div class="card-actions justify-end pt-2">
+          <button type="submit" class="btn btn-primary btn-sm">Gửi danh sách việc chặn</button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- ============================== 10 · XONG LÀ GÌ ============================== -->
+  <section id="xong" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold sm:text-3xl">10 · "Xong" nghĩa là gì</h2>
+    <p class="mt-2 text-base-content/70">
+      Mỗi dòng dưới phải phán đoán được <strong>đúng hoặc sai</strong>, không có vùng xám.
+    </p>
+
+    <div class="card card-border mt-6 bg-base-100">
+      <div class="card-body">
+        <div class="overflow-x-auto">
+          <table class="table table-zebra table-sm">
+            <thead><tr><th>MS</th><th>Điều kiện khách quan để coi là xong</th></tr></thead>
+            <tbody>
+              <tr><td><strong>M1</strong></td><td>Mọi overload <code class="mono">on(...)</code> trả <code class="mono">() =&gt; void</code>. Mọi drain site đi qua một helper đảo thứ tự + cô lập lỗi. Bảng "pi feature → omp status" không còn dòng nào trống ở cột status.</td></tr>
+              <tr><td><strong>M1B</strong></td><td>Sáu package đã chép và migrate; 64 va chạm đã được hoà giải có chủ.</td></tr>
+              <tr><td><strong>M2</strong></td><td><strong>Một extension viết ngoài repo cài được, và đăng ký được tool + slash command + config key + lifecycle hook + panel TUI mà không sửa một dòng core nào.</strong></td></tr>
+              <tr><td><strong>M3</strong></td><td>Bộ acceptance check so sánh cụ thể với bản phát hành đều đạt. <strong>Phần này không kiểm được bằng máy — cần người nhìn và quyết.</strong></td></tr>
+              <tr><td><strong>M4</strong></td><td>Đã lấy được các cơ chế nhỏ mà <em>không</em> tạo tầng kernel nào mới. Kiểm được: số dòng thêm có trần, và không có package kernel nào xuất hiện.</td></tr>
+              <tr><td><strong>M5</strong></td><td><code class="mono">grep -ri 'oh-my-pi'</code> chỉ còn đúng những chỗ cố ý giữ. Bốn nhóm vỡ âm thầm đã có test hoặc lệnh kiểm bắt.</td></tr>
+              <tr><td><strong>M6</strong></td><td>Mỗi bài học đã qua quyết định chọn/loại, và những cái được chọn đã xuất hiện thành work item cụ thể trong M1–M5. Không nằm ở dạng ghi chú.</td></tr>
+              <tr><td><strong>M7</strong></td><td>Bốn seam API đã có; nhóm builtin chạy được ngay mà không cần hạ tầng mới.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-border mt-5 bg-base-200">
+      <div class="card-body">
+        <h3 class="font-semibold">Xuyên suốt cả 8 milestone</h3>
+        <ul class="vlist list-disc pl-5 text-sm mt-1 text-base-content/75">
+          <li><code class="mono">bun check</code> xanh. <strong>Không dùng <code class="mono">tsc</code> ở bất kỳ đâu.</strong></li>
+          <li>Không <code class="mono">any</code>, không <code class="mono">ReturnType&lt;&gt;</code>, không inline import, <code class="mono">#private</code> cho field.</li>
+          <li><code class="mono">logger</code>, không <code class="mono">console.*</code> ở bất kỳ đường nào TUI/RPC/SDK/worker còn sống.</li>
+          <li>Test không source-grep file cài đặt, không <code class="mono">mock.module()</code>.</li>
+          <li>Không chỉnh tay <code class="mono">models.json</code> hay <code class="mono">compat/rules.json</code>.</li>
+          <li><strong>Mọi <code class="mono">file:line</code> trong tài liệu còn đúng khi đọc lại file. Nếu một cái lệch, tài liệu <em>hỏng</em>.</strong></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== GHI CHÚ ============================== -->
+  <section class="mb-6">
+    <h2 class="text-xl font-bold">Ghi chú cho người review</h2>
+    <div class="alert alert-info alert-soft mt-4">
+      <div>
+        <p class="text-sm">
+          Mỗi khối trên đây đều có thể bình luận trực tiếp trên trang. Nếu muốn chỉ ra một chỗ sai,
+          một quyết định cần đổi, hoặc một câu hỏi bạn chưa tìm thấy trong tài liệu — bôi đen rồi
+          ghi chú, hoặc dùng hai nút ở mục 3 và 4 để gửi quyết định về.
+        </p>
+        <p class="text-sm mt-2">
+          <strong>Năm chỗ nên soi kỹ trước khi duyệt:</strong> bảng thứ tự milestone thiếu M1B và
+          M7; M3/M6/M7 chưa có implementation sheet; quan hệ giữa M7 với M6 chưa được ghi ở đâu
+          (nét đứt trên sơ đồ); và bốn claim ở mục 9A đã lỗi thời — trong đó GAP-M7-01 đang được
+          mô tả như RCE đang sống, trong khi commit <code class="mono">5acb674475</code> đã đóng nó.
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="border-t border-base-content/10 bg-base-200/40">
+  <div class="mx-auto max-w-7xl px-4 py-8 text-xs text-base-content/60 sm:px-6 lg:px-8">
+    <p class="mono">C:\Users\ADMIN\Documents\Projects\ultraworkers</p>
+    <p class="mt-2">
+      Nguồn: <code class="mono">COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md</code> (26.378 dòng) +
+      tám <code class="mono">MILESTONE_*_EXECUTION_PLAN.md</code>.
+      Các mục đánh dấu "đã kiểm chứng" đã được đối chiếu trên cây lệnh; phần còn lại là claim của tài liệu.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

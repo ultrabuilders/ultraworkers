@@ -6,12 +6,12 @@ M1 bọc trọn `pi` làm tiền đề, M2 cắt seam composable, M3 dựng tr�
 
 | | |
 | --- | --- |
-| Work item còn lại | **10** — 4 mục gốc (M4-4, M4-6, M4-7, M4-9) + 6 mục `GAP-M4-10`..`GAP-M4-15` thêm 2026-09-29 — trên tổng 16 (10 ban đầu + 6 mới) |
+| Work item còn lại | **11** — 4 mục gốc (M4-4, M4-6, M4-7, M4-9) + 7 mục `GAP-M4-10`..`GAP-M4-16` thêm 2026-09-29 — trên tổng 17 (10 ban đầu + 7 mới) |
 | File được chạm | **69** mục đã kiểm chứng đường dẫn (37 của bốn mục gốc + 32 của sáu mục mới), trong đó 2 mục `[create,UNVERIFIED]` |
 | Câu hỏi mở / đính chính | **25 câu hỏi mở, 41 đính chính** (34 của bốn mục gốc + 7 của sáu mục mới) |
 | Sóng | 3 (B, C, D) — **cả ba đều `shippable: false`**, và nay có 10 work item thay vì 4 |
 | Cổng đang đỏ ngay bây giờ | 3/6 bước kiểm của M4-4 đỏ — (b) vì file test mới chưa tồn tại; (c)(d) vì refactor chưa thực thi. (a)(e)(f) đã xanh từ 2026-09-29, sau khi build addon native |
-| Phụ thuộc chưa thoả | **4** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 chưa có trong kế hoạch M1 — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**; M2 Wave 1b (WI-PRESTEP-1) cho M4-4) |
+| Phụ thuộc chưa thoả | **4** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 đã lên sổ M1 (W18, `MILESTONE_1_EXECUTION_PLAN.md:3730`) nhưng CHƯA merge — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**; M2 Wave 1b (WI-PRESTEP-1) cho M4-4) |
 
 Đây **không phải** một milestone bắt đầu từ xanh. Hai trong bốn work item gốc phụ thuộc công việc M2 **chưa được thực thi** trên nhánh này, và item lớn nhất về mặt cơ học (M4-4) vẫn đỏ ở ba trong sáu cổng sau khi addon native đã build.
 
@@ -43,6 +43,39 @@ Viết bằng kết quả quan sát được, không bằng kết quả nội b�
 - Người viết patch biết **vá cái gì, vì sao, bỏ khi nào** mà không phải đọc lại 35 KB diff. *(GAP-M4-10)*
 - Người đọc tài liệu tìm được **cơ chế nào làm hành vi này thật**, kèm tên một cổng kiểm đỏ được cho mỗi hàng. *(GAP-M4-14)*
 - Người dùng viết `hooks` vào `.claude/settings.json` được `omp doctor` **báo ra thay vì bỏ qua im lặng**. *(GAP-M4-15)*
+
+### `GAP-M4-16` — thứ tự ưu tiên giữa `.claude/settings.json` và `.omp/config.yml` *(tách ra từ `GAP-M4-15`, 2026-09-29)*
+
+**Vì sao tách riêng, không gộp vào `GAP-M4-15`.** Khi tra `GAP-M4-15` người đọc phát hiện mô tả gốc của nó **sai hướng**: `hooks` **không biến mất khỏi dữ liệu**. Nó được giữ nguyên trong `RawSettings` đã merge — `claude.ts:555` đẩy cả object đã parse, không lọc key; nhánh pass-through ở `config/settings.ts:293-298` giữ mọi key không thuộc group-prefix, và `hooks` không nằm trong tập đó. Nó chỉ **không bao giờ được đọc**. `assertKnownSettingPaths` có đúng **một** call site không đệ quy (`settings.ts:632`), nằm trong `#overrideLayer` — không chạm đường đọc file của nhà khác. Vậy nên hàng `hooks` là *một dòng trong bảng kiểm của `omp doctor`*, đúng như đã định nghĩa.
+
+**Cái thật sự là hành vi im lặng, và nó lớn hơn nhiều:** `.claude/settings.json` merge **sau** `.omp/config.yml`.
+
+```
+claude.ts:44   priority 80
+builtin.ts:42  priority 100     giảm dần → later-wins
+settings.ts:2196-2199           vòng merge
+settings.ts:2216                chỉ modelRoles reap lại từ config.yml
+
+mô phỏng deepMerge:
+  sau vòng capability  →  tui.theme="claude", modelRoles.main="b"   (claude đè omp-yml)
+  sau modelRoles reap →  tui.theme="claude", modelRoles.main="a"   (chỉ modelRoles quay lại omp)
+```
+
+Nghĩa là **mọi key** trong `.claude/settings.json` đè lên cấu hình project của chính người dùng, trừ `modelRoles`. Người dùng đặt `tui.theme` trong `.omp/config.yml` của dự án sẽ bị một `.claude/settings.json` cũ trong repo ghi đè, và **không có gì cảnh báo**. Đây là rủi ro người dùng lớn hơn hàng `hooks` nhiều, và nó **chưa có test nào assert thứ tự ưu tiên này**.
+
+**Quyết định của chủ sở hữu (2026-09-29): tách ra work item riêng, không gộp vào `GAP-M4-15`.** `GAP-M4-15` giữ nguyên phạm vi (một dòng trong bảng kiểm của `omp doctor`). `GAP-M4-16` mở ở **sóng D**, read-only, không đổi hành vi mặc định — nhiệm vụ là **khẳng định thứ tự ưu tiên bằng một test**, rồi quyết định xem nó có cần sửa.
+
+**Phải chốt trước khi code:**
+
+| Câu hỏi | Vì sao chặn |
+|---|---|
+| Thứ tự ưu tiên hiện tại là **đúng ý** (`.claude` là của người dùng khác, nó nên thắng) hay là **sự cố**? | Nếu đúng ý thì `GAP-M4-16` chỉ cần một test khóa hành vi, và `omp doctor` nên **báo** thứ tự này chứ không sửa. Nếu là sự cố thì đổi thứ tự là breaking change với bất kỳ ai đang dựa vào nó — và `modelRoles` là ngoại lệ duy nhất đã được chọn có chủ ý, nên phải biết vì sao. |
+| `opencode.json` có cùng lớp vấn đề không? | `opencode.ts loadSettings` đẩy **toàn bộ** config không namespace — tập key có thể rộng hơn nhiều. Chưa đo được danh sách key thật. |
+| `dropSettingsGroupShadows` có nuốt `hooks` khi nó lồng trong một group path đã biết (ví dụ `someGroup.hooks`) không? | Mới xác nhận `hooks` ở **top-level**. Lồng sâu hơn thì chưa đo. |
+
+**Test hợp đồng phải bảo vệ (theo `AGENTS.md`: một hợp đồng quan sát được, không source-grep, không `mock.module()`):** khởi tạo settings với cùng một key ở cả `.omp/config.yml` và `.claude/settings.json`, rồi assert key đó resolve theo thứ tự đã chốt — chạy qua public API.
+
+**Cổng mở:** cần một lần build native addon. Hiện `bun test packages/coding-agent/test/settings-group-shadowing.test.ts` → `0 pass / 1 fail / 1 error`, `Cannot find module ...pi_natives.win32-x64.node`, nên **toàn bộ** kết luận trên là đọc tĩnh.
 
 **Thành thật về phần vô hình.** Ba trong bốn item gốc chỉ hiện ra khi có chuyện xấu xảy ra — một ghi file thất bại, một setting bị che, một extension bị chặn. Chỉ M4-7 có tác dụng nhìn thấy liên tục trên màn hình. Ngoài ra M4 tạo ra hạ tầng mà người dùng không bao giờ chạm tới: một `atomicWriteJson` dùng chung trong `packages/utils`, một `shadowing.ts` mới, một module capability mới, và một entry đăng ký lệnh CLI mới. Trong sáu mục mới, **năm trên sáu cũng chỉ hiện ra khi có chuyện xấu xảy ra** — một getter `message` ném, một hook hỏng, một transcript không trả lời được, một bản vá không ai giải thích được, một key cấu hình biến mất. Đổi lại, milestone này **giữ kỷ luật cho những milestone sau**: một release gate duy nhất, một quyết định changelog duy nhất, và các PR được phép merge nhưng không được phép release cho tới khi cả ba sóng xong.
 
@@ -351,7 +384,7 @@ Và nó **là** một cổng thật cho cả bốn work item gốc — không ph
 | Quyết định con người về câu hỏi mở 1 (ai sở hữu `application`) | M4-4 (điều kiện DONE) | Chờ bạn |
 | Quyết định changelog của M4 (plan:§6.2) | Mở PR của Wave B | Chờ bạn — merge thì được, release thì không |
 | Ủy quyền `shippable: false` của Wave D bằng văn bản | M4-9, `GAP-M4-10`, `GAP-M4-14`, `GAP-M4-15` | Chờ bạn |
-| **GAP-M1-18** (`omp doctor`) phải merge, và danh sách check của nó phải đã đóng | `GAP-M4-15` (điều kiện tiên quyết tuyệt đối) | **CHƯA CÓ** — `grep -n "GAP-M1-18\|omp doctor" MILESTONE_1_EXECUTION_PLAN.md` trả **0 hit**; mục này chưa tồn tại trong kế hoạch M1. Theo GAP-D4, hàng check phải vào **danh sách** trước khi code |
+| **GAP-M1-18** (`omp doctor`) phải merge, và danh sách check của nó phải đã đóng | `GAP-M4-15` (điều kiện tiên quyết tuyệt đối) | **ĐÃ LÊN SỔ M1, CHƯA MERGE** — mục `W18` tồn tại ở `MILESTONE_1_EXECUTION_PLAN.md:3730` (Wave 8), và danh sách check `GAP-D4` của nó **đã đóng và liệt kê** tại `:3754`. *(Đính chính 2026-09-29: bản trước ghi "CHƯA CÓ" dựa trên `grep` trả 0 hit — con số đó sai, lệnh thật trả **19 hit**.)* Kết luận không đổi: `runDoctorChecks` chỉ có **1 hit toàn repo** (chính dòng định nghĩa) và `grep -c 'name: "doctor"'` trả 0, nên `omp doctor` **chưa có** và đây vẫn là tiền đề tuyệt đối. Theo GAP-D4, hàng check phải vào **danh sách** trước khi code |
 | Merge order của `GAP-M4-10` với GAP-M1-18 | `GAP-M4-10` | `GAP-M4-10` merge **trước** — không có `LEDGER.md` thì doctor không có gì để báo |
 | Quyết định merge order với **M2 WI-9** | `GAP-M4-12` | Chưa có — WI-9 sửa đường đăng ký handler mà item này sửa đường gọi; hai mặt của cùng một seam |
 | **GAP-D8** (tiêu chí chọn trong 895 call site) + tên owner của phần nợ còn lại | `GAP-M4-11` | Chờ bạn |

@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phê duyệt — 4 blocker đã tra</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge) { overflow-wrap: anywhere; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .anchor-offset { scroll-margin-top: 1.5rem; }
+  pre.cmd {
+    background: color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+    border-radius: var(--radius-box);
+    padding: .75rem .875rem;
+    overflow-x: auto;
+    font-size: .8125rem;
+    line-height: 1.55;
+    white-space: pre;
+  }
+  .lead { font-size: 1.0625rem; line-height: 1.6; }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+
+<header class="border-b border-base-content/10 bg-base-200/40">
+  <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <span class="badge badge-primary badge-soft">Chờ bạn phê duyệt</span>
+      <span class="badge badge-ghost">227 agent · 109 claim sống · 102 bị bác</span>
+    </div>
+    <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Bốn việc chặn — đã tra xong</h1>
+    <p class="mt-2 max-w-3xl text-base-content/70">
+      Mỗi claim đều qua phản biện với mặc định là bác bỏ. <strong>102 trong 211 claim bị bác</strong> —
+      gần một nửa. Hai chỗ các agent <em>mâu thuẫn nhau</em>, tôi đánh dấu thẳng bên dưới thay vì
+      chọn bừa.
+    </p>
+
+    <div class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-xs font-semibold text-success">Q1 · npm scope</div>
+        <div class="mt-1 text-sm text-base-content/80">Cả <code class="mono">@ultraworkers</code> và <code class="mono">@ultrabuilders</code> đều <strong>trống</strong></div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-xs font-semibold text-success">Q3 · opentui license</div>
+        <div class="mt-1 text-sm text-base-content/80">MIT thật ở tầng JS — <strong>nhưng tầng native kéo thêm nghĩa vụ</strong></div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-xs font-semibold text-error">Q2 · keep-list.txt</div>
+        <div class="mt-1 text-sm text-base-content/80">File không có, <strong>mẫu W6a đề xuất là neo chết</strong></div>
+      </div>
+      <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
+        <div class="text-xs font-semibold text-error">Q4 · GAP-M4-15</div>
+        <div class="mt-1 text-sm text-base-content/80">Phát hiện được <strong>vấn đề lớn hơn</strong> hàng <code class="mono">hooks</code></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+
+  <nav class="mb-10 flex flex-wrap gap-2" aria-label="Mục lục">
+    <a class="btn btn-sm btn-ghost" href="#q1">Q1 · npm scope</a>
+    <a class="btn btn-sm btn-ghost" href="#q2">Q2 · keep-list.txt</a>
+    <a class="btn btn-sm btn-ghost" href="#q3">Q3 · opentui</a>
+    <a class="btn btn-sm btn-ghost" href="#q4">Q4 · GAP-M4-15</a>
+    <a class="btn btn-sm btn-ghost" href="#het">Chốt tất cả</a>
+  </nav>
+
+  <!-- ===================== Q1 ===================== -->
+  <section id="q1" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold">Q1 · npm scope <code class="mono">@ultraworkers</code></h2>
+
+    <div class="alert alert-success alert-soft mt-4">
+      <div>
+        <h3 class="font-bold">Tên này chưa ai giữ — nhưng đừng vội mừng</h3>
+        <p class="text-sm mt-1">
+          Cả <code class="mono">@ultraworkers</code> và <code class="mono">@ultrabuilders</code> đều
+          trả <code class="mono">404 Scope not found</code> — tức <strong>không có account npm nào
+          mang tên này</strong>. Nhưng repo này <strong>không có quyền publish lên
+          <code class="mono">@oh-my-pi</code></strong>: scope đó thuộc <code class="mono">can1357</code>,
+          và OIDC trusted publishing bind vào <code class="mono">can1357/oh-my-pi</code>.
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-5 grid gap-5 lg:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">Probe phân biệt được ba trạng thái</h4>
+          <pre class="cmd cmd">curl -s -w " %{http_code}" https://registry.npmjs.org/-/user/&lt;tên&gt;/package
+
+angular          200  [danh sách package]      org thật
+oh-my-pi         200  {"@oh-my-pi/pi-ai":...} org thật, 18+ package
+omp, ultracode   200  {}                       account có, 0 package  ← ĐÃ BỊ CHIẾM
+ultraworkers     404  {"error":"Scope not found"}
+ultrabuilders    404  {"error":"Scope not found"}</pre>
+          <p class="text-sm text-base-content/75">
+            <strong>Cảnh báo:</strong> <code class="mono">@ultracode</code> và
+            <code class="mono">@ultrawork</code> <em>không</em> trống — chúng là account đã đăng ký.
+            Nếu W7 chọn <code class="mono">@ultracode</code> vì "search ra 0 kết quả",
+            <code class="mono">npm org create</code> sẽ fail <code class="mono">already taken</code>.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border border-warning/40 bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">Rủi ro thương hiệu chưa ai nói</h4>
+          <p class="text-sm text-base-content/80">
+            Có một tổ chức GitHub khác đã chiếm tên <strong>ultraworkers</strong> — agent-harness,
+            khoảng 195k sao, Canada, tạo 2026-04-02. Hoàn toàn tách biệt với org
+            <code class="mono">ultrabuilders</code> của repo này.
+          </p>
+          <p class="text-sm text-base-content/70 mt-1">
+            Đây không phải lỗi kỹ thuật, nhưng nó là quyết định của người, không phải của lệnh. Tôi
+            không tự quyết.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-border mt-5 bg-base-100">
+      <div class="card-body">
+        <h4 class="font-semibold text-sm">Số liệu trong kế hoạch đã cũ — GATE của W7 sẽ đỏ giả</h4>
+        <pre class="cmd cmd">git ls-files -z ':(exclude)packages/*/CHANGELOG.md' ':(exclude).lavish-wip/**' \
+  ':(exclude)COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' ':(exclude)MILESTONE_*_EXECUTION_PLAN.md' \
+  | xargs -0 grep -l -F '@oh-my-pi/' | wc -l      →  4114   (kế hoạch ghi 4118)
+  ... | xargs -0 grep -o -F '@oh-my-pi/' | wc -l   → 17252   (kế hoạch ghi 17212)</pre>
+        <p class="text-sm text-base-content/75">
+          W7 hardcode <code class="mono">test … -eq 17212</code> ở bước 6 → hoặc đỏ giả, hoặc bị sửa
+          thành "không đổi" và bỏ mất regression thật.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Q2 ===================== -->
+  <section id="q2" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold">Q2 · <code class="mono">scripts/rename/keep-list.txt</code></h2>
+
+    <div class="alert alert-error mt-4">
+      <div>
+        <h3 class="font-bold">File không tồn tại — và mẫu W6a đề xuất là một neo chết</h3>
+        <p class="text-sm mt-1">
+          Không chỉ thiếu file. Dòng W6a đề xuất duy nhất
+          (<code class="mono">^\.omp/</code>) <strong>không khớp dòng nào, và làm
+          <code class="mono">sed</code> lỗi cứng</strong>. Ba lỗi, đều đo được:
+        </p>
+      </div>
+    </div>
+
+    <pre class="cmd cmd mt-4"># 1. Neo không khớp gì cả — thư mục project không bao giờ ở đầu dòng
+$ git grep -c -E '^\.omp/' -- '*.ts' | wc -l          →  0
+$ git grep -n 'path.join(ctx.cwd, ".omp")' -- '*.ts'
+  packages/coding-agent/src/discovery/omp-extension-roots.ts:162
+  packages/coding-agent/src/secrets/index.ts:167
+
+# 2. grep -f nuốt luôn phần "# reason" vào regex → khớp 0, fail-open
+$ printf '^.omp/  # project-level dir\n' > kl1.txt
+$ grep -c -f kl1.txt packages/utils/src/dirs.ts            →  0
+
+# 3. sed -f lỗi cứng
+$ echo x | sed -f kl1.txt
+  sed: file kl1.txt line 1: unknown command: `^'</pre>
+
+    <div class="alert alert-warning alert-soft mt-4">
+      <div>
+        <h4 class="font-bold">Vì sao quan trọng</h4>
+        <p class="text-sm mt-1">
+          Keep-list dạng phẳng <code class="mono">&lt;pattern&gt; # &lt;reason&gt;</code> không phân biệt
+          được <code class="mono">~/.omp</code> (home root) với <code class="mono">&lt;repo&gt;/.omp/</code>
+          (project dir) — đúng cái conflation W6a cố tránh. Bỏ neo thì <code class="mono">\.omp/</code>
+          unanchored khớp <strong>375 dòng</strong>. Chỗ phân biệt đúng nằm ở
+          <code class="mono">disposition.tsv</code> theo <em>path</em> của W8b, không phải ở file pattern
+          phẳng. Và cổng của W6a chỉ kiểm file <em>có dòng đó</em> — nên nó <strong>xanh dù neo chết</strong>.
+        </p>
+      </div>
+    </div>
+
+    <div class="card card-border mt-5 bg-base-100">
+      <div class="card-body">
+        <h4 class="font-semibold">9 chỗ hardcode scope phải vào keep-list</h4>
+        <p class="text-sm text-base-content/75">
+          Quan trọng nhất: <code class="mono">packages/natives/native/loader-state.js:70</code> —
+          <code class="mono">require_.resolve('@oh-my-pi/pi-natives-${platformTag}/package.json')</code>.
+          Đây là file runtime đóng gói vào tarball, và lỗi bị nuốt trong
+          <code class="mono">catch { return null }</code> → <strong>hỏng mà không có dấu vết</strong>.
+        </p>
+        <p class="text-sm text-base-content/70 mt-2 mono text-xs">
+          gen-npm-packages.ts:93 · ci-release-publish.ts:309 · setup-npm-trust.ts:172,239 ·
+          update-cli.ts:35,49 · bundle-dist.ts:16 · run-ci.sh:188-231
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Q3 ===================== -->
+  <section id="q3" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold">Q3 · <code class="mono">@opentui/core@0.5.12</code> — giấy phép thật</h2>
+
+    <div class="alert alert-warning mt-4">
+      <div>
+        <h3 class="font-bold">MIT thật — nhưng MIT đó không phủ hết, và omp đang nợ một khoản attribution</h3>
+        <p class="text-sm mt-1">
+          Bạn nói đúng, nó open source. Nhưng: <strong>MIT chỉ phủ tầng JS</strong>. Tầng native kéo
+          <strong>Apache-2.0 (wuffs)</strong> + <strong>patent grant có điều khoản chấm dứt
+          (libwebp)</strong>. Và tách ra một việc chưa làm: omp đã vendor code OpenTUI vào
+          <code class="mono">packages/tui/src/stdin-buffer.ts</code> mà
+          <strong>chưa đóng nghĩa vụ ghi công MIT</strong> — và
+          <code class="mono">packages/tui/package.json</code> có
+          <code class="mono">files:["src",…]</code>, nên người cài từ npm <em>không nhận được</em>
+          attribution đó.
+        </p>
+      </div>
+    </div>
+
+    <div class="grid gap-5 mt-5 lg:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">Bằng chứng ở tầng artifact, không phải metadata</h4>
+          <pre class="cmd cmd">npm view @opentui/core@0.5.12 license  →  'MIT'
+curl -sL .../core-0.5.12.tgz | openssl dgst -sha512 -binary | openssl base64 -A
+  → ZXBE5gmvdovmV8zJQrOQf6E44v1tJRDEgrM2MYhEglzgXZ+smIUp95O8zeRYGsuIzQIiMPMgQqKtTJuzvAb7BQ==
+  (== dist.integrity, từng ký tự)
+tar -xzOf core-0.5.12.tgz package/LICENSE
+  → MIT License / Copyright (c) 2025 opentui   (1063 byte)
+
+tar -tzf core-win32-x64-0.5.12.tgz
+  → package/{LICENSE, LICENSE-GHOSTTY, LICENSE-LCMS2, LICENSE-LIBWEBP,
+             LICENSE-STB, LICENSE-WUFFS, PATENTS-LIBWEBP, AUTHORS-LIBWEBP}
+  LICENSE-WUFFS = Apache-2.0 · PATENTS-LIBWEBP = patent grant tự chấm dứt</pre>
+          <p class="text-sm text-base-content/75">
+            Quét 184 entry tìm copyleft/commercial → <strong>0 file</strong>. Không có
+            <code class="mono">CLA</code>, không có điều khoản kép.
+            <code class="mono">fork: false</code> trên GitHub — lịch sử giấy phép liên tục.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border border-error/40 bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">Hai lỗi số trong kế hoạch</h4>
+          <ul class="text-sm list-disc pl-5 space-y-2 text-base-content/80">
+            <li><strong>Version sai.</strong> opencode ghim <code class="mono">0.4.5</code>, không
+              phải <code class="mono">0.5.12</code>. <code class="mono">MILESTONE_3:73</code> và
+              <code class="mono">MILESTONE_6:203</code> đều ghi sai. 0.4.5 chỉ có LICENSE thuần MIT —
+              <strong>trục version là nơi nghĩa vụ đổi</strong>.</li>
+            <li><strong>Claim "chưa ai cài" vẫn đúng.</strong> Không chạy <code class="mono">bun add</code>
+              vì hard-rule read-only. Chưa biết DLL có load được trên Windows không, có cần
+              <code class="mono">--experimental-ffi</code> không.</li>
+          </ul>
+          <p class="text-sm text-base-content/70 mt-2">
+            Một tin tốt: <code class="mono">sst/opentui</code> chỉ là tên cũ —
+            <code class="mono">github.com/sst/opentui</code> trả <strong>301</strong> về
+            <code class="mono">anomalyco/opentui</code>. Một repo, một giấy phép, không phải hai.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-border mt-5 bg-base-100">
+      <div class="card-body">
+        <h4 class="font-semibold text-sm">Cỡ thật — để bạn cân, không phải để tranh luận</h4>
+        <div class="overflow-x-auto mt-2">
+          <table class="table table-sm">
+            <tbody>
+              <tr><td>Tải win32-x64</td><td class="mono">4,02 MiB</td><td>core 2,20 + native 1,82</td></tr>
+              <tr><td>Trên đĩa sau giải nén</td><td class="mono">19,20 MiB</td><td>47,2% core là source map</td></tr>
+              <tr><td>Cài thật (kèm peer cứng)</td><td class="mono">~25,8 MiB</td><td><code class="mono">web-tree-sitter</code> không optional</td></tr>
+              <tr><td><code class="mono">packages/tui</code> của omp</td><td class="mono">188.515 dòng</td><td>trong đó <code class="mono">src/render/</code> chỉ 3.052 dòng (1,6%)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-sm text-base-content/70 mt-2">
+          Không phải thư viện layout — là <strong>framework TUI trọn vẹn</strong>
+          (<code class="mono">createCliRenderer</code>, 25 renderables, Markdown, Audio, parser.worker.js
+          172 KB, Yoga export từ entry chính). 98,4% tầng ứng dụng của omp mà opentui không có.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Q4 ===================== -->
+  <section id="q4" class="anchor-offset mb-14">
+    <h2 class="text-2xl font-bold">Q4 · GAP-M4-15 — hooks trong <code class="mono">.claude/settings.json</code></h2>
+
+    <div class="alert alert-error mt-4">
+      <div>
+        <h3 class="font-bold">Hàng <code class="mono">hooks</code> không phải vấn đề — thứ tự ưu tiên mới là</h3>
+        <p class="text-sm mt-1">
+          <code class="mono">hooks</code> <strong>không biến mất khỏi dữ liệu</strong> — nó được giữ
+          nguyên trong <code class="mono">RawSettings</code> đã merge và không bao giờ bị đọc. Nhưng
+          <code class="mono">.claude/settings.json</code> merge <strong>sau</strong>
+          <code class="mono">.omp/config.yml</code>, nên nó <strong>ghi đè cấu hình project của chính
+          người dùng ở mọi key trừ <code class="mono">modelRoles</code></strong>. Đó mới là hành vi im
+          lặng — và blast radius lớn hơn nhiều so với việc thiếu một hàng <code class="mono">hooks</code>.
+        </p>
+      </div>
+    </div>
+
+    <div class="grid gap-5 mt-5 lg:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">Cơ chế</h4>
+          <pre class="cmd cmd">claude.ts:44   priority 80
+builtin.ts:42  priority 100      giảm dần, later-wins
+settings.ts:2196-2199            vòng merge
+settings.ts:2216                chỉ modelRoles reap lại từ config.yml
+
+mô phỏng:
+  sau vòng capability : tui.theme="claude", modelRoles.main="b"
+  sau modelRoles reap : tui.theme="claude", modelRoles.main="a"</pre>
+          <p class="text-sm text-base-content/75">
+            <code class="mono">hooks</code> không nằm trong tập group-prefix nên nhánh pass-through
+            của <code class="mono">dropSettingsGroupShadows</code> giữ nguyên nó.
+            <code class="mono">assertKnownSettingPaths</code> chỉ có <strong>một</strong> call site
+            không đệ quy, nằm trong <code class="mono">#overrideLayer</code> — không chạm đường đọc file.
+          </p>
+        </div>
+      </div>
+
+      <div class="card card-border border-warning/40 bg-base-100">
+        <div class="card-body">
+          <h4 class="font-semibold">Ba chỗ sổ M4-15 đang neo sai</h4>
+          <ul class="text-sm list-disc pl-5 space-y-2 text-base-content/80">
+            <li><code class="mono">settings.ts:1020</code> nằm trong
+              <code class="mono">#configWatchTargets()</code> — chỉ đăng ký target cho
+              <code class="mono">fs.watch</code>, <strong>không phải lớp parse</strong>. Đường nạp thật là
+              <code class="mono">claude.ts:634 → settings.ts:2177</code>.</li>
+            <li>Hàng test âm số 3 neo vào <code class="mono">projectLayerForMerge</code> — hàm chỉ gỡ
+              <code class="mono">modelRoles.&lt;role&gt;</code> null, <strong>không lọc key lạ nào</strong>.
+              Bản hiện tại xanh dù đặt lời gọi sai chỗ.</li>
+            <li><code class="mono">omp doctor</code> chưa tồn tại:
+              <code class="mono">grep -c 'name: "doctor"'</code> → <strong>0</strong>.
+              <code class="mono">runDoctorChecks</code> có 1 hit toàn repo — chính dòng định nghĩa.
+              Đây là chỗ duy nhất để in cảnh báo, và nó chưa có.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert alert-info alert-soft mt-4">
+      <div>
+        <h4 class="font-bold text-sm">Chưa có bằng chứng runtime</h4>
+        <p class="text-sm mt-1">
+          <code class="mono">bun test packages/coding-agent/test/settings-group-shadowing.test.ts</code>
+          → <code class="mono">0 pass / 1 fail / 1 error</code>,
+          <code class="mono">Cannot find module ...pi_natives.win32-x64.node</code>. Mọi kết luận trên
+          là đọc tĩnh. Riêng phát hiện thứ tự ưu tiên là thứ có blast radius lớn nhất mà
+          <strong>chưa test nào assert</strong>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CHỐT ===================== -->
+  <section id="het" class="anchor-offset mb-10">
+    <h2 class="text-2xl font-bold">Chốt</h2>
+    <p class="mt-2 text-base-content/70">
+      Bốn quyết định dưới đây đều cần bạn. Tick rồi gửi một lần; phần "sửa số" không cần bạn quyết —
+      mình sửa được.
+    </p>
+
+    <form data-lavish-question="chot-4-blocker"
+          class="mt-6 space-y-4"
+          onsubmit="event.preventDefault();
+            const g = (n) => [...event.currentTarget.querySelectorAll('input[name=' + n + ']:checked')].map(i => i.value);
+            const notes = document.getElementById('ghi-chu').value.trim();
+            const lines = [
+              'Q1 npm scope: ' + (g('q1')[0] || '(chưa chọn)'),
+              'Q2 keep-list format: ' + (g('q2')[0] || '(chưa chọn)'),
+              'Q3 opentui: ' + (g('q3')[0] || '(chưa chọn)'),
+              'Q4 GAP-M4-15 phạm vi: ' + (g('q4')[0] || '(chưa chọn)'),
+            ];
+            const extra = [];
+            if (notes) extra.push('Ghi chú: ' + notes);
+            window.lavish.queuePrompt(
+              'Quyết định cho 4 blocker đã tra:\\n' + lines.join('\\n') +
+              (extra.length ? '\\n' + extra.join('\\n') : '') +
+              '\\n\\nÁp dụng: ghi vào tài liệu kế hoạch tương ứng, và tự sửa các con số sai đã nêu (M5 4118/17212 → 4114/17252; M4:354; M3:73 và M6:203 về version opentui).',
+              { tag: 'quyet-dinh', text: lines.join(' | '), element: event.currentTarget,
+                data: { q1: g('q1'), q2: g('q2'), q3: g('q3'), q4: g('q4'), notes } }
+            );">
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Q1 · Chọn npm scope</h3>
+          <div class="space-y-1">
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q1" value="@ultraworkers" class="radio radio-primary"><span class="label-text"><code class="mono">@ultraworkers</code> — trống, nhưng trùng tên tổ chức GitHub khác (195k sao)</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q1" value="@ultrabuilders" class="radio radio-primary"><span class="label-text"><code class="mono">@ultrabuilders</code> — trống, khớp org GitHub hiện tại của repo, không trùng ai</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q1" value="@ultracode" class="radio radio-warning"><span class="label-text"><code class="mono">@ultracode</code> — <strong>đã bị chiếm</strong>, <code class="mono">npm org create</code> sẽ fail</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q1" value="giữ @oh-my-pi" class="radio"><span class="label-text">Giữ <code class="mono">@oh-my-pi</code> — nhưng cần <code class="mono">can1357</code> tra quyền publish</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Q2 · Chọn format cho <code class="mono">keep-list.txt</code></h3>
+          <div class="space-y-1">
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q2" value="(b) giữ comment hậu tố, bắt consumer cắt comment + sửa gate + bỏ neo ^" class="radio radio-primary"><span class="label-text"><strong>(b) khuyến nghị</strong> — giữ <code class="mono">&lt;pattern&gt; # &lt;reason&gt;</code>, bắt consumer cắt comment trước, và sửa cổng để kiểm <em>pattern khớp ≥1 dòng thật</em> thay vì kiểm dòng có mặt. Bỏ neo <code class="mono">^\.omp/</code></span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q2" value="(a) tách reasons ra file riêng" class="radio"><span class="label-text">(a) — file pattern thuần, reasons ở file riêng. Sạch hơn nhưng thêm một file phải đồng bộ</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q2" value="(c) bỏ flat, đẩy hết vào disposition.tsv theo path" class="radio"><span class="label-text">(c) — bỏ hẳn flat pattern, dùng <code class="mono">disposition.tsv</code> theo path của W8b. Đúng nhất về mặt kỹ thuật, nhưng đổi hợp đồng của ba cổng</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Q3 · <code class="mono">@opentui/core</code> — M3 có phụ thuộc không?</h3>
+          <div class="space-y-1">
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q3" value="không phụ thuộc, chỉ đọc hành vi; đóng nợ attribution hiện có" class="radio radio-primary"><span class="label-text"><strong>Không phụ thuộc</strong> — chỉ đọc hành vi, và sửa nợ attribution cho <code class="mono">stdin-buffer.ts</code> (việc này tồn tại sẵn, không phải việc mới)</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q3" value="phụ thuộc, pin 0.4.5 (MIT thuần, chưa có tầng native)" class="radio"><span class="label-text">Phụ thuộc, pin <code class="mono">0.4.5</code> — bản opencode thực sự dùng, chỉ có LICENSE thuần MIT, chưa có 5 license bên thứ ba ở tầng native</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q3" value="smoke test trước, quyết sau" class="radio"><span class="label-text"><strong>Cần bằng chứng trước</strong> — cài thử ở thư mục tạm ngoài repo, đo xong mới quyết (chưa ai làm; DLL/FFI trên Windows chưa biết)</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <h3 class="card-title text-base">Q4 · Phạm vi GAP-M4-15</h3>
+          <div class="space-y-1">
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q4" value="tách thứ tự ưu tiên ra work item riêng" class="radio radio-primary"><span class="label-text"><strong>Khuyến nghị</strong> — giữ GAP-M4-15 cho hàng <code class="mono">hooks</code>, mở work item riêng cho thứ tự ưu tiên <code class="mono">.claude/settings.json</code> đè <code class="mono">.omp/config.yml</code></span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q4" value="gộp vào GAP-M4-15, viết lại blast radius" class="radio"><span class="label-text">Gộp vào GAP-M4-15 — nhưng khiến một item read-only S gánh thêm một vấn đề ưu tiên cấu hình</span></label>
+            <label class="label cursor-pointer justify-start gap-3"><input type="radio" name="q4" value="chỉ sửa neo sai, giữ nguyên phạm vi" class="radio"><span class="label-text">Chỉ sửa ba neo sai, giữ nguyên phạm vi — thứ tự ưu tiên ghi vào backlog riêng</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body">
+          <label class="label" for="ghi-chu"><span class="label-text font-semibold">Ghi chú</span></label>
+          <textarea id="ghi-chu" class="textarea textarea-bordered w-full" rows="3"
+            placeholder="Ví dụ: về quan hệ giữa can1357 và bạn — nếu không phải một nhóm thì W12 chặn release."></textarea>
+          <div class="card-actions justify-end mt-3">
+            <button type="submit" class="btn btn-primary btn-sm">Gửi cả 4 quyết định</button>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <div class="alert alert-info alert-soft mt-6">
+      <div>
+        <h4 class="font-bold text-sm">Mình sẽ tự sửa, không cần bạn duyệt</h4>
+        <ul class="text-sm mt-1 list-disc pl-5 space-y-1">
+          <li>M5: số <code class="mono">4118 / 17212</code> → <code class="mono">4114 / 17252</code> ở 6 chỗ, gồm cả <code class="mono">test … -eq 17212</code></li>
+          <li>M4:354 — đổi "CHƯA CÓ" thành "đã lên sổ M1 (W18, :3730), chưa merge"; kết luận giữ nguyên</li>
+          <li>M3:73 và M6:203 — version opentui thật của opencode là <code class="mono">0.4.5</code></li>
+          <li>M6:1882 — "MIT qua metadata" → "MIT ở tầng JS + Apache-2.0 (wuffs) + patent grant (libwebp) ở tầng native; bằng chứng nâng lên đọc LICENSE trong tarball"</li>
+          <li>Thêm entry <code class="mono">opentui</code> vào <code class="mono">THIRD-PARTY-NOTICES.txt</code> (đóng nghĩa vụ đã tồn tại)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="border-t border-base-content/10 bg-base-200/40">
+  <div class="mx-auto max-w-6xl px-4 py-6 text-xs text-base-content/60 sm:px-6 lg:px-8">
+    Nguồn: workflow <code class="mono">omp-blocker-research</code> — 227 agent, 5.512 tool call,
+    109 claim sống sót phản biện, 102 bị bác. Báo cáo đầy đủ:
+    <code class="mono">brief-1..4.md</code>.
+  </div>
+</footer>
+
+</body>
+</html>

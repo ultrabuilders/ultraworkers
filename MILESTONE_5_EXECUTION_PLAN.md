@@ -4,6 +4,25 @@ M5 là milestone phân phối, không phải milestone tính năng: nó đổi t
 
 **Trả lời ngắn cho câu hỏi "có nên bắt đầu không": có, nhưng chỉ sóng 1.** W1 và W2a là hai mục nhỏ, độc lập file, không cần gì ngoài ba mức điều kiện tiên quyết, và chúng mở đường cho mọi thứ sau đó. Nhưng **đừng chạm vào sóng 3**. Cổng GATE 0 của cả W7, W8a và W8b đều là cùng một kiểm tra — `test -f scripts/rename/keep-list.txt` — và thư mục `scripts/rename/` **không tồn tại trên cây hiện tại** (`1454dc0`, kiểm chứng lại). Danh sách chuỗi cấm đổi phải có, phải nằm trên `main`, và phải được **một người duyệt khác người viết**, trước khi bất kỳ lệnh thay chuỗi nào chạy. Đó là điều kiện có lead time dài nhất của milestone và nó cần hai người — nên mở nó ngay, song song với sóng 1.
 
+## QUYẾT ĐỊNH ĐÃ CHỐT (2026-09-29)
+
+Hai việc nằm ngoài repo, chặn cả sóng 3, đã được chủ sở hữu quyết sau khi tra thật:
+
+> **1. npm scope = `@ultraworkers`.** Đã probe registry: `https://registry.npmjs.org/-/user/<tên>/package` trả **404 `Scope not found`** cho `ultraworkers` — tức **không có account npm nào mang tên này**, nên tên còn trống. Cùng lệnh phân biệt được ba trạng thái: `oh-my-pi` → 200 kèm danh sách package; `omp`/`ultracode` → 200 `{}` (account có, 0 package — **đã bị chiếm**); `ultraworkers`/`ultrabuilders` → 404.
+>
+> **Hai việc còn treo, nằm ngoài khả năng tra bằng lệnh:**
+> - **Cần `npm org create ultraworkers` trên tài khoản có `npm login`** để xác nhận lần cuối. 404 chỉ chứng minh *chưa có account*, chứ không chứng minh *tên sẽ được cấp cho bạn* — tạo org là miễn phí và tức thì, làm sớm.
+> - **Tên `ultraworkers` đã bị một tổ chức GitHub khác dùng** (agent-harness, ~195k sao, Canada, tạo 2026-04-02), hoàn toàn tách biệt với org `ultrabuilders` của repo này. Rủi ro thương hiệu/SEO, **không phải** rủi ro kỹ thuật, và là quyết định của người chứ không phải của lệnh. Đã được chủ sở hữu chấp nhận để đi tiếp; ghi lại ở đây để không bị quên.
+>
+> **2. Format của `scripts/rename/keep-list.txt` = giữ `<pattern>  # <reason>` (phương án b), với ba sửa bắt buộc:**
+> - **Consumer phải cắt phần comment trước khi dùng.** `grep -f keep-list.txt` hiện nuốt luôn `# reason` vào regex. Dùng dạng `sed 's/[[:space:]]*#.*$//'` trước, hoặc `grep -F` theo tập literal.
+> - **Cổng phải kiểm *pattern khớp ≥ 1 dòng thật*, không kiểm *dòng có mặt*.** Cổng hiện tại của W6a kiểm `grep -n '^\^\\\.omp/.*#' keep-list.txt` — chỉ chứng minh dòng đó tồn tại, nên nó **xanh dù neo chết**.
+> - **Bỏ neo `^\.omp/`.** Nó khớp **0 dòng**: thư mục project không bao giờ nằm ở đầu dòng (`path.join(ctx.cwd, ".omp")` ở `discovery/omp-extension-roots.ts:162` và `secrets/index.ts:167`). Và `sed -f` với dòng đó **lỗi cứng**: `sed: unknown command: '^'`. Bỏ neo thì `\.omp/` unanchored khớp **375 dòng**, nhưng đó lẫn cả `~/.omp` lẫn `<repo>/.omp/` — chính là cái conflation W6a cố tránh. **Chỗ phân biệt đúng là `disposition.tsv` theo *path* của W8b**, không phải file pattern phẳng.
+>
+> **Số liệu đã đo lại (2026-09-29), số cũ đã lỗi thời:** tập in-scope là **4114 file / 17252 lượt** (trước đây ghi 4118/17212, chỉ đúng ở `1454dc0` và `84cbac9`; HEAD hiện tại là `150fd28aa9`). Phân rã đã kiểm lại: 18 file manifest+lock mang **212 lượt**, **4096 file** còn lại mang **17040 lượt**; phân bố 4096 file là **3999 `.ts`, 70 `.md`, 9 `.tsx`, 4 `.py`, 2 `.sh`, 2 `.rs`, 2 `.jsonl`, 2 `.json`, 2 `.js`, và 1 mỗi loại `.yml`/`.ps1`/`.nix`/`.dockerfile`**. Cổng `test … -eq 17212` ở bước 6 đã sửa thành 17252 — nếu không, nó đỏ giả hoặc bị sửa thành "không đổi" và bỏ mất regression thật.
+>
+> **Lưu ý về quyền publish:** repo này **không có quyền publish lên `@oh-my-pi`** — scope đó thuộc `can1357`, và OIDC trusted publishing bind vào `can1357/oh-my-pi` (`scripts/setup-npm-trust.ts:45`). Còn 2 tên orphan trên npm không còn manifest: `@oh-my-pi/hashline` và `@oh-my-pi/swarm-extension`. Quan hệ giữa `can1357` và người duy trì fork **chưa xác lập** và cần người xác nhận — nó quyết định W12 (stub tên cũ để auto-migrate) có mở được không.
+
 ## Trạng thái hiện tại
 
 | Số liệu | Giá trị |
@@ -15,7 +34,7 @@ M5 là milestone phân phối, không phải milestone tính năng: nó đổi t
 | Sóng | 6 |
 | Cổng đang đỏ ngay bây giờ | 5 |
 
-Con số 181 là tổng `n_files` của 16 work item, và nó **understated** bề mặt chạm thật: hai mục là tập tổng hợp, không phải file lẻ — `(4100 file còn lại trong tập in-scope)` của W7 và `<599 file .ts trong tập display-token>` của W8b. M5 không bắt đầu từ xanh. Năm cổng sau đây đỏ ngay tại cây sạch, trước khi bất kỳ dòng nào của M5 được viết:
+Con số 181 là tổng `n_files` của 16 work item, và nó **understated** bề mặt chạm thật: hai mục là tập tổng hợp, không phải file lẻ — `(4096 file còn lại trong tập in-scope)` của W7 và `<599 file .ts trong tập display-token>` của W8b. M5 không bắt đầu từ xanh. Năm cổng sau đây đỏ ngay tại cây sạch, trước khi bất kỳ dòng nào của M5 được viết:
 
 1. **W7 GATE 0** — `test -f scripts/rename/keep-list.txt` thất bại. `scripts/rename/` không tồn tại trên cây.
 2. **W8a GATE 0** — cùng điều kiện thiếu `keep-list.txt`, cộng thêm hai điều kiện khác chưa thoả (W2 chưa merge, W7 chưa merge).
@@ -42,7 +61,7 @@ Các phép đo trong tài liệu này lấy trên HEAD `84cbac9` với cây sạ
 
 **Ba lý do khiến nó không hoàn tác được.**
 
-Một là phạm vi. Hai mục lớn nhất của milestone là W7 — 4118 file, 17212 lượt, 16 manifest, `bun.lock` tái sinh — và W8b — 599 file `.ts`, 1853 lượt token `omp`. Cả hai đều là **một lệnh**. W7 ghi rõ phần thao tác gõ là "S theo thao tác gõ (một lệnh `perl -pi` trên 4118 file)" và phần kiểm chứng mới là "M". Nghĩa là công việc thật không nằm ở lệnh, mà nằm ở việc chứng minh lệnh đó không quét nhầm — và nếu bỏ qua phần đếm và chạy thử, đây là việc không thể hoàn tác khi sai. Còn về khả năng review: một diff trên hàng trăm file, phần lớn là dòng comment, **không ai đọc nổi**. W8b nói thẳng sai lầm số một của nó là "CHẠY `sed` ĐẠI TRÀ trên 599 file", và điều kiện của nó là không có bảng quyết định thì **không được sửa một dòng nào** — kể cả dòng mang `disposition=rename`.
+Một là phạm vi. Hai mục lớn nhất của milestone là W7 — 4114 file, 17252 lượt, 16 manifest, `bun.lock` tái sinh — và W8b — 599 file `.ts`, 1853 lượt token `omp`. Cả hai đều là **một lệnh**. W7 ghi rõ phần thao tác gõ là "S theo thao tác gõ (một lệnh `perl -pi` trên 4114 file)" và phần kiểm chứng mới là "M". Nghĩa là công việc thật không nằm ở lệnh, mà nằm ở việc chứng minh lệnh đó không quét nhầm — và nếu bỏ qua phần đếm và chạy thử, đây là việc không thể hoàn tác khi sai. Còn về khả năng review: một diff trên hàng trăm file, phần lớn là dòng comment, **không ai đọc nổi**. W8b nói thẳng sai lầm số một của nó là "CHẠY `sed` ĐẠI TRÀ trên 599 file", và điều kiện của nó là không có bảng quyết định thì **không được sửa một dòng nào** — kể cả dòng mang `disposition=rename`.
 
 Hai là phần không thể sinh lại. Cột DoD của M5 là "zero hit", và điều đó đẩy áp lực lên việc quét cho sạch. Nhưng một số thứ **không được viết lại được** khi đã mất: 13 file changelog chứa 85 lượt `@oh-my-pi/` trong các mục đã phát hành, mà `AGENTS.md` coi là bất biến. W7 dựng một cổng riêng cho việc này — GATE B so một baseline **phải** là 13 file / 85 lượt — vì Gate A không bắt được nó: changelog vốn đã nằm ngoài tập in-scope, nên kể cả khi ai đó lỡ xoá exclusion, Gate A vẫn xanh trong khi Gate B đỏ. Hai cổng soi hai lỗi khác nhau, và việc tách riêng chúng là chính xác thứ bắt một người review phải nghĩ trước khi chạy.
 
@@ -104,7 +123,7 @@ và xác nhận ba điều: (a) cấu hình cũ **vẫn được đọc** từ `
 Ngoài hai lớp trên còn hai trục danh tính nữa, và M5 xử lý chúng khác nhau:
 
 - **Tên trên wire** (`WIRE_NAME`) — W1 dựng hằng số nhưng giữ nguyên giá trị `"omp"`. M5 đổi nơi hằng số sống, không đổi giá trị. Cổng 1 của W1 tồn tại để làm đúng việc đó: nó đỏ ngay khi ai đó gõ `export const WIRE_NAME: string = "ultraworkers"`, đó là sai lầm dễ nhất ở đây vì cả mục đích của hằng số là để được đổi tên và tên thương hiệu mới là thứ hấp dẫn nhất trong repo để gõ vào. Đây là nơi hợp đồng với Warp terminal và ACP client.
-- **npm scope** `@oh-my-pi/` → `@ultraworkers/` — đổi ở sóng 3 (W7), trên 4118 file và 17212 lượt. Đây là lớp mà W8a và W8b buộc phải khớp: bảng quyết định của W8b phải được lập **trên cây sau W7**, không phải trước, vì phần lớn 599 file đã đổi scope.
+- **npm scope** `@oh-my-pi/` → `@ultraworkers/` — đổi ở sóng 3 (W7), trên 4114 file và 17252 lượt. Đây là lớp mà W8a và W8b buộc phải khớp: bảng quyết định của W8b phải được lập **trên cây sau W7**, không phải trước, vì phần lớn 599 file đã đổi scope.
 
 ## `do_not_rename`
 
@@ -1828,7 +1847,7 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
 
 **Sóng:** Wave 3
 
-**Effort:** S theo thao tác gõ (một lệnh `perl -pi` trên 4118 file), M theo kiểm chứng. Phần công việc thật KHÔNG phải là lệnh sửa — nó là chụp baseline, dựng danh sách in-scope, đếm trước, chạy thử không ghi, và chứng minh 5 cổng. Nếu bỏ qua phần đếm và chạy thử, đây là việc không thể hoàn tác khi sai.
+**Effort:** S theo thao tác gõ (một lệnh `perl -pi` trên 4114 file), M theo kiểm chứng. Phần công việc thật KHÔNG phải là lệnh sửa — nó là chụp baseline, dựng danh sách in-scope, đếm trước, chạy thử không ghi, và chứng minh 5 cổng. Nếu bỏ qua phần đếm và chạy thử, đây là việc không thể hoàn tác khi sai.
 
 **Rủi ro chính:** Có hai tầng. Tầng chặn cứng là chạy trước W2 — phá canonicaliser extension một cách im lặng, và Gate 0 chặn việc này. Tầng đắt nhất về mặt hành vi là `packages/natives/native/loader-state.js:70`: nó `require_.resolve` tới sáu leaf package **đã phát hành trên registry** chứ không phải workspace package; đổi scope ở đó trước khi leaf package tồn tại dưới scope mới khiến `require_.resolve` ném, `catch { return null }` chạy, và loader rơi im lặng sang nhánh dự phòng. Không một lỗi nào được ném, không một test nào đỏ.
 
@@ -1845,7 +1864,7 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
 | `nix/bun.nix` | sửa | 16 lượt scope trong định nghĩa nix. | có — không có typecheck nào phủ nix, phải đếm riêng |
 | `packages/coding-agent/test/fixtures/before-compaction.jsonl`, `packages/coding-agent/test/fixtures/large-session.jsonl` | sửa | 810 lượt (649 + 161) trong transcript session đã ghi, gồm cả một URL registry `https://registry.npmjs.org/@oh-my-pi/pi-coding-agent/...`. | có — `grep -o -F '@oh-my-pi/'` từng file cho 649 và 161 (`grep -c` chỉ ra 132 và 49 vì đếm DÒNG, không phải lượt). Nhưng đây là **phán đoán**, xem Q2 |
 | `.omp/skills/tool-prompt-optimization/SKILL.md`, `.omp/skills/tool-prompt-optimization/scripts/probe.ts`, `.omp/skills/tool-prompt-optimization/scripts/probe-builtin.ts` | sửa | 3 file / 10 lượt. PHẢI sửa — đây là code thật (import statement trong probe scripts), không phải tên thư mục. | có — N14 chỉ khoá TÊN THƯ MỤC `.omp` (N14: `getProjectAgentDir()` đọc `CONFIG_DIR_NAME`), KHÔNG khoá nội dung bên trong |
-| (4100 file còn lại trong tập in-scope) | sửa | Đổi `@oh-my-pi/` → `@ultraworkers/` bằng một pass cơ học duy nhất. **Ngoại lệ duy nhất là 2 file `.jsonl` ở `packages/coding-agent/test/fixtures/` (810 lượt), chờ Q2 quyết** — xem bước 4. Không có ngoại lệ nào khác trong tập này. | có — 4118 − 16 manifest − `package.json` gốc − `bun.lock` = 4100 |
+| (4096 file còn lại trong tập in-scope) | sửa | Đổi `@oh-my-pi/` → `@ultraworkers/` bằng một pass cơ học duy nhất. **Ngoại lệ duy nhất là 2 file `.jsonl` ở `packages/coding-agent/test/fixtures/` (810 lượt), chờ Q2 quyết** — xem bước 4. Không có ngoại lệ nào khác trong tập này. | có — 4114 − 16 manifest − `package.json` gốc − `bun.lock` = 4096 |
 | `packages/coding-agent/test/npm-scope-resolution.test.ts` | tạo | Test mới. Ba invariant, xem Hợp đồng test. | **KHÔNG** — spec đánh dấu `verified: false`; file chưa được kiểm chứng là tồn tại hay chưa. Đây là test DUY NHẤT thuộc W7; test tương đương của W2 do W2 sở hữu, KHÔNG lặp lại ở đây. |
 | `scripts/rename/keep-list.txt` | KHÔNG tạo ở W7 | Đây là **điều kiện mở** của W7 — file phải tồn tại trên `main`, đã được một người duyệt không phải người viết, trước khi bất kỳ lệnh sed nào chạy. W7 phải dừng và báo nếu nó thiếu. | có — `ls scripts/rename/` hiện KHÔNG tồn tại (exit 2, thư mục không có) tại HEAD `1454dc0` |
 
@@ -1880,17 +1899,17 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
    | xargs -0 grep -l -F '@oh-my-pi/' > /tmp/w7-inscope-files.txt
    ```
 
-   Kỳ vọng tại HEAD `1454dc0`: **4118 dòng**. Chạy lại tại thời điểm thực thi và ghi con số thật vào commit message; con số 4118 chỉ đúng ở `84cbac9` và `1454dc0`.
+   Kỳ vọng tại HEAD `1454dc0`: **4114 dòng**. Chạy lại tại thời điểm thực thi và ghi con số thật vào commit message; con số 4114 chỉ đúng ở `84cbac9` và `1454dc0`.
 
-   **Q2 phải được quyết trước khi pass chạy**, để không bao giờ bị quyết ngầm. Nếu Q2 quyết "giữ 2 transcript `.jsonl` làm lịch sử", thêm `':(exclude)packages/coding-agent/test/fixtures/*.jsonl'` vào lệnh `git ls-files` ở trên và đếm lại (4118 − 2 = 4116 file, 17212 − 810 = 16402 lượt). Nếu Q2 quyết "sửa", KHÔNG thêm exclude — pass phủ cả hai, và GATE A/B/C không bị ảnh hưởng.
+   **Q2 phải được quyết trước khi pass chạy**, để không bao giờ bị quyết ngầm. Nếu Q2 quyết "giữ 2 transcript `.jsonl` làm lịch sử", thêm `':(exclude)packages/coding-agent/test/fixtures/*.jsonl'` vào lệnh `git ls-files` ở trên và đếm lại (4114 − 2 = 4112 file, 17252 − 810 = 16442 lượt). Nếu Q2 quyết "sửa", KHÔNG thêm exclude — pass phủ cả hai, và GATE A/B/C không bị ảnh hưởng.
 
-5. **Đếm chuỗi và ghi ra.** Đây là bước BẮT BUỘC trước khi sửa — một lệnh trên 4118 file không thể hoàn tác nếu sai:
+5. **Đếm chuỗi và ghi ra.** Đây là bước BẮT BUỘC trước khi sửa — một lệnh trên 4114 file không thể hoàn tác nếu sai:
 
    ```bash
    xargs -a /tmp/w7-inscope-files.txt grep -o -F '@oh-my-pi/' | wc -l
    ```
 
-   Kỳ vọng tại HEAD `1454dc0`: **17212**. Dừng nếu lệch.
+   Kỳ vọng tại HEAD `1454dc0`: **17252**. Dừng nếu lệch.
 
 6. **Chạy thử KHÔNG GHI (dry run) và đọc kết quả bằng mắt:**
 
@@ -1904,8 +1923,8 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
    # cây thật phải KHÔNG đổi
    git diff --quiet || { echo 'DRY RUN FAIL: cây thật bị đụng — DỪNG'; exit 1; }
    # bản sao phải khác, và scope cũ trong bản sao phải về 0
-   test "$(cd /tmp/w7-dry && grep -ro -F '@ultraworkers/' . | wc -l | tr -d ' ')" -eq 17212 \
-     || { echo 'DRY RUN FAIL: bản sao không thay đủ 17212 lượt — DỪNG'; exit 1; }
+   test "$(cd /tmp/w7-dry && grep -ro -F '@ultraworkers/' . | wc -l | tr -d ' ')" -eq 17252 \
+     || { echo 'DRY RUN FAIL: bản sao không thay đủ 17252 lượt — DỪNG'; exit 1; }
    test "$(cd /tmp/w7-dry && grep -ro -F '@oh-my-pi/' . | wc -l | tr -d ' ')" -eq 0 \
      || { echo 'DRY RUN FAIL: bản sao vẫn còn scope cũ — DỪNG'; exit 1; }
    rm -rf /tmp/w7-dry
@@ -1914,7 +1933,7 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
 
    KHÔNG dùng `xargs -a` (không có trên macOS), KHÔNG dùng cờ `--dry-run` (không tồn tại ở cả BSD sed lẫn perl), và KHÔNG để `|| true` ở cuối. Bản cũ không thể thất bại — nó luôn trả 0, nên nó chứng minh điều gì cũng không: (1) `xargs -a` bị BSD xargs từ chối nên cả hai vế chết trước khi gọi sed/perl; (2) nếu sửa (1), `sed --dry-run` exit 1 với `illegal option -- -`; (3) nếu sửa (2), `perl --dry-run` exit 25 với `Unrecognized switch`; lớp `|| true` nuốt tất cả. Người đọc chạy bản cũ thấy exit 0 và kết luận "công cụ đã được kiểm chứng" — trong khi không lệnh nào chạy. Đây đúng là mẫu "cổng báo xanh vì không chạy" mà Sai lầm 9 cảnh báo. Dry run chỉ an toàn khi nó ghi vào thư mục tạm rồi so kết quả, không phải khi dựa vào một cờ không tồn tại.
 
-   Nếu `sed -i ''` (kiểu BSD/macOS) không khả dụng thì dùng `perl -pi -e`. Chốt một công cụ, không trộn hai công cụ. Mục đích của bước này là xác nhận công cụ xử lý được đúng 4118 file với tên file có ký tự lạ (`.omp/skills/...`), KHÔNG phải để xem nội dung.
+   Nếu `sed -i ''` (kiểu BSD/macOS) không khả dụng thì dùng `perl -pi -e`. Chốt một công cụ, không trộn hai công cụ. Mục đích của bước này là xác nhận công cụ xử lý được đúng 4114 file với tên file có ký tự lạ (`.omp/skills/...`), KHÔNG phải để xem nội dung.
 
 7. **PASS DUY NHẤT.** Dùng đúng danh sách từ bước 4, dùng đúng công cụ đã chốt ở bước 6:
 
@@ -1932,7 +1951,7 @@ Rủi ro thứ hai là quyết định priorityList ở `config.ts:12` (open que
 
    Sau đó ĐỌC LẠI 3 file đại diện bằng mắt và xác nhận scope đã đổi đúng: `packages/ai/package.json` (dòng `name`), `package.json` (một trong 12 mục ghim), `packages/coding-agent/src/index.ts` (một import). KHÔNG chạy pass thứ hai — pass thứ hai là thứ làm hỏng việc này.
 
-7b. **Đường hoàn tác — đọc TRƯỚC khi chạy pass ở bước 7.** Pass `perl -pi` trên 4118 file không thể hoàn tác bằng trực giác: cách phản xạ của người ta khi hoảng là chạy thêm một pass nữa để "sửa ngược", và đó đúng là thứ phá N17. Mốc hoàn tác đã nằm sẵn trên đĩa từ bước 3:
+7b. **Đường hoàn tác — đọc TRƯỚC khi chạy pass ở bước 7.** Pass `perl -pi` trên 4114 file không thể hoàn tác bằng trực giác: cách phản xạ của người ta khi hoảng là chạy thêm một pass nữa để "sửa ngược", và đó đúng là thứ phá N17. Mốc hoàn tác đã nằm sẵn trên đĩa từ bước 3:
 
    ```bash
    # Mốc hoàn tác — BẮT BUỘC tồn tại trước khi chạy pass
@@ -2011,7 +2030,7 @@ W7 không viết TypeScript mới. Đây là bản gốc của khối hình dạ
 
 ```typescript
 // Không có code TypeScript mới do W7 viết. W7 là một pass thay chuỗi cơ học
-// trên 4118 file, cộng một file test.
+// trên 4114 file, cộng một file test.
 //
 // Hình dạng duy nhất cần giữ nguyên — dòng RỦI RO trong loader-state.js (:70):
 //
@@ -2222,7 +2241,7 @@ Bản cũ viết `node -e '…' | grep . && { echo …; exit 1; }` và **không 
 - **Sai lầm 5, NẶNG NHẤT VỀ MẶT LUẬT REPO — ĐỂ MẪU `git grep -o '@oh-my-pi/' -- .` QUÉT TỚI CHANGELOG.** Nó viết lại 85 mục trong 13 file thuộc phần đã phát hành, phần AGENTS.md nói là bất biến, và làm hỏng chính keep-list mà DoD kiểm. Gate B chống đúng cái này.
 - **Sai lầm 6, MỚI, KHÔNG CÓ TRONG PLAN — `loader-state.js:70` resolve tới sáu leaf package ĐÃ PHÁT HÀNH trên registry.** Đổi scope ở đó trước khi leaf package tồn tại dưới scope mới ⇒ `require_.resolve` ném ⇒ `catch { return null }` ⇒ loader rơi im lặng. Không có lỗi nào được ném, không có test nào đỏ. Đây là phần thất bại im lặng đắt nhất của W7.
 - **Sai lầm 7, MỚI — `.lavish-wip/specs/*.spec.json`** (13 file workflow scratch đã bị commit, 68 lượt) và 5 tài liệu kế hoạch (333 lượt ở HEAD `1454dc0`) không nằm trong bất kỳ danh sách loại trừ nào của plan. Mẫu toàn-repo của plan sẽ viết lại chúng. Đặc tả đã đưa chúng ra khỏi tập in-scope.
-- **Sai lầm 8, MỚI — LOẠI NHẦM `.omp/skills/**`.** N14 khoá TÊN THƯ MỤC `.omp`, không khoá nội dung. 3 file đó là code thật với import statement; loại chúng làm skill vỡ. (Nhóm thứ tư ngoài danh sách loại trừ là 2 transcript `.jsonl` ở Sai lầm 6/Q2 — chúng nằm trong 4100 file nên đã bị pass phủ, nhưng chờ Q2 quyết.)
+- **Sai lầm 8, MỚI — LOẠI NHẦM `.omp/skills/**`.** N14 khoá TÊN THƯ MỤC `.omp`, không khoá nội dung. 3 file đó là code thật với import statement; loại chúng làm skill vỡ. (Nhóm thứ tư ngoài danh sách loại trừ là 2 transcript `.jsonl` ở Sai lầm 6/Q2 — chúng nằm trong 4096 file nên đã bị pass phủ, nhưng chờ Q2 quyết.)
 - **Sai lầm 9, MỚI — ĐỂ CỔNG 'test pass' xanh trong khi `bun test` không chạy.** Trên máy **chưa build** addon, chỉ những test import `pi_natives` mới báo `0 pass / 1 fail / 1 error`. Chặn là **CHỌN LỌC theo bề mặt import, không phải toàn cục** — đo tại HEAD `106eb3e`, 2026-09-28, trong khi addon của `packages/natives` CHƯA build: `packages/omptype` **1.191 test / 0 fail** và `packages/utils` chạy được. Chỉ những file import `pi_natives` mới đỏ. Phép đo theo package **trước khi build**: `omptype` 1139/0 · `utils` 658/17 · `catalog` 141/104 · `stats` 43/19 · `mnemopi` 146/53 · `agent` 4/46 · `ai` 73/450 · `tui` 149/205 · `coding-agent` 913/1445. Sau khi build thì lớp đỏ này biến mất hết — và bài học vẫn giữ nguyên giá trị: một cổng báo xanh vì không chạy là cổng không có tác dụng.
 
 ### Cần người quyết
@@ -2230,7 +2249,7 @@ Bản cũ viết `node -e '…' | grep . && { echo …; exit 1; }` và **không 
 - **Q1 (chặn W7 hoặc phải trả lời trước khi merge)** — Sáu leaf package `@oh-my-pi/pi-natives-<tag>` được publish từ CI (`.github/workflows/ci.yml:326` chạy `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball`). Chúng đã được publish dưới scope MỚI chưa? Nếu chưa, `loader-state.js:70` KHÔNG được đổi trong W7 — hoặc W7 phải đi kèm một bước publish leaf package, hoặc sáu tên leaf package phải vào `do_not_rename`. Đây là câu hỏi duy nhất trong W7 có thể gây hỏng im lặng ở người dùng cuối.
 - **Q2 (phán đoán, cần một người quyết)** — Hai transcript đã ghi `packages/coding-agent/test/fixtures/before-compaction.jsonl` (649 lượt) và `large-session.jsonl` (161 lượt) chứa 810 lượt scope cũ, kể cả một URL registry. Chúng là LỊCH SỬ (cùng lớp với `gallery-fixtures/segments.ts` mà W8 phải phán xét) hay là fixture mà test đọc và phải cập nhật? Mặc định của đặc tả: SỬA, vì test đọc chúng như dữ liệu đầu vào. Nhưng nếu chúng được coi là bản ghi phiên thật thì phải giữ, và đó là một ngoại lệ phải nêu tường minh trong keep-list chứ không được để mặc định.
 - **Q3** — 5 tài liệu kế hoạch (`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` + `MILESTONE_1..4_EXECUTION_PLAN.md`, 333 lượt ở HEAD `1454dc0`) và 13 file `.lavish-wip/specs/*.spec.json` (68 lượt) là bản ghi về việc đổi tên, không phải sản phẩm. Đặc tả đã loại chúng khỏi tập in-scope. Nếu ý kiến là phải viết lại chúng (ví dụ để tài liệu phản ánh tên mới), thì đó là một work item riêng, không phải để lẫn vào W7 — vì viết lại chúng làm bảng §2.3 của chính kế hoạch thành dối.
-- **Q4** — Scope `@ultraworkers` đã được ai sở hữu chưa? Đây là cổng G3 của plan §8, nằm NGOÀI repo. Nếu chưa có, toàn bộ W7 là vô nghĩa và 17212 lượt viết là việc không cần thiết.
+- **Q4** — Scope `@ultraworkers` đã được ai sở hữu chưa? Đây là cổng G3 của plan §8, nằm NGOÀI repo. Nếu chưa có, toàn bộ W7 là vô nghĩa và 17252 lượt viết là việc không cần thiết.
 
 ### Đính chính so với plan
 
@@ -2238,7 +2257,7 @@ Nếu plan tổng nói sai, người đọc phải thấy đó. Bảng dưới l
 
 | claim | verdict | correction |
 | --- | --- | --- |
-| Lượt 1 chạy trên 4107 file chứa 17169 lượt `@oh-my-pi/`. | `stale` | Tại `84cbac9` (nhánh `milestone-1`) con số thật là **4149 file / 17697 lượt** cho toàn bộ file theo dõi; tại HEAD `1454dc0` là **4149 file / 17698 lượt** — cây đã dời một commit (`git diff --stat 84cbac9..HEAD` → `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md \| 100 +++`, 1 file, +99/−1). Các con số còn lại trong dòng này đã đo lại và vẫn đúng ở CẢ HAI mốc, trừ MỘT ngoại lệ: 5 tài liệu kế hoạch là **332 lượt ở `84cbac9` và 333 lượt ở HEAD `1454dc0`** — cùng cái commit đó làm tổng repo nhảy 17697 → 17698. Sau khi loại N11 (13 changelog / 85 lượt), `.lavish-wip/**` (13 file / 68 lượt) và 5 tài liệu kế hoạch (5 file / 333 lượt ở HEAD), tập in-scope đề xuất là **4118 file / 17212 lượt**. Dùng 4118/17212, không dùng 4107/17169. Trong tập in-scope: 18 file là manifest + lock (16 `packages/*/package.json` = 78 lượt, `package.json` gốc = 12, `bun.lock` = 122 → **212 lượt**), 4100 file còn lại là mã và tài liệu (17212 − 212 = **17000 lượt**, đo trực tiếp cũng ra 17000). |
+| Lượt 1 chạy trên 4107 file chứa 17169 lượt `@oh-my-pi/`. | `stale` | Tại `84cbac9` (nhánh `milestone-1`) con số thật là **4149 file / 17697 lượt** cho toàn bộ file theo dõi; tại HEAD `1454dc0` là **4149 file / 17698 lượt** — cây đã dời một commit (`git diff --stat 84cbac9..HEAD` → `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md \| 100 +++`, 1 file, +99/−1). Các con số còn lại trong dòng này đã đo lại và vẫn đúng ở CẢ HAI mốc, trừ MỘT ngoại lệ: 5 tài liệu kế hoạch là **332 lượt ở `84cbac9` và 333 lượt ở HEAD `1454dc0`** — cùng cái commit đó làm tổng repo nhảy 17697 → 17698. Sau khi loại N11 (13 changelog / 85 lượt), `.lavish-wip/**` (13 file / 68 lượt) và 5 tài liệu kế hoạch (5 file / 333 lượt ở HEAD), tập in-scope đề xuất là **4114 file / 17252 lượt**. Dùng 4114/17252, không dùng 4107/17169. Trong tập in-scope: 18 file là manifest + lock (16 `packages/*/package.json` = 78 lượt, `package.json` gốc = 12, `bun.lock` = 122 → **212 lượt**), 4096 file còn lại là mã và tài liệu (17252 − 212 = **17040 lượt**, đo trực tiếp cũng ra 17040). |
 | Các mục kiểm chứng của plan được xác nhận trên HEAD `5873776`. | `unverifiable` | Commit `5873776` KHÔNG tồn tại trong repo này: `git cat-file -t 5873776` trả `fatal: Not a valid object name`. Không claim nào ghim vào SHA đó kiểm lại được. Lấy lại toàn bộ mốc bằng `git rev-parse HEAD` tại thời điểm thực thi. Đáng chú ý: mốc N11 (13 file / 85 lượt) VẪN đúng ở CẢ `84cbac9` và `1454dc0` — drift nằm ở phần ngoài changelog (tài liệu kế hoạch), không nằm ở changelog. |
 | Rủi ro sai lầm thứ hai: 'đổi scope trong manifest mà bỏ sót khóa subpath của `exports` map hoặc một mục `peerDependencies`'. | `partly-wrong` | Vế `exports` map KHÔNG đúng và không cần lo. Mọi khóa subpath trong `exports` đều là đường dẫn tương đối (`./compaction`, `./error`, `./*`) chứ không phải scope, và repo KHÔNG có trường `imports` ở bất kỳ manifest nào. Nên không có khóa subpath nào mang scope. Vế `peerDependencies` thì ĐÚNG và còn lớn hơn plan nghĩ: 90 lượt trong 16 manifest, không phải 16 dòng `name`. Rủi ro thật là bỏ sót mục phụ thuộc, và nó chỉ lộ ra trên bản cài sạch. Đếm: `git grep -o '@oh-my-pi/' -- 'packages/*/package.json' \| wc -l` = 78, cộng 12 ở `package.json` gốc = 90. |
 | 16 basename sau dấu `/` tách ba nhóm: 10 `pi-*`, 2 thương hiệu cũ, 4 không thuộc họ nào (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`). | `confirmed` | Giữ nguyên, và con số này là thứ plan làm đúng nhất. Đã liệt kê đủ 16 `name` từ manifest thật và phân nhóm khớp N17 chính xác. Bổ sung: catalog ở `package.json` gốn chỉ ghim 12 trong 16 — `browser-relay`, `collab-web`, `pi-metaharness`, `typescript-edit-benchmark` không có mục ghim. Đừng 'sửa cho đủ 16' ở bước 8. |
@@ -2253,8 +2272,8 @@ Nếu plan tổng nói sai, người đọc phải thấy đó. Bảng dưới l
 
 Hai chỗ đã đo lại và đóng (mục 1 và 2), một chỗ còn cần một người xác nhận (mục 3). Các con số ở trên đã được sửa theo kết quả đo, không sửa theo suy đoán.
 
-1. **Phân bố 4100 file — đã đo lại, câu hỏi cũ đóng.** Ghi chú phân bố cũ trong hàng `(4100 file còn lại trong tập in-scope)` đã bị gỡ khỏi bảng, nên phân bố thật là: **4005 `.ts`, 66 `.md`, 12 `.tsx`, 4 `.py`, 2 `.sh`, 2 `.rs`, 2 `.jsonl`, 2 `.json`, và 1 mỗi loại `.yml`/`.ps1`/`.nix`/`.js`/`.dockerfile` — tổng đúng 4100**. Không có `.lock` nào trong 4100 file này (`bun.lock` nằm ở nhóm 18 file manifest+lock, đã tách riêng). Đo bằng `sed -E 's/.*\.([A-Za-z0-9]+)$/\1/' \| sort \| uniq -c` trên danh sách 4100 file ở bước 4.
-2. **"3 file Rust" — đã đóng, chỉ có 2 file `.rs`.** Câu nói "3 file Rust" chỉ tồn tại trong chính mục xác nhận này; bảng đã không còn nó. Đo trong 4100 file: đúng 2 file `.rs`, `crates/pi-edit/src/modes/hashline/mod.rs` và `crates/pi-shell/src/minimizer/filters/bun.rs` — cả hai đều được nêu tên, không có file thứ ba.
+1. **Phân bố 4096 file — đã đo lại, câu hỏi cũ đóng.** Ghi chú phân bố cũ trong hàng `(4096 file còn lại trong tập in-scope)` đã bị gỡ khỏi bảng, nên phân bố thật là: **3999 `.ts`, 70 `.md`, 9 `.tsx`, 4 `.py`, 2 `.sh`, 2 `.rs`, 2 `.jsonl`, 2 `.json`, 2 `.js`, và 1 mỗi loại `.yml`/`.ps1`/`.nix`/`.dockerfile` — tổng đúng 4096**. Không có `.lock` nào trong 4096 file này (`bun.lock` nằm ở nhóm 18 file manifest+lock, đã tách riêng). Đo bằng `sed -E 's/.*\.([A-Za-z0-9]+)$/\1/' \| sort \| uniq -c` trên danh sách 4096 file ở bước 4.
+2. **"3 file Rust" — đã đóng, chỉ có 2 file `.rs`.** Câu nói "3 file Rust" chỉ tồn tại trong chính mục xác nhận này; bảng đã không còn nó. Đo trong 4096 file: đúng 2 file `.rs`, `crates/pi-edit/src/modes/hashline/mod.rs` và `crates/pi-shell/src/minimizer/filters/bun.rs` — cả hai đều được nêu tên, không có file thứ ba.
 3. **Trường `action` của `scripts/rename/keep-list.txt` là `create` nhưng phần `change` lại ghi "KHÔNG tạo ở W7".** Hai câu này không cùng một ý. Mục này được trình bày ở trên theo nghĩa thứ hai (điều kiện mở, không tạo ở W7) vì đó là nghĩa an toàn hơn, nhưng cần xác nhận ý định gốc.
 
 
@@ -4371,7 +4390,7 @@ Hai mâu thuẫn **bên trong chính spec này** — cả hai đã đo lại tr�
 
 Có ba kiểu hỏng mà M5 nhiều khả năng đi sai hơn mọi thứ khác cộng lại.
 
-Một là **một lệnh thay chuỗi sai trên hàng nghìn file là thất bại không hoàn tác được**. W7 là một pass trên 4118 file / 17212 lượt; W8b là một pass trên 599 file / 1853 token `omp`. Không có nút "hoàn tác" cho một pass đã ghi; đường về chỉ có là diff so với baseline — và baseline chỉ tồn tại nếu được chụp *trước* khi pass chạy. Ở W7, phạm vi sai không chỉ hỏng code: nó có thể quét sạch 13 file changelog đã phát hành, mà `AGENTS.md` coi là bất biến, và Gate A vẫn xanh vì changelog vốn nằm ngoài tập in-scope.
+Một là **một lệnh thay chuỗi sai trên hàng nghìn file là thất bại không hoàn tác được**. W7 là một pass trên 4114 file / 17252 lượt; W8b là một pass trên 599 file / 1853 token `omp`. Không có nút "hoàn tác" cho một pass đã ghi; đường về chỉ có là diff so với baseline — và baseline chỉ tồn tại nếu được chụp *trước* khi pass chạy. Ở W7, phạm vi sai không chỉ hỏng code: nó có thể quét sạch 13 file changelog đã phát hành, mà `AGENTS.md` coi là bất biến, và Gate A vẫn xanh vì changelog vốn nằm ngoài tập in-scope.
 
 Hai là **đổi tên trên đĩa phá vỡ cài đặt đang tồn tại** — đúng ràng buộc tuyệt đối của milestone. Cái bẫy là `APP_NAME` không chỉ là tên hiển thị: `dirs.ts:360` dựng XDG app root bằng chính hằng số đó, nên một "đổi tên hiển thị" ở W3 đồng thời là một cái dời thư mục dữ liệu. Tệ hơn, lỗi ở đây không báo mình: `getInstallId()` rơi xuống nhánh tạo UUID mới thì UUID mới không khác UUID đúng ở bất kỳ call site nào, và dấu hiệu duy nhất là bảng chi phí khởi động lại từ đầu.
 
@@ -4387,7 +4406,7 @@ Hai giới hạn còn lại thì đúng như mong đợi. `bun --cwd=packages/na
 
 | Work item | Rủi ro | Cách giảm |
 | --- | --- | --- |
-| W7 | Một pass trên 4118 file / 17212 lượt là không hoàn tác được. Phạm vi sai quét sạch 13 file changelog đã phát hành, và Gate A vẫn xanh vì changelog nằm ngoài tập in-scope. | Chụp baseline *trước khi sửa* (`/tmp/w7-changelog-baseline.txt`, `/tmp/w7-bare-baseline.txt`, `/tmp/w7-inscope-files.txt`); chạy thử không ghi để đếm trước; dừng ở cổng đỏ đầu tiên. Gate B (changelog) và Gate C (dạng trần, 16 file) soi hai lỗi khác nhau — không thay bằng nhau. |
+| W7 | Một pass trên 4114 file / 17252 lượt là không hoàn tác được. Phạm vi sai quét sạch 13 file changelog đã phát hành, và Gate A vẫn xanh vì changelog nằm ngoài tập in-scope. | Chụp baseline *trước khi sửa* (`/tmp/w7-changelog-baseline.txt`, `/tmp/w7-bare-baseline.txt`, `/tmp/w7-inscope-files.txt`); chạy thử không ghi để đếm trước; dừng ở cổng đỏ đầu tiên. Gate B (changelog) và Gate C (dạng trần, 16 file) soi hai lỗi khác nhau — không thay bằng nhau. |
 | W8b | `sed` đại trà trên 599 file: 851/1768 dòng có hit là dòng comment, 226 file là file test. Cách xoá sạch một dòng lẽ ra phải giữ làm Gate 1 im lặng. Thêm nữa, cột `hits` suy ra bằng `grep -c` sẽ sai ở file trộn đường dẫn với User-Agent — `update-cli.test.ts` có cả `path.join(dir, ".local", "bin", "omp")` lẫn `parseReportedVersion("omp/18.0.6-canary.1")` trong 58 dòng — và cổng `--stage=post` chỉ đỏ *sau khi đã sửa xong*. | Không sửa một dòng nào trước khi có `scripts/rename/disposition.tsv` (6 cột, `reason` không trống, `approved-by` khác `authored-by`); `check-disposition.ts --gate0` là cổng mở. Đếm `hits` bằng cách mở từng file, không bằng `grep -c`. Gate 1 đối chiếu tập hit còn lại với disposition *trong file*, không với một danh sách viết tay thứ hai. |
 | W8b, W11, W13 | Detector đọc danh sách do chính pass đó sinh ra, nên "khớp" là hệ quả tất yếu chứ không phải bằng chứng. | Bảng phải lập trên cây *sau* W7, có lý do bằng văn bản cho từng hàng và một người duyệt thứ hai — cổng `--stage=pre` đã kiểm `git log --format='%ae' -- scripts/rename/disposition.tsv` có ít nhất hai địa chỉ hay không và in cảnh báo khi chỉ có một, nhưng cảnh báo không phải cổng. Ở W13, allow-list phải kiểm cả hai chiều bằng `comm -23` và `comm -13` (một dòng allow-list hết hiệu lực cũng phải đỏ) và phải có `\|\| true` — thiếu nó thì `git grep` exit 1 làm bỏ qua `comm` và cổng luôn xanh. |
 | W3, W6, W6a | Đổi tên trên đĩa phá cài đặt đang tồn tại — vi phạm ràng buộc tuyệt đối của milestone. `APP_NAME` dựng cả XDG app root (`dirs.ts:360`), nên đổi nó làm người dùng XDG rơi về `~/.omp` và mất `sessions` cùng `secret-placeholder.key` (`dirs.ts:983`); secret key sinh lại là mọi secret cũ hỏng. | Tách hiển thị khỏi đường dẫn (W3 phương án b: `APP_NAME` + `XDG_DIR_NAME` đóng băng), rồi mới lật. W4 phải land trước: đọc hai root theo thứ tự, ghi chỉ vào root mới. W6a ghim `.omp` cấp project vào hằng số riêng với khẳng định DIVERGENCE — không có test nào sẵn có bắt được hành vi nếu hai hằng số bị gộp lại. |
@@ -4409,7 +4428,7 @@ Bên dưới là **73 câu hỏi mở** (đã đếm trên `m5-index/questions.j
 | Work item | Câu hỏi | Vì sao nó chặn | Mặc định nếu không trả lời |
 | --- | --- | --- | --- |
 | W7 | Sáu leaf package `@oh-my-pi/pi-natives-<tag>` publish từ CI (`ci.yml:326`) đã được publish dưới scope mới chưa? Nếu chưa thì `loader-state.js:70` không được đổi, hoặc W7 phải kèm một bước publish, hoặc sáu tên phải vào danh sách loại trừ. | Câu hỏi duy nhất trong W7 có thể hỏng im lặng ở người dùng cuối: đổi `loader-state.js:70` khi addon chưa publish sẽ hỏng lúc nạp native, không phải lúc build. | Theo câu hỏi: nếu chưa publish thì giữ `loader-state.js:70` nguyên vẹn. Nhánh publish-step và nhánh đưa sáu tên vào danh sách loại trừ là hai lựa chọn khác, cần bạn chọn. |
-| W7 | Scope `@ultraworkers` đã được ai sở hữu chưa? Đây là cổng G3 của kế hoạch §8, nằm ngoài repo. | Là điều kiện mở của W7 (Gate 0) và của cả W2b. Chưa có scope thì toàn bộ W7 là 17212 lượt viết vào một namespace không tồn tại. | Chưa có mặc định — cần bạn quyết. |
+| W7 | Scope `@ultraworkers` đã được ai sở hữu chưa? Đây là cổng G3 của kế hoạch §8, nằm ngoài repo. | Là điều kiện mở của W7 (Gate 0) và của cả W2b. Chưa có scope thì toàn bộ W7 là 17252 lượt viết vào một namespace không tồn tại. | Chưa có mặc định — cần bạn quyết. |
 | W12 | Scope `@ultraworkers` đã có và đã được sở hữu, **và** scope cũ còn publish được cho stub không? | Cả hai đều nằm ngoài repo và cả hai chặn W12 ngay từ bước 10. | Chưa có mặc định — cần bạn quyết. *(Nửa đầu câu này trùng với W7 ở dòng trên; nửa sau — quyền publish scope cũ cho stub — là câu riêng, không câu nào khác hỏi.)* |
 | W8b | Ai là người duyệt, duyệt lúc nào, và nếu không có ai duyệt thì mục này có bị chặn không? Repo chỉ có hai tác giả git (`E2E <e2e@example.com>` 7 commit, `Tran Quang Dang <tranquangdang21@gmail.com>` 1 commit) và identity đang cấu hình là `E2E`. | Kế hoạch chỉ trả lời bằng một câu, trong khi đây là ba quyết định tách biệt. Quan trọng nhất là mốc thời gian: kế hoạch nói "không duyệt thì W8b không được sửa dòng nào", nghĩa là duyệt phải xảy ra *trước khi viết xong bảng* — người duyệt phải theo dõi tiến trình viết bảng chứ không thể duyệt một lần lúc PR mở. Người duyệt cũng là chủ chốt an toàn của cả W7 lẫn W8b. | Theo câu hỏi: nếu không có ai duyệt thì **không chặn**, nhưng phải ghi rõ trong PR rằng bảng tự duyệt và ai đã đọc. Còn "ai" và "duyệt lúc nào" thì chưa có mặc định — cần bạn quyết. |
 | W8b | 226 trong 599 file là file test, và 24 file trong số đó trùng với tập 70 file của W11. Ai sở hữu việc đổi tên trong 226 file đó? | Nếu W8b sửa literal trước thì W11 làm lại; nếu W8b bỏ qua thì cổng nghiệm thu 2 của W8b ("không còn khẳng định tên cũ hardcode trong nguồn test") không bao giờ đạt vì W11 chưa chạy. Không thể để hai mục cùng sửa một dòng mà không có thỏa thuận bằng văn bản. | Chưa có mặc định — cần bạn quyết. Đề xuất trong câu hỏi là W8b chỉ gán `disposition` mà không sửa dòng nào, nhưng chính đề xuất đó biến `hits` thành con số "đã biết sẽ đổi" và làm cổng `--stage=post` đỏ, nên không tự áp dụng được. |
@@ -4553,7 +4572,7 @@ Bên dưới là **73 câu hỏi mở** (đã đếm trên `m5-index/questions.j
 | W6a-3 | Ghi chú môi trường: "`bun test` bị CHẶN — addon native chưa build, mọi test báo 0 pass / 1 fail / 1 error với Failed to load pi_natives native addon for darwin-arm64." | SAI như một mệnh đề tổng quát — đúng với `packages/coding-agent/test/`, sai với `packages/utils/test/`. | Chặn có phạm vi theo package, **và chỉ tồn tại trên máy chưa build addon**; sau `brew install ninja` + `bun --cwd=packages/natives run build` (exit 0) thì hết. Đo trên máy **chưa build** ở HEAD 84cbac9: `bun test packages/utils/test/dirs.test.ts` → 6 pass, 0 fail, 9 lời gọi expect(), 121ms; `bun test packages/utils/test/install-id.test.ts` → 5 pass, 0 fail, 11 lời gọi expect(), 115ms; `bun test packages/coding-agent/test/config/settings-reload.test.ts` → 0 pass, 1 fail, 1 error. Nguyên nhân: `packages/utils/src/dirs.ts` chỉ import `node:fs`, `node:os`, `node:path` và `../package.json` của chính nó — không có đường nào tới addon native. Hệ quả với đặc tả này, và cũng là câu hỏi harness nêu tường minh: một test đặt ở `packages/coding-agent/test/` sẽ **không đỏ được trên máy chưa build**, đúng cái nhầm lẫn "đã xong" với "test không chạy" cần tránh. Test mới của W6a vì thế đi vào `packages/utils/test/`. Điều này cũng có nghĩa "bun run check:ts là tín hiệu chính" của harness không phải tín hiệu dùng được duy nhất — với package sở hữu work item này, có một tín hiệu đỏ/xanh thật. Cùng loại với W1-5, W6-3 và W5-7. |
 | W6a-4 | Plan dòng 13199 / N14: "root `.omp` tầng dự án (xem W6a — khuyến nghị là giữ nó) ... phải vào do_not_rename." | XÁC NHẬN, và cây trong repo làm cho lập luận cụ thể hơn plan nói. | Chính `.omp` tầng dự án của repo này được git theo dõi với 14 file, nên thất bại mà W6a ngăn không phải chuyện giả định đối với codebase này: một cú đảo sẽ làm hỏng chính `.omp/commands` của người bảo trì (5 file markdown: cleanup, fix-issues, release, review-prs, triage), `.omp/skills` (6 file trải trên semantic-compression, system-prompts, tool-prompt-optimization) và `.omp/tools` (3 file: package.json, bun.lock, tui.ts). Plan coi root dự án là mối lo chung của người dùng; nó còn là chính cấu hình làm việc của repo này nữa. Dòng do_not_rename là bắt buộc dù thế nào. |
 | **W7** | | | |
-| W7-1 | Lượt 1 chạy trên 4107 file chứa 17169 lượt `@oh-my-pi/`. | CŨ — cây đã trôi. | Tại HEAD `84cbac9` (nhánh milestone-1) con số thật cho toàn bộ file theo dõi là **4149 file / 17697 lượt**. Sau khi loại N11 (13 changelog / 85 lượt), `.lavish-wip/**` (13 file / 68 lượt) và 5 tài liệu kế hoạch (5 file / 332 lượt), tập in-scope đề xuất là **4118 file / 17212 lượt**. Hãy dùng 4118/17212, đừng dùng 4107/17169. Trong tập in-scope: 18 file là manifest + lock (16 `packages/*/package.json` + `package.json` gốc + `bun.lock`), 4100 file còn lại là mã và tài liệu. |
+| W7-1 | Lượt 1 chạy trên 4107 file chứa 17169 lượt `@oh-my-pi/`. | CŨ — cây đã trôi. | Tại HEAD `84cbac9` (nhánh milestone-1) con số thật cho toàn bộ file theo dõi là **4149 file / 17697 lượt**. Sau khi loại N11 (13 changelog / 85 lượt), `.lavish-wip/**` (13 file / 68 lượt) và 5 tài liệu kế hoạch (5 file / 332 lượt), tập in-scope đề xuất là **4114 file / 17252 lượt**. Hãy dùng 4114/17252, đừng dùng 4107/17169. Trong tập in-scope: 18 file là manifest + lock (16 `packages/*/package.json` + `package.json` gốc + `bun.lock`), 4096 file còn lại là mã và tài liệu. |
 | W7-2 | Các mục kiểm chứng của plan được xác nhận trên HEAD `5873776`. | KHÔNG KIỂM CHỨNG ĐƯỢC — commit đó không tồn tại. | Commit `5873776` KHÔNG tồn tại trong repo này: `git cat-file -t 5873776` trả `fatal: Not a valid object name`. Không claim nào ghim vào SHA đó kiểm lại được. Hãy lấy lại toàn bộ mốc bằng `git rev-parse HEAD` tại thời điểm thực thi. Đáng chú ý: mốc N11 (13 file / 85 lượt) VẪN đúng ở `84cbac9` — phần trôi nằm ở ngoài changelog, không nằm ở changelog. Đây gần như là nguyên nhân gốc của mọi sai số còn lại trong W7, W8a và W8b: bảng kiểm kê được lập trên một trạng thái cây không nằm trong lịch sử repo, nên nó không tự phát hiện là cũ. Xem W1-7, W2-5 và W8b-2 cho cùng loại lỗi. |
 | W7-3 | Rủi ro sai lầm thứ hai: "đổi scope trong manifest mà bỏ sót khóa subpath của `exports` map hoặc một mục `peerDependencies`". | SAI MỘT NỬA — | Vế `exports` map KHÔNG đúng và không cần lo. Đã kiểm: mọi khóa subpath trong `exports` đều là đường dẫn tương đối (`./compaction`, `./error`, `./*`) chứ không phải scope, và repo KHÔNG có trường `imports` ở bất kỳ manifest nào. Nên không khóa subpath nào mang scope. Vế `peerDependencies` thì ĐÚNG và còn lớn hơn plan nghĩ: 90 lượt trong 16 manifest, không phải 16 dòng `name`. Rủi ro thật là bỏ sót mục phụ thuộc, và nó chỉ lộ ra trên bản cài sạch. |
 | W7-4 | 16 basename sau dấu `/` tách ba nhóm: 10 `pi-*`, 2 thương hiệu cũ, 4 không thuộc họ nào (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`). | XÁC NHẬN — giữ nguyên. | Giữ nguyên, và con số này là thứ plan làm đúng nhất. Đã liệt kê đủ 16 `name` từ manifest thật và phân nhóm khớp N17 chính xác. Bổ sung: catalog ở `package.json` gốn chỉ ghim 12 trong 16 — `browser-relay`, `collab-web`, `pi-metaharness`, `typescript-edit-benchmark` không có mục ghim. Đừng "sửa cho đủ 16" ở bước 8. |
@@ -4648,7 +4667,7 @@ Bên dưới là **73 câu hỏi mở** (đã đếm trên `m5-index/questions.j
 
 ### Bằng chứng — W7
 
-- **W7-1** — `git grep -l '@oh-my-pi/' -- . | wc -l` = 4149; `git grep -o '@oh-my-pi/' -- . | wc -l` = 17697. Tập in-scope đếm bằng script với `git ls-files` + bốn `:(exclude)` = 4118 file / 17212 lượt.
+- **W7-1** — `git grep -l '@oh-my-pi/' -- . | wc -l` = 4149; `git grep -o '@oh-my-pi/' -- . | wc -l` = 17697. Tập in-scope đếm bằng script với `git ls-files` + bốn `:(exclude)` = 4114 file / 17252 lượt.
 - **W7-2** — `git cat-file -t 5873776` → `fatal: Not a valid object name 5873776`; `git rev-list --count 5873776..HEAD` → `fatal: unknown revision`. HEAD hiện tại: `84cbac9`.
 - **W7-3** — `git grep -n '"\./' -- 'packages/*/package.json'` trả toàn khóa tương đối; `git grep -ln '"imports"' -- 'packages/*/package.json'` trả rỗng; `git grep -o '@oh-my-pi/' -- 'packages/*/package.json' package.json | wc -l` = 90.
 - **W7-4** — `git grep -n '"name": "@oh-my-pi/' -- '**/package.json'` trả đúng 16 dòng; `git grep -n '@oh-my-pi/' -- package.json` trả đúng 12 dòng, liên tiếp :19–:30.

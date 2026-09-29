@@ -70,7 +70,7 @@ Và khi tra đúng chỗ, câu trả lời tốt hơn nhiều so với cả hai 
 
 | | Engine layout | Giấy phép | Quy mô |
 |---|---|---|---|
-| `opencode` | **`@opentui/core@0.5.12`** — lõi Zig, TS bindings, C ABI, layout bằng **yoga-layout 3.2.1** | **MIT** | 13.080 star · 174,7K lượt/tuần · *"OpenCode dùng nó ở production"* |
+| `opencode` | **`@opentui/core@0.4.5`** — lõi Zig, TS bindings, C ABI, layout bằng **yoga-layout 3.2.1** | **MIT** (tầng JS) · **+ Apache-2.0 + patent grant ở tầng native** — xem mục "Những điều chưa được kiểm chứng" | 13.420 star · 174,7K lượt/tuần · *"OpenCode dùng nó ở production"* |
 | `ccb` | `@anthropic/ink` (fork) — React, cũng trên **yoga** | *không có LICENSE* | — |
 | `omp` | **không có** | — | — |
 
@@ -2769,7 +2769,11 @@ Biến mười ba cổng chấp nhận viết bằng văn xuôi ở §7.1 thành
 
 ### Các bước
 
-1. **DỪNG lại, lấy hai câu trả lời của con người trước khi viết bất kỳ cổng nào** — vì cả hai đều thay đổi cách cổng **NÓI**, chứ không chỉ việc chúng có pass hay không. **Q-A (§8.6 #5):** có viết chính sách clean-room ra thành file `docs/`, thành phụ lục CONTRIBUTING, hay cả hai? **Q-B (§8.6 #1):** đã có người đọc Commercial Terms hiện hành của Anthropic về reverse engineering, derivative works và UI simulation chưa? Nếu Q-B chưa trả lời, tài liệu vẫn được đưa vào, nhưng lưới ký của nó **phải** hiện §8.6 #1 là `OPEN` và tài liệu **không được** khẳng định clean-room status. Viết cổng trước rồi đọc lại chúng thì rẻ; viết lại một thế đứng pháp lý thì không. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9112-9119`
+1. **~~DỪNG lại, lấy hai câu trả lời của con người trước khi viết bất kỳ cổng nào~~ — ĐÃ THU HẸP (2026-09-29).** **Q-A (§8.6 #5) vẫn chặn** và trả lời bình thường: có viết chính sách clean-room ra thành file `docs/`, thành phụ lục CONTRIBUTING, hay cả hai? **Q-B (§8.6 #1) KHÔNG còn chặn** — xem bên dưới.
+
+   > **Ranh giới pháp lý đã chốt (2026-09-29):** **mượn UI/UX thì tự do**; **không** dùng tên, logo hay nhãn hiệu "Claude Code" ở bất kỳ đâu trong sản phẩm. Ranh giới còn lại — và nó **không liên quan gì tới logo** — là không **dán dòng code** từ `claude-code-ref`, vì cây đó không có LICENSE nào cả. Logo là vấn đề *nhãn hiệu*; dán code từ một cây không có giấy phép là vấn đề *khác*. Tài liệu này vốn đã giữ đúng ranh giới đó (§8: *"Không sao chép, không dịch, không suy ra từ cây Claude Code"*) — việc chốt hôm nay là **ghi rõ đó là toàn bộ ranh giới**, không phải một cổng chặn đang mở.
+   >
+   > **Hệ quả cho bước 1:** viết cổng ngay. Lưới ký của `docs/clean-room-policy.md` **vẫn** phải hiện §8.6 #1 là `OPEN` và tài liệu **vẫn không được** khẳng định clean-room status cho tới khi có người đọc Terms — nhưng đó là lời khai trung thực trong một tài liệu đã đứng ở phía thận trọng, **không** phải lý do hoãn. Q-B là câu hỏi *tra cứu*, không phải câu hỏi *định hướng*; **không** dùng nó để mở rộng phạm vi chép. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:9112-9119`
 
 2. **Tạo `scripts/m3-acceptance-gates.sh`** với một helper duy nhất `gate <id> <description> <command...>` chạy lệnh, in `  XANH <id>` hoặc `  DO   <id>  <why-it-is-red>`, và cộng dồn một bộ đếm thất bại. Exit 1 ở cuối nếu bộ đếm khác 0. **Không** để một cổng đơn lẻ abort cả lượt chạy — người review cần cả mười ba kết quả trong một lượt, và `set -e` trên một lệnh trần sẽ giấu mười hai cái còn lại. Dùng `set -uo pipefail` và xử lý thất bại tường minh bên trong helper. Giữ nguyên vốn từ XANH/DO mà plan đã dùng để đầu ra **diff được** với plan dòng 8988-9029. — neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8988-8989`
 

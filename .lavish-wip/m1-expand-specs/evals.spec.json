@@ -1,0 +1,1044 @@
+{
+ "id": "evals",
+ "title": "Copy pi's packages/evals into omp as @oh-my-pi/pi-evals",
+ "source_path": "/Users/tranquangdang21/Projects/pi-ref/packages/evals",
+ "source_files": 30,
+ "source_bytes": 133025,
+ "one_line": "pi's behavioural eval harness for its coding agent — it measures whether the agent can configure its OWN installation (add a provider, add a model, create a tool extension) with and without the repo's documentation shipped, by running paired arms in two throwaway Docker images; it is the only thing in pi that tells you a change broke agent behaviour, and roughly 40% of it is Docker/vitest/pi-release-layout plumbing that omp has to be rebuilt rather than copied.",
+ "why_copy_not_reimplement": "Three things here are expensive to re-derive and cheap to copy. (1) The paired-comparison statistics in src/report.ts: 483 lines that implement 'a pair contributes to lift only when BOTH arms produce exactly one score; any missing, duplicate, skipped, pending, unscored or errored arm blocks the pair; if any pair in an eval set is blocked the headline is withheld; missing telemetry is unavailable, never zero'. That is a protocol argument, not code — six independent blocking rules that had to be reasoned into existence against real noisy model output. Re-deriving it means rediscovering every rule by being burned by it. (2) The container sandbox in src/harness.ts L130-188: chmod 0600 on every transformed module under tmpdir, chownTree the workspace to a throwaway uid, verify the demoted process cannot read its own evaluator, then delete the credential env var. That is adversarial hardening against the agent under test reading its own grader — again, the kind of thing you only get right after an incident. (3) The whole measurement design: the agent configures a LIVE running installation and is then graded on the RESULT via a fake provider server, with alternated arm ordering to de-bias, a protocol digest binding every report to its exact plan, and a nonzero exit when pairs block. Meanwhile omp today has zero behavioural eval of its coding agent — packages/coding-agent/src/eval/ is a JS/Python sandbox executor with a completely different meaning of 'eval', and the nearest thing to a bench (packages/typescript-edit-benchmark) measures edit mechanics, not agent judgement. So the gap is real. The counter-argument is also real: the expensive half is the harness, the copyable half is the plumbing, and the plumbing is the part that has to be thrown away. The honest shape of this migration is copy the ~30% that is judgement and statistics, rebuild the ~70% that is Docker, vitest, and pi's release-tarball layout.",
+ "public_api": [
+  {
+   "symbol": "DOCUMENTATION_VARIANTS",
+   "kind": "const",
+   "source_anchor": "packages/evals/src/plan.ts:1",
+   "target_anchor": "packages/evals/src/plan.ts:1",
+   "already_exists_in_omp": false,
+   "note": "Copies verbatim. Const tuple of the two doc-lift arms."
+  },
+  {
+   "symbol": "DocumentationVariant",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/plan.ts:2",
+   "target_anchor": "packages/evals/src/plan.ts:2",
+   "already_exists_in_omp": false,
+   "note": "Derived from DOCUMENTATION_VARIANTS; also the discriminant in report.ts's EvalObservation/EvalComparisonReport."
+  },
+  {
+   "symbol": "DiscoveredEvalCase",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/plan.ts:4-9",
+   "target_anchor": "packages/evals/src/plan.ts:4-9",
+   "already_exists_in_omp": false,
+   "note": "{file, fullName, evalSet, caseId}."
+  },
+  {
+   "symbol": "EvalTask",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/plan.ts:11-15",
+   "target_anchor": "packages/evals/src/plan.ts:11-15",
+   "already_exists_in_omp": false,
+   "note": "DiscoveredEvalCase + {variant, model, runNumber}."
+  },
+  {
+   "symbol": "parseDiscoveredCases",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/plan.ts:21-37",
+   "target_anchor": "packages/evals/src/plan.ts:21-37",
+   "already_exists_in_omp": false,
+   "note": "Parses vitest `name` as \"<eval set> > <case>\"; rejects duplicates. Contract test exists (plan.test.ts) and ports clean."
+  },
+  {
+   "symbol": "createTaskPlan",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/plan.ts:39-59",
+   "target_anchor": "packages/evals/src/plan.ts:39-59",
+   "already_exists_in_omp": false,
+   "note": "Cartesian (case x runNumber x both variants) with alternating order to de-bias repetition order."
+  },
+  {
+   "symbol": "PiCodingAgentInput",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/harness.ts:43",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "string | [{type:'prompt',content} | {type:'reload'}]. The 'reload' step is the whole reason the eval can test a live-configuration agent; keep it."
+  },
+  {
+   "symbol": "PiCodingAgentModelSelection",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/harness.ts:45-48",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "{provider, id}."
+  },
+  {
+   "symbol": "PiCodingAgentHarnessOptions",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/harness.ts:50-59",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "BREAKS ON COPY: noTools/tools are typed CreateAgentSessionOptions['noTools']/['tools'] and omp's CreateAgentSessionOptions has NEITHER key. Retype to string[] and map onto omp's customTools/extensions."
+  },
+  {
+   "symbol": "PiCodingAgentHarnessWithOutput<T>",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/harness.ts:61-68",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Adds an `output` mapper receiving {response, session, systemPrompt, agentDir}."
+  },
+  {
+   "symbol": "resolveModelSelection",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/harness.ts:70-80",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Explicit model beats OMP_PROVIDER/OMP_MODEL env; throws when neither is set. Covered by harness.test.ts (which is otherwise skipped)."
+  },
+  {
+   "symbol": "applyIsolatedEnvironment",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/harness.ts:82-100",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Sets HOME/USERPROFILE/OMP_CODING_AGENT_DIR, strips OMP_EVAL_* leakage, returns a restore closure. Mutates process.env — needs a per-test vi.spyOn seam under omp's full-suite-safety rule."
+  },
+  {
+   "symbol": "verifySystemPrompt",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/harness.ts:257-270",
+   "target_anchor": "packages/evals/src/doc-lift.ts (moved)",
+   "already_exists_in_omp": false,
+   "note": "Asserts the prompt kept its rules block and that the docs block presence matches the arm. MARKER STRINGS ARE PI-SPECIFIC — `\\n<rules>\\n` and `\\n<docs>\\nPi documentation (read only` do not exist in omp's prompt. Must re-derive."
+  },
+  {
+   "symbol": "createPiCodingAgentHarness",
+   "kind": "fn (2 overloads)",
+   "source_anchor": "packages/evals/src/harness.ts:471-482",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Public constructor. Internally calls createAgentSessionFromServices + createAgentSessionServices + ModelRuntime.create — none exist in omp."
+  },
+  {
+   "symbol": "DOCUMENTATION_EVAL_TOOLS",
+   "kind": "const",
+   "source_anchor": "packages/evals/src/harness.ts:485",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "[\"read\",\"write\",\"edit\",\"grep\",\"find\",\"ls\"] — deliberately excludes shell/web. omp's coding-agent ships its own tool name set; these 6 must be verified to exist under the SAME names or the arm silently runs with fewer tools."
+  },
+  {
+   "symbol": "resolveDocumentationVariant",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/harness.ts:487-492",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Reads OMP_EVAL_VARIANT; throws TypeError on any other value."
+  },
+  {
+   "symbol": "excludePiDocumentation",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/harness.ts:494-506",
+   "target_anchor": "packages/evals/src/doc-lift.ts (moved)",
+   "already_exists_in_omp": false,
+   "note": "Splices the docs section out of the default prompt. Depends on pi's `\\n<docs>\\n` / `\\n</docs>` markers; if omp's prompt has no such markers this throws 'Default Pi system prompt has no Pi documentation section' and the entire control arm is dead."
+  },
+  {
+   "symbol": "createPiDocumentationEvalHarness",
+   "kind": "fn (2 overloads)",
+   "source_anchor": "packages/evals/src/harness.ts:517-537",
+   "target_anchor": "packages/evals/src/harness.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Refuses to run unless OMP_EVAL_CONTAINER=1 and a sandbox uid/gid pair are set. That hard container gate is why none of this runs locally."
+  },
+  {
+   "symbol": "PI_SESSION_SNAPSHOT_ARTIFACT",
+   "kind": "const",
+   "source_anchor": "packages/evals/src/report.ts:9",
+   "target_anchor": "packages/evals/src/report.ts:9",
+   "already_exists_in_omp": false,
+   "note": "\"piSessionJsonl\". Read by persistSession (L123) and written by harness.ts (L426). Rename to ompSessionJsonl for consistency with the env-var rename."
+  },
+  {
+   "symbol": "EvalRunIdentity",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:11-17",
+   "target_anchor": "packages/evals/src/report.ts:11-17",
+   "already_exists_in_omp": false,
+   "note": "{evalSet, caseId, variant, model, runNumber}."
+  },
+  {
+   "symbol": "ExpectedEvalRun",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:19",
+   "target_anchor": "packages/evals/src/report.ts:19",
+   "already_exists_in_omp": false,
+   "note": "Alias of EvalRunIdentity — represents the PLANNED run, as opposed to the observed one."
+  },
+  {
+   "symbol": "EvalObservation",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:32-34",
+   "target_anchor": "packages/evals/src/report.ts:32-34",
+   "already_exists_in_omp": false,
+   "note": "Discriminated union: {outcome:'scored',score} | {outcome:'unscored'|'skipped'|'pending'|'errored'}. The five-way outcome IS the blocking contract."
+  },
+  {
+   "symbol": "PairedMetricSummary",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:36-41",
+   "target_anchor": "packages/evals/src/report.ts:36-41",
+   "already_exists_in_omp": false,
+   "note": "{eligiblePairs, controlMean, treatmentMean, meanDelta} — nulls mean UNAVAILABLE, never 0."
+  },
+  {
+   "symbol": "EvalSetComparison",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:43-56",
+   "target_anchor": "packages/evals/src/report.ts:43-56",
+   "already_exists_in_omp": false,
+   "note": "Per-eval-set lift + 5 flags (no-lift, negative-delta, control-saturated, treatment-saturated, flaky) + 4 paired metrics."
+  },
+  {
+   "symbol": "BlockedPair",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:58",
+   "target_anchor": "packages/evals/src/report.ts:58",
+   "already_exists_in_omp": false,
+   "note": "EvalRunIdentity minus variant, plus reasons[]."
+  },
+  {
+   "symbol": "OperationalMetricTotal",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:60",
+   "target_anchor": "packages/evals/src/report.ts:60",
+   "already_exists_in_omp": false,
+   "note": "{availableRuns, total} — the availableRuns/total split is what keeps 'missing telemetry' from reading as zero."
+  },
+  {
+   "symbol": "VariantTotals",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:62-73",
+   "target_anchor": "packages/evals/src/report.ts:62-73",
+   "already_exists_in_omp": false,
+   "note": "Per-arm aggregate of 8 OperationalMetricTotals."
+  },
+  {
+   "symbol": "EvalComparisonReport",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/report.ts:75-83",
+   "target_anchor": "packages/evals/src/report.ts:75-83",
+   "already_exists_in_omp": false,
+   "note": "schemaVersion: 3, protocolDigest, control:'without_docs', treatment:'with_docs'. The digest binds a report to the exact plan that produced it."
+  },
+  {
+   "symbol": "classifyCaseStatus",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/report.ts:101-106",
+   "target_anchor": "packages/evals/src/report.ts:101-106",
+   "already_exists_in_omp": false,
+   "note": "vitest status -> outcome. The status vocabulary it consumes is vitest's ('failed'|'skipped'|'todo'|'disabled'|'pending') — if the runner changes, THIS mapping changes and report.test.ts is the only thing guarding it."
+  },
+  {
+   "symbol": "erroredObservation",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/report.ts:118-120",
+   "target_anchor": "packages/evals/src/report.ts:118-120",
+   "already_exists_in_omp": false,
+   "note": "The 'arm never produced a report' path."
+  },
+  {
+   "symbol": "readTaskObservation",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/report.ts:136-189",
+   "target_anchor": "packages/evals/src/report.ts:136-189",
+   "already_exists_in_omp": false,
+   "note": "Normalizes one vitest JSON report into an EvalObservation and persists the session artifact. Deeply defensive: ~12 distinct errored() returns for any identity/status/model mismatch. BLOCKED on the @vitest-evals/core seam."
+  },
+  {
+   "symbol": "summarizeEvalObservations",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/report.ts:359-413",
+   "target_anchor": "packages/evals/src/report.ts:359-413",
+   "already_exists_in_omp": false,
+   "note": "Pairs arms, computes lift, withholds headline when any pair in an eval set is blocked. Pure; the highest-value thing in the package and it ports unchanged."
+  },
+  {
+   "symbol": "formatEvalComparisonReport",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/report.ts:436-483",
+   "target_anchor": "packages/evals/src/report.ts:436-483",
+   "already_exists_in_omp": false,
+   "note": "Human-readable report. Uses node:util styleText -> Bun.styleText."
+  },
+  {
+   "symbol": "BuiltImages",
+   "kind": "type",
+   "source_anchor": "packages/evals/src/docker.ts:12",
+   "target_anchor": "packages/evals/src/docker.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Record<DocumentationVariant, {name,id}>."
+  },
+  {
+   "symbol": "buildImages",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/docker.ts:38-61",
+   "target_anchor": "packages/evals/src/docker.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Two `docker build --target` calls + `docker image inspect`. Image name is a sha256 of repositoryRoot, so it changes when the repo moves. spawnSync -> Bun $."
+  },
+  {
+   "symbol": "requireEvalAuthFile",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/docker.ts:67-89",
+   "target_anchor": "packages/evals/src/docker.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Finds and JSON-parses auth.json, verifying the provider key exists. Sync today; must become async for the Bun file API. Path default is `~/.pi/agent` in pi — omp's is `~/.omp/agent`."
+  },
+  {
+   "symbol": "createDockerContext",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/docker.ts:126-135",
+   "target_anchor": "packages/evals/src/docker.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Plain record constructor; ports unchanged."
+  },
+  {
+   "symbol": "discoverCases",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/docker.ts:137-154",
+   "target_anchor": "packages/evals/src/docker.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Runs the container in --discover mode and returns the discovered-tests.json path."
+  },
+  {
+   "symbol": "runTask",
+   "kind": "fn",
+   "source_anchor": "packages/evals/src/docker.ts:161-175",
+   "target_anchor": "packages/evals/src/docker.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Runs ONE (case, variant, runNumber) arm in a fresh container; returns undefined when no report landed. Escapes the test name into an anchored regex (L164)."
+  },
+  {
+   "symbol": "ProviderRuntimeOutput",
+   "kind": "type",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:16-24",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "{result:{validRequestReceived,model,response}|{error}} — the exact shape StructuredOutputJudge compares."
+  },
+  {
+   "symbol": "AddedModelOutput",
+   "kind": "type",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:26-28",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "{result:{model,existingModelsPreserved}|{error}}."
+  },
+  {
+   "symbol": "ProviderScenario",
+   "kind": "type",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:30-36",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "providerId/modelId/createContext/options/validRequestReceived. `ModelsSimpleStreamOptions` in `options` has no omp equivalent."
+  },
+  {
+   "symbol": "loadConfiguredModelRuntime",
+   "kind": "fn",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:56-63",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "ModelRuntime.create with explicit modelsPath/authPath/modelsStorePath and allowModelNetwork:false. ModelRuntime does not exist in omp."
+  },
+  {
+   "symbol": "inspectProvider",
+   "kind": "fn",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:65-93",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "refresh(no network) -> getError -> getModel -> completeSimple, wrapped so every throw becomes a typed {error} instead of an exception. The typed-error-not-throw shape is what the judge contract needs."
+  },
+  {
+   "symbol": "inspectAddedModel",
+   "kind": "fn",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:95-119",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Proves a newly added model did not evict the provider's existing models. ModelRuntime-only."
+  },
+  {
+   "symbol": "modelFields",
+   "kind": "fn (private)",
+   "source_anchor": "packages/evals/evals/configured-runtime.ts:38-54",
+   "target_anchor": "packages/evals/evals/configured-runtime.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Projects a full Model down to 9 fields so the judge fixture is stable against upstream metadata churn. Field names must be diffed against omp's Model — omp models come from the KDL rule tree, not pi's catalog."
+  },
+  {
+   "symbol": "OPENAI_PROVIDER_ID",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:3",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Literal \"acme\"."
+  },
+  {
+   "symbol": "OPENAI_MODEL_ID",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:4",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Literal \"acme-chat\"."
+  },
+  {
+   "symbol": "OPENAI_PROBE_PROMPT",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:5",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Probe prompt echoed back for request validation."
+  },
+  {
+   "symbol": "OPENAI_PROBE_RESPONSE",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:6",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Expected reply text."
+  },
+  {
+   "symbol": "STREAM_PROVIDER_ID",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:7",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Literal \"acme-stream\"."
+  },
+  {
+   "symbol": "STREAM_MODEL_ID",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:8",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Literal \"acme-stream-chat\"."
+  },
+  {
+   "symbol": "STREAM_PROBE_PROMPT",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:9",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Probe prompt for the ndjson arm."
+  },
+  {
+   "symbol": "STREAM_PROBE_RESPONSE",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:10",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "Expected reply for the ndjson arm."
+  },
+  {
+   "symbol": "STREAM_API_DOCUMENTATION",
+   "kind": "const",
+   "source_anchor": "packages/evals/evals/acme-server.ts:12",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "The API doc fixture handed to the agent as a workspace file. Model-visible input, so its content is part of the experiment."
+  },
+  {
+   "symbol": "AcmeServer",
+   "kind": "type",
+   "source_anchor": "packages/evals/evals/acme-server.ts:51-58",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "start/stop/reset/origin/baseUrl/validRequestReceived. 4 call sites; shape must not drift during the node:http -> Bun.serve swap."
+  },
+  {
+   "symbol": "createAcmeServer",
+   "kind": "fn",
+   "source_anchor": "packages/evals/evals/acme-server.ts:60-154",
+   "target_anchor": "packages/evals/evals/acme-server.ts (new)",
+   "already_exists_in_omp": false,
+   "note": "In-process fake provider on an ephemeral port. Validates path/method/content-type/auth/model/prompt, then replays SSE (openai mode) or ndjson (stream mode). Fully covered by acme-server.test.ts, which ports clean."
+  }
+ ],
+ "scope_rewrites": [
+  {
+   "from": "@earendil-works/pi-coding-agent",
+   "to": "@oh-my-pi/pi-coding-agent",
+   "occurrences": 14,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/pi-ai",
+   "to": "@oh-my-pi/pi-ai",
+   "occurrences": 7,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/pi-evals",
+   "to": "@oh-my-pi/pi-evals",
+   "occurrences": 1,
+   "verified": true
+  },
+  {
+   "from": "PI_PROVIDER",
+   "to": "OMP_PROVIDER",
+   "occurrences": 16,
+   "verified": true
+  },
+  {
+   "from": "PI_MODEL",
+   "to": "OMP_MODEL",
+   "occurrences": 16,
+   "verified": true
+  },
+  {
+   "from": "PI_CODING_AGENT_DIR",
+   "to": "OMP_CODING_AGENT_DIR",
+   "occurrences": 5,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_VARIANT",
+   "to": "OMP_EVAL_VARIANT",
+   "occurrences": 10,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_SANDBOX_UID",
+   "to": "OMP_EVAL_SANDBOX_UID",
+   "occurrences": 5,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_SANDBOX_GID",
+   "to": "OMP_EVAL_SANDBOX_GID",
+   "occurrences": 5,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_CONTAINER",
+   "to": "OMP_EVAL_CONTAINER",
+   "occurrences": 3,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_RUNS_PER_VARIANT",
+   "to": "OMP_EVAL_RUNS_PER_VARIANT",
+   "occurrences": 3,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_ARTIFACT_UID",
+   "to": "OMP_EVAL_ARTIFACT_UID",
+   "occurrences": 3,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_ARTIFACT_GID",
+   "to": "OMP_EVAL_ARTIFACT_GID",
+   "occurrences": 3,
+   "verified": true
+  },
+  {
+   "from": "PI_EVAL_ARTIFACT_DIR",
+   "to": "OMP_EVAL_ARTIFACT_DIR",
+   "occurrences": 3,
+   "verified": true
+  },
+  {
+   "from": "PI_SESSION_SNAPSHOT_ARTIFACT / piSessionJsonl",
+   "to": "OMP_SESSION_SNAPSHOT_ARTIFACT / ompSessionJsonl",
+   "occurrences": 7,
+   "verified": true
+  },
+  {
+   "from": "pi-eval- (tmpdir/secret/image path prefixes)",
+   "to": "omp-eval-",
+   "occurrences": 11,
+   "verified": true
+  },
+  {
+   "from": "\"Pi documentation (read only",
+   "to": "<omp's actual docs marker>",
+   "occurrences": 2,
+   "verified": false
+  },
+  {
+   "from": "/repo/packages/evals/ (hardcoded container prefix in cli.ts:101)",
+   "to": "derived from the resolved packageRoot",
+   "occurrences": 1,
+   "verified": true
+  },
+  {
+   "from": "vitest-evals/harness",
+   "to": "packages/evals/src/harness-types.ts (local port)",
+   "occurrences": 1,
+   "verified": true
+  },
+  {
+   "from": "vitest-evals",
+   "to": "REMOVED (no bun-test equivalent)",
+   "occurrences": 7,
+   "verified": true
+  },
+  {
+   "from": "vitest",
+   "to": "bun:test",
+   "occurrences": 13,
+   "verified": true
+  },
+  {
+   "from": "@vitest-evals/core",
+   "to": "packages/evals/src/report-io.ts (local port)",
+   "occurrences": 3,
+   "verified": true
+  },
+  {
+   "from": "autoevals",
+   "to": "REMOVED or replaced",
+   "occurrences": 1,
+   "verified": true
+  },
+  {
+   "from": "@earendil-works/pi-ai/utils/transcript",
+   "to": "packages/evals/src/system-prompt.ts (local port)",
+   "occurrences": 1,
+   "verified": false
+  },
+  {
+   "from": "Pi coding agent prose (\"Configure this running Pi installation\")",
+   "to": "omp prose",
+   "occurrences": 3,
+   "verified": true
+  }
+ ],
+ "new_dependencies": [
+  {
+   "name": "vitest",
+   "version": "4.1.9",
+   "why": "pi's runner: describeEval, project splits, vitest JSON reporter, `vitest list --json` discovery",
+   "already_in_omp": false,
+   "license": "MIT — DO NOT ADD. omp is a bun test repo; adding vitest would create a second, differently-configured test runner and violate the central-utilities rule in spirit. Replace with bun:test."
+  },
+  {
+   "name": "vitest-evals",
+   "version": "0.15.0",
+   "why": "the describeEval/judge/StructuredOutputJudge/ToolCallJudge API and the vitest-evals JSON reporter",
+   "already_in_omp": false,
+   "license": "MIT (verify) — DO NOT ADD. It is a vitest plugin and cannot run under bun test. Port the ~6 symbols the harness needs into a local harness-types.ts instead."
+  },
+  {
+   "name": "@vitest-evals/core",
+   "version": "0.15.0",
+   "why": "ReportCase type plus readReportWorkspace/readVitestJsonReportFile used to read the vitest JSON report",
+   "already_in_omp": false,
+   "license": "MIT (verify) — DO NOT ADD. Replace with a local report-io.ts that parses the JSON directly; report.ts's field expectations are enumerated in the API table."
+  },
+  {
+   "name": "autoevals",
+   "version": "0.3.0",
+   "why": "Levenshtein judge used only by tui.docs.eval.ts",
+   "already_in_omp": false,
+   "license": "MIT (verify) — only needed if tui.docs.eval.ts is ported. The metric is a 10-line local function; do not add a dependency for it."
+  },
+  {
+   "name": "shx",
+   "version": "0.4.0",
+   "why": "the `clean` script: shx rm -rf .eval",
+   "already_in_omp": false,
+   "license": "MIT — DO NOT ADD. omp forbids spawning shell for filesystem ops; use `rm -rf` via Bun or a node:fs/promises rm."
+  },
+  {
+   "name": "@types/bun",
+   "version": "catalog: (^1.3.14)",
+   "why": "replaces @types/node + @types/vitest in tsconfig types",
+   "already_in_omp": true,
+   "license": "MIT — already in the root catalog, no new entry."
+  },
+  {
+   "name": "oven/bun docker base image",
+   "version": "1.4-slim",
+   "why": "replaces node:24-slim; the eval container runs the harness and the CLI",
+   "already_in_omp": false,
+   "license": "MIT — image only, no package.json entry. Note: this drops `node --experimental-strip-types`, which Bun does natively."
+  }
+ ],
+ "collisions": [
+  {
+   "what": "readStoredCredential — SAME NAME, DIFFERENT SIGNATURE. pi: readStoredCredential(provider, authPath) at packages/coding-agent/src/core/auth-storage.ts:496. omp: readStoredCredential(provider) at packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts:1469, which resolves auth.json through AuthStorage.create() and takes no path.",
+   "pi_anchor": "packages/evals/src/harness.ts:314",
+   "omp_anchor": "packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts:1469",
+   "resolution": "KEEP omp's. The whole point of the eval harness is to read a credential from an ISOLATED agent dir before the session exists; omp's version reads the process-global AuthStorage and would silently use the developer's real ~/.omp/agent/auth.json — leaking the developer's credentials into a container that then drops privileges. omp's signature is also the one the 2-arg call would compile against only by accident. Resolve the path explicitly (authPath = join(hostAgentDir,'auth.json')) and read the file directly, or add an optional second parameter to omp's function."
+  },
+  {
+   "what": "CreateAgentSessionOptions.tools / .noTools DO NOT EXIST in omp. pi's harness types PiCodingAgentHarnessOptions.tools and .noTools as CreateAgentSessionOptions['tools'] / ['noTools'] and forwards them to createAgentSessionFromServices. omp's CreateAgentSessionOptions (packages/coding-agent/src/sdk.ts:495) has customTools and extensions but neither tools nor noTools.",
+   "pi_anchor": "packages/evals/src/harness.ts:53-55",
+   "omp_anchor": "packages/coding-agent/src/sdk.ts:495-700",
+   "resolution": "KEEP omp's interface; retype the harness options to plain `string[]` and map them onto omp's session construction. The 6 DOCUMENTATION_EVAL_TOOLS names ('read','write','edit','grep','find','ls') must be verified to exist in omp's tool registry under those names — if omp renamed any, the control arm silently runs with a smaller toolset, which is exactly the kind of quiet protocol violation these evals exist to prevent."
+  },
+  {
+   "what": "ModelRuntime does not exist anywhere in omp. pi: packages/coding-agent/src/core/model-runtime.ts:153. omp has no packages/coding-agent/src/core/ at all. This breaks resolveModelSelection's downstream (ModelRuntime.create/getModel/getAuth/setRuntimeApiKey) AND all of evals/configured-runtime.ts.",
+   "pi_anchor": "packages/evals/src/harness.ts:316-327; packages/evals/evals/configured-runtime.ts:56-119",
+   "omp_anchor": "mới — không có (nearest: packages/coding-agent/src/sdk.ts:495 authStorage/modelRegistry, and packages/catalog's model manager)",
+   "resolution": "BLOCKING for the model-probing evals, non-blocking for the rest. Do NOT create a ModelRuntime shim to make the copy compile. Repoint at omp's ModelRegistry + AuthStorage + getModel and accept that models.docs.eval.ts / openai-provider.docs.eval.ts / custom-provider.docs.eval.ts (3 of 5 eval suites) are out of scope until that reconcile lands. Ship report.ts + plan.ts + acme-server.ts + the 4 porting tests first."
+  },
+  {
+   "what": "createAgentSessionServices / createAgentSessionFromServices do not exist in omp. pi: packages/coding-agent/src/core/agent-session-services.ts:135,202. omp's createAgentSession (packages/coding-agent/src/sdk.ts:1485) is the single entry point and returns {session, ...} directly, with no separately-constructed services object.",
+   "pi_anchor": "packages/evals/src/harness.ts:337-355",
+   "omp_anchor": "packages/coding-agent/src/sdk.ts:1485",
+   "resolution": "KEEP omp's createAgentSession. The two-step services/attach shape is pi's plugin architecture; omp's opts out. The harness must pass cwd/agentDir/model/thinkingLevel/customTools/extensions in one call. Verify session.reload() and session.abort() still exist on the returned AgentSession — harness.ts L376 and L370 depend on both, and 'reload' is the step that makes the configure-your-own-installation evals possible."
+  },
+  {
+   "what": "InlineExtension does not exist in omp; omp calls the same concept ExtensionFactory, and the event name used to rewrite the system prompt differs. pi's harness registers a hidden inline extension listening for 'before_agent_start' and replacing the prompt.",
+   "pi_anchor": "packages/evals/src/harness.ts:287-301",
+   "omp_anchor": "packages/coding-agent/src/sdk.ts:99 (extensions?: ExtensionFactory[]); packages/coding-agent/src/extensibility/extensions/types.ts",
+   "resolution": "KEEP omp's ExtensionFactory. But do NOT assume the hook name carries over: verify the actual omp hook for pre-prompt system-prompt rewriting. If none exists, add one — this is a legitimate gap, because the entire with_docs/without_docs experiment is defined by a system-prompt difference, and a prompt-rewriting seam is required for ANY doc-lift measurement. Note pi's comment at L388-389: a forced prompt is not recorded in the transcript, which is why the harness keeps the transform's own value."
+  },
+  {
+   "what": "getDocsPath / getExamplesPath / getReadmePath do not exist in omp (0 definitions, verified). test/harness.test.ts imports all three to assert the doc files a variant should or should not have.",
+   "pi_anchor": "packages/evals/test/harness.test.ts:2",
+   "omp_anchor": "mới — không có",
+   "resolution": "REPLACE, do not re-add. The doc-path helpers pi used are not omp's API. Derive the expected doc paths from omp's own `packages/coding-agent` package.json `files` array, which is the shipped contract — and note it already lists `README.md`, `CHANGELOG.md` and `examples` but has NO `docs` entry, unlike pi's."
+  },
+  {
+   "what": "The 'docs' directory the whole experiment strips does not exist in the same place. pi deletes packages/coding-agent/{README.md,CHANGELOG.md,docs,examples} in the without_docs image and asserts on exactly that set. omp's coding-agent ships README.md, CHANGELOG.md, examples/ — and no docs/; its user-facing docs live at repo-root ./docs, and its bundle carries an omp-only dist/docs-index.generated.txt that backs the omp:// docs URL scheme.",
+   "pi_anchor": "packages/evals/docker/Dockerfile:15-19; docker/entrypoint.ts:49-61; evals/documentation-audit.eval.ts:33",
+   "resolution": "RETARGET the doc set, do not delete the concept. The without_docs arm must strip exactly what omp's model can actually see: README.md, CHANGELOG.md, examples/, and dist/docs-index.generated.txt (the omp-only one — stripping it is a NEW arm pi had no equivalent of, and dropping it would leave the treatment reading docs the control cannot). Separately, documentation-audit.eval.ts globs a directory that does not exist in omp and would discover ZERO cases — a silent no-op, the worst failure mode in the package. Either repoint it at omp's real docs or do not port it."
+  },
+  {
+   "what": "pi's release-tarball install pipeline has no omp equivalent. install-runtime.mjs imports getPublicWorkspacePackages/packReleasePackages/installCodingAgentConsumer from scripts/release-packages.mjs and scripts/coding-agent-consumer.mjs — neither file exists in omp. It then installs the packed tarballs and entrypoint.ts asserts pi-coding-agent resolves to dist/index.js with an npm-shrinkwrap.json present.",
+   "pi_anchor": "packages/evals/docker/install-runtime.mjs:5-6; docker/entrypoint.ts:102-105,32",
+   "omp_anchor": "mới — không có (omp scripts/ has ci-release-*.ts + release.ts, which publish from source; coding-agent's main is ./src/index.ts and its only dist artifact is dist/cli.js)",
+   "resolution": "REBUILD, do not port. There is no npm-installable compiled runtime in omp to image. The realistic options are (a) mount the omp workspace source into the container and run the CLI from source with bun — losing the 'resolves from dist' guarantee but gaining fidelity to how developers actually run omp; or (b) extend scripts/release.ts to emit packed tarballs and write the missing consumer helper. Recommend (a) for a first cut: it is smaller, it cannot drift from the source, and the dist-resolution assertion it drops is a pi-release-specific check, not a security control."
+  },
+  {
+   "what": "The 'eval' name collides with a large, unrelated omp subsystem. packages/coding-agent/src/eval/ is 60 files of JS/Python sandbox execution, kernel sessions, speculation evaluators and workpool bridges; packages/coding-agent/src/if-bench/ and src/judgment/ sit next to it. A new packages/evals at repo root does not collide on disk, but 'eval' in an omp code review now means two unrelated things.",
+   "pi_anchor": "packages/evals/ (whole package)",
+   "omp_anchor": "packages/coding-agent/src/eval/ (60 files); packages/coding-agent/src/if-bench/; packages/coding-agent/src/judgment/",
+   "resolution": "KEEP both, but name the concept in prose. The new package evaluates AGENT BEHAVIOUR (does the agent configure its own installation correctly); the existing eval/ subsystem evaluates UNTRUSTED CODE the agent wrote. Call the new one 'behavioural evals' in docs, changelog and commit messages, and never add it to scripts/ci-test-ts.ts's existing `eval`-named buckets without a comment. Consider a packages/evals/README.md line that says so on the first page."
+  },
+  {
+   "what": "vitest does not exist in omp at all — 13 import sites, 2 config files, 1 reporter invocation, and a root vitest.base.ts that omp does not have. The entire runner, the project split, and the discovery mechanism (`vitest list --json`) are vitest-specific.",
+   "pi_anchor": "packages/evals/vitest.evals.config.ts; vitest.test.config.ts; docker/entrypoint.ts:120,132-143; 13 `from 'vitest'` sites",
+   "omp_anchor": "mới — không có (omp: bun test via scripts/ci-test-ts.ts, which globs `*.test.ts` and buckets packages by name)",
+   "resolution": "REPLACE with bun:test for the unit tests — omp's ci-test-ts.ts already collects any `*.test.ts` under a package dir, so 4 test files port by changing one import line each. The docker-arm runner has no bun equivalent and is the reason the comparison runner is rewrite-only. Do not add vitest."
+  },
+  {
+   "what": "session.resourceLoader does not exist on omp's AgentSession. extensions.docs.eval.ts reads session.resourceLoader.getExtensions() for both the loaded-extension list and the per-extension tool sets. omp exposes session.extensionRunner (a getter at packages/coding-agent/src/session/agent-session.ts:12155) but no resourceLoader.",
+   "pi_anchor": "packages/evals/evals/extensions.docs.eval.ts:12,18-19",
+   "omp_anchor": "packages/coding-agent/src/session/agent-session.ts:12155",
+   "resolution": "REPOINT to omp's extension surface once identified; extensionRunner may be optional (returns `ExtensionRunner | undefined`), so the ported output mapper must handle the undefined case rather than assume it. This eval is the most valuable of the five (it proves an agent can create and then use a tool extension), so it is worth the extra work — but it is a rewrite, not a copy."
+  }
+ ],
+ "files_to_copy": [
+  {
+   "path": "packages/evals/src/plan.ts",
+   "bytes": 2215,
+   "action": "copy-verbatim",
+   "rewrite": "No rewrite. Zero @earendil-works, zero node builtins, zero vitest imports — the only file that ports byte-for-byte. Keeps `DOCUMENTATION_VARIANTS`/`DocumentationVariant`/`DiscoveredEvalCase`/`EvalTask`/`parseDiscoveredCases`/`createTaskPlan` and the private `isRecord` unchanged."
+  },
+  {
+   "path": "packages/evals/src/report.ts",
+   "bytes": 19038,
+   "action": "copy-then-rewrite",
+   "rewrite": "Rewrite 6 import lines only: L4 `node:util` styleText -> `Bun.styleText`; L5-6 `@vitest-evals/core` + `/node` imports -> new local `./report-io.ts` (see new files); L7 unchanged. Then Bun-ify 3 sites: `createHash` from `node:crypto` -> `Bun.hash` (9 createHash sites package-wide, 0 in this file after import swap — verify). Keep `console.*` free (it already is). Everything else — pairing, blocking, flags, formatters — is pure and ports unchanged."
+  },
+  {
+   "path": "packages/evals/src/docker.ts",
+   "bytes": 5940,
+   "action": "copy-then-rewrite",
+   "rewrite": "Rewrite L1-4: `spawnSync` -> `$` from `bun` (Bun rule: never spawnSync); `createHash` -> `Bun.hash`; `existsSync`/`readFileSync`/`statSync` -> `await Bun.file(p).exists()`/`.text()` + `node:fs/promises` stat; `mkdirSync` -> `fs.mkdir`. `requireEvalAuthFile` is currently sync and its caller in cli.ts is async — make it `async` and update the one call site. `execute()` signature changes from `{status,stdout}` to Bun Shell `.exitCode`/`.text()`; the two `capture` branches collapse. Keep `spawnSync` shape OUT — this is the file that most needs the omp rule pass."
+  },
+  {
+   "path": "packages/evals/src/cli.ts",
+   "bytes": 7871,
+   "action": "copy-then-rewrite",
+   "rewrite": "L1-5 builtin imports -> Bun (`Bun.hash`, `Bun.randomUUIDv7` or keep `crypto.randomUUID`, `Bun.write`, `import.meta.dir` instead of `dirname(fileURLToPath(import.meta.url))`). L6 `await requireEvalAuthFile(...)` -> add `await`. Rewrite the 3 `console.log` calls: the rule bans `console.*` while TUI/RPC/SDK live, but a standalone CLI that exits without entering the TUI IS the documented exception — so these 3 are ALLOWED as-is; do not convert to `logger` (logger writes to ~/.omp/logs, not the user's terminal, and would break the runner's output contract). Change the hardcoded container prefix `/repo/packages/evals/` (L101) to read from the resolved packageRoot. Everything else ports unchanged."
+  },
+  {
+   "path": "packages/evals/src/harness.ts",
+   "bytes": 20636,
+   "action": "copy-then-rewrite",
+   "rewrite": "THE hard file — 4 of its 9 external symbols do not exist in omp. (a) L8 `contentText` from `@earendil-works/pi-ai` -> `@oh-my-pi/pi-ai` + new local `./content-text.ts` (omp's pi-ai has no `utils/text.ts`; do NOT re-export from utils/text). (b) L9 `getCurrentSystemPrompt` from `@earendil-works/pi-ai/utils/transcript` -> local `./system-prompt.ts` re-implementation over omp's `Message`. (c) L10-20 coding-agent import: drop `createAgentSessionFromServices`, `createAgentSessionServices`, `ModelRuntime`, `InlineExtension` (none exist in omp); keep `AgentSession`, `CreateAgentSessionOptions`, `getAgentDir`, `readStoredCredential`, `SessionManager` — but `readStoredCredential` has a DIFFERENT SIGNATURE (see collisions). (d) L21-33 `vitest-evals/harness` -> new local `./harness-types.ts`. (e) L2-7 node builtins -> Bun (`Bun.file`, `fs/promises` for readdir/mkdir/rm, `Bun.hash` for the sha256 system-prompt digest, `Bun.nanoseconds` for `performance.now`). (f) `PiCodingAgentHarnessOptions.tools`/`noTools` are typed `CreateAgentSessionOptions['tools']`/`['noTools']` — those keys DO NOT EXIST in omp's interface; retype to `string[]` and map to omp's `createAgentSession` (which takes `customTools` + `extensions`, not `tools`/`noTools`). (g) L291-301 the inline `before_agent_start` transform extension: omp hooks this differently — re-derive the mechanism from omp's `ExtensionFactory` contract, do not assume pi's event name. (h) L526-528 the `PI_EVAL_CONTAINER !== '1'` guard: rewrite to `OMP_EVAL_CONTAINER`. (i) All `PI_EVAL_*`/`PI_PROVIDER`/`PI_MODEL`/`PI_CODING_AGENT_DIR` -> `OMP_*`."
+  },
+  {
+   "path": "packages/evals/evals/acme-server.ts",
+   "bytes": 5729,
+   "action": "copy-then-rewrite",
+   "rewrite": "L1 `createServer` from `node:http` -> `Bun.serve` (omp rule: Bun.serve, not http.createServer). The `AcmeServer` public shape (start/stop/reset/origin/baseUrl/validRequestReceived) MUST NOT change — 4 call sites depend on it. `server.address()` port extraction is replaced by `Bun.serve`'s returned `port`; the 2 `new Promise(...)` wrapper sites (L135, L144) -> `Promise.withResolvers()`. `server.close(cb)` -> `server.stop()`. 9 exported consts port unchanged."
+  },
+  {
+   "path": "packages/evals/evals/configured-runtime.ts",
+   "bytes": 3861,
+   "action": "copy-then-rewrite",
+   "rewrite": "L2 `Api`/`Context`/`contentText`/`Model`/`ModelsSimpleStreamOptions` from `@earendil-works/pi-ai` -> `@oh-my-pi/pi-ai` — but omp's `pi-ai` has no `Models`/`ModelsSimpleStreamOptions` abstraction and no `ModelRuntime`. `loadConfiguredModelRuntime` + `inspectProvider` + `inspectAddedModel` are ALL built on `ModelRuntime` (pi `packages/coding-agent/src/core/model-runtime.ts`, absent from omp). These three functions must be re-pointed at omp's model surface (ModelRegistry / discoverModels / AuthStorage) or deleted. `contentText` -> local helper. `ModelFields` shape (reasoning/input/cost/contextWindow/maxTokens) must be diffed field-by-field against omp's `Model` before any judge fixture is reused — omp models are KDL-classified and may carry different field names."
+  },
+  {
+   "path": "packages/evals/evals/smoke.eval.ts",
+   "bytes": 681,
+   "action": "skip",
+   "rewrite": "SKIP. Calls `describeEval` from `vitest-evals` and `expect` from `vitest` — neither runner exists in omp. The scenario (single prompt, no tools, assert capital of France, assert usage.provider/model match env) is trivially portable to a bun test, but it is NOT a copy — it is a rewrite. Keep as design reference only."
+  },
+  {
+   "path": "packages/evals/evals/models.docs.eval.ts",
+   "bytes": 1449,
+   "action": "skip",
+   "rewrite": "SKIP. `describeEval` + `StructuredOutputJudge` (vitest-evals), and the scenario depends on `inspectAddedModel` -> `ModelRuntime`, which omp lacks. Also the prompt says 'Configure this running Pi installation' — must become 'omp' prose. Rewrite-only, not copy."
+  },
+  {
+   "path": "packages/evals/evals/extensions.docs.eval.ts",
+   "bytes": 1892,
+   "action": "skip",
+   "rewrite": "SKIP. `describeEval`/`StructuredOutputJudge`/`ToolCallJudge` (vitest-evals). Imports `contentText` from pi-ai (absent in omp) and reads `session.resourceLoader.getExtensions()` + `session.extensionRunner` — omp's AgentSession exposes `extensionRunner` (packages/coding-agent/src/session/agent-session.ts:12155) but has NO `resourceLoader` member. Rewrite-only."
+  },
+  {
+   "path": "packages/evals/evals/openai-provider.docs.eval.ts",
+   "bytes": 2299,
+   "action": "skip",
+   "rewrite": "SKIP. vitest-evals hooks + `ModelRuntime` + the acme server. Also the scenario is pi-specific: 'Add an OpenAI-compatible provider' depends on pi's provider-registration surface, which omp replaced with the KDL compat rule tree. Porting this eval would require a spec for how an agent adds a provider to omp at all — that capability may not exist. Rewrite-only, and the most likely of the 5 to be dropped from scope."
+  },
+  {
+   "path": "packages/evals/evals/custom-provider.docs.eval.ts",
+   "bytes": 2680,
+   "action": "skip",
+   "rewrite": "SKIP. vitest-evals + `ModelRuntime.completeSimple` + an in-process SSE fixture server. Same provider-registration dependency as above. Rewrite-only."
+  },
+  {
+   "path": "packages/evals/evals/tui.docs.eval.ts",
+   "bytes": 8603,
+   "action": "skip",
+   "rewrite": "SKIP. Imports `Levenshtein` from `autoevals`, `createJudge`/`describeEval` from `vitest-evals`, and `AgentSessionRuntime`/`AgentSessionServices` from pi-coding-agent (all 3 absent in omp). It also implements a 40+ method `RecordingTerminal` shim against pi's TUI interface — omp's TUI surface has moved and this shim will not satisfy it. Highest-rewrite file in the package. Rewrite-only."
+  },
+  {
+   "path": "packages/evals/evals/documentation-audit.eval.ts",
+   "bytes": 3083,
+   "action": "skip",
+   "rewrite": "SKIP — and note the concrete breakage: L33 globs `resolve(repositoryRoot, 'packages/coding-agent/docs')`, which DOES NOT EXIST in omp (omp has no `packages/coding-agent/docs/`; its docs live at repo-root `./docs`). `globSync('**/*.md')` would return [] and `it.for([])` would register ZERO cases — a silent no-op eval, the worst failure mode. It also imports `defineTool` (omp has it at packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts:457) and `Type` from pi-ai (omp re-exports it from `@oh-my-pi/omptype` at packages/ai/src/index.ts:1) and `toolCalls` from vitest-evals. Rewrite-only."
+  },
+  {
+   "path": "packages/evals/docker/Dockerfile",
+   "bytes": 1970,
+   "action": "copy-then-rewrite",
+   "rewrite": "REWRITE, do not copy. L1 `FROM node:24-slim` -> `oven/bun:1.4-slim` (omp is a Bun repo; `node --experimental-strip-types` at L36 has no omp equivalent — Bun strips types natively). L8-9 `npm ci && npm run build:offline` -> `bun install --frozen-lockfile && bun run build` (omp root has NO `build:offline` script — verified). L10 `install-runtime.mjs` keeps its role but its imports must be repointed. L15-19 rm the pi docs — retarget to what omp actually ships in `packages/coding-agent` `files[]`: `README.md`, `CHANGELOG.md`, `examples/` (there is NO `docs/` to remove) plus the omp-only `dist/docs-index.generated.txt`. L22-35 chmod/allowlist block needs the omp image layout. L31-33 `/repo/vitest.base.ts` and `vitest.evals.config.ts` — omp has neither."
+  },
+  {
+   "path": "packages/evals/docker/Dockerfile.dockerignore",
+   "bytes": 68,
+   "action": "copy-verbatim",
+   "rewrite": "No rewrite. Still correct; add `**/dist` variants only if omp's build emits new dirs."
+  },
+  {
+   "path": "packages/evals/docker/install-runtime.mjs",
+   "bytes": 2735,
+   "action": "skip",
+   "rewrite": "SKIP. L5-6 import `../../../scripts/coding-agent-consumer.mjs` (`installCodingAgentConsumer`, `packReleasePackages`) and `../../../scripts/release-packages.mjs` (`getPublicWorkspacePackages`) — NEITHER FILE EXISTS IN omp (omp scripts/ has ci-release-*.ts + release.ts, no consumer/pack helper). This is the single hardest blocker in the package: pi's whole eval image is 'pack workspace tarballs -> npm-install them into a scratch dir -> delete their docs'. omp publishes `main: ./src/index.ts` (raw TS) and its only `dist/` artifact is `dist/cli.js`, so there is no npm-installable compiled runtime to image. Must be redesigned, not copied."
+  },
+  {
+   "path": "packages/evals/docker/entrypoint.ts",
+   "bytes": 6281,
+   "action": "skip",
+   "rewrite": "SKIP. L102-105 asserts the eval resolves `@earendil-works/pi-coding-agent` to `/repo/node_modules/.../dist/index.js` — omp has no such dist entry. L31 asserts `npm-shrinkwrap.json` (a pi release artifact, absent in omp). L28 asserts `/repo` contains exactly `node_modules, package.json, packages, vitest.base.ts` — omp has no `vitest.base.ts`. L120 resolves the `vitest` CLI — omp has no vitest. L133-143 shells the `vitest.mjs` binary with `--reporter=vitest-evals/reporter`. Roughly 60% of the file is a Node+Vitest+pi-release-layout contract that omp does not share. The 6 security assertions (assertWorkspace/assertRootOnly/assertSandboxCannotRead/chownTree) are the valuable part and should be re-implemented against a Bun entrypoint."
+  },
+  {
+   "path": "packages/evals/vitest.evals.config.ts",
+   "bytes": 1087,
+   "action": "skip",
+   "rewrite": "SKIP. Imports `vitest/config` and `../../vitest.base.ts` — omp has neither (verified: no vitest.base.ts at repo root, no vitest anywhere in omp). The `projects: [{name:'docs'},{name:'host'}]` split has no omp analogue; omp's runner is `scripts/ci-test-ts.ts` + `bun test`."
+  },
+  {
+   "path": "packages/evals/vitest.test.config.ts",
+   "bytes": 378,
+   "action": "skip",
+   "rewrite": "SKIP. Same vitest/vitest.base.ts dependency; the only surviving idea is the `@earendil-works/pi-coding-agent` -> workspace-source alias, which omp expresses as a bun workspace dependency instead."
+  },
+  {
+   "path": "packages/evals/test/plan.test.ts",
+   "bytes": 1570,
+   "action": "copy-then-rewrite",
+   "rewrite": "Port. L1 `from 'vitest'` -> `from 'bun:test'` (omp rule: bun test, never vitest). The 4 assertions are all contract-level (parse identity, duplicate rejection, task-plan expansion order, invalid-input rejection) and survive the runner swap unchanged. Add the package to `fastWorkspacePackages` in scripts/ci-test-ts.ts or it will never run in CI."
+  },
+  {
+   "path": "packages/evals/test/comparison.test.ts",
+   "bytes": 4135,
+   "action": "copy-then-rewrite",
+   "rewrite": "Port. `vitest` -> `bun:test` on L2 only. Imports `../src/report.ts` (the 5 pure exported functions) — the whole file runs with no model, no docker, no network. Highest value-per-byte test in the package."
+  },
+  {
+   "path": "packages/evals/test/report.test.ts",
+   "bytes": 6992,
+   "action": "copy-then-rewrite",
+   "rewrite": "Port with a seam rewrite. L4 `vitest` -> `bun:test`; L1-3 node:fs/promises + node:os + node:path -> Bun equivalents. CRITICAL: it feeds fixtures into `readTaskObservation`, which currently calls `readReportWorkspace`/`readVitestJsonReportFile` from `@vitest-evals/core/node`. Those must be replaced by a local `./report-io.ts` seam that parses the JSON files directly, and the test must construct that shape itself. Without the seam this test cannot run at all."
+  },
+  {
+   "path": "packages/evals/test/acme-server.test.ts",
+   "bytes": 4303,
+   "action": "copy-then-rewrite",
+   "rewrite": "Port. `vitest` -> `bun:test`. Exercises the acme fixture server's 404/405/415/400/422/401 branches — all real contract branches, all survive the `node:http` -> `Bun.serve` swap. No model, no docker."
+  },
+  {
+   "path": "packages/evals/test/configured-runtime.test.ts",
+   "bytes": 6307,
+   "action": "skip",
+   "rewrite": "SKIP. Every assertion goes through `ModelRuntime.create/refresh/getModel/getProvider/completeSimple`, none of which exist in omp. Cannot port without the model-runtime reconcile landing first."
+  },
+  {
+   "path": "packages/evals/test/harness.test.ts",
+   "bytes": 4252,
+   "action": "skip",
+   "rewrite": "SKIP. L2 imports `getDocsPath, getExamplesPath, getReadmePath` from pi-coding-agent — NONE exist in omp (verified: 0 definitions). L4 imports `../../coding-agent/src/core/system-prompt.ts` — omp has `packages/coding-agent/src/system-prompt.ts` (no `core/`), and its `buildSystemPrompt` takes different options. `excludePiDocumentation` also asserts the `\\n<docs>\\nPi documentation (read only` marker, which is pi's prompt layout, not omp's. Rewrite-only."
+  },
+  {
+   "path": "packages/evals/README.md",
+   "bytes": 6039,
+   "action": "skip",
+   "rewrite": "SKIP as a copy; it documents `npm run eval -w packages/evals` against pi's npm workspace, `packages/coding-agent/docs/` (absent in omp), `PI_PROVIDER`/`PI_MODEL`, and the pi release-tarball pipeline. Write a fresh omp README instead — but carry the MIT attribution line into it."
+  },
+  {
+   "path": "packages/evals/tsconfig.json",
+   "bytes": 265,
+   "action": "copy-then-rewrite",
+   "rewrite": "L2 `extends ../../tsconfig.json` -> omp convention is `../../tsconfig.base.json` (see packages/tsconfig.workspace.json). L7 `types: ['node','vitest']` -> `['bun']` (omp uses @types/bun, root catalog pins `^1.3.14`; there is no @types/vitest). L9 include list keeps the same five globs."
+  },
+  {
+   "path": "packages/evals/package.json",
+   "bytes": 659,
+   "action": "copy-then-rewrite",
+   "rewrite": "L3 name `@earendil-works/pi-evals` -> `@oh-my-pi/pi-evals` (matches the mandated `@earendil-works/X` -> `@oh-my-pi/X` convention; note it is NOT `@oh-my-pi/evals`). L5-6 `clean`/`eval` npm scripts -> bun. L7 `eval:host` vitest -> `bun test`. L8 `eval:docs` `node --experimental-strip-types src/cli.ts` -> `bun src/cli.ts`. Drop devDeps `@vitest-evals/core`, `autoevals`, `vitest`, `vitest-evals`, `shx`. Repoint `@earendil-works/pi-ai`/`pi-coding-agent` to `@oh-my-pi/*` catalog: refs. Add `private: true` is already set — keep it. Add `packages/evals` to the root `workspaces` if it is not matched by the `packages/*` glob (it is, so no root change needed)."
+  },
+  {
+   "path": "packages/evals/.gitignore",
+   "bytes": 7,
+   "action": "copy-verbatim",
+   "rewrite": "No rewrite. `.eval/` is the right artifact-ignore path."
+  },
+  {
+   "path": "packages/evals/NOTICE",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE, 0 bytes copied. Must carry the verbatim MIT notice from /Users/tranquangdang21/Projects/pi-ref/LICENSE (Copyright (c) 2025 Mario Zechner) plus the adapted-file list and the upstream commit d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31. Follows the crates/pi-shell/NOTICE precedent."
+  },
+  {
+   "path": "packages/evals/src/harness-types.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. Local port of the `vitest-evals/harness` surface the adapter needs: `Harness`, `HarnessContext`, `JsonValue`, `SimpleHarnessResult`, `TranscriptEvent`, `UsageSummary`, `createHarness`, `normalizeHarnessRun`, `normalizeRecord`, `attachHarnessRunToError`, `toJsonValue`. These types define what `runPiCodingAgent` returns, so getting them wrong silently corrupts every observation. No `#private`, no `any`."
+  },
+  {
+   "path": "packages/evals/src/report-io.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. Replaces `@vitest-evals/core/node` (`readReportWorkspace`, `readVitestJsonReportFile`) and `@vitest-evals/core` (`ReportCase`) with a direct JSON reader. Must preserve the exact `ReportCase` field names `readTaskObservation` reads: `status`, `fullName`, `harness.run.usage.{provider,model,inputTokens,outputTokens,totalTokens,toolCalls,metadata.cacheReadTokens,metadata.cacheWriteTokens,metadata.estimatedCostUsd}`, `harness.run.timings.totalMs`, `harness.run.errors`, `harness.run.artifacts[piSessionJsonl]`, `eval.avgScore` — because report.ts L122-188 depends on every one of them."
+  },
+  {
+   "path": "packages/evals/src/content-text.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. `contentText(content: string | readonly Content[], separator?)` — port of pi packages/ai/src/utils/text.ts L6. omp's pi-ai has no `utils/text.ts` (verified). Used by harness.ts toTranscriptEvents, extensions eval, and configured-runtime."
+  },
+  {
+   "path": "packages/evals/src/system-prompt.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. `getCurrentSystemPrompt(messages)` — port of pi packages/ai/src/utils/transcript.ts L99. Needed because omp's pi-ai has no `utils/transcript.ts` (verified: `find packages/ai/src -name '*transcript*'` returns only transcription providers)."
+  },
+  {
+   "path": "packages/evals/src/doc-lift.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. The `excludePiDocumentation` docs-section stripper, retargeted from pi's `\\n<docs>\\n ... \\n</docs>` markers to whatever omp's system prompt actually uses. Must re-derive the marker strings by reading omp's built prompt (packages/coding-agent/src/prompts/system/system-prompt.md), NOT by copying the pi marker literals — those are the strings that silently no-op."
+  },
+  {
+   "path": "packages/evals/scripts/eval.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. Replacement entrypoint for pi's `src/cli.ts` if the docker pipeline is redesigned around bun + omp's own build instead of pi's release-tarball packer."
+  },
+  {
+   "path": "packages/evals/src/index.ts",
+   "bytes": 0,
+   "action": "skip",
+   "rewrite": "NEW FILE. Star re-export barrel over the modules that actually survive (`export * from './plan'` etc.) per the omp barrel rule. pi's evals has NO index.ts — this is an addition, not a copy."
+  }
+ ],
+ "steps": [
+  {
+   "n": 1,
+   "instruction": "Create packages/evals/{src,evals,test,docker,scripts} and copy src/plan.ts VERBATIM — it is the only source file with zero external dependencies (no @earendil-works, no node builtins, no vitest). Do not reformat it; a byte-identical copy is the cheapest correctness signal in the whole migration. Also copy .gitignore and Dockerfile.dockerignore verbatim.",
+   "anchor": "packages/evals/src/plan.ts"
+  },
+  {
+   "n": 2,
+   "instruction": "Write packages/evals/NOTICE with the VERBATIM MIT notice from /Users/tranquangdang21/Projects/pi-ref/LICENSE (Copyright (c) 2025 Mario Zechner, full permission + warranty disclaimer), plus: the upstream repo (earendil-works/pi), the pinned commit d6af72e1857cfb10b41d8ff8e69f0d72b4cf6d31, the derivation statement (fork, not clean-room), and the list of adapted files. Follow the crates/pi-shell/NOTICE precedent exactly — prose, then a blank line, then the unmodified license text. This is a condition of the copy being lawful, not a formality.",
+   "anchor": "packages/evals/NOTICE"
+  },
+  {
+   "n": 3,
+   "instruction": "Write packages/evals/package.json: name @oh-my-pi/pi-evals (NOT @oh-my-pi/evals — the convention is @earendil-works/X -> @oh-my-pi/X verbatim). Drop the five vitest-family devDependencies. Repoint pi-ai/pi-coding-agent to catalog: refs. Add 'test': 'bun ../../scripts/ci-test-ts.ts local-ts'. Keep private:true.",
+   "anchor": "packages/evals/package.json"
+  },
+  {
+   "n": 4,
+   "instruction": "Port src/report.ts. Do this before harness.ts because it is the highest-value code in the package and is blocked on nothing but one seam. Create src/report-io.ts replacing @vitest-evals/core: a `ReportCase` type plus direct readers for the vitest JSON. The field names MUST match exactly what readTaskObservation reads at L122-188 (status, fullName, harness.run.usage.*, harness.run.timings.totalMs, harness.run.errors, harness.run.artifacts[piSessionJsonl], eval.avgScore) — a renamed field turns a real observation into a silent 'errored' and quietly deletes the case from the report. Swap node:util styleText -> Bun.styleText. Port the node builtins to Bun.",
+   "anchor": "packages/evals/src/report.ts"
+  },
+  {
+   "n": 5,
+   "instruction": "Port src/docker.ts and src/cli.ts together (cli.ts calls every docker.ts export). Replace spawnSync with Bun Shell $ per the omp rule; replace existsSync/readFileSync/statSync/mkdirSync with Bun.file + node:fs/promises; make requireEvalAuthFile async and await it. The 3 console.log calls in cli.ts KEEP console.* — the omp rule explicitly permits console for standalone CLIs that exit without entering the TUI, and routing them through `logger` would send the runner's user-facing output to ~/.omp/logs/ where nobody reads it. Derive the container prefix instead of hardcoding /repo/packages/evals/.",
+   "anchor": "packages/evals/src/docker.ts"
+  },
+  {
+   "n": 6,
+   "instruction": "Write the four new local helper modules: harness-types.ts (port the vitest-evals/harness surface — Harness, HarnessContext, JsonValue, SimpleHarnessResult, TranscriptEvent, UsageSummary, createHarness, normalizeHarnessRun, normalizeRecord, attachHarnessRunToError, toJsonValue), content-text.ts (port pi packages/ai/src/utils/text.ts:6), system-prompt.ts (port pi packages/ai/src/utils/transcript.ts:99), and doc-lift.ts. For doc-lift.ts do NOT copy pi's marker strings: read omp's actual built prompt (packages/coding-agent/src/prompts/system/system-prompt.md) and derive the section boundaries from it. Copying pi's `\\n<docs>\\n` / `\\n</docs>` markers produces a stripper that either throws on the first run or, worse, no-ops and leaves the control arm fully documented.",
+   "anchor": "packages/evals/src/harness-types.ts"
+  },
+  {
+   "n": 7,
+   "instruction": "Port src/harness.ts. This is the file that will break. (a) Drop ModelRuntime, createAgentSessionServices, createAgentSessionFromServices, InlineExtension — none exist in omp; repoint at createAgentSession / ExtensionFactory. (b) Retype .tools and .noTools as string[] (omp's CreateAgentSessionOptions has neither key). (c) Resolve readStoredCredential explicitly against the isolated agentDir path — do NOT use omp's 1-arg form, which reads the developer's real auth.json. (d) Verify session.reload() and session.abort() exist before relying on them. (e) Port node builtins to Bun (Bun.file, fs/promises, Bun.hash, Bun.nanoseconds). (f) Rename every PI_* env var to OMP_* and PI_SESSION_SNAPSHOT_ARTIFACT to ompSessionJsonl (update report.ts L9 to match).",
+   "anchor": "packages/evals/src/harness.ts"
+  },
+  {
+   "n": 8,
+   "instruction": "Port evals/acme-server.ts: node:http createServer -> Bun.serve, 2 `new Promise` sites -> Promise.withResolvers(), close(cb) -> stop(). The AcmeServer public shape (start/stop/reset/origin/baseUrl/validRequestReceived) must not drift — 4 call sites and 1 test depend on it. Port the 9 exported constants unchanged.",
+   "anchor": "packages/evals/evals/acme-server.ts"
+  },
+  {
+   "n": 9,
+   "instruction": "Port the 4 runnable test files, changing only the runner import: `from 'vitest'` -> `from 'bun:test'`. plan.test.ts, comparison.test.ts, acme-server.test.ts port essentially unchanged. report.test.ts additionally needs its fixtures rewritten against the new src/report-io.ts shape, and its node:fs/promises calls swapped for Bun. Then register packages/evals in scripts/ci-test-ts.ts — the fastWorkspacePackages array (around line 88) is the right home, because these 4 files are pure and short. Without that line the tests exist but never run in CI.",
+   "anchor": "packages/evals/test/plan.test.ts"
+  },
+  {
+   "n": 10,
+   "instruction": "DEFER the 5 eval suites, the Dockerfile, install-runtime.mjs, entrypoint.ts, the 2 vitest configs, evals/configured-runtime.ts, test/configured-runtime.test.ts and test/harness.test.ts. They are not blocked on process — they are blocked on real design work: 3 of the 5 suites need ModelRuntime, 1 needs a tool-extension output surface omp does not expose, 1 globs a docs directory omp does not have, and the whole docker image depends on a release-tarball pipeline omp has no equivalent of. Ship the runnable core first and file the rest as follow-ups.",
+   "anchor": "packages/evals/docker/Dockerfile"
+  },
+  {
+   "n": 11,
+   "instruction": "Before the first commit, diff omp's coding-agent `files` array against the doc set the without_docs arm strips, and record the mapping (README.md, CHANGELOG.md, examples/ — and omp-only dist/docs-index.generated.txt, which has no pi equivalent and must be added to the control arm or the experiment measures nothing). Add a CHANGELOG entry under ## [Unreleased] in the package's own CHANGELOG.md, leading with what the user can now do.",
+   "anchor": "packages/coding-agent/package.json"
+  }
+ ],
+ "test_contract": "Four things must be observably true after the migration, and each has exactly one test that proves it.\n\n(1) BLOCKING PROPAGATION. Given a planned cohort where one arm errored, zero was discovered, or two arms share an identity, summarizeEvalObservations must list that pair in blockedPairs, set that eval set's controlPassRate and treatmentPassRate to null, and set lift to null — and must NOT silently drop the pair from the denominator. Proven by test/comparison.test.ts.\n\n(2) A DISAPPEARED METRIC IS UNAVAILABLE, NOT ZERO. readTaskObservation on a report missing a telemetry field must produce outcome:'errored' or a summary whose OperationalMetricTotal carries {availableRuns: n, total: null} — never total: 0. Zero cost and unmeasured cost are different facts and conflating them makes a regression look free. Proven by test/report.test.ts and test/comparison.test.ts.\n\n(3) THE ARM SANDBOX IS REAL. The evaluator's own source and fixtures must be unreadable by the uid the harness demotes to, and the demotion must be permanent. This is asserted in-process by the chmod/chownTree/assertSandboxCannotRead trio and end-to-end by docker/entrypoint.ts. In the first cut (source-mounted, no image), the in-process half still must hold or the eval grades a model that can read its grader.\n\n(4) AN ARM THAT PRODUCED NO REPORT IS AN ERRORED OBSERVATION, NOT A MISSING ONE. runTask returning undefined must produce erroredObservation(task) so the pair blocks and the process exits nonzero — never a silently shorter denominator, which would report lift computed over a cohort the protocol did not plan. Proven by test/comparison.test.ts and the cli.ts exit-code path.\n\nPlus the runner-agnostic invariants that survive the vitest->bun swap: the acme fixture server rejects 404/405/415/400/422/401 distinctly; createTaskPlan alternates arm order by run number; parseDiscoveredCases rejects a name without \"<eval set> > <case>\" and rejects duplicate identities.\n\nNOT a contract, and must not be tested: that the harness constructor stores its options, that constants have particular values, that the report is non-empty, that a file exists. No source-grepping. No mock.module(). applyIsolatedEnvironment mutates process.env and registerEvalCleanup() runs in omp's createAgentSession, so the harness test must use per-test vi.spyOn + vi.restoreAllMocks() in afterEach rather than a file-wide mutation.",
+ "test_files": [
+  "packages/evals/test/plan.test.ts",
+  "packages/evals/test/comparison.test.ts",
+  "packages/evals/test/report.test.ts",
+  "packages/evals/test/acme-server.test.ts"
+ ],
+ "verification": "AVAILABLE NOW, and it is the real gate:\n  - `bun run check:ts` — runs oxlint + oxfmt over the new package plus tsgo typecheck. Verified to work in this environment (exit 0, ~29s on an idle machine). This WILL catch the harness.ts type breakage, which is the point: CreateAgentSessionOptions['tools'] and ['noTools'] do not exist in omp, so a verbatim copy fails typecheck immediately and cannot be shipped silently.\n  - `bun test packages/evals` — BLOCKED in this environment. The natives addon has not been built. `bun --cwd=packages/natives run build` fails on missing ninja; `brew install ninja` first, then the build, then the tests. Until then the 4 ported test files are written but unexecuted, and that must be stated in the PR rather than papered over.\n  - `bun run check:tools` — oxlint + oxfmt over the new package. Free, runs now.\n\nNOT AVAILABLE, and honestly so:\n  - The actual evals. `createPiDocumentationEvalHarness` hard-refuses to run unless OMP_EVAL_CONTAINER=1 plus a sandbox uid/gid pair are set, and every doc arm needs a real provider credential plus two built Docker images. A migration PR cannot prove the comparison works; it can only prove the package compiles, lints, and passes its unit tests. Say so in the PR.\n  - `bun run pi:smoke`-style probes. The container entrypoint is not exercised by any existing CI job; a new sibling smoke probe would be needed if the Docker path is revived (see AGENTS.md's worker/smoke contract for the pattern).",
+ "gate": "`bun run check:ts` exits 0 (oxlint + oxfmt + tsgo over packages/evals) AND `oxlint packages/evals` is clean AND, once ninja is installed and natives are built, `bun test packages/evals` passes 4/4 files AND `grep -rn '@earendil-works' packages/evals` returns nothing AND `grep -rn 'from \"vitest' packages/evals` returns nothing AND packages/evals appears in scripts/ci-test-ts.ts AND packages/evals/NOTICE contains the verbatim 'Copyright (c) 2025 Mario Zechner' line and the full permission notice.",
+ "gate_can_fail": true,
+ "effort": "The runnable core (plan.ts, report.ts + report-io.ts, docker.ts, cli.ts, acme-server.ts, harness.ts + 4 helper modules, 4 test files) is roughly 1,200 lines of porting where 6 files change only an import line. Call it 2-3 days including the check:ts loop. The deferred half is not the same size but is harder: install-runtime.mjs's release-tarball pipeline has no omp equivalent and needs a design decision, and 3 of the 5 eval suites cannot be written at all until a ModelRuntime equivalent exists in omp's coding-agent. Do not let the deferred half's size hide behind the core's — if the goal is 'know whether a change broke agent behaviour', the core alone does not answer that, because the core is statistics and plumbing while the evals are the measurement.",
+ "risk": "Highest: the SILENT NO-OP. Three concrete ways this migration can succeed at every gate and still measure nothing. (a) The without_docs arm strips a docs set that does not exist in omp — pi deletes packages/coding-agent/docs, omp has no such directory, so a copied Dockerfile would strip nothing and the control arm would read the same documentation as the treatment. (b) verifySystemPrompt and excludePiDocumentation key on pi's literal `\\n<docs>\\nPi documentation (read only` and `\\n<rules>\\n` markers; if omp's prompt layout differs, the assertion either throws (visible) or the stripper returns the prompt unchanged (invisible). (c) DOCUMENTATION_EVAL_TOOLS names 6 tools that may not exist under those names in omp, so the arm runs with a smaller toolset and the comparison is between two differently-equipped agents. All three fail closed on nothing — no error, no nonzero exit, just a wrong number. Mitigate by asserting the two arms' system prompts actually differ before recording any observation, and by making the image's doc-strip list assert-then-delete rather than delete-if-present.\n\nSecond: the credential leak. Copying harness.ts's readStoredCredential call as-is would either not compile (good) or, if someone 'fixes' it by dropping the authPath argument, would silently read the developer's real ~/.omp/agent/auth.json and ship their credential into a container that then drops to an unprivileged uid. This is the one defect in this migration that could cost something real, and the fix is a one-line discipline: never call omp's 1-arg readStoredCredential from the harness.\n\nThird: the vitest question. The tempting shortcut is to add vitest so the copy runs unchanged. Reject it — omp is a bun test repo, adding a second runner to one package creates two test systems with different configs, different lifecycles, and different CI plumbing, and it will be read as a mistake. The 4 unit-test files port with one import line each; that is the cheap part. The docker-arm runner genuinely has no bun equivalent, and that should be a stated limitation, not a reason to reintroduce vitest.\n\nFourth: scope. It is tempting to port all 5 eval suites to 'complete' the package. Three of them test whether an agent can add a provider or a model to its OWN installation — a capability omp may not have at all, because omp replaced pi's provider-registration surface with a KDL rule tree compiled at build time. If the capability is gone, the eval is unwriteable, and writing it anyway would produce an eval that can never pass. Verify the capability exists before porting the suite.",
+ "open_questions": [
+  "Does omp's coding-agent support an agent adding a provider or model to its own installation at all? pi's 3 of 5 eval suites (models, openai-provider, custom-provider) test exactly that. omp's model policy lives in a compiled KDL rule tree (packages/catalog/src/compat/rules/), not in a runtime-editable registry — if so those 3 evals are unwriteable and the package ships with 2 behavioural suites instead of 5. THIS BLOCKS THE SCOPE DECISION and should be answered before any suite is ported.",
+  "Which packages/evals symbols are covered by an existing test after the migration? test/plan.test.ts, comparison.test.ts, report.test.ts and acme-server.test.ts cover plan.ts, report.ts and acme-server.ts. src/harness.ts loses ALL of its coverage (harness.test.ts is skipped) and src/docker.ts and src/cli.ts had none to begin with. The sandbox and credential-isolation logic in harness.ts is the highest-consequence code in the package and is currently untested. Is a narrower harness test (the pure parts: resolveModelSelection, verifySystemPrompt, resolveDocumentationVariant, excludePiDocumentation, seedWorkspace's escape rejection) worth writing against bun:test, or does the AGENTS.md test-quality bar rule it out as too narrow?",
+  "Is the pi -> omp scope rename (@earendil-works/ -> @oh-my-pi/) the right call for the PACKAGE NAME specifically? The convention gives @oh-my-pi/pi-evals, which reads redundantly. The other 6 new packages are unaffected (chord, client, durable, protocol, server, telemetry) but if evals is the one that looks wrong, now is the time — after it lands it is a breaking change to a published package name.",
+  "Should the Docker arm survive at all in the first cut? Option (a) mount omp source into a bun container and run from source (smaller, cannot drift, loses pi's dist-resolution assertion); option (b) extend scripts/release.ts to emit packed tarballs and write the missing scripts/release-packages.mjs + scripts/coding-agent-consumer.mjs (faithful, bigger, and a new build surface to maintain). This is a maintainer decision with a long tail, and it should be made once, explicitly, not drifted into.",
+  "Where do the 3 deferred ModelRuntime-dependent test files go — a follow-up package, or a tracked TODO in the new package's README? They are not deletable (they encode real contracts against a surface omp does not have yet) and leaving them unfiled means the next person re-derives that ModelRuntime is missing."
+ ],
+ "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m1-expand-specs/evals.spec.json"
+}

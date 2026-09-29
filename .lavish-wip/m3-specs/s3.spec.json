@@ -1,0 +1,245 @@
+{
+  "id": "s3",
+  "title": "M3-A2 + M3-D1 — declare the MCP elicitation capability and its handler in ONE commit",
+  "wave": "M3 wave 3 (plan lines 7347-7360; the harness mislabels this range as M2 — it is M3)",
+  "one_line": "omp starts answering elicitation/create from MCP servers with a real multi-field form, and decline / cancel / timeout each arrive at the server as a different answer on the wire.",
+  "user_visible_effect": "A spec-compliant MCP server can now ask the user a question mid-session and get a real answer back. Before this, the server never even asks, because omp never advertised the capability in the initialize handshake. After this, it asks, the user sees a form in the composer area, and choosing 'decline' is reported to the server as decline rather than as an empty submission. The flip side is deliberate: declaring the capability without a handler would make every probing server receive -32601, which is strictly worse than silence — so the two halves must land together.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/mcp/types.ts",
+      "action": "modify",
+      "change": "Add `elicitation?: Record<string, never>` to `MCPClientCapabilities` (interface is at lines 196-200) and add hand-authored `MCPElicitProperty`, `MCPElicitRequest`, `MCPElicitOutcome`, and `MCPElicitationHandler` types next to it.",
+      "verified": true,
+      "note": "Confirmed by `sed -n '190,226p'`: MCPClientCapabilities currently has exactly three members (roots, sampling, experimental) — no elicitation. MCP_PROTOCOL_VERSION is `\"2025-11-25\"` at line 175, which is a version that includes elicitation, so no protocol bump is needed. `toJsonRpcError` at lines 500-512 already preserves a numeric `code` off a thrown Error, which is why the existing -32601 default branch reaches the server intact."
+    },
+    {
+      "path": "packages/coding-agent/src/mcp/client.ts",
+      "action": "modify",
+      "change": "Add `elicitation: {}` to the `capabilities` literal in the `initialize` params (lines 101-103).",
+      "verified": true,
+      "note": "The plan's anchor `client.ts:100-104` is accurate — that is the whole `MCPInitializeParams` literal, with `capabilities` on 101-103. This edit alone is inert without the types.ts field above; TypeScript rejects the extra key otherwise, which is a useful ordering signal."
+    },
+    {
+      "path": "packages/coding-agent/src/mcp/manager.ts",
+      "action": "modify",
+      "change": "Add a `#elicitationHandler` field, a `setElicitationHandler(handler: MCPElicitationHandler | undefined)` setter, and an `elicitation/create` case in `#handleServerRequest` (lines 1032-1040) that returns -32601 when no handler is installed. Rename the `_params` parameter to `params` — it is now used.",
+      "verified": true,
+      "note": "Anchor `manager.ts:1032-1040` is exact: `async #handleServerRequest(method: string, _params: unknown)` at 1032, `case \"ping\"` 1034, `case \"roots/list\"` 1036, the -32601 throw at 1039. Both `onRequest` wiring sites (lines 741-742 and 1548-1549) already delegate to this method, so neither needs a change. Verified the only `pi-tui` reference in the whole file is line 46, `import type { MCPToolDetails } from \"@oh-my-pi/pi-tui/tools/mcp\"` — type-only, confirming the plan's claim that the manager has no UI seam today."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/interactive-mode.ts",
+      "action": "modify",
+      "change": "Install the elicitation handler on `this.mcpManager` immediately after the existing `setAuthHandler` call, delegating into the extension UI controller's form presenter.",
+      "verified": true,
+      "note": "Anchor verified: `mcpManager?: MCPManager` is declared at line 1137, assigned from a constructor parameter at line 1306, assigned to the field at 1356, and `this.mcpManager?.setAuthHandler((serverName, challenge) => new MCPCommandController(this).handleMCPAuthChallenge(...))` sits at 1357-1359. That call is the precedent this work follows — see plan_corrections."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts",
+      "action": "modify",
+      "change": "Add a `showElicitationForm(request: MCPElicitRequest): Promise<MCPElicitOutcome>` presenter built on the existing `#presentDialog`, rendering one `FormField` / `TextFormField` / `SelectFormField` per schema property, mounted into `ctx.editorContainer` with `ctx.ui.setFocus` + `ctx.ui.requestRender`.",
+      "verified": true,
+      "note": "Anchors verified: `#dialogActive` / `#dialogQueue` at lines 92-93; `constructor(private ctx: InteractiveModeContext)` at 100; the `uiContext` object literal at 120-160; `#showLocalAskDialog` at 657-756 (mount/settle/restore/cleanup pattern to copy); `#presentDialog` at 1281-1336. Using `#presentDialog` is mandatory, not stylistic — it is what queues the elicitation behind a permission prompt already on screen instead of both fighting for `editorContainer`."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/acp/acp-agent.ts",
+      "action": "modify",
+      "change": "Add an action-preserving sibling of `elicitFormFromAcpClient` (the existing one returns `undefined` for both decline and cancel) and install it as the manager's elicitation handler next to `manager.setOnToolsChanged` at line 2688.",
+      "verified": true,
+      "note": "Verified: `elicitFormFromAcpClient` JSDoc starts at 295, function at 314, and the lossy collapse is at line 375 — `if (!isAcceptedElicitation(response) || !response.content) return undefined;` — with the narrowing helper `isAcceptedElicitation` at 402. That collapse is the exact wire-distinction loss this item exists to prevent, so it cannot be reused as-is. `CreateElicitationResponse` in packages/utils/src/acp/protocol.ts already carries `action: \"accept\" | \"decline\" | \"cancel\"`, so the information is present; only the return type throws it away. `new MCPManager(...)` is at 2667."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/rpc/rpc-mode.ts",
+      "action": "modify",
+      "change": "Add an RPC request kind that forwards an `MCPElicitRequest` to the RPC client and resolves with the action-preserving `MCPElicitOutcome`; install it on the ACP-equivalent manager wiring in RPC mode.",
+      "verified": true,
+      "note": "Anchors verified: `requestRpcEditor` at line 600, `class RpcExtensionUIContext implements ExtensionUIContext` at 831, instantiation at 1016. This is the mirror of the ACP path. The exact RPC request-name string is an open question — see open_questions."
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/elicitation-mcp.ts",
+      "action": "create",
+      "verified": true,
+      "note": "The fixtures directory exists and already holds the exact pattern needed: `notifications-mcp.ts` is a standalone executable stdio MCP server speaking newline-delimited JSON-RPC, exported constants imported by the test, started only when run as the entry module. Spawn it with `{ type: \"stdio\", command: process.execPath, args: [FIXTURE_PATH] }` exactly as `mcp-manager-notification-listeners.test.ts:18` does. The fixture must gate on the client's advertised capability — see test_contract."
+    },
+    {
+      "path": "packages/coding-agent/test/mcp/elicitation-capability.test.ts",
+      "action": "create",
+      "verified": true,
+      "note": "`packages/coding-agent/test/mcp/` exists and already holds MCP tests. NOTE: do not use `packages/coding-agent/test/mcp-roots-list.test.ts` as a template — it is a specification test that re-implements the shape locally and says so in its own comments (\"Does not exercise the actual transport methods — changes to #handleMessage won't fail this test. Tests the contract, not the wiring\"). It is not a precedent for a wiring test."
+    },
+    {
+      "path": "packages/coding-agent/test/mcp/elicitation-form.test.ts",
+      "action": "create",
+      "verified": true,
+      "note": "Same directory. Covers the D1 half: form rendering, required-field gating, secret masking, and the three distinct outcomes."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "In packages/coding-agent/src/mcp/types.ts, add `elicitation?: Record<string, never>` to the MCPClientCapabilities interface (lines 196-200). Then add MCPElicitProperty / MCPElicitRequest / MCPElicitOutcome / MCPElicitationHandler next to it. Do not import anything from an MCP SDK — grep for 'modelcontextprotocol' in package.json returns zero hits across the workspace, so the whole MCP stack is hand-rolled and these types must be authored here. Export them from the module (the mcp barrel re-exports types.ts with a star, so no barrel edit is needed).",
+      "anchor": "packages/coding-agent/src/mcp/types.ts:196"
+    },
+    {
+      "n": 2,
+      "instruction": "In packages/coding-agent/src/mcp/manager.ts, add a `#elicitationHandler?: MCPElicitationHandler` private field next to `#authHandler` (line 271) and a `setElicitationHandler(handler: MCPElicitationHandler | undefined): void` method next to `setAuthHandler` (lines 525-527). Use a plain `#field` plus a bare method — no `private` keyword, per AGENTS.md.",
+      "anchor": "packages/coding-agent/src/mcp/manager.ts:525"
+    },
+    {
+      "n": 3,
+      "instruction": "Edit `#handleServerRequest`: rename the second parameter from `_params` to `params` (it is used now) and add the `case \"elicitation/create\"` arm between `roots/list` and `default`. The arm must throw the same `-32601` shape the default branch throws when `#elicitationHandler` is undefined. Do not widen the parameter type to `any` — cast inside the arm.",
+      "anchor": "packages/coding-agent/src/mcp/manager.ts:1032"
+    },
+    {
+      "n": 4,
+      "instruction": "Confirm no transport file needs editing: StdioTransport's own `#handleServerRequest` already wraps the delegated call in try/catch and converts a throw into an error response via `toJsonRpcError` (packages/coding-agent/src/mcp/transports/stdio.ts:718-729), and `toJsonRpcError` already lifts a numeric `code` off the thrown Error (packages/coding-agent/src/mcp/types.ts:500-512). Verify sse.ts:341 and http.ts:719 have the same shape. If any transport does NOT, that transport needs the same two-line catch before this item is done.",
+      "anchor": "packages/coding-agent/src/mcp/transports/stdio.ts:718"
+    },
+    {
+      "n": 5,
+      "instruction": "In packages/coding-agent/src/mcp/client.ts, add `elicitation: {}` to the `capabilities` literal. Order it after `roots` for readability. This is inert on its own — do not worry about it until step 6 exists.",
+      "anchor": "packages/coding-agent/src/mcp/client.ts:101"
+    },
+    {
+      "n": 6,
+      "instruction": "Write the interactive presenter. Add `showElicitationForm(request: MCPElicitRequest): Promise<MCPElicitOutcome>` to ExtensionUiController, implemented as `this.#presentDialog(undefined, settle => { ... })` and copied structurally from `#showLocalAskDialog` (lines 657-756): build the fields, `ctx.editorContainer.clear()`, addChild, `ctx.ui.setFocus`, `ctx.ui.requestRender()`, and return a cleanup that disposes, clears, restores `ctx.editor` and re-focuses it. Do not invent a second mount path.",
+      "anchor": "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:1281"
+    },
+    {
+      "n": 7,
+      "instruction": "Map schema properties to the existing TUI form primitives — do not build a new form widget. `string` -> TextFormField, `number` -> TextFormField with numeric `validate`, `boolean` -> SelectFormField with Yes/No, `array`/`enum` -> SelectFormField (multi when the property is not in `required` and the schema allows it). Reuse `formTheme` from `@oh-my-pi/pi-tui/chrome/form-theme` the way plugin-settings.ts does, not a locally built theme.",
+      "anchor": "packages/tui/src/components/form.ts:104"
+    },
+    {
+      "n": 8,
+      "instruction": "Enforce the three required behaviors on the form. (a) A property listed in `required` blocks submit until non-empty — use `TextFormField`'s `empty: \"reject\"` plus a `validate` callback, which routes through `submit()` at form.ts:294-303. (b) A property carrying `writeOnly: true` (MCP's secret marker) renders with `secret: true`, is never pre-filled with a stored value, and its value is NEVER passed to `ctx.editor` and never included in any transcript component. (c) Escape/cancel resolves `{ action: \"cancel\" }`; a deliberate 'decline' control resolves `{ action: \"decline\" }`. These must be two distinct, separately reachable user actions — if the form only has a cancel affordance, the item is not done.",
+      "anchor": "packages/tui/src/overlays/plugin-settings.ts:667"
+    },
+    {
+      "n": 9,
+      "instruction": "Sanitize every rendered string. Server-supplied `title`, `description`, `message`, and `enumNames` are untrusted: apply `replaceTabs` and `truncateToWidth` from the TUI render utils on every one, on both the field-label and error paths, and shorten any value that looks like a path. No raw server string may reach a render path unsanitized.",
+      "anchor": "packages/tui/src/components/form.ts:6"
+    },
+    {
+      "n": 10,
+      "instruction": "Wire interactive mode: immediately after the `setAuthHandler` call at line 1357, add `this.mcpManager?.setElicitationHandler(req => extensionUiController.showElicitationForm(req))`. The mode already holds a reference to the manager (field at 1137, assigned at 1356), so no new plumbing is needed. If the ExtensionUiController is not yet constructed at that point in the constructor, move the install into `initHooksAndCustomTools()` where the controller's UI context is built — do not defer it to first use, because a server can elicit before the user ever opens a prompt.",
+      "anchor": "packages/coding-agent/src/modes/interactive-mode.ts:1357"
+    },
+    {
+      "n": 11,
+      "instruction": "Wire ACP: add a sibling of `elicitFormFromAcpClient` that returns the full `CreateElicitationResponse` action rather than `undefined`, reusing the same abort/timeout/listener-cleanup body (copy it; do not refactor the existing function, which three other call sites at acp-agent.ts:389 and :507 depend on). Install it via `manager.setElicitationHandler(...)` next to `manager.setOnToolsChanged` at line 2688.",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-agent.ts:314"
+    },
+    {
+      "n": 12,
+      "instruction": "Wire RPC: add the request kind and the `RpcExtensionUIContext` method, mirroring `requestRpcEditor` (rpc-mode.ts:600). Resolve with `{ action, content? }`, never with `undefined` or an empty object, so a decline is distinguishable from a cancel on the RPC wire.",
+      "anchor": "packages/coding-agent/src/modes/rpc/rpc-mode.ts:600"
+    },
+    {
+      "n": 13,
+      "instruction": "STOP before writing the headless/SDK branch. Plan section 10 question 10 is unanswered and it is a user-visible protocol decision, not an implementation detail. The two natural wrong answers — hanging the request forever, and silently auto-declining — are both observable at the protocol layer. Get the answer, record it in this spec's open_questions, then implement. If the answer is 'auto-decline', the decline must be logged via `logger` with the server name and the request message, and it must still be a real `{ action: \"decline\" }` on the wire, not an error.",
+      "anchor": "packages/coding-agent/src/sdk.ts:2274"
+    },
+    {
+      "n": 14,
+      "instruction": "Add the test fixture. Create a standalone stdio MCP server that (1) records the client capabilities from the `initialize` params, (2) exposes a tool `elicit` whose `tools/call` handler emits `elicitation/create` as a server->client request ONLY when `clientCapabilities.elicitation` is present, awaits the response, and returns it as the tool result — and returns `{ sent: false }` when the capability was absent, and (3) exposes a tool `elicit_unconditionally` that always emits, modelling a server that ignores the advertised capability. Copy the newline-delimited JSON-RPC framing from test/fixtures/notifications-mcp.ts.",
+      "anchor": "packages/coding-agent/test/fixtures/notifications-mcp.ts:1"
+    },
+    {
+      "n": 15,
+      "instruction": "Write elicitation-capability.test.ts. Two tests over the same fixture and the same real manager+transport path, in a temp cwd with `manager.disconnectAll()` and `removeSyncWithRetries` in afterEach. Test 1 (the negative contract): build a manager and DO NOT call setElicitationHandler, call the `elicit` tool, assert `{ sent: false }` — the gate held. Then call `elicit_unconditionally` and assert the tool result carries a JSON-RPC error with `code === -32601`. Test 2: install a stub handler, call `elicit`, assert the fixture saw `sent: true` and the tool result is the handler's `{ action: \"accept\", content: {...} }` unchanged. Also assert in test 2 that the initialize params the fixture recorded contain `elicitation`.",
+      "anchor": "packages/coding-agent/test/mcp/elicitation-capability.test.ts"
+    },
+    {
+      "n": 16,
+      "instruction": "Write elicitation-form.test.ts against the presenter directly (drive it with a stubbed InteractiveModeContext the way the sibling controller tests do — do not mock.module anything). Cover: a required property blocks submit while empty and succeeds once filled; a writeOnly property is rendered with masking and its value never appears in any rendered line; decline and cancel resolve to two different actions; and a handler that throws is surfaced as a JSON-RPC error rather than an unhandled rejection.",
+      "anchor": "packages/coding-agent/test/mcp/elicitation-form.test.ts"
+    }
+  ],
+  "code_shape": "// ---- packages/coding-agent/src/mcp/types.ts (add beside MCPClientCapabilities, line 196) ----\n// There is NO @modelcontextprotocol/sdk dependency anywhere in this workspace\n// (grep across every package.json returns 0 hits) — MCP is hand-rolled, so these\n// types are authored here, not imported.\nexport interface MCPClientCapabilities {\n\troots?: { listChanged?: boolean };\n\tsampling?: Record<string, never>;\n\t/** Present only once an elicitation handler can actually answer. */\n\telicitation?: Record<string, never>;\n\texperimental?: Record<string, unknown>;\n}\n\n/** One property of an `elicitation/create` requestedSchema. */\nexport interface MCPElicitProperty {\n\ttype: \"string\" | \"number\" | \"boolean\" | \"array\";\n\ttitle?: string;\n\tdescription?: string;\n\tformat?: \"email\" | \"uri\" | \"date\" | \"date-time\";\n\tminLength?: number;\n\tmaxLength?: number;\n\tminimum?: number;\n\tmaximum?: number;\n\tenum?: Array<string | number | boolean>;\n\tenumNames?: string[];\n\tdefault?: string | number | boolean;\n\t/** Secret. Render masked; the value never reaches the transcript. */\n\twriteOnly?: boolean;\n}\n\nexport interface MCPElicitRequest {\n\tmethod: \"elicitation/create\";\n\tmessage: string;\n\trequestedSchema: {\n\t\ttype: \"object\";\n\t\tproperties: Record<string, MCPElicitProperty>;\n\t\trequired?: string[];\n\t};\n}\n\nexport type MCPElicitContentValue = string | number | boolean | string[];\n\n/**\n * Three outcomes, three wire values. There is deliberately no `undefined` arm:\n * `undefined` is how the ACP bridge (acp-agent.ts:375) already collapses decline\n * and cancel together, and that is the loss this type exists to prevent.\n */\nexport type MCPElicitOutcome =\n\t| { action: \"accept\"; content: Record<string, MCPElicitContentValue> }\n\t| { action: \"decline\" }\n\t| { action: \"cancel\" };\n\nexport type MCPElicitationHandler = (request: MCPElicitRequest) => Promise<MCPElicitOutcome>;\n\n// ---- packages/coding-agent/src/mcp/manager.ts ----\n// Third member of the setAuthHandler / setOnToolsChanged family: a single-slot\n// optional callback the owning mode installs. Single slot on purpose — see the\n// subagent-reuse guard at sdk.ts:4934 (`if (mcpManager && !options.mcpManager)`)\n// for proof that one manager can be shared by more than one session.\n#elicitationHandler?: MCPElicitationHandler;\n\nsetElicitationHandler(handler: MCPElicitationHandler | undefined): void {\n\tthis.#elicitationHandler = handler;\n}\n\n// #handleServerRequest, manager.ts:1032. Note `_params` -> `params`: it is used now.\nasync #handleServerRequest(method: string, params: unknown): Promise<unknown> {\n\tswitch (method) {\n\t\tcase \"ping\":\n\t\t\treturn {};\n\t\tcase \"roots/list\":\n\t\t\treturn this.#getRoots();\n\t\tcase \"elicitation/create\": {\n\t\t\t// No handler => -32601, identical to the default arm. This is the arm that\n\t\t\t// makes the half-shipped state detectable instead of merely unlikely.\n\t\t\tif (!this.#elicitationHandler) {\n\t\t\t\tthrow Object.assign(new Error(`Unsupported server request: ${method}`), { code: -32601 });\n\t\t\t}\n\t\t\treturn await this.#elicitationHandler(params as MCPElicitRequest);\n\t\t}\n\t\tdefault:\n\t\t\tthrow Object.assign(new Error(`Unsupported server request: ${method}`), { code: -32601 });\n\t}\n}\n\n// ---- packages/coding-agent/src/modes/interactive-mode.ts:1357 (beside setAuthHandler) ----\nthis.mcpManager?.setAuthHandler((serverName, challenge) =>\n\tnew MCPCommandController(this).handleMCPAuthChallenge(serverName, challenge),\n);\nthis.mcpManager?.setElicitationHandler(request => extensionUiController.showElicitationForm(request));\n\n// ---- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts ----\n// MUST go through #presentDialog (line 1281) so the form queues behind whatever\n// is already up (#dialogActive / #dialogQueue, lines 92-93) instead of both\n// fighting over ctx.editorContainer.\nshowElicitationForm(request: MCPElicitRequest): Promise<MCPElicitOutcome> {\n\treturn this.#presentDialog<MCPElicitOutcome>(undefined, settle => {\n\t\tconst form = new McpElicitationFormComponent(request.requestedSchema, {\n\t\t\tonAccept: content => settle({ action: \"accept\", content }),\n\t\t\tonDecline: () => settle({ action: \"decline\" }),\n\t\t\tonCancel: () => settle({ action: \"cancel\" }),\n\t\t\ttui: this.ctx.ui,\n\t\t\t// Field labels and descriptions are server-supplied: replaceTabs +\n\t\t\t// truncateToWidth before any render path, including the error path.\n\t\t\tsanitize: (text: string) => truncateToWidth(replaceTabs(text), PREVIEW_LIMITS.defaultLineWidth),\n\t\t});\n\t\tthis.ctx.editorContainer.clear();\n\t\tthis.ctx.editorContainer.addChild(form);\n\t\tthis.ctx.ui.setFocus(form);\n\t\tthis.ctx.ui.requestRender();\n\t\treturn () => {\n\t\t\tform.dispose();\n\t\t\tthis.ctx.editorContainer.clear();\n\t\t\tthis.ctx.editorContainer.addChild(this.ctx.editor);\n\t\t\tthis.ctx.ui.setFocus(this.ctx.editor);\n\t\t\tthis.ctx.ui.requestRender();\n\t\t};\n\t});\n}",
+  "test_contract": "Two externally observable contracts, and each has a consumer who breaks visibly if it regresses.\n\n(1) THE GATE. An MCP server must not be able to elicit unless omp advertised the capability, and when omp HAS advertised it, the same request must be answered. Consumer: the MCP server itself. If the gate is missing, servers start asking a client that cannot answer; if the handler is missing, servers that ignore the gate receive -32601, which is strictly worse than the current silence. The negative half is the one that makes the half-shipped state fail a suite instead of passing review: a manager with no handler installed must return -32601 for a forced `elicitation/create`, and the fixture must report `sent: false` when the capability was absent from the initialize params.\n\n(2) THE THREE-WAY OUTCOME. decline, cancel, and timeout must each arrive at the server as a different, distinguishable value. Consumer: the server, which typically branches on the action. A regression that collapses decline into an empty submission is invisible to a user and is the exact protocol bug this item exists to prevent, so it must be asserted at the wire, not on a returned boolean. Additionally: a `required` property blocks submit; a `writeOnly` property is masked in the render AND its value never appears in the transcript; and a handler that throws surfaces as a JSON-RPC error rather than an unhandled rejection.\n\nBoth contracts are exercised through a real MCPManager and a real stdio transport against a spawned fixture server, not through a locally re-implemented shape. `packages/coding-agent/test/mcp-roots-list.test.ts` is explicitly NOT the model here — it declares in its own comments that it does not exercise the wiring.",
+  "test_files": [
+    "packages/coding-agent/test/mcp/elicitation-capability.test.ts",
+    "packages/coding-agent/test/mcp/elicitation-form.test.ts",
+    "packages/coding-agent/test/fixtures/elicitation-mcp.ts"
+  ],
+  "verification": "bun run check:ts\n\n# blocked until the native addon is built:\n#   bun test packages/coding-agent/test/mcp/elicitation-capability.test.ts packages/coding-agent/test/mcp/elicitation-form.test.ts\n#\n# Baseline verified at HEAD 808b365: `bun run check:ts` is GREEN (oxlint + oxfmt + tsgo\n# across all 16 packages, coding-agent in 11.00s). `bun test` is BLOCKED: it reports\n#   0 pass / 1 fail / 1 error\n#   Failed to load pi_natives native addon for darwin-arm64\n#   (packages/natives/native/pi_natives.darwin-arm64.node missing)\n# To unblock tests: bun --cwd=packages/natives run build\n#\n# Once unblocked, also run the two pre-existing files most likely to regress:\n#   bun test packages/coding-agent/test/mcp-roots-list.test.ts\n#   bun test packages/coding-agent/test/mcp-manager-notification-listeners.test.ts",
+  "gate": "All three must hold, and each can fail independently.\n\n(1) `bun run check:ts` is green. This fails on a hand-authored type that does not satisfy the hand-rolled MCP shapes, on an `any` that AGENTS.md forbids, on a `private` keyword on a class field, or on a missing top-level import.\n\n(2) `packages/coding-agent/test/mcp/elicitation-capability.test.ts` passes against a real spawned fixture, proving both directions: the fixture refuses to elicit without the advertised capability AND receives a real answer with it. The negative half asserts `code === -32601` for a forced elicit against a handler-less manager.\n\n(3) `packages/coding-agent/test/mcp/elicitation-form.test.ts` passes, proving the three outcomes are three distinct values, that `required` blocks submit, and that a `writeOnly` value never reaches the transcript.\n\nItem is DONE only when (1)+(2)+(3) are all green in the same tree. Declaring the capability and shipping the handler as two commits is explicitly not done — the test in (2) exists so the half-shipped build fails rather than reviews well.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [
+    "M3-D2 (packages/coding-agent/test/user-shell-status-line.test.ts and the status-line segment work) — no, D2 is independent. The real blocker list is empty; what this item blocks is the reverse: until it lands, M3-C2's status-line segment and M3-B1's renderer pinning are unaffected, but any milestone text that says omp supports MCP elicitation is false.",
+    "Any future M4/M5 work that assumes an MCP server can ask the user something."
+  ],
+  "effort": "L, ~5 days as a single indivisible unit. A2 (the capability declaration) is genuinely a few lines once the types exist. D1 is the whole cost: designing the manager->UI seam, the per-mode policy for interactive / ACP / RPC / headless, three distinct wire outcomes, sanitization of untrusted server strings, and two new test files plus a fixture. Do not split the estimate — the plan is explicit that this is the one item in M3 that should not have its budget raided to pay for something else, because getting the order wrong produces a user-visible protocol error.",
+  "risk": "Shipping the capability before the handler. It is the highest-leverage change in the milestone and therefore the easiest to land alone and call done: the diff is one line in client.ts, it type-checks, and it makes omp look more capable. Every spec-compliant probing server then starts receiving -32601 from manager.ts:1039 — a visible protocol error where today it simply never asks. The second-order risk is the one the plan understates: the ACP bridge at acp-agent.ts:375 already collapses decline and cancel into `undefined`, so the obvious implementation — reuse elicitFormFromAcpClient for the ACP mode and model the interactive mode on it — silently reintroduces the exact three-way distinction the item exists to preserve. Write the outcome type first, then make every mode produce it.",
+  "open_questions": [
+    "HEADLESS/SDK POLICY (plan section 10, question 10 — unanswered, and the implementer must not guess). What does omp do when an MCP server elicits in headless/SDK mode with no interactive surface? The two natural wrong answers — hang the request forever, and silently auto-decline — are both visible at the protocol layer. Recommended default to put in front of a human: auto-decline with a `logger.warn` naming the server and the request message, and make it a real `{ action: \"decline\" }` on the wire rather than an error — plus an opt-in programmatic handler so SDK embedders are not stuck with it. Confirm before step 13.",
+    "SECRET MARKER. Is the secret field indicated by MCP's `writeOnly: true`, by `format: \"password\"`, or by an omp-specific extension? The MCP spec uses writeOnly. Confirm which one the servers in the wild actually send before step 8 hard-codes it; getting this wrong means secrets render in plaintext.",
+    "ACP RE-ELICITATION. In ACP mode the manager is created per managed session (acp-agent.ts:2667) and the outbound bridge already exists. Should the handler reuse `unstable_createElicitation` verbatim, or should MCP-originated elicitations bypass the editor client and be handled locally? These are very different UXs and the plan does not say.",
+    "RPC REQUEST NAME. The exact RPC method name and payload shape for forwarding an elicitation to an RPC client is unspecified. rpc-mode.ts:600 (requestRpcEditor) is the shape to mirror, but the method name needs a decision because RPC clients key off it.",
+    "TIMEOUT. Should an elicitation form time out at all? ACP's bridge honors `dialogOptions.timeout`; the MCP request carries no timeout of its own, so this needs an explicit default (and the plan requires timeout to be a THIRD distinct wire outcome, which means the value must be chosen deliberately, not inherited as 'undefined')."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The harness task text says 'Milestone 2 occupies lines 7042 to 7692' of COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md, and that s3 is a milestone-2 work item.",
+      "verdict": "WRONG — the line range is right, the milestone label is not.",
+      "correction": "Line 7042 is `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, not milestone 2. Line 7347 is `### Sóng 3 — Cặp giao thức, nguyên tử`, which is M3's wave 3. The harness's own output path (`.lavish-wip/m3-specs/`) agrees with M3. Treat this as an M3 item; nothing in the spec depends on M2.",
+      "evidence": "`sed -n '7042p'` returns `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`; `grep -n 'Sóng 3'` returns `7347:### Sóng 3 — Cặp giao thức, nguyên tử`."
+    },
+    {
+      "claim": "The harness task text says the repo is at 'git HEAD 5873776'.",
+      "verdict": "WRONG.",
+      "correction": "HEAD is 808b365, on branch milestone-1. No anchor in the plan depends on the SHA, but a stale SHA in a handoff invites a wrong `git checkout`.",
+      "evidence": "`git log --oneline -1` -> `808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan`; `git rev-parse HEAD` -> `808b365409fa36719c38319a041c0e612b4e702b`."
+    },
+    {
+      "claim": "Plan §2.2 / wave 3 D1: 'Phải thiết kế điểm tiêm manager→UI, ví dụ một callback request tuỳ chọn do mỗi mode cấp lúc khởi tạo manager, theo đúng cách `ExtensionUIContext` được tiêm hôm nay.'",
+      "verdict": "HALF WRONG — the ExtensionUIContext analogy is wrong; the callback design is right, and it already exists in the tree.",
+      "correction": "The repo already has the exact seam the plan says must be designed: `MCPManager.setAuthHandler(handler: MCPAuthHandler | undefined)` at manager.ts:525-527, a single-slot optional manager->UI callback, installed by interactive mode at interactive-mode.ts:1357 and delegating into a controller. `setElicitationHandler` is the literal third member of that family — add it beside setAuthHandler, do not build a new injection mechanism. The `ExtensionUIContext` half of the analogy is wrong for two reasons: that interface has no `form` method, and it flows session->mode (each mode constructs it and pushes it in via setToolUIContext at sdk.ts:3975), not manager->UI. Adding `form()` to it would be a public extension-API change, which is M2 territory by the plan's own O2 reasoning.",
+      "evidence": "`sed -n '525,527p' packages/coding-agent/src/mcp/manager.ts` is the setAuthHandler body; `sed -n '1356,1359p' packages/coding-agent/src/modes/interactive-mode.ts` is the install. `grep -n 'askDialog' packages/coding-agent/src/extensibility/extensions/types.ts` returns only the optional askDialog at 252 — no form method exists on ExtensionUIContext."
+    },
+    {
+      "claim": "Plan wave 3: 'A2 ... Nửa A2 chỉ vài dòng' (A2 is a few lines).",
+      "verdict": "UNDERSTATED — it is two files, and one of them is the types file.",
+      "correction": "The `capabilities` literal in client.ts is three lines, but `MCPClientCapabilities` at types.ts:196-200 has exactly three members (roots, sampling, experimental) and no `elicitation`, so the type must be extended too. And because there is no `@modelcontextprotocol/sdk` dependency anywhere in the workspace, the request/result/outcome types must be hand-authored from the 2025-11-25 spec — there is no SDK type to import. This is still small; it just is not one file.",
+      "evidence": "`sed -n '196,200p' packages/coding-agent/src/mcp/types.ts` shows the three-member interface; `grep -rn 'modelcontextprotocol' package.json packages/*/package.json` returns 0 hits; `sed -n '175p'` shows `MCP_PROTOCOL_VERSION = \"2025-11-25\"`."
+    },
+    {
+      "claim": "Plan wave 3 D1: 'ACP dùng lại cầu nối chiều ra sẵn có' (ACP reuses the existing outbound bridge).",
+      "verdict": "WRONG as written — reuse would destroy the contract this item exists to establish.",
+      "correction": "`elicitFormFromAcpClient` (acp-agent.ts:314) already collapses decline and cancel into `undefined` at line 375. It is an excellent lifecycle reference (abort race, timeout, `onTimeout`, listener cleanup, silent late-response suppression) but its return type is lossy, and the plan's own gate demands three distinct wire outcomes. Add an action-preserving sibling; do not refactor the existing function, which three other call sites depend on.",
+      "evidence": "`sed -n '375p'` is `if (!isAcceptedElicitation(response) || !response.content) {` followed by `return undefined;`; the narrowing helper is at line 402; `CreateElicitationResponse` in packages/utils/src/acp/protocol.ts already carries `action: \"accept\" | \"decline\" | \"cancel\"`."
+    },
+    {
+      "claim": "Plan §2.2: 'manager không có quyền mở form ... Chỗ cần trả lời JSON-RPC nằm trong một class không thể với tới UI.'",
+      "verdict": "VERIFIED — carries forward unchanged.",
+      "correction": "Confirmed exactly. The single `pi-tui` reference in manager.ts is line 46, `import type { MCPToolDetails } from \"@oh-my-pi/pi-tui/tools/mcp\"` — a type-only import. The manager genuinely cannot open a form today, which is why a setter is required.",
+      "evidence": "`grep -n 'pi-tui' packages/coding-agent/src/mcp/manager.ts` returns exactly one line, 46."
+    },
+    {
+      "claim": "Plan wave 3 anchors: `client.ts:100-104` and `manager.ts:1032-1040`.",
+      "verdict": "VERIFIED — both exact, no drift.",
+      "correction": "client.ts 100-104 is the MCPInitializeParams literal with `capabilities` on 101-103. manager.ts 1032-1040 is `#handleServerRequest` in full, with the -32601 throw at 1039. Additionally verified that both `onRequest` wiring sites (manager.ts:741-742 for initial connect, 1548-1549 for reconnect) already delegate to this method, so neither needs changing, and that `toJsonRpcError` (types.ts:500-512) plus StdioTransport's own try/catch (stdio.ts:718-729) already carry a thrown -32601 to the server — no transport edit is required.",
+      "evidence": "`sed -n '100,104p'`, `sed -n '1032,1040p'`, `sed -n '735,750p'`, `sed -n '1540,1560p'`, `sed -n '500,512p'` and `sed -n '718,729p'` of the respective files."
+    },
+    {
+      "claim": "Plan wave 3 test locations: NEW `packages/coding-agent/test/mcp/elicitation-capability.test.ts` and `.../elicitation-form.test.ts`.",
+      "verdict": "LOCATION FINE, TEMPLATE WARNING ADDED.",
+      "correction": "The `packages/coding-agent/test/mcp/` directory exists and is the right home. But do not copy `packages/coding-agent/test/mcp-roots-list.test.ts` — it is a specification test that re-implements the shape locally and says so in its own comments: 'Does not exercise the actual transport methods — changes to #handleMessage won't fail this test. Tests the contract, not the wiring.' The correct template is `packages/coding-agent/test/mcp-manager-notification-listeners.test.ts` plus `packages/coding-agent/test/fixtures/notifications-mcp.ts`: a standalone executable stdio server spawned with `{ type: 'stdio', command: process.execPath, args: [FIXTURE_PATH] }` against a real MCPManager in a temp cwd.",
+      "evidence": "The self-documenting comments are at the top of each describe block in mcp-roots-list.test.ts; the spawn config is `function serverConfig(): MCPServerConfig { return { type: \"stdio\", command: BUN_EXEC, args: [FIXTURE_PATH] }; }` at lines 17-19 of mcp-manager-notification-listeners.test.ts."
+    },
+    {
+      "claim": "Harness: 'Verify with `bun run check:ts` (which does not need the addon) and treat `bun test` as blocked until the addon is built.'",
+      "verdict": "VERIFIED — both halves reproduced.",
+      "correction": "`bun run check:ts` is green at HEAD 808b365 (oxlint + oxfmt + tsgo, coding-agent in 11.00s). `bun test packages/coding-agent/test/mcp/request-id.test.ts` reports `0 pass / 1 fail / 1 error` with `Failed to load pi_natives native addon for darwin-arm64`, missing `packages/natives/native/pi_natives.darwin-arm64.node`. Unblock with `bun --cwd=packages/natives run build`.",
+      "evidence": "Both commands executed; output quoted above in verification."
+    },
+    {
+      "claim": "The plan never states whether the elicitation form must queue behind other dialogs.",
+      "verdict": "OMISSION — a real bug waiting to happen.",
+      "correction": "An MCP server can elicit at any moment, including while a permission prompt or an ask dialog already owns `ctx.editorContainer`. The interactive presenter MUST be built on `ExtensionUiController.#presentDialog` (line 1281), which routes through the `#dialogActive` / `#dialogQueue` gate (lines 92-93). Presenting the form directly into `editorContainer` — the obvious thing to write — makes two surfaces fight for focus, and the loser is whichever the user was already answering.",
+      "evidence": "`sed -n '1281,1336p'` shows #presentDialog's queue branch (`if (this.#dialogActive) { this.#dialogQueue.push(startPresentation); } else { startPresentation(); }`); `sed -n '92,93p'` shows the two fields."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/s3.spec.json"
+}

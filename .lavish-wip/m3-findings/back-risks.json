@@ -1,0 +1,56 @@
+[
+ {
+  "severity": "major",
+  "location": "Dòng 17, cột \"rủi ro\" của hàng *vượt biên danh sách site*: «Sửa cả chỗ không nên sửa (sáu `handleWheel` không nằm trong nhóm \"tăng tốc\")»",
+  "claim": "Ngoặc bên trong nói 6 hiện thực `handleWheel` KHÔNG thuộc nhóm \"tăng tốc\" của A3.",
+  "why_wrong": "Trái ngược phạm vi A3 mà chính kế hoạch đã chốt. Kế hoạch 8804 đưa \"sáu hiện thực `handleWheel`\" vào đúng dòng *Quy mô* của M3-A3 cùng 9 site nhân hằng số; 8808 viết thẳng \"Muốn 6 hiện thực `handleWheel` (danh sách dưới) **được gia tốc**, A3 phải đổi interface\"; 8815 liệt kê chúng. Cây xác nhận có đúng 6 hiện thực `handleWheel(delta: -1 | 1)` (agent-hub, session-selector, oauth-selector, extension-list, select-list, settings-list) cộng interface ở mouse.ts:74. Hàng này viện dẫn \"sửa cả chỗ không nên sửa\" nên người đọc sẽ dừng lại trước 6 site đó — bỏ sót 6 trong 15 bề mặt cuộn. Tệ hơn: cột \"cách giảm\" của chính hàng này chỉ audit `wheel * [0-9]` và `delta * 3`, tức 9 site nhân hằng số, không phủ 6 handleWheel; G4/G4b cũng vậy. Lỗ hổng thật là **không cổng nào phủ 6 handleWheel**, chứ không phải chúng nằm ngoài phạm vi — tài liệu đang dán nhãn sai chỗ trống.",
+  "evidence": "$ awk 'NR==8808' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | cut -c1-320\n  2. **Họ `handleWheel`.** … Muốn 6 hiện thực `handleWheel` (danh sách dưới) được gia tốc, **A3 phải đổi interface**: `SelectListMouseTarget.handleWheel` tại `mouse.ts:74` nhận thêm…\n$ awk 'NR==8804' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | cut -c1-260\n  …**tám** site hằng số `event.wheel * 3` / `* 2` … **cộng một** site `delta * 3` … **cùng sáu** hiện thực `handleWheel` chỉ dùng được sau khi đổi interface…\n$ git grep -n \"handleWheel\" -- 'packages/tui/src' | grep -v 'handleWheel('\n  (6 impl `delta: -1 | 1`: agent-hub.ts:1247, session-selector.ts:588, oauth-selector.ts:407, extension-list.ts:597, select-list.ts:229, settings-list.ts:241; cộng interface mouse.ts:74)",
+  "fix": "Thay ngoặc trong cột \"rủi ro\" bằng: «Sửa cả chỗ không nên sửa, **hoặc bỏ sót sáu `handleWheel` — chúng CÓ nằm trong nhóm tăng tốc của A3 (kế hoạch 8804/8808) nhưng không cổng nào phủ**: G4/G4b và lệnh audit ở cột kế bên chỉ quét 9 site nhân hằng số, không chạm 6 site kia. Site thứ chín (`delta * 3` trong thân `handleWheel`) thì grep `event.wheel * N` không bao giờ chạm tới.»",
+  "file": "back-risks"
+ },
+ {
+  "severity": "major",
+  "location": "Dòng 14, cột \"cách giảm\" của hàng *neo cũ chép từ văn xuôi kế hoạch*: «`bun .lavish-wip/m3-md/check-anchors.mjs` phải từng đỏ; số neo kiểm phải hàng chục, không phải 0»",
+  "claim": "Có thể chạy `bun .lavish-wip/m3-md/check-anchors.mjs` để kiểm neo, và lệnh đó hôm nay phải đỏ.",
+  "why_wrong": "Script không tồn tại. Cổng này **đỏ vĩnh viên vì lý do không mang thông tin**: `Module not found` không phải neo trôi, mà là không có neo nào được kiểm. Người đọc làm đúng như hướng dẫn — chạy lệnh, thấy exit 1, kết luận \"neo cũ đã bị bắt\" — trong khi thực tế chưa neo nào được soi. Đây chính là cái bẫy mà dòng 9 của chính file này cảnh báo (\"test xanh cũng vậy, vì nó có thể chỉ là một test rỗng chạy được\"), tái hiện ở dạng đỏ thay vì xanh, nằm đúng trong hàng sinh ra để chặn nó. light.json:117 ghi nó là `[create,UNVERIFIED]` thuộc tail2, tức chưa ai viết, và không sóng nào giao việc dựng nó trước khi người đọc dùng.",
+  "evidence": "$ bun .lavish-wip/m3-md/check-anchors.mjs > /tmp/ca.txt 2>&1; echo \"REAL EXIT=$?\"; cat /tmp/ca.txt\nREAL EXIT=1\nerror: Module not found \".lavish-wip/m3-md/check-anchors.mjs\"\n$ find . -name \"check-anchors*\" -not -path \"*/node_modules/*\"   →  0 kết quả\n$ git grep -ln \"check-anchors\\|checkAnchors\"                 →  0 kết quả\n$ grep -n \"check-anchors\" .lavish-wip/m3-index/light.json\n  \".lavish-wip/m3-md/check-anchors.mjs [create,UNVERIFIED]\"   ← tail2, chưa tồn tại",
+  "fix": "Thay câu đó bằng: «Chưa có script nào để chạy: `bun .lavish-wip/m3-md/check-anchors.mjs` hôm nay exit 1 với `Module not found` — đỏ vì script chưa được viết, **không** phải đỏ vì neo trôi. Cổng này chỉ có sức phủ sau khi tail2 dựng xong script (light.json ghi `[create,UNVERIFIED]`), và khi đó nó phải vừa trả 0 vừa **đã từng** trả 1 trên đầu vào sai. Số neo kiểm phải hàng chục, không phải 0.»",
+  "file": "back-risks"
+ },
+ {
+  "severity": "major",
+  "location": "Dòng 14, cột \"rủi ro\" của hàng *neo cũ chép từ văn xuôi kế hoạch*: «ở ctx1 sáu neo lệch đã biết (union 2-30 chứ không phải 1-32, MCP capabilities 101-102 chứ không phải 100-104)»",
+  "claim": "Neo đúng cho khối MCP `capabilities` ở `mcp/client.ts` là 101-102, không phải 100-104.",
+  "why_wrong": "Trên cây, khối `capabilities` là 101-103: 101 mở `capabilities: {`, 102 là dòng nội dung, 103 là dấu `},` đóng khối. `101-102` cắt mất dấu đóng nên không mô tả trọn khối. Tệ hơn, bộ tài liệu đang có **ba** giá trị cùng nói về một neo: file này và cổng ctx1 (leg 3) nói 101-102; `90-back2b.md:13` và `ctx2.spec.json:198` nói 101-103; còn `90-back2b.md:37` phán đoán ngược hẳn — \"**VERIFIED — cả hai chính xác, không trôi** | `client.ts` 100-104 là literal `MCPInitializeParams` với `capabilities` ở 101-103\". File này trình bày một trong ba giá trị như đã chốt, trong khi hai chỗ khác trong cùng bộ đang đảo ngược kết luận về chính neo đó.",
+  "evidence": "$ awk 'NR>=96 && NR<=110 {print NR\": \"$0}' packages/coding-agent/src/mcp/client.ts\n  99: \tconst params: MCPInitializeParams = {\n  100: \t\tprotocolVersion: MCP_PROTOCOL_VERSION,\n  101: \t\tcapabilities: {\n  102: \t\t\troots: { listChanged: false },\n  103: \t\t},\n  104: \t\tclientInfo: CLIENT_INFO,\n$ grep -n \"101-103\" .lavish-wip/m3-md/90-back2b.md .lavish-wip/m3-specs/ctx2.spec.json\n  90-back2b.md:13  \"Khối capabilities là `:101-103` không phải `:100-104` (range plan nuốt luôn protocolVersion)\"\n  ctx2.spec.json:198 \"The capabilities block is :101-103 rather than :100-104\"\n$ grep -n \"100-104\" .lavish-wip/m3-md/90-back2b.md\n  90-back2b.md:37  \"**VERIFIED — cả hai chính xác, không trôi** | `client.ts` 100-104 … `capabilities` ở 101-103\"",
+  "fix": "Thay `MCP capabilities 101-102 chứ không phải 100-104` bằng `MCP capabilities 101-103 chứ không phải 100-104 (dải 100-104 của kế hoạch nuốt luôn protocolVersion)`, và thêm câu gỡ mâu thuẫn vào cùng hàng: «`90-back2b.md` đang phán 100-104 là chính xác — cần chọn một định nghĩa (100-104 là cả literal `MCPInitializeParams`, 101-103 mới là khối `capabilities`) rồi dùng thống nhất khắp bộ back matter.»",
+  "file": "back-risks"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 6, mục 2 *Chép neo cũ từ văn xuôi kế hoạch*: «bảy neo `* 3` trong kế hoạch sai hết (lệch +1 đến +13)»",
+  "claim": "Cả bảy neo `* 3` trong kế hoạch trôi theo một chiều, lệch trong khoảng +1 đến +13 dòng.",
+  "why_wrong": "Một neo trôi ngược chiều. Kế hoạch ghi `plan-review-overlay.ts:581` còn cây đặt dòng đó ở 580, tức lệch **−1**. Đo đủ bảy: +1, +2, **−1**, +13, +4, +1, +1 — khoảng thật là −1 đến +13. Câu này nằm trong hàng dạy người đọc đi săn neo cũ, nên chỉ sai dấu ở một neo đã đủ để người đọc tìm nhầm hướng (tưởng mọi neo kế hoạch đều nằm thấp hơn thực tế). Nó cũng mâu thuẫn với chính sổ neo của tail1, ghi rõ \"plan-review-overlay 581→580\".",
+  "evidence": "$ awk 'NR>=8986 && NR<=9000' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -n \"wheel \\* 3\"\n  kế hoạch 9001: agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638\n$ { grep -rn \"event\\.wheel \\* [0-9]\" packages/tui/src --include='*.ts'; grep -rn \"delta \\* [0-9]\" packages/tui/src --include='*.ts'; } | grep -v \"^packages/tui/src/mouse-wheel\\.ts:\" | grep \"\\* 3\"\n  agent-transcript-viewer.ts:470   +1\n  copy-selector.ts:214            +2\n  plan-review-overlay.ts:580      −1   ← ngược chiều\n  rewind-selector.ts:245          +13\n  git-tui.ts:697                  +4\n  raw-sse.ts:168                  +1\n  log-viewer.ts:639               +1\n$ grep -o \"plan-review-overlay 581→580\" .lavish-wip/m3-specs/tail1.spec.json\n  plan-review-overlay 581→580",
+  "fix": "Đổi thành: «bảy neo `* 3` trong kế hoạch sai hết (lệch **−1 đến +13**; riêng `plan-review-overlay` neo kế hoạch nằm **cao hơn** thực tế một dòng)».",
+  "file": "back-risks"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 21 (dùng hai lần): «`XANH` trên mười một cổng» và «mười một cổng đang là văn xuôi phải lắp tay mỗi lần»",
+  "claim": "Có mười một cổng máy kiểm được trong M3.",
+  "why_wrong": "Bảng cổng ở §7.1 của kế hoạch có **mười hai** dòng: G1, G2, G3, G4, G4b, G5, G6, G7, G8, G9, G10, G11. G4b không phải chú thích của G4 — nó là một dòng riêng, có lệnh riêng và cột \"nếu đỏ thì nghĩa là gì\" riêng. Cổng của tail1 lại bắt script \"in một dòng XANH/DO cho **mỗi** cổng\", nên người đọc đếm dòng ra sẽ thấy 12 chứ không phải 11. Cùng lỗi lệch-một này còn nằm ở `90-back3.md:23` (\"11 dòng XANH\"), nên hai chỗ đang cùng sai theo một hướng.",
+  "evidence": "$ awk 'NR>=8987 && NR<=8999' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -c '^| G'\n12\n$ awk 'NR>=8986 && NR<=9000' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -oE '^\\| G[0-9]+[a-z]?' | tr -d '| '\nG1 G2 G3 G4 G4b G5 G6 G7 G8 G9 G10 G11\n$ python3 -c \"import json;print(json.load(open('.lavish-wip/m3-specs/tail1.spec.json'))['gate'][:220])\"\n  …prints one XANH/DO line per gate, and exits 1…\n$ grep -n \"11 dòng XANH\" .lavish-wip/m3-md/90-back3.md\n  90-back3.md:23: \"Một lượt cổng với 11 dòng XANH không nói gì…\"",
+  "fix": "Đổi cả hai chỗ thành «mười hai cổng (G1–G11 cộng G4b)», và sửa luôn `90-back3.md:23` cho khớp.",
+  "file": "back-risks"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 6, mục 2: «kế hoạch liệt 7 site `* 3` trong khi cây có 9»",
+  "claim": "Kế hoạch liệt kê 7 site `* 3` trong khi cây thật có 9.",
+  "why_wrong": "Câu đặt dưới nhãn \"chép neo cũ từ văn xuôi kế hoạch\", ám chỉ kế hoạch còn đang đếm thiếu. Thực tế kế hoạch đã tự bắt đúng chỗ này từ trước và **xây cổng quanh nó**: 8807/8814/8817 đều nói rõ 9 = 7 `* 3` + 1 `* 2` + 1 `delta * 3`; 9003 giải thích riêng tại sao G4 phải ghép **cả hai** mẫu `event.wheel \\* [0-9]` và `delta \\* [0-9]` mới đủ 9; 9001 ghi con số 7 là của \"**bản gốc**\", không phải của kế hoạch. Trình bày như một sai lệch còn treo là nói quá — và nó làm mờ đúng cái bài học đáng giữ: kế hoạch đã học được từ lỗi này. Phần đã trôi thật sự của câu chỉ có `usage-dashboard.ts:753`.",
+  "evidence": "$ grep -n \"chín\\*\\* site\\|9\\*\\*\\|cả hai\\*\\* mẫu\\|đủ 9\\|Bản gốc yêu cầu\" COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | cut -c1-150\n  8804: **chín** site nhân ×N phải rời hằng số cứng — **tám** site hằng số … **cộng một** site `delta * 3`\n  8817: lệnh đó hôm nay trả **8** trong khi site ×3 thật là **9**\n  9001: **Bản gốc yêu cầu** `grep -rn 'wheel \\* 3' … | wc -l` = 7 **trước và sau**\n  9003: Chỉ khi ghép **cả hai** mẫu mới đủ 9",
+  "fix": "Tách câu này ra khỏi danh sách neo trôi và ghi rõ nguồn: «Bản gốc của kế hoạch liệt 7 site `* 3`; cây có 9 (7 `* 3` + 1 `* 2` ở `usage-dashboard.ts:759` + 1 `delta * 3`). Kế hoạch đã sửa số này và xây G4 quanh nó — đó là lý do G4 phải quét **hai** mẫu. Vì vậy bảy neo `* 3` và `usage-dashboard.ts:753` còn sót lại là loại trôi âm thầm hơn, không phải loại đếm thiếu.»",
+  "file": "back-risks"
+ }
+]

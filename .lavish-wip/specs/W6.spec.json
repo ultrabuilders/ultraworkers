@@ -1,0 +1,161 @@
+{
+  "id": "W6",
+  "title": "Deny (not auto-approve) bash critical-pattern commands under yolo mode",
+  "wave": "Wave 2 (Correctness trên các đường đang ship) — gated by PRODUCT SIGN-OFF, must not gate W4/W12/W13",
+  "one_line": "Two one-line edits make `rm -rf /`-class bash commands resolve to `policy: \"deny\"` in every approval mode — including the default `yolo` — instead of silently self-approving on install.",
+  "user_visible_effect": "With the default `tools.approvalMode: yolo`, a command matching `CRITICAL_BASH_PATTERNS` (`rm -rf /`, `rm --no-preserve-root`, `sudo rm`, `chmod -R 777 /`, fork bomb, `mkfs`, `dd of=/dev/`, `> /etc/passwd`, shutdown, etc.) is now refused with `Tool \"bash\" is blocked by tool policy. Reason: Critical pattern detected` instead of running unattended. A second, larger effect: a `bash.patterns` rule with `approval: \"allow\"` can NO LONGER permit a critical command — the tool deny is absolute and beats user allow. Any user whose workflow depends on `rm -rf /tmp/...` (which matches the `/`-anchored critical regex) being auto-allowed in yolo loses that, and there is no settings-level escape hatch short of editing code. This is a default-behavior change for every yolo user and is exactly why sign-off is required.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/tools/bash.ts",
+      "change": "Add `policy: \"deny\"` to BOTH critical-pattern returns: the top-level branch at line 516 and the per-segment compound loop at line 545. No other logic changes.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified with awk. Line 516 is `return { tier: \"exec\", override: true, reason: \"Critical pattern detected\" };` inside `if (!compoundSegments && criticalCommand) {` (line 515). Line 545 is the identical return inside the deferred per-segment loop (lines 542-546), guarded by `if (criticalCommand || CRITICAL_BASH_PATTERNS.some(p => p.test(segment.argv.join(\" \"))))` at line 544. Both currently return WITHOUT a `policy` field. The two adjacent config-deny branches — line 510 (`patternRule.approval === \"deny\"`, reason `Blocked by bash pattern: …`) and line 528 (its compound twin) — already carry `policy: \"deny\"`, so the new field matches the surrounding idiom and introduces no new type."
+    },
+    {
+      "path": "packages/coding-agent/test/tools/approval.test.ts",
+      "change": "Update FIVE existing assertions that currently assert the no-policy shape, and add one new yolo-deny contract test plus one negative (benign-command) test. The `dangerous` synthetic fixture at line 82 stays as-is.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified with `grep -n 'it(\"'` and `sed -n`. Broken by the change: (1) line 371 in `classifies critical bash patterns through BashTool.approval` — `toEqual({tier,override,reason})` must gain `policy:\"deny\"`; (2) lines 431-435 in `keeps critical bash patterns prompt-gated unless explicitly denied` — same, and the it() title at line 426 becomes factually wrong and must be renamed; (3) lines 818-822 in `does not let an unmatched segment conceal a critical later segment` — asserts `policy:\"prompt\"` in `write` mode, must become `policy:\"deny\"`; (4) lines 834-838 in `retains critical checks after removing literal shell quotes and escapes with an unmatched segment` — same, for both loop commands. NOT broken: line 84 `ignores override-based prompts in yolo mode` and line 90 `user policy still controls execution in yolo mode` — both use the hand-built `dangerous` const at line 82, which is a synthetic `{tier,override,reason}` object unrelated to BashTool; `resolveApproval`'s handling of a tool decision that has `override:true` but no `policy` is unchanged by this work."
+    },
+    {
+      "path": "docs/approval-mode.md",
+      "change": "Line 64: replace the sentence \"In `yolo`, a bare critical override is ignored…\" with the new rule. Line 124: the `isCritical(args.command)` extension example currently recommends the now-weaker `{tier,override,reason}` shape.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified with grep. Line 64 verbatim today: \"…Reasons appear in the approval prompt. In `yolo`, a bare critical override is ignored, but an explicit tool/user `prompt` or `deny` policy is still enforced.\" That sentence becomes false and MUST be edited — it is the user-facing statement of the behavior being changed. Line 124 is inside a fenced extension-authoring example showing the bare-override return; leaving it teaches third-party extension authors a shape that yolo will now ignore. Also check line 72 and line 10 (`cannot bypass a tool's own deny/prompt policy`) — line 10 is already correct and needs no edit."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "change": "Add one `### Changed` (or `### Fixed`) bullet under the existing `## [Unreleased]` heading at line 3.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified: `## [Unreleased]` is at line 3, currently with no subsections — the bullet creates the first one. Per AGENTS.md, lead with what the user sees, no root-cause narration. E.g. \"Critical bash commands such as `rm -rf /` are now blocked instead of auto-approved in `yolo` mode, and a `bash.patterns` allow rule can no longer permit them.\""
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "GATE — do not write a line of code until a product owner signs off in writing on the exact user-visible change recorded in `user_visible_effect` above, specifically: (a) critical bash commands are now hard-denied in yolo, and (b) `bash.patterns` `allow` can no longer override a critical match. If sign-off is withheld or deferred, close this item as 'deferred' and ship Wave 2 without it (W4/W12/W13 must not wait).",
+      "anchor": "N/A — process gate, no file"
+    },
+    {
+      "n": 2,
+      "instruction": "In `bash.ts`, change line 516 from `return { tier: \"exec\", override: true, reason: \"Critical pattern detected\" };` to a multi-line object literal that adds `policy: \"deny\",` between `override: true,` and `reason:`, matching the field order used by the adjacent deny branch at lines 507-511 (`tier`, `override`, `policy`, `reason`).",
+      "anchor": "packages/coding-agent/src/tools/bash.ts:516"
+    },
+    {
+      "n": 3,
+      "instruction": "In the SAME file, make the identical change at line 545 (the per-segment compound loop). Do not skip it: the top-level check at 515 is guarded by `!compoundSegments`, so every compound command reaches line 545 instead — line 545 is the branch a real compound payload such as `pwd && cmp a b && rm -rf /` actually takes. Missing one of the two sites is the single most likely way to ship this half-done.",
+      "anchor": "packages/coding-agent/src/tools/bash.ts:545"
+    },
+    {
+      "n": 4,
+      "instruction": "Update `classifies critical bash patterns through BashTool.approval`: change the `toEqual` at line 371 to expect `{ tier: \"exec\", override: true, policy: \"deny\", reason: \"Critical pattern detected\" }`. Leave the command list above it untouched — it is the false-positive regression corpus and every entry must still be classified as critical.",
+      "anchor": "packages/coding-agent/test/tools/approval.test.ts:371"
+    },
+    {
+      "n": 5,
+      "instruction": "Rename the it() at line 426 (currently \"keeps critical bash patterns prompt-gated unless explicitly denied\" — no longer true) to describe the new contract, e.g. \"denies critical bash patterns even when a configured pattern allows\", and add `policy: \"deny\"` to the expected object at lines 431-435. Keep the two sibling assertions in that same test unchanged: `echo hello` under the `*`/allow rule must still be `{tier:\"write\",policy:\"allow\"}` and `echo hello && rm file.txt` must still be `\"exec\"` — they are the proof the change did not overreach.",
+      "anchor": "packages/coding-agent/test/tools/approval.test.ts:426"
+    },
+    {
+      "n": 6,
+      "instruction": "In `does not let an unmatched segment conceal a critical later segment`, change the `toMatchObject` at lines 818-822 from `policy: \"prompt\"` to `policy: \"deny\"`. It asserts in `write` mode (not yolo) — it breaks anyway because `resolveApproval` short-circuits on `decision.policy === \"deny\"` before mode is ever consulted.",
+      "anchor": "packages/coding-agent/test/tools/approval.test.ts:818"
+    },
+    {
+      "n": 7,
+      "instruction": "In `retains critical checks after removing literal shell quotes and escapes with an unmatched segment`, change the `toMatchObject` at lines 834-838 from `policy: \"prompt\"` to `policy: \"deny\"`. Both loop commands (`rm -rf '/'` and `r\\m -rf /`) must still be denied, proving quote-stripping/canonicalization still surfaces the critical match.",
+      "anchor": "packages/coding-agent/test/tools/approval.test.ts:834"
+    },
+    {
+      "n": 8,
+      "instruction": "Add a new test in the same `describe(\"tool-owned dynamic approval declarations\")` block, after the one from step 4, that drives the REAL `BashTool` (use the existing `createBashTool()` helper) and asserts the compound path under yolo: `resolveApproval(bash, { command: \"pwd && cmp before after && rm -rf /\" }, \"yolo\", { bash: \"allow\" })` matches `{ policy: \"deny\", source: \"tool\", override: true }`, and `requiresApproval(bash, { command: \"rm -rf /\" }, \"yolo\", { bash: \"allow\" })` throws a message starting `Tool \"bash\" is blocked by tool policy`. This is the headline contract and it must exercise the compound loop at line 545, not just the top-level branch at line 516.",
+      "anchor": "packages/coding-agent/test/tools/approval.test.ts:352 (insert after the it() at 375)"
+    },
+    {
+      "n": 9,
+      "instruction": "Add a negative test in the same block: a harmless command under the default yolo mode still resolves `allow`. `resolveApproval(createBashTool(), { command: \"ls -la\" }, \"yolo\", {})` must match `{ policy: \"allow\" }`, and the existing `does not flag benign bash commands` test (line 375) must stay green. This is the guard against the change widening into ordinary commands.",
+      "anchor": "packages/coding-agent/test/tools/approval.test.ts:375 (adjacent)"
+    },
+    {
+      "n": 10,
+      "instruction": "Edit `docs/approval-mode.md` line 64: delete the clause \"In `yolo`, a bare critical override is ignored, but an explicit tool/user `prompt` or `deny` policy is still enforced.\" and replace it with a statement that a critical bash pattern is refused outright in every mode, including `yolo`, and that a `bash.patterns` `allow` rule does not override it (a configured `deny` rule is still the way to name the specific pattern in the reason).",
+      "anchor": "docs/approval-mode.md:64"
+    },
+    {
+      "n": 11,
+      "instruction": "Edit the extension example at `docs/approval-mode.md:124` so the `isCritical(args.command)` branch returns the same shape the shipped bash tool now uses (include `policy: \"deny\"`), and add one clause noting that an `override: true` decision with no `policy` is ignored under `yolo`. Only the example text changes — the example is illustrative, not compiled.",
+      "anchor": "docs/approval-mode.md:124"
+    },
+    {
+      "n": 12,
+      "instruction": "Add the changelog bullet under `## [Unreleased]` in `packages/coding-agent/CHANGELOG.md` (create the `### Changed` subsection if absent). One line, user-facing, no implementation narration.",
+      "anchor": "packages/coding-agent/CHANGELOG.md:3"
+    },
+    {
+      "n": 13,
+      "instruction": "Run the verification commands. `bun test packages/coding-agent/test/tools/approval.test.ts` must be green with 0 failures. NOTE: in this checkout `node_modules/` is empty, so BOTH `bun test` and `bun run check:ts` currently fail before running any test — run `bun install` first (see open_questions).",
+      "anchor": "N/A — verification"
+    }
+  ],
+  "code_shape": "// packages/coding-agent/src/tools/bash.ts — TWO sites, identical edit.\n\n// Site 1 — bash.ts:515-517 (top-level; skipped entirely when compoundSegments is set)\nif (!compoundSegments && criticalCommand) {\n\treturn {\n\t\ttier: \"exec\",\n\t\toverride: true,\n\t\tpolicy: \"deny\",          // <-- ADDED\n\t\treason: \"Critical pattern detected\",\n\t};\n}\n\n// Site 2 — bash.ts:542-546 (per-segment compound loop; the branch real compound payloads take)\nfor (const segment of compoundSegments) {\n\tconst literalCommand = segment.argv.join(\" \");\n\tif (criticalCommand || CRITICAL_BASH_PATTERNS.some(pattern => pattern.test(literalCommand))) {\n\t\treturn {\n\t\t\ttier: \"exec\",\n\t\t\toverride: true,\n\t\t\tpolicy: \"deny\",      // <-- ADDED\n\t\t\treason: \"Critical pattern detected\",\n\t\t};\n\t}\n}\n\n// Why this works without touching approval.ts: resolveApproval already short-circuits on the\n// tool's own deny BEFORE the mode is consulted —\n//   if (decision.policy === \"deny\") return { policy: \"deny\", ..., source: \"tool\", ... };\n// and requiresApproval turns that into a throw via denyError():\n//   `Tool \"bash\" is blocked by tool policy.\\nReason: Critical pattern detected`\n// The yolo short-circuit at approval.ts:~252 is therefore never reached for a critical command.\n\n// New test (real BashTool, compound path, yolo):\n//   const bash = createBashTool({ \"bash.allowCompoundCommands\": true });\n//   const args = { command: \"pwd && cmp before after && rm -rf /\" };\n//   expect(resolveApproval(bash, args, \"yolo\", { bash: \"allow\" }))\n//     .toMatchObject({ policy: \"deny\", source: \"tool\", override: true });\n//   expect(() => requiresApproval(bash, args, \"yolo\", { bash: \"allow\" })).toThrow();\n\n// Negative guard:\n//   expect(resolveApproval(createBashTool(), { command: \"ls -la\" }, \"yolo\", {}))\n//     .toMatchObject({ policy: \"allow\" });",
+  "test_contract": "The contract defended: **a command matching `CRITICAL_BASH_PATTERNS` is never self-approved by `yolo` — it resolves `policy: \"deny\"` with `source: \"tool\"` and `requiresApproval` throws, in every mode, through BOTH the top-level branch and the per-segment compound branch.** Consumer-visible regression if it breaks: `rm -rf /` (or `pwd && cmp a b && rm -rf /`) silently executes unattended under the default approval mode on a developer's machine — silent data loss, no prompt, no log line, and nothing in the transcript says the safety classifier fired. The negative half is equally load-bearing: if the change over-reaches, an ordinary `ls -la` stops resolving to `allow` in yolo and every automation built on the default mode breaks loudly. The step-5 sibling assertions (`echo hello` still `write`/`allow`, `echo hello && rm file.txt` still `\"exec\"`) are the second negative guard, proving the deny did not leak into the configured-pattern resolution order.",
+  "test_files": [
+    "packages/coding-agent/test/tools/approval.test.ts"
+  ],
+  "verification": "bun install && bun run check:ts && bun test packages/coding-agent/test/tools/approval.test.ts\n\nExpected: oxlint/oxfmt clean, type-check clean, and approval.test.ts fully green (0 fail) with the previously-passing 5 assertions updated per steps 4-7 and the 2 new tests from steps 8-9 added. `bun check` (the full repo check, per AGENTS.md — never `tsc`) is the stricter form of the first command if time allows.\n\nPre-existing environment blocker, verified in this checkout: `node_modules/` is empty, so `bun test` currently fails with `Cannot find module '@oh-my-pi/pi-tui/tools/bash' from packages/coding-agent/src/tools/bash.ts` (0 pass, 1 fail) and `bun run check:ts` fails with `oxlint: command not found` (exit 127). Neither reaches the code under test. `bun install` must run first.",
+  "gate": "`bun test packages/coding-agent/test/tools/approval.test.ts` exits 0 with zero failures, AND the suite contains a test that drives the real `BashTool` under mode `\"yolo\"` and asserts `resolveApproval(...)` returns `policy: \"deny\"` / `source: \"tool\"` for BOTH `rm -rf /` (top-level, bash.ts:516) and `pwd && cmp before after && rm -rf /` (compound, bash.ts:545) — while `ls -la` under the same mode still returns `policy: \"allow\"`. Equivalently: reverting either of the two `bash.ts` edits without reverting the tests turns the suite red.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [],
+  "effort": "S — two one-line source edits, five test-assertion updates, two new tests, two doc edits, one changelog line.",
+  "risk": "**Half-applying the pair.** The top-level check at `bash.ts:515` is guarded by `!compoundSegments`, so it is unreachable for every compound command; line 545 is the branch a real payload actually reaches. Fixing 516 alone produces tests that pass (the top-level corpus is large) while `pwd && cmp a b && rm -rf /` still self-approves in yolo — the exact silent-failure the item exists to prevent. Second-highest risk: the sign-off gate being treated as advisory. This changes default behavior for every yolo user and removes the `bash.patterns` allow escape hatch, so implementing it without a recorded sign-off is itself the failure — mark it skipped and ship Wave 2 without it rather than guessing.",
+  "open_questions": [
+    "SIGN-OFF (hard gate): does product accept that `bash.patterns` `{ approval: \"allow\" }` can no longer permit ANY command matching `CRITICAL_BASH_PATTERNS`? This is the sharpest part of the change and the plan does not call it out. `rm -rf /tmp/build` matches the `/`-anchored recursive-delete regex, so users who currently rely on an allow rule to auto-run cleanup in yolo lose it with no settings-level escape hatch. Options: (a) ship as-is (recommended — a safety classifier with a documented opt-out is not a safety classifier); (b) make the critical deny yield to an explicit user `tools.approval.bash: \"allow\"` (weakens the gate, and contradicts the adjacent deny branch's own precedence); (c) narrow `CRITICAL_BASH_PATTERNS` so `/tmp` and `/var/tmp` are excluded. Recommend (a) and ask the owner to confirm explicitly.",
+    "The plan instructs: rename the existing test at `approval.test.ts:84` (\"ignores override-based prompts in yolo mode\") to describe the new behavior. Verification says that instruction is wrong. That test's input is a synthetic object built inline at line 82 (`const dangerous = tool(\"bash\", { tier: \"exec\", override: true, reason: \"Critical pattern detected\" })`) — it never calls BashTool, so it still passes unchanged after the bash.ts edit, and renaming it would assert something false. The spec keeps it as-is (it still guards a genuinely reachable shape: any tool returning `override:true` with no `policy`) and adds the real-BashTool test at step 8. Confirm this deviation is acceptable, or direct otherwise.",
+    "Is `policy: \"prompt\"` acceptable as an alternative to `deny`? Under yolo, a tool decision carrying an explicit `policy` is returned verbatim with `override: false` (approval.ts yolo branch), so a critical command would prompt instead of being refused. It was rejected in favor of `deny` because `docs/approval-mode.md:162` documents that a `prompt` policy is unsatisfiable in a headless subagent, and ACP/headless sessions would fail inconsistently; `deny` fails closed deterministically. Confirm `deny` is the intent before implementing — this is not a detail the engineer should decide.",
+    "Should `docs/approval-mode.md:124`'s extension-authoring example be changed to the new shape, or left as a demonstration that a bare override is still legal but yolo-ignored? The spec changes it (step 11) on the grounds that it currently teaches extension authors a shape that silently does nothing under the default mode."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Environment note in the work order: repo is at git HEAD 5873776.",
+      "verdict": "wrong",
+      "correction": "HEAD is `ecd516f35b64327392329443ceb52dfbc4e08f06` (\"feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers\"), verified via `git rev-parse HEAD`. Every file path and line number in this spec was re-derived against that commit, not 5873776.",
+      "evidence": "`git rev-parse HEAD` → ecd516f35b64327392329443ceb52dfbc4e08f06; `git log --oneline -1` → ecd516f"
+    },
+    {
+      "claim": "Environment note: \"the native addon is not built, so `bun test` currently reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64'. Verify with `bun run check:ts` (which does not need the addon).\"",
+      "verdict": "wrong",
+      "correction": "Dependencies are not installed at all — `node_modules/` is empty. `bun test` fails at module resolution (`Cannot find module '@oh-my-pi/pi-tui/tools/bash'`), not on the native addon, and `bun run check:ts` is ALSO blocked (exit 127, `oxlint: command not found`). Neither command is a usable gate until `bun install` succeeds. Do not treat a green `check:ts` as pre-verified baseline evidence in this checkout.",
+      "evidence": "`bun test packages/coding-agent/test/tools/approval.test.ts` → `error: Cannot find module '@oh-my-pi/pi-tui/tools/bash' … 0 pass, 1 fail, 1 error`; `bun run check:ts` → `oxlint: command not found … exited with code 127`; `ls node_modules | wc -l` → 0"
+    },
+    {
+      "claim": "Test cần viết (2): \"CẬP NHẬT CÓ CHỦ ĐÍCH case sẵn có tại `approval.test.ts:84` — đổi tên để nói hành vi mới, không bao giờ xóa nó.\" (Deliberate update to the existing case at approval.test.ts:84 — rename it to say the new behavior, never delete it.)",
+      "verdict": "wrong",
+      "correction": "The test at line 84 does not break and should not be renamed. Its subject is a synthetic fixture built inline at line 82 — `{ tier: \"exec\", override: true, reason: \"Critical pattern detected\" }` — never `BashTool.approval`, so the bash.ts edit cannot change its result. `resolveApproval`'s contract for a tool decision with `override:true` and no `policy` is genuinely unchanged by this work. Worse, if an engineer 'updates' the fixture at line 82 to carry `policy:\"deny\"` so the rename makes sense, they also break the adjacent test at line 90 (`user policy still controls execution in yolo mode`), whose `allow` and `prompt` assertions both assume no tool policy. Leave lines 82-97 untouched; add the new real-BashTool test instead.",
+      "evidence": "`sed -n '82,97p' packages/coding-agent/test/tools/approval.test.ts` — line 82 `const dangerous = tool(\"bash\", { tier: \"exec\", override: true, reason: \"Critical pattern detected\" });` is a local literal passed through the `tool()` helper (lines 21-27), not sourced from BashTool; line 84 is the yolo test; line 90 asserts `{bash:\"allow\"}`→allow and `{bash:\"prompt\"}`→prompt, both of which a `policy:\"deny\"` fixture would override to deny."
+    },
+    {
+      "claim": "Test cần viết lists four changes (1) yolo+critical returns deny, (2) update the case at :84, (3) negative benign command, (4) compound critical still denied — and names `approval.test.ts:84-88` as the only test file location to update.",
+      "verdict": "incomplete",
+      "correction": "The change breaks FIVE existing assertions across FOUR tests, not one. Beyond the (incorrect) instruction at :84, the edits required are: line 371 (`classifies critical bash patterns through BashTool.approval`), lines 431-435 plus the it() title at 426 (`keeps critical bash patterns prompt-gated unless explicitly denied` — the title becomes factually false), lines 818-822 (`does not let an unmatched segment conceal a critical later segment`), and lines 834-838 (`retains critical checks after removing literal shell quotes and escapes with an unmatched segment`). The last two break in `write` mode, not yolo, because `resolveApproval` short-circuits on `decision.policy === \"deny\"` before mode is consulted. An engineer following the plan literally will hit four unexpected red tests.",
+      "evidence": "`grep -n 'it(\"' packages/coding-agent/test/tools/approval.test.ts` gives all 62 it() line numbers; `sed -n '371p;431,435p;818,822p;834,838p'` each contains an assertion on the returned approval object. `bash.ts:515` guard `!compoundSegments` and `approval.ts` `if (decision.policy === \"deny\")` short-circuit confirm the mode-independence of the break."
+    },
+    {
+      "claim": "\"Bối cảnh đã xác minh … cả hai nhánh critical trả `{tier:\"exec\", override:true, reason:\"Critical pattern detected\"}` với KHÔNG có `policy:\"deny\"`, trong khi đường deny do người dùng cấu hình ngay cạnh bên tại `:506-512` thì có đặt `policy:\"deny\"` đúng cách.\"",
+      "verdict": "confirmed (line numbers slightly off)",
+      "correction": "The behavioral claim is exactly right and reproduces. The config-deny path is lines 506-512 (not 506-512 per the file's own numbering — accurate) with `policy: \"deny\"` at line 510, and its compound twin at 526-530 with `policy:\"deny\"` at 528. The two critical branches are at 516 and 545, matching the plan. `default: \"yolo\"` is at `settings.ts:294`, matching the plan. The plan's inline note that the top-level check is skipped when `compoundSegments` is set is also confirmed by the `!compoundSegments` guard on line 515.",
+      "evidence": "`awk 'NR>=508 && NR<=520' bash.ts` shows 510 `policy: \"deny\",` and 515 `if (!compoundSegments && criticalCommand) {`; `awk 'NR>=540 && NR<=548' bash.ts` shows 544 the per-segment condition and 545 the bare return; `awk 'NR>=292 && NR<=296' settings.ts` shows 294 `default: \"yolo\",`"
+    },
+    {
+      "claim": "\"Cách sai dễ nhất: sửa `bash.ts:516` mà bỏ sót `bash.ts:545` … `:545` là chỗ một payload compound thực sự tới.\"",
+      "verdict": "confirmed and load-bearing",
+      "correction": "Verified and worth escalating: the top-level corpus (≈15 commands at lines 350-370) all pass through the non-compound path, so an engineer who fixes only :516 sees a fully green suite while the compound path stays vulnerable. This is why the new test in step 8 must drive a compound command, not just `rm -rf /`.",
+      "evidence": "`bash.ts:515` `if (!compoundSegments && criticalCommand)` — the guard makes :516 unreachable whenever segments exist; `bash.ts:542-546` is the only critical check in the compound branch."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W6.spec.json"
+}

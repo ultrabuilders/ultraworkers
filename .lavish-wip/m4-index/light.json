@@ -1,0 +1,131 @@
+[
+ {
+  "id": "M4-6",
+  "title": "Guard /settings writes by provenance",
+  "wave": "M4 Wave B (shippable: false — merges with M4-4, one review, one changelog gate)",
+  "one_line": "When you change a setting in the /settings panel but a project config, a --config overlay, a runtime override, or an environment variable still supplies the effective value, the panel now says which layer is shadowing it and the dead value never gets written to your global config.",
+  "user_visible_effect": "Turning on a setting that a project's .omp/config.yml already sets no longer silently writes a dead duplicate into the global config.yml and calls it 'applied' — the row reports which layer is overriding the panel value instead.",
+  "files": [
+   "packages/tui/src/overlays/settings-defs.ts [modify,verified]",
+   "packages/tui/src/overlays/settings-selector.ts [modify,verified]",
+   "packages/coding-agent/src/config/shadowing.ts [create,verified]",
+   "packages/coding-agent/src/cli/config-cli.ts [modify,verified]",
+   "packages/coding-agent/src/config/settings-ui.ts [modify,verified]",
+   "packages/coding-agent/test/config/settings-provenance-guard.test.ts [create,verified]"
+  ],
+  "n_files": 6,
+  "depends_on": [
+   "M2 WI-8a and WI-8b must merge first — they are what exposed the namespaced `pi.registerSetting` surface this item edits. NOT VERIFIED: WI-8a/WI-8b are M2 work items that have not been executed; confirm they have landed on this branch before starting.",
+   "M4-4 must land in the SAME PR or with an explicit merge order — Wave B states both items change a structurally-satisfied interface in the same `packages/tui/src/overlays/` package. M4-6 adds a member to `SettingsHost`; M4-4 changes `PluginSettingsManager.setEnabled`'s return type. One review, two commits.",
+   "M4-4's `ChangeResult` shape is the precedent for `SettingsWriteResult` — align the two so Wave B ships one coherent result type, not two near-identical ones."
+  ],
+  "blocks": [
+   "M4 Wave B cannot open its PR until the M4 changelog decision is made (plan:8096) — merge is allowed, release is not.",
+   "Blocks the other half of Wave B: M4-4 cannot be reviewed independently without deciding the shared `ChangeResult` vs `SettingsWriteResult` shape."
+  ],
+  "effort": "M",
+  "risk": "The guard is a post-write verification with rollback, and the rollback decision is what can brick /settings.",
+  "n_questions": 4,
+  "n_corrections": 9,
+  "gate": "Four gates, all mechanical and all able to go red.\n(1) `grep -c 'settings\\.set(' packages/tui/src/overlays/settings-selector.ts` prints 0 — no write bypasses the guard. This is the anti-drift gate: it goes red the moment anyone adds a 14th call site the way the plan's hardcoded line list would have silently missed.\n(2) The project-shadow test asserts `YAML.parse(await Bun.file(globalConfigPath).text())` does NOT contain the key after a panel write, and that it contains the PRE-write value — a byte-level assertion on the real file, which is what rollback means here (in-memory revert before the 100ms `#queueSave` debounce drains, so the write and its rollback coalesce into one save; verified settings.ts:818-838 and #queueSave).\n(3) The no-shadow control test asserts the same key IS present in config.yml after a panel write with nothing shadowing it. Without this, gates (1) and (2) are satisfiable by a guard that refuses every write.\n(4) `bun run check:ts` clean, which additionally enforces that tui's `SettingsProvenance` and coding-agent's `SettingProvenance` have not drifted.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "M4-7",
+  "title": "Typed rawArgs render channel + fix the xdev __partialJson two-valued key",
+  "wave": "M4 Wave C — Hợp đồng render (shippable: false — merges with M4-4/M4-6 into one M4 changelog decision; §6.2 forbids shipping any M4 wave alone)",
+  "one_line": "Give renderers a properly typed `rawArgs: { json, complete }` channel on the options object, actually forward the whole options object to extension renderers (today two adapters silently drop four fields), and stop `__partialJson` from meaning two different things at once.",
+  "user_visible_effect": "A `xd://` device card and any extension-registered tool card stop showing a frozen or wrong raw stream mid-stream: a renderer that watches the raw argument buffer repaints on every prefix growth instead of only when the parsed args object identity changes, and an out-of-repo extension can finally observe `argsComplete` / `executionStarted` (and the new `rawArgs`) on its `renderResult` — fields that have been declared in the TUI type since forever but were thrown away at the two adapter sites before the extension ever saw them.",
+  "files": [
+   "packages/tui/src/tools/renderer.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/types.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/extensions/wrapper.ts [modify,verified]",
+   "packages/coding-agent/src/sdk.ts [modify,verified]",
+   "packages/tui/src/chat/tool-execution.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/tool-args-reveal.ts [modify,verified]",
+   "packages/coding-agent/src/modes/utils/ui-helpers.ts [modify,verified]",
+   "packages/tui/src/tools/xdev.ts [modify,verified]",
+   "packages/tui/src/tools/json-tree.ts [modify,verified]",
+   "packages/tui/test/tool-execution-xdev-render.test.ts [modify,verified]",
+   "packages/coding-agent/test/extensions/raw-args-render-channel.test.ts [create,verified]"
+  ],
+  "n_files": 11,
+  "depends_on": [],
+  "blocks": [
+   "M2 WI-4b (renderer registration surface; §6.1) — surface ordering only. WI-4b must not land its changes to the extension renderer registration path in the same PR as this item; this item changes `ToolRenderResultOptions` and the two adapters, WI-4b builds on top of the resulting contract. The plan's ordering rule is 'M4-7 first, WI-4b after', and it is satisfied by this item landing as its own commit. Note WI-4b itself does not yet exist in §11 — the plan states this must be written and agreed BEFORE this item opens its PR (§6.1).",
+   "The M4 changelog decision (§6.2) — Wave C is `shippable: false`. This item changes what the first `xd://` renderer receives and renames a key, both user-observable, so it merges as part of the single M4 changelog decision covering Waves B, C and D. Do not add a CHANGELOG entry in this PR; do not open the PR before the WI-4b write-up is agreed."
+  ],
+  "effort": "M",
+  "risk": "The single most likely way to get this wrong is shipping a type-only change that is green everywhere and reaches nothing.",
+  "n_questions": 4,
+  "n_corrections": 6,
+  "gate": "Four gates. Each is mechanical and each can go red.\n\nG1 — ADAPTER REACH (the deciding gate). `bun test packages/coding-agent/test/extensions/raw-args-render-channel.test.ts` goes RED on the pre-change tree and GREEN after. It goes red because `RegisteredToolAdapter.renderResult` receives `options.argsComplete === true` and asserts the captured object still has it, and today wrapper.ts:62 has dropped it. To confirm the gate is real, do this: add ONLY the `rawArgs` field to the two interfaces and change nothing else, re-run, and observe it stay GREEN — that is the proof the gate has teeth beyond a type edit, and it is the exact trap the plan names.\n\nG2 — STREAM MONOTONICITY. In packages/tui/test/tool-execution-xdev-render.test.ts, the recorded `rawArgs.json` sequence is asserted non-decreasing and prefix-chained, and the final value asserted to contain `\"path\":\"xd://probe\"` (outer) and NOT be the inner device JSON. Goes red if the channel is populated from the inner decode or is never repainted mid-stream.\n\nG3 — REBUILD PARITY. Same file: the rebuild-driven render equals the live-driven render. Goes red if ui-helpers.ts:605 is not wired — a failure mode that is invisible to both `bun check` and the built-in-only xdev tests.\n\nG4 — HIDDEN-KEY NEGATIVE. `HIDDEN_ARG_KEYS` (json-tree.ts:23) covers the new xdev key. Assert via `formatArgsInline` — the same seam packages/tui/test/json-tree-render.test.ts:32 already uses — that neither the old nor the new spelling appears in the rendered output. Goes red the moment someone renames xdev.ts:57 and forgets this line, which is the plan's stated silent risk.\n\nG5 — TYPES. `bun run check:ts` exits 0.\n\nAll five are able to fail on incomplete work. G1 is the one that distinguishes this item from a type-only change.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "M4-4",
+  "title": "ChangeResult + withFileLock + atomicWriteJson trích ra",
+  "wave": "M4 Wave B — Ghi trạng thái bền vững và sự thật của bảng settings (shippable: false)",
+  "one_line": "Plugin enable/disable/setting writes become a locked read-modify-write that reports back whether the change actually landed on disk, and the ad-hoc atomic-JSON writer becomes one shared utility.",
+  "user_visible_effect": "Toggling a plugin in /settings now returns a real answer instead of an unconditional void: the caller learns whether the lockfile actually changed and whether the running session picked it up.",
+  "files": [
+   "packages/coding-agent/src/extensibility/plugins/manager.ts [modify,verified]",
+   "packages/tui/src/overlays/plugin-settings.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/plugins/marketplace/registry.ts [modify,verified]",
+   "packages/utils/src/atomic-write.ts [create,UNVERIFIED]",
+   "packages/utils/src/index.ts [modify,verified]",
+   "packages/coding-agent/src/extensibility/plugins/marketplace/manager.ts [modify,verified]",
+   "packages/coding-agent/src/cli/plugin-cli.ts [modify,verified]",
+   "packages/coding-agent/test/plugin-runtime-config-lock.test.ts [create,UNVERIFIED]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]",
+   "packages/tui/CHANGELOG.md [modify,verified]",
+   "packages/utils/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 11,
+  "depends_on": [
+   "Native addon build: `bun --cwd=packages/natives run build` — a hard prerequisite, not a nicety. withFileLock is unusable and untestable without it.",
+   "M3-A4 (merge-order only, not a code dependency): M3-A4 rewrites the same setPluginSetting range 942-949. The plan requires same-PR or an explicit merge order; two independent patches will silently undo each other."
+  ],
+  "blocks": [
+   "M4-6 — touches the same packages/tui/src/overlays/ package; the plan mandates one review, two commits.",
+   "M4's single changelog decision (plan section 6.2) — Wave B is shippable:false and cannot ship before that gate, which also covers Waves C and D.",
+   "Wave B completion generally — M4-4 and M4-6 are not independent PRs because both change the same structural interface."
+  ],
+  "effort": "M by the plan's own estimate. Realistically M-L: the mechanical part is large (nine call sites change shape, not just two signatures), and the test cannot be written or run until the native addon is built, which is a real chunk of wall-clock on a cold machine.",
+  "risk": "The single most likely way to get this wrong is implementing the plan's words literally: 'wrap #saveRuntimeConfig in withFileLock and re-read the config inside the lock.' All nine call sites mutate the memoized `this.#runtimeConfig` BEFORE calling save — verified, e.g.",
+  "n_questions": 6,
+  "n_corrections": 10,
+  "gate": "All six verification steps pass, in order, with the addon built. Concretely, a reviewer must be able to show: (a) `bun test packages/utils/test/file-lock.test.ts` is green — it is 0 pass / 1 fail right now, so this alone is a real, currently-red gate; (b) the new test file passes AND its negative-control test asserts that the unlocked algorithm really does lose an update (temporarily delete `withFileLock` from `#mutateConfig` and confirm the contention test goes red — a gate that has never been seen red is not a gate); (c) `git grep -n saveRuntimeConfig -- packages/` returns zero hits; (d) `git grep -n atomicWriteJson -- packages/` shows exactly one definition, in packages/utils; (e) `grep -c secret .../manager.ts` is 0; (f) `bun run check:ts` is green, which is what actually catches the tui/coding-agent interface drift the plan warns about.\n\nDONE additionally requires a human decision on open question 1 (who owns `application`), because the plan's model for that type lives in a repo that does not exist here.",
+  "gate_can_fail": "Yes, and three of the six steps are red today. Step 1-2 fail right now: the native addon is unbuilt, `withFileLock` imports `FileLock` from `@oh-my-pi/pi-natives` (file-lock.ts:9), and `bun test packages/utils/test/file-lock.test.ts` reports `0 pass, 1 fail` with 'Failed to load pi_natives native addon for darwin-arm64' — verified by running it. Step 3 fails because the file does not exist. Step 5 is a genuine gate: it currently passes clean, and it is precisely what turns the tui interface drift into a build failure rather than a runtime surprise. The one step that is NOT self-validating is 6 — grep counts are a human checklist, not a test; if someone reorders the refactor so `#saveRuntimeConfig` is renamed rather than removed, the greps stay green while the lock is silently absent. The contention test with its negative control is the only real defense, and step 2 of the gate (delete the lock, watch it go red) is what proves that defense is live."
+ },
+ {
+  "id": "M4-9",
+  "title": "CLI inventory over loadAllExtensions (scoped down: state/shadowed only, no shadow-source)",
+  "wave": "M4 Wave D — Khả năng nhìn thấy triage (shippable: false, waits on M4's shared changelog gate, plan §6.2/§6.3)",
+  "one_line": "Add a read-only `omp extensions-triage` command that prints, for every extension the loader found, whether it is active / disabled / shadowed and which disable policy blocked it, by projecting the exact rows `loadAllExtensions` already returns instead of re-deriving anything.",
+  "user_visible_effect": "A new top-level CLI command.",
+  "files": [
+   "packages/coding-agent/src/cli/extensions-triage-cli.ts [create,verified]",
+   "packages/coding-agent/src/commands/extensions-triage.ts [create,verified]",
+   "packages/coding-agent/src/cli/command-help.ts [modify,verified]",
+   "packages/coding-agent/src/cli-commands.ts [modify,verified]",
+   "packages/coding-agent/test/extensions-triage-cli.test.ts [create,verified]",
+   "packages/coding-agent/CHANGELOG.md [modify,verified]",
+   "packages/coding-agent/src/capability/index.ts [modify,verified]",
+   "packages/coding-agent/src/capability/types.ts [modify,verified]",
+   "packages/coding-agent/src/modes/components/extensions/state-manager.ts [modify,verified]"
+  ],
+  "n_files": 9,
+  "depends_on": [
+   "M2 WI-2 (deterministic extension load order + explicit collision resolution) — MUST be merged before this ships. UNMET as of 2026-09-27: packages/coding-agent/test/extension-load-order-determinism.test.ts does not exist and `git grep -n 'extension-load-order' packages/coding-agent/` returns 0 hits, so WI-2's deliverable is not in the tree. If this CLI ships first, it reports an ordering the user never sees in the dashboard.",
+   "Nothing else. Option (a) touches no shared core."
+  ],
+  "blocks": [],
+  "effort": "S for option (a) (~1 day: 2 new files + 2 modified + 1 test). M for option (b) (~2-3 days: option (a) plus a shared-core change in capability/index.ts and a 6-call-site change in state-manager.ts). The plan's \"S is optimistic\" verdict is correct for (b) only; (a) is genuinely S.",
+  "risk": "Shipping a CLI that re-derives shadowing independently of `loadAllExtensions`, so the inventory and the runtime dashboard disagree — the plan calls this out and is right: an inventory that lies is worse than no inventory.",
+  "n_questions": 5,
+  "n_corrections": 9,
+  "gate": "The item is DONE when all of: (1) `bun run check:ts` is clean; (2) `bun test packages/coding-agent/test/extensions-triage-cli.test.ts` passes; (3) the manual diff in step 13 shows the CLI's rows matching the dashboard exactly — specifically, a row the dashboard calls `disabled` is not reported `active` by the CLI, which is the only thing that catches the step-4 mirroring mistake; (4) for (b), a fixture row shadowed by a same-name winner reports a non-empty `shadowedBy` AND a test in the capability suite fails if `_shadowed` is set without the winner; (5) the CHANGELOG line exists and Wave D's `shippable: false` authorization has been granted in writing. Condition (3) is the one that cannot be faked: delete the `Settings.init()` / `cfgDisabledExtensions` mirroring from the CLI and the JSON output will still look plausible, but every item-level disable will flip to `active` and the diff against the dashboard will show it. What the gate does NOT catch, and a reviewer must confirm by eye: whether the new `Command` was actually registered in `cli-commands.ts` — a missing registry entry makes `omp extensions-triage` fall through to `runCli` and forward the argv to the LLM as a prompt (the #1496 regression), and no test listed here would notice. The plan's own suggested command, `bun test packages/coding-agent/test/ -t 'acp'`, would go green against every one of these defects; see plan_corrections #5.",
+  "gate_can_fail": true
+ }
+]

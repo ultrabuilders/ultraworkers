@@ -1,0 +1,146 @@
+{
+  "id": "W12",
+  "title": "Serialize concurrent file mutations by realpath (withFileMutationQueue)",
+  "wave": "Wave 2 — Correctness trên các đường đang ship (W4, W6, W12, W13)",
+  "one_line": "Add a per-realpath queue that runs one file's mutations one at a time while different files keep running in parallel, and route every tool that writes or deletes a file through it.",
+  "user_visible_effect": "When two subagents (or two sessions) edit the same file in the same turn, the two writes no longer interleave — the second write is applied cleanly after the first instead of tearing/reordering bytes. Edits to two DIFFERENT files still run concurrently, so no measurable tool latency regression.",
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/utils/file-mutation-queue.ts",
+      "action": "create",
+      "change": "New module exporting `withFileMutationQueue<T>(filePath, fn)`. Module-level `Map<string, Promise<void>>` keyed by realpath, plus a separate `registrationQueue` promise so key resolution is itself serialized. Two-phase handoff via `Promise.withResolvers`, not a bare `tail.then(run)`.",
+      "verified": true,
+      "note": "Confirmed ABSENT at HEAD (ls + `git grep withFileMutationQueue` returns nothing). Directory `packages/coding-agent/src/utils/` exists. The upstream reference is readable at `$HOME/Projects/pi-ref/packages/coding-agent/src/core/tools/file-mutation-queue.ts` (61 LOC) — note that is `core/tools/`, not `src/tools/`, and omp's utils dir is flat (no `src/utils/index.ts` barrel)."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/file-write-fallback.ts",
+      "action": "modify",
+      "change": "Wrap the body of `writeFileWithFallback` (:402) and `deleteFileWithFallback` (:305) in `withFileMutationQueue` so the queue covers create/update/move/delete for `edit` and `write` with one edit to this file.",
+      "verified": true,
+      "note": "Both line numbers confirmed by `sed -n`. `writeFileWithFallback` is the shared chokepoint: `git grep writeFileWithFallback` over src/ finds exactly 3 call sites (edit/index.ts:674, lsp/writethrough.ts:74, lsp/writethrough.ts:314). CAUTION: the doc comment at :18-32 claims FOUR call sites including `edit/hashline/filesystem.ts` and `edit/modes/patch.ts` — both files DO NOT EXIST at this HEAD (verified by ls). Do not chase them; the real count is 3."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/ast-edit.ts",
+      "action": "modify",
+      "change": "Route the applying `astEdit(...)` calls through `withFileMutationQueue` explicitly — they do NOT pass through `writeFileWithFallback`.",
+      "verified": true,
+      "note": "`grep -c writeFileWithFallback packages/coding-agent/src/tools/ast-edit.ts` returns 0, confirming the plan's exception. Writes go through native `astEdit` (:87, :137) via `urlFilesystem.shellFilesystem()`. GOTCHA: `ast_edit` fans out over MANY files per call (`runAstEditTargets` loops at :85-95, `resolvedSearchPath` + globFilter), so a single call mutates many files. See open_questions — this is the one place per-file keying does not map 1:1 onto a tool call."
+    },
+    {
+      "path": "packages/coding-agent/test/tools/file-mutation-queue.test.ts",
+      "action": "create",
+      "change": "New test with 5 cases defending the queue contract: same-path serialization, different-path parallelism, symlink/target key identity, non-existent path does not throw, and double-registration does not interleave.",
+      "verified": true,
+      "note": "Directory `packages/coding-agent/test/tools/` exists (30+ files). Test file does NOT exist yet."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/coding-agent/src/utils/file-mutation-queue.ts (new file)",
+      "instruction": "Create the helper. Port all three load-bearing details from $HOME/Projects/pi-ref/packages/coding-agent/src/core/tools/file-mutation-queue.ts (read it first, 61 LOC). Import ONLY `realpath` from `node:fs/promises` and `resolve` from `node:path`. Do NOT import anything from `@oh-my-pi/pi-utils` — see risk: the barrel pulls the native addon and makes the test unrunnable. Implement `isMissingPathError` inline (check `code === \"ENOENT\" || code === \"ENOTDIR\"`) exactly as the reference does, rather than importing `isEnoent`/`isEnotdir`. Adapt the reference's `new Promise<void>((resolveQueue) => { releaseNext = resolveQueue; })` to `Promise.withResolvers<void>()` per AGENTS.md (repo precedent: packages/coding-agent/src/advisor/runtime.ts:454)."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/utils/file-mutation-queue.ts",
+      "instruction": "Key the queue by `await realpath(resolve(filePath))`, falling back to `resolve(filePath)` ONLY when realpath rejects with ENOENT or ENOTDIR; rethrow every other error (e.g. EACCES, ELOOP). This is detail 1 of 3 — a resolve-only key silently fails to serialize two agents that reach one file through a symlink or a `..` segment. Keep `getMutationQueueKey` as a separate named function so the fallback is one readable branch."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/utils/file-mutation-queue.ts",
+      "instruction": "Serialize the REGISTRATION itself through a module-level `let registrationQueue: Promise<void> = Promise.resolve()`. Each call does `const registration = registrationQueue.then(async () => { ...resolve key, read currentQueue, build nextQueue, set map... })`, then reassigns `registrationQueue = registration.then(() => undefined, () => undefined)` BEFORE awaiting. This is detail 2 of 3 — without it two concurrent `realpath` awaits can both read the same `currentQueue` and both append to it, which is precisely the race the separate queue exists to prevent. The `.then(ok, err)` two-arg form is required: a plain `.then(() => undefined)` would leave `registrationQueue` permanently rejected and deadlock every later call after one throw."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/utils/file-mutation-queue.ts",
+      "instruction": "Implement the two-phase handoff, NOT `tail.then(run)`. Inside the registration callback create `nextQueue` with `Promise.withResolvers<void>()`, store `chainedQueue = currentQueue.then(() => nextQueue.promise)` in the map, and return `{ key, currentQueue, chainedQueue, releaseNext: nextQueue.resolve }`. After awaiting the registration: `await currentQueue`, then `try { return await fn(); } finally { releaseNext(); if (fileMutationQueues.get(key) === chainedQueue) fileMutationQueues.delete(key); }`. The `finally` is what makes a THROWING mutation release the queue — a plain chain would wedge the key forever and hang every later mutation of that file. The identity check before delete is what stops a late finisher from evicting a successor that already chained onto it."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/src/tools/file-write-fallback.ts:402 and :305",
+      "instruction": "Route the shared seam. Wrap the entire body of `writeFileWithFallback` (:402) in `withFileMutationQueue(dst, async () => { ...existing body... })`, and do the same for `deleteFileWithFallback` (:305). This single edit covers three of the four mutating tools: `edit` create/update (via `createEditWritethrough` -> lsp/writethrough.ts:314), `edit` move destination (edit/index.ts:674), and `write` (write.ts:909-911 -> lsp/writethrough.ts:314). Delete must go through the SAME queue as write — a delete landing on top of a concurrent write is exactly the lost-update this item exists to stop, which is why :305 is in scope even though the plan only names the write path. Keep `fallbackHandlers` / `deleteFallbackHandlers` iteration and the `logger.warn` handler-throw catch exactly as they are; the queue must not swallow or reorder handler behavior."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/src/tools/ast-edit.ts:87 and :137",
+      "instruction": "Route `ast_edit` explicitly. `grep -c writeFileWithFallback packages/coding-agent/src/tools/ast-edit.ts` is 0, so step 5 does NOT cover this tool — do not assume the chokepoint reached it. Wrap the applying `astEdit({...})` calls. Because one call can rewrite many files under a glob, see open_questions: the defensible default is to key on the tool's resolved target scope (`resolvedSearchPath`) so two `ast_edit` calls on the same scope serialize while calls on disjoint scopes stay parallel. Do NOT wrap the `dryRun: true` preview call at :285 — it only parses and must not take the write lock."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/test/tools/file-mutation-queue.test.ts (new file)",
+      "instruction": "Write the 5 contract tests described in test_contract. Use `bun:test` (`describe`/`expect`/`it`), `node:fs/promises` for fixtures, and `os.tmpdir()` + `fs.mkdtemp` for a real temp dir. Import the helper by its module path. Do NOT use `mock.module()`, do NOT source-grep, do NOT mutate `process.env` or `Bun.*` at file scope. Clean the temp dir in `afterEach`."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/CHANGELOG.md",
+      "instruction": "Add one line under `## [Unreleased]` -> `### Fixed`: user-facing phrasing, e.g. 'Fixed concurrent edits to the same file by parallel agents interleaving instead of applying cleanly.' No issue link unless a real internal issue number exists. Do not touch any already-released section."
+    }
+  ],
+
+  "code_shape": "// packages/coding-agent/src/utils/file-mutation-queue.ts\n// NOTE: deliberately imports ONLY node builtins. Importing the @oh-my-pi/pi-utils\n// barrel here pulls the pi_natives addon, which makes this module's test\n// unrunnable in an environment where the addon is not built.\nimport { realpath } from \"node:fs/promises\";\nimport { resolve } from \"node:path\";\n\nconst fileMutationQueues = new Map<string, Promise<void>>();\nlet registrationQueue: Promise<void> = Promise.resolve();\n\nfunction isMissingPathError(error: unknown): boolean {\n\treturn (\n\t\ttypeof error === \"object\" &&\n\t\terror !== null &&\n\t\t\"code\" in error &&\n\t\t((error as { code?: unknown }).code === \"ENOENT\" || (error as { code?: unknown }).code === \"ENOTDIR\")\n\t);\n}\n\nasync function getMutationQueueKey(filePath: string): Promise<string> {\n\tconst resolvedPath = resolve(filePath);\n\ttry {\n\t\treturn await realpath(resolvedPath);\n\t} catch (error) {\n\t\tif (isMissingPathError(error)) return resolvedPath;\n\t\tthrow error;\n\t}\n}\n\n/**\n * Serialize file mutation operations targeting the same file.\n * Operations for different files still run in parallel.\n */\nexport async function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T> {\n\t// Detail 2: registration is itself serialized, so two concurrent key\n\t// resolutions cannot both read the same tail and both append to it.\n\tconst registration = registrationQueue.then(async () => {\n\t\tconst key = await getMutationQueueKey(filePath);\n\t\tconst currentQueue = fileMutationQueues.get(key) ?? Promise.resolve();\n\n\t\t// Detail 3: two-phase handoff, not tail.then(run).\n\t\tconst nextQueue = Promise.withResolvers<void>();\n\t\tconst chainedQueue = currentQueue.then(() => nextQueue.promise);\n\t\tfileMutationQueues.set(key, chainedQueue);\n\n\t\treturn { key, currentQueue, chainedQueue, releaseNext: nextQueue.resolve };\n\t});\n\t// Two-arg form: a plain then() would leave registrationQueue rejected\n\t// forever after one throw, deadlocking every subsequent mutation.\n\tregistrationQueue = registration.then(\n\t\t() => undefined,\n\t\t() => undefined,\n\t);\n\n\tconst { key, currentQueue, chainedQueue, releaseNext } = await registration;\n\tawait currentQueue;\n\ttry {\n\t\treturn await fn();\n\t} finally {\n\t\treleaseNext();\n\t\t// Identity check: a late finisher must not evict a successor that has\n\t\t// already chained onto this entry.\n\t\tif (fileMutationQueues.get(key) === chainedQueue) fileMutationQueues.delete(key);\n\t}\n}",
+
+  "test_contract": "The contract defended is: \"mutations to one file apply one-at-a-time; mutations to different files still overlap.\" A regression makes concurrent agents silently clobber or tear each other's writes — the user sees a file whose content is neither edit, with no error anywhere. Specifically: (1) two concurrent mutations on the SAME path must not interleave — assert the observed order is strictly before/after with no overlap (each task pushes 'start', awaits a tick, pushes 'end'; assert no 'start' appears between another task's 'start' and 'end'); (2) two mutations on DIFFERENT paths MUST overlap — assert they do, because a single global queue is a performance regression disguised as a fix, and this is the assertion that keeps the Map honestly keyed; (3) a symlink and its target share ONE queue entry, which is what the realpath key buys and what a resolve-only key silently misses; (4) a not-yet-created file does NOT throw (ENOENT/ENOTDIR falls back to resolve); (5) double registration — two mutations arriving while the first is still resolving its key must still chain, not both read the same predecessor and run concurrently.",
+
+  "test_files": [
+    "packages/coding-agent/test/tools/file-mutation-queue.test.ts"
+  ],
+
+  "verification": "MUST PASS: `bun run check:ts` (verified green at baseline on this HEAD — all 16 packages Done, no errors; it does not need the native addon).\n\nBLOCKED, NOT RUNNABLE HERE: `bun test packages/coding-agent/test/tools/file-mutation-queue.test.ts`. Confirmed on this machine: `bun test packages/coding-agent/test/tools/ast-edit.test.ts` reports `0 pass / 1 fail / 1 error` with 'Failed to load pi_natives native addon for darwin-arm64' (loader-state.js:970). Build the addon with `bun --cwd=packages/natives run build` first, then run the test command.\n\nNOTE the plan's stated command is `bun check && bun test ...`; `bun check` also runs `check:rs` (cargo), which is unrelated to this change and slower. `bun run check:ts` is the correct gate for this item. Use `bun run test:rs` if any Rust check is ever needed — never `cargo test` directly.",
+
+  "gate": "Two independent assertions, both able to go red.\n\n(1) TYPE GATE: `bun run check:ts` exits 0. Goes red on a type error, a missing top-level import, a `ReturnType<>`, or a format violation (it runs the formatter check across 5445 files). Verified meaningful: it is green now, so any new red is caused by this change.\n\n(2) BEHAVIOR GATE: `bun test packages/coding-agent/test/tools/file-mutation-queue.test.ts` reports 5 pass / 0 fail, once the addon is built. Test 2 (different paths MUST overlap) is the gate that can actually fail on a wrong implementation: the naive single-global-tail port makes it red. Test 5 (double registration) is the gate for detail 2: drop `registrationQueue` and it goes red. Test 3 (symlink shares an entry) is the gate for detail 1: swap realpath for plain `resolve` and it goes red. Any single one of the three going red is a real W12 defect, not a flake.\n\nCOVERAGE GATE: `git grep -c writeFileWithFallback packages/coding-agent/src/tools/ast-edit.ts` still returns 0, confirming ast_edit was routed explicitly and NOT silently assumed covered.",
+
+  "gate_can_fail": "Yes. check:ts was observed green at baseline (16/16 packages Done) on this exact HEAD, so it is a live gate, not a no-op. The 5 behavior tests each target a distinct defect: a naive single-global-tail port fails test 2; dropping the serialized registration fails test 5; a resolve-only key fails test 3; missing ENOENT fallback fails test 4; a non-`finally` release wedges test 1. The tests are runnable once `bun --cwd=packages/natives run build` succeeds, which I verified is the only blocker (a bare `bun test` of a node-builtins-only module in this repo passes 1/1 today).",
+
+  "depends_on": [],
+
+  "blocks": [],
+
+  "effort": "M — one new helper (~60 LOC), two modified call-path files, one new test file. The plan's estimate holds. The extra work versus a naive port is the `deleteFileWithFallback` wrap (step 5) and the `ast_edit` fan-out keying decision (step 6), neither of which the plan spells out.",
+
+  "risk": "Highest risk is a RE-ENTRANT call deadlocking the queue. Wrapping `writeFileWithFallback` (:402) puts the lock around the whole fallback-handler loop (:440-452), which invokes extension-registered handlers from `addFileWriteFallback` (wired at packages/coding-agent/src/extensibility/extensions/runner.ts:778, exposed as `registerFileWriteFallback` at extensibility/extensions/types.ts:1379). If any such handler calls back into `writeFileWithFallback` or `deleteFileWithFallback` for the same path, the queue never releases and that path hangs forever. The queue is NOT reentrant — there is no owner token. Second-highest: `ast_edit` fans out over many files per call, so per-file keying has no single key to use. Third: do not let the new module import the `@oh-my-pi/pi-utils` barrel (verified: it drags in the native addon and makes the test unrunnable in this environment).",
+
+  "open_questions": [
+    "DECISION REQUIRED — extension surface. `withFileMutationQueue` is internal: an out-of-repo extension registering a tool via `registerTool` (packages/coding-agent/src/extensibility/extensions/types.ts:1347) and calling `Bun.write` directly bypasses the queue entirely. pi-ref RESOLVED this by exporting `withFileMutationQueue` on its public surface (see $HOME/Projects/pi-ref/packages/coding-agent/src/core/sdk.ts:120 and src/index.ts:376). omp must pick deliberately: (a) export it from the extension API now, or (b) record in the M2 handoff that third-party mutations are not serialized, with a reason. The answer MUST be written into the M2 handoff — M2 must not have to guess. Note the plan's cited anchor types.ts:1322 is wrong (that is an `on(\"auto_compaction_end\")` overload); `registerTool` is at :1347.",
+    "DECISION REQUIRED — ast_edit fan-out keying. One `ast_edit` call can rewrite MANY files under a glob (runAstEditTargets loops at :85-95). Options: (a) key on the resolved scope path (`resolvedSearchPath`) — coarse but cheap, and two ast_edit calls on the same scope serialize; (b) key per rewritten file — impossible today, because the writes happen inside the native `astEdit` call and omp never sees them individually; (c) do not route ast_edit and accept the gap. Recommend (a) and document the coarseness. The plan asserts ast_edit must be routed but does not say how to key it.",
+    "VERIFY BEFORE CODING — read-modify-write atomicity. `edit`'s update path reads the file at packages/coding-agent/src/edit/index.ts:711 (`preWriteBytes = await Bun.file(request.path).bytes()`) and compares after writing (~:735-747, throwing 'edit appeared successful but file content did not change'). If the queue is entered at :402, that read at :711 is OUTSIDE the lock, so two agents can still read the same pre-image and the second write silently discards the first — the queue prevents interleaving and byte-tearing but NOT lost updates. Decide whether W12 claims to fix only interleaving (defensible, matches the plan's wording) or also lost updates (which needs the lock moved up to the `#write` callback at edit/index.ts:495, the single funnel for ALL edit ops). State the chosen scope explicitly in the PR.",
+    "CONFIRM SCOPE — what `concurrency = \"exclusive\"` already covers. BOTH `EditTool` (edit/index.ts:328) and `WriteTool` (tools/write.ts:441) already declare `readonly concurrency = \"exclusive\"`. I traced its implementation: packages/agent/src/agent-loop.ts:3589-3611 chains exclusive tools via a FUNCTION-LOCAL `lastExclusive` declared at :3511 inside `executeToolCalls` (which starts at :3024) — so it serializes tool calls WITHIN ONE agent's single batch, and is NOT shared across agents or sessions. That is why W12 is still needed (the plan's premise holds: subagents are in-process via createAgentSession in task/executor.ts:3960, no spawn, so they share the module-level Map). But the PR should say so, or a reviewer will ask why both mechanisms are needed. Note `ast_edit` declares NO concurrency (name at :152, no `concurrency` field), so it defaults to shared and gets no agent-loop protection at all.",
+    "OPTIONAL — queue map hygiene. The reference implementation deletes its Map entry on release, so the Map stays proportional to CONCURRENTLY-mutated files, not to files ever touched. Preserve that; a Map that only ever grows is a slow leak in a long session."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "`registerTool` is at packages/coding-agent/src/extensibility/extensions/types.ts:1322 (plan, W12 extension-surface paragraph).",
+      "verdict": "STALE — off by 25 lines",
+      "correction": "`registerTool` is declared at :1347, under a 'Tool Registration' heading at :1343. Line 1322 is an `on(event: \"auto_compaction_end\", ...)` overload. Verified by `sed -n '1320,1324p'` and `git grep -n registerTool`.",
+      "evidence": "`sed -n '1340,1355p' packages/coding-agent/src/extensibility/extensions/types.ts` prints `registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(tool: ToolDefinition<TParams, TDetails>): void;` at 1347; `git grep -n registerTool packages/coding-agent/src/extensibility/extensions/types.ts` returns only :634 (doc comment) and :1347."
+    },
+    {
+      "claim": "`writeFileWithFallback` (file-write-fallback.ts:402) is the shared write path with FOUR call sites, per the doc comment at :18-32 (which names edit/hashline/filesystem.ts and edit/modes/patch.ts).",
+      "verdict": "PARTLY STALE — comment describes files that no longer exist at this HEAD",
+      "correction": "The real call-site count in src/ is THREE: edit/index.ts:674, lsp/writethrough.ts:74, lsp/writethrough.ts:314. The two files the doc comment names (`edit/hashline/filesystem.ts`, `edit/modes/patch.ts`) DO NOT EXIST — the `edit/` directory contains only index.ts, schemas.ts, settings.ts, store.ts, normalize.ts, blackbox.ts, auto-repair.ts and two .md files. An implementer who trusts the comment will hunt for files that are not there. `apply_patch` still works (it is an edit MODE selected at edit/index.ts:222, not a separate tool), and all edit modes funnel through the single `#write` callback at edit/index.ts:495.",
+      "evidence": "`ls -R packages/coding-agent/src/edit/` (8 entries, no hashline/ or modes/ dirs); `ls packages/coding-agent/src/edit/hashline/filesystem.ts` and `.../edit/modes/patch.ts` both return 'No such file or directory'; `git grep -n writeFileWithFallback -- 'packages/coding-agent/src/**/*.ts'` returns exactly 4 hits, one being the import at file-write-fallback.ts's own doc block and 3 real call sites."
+    },
+    {
+      "claim": "pi-ref reference is at `pi-ref/packages/coding-agent/src/core/tools/file-mutation-queue.ts` (61 LOC) and pi wires the queue per-tool in `edit.ts:163` and `write.ts:67`.",
+      "verdict": "CONFIRMED but MISLEADING about omp's best chokepoint",
+      "correction": "The file is real and readable, but at `$HOME/Projects/pi-ref/...` (NOT `pi-ref/...` relative to the omp repo root — the plan itself warns about this at its line 302, and `ls -d pi-ref` from the repo root fails). pi wraps the queue around the whole TOOL BODY (its `execute`), not at a write chokepoint, and pi has NO ast-edit.ts at all, so it never had to solve ast_edit. In omp the chokepoint at file-write-fallback.ts IS the better seam (it covers three tools in one edit) — but only because omp's `edit` is native-driven with a single `#write` funnel at :495, a shape pi does not have. Do not copy pi's per-tool placement into omp; copy only the helper's internals.",
+      "evidence": "`grep -rn withFileMutationQueue ~/Projects/pi-ref/packages/coding-agent/src/` returns 8 hits: the helper itself, `core/tools/edit.ts:16,163`, `core/tools/write.ts:6,67`, `core/tools/index.ts:20` (barrel), and public re-exports at `core/sdk.ts:33,120` and `index.ts:376`. No ast-edit.ts exists in that checkout."
+    },
+    {
+      "claim": "The task description's premise: 'git HEAD 5873776'.",
+      "verdict": "STALE",
+      "correction": "HEAD is `ecd516f` ('feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers'). Line numbers in this spec were all re-verified against this actual HEAD, so the anchors are right; only the commit id in the brief is wrong.",
+      "evidence": "`git log --oneline -1` returns ecd516f."
+    },
+    {
+      "claim": "Plan says the mutating tool set is four files and that wrapping `writeFileWithFallback` covers 'three of the four', with `ast_edit` needing explicit routing; and separately that `edit`'s delete op (edit/index.ts:645, :675) is a mutation that must ride the same queue.",
+      "verdict": "CORRECT but INCOMPLETE",
+      "correction": "The plan names only `writeFileWithFallback` as the chokepoint to wrap, yet its own test for delete demands delete be serialized too. `deleteFileWithFallback` is a SEPARATE exported function at file-write-fallback.ts:305 with its own body — wrapping :402 leaves it entirely outside the queue, so a delete could still land on a concurrent write. Both seams must be wrapped. edit's delete call sites are edit/index.ts:645 (the `delete` op) and :675 (the `move` op's source unlink).",
+      "evidence": "`sed -n '305p'` prints `export async function deleteFileWithFallback(dst: string, file?: BunFile): Promise<void> {`; `git grep -n deleteFileWithFallback -- 'packages/coding-agent/src/**/*.ts'` returns the import at edit/index.ts:38 and exactly two call sites, :645 and :675."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W12.spec.json"
+}

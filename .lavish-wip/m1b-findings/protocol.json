@@ -1,0 +1,101 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 5, 25, 128, 133, 137, 141, 192 (\"28 test\", \"75 assertion\", \"Mong 28 pass\")",
+  "claim": "Tài liệu khẳng định package này có \"28 test\", \"75 assertion\", và GATE 2 dặn \"Mong 28 pass: 9 framing, 13 protocol, 6 CBOR\".",
+  "why_wrong": "28 và 75 là SỐ CALL SITE tĩnh (`grep -c 'test('` và `grep -o 'expect('`), không phải số case lúc chạy. 12 trong 28 call site là `test.each(...)`, mỗi cái nở thành nhiều case. Tôi đã chạy thật: `bun test` báo 133 pass / 386 expect() calls. Người đọc chạy GATE 2 sẽ thấy \"133 pass\", tưởng bản chép đã phân kỳ, rồi đi sửa test — đúng cái điều tài liệu cấm ở dòng 133. Dòng 25 còn gán \"75 assertion\" cho riêng file cbor, trong khi 75 là tổng cả 3 file (cbor một mình là 20 call site / 82 case).",
+  "evidence": "Chép 3 file test +o bun:test + bóc hậu tố .ts vào thư mục tạm, cài typebox@1.3.27 thật, shim chord từ source thật, chạy `bun test`:\n  133 pass / 0 fail / 386 expect() calls  (Ran 133 tests across 3 files)\nChia ra: cbor.test.ts 82 pass (128 expect), framing.test.ts 15 pass (30 expect), protocol.test.ts 36 pass (228 expect).\nTĩnh: `grep -rn '^\\s*test(' test | wc -l` = 28; `grep -o 'expect(' -r test | wc -l` = 20+17+38 = 75.\n12 `test.each` là nguồn của chênh lệch: `grep -rn 'test\\.each' test` ra 12 dòng (cbor 3, framing 2, protocol 7).",
+  "fix": "Thay mọi cụm \"28 test\" bằng: \"28 call site `test(` / 75 call site `expect(` — nhưng `test.each` nở lúc chạy, `bun test` thật sự báo **133 pass / 386 expect() calls**: 82 CBOR, 15 framing, 36 protocol.\"\nỞ dòng 133 và 192 đổi \"Mong 28 pass: 9 framing, 13 protocol, 6 CBOR\" thành \"Mong 133 pass: 82 CBOR, 15 framing, 36 protocol\".\nỞ dòng 25 (hàng cbor) đổi \"6 test / 75 assertion giữ nguyên\" thành \"6 call site `test(` / 20 call site `expect(` — 82 case lúc chạy\".\nỞ dòng 137, 141, 128: giữ \"28 call site\" nhưng thêm \"(133 case lúc chạy)\".",
+  "file": "protocol"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 7, 159-165, 192, 194 (GATE 2 bị chặn bởi natives + ninja)",
+  "claim": "GATE 2 được đánh dấu \"CURRENTLY BLOCKED\", nguyên nhân là `bun test` fail vì `packages/natives` chưa build và lệnh gỡ chặn `bun --cwd=packages/natives run build` fail vì thiếu `ninja`; tài liệu kết luận \"không phải việc của mục này để gỡ\".",
+  "why_wrong": "Package protocol KHÔNG import natives chút nào, và repo không có preload nào ép nạp nó. Tôi đã chạy 3 file test protocol trong môi trường sạch (không build natives, không có `ninja` trên PATH cần thiết): 133 pass, 0 fail. Nút thắt thật là chord CHƯA migrate (đúng thứ tự) và quyết định schema engine — không phải môi trường Rust. Tài liệu đẩy một cổng chạy được ngay ra khỏi tầm kiểm soát, biến nó thành \"việc của mục khác\", và dặn `brew install ninja` vô ích. Người lập kế hoạch sẽ hoãn một cổng có thể đỏ ngay.",
+  "evidence": "`cd /Users/tranquangdang21/Projects/pi-ref && git grep -n 'natives' -- packages/protocol` → rỗng (0 kết quả, kể cả test).\n`grep -n preload bunfig.toml package.json` ở omp → chỉ có preload trong script \"dev:timing\", không có trong [test].\nChạy thật trong thư mục tạm, không build natives: `bun test ./test` → `133 pass / 0 fail / 386 expect() calls`. natives chưa build (`ls packages/natives/*.node` → \"no matches found\") và lệnh này vẫn xanh.\nĐối chiếu: `bun test ./packages/utils/test` ở omp mới thực sự đỏ vì natives (\"Failed to load pi_natives native addon for darwin-arm64\") — nhưng utils thì CÓ import natives, protocol thì không.",
+  "fix": "Thay nguyên đoạn GATE 2 bị chặn bằng: \"GATE 2 (chặn, BỊ CHẶN VÌ CHORD CHƯA ĐÁP — KHÔNG PHẢI VÌ MÔI TRƯỜNG): `bun test packages/protocol` chạy được ngay khi `@oh-my-pi/chord` có mặt. Nó KHÔNG bị chặn bởi `packages/natives`: package này có 0 import natives (git grep rỗng) và repo không có preload trong bunfig. Đã chạy thật ở môi trường sạch: 133 pass / 0 fail. Không cần `brew install ninja`, không cần build natives. Nút thắt thật là bước 9 (đăng ký workspace + `bun install` sau khi chord đáp).\"\nXoá mọi câu \"thiếu `ninja`\" / \"`brew install ninja`\" / \"lỗi build là vấn đề môi trường\" ở dòng 7, 162, 192, 194.",
+  "file": "protocol"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 171 và dòng 114 (khẳng định máy móc #2, và \"Rẻ để kiểm\")",
+  "claim": "Khẳng định máy móc #2: `grep -rc 'from \"\\./' packages/protocol/src | grep -v ':0'   # 0 dòng kết thúc bằng .ts\"`, và dòng 114 nói \"sau lần quét, `grep -rc 'from \"\\./' packages/protocol/src` phải trả 0\".",
+  "why_wrong": "`from \"\\./` khớp MỌI relative import bất kể có hậu tố `.ts` hay không, nên lệnh này không bao giờ kiểm tra điều tài liệu nói nó kiểm tra. Comment \"0 dòng kết thúc bằng .ts\" mô tả ý định mà lệnh không diễn đạt được. Hệ quả: cổng này KHÔNG THỂ thỏa mãn — package sau khi chép đúng bắt buộc vẫn có 12 relative import (chính là 15 dòng đã bỏ hậu tố ở dòng 114). Người triển khai chạy lệnh sẽ thấy output và tưởng mình làm hỏng, hoặc bỏ qua cổng.",
+  "evidence": "Tôi tạo bản chép ĐÃ bóc hậu tố đúng (grep xác nhận: `import { decodeCbor, encodeCbor } from \"./cbor/index\";` — không còn `.ts` nào), rồi chạy đúng lệnh của tài liệu:\n  $ grep -rc 'from \"\\./' src | grep -v ':0'\n  src/codec.ts:3\n  src/cbor/encoder.ts:1\n  src/cbor/index.ts:3\n  src/index.ts:4\n  src/cbor/decoder.ts:1\n  → 5 dòng, KHÔNG BAO GIỜ 0. Tổng 12 import, khớp đúng con số \"12 dòng ở src\" mà chính tài liệu nêu ở comment.\nLệnh đúng: `grep -rn 'from \"\\.[^\"]*\\.ts\"' packages/protocol/src packages/protocol/test` → 0.",
+  "fix": "Xoá dòng `grep -rc 'from \"\\./' packages/protocol/src | grep -v ':0'` và thay bằng:\n  grep -rn 'from \"\\.[^\"]*\\.ts\"' packages/protocol/src packages/protocol/test   # -> 0 (baseline upstream: 12 dòng ở src, 3 ở test)\nỞ dòng 114, đổi \"sau lần quét, `grep -rc 'from \"\\./' packages/protocol/src` phải trả 0\" thành \"sau lần quét, `grep -rn 'from \"\\.[^\"]*\\.ts\"' packages/protocol/src` phải trả 0 (đếm được: cây đích có 12 relative import hợp lệ, nên đừng dùng `from \"\\./` — lệnh đó khớp cả import đã bỏ hậu tố)\".",
+  "file": "protocol"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 13 và bước 2 (dòng 123) — LICENSE \"21 dòng\"",
+  "claim": "Cả bảng lẫn bước 2 dặt dựng LICENSE bằng: 4 dòng đầu giữ nguyên văn, rồi 2 dòng copyright của omp, rồi \"phần permission + warranty-disclaimer 21 dòng nguyên văn\", \"Theo đúng hình dạng packages/wire/LICENSE\".",
+  "why_wrong": "Phần thân chỉ có 17 dòng, không phải 21. Tác giả lấy \"LICENSE dài 21 dòng\" làm số của riêng phần thân. Công thức của tài liệu ra 4 + 2 + 21 = 27 dòng, trong khi `packages/wire/LICENSE` — mẫu mà tài liệu bắt theo — dài đúng 22 dòng. Người triển khai làm theo sẽ tạo một file LICENSE 27 dòng lệch hình dạng chuẩn của repo, và đây chính là bước mà tài liệu tự gọi là \"toàn bộ nghĩa vụ MIT\" + \"thất bại duy nhất ở đây không cứu được bằng một commit theo sau\". Sai số còn lặp thêm một điểm: thứ tự dấu trng. Tài liệu đặt dòng trống TRƯỚC 2 dòng copyright omp (vì 4 dòng đầu đã kết thúc bằng dòng trống), còn wire đặt dòng trống SAU.",
+  "evidence": "`cat -n /Users/tranquangdang21/Projects/pi-ref/LICENSE` → 21 dòng: 1 \"MIT License\", 2 trống, 3 \"Copyright (c) 2025 Mario Zechner\", 4 trống, 5..21 = phần thân = 17 dòng.\n`cat -n packages/wire/LICENSE` → 22 dòng: 1 \"MIT License\", 2 trống, 3 \"Copyright (c) 2025-2026 Can Bölük\", 4 \"Copyright (c) 2026 Stencil Labs, Inc.\", 5 trống, 6..22 = phần thân = 17 dòng.\nHai phần thân GIỐNG HỆT nhau, đều 17 dòng — wire là bằng chứng trực tiếp rằng con số đúng là 17.",
+  "fix": "Thay \"rồi phần permission + warranty-disclaimer 21 dòng nguyên văn\" bằng \"rồi phần thân permission + warranty-disclaimer **17 dòng** nguyên văn (tức `LICENSE` của pi từ dòng 5 đến hết — `LICENSE` của pi dài 21 dòng, trong đó 4 dòng đầu là header)\". Và sửa thứ tự cho khớp wire: \"1 dòng `MIT License`, 1 dòng trống, 2 dòng copyright omp, 1 dòng trống, rồi 17 dòng thân\" — kết quả 22 dòng, giống hệt `packages/wire/LICENSE`. Ở dòng 13 và dòng 123.",
+  "file": "protocol"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 38-79, cột \"neo ở nguồn\" của bảng \"Bề mặt công khai\" (43 dòng)",
+  "claim": "Bảng bề mặt công khai ghim số dòng cho từng symbol ở nguồn, ví dụ `decodeCbor` ở `decoder.ts:168`, `ServerHello` ở `protocol.ts:57`, `CborError` ở `options.ts:24`.",
+  "why_wrong": "Khoảng 30/43 số dòng sai, lệch 1 đến 48 dòng. Bảng này tồn tại để người đọc đối chiếu bản chép với nguồn; dùng nó để verify sẽ kết luận bản chép sai ngay từ symbol đầu tiên. Sai lệch lớn nhất ở `protocol.ts` (càng xuống càng lệch vì doc đếm từ một bản cũ hơn).",
+  "evidence": "Đối chiếu từng symbol bằng `git grep -n` trong pi-ref @ d6af72e:\n  decodeCbor            doc :168  thực tế :161\n  encodeCbor            doc :216  thực tế :211\n  CborError             doc :24   thực tế :25\n  DEFAULT_MAX_CBOR_BYTE_LENGTH     doc :8    thực tế :6\n  DEFAULT_MAX_CBOR_CONTAINER_LENGTH doc :9    thực tế :7\n  DEFAULT_MAX_CBOR_DEPTH           doc :10   thực tế :8\n  textEncoder/textDecoder          doc :28-29 thực tế :32-33\n  ProtocolValidationError doc codec.ts:11  thực tế :13\n  parseClientMessage    doc :17   thực tế :20\n  parseServerMessage    doc :25   thực tế :27\n  encodeClientMessage   doc :50   thực tế :56\n  encodeServerMessage   doc :55   thực tế :61\n  ClientMessageDecoder  doc :100  thực tế :106\n  ServerMessageDecoder  doc :117  thực tế :123\n  isSupportedProtocolVersion doc :132 thực tế :139\n  encodeFrame           doc framing.ts:29  thực tế :28\n  isServerId            doc protocol.ts:15 thực tế :17\n  ServerId              doc :13   thực tế :15\n  SessionTarget         doc :39   thực tế :45\n  RpcTarget             doc :44   thực tế :47\n  ClientHello           doc :23   thực tế :33\n  RequestEnvelope      doc :48   thực tế :60\n  CancelEnvelope        doc :52   thực tế :61\n  ClientMessage         doc :52   thực tế :63\n  ProtocolErrorCode     doc :19   thực tế :25\n  ProtocolError         doc :20   thực tế :26\n  ServerHello           doc :57   thực tế :105\n  ServerHelloError      doc :62   thực tế :106\n  ResponseEnvelope      doc :67   thực tế :107\n  ServiceEventEnvelope  doc :80   thực tế :108\n  AttachmentEnvelope    doc :85   thực tế :109\n  ServerMessage         doc :96   thực tế :110\n  ClientMessageSchema   doc :54   thực tế :62\n  ServerMessageSchema   doc :90   thực tế :98\n  encodeProtocolMessage doc codec.ts:38  thực tế :39\n  isPlainObject         doc cbor/encoder.ts:99  thực tế :102\n  CborReader            doc cbor/decoder.ts:9  thực tế :10\n  ValidatedMessageDecoder doc codec.ts:64  thực tế :65\n  MAX_CONFIGURED_DEPTH  doc cbor/options.ts:1-6  thực tế :3\nChỉ 9 symbol đúng: CborOptions(:10), FRAME_HEADER/FrameDecoderOptions(:8)/FrameError(:12)/FrameDecoder(:44), DEFAULT_MAX_FRAME_LENGTH(:6), PROTOCOL_VERSION(:5), StrictObject(:10), CborWriter(:12).",
+  "fix": "Sinh lại cột \"neo ở nguồn\" bằng `git grep -nw '<symbol>' -- packages/protocol` tại HEAD d6af72e, thay từng số dòng. Nếu không muốn rà lại 43 dòng, đổi cột thành dạng không gắn số: chỉ giữ tên file + tên symbol (vd `packages/protocol/src/cbor/decoder.ts — decodeCbor`) và thêm một câu \"số dòng ở đây là neo tiệm lợi, dùng `git grep -nw` để tra\". Bảng còn lại (symbol, loại, neo ở omp, đã có sẵn chưa) giữ nguyên — phần đó tôi đã verify và đúng.",
+  "file": "protocol"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 137 (\"Chúng vốn đã đúng khuôn dưới quy tắc test của AGENTS.md\") và dòng 128 (\"KHÔNG SỬA GÌ KHÁC\")",
+  "claim": "\"28 test, 75 assertion, chép nguyên văn từ upstream. Chúng vốn đã đúng khuôn dưới quy tắc test của AGENTS.md.\"",
+  "why_wrong": "AGENTS.md cấm rõ `not.toThrow()` trần, và có đúng một cái trong bộ test này. Tài liệu dùng \"đã đúng khuôn\" để biện minh cho lệnh \"KHÔNG SỬA GÌ KHÁC\", tức là chặn sửa bằng một khẳng định có thể bác bỏ trong 5 giây. Reviewer thấy sẽ hoặc báo động giả, hoặc phải tự điều tra. Nói thẳng đây là ngoại lệ đã cân nhắc sẽ trung thực hơn và vẫn giữ nguyên hành động.",
+  "evidence": "`grep -n 'not\\.toThrow()' -r test` trong pi-ref/packages/protocol → 1 kết quả:\n  test/framing.test.ts:73:  expect(() => decoder.end()).not.toThrow();\nNằm trong test \"accepts empty chunks and a clean empty stream\" (dòng 70-74). Đây là hợp đồng âm có chủ đích (end() trên stream rỗng không ném), nhưng AGENTS.md liệt kê \"bare not.toThrow()\" là loại test bị cấm. Các mẫu cấm khác đều sạch: `grep 'expect(true)\\.toBe(true)|toBeTruthy()|toBeDefined()'` → 0; không có source-grep file .ts trong test.",
+  "fix": "Đổi câu ở dòng 137 thành: \"28 call site `test(` / 75 call site `expect(` (133 case lúc chạy), chép nguyên văn. Chúng gần như đã đúng khuôn dưới quy tắc test của AGENTS.md, với MỘT ngoại lệ đã biết: `test/framing.test.ts:73` là `expect(() => decoder.end()).not.toThrow()` trần, thuộc loại AGENTS.md cấm. Giữ nguyên vì nó là hợp đồng âm thật (end() trên stream rỗng không ném) và đi cùng một khẳng định dương ở dòng 72 — nhưng ghi tên nó ra đây để reviewer không phải tự săn.\"\nĐồng thời ở dòng 128, thay \"chúng là hợp đồng\" bằng \"chúng là hợp đồng, trừ ngoại lệ `not.toThrow()` đã ghi ở mục Hợp đồng test\".",
+  "file": "protocol"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 132 (\"không có phát hiện `oxlint`\") và dòng 176 (`bunx oxlint packages/protocol   # -> 0 findings`)",
+  "claim": "GATE 1 đòi \"không có phát hiện `oxlint`\", và khẳng định máy móc #6 là `bunx oxlint packages/protocol   # -> 0 findings`.",
+  "why_wrong": "Không bao giờ 0 findings. Tệ hơn: `bunx oxlint` tải oxlint MỚI NHẤT từ registry, không phải bản omp ghim, và không chắc nó nhận `.oxlintrc.json` khi trỏ vào một thư mục ngoài repo. Chạy bằng binary + config đúng của omp cho 1 warning; chạy bằng `bunx` cho 2 warning. Người đọc sẽ tưởng cổng đỏ. (Điểm tốt: warning không làm GATE 1 đỏ — `oxlint` exit 0, và `check:tools` dùng `oxlint .` nên vẫn xanh. Vấn đề chỉ là khẳng định \"0 findings\" sai.)",
+  "evidence": "Dùng binary + config của omp (oxlint 1.85.0, .oxlintrc.json):\n  $ ./node_modules/.bin/oxlint --config .oxlintrc.json <pkg>/src <pkg>/test\n  test/cbor/cbor.test.ts:87:18: warning unicorn(no-new-array): Do not use `new Array(singleArgument)`.   → exit 0\nDùng `bunx oxlint` (bản tải mới, không config omp) → 2 warning: cột trên CỘNG thêm\n  src/cbor/decoder.ts:51:14: warning eslint(no-unused-vars): Catch parameter '_error' ...\nCả hai đều là code upstream nguyên văn (`new Array(1)` ở cbor.test.ts:87 là fixture \"array hole\" — sửa nó sẽ đổi ngữ nghĩa test).",
+  "fix": "Đổi dòng 176 thành:\n  ./node_modules/.bin/oxlint --config .oxlintrc.json packages/protocol   # -> 0 errors, 1 warning cần biết: cbor/cbor.test.ts:87 unicorn(no-new-array) trên `new Array(1)` — đây là fixture \"array hole\", CỐ Ý giữ nguyên, đừng sửa. exit 0 nên GATE 1 vẫn xanh.\nVà ở dòng 132 đổi \"không có phát hiện `oxlint`\" thành \"0 error từ oxlint (dùng `./node_modules/.bin/oxlint --config .oxlintrc.json`, KHÔNG dùng `bunx` — bunx tải bản khác và không đọc config omp); warning thì có 1 cái cố ý, xem khẳng định #6\".",
+  "file": "protocol"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 25, 128, 141 (bảng `knownVectors` \"33 mục\")",
+  "claim": "Bảng `knownVectors` có \"33 mục\" — nói ở cả ba chỗ, và gọi đây là \"test vector RFC, viết lại sẽ hỏng test\".",
+  "why_wrong": "Đếm được 34 mục, không phải 33. Không đổi hành động (vẫn chép nguyên văn), nhưng đây là con số lặp 3 lần trong tài liệu, và tài liệu tự đặt bar cao là \"mọi con số phải tái lập được\". Người đọc đếm lại sẽ mất niềm tin vào toàn bộ bảng số của mục này.",
+  "evidence": "Đếm bằng script trên `test/cbor/cbor.test.ts`: mảng `knownVectors` mở ở dòng 23, đóng ở `];`, các dòng entry khớp `^\\s*[\\[{]` → 34 entry (dòng 24..57). Kiểm chéo: `test.each(knownVectors)` nhánh đó sinh 34 case, và cbor.test.ts chạy 82 case = 34 vector + 13 \"unsupported encoder value\" + 32 malformed + 3 test đơn.",
+  "fix": "Đổi \"33 mục\" → \"34 mục\" ở cả ba chỗ (dòng 25, 128, 141).",
+  "file": "protocol"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 5 (đầu mục \"Quy mô\")",
+  "claim": "\"Phép cộng của spec: 17 file upstream − 3 file bỏ (`vitest.config.ts` 298, `tsconfig.build.json` 209, `tsconfig.test.json` 220 = 727) + 3 file mới tự viết (`LICENSE` 1.069, `tsconfig.json` 74, `tsconfig.publish.json` 339 = 1.482) = 20 hàng.\"",
+  "why_wrong": "17 − 3 + 3 = 17, không phải 20. Số 20 là số HÀNG trong bảng, và đúng là 20 (17 dòng upstream + 3 dòng mới) — nhưng công thức viết ra thì cho 17. Hai tổng byte (727 và 1.482) thì đúng. Ai làm theo phép cộng sẽ ra 17 và tưởng bảng thừa 3 dòng.",
+  "evidence": "python3: 17-3+3 = 17; 17+3 = 20. Tổng byte kiểm lại: 298+209+220 = 727 ✓; 1069+74+339 = 1482 ✓. Bảng \"File cần chép\" có đúng 20 dòng: 17 file upstream (gồm cả 3 dòng đánh dấu \"bỏ\") + LICENSE/tsconfig.json/tsconfig.publish.json.",
+  "fix": "Đổi thành: \"Phép cộng của spec: 17 file upstream (3 file trong đó bị bỏ: `vitest.config.ts` 298, `tsconfig.build.json` 209, `tsconfig.test.json` 220 = 727 byte) + 3 file mới tự viết (`LICENSE` 1.069, `tsconfig.json` 74, `tsconfig.publish.json` 339 = 1.482 byte) = 20 hàng trong bảng dưới.\"",
+  "file": "protocol"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 107 (va chạm PROTOCOL_VERSION) và dòng 131 (cột \"đã có sẵn ở omp chưa\" cho wire/index.ts, wire/stream.ts)",
+  "claim": "Neo phía omp: `COLLAB_PROTO = 3` tại `packages/wire/src/index.ts:394`; `STREAM_PROTO = 1` tại `packages/wire/src/stream.ts:26`. Và: \"grep -rn 'PROTOCOL_VERSION' packages ra 2 file\".",
+  "why_wrong": "Hai neo phía omp sai 3 và 6 dòng. Câu \"grep ra 2 file\" chỉ đúng khi có `-w`; đúng như tài liệu viết thì ra 9 file (vì `MCP_PROTOCOL_VERSION`, `WARP_CLI_AGPENT_PROTOCOL_VERSION`... chứa chuỗi). Kết luận của tài liệu vẫn đúng (không có star-merge), nhưng bằng chứng ghi ra thì không tái lập được — và đây là phía omp, phía được sửa.",
+  "evidence": "git grep -n 'COLLAB_PROTO = ' -- packages/wire/src/index.ts → packages/wire/src/index.ts:397 (doc ghi 394).\ngit grep -n 'STREAM_PROTO = ' -- packages/wire/src/stream.ts → packages/wire/src/stream.ts:20 (doc ghi 26).\ngrep -rln 'PROTOCOL_VERSION' packages | wc -l → 9 file. grep -rlw 'PROTOCOL_VERSION' packages → 2 file (acp-agent.ts, utils/src/acp/protocol.ts) — khớp kết luận của tài liệu.",
+  "fix": "Sửa hai neo: `packages/wire/src/index.ts:397` và `packages/wire/src/stream.ts:20`. Sửa câu bằng chứng thành: \"grep -rlw 'PROTOCOL_VERSION' packages ra đúng 2 file (`packages/utils/src/acp/protocol.ts:13` và `packages/coding-agent/src/modes/acp/acp-agent.ts`), không file nào import nó từ root barrel — cần `-w`, không có nó thì 9 file vì các `MCP_PROTOCOL_VERSION`/`WARP_CLI_AGENT_PROTOCOL_VERSION` cũng khớp.\"",
+  "file": "protocol"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 116 (\"2690 file dưới `packages/` import từ `bun:test`\") và dòng 132 (baseline \"24,2s wall\")",
+  "claim": "\"2690 file dưới `packages/` import từ `bun:test`\"; và GATE 1 baseline \"exit 0, 24,2s wall (79,3s user, 346% cpu), 5.445 file được format, 16 package typecheck\".",
+  "why_wrong": "Con số file lệch 7. Phần còn lại của baseline tôi xác nhận đúng (exit 0, 5.445 file, 16 package). Con số 24,2s là số đo từ lúc chạy trên máy khác/tải khác; chạy lại ở đây là 29,05s. Không nguy hiểm, nhưng tài liệu dán nhãn \"Baseline đo hôm nay\" nên nên là số tái lập được.",
+  "evidence": "git grep -l 'from \"bun:test\"' -- packages | wc -l → 2697 (doc ghi 2690).\nTôi chạy `bun run check:ts` thật ở omp: exit 0, \"Finished in 245ms on 5445 files using 10 threads\" ✓ khớp 5.445; đếm đúng 16 dòng `check:types` ✓ khớp 16 package; nhưng wall time là 29.051s, không phải 24,2s.",
+  "fix": "Đổi \"2690 file\" → \"2697 file\". Ở dòng 132, đổi baseline thành: \"exit 0, 29,0s wall (87,8s user, 322% cpu), 5.445 file được format, 16 package typecheck — đo lại ngày 2026-09-28 trên máy này; wall time dao động theo tải máy, các số còn lại ổn định.\"",
+  "file": "protocol"
+ }
+]

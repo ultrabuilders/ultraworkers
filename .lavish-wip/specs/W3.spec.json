@@ -1,0 +1,129 @@
+{
+  "id": "W3",
+  "title": "Runtime type guard at the collab frame decode boundary",
+  "wave": "Wave 1 — Lifecycle foundation (W1, W2, W3, W5). First in sequence, no gate in front of it.",
+  "one_line": "Replace the blind `as CollabFrame` cast at the end of `open()` with a per-variant required-field check, so a structurally broken frame is rejected at the network boundary instead of surfacing as a meaningless TypeError several calls later.",
+  "user_visible_effect": "none — internal. A malformed or tampered collab frame is now dropped at the decrypt boundary with a named reason in the debug log, instead of being handed to the host/guest frame handler as a well-typed lie. Users never see this; it only changes what lands in `~/.omp/logs/omp.<date>.log` on the `collab: ignoring undecryptable guest frame` line.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/collab/crypto.ts",
+      "action": "modify",
+      "change": "Add a module-private `FRAME_REQUIRED_FIELDS` map, a `FRAME_REQUIRED_LOOKUP` widening alias, and an `assertCollabFrame(value: unknown): CollabFrame` function; change line 57 from `return JSON.parse(TEXT_DECODER.decode(plaintext)) as CollabFrame;` to `return assertCollabFrame(JSON.parse(TEXT_DECODER.decode(plaintext)));`. The function stays module-private (NOT exported) — tests reach it only through `open()`.",
+      "verified": true,
+      "note": "Line 57 confirmed by `grep -n 'as CollabFrame' packages/coding-agent/src/collab/crypto.ts` → `57:return JSON.parse(TEXT_DECODER.decode(plaintext)) as CollabFrame;`. File is 67 lines today; the change takes it to ~100. This is the ONLY production `as CollabFrame` in the repo (`git grep -n 'as CollabFrame' -- packages/` returns this line plus 8 hits in test files)."
+    },
+    {
+      "path": "packages/coding-agent/test/collab/crypto.test.ts",
+      "action": "modify",
+      "change": "Add one new `describe(\"collab frame decode guard\")` block after the existing `describe(\"collab crypto\")` block (which ends at line 41), containing 4 tests. Also add `sealSerialized` to the existing `from \"@oh-my-pi/pi-coding-agent/collab/crypto\"` import list (line 2-8) and `COLLAB_PROTO` to the `collab/protocol` import list (line 9-19), plus three new type-only imports.",
+      "verified": true,
+      "note": "File exists, 270 lines, 11 KB, 29 tests, currently 29 pass / 0 fail. Imports use the `@oh-my-pi/pi-coding-agent/...` alias for crypto+protocol (lines 2-19) — follow that, do not switch to the `../../src/collab/crypto` relative form some sibling test files use."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Open packages/coding-agent/src/collab/crypto.ts. Immediately above the `/** Inverse of {@link seal}. Throws on auth failure or malformed input. */` doc comment (currently line 49), insert the `FRAME_REQUIRED_FIELDS` const, the `FRAME_REQUIRED_LOOKUP` widening alias, and the `assertCollabFrame` function, exactly as given in the `code_shape` field of this spec. Keep the existing JSDoc on `open()` but extend it to name the new failure mode — the current text already says 'Throws on auth failure or malformed input', which remains accurate, so you may leave it untouched.",
+      "anchor": "packages/coding-agent/src/collab/crypto.ts:49"
+    },
+    {
+      "n": 2,
+      "instruction": "Confirm the annotation `Record<CollabFrame[\"t\"], readonly string[]>` enumerates all 18 variants. It does — do not 'fix' it by hand if tsgo complains; the annotation is the exhaustiveness mechanism. If you add a variant to `CollabFrame` (in packages/coding-agent/src/collab/protocol.ts:54) while this work is open, add its row here too or the build goes red with TS2741 (this is intended).",
+      "anchor": "packages/coding-agent/src/collab/crypto.ts:50"
+    },
+    {
+      "n": 3,
+      "instruction": "Replace line 57 (`return JSON.parse(TEXT_DECODER.decode(plaintext)) as CollabFrame;`) with `return assertCollabFrame(JSON.parse(TEXT_DECODER.decode(plaintext)));`. This is the only edit to `open()`; do not change the length check, the `asStrict` calls, or the AES-GCM invocation.",
+      "anchor": "packages/coding-agent/src/collab/crypto.ts:57"
+    },
+    {
+      "n": 4,
+      "instruction": "Add `sealSerialized` to the crypto import list in the test file, and `COLLAB_PROTO` to the protocol import list. Add three type-only imports: `import type { AgentSnapshot } from \"@oh-my-pi/pi-wire\";` and `import type { SessionEntry, SessionHeader } from \"@oh-my-pi/pi-coding-agent/session/session-entries\";`. Verify the session-entries path resolves — it is imported the same way at packages/coding-agent/src/collab/protocol.ts:26.",
+      "anchor": "packages/coding-agent/test/collab/crypto.test.ts:2"
+    },
+    {
+      "n": 5,
+      "instruction": "Insert the module-level fixture consts (`header`, `entry`, `agent`, `state`) and the `VARIANTS: CollabFrame[]` 18-element table, then the `describe(\"collab frame decode guard\")` block with the 4 tests, exactly as given in `code_shape`. Place it after line 41 (the close of `describe(\"collab crypto\")`) so the existing seal/open tests stay at the top of the file.",
+      "anchor": "packages/coding-agent/test/collab/crypto.test.ts:41"
+    },
+    {
+      "n": 6,
+      "instruction": "Run `bun test packages/coding-agent/test/collab/crypto.test.ts` from the repo root. Expect 33 pass / 0 fail (29 existing + 4 new). If the round-trip test fails, the guard is over-strict — check that no required list includes a field the CollabFrame type marks optional (`writeToken`, `images`, `readOnly`, `value`, `text` on agent-cmd, `error` on transcript).",
+      "anchor": "packages/coding-agent/test/collab/crypto.test.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "Run `cd packages/coding-agent && bun run check:types` (this is `tsgo -p tsconfig.json --noEmit`, NOT tsc). Expect exit 0. Then from the repo root run `bun run check:tools` — oxlint plus `oxfmt --check` over src and test — and expect both clean. Run `bun run fmt` if oxfmt reports the new code needs reformatting.",
+      "anchor": "packages/coding-agent/src/collab/crypto.ts"
+    },
+    {
+      "n": 8,
+      "instruction": "Add a one-line entry under `## [Unreleased]` → `### Fixed` in packages/coding-agent/CHANGELOG.md. Suggested text: `Fixed malformed collab frames being accepted at the decode boundary instead of being rejected before the frame handler.` No issue or PR link yet — add attribution per AGENTS.md once the PR number exists.",
+      "anchor": "packages/coding-agent/CHANGELOG.md"
+    },
+    {
+      "n": 9,
+      "instruction": "Do NOT commit. The repo rule is 'NEVER commit unless asked'. Leave the working tree dirty for the operator to review.",
+      "anchor": ""
+    }
+  ],
+  "code_shape": "// ── packages/coding-agent/src/collab/crypto.ts ──────────────────────────────────\n// Insert directly above the `open()` doc comment (today line 49).\n\n/**\n * Non-optional fields per {@link CollabFrame} variant, checked at the decode boundary.\n *\n * Required-field, NOT exact-shape: a peer that predates this build may add fields\n * we do not know yet, and a stricter check would reject it. The `Record<CollabFrame[\"t\"], …>`\n * annotation is the exhaustiveness mechanism — adding a variant to `CollabFrame` without a\n * row here is a compile error, while an unknown tag at runtime still falls through.\n */\nconst FRAME_REQUIRED_FIELDS: Record<CollabFrame[\"t\"], readonly string[]> = {\n\thello: [\"proto\", \"name\"],\n\tprompt: [\"text\"],\n\t\"ui-response\": [\"reqId\"],\n\tabort: [],\n\t\"agent-cmd\": [\"cmd\", \"agentId\"],\n\t\"fetch-transcript\": [\"reqId\", \"agentId\", \"fromByte\"],\n\twelcome: [\"proto\", \"header\", \"state\", \"agents\", \"entryCount\"],\n\t\"snapshot-chunk\": [\"entries\", \"final\"],\n\tentry: [\"entry\"],\n\tevent: [\"event\"],\n\tstate: [\"state\"],\n\tbus: [\"channel\", \"data\"],\n\tagents: [\"agents\"],\n\t\"ui-request\": [\"request\"],\n\t\"ui-request-end\": [\"reqId\"],\n\ttranscript: [\"reqId\", \"text\", \"newSize\"],\n\tbye: [\"reason\"],\n\terror: [\"message\"],\n};\n\n/** Widened view so an unrecognised tag can be looked up without a cast at the call site. */\nconst FRAME_REQUIRED_LOOKUP: Readonly<Record<string, readonly string[] | undefined>> = FRAME_REQUIRED_FIELDS;\n\nfunction assertCollabFrame(value: unknown): CollabFrame {\n\tif (typeof value !== \"object\" || value === null || Array.isArray(value)) {\n\t\tthrow new Error(\"collab frame is not a JSON object\");\n\t}\n\tconst tag = (value as { t?: unknown }).t;\n\tif (typeof tag !== \"string\") {\n\t\tthrow new Error(`collab frame has no string \"t\" discriminator (got ${typeof tag})`);\n\t}\n\tconst required = FRAME_REQUIRED_LOOKUP[tag];\n\t// Tolerant default: a variant this build has never heard of passes through untouched,\n\t// matching the documented house style in packages/wire/src/index.ts:9-12.\n\tif (!required) return value as CollabFrame;\n\tfor (const field of required) {\n\t\tif (!(field in value)) {\n\t\t\tthrow new Error(`collab frame \"${tag}\" is missing required field \"${field}\"`);\n\t\t}\n\t}\n\treturn value as CollabFrame;\n}\n\n// ── open(), line 57 only ──────────────────────────────────────────────────────\n\treturn assertCollabFrame(JSON.parse(TEXT_DECODER.decode(plaintext)));\n\n\n// ── packages/coding-agent/test/collab/crypto.test.ts ──────────────────────────\n// Extra imports: `sealSerialized` (crypto), `COLLAB_PROTO` (protocol),\n//   import type { AgentSnapshot } from \"@oh-my-pi/pi-wire\";\n//   import type { SessionEntry, SessionHeader } from \"@oh-my-pi/pi-coding-agent/session/session-entries\";\n\nconst header: SessionHeader = { type: \"session\", id: \"s1\", timestamp: \"2026-09-08T00:00:00Z\", cwd: \"/tmp\" };\nconst entry: SessionEntry = {\n\ttype: \"message\",\n\tid: \"e1\",\n\tparentId: null,\n\ttimestamp: \"2026-09-08T00:00:00Z\",\n\tmessage: { role: \"user\", content: \"hi\", timestamp: 0 },\n};\nconst agent: AgentSnapshot = {\n\tid: \"a1\",\n\tdisplayName: \"Main\",\n\tkind: \"main\",\n\tstatus: \"running\",\n\thasSessionFile: true,\n\tcreatedAt: 1,\n\tlastActivity: 2,\n};\nconst state = {\n\tisStreaming: false,\n\tqueuedMessageCount: 0,\n\tsessionName: \"host\",\n\tcwd: \"/tmp\",\n\tparticipants: [{ name: \"Host\", role: \"host\" as const }],\n};\n\n/** One fixture per `CollabFrame` variant. Adding a variant without a row here is a compile error. */\nconst VARIANTS: CollabFrame[] = [\n\t{ t: \"hello\", proto: COLLAB_PROTO, name: \"guest\" },\n\t{ t: \"prompt\", text: \"hello\" },\n\t{ t: \"ui-response\", reqId: 1, value: \"ok\" },\n\t{ t: \"abort\" },\n\t{ t: \"agent-cmd\", cmd: \"chat\", agentId: \"a1\", text: \"go\" },\n\t{ t: \"fetch-transcript\", reqId: 2, agentId: \"a1\", fromByte: 0 },\n\t{ t: \"welcome\", proto: COLLAB_PROTO, header, state, agents: [agent], entryCount: 1 },\n\t{ t: \"snapshot-chunk\", entries: [entry], final: true },\n\t{ t: \"entry\", entry },\n\t{ t: \"event\", event: { type: \"model_changed\" } },\n\t{ t: \"state\", state },\n\t{ t: \"bus\", channel: \"task:subagent:lifecycle\", data: { id: \"a1\", agent: \"task\", status: \"started\", index: 0 } },\n\t{ t: \"agents\", agents: [agent] },\n\t{ t: \"ui-request\", request: { kind: \"editor\", title: \"Edit\", reqId: 3 } },\n\t{ t: \"ui-request-end\", reqId: 3 },\n\t{ t: \"transcript\", reqId: 4, text: \"{}\", newSize: 10 },\n\t{ t: \"bye\", reason: \"host done\" },\n\t{ t: \"error\", message: \"boom\" },\n];\n\ndescribe(\"collab frame decode guard\", () => {\n\tit(\"round-trips a well-formed frame of every CollabFrame variant\", async () => {\n\t\tconst key = await importRoomKey(generateRoomKey());\n\t\tfor (const frame of VARIANTS) {\n\t\t\texpect(await open(key, await seal(key, frame))).toEqual(frame);\n\t\t}\n\t});\n\n\tit(\"rejects a decoded frame missing a required field at the guard\", async () => {\n\t\tconst key = await importRoomKey(generateRoomKey());\n\t\tconst sealed = await sealSerialized(key, JSON.stringify({ t: \"hello\", proto: COLLAB_PROTO }));\n\t\tawait expect(open(key, sealed)).rejects.toThrow(/missing required field \"name\"/);\n\t});\n\n\tit(\"rejects a payload whose discriminator is not a string\", async () => {\n\t\tconst key = await importRoomKey(generateRoomKey());\n\t\tfor (const raw of [\"{}\", \"[]\", \"null\", \"7\", '\"str\"', JSON.stringify({ t: 42 })]) {\n\t\t\tawait expect(open(key, await sealSerialized(key, raw))).rejects.toThrow();\n\t\t}\n\t});\n\n\tit(\"accepts a variant this build does not know\", async () => {\n\t\tconst key = await importRoomKey(generateRoomKey());\n\t\tconst raw = { t: \"future-thing\", payload: { anything: true } };\n\t\tconst opened: unknown = await open(key, await sealSerialized(key, JSON.stringify(raw)));\n\t\texpect(opened).toEqual(raw);\n\t});\n});\n\n// Two authoring notes that cost the author an hour if missed:\n//  1. `await expect(...).rejects` — the three pre-existing tests at lines 33/39 do NOT await,\n//     which is a floating assertion. Do not copy that pattern into new tests.\n//  2. `const opened: unknown = …` — without the `: unknown` annotation the final test does not\n//     compile: bun types `toEqual` as `toEqual(expected: T)` with T inferred from the actual, so\n//     an unknown-variant object is not assignable to the `CollabFrame` return type. A direct\n//     `as CollabFrame` cast is rejected too (TS2352, no overlap); `as unknown as CollabFrame`\n//     compiles but is a double assertion. The `: unknown` local is the clean fix.",
+  "test_contract": "The observable contract: a collab frame whose JSON payload is structurally inconsistent with its own variant is rejected at the decrypt boundary, by an error whose message names the variant and the missing field — not handed to the frame handler as a value typed `CollabFrame` but lacking a field every consumer of that variant will read. A consumer of this contract observes three things. (1) Every one of the 18 declared `CollabFrame` variants survives a `seal`/`open` round trip byte-for-byte, so the guard can never become a forward-compatibility regression. (2) A payload missing a required field, or whose `t` is absent / not a string, rejects at `open()` — today those resolve successfully and blow up later as an unrelated TypeError inside `CollabHost`/`CollabGuestLink`. (3) A payload carrying a variant tag this build has never seen still opens successfully, so an older or newer peer is not rejected. If the guard regresses to an exact-shape check, test 1 goes red; if the tolerant default is dropped, test 4 goes red; if the guard is deleted, tests 2 and 3 go red.",
+  "test_files": [
+    "packages/coding-agent/test/collab/crypto.test.ts"
+  ],
+  "verification": "cd /Users/tranquangdang21/Projects/ultraworkers && bun test packages/coding-agent/test/collab/crypto.test.ts   # expect 33 pass / 0 fail (29 existing + 4 new)\ncd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun run check:types   # tsgo -p tsconfig.json --noEmit, expect exit 0\ncd /Users/tranquangdang21/Projects/ultraworkers && bun run check:tools   # oxlint + oxfmt --check, expect clean",
+  "gate": "All three commands above pass. Specifically: (a) `bun test packages/coding-agent/test/collab/crypto.test.ts` reports 33 pass / 0 fail; (b) `cd packages/coding-agent && bun run check:types` exits 0 — which in particular means the `Record<CollabFrame[\"t\"], readonly string[]>` annotation is complete, because a missing variant row is TS2741; (c) `bun run check:tools` (oxlint + oxfmt --check) is clean. The gate was validated by mutation on a scratch copy of the branch: reverting crypto.ts to the original blind cast makes the two rejection tests fail (2 pass / 2 fail); removing the tolerant `if (!required) return` makes the unknown-variant test fail; adding an optional field (`error` on transcript, `readOnly` on welcome) to the required lists makes the round-trip test fail. All three mutations are caught.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [
+    "W8 (Wave 3a) — the plan asks for all collab boundary work to land in one review pass",
+    "Any later work that adds a `CollabFrame` variant: the `Record<CollabFrame[\"t\"], …>` annotation turns a forgotten guard row into a compile error, which is a deliberate coupling"
+  ],
+  "effort": "S. ~50 lines added to crypto.ts (a 48-line map plus a 20-line function, on a 67-line file) and ~75 lines added to the existing test file. The production change itself is a one-line edit at crypto.ts:57; the fixture table is the bulk. Verified end to end on a scratch branch: applied, type-checked, tested, then reverted — the repo is clean.",
+  "risk": "A false-positive rejection is far more expensive than the defect it fixes. `open()` has exactly one production caller — `packages/coding-agent/src/collab/relay-client.ts:578` — and its catch block routes by role: on the host it logs and drops the frame (line 582), but on the GUEST it calls `#failFatal(\"bad key or corrupted frame\")` (line 584), which sets `#closed = true`, closes the socket, and fires `onClose(reason, false)` with no reconnect (relay-client.ts:675-689). So a guard that is one field too strict does not drop a frame — it tears the guest's collab session down permanently and tells the user to rejoin. The plan's stated rationale (\"a throw only loses one frame, because #recvChain has a .catch() at the tail\") is wrong on both counts: the tail `.catch()` at relay-client.ts:595-597 covers errors from `onFrame?.()`, and `open()` is already wrapped in its own try/catch at 577-586. This inverts the priority — permissiveness is the requirement, strictness is the cost. The single field most likely to bite is `data` on the `bus` variant, typed `unknown`: if any future `emitSubagentFrame(channel, payload)` call site ever passes `undefined`, `JSON.stringify` drops the key and every guest connected to that host dies. Today this is unreachable — all 6 emit sites (packages/coding-agent/src/task/executor.ts:1497, 1597, 2641, 2947, 3321, 4065) pass concrete object literals. If it ever becomes reachable, drop `\"data\"` from the `bus` row rather than tightening anything else.",
+  "open_questions": [
+    "Should the `data` field on the `bus` variant stay in the required list? Keeping it matches the `CollabFrame` type and passes the 'missing required field' test faithfully; dropping it is strictly safer against a future `undefined` emit and costs nothing observable. Default to keeping it (the current type says required and no call site violates it), and revisit only if a new `emitSubagentFrame` call site can pass `undefined`.",
+    "Should the guard be exported for reuse? No. `sealSerialized` is already exported and lets the tests build malformed payloads without one, and keeping the guard module-private means the test can only observe it through `open()` — which is the contract the item is actually about. Exporting would add a surface with no consumer.",
+    "Does the guard belong at the `JSON.parse` boundary in crypto.ts, or one layer up in relay-client? crypto.ts. The plan's call is right: crypto.ts is the only module that knows both the ciphertext framing and the `CollabFrame` type, and it is the single place every decoded frame passes through (`git grep -n 'as CollabFrame' -- packages/` finds no other production site)."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Repo HEAD is 5873776 on branch milestone-1.",
+      "verdict": "stale",
+      "correction": "HEAD is ecd516f ('feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers') on branch milestone-1. Every other anchor in the plan (crypto.ts:57, packages/wire/src/index.ts, the collab file list) still resolves correctly, so only the SHA was stale — do not go looking for a missing commit.",
+      "evidence": "`git rev-parse --short HEAD` → ecd516f; `git branch --show-current` → milestone-1."
+    },
+    {
+      "claim": "\"#recvChain có .catch() ở đuôi nên một lần ném chỉ mất một frame\" — a throw from the guard costs at most one frame.",
+      "verdict": "wrong",
+      "correction": "The tail `.catch()` does not cover the guard at all. `open()` is called inside its own try/catch (relay-client.ts:577-586); the chain's `.catch()` at 595-597 only catches errors thrown by `onFrame?.()` on line 594. The inner catch routes by role: host → `logger.debug` and drop (line 582); GUEST → `#failFatal(\"bad key or corrupted frame\")` (line 584), and `#failFatal` sets `#closed = true`, closes the socket, discards pending sends and calls `onClose(reason, false)` with reconnect disabled. A false-positive guard rejection therefore kills the guest's session outright. The plan's threat framing is still right that this is defense-in-depth rather than a security fix (the guard sits behind AES-256-GCM and the relay is a content-blind byte pump), but the 'cheap to be wrong about' conclusion does not hold, and the design must stay maximally permissive.",
+      "evidence": "sed -n '570,600p' packages/coding-agent/src/collab/relay-client.ts shows `try { frame = await open(...) } catch { … this.#failFatal(\"bad key or corrupted frame\") … }` then `this.onFrame?.(frame, envelope.peerId);` then `.catch((err) => logger.debug(...))`. `#failFatal` is defined at relay-client.ts:675 and sets `this.#closed = true`."
+    },
+    {
+      "claim": "The house-style note is at packages/wire/src/index.ts:11-13.",
+      "verdict": "slightly stale",
+      "correction": "The sentence 'consumers cast at the JSON boundary and every `switch` keeps a tolerant `default:` branch' now sits on lines 10-11 of that file (the block comment runs 9-12). Cite it as packages/wire/src/index.ts:9-12 in the code comment. The guidance itself is unchanged and still correct.",
+      "evidence": "`sed -n '9,12p' packages/wire/src/index.ts` returns the four-line comment ending with '*/' on line 12."
+    },
+    {
+      "claim": "Verification is `bun check && bun test packages/coding-agent/test/collab/crypto.test.ts`; the native addon being unbuilt means `bun test` is blocked.",
+      "verdict": "half wrong",
+      "correction": "The addon claim is true for the directory but false for this file. `bun test packages/coding-agent/test/collab/` reports 29 pass / 21 fail with 'Failed to load pi_natives native addon for darwin-arm64' — but every one of the 21 failures is a different file, and crypto.test.ts passes 29/29 on its own because it never loads the addon. So W3 is NOT blocked: run the file-scoped command. Also `bun check` runs `check:rs` (cargo) in parallel with `check:ts`; for a TypeScript-only change use `bun run check:types` scoped to packages/coding-agent (it is `tsgo -p tsconfig.json --noEmit`, not tsc) plus `bun run check:tools` for oxlint/oxfmt, which together are exactly what `check:ts` does for this package.",
+      "evidence": "`bun test packages/coding-agent/test/collab/crypto.test.ts` → '29 pass 0 fail 68 expect() calls' before any change. `bun test packages/coding-agent/test/collab/` → '29 pass 21 fail 21 errors' with the native-addon loader error. `cd packages/coding-agent && bun run check:types` → exit 0."
+    },
+    {
+      "claim": "Effort is ~40 lines plus a test.",
+      "verdict": "understated",
+      "correction": "The production change is ~68 lines of new code in crypto.ts (the 18-row map is 20 lines, the JSDoc and lookup alias ~14, the function ~20) plus a one-line edit at line 57, and the test is ~75 lines because the round-trip contract needs one fixture per variant. Total ~145 lines against the plan's ~40. Still firmly effort S, and all of it mechanical.",
+      "evidence": "Applied the change to a scratch copy and measured: crypto.ts went 67 → 100 lines, the new test block is 75 lines, and both tsgo and oxfmt were clean on the first attempt."
+    },
+    {
+      "claim": "The guard is a per-variant required-field check covering all frame variants crossing the decode boundary.",
+      "verdict": "confirmed, with a useful addition",
+      "correction": "The plan does not say how many variants there are. There are exactly 18 discriminants: abort, agent-cmd, agents, bus, bye, entry, error, event, fetch-transcript, hello, prompt, snapshot-chunk, state, transcript, ui-request, ui-request-end, ui-response, welcome. Annotating the map as `Record<CollabFrame[\"t\"], readonly string[]>` (rather than a plain `Record<string, …>`) makes a forgotten variant a compile error — verified: deleting the `error` row produces TS2741 naming all 18 literals. That is strictly better than the plan's hand-maintained list and should be used.",
+      "evidence": "A scratch file using the annotated map type-checked clean under tsgo; removing the `error: [\"message\"]` row produced `src/collab/w3-scratch-verify.ts(4,7): error TS2741: Property 'error' is missing in type '{…}' but required in type 'Record<\"abort\" | \"agent-cmd\" | \"agents\" | \"bus\" | \"bye\" | \"entry\" | \"error\" | \"event\" | \"fetch-transcript\" | \"hello\" | \"prompt\" | \"snapshot-chunk\" | \"state\" | \"transcript\" | \"ui-request\" | \"ui-request-end\" | \"ui-response\" | \"welcome\", readonly string[]>'`."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W3.spec.json"
+}

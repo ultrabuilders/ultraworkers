@@ -1,0 +1,294 @@
+[
+ {
+  "id": "W1",
+  "q": "The plan says the wire set is five positions, but `git grep -n '\"omp\"' -- packages/{coding-agent,catalog,utils,tui}/src` finds several more bare-literal wire values this item does not touch. Two of them are serious and are NOT display strings: `packages/catalog/src/compat/rules/auth/stencil.kdl:13` (`client-id \"omp\"` — the OAuth client id registered at the Stencil issuer; renaming it breaks Stencil login, and per AGENTS.md it lives in KDL so a TS constant cannot simply be substituted) and `packages/catalog/src/compat/rules/auth/openai-codex.kdl:12` (`originator \"omp\"`). Non-KDL extras: `packages/coding-agent/src/cli/git-tui/avatar.ts:50` (`\"User-Agent\": \"omp\"` on the GitHub API), `packages/coding-agent/src/tools/report-tool-issue.ts:441` (`agent: { name: \"omp\" }` in a POSTed grievance body), `packages/coding-agent/src/internal-urls/omp-protocol.ts:28` (`readonly scheme = \"omp\"` — the omp:// URL scheme). HUMAN DECISION: does the milestone owner want these folded into W1's wire set, assigned to a later work item, or explicitly recorded as do-not-touch? Do NOT silently add them — the plan explicitly forbids a sixth site — and do NOT silently leave them either, or W7's `sed` and W8b's display-token sweep become the thing that decides. My recommendation is a separate, explicit work item, because the two KDL ones need a KDL-level fix that this item must not attempt."
+ },
+ {
+  "id": "W1",
+  "q": "`packages/catalog/src/wire/codex.ts:52` is declared READ-ONLY by this item, but its real source is the writable KDL rule `packages/catalog/src/compat/rules/auth/openai-codex.kdl:12`. The compiled `rules.json` is committed. So a later `sed`-style pass over the KDL tree, or a `bun run gen:compat` after an unrelated KDL edit, can move this value with no TypeScript diff at all. HUMAN DECISION: who owns the invariant that the OpenAI originator stays \"omp\", and does it need a test before W7 runs? This is a real hole in the plan's own framing, not a hypothetical."
+ },
+ {
+  "id": "W1",
+  "q": "The DAP site (`dap/session.ts:1465-1466`) has no direct test and I recommend not building a harness for it. HUMAN DECISION: accept transitive coverage (all five sites read one constant, and four goldens plus the new constant test pin its value), or spend the effort on a `vi.spyOn(DapClient, \"spawn\")` harness? The DAP `clientID`/`clientName` pair is the only one of the five whose consumer is a third-party debug adapter rather than an in-repo subsystem, so it is the one where a silent break is least likely to be noticed by the maintainers themselves."
+ },
+ {
+  "id": "W1",
+  "q": "`packages/coding-agent/src/hindsight/settings.ts:172` registers `cfgHindsightRetainContext` with `default: \"omp\"` — the same bank-namespace identity as `bank.ts:29`, but a separate persisted config key with its own default. Five test files carry `retainContext: \"omp\"` as a FIXTURE INPUT (hindsight-bank.test.ts:55, hindsight-conversation-timestamps.test.ts:35, hindsight-mm-cache-stability.test.ts:34, hindsight-retention-cache.test.ts:27, memory-tools.test.ts:63). HUMAN DECISION: is this the same wire identity (in which case it should also read WIRE_NAME, changing an existing default and its persisted value) or an independent user-facing setting default (in which case it stays)? I have left it out of W1 because changing a registered setting's default is a behaviour change, not a refactor, and that is W3's territory. Flagging it because five test fixtures currently hardcode it and the next person to sweep literals will trip on it."
+ },
+ {
+  "id": "W2",
+  "q": "Do we accept the W2a / W2b split, or does the milestone owner want W2 kept as one commit that must be merged in the same PR as W7 pass 1? The split is strictly safer (it creates no window in which the canonical scope names a scope that does not exist) but it does move one line of W2 out of wave 1, which is a visible change to the plan's wave structure. A human must decide because it reorders the milestone, not just the code."
+ },
+ {
+  "id": "W2",
+  "q": "If W2b and W7 pass 1 must ship together, who owns the release gate that stops W2b from being cherry-picked alone? A CODEOWNERS entry or a CI check asserting `git grep -m1 '\"name\"' -- packages/utils/package.json` returns `@ultraworkers/pi-utils` whenever `CANONICAL_PI_SCOPE` is `@ultraworkers` would make the failure impossible rather than merely documented."
+ },
+ {
+  "id": "W2",
+  "q": "N17 is recorded as settled ('keep all 16 basenames') but the plan's own open-questions table still presents it as an open product decision. W2 must not resolve it either way. Confirm the plan's final position before anyone touches `PI_PACKAGE_NAMES`."
+ },
+ {
+  "id": "W3",
+  "q": "XDG blast radius: dirs.ts:360 là `const appRoot = path.join(value, APP_NAME)` và chỉ dùng XDG khi `fs.existsSync(appRoot)`. Đổi APP_NAME khiến người dùng XDG rơi về configRoot (~/.omp) vì root mới chưa tồn tại — sessions và secret-placeholder.key (dirs.ts:983) biến mất khỏi tầm tay, và secret key bị sinh lại thì giải mã secret cũ hỏng. Cần người quyết định: (a) W3 chấp nhận rủi ro vì XDG là opt-in và ít người dùng, (b) tách APP_NAME thành APP_NAME (display) + XDG_DIR_NAME (đóng băng \"omp\") để W3 thực sự chỉ đổi tên hiển thị, hay (c) trì hoãn W3 tới khi W6 có migration. Khuyến nghị (b): rẻ nhất và giữ đúng ý nghĩa tên hàng của W3."
+ },
+ {
+  "id": "W3",
+  "q": "Giá trị mới của APP_NAME là gì? Plan không nêu. Kỹ sư cần chốt trước khi sửa vì nó xuất hiện ở 6 file và 4 file test."
+ },
+ {
+  "id": "W3",
+  "q": "Có kéo `composer-shape-preview.ts:45` (PREVIEW_TITLE) vào W3 không? Plan bỏ sót; tôi đã đưa vào scope vì cùng package tui, cùng tính chất tên hiển thị, và test của nó đang ghim \"omp\"."
+ },
+ {
+  "id": "W3",
+  "q": "Có kéo `relay/server.ts:55` (DEFAULT_GROUP title của tab group trình duyệt) vào W3 không? Tôi để NGOÀI scope vì đó là nhãn chrome trình duyệt, không phải tên ứng dụng — nhưng nó sẽ thành literal trùng lặp thứ 10."
+ },
+ {
+  "id": "W4",
+  "q": "Should getConfigDirCandidates() include the project-level name, or stay strictly home-scoped? This spec keeps it home-scoped and gives the project path its own pinned constant, matching W6a option (b). If the product later wants a project-level dual root too, that is W6a option (a) and it additionally requires config migrate to move project .omp directories — which are often committed to git, so migrate would have to read both and never delete."
+ },
+ {
+  "id": "W4",
+  "q": "The plan's M5 open question on the PI_*/OMP_* family (plan line 14025) is answered 'keep forever as aliases' by N16, and W4 implements exactly that for one variable. The other 149 runtime-read names in the family stay PI_-prefixed in this milestone. Confirm that is intended rather than an oversight, since the product will ship named ultraworkers with PI_-prefixed configuration vocabulary."
+ },
+ {
+  "id": "W4",
+  "q": "docs/environment-variables.md documents 100 env variables. W4 adds one row and amends one. Should the other config-adjacent variables in the family get new aliases in a later wave, or is one alias sufficient evidence of the pattern?"
+ },
+ {
+  "id": "W4",
+  "q": "Should the cache be process-lifetime, or should config migrate be able to force a re-resolution in-process? With a process-lifetime cache, a migrate that moves ~/.omp to ~/.ultraworkers leaves the running process resolving to a directory that no longer exists. That is harmless for a one-shot CLI command that exits, but it should be a stated decision rather than an accident."
+ },
+ {
+  "id": "W5",
+  "q": "Should `config migrate` refuse to run while a daemon or session is live, or warn and proceed? The verified presence of `agent.db`/`history.db`/`models.db` with `-wal`/`-shm` siblings and `run/daemons/<hash>/` makes this a real corruption risk, but a hard refusal means a user with a stuck daemon cannot migrate at all. The plan does not raise it. Recommend: detect a live daemon via the existing lock surface in `packages/utils/src/file-lock.ts`, print a clear refusal naming the command that stops it, and let `--force` override. Needs a product decision before implementation."
+ },
+ {
+  "id": "W5",
+  "q": "What exactly is `MigrationOptions.oldName` at call time — the literal `\".omp\"`, or the previous value of `CONFIG_DIR_NAME` read before W6 flips it? The literal is correct for W5-as-shipped (W6 has not landed). But if W5 is ever backported or re-run after W6, the literal silently goes stale. Recommend capturing it as a named constant next to `CONFIG_DIR_NAME` so the relationship is explicit and greppable."
+ },
+ {
+  "id": "W5",
+  "q": "Should the XDG roots be migrated at all, given `init-xdg` is opt-in? Migrating `$XDG_*_HOME/omp` for a user who never ran `init-xdg` is a no-op because the directory does not exist, so the three-way rule absorbs it. But on a Linux box where `XDG_DATA_HOME` is set and an unrelated `omp` directory happens to live there, migrate would move a directory it did not create. Recommend requiring the old path to look like a config root (contains `agent/` or `install-id`) before proposing a move, and reporting anything else as a conflict rather than silently renaming it."
+ },
+ {
+  "id": "W5",
+  "q": "Does W5 ship with a changelog entry? The plan says changelog updates happen only when a work item asks for one, and the W5 section does not ask. This spec therefore proposes none. Confirm that is intended, since `config migrate` is a user-visible command and the M5 changelog will otherwise have no trace of it."
+ },
+ {
+  "id": "W5",
+  "q": "Should the engine live in `packages/utils` at all, or in a new `packages/coding-agent/src/config-migrate/` with the tests moved to a package that can run? The engine is dirs-shaped and depends on nothing but `node:fs`/`node:path`, and `packages/utils/src/dirs.ts` is its natural neighbour — but the placement was chosen here for the gate, and that reason should be confirmed by the reviewer rather than assumed."
+ },
+ {
+  "id": "W6",
+  "q": "Where does do_not_rename.tsv actually live? The plan's §2.3 defines it as a 17-row table but never names a file path, and scripts/rename/ does not exist yet. This spec proposes scripts/rename/do_not_rename.tsv alongside W8b's disposition.tsv. Confirm with the W7/W8b owner — a registry in the wrong place is one W7 will not read, and W7's sed pass is what makes the exclusion set load-bearing."
+ },
+ {
+  "id": "W6",
+  "q": "Should W6 wait for W4 and W5 to be used in a real release, or is 'shipped and CI-green' enough? The plan says both must have shipped AND been used in a real release. That is a calendar dependency no test can discharge, and it is the one gate that cannot be automated."
+ },
+ {
+  "id": "W6",
+  "q": "Is the string 'This project (.omp/rules)' in the omfg rules editor a literal in the controller, or derived from a constant? If literal, it correctly stays '.omp' and the user-visible label is unchanged; if it is built from a renamed constant it would drift from the on-disk path. Step 5 tells the implementer to check this, but the answer should be recorded in the commit message so a later reader knows it was deliberate."
+ },
+ {
+  "id": "W6a",
+  "q": "1. BLOCKING — packages/coding-agent/src/config.ts:12. priorityList feeds BOTH USER_CONFIG_BASES (line 84) and PROJECT_CONFIG_BASES (line 90) from the same `dir` value, and line 135 compares `name !== CONFIG_DIR_NAME` to decide user-source opt-in. If PROJECT_DIR_NAME is introduced and this file is untouched, the project entry in PROJECT_CONFIG_BASES silently becomes '.ultraworkers' — a project-level behaviour change hiding inside a constant rename. Recommendation: switch that one priorityList entry to PROJECT_DIR_NAME so project config keeps reading the committed .omp. This is a product decision (does the user's repo keep its committed .omp?) and must be answered by a person before merge, not inferred by the implementer. Affects: getConfigDirs('skills'|'commands'|'agents'|'hooks', {level:'project'}) and every project-level config lookup routed through it."
+ },
+ {
+  "id": "W6a",
+  "q": "2. NON-BLOCKING — should the do_not_rename row for the project .omp be created by this work item or left to whichever item first creates scripts/rename/keep-list.txt? Verified: scripts/rename/ does not exist on HEAD 84cbac9, so somebody has to create it. Plan section 2.3 assigns the file to the milestone, W7 gates on it, and section 2.3's format requires a mandatory '#' reason per entry. Recommendation: W6a creates it with the single project-.omp row, appending rather than overwriting if a sibling got there first."
+ },
+ {
+  "id": "W6a",
+  "q": "3. NON-BLOCKING — is a permanent divergence (CONFIG_DIR_NAME = '.ultraworkers', PROJECT_DIR_NAME = '.omp', forever) acceptable as a shipped end state, or does it need a dated follow-up? The plan's option (b) is a keep-forever decision and N14 records it as such. Worth a maintainer's explicit acknowledgement because the codebase will permanently carry two directory names, and the next person to read dirs.ts:27-40 will ask why."
+ },
+ {
+  "id": "W6a",
+  "q": "4. NON-BLOCKING, environment — the coding-agent negative controls (omfg-controller.test.ts, extensions-discovery.test.ts) cannot run on this machine without `brew install ninja` followed by `bun --cwd=packages/natives run build`. Should the milestone's verification environment be provisioned once so the whole negative-control set becomes runnable, or should each spec keep declaring which of its gates are locally unrunnable? Recommend the former: the blocker has now cost every work item in this milestone a caveat, and a working addon would let the strongest signals actually fire."
+ },
+ {
+  "id": "W7",
+  "q": "Q1 (chặn W7 hoặc phải trả lời trước khi merge) — Sáu leaf package `@oh-my-pi/pi-natives-<tag>` được publish từ CI (`.github/workflows/ci.yml:326` chạy `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball`). Chúng đã được publish dưới scope MỚI chưa? Nếu chưa, `loader-state.js:70` KHÔNG được đổi trong W7 — hoặc W7 phải đi kèm một bước publish leaf package, hoặc sáu tên leaf package phải vào `do_not_rename`. Đây là câu hỏi duy nhất trong W7 có thể gây hỏng im lặng ở người dùng cuối."
+ },
+ {
+  "id": "W7",
+  "q": "Q2 (phán đoán, cần một người quyết) — Hai transcript đã ghi `packages/coding-agent/test/fixtures/before-compaction.jsonl` (132) và `large-session.jsonl` (49) chứa 181 lượt scope cũ, kể cả một URL registry. Chúng là LỊCH SỬ (cùng lớp với `gallery-fixtures/segments.ts` mà W8 phải phán xét) hay là fixture mà test đọc và phải cập nhật? Mặc định của tôi: SỬA, vì test đọc chúng như dữ liệu đầu vào. Nhưng nếu chúng được coi là bản ghi phiên thật thì phải giữ, và đó là một ngoại lệ phải nêu tường minh trong keep-list chứ không được để mặc định."
+ },
+ {
+  "id": "W7",
+  "q": "Q3 — 5 tài liệu kế hoạch (`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` + `MILESTONE_1..4_EXECUTION_PLAN.md`, 332 lượt) và 13 file `.lavish-wip/specs/*.spec.json` (68 lượt) là bản ghi về việc đổi tên, không phải sản phẩm. Tôi đã loại chúng khỏi tập in-scope. Nếu ý kiến là phải viết lại chúng (ví dụ để tài liệu phản ánh tên mới), thì đó là một work item riêng, không phải để lẫn vào W7 — vì viết lại chúng làm bảng §2.3 của chính kế hoạch thành dối."
+ },
+ {
+  "id": "W7",
+  "q": "Q4 — Scope `@ultraworkers` đã được ai sở hữu chưa? Đây là cổng G3 của plan §8, nằm NGOÀI repo. Nếu chưa có, toàn bộ W7 là vô nghĩa và 17212 lượt viết là việc không cần thiết."
+ },
+ {
+  "id": "W8a",
+  "q": "Ba hàng N18/N19/N20 có được một người duyệt riêng không, hay chấp nhận theo tiền lệ đã đặt ở W7? Đây là câu hỏi có thật về quy trình, không phải về kỹ thuật: §2.3 nói bảng phải do người không viết nó duyệt, và W8a thêm 3 hàng mới thì người duyệt W7 chưa chắc là người duyệt W8a."
+ },
+ {
+  "id": "W8a",
+  "q": "`KEY_NAME` ở `zai.ts:25` có thật sự cần giữ, hay Z.AI coi nó là nhãn tuỳ ý và chấp nhận tên mới? Comment tại `:24` cho thấy ý định thiết kế là 'khoa của riêng OMP, không đụng zcode-api-key' — nếu Z.AI chỉ cần một nhãn phân biệt thì đổi tên vẫn an toàn về mặt chức năng, nhưng nó sẽ tạo ra một khoá thứ hai trong tài khoản của người dùng thay vì tái dùng khoá cũ. Không có bằng chứng nào trong repo trả lời được; đây là câu hỏi cho người đã từng chạy `mintZaiApiKey`."
+ },
+ {
+  "id": "W8a",
+  "q": "`EXA_MCP_SOURCE` ở `exa.ts:26` có được Exa dùng cho billing/attribution thật không, hay chỉ là header chẩn đoán? Nếu chỉ chẩn đoán thì đổi tên được và N19 không cần. Nhưng nó đúng cùng loại với N9 (`APP_URL`/`USER_AGENT` — thứ plan đã chốt 'giữ nếu chưa có domain mới'), nên mặc định giữ là an toàn."
+ },
+ {
+  "id": "W8a",
+  "q": "Phần tài liệu ở bước 10 có thuộc phạm vi M5 không, hay nên chuyển sang W11 (viết tài liệu)? Cả hai file đó không chứa literal dạng trần, nên việc duy nhất còn lại là sửa câu chữ — đó là việc nhỏ và nó phụ thuộc M2 đã merge, trong khi 13 quyết định còn lại thì không."
+ },
+ {
+  "id": "W8a",
+  "q": "Lệnh nghiệm thu của plan trỏ tới `test/extension-scope-canonicalization.test.ts` không tồn tại. Tôi đã dùng `test/pi-scope-aliases.test.ts` theo đặc tả W2. Nếu implementer W2 thực tế đặt tên khác, cả hai phải khớp trước khi W8a chạy."
+ },
+ {
+  "id": "W8b",
+  "q": "AI LÀ NGƯỜI DUYỆT, DUYỆT LÚC NÀO, VÀ NẾU KHÔNG CÓ AI DUYỆT THÌ MỤC NÀY CÓ BỊ CHẶN KHÔNG? Đây là câu hỏi vận hành, và plan chỉ trả lời bằng một câu. Cụ thể: (1) AI — lịch sử git của repo này chỉ có hai tác giả, `E2E <e2e@example.com>` (7 commit) và `Tran Quang Dang <tranquangdang21@gmail.com>` (1 commit), và identity đang cấu hình là `E2E`. Vậy người duyệt là người thứ hai kia, hay chính `E2E` phải đổi identity, hay quy tắc này vô hiệu lực khi milestone chạy một mình? (2) KHI NÀO — trước khi viết dòng đầu tiên của bảng, hay sau khi viết xong? Plan nói 'không duyệt thì W8b không được sửa dòng nào trong 585 file đó', nghĩa là duyệt PHẢI xảy ra trước khi sửa mã, tức là trước khi viết bảng xong — vậy người duyệt phải theo dõi tiến trình viết bảng chứ không thể duyệt một lần lúc PR mở. (3) NẾU KHÔNG CÓ AI — câu trả lời đề xuất là KHÔNG chặn, nhưng phải ghi rõ trong PR rằng bảng tự duyệt và ai đã đọc. Lý do không nên chặn cứng: W8b là mục không quy ra ngày được, chặn nó vô điều kiện vì thiếu một người có nghĩa là milestone không bao giờ ship được phần hiển thị. Nhưng đặc tả này KHÔNG tự quyết — đó là quyết định của người đứng ngoài. Cách tôi đã cài để câu hỏi này không chỉ nằm trên giấy: `--stage=pre` kiểm `git log --format='%ae' -- scripts/rename/disposition.tsv` có ít nhất hai địa chỉ khác nhau hay không, và in ra cảnh báo khi chỉ có một."
+ },
+ {
+  "id": "W8b",
+  "q": "226 TRONG 599 FILE LÀ FILE TEST, VÀ 24 FILE TRONG SỐ ĐÓ TRÙNG VỚI TẬP 70 FILE CỦA W11. AI SỞ HỮU VIỆC ĐỔI TÊN TRONG 226 FILE ĐÓ? Plan đặt W11 ở wave 5, sau W8b, và W11 nói rõ nhiệm vụ của nó là chuyển khẳng định literal sang đọc hằng số. Nếu W8b sửa literal trước, W11 sẽ làm lại; nếu W8b bỏ qua, cổng nghiệm thu 2 của W8b ('bộ test xanh, không còn khẳng định tên cũ hardcode trong nguồn test') sẽ không bao giờ đạt vì W11 chưa chạy. Đề xuất: W8b CHỈ gán `disposition` cho 226 file test — tức `keep-wire` cho khẳng định wire, `rename` cho khẳng định tên hiển thị — nhưng KHÔNG sửa dòng nào trong chúng; W8a/W7/W9 sửa hằng số trước, W11 mới đọc lại. Nhưng điều đó biến `hits` của 226 hàng thành con số 'đã biết sẽ đổi' chứ không phải 'đã đổi', và cổng `--stage=post` sẽ đỏ. Cần một quyết định bằng văn bản, không phải một quy ước ngầm."
+ },
+ {
+  "id": "W8b",
+  "q": "BA TRONG NĂM LITERAL `APP_NAME` NHÂN BẢN LÀ HÀNG 17 CỦA §2.2, KHÔNG THUỘC W8B — NHƯNG NÓ CÙNG NẰM TRONG TẬP 599. Cụ thể `packages/coding-agent/src/cli/commands/init-xdg.ts:5` và `packages/tui/src/desktop-notify.ts:29` khai báo `const APP_NAME = \"omp\"` cục bộ thay vì đọc hằng số từ `dirs.ts`, và `packages/tui/src/terminal-capabilities.ts:45` khai báo `CMUX_NOTIFICATION_TITLE = \"omp\"`. Nếu W8b chỉ đổi hằng số trung tâm thì ba chỗ này vẫn hiện tên cũ. W1 sở hữu chúng (theo hàng 17) — nhưng chúng nằm trong tập 599 file của W8b, nên nếu W8b đánh `rename` cho chúng thì trùng sở hữu. Đề xuất: W8b đánh `rename` và sửa luôn, vì nó đã ở trong tập; nhưng phải ghi rõ trong PR để không tính trùng."
+ },
+ {
+  "id": "W8b",
+  "q": "CỘT `hits` CHO 562 FILE 'THUẦN HIỂN THỊ' CÓ NHIỀU KHẢ NĂNG LÀ 1, NHƯNG KHÔNG PHẢI LUÔN. File không chứa `\".omp\"`, không chứa selector, không chứa giá trị wire nào trong bảng N thì phần lớn lượt là tên hiển thị và `hits` sẽ bằng số dòng có token. Nhưng ví dụ `packages/coding-agent/test/update-cli.test.ts` có 58 dòng chứa token và 25 literal `\"omp\"` — trong đó có cả `path.join(dir, \".local\", \"bin\", \"omp\")` (đường dẫn) lẫn `parseReportedVersion(\"omp/18.0.6-canary.1\")` (User-Agent). Người viết bảng phải mở từng file và tách, không được suy ra `hits` từ `grep -c`. Đây là lý do effort là L chứ không phải M."
+ },
+ {
+  "id": "W8b",
+  "q": "W8B VÀ W9 CÙNG CHẠM 11 FILE. W8b gán chúng là `keep-worker-selector` với `keep_refs=W9`, W9 sẽ đổi tên selector. Nếu W9 chạy trước khi bảng W8b được duyệt, bảng sẽ mô tả một thế giới không còn tồn tại và `--stage=post` sẽ đỏ. Có nên đưa W9 vào `depends_on` của W8b không, hay giữ thứ tự wave 3 → wave 4 và chấp nhận một lần rà lại bảng? Plan nói 'bảng quyết định phải được rà lại sau W9', nghe như phương án thứ hai, nhưng không nói rõ."
+ },
+ {
+  "id": "W8b",
+  "q": "CÓ NÊN ĐƯA 599 FILE CÒN LẠI THÀNH BA NHÓM EFFORT KHÁC NHAU THAY VÌ MỘT MỤC KHÔNG? Tập 599 gồm 422 file coding-agent, 59 ai, 47 tui và 71 file của các gói khác. Các anchor đã kiểm chứng (`dirs.ts:21,24,27,36`, `update-cli.ts:166,190`, `worker-selectors.ts:9-21`) đều tập trung ở vài chục file; 318 file chỉ có từ 2 lượt trở lại. Có thể một work item riêng cho tập có `hits` nhỏ, chạy song song, sẽ rẻ hơn — nhưng khi đó bảng quyết định bị chia và cổng phải đọc nhiều tệp. Plan đã cân nhắc và chọn một mục; tôi ghi lại vì con số 599 làm mục này lớn hơn mức 'L' mà một mục duy nhất nên mang."
+ },
+ {
+  "id": "W9",
+  "q": "Tên bin mới chính xác, và `DEFAULT_CMD` có nên bỏ ghim cứng không? `packages/coding-agent/src/task/omp-command.ts:11` đang ghim `\"omp.cmd\" : \"omp\"`. Có hai lựa chọn: (a) chỉ đổi chuỗi (giữ nguyên lỗi \"quên một trong ba khai báo bin\"), hay (b) suy ra từ `APP_NAME`: `const DEFAULT_CMD = process.platform === \"win32\" ? `${APP_NAME}.cmd` : APP_NAME`. KHUYẾN NGHỊ (b) — nó xoá nguyên nhân gốc của rủi ro số 4, và repo đã có tiền lệ đúng y như vậy ở `packages/coding-agent/test/fixtures/compiled-worker-selector-host.ts:5` (`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`). Cần người quyết định vì nó biến W9 từ 'đổi 3 literal' thành 'xoá 1 literal + thêm 1 import'."
+ },
+ {
+  "id": "W9",
+  "q": "Marker `# >>> omp profile alias:` và tên file `omp-profiles.fish`: đóng băng hay đổi? (a) Đóng băng cả hai ở giá trị cũ, thêm vào `do_not_rename` với lý do 'cơ chế nhận diện block do công cụ quản lý trong file rc của người dùng' — người dùng cũ không bị append trùng, nhưng file sinh ra vẫn mang tên cũ. (b) Đổi cả hai và chấp nhận: block cũ trong rc không bị nhận nữa, file fish cũ vẫn được source song song. Cần người quyết vì đây là đánh đổi giữa 'sạch tên' và 'tương thích cài đặt đang tồn tại', mà §1.1 đặt tương thích là ràng buộc tuyệt đối."
+ },
+ {
+  "id": "W9",
+  "q": "`omp-stats` có thuộc W9 không? `packages/stats/package.json:27` khai báo `\"bin\": { \"omp-stats\": \"./src/index.ts\" }` — đây là tên lệnh thứ TƯ được cài vào PATH, và kế hoạch không nhắc tới nó ở đâu cả. N17 giữ nguyên basename gói `@oh-my-pi/omp-stats` → `@ultraworkers/omp-stats`, nhưng tên BIN không phải basename: nó là lệnh người dùng gõ. Chốt: giữ `omp-stats`, hay đổi thành `ultraworkers-stats`? Nếu đổi thì nó là một work item riêng vì `packages/coding-agent/src/cli/update-cli.ts` phân loại cài đặt dựa trên tên."
+ },
+ {
+  "id": "W9",
+  "q": "`omp.ida.<id>` trong `docs/tools/ida.md:14` là tên daemon/socket — wire hay display? Nó không nằm trong danh sách N4 của §2.3 (5 vị trí wire đã gom về `WIRE_NAME`), nhưng nó là danh tính runtime mà client ngoài có thể thấy. Nếu là wire thì phải vào `do_not_rename`; nếu chỉ là tên daemon nội bộ thì đổi được. W9 chỉ sửa phần `__omp_worker_ida_host` cạnh nó, còn lại để W10."
+ },
+ {
+  "id": "W9",
+  "q": "Có thêm smoke cho `tab` và `js_eval_process` không? Đây là 2 loại selector duy nhất mà KHÔNG có lời gọi `smokeTest*` nào ở `cli.ts:151-179`. `js_eval_process` đã được `worker-selector.test.ts` (3 ca) chạm tới; `tab` thì hoàn toàn trần. Chấp nhận thiếu phủ (vì tỷ lệ 14/16 trong smoke là đã rất cao), hay thêm một `smokeTestTabWorker`? Nếu thêm thì nó là bước thêm ngoài W9 và cần thêm một worker module graph."
+ },
+ {
+  "id": "W9",
+  "q": "Ba token sentinel trong test có đổi theo cho nhất quán không? `__omp_worker_test` (8 lượt, `executable-fallback.test.ts`) là argv tùy ý chỉ để `resolveWorkerSpawnCmd` chuyển tiếp — KHÔNG cần khớp tiền tố. `__omp_worker_does_not_exist` (2 lượt, `worker-selector.test.ts:24,41`) là selector CỐ Ý sai. `__omp_worker_core_gate` (30 lượt, `worker-core.test.ts`) là tên thuộc tính `globalThis`, KHÔNG liên quan gì tới worker host. KHUYẾN NGHỊ: giữ nguyên cả ba, vì đổi chúng chỉ tạo diff nhiễu và tăng rủi ro. Nhưng nếu W9 chạy `sed` toàn repo trên `__omp_worker_` thì chúng sẽ bị đổi ngoài ý muốn — vì vậy đừng chạy sed toàn repo ở W9."
+ },
+ {
+  "id": "W10",
+  "q": "`nix/home-manager.nix:14` đặt `options.programs.omp` — đây là tên option home-manager mà người dùng viết trong `home.nix` của họ. Đổi nó phá mọi config home-manager hiện hữu, cùng loại với `.omp` cấp project (N14) mà W6a đã quyết định giữ. KHUYẾN NGHỊ: giữ `programs.omp` nguyên vẹn, thêm vào `do_not_rename` với lý do 'tên option là config người dùng viết tay, không phải trạng thái máy'. CẦN QUYẾT ĐỊNH TRƯỚC khi sửa `nix/`. Nếu tổ chức muốn đổi, cần alias option mới → option cũ trước."
+ },
+ {
+  "id": "W10",
+  "q": "`scripts/ci-update-brew-formula.ts:15` `HOMEPAGE = \"https://omp.sh\"` — domain thứ BA đóng attribution (hai cái kia là `APP_URL` ở `dirs.ts:24` và `USER_AGENT` ở `dirs.ts:36`, đã nằm trong N9). Có domain mới thật sự resolve chưa? Nếu chưa, giữ `https://omp.sh` và ghi vào keep-list — Formula trỏ host chết thì `brew install` vẫn chạy nhưng attribution về OpenRouter/Vercel hỏng."
+ },
+ {
+  "id": "W10",
+  "q": "`README.md:40` (`curl -fsSL https://omp.sh/install | sh`) và `:85` (`irm https://omp.sh/install.ps1 | iex`) phụ thuộc domain. Nếu domain đổi, các lệnh cài này trong README và trên trang chủ phải đổi cùng một lần phát hành. Tài liệu thuộc W13, nhưng W10 sửa `scripts/install.sh` — hai bên phải thống nhất tên."
+ },
+ {
+  "id": "W10",
+  "q": "`ci.yml:34` `branches: [main, omp2]` và comment `:578`. Đã kiểm tra: KHÔNG có nhánh `omp2` nào trên `origin` (chỉ `main` và `milestone-1`). Đây có thể là filter push chết, hoặc nhánh chỉ tồn tại trên fork gốc. KHÔNG tự ý xoá — hỏi maintainer. Đây là trigger filter, đổi nó ảnh hưởng ai được chạy CI."
+ },
+ {
+  "id": "W10",
+  "q": "`Cargo.toml:30` `homepage = \"https://omp.sh/\"` và `:31` `repository = \"https://github.com/can1357/oh-my-pi\"` — metadata phân phối crate, trỏ về org cũ. Nằm ngoài danh sách file của plan. Có thuộc W10, hay để W13? Lưu ý `repository` trỏ org khác hẳn (`can1357` vs `ultrabuilders`) — đây có thể là quyết định có chủ ý đã có, đừng đổi bừa."
+ },
+ {
+  "id": "W10",
+  "q": "W10 có cần một hàng changelog không? AGENTS.md nói changelog chỉ cập nhật khi được yêu cầu, và hướng dẫn M5 nói rõ đừng tự thêm. Đặc tả này KHÔNG đề xuất hàng changelog cho W10 — đây là hạ tầng, người dùng không thấy gì. Nếu release-notes sinh từ commit thì không cần."
+ },
+ {
+  "id": "W11",
+  "q": "Sau W4, tên của candidate list hai root là gì? 217 lượt `.omp` không phân loại được thành tập (i) 'config root của app' và tập (ii) 'đường dẫn legacy được seed' nếu không biết hằng số candidate đó tên gì. Đây là câu hỏi chặn thật sự, và nó là lý do W11 phụ thuộc W4 chứ không chỉ phụ thuộc W1/W3."
+ },
+ {
+  "id": "W11",
+  "q": "`packages/coding-agent/test/fixtures/before-compaction.jsonl` (2.3 MB) không được tham chiếu ở bất kỳ đâu — `git grep -rn 'before-compaction' -- .` không trả về gì. Nó là fixture chết. Giữ đóng băng (đề xuất của tôi, vì nó là transcript lịch sử) hay xoá? Xoá là việc ngoài phạm vi W11 và cần quyết định riêng."
+ },
+ {
+  "id": "W11",
+  "q": "Detector `scripts/ci-rename-test-literals.ts` có được phép là một script grep trong CI không, hay phải là một `bun test`? AGENTS.md cấm source-grep BÊN TRONG test; nó không cấm một detector CI, và DoD của chính plan (dòng 14034-14039) là grep-based với `disposition.tsv` làm nơi CI đọc. Tôi đọc là được phép, nhưng đây là ranh giới diễn giải nên nói thẳng trong PR chứ không giấu."
+ },
+ {
+  "id": "W11",
+  "q": "5 file test có `.omp` nằm ngoài `packages/coding-agent` (tui 2, ai 1, utils 1) — có file nào trong số đó thực ra là contract đáng giữ (ví dụ `tui/test/render-utils.test.ts` khẳng định chuỗi hiển thị có sanitize đúng không) hơn là chỉ là đường dẫn tạm? Tôi mới chỉ phân loại qua mẫu, chưa đọc hết 61 file."
+ },
+ {
+  "id": "W12",
+  "q": "Where does the `omp` manifest block get authored — in the repo's `packages/coding-agent/package.json`, or injected per-release by the publish step? The plan explicitly punts on this ('bản thân manifest, không phải file nguồn') but does not decide. Authoring it in the repo means every publish of that directory carries the rename pointer, including the new-name package; injecting it costs the per-release mechanism. Different failure modes, no default. Must be decided in step 4, in the commit message."
+ },
+ {
+  "id": "W12",
+  "q": "How is the rename path verified end-to-end against a real published manifest before release, and who has registry access to do it? A fixture-based test proves the parser, not the release. The plan demands the real check and provides no mechanism or owner for it."
+ },
+ {
+  "id": "W12",
+  "q": "Is `@ultraworkers` scope available and owned, and is the old scope still publishable for the stub? Both are external, both are stated as external in the plan, and both block the item outright. This is the same unresolved question that blocks W2/W7; W12 cannot proceed past step 10 without it."
+ },
+ {
+  "id": "W12",
+  "q": "Does the stub ship a real `omp` shim binary, or does the install matrix learn the new command name? `scripts/install-tests/run-ci.sh:94,103` currently require a `dist/omp` artifact. W12 needs a decision or an explicit handoff to W10; leaving it undecided means neither item can be signed off."
+ },
+ {
+  "id": "W13",
+  "q": "URL `github.com/can1357/oh-my-pi` có được đổi không? 24 lượt trên 13 file `.md` và 54 file `.ts`. Bảng `do_not_rename` N1–N17 KHÔNG có hàng nào phủ nó, và không work item nào sở hữu. GitHub giữ redirect khi repo đổi tên nên URL cũ không gãy — nghĩa là đây là việc KHÔNG GÃY, cũng chính vì thế dễ bị bỏ sót vĩnh viễn. Cần người dùng trả lời: repo GitHub có được đổi tên trong M5 không? Nếu có, W13 cập nhật 13 file `.md` và phần `.ts` phải có chủ sở hữu riêng (không thuộc W13). Nếu không, thêm một hàng N mới vào `do_not_rename` với lý do."
+ },
+ {
+  "id": "W13",
+  "q": "`omp://` là tên hiển thị cần đổi không? `packages/coding-agent/src/prompts/internal-urls/omp.md` giữ tài liệu harness và được import theo đường dẫn. Nếu đổi thì đổi SCHEME, thuộc W9, và phải giữ alias cho scheme cũ. Nếu giữ thì cần một hàng trong `do_not_rename`. W13 không tự quyết."
+ },
+ {
+  "id": "W13",
+  "q": "9 file `.md` dưới `.omp/` và `internal-urls/omp.md` có được tính vào 'tài liệu' không? Tôi khuyến nghị KHÔNG và đã loại chúng khỏi allow-list ở bước 2. Nhưng nếu chúng được tínm vào thì tổng bề mặt là 103 chứ không phải 93, và phải có người chịu trách nhiệm riêng cho chúng — không phải W13."
+ },
+ {
+  "id": "W13",
+  "q": "Ai sửa `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51`? Câu hỏi sở hữu kép ở `risk` #1. Tôi đề xuất W8a, vì W8a đã ghi điều kiện phụ thuộc M2 còn W13 thì không."
+ },
+ {
+  "id": "W13",
+  "q": "`scripts/rename/check-docs-rename.ts` có được nối vào job CI nào? Repo có `check:tools` (oxlint + oxfmt) chạy trong `bun run check`, nhưng đó là lint chứ không phải gate nội dung. Cần biết job nào sẽ gọi nó, nếu không thì gate chỉ chạy khi ai đó nhớ chạy tay — tức là gate hữu ích nhưng không ép ai."
+ },
+ {
+  "id": "W13",
+  "q": "Cột `New name` trong `docs/environment-variables.md` có phản ánh cơ chế mirror `OMP_*` → `PI_*` (đã có) hay chỉ ánh xạ `ULTRAWORKERS_CONFIG_DIR`? Tôi đề xuất cột chỉ ghi TÊN, và sửa dòng 29 để giải thích cơ chế. Nếu cột ghi cả quan hệ thắng/thua thì phải quyết định rõ điều gì thắng gì cho TỪNG biến, và đó là câu hỏi lớn hơn W13."
+ },
+ {
+  "id": "W13p",
+  "q": "Is the `omp-rpc` DISTRIBUTION name being renamed at all? This blocks the item and the plan leaves it open. The stated default is KEEP `omp-rpc` permanently, on the grounds that renaming breaks every existing `pip install omp-rpc`. If that default stands, then `python/omp-rpc/pyproject.toml:6` stays AND `python/robomp/pyproject.toml:22` must stay as a coupled consequence, AND `Dockerfile:164`'s `pip install /tmp/wheels/omp_rpc-*.whl` keeps resolving. If the answer is instead to rename, this item grows a release-ordering requirement (publish the new name before retiring the old) and needs a changelog note in that package — which AGENTS.md forbids writing unless explicitly asked. The conservative default is assumed throughout this spec, and it is the only assumption that leaves the tree installable."
+ },
+ {
+  "id": "W13p",
+  "q": "Is the `robomp` DISTRIBUTION name being renamed? The plan's open-questions table asks only about `omp-rpc` and says nothing about `robomp`, yet `python/robomp/pyproject.toml:6` is the same class of decision — a published PyPI name where renaming breaks every existing install. This spec assumes KEEP, but the question is genuinely unasked rather than answered, and `robomp` also encodes the old brand ('robo' + 'omp') in a way `omp-rpc` does not."
+ },
+ {
+  "id": "W13p",
+  "q": "What is the new domain, and does `python/omp-rpc/pyproject.toml:26` move with it? `Homepage = \"https://omp.sh/\"` is the same value as `APP_URL` at `packages/utils/src/dirs.ts:24`, which the risk table freezes until a new domain actually resolves. If N9 has not been decided by the time this item lands, `:26` must be left alone rather than renamed on a guess. The safe default here is to leave it and record why."
+ },
+ {
+  "id": "W13p",
+  "q": "Are `python/omp-rpc/pyproject.toml:27,28` (`Repository` and `Documentation`, both `https://github.com/can1357/oh-my-pi`) in scope for any milestone? They carry the old org name but are invisible to `git grep -n 'omp'`, because the string `oh-my-pi` does not contain the substring `omp`. W7 targets `@oh-my-pi/` with a trailing slash and would not match them; W8a handles bare `\"oh-my-pi\"` in TypeScript. A URL in a Python manifest currently belongs to nobody. Default: leave them, and do not let a W7 pass reach them by accident."
+ },
+ {
+  "id": "W13p",
+  "q": "Does robomp's staged agent home need migrating when W6 flips `CONFIG_DIR_NAME`? `worker.py:145,168,209` and `entrypoint.sh:60,61,65,66,77-81` manage `/srv/agent-home/.omp` — the CLI's own config dir. This spec keeps them on `.omp` because W4's dual-root reader still reads the legacy root, which makes the current arrangement correct during the transition. But if `config migrate` (W5) has run on a container's volume, the staged home becomes stale and robomp would populate a root nobody reads. Nobody currently owns that hand-off. Default: keep as-is and raise it at W6; the fix is not safe to make before W4's dual-root reader is proven."
+ }
+]

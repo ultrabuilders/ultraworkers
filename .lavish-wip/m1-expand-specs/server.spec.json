@@ -1,0 +1,712 @@
+{
+  "id": "server",
+  "title": "Migrate @earendil-works/pi-server -> @oh-my-pi/pi-server by verbatim copy; LAST of the 7, blocked on chord + pi-protocol, and on one type omp does not have",
+  "source_path": "/Users/tranquangdang21/Projects/pi-ref/packages/server",
+  "source_files": 29,
+  "source_bytes": 115351,
+  "one_line": "pi-server is a transport-neutral, length-framed CBOR RPC server that hosts durable Sessions over a Unix-domain-socket listener and routes contract-agnostic chord service calls per presentation attachment — 16 source files / 67,005 bytes, and the only one of the seven new packages with ZERO external npm dependencies of its own (its sole dep `esbuild` belongs to chord, and its other two deps are the sibling packages chord and pi-protocol).",
+  "why_copy_not_reimplement": "Three reasons, each tied to a contract a rewrite would silently lose.\n\n(1) The state machine is the product. `Server` is 576 lines whose value is almost entirely in ORDERING, not in any algorithm: `awaitingHello → handshaking → ready → closing → closed`; a handshake whose `finishHandshake` promise has not settled must QUEUE subsequent messages rather than drop them (server.ts:252-259); a `hello` that arrives after the handshake is refused while one that arrives during it is awaited; and a request that fails AFTER it already responded must close the connection instead of sending a second response (server.ts:387-390). A reimplementation reproduces none of this for free — it reproduces it only if someone has read all 576 lines and understood why each branch exists. 5 of the 39 upstream tests exist purely to pin this ordering (`requires hello as the first message`, `accepts fragmented hello and request frames`, `rejects a second hello after completing the handshake`, `processes a hello and request coalesced in one byte chunk`, `reports a truncated final frame when the peer closes`). Copying carries the ordering and its tests together; a rewrite has to re-derive both and then prove the re-derivation.\n\n(2) The failure handling is the contract, and it is unguessable. Every cleanup path in this package is an AggregateError with a specific argument list and a specific report-vs-throw decision: `startInternal` closes already-started listeners before rethrowing and wraps the original error with every cleanup error (server.ts:124-128); `closeInternal` collapses a single failure to that error and multiple failures to `new AggregateError(errors, \"Server shutdown failed\")` (server.ts:197-203); `handleRequest` deletes the subscription encoder only when it installed one and had not yet responded (server.ts:384-386); `removeSession` throws one error bare but aggregates many, and does so with the message `Failed to close Session ${sessionId}` (session-router.ts:87-88). A rewrite gets all of this subtly wrong in ways that only surface when a listener fails to close during shutdown — the exact scenario `test/server.test.ts:111` (\"rejects close and closed when listener shutdown fails\") and `test/conformance.test.ts:479` (\"fails shutdown when an in-flight acquisition cannot release its Harness\") exist to catch. These are 5 lines each, and they are the lines you cannot reconstruct from the interface.\n\n(3) The filesystem-safety logic in the Unix listener is genuinely subtle and load-bearing. `removeStaleSocket` refuses to unlink a non-socket, refuses when a live listener answers a connect probe, renames the target to a sibling, RE-STATs it, and restores the original name if the inode changed underneath it; `cleanupOwnedSocket` does the same dance in reverse to avoid deleting a replacement. `start` binds a private `bind-<sha256-prefix>` path, `link()`s it to the public name, `chmod`s, then unlinks the private one — so a crashed startup never publishes a half-configured socket. That is ~90 lines of TOCTOU-aware code in a 421-line file, and a regression in it deletes a user's regular file. `test/unix.test.ts` has 5 cases devoted to it, including \"never unlinks a regular file at the configured path\" and \"does not remove a replacement inode during shutdown\". Reimplementing this is the single highest-risk thing in the whole wave, and copying it is free.\n\nBonus, and it is what makes the mechanical pass so cheap: this package imports NOTHING from the npm ecosystem. Its dependencies are `@earendil-works/chord`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-protocol` — all in-wave siblings — and its devDependencies (`shx`, `vitest`) are both droppable. No `esbuild`, no `typebox`, no third-party runtime surface enters through this door. Copy-then-migrate costs 38 scope substitutions and 57 `.ts`-suffix strips; a hand-port would cost the same design work with none of the provenance and none of the MIT notice trail that makes future upstream merges possible.",
+  "public_api": [
+    {
+      "symbol": "INTERNAL_SERVER_ERROR_MESSAGE",
+      "kind": "const",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:11",
+      "target_anchor": "packages/server/src/errors.ts:11",
+      "already_exists_in_omp": false,
+      "note": "Opaque error text for any non-ServerError/non-RemoteServiceError/non-ProtocolValidationError throw (server.ts:520). Preserved verbatim; the constant is the wire contract a client matches on."
+    },
+    {
+      "symbol": "ServerError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:14",
+      "target_anchor": "packages/server/src/errors.ts:14",
+      "already_exists_in_omp": false,
+      "note": "Base class; `toProtocolError` (server.ts:513) does `error instanceof ServerError || error instanceof RemoteServiceError` and forwards `.code`/`.message` verbatim. The instanceof pairing with chord's RemoteServiceError is the reason this class must keep its exact name and shape."
+    },
+    {
+      "symbol": "WrongServerError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:24",
+      "target_anchor": "packages/server/src/errors.ts:24",
+      "already_exists_in_omp": false,
+      "note": "code `wrong_server`. Thrown by Server.handleRequest at server.ts:346 BEFORE any repository access — test/conformance.test.ts:321 pins that ordering."
+    },
+    {
+      "symbol": "SessionNotFoundError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:31",
+      "target_anchor": "packages/server/src/errors.ts:31",
+      "already_exists_in_omp": false,
+      "note": "code `session_not_found`. Application-thrown via ServerHost.resolveSession; the class ships here so hosts can throw the one type the server maps."
+    },
+    {
+      "symbol": "SessionAmbiguousError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:38",
+      "target_anchor": "packages/server/src/errors.ts:38",
+      "already_exists_in_omp": false,
+      "note": "code `session_ambiguous`. Same role as SessionNotFoundError."
+    },
+    {
+      "symbol": "SessionNotAttachedError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:45",
+      "target_anchor": "packages/server/src/errors.ts:45",
+      "already_exists_in_omp": false,
+      "note": "code `session_not_attached`. Thrown by SessionRouter.requireAttachment (session-router.ts:229) when the request's {sessionId, attachmentId} does not match the calling connection's live route."
+    },
+    {
+      "symbol": "ServerDrainingError",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts:52",
+      "target_anchor": "packages/server/src/errors.ts:52",
+      "already_exists_in_omp": false,
+      "note": "code `server_draining`. The draining latch is read in 6 places across session-router.ts; the error is the observable half of that contract."
+    },
+    {
+      "symbol": "ServerListener",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/listener.ts:4",
+      "target_anchor": "packages/server/src/listener.ts:4",
+      "already_exists_in_omp": false,
+      "note": "`start(accept)`/`close()`. The ONLY transport seam: Server never imports node:net. Verified `export interface ServerListener` matches 0 files under omp/packages."
+    },
+    {
+      "symbol": "ServerOptions",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:5",
+      "target_anchor": "packages/server/src/types.ts:5",
+      "already_exists_in_omp": false,
+      "note": "0 matches in omp. `listeners: readonly ServerListener[]` is required (no default) — resolveOptions throws TypeError without it (server.ts:559)."
+    },
+    {
+      "symbol": "MaybePromise",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:15",
+      "target_anchor": "packages/server/src/types.ts:15",
+      "already_exists_in_omp": true,
+      "note": "COLLISION (benign, real). omp already defines an identical `export type MaybePromise<T> = T | Promise<T>` at packages/utils/src/acp/protocol.ts:9, reachable as `@oh-my-pi/pi-utils/acp/protocol`. AGENTS.md 'Central Utilities' forbids a second implementation. Resolution in collisions[0]."
+    },
+    {
+      "symbol": "RoutedSessionAttachment",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:18",
+      "target_anchor": "packages/server/src/types.ts:18",
+      "already_exists_in_omp": false,
+      "note": "The presentation-scoped capability a Session hands the server. invokeService takes an opaque ServiceCall — the server never decodes business payloads."
+    },
+    {
+      "symbol": "RoutedServerPresentation",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:29",
+      "target_anchor": "packages/server/src/types.ts:29",
+      "already_exists_in_omp": false,
+      "note": "attachSession/detachSession/prepareSessionRemoval, bound per connection in Server.finishHandshake (server.ts:272-279). This is the object a server-service host receives."
+    },
+    {
+      "symbol": "RoutedServerServiceAttachment",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:37",
+      "target_anchor": "packages/server/src/types.ts:37",
+      "already_exists_in_omp": false,
+      "note": "Connection-scoped service endpoint. Stored on ConnectionState.serverServices; the alternative branch of handleRequest (server.ts:353)."
+    },
+    {
+      "symbol": "RoutedServerServiceHost",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:46",
+      "target_anchor": "packages/server/src/types.ts:46",
+      "already_exists_in_omp": false,
+      "note": "ServerHost.serverServices. `attachClient(presentation, context)` is called once per successful handshake."
+    },
+    {
+      "symbol": "RoutedSessionHandle",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:51",
+      "target_anchor": "packages/server/src/types.ts:51",
+      "already_exists_in_omp": false,
+      "note": "Process-safe handle: attachClient/terminated/close. `terminated` is optional and drives SessionRouter.invalidate (session-router.ts:294) — a terminated handle evicts the hosted session and releases its attachments."
+    },
+    {
+      "symbol": "ServerHost",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts:59",
+      "target_anchor": "packages/server/src/types.ts:59",
+      "already_exists_in_omp": false,
+      "note": "THE blocking type. Generic `TMetadata extends SessionMetadata` — the only symbol in the whole package that does not resolve inside omp. See collisions[2] and open_questions[0]."
+    },
+    {
+      "symbol": "Server",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/server.ts:46",
+      "target_anchor": "packages/server/src/server.ts:46",
+      "already_exists_in_omp": false,
+      "note": "576-line connection lifecycle: start/accept/close + `readonly closed: Promise<void>`. No `export class Server` exists anywhere in omp (measured 0), so no silent shadowing — but the NAME is used in omp for two unrelated things. See collisions[1]."
+    },
+    {
+      "symbol": "SessionRouter",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/session-router.ts:34",
+      "target_anchor": "packages/server/src/session-router.ts:34",
+      "already_exists_in_omp": false,
+      "note": "NOT re-exported from index.ts — reachable only by deep import. 312 lines of per-client serialization (`runForClient`) and attachment lifetime. Deliberately internal; keep it unexported from the barrel."
+    },
+    {
+      "symbol": "ByteConnection",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts:7",
+      "target_anchor": "packages/server/src/connection.ts:7",
+      "already_exists_in_omp": false,
+      "note": "NOT re-exported from index.ts. `closed`/`send`/`close(finalChunk?)` — the ordered-byte abstraction the whole server is written against. Zero matches in omp."
+    },
+    {
+      "symbol": "ByteConnectionHandler",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts:13",
+      "target_anchor": "packages/server/src/connection.ts:13",
+      "already_exists_in_omp": false,
+      "note": "onData/onClose/onError. NOT re-exported from index.ts."
+    },
+    {
+      "symbol": "ByteConnectionAcceptor",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts:19",
+      "target_anchor": "packages/server/src/connection.ts:19",
+      "already_exists_in_omp": false,
+      "note": "NOT re-exported from index.ts. `(connection) => handler` — the callback ServerListener implementations call."
+    },
+    {
+      "symbol": "ConnectionStage",
+      "kind": "type",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts:21",
+      "target_anchor": "packages/server/src/connection.ts:21",
+      "already_exists_in_omp": false,
+      "note": "NOT re-exported. 5-state union; the ordering `awaitingHello → handshaking → ready → closing → closed` is the state machine test/protocol.test.ts drives."
+    },
+    {
+      "symbol": "ConnectionState",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts:23",
+      "target_anchor": "packages/server/src/connection.ts:23",
+      "already_exists_in_omp": false,
+      "note": "NOT re-exported. Per-connection record. Contains `handshakeTimeout: NodeJS.Timeout` — the one place the `NodeJS.` global type leaks in; see step 7."
+    },
+    {
+      "symbol": "isTerminalConnection",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts:35",
+      "target_anchor": "packages/server/src/connection.ts:35",
+      "already_exists_in_omp": false,
+      "note": "NOT re-exported. `disconnected || stage==='closing' || stage==='closed'` — guards the receive loop and the message dispatch loop."
+    },
+    {
+      "symbol": "getUnixSocketPath",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/address.ts:4",
+      "target_anchor": "packages/server/src/transports/unix/address.ts:4",
+      "already_exists_in_omp": false,
+      "note": "Exported from the `./unix` subpath. Regex-validates a canonical lowercase UUIDv4 and throws TypeError otherwise. 0 matches in omp."
+    },
+    {
+      "symbol": "createUnixListener",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/listener.ts:388",
+      "target_anchor": "packages/server/src/transports/unix/listener.ts:388",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./unix`. The ONLY node:net consumer in the package. 0 matches in omp."
+    },
+    {
+      "symbol": "createUnixServer",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/preset.ts:8",
+      "target_anchor": "packages/server/src/transports/unix/preset.ts:8",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./unix`. Composes one UnixListener into a Server. Generic over TMetadata — inherits the SessionMetadata problem from ServerHost."
+    },
+    {
+      "symbol": "UnixListenerOptions",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/types.ts:3",
+      "target_anchor": "packages/server/src/transports/unix/types.ts:3",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./unix`. path/mode/maxPendingBytes/gracefulCloseTimeoutMs/maxFrameLength/onError, all range-validated in resolveUnixListenerOptions (listener.ts:392)."
+    },
+    {
+      "symbol": "UnixServerOptions",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/types.ts:15",
+      "target_anchor": "packages/server/src/transports/unix/types.ts:15",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./unix`. `extends Omit<ServerOptions,'listeners'>, UnixListenerOptions`."
+    },
+    {
+      "symbol": "UnixByteConnection",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/listener.ts:191",
+      "target_anchor": "packages/server/src/transports/unix/listener.ts:191",
+      "already_exists_in_omp": false,
+      "note": "Marked `@internal Exported only for transport-level verification` and deliberately NOT re-exported from unix/index.ts. test/unix-connection.test.ts deep-imports it. Keep the marker comment and the deep-import path."
+    },
+    {
+      "symbol": "WireChannel",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/client.ts:21",
+      "target_anchor": "packages/server/src/testing/client.ts:21",
+      "already_exists_in_omp": false,
+      "note": "Exported from the `./testing` subpath. send/sendFragmented/close — the seam that lets conformance.test.ts drive the server in-process with zero sockets."
+    },
+    {
+      "symbol": "ProtocolTestClient",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/client.ts:27",
+      "target_anchor": "packages/server/src/testing/client.ts:27",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Records `messages` and resolves `next(predicate)` waiters. Also asserts 'Wire client is closed' when a waiter is registered post-close."
+    },
+    {
+      "symbol": "connectUnixTestClient",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/client.ts:152",
+      "target_anchor": "packages/server/src/testing/client.ts:152",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Real-socket client used by test/unix.test.ts."
+    },
+    {
+      "symbol": "Deferred",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/host.ts:7",
+      "target_anchor": "packages/server/src/testing/host.ts:7",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. omp has no such class (0 matches) but AGENTS.md mandates `Promise.withResolvers()` — see step 12. Name collides conceptually with omp's usage, not by symbol."
+    },
+    {
+      "symbol": "TestHarness",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/host.ts:27",
+      "target_anchor": "packages/server/src/testing/host.ts:27",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Holds a live `Session` and the observable counters every conformance assertion reads (attachedClients, attachmentReleaseCount, closeCount, serviceCalls)."
+    },
+    {
+      "symbol": "createTestServerServices",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/host.ts:119",
+      "target_anchor": "packages/server/src/testing/host.ts:119",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Hard-codes serviceId `pi.session-management` (3 literals total across testing/). See open_questions[2]."
+    },
+    {
+      "symbol": "TestServerHost",
+      "kind": "class",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/host.ts:151",
+      "target_anchor": "packages/server/src/testing/host.ts:151",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Depends on `MemorySessionRepo`, which omp does not have in ANY package (measured 0). This is the single hardest file in the package to migrate — see collisions[3]."
+    },
+    {
+      "symbol": "TestServerOptions",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/server.ts:5",
+      "target_anchor": "packages/server/src/testing/server.ts:5",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Omit<ServerOptions,'serverId'> plus optional host/serverId."
+    },
+    {
+      "symbol": "TestServer",
+      "kind": "interface",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/server.ts:10",
+      "target_anchor": "packages/server/src/testing/server.ts:10",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. `{ server, host }` pair."
+    },
+    {
+      "symbol": "createTestServer",
+      "kind": "function",
+      "source_anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/server.ts:16",
+      "target_anchor": "packages/server/src/testing/server.ts:16",
+      "already_exists_in_omp": false,
+      "note": "Exported from `./testing`. Defaults serverId to 00000000-0000-4000-8000-000000000001 — the same fixture UUID the three test files use."
+    }
+  ],
+  "scope_rewrites": [
+    {
+      "from": "@earendil-works/pi-protocol",
+      "to": "@oh-my-pi/pi-protocol",
+      "occurrences": 11,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-agent-core",
+      "to": "@oh-my-pi/pi-agent-core",
+      "occurrences": 10,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/chord",
+      "to": "@oh-my-pi/chord",
+      "occurrences": 9,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-server",
+      "to": "@oh-my-pi/pi-server",
+      "occurrences": 4,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-ai",
+      "to": "@oh-my-pi/pi-ai",
+      "occurrences": 3,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-telemetry",
+      "to": "@oh-my-pi/pi-telemetry",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "from \"./x.ts\"  (relative specifier, .ts suffix)",
+      "to": "from \"./x\"  (extensionless)",
+      "occurrences": 57,
+      "verified": true
+    }
+  ],
+  "new_dependencies": [
+    {
+      "name": "@oh-my-pi/chord",
+      "version": "18.3.3 (workspace catalog)",
+      "why": "Hard dep. pi-server imports 11 chord symbols across 7 files: types JsonValue/ServiceCall/ServiceProviderUpdate/ServiceStateEncoder/RemoteServiceErrorCode, values createServiceStateEncoder/decodeServiceControlCall/parseServiceCall/parseServiceSubscriptionSnapshot/RemoteServiceError. Server cannot typecheck without it.",
+      "already_in_omp": false,
+      "license": "MIT (Copyright (c) 2025 Mario Zechner) — same notice as the root LICENSE already carries."
+    },
+    {
+      "name": "@oh-my-pi/pi-protocol",
+      "version": "18.3.4 (workspace catalog)",
+      "why": "Hard dep, and the harder of the two. 18 symbols across 6 files: ClientMessageDecoder, encodeServerMessage, encodeClientMessage, ServerMessageDecoder, encodeFrame, encodeCbor, DEFAULT_MAX_FRAME_LENGTH, PROTOCOL_VERSION, isServerId, isSupportedProtocolVersion, ProtocolValidationError + 8 envelope types. Its own upstream dep is `typebox@1.3.27`; omp has only `@sinclair/typebox@0.34.52` (transitive) and an unrelated `@oh-my-pi/omptype`. typebox is NOT in the omp catalog, so pi-protocol's spec must decide it before server can land.",
+      "already_in_omp": false,
+      "license": "MIT (Copyright (c) 2025 Mario Zechner)"
+    },
+    {
+      "name": "@oh-my-pi/pi-agent-core",
+      "version": "18.3.3 (workspace catalog)",
+      "why": "Declared dep, but only ONE of its five imported symbols actually has to come from there: SessionMetadata. The other four (Context, BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal) are pure re-exports of `@earendil-works/chord/context` in upstream pi — see pi's packages/agent/src/harness/context.ts:14-25, which re-exports all of them from chord. Repoint those four at `@oh-my-pi/chord/context` and the package stops depending on agent-core except for SessionMetadata. See collisions[2].",
+      "already_in_omp": true,
+      "license": "MIT (Copyright (c) 2025 Mario Zechner; omp adds Can Bölük and Stencil Labs)"
+    }
+  ],
+  "collisions": [
+    {
+      "what": "The `Server` class name. pi-server exports `class Server<TMetadata>`. omp uses the bare word `Server` for two unrelated things: packages/metaharness/src/server.ts:26 does `import type { Server, Subprocess } from \"bun\"` and annotates `#server: Server<undefined> | null` (line 194), and packages/stats/src/server.ts is a whole file of the same name.",
+      "pi_anchor": "packages/server/src/server.ts:46 — `export class Server<TMetadata extends SessionMetadata = SessionMetadata>`",
+      "omp_anchor": "packages/metaharness/src/server.ts:26,194 (`import type { Server } from \"bun\"`; `#server: Server<undefined> | null`) and packages/stats/src/server.ts",
+      "resolution": "KEEP BOTH — no edit to either. They are different packages with different module specifiers, so no import can ever be ambiguous: `@oh-my-pi/pi-server`'s `Server` only enters scope via `import { Server } from \"@oh-my-pi/pi-server\"`, which never collides with a local `import type { Server } from \"bun\"` in a different module. The only real hazard is a FUTURE file that imports both; if that happens, alias the Bun one as `BunServer` at the import site rather than renaming the migrated class. Do not rename the migrated class — upstream name fidelity is the whole point of a copy-based migration."
+    },
+    {
+      "what": "`MaybePromise<T> = T | Promise<T>` declared twice. pi-server declares and star-exports its own at types.ts:15. omp already has a byte-identical declaration in a shared package.",
+      "pi_anchor": "packages/server/src/types.ts:15 — `export type MaybePromise<T> = T | Promise<T>;` (re-exported by src/index.ts:4)",
+      "omp_anchor": "packages/utils/src/acp/protocol.ts:9 — `export type MaybePromise<T> = T | Promise<T>;` (reachable as `@oh-my-pi/pi-utils/acp/protocol` via the `./*` export wildcard)",
+      "resolution": "DROP the local declaration; add `export type { MaybePromise } from \"@oh-my-pi/pi-utils/acp/protocol\";` to src/types.ts so the public API of pi-server is byte-identical but the type has exactly one home. AGENTS.md 'Central Utilities' is explicit that a second implementation of an existing helper is a bug. This is the ONE intentional non-verbatim edit to a public symbol, and it is type-only, so it cannot change runtime behavior."
+    },
+    {
+      "what": "`SessionMetadata` — the generic bound on ServerHost/Server/SessionRouter/createUnixServer — does not exist anywhere in omp, and omp's `@oh-my-pi/pi-agent-core` is NOT the same package as pi's despite the identical name.",
+      "pi_anchor": "packages/server/src/types.ts:59 `ServerHost<TMetadata extends SessionMetadata = SessionMetadata>`; the type itself is pi's packages/agent/src/harness/session/types.ts:473 — a 6-field interface: `{ id: string; createdAt: number; storageVersion: number; cwd?: string; parentSessionId?: string; legacyParentSessionPath?: string }`",
+      "omp_anchor": "packages/agent/src/index.ts exports only 18 flat modules (agent, agent-loop, append-only-context, compaction, output-budget, pause, proxy, replay-policy, run-collector, sent-tool-definitions, speculative-execution, telemetry, thinking, tool-context, tokenizer, types, utils/yield). `grep -rn 'SessionMetadata' packages/agent/src` returns 0 hits. The entire `harness/` subtree is absent: omp pi-agent-core is 34 files / 739,550 bytes vs pi's 117 files / 1,145,928 bytes. omp also has no `MemorySessionRepo`, no `Session` interface, no `SessionReader`, no `SessionDirectory` (all measured 0 across packages/).",
+      "resolution": "DECLARE IT LOCALLY in pi-server. Add the 6-field `SessionMetadata` interface verbatim to packages/server/src/types.ts and import it from there instead of from pi-agent-core, then delete the 7 pi-agent-core import lines. Rationale: (a) the other four agent-core symbols (Context, BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal) are re-exports of chord/context upstream, so repointing them to `@oh-my-pi/chord/context` leaves SessionMetadata as the ONLY residue; (b) omp has no durable-Session concept at all, so there is nothing in-tree for this type to alias to; (c) declaring it here makes pi-server landable as a standalone package instead of hostage to a much larger agent-core reconciliation that is out of scope for this spec. This is a deliberate, named deviation from verbatim — see open_questions[0] for the owner's call."
+    },
+    {
+      "what": "`TestServerHost` depends on `MemorySessionRepo`, a pi-agent-core session-repository abstraction with no omp counterpart and no obvious home.",
+      "pi_anchor": "packages/server/src/testing/host.ts:3 `import { BACKGROUND_CONTEXT, MemorySessionRepo } from \"@earendil-works/pi-agent-core\";` and :153 `readonly repo = new MemorySessionRepo({ now: () => 1 });` — used by resolveSession (list), openSession (open), and seed (create)",
+      "omp_anchor": "none — `grep -rn 'MemorySessionRepo' packages/` returns 0 hits. omp's closest analogue is packages/coding-agent/src/session/, which is a single-process session manager with no repository interface.",
+      "resolution": "REPLACE with a ~30-line in-file `TestSessionRepo` in src/testing/host.ts: keep a `Map<string, SessionMetadata>` plus an in-memory `Session` shim, and give it the three methods the harness calls (list/open/create) so the observable contract the conformance tests assert — resolveSession returns 0 matches → SessionNotFoundError, >1 → SessionAmbiguousError, exactly 1 → that metadata — is unchanged. Do NOT try to introduce a real session-repository abstraction here; that is pi-durable's job and it is a separate package in the wave."
+    },
+    {
+      "what": "Role overlap with the two packages the brief flagged. Neither is a functional duplicate, but both would be mistaken for one by a reader.",
+      "pi_anchor": "packages/server/src/server.ts:136 `accept(connection: ByteConnection): ByteConnectionHandler` — accepts an already-authorized ordered byte stream. Zero HTTP, zero WebSocket, zero MCP anywhere in the package (verified: the only node:net import is transports/unix/listener.ts:4).",
+      "omp_anchor": "packages/collab-web/src/lib/socket.ts (browser WebSocket to a relay room, AES-GCM sealed frames via codec.ts, 4-digit close codes 4001/4004/4009/4029 in RELAY_CLOSE_REASONS) and packages/collab-web/src/lib/link.ts (`wss://host/r/<roomId>.<base64url-key>`) vs packages/metaharness/src/server.ts:211 `Bun.serve({ port, routes, fetch })` — REST + SSE over HTTP for the benchmark run store.",
+      "resolution": "NO MERGE, and record the distinction in the new packages/server/README.md so the next reader does not re-litigate it. pi-server is: length-framed CBOR (pi-protocol) over a Unix socket, a hello/hello_error handshake with PROTOCOL_VERSION = 8, request/response/cancel plus out-of-band attachment and service_update messages, and per-attachment service routing. collab-web is: a WebSocket relay with browser-safe crypto, room-scoped, no handshake version gate. metaharness is: an HTTP/SSE process manager. Three different transports, three different auth models, three different lifecycles. The genuine adjacent art in omp is packages/coding-agent/src/collab/registry.ts (762 lines) and src/tiny/jsonl-socket.ts (49 lines) — both node:net + Unix-socket hosts, but newline-delimited JSON rather than length-framed CBOR, so they remain the idiomatic in-tree pattern for their own protocols and must NOT be refactored onto pi-server."
+    }
+  ],
+  "files_to_copy": [
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/index.ts",
+      "bytes": 117,
+      "action": "copy-then-rewrite",
+      "rewrite": "4 lines. Strip `.ts` from all 4 re-export specifiers. Barrel uses `export * from` — already omp-compliant, keep as-is. NO new exports: do NOT add connection.ts or session-router.ts to the barrel; upstream deliberately keeps them deep-import-only and the tests depend on that."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/errors.ts",
+      "bytes": 1532,
+      "action": "copy-then-rewrite",
+      "rewrite": "1 line: `@earendil-works/chord` → `@oh-my-pi/chord` (line 1). Nothing else. Error class bodies are already `#private`-free and keyword-free (they use `readonly` + constructor assignment, which omp allows)."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/listener.ts",
+      "bytes": 340,
+      "action": "copy-then-rewrite",
+      "rewrite": "1 line: strip `.ts` from `./connection.ts` (line 1). 8 lines total; interface only."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/connection.ts",
+      "bytes": 1322,
+      "action": "copy-then-rewrite",
+      "rewrite": "2 lines: `@earendil-works/chord` → `@oh-my-pi/chord` (line 1); `@earendil-works/pi-protocol` → `@oh-my-pi/pi-protocol` (line 2); strip `.ts` from `./types.ts` (line 4). Line 30's `NodeJS.Timeout` must become `Timer` — see step 7."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/types.ts",
+      "bytes": 2836,
+      "action": "copy-then-rewrite",
+      "rewrite": "3 edits. (a) lines 1-2: drop BOTH upstream import lines; repoint `Context` to `@oh-my-pi/chord/context` and delete the pi-agent-core line entirely. (b) ADD the 6-field `SessionMetadata` interface locally (collisions[2]). (c) line 15: replace the `MaybePromise` declaration with a re-export from `@oh-my-pi/pi-utils/acp/protocol` (collisions[1])."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/server.ts",
+      "bytes": 19869,
+      "action": "copy-then-rewrite",
+      "rewrite": "THE BIG ONE, 576 lines. 3 import blocks to rewrite (lines 1-10 chord, 11 agent-core, 12-30 pi-protocol) plus 5 relative `.ts` specifiers (lines 32,34,35,37,38,39,40). Body logic: NO changes. It already uses `private` TS keyword fields (allowed only on nothing here — see step 6) and no `any`, no `ReturnType<>`, no dynamic imports, no `console.*`. `new Promise((resolve, reject) => ...)` at line 88 is an EXCEPTION to the `Promise.withResolvers()` rule and must be rewritten — see step 7."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/session-router.ts",
+      "bytes": 11959,
+      "action": "copy-then-rewrite",
+      "rewrite": "312 lines. 3 import lines to rewrite (2 chord, 3 agent-core → chord/context + local SessionMetadata, 4 pi-protocol) plus 2 relative `.ts` (5, 6). Body: no logic change. `class SessionCleanupError extends AggregateError {}` at line 8 stays. Line 8 uses `private readonly` fields throughout — see step 6."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/types.ts",
+      "bytes": 610,
+      "action": "copy-then-rewrite",
+      "rewrite": "1 line: strip `.ts` from `../../types.ts`. 15 lines, two interfaces."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/address.ts",
+      "bytes": 425,
+      "action": "copy-verbatim",
+      "rewrite": "9 lines. No pi imports, no relative pi imports (only `node:path`). Copy byte-for-byte."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/index.ts",
+      "bytes": 224,
+      "action": "copy-then-rewrite",
+      "rewrite": "4 lines, all re-exports: strip `.ts` from all 4 specifiers. NOTE: omp AGENTS.md prefers `export * from` in pure index.ts barrels. These 4 are already one-name-each with a type/export split, so keep them as named re-exports — the star rule is about barrels that can be stars, and converting them would newly export the module-internal `UnixByteConnection`. Document the deviation in the PR."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/listener.ts",
+      "bytes": 13675,
+      "action": "copy-then-rewrite",
+      "rewrite": "421 lines, the largest rewrite surface after server.ts. 1 line: `@earendil-works/pi-protocol` → `@oh-my-pi/pi-protocol` (line 6). 3 relative `.ts` (7, 8, 9). Body uses node:net/node:fs/node:crypto via NAMESPACED imports already (`import * as net`? NO — it uses named imports `import { chmod, link, lstat, mkdir, rename, unlink } from \"node:fs/promises\"`). AGENTS.md mandates `import * as fs from \"node:fs/promises\"` for node modules; see step 8. Also `private readonly` fields on UnixListener + UnixByteConnection (see step 6) and 4 `new Promise(...)` constructions (lines 61, 238, 274, 339 — see step 7)."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/transports/unix/preset.ts",
+      "bytes": 1010,
+      "action": "copy-then-rewrite",
+      "rewrite": "28 lines. Line 1 (`@earendil-works/pi-agent-core` type SessionMetadata) → drop; import SessionMetadata from `../../types`. 4 relative `.ts` (2, 3, 4, 5)."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/index.ts",
+      "bytes": 328,
+      "action": "copy-then-rewrite",
+      "rewrite": "5 lines, all re-exports: strip `.ts` from all 5. Same barrel-deviation note as unix/index.ts."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/client.ts",
+      "bytes": 5557,
+      "action": "copy-then-rewrite",
+      "rewrite": "183 lines. 2 lines: chord (3) and pi-protocol (12) scope. 1 relative `.ts` (13). Body: no logic change. `new Promise((resolve, reject) => this.waiters.add(...))` at line 104 — cannot use withResolvers (resolves a value derived from a predicate, not a deferred write) — see step 7 note."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/host.ts",
+      "bytes": 6356,
+      "action": "copy-then-rewrite",
+      "rewrite": "215 lines. HARDEST FILE. 3 upstream import lines to replace (1 chord, 2+3 agent-core) plus 2 relative `.ts` (4, 5). Two substantive edits beyond scope: add the in-file `TestSessionRepo` shim (collisions[3]) and drop the `MemorySessionRepo` import. `Deferred` at lines 7-20 → `Promise.withResolvers()` (step 12)."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/src/testing/server.ts",
+      "bytes": 845,
+      "action": "copy-then-rewrite",
+      "rewrite": "28 lines. 3 relative `.ts` (1, 2, 3). Zero upstream imports. Body unchanged."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/fixtures/stale-socket-server.mjs",
+      "bytes": 246,
+      "action": "copy-verbatim",
+      "rewrite": "9 lines, plain node:net, zero pi imports, zero scope occurrences. `.mjs` is in omp's oxlint ignorePatterns (.oxlintrc.json:55) and in check:tools' not-matched globs, so it is invisible to the linter — it is still typechecked? NO: tsconfig include patterns in omp packages cover `*.ts` only, so this file is neither linted nor typechecked, exactly as upstream. Verify at runtime."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/protocol.test.ts",
+      "bytes": 5727,
+      "action": "copy-then-rewrite",
+      "rewrite": "168 lines, 5 tests. (a) vitest → bun:test: `import { afterEach, describe, expect, test } from \"vitest\"` → `from \"bun:test\"` (bun:test exports all four; `describe` and `test` are the same names). (b) 1 scope line (pi-protocol, line 1). (c) 3 relative `.ts` (3, 4, 5). (d) vitest-only API audit: this file uses `expect(...).resolves.toMatchObject(...)` and `rejects` — both supported by bun:test. No `vi.*`, no `mock.module()` — the file is clean on that front."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/conformance.test.ts",
+      "bytes": 18831,
+      "action": "copy-then-rewrite",
+      "rewrite": "502 lines, 20 tests in 2 describes. The contract centrepiece. (a) vitest → bun:test. (b) 2 scope lines (chord:1, pi-agent-core:2 → BACKGROUND_CONTEXT moves to chord/context, SessionMetadata to ../src/types). (c) 5 relative `.ts`. (d) test/gate primitives used: `expect(x).toBe`, `.rejects.toThrow`, `.resolves` — all in bun:test. Verify no `vi.useFakeTimers` (there is none)."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/server.test.ts",
+      "bytes": 4133,
+      "action": "copy-then-rewrite",
+      "rewrite": "127 lines, 6 tests. (a) vitest → bun:test. (b) 1 scope line (pi-protocol:4). (c) 5 relative `.ts`. Covers option validation (TypeError ranges), concurrent start, handshake timeout emitting a final hello_error frame, and shutdown-failure propagation."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/listener.test.ts",
+      "bytes": 1583,
+      "action": "copy-then-rewrite",
+      "rewrite": "52 lines, 2 tests. (a) vitest → bun:test. (b) 3 relative `.ts`. No scope occurrences."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/unix.test.ts",
+      "bytes": 5564,
+      "action": "copy-then-rewrite",
+      "rewrite": "143 lines, 5 tests. (a) vitest → bun:test. (b) 3 relative `.ts`. Uses `fork` from node:child_process to spawn the stale-socket fixture — Bun implements node:child_process `fork`; confirm the `process.send` handshake in the .mjs still resolves under Bun before trusting this file."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/unix-connection.test.ts",
+      "bytes": 2006,
+      "action": "copy-then-rewrite",
+      "rewrite": "65 lines, 1 test. (a) vitest → bun:test. (b) 1 scope line (pi-protocol:3). (c) 1 relative `.ts`. Deep-imports the `@internal` UnixByteConnection — keep that import path intact."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/package.json",
+      "bytes": 1314,
+      "action": "skip",
+      "rewrite": "DO NOT COPY — write fresh. pi's manifest targets a tsc dist build with vitest; omp's packages are source-first (`main`/`types` → `./src/index.ts`, no build step). Differences to author, not to port: name `@oh-my-pi/pi-server`; version pinned to the omp release line; `main`/`types`/`exports` pointing at `./src/index.ts`, `./src/testing/index.ts`, `./src/transports/unix/index.ts`; scripts `check`/`check:types`(`tsgo -p tsconfig.json --noEmit`)/`lint`/`test`(`bun test --parallel`)/`fix`/`fmt` copied verbatim from packages/agent/package.json; dependencies all `catalog:`-pinned; devDependencies `@types/bun` only — DROP `shx` and `vitest` (neither exists in omp: measured 0 hits in root package.json and all package.jsons); engines `bun: >=1.3.14`; repository.directory `packages/server`; author Stencil Labs with `contributors: [\"Mario Zechner\"]` matching packages/agent/package.json; license MIT. See step 5."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/README.md",
+      "bytes": 5408,
+      "action": "copy-then-rewrite",
+      "rewrite": "79 lines, 4 scope occurrences: line 1 (title), 19 (`@earendil-works/pi-agent-core`), 26 (`@earendil-works/pi-server`), 27 (`@earendil-works/pi-server/unix`). The title becomes `# @oh-my-pi/pi-server`. The ~40-line runnable example is NOT valid in omp: it calls `MemorySessionRepo`, which omp lacks — rewrite it against the new `TestSessionRepo`-shaped host or against a hand-written `ServerHost`. ADD a short 'Not a collab-web / metaharness replacement' section stating the transport difference (collisions[4]); that is the single highest-value sentence in the file."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/CHANGELOG.md",
+      "bytes": 1567,
+      "action": "skip",
+      "rewrite": "Upstream's 65-line pi version history (0.84.4 → 0.87.1). Do NOT copy: omp's release tooling finalizes `## [Unreleased]` and would try to reconcile foreign version headings. Author a fresh `# Changelog` with only `## [Unreleased]` containing one Added line, matching every other omp package."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/tsconfig.build.json",
+      "bytes": 209,
+      "action": "skip",
+      "rewrite": "Emits to ./dist with rootDir ./src. omp packages are source-first with noEmit — this file has no omp equivalent. The replacement is packages/server/tsconfig.json extending ../../tsconfig.base.json, which every omp package already has."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/tsconfig.test.json",
+      "bytes": 560,
+      "action": "skip",
+      "rewrite": "NodeNext + vitest types + the 5 upstream `paths` aliases. Dead on arrival: vitest is gone, and omp resolves workspace packages through Bun workspaces + the exports map, not tsconfig paths. All 4 of its scope occurrences (pi-ai ×2, pi-telemetry ×1, pi-protocol ×1) live here, which is why pi-ai and pi-telemetry need zero rewrites in the copied set."
+    },
+    {
+      "path": "/Users/tranquangdang21/Projects/pi-ref/packages/server/vitest.config.ts",
+      "bytes": 1198,
+      "action": "skip",
+      "rewrite": "vitest resolver with 6 upstream `source` aliases. The whole reason it exists is the sibling-package aliasing omp does not need. Its single pi-ai occurrence dies with the file."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "PRECONDITION GATE — do not start until all three land: `@oh-my-pi/chord`, `@oh-my-pi/pi-protocol`, and a decision on SessionMetadata (open_questions[0]). `bun run check:ts` will fail at step 12 with TS2307 on `@oh-my-pi/pi-protocol` and `@oh-my-pi/chord` if either is missing. Verify with: `ls packages/chord/src/index.ts packages/protocol/src/index.ts`.",
+      "anchor": "packages/chord, packages/protocol"
+    },
+    {
+      "n": 2,
+      "instruction": "Record provenance BEFORE any file lands. Add to `packages/server/`: a `NOTICE` file whose first line is `Derived from earendil-works/pi packages/server @ d6af72e (MIT, Copyright (c) 2025 Mario Zechner). Modified: package scope rebased @earendil-works/ -> @oh-my-pi/, import specifiers made extensionless, vitest -> bun:test, TS `private` -> ES `#private`, Promise constructor -> Promise.withResolvers, SessionMetadata declared locally.` followed by the FULL verbatim MIT text from pi-ref/LICENSE. Also add the same NOTICE to the root `THIRD-PARTY-NOTICES.txt` under a new `packages/server/NOTICE` section header, matching the existing `crates/pi-shell/NOTICE` section format. This is the MIT §'The above copyright notice ... shall be included' obligation and it is a hard gate, not paperwork: the file must exist in the SAME commit as the first copied source file.",
+      "anchor": "packages/server/NOTICE, THIRD-PARTY-NOTICES.txt"
+    },
+    {
+      "n": 3,
+      "instruction": "Create the package skeleton: `mkdir -p packages/server/src/transports/unix packages/server/src/testing packages/server/test/fixtures`. Write `packages/server/tsconfig.json` as `{ \"extends\": \"../../tsconfig.base.json\", \"include\": [\"src/**/*.ts\", \"test/**/*.ts\"] }` — copy the shape from packages/agent/tsconfig.json. Do NOT port tsconfig.build.json or tsconfig.test.json.",
+      "anchor": "packages/server/tsconfig.json"
+    },
+    {
+      "n": 4,
+      "instruction": "Write `packages/server/package.json` fresh per the files_to_copy[package.json] rewrite note: name `@oh-my-pi/pi-server`, source-first exports for `.`, `./testing`, `./unix`, `catalog:` deps, the 6 scripts copied from packages/agent/package.json, devDependencies `@types/bun` only. Then add the three sibling versions to the ROOT `package.json` `workspaces.catalog` block alphabetically (`@oh-my-pi/pi-protocol` after pi-natives, `@oh-my-pi/pi-server` after pi-protocol, `@oh-my-pi/chord` in its own slot) and run `bun install`.",
+      "anchor": "package.json (workspaces.catalog)"
+    },
+    {
+      "n": 5,
+      "instruction": "Copy the 16 files under src/ preserving the exact directory layout. For each, apply ONLY the mechanical rewrites recorded in files_to_copy: scope strings (7 entries in scope_rewrites) and the 57 `.ts` suffixes on relative specifiers. Verify the mechanical pass is complete and exact with: `grep -rn '@earendil-works/' packages/server/src | wc -l` must print 0, and `grep -rnoE 'from \"\\.[^\"]*\\.ts\"' packages/server/src | wc -l` must print 0.",
+      "anchor": "packages/server/src/**"
+    },
+    {
+      "n": 6,
+      "instruction": "ES `#private` sweep — 20 fields across 3 files. `src/server.ts`: lines 51-66 (host, listeners, maxFrameLength, handshakeTimeoutMs, onConnectionCountChanged, onError, connections, sessions, closing, closePromise, closedSettled, rejectClosed, resolveClosed, startPromise, started). `src/session-router.ts`: lines 35-41 (options, hostedSessions, openingSessions, attachmentsByClient, disconnectedClients, clientOperations, closePromise). `src/transports/unix/listener.ts`: lines 30-39 + 192-200 + 208-210. For each: `private readonly x` -> `#x`, `private x` -> `#x`, and the `private get closed()` at unix/listener.ts:208 -> `#get closed()`. AGENTS.md bans the `private` keyword on fields AND methods except constructor parameter properties — none of these are constructor parameter properties, so all 20 convert. NOTE the reads: `metaharness/src/server.ts` shows the target shape (`#store`, `#children`, `#server`).",
+      "anchor": "packages/server/src/server.ts:51, src/session-router.ts:35, src/transports/unix/listener.ts:30"
+    },
+    {
+      "n": 7,
+      "instruction": "Promise-constructor sweep. Convert 5 of the 6 `new Promise(...)` sites to `Promise.withResolvers()`: server.ts:88 (closed), unix/listener.ts:61 (listen), :238 (close), :274 (write), :339 (isSocketLive). LEAVE testing/client.ts:104 as `new Promise` — it resolves with a value computed from a predicate, which withResolvers cannot express; note the reason in a one-line comment so a later reviewer does not 'fix' it. Also change `NodeJS.Timeout` -> `Timer` at connection.ts:30, unix/listener.ts:242/345/361 — omp's own convention (see metaharness/src/server.ts:193 `#syncTimer: Timer`), since the copied tsconfig has `types: [\"bun\", \"assets\"]` and no `@types/node`.",
+      "anchor": "packages/server/src/server.ts:88, src/transports/unix/listener.ts:61, src/connection.ts:30"
+    },
+    {
+      "n": 8,
+      "instruction": "Node-module import normalization. `src/transports/unix/listener.ts` uses named imports from `node:fs/promises` (line 3: chmod, link, lstat, mkdir, rename, unlink) and `node:fs` (line 2: `import type { Stats }`) and `node:net` (line 4) and `node:path` (line 5) and `node:crypto` (line 1) — convert the value imports to `import * as fs from \"node:fs/promises\"` / `import * as net from \"node:net\"` / `import * as path from \"node:path\"` / `import * as crypto from \"node:crypto\"` and qualify the call sites. session-router.ts:1 (`import { randomUUID } from \"node:crypto\"`) -> `import * as crypto from \"node:crypto\"` + `crypto.randomUUID()`. unix/address.ts:1 (`import { join } from \"node:path\"`) -> `import * as path from \"node:path\"` + `path.join`. testing/client.ts:1-2 (`node:events`, `node:net`) -> namespace. This is mechanical but touches ~25 call sites; do it with oxfmt after, not by hand-formatting.",
+      "anchor": "packages/server/src/transports/unix/listener.ts:1-5, src/session-router.ts:1, src/transports/unix/address.ts:1, src/testing/client.ts:1-2"
+    },
+    {
+      "n": 9,
+      "instruction": "Apply collisions[1] — replace the `MaybePromise` declaration in src/types.ts:15 with `export type { MaybePromise } from \"@oh-my-pi/pi-utils/acp/protocol\";` and add `@oh-my-pi/pi-utils` to packages/server/package.json dependencies. This keeps pi-server's public API byte-identical while giving the type a single home, per AGENTS.md 'Central Utilities'.",
+      "anchor": "packages/server/src/types.ts:15"
+    },
+    {
+      "n": 10,
+      "instruction": "Apply collisions[2] and [3] — the two substantive adaptations. (a) In src/types.ts, delete the `@earendil-works/pi-agent-core` import (line 2) and ADD the 6-field `SessionMetadata` interface verbatim from pi-ref packages/agent/src/harness/session/types.ts:473-480 with its doc comment. (b) In all 4 src files that imported Context/BACKGROUND_CONTEXT/TODO_CONTEXT/withAbortSignal from agent-core, repoint to `@oh-my-pi/chord/context` — these are pure re-exports upstream, so the symbols are identical, only the module specifier changes. (c) In src/testing/host.ts, delete the `MemorySessionRepo` import and add the in-file `TestSessionRepo` shim backing `Map<string, SessionMetadata>` with list/open/create, preserving the exact 0-match / >1-match / 1-match behavior that conformance.test.ts:334 and :346 assert. (d) In src/testing/host.ts, `Deferred` (lines 7-20) -> `Promise.withResolvers()` per AGENTS.md; the class's 4 public members become `promise`/`resolve`/`reject` fields.",
+      "anchor": "packages/server/src/types.ts:2, src/server.ts:11, src/session-router.ts:3, src/transports/unix/preset.ts:1, src/testing/host.ts:3"
+    },
+    {
+      "n": 11,
+      "instruction": "Copy the 7 test/ files and convert them to bun:test. Per file: swap `from \"vitest\"` for `from \"bun:test\"`; apply the same scope and `.ts`-suffix rewrites; in conformance.test.ts repoint BACKGROUND_CONTEXT to chord/context and SessionMetadata to `../src/types`. Then audit for banned patterns BEFORE running anything: `grep -rn 'mock.module' packages/server/test` must be 0, `grep -rn 'from \"vitest\"' packages/server/test` must be 0, and `grep -rn 'readFileSync\\|Bun.file' packages/server/test` must be 0 (no source-grep test snuck in from upstream).",
+      "anchor": "packages/server/test/**"
+    },
+    {
+      "n": 12,
+      "instruction": "Run the gate: `cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts`. Measured on this machine at 23.8s wall / exit 0 for the current 16-package tree; expect ~25s with a 17th. It runs oxlint + oxfmt --check over the new package and `tsgo --noEmit` per package. If TS2307 names `@oh-my-pi/pi-protocol` or `@oh-my-pi/chord`, step 1's precondition was not met — stop and go land them. If it names `@oh-my-pi/pi-agent-core`, step 10 was not applied.",
+      "anchor": "bun run check:ts"
+    },
+    {
+      "n": 13,
+      "instruction": "Run the tests, which requires unblocking the native addon first. `bun test` currently fails on the unbuilt native module. The documented unblock is `brew install ninja` then `bun --cwd=packages/natives run build`; the task brief records that the build FAILS without ninja. Only after the addon builds, run `bun test packages/server` and expect 38 passing tests: 20 (conformance) + 6 (server) + 2 (listener) + 5 (protocol) + 5 (unix) + 1 (unix-connection) = 39. The count is the deliverable's own smoke signal — if it is not 39, a rewrite dropped or duplicated a case.",
+      "anchor": "bun test packages/server"
+    },
+    {
+      "n": 14,
+      "instruction": "Author the omp-native CHANGELOG: a fresh `packages/server/CHANGELOG.md` with only `## [Unreleased]` and one `### Added` line, user-facing, no root-cause narration (AGENTS.md 'Changelog'). Then write the README per files_to_copy[README.md] — including the explicit 'this is not collab-web and not metaharness' paragraph. Commit the copied sources, the NOTICE, the CHANGELOG, and the root package.json/bun.lock changes TOGETHER; a commit containing copied MIT code without its notice is a licence violation, not a style issue.",
+      "anchor": "packages/server/CHANGELOG.md, packages/server/README.md, packages/server/NOTICE"
+    }
+  ],
+  "test_contract": "Seven test files, 39 cases, all rewritten to `bun:test`, all contract-level. None is a static echo, none is a success passthrough, none reads an implementation file's text, and none uses `mock.module()` (which AGENTS.md bans outright because Bun's module-registry mutation leaks across files).\n\nWHAT EACH FILE PROVES, and the failure a consumer observes if each regresses:\n\n- `test/conformance.test.ts` (502 lines, 20 cases, 2 describes) — the attachment-routing contract. A client that attaches to a Session, routes a service call, and loses the connection must observe: the attachment released only after admitted calls settle (a session is never closed while a service call is in flight); a request from a connection that does NOT hold the targeted {sessionId, attachmentId} is rejected with `session_not_attached`; a stale attachmentId after switching Sessions is rejected; a request addressed to a different serverId is rejected BEFORE any repository lookup; an unknown session raises `session_not_found` without constructing a Harness; an ambiguous sessionId raises `session_ambiguous` without constructing a Harness; a terminated Harness handle is evicted and a later attach succeeds; server shutdown closes every routed handle. These are the guarantees a remote-presentation client depends on — a regression here means a guest either loses its session or talks to a dead one.\n\n- `test/protocol.test.ts` (168 lines, 5 cases) — the framing/handshake contract on a pure in-memory `ByteConnection` (no sockets, no ports, no timers, fully deterministic). hello must be the first message; an unsupported PROTOCOL_VERSION is refused; a frame split across two `onData` calls decodes identically; a second hello is refused; a hello and a request coalesced in ONE byte chunk both process in order; a truncated final frame is surfaced as an error when the peer closes. Observable effect: a client on a slow or lossy link must never see a half-parsed session.\n\n- `test/server.test.ts` (127 lines, 6 cases) — the options and lifecycle contract. A non-UUIDv4 serverId and a missing listeners array are rejected with TypeError; maxFrameLength/handshakeTimeoutMs out of range are rejected (including above Node's 2_147_483_647 ms timer ceiling); a second concurrent `start()` is refused without leaking the already-started listener; a handshake that never arrives is closed with a FINAL `hello_error` frame in the last write; `close()` propagates a listener-shutdown failure instead of resolving. Observable effect: a misconfigured launcher fails at boot rather than serving a broken server.\n\n- `test/listener.test.ts` (52 lines, 2 cases) — the composition contract. Every configured listener starts; if listener N fails, listeners 1..N-1 are closed. Observable effect: a partial-transport server never runs with half its transports up.\n\n- `test/unix.test.ts` (143 lines, 5 cases) — the filesystem-safety contract on real temp-dir sockets. A live listener at the target path is REFUSED, not unlinked; a regular file at the path is never unlinked; a nested parent dir is created 0o700 and the socket left 0o600 and removed on close; a replacement inode appearing during shutdown is NOT removed; a genuinely stale socket IS removed before binding. This is the sharpest test set in the package: a regression means the server deletes a user's file. It uses real `node:net` sockets and the `fixtures/stale-socket-server.mjs` child process.\n\n- `test/unix-connection.test.ts` (65 lines, 1 case) — the backpressure/close-ordering contract: a final protocol-error frame is queued BEHIND pending output rather than racing it, so a client always reads the error before EOF.\n\n- `test/fixtures/stale-socket-server.mjs` (9 lines) — not a test; a `node:net` listener that binds a path and never accepts, used by the stale-socket case.\n\nMIGRATION-SIDE TEST CHANGES REQUIRED: `vitest` -> `bun:test` in all 7; the two `BackgroundContext`/`SessionMetadata` imports in conformance.test.ts repointed; `.ts` suffixes stripped from 24 relative specifiers across the 6 `.ts` test files. Every `expect` matcher used upstream (`toBe`, `toMatchObject`, `rejects.toThrow`, `resolves`, `toEqual`) exists in `bun:test`; upstream uses no `vi.*` timer or module API, so no behavioural test surgery is needed — only the import line changes. After the rewrite, the contract above is UNCHANGED: the same 39 assertions, same names, same observable guarantees.",
+  "test_files": [
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/conformance.test.ts -> packages/server/test/conformance.test.ts (20 cases)",
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/protocol.test.ts -> packages/server/test/protocol.test.ts (5 cases)",
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/server.test.ts -> packages/server/test/server.test.ts (6 cases)",
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/unix.test.ts -> packages/server/test/unix.test.ts (5 cases)",
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/listener.test.ts -> packages/server/test/listener.test.ts (2 cases)",
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/unix-connection.test.ts -> packages/server/test/unix-connection.test.ts (1 case)",
+    "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/fixtures/stale-socket-server.mjs -> packages/server/test/fixtures/stale-socket-server.mjs (9-line node:net fixture, no test cases)"
+  ],
+  "verification": "GATE 1 (blocking, runnable today): `cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts` — measured exit 0 at 23.8s wall on this machine for the current 16-package tree; budget ~25s with a 17th. It chains `check:tools` (oxlint + `oxfmt --check` over `packages/*/src/**/*.{ts,tsx}`, `{test,bench,examples,scripts}/**/*.ts`, `packages/*/*.ts`, `scripts/**/*.ts` — note test/fixtures/*.mjs matches NONE of these globs and is therefore unlinted, exactly as upstream) with `--filter './packages/*' --sequential --if-present check:types`, which runs `tsgo -p tsconfig.json --noEmit` per package. It will FAIL, correctly and loudly, if step 1's precondition is unmet: unresolved `@oh-my-pi/chord` or `@oh-my-pi/pi-protocol` surfaces as TS2307, and an unapplied step 10 surfaces as TS2307 on `@oh-my-pi/pi-agent-core`.\n\nGATE 2 (currently BLOCKED, must be unblocked before this spec can be called done): `bun test packages/server`. The brief records that `bun test` is blocked because the native addon is unbuilt, and that the documented unblock — `bun --cwd=packages/natives run build` — FAILS for want of `ninja`. So the correct sequence is `brew install ninja`, then `bun --cwd=packages/natives run build`, then `bun test packages/server`, expecting exactly 39 passing cases. Until ninja is installed, GATE 2 is un-runnable and this spec's test contract is UNVERIFIED — record that honestly in the PR rather than claiming green.\n\nGATE 3 (mechanical, cheap, and the only way to prove the rewrite pass was exact): `grep -rn '@earendil-works/' packages/server | wc -l` must be 0, and `grep -rnoE 'from \"\\.[^\"]*\\.ts\"' packages/server/src packages/server/test | wc -l` must be 0. These two greps catch an incomplete scope pass and a missed `.ts` suffix respectively; they are build-verification, not tests, and must not be encoded as a test file (AGENTS.md bans source-grep tests).\n\nGATE 4 (legal, non-skippable): `packages/server/NOTICE` exists, its first line names the upstream commit `d6af72e`, and the full MIT text from pi-ref/LICENSE follows it verbatim; and the root `THIRD-PARTY-NOTICES.txt` carries a matching `packages/server/NOTICE` section. Note the root LICENSE already lists `Copyright (c) 2025 Mario Zechner` (line 2) — that covers the omp-authored Rust/TS that descends from pi, but it does NOT by itself discharge the notice obligation for a newly vendored third-party package, which is why the per-package NOTICE is mandatory.",
+  "gate": [
+    "bun run check:ts (blocking) + bun test packages/server (39 cases; blocked until `brew install ninja` && `bun --cwd=packages/natives run build`)"
+  ],
+  "gate_can_fail": [
+    true
+  ],
+  "effort": [
+    "MEDIUM — about a day, and the size is misleading. The mechanical part is trivial: 29 files / 115,351 bytes total, of which only 16 files / 67,005 bytes are source, and the scope+`.ts`-suffix pass is 38 + 57 string substitutions that a script does in under a second. The cost is entirely in the four non-mechanical sweeps and one blocking dependency question:\n\n- step 6 (`private` -> `#private`): 20 fields across 3 files, mechanical but touch-heavy (~40 call sites including the `get closed()` accessor).\n- step 7 (Promise.withResolvers + `NodeJS.Timeout` -> `Timer`): 5 of 6 promise sites, plus 4 timer type positions.\n- step 8 (node:* namespace imports): ~25 call sites in 4 files; the largest diff of the four even though the rule is trivial.\n- step 10 (the two adaptations): the SessionMetadata declaration + chord/context repoint + the TestSessionRepo shim. This is the only step requiring design judgement, and it is also the one that depends on an answer the owner has not given yet (open_questions[0]).\n- tests: 24 relative specifiers + 7 vitest import lines + 2 dependency repoints across 7 files, then a native-addon build to even run them.\n\nRough split: 2h mechanical copy + rewrites, 3h the four sweeps, 2h the two adaptations, 2h test conversion, 1-2h build/fix/verify, leaving slack for the gate. Nothing here is algorithmically hard — the risk is entirely in the ordering constraint and in the agent-core divergence, not in the code."
+  ],
+  "risk": [
+    "HIGH, and for a reason that is easy to miss: this package is the LAST of the seven and it is the only one whose stated premise does not hold.\n\nThe brief's measured fact — \"omp already has `pi-agent-core` and `pi-ai` under the same names, only the scope differs\" — is true of the NAMES and false of the PACKAGES. omp's `packages/agent` is 34 files / 739,550 bytes exporting 18 flat modules; pi's is 117 files / 1,145,928 bytes with an entire `harness/` subtree. `grep -rn 'SessionMetadata' packages/agent/src` returns 0. omp has no `Context`, no `Session`, no `MemorySessionRepo`, no `SessionReader`, no `SessionDirectory` — all measured 0 across every package. So `ServerHost<TMetadata extends SessionMetadata>` has nothing in omp to bind to, and the seven pi-agent-core import lines cannot be rewritten by scope substitution; they are the package's real integration surface.\n\nThat said, the exposure is narrower than it looks, and that is the load-bearing finding of this spec: of the five symbols pi-server imports from pi-agent-core, FOUR (`Context`, `BACKGROUND_CONTEXT`, `TODO_CONTEXT`, `withAbortSignal`) are not agent-core concepts at all — pi's own `packages/agent/src/harness/context.ts:14-25` re-exports them verbatim from `@earendil-works/chord/context`. Once chord lands, they come from `@oh-my-pi/chord/context` and the agent-core dependency effectively evaporates. What remains is ONE type: `SessionMetadata`, a 6-field interface. That is the whole gap, and it is small enough to close inside this package (collisions[2]) without waiting on, or dictating, an agent-core reconciliation that is far out of scope.\n\nSecond risk, and the one most likely to actually break the build: the `typebox` wall. pi-protocol declares `typebox@1.3.27` and builds every envelope type with `Static<typeof XSchema>` / `Type.Union`. omp's lockfile has only the unrelated `@sinclair/typebox@0.34.52` (transitive) plus `@oh-my-pi/omptype`, which is an ArkType-compatible validator, not a typebox. pi-protocol is NOT in the omp catalog. Server cannot typecheck until pi-protocol lands, and pi-protocol may need a schema-library decision of its own. This is a chain, not a detail: pi-server is blocked behind a decision that belongs to a different package's spec.\n\nThird risk, lower but real: `session-router.ts` and `server.ts` are the two files where a subtle rewrite turns a correct concurrency contract into a subtly wrong one. SessionRouter serializes every operation per client through `runForClient`, keeps three separate Maps plus a `disconnectedClients` Set, and distinguishes \"release after admitted calls settle\" from \"release immediately.\" The 20 conformance cases are the only thing standing between a refactor and a session-close race, and they cannot run until ninja is installed. Do not let the vitest->bun:test conversion be treated as mechanical until GATE 2 has actually executed 39 green cases.\n\nFourth, and cheapest to state: `chord` drags in `esbuild@0.28.2`, absent from omp. That is chord's spec to solve, not this one's, but it is on the critical path and belongs in the milestone plan.\n\nNot a risk: the collision with `collab-web` and `metaharness`. Measured, not assumed — pi-server is length-framed CBOR over Unix sockets with a versioned handshake; collab-web is WebSocket + AES-GCM room relay; metaharness is `Bun.serve` REST+SSE. Three transports, three auth models. The real adjacent art is `packages/coding-agent/src/collab/registry.ts` (762 lines of node:net + newline-JSON Unix-socket host), which must NOT be refactored onto pi-server, and the spec says so explicitly so the question is closed rather than re-litigated later."
+  ],
+  "open_questions": [
+    [
+      "BLOCKING — where does `SessionMetadata` live in omp? Recommended: declare the 6-field interface locally in packages/server/src/types.ts (collisions[2]), making this package landable standalone. Alternatives: (a) land pi's `harness/session/types.ts` into omp's pi-agent-core as a first slice of the agent-core reconciliation, which couples server to a much larger decision; (b) make `ServerHost` metadata-generic with no constraint (`TMetadata = unknown`), which is the smallest diff but weakens the `resolveSession` contract that test/conformance.test.ts:334 and :346 depend on. The owner should pick before step 4, because it changes the package.json dependency list.",
+      "Does the 7-package wave have a name for the chord Context re-export layer? The recommendation here is to import Context/BACKGROUND_CONTEXT/TODO_CONTEXT/withAbortSignal from `@oh-my-pi/chord/context` directly, matching upstream's own re-export path. If the wave instead decides to build an omp-side `pi-agent-core/context` barrel (the shape pi uses), then step 10's 4 repoints become 1 import-line change per file instead — cosmetically cheaper, architecturally a real fork. Worth a decision, not worth blocking on.",
+      "Do the `pi.session-management` / `pi.session-directory` service-id string literals get rebased to an `omp.*` namespace? Measured: 3 occurrences, all in src/testing (testing/host.ts:126, :136, testing/client.ts:66) plus 1 more in test/conformance.test.ts's call fixtures. They are runtime protocol constants owned by the durable/session-management layer, not scope strings, so they are deliberately NOT in scope_rewrites. If omp rebadges the service namespace, these 4 move with that decision — but pi-server's own routing is id-agnostic (it forwards `call.serviceId` opaquely), so nothing in the server half cares either way.",
+      "Is `typebox@1.3.27` going into the omp catalog, or does pi-protocol get ported onto `@oh-my-pi/omptype`? This is pi-protocol's spec to answer but it gates this one: every `Static<typeof XSchema>` in pi-protocol's protocol.ts is a compile-time type projection over a runtime schema, and omptype's ArkType surface is not a drop-in. If the answer is 'port to omptype', pi-protocol's rewrite surface grows and server's start date moves with it.",
+      "Does `test/unix.test.ts`'s `fork(new URL('fixtures/stale-socket-server.mjs', import.meta.url), ...)` work under Bun's node:child_process shim, including the `process.send('listening')` handshake the parent waits on? Nothing in the source answers this and GATE 2 is currently unrunnable, so it is untested. If `fork` misbehaves, replace the fixture with an in-process `createServer()` that binds and never accepts — same observable precondition, no child process, and it removes a test that is invisible to both oxlint and tsgo because `.mjs` matches no omp lint or include glob.",
+      "The two `index.ts` barrels (transports/unix/index.ts, testing/index.ts) use named re-exports where AGENTS.md prefers `export * from` in pure index barrels. Converting them to stars would newly export the `@internal` UnixByteConnection from `./unix`, changing the public API. This spec keeps the named re-exports and calls the deviation out in the PR rather than silently widening the surface — but if the owner prefers strict AGENTS.md compliance, the fix is to delete the `@internal` export comment's claim and accept the wider barrel."
+    ]
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m1-expand-specs/server.spec.json"
+}

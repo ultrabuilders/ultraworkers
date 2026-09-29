@@ -1,0 +1,429 @@
+[
+ {
+  "id": "chord",
+  "title": "Migrate @earendil-works/chord -> @oh-my-pi/chord by verbatim copy + scope/extension/vitest/format rewrite; FIRST of the 7 new packages, and the only one with an external npm dep (esbuild)",
+  "migration_order": 1,
+  "why_this_position": "Nền của cả đợt migrate — durable phụ thuộc nó, và M1 W1/W2 đã tuyên bố port tay từ chính file này.",
+  "one_line": "Chord is the application-composition runtime the other six new packages sit on top of: 30 source files / 314681 bytes implementing facet lifecycle (activate/dispose with reverse-order effect drain and error isolation), an immutable delta/CRDT engine (tracker 2205 lines, diff, apply, encoder/decoder, prototype-pollution guards), a Context cancellation scope, and a remote-service provider/consumer/i",
+  "effort": "Medium-Large, ~1.5 days. The volume is what it is — 30 src files / 314681 bytes and 22 test files — but almost all of it is mechanical. Real breakdown: ~30 min for LICENSE + package.json + tsconfig + esbuild install; ~2 h for the 84 `.ts` suffixes and 25 scope strings (sed-able, then verified by gre",
+  "source_files": 62,
+  "source_bytes": 690344,
+  "n_files_to_copy": 64,
+  "n_public_api": 148,
+  "n_new_deps": 2,
+  "n_collisions": 6,
+  "collision_headlines": [
+   "Disposer teardown drain — SEMANTIC CONFLICT, and the M1 W2 premise is false. The task note says M1 W1/W2 'already manually ported reverse-order drain ",
+   "JsonValue — six definitions in omp, three distinct shapes. Highest-reach collision in the package because pi-server, pi-client, pi-durable, and pi-pro",
+   "isJsonValue — name already taken three times in omp, once with an incompatible signature.",
+   "Context — same name, entirely different concept.",
+   "Draft — a much more permissive type in a codebase that forbids `any` elsewhere.",
+   "On-disk format strings that name the upstream package, which the package no longer is."
+  ],
+  "new_deps": [
+   {
+    "name": "esbuild",
+    "version": "0.28.2",
+    "already_in_omp": false,
+    "why": "The ONLY external runtime dep of the entire package. Imported in exactly one file: src/node/bundle.ts:4 `import { type BuildOptions, build, type Message } from \"esbuild\"`. Every other external import in src/ is a node: builtin (node:crypto, node:fs/promises, node:module, node:os, node:path, node:url, node:vm). Confirmed absent from omp: no `\"esbuild\"` in the root package.json or any packages/*/package.json, and `ls -d node_modules/esbuild` returns No such file or directory. The only trace in bun.lock is line 1455, where esbuild appears as vite's OPTIONAL PEER (`peerDependencies: {..., \"esbuild\": \"^0.27.0 || ^0.28.0\", ...}`, `optionalPeers: [..., \"esbuild\", ...]`) — declared, never installed. 0.28.2 satisfies that range, so adding it creates no version conflict with vite."
+   },
+   {
+    "name": "@types/bun",
+    "version": "catalog:",
+    "already_in_omp": true,
+    "why": "Standard devDependency on every omp package (see packages/omptype/package.json). Replaces chord's `@types/node` need for the node: imports; the repo already has `@types/bun` in the root catalog block."
+   }
+  ],
+  "gate": "bun run check:ts",
+  "gate_can_fail": true,
+  "risk": "MEDIUM, and the medium part is concentrated in one specific place.\n\nThe mechanical risk is low and self-announcing: a missed `.ts` suffix or a missed scope string is a compile error or a grep that does not return zero. `bun run check:ts` catches all of it.\n\nThe real risk is that copying chord's `dispose()` re-opens the M1 W2 drain question with the wrong answer. The task note says W1/W2 already ma",
+  "n_questions": 6,
+  "n_steps": 15,
+  "test_files": [
+   "packages/chord/test/delta-tracker/tracker.test.ts",
+   "packages/chord/test/delta-tracker/retention.test.ts",
+   "packages/chord/test/delta-tracker/retention.worker.ts",
+   "packages/chord/test/facets.test.ts",
+   "packages/chord/test/facet-loader.test.ts",
+   "packages/chord/test/services.test.ts",
+   "packages/chord/test/service-wire.test.ts",
+   "packages/chord/test/delta-apply-immutable.test.ts",
+   "packages/chord/test/delta-diff.test.ts",
+   "packages/chord/test/delta.test.ts",
+   "packages/chord/test/delta-clone.test.ts",
+   "packages/chord/test/state.test.ts",
+   "packages/chord/test/state-diff.test.ts",
+   "packages/chord/test/state-draft.test.ts",
+   "packages/chord/test/state-fuzz.test.ts",
+   "packages/chord/test/state-value.test.ts",
+   "packages/chord/test/context.test.ts",
+   "packages/chord/test/json.test.ts",
+   "packages/chord/test/bundle.test.ts",
+   "packages/chord/test/boundary.test.ts",
+   "packages/chord/test/helpers.ts"
+  ]
+ },
+ {
+  "id": "protocol",
+  "title": "pi-protocol — length-framed CBOR RPC envelopes (@earendil-works/pi-protocol -> @oh-my-pi/pi-protocol)",
+  "migration_order": 2,
+  "why_this_position": "Wire schema; phải đứng trước server và client vì cả hai dùng nó.",
+  "one_line": "Chép nguyên 17 file / 55,559 byte của packages/protocol (CBOR codec + length-prefixed framing + typebox envelope schemas + 28 test) vào packages/protocol mới; 95% việc là 7 chuỗi scope, 15 hậu tố `.ts`, 30 chỗ `private` -> `#private`, và 3 dòng import vitest -> bun:test. Đây là package THỨ HAI trong 7 package mới, ngay sau `chord`, và là hàng ngang của `packages/wire` chứ không thay nó.",
+  "effort": "LOW — roughly a third of a day, and the smallest of the seven. The mechanical part is a few minutes of scripted substitution; the rest is four judgement calls that a half-day absorbs with room to spare.\n\nMeasured surface: 17 files / 55,559 bytes upstream, of which 8 source files are 28,963 bytes and",
+  "source_files": 17,
+  "source_bytes": 55559,
+  "n_files_to_copy": 20,
+  "n_public_api": 43,
+  "n_new_deps": 3,
+  "n_collisions": 10,
+  "collision_headlines": [
+   "`PROTOCOL_VERSION` — same exported name, DIFFERENT meaning and value",
+   "`encodeFrame` — same name, incompatible signature, 3 in-tree definitions",
+   "`parseServerMessage` — same token, used as a STRING not a symbol",
+   "`JsonValue` — six in-tree definitions with six different shapes",
+   "HAND-ROLLED CBOR WRITER in omp — the one genuine byte-level duplicate in the tree",
+   "`FrameDecoder` has no counterpart, but omp's framing idioms are two different shapes",
+   "`private` keyword on 30 members — an AGENTS.md violation that is a REAL semantic difference in one place",
+   "`.ts`-suffixed relative imports — pi style vs omp style",
+   "Error-type naming: a TYPE named `ProtocolError` alongside a CLASS named `ProtocolValidationError`",
+   "`vitest` — 3 import lines, 4 describes, 28 tests"
+  ],
+  "new_deps": [
+   {
+    "name": "@oh-my-pi/chord",
+    "version": "catalog (18.3.3, workspace)",
+    "already_in_omp": false,
+    "why": "protocol.ts:1 imports `type JsonValue` and codec.ts:1 imports `isJsonValue` from chord. That is the ENTIRE coupling — 2 symbols, 2 import lines. Both live upstream in chord/src/types.ts:21 (the type) and chord/src/json.ts:74 (the predicate). chord is a LEAF for our purposes: its only npm dependency is esbuild, and neither of the two symbols we need touches that. Hence protocol is the 2nd of the 7, immediately after chord and immediately before client + server."
+   },
+   {
+    "name": "typebox@1.3.27",
+    "version": "1.3.27 (pinned exact, no caret upstream)",
+    "already_in_omp": false,
+    "why": "Upstream protocol.ts builds every envelope type with `Type.*` + `Static<>` and validates with `Check` from `typebox/value`. omp has NEITHER: the lockfile carries only the unrelated `@sinclair/typebox@0.34.52` (a transitive dep, different package, different API) and `node_modules/typebox` does not exist. This is the single decision that blocks the package, and this spec's answer is open_questions[0]."
+   },
+   {
+    "name": "@oh-my-pi/omptype",
+    "version": "catalog (18.3.3, workspace) — REPLACES typebox per open_questions[0]",
+    "already_in_omp": true,
+    "why": "omp already ships a TypeBox-compatible facade at `@oh-my-pi/omptype/typebox`, used in production by packages/coding-agent/src/extensibility/legacy-typebox.ts and four test files. Measured: it exports `Type.{String,Number,Integer,Boolean,Null,Any,Unknown,Never,Literal,Union,Intersect,Enum,Array,Tuple,Object,Record,Optional,Nullable,Readonly,Partial,Required,Pick,Omit,Composite,Unsafe}` and `Static` — i.e. every builder protocol.ts calls, plus `additionalProperties:false` (typebox.ts:426 maps it to `def[\"+\"] = \"reject\"`), `minLength` (:207), `pattern` (:209-216) and `minimum` (:121-141). The ONLY missing piece is `Check`, and omp's own idiom replaces it in one line: `const r = schema(value); if (r instanceof type.errors) throw ...` (packages/coding-agent/src/security/contracts/validation.ts:10-14)."
+   }
+  ],
+  "gate": [
+   "GATE 1 (blocking, RUNNABLE NOW): `bun run check:ts` from /Users/tranquangdang21/Projects/ultraworkers — oxlint + oxfmt + tsgo over the new package. Baseline measured today: exit 0, 24.2s wall.",
+   "GATE 1b (blocking, RUNNABLE NOW): 6 mechanical greps — 0 `@earendil-works/`, 0 `.ts\"` in relative specifiers, 0 `private`, 0 `vitest`, 0 `any`/`ReturnType<`/`await import(`, and the LICENSE `Copyright (c) 2025 Mario Zechner` on line 3.",
+   "GATE 2 (blocking, CURRENTLY BLOCKED): `bun test packages/protocol` — 28 cases (9 framing, 13 protocol, 6 CBOR). Unrunnable until `brew install ninja` && `bun --cwd=packages/natives run build`. Not this spec's to unblock; the build failure is environmental."
+  ],
+  "gate_can_fail": [
+   true,
+   false
+  ],
+  "risk": "First and largest: THE PACKAGE CANNOT TYPE-CHECK WITHOUT A SCHEMA-ENGINE DECISION, and four other specs inherit the answer. pi-protocol declares `typebox@1.3.27` and builds every envelope type with `Static<typeof XSchema>`. omp has no `typebox` in the lockfile — only the unrelated `@sinclair/typebox@0.34.52`, a transitive dependency with a different API — and `node_modules/typebox` does not exist.",
+  "n_questions": 1,
+  "n_steps": 12,
+  "test_files": [
+   "packages/protocol/test/framing.test.ts",
+   "packages/protocol/test/protocol.test.ts",
+   "packages/protocol/test/cbor/cbor.test.ts"
+  ]
+ },
+ {
+  "id": "server",
+  "title": "Migrate @earendil-works/pi-server -> @oh-my-pi/pi-server by verbatim copy; LAST of the 7, blocked on chord + pi-protocol, and on one type omp does not have",
+  "migration_order": 3,
+  "why_this_position": "State machine 576 dòng mà giá trị nằm ở THỨ TỰ thao tác, không phải ở thuật toán.",
+  "one_line": "pi-server is a transport-neutral, length-framed CBOR RPC server that hosts durable Sessions over a Unix-domain-socket listener and routes contract-agnostic chord service calls per presentation attachment — 16 source files / 67,005 bytes, and the only one of the seven new packages with ZERO external npm dependencies of its own (its sole dep `esbuild` belongs to chord, and its other two deps are the",
+  "effort": "MEDIUM — about a day, and the size is misleading. The mechanical part is trivial: 29 files / 115,351 bytes total, of which only 16 files / 67,005 bytes are source, and the scope+`.ts`-suffix pass is 38 + 57 string substitutions that a script does in under a second. The cost is entirely in the four n",
+  "source_files": 29,
+  "source_bytes": 115351,
+  "n_files_to_copy": 29,
+  "n_public_api": 40,
+  "n_new_deps": 3,
+  "n_collisions": 5,
+  "collision_headlines": [
+   "The `Server` class name. pi-server exports `class Server<TMetadata>`. omp uses the bare word `Server` for two unrelated things: packages/metaharness/s",
+   "`MaybePromise<T> = T | Promise<T>` declared twice. pi-server declares and star-exports its own at types.ts:15. omp already has a byte-identical declar",
+   "`SessionMetadata` — the generic bound on ServerHost/Server/SessionRouter/createUnixServer — does not exist anywhere in omp, and omp's `@oh-my-pi/pi-ag",
+   "`TestServerHost` depends on `MemorySessionRepo`, a pi-agent-core session-repository abstraction with no omp counterpart and no obvious home.",
+   "Role overlap with the two packages the brief flagged. Neither is a functional duplicate, but both would be mistaken for one by a reader."
+  ],
+  "new_deps": [
+   {
+    "name": "@oh-my-pi/chord",
+    "version": "18.3.3 (workspace catalog)",
+    "already_in_omp": false,
+    "why": "Hard dep. pi-server imports 11 chord symbols across 7 files: types JsonValue/ServiceCall/ServiceProviderUpdate/ServiceStateEncoder/RemoteServiceErrorCode, values createServiceStateEncoder/decodeServiceControlCall/parseServiceCall/parseServiceSubscriptionSnapshot/RemoteServiceError. Server cannot typecheck without it."
+   },
+   {
+    "name": "@oh-my-pi/pi-protocol",
+    "version": "18.3.4 (workspace catalog)",
+    "already_in_omp": false,
+    "why": "Hard dep, and the harder of the two. 18 symbols across 6 files: ClientMessageDecoder, encodeServerMessage, encodeClientMessage, ServerMessageDecoder, encodeFrame, encodeCbor, DEFAULT_MAX_FRAME_LENGTH, PROTOCOL_VERSION, isServerId, isSupportedProtocolVersion, ProtocolValidationError + 8 envelope types. Its own upstream dep is `typebox@1.3.27`; omp has only `@sinclair/typebox@0.34.52` (transitive) and an unrelated `@oh-my-pi/omptype`. typebox is NOT in the omp catalog, so pi-protocol's spec must decide it before server can land."
+   },
+   {
+    "name": "@oh-my-pi/pi-agent-core",
+    "version": "18.3.3 (workspace catalog)",
+    "already_in_omp": true,
+    "why": "Declared dep, but only ONE of its five imported symbols actually has to come from there: SessionMetadata. The other four (Context, BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal) are pure re-exports of `@earendil-works/chord/context` in upstream pi — see pi's packages/agent/src/harness/context.ts:14-25, which re-exports all of them from chord. Repoint those four at `@oh-my-pi/chord/context` and the package stops depending on agent-core except for SessionMetadata. See collisions[2]."
+   }
+  ],
+  "gate": [
+   "bun run check:ts (blocking) + bun test packages/server (39 cases; blocked until `brew install ninja` && `bun --cwd=packages/natives run build`)"
+  ],
+  "gate_can_fail": [
+   true
+  ],
+  "risk": "HIGH, and for a reason that is easy to miss: this package is the LAST of the seven and it is the only one whose stated premise does not hold.\n\nThe brief's measured fact — \"omp already has `pi-agent-core` and `pi-ai` under the same names, only the scope differs\" — is true of the NAMES and false of the PACKAGES. omp's `packages/agent` is 34 files / 739,550 bytes exporting 18 flat modules; pi's is 11",
+  "n_questions": 1,
+  "n_steps": 14,
+  "test_files": [
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/conformance.test.ts -> packages/server/test/conformance.test.ts (20 cases)",
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/protocol.test.ts -> packages/server/test/protocol.test.ts (5 cases)",
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/server.test.ts -> packages/server/test/server.test.ts (6 cases)",
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/unix.test.ts -> packages/server/test/unix.test.ts (5 cases)",
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/listener.test.ts -> packages/server/test/listener.test.ts (2 cases)",
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/unix-connection.test.ts -> packages/server/test/unix-connection.test.ts (1 case)",
+   "/Users/tranquangdang21/Projects/pi-ref/packages/server/test/fixtures/stale-socket-server.mjs -> packages/server/test/fixtures/stale-socket-server.mjs (9-line node:net fixture, no test cases)"
+  ]
+ },
+ {
+  "id": "client",
+  "title": "Migrate @earendil-works/pi-client -> @oh-my-pi/pi-client by verbatim copy + scope/extension/vitest/private/promise rewrite; it is a NEW capability, not a duplicate of omp's RPC or collab transports",
+  "migration_order": 4,
+  "why_this_position": "Phí điều phối vượt phí viết code — 8/33 test không viết được nếu chưa có server.",
+  "one_line": "pi-client is a TRANSPORT-NEUTRAL, REQUEST/RESPONSE, SERVER-ROUTED remote-session client: it owns a byte-transport abstraction (`ByteTransport`/`ByteTransportFactory`), a state-machine `Connection` (disconnected -> connecting -> connected) that performs a `hello` handshake and verifies the physical endpoint's logical `serverId`, a request-correlation table keyed by `request-N`, `AbortSignal` cancel",
+  "effort": "Small in code, real in coordination. 19 source files / 70483 bytes total, of which only 7 files / 33718 bytes are shipped source and 5 files / 27504 bytes are tests; the remaining 6 files / 7412 bytes are metadata that is mostly deleted rather than ported (tsconfig.build.json, tsconfig.test.json, vi",
+  "source_files": 19,
+  "source_bytes": 70483,
+  "n_files_to_copy": 18,
+  "n_public_api": 25,
+  "n_new_deps": 3,
+  "n_collisions": 8,
+  "collision_headlines": [
+   "`toError(error: unknown): Error` -- pi-client's local helper vs omp's canonical one in pi-utils. EXACT functional duplicates, and the only true code c",
+   "`PromiseResolvers<T>` / `createPromiseResolvers<T>()` -- pi's hand-rolled resolver pair, and its own source file says it should be deleted.",
+   "`ReturnType<typeof setTimeout>` at src/unix.ts:247 -- a banned construct, and the only one in the package.",
+   "4 `private` field/method declarations in test/support.ts -- banned by omp's class-privacy rule.",
+   "The bare class name `Client` and `Connection`. Not a collision in omp's code, but the highest-confusion risk in the migration because omp has 57 files",
+   "`ServerError` and `ProtocolErrorCode`/`ProtocolError` -- the class name pi's own coding-agent has to alias around.",
+   "The package name `@oh-my-pi/pi-client` and its intended consumer path `@oh-my-pi/pi-coding-agent/client`.",
+   "`ClientOptions`, `Unsubscribe` -- partial name overlaps that are documentation prose, not code."
+  ],
+  "new_deps": [
+   {
+    "name": "@oh-my-pi/chord",
+    "version": "18.3.3 (workspace catalog, matching every other omp package -- add a line to the root package.json `workspaces.catalog` block)",
+    "already_in_omp": false,
+    "why": "Hard dep, 16 named symbols across 4 files. src/client.ts:2-18 imports createServiceCatalogueCall, createServiceStateDecoder, createServiceSubscribeCall, createServiceUnsubscribeCall, JsonValue, parseServiceCall, parseServiceCatalogue, parseWireServiceProviderUpdate, parseWireServiceSubscriptionSnapshot, RemoteServiceTransport, ServiceCall, ServiceCatalogueEntry, ServiceMode, ServiceProviderUpdate, ServiceStateDecoder, ServiceSubscriptionSnapshot; src/client.ts:19 additionally imports BACKGROUND_CONTEXT from the SUBPATH `@oh-my-pi/chord/context`; src/types.ts:1 imports ServiceSubscriptionSnapshot; test/client.test.ts:1 imports BACKGROUND_CONTEXT from the same subpath; test/unix-transport.test.ts:4 imports parseServiceCall. client.ts cannot typecheck without all 16 -- createClientServiceTransport's return type IS chord's `RemoteServiceTransport`."
+   },
+   {
+    "name": "@oh-my-pi/pi-protocol",
+    "version": "18.3.3 (workspace catalog)",
+    "already_in_omp": false,
+    "why": "Hard dep, 22 named symbols across 5 files -- the widest surface of any package in this migration. src/client.ts:20-30 imports AttachmentEnvelope, encodeClientMessage, isServerId, ProtocolValidationError, ResponseEnvelope, RpcTarget, ServerHello, ServiceEventEnvelope, SessionTarget; src/connection.ts:2-9 imports DEFAULT_MAX_FRAME_LENGTH, encodeClientMessage, PROTOCOL_VERSION, ProtocolValidationError, ServerHello, ServerMessage, ServerMessageDecoder; src/unix.ts:4-9 imports DEFAULT_MAX_FRAME_LENGTH, isServerId, ProtocolValidationError, ServerId; src/errors.ts:1 imports ProtocolError, ProtocolErrorCode; src/types.ts:2 imports RpcTarget, SessionTarget; test/client.test.ts:2-7 imports encodeCbor, encodeFrame, encodeServerMessage, PROTOCOL_VERSION, ProtocolValidationError; test/support.ts:1-7 imports ClientMessage, ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION, ServerMessage; test/unix-transport.test.ts:5 imports ClientMessageDecoder, encodeServerMessage, PROTOCOL_VERSION. The branded `ServerId` in `UnixServerRoute` means the ./unix subpath is un-typecheckable without it."
+   },
+   {
+    "name": "@oh-my-pi/pi-utils",
+    "version": "18.3.3 (workspace catalog)",
+    "already_in_omp": true,
+    "why": "Already in omp, but this is the first package in the migration to declare a NEW dependency on it. Needed for exactly one symbol: `toError`, to replace pi's local byte-identical copy at src/errors.ts:27. Without it the package ships a second implementation of a helper the Central Utilities rule forbids."
+   }
+  ],
+  "gate": "bun run check:ts",
+  "gate_can_fail": true,
+  "risk": "LOW on correctness, MEDIUM on sequencing -- and the two are separable. CORRECTNESS is low because the risky logic is never retyped, only re-addressed: the handshake-order guards, the abort/cancel race, the subscription hydration barrier, and the write backpressure resolver are all copied byte-for-byte, and every edit is an import specifier, a privacy modifier, a promise constructor, or a type name",
+  "n_questions": 6,
+  "n_steps": 14,
+  "test_files": [
+   "packages/client/test/client.test.ts",
+   "packages/client/test/support.ts",
+   "packages/client/test/unix-transport.test.ts",
+   "packages/client/test/unix.test.ts",
+   "packages/client/test/fixtures/stale-socket-server.mjs"
+  ]
+ },
+ {
+  "id": "durable",
+  "title": "Migrate @earendil-works/pi-durable -> @oh-my-pi/pi-durable (chep code, doi scope)",
+  "migration_order": 5,
+  "why_this_position": "Có src/documents.ts — nửa 'document' mà M1 tự thừa nhận là điểm không có bằng chứng duy nhất.",
+  "one_line": "Chep nguyen 63 file / 807,033 byte cua packages/durable (durable conversation + task + document runtime) vao packages/durable, doi 78 lan @earendil-works/ -> @oh-my-pi/, giai quyet 11 va cham voi code omp da co truoc do khi moi chay duoc.",
+  "effort": "5-7 ngay cong. Copy 2 phut, viec that su la: giai quyet 11 va cham (buoc 8-9, ~1.5 ngay), chuyen 19 file test tu vitest sang bun:test kem 4 file dung vi.* fake timers (buoc 13-14, ~1 ngay), viet package.json theo convention source-exports (buoc 11-12, ~0.5 ngay), adapter bun:sqlite moi (buoc sau, ~0",
+  "source_files": 63,
+  "source_bytes": 807033,
+  "n_files_to_copy": 63,
+  "n_public_api": 165,
+  "n_new_deps": 2,
+  "n_collisions": 11,
+  "collision_headlines": [
+   "TruncationResult - cung ten, KHAC HINH DANG. durable (src/env/utils/truncate.ts:15) bat buoc co 11 truong: content, truncated:boolean, truncatedBy:'li",
+   "DEFAULT_MAX_LINES - cung ten, KHAC GIA TRI. durable = 2000, omp = 3000. Day la observable: mot lenh shell 2500 dong se bi durable cat, khong bi omp ca",
+   "truncateLine - cung ten, KHAC MARKER va KHAC DEFAULT. durable cat o 500 (GREP_MAX_LINE_LENGTH) va chen '... [truncated]'; omp cat o 512 (DEFAULT_MAX_C",
+   "Shell - cung ten, KHAC Y NGHIA hoàn toàn. durable la INTERFACE (exec + cleanup) tai src/env/index.ts:180; omp la STRING-UNION 'bash'|'zsh'|'fish' tai ",
+   "Context - cung ten, KHAC Y NGHIA. durable import Context tu chord (context nen / huy) o src/types.ts:1; omp Context tai packages/ai/src/types.ts:1476 ",
+   "JsonObject - cung ten, KHAC HINH DANG. durable: { [key: string]: JsonValue } voi JsonValue tu chord (src/types.ts:6); omp: Record<string, unknown> (pa",
+   "toError - cung ten, cung chuc nang, KHAC XU LY. durable (src/env/index.ts:24) thu Error -> string -> JSON.stringify -> String; omp (packages/utils/src",
+   "formatSize - cung ten, khac ham. durable la helper in kich thuoc byte (src/env/utils/truncate.ts:115); omp co formatBytes trong pi-tui/render/render-u",
+   "Node SQLite adapter dung node:sqlite, con omp dung bun:sqlite o 51 file src (git grep -l 'bun:sqlite' -- 'packages/*/src/**' = 51). AGENTS.md quy dinh",
+   "NodeExecutionEnv dung node:child_process spawn; repo chi con 1 file duy nhat dung node:child_process (packages/metaharness/src/runner.ts). AGENTS.md q",
+   "Vi tri dat: omp packages/agent/ va pi-ref packages/agent/ CHI giao 5 ten file tren 50 (omp) vs 117 (pi), va ca 5 deu lech khoi doi luong lon (agent-lo"
+  ],
+  "new_deps": [
+   {
+    "name": "@oh-my-pi/chord",
+    "version": "0.87.1 (workspace)",
+    "already_in_omp": false,
+    "why": "52 lan import. Cung cap Context/Draft/JsonValue/Op/copyJson/track/apply/applyImmutableBatches/awaitWithContext/withoutAbortSignal/BACKGROUND_CONTEXT/withAbortSignal. KHONG the de co chay durable."
+   },
+   {
+    "name": "@oh-my-pi/pi-ai",
+    "version": "workspace",
+    "already_in_omp": true,
+    "why": "CHI 1 import type: Message tai src/types.ts:3, dung trong ContextEdit.replace.messages va EntryRecord.model. Shape giong het omp packages/ai/src/types.ts:1199."
+   }
+  ],
+  "gate": "1. `bun run check:ts` == 0. THAT BAI NEU: con import sai scope, con named re-export trong barrel, con doc field khong ton tai tren shape cua pi-tui (vi du maxBytes), con thieu export trong package.json.\n2. `grep -rc '@earendil-works/' packages/durable` == 0 dong. THAT BAI NEU: con sót.\n3. `bun test packages/durable` xanh. THAT BAI NEU: hành vi khac truoc/sau cat trung voi pi-tui - nhat la totalLines dem sai khi content ket thuc bang '\\n' va dau truncatedBy.\n4. `ls packages/durable/LICENSE` va `cmp packages/durable/LICENSE <(git -C pi-ref show d6af72e:LICENSE)` == 0. THAT BAI NEU: con sua hoac quen ban quyen.\n5. `grep -rn 'from \"vitest\"' packages/durable` == 0. THAT BAI NEU: con file test chua chuyen.\n6. `ls packages/durable/tsconfig.build.json packages/durable/vitest.config.ts` == khong ton tai. THAT BAI NEU: quen xoa.",
+  "gate_can_fail": true,
+  "risk": "CAO. (1) PHAI CO CHORD TRUOC - 52 import, 12 symbol, khong the bien dich khi chua co. (2) VA CHAM TRUNCATION - durable va pi-tui cung ten truncateHead/truncateTail/truncateLine/TruncationResult/TruncationOptions nhung KHAC HINH DANG va KHAC HANH VI: durable dem totalLines bo newline trailing, omp dem bang countNewlines+1, nen 'a\\nb\\n' ra 2 dong o durable va 3 o omp; durable tien trong truncatedBy,",
+  "n_questions": 8,
+  "n_steps": 17,
+  "test_files": [
+   "packages/durable/test/session-tables.test.ts",
+   "packages/durable/test/session-documents.test.ts",
+   "packages/durable/test/session-checkpoints-migrations.test.ts",
+   "packages/durable/test/session-forks.test.ts",
+   "packages/durable/test/session-definitions.test.ts",
+   "packages/durable/test/types.test.ts",
+   "packages/durable/test/session-support.ts",
+   "packages/durable/test/memory-storage.test.ts",
+   "packages/durable/test/jsonl-storage.test.ts",
+   "packages/durable/test/sqlite-storage.test.ts",
+   "packages/durable/test/sqlite-facade.test.ts",
+   "packages/durable/test/sqlite-migrations.test.ts",
+   "packages/durable/test/storage-runtime-boundary.test.ts",
+   "packages/durable/test/env-node.test.ts",
+   "packages/durable/test/env-node-spill.test.ts",
+   "packages/durable/test/env-output-capture.test.ts",
+   "packages/durable/test/env-truncate.test.ts",
+   "packages/durable/test/env-adaptive-publisher.test.ts",
+   "packages/durable/test/fixtures/delete-buffer.ts",
+   "packages/durable/test/fixtures/utf8-byte-length-without-buffer.ts",
+   "packages/durable/test/storage-memory.ts",
+   "packages/durable/test/storage.bench.ts",
+   "packages/durable/test/scratch.ts",
+   "packages/durable/src/testing/storage-conformance.ts"
+  ]
+ },
+ {
+  "id": "telemetry",
+  "title": "Migrate @earendil-works/pi-telemetry -> @oh-my-pi/pi-telemetry by verbatim copy + scope/vitest/private rewrite",
+  "migration_order": 6,
+  "why_this_position": "12 file nhỏ, 0 dependency mới, 5 va chạm tên gần giống nhưng khác nghĩa.",
+  "one_line": "Telemetry is a 957-line zero-dependency LEAF contract package (callback-scoped span context, in-memory reference adapter, reusable adapter conformance suite, ~250 lines of closed-set attribute type machinery); copy all 12 files, strip 16 `.ts` import extensions, swap 2 vitest imports for bun:test, convert one `private` field to `#state`, and re-scope 14 `@earendil-works/` strings — it depends on Z",
+  "effort": "Small. ~1 hour. 12 files / 62831 bytes, of which only 8 files (34128 bytes) contain code. The rewrite surface is 16 specifier extensions, 2 runner imports, 3 `#state` edits, 2 barrel files, 7 assertion edits, 3 manifest files, and 2 registration lines in the root package.json. No new dependency, no ",
+  "source_files": 12,
+  "source_bytes": 62831,
+  "n_files_to_copy": 13,
+  "n_public_api": 38,
+  "n_new_deps": 0,
+  "n_collisions": 5,
+  "collision_headlines": [
+   "`AttributeValue` — pi-telemetry's scalar/array union vs @opentelemetry/api's `AttributeValue`",
+   "`SpanOptions` and `SpanStatus` — pi's `{name, attributes?}` / `{status:'ok'|'error'}` vs OTEL's `{attributes?,links?,startTime?,kind?}` / `{code,messa",
+   "`startSpan` — pi's callback-scoped `startSpan(options, callback) => Promise<T>` (span lives only for the callback) vs omp's immediate `startSpan(telem",
+   "`TelemetrySpan` (pi) vs `TelemetrySpanKind` (omp) — near-identical names, unrelated symbols",
+   "CONCEPTUAL, not textual: omp has TWO existing telemetry things and pi adds a third. They are not duplicates and must not be merged."
+  ],
+  "new_deps": [],
+  "gate": "bun run check:ts",
+  "gate_can_fail": true,
+  "risk": "LOW, and low in a specific way worth naming: this package has ZERO existing consumers in omp. Nothing imports TelemetryContext, InMemoryTelemetryContext, or any schema type anywhere in the 17-package tree (verified: 0 refs for 33 of the 36 public symbols). So the blast radius of a mistake is confined to packages/telemetry itself and cannot regress the CLI. The real risks are all local and all mech",
+  "n_questions": 6,
+  "n_steps": 14,
+  "test_files": [
+   "packages/telemetry/test/telemetry.test.ts",
+   "packages/telemetry/test/conformance.test.ts"
+  ]
+ },
+ {
+  "id": "evals",
+  "title": "Copy pi's packages/evals into omp as @oh-my-pi/pi-evals",
+  "migration_order": 7,
+  "why_this_position": "4 trong 7 dependency phải KHÔNG thêm (vitest); ModelRuntime không có ở omp nên chặn phần dò model.",
+  "one_line": "pi's behavioural eval harness for its coding agent — it measures whether the agent can configure its OWN installation (add a provider, add a model, create a tool extension) with and without the repo's documentation shipped, by running paired arms in two throwaway Docker images; it is the only thing in pi that tells you a change broke agent behaviour, and roughly 40% of it is Docker/vitest/pi-relea",
+  "effort": "The runnable core (plan.ts, report.ts + report-io.ts, docker.ts, cli.ts, acme-server.ts, harness.ts + 4 helper modules, 4 test files) is roughly 1,200 lines of porting where 6 files change only an import line. Call it 2-3 days including the check:ts loop. The deferred half is not the same size but i",
+  "source_files": 30,
+  "source_bytes": 133025,
+  "n_files_to_copy": 38,
+  "n_public_api": 57,
+  "n_new_deps": 7,
+  "n_collisions": 11,
+  "collision_headlines": [
+   "readStoredCredential — SAME NAME, DIFFERENT SIGNATURE. pi: readStoredCredential(provider, authPath) at packages/coding-agent/src/core/auth-storage.ts:",
+   "CreateAgentSessionOptions.tools / .noTools DO NOT EXIST in omp. pi's harness types PiCodingAgentHarnessOptions.tools and .noTools as CreateAgentSessio",
+   "ModelRuntime does not exist anywhere in omp. pi: packages/coding-agent/src/core/model-runtime.ts:153. omp has no packages/coding-agent/src/core/ at al",
+   "createAgentSessionServices / createAgentSessionFromServices do not exist in omp. pi: packages/coding-agent/src/core/agent-session-services.ts:135,202.",
+   "InlineExtension does not exist in omp; omp calls the same concept ExtensionFactory, and the event name used to rewrite the system prompt differs. pi's",
+   "getDocsPath / getExamplesPath / getReadmePath do not exist in omp (0 definitions, verified). test/harness.test.ts imports all three to assert the doc ",
+   "The 'docs' directory the whole experiment strips does not exist in the same place. pi deletes packages/coding-agent/{README.md,CHANGELOG.md,docs,examp",
+   "pi's release-tarball install pipeline has no omp equivalent. install-runtime.mjs imports getPublicWorkspacePackages/packReleasePackages/installCodingA",
+   "The 'eval' name collides with a large, unrelated omp subsystem. packages/coding-agent/src/eval/ is 60 files of JS/Python sandbox execution, kernel ses",
+   "vitest does not exist in omp at all — 13 import sites, 2 config files, 1 reporter invocation, and a root vitest.base.ts that omp does not have. The en",
+   "session.resourceLoader does not exist on omp's AgentSession. extensions.docs.eval.ts reads session.resourceLoader.getExtensions() for both the loaded-"
+  ],
+  "new_deps": [
+   {
+    "name": "vitest",
+    "version": "4.1.9",
+    "already_in_omp": false,
+    "why": "pi's runner: describeEval, project splits, vitest JSON reporter, `vitest list --json` discovery"
+   },
+   {
+    "name": "vitest-evals",
+    "version": "0.15.0",
+    "already_in_omp": false,
+    "why": "the describeEval/judge/StructuredOutputJudge/ToolCallJudge API and the vitest-evals JSON reporter"
+   },
+   {
+    "name": "@vitest-evals/core",
+    "version": "0.15.0",
+    "already_in_omp": false,
+    "why": "ReportCase type plus readReportWorkspace/readVitestJsonReportFile used to read the vitest JSON report"
+   },
+   {
+    "name": "autoevals",
+    "version": "0.3.0",
+    "already_in_omp": false,
+    "why": "Levenshtein judge used only by tui.docs.eval.ts"
+   },
+   {
+    "name": "shx",
+    "version": "0.4.0",
+    "already_in_omp": false,
+    "why": "the `clean` script: shx rm -rf .eval"
+   },
+   {
+    "name": "@types/bun",
+    "version": "catalog: (^1.3.14)",
+    "already_in_omp": true,
+    "why": "replaces @types/node + @types/vitest in tsconfig types"
+   },
+   {
+    "name": "oven/bun docker base image",
+    "version": "1.4-slim",
+    "already_in_omp": false,
+    "why": "replaces node:24-slim; the eval container runs the harness and the CLI"
+   }
+  ],
+  "gate": "`bun run check:ts` exits 0 (oxlint + oxfmt + tsgo over packages/evals) AND `oxlint packages/evals` is clean AND, once ninja is installed and natives are built, `bun test packages/evals` passes 4/4 files AND `grep -rn '@earendil-works' packages/evals` returns nothing AND `grep -rn 'from \"vitest' packages/evals` returns nothing AND packages/evals appears in scripts/ci-test-ts.ts AND packages/evals/NOTICE contains the verbatim 'Copyright (c) 2025 Mario Zechner' line and the full permission notice.",
+  "gate_can_fail": true,
+  "risk": "Highest: the SILENT NO-OP. Three concrete ways this migration can succeed at every gate and still measure nothing. (a) The without_docs arm strips a docs set that does not exist in omp — pi deletes packages/coding-agent/docs, omp has no such directory, so a copied Dockerfile would strip nothing and the control arm would read the same documentation as the treatment. (b) verifySystemPrompt and exclu",
+  "n_questions": 5,
+  "n_steps": 11,
+  "test_files": [
+   "packages/evals/test/plan.test.ts",
+   "packages/evals/test/comparison.test.ts",
+   "packages/evals/test/report.test.ts",
+   "packages/evals/test/acme-server.test.ts"
+  ]
+ }
+]

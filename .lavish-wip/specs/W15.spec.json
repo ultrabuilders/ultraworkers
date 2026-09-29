@@ -1,0 +1,234 @@
+{
+  "id": "W15",
+  "title": "Transcript search in the TUI — rendered-line-buffer scope (port of pi's alt-screen search)",
+  "wave": "Wave 7 (\"TUI và Windows — cái đuôi cắt được\"), together with W14. Wave 7's blocking gate is câu hỏi mở 4a (W14 scope) and explicitly does NOT wrap W15. W15 has no dependencies and is the first thing to cut if the milestone slips.",
+  "one_line": "Ctrl+Shift+F opens a fullscreen search bar over a replay of the whole session transcript; typing filters the rendered lines, the bar counts matches, and Enter / Shift+Enter jump the viewport to each one with it highlighted.",
+  "user_visible_effect": "Pressing Ctrl+Shift+F (when no overlay is open) paints a fullscreen transcript overlay with a search bar across the bottom. Typing narrows it; the bar shows \"7/23\" or \"No matches\"; Enter scrolls to and highlights the next match, Shift+Enter the previous, Escape closes and restores focus to the prompt. Nothing else about the TUI changes — no existing key, layout, or render path is touched.",
+  "effort": "M for the 327-line port (it is a copy, not a design). M+ overall, roughly 400-500 net LOC, because the plan's stated scroll target does not exist for the live transcript and the search buffer has to be produced by a ChatTranscriptBuilder replay instead. Two edits, not three, in app-keybindings.ts. If the engineer picks the search-bar-only variant (open question 1) it drops back to a clean M.",
+  "risk": "Building against the plan's stated scroll target. The plan says the rendered line buffer belongs to packages/tui/src/components/scroll-view.ts, but the LIVE main transcript does not use ScrollView at all: TranscriptContainer (packages/tui/src/chrome/transcript-container.ts:150, held at packages/coding-agent/src/modes/interactive-mode.ts:879) retires finished blocks into native terminal scrollback and drops them from .children, so there is nothing to search and no API to scroll to a row. An engineer who trusts the plan writes a search over chatContainer.children and ships a feature that silently ignores everything but the last screenful. Second failure mode, straight from the plan: rebuilding the index by hand instead of porting it, and losing the PRINTABLE_ASCII run-indexing fast path plus the per-span linearColumns flag — that is what stops a 200k-line transcript from allocating one mapping object per cell.",
+  "depends_on": [],
+  "blocks": [],
+  "files_touched": [
+    {
+      "path": "packages/tui/src/chat/transcript-search-index.ts",
+      "action": "create",
+      "change": "The ported search index, verbatim from /Users/tranquangdang21/Projects/pi-ref/packages/tui/src/alt-screen-search.ts lines 34-195: SearchSourceSpan, SearchCorpus, buildSearchCorpus, normalizeQuery, escapeRegExp, findSearchCorpusMatches, the TranscriptSearchIndex cache class, findTranscriptSearchMatches(lines, query), and getTranscriptSearchMatchKey. Every AltScreenSearch* name becomes TranscriptSearch*.",
+      "verified": false,
+      "note": "Does not exist at HEAD — this is the new file. The source lines it is copied from are verified: pi-ref/packages/tui/src/alt-screen-search.ts is 327 LOC at pi-ref HEAD d6af72e."
+    },
+    {
+      "path": "packages/tui/src/overlays/transcript-search.ts",
+      "action": "create",
+      "change": "The ported 3-row search bar (pi lines 197-326) as TranscriptSearchComponent implements Component, Focusable, plus the new TranscriptSearchOverlay that owns the ChatTranscriptBuilder replay, the TranscriptSearchIndex, the TranscriptBrowser, and the bar. tsgo will not see it through the barrel: packages/tui/src/index.ts has zero overlays exports, consumers import by subpath.",
+      "verified": false,
+      "note": "Does not exist at HEAD. Subpath shape confirmed against the two live precedents: packages/coding-agent/src/modes/controllers/input-controller.ts:19 and selector-controller.ts:92. grep -c overlays packages/tui/src/index.ts returns 0."
+    },
+    {
+      "path": "packages/tui/src/keybindings.ts",
+      "action": "modify",
+      "change": "Add \"tui.transcript.searchNext\": true and \"tui.transcript.searchPrevious\": true to interface Keybindings (block opens line 7, last member tui.select.cancel at line 43) and the matching TUI_KEYBINDINGS entries at the end of the table that opens at line 58.",
+      "verified": true,
+      "note": "Confirmed: `grep -n \"^export const TUI_KEYBINDINGS\" packages/tui/src/keybindings.ts` -> 58:export const TUI_KEYBINDINGS = {"
+    },
+    {
+      "path": "packages/tui/src/app-keybindings.ts",
+      "action": "modify",
+      "change": "Add \"app.transcript.search\": true to interface AppKeybindings (block lines 26-65, last member app.live.toggle at line 64) and a KEYBINDINGS entry with defaultKeys \"ctrl+shift+f\" after the \"app.history.search\" entry at lines 236-239. Do NOT touch line 68.",
+      "verified": true,
+      "note": "Confirmed: 26:interface AppKeybindings, 68:export type AppKeybinding = keyof AppKeybindings (derives itself, needs no edit — the plan says three edits, it is two), 86:export const KEYBINDINGS = {."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/input-controller.ts",
+      "action": "modify",
+      "change": "Inside the #globalEditorActionsListener block (starts line 319), add an app.transcript.search branch next to the app.history.search branch at lines 331-337: guard on hasOverlay(), call this.ctx.showTranscriptSearch(), return { consume: true }.",
+      "verified": true,
+      "note": "Plan cited :391 as the overlay guard; :391 is inside the app.tools.expand listener. The real history-search guard is the `getFocused() instanceof HistorySearchComponent` check at :332. The new branch does not need that self-guard because this overlay mounts via showOverlay, not showSelector."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/selector-controller.ts",
+      "action": "modify",
+      "change": "Add showTranscriptSearch() next to showCopySelector() (line 1204). Reuse its entry source (getBranch().filter(isTranscriptEntry), line 1205), its ChatTranscriptBuilder deps block (lines 1217-1226) and its fullscreen showOverlay mount (lines 1249-1255) unchanged.",
+      "verified": true,
+      "note": "Confirmed: showCopySelector at 1204, mount options at 1249-1255, HistorySearchComponent import at :92 and `new HistorySearchComponent(...)` at :475. isTranscriptEntry lives at packages/coding-agent/src/session/session-context.ts:214."
+    },
+    {
+      "path": "packages/tui/src/hotkeys-markdown.ts",
+      "action": "modify",
+      "change": "Add one hotkey row after the app.history.search row at line 79, or the binding is documented nowhere and users cannot discover the feature.",
+      "verified": true,
+      "note": "Confirmed: line 79 is the `| \\`${hotkeyLabel(bindings, \"app.history.search\")}\\` | Search prompt history |` row."
+    },
+    {
+      "path": "packages/tui/test/transcript-search.test.ts",
+      "action": "create",
+      "change": "Contract tests for the index and the navigation state machine. No source-grep, no mock.module, no bare not.toThrow.",
+      "verified": false,
+      "note": "Does not exist at HEAD. Test dir convention confirmed: packages/tui/test/ holds 235 *.test.ts files."
+    },
+    {
+      "path": "packages/tui/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under [Unreleased] > Added: Ctrl+Shift+F searches the rendered transcript.",
+      "verified": false,
+      "note": "Per AGENTS.md changelog rules; not read to keep context bounded."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under [Unreleased] > Added: the user-facing keybinding.",
+      "verified": false,
+      "note": "Per AGENTS.md changelog rules; not read to keep context bounded."
+    }
+  ],
+  "steps": [
+    {
+      "n": 0,
+      "anchor": "packages/tui/src/keybindings.ts:186",
+      "instruction": "BEFORE writing code, re-check the chord is still free. Run: for k in ctrl+shift+f ctrl+shift+e ctrl+shift+k alt+k; do printf '%s -> ' $k; grep -rn -F \"$k\" packages/tui/src packages/coding-agent/src | wc -l; done — and separately check ctrl+g, because pi's next/previous defaults use it. At HEAD: ctrl+shift+f/e/k and alt+k are 0 hits; ctrl+g is ALREADY TAKEN by app.editor.external (packages/tui/src/app-keybindings.ts, defaultKeys \"ctrl+g\"). pi's tui.altScreen.searchNext defaults are [\"enter\",\"ctrl+g\"] and searchPrevious [\"shift+enter\",\"ctrl+shift+g\"] (pi-ref keybindings.ts:196-207) — do NOT carry ctrl+g over. Use [\"enter\"] and [\"shift+enter\"] only. This list is HEAD state, not a guarantee; re-run it at merge."
+    },
+    {
+      "n": 1,
+      "anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/tui/src/alt-screen-search.ts:34",
+      "instruction": "Create packages/tui/src/chat/transcript-search-index.ts. Copy lines 34-195 of the pi-ref file (buildSearchCorpus, normalizeQuery, escapeRegExp, findSearchCorpusMatches, the index class, findAltScreenSearchMatches, getAltScreenSearchMatchKey) and rename every AltScreenSearch* identifier to TranscriptSearch*. The port target lives OUTSIDE this repo, at /Users/tranquangdang21/Projects/pi-ref (a sibling of ultraworkers) — there is no pi-ref/ inside ultraworkers; `ls -d pi-ref` from the repo root returns no such file. This is a copy, not a rewrite: keep the PRINTABLE_ASCII regex, the whole-run indexing loop at lines 53-78, and the linearColumns flag on both span constructions byte-for-byte. Those three things are the entire performance story and they are already written."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/tui/src/utils.ts:226",
+      "instruction": "Fix the one import that does not exist in omp. pi line 4 imports getGraphemeSegmenter from ./utils; omp has no such symbol anywhere in packages/. Use getSegmenter() (packages/tui/src/utils.ts:226), and stripTerminalSequences (utils.ts:388), visibleWidth (utils.ts:318). Keep the non-null assertions on span indexing — oxlint has typescript/no-non-null-assertion set to \"off\" (.oxlintrc.json:26), so they are not a lint failure."
+    },
+    {
+      "n": 3,
+      "anchor": "/Users/tranquangdang21/Projects/pi-ref/packages/tui/src/alt-screen-search.ts:197",
+      "instruction": "Create packages/tui/src/overlays/transcript-search.ts and port TranscriptSearchComponent from pi lines 197-326. Three adaptations, all forced: (a) omp's Input has no options constructor and no placeholder — packages/tui/src/components/input.ts:53 exposes public mutable fields only (prompt, mask, onSubmit, onEscape, cursorOverride), so drop the { prompt, placeholder, placeholderStyle } object, set this.#input.prompt = \"Find: \" after construction, and drop the placeholder entirely; (b) render(width: number): readonly string[] — omp's Component contract returns readonly string[] (packages/tui/src/tui.ts:241), not pi's string[]; (c) convert every TS `private` field to ES `#field` per AGENTS.md. Keep the width-collapse logic at pi lines 290-318 verbatim — it is what stops the bar overflowing a narrow terminal."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/tui/src/key-hint-format.ts:114",
+      "instruction": "In the ported render(), delete pi's hand-rolled local formatKey helper (pi lines 263-272) and call formatKeyHints from ../key-hint-format instead. formatKeyHint already renders modifiers in canonical order and already does the darwin Option substitution the local helper was hand-rolling, so keeping the local copy is a duplicate implementation of a central helper — which AGENTS.md calls a bug even when both work. Read the two labels from getKeybindings().getKeys(\"tui.transcript.searchPrevious\") and (\"tui.transcript.searchNext\")."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/tui/src/keybindings.ts:7",
+      "instruction": "Register the two TUI-layer bindings. Add the two `true` members to interface Keybindings (block opens at :7; the last member tui.select.cancel is at :43) and the two definitions to the end of TUI_KEYBINDINGS (table opens at :58). Defaults from step 0: next [\"enter\"], previous [\"shift+enter\"], each with a description. Both are declared in the TUI layer, not the app layer, because the component that reads them lives in packages/tui — that is the layer pi used too (tui.altScreen.searchNext)."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/tui/src/app-keybindings.ts:26",
+      "instruction": "Register the open chord. Add \"app.transcript.search\": true to interface AppKeybindings (block :26-65, last member app.live.toggle at :64) and a KEYBINDINGS entry right after the \"app.history.search\" entry at :236-239, with defaultKeys \"ctrl+shift+f\" and a description. Leave line 68 alone: AppKeybinding is `keyof AppKeybindings` and picks the new member up by itself. The plan's \"add an entry to all three places\" is two edits, not three."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/tui/src/chat/chat-transcript-builder.ts:112",
+      "instruction": "This is the step the plan gets wrong, and it is the whole shape of the feature. Add TranscriptSearchOverlay to packages/tui/src/overlays/transcript-search.ts. It owns: a ChatTranscriptBuilder rebuilt from the ENTIRE branch via rebuild(entries) (chat-transcript-builder.ts:112) — not the recentEntries tail that CopySelectorComponent defaults to, because a search that cannot see the rest of the session is useless; a TranscriptSearchIndex; a TranscriptBrowser; and the bar. Build the plain line buffer by flattening builder.container.children — child.render(contentWidth) for each, concatenated. This is the same contract OutlineRowCache relies on (packages/tui/src/chat/transcript-outline.ts:80-93: a child returns the same array while its rows are unchanged). Do NOT use TranscriptBrowser.renderOutlineRows / stripPromptZones for this: that strips prompt zones and shifts the columns the whole match-mapping depends on."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/tui/src/chat/transcript-browser.ts:237",
+      "instruction": "Highlight inside the frame callback, not after the render. TranscriptBrowser.render() does `this.#scrollView.setLines(frame.body.lines)` (line 237), so returning already-highlighted body lines from the frame callback gets them into the viewport with no extra pass. Build the index from the PLAIN lines and highlight a separate copy — buildSearchCorpus calls stripTerminalSequences on every line, so the index is highlight-agnostic either way, but indexing plain text is cheaper and deterministic. Current match gets the accent/reverse style, other matches a dim background."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/tui/src/components/scroll-view.ts:267",
+      "instruction": "Scroll-to-match. Set the browser's body anchor to the current match's first row on every navigation so ScrollView.revealRange pulls it into view — that is the mechanism TranscriptBrowser already uses for its own anchors and it needs no new scroll API. If centering reads better, use setActiveRow(row, \"center\") (scroll-view.ts:267). Do not build a scroll abstraction; do not reach into the live transcript."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/coding-agent/src/modes/controllers/selector-controller.ts:1204",
+      "instruction": "Add showTranscriptSearch() next to showCopySelector(). Copy its shape exactly: entries from this.ctx.sessionManager.getBranch().filter(isTranscriptEntry) (line 1205), the same nine ChatTranscriptBuilder deps (lines 1217-1226), the same fullscreen mount this.ctx.ui.showOverlay(overlay, { anchor: \"bottom-center\", width: \"100%\", maxHeight: \"100%\", margin: 0, fullscreen: true }) (lines 1249-1255), then setFocus + requestRender. Escape / cancel routes to the same done() that hides the handle and disposes the overlay. Empty branch: this.ctx.showStatus(\"Nothing to search yet.\") and return, matching the :1206 guard. dispose() must call builder.dispose() and drop the index."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/coding-agent/src/modes/controllers/input-controller.ts:331",
+      "instruction": "Add the handler inside #globalEditorActionsListener (block starts :319), immediately after the app.history.search branch at :331-337: if matches(data, \"app.transcript.search\") { if (this.ctx.ui.hasOverlay()) return undefined; this.ctx.showTranscriptSearch(); return { consume: true }; }. Do NOT add an `instanceof` self-guard like history search has at :332 — that guard exists because showHistorySearch swaps the editor slot via showSelector (selector-controller.ts:228-245), which does not create an overlay. This one mounts through showOverlay, so hasOverlay() already covers the open case."
+    },
+    {
+      "n": 12,
+      "anchor": "packages/tui/src/hotkeys-markdown.ts:79",
+      "instruction": "Add one row to the hotkeys table after the app.history.search row so the binding is discoverable, then add one line to each of packages/tui/CHANGELOG.md and packages/coding-agent/CHANGELOG.md under [Unreleased] > Added."
+    }
+  ],
+  "code_shape": "// packages/tui/src/chat/transcript-search-index.ts — ported verbatim from\n// /Users/tranquangdang21/Projects/pi-ref/packages/tui/src/alt-screen-search.ts:34-195\n// The only adaptation: getGraphemeSegmenter -> getSegmenter (utils.ts:226).\n\nconst PRINTABLE_ASCII = /^[\\x20-\\x7e]*$/;\n\nexport interface TranscriptSearchSegment { row: number; startCol: number; endCol: number }\nexport interface TranscriptSearchMatch { segments: TranscriptSearchSegment[] }\n\ninterface SearchSourceSpan {\n  textStart: number; textEnd: number;\n  row: number; startCol: number; endCol: number;\n  linearColumns: boolean; // true => ASCII fast path, 1 char === 1 column\n}\ninterface SearchCorpus { text: string; spans: SearchSourceSpan[] }\n\nfunction buildSearchCorpus(lines: readonly string[]): SearchCorpus {\n  // KEEP THIS LOOP. One span per non-space RUN, not one per cell, and\n  // linearColumns: true so match->column math is plain arithmetic. This is\n  // what the 0.85.0 perf work already is; a per-cell rebuild is the failure\n  // mode this item exists to avoid.\n  // ... (pi lines 47-103, unchanged, incl. the PRINTABLE_ASCII branch)\n}\n\n// The load-bearing detail: a match may start in one span and end in another,\n// possibly on a different row (wrapped lines). The walk emits ONE segment per\n// touched span, carrying each span's own row, and merges adjacent same-row ones.\nexport function findTranscriptSearchMatches(\n  lines: readonly string[], query: string,\n): TranscriptSearchMatch[] { /* pi:186 */ }\n\nexport function getTranscriptSearchMatchKey(m: TranscriptSearchMatch): string { /* pi:191 */ }\n\n/** Caches corpus + matches; `changed` is the overlay's skip-render signal. */\nexport class TranscriptSearchIndex {\n  #sourceLines: string[] | undefined;\n  #corpus: SearchCorpus | undefined;\n  #normalizedQuery: string | undefined;\n  #matches: TranscriptSearchMatch[] = [];\n\n  search(lines: readonly string[], query: string): { matches: TranscriptSearchMatch[]; changed: boolean } {\n    // pi:162-183 — element-wise compare so an append invalidates, an identical\n    // re-query does not.\n  }\n}\n\n// packages/tui/src/overlays/transcript-search.ts — the overlay.\n// The line buffer is a REPLAY, not the live transcript: the live\n// TranscriptContainer retires finished blocks into native terminal scrollback\n// and drops them from .children, so it cannot be searched or scrolled.\nexport class TranscriptSearchOverlay implements Component {\n  #builder: ChatTranscriptBuilder;   // rebuild(wholeBranchEntries)\n  #index = new TranscriptSearchIndex();\n  #browser: TranscriptBrowser;       // owns the ScrollView\n  #bar: TranscriptSearchComponent;   // the 3-row search bar, ported from pi:197\n  #query = \"\";\n  #cursor = 0;                        // index into #index.search(...).matches\n\n  #plainLines(contentWidth: number): string[] {\n    const out: string[] = [];\n    for (const child of this.#builder.container.children) out.push(...child.render(contentWidth));\n    return out;\n  }\n\n  #frame(context: TranscriptBrowserRenderContext): TranscriptBrowserFrame {\n    // 1. plain = this.#plainLines(context.contentWidth)          (identity-stable)\n    // 2. { matches } = this.#index.search(plain, this.#query)   (skip if !changed)\n    // 3. body.lines = highlight(plain, matches, this.#cursor)  -> TranscriptBrowser\n    //    feeds these to ScrollView.setLines() (transcript-browser.ts:237), so the\n    //    highlight lands in the viewport with no extra render pass.\n    // 4. body.anchor = first row of matches[this.#cursor] -> revealRange scrolls to it.\n  }\n\n  render(width: number): readonly string[] { /* #browser.render + bar rows */ }\n  dispose(): void { this.#builder.dispose(); this.#bar.dispose?.(); }\n}\n",
+  "test_contract": "Five named contracts in packages/tui/test/transcript-search.test.ts.\n\n(1) SPAN MAPPING, ROW AND COLUMN, ACROSS A LINE BREAK. Hand-build a wrapped multi-line buffer (no rendering, no TUI) and query a string that starts on one line and ends on the next. Assert findTranscriptSearchMatches returns ONE match with TWO segments carrying the correct row/startCol/endCol for each. This is the case that proves the span->(row,startCol,endCol) map and it is the most-wrong case in the file. Consumer: the highlight pass in the frame callback and the scroll anchor. Regression shows the user a correct match count and a correctly jumped viewport with the highlight painted over the wrong words.\n\n(2) A SECOND WRAPPED MESSAGE ON LATER ROWS gets its own correct columns, not row-0 columns. Guards the `row` field specifically, which (1) cannot distinguish when the match is on rows 0-1. Consumer: same.\n\n(3) INDEX REBUILD ON LINE CHANGE, AND changed:false ON AN IDENTICAL RE-QUERY. Drive TranscriptSearchIndex directly: search a buffer, then search a buffer with one line appended, and assert the new match appears. Then re-search the same buffer with the same query and assert changed === false. Consumer: the per-keystroke path in #frame; `changed: false` is the signal that lets the overlay skip a re-render. This is why the plan says to drive the class, not just the free function.\n\n(4) NAVIGATION WRAPS BOTH ENDS. With 3 matches, next from index 2 lands on 0 and previous from 0 lands on 2. Consumer: Enter and Shift+Enter in the bar.\n\n(5) A QUERY WITH NO MATCH RETURNS [] AND THE BAR SAYS \"No matches\" — it does not throw and it does not return a zero-length match. Consumer: the bar's render path, which would otherwise index segments[0] of nothing.\n\n(6) BOUNDED WORK, NOT A TIMING THRESHOLD. Feed a 5,000-line buffer with exactly one occurrence; assert the result is exactly one match and that its segments touch only the rows that contain the text. A wall-clock assertion is not a contract per AGENTS.md; a bounded output is. This is the assertion that would go red if someone replaced the run-indexing fast path with a per-cell rebuild.\n\nNot tested, deliberately: the bar's pixel layout, the chord, and the overlay mount. Those are wiring, and AGENTS.md bans tests that assert a constructor copied a fixture.",
+  "test_files": [
+    "packages/tui/test/transcript-search.test.ts"
+  ],
+  "verification": [
+    "bun run --cwd=packages/tui check    # oxlint + oxfmt --check + tsgo. Verified green at HEAD (exit 0). This is the primary gate.",
+    "bun run --cwd=packages/coding-agent check:types    # tsgo over the two edited controllers.",
+    "bun test packages/tui/test/transcript-search.test.ts    # BLOCKED at HEAD — see below.",
+    "bun --cwd=packages/natives run build    # prerequisite, not optional."
+  ],
+  "gate": "Three gates, at least two of which genuinely go red.\n\n(1) REGISTRY GATE — the real one. packages/coding-agent/src/modes/controllers/input-controller.ts calls this.ctx.keybindings.matches(data, \"app.transcript.search\"), and KeybindingsManager.matches takes `keybinding: Keybinding` where Keybinding = keyof Keybindings (packages/tui/src/keybindings.ts:293, :45). Delete the new member from interface AppKeybindings (packages/tui/src/app-keybindings.ts:26) and tsgo fails with TS2345 on that call site. A new binding that is not in the interface is not a binding. This fails loudly and specifically.\n\n(2) TYPES + LINT + FORMAT — `bun run --cwd=packages/tui check` and `bun run --cwd=packages/coding-agent check:types` both exit 0. Catches the three port mismatches (getGraphemeSegmenter, Input options ctor, readonly string[]) and the ES-#private conversion.\n\n(3) TEST GATE — `bun test packages/tui/test/transcript-search.test.ts` reports 0 fail. NOT RUNNABLE TODAY: at HEAD it reports 0 pass / 1 fail with \"Failed to load pi_natives native addon for darwin-arm64\" (confirmed by running packages/tui/test/scroll-view.test.ts). Build the addon with `bun --cwd=packages/natives run build` first. This gate is real but currently blocked, which is why the milestone-1 tracker should treat W15 as type-complete and test-pending rather than done until someone builds the addon.",
+  "gate_can_fail": true,
+  "open_questions": [
+    "OVERLAY SHAPE — the one that actually decides the estimate. (A) Fullscreen searchable replay: a fresh overlay that owns its own ChatTranscriptBuilder rebuild and its own ScrollView, so Enter really scrolls the transcript to the match. This is what the spec above describes and it is the only variant with working scroll-to-match. (B) Reuse the live transcript with a search bar and no scroll-to-match, matching results only by count. (B) is smaller but the user cannot see what they matched, which is the whole point. Recommend A. If the milestone is already slipping, the honest cut is to drop W15 entirely — the plan ranks it last precisely because cutting it costs no user-visible guess.",
+    "REPLAY COST ON A LARGE SESSION. CopySelectorComponent deliberately replays only the tail (recentEntries / INITIAL_ENTRIES) and lazily loads the full history on demand. Search needs the WHOLE branch, so every open does a full rebuild. On a 200k-line session that is the one real performance risk in this item, and the fast path does not help here because it only applies to indexing, not to the replay. Options: (i) accept it and show 'indexing…' while it runs, (ii) cache the replay on the mode object and invalidate on session mutation, (iii) cap the searchable window and say so in the UI. Whoever picks this needs a number, not a vibe — measure before choosing.",
+    "CHORD. ctrl+shift+f is the recommendation (free at HEAD, and it is pi's own default so the muscle memory transfers). But Ctrl+Shift+F is Find in a great many terminals and emulators, and some forward it to the emulator rather than the application. Before merge, confirm it actually reaches the app on the terminals omp claims to support, or pick alt+k (also 0 hits at HEAD).",
+    "DISCOVERABILITY. Should the feature also appear as a slash command (/search) so it is reachable when the chord is swallowed by the terminal? Adding it is cheap and reuses the same showTranscriptSearch(), but it is a second surface and the plan did not ask for it.",
+    "HIGHLIGHT STYLE. The spec says accent/reverse for the current match and a dim background for the rest. Both are theme decisions, not engineering ones, and the rest-of-matches styling is what makes a 23-hit result navigable at all. Needs a human who owns the theme.",
+    "TEST UNBLOCK. bun test is blocked repo-wide until the native addon is built (bun --cwd=packages/natives run build). Gates 1 and 2 of this item can pass without it; gate 3 cannot. Confirm whether the addon will be built before this item is scheduled, otherwise the work item ships type-complete and test-pending."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "pi-ref/packages/tui/src/alt-screen-search.ts is the port source, 327 LOC, 'đã xác minh'.",
+      "verdict": "correct-but-misleading-path",
+      "correction": "The file is real and is 327 LOC, but pi-ref is NOT inside this repo. It lives at /Users/tranquangdang21/Projects/pi-ref, a sibling of ultraworkers. `ls -d pi-ref` from the repo root returns no such file, and `find . -name 'alt-screen-search*'` in the repo returns nothing. pi-ref is at its own HEAD d6af72e. The engineer must read across directories; there is nothing to copy from inside the tree.",
+      "evidence": "ls -d pi-ref -> no such file; find /Users/tranquangdang21/Projects -name alt-screen-search.ts -> /Users/tranquangdang21/Projects/pi-ref/packages/tui/src/alt-screen-search.ts; wc -l -> 327"
+    },
+    {
+      "claim": "Point 4, 'Scroll target: the rendered line buffer belongs to packages/tui/src/components/scroll-view.ts and scroll-viewport.ts'.",
+      "verdict": "wrong",
+      "correction": "ScrollView does not back the live main transcript, and no scroll-to-row API exists for it. The live transcript is a TranscriptContainer (packages/tui/src/chrome/transcript-container.ts:150) held at packages/coding-agent/src/modes/interactive-mode.ts:879, and it retires finished blocks into NATIVE terminal scrollback — chatContainer.children holds only the live tail, so it is neither complete enough to search nor has an API to scroll it. ScrollView is used by console-tui.ts:45, by TranscriptBrowser (copy-selector, rewind-selector, agent-transcript-viewer), and by SelectList. Consequence: the searched line buffer must be produced by a ChatTranscriptBuilder replay — exactly the showCopySelector pattern at selector-controller.ts:1204 — mounted as its own fullscreen overlay with its own ScrollView. This is the largest single deviation from the plan and it is what turns the plan's M into M+.",
+      "evidence": "grep -rn 'ScrollView\\b' packages/ (excluding components/scroll-view) -> only console-tui.ts:45, tests, and CHANGELOG; transcript-container.ts:150 'export class TranscriptContainer extends Container'; transcript-container.ts entries carry state 'active' with retirement and a #frontier"
+    },
+    {
+      "claim": "Point 3, 'add a new entry to all three of interface AppKeybindings (:26), type AppKeybinding (:68), and table KEYBINDINGS (:86)'.",
+      "verdict": "wrong-by-one",
+      "correction": "Two edits, not three. Line 68 is `export type AppKeybinding = keyof AppKeybindings`, which derives itself; adding the member to the interface is sufficient. Also worth recording: the AppKeybindings interface is 38 members, not the 14 that a partial read suggests — a member that is in the KEYBINDINGS table but missing from the interface will not typecheck at a matches() call site.",
+      "evidence": "app-keybindings.ts:26 interface AppKeybindings {...} spanning to :65; :68 export type AppKeybinding = keyof AppKeybindings; :86 export const KEYBINDINGS = {"
+    },
+    {
+      "claim": "The port carries pi's default keys for next/previous (['enter','ctrl+g'] / ['shift+enter','ctrl+shift+g']).",
+      "verdict": "collision",
+      "correction": "The plan never checked ctrl+g. It is already bound to app.editor.external in omp. Carry over ['enter'] and ['shift+enter'] only. The zero-hit free-chord list in the plan is correct and still holds, but it was about the OPEN chord, not the navigation chords.",
+      "evidence": "pi-ref/packages/tui/src/keybindings.ts:196-207 shows searchNext ['enter','ctrl+g']; app-keybindings.ts app.editor.external defaultKeys 'ctrl+g'"
+    },
+    {
+      "claim": "'Candidates still free, verified zero hits: ctrl+shift+f, ctrl+shift+e, ctrl+shift+k, alt+x, alt+k.'",
+      "verdict": "mostly-correct, one-exception",
+      "correction": "ctrl+shift+f, ctrl+shift+e, ctrl+shift+k and alt+k are 0 hits. alt+x is 1 hit, not 0 — but it is inside a doc comment in packages/tui/src/keys.ts:544, so it is functionally free. Recommend ctrl+shift+f anyway: it is what pi's own tui.altScreen.search defaults to, so the muscle memory transfers.",
+      "evidence": "for k in ctrl+shift+f ctrl+shift+e ctrl+shift+k alt+x alt+k; do grep -rn -F $k packages/tui/src packages/coding-agent/src | wc -l; done -> 0/0/0/1/0; the single alt+x hit is packages/tui/src/keys.ts:544 '- Combined modifiers: \"shift+ctrl+p\", \"ctrl+alt+x\"'"
+    },
+    {
+      "claim": "InputController mounts overlays: 'the import at :19 and the overlay-focus block at :391'.",
+      "verdict": "stale-anchor",
+      "correction": "The import at input-controller.ts:19 is correct and current. :391 is not the overlay-focus block — it is inside the app.tools.expand listener (starts :375). The overlay guard the plan means is the `this.ctx.ui.hasOverlay() || this.ctx.ui.getFocused() instanceof HistorySearchComponent` check at :332, inside the app.history.search branch at :331-337. Work inside that block, not around :391.",
+      "evidence": "input-controller.ts:331-337 is the app.history.search branch; :375 begins the expandTools listener; :387-388 contain the hasOverlay()/TreeSelectorComponent guard"
+    },
+    {
+      "claim": "The port imports getGraphemeSegmenter from ./utils (pi line 4).",
+      "verdict": "stale-symbol",
+      "correction": "No such symbol exists anywhere in omp. The shared segmenter is getSegmenter() at packages/tui/src/utils.ts:226. Left unfixed this is the first thing tsgo rejects, so it is a 30-second fix, not a design problem.",
+      "evidence": "grep -rn getGraphemeSegmenter packages/ -> no matches; utils.ts:226 export function getSegmenter(): Intl.Segmenter"
+    },
+    {
+      "claim": "The ported component's `private` fields and `new Input({...})` constructor options.",
+      "verdict": "needs-adaptation",
+      "correction": "omp's Input (packages/tui/src/components/input.ts:53) has no constructor and no options object — it exposes public mutable fields (prompt, mask, onSubmit, onEscape, cursorOverride) and no placeholder support at all. Construct with `new Input()`, then set `input.prompt = \"Find: \"`; the dim placeholder styling from pi has to be dropped or replaced. Also convert every TS `private` to ES `#field` per AGENTS.md, and return `readonly string[]` from render() per omp's Component contract (packages/tui/src/tui.ts:241).",
+      "evidence": "input.ts:53 export class Input; no constructor in the class; pi:198-202 uses new Input({ prompt, placeholder, placeholderStyle })"
+    },
+    {
+      "claim": "Test item (4), 'the perf contract as a BOUNDED-WORK assertion: a large transcript does not compute highlights for off-screen matches'.",
+      "verdict": "overstated",
+      "correction": "The 327-line port is unbounded by design — findSearchCorpusMatches returns every match in the buffer, and nothing in it knows about a viewport. The bound has to be introduced at the overlay layer, or the assertion is about something the port does not do. State it honestly in the test as: on a 5,000-line buffer with one occurrence, the index returns exactly one match touching only the rows that contain the text, and the overlay renders only the visible window. That is a real bounded-output contract; the plan's phrasing promises a viewport bound the port does not have.",
+      "evidence": "pi-ref alt-screen-search.ts:116-148 findSearchCorpusMatches pushes every match; the file has no viewport, height, or visible-range parameter anywhere"
+    },
+    {
+      "claim": "The task frame states the repo is at git HEAD 5873776.",
+      "verdict": "wrong",
+      "correction": "Actual HEAD is ecd516f ('feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers') on branch milestone-1. Every anchor in this spec was re-verified against ecd516f, not 5873776.",
+      "evidence": "git rev-parse --short HEAD -> ecd516f"
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W15.spec.json"
+}

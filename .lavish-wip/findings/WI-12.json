@@ -1,0 +1,58 @@
+[
+ {
+  "severity": "blocking",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:129-132 (khối Xác minh) và :161 (điều khoản cổng (b)), phát lại ở :165",
+  "claim": "Điều khoản cổng (b) được tuyên bố là 'đỏ cứng và cơ khế': `git diff --stat HEAD` phải liệt kê đúng ba path tài liệu, trong đó có `docs/mcp-server-contribution-by-extensions.md` (new).",
+  "why_wrong": "Sản phẩm chính của hạng mục là MỘT FILE MỚI. File chưa `git add` là untracked, và git không bao giờ đưa untracked file vào bất kỳ `git diff` nào — kể cả `git diff HEAD`. Nghĩa là lệnh kiểm chứng duy nhất được tuyên bố là cơ khế sẽ KHÔNG THẤY tài liệu cần giao, và trên một cây sạch đúng-scope nó in ra HAI path chứ không phải ba. Kỹ sư làm đúng bài sẽ tưởng mình trượt cổng rồi đi `git add` để 'làm cho nó xanh' — tức là cổng buộc phải dạy thói quen staging chỉ để bộ lọc hoạt động. Đây là phát hiện nặng nhất vì toàn bộ luận điểm 'chỉ cơ khế bắt được lỗi phổ biến nhất' ở :167 đứng trên chính điều khoản này.",
+  "evidence": "Probe thật: `cp /tmp/wi12_probe.md ./docs/zz-wi12-probe.md` → `git status --short docs/zz-wi12-probe.md` in ra `?? docs/zz-wi12-probe.md`, còn `git diff --stat HEAD -- docs/zz-wi12-probe.md` in ra RỖNG. Sau `git add docs/zz-wi12-probe.md` thì `git diff --stat HEAD -- docs/zz-wi12-probe.md` mới in ra `docs/zz-wi12-probe.md | 1 +`. Đã xoá sạch probe, `git diff --name-only HEAD` hiện rỗng.",
+  "fix": "Thay cả hai chỗ. Ở khối Xác minh (:129-132) và ở điều khoản cổng (b) (:161), đổi lệnh thành:\n```bash\ncd /Users/tranquangdang21/Projects/ultraworkers && git status --porcelain\n#   expected: đúng ba dòng dạng ' M docs/extensions.md', ' M docs/mcp-config.md',\n#   '?? docs/mcp-server-contribution-by-extensions.md' — và KHÔNG có dòng nào\n#   trỏ vào packages/. '??' là bắt buộc: file mới chưa stage là untracked nên\n#   `git diff --stat HEAD` không bao giờ thấy nó. Nếu muốn dùng diff, phải\n#   `git add -A` trước rồi `git diff --cached --stat HEAD`.\n```\nCâu 'expected: exactly three paths' hiện tại ở :130 nói thẳng sai số và sai cơ chế — sửa thành câu trên."
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:200 (hàng 'STALE by +25' đầu tiên trong bảng Đính chính); gốc: WI-12.spec.json:27",
+  "claim": "'Đã xác nhận đây là thành viên MCP DUY NHẤT: `grep -n 'mcp' packages/coding-agent/src/extensibility/extensions/types.ts` trả về đúng năm hit (`:663`, `:665`, `:711`, `:905`, `:908`, `:1340`)'.",
+  "why_wrong": "Câu tự mâu thuẫn ngay trong nó: nói 'năm' rồi liệt kê sáu neo. Và con số thật là SÁU, không phải năm. Đây là hàng được gắn nhãn bằng một lệnh kiểm chứng cụ thể mà kỹ sư sẽ chạy — chạy ra 6 dòng, đọc 'năm' là phải tự đếm lại và mất niềm tin vào phần còn lại của cột 'Bằng chứng'.",
+  "evidence": "`grep -n 'mcp' packages/coding-agent/src/extensibility/extensions/types.ts | wc -l` → `6`. Sáu dòng: 663, 665, 711, 905, 908, 1340 — khớp đúng sáu neo đã liệt kê.",
+  "fix": "Đổi 'đúng năm hit' thành 'đúng sáu hit'. Nguyên văn thay cho mệnh đề sai:\n\"Đã xác nhận đây là thành viên MCP DUY NHẤT: `grep -n 'mcp' packages/coding-agent/src/extensibility/extensions/types.ts` trả về đúng sáu hit (`:663`, `:665`, `:711`, `:905`, `:908`, `:1340`) và `:711` là doc comment của `SourceInfo.source`, không phải một thành viên.\""
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:19 (hàng `packages/coding-agent/src/mcp/manager.ts`); gốc: WI-12.spec.json:96",
+  "claim": "'File nặng 71 KB / khoảng 1300 dòng; tài liệu thiết kế nên trích đúng bốn neo trên và không gì hơn.'",
+  "why_wrong": "Sai 640 dòng, lệch ~49%. Con số này được dùng để biện minh cho lập luận 'chỉ trích bốn neo, đừng đi lang thang' — một người đọc tin rằng file 1300 dòng sẽ chấp nhận giới hạn đó; biết nó dài 1941 dòng thì sẽ hiểu lời khuyên là 'đừng trích tất cả', không phải 'file nhỏ lắm'. KB thì đúng (72279 byte ≈ 71 KiB), chỉ số dòng sai.",
+  "evidence": "`wc -l packages/coding-agent/src/mcp/manager.ts` → `1941`. `wc -c` → `72279` (≈71 KiB, phần KB đúng).",
+  "fix": "Thay 'File nặng 71 KB / khoảng 1300 dòng' bằng: \"File dài 1941 dòng / 72 KB; tài liệu thiết kế nên trích đúng bốn neo trên và không gì hơn.\""
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:22 (hàng `packages/tui/src/overlays/extensions/extension-dashboard.ts`); gốc: WI-12.spec.json:114",
+  "claim": "'Call site là `#toggleMcpExtension` tại `:419-433`, truyền kết quả vào `persistMcpToggle` tại `:421`.'",
+  "why_wrong": "Cả hai đầu của khoảng đều sai: hàm bắt đầu ở :418 (không phải 419) và kết thúc ở :447 (không phải 433) — thiếu 14 dòng, gồm cả nhánh `disabledExtensions` reconcile mà đoạn :192 của chính tài liệu này cần đọc. Chỉ :421 là đúng. Đây là hàng được đánh dấu là bằng chứng mạnh nhất trong cả tài liệu thiết kế, nên khoảng neo sai ở đây tệ hơn chỗ khác.",
+  "evidence": "`grep -n '#toggleMcpExtension' packages/tui/src/overlays/extensions/extension-dashboard.ts` → `396` (call site) và `418` (định nghĩa). `awk 'NR>=410 && NR<=460 && /^\\t}/'` cho thấy dấu `}` đóng hàm ở :447. `sed -n '445,449p'` → :446 `await this.#refreshFromState();`, :447 `}`, :448 trống, :449 `#writableMcpSourcePath(...)`.",
+  "fix": "Thay '`#toggleMcpExtension` tại `:419-433`' bằng: \"`#toggleMcpExtension` tại `:418-447` (call site từ :396), truyền kết quả vào `persistMcpToggle` tại `:421`.\""
+ },
+ {
+  "severity": "major",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:88 (Hình dải code) so với :36 (bước 6)",
+  "claim": "Sketch gọi `toLegacyConfig({ ...descriptor, _source: source })` và :36 kết luận 'nó biến \"một bản build cỡ M lớn\" thành \"một producer cho hai bản ghi cộng một chỉ mục chủ sở hữu\"'.",
+  "why_wrong": "`toLegacyConfig` KHÔNG tồn tại ở bất kỳ đâu trong repo — sketch gọi một hàm bịa ra như thể là hạ tầng có sẵn. Tệ hơn, nó che đúng phần khó: `SourceMeta` bắt buộc có `path` (đường dẫn file tuyệt đối), `provider`, `providerName`, và `level: \"user\" | \"project\" | \"native\"`; một server do extension đã nạp không có file nào, không có provider nào trong danh mục, và level của nó là một lựa chọn bị ép. `level` lại là trục bị dùng để chặn: `state-manager.ts:60` (`source.level === \"user\" && !isUserSourceEnabled(...)` → state `disabled`, reason `user-opt-in`) và `skills.ts:163-184`. Tức là chính cái 'chỉ là một producer' mà bước 6 hứa sẽ phải trả lời câu hỏi 'level nào, và nó rơi vào cổng opt-in nào' — và câu đó vắng mặt khỏi cả năm câu hỏi mở. Đây là lỗ hổng thiết kế thật, không phải lỗi văn phong.",
+  "evidence": "`grep -rn 'toLegacyConfig' --include='*.ts' . | grep -v node_modules | wc -l` → `0`. Định nghĩa thật: `packages/coding-agent/src/capability/types.ts:139-155` (`SourceMeta` với `path: string`, `level: \"user\" | \"project\" | \"native\"` bắt buộc). Cổng chặn theo level: `packages/coding-agent/src/modes/components/extensions/state-manager.ts:60`.",
+  "fix": "Hai việc. (1) Đổi dòng :88 thành `// TODO(build): cần bộ chuyển MCPServer -> MCPServerConfig (chưa tồn tại;` / `// MCPServerConfig là union stdio|http|sse tại mcp/types.ts:145, khác shape MCPServer).` (2) Thêm một câu hỏi mở vào mục 'Cần người quyết' sau câu credential, nguyên văn: \"**Level và provenance của server do extension đóng góp:** `SourceMeta` bắt buộc có `path`, `provider`, `providerName` và `level: \\\"user\\\" | \\\"project\\\" | \\\"native\\\"` (`capability/types.ts:139-155`). Một server đóng góp lúc runtime không có file, không có provider trong danh mục hiện có, và `level` của nó đi thẳng vào cổng chặn `state-manager.ts:60` (`source.level === \\\"user\\\" && !isUserSourceEnabled(...)` → disabled, lý do `user-opt-in`). Chọn level nào, provider id nào, và path giả hay path rỗng — tài liệu phải trả lời, vì đây là chỗ lớp 'chỉ là một producer' của bản build hấp thụ.\""
+ },
+ {
+  "severity": "minor",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:56-109 (Hình dải code) và :125-156 (khối Xác minh)",
+  "claim": "Toàn bộ phần còn lại của mục viết bằng tiếng Việt; chỉ hai khối này còn tiếng Anh nguyên vẹn.",
+  "why_wrong": "Hai khối này không phải comment kỹ thuật vô hại — chúng mang nội dung ra lệnh. Cụ thể ở khối Xác minh: 'The deliverable is prose, so the verification is...' (:127-128), 'Expected green — but note it proves NOTHING about this item...' (:150-151), và đoạn cảnh báo native addon (:153-156) là hướng dẫn diễn giải kết quả cho kỹ sư. Ở Hình dải code, đoạn :105-108 là lập luận về trust tier — nội dung quyết định nhất của cả tài liệu — bằng tiếng Anh. Người review tiếng Việt đọc tới đây sẽ bỏ qua.",
+  "evidence": "17 dòng comment `//` trong :56-109 và 6 dòng comment `#` tiếng Anh trong :123-157; `sed -n '127,134p;149,156p'` in ra nguyên văn tiếng Anh như trích.",
+  "fix": "Dịch comment tiếng Anh trong Hình dải code và trong khối Xác minh. Ví dụ :150-151 thay bằng: `#   Kỳ vọng xanh — nhưng lưu ý nó KHÔNG chứng minh gì cho hạng mục này: không có` / `#   dòng source nào đổi. Chạy nó là để bắt nhầm sửa ngoài ý muốn, không phải bằng chứng thiết kế đúng.` và :153-156 thay bằng: `# Bị chặn trong môi trường này, không phải lỗi: native addon chưa build, nên` / `# \\`bun test\\` báo 0 pass kèm \"Failed to load pi_natives native addon for darwin-arm64\".` / `# Build bằng \\`bun --cwd=packages/natives run build\\` trước khi tin một lần \\`bun test\\` xanh.` / `# Hạng mục này không viết test nên dù sao cũng không chặn.`"
+ },
+ {
+  "severity": "minor",
+  "location": ".lavish-wip/m2-md/sections/WI-12.md:19, :20, :32, :46",
+  "claim": "Các khoảng dòng 'đã kiểm chứng' trong bảng File cần chạm tới: `loadMCPServers` tại `:293-370`; `setMcpServerEnabled` tại `:333-380`; `#replaceServerTools` tại `:942-948`; `SetMcpServerEnabledOptions.sourcePath` tại `config-writer.ts:298-306`.",
+  "why_wrong": "Cả bốn đều lệch đúng một dòng ở một đầu. Nhỏ, nhưng chúng nằm trong cột 'đã kiểm chứng? = có', và hướng dẫn ở :26 nói dạng lệnh 'ba neo plan đưa cho extensions/types.ts đã sai lệch +25 ngay tại HEAD này' — tức chính mục này dựng lại uy tín neo trên việc bắt trôi dòng, rồi lại để trôi. `sed -n '370p'` và `sed -n '380p'` đều ra dòng trống.",
+  "evidence": "`awk 'NR>=293 && NR<=380 && /^}/'` trên omp-plugins.ts → `369: }`. `awk 'NR>=333 && /^}/'` trên config-writer.ts → `379: }`. `sed -n '942,948p'` trên manager.ts → :942-947 là thân hàm, :948 trống. `grep -n 'export interface SetMcpServerEnabledOptions'` → `297` (spec ghi 298-306 cho doc comment của `sourcePath`, thực tế `sourcePath?: string;` ở :306, interface mở ở :297).",
+  "fix": "Sửa từng khoảng: :293-370 → :293-369; `mcp/config-writer.ts:333-380` → :333-379; `mcp/manager.ts:942-948` → :942-947; `config-writer.ts:298-306` → :297-306 (interface mở ở :297, field `sourcePath?: string;` ở :306)."
+ }
+]

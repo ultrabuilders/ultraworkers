@@ -1,0 +1,297 @@
+{
+  "id": "WI-7",
+  "title": "registerMode: top-level mode registry, co-designed with the status-line seam",
+  "wave": "5 (M2 wave 5 — registerMode: phần việc thực chất của M2)",
+  "one_line": "Extension authors get one `pi.registerMode` call that installs a mode (tools, settings gate, enter/exit, write policy, and a visible status-line chip) instead of hand-rolling 15 KB of mode machinery, and the five built-in modes are re-registered through that same path without changing behaviour.",
+  "user_visible_effect": "Nothing changes for a user who never installs a third-party mode — the five built-in modes render, gate and block writes exactly as they do today. What changes is that a mode installed from outside the repo can no longer be invisible: `ModeDefinition.statusLine` is a required field, so a registered mode always produces a chip in the status line's existing `mode` segment, in the same accent/warning tones and with the same pause suffix the built-in modes already use. The one user-visible removal: `examples/extensions/plan-mode.ts` (549 lines) is deleted and replaced by a ~50-line `registerMode` call, so anyone who copied that example loses its prose and keeps its behaviour.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/modes/mode-registry.ts",
+      "action": "create",
+      "change": "New `ModeRegistry` class + `ModeDefinition` / `WritePolicy` / `ModeStatusLine` / `ModeContext` types. Owns registration, deterministic ordering, active/paused state, and `resolvedMode()` (the single winner of the status-line priority order).",
+      "verified": true,
+      "note": "Directory exists and is the right home — `packages/coding-agent/src/modes/` already holds `status-line-host.ts`, `settings.ts`, `types.ts`; file itself is new."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/index.ts",
+      "action": "modify",
+      "change": "Add `export * from \"./mode-registry\";` — star re-export, per AGENTS.md barrel rule.",
+      "verified": true,
+      "note": "Verified `packages/coding-agent/src/modes/index.ts` exists (603 bytes)."
+    },
+    {
+      "path": "packages/coding-agent/src/plan-mode/write-policy.ts",
+      "action": "create",
+      "change": "Extract the plan-mode write policy as data: a `WritePolicy` literal plus a `checkWritePolicy(policy, ctx)` evaluator returning a violation kind (`move` | `delete` | `workingTree` | null). Core keeps ownership of the user-facing message text.",
+      "verified": true,
+      "note": "New file inside the existing `packages/coding-agent/src/plan-mode/` directory (verified: 9 files incl. `state.ts`, `settings.ts`)."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/plan-mode-guard.ts",
+      "action": "modify",
+      "change": "`enforcePlanModeWrite` becomes a thin adapter: resolve the active mode's `writePolicy` from the registry, call `checkWritePolicy`, throw the existing `ToolError` text for the returned violation kind. Line range 127-148 confirmed current.",
+      "verified": true,
+      "note": "Verified: `enforcePlanModeWrite` at :127, closing brace at :148, `targetsLocalSandbox` early-return at :143. Function body unchanged in behaviour."
+    },
+    {
+      "path": "packages/coding-agent/src/tools/write.ts",
+      "action": "modify",
+      "change": "The 4 existing `enforcePlanModeWrite` call sites now resolve policy through the registry rather than reading plan-mode state directly. No signature change to the call itself.",
+      "verified": true,
+      "note": "Verified call sites: :778 (update), :814 (archive, update), :842 (sqlite, update), :859 (create). The archive and sqlite sites pass `{ op: \"update\" }` on paths that are NOT plain working-tree files — check them individually against the working-tree rule."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/types.ts",
+      "action": "modify",
+      "change": "Lines 189-194 keep their exact names and `boolean` types but become accessor pairs on the context (registry-backed). The four non-boolean fields at 195-198 are left alone.",
+      "verified": true,
+      "note": "Verified: :189 planModeEnabled, :190 vibeModeEnabled, :191 goalModeEnabled, :192 goalModePaused, :193 loopModeEnabled, :194 loopModePaused. :195-198 are loopPrompt/loopLimit/loopCondition/planModePlanFilePath — correctly excluded from the boolean seam."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/interactive-mode.ts",
+      "action": "modify",
+      "change": "Replace the 7 class-field initializers with getter/setter pairs delegating to the registry. Add the registry instance. Wire `resolvedMode()` into the status-line update path.",
+      "verified": true,
+      "note": "STALE ANCHOR CORRECTION — the plan says the fields are at :981-988; they are actually at :908-915. There are SEVEN fields, not six: `planModePaused = false` at :909 is runtime-only and is absent from `InteractiveModeContext`. There are 28 assignment sites across src (all in this file), so a bare getter will not compile — see plan_corrections."
+    },
+    {
+      "path": "packages/coding-agent/src/session/agent-session.ts",
+      "action": "modify",
+      "change": "The four mode-state accessors keep name, return type, and `undefined`-on-inactive; the registry supplies the value behind them.",
+      "verified": true,
+      "note": "STALE ANCHOR CORRECTION — plan says getPlanModeState :6097 / getPrewalkState :6102 / getGoalModeState :6120 / getVibeModeState :6128; actual are :6132 / :6137 / :6155 / :6163. Also `codeModeNamespacesInfo` is at :5852 (plan says :5822) and `#codeModeState` at :1395 (plan says :1387)."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/types.ts",
+      "action": "modify",
+      "change": "Add `registerMode(definition: ModeDefinition): void` to `ExtensionAPI`. Do NOT add a `ui` alias.",
+      "verified": true,
+      "note": "Verified `ExtensionAPI` (:1231-1557) has no `ui` member: the awk/grep check returns exactly one hit, a comment at :1351. `registerTool` (:1347), `registerCommand` (:1411), `registerFlag` (:1430), `setActiveTools` (:1501) are the house pattern to match."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/loader.ts",
+      "action": "modify",
+      "change": "Bind `registerMode` on the `pi` object handed to each extension factory; record the owning source id so unload can drop its modes.",
+      "verified": true,
+      "note": "Loader already imports `resolvePath, withHostGuard` from `../utils` at :40 — the provenance plumbing WI-5 added is the seam to reuse."
+    },
+    {
+      "path": "packages/tui/src/status-line/types.ts",
+      "action": "modify",
+      "change": "Add a `ModeStatusLine` type and ONE new `SegmentContext` field carrying the resolved mode's display contribution. Gated on the M2-OQ3 decision — see open_questions.",
+      "verified": true,
+      "note": "Verified `SegmentContext` at :75 with FIVE separate hardcoded mode fields: planMode :96, prewalk :100, loopMode :103, goalMode :109, vibeMode :113. The closed per-mode fields are the actual blocker, not the id union alone."
+    },
+    {
+      "path": "packages/tui/src/status-line/schema.ts",
+      "action": "modify",
+      "change": "No change expected. The 27-member `StatusLineSegmentId` union stays closed; an extension mode renders inside the existing `mode` segment rather than as a new id.",
+      "verified": true,
+      "note": "Verified: array literal spans :2-30 and has exactly 27 members. This file is only listed so a reviewer can confirm it was deliberately left closed."
+    },
+    {
+      "path": "packages/tui/src/status-line/segments.ts",
+      "action": "modify",
+      "change": "`modeSegment` consults the new resolved-mode field first, then falls through to the existing 5-way priority chain unchanged.",
+      "verified": true,
+      "note": "Verified: `modeSegment` const at :364, `id: \"mode\"` at :365, priority chain plan→prewalk→goal→vibe→loop at :369-403. Plan's 'segments.ts:919-947' is the SEGMENTS record; it actually ends at :945."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/status-line-host.ts",
+      "action": "modify",
+      "change": "Feed the registry's resolved mode into the status-line host so the segment sees it alongside the existing five fields.",
+      "verified": true,
+      "note": "Verified file exists (3.2 KB) and is the only place the `StatusLineHost` policy object is constructed."
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/plan-mode.ts",
+      "action": "delete",
+      "change": "Delete the 549-line hand-rolled example. PRECONDITION, not the acceptance gate.",
+      "verified": true,
+      "note": "Verified: 549 lines / 15,153 bytes. The plan's reference anchors :216 (registerFlag), :255 (setActiveTools), :301 (tool_call hook) all land where it says. Deleting this is a design input, not proof — see the risk field."
+    },
+    {
+      "path": "packages/coding-agent/test/plan-mode/write-policy.test.ts",
+      "action": "create",
+      "change": "Safety-critical. An extension-registered mode with a writePolicy DENIES a working-tree write AND ALLOWS a `local://` sandbox write. Both halves mandatory.",
+      "verified": true,
+      "note": "Directory verified (5 files: approved-plan, model-transition, plan-handoff, plan-protection, reentry-prompt). The `plan-protection.test.ts` coverage must NOT be restated here."
+    },
+    {
+      "path": "packages/coding-agent/test/modes/mode-registry.test.ts",
+      "action": "create",
+      "change": "Per migrated mode: same tool set after `enter`, same `mode` value reported back to the extension, same settings-domain resolve.",
+      "verified": true,
+      "note": "Directory verified. Assert observable session state — never 'the registry was called'."
+    },
+    {
+      "path": "packages/tui/test/status-line-extension-mode.test.ts",
+      "action": "create",
+      "change": "An extension-registered mode renders a mode segment. This row is the only thing that makes the 'new mode has no indicator' default unshippable-silently.",
+      "verified": true,
+      "note": "Directory verified; 8 existing status-line-*.test.ts files to match in style. Can only be written AFTER the M2-OQ3 seam decision."
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/outsider-extension/index.ts",
+      "action": "create",
+      "change": "Wave-5 leg only: a package outside examples/ that registers a tool, a slash command, a session_start hook, ctx.ui.setWidget, and pi.registerMode. NO registerSetting line.",
+      "verified": true,
+      "note": "Does not exist yet — confirmed. Spec at plan §11.2 item 12. `pi.registerMode` and `pi.registerSetting` are both absent from HEAD (`git grep` empty), so this file cannot typecheck until both exist."
+    },
+    {
+      "path": "packages/coding-agent/test/fixtures/outsider-extension/package.json",
+      "action": "create",
+      "change": "Declares `omp.extensions` pointing at index.ts. No hardcoded path, no name allowlist in any loader.",
+      "verified": true,
+      "note": "Does not exist yet — confirmed."
+    },
+    {
+      "path": "packages/coding-agent/test/extension-outsider-install.test.ts",
+      "action": "create",
+      "change": "Loads the fixture through the real install path and asserts it RUNS: empty result.errors, tool in the tool table, command in the registry, session_start handler fires, widget in frame, mode in the registry WITH its status-line segment.",
+      "verified": true,
+      "note": "Does not exist yet — confirmed. Must copy the isolation discipline of the existing `packages/coding-agent/test/plugin-extensions-discovery.test.ts` (26 KB, verified present)."
+    }
+  ],
+  "steps": [
+    {
+      "n": 0,
+      "anchor": "§6.1 wave 5; §M2-OQ3",
+      "instruction": "DO THIS BEFORE ANY CODE: get the M2-OQ3 status-line seam decision signed off in writing. The decision must satisfy four constraints verified against HEAD: (1) the 27-member union at schema.ts:2-30 stays closed; (2) a registered mode renders inside the existing `mode` segment (segments.ts:364), not as a new id; (3) the five-way priority chain plan→prewalk→goal→vibe→loop (segments.ts:369-403) is preserved and its order comes from the registry, not from the filesystem; (4) `ModeDefinition.statusLine` is REQUIRED, never optional. The plan's own §7.4 option 3 ('mode segment reads id from ModeRegistry') is the only one of the three that meets all four — but the plan explicitly did NOT choose, so a human picks. Everything in steps 3+ is gated on this."
+    },
+    {
+      "n": 1,
+      "anchor": "packages/coding-agent/src/tools/plan-mode-guard.ts:127",
+      "instruction": "Write `packages/coding-agent/test/plan-mode/write-policy.test.ts` FIRST, before the policy exists. It must prove BOTH halves: a mode whose writePolicy denies working-tree writes REJECTS a `src/foo.ts` write, AND the SAME mode ALLOWS a `local://slug-plan.md` write. One assertion without the other is a test that passes on an implementation which also blocks the sandbox. Drive it through a registry-supplied policy, not through the built-in plan mode — the built-in inequality is already covered at test/tools/plan-mode-guard-local.test.ts:90-127, and restating it here is a banned duplicate."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/plan-mode/write-policy.ts",
+      "instruction": "Extract the policy as data in a NEW commit that touches no mode registry. `enforcePlanModeWrite` reads the active mode's writePolicy, calls the evaluator, and throws the existing `ToolError` strings keyed by violation kind (core owns the text; an extension must not be able to inject user-facing strings into a tool error). Verify the messages still match the regexes the existing tests assert: /working tree is read-only/, /deleting files is not allowed/, /renaming files is not allowed/. Land and prove this commit alone."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/modes/mode-registry.ts",
+      "instruction": "Add `ModeRegistry` + the `ModeDefinition` type. Registry owns: id→definition map, a deterministic order (WI-2's output), active/paused state per id, and `resolvedMode()` returning the single winner for the status line. Reject duplicate ids at registration with a thrown Error naming the id. No `any`, no `ReturnType<>`, `#private` fields only, top-level imports only, star re-export from modes/index.ts."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/modes/interactive-mode.ts:908",
+      "instruction": "Convert the 7 mode-state fields (lines 908-915) into getter/setter pairs backed by the registry. This must be a SEPARATE commit from step 3. A bare getter is not enough — there are 28 `this.<mode>.x = ` assignment sites in this file alone (planModeEnabled x4, planModePaused x5, vibeModeEnabled x3, goalModeEnabled x7, goalModePaused x7, loopModeEnabled x2, loopModePaused x4), so each pair needs a setter that routes the write into the registry. After this commit run the two grep gates below and confirm zero new diff sites."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts:6132",
+      "instruction": "Back the four accessors (getPlanModeState :6132, getPrewalkState :6137, getGoalModeState :6155, getVibeModeState :6163) with the registry, preserving name, exact return type, and returning `undefined` when inactive. `getPrewalkState` returns `Prewalk | undefined`, NOT a boolean — a derived boolean getter cannot replace it. Then re-run the seam-2 grep: it must still be exactly 51 lines across 21 files, 0 of them hand-edited."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/tui/src/status-line/types.ts:96",
+      "instruction": "Implement the M2-OQ3 seam per the step-0 decision. Add ONE new `SegmentContext` field carrying the resolved mode's display contribution, next to the five existing hardcoded mode fields. Thread it through `status-line-host.ts`. In `segments.ts` `modeSegment`, read the new field first and fall through to the existing chain unchanged. Leave `schema.ts` closed. Write `packages/tui/test/status-line-extension-mode.test.ts` in this same commit."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/src/modes/mode-registry.ts",
+      "instruction": "Seed the registry by WRAPPING, never rewriting: register plan mode first, then goal, vibe, loop, prewalk. Each wrapped definition delegates `enter`/`exit` to the existing `InteractiveMode` method; the original code stays where it is. Re-run the seam-1 grep after every single mode migrated."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/test/modes/mode-registry.test.ts",
+      "instruction": "Write `test/modes/mode-registry.test.ts`. For EACH of the five migrated modes assert observable equivalence against the pre-migration build: identical tool set after `enter`, identical `mode` value reported back to the extension, identical settings-domain resolve. Assert observable session state — never 'the registry was called'."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:1347",
+      "instruction": "Add `registerMode(definition: ModeDefinition): void` to `ExtensionAPI`, following the registerTool/registerCommand/registerFlag pattern. Bind it in the extension loader and record the owning source id so unload can drop that extension's modes. Do NOT add a `ui` alias to `ExtensionAPI` — it has no `ui` member today (verified: the only hit in :1231-1557 is a comment at :1351) and adding one would be a 30th public member on a surface §5.2 counts as 29."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/coding-agent/examples/extensions/plan-mode.ts",
+      "instruction": "Delete `examples/extensions/plan-mode.ts` (549 lines) and land a ~50-line replacement built on `registerMode` in the same commit. This is a PRECONDITION demonstrating the API is usable, NOT the acceptance gate — deleting an in-repo example proves nothing about an outside extension."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/coding-agent/test/fixtures/outsider-extension/index.ts",
+      "instruction": "Create the outsider fixture (package.json declaring `omp.extensions` + index.ts) registering: a tool, a slash command, a session_start hook, `ctx.ui.setWidget` (NOT `pi.ui.setWidget` — that would not compile), and `pi.registerMode` with a `writePolicy`. Add NO `registerSetting` line. Then write `test/extension-outsider-install.test.ts`: stage it at `<TempDir>/.omp/extensions/outsider-extension/` and call `discoverAndLoadExtensions([], tempProjectDir)` — never by passing a path into `configuredPaths`, which bypasses discovery — and repeat at user scope via `setAgentDir` + `getAgentDir()`. Assert it RUNS, not that it was found: empty `result.errors`, tool in the tool table, command in the registry, hook fires on event, widget in frame, mode in the registry with its status-line segment. Copy the isolation discipline of plugin-extensions-discovery.test.ts: spyOn(os,'homedir') to a temp home, clear XDG_*, setAgentDir in afterEach."
+    }
+  ],
+  "code_shape": "// packages/coding-agent/src/modes/mode-registry.ts — the parts that are NOT obvious\n\n/** Write admission for a mode. Data only — never a message string.\n *  Core keeps ownership of the user-facing `ToolError` text so an extension\n *  cannot inject arbitrary prose into a tool error. */\nexport interface WritePolicy {\n\t/** Writes under `local://` sandbox roots. */\n\treadonly sandbox: \"allow\" | \"deny\";\n\t/** Writes that land in the working tree. */\n\treadonly workingTree: \"allow\" | \"deny\";\n\t/** `op: \"delete\"`. */\n\treadonly delete: \"allow\" | \"deny\";\n\t/** `move:` renames. */\n\treadonly move: \"allow\" | \"deny\";\n}\n\n/** How a registered mode appears in the status line's `mode` segment. */\nexport interface ModeStatusLine {\n\treadonly label: string;\n\treadonly icon: string | undefined;\n\treadonly tone: \"accent\" | \"warning\" | \"customMessageLabel\" | undefined;\n\t/** Rendered after the label when the mode is paused (default \" (paused)\"). */\n\treadonly pausedSuffix: string | undefined;\n}\n\n/** Narrow context handed to `enter`/`exit`. Deliberately NOT InteractiveModeContext —\n *  an outside extension must not receive TUI internals. */\nexport interface ModeContext {\n\treadonly session: AgentSession;\n\treadonly settings: Settings;\n\tsetActiveTools(toolNames: readonly string[]): Promise<void>;\n\tnotify(message: string): void;\n}\n\nexport interface ModeDefinition {\n\treadonly id: string;\n\treadonly label: string;\n\treadonly icon: string | undefined;\n\t/** REQUIRED — a mode that cannot announce itself does not register. */\n\treadonly statusLine: ModeStatusLine;\n\t/** `all-settings.ts` DOMAINS id whose keys gate this mode. */\n\treadonly settingsDomain: string;\n\treadonly initialToolSet: readonly string[];\n\t/** Lower sorts first in the `mode` segment. Unique. Fed by WI-2's order. */\n\treadonly order: number;\n\tenter(ctx: ModeContext): Promise<void>;\n\texit(ctx: ModeContext): Promise<void>;\n\treadonly writePolicy?: WritePolicy;\n}\n\nexport type ModeActivation = \"active\" | \"paused\";\n\n/** Winner of the status-line priority order, computed ONCE by the registry so the\n *  segment does not re-derive it. `null` when no mode is active. */\nexport interface ResolvedMode {\n\treadonly id: string;\n\treadonly display: ModeStatusLine;\n\treadonly activation: ModeActivation;\n}\n\nexport class ModeRegistry {\n\treadonly #definitions = new Map<string, ModeDefinition>();\n\treadonly #activation = new Map<string, ModeActivation>();\n\t#sorted: readonly string[] = [];\n\t#dirty = true;\n\n\tregister(definition: ModeDefinition): void {\n\t\tif (this.#definitions.has(definition.id)) {\n\t\t\tthrow new Error(`ModeRegistry: duplicate mode id \"${definition.id}\"`);\n\t\t}\n\t\tthis.#definitions.set(definition.id, definition);\n\t\tthis.#dirty = true;\n\t}\n\n\t/** Active AND enabled for write policy. Drives `enforcePlanModeWrite`. */\n\twritePolicy(): WritePolicy | undefined {\n\t\tfor (const id of this.#sortedIds()) {\n\t\t\tif (this.#activation.get(id) === \"active\") {\n\t\t\t\tconst policy = this.#definitions.get(id)?.writePolicy;\n\t\t\t\tif (policy) return policy;\n\t\t\t}\n\t\t}\n\t\treturn undefined;\n\t}\n\n\t#sortedIds(): readonly string[] {\n\t\tif (this.#dirty) {\n\t\t\tthis.#sorted = [...this.#definitions.values()]\n\t\t\t\t.sort((a, b) => a.order - b.order)\n\t\t\t\t.map(d => d.id);\n\t\t\tthis.#dirty = false;\n\t\t}\n\t\treturn this.#sorted;\n\t}\n}\n\n// packages/coding-agent/src/modes/interactive-mode.ts:908 — accessor pairs, NOT bare getters.\n// 28 assignment sites live in this file; a getter alone will not compile.\n\tget planModeEnabled(): boolean {\n\t\treturn this.#modeRegistry.isActive(\"plan\");\n\t}\n\tset planModeEnabled(value: boolean) {\n\t\tthis.#modeRegistry.setActivation(\"plan\", value ? \"active\" : undefined);\n\t}\n\n// packages/tui/src/status-line/types.ts — ONE new field beside the five hardcoded ones.\n// The five (`planMode` :96, `prewalk` :100, `loopMode` :103, `goalMode` :109,\n// `vibeMode` :113) are the real blocker; the closed 27-id union is only half of it.\nexport interface SegmentContext {\n\t// ...existing fields unchanged...\n\t/** Winner of the registry's deterministic mode order, or null. Checked BEFORE the\n\t *  legacy plan→prewalk→goal→vibe→loop chain, which then acts as the fallback. */\n\tresolvedMode: ResolvedMode | null;\n}\n",
+  "test_contract": "Four contracts, each with a named observable failure. (1) WRITE-POLICY INEQUALITY — `packages/coding-agent/test/plan-mode/write-policy.test.ts`: a mode whose policy denies working-tree writes rejects a `src/foo.ts` write AND the same mode accepts a `local://slug-plan.md` write. Consumer regression: a refactor that hoists the sandbox check above the working-tree branch silently closes off the agent's only scratch space while plan mode is on; the user loses the place to draft the plan and nothing in the UI says why. If this regresses, the agent edits a tree the user believes is read-only — the single silent-data-corruption path in M2. (2) REGISTRY EQUIVALENCE — `packages/coding-agent/test/modes/mode-registry.test.ts`: for each of the five wrapped modes, the tool set after `enter`, the `mode` value reported back to the extension, and the settings-domain resolve are identical to the pre-migration build. Consumer regression: a mode migrates onto the registry but quietly enters with a different tool set, so a feature silently disappears from the model. (3) MODE SEGMENT VISIBILITY — `packages/tui/test/status-line-extension-mode.test.ts`: an extension-registered mode renders a chip in the status line. Consumer regression: a mode with no indicator reads as a bug to the user, because a `mode` segment already exists at segments.ts:364 and they will expect a new mode to appear there. This row is the only thing making that default unshippable-silently. (4) OUTSIDER INSTALL — `packages/coding-agent/test/extension-outsider-install.test.ts`: a real extension written outside the repo, loaded through the real install path, registers a mode with a writePolicy and that mode shows up in the mode registry WITH its status-line segment, and the extension runs (empty errors, tool in the tool table, command in the registry, hook fires, widget in frame). Consumer regression: `registerMode` exists but is unreachable by anything that is not in-repo, which is precisely the false green the plan says in-repo example deletion cannot rule out.",
+  "test_files": [
+    "packages/coding-agent/test/plan-mode/write-policy.test.ts",
+    "packages/coding-agent/test/modes/mode-registry.test.ts",
+    "packages/tui/test/status-line-extension-mode.test.ts",
+    "packages/coding-agent/test/extension-outsider-install.test.ts",
+    "packages/coding-agent/test/fixtures/outsider-extension/index.ts",
+    "packages/coding-agent/test/fixtures/outsider-extension/package.json"
+  ],
+  "verification": "Per-item gate (runs from repo root):\n\n  bun run check:ts && \\\n    (cd packages/coding-agent && bun test test/plan-mode/write-policy.test.ts test/modes/mode-registry.test.ts) && \\\n    (cd packages/tui && bun test test/status-line-extension-mode.test.ts)\n\nWave-5 acceptance gate — SEPARATE, and deliberately WITHOUT check:ts (the fixture is typechecked because packages/coding-agent/tsconfig.json includes \"test\", so a `registerSetting` line would redden check:ts and the && would stop the tests from ever running):\n\n  cd packages/coding-agent && bun test test/extension-outsider-install.test.ts\n\nThe M2-close gate (after WI-8b adds the single registerSetting line) is the full command with check:ts. Do not put check:ts on the wave-5 gate and do not use // @ts-expect-error to keep a leg alive in the fixture.\n\nTwo seam gates — re-run after EVERY commit in steps 4-7; any hand-edited call site means that commit broke the GĐ1 compatibility promise:\n\n  grep -n \"planModeEnabled\\|vibeModeEnabled\\|goalModeEnabled\\|goalModePaused\\|loopModeEnabled\\|loopModePaused\" packages/coding-agent/src/modes/types.ts\n  git grep -n \"getPlanModeState\\|getGoalModeState\\|getVibeModeState\\|getPrewalkState\" -- packages/coding-agent/src | grep -v gallery-fixtures\n\nThe second must report exactly 51 lines across 21 files, unchanged, after every one of those commits.\n\nENVIRONMENT — verified on this machine: `bun run check:ts` PASSES (exit 0). `bun test` is BLOCKED: it reports `0 pass / 1 fail` with \"Failed to load pi_natives native addon for darwin-arm64\". The test-side commands above cannot produce a real signal until the native addon is built. Build it first, or treat every test gate here as UNVERIFIED — do not read a red as a regression in the code under test.",
+  "gate": "DONE means all four hold. (1) `bun run check:ts` exits 0. (2) The seam-2 grep still reports exactly 51 lines across 21 files with zero hand-edits, and the seam-1 grep still shows the six booleans at modes/types.ts:189-194. (3) A mode registered from OUTSIDE the repo — packages/coding-agent/test/fixtures/outsider-extension/, loaded via `discoverAndLoadExtensions([], tempProjectDir)` and not via `configuredPaths` — appears in the mode registry carrying a non-optional `statusLine`, renders a chip in the status line's `mode` segment, denies a working-tree write while allowing a `local://` write, and the extension runs with empty `result.errors`. (4) `examples/extensions/plan-mode.ts` no longer exists.\n\nCAVEAT ON THIS GATE'S CREDIBILITY TODAY: `bun test` is currently blocked repo-wide by the missing native addon, so the test halves of this gate are red for a reason unrelated to the work. Build the addon before treating any test signal here as real.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "WI-1 — a suspended mode must actually stop; otherwise mode suspension inherits the live timer bug",
+    "WI-2 — mode ordering must be deterministic before modes become order-sensitive; today the mode segment's priority chain is the only ordering, and WI-7's `order` field has to come from this",
+    "WI-5 — modes need capability state that can actually be released (registry ownership + source attribution for unload)",
+    "WI-6 — the tool-set table, since `ModeDefinition.initialToolSet` depends on the admission rules it settles",
+    "WI-10 — which write surface modes answer on"
+  ],
+  "blocks": [
+    "M2-OQ3 close-out — the status-line seam answer is produced by this work item's step 0",
+    "M3 item 5 / O2 — the M3 status-line segment work consumes the seam this item freezes, and must not re-open it",
+    "§11.2 item 12 wave-5 leg — the fixture's `pi.registerMode` row is the only row that closes in wave 5"
+  ],
+  "effort": "L — a multi-PR milestone, not one change. Budget 5-8 PRs across 4-5 weeks: (1) writePolicy extraction, (2) registry core, (3) accessor pairs on the seven fields, (4) the M2-OQ3 seam + its test, (5) wrap plan mode, (6) wrap goal/vibe/loop/prewalk, (7) registerMode on ExtensionAPI + delete the example, (8) the outsider fixture + install test. Step 1 must be written before the registry exists.",
+  "risk": "Silently regressing the plan-mode write guard — the one thing in M2 that can corrupt user data. The agent edits a working tree the user believes is read-only and no UI reports it. The failure is invisible precisely because the guard throws a ToolError the user never sees. Two mandatory safeties, in this order: (1) land and prove the writePolicy extraction as its OWN commit before migrating a single mode, so there is only one enforcing implementation in the tree to reason about; (2) keep the mode-state fields as registry-backed accessor pairs for the ENTIRE migration — names and types unchanged, plus a seventh field the plan missed — so a partial rollback is always available. The second-highest risk is shipping a mode registry with no status-line answer: a mode with no indicator reads as a bug, because a `mode` segment already exists at segments.ts:364 and users will expect new modes to show up there. That's what step 0 exists to prevent.",
+  "open_questions": [
+    "M2-OQ3 — HOW does an extension-registered mode reach the status line? This BLOCKS step 6 and cannot be decided by the implementer. The plan analysed three options at §7.4 and explicitly did NOT choose. The four constraints any answer must satisfy, all verified against HEAD: the 27-member union at schema.ts:2-30 stays closed; a registered mode renders inside the existing `mode` segment at segments.ts:364, not as a new id; the plan→prewalk→goal→vibe→loop priority chain (segments.ts:369-403) is preserved with its order supplied by the registry; `ModeDefinition.statusLine` is required. The plan leans toward option 3 ('mode segment reads id from ModeRegistry') as the only one meeting all four, but §7.4 notes option 3 does NOT cover a mode wanting a segment outside `mode` — if that is wanted later, all three options must reopen. Decision owner: whoever owns WI-10 / the M2 design review. Needed before step 6, not before step 0.",
+    "Should the writePolicy control user-facing error TEXT, or only the flags? This spec puts message text in core (a `WritePolicy` is allow/deny flags; the guard owns the `ToolError` strings) so an extension cannot inject prose into a tool error. The alternative lets each mode word its own refusal, which is friendlier and is what a shipped example would want. Security-flavoured default, product-flavoured alternative — a human picks.",
+    "Does `ModeContext` expose a UI affordance at all? This spec makes it narrow (session, settings, setActiveTools, notify) and hands no TUI handle, because a registered mode's self-drawn area is exactly what WI-13 defines and it lands in wave 6. If a mode is expected to render more than a status-line chip at wave 5, the context needs a seam now rather than in wave 6.",
+    "Does the fixture's second leg really need to be a separate commit? The plan's reasoning is sound (tsconfig includes test, so one `registerSetting` line reddens check:ts and the && never reaches the tests) and this spec follows it. Confirm with whoever owns WI-8b that the wave-5 and M2-close gates stay two separate commands rather than one tolerant one.",
+    "Should the five built-in modes be registered with their existing `order` values sourced from WI-2, or does WI-2 produce a separate artifact this item must read? Step 7 depends on WI-2's output being a concrete, stable order. If WI-2 lands a diagnostic-only ordering with no canonical list, step 7 has no order to assign and the status-line priority becomes a second, competing source of truth."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The six booleans are runtime fields of `InteractiveMode` at `modes/interactive-mode.ts:981-988`.",
+      "verdict": "stale",
+      "correction": "They are at `modes/interactive-mode.ts:908-915`, not 981-988 — off by roughly 73 lines. The `types.ts:189-194` half of the same claim IS correct.",
+      "evidence": "`grep -n 'planModeEnabled\\|vibeModeEnabled\\|goalModeEnabled\\|goalModePaused\\|loopModeEnabled\\|loopModePaused' packages/coding-agent/src/modes/types.ts` → 189,190,191,192,193,194 (exact). `sed -n '900,920p' packages/coding-agent/src/modes/interactive-mode.ts` → 908 `planModeEnabled = false;` through 915 `loopModePaused = false;`. Lines 975-1000, which the plan points at, hold `pendingPythonComponents` / `isPythonMode` and the working-message cache."
+    },
+    {
+      "claim": "The four `AgentSession` mode accessors are at `agent-session.ts:6097`, `:6102`, `:6120`, `:6128`; `codeModeNamespacesInfo` at `:5822`; `#codeModeState` declared at `:1387`.",
+      "verdict": "stale",
+      "correction": "All six anchors are off. getPlanModeState is at :6132, getPrewalkState :6137, getGoalModeState :6155, getVibeModeState :6163, codeModeNamespacesInfo :5852, #codeModeState :1395. The accessor anchors are off by a consistent ~30-35 lines; the other two by ~30 and ~8.",
+      "evidence": "`grep -n 'getPlanModeState\\|getPrewalkState\\|getGoalModeState\\|getVibeModeState\\|codeModeNamespacesInfo\\|#codeModeState' packages/coding-agent/src/session/agent-session.ts` → 1366, 1395, 1404, 1474, 1783, 5852, 5853, 6132, 6137, 6155, 6163. The plan's own two seam-grep counts still hold exactly, so the drift is confined to line numbers, not to structure."
+    },
+    {
+      "claim": "The six booleans become 'derived getters' on the registry, keeping their names and types.",
+      "verdict": "incomplete-and-blocking",
+      "correction": "A bare getter will not compile. There are 28 `this.<mode>.x = ` assignment sites in src/, ALL in interactive-mode.ts (planModeEnabled x4, planModePaused x5, vibeModeEnabled x3, goalModeEnabled x7, goalModePaused x7, loopModeEnabled x2, loopModePaused x4). Each field needs a getter AND a setter pair, with the setter routing the write into the registry. The plan's framing understates the work and, followed literally, produces a commit that does not build.",
+      "evidence": "`git grep -nE '\\.(planModeEnabled|vibeModeEnabled|goalModeEnabled|goalModePaused|loopModeEnabled|loopModePaused|planModePaused) = ' -- packages/coding-agent/src` → 28 lines, and `git grep -l` on the same pattern → exactly one file, `interactive-mode.ts`. Per-field assignment counts from `grep -cE '^\\s*this\\.<name> = ' interactive-mode.ts`."
+    },
+    {
+      "claim": "Six booleans is the complete mode-state surface to preserve as derived getters.",
+      "verdict": "wrong-count",
+      "correction": "There are SEVEN mode-state bits. `planModePaused = false` is declared at interactive-mode.ts:909 and is read at 11 sites — but it is NOT declared on `InteractiveModeContext` (grep for planModePaused in modes/types.ts returns nothing), so it was missed by a plan that enumerated the interface. It is load-bearing: interactive-mode.ts:3750-3753 feeds it straight into the status line as `paused`, and segments.ts:369-373 renders the `Plan ⏸` warning chip from it. Converting six and leaving the seventh as a raw field means the status line's paused state silently stops updating the moment the other six move to the registry.",
+      "evidence": "`grep -n 'this.planModePaused' packages/coding-agent/src/modes/interactive-mode.ts` → 11 sites (2318, 3750, 3753, 4018, 4031, 4158, 4181, 4377, 4398, 4406, 5069, 5075, 5130, 5253, 5361, 5406). `sed -n '3748,3757p'` shows #updatePlanModeStatus passing `{ enabled, paused }` to `this.statusLine.setPlanModeStatus(status)`. `sed -n '369,373p' packages/tui/src/status-line/segments.ts` shows the paused branch producing the warning-toned chip."
+    },
+    {
+      "claim": "`test/plan-mode/write-policy.test.ts` is new and must defend the `local://` sandbox inequality that nothing currently covers.",
+      "verdict": "partly-stale",
+      "correction": "The inequality IS already covered for the built-in plan mode, at `packages/coding-agent/test/tools/plan-mode-guard-local.test.ts:90-127`: it asserts `local://` create and update resolve, `src/foo.ts` and `PLAN.md` reject with /working tree is read-only/, delete rejects with /deleting files is not allowed/, and move rejects with /renaming files is not allowed/. AGENTS.md bans restating coverage at a second level. The new file must defend a DIFFERENT contract — the policy evaluated AS DATA through a registry entry, driven by an extension-registered mode — or it is a duplicate that the rules forbid.",
+      "evidence": "`sed -n '90,127p' packages/coding-agent/test/tools/plan-mode-guard-local.test.ts` shows all five assertions above. The file is 26 KB-scale and fully wired to `enforcePlanModeWrite`."
+    },
+    {
+      "claim": "The status-line blocker is the closed 27-member `StatusLineSegmentId` union at `schema.ts:2-30` with no seam for contributors.",
+      "verdict": "right-but-incomplete",
+      "correction": "The union is exactly as described (verified 27 members). But the harder half of the blocker is one level down: `SegmentContext` (types.ts:75) carries FIVE separate hardcoded per-mode fields — planMode :96, prewalk :100, loopMode :103, goalMode :109, vibeMode :113 — and `modeSegment` resolves them through a hand-written 5-way if-chain in a fixed priority order (segments.ts:369-403). An extension mode has no field there either, and the if-chain silently returns `{ visible: false }` for anything it does not recognise. A design that opens the id union but leaves the five fields hardcoded still ships an invisible mode, so any M2-OQ3 answer must address both halves.",
+      "evidence": "`sed -n '96,116p' packages/tui/src/status-line/types.ts` shows the five fields. `sed -n '364,406p' packages/tui/src/status-line/segments.ts` shows the chain and the `return { content: \"\", visible: false };` fallthrough. Minor: the plan's 'segments.ts:919-947' for the SEGMENTS record actually ends at :945, and `id: \"mode\"` is at :365 (the const opens at :364)."
+    },
+    {
+      "claim": "`enforcePlanModeWrite` is 'called from the tool layer'.",
+      "verdict": "vague-but-not-wrong",
+      "correction": "There are exactly 4 call sites and they are not uniform: `tools/write.ts:778` (op update), `:814` (archive path, op update), `:842` (sqlite path, op update), `:859` (op create). The archive and sqlite sites pass a working-tree op over a path that is not a plain source file, so each needs individual reasoning about the new `workingTree: allow|deny` rule. Listing them costs nothing and prevents three of the four being assumed equivalent.",
+      "evidence": "`git grep -n enforcePlanModeWrite -- packages/` → 4 sites in write.ts, plus the definition at plan-mode-guard.ts:127 and the existing test file."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-7.spec.json"
+}

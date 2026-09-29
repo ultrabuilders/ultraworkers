@@ -1,0 +1,260 @@
+{
+  "id": "WI-5",
+  "title": "Capability registry has an owner, has unregister, and has a real reset",
+  "wave": "Spans two waves: commit 1 in wave 3 (unconditional), commits 2-3 in wave 4 (gated on M2-OQ2 from wave 1)",
+  "one_line": "Rename the capability registry's `reset` to the truthful `invalidateAllCaches`, add a separate `resetRegistry()` that really does drop capability definitions, then give registered providers an owning `sourceId` and an `unregisterProvidersForSource()` so a suspended extension's contributions are actually released.",
+  "user_visible_effect": "Commit 1 is invisible but stops a landmine: every future reader of the capability registry is told what `reset` actually does. Commits 2-3 are the visible part — after this ships, toggling an extension off in settings releases the capability providers it contributed instead of leaving them loaded, so a disabled extension stops contributing prompts, rules, hooks, slash commands, skills and tools. Today no toggle releases anything at all.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-5.spec.json",
+  "effort": "S for commit 1, M for commits 2-3. Three commits, three PRs. Commit 1 is mechanical (8 import lines, 12 call sites, 1 comment) but the type checker will enumerate every caller for you. Commits 2-3 are ~40 lines of new registry code plus one line in a hot path.",
+  "risk": "The single most likely way to get this wrong is the FORBIDDEN option: making `reset()` also clear the `capabilities` map. That looks like the fix and bricks the entire process silently — see the open_questions entry on why. The second most likely is a missed caller on the rename; the third is shipping commits 2-3 before wave 1 answers M2-OQ2, which leaves the attribution maps as permanently dead weight.",
+  "depends_on": [
+    "WI-1 commit 1 (wave 2) — both add an owner-tagged teardown call to the SAME suspend branch of `reconcileExtensionSources`. Do not write that branch twice; whoever lands second EXTENDS it, never re-creates it. Verify at HEAD 808b365 that WI-1 has not already claimed it.",
+    "WI-0 (wave 1) — its M2-OQ2 answer ('is the capability registry extension-reachable?') decides whether attribution is worth building now. Commits 2-3 are gated on it; commit 1 is not."
+  ],
+  "blocks": [
+    "WI-6 (wave 4) — the plan states WI-6 needs a settled tool-set story, and WI-5 is what settles ownership of the provider set.",
+    "WI-9 (wave 7) — unload needs a full resource inventory, and this item is what adds an owner to capability state."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "§5.2 table: the 12 `resetCapabilities()` call sites are at `main.ts:871`, `sdk.ts:4565`, `agent-session.ts:5405`/`:5790`/`:8779`, `session-tools.ts:1557`, and (unchanged) `ssh-command-controller.ts:208`/`:369`, `selector-controller.ts:310`, `builtin-marketplace.ts:36`, `helpers/ssh.ts:146`/`:167`.",
+      "verdict": "STALE — counts right, four files drifted",
+      "correction": "The COUNTS are exactly right: 12 call sites across 8 files, verified. But line numbers drifted because HEAD moved to 808b365 (the M1 plan fold). Correct anchors: `main.ts:872`, `sdk.ts:4571`, `session/agent-session.ts:5435`/`:5820`/`:8811`, `session/session-tools.ts:1651`. Unchanged and still correct: `modes/controllers/ssh-command-controller.ts:208` and `:369`, `modes/controllers/selector-controller.ts:310`, `slash-commands/builtin-marketplace.ts:36`, `slash-commands/helpers/ssh.ts:146` and `:167`.",
+      "evidence": "`git grep -n resetCapabilities -- packages/coding-agent/src` at HEAD 808b365. All 8 import lines confirmed as `import { reset as resetCapabilities }`. Do NOT hand-edit line numbers: run the grep, it is the authority."
+    },
+    {
+      "claim": "§5.2/§5.3 cite `reconcileExtensionSources` at `sdk.ts:4560-4624` with `resetCapabilities()` at `:4565` and `setSuspendedExtensions()` at `:4573`.",
+      "verdict": "STALE by ~6 lines",
+      "correction": "`const reconcileExtensionSources = async ()` is at `sdk.ts:4566`; `resetCapabilities()` is at `sdk.ts:4571`; `extensionRunner.setSuspendedExtensions(...)` is at `sdk.ts:4580`. The SHAPE the plan describes is exactly right and this is the load-bearing confirmation for the whole item: `resetCapabilities()` really is called immediately before `setSuspendedExtensions()`, believing it releases the registry when it only clears the fs cache.",
+      "evidence": "`sed -n '4566,4582p' packages/coding-agent/src/sdk.ts`"
+    },
+    {
+      "claim": "§5.2: `clearSourceRegistrations` is at `config/model-registry.ts:2914`.",
+      "verdict": "OFF BY ONE",
+      "correction": "The method opens at `config/model-registry.ts:2913`; `:2914` is its opening brace. `syncExtensionSources` at `:2955` is correct.",
+      "evidence": "`sed -n '2908,2930p' packages/coding-agent/src/config/model-registry.ts`"
+    },
+    {
+      "claim": "WI-5 'File path' section: the three module-level Maps and two mutable Sets are at `capability/index.ts:30-41`.",
+      "verdict": "STALE — the cited range MISSES the two Sets",
+      "correction": "The three Maps are at `:34` (`capabilities`), `:37` (`providerCapabilities`), `:40` (`providerMeta`). The two mutable Sets are at `:43` and `:44` (`unboundDisabledProviders`, `unboundEnabledProviders`) — i.e. OUTSIDE the cited range. The real state block is `:32-44`, and it is five module-level containers, not three. This matters because commits 2-3 add TWO more Maps next to them at `:45-46`, making seven.",
+      "evidence": "`grep -n '^const capabilities\\|^const providerCapabilities\\|^const providerMeta\\|^let unbound' packages/coding-agent/src/capability/index.ts`"
+    },
+    {
+      "claim": "WI-5 'File path' section: `defineCapability` at `:88-96`, `registerProvider` at `:99-127`.",
+      "verdict": "NEARLY EXACT",
+      "correction": "`defineCapability` is at `:89` (its duplicate-throw is `:90-91`); `registerProvider` is at `:101`. Off by one at the start of each. Substance fully confirmed: `registerProvider<T>(capabilityId: string, provider: Provider<T>): void` has NO `sourceId` in its signature, and `defineCapability` DOES throw on a duplicate id.",
+      "evidence": "`sed -n '88,102p' packages/coding-agent/src/capability/index.ts`"
+    },
+    {
+      "claim": "WI-5 cites `capability/index.ts:554-556` for `reset()` and `:561-566` for `resetCapabilityForTests`, and `capability/index.ts:459` for `getCapability`.",
+      "verdict": "EXACT — all three verified",
+      "correction": "No change. `reset()` at `:554-556` is literally `clearFsCache();` and nothing else. `resetCapabilityForTests()` at `:561-566` clears settingsHolds + the two unbound Sets + the fs cache (it does NOT touch `capabilities`). `getCapability<T>(id)` at `:459` returns `capabilities.get(id)`. These are the three anchors the entire item hangs on and all three are correct.",
+      "evidence": "`sed -n '548,568p;455,462p' packages/coding-agent/src/capability/index.ts`"
+    },
+    {
+      "claim": "WI-5: `model-registry.ts:303-304` is the attribution shape to copy.",
+      "verdict": "EXACT",
+      "correction": "No change. `#runtimeProvidersBySource: Map<string, Set<string>>` at `:303` and `#runtimeProviderSourceByName: Map<string, string>` at `:304`. The steal-on-re-register logic to mirror is at `:3010-3015` (`previousSourceId` eviction), and the teardown to mirror is `clearSourceRegistrations` at `:2913-2930`.",
+      "evidence": "`sed -n '303,304p;3008,3024p' packages/coding-agent/src/config/model-registry.ts`"
+    },
+    {
+      "claim": "The plan lists 14 `defineCapability` call sites and 84 provider/capability pairs.",
+      "verdict": "EXACT — all 14 line numbers verified, all module-level",
+      "correction": "All 14 confirmed at the exact cited lines: `context-file.ts:27`, `extension-module.ts:23`, `extension.ts:37`, `hook.ts:27`, `instruction.ts:25`, `mcp.ts:108`, `prompt.ts:23`, `rule.ts:392`, `settings.ts:23`, `skill.ts:58`, `slash-command.ts:29`, `ssh.ts:31`, `system-prompt.ts:31`, `tool.ts:27`. The 84 is also right: 104 `registerProvider` lines under `src/discovery/` minus 20 import lines = 84 calls.",
+      "evidence": "`git grep -n defineCapability -- packages/coding-agent/src`; `git grep -c registerProvider -- packages/coding-agent/src/discovery/`"
+    },
+    {
+      "claim": "(Plan does not state this) Implicitly, WI-5 assumes some live caller passes a `sourceId` to the capability `registerProvider`, so that `unregisterProvidersForSource` has something to unregister.",
+      "verdict": "FALSE — this is the most consequential thing the plan omits",
+      "correction": "There is NO per-source capability-provider registration anywhere in the repo. All 84 capability `registerProvider` calls are MODULE-LEVEL top-level statements in `src/discovery/*.ts` (agent-plugins, agents-md, agents, builtin-defaults, builtin, claude-plugins, claude, cline, codex, cursor, gemini, github, mcp-json, omp-plugins, opencode, skillshare, ssh, vscode, windsurf) — verified: no call site is nested inside a function. Extensions contribute to the capability registry by being READ at `load(ctx)` time, not by registering a provider. The `registerProvider` on the extension API (`extensibility/extensions/types.ts:1570`, `:1743`) is the MODEL registry's different function of the same name, which already takes a `sourceId`. Consequence: the `sdk.ts` suspend-branch call to `unregisterProvidersForSource` is INERT at ship time — it will be a Map lookup that always misses, because the map is always empty. It is forward-compatible scaffolding for WI-10, not a live fix. The two attribution tests must therefore drive the registry API DIRECTLY (register with a sourceId, then unregister), NOT through the TUI/suspend path, and the PR description must not claim toggling an extension now releases providers in practice.",
+      "evidence": "`git grep -n registerProvider -- packages/coding-agent/src/discovery/` — every hit is either an `import` line or a top-level `registerProvider` statement; the filter for non-top-level matches returned only import lines. `git grep -n 'registerProvider' -- .../extensibility/extensions/{loader,runner,types}.ts` shows those route to `ModelRegistry.registerProvider(name, config, sourceId)`, not the capability one."
+    },
+    {
+      "claim": "WI-5 test row (c): after `resetRegistry()`, a provider registered from a `sourceId` is still in the resolved list.",
+      "verdict": "SOUND but only if `resetRegistry` is kept narrow",
+      "correction": "This row forces `resetRegistry()` to clear ONLY the `capabilities` map — not `providerCapabilities`, not `providerMeta`, not the per-capability `providers` arrays, and not the new attribution maps. Keep it that narrow or this row is unimplementable. Note the accepted degradation: after `resetRegistry()`, `getProviderInfo` still iterates `providerCapabilities` and finds `capabilities.get(capId) === undefined`, so it falls through to `priority = 0` (see `capability/index.ts:502-522`). That is acceptable for a function that exists solely for tests and a future extension-reload path, but it must be a deliberate choice, not an accident.",
+      "evidence": "`sed -n '502,525p' packages/coding-agent/src/capability/index.ts`"
+    },
+    {
+      "claim": "WI-5 verification command: `bun run check:ts && (cd packages/coding-agent && bun test test/capability/reset-contract.test.ts test/capability/provider-source-attribution.test.ts)`.",
+      "verdict": "PARTIALLY BLOCKED at HEAD 808b365",
+      "correction": "`bun run check:ts` PASSES at HEAD — verified end to end, all 15 packages green. The `bun test` half CANNOT run: the native addon is not built, so even the pre-existing, unrelated `test/capability/rule-agents.test.ts` reports `0 pass / 1 fail` with 'Failed to load pi_natives native addon for darwin-arm64'. Build first with `bun --cwd=packages/natives run build`, then the `bun test` half becomes runnable. There is a real chance the two new tests are NOT blocked even without the addon, because `capability/index.ts` does not import `@oh-my-pi/pi-natives` (unlike `discovery/helpers.ts:4`, which is what breaks the existing test) — but `capability/index.ts` does pull `./fs`, `../extensibility/settings` and `../config/model-settings`, so this is unverified. Check it early: it decides whether this item can be validated before the Rust build lands.",
+      "evidence": "`bun run check:ts` → all packages Done. `cd packages/coding-agent && bun test test/capability/rule-agents.test.ts` → 0 pass, 1 fail, 'Failed to load pi_natives native addon for darwin-arm64'."
+    },
+    {
+      "claim": "(Plan does not state this) Row 2 of `reset-contract.test.ts` calls `resetRegistry()`, which destroys the module-level capability definitions for the rest of the process.",
+      "verdict": "RESOLVED — empirically tested, the plan's two-rows-in-one-file design is safe",
+      "correction": "I tested this directly rather than reasoning about it: `bun test` gives each test FILE a fresh module registry, while module state IS shared across `test()` blocks WITHIN one file. A file that clears a module-level Map does not affect a sibling test file (verified: 2 pass / 0 fail, the second file still observed the pre-clear value). So `resetRegistry()` in `reset-contract.test.ts` cannot poison `provider-source-attribution.test.ts` or any other file. The plan's instruction that the two rows must be in that order is correct and the reason is now confirmed empirically: within a file, row 2's `resetRegistry()` would make row 1 fail if row 1 ran second.",
+      "evidence": "Isolated repro in scratchpad: `a.test.ts` calls `nuke()` then asserts cleared; `b.test.ts` asserts the module-level entry is still present. `bun test` → `2 pass 0 fail`. Same-file control (`c.test.ts`) shows state persisting across three `test()` blocks."
+    }
+  ],
+  "open_questions": [
+    "THE FORBIDDEN OPTION — do not do this, and know why. Making `reset()` also clear the `capabilities` map is the obvious 'fix' and it bricks the whole process. All 14 `defineCapability` calls are `export const x = defineCapability(...)` at module scope, and ESM evaluates each module exactly once — no later import re-runs them. So after the first `reset()`, `getCapability` and `loadCapability` return `undefined`/throw for ALL 14 capabilities across every one of the 12 call sites (`/clear`, resume-with-chdir, the reconcile loop, ssh session switches, marketplace install, …). It is a silent, stack-trace-free, process-wide failure. The ONLY sanctioned shape is: keep the fs-only function, rename it to say what it does, and add a separate `resetRegistry()` for the registry. The test row that catches this mistake is row 1 of `reset-contract.test.ts` — it passes on HEAD and fails the moment someone adds `capabilities.clear()` to `reset()`.",
+    "What should the fs-only function be renamed to? The plan says 'rename to be correct' but does not pick a name. Recommendation: `invalidateAllCaches()`. It is the honest sibling of the existing `invalidate(filePath, cwd?)` at `capability/index.ts:572`, it says 'caches' (plural) because it clears both the content and directory caches, and it does not collide with the existing `resetCapabilityForTests` at `:561`. The alternative `clearFsCaches()` collides in spirit with the already-imported `clearFsCache` alias from `./fs` at `capability/index.ts:11`. Either is defensible — but pick one and apply it to all 8 imports and 12 call sites.",
+    "Should the `resetCapabilities` local alias survive the rename? Recommendation: NO. All 8 files currently write `import { reset as resetCapabilities }`, and the alias is the second half of the lie — the name `resetCapabilities` is what makes the reconcile loop read as if it releases capabilities. After renaming, use the truthful name directly at all 12 call sites. This also forces you to touch `sdk.ts:3528`, whose comment ('resetCapabilities() clears the fs cache at those boundaries') must be updated to match.",
+    "Same `providerId` registered by two different sources — who wins? The plan does not address it and it is a real design hole. `providerMeta` (`:40`) is first-write-wins and `providerCapabilities` (`:37`) is keyed by providerId alone, so neither can distinguish two owners. Recommendation: mirror ModelRegistry exactly — `providerSourceByName` is one-to-one, last registration wins, and `registerProvider` evicts the previous owner from its set (copy `model-registry.ts:3010-3015`). Known accepted cost, identical to ModelRegistry's shipped behavior: if source A and source B both register provider 'claude' and B wins, suspending B deletes the provider even though A still declares it. Today this is vacuous (nothing registers per source), and it only becomes load-bearing when WI-10 makes the registry extension-reachable. If you would rather not accept that, the alternative is a refcount per (capabilityId, providerId) — but that is a second, invented shape, and the plan explicitly forbids inventing one.",
+    "Should `registerProvider` without a `sourceId` evict an existing source owner? Recommendation: NO — a source-less registration adds to the array but neither claims nor clears attribution. All 84 existing calls are source-less module-level registrations that run once at import; letting them evict would orphan a source-owned provider on any re-evaluation. This is a decision, not an accident; put it in the doc comment.",
+    "Gate question for the engineer: can the two new tests run BEFORE the Rust native addon is built? If yes, commit 2-3 can be validated this week instead of waiting on the build. Check it by running `bun test test/capability/reset-contract.test.ts` immediately after writing it. If it fails on the addon, say so in the PR rather than claiming test coverage you could not execute."
+  ],
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/capability/index.ts",
+      "change": "COMMIT 1: rename `export function reset()` at :554-556 to `invalidateAllCaches()`; add `export function resetRegistry(): void` that clears ONLY the `capabilities` map. COMMIT 2: add two module-level Maps next to the existing three at :34/:37/:40 — `const providersBySource = new Map<string, Set<string>>()` and `const providerSourceByName = new Map<string, string>()`; add a third optional param `sourceId?: string` to `registerProvider<T>` at :101, recording attribution and evicting a previous owner (mirror model-registry.ts:3010-3015). COMMIT 3: add `export function unregisterProvidersForSource(sourceId: string): void` that looks up the source's providerIds, splices each out of its capability's `providers` array, prunes `providerCapabilities`, and deletes both attribution entries.",
+      "action": "modify",
+      "verified": true,
+      "note": "File is 588 lines. Verified anchors: Maps at :34/:37/:40, mutable Sets at :43/:44, defineCapability :89, registerProvider :101, getCapability :459, reset :554-556, resetCapabilityForTests :561-566, invalidate :572. The plan's cited ranges :30-41 and :99-127 are off by a few lines and :30-41 omits the two Sets."
+    },
+    {
+      "path": "packages/coding-agent/src/main.ts",
+      "change": "COMMIT 1: import line :24 becomes `import { invalidateAllCaches } from \"./capability\";` (drop the `as resetCapabilities` alias); call site :872 becomes `invalidateAllCaches();`. This is the resume-with-chdir path — it runs right after `clearPluginRootsAndCaches()` and before the destination preload re-warm.",
+      "action": "modify",
+      "verified": true,
+      "note": "Plan says :871; actual is :872 at HEAD 808b365. Grep, do not trust the number."
+    },
+    {
+      "path": "packages/coding-agent/src/sdk.ts",
+      "change": "COMMIT 1: import line :51 becomes `import { invalidateAllCaches, loadCapability } from \"./capability\";`; call site :4571 (inside `reconcileExtensionSources`) becomes `invalidateAllCaches();`; the explanatory comment at :3528 is rewritten to name the new function. COMMIT 3: inside the same `reconcileExtensionSources`, immediately after `const { suspended, resumed } = extensionRunner.setSuspendedExtensions(...)` at :4580, add `for (const extension of suspended) unregisterProvidersForSource(extension.path);` — EXTEND WI-1's suspend branch if it already exists, do not re-create it.",
+      "action": "modify",
+      "verified": true,
+      "note": "Plan says :4565 for the call and :4560-4624 for the function; actual is :4571 and the function opens at :4566. `setSuspendedExtensions` returns `{ suspended: Extension[]; resumed: Extension[] }` and `Extension.path` is the id the model registry already uses as sourceId (loader.ts:363), so `extension.path` is the right key — not `resolvedPath`."
+    },
+    {
+      "path": "packages/coding-agent/src/session/agent-session.ts",
+      "change": "COMMIT 1: import line :112 becomes `import { invalidateAllCaches } from \"../capability\";`; all three call sites — :5435 (the `/clear` boundary, right after `appendResetBoundary()`), :5820, :8811 — become `invalidateAllCaches();`.",
+      "action": "modify",
+      "verified": true,
+      "note": "Plan says :5405/:5790/:8779; all three drifted (HEAD 808b365). The :5435 one is confirmed to be the `/clear` path: it is immediately followed by `await this.refreshBaseSystemPrompt();` and preceded by a comment referencing `/clear` and issue #1246."
+    },
+    {
+      "path": "packages/coding-agent/src/session/session-tools.ts",
+      "change": "COMMIT 1: import line :6 becomes `import { invalidateAllCaches } from \"../capability\";`; call site :1651 becomes `invalidateAllCaches();`.",
+      "action": "modify",
+      "verified": true,
+      "note": "Plan says :1557; actual is :1651 at HEAD."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/ssh-command-controller.ts",
+      "change": "COMMIT 1: import line :7 becomes `import { invalidateAllCaches } from \"../../capability\";`; both call sites :208 and :369 become `invalidateAllCaches();`.",
+      "action": "modify",
+      "verified": true,
+      "note": "Both line numbers match the plan exactly. This file has the highest call-site density (2 of 12)."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/selector-controller.ts",
+      "change": "COMMIT 1: import line :25 becomes `import { invalidateAllCaches } from \"../../capability\";`; call site :310 becomes `invalidateAllCaches();`.",
+      "action": "modify",
+      "verified": true,
+      "note": "Line number matches the plan exactly."
+    },
+    {
+      "path": "packages/coding-agent/src/slash-commands/builtin-marketplace.ts",
+      "change": "COMMIT 1: import line :1 becomes `import { invalidateAllCaches } from \"../capability\";`; call site :36 becomes `invalidateAllCaches();`.",
+      "action": "modify",
+      "verified": true,
+      "note": "Line number matches the plan exactly."
+    },
+    {
+      "path": "packages/coding-agent/src/slash-commands/helpers/ssh.ts",
+      "change": "COMMIT 1: import line :2 becomes `import { invalidateAllCaches } from \"../../capability\";`; both call sites :146 and :167 become `invalidateAllCaches();`.",
+      "action": "modify",
+      "verified": true,
+      "note": "Both line numbers match the plan exactly."
+    },
+    {
+      "path": "packages/coding-agent/test/capability/reset-contract.test.ts",
+      "change": "NEW, commit 1. Exactly two `test()` blocks, in this order. Row 1 (negative contract, passes on HEAD): after `invalidateAllCaches()`, `getCapability(<module-level id>)` still returns the capability — pick a real one by importing its definition module, e.g. `import { toolCapability } from \"@oh-my-pi/pi-coding-agent/capability/tool\"`, so the module-level `defineCapability` at `capability/tool.ts:27` has actually run. Row 2 (the rejectable fix, fails on HEAD because `resetRegistry` does not exist): after `resetRegistry()`, `getCapability(same id)` is `undefined`.",
+      "action": "create",
+      "verified": true,
+      "note": "Directory `packages/coding-agent/test/capability/` exists and holds 3 tests (fs-special-files, rule-agents, rule-buckets). The destructive row cannot poison other files: verified empirically that `bun test` gives each file a fresh module registry. Do NOT add a row of the form 'after invalidateAllCaches a capability no longer resolves' — that row is green on a bricked build, so it is a fake gate."
+    },
+    {
+      "path": "packages/coding-agent/test/capability/provider-source-attribution.test.ts",
+      "change": "NEW, commits 2-3. Three `test()` blocks. (a) a provider registered with a `sourceId` disappears from the RESOLVED list after `unregisterProvidersForSource(sourceId)` — read the resolved list via `getCapabilityInfo(capabilityId)?.providers`, not the internal maps, because that is what discovery and the settings UI actually read. (b) two sources register providers for the same capability; suspending one leaves the other's provider in the resolved list — the negative-contract row proving attribution is real and that `unregisterProvidersForSource` does not over-delete. (c) `resetRegistry()` does not touch existing attribution: after it, providers from two different sourceIds are both still in the resolved list.",
+      "action": "create",
+      "verified": true,
+      "note": "`getCapabilityInfo` is at `capability/index.ts:473` and returns `{ id, displayName, description, providers: [{id, displayName, description, priority, enabled}] }` — that resolved array is the observable surface. Use DISTINCT providerIds per source in row (b) and record that choice in a comment; the same-id collision case is a separate open question. Because row (c) calls `resetRegistry()`, keep this file's own tests ordered so the destructive one does not precede rows (a)/(b) — within a file, module state IS shared."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Confirm the tree state you are starting from: `git -C /Users/tranquangdang21/Projects/ultraworkers rev-parse --short HEAD` and `git -C /Users/tranquangdang21/Projects/ultraworkers branch --show-current`. Then run `git -C /Users/tranquangdang21/Projects/ultraworkers grep -n 'reset as resetCapabilities' -- packages/coding-agent/src` and `git -C /Users/tranquangdang21/Projects/ultraworkers grep -n 'resetCapabilities()' -- packages/coding-agent/src`. You must see 8 import lines and 12 call sites. Those two greps — not this spec's line numbers — are the authority; several anchors in the source plan drifted after HEAD moved to 808b365.",
+      "anchor": "repo root"
+    },
+    {
+      "n": 2,
+      "instruction": "COMMIT 1, decide the name first and write it into the PR description before touching code. Use `invalidateAllCaches` unless you have a better reason. Open `packages/coding-agent/src/capability/index.ts`, go to line 554, and change the export from `export function reset(): void { clearFsCache(); }` to `export function invalidateAllCaches(): void { clearFsCache(); }`, updating the doc comment above it to say it clears the filesystem discovery cache after a chdir or filesystem change — explicitly NOT the registry. Leave `resetCapabilityForTests` at :561 alone; it is a different function with a different job.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:554"
+    },
+    {
+      "n": 3,
+      "instruction": "Still commit 1: add `resetRegistry()` immediately after `invalidateAllCaches` in the same Cache Management section. It clears ONLY the definitions map and nothing else — no provider arrays, no `providerCapabilities`, no `providerMeta`, no fs cache, and (from commit 2) no attribution maps. Its doc comment must say it is for tests and future extension reload, that nothing in the 12 live call sites invokes it, and that calling it drops module-level capability definitions for the remainder of the process because ESM evaluates each definition module exactly once. That last sentence is the whole reason the function is dangerous and it belongs in the code, not just in this spec.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:557"
+    },
+    {
+      "n": 4,
+      "instruction": "COMMIT 1, update all 8 import lines. For each of main.ts:24, sdk.ts:51, session/agent-session.ts:112, session/session-tools.ts:6, modes/controllers/selector-controller.ts:25, modes/controllers/ssh-command-controller.ts:7, slash-commands/builtin-marketplace.ts:1, slash-commands/helpers/ssh.ts:2 — replace `import { reset as resetCapabilities } from \"...capability\"` with `import { invalidateAllCaches } from \"...capability\"`, dropping the `as resetCapabilities` alias entirely. For sdk.ts:51 also keep `loadCapability` in the same statement. Do not keep the alias: the alias is the second half of the lie and keeping it means the next reader still believes the reconcile loop releases capabilities.",
+      "anchor": "packages/coding-agent/src/main.ts:24 (and 7 siblings)"
+    },
+    {
+      "n": 5,
+      "instruction": "COMMIT 1, update all 12 call sites to `invalidateAllCaches();` — main.ts:872, sdk.ts:4571, session/agent-session.ts:5435/:5820/:8811, session/session-tools.ts:1651, modes/controllers/selector-controller.ts:310, modes/controllers/ssh-command-controller.ts:208/:369, slash-commands/builtin-marketplace.ts:36, slash-commands/helpers/ssh.ts:146/:167. Then rewrite the comment at sdk.ts:3528 that currently reads 'resetCapabilities() clears the fs cache at those boundaries' to use the new name. A missed call site is not a silent bug — it is a type error, which is why this commit is cheap. Run `git grep -n resetCapabilities -- packages/coding-agent/src` afterward and confirm you get zero hits.",
+      "anchor": "packages/coding-agent/src/sdk.ts:4571"
+    },
+    {
+      "n": 6,
+      "instruction": "COMMIT 1, write `packages/coding-agent/test/capability/reset-contract.test.ts` with exactly two tests in this order. Row 1 asserts the negative contract: call `invalidateAllCaches()`, then assert `getCapability(toolCapability.id)` is still defined. Import `toolCapability` from `@oh-my-pi/pi-coding-agent/capability/tool` so the module-level `defineCapability` at `capability/tool.ts:27` has run. This row passes on HEAD and fails the moment someone adds `capabilities.clear()` to the renamed function — that is its entire job. Row 2 asserts the new contract: call `resetRegistry()`, then assert `getCapability(toolCapability.id)` is `undefined`. This row fails on HEAD because the function does not exist yet. Do not reorder them; within a file module state is shared, so running row 1 after row 2 makes it fail spuriously.",
+      "anchor": "packages/coding-agent/test/capability/reset-contract.test.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "COMMIT 1 gate: `cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts` then `cd packages/coding-agent && bun test test/capability/reset-contract.test.ts`. If the test fails on 'Failed to load pi_natives native addon', note it in the PR rather than claiming you ran it — `capability/index.ts` does not import `@oh-my-pi/pi-natives` itself, so it may well work, but `./fs`, `../extensibility/settings` and `../config/model-settings` are unverified. Ship commit 1 as its own PR.",
+      "anchor": "repo root"
+    },
+    {
+      "n": 8,
+      "instruction": "BEFORE starting commits 2-3, confirm M2-OQ2 has been answered by WI-0 and that the answer is 'the capability registry becomes extension-reachable' (YES). If the answer is NO, do not build the attribution maps — they would be permanently dead weight. Also re-check whether WI-1 commit 1 has landed its owner-tagged teardown call in the `reconcileExtensionSources` suspend branch; if it has, extend that branch, do not write a second one.",
+      "anchor": "packages/coding-agent/src/sdk.ts:4580"
+    },
+    {
+      "n": 9,
+      "instruction": "COMMIT 2, add the two attribution maps to the Registry State section of `capability/index.ts`, directly after the existing three at :34/:37/:40 and before the two mutable Sets at :43/:44. Name and type them exactly after ModelRegistry: `const providersBySource = new Map<string, Set<string>>()` and `const providerSourceByName = new Map<string, string>()`. Give both a doc comment pointing at `config/model-registry.ts:303-304` as the shape being mirrored, so the next reader knows this is deliberate reuse and not a second invention.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:40"
+    },
+    {
+      "n": 10,
+      "instruction": "COMMIT 2, extend the signature to `registerProvider<T>(capabilityId: string, provider: Provider<T>, sourceId?: string)`. When `sourceId` is provided: add the providerId to that source's set in `providersBySource` (creating the set if absent) and set `providerSourceByName` to that source. Before claiming it, evict any previous owner — read `providerSourceByName.get(provider.id)`, and if it names a different source, delete the providerId from that source's set and delete the reverse entry. This is a direct port of `model-registry.ts:3010-3015`. When `sourceId` is omitted (all 84 existing call sites), do not claim attribution and do not evict anyone. Put both rules in the doc comment.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:101"
+    },
+    {
+      "n": 11,
+      "instruction": "COMMIT 3, add `export function unregisterProvidersForSource(sourceId: string): void` next to the other cache/registry management functions. Body: look up the set in `providersBySource`; if absent or empty, return immediately. Otherwise, for each providerId, resolve its capability id from `providerCapabilities` and splice the provider out of that capability's `providers` array, then delete the capabilityId from `providerCapabilities`'s set for that provider and drop the `providerMeta` entry only when that provider has no remaining capability registrations. Finally delete the `providersBySource` entry and every `providerSourceByName` entry this source owned. Guard the whole thing so a providerId still owned by a DIFFERENT source is never removed — that guard is what test row (b) exists to catch.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:566"
+    },
+    {
+      "n": 12,
+      "instruction": "COMMIT 3, wire it into the hot path. In `reconcileExtensionSources` in sdk.ts, immediately after `const { suspended, resumed } = extensionRunner.setSuspendedExtensions(...)` at :4580, add a loop calling `unregisterProvidersForSource(extension.path)` for each suspended extension. Use `extension.path`, not `extension.resolvedPath` — `path` is the id the model registry already uses as a sourceId (`loader.ts:363`). If WI-1 already added a teardown call in this branch, add yours next to it rather than creating a second loop. Write a comment stating plainly that this is currently inert because nothing registers capability providers with a sourceId, and that it exists so the seam is in place for WI-10.",
+      "anchor": "packages/coding-agent/src/sdk.ts:4580"
+    },
+    {
+      "n": 13,
+      "instruction": "COMMITS 2-3, write `packages/coding-agent/test/capability/provider-source-attribution.test.ts` with three tests. Register throwaway providers directly through the registry API with distinct provider ids and distinct sourceIds, and assert on the RESOLVED list from `getCapabilityInfo(capabilityId)?.providers` — never on internal maps, because the resolved list is what discovery and the settings UI read. Row (a): a source-owned provider is gone from the resolved list after `unregisterProvidersForSource`. Row (b): with two sources on the same capability, suspending one leaves the other's provider present. Row (c): after `resetRegistry()`, providers from two different sourceIds are both still present. Order the file so the `resetRegistry()` row does not run before (a) and (b). Use a real module-level capability id from `capability/tool.ts` so the definition exists.",
+      "anchor": "packages/coding-agent/test/capability/provider-source-attribution.test.ts"
+    },
+    {
+      "n": 14,
+      "instruction": "COMMITS 2-3 gate: `cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts` then `cd packages/coding-agent && bun test test/capability/reset-contract.test.ts test/capability/provider-source-attribution.test.ts`. Then run the full coding-agent suite to prove `resetRegistry()` in one file did not poison another — this is a real risk the source plan never mentions, and although I verified `bun test` isolates per file, the full suite is the proof. Finally `bun run check:tools` (oxlint + oxfmt), which `check:ts` already invokes.",
+      "anchor": "repo root"
+    }
+  ],
+  "code_shape": "// packages/coding-agent/src/capability/index.ts — Registry State section,\n// immediately after the existing three Maps at :34/:37/:40.\n\n/**\n * Providers registered by an owning source, mirroring ModelRegistry's\n * `#runtimeProvidersBySource` (config/model-registry.ts:303). Keyed by sourceId.\n */\nconst providersBySource = new Map<string, Set<string>>();\n\n/**\n * Reverse index: provider ID -> owning sourceId, mirroring ModelRegistry's\n * `#runtimeProviderSourceByName` (config/model-registry.ts:304). At most one\n * owner per provider ID; a later registration evicts the previous owner.\n */\nconst providerSourceByName = new Map<string, string>();\n\n// ---- registerProvider, signature change at :101 ----\n\nexport function registerProvider<T>(capabilityId: string, provider: Provider<T>, sourceId?: string): void {\n\tconst capability = capabilities.get(capabilityId);\n\tif (!capability) {\n\t\tthrow new Error(`Unknown capability: \"${capabilityId}\". Define it first with defineCapability().`);\n\t}\n\n\tif (!providerMeta.has(provider.id)) {\n\t\tproviderMeta.set(provider.id, { displayName: provider.displayName, description: provider.description });\n\t}\n\tif (!providerCapabilities.has(provider.id)) {\n\t\tproviderCapabilities.set(provider.id, new Set());\n\t}\n\tproviderCapabilities.get(provider.id)!.add(capabilityId);\n\n\t// Attribution: only claimed when a sourceId is supplied. A source-less\n\t// registration never claims and never evicts — all 84 existing call sites are\n\t// source-less module-level registrations. Eviction ports ModelRegistry\n\t// (config/model-registry.ts:3010-3015): one owner per provider ID, last wins.\n\tif (sourceId !== undefined) {\n\t\tconst previousSourceId = providerSourceByName.get(provider.id);\n\t\tif (previousSourceId !== undefined && previousSourceId !== sourceId) {\n\t\t\tproviderCapabilities.get(provider.id); // keep the reverse index; only the owner changes\n\t\t\tprovidersBySource.get(previousSourceId)?.delete(provider.id);\n\t\t}\n\t\tconst sourceProviders = providersBySource.get(sourceId) ?? new Set<string>();\n\t\tsourceProviders.add(provider.id);\n\t\tprovidersBySource.set(sourceId, sourceProviders);\n\t\tproviderSourceByName.set(provider.id, sourceId);\n\t}\n\n\tconst providers = capability.providers as Provider<T>[];\n\tconst idx = providers.findIndex(p => p.priority < provider.priority);\n\tif (idx === -1) providers.push(provider);\n\telse providers.splice(idx, 0, provider);\n}\n\n// ---- new teardown, next to the cache management section ----\n\n/**\n * Remove every provider registered by `sourceId`.\n *\n * Contract: a provider ID has at most one owning source at a time. A provider\n * whose current owner is a different source is never removed. Safe to call for\n * an unknown or already-removed sourceId.\n */\nexport function unregisterProvidersForSource(sourceId: string): void {\n\tconst sourceProviders = providersBySource.get(sourceId);\n\tif (!sourceProviders || sourceProviders.size === 0) return;\n\n\tfor (const providerId of [...sourceProviders]) {\n\t\tif (providerSourceByName.get(providerId) !== sourceId) continue; // re-owned elsewhere\n\n\t\tfor (const capabilityId of providerCapabilities.get(providerId) ?? []) {\n\t\t\tconst capability = capabilities.get(capabilityId);\n\t\t\tif (!capability) continue;\n\t\t\tconst providers = capability.providers as Provider<unknown>[];\n\t\t\tconst idx = providers.findIndex(p => p.id === providerId);\n\t\t\tif (idx !== -1) providers.splice(idx, 1);\n\t\t}\n\n\t\tproviderCapabilities.delete(providerId);\n\t\tproviderMeta.delete(providerId);\n\t\tproviderSourceByName.delete(providerId);\n\t}\n\n\tprovidersBySource.delete(sourceId);\n}\n\n// ---- COMMIT 1, the rename at :554 and the new function beside it ----\n\n/**\n * Clear the filesystem discovery cache. Call after a chdir or filesystem change.\n *\n * This does NOT clear the capability registry: capability definitions and\n * registered providers survive. Use {@link resetRegistry} for the registry.\n */\nexport function invalidateAllCaches(): void {\n\tclearFsCache();\n}\n\n/**\n * Drop every registered capability definition. Tests and future extension\n * reload only — no live call site invokes this.\n *\n * DESTRUCTIVE: all 14 `defineCapability` calls are module-level `export const`\n * bindings and ESM evaluates each module exactly once, so no later import\n * re-runs them. After this call, `getCapability` returns undefined and\n * `loadCapability` throws for every capability for the rest of the process.\n *\n * Deliberately narrow: it touches `capabilities` and nothing else. Registered\n * providers and their source attribution survive (see provider-source-\n * attribution.test.ts row 3).\n */\nexport function resetRegistry(): void {\n\tcapabilities.clear();\n}\n",
+  "test_contract": "The suite defends one thing: the capability registry's exported lifecycle functions must do what their names say, and provider teardown must be scoped to exactly one owner.\n\nRow 1 of reset-contract.test.ts defends a NEGATIVE contract and is the only thing standing between the plan and the one forbidden option. If it regresses, somebody has made the fs-cache invalidator also wipe the capability map — and the observable consequence is that `/clear`, resume-with-chdir, ssh session switches and the extension reconcile loop all silently stop resolving every one of the 14 capabilities for the rest of the process, with no stack trace, because ESM will not re-evaluate the module-level `defineCapability` calls. A consumer sees prompts, rules, hooks, slash commands, skills and tools quietly vanish and never come back.\n\nRow 2 defends the forward contract: `resetRegistry()` must actually drop definitions. It is the row that fails on HEAD, because the function does not exist — it is the rejectable part of the fix, and it is what makes the name-and-behavior match enforceable rather than aspirational.\n\nRow (a) of provider-source-attribution.test.ts defends the discovery contract: after a source is torn down, its providers must be absent from the RESOLVED list (`getCapabilityInfo(id).providers`) — the array settings UI and discovery actually read. A consumer sees a suspended extension's contributions disappear from the capability set instead of lingering. Asserting on the internal maps instead would pass while the resolved list stayed stale, which is the whole failure mode.\n\nRow (b) defends the negative contract for teardown scope: two sources on one capability, one torn down, the other's provider survives. If this regresses, `unregisterProvidersForSource` over-deletes and disabling one extension silently strips another extension's contributions. This is the row that proves attribution is real rather than a single-owner special case.\n\nRow (c) defends the cross-commit contract: the two commits do not regress each other. `resetRegistry()` must not disturb attribution, so a test suite that calls it still sees source-owned providers afterwards. If this regresses, commit 1 quietly breaks commit 2's cleanup path.\n\nWhat a consumer sees if any of this fails is a capability registry that either leaks every suspended extension's providers forever (the status quo at HEAD) or, in the forbidden variant, drops every capability in the process. Both are silent; neither throws.",
+  "test_files": [
+    "packages/coding-agent/test/capability/reset-contract.test.ts",
+    "packages/coding-agent/test/capability/provider-source-attribution.test.ts"
+  ],
+  "verification": "cd /Users/tranquangdang21/Projects/ultraworkers && bun run check:ts\ncd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun test test/capability/reset-contract.test.ts test/capability/provider-source-attribution.test.ts\ncd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun test   # full suite: prove resetRegistry() in one file poisons no other\ngit -C /Users/tranquangdang21/Projects/ultraworkers grep -n resetCapabilities -- packages/coding-agent/src   # must return zero hits after commit 1",
+  "gate": "Three gates, in order.\n\n(1) After commit 1: `bun run check:ts` is green AND `git grep -n resetCapabilities -- packages/coding-agent/src` returns zero hits. The type checker is what makes the rename safe — a missed call site is a compile error, not a silent behavior change, which is why commit 1 is S rather than M.\n\n(2) Row 2 of reset-contract.test.ts is red on HEAD and green only after `resetRegistry()` exists and really clears `capabilities`. This is the rejectable row: if it cannot be made to go red before the fix, the fix has not been pinned.\n\n(3) After commits 2-3: `bun run check:ts` green, both new test files green, and the full coding-agent suite still green — the last one specifically proves that a test file calling `resetRegistry()` does not poison any other file.\n\nENVIRONMENT CAVEAT, verified not assumed: at HEAD 808b365 `bun run check:ts` passes (all 15 packages green) but `bun test` cannot run at all — the native addon is unbuilt, so even the pre-existing unrelated `test/capability/rule-agents.test.ts` reports `0 pass / 1 fail` with 'Failed to load pi_natives native addon for darwin-arm64'. So today only gate (1)'s type-check half and the grep half are runnable. Build the addon with `bun --cwd=packages/natives run build` to unlock the test halves. There is a decent chance the two new tests escape the addon problem, because `capability/index.ts` does not import `@oh-my-pi/pi-natives` (unlike `discovery/helpers.ts:4`, which is what breaks the existing test) — but `capability/index.ts` does pull `./fs`, `../extensibility/settings` and `../config/model-settings`, and I could not verify those transitively. Run the test early and find out; if it is blocked, say so in the PR instead of claiming coverage you did not execute.\n\nWHY THIS GATE CAN FAIL: Yes, on both halves. The type-check half fails the moment a single one of the 12 call sites or 8 import lines is missed, because the renamed export no longer exists — that is a hard compile error, not a soft warning, and it is what makes the 8-file rename safe to do without reading every file. The test half fails on HEAD for a concrete, demonstrated reason: `resetRegistry` is not exported at HEAD, so row 2 cannot even resolve, let alone pass. And row 1 is a live tripwire against the forbidden option: it is green today and goes red the instant someone adds `capabilities.clear()` to the fs-cache function, which is exactly the mistake the plan spends a paragraph forbidding. The one thing this gate does NOT cover is the behavioral claim in the PR description — since no production code path registers a capability provider with a sourceId (verified: all 84 `registerProvider` calls are module-level in `src/discovery/`), the `sdk.ts` suspend-branch call to `unregisterProvidersForSource` is inert at ship time and the tests exercise the registry API directly. Do not let the PR claim that toggling an extension now releases its providers in practice; it lays the seam, nothing more.",
+  "gate_can_fail": true
+}

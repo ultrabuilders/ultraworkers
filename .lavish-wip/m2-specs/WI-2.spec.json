@@ -1,0 +1,186 @@
+{
+  "id": "WI-2",
+  "title": "Deterministic extension load order, and collision resolution made explicit",
+  "wave": "M2 wave 2 (shippable; WI-2 splits into 2 PRs — the sort is a real behavior change and goes alone, the diagnostic rides along)",
+  "one_line": "Extensions are now always loaded in sorted path order instead of whatever order the filesystem happened to hand back, and when two extensions register the same tool name the winner is both a documented rule and a diagnostic that names both sides.",
+  "user_visible_effect": "Two plugins that register the same tool name resolve to the same one on every machine, every run, and after every reinstall — instead of silently flipping with directory layout. The losing registration is also reported by name and path, so 'my extension never registered' finally has a signal instead of silence. A user who listed extensions in a specific order in settings and relied on that order winning will see the order become alphabetical; that is the intended flip and is called out in the changelog.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/loader.ts",
+      "change": "Sort the accumulated `allPaths` with a code-unit comparator immediately before `return allPaths;` at line 660 (after dedup, after all four discovery branches).",
+      "action": "modify",
+      "verified": true,
+      "note": "`discoverExtensionPaths` is at line 572 (plan anchor correct); `allPaths` declared 578, `addPath` dedupes on the RESOLVED path at 585-591, `return allPaths` at 660. The list is locally built so sorting in place is safe — no shared cache to poison."
+    },
+    {
+      "path": "packages/coding-agent/src/discovery/helpers.ts",
+      "change": "In `discoverLinkedExtensionModuleFiles`, replace `const entries = await readDirEntries(dir);` at line 763 with a COPY of the cached array, sorted by entry name with a code-unit comparator, before the existing `Promise.all(entries.map(...))` at line 769.",
+      "action": "modify",
+      "verified": true,
+      "note": "Function starts at 759 (plan anchor correct). This sort is independently load-bearing: the Promise.all pushes into shared arrays from inside its callbacks, so result order is I/O-completion order and the post-sort in loader.ts cannot repair it."
+    },
+    {
+      "path": "packages/coding-agent/src/capability/fs.ts",
+      "change": "NO CHANGE. Read to confirm why it must not be touched.",
+      "action": "modify",
+      "verified": true,
+      "note": "`readDirEntries` at 37-52 (plan anchor correct) returns the module-level `dirCache` array BY REFERENCE at 39-41. Beyond being shared/cached, it has six other consumers — discovery/builtin.ts:48,531,582,701,743, discovery/cline.ts:23, discovery/gemini.ts:195, discovery/omp-extension-roots.ts:243, discovery/omp-plugins.ts:236, discovery/helpers.ts:763,844,848,874. Sorting here would reorder every one of them. The correct fix is at the two order-sensitive consumers."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/types.ts",
+      "change": "Add an exported `ExtensionRegistrationDiagnostic` interface immediately after `RegisteredTool` (which ends at line 1676) and add the `type` discriminant doc.",
+      "action": "modify",
+      "verified": true,
+      "note": "`export interface RegisteredTool` is at 1666 — verified. `RegisteredTool` carries `extensionPath: string` (line 1668), which is what the winner-name assertion reads. `Extension.tools` is `Map<string, RegisteredTool<any, any>>` at line 1807 — that pre-existing `any` is NOT in scope for this change; do not widen it."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/runner.ts",
+      "change": "(1) Rename the private `#commandDiagnostics` field to `#registrationDiagnostics` and retype it as `ExtensionRegistrationDiagnostic[]` (line 481). (2) Add private `#collectToolNameCollisions()`. (3) Push its result into `#registrationDiagnostics` at the end of `getRegisteredCommands` (line 1186 reset, 1193 push). (4) Widen `getCommandDiagnostics()`'s return type (line 1206). (5) Add public `getToolCollisionDiagnostics()`. (6) Expand the doc comment on `getRegisteredTool` (line 984) to state last-wins as the defined rule.",
+      "action": "modify",
+      "verified": true,
+      "note": "ALL FOUR of the plan's runner line numbers are stale by ~11-13: field decl is 481 not 470, push site 1193 not 1180, getter 1206 not 1193, getRegisteredTool 984-990 not 971-977. Verified individually with grep. `#registrationDiagnostics` must stay reset inside getRegisteredCommands (line 1186) — see open_questions for why the dedicated getter also exists."
+    },
+    {
+      "path": "packages/coding-agent/test/extension-load-order-determinism.test.ts",
+      "change": "New test file. Row 1 asserts the WINNER'S NAME across two fresh subprocesses. Row 2 asserts a tool-name collision is reported with both registrants named.",
+      "action": "create",
+      "verified": true,
+      "note": "Confirmed non-existent today (`ls packages/coding-agent/test/ | grep -iE 'extension-load|load-order|determinism'` returns only the four pre-existing extension-loader-* files). Follows the `Bun.spawn([process.execPath, '-e', script], { cwd: repoRoot })` pattern from test/bench-auth-fallback.test.ts:284-296."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "change": "One line under `## [Unreleased]` → `### Changed`: extension load order is now sorted, so a duplicate tool name always resolves to the same extension; the collision is now reported. One line under `### Added`: nothing new is user-facing beyond the report, so fold it into the same Changed line.",
+      "action": "modify",
+      "verified": true,
+      "note": "`## [Unreleased]` exists at line 3 and is currently empty; `## [18.3.3]` starts at line 5 and is immutable."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "In loader.ts, insert a comment block plus `allPaths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));` on the line immediately before `return allPaths;`. The comment must say: (a) why — registration is last-extension-wins, so a filesystem-dependent order is a silent user-visible behavior change; (b) that this is a code-unit comparator, not localeCompare, so the winner does not depend on host locale; (c) that it sits after dedup and after every discovery branch so all four contribute to one order. Do NOT touch `addPath`/`addPaths` — they are the dedup and disable-filter layer and are correct as-is.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/loader.ts:660"
+    },
+    {
+      "n": 2,
+      "instruction": "In helpers.ts, replace the single `const entries = await readDirEntries(dir);` line with a statement that first awaits readDirEntries, spreads the result into a new array, and sorts that copy by `entry.name` with a code-unit comparator. The comment MUST state that readDirEntries returns the module-level dirCache array by reference and that sorting in place would reorder the cache for the six other discovery modules — this is the single easiest mistake to make here and it is silent. Also state that a post-sort in discoverExtensionPaths cannot repair this function, because the Promise.all below pushes from inside its callbacks so the result order is I/O-completion order.",
+      "anchor": "packages/coding-agent/src/discovery/helpers.ts:763"
+    },
+    {
+      "n": 3,
+      "instruction": "In types.ts, add `export interface ExtensionRegistrationDiagnostic` right after the RegisteredTool interface closes. Four fields: `type: string` (documented as staying `\"warning\"` for both current producers, present so a future producer can be filtered), `message: string` (documented as required to name EVERY conflicting side so a log-only consumer sees both), `path: string` (the last-wins winner, or the single side when there is no conflict), and `paths: string[]` (every conflicting side in load order, last entry is the winner).",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:1676"
+    },
+    {
+      "n": 4,
+      "instruction": "In runner.ts, add the private `#collectToolNameCollisions(): ExtensionRegistrationDiagnostic[]` method. Walk `this.extensions` in order, build a Map<toolName, string[]> of registrant paths, then emit one diagnostic per name with two or more registrants. Use the LAST path as both `path` and the message's stated winner. The message must contain every path as text. Return the array. Note in a comment that Map insertion order makes the diagnostic list itself deterministic once load order is.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:984"
+    },
+    {
+      "n": 5,
+      "instruction": "In runner.ts, retype the private field as `#registrationDiagnostics: ExtensionRegistrationDiagnostic[] = []` and rename all four references (declaration, reset, push, return). At the end of `getRegisteredCommands`, after the command loop and before the return, push `...this.#collectToolNameCollisions()`. Deliberately do NOT add a `logger.warn` for tool collisions — the reserved-command path at 1193-1196 logs only when `!this.hasUI()`, and a plugin tree can produce many collisions; recording them without logging keeps startup quiet while still surfacing them to any consumer that reads the report.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:481,1186,1193,1206"
+    },
+    {
+      "n": 6,
+      "instruction": "In runner.ts, widen `getCommandDiagnostics()` to return `ExtensionRegistrationDiagnostic[]` (the array element type changes, the method name and the `path` field do not). Add `getToolCollisionDiagnostics(): ExtensionRegistrationDiagnostic[]` that returns `this.#collectToolNameCollisions()` computed fresh. Keep the doc comment on both explaining that `#registrationDiagnostics` is only populated once `getRegisteredCommands()` has run, which is exactly why the tool getter recomputes rather than filtering. Add the top-level import of `ExtensionRegistrationDiagnostic` from `./types` to the existing type import block — top-level only, no inline import.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:1206"
+    },
+    {
+      "n": 7,
+      "instruction": "In runner.ts, expand the one-line doc comment above `getRegisteredTool` into the rule statement: extensions bind in `discoverExtensionPaths` order, which is sorted by path; on a duplicate tool name the registration from the extension whose path sorts LAST wins; the shadowed registration is still returned by `getAllRegisteredTools()`; and the collision is reported by `#collectToolNameCollisions` / `getToolCollisionDiagnostics`. This is the sentence WI-2 exists to write down — the reverse-walk loop body itself does not change.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:983"
+    },
+    {
+      "n": 8,
+      "instruction": "Write the new test file. Structure: `TempDir.createSync(\"@omp-ext-order-\")` in beforeEach, `removeSync()` in afterEach. Build a fixture directory `<temp>/exts/` containing 8 subdirectories `ext-a` .. `ext-h`, each with an `index.ts` registering a tool named `dup` with a distinct label. The fixture dir MUST contain no `package.json` and no `index.ts`/`index.js` directly — a direct index short-circuits `resolveExtensionDirectory` to a single file at directory-resolution.ts:109-110 and the test becomes vacuous, and a package.json makes the manifest branch authoritative at 106-107.",
+      "anchor": "packages/coding-agent/test/extension-load-order-determinism.test.ts"
+    },
+    {
+      "n": 9,
+      "instruction": "Add the fixture-premise check inside the test, before the subprocess runs: call `fs.readdirSync(extsDir)` and assert its order is NOT already sorted. This is the check the plan called for, with one correction — it must use `fs.readdirSync`, NOT `readDirEntries`, because the configured-directory branch of `discoverExtensionPaths` goes through `resolveExtensionDirectory`, which uses raw `fs.readdirSync` at directory-resolution.ts:114 and never touches the cached capability helper. Checking with the wrong primitive would validate a premise about a code path the fixture does not exercise. On failure, throw an error whose message names the actual order and instructs the engineer to rename the subdirectories until readdir returns them out of lexical order — never a silent skip.",
+      "anchor": "packages/coding-agent/test/extension-load-order-determinism.test.ts"
+    },
+    {
+      "n": 10,
+      "instruction": "Add the row-1 probe. One `PROBE_SCRIPT` template constant, interpolated with `JSON.stringify(extsDir)` and `JSON.stringify(tempDir.path())`, spawned with `Bun.spawn([process.execPath, \"-e\", script], { cwd: path.resolve(import.meta.dir, \"../../../\"), env: { ...process.env, NO_COLOR: \"1\", PI_CODING_AGENT_DIR: tempDir.path() }, stdout: \"pipe\", stderr: \"pipe\" })`. The `cwd` must be the repo root so the probe's relative `./packages/coding-agent/src/...` imports resolve (this is the bench-auth-fallback.test.ts:287 trick). The probe: awaits `discoverExtensionPaths([extsDir], cwd, undefined, { ambient: false })`, awaits `loadExtensions(paths, cwd)`, builds `SessionManager.inMemory()` + `AuthStorage.create` + `ModelRegistry` + `ExtensionRunner` exactly as extensions-runner.test.ts:394-400 does, then prints ONE line of JSON `{ winnerPath, extensionOrder }` and exits 0. Assert the probe's exit code is 0 and include stderr in the failure message. Run it TWICE, in two separate processes, and assert BOTH report `winnerPath === path.join(extsDir, \"ext-h\", \"index.ts\")`. Do not call the loader twice inside one process — the module-level dirCache in capability/fs.ts:5 and Bun's ESM module cache both persist across calls and would hide exactly the ordering this test exists to catch.",
+      "anchor": "packages/coding-agent/test/extension-load-order-determinism.test.ts"
+    },
+    {
+      "n": 11,
+      "instruction": "Add row 2, in-process. Reuse the extensions-runner.test.ts setup: one `AuthStorage.create(path.join(sharedTempDir.path(), \"testauth.db\"))` + `new ModelRegistry(authStorage)` in `beforeAll` (the comment there notes this costs ~100ms, so do not rebuild it per test), `SessionManager.inMemory()` in `beforeEach`. Write two single-file extensions into a second TempDir that each register a tool named `dup`, `loadExtensions` them in an explicit order, construct the runner, and assert the diagnostic: `type === \"warning\"`, `paths` has exactly the two extension paths, and `message` contains BOTH path strings as substrings. Assert via `getToolCollisionDiagnostics()` so the row does not depend on `getRegisteredCommands()` having been called first.",
+      "anchor": "packages/coding-agent/test/extension-load-order-determinism.test.ts"
+    },
+    {
+      "n": 12,
+      "instruction": "Add the changelog entries under `## [Unreleased]`, one line under `### Changed`. Lead with what the user sees: that extension load order is now deterministic and a duplicate tool name resolves the same way everywhere, and that the collision is now reported. Do not narrate the sort or the Promise.all in the changelog — that belongs in the PR body.",
+      "anchor": "packages/coding-agent/CHANGELOG.md:3"
+    }
+  ],
+  "code_shape": "// ── packages/coding-agent/src/extensibility/extensions/loader.ts:659 ──────────\n// Deterministic load order. `allPaths` accumulates in discovery order, which is\n// raw-`readdir` order for ambient/configured scans and I/O-completion order for\n// the linked-module branch — both filesystem-dependent. Registration is\n// last-extension-wins (see ExtensionRunner#getRegisteredTool), so that order IS\n// user-visible behavior. Sort once, here, after dedup and after all four\n// discovery branches, so every branch contributes to a single stable order.\n// Code-unit order, deliberately not localeCompare: the winning extension must\n// not depend on the host's locale.\nallPaths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));\nreturn allPaths;\n\n// ── packages/coding-agent/src/discovery/helpers.ts:763 ──────────────────────\n// `readDirEntries` hands back the module-level `dirCache` array BY REFERENCE, so\n// sorting in place would reorder the cache for the six other discovery modules\n// that share it (builtin, cline, gemini, omp-extension-roots, omp-plugins,\n// helpers). Copy first.\n//\n// This sort is load-bearing on its own: the Promise.all below pushes into shared\n// arrays from inside its callbacks, so the result order is I/O-completion order,\n// and the post-sort in discoverExtensionPaths cannot repair it.\nconst entries = [...(await readDirEntries(dir))].sort((a, b) =>\n\ta.name < b.name ? -1 : a.name > b.name ? 1 : 0\n);\n\n// ── packages/coding-agent/src/extensibility/extensions/types.ts (after :1676) ─\n/** A registration conflict surfaced by the extension runner. */\nexport interface ExtensionRegistrationDiagnostic {\n\t/** `\"warning\"` for both current producers; lets a future one be filtered. */\n\ttype: string;\n\t/**\n\t * Human-readable text that names EVERY conflicting side, so a consumer that\n\t * only reads `message` (a log line, a crash dump) still sees the full picture\n\t * without having to learn the record shape.\n\t */\n\tmessage: string;\n\t/** The winning side under last-extension-wins, or the single side when unconflicted. */\n\tpath: string;\n\t/** Every conflicting side in load order. The last entry is the winner. */\n\tpaths: string[];\n}\n\n// ── packages/coding-agent/src/extensibility/extensions/runner.ts ────────────\n/**\n * Tool names resolve by last-extension-wins. Extensions bind in\n * `discoverExtensionPaths` order, which is sorted by path, so a duplicate name\n * resolves to the registrant whose path sorts last. The shadowed registration\n * remains in `getAllRegisteredTools()`. A collision used to be entirely silent,\n * so a plugin that overrode another's tool looked like it had never been\n * installed — report both sides instead.\n *\n * Pure: derived from `this.extensions` on every call, so it is correct\n * regardless of whether `getRegisteredCommands()` has run.\n */\n#collectToolNameCollisions(): ExtensionRegistrationDiagnostic[] {\n\tconst registrants = new Map<string, string[]>();\n\tfor (const ext of this.extensions) {\n\t\tfor (const name of ext.tools.keys()) {\n\t\t\tconst seen = registrants.get(name);\n\t\t\tif (seen) seen.push(ext.path);\n\t\t\telse registrants.set(name, [ext.path]);\n\t\t}\n\t}\n\n\tconst diagnostics: ExtensionRegistrationDiagnostic[] = [];\n\t// Map iteration is insertion-ordered, so with a deterministic load order the\n\t// diagnostic list is too.\n\tfor (const [name, paths] of registrants) {\n\t\tif (paths.length < 2) continue;\n\t\tconst winner = paths.at(-1)!;\n\t\tdiagnostics.push({\n\t\t\ttype: \"warning\",\n\t\t\tmessage:\n\t\t\t\t`Extension tool '${name}' is registered by ${paths.length} extensions ` +\n\t\t\t\t`(${paths.join(\", \")}). Last-extension-wins: ${winner}.`,\n\t\t\tpath: winner,\n\t\t\tpaths,\n\t\t});\n\t}\n\treturn diagnostics;\n}\n\n/** Duplicate tool names, recomputed on demand — see #collectToolNameCollisions. */\ngetToolCollisionDiagnostics(): ExtensionRegistrationDiagnostic[] {\n\treturn this.#collectToolNameCollisions();\n}\n\n// inside getRegisteredCommands, after the reserved-command loop:\nthis.#registrationDiagnostics.push(...this.#collectToolNameCollisions());\nreturn [...commands.values()];\n",
+  "test_contract": "Two externally observable contracts, each with a named failure mode.\n\nROW 1 — \"Extension load order is sorted, so a duplicate tool name always resolves to the lexicographically-last registrant, across fresh processes.\" Observable: `ExtensionRunner#getRegisteredTool(\"dup\")?.extensionPath`. If this regresses, a user with two installed plugins registering the same tool name gets whichever one readdir happened to yield first — so the same install resolves differently on APFS vs ext4, before vs after a reinstall that changes directory layout, and the flip is silent (no log, no error, the losing plugin just appears not to exist). Why the winner's NAME and not a cross-run consistency assertion: raw readdir order is a property of the DIRECTORY, not the process, so two subprocesses reading the same fixture directory see the same order with or without a sort. A consistency-only assertion passes identically on an implementation that sorts nothing, which is why the fixture is built to make readdir order differ from lexical order and the premise is verified in-test with fs.readdirSync before the subprocess runs. Why two subprocesses rather than two in-process calls: the module-level dirCache (capability/fs.ts:5) and Bun's ESM module cache both survive a second call and would mask the very ordering under test. This row FAILS on HEAD and passes only after the loader.ts sort.\n\nROW 2 — \"A duplicate tool name is reported as a diagnostic naming both registering sides.\" Observable: `ExtensionRunner#getToolCollisionDiagnostics()` returns a record whose `paths` holds exactly the two registrants and whose `message` contains both path strings. If this regresses, a plugin author whose tool is silently overridden by another plugin has no signal at all — the override is invisible in the UI, the logs, and the API, and the only symptom is a tool that behaves differently than its source says. `message` is asserted to carry both paths as text so the log-only consumer path is defended, not just the structured field.\n\nWhat is deliberately NOT asserted: that the `allPaths` array is sorted. That is internal array shape; the winner's identity is the contract, and asserting the array would let an implementer satisfy the test by sorting in the wrong layer.",
+  "test_files": [
+    "packages/coding-agent/test/extension-load-order-determinism.test.ts"
+  ],
+  "verification": "BLOCKED until the native addon is built. `bun test` currently dies at import: \"Failed to load pi_natives native addon for darwin-arm64\" — measured 0 pass / 1 fail / 1 error, file-scoped, not a suite-wide 0-pass. Unblock with `bun --cwd=packages/natives run build`, then:\n\n  bun run check:ts\n  cd packages/coding-agent && bun test test/extension-load-order-determinism.test.ts test/extensions-discovery.test.ts\n\n`bun run check:ts` was measured green on this tree at HEAD 808b365 (exit 0, ~7 min) and does NOT need the addon — use it as the fast signal while iterating. Re-run the two named test files after the build; do not substitute `tsc` (AGENTS.md).\n\nGate proof, run before opening the PR: (1) with the fix in place, both rows pass; (2) delete the `allPaths.sort(...)` line at loader.ts:659, re-run — row 1 MUST go red with the wrong `ext-*` winner; (3) restore it, then delete the helpers.ts:763 pre-map sort, re-run — row 1 MUST still be green (this is expected: the loader post-sort is what this fixture exercises) and `extensions-discovery.test.ts` MUST stay green, proving the two sorts are not redundant and that the linked-module sort has no observable coverage in this fixture — see open_questions; (4) restore, delete `#collectToolNameCollisions`, re-run — row 2 MUST go red.",
+  "gate": "Four-part, and every part is able to go red.\n\n(1) TYPE: `bun run check:ts` exits 0. Goes red if the diagnostic interface is exported wrong, the top-level type import is missing, or an `any` leaks in.\n\n(2) ROW 1 DISCRIMINATES: with the fix reverted, row 1 reports a winner that is NOT `ext-h`. This is only a real gate because the test first proves its own fixture premise — it reads the fixture directory with `fs.readdirSync` (the same primitive `resolveExtensionDirectory` uses at directory-resolution.ts:114) and refuses to proceed if readdir already happens to return lexical order, in which case the assertion would be vacuous and would pass on an implementation that sorts nothing.\n\n(3) ROW 2 DISCRIMINATES: with `#collectToolNameCollisions` removed, row 2 gets zero diagnostics and goes red on `paths` and on the message substring check.\n\n(4) NO REGRESSION: `bun test test/extensions-discovery.test.ts` stays green, and `test/extension-loader-concurrency.test.ts` stays green — that file is the standing guard that `loadExtensions` imports concurrently while binding factories in path order, and the loader sort must not disturb it.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [
+    "WI-7 (wave 5 registerMode) — hard prerequisite. The mode registry creates order-sensitive registrations of its own, so it must land on top of a defined order, not on filesystem order.",
+    "WI-6 (wave 4) — the wave table states WI-6 needs WI-2's collision rule settled before it can safely change priority ordering."
+  ],
+  "effort": "S. Two sorts, one private collector, one exported interface, one doc paragraph, one new test file, one changelog line. The sort half is well under an hour; the test is the bulk of it because the fixture has to be built so that it actually discriminates.",
+  "risk": "MEDIUM, and it is a real behavior change rather than a defect fix — that is the whole reason the plan splits this into two PRs. A user with two same-named plugins today is relying on an accidental order, and the fix flips it. The second, quieter risk is the in-place sort: `readDirEntries` returns the cached `fs.Dirent[]` by reference, so `[...entries].sort()` written as `entries.sort()` mutates a module-level cache shared by six other discovery modules and silently reorders their results too. That produces no error and no failing import — it is the failure mode most likely to reach main, and the comment at helpers.ts:763 is the only thing standing between a tired engineer and it.",
+  "open_questions": [
+    "Does the post-sort apply to EXPLICITLY configured paths too? Sorting `allPaths` wholesale (the plan's choice, and what step 1 implements) means a user who writes `extensions: [\"b-ext\", \"a-ext\"]` in settings and relies on b-ext winning now gets a-ext. Sorting only the ambient/discovered entries and preserving configured order would honor intent better but makes the rule harder to state and the test fixture would have to use the ambient path. The plan settled on wholesale; this needs a human to confirm before the PR is opened, because it is the one part of WI-2 a user could reasonably call a regression.",
+    "Should the 8-extension fixture's degenerate-premise check hard-fail or skip? Hard-failing is honest and is what the plan chose, but on a filesystem whose readdir happens to return lexical order the row goes red on a platform that is not broken. Skipping silently reintroduces the exact vacuous pass the plan was written to prevent. A third option — assert the winner name unconditionally and record the premise in the failure text only — trades a rare red for a permanently weaker test on some platforms. Pick one before writing the test.",
+    "The linked-module sort at helpers.ts:763 has no observable coverage in this WI's fixture, because the fixture exercises the configured-directory path (which the loader post-sort already fixes). Gate step (3) above proves the two sorts are not redundant but cannot prove the helpers.ts sort does anything. Options: build a second fixture that forces `discoverExtensionModulePaths`'s linked-directory branch (symlinked subdirectory containing index.ts, which native glob does not descend into), or accept that the helpers.ts sort rests on a code-reading argument and say so in the PR. This needs a human decision because the second fixture is most of the remaining test effort.",
+    "Does `getCommandDiagnostics()` have out-of-repo consumers (published SDK, downstream forks)? `git grep -rn \"getCommandDiagnostics\" -- packages/` matches only the definition at runner.ts:1206, so nothing IN this repo needs updating — but widening its element type is still a published-API surface change. Confirm the SDK's public exports before widening rather than relying on the in-repo grep alone."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The diagnostic record is declared at runner.ts:470, pushed at runner.ts:1180, and `getCommandDiagnostics` is at runner.ts:1193.",
+      "verdict": "stale-line-numbers",
+      "correction": "All four anchors are off by 11-13 lines. The private field is at runner.ts:481, the reset at 1186, the single push site at 1193, and the getter at 1206. `getRegisteredTool` is at 984-990, not 971-977.",
+      "evidence": "grep -n on packages/coding-agent/src/extensibility/extensions/runner.ts: 481:#commandDiagnostics; 1185:getRegisteredCommands(reserved?); 1186: reset; 1193: push; 1206: getCommandDiagnostics; 984: getRegisteredTool(name)."
+    },
+    {
+      "claim": "The fixture premise should be checked by reading `readDirEntries` once inside the test, because that is what determines the order.",
+      "verdict": "wrong-primitive",
+      "correction": "Check with `fs.readdirSync` instead. The configured-directory branch of `discoverExtensionPaths` calls `resolveExtensionDirectory`, which does its own raw `fs.readdirSync` and never touches the cached capability helper — `readDirEntries` is not on the code path the fixture exercises, so checking with it validates a premise about the wrong function.",
+      "evidence": "packages/coding-agent/src/extensibility/extensions/directory-resolution.ts:114 `children = fs.readdirSync(dir);` — `readDirEntries` is imported nowhere in that file. Its only import in discovery is helpers.ts:17."
+    },
+    {
+      "claim": "Sort `entries` inside `discoverLinkedExtensionModuleFiles` before mapping.",
+      "verdict": "incomplete-missing-hazard",
+      "correction": "Correct instruction, but it omits the trap that makes it wrong in the obvious implementation: `entries` IS the cached array, so `.sort()` in place mutates the shared module-level cache. The step must specify a copy. Without this the change silently reorders results for six other discovery modules with no error and no failing import.",
+      "evidence": "packages/coding-agent/src/capability/fs.ts:39-41 returns `dirCache.get(abs) ?? []` — the same `fs.Dirent[]` reference, not a copy. Other consumers: discovery/builtin.ts:48,531,582,701,743; cline.ts:23; gemini.ts:195; omp-extension-roots.ts:243; omp-plugins.ts:236."
+    },
+    {
+      "claim": "`getCommandDiagnostics()` returns `Array<{ type: string; message: string; path: string }>` and the fix is to add `paths: string[]` to it.",
+      "verdict": "verified-but-underdetermined",
+      "correction": "The no-consumer claim is verified. But the plan never says WHERE a tool-collision diagnostic gets computed, and the answer is forced: `#commandDiagnostics` is reset at the top of `getRegisteredCommands` (runner.ts:1186), so a tool diagnostic that only ever got pushed there would be invisible to any consumer that has not called `getRegisteredCommands()` first. The spec resolves this with a pure private collector plus a dedicated recomputing getter, so the tool report carries no hidden ordering contract.",
+      "evidence": "runner.ts:1185-1186 `getRegisteredCommands(reserved?) { this.#commandDiagnostics = [];`. `git grep -rn getCommandDiagnostics -- packages/` returns only runner.ts:1206."
+    },
+    {
+      "claim": "The task context states git HEAD is 5873776.",
+      "verdict": "stale",
+      "correction": "HEAD is 808b365 on branch milestone-1, working tree clean. Every line anchor in this spec was verified against 808b365.",
+      "evidence": "`git log --oneline -1` → 808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan."
+    },
+    {
+      "claim": "`bun test` reports 0 pass with the native-addon error.",
+      "verdict": "partly-wrong",
+      "correction": "It reports 0 pass / 1 FAIL / 1 error per file — the file is counted as failed, not skipped. Small, but it tells the engineer the test run is genuinely red rather than silently empty, which is what they need to know before assuming a green run.",
+      "evidence": "`cd packages/coding-agent && bun test test/extension-loader-concurrency.test.ts` → `0 pass / 1 fail / 1 error / Ran 1 test across 1 file`."
+    },
+    {
+      "claim": "Sorting `allPaths` is a no-op for consumers because nothing in the codebase depends on incidental filesystem order.",
+      "verdict": "verified-with-caveat",
+      "correction": "Verified — `loadExtensions` (loader.ts:485-487) uses `Promise.all(paths.map(...))`, which preserves input order, and `bindPreparedExtensions` iterates in that order, so `this.extensions` order is exactly `allPaths` order. The caveat: `resolveExtensionDirectory` is called with CONFIGURED_EXTENSION_DIRECTORY_OPTIONS, which does NOT set `sortChildren` (only the plugin options at plugins/loader.ts:290 do), so a configured directory of sub-extensions is the one path the loader post-sort is load-bearing for. That is exactly the path the test fixture exercises, which is good for coverage but means the plugin path was already sorted and gains nothing.",
+      "evidence": "loader.ts:485-487; loader.ts:528-536 `CONFIGURED_EXTENSION_DIRECTORY_OPTIONS` (no sortChildren) vs plugins/loader.ts:287-291 `PLUGIN_EXTENSION_DIRECTORY_OPTIONS` (sortChildren: true); directory-resolution.ts:119 `if (options.sortChildren) children.sort();`."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-2.spec.json"
+}

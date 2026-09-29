@@ -1,0 +1,191 @@
+{
+  "id": "W12",
+  "title": "Phát hành bản cuối dưới scope cũ dưới dạng stub rename, rồi ký lại",
+  "wave": "Wave 6",
+  "one_line": "Publish the last `@oh-my-pi/pi-coding-agent` as a rename stub carrying an `omp` manifest block (`rename` pointer + `dist`), with a publish-time `publishBin` override that keeps the `omp` command on the stub, then re-sign and re-notarize the renamed macOS binary.",
+  "user_visible_effect": "A user on the old name runs `omp update`, gets moved onto the new package, and still has a working `omp` command afterwards. A user whose updater is too old to understand `rename` gets the GitHub release binary instead of an empty stub. The `omp` command keeps working for users who never update at all. Nothing the user can observe changes except that the rename happens without a 404 and without a dead command.",
+  "files_touched": [
+    {
+      "path": "scripts/ci-release-publish.ts",
+      "action": "modify",
+      "change": "Add a per-release `publishBin` override so the stub publish can ship `bin: { omp: <shim> }` while the new-name publish ships `bin: { ultraworkers: ... }`. Today the only `publishBin` is the single static value on the `packages[]` entry at :186, and `rewriteManifest` (:243) applies it to every publish of that directory.",
+      "verified": true,
+      "note": "Plan said `publishBin` is at :165 — it is at :186. See plan_corrections. The `PublishPackage` interface field is at :69; `rewriteManifest` is exported at :240; `applyPublishBin` is a SEPARATE exported function at :296-303 whose only caller is `scripts/install-tests/run-ci.sh:156`."
+    },
+    {
+      "path": "scripts/ci-release-publish.test.ts",
+      "action": "modify",
+      "change": "Add the test that defends the actual W12 contract: a stub publish of `packages/coding-agent` yields a manifest whose `bin` still contains the `omp` key, even after the table entry's `publishBin` is renamed to the new command name. Use the existing `rewriteManifest(pkg, false)` dry-run seam already used at :212 and :242.",
+      "verified": true,
+      "note": "This file RUNS on this machine: `bun test scripts/ci-release-publish.test.ts` = 11 pass / 0 fail / exit 0, verified 2026-09-27. It is the only W12-relevant test file that is not blocked by the native addon. It currently contains ZERO assertions about `bin` or `publishBin` (grep: `publishBin|manifest.bin` return no hits in the file)."
+    },
+    {
+      "path": "packages/coding-agent/package.json",
+      "action": "modify",
+      "change": "The published manifest must carry an `omp` block declaring `omp: { \"rename\": { \"package\": \"<new-agent-pkg>\", \"natives\": \"<new-natives-pkg>\" }, \"dist\": \"binary\" }` on the final old-name release, and `omp: { \"dist\": \"npm\" }` on the new package's manifest. The new package's version must CONTINUE the old line (today `18.3.3`, `packages/coding-agent/package.json:3`) — never reset it lower.",
+      "verified": true,
+      "note": "There is NO `omp:` block in this manifest today (the only `\"omp\"` hit is the `bin` key at :28). Whether the block is authored in the repo manifest or injected by a per-release publish step is open question 1 — the plan does not decide it, and the two options have different failure modes."
+    },
+    {
+      "path": "packages/coding-agent/src/cli/update-cli.ts",
+      "action": "modify",
+      "change": "NO code change expected. The parser already accepts exactly the required shape and is already correct.",
+      "verified": true,
+      "note": "`resolveReleaseDist` at :165, `isRecord(manifest.omp)` at :166, the stub-contract docblock at :183-188, `resolveReleaseRename` at :189, `isRecord(manifest.omp)` at :190, `shouldForceBinaryUpdate` at :216-222, `MAX_RENAME_HOPS = 3` at :807, `getLatestRelease` at :883 with the rename-follow loop at :894-903. All confirmed on HEAD 84cbac9. The `omp` key name is `do_not_rename` N1 and must not move."
+    },
+    {
+      "path": "packages/coding-agent/test/cli/update-rename-migration.integration.test.ts",
+      "action": "modify",
+      "change": "NO change. The plan instructs extending this file with manifest-shape cases; those cases already exist in a different file and this file has no manifest seam at all.",
+      "verified": true,
+      "note": "171 lines. It exercises real npm and real bun over local `file:` fixtures and drives `migrateRenamedInstall` through INJECTED `RenameMigrationSteps` (:108-120, :149-161). It never calls `resolveReleaseRename` or `resolveReleaseDist` and never parses a manifest. Adding manifest cases here would duplicate existing coverage. See plan_corrections."
+    },
+    {
+      "path": "packages/coding-agent/test/cli/update-cli.test.ts",
+      "action": "modify",
+      "change": "NO change expected — this is where the two cases the plan asks W12 to write ALREADY live. Read :60-79 before writing anything new.",
+      "verified": true,
+      "note": ":60-79 already asserts a real rename pointer (`@oh-my-pi/pi-coding-agent` -> `@new/omp`) resolves version, dist and package names from the FINAL manifest, including the two-hop registry URL sequence. The cycle guard is at :90+. Unit-level parser cases are at `packages/coding-agent/test/update-cli.test.ts:642-653` (rename) and `:1420-1431` (dist)."
+    },
+    {
+      "path": "scripts/ci-macos-sign.sh",
+      "action": "modify",
+      "change": "NO change. The codesign gate the plan lists as W12 acceptance already exists and is already name-parameterized.",
+      "verified": true,
+      "note": "`BINARY=\"${1:-}\"` at :35, `codesign --verify --strict --verbose=4 \"$BINARY\"` at :109, plus `--version` and `--smoke-test` probes at :117-118 and a notarytool round-trip at :120-145. The call site is `ci.yml:974` passing `${{ matrix.binary_path }}`. W12's real work here is RE-RUNNING signing under the new filename, not editing the script."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "action": "modify",
+      "change": "Not W12's edit, but W12 cannot be signed off while these stand: the published-binary verify job hardcodes the old asset name in 9 places — lines 922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225. After the asset rename these curl a 404 and the verify job fails for a reason unrelated to signing.",
+      "verified": true,
+      "note": "Handoff to W10 (which already owns `ci.yml` and the release-asset rename). W12 must confirm these 9 lines were changed by W10 before claiming a signed release, otherwise the codesign gate is unverifiable."
+    },
+    {
+      "path": "scripts/install-tests/run-ci.sh",
+      "action": "modify",
+      "change": "The stub needs a `dist/omp` artifact or this install matrix breaks: :94 copies `packages/coding-agent/dist/omp` to the test bin dir and :103 smokes `$BUN_INSTALL/bin/omp`. After W9 renames the command, a stub that only ships a `bin` map pointing at a non-existent `dist/omp` fails here.",
+      "verified": true,
+      "note": "Not in the plan at all. Verified at :92-95 and :101-103. Whether the stub ships a real shim or the install test learns the new name is a W10 handoff; either way W12 must not be signed off while it is undecided."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Confirm the rename parser is already correct and needs no change: `grep -n 'resolveReleaseDist\\|resolveReleaseRename\\|isRecord(manifest\\.omp)' packages/coding-agent/src/cli/update-cli.ts` must return :165, :166, :189, :190 and nothing else. If it does not, stop — the tree is not the tree this spec was written against. Do not 'fix' the parser; the `omp` key is do_not_rename N1 and moving it breaks the whole mechanism.",
+      "anchor": "packages/coding-agent/src/cli/update-cli.ts:165,166,189,190"
+    },
+    {
+      "n": 2,
+      "instruction": "Read the existing coverage before writing any test: `sed -n '60,79p' packages/coding-agent/test/cli/update-cli.test.ts` and `grep -n 'resolveReleaseDist\\|resolveReleaseRename' packages/coding-agent/test/update-cli.test.ts`. Both of the cases the plan asks W12 to write already exist. Do not duplicate them. If you believe a case is missing, say which assertion is absent, specifically.",
+      "anchor": "packages/coding-agent/test/cli/update-cli.test.ts:60-79"
+    },
+    {
+      "n": 3,
+      "instruction": "TEST FIRST, and make it red: add to `scripts/ci-release-publish.test.ts` a test that calls `rewriteManifest(pkg, false)` for `packages/coding-agent` and asserts `manifest.bin` still has an `omp` key. Run `bun test scripts/ci-release-publish.test.ts` and confirm it FAILS. This file runs on this machine (verified exit 0 today, 11 tests), so a red result here is a real red, not an environment artifact. If you cannot make this test go red before implementing, you have written a tautology.",
+      "anchor": "scripts/ci-release-publish.test.ts"
+    },
+    {
+      "n": 4,
+      "instruction": "Decide open question 1 and write the decision into the commit message, not into a comment: does the `omp` block get authored in `packages/coding-agent/package.json` (simplest, but then EVERY publish of that directory carries the rename pointer, including the new-name package) or injected by a per-release publish step (more code, but the pointer only ships on the final old-name release)? Then implement the corresponding change. The plan does not choose; picking silently is how the wrong one ships.",
+      "anchor": "packages/coding-agent/package.json:3,27-29"
+    },
+    {
+      "n": 5,
+      "instruction": "Implement the per-release `publishBin` override in `scripts/ci-release-publish.ts`. The hazard is real even though the plan's stated reason is wrong: `rewriteManifest` at :243 applies the single static `publishBin` from the `packages[]` entry (:186) to EVERY publish of that directory, and there is no per-release mechanism today. Once W9 renames that to `ultraworkers`, a stub published from the same directory ships `bin: { ultraworkers: ... }` and users who never update lose the `omp` command entirely.",
+      "anchor": "scripts/ci-release-publish.ts:69,186,240,243"
+    },
+    {
+      "n": 6,
+      "instruction": "Make the step-3 test green. Then re-run the full publish script suite: `bun test scripts/ci-release-publish.test.ts scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/release.test.ts`. These four all pass individually on this machine (verified exit 0 each, 2026-09-27). Do NOT expect `bun run test:scripts` to pass — see the gate.",
+      "anchor": "scripts/ci-release-publish.ts:243"
+    },
+    {
+      "n": 7,
+      "instruction": "Version-line continuity. The stub release must be strictly greater than the current version on `packages/coding-agent/package.json:3` (18.3.3 today) and must NOT reset lower. `getLatestRelease` (update-cli.ts:883) resolves version from the final manifest in the chain, and `shouldForceBinaryUpdate` (:216-222) compares it. A reset makes every update compare as already-current: updates silently never arrive, with no error anywhere. This is the single highest-cost mistake in this work item.",
+      "anchor": "packages/coding-agent/package.json:3"
+    },
+    {
+      "n": 8,
+      "instruction": "Verify W10 landed its 9 `omp-darwin-arm64` line changes in ci.yml (922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225) and its `run-ci.sh` change for the `dist/omp` artifact. Run `grep -c 'omp-darwin-arm64' .github/workflows/ci.yml` — it must not be 9. If it is, W12 cannot be signed off: the codesign gate verifies an asset that no longer exists.",
+      "anchor": ".github/workflows/ci.yml:1206-1225"
+    },
+    {
+      "n": 9,
+      "instruction": "Re-sign and re-notarize under the new filename by RE-RUNNING the existing pipeline — `ci.yml:974` invokes `bash scripts/ci-macos-sign.sh \"${{ matrix.binary_path }}\"`, and that script already does `codesign --verify --strict` at :109. No script edit is needed. This is a prerequisite of the release, not a follow-up task.",
+      "anchor": "scripts/ci-macos-sign.sh:35,103,109"
+    },
+    {
+      "n": 10,
+      "instruction": "EXTERNAL, blocked in this environment and not delegable to code: confirm the `@ultraworkers` scope exists and is owned; confirm the old scope is still publishable for this stub; obtain the Apple signing identity. All three are outside the repo. If any is unavailable, W12 is BLOCKED — do not mark it done and do not widen the scope to work around it.",
+      "anchor": "scripts/ci-macos-sign.sh:94-98"
+    },
+    {
+      "n": 11,
+      "instruction": "Verify the rename path end-to-end against a real published manifest before it reaches any user. This requires registry access (open question 2). If it cannot be done, say so explicitly in the handoff rather than substituting a fixture-based test — a fixture proves the parser, not the release.",
+      "anchor": "packages/coding-agent/src/cli/update-cli.ts:894-903"
+    }
+  ],
+  "code_shape": "Almost nothing new. The consumer side is DONE and verified: `resolveReleaseDist` (update-cli.ts:165) and `resolveReleaseRename` (:189) already parse `omp.dist` and `omp.rename`, `getLatestRelease` (:883) already follows up to `MAX_RENAME_HOPS = 3` (:807) and takes version, dist and package names from the FINAL manifest in the chain, and `shouldForceBinaryUpdate` (:216) already treats any non-`npm` dist as binary. W12 supplies VALUES, not code, plus one small addition on the producer side: a per-release `publishBin` override so a stub publish of `packages/coding-agent` can keep `bin: { omp: ... }` while the table entry at :186 is renamed. Producer today: `PublishPackage.publishBin` is a single static field (:69) on one `packages[]` entry (:186), consumed unconditionally-by-that-entry at :243 inside the exported `rewriteManifest` (:240). Design constraint for the test: `rewriteManifest` reads `path.join(repoRoot, pkg.dir, 'package.json')` and `repoRoot` is module-level (`import.meta.dir/..`), so `pkg.dir` cannot be redirected to a temp dir — a stub test either needs a real directory or a small signature change to inject the manifest source.",
+  "test_contract": "Defends one observable contract: a final old-scope release must leave a user with a working `omp` command, whether or not their updater understands the rename pointer. Concretely — (1) a stub publish of `packages/coding-agent` produces a manifest whose `bin` still contains the `omp` key, even after the table entry's `publishBin` is renamed. This is a transformation assertion on `rewriteManifest` output, and it must be proven RED before the implementation makes it green. (2) The already-present case at `test/cli/update-cli.test.ts:60-79` covers the rename-following path; `:90+` covers the cycle guard; `test/update-cli.test.ts:1420-1431` covers dist coercion including an unknown value mapping to `binary`. Do NOT rewrite those to read a constant — AGENTS.md forbids converting a literal assertion into a tautology, and a rename-e2e gate that reads a constant proves nothing. Do NOT add manifest-shape cases to `update-rename-migration.integration.test.ts`: it has no manifest seam, and the cases would duplicate existing coverage. Per AGENTS.md: no `mock.module()` (use `vi.spyOn` + `restoreAllMocks`), no source-grep of implementation files, and the publish test is pure so it needs neither.",
+  "test_files": [
+    "scripts/ci-release-publish.test.ts",
+    "packages/coding-agent/test/cli/update-cli.test.ts",
+    "packages/coding-agent/test/update-cli.test.ts"
+  ],
+  "verification": "Verified on HEAD 84cbac9 (the plan was written against 5873776; every anchor below was re-confirmed by command, not read off the plan). CONFIRMED: update-cli.ts :165/:166/:189/:190/:183-188/:216/:807/:883/:894-903 all exist with the described semantics; `scripts/ci-release-publish.ts` :69/:186/:240/:243/:296-303 as described; `packages/coding-agent/package.json:3` = 18.3.3, `bin.omp` at :28, no `omp:` block; integration test is 171 lines and manifest-free; `test/cli/update-cli.test.ts:60-79` already asserts the rename path; `scripts/ci-macos-sign.sh:109` already runs `codesign --verify --strict`; `ci.yml:974` calls it; `omp-darwin-arm64` appears 9 times in ci.yml (922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225); `scripts/install-tests/run-ci.sh:94,103` depend on a `dist/omp` artifact. ENVIRONMENT (measured, not assumed): `bun run check:ts` exits 0 in ~29s. `bun test` exits 1 on anything importing pi_natives — 0 pass / 1 fail / 1 error, `Failed to load pi_natives native addon for darwin-arm64` — for BOTH the integration test and `test/update-cli.test.ts`, and this happens whether or not the work is done. `bun run test:scripts` exits 1 for exactly one reason: of its five members only `scripts/ci-test-ts.test.ts` is blocked; the other four exit 0 individually. `ninja` is NOT installed (`which ninja` fails; `brew list ninja` -> 'No such keg: /opt/homebrew/Cellar/ninja'), so `bun --cwd=packages/natives run build` cannot succeed as-is.",
+  "gate": "TIER 1 — runs on this machine, green verified 2026-09-27:\n  bun run check:ts\nTIER 2 — the W12 test, runs on this machine, and CAN go red (verified 11 pass / 0 fail / exit 0 before the change):\n  bun test scripts/ci-release-publish.test.ts\n  This tier is the discriminating gate. Watch it fail before implementing, then pass.\nTIER 3 — blocked here, NOT a pass. Install ninja FIRST or the build cannot run:\n  brew install ninja\n  bun --cwd=packages/natives run build\n  (cd packages/coding-agent && bun test test/cli/update-cli.test.ts test/update-cli.test.ts)\n  bun test scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/release.test.ts\n  NOTE: after the build, `bun run test:scripts` may still fail on `scripts/ci-test-ts.test.ts` alone; that is expected and is not a W12 signal.\nTIER 4 — external, cannot be run here, must be reported as BLOCKED not PASS: registry publish of the stub, end-to-end rename against the real published manifest, `codesign --verify --strict` on the re-signed artifact, Apple identity availability.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "W9",
+    "W10"
+  ],
+  "blocks": [],
+  "effort": "S in code, L in calendar — the plan's calibration is right but understated in one place. In-repo: roughly one new mechanism in `ci-release-publish.ts`, one new test in a file that already runs, and possibly a manifest shape decision. There is essentially no new consumer code; the parser is already done. Outside the repo and dominating: npm scope ownership, registry publish rights, Apple signing identity, and a real end-to-end rename check. The plan's 'S' does not account for the fact that the publish-side mechanism and the manifest-location decision are genuinely new work, not configuration.",
+  "risk": "Mislitigating one line number sends an engineer to the wrong function — `publishBin` is at :186, not :165, and the two `manifest.bin` writes the plan names are at :243 and :301, in two different functions, one of them conditional. Assuming the parser needs writing wastes the item; it is already correct and verified. The genuinely dangerous failure is value-shaped, not code-shaped: a version reset in the new package's manifest makes every update compare as already-current, so updates silently stop arriving with no error and no red test anywhere — a user on the old name is stuck permanently and nothing reports it. Second: publishing the stub without a dist value, so a package-manager install of the stub yields a command with no code. Third, the plan's stated reason for the publishBin hazard is factually wrong, so an engineer who checks it may conclude the hazard is also wrong and skip the fix — the hazard is real, only the explanation is wrong. Fourth, and not in the plan at all: signing cannot be verified while ci.yml still curls the old asset name in 9 places, and the install matrix breaks without a `dist/omp` artifact.",
+  "open_questions": [
+    "Where does the `omp` manifest block get authored — in the repo's `packages/coding-agent/package.json`, or injected per-release by the publish step? The plan explicitly punts on this ('bản thân manifest, không phải file nguồn') but does not decide. Authoring it in the repo means every publish of that directory carries the rename pointer, including the new-name package; injecting it costs the per-release mechanism. Different failure modes, no default. Must be decided in step 4, in the commit message.",
+    "How is the rename path verified end-to-end against a real published manifest before release, and who has registry access to do it? A fixture-based test proves the parser, not the release. The plan demands the real check and provides no mechanism or owner for it.",
+    "Is `@ultraworkers` scope available and owned, and is the old scope still publishable for the stub? Both are external, both are stated as external in the plan, and both block the item outright. This is the same unresolved question that blocks W2/W7; W12 cannot proceed past step 10 without it.",
+    "Does the stub ship a real `omp` shim binary, or does the install matrix learn the new command name? `scripts/install-tests/run-ci.sh:94,103` currently require a `dist/omp` artifact. W12 needs a decision or an explicit handoff to W10; leaving it undecided means neither item can be signed off."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "`scripts/ci-release-publish.ts:165` holds `publishBin: { omp: \"dist/cli.js\" }`.",
+      "verdict": "wrong-line",
+      "correction": "It is at line 186, on the `packages/coding-agent` entry of the exported `packages[]` array (`:164`). Line 165 is a blank line inside a docblock.",
+      "evidence": "`grep -n 'publishBin\\|manifest\\.bin\\|\"bin\"' scripts/ci-release-publish.ts` returns 16, 69, 186, 243, 298, 301. `sed -n '160,175p'` shows 165 is blank; `sed -n '178,192p'` shows `publishBin: { omp: \"dist/cli.js\" }` at 186."
+    },
+    {
+      "claim": "`ci-release-publish.ts:220` and `:278` overwrite `manifest.bin` unconditionally from `publishBin`, which is why the stub needs its own `publishBin`.",
+      "verdict": "wrong-line-and-wrong-mechanism",
+      "correction": "Both line numbers are wrong and the 'unconditional' characterization is false. The only in-publish overwrite is at :243 and it IS conditional: `if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };`. Line 301 is inside `applyPublishBin()`, a separate exported function (:296-303) that throws if the package has no `publishBin`; its only caller is `scripts/install-tests/run-ci.sh:156`, an install-test helper, not the release publish path. The hazard the plan describes is still REAL but for a different reason: the single static `publishBin` on the `packages[]` entry (:186) is applied to every publish of that directory, so once W9 renames it, a stub published from the same directory ships `bin: { ultraworkers: ... }`. Stating the wrong reason is dangerous here — an engineer who checks it may conclude the hazard is also wrong and skip the fix.",
+      "evidence": "`sed -n '240,244p'` shows `if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };` at 243. `sed -n '296,303p'` shows applyPublishBin. `grep -rn 'applyPublishBin'` returns exactly two hits: the definition at :296 and `scripts/install-tests/run-ci.sh:156`."
+    },
+    {
+      "claim": "W12 should extend `packages/coding-agent/test/cli/update-rename-migration.integration.test.ts` with a manifest whose `rename` points to a real new package, plus a second case where `dist` is the binary value.",
+      "verdict": "already-covered-and-misplaced",
+      "correction": "Both cases already exist, in a different file. `packages/coding-agent/test/cli/update-cli.test.ts:60-79` already asserts a real two-package rename (`@oh-my-pi/pi-coding-agent` -> `@new/omp`) resolving version, dist and package names from the final manifest, including the exact two-hop registry URL sequence; the cycle guard follows at :90+. Parser unit cases are at `packages/coding-agent/test/update-cli.test.ts:642-653` and `:1420-1431` (the latter includes the unknown-value-coerces-to-binary case). Separately, `update-rename-migration.integration.test.ts` has NO manifest seam at all: it drives `migrateRenamedInstall` through injected `RenameMigrationSteps` against real npm and real bun over local `file:` fixtures, and never calls either resolver. Writing manifest cases there would duplicate existing coverage in a file built for a different seam.",
+      "evidence": "`sed -n '60,79p' packages/coding-agent/test/cli/update-cli.test.ts` shows the rename fixture and its assertions. `grep -n 'resolveReleaseDist\\|resolveReleaseRename' packages/coding-agent/test/update-cli.test.ts` returns 29, 30, 642, 646, 650, 651, 652, 653, 1420, 1421, 1425, 1429, 1430, 1431. The integration test's 171 lines contain `RenameMigrationSteps` at :108-120 and :149-161 and no resolver call."
+    },
+    {
+      "claim": "W12 acceptance includes `codesign --verify --strict` succeeding on the renamed artifact, implying this needs building.",
+      "verdict": "already-exists",
+      "correction": "The gate already exists in two places and needs no new code. `scripts/ci-macos-sign.sh:109` runs `codesign --verify --strict --verbose=4 \"$BINARY\"` and is already name-parameterized (`BINARY=\"${1:-}\"` at :35), called from `ci.yml:974`. W12's actual work is RE-RUNNING signing under the new filename — a prerequisite, not an edit. The one thing that will break it is in W10's file: `ci.yml` hardcodes `omp-darwin-arm64` in 9 places, so the verify job will curl a 404 after the asset rename.",
+      "evidence": "`grep -rn 'codesign\\|notarytool\\|notariz' .github/workflows/ scripts/` returns ci.yml:962, 965, 1210, 1211, 1218, 1222; ci-macos-sign.sh:83, 84, 90, 91, 94, 98, 103, 109, 110, 112, 120, 122, 135, 137, 145. `grep -c 'omp-darwin-arm64' .github/workflows/ci.yml` = 9, at lines 922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225."
+    },
+    {
+      "claim": "W12's gate is `(cd packages/coding-agent && bun test test/cli/update-rename-migration.integration.test.ts) && bun run test:scripts`.",
+      "verdict": "false-red",
+      "correction": "This gate cannot distinguish 'done' from 'test could not run' — it is red in this environment no matter what the engineer does. `bun test` on any test importing pi_natives exits 1 with 0 pass / 1 fail / 1 error and `Failed to load pi_natives native addon for darwin-arm64`. Both halves of the gate are affected, and `bun run test:scripts` is blocked for exactly one of its five members (`scripts/ci-test-ts.test.ts`); the other four exit 0 individually. Rewritten as a four-tier gate (see the `gate` field) so the one tier that can actually go red — `scripts/ci-release-publish.test.ts`, which runs here — is the discriminating signal, and the blocked tiers are labelled BLOCKED rather than passed. Unblocking tier 3 also needs `brew install ninja` first: `ninja` is not installed on this machine and the natives build cannot run without it.",
+      "evidence": "Measured 2026-09-27: `bun test packages/coding-agent/test/cli/update-rename-migration.integration.test.ts` -> exit 1 (0 pass / 1 fail / 1 error, pi_natives load error); `bun test packages/coding-agent/test/update-cli.test.ts` -> exit 1; `bun run check:ts` -> exit 0. Per-member of test:scripts: ci-test-ts 1, ci-release-build-binaries 0, musl-release 0, ci-release-publish 0, release 0. `bun test scripts/ci-release-publish.test.ts` alone -> 11 pass / 0 fail / exit 0. `which ninja` -> not found; `brew list ninja` -> 'No such keg: /opt/homebrew/Cellar/ninja'."
+    },
+    {
+      "claim": "W12's 'Vị trí' lists the stub manifest, the parser, the publish script, and the signing step as the whole surface.",
+      "verdict": "incomplete",
+      "correction": "One real dependency is missing from the plan entirely: `scripts/install-tests/run-ci.sh:94` copies `packages/coding-agent/dist/omp` into the test bin dir and :103 smokes `$BUN_INSTALL/bin/omp`. A stub that only carries a `bin` map pointing at a `dist/omp` that no longer exists fails the install matrix, which is W10's stated acceptance. W12 must either require a real `omp` shim artifact in the stub or get an explicit handoff decision from W10; leaving it undecided blocks both items.",
+      "evidence": "`grep -n 'dist/omp\\|BUN_INSTALL/bin\\|BINARY_DIR' scripts/install-tests/run-ci.sh` returns 92, 93, 94, 95, 101, 103."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m5-specs/W12.spec.json"
+}

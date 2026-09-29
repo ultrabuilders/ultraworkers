@@ -1,0 +1,119 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 15, 21, 22, 23, 25, 26, 29, 33, 222, 224, 225, 227 — mọi neo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:NNNN`",
+  "claim": "Tài liệu trích dẫn hàng chục số dòng trong `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (7042, 7046, 7242, 7294, 7347, 7361, 7410, 7449, 7481-7522, 7490, 7493, 7499, 7504-7519, 7541, 7603, 7605-7612, 7609-7627, 7620-7625, 10015, 10016) như thể chúng trỏ đúng.",
+  "why_wrong": "Plan đã bị viết lại ở commit e040a60 (\"docs(m2): execution plan for milestone 2\"), dài 10.234 → 11.741 dòng. Toàn bộ M3 dịch đúng **+1507 dòng**. Hôm nay `sed -n '7042p'` in ra `### Phụ thuộy`, không phải header MILESTONE 3; `awk 'NR>=7042 && NR<=7692 && /^### Sóng/'` trả **0** hit, phủ định trực tiếp bằng chứng mà chính dòng 222 dùng. Người đọc bấm theo bất kỳ neo nào cũng rơi vào nội dung của M2 hoặc rỗng — và tệ nhất là dòng 222 trình bày nó như một phát hiện ĐÃ kiểm chứng, khiến người đọc tin rằng dòng đó không thể sai.",
+  "evidence": "`git log --oneline -3` → e040a60 (HEAD), 808b365, ecd516f. `git show 808b365:COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | grep -n '^# MILESTONE 3'` → 7042; `grep -n '^# MILESTONE 3' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (hiện tại) → 8549. `sed -n '7042p'` ngày nay → `### Phụ thuộp`. Sóng: 7242/7294/7347/7361/7410/7449 (cũ) → 8749/8801/8854/8868/8917/8956 (nay). Mọi cặp lệch đúng +1507: 7481→8988 (hàng G1), 7504→9011 (mở ```` ```bash ````), 7541→9048 (dòng \"**Nguồn:** `claude-code-ref`\"), 7605→9112 (\"### 8.6. Việc **con người** phải xác nhận\"), 7692→9199 (\"# 13. M4 — DeepSeek-Harness-derived core and plugin workflow\").",
+  "fix": "Thay mọi neo plan bằng số đã dịch +1507: `7042`→`8549`; `7046`→`8553`; sóng `7242/7294/7347/7361/7410/7449`→`8749/8801/8854/8868/8917/8956`; phạm vi `7042–7692`→`8549–9199`; `7481-7522`→`8988-9029`; `7481-7482`→`8988-8989`; `7504-7519`→`9011-9026`; `7490`→`8997`; `7541`→`9048`; `7603`→`9110`; `7605-7612`→`9112-9119`; `7609-7627`→`9116-9134`; `7620-7625`→`9076-9081`; `10015/10016`→`11522/11523`. Và thêm một câu neo tới commit: *\"Số dòng plan trong mục này lấy theo `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` tại HEAD `e040a60`; commit `e040a60` đã chèn kế hoạch M2 và dịch mọi neo M3 +1507 dòng so với `808b365`.\"*",
+  "file": "tail1"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 173 (mục *Cổng hoàn thành*, điều 1) và dòng 191 (mục *Phụ thuộc*)",
+  "claim": "\"**HÔM NAY NÓ EXIT 1 — đo, không phải giả định:** G4 tìm thấy 9 wheel multiplier, G4b tìm thấy 0/9, G5 báo `left=7 kept=3`, G6 thấy `elicitation-capability.test.ts` không tồn tại. **Cái đỏ đó là chủ ý**\"; và \"`depends_on`: **s1** — sở hữu các file test status-line mà G1/G2/G3 assert trên đó. Không có s1 thì G1-G3 của script vẫn đỏ, **điều đó đúng, không phải khiếm khuyết**.\"",
+  "why_wrong": "Đây đúng là loại cổng part-A cảnh báo: cổng đỏ vì native addon chưa build, không phải vì công việc chưa làm. `gate_test()` chạy `bun test <path>`, mà `status-line-overflow.test.ts`, `status-line-settings-cache.test.ts` và `loop-watchdog.test.ts` đều chết với *\"Failed to load pi_natives native addon for darwin-arm64\"*. Tệ hơn: hai file test status-line **đã tồn tại** hôm nay, nên chúng sẽ **vẫn đỏ sau khi s1 đến** — lập luận \"đỏ vì chưa có s1\" sai cả về nguyên nhân lẫn hệ quả. Hậu quả thực tế: reviewer chạy script thấy G1/G2/G3 đỏ, đọc §Phụ thuộc, kết luận s1 chưa tới, và chờ s1 — trong khi chúng không bao giờ xanh được nếu addon chưa build. Đây là \"cổng đỏ trên một cây đúng khiến cả đội tự đánh dấu qua\" mà chính §Hợp đồng test (3) mô tả là thất bại.",
+  "evidence": "`bun test packages/coding-agent/test/status-line-overflow.test.ts` → `0 pass / 1 fail / 1 error`; `bun test packages/coding-agent/test/status-line-settings-cache.test.ts` → `0 pass / 1 fail / 1 error`; `bun test packages/tui/test/loop-watchdog.test.ts` → `0 pass / 1 fail / 1 error`. `bun test packages/coding-agent/test/mcp/request-id.test.ts` → `error: Failed to load pi_natives native addon for darwin-arm64` (đúng chuỗi tài liệu trích). Ngược lại `bun test packages/tui/test/mouse.test.ts` → `13 pass` — đúng như tài liệu nói. `ls -la packages/coding-agent/test/status-line-overflow.test.ts packages/coding-agent/test/status-line-settings-cache.test.ts packages/tui/test/loop-watchdog.test.ts` → cả ba đều tồn tại (10K/18K/14K).",
+  "fix": "Sửa điều 1 của *Cổng hoàn thành* thành: *\"**HÔM NAY NÓ EXIT 1 — đo, không phải giả định.** Đỏ vì **việc chưa làm**: G4 = 9 (cần 0), G4b = 0/9 (cần 9/9), G5 `left`=7 (cần 0), G6 thiếu `elicitation-capability.test.ts`. Đỏ vì **addon chưa build** (KHÔNG phải vì việc): G1/G2/G3 và cổng tmux chạy `bun test` trên `status-line-overflow.test.ts`, `status-line-settings-cache.test.ts`, `loop-watchdog.test.ts`, cả ba đều chết với `Failed to load pi_natives native addon for darwin-arm64` (0 pass / 1 fail). Hai file test status-line **đã tồn tại**, nên G1-G3 sẽ vẫn đỏ sau khi s1 đến cho tới khi `bun run bazel-natives` build addon. Đỏ vì **chưa tới**: `elicitation-capability.test.ts`, `read-group-membership.test.ts`, `daltonized-theme.test.ts` chưa tồn tại. Trong bảy file của T7, hôm nay đúng **một** file xanh (`mouse.test.ts`, 13/13). Script phải in lý do theo loại này, không gộp chung một thông điệp 'chưa làm'.\"* Và sửa `depends_on` s1 thành: *\"**s1 (Sóng 1)** — sở hữu các file test status-line mà G1/G2/G3 assert trên đó. Cả hai file **đã tồn tại** hôm nay, nên chúng không đỏ vì thiếu s1 — chúng đỏ vì `pi_natives` chưa build. Không có s1 thì chúng vẫn đỏ, nhưng **không** vì lý do đó.\"*",
+  "file": "tail1"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 16 (bảng *File cần chạm tới*, hàng `docs/clean-room-policy.md`)",
+  "claim": "\"(a) bảng phân loại bốn dòng A3/A7/A8/D2 từ **plan dòng 7620-7625** dưới dạng **SIGN-OFF GRID** có cột ký\"",
+  "why_wrong": "Sai ngay cả tại `808b365`, nên không cứu được bằng cách dịch +1507. Dòng 7620-7625 là mục 2-4 của **§9 RỦI RO** (văn xuôi rủi ro: cache-pill TTL, đòn bẩy server thăm dò, ghi đè tool-renderer) — không có bảng nào ở đó. Người thực hiện mở neo này để chép bảng sẽ chép nhầm văn xuôi rủi ro vào tài liệu ký tên, đúng thứ tài liệu đó không được phép chứa. Bảng thật nằm ở §8.2 như chính §8.6 #2 nói (\"bảng phân loại bốn hạng mục nằm ở mục 8.2\").",
+  "evidence": "`git show 808b365:COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | sed -n '7620,7625p'` → `2. **Mang đếm ngược cache-pill sẽ ship một con số không có nghĩa…`, `*Đối phóng:* D2 chỉ ship nửa tỉ lệ hit…`, `3. **Thay đổi đòn bẩy cao nhất làm tệ hơn với server thăm dò.**`, `*Đối phóng:* A2 mang ràng buộc cứng…`, `4. **Cơ chế ghi đè tool-renderer…**`, `*Đối phóng:* ship test ghim hồi quy…` — tức §9 RỦI RO, không phải bảng. Bảng thật: `sed -n '7569,7574p'` @808b365 → header `| Hạng mục | \\`spec\\` | Nghĩa là gì |` rồi đúng bốn hàng `**A7**` / `**D2**` / `**A8**` / `**A3**`. Ở cây nay (dịch +1507) bảng ấy ở dòng **9076-9081**.",
+  "fix": "Thay `từ plan dòng 7620-7625` bằng `từ bảng §8.2 của plan, dòng 9076-9081 (bốn hàng A7/D2/A8/A3; ở bản `808b365` là 7569-7574 — con số 7620-7625 trỏ vào §9 RỦI RO, không phải bảng này).`",
+  "file": "tail1"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 15 (cột *thay đổi* của hàng `scripts/m3-acceptance-gates.sh`) mâu thuẫn với dòng 23 (bước 2) và dòng 45 (Hình dạng code)",
+  "claim": "\"Một script shell, **`set -euo pipefail`**, chạy từ repo root.\"",
+  "why_wrong": "Mâu thuẫn nội bộ, và mâu thuẫn đúng chỗ load-bearing nhất. Bước 2 giải thích vì sao phải bỏ `-e`: `set -e` trên một lệnh trần sẽ giấu mười cổng còn lại, và yêu cầu người review phải thấy **mọi** kết quả trong một lượt. Hình dạng code cũng viết `set -uo pipefail`. Nếu người thực hiện cắt-dán từ cột *thay đổi* (vốn là chỗ được đánh dấu \"đã kiểm chứng\"), họ viết một script abort ở cổng đỏ đầu tiên — đúng cái hỏng mà §Hợp đồng test (3) gọi tên.",
+  "evidence": "dòng 15: `` `set -euo pipefail` ``. Dòng 23: *\"**Không** để một cổng đơn lẻ abort cả lượt chạy … Dùng `set -uo pipefail` và xử lý thất bại tường minh bên trong helper.\"* Dòng 45 (code shape): `set -uo pipefail`. Ba chỗ, hai giá trị.",
+  "fix": "Đổi cột *thay đổi* dòng 15 thành: *\"Một script shell, `set -uo pipefail` (**không** `set -e` — xem bước 2), chạy từ repo root. …\"*",
+  "file": "tail1"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 131-132 (T2 trong *Xác minh*) và dòng 173 (điều 1 của *Cổng hoàn thành*)",
+  "claim": "\"# T2 — the gate script itself runs and reports the right four states. ./scripts/m3-acceptance-gates.sh; echo \\\"exit=$?\\\" / # TODAY: G4 DO, G4b DO, G5 DO, G10 XANH, exit=1.\" và \"**HÔM NAY NÓ EXIT 1 — đo, không phải giả định**\"",
+  "why_wrong": "File được tạo ở chính mục này, nên hôm nay nó không tồn tại — T2 chạy nguyên văn sẽ trả `No such file or directory`, không phải bốn dòng XANH/DO. Cụm \"đo, không phải giả định\" và giá trị `exit=1` cụ thể là một tuyên bố đo **không thể đã đo**. Bốn phép grep bên dưới thì có thật và tôi đã chạy lại (9 / 0-of-9 / left=7 kept=3 / 0), nhưng tuyên bố ở cấp script thì không. Người review tin rằng gate đã chạy end-to-end một lần thì sẽ không chạy nó lần đầu tiên khi viết.",
+  "evidence": "`ls -la scripts/m3-acceptance-gates.sh` → `No such file or directory (os error 2)`. `ls scripts/ | grep -iE 'gate|accept|m3|check-'` → chỉ `check-spoofed-versions.ts` (khớp với ghi chú cột \"đã kiểm chứng?\" ở dòng 15 — nên chính tài liệu đã biết file chưa tồn tại, rồi vẫn viết T2 là phép đo hôm nay).",
+  "fix": "Đổi T2 thành: *\"# T2 — CHẠY SAU KHI tạo xong `scripts/m3-acceptance-gates.sh` ở bước 2. Hôm nay file này chưa tồn tại, nên lệnh dưới đây trả `No such file or directory` — đó là đúng, không phải cổng đỏ. / # SAU KHI TẠO, kỳ vọng: G4 DO, G4b DO, G5 DO, G10 XANH, exit=1. / # SAU KHI A6: G5 XANH. SAU KHI A3: G4 + G4b XANH.\"* Và ở điều 1 của *Cổng hoàn thành* thay *\"HÔM NAY NÓ EXIT 1 — đo, không phải giả định\"* bằng *\"NGAY KHI TẠO XONG, nó sẽ EXIT 1 — các con số bên dưới đã đo từng lệnh trên cây này, chưa đo ở cấp script vì script chưa tồn tại\"*.",
+  "file": "tail1"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 39-105 (*Hình dạng code*), đặc biệt dòng 97-102 và dòng 104",
+  "claim": "\"In một dòng `XANH`/`DO` cho **mỗi cổng**\"; \"in một dòng `XANH`/`DO` cho mỗi cổng, và exit 1\"; \"người review cần cả mười một kết quả trong một lượt\"; T2 kỳ vọng đầu ra `G4 DO, G4b DO, G5 DO, G10 XANH`; \"Một script shell (~120 dòng kể cả **tám stub test-gate**)\"",
+  "why_wrong": "Hình dạng code chỉ implement 5 cổng (G4, G4b, G5, G10, G12). `gate_test()` được **định nghĩa và không có call site nào** — grep toàn tài liệu thấy đúng 1 lần xuất hiện, chính là dòng định nghĩa. Tám cổng TEST được mô tả ở bước 6 sẽ không bao giờ chạy, và script sẽ in 5 dòng chứ không phải \"một dòng cho mỗi cổng\". Thêm nữa, `fail G4b` nằm trong vòng lặp nên sẽ in **9** dòng `DO` (một dòng cho mỗi file thiếu) và cộng dồn 9 vào `FAILED`, trái với lời hứa \"một dòng cho mỗi cổng\" và với kỳ vọng một dòng `G4b DO` ở T2. Đây là loại cổng mà part-A cảnh báo: script chạy xong nhưng không gate được tám cổng nó tự nhận gate.",
+  "evidence": "`grep -c 'gate_test' tail1.md` → **1**; lần duy nhất là dòng 98 `gate_test() { # gate_test <id> <test-path> <which-wave>`. Trong khối code dòng 40-105, call site thực sự chỉ có `gate_eq G4`, `gate_eq G10`, `gate_eq G12` (3 lần). Vòng lặp G4b ở dòng 73: `for f in \"${WHEEL_FILES[@]}\"; do grep -q 'mouse-wheel' \"$f\" || { missing=$((missing+1)); fail G4b \"khong import: $f\"; }; done` — 9 file, 9 lần gọi `fail` khi đều thiếu (đã đo: cả 9 đều `MISS`).",
+  "fix": "Hoặc thêm tám lời gọi `gate_test` vào code shape (một dòng mỗi cổng, `<path>` lấy từ danh sách T7), hoặc — nếu giữ code shape là bản phác thảo — ghi rõ trong dòng dẫn: *\"Bản phác thảo dưới đây chỉ mã hoá **năm** cổng COUNT (G4, G4b, G5, G10, G12). Tám cổng TEST (G1, G2, G3, G6, G7, G8, G9, G11) được thêm ở bước 6 bằng tám lời gọi `gate_test <id> <path> <wave>`; bản phác thảo chỉ để người đọc thấy hình dạng helper.\"* Đồng thời sửa dòng 73 để G4b chỉ in **một** dòng: `miss=(); for f in \"${WHEEL_FILES[@]}\"; do grep -q 'mouse-wheel' \"$f\" || miss+=(\"$f\"); done; if [ ${#miss[@]} -eq 0 ]; then ok G4b \"9/9\"; else fail G4b \"thieu import: ${miss[*]}\"; fi`",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 224, 225, 29",
+  "claim": "\"§7.1 văn xuôi (**dòng 7499**): *\\\"G4 trả `8` (7 `* 3` + 1 `* 2`)\\\"*\"; \"§7.1 **dòng 7493** liệt kê bảy site `* 3` là …\"; và neo của bước 5 `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7490` cho G10.",
+  "why_wrong": "Lệch một dòng ngay cả tại `808b365`, nên dù người đọc dịch +1507 thì vẫn tới ô trống. Nội dung tài liệu trích là đúng — chỉ số dòng sai. Với 7493 và 7499 tệ hơn bình thường: chúng là dòng trống, nên `sed -n '7493p'` in ra chuỗi rỗng và người đọc không có cách nào biết mình đang lạc; còn 7490 trỏ sang hàng **G9** trong khi tài liệu dùng nó làm neo cho **G10**.",
+  "evidence": "@808b365: `7493` → rỗng; `7494` → `**G4 viết lại thành cổng âm tính … agent-transcript-viewer.ts:469 … usage-dashboard.ts:753 …**`. `7499` → rỗng; `7500` → `Hai cổng thay thế chạy **từ repo root** … G4 trả \\`8\\` (7 \\`* 3\\` + 1 \\`* 2\\`) …`. `7490` → `| G9 — D3 chống tràn phạm vi | Transcript **chính** render giống byte trước và sau |`; `7491` → hàng G10. Ở cây nay: `9000`/`9006` rỗng, `9001`/`9007` có nội dung, `8997` là G9, `8998` là G10.",
+  "fix": "Đổi `dòng 7499` → `dòng 9007` (bản `808b365`: 7500); `dòng 7493` → `dòng 9001` (bản `808b365`: 7494); neo bước 5 `:7490` → `:8998` (bản `808b365`: 7491).",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 227 (hàng *Đính chính so với plan*) và dòng 29 (bước 5)",
+  "claim": "\"một grep toàn repo hôm nay trả **5** hit, **TẤT CẢ** nằm trong chính `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` (**dòng 7046, 7541, 7603, 10015, 10016**)\" — và bước 5 lặp lại \"một grep toàn repo hôm nay trả 5 hit\".",
+  "why_wrong": "Đếm 5 là đúng, nhưng cả năm số dòng đều cũ. Hôm nay năm hit nằm ở 8553, 9048, 9110, 11522, 11523. Người đọc cần mở đúng dòng để tự kiểm lại thì mở trúng, và mất công tìm lại — đúng cái hao tổn mà chính *Rủi ro* thứ hai của tài liệu mô tả.",
+  "evidence": "`grep -rn 'claude-code-best' . --exclude-dir=.git | grep -v '^\\./\\.lavish-wip'` → `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8553`, `:9048`, `:9110`, `:11522`, `:11523` (đúng 5 hit, đều trong plan). `grep -rn 'claude-code-best' packages/ scripts/ docs/ | grep -v node_modules | wc -l` → `0` ✓. `grep -c 'claude-code-best' packages/tui/src/theme/glyph-bundle.json` → `0`; `.../defaults/light-canyon.json` → `0` ✓ (hai false positive cũ thật sự đã biến mất).",
+  "fix": "Thay `(dòng 7046, 7541, 7603, 10015, 10016)` bằng `(dòng 8553, 9048, 9110, 11522, 11523)` ở cả dòng 227 và dòng 29.",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 113 (*Hợp đồng test* (2)), dòng 226 và 232 (bảng *Đính chính*)",
+  "claim": "\"`scripts/ci-release-publish.ts:100` export `legalPayloadFiles(license)` và nó **ném** khi thiếu license\"; và \"`scripts/ci-release-publish.ts:100` `legalPayloadFiles()` **ném** khi license thiếu hoặc không phải MIT\"",
+  "why_wrong": "Dòng 100 không phải export và không phải chỗ ném — nó là dòng `return`. Người đọc mở `:100` để kiểm chứng tuyên bố \"ném khi thiếu license\" sẽ không thấy `throw` ở đó. Cùng lý do đó dòng 143 trong test không phải dòng assert được trích.",
+  "evidence": "`sed -n '97,105p' scripts/ci-release-publish.ts` → 97 `export function legalPayloadFiles(license: string | undefined): string[] {`, 100 `\t\t\treturn [MIT_LICENSE, THIRD_PARTY_NOTICES];`, 103 `\t\t\tthrow new Error(\\`Unsupported package license: ${license ?? \"<missing>\"}\\`);`. `grep -n \"Unsupported package license: <missing>\" scripts/ci-release-publish.test.ts` → **145** (không phải 143).",
+  "fix": "Chỉnh thành: *\"`scripts/ci-release-publish.ts:97` export `legalPayloadFiles(license)`, `:100` trả payload, `:103` **ném** `Unsupported package license` khi license thiếu hoặc không phải MIT. `scripts/ci-release-publish.test.ts:144-145` assert cả hai nhánh ném.\"* (Ghi chú ở dòng 226 nói đúng `:100` **STAGE** file — phần đó giữ nguyên.)",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 228 (bảng *Đính chính so với plan*, hàng §8.2/§6)",
+  "claim": "\"**ĐÃ KIỂM CHỨNG CHÍNH XÁC:** … `schema.ts:77-78` (statusLineGitClean/Dirty), `schema.ts:140-141` (fallback của chúng) …\" — và trong cùng hàng, `settings.ts:108` → `:110` được sửa thành đúng nhưng vẫn là tên trần.",
+  "why_wrong": "Tên trần chính là cái bẫy mà chính *Rủi ro* thứ hai của tài liệu cảnh báo cho `loader.ts`, và tài liệu đã tự phát hiện nó với `segments.ts` (nêu rõ hai file) — nhưng không áp dụng quy tắc đó cho `schema.ts` và `settings.ts`. `schema.ts` có **hai** file cùng tên trong tui/src và file thứ hai **không có dòng 77** (chỉ 57 dòng), nên neo ghi sai sẽ hỏng âm thầm; `settings.ts` có **33** file cùng tên trong repo. Đây đúng là loại \"khớp âm thầm không cái gì cả\" mà tài liệu vừa cảnh báo.",
+  "evidence": "`git ls-files | grep -E 'status-line/schema\\.ts'` → `packages/tui/src/status-line/schema.ts`; `wc -l` → **57**, nên `:77-78` và `:140-141` không tồn tại ở đó. `git grep -n 'statusLineGitClean' -- '*.ts'` → `packages/tui/src/theme/schema.ts:77` và `packages/tui/src/theme/schema.ts:140` — đó là file thứ hai. `git ls-files | grep -E '/settings\\.ts$' | wc -l` → **33**; `git grep -n 'colorBlindMode' -- '*.ts'` → `packages/coding-agent/src/modes/settings.ts:110` là dòng `id: \"colorBlindMode\",` duy nhất khớp; `packages/tui/src/theme/settings.ts` **không tồn tại**.",
+  "fix": "Ghi đủ đường dẫn: `packages/tui/src/theme/schema.ts:77-78` và `packages/tui/src/theme/schema.ts:140-141` (KHÔNG phải `packages/tui/src/status-line/schema.ts` — file đó chỉ 57 dòng); `packages/coding-agent/src/modes/settings.ts:110`. Và thêm câu: *\"`schema.ts` và `settings.ts` cũng là tên trần — tài liệu này dùng tên trần cho `segments.ts`, `schema.ts`, `settings.ts`, `loader.ts`; mọi script và mọi tài liệu sinh ra từ mục này phải mang **đường dẫn đầy đủ** cho cả bốn.\"*",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 206 (*Rủi ro*, rủi ro thứ hai)",
+  "claim": "\"**Mười ba** tham chiếu dòng của plan trong hai mục này là sai, nhiều cái chỉ sai rất ít (`ui-helpers.ts:141` thực ra là `143`, `settings.ts:108` thực ra là `110`)\"",
+  "why_wrong": "Con số không khớp với chính danh sách tài liệu liệt kê. Bảng *Đính chính* liệt kê đúng 10 neo sai: 8 ở hàng G4b (bảy `* 3` + `usage-dashboard.ts:753`) và 2 ở hàng §8.2 (`ui-helpers.ts:141`, `settings.ts:108`). \"Mười ba\" không có danh sách nào đứng sau. Ba neo còn lại mà đoạn này nhắc tới (`loader.ts:107`, `segments.ts`, `tmux`) đều là **mơ hồ đường dẫn**, không phải số dòng sai.",
+  "evidence": "Bảng *Đính chính* dòng 225 liệt kê 8: `agent-transcript-viewer 469→470`, `copy-selector 212→214`, `plan-review-overlay 581→580`, `rewind-selector 232→245`, `git-tui 693→697`, `raw-sse 167→168`, `log-viewer 638→639`, `usage-dashboard 753→759`. Dòng 228 liệt kê thêm 2: `ui-helpers.ts:141→143`, `settings.ts:108→110`. Tổng 10. Tất cả đều đã tôi chạy lại và xác nhận đúng.",
+  "fix": "Đổi \"**Mười ba**\" thành \"**Mười**\" và chỉ rõ phạm vi: *\"**Mười** tham chiếu dòng mà bảng *Đính chính* liệt kê đều sai: tám neo `* 3`/`* 2` ở §7.1 (lệch −1 đến +13) và hai neo `ui-helpers.ts:141` / `settings.ts:108` ở §8.2 (lệch +2). Ba trường hợp còn lại nêu ở đây — `loader.ts:107`, `segments.ts`, `keybinding-hints.ts` — không phải số dòng sai mà là **tên trần nhập nhằng**, xem hàng cuối của bảng.\"*",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 3, 23, 185, 198, 204, 208",
+  "claim": "\"Biến **mười một** cổng chấp nhận … thành một script duy nhất\"; \"người review cần cả **mười một** kết quả trong một lượt … sẽ giấu **mười** cái còn lại\"; \"Người review đọc `XANH` trên cả **mười một** cổng\"; \"**bốn** trong số **mười một** cổng là phép đếm `grep -rn`\"; \"**mười một** tính chất cơ học đang đứng vững\".",
+  "why_wrong": "Đếm bảng §7.1 của plan ra **12** hàng (G1, G2, G3, G4, G4b, G5, G6, G7, G8, G9, G10, G11), và tài liệu tự thêm **G12** → 13 cổng. Chính bước 3 của tài liệu liệt kê 4 cổng COUNT, bước 6 liệt kê 8 cổng TEST, cộng G12 = 13. \"Mười một\" thiếu G4b và G12, và nó là mẫu số của câu \"bốn trong số mười một cổng là phép đếm grep\" — tỷ lệ đó sai (4/13, không phải 4/11), nên cả phán đoán về độ rộng cổng bị lệch. Đây đúng là kiểu số phải đếm lại mà phần E của nhiệm vụ yêu cầu.",
+  "evidence": "`git show 808b365:COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md | awk 'NR>=7481 && NR<=7492' | grep -oE '^\\| G[0-9]+b?' | tr -d '| '` → `G1 G2 G3 G4 G4b G5 G6 G7 G8 G9 G10 G11`, `grep -c` → **12**; cây nay `sed -n '8988,8999p'` cho ra đúng 12 hàng ấy. Tài liệu: bước 3 nêu G4, G4b, G5, G10 (4); bước 6 nêu \"tám cổng TEST (G1, G2, G3, G6, G7, G8, G9, G11)\"; bước 5 thêm G12. 4+8+1 = 13.",
+  "fix": "Thay \"mười một\" → \"mười ba\" ở cả sáu chỗ (dòng 3, 23, 185, 198, 204, 208), và sửa câu phụ ở dòng 23: *\"`set -e` trên một lệnh trần sẽ giấu **mười hai** cái còn lại\"*; dòng 204: *\"**bốn** trong số **mười ba** cổng là phép đếm `grep -rn`\"*; dòng 15: *\"Mã hoá **mười ba** cổng (G1–G11, G4b, G12) đúng như plan dòng 8988-9029 định nghĩa\"*.",
+  "file": "tail1"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 150 (T6), 176 (điều 4 của *Cổng hoàn thành*), 230 (bảng *Đính chính*)",
+  "claim": "\"**T6** — the whole milestone typechecks (does not need the native addon; verified exit 0 **at HEAD 808b365**)\"; \"**`bun run check:ts`** exit 0. **Đo tại HEAD `808b365`**: exit 0, **cả 12 package type-check** đều `Done`.\"; \"đo exit 0 tại HEAD `808b365` với **cả 12 package** type-check `Done`.\"",
+  "why_wrong": "Hai vấn đề nhỏ nhưng người đọc dùng để tái lại đo sẽ thấy lệch. HEAD hiện tại là `e040a60`, không phải `808b365` — lệnh verify ghim một commit cũ. Và `check:ts` chạy **16** package type-check, không phải 12; con số 12 là số package *published*, một sự thật khác hoàn toàn mà chính tài liệu nêu đúng ở dòng 232. Lệch này sẽ khiến người review tưởng `check:ts` bỏ sót 4 package.",
+  "evidence": "`git log --oneline -1` → `e040a60 docs(m2): execution plan for milestone 2, spec-verified against the tree`. `bun run check:ts` chạy hôm nay → `EXIT=0`, liệt kê **16** dòng `Done`: browser-relay, collab-web, omp-stats, omptype, pi-agent-core, pi-ai, pi-catalog, pi-coding-agent, pi-metaharness, pi-mnemopi, pi-natives, pi-tui, pi-utils, pi-wire, snapcompact, typescript-edit-benchmark. `python3` đếm `packages/*/package.json` → total 16, private 4, published **12**, non-MIT 0 ✓ (con số 12 của dòng 232 là đúng, chỉ là bị dùng nhầm ở đây).",
+  "fix": "Thay `at HEAD 808b365` → `at HEAD e040a60` (dòng 150, 176, 230) và `cả 12 package type-check` → `cả **16** package type-check` (dòng 176, 230). Có thể thêm chú thích một lần cho cả ba: *\"Con số 12 là số package **published** (xem hàng cuối bảng *Đính chính*), không phải số package `check:ts` type-check.\"*",
+  "file": "tail1"
+ }
+]

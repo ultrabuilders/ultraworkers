@@ -1,0 +1,905 @@
+[
+ {
+  "id": "WI-5",
+  "claim": "§5.2 table: the 12 `resetCapabilities()` call sites are at `main.ts:871`, `sdk.ts:4565`, `agent-session.ts:5405`/`:5790`/`:8779`, `session-tools.ts:1557`, and (unchanged) `ssh-command-controller.ts:208`/`:369`, `selector-controller.ts:310`, `builtin-marketplace.ts:36`, `helpers/ssh.ts:146`/`:167`.",
+  "verdict": "STALE — counts right, four files drifted",
+  "correction": "The COUNTS are exactly right: 12 call sites across 8 files, verified. But line numbers drifted because HEAD moved to 808b365 (the M1 plan fold). Correct anchors: `main.ts:872`, `sdk.ts:4571`, `session/agent-session.ts:5435`/`:5820`/`:8811`, `session/session-tools.ts:1651`. Unchanged and still correct: `modes/controllers/ssh-command-controller.ts:208` and `:369`, `modes/controllers/selector-controller.ts:310`, `slash-commands/builtin-marketplace.ts:36`, `slash-commands/helpers/ssh.ts:146` and `:167`.",
+  "evidence": "`git grep -n resetCapabilities -- packages/coding-agent/src` at HEAD 808b365. All 8 import lines confirmed as `import { reset as resetCapabilities }`. Do NOT hand-edit line numbers: run the grep, it is the authority."
+ },
+ {
+  "id": "WI-5",
+  "claim": "§5.2/§5.3 cite `reconcileExtensionSources` at `sdk.ts:4560-4624` with `resetCapabilities()` at `:4565` and `setSuspendedExtensions()` at `:4573`.",
+  "verdict": "STALE by ~6 lines",
+  "correction": "`const reconcileExtensionSources = async ()` is at `sdk.ts:4566`; `resetCapabilities()` is at `sdk.ts:4571`; `extensionRunner.setSuspendedExtensions(...)` is at `sdk.ts:4580`. The SHAPE the plan describes is exactly right and this is the load-bearing confirmation for the whole item: `resetCapabilities()` really is called immediately before `setSuspendedExtensions()`, believing it releases the registry when it only clears the fs cache.",
+  "evidence": "`sed -n '4566,4582p' packages/coding-agent/src/sdk.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "§5.2: `clearSourceRegistrations` is at `config/model-registry.ts:2914`.",
+  "verdict": "OFF BY ONE",
+  "correction": "The method opens at `config/model-registry.ts:2913`; `:2914` is its opening brace. `syncExtensionSources` at `:2955` is correct.",
+  "evidence": "`sed -n '2908,2930p' packages/coding-agent/src/config/model-registry.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "WI-5 'File path' section: the three module-level Maps and two mutable Sets are at `capability/index.ts:30-41`.",
+  "verdict": "STALE — the cited range MISSES the two Sets",
+  "correction": "The three Maps are at `:34` (`capabilities`), `:37` (`providerCapabilities`), `:40` (`providerMeta`). The two mutable Sets are at `:43` and `:44` (`unboundDisabledProviders`, `unboundEnabledProviders`) — i.e. OUTSIDE the cited range. The real state block is `:32-44`, and it is five module-level containers, not three. This matters because commits 2-3 add TWO more Maps next to them at `:45-46`, making seven.",
+  "evidence": "`grep -n '^const capabilities\\|^const providerCapabilities\\|^const providerMeta\\|^let unbound' packages/coding-agent/src/capability/index.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "WI-5 'File path' section: `defineCapability` at `:88-96`, `registerProvider` at `:99-127`.",
+  "verdict": "NEARLY EXACT",
+  "correction": "`defineCapability` is at `:89` (its duplicate-throw is `:90-91`); `registerProvider` is at `:101`. Off by one at the start of each. Substance fully confirmed: `registerProvider<T>(capabilityId: string, provider: Provider<T>): void` has NO `sourceId` in its signature, and `defineCapability` DOES throw on a duplicate id.",
+  "evidence": "`sed -n '88,102p' packages/coding-agent/src/capability/index.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "WI-5 cites `capability/index.ts:554-556` for `reset()` and `:561-566` for `resetCapabilityForTests`, and `capability/index.ts:459` for `getCapability`.",
+  "verdict": "EXACT — all three verified",
+  "correction": "No change. `reset()` at `:554-556` is literally `clearFsCache();` and nothing else. `resetCapabilityForTests()` at `:561-566` clears settingsHolds + the two unbound Sets + the fs cache (it does NOT touch `capabilities`). `getCapability<T>(id)` at `:459` returns `capabilities.get(id)`. These are the three anchors the entire item hangs on and all three are correct.",
+  "evidence": "`sed -n '548,568p;455,462p' packages/coding-agent/src/capability/index.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "WI-5: `model-registry.ts:303-304` is the attribution shape to copy.",
+  "verdict": "EXACT",
+  "correction": "No change. `#runtimeProvidersBySource: Map<string, Set<string>>` at `:303` and `#runtimeProviderSourceByName: Map<string, string>` at `:304`. The steal-on-re-register logic to mirror is at `:3010-3015` (`previousSourceId` eviction), and the teardown to mirror is `clearSourceRegistrations` at `:2913-2930`.",
+  "evidence": "`sed -n '303,304p;3008,3024p' packages/coding-agent/src/config/model-registry.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "The plan lists 14 `defineCapability` call sites and 84 provider/capability pairs.",
+  "verdict": "EXACT — all 14 line numbers verified, all module-level",
+  "correction": "All 14 confirmed at the exact cited lines: `context-file.ts:27`, `extension-module.ts:23`, `extension.ts:37`, `hook.ts:27`, `instruction.ts:25`, `mcp.ts:108`, `prompt.ts:23`, `rule.ts:392`, `settings.ts:23`, `skill.ts:58`, `slash-command.ts:29`, `ssh.ts:31`, `system-prompt.ts:31`, `tool.ts:27`. The 84 is also right: 104 `registerProvider` lines under `src/discovery/` minus 20 import lines = 84 calls.",
+  "evidence": "`git grep -n defineCapability -- packages/coding-agent/src`; `git grep -c registerProvider -- packages/coding-agent/src/discovery/`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "(Plan does not state this) Implicitly, WI-5 assumes some live caller passes a `sourceId` to the capability `registerProvider`, so that `unregisterProvidersForSource` has something to unregister.",
+  "verdict": "FALSE — this is the most consequential thing the plan omits",
+  "correction": "There is NO per-source capability-provider registration anywhere in the repo. All 84 capability `registerProvider` calls are MODULE-LEVEL top-level statements in `src/discovery/*.ts` (agent-plugins, agents-md, agents, builtin-defaults, builtin, claude-plugins, claude, cline, codex, cursor, gemini, github, mcp-json, omp-plugins, opencode, skillshare, ssh, vscode, windsurf) — verified: no call site is nested inside a function. Extensions contribute to the capability registry by being READ at `load(ctx)` time, not by registering a provider. The `registerProvider` on the extension API (`extensibility/extensions/types.ts:1570`, `:1743`) is the MODEL registry's different function of the same name, which already takes a `sourceId`. Consequence: the `sdk.ts` suspend-branch call to `unregisterProvidersForSource` is INERT at ship time — it will be a Map lookup that always misses, because the map is always empty. It is forward-compatible scaffolding for WI-10, not a live fix. The two attribution tests must therefore drive the registry API DIRECTLY (register with a sourceId, then unregister), NOT through the TUI/suspend path, and the PR description must not claim toggling an extension now releases providers in practice.",
+  "evidence": "`git grep -n registerProvider -- packages/coding-agent/src/discovery/` — every hit is either an `import` line or a top-level `registerProvider` statement; the filter for non-top-level matches returned only import lines. `git grep -n 'registerProvider' -- .../extensibility/extensions/{loader,runner,types}.ts` shows those route to `ModelRegistry.registerProvider(name, config, sourceId)`, not the capability one."
+ },
+ {
+  "id": "WI-5",
+  "claim": "WI-5 test row (c): after `resetRegistry()`, a provider registered from a `sourceId` is still in the resolved list.",
+  "verdict": "SOUND but only if `resetRegistry` is kept narrow",
+  "correction": "This row forces `resetRegistry()` to clear ONLY the `capabilities` map — not `providerCapabilities`, not `providerMeta`, not the per-capability `providers` arrays, and not the new attribution maps. Keep it that narrow or this row is unimplementable. Note the accepted degradation: after `resetRegistry()`, `getProviderInfo` still iterates `providerCapabilities` and finds `capabilities.get(capId) === undefined`, so it falls through to `priority = 0` (see `capability/index.ts:502-522`). That is acceptable for a function that exists solely for tests and a future extension-reload path, but it must be a deliberate choice, not an accident.",
+  "evidence": "`sed -n '502,525p' packages/coding-agent/src/capability/index.ts`"
+ },
+ {
+  "id": "WI-5",
+  "claim": "WI-5 verification command: `bun run check:ts && (cd packages/coding-agent && bun test test/capability/reset-contract.test.ts test/capability/provider-source-attribution.test.ts)`.",
+  "verdict": "PARTIALLY BLOCKED at HEAD 808b365",
+  "correction": "`bun run check:ts` PASSES at HEAD — verified end to end, all 15 packages green. The `bun test` half CANNOT run: the native addon is not built, so even the pre-existing, unrelated `test/capability/rule-agents.test.ts` reports `0 pass / 1 fail` with 'Failed to load pi_natives native addon for darwin-arm64'. Build first with `bun --cwd=packages/natives run build`, then the `bun test` half becomes runnable. There is a real chance the two new tests are NOT blocked even without the addon, because `capability/index.ts` does not import `@oh-my-pi/pi-natives` (unlike `discovery/helpers.ts:4`, which is what breaks the existing test) — but `capability/index.ts` does pull `./fs`, `../extensibility/settings` and `../config/model-settings`, so this is unverified. Check it early: it decides whether this item can be validated before the Rust build lands.",
+  "evidence": "`bun run check:ts` → all packages Done. `cd packages/coding-agent && bun test test/capability/rule-agents.test.ts` → 0 pass, 1 fail, 'Failed to load pi_natives native addon for darwin-arm64'."
+ },
+ {
+  "id": "WI-5",
+  "claim": "(Plan does not state this) Row 2 of `reset-contract.test.ts` calls `resetRegistry()`, which destroys the module-level capability definitions for the rest of the process.",
+  "verdict": "RESOLVED — empirically tested, the plan's two-rows-in-one-file design is safe",
+  "correction": "I tested this directly rather than reasoning about it: `bun test` gives each test FILE a fresh module registry, while module state IS shared across `test()` blocks WITHIN one file. A file that clears a module-level Map does not affect a sibling test file (verified: 2 pass / 0 fail, the second file still observed the pre-clear value). So `resetRegistry()` in `reset-contract.test.ts` cannot poison `provider-source-attribution.test.ts` or any other file. The plan's instruction that the two rows must be in that order is correct and the reason is now confirmed empirically: within a file, row 2's `resetRegistry()` would make row 1 fail if row 1 ran second.",
+  "evidence": "Isolated repro in scratchpad: `a.test.ts` calls `nuke()` then asserts cleared; `b.test.ts` asserts the module-level entry is still present. `bun test` → `2 pass 0 fail`. Same-file control (`c.test.ts`) shows state persisting across three `test()` blocks."
+ },
+ {
+  "id": "WI-12",
+  "claim": "Plan §WI-12: 'Extension API tiêu thụ được MCP ... nhưng KHÔNG đóng góp được server — config MCP do core sở hữu qua `mcpSettings` cộng writer `setMcpServerEnabled` của dashboard.'",
+  "verdict": "STALE AND MATERIALLY OVERSTATED — the premise is half wrong, and the wrong half changes which architecture is correct",
+  "correction": "The ExtensionAPI half is right: `ExtensionAPI` (extensions/types.ts:1256) declares no MCP-contribution method, and the only MCP members are inbound (types.ts:663, :665, :1340, :904-916). But an extension PACKAGE already contributes MCP servers today, declaratively. Three providers register the mcps capability: `registerProvider<MCPServer>(mcpCapability.id, …)` at discovery/omp-plugins.ts:423, discovery/agent-plugins.ts:335, and discovery/claude-plugins.ts:737 — 12 providers register it in total. omp-plugins reads `.mcp.json` / `mcp.json` from the package root (`MCP_FILENAMES` at omp-plugins.ts:275, `loadMCPServers` at :293-370, registered at :423), and docs/mcp-config.md:40 and :489-491 already document extension packages as an MCP source ranked #2 in discovery precedence. The real gap is therefore narrower and must be stated as: a LOADED, LIVE extension module cannot contribute a server IMPERATIVELY at runtime. That distinction is load-bearing — Option B below is not merely disfavored, it is a regression against a path that already ships.",
+  "evidence": "`grep -n 'registerProvider<MCPServer>\\|registerProvider(mcpCapability' packages/coding-agent/src/discovery/` → 12 hits (agent-plugins.ts:335, builtin.ts:241, claude-plugins.ts:737, claude.ts:578, codex.ts:536, cursor.ts:201, gemini.ts:302, mcp-json.ts:186, omp-plugins.ts:423, opencode.ts:507, vscode.ts:22, windsurf.ts:138); `sed -n '36,44p;484,495p' docs/mcp-config.md`; `grep -n 'mcp' packages/coding-agent/src/extensibility/plugins/types.ts` → zero hits (PluginManifest at :26-49 has no mcp field; MCP arrives via the separate .mcp.json convention, not the manifest)."
+ },
+ {
+  "id": "WI-12",
+  "claim": "Plan §WI-12 file path: `extensibility/extensions/types.ts:1315` (the only MCP member of the API — inbound).",
+  "verdict": "STALE by +25",
+  "correction": "The single MCP member of the API surface is at `types.ts:1340`: `on(event: \"mcp_notification\", handler: ExtensionHandler<McpNotificationEvent>): void;` — the last `on(...)` overload in the event block that runs :1290-1340. Confirmed it is the ONLY MCP member: `grep -n 'mcp' packages/coding-agent/src/extensibility/extensions/types.ts` returns exactly five hits (:663, :665, :711, :905, :908, :1340) and :711 is the `SourceInfo.source` doc comment, not a member.",
+  "evidence": "`grep -n 'mcp' packages/coding-agent/src/extensibility/extensions/types.ts` at HEAD 808b365; file is 1849 lines."
+ },
+ {
+  "id": "WI-12",
+  "claim": "Plan §WI-12 file path: `types.ts:638`/`:640` (mcpServerName / mcpToolName) and `:879-883` (McpNotificationEvent).",
+  "verdict": "STALE by +25 (uniform drift across all three anchors in this file)",
+  "correction": "Correct anchors: `mcpServerName?: string;` at `types.ts:663` with its doc comment at :662; `mcpToolName?: string;` at `:665` with its doc comment at :664; `export interface McpNotificationEvent` at `:904` running to `:916` (`type: \"mcp_notification\"` :905, `server: string` :911, `method: string` :913, `params: unknown` :915). It is unioned into the event map at `:1149`. Same +25 drift applies to the extension-tool `ToolDefinition` fields the plan's Option B reasoning leans on: `approval?: ToolApproval` at `:658` (doc comment :656-657 says it defaults to `\"exec\"` when omitted) and `sourcePath?: string` at `:672`. The identical pair is duplicated on the internal `CustomTool` at custom-tools/types.ts:213-215 and :221.",
+  "evidence": "`grep -n 'mcpServerName\\|mcpToolName\\|McpNotificationEvent\\|approval?:\\|sourcePath?:' packages/coding-agent/src/extensibility/extensions/types.ts packages/coding-agent/src/extensibility/custom-tools/types.ts` at HEAD 808b365."
+ },
+ {
+  "id": "WI-12",
+  "claim": "Plan §WI-12 file path: core ownership at `mcp/config-writer.ts` via `modes/components/extensions/dashboard-runtime.ts:41-49`.",
+  "verdict": "NEARLY EXACT — one line off, and the characterization of what owns MCP config is wrong",
+  "correction": "`persistMcpToggle` is at dashboard-runtime.ts:40-48 (the `setMcpServerEnabled({...})` call itself is :41-47, the call sites at :42 and :44 are the two `getMCPConfigPath` lines) and `applyMcpToggle` is at :49-62. Anchor `:41-49` straddles the boundary between the two members. More importantly, `config-writer.ts` is NOT where core owns MCP config — it is a dashboard-toggle writer, and its own doc comment says so: `SetMcpServerEnabledOptions.sourcePath` at config-writer.ts:298-306 instructs callers to 'Provide ONLY for formats this codebase owns (native `.omp/mcp.json` and `mcp-json`) ... Tool-owned configs MUST be omitted; we never mutate another tool's file.' Actual ownership is the capability registry — `MCPServer` at capability/mcp.ts:15-74 and `mcpCapability` at :108-129 with `key: server => server.name`, `equivalent: isSameMCPConnection`, `toExtensionId: server => 'mcp:' + server.name` — merged by `loadAllMCPConfigs` at mcp/config.ts:103 into paired `configs` / `sources` records. The `mcpSettings` module (mcp/settings.ts) is a red herring for this design: it holds five registered UI settings (enableProjectConfig, startupTimeoutMs, renderMarkdownResults, notifications, notificationDebounceMs) and no server inventory.",
+  "evidence": "`cat -n packages/coding-agent/src/modes/components/extensions/dashboard-runtime.ts` (80 lines, read whole); `cat -n packages/coding-agent/src/capability/mcp.ts`; `cat -n packages/coding-agent/src/mcp/settings.ts`; `grep -n '^export' packages/coding-agent/src/mcp/config-writer.ts`."
+ },
+ {
+  "id": "WI-12",
+  "claim": "Plan §WI-12 'Chỗ dễ sai' and 'Test cần viết': the approval-parity proposition ('tools of an extension-registered MCP server appear through the normal MCP tool path, with the same approval gating as any other tool') is the thing that distinguishes the recommended design from the config-write option.",
+  "verdict": "UNDERSPECIFIED — the proposition cannot be checked as written, because the current tiers are not what the plan assumes",
+  "correction": "Write it with the actual numbers, and note that today's state is itself an artifact. `MCPTool.approval` is hardcoded `readonly approval = \"write\" as const;` at mcp/tool-bridge.ts:656 and `DeferredMCPTool.approval` is the identical hardcode at tool-bridge.ts:771 — both unconditional, neither derived from the server's config, so a stdio server that spawns a subprocess and an http server that POSTs to a remote host sit in the same tier. Meanwhile the extension tool path defaults STRICTER: `ToolDefinition.approval` (extensions/types.ts:658) is documented as defaulting to `\"exec\"` when omitted. So the naive reading of 'parity' is backwards — an extension-registered tool is already gated at `exec` while an MCP tool is gated at `write`. Corollary the design must address: the branch at tools/approval.ts:369-371, `if (tool.name.startsWith(\"mcp__\") && tool.approval === undefined) { lines.push(\"Origin: MCP server tool\"); }`, is currently UNREACHABLE for manager-minted MCP tools, because both classes always set `approval` — so the approval prompt never tells the user the call came from an MCP server. If a contributed server lands in that same path, the user gets a `write`-tier prompt with no origin line, which is exactly the disclosure gap a trust decision is supposed to close. The design must state whether contributed servers get a distinct tier and whether the origin line becomes reachable.",
+  "evidence": "`sed -n '648,700p' packages/coding-agent/src/mcp/tool-bridge.ts` and `sed -n '765,812p'` on the same file; `sed -n '340,385p' packages/coding-agent/src/tools/approval.ts`; `sed -n '655,660p' packages/coding-agent/src/extensibility/extensions/types.ts`."
+ },
+ {
+  "id": "WI-12",
+  "claim": "Plan §WI-12: contributing a server 'inherits WI-0's unanswered posture'.",
+  "verdict": "UNDERSTATED — it is not just unanswered, it is hardcoded permissive, which is stronger evidence than the plan gives",
+  "correction": "`isProjectTrusted(): boolean` is declared twice on the extension-facing surfaces (extensions/types.ts:494 and :561) and implemented as `isProjectTrusted: () => true` at extensions/runner.ts:1264 and again at session/agent-session.ts:7406. There is no gate to inherit — the value is a constant. So a design that says 'extension-contributed servers land in the same tier as project `.mcp.json` servers' is, as of this HEAD, saying 'no tier at all'. State that in the document explicitly; it converts an abstract dependency on WI-0 into a checkable precondition (`grep -n 'isProjectTrusted: () => true'` must stop returning two hits before the trust tier in this design means anything).",
+  "evidence": "`grep -rn 'isProjectTrusted' packages/coding-agent/src` → 4 hits: extensions/types.ts:494, extensions/types.ts:561, extensions/runner.ts:1264, session/agent-session.ts:7406."
+ },
+ {
+  "id": "WI-3",
+  "claim": "The table's value type is `(event: AgentSessionEvent) => RunnerEmitEvent | undefined` (a bare `Record<RelayableEventKind, …>` with `satisfies`).",
+  "verdict": "WRONG — and following it literally costs a full rework of all 19 arms",
+  "correction": "Use a MAPPED type with an ASYNC return: `type SessionEventRelays = { [E in RelayableEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<RunnerEmitEvent | undefined> };`. Two independent failures in the plan's form. (a) It is synchronous, so the two arms that mutate relay state — `this.#turnIndex = 0` (4605) and `this.#turnIndex++` (4630) — have nowhere to live and get dropped, freezing `turnIndex` at 0 for every extension for the whole session. (b) Its parameter is the full 28-member `AgentSessionEvent`, which does not narrow per arm, so `event.message` / `event.toolCallId` / `event.goal` do not typecheck and every one of the 19 arms needs a cast — which is precisely the outcome the refactor is meant to eliminate. The plan did gesture at the right answer ('copy BOTH halves, not just the object literal') but then wrote a sketch of the half that does not work.",
+  "evidence": "packages/coding-agent/src/modes/controllers/event-controller.ts:107-109 — `type AgentSessionEventHandlers = { [E in AgentSessionEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<void>; };`, closed at :357 with `} satisfies AgentSessionEventHandlers;`. Arms there read `e` with full variant narrowing (`event-controller.ts:287-300`). `AgentSessionEventKind = AgentSessionEvent[\"type\"]` at :74."
+ },
+ {
+  "id": "WI-3",
+  "claim": "The dispatch is `relayTable[event.type as RelayableEventKind]?.(event)` — 'the `as` cast at the lookup is the only place needing a cast'.",
+  "verdict": "WRONG — two casts are required",
+  "correction": "`this.#sessionEventRelay[event.type as RelayableEventKind]` has type `SessionEventRelays[RelayableEventKind]`, which is a union of 19 function types. Calling a union of function types requires an argument assignable to the INTERSECTION of their parameters, and a full `AgentSessionEvent` is not assignable to `Extract<AgentSessionEvent, { type: \"turn_start\" }>`. The lookup must also cast the VALUE to a single wide signature: `as ((event: AgentSessionEvent) => Promise<RunnerEmitEvent | undefined>) | undefined`. The TUI does exactly this and the plan cited the TUI as the template without carrying the dispatch half over.",
+  "evidence": "packages/coding-agent/src/modes/controllers/event-controller.ts:851 — `const run = this.#handlers[event.type] as (e: AgentSessionEvent) => Promise<void>;`"
+ },
+ {
+  "id": "WI-3",
+  "claim": "The runtime test row 'is the thing that FAILS if someone leaves a variant out of `RelayableEventKind` and then adds it to the table'.",
+  "verdict": "COHERENTLY WRONG — the claim contradicts itself and no single-event test could hold it",
+  "correction": "The two halves of the sentence describe opposite situations and neither makes the runtime row load-bearing. If a name is added to the TABLE but not the union, `satisfies` fails as an excess-property error — `bun run check:ts`, not the runtime row. If a name is left out of BOTH, nothing fails anywhere: a new session event that nobody relays is a legitimate product decision, not a defect. What the runtime row actually defends is narrower and still worth having: the table is the LIVE dispatch path, and the payload reaching the handler is the payload the session produced. State it that way; do not let a reviewer believe the test backstops exhaustiveness.",
+  "evidence": "`packages/coding-agent/tsconfig.json` includes `[\"src\", \"test\", \"scripts\"]`, so `tsgo --noEmit` type-checks the table — that is the entire exhaustiveness gate. A one-event runtime test observes one event's delivery and nothing about the other 18."
+ },
+ {
+  "id": "WI-3",
+  "claim": "A bare `AgentSessionEvent[\"type\"]` table key 'would demand more than ten `() => undefined` arms'.",
+  "verdict": "RIGHT IN SUBSTANCE, OFF BY COUNT",
+  "correction": "It is exactly 9, not 'more than ten'. `AgentSessionEvent` is 28 distinct type names (11 from `AgentEvent` + 17 added by the session union); 19 are relayable, leaving 9: `tool_stream_update`, `model_changed`, `config_warnings_changed`, `advisor_cost_changed`, `advisor_yielded`, `todo_auto_clear`, `irc_message`, `notice`, `thinking_level_changed`. The conclusion — use the 19-member `Extract` — is unchanged. Worth writing the exact 9 into the `RelayableEventKind` doc comment so the next author adding a session event knows the two valid options.",
+  "evidence": "packages/coding-agent/src/session/agent-session-events.ts:13-80 (union; 17 session-only variants at 29-80). packages/agent/src/types.ts:1197-1219 — `AgentEvent` is 11 variants ending at 1219. Cross-check: the TUI handler table (event-controller.ts:284-357) has a real arm for every one of the 28, because the TUI subscribes to all of them."
+ },
+ {
+  "id": "WI-3",
+  "claim": "`model_changed`: 'or delete the prose at agent-session.ts:9442-9443'.",
+  "verdict": "ANCHOR WRONG, AND DELETING THE WHOLE COMMENT IS THE WRONG FIX",
+  "correction": "The comment is at 9523-9527, not 9442-9443, and only its third clause goes stale. Lines 1-2 ('Fan-out uses the synchronous `#emit` … would only add an extension-delivery await inside every model switch — including retry-fallback on the error path') are load-bearing rationale for using `#emit` instead of `#emitSessionEvent`, and they remain true. Delete the '`model_changed` has no extension-facing hook (`#emitExtensionEvent` never maps it)' assertion and replace it with a pointer to `RelayableEventKind`. Exact replacement text is in step 11.",
+  "evidence": "packages/coding-agent/src/session/agent-session.ts:9523-9527, read directly; followed at 9528-9530 by `if (isChanging) { this.#emit({ type: \"model_changed\" }); }`."
+ },
+ {
+  "id": "WI-3",
+  "claim": "The 19 relay branches live at `agent-session.ts:4572-4770`, arm names sourced from `:4572-4720`; `model_changed` note at `:9442-9443`; `RunnerEmitEvent` at `extensions/runner.ts:344`; `ExtensionEvent` at `extensions/extensions/types.ts:1095`; `AgentSessionEvent` at `session/agent-session-events.ts:13-77`; `AgentEvent` at `agent/src/types.ts:1189`; TUI template at `event-controller.ts:106-108` and `:279-352`.",
+  "verdict": "SEVEN STALE ANCHORS — all verified line numbers below",
+  "correction": "Use these, all confirmed with `git grep -n` / `sed -n` at HEAD 808b365: relay method 4602-4747; the 19 `event.type ===` comparisons at 4604, 4611, 4615, 4622, 4631, 4637, 4644, 4657, 4666, 4675, 4684, 4690, 4700, 4709, 4717, 4725, 4731, 4733, 4740; `model_changed` note 9523-9527; `RunnerEmitEvent` runner.ts:347; `ExtensionEvent` extensions/types.ts:1120; `AgentSessionEvent` agent-session-events.ts:13-80; `AgentEvent` agent/src/types.ts:1197-1219; TUI mapped type event-controller.ts:107-109 and object literal 284-357 (closing `satisfies` at 357).",
+  "evidence": "Direct reads of each file; `agent-session.ts:4746-4747` shows the chain's closing `}` and the method's `}`; `event-controller.ts:357` is `} satisfies AgentSessionEventHandlers;`."
+ },
+ {
+  "id": "WI-3",
+  "claim": "The repo is at git HEAD 5873776 on branch milestone-1.",
+  "verdict": "STALE — that commit does not exist in this repository",
+  "correction": "Actual HEAD is 808b365 (\"docs(plan): fold the spec-verified M1 execution plan into the upgrade plan\"), branch milestone-1, working tree clean. `git cat-file -t 5873776` returns 'fatal: Not a valid object name'. Every line number in this spec was verified against 808b365; if the tree moves before implementation, re-verify the four anchors in agent-session.ts (4602, 4747, 9523, 837) before editing.",
+  "evidence": "`git rev-parse --short HEAD` -> 808b365; `git log --oneline -3` -> 808b365, 33d6e33, ecd516f."
+ },
+ {
+  "id": "WI-3",
+  "claim": "`HookEvent` is a 15-member union at `extensibility/hooks/types.ts:393` that lacks the 9 relay-only types.",
+  "verdict": "CONFIRMED — the plan's sharpest type warning holds",
+  "correction": "Verified exactly 15 members (394-408) and the line number is right. Listed here so the implementer does not re-derive it: SessionEvent, ContextEvent, BeforeAgentStartEvent, AgentStartEvent, AgentEndEvent, TurnStartEvent, TurnEndEvent, AutoCompactionStartEvent, AutoCompactionEndEvent, AutoRetryStartEvent, AutoRetryEndEvent, TtsrTriggeredEvent, TodoReminderEvent, ToolCallEvent, ToolResultEvent. The 9 relay-only types (message_start/update/end, tool_execution_start/update/end, retry_fallback_applied, retry_fallback_succeeded, goal_updated) are absent — using it as the key type collapses `Extract` to `never`.",
+  "evidence": "packages/coding-agent/src/extensibility/hooks/types.ts:393-408. `ExtensionEventType` also confirmed non-existent: `git grep -n ExtensionEventType -- packages` returns nothing."
+ },
+ {
+  "id": "WI-3",
+  "claim": "Environment note: `bun test` is blocked by the unbuilt native addon; `bun run check:ts` works.",
+  "verdict": "CONFIRMED — and the consequence for the gate is spelled out in `gate`",
+  "correction": "Ran it: `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` -> '0 pass, 1 fail, 1 error', 'Failed to load pi_natives native addon for darwin-arm64', fix hint `bun --cwd=packages/natives run build`. `bun run check:ts` at HEAD exits 0 (verified, full run). So the ONLY gate that is live today is `check:ts` — which is fortunate, because it is also the gate that carries exhaustiveness. Do not report the test as passing until the addon is built.",
+  "evidence": "Live runs in this session; `bun run check:ts` output ended with every package's `check:types | Done` and `[exited with code 0]`."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "`registry.ts:476-480` — the env layer is opt-in, `envValue()` returns undefined when a setting does not declare `definition.env`.",
+  "verdict": "STALE LINE, SOUND CONCLUSION",
+  "correction": "Lines 476-480 are the CONSTRUCTOR body (`this.#parseEnv = ...` at :477-479, `this.envFallback = ...` at :478), not `envValue`. The function the plan means is `envValue()` at `config/registry.ts:514-522`, whose opt-in guard is the first line: `if (!this.envName || !this.#parseEnv) return undefined;` (:515). Cite :515, or :514-522.",
+  "evidence": "grep -n over packages/coding-agent/src/config/registry.ts: `envValue():` at 514, `#effectiveEnv` at 526, and line 478 is `this.envFallback = typeof env === \"object\" ? (env.fallback ?? false) : false;` — a constructor assignment. The plan's conclusion holds, its pointer does not."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "`Settings.getProvenance` (settings.ts:800-808) checks five layers and never returns `\"env\"`; only `Setting.provenance(scope)` at `registry.ts:764-765` can.",
+  "verdict": "VERIFIED CORRECT",
+  "correction": "None. This is the single most load-bearing claim in the item and it holds exactly. `getProvenance` at `config/settings.ts:800-808` returns runtime/overlay/project/global/parent-default, and `Setting.provenance` at `config/registry.ts:763-765` returns `this.#effectiveEnv(scope) !== undefined ? \"env\" : settingsOf(scope).getProvenance(this)`. The `\"env\"` member of the union at `settings.ts:62` is reachable from exactly one surface.",
+  "evidence": "sed of settings.ts:800-808 shows the five-branch return ending in `return this.#parent?.getProvenance(setting) ?? \"default\";`. sed of registry.ts:763-765 shows the `#effectiveEnv` ternary. The test must assert through the latter."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "`register()` at `registry.ts:783-792` throws on a duplicate id, which is why namespacing is load-bearing.",
+  "verdict": "VERIFIED CORRECT, BUT INCOMPLETE — AND THE OMISSION IS THE ITEM'S BIGGEST RISK",
+  "correction": "The throw is real at :787 and the doc block starts at :783, so the range is right. What the plan never says is that the registry is APPEND-ONLY: `byId.set` (:789) is the only mutation of `byId`, `ordered.push` (:790) the only mutation of `ordered`, and `resetRegistryForTest` (:953) touches only the `effects` array. There is NO unregister. So a design that registers plugin settings dynamically at load time makes the second load of the same plugin in one process throw — and reload, suspend/resume (WI-1, WI-7) and unload (WI-9) are precisely what the following waves build. The spec adds an idempotent `registerPluginSetting` that returns the existing handle on a repeat lookup, as step 1.",
+  "evidence": "grep -n 'byId' over registry.ts returns exactly four hits: declaration :778, the has() check :787, the set :789, the get :796. grep -n 'ordered' returns the declaration :779 and the push :790 only. `resetRegistryForTest` at :953 has a body calling `unbindEffects()` and iterating `effects` — never `byId`."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "The side-channel store is `manager.ts:929-960` reading from two files, and migrating that region is the work.",
+  "verdict": "INCOMPLETE — a second copy of the same merge exists and the plan never mentions it",
+  "correction": "`packages/coding-agent/src/extensibility/plugins/loader.ts:474-483` exports a module-level `getPluginSettings(pluginName, cwd)` that is a byte-for-byte second copy of the `{ ...global, ...project }` merge over the same two legacy files. It is re-exported through the `extensibility/plugins` barrel (`plugins/index.ts:5`) and it is the function an EXTENSION calls by name. Migrating only `manager.ts` leaves the extension-facing read path on the legacy files forever — the same 'two read paths, you migrate one' failure the plan names as its main hazard, reproduced one file over. It is easy to miss precisely because `git grep` finds no in-repo caller: its consumer is third-party code. Step 8 of this spec covers it.",
+  "evidence": "sed of loader.ts:460-483 shows `export async function getPluginSettings(pluginName: string, cwd: string)` calling `loadRuntimeConfig()` and `loadProjectOverrides(cwd)` and returning `{ ...global, ...project }`. `git grep -n getPluginSettings` across packages/ returns only manager.ts, loader.ts, plugin-cli.ts, tui/overlays/plugin-settings.ts, and tests — no production caller of the loader copy."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "The Plugins settings tab lives at `packages/tui/src/overlays/settings-selector.ts:435` and must be left alone by this item.",
+  "verdict": "STALE LINE, SOUND INSTRUCTION",
+  "correction": "The hard-coded tab is at :438, not :435: `{ id: \"plugins\", label: ... }`, inside `getSettingsTabs()` (:433-440). There is a second hit at :856. The instruction to leave it alone is correct and is WI-8b blocker 4's problem, not this item's. The same wrong line is repeated in WI-8b's file list.",
+  "evidence": "grep -n 'id: \"plugins\"' over settings-selector.ts returns :438 and :856; sed of 420-450 places the Plugins tab at 438 inside getSettingsTabs()."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "`ProjectPluginOverrides` shape at `plugins/types.ts:156-163`, with `settings?` at `:162`.",
+  "verdict": "STALE BY ONE LINE",
+  "correction": "The interface is at :156-162 and the `settings?` field is at :161, not :162. The three fields are `disabled?` (:157), `features?` (:159), `settings?: Record<string, Record<string, unknown>>` (:161). Relevant because this item migrates `settings` only — the file survives with two of its three fields, so it is NOT removed.",
+  "evidence": "sed of types.ts:150-170 shows `export interface ProjectPluginOverrides {` at 156, `disabled?` 157, `features?` 159, `settings?` 161, closing brace 162."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "The env layer is where the test's value is overridden by the env var, and the plan calls out that a row asserting `\"env\"` without a declared `env` must fail.",
+  "verdict": "VERIFIED, WITH AN UNSTATED INVERSION THE PLAN MISSES",
+  "correction": "The opt-in and the fail-without-declaration behaviour are both correct. What the plan does not mention is `envFallback`: `#effectiveEnv` (`config/registry.ts:526-536`) makes the env YIELD to any configured layer when the definition sets it, and the default is `false` (:478), so env wins by default. A fixture that declares `envFallback: true` will have the project value win and `provenance` report `\"project\"` — a red test for correct behaviour, which is exactly the shape of mistake that gets 'fixed' by weakening an assertion. The spec calls this out as the trap in row 3.",
+  "evidence": "sed of registry.ts:526-536 shows `if (value === undefined || !this.envFallback) return value;` then the `envFallback === true` and string-compare branches. registry.ts:478 is `this.envFallback = typeof env === \"object\" ? (env.fallback ?? false) : false;`."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "Migration risk is fully covered by the provenance test running real tiering.",
+  "verdict": "OVERSTATED",
+  "correction": "The provenance test defends the TIERING, not the MIGRATION. Three failure modes survive it: (a) a migration without a completion marker re-runs every start and resurrects keys the user deleted after the first run — undetectable by a suite that only migrates once; (b) the new durable layer is wrong and values are written somewhere the read path does not consult; (c) `deletePluginSetting` silently changes meaning from 'delete outright' to 'clear the global layer only'. This spec's gate therefore adds a manual step (4) covering the resurrection re-run, and the two related open_questions, instead of resting on the test alone.",
+  "evidence": "`unsetGlobalValue` (`config/settings.ts:845-859`) only ever calls `deleteByPath(this.#global, segments)`; there is no project-layer delete anywhere in the method, and no equivalent existed in the old side-channel delete."
+ },
+ {
+  "id": "WI-8a",
+  "claim": "Environment: `bun test` reports 0 pass because the native addon is not built; `bun run check:ts` is the usable gate.",
+  "verdict": "VERIFIED EXACTLY",
+  "correction": "None. Reproduced both. `bun test test/config/settings-registry.test.ts` → `0 pass / 1 fail`, `Cannot find module .../native/pi_natives.darwin-arm64.node`, with the loader's own hint `bun --cwd=packages/natives run build`. `bun run check:ts` → clean, oxlint + oxfmt pass on 5445 files, all 17 package `check:types` Done. The build command is the first half of the gate; the test half is blocked until it runs.",
+  "evidence": "Direct execution of both commands in the repo at HEAD 808b365 on branch milestone-1."
+ },
+ {
+  "id": "WI-4",
+  "claim": "The sanctioned write path is at `packages/coding-agent/src/extensibility/extensions/types.ts:1322`.",
+  "verdict": "STALE — wrong line, and it points at an unrelated declaration",
+  "correction": "Line 1322 is `on(event: \"tool_execution_end\", handler: ExtensionHandler<ToolExecutionEndEvent>): void;` — an event subscription, not the tool-registration path. Correct anchors: `ToolDefinition` interface begins at types.ts:636; its `renderCall` field is at types.ts:686 and its `renderResult` field at types.ts:689; the `registerTool` declaration on the extension API is at types.ts:1347. The plan cites `:661` and `:664` in two other places — those are also off; use 686 and 689.",
+  "evidence": "`grep -n 'registerTool<TParams' packages/coding-agent/src/extensibility/extensions/types.ts` -> 1347. `grep -n 'renderCall\\|renderResult' .../types.ts` -> 686 and 689. `grep -rn 'interface ToolDefinition' packages/coding-agent/src/` -> types.ts:636. `sed -n '1300,1360p'` confirms line 1322 is the `tool_execution_end` event."
+ },
+ {
+  "id": "WI-4",
+  "claim": "`RegisteredToolAdapter` wraps the render hooks at `wrapper.ts:54-62`.",
+  "verdict": "NEARLY CORRECT — off by one line at the end",
+  "correction": "The binding spans lines 54-63, not 54-62. Lines 50-53 are the comment explaining why the methods are defined conditionally; 54-57 is the `renderCall` assignment; 58-63 is the `renderResult` assignment, whose object literal closes on 63.",
+  "evidence": "`sed -n '50,64p' packages/coding-agent/src/extensibility/extensions/wrapper.ts` — `if (registeredTool.definition.renderCall) {` is at 54, `if (registeredTool.definition.renderResult) {` is at 58, and the closing `args,` / `);` / `}` run through 63."
+ },
+ {
+  "id": "WI-4",
+  "claim": "The verification command is `bun run check:ts && (cd packages/tui && bun test test/tool-renderers-frozen.test.ts) && (cd packages/coding-agent && bun test test/extension-tool-renderer-registration.test.ts)`, with the note that only the coding-agent half is environment-blocked.",
+  "verdict": "WRONG — BOTH test files are blocked, including the tui half the plan treats as the runnable one",
+  "correction": "`bun test` is blocked for anything that transitively loads the native addon, in BOTH packages. Verified by probe: in `packages/tui`, `import * as m from \"../src/tools/index\"` fails with the missing-addon error, and so does the package specifier `@oh-my-pi/pi-tui/tools`. The exact edge is `packages/tui/src/theme/theme.ts:3` — `import { detectMacOSAppearance, MacAppearanceObserver } from \"@oh-my-pi/pi-natives\"` — a VALUE import (not `import type`). Every `ToolRenderer` takes a `Theme`, so every renderer module transitively loads the theme module, so the whole registry is un-loadable without the addon. Only `../src/tools/renderer` (the type-only module) loads clean. The coding-agent half is separately blocked: importing `wrapRegisteredTools` from `extensibility/extensions/wrapper` reaches `../../tools/approval`, `../../tools/essential-tools` and `../../tools/file-write-fallback`, and the probe throws. Unblock command is `bun --cwd=packages/natives run build` — but note that script is `bun ../../scripts/bazel-natives.ts host --dest native`, and bazel is NOT installed in this environment, so the unblock cannot be performed here. Practical consequence: `bun run check:ts` is the only real gate until then, which is exactly why the `Readonly` type half of this change matters so much — it is the half that `check:ts` can actually police.",
+  "evidence": "Probes run in `packages/tui`: `../src/tools/renderer` -> OK; `../src/tools/index` -> 'Failed to load pi_natives native addon for darwin-arm64'; `@oh-my-pi/pi-tui/tools` -> same; `../src/theme/theme` -> same; `../src/chat/tool-execution` -> same. All 20 renderer submodules under `src/tools/` individually probe as blocked. Existing-file control: `packages/tui/test/countdown-timer.test.ts` runs green (2 pass), so `bun test` itself works — it is the import graph that is blocked. In `packages/coding-agent`, `bun test test/tools/apply-patch-renderer.test.ts` -> 0 pass / 1 fail with the same addon error, and a probe importing `wrapRegisteredTools` reproduces it. `which bazel bazelisk` -> not found."
+ },
+ {
+  "id": "WI-4",
+  "claim": "WI-4 is `Object.freeze(toolRenderers)` — a runtime guard. (The plan's own later sections concede that this carries no enforcement mechanism and that the constraint has to come from the type, deferring the type half to a 'WI-4b' that appears nowhere in the M2 wave table.)",
+  "verdict": "UNDERSPECIFIED — the runtime half alone does not deliver the stated goal",
+  "correction": "`Object.freeze` on a `const` declared as `Record<string, ToolRenderer>` is invisible to `bun check`: a future contributor writing `toolRenderers.grep = x` still type-checks and still compiles. The item's goal — close the backdoor so it cannot silently reopen — is therefore only half delivered by the freeze alone. Add the `Readonly` type annotation. It is free, and this was verified rather than reasoned: with `Readonly<Record<string, ToolRenderer>>` in place, `bun run --cwd packages/tui check:types` and `bun run --cwd packages/coding-agent check:types` both pass clean, and a single injected write `toolRenderers.probe_backdoor = toolRenderers.bash;` at `tool-execution.ts:355` fails with `TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Since WI-4b is unowned in the wave table, folding this in is how it stops being nobody's job. Keep the runtime freeze too — the type cannot stop a cast.",
+  "evidence": "Applied the two-line change to a scratch copy, ran `bun run --cwd packages/tui check:types` -> exit 0; `bun run --cwd packages/coding-agent check:types` -> exit 0; `bunx oxlint` -> clean; `bunx oxfmt --check` -> clean. Then injected one write line and re-ran the tui type check -> `src/chat/tool-execution.ts(355,3): error TS2542: Index signature in type 'Readonly<Record<string, ToolRenderer<unknown, unknown>>>' only permits reading.` Tree reverted; `git status --porcelain` shows only the untracked spec output."
+ },
+ {
+  "id": "WI-4",
+  "claim": "The export-map wildcard is at `packages/tui/package.json:93-96`.",
+  "verdict": "STALE — off by one",
+  "correction": "The `\"./*\"` entry is at lines 94-97. The `\"./tools\"` entry that the in-repo consumers actually resolve through is at line 86, and it is a separate, explicit entry that the wildcard does not shadow.",
+  "evidence": "`grep -n '\"\\./\\*\"\\|\"\\./tools\"' packages/tui/package.json` -> 86 for `\"./tools\"`, 94 for `\"./*\"`, 98 for `\"./components/*\"`, 102 for `\"./*.js\"`."
+ },
+ {
+  "id": "WI-4",
+  "claim": "There are exactly 14 in-repo references to `toolRenderers` across 5 files, all read-only, none an assignment.",
+  "verdict": "CONFIRMED — do not re-derive this",
+  "correction": "Re-ran `git grep -n toolRenderers -- packages` and got exactly 14 hits across exactly the 5 files named, at exactly the line numbers the plan lists. Also ran the writer probe across the whole repo and got zero hits for `toolRenderers[x] =`, `toolRenderers.foo =`, and `delete toolRenderers`. The plan's re-sizing from S to XS on the basis of this inventory is sound. Saving you the hour.",
+  "evidence": "`git grep -n toolRenderers -- packages` -> 14 lines across gallery-cli.ts(4), gallery-cli.test.ts(2), apply-patch-renderer.test.ts(4), tool-execution.ts(2), tools/index.ts(2). `git grep -n 'toolRenderers\\[.*\\]\\s*=|delete toolRenderers|Object.assign(toolRenderers'` -> no hits."
+ },
+ {
+  "id": "WI-9",
+  "claim": "`runner.ts:1333` — 'cú quét dispose() toàn bộ #fileFallbackDisposers; unload phải tiêu đúng disposer của extension đó'",
+  "verdict": "STALE-LINE + MISSING-PREREQUISITE",
+  "correction": "The sweep is not at 1333 and is not a bare `dispose()`. It is `disposeFileFallbacks()` at runner.ts:1346-1348, called from two places: session shutdown (runner.ts:410) and the re-initialize guard (runner.ts:747). More importantly, the plan's requirement is not expressible today: `#fileFallbackDisposers` (runner.ts:537) is a flat `Array<() => void>` with no association to any extension, so 'that extension's disposer' does not exist. Converting it to a path-keyed Map is mandatory work INSIDE WI-9 that the plan does not list as a step.",
+  "evidence": "git grep -n '#fileFallbackDisposers' → runner.ts:537 (decl), 777, 796 (pushes), 1347 (splice sweep). git grep -n 'disposeFileFallbacks' → runner.ts:410, 747, 1346."
+ },
+ {
+  "id": "WI-9",
+  "claim": "(1) 'module graph được cache bởi runtime, nên unload thật cần cache-busting' … 'coi module cache là follow-up'",
+  "verdict": "WRONG — already implemented",
+  "correction": "Cache-busting is not a follow-up; it already exists and is already per-load. `loadLegacyPiModule` appends a fresh monotonically-increasing tag to the entry specifier on every import, so every load already gets a fresh module graph. There is no cache work for WI-9 to do. The plan's 'resolve bucket teardown first and treat module cache as a follow-up' sequencing advice is aimed at a problem the codebase does not have. If reload is ever in scope it inherits this mechanism for free; if it is not, WI-9 is purely teardown and the module-graph paragraph should be deleted from the plan.",
+  "evidence": "legacy-pi-compat.ts:2630 `return await import(`${entrySpecifier}?mtime=${nextLegacyPiLoadTag()}`)` inside `loadLegacyPiModule` (2613-2637); `nextLegacyPiLoadTag` at 2101-2104 returns `String(Math.max(legacyPiLoadTag + 1, Date.now()))` — monotonic, so no two loads share a tag."
+ },
+ {
+  "id": "WI-9",
+  "claim": "`types.ts:1777-1792` (11 bucket phải giải phóng), `:1783` (toolRegistrationListeners là Set per-extension)",
+  "verdict": "STALE-LINE (off by ~25)",
+  "correction": "`interface Extension` is at types.ts:1801-1817; `toolRegistrationListeners?: Set<ToolRegistrationListener>` is at line 1808. The 11-bucket count and the 'no shape change needed' conclusion are both correct — only the numbers are wrong.",
+  "evidence": "git grep -n on types.ts → handlers 1805, tools 1806, toolRegistrationListeners 1808, assistantThinkingRenderers 1809, fileWriteFallbackHandlers 1810, fileDeleteFallbackHandlers 1811, messageRenderers 1812, composerShapes 1813, commands 1814, flags 1815, shortcuts 1816."
+ },
+ {
+  "id": "WI-9",
+  "claim": "`runner.ts:763` (điều kiện cài trampoline) and `:766-771` (bất biến trampoline cần giữ)",
+  "verdict": "STALE-LINE",
+  "correction": "The skip-guard is at runner.ts:756: `if (ext.fileWriteFallbackHandlers.length === 0 && ext.fileDeleteFallbackHandlers.length === 0) continue;`. The actual installs are `addFileWriteFallback(...)` at 778 and `addFileDeleteFallback(...)` at 797. The invariant comment the plan points at is the 750-755 block. The plan's baseline-row reasoning ('a row asserting an empty seam would be green on HEAD') is nonetheless CORRECT and is the sharpest thing in the item — keep it.",
+  "evidence": "sed -n '750,790p' runner.ts and git grep -n 'addFileWriteFallback|addFileDeleteFallback' → runner.ts:778, 797."
+ },
+ {
+  "id": "WI-9",
+  "claim": "`runner.ts:1290-1292` (timer runtime-scoped)",
+  "verdict": "STALE-LINE (off by ~14)",
+  "correction": "The timer triple is at runner.ts:1304-1306 inside createContext(): setInterval/setTimeout/clearTimer all delegate to the single runner-wide `#managedTimers`. The substantive claim — that the timer store is all-runner with no per-extension owner, which is why WI-1 is a hard prerequisite — is CONFIRMED: ManagedTimers holds one flat `Set<Timer>` and exposes only `clear(handle)` and `clearAll()`. So unload cannot release an extension's timers until WI-1 adds per-extension ownership.",
+  "evidence": "git grep -n 'managedTimers' → runner.ts:518 (field), 1304-1306 (registration), 1336-1337 (clearManagedTimers). managed-timers.ts:22-68, `#timers = new Set<Timer>()`, methods setInterval/setTimeout/clear/clearAll only."
+ },
+ {
+  "id": "WI-9",
+  "claim": "row (b) is about the registerFlag runtime value at `loader.ts:265`",
+  "verdict": "INCOMPLETE — three more call sites the plan never mentions",
+  "correction": "`flagValues` has FOUR writers and one flat reader across the package, and only one is in loader.ts. The other three break silently under the reshape if missed: runner.ts:1099 `setFlagValue` (extension-less — the open question), runner.ts:1095 `getFlagValues()` (returns a flat copy — must become a flatten over this.extensions), and main.ts:2210 `extensionsResult.runtime.flagValues.set(name, value)` (bypasses the runner entirely). The reshaped flagValues is a four-file change, not a loader.ts-local one, and the plan's row (b) does not prepare a human for that.",
+  "evidence": "`git grep -n '\\.flagValues' -- packages/coding-agent/src` returns exactly five hits: loader.ts:265, loader.ts:293, runner.ts:1095, runner.ts:1099, main.ts:2210."
+ },
+ {
+  "id": "WI-9",
+  "claim": "row (c) mechanism: 'extension rời registry, nên nó không còn đăng ký được tool, nên bucket của nó không còn ai drain'",
+  "verdict": "PARTLY-CORRECT — the stated mechanism is weaker than claimed",
+  "correction": "The rest of the analysis is exactly right: the bucket is per-extension, loader.ts:223 is its only reader, and the onToolRegistered disposer (runner.ts:1044-1048) closes over a local `subscriptions` array that unsubscribes that ONE call across all extensions — a different contract, not an unload contract. But 'it can no longer register a tool' is only true of the load-time path. Extension A's API object retains its Extension even after unload, so a retained async closure that calls `api.registerTool` afterwards still drains A's listener set and the listener still fires. The test as the plan writes it (register at extension B) passes either way and does not distinguish. One line — `extension.toolRegistrationListeners?.clear()` inside unloadExtension — makes the stated contract unconditionally true. Write the row to the BEHAVIORAL contract (listener does not fire), which holds regardless, and add the clear so the mechanism matches the claim.",
+  "evidence": "loader.ts:222-223 `this.extension.tools.set(tool.name, registered); for (const listener of this.extension.toolRegistrationListeners ?? []) listener(tool.name);` — the loop is unconditional on registry membership. ConcreteExtensionAPI holds `private readonly extension: Extension` (loader.ts:193) for the API's whole lifetime."
+ },
+ {
+  "id": "WI-9",
+  "claim": "Verification command `bun run check:ts && (cd packages/coding-agent && bun test test/extension-unload.test.ts test/extensions-runner.test.ts)`",
+  "verdict": "PARTIALLY UNRUNNABLE as written",
+  "correction": "The first half runs and is green (I ran it on HEAD 808b365: all 15 packages Done, exit 0). The second half cannot run on this machine: the native addon is unbuilt, so every test file reports 0 pass / 1 fail before asserting anything. State the gate as blocked rather than presenting the compound command as a single pass/fail.",
+  "evidence": "`bun run check:ts` → all 15 @oh-my-pi/*:check:types Done. `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` → '0 pass, 1 fail, 1 error, Ran 1 test across 1 file' with 'Failed to load pi_natives native addon for darwin-arm64' at packages/natives/native/index.js:23:24."
+ },
+ {
+  "id": "WI-9",
+  "claim": "Wave placement: WI-9 last in wave 7, needs the full inventory that only exists after waves 2 and 4 gave owner-ship to timer, provider and capability state",
+  "verdict": "CONFIRMED",
+  "correction": "Nothing to change. The dependency is real and verified: ManagedTimers has no per-extension owner, and the existing `unregisterProvider(name, sourceId)` (types.ts:1745) is already sourceId-keyed — that is the precedent the flagValues reshape should mirror, and the plan is right that WI-9 must not be built first.",
+  "evidence": "managed-timers.ts:22-68 (no per-extension keying); types.ts:1745 `unregisterProvider(name: string, sourceId: string): void;`."
+ },
+ {
+  "id": "WI-9",
+  "claim": "`runner.ts:934-956` (suspend) and `:984-1050` (phóng onToolRegistered), `:1031-1035` (disposer theo từng đăng ký)",
+  "verdict": "STALE-LINE (off by 6-13, regions still recognizable)",
+  "correction": "setSuspendedExtensions is at 947 (doc comment 940-946, body through 970); isExtensionActive is at 937. onToolRegistered's signature is at 997, the per-extension wrapper 1027-1040, and the disposer is 1044-1048, not 1031-1035. The plan's characterization of that disposer is right: it closes over a local `subscriptions` array and unsubscribes one onToolRegistered call across every extension at once.",
+  "evidence": "git grep -n on runner.ts → setSuspendedExtensions 947, onToolRegistered 997, `extension.toolRegistrationListeners.add(wrapped)` 1041, disposer body 1044-1048."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13 file path list: `extension-ui-controller.ts:148-149` (the two TUI stubs), `:121` (setWidget), `:78-79` (the two ownerless maps), `:1203-1212` (clearHookWidgets), `:334-347` (setHookWidget), `:349-353` (#removeHookWidget), `:355-370` (#createHookWidget), and the four call sites `:237` / `:298` / `:469` / `:527`.",
+  "verdict": "STALE — every line number in this file is low by exactly 9",
+  "correction": "All ten anchors are correct in content but uniformly 9 lines low. Use: maps at `:87-88`; `setWidget` forwarding at `:130`; the two silent stubs at `:157-158`; `setEditorComponent` forwarding at `:159`; `setHookWidget` at `:343-356`; the `target.set(key, ...)` line at `:353-354`; `#removeHookWidget` at `:358-362`; `#createHookWidget` at `:364-379`; `#rebuildHookWidgets` at `:381-385`; `#renderHookWidgetContainer` at `:387-408`; `clearHookWidgets` at `:1210-1220`; and the four call sites at `:246` (newSession, block 1), `:307` (switchSession, block 1), `:478` (newSession, block 2), `:536` (switchSession, block 2). The file is 1342 lines.",
+  "evidence": "`grep -n 'setFooter\\|setHeader\\|setWidget\\|hookWidgetsAbove\\|hookWidgetsBelow\\|clearHookWidgets\\|setHookWidget\\|removeHookWidget\\|createHookWidget' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` at HEAD 808b365; `wc -l` on the same file."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13 file path list: `runner.ts:412-425` (`noOpUIContext`) and **`:421-422`** — 'the second silent pair' — plus `:448` (`#uiContext`), `:627` and `:727` (the two assignments), `:1229-1242` (`createContext()`, with `ui: this.#uiContext` at `:1242`), `:745-747` (the 'createContext() takes no extension argument' decision), and `:766-771` (the trampoline).",
+  "verdict": "STALE — drift is not uniform; it ranges +3 to +13",
+  "correction": "Correct line numbers: `const noOpUIContext: ExtensionUIContext = {` at `:415`; the silent pair `setFooter: () => {},` / `setHeader: () => {},` at `:424-425`; `#uiContext: ExtensionUIContext;` field at `:459`; the constructor fallback `this.#uiContext = noOpUIContext;` at `:640`; the init fallback `this.#uiContext = uiContext ?? noOpUIContext;` at `:740`; `createContext(` at `:1242`; `ui: this.#uiContext,` at `:1255`; the 'createContext() takes no extension argument' comment at `:758`; and the two no-arg trampoline calls at `:780` and `:799`. Also note `hasUI()` at `:923-925` is `return this.#uiContext !== noOpUIContext;` — it is the identity check the tests can use, so do not break it when `#uiContext` starts delegating to per-extension variants.",
+  "evidence": "`grep -n 'noOpUIContext\\|setFooter\\|setHeader\\|#uiContext\\|createContext' packages/coding-agent/src/extensibility/extensions/runner.ts` and `sed -n '410,432p;915,930p;1242,1262p;752,805p'` at HEAD 808b365. File is 1963 lines."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13: `interactive-mode.ts:6071` (the fifth `clearHookWidgets` call site) and `:6324` (`setEditorComponent`).",
+  "verdict": "STALE — both are 51 lines HIGH",
+  "correction": "The `clearHookWidgets()` call is at `interactive-mode.ts:6020` (`this.#extensionUiController.clearHookWidgets();`). The `setEditorComponent` method declaration is at `interactive-mode.ts:6273`; the forwarder that hands `interactive-mode`'s UI context to the controller is at `:6269-6270` (`initializeHookRunner`). The plan's `:6324` is not a real anchor for this item.",
+  "evidence": "`grep -n 'clearHookWidgets\\|setEditorComponent' packages/coding-agent/src/modes/interactive-mode.ts` at HEAD 808b365."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13: the two duplicated handler blocks are the `newSession`/`switchSession` handlers of 'two different UI contexts' at `:237`/`:469` and `:298`/`:527`.",
+  "verdict": "VERIFIED in substance, with the enclosing sites named",
+  "correction": "Confirmed there are exactly two `const actions: ExtensionActions = {` blocks and each one contains its own `newSession` and `switchSession` handler. Block 1 is at `extension-ui-controller.ts:183`, inside `async initHooksAndCustomTools()` (declared `:117`, builds the TUI `uiContext` literal at `:119-163`). Block 2 is at `:416`, inside `initializeHookRunner(uiContext, _hasUI)` (declared `:410`, called from `interactive-mode.ts:6269-6270`). Fixing one and leaving its twin is a silent split — the plan is right about this and it is the easiest mistake to make here.",
+  "evidence": "`grep -n 'const actions: ExtensionActions' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` returns exactly `:183` and `:416`; `sed -n '238,250p;300,312p;468,482p;528,540p'` shows the twin bodies are byte-identical."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13: 'Sau khi widget có owner, cú quét không còn được xoá toàn cục nữa: nó trở thành remount theo từng extension — `dispose()` widget cũ rồi gọi lại factory của nó để dựng widget mới trên session vừa mở.'",
+  "verdict": "GAP — the plan's remount is not implementable against the current data structure; this is the one thing most likely to burn an engineer",
+  "correction": "The two maps store the RENDERED COMPONENT, not the content/factory. `#hookWidgetsAbove = new Map<string, ExtensionUiComponent>()` (`:87`) and `#hookWidgetsBelow` (`:88`), and `setHookWidget` does `target.set(key, this.#createHookWidget(content))` (`:354`) — `content` is a local that goes out of scope. `#createHookWidget` (`:364-379`) turns a `string[]` into a fresh `Container` of `Text` children, so for array content the original lines are gone entirely. There is nothing to re-invoke, so 'remount by calling the factory again' cannot be written without first changing what the map holds. PR 2 must change the value type to carry the content alongside the component — e.g. `Map<extensionPath, Map<string, { content: ExtensionWidgetContent; component: ExtensionUiComponent }>>` — and `#createHookWidget`/`#removeHookWidget`/`#renderHookWidgetContainer` updated to read `.component` while remount re-reads `.content`. Also note `ExtensionUiComponent` is `Component & { dispose?(): void }` (`packages/tui/src/chat/extension-types.ts:5`), so `dispose` is optional: remount must call `dispose?.()`, matching the existing `#removeHookWidget` at `:359`.",
+  "evidence": "`sed -n '340,395p;1205,1225p'` of the controller at HEAD 808b365; `grep -n 'ExtensionUiComponent' packages/tui/src/chat/extension-types.ts` returns `:5` (`export type ExtensionUiComponent = Component & { dispose?(): void };`) and `:7` (the factory type)."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13: `packages/tui/src/tui.ts` has no header/footer surface; the only `grep` hits in `packages/tui/src` are `components/wizard-step.ts:132` and `prompt/composer.ts:822 setHeaderExtras`.",
+  "verdict": "VERIFIED, one line off",
+  "correction": "Confirmed and this is the load-bearing check behind option (A) being ruled out: `packages/tui/src/tui.ts` is 3633 lines and contains zero occurrences of `setHeader`, `setFooter`, `headerComponent`, or `footerComponent`. Across all of `packages/tui/src` there are exactly two hits, and both are private to another component — `components/wizard-step.ts:132` (`setFooter(footer: Component | undefined)`, the wizard's own footer slot) and `prompt/composer.ts:823` (`setHeaderExtras(before, after)`, the composer's own welcome-scene extras; the plan says 822, the real line is 823). So option (A) is genuinely a new `packages/tui` public surface, and §4.2's 'M2 adds no new insertion point' would have to be amended in writing if (A) is ever chosen.",
+  "evidence": "`grep -rn 'setHeader\\|setFooter\\|headerComponent\\|footerComponent' packages/tui/src` at HEAD 808b365 returns exactly those two lines; `wc -l packages/tui/src/tui.ts` = 3633."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13: the wave-6 verification command is `bun run check:ts && (cd packages/coding-agent && bun test test/extension-ui-header-footer.test.ts)`, and the file `packages/coding-agent/test/extension-unload.test.ts` already owns the unload bucket sweep.",
+  "verdict": "VERIFIED as a plan; environment caveat not carried in the plan",
+  "correction": "Neither `packages/coding-agent/test/extension-ui-header-footer.test.ts` nor `packages/coding-agent/test/extension-unload.test.ts` exists on HEAD — `ls` returns 'No such file or directory' for both, and `packages/coding-agent/test/fixtures/outsider-extension/` does not exist either. So the plan's two-file split is still the right call (it keeps wave 6's command from going red on WI-9's not-yet-written rows), and both files are genuinely created-by-this-milestone. Environment caveat: the native addon is not built, so `bun test` currently reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64'. `bun run check:ts` does not need the addon and is the only execution signal available until `bun --cwd=packages/natives run build` is run.",
+  "evidence": "`ls packages/coding-agent/test/fixtures/outsider-extension` and `ls packages/coding-agent/test/extension-unload.test.ts` both fail at HEAD 808b365; `grep -n '\"check:ts\"' package.json` gives `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types` at root line 94."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Implicit in the plan: `noOpUIContext` is 'the context every extension receives when there is no UI, because `runner.ts:627` and `runner.ts:727` both fall back to it'.",
+  "verdict": "VERIFIED, with one addition the plan misses",
+  "correction": "Both fallbacks are real (`:640` in the constructor, `:740` in `initialize`). The addition: a runner that has never been initialized is already observable, because the constructor sets `#uiContext = noOpUIContext` at `:640` and `getUIContext()` (`:919-921`) returns it. That is what makes test row (2) cheap — it does not need to run a headless session, only `new ExtensionRunner(...)` followed by `runner.getUIContext().setHeader(...)`. There is also no `unloadExtension` anywhere in `packages/coding-agent/src` today (grep returns nothing) and `getExtensionPaths()` is at `:927-929`; PR 2's per-extension disposal should not assume an unload entry point exists, because WI-9 is what creates it.",
+  "evidence": "`sed -n '630,645p;915,930p'` and `grep -rn 'unloadExtension' packages/coding-agent/src` at HEAD 808b365."
+ },
+ {
+  "id": "WI-13",
+  "claim": "Plan §WI-13 headline: 'Cặp stub đó không chỉ có một chỗ... Sửa mỗi `extension-ui-controller.ts` là ship một nửa... Vì vậy cả hai site đều nằm trong phạm vi WI-13.' The plan's entire failure-mode-4 analysis rests on there being exactly TWO sites.",
+  "verdict": "WRONG — there are FOUR, and they do not all share the same intent",
+  "correction": "`grep -rn 'setFooter: () => {}\\|setHeader: () => {}' packages/coding-agent/src` returns EIGHT lines = four distinct sites, not two. (a) `modes/controllers/extension-ui-controller.ts:157-158` — the TUI path, the plan's site 1. (b) `extensibility/extensions/runner.ts:424-425` — `noOpUIContext`, the plan's site 2. (c) `session/agent-session.ts:540-541` — a SECOND, entirely separate `noOpUIContext` declared at `:518` and used at `:7400`, which the plan never mentions. It is a genuine extension-facing fallback: `#createCommandContext()` returns `{ ui: noOpUIContext, mode: 'print', hasUI: false, ... }` when the session has no extension runner, so an extension command handler in a hand-constructed session gets this context and its `setHeader` call is swallowed. Its own JSDoc at `:7404-7406` notes the path is reached only by hand-constructed sessions, but it is still reachable and still silent. (d) `modes/acp/acp-agent.ts:581-582` — inside the exported `createAcpExtensionUiContext(connection, getSessionId, clientCapabilities)` declared at `:425`. This one is DIFFERENT IN KIND: its own JSDoc at `:409-424` deliberately documents the silence ('The non-elicitation surface (custom components, theming, terminal input) remains stubbed — ACP clients render those themselves or not at all'). Consequence for the plan: its failure-mode-4 warning ('fix the controller, forget the runner, gate stays green') is still right but understates the exposure by 2x, and the plan's remedy — 'both sites are in WI-13's scope' — is not a decision that can be made mechanically, because (c) is a bug and (d) is a documented design choice. See the ACP open question.",
+  "evidence": "`grep -rn 'setFooter: () => {}\\|setHeader: () => {}' packages/coding-agent/src` at HEAD 808b365 returns exactly `extension-ui-controller.ts:157,:158`, `acp-agent.ts:581,:582`, `runner.ts:424,:425`, `agent-session.ts:540,:541`. `sed -n '405,430p'` of acp-agent.ts shows the exported builder and its JSDoc; `sed -n '516,545p;7394,7410p'` of agent-session.ts shows the second noOpUIContext and its only use site."
+ },
+ {
+  "id": "WI-2",
+  "claim": "The diagnostic record is declared at runner.ts:470, pushed at runner.ts:1180, and `getCommandDiagnostics` is at runner.ts:1193.",
+  "verdict": "stale-line-numbers",
+  "correction": "All four anchors are off by 11-13 lines. The private field is at runner.ts:481, the reset at 1186, the single push site at 1193, and the getter at 1206. `getRegisteredTool` is at 984-990, not 971-977.",
+  "evidence": "grep -n on packages/coding-agent/src/extensibility/extensions/runner.ts: 481:#commandDiagnostics; 1185:getRegisteredCommands(reserved?); 1186: reset; 1193: push; 1206: getCommandDiagnostics; 984: getRegisteredTool(name)."
+ },
+ {
+  "id": "WI-2",
+  "claim": "The fixture premise should be checked by reading `readDirEntries` once inside the test, because that is what determines the order.",
+  "verdict": "wrong-primitive",
+  "correction": "Check with `fs.readdirSync` instead. The configured-directory branch of `discoverExtensionPaths` calls `resolveExtensionDirectory`, which does its own raw `fs.readdirSync` and never touches the cached capability helper — `readDirEntries` is not on the code path the fixture exercises, so checking with it validates a premise about the wrong function.",
+  "evidence": "packages/coding-agent/src/extensibility/extensions/directory-resolution.ts:114 `children = fs.readdirSync(dir);` — `readDirEntries` is imported nowhere in that file. Its only import in discovery is helpers.ts:17."
+ },
+ {
+  "id": "WI-2",
+  "claim": "Sort `entries` inside `discoverLinkedExtensionModuleFiles` before mapping.",
+  "verdict": "incomplete-missing-hazard",
+  "correction": "Correct instruction, but it omits the trap that makes it wrong in the obvious implementation: `entries` IS the cached array, so `.sort()` in place mutates the shared module-level cache. The step must specify a copy. Without this the change silently reorders results for six other discovery modules with no error and no failing import.",
+  "evidence": "packages/coding-agent/src/capability/fs.ts:39-41 returns `dirCache.get(abs) ?? []` — the same `fs.Dirent[]` reference, not a copy. Other consumers: discovery/builtin.ts:48,531,582,701,743; cline.ts:23; gemini.ts:195; omp-extension-roots.ts:243; omp-plugins.ts:236."
+ },
+ {
+  "id": "WI-2",
+  "claim": "`getCommandDiagnostics()` returns `Array<{ type: string; message: string; path: string }>` and the fix is to add `paths: string[]` to it.",
+  "verdict": "verified-but-underdetermined",
+  "correction": "The no-consumer claim is verified. But the plan never says WHERE a tool-collision diagnostic gets computed, and the answer is forced: `#commandDiagnostics` is reset at the top of `getRegisteredCommands` (runner.ts:1186), so a tool diagnostic that only ever got pushed there would be invisible to any consumer that has not called `getRegisteredCommands()` first. The spec resolves this with a pure private collector plus a dedicated recomputing getter, so the tool report carries no hidden ordering contract.",
+  "evidence": "runner.ts:1185-1186 `getRegisteredCommands(reserved?) { this.#commandDiagnostics = [];`. `git grep -rn getCommandDiagnostics -- packages/` returns only runner.ts:1206."
+ },
+ {
+  "id": "WI-2",
+  "claim": "The task context states git HEAD is 5873776.",
+  "verdict": "stale",
+  "correction": "HEAD is 808b365 on branch milestone-1, working tree clean. Every line anchor in this spec was verified against 808b365.",
+  "evidence": "`git log --oneline -1` → 808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan."
+ },
+ {
+  "id": "WI-2",
+  "claim": "`bun test` reports 0 pass with the native-addon error.",
+  "verdict": "partly-wrong",
+  "correction": "It reports 0 pass / 1 FAIL / 1 error per file — the file is counted as failed, not skipped. Small, but it tells the engineer the test run is genuinely red rather than silently empty, which is what they need to know before assuming a green run.",
+  "evidence": "`cd packages/coding-agent && bun test test/extension-loader-concurrency.test.ts` → `0 pass / 1 fail / 1 error / Ran 1 test across 1 file`."
+ },
+ {
+  "id": "WI-2",
+  "claim": "Sorting `allPaths` is a no-op for consumers because nothing in the codebase depends on incidental filesystem order.",
+  "verdict": "verified-with-caveat",
+  "correction": "Verified — `loadExtensions` (loader.ts:485-487) uses `Promise.all(paths.map(...))`, which preserves input order, and `bindPreparedExtensions` iterates in that order, so `this.extensions` order is exactly `allPaths` order. The caveat: `resolveExtensionDirectory` is called with CONFIGURED_EXTENSION_DIRECTORY_OPTIONS, which does NOT set `sortChildren` (only the plugin options at plugins/loader.ts:290 do), so a configured directory of sub-extensions is the one path the loader post-sort is load-bearing for. That is exactly the path the test fixture exercises, which is good for coverage but means the plugin path was already sorted and gains nothing.",
+  "evidence": "loader.ts:485-487; loader.ts:528-536 `CONFIGURED_EXTENSION_DIRECTORY_OPTIONS` (no sortChildren) vs plugins/loader.ts:287-291 `PLUGIN_EXTENSION_DIRECTORY_OPTIONS` (sortChildren: true); directory-resolution.ts:119 `if (options.sortChildren) children.sort();`."
+ },
+ {
+  "id": "WI-7",
+  "claim": "The six booleans are runtime fields of `InteractiveMode` at `modes/interactive-mode.ts:981-988`.",
+  "verdict": "stale",
+  "correction": "They are at `modes/interactive-mode.ts:908-915`, not 981-988 — off by roughly 73 lines. The `types.ts:189-194` half of the same claim IS correct.",
+  "evidence": "`grep -n 'planModeEnabled\\|vibeModeEnabled\\|goalModeEnabled\\|goalModePaused\\|loopModeEnabled\\|loopModePaused' packages/coding-agent/src/modes/types.ts` → 189,190,191,192,193,194 (exact). `sed -n '900,920p' packages/coding-agent/src/modes/interactive-mode.ts` → 908 `planModeEnabled = false;` through 915 `loopModePaused = false;`. Lines 975-1000, which the plan points at, hold `pendingPythonComponents` / `isPythonMode` and the working-message cache."
+ },
+ {
+  "id": "WI-7",
+  "claim": "The four `AgentSession` mode accessors are at `agent-session.ts:6097`, `:6102`, `:6120`, `:6128`; `codeModeNamespacesInfo` at `:5822`; `#codeModeState` declared at `:1387`.",
+  "verdict": "stale",
+  "correction": "All six anchors are off. getPlanModeState is at :6132, getPrewalkState :6137, getGoalModeState :6155, getVibeModeState :6163, codeModeNamespacesInfo :5852, #codeModeState :1395. The accessor anchors are off by a consistent ~30-35 lines; the other two by ~30 and ~8.",
+  "evidence": "`grep -n 'getPlanModeState\\|getPrewalkState\\|getGoalModeState\\|getVibeModeState\\|codeModeNamespacesInfo\\|#codeModeState' packages/coding-agent/src/session/agent-session.ts` → 1366, 1395, 1404, 1474, 1783, 5852, 5853, 6132, 6137, 6155, 6163. The plan's own two seam-grep counts still hold exactly, so the drift is confined to line numbers, not to structure."
+ },
+ {
+  "id": "WI-7",
+  "claim": "The six booleans become 'derived getters' on the registry, keeping their names and types.",
+  "verdict": "incomplete-and-blocking",
+  "correction": "A bare getter will not compile. There are 28 `this.<mode>.x = ` assignment sites in src/, ALL in interactive-mode.ts (planModeEnabled x4, planModePaused x5, vibeModeEnabled x3, goalModeEnabled x7, goalModePaused x7, loopModeEnabled x2, loopModePaused x4). Each field needs a getter AND a setter pair, with the setter routing the write into the registry. The plan's framing understates the work and, followed literally, produces a commit that does not build.",
+  "evidence": "`git grep -nE '\\.(planModeEnabled|vibeModeEnabled|goalModeEnabled|goalModePaused|loopModeEnabled|loopModePaused|planModePaused) = ' -- packages/coding-agent/src` → 28 lines, and `git grep -l` on the same pattern → exactly one file, `interactive-mode.ts`. Per-field assignment counts from `grep -cE '^\\s*this\\.<name> = ' interactive-mode.ts`."
+ },
+ {
+  "id": "WI-7",
+  "claim": "Six booleans is the complete mode-state surface to preserve as derived getters.",
+  "verdict": "wrong-count",
+  "correction": "There are SEVEN mode-state bits. `planModePaused = false` is declared at interactive-mode.ts:909 and is read at 11 sites — but it is NOT declared on `InteractiveModeContext` (grep for planModePaused in modes/types.ts returns nothing), so it was missed by a plan that enumerated the interface. It is load-bearing: interactive-mode.ts:3750-3753 feeds it straight into the status line as `paused`, and segments.ts:369-373 renders the `Plan ⏸` warning chip from it. Converting six and leaving the seventh as a raw field means the status line's paused state silently stops updating the moment the other six move to the registry.",
+  "evidence": "`grep -n 'this.planModePaused' packages/coding-agent/src/modes/interactive-mode.ts` → 11 sites (2318, 3750, 3753, 4018, 4031, 4158, 4181, 4377, 4398, 4406, 5069, 5075, 5130, 5253, 5361, 5406). `sed -n '3748,3757p'` shows #updatePlanModeStatus passing `{ enabled, paused }` to `this.statusLine.setPlanModeStatus(status)`. `sed -n '369,373p' packages/tui/src/status-line/segments.ts` shows the paused branch producing the warning-toned chip."
+ },
+ {
+  "id": "WI-7",
+  "claim": "`test/plan-mode/write-policy.test.ts` is new and must defend the `local://` sandbox inequality that nothing currently covers.",
+  "verdict": "partly-stale",
+  "correction": "The inequality IS already covered for the built-in plan mode, at `packages/coding-agent/test/tools/plan-mode-guard-local.test.ts:90-127`: it asserts `local://` create and update resolve, `src/foo.ts` and `PLAN.md` reject with /working tree is read-only/, delete rejects with /deleting files is not allowed/, and move rejects with /renaming files is not allowed/. AGENTS.md bans restating coverage at a second level. The new file must defend a DIFFERENT contract — the policy evaluated AS DATA through a registry entry, driven by an extension-registered mode — or it is a duplicate that the rules forbid.",
+  "evidence": "`sed -n '90,127p' packages/coding-agent/test/tools/plan-mode-guard-local.test.ts` shows all five assertions above. The file is 26 KB-scale and fully wired to `enforcePlanModeWrite`."
+ },
+ {
+  "id": "WI-7",
+  "claim": "The status-line blocker is the closed 27-member `StatusLineSegmentId` union at `schema.ts:2-30` with no seam for contributors.",
+  "verdict": "right-but-incomplete",
+  "correction": "The union is exactly as described (verified 27 members). But the harder half of the blocker is one level down: `SegmentContext` (types.ts:75) carries FIVE separate hardcoded per-mode fields — planMode :96, prewalk :100, loopMode :103, goalMode :109, vibeMode :113 — and `modeSegment` resolves them through a hand-written 5-way if-chain in a fixed priority order (segments.ts:369-403). An extension mode has no field there either, and the if-chain silently returns `{ visible: false }` for anything it does not recognise. A design that opens the id union but leaves the five fields hardcoded still ships an invisible mode, so any M2-OQ3 answer must address both halves.",
+  "evidence": "`sed -n '96,116p' packages/tui/src/status-line/types.ts` shows the five fields. `sed -n '364,406p' packages/tui/src/status-line/segments.ts` shows the chain and the `return { content: \"\", visible: false };` fallthrough. Minor: the plan's 'segments.ts:919-947' for the SEGMENTS record actually ends at :945, and `id: \"mode\"` is at :365 (the const opens at :364)."
+ },
+ {
+  "id": "WI-7",
+  "claim": "`enforcePlanModeWrite` is 'called from the tool layer'.",
+  "verdict": "vague-but-not-wrong",
+  "correction": "There are exactly 4 call sites and they are not uniform: `tools/write.ts:778` (op update), `:814` (archive path, op update), `:842` (sqlite path, op update), `:859` (op create). The archive and sqlite sites pass a working-tree op over a path that is not a plain source file, so each needs individual reasoning about the new `workingTree: allow|deny` rule. Listing them costs nothing and prevents three of the four being assumed equivalent.",
+  "evidence": "`git grep -n enforcePlanModeWrite -- packages/` → 4 sites in write.ts, plus the definition at plan-mode-guard.ts:127 and the existing test file."
+ },
+ {
+  "id": "WI-1",
+  "claim": "Repo state: 'git HEAD 5873776, currently on branch milestone-1'.",
+  "verdict": "STALE — the commit does not exist",
+  "correction": "HEAD is 808b365 ('docs(plan): fold the spec-verified M1 execution plan into the upgrade plan'). `git cat-file -t 5873776` returns 'fatal: Not a valid object name'. The branch is correct (milestone-1). All line numbers below were measured against 808b365.",
+  "evidence": "`git rev-parse --short HEAD` -> 808b365; `git cat-file -t 5873776` -> fatal; `git branch --show-current` -> milestone-1"
+ },
+ {
+  "id": "WI-1",
+  "claim": "runner.ts anchors: `#managedTimers` at :507, `clearManagedTimers()` call at :408, `setSuspendedExtensions` at :934-956, `createContext` signature at :1229, trampoline gates at :766/:785, `#runHandlerWithTimeout` at :1361, `createHandlerContext` at :227-239, timer arrow props at :1290-1291.",
+  "verdict": "STALE — systematically shifted",
+  "correction": "Every runner.ts anchor in the plan is off. Measured at HEAD: `#managedTimers` = 518, `clearManagedTimers()` call = 411, method defined = 1336-1337, `setSuspendedExtensions` = 947-969, trampoline gates = 779 and 798, `createContext` signature = 1242, timer arrow props = 1304-1305, `#runHandlerWithTimeout` = 1375, `createHandlerContext` = 230-241, `createHandlerContext(...)` call = 1405-1408. The shift is not uniform: +11, +3, +13, +13, +3, +14, +14, +3, +14. Do not `sed -n '507p'` this file — re-derive every anchor with grep.",
+  "evidence": "`grep -n '#managedTimers\\|clearManagedTimers\\|setSuspendedExtensions\\|runHandlerWithTimeout\\|createHandlerContext' packages/coding-agent/src/extensibility/extensions/runner.ts`"
+ },
+ {
+  "id": "WI-1",
+  "claim": "sdk.ts anchors: `reconcileExtensionSources` at 4560-4624, `resetCapabilities()` at :4565, `setSuspendedExtensions` at :4573, the discover await at :4567-4570.",
+  "verdict": "STALE — uniformly +6",
+  "correction": "Measured at HEAD: `const reconcileExtensionSources` = 4566, `resetCapabilities()` = 4571, the `await Promise.all([...])` = 4573-4576, `const { suspended, resumed } = extensionRunner.setSuspendedExtensions(` = 4579-4581, function ends near 4629. All four are +6. The OTHER sdk.ts anchors in the plan are exact: 1002-1004, 1006-1009, 2482, 2484, and 3074. The 2487-2491 drain block is off by one only at its closing brace (2492).",
+  "evidence": "`grep -n 'resetCapabilities()\\|setSuspendedExtensions(' packages/coding-agent/src/sdk.ts` -> 4571, 4579; `sed -n '4566,4584p' packages/coding-agent/src/sdk.ts`"
+ },
+ {
+  "id": "WI-1",
+  "claim": "The retention record lives on the `Extension` interface at `types.ts:1777-1792`.",
+  "verdict": "STALE — wrong location",
+  "correction": "`export interface Extension` is at types.ts:1802-1818, not 1777-1792. The plan's line 1777-1779 claim that `Extension` 'already has both path and resolvedPath' is true but at 1803-1804, 25 lines later. types.ts:1777-1792 actually contains `ExtensionCommandContextActions` and `ExtensionRuntime`. The design conclusion is unaffected — the record still belongs on `Extension`, not on `ExtensionRuntime` — but do not open 1777.",
+  "evidence": "`grep -n '^export interface Extension ' packages/coding-agent/src/extensibility/extensions/types.ts` -> 1802; `sed -n '1770,1800p'` shows ExtensionCommandContextActions / ExtensionRuntime"
+ },
+ {
+  "id": "WI-1",
+  "claim": "Two constraints on commit 1 that read as design inputs are not.",
+  "verdict": "CONFIRMED TRUE — recorded because it is the load-bearing insight",
+  "correction": "Both hold exactly as stated, and they are the reason this work item is not a one-liner. (a) `createContext()` has exactly 15 call sites — `grep -n 'this\\.createContext(' packages/coding-agent/src/extensibility/extensions/runner.ts | wc -l` -> 15 — of which 2 (lines 780, 799) are the file-fallback trampolines that call handlers directly, and 13 share one context across the emit loop via `ctx ??= this.createContext()` (lines 1478 and 1490). Threading `ext` into `createContext()` would pass `undefined` at all 13. (b) `createHandlerContext` (230-241) is `Object.create(ctx)` overriding only `ui`, so the ownerless `setInterval`/`setTimeout` `createContext()` installs at 1304-1305 are inherited by every handler. Both verified, both decisive.",
+  "evidence": "15 call sites listed at 780, 799, 1352, 1478, 1490, 1529, 1587, 1644, 1675, 1716, 1738, 1819, 1855, 1880, 1937; #runHandlerWithTimeout is called from exactly 12 sites: 1480, 1493, 1538, 1600, 1651, 1686, 1723, 1770, 1831, 1869, 1896, 1945"
+ },
+ {
+  "id": "WI-1",
+  "claim": "'Commit 2 must join the resume record, and the two `createContext` caller shapes mean only three owner points exist' — i.e. the shape of the whole fix.",
+  "verdict": "CONFIRMED, with one refinement the plan overstates",
+  "correction": "Three owner points is right. The refinement: the plan says the reconcile path 'works in resolvedPath space, so the two spaces must be joined through a mapping that cannot be used directly' (and repeats it under 'where the record lives'). That is true for the `governed`/`enabled` sets at 4577-4578, but it does NOT apply to the provider work. `setSuspendedExtensions` returns `Extension` OBJECTS, and `Extension` carries both `path` and `resolvedPath` — so the source id is a plain `.path` read, and `sourceId` is exactly `extension.path` by construction (loader.ts:363). `extensionRunner.getExtensionPaths()` (927-929) hands over the whole active list in the right key space in one call. No mapping is needed anywhere in the provider half, and building one would be the error.",
+  "evidence": "`sed -n '4577,4582p' packages/coding-agent/src/sdk.ts` (predicate uses `.resolvedPath`); `sed -n '362,364p' packages/coding-agent/src/extensibility/extensions/loader.ts` (sourceId IS `this.extension.path`); `sed -n '927,929p' .../runner.ts` (`this.extensions.map(e => e.path)`)"
+ },
+ {
+  "id": "WI-1",
+  "claim": "Test rows 1-2 fail on HEAD; row 3 also fails on HEAD.",
+  "verdict": "PARTLY WRONG — row 2 passes vacuously on HEAD",
+  "correction": "Rows 1 and 3 do fail on HEAD. Row 2 (TIMER ALIVE AFTER RESUME) does NOT: on unmodified HEAD nothing is ever cleared, so an interval keeps firing across a suspend/resume cycle and the row passes for the wrong reason. It only becomes a real gate once commit 1 lands — it blocks a commit-1 implementation that satisfies row 1 by never scheduling, or by clearing on the resume branch too. Write it anyway (it is a genuine regression guard), but do not report it as red-before / green-after.",
+  "evidence": "managed-timers.ts has no owner concept and setSuspendedExtensions (947-969) touches only `#suspendedExtensions` and the `extensions` array; therefore every scheduled timer keeps running regardless of suspend state at HEAD."
+ },
+ {
+  "id": "WI-1",
+  "claim": "Wave split: commit 1 ships in Wave 2, commit 2 (suspend + resume together) in Wave 4.",
+  "verdict": "CONFIRMED — this spec ships the Wave 2 half only",
+  "correction": "Per the plan's own wave table (section 6.1, line 4693) and its stated reasoning at 4866-4869: the provider half cannot ship suspend-only, because `pendingProviderRegistrations` is destructively drained by all three consumers (loader.ts:102/105 declare and push; sdk.ts:1009, sdk.ts:2491, cli/models-cli.ts:362 each reassign `[]`), so a bare re-call would re-register nothing. The plan ships no suspend-only provider increment to users at all. The Wave 2 PR therefore contains steps 1-7 only.",
+  "evidence": "Plan lines 4693, 4860-4869, 4718-4720; `grep -n 'pendingProviderRegistrations' packages/coding-agent/src` -> sdk.ts:1006,1009,2487,2488,2491; cli/models-cli.ts:359,362; loader.ts:102,105"
+ },
+ {
+  "id": "WI-1",
+  "claim": "Environment: `bun test` reports 0 pass because the pi_natives addon is not built.",
+  "verdict": "CONFIRMED — reproduced verbatim",
+  "correction": "Reproduced at HEAD: `bun test test/model-registry-runtime-cleanup.test.ts` -> '0 pass, 1 fail, 1 error' with 'Failed to load pi_natives native addon for darwin-arm64'. The unblock is `bun --cwd=packages/natives run build` (package script verified at packages/natives/package.json:32). Separately, the type baseline is clean and should be recorded: `cd packages/coding-agent && bun run check:types` exits 0 with zero errors at HEAD, so the gate is genuinely 'zero errors', not 'no new errors'.",
+  "evidence": "`bun test test/model-registry-runtime-cleanup.test.ts` (output above); `grep -n '\"build\"' packages/natives/package.json` -> line 32; `bun run check:types` -> EXIT=0"
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan line 5895: the extension factory surface is at 'types.ts:1231'.",
+  "verdict": "STALE — off by 25 lines",
+  "correction": "ExtensionAPI is declared at packages/coding-agent/src/extensibility/extensions/types.ts:1256. Line 1231 is inside a doc comment for a neighbouring type ('Service tiers accepted by each provider family'). Anything an engineer does with the plan's 1231 lands 25 lines short of the interface.",
+  "evidence": "`grep -n 'export interface ExtensionAPI' packages/coding-agent/src/extensibility/extensions/types.ts` → 1256:export interface ExtensionAPI. Related: ExtensionFactory at :1660, and §5.x of the plan separately cites 'extensions/types.ts:1255-1315' for the 46 on() overloads, whose start anchor 1255 is likewise one line off the real interface at 1256."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan lines 5893-5896 and 5911: there are TWO 'fallow-ignore-next-line code-duplication' markers, at types.ts:230 and :543, and they carry the argument that the extension surface is a strict superset of the hook surface.",
+  "verdict": "WRONG COUNT and WRONG ANCHOR — there are four markers, and :543 matches nothing",
+  "correction": "The file has FOUR such markers, at lines 230, 395, 568 and 1227. The plan's :230 is correct (it precedes ExtensionUIContext, commented 'extensions expose a strictly larger UI surface'). Its :543 does not correspond to a marker at all — the nearest is :568. The plan therefore understates its own evidence by half: 230 and 395 are the pair that actually make the superset argument for the UI and runtime contexts, 568 covers ExtensionCommandContext, and 1227 covers RegisteredCommand.",
+  "evidence": "`grep -n 'fallow-ignore-next-line code-duplication' packages/coding-agent/src/extensibility/extensions/types.ts` → 230, 395, 568, 1227. The file is 1849 lines, so all four are stable positions."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan lines 5893 and 4441: the capability layer is '14 capability trên 84 provider pair'.",
+  "verdict": "HALF RIGHT — 14 verified, 84 NOT REPRODUCIBLE, and the miscount hides a correctness trap",
+  "correction": "14 capabilities is exactly right. The 84 is not: the static count of capability-provider registrations is 20, all at module top level, none in a loop, one provider per call. The 84 figure almost certainly came from conflating the capability registry with a SECOND, unrelated registry that shares the function name registerProvider — the MODEL provider registry at config/model-registry.ts, exposed to extensions as pi.registerProvider (declared extensions/types.ts:1570, implemented loader.ts:362, replayed from pendingProviderRegistrations in sdk.ts:1007 and :2489). That conflation is not cosmetic: the model-provider registry IS already extension-reachable today, and docs/extensions.md:905 says so in as many words ('extensions (…): unified system (events + tools + commands + renderers + provider registration)'). An ADR that says 'provider registries are not extension-reachable' would be flatly false. Only the CAPABILITY registry is core-only. The document must name which registry it means.",
+  "evidence": "14: `grep -rn 'defineCapability<' packages/coding-agent/src/` → 14 hits, all under packages/coding-agent/src/capability/. 20: `grep -rn '^registerProvider(' packages/coding-agent/src/ | grep -cE 'Capability\\.id'` → 20, spread over discovery/{opencode:6, gemini:5, cursor:3, github:2, mcp-json:1, claude-md:1, agents-md:1, ssh:1}. Full `registerProvider(` hits number 42, splitting 20 capability / 22 model-provider. The two registries are distinguishable by first argument: `someCapability.id` versus a name string."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan line 5904: the core-only capability registry is at 'capability/index.ts:88'.",
+  "verdict": "OFF BY ONE — points at a JSDoc terminator, not the code",
+  "correction": "defineCapability is declared at packages/coding-agent/src/capability/index.ts:89 and ends at :96. Line 88 is the closing ' */' of its doc comment. The module-scope registry map is at :34 and the duplicate-id throw is at :90-92. Cite :89-96 (which is what the plan's own §4.3 R1 does — so the plan is internally inconsistent about this anchor, and §4.3's version is the correct one).",
+  "evidence": "`sed -n '84,99p' packages/coding-agent/src/capability/index.ts` → 84 section banner, 86-88 JSDoc for defineCapability, 89 the export, 90-92 the duplicate-id throw, 96 the closing brace. §4.3 R1 of the plan cites ':88-96'; the WI-10 body cites ':88'."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan line 4724 (wave 6 rationale): 'setHookWidget giữ widget trong hai map không ai giải phóng (extension-ui-controller.ts:78-79)'.",
+  "verdict": "WRONG ANCHOR — off by 9 lines, and the cited lines contain unrelated code",
+  "correction": "The two unowned maps are at packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:87-88, not 78-79. They are the private fields #hookWidgetsAbove and #hookWidgetsBelow. Lines 78-79 are inside the toWireSelectOptions helper, mapping a select option's description field — nothing to do with widget ownership. This is WI-13's and WI-9's anchor rather than WI-10's, but it appears in the wave table this item ships in, so correct it here rather than letting WI-9 inherit it.",
+  "evidence": "`grep -n 'new Map\\|setHookWidget' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` → 87:#hookWidgetsAbove, 88:#hookWidgetsBelow, 343: setHookWidget(...). The file is 1342 lines; `sed -n '78,79p'` returns `: option.description` / `: { label: option.label, description: option.description }`."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan line 4694 (wave 5 gate) and WI-0's spec: the wave-5 gate is 'the pi.registerMode row of the outsider-extension fixture'.",
+  "verdict": "NOT A CURRENT ANCHOR — neither exists; both are wave-5/6 artifacts to be created",
+  "correction": "There is no outsider-extension fixture anywhere in the tree, and pi.registerMode does not exist as a symbol. These are things WI-7 and WI-13 will BUILD, not things this plan can cite as evidence. The correct reading is prospective: wave 5's gate is a fixture row that does not exist until WI-7 lands. Do not write either name into a spec or an ADR as if it were present, and do not expect to open them during review.",
+  "evidence": "`grep -rln 'outsider' packages/` → no matches. `grep -rn 'registerMode' packages/coding-agent/src/` → no matches. `find . -name '*outsider*' -not -path './node_modules/*'` → nothing."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan lines 4697 and 5921 reference test/extension-ui-header-footer.test.ts (WI-13's wave-6 gate) and test/extension-unload.test.ts (WI-9's fixture).",
+  "verdict": "NOT YET EXISTING — correctly future files, but must not be cited as if runnable",
+  "correction": "Neither file exists. packages/coding-agent/test/ contains a large set of extension tests (extensions-runner.test.ts, extensions-discovery.test.ts, plugin-extensions-discovery.test.ts, extension-provider-registration-rollback.test.ts and many more) but not these two. WI-13 and WI-9 create them in waves 6 and 7. Since WI-10 writes no test, this costs nothing directly — but it does mean the §11.1 five-capability checklist cannot be called green on the strength of this item, and neither doc-side file makes it greener.",
+  "evidence": "`ls packages/coding-agent/test/ | grep -iE '^extension'` returns 15 files, none named extension-ui-header-footer.test.ts or extension-unload.test.ts. Note also that the plan's wave-6 gate names these without the packages/coding-agent/ prefix; the real location is packages/coding-agent/test/."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Not mentioned anywhere in the plan: nothing states that the tree ALREADY contains a partial answer to this work item.",
+  "verdict": "MISSING FROM THE PLAN — and it is the highest-value finding in this review",
+  "correction": "docs/extensions.md:901-909 already contains a section titled '## Extensions vs hooks vs custom-tools' that begins 'Use the right surface:'. It ranks three of the five surfaces in prose, calls hooks a 'separate legacy event API', and closes with 'If you need one package that owns policy, tools, command UX, and rendering together, use extensions.' It is a real prior answer, it is incomplete (custom-commands/ and plugins/ absent), it is uncheckable (no status word), and it is silent on the capability registry. The plan's own framing — 'which surface is canonical' — is therefore not a blank page but a page with a partial draft on it. The ADR must reconcile that section rather than sit beside it, or the tree ships two answers and the conflict is resolved by whichever one a reader opens first.",
+  "evidence": "`sed -n '901,909p' docs/extensions.md` → heading at 901, 'Use the right surface' at 903, the three bullets at 905-907, the closing sentence at 909."
+ },
+ {
+  "id": "WI-10",
+  "claim": "Plan line 5923: 'Phụ thuộc: WI-0 … và WI-7 / WI-8, vì hai cái đó quyết định năng lực mới sẽ đáp trên bề mặt nào.'",
+  "verdict": "INTERNALLY INCONSISTENT — the wave table inverts this",
+  "correction": "WI-7/WI-8 appear here as a soft dependency, but the plan's own wave table (§6.1) and its M2-OQ2 blast-radius text both say the opposite: WI-10 BLOCKS WI-7, and the wave-5 note states wave 5 depends strictly on waves 1-4. WI-8 does not appear as blocked by WI-10 anywhere. Treat WI-0 as the only hard dependency; the WI-7/WI-8 mention is best read as 'this decision must anticipate what WI-7 and WI-8 will need', which is a drafting instruction, not a sequencing constraint.",
+  "evidence": "Plan line 5923 lists WI-7/WI-8 under 'Phụ thuộc'. Plan lines 4693 ('Wave 5 phụ thuộc nghiêm ngặc vào 1-4') and 4704 ('WI-10 chặn WI-7') state the inverse. Line 6669-6673 names WI-7 first among what M2-OQ2 blocks."
+ },
+ {
+  "id": "WI-6",
+  "claim": "`packages/coding-agent/src/tools/index.ts:725-789` is the `isToolAllowed` 25-branch ladder.",
+  "verdict": "STALE",
+  "correction": "The ladder is at lines 731-793. Off by +6 at the start, +4 at the end.",
+  "evidence": "`grep -n 'const isToolAllowed' packages/coding-agent/src/tools/index.ts` → `731: const isToolAllowed = (name: string) => {`; read of 731-793 shows the closing `};` at 793."
+ },
+ {
+  "id": "WI-6",
+  "claim": "Sub-anchors: `goal` at `:731-735`, `wait` at `:762-769`, `checkpoint`/`rewind` at `:755-761`, `manage_skill` at `:774-778`, `learn` at `:779-785`, `task` at `:786-788`, `context_notes`/`new_context` at `:753-754`.",
+  "verdict": "STALE (all seven)",
+  "correction": "Actual lines: goal 737-741, context_notes/new_context 759-760, checkpoint/rewind 761-765, wait 766-772, manage_skill 777-781, learn 782-788, task 789-791. Every one is 3-6 lines lower than the plan says. A mechanical copy of these anchors lands on the wrong branch.",
+  "evidence": "Read of `tools/index.ts:700-807` with per-branch line numbers; `awk` count of `^\\s*if (name ===` over 731-793 returns exactly 25, confirming the branch COUNT in the plan is right even though the line numbers are not."
+ },
+ {
+  "id": "WI-6",
+  "claim": "`BUILTIN_TOOLS` at `:548-579`, `SETTINGS_GATED_BUILTIN_TOOL_NAMES` at `:594-597`, the `isMountableUnderXdev` coupling at `:899`.",
+  "verdict": "STALE",
+  "correction": "Actual: `BUILTIN_TOOLS` 554-585, `SETTINGS_GATED_BUILTIN_TOOL_NAMES` 600-602, the xdev coupling at 902.",
+  "evidence": "`grep -n` on `tools/index.ts` for each symbol."
+ },
+ {
+  "id": "WI-6",
+  "claim": "The risk is 'silent priority inversion': the 25-branch chain is an early-return ladder, so reordering branches during the move can change which rule wins without changing any rule's body.",
+  "verdict": "OVERSTATED — and pointing the implementer at it will waste the day they should spend on the real risk",
+  "correction": "All 25 branches are `if (name === \"literal\")` and the 29 distinct names across them are pairwise disjoint, so at most one branch can ever match a given `name`. Branch order therefore provably cannot change any outcome; the stated failure mode cannot occur. The REAL risk is the one the plan does not name: hoisting each branch into a standalone `(ctx) => boolean` requires promoting eleven closure captures to explicit context fields, and a dropped field compiles cleanly while silently changing admission. The mechanical move is order-insensitive; the semantic move is capture-insensitive.",
+  "evidence": "Extracted the 29 distinct names from `tools/index.ts:731-793` and confirmed none appears in two branches: ask ast_edit ast_grep bash checkpoint context_notes debug eval find github glob goal grep ida learn lsp manage_skill memory_edit new_context recall reflect retain rewind security_scan task think todo wait web_search."
+ },
+ {
+  "id": "WI-6",
+  "claim": "The table should be `Record<ToolName, (ctx) => boolean>`.",
+  "verdict": "WOULD NOT TYPECHECK",
+  "correction": "`ToolName = BuiltinToolName` (`tools/index.ts:593`), which is the 30 built-in names. But `isToolAllowed` carries real, non-default rules for `goal` and `think`, and both are `HiddenToolName`, not `BuiltinToolName`. The key must be `BuiltinToolName | HiddenToolName` (33 names). Writing it as the plan states either fails the typecheck or silently drops the `goal` rule — and the `goal` rule is the one carrying a three-way condition and a `dropped`-status exception.",
+  "evidence": "`grep -n 'export type ToolName' tools/index.ts` → `593: export type ToolName = BuiltinToolName;`. `builtin-names.ts:36` shows `HIDDEN_TOOL_NAMES = [\"yield\", \"goal\", \"think\"]`. The branch list contains `goal` and `think`; subtracting the 30 `BUILTIN_TOOL_NAMES` leaves exactly those two as covered-but-not-builtin."
+ },
+ {
+  "id": "WI-6",
+  "claim": "Not mentioned anywhere in the plan: a `Record`-shaped admission table introduces a prototype-chain lookup hazard that the current if-chain does not have.",
+  "verdict": "NEW FINDING — this is the sharpest correctness risk in the item",
+  "correction": "With a plain object literal and a `TABLE[name]` lookup, `TABLE[\"toString\"]` resolves to `Object.prototype.toString` — a FUNCTION, so calling it returns the truthy string `\"[object Undefined]\"` instead of a boolean; `TABLE[\"constructor\"]` returns `Object`, truthy; `TABLE[\"__proto__\"]` returns a non-function that THROWS when called. The current if-chain is immune because unmatched names fall through to `return true`. This is reachable, not theoretical: `tools/index.ts:799` gates on `name in BUILTIN_TOOLS`, and `in` on an object literal is exactly as prototype-polluted — an extension tool named `toString` already passes that gate today and reaches `isToolAllowed`. Mitigation: build the `Map` from `Object.entries()` of a `satisfies Record<…>` literal, which keeps compile-time exhaustiveness while making lookup prototype-safe.",
+  "evidence": "Executed a probe against the real gate shape: `[\"read\",\"toString\",\"constructor\",\"__proto__\"].filter(n => n in BUILTIN_TOOLS)` → all four pass. And against the proposed table: `toString`/`constructor` → callable, truthy non-boolean; `__proto__`/`my_ext_tool` → not callable, throws."
+ },
+ {
+  "id": "WI-6",
+  "claim": "The parallel declarations to merge are `BUILTIN_TOOL_NAMES` (30), `BUILTIN_TOOLS`, and `ESSENTIAL_BUILTIN_TOOL_NAMES` (13).",
+  "verdict": "PARTLY REDUNDANT — one of the three is already safe",
+  "correction": "`BUILTIN_TOOL_NAMES` ↔ `BUILTIN_TOOLS` is ALREADY compile-time enforced: `BUILTIN_TOOLS` is declared `Record<BuiltinToolName, ToolFactory>` (`tools/index.ts:554`), and TypeScript rejects both a missing key and an unknown extra key. There is nothing to merge there and no test to add. The declarations that genuinely lack a type link are `ESSENTIAL_BUILTIN_TOOL_NAMES` (`Record<string, true>` — untyped keys, runtime-only guard) and `SESSION_MANAGED_BUILTIN_TOOL_NAMES` (`sdk.ts:1161`, bare `string[]`, no guard at all). The plan also never mentions the latter.",
+  "evidence": "Compiled a probe with `bunx tsc --noEmit --strict`: `Record<\"a\"|\"b\"|\"c\", F>` with `{a,b}` → TS2741 'Property c is missing'; with an extra `d` → TS2353 'Object literal may only specify known properties'. Baseline `bun run check:ts` is green at HEAD."
+ },
+ {
+  "id": "WI-6",
+  "claim": "`ESSENTIAL_BUILTIN_TOOL_NAMES` at `essential-tools.ts:23-37` (13 names) and `builtin-names.ts:2-31` (30) / `:36` (3).",
+  "verdict": "CORRECT",
+  "correction": "No change. These are the only anchors in the item that are already right — worth stating explicitly so the implementer does not re-verify them.",
+  "evidence": "Read of both files in full; counted 13 and 30 entries respectively."
+ },
+ {
+  "id": "WI-6",
+  "claim": "Three built-ins plus `yield` are implicitly admitted; not stated in the plan.",
+  "verdict": "UNDOCUMENTED BEHAVIOUR THAT MUST NOT BE LOST",
+  "correction": "`read`, `edit`, `write` and hidden `yield` have NO branch in the ladder and reach the trailing `return true`. A `Record` table that only lists tools with rules would silently change nothing today, but it leaves admission under-specified for four of thirty-three names. I specified explicit `() => true` entries so the table is a complete description rather than a partial one.",
+  "evidence": "Subtracting the 29 covered names from the 30 `BUILTIN_TOOL_NAMES` leaves exactly read, edit, write; subtracting from `HIDDEN_TOOL_NAMES` leaves exactly yield."
+ },
+ {
+  "id": "WI-6",
+  "claim": "(Task framing) repo git HEAD is 5873776.",
+  "verdict": "STALE",
+  "correction": "HEAD is 808b365 on branch `milestone-1`.",
+  "evidence": "`git rev-parse HEAD` → `808b365409fa36719c38319a041c0e612b4e702b`; `git log --oneline -3`."
+ },
+ {
+  "id": "WI-6",
+  "claim": "Verification command `bun run check:ts && (cd packages/coding-agent && bun test test/tools/tool-admission-table.test.ts)`.",
+  "verdict": "HALF-BLOCKED",
+  "correction": "`check:ts` passes green at HEAD (all 15 packages Done). The test command cannot run: `bun test` reports `0 pass / 1 fail / 1 error` with `Failed to load pi_natives native addon for darwin-arm64`. The addon must be built with `bun --cwd=packages/natives run build` before the test half of the gate is meaningful. Confirmed by actually running it.",
+  "evidence": "Ran both commands at HEAD 808b365."
+ },
+ {
+  "id": "WI-0",
+  "claim": "The two doc comments about the absence of trust are at packages/coding-agent/src/extensibility/extensions/types.ts:462-469 and :523-536.",
+  "verdict": "STALE — both line numbers wrong, characterisation correct",
+  "correction": "Actual: :487-494 (comment 487-493, declaration `isProjectTrusted(): boolean;` at 494) and :548-561 (comment 548-560, declaration at 561). Both blocks exist and both are genuinely about the absence of a trust gate, so the plan's description of them is accurate; only the line numbers moved. Use 487-494 and 548-561.",
+  "evidence": "`git grep -n 'isProjectTrusted' -- packages/coding-agent/src/extensibility/extensions/types.ts` returns exactly 494 and 561 for the two declarations. `sed -n '480,500p'` shows the first doc comment opening at 487; `sed -n '548,575p'` shows the second opening at 548 and the interface closing at 562."
+ },
+ {
+  "id": "WI-0",
+  "claim": "packages/coding-agent/src/extensibility/extensions/runner.ts:1251 hardcodes `true`.",
+  "verdict": "STALE — off by 13 lines",
+  "correction": "Actual: runner.ts:1264 — `isProjectTrusted: () => true,` inside the ExtensionContext object literal returned by `createContext()`. Line 1251 is inside that same function's parameter list, not its body.",
+  "evidence": "`git grep -n 'isProjectTrusted: () => true' -- packages/coding-agent/src/extensibility/extensions/runner.ts` returns 1264. `sed -n '1250,1275p'` shows 1251 is a parameter line of `createContext()`."
+ },
+ {
+  "id": "WI-0",
+  "claim": "packages/coding-agent/src/session/agent-session.ts:7369 hardcodes `true`.",
+  "verdict": "STALE — off by 37 lines",
+  "correction": "Actual: agent-session.ts:7406 — `isProjectTrusted: () => true,` in the `#createCommandContext()` path. Line 7369 is inside `#tryExecuteExtensionCommand`, an unrelated method.",
+  "evidence": "`git grep -n 'isProjectTrusted: () => true' -- packages/coding-agent/src/session/agent-session.ts` returns 7406. `sed -n '7392,7415p'` confirms the context literal."
+ },
+ {
+  "id": "WI-0",
+  "claim": "packages/coding-agent/src/discovery/omp-extension-roots.ts:162 is the project root.",
+  "verdict": "CORRECT — the only one of the four anchors that survives",
+  "correction": "No change. Line 162 is `project: path.join(ctx.cwd, \".omp\"),` inside `function scopeDirs(ctx: LoadContext): ScopeDirs` (interface at 155-158, function opens at 160, user scope at 163).",
+  "evidence": "`sed -n '150,175p' packages/coding-agent/src/discovery/omp-extension-roots.ts` — line 162 is exactly the project join. `git grep -n 'path.join(ctx.cwd' -- .../omp-extension-roots.ts` returns a single hit at 162."
+ },
+ {
+  "id": "WI-0",
+  "claim": "F2 / 'không có cơ sở nào để khuyến nghị một extension bên thứ ba' — the trust posture is undefined and unwritten, so there is no basis on which to recommend a third-party extension.",
+  "verdict": "MISLEADING — a deliberate posture IS already written and already released, which makes this URGENT rather than absent",
+  "correction": "A 'no gate' posture is already documented in two shipped source comments and stated to users in a released changelog entry. types.ts:548-561 says explicitly: 'OMP has no equivalent per-directory trust gate … This method exists for compatibility with that upstream surface and always returns true, truthfully reflecting that OMP already trusts project-local inputs by default — it does not narrow or widen OMP's own security model.' The released entry says the same to users. So the correct framing of WI-0 is RATIFY-OR-OVERTURN an existing, documented, released posture — a stronger and more urgent decision than authoring one from nothing, and one that carries a compatibility obligation the plan does not acknowledge. What genuinely is absent is any document a third-party author or a security reviewer can read: `grep -c -iE 'isProjectTrusted|project trust|no trust' docs/extensions.md` returns 0, and docs/extension-loading.md — the file the shipped comment points at — is entirely silent on trust.",
+  "evidence": "`sed -n '548,561p'` of types.ts; CHANGELOG.md:1057 (section header `## [18.1.16] - 2026-09-09` confirmed at line 1039); `grep -c -iE 'isProjectTrusted|project trust|no trust' docs/extensions.md` → 0; `grep -niE 'trust|unconditional|project-local' docs/extension-loading.md` → no matches."
+ },
+ {
+  "id": "WI-0",
+  "claim": "'Thi triển khai khai là M–L … nó là tiền đề bắt buộc của bất kỳ ai muốn mở marketplace' and 'chưa milestone nào nhận việc thực thi này — kể cả M3, và M3 cũng không mở marketplace' — enforcement is a prerequisite for anyone who wants to OPEN a marketplace, and no milestone opens one.",
+  "verdict": "WRONG IN A DIRECTION THAT RAISES URGENCY — a project-scope marketplace install path already ships, and it already loads extension modules unconditionally",
+  "correction": "The marketplace is not hypothetical. `/marketplace install [--force] [--scope user|project] name@marketplace` already exists (docs/marketplace.md:51) and `--scope project` writes the NEAREST PROJECT's `.omp/plugins/installed_plugins.json` (docs/marketplace.md:20-23). The registry path is resolved by `resolveActiveProjectRegistryPath` (discovery/helpers.ts:1025, walk order documented at :1013-1021: nearest ancestor containing `.omp/`, else the nearest `.git` as anchor). The loader then builds `projectRoots` with `scope: \"project\"` and `path: entry.installPath` (helpers.ts:1271-1307, the block commented 'Project entries take precedence over user entries for the same plugin ID'), and `extensibility/plugins/loader.ts` enumerates `<root>/node_modules` per root (loader.ts:93-95, scope type at :19) and resolves the `omp.extensions` manifest key via `resolvePluginPaths(plugin, \"extensions\")` (loader.ts:331, called at :407). Net effect: cloning a repository that contains `.omp/plugins/installed_plugins.json` runs that repo's plugin extension modules, with no prompt, and those project entries SHADOW the user's own installs. The plan's premise — that the marketplace is closed and could be held closed until a trust gate exists — is already false. This does not change WI-0's scope (still a document), but it must be an INPUT to the decision and it is the strongest argument against deferring.",
+  "evidence": "`sed -n '1262,1312p' packages/coding-agent/src/discovery/helpers.ts` shows the project-registry block and `scope: \"project\"` at 1300; `sed -n '1013,1021p'` of the same file documents the walk order; `grep -n 'omp.extensions\\|node_modules\\|scope' packages/coding-agent/src/extensibility/plugins/loader.ts` returns 19, 95, 331, 407; `sed -n '18,23p'` and `sed -n '49,55p'` of docs/marketplace.md; `git grep -l marketplace -- packages/coding-agent/src` returns 38 files, including a full `extensibility/plugins/marketplace/` module (fetcher, cache, registry, manager, source-resolver, auto-update)."
+ },
+ {
+  "id": "WI-0",
+  "claim": "Option A is 'rẻ nhất, và là đường mà API được thiết kế vừa khít' — the cheapest path, and the one the API was designed around.",
+  "verdict": "PARTLY TRUE — the plan understates the cost",
+  "correction": "The stub is genuinely pre-positioned for A, but A is not a one-line change to runner.ts:1264. It requires changing BOTH implementation sites (runner.ts:1264 and agent-session.ts:7406), it turns TWO existing tests red (test/extension-context-project-trust.test.ts and test/issue-7955-extension-project-trusted.test.ts), and it contradicts a RELEASED changelog entry at CHANGELOG.md:1057 — making it a user-visible behaviour change, not a documentation exercise. There is also a scope mismatch: the types.ts:548-561 comment describes project trust as covering 'extensions, settings, skills, resources', which is wider than the extension module load this work item is about, so A either gates more than the ADR is scoped to decide or is internally inconsistent. Put that cost in the ADR rather than repeating the plan's 'cheapest'.",
+  "evidence": "Both test files confirmed to exist and to assert `true` (via `git grep -n isProjectTrusted`); CHANGELOG.md:1057 confirmed under `## [18.1.16]` at line 1039; the wider-scope wording is quoted verbatim from types.ts:548-561."
+ },
+ {
+  "id": "WI-0",
+  "claim": "Verification is 'Không build, không test' and running `bun run check:ts` 'chạy nó không chứng minh gì về mục này'.",
+  "verdict": "CORRECT, with an environment addition the engineer needs",
+  "correction": "Keep the no-build stance — the plan is right that `check:ts` is unaffected and proves nothing here. Add the fact so the engineer does not burn time: `bun test` is currently blocked outright because the native addon is not built. Verified first-hand — `bun test test/extension-context-project-trust.test.ts` from packages/coding-agent reports '0 pass, 1 fail, 1 error' with 'Failed to load pi_natives native addon for darwin-arm64'; the binary packages/natives/native/pi_natives.darwin-arm64.node is absent. Since WI-0 writes no test this changes nothing about the item, but the two existing trust tests must be cited as contracts-by-INSPECTION and must not be described as verified-green. Build with `bun --cwd=packages/natives run build` before any later item needing a real run.",
+  "evidence": "`bun test test/extension-context-project-trust.test.ts` in packages/coding-agent → '0 pass / 1 fail / 1 error', error text names the missing darwin-arm64 addon and the two paths it tried."
+ },
+ {
+  "id": "WI-0",
+  "claim": "The task/repo context states git HEAD is 5873776.",
+  "verdict": "STALE — the tree has moved",
+  "correction": "Actual HEAD is 808b365409fa36719c38319a041c0e612b4e702b on branch milestone-1. Every line number in this spec was re-verified against 808b365, not 5873776. If the tree moves again before Monday, re-run the five verification greps in `files_touched[0].note` and `plan_corrections` before trusting the anchors.",
+  "evidence": "`git rev-parse HEAD` → 808b365409fa36719c38319a041c0e612b4e702b; `git log --oneline -3` → 808b365, 33d6e33, ecd516f."
+ },
+ {
+  "id": "WI-11",
+  "claim": "`ExtensionAPI` has 29 methods and no storage primitive (WI-11 opening: '`ExtensionAPI` 29 phương thức **không có primitive lưu trữ nào**').",
+  "verdict": "STALE",
+  "correction": "The no-storage-primitive claim is CORRECT and load-bearing — keep it. The count is wrong by a factor of 2.4: `ExtensionAPI` declares 80 members, 69 of them methods. An engineer who trusts '29' will assume a much smaller surface and may reason that adding one more is cheap in a way the real surface does not support.",
+  "evidence": "`git grep -n 'export interface ExtensionAPI' -- packages/coding-agent/src` → `packages/coding-agent/src/extensibility/extensions/types.ts:1256`. The interface closes at :1582. Enumerating members over that range: 80 unique names; `grep -cE '^\\t[a-zA-Z#]+\\??\\('` over the same range → 69. The non-method properties are appendEntry, arktype, events, logger, pi, registerMessageRenderer, registerTool, sendMessage, setServiceTier, typebox, zod. Independently confirmed: `git grep -niE '\\b(storage|state|kv|getState|setState|loadState|saveState|persist)\\b'` over types.ts returns no storage primitive."
+ },
+ {
+  "id": "WI-11",
+  "claim": "`packages/coding-agent/src/extensibility/extensions/types.ts:429-537` is `ExtensionContext`, and it has 12 fields, no storage.",
+  "verdict": "STALE",
+  "correction": "The interface is at lines 452-562 — stale by +23 at the start and +25 at the end. The field count is badly wrong: 26 unique members across 27 declarations, not 12. `isProjectTrusted(): boolean` is declared TWICE, at :494 and :561. The 'no storage' claim is correct.",
+  "evidence": "`git grep -n 'interface ExtensionContext' -- packages/coding-agent/src` → `types.ts:452` (the second hit at :1768 is `ExtensionContextActions`, a different interface). Read of 452-562 shows the closing `}` at 562. Enumerating tab-indented members in that range yields 27 declarations / 26 unique names, with `isProjectTrusted` appearing twice — confirmed independently by `grep -n isProjectTrusted types.ts` → `494:` and `561:`. Members include ui, mode, getContextUsage, getAsyncJobSnapshot, compact, hasUI, cwd, sessionManager, modelRegistry, localProtocolOptions, model, models, isIdle, abort, hasPendingMessages, shutdown, agent, isProjectTrusted, getSystemPrompt, runEphemeralTurn, memory, setInterval, setTimeout, clearTimer, addAdditionalContext, invokeTool."
+ },
+ {
+  "id": "WI-11",
+  "claim": "`types.ts:480-481` is `memory?: MemoryRuntimeContext` — the agent's content memory, not a per-extension key-value store.",
+  "verdict": "STALE",
+  "correction": "The member is at line 506, a single line, not a two-line range at 480-481. The SUBSTANCE is correct and is a load-bearing part of the argument: `MemoryRuntimeContext` has exactly three methods — `status()`, `search()`, `save()` — and is agent content memory, so it cannot serve as a per-extension keyed store. Keep this argument; fix the line number.",
+  "evidence": "`git grep -n 'MemoryRuntimeContext' -- packages/coding-agent/src` → `types.ts:506` (`memory?: MemoryRuntimeContext;`), imported at `types.ts:80`. Definition at `packages/coding-agent/src/memory-backend/types.ts:79-83`: `status(): Promise<MemoryBackendStatus>`, `search(query, options?)`, `save(input)`. Wired into the extension context at `extensions/runner.ts:1303` (`memory: this.#getMemoryFn?.()`), supplied from `sdk.ts:3080` via `createSessionMemoryRuntimeContext`."
+ },
+ {
+  "id": "WI-11",
+  "claim": "`packages/coding-agent/src/extensibility/plugins/manager.ts:929-957` is the ad-hoc store to model a lifecycle after.",
+  "verdict": "CONFIRMED_WITH_DRIFT",
+  "correction": "The three methods are all there, but the range ends at 960, not 957: `getPluginSettings` 929-937, `setPluginSetting` 942-949, `deletePluginSetting` 954-960. This anchor matters more than usual because WI-11's central argument is that this store is the pattern that will spread — so an engineer should be sent to the exact lines.",
+  "evidence": "`grep -nE 'async (getPluginSettings|setPluginSetting|deletePluginSetting)' packages/coding-agent/src/extensibility/plugins/manager.ts` → 929, 942, 954. Read of 926-965 shows each body ending at 937, 949, 960 respectively. Supporting anchors, all VERIFIED: `#saveRuntimeConfig` at :148-151 (writes `getPluginsLockfile()`), `#loadProjectOverrides` at :153-162 (reads `getProjectPluginOverridesPath(this.#cwd)`), and `getPluginsLockfile` at `packages/utils/src/dirs.ts:652-654` → `~/.omp/plugins/omp-plugins.lock.json`. Note what this store actually IS: a read path spanning TWO files (`config.settings[name]` plus `projectOverrides.settings?.[name]`) with a write path that only ever writes the first — which is WI-8a's silent-data-loss trap and a strong concrete argument for why state does not belong in settings."
+ },
+ {
+  "id": "WI-11",
+  "claim": "The task's stated repo state: 'git HEAD 5873776, currently on branch milestone-1'.",
+  "verdict": "STALE",
+  "correction": "HEAD is 808b365, still on branch milestone-1. Recent commits: 808b365 'docs(plan): fold the spec-verified M1 execution plan into the upgrade plan', 33d6e33 'docs(m1): execution plan for milestone 1...', ecd516f 'feat: initial publish — oh-my-pi 18.3.3'. The line-number drift throughout the plan is consistent with commits landing after the plan was written, which is the reason so many of its anchors are off by 10-30 lines rather than by an odd one or two.",
+  "evidence": "`git rev-parse HEAD` → `808b365409fa36719c38319a041c0e612b4e702b`; `git branch --show-current` → `milestone-1`. This is corroborated by the drift pattern itself: `settings.ts:62`, `settings.ts:800-808`, `registry.ts:786-792`, `loader.ts:263`/`:265`, `dirs.ts:1046-1048`, `dirs.ts:652-654` and `plugins/types.ts:156-163` ALL reproduce exactly, while the `types.ts` anchors are all off by 23-26. A uniform +23-26 shift on one file means that file grew above line 429 after the plan was written; the config/ files did not move."
+ },
+ {
+  "id": "WI-11",
+  "claim": "The plan frames the design question as a binary: a namespaced key-value store inside the existing layered `Settings`, or a dedicated per-extension store with its own lifecycle.",
+  "verdict": "INCOMPLETE",
+  "correction": "It is a ternary, and the third option is the one an author can actually reach today: `pi.appendEntry(<qualified customType>, data)` (signature at `types.ts:1489`) plus a rebuild from `ctx.sessionManager.getBranch()` on `session_start` / `session_branch` / `session_tree`, documented at `docs/extensions.md:699-723` under the heading 'For durable extension state'. It is session-scoped — entries live on a session branch, so nothing survives the session — and it is append-and-replay with latest-match-wins, not a keyed get/set. The design document must rank all three. A document that surveys only the two the plan names will be read as having surveyed the options when it did not, and the first reviewer question will be 'what about the appendEntry pattern that our own docs already recommend?'",
+  "evidence": "Read of `docs/extensions.md:699-723` shows the heading, the three numbered steps, and the `session_start` rebuild example using `entry.type === \"custom\" && entry.customType === \"com.example.my-extension.state\"`. `git grep -n appendEntry -- packages/coding-agent/src/extensibility/extensions/` → declared at `types.ts:1489` (ExtensionAPI) and `types.ts:1752` (handler type), implemented at `loader.ts:307-308` delegating to `runner.ts:694`."
+ },
+ {
+  "id": "WI-11",
+  "claim": "WI-11 depends only on WI-8 and WI-9, and M2-OQ2 does not bear on it.",
+  "verdict": "INCOMPLETE",
+  "correction": "The plan's own §10 contradicts its WI-11 section: M2-OQ2 (does the capability registry ever become extension-reachable — YES / NO / DEFERRED) explicitly lists 'substrate của WI-11/WI-12' among the things it BLOCKS, and §6.1 wave ordering puts wave 1 (WI-0, WI-10) before wave 8 for this reason. If the design document is written while M2-OQ2 is open, it must say its recommendation is conditional on that answer rather than assuming a trust posture that has not been chosen.",
+  "evidence": "Read of plan §10, M2-OQ2: 'Chặn: WI-5 commit 2-3 ..., WI-7 ..., và substrate của WI-11/WI-12.' Read of §6.1: 'WI-0 chặn WI-10 vì câu trả lời trust làm thay đổi nghĩa của \"canonical\" với tác giả bên thứ ba; WI-10 chặn WI-7 ... và WI-11/WI-12.'"
+ },
+ {
+  "id": "WI-8b",
+  "claim": "`packages/coding-agent/src/extensibility/extensions/types.ts:1231-1557` is the exact span of `ExtensionAPI`.",
+  "verdict": "stale-anchor",
+  "correction": "The interface spans :1256-1582. `export interface ExtensionAPI` is at :1256, the closing brace at :1582, and the next top-level declaration (`export interface ProviderConfig`) at :1589. Both ends of the plan's range are off by exactly 25 lines. The plan's method count of 29 is CORRECT and stays 29 — I enumerated the distinct leading-tab method names over 1256-1582 and got exactly 29; this item makes it 30.",
+  "evidence": "`grep -n '^}' packages/coding-agent/src/extensibility/extensions/types.ts | awk -F: '$1>1256' | head -5` → 1582, 1627, 1657, 1676, 1687. `awk 'NR>=1256 && NR<=1582' ... | grep -oE '^\\t[a-zA-Z_][a-zA-Z0-9_]*[<(]' | sed 's/[(<]//' | sort -u | wc -l` → 29."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "`packages/tui/src/overlays/settings-selector.ts:435` is the fixed tab list with its own Plugins tab (and §7 GĐ6 cites `:847-853` for the schema-backed search).",
+  "verdict": "stale-anchor",
+  "correction": "Off by a few lines in both places. `getSettingsTabs()` is :431-440 and the `plugins` tab entry is at :438; line :435 is `const icon = theme.symbol(meta.icon);` inside the `SETTING_TABS.map` callback. On the search side, the `for (const id of SETTING_TABS)` loop is :848-853, the \"Plugins hosts its own UI\" comment is at :854, and the muted plugins push is :855-860. GĐ6's substance is right — both surfaces must be decided together — only the numbers move.",
+  "evidence": "`git grep -n 'id: \"plugins\"' -- packages/tui/src/overlays/settings-selector.ts` → :438 and :856. `awk 'NR>=431 && NR<=440' ...` and `awk 'NR>=840 && NR<=860' ...` confirm the surrounding lines."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "Blockers 3 and 4 are separate: (3) panel order is declaration order within a domain, so a dynamic domain has no place; (4) the panel is a fixed tab list with its own Plugins tab.",
+  "verdict": "incomplete — the two are one coupled problem, and the plan misses the constraint that decides between the options",
+  "correction": "The panel's placement vocabulary is a CLOSED union, not just a fixed list. `SettingTab` in `packages/tui/src/overlays/settings-defs.ts:4-15` is exactly ten literals; `TAB_GROUPS` at :52-88 is a static `Record<SettingTab, readonly string[]>`; `UiBase` at :97-111 requires `tab: SettingTab` and a `group` that must already be listed in `TAB_GROUPS[tab]`. And `createSettingsHost()` (`config/settings-ui.ts:51-68`) builds the panel by iterating `SETTING_TABS` and keeping entries whose `ui?.tab === tab` (:53-56). So an extension key can only land in one of the ten existing tabs, and M2-OQ4's third option — a dynamic tab per extension — is not expressible without changing both the union and the record. Deciding 3 and 4 separately, as the plan frames them, invites picking an option that turns out to be unrepresentable.",
+  "evidence": "`awk 'NR>=45 && NR<=140' packages/tui/src/overlays/settings-defs.ts` shows `TAB_GROUPS` at :52-88 and `UiBase` at :97-111 with `tab: SettingTab`. `awk 'NR>=40 && NR<=80' packages/coding-agent/src/config/settings-ui.ts` shows the double loop at :53-56. Separately verified: the existing `plugins` tab id is NOT in the `SettingTab` union, which is why it renders from `plugin-settings.ts` and not from this schema — so \"put extension keys under Plugins\" merges two unrelated surfaces under one tab and is a product decision, not a mechanical one."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "`config/registry.ts:783-792` is `register` with the duplicate-id throw; the only note on module state is the throw itself.",
+  "verdict": "stale-anchor plus a missed blocker",
+  "correction": "`register` is at :786 and the throw at :787 (the plan's :783 is a JSDoc line, :792 is the closing brace). The missed blocker: `byId` (:778) and `ordered` (:779) are module-level and APPEND-ONLY — there is no `unregister` anywhere in `packages/coding-agent/src/config/` (verified by grep). An extension that is disabled and re-enabled in one process therefore throws \"registered twice\" on its second enable, and its keys are unreachable for the process lifetime. WI-8b must add an owner-scoped unregister, and the precedent for the shape already exists in the same package: `clearSourceRegistrations(sourceId)` at `config/model-registry.ts:2914` and `syncExtensionSources(activeSourceIds)` at :2955 do exactly this for providers. This is also what makes WI-9's 11-bucket unload inventory tractable rather than impossible.",
+  "evidence": "`git grep -n 'unregister|delete byId|ordered.length|ordered.splice' -- packages/coding-agent/src/config/registry.ts` returns nothing. `awk 'NR>=779 && NR<=802' packages/coding-agent/src/config/registry.ts` shows `byId`/`ordered` declared once at module scope with only `register` appending. `awk 'NR>=2950 && NR<=2966' packages/coding-agent/src/config/model-registry.ts` shows the provider-owner precedent."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "`orderedSettings()` lists settings by domain order then declaration order; a dynamic domain has no place in the panel (blocker 3).",
+  "verdict": "incomplete — there is a second, sharper failure the plan does not name",
+  "correction": "Two defects, not one. (a) `all-settings.ts:85-89` memoizes `ordered` in a module-level `let` with NO invalidation, so any setting registered after the first `orderedSettings()` call is invisible forever — regardless of panel placement. (b) `domainHandles` (:92-106) only ever walks values reachable from the 33 static `DOMAINS` entries, so an extension handle that IS in `registry.all()` is silently dropped. The plan describes (b) as \"no place in the panel\"; (a) is worse because it is order-dependent and would not show up in a test that happens to register before the first call.",
+  "evidence": "`awk 'NR>=78 && NR<=160' packages/coding-agent/src/config/all-settings.ts` shows `let ordered` at :85, `if (ordered) return ordered;` at :89, and `domainHandles` at :92-106 iterating only `for (const key in domain)`. No invalidation function exists anywhere in the file."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "A test row asserting that a duplicate id produces an error surfaced to the extension author fails on HEAD because \"the loader has no obligation to propagate it today\".",
+  "verdict": "wrong in detail — the loader already propagates; what is missing is a message that names the collision",
+  "correction": "The loader DOES surface factory errors. `runExtensionFactory` (loader.ts:397-414) rethrows, `bindExtension` (:438-459) catches and returns `Failed to load extension: <message>` at :457, and `bindPreparedExtensions` (:491-520) collects those into `LoadExtensionsResult.errors` (:497-505), which `formatExtensionLoadNotifications` (`load-errors.ts`) renders to the user. So the propagation path exists and needs no work. The actual gap is that the current message is `Setting \"X\" is registered twice` — it names the id but not the owner and not the namespace rule, which is exactly the GĐ6 compatibility gate. The test-design consequence is concrete and easy to get wrong: assert the collision through `loadExtensions`/`bindPreparedExtensions` and read `result.errors`, NOT through `loadExtensionFromFactory` (:464-475), which rethrows at :473 and never populates `errors`.",
+  "evidence": "`awk 'NR>=380 && NR<=470' packages/coding-agent/src/extensibility/extensions/loader.ts` shows all three functions. `cat packages/coding-agent/src/extensibility/extensions/load-errors.ts` shows the formatter. `git grep -n 'bindPreparedExtensions|errors.push|errors:' -- .../loader.ts` → :497 and :505."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "`pi.registerSetting` is added as the 30th method on `ExtensionAPI`, and the `ConcreteExtensionAPI` wiring follows the pattern of the existing registration methods.",
+  "verdict": "correct, with one saving worth knowing",
+  "correction": "Confirmed, and better than the plan assumes: NO wiring is needed. `ConcreteExtensionAPI`'s constructor (loader.ts:191-208) walks `ConcreteExtensionAPI.prototype` and rebinds every method onto the instance, and the comment at :198-200 says so explicitly (\"Walk the prototype rather than listing methods: a new method is bound without touching this\"). The class is declared `implements ExtensionAPI, IExtensionRuntime` (:179), so omitting the implementation is a compile error — which is what makes the `check:ts` half of the gate real rather than decorative. The best sibling template is not `registerFlag` (:259-267) but `registerComposerShape` (:277-289), which already validates its id and throws a typed error before mutating any state.",
+  "evidence": "`awk 'NR>=179 && NR<=290' packages/coding-agent/src/extensibility/extensions/loader.ts` shows the prototype-walk constructor, `registerFlag`, and `registerComposerShape`'s validate-then-throw body. `bun run check:ts` passes on HEAD (all 15 packages report Done), confirming the current baseline is green."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "Verification is `bun run check:ts && (cd packages/coding-agent && bun test test/config/extension-registered-setting.test.ts)`.",
+  "verdict": "correct as written, but the second half is blocked in this environment — flag it before assigning",
+  "correction": "`bun run check:ts` runs and passes on HEAD 808b365 (verified: all 15 packages report Done). `bun test` does NOT: running an existing test in that directory reports `0 pass / 1 fail / 1 error` with `Failed to load pi_natives native addon for darwin-arm64` and points at `bun --cwd=packages/natives run build`. So the four test rows cannot be executed until the addon is built. This does not weaken the work — rows 1, 2 and 4 need no loader, no session and no fixture on disk — but the assignee must know the gate is half-runnable today, and should not read a `bun test` failure as a regression in their own change.",
+  "evidence": "`bun run check:ts` → 15 packages Done. `cd packages/coding-agent && bun test test/config/settings-registry.test.ts` → `0 pass / 1 fail / 1 error`, `Failed to load pi_natives native addon for darwin-arm64`."
+ },
+ {
+  "id": "WI-8b",
+  "claim": "WI-8b depends only on WI-8a; WI-7 is not a dependency because no file on the `registerSetting` path knows the mode.",
+  "verdict": "confirmed",
+  "correction": "Verified independently. Nothing on the path reads a mode: `registry.ts:786-792` is pure id bookkeeping, `all-settings.ts:43-77` is a static import list, and the panel tab list is `settings-selector.ts:431-440` plus `settings-defs.ts:20`. The one genuine prerequisite the plan understates is M2-OQ4, which is not code but blocks steps 5-7 and test row 3 outright.",
+  "evidence": "`sed -n '760,800p' packages/coding-agent/src/config/registry.ts`, `sed -n '43,77p' packages/coding-agent/src/config/all-settings.ts`, `sed -n '431,440p' packages/tui/src/overlays/settings-selector.ts` — no mode reference in any of them."
+ }
+]

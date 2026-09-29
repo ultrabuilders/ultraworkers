@@ -1,0 +1,119 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 118, dòng 124 (khối lệnh), dòng 47 (bước 12), dòng 144 (kết luận cổng)",
+  "claim": "Tài liệu hướng dẫn gỡ chặn `bun test` bằng `bun --cwd=packages/natives run build`, và kết luận \"Cả năm đều đỏ được khi làm dở\" (gate_can_fail: true). Trên đúng máy này, lệnh gỡ chặn đó thất bại.",
+  "why_wrong": "G1–G4 (4/5 cổng, gồm cả cổng quyết định G1) đều gọi `bun test`, mà `bun test` bị chặn bởi native addon. Tài liệu đưa đúng một lệnh để gỡ chặn, và lệnh đó không chạy được: cargo build của `opusic-sys` cần cmake với Ninja, mà Ninja không có trên máy. Không ai làm theo tài liệu này có thể tạo ra kết quả đỏ/xanh cho G1–G4, mà lại được dạy rằng cả năm đều đỏ được.",
+  "evidence": "`cd /Users/tranquangdang21/Projects/ultraworkers && bun --cwd=packages/natives run build` → BUILD_EXIT=1. Log: `CMake Error: CMake was unable to find a build program corresponding to \"Ninja\". CMAKE_MAKE_PROGRAM is not set.` → `build script failed, must exit now` → `error: script \"build\" exited with code 1`. Sau đó `ls packages/natives/native/*.node` → `no matches found`. `which ninja` → `ninja not found`; `which cmake` → `/opt/homebrew/bin/cmake`; `which brew` → `/opt/homebrew/bin/brew`. Xác nhận blocker gốc vẫn đúng: `bun test packages/tui/test/tool-execution-xdev-render.test.ts` → `0 pass / 1 fail / 1 error`, `error: Failed to load pi_natives native addon for darwin-arm64.` tại `packages/natives/native/loader-state.js:970`.",
+  "fix": "Ba chỗ. (1) Dòng 118, đổi phần cuối thành: \"Còn `bun test` thì **bị chặn**: `0 pass, 1 fail, 1 error`, lỗi 'Failed to load pi_natives native addon for darwin-arm64' từ `packages/natives/native/loader-state.js:970`. Lệnh gỡ chặn `bun --cwd=packages/natives run build` **thất bại trên máy này** (đã chạy thật): `CMake Error: CMake was unable to find a build program corresponding to \"Ninja\". CMAKE_MAKE_PROGRAM is not set.` — vì `opusic-sys` build bằng cmake và máy không có `ninja`. Phải `brew install ninja` **trước**, rồi build mới xong.\" (2) Dòng 124, chèn `brew install ninja` lên trên `bun --cwd=packages/natives run build` trong khối lệnh, kèm chú thích `# BẮT BUỘC: cmake build của opusic-sys cần Ninja; thiếu nó thì build exit 1`. (3) Dòng 144 thay bằng: \"Cổng có thực sự đỏ được không: **có** (`gate_can_fail: true`) — nhưng **trên máy này chỉ G5 chạy được ngay hôm nay**. G1–G4 đều gọi `bun test`, và `bun test` bị chặn cho tới khi native addon build được; lệnh build trong §Xác minh cần `brew install ninja` trước. Trước khi coi bất kỳ cổng test nào là xanh hay đỏ, hãy build được addon; nếu không thì báo pending chứ đừng báo một suite xanh.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 39 (bước 8) và dòng 17 (bảng file)",
+  "claim": "Bước 8 yêu cầu truyền raw channel \"ở fallback `component.updateArgs(...)` ngay bên dưới\" constructor `ToolExecutionComponent`, và dựng component tại `:608`.",
+  "why_wrong": "Trong `ui-helpers.ts` **không tồn tại** lời gọi `component.updateArgs(...)` nào cả — grep toàn file chỉ ra 3 hit, đều là `readGroup.updateArgs(...)` trên read-group chứ không phải `ToolExecutionComponent`, và cả ba đều nằm trước dòng 611 hoặc xa sau nó, không \"ngay bên dưới\" gì. Người triển khai đi tìm call site đó sẽ không thấy, hoặc tệ hơn là tự bịa một lời gọi. Đây đúng là đường mà G3 (CÂN BẰNG REBUILD) bảo vệ, nên bước 8 là nửa việc của G3.",
+  "evidence": "`grep -n 'updateArgs' packages/coding-agent/src/modes/utils/ui-helpers.ts` → chỉ `562: readGroup.updateArgs(content.arguments, content.id);`, `576: readGroup.updateArgs(content.arguments, content.id);`, `697: readGroup.updateArgs(args, message.toolCallId);`. `awk 'NR>=611 && NR<=700 && /updateArgs/'` → chỉ dòng 697 (`readGroup`). `grep -n 'new ToolExecutionComponent'` → `611`. Còn `:600` là dòng comment \"// parse window, so spreading them alone would freeze a long write/edit\" — ternary thật là `604: const renderArgs = partialJson`, nhánh fallback `: content.arguments` ở `610`.",
+  "fix": "Thay bước 8 bằng: \"8. **Thread tiền tố raw từ đường rebuild.** Tại `ui-helpers.ts:604`, `decodeStreamedToolArgs(partialJson, ...)` vốn đã cầm raw buffer trong tay ở tham số đầu tiên — hãy truyền đúng `partialJson` đó làm raw channel khi dựng `ToolExecutionComponent` ở `:611` (constructor nhận thêm tham số `rawArgs`; đây là **call site duy nhất** của đường rebuild, không có `component.updateArgs(...)` nào để sửa — `grep -n updateArgs ui-helpers.ts` chỉ ra 3 hit, tất cả là `readGroup.updateArgs(...)` tại :562, :576, :697 và không liên quan tới `ToolExecutionComponent`). Ternary ở `:604` fallback về `content.arguments` khi `partialJson` falsy; ở nhánh đó không có raw buffer, nên truyền `undefined` và để `rawArgs` vắng mặt thay vì bịa ra chuỗi rỗng. Đây là đường làm card rebuild và card sống render giống nhau, và là đường mà test (2) của plan bảo vệ. Neo: `packages/coding-agent/src/modes/utils/ui-helpers.ts:604-611`.\" Đồng thời sửa dòng 17 của bảng file theo cùng neo.",
+  "file": "M4-7"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 118 (mục \"Xác minh\")",
+  "claim": "\"`bun run check:ts` thoát 0 trên cây sạch (cả 16 target type-check đều Done; pi-coding-agent 301s, pi-catalog 138s, pi-metaharness 110s) ... hãy tính ~10 phút wall clock\" — và đây là số đo thật: \"cả hai đều do chạy thật, không phải giả định\".",
+  "why_wrong": "Số đo sai lệch ~18x ở wall clock và ~50x ở từng target. Tài liệu dạy người đọc dành 10 phút và \"đừng nhầm im lặng là treo\" cho một lệnh chạy hết 33 giây — một người làm theo sẽ tưởng lệnh treo và kill nó. Vì con số sai nằm trong câu tự nhận là đo thật, nó làm hỏng uy tín của toàn bộ mục Xác minh, kể cả những phần đúng trong đó.",
+  "evidence": "`time bun run check:ts` → `93.41s user 9.08s system 309% cpu 33.134 total`, `EXIT=0`. Log: `pi-coding-agent:check:types | Done in 5.33s`, `pi-catalog:check:types | Done in 3.57s`, `pi-metaharness:check:types | Done in 9.28s`. Không có giải thích bằng cache ấm: `check:types` là `tsgo -p tsconfig.json --noEmit`, `packages/tui/tsconfig.json` không có `incremental`/`composite`, và `find packages -name \"*.tsbuildinfo\"` → rỗng. Phần \"16 target\" và \"thoát 0\" thì đúng.",
+  "fix": "Thay câu mở đầu của dòng 118 bằng: \"Baseline môi trường (đo bằng `time bun run check:ts` trên cây sạch): `bun run check:ts` thoát **0** sau **33.1s** wall clock, 16 target type-check đều Done (pi-metaharness 9.28s, pi-coding-agent 5.33s, pi-catalog 3.57s, phần còn lại dưới 4s). Không có `tsbuildinfo`/`incremental` nên đây là cold-run thật, không phải cache ấm. Lưu ý `check:ts` chạy `oxlint . && oxfmt --check` **trước** 16 target — nó là lint + format + types, không chỉ types. Còn `bun test` thì **bị chặn**: `0 pass, 1 fail, 1 error`, lỗi 'Failed to load pi_natives native addon for darwin-arm64' từ `packages/natives/native/loader-state.js:970`.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 35 (bước 6), dòng 157 (\"Cách sai dễ nhất\"), dòng 174 (bảng đính chính PC3)",
+  "claim": "Tài liệu liệt kê đầy đủ các nơi thu hẹp options (\"Tách riêng: adapter ném **bốn** field\"), và bước 6 nói: \"Nếu tham số ở call site được gõ `any` thì spread vẫn là cách đúng; đừng thêm cast để dập tiếng.\"",
+  "why_wrong": "Tham số ở call site không phải `any` — nó **đã là một cast thu hẹp**, và đó là chỗ thứ ba trong repo bakes shape 3-field. Đây chính là lý do type checker im lặng, tức cơ chế mà G1 dựa vào để chứng minh cổng có răng. Người đọc bước 6 sẽ nhìn thấy một cast mâu thuẫn với mô hình tư duy của tài liệu, và hoặc sửa nhầm nó, hoặc mất niềm tin vào danh sách \"bốn field\".",
+  "evidence": "`grep -n 'renderResult as' packages/tui/src/chat/tool-execution.ts` → `996: const renderResult = tool.renderResult as (`. Thân cast ở :998: `options: { expanded: boolean; isPartial: boolean; spinnerFrame?: number },`. Đây là site thu hẹp thứ ba, không được nhắc ở đâu trong tài liệu. Nhánh built-in (:1150) thì không có cast tương tự (`grep -n 'renderResult as\\|renderCall as'` chỉ ra đúng một hit).",
+  "fix": "Thêm vào bước 6, ngay trước neo, đoạn: \"Lưu ý site thu hẹp thứ ba: `tool-execution.ts:996-1001` cast `tool.renderResult as (..., options: { expanded: boolean; isPartial: boolean; spinnerFrame?: number }, ...)` — tham số ở call site **không** phải `any`, nó **đã là một cast**. Cast đó chỉ có tác dụng lúc compile (runtime vẫn truyền nguyên `this.#renderState`), nên `bun run check:ts` vẫn xanh kể cả khi ba field bị ném — đó là máy phát hiện im lặng mà G1 nói tới. Không cần sửa cast này, nhưng đừng để người đọc tưởng call site được gõ `any` và xoá nó.\" Và sửa câu \"Nếu tham số ở call site được gõ `any`\" thành: \"Tham số ở call site được gõ `any` (wrapper.ts:59) hoặc đã bị cast thu hẹp (tool-execution.ts:996-1001) — ở cả hai trường hợp forward thẳng `options` vẫn là cách đúng; đừng thêm cast để dập tiếng.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 186 (mục \"Cần người xác nhận\", gạch đầu dòng thứ 4)",
+  "claim": "\"Snippet sdk.ts trong `code_shape` không hiện ra thay đổi mà nó nói ... bên dưới trình bày một dạng mà nhìn như vẫn là dạng trước khi sửa ... Đừng copy snippet sdk đó một cách máy móc — hãy làm theo bước 6.\"",
+  "why_wrong": "Snippet ĐÃ là dạng sau khi sửa: nó truyền thẳng `options`, không có object literal `{ expanded, isPartial, spinnerFrame }` nào. Tài liệu đang bảo người đọc nghi ngờ chính một snippet đúng, và dán nhãn mâu thuẫn vào đặc tả oan. Kết quả là một mục \"cần người xác nhận\" giả mà maintainer sẽ phải mở điện thoại hỏi lại.",
+  "evidence": "Khối `code_shape` dòng 95-99: `// packages/coding-agent/src/sdk.ts:1217 — same one-line shape.` rồi `renderResult: tool.renderResult ? (result, options, theme): Component => tool.renderResult?.(result, options, theme) ?? (...) : undefined,` — `options` được forward trực tiếp, đúng như bước 6 yêu cầu. Dạng trước khi sửa (đọc từ cây thật) là `const component = tool.renderResult?.(result, { expanded: options.expanded, isPartial: options.isPartial, spinnerFrame: options.spinnerFrame }, theme);` tại sdk.ts:1215-1217, khác snippet hoàn toàn.",
+  "fix": "Xoá hẳn gạch đầu dòng 186 khỏi mục \"Cần người xác nhận\" (đây là mâu thuẫn của chính tài liệu với chính nó, không phải mâu thuẫn của đặc tả cần người đọc phải thấy). Thay bằng một dòng xác nhận đã kiểm: \"Snippet `code_shape` của `sdk.ts:1217` là dạng **sau** khi sửa (forward thẳng `options`); copy nguyên văn là đúng bước 6.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 35 (bước 6) và dòng 174 (PC3)",
+  "claim": "\"wrapper.ts:55-57 và sdk.ts:1213 đã forward `options` nguyên vẹn\"; PC3: \"`sdk.ts:1213` là tham chiếu trần `renderCall: tool.renderCall` không có wrapper nào.\"",
+  "why_wrong": "Dòng 1213 là `renderResult: tool.renderResult`, không phải `renderCall`. Bước 6 dùng neo này để dặn đừng sửa `renderCall` — neo chỉ vào nhầm dòng sẽ khiến người đọc tưởng mình đang sửa `renderResult` khi đọc theo neo. Lặp lại ở PC3, một bảng được trình bày là đã xác minh.",
+  "evidence": "`awk 'NR>=1211 && NR<=1214' packages/coding-agent/src/sdk.ts` → `1212: renderCall: tool.renderCall,` / `1213: renderResult: tool.renderResult`. Phần `wrapper.ts:55-57` thì đúng: `55: this.renderCall = (args: any, options: any, theme: any) =>` / `56: registeredTool.definition.renderCall!(args, options, theme as Theme);`.",
+  "fix": "Thay mọi `sdk.ts:1213` bằng `sdk.ts:1212` (xuất hiện ở dòng 35 và dòng 174). Cụ thể: dòng 35 đổi thành \"**Để nguyên `renderCall` ở cả hai file** — wrapper.ts:55-57 và sdk.ts:1212 đã forward `options` nguyên vẹn\"; dòng 174 đổi thành \"`sdk.ts:1212` là tham chiếu trần `renderCall: tool.renderCall` không có wrapper nào\".",
+  "file": "M4-7"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 39 (bước 8) và dòng 172 (PC1)",
+  "claim": "\"đi tới constructor của component ở :608\"; \"Ternary ở :600 fallback về `content.arguments`\". Cả PC1 lẫn bước 8.",
+  "why_wrong": "Đây là hàng đính chính — phần của tài liệu tồn tại để chỉ người đọc rời khỏi file sai của plan và neo vào file đúng. Nhưng neo trong file đúng lại lệch 3 dòng và 4 dòng, làm mất đúng điều mà hàng đính chính định giá: độ chính xác.",
+  "evidence": "`awk 'NR==604 || NR==610 || NR==611' packages/coding-agent/src/modes/utils/ui-helpers.ts` → `604: const renderArgs = partialJson` / `610: : content.arguments;` / `611: const component = new ToolExecutionComponent(`. Dòng 600 là `// parse window, so spreading them alone would freeze a long write/edit` (comment). Dòng 605 (`decodeStreamedToolArgs(partialJson, ...)`) thì tài liệu nói đúng.",
+  "fix": "Thay `:608` bằng `:611` và `:600` bằng `:604` (nhánh fallback `content.arguments` ở `:610`), ở cả dòng 39 và dòng 172. Dòng 172 viết lại thành: \"...đi tới constructor của component ở `:611`.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 166 (\"Cần người quyết\", gạch đầu dòng 4) và dòng 174 (PC3)",
+  "claim": "\"`#renderState.renderContext` được set ở `tool-execution.ts:959` và `:1121`\" (PC3 lặp lại: \"mà `#rebuildDisplay` set ở tool-execution.ts:959 (nhánh custom) và :1121 (nhánh built-in)\").",
+  "why_wrong": "Lệch một dòng ở cả hai neo, trong một claim được đóng dấu VERIFIED. Cùng kiểu lệch với các mục khác nhưng ở đây nó nằm trong danh sách \"bốn field bị ném\" — người đọc sẽ dùng hai neo này để định vị chính xác chỗ ghi `renderContext` khi họ kiểm tra `rawArgs` có được forward cùng đường hay không.",
+  "evidence": "`grep -n 'renderState.renderContext' packages/tui/src/chat/tool-execution.ts` → `885`, `890`, `960`, `1062`, `1122`. Có bốn chỗ gán, không phải hai: `885` (`??=` trong một nhánh khác), `960`, `1062`, `1122`. Nhánh custom là :960, nhánh built-in là :1122.",
+  "fix": "Sửa `:959` → `:960` và `:1121` → `:1122` ở cả dòng 166 và dòng 174. Vì có tới bốn chỗ gán, nên viết lại câu cho đúng: \"Cùng hai adapter đó cũng ném nó (`#renderState.renderContext` được set ở tool-execution.ts:960 nhánh custom, :1062 và :1122 nhánh built-in — có bốn chỗ gán, không phải hai — và `RenderResultContextOptions` ở renderer.ts:30 sinh ra chính là để mang nó).\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 11 (bảng file, hàng renderer.ts)",
+  "claim": "\"... vào `RenderResultOptions` (hiện ở :10-27), cạnh `argsComplete?` (:19) và `executionStarted?` (:24) đã có sẵn.\"",
+  "why_wrong": "Hai neo lệch 2 dòng. Nhỏ, nhưng đây là hàng đầu tiên của bảng \"File cần chạm tới\" và nó đặt mục tiêu chính xác cho bước 2 — người triển khai sẽ mở file và nhảy tới dòng 19/24, thấy jsdoc, rồi phải tự dò lại.",
+  "evidence": "`grep -n 'argsComplete?: boolean;\\|executionStarted?: boolean;' packages/tui/src/tools/renderer.ts` → `21: argsComplete?: boolean;` và `26: executionStarted?: boolean;`. `:10-27` cho interface thì đúng (10 mở, 27 đóng).",
+  "fix": "Thay \"(hiện ở :10-27), cạnh `argsComplete?` (:19) và `executionStarted?` (:24)\" bằng \"(hiện ở :10-27), cạnh `argsComplete?` (:21) và `executionStarted?` (:26) đã có sẵn\".",
+  "file": "M4-7"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 33 (bước 5) và dòng 15 (bảng file)",
+  "claim": "\"gán nó trong `#rebuildDisplay` (cạnh các phép gán sẵn có ở :925-929 ...)\" và \"`#rebuildDisplay` (:924-931)\".",
+  "why_wrong": "Lệch một dòng. Dòng 925 là comment, phép gán đầu tiên là 926. Tác hại thấp vì neo ở khoảng, nhưng tài liệu tự đặt chuẩn \"mọi neo phải chính xác\" và neo này nằm trong danh sách các neo khác đã lệch.",
+  "evidence": "`awk 'NR>=924 && NR<=931' packages/tui/src/chat/tool-execution.ts` → `924: #rebuildDisplay(): void {` / `925: // Sync shared mutable render state...` / `926: expanded` / `927: isPartial` / `928: argsComplete` / `929: executionStarted` / `930: spinnerFrame` / `931: (trống)`.",
+  "fix": "Thay \":925-929\" bằng \":926-930\" (ở dòng 33). Với \"#rebuildDisplay (:924-931)\" thì giữ nguyên — 924 là dòng mở hàm và 931 là dòng trống kết thúc khối gán, vẫn là khoảng đúng.",
+  "file": "M4-7"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 185 (mục \"Cần người xác nhận\", gạch đầu dòng 3)",
+  "claim": "\"**Neo push site trong `tool-args-reveal.ts` không khớp giữa hai chỗ.** `files_touched` ghi push site ở `:566, :615`, còn `steps` bước 7 ghi `#tick` ở `:613-616` và `flushAll` ở `:566`. Cùng một vị trí, hai neo khác nhau. Đi theo `steps` (chi tiết hơn) cho tới khi bạn xác nhận.\"",
+  "why_wrong": "Hai \"con số khác nhau\" chỉ là một call site nằm trong một khoảng — không phải mâu thuẫn. Tài liệu dựng ra một việc xác nhận không có lý do để tồn tại, đúng thứ tài liệu tự quy tắc ở dòng 181 là phải ghi ra để người đọc thấy.",
+  "evidence": "`awk` trên `tool-args-reveal.ts`: `566: entry.component.updateArgs(displayArgsForPrefix(entry, entry.target, true).args, id);` (trong `flushAll`, mở ở :563) và `615: entry.component.updateArgs(display.args, id);` (trong `#tick`, :613 là `displayArgsForPrefix`, :614 là `if (display.changed) {`, :616 là `rendered.add(...)`). 615 nằm trọn trong 613-616. Cả hai vị trí đều đúng.",
+  "fix": "Xoá gạch đầu dòng này khỏi \"Cần người xác nhận\". Nếu muốn giữ lại như một ghi chú định vị, hãy đổi thành: \"Hai cách ghi neo cho cùng hai call site và không mâu thuẫn: `files_touched` đưa call site (`:566`, `:615`), `steps` đưa khoảng bao quanh (`#tick` `:613-616`). `steps` chi tiết hơn và là cách đi.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 142 (G5)",
+  "claim": "\"**G5 — TYPES.** `bun run check:ts` thoát 0.\"",
+  "why_wrong": "Nhãn \"TYPES\" mô tả một cổng còn hẹp hơn thực tế. Thực tế cổng đỏ cả khi người triển khai viết sai format — đúng kiểu đỏ-khác-vì-lý-do-không-ai-đoán, và bước 2 của tài liệu bắt viết jsdoc \"theo đúng style hiện có\" mà không nói rằng cổng cũng soi style đó.",
+  "evidence": "`package.json` → `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"` và `\"check:tools\": \"oxlint . && oxfmt --check 'packages/*/src/**/*.{ts,tsx}' ...\"`. Log chạy thật: `$ oxlint . && oxfmt --check ...` → `Checking formatting... All matched files use the correct format. Finished in 321ms on 5445 files using 10 threads.` rồi mới tới 16 target `check:types`.",
+  "fix": "Sửa nhãn G5 thành: \"**G5 — TYPES + LINT/FORMAT.** `bun run check:ts` thoát 0. Lưu ý lệnh này là `oxlint . && oxfmt --check ... &&` rồi 16 target `check:types` — nó đỏ cả khi jsdoc/format sai, không chỉ khi type sai.\"",
+  "file": "M4-7"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 33 (bước 5) và dòng 25 (bước 1) và dòng 18 (bảng file)",
+  "claim": "\"Xác nhận nhánh custom-renderer (:950) và nhánh built-in (:1119)\"; `displayArgsForPrefix` (\":396-431\"); `decodeInnerArgs` (\":53-58\").",
+  "why_wrong": "Cả ba lệch nửa đến một dòng về điểm đóng. Tổng hợp, ba neo này cùng loại với các neo đã lệch ở trên; gom lại để một lượt sửa.",
+  "evidence": "`tool-execution.ts:950` đúng (custom branch). Nhánh built-in là `} else {` ở `:1115` — dòng 1119 là `this.#contentBox.clear();` bên trong nó. `tool-args-reveal.ts`: hàm mở ở 396, đóng ở **432** (428 là `return { args, changed: true }`). `xdev.ts`: `decodeInnerArgs` mở ở 53, đóng ở **59** (58 là `return args;`).",
+  "fix": "Sửa ba neo: \"nhánh built-in (:1119)\" → \"nhánh built-in (:1115)\"; \"`displayArgsForPrefix` (:396-431)\" → \"(:396-432)\" (xuất hiện ở dòng 16, 25, 37); \"`xdev.ts:53-58`\" → \"`xdev.ts:53-59`\" (dòng 18 và 41). Giữ nguyên `:424`, `:427-429`, `:455`, `:566`, `:613-616` — tất cả đã đúng.",
+  "file": "M4-7"
+ }
+]

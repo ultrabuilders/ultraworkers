@@ -1,0 +1,199 @@
+{
+  "id": "WI-3",
+  "title": "Event relay exhaustive, compile-checked",
+  "wave": "3 — close the two places the machine lies about itself (WI-3, WI-5 commit 1). WI-3 is 2 commits, ships alone; independent of WI-1 and WI-2, parallelizable. Sole coupling: the shared file `session/agent-session.ts` with M2-OQ6 (46-overload -> module-declared `Events` interface question, decide before touching either) and the one-word `export` on `extensions/runner.ts`.",
+  "one_line": "Replace the 19-branch if/else chain that forwards session events to extensions with a declared lookup table whose key union is a named 19-member subset, so a new event kind cannot be added to the session without either getting a forwarding arm or failing the type check.",
+  "user_visible_effect": "none directly — no behaviour change. The user-visible consequence is for plugin authors: the set of events extensions can subscribe to is now stated in one place, and a session event with no extension hook (e.g. `model_changed`) is no longer documented in prose as if it had one.",
+
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/runner.ts",
+      "action": "modify",
+      "line": 347,
+      "change": "Add the `export` keyword to `type RunnerEmitEvent = Exclude<ExtensionEvent, ...>`. The file already uses the type at 361, 371, 1364, 1372, 1464; nothing else changes. The barrel `src/extensibility/extensions/index.ts` already has `export * from \"./runner\"`, so the type becomes importable from `../extensibility/extensions` with no barrel edit.",
+      "verified": true,
+      "note": "PLAN SAID LINE 344. Actual declaration is at 347 (doc comment occupies 343-346). `agent-session.ts` already imports its sibling event types from `../extensibility/extensions` (block at 139-156), so no new import path is introduced."
+    },
+    {
+      "path": "packages/coding-agent/src/session/agent-session.ts",
+      "action": "modify",
+      "line": 4602,
+      "change": "Add a module-scope `type RelayableEventKind` (19 names) and a module-scope `type SessionEventRelays` (mapped type over that kind), then add a private class field `#sessionEventRelay` holding the 19-arm object literal closed with `} satisfies SessionEventRelays;`. Replace the body of `#emitExtensionEvent` (currently 4602-4747) with a four-line dispatch that looks the arm up and awaits it.",
+      "verified": true,
+      "note": "PLAN SAID 4572-4770. The method is `async #emitExtensionEvent(event: AgentSessionEvent): Promise<void>` at 4602-4747; the 19 `event.type ===` comparisons are at 4604, 4611, 4615, 4622, 4631, 4637, 4644, 4657, 4666, 4675, 4684, 4690, 4700, 4709, 4717, 4725, 4731, 4733, 4740 (count of 19 verified by grep). Region contains 0 `case` and 0 `satisfies` (verified)."
+    },
+    {
+      "path": "packages/coding-agent/src/session/agent-session.ts",
+      "action": "modify",
+      "line": 9523,
+      "change": "Rewrite the 5-line prose comment above `if (isChanging) { this.#emit({ type: \"model_changed\" }); }` in `setModel`. Keep the engineering rationale (synchronous `#emit` avoids adding an extension-delivery await to every model switch, including retry-fallback on the error path). Delete only the clause asserting the implementation fact that the relay never maps `model_changed`, and replace it with a pointer to `RelayableEventKind`. Exact current text is in the steps.",
+      "verified": true,
+      "note": "PLAN SAID 9442-9443. Actual comment is 9523-9527. Do NOT delete the whole comment — its await-in-hot-path rationale is still true and valuable; only the 'no extension-facing hook' assertion goes stale once the relay is a table."
+    },
+    {
+      "path": "packages/coding-agent/test/extension-event-relay-exhaustive.test.ts",
+      "action": "create",
+      "change": "New test file. One runtime row: a registered `goal_updated` extension handler receives the dropped goal's payload end-to-end through the relay table. Copy the construction harness from `test/agent-session-aside-delivery.test.ts:890-935` (TempDir + AuthStorage + ModelRegistry + createMockModel + SessionManager.inMemory + ExtensionRuntime + loadExtensionFromFactory + new ExtensionRunner + new AgentSession with `extensionRunner` in config) and drive it with `session.setGoalModeState(...)` then `await session.goalRuntime.dropGoal()`.",
+      "verified": true,
+      "note": "`GoalModeState` = `{ enabled: boolean; mode: \"active\" | \"exiting\"; reason?: \"completed\"; goal: Goal }` at `src/goals/state.ts:4-9`. `setGoalModeState` is a plain setter at `src/session/agent-session.ts:6159` and does NOT emit; `dropGoal()` (`src/goals/runtime.ts:456`) is what emits `goal_updated` via the `GoalRuntimeHost.emit` bridge at `src/session/agent-session.ts:1916-1920`. Reaches the relay with no model streaming and no tool run."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:347",
+      "instruction": "Change `type RunnerEmitEvent = Exclude<` to `export type RunnerEmitEvent = Exclude<`. One word. No other edit in this file."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts (top level, near the other module-scope types)",
+      "instruction": "Add the key type. It MUST be `Extract<AgentSessionEvent[\"type\"], ...>` over exactly these 19 names and NOT a bare `AgentSessionEvent[\"type\"]`: agent_start, agent_end, turn_start, turn_end, message_start, message_update, message_end, tool_execution_start, tool_execution_update, tool_execution_end, auto_compaction_start, auto_compaction_end, auto_retry_start, auto_retry_end, retry_fallback_applied, retry_fallback_succeeded, ttsr_triggered, todo_reminder, goal_updated. Add a doc comment stating the subset is deliberate and that adding a name without an arm is the compile error the whole work item exists to produce."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts (immediately after RelayableEventKind)",
+      "instruction": "Add the MAPPED type, not a bare `Record`. `type SessionEventRelays = { [E in RelayableEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<RunnerEmitEvent | undefined> };`. This is the half the plan warns you not to skip and the reason is mechanical, not stylistic: only the mapped form contextually types each arm's `event` parameter to that arm's variant, which is what lets `event.message` / `event.toolCallId` typecheck inside an arm. A `Record<RelayableEventKind, (event: AgentSessionEvent) => ...>` would force a cast in every one of the 19 arms."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts (class field area, next to the other private fields around line 837-849)",
+      "instruction": "Add `#sessionEventRelay = { ...19 arms... } satisfies SessionEventRelays;` as a private class field — NOT a local inside `#emitExtensionEvent`. `message_update` fires per streamed delta; rebuilding a 19-closure object literal on every event is a real per-token cost. Field initializers run at construction; the arms only read `this.#turnIndex` when invoked, so declaration order relative to `#turnIndex` (line 849) is not a constraint."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts:4602-4747 (#emitExtensionEvent)",
+      "instruction": "Move all 19 arm bodies into the table verbatim, preserving each one's existing annotated-local shape (`const hookEvent: TurnStartEvent = { ... }; return hookEvent;`). The types `TurnStartEvent`, `TurnEndEvent`, `MessageStartEvent`, `MessageUpdateEvent`, `MessageEndEvent`, `ToolExecutionStartEvent`, `ToolExecutionUpdateEvent`, `ToolExecutionEndEvent` are already imported at 139-156 — add only `RunnerEmitEvent` to that import block. Add `import type { AgentSessionEvent }` only if it is not already imported (it is: it is the method's own parameter type)."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts — the agent_start arm",
+      "instruction": "`agent_start` arm keeps the turn-counter reset and returns the payload: `agent_start: async () => { this.#turnIndex = 0; const extensionEvent: AgentStartEvent = { type: \"agent_start\" }; return extensionEvent; },`. Add `AgentStartEvent` to the 139-156 import block if the annotation is used; omitting the local annotation and returning the literal also typechecks under the mapped type, and is less code."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts — the agent_end arm",
+      "instruction": "`agent_end: async () => undefined,` with a comment naming where the real emit lives: `#emitAgentEndNotification` (agent-session.ts:4538-4544), which emits `{ type: \"agent_end\", messages, willContinue }` from the settled maintenance path so `session_stop` control hooks are not blocked. This is a documented routing decision, not a missing feature — say so in the comment, because an unexplained no-op arm is exactly the smell WI-3 exists to remove. TUI precedent for no-op arms: `event-controller.ts:286` (`turn_start: async () => {}`) and `:356` (`goal_updated: async () => {}`)."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts — the turn_end arm",
+      "instruction": "Move `this.#turnIndex++` INTO the arm, immediately before the `return`. It currently sits after the `await emit(...)` at line 4630; the table returns the payload and the dispatcher emits, so the increment necessarily moves before the emit. This is observably equivalent: `#turnIndex` is read only by the `turn_start`/`turn_end` arms (4618, 4625) and by `turn_id: Math.max(0, this.#turnIndex - 1)` at 4561, all of which run strictly later in the turn lifecycle, never re-entrantly from inside a `turn_end` extension handler (handlers receive an `ExtensionContext` and cannot reach session internals). State this reasoning in the PR body — a reviewer will otherwise read it as an accidental reordering."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts — the message_end arm",
+      "instruction": "Keep the payload clone: `const extensionEvent: MessageEndEvent = { type: \"message_end\", message: cloneMessageEndNotification(event.message) };`. The helper is a module-scope function in the same file at 612-630; the 5-line comment explaining WHY the payload is detached (an async observer mutating the event after an `await` must not be able to rewrite the next provider request) must move into the arm, not be deleted."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts:4602 (new method body)",
+      "instruction": "Replace the whole chain with this dispatch, preserving the two existing gates in their current order:\n\n```\nasync #emitExtensionEvent(event: AgentSessionEvent): Promise<void> {\n    const runner = this.#extensionRunner;\n    if (!runner) return;\n    const arm = this.#sessionEventRelay[event.type as RelayableEventKind] as\n        | ((event: AgentSessionEvent) => Promise<RunnerEmitEvent | undefined>)\n        | undefined;\n    if (!arm) return;\n    // `agent_start` stays ungated: its arm resets the turn counter, which also\n    // feeds `turn_id` on the session_stop continuation path and must not depend\n    // on any extension being subscribed. Every other relayable kind keeps the\n    // pre-existing zero-handler fast path.\n    if (event.type !== \"agent_start\" && !runner.hasHandlers(event.type)) return;\n    const payload = await arm(event);\n    if (payload) await runner.emit(payload);\n}\n```\n\nTwo casts, not one: the key cast (`as RelayableEventKind`) narrows a 28-member union to the 19 the table covers, and the value cast collapses a 19-member union of function types into one callable signature. The value cast is the exact precedent the plan cited for the TUI and then did not carry over — `event-controller.ts:851` does `const run = this.#handlers[event.type] as (e: AgentSessionEvent) => Promise<void>;`."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts:9523-9527",
+      "instruction": "Replace the 5-line comment. Current text verbatim:\n\n```\n// Fan-out uses the synchronous `#emit`, matching `thinking_level_changed`:\n// `model_changed` has no extension-facing hook (`#emitExtensionEvent`\n// never maps it), so routing it through `#emitSessionEvent` would only\n// add an extension-delivery await inside every model switch — including\n// retry-fallback on the error path.\n```\n\nReplace with:\n\n```\n// Fan-out uses the synchronous `#emit`, matching `thinking_level_changed`:\n// routing it through `#emitSessionEvent` would add an extension-delivery await\n// inside every model switch — including retry-fallback on the error path.\n// `model_changed` is deliberately absent from `RelayableEventKind`; add it\n// there together with a real relay arm, never on its own.\n```\n\nThe first two lines are load-bearing engineering rationale — do not delete them."
+    },
+    {
+      "n": 12,
+      "anchor": "packages/coding-agent/test/extension-event-relay-exhaustive.test.ts (new file)",
+      "instruction": "Write the one runtime row. Register `pi.on(\"goal_updated\", ...)` in a `loadExtensionFromFactory` extension, push the received event into an array, build the runner and session per step 12's harness, `session.setGoalModeState({ enabled: true, mode: \"active\", goal: { id: \"g-relay\", objective: \"Prove the relay table is live\", status: \"active\", tokensUsed: 0, timeUsedSeconds: 0, createdAt: 0, updatedAt: 0 } })`, then `await session.goalRuntime.dropGoal()`. Assert the handler received exactly one event whose `goal.id === \"g-relay\"`, `goal.status === \"dropped\"`, and `state.enabled === false`. Clean up with `await session.dispose()`, `authStorage.close()`, `tempDir.removeSync()` in `afterEach`, matching `agent-session-aside-delivery.test.ts:29-47`. No `mock.module()`, no global `Bun.*` mutation."
+    },
+    {
+      "n": 13,
+      "anchor": "packages/coding-agent/package.json (no edit)",
+      "instruction": "Do NOT add a `@ts-expect-error` type-level test, and do NOT export the table for testing. AGENTS.md bans placeholder/tautological tests, and a deliberately-incomplete case object behind `@ts-expect-error` cannot detect the failure this work item exists to prevent: the missing-key error lives in an independent literal that is wrong forever regardless of what the production table does, and `@ts-expect-error` only fires when an error DISAPPEARS. Exhaustiveness is carried entirely by the `satisfies` on the production table plus `bun run check:ts`."
+    },
+    {
+      "n": 14,
+      "anchor": "commit",
+      "instruction": "Commit 1 = steps 1-12 as one commit (green on its own). Commit 2 ONLY if product answers the `model_changed` open question with 'yes, ship a hook': add `model_changed` to `RelayableEventKind` and a real arm in the SAME commit. Never add the name to the union with an empty arm — that is the exact defect WI-3 exists to kill. Do not fold in consolidating the scattered `extensionRunner.emit(...)` call sites elsewhere in the file; different refactor, different risk profile."
+    }
+  ],
+
+  "code_shape": "// ---- module scope, near the top of agent-session.ts ----\n\n/**\n * Session event kinds the extension relay forwards.\n *\n * Deliberately a subset of `AgentSessionEvent[\"type\"]`: `model_changed`,\n * `config_warnings_changed`, `advisor_cost_changed`, `advisor_yielded`,\n * `todo_auto_clear`, `irc_message`, `notice`, `thinking_level_changed` and\n * `tool_stream_update` are delivered to in-process subscribers only and have no\n * extension-facing hook. Adding a name here without adding an arm below is a\n * compile error, which is the entire point of this table.\n */\ntype RelayableEventKind = Extract<\n\tAgentSessionEvent[\"type\"],\n\t| \"agent_start\" | \"agent_end\" | \"turn_start\" | \"turn_end\"\n\t| \"message_start\" | \"message_update\" | \"message_end\"\n\t| \"tool_execution_start\" | \"tool_execution_update\" | \"tool_execution_end\"\n\t| \"auto_compaction_start\" | \"auto_compaction_end\"\n\t| \"auto_retry_start\" | \"auto_retry_end\"\n\t| \"retry_fallback_applied\" | \"retry_fallback_succeeded\"\n\t| \"ttsr_triggered\" | \"todo_reminder\" | \"goal_updated\"\n>;\n\n/**\n * MAPPED type, not `Record<...>`. The `Extract` in the value position is what\n * gives each arm its own event variant, so arm bodies narrow without casts.\n * The return is a Promise because arms also carry the relay's non-emit side\n * effects (the `agent_start` counter reset, the `turn_end` increment); a pure\n * synchronous `event -> RunnerEmitEvent` signature would silently drop them.\n */\ntype SessionEventRelays = {\n\t[E in RelayableEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<RunnerEmitEvent | undefined>;\n};\n\n// ---- class field, next to #extensionRunner (line 837) / #turnIndex (line 849) ----\n\n#sessionEventRelay = {\n\tagent_start: async () => {\n\t\t// Ungated in the dispatcher: this reset also feeds `turn_id` at the\n\t\t// session_stop continuation path, which must not depend on any\n\t\t// extension being subscribed.\n\t\tthis.#turnIndex = 0;\n\t\treturn { type: \"agent_start\" } satisfies AgentStartEvent;\n\t},\n\t// No payload from the session path. The extension `agent_end` notification is\n\t// emitted from `#emitAgentEndNotification` (this file) so `session_stop` control\n\t// hooks are not blocked by unrelated notification-only work. Routing decision,\n\t// not a missing arm.\n\tagent_end: async () => undefined,\n\tturn_start: async () => {\n\t\treturn { type: \"turn_start\", turnIndex: this.#turnIndex, timestamp: Date.now() } satisfies TurnStartEvent;\n\t},\n\tturn_end: async event => {\n\t\t// Increment moved ahead of the emit (the table returns, the dispatcher emits).\n\t\t// Safe: #turnIndex is read only by the arms above and by `turn_id` at the\n\t\t// session_stop path, all strictly later in the turn lifecycle.\n\t\tthis.#turnIndex++;\n\t\treturn { type: \"turn_end\", turnIndex: this.#turnIndex - 1, message: event.message, toolResults: event.toolResults } satisfies TurnEndEvent;\n\t},\n\tmessage_start: async event => ({ type: \"message_start\", message: event.message }) satisfies MessageStartEvent,\n\tmessage_update: async event =>\n\t\t({ type: \"message_update\", message: event.message, assistantMessageEvent: event.assistantMessageEvent }) satisfies\n\t\t\tMessageUpdateEvent,\n\tmessage_end: async event => {\n\t\t// Detach the payload from agent-owned history so an async observer that mutates\n\t\t// the event after an `await` cannot race mid-run maintenance and enlarge (or\n\t\t// otherwise rewrite) the next provider request after its threshold check.\n\t\treturn { type: \"message_end\", message: cloneMessageEndNotification(event.message) } satisfies MessageEndEvent;\n\t},\n\ttool_execution_start: async event =>\n\t\t({\n\t\t\ttype: \"tool_execution_start\",\n\t\t\ttoolCallId: event.toolCallId,\n\t\t\ttoolName: event.toolName,\n\t\t\targs: event.args,\n\t\t\tintent: event.intent,\n\t\t}) satisfies ToolExecutionStartEvent,\n\ttool_execution_update: async event =>\n\t\t({\n\t\t\ttype: \"tool_execution_update\",\n\t\t\ttoolCallId: event.toolCallId,\n\t\t\ttoolName: event.toolName,\n\t\t\targs: event.args,\n\t\t\tpartialResult: event.partialResult,\n\t\t}) satisfies ToolExecutionUpdateEvent,\n\ttool_execution_end: async event =>\n\t\t({\n\t\t\ttype: \"tool_execution_end\",\n\t\t\ttoolCallId: event.toolCallId,\n\t\t\ttoolName: event.toolName,\n\t\t\tresult: event.result,\n\t\t\tisError: event.isError ?? false,\n\t\t}) satisfies ToolExecutionEndEvent,\n\tauto_compaction_start: async event =>\n\t\t({ type: \"auto_compaction_start\", reason: event.reason, action: event.action }) satisfies AutoCompactionStartEvent,\n\tauto_compaction_end: async event =>\n\t\t({\n\t\t\ttype: \"auto_compaction_end\",\n\t\t\taction: event.action,\n\t\t\tresult: event.result,\n\t\t\taborted: event.aborted,\n\t\t\twillRetry: event.willRetry,\n\t\t\terrorMessage: event.errorMessage,\n\t\t\tskipped: event.skipped,\n\t\t}) satisfies AutoCompactionEndEvent,\n\tauto_retry_start: async event =>\n\t\t({\n\t\t\ttype: \"auto_retry_start\",\n\t\t\tattempt: event.attempt,\n\t\t\tmaxAttempts: event.maxAttempts,\n\t\t\tdelayMs: event.delayMs,\n\t\t\terrorMessage: event.errorMessage,\n\t\t\terrorId: event.errorId,\n\t\t}) satisfies AutoRetryStartEvent,\n\tauto_retry_end: async event =>\n\t\t({\n\t\t\ttype: \"auto_retry_end\",\n\t\t\tsuccess: event.success,\n\t\t\tattempt: event.attempt,\n\t\t\tfinalError: event.finalError,\n\t\t\tretryErrors: event.retryErrors,\n\t\t}) satisfies AutoRetryEndEvent,\n\tretry_fallback_applied: async event =>\n\t\t({ type: \"retry_fallback_applied\", from: event.from, to: event.to, role: event.role, reason: event.reason }) satisfies\n\t\t\tRetryFallbackAppliedEvent,\n\tretry_fallback_succeeded: async event =>\n\t\t({ type: \"retry_fallback_succeeded\", model: event.model, role: event.role }) satisfies RetryFallbackSucceededEvent,\n\tttsr_triggered: async event => ({ type: \"ttsr_triggered\", rules: event.rules }) satisfies TtsrTriggeredEvent,\n\ttodo_reminder: async event =>\n\t\t({ type: \"todo_reminder\", todos: event.todos, attempt: event.attempt, maxAttempts: event.maxAttempts }) satisfies\n\t\t\tTodoReminderEvent,\n\tgoal_updated: async event => ({ type: \"goal_updated\", goal: event.goal, state: event.state }) satisfies GoalUpdatedEvent,\n} satisfies SessionEventRelays;\n\n// ---- method ----\n\nasync #emitExtensionEvent(event: AgentSessionEvent): Promise<void> {\n\tconst runner = this.#extensionRunner;\n\tif (!runner) return;\n\tconst arm = this.#sessionEventRelay[event.type as RelayableEventKind] as\n\t\t| ((event: AgentSessionEvent) => Promise<RunnerEmitEvent | undefined>)\n\t\t| undefined;\n\tif (!arm) return;\n\tif (event.type !== \"agent_start\" && !runner.hasHandlers(event.type)) return;\n\tconst payload = await arm(event);\n\tif (payload) await runner.emit(payload);\n}\n",
+
+  "test_contract": "OBSERVABLE CONTRACT: a registered `goal_updated` extension handler receives the extension event, carrying the goal identity and the dropped state that the session produced. WHAT A CONSUMER SEES IF IT REGRESSES: the handler's `received` array stays empty — the plugin author's `pi.on(\"goal_updated\", ...)` silently never fires — when the table lookup misses (bad `as` cast, transposed key, arm returned `undefined` instead of a payload) or when the dispatcher stops routing through `#emitExtensionEvent`. If only the payload is wrong, the assertions on `goal.id` / `goal.status === \"dropped\"` / `state.enabled === false` fail, which catches a mis-mapped or truncated forwarding arm that still reaches the handler. WHY IT IS NOT A STATIC ECHO: the goal object is produced by `GoalRuntime.dropGoal` (it sets `status: \"dropped\"` and `state.enabled: false` itself at `goals/runtime.ts:456-471`) and travels runtime -> `GoalRuntimeHost.emit` bridge (`agent-session.ts:1916-1920`) -> `#emitSessionEvent` -> `#emitExtensionEvent` -> table -> `ExtensionRunner.emit` -> handler. The relay asserts nothing; it only moves the payload. There is no fixture being compared to itself. WHAT IT DELIBERATELY DOES NOT DEFEND: exhaustiveness. A single-event runtime row cannot fail when someone adds a key to the table, and cannot fail when a name is left out of `RelayableEventKind` entirely. That contract is carried 100% by the `satisfies SessionEventRelays` on the production table plus `bun run check:ts` — and the plan's claim that this runtime row would fail in that scenario is wrong (see plan_corrections).",
+
+  "test_files": ["packages/coding-agent/test/extension-event-relay-exhaustive.test.ts"],
+
+  "verification": "RUNNABLE TODAY (verified green at HEAD 808b365, exit 0):\n  bun run check:ts\n\nRUNNABLE ONCE THE NATIVE ADDON IS BUILT (currently blocked — `bun test` reports 0 pass, 1 fail, 'Failed to load pi_natives native addon for darwin-arm64'; confirmed by running `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts`):\n  cd packages/coding-agent && bun test test/extension-event-relay-exhaustive.test.ts\n\nCOMBINED (the plan's command, valid only after `bun run build:native`):\n  bun run check:ts && (cd packages/coding-agent && bun test test/extension-event-relay-exhaustive.test.ts)\n\n`check:ts` is not a formality: it runs `oxlint` + `oxfmt --check` then `tsgo -p tsconfig.json --noEmit` per package, and `packages/coding-agent/tsconfig.json` includes `[\"src\", \"test\", \"scripts\"]` — so both the table AND the new test file are type-checked by it.",
+
+  "gate": "`bun run check:ts` exits 0. This is the load-bearing gate and it is genuinely load-bearing: if an implementer adds a name to `RelayableEventKind` without an arm, the mapped type demands the missing property and tsgo fails. If they write the bare `Record<RelayableEventKind, (event: AgentSessionEvent) => ...>` form from the plan's sketch, every arm that touches a variant-specific field fails to compile. If they use `HookEvent` as the key type, the `Extract` collapses to `never` and the table fails. Second gate, once the addon is built: `cd packages/coding-agent && bun test test/extension-event-relay-exhaustive.test.ts` exits 0 with exactly 1 passing test.",
+
+  "gate_can_fail": "YES for `check:ts`, and it is the gate that matters. Three concrete red states: (1) add `\"model_changed\"` to `RelayableEventKind` without an arm -> TS2741 missing property, tsgo exits non-zero. (2) delete the `turn_end` arm -> same. (3) rename a `satisfies TurnEndEvent` annotation to a wrong event interface -> TS2322 on the object literal. It has been observed green at HEAD (`bun run check:ts` -> exit 0) so it is demonstrably live. NO for the `bun test` half today: the native addon is not built, so the whole suite reports 0 pass regardless of the code. That half is a real gate only after `bun run build:native`; until then do not treat its silence as green.",
+
+  "depends_on": [],
+
+  "blocks": [],
+
+  "effort": "S — a few hours. One word in `runner.ts`, one 19-arm table, a four-line dispatcher, a five-line comment rewrite, one test file. The plan's 'S-M' rating is inflated by the `model_changed` product decision; the mechanical half is genuinely S and the compiler does the checking.",
+
+  "risk": "THE LIKELY WAY TO GET THIS WRONG: reaching for the plan's literal sketch — `satisfies Record<RelayableEventKind, (event: AgentSessionEvent) => RunnerEmitEvent | undefined>` — which is wrong twice over. It is SYNCHRONOUS, so the `#turnIndex` reset in `agent_start` and the increment in `turn_end` have nowhere to live and get silently dropped, leaving `turnIndex` frozen at 0 for every extension forever. And it types every arm's parameter as the full 28-member `AgentSessionEvent`, so `event.message` / `event.toolCallId` do not narrow and every one of the 19 arms needs a cast — defeating the point. The correct form is the mapped `SessionEventRelays` with an async return, copied from `event-controller.ts:107-109` + `:284-357`, plus the value cast at the lookup that the plan also omitted (TUI precedent: `event-controller.ts:851`). Second-most-likely: putting the table inside the method body instead of a class field, allocating 19 closures on every `message_update` delta. Third: deleting the whole `model_changed` comment instead of just its stale clause, throwing away the await-in-hot-path rationale.",
+
+  "open_questions": [
+    "PRODUCT — `model_changed`: ship an extension hook or not? The spec's default is NO: leave it out of `RelayableEventKind` and keep the comment pointer. A hook fires on every model switch including retry-fallback on the error path, and `setModel` is on the hot path. If the answer is yes, it is commit 2 and must land with a real arm — never a name in the union with an empty arm.",
+    "PRODUCT/REVIEW — the latent `#turnIndex` bug surfaced by this refactor: `this.#turnIndex++` (agent-session.ts:4630) currently sits BEHIND the `if (!runner.hasHandlers(event.type)) return;` guard at 4610. When no extension has registered a `turn_end` handler, `#turnIndex` therefore never increments, so the `turnIndex` handed to `turn_start`/`turn_end` handlers stays 0 for the whole session and `turn_id` at 4561 (`Math.max(0, this.#turnIndex - 1)`) is always 0. The spec PRESERVES this behaviour exactly so WI-3 stays a zero-diff mechanical commit. Fixing it is a separate, small, behaviour-changing commit with its own runtime test. Should it be filed as a follow-up item, and does anyone want it in M2 at all?",
+    "REVIEW — is keeping `agent_end` as a documented `async () => undefined` arm acceptable, or should `agent_end` be dropped from `RelayableEventKind` (18 keys) since it has no payload from the session path? The spec keeps it at 19 to match the current branch count and to force a future author to confront the routing decision; the TUI sets a precedent for no-op arms (`event-controller.ts:286`, `:356`). A reviewer who disagrees only has to delete one key and one arm."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "The table's value type is `(event: AgentSessionEvent) => RunnerEmitEvent | undefined` (a bare `Record<RelayableEventKind, …>` with `satisfies`).",
+      "verdict": "WRONG — and following it literally costs a full rework of all 19 arms",
+      "correction": "Use a MAPPED type with an ASYNC return: `type SessionEventRelays = { [E in RelayableEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<RunnerEmitEvent | undefined> };`. Two independent failures in the plan's form. (a) It is synchronous, so the two arms that mutate relay state — `this.#turnIndex = 0` (4605) and `this.#turnIndex++` (4630) — have nowhere to live and get dropped, freezing `turnIndex` at 0 for every extension for the whole session. (b) Its parameter is the full 28-member `AgentSessionEvent`, which does not narrow per arm, so `event.message` / `event.toolCallId` / `event.goal` do not typecheck and every one of the 19 arms needs a cast — which is precisely the outcome the refactor is meant to eliminate. The plan did gesture at the right answer ('copy BOTH halves, not just the object literal') but then wrote a sketch of the half that does not work.",
+      "evidence": "packages/coding-agent/src/modes/controllers/event-controller.ts:107-109 — `type AgentSessionEventHandlers = { [E in AgentSessionEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<void>; };`, closed at :357 with `} satisfies AgentSessionEventHandlers;`. Arms there read `e` with full variant narrowing (`event-controller.ts:287-300`). `AgentSessionEventKind = AgentSessionEvent[\"type\"]` at :74."
+    },
+    {
+      "claim": "The dispatch is `relayTable[event.type as RelayableEventKind]?.(event)` — 'the `as` cast at the lookup is the only place needing a cast'.",
+      "verdict": "WRONG — two casts are required",
+      "correction": "`this.#sessionEventRelay[event.type as RelayableEventKind]` has type `SessionEventRelays[RelayableEventKind]`, which is a union of 19 function types. Calling a union of function types requires an argument assignable to the INTERSECTION of their parameters, and a full `AgentSessionEvent` is not assignable to `Extract<AgentSessionEvent, { type: \"turn_start\" }>`. The lookup must also cast the VALUE to a single wide signature: `as ((event: AgentSessionEvent) => Promise<RunnerEmitEvent | undefined>) | undefined`. The TUI does exactly this and the plan cited the TUI as the template without carrying the dispatch half over.",
+      "evidence": "packages/coding-agent/src/modes/controllers/event-controller.ts:851 — `const run = this.#handlers[event.type] as (e: AgentSessionEvent) => Promise<void>;`"
+    },
+    {
+      "claim": "The runtime test row 'is the thing that FAILS if someone leaves a variant out of `RelayableEventKind` and then adds it to the table'.",
+      "verdict": "COHERENTLY WRONG — the claim contradicts itself and no single-event test could hold it",
+      "correction": "The two halves of the sentence describe opposite situations and neither makes the runtime row load-bearing. If a name is added to the TABLE but not the union, `satisfies` fails as an excess-property error — `bun run check:ts`, not the runtime row. If a name is left out of BOTH, nothing fails anywhere: a new session event that nobody relays is a legitimate product decision, not a defect. What the runtime row actually defends is narrower and still worth having: the table is the LIVE dispatch path, and the payload reaching the handler is the payload the session produced. State it that way; do not let a reviewer believe the test backstops exhaustiveness.",
+      "evidence": "`packages/coding-agent/tsconfig.json` includes `[\"src\", \"test\", \"scripts\"]`, so `tsgo --noEmit` type-checks the table — that is the entire exhaustiveness gate. A one-event runtime test observes one event's delivery and nothing about the other 18."
+    },
+    {
+      "claim": "A bare `AgentSessionEvent[\"type\"]` table key 'would demand more than ten `() => undefined` arms'.",
+      "verdict": "RIGHT IN SUBSTANCE, OFF BY COUNT",
+      "correction": "It is exactly 9, not 'more than ten'. `AgentSessionEvent` is 28 distinct type names (11 from `AgentEvent` + 17 added by the session union); 19 are relayable, leaving 9: `tool_stream_update`, `model_changed`, `config_warnings_changed`, `advisor_cost_changed`, `advisor_yielded`, `todo_auto_clear`, `irc_message`, `notice`, `thinking_level_changed`. The conclusion — use the 19-member `Extract` — is unchanged. Worth writing the exact 9 into the `RelayableEventKind` doc comment so the next author adding a session event knows the two valid options.",
+      "evidence": "packages/coding-agent/src/session/agent-session-events.ts:13-80 (union; 17 session-only variants at 29-80). packages/agent/src/types.ts:1197-1219 — `AgentEvent` is 11 variants ending at 1219. Cross-check: the TUI handler table (event-controller.ts:284-357) has a real arm for every one of the 28, because the TUI subscribes to all of them."
+    },
+    {
+      "claim": "`model_changed`: 'or delete the prose at agent-session.ts:9442-9443'.",
+      "verdict": "ANCHOR WRONG, AND DELETING THE WHOLE COMMENT IS THE WRONG FIX",
+      "correction": "The comment is at 9523-9527, not 9442-9443, and only its third clause goes stale. Lines 1-2 ('Fan-out uses the synchronous `#emit` … would only add an extension-delivery await inside every model switch — including retry-fallback on the error path') are load-bearing rationale for using `#emit` instead of `#emitSessionEvent`, and they remain true. Delete the '`model_changed` has no extension-facing hook (`#emitExtensionEvent` never maps it)' assertion and replace it with a pointer to `RelayableEventKind`. Exact replacement text is in step 11.",
+      "evidence": "packages/coding-agent/src/session/agent-session.ts:9523-9527, read directly; followed at 9528-9530 by `if (isChanging) { this.#emit({ type: \"model_changed\" }); }`."
+    },
+    {
+      "claim": "The 19 relay branches live at `agent-session.ts:4572-4770`, arm names sourced from `:4572-4720`; `model_changed` note at `:9442-9443`; `RunnerEmitEvent` at `extensions/runner.ts:344`; `ExtensionEvent` at `extensions/extensions/types.ts:1095`; `AgentSessionEvent` at `session/agent-session-events.ts:13-77`; `AgentEvent` at `agent/src/types.ts:1189`; TUI template at `event-controller.ts:106-108` and `:279-352`.",
+      "verdict": "SEVEN STALE ANCHORS — all verified line numbers below",
+      "correction": "Use these, all confirmed with `git grep -n` / `sed -n` at HEAD 808b365: relay method 4602-4747; the 19 `event.type ===` comparisons at 4604, 4611, 4615, 4622, 4631, 4637, 4644, 4657, 4666, 4675, 4684, 4690, 4700, 4709, 4717, 4725, 4731, 4733, 4740; `model_changed` note 9523-9527; `RunnerEmitEvent` runner.ts:347; `ExtensionEvent` extensions/types.ts:1120; `AgentSessionEvent` agent-session-events.ts:13-80; `AgentEvent` agent/src/types.ts:1197-1219; TUI mapped type event-controller.ts:107-109 and object literal 284-357 (closing `satisfies` at 357).",
+      "evidence": "Direct reads of each file; `agent-session.ts:4746-4747` shows the chain's closing `}` and the method's `}`; `event-controller.ts:357` is `} satisfies AgentSessionEventHandlers;`."
+    },
+    {
+      "claim": "The repo is at git HEAD 5873776 on branch milestone-1.",
+      "verdict": "STALE — that commit does not exist in this repository",
+      "correction": "Actual HEAD is 808b365 (\"docs(plan): fold the spec-verified M1 execution plan into the upgrade plan\"), branch milestone-1, working tree clean. `git cat-file -t 5873776` returns 'fatal: Not a valid object name'. Every line number in this spec was verified against 808b365; if the tree moves before implementation, re-verify the four anchors in agent-session.ts (4602, 4747, 9523, 837) before editing.",
+      "evidence": "`git rev-parse --short HEAD` -> 808b365; `git log --oneline -3` -> 808b365, 33d6e33, ecd516f."
+    },
+    {
+      "claim": "`HookEvent` is a 15-member union at `extensibility/hooks/types.ts:393` that lacks the 9 relay-only types.",
+      "verdict": "CONFIRMED — the plan's sharpest type warning holds",
+      "correction": "Verified exactly 15 members (394-408) and the line number is right. Listed here so the implementer does not re-derive it: SessionEvent, ContextEvent, BeforeAgentStartEvent, AgentStartEvent, AgentEndEvent, TurnStartEvent, TurnEndEvent, AutoCompactionStartEvent, AutoCompactionEndEvent, AutoRetryStartEvent, AutoRetryEndEvent, TtsrTriggeredEvent, TodoReminderEvent, ToolCallEvent, ToolResultEvent. The 9 relay-only types (message_start/update/end, tool_execution_start/update/end, retry_fallback_applied, retry_fallback_succeeded, goal_updated) are absent — using it as the key type collapses `Extract` to `never`.",
+      "evidence": "packages/coding-agent/src/extensibility/hooks/types.ts:393-408. `ExtensionEventType` also confirmed non-existent: `git grep -n ExtensionEventType -- packages` returns nothing."
+    },
+    {
+      "claim": "Environment note: `bun test` is blocked by the unbuilt native addon; `bun run check:ts` works.",
+      "verdict": "CONFIRMED — and the consequence for the gate is spelled out in `gate`",
+      "correction": "Ran it: `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` -> '0 pass, 1 fail, 1 error', 'Failed to load pi_natives native addon for darwin-arm64', fix hint `bun --cwd=packages/natives run build`. `bun run check:ts` at HEAD exits 0 (verified, full run). So the ONLY gate that is live today is `check:ts` — which is fortunate, because it is also the gate that carries exhaustiveness. Do not report the test as passing until the addon is built.",
+      "evidence": "Live runs in this session; `bun run check:ts` output ended with every package's `check:types | Done` and `[exited with code 0]`."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-3.spec.json"
+}

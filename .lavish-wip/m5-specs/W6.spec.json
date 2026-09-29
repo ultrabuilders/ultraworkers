@@ -1,0 +1,180 @@
+{
+  "id": "W6",
+  "title": "Flip CONFIG_DIR_NAME to .ultraworkers, with the mandatory W6a project-root pin",
+  "wave": "2",
+  "one_line": "Point new writes at ~/.ultraworkers while every project directory named .omp keeps being read, by splitting the project-level directory name into its own constant that is deliberately never renamed.",
+  "user_visible_effect": "New config, sessions and settings are written under ~/.ultraworkers instead of ~/.omp. A user whose home root is still only ~/.omp keeps every session, setting and install-id exactly as-is and sees no error. Every project that has a .omp directory committed in its repo — including the 'This project (.omp/rules)' scope in the rules editor — keeps resolving to that .omp, unchanged. What the user never sees is the failure this work exists to prevent: no error, no warning, no missing config, just a silent re-login because the project directory stopped being found.",
+  "files_touched": [
+    {
+      "path": "packages/utils/src/dirs.ts",
+      "change": "Line 27: flip CONFIG_DIR_NAME from \".omp\" to \".ultraworkers\". Add a new exported PROJECT_DIR_NAME = \".omp\" immediately after it, with a docblock stating it is deliberately not derived from CONFIG_DIR_NAME and is pinned for the whole milestone. Line 590: getProjectAgentDir() joins PROJECT_DIR_NAME instead of CONFIG_DIR_NAME.",
+      "action": "modify",
+      "verified": true,
+      "note": "Line 27 is `export const CONFIG_DIR_NAME: string = \".omp\";` (confirmed by grep -n). Line 589 is the getProjectAgentDir signature, 590 is `return path.join(cwd, CONFIG_DIR_NAME);` (confirmed). This is the plan's cited flip site and it is accurate."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/omfg-controller.ts",
+      "change": "Line 2: import PROJECT_DIR_NAME instead of CONFIG_DIR_NAME. Line 285: build the project-scope rules path from PROJECT_DIR_NAME instead of CONFIG_DIR_NAME.",
+      "action": "modify",
+      "verified": true,
+      "note": "NOT IN THE PLAN. Line 2 is `import { CONFIG_DIR_NAME, prompt } from \"@oh-my-pi/pi-utils\";` and line 285 is `filePath: path.join(this.ctx.sessionManager.getCwd(), CONFIG_DIR_NAME, \"rules\", `${ruleName}.md`)` (both confirmed by sed). This is a second, product-level project-root read that the plan's W6a analysis does not mention. Missing it makes project-scope rules silently resolve to an empty new-name directory."
+    },
+    {
+      "path": "packages/coding-agent/src/discovery/helpers.ts",
+      "change": "Line 6: import PROJECT_DIR_NAME instead of CONFIG_DIR_NAME. Line 47: set `projectDir: PROJECT_DIR_NAME` in the SOURCE_PATHS.native entry.",
+      "action": "modify",
+      "verified": true,
+      "note": "NOT IN THE PLAN. Line 47 is `projectDir: CONFIG_DIR_NAME,` inside SOURCE_PATHS.native (confirmed by sed -n '40,55p'). This is a third project-root read, consumed by discovery/builtin.ts:44 and discovery/skillshare.ts:93. Missing it makes project-local skills/agents discovery silently return nothing."
+    },
+    {
+      "path": "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts",
+      "change": "Line 14: replace `expect(CONFIG_DIR_NAME).toBe(\".omp\")` with an assertion that the shim's CONFIG_DIR_NAME is bound to the HOME root constant and is NOT the project root constant.",
+      "action": "modify",
+      "verified": true,
+      "note": "NOT IN THE PLAN, AND THIS TEST WILL OTHERWISE FAIL. Line 14 hard-codes the literal \".omp\" (confirmed by sed). The test's own name is \"re-exports parseArgs and CONFIG_DIR_NAME from the legacy package root\" — the defended contract is the barrel wiring documented at legacy-pi-coding-agent-shim.ts:1587-1591, not the value. The value pin is what breaks on the flip."
+    },
+    {
+      "path": "scripts/rename/do_not_rename.tsv",
+      "change": "Add the N14 row: value `.omp` (project-level), reason \"project-level directory is usually committed to the user's git repo; renaming it rewrites their working tree rather than moving machine-local state\", source `packages/utils/src/dirs.ts:589-591`.",
+      "action": "create",
+      "verified": false,
+      "note": "The plan's §2.3 defines do_not_rename as a 17-row table but never pins a file path for it, and `scripts/rename/` does not exist yet (confirmed: `ls scripts/rename` → No such file or directory). The sibling W8b file `scripts/rename/disposition.tsv` is named in the plan, so `scripts/rename/` is the intended home. CONFIRM THE PATH with the W7/W8b owner before creating."
+    },
+    {
+      "path": "packages/utils/test/project-dir-name-pinned.test.ts",
+      "change": "New test file. Asserts that after the flip the two roots have diverged, and that getProjectAgentDir() resolves to a committed .omp project directory even when a directory named after the NEW home root also exists in the same project.",
+      "action": "create",
+      "verified": true,
+      "note": "Follows packages/utils/test/dirs.test.ts conventions: bun:test, TempDir, no process.env mutation, no mock.module, no source-grep. Parent directory packages/utils/test/ confirmed to exist."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Confirm W4 and W5 have actually shipped and been used in a real release. This is a hard gate: W4 adds the ordered read-candidate list and the separate write root, W5 ships `config migrate`. Until both exist there is no path back to a user's data, and this item must not start. Verify the W4 test files exist on disk right now: `ls packages/utils/test/config-dir-dual-root.test.ts packages/utils/test/install-id-legacy-read.test.ts packages/utils/test/config-dir-write-root.test.ts`.",
+      "anchor": "packages/utils/test/config-dir-dual-root.test.ts"
+    },
+    {
+      "n": 2,
+      "instruction": "Create scripts/rename/ and do_not_rename.tsv with the N14 row (see files_touched). Confirm the path with the W7/W8b owner first — the plan never pins it. Do this FIRST, not last: the registry is the artifact that makes the pin a decision rather than an accident.",
+      "anchor": "scripts/rename/do_not_rename.tsv"
+    },
+    {
+      "n": 3,
+      "instruction": "In packages/utils/src/dirs.ts, add PROJECT_DIR_NAME = \".omp\" directly after CONFIG_DIR_NAME at line 27, with a docblock saying it is deliberately NOT derived from CONFIG_DIR_NAME, that the directory is usually committed to the user's git repo, and that renaming it is a working-tree change rather than a product rename. Keep the docblock short; the full rationale lives in do_not_rename N14.",
+      "anchor": "packages/utils/src/dirs.ts:27"
+    },
+    {
+      "n": 4,
+      "instruction": "Repoint getProjectAgentDir() at PROJECT_DIR_NAME. The function signature and default arg stay exactly as they are. This is the one site the plan names.",
+      "anchor": "packages/utils/src/dirs.ts:589-591"
+    },
+    {
+      "n": 5,
+      "instruction": "Repoint the omfg project-scope rules path at PROJECT_DIR_NAME, and update the import on line 2 from CONFIG_DIR_NAME to PROJECT_DIR_NAME. Check whether the string \"This project (.omp/rules)\" that the test file treats as a user-visible label is produced from a constant or written literally in the controller — if it is a literal, it stays \".omp\" deliberately and needs no edit; if it is built from the constant, it comes along for free.",
+      "anchor": "packages/coding-agent/src/modes/controllers/omfg-controller.ts:285"
+    },
+    {
+      "n": 6,
+      "instruction": "Repoint SOURCE_PATHS.native.projectDir at PROJECT_DIR_NAME, and update the import on line 6. Leave userBase and userAgent on their existing getConfigDirName() getters — those are HOME roots and must follow W4's candidate resolution, not the project pin. The asymmetry is intentional and is the whole design: the home root is movable and dual-read, the project root is pinned.",
+      "anchor": "packages/coding-agent/src/discovery/helpers.ts:47"
+    },
+    {
+      "n": 7,
+      "instruction": "Flip CONFIG_DIR_NAME at line 27 to \".ultraworkers\". Do this LAST, after all three call sites are repointed, so the intermediate state of the working tree never has a renamed project root.",
+      "anchor": "packages/utils/src/dirs.ts:27"
+    },
+    {
+      "n": 8,
+      "instruction": "Fix the legacy shim test. In packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts, replace the literal \".omp\" assertion on line 14 with an assertion that the shim's CONFIG_DIR_NAME equals the home-root CONFIG_DIR_NAME imported from @oh-my-pi/pi-utils AND is not equal to PROJECT_DIR_NAME. Post-flip those two constants differ, so the second half has teeth: it goes red if anyone re-points the legacy compat surface at the pinned project constant. Keep the existing parseArgs assertion unchanged.",
+      "anchor": "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts:14"
+    },
+    {
+      "n": 9,
+      "instruction": "Write packages/utils/test/project-dir-name-pinned.test.ts per the code_shape below. It must seed BOTH a .omp/rules directory and a directory named after the new CONFIG_DIR_NAME in the same temp project, then assert getProjectAgentDir() resolves to the .omp one. The second seeded directory is what makes the assertion a real precedence test rather than a constant echo.",
+      "anchor": "packages/utils/test/project-dir-name-pinned.test.ts"
+    },
+    {
+      "n": 10,
+      "instruction": "Run the verification commands. Then run the four existing test files that hard-code a project-level .omp literal — omfg-controller.test.ts, agent-session-rules-reload.test.ts, advisor-toggle.test.ts, extensions-discovery.test.ts — as the real proof that committed project directories are unaffected. These are pre-existing and must not need editing; if any of them fails, a call site was missed.",
+      "anchor": "packages/coding-agent/test/modes/controllers/omfg-controller.test.ts"
+    },
+    {
+      "n": 11,
+      "instruction": "Commit as ONE standalone commit containing only these files, on top of shipped W4 and W5. Do not bundle it with any other rename work. The entire point of the separate commit is that the moment a user loses a session must be a one-line revert, not something buried in a 4107-file diff.",
+      "anchor": "packages/utils/src/dirs.ts:27"
+    }
+  ],
+  "code_shape": "// packages/utils/src/dirs.ts — around line 27\n\n/** Config directory name for the home root (e.g. \".ultraworkers\"). */\nexport const CONFIG_DIR_NAME: string = \".ultraworkers\";\n\n/**\n * Project-local config directory name, relative to the project root.\n *\n * Deliberately NOT derived from CONFIG_DIR_NAME. This directory usually lives in\n * the user's repo and is committed to git, so renaming it rewrites their working\n * tree rather than moving machine-local state. Pinned for the whole rebrand\n * milestone — see do_not_rename N14.\n */\nexport const PROJECT_DIR_NAME: string = \".omp\";\n\n// packages/utils/src/dirs.ts:589-591\n/** Get the project-local config directory (.omp). */\nexport function getProjectAgentDir(cwd: string = getProjectDir()): string {\n\treturn path.join(cwd, PROJECT_DIR_NAME);\n}\n\n// packages/coding-agent/src/modes/controllers/omfg-controller.ts:283-288\n#resolveTarget(location: string, ruleName: string): { filePath: string; level: OmfgRuleSourceLevel } {\n\tif (location === GLOBAL_OPTION) {\n\t\treturn {\n\t\t\tfilePath: path.join(this.ctx.settings.getAgentDir(), \"rules\", `${ruleName}.md`),\n\t\t\tlevel: \"user\",\n\t\t};\n\t}\n\treturn {\n\t\t// PROJECT_DIR_NAME, not CONFIG_DIR_NAME: this directory is committed in\n\t\t// the user's repo and must keep resolving after the home root is renamed.\n\t\tfilePath: path.join(this.ctx.sessionManager.getCwd(), PROJECT_DIR_NAME, \"rules\", `${ruleName}.md`),\n\t\tlevel: \"project\",\n\t};\n}\n\n// packages/coding-agent/src/discovery/helpers.ts:40-48 — note the asymmetry\nnative: {\n\tget userBase() {\n\t\treturn getConfigDirName();   // HOME root: W4 candidate resolution, follows the rename\n\t},\n\tget userAgent() {\n\t\treturn `${getConfigDirName()}/agent`;\n\t},\n\tprojectDir: PROJECT_DIR_NAME,   // project root: pinned, never renamed\n},",
+  "test_contract": "Defends two things. (1) PROJECT_DIR_NAME is pinned to \".omp\" independently of CONFIG_DIR_NAME, and the two constants have DIVERGED — that divergence is the contract, and if they ever become equal again someone has flipped the project root too. (2) A project directory that already contains a committed .omp/ is still what getProjectAgentDir() resolves to, even when a directory named after the NEW home root sits right next to it. What the consumer sees if this regresses: a user opens a repo they have been using for months, their project settings, rules and skills silently disappear, no error is printed, and the app behaves as if freshly installed. Secondary contract, in the legacy shim test: the compat surface exported from the legacy package root stays bound to the home-root constant and is not re-pointed at the pinned project constant — if it regresses, every third-party legacy extension resolves its config directory to a path that does not exist.",
+  "test_files": [
+    "packages/utils/test/project-dir-name-pinned.test.ts (new — the W6a contract)",
+    "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts (modified — line 14's literal \".omp\" assertion is replaced by a home-root-vs-project-root binding assertion)",
+    "packages/coding-agent/test/modes/controllers/omfg-controller.test.ts (existing, NOT to be edited — pre-existing proof; hard-codes <projectDir>/.omp/rules and the label \"This project (.omp/rules)\")",
+    "packages/coding-agent/test/agent-session-concurrent.test.ts (existing, NOT to be edited — line 1630 hard-codes <cwd>/.omp/rules/no-unwrap.md)",
+    "packages/coding-agent/test/agent-session-rules-reload.test.ts (existing, NOT to be edited — lines 89,156 hard-code <tempDir>/.omp/RULES.md and .omp/rules/)",
+    "packages/coding-agent/test/advisor-toggle.test.ts (existing, NOT to be edited — lines 268,272 build project settings.json via getProjectAgentDir)",
+    "packages/coding-agent/test/extensions-discovery.test.ts (existing, NOT to be edited — lines 23,149,747,767,792 exercise project-local discovery)",
+    "packages/utils/test/config-dir-dual-root.test.ts (from W4 — gates the home-root read ordering)",
+    "packages/utils/test/install-id-legacy-read.test.ts (from W4 — gates install-id continuity)",
+    "packages/utils/test/config-dir-write-root.test.ts (from W4 — gates that writes land in the new root)"
+  ],
+  "verification": "bun run check:ts\ncd packages/utils && bun test test/project-dir-name-pinned.test.ts test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts test/config-dir-write-root.test.ts\ncd packages/coding-agent && bun test test/extensibility/legacy-pi-cli-exports.test.ts test/modes/controllers/omfg-controller.test.ts test/agent-session-rules-reload.test.ts test/advisor-toggle.test.ts test/extensions-discovery.test.ts",
+  "gate": "All of the following, and they are genuinely falsifiable: (1) `bun run check:ts` is green. (2) The three new/updated utils tests pass. (3) packages/coding-agent/test/modes/controllers/omfg-controller.test.ts passes UNCHANGED — it asserts the literal paths <projectDir>/.omp/rules at lines 178,198,202,215,220 and the option label \"This project (.omp/rules)\" at line 15; if omfg-controller.ts:285 still read CONFIG_DIR_NAME after the flip, every one of those assertions fails. (4) packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts passes with the value pin replaced by the binding assertion. (5) `git grep -n 'CONFIG_DIR_NAME' -- 'packages/**/*.ts'` returns no project-root join: every remaining hit must be a HOME-root use, a comparison against the constant itself, or a re-export.",
+  "gate_can_fail": "Yes, and in four distinct ways that were each verified against the real tree rather than assumed. (a) Forget dirs.ts:590 — getProjectAgentDir() returns a path nobody has data in, and dozens of existing project-scoped tests across packages/coding-agent/test go red. (b) Forget omfg-controller.ts:285 — omfg-controller.test.ts goes red on its literal .omp/rules path assertions, which is the only automated signal that this site exists. (c) Forget discovery/helpers.ts:47 — extensions-discovery.test.ts and advisor-toggle.test.ts go red. (d) Do nothing about the test in W6a at all — the flip is still caught by (a)-(c), but the new test is what makes the pin a stated decision rather than an accident nobody consciously made, and it is the only assertion that the two constants must stay DIVERGED. Separately verified: the harness note that `bun test` is blocked by a missing native addon is FALSE on this machine — `bun test packages/utils/test/dirs.test.ts` reports 6 pass / 0 fail and dirs-python-gateway.test.ts reports 2 pass / 0 fail, so the real test run is available as a gate.",
+  "depends_on": [
+    "W3 (gives APP_NAME its new value, which the XDG candidate join at dirs.ts:360 depends on)",
+    "W4 (HARD GATE — the ordered read-candidate list and the separate write root; this is what makes the flip survivable)",
+    "W5 (HARD GATE — `config migrate`, the user's manual path back)"
+  ],
+  "blocks": [
+    "W13 (documentation — the plan requires it to run after W6 so no doc is written while both ~/.omp and ~/.ultraworkers exist)",
+    "M5 definition-of-done: the 'on-disk identity shipped' condition cannot be true until this flips"
+  ],
+  "effort": "S for the main flip, S for W6a option (b) as specified here — but larger than the plan's claim of a single line. Real count: 1 line flipped in dirs.ts, 1 new constant, 3 call sites repointed (only 1 of which the plan names), 1 existing test's value pin relaxed, 1 new test, 1 do_not_rename row. Option (a) from the plan (dual-read at the project level) remains M and should not be chosen without a decision.",
+  "risk": "The single most likely way to get this wrong is treating W6a as a one-line change at dirs.ts:590 because that is what the plan says, and leaving omfg-controller.ts:285 and discovery/helpers.ts:47 reading CONFIG_DIR_NAME. Both are product-level project-root reads that the plan's W6a analysis missed entirely; both fail silently — project-scope rules resolve to an empty directory and project-local skills/agents discovery returns nothing, with no error and no missing-config warning. The second-most-likely mistake is leaving the literal \".omp\" assertion in legacy-pi-cli-exports.test.ts:14, which turns a survivable migration into a red test nobody can explain. The third is flipping CONFIG_DIR_NAME before repointing the call sites, which creates a window where a partial commit silently breaks project directories.",
+  "open_questions": [
+    "Where does do_not_rename.tsv actually live? The plan's §2.3 defines it as a 17-row table but never names a file path, and scripts/rename/ does not exist yet. This spec proposes scripts/rename/do_not_rename.tsv alongside W8b's disposition.tsv. Confirm with the W7/W8b owner — a registry in the wrong place is one W7 will not read, and W7's sed pass is what makes the exclusion set load-bearing.",
+    "Should W6 wait for W4 and W5 to be used in a real release, or is 'shipped and CI-green' enough? The plan says both must have shipped AND been used in a real release. That is a calendar dependency no test can discharge, and it is the one gate that cannot be automated.",
+    "Is the string 'This project (.omp/rules)' in the omfg rules editor a literal in the controller, or derived from a constant? If literal, it correctly stays '.omp' and the user-visible label is unchanged; if it is built from a renamed constant it would drift from the on-disk path. Step 5 tells the implementer to check this, but the answer should be recorded in the commit message so a later reader knows it was deliberate."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "W6a scope is the single direct read at dirs.ts:589-591 — \"Dòng :590 đọc trực tiếp CONFIG_DIR_NAME\" presented as the one project-root site the plan missed.",
+      "verdict": "STALE / INCOMPLETE — the site is real but it is not the only one",
+      "correction": "There are THREE project-root reads of CONFIG_DIR_NAME, not one. In addition to dirs.ts:590 there is packages/coding-agent/src/modes/controllers/omfg-controller.ts:285 (path.join(cwd, CONFIG_DIR_NAME, 'rules', name.md), the omfg project-scope rules feature) and packages/coding-agent/src/discovery/helpers.ts:47 (projectDir: CONFIG_DIR_NAME in SOURCE_PATHS.native, consumed by discovery/builtin.ts:44 and discovery/skillshare.ts:93). Both must be repointed to PROJECT_DIR_NAME in the same commit. The plan's claim that a missed site produces no signal is also wrong — omfg-controller.test.ts already hard-codes <projectDir>/.omp/rules at lines 178,198,202,215,220 and the option label 'This project (.omp/rules)' at line 15, so a missed site produces a loudly red test.",
+      "evidence": "git grep -n CONFIG_DIR_NAME -- '*.ts' returns 3 non-utils call sites that build project-root paths: dirs.ts:590, omfg-controller.ts:285, discovery/helpers.ts:47. sed -n '275,295p' omfg-controller.ts and sed -n '40,55p' discovery/helpers.ts confirm both. omfg-controller.test.ts:15,178,198,202,215,220 confirm the literal .omp/rules assertions."
+    },
+    {
+      "claim": "The plan's W6 command is `bun run check && (cd packages/utils && bun test test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts)` and W6 needs no test for the main flip beyond W6a's.",
+      "verdict": "INCOMPLETE — omits a test that will fail",
+      "correction": "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts:14 asserts `expect(CONFIG_DIR_NAME).toBe(\".omp\")` — an exact literal that fails the moment the flip lands. The plan never mentions it. Its contract (per its own title) is the barrel wiring described at legacy-pi-coding-agent-shim.ts:1587-1591, not the value, so the fix is to replace the value pin with a binding assertion: the shim's CONFIG_DIR_NAME equals the home-root constant and is NOT the project-root constant. That second half only gains teeth after the two constants diverge.",
+      "evidence": "sed -n '1,30p' packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts shows line 14. legacy-pi-coding-agent-shim.ts:1592 is `export { CONFIG_DIR_NAME } from \"@oh-my-pi/pi-utils\";` and the docblock at :1587-1591 explains the export exists to avoid a Bun static-export failure during extension validation."
+    },
+    {
+      "claim": "ENVIRONMENT premise (harness): the native addon is not built, so `bun test` reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64' and must be treated as blocked.",
+      "verdict": "FALSE — tests run on this machine",
+      "correction": "The native addon loads. `bun test packages/utils/test/dirs.test.ts` reports 6 pass / 0 fail, and `bun test packages/utils/test/dirs-python-gateway.test.ts` reports 2 pass / 0 fail — the latter imports @oh-my-pi/pi-natives, so the addon is definitely working. W6's gate can and should be a real test run, not a type-check-only substitute. This makes the gate materially stronger than the plan assumed.",
+      "evidence": "Both commands executed at HEAD 808b365; node_modules/@oh-my-pi/pi-natives is a symlink to packages/natives and resolves."
+    },
+    {
+      "claim": "Plan line anchors `dirs.ts:27` (CONFIG_DIR_NAME), `:297-298` (getConfigDirName), `:360` (XDG join), `:589-591` (getProjectAgentDir), `:24` (APP_URL), `:36` (USER_AGENT).",
+      "verdict": "VERIFIED ACCURATE — no correction needed",
+      "correction": "All six anchors are correct as of HEAD 808b365. Specifically: 27 is CONFIG_DIR_NAME, 297/298 are getConfigDirName's signature and its `return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;`, 360 is `const appRoot = path.join(value, APP_NAME);` (the XDG join W4 must cover), 589/590/591 are getProjectAgentDir and its direct CONFIG_DIR_NAME join, 24 is APP_URL and 36 is USER_AGENT. The engineer can type these anchors without re-deriving them.",
+      "evidence": "grep -n CONFIG_DIR_NAME packages/utils/src/dirs.ts → 27, 298, 590. grep -n 'path.join(value, APP_NAME)' → 360. sed -n '24p;36p' → APP_URL and USER_AGENT."
+    },
+    {
+      "claim": "W6's gate command runs `bun test test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts`.",
+      "verdict": "STALE — those files do not exist yet",
+      "correction": "Neither file exists at HEAD; neither does config-dir-write-root.test.ts (which W4's own text adds as a third). `ls` on all three returns 'No such file or directory'. This is correct and expected — they are W4's deliverables and W6 is hard-gated on W4 — but the gate command cannot run until step 1 confirms they exist. Note also that `bun run check` is `check:ts` AND `check:rs` (root package.json:93-94), so the plan's command pulls in a cargo build for a change that touches no Rust; `bun run check:ts` is the correct gate here.",
+      "evidence": "ls on the three paths returns 'No such file or directory' for each. package.json:93 `\"check\": \"bun run --parallel check:ts check:rs\"` and :94 `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"`."
+    },
+    {
+      "claim": "The new config root name is unstated in W6 (\"sang tên mới\").",
+      "verdict": "RESOLVED — the plan decides it elsewhere, W6a just omits it",
+      "correction": "The new value is \".ultraworkers\". The plan states it as settled in three places — the §1.2 cost analysis ('chuyển ~/.omp sang ~/.ultraworkers'), the §5.4 on-disk-identity decision ('CONFIG_DIR_NAME trở thành tên mới (dirs.ts:27) và ghi mới rơi vào ~/.ultraworkers'), and W5's own detail line ('di chuyển ~/.omp → ~/.ultraworkers'). It is NOT an open question and the implementer should not reopen it.",
+      "evidence": "Plan lines 8136, 8585, and the W5 detail paragraph (~8712) all name ~/.ultraworkers as the new root."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m5-specs/W6.spec.json"
+}

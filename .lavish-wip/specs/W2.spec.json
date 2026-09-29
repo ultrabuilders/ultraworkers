@@ -1,0 +1,158 @@
+{
+  "id": "W2",
+  "title": "Four drain points: reverse order and error isolation",
+  "wave": "Wave 1 — Lifecycle foundation (W1, W2, W3, W5)",
+  "one_line": "Add one shared `drainDisposers` helper that runs registered teardown callbacks last-registered-first, keeps going when one throws (logging instead of rethrowing), and repeats until the list is empty — then route all four existing drain loops through it.",
+  "user_visible_effect": "none directly — internal hardening. A throwing extension teardown callback (or a settings unsubscribe that throws during a config reload) can no longer abort the rest of session shutdown, so a `Ctrl-C` / `/exit` no longer risks leaking a draft save, background bash jobs, or the extension `session_shutdown` event. Manifests in `~/.omp/logs/omp.YYYY-MM-DD.log` gain a `Disposer threw during drain` warn line that a crash report would not have carried before.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W2.spec.json",
+  "effort": "S — one ~15-line helper, four one-line call-site swaps, three import lines, one ~70-line test file, one changelog line.",
+  "risk": "The single most likely way to get this wrong is porting chord's `throw errors[0]` / `AggregateError` shape. The drain is a synchronous contract called by `beginDispose()`, which `session-teardown.ts:70` invokes BEFORE the `try` that wraps `await deps.saveDraft(draftText)`. A throwing drain would reject the teardown promise before the draft is written, converting a conditional leak into an unconditional one — the exact outcome the surrounding doc comment says the design exists to prevent. The second-most-likely mistake is a splice-once implementation, which silently drops disposers registered while teardown is running; `agent-session.ts:5217` documents a second drain pass that exists solely to catch those.",
+  "depends_on": [],
+  "blocks": ["W8", "W12"],
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/utils/disposers.ts",
+      "action": "create",
+      "change": "New module exporting `drainDisposers(list: Array<() => void>): void` — pop-based, drains to empty, per-disposer try/catch, `logger.warn` on throw, never rethrows. Imports `logger` from `@oh-my-pi/pi-utils`.",
+      "verified": true,
+      "note": "Confirmed absent: `ls packages/coding-agent/src/utils/disposers.ts` → No such file. No pre-existing drain helper anywhere in the tree. Note `packages/coding-agent/src/utils/` has NO `index.ts` barrel, so this is imported by direct relative path, matching every other util."
+    },
+    {
+      "path": "packages/coding-agent/src/session/agent-session.ts",
+      "action": "modify",
+      "change": "Line 4983 (inside `beginDispose()`, which opens at 4981): `for (const dispose of this.#disposers.splice(0)) dispose();` → `drainDisposers(this.#disposers);`. Line 5218 (second pass in `dispose()`): identical replacement. Add `import { drainDisposers } from \"../utils/disposers\";` to the existing `../utils/*` import block (lines 250-255).",
+      "verified": true,
+      "note": "Both lines confirmed byte-identical via `sed -n '4983p'` and `sed -n '5218p'`. Field `#disposers: Array<() => void> = []` is declared at line 719, pushed only by `addDisposer()` at line 2179. The plan's anchors 4953 / 5188 are STALE by 30 lines each."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/runner.ts",
+      "action": "modify",
+      "change": "Line 1347 (whole body of `disposeFileFallbacks()`): `for (const dispose of this.#fileFallbackDisposers.splice(0)) dispose();` → `drainDisposers(this.#fileFallbackDisposers);`. Add `import { drainDisposers } from \"../../utils/disposers\";` to the `../../` relative import block (lines 21-30).",
+      "verified": true,
+      "note": "Field `#fileFallbackDisposers: Array<() => void> = []` at line 537, pushed at lines 777 and 796. Plan's anchor 1333 is STALE by 14 lines."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts",
+      "action": "modify",
+      "change": "Line 112 (whole body of `disposeComposerShapes()`): `for (const dispose of this.#composerShapeDisposers.splice(0)) dispose();` → `drainDisposers(this.#composerShapeDisposers);`. Add `import { drainDisposers } from \"../../utils/disposers\";` to the `../../utils/*` import block (lines 36-37).",
+      "verified": true,
+      "note": "Field `#composerShapeDisposers: Array<() => void> = []` at line 86, pushed at line 105. Plan's anchor 103 is STALE by 9 lines."
+    },
+    {
+      "path": "packages/coding-agent/test/disposer-drain.test.ts",
+      "action": "create",
+      "change": "New test file, three tests: reverse order, error isolation + logger receipt, and drain-to-empty across two rounds. Imports `drainDisposers` from `@oh-my-pi/pi-coding-agent/utils/disposers` and `logger` from `@oh-my-pi/pi-utils`; `vi.restoreAllMocks()` in `afterEach`.",
+      "verified": true,
+      "note": "Directory and naming convention confirmed: 791 `*.test.ts` files already live directly in `packages/coding-agent/test/`. Import style confirmed against e.g. `agent-session-aside-delivery.test.ts:19` (`@oh-my-pi/pi-coding-agent/utils/event-bus`). The package `exports` map has a `./*` → `./src/*.ts` wildcard (package.json:53), so the subpath resolves."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under `## [Unreleased]` in a new `### Fixed` subsection, e.g. `- Fixed session teardown aborting early when a registered extension teardown callback throws.`",
+      "verified": true,
+      "note": "`## [Unreleased]` exists at line 3 and is currently empty. Per AGENTS.md the entry is user-facing only — no root-cause narration, no implementation detail."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/coding-agent/src/utils/disposers.ts (new file)",
+      "instruction": "Create the helper using the code_shape below. Use `Array.prototype.pop()` in a `while (list.length > 0)` loop rather than `splice(0)` + reverse-iterate: pop gives strict last-registered-first ordering for free, mutates the caller's array in place so the existing call sites need no assignment, and drains to empty with no outer retry loop — a disposer that pushes a new disposer mid-drain is picked up on the very next iteration. Wrap each call in try/catch and report through `logger.warn` with the error stringified via `String(error)`, matching the `logger.warn(\"...\", { error: String(err) })` shape used throughout `session-teardown.ts` and `agent-session.ts`. The function must have no code path that rethrows."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts:4983",
+      "instruction": "Replace the line `for (const dispose of this.#disposers.splice(0)) dispose();` with `drainDisposers(this.#disposers);`. It sits as the second statement of `beginDispose()` (which opens at 4981), immediately after `this.#isDisposed = true;` and before `this.#modelDiscoveryAbortController.abort();`. Do not reorder anything else in that method — the surrounding statements are a deliberate ordering of teardown guards."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts:5218",
+      "instruction": "Replace the second, identical line `for (const dispose of this.#disposers.splice(0)) dispose();` with `drainDisposers(this.#disposers);`. It is directly under the comment `// beginDispose() drained the rest; this catches registrations made during teardown.` (line 5217) — keep that comment, it is the reason the pass exists. This is the pass that makes the drain-to-empty loop observable; a splice-once helper would make this line dead code."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:1347",
+      "instruction": "Replace `for (const dispose of this.#fileFallbackDisposers.splice(0)) dispose();` — the entire body of `disposeFileFallbacks()` — with `drainDisposers(this.#fileFallbackDisposers);`. Keep the method's existing JSDoc (it explains the process-wide registry rationale)."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:112",
+      "instruction": "Replace `for (const dispose of this.#composerShapeDisposers.splice(0)) dispose();` — the entire body of `disposeComposerShapes()` — with `drainDisposers(this.#composerShapeDisposers);`. Do NOT touch `#dialogQueue` (line 93) or `#extensionTerminalInputUnsubscribers` (line 85) — see open_questions."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/src/session/agent-session.ts (import block ~line 250)",
+      "instruction": "Add `import { drainDisposers } from \"../utils/disposers\";`. Extensionless relative specifier, no `.js`, matching lines 250-255. In `runner.ts` add `import { drainDisposers } from \"../../utils/disposers\";` into the `../../` block (after line 30, `../../tools/file-write-fallback`). In `extension-ui-controller.ts` add `import { drainDisposers } from \"../../utils/disposers\";` next to the existing `../../utils/*` imports at lines 36-37. All three are top-level static imports — no dynamic import, per AGENTS.md."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/test/disposer-drain.test.ts (new file)",
+      "instruction": "Write the three tests from the test_contract. Order of registration in the order test must be A, B, C and the assertion is the reverse run order C, B, A — the assertion is the point, so build the run list with a `calls: string[]` push from each closure and assert `calls` deep-equals `[\"C\", \"B\", \"A\"]`. The isolation test must register the throwing disposer LAST (so, under reverse order, it runs FIRST) and assert the earlier-registered disposer still ran — that is the exact failure mode. The two-round test must have one disposer push a new disposer into the same array when it runs, then assert the array is empty afterwards, not merely that the first round ran. Use `vi.spyOn(logger, \"warn\").mockImplementation(() => {})` and `vi.restoreAllMocks()` in `afterEach` — never `mock.module()`, which leaks across files (bun#12823). Do not source-grep the implementation file."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/CHANGELOG.md:3",
+      "instruction": "Add a `### Fixed` subsection directly under `## [Unreleased]` (line 3) with one user-facing line. Do not touch the `## [18.3.3]` section — released sections are immutable."
+    },
+    {
+      "n": 9,
+      "anchor": "verification",
+      "instruction": "Run `bun install` first (node_modules is absent in this checkout — see plan_corrections), then `bun run check:ts`, then `bun test packages/coding-agent/test/disposer-drain.test.ts`. If the test file turns out to require the unbuilt native addon, that is a regression against the expectation recorded in open_questions and should be reported rather than worked around."
+    }
+  ],
+  "code_shape": "// packages/coding-agent/src/utils/disposers.ts\nimport { logger } from \"@oh-my-pi/pi-utils\";\n\n/**\n * Run registered teardown callbacks last-registered-first, draining until the\n * list is empty.\n *\n * Three properties this helper exists to guarantee:\n *  - Reverse order: a disposer registered by B must observe B's teardown already\n *    done, the way stacked acquisition requires.\n *  - Error isolation: one throwing disposer never prevents the ones after it\n *    from running, and never propagates. `beginDispose()` is called by\n *    `createSessionTeardown` BEFORE the `try` that wraps `saveDraft`, so a\n *    throw here would reject teardown before the draft is written and before\n *    background jobs are released.\n *  - Drain to empty: a disposer may register another disposer while teardown is\n *    running (`AgentSession.dispose` runs a second pass for exactly that), so a\n *    single splice would silently drop the late registration.\n */\nexport function drainDisposers(list: Array<() => void>): void {\n\twhile (list.length > 0) {\n\t\tconst dispose = list.pop();\n\t\tif (!dispose) continue;\n\t\ttry {\n\t\t\tdispose();\n\t\t} catch (error) {\n\t\t\tlogger.warn(\"Disposer threw during drain; continuing\", { error: String(error) });\n\t\t}\n\t}\n}\n\n// call sites — all four become a single call\n// agent-session.ts:4983 (beginDispose)  ->  drainDisposers(this.#disposers);\n// agent-session.ts:5218 (second pass)   ->  drainDisposers(this.#disposers);\n// runner.ts:1347                        ->  drainDisposers(this.#fileFallbackDisposers);\n// extension-ui-controller.ts:112        ->  drainDisposers(this.#composerShapeDisposers);",
+  "test_contract": "The contract is: \"draining disposers runs them last-registered-first, a disposer that throws neither stops the ones after it nor escapes the drain, and a disposer registered during the drain still runs.\" Three tests, one per clause, all asserting on an observable `string[]` run-order array or on `logger.warn` being called — never on internal wiring.\n\n(1) `runs disposers in reverse registration order` — register A, B, C (in that order), drain, assert `calls` deep-equals `[\"C\", \"B\", \"A\"]`. Consumer-visible failure: a forward-order drain would leave a resource acquired by A still live when B's teardown runs — the leak this milestone exists to close. This is the assertion most likely to fail on a first attempt, because the current code is forward-order at all four sites.\n\n(2) `a throwing disposer does not stop later disposers and is logged` — register a non-throwing disposer first, then a throwing one (so reverse order runs the thrower first), drain. Assert (a) the non-throwing disposer still ran, (b) `drainDisposers` itself did not throw, and (c) `logger.warn` was called exactly once. Consumer-visible failure: without the try/catch, the throwing disposer aborts the loop and the listener teardown registered before it never runs, leaking a live settings watcher against a disposed session; without the logger call, the failure is silent and a user reports \"omp hung on exit\" with nothing in the log.\n\n(3) `drains disposers registered during the drain` — one disposer pushes a second disposer into the same array when it runs; drain; assert the array is EMPTY afterwards and the late disposer ran. Consumer-visible failure: a splice-once helper leaves the array non-empty and the late disposer never runs — which is precisely what `agent-session.ts:5217`'s second pass exists to catch. Asserting only that the first round ran would let that bug ship.\n\nNot covered, and deliberately so: the exact `logger.warn` message text, the number of drain rounds, and any assertion about `beginDispose()`/`disposeFileFallbacks()`/`disposeComposerShapes()` themselves — those are the call sites, and the helper is where the contract lives.",
+  "test_files": ["packages/coding-agent/test/disposer-drain.test.ts"],
+  "verification": "bun install && bun run check:ts && bun test packages/coding-agent/test/disposer-drain.test.ts",
+  "gate": "All three tests in `packages/coding-agent/test/disposer-drain.test.ts` pass, and `bun run check:ts` is clean. Specifically: (1) run order is `[\"C\", \"B\", \"A\"]`; (2) the non-throwing disposer ran AND `logger.warn` fired once AND `drainDisposers` returned normally; (3) the array is empty and the late disposer ran. Additionally a grep must return zero hits for `for (const dispose of` in `packages/coding-agent/src` — proving all four sites were routed through the helper and no fifth forward-order drain was left behind. (That grep is a completeness check on the migration, not a test assertion, and must not be written into the test file.)",
+  "gate_can_fail": "Yes, three independent ways. A forward-order implementation fails test (1) on the deep-equal. A splice-once implementation fails test (3) on the non-empty array. An implementation with no try/catch fails test (2) on both the run-order array and the fact that `drainDisposers` itself throws. An implementation that rethrows (the chord `throw errors[0]` port) fails test (2) outright. Nothing in the gate can pass on a no-op, because every assertion reads a concrete run-order array or a logger call count. Caveat: the gate's executability currently depends on `bun install` — see plan_corrections; before that, neither `bun test` nor `check:ts` runs at all.",
+  "open_questions": [
+    "A FIFTH teardown-shaped drain site exists that the plan's 'four drain points' does not cover: `clearExtensionTerminalInputListeners()` at `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:1222-1227` iterates `#extensionTerminalInputUnsubscribers` (a `Set<() => void>`, declared line 85, added line 1203) and then calls `.clear()`. It has the same isolation defect — an `unsubscribe` that throws stops the rest — but a different data structure, so `drainDisposers(list: Array<...>)` does not fit it as written. Decision for a human: in scope for W2 (widen the helper to accept `Set` or convert the field to an Array), or explicitly deferred? The plan's own blast-radius note argues for deferring, since these are TUI input listeners rather than the session teardown chain.",
+    "Self-re-registration: the `while (list.length > 0)` loop will spin forever if a disposer unconditionally re-pushes itself. No current disposer does this (all pushes are at agent-session.ts:2179, runner.ts:777 and :796, extension-ui-controller.ts:105, and none are self-referential), so the loop is currently bounded. Should the helper add a defensive iteration cap, or is an unbounded loop that faithfully surfaces a pathological disposer the better failure mode? This is a judgement call, not a defect.",
+    "Does this test file need the native addon? The test imports only `drainDisposers` and `logger` — neither pulls in `pi_natives` — so it is EXPECTED to be runnable as soon as `bun install` completes, unlike the rest of the suite. This is unconfirmed because node_modules is absent here. If it does turn out to require the addon, W2 loses its only always-runnable gate and needs a different one; please report rather than working around it."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Drain sites are at `agent-session.ts:4953` and `:5188`; `runner.ts:1333`; `extension-ui-controller.ts:103`.",
+      "verdict": "stale anchors — all four wrong",
+      "correction": "Real anchors: `packages/coding-agent/src/session/agent-session.ts:4983` (in `beginDispose()`), `packages/coding-agent/src/session/agent-session.ts:5218` (second pass in `dispose()`), `packages/coding-agent/src/extensibility/extensions/runner.ts:1347` (in `disposeFileFallbacks()`), `packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:112` (in `disposeComposerShapes()`). Off by +30, +30, +14 and +9 respectively.",
+      "evidence": "`sed -n '4983p'` etc. confirm all four lines are byte-identical: `for (const dispose of <field>.splice(0)) dispose();`. A repo-wide `git grep -n \"for (const dispose of\"` over `packages/coding-agent/src` returns exactly these four hits and no others."
+    },
+    {
+      "claim": "Take the reverse-order + per-effect try/catch + log shape from `pi-ref/packages/chord/src/facets/host.ts:125-142`.",
+      "verdict": "unverifiable — the reference does not exist in this repo",
+      "correction": "Do not attempt to read chord. Implement from the contract in this spec and from the in-repo precedent for error isolation, which is stronger evidence anyway: the try/catch + `logger.warn` + continue shape already used at `agent-session.ts:5183-5186` (`releaseSharpshooterSession`) and in `session-teardown.ts:72-75` (saveDraft). No behavioural detail is lost by dropping the chord citation.",
+      "evidence": "`ls -d pi-ref` → No such file or directory; `find . -path ./node_modules -prune -o -name host.ts -path '*chord*' -print` returns nothing."
+    },
+    {
+      "claim": "The two current registrants (`main.ts:1050`, `config/registry.ts:323`) are both `Set.delete` and cannot throw.",
+      "verdict": "half wrong — one anchor off by one, and the `Set.delete` description is inaccurate",
+      "correction": "`session.addDisposer(stop)` is at `packages/coding-agent/src/main.ts:1051`, not 1050. Neither registrant is a `Set.delete`: `main.ts:1051` passes the `stop` closure returned by `cfgScopedModelInputs.listen(...)`, and `config/registry.ts:323` passes an `unsubscribe` closure of the form `() => { active = false; stop(); }` (defined at lines 319-322). Both are settings-listener stops, not Set deletions. The plan's CONCLUSION (low blast radius, current registrants are unlikely to throw) still holds and is worth keeping in the changelog rationale, but do not repeat the `Set.delete` claim.",
+      "evidence": "`sed -n '1051p' packages/coding-agent/src/main.ts` → `session.addDisposer(stop);`; `sed -n '319,323p' packages/coding-agent/src/config/registry.ts` → the `unsubscribe` closure then `scope.addDisposer?.(unsubscribe);`. `config/registry.ts:323` itself is correct."
+    },
+    {
+      "claim": "`session-teardown.ts:70` calls `deps.beginDispose()` before the `try` wrapping `await deps.saveDraft(draftText)`, and the doc comment says saveDraft failures never abort the disposal chain.",
+      "verdict": "VERIFIED — this is the load-bearing justification for never throwing",
+      "correction": "Keep this reasoning verbatim in the helper's doc comment; it is the reason the drain must not rethrow, and it is not obvious from the helper alone.",
+      "evidence": "`sed -n '70p' packages/coding-agent/src/modes/session-teardown.ts` → `deps.beginDispose();`; the `try {` is at line 71 and the doc comment at lines 62-64 reads \"`saveDraft` failures are logged but never abort the disposal chain — a draft-write error must not leak background bash/task jobs or skip the extension `session_shutdown` event.\""
+    },
+    {
+      "claim": "The second drain pass at `agent-session.ts:5187-5188` is the trap that makes drain-to-empty mandatory.",
+      "verdict": "VERIFIED (line number off by 30)",
+      "correction": "The pass is at `agent-session.ts:5217-5218`. The comment at 5217 reads `// beginDispose() drained the rest; this catches registrations made during teardown.` — quote this in the test rationale so the third test is obviously not a hypothetical.",
+      "evidence": "`sed -n '5217,5218p' packages/coding-agent/src/session/agent-session.ts`."
+    },
+    {
+      "claim": "Environment: `bun run check:ts` works because it does not need the native addon; only `bun test` is blocked.",
+      "verdict": "WRONG for this checkout — both gates are blocked",
+      "correction": "`node_modules` does not exist at all, so BOTH commands fail before reaching any addon code. `bun test packages/coding-agent/test/agent-session-dispose-concurrent.test.ts` → `0 pass, 1 fail`, `Cannot find module '@oh-my-pi/pi-agent-core'`. `bun run check:ts` → `oxlint: command not found`, exit 127. `bun install` is a prerequisite for every verification step, and must be the first thing the engineer runs. This does not change the spec, only the setup order.",
+      "evidence": "`ls -d node_modules` → No such file or directory; `ls node_modules/.bin` → empty; both commands run directly and their output captured above."
+    },
+    {
+      "claim": "There are exactly four disposer drain points.",
+      "verdict": "correct for the four, but incomplete for the codebase",
+      "correction": "The four are exhaustively the disposer drains — the `git grep` above is proof there is no fifth of that shape. But two adjacent structures look similar and must NOT be swept in: `#dialogQueue` (`Array<() => void>`, line 93) is drained FIFO with `.shift()` at line 1340 and is a dialog-presentation queue, not teardown; and `#extensionTerminalInputUnsubscribers` (`Set<() => void>`, line 85) is drained at 1223-1227 and is a genuine teardown with the same isolation defect but a different structure. See open_questions for the scope decision on the latter.",
+      "evidence": "`git grep -n \"dialogQueue\"` and `git grep -n \"extensionTerminalInputUnsubscribers\"` in extension-ui-controller.ts; `git grep -n \"\\.splice(0)\" -- packages/coding-agent/src` for the full drain inventory."
+    }
+  ]
+}

@@ -1,0 +1,464 @@
+[
+ {
+  "id": "ctx2",
+  "claim": "A4 must fix the plugin secret leak: enum rendered plaintext at `plugin-settings.ts:166` and stored plaintext at `manager.ts:942-949`; the `secret?: boolean` flag is not in the M2 plan.",
+  "verdict": "partly stale",
+  "correction": "The two bugs are real but the fix is far smaller than the plan implies, and the flag it says is absent is already in the tree. `secret?: boolean` EXISTS at packages/coding-agent/src/extensibility/plugins/types.ts:63 and packages/tui/src/overlays/plugin-settings.ts:31, and the display mask is already implemented at plugin-settings.ts:152 (`schema.secret && currentValue ? \"••••••••\" : ...`). So A4 is a ONE-LINE fix — the enum branch at :167 uses raw `String(currentValue ?? schema.default ?? \"\")` where it should use `displayValue` — reusing a mask that already works for the string branch at :188. The plan's grep for 'secret' across the M2 plan text returning 0 IS confirmed, which means M2 will replace this store without knowing the flag exists; that is the real risk here, not the missing flag. Line numbers: enum is :167 not :166, string branch :188 not :187.",
+  "evidence": "`grep -rn 'secret' packages/coding-agent/src/extensibility/plugins/types.ts packages/tui/src/overlays/plugin-settings.ts` -> types.ts:63, plugin-settings.ts:31/152/667/668; `awk 'NR>=4000 && NR<=7041' <plan> | grep -c secret` -> 0"
+ },
+ {
+  "id": "ctx2",
+  "claim": "O5 is locked: inject a `readCollapsesIntoGroup` predicate from coding-agent into the tui builder, because 3 of 4 consumption sites live in packages/tui which cannot depend on pi-coding-agent.",
+  "verdict": "confirmed, with an unmentioned alternative",
+  "correction": "The dependency-direction argument is fully confirmed: packages/tui/package.json declares no @oh-my-pi/pi-coding-agent dependency (deps are omptype / pi-agent-core / pi-ai / pi-catalog / pi-natives / pi-utils / pi-wire / snapcompact) and `git grep -l pi-coding-agent -- packages/tui/test/` returns nothing. All three injection points exist and are unstubbed: chat-transcript-builder.ts:65-77 (deps interface, closes at 77 not 76), :101 (constructor), :443 and :507 (the two hardcoded `=== \"read\"` sites), and read-tool-group.ts:59. What the plan does not mention: `getTool?: (name: string) => AgentTool | undefined` is ALREADY in the deps at :67 and already used at :475, and `AgentTool` is already imported from `@oh-my-pi/pi-agent-core` at :14 — so the builder can already resolve a tool by name and read a membership flag directly, without any injection at all. I did not overturn the locked decision; this is raised as an open question instead.",
+  "evidence": "read-tool-group.ts:41/:59; chat-transcript-builder.ts:14, :65-77, :101, :443, :475, :507; `grep -c 'pi-coding-agent' packages/tui/package.json` -> 0; no `readCollapsesIntoGroup` symbol exists anywhere in packages/"
+ },
+ {
+  "id": "ctx2",
+  "claim": "§4.1: the A1 test must live in packages/coding-agent/test/, not packages/tui/test/, and the harness is status-line-overflow.test.ts plus StatusLineTestComponents.",
+  "verdict": "confirmed",
+  "correction": "Fully confirmed, and it is the single most load-bearing harness claim in §3-5. All three files exist. status-line-overflow.test.ts already imports resetSettingsForTest, does `Settings.init({ inMemory: true })`, and pulls statusLineHost from coding-agent — exactly the coupling that makes a tui-local test impossible. StatusLineTestComponents is at helpers/status-line.ts:6. One off-by-one: the O1 evidence test is status-line-settings-cache.test.ts:374-381, not :373-380 — the describe block is at 374 and the assertion `expect(component.render(8)).toEqual([\"Ponytail\", \"$0.04 (…\"])` is at 380. The proof works because `makeComponent({ showHookStatus: true })` passes NO segment ids, and no preset contains `status`, so both output lines prove hook statuses render through the separate path at component.ts:3066-3068 rather than through the status segment.",
+  "evidence": "ls confirms all three files; status-line-settings-cache.test.ts:374-381; component.ts:3066-3068 = `const showHooks = this.#settings.showHookStatus ?? true`"
+ },
+ {
+  "id": "ctx2",
+  "claim": "The status-line width ladder at component.ts:2687-2745 shrinks session_name, then `right.pop()` at :2705, then path, then drops left segments right-to-left; index in rightSegments is the only priority lever.",
+  "verdict": "confirmed (range end understated)",
+  "correction": "Every step and every cited line is exact — session_name truncation at :2688-2703, `right.pop()` at :2705, path shrink at :2709-2740, left drop via leftOverflowDropIndex at :2752-2757. The block actually runs to :2758, so the plan's cited range stops 13 lines early. The operational consequence stands and is the most valuable single finding in §3-5: preset `default` has rightSegments `[\"session_name\"]`, so appending `usage` makes it the first element dropped at narrow widths, and since `usage` is the widest segment in the catalog the quota silently disappears at 80 columns while the (truncated) session name survives. That is why A1's gate must be a NEGATIVE contract — usage must still render at 80 columns with full context — not a positive 'it renders' check.",
+  "evidence": "presets.ts:7 `rightSegments: [\"session_name\"]`; component.ts:2687-2758; `grep -c 'usage' packages/tui/src/status-line/presets.ts` -> 0"
+ },
+ {
+  "id": "ctx2",
+  "claim": "MCP: manager.ts:1032-1040 handles only ping and roots/list and throws -32601 on default; client.ts:100-104 declares only the roots capability; manager.ts has one type-only pi-tui import.",
+  "verdict": "confirmed",
+  "correction": "All three exact. `#handleServerRequest` is at :1032, the `throw Object.assign(new Error(...), { code: -32601 })` is at :1039, and the only pi-tui reference in manager.ts is the type-only import at :46 — confirming the manager structurally cannot open a form. The capabilities block is :101-103 rather than :100-104 (the plan's range also swallows protocolVersion), which is a harmless over-bracket. This row correctly blocks D1 and A2 into one commit (O3+O4), and correctly warns that advertising a capability without a handler is worse than today's silence.",
+  "evidence": "manager.ts:1032/:1039/:46; client.ts:101-103"
+ },
+ {
+  "id": "ctx2",
+  "claim": "acp-agent.ts:295-410 is a working local implementation of schema→form, and both critique rounds were wrong to reject it.",
+  "verdict": "confirmed — the plan's correction is right",
+  "correction": "The plan is right and the dossier was wrong. `elicitFormFromAcpClient` is declared at acp-agent.ts:314 and calls `connection.unstable_createElicitation(...)` at :358 — it is an OUTBOUND bridge that packages a schema and asks a remote editor. It renders no local form. It is a good reference for lifecycle (abort, timeout, late-response drop, listener cleanup) and worthless as a reference for schema→form rendering, which is new work for D1. Worth stating plainly because a reader who skipped the correction would otherwise try to reuse it.",
+  "evidence": "`grep -n 'elicitFormFromAcpClient|unstable_createElicitation' packages/coding-agent/src/modes/acp/acp-agent.ts` -> 295 (doc), 314 (fn), 358, 389, 507, 1879"
+ },
+ {
+  "id": "ctx2",
+  "claim": "Minor off-by-one group: schema.ts segments, chat-transcript-builder.ts deps range, agent-transcript-viewer.ts handleScroll, settings.ts showHookStatus, theme/loader.ts COLORBLIND_ADJUSTMENT, settings.ts cfgColorBlindMode, ui-helpers.ts showStatus, package.json export map, cacheHit segment end, status segment end.",
+  "verdict": "stale",
+  "correction": "None of these change a decision, but carry the corrected numbers: statusSegment 197-211 (not 212); cacheHitSegment 718-738 (not 737); ChatTranscriptBuilderDeps 65-77 (not 76); #handleScroll 516-535 (not 515-534); cfgStatusLineShowHookStatus 264-267 with `default: true` at 267 (not 262-265); COLORBLIND_ADJUSTMENT at theme/loader.ts:146 (not 145); cfgColorBlindMode at settings.ts:109 (not 108); UiHelpers.showStatus 143-164 (not 141-160) — the method body checks the last two chatContainer children and patches in place at :152-157, with the 'avoid log spam' comment at :141, so the plan's SUBSTANCE is right and only the range is shifted; the `./*` export map is package.json:94-97 (not 93-96).",
+  "evidence": "each verified by sed -n on the cited file; see the gate script in `verification` for the machine-checked subset"
+ },
+ {
+  "id": "ctx2",
+  "claim": "Counts verified exactly and carried forward unchanged: 7 preset lines (5,16,26,36,59,84,96), 27 segment ids with status at 1 and usage at 23, 99 palettes, 7 `event.wheel * 3` sites + 1 `* 2` site, 1 non-test setFrameProvider call site with 37 test hits, grep -c tmux = 0,0,0 across three files, 3 of 4 read-group consumers in tui, form.ts:104/270/352, transcript-browser.ts:47, types.ts:235/267/264-277, interactive-mode.ts:424, grep.ts:241, builtin-session.ts:434, tmux.ts:5/48-49, loop-watchdog.ts:57/123-124, loader.ts:32/107-113/141, message-notice.ts:37, read-tool-group.ts:41, session-color.ts:2, docs/tui-core-renderer.md:107 and :174.",
+  "verdict": "confirmed",
+  "correction": "Every one reproduced. Two are worth re-stating as load-bearing because the §5.1 table's credibility rests on them: (1) `setHeader`/`setFooter` are no-ops and the plugin surface cannot reach the main display area; (2) docs/tui-core-renderer.md:107 ('The renderer never probes the user's scroll position') and :174 ('...or forks history policy') are the written invariant that hard-limits D3 to the overlay viewer. Also confirmed: the palette count is exactly 99 via the glob form `ls packages/tui/src/theme/defaults/*.json | wc -l`, and MessageNoticeComponent has no timeout, no buffer and no key field — only `#expanded` and `#toolActivityVisible` — so it must stay permanently-visible and must NOT be reused as the A7 transient-notice sink.",
+  "evidence": "see the gate script in `verification`; docs/tui-core-renderer.md:107 and :174 read directly"
+ },
+ {
+  "id": "ctx2",
+  "claim": "`packages/tui/test/status-line-extension-mode.test.ts` is M2 WI-7's test, unwritable until M2-OQ3 is answered.",
+  "verdict": "confirmed, but the file does not exist",
+  "correction": "The reasoning is right and the blocking claim holds, but a reader could waste time hunting for the file. `ls` confirms packages/tui/test/status-line-extension-mode.test.ts does not exist. It is a future artifact gated on M2-OQ3, and its absence is NOT a regression. D2 and C2 must be written after M2-OQ3 lands, and their negative contract must be derived from whichever of M2's two directions is chosen — prefixed ids with bare ids rejected (direction 1), or a map fallback where unregistered ids are accepted at render time (direction 2). The plan's point that an M3-authored third mechanism would contradict whichever M2 picks is the correct framing and should survive into the D2/C2 specs.",
+  "evidence": "`ls packages/tui/test/status-line-extension-mode.test.ts` -> No such file or directory; packages/tui/src/status-line/index.ts exports only component/metrics/presets/segments/separators/types"
+ },
+ {
+  "id": "s2",
+  "claim": "A3 line anchors: agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638, usage-dashboard.ts:753, and the six handleWheel sites at mouse.ts:74, agent-hub.ts:1244, session-selector.ts:586, oauth-selector.ts:407, extension-list.ts:597, select-list.ts:229, settings-list.ts:239.",
+  "verdict": "STALE — 13 of 15 anchors are wrong; only mouse.ts:74 and extension-list.ts:597 are exact",
+  "correction": "Actual: agent-transcript-viewer.ts:470, copy-selector.ts:214, plan-review-overlay.ts:580, rewind-selector.ts:245, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639, usage-dashboard.ts:759, sidebar.ts:896-897; agent-hub.ts:1247, session-selector.ts:588, settings-list.ts:241. The counts are right (7 x3 + 1 x2 + 1 separate delta*3 = 9) — only the line numbers moved.",
+  "evidence": "`grep -rn 'wheel \\* 3' packages/tui/src --include='*.ts'` -> 7 hits at 470/580/245/214/697/168/639. `grep -rn 'wheel \\* 2'` -> 1 hit at usage-dashboard.ts:759. `grep -rn 'handleWheel'` -> the six implementations at oauth-selector.ts:407, session-selector.ts:588, extension-list.ts:597, sidebar.ts:896, agent-hub.ts:1247, select-list.ts:229, settings-list.ts:241."
+ },
+ {
+  "id": "s2",
+  "claim": "`routeSelectListMouse` 'truyền timestamp của sự kiện xuống' (passes the event's timestamp down) after `SelectListMouseTarget.handleWheel` gains a time parameter.",
+  "verdict": "WRONG — there is no timestamp on the event to pass",
+  "correction": "`SgrMouseEvent` (mouse.ts:12) has six fields and no time field; `parseSgrMouse(data)` takes no clock; `routeSgrMouseInput(data, handler)` takes no clock. A3 must ADD the clock to the decode path before anything can be forwarded. This is real work the plan does not budget, and it is the step that makes the 'just add an optional parameter' framing wrong.",
+  "evidence": "Read mouse.ts in full (110 lines). Line 12 `export interface SgrMouseEvent {` -> button/col/row/release/wheel/motion/leftClick, closed at :32. Line 39 `export function parseSgrMouse(data: string)`. Line 61 `routeSgrMouseInput(data: string, handler: SgrMouseHandler)`. Line 87 `target.handleWheel(event.wheel);`."
+ },
+ {
+  "id": "s2",
+  "claim": "Adding a time parameter to the mouse interface keeps the old interface working via an optional defaulted parameter, 'so six files need not be changed at once'.",
+  "verdict": "INCOMPLETE — the six implementations are not the only call sites",
+  "correction": "There are five additional forwarding call sites the plan never lists, each of which would keep passing only `event.wheel` and therefore keep the un-accelerated behavior — an inconsistency between overlays, not a compatibility win: oauth-selector.ts:422 (`this.handleWheel(event.wheel)`), session-selector.ts:1134, settings-selector.ts:689 (-> `handleWheelAt` at settings-list.ts:249, which forwards to `handleWheel` at :254), extension-dashboard.ts:282, git-tui.ts:695. `routeSelectListMouseWithTopBorder` (chrome/select-list-mouse-routing.ts:4-11) is a sixth forwarder that passes the whole event through, so it is safe only because the event itself carries the time.",
+  "evidence": "`grep -rn 'handleWheel' packages/tui/src --include='*.ts'` -> 16 hits, of which 7 are declarations and 9 are call sites; the plan's list of six covers only the declarations."
+ },
+ {
+  "id": "s2",
+  "claim": "Extending `mouse.test.ts` for the wiring part.",
+  "verdict": "UNDERSTATED — two existing assertions break outright",
+  "correction": "`expect(parseSgrMouse(\"\\x1b[<0;5;9M\")).toEqual({...six fields...})` at mouse.test.ts:22-32 is an exact-equality assertion on the whole event, and `const baseEvent: SgrMouseEvent` at :126-134 is a literal that must satisfy the interface. Adding a required `now` field breaks both. The plan's 'extend this file' does not mention repairing them.",
+  "evidence": "Read packages/tui/test/mouse.test.ts in full (140 lines); `bun test` on it -> 13 pass, 0 fail, 38 expect() calls."
+ },
+ {
+  "id": "s2",
+  "claim": "A7's keyed notice row is 'a normal composer row going through the existing chrome path', and `coding-agent` already drops content there at `interactive-mode.ts:3181`.",
+  "verdict": "WRONG — the composer chrome has no component row to drop into, and the anchor is unrelated code",
+  "correction": "The composer's top chrome is a PRE-RENDERED STRING owned by the status line: `syncComposerShape` (interactive-mode.ts:3050-3071) installs `this.editor.setTopBorderProvider(w => this.statusLine.getTopBorder(w))` (or `getBandTopBorder` / `getStandaloneTopBorder`), and `EditorTopBorder` (composer/types.ts:33-40) is `{ content: string; width: number; revision?: number }` — a string, not a slot for a Component. The conclusion (do not couple to M2's `registerStatusLineSegment`) is still right, but the mechanism is not 'the existing chrome path'. The correct home is a NEW dedicated Container in the layout array, which is also what keeps the 'not in the transcript' contract enforceable and testable. Separately, interactive-mode.ts:3181 is inside `syncRunningSubagentBadge` / `#composerHint` and has nothing to do with chrome.",
+  "evidence": "`sed -n '3040,3100p' interactive-mode.ts`; `sed -n '30,45p' packages/tui/src/components/composer/types.ts`; `sed -n '3170,3195p' interactive-mode.ts`; `grep -n 'setTopBorderProvider|setTopBorder(' packages/tui/src/components/editor.ts`."
+ },
+ {
+  "id": "s2",
+  "claim": "Use `hookWidgetContainerAbove` (or an equivalent existing above-composer row) for the notice row.",
+  "verdict": "NOT IN THE PLAN, and it is a trap if inferred",
+  "correction": "`hookWidgetContainerAbove` IS the real 'row above the composer' container (constructed at interactive-mode.ts:1453-1454, placed in the layout at :1728, declared on the context at types.ts:126) — but `ExtensionUIController.#renderHookWidgetContainer` calls `container.clear()` at extension-ui-controller.ts:394 on every hook-widget rebuild, so a notice row placed there is silently wiped whenever a hook widget changes. Use a new dedicated container instead.",
+  "evidence": "`sed -n '1435,1470p'` and `sed -n '1715,1735p' interactive-mode.ts`; `sed -n '379,407p' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` showing `container.clear()` at :394."
+ },
+ {
+  "id": "s2",
+  "claim": "A7's compaction integration test targets `#handleNotice` in event-controller; the compaction notice belongs to that path.",
+  "verdict": "STALE — the compaction notice is in ui-helpers, not event-controller",
+  "correction": "`this.ctx.showStatus(`Session compacted ${times}`)` is at ui-helpers.ts:1035, inside the session-context render path, not in EventController. `#handleNotice` is at event-controller.ts:1250-1259 (plan said 1244-1251) and handles only the `notice` event, which is `{ type, level, message, source }` with no key. The 'run a real compaction' integration test should drive the ui-helpers:1035 path; the `#handleNotice` change is a separate, smaller edit that gives the `info` branch a key while leaving error and warning on their existing durable renderers.",
+  "evidence": "`grep -n 'Session compacted' packages/coding-agent/src/modes/utils/ui-helpers.ts` -> :1035. `sed -n '1250,1259p' event-controller.ts`. `sed -n '2802,2813p' packages/coding-agent/src/session/agent-session.ts` for `emitNotice`."
+ },
+ {
+  "id": "s2",
+  "claim": "D3's core difficulty is proving that a marker anchored by message index survives reflow at three widths mid-scroll; the work is 'anchoring by index, re-anchoring by height delta, and fixed-height chrome'.",
+  "verdict": "OVERSTATED — the anchoring mechanism already exists and works",
+  "correction": "`ChatTranscriptBuilder.rowForEntry(entryId)` (chat-transcript-builder.ts:138-144) maps an entry id to a logical row; the viewer already builds a `ScrollRangeAnchor` from it at agent-transcript-viewer.ts:597-608; `ScrollView` already provides `revealRange` (scroll-view.ts:292), `hasRevealedRange` (:284), `logicalRowAt` (:243), `localRowFor` (:252); and `getScrollOffset()` is already a logical row offset, not pixels. The viewer uses all of this today for its entry anchor. D3 is therefore a render-and-keybinding job — track the first unread entry id, paint a fixed-height divider and count pill at its row, add a key to reveal the newest entry — not a new anchoring subsystem. Re-anchoring across reflow needs no new code because `revealRange` re-derives the viewport from the anchor on every render. This drops D3 from M/2 days to roughly S/1 day, and the width test becomes a regression guard on existing machinery rather than the item's whole risk.",
+  "evidence": "`sed -n '130,150p' packages/tui/src/chat/chat-transcript-builder.ts`; `sed -n '236,242p' packages/tui/src/chat/transcript-browser.ts` (`if (frame.body.anchor && this.#scrollView.revealRange(...))`); `grep -n 'revealRange|hasRevealedRange|logicalRowAt|localRowFor|getScrollOffset' packages/tui/src/components/scroll-view.ts` -> :284, :292, :243, :252, :229."
+ },
+ {
+  "id": "s2",
+  "claim": "D3 edits `packages/tui/src/chat/transcript-browser.ts:39-48`.",
+  "verdict": "MISLEADING ANCHOR — right file, wrong region",
+  "correction": "Lines 39-48 are the `TranscriptBrowserOptions` interface — the right place to ADD a new option, but not where the scroll state lives. The state is `#scrollView` (declared transcript-browser.ts:108, constructed :118) and all offset/anchor behavior is delegated to it. Anyone who reads :39-48 expecting to find the scroll machinery will not find it.",
+  "evidence": "`sed -n '30,60p' packages/tui/src/chat/transcript-browser.ts` shows `export interface TranscriptBrowserOptions` at :38-49 with `getHeight`, `frame`, `minimumBodyRows`, `followBottom`. `grep -n '#scrollView' packages/tui/src/chat/transcript-browser.ts` -> :108, :118, :124, :130, :130, :176-261."
+ },
+ {
+  "id": "s2",
+  "claim": "A3's acceleration override is a named setting the user can reach; it is 'a setting with a name, not an idea'.",
+  "verdict": "INCOMPLETE — as specified it is unreachable from the settings panel",
+  "correction": "`registry.ts:41-44` states that a `UiNumber` without `options` has NO UI representation — 'intentional hide'. So `ui.mouseWheelSpeedMultiplier` with `type: \"number\"` and no options renders nowhere in the panel and is config-file only. The validation requirement IS supported and easy: `validate?: (raw: unknown) => void` exists at registry.ts:112 and is allowed to throw (:666, :680). Push direction is also settled: coding-agent depends on @oh-my-pi/pi-tui and pi-tui does not depend on coding-agent, so the sanctioned pattern is `register` + `effect(cfg, setWheelSpeedMultiplier)` exactly as `cfgTuiMaxInlineImageColumns` does at settings.ts:334-341.",
+  "evidence": "`sed -n '30,60p' packages/coding-agent/src/config/registry.ts` for UiNumber; `grep -n 'validate' packages/coding-agent/src/config/registry.ts` -> :112, :666, :680; `sed -n '330,341p' packages/coding-agent/src/modes/settings.ts`; package.json dependency check on both packages."
+ },
+ {
+  "id": "s2",
+  "claim": "`bun test` currently reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64' and must be treated as blocked.",
+  "verdict": "FALSE for this wave's tests",
+  "correction": "`bun test packages/tui/test/mouse.test.ts` runs today: 13 pass, 0 fail, 38 expect() calls, 26ms. The addon failure applies only to suites that transitively load it. `bun run check:ts` is fully green on the unmodified tree (oxlint + oxfmt over 5445 files, all 16 package type checks Done). Treating `bun test` as blocked would have made this wave unverifiable when it does not need to be.",
+  "evidence": "`bun test packages/tui/test/mouse.test.ts` -> '13 pass / 0 fail / Ran 13 tests across 1 file. [26.00ms]'. `bun run check:ts` -> 'All matched files use the correct format. Finished in 575ms on 5445 files' plus 16 green `check:types` tasks."
+ },
+ {
+  "id": "s2",
+  "claim": "The plan's verification command is `bun check && bun test ...`.",
+  "verdict": "WRONG SCRIPT for this repo",
+  "correction": "`bun check` runs `check:ts` AND `check:rs` (Rust). Use `bun run check:ts` — it is the TypeScript-only gate, it needs no Rust toolchain, and it is what actually verifies this wave.",
+  "evidence": "Root package.json scripts: `\"check\": \"bun run --parallel check:ts check:rs\"`, `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"`. AGENTS.md also says never use tsc/npx tsc — always `bun check` — but for a TypeScript-only wave the narrower `check:ts` is the correct instance of that."
+ },
+ {
+  "id": "s2",
+  "claim": "A3: '8 constant sites + 1 separate delta*3 site'; D3: 'the overlay already has pager keys at :515-534'; A7: 'composer/types.ts:57, :93, band.ts:14, message-notice.ts:37'; A7: 'ui-helpers.ts:141-160'.",
+  "verdict": "CORRECT — verified exactly, no correction needed",
+  "correction": "Recorded so the implementer knows which anchors to trust: the site count (7 x3 + 1 x2 + 1 separate = 9) is right; `#handleScroll` is at :517-534 (the plan's :515 points at the doc comment, harmless); `composer/types.ts:57` is `topBorder?: EditorTopBorder;`, `:93` is `readonly statusAttachment:`; `composer/band.ts:14` is `statusAttachment: \"top-band\"`; `message-notice.ts:37` is `export class MessageNoticeComponent extends Container {`; the docs invariants at `docs/tui-core-renderer.md:107` and `:174` are the two 'never probes scroll position' statements. `ui-helpers.ts` is 143-164, not 141-160. `ShowStatusOptions` does not exist (`git grep` returns only the plan document); `registerStatusLineSegment` does not exist; the 332 `showStatus(` call lines and the 12 KB `createInteractiveModeContext` fixture at test/helpers/interactive-mode-context.ts:192 are all as the plan says.",
+  "evidence": "Each confirmed with `sed -n` on the named file and `grep -n` for the symbol; `git grep -c 'showStatus(' -- 'packages/**/*.ts'` summed to 332 across 19 files; `git grep ShowStatusOptions` and `git grep registerStatusLineSegment` return no source hits."
+ },
+ {
+  "id": "s3",
+  "claim": "The harness task text says 'Milestone 2 occupies lines 7042 to 7692' of COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md, and that s3 is a milestone-2 work item.",
+  "verdict": "WRONG — the line range is right, the milestone label is not.",
+  "correction": "Line 7042 is `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`, not milestone 2. Line 7347 is `### Sóng 3 — Cặp giao thức, nguyên tử`, which is M3's wave 3. The harness's own output path (`.lavish-wip/m3-specs/`) agrees with M3. Treat this as an M3 item; nothing in the spec depends on M2.",
+  "evidence": "`sed -n '7042p'` returns `# MILESTONE 3 — BỀ MẶT UI/UX KIỂU CLAUDE CODE`; `grep -n 'Sóng 3'` returns `7347:### Sóng 3 — Cặp giao thức, nguyên tử`."
+ },
+ {
+  "id": "s3",
+  "claim": "The harness task text says the repo is at 'git HEAD 5873776'.",
+  "verdict": "WRONG.",
+  "correction": "HEAD is 808b365, on branch milestone-1. No anchor in the plan depends on the SHA, but a stale SHA in a handoff invites a wrong `git checkout`.",
+  "evidence": "`git log --oneline -1` -> `808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan`; `git rev-parse HEAD` -> `808b365409fa36719c38319a041c0e612b4e702b`."
+ },
+ {
+  "id": "s3",
+  "claim": "Plan §2.2 / wave 3 D1: 'Phải thiết kế điểm tiêm manager→UI, ví dụ một callback request tuỳ chọn do mỗi mode cấp lúc khởi tạo manager, theo đúng cách `ExtensionUIContext` được tiêm hôm nay.'",
+  "verdict": "HALF WRONG — the ExtensionUIContext analogy is wrong; the callback design is right, and it already exists in the tree.",
+  "correction": "The repo already has the exact seam the plan says must be designed: `MCPManager.setAuthHandler(handler: MCPAuthHandler | undefined)` at manager.ts:525-527, a single-slot optional manager->UI callback, installed by interactive mode at interactive-mode.ts:1357 and delegating into a controller. `setElicitationHandler` is the literal third member of that family — add it beside setAuthHandler, do not build a new injection mechanism. The `ExtensionUIContext` half of the analogy is wrong for two reasons: that interface has no `form` method, and it flows session->mode (each mode constructs it and pushes it in via setToolUIContext at sdk.ts:3975), not manager->UI. Adding `form()` to it would be a public extension-API change, which is M2 territory by the plan's own O2 reasoning.",
+  "evidence": "`sed -n '525,527p' packages/coding-agent/src/mcp/manager.ts` is the setAuthHandler body; `sed -n '1356,1359p' packages/coding-agent/src/modes/interactive-mode.ts` is the install. `grep -n 'askDialog' packages/coding-agent/src/extensibility/extensions/types.ts` returns only the optional askDialog at 252 — no form method exists on ExtensionUIContext."
+ },
+ {
+  "id": "s3",
+  "claim": "Plan wave 3: 'A2 ... Nửa A2 chỉ vài dòng' (A2 is a few lines).",
+  "verdict": "UNDERSTATED — it is two files, and one of them is the types file.",
+  "correction": "The `capabilities` literal in client.ts is three lines, but `MCPClientCapabilities` at types.ts:196-200 has exactly three members (roots, sampling, experimental) and no `elicitation`, so the type must be extended too. And because there is no `@modelcontextprotocol/sdk` dependency anywhere in the workspace, the request/result/outcome types must be hand-authored from the 2025-11-25 spec — there is no SDK type to import. This is still small; it just is not one file.",
+  "evidence": "`sed -n '196,200p' packages/coding-agent/src/mcp/types.ts` shows the three-member interface; `grep -rn 'modelcontextprotocol' package.json packages/*/package.json` returns 0 hits; `sed -n '175p'` shows `MCP_PROTOCOL_VERSION = \"2025-11-25\"`."
+ },
+ {
+  "id": "s3",
+  "claim": "Plan wave 3 D1: 'ACP dùng lại cầu nối chiều ra sẵn có' (ACP reuses the existing outbound bridge).",
+  "verdict": "WRONG as written — reuse would destroy the contract this item exists to establish.",
+  "correction": "`elicitFormFromAcpClient` (acp-agent.ts:314) already collapses decline and cancel into `undefined` at line 375. It is an excellent lifecycle reference (abort race, timeout, `onTimeout`, listener cleanup, silent late-response suppression) but its return type is lossy, and the plan's own gate demands three distinct wire outcomes. Add an action-preserving sibling; do not refactor the existing function, which three other call sites depend on.",
+  "evidence": "`sed -n '375p'` is `if (!isAcceptedElicitation(response) || !response.content) {` followed by `return undefined;`; the narrowing helper is at line 402; `CreateElicitationResponse` in packages/utils/src/acp/protocol.ts already carries `action: \"accept\" | \"decline\" | \"cancel\"`."
+ },
+ {
+  "id": "s3",
+  "claim": "Plan §2.2: 'manager không có quyền mở form ... Chỗ cần trả lời JSON-RPC nằm trong một class không thể với tới UI.'",
+  "verdict": "VERIFIED — carries forward unchanged.",
+  "correction": "Confirmed exactly. The single `pi-tui` reference in manager.ts is line 46, `import type { MCPToolDetails } from \"@oh-my-pi/pi-tui/tools/mcp\"` — a type-only import. The manager genuinely cannot open a form today, which is why a setter is required.",
+  "evidence": "`grep -n 'pi-tui' packages/coding-agent/src/mcp/manager.ts` returns exactly one line, 46."
+ },
+ {
+  "id": "s3",
+  "claim": "Plan wave 3 anchors: `client.ts:100-104` and `manager.ts:1032-1040`.",
+  "verdict": "VERIFIED — both exact, no drift.",
+  "correction": "client.ts 100-104 is the MCPInitializeParams literal with `capabilities` on 101-103. manager.ts 1032-1040 is `#handleServerRequest` in full, with the -32601 throw at 1039. Additionally verified that both `onRequest` wiring sites (manager.ts:741-742 for initial connect, 1548-1549 for reconnect) already delegate to this method, so neither needs changing, and that `toJsonRpcError` (types.ts:500-512) plus StdioTransport's own try/catch (stdio.ts:718-729) already carry a thrown -32601 to the server — no transport edit is required.",
+  "evidence": "`sed -n '100,104p'`, `sed -n '1032,1040p'`, `sed -n '735,750p'`, `sed -n '1540,1560p'`, `sed -n '500,512p'` and `sed -n '718,729p'` of the respective files."
+ },
+ {
+  "id": "s3",
+  "claim": "Plan wave 3 test locations: NEW `packages/coding-agent/test/mcp/elicitation-capability.test.ts` and `.../elicitation-form.test.ts`.",
+  "verdict": "LOCATION FINE, TEMPLATE WARNING ADDED.",
+  "correction": "The `packages/coding-agent/test/mcp/` directory exists and is the right home. But do not copy `packages/coding-agent/test/mcp-roots-list.test.ts` — it is a specification test that re-implements the shape locally and says so in its own comments: 'Does not exercise the actual transport methods — changes to #handleMessage won't fail this test. Tests the contract, not the wiring.' The correct template is `packages/coding-agent/test/mcp-manager-notification-listeners.test.ts` plus `packages/coding-agent/test/fixtures/notifications-mcp.ts`: a standalone executable stdio server spawned with `{ type: 'stdio', command: process.execPath, args: [FIXTURE_PATH] }` against a real MCPManager in a temp cwd.",
+  "evidence": "The self-documenting comments are at the top of each describe block in mcp-roots-list.test.ts; the spawn config is `function serverConfig(): MCPServerConfig { return { type: \"stdio\", command: BUN_EXEC, args: [FIXTURE_PATH] }; }` at lines 17-19 of mcp-manager-notification-listeners.test.ts."
+ },
+ {
+  "id": "s3",
+  "claim": "Harness: 'Verify with `bun run check:ts` (which does not need the addon) and treat `bun test` as blocked until the addon is built.'",
+  "verdict": "VERIFIED — both halves reproduced.",
+  "correction": "`bun run check:ts` is green at HEAD 808b365 (oxlint + oxfmt + tsgo, coding-agent in 11.00s). `bun test packages/coding-agent/test/mcp/request-id.test.ts` reports `0 pass / 1 fail / 1 error` with `Failed to load pi_natives native addon for darwin-arm64`, missing `packages/natives/native/pi_natives.darwin-arm64.node`. Unblock with `bun --cwd=packages/natives run build`.",
+  "evidence": "Both commands executed; output quoted above in verification."
+ },
+ {
+  "id": "s3",
+  "claim": "The plan never states whether the elicitation form must queue behind other dialogs.",
+  "verdict": "OMISSION — a real bug waiting to happen.",
+  "correction": "An MCP server can elicit at any moment, including while a permission prompt or an ask dialog already owns `ctx.editorContainer`. The interactive presenter MUST be built on `ExtensionUiController.#presentDialog` (line 1281), which routes through the `#dialogActive` / `#dialogQueue` gate (lines 92-93). Presenting the form directly into `editorContainer` — the obvious thing to write — makes two surfaces fight for focus, and the loser is whichever the user was already answering.",
+  "evidence": "`sed -n '1281,1336p'` shows #presentDialog's queue branch (`if (this.#dialogActive) { this.#dialogQueue.push(startPresentation); } else { startPresentation(); }`); `sed -n '92,93p'` shows the two fields."
+ },
+ {
+  "id": "s4",
+  "claim": "`secret?: boolean` at plugin-settings.ts:30 is a thing to add for A4.",
+  "verdict": "WRONG — it already exists",
+  "correction": "The flag is already present at line 31, and the manifest-side flag is already present at packages/coding-agent/src/extensibility/plugins/types.ts:63 (`PluginSettingBase`, documented 'If true, mask value in UI and logs'). There is no schema work in A4-display. The defect is narrower than the plan states: exactly one branch fails to honor the flag.",
+  "evidence": "awk NR>=25&&NR<=35 packages/tui/src/overlays/plugin-settings.ts → 31| secret?: boolean;  — and git grep -n secret -- packages/coding-agent/src/extensibility/plugins/types.ts → 63| secret?: boolean;"
+ },
+ {
+  "id": "s4",
+  "claim": "The enum secret bug is at plugin-settings.ts:166.",
+  "verdict": "OFF BY ONE",
+  "correction": "Line 166 is `description: schema.description || \\`Configure ${key}\\``. The unmasked read is line 167: `currentValue: String(currentValue ?? schema.default ?? \"\")`. Point the engineer at 167.",
+  "evidence": "awk NR>=160&&NR<=172 packages/tui/src/overlays/plugin-settings.ts → 166| description: …  167| currentValue: String(currentValue ?? schema.default ?? \"\"),"
+ },
+ {
+  "id": "s4",
+  "claim": "plugin-settings.ts:187 is the string branch that already masks correctly — freeze it.",
+  "verdict": "MISLEADING ANCHOR — the invariant is elsewhere",
+  "correction": "Line 187 is another `description:` line. The masking itself happens once, at line 152: `const displayValue = schema.secret && currentValue ? \"••••••••\" : String(currentValue ?? \"(not set)\")`, and is consumed at line 188 (`currentValue: displayValue`). The invariant to freeze is 151-152, not 187.",
+  "evidence": "git grep -n secret -- packages/tui/src/overlays/plugin-settings.ts → 31, 152, 667, 668. Only 152 masks; 188 and 167 are the two consumers, and only 188 consumes the mask."
+ },
+ {
+  "id": "s4",
+  "claim": "The `empty: \"cancel\"` policy is at plugin-settings.ts:662.",
+  "verdict": "OFF BY 7",
+  "correction": "It is at line 669, inside `createConfigInputPanel` (:650-…). Line 662 is the `TextFormField` construction. Pair it with line 668 (`initialValue: !schema.secret ? currentValue : undefined`) — the two together, not `empty` alone, are what stop a blank save from erasing a stored secret.",
+  "evidence": "awk NR>=655&&NR<=670 packages/tui/src/overlays/plugin-settings.ts → 667| secret: schema.secret,  668| initialValue: !schema.secret ? currentValue : undefined,  669| empty: \"cancel\","
+ },
+ {
+  "id": "s4",
+  "claim": "The repo has no secret store to fall back to, so A4-PERSIST must invent somewhere to put the value.",
+  "verdict": "WRONG — a store exists and the plan's grep missed it",
+  "correction": "There IS one: `~/.omp/agent/secrets.yml` (global) and `<cwd>/.omp/secrets.yml` (project), loaded by `packages/coding-agent/src/secrets/index.ts:163-168`, backed by `SecretObfuscator` and a per-install key at `~/.omp/agent/secret-placeholder.key` (secrets/index.ts:16-53, written mode 0o600 with a create-race guard). Documented at `docs/secrets.md:35-42`. The plan grepped for `keytar|keychain|safeStorage|encrypt` and concluded none existed — but the store is a YAML file, not a keyring API, so the grep returned only unrelated hits. The A4-PERSIST question is therefore NOT 'where do we put it' but 'do we route to secrets.yml, or give the Settings registry a secret-marked tier'. Caveat the plan did not state: secrets.yml is plaintext on disk and is a MODEL-REDACTION system, not a vault, so it does not by itself make a plugin API token safe at rest. See open_questions #2 and #3.",
+  "evidence": "awk NR>=160&&NR<=170 packages/coding-agent/src/secrets/index.ts → 167| const projectPath = path.join(cwd, \".omp\", \"secrets.yml\");  168| const globalPath = path.join(agentDir, \"secrets.yml\");  — and docs/secrets.md:41-42 table rows 'Global | ~/.omp/agent/secrets.yml' / 'Project | <cwd>/.omp/secrets.yml'."
+ },
+ {
+  "id": "s4",
+  "claim": "Masking the enum's `currentValue` at build time fixes the leak.",
+  "verdict": "INCOMPLETE — the fix must be structural, and the plan never saw why",
+  "correction": "`SettingItem.currentValue` does double duty: it is painted AND round-tripped. settings-list.ts:797 reassigns `item.currentValue = selectedValue` inside the submenu done-callback, so a build-time mask repaints the plaintext the moment the user picks a value. It also breaks preselection, because createConfigEnumPanel (:624-647) feeds `currentValue` straight into `SelectFormField({ items: values.map(...), currentValue })` — a masked value matches no item. The correct fix is to split the painted copy out: add `displayValue?: string` to `SettingItem` (settings-list.ts:24-43), read `item.displayValue ?? item.currentValue` at the paint site (:515) and the search corpus (:97), and leave :795 / :797 / :804 / :318 reading and writing the real value. This is the one finding in this wave that the plan missed entirely, and it is the difference between a shipped fix and a green test.",
+  "evidence": "packages/tui/src/components/settings-list.ts → 34| currentValue: string;  97| let text = `${item.label} ${item.id} ${item.currentValue}`;  515| const valuePlain = truncateToWidth(String(item.currentValue ?? \"\"), …);  795| this.#submenuComponent = item.submenu(item.currentValue, (selectedValue?: string) => {  797| item.currentValue = selectedValue;  804| const currentIndex = item.values.indexOf(item.currentValue);  — plus packages/tui/src/overlays/plugin-settings.ts:633-638 (createConfigEnumPanel → SelectFormField currentValue)."
+ },
+ {
+  "id": "s4",
+  "claim": "B2: 'no core change needed'; sanitizer is the only constraint.",
+  "verdict": "CORRECT on substance, but two of the three planned assertions already pass",
+  "correction": "The gap is real and confirmed: setWorkingMessage (interactive-mode.ts:6645-6660) hands the plugin string straight to `loadingAnimation.setMessage` with no replaceTabs and no truncation. But the plan's other two checks are already green today — `undefined` restores the default at :6646-6651, and the same-string-twice dedupe holds because loader.ts:145-152 guards `if (message === this.message) return;`. Keep both assertions anyway, but know that only the tab/width assertion is red before the fix, and that the dedupe currently depends on a guard three frames below the plugin boundary. `setWorkingMessage` is at :6645, not the :424 the plan gives for DEFAULT_WORKING_MESSAGE (that constant is at :427).",
+  "evidence": "awk NR>=6640&&NR<=6680 packages/coding-agent/src/modes/interactive-mode.ts → 6645| setWorkingMessage(message?: string): void {  6647| this.#pendingWorkingMessage = undefined;  6649| this.loadingAnimation.setMessage(DEFAULT_WORKING_MESSAGE);  6655| this.loadingAnimation.setMessage(message);  6659| this.#pendingWorkingMessage = message;  427| const DEFAULT_WORKING_MESSAGE = \"Working…\";  — and packages/tui/src/components/loader.ts:145-152 (the dedupe guard)."
+ },
+ {
+  "id": "s4",
+  "claim": "extension-ui-controller.ts:120 is the setWorkingMessage tap, :119 is setStatus, :586 is where requestRender lives.",
+  "verdict": "ALL THREE OFF",
+  "correction": ":120 is `const uiContext: ExtensionUIContext = {` (the object literal opens there). The setWorkingMessage wiring is at :129 and setStatus at :128. requestRender is not at :586 — :586 closes `showToolError`; the real call is `this.ctx.ui.requestRender()` at :593 inside `setHookStatus` (:591-594). The plan's warning that requestRender lives in the controller and not in StatusLineComponent is CORRECT and is the trap that hangs a B3 test; just point at :593.",
+  "evidence": "awk NR>=110&&NR<=130 → 120| const uiContext: ExtensionUIContext = {  128| setStatus: (key, text) => this.setHookStatus(key, text),  129| setWorkingMessage: message => this.ctx.setWorkingMessage(message), ;  awk NR>=575&&NR<=595 → 586| }  591| setHookStatus(key: string, text: string | undefined): void {  593| this.ctx.ui.requestRender();"
+ },
+ {
+  "id": "s4",
+  "claim": "`ExtensionUIContext` is at extensions/types.ts:100-340.",
+  "verdict": "WRONG RANGE",
+  "correction": "`export interface ExtensionUIContext` is at line 235 and the interface closes at line 350. Lines 96-130 are the type-only import block above it. A 100-340 range points an engineer at imports and cuts off the interface's tail.",
+  "evidence": "git grep -n 'interface ExtensionUIContext' -- packages/coding-agent/src → packages/coding-agent/src/extensibility/extensions/types.ts:235;  and awk NR>=330&&NR<=350 → 350| } (closing brace of the interface)."
+ },
+ {
+  "id": "s4",
+  "claim": "Dossier anchor correction: `legacy-pi-compat.ts:2657` is resolveLegacyPiSpecifier, `:2736` is the onResolve filter, the real remap is `:2742`.",
+  "verdict": "VERIFIED CORRECT — carry it forward",
+  "correction": "All three confirmed at HEAD. Also confirmed the practical consequence the plan draws: `USE_BUNDLED_PI_MODULES` at :20 is `isCompiledBinary() || Boolean(process.env.PI_BUNDLED)`, false under `bun test`, so the :2736 file-namespace source branch is the only one that runs and :2742's virtual-namespace remap is dead in tests. One adjacent nit: the plan's `:2752-2754` for the bundled-host remap points at the tail of the onResolve; the onLoad that backs it is at :2753-2756.",
+  "evidence": "awk NR>=2728&&NR<=2760 → 2736| build.onResolve({ filter: LEGACY_PI_SPECIFIER_FILTER, namespace: \"file\" }, resolveLegacyPiSpecifier);  2742| resolveBundledVirtualSpecifier(args.path, BUNDLED_HOST_NAMESPACE),  2753| build.onLoad({ filter: /.*/, namespace: BUNDLED_HOST_NAMESPACE }, …;  awk NR>=15&&NR<=25 → 20| const USE_BUNDLED_PI_MODULES = isCompiledBinary() || Boolean(process.env.PI_BUNDLED);  awk NR>=2650&&NR<=2665 → 2657| function resolveLegacyPiSpecifier(…"
+ },
+ {
+  "id": "s4",
+  "claim": "The TUI export map `./*` → `./src/*.ts` lives at packages/tui/package.json:93-96.",
+  "verdict": "OFF BY ONE",
+  "correction": "It is at :94-97. Same for `./tools` at :86-89 and `./status-line` at :90-93, which the B1 fixture import depends on.",
+  "evidence": "awk NR>=85&&NR<=105 packages/tui/package.json → 94| \"./*\": {  95| \"types\": \"./src/*.ts\",  96| \"import\": \"./src/*.ts\"  97| },"
+ },
+ {
+  "id": "s4",
+  "claim": "B3 is blocked on the `status` id being absent from the preset.",
+  "verdict": "CORRECT but sharper than stated",
+  "correction": "Both halves check out and the conclusion (B3 is not C1-blocked) is right. Sharpen it: the id `status` IS in the closed union at `packages/tui/src/status-line/schema.ts:4`, and is absent from every preset's left/right segment list in presets.ts (:5, :16, :26, :36, :59). So `setHookStatus` is fully wired in code (component.ts:959-970) and merely unreachable by default. component.ts:963 already has an equality guard (`if (this.#hookStatuses.get(key) === text) return;`) and :969 invalidates the render cache. Also confirmed: `status-line/index.ts` is a 6-line barrel with zero `register*`, so the registration seam genuinely is not M2's to give.",
+  "evidence": "awk NR<=30 packages/tui/src/status-line/schema.ts → 4| \"status\", (27 ids total, 2-30);  git grep -c '\"status\"' -- packages/tui/src/status-line/presets.ts → 0;  awk NR>=955&&NR<=970 packages/tui/src/status-line/component.ts → 959| setHookStatus(  963| if (this.#hookStatuses.get(key) === text) return;  969| this.#invalidateStatusLineRenderCache();"
+ },
+ {
+  "id": "s4",
+  "claim": "keybinding-hints.ts:29 and :42 are the two hint sites B3 touches.",
+  "verdict": "BOTH POINT AT JSDoc, NOT CODE",
+  "correction": "Line 29 is inside the doc comment for `boundKeys`; line 42 is inside the doc comment for `appKey`. The functions themselves are `boundKeys` at :33-36 and `appKey` at :44-47. An engineer editing 'line 29' edits a comment and gets a no-op that still typechecks.",
+  "evidence": "awk '{printf \"%d| %s\\n\", NR, $0}' packages/tui/src/chrome/keybinding-hints.ts → 29| * Keys bound to `action`, or `fallback` …  33| export function boundKeys(…  42| /** Primary key bound to an app action …  44| export function appKey(…"
+ },
+ {
+  "id": "s4",
+  "claim": "Status-line is not M2's seam, so M3-C1 was correctly removed from M3 and wave 4 is gated on M2.",
+  "verdict": "VERIFIED — the wave-level framing is sound",
+  "correction": "Confirmed independently. The status-line surface is a closed 27-id union (schema.ts:2-30), the barrel has no `register*`, and `setStatus` is wired end to end (extension-ui-controller.ts:128 → :591-594 → component.ts:959-970). The one thing to carry forward as a live correction rather than a settled fact: A4 is NOT uniformly M2-blocked. Its display half is unblocked and is the cheapest unblock in the wave. Reading the wave header alone and deferring all four items would cost a day of avoidable waiting — which is why the plan flagged A4 as the exception.",
+  "evidence": "awk NR<=35 packages/tui/src/status-line/schema.ts → 2| export const STATUS_LINE_SEGMENT_IDS = [ … 30| ] as const;  ;  cat packages/tui/src/status-line/index.ts → 6 star re-exports, no register*;  git grep -n setHookStatus -- packages/tui/src → packages/tui/src/status-line/component.ts:959 only."
+ },
+ {
+  "id": "s5",
+  "claim": "The trust premise is at `packages/coding-agent/src/extensibility/extensions/types.ts:462-470`, and 'xem thêm `:528-532`'.",
+  "verdict": "WRONG — stale by ~25 and ~20 lines; both cited ranges land in unrelated interface methods.",
+  "correction": "The 'no per-directory trust gate' reasoning is at types.ts:487-494 ('OMP performs no project-trust gating — project-level settings and extensions load unconditionally — so this always returns `true`') and the longer companion comment at types.ts:548-562. The two implementations that hard-code the return are `runner.ts:1264` and `agent-session.ts:7406`, both `isProjectTrusted: () => true`. The SUBSTANCE is fully correct and I reproduced it; only the line numbers are wrong.",
+  "evidence": "sed -n '483,500p' and '548,565p' on types.ts show the comments; `git grep -n isProjectTrusted -- packages/coding-agent/src` returns exactly the two call sites plus the two declarations at :494 and :561."
+ },
+ {
+  "id": "s5",
+  "claim": "`registerStatusLineSegment` is M2's seam and this wave's two items are its first consumers, both written after M2-OQ3 has an answer.",
+  "verdict": "SUBSTANTIVELY WRONG — the seam exists and the items do not consume it.",
+  "correction": "`git grep -n registerStatusLineSegment -- packages/` returns 0 hits repo-wide, so the seam is indeed unbuilt (the plan is right that M3-C1 was removed). But neither C2 nor D2 touches it. C2 dispatches through `ctx.ui.setStatus`, which is ALREADY fully wired (types.ts:263 -> controller.ts:128 -> controller.ts:591-594 -> component.ts:958-971). D2 is a core union addition. What M2-OQ3 actually decides for this wave is only the NEGATIVE contract — what happens to an id nobody registered. Write the items; do not gate them behind the seam.",
+  "evidence": "`git grep -c registerStatusLineSegment -- packages/` = 0 hits. `git grep -n setStatus -- packages/coding-agent/src` shows the live chain ending at component.ts:958."
+ },
+ {
+  "id": "s5",
+  "claim": "`setStatus` is wired at `extension-ui-controller.ts:119`; `requestRender` is at `extension-ui-controller.ts:586`.",
+  "verdict": "WRONG line numbers; the surrounding warning is CORRECT and worth keeping.",
+  "correction": "The wiring is at controller.ts:128 (`setStatus: (key, text) => this.setHookStatus(key, text)`), and `setHookStatus` spans controller.ts:591-594 with `this.ctx.ui.requestRender()` at :593. The plan's warning — that `requestRender` lives on the controller and NOT on `StatusLineComponent`, so a test driving only the component will hang — is CORRECT and I verified it. Also note the controller is at `src/modes/controllers/`, not under `extensibility/`.",
+  "evidence": "sed -n '578,600p' on the controller shows setHookStatus at 591 with requestRender at 593; `git grep -n requestRender -- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` shows 6 sites, of which :593 is the status-line one."
+ },
+ {
+  "id": "s5",
+  "claim": "D2 is blocked on M2-OQ3.",
+  "verdict": "OVERSTATED — conditionally blocked at most, and only under one of the three options.",
+  "correction": "D2 edits the CORE union, and no extension contributes a segment to it. Under option 2 (contributor Map) or option 3 (mode reads ModeRegistry) the core union is untouched and D2 is implementable today. Only under option 1 does the core id set get rewritten into `core:`-prefixed template literals, which would change D2's id literal. So: proceed with D2 unless OQ3 has landed as option 1.",
+  "evidence": "The union is a plain `as const` array at schema.ts:2-29 with 27 members, unrelated to any extension-contributor path; no `register*` seam exists to block on."
+ },
+ {
+  "id": "s5",
+  "claim": "The manifest `omp` field is read at `manager.ts:256`, with two other paths at `:622` and `:845`.",
+  "verdict": "INCOMPLETE — all three are correct, a fourth exists.",
+  "correction": "256, 622 and 845 are all real and all read `pkg.omp || pkg.pi || {...}`. There is a fourth at manager.ts:1084 (`const manifest: PluginManifest | undefined = pluginPkg.omp || pluginPkg.pi;`, note it can be undefined). If the implementer audits 'every place the manifest is read', 1084 must be included or the audit is incomplete.",
+  "evidence": "`git grep -n 'const manifest: PluginManifest' -- packages/coding-agent/src/extensibility/plugins/manager.ts` returns 256, 622, 845, 1084."
+ },
+ {
+  "id": "s5",
+  "claim": "`--extension` is at `flag-tables.ts:216`; `--trusted-extension` is at `:218`.",
+  "verdict": "WRONG by one line each.",
+  "correction": "`--extension` is at :215 and :216 is the `-e` alias. `--trusted-extension` is at :217, not :218. Anyone scripting an edit against these numbers touches the wrong flag.",
+  "evidence": "sed -n '205,230p' on flag-tables.ts."
+ },
+ {
+  "id": "s5",
+  "claim": "`--trusted-extension` sets `options.disableExtensionDiscovery = true` at `main.ts:1658-1659`.",
+  "verdict": "OFF BY ONE — substance correct.",
+  "correction": "The two assignments are at main.ts:1659-1660; :1658 is the closing `});` of the `.map()` above them. The claim itself — that this disables discovery and substitutes an absolute-path allowlist, making it a harness tool rather than an end-user gate — is correct.",
+  "evidence": "sed -n '1650,1665p' on main.ts."
+ },
+ {
+  "id": "s5",
+  "claim": "`ExtensionUIContext` dispatch is at `types.ts:264`; the `setStatus` declaration sits at that anchor.",
+  "verdict": "OFF BY ONE — :264 is a blank line.",
+  "correction": "`setStatus(key, text)` is declared at types.ts:263, inside the `ExtensionUIContext` interface (the neighbourhood the plan cites as `264-277` is right).",
+  "evidence": "sed -n '250,285p' on extensions/types.ts."
+ },
+ {
+  "id": "s5",
+  "claim": "The overlay reads the settings schema at `packages/tui/src/overlays/plugin-settings.ts:143`.",
+  "verdict": "OFF BY ONE.",
+  "correction": "The read is `const schemaSettings = plugin.manifest.settings;` at plugin-settings.ts:144, with an early return at :145. Same file, one line down.",
+  "evidence": "`git grep -n schema -- packages/tui/src/overlays/plugin-settings.ts`."
+ },
+ {
+  "id": "s5",
+  "claim": "`packages/tui/package.json:39-48` declares no dependency on the coding-agent; the reverse direction is at `packages/coding-agent/package.json:545`.",
+  "verdict": "CORRECT in substance; one line off on the tui range.",
+  "correction": "The tui `dependencies` block is :40-49. It lists omptype, pi-agent-core, pi-ai, pi-catalog, pi-natives, pi-utils, pi-wire, snapcompact — no coding-agent, confirming the test-file placement rule. The reverse direction is exactly right: `@oh-my-pi/pi-tui` is at coding-agent/package.json:545.",
+  "evidence": "`grep -n '\"@oh-my-pi/pi-tui\"' packages/tui/package.json` (absent) and sed -n '540,550p' on the coding-agent manifest."
+ },
+ {
+  "id": "s5",
+  "claim": "HEAD is 5873776.",
+  "verdict": "STALE.",
+  "correction": "Actual HEAD is 808b365 ('docs(plan): fold the spec-verified M1 execution plan into the upgrade plan'), on branch milestone-1. Every line number in this spec was re-measured at 808b365.",
+  "evidence": "`git log --oneline -1`."
+ },
+ {
+  "id": "s5",
+  "claim": "C2's sanitization and width-limiting is work the item must do (tab output, 10,000 characters).",
+  "verdict": "MISFRAMED — the contract already exists; C2 only has to not break it.",
+  "correction": "The `status` segment ALREADY runs every hook status through `sanitizeStatusText` -> `sanitizeDisplaySingleLine` -> `sanitizeDisplayText` -> `replaceTabs(sanitizeText(text))`, then collapses newline runs and trims. Width is enforced separately by `truncateToWidth` at component.ts:3068 and by row layout. One nuance the test must get right: the sanitizer chain has NO length cap, so assert the ROW is within width — do not assert that the sanitizer truncated. C2's test therefore asserts an existing contract holds for plugin-supplied content, which is a stronger and more honest framing than 'add sanitization'.",
+  "evidence": "packages/tui/src/chrome/shared.ts:9, packages/tui/src/overlays/extensions/display-text.ts, segments.ts:201, component.ts:3068."
+ },
+ {
+  "id": "s5",
+  "claim": "D2 is 'add an id to the closed union'.",
+  "verdict": "UNDERSTATED — the union is not the only edit, though the compiler will tell you.",
+  "correction": "`SEGMENTS` at segments.ts:919 is an exhaustive `Record<StatusLineSegmentId, StatusLineSegment>`, so adding a union member without a registry entry is a TYPE error — good, `bun run check:ts` catches it with no addon. Good news for blast radius: `ALL_SEGMENT_IDS` is `Object.keys(SEGMENTS)`, so the CLI gallery inventory picks the new id up automatically, and the gallery's `variantsFor` switch has a `default:` branch, so no gallery edit is required either.",
+  "evidence": "segments.ts:919, :957; packages/coding-agent/src/cli/gallery-fixtures/segments.ts (default branch at the end of variantsFor)."
+ },
+ {
+  "id": "s6",
+  "claim": "`statusLineGitClean`/`statusLineGitDirty` are declared at `packages/tui/src/theme/schema.ts:77-78` 'with a fallback at :140-141', so a missing key would silently skip the adjustment.",
+  "verdict": "STALE / MISLEADING",
+  "correction": "The line numbers are right, but :140-141 is NOT a fallback. Both lines sit inside `THEME_COLOR_RECORD` (schema.ts:89), which exists only to build `VALID_THEME_COLORS` (schema.ts:152) for `isValidThemeColor` (schema.ts:156). It is a validation allowlist, not a default-color layer. There is no default-filling layer anywhere: `resolveThemeColors` (color.ts:64-73) iterates only keys present in the palette, and `theme-class.ts:167-169` drops any key failing `isValidThemeColor` via `continue`. A missing key therefore yields an ABSENT color, not a fallback color — so the implementer must not expect a missing key to render as something reasonable.",
+  "evidence": "`git grep -n THEME_COLOR_RECORD -- packages/tui/src` → only two hits: schema.ts:89 (definition) and schema.ts:152 (`const VALID_THEME_COLOR_RECORD = new Set(...)` → VALID_THEME_COLORS). `sed -n '64,73p' packages/tui/src/theme/color.ts` shows `resolveThemeColors` looping `Object.entries(colors)` only. `sed -n '167,169p' packages/tui/src/theme/theme-class.ts` → `if (!isValidThemeColor(key)) continue;`."
+ },
+ {
+  "id": "s6",
+  "claim": "The small patch 'must come with a 99-palette inventory checking each key exists and is a hex string' because 'a missing or non-hex key silently ignores the adjustment'.",
+  "verdict": "VERIFIED TRUE, AND THE AUDIT IS NOW DONE — it comes back clean",
+  "correction": "I ran the inventory the plan demanded. All 99 palettes in `packages/tui/src/theme/defaults/` contain `toolDiffAdded`, `success`, `error`, `statusLineGitClean`, and `statusLineGitDirty`. None is missing, so no key is silently skipped. One nuance the plan misses: the raw JSON is mostly `var:` indirection, not literal hex — e.g. onyx.json has `\"toolDiffAdded\": \"$emerald\"` with `vars.emerald = \"#6fb37f\"`. `resolveVarRefs` (color.ts:49-62) resolves those at `resolveThemeColors`, which runs at loader.ts:151 BEFORE the colorBlindMode branch reads them at :153. So the branch always sees resolved hex and the existing `startsWith(\"#\")` guard holds on all 99. The silent-skip risk is therefore real only for a 256-color number or `\"\"` value, which can come from a user-authored custom theme, not a builtin.",
+  "evidence": "Script over `packages/tui/src/theme/defaults/*.json` asserting all four keys present: output is a single line `99 True`. `sed -n '16p;23p;51p;74p' packages/tui/src/theme/defaults/onyx.json` → `\"emerald\": \"#6fb37f\"`, `\"success\": \"$emerald\"`, `\"toolDiffAdded\": \"$emerald\"`, `\"statusLineGitClean\": \"$emerald\"`. `ls packages/tui/src/theme/defaults/*.json | wc -l` → 99."
+ },
+ {
+  "id": "s6",
+  "claim": "The regression harness should run across 'all 99 palettes'.",
+  "verdict": "INCOMPLETE — 99 is the wrong number",
+  "correction": "`BUILTIN_THEMES` (loader.ts:18-22) is `dark.json` + `light.json` + the 99 `defaults/*.json`, i.e. 101 themes. `dark` and `light` are the two the app actually boots with when no theme is configured, and they are not in the defaults directory. A harness that globs `defaults/*.json` misses exactly the two themes most users see. Iterate `getBuiltinThemes()` (loader.ts:24) instead, which is the same map the picker uses.",
+  "evidence": "`sed -n '18,26p' packages/tui/src/theme/loader.ts` → `const BUILTIN_THEMES: Record<string, ThemeJson> = { dark: darkThemeJson, light: lightThemeJson, ...(defaultThemes as Record<string, ThemeJson>) };` followed by `export function getBuiltinThemes() { return BUILTIN_THEMES; }`."
+ },
+ {
+  "id": "s6",
+  "claim": "The new themes are 'selectable from ThemePicker like any normal theme'.",
+  "verdict": "STALE — no ThemePicker exists in this repo",
+  "correction": "`git grep -rn 'ThemePicker|theme-picker' -- packages/` returns nothing. Theme selection is `setTheme` / `previewTheme` (theme.ts:211 / :248) driven by `getAvailableThemes` (loader.ts:29) and the `cfgThemeDark` / `cfgThemeLight` settings (settings.ts:58). A theme is 'just a theme' when it is imported in `packages/tui/src/theme/defaults/index.ts` and added to the `defaultThemes` object literal — that is the whole registration cost, and it needs no picker change. This matters only for the M variant, which is why the S variant below touches no UI file at all.",
+  "evidence": "`git grep -rn 'ThemePicker|theme-picker' -- packages/ | grep -v test` → empty. `tail -15 packages/tui/src/theme/defaults/index.ts` shows the object literal keyed by theme name (`titanium: titanium,`)."
+ },
+ {
+  "id": "s6",
+  "claim": "The global `colorBlindMode` flag is 'wired from packages/coding-agent/src/modes/settings.ts:108'.",
+  "verdict": "RIGHT AREA, WRONG LINE AND INCOMPLETE — there are four consumer sites, not one",
+  "correction": "settings.ts:109-120 is the declaration: `export const cfgColorBlindMode = register({ id: \"colorBlindMode\" ... })` with `id` at :110 and `effect(cfgColorBlindMode, setColorBlindMode)` at :120. Line 108 is the blank line above it. But the actual hand-off into `createTheme` is at `main.ts:1909` via `applyStartupComposerPreferences({ theme: { colorBlindMode: cfgColorBlindMode.get(settingsInstance) } })`, and there are two more consumers: `modes/setup.ts:90-92` and `cli/gallery-cli.ts:29` / `commands/git.ts:13`. A reader who follows only settings.ts:108 will not find the wiring to the TUI.",
+  "evidence": "`sed -n '1907,1912p' packages/coding-agent/src/main.ts` → `colorBlindMode: cfgColorBlindMode.get(settingsInstance),` inside the `theme: {` object. `sed -n '90,92p' packages/coding-agent/src/modes/setup.ts` → `get colorBlindMode() { return cfgColorBlindMode.get(ctx.settings); }`."
+ },
+ {
+  "id": "s6",
+  "claim": "OKLCH primitives `hexToOklch, oklchCusp, oklchToHex, relativeLuminance` are available, imported from `@oh-my-pi/pi-utils` (session-color.ts:2).",
+  "verdict": "VERIFIED TRUE",
+  "correction": "No change needed. All four exist and are exported from `packages/utils/src/color.ts` at lines 320, 392, 423, 471. Note for the implementer: `loader.ts:3` imports `adjustHsv` from the SUBPATH `@oh-my-pi/pi-utils/color`, not the barrel — keep new color imports on the subpath to match. `oklchToHex` gamut-maps by chroma bisection and clamps, so it always returns valid 6-digit hex and never needs a post-check.",
+  "evidence": "`git grep -n 'export function hexToOklch|export function oklchCusp|export function oklchToHex|export function relativeLuminance' -- packages/utils/src` → color.ts:320, :392, :423, :471. `sed -n '3p' packages/tui/src/theme/loader.ts` → `import { adjustHsv } from \"@oh-my-pi/pi-utils/color\";`."
+ },
+ {
+  "id": "s6",
+  "claim": "Tests live at `packages/tui/test/*.test.ts`; tui has 221 test files.",
+  "verdict": "VERIFIED (count is now 222)",
+  "correction": "Convention holds and matters: `find packages/tui/src -name '*.test.ts' | wc -l` returns 0, confirming nothing is colocated. A new `*.test.ts` under `packages/tui/src/` would never be run. The count drifted from 221 to 222 since the plan was written; use the count only as a sanity check, never as an acceptance number.",
+  "evidence": "`find packages/tui -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` → 222. `find packages/tui/src -name '*.test.ts' | wc -l` → 0. Existing neighbors to read first: `packages/tui/test/settings-list-theme.test.ts` (uses `initTheme()` in `beforeAll`), `theme-color-mode.test.ts`, `theme-auto-detection.test.ts`."
+ }
+]

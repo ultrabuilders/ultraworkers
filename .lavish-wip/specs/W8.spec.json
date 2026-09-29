@@ -1,0 +1,212 @@
+{
+  "id": "W8",
+  "title": "Turn the existing prompt-cache refresh loop into a cost-gated one (one scheduler, one switch)",
+  "wave": "3a — Cache economics (ships together with W7, default-OFF)",
+  "one_line": "The keep-alive prompt-cache refresh that runs today unconditionally gets a single tri-state setting and an economic gate, so the only thing that spends the user's money is something they explicitly turned on.",
+  "user_visible_effect": "New `providers.promptCacheRefresh` setting (`off` by default, `cost-gated`, `always`). On `off` — the default for the first release — the unconditional 4m45s keep-alive replays that ship today stop entirely, so the user's Anthropic bill drops and nothing is spent. `always` restores today's behaviour exactly. `cost-gated` warms only when expected savings beat a $0.05 floor, and idle-phase warming needs roughly a $0.35 miss cost to fire at all — so on most sessions it correctly does nothing, which the release notes must say out loud or the feature reads as broken. This is a behaviour change on a feature that is live today, so it needs a changelog entry that says it plainly.",
+  "files_touched": [
+    {
+      "path": "packages/ai/src/stream.ts",
+      "action": "modify",
+      "change": "Replace the hard-coded `ANTHROPIC_CACHE_TTL_MS` (:1209) with W7's per-tier `promptCacheLifetime` (absent ⇒ no warm, fail safe); add `#decision`/`#phase` fields and widen `arm()` (:1237) to take `(plan, cacheTouchedAtMs, decision, phase)`; have `#refresh()` read the phase probe immediately before deciding; compute `warmCost`/`missCost` in `armRefresh` (:1454) from `model` + `message.usage` which are already in scope; relax `supportsAnthropicCacheRefresh` (:1292) to be KDL-driven for the api/provider/transport axis while KEEPING `isLeakedThinkingHealExempt(model)`; stop hard-coding `cacheRetention: \"short\"` in the warm request (:1370) in favour of `resolveCacheRetention(options.cacheRetention)`; relax the retention gate at :1431; keep the replay guard (:1369) intact.",
+      "verified": true,
+      "note": "All line numbers in this spec for stream.ts were reproduced with `grep -n` against HEAD ecd516f."
+    },
+    {
+      "path": "packages/ai/src/types.ts",
+      "action": "modify",
+      "change": "Line 439: widen `anthropicCacheRefresh?: boolean` to `anthropicCacheRefresh?: \"off\" | \"cost-gated\" | \"always\"` (add a named exported union type; `undefined` keeps its old meaning of off, so every existing consumer that omits the field stays green). Add `anthropicCacheRefreshPhase?: () => \"streaming\" | \"idle\"` adjacent to it — a probe, not a literal.",
+      "verified": true,
+      "note": "`:439` is exact. This is a public type widening, so it is a breaking change for any external caller that passed a boolean."
+    },
+    {
+      "path": "packages/coding-agent/src/sdk.ts",
+      "action": "modify",
+      "change": "At :4111 replace the hard-coded `anthropicCacheRefresh: true` with the tri-state read from settings, and add the phase probe `() => (agent.state.isStreaming ? \"streaming\" : \"idle\")`. `agent` is already in scope in this closure — `agent.state.tools` is read at :4105. Do NOT touch `transformProviderContext` (:3949); it operates on messages and has no access to stream options.",
+      "verified": true,
+      "note": "PLAN SAID :4105 — ACTUAL IS :4111. The plan's line is off by 6; every other sdk.ts anchor in the plan is off too. See plan_corrections."
+    },
+    {
+      "path": "packages/coding-agent/src/session/settings.ts",
+      "action": "modify",
+      "change": "Register `providers.promptCacheRefresh` as a tri-state enum following the `cfgProvidersAnthropicSlowMode` shape at :863 (`register({ id, type: \"enum\", values: [...] as const, default: \"off\" as const })`), defaulting to `\"off\"`.",
+      "verified": true,
+      "note": "PLAN SAID :860 — ACTUAL IS :863. The `slowMode` precedent deliberately carries NO `ui` block; decide explicitly whether this setting gets `/settings` UI or stays script-only like its model."
+    },
+    {
+      "path": "packages/ai/test/anthropic-cache-refresh.test.ts",
+      "action": "modify",
+      "change": "Add tests (0)-(6) and REWRITE (do not delete) the retention case at :335. Also verify the unlisted OAuth case at :359 still passes after the :1431 gate relaxation — it locks the same hole by a different route.",
+      "verified": true,
+      "note": "386 lines, 7 `it()` blocks at :237, :257, :279, :297, :318, :335, :359. Helpers available: `createFetch`, `finishRequest`, `drainUntil`, `CACHE_REFRESH_DELAY_MS`, `withOfficialAnthropicEndpoint`."
+    },
+    {
+      "path": "packages/ai/CHANGELOG.md",
+      "action": "modify",
+      "change": "Entry under `## [Unreleased]` → `### Changed`, stating plainly that the unconditional prompt-cache keep-alive is now off by default and that idle-phase warming needs roughly a $0.35 miss cost to fire.",
+      "verified": false,
+      "note": "Path exists as a convention (`packages/*/CHANGELOG.md` per AGENTS.md) but was not opened during this analysis; confirm the exact file and the `### Changed` heading before editing."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W8.spec.json",
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/ai/src/stream.ts:1209",
+      "instruction": "Do nothing yet. First unblock the environment: run `bun install` and `bun run build` (or at minimum `bun run build:native`) so the native addon exists. Confirm `bun test packages/ai/test/anthropic-cache-refresh.test.ts` reports 7 pass / 0 fail BEFORE editing any production code, and record that green baseline. Every gate in this spec is meaningless without it — right now the file errors out with a misleading `Cannot find module '@oh-my-pi/pi-catalog/build'`, which is actually `@oh-my-pi/pi-natives` failing to load underneath."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/ai/src/stream.ts:1209",
+      "instruction": "Confirm W7 has landed: `grep -rn promptCacheLifetime packages/catalog/src packages/ai/src` must return hits. If it returns nothing, STOP — W8 is hard-blocked on W7. Also confirm F6's economic helper landed: `grep -rn 'decideWarm' packages/` must return a definition. If F6 is absent, STOP — the `WarmDecision` type this spec threads through `arm()` does not exist anywhere in the repo today."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/ai/src/stream.ts:1209",
+      "instruction": "Delete `const ANTHROPIC_CACHE_TTL_MS = 5 * 60_000;`. Thread W7's `promptCacheLifetime` per-tier through instead. A model that declares no lifetime yields `undefined` and must NOT warm — that is W7's negative contract and W8 is its only consumer. Leave `ANTHROPIC_CACHE_REFRESH_LEAD_MS` (:1210), `ANTHROPIC_CACHE_REFRESH_LIMIT` (:1211) and `ANTHROPIC_CACHE_REFRESH_STATE_KEY` (:1212) alone."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/ai/src/stream.ts:1237",
+      "instruction": "Widen `arm()` to `arm(plan: AnthropicCacheRefreshPlan, cacheTouchedAtMs: number, decision: WarmDecision, phase: () => \"streaming\" | \"idle\"): void`. Add two new ES `#private` fields — `#decision` and `#phase` — beside the existing `#controller` / `#generation` / `#plan` / `#refreshesRemaining` / `#timer`. Use `#private`, never the TS `private` keyword. `#schedule` stays private and must NOT do any pricing of its own; it only asks the already-decided verdict."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/ai/src/stream.ts:1258",
+      "instruction": "Inside `#refresh()`, call the phase probe IMMEDIATELY BEFORE the decision — not at `arm()` time. At `arm()` the run has barely settled, so reading `isStreaming` there yields `\"streaming\"` almost always and the 0.15 idle branch dies. Feed the result into the F6 decision via `WarmDecisionInput.idle`. Keep the existing generation guard, the refresh-count decrement, and the `cacheTouchedAtMs === undefined` teardown exactly as they are."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/ai/src/stream.ts:1454",
+      "instruction": "Compute the economics in `armRefresh`, where `model` and `message.usage.{input,output,cacheRead,cacheWrite}` are ALREADY in scope — the existing bail at :1458 already reads `message.usage.cacheRead + message.usage.cacheWrite`. Pass the resulting `WarmDecision` into `refreshState.arm(...)` at :1465. Do NOT move pricing into `AnthropicCacheRefreshState`: pi prices from `SessionEntry[]`, which `packages/ai` has no access to and must not acquire."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/ai/src/stream.ts:1209",
+      "instruction": "Add the ported constants, with their phase distinction intact — that distinction is the whole point: `MAX_WARMING_AGE_MS = 60 * 60_000` (STREAMING only), `MAX_IDLE_WARMING_AGE_MS = 30 * 60_000` (IDLE only, shorter because continuation estimates decay with age), `CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS_USD = 0.05`, `IDLE_CONTINUATION_PROBABILITY = 0.15` (IDLE only) and `STREAMING_CONTINUATION_PROBABILITY = 1.0`. Copying the numbers while flattening the two phases is the second-most-expensive mistake in this item."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/ai/src/types.ts:439",
+      "instruction": "Widen `anthropicCacheRefresh?: boolean` to `anthropicCacheRefresh?: \"off\" | \"cost-gated\" | \"always\"` and add the sibling `anthropicCacheRefreshPhase?: () => \"streaming\" | \"idle\"`. Export the union under a real name (e.g. `AnthropicCacheRefreshMode`) — no string-literal duplication. `undefined` must keep meaning off. Collapsing the tri-state back to a boolean at the sdk boundary makes `always` and `cost-gated` indistinguishable, leaving only two reachable states and giving the gate no way to know it is allowed to skip."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/ai/src/stream.ts:1292",
+      "instruction": "Relax `supportsAnthropicCacheRefresh` to be KDL-driven for the api / provider / transport axis. FOUR conditions are required there today, not three — `model.api === \"anthropic-messages\" && model.provider === \"anthropic\" && model.transport !== \"pi-native\" && isLeakedThinkingHealExempt(model)` — and the fourth MUST SURVIVE. Dropping it silently excludes every model that is not leaked-thinking-heal exempt from warming, which is a behaviour change on the exact path that spends money. Per AGENTS.md the extension must be driven by a KDL fact, never a second hard-coded id list in TS. No other provider may become warmable."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/ai/src/stream.ts:1431",
+      "instruction": "Stop hard-coding `cacheRetention: \"short\"` in the warm request at :1370 — pass `resolveCacheRetention(options.cacheRetention)` through instead — and relax the matching bail at :1431 (`resolveCacheRetention(options.cacheRetention) !== \"short\"`). Today a user who sets `providers.cacheRetention = \"long\"` receives ZERO warming, which is backwards: the long-retention case is the largest-context case. After this change, the OAuth test at test:359 MUST still pass — it stays green because OAuth emits `ttl: \"1h\"` breakpoints, so `hasShortAnthropicMessageBreakpoint` (:1322) still bails at arm time."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/ai/src/stream.ts:1369",
+      "instruction": "Leave the replay guard exactly where it is. NOTE: it is NOT a function called `isReplayable` — the plan is wrong about this. HEAD expresses it as `isAnthropicThinkingActive` (:1348) feeding `anthropicCacheRefreshRequest: !thinkingEnabled` at :1369 plus `maxTokens: thinkingEnabled ? options?.maxTokens : 0`. Anthropic derives `budget_tokens` from `max_tokens`, so a replay under a different output cap changes the cache key AND makes the model think for thousands of tokens. When you generalise it per-API, the non-reasoning arm must survive: a request that is not reasoning is replayable on EVERY model."
+    },
+    {
+      "n": 12,
+      "anchor": "packages/coding-agent/src/session/settings.ts:863",
+      "instruction": "Register `providers.promptCacheRefresh` as a tri-state enum in the `cfgProvidersAnthropicSlowMode` shape (`register({ id, type: \"enum\", values: [...] as const, default: \"off\" as const })`), default `\"off\"`. No extension override hook for the warming decision in milestone 1 — the tri-state plus the phase probe IS the entire public surface of W8."
+    },
+    {
+      "n": 13,
+      "anchor": "packages/coding-agent/src/sdk.ts:4111",
+      "instruction": "Replace the hard-coded `anthropicCacheRefresh: true` with the settings read, and add the phase probe `() => (agent.state.isStreaming ? \"streaming\" : \"idle\")`. `agent` is already in scope — `agent.state.tools` is read at :4105, four lines above. Do NOT touch `transformProviderContext` (:3949): it transforms messages and cannot reach stream options, so a scheduler hung off it cannot even be built. Then add the changelog entry — this ships a behaviour change on a live, unconditional feature."
+    },
+    {
+      "n": 14,
+      "anchor": "packages/ai/test/anthropic-cache-refresh.test.ts:335",
+      "instruction": "Write tests (0)-(6) from the test_contract, then REWRITE the case at :335 — it currently locks the exact hole that change (10) fixes, so its expectation must flip to \"tier long DOES warm, and that warm still emits `ttl: \"1h\"`\". Deleting it to get green is not acceptable. Then re-run the whole file and confirm all 7 original cases plus the new ones pass."
+    }
+  ],
+  "code_shape": "// packages/ai/src/types.ts — public surface widening\n\nexport type AnthropicCacheRefreshMode = \"off\" | \"cost-gated\" | \"always\";\n\nexport interface SimpleStreamOptions {\n\t// ...unchanged...\n\t/** Widened from `boolean`. `undefined` keeps its old meaning: off. */\n\tanthropicCacheRefresh?: AnthropicCacheRefreshMode; // was: boolean — :439\n\t/** Probe, NOT a literal: the phase can only be known when the timer fires. */\n\tanthropicCacheRefreshPhase?: () => \"streaming\" | \"idle\";\n}\n\n// packages/ai/src/stream.ts — economics live at the arm site, never inside the scheduler\n\nconst ANTHROPIC_CACHE_REFRESH_LEAD_MS = 15_000; // :1210 — unchanged\nconst ANTHROPIC_CACHE_REFRESH_LIMIT = 3; // :1211 — unchanged\n\n// Phase distinction is load-bearing; do not flatten it.\nconst MAX_WARMING_AGE_MS = 60 * 60_000; // STREAMING only\nconst MAX_IDLE_WARMING_AGE_MS = 30 * 60_000; // IDLE only — shorter; estimates decay with age\nconst CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS_USD = 0.05;\nconst STREAMING_CONTINUATION_PROBABILITY = 1.0;\nconst IDLE_CONTINUATION_PROBABILITY = 0.15; // IDLE only\n\nclass AnthropicCacheRefreshState implements ProviderSessionState {\n\t#controller: AbortController | undefined;\n\t#generation = 0;\n\t#plan: AnthropicCacheRefreshPlan | undefined;\n\t#refreshesRemaining = 0;\n\t#timer: NodeJS.Timeout | undefined;\n\t#decision: WarmDecision | undefined; // new — decided upstream, never priced here\n\t#phase: (() => \"streaming\" | \"idle\") | undefined; // new — probe, not a value\n\n\tarm(\n\t\tplan: AnthropicCacheRefreshPlan,\n\t\tcacheTouchedAtMs: number,\n\t\tdecision: WarmDecision,\n\t\tphase: () => \"streaming\" | \"idle\",\n\t): void {\n\t\tthis.cancel();\n\t\tthis.#plan = plan;\n\t\tthis.#decision = decision;\n\t\tthis.#phase = phase;\n\t\tthis.#refreshesRemaining = ANTHROPIC_CACHE_REFRESH_LIMIT;\n\t\tthis.#schedule(cacheTouchedAtMs, this.#generation);\n\t}\n\n\tasync #refresh(generation: number): Promise<void> {\n\t\t// ...existing generation / refresh-count guards unchanged...\n\t\t// Probe is read HERE, immediately before the decision — reading it in arm()\n\t\t// yields \"streaming\" almost always and kills the 0.15 branch entirely.\n\t\tconst idle = (this.#phase?.() ?? \"streaming\") === \"idle\";\n\t\tif (!this.#decision.warm) return;\n\t\t// ...existing plan.refresh(controller) body unchanged...\n\t}\n\n\tcancel(): void { /* unchanged — already aborts #controller; no W2 needed */ }\n\tclose(): void {\n\t\tthis.cancel();\n\t}\n\t#schedule(cacheTouchedAtMs: number, generation: number): void { /* unchanged shape */ }\n}\n\n// packages/ai/src/stream.ts:1454 — armRefresh is the ONE frame where price inputs exist\n\nconst armRefresh = (message: AssistantMessage): void => {\n\tif (\n\t\tmessage.stopReason === \"error\" ||\n\t\tmessage.stopReason === \"aborted\" ||\n\t\tmessage.usage.cacheRead + message.usage.cacheWrite <= 0 ||\n\t\tcacheTouchedAtMs === undefined ||\n\t\tcapturedPayload === undefined ||\n\t\t!hasShortAnthropicMessageBreakpoint(capturedPayload) // :1322 — fifth arm-time condition\n\t) {\n\t\treturn;\n\t}\n\t// `model` and the full usage breakdown are already in scope at :1454.\n\tconst decision: WarmDecision = decideWarm({\n\t\tmodel,\n\t\tidle: false, // real value substituted at timer fire from the probe\n\t\tageSinceTouchMs: Date.now() - cacheTouchedAtMs,\n\t\tusage: {\n\t\t\tinput: message.usage.input,\n\t\t\toutput: message.usage.output,\n\t\t\tcacheRead: message.usage.cacheRead,\n\t\t\tcacheWrite: message.usage.cacheWrite,\n\t\t},\n\t});\n\trefreshState.arm(\n\t\tcreateAnthropicCacheRefreshPlan(model, context, options, capturedPayload),\n\t\tcacheTouchedAtMs,\n\t\tdecision,\n\t\toptions?.anthropicCacheRefreshPhase ?? (() => \"streaming\"),\n\t);\n};\n\n// packages/coding-agent/src/sdk.ts:4111 — one switch, on the switch that is already live\n\nstreamFn: (streamModel, context, streamOptions) => {\n\t// ...unchanged notify / externalThinking / fallbackCreditRedemption prelude...\n\treturn primaryStreamFn(streamModel, context, {\n\t\t...streamOptions,\n\t\tanthropicCacheRefresh: cfgProvidersPromptCacheRefresh.get(settings), // was: true\n\t\t// `agent` is already in scope here (agent.state.tools is read at :4105).\n\t\tanthropicCacheRefreshPhase: () => (agent.state.isStreaming ? \"streaming\" : \"idle\"),\n\t\t// ...rest unchanged...\n\t});\n},",
+  "test_contract": "The suite defends the money-spending boundary, so its most important assertions are NEGATIVE — proving requests that were NOT sent.\n\n(0) THE ACCEPTANCE GATE. With `anthropicCacheRefresh: \"off\"` passed straight into `SimpleStreamOptions`, assert the REPLAY PAYLOAD IS ABSENT — not merely \"no new refresh\". A toggle measured as \"no new refresh\" does not prove it disabled the thing that was already running; only an absent replay payload does. Fails red if the tri-state is collapsed to a boolean (truthiness on the string `\"off\"` keeps warming), or if `sdk.ts` still hard-codes an unconditional warm. Lives in `packages/ai`; NO `packages/coding-agent` test is created.\n(1) With a declared TTL, warming fires at 90% of TTL with a 10s floor; a TTL ≤ 10s returns `undefined` and warms NOTHING. (This is W7's negative contract, consumed here.)\n(2) A forced flush sends EXACTLY ONE request with output cap 1 token.\n(3) THE MOST IMPORTANT ECONOMIC ASSERTION — negative: with a price table driving expected savings below $0.05, NO request is sent.\n(4) The idle branch, as a PAIR: the same probe returning `\"idle\"` must NOT fire below roughly $0.35 miss cost (`0.15 * missCost - warmCost < 0.05`), and the SAME probe returning `\"streaming\"` must fire at a far lower miss cost. The pair is what proves the probe is actually read at the right place rather than a hard-coded literal.\n(5) Replay guard, negative PLUS its mandatory inverse: an `anthropic-messages` model WITH reasoning and `compat.forceAdaptiveThinking !== true` must NEVER be warmed, and that same model on a NON-reasoning request MUST be warmed — the non-reasoning arm has to survive.\n(6) Changing model stops the pending timer.\n(7) REWRITE, do not delete, the case at test:335 — \"skips keep-alive refreshes and emits 1h breakpoints when retention is long\" currently locks the exact hole change (10) fixes. Its expectation flips to \"tier long DOES warm, and that warm still emits `ttl: \"1h\"`\".\n\nIf (0) regresses, the user is silently billed for keep-alive replays they explicitly disabled. If (3) regresses, they are billed for warming that saves nothing. If (4)'s pair collapses, idle warming either never runs or runs constantly — the first reads as a broken feature, the second as a bug report about money.\n\nAlso verify, unprompted by the plan, that the case at test:359 (OAuth, automatic retention) still passes after the :1431 relaxation.",
+  "test_files": [
+    "packages/ai/test/anthropic-cache-refresh.test.ts"
+  ],
+  "verification": "`bun install && bun run build` first — without the native addon NOTHING below runs. Baseline: `bun test packages/ai/test/anthropic-cache-refresh.test.ts` must show 7 pass before any edit. Then after the work: `bun test packages/ai/test/anthropic-cache-refresh.test.ts` (all original 7 + new cases green) and `bun run check:ts` for types/lint. NEVER `tsc`, NEVER `npx tsc`. Note: `bun run check:ts` currently dies at `check:tools` with `oxlint: command not found` — the linter is not installed in this checkout, so install it or the type gate is a no-op. If `bun run check` is used it also runs `check:rs`, which needs the Rust toolchain.",
+  "gate": "TWO PARTS, because one is not enough.\n\nPART A — `bun test packages/ai/test/anthropic-cache-refresh.test.ts` with test (0): `anthropicCacheRefresh: \"off\"` at the boundary produces an absent replay payload, plus test (3) (no request sent below the $0.05 floor) and test (4)'s idle/streaming pair. Red if the tri-state is not threaded end to end, if the economic gate is absent, or if the phase probe is read at the wrong moment.\n\nPART B — the second-warmer trap, which Part A structurally CANNOT catch: assert `test ! -e packages/coding-agent/src/session/cache-warmer.ts`, and confirm via code review that `streamSimpleWithAnthropicCacheRefresh` remains the only warm path. This is the plan's stated #1 failure mode and it is silent: a new file defaulting to `\"off\"` costs nothing, its own tests pass, and Part A stays green, while `anthropicCacheRefresh: true` at sdk.ts:4111 keeps refreshing unconditionally and nobody touched it. A filesystem-absence assertion is legitimate here precisely because AGENTS.md bans source-grepping implementation files — there is no test-shaped way to ask \"is there a second scheduler\", so the guard is the file check plus review.\n\nDOES NOT COUNT AS THE GATE: \"no new tests failed\", \"the setting is registered\", or any assertion about the toggle's existence rather than about money leaving the account.",
+  "gate_can_fail": true,
+  "gate_can_fail_note": "Part A genuinely goes red on the real failure modes: collapse the tri-state to a boolean at the boundary and the string `\"off\"` is truthy, so warming continues and the absent-payload assertion fails; omit the economic gate and test (3) fails; read the phase at `arm()` instead of at timer fire and test (4)'s pair diverges. Part B fails red if a second warmer is created — the file-absence check is a real, mechanical, falsifiable assertion. Honest caveat, stated because it matters: Part A ALONE would NOT catch the second-warmer mistake, because a brand-new module is not reached by a test that passes `\"off\"` through `SimpleStreamOptions`. That is exactly why the gate is two parts; if an implementer ships only Part A and calls W8 done, the milestone's most expensive failure mode is unguarded.",
+  "depends_on": [
+    "W7 — HARD BLOCK. `promptCacheLifetime` does not exist anywhere in the repo today (`grep -rn promptCacheLifetime packages/catalog/src packages/ai/src` returns nothing). The plan's own note is right that W7's negative contract — an undeclared lifetime means no warming — has no consumer without W8.",
+    "F6 (the economic decision helper) — also blocking, and the plan understates this. `decideWarm` / `WarmDecision` do not exist anywhere in the repo either. The new `arm()` signature threads `WarmDecision` through, so W8 needs F6 to have landed, not just W7.",
+    "Wave 3a's shared gate: a sourced per-provider per-tier TTL table (the plan's open question 0). That gate wraps W7 and W8 together and wraps nothing else.",
+    "NOT dependent on W2. Verified: `AnthropicCacheRefreshState` is already a `ProviderSessionState` with `cancel()`/`close()`, and `cancel()` already calls `this.#controller?.abort()`, so the in-flight cancellation path exists today. W2 remains a prerequisite only for the extension disposer, not for W8."
+  ],
+  "blocks": [],
+  "effort": "M — four changes to code that is already running, not a package port. The bulk of the work is rewriting tests that currently lock the old behaviour, not writing new production code. Budget extra care on the one test that must change expectations rather than just gain a case.",
+  "risk": "Creating a SECOND system instead of gating the existing one. It is the most expensive way to fail here precisely because it is silent: a new file defaulting to `\"off\"` spends nothing, its own tests are green, and the acceptance gate passes — while `anthropicCacheRefresh: true` at sdk.ts:4111 keeps refreshing unconditionally and no one ever touches it. `AnthropicCacheRefreshState` at stream.ts:1218 ALREADY schedules, is ALREADY tested, and is ALREADY switched on; W8's job is to gate it, not to sit beside it.\n\nRunner-up, and the one the plan itself flags: copying pi's constants while LOSING their phase distinction. `IDLE_CONTINUATION_PROBABILITY = 0.15` applies to idle only, while streaming uses `1.0`. Flatten those and idle warming either never fires (feature looks broken on most sessions) or always fires (the opposite bug). The release notes must state the ~$0.35 idle threshold explicitly.\n\nThird: dropping the fourth condition of `supportsAnthropicCacheRefresh`. There are FOUR today, not three — `isLeakedThinkingHealExempt(model)` is the one that is easy to lose while extending the api/provider/transport axis, and losing it silently excludes models from warming on the exact path that costs money.",
+  "open_questions": [
+    "F6 is an unstated hard dependency. The plan names only W7, but the proposed `arm()` signature takes a `WarmDecision` \"là shape ở F6\" and no such type or `decideWarm` exists in the repo. Is F6 scheduled inside milestone 1, or does W8 need to define the decision shape itself? This must be settled before an engineer starts, because it decides whether step 4 can even be typed.",
+    "`pi-ref/` does not exist in this checkout — there is no such directory, so all six constants the plan says to port (`MAX_WARMING_AGE_MS` :16, `MAX_IDLE_WARMING_AGE_MS` :18, `CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS` :20, `IDLE_CONTINUATION_PROBABILITY` :26, `getCacheWarmingDelayMs` :29, `isReplayable` :55-57) and every behavioural claim sourced to `cache-warmer.ts` are UNVERIFIABLE from this repo. Where does that reference package actually live, and should the engineer re-derive the values from Anthropic's published TTL table instead of porting them?",
+    "`\"off\"` as the default is a behaviour BREAK on a feature that is live and free today. Users who benefit from unconditional keep-alive warming lose it with no action on their part. Is a migration note in the changelog enough, or does the first release need a deprecation window where the old default is preserved?",
+    "Test isolation: `isLeakedThinkingHealExempt` (stream.ts:102) reads `$env.ANTHROPIC_BASE_URL` and `$env.FOUNDRY_BASE_URL`, and `resolveCacheRetention` (utils.ts:538) reads `$env.PI_CACHE_RETENTION`. A developer with `PI_CACHE_RETENTION=long` in their shell will get different results from CI, and AGENTS.md forbids file-wide env mutation. The existing suite already has `withOfficialAnthropicEndpoint` in `packages/ai/test/helpers` for the endpoint half — should the new tests route the retention half through a matching helper, or does every new case need an explicit per-test neutralisation?",
+    "Relaxing the retention gate at :1431 so `long` retention also warms changes the economics of the largest-context sessions. Does that interact with W9's cache-miss cost accounting, or is W9 strictly downstream and unaware?",
+    "The plan says no other provider may become warmable, yet also says the KDL fact may speak to the api/provider/transport axis. Confirm the intent: is the correct end state \"anthropic-messages on any provider except pi-native transport\", or \"anthropic provider only, with the axis left ready for later\"? The two produce different KDL shapes and the difference is not recoverable later without a migration."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "`anthropicCacheRefresh: true` lives at packages/coding-agent/src/sdk.ts:4105, with neighbours externalThinking at :4099 and fallbackCreditRedemption at :4102; transformProviderContext at :3943; primaryStreamFn at :4030-4036; the streamFn wrapper at :4086-4110.",
+      "verdict": "STALE — every sdk.ts anchor is off",
+      "correction": "Actual line numbers: `anthropicCacheRefresh: true` at :4111; `externalThinking` at :4104; `fallbackCreditRedemption` at :4108; `transformProviderContext` at :3949; `primaryStreamFn` at :4036; the `streamFn` wrapper at :4092-4117. The plan is off by 4-6 lines throughout, presumably from an edit that predates HEAD.",
+      "evidence": "grep -n over packages/coding-agent/src/sdk.ts at HEAD ecd516f."
+    },
+    {
+      "claim": "The replay guard is `isReplayable` in streamSimpleWithAnthropicCacheRefresh, and HEAD already has it; porting pi's `isReplayable` (pi-ref cache-warmer.ts:55-57) generalizes the existing one.",
+      "verdict": "WRONG IN DETAIL — the function does not exist",
+      "correction": "There is no `isReplayable` anywhere in `packages/ai/src/stream.ts`. HEAD expresses the guard as `isAnthropicThinkingActive` (stream.ts:1348) feeding `anthropicCacheRefreshRequest: !thinkingEnabled` at :1369 together with `maxTokens: thinkingEnabled ? options?.maxTokens : 0`. An engineer searching for `isReplayable` to extend it will find nothing and may conclude the guard is absent — it is present, just shaped differently and named differently. Guard against the generalisation dropping the non-reasoning arm: `isAnthropicThinkingActive` returns false when `payload.thinking.type === \"disabled\"`, and that model-independent arm must survive the per-API split.",
+      "evidence": "`grep -n isReplayable packages/ai/src/stream.ts` → no hits. `sed -n '1348,1371p'` shows isAnthropicThinkingActive and the two derived options."
+    },
+    {
+      "claim": "Test (7) rewrites `anthropic-cache-refresh.test.ts:335`, the one test locking the old retention-long behaviour.",
+      "verdict": "INCOMPLETE — a second test locks the same hole and the plan never mentions it",
+      "correction": "The file has SEVEN `it()` blocks (:237, :257, :279, :297, :318, :335, :359). The one at :359, \"arms no keep-alive refresh for an OAuth request with automatic retention\", locks the same retention behaviour by a different route — OAuth resolves to 1h, so no short breakpoint exists for `hasShortAnthropicMessageBreakpoint` to find. It should stay green after the :1431 relaxation, but it must be re-run deliberately, not assumed. Treating :335 as the only affected test is how a green-looking Wave 3a ships a regression.",
+      "evidence": "`grep -n 'it(' packages/ai/test/anthropic-cache-refresh.test.ts` → 7 blocks (at lines :237, :257, :279, :297, :318, :335, :359); `sed -n '359,386p'` shows the OAuth case. The original grep pattern was tab-indented, which is why a literal tab had to be escaped here."
+    },
+    {
+      "claim": "The arm-time conditions are the four in `supportsAnthropicCacheRefresh` plus the usage bail; the plan's described change set never mentions `hasShortAnthropicMessageBreakpoint`.",
+      "verdict": "INCOMPLETE — a fifth arm-time condition exists",
+      "correction": "`armRefresh` (stream.ts:1454) has a five-way bail, and the fifth is `!hasShortAnthropicMessageBreakpoint(capturedPayload)` at :1461 (the function is at :1322). Any change to the TTL axis or the retention gate must be reasoned against this condition too — it is in fact what keeps the OAuth test at :359 green.",
+      "evidence": "`sed -n '1454,1466p' packages/ai/src/stream.ts`."
+    },
+    {
+      "claim": "W8's only hard prerequisite is W7.",
+      "verdict": "INCOMPLETE — F6 is a second hard prerequisite",
+      "correction": "The proposed `arm()` signature takes `decision: WarmDecision` described as \"là shape ở F6\", but neither `WarmDecision` nor `decideWarm` exists anywhere in the repo. W8 needs F6 landed, exactly as it needs W7. The dependency list should read W7 + F6, and the wave sequencing should confirm F6 lands in 3a or earlier.",
+      "evidence": "`grep -rn 'decideWarm\\|WarmDecision' packages/` → no hits."
+    },
+    {
+      "claim": "Constants ported from `pi-ref/packages/coding-agent/src/core/cache-warmer.ts` at lines :16, :18, :20, :26, :29, :55-57, :252, :380-390, :387-398.",
+      "verdict": "UNVERIFIABLE — the path does not exist",
+      "correction": "There is no `pi-ref/` directory in this checkout. Every value and every behavioural claim sourced to that file is outside the repository and cannot be checked from here. Treat the six constants as UNVERIFIED inputs: re-derive them from Anthropic's published per-tier TTL and pricing documentation, or locate the reference package and cite it. Do not copy them blind.",
+      "evidence": "`ls -d pi-ref` → no such directory."
+    },
+    {
+      "claim": "`cfgProvidersAnthropicSlowMode` is at packages/coding-agent/src/session/settings.ts:860.",
+      "verdict": "STALE by 3 lines",
+      "correction": "It is at :863. The shape to copy is `register({ id, type: \"enum\", values: [...] as const, default: \"off\" as const })`. Note it deliberately carries NO `ui` block — the settings precedent to follow is script-only, so decide explicitly whether `providers.promptCacheRefresh` gets `/settings` UI or stays script-only.",
+      "evidence": "`grep -n cfgProvidersAnthropicSlowMode packages/coding-agent/src/session/settings.ts` → :863; `sed -n '855,870p'`."
+    },
+    {
+      "claim": "`Agent` emits `agent_end` at packages/agent/src/agent.ts:1921 and :1925, and holds `AgentState.isStreaming` at packages/agent/src/types.ts:946.",
+      "verdict": "STALE — both off",
+      "correction": "`agent_end` is emitted at agent.ts:1975 (success) and :1979 (error branch); the `case \"agent_end\":` at :1843 is a different construct. `AgentState.isStreaming` is at types.ts:954. The plan's SUBSTANCE is right and this is the load-bearing part of the phase feature: the probe `() => (agent.state.isStreaming ? \"streaming\" : \"idle\")` is sound, and `agent` is genuinely already in scope in the streamFn closure (agent.state.tools is read at :4105).",
+      "evidence": "`grep -n agent_end packages/agent/src/agent.ts`; `grep -n isStreaming packages/agent/src/types.ts`; `sed -n '4104,4106p' packages/coding-agent/src/sdk.ts`."
+    },
+    {
+      "claim": "Verification is `bun check && bun test packages/ai/test/anthropic-cache-refresh.test.ts`; the environment blocks tests with \"Failed to load pi_natives native addon for darwin-arm64\" and `bun run check:ts` still works.",
+      "verdict": "WRONG — BOTH commands are blocked, and the stated error message is a misleading cascade",
+      "correction": "`bun run check:ts` fails immediately at its first step: `check:tools` runs `oxlint`, which is `command not found` — the linter is not installed in this checkout, so the stated fallback does not work either. `bun test` reports 0 pass / 1 fail / 1 error, and the message is `Cannot find module '@oh-my-pi/pi-catalog/build'` — which looks like a bad import but is NOT one: `@oh-my-pi/pi-catalog/build` resolves through the wildcard export at catalog package.json:72 to `packages/catalog/src/build.ts`, which exists. A direct `bun -e` probe shows the real cause: `packages/natives/native/loader-state.js` throwing because the native addon was never built. So the task brief's claim is right in substance (addon missing) and wrong in the literal error text. The spec must instruct `bun install && bun run build` as step 1, and must not let an engineer \"fix\" a non-broken import.",
+      "evidence": "`bun run check:ts` → `oxlint: command not found`, exit 127. `bun test packages/ai/test/anthropic-cache-refresh.test.ts` → 0 pass, 1 fail, 1 error. `bun -e 'import { buildModel } from \"@oh-my-pi/pi-catalog/build\"'` → loadNative failure at loader-state.js:970. `grep -c build packages/catalog/package.json` shows the `./*` wildcard export at :72."
+    },
+    {
+      "claim": "VERIFIED CORRECT — worth recording so the implementer does not re-derive it: ANTHROPIC_CACHE_TTL_MS at stream.ts:1209; the class at :1218 holding exactly #controller/#generation/#plan/#refreshesRemaining/#timer with no usage history and no price(); arm() at :1237; #schedule private at :1248; supportsAnthropicCacheRefresh at :1292 with FOUR conditions including isLeakedThinkingHealExempt; the retention gate at :1431; the hard-coded cacheRetention: \"short\" at :1370; armRefresh at :1454 and the arm() call at :1465; types.ts:439 as a boolean; and the claim that W2 is not needed because cancel()/close() and #controller?.abort() already exist.",
+      "verdict": "VERIFIED — all correct",
+      "correction": "Every one of these reproduced exactly. The plan's reading of the code here is accurate, including the subtle point that `transformProviderContext` works on messages and cannot host a scheduler, and that `arm()` is called unconditionally on every `done` event, which is why the phase must be a probe read at timer fire rather than a value captured at arm time. Also verified: `anthropicCacheRefresh: true` at sdk.ts is genuinely the only stream-options site that sets it, and its two neighbours really do read config.",
+      "evidence": "grep -n and sed -n over packages/ai/src/stream.ts, packages/ai/src/types.ts and packages/coding-agent/src/sdk.ts at HEAD ecd516f."
+    }
+  ]
+}

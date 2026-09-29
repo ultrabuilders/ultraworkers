@@ -1,0 +1,581 @@
+[
+ {
+  "id": "W1",
+  "title": "Đưa 5 vị trí wire về một hằng số WIRE_NAME",
+  "wave": "1",
+  "one_line": "Add one named constant, WIRE_NAME, whose value is deliberately still the string \"omp\", and point the five third-party contract sites at it so the next rename has one place to change instead of five — and, because four of the five already have golden-literal tests, so that renaming it breaks a test instead of a user's Warp terminal or ACP client.",
+  "user_visible_effect": "none — internal.",
+  "files": [
+   "packages/utils/src/dirs.ts [modify,verified]",
+   "packages/coding-agent/src/dap/session.ts [modify,verified]",
+   "packages/coding-agent/src/blob-broker/uploaders-legacy.ts [modify,verified]",
+   "packages/coding-agent/src/modes/warp-events.ts [modify,verified]",
+   "packages/coding-agent/src/modes/acp/acp-agent.ts [modify,verified]",
+   "packages/coding-agent/src/hindsight/bank.ts [modify,verified]",
+   "packages/utils/test/wire-name.test.ts [create,verified]"
+  ],
+  "n_files": 7,
+  "depends_on": [],
+  "blocks": [
+   "W3",
+   "W7",
+   "W9",
+   "W8b"
+  ],
+  "effort": "S for the source change (six files, one added line in dirs.ts and five one-to-three-line edits), S for the test (one new ~15-line file, zero edits to existing tests). Net roughly 40 lines of diff across 7 paths. The plan's \"~10 lines\" understates it by not counting the new test file, but the plan's instinct that this is the cheapest item in the wave is right. The one thing that could blow it up is the DAP test — gate (6) exists specifically to stop that from happening.",
+  "risk": "Typing the new brand name into WIRE_NAME.",
+  "n_questions": 4,
+  "n_corrections": 8,
+  "gate": "The change is DONE when all of the following hold, and the first one is the one that can fail:\n\n(1) `bun test packages/utils/test/wire-name.test.ts` FAILS if `WIRE_NAME` is not exactly the string \"omp\" — verified by temporarily setting it to \"ultraworkers\" and confirming a red run, then reverting. This is the load-bearing gate: it is the only thing that pins the constant itself, and it is the whole defence against the failure mode the plan calls out first.\n(2) `bun run check:ts` is green.\n(3) All four existing golden test files are byte-identical to HEAD — `git diff packages/coding-agent/test/ packages/catalog/` is EMPTY. If any of them changed, the engineer converted a golden pin into a tautology and the item is not done, regardless of whether tests pass.\n(4) `git diff --stat` lists exactly the six modified source files plus the one new test file, and `packages/catalog/src/wire/codex.ts` is not among them.\n(5) `git grep -n '\"omp\"'` over the four coding-agent source files that had bare literals returns zero hits, while `acp-agent.ts` retains `name: \"oh-my-pi\"` on line 656.\n(6) `packages/coding-agent/src/dap/session.ts` shows no new test file and no new export — the DAP gap was closed transitively, as documented, rather than by adding a harness.",
+  "gate_can_fail": "Yes, and gate (1) is the one that bites. It goes red the moment someone writes `export const WIRE_NAME: string = \"ultraworkers\";` — which is the single most likely mistake here, because the whole point of the constant is to be renamed and the new brand name is the most attractive thing in the repo to type. The four existing goldens are a second, independent net for the same mistake (they compare against literal \"omp\"), and gate (3) catches the subtler failure where an engineer \"helpfully\" rewrites those goldens to compare against the constant, which would make all five sites pass a rename silently. Gate (4) catches scope creep — the plan itself warns that adding a sixth site is the second-most-likely error, and `git grep` over the whole repo finds several more bare \"omp\" wire values (see plan_corrections) that an eager engineer would fold in without deciding. Nothing in this gate is a tautology or a bare not.toThrow(); every clause names a value a third party reads."
+ },
+ {
+  "id": "W2",
+  "title": "Point CANONICAL_PI_SCOPE at the new npm scope and widen PI_SCOPE_ALIASES (must land with the W7 scope rename, not before it)",
+  "wave": "Wave 1 (M5 §6.1) — as written. RECOMMENDED: split into W2a (wave 1, shippable alone) and W2b (ships with or immediately after W7 pass 1).",
+  "one_line": "Add `ultraworkers` to the list of npm scopes the extension loader accepts and repoint the canonical scope string at `@ultraworkers`, so a plugin that imports `@ultraworkers/pi-utils` is served the exact copy of the package already running inside the host instead of a second copy pulled from npm.",
+  "user_visible_effect": "After W2b: an extension declaring `@ultraworkers/pi-*` in peerDependencies loads against the host's in-process copy — same module registry, same tool registry — instead of linking a duplicate (and, for pi-natives, a second copy of the native addon).",
+  "files": [
+   "packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts [modify,verified]",
+   "packages/coding-agent/test/pi-scope-aliases.test.ts [modify,verified]"
+  ],
+  "n_files": 2,
+  "depends_on": [
+   "W1 (soft, cosmetic: keeps the diff free of wire-literal churn; W2's two lines are in a different file from W1's five, so this is ordering hygiene rather than a real dependency)",
+   "For W2b ONLY: W7 pass 1 must have landed, because W7 is what makes the `@ultraworkers` scope actually exist on disk. This is the load-bearing dependency and the plan does not state it correctly."
+  ],
+  "blocks": [
+   "W7 (the plan declares W2 a hard prerequisite of W7; see plan_corrections — the real relationship is that W2 and W7 pass 1 must not be separated by a release, and W2's alias-only half is what genuinely must precede W7)"
+  ],
+  "effort": "S — two string edits in one file, plus two cases appended to an existing test file. The verification work is the bulk of it: `bun test` is blocked in this environment until the native addon is built.",
+  "risk": "The single most likely way to get this wrong is shipping W2b before W7, and it is worse than the plan's own stated risk.",
+  "n_questions": 3,
+  "n_corrections": 6,
+  "gate": "W2a gate (wave 1, runs today): `bun run check:ts` exits 0, and `git grep -n '\"@oh-my-pi\"' -- packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts` still reports line 802. W2a deliberately ships with no new test case, so the greps ARE its gate — they are the only thing that distinguishes a correct W2a from a W2a that accidentally also flipped the canonical scope.\n\nW2b gate (after W7): `cd packages/coding-agent && bun test test/pi-scope-aliases.test.ts` reports 1 pass / 0 fail (requires the native addon), AND `git grep -m1 '\"name\"' -- packages/utils/package.json` prints `@ultraworkers/pi-utils`. Both are required: the first proves the identity contract, the second proves the compiled-binary registry will have the keys the canonicalizer now asks for.\n\nCAN THE GATE GO RED? For W2b, yes, in two independent ways. (1) If the canonical scope were flipped but the alias list lost `@oh-my-pi`, the existing cases at test lines 53 and 55-59 load plugins that import `@oh-my-pi/pi-utils` and `@oh-my-pi/pi-coding-agent`; those imports stop resolving and `result.errors` is non-empty, so line 131 `expect(result.errors).toEqual([])` fails. (2) If W2b landed before W7, `Bun.resolveSync(\"@ultraworkers/pi-utils\")` throws at test-module scope, so the file fails to even evaluate and the run reports 0 pass / 1 fail — a red gate, not a green one. For W2a the gate is weaker by design: with no new test case, the only failure it can catch is the dropped `\"@oh-my-pi\"` alias, and only because the grep is written to look for it.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W3",
+  "title": "W3. Đổi hằng số tên hiển thị và mọi literal trùng lặp",
+  "wave": "Wave 1 — Cô lập hợp đồng, rồi mới đổi lớp hiển thị (plan line 8652)",
+  "one_line": "Đổi tên hiển thị của ứng dụng ở một hằng số duy nhất (APP_NAME) và xoá 9 literal \"omp\" trùng lặp để thông báo desktop, tiêu đề OSC99, tiêu đề setup-wizard và tên file log đều tự suy ra từ đó.",
+  "user_visible_effect": "Ứng dụng tự giới thiệu bằng tên mới thống nhất: tiêu đề thông báo desktop (notify-send/gdbus), tên app trong OSC99 và id thông báo (omp-1 → <tên-mới>-1), tiêu đề khung setup composer, tên file log xoay vòng và file audit log.",
+  "files": [
+   "packages/utils/src/dirs.ts [modify,verified]",
+   "packages/utils/src/logger.ts [modify,verified]",
+   "packages/coding-agent/src/cli/commands/init-xdg.ts [modify,verified]",
+   "packages/tui/src/desktop-notify.ts [modify,verified]",
+   "packages/tui/src/terminal-capabilities.ts [modify,verified]",
+   "packages/tui/src/overlays/composer-shape-preview.ts [modify,verified]",
+   "packages/utils/test/logger-contract.test.ts [modify,verified]",
+   "packages/utils/test/dirs.test.ts [modify,verified]",
+   "packages/tui/test/desktop-notify.test.ts [modify,verified]",
+   "packages/tui/test/composer-shape-preview.test.ts [modify,verified]"
+  ],
+  "n_files": 10,
+  "depends_on": [
+   "W1 — rời literal khỏi các vị trí wire để chúng không bị cuốn vào diff này"
+  ],
+  "blocks": [
+   "W6 — đổi CONFIG_DIR_NAME; W3 phải đặt APP_NAME về trạng thái nhất quán trước khi W6 lật hằng số cấu hình"
+  ],
+  "effort": "S về code (9 dòng nguồn trong 6 file) nhưng trung bình về test — 4 file test hiện có ghim literal \"omp\" và sẽ đỏ nếu không cập nhật cùng commit.",
+  "risk": "APP_NAME không chỉ là tên hiển thị: dirs.ts:360 dựng XDG app root bằng chính hằng số này, nên đổi APP_NAME cũng dời $XDG_{DATA,STATE,CACHE}_HOME/omp (sessions, secret-placeholder.key, autoqa.db, run/daemons).",
+  "n_questions": 4,
+  "n_corrections": 6,
+  "gate": "Cổng 1 (luôn chạy được, kể cả khi addon chưa build): `bun run check:ts` phải exit 0. Nếu còn hằng số shadow trong init-xdg.ts hoặc desktop-notify.ts, hoặc import sai subpath, hoặc tạo chu trình import, bước này đỏ.\n\nCổng 2 (cần `bun --cwd=packages/natives run build` trước): 4 file test ở mục test_files phải xanh, tức 18 assertion ghim literal cũ đã được derive. Cổng này ĐỎ nếu kỹ sư sửa nguồn mà bỏ sót file test — đó chính là lỗi 'đổi tên tới mọi nơi trừ log' mà plan cảnh báo.\n\nCổng 3: `bun run ci:test:smoke` xanh, xác nhận CLI vẫn khởi động và worker spawn được sau khi đổi hằng số.\n\nCổng 4 (thủ công, bắt buộc vì không test tự động nào bắt được): chạy `bun --cwd=packages/natives run build` rồi `PI_CONFIG_DIR=.omp bun packages/coding-agent/src/cli.ts` và xác nhận (a) cấu hình cũ vẫn được đọc từ `~/.omp`, (b) `ls ~/.omp/logs` cho thấy tên file mang tiền tố mới, (c) file log cũ tên cũ vẫn còn nguyên và tự biến mất qua prune-stale.\n\nNếu open_questions[0] được giải quyết theo hướng (b) — tách XDG dir name — thì phải chạy thêm: đặt XDG_DATA_HOME/STATE/CACHE trỏ vào thư mục tạm có sẵn thư mục con tên cũ, chạy lại omp, và xác nhận nó VẪN dùng thư mục cũ.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W4",
+  "title": "Split config-directory resolution into a dual-root read side and a single-root write side, and add ULTRAWORKERS_CONFIG_DIR as an alias that beats PI_CONFIG_DIR",
+  "wave": "Wave 2",
+  "one_line": "Make ~/.omp and ~/.ultraworkers both readable by resolving the config root as an ordered candidate list, while every new write and the install-id's write path go only to the new root, and make the project-level .omp directory and the two Rust env readers exempt.",
+  "user_visible_effect": "A user who upgrades mid-flight never loses their settings, sessions or install identity: an install that only has the old root keeps reading it, an install that has both prefers the new one, an install with neither falls back to the default, and everything newly written lands in the new root.",
+  "files": [
+   "packages/utils/src/dirs.ts [modify,verified]",
+   "packages/coding-agent/src/discovery/helpers.ts [modify,verified]",
+   "crates/pi-natives/src/crash_handler.rs [modify,verified]",
+   "crates/pi-natives/src/oauth_callback/darwin.rs [modify,verified]",
+   "packages/utils/test/config-dir-dual-root.test.ts [create,verified]",
+   "packages/utils/test/install-id-legacy-read.test.ts [create,verified]",
+   "packages/utils/test/config-dir-write-root.test.ts [create,verified]",
+   "docs/environment-variables.md [modify,verified]"
+  ],
+  "n_files": 8,
+  "depends_on": [
+   "W3 (must land first so the new APP_NAME value exists; W4 writes that name, and without W3 there is no name to write — the plan is explicit that W4 depends on W3 for this reason)",
+   "M2 (merged, so the legacy-pi-compat table is frozen; M5 and M2 both touch it)"
+  ],
+  "blocks": [
+   "W5 (config migrate moves ~/.omp to ~/.ultraworkers and $XDG_*/omp to $XDG_*/ultraworkers; it needs the dual-root read to know both roots exist and needs the separated write root to place files)",
+   "W6 (flipping CONFIG_DIR_NAME is meaningless without a read side that still finds the legacy root — the whole point of the hard gate is that W6 changes only where NEW writes land)",
+   "W6a (the project-root pin lands here, early, because W4 is what makes the home-side name diverge)"
+  ],
+  "effort": "M. The candidate list itself is small — roughly 40 lines across one module. What makes it M rather than S is that three separate mechanisms each have their own way of failing quietly: splitting install-id read from write while keeping UUID validation and the O_EXCL create race intact; adding a cache to an accessor that the module already freezes in four different places; and keeping the project-level and Rust paths off the home-side name. The plan calls this M and that rating holds.",
+  "risk": "The dominant risk is a failure that produces no error, no warning, and no failing test at the moment it ships.",
+  "n_questions": 4,
+  "n_corrections": 6,
+  "gate": "Run from the repo root.\n\n  bun run check:ts\n  cd packages/utils && bun test ./test/config-dir-dual-root.test.ts ./test/install-id-legacy-read.test.ts ./test/config-dir-write-root.test.ts\n  cd ../.. && bun test ./packages/utils/test/install-id.test.ts ./packages/utils/test/profiles.test.ts ./packages/utils/test/dirs-python-gateway.test.ts ./packages/coding-agent/test/discovery/pi-config-dir.test.ts\n\nThe leading './' on each path is required: without it Bun treats the argument as a name filter rather than a path, and the missing-file case still exits 1 but the real-file case reports '0 tests' in a way that is easy to misread as green.\n\nRED-BEFORE-GREEN is mandatory for contract (2). Before the getInstallId() change, planting a UUID at the legacy install-id path and resolving with the new root empty returns a DIFFERENT freshly minted UUID, and the assertion that the planted value comes back fails. That is a true red, not a missing-file error, and it is the only proof that the change is doing anything.\n\nNEGATIVE CONTROL, so a vacuous green is impossible: before trusting the suite, confirm each new file reports a non-zero pass count. A file that loads and reports '0 pass' has asserted nothing. The missing-file control above (exit 1) plus a deliberate temporary break in getConfigWriteRootName() (return the legacy name, expect contract 3 and contract 4 to go red) together establish that these tests can actually fail.\n\nREGRESSION NET: packages/utils/test/install-id.test.ts must pass UNCHANGED — it pins the current single-root install-id behaviour, so it is what proves the resolver rewiring did not disturb an unrelated contract.\n\nCROSS-PACKAGE, NO NEW AUTOMATED GATE: `bun test ./packages/coding-agent/test/discovery/pi-config-dir.test.ts` covers the helpers.ts rewiring on the TypeScript side. The two Rust files have no test harness in this milestone — `bun run check:rs` type-checks them, and the darwin.rs path in particular is macOS-only, so a reviewer must read those two hunks rather than rely on a run. Say so in the PR rather than implying a green run covered them.",
+  "gate_can_fail": "Yes, in five ways that were each verified against the real tree rather than assumed.\n\n(a) Mint instead of read. If getInstallId() falls through to generating a new UUID when only the legacy path is readable, contract (2) goes red. Verified that this is a TRUE red rather than an environment problem: the probe above shows the read accessor is live, so a planted legacy file really is found by the test. This is the single failure that silently costs money — a new UUID is indistinguishable from a correct one at every call site, and the only symptom is a cost table restarting.\n\n(b) Do not clear the cache. If refreshDirsFromEnv() (:484), setAgentDir() (:502) and setProfile() (:541) do not call the new reset, the eight test files that assign process.env.PI_CONFIG_DIR at runtime read a frozen root and go red. Verified list in step 6. This is the failure mode that would make the change look correct in a fresh single-test run and break the wider suite — precisely why the third gate command includes packages/utils/test/profiles.test.ts and packages/coding-agent/test/discovery/pi-config-dir.test.ts.\n\n(c) Leave the project path on the home accessor. If helpers.ts:1032/:1034/:1049/:1079 still call getConfigDirName(), every project with a committed .omp stops resolving its installed_plugins.json the moment the new root wins. Note the failure is deferred: at W4 the new root is never created, so this passes today and breaks at W5/W6. The negative control in the gate (deliberately flipping getConfigWriteRootName to the legacy name) is what surfaces it inside W4 rather than three items later.\n\n(d) Share one candidate list between the home and XDG spellings. The home root is dot-prefixed, the XDG appRoot is not (dirs.ts:360 joins APP_NAME). One shared list is wrong for exactly one of the two, and the wrong one is invisible on a machine without XDG_*_HOME set — which is most CI.\n\n(e) Extend the alias to TypeScript only. The crash-log directory (crash_handler.rs:269) and the macOS OAuth recovery path (darwin.rs:441) would keep honouring PI_CONFIG_DIR alone, so a user who sets only ULTRAWORKERS_CONFIG_DIR gets a coherent config root and an incoherent crash-log directory. No test in the repo catches this; only reading the two hunks does.\n\nSeparately: the brief's claim that `bun test` is blocked on this machine is FALSE and must not be propagated. It reports 5 pass / 0 fail for install-id.test.ts and 2 pass / 0 fail for dirs-python-gateway.test.ts; the 17 failures in the full packages/utils run are the pi_natives addon and are confined to logger-contract.test.ts and procmgr.test.ts. `bun run check:ts` exits 0. The real limitation is that `bun --cwd=packages/natives run build` fails without ninja, which only matters if a change here needs the native addon rebuilt — and none of the four files W4 touches do."
+ },
+ {
+  "id": "W5",
+  "title": "Ship `config migrate` — idempotent, dry-run by default",
+  "wave": "Wave 2",
+  "one_line": "Add a `migrate` subcommand to the existing `config` command that moves the user config roots from the old name to the new one (`~/.omp` → `~/.ultraworkers` and `$XDG_{DATA,STATE,CACHE}_HOME/omp` → `$XDG_*_HOME/ultraworkers`), preserving `install-id`, dry-run by default with an explicit `--apply`, and safe to run twice (second run reports 0 moves and exits 0).",
+  "user_visible_effect": "`omp config migrate` prints the exact list of directories it would move and exits without touching anything.",
+  "files": [
+   "packages/utils/src/config-migrate.ts [create,verified]",
+   "packages/utils/src/index.ts [modify,verified]",
+   "packages/utils/src/fs-move.ts [create,verified]",
+   "packages/coding-agent/src/cli/config-cli.ts [modify,verified]",
+   "packages/coding-agent/src/commands/config.ts [modify,verified]",
+   "packages/coding-agent/src/cli/commands/config-migrate.ts [create,verified]",
+   "packages/utils/test/config-migrate.test.ts [create,verified]",
+   "packages/coding-agent/test/config-migrate-cli.test.ts [create,verified]"
+  ],
+  "n_files": 8,
+  "depends_on": [
+   "W4 — HARD GATE. The ordered read-candidate list (`getConfigDirCandidates`) and the separate write root (`getConfigWriteRoot`). Verified absent on HEAD: `git grep -n 'getConfigWriteRoot\\|getConfigDirCandidates' -- packages/utils/src/dirs.ts` returns nothing. Without W4, `~/.omp` stops resolving the moment W6 flips, and this command is the only path back.",
+   "W3 — supplies the new name (the new `APP_NAME` value) that `MigrationOptions.newName` is set from. The XDG candidate join mirrors dirs.ts:360, which is already APP_NAME-driven.",
+   "M2 frozen (the milestone-wide baseline), per the plan's own dependency note."
+  ],
+  "blocks": [
+   "W6 — HARD GATE, the stated purpose. W6 flips `CONFIG_DIR_NAME` at dirs.ts:27; the plan requires W5 to have shipped AND been used in a real release first, and W6 itself must not land before that. W5 is the user's manual path back from a bad flip.",
+   "M5 definition-of-done: a rename whose on-disk state can survive the flip is not shippable without a tested, idempotent, dry-run-by-default migration command."
+  ],
+  "effort": "M, as the plan says, but the distribution is different from what it implies. The plan reads as \"two files, four edit sites\"; the real shape is three new files, four modified, twelve edit sites, and a reusable-move promotion in a fifth. The move logic itself is genuinely easy (a rename with an EXDEV fallback). The two things that are not easy, exactly as the plan says, are the conflict/idempotency rule and the named-profile case. Budget for the `movePath` promotion into `gc-cli.ts` — it is a cross-file refactor of a file this work item does not otherwise touch, and it is the single most likely source of an unrelated regression in this commit.",
+  "risk": "Ranked by how badly it fails.",
+  "n_questions": 5,
+  "n_corrections": 10,
+  "gate": "Two commands, both of which were measured on this machine before being proposed.\n\n(1) `bun run check:ts` — exit 0 on a clean tree, verified twice, roughly 40s wall. This is the only automated signal for the eight `config-cli.ts` and four `config.ts` edit sites, and it is a weak one: a forgotten site produces no type error at all, because widening `ConfigAction` leaves `VALID_ACTIONS` and `ACTIONS` typechecking as subsets, and a `switch` over a union has no exhaustiveness check here (no `noImplicitReturns` in the tsconfig, no exhaustiveness rule in `.oxlintrc.json`). The count is a REVIEW obligation, not a tool obligation. Say so in the PR description rather than implying the typecheck caught it.\n\n(2) `bun test packages/utils/test/config-migrate.test.ts` — this is the real gate, and it was chosen specifically because it is the only surface on this machine where the four properties under test can actually be falsified. It is red before the work starts and green only when the work is correct:\n  - today, with no such file, the command exits **1** (verified: `bun test <missing-path>` → `EXIT=1`, \"Tests need \\\".test\\\"… in the filename\");\n  - `bun test packages/utils/test/install-id.test.ts` in the SAME package exits **0** with 5 pass / 0 fail (verified), because it imports the `@oh-my-pi/pi-utils/dirs` subpath, which has no `@oh-my-pi/pi-natives` in its graph.\n  So a green here means the test ran and passed. It cannot mean \"could not run\".\n\nWhat is explicitly NOT the gate: `cd packages/coding-agent && bun test test/config-migrate.test.ts`, the command the plan gives. On this machine it exits **1** (verified: 0 pass / 1 fail / 1 error, `Cannot find module .../packages/natives/native/pi_natives.darwin-arm64.node`) whether or not the feature is implemented, because every `packages/coding-agent` test transitively loads `@oh-my-pi/pi-natives`. Gating on it would mean a permanently red gate whose redness carries no information about the work — the failure mode the brief warns about. The plan's gate has to be rewritten, not merely run.",
+  "gate_can_fail": "Yes, and specifically in the direction that matters — it can distinguish \"the engineer did the work\" from \"the test could not run\".\n\nThe primary test gate is falsifiable in five distinct ways, each verified against the real tree rather than assumed:\n(a) Implement nothing, create nothing. `bun test packages/utils/test/config-migrate.test.ts` exits 1 because the file does not exist. RED.\n(b) Write the test but leave the engine's decision rule at two states (merge when both roots exist). Case 4 goes red on the marker-file assertion. RED.\n(c) Write the test but make `planConfigMigration` write as it reads. Case 1 goes red on the still-exists assertions. RED.\n(d) Make the executor run twice unconditionally. Case 3 goes red on the `moves.length === 0` assertion and on the byte-identical check. RED.\n(e) Regenerate `install-id` during the move. Case 5 goes red on the value-equality assertion. RED.\n\nAnd the negative control — the property that makes the gate trustworthy — was also verified: `bun test packages/utils/test/install-id.test.ts` exits 0 in that same package on this same machine, with no work done at all. So a green in `packages/utils` is evidence of a real pass, not of a skipped suite.\n\nThe coding-agent CLI gate CANNOT fail meaningfully here, and this is stated rather than hidden: it exits 1 on a clean tree because the native addon is missing. It becomes meaningful only after `brew install ninja && bun --cwd=packages/natives run build`, and even then it is the secondary signal. Do not let it be quoted as acceptance in a PR on this machine."
+ },
+ {
+  "id": "W6",
+  "title": "Flip CONFIG_DIR_NAME to .ultraworkers, with the mandatory W6a project-root pin",
+  "wave": "2",
+  "one_line": "Point new writes at ~/.ultraworkers while every project directory named .omp keeps being read, by splitting the project-level directory name into its own constant that is deliberately never renamed.",
+  "user_visible_effect": "New config, sessions and settings are written under ~/.ultraworkers instead of ~/.omp.",
+  "files": [
+   "packages/utils/src/dirs.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/omfg-controller.ts [modify,verified]",
+   "packages/coding-agent/src/discovery/helpers.ts [modify,verified]",
+   "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts [modify,verified]",
+   "scripts/rename/do_not_rename.tsv [create,UNVERIFIED]",
+   "packages/utils/test/project-dir-name-pinned.test.ts [create,verified]"
+  ],
+  "n_files": 6,
+  "depends_on": [
+   "W3 (gives APP_NAME its new value, which the XDG candidate join at dirs.ts:360 depends on)",
+   "W4 (HARD GATE — the ordered read-candidate list and the separate write root; this is what makes the flip survivable)",
+   "W5 (HARD GATE — `config migrate`, the user's manual path back)"
+  ],
+  "blocks": [
+   "W13 (documentation — the plan requires it to run after W6 so no doc is written while both ~/.omp and ~/.ultraworkers exist)",
+   "M5 definition-of-done: the 'on-disk identity shipped' condition cannot be true until this flips"
+  ],
+  "effort": "S for the main flip, S for W6a option (b) as specified here — but larger than the plan's claim of a single line. Real count: 1 line flipped in dirs.ts, 1 new constant, 3 call sites repointed (only 1 of which the plan names), 1 existing test's value pin relaxed, 1 new test, 1 do_not_rename row. Option (a) from the plan (dual-read at the project level) remains M and should not be chosen without a decision.",
+  "risk": "The single most likely way to get this wrong is treating W6a as a one-line change at dirs.ts:590 because that is what the plan says, and leaving omfg-controller.ts:285 and discovery/helpers.ts:47 reading CONFIG_DIR_NAME.",
+  "n_questions": 3,
+  "n_corrections": 6,
+  "gate": "All of the following, and they are genuinely falsifiable: (1) `bun run check:ts` is green. (2) The three new/updated utils tests pass. (3) packages/coding-agent/test/modes/controllers/omfg-controller.test.ts passes UNCHANGED — it asserts the literal paths <projectDir>/.omp/rules at lines 178,198,202,215,220 and the option label \"This project (.omp/rules)\" at line 15; if omfg-controller.ts:285 still read CONFIG_DIR_NAME after the flip, every one of those assertions fails. (4) packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts passes with the value pin replaced by the binding assertion. (5) `git grep -n 'CONFIG_DIR_NAME' -- 'packages/**/*.ts'` returns no project-root join: every remaining hit must be a HOME-root use, a comparison against the constant itself, or a re-export.",
+  "gate_can_fail": "Yes, and in four distinct ways that were each verified against the real tree rather than assumed. (a) Forget dirs.ts:590 — getProjectAgentDir() returns a path nobody has data in, and dozens of existing project-scoped tests across packages/coding-agent/test go red. (b) Forget omfg-controller.ts:285 — omfg-controller.test.ts goes red on its literal .omp/rules path assertions, which is the only automated signal that this site exists. (c) Forget discovery/helpers.ts:47 — extensions-discovery.test.ts and advisor-toggle.test.ts go red. (d) Do nothing about the test in W6a at all — the flip is still caught by (a)-(c), but the new test is what makes the pin a stated decision rather than an accident nobody consciously made, and it is the only assertion that the two constants must stay DIVERGED. Separately verified: the harness note that `bun test` is blocked by a missing native addon is FALSE on this machine — `bun test packages/utils/test/dirs.test.ts` reports 6 pass / 0 fail and dirs-python-gateway.test.ts reports 2 pass / 0 fail, so the real test run is available as a gate."
+ },
+ {
+  "id": "W6a",
+  "title": "Pin the project-level .omp directory to its own constant, never renamed",
+  "wave": "Wave 2",
+  "one_line": "Split the project-root directory name out of CONFIG_DIR_NAME into a deliberately-never-renamed PROJECT_DIR_NAME, and repoint every project-level call site at it, so that flipping the home config root in W6 cannot silently stop a user's committed .omp/ directory from being read.",
+  "user_visible_effect": "Nothing changes on screen during M5, and that is the point: every project that has a .omp directory — including this repository's own, which holds 14 git-tracked files under .omp/commands, .omp/skills and .omp/tools — keeps resolving to that exact directory after the home config root moves to ~/.ultraworkers.",
+  "files": [
+   "packages/utils/src/dirs.ts [modify,verified]",
+   "packages/coding-agent/src/discovery/helpers.ts [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/omfg-controller.ts [modify,verified]",
+   "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts [modify,verified]",
+   "packages/utils/test/project-dir-name-pinned.test.ts [create,verified]",
+   "packages/coding-agent/src/cli/help-extra.ts [verify-only,verified]",
+   "packages/coding-agent/src/config.ts [verify-only,verified]"
+  ],
+  "n_files": 7,
+  "depends_on": [
+   "W3 — APP_NAME must already carry its new value; the XDG candidate join at dirs.ts:360 derives the second root from it, and W6a must not be the commit that changes it",
+   "W4 — HARD GATE. The ordered read-candidate list and the separate getConfigWriteRoot() are what make the W6 flip survivable. W6a is what stops the flip from reaching past the home root and into the user's repo. Without W4 there is no reason to split the constant.",
+   "W5 — HARD GATE. `config migrate` is the user's manual path back. W6a deliberately does NOT extend it to the project root (option b), so W5 must ship with its scope clearly limited to the two home roots, or the two will disagree about what 'migrated' means."
+  ],
+  "blocks": [
+   "W6 — this is a mandatory sub-task of W6, not an optional companion. W6 must not be merged without it; the spec is written to land first or in the same commit.",
+   "W7 — the do_not_rename row created in step 8 is part of the exclusion list W7's 4107-file sed loads",
+   "M5 definition-of-done — the 'on-disk identity shipped' condition is not true until the project root is provably still read",
+   "W13 — documentation runs after W6, so every doc written there can state one project-directory name rather than two"
+  ],
+  "effort": "S by the plan's grading, but larger than the plan's own description of 'a separate constant, one do_not_rename line, one test case'. Real count, all verified: 1 new constant, 4 call sites repointed (only 1 of which the plan names — dirs.ts:590, discovery/helpers.ts:47, omfg-controller.ts:285, plus the config.ts:12 decision), 1 test file created, 1 line of an existing test relaxed, 1 do_not_rename row. The gap between 'S' and what S actually contains here is the two unnamed call sites. Option (a) from the plan — dual-read at the project level — remains M and is NOT recommended; it would force `config migrate` to touch a directory that is committed to the user's git history, which is the one thing this milestone is chartered not to do.",
+  "risk": "The single most likely failure is believing the plan's framing that W6a is one line at dirs.ts:590, and leaving discovery/helpers.ts:47 and omfg-controller.ts:285 reading CONFIG_DIR_NAME.",
+  "n_questions": 4,
+  "n_corrections": 4,
+  "gate": "All seven clauses, each independently falsifiable:\n\n(1) `bun run check:ts` exits 0.\n\n(2) The new test passes: `cd packages/utils && bun test test/project-dir-name-pinned.test.ts` — 4 assertions (value, divergence, resolution-under-adversary, five project getters).\n\n(3) NEGATION PROOF for clause 2, run explicitly, not assumed: set PROJECT_DIR_NAME = CONFIG_DIR_NAME, re-run, and confirm the divergence assertion goes RED. This is the only clause that catches a future well-meaning 'cleanup' that re-merges the two constants — and it is the clause that does not exist anywhere in the current suite.\n\n(4) `grep -n CONFIG_DIR_NAME packages/utils/src/dirs.ts` returns EXACTLY 2 hits (27 declaration, 298 home-root read). Three hits means step 3 was skipped. This is a grep over a data value, not a source-grep test — it is a review checklist item, not an automated test, and the spec says so.\n\n(5) `git grep -n CONFIG_DIR_NAME -- 'packages/**/*.ts'` — every remaining hit must be one of exactly three kinds: a HOME-root use (help-extra.ts:66; config.ts user-base logic), a comparison against the constant itself (config.ts:135), or a re-export (legacy-pi-coding-agent-shim.ts:1592). A project-root join surviving here is a bug. Note: this clause is a REVIEW check, not an automated test — the plan itself flags this class of grep as a human checklist, and pretending otherwise would be the same 'looks green, is broken' trap this spec exists to avoid.\n\n(6) The two coding-agent negative-control suites are UNCHANGED and (in an addon-built environment) green: omfg-controller.test.ts and extensions-discovery.test.ts. On this machine they cannot run; that is stated, not hidden.\n\n(7) `scripts/rename/keep-list.txt` exists, is committed, and its project-`.omp` entry carries a non-empty `#` reason.",
+  "gate_can_fail": "Yes, in five ways, each traced to a specific missed edit rather than to a hypothetical. (a) Skip step 3 (leave CONFIG_DIR_NAME at dirs.ts:590): getProjectAgentDir() returns a path the user has no data in, the new test's resolution assertion goes red, and — the real proof — omfg-controller.test.ts, agent-session-rules-reload.test.ts, extensions-discovery.test.ts and advisor-toggle.test.ts all go red on their hard-coded .omp paths. Verified those literals exist at omfg-controller.test.ts:15,178,198 and agent-session-rules-reload.test.ts:89,156. (b) Skip step 4a (leave discovery/helpers.ts:47 reading CONFIG_DIR_NAME): extensions-discovery.test.ts goes red at lines 23,747,767,792. (c) Skip step 4b (leave omfg-controller.ts:285): omfg-controller.test.ts goes red — this is the ONLY automated signal that this site exists, since nothing else in the repo asserts on the project-scope rules write path. (d) Do nothing about the new test at all: clauses (a)-(c) still catch the flip, but the DIVERGENCE assertion is then absent, and that is the one failure mode none of the pre-existing tests can catch — a future refactor that quietly sets PROJECT_DIR_NAME = CONFIG_DIR_NAME passes every existing suite in this repository. (e) Leave the literal pin at legacy-pi-cli-exports.test.ts:14: that test goes red at W6 for a legitimate reason nobody can explain, which is a survivable migration turned into a mystery.\n\nVERIFIED, and contrary to the brief I was given: the harness note that 'bun test is blocked, everything reports 0 pass / 1 fail / 1 error' is FALSE as a general statement. It is true for packages/coding-agent/test/ and false for packages/utils/test/. Measured directly: `bun test packages/utils/test/dirs.test.ts` -> 6 pass, 0 fail; `bun test packages/utils/test/install-id.test.ts` -> 5 pass, 0 fail; `bun test packages/coding-agent/test/config/settings-reload.test.ts` -> 0 pass, 1 fail, 1 error with 'Failed to load pi_natives native addon for darwin-arm64'. I looked for why: `packages/utils/src/dirs.ts` imports only `node:fs`, `node:os`, `node:path` and its own `../package.json` — it has no path to the native addon, so utils tests are unaffected. Consequence for this spec: the new test is placed in packages/utils/test/ specifically so the gate has a runnable red/green signal on this machine."
+ },
+ {
+  "id": "W7",
+  "title": "Đổi npm scope: 4107 file, 16 manifest, 12 mục gốc",
+  "wave": "Wave 3",
+  "one_line": "Đổi tiền tố npm scope `@oh-my-pi/` → `@ultraworkers/` trên 4118 file / 17212 lượt (không phải 4107/17169), giữ nguyên cả 16 basename, tái sinh `bun.lock` bằng `bun install`, và không đụng 13 file changelog (N11) hay 5 tài liệu kế hoạch.",
+  "user_visible_effect": "Sau W7, mọi import nội bộ trong repo trỏ tới `@ultraworkers/*`.",
+  "files": [
+   "packages/agent/package.json, packages/ai/package.json, packages/browser-relay/package.json, packages/catalog/package.json, packages/coding-agent/package.json, packages/collab-web/package.json, packages/metaharness/package.json, packages/mnemopi/package.json, packages/natives/package.json, packages/omptype/package.json, packages/snapcompact/package.json, packages/stats/package.json, packages/tui/package.json, packages/typescript-edit-benchmark/package.json, packages/utils/package.json, packages/wire/package.json [modify,verified]",
+   "package.json [modify,verified]",
+   "bun.lock [modify,verified]",
+   "packages/natives/native/loader-state.js [modify,verified]",
+   ".github/workflows/ci.yml [modify,verified]",
+   "scripts/install.sh, scripts/install.ps1, scripts/install-tests/run-ci.sh, scripts/install-tests/tarball.dockerfile [modify,verified]",
+   "nix/bun.nix [modify,verified]",
+   "packages/coding-agent/test/fixtures/before-compaction.jsonl, packages/coding-agent/test/fixtures/large-session.jsonl [modify,verified]",
+   ".omp/skills/tool-prompt-optimization/SKILL.md, .omp/skills/tool-prompt-optimization/scripts/probe.ts, .omp/skills/tool-prompt-optimization/scripts/probe-builtin.ts [modify,verified]",
+   "(4100 file còn lại trong tập in-scope) [modify,verified]",
+   "packages/coding-agent/test/npm-scope-resolution.test.ts [create,UNVERIFIED]",
+   "scripts/rename/keep-list.txt [create,verified]"
+  ],
+  "n_files": 12,
+  "depends_on": [
+   "W2 (CỨNG) — CANONICAL_PI_SCOPE / PI_SCOPE_ALIASES phải đã đặt xuống. Hai chuỗi scope mà pass của W7 không chạm tới chính là cơ chế tương thích. Chạy W7 trước W2 phá canonicaliser extension một cách im lặng.",
+   "W1 — để vị trí wire đã chạy bằng hằng số và không bị cuốn vào pass.",
+   "scripts/rename/keep-list.txt tồn tại trên main, đã được một người duyệt khác người viết (chưa có ở HEAD 84cbac9 — thư mục scripts/rename/ chưa tồn tại).",
+   "Cổng ngoài repo G3 của plan §8: scope `@ultraworkers` đã tồn tại và được sở hữu."
+  ],
+  "blocks": [
+   "W8a — 15/16 file dạng trần; Gate C của W7 bàn giao một danh sách baseline sạch cho nó.",
+   "W8b — 585 file token `omp`; bảng disposition.tsv cần biết chính xác tập nào đã đổi scope.",
+   "W9 — đổi tên binary; phụ thuộc bin khai báo trong manifest đã đổi scope.",
+   "W12 — release stub; phụ thuộc tên package trong lockfile.",
+   "M5 DoD cuối — dòng DoD về zero-hit `@oh-my-pi/` chỉ đóng được sau khi mọi wave scope chạy xong."
+  ],
+  "effort": "S theo thao tác gõ (một lệnh `perl -pi` trên 4118 file), M theo kiểm chứng. Phần công việc thật KHÔNG phải là lệnh sửa — nó là chụp baseline, dựng danh sách in-scope, đếm trước, chạy thử không ghi, và chứng minh 5 cổng. Nếu bỏ qua phần đếm và chạy thử, đây là việc không thể hoàn tác khi sai.",
+  "risk": "Sai lầm 1 — CHẠY TRƯỚC W2.",
+  "n_questions": 4,
+  "n_corrections": 10,
+  "gate": "CHẠY THEO ĐÚNG THỨ TỰ. Dừng ngay khi cổng đầu tiên đỏ.\n\n── GATE 0 — ĐIỀU KIỆN MỞ (đỏ được) ──\n  test -f scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list.txt missing — W7 is BLOCKED'; exit 1; }\n  git grep -q 'CANONICAL_PI_SCOPE' packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts || { echo 'GATE 0 FAIL: W2 not landed'; exit 1; }\n  Phân biệt được: không có keep-list là BLOCKED, không phải 'chưa xong'.\n\n── GATE A — RESIDUE TRONG TẬP IN-SCOPE (đỏ được) ──\n  test \"$(xargs -a /tmp/w7-inscope-files.txt grep -c -F '@oh-my-pi/' 2>/dev/null | wc -l)\" -eq 0 || { echo 'GATE A FAIL: leftover scope in in-scope set'; exit 1; }\n  Phân biệt được: đỏ ⇒ pass chưa phủ hết tập, HOẶC danh sách in-scope đã cũ. Cả hai đều là lỗi thật.\n\n── GATE B — N11 CHANGELOG KHÔNG BỊ ĐỤNG (đỏ được, chống tự lừa) ──\n  git grep -c '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' > /tmp/w7-changelog-after.txt\n  diff /tmp/w7-changelog-baseline.txt /tmp/w7-changelog-after.txt || { echo 'GATE B FAIL: CHANGELOG was rewritten — released sections are immutable'; exit 1; }\n  Baseline PHẢI là 13 file / 85 lượt. Đây là cổng quan trọng nhất của W7: Gate A KHÔNG bắt được chuyện sed đã quét changelog (changelog bị viết sạch thì Gate A vẫn xanh vì changelog vốn đã nằm ngoài tập in-scope — nhưng nếu ai đó lỡ xoá exclusion thì Gate A im lặng và Gate B đỏ). Hai cổng soi hai lỗi khác nhau.\n\n── GATE C — CROSS-CHECK DẠNG TRẦN (đỏ được) ──\n  git grep -lE '\"oh-my-pi\"' -- . > /tmp/w7-bare-after.txt\n  diff /tmp/w7-bare-baseline.txt /tmp/w7-bare-after.txt || { echo 'GATE C FAIL: bare form drifted — W7 must not touch it (W8 owns it)'; exit 1; }\n  Baseline PHẢI là 16 file. Grep sạch trên dạng có `/` KHÔNG chứng minh gì về dạng trần — đây là cổng bù cho đúng cái lỗ đó.\n\n── GATE D — TYPECHECK + BANNER (đỏ được) ──\n  bun run check:ts                                                   # phải exit 0\n  bun run check:ts 2>&1 | grep -q '@ultraworkers/.*check:types'    # phải có\n  ! bun run check:ts 2>&1 | grep -q '@oh-my-pi/.*check:types'       # phải không có\n  Cổng này phân biệt 'scope đã đổi thật' (banner đổi) với 'check pass vì node_modules cũ vẫn còn' (banner không đổi).\n\n── GATE E — BỘ TEST TS: NOT RUN, ENVIRONMENT BLOCKED ──\n  Không chạy được ở máy này. Ghi vào commit message đúng ba chữ:\n      test:ts = NOT RUN — environment blocked (pi_natives native addon not built)\n  Gỡ chặn: brew install ninja && bun --cwd=packages/natives run build && bun run test:ts\n  TUYỆT ĐỐI không ghi 'pass' cho cổng này khi nó chưa chạy. Nếu CI có runner đã build native addon thì chạy `bun run test:ts` ở đó và dán kết quả vào PR.\n\n── GATE F — BỔ SUNG (khuyến nghị, chạy được) ──\n  node -e 'const fs=require(\"fs\");for(const d of fs.readdirSync(\"node_modules/@ultraworkers\")){const p=fs.realpathSync(\"node_modules/@ultraworkers/\"+d);if(!p.includes(\"/packages/\")){console.log(\"NOT WORKSPACE:\",d,p)}}' | grep . && { echo 'GATE F FAIL: registry copy instead of workspace link'; exit 1; }\n  Cổng cài sạch rẻ: bắt được lỗi mà typecheck không bắt.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W8a",
+  "title": "Quyết định từng file cho literal dạng trần \"oh-my-pi\" (15 file / 23 lượt) — 14 giữ, 1 file đổi (2 dòng), 7 file test giữ nguyên làm pin",
+  "wave": "Wave 3",
+  "one_line": "Mỗi literal dạng trần \"oh-my-pi\" nằm ngoài tầm với của sed scope của W7, nên W8a là 15 quyết định riêng chứ không phải một mẫu; kết quả là 7 giá trị wire giữ nguyên (3 cái phải thêm mới vào keep-list), đúng 1 file đổi tên hiển thị, và 7 file test không sửa dòng nào.",
+  "user_visible_effect": "Lệnh `omp gallery` in ra tên dự án `ultraworkers` thay vì `oh-my-pi` trong dòng trạng thái và trong ảnh chụp màn hình mà lệnh đó tạo.",
+  "files": [
+   "packages/coding-agent/src/cli/gallery-fixtures/segments.ts [modify,verified]",
+   "scripts/rename/keep-list.txt [modify,verified]",
+   "packages/coding-agent/test/otel-service-name-probe.ts [create,verified]",
+   "packages/coding-agent/test/telemetry-export.test.ts [modify,verified]"
+  ],
+  "n_files": 4,
+  "depends_on": [
+   "W2",
+   "W7",
+   "M2 (chỉ cho phần tài liệu ở bước 10)"
+  ],
+  "blocks": [
+   "W8b (bảng quyết định `scripts/rename/disposition.tsv` phải có >= 15 hàng `scope=bare-oh-my-pi` khớp đúng quyết định ở đây)"
+  ],
+  "effort": "S về thao tác gõ, M về quyết định. Số dòng thật sự phải sửa trong mã nguồn là 2 (một file). 13 file còn lại là 13 quyết định 'không sửa', và đó mới là chi phí. Thêm 3 hàng keep-list, 1 file probe mới (~60 dòng, copy từ probe hiện có), 1 dòng nối vào test hiện có, 1 ca thêm vào test của W2, và 2 đoạn văn xuôi tài liệu. Tổng dưới 2 giờ nếu đã đọc bảng quyết định ở `code_shape`; trên 4 giờ nếu phải tự suy lại từng file.",
+  "risk": "Rủi ro sửa sai lớn nhất vẫn là cái plan đã nêu và vẫn đúng: áp cùng một quyết định cho cả 15.",
+  "n_questions": 5,
+  "n_corrections": 8,
+  "gate": "CHẠY THEO ĐÚNG THỨ TỰ. Dừng ngay khi cổng đầu tiên đỏ. Mỗi cổng dưới đây đều phân biệt được 'đã làm' với 'chưa làm'.\n\n── GATE 0 — ĐIỀU KIỆN MỞ (đỏ được) ──\n  git merge-base --is-ancestor HEAD main >/dev/null 2>&1 || true\n  git grep -q 'CANONICAL_PI_SCOPE' packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts || { echo 'GATE 0 FAIL: W2 chua merge'; exit 1; }\n  git grep -qF 'PI_SCOPE_ALIASES = [\"oh-my-pi\", \"mariozechner\", \"earendil-works\"]' packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts || { echo 'GATE 0 FAIL: N8 alias da bi pham — dung lai, W8a khong the chay'; exit 1; }\n  test -f scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list.txt missing'; exit 1; }\n  grep -q 'N7' scripts/rename/keep-list.txt || { echo 'GATE 0 FAIL: keep-list chua qua duyet W7'; exit 1; }\n  git grep -l '@ultraworkers/pi-catalog' -- 'packages/catalog/package.json' >/dev/null || { echo 'GATE 0 FAIL: W7 chua merge — W8a phai chay SAU W7 vi Gate C cua W7 so sanh baseline dang truan'; exit 1; }\n  Phan biet duoc: W7 chua xong -> BLOCKED, khong phai 'W8a chua xong'.\n\n── GATE A — TAP FILE TRON VEN KHONG DOI (đỏ được) ──\n  git grep -lE '\"oh-my-pi\"' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' > /tmp/w8a-bare-after.txt\n  diff /tmp/w8a-bare-baseline.txt /tmp/w8a-bare-after.txt && echo 'GATE A: tap 15 file van nguyen (chi gallery doi noi dung)'\n  Baseline PHAI la 15 dong. Doc ky: dong 6 (gallery) van xuat hien la DUNG — W8a doi GIA TRI trong file, khong xoa file. Dong 16 (ke hoach) nen duoc loai bang `:!` vi no chua chuoi trong ban ke hoach, khong phai muc tieu.\n  Phan biet duoc: dong khac biet nghia la W8a da them/xoa literal o file ngoai bang quyet dinh — dung ngay.\n\n── GATE B — 7 LITUAL GIU CON NGUYEN (đỏ được, cổng chống sed) ──\n  for loc in 'packages/coding-agent/src/telemetry-export-otlp.ts:51:oh-my-pi' 'packages/coding-agent/src/modes/acp/acp-agent.ts:656:oh-my-pi' 'packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:802:oh-my-pi' 'packages/ai/src/registry/oauth/zai.ts:25:oh-my-pi' 'packages/coding-agent/src/web/search/providers/exa.ts:26:oh-my-pi' 'packages/coding-agent/src/mcp/oauth-flow.ts:629:oh-my-pi' 'docs/provider-quirks.md:1706:oh-my-pi'; do\n    f=${loc%%:*}; rest=${loc#*:}; n=${rest%%:*}; v=${rest#*:}\n    line=$(sed -n \"${n}p\" \"$f\")\n    case \"$line\" in *\"$v\"*) ;; *) echo \"GATE B FAIL: $f:$n mat gia tri giu '$v'\"; exit 1;; esac\n  done\n  echo 'GATE B: 7 gia tri wire van nguyen'\n  Phan biet duoc: day la con RED DUY NHAT bat duoc mot sed dai. Mot sed tren 15 file nay se doi ca 7 dong nay va lam cung nay do trong khi Gate A van XANH (vi tap file khong doi) — day la lo do Gate A khong du.\n\n── GATE C — W8A KHONG LAN SANG VIEC CUA W7 (đỏ được) ──\n  BASE=$(cat /tmp/w8a-head-baseline.txt)\n  git diff --name-only \"$BASE\"..HEAD | sort > /tmp/w8a-touched.txt\n  printf '%s\\n' \\\n    'packages/coding-agent/src/cli/gallery-fixtures/segments.ts' \\\n    'packages/coding-agent/test/otel-service-name-probe.ts' \\\n    'packages/coding-agent/test/telemetry-export.test.ts' \\\n    'packages/coding-agent/test/pi-scope-aliases.test.ts' \\\n    'scripts/rename/keep-list.txt' | sort > /tmp/w8a-expected.txt\n  diff /tmp/w8a-expected.txt /tmp/w8a-touched.txt || { echo 'GATE C FAIL: W8a cham file ngoai danh sach da duyet — xem lai'; exit 1; }\n  Phan biet duoc: W7 da sua 14/15 file nay o pass scope. Gate C la thu bat duoc 'W8a chay lai mot sed' va 'W8a sua them cho mot muc khong ai duyet', va no cung la bang chung W8a khong pham vi cua W7.\n\n── GATE D — HAI DONG GALLERY (đỏ được) ──\n  test \"$(git diff --numstat \"$BASE\"..HEAD -- packages/coding-agent/src/cli/gallery-fixtures/segments.ts | wc -l)\" -eq 1\n  test \"$(git diff --numstat \"$BASE\"..HEAD -- packages/coding-agent/src/cli/gallery-fixtures/segments.ts | cut -f1)\" -eq 2 || { echo 'GATE D FAIL: phai doi DUNG 2 dong'; exit 1; }\n  test \"$(git diff --numstat \"$BASE\"..HEAD -- packages/coding-agent/src/cli/gallery-fixtures/segments.ts | cut -f2)\" -eq 2 || { echo 'GATE D FAIL: phai xoa DUNG 2 dong'; exit 1; }\n  Dung numstat hai cot, KHONG dung grep -c \"^-\": dong header \"--- a/...\" cua git diff cung khai dau bang dau gach, dem no se ra 3 thay vi 2.\n  Phan biet duoc: file nay con 5 luot scope da doi boi W7. W8a chi duoc tach them 2 dong. Nhieu hon 2 nghia la W8a da chay mot pass thay chuoi lan nua.\n\n── GATE E — KEEP-LIST DA CO 3 HANG MOI (đỏ được) ──\n  for n in N18 N19 N20; do\n    grep -q \"$n\" scripts/rename/keep-list.txt || { echo \"GATE E FAIL: thieu hang $n\"; exit 1; }\n  done\n  awk -F'#' '/N1[89]|N20/ && NF < 2 { print \"GATE E FAIL: hang khong co phan # ly do: \" $0; exit 1 }' scripts/rename/keep-list.txt\n  Phan biet duoc: Gate B giu duoc gia tri trong CODE; Gate E giu duoc quyet dinh trong KEEP-LIST, de mot sed tuong lai khong xoa chung. Hai cong nay soi hai file khac nhau.\n\n── GATE F — TYPECHECK (đỏ được) ──\n  bun run check:ts    # phai exit 0\n  Phan biet duoc: file W8a sua deu nam trong packages/coding-agent, ma check:types cua package do chay trong 25s va no bat loi type. Khong thay the bang viec doc bang mat.\n\n── GATE G — BO TEST: NOT RUN, ENVIRONMENT BLOCKED ──\n  Khong chay duoc o may nay. Ghi vao commit message dung ba chu:\n      test:ts = NOT RUN — environment blocked (pi_natives native addon not built)\n  Go chan: brew install ninja && bun --cwd=packages/natives run build && bun run test:ts\n  TUYET DOI khong ghi 'pass' cho cong nay khi no chua chay. Day la ly do Gate A-F viet de khong can test: chung phan biet duoc 'da lam' voi 'test khong chay duoc' ma khong can chay mot dong test nao.\n  Neu CI co runner da build native addon, chay `cd packages/coding-agent && bun test test/telemetry-export.test.ts test/pi-scope-aliases.test.ts` o do va dan ket qua vao PR.\n\n── GATE H — BẢNG QUYẾT ĐỊNH CỦA W8b (đỏ được, chỉ khi W8b chạy ngay sau) ──\n  awk -F'\\t' '$1==\"bare-oh-my-pi\"' scripts/rename/disposition.tsv | wc -l   # phai >= 15\n  Phan biet duoc: W8b Gate 0 dung lenh ghi '15 file' cho scope=bare-oh-my-pi, nhung lenh do tra 16 tren HEAD hien tai. Xem plan_corrections #1 — W8b phai loai COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md theo duong danh, neu khong Gate 0 cua W8b se do vi mot hang thuoc ve tai lieu ke hoach.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W8b",
+  "title": "W8b — Xử lý 599 file .ts có token hiển thị `omp` (bảng quyết định + đổi tên từng file)",
+  "wave": "Wave 3",
+  "one_line": "Dựng `scripts/rename/disposition.tsv` — một hàng quyết định cho mỗi lớp hit trong 599 file `.ts` có token `omp`, có người thứ hai duyệt — rồi đổi đúng những lượt mang `disposition=rename`; tuyệt đối không chạy `sed` đại trà.",
+  "user_visible_effect": "Sau wave này, mọi chỗ người dùng nhìn thấy tên cũ đã mang tên mới: tiêu đề thông báo macOS, tên file log trong `~/.omp/logs`, tên lệnh trong profile alias (`.omp` alias của zsh/fish/PowerShell), chuỗi `omp/<version>` trong User-Agent và tên asset phát hành.",
+  "files": [
+   "scripts/rename/disposition.tsv [create,verified]",
+   "scripts/rename/check-disposition.ts [create,verified]",
+   "scripts/rename/README.md [create,verified]",
+   "599 file `.ts` (tập sinh bằng lệnh, KHÔNG liệt kê tay) [modify,verified]",
+   "packages/*/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 5,
+  "depends_on": [
+   "W1",
+   "W2",
+   "W3"
+  ],
+  "blocks": [
+   "W11"
+  ],
+  "effort": "L — lớn nhất milestone sau việc phát hành. Plan tự ghi là 'chưa định lượng' và nói thẳng ở dòng 14085 rằng mục này không suy ra được ngày từ phép nhân với W8a: W8a là 15 quyết định, W8b là hàng trăm hàng bảng quyết định, và phân bố giữa hai bên lệch nhau. Con số thực tế cao hơn plan ở ba chỗ nên effort cao hơn ước tính cũ: 599 file thay vì 585, 226 file thay vì 0 là file test mà plan không tách ra, và 11 file chồng với W9 phải rà lại hai lần. Cách chuẩn hoá mà plan đề xuất vẫn đúng và nên làm ngay khi bắt đầu: làm 50 hàng đầu của `disposition.tsv`, đo thời gian thật, rồi nhân để ước lượng phần còn lại — đừng chuẩn hoá bằng cách nhân con số file với một thời gian giả định.",
+  "risk": "**Rủi ro sửa sai chính của mục: `sed` đại trà.** Một lệnh sed token trên 599 file sẽ đổi cả tên hiển thị lẫn giá trị wire lẫn selector worker trong một lần, và sẽ không ai kiểm tra được — vì trước khi bảng quyết định tồn tại, không có danh sách nào trong repo nói cái gì được phép đổi.",
+  "n_questions": 6,
+  "n_corrections": 11,
+  "gate": "Ba cổng, theo thứ tự. Cổng 0 phải xanh trước khi coi mục này là bắt đầu.\n\n**Cổng 0 — bảng quyết định đầy đủ, cân đối, và đã được một người khác duyệt.** `bun scripts/rename/check-disposition.ts --stage=pre` exit 0. Đỏ khi: thiếu hàng cho bất kỳ file nào trong tập 599; hàng trỏ tới `path` không còn tồn tại; `reason` trống; `disposition` ngoài từ vựng đóng; `hits` không khớp tổng lượt thật của file; `keep_refs` sai quy tắc theo `disposition`; hoặc `git log --format='%ae' -- scripts/rename/disposition.tsv` chưa trả về ít nhất 2 địa chỉ khác nhau.\n\n**Cổng 1 — sau khi chạy.** `bun scripts/rename/check-disposition.ts --stage=post` exit 0. Mỗi hàng `rename` còn 0 lượt; mỗi hàng `keep-*` còn đúng số lượt ở cột `hits`. Cổng này đối chiếu tập hit còn lại với `disposition` TRONG CHÍNH BẢNG, không đối chiếu với một danh sách viết tay thứ hai — vì danh sách thứ hai chính là nơi mà một `grep` sẽ 'xanh' trong khi việc đổi tên đã hỏng.\n\n**Cổng 2 — typecheck.** `bun run check:ts` exit 0. Đã xác nhận xanh.\n\n**Cổng 3 (không chặn merge, nhưng phải báo cáo kết quả) — `bun run test:ts`.** Ghi kết quả vào PR kèm lý do nếu không chạy được. KHÔNG dùng làm điều kiện nghiệm thu khi native addon chưa build, vì khi đó nó không phân biệt được 'đổi tên làm hỏng' với 'hạ tầng chưa sẵn sàng' — cả hai đều ra cùng một exit 1.\n\n**Không nằm trong cổng, nhưng bắt buộc trước khi báo xong:** chứng minh cổng đỏ được bằng ba thao tác phá hỏng có chủ đích, ghi exit code thật vào PR (`steps[10]`). Không có bước này thì `gate_can_fail` là `false`.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W9",
+  "title": "W9. Đổi tên binary và toàn bộ bề mặt selector worker sinh ra theo tên đó",
+  "wave": "Wave 4",
+  "one_line": "Đổi tên lệnh cài vào PATH từ `omp` sang tên mới ở cả ba khai báo bin, và làm selector worker `__omp_worker_*` dẫn xuất từ MỘT hằng số tiền tố duy nhất để 16 loại selector không thể bị bỏ sót — sau đó khoá bằng một ca test parity chạy được ngay cả khi addon native chưa build.",
+  "user_visible_effect": "Người dùng cài bản mới gõ tên mới (`ultraworkers ...`) thay vì `omp ...`; lệnh cũ biến mất khỏi PATH sau khi gói npm cài lại.",
+  "files": [
+   "packages/utils/src/worker-host.ts [modify,verified]",
+   "packages/coding-agent/src/cli/worker-selectors.ts [modify,verified]",
+   "packages/coding-agent/src/cli.ts [modify,verified]",
+   "packages/coding-agent/src/stt/asr-client.ts [modify,verified]",
+   "packages/coding-agent/src/tts/tts-client.ts [modify,verified]",
+   "packages/coding-agent/src/mnemopi/embed-client.ts [modify,verified]",
+   "packages/coding-agent/src/tiny/title-protocol.ts [modify,verified]",
+   "packages/coding-agent/src/eval/js/context-manager.ts [modify,verified]",
+   "packages/coding-agent/src/tools/browser/tab-supervisor.ts [modify,verified]",
+   "packages/stats/src/aggregator.ts [modify,verified]",
+   "scripts/ci-release-publish.ts [modify,verified]",
+   "packages/coding-agent/package.json [modify,verified]",
+   "packages/coding-agent/src/task/omp-command.ts [modify,verified]",
+   "packages/coding-agent/src/subprocess/worker-client.ts [modify,verified]",
+   "packages/coding-agent/src/cli/profile-alias.ts [modify,verified]",
+   "packages/coding-agent/src/cli/completion-gen.ts [modify,verified]",
+   "AGENTS.md [modify,verified]",
+   "packages/coding-agent/DEVELOPMENT.md [modify,verified]",
+   "docs/tools/ida.md [modify,verified]",
+   "crates/pi-natives/src/utok/claude/testdata/fixtures.json [modify,verified]",
+   "packages/coding-agent/src/cli/update-cli.ts [modify,verified]",
+   "packages/stats/package.json [modify,verified]",
+   "packages/stats/CHANGELOG.md [modify,verified]"
+  ],
+  "n_files": 23,
+  "depends_on": [
+   "W1 — 5 vị trí wire phải rời literal \"omp\" về hằng số `WIRE_NAME` TRƯỚC, nếu không grep tìm literal trong W9 sẽ trả về kết quả mơ hồ (wire lẫn display lẫn selector trong cùng một lượt khớp)",
+   "W3 — `APP_NAME` (`dirs.ts:21`) đã mang tên mới; W9 dựa vào nó ở `commands/completions.ts:29` và (nếu chốt open_questions[0]) ở `task/omp-command.ts:11`"
+  ],
+  "blocks": [
+   "W13' — gói Python spawn binary theo tên mới; phải biết tên mới chính xác mới viết được khẳng định test",
+   "W10 — CI / release / Docker / homebrew / nix: tên asset tách (`omp-` → tên mới) và tên binary đóng gói phải khớp W9",
+   "W11 — sửa test theo hằng số (wave 5) sẽ dựa vào selector parity test mà W9 tạo"
+  ],
+  "effort": "M (không phải S). Đo được: 17 file nguồn + 9 file test + 3 file tài liệu = 29 file. Nhưng phần tốn kém KHÔNG phải số dòng — mà là (a) 5 cặp hằng số selector trùng lặp phải gộp về một nguồn, (b) 3 literal thô phải chuyển thành hằng số dẫn xuất, (c) quyết định đóng băng vs đổi cho marker profile-alias và tên file `omp-profiles.fish`, (d) một ca test parity mới. Con số `E` (nhỏ) trong kế hoạch cũ là do đếm thiếu 1 file comment, thiếu 1 hằng số, và 4 dòng profile-alias không được liệt kê.",
+  "risk": "Ba lớp, tăng dần.",
+  "n_questions": 6,
+  "n_corrections": 21,
+  "gate": "Cổng gồm 4 tầng, xếp theo nguyên tắc: TẦNG NÀO CÀNG CAO THÌ CÀNG CẦN CHUẨN BỊ TRƯỚC, và mỗi tầng phải phân biệt được 'W9 làm hỏng' với 'máy chưa sẵn sàng'. Nguyên tắc này quyết định toàn bộ hình dạng cổng, vì lệnh kiểm mà kế hoạch đề xuất (`bun run check && bun run ci:test:smoke && bun test test/worker-selector.test.ts`) ĐỎ trên máy này vì ba lý do không liên quan tới W9.\n\n===== TẦNG 1 — LUÔN CHẠY ĐƯỢC, KHÔNG CẦN CHUẨN BỊ GÌ. Đây là cổng chính. =====\nLệnh: `bun run check:ts`\nPhải exit 0. ĐÃ ĐO: exit 0 tại HEAD 84cbac9, package chậm nhất 39.85s.\nCổng này ĐỎ khi: import sai subpath, tạo vòng import mới (thêm import chéo giữa cli.ts và context-manager.ts là rủi ro thật ở bước 5), còn tên hằng cũ sót lại trong phạm vi nguồn, hoặc type sai sau khi đổi kiểu hằng.\nCổng này KHÔNG đỏ khi: thiếu ninja, thiếu addon native, test fail. Nó không phụ thuộc vào cái nào trong ba thứ đó. Đó là lý do nó là tầng 1.\n\n===== TẦNG 2 — LUÔN CHẠY ĐƯỢC, VÀ BẮT ĐƯỢC CẢ HAI BẤT BIẾN CHÍNH. =====\nLệnh: `bun test packages/utils/test/worker-host.test.ts` && `cd packages/coding-agent && bun test test/profile-alias.test.ts`\nĐÃ ĐO Ở HEAD SẠN: 4 pass và 23 pass. KHÔNG cần build native.\nĐây là tầng quan trọng nhất về mặt thiết kế, vì nó bắt được ĐÚNG hai thứ mà W9 làm thay đổi mà vẫn chạy được: (a) tiền tố selector, (b) chốt chặn alias + tương thích marker. Cổng 3 bên dưới KHÔNG bắt được (a).\nCổng này ĐỎ khi: tiền tố đổi mà `worker-host.test.ts:24-26` chưa cập nhật; tên lệnh mới chưa vào `DEFAULT_ALIAS_COMMAND`; chốt chặn alias thiếu nhánh thứ hai; marker bị đổi làm `upsertBlock` append thay vì thay.\n\n===== TẦNG 3 — CẦN BUILD, VÀ PHẢI TÁCH RÕ TIỀN ĐỀ KHỎI KẾT QUẢ. =====\nBước 0 (TIỀN ĐỀ, không phải test): `which ninja` phải có. Nếu chưa: `brew install ninja`. Rồi `bun --cwd=packages/natives run build` phải exit 0.\nNẾU BƯỚC 0 FAIL, DỪNG NGAY và báo 'PRECONDITION FAILED — addon native chưa build' (kèm lỗi cmake nguyên văn). TUYỆT ĐỐI KHÔNG báo 'test failed' và không được coi là đỏ của W9. Đây là phân biệt quan trọng nhất của cổng này: trên máy này `bun test test/worker-selector.test.ts` báo '0 pass / 1 fail / 1 error' với lỗi addon — trông y hệt một thay đổi hỏng, nhưng không phải.\nSau khi bước 0 exit 0:\nLệnh: `cd packages/coding-agent && bun test test/worker-selector.test.ts test/worker-selector-parity.test.ts`\nCổng này ĐỎ khi: selector nào không còn được dispatch, ca 'unknown selector' thất bại, ca reaping hỏng, hoặc ca parity mới bắt được hằng số còn sót tiền tố cũ.\n\n===== TẦNG 4 — PHÂN PHỐI, VÀ PHẢI BÁO CÁO ĐỘ PHỦ TRUNG THỰC. =====\nLệnh: `bun run ci:test:smoke` (`package.json:123`)\nPhải exit 0. Khi viết báo cáo, GHI RÕ: trên darwin phủ **13/16** selector (thiếu `stats_sync` — `aggregator.ts:194` return sớm trên macOS; thiếu `tab` và `js_eval_process` — không có lời gọi smoke nào tới). Trên Linux 14/16. KHÔNG được viết 'smoke xanh nghĩa là đổi tên selector đã đúng' — đó là 13/16, và `stats_sync` chính là literal thô khó chạm nhất. Nếu có CI Linux, chạy lại tầng 4 ở đó và báo cáo 14/16.\n\n===== TẦNG 5 — SO VỚI BASELINE (không phải lệnh kiểm, là điều kiện nghiệm thu). =====\nChạy lại ba lệnh ở bước 2 sau khi sửa và so với baseline 97 / 28 / 21. Phải giải thích được TỪNG chênh lệch bằng danh sách ở bước 9. Đặc biệt: nếu số lượt giảm nhiều hơn ~30 so với dự kiến, hãy dừng — nghĩa là đã quét vào thứ không nên quét (khả năng cao nhất: `sed` toàn repo đụng `fixtures.json` và `worker-core.test.ts`).\n\n===== ĐIỀU CẤM =====\n- KHÔNG dùng lệnh kiểm nào mà 'đỏ' có thể do nguyên nhân ngoài W9 mà không nói rõ. Đó là lý do tầng 3 tách tiền đề khỏi kết quả.\n- KHÔNG chấp nhận `grep sạch` làm bằng chứng. Ở đây 'sạch' là SAI: 44 lượt sentinel trong test + 5 lượt trong fixtures.json phải CỐ Ý còn lại. Cổng đúng là 'con số khớp danh sách từng dòng', không phải 'zero hit'.\n- KHÔNG coi `bun test` là sẵn sàng trên máy chưa build. Nó chỉ sẵn sàng cho 2 file đã đo ở tầng 2.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W10",
+  "title": "Đổi tên bề mặt phân phối: CI, release, Docker, homebrew, nix, installer",
+  "wave": "Wave 4",
+  "one_line": "Đổi tên thương hiệu cũ trên toàn bộ đường phân phối (workflow, tên asset release, image Docker, Formula homebrew, flake/nix, installer curl|sh) — với hai ngoại lệ cứng: nhãn runner `omp-kata` (đăng ký ngoài repo) và mọi `do_not_rename`.",
+  "user_visible_effect": "Sau W10: `docker build -t <new>/<new>:dev .` đóng tag mới, image robomp mở rộng `FROM` đúng tag mới, `brew install` lấy đúng tên asset mới, `nix build` tạo đúng tên lệnh mới, `curl -fsSL https://<domain>/install | sh` tải và cài đúng tên nhị phân mới, và mọi job CI upload artifact đúng tên mà release thật đăng.",
+  "files": [
+   ".github/workflows/ci.yml [modify,verified]",
+   ".github/actionlint.yaml [modify,verified]",
+   ".github/actions/bun-install/action.yml [modify,verified]",
+   ".github/actions/bazel-cache/action.yml [modify,verified]",
+   ".github/actions/bazel-natives/action.yml [modify,verified]",
+   ".github/actions/native-artifacts/action.yml [modify,verified]",
+   ".github/workflows/bazel-cache-warm.yml [modify,verified]",
+   "Dockerfile [modify,verified]",
+   "Dockerfile.robomp [modify,verified]",
+   "Dockerfile.dockerignore [modify,verified]",
+   ".dockerignore [modify,verified]",
+   "Dockerfile.robomp.dockerignore [modify,verified]",
+   "scripts/ci-update-brew-formula.ts [modify,verified]",
+   "scripts/ci-update-brew-formula.test.ts [modify,verified]",
+   "package.json [modify,verified]",
+   "scripts/ci-release-build-binaries.ts [modify,verified]",
+   "packages/coding-agent/src/cli/update-cli.ts [modify,verified]",
+   "scripts/install.sh [modify,verified]",
+   "scripts/install.ps1 [modify,verified]",
+   "scripts/install-tests/run-ci.sh [modify,verified]",
+   "scripts/install-tests/binary.dockerfile [modify,verified]",
+   "scripts/install-tests/source.dockerfile [modify,verified]",
+   "scripts/install-tests/tarball.dockerfile [modify,verified]",
+   "scripts/install-tests/settings-session.ts [modify,verified]",
+   "scripts/install-tests/run-podman.sh [modify,verified]",
+   "flake.nix [modify,verified]",
+   "nix/package.nix [modify,verified]",
+   "nix/home-manager.nix [modify,verified]",
+   "nix/nixos-module.nix [modify,verified]",
+   "nix/dev-shell.nix [modify,verified]",
+   "scripts/ci-macos-sign.sh [modify,verified]",
+   "scripts/ci-release-publish.ts [modify,verified]",
+   "scripts/rename/keep-list.txt [create,verified]"
+  ],
+  "n_files": 33,
+  "depends_on": [
+   "W2",
+   "W7",
+   "W9",
+   "W13'"
+  ],
+  "blocks": [
+   "W11",
+   "W12",
+   "W13"
+  ],
+  "effort": "M",
+  "risk": "Cao nhất là `Dockerfile.robomp` — `ARG PI_BASE=oh-my-pi/pi:dev` tại dòng 19 là giá trị mà `FROM ${PI_BASE}` dòng 41 mở rộng; đổi tag ở `Dockerfile` mà bỏ sót file này thì job build image robomp trỏ tới tag không tồn tại, và job đó chạy ít nhất nên sẽ bị bỏ sót lâu nhất.",
+  "n_questions": 6,
+  "n_corrections": 13,
+  "gate": "bun run check:ts && bun test scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/ci-release-publish.test.ts scripts/release.test.ts scripts/ci-update-brew-formula.test.ts && git diff --quiet -- packages/natives/package.json",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W11",
+  "title": "Chỉ bộ test khẳng định tên về hằng số",
+  "wave": "Wave 5",
+  "one_line": "Đổi 70 file test từ literal tên cũ sang đọc hằng số (APP_NAME / WIRE_NAME / CONFIG_DIR_NAME / tiền tố selector), giữ một test ghim giá trị thật cho mỗi bề mặt, và thêm một detector CI đọc disposition.tsv để cổng đỏ được ngay cả khi bộ test không chạy được.",
+  "user_visible_effect": "Không có gì thấy được.",
+  "files": [
+   "packages/utils/test/worker-host.test.ts [modify,verified]",
+   "packages/coding-agent/test/worker-selector.test.ts [modify,verified]",
+   "packages/coding-agent/test/executable-fallback.test.ts [modify,verified]",
+   "packages/coding-agent/test/eval/process-entry-import.test.ts [modify,verified]",
+   "packages/coding-agent/test/fixtures/computer-worker-cli-selector.ts [modify,verified]",
+   "packages/coding-agent/test/eval/worker-core.test.ts [modify,verified]",
+   "packages/coding-agent/test/issue-1606-repro.test.ts [modify,verified]",
+   "packages/coding-agent/test/issue-3031-repro.test.ts [modify,verified]",
+   "packages/coding-agent/test/issue-7352-repro.test.ts [modify,verified]",
+   "packages/coding-agent/test/export-html-template.test.ts [modify,verified]",
+   "packages/coding-agent/test/modes/warp-events.test.ts [modify,verified]",
+   "packages/coding-agent/test/acp-agent.test.ts [modify,verified]",
+   "packages/coding-agent/test/** (57 file), packages/tui/test/** (2 file), packages/ai/test/helpers/index.ts (1 file), packages/utils/test/logger-contract.test.ts (1 file) [modify,verified]",
+   "scripts/ci-rename-test-literals.ts [create,UNVERIFIED]",
+   "packages/utils/test/brand-constants.test.ts [create,UNVERIFIED]",
+   "packages/utils/test/persisted-identity-keys.test.ts [create,UNVERIFIED]",
+   "scripts/rename/disposition.tsv [modify,verified]"
+  ],
+  "n_files": 17,
+  "depends_on": [
+   "W1 (hằng số WIRE_NAME — chưa tồn tại trong source; W11 không thể chuyển warp-events.test.ts sang nó nếu W1 chưa xong)",
+   "W3 (hằng số lớp hiển thị + 5 literal nhân bản)",
+   "W4 (danh sách ứng viên hai root — 217 lượt `.omp` cần biết candidate list mới có tên gì mới phân loại được tập (i) với tập (ii))",
+   "W7 (sed scope — tên import trong 70 file test đổi trước; W11 sửa sau nếu không thì sẽ sửa hai lần)",
+   "W8b (scripts/rename/disposition.tsv — detector đọc file này; file chưa tồn tại tại HEAD)",
+   "W9 (tên binary + tiền tố selector — 9 file selector chỉ ổn định sau khi W9 chốt tiền tố)"
+  ],
+  "blocks": [
+   "W13 (quét tài liệu — nghiệm thu của nó là 'một grep token omp đứng riêng trên .md chỉ trả về tập legacy có chủ ý', cùng họ detector với W11)"
+  ],
+  "effort": "M (2,5 ngày công theo thang của plan: S = 1, M = 2,5, L = chưa quy ra được). Cao hơn M một chút so với dự kiến, vì số file thật là 70 chứ không phải 68, vì có một lớp false-positive mà plan không nhận ra (20/54 lượt selector nằm trong globalThis instrument), và vì detector ở bước 11 là code mới chứ không phải sửa test. Trong đó ~0,5 ngày là viết detector + canary, ~1,5 ngày là phân loại 217 lượt `.omp` theo ba tập, ~0,5 ngày là 9 file selector và 4 file APP_NAME.",
+  "risk": "Sai lầm lớn nhất, và nó là sai lầm mà W11 tự tạo ra: thay literal bằng tham chiếu hằng số một cách hàng loạt.",
+  "n_questions": 4,
+  "n_corrections": 10,
+  "gate": "CỔNG BA TẦNG, vì lệnh của plan (`bun run check && bun run test:ts && bun run test:py`) không phân biệt được 'W11 xong' với 'máy này không build được' — cả ba lệnh đều không chạy được ở đây. TẦNG 1 — chạy được NGAY trên máy này, và mỗi lệnh đều phân biệt được xanh-với-nothing-to-do: (a) `bun run check:ts` — exit 0, đo được 4m14s; nó bắt được import hỏng, hằng số chưa tồn tại, và scope đổi sai sau W7. (b) `bun test packages/utils/test/worker-host.test.ts` — phải in `4 pass` và `0 fail`; đây là pin tiền tố selector, file test selector DUY NHẤT chạy được cục bộ. (c) `bun scripts/ci-rename-test-literals.ts` — detector mới, exit 1 khi còn hit chưa có disposition, exit 0 khi sạch; chạy được không cần native addon. TẦNG 2 — nghiệm thu thật, CHỈ CI, kèm canary bắt buộc: `bun run test:ts` và `bun run test:py` phải cùng chạy; canary là một script khẳng định run cho ra số pass > 0 VÀ không chứa chữ ký `Failed to load pi_natives native addon` / `No module named pytest`, để một môi trường bị chặn không bao giờ được báo là xanh. TẦNG 3 — thứ KHÔNG phải cổng: không một khẳng định nào được tạo ra mà chỉ đọc hằng số. Gỡ chặn cho máy dev: `brew install ninja` TRƯỚC (cmake build của opusic-sys cần build program, thiếu thì `bun --cwd=packages/natives run build` fail với `CMAKE_MAKE_PROGRAM is not set`), rồi `bun --cwd=packages/natives run build`; và `python3 -m pip install pytest` cho test:py.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W12",
+  "title": "Phát hành bản cuối dưới scope cũ dưới dạng stub rename, rồi ký lại",
+  "wave": "Wave 6",
+  "one_line": "Publish the last `@oh-my-pi/pi-coding-agent` as a rename stub carrying an `omp` manifest block (`rename` pointer + `dist`), with a publish-time `publishBin` override that keeps the `omp` command on the stub, then re-sign and re-notarize the renamed macOS binary.",
+  "user_visible_effect": "A user on the old name runs `omp update`, gets moved onto the new package, and still has a working `omp` command afterwards.",
+  "files": [
+   "scripts/ci-release-publish.ts [modify,verified]",
+   "scripts/ci-release-publish.test.ts [modify,verified]",
+   "packages/coding-agent/package.json [modify,verified]",
+   "packages/coding-agent/src/cli/update-cli.ts [modify,verified]",
+   "packages/coding-agent/test/cli/update-rename-migration.integration.test.ts [modify,verified]",
+   "packages/coding-agent/test/cli/update-cli.test.ts [modify,verified]",
+   "scripts/ci-macos-sign.sh [modify,verified]",
+   ".github/workflows/ci.yml [modify,verified]",
+   "scripts/install-tests/run-ci.sh [modify,verified]"
+  ],
+  "n_files": 9,
+  "depends_on": [
+   "W9",
+   "W10"
+  ],
+  "blocks": [],
+  "effort": "S in code, L in calendar — the plan's calibration is right but understated in one place. In-repo: roughly one new mechanism in `ci-release-publish.ts`, one new test in a file that already runs, and possibly a manifest shape decision. There is essentially no new consumer code; the parser is already done. Outside the repo and dominating: npm scope ownership, registry publish rights, Apple signing identity, and a real end-to-end rename check. The plan's 'S' does not account for the fact that the publish-side mechanism and the manifest-location decision are genuinely new work, not configuration.",
+  "risk": "Mislitigating one line number sends an engineer to the wrong function — `publishBin` is at :186, not :165, and the two `manifest.bin` writes the plan names are at :243 and :301, in two different functions, one of them conditional.",
+  "n_questions": 4,
+  "n_corrections": 6,
+  "gate": "TIER 1 — runs on this machine, green verified 2026-09-27:\n  bun run check:ts\nTIER 2 — the W12 test, runs on this machine, and CAN go red (verified 11 pass / 0 fail / exit 0 before the change):\n  bun test scripts/ci-release-publish.test.ts\n  This tier is the discriminating gate. Watch it fail before implementing, then pass.\nTIER 3 — blocked here, NOT a pass. Install ninja FIRST or the build cannot run:\n  brew install ninja\n  bun --cwd=packages/natives run build\n  (cd packages/coding-agent && bun test test/cli/update-cli.test.ts test/update-cli.test.ts)\n  bun test scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/release.test.ts\n  NOTE: after the build, `bun run test:scripts` may still fail on `scripts/ci-test-ts.test.ts` alone; that is expected and is not a W12 signal.\nTIER 4 — external, cannot be run here, must be reported as BLOCKED not PASS: registry publish of the stub, end-to-end rename against the real published manifest, `codesign --verify --strict` on the re-signed artifact, Apple identity availability.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W13",
+  "title": "Quét tài liệu — changelog chỉ khi được yêu cầu",
+  "wave": "Wave 6",
+  "one_line": "Lượt cuối, chạy sau khi bề mặt đã ngừng chuyển động: đổi token hiển thị `omp` trong 93 file `.md` văn xuôi, thêm cột tương thích cho đúng MỘT bí danh `ULTRAWORKERS_*` mới vào `docs/environment-variables.md`, và không đụng vào bất kỳ file changelog nào.",
+  "user_visible_effect": "Người đọc tài liệu không còn thấy tên cũ trong văn xuôi: lệnh được ghi trong README và 82 file trong `docs/` được gọi bằng tên mới.",
+  "files": [
+   "scripts/rename/docs-legacy-allowlist.txt [create,UNVERIFIED]",
+   "scripts/rename/check-docs-rename.ts [create,UNVERIFIED]",
+   "docs/environment-variables.md [modify,verified]",
+   "docs/environment-variables.md:29 [modify,verified]",
+   "packages/coding-agent/src/prompts/internal-urls/omp.md [modify,verified]",
+   ".omp/commands/cleanup.md, .omp/commands/fix-issues.md, .omp/commands/release.md, .omp/commands/review-prs.md, .omp/commands/triage.md, .omp/skills/semantic-compression/SKILL.md, .omp/skills/system-prompts/SKILL.md, .omp/skills/system-prompts/small-models.md, .omp/skills/tool-prompt-optimization/SKILL.md [modify,verified]",
+   "packages/coding-agent/src/modes/controllers/input-controller.ts:2515 [modify,verified]",
+   "README.md [modify,verified]",
+   "AGENTS.md [modify,verified]",
+   "CONTRIBUTING.md [modify,verified]",
+   "packages/*/CHANGELOG.md [modify,verified]",
+   "LICENSE [modify,verified]",
+   "docs/extension-loading.md:231 [modify,verified]",
+   "docs/porting-from-pi-mono.md:46-51 [modify,verified]",
+   "13 file .md chứa URL github.com/can1357/oh-my-pi [modify,verified]",
+   "docs/ (82 file ở cấp đỉnh, 134 tính mọi cấp) [modify,verified]"
+  ],
+  "n_files": 16,
+  "depends_on": [
+   "W7 — scope `@oh-my-pi/` đã đổi trên 4107 file; nếu chưa, W13 sẽ sửa scope lần thứ hai bằng tay trên 66 file `.md`",
+   "W4 — `ULTRAWORKERS_CONFIG_DIR` phải tồn tại trong code trước khi W13 ghi nó vào doc. Tôi đo `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` = 0, tức W4 CHƯA land",
+   "W8a — SỞ HỮU `docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` (plan dòng 13841). W13 KHÔNG được chạm hai dòng này",
+   "W9 — tên binary mới đã chốt, vì tên lệnh trong code block của `docs/` phải khớp tên thật",
+   "W6 — `CONFIG_DIR_NAME` đã lật, vì §5 của plan yêu cầu tài liệu được viết KHI CẢ HAI thư mục `~/.omp` và `~/.ultraworkers` đã tồn tại; nếu không, mọi câu về thư mục config trong doc sẽ mô tả một thế giới chưa tồn tại",
+   "W10 — CI/Docker/brew/nix đã đổi tên, để tài liệu cài đặt không hướng dẫn sai tên artifact",
+   "M2 — exports map đã chốt trên main; nếu chưa thì `docs/extension-loading.md` mô tả một bản đồ đang sửa"
+  ],
+  "blocks": [
+   "Cổng phát hành của M5 — không ký/n notarize được cho tới khi tài liệu không còn mô tả tên cũ như thể đó là tên hiện hành",
+   "ĐIỀU KIỆN KẾT THÚC 'một grep token `omp` đứng riêng trên `.md` chỉ trả về tập legacy có chủ đích' của plan §ĐỊNH NGHĨA HOÀN THÀNH"
+  ],
+  "effort": "S theo bảng effort của plan (1 ngày công) — và con số đó ĐÚNG, với điều kiện là bỏ qua bước số 3. Ba việc nặng nhất theo thứ tự: (1) cột tương thích trong `docs/environment-variables.md` — 100 dòng trên 11 bảng, mỗi bảng header khác nhau, sửa tay; (2) phân loại 549 lượt trên 93 file, không phải lượt nào giống nhau; (3) 24 URL GitHub trên 13 file nếu quyết định ở `open_questions` #1 là có đổi. Nếu W4 chưa land thì cột tương thích không có nội dung và phần này chỉ còn 1 dòng — đó là lý do bước 1 là điều kiện chặn chứ không phải lời khuyên.",
+  "risk": "1.",
+  "n_questions": 6,
+  "n_corrections": 15,
+  "gate": "Ba quy tắc, chạy CẢ BA, và cả ba đều phải đỏ được. Dùng script `scripts/rename/check-docs-rename.ts`; dưới đây là bản một dòng để kiểm cục bộ.\n\nQUY TẮC A — không còn token thương hiệu ngoài allow-list:\n  P='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'\n  { git grep -lE \"$P\" -- '*.md' ':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' || true; } \\\n    | LC_ALL=C sort > /tmp/w13-actual.txt\n  { sed 's/[[:space:]]*#.*$//' scripts/rename/docs-legacy-allowlist.txt | sed '/^$/d' | LC_ALL=C sort; } > /tmp/w13-allowed.txt\n  comm -23 /tmp/w13-actual.txt /tmp/w13-allowed.txt      # rỗng = XANH, có dòng = ĐỎ\n  comm -13 /tmp/w13-actual.txt /tmp/w13-allowed.txt      # rỗng = XANH, có dòng = ĐỎ (dòng allow-list đã hết hiệu lực)\n  VÌ SAO ĐỎ ĐƯỢC: thêm một file `.md` mới mang thương hiệu, hoặc quên gỡ một file khỏi allow-list sau khi đã đổi tên, đều làm `comm` in ra dòng. `|| true` là BẮT BUỘC — `git grep` exit 1 khi không khớp, nếu nối bằng `&&` thì `comm` bị bỏ qua và gate luôn xanh, tức là gate không phân biệt được 'đã làm' với 'lệnh không chạy'. Đây đúng là lỗi mà yêu cầu cảnh báo.\n\nQUY TẮC B — biến môi trường không mồ côi, hai chiều (DoD 'không có biến mới nào mồ côi'):\n  comm -13 <(git grep -ohE '(process\\.env|Bun\\.env)\\.ULTRAWORKERS_[A-Z0-9_]+' -- '*.ts' | grep -oE 'ULTRAWORKERS_[A-Z0-9_]+' | LC_ALL=C sort -u) \\\n          <(grep -ohE 'ULTRAWORKERS_[A-Z0-9_]+' docs/environment-variables.md | LC_ALL=C sort -u)\n  Baseline tôi đo được: phía code 0, phía doc 0 -> `comm` rỗng -> XANH. Nó đỏ đúng lúc cần: W4 thêm `ULTRAWORKERS_CONFIG_DIR` vào code mà W13 quên ghi vào doc, hoặc doc nói một tên mà không chỗ nào đọc. Đây là hợp đồng quan sát được, không phải kiểm tra hình thức.\n\nQUY TẮC C — changelog bất biến:\n  git diff --name-only -- 'packages/*/CHANGELOG.md' | grep -q . && echo 'FAIL: changelog bị sửa' && exit 1\n  Baseline 0 dòng. Đỏ ngay khi có ai thêm một mục changelog 'vì lần đổi tên này hướng tới người dùng' — đúng cái sai lầm AGENTS.md cấm mà plan nêu là rủi ro số một.\n\nCỔNG KẾT: quy tắc A rỗng cả hai chiều, quy tắc B rỗng, quy tắc C rỗng, và `bun run check:ts` exit 0. LƯU Ý VỀ `bun run check` MÀ PLAN CHỈ ĐỊNH: đó là `bun run --parallel check:ts check:rs`, cần cargo, và typecheck không nói gì về nội dung markdown. Giữ nó như điều kiện phụ, đừng để nó thay cho ba quy tắc trên.",
+  "gate_can_fail": true
+ },
+ {
+  "id": "W13p",
+  "title": "Rename the binary name the two Python packages actually spawn — the only brand occurrence Python executes — and change nothing else they mention",
+  "wave": "Wave 4",
+  "one_line": "In `python/omp-rpc` and `python/robomp` exactly two source lines mint the binary name (`client.py:455` and `config.py:95`), plus two shipped-config overrides the plan's grep cannot see (`docker-compose.yml:81` and `.env.example:185`) that would silently defeat both edits; every other `omp` in `python/**` is a Unix group that is materialized on real hosts, a container-sandbox on-disk layout, or the CLI's own config dir owned by W4/W6, and all of them stay. The Python packages ship in the same release as W9 because between a TS-only rename and a Python rename there is a window in which the new binary has no `omp` command and the Python clients still call one.",
+  "user_visible_effect": "The typed RPC client and the robomp triage bot spawn the renamed binary by default instead of failing with FileNotFoundError on `omp`.",
+  "files": [
+   "python/omp-rpc/src/omp_rpc/client.py [modify,verified]",
+   "python/robomp/src/config.py [modify,verified]",
+   "python/omp-rpc/tests/test_client.py [modify,verified]",
+   "python/robomp/docker-compose.yml [modify,verified]",
+   "python/robomp/.env.example [modify,verified]",
+   "python/omp-rpc/pyproject.toml [modify,verified]",
+   "python/robomp/pyproject.toml [modify,verified]",
+   "python/robomp/src/worker.py [modify,verified]",
+   "python/robomp/src/sandbox.py [modify,verified]",
+   "python/robomp/src/tasks.py [modify,verified]",
+   "python/robomp/entrypoint.sh [modify,verified]",
+   "python/omp-rpc/tests/test_user_group.py [modify,verified]",
+   "python/robomp/tests/test_sandbox.py [modify,verified]",
+   "python/robomp/tests/test_worker.py [modify,verified]"
+  ],
+  "n_files": 14,
+  "depends_on": [
+   "W9 (the binary name W9 installs is the value these four sites must carry — W13p cannot name the new command without W9, and shipping W9 without W13p leaves the Python clients calling a command that no longer exists)"
+  ],
+  "blocks": [
+   "W10 (its Docker work builds the image whose `/usr/local/bin/omp` shim at Dockerfile:180 and ENTRYPOINT at :216 is what `ROBOMP_OMP_COMMAND` names; if W10 renames the shim and this item has not updated docker-compose.yml:81, the robomp image is built pointing at a command it no longer contains)"
+  ],
+  "effort": "S, not the plan's M — and the plan overcounts for a defensible reason while undercounting the inventory. The edits themselves are 6 string values across 4 code files plus 4 descriptive strings across 2 manifests: about 10 added and 10 removed lines in 7 files, with roughly 150 real `omp` occurrences left deliberately untouched. What the plan priced as M is the deliberation of enumerating 24 occurrences into three sets, and that enumeration is already done and verified here (4 / 8 / 12, per-file counts pinned), so the expensive half of the plan's estimate is spent. What it missed — the compose override, the `.omp*` family being 108 rather than 12, the `~/.omp` config-dir category, and the `robomp:22` dependency coupling — is discovery cost that this spec has already paid. Realistically half a day: 2-3 hours of edits, 1 hour reconciling the keep-list with W7's `scripts/rename/keep-list.txt`, 1 hour of gates, and the rest waiting on the two open questions below. The one thing that can stretch it is container verification, which cannot be done from this repository at all.",
+  "risk": "Highest consequence, and the one the plan names correctly: editing only `client.py:455` and `config.py:95` and calling it done.",
+  "n_questions": 5,
+  "n_corrections": 6,
+  "gate": "Three gates, all executed from the repo root, all verified to produce the stated result on HEAD 84cbac9 BEFORE any edit. Gates 1 and 2 are tripwires (red now, green after the work); gate 3 is an invariant (green now, green after, RED on a partial rename) and is the one that catches the failure this item is actually about.\n\n--- GATE 1 — THE SPLIT (tripwire: RED today) ---\nCHANGED=$(git grep -c '\"omp\"' -- python/omp-rpc/src/omp_rpc/client.py python/robomp/src/config.py python/omp-rpc/tests/test_client.py 2>/dev/null | wc -l | tr -d ' ')\nKEPT=$(git grep -c '\"omp\"' -- python/omp-rpc/tests/test_user_group.py python/robomp/src/worker.py python/robomp/src/sandbox.py python/robomp/tests/test_sandbox.py python/robomp/tests/test_worker.py 2>/dev/null | tr -d ' ' | cut -d: -f2 | paste -sd, -)\necho \"set_i_files_still_matching=$CHANGED keep_counts=$KEPT\"\n[ \"$CHANGED\" = \"0\" ] && [ \"$KEPT\" = \"5,2,2,8,3\" ]\n\nVerified output today: `set_i_files_still_matching=3 keep_counts=5,2,2,8,3` → RED, as designed. The residual total is 20, not 24, and the keep counts are pinned PER FILE so that renaming a Unix group or a sandbox path cannot be masked by deleting a different keep site. `git grep -c` prints nothing for a zero-count file, which is why the changed-file check counts LINES OF OUTPUT (3 today) rather than summing hits.\n\n--- GATE 2 — NO SHIPPED FILE PINS THE OLD NAME (tripwire: RED today) ---\nOV=$(git grep -ohE 'ROBOMP_OMP_COMMAND[=:][[:space:]]*[A-Za-z][A-Za-z0-9_-]*' -- python/robomp/docker-compose.yml python/robomp/.env.example | awk -F'[=:] *' '{print $2}' | paste -sd, -)\necho \"shipped_overrides=[$OV]\"; [ \"$OV\" = \"ultraworkers,ultraworkers\" ]\n\nVerified output today: `shipped_overrides=[omp,omp]` → RED, as designed. This is the gate that does not exist in the plan. It targets the two files the `\"omp\"` grep cannot see, because there the value is unquoted-at-line-start and preceded by the variable name.\n\n--- GATE 3 — FOUR-WAY NAME AGREEMENT (invariant: GREEN today, RED on a partial rename) ---\nC=$(grep -oE 'executable: str = \"[^\"]+\"' python/omp-rpc/src/omp_rpc/client.py | grep -oE '\"[^\"]+\"' | tr -d '\"')\nR=$(grep -oE 'omp_command: str = Field\\(\"[^\"]+\"' python/robomp/src/config.py | grep -oE '\"[^\"]+\"' | tr -d '\"')\nD=$(grep -oE 'ROBOMP_OMP_COMMAND: *[^ ]+' python/robomp/docker-compose.yml | awk '{print $2}')\nE=$(grep -oE 'ROBOMP_OMP_COMMAND=[A-Za-z][A-Za-z0-9_-]*' python/robomp/.env.example | cut -d= -f2)\necho \"client=$C config=$R compose=$D env=$E\"\n{ [ -n \"$C\" ] && [ \"$C\" = \"$R\" ] && [ \"$C\" = \"$D\" ] && [ \"$C\" = \"$E\" ]; }\n\nVerified output today: `client=omp config=omp compose=omp env=omp` → GREEN (all four agree today). This gate is the structural mirror of §3.1: a consumer reads a name from a constant while a producer hardcodes the literal elsewhere, and nothing executes either. It stays green through a correct rename and goes red the moment one of the four is missed — most valuably if `config.py` is changed and `docker-compose.yml` is not, which is precisely the mistake gate 1 alone would report as success.\n\n--- ENVIRONMENT-SUFFIXED GATE — the behavioural one, WITH a runnable-prefix check ---\nRun ONLY if the prefix prints READY. On this machine the prefix FAILS (`python3 -m pytest --version` → `No module named pytest`), and the gate must then report NOT-RUNNABLE and exit non-zero — never silently pass.\n\n  if python3 -m pytest --version >/dev/null 2>&1; then echo READY; else\n    echo \"NOT-RUNNABLE: pytest missing. Build it with:\"; \\\n    echo \"  uv venv /tmp/ompw13-venv -p 3.13\"; \\\n    echo \"  VIRTUAL_ENV=/tmp/ompw13-venv uv pip install pytest pytest-asyncio respx httpx pydantic pydantic-settings fastapi uvicorn click python-dotenv -e python/omp-rpc -e python/robomp\"; \\\n    exit 2; fi\n  /tmp/ompw13-venv/bin/python -m pytest -q python/omp-rpc/tests   # 81 passed, 17 subtests\n  /tmp/ompw13-venv/bin/python -m pytest -q python/robomp/tests      # 665 passed, 4 skipped\n\nThe two invocations must stay SEPARATE. Combined they fail at collection with `ModuleNotFoundError: No module named 'tests.test_user_group'` — both directories are named `tests` and neither has `__init__.py`.",
+  "gate_can_fail": "Yes, and the reason each of the three can fail is different.\n\nGATE 1 fails the moment a set-(i) site is missed, and — because the keep counts are per file rather than a single total — it also fails if the engineer satisfies '20 remain' by renaming a Unix group or a sandbox path. That second failure mode is the one the plan's total-count check would miss entirely: dropping `test_user_group.py` from 5 to 0 and `test_sandbox.py` from 8 to 3 both land on exactly 20. Verified red today (`set_i_files_still_matching=3`).\n\nGATE 2 fails if `docker-compose.yml` or `.env.example` still names the old command. This is the gate for a mistake the plan does not contain, and the mistake it catches is silent: the container starts, robomp boots, and the first RPC spawn is the only evidence. Verified red today (`shipped_overrides=[omp,omp]`).\n\nGATE 3 fails on a PARTIAL rename — any one of the four sources changed without the other three. It is the only gate here that stays green before and after and therefore functions as a regression net rather than a progress indicator. Verified green today (`client=omp config=omp compose=omp env=omp`); it must be green again only when all four read the new name.\n\nStated plainly so they are not over-trusted: the environment-gated pytest run cannot fail on a rename at all if the prefix is skipped — which is why the prefix exits 2 with NOT-RUNNABLE rather than falling through. `bun run check:ts` is in the plan's command line and is STRUCTURALLY BLIND here: it filters `./packages/*` and oxlint is JS/TS only, so no edit to any file in this item can turn it red. It must not be reported as evidence for this work. Nothing in this repository executes `docker-compose.yml`, so gate 3 is a static string comparison and not a behavioural proof that a container spawns the right command — a real container smoke run is the only thing that would be, and it is out of scope."
+ }
+]

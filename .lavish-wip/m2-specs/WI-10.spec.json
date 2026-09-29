@@ -1,0 +1,160 @@
+{
+  "id": "WI-10",
+  "title": "Chốt một bề mặt viết chuẩn (tài liệu quyết định, không code)",
+  "wave": 1,
+  "one_line": "Write one ADR that ranks the five extension writing surfaces, marks the compat-only ones frozen, and answers M2-OQ2 in literally one of the words YES / NO / DEFERRED — changing no runtime code and adding no test.",
+  "user_visible_effect": "none at runtime — the diff is three markdown files and no TypeScript. The only thing a user can notice is that a third-party extension author now has one page that says which surface to write against, instead of inferring it from five directories and a four-sentence paragraph buried in docs/extensions.md.",
+  "files_touched": [
+    {
+      "path": "docs/extension-writing-surfaces.md",
+      "action": "create",
+      "change": "The ADR itself. A six-row status table (five extension-facing writing surfaces + the core-only capability registry), each row carrying an explicit status: CANONICAL, COMPATIBILITY-ONLY / FROZEN, or CORE-ONLY / NOT EXTENSION-REACHABLE. Plus the M2-OQ2 answer, the 'new capability must name its target surface' rule, and the legacy-shim disposition.",
+      "verified": true,
+      "note": "The directory exists and is the established home for exactly this kind of document: docs/ is flat, holds 82 .md files, and already carries extension-loading.md, extensions.md, hooks.md and custom-tools.md. There is NO adr/, decisions/ or architecture/ subdirectory in the tree — find for '*adr*' and '*decision*' returns only packages/coding-agent/src/prompts/system/plan-mode-tool-decision-reminder.md, which is a prompt and unrelated. So docs/ is the only convention available. The filename deliberately mirrors WI-0's docs/extension-trust-model.md so the two wave-1 ADRs read as a pair; AGREE THE NAME WITH WI-0 BEFORE WRITING, because two ADRs must not land under divergent naming."
+    },
+    {
+      "path": "docs/extensions.md",
+      "action": "modify",
+      "change": "Replace the nine-line section '## Extensions vs hooks vs custom-tools' (heading at line 901, body at 903-909) with a short pointer that names the ADR as the authoritative surface ranking. Keep at most a one-line summary; do not leave two independent answers to the same question in the tree.",
+      "verified": true,
+      "note": "VERIFIED EXISTING, and this is the single most important thing the plan never mentions: docs/extensions.md:901-909 ALREADY answers part of this work item, informally and incompletely. It says 'Use the right surface', calls extensions 'unified system', calls hooks 'separate legacy event API', covers custom-tools, and then says 'If you need one package that owns policy, tools, command UX, and rendering together, use extensions.' It covers only THREE of the five surfaces — custom-commands/ and plugins/ are absent — it never uses a status word a reviewer can check, and it never mentions the capability registry at all. If the ADR lands without this edit, the tree ends up holding two conflicting answers to the same question, which is strictly worse than either one alone."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under the empty '## [Unreleased]' heading at line 3, user-facing, leading with what an author can now do.",
+      "verified": true,
+      "note": "VERIFIED: '## [Unreleased]' is at line 3 and is currently empty; the next heading is '## [18.3.3] - 2026-09-27' at line 5. Per AGENTS.md the entry is one line, brief, user-facing, with root-cause narration left to the commit. This item is docs-only so it could arguably skip the changelog, but WI-0 touches the same file and a paired set of ADRs with one changelog line between them reads as an accident."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "HARD GATE — do not start until docs/extension-trust-model.md exists in the tree (WI-0 merged). Run `ls docs/extension-trust-model.md`. If it is absent, STOP and report WI-10 blocked; do not draft a partial ADR. M2-OQ2 changes what the word 'canonical' means for a third-party author, so an ADR written on an unwritten trust posture freezes the wrong contract and every later posture change becomes a breaking change for authors who already shipped against it.",
+      "anchor": "docs/extension-trust-model.md (produced by WI-0; does not exist at HEAD 808b365)"
+    },
+    {
+      "n": 2,
+      "instruction": "Settle the filename with the WI-0 author before creating anything, then create the ADR with a status table as its FIRST section — not a preamble, not background. Six rows, one per surface, columns: Surface | Path | Status | What it is for | Evidence. The six surfaces are exactly these, in this order: (1) extension factory TypeScript, (2) hooks, (3) custom tools, (4) custom-command markdown, (5) plugin manifest package, (6) capability registry — the last marked CORE-ONLY.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/, hooks/, custom-tools/, custom-commands/, plugins/; packages/coding-agent/src/capability/index.ts"
+    },
+    {
+      "n": 3,
+      "instruction": "For each of the five extension-facing rows, write a status word a reviewer can literally check — CANONICAL, or COMPATIBILITY-ONLY / FROZEN. Do not write prose hedges. The evidence column for the extension-factory row must cite the four in-tree markers that say the extension surface is a strict superset of the hook surface; there are FOUR of them, not the two the plan names. Quote each one's comment so the superset argument is checkable rather than asserted.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:230, :395, :568, :1227 (all four carry '// fallow-ignore-next-line code-duplication')"
+    },
+    {
+      "n": 4,
+      "instruction": "Answer M2-OQ2 as a standalone, quotable line containing exactly one of the words YES, NO, or DEFERRED — 'Capability registry: <YES|NO|DEFERRED>'. Put it near the top so a reviewer who reads nothing else still gets it. Then give the reasoning beneath it, in one short paragraph, drawing on: defineCapability throws on a duplicate id, the registry has no provenance layer, and the fact that a module-scope single-writer registry is what makes a second load in the same process a crash rather than a re-registration. A DEFERRED is a legal answer but it must be a deferral WITH a named owner and a milestone, or it is indistinguishable from not answering.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:89-96 (defineCapability; the throw is at :90-92)"
+    },
+    {
+      "n": 5,
+      "instruction": "State the ACCEPTED RULE, which is the actual deliverable: a new capability MUST name its target surface in its PR description. Write that no lint rule or CI check enforces it, and say why in one sentence — a check that a PR mentions a surface is not worth its maintenance cost and would violate AGENTS.md's ban on assertions with no consumer contract. The enforcement is a review norm, and that is a deliberate choice, not an omission.",
+      "anchor": "AGENTS.md, 'Testing Guidance' — no placeholder tests, no assertions without a named consumer contract"
+    },
+    {
+      "n": 6,
+      "instruction": "Add a FROZEN list naming what must not be touched while implementing the decision: the legacy shims, and the fact that removing them is a separate breaking-change project with its own milestone. Give the real line counts so a future reader can see the cost and check it has not silently changed. All five are verified exact and sum to 4833.",
+      "anchor": "extensibility/legacy-pi-coding-agent-shim.ts (1649), plugins/legacy-pi-compat.ts (2783), legacy-pi-ai-shim.ts (179), legacy-typebox.ts (179), legacy-pi-tui-shim.ts (43)"
+    },
+    {
+      "n": 7,
+      "instruction": "Add a short 'Consequences' section naming the three things this decision unblocks and the one thing it does not: it unblocks WI-5 commit 2-3 (whether source attribution is infrastructure or dead weight), WI-7 (whether the mode registry is built ON the capability layer or BESIDE it), and WI-11/WI-12 (which substrate they target). It does NOT unblock any code — the implementation of the decision is explicitly out of M2 scope, and the document must say so, or the next engineer will read a decided posture as permission to start deleting shims.",
+      "anchor": "plan lines 4531-4532 (WI-5 gating), 6669-6673 (M2-OQ2 blast radius)"
+    },
+    {
+      "n": 8,
+      "instruction": "Edit docs/extensions.md: replace the '## Extensions vs hooks vs custom-tools' section with a pointer. Do not delete the section outright — external readers have linked to it — and do not leave its old body in place beside the new pointer, because that recreates the two-answers problem this step exists to prevent.",
+      "anchor": "docs/extensions.md:901-909"
+    },
+    {
+      "n": 9,
+      "instruction": "Add the changelog line, then run the gate in the `gate` field before declaring done.",
+      "anchor": "packages/coding-agent/CHANGELOG.md:3"
+    }
+  ],
+  "code_shape": "",
+  "test_contract": "There is no test, and absence is the correct instrument here — not a compromise. Three independent reasons, and the third is the one that actually binds. (1) A document has no observable runtime contract; AGENTS.md forbids placeholder tests and tests that merely assert a thing exists. (2) The one automated check anyone would reach for — a lint rule or CI step asserting 'the PR mentions a target surface' — is explicitly rejected by the plan and by AGENTS.md's ban on assertions with no consumer contract; there is no consumer that would notice it missing. (3) The natural instinct, a test asserting the ADR file exists, is a source-grep and is banned outright: it would pass while the document said the wrong thing, which is the exact failure this item exists to prevent. The real contract is a REVIEWER READ-LIST with five failure conditions, spelled out in the `gate` field. A maintainer who cannot answer three questions from the ADR's text alone, without asking the author, has not been given a decision.",
+  "test_files": [],
+  "verification": "Human review by ONE maintainer. Do NOT present `bun run check:ts` as evidence for this item — it runs oxlint plus `tsgo --noEmit` over `packages/*/src/**/*.{ts,tsx}` and `packages/*/{test,bench,examples,scripts}/**/*.ts` (package.json:94-95). Markdown is outside every one of those globs, so a passing check:ts is a statement about zero bytes of this change. Equally, `bun test` is currently blocked environment-wide: the native addon is not built (no pi_natives*.node under packages/natives), so it reports 0 pass. Neither is evidence here; run neither and say so. The real verification is these five, all of which a reviewer can do in minutes:\n\n1. `ls docs/extension-writing-surfaces.md` — the file is in the tree, and it names a decider and a date.\n2. `grep -n 'Capability registry' docs/extension-writing-surfaces.md` returns a line whose status cell is literally YES, NO, or DEFERRED. A line that merely lists the registry among six surfaces FAILS this check — that is the deferral the plan warns about, and it is the one failure this item must never ship.\n3. `git diff --stat` shows exactly three files and NO file ending in .ts. Any .ts in the diff means code was written, which this item forbids.\n4. `git diff docs/extensions.md` shows the section at former line 901 now points at the ADR, and that the old three-surface list no longer stands as a competing answer.\n5. `git diff packages/coding-agent/CHANGELOG.md` shows the new line under '## [Unreleased]' (line 3) and that the '## [18.3.3] - 2026-09-27' section below it is untouched.",
+  "gate": "DONE means all five hold. (1) docs/extension-writing-surfaces.md exists, and names a decider and a date. (2) A maintainer who has read nothing else can answer three questions from the text alone, without asking the author: which surface is CANONICAL for new work; which are COMPATIBILITY-ONLY and frozen; and whether the capability registry is extension-reachable. (3) The M2-OQ2 answer is one of exactly three words — YES, NO, or DEFERRED — and is greppable as a standalone line, not implied by surrounding prose. (4) `git diff --stat` shows exactly three files, none of them TypeScript. (5) The legacy shims are named with their real line counts and an explicit statement that removing them is a separate breaking-change project outside M2. This gate FAILS if: no ADR file is in the tree; the six-surface table lists surfaces without choosing among them; the M2-OQ2 answer is absent or is any fourth wording such as 'TBD', 'under discussion', or 'it depends'; docs/extensions.md still carries its old three-surface answer beside the new one; any .ts file appears in the diff; or the shims are described as removable within M2. Note the honest limit of this gate: nothing in CI can enforce any of it. Markdown is outside every lint and typecheck glob in package.json, there is no markdown linter, and there is no docs index to break. The gate is a human read, and it must be run as one — a green CI run on this branch means nothing about whether this item is done.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "WI-0 — extension trust model. HARD dependency and a hard stop: M2-OQ2 changes what 'canonical' means for a third-party author, so writing the surface ranking on an unwritten trust posture freezes the wrong contract and every later posture change becomes a breaking change for authors who already shipped. WI-0 is also the sibling item that owns the paired ADR filename and the same CHANGELOG file."
+  ],
+  "blocks": [
+    "WI-7 — registerMode mode registry. Blocked because the plan's own M2-OQ2 blast-radius text names it first: the mode registry must be built ON the capability layer or BESIDE it, and the answer is only knowable once extension-reachability is decided. Wave 5 also depends on waves 1-4 having landed.",
+    "WI-11 — per-extension state persistence. Blocked because a per-extension store must know whether a capability-per-extension exists before it can pick a substrate to persist keyed to it.",
+    "WI-12 — MCP contribution architecture. Blocked for the same reason — the plan's wave-8 note is explicit that WI-10 must say which surface an MCP contribution belongs to.",
+    "M2 acceptance item 9 (§11.3) — 'Hai ADR đã merge (WI-0, WI-10), và M2-OQ2 đã được trả lời bằng YES / NO / DEFERRED'. Fails on any of: no ADR file in the tree; the M2-OQ2 answer is not literally one of the three words. The plan is explicit that this item has no test and must not pretend to have one.",
+    "M2 acceptance item 10 (§11.3) — no §4.3 boundary silently deleted. The closer walks §4.3 row by row adding a 'still present / replaced by a decision at line …' column and lets no cell through blank; this ADR is what fills the Capability row's cell.",
+    "M3 — §11.x notes M3 needs one settled authoring surface (M2-OQ1/OQ2/OQ7) before it can start."
+  ],
+  "effort": "S — half a day, matching the plan's own 'S để quyết định'. That estimate holds only if the author resists expanding the document into an enforcement design: enforcement is M–L and explicitly outside M2. Add roughly an hour over the naive estimate for step 3, because the correct marker set is four `fallow-ignore-next-line code-duplication` sites and the plan names only two, so the superset argument has to be rebuilt from the tree rather than copied. Implementation cost of the decision, for planning only, is HIGH and is outside M2 — that asymmetry, not the writing, is the argument for doing this first.",
+  "risk": "The comfortable failure is a deferral wearing the costume of a decision, and it has a specific signature: a document that lists six surfaces, assigns each a descriptive adjective, and never says which one is canonical for new work. Every reader then treats the list as settled, and the next engineer builds a public API on a posture nobody chose — which is the exact hazard the plan names when it says a list without a choice 'đã hoãn quyết định trong lúc trông như đã quyết'. The tell is simple and checkable: if the M2-OQ2 cell is anything other than one of the three literal words, the item is not done. The second-order risk is the opposite one — an author who reads 'NO' on M2-OQ2 as licence to start deleting the 4833 lines of legacy shim. They are not deleted under M2; they are the reason existing plugins currently run, and removing them is its own breaking-change project with its own milestone. State that in the document, in the same breath as the answer, or the decision will be executed instead of merely recorded.",
+  "open_questions": [
+    "MUST BE DECIDED BY A HUMAN, NOT BY THE ENGINEER WRITING THE DOC: which of the three words is the M2-OQ2 answer. The spec deliberately does not pick one. Picking it would repeat the failure this item exists to prevent — a decision made by accident, inside a document, by someone who was only supposed to be recording it. Prepare the choice; do not make it.",
+    "If the answer is DEFERRED rather than YES or NO: DEFERRED is only defensible with a named owner and a named milestone. A deferral without both is indistinguishable from not answering, and it fails gate condition (3). Settle the owner and the milestone BEFORE writing the word, or write YES or NO instead.",
+    "COORDINATION WITH WI-0 (same wave, same reviewer, two of the same three files): agree the ADR filename convention so the pair reads as a set — WI-0's spec chose docs/extension-trust-model.md, so docs/extension-writing-surfaces.md is the matching name. Also note WI-0's spec cites the changelog anchor as 'line 1057, the #7955 entry under ## [18.1.16]', which is stale: the current released heading is '## [18.3.3] - 2026-09-27' at line 5. Two items editing the same file in the same wave will conflict on the context lines.",
+    "Do custom-commands/ and the plugin manifest get a status word of their own, or are they folded into 'extensions'? The plan lists them as two of the five separate surfaces and the tree backs that up — they are genuinely distinct directories with distinct loaders. This spec assumes five separate rows; if the maintainer collapses them, the collapse must be argued in the document, not made silently by omission.",
+    "Does the ADR need to name which existing docs are now subordinate (docs/hooks.md, docs/custom-tools.md), or is redirecting only docs/extensions.md:901 enough? Recommend the minimum — three files — and let a follow-up widen it, so the diff stays reviewable."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Plan line 5895: the extension factory surface is at 'types.ts:1231'.",
+      "verdict": "STALE — off by 25 lines",
+      "correction": "ExtensionAPI is declared at packages/coding-agent/src/extensibility/extensions/types.ts:1256. Line 1231 is inside a doc comment for a neighbouring type ('Service tiers accepted by each provider family'). Anything an engineer does with the plan's 1231 lands 25 lines short of the interface.",
+      "evidence": "`grep -n 'export interface ExtensionAPI' packages/coding-agent/src/extensibility/extensions/types.ts` → 1256:export interface ExtensionAPI. Related: ExtensionFactory at :1660, and §5.x of the plan separately cites 'extensions/types.ts:1255-1315' for the 46 on() overloads, whose start anchor 1255 is likewise one line off the real interface at 1256."
+    },
+    {
+      "claim": "Plan lines 5893-5896 and 5911: there are TWO 'fallow-ignore-next-line code-duplication' markers, at types.ts:230 and :543, and they carry the argument that the extension surface is a strict superset of the hook surface.",
+      "verdict": "WRONG COUNT and WRONG ANCHOR — there are four markers, and :543 matches nothing",
+      "correction": "The file has FOUR such markers, at lines 230, 395, 568 and 1227. The plan's :230 is correct (it precedes ExtensionUIContext, commented 'extensions expose a strictly larger UI surface'). Its :543 does not correspond to a marker at all — the nearest is :568. The plan therefore understates its own evidence by half: 230 and 395 are the pair that actually make the superset argument for the UI and runtime contexts, 568 covers ExtensionCommandContext, and 1227 covers RegisteredCommand.",
+      "evidence": "`grep -n 'fallow-ignore-next-line code-duplication' packages/coding-agent/src/extensibility/extensions/types.ts` → 230, 395, 568, 1227. The file is 1849 lines, so all four are stable positions."
+    },
+    {
+      "claim": "Plan lines 5893 and 4441: the capability layer is '14 capability trên 84 provider pair'.",
+      "verdict": "HALF RIGHT — 14 verified, 84 NOT REPRODUCIBLE, and the miscount hides a correctness trap",
+      "correction": "14 capabilities is exactly right. The 84 is not: the static count of capability-provider registrations is 20, all at module top level, none in a loop, one provider per call. The 84 figure almost certainly came from conflating the capability registry with a SECOND, unrelated registry that shares the function name registerProvider — the MODEL provider registry at config/model-registry.ts, exposed to extensions as pi.registerProvider (declared extensions/types.ts:1570, implemented loader.ts:362, replayed from pendingProviderRegistrations in sdk.ts:1007 and :2489). That conflation is not cosmetic: the model-provider registry IS already extension-reachable today, and docs/extensions.md:905 says so in as many words ('extensions (…): unified system (events + tools + commands + renderers + provider registration)'). An ADR that says 'provider registries are not extension-reachable' would be flatly false. Only the CAPABILITY registry is core-only. The document must name which registry it means.",
+      "evidence": "14: `grep -rn 'defineCapability<' packages/coding-agent/src/` → 14 hits, all under packages/coding-agent/src/capability/. 20: `grep -rn '^registerProvider(' packages/coding-agent/src/ | grep -cE 'Capability\\.id'` → 20, spread over discovery/{opencode:6, gemini:5, cursor:3, github:2, mcp-json:1, claude-md:1, agents-md:1, ssh:1}. Full `registerProvider(` hits number 42, splitting 20 capability / 22 model-provider. The two registries are distinguishable by first argument: `someCapability.id` versus a name string."
+    },
+    {
+      "claim": "Plan line 5904: the core-only capability registry is at 'capability/index.ts:88'.",
+      "verdict": "OFF BY ONE — points at a JSDoc terminator, not the code",
+      "correction": "defineCapability is declared at packages/coding-agent/src/capability/index.ts:89 and ends at :96. Line 88 is the closing ' */' of its doc comment. The module-scope registry map is at :34 and the duplicate-id throw is at :90-92. Cite :89-96 (which is what the plan's own §4.3 R1 does — so the plan is internally inconsistent about this anchor, and §4.3's version is the correct one).",
+      "evidence": "`sed -n '84,99p' packages/coding-agent/src/capability/index.ts` → 84 section banner, 86-88 JSDoc for defineCapability, 89 the export, 90-92 the duplicate-id throw, 96 the closing brace. §4.3 R1 of the plan cites ':88-96'; the WI-10 body cites ':88'."
+    },
+    {
+      "claim": "Plan line 4724 (wave 6 rationale): 'setHookWidget giữ widget trong hai map không ai giải phóng (extension-ui-controller.ts:78-79)'.",
+      "verdict": "WRONG ANCHOR — off by 9 lines, and the cited lines contain unrelated code",
+      "correction": "The two unowned maps are at packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:87-88, not 78-79. They are the private fields #hookWidgetsAbove and #hookWidgetsBelow. Lines 78-79 are inside the toWireSelectOptions helper, mapping a select option's description field — nothing to do with widget ownership. This is WI-13's and WI-9's anchor rather than WI-10's, but it appears in the wave table this item ships in, so correct it here rather than letting WI-9 inherit it.",
+      "evidence": "`grep -n 'new Map\\|setHookWidget' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` → 87:#hookWidgetsAbove, 88:#hookWidgetsBelow, 343: setHookWidget(...). The file is 1342 lines; `sed -n '78,79p'` returns `: option.description` / `: { label: option.label, description: option.description }`."
+    },
+    {
+      "claim": "Plan line 4694 (wave 5 gate) and WI-0's spec: the wave-5 gate is 'the pi.registerMode row of the outsider-extension fixture'.",
+      "verdict": "NOT A CURRENT ANCHOR — neither exists; both are wave-5/6 artifacts to be created",
+      "correction": "There is no outsider-extension fixture anywhere in the tree, and pi.registerMode does not exist as a symbol. These are things WI-7 and WI-13 will BUILD, not things this plan can cite as evidence. The correct reading is prospective: wave 5's gate is a fixture row that does not exist until WI-7 lands. Do not write either name into a spec or an ADR as if it were present, and do not expect to open them during review.",
+      "evidence": "`grep -rln 'outsider' packages/` → no matches. `grep -rn 'registerMode' packages/coding-agent/src/` → no matches. `find . -name '*outsider*' -not -path './node_modules/*'` → nothing."
+    },
+    {
+      "claim": "Plan lines 4697 and 5921 reference test/extension-ui-header-footer.test.ts (WI-13's wave-6 gate) and test/extension-unload.test.ts (WI-9's fixture).",
+      "verdict": "NOT YET EXISTING — correctly future files, but must not be cited as if runnable",
+      "correction": "Neither file exists. packages/coding-agent/test/ contains a large set of extension tests (extensions-runner.test.ts, extensions-discovery.test.ts, plugin-extensions-discovery.test.ts, extension-provider-registration-rollback.test.ts and many more) but not these two. WI-13 and WI-9 create them in waves 6 and 7. Since WI-10 writes no test, this costs nothing directly — but it does mean the §11.1 five-capability checklist cannot be called green on the strength of this item, and neither doc-side file makes it greener.",
+      "evidence": "`ls packages/coding-agent/test/ | grep -iE '^extension'` returns 15 files, none named extension-ui-header-footer.test.ts or extension-unload.test.ts. Note also that the plan's wave-6 gate names these without the packages/coding-agent/ prefix; the real location is packages/coding-agent/test/."
+    },
+    {
+      "claim": "Not mentioned anywhere in the plan: nothing states that the tree ALREADY contains a partial answer to this work item.",
+      "verdict": "MISSING FROM THE PLAN — and it is the highest-value finding in this review",
+      "correction": "docs/extensions.md:901-909 already contains a section titled '## Extensions vs hooks vs custom-tools' that begins 'Use the right surface:'. It ranks three of the five surfaces in prose, calls hooks a 'separate legacy event API', and closes with 'If you need one package that owns policy, tools, command UX, and rendering together, use extensions.' It is a real prior answer, it is incomplete (custom-commands/ and plugins/ absent), it is uncheckable (no status word), and it is silent on the capability registry. The plan's own framing — 'which surface is canonical' — is therefore not a blank page but a page with a partial draft on it. The ADR must reconcile that section rather than sit beside it, or the tree ships two answers and the conflict is resolved by whichever one a reader opens first.",
+      "evidence": "`sed -n '901,909p' docs/extensions.md` → heading at 901, 'Use the right surface' at 903, the three bullets at 905-907, the closing sentence at 909."
+    },
+    {
+      "claim": "Plan line 5923: 'Phụ thuộc: WI-0 … và WI-7 / WI-8, vì hai cái đó quyết định năng lực mới sẽ đáp trên bề mặt nào.'",
+      "verdict": "INTERNALLY INCONSISTENT — the wave table inverts this",
+      "correction": "WI-7/WI-8 appear here as a soft dependency, but the plan's own wave table (§6.1) and its M2-OQ2 blast-radius text both say the opposite: WI-10 BLOCKS WI-7, and the wave-5 note states wave 5 depends strictly on waves 1-4. WI-8 does not appear as blocked by WI-10 anywhere. Treat WI-0 as the only hard dependency; the WI-7/WI-8 mention is best read as 'this decision must anticipate what WI-7 and WI-8 will need', which is a drafting instruction, not a sequencing constraint.",
+      "evidence": "Plan line 5923 lists WI-7/WI-8 under 'Phụ thuộc'. Plan lines 4693 ('Wave 5 phụ thuộc nghiêm ngặc vào 1-4') and 4704 ('WI-10 chặn WI-7') state the inverse. Line 6669-6673 names WI-7 first among what M2-OQ2 blocks."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-10.spec.json"
+}

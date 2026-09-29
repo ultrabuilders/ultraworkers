@@ -1,0 +1,339 @@
+{
+  "id": "s2",
+  "title": "Sóng 2 — UX cảm nhận được ngay (M3-A3 wheel acceleration, M3-A7 keyed notice queue, M3-D3 transcript scroll chrome)",
+  "wave": "2 (plan lines 7294-7346; the whole wave is exactly these three items — A3, A7, D3)",
+  "one_line": "Fast-scrolling a mouse wheel now speeds up the way a trackpad always has, transient status lines get keys so a newer one can replace an older one instead of scrolling away forever, and the agent transcript overlay grows an unread divider you can click to jump back.",
+  "user_visible_effect": "Wheel scrolling feels the same on a clicky wheel and a trackpad instead of being hard-coded to three rows per notch, with a `ui.mouseWheelSpeedMultiplier` setting to slow it down or speed it up. Status messages that mean 'the same thing' (compaction counts, background-job progress) replace each other on one line above the prompt instead of accumulating as permanent transcript lines. In the agent transcript viewer, a rule and an unread-count pill appear at the first message you have not read; activating it jumps back to the newest message.",
+  "files_touched": [
+    {
+      "path": "packages/tui/src/mouse-wheel.ts",
+      "action": "create",
+      "change": "NEW module: the pure wheel model (`resolveWheelDelta`), the `WheelThresholds` record whose values are the measured ones, a per-pane `WheelAccelerationState` shell with `reset()`, and `setWheelSpeedMultiplier` / `wheelSpeedMultiplier` for the user override. Placed next to `packages/tui/src/mouse.ts`.",
+      "verified": true,
+      "note": "Does not exist yet. `packages/tui/package.json` exports map contains a `./*` entry, so `@oh-my-pi/pi-tui/mouse-wheel` resolves with no package.json change; `packages/tui/src/index.ts:59` is `export * from \"./mouse\"` and the barrel convention (AGENTS.md) says add `export * from \"./mouse-wheel\"` beside it."
+    },
+    {
+      "path": "packages/tui/src/mouse.ts",
+      "action": "modify",
+      "change": "Add a `now: number` field to `SgrMouseEvent` (line 12) and an optional third parameter to `parseSgrMouse(data, now = Date.now())` (line 39) and `routeSgrMouseInput(data, handler, now?)` (line 61) so the decode path is the single place a timestamp is attached. Widen `SelectListMouseTarget.handleWheel` (line 74) from `(delta: -1 | 1)` to `(delta: number, now?: number)` and have `routeSelectListMouse` (line 85) forward `event.now`.",
+      "verified": true,
+      "note": "Read the file in full (110 lines). `SgrMouseEvent` today has exactly six fields — button, col, row, release, wheel, motion, leftClick — and NO timestamp; `parseSgrMouse` at :39 takes only `data`; `routeSelectListMouse` at :87 calls `target.handleWheel(event.wheel)` with no time argument. The plan's claim that the router 'passes the event timestamp down' presupposes a timestamp that does not exist — see plan_corrections."
+    },
+    {
+      "path": "packages/tui/src/apps/git/sidebar.ts",
+      "action": "modify",
+      "change": "Line 896: change `handleWheel(delta: number): void` to `handleWheel(delta: number, now?: number): void` and line 897 replace `this.#scrollView.scroll(delta * 3)` with the resolved model call, so the right pane of git-tui stops scrolling a hard-coded x3.",
+      "verified": true,
+      "note": "NINTH site, the one every `event.wheel * N` grep misses. `sed -n '890,900p'` confirms lines 896-897 are `handleWheel(delta: number) { this.#scrollView.scroll(delta * 3); this.#requestRender(); }`. The plan's `:897` is EXACT here; every other A3 anchor in the plan drifted (see plan_corrections)."
+    },
+    {
+      "path": "packages/tui/src/apps/git/git-tui.ts",
+      "action": "modify",
+      "change": "Line 695: forward the timestamp — `this.#sidebar.handleWheel(event.wheel, event.now)`. Line 697: replace `this.#pane.scrollBy(event.wheel * 3)` with the model call so the MAIN pane accelerates.",
+      "verified": true,
+      "note": "`sed -n '685,700p'` confirms :695 is the right-pane branch (`hit.pane === \"right\"` -> sidebar) and :697 is the main-pane `scrollBy`. The plan's own substantive correction is right — :695's right pane is ALSO x3 via sidebar.ts:897, so it is not the 'x1 line' — but its line numbers (691/693) are off by four."
+    },
+    {
+      "path": "packages/tui/src/overlays/agent-transcript-viewer.ts",
+      "action": "modify",
+      "change": "A3: line 470, replace `this.#browser.scroll(event.wheel * 3)` with the model call. D3: line 470's neighbourhood is unchanged; the unread divider and pill are painted in `#frame` (lines 577-613) using the already-existing `this.#builder.rowForEntry(firstUnreadEntryId)`, and a new key handler routes to `this.#browser.revealEntry(...)`.",
+      "verified": true,
+      "note": "Read the render path in full. `sed -n '460,480p'` confirms :470. `sed -n '505,545p'` confirms `#handleScroll` is at :517-534 (the plan says 515-534 — the doc comment is :516, the signature :517). `sed -n '577,613p'` confirms `#frame` builds `anchor: ScrollRangeAnchor` at :597-608 from `this.#builder.rowForEntry(this.#initialEntryId)`."
+    },
+    {
+      "path": "packages/tui/src/overlays/plan-review-overlay.ts",
+      "action": "modify",
+      "change": "Line 580: replace `this.#scrollView.scroll(event.wheel * 3)` with the model call; keep the immediately-following `this.#captureScrollProgress()` (line 581) exactly where it is.",
+      "verified": true,
+      "note": "Plan said :581; actual is :580. The surrounding `#handleMouse` returns through `routeSgrMouseInput` at :577."
+    },
+    {
+      "path": "packages/tui/src/overlays/rewind-selector.ts",
+      "action": "modify",
+      "change": "Line 245: replace `if (this.#browser.scroll(event.wheel * 3)) this.deps.requestRender();` with the model call, preserving the 'a notch at either end repaints nothing' contract — the repaint must still be gated on the scroll actually moving.",
+      "verified": true,
+      "note": "Plan said :232; actual is :245 (13 lines of drift). `transcript-browser.ts:175-180` `scroll(delta)` returns `false` when the offset is unchanged, so the gate survives as long as the model returns a row count rather than a boolean."
+    },
+    {
+      "path": "packages/tui/src/overlays/copy-selector.ts",
+      "action": "modify",
+      "change": "Line 214: same change as rewind-selector — model call, keep the `if (this.#browser.scroll(...))` repaint gate.",
+      "verified": true,
+      "note": "Plan said :212; actual is :214."
+    },
+    {
+      "path": "packages/tui/src/apps/debug/raw-sse.ts",
+      "action": "modify",
+      "change": "Line 168: replace `this.#frame.scroll(event.wheel * 3)` with the model call, keeping the `this.#frame.isBodyFrameRow(event.row)` guard on line 167 and `this.#onUpdate?.()` on line 169.",
+      "verified": true,
+      "note": "Plan said :167; actual is :168. `#handleMouse` starts at :166."
+    },
+    {
+      "path": "packages/tui/src/apps/debug/log-viewer.ts",
+      "action": "modify",
+      "change": "Line 639: replace `this.#frame.scroll(event.wheel * 3)` with the model call. Keep `this.#statusMessage = undefined;` (line 638) BEFORE the scroll — it is a side effect that must still fire on every wheel notch, accelerated or not.",
+      "verified": true,
+      "note": "Plan said :638; actual is :639. `#handleMouse` at :636, `isBodyFrameRow` guard at :637, `statusMessage` clear at :638, `onUpdate` at :640."
+    },
+    {
+      "path": "packages/tui/src/overlays/usage-dashboard.ts",
+      "action": "modify",
+      "change": "Line 759: replace `this.#scrollBy(event.wheel * 2)` with the model call. This is the only x2 site; it becomes the same model as the x3 sites, which is the point — the multipliers differed only by accident.",
+      "verified": true,
+      "note": "Plan said :753; actual is :759. `handleInput` at :759 dispatches through `routeSgrMouseInput`."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/settings.ts",
+      "action": "modify",
+      "change": "Register `cfgUiMouseWheelSpeedMultiplier = register({ id: \"ui.mouseWheelSpeedMultiplier\", type: \"number\", default: 1, validate: raw => { if (typeof raw !== \"number\" || !Number.isFinite(raw) || raw <= 0) throw new Error(...) } })` and add `effect(cfgUiMouseWheelSpeedMultiplier, setWheelSpeedMultiplier);` — the exact `register` + `effect` pair already used for `cfgTuiMaxInlineImageColumns` at lines 334-341.",
+      "verified": true,
+      "note": "`sed -n '330,341p'` shows the sanctioned pattern: `register({...})` then `effect(cfg, setter)`, with the setter imported from `@oh-my-pi/pi-tui/...` at the top of the file. `validate?: (raw: unknown) => void` exists at `packages/coding-agent/src/config/registry.ts:112` and is invoked (and allowed to throw) at :666 and :680. pi-tui does NOT depend on coding-agent (verified: coding-agent/package.json depends on @oh-my-pi/pi-tui; tui/package.json has no coding-agent dep), so the push direction is mandatory."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/utils/ui-helpers.ts",
+      "action": "modify",
+      "change": "A7: add and export `export interface ShowStatusOptions { dim?: boolean; immediate?: boolean; invalidates?: readonly string[]; fold?: boolean; key?: string }` above the class; change the signature at line 143 to `showStatus(message: string, options?: ShowStatusOptions): void`; inside the method branch — a notice with no `key` keeps today's `chatContainer` path verbatim, a notice with a `key` goes to the keyed queue. Line 1035 (`Session compacted ${times}`) becomes a keyed notice with a stable key.",
+      "verified": true,
+      "note": "Read lines 130-164. The signature is at :143 (plan said :141). `git grep ShowStatusOptions` returns ZERO hits in `packages/**` — the only hit in the whole repo is the plan document itself — so the name is genuinely new and it absorbs the existing anonymous `{ dim?: boolean }` literal in the signature. `git grep -c 'showStatus('` totals 332 lines across 19 files, matching the plan's '~300'. The compaction notice is at ui-helpers.ts:1035 — NOT in event-controller, which the plan implied by listing it under A7's event-controller anchors."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/controllers/event-controller.ts",
+      "action": "modify",
+      "change": "`#handleNotice` (line 1250) routes the `info` branch through `showStatus(message, { key })` so a notice that means the same thing twice replaces itself; the `error` and `warning` branches keep calling `showError`/`showWarning` untouched, because errors and warnings are durable and must not be evicted by a later info line.",
+      "verified": true,
+      "note": "Read lines 1250-1259. Plan said 1244-1251; actual is 1250-1259 (the dispatch `notice: e => this.#handleNotice(e)` is at :313). The `notice` event is `{ type: \"notice\", level, message, source }` — defined at `packages/coding-agent/src/session/agent-session.ts:2812` via `emitNotice` at :2810 — and it carries NO key today, so the key must be decided here, not read off the event."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/interactive-mode.ts",
+      "action": "modify",
+      "change": "A7: add `this.noticeContainer = new Container()` next to the other layout containers (beside the `hookWidgetContainerAbove` construction at lines 1453-1454) and insert `this.noticeContainer` into the layout array at line 1728, immediately before `this.hookWidgetContainerAbove`. Pass it on `InteractiveModeContext` (types.ts) and hand it to `UiHelpers` through the existing `InteractiveModeContext` constructor argument.",
+      "verified": true,
+      "note": "The plan's anchor `interactive-mode.ts:3181` for 'coding-agent already drops content into the composer chrome' is WRONG — `sed -n '3170,3195p'` shows that line sits inside `syncRunningSubagentBadge` / `#composerHint`, with no chrome wiring. The real chrome wiring is at :3054-3068 and the real layout array is the `Container` composed at :1700-1732. `Container.clear()` exists at `packages/tui/src/tui.ts:481`."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/types.ts",
+      "action": "modify",
+      "change": "Declare `noticeContainer: Container` alongside `hookWidgetContainerAbove` (declared at line 126), and add the keyed-notice registry fields next to `lastStatusSpacer` / `lastStatusText` (lines 261-262).",
+      "verified": true,
+      "note": "`grep -n` confirms `hookWidgetContainerAbove: Container;` at :126 and `lastStatusSpacer` / `lastStatusText` at :261/:262. The keyed registry is per-session state and belongs next to the existing status-line bookkeeping."
+    },
+    {
+      "path": "packages/tui/test/wheel-acceleration.test.ts",
+      "action": "create",
+      "change": "NEW: table-driven tests for `resolveWheelDelta` over a synthesized notch stream — detented wheel (three notches per physical detent stay at 1 row), continuous ramp (20 ms apart climbs to the cap; 500 ms apart stays at 1), bounce detection (flip-then-flip-back inside the MEASURED bounce window enables wheel mode; no event for MEASURED idle-reset ms disables it), no-flip streams never enabling wheel mode, same-batch coalescing under the MEASURED batch window, and the override multiplying exactly once.",
+      "verified": true,
+      "note": "Pure-function tests, no terminal and no TUI instance needed — which is why this file is a plain model test and not a wiring test."
+    },
+    {
+      "path": "packages/tui/test/mouse.test.ts",
+      "action": "modify",
+      "change": "EXTEND. Two mandatory repairs first: the exact-equality assertion `expect(parseSgrMouse(\"\\x1b[<0;5;9M\")).toEqual({...})` at lines 22-32 and the `baseEvent: SgrMouseEvent` literal at lines 126-134 both break the moment `SgrMouseEvent` gains a `now` field. Then add coverage that `routeSelectListMouse` forwards `event.now` to `handleWheel` as a second argument.",
+      "verified": true,
+      "note": "Read the file in full (140 lines). Ran it: `bun test packages/tui/test/mouse.test.ts` -> 13 pass, 0 fail, 38 expect() calls, 26ms. The `toEqual` at :22 and the `baseEvent` literal at :126 are the two places a new required field lands."
+    },
+    {
+      "path": "packages/coding-agent/test/notice-queue.test.ts",
+      "action": "create",
+      "change": "NEW: keyed-notice supersession (a low-priority keyed notice then an `immediate` notice that `invalidates` its key — the first disappears from the display and never comes back), `fold` accumulating into a single row, queue-not-overwrite when a notice arrives while another is showing, the render-location contract (a keyed notice is present in the notice container's children and ABSENT from `chatContainer.children`; an unkeyed notice is still in `chatContainer.children`), validation rejecting `0` and negatives, and one integration test driving a real compaction through `EventController` asserting exactly ONE transient notice results.",
+      "verified": true,
+      "note": "Lives in coding-agent, not pi-tui: `UiHelpers` is a class in coding-agent, `#handleNotice` is an EventController method, and the test fixture `createInteractiveModeContext` is at `packages/coding-agent/test/helpers/interactive-mode-context.ts:192` (12,260 bytes) which already supplies `chatContainer` (:202, a `TranscriptContainer`), a `present` that mounts into it (:274), and `ui.requestRender` (:204)."
+    },
+    {
+      "path": "packages/coding-agent/test/interactive-mode-status.test.ts",
+      "action": "modify",
+      "change": "EXTEND: add one test asserting an unkeyed `showStatus` still lands in `chatContainer` with the same two-child spacer+text shape. This is the regression guard for the plan's 'do not merge the two branches' rule and it must keep passing unchanged.",
+      "verified": true,
+      "note": "Already exists and already asserts exactly this: `expect(ctx.chatContainer.children).toHaveLength(2)` at the first and second `showStatus`, and `toHaveLength(5)` when something else intervenes. Reading the file in full, the two branches are already covered on the unkeyed side — A7 must not break it."
+    },
+    {
+      "path": "packages/tui/test/transcript-viewer-scroll-chrome.test.ts",
+      "action": "create",
+      "change": "NEW: scroll up, append a message, assert the divider appears with the right unread count and that activating it returns to the bottom; change terminal width through at least three widths while scrolled and assert the marker still points at the same message; and assert the plain transcript renders byte-identically with the chrome on.",
+      "verified": true,
+      "note": "Sits beside the existing `packages/tui/test/transcript-container.test.ts` (24 KB) and `transcript-outline-row-cache.test.ts`."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/tui/src/mouse-wheel.ts",
+      "instruction": "A3 STEP 0 — DO THIS BEFORE ANY CODE. Run the measurement table on four real terminals (Ghostty, Terminal.app, VS Code, Cursor). For each, record: (a) how many SGR wheel reports one physical detent produces, (b) the inter-report gap for a trackpad continuous scroll, (c) whether a detent emits a direction flip-then-flip-back and how long the pair spans, (d) the gap after which the terminal stops sending. Write the three resulting numbers into the work item as `WHEEL_BATCH_WINDOW_MS`, `WHEEL_BOUNCE_WINDOW_MS`, `WHEEL_IDLE_RESET_MS`, plus the ramp cap. The plan's 200/1500/5 are placeholders, not a spec. Do not write a line of TypeScript before this table exists — the model cannot be tuned and the tests cannot be pinned without it."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/tui/src/mouse-wheel.ts",
+      "instruction": "A3 STEP 1 — create the module. Pure `resolveWheelDelta(notches, thresholds)` that turns a synthesized notch stream into `{ rows, source }`; a `WheelThresholds` record (batchWindowMs, bounceWindowMs, idleResetMs, maxRowsPerNotch) so the measured values live in one exported constant; a thin per-pane `WheelAccelerationState` with `reset()` that owns the notch history and hands it to the pure function; and `setWheelSpeedMultiplier` / `wheelSpeedMultiplier` for the user override, applied exactly once, after the model. Keep it a function plus a thin state shell — the plan's biggest risk is that a ramp that lags feels worse than a wrong constant."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/tui/src/mouse.ts",
+      "instruction": "A3 STEP 2 — attach the clock. Add `now: number` to `SgrMouseEvent`; give `parseSgrMouse` and `routeSgrMouseInput` an optional trailing `now` parameter defaulting to `Date.now()`; widen `SelectListMouseTarget.handleWheel` to `(delta: number, now?: number)`; and have `routeSelectListMouse` pass `event.now`. Keep `now` optional on `handleWheel` so a target that ignores it compiles — but see the open question, the recommendation is NOT to accelerate the list targets at all, in which case this widening is the whole change to them."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/tui/src/overlays/agent-transcript-viewer.ts:470",
+      "instruction": "A3 STEP 3 — convert the eight constant sites, one at a time, and re-verify the count after each: agent-transcript-viewer.ts:470, plan-review-overlay.ts:580, rewind-selector.ts:245, copy-selector.ts:214, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639 (all x3) and usage-dashboard.ts:759 (x2). At rewind-selector and copy-selector the repaint stays gated on the scroll actually moving — `transcript-browser.ts:175-180` `scroll()` returns false when the offset is unchanged, so pass a row count through, not a boolean."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/tui/src/apps/git/sidebar.ts:897",
+      "instruction": "A3 STEP 4 — the ninth site. Replace `delta * 3` in `handleWheel` with the model call and widen the signature at :896 to accept `now`. This is the one no `event.wheel * N` grep finds, and it is why git-tui's RIGHT pane is also x3 today — `:695` delegates to it. Add a `WheelAccelerationState` instance per pane: the sidebar gets its own, git-tui's main pane gets its own. Sharing one instance across panes is the plan's second-named risk: scrolling the sidebar would preload momentum for the other pane."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/src/modes/settings.ts",
+      "instruction": "A3 STEP 5 — declare the escape hatch. Register `ui.mouseWheelSpeedMultiplier` (type number, default 1) with a `validate` that throws on 0, negatives, and non-finite values, and wire it with `effect(cfgUiMouseWheelSpeedMultiplier, setWheelSpeedMultiplier)` exactly as `cfgTuiMaxInlineImageColumns` does at :334-341. Before you write the `ui:` block, read the open question: a `UiNumber` with no `options` is deliberately hidden from the settings panel, so this setting as specified is config-file only."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/src/modes/utils/ui-helpers.ts:143",
+      "instruction": "A7 STEP 1 — name the options type and keep the signature compatible. Declare and export `ShowStatusOptions` (dim, immediate, invalidates, fold, key) and change the parameter type in place. All 332 existing `showStatus(...)` call lines must compile untouched — that is the whole point of naming the type rather than changing the shape. Branch inside the method: no `key` means today's `chatContainer` path byte-for-byte; a `key` means the keyed queue. Never merge the two branches."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/src/modes/interactive-mode.ts:1728",
+      "instruction": "A7 STEP 2 — build the keyed row's home. Add a dedicated `noticeContainer` beside the other layout containers and put it in the layout array immediately before `hookWidgetContainerAbove`. Do NOT reuse `hookWidgetContainerAbove`: `ExtensionUIController.#renderHookWidgetContainer` calls `container.clear()` at extension-ui-controller.ts:394 on every hook-widget rebuild, so a notice row placed there is silently wiped. Do NOT route the notice through the composer top chrome either — `syncComposerShape` at interactive-mode.ts:3054-3068 hands the editor a `TopBorderProvider` that returns a pre-rendered string from `StatusLineComponent.getTopBorder` / `getBandTopBorder` / `getStandaloneTopBorder`; there is no component row to drop into."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/src/modes/utils/ui-helpers.ts:1035",
+      "instruction": "A7 STEP 3 — implement the four option semantics in the keyed branch. `key` defaults to the message so today's in-place-edit behavior survives; `invalidates` removes every queued notice whose effective key matches, compared against the TARGET's key, so to evict an unkeyed notice you must pass its exact message string; `fold` with the same key appends to the existing row instead of adding one; `immediate` bypasses the queue and applies its `invalidates` synchronously. Then make the compaction notice keyed with a stable key so repeated compactions replace each other instead of stacking."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/coding-agent/src/modes/controllers/event-controller.ts:1250",
+      "instruction": "A7 STEP 4 — route the notice event. `#handleNotice` keeps `showError` and `showWarning` exactly as they are (durable, must not be evicted) and gives the `info` branch a key so two notices of the same kind supersede. The `notice` event carries no key today, so the key is chosen here, not read off the event."
+    },
+    {
+      "n": 11,
+      "anchor": "packages/tui/src/overlays/agent-transcript-viewer.ts:597",
+      "instruction": "D3 STEP 1 — do NOT build a new anchoring mechanism; it already exists. `ChatTranscriptBuilder.rowForEntry(entryId)` (chat-transcript-builder.ts:138-144) maps an entry id to a logical row, `#frame` already turns that into a `ScrollRangeAnchor` at :597-608, and `ScrollView.revealRange` / `hasRevealedRange` / `logicalRowAt` (scroll-view.ts:292 / :284 / :243) already do anchor-by-message-index with re-anchoring. D3 is: track the first unread entry id, paint a fixed-height divider plus a count pill at `rowForEntry(firstUnreadEntryId)`, and add a key that reveals the newest entry. Height-delta re-anchoring needs no new code because `revealRange` already re-derives the viewport from the anchor on every render."
+    },
+    {
+      "n": 12,
+      "anchor": "packages/tui/src/overlays/agent-transcript-viewer.ts:517",
+      "instruction": "D3 STEP 2 — leave `#handleScroll` alone. The pager keys (g/G/j/k plus the `handleScrollKey` delegation) already exist and already own the offset; the new chrome is a render concern, not a navigation concern. Do not touch the two renderer invariants in docs/tui-core-renderer.md:107 and :174 — an overlay anchoring on a logical row does not probe terminal scrollback, but do not weaken the wording either."
+    },
+    {
+      "n": 13,
+      "anchor": "packages/tui/test/wheel-acceleration.test.ts",
+      "instruction": "A3 + D3 + A7 STEP 4 — write the tests. Three new files and two extensions, in the order the work lands: the wheel model (pure, no terminal), the mouse wiring (including the two mandatory repairs to the existing exact-equality assertions and the `baseEvent` literal), the notice queue (including the compaction integration test and the render-location contract), and the transcript scroll chrome. Then the transcript byte-identity assertion: the plain transcript must render identically with the chrome in place."
+    },
+    {
+      "n": 14,
+      "anchor": "packages/tui/src/apps/git/sidebar.ts:897",
+      "instruction": "FINAL AUDIT (not a test — run once, by hand, and paste the output into the work item). `grep -rn 'wheel \\* [0-9]' packages/tui/src --include='*.ts'` must return zero hits and `grep -rn 'delta \\* 3' packages/tui/src --include='*.ts'` must return zero hits. Nine sites is the count that matters: the eight constants plus the one inside `handleWheel`. The plan is explicit that no `event.wheel * N` grep is a sufficient counter — today it returns 8 while the true x3 site count is 9."
+    }
+  ],
+  "code_shape": "// packages/tui/src/mouse-wheel.ts  (new)\n// The pure part decides rows-per-notch. The shell holds per-pane history. Nothing\n// here imports a terminal, a TUI, or coding-agent.\n\n/** One wheel notch as observed on the wire. */\nexport interface WheelNotch {\n\t/** -1 up, 1 down. Always a unit direction; magnitude is the model's to choose. */\n\treadonly direction: -1 | 1;\n\t/** Milliseconds from one monotonic clock, across the whole gesture. */\n\treadonly at: number;\n}\n\n/** How the terminal is reporting: a detented wheel or a continuous trackpad. */\nexport type WheelSource = \"detented\" | \"continuous\";\n\n/**\n * The three measured numbers plus the ramp ceiling. Values come from the\n * measurement table recorded in the work item (plan step 1) — NOT from the\n * plan's placeholders.\n */\nexport interface WheelThresholds {\n\t/** Notches closer together than this collapse into one. */\n\treadonly batchWindowMs: number;\n\t/** An opposite-direction pair inside this window means a physical detent. */\n\treadonly bounceWindowMs: number;\n\t/** Silence longer than this clears the gesture. */\n\treadonly idleResetMs: number;\n\t/** Ceiling for the continuous ramp. */\n\treadonly maxRowsPerNotch: number;\n\t/** Rows a detented wheel reports per physical detent. */\n\treadonly detentRows: number;\n}\n\nexport const MEASURED_THRESHOLDS: WheelThresholds = {\n\tbatchWindowMs: /* MEASURED */,\n\tbounceWindowMs: /* MEASURED */,\n\tidleResetMs: /* MEASURED */,\n\tmaxRowsPerNotch: /* MEASURED */,\n\tdetentRows: 1,\n};\n\n/** Result of running the model over a notch stream. */\nexport interface ResolvedWheel {\n\t/** Rows to scroll for the LAST notch in the stream. */\n\treadonly rows: number;\n\treadonly source: WheelSource;\n}\n\n/**\n * Pure. `notches` is the gesture history oldest-first; the last element is the\n * notch being resolved. Returns a row COUNT, never a boolean — callers that\n * gate a repaint on \"did it actually move\" compare offsets themselves\n * (transcript-browser.ts:175-180 does exactly this).\n */\nexport function resolveWheelDelta(notches: readonly WheelNotch[], thresholds: WheelThresholds): ResolvedWheel;\n\n/** User override, pushed in from coding-agent via settings.ts `effect()`. */\nexport function setWheelSpeedMultiplier(value: number): void;\nexport function wheelSpeedMultiplier(): number;\n\n/**\n * Thin per-pane shell. One instance per scrollable pane — a shared instance\n * lets scrolling one pane preload momentum for another.\n */\nexport class WheelAccelerationState {\n\tconstructor(thresholds?: WheelThresholds);\n\t/** Rows to scroll for a fresh notch stamped `now`. Applies the user override once, last. */\n\trows(direction: -1 | 1, now: number): number;\n\t/** Clear gesture history. Call on focus change, pane switch, and overlay open. */\n\treset(): void;\n}\n\n// packages/tui/src/mouse.ts — the clock the model needs (lines 12, 39, 61, 74, 85)\nexport interface SgrMouseEvent {\n\t// ...six existing fields unchanged...\n\t/** Decode-time milliseconds. The single timestamp source for wheel acceleration. */\n\tnow: number;\n}\n\nexport function parseSgrMouse(data: string, now?: number): SgrMouseEvent | null;\nexport function routeSgrMouseInput(data: string, handler: SgrMouseHandler, now?: number): boolean;\n\nexport interface SelectListMouseTarget {\n\t/** Widened from `-1 | 1`: the model returns a row count. `now` is optional so\n\t *  targets that ignore it still satisfy the interface. */\n\thandleWheel(delta: number, now?: number): void;\n\t// ...rest unchanged...\n}\n\n// packages/coding-agent/src/modes/utils/ui-helpers.ts:143 — A7\nexport interface ShowStatusOptions {\n\t/** Existing anonymous `{ dim?: boolean }`, now named. */\n\tdim?: boolean;\n\t/** Bypass the queue, show at once, and drop everything in `invalidates`. */\n\timmediate?: boolean;\n\t/** Keys to evict when this notice shows. Compared against the TARGET's key. */\n\tinvalidates?: readonly string[];\n\t/** Same key: append to the existing row instead of adding one. */\n\tfold?: boolean;\n\t/** Identity. Defaults to `message` so today's in-place-edit behavior is kept. */\n\tkey?: string;\n}\n\n// packages/coding-agent/src/modes/settings.ts — the escape hatch\nexport const cfgUiMouseWheelSpeedMultiplier = register({\n\tid: \"ui.mouseWheelSpeedMultiplier\",\n\ttype: \"number\",\n\tdefault: 1,\n\tvalidate: raw => {\n\t\tif (typeof raw !== \"number\" || !Number.isFinite(raw) || raw <= 0) {\n\t\t\tthrow new Error(\"ui.mouseWheelSpeedMultiplier must be a positive number (0 and negatives are rejected)\");\n\t\t}\n\t},\n});\neffect(cfgUiMouseWheelSpeedMultiplier, setWheelSpeedMultiplier);",
+  "test_contract": "Four contracts, one per test file, none redundant.\n\n(1) `packages/tui/test/wheel-acceleration.test.ts` defends THE MODEL: given a synthesized notch stream and the thresholds recorded in the measurement table, the returned row count is exactly the specified one. Detented wheel -> three notches for one physical detent stay at 1 row each, never 3. Continuous at ~20 ms -> climbs to the cap; at 500 ms -> stays at 1. Flip-then-flip-back inside the measured bounce window -> wheel mode on; no event for the measured idle-reset window -> off. A stream with no flip never enables wheel mode. Notches closer than the measured batch window count once. `ui.mouseWheelSpeedMultiplier = 0.5` multiplies the accelerated delta exactly ONCE (a double application is invisible in the model test but doubles the speed for the user). If this regresses, the user feels a wrong scroll speed on their own hardware and there is no way for them to tell you — only the threshold table can.\n\n(2) `packages/tui/test/mouse.test.ts` defends THE WIRING: `routeSelectListMouse` hands `event.now` to `handleWheel` as a second argument, and `parseSgrMouse` stamps a `now` derived from the injected clock rather than calling `Date.now()` internally (so the test can assert the exact value). The two pre-existing assertions — the `toEqual` at :22-32 and the `baseEvent` literal at :126-134 — are the canary: if a future change drops the field from one construction path, they go red.\n\n(3) `packages/coding-agent/test/notice-queue.test.ts` defends TWO contracts and the second one is the one that matters. First: supersession and folding — a keyed low-priority notice followed by an `immediate` notice whose `invalidates` names its key removes the first from the display permanently; the same key posted three times with `fold` accumulates into exactly one row; a notice arriving while another is showing queues rather than overwrites. Second, and NON-NEGOTIABLE: THE RENDER-LOCATION CONTRACT — a keyed notice appears in the notice container's children and is ABSENT from `chatContainer.children`; an unkeyed notice is still in `chatContainer.children` exactly as before. Without that assertion the build stays green while someone renders both branches into the transcript, which is precisely the unrequested behavior change the plan forbids. Plus one integration test driving a real compaction through `EventController` and asserting exactly ONE transient notice results, and a validation test proving 0 and negatives are rejected rather than applied.\n\n(4) `packages/tui/test/transcript-viewer-scroll-chrome.test.ts` defends THE MARKER: scroll up, append a message, the divider shows with the right unread count, activating it returns to the bottom; change terminal width through at least three widths WHILE scrolled and the marker still points at the same message; and the plain transcript renders byte-identically with the chrome in place. The width test is the whole reason this item exists — a chrome header whose height varies shifts the viewport on every reflow even when the offset is unchanged. If this regresses, the divider drifts onto the wrong message the first time the user resizes their window mid-scroll, and nothing else catches it.",
+  "test_files": [
+    "packages/tui/test/wheel-acceleration.test.ts",
+    "packages/tui/test/mouse.test.ts",
+    "packages/coding-agent/test/notice-queue.test.ts",
+    "packages/coding-agent/test/interactive-mode-status.test.ts",
+    "packages/tui/test/transcript-viewer-scroll-chrome.test.ts"
+  ],
+  "verification": "RUNNABLE TODAY. Baseline established 2026-09-27 on branch milestone-1 at 808b365.\n\n  1. `bun run check:ts` — VERIFIED GREEN on the unmodified tree just now: oxlint + oxfmt clean over 5445 files, and all 16 package `check:types` tasks Done (pi-tui 2.29s, pi-coding-agent 8.19s). This is the gate that works today.\n\n  2. `bun test packages/tui/test/mouse.test.ts` — VERIFIED RUNNABLE NOW: `13 pass, 0 fail, 38 expect() calls, Ran 13 tests across 1 file. [26.00ms]`.\n\n  3. The task brief's claim that `bun test` reports 0 pass with \"Failed to load pi_natives native addon for darwin-arm64\" is NOT true for pi-tui tests. It holds only for suites that transitively load the addon. Do not treat `bun test` as wholesale blocked: run the two pi-tui test files directly, and expect only the native-dependent suites to fail until the addon is built.\n\n  4. After implementation, in order:\n     `bun run check:ts`\n     `bun test packages/tui/test/wheel-acceleration.test.ts packages/tui/test/mouse.test.ts`\n     `bun test packages/coding-agent/test/notice-queue.test.ts packages/coding-agent/test/interactive-mode-status.test.ts`\n     `bun test packages/tui/test/transcript-viewer-scroll-chrome.test.ts`\n\n  5. The plan's command `bun check && bun test ...` should be `bun run check:ts`, not `bun check` — `bun check` also runs `check:rs`, which needs a Rust toolchain and is unrelated to this wave.\n\n  6. Hand-run audit, not a test (AGENTS.md bans source-grep inside tests; this is a one-time manual check whose output goes in the work item):\n     `grep -rn 'wheel \\* [0-9]' packages/tui/src --include='*.ts'` -> expect 0 hits\n     `grep -rn 'delta \\* 3' packages/tui/src --include='*.ts'` -> expect 0 hits",
+  "gate": "DONE when, in order:\n\n  (a) The measurement table exists in the work item with three real numbers per terminal (Ghostty, Terminal.app, VS Code, Cursor), and `MEASURED_THRESHOLDS` in `packages/tui/src/mouse-wheel.ts` holds those exact values. The plan's 200/1500/5 are placeholders; shipping them unmeasured fails this gate.\n\n  (b) `bun run check:ts` is green.\n\n  (c) `bun test packages/tui/test/wheel-acceleration.test.ts packages/tui/test/mouse.test.ts packages/coding-agent/test/notice-queue.test.ts packages/coding-agent/test/interactive-mode-status.test.ts packages/tui/test/transcript-viewer-scroll-chrome.test.ts` is green — with the three new files actually executing, not skipped.\n\n  (d) The RENDER-LOCATION assertion is present and passing: keyed notice in the notice container AND absent from `chatContainer.children`; unkeyed notice still in `chatContainer.children`.\n\n  (e) `packages/coding-agent/test/interactive-mode-status.test.ts` passes UNCHANGED in its existing assertions (the `toHaveLength(2)` / `toHaveLength(5)` cases). If A7 had to edit those, the unkeyed branch's behavior changed — that is a gate failure, not a test fix.\n\n  (f) The manual grep audit returns 0 hits for `wheel * [0-9]` and for `delta * 3` under `packages/tui/src`.\n\n  (g) A human has explicitly answered the two open questions (handleWheel acceleration semantics, and whether the new setting is config-file-only) — both change observable behavior, so neither may be resolved by the implementer alone.",
+  "gate_can_fail": "Yes, and each clause fails for a distinct reason. (a) fails if the implementer copies the plan's placeholder numbers instead of measuring — the numbers are visible in the diff. (b) fails on any type error, including the SgrMouseEvent widening that touches 20+ routeMouse implementations. (c) fails if a test file is missing, empty, or its assertions are vacuous. (d) is the specific clause that catches the failure mode the plan warns about: a build where someone renders both the keyed and unkeyed branches into the transcript stays perfectly green without it. (e) is the clause that catches an unrequested behavior change to 332 existing call sites — the pre-existing assertions are the tripwire. (f) fails if a site was missed, and it is the only check that catches the ninth site, since no `event.wheel * N` grep reaches `delta * 3` inside `handleWheel`. (g) cannot be automated at all, which is why it is a gate rather than a step.",
+  "depends_on": [
+    "M3-A3: nothing. The plan is explicit that this item has no dependency, and I verified nothing in its path is blocked.",
+    "M3-A7: nothing. Verified `registerStatusLineSegment` does not exist anywhere in `packages/**` (the only grep hits are in the plan document), so the plan's decision not to couple to the M2-OQ3 seam is correct and costs nothing.",
+    "M3-D3: M3-A3 must land FIRST — they touch the same file, `packages/tui/src/overlays/agent-transcript-viewer.ts`, and the wheel line (:470) is inside the same `#frame`-adjacent region. Doing D3 first means the wheel constant is edited twice in one file."
+  ],
+  "blocks": [
+    "M3-A3 and M3-A1 should go through review together (the plan's own instruction) so two UX changes are not in flight at once.",
+    "M3-D3 is blocked by M3-A3 (same file).",
+    "Any later wave item that adds its own scroll surface must route through `packages/tui/src/mouse-wheel.ts` instead of introducing a second multiplier — that is the AGENTS.md 'two implementations of the same thing is a bug' rule applied to scroll speed."
+  ],
+  "effort": "The plan budgets L/~5 days for A3, M/~3 for A7, M/~2 for D3 — about 10 days for the wave. My estimate after verification is closer to 6-7, and the difference is entirely in D3 and in the A3 measurement: D3's hardest part (anchor by message index, survive reflow) is ALREADY IMPLEMENTED (`ChatTranscriptBuilder.rowForEntry` -> `ScrollRangeAnchor` -> `ScrollView.revealRange`), so D3 is a render-and-keybinding job, roughly S/1 day, not M/2. A3's 5 days are real but only ~1.5 of them are code: the measurement table is irreducible calendar time and the plan is right that it should not be split across two people. A7 is 3 days and I would hold it at 2.5-3: the code is small, but proving the composer row and the transcript row never mix is the entire budget, exactly as the plan says. The wave's real risk is not effort, it is that A3's measurement never happens and placeholder numbers ship.",
+  "risk": "The single most likely way to get this wrong is to accept the plan's framing that the six `handleWheel` implementations are 'accelerated' alongside the nine scroll sites. They are not the same thing, and I verified every one of them: `SelectList.handleWheel` calls `this.#selection.move(delta)` (select-list.ts:229-231), `SettingsList.handleWheel` calls `this.#moveSelection(delta, false)` (settings-list.ts:241-247), `AgentHub.handleWheel` does `this.#selectedActivityRow + delta` (agent-hub.ts:1254), `SessionSelector` and `OAuthSelector` call `this.#menu.move(delta, false)`, and `ExtensionList` calls `#moveSelectionUp()` / `#moveSelectionDown()` (extension-list.ts:597-600). Those are SELECTION moves of exactly one row, not scrolls. Multiplying them by 3 makes a wheel notch silently skip two rows the user never saw pass, in a list where the pointer may be highlighting the row they are about to click. The plan never defines an acceleration semantic for them, and its own risk section is entirely about scroll lag. Worse, the plan's list of forwarding call sites is incomplete — beyond `routeSelectListMouse` there are five more that would silently keep the old behavior: oauth-selector.ts:422, session-selector.ts:1134, settings-selector.ts:689 (which reaches `handleWheel` through `handleWheelAt` at settings-list.ts:249-255), extension-dashboard.ts:282, and git-tui.ts:695. The recommendation is to accelerate ONLY the nine scroll sites, leave the six selection movers at exactly one row, and answer open question 1 before anyone writes the interface change.",
+  "open_questions": [
+    "OPEN QUESTION 1 — BLOCKING. What does 'acceleration' mean for the six `handleWheel(delta: -1 | 1)` implementations, given that every one of them is a one-row SELECTION move rather than a scroll (verified: select-list.ts:229, settings-list.ts:241, agent-hub.ts:1247, session-selector.ts:588, oauth-selector.ts:407, extension-list.ts:597)? Recommendation: do NOT accelerate them. Keep one notch = one row for selection, and apply the model only to the nine scroll sites. If the product owner does want list acceleration, it needs its own, much lower cap and its own decision — and the five extra forwarding call sites must be updated too, or the behavior is inconsistent between overlays.",
+    "OPEN QUESTION 2 — BLOCKING for the setting's shape. `ui.mouseWheelSpeedMultiplier` as specified is `type: \"number\"` with no `ui.options`, and `registry.ts:42-43` says a numeric setting without options is DELIBERATELY HIDDEN from the settings panel. So as specified it is config-file only. Is that acceptable for an 'escape hatch', or does it need a submenu of discrete values so users can actually reach it? If it stays config-file-only, say so in the changelog entry, because a user reading 'there is a setting' will look for it in the panel and not find it.",
+    "OPEN QUESTION 3 — non-blocking but decide now. Should the acceleration cap be a rows-per-notch integer or a float? Every current consumer truncates (`scroll-view.ts:352` does `Math.trunc(delta)`), so a float cap is silently floored per call and a ramp that grows 1→2→3 never lands mid-step. Integer is the safer default; confirm before the model is written.",
+    "OPEN QUESTION 4 — carried forward from the plan, explicitly NOT blocking. Whether a keyed transient status that has scrolled out of view should also be recorded in the transcript permanently, or whether the transcript is the complete record and notices are additive only. The plan leaves this open and correctly notes it does not block Wave 2 — A7 only has to keep the unkeyed branch's existing transcript behavior."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "A3 line anchors: agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638, usage-dashboard.ts:753, and the six handleWheel sites at mouse.ts:74, agent-hub.ts:1244, session-selector.ts:586, oauth-selector.ts:407, extension-list.ts:597, select-list.ts:229, settings-list.ts:239.",
+      "verdict": "STALE — 13 of 15 anchors are wrong; only mouse.ts:74 and extension-list.ts:597 are exact",
+      "correction": "Actual: agent-transcript-viewer.ts:470, copy-selector.ts:214, plan-review-overlay.ts:580, rewind-selector.ts:245, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639, usage-dashboard.ts:759, sidebar.ts:896-897; agent-hub.ts:1247, session-selector.ts:588, settings-list.ts:241. The counts are right (7 x3 + 1 x2 + 1 separate delta*3 = 9) — only the line numbers moved.",
+      "evidence": "`grep -rn 'wheel \\* 3' packages/tui/src --include='*.ts'` -> 7 hits at 470/580/245/214/697/168/639. `grep -rn 'wheel \\* 2'` -> 1 hit at usage-dashboard.ts:759. `grep -rn 'handleWheel'` -> the six implementations at oauth-selector.ts:407, session-selector.ts:588, extension-list.ts:597, sidebar.ts:896, agent-hub.ts:1247, select-list.ts:229, settings-list.ts:241."
+    },
+    {
+      "claim": "`routeSelectListMouse` 'truyền timestamp của sự kiện xuống' (passes the event's timestamp down) after `SelectListMouseTarget.handleWheel` gains a time parameter.",
+      "verdict": "WRONG — there is no timestamp on the event to pass",
+      "correction": "`SgrMouseEvent` (mouse.ts:12) has six fields and no time field; `parseSgrMouse(data)` takes no clock; `routeSgrMouseInput(data, handler)` takes no clock. A3 must ADD the clock to the decode path before anything can be forwarded. This is real work the plan does not budget, and it is the step that makes the 'just add an optional parameter' framing wrong.",
+      "evidence": "Read mouse.ts in full (110 lines). Line 12 `export interface SgrMouseEvent {` -> button/col/row/release/wheel/motion/leftClick, closed at :32. Line 39 `export function parseSgrMouse(data: string)`. Line 61 `routeSgrMouseInput(data: string, handler: SgrMouseHandler)`. Line 87 `target.handleWheel(event.wheel);`."
+    },
+    {
+      "claim": "Adding a time parameter to the mouse interface keeps the old interface working via an optional defaulted parameter, 'so six files need not be changed at once'.",
+      "verdict": "INCOMPLETE — the six implementations are not the only call sites",
+      "correction": "There are five additional forwarding call sites the plan never lists, each of which would keep passing only `event.wheel` and therefore keep the un-accelerated behavior — an inconsistency between overlays, not a compatibility win: oauth-selector.ts:422 (`this.handleWheel(event.wheel)`), session-selector.ts:1134, settings-selector.ts:689 (-> `handleWheelAt` at settings-list.ts:249, which forwards to `handleWheel` at :254), extension-dashboard.ts:282, git-tui.ts:695. `routeSelectListMouseWithTopBorder` (chrome/select-list-mouse-routing.ts:4-11) is a sixth forwarder that passes the whole event through, so it is safe only because the event itself carries the time.",
+      "evidence": "`grep -rn 'handleWheel' packages/tui/src --include='*.ts'` -> 16 hits, of which 7 are declarations and 9 are call sites; the plan's list of six covers only the declarations."
+    },
+    {
+      "claim": "Extending `mouse.test.ts` for the wiring part.",
+      "verdict": "UNDERSTATED — two existing assertions break outright",
+      "correction": "`expect(parseSgrMouse(\"\\x1b[<0;5;9M\")).toEqual({...six fields...})` at mouse.test.ts:22-32 is an exact-equality assertion on the whole event, and `const baseEvent: SgrMouseEvent` at :126-134 is a literal that must satisfy the interface. Adding a required `now` field breaks both. The plan's 'extend this file' does not mention repairing them.",
+      "evidence": "Read packages/tui/test/mouse.test.ts in full (140 lines); `bun test` on it -> 13 pass, 0 fail, 38 expect() calls."
+    },
+    {
+      "claim": "A7's keyed notice row is 'a normal composer row going through the existing chrome path', and `coding-agent` already drops content there at `interactive-mode.ts:3181`.",
+      "verdict": "WRONG — the composer chrome has no component row to drop into, and the anchor is unrelated code",
+      "correction": "The composer's top chrome is a PRE-RENDERED STRING owned by the status line: `syncComposerShape` (interactive-mode.ts:3050-3071) installs `this.editor.setTopBorderProvider(w => this.statusLine.getTopBorder(w))` (or `getBandTopBorder` / `getStandaloneTopBorder`), and `EditorTopBorder` (composer/types.ts:33-40) is `{ content: string; width: number; revision?: number }` — a string, not a slot for a Component. The conclusion (do not couple to M2's `registerStatusLineSegment`) is still right, but the mechanism is not 'the existing chrome path'. The correct home is a NEW dedicated Container in the layout array, which is also what keeps the 'not in the transcript' contract enforceable and testable. Separately, interactive-mode.ts:3181 is inside `syncRunningSubagentBadge` / `#composerHint` and has nothing to do with chrome.",
+      "evidence": "`sed -n '3040,3100p' interactive-mode.ts`; `sed -n '30,45p' packages/tui/src/components/composer/types.ts`; `sed -n '3170,3195p' interactive-mode.ts`; `grep -n 'setTopBorderProvider|setTopBorder(' packages/tui/src/components/editor.ts`."
+    },
+    {
+      "claim": "Use `hookWidgetContainerAbove` (or an equivalent existing above-composer row) for the notice row.",
+      "verdict": "NOT IN THE PLAN, and it is a trap if inferred",
+      "correction": "`hookWidgetContainerAbove` IS the real 'row above the composer' container (constructed at interactive-mode.ts:1453-1454, placed in the layout at :1728, declared on the context at types.ts:126) — but `ExtensionUIController.#renderHookWidgetContainer` calls `container.clear()` at extension-ui-controller.ts:394 on every hook-widget rebuild, so a notice row placed there is silently wiped whenever a hook widget changes. Use a new dedicated container instead.",
+      "evidence": "`sed -n '1435,1470p'` and `sed -n '1715,1735p' interactive-mode.ts`; `sed -n '379,407p' packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` showing `container.clear()` at :394."
+    },
+    {
+      "claim": "A7's compaction integration test targets `#handleNotice` in event-controller; the compaction notice belongs to that path.",
+      "verdict": "STALE — the compaction notice is in ui-helpers, not event-controller",
+      "correction": "`this.ctx.showStatus(`Session compacted ${times}`)` is at ui-helpers.ts:1035, inside the session-context render path, not in EventController. `#handleNotice` is at event-controller.ts:1250-1259 (plan said 1244-1251) and handles only the `notice` event, which is `{ type, level, message, source }` with no key. The 'run a real compaction' integration test should drive the ui-helpers:1035 path; the `#handleNotice` change is a separate, smaller edit that gives the `info` branch a key while leaving error and warning on their existing durable renderers.",
+      "evidence": "`grep -n 'Session compacted' packages/coding-agent/src/modes/utils/ui-helpers.ts` -> :1035. `sed -n '1250,1259p' event-controller.ts`. `sed -n '2802,2813p' packages/coding-agent/src/session/agent-session.ts` for `emitNotice`."
+    },
+    {
+      "claim": "D3's core difficulty is proving that a marker anchored by message index survives reflow at three widths mid-scroll; the work is 'anchoring by index, re-anchoring by height delta, and fixed-height chrome'.",
+      "verdict": "OVERSTATED — the anchoring mechanism already exists and works",
+      "correction": "`ChatTranscriptBuilder.rowForEntry(entryId)` (chat-transcript-builder.ts:138-144) maps an entry id to a logical row; the viewer already builds a `ScrollRangeAnchor` from it at agent-transcript-viewer.ts:597-608; `ScrollView` already provides `revealRange` (scroll-view.ts:292), `hasRevealedRange` (:284), `logicalRowAt` (:243), `localRowFor` (:252); and `getScrollOffset()` is already a logical row offset, not pixels. The viewer uses all of this today for its entry anchor. D3 is therefore a render-and-keybinding job — track the first unread entry id, paint a fixed-height divider and count pill at its row, add a key to reveal the newest entry — not a new anchoring subsystem. Re-anchoring across reflow needs no new code because `revealRange` re-derives the viewport from the anchor on every render. This drops D3 from M/2 days to roughly S/1 day, and the width test becomes a regression guard on existing machinery rather than the item's whole risk.",
+      "evidence": "`sed -n '130,150p' packages/tui/src/chat/chat-transcript-builder.ts`; `sed -n '236,242p' packages/tui/src/chat/transcript-browser.ts` (`if (frame.body.anchor && this.#scrollView.revealRange(...))`); `grep -n 'revealRange|hasRevealedRange|logicalRowAt|localRowFor|getScrollOffset' packages/tui/src/components/scroll-view.ts` -> :284, :292, :243, :252, :229."
+    },
+    {
+      "claim": "D3 edits `packages/tui/src/chat/transcript-browser.ts:39-48`.",
+      "verdict": "MISLEADING ANCHOR — right file, wrong region",
+      "correction": "Lines 39-48 are the `TranscriptBrowserOptions` interface — the right place to ADD a new option, but not where the scroll state lives. The state is `#scrollView` (declared transcript-browser.ts:108, constructed :118) and all offset/anchor behavior is delegated to it. Anyone who reads :39-48 expecting to find the scroll machinery will not find it.",
+      "evidence": "`sed -n '30,60p' packages/tui/src/chat/transcript-browser.ts` shows `export interface TranscriptBrowserOptions` at :38-49 with `getHeight`, `frame`, `minimumBodyRows`, `followBottom`. `grep -n '#scrollView' packages/tui/src/chat/transcript-browser.ts` -> :108, :118, :124, :130, :130, :176-261."
+    },
+    {
+      "claim": "A3's acceleration override is a named setting the user can reach; it is 'a setting with a name, not an idea'.",
+      "verdict": "INCOMPLETE — as specified it is unreachable from the settings panel",
+      "correction": "`registry.ts:41-44` states that a `UiNumber` without `options` has NO UI representation — 'intentional hide'. So `ui.mouseWheelSpeedMultiplier` with `type: \"number\"` and no options renders nowhere in the panel and is config-file only. The validation requirement IS supported and easy: `validate?: (raw: unknown) => void` exists at registry.ts:112 and is allowed to throw (:666, :680). Push direction is also settled: coding-agent depends on @oh-my-pi/pi-tui and pi-tui does not depend on coding-agent, so the sanctioned pattern is `register` + `effect(cfg, setWheelSpeedMultiplier)` exactly as `cfgTuiMaxInlineImageColumns` does at settings.ts:334-341.",
+      "evidence": "`sed -n '30,60p' packages/coding-agent/src/config/registry.ts` for UiNumber; `grep -n 'validate' packages/coding-agent/src/config/registry.ts` -> :112, :666, :680; `sed -n '330,341p' packages/coding-agent/src/modes/settings.ts`; package.json dependency check on both packages."
+    },
+    {
+      "claim": "`bun test` currently reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64' and must be treated as blocked.",
+      "verdict": "FALSE for this wave's tests",
+      "correction": "`bun test packages/tui/test/mouse.test.ts` runs today: 13 pass, 0 fail, 38 expect() calls, 26ms. The addon failure applies only to suites that transitively load it. `bun run check:ts` is fully green on the unmodified tree (oxlint + oxfmt over 5445 files, all 16 package type checks Done). Treating `bun test` as blocked would have made this wave unverifiable when it does not need to be.",
+      "evidence": "`bun test packages/tui/test/mouse.test.ts` -> '13 pass / 0 fail / Ran 13 tests across 1 file. [26.00ms]'. `bun run check:ts` -> 'All matched files use the correct format. Finished in 575ms on 5445 files' plus 16 green `check:types` tasks."
+    },
+    {
+      "claim": "The plan's verification command is `bun check && bun test ...`.",
+      "verdict": "WRONG SCRIPT for this repo",
+      "correction": "`bun check` runs `check:ts` AND `check:rs` (Rust). Use `bun run check:ts` — it is the TypeScript-only gate, it needs no Rust toolchain, and it is what actually verifies this wave.",
+      "evidence": "Root package.json scripts: `\"check\": \"bun run --parallel check:ts check:rs\"`, `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"`. AGENTS.md also says never use tsc/npx tsc — always `bun check` — but for a TypeScript-only wave the narrower `check:ts` is the correct instance of that."
+    },
+    {
+      "claim": "A3: '8 constant sites + 1 separate delta*3 site'; D3: 'the overlay already has pager keys at :515-534'; A7: 'composer/types.ts:57, :93, band.ts:14, message-notice.ts:37'; A7: 'ui-helpers.ts:141-160'.",
+      "verdict": "CORRECT — verified exactly, no correction needed",
+      "correction": "Recorded so the implementer knows which anchors to trust: the site count (7 x3 + 1 x2 + 1 separate = 9) is right; `#handleScroll` is at :517-534 (the plan's :515 points at the doc comment, harmless); `composer/types.ts:57` is `topBorder?: EditorTopBorder;`, `:93` is `readonly statusAttachment:`; `composer/band.ts:14` is `statusAttachment: \"top-band\"`; `message-notice.ts:37` is `export class MessageNoticeComponent extends Container {`; the docs invariants at `docs/tui-core-renderer.md:107` and `:174` are the two 'never probes scroll position' statements. `ui-helpers.ts` is 143-164, not 141-160. `ShowStatusOptions` does not exist (`git grep` returns only the plan document); `registerStatusLineSegment` does not exist; the 332 `showStatus(` call lines and the 12 KB `createInteractiveModeContext` fixture at test/helpers/interactive-mode-context.ts:192 are all as the plan says.",
+      "evidence": "Each confirmed with `sed -n` on the named file and `grep -n` for the symbol; `git grep -c 'showStatus(' -- 'packages/**/*.ts'` summed to 332 across 19 files; `git grep ShowStatusOptions` and `git grep registerStatusLineSegment` return no source hits."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/s2.spec.json"
+}

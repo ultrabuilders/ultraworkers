@@ -1,0 +1,199 @@
+{
+  "id": "W7",
+  "title": "Add a per-tier prompt-cache lifetime axis to the model catalog via the KDL rule tree",
+  "wave": "3a — Cache economics, core value (ship default-OFF)",
+  "one_line": "Add a rule-owned, per-tier numeric prompt-cache lifetime (short/long, in seconds) to the catalog as a new sibling KDL axis, without touching the existing OpenAI wire field.",
+  "user_visible_effect": "none directly — internal. W7 adds no user-facing surface and changes no request bytes. It only makes a sourced per-tier TTL table expressible in the rule tree so that W8 (the default-off cache warmer) can read it instead of a hard-coded 5-minute constant. Shipping W7 without W8 changes nothing a user can observe.",
+
+  "files_touched": [
+    {
+      "path": "packages/catalog/src/types.ts",
+      "action": "modify",
+      "change": "Add `CacheRetentionTier` and `PromptCacheLifetime` type aliases; add `promptCacheLifetime?: PromptCacheLifetime` to `AnthropicCompat` (interface starts at :526); add \"promptCacheLifetime\" to the `Omit<...>` union inside `ResolvedAnthropicCompat` (:963) and re-declare it as an optional property in the `& { ... }` intersection.",
+      "verified": true,
+      "note": "The plan says to put the field next to `promptCacheBreakpointTtl?: \"30m\"` at :403. That anchor is real but lands in `OpenAICompat` (starts :237), which is the WRONG shape for W7's consumer. See plan_corrections C2. The `Omit` step is mandatory and the plan omits it entirely — see C3."
+    },
+    {
+      "path": "packages/catalog/src/compat/axes.ts",
+      "action": "modify",
+      "change": "Register `\"prompt-cache-lifetime\": wire(\"promptCacheLifetime\", [\"anthropic\", \"bedrock\"], \"object\")` in the AXES table, adjacent to the existing bedrock prompt-cache axes at :216-218.",
+      "verified": true,
+      "note": "Shape \"object\" is already supported by the compiler and accepts numeric children plus partial payloads — `objectValue()` in `scripts/compat-compiler/compile-axes.ts` passes `KdlScalar` (string|number|boolean|null) straight through, so `{ short 300 }` alone yields a genuinely partial object. Do NOT include \"openai\" or \"openai-responses\" in records unless you also intend the OpenAI wire path to read it (see C2)."
+    },
+    {
+      "path": "packages/catalog/src/compat/rules/classes/anthropic.kdl",
+      "action": "modify",
+      "change": "Author the new axis in sourced rule blocks. Add at least one block under an `on \"anthropic\" { ... }` selector (this file already has several, e.g. :44, :183) and, if Bedrock should read the same numbers, mirror it into the `on \"amazon-bedrock\" { ... }` block at :255-360 next to the existing `prompt-cache-mode` / `prompt-cache-minimum-tokens` / `prompt-cache-maximum-checkpoints` groups. Use unquoted integer seconds.",
+      "verified": true,
+      "note": "The plan's `:258-266` anchor is accurate but ALL of the prompt-cache axes it points at live inside `on \"amazon-bedrock\"`. Copying them literally puts the new rule on Bedrock only and leaves first-party Anthropic empty — which is exactly the model family W8's warmer needs. See plan_corrections C4."
+    },
+    {
+      "path": "packages/catalog/src/compat/rules.json",
+      "action": "create",
+      "change": "Regenerate via `bun run gen:compat` and commit alongside the .kdl change. Also regenerates `packages/catalog/src/compat/auth-ids.ts` and `packages/catalog/src/compat/provider-ids.ts` — check those for diffs too.",
+      "verified": true,
+      "note": "VERIFIED WORKING: `bun run gen:compat` ran clean in this environment and produced ZERO diff against the committed file, so the generator is deterministic and the baseline is clean. Output: 'wrote src/compat/rules.json (736 rules, 21 classes, 82 catalog providers, 91 auth providers, 221 files)'. The plan lists only rules.json; the script writes three files (see scripts/compile-compat.ts)."
+    },
+    {
+      "path": "packages/catalog/test/prompt-cache-lifetime.test.ts",
+      "action": "create",
+      "change": "New rule-level test with the four cases the plan names: both tiers exposed via buildModel; an undeclared model resolves the field to undefined (explicit negative assertion); the pre-existing `promptCacheBreakpointTtl` still resolves \"30m\"; and the OpenAI wire payload is unchanged.",
+      "verified": true,
+      "note": "Path does not exist yet — confirmed against `ls packages/catalog/test/`. Model the synthetic-spec pattern on packages/catalog/test/anthropic-fable-5-1-cache-read.test.ts, which exists and asserts rules (not bundled JSON) via `buildModel` from `@oh-my-pi/pi-catalog/build`."
+    },
+    {
+      "path": "packages/ai/test/prompt-cache-lifetime-wire-unchanged.test.ts",
+      "action": "create",
+      "change": "Wire-contract test proving the new axis does not shift any value sent to OpenAI. Assert the built `prompt_cache_options` for a fixture model WITH `promptCacheLifetime` and one WITHOUT are identical.",
+      "verified": true,
+      "note": "The plan puts all four cases in one catalog test file, but case (4) is a claim about packages/ai behavior and cannot live in packages/catalog. Splitting by package also matches AGENTS.md's 'prefer focused package-local verification'."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/catalog/src/types.ts:526",
+      "instruction": "Above the `export interface AnthropicCompat` declaration, add two exported type aliases: `export type CacheRetentionTier = \"short\" | \"long\";` and `export type PromptCacheLifetime = Partial<Record<CacheRetentionTier, number>>;` with a doc comment stating the unit is SECONDS and that an absent key means that tier's lifetime is unknown. Place them near the other cache-related types (just before :526) rather than inside the interface."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/catalog/src/types.ts:526 (AnthropicCompat body)",
+      "instruction": "Add `promptCacheLifetime?: PromptCacheLifetime;` to `AnthropicCompat` with a doc comment that says the value is rule-owned via the `prompt-cache-lifetime` KDL axis and is UNSET when the provider's cache behavior is unknown, so consumers must fail safe rather than default it. Do NOT add it to `OpenAICompat` (:237) — see C2."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/catalog/src/types.ts:963",
+      "instruction": "`ResolvedAnthropicCompat` is `Required<Omit<AnthropicCompat, \"streamIdleTimeoutMs\" | \"thinkingLoopGuard\">> & {...}`. Because of the `Required<>`, a new optional field on `AnthropicCompat` becomes MANDATORY on the resolved type — which would contradict the fail-safe-absent contract. Add `\"promptCacheLifetime\"` to that `Omit<...>` union, then re-declare `promptCacheLifetime?: PromptCacheLifetime;` inside the `& { ... }` intersection, exactly as `streamIdleTimeoutMs` and `thinkingLoopGuard` are handled. This step is mandatory; skipping it makes the type lie about the runtime value."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/catalog/src/compat/axes.ts:216",
+      "instruction": "In the AXES record, next to `\"prompt-cache-maximum-checkpoints\"` / `\"prompt-cache-minimum-tokens\"` / `\"prompt-cache-mode\"`, add `\"prompt-cache-lifetime\": wire(\"promptCacheLifetime\", [\"anthropic\", \"bedrock\"], \"object\"),`. The third argument is the shape and MUST be `\"object\"` (a `scalar` axis takes exactly one positional arg and cannot carry a child block). Do not pass a `values` array — that vocabulary only applies to scalar/array shapes."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/catalog/src/compat/rules/classes/anthropic.kdl:44 (an `on \"anthropic\"` block)",
+      "instruction": "Author the rule with sourced values. Example shape inside a matching family/revision block:\n\n  prompt-cache-lifetime {\n      short 300\n      long 3600\n  }\n\nWrite the numbers UNQUOTED — KDL parses `300` as a number and `\"300\"` as a string, and the resolved type demands a number. Use `short`/`long` as child names (lowercase, no dashes, so `payloadKey()` passes them through untouched). You may declare only one tier in a given block; the payload is genuinely partial. Every value needs a source comment naming the provider doc, matching the file's existing convention (see the AWS model-card comment at :252-254)."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/catalog/src/compat/rules/classes/anthropic.kdl:255 (on \"amazon-bedrock\")",
+      "instruction": "If the Bedrock consumers (packages/ai/src/providers/amazon-bedrock.ts:960) should read the same numbers, mirror the axis into the `on \"amazon-bedrock\"` block alongside the existing prompt-cache groups. If Bedrock keeps its existing boolean, skip this step and set the axis records to `[\"anthropic\"]` only. Decide this with the open question OQ1 before writing either block."
+    },
+    {
+      "n": 7,
+      "anchor": "repo root",
+      "instruction": "Run `bun run gen:compat`. It must exit 0 and report the rule/class counts. Then `git status --short packages/catalog/` — the only expected changes are `rules.json` (plus `auth-ids.ts` / `provider-ids.ts` if they shift) and your `.kdl` edit. Commit the generated files together with the rule change, per AGENTS.md's Generated Files rule."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/catalog/test/prompt-cache-lifetime.test.ts",
+      "instruction": "Write the rule test using synthetic `ModelSpec<\"anthropic-messages\">` objects (copy the `spec()` helper shape from anthropic-fable-5-1-cache-read.test.ts), so the assertions test the RULE and not the bundled JSON. Cover: (1) a model the KDL declares exposes BOTH tiers through `buildModel(...).compat.promptCacheLifetime`; (2) a model with no declaration resolves to `undefined` — assert this explicitly, do not let it pass by omission; (3) `buildModel` on the existing OpenAI gpt-5.6 fixtures still yields `promptCacheBreakpointTtl === \"30m\"` and `supportsPromptCacheBreakpoints === true`; (4) a negative case proving the axis does not leak onto a provider it was not authored for."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/ai/test/prompt-cache-lifetime-wire-unchanged.test.ts",
+      "instruction": "Write the wire-unchanged test. Build request params for an OpenAI Responses model WITH `promptCacheLifetime` set and one WITHOUT, and assert the resulting `prompt_cache_options` are deep-equal. For the responses path use the exported `buildParams` from packages/ai/src/providers/openai-responses.ts:1174. For the completions path see OQ2 — its `buildParams` at :1797 is NOT exported, so you must choose an interception strategy first. Do not write this as a source-grep of the two `ttl:` lines; AGENTS.md bans asserting on implementation file text, and such a test would pass even if the axis were wired in backwards."
+    },
+    {
+      "n": 10,
+      "anchor": "repo root",
+      "instruction": "Add a one-line entry under `## [Unreleased]` in `packages/catalog/CHANGELOG.md` (and `packages/ai/CHANGELOG.md` if you touched packages/ai source). Keep it user-facing and brief — this is an internal capability with no user-visible effect, so phrase it as the capability it unlocks. Do not flag changelog section order in review; `bun run release` normalizes it."
+    }
+  ],
+
+  "code_shape": "// packages/catalog/src/types.ts — placed just above `export interface AnthropicCompat` (:526)\nexport type CacheRetentionTier = \"short\" | \"long\";\n\n/**\n * Per-tier prompt-cache entry lifetime, in SECONDS.\n * An absent key means that tier's lifetime is unknown — consumers must fail safe\n * and must not substitute a default. Rule-owned via the `prompt-cache-lifetime`\n * KDL axis; never derived from a model-id string match in TypeScript.\n */\nexport type PromptCacheLifetime = Partial<Record<CacheRetentionTier, number>>;\n\nexport interface AnthropicCompat {\n  // …existing fields…\n  /** Per-tier prompt-cache entry lifetime in seconds. Unset when unknown. */\n  promptCacheLifetime?: PromptCacheLifetime;\n}\n\n// packages/catalog/src/types.ts:963 — the Omit list is what keeps the field optional.\nexport type ResolvedAnthropicCompat = Required<Omit<AnthropicCompat,\n  \"streamIdleTimeoutMs\" | \"thinkingLoopGuard\" | \"promptCacheLifetime\">> & {\n  thinkingLoopGuard?: AnthropicCompat[\"thinkingLoopGuard\"];\n  streamIdleTimeoutMs?: number;\n  /** Unset when unknown; consumers fail safe. */\n  promptCacheLifetime?: PromptCacheLifetime;\n  officialEndpoint: boolean;\n  firstPartyProvider: boolean;\n};\n\n// packages/catalog/src/compat/axes.ts — beside the bedrock prompt-cache axes (:216-218)\n\"prompt-cache-lifetime\": wire(\"promptCacheLifetime\", [\"anthropic\", \"bedrock\"], \"object\"),\n\n// packages/catalog/src/compat/rules/classes/anthropic.kdl — unquoted integer seconds\non \"anthropic\" {\n  family \"opus\" {\n    revision \"=4.5\" {\n      // <source: provider cache-retention doc>\n      prompt-cache-lifetime {\n        short 300\n        long 3600\n      }\n    }\n  }\n}",
+
+  "test_contract": "The observable contract is a negative one plus a containment guarantee. (a) A model the rule tree declares per-tier cache lifetimes for exposes BOTH tiers through `buildModel(...).compat.promptCacheLifetime` as numbers in seconds — a consumer reading the field learns the real TTL instead of guessing. (b) A model with no declaration resolves the field to `undefined`, asserted explicitly, so W8's fail-safe branch is defended rather than assumed; if the axis ever starts defaulting to 0 or to a hard-coded constant, this test goes red. (c) The pre-existing `promptCacheBreakpointTtl` still resolves to the literal `\"30m\"` for GPT-5.6+ on the official OpenAI API, proving the C3 decision (add a sibling axis, do not widen the existing wire field) was actually honored. (d) The `prompt_cache_options` object emitted for an OpenAI model that DOES declare `promptCacheLifetime` is deep-equal to the one emitted for an identical model that does NOT — so the new axis is provably inert on OpenAI traffic. If a future implementer widens `promptCacheBreakpointTtl` into a per-tier number, or lets the new axis leak into the OpenAI wire payload, (c) and (d) both fail. Consumers see no wire change and no cache-behavior change from this work item.",
+
+  "test_files": [
+    "packages/catalog/test/prompt-cache-lifetime.test.ts",
+    "packages/ai/test/prompt-cache-lifetime-wire-unchanged.test.ts"
+  ],
+
+  "verification": "RUNNABLE IN THIS ENVIRONMENT (verified by me just now):\n  bun run gen:compat            # exits 0; baseline currently regenerates with zero diff\n  bun run check:ts              # types + oxlint + oxfmt\n\nRUNNABLE BUT PACKAGE-SCOPED (recommended, because of concurrent-agent interference — see risk):\n  bun run --filter @oh-my-pi/pi-catalog check:types\n\nBLOCKED IN THIS ENVIRONMENT — do not treat a failure here as your regression:\n  bun test packages/catalog/test/prompt-cache-lifetime.test.ts\n  bun test packages/ai/test/prompt-cache-lifetime-wire-unchanged.test.ts\n  bun check\n\nBLOCKER, verified by me: `bun test` fails at import time for EVERY package, including\npackages/catalog, with:\n  Failed to load pi_natives native addon for darwin-arm64.\n  -> 0 pass, 1 fail, 1 error\nThe chain is build.ts -> compat/resolve.ts:37 -> compat/cascade.ts:12 ->\n`@oh-my-pi/pi-utils/lru` -> packages/natives. packages/catalog has no direct\ndependency on pi-natives; it is pulled in transitively.\nThe documented build is `bun --cwd=packages/natives run build`, which shells to\n`bun ../../scripts/bazel-natives.ts` — and NEITHER bazel NOR bazelisk is on PATH\nhere (cargo is). So the addon cannot be built in this environment.\n\n`bun check` = `check:ts` + `check:rs` in parallel (package.json:93), so it inherits\nthe same addon dependency and is equally blocked.",
+
+  "gate": "All four must hold. (1) `bun run gen:compat` exits 0 and `git status --short packages/catalog/` shows only the expected regenerated files. (2) `bun run --filter @oh-my-pi/pi-catalog check:types` exits 0. (3) `bun run check:ts` introduces no NEW errors beyond the known concurrent-agent baseline (capture the baseline before you start — see risk). (4) Once the native addon is built, `bun test packages/catalog/test/prompt-cache-lifetime.test.ts packages/ai/test/prompt-cache-lifetime-wire-unchanged.test.ts` is green, and the pre-existing `packages/catalog/test/build.test.ts` \"OpenAI explicit prompt-cache breakpoint compat\" suite still passes unchanged. Gate (1) alone already catches the most likely wiring mistakes: an unregistered directive fails with `unknown directive \\`prompt-cache-lifetime\\``, a wrong shape fails with `directive ... has a malformed value`, and a camelCase child fails with `must be kebab-case`.",
+
+  "gate_can_fail": "Yes, and it fails in a specific, diagnosable way. `gen:compat` is a real gate: `collectAxis`/`axisFor` in scripts/compat-compiler/compile-axes.ts throw CompatCompileError on an unknown directive, a scalar-shaped axis given a child block, a camelCase object child, or the same axis assigned twice in one block. The type gate is real: forgetting the `Omit` step makes `promptCacheLifetime` a required `PromptCacheLifetime` on `ResolvedAnthropicCompat` while `resolveAnthropicPolicy` never assigns it, which is a type error or a silent lie. HONEST CAVEAT, stated because it matters: the test half of this gate CANNOT RUN in this environment, so today only gates (1)-(3) are executable. And note explicitly that the compiler will NOT flag the 'two axes say the same thing' problem — see plan_corrections C6 — so gates (1)-(3) can all be green while the design decision is still unmade. That is why OQ1 is listed as a blocking open question rather than an implementation detail.",
+
+  "depends_on": [
+    "HARD GATE, not a task: a sourced per-provider, per-tier prompt-cache TTL table must exist before this item starts (the plan's open question 0). The exact TTL numbers are the deliverable of that research; this item supplies the schema, not the data. An engineer who cannot source a number must leave the field undefined rather than guess — an over-estimated TTL causes refreshes to explode on an entry that would have survived; an under-estimated one only loses an occasional avoidable miss.",
+    "Nothing structural. Unlike most of this milestone, W7 does not depend on Wave 1 (W1/W2/W3/W5) — it touches no lifecycle or disposer code. It can be built in parallel with Wave 1.",
+    "W7 and W8 are intended to ship as one unit: the axis is dead weight alone, and the warmer is blocked without it."
+  ],
+
+  "blocks": [
+    "W8 (the default-OFF Anthropic cache warmer) — blocked on the whole point of this axis. W8's current path hard-codes `ANTHROPIC_CACHE_TTL_MS = 5 * 60_000` at packages/ai/src/stream.ts:1209 and is switched on unconditionally at packages/coding-agent/src/sdk.ts:4111; W8 is the consumer that reads the new field."
+  ],
+
+  "effort": "M — one KDL axis registration, two type-shape edits (one of which, the `Omit` list, is easy to miss), one or more sourced rule blocks, `gen:compat`, and two focused test files. The non-obvious cost is not the typing; it is sourcing defensible TTL numbers and deciding OQ1.",
+
+  "risk": "The single most likely way to get this wrong is following the plan's file instruction literally — adding the field next to `promptCacheBreakpointTtl` at types.ts:403 — which puts it on `OpenAICompat`/`ResolvedOpenAISharedCompat` and makes the axis permanently invisible to the only consumer that needs it. `applyWireAxes` (resolve.ts:131-140) assigns a wire axis only when the model's API maps to one of the axis's declared records, and `API_COMPAT_RECORDS` maps `anthropic-messages` to `[\"anthropic\"]` and `openai-responses` to `[\"openai-responses\"]` — disjoint sets. An axis on the OpenAI records can never reach an Anthropic model, so the field would type-check, compile, regenerate cleanly, and still be dead at runtime. Second-most-likely: copying the `:258-266` anchor literally and landing the rule only inside `on \"amazon-bedrock\"`, which leaves first-party Anthropic — the family W8 actually warms — with no values. Neither mistake produces a red build.",
+
+  "open_questions": [
+    "OQ1 (BLOCKING — the plan explicitly leaves this open, and it changes what you write in step 6). There is already a wired sibling axis, `supports-long-prompt-cache-retention` (axes.ts:153, records [...OAI, \"bedrock\"]), with two live consumers gating `ttl: \"1h\"` at packages/ai/src/providers/amazon-bedrock.ts:960 and packages/ai/src/providers/openai-responses.ts:1253, resolved at resolve.ts:721 and :830 with a hard-coded `false` baseline at resolve.ts:899. It is declared at anthropic.kdl:266, 286, 292, 317, 328, 341, 349. Once `promptCacheLifetime` exists these are two sources of truth for the same fact. The plan's F5 block recommends (a) delete the boolean and migrate both consumers to `promptCacheLifetime?.long`, or (b) keep both with an explicit meaning split. Note that (a) is a breaking change touching two providers and a models.json regeneration, and is materially larger than this M-sized item. A human must pick. My recommendation: keep the boolean for this milestone (it is already shipped and correct), scope the new axis to `[\"anthropic\"]` only, and file the consolidation as separate work — but that is a recommendation, not a decision I can make.",
+    "OQ2. The plan's test (4) requires building request params 'through the public path of the provider' for BOTH openai-responses.ts and openai-completions.ts. That is possible for responses (buildParams is exported at :1174 and calls the policy fn at :1365) but NOT for completions: its buildParams at :1797 is module-private, as is applyOpenAIChatCompletionsPromptCachePolicy at :1767, reachable only from :1999. Pick one: (a) export buildParams from openai-completions (a production change made purely for testability — cheapest, but widens public surface), (b) drive streamOpenAICompletions with an intercepted fetch (fully public, heavier, needs a mock server), or (c) cover responses via the exported buildParams and cover completions via a mock-fetch stream test. State the choice in the test file's header comment.",
+    "OQ3. Should `promptCacheLifetime` be user-overridable in `models.yml`? If yes it must also be added to the hand-maintained omptype schema at packages/coding-agent/src/config/models-config-schema-bundle.ts (NOT generated — it is hand-written; the sibling `supportsLongPromptCacheRetention?: \"boolean\"` appears at :70 and :96). If the axis is purely rule-owned, leave it out and say so. Default recommendation: leave it out, since AGENTS.md's ownership strata put this under the KDL tree."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "Repo is at git HEAD 5873776 on branch milestone-1.",
+      "verdict": "stale",
+      "correction": "Actual HEAD is `ecd516f` (\"feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers\"). Branch `milestone-1` is correct. The line numbers in the plan still resolve correctly against this commit — I verified every one of them — so the plan was written against equivalent content despite the different SHA.",
+      "evidence": "`git log --oneline -1` -> `ecd516f feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers`"
+    },
+    {
+      "claim": "types.ts:403 (`promptCacheBreakpointTtl?: \"30m\"`), :795 (resolved), :393 (`promptCacheSessionHeader`), :863-865 (key union), axes.ts:106, resolve.ts:533 & :723, openai-responses.ts:1168, openai-completions.ts:1791, anthropic.kdl:258-266 (+ repeats at :263, :269, :283, :289, :298), package.json:158, stream.ts:1209, sdk.ts:4111.",
+      "verdict": "confirmed",
+      "correction": "None — every anchor reproduces exactly. This plan section is unusually well grounded. The `ttl: promptCache.ttl ?? model.compat.promptCacheBreakpointTtl` string appears verbatim at both consumer lines, and the KDL repeats land on precisely the lines named.",
+      "evidence": "git grep and sed on each anchor; `grep -n 'prompt-cache|supports-long-prompt-cache-retention' packages/catalog/src/compat/rules/classes/anthropic.kdl` returns 258,259,260,263,264,265,266,269,283,289,298 as claimed."
+    },
+    {
+      "claim": "The new field should be declared 'in the input shape right next to `promptCacheBreakpointTtl?: \"30m\"` at :403, resolve it right next to :795, and add it to the key union at :863-865'.",
+      "verdict": "wrong",
+      "correction": "types.ts:403 is inside `OpenAICompat` (declared at :237); :795 is inside `ResolvedOpenAISharedCompat` (declared at :745); :863-865 is inside `ResolvedOpenAICompat`'s `Required<Omit<OpenAICompat, ...>>` (declared at :823). All three are OpenAI-only shapes. But W7+W8's consumer is the Anthropic warmer, and `applyWireAxes` (resolve.ts:131-140) assigns a wire axis only when the model's API maps to one of the axis's declared records, with `API_COMPAT_RECORDS` mapping `anthropic-messages` -> `[\"anthropic\"]` and `openai-responses` -> `[\"openai-responses\"]` — disjoint. An axis declared on the OpenAI shapes can never reach an Anthropic model. The field belongs on `AnthropicCompat` (:526) and `ResolvedAnthropicCompat` (:963), with the axis records `[\"anthropic\"]` (plus `\"bedrock\"` if OQ1 goes that way). Following the plan literally yields code that compiles, regenerates, and passes every gate while being dead at runtime.",
+      "evidence": "types.ts:237 `export interface OpenAICompat`; :526 `export interface AnthropicCompat`; :745 `export interface ResolvedOpenAISharedCompat`; :963 `export type ResolvedAnthropicCompat`; axes.ts:369-381 `API_COMPAT_RECORDS` (`\"anthropic-messages\": [\"anthropic\"]`); resolve.ts:131-140 `applyWireAxes` gating on `meta?.records.some(record => records.includes(record))`."
+    },
+    {
+      "claim": "(implicit, not stated) that adding an optional field to a resolved compat shape is a one-line edit.",
+      "verdict": "incomplete",
+      "correction": "`ResolvedAnthropicCompat` is `Required<Omit<AnthropicCompat, \"streamIdleTimeoutMs\" | \"thinkingLoopGuard\">> & {...}`. The `Required<>` wrapper means a new `promptCacheLifetime?:` on `AnthropicCompat` becomes a MANDATORY `PromptCacheLifetime` on the resolved type, directly contradicting the plan's own hard requirement that the default be ABSENT when unknown. The field must be added to the `Omit` union and re-declared optional in the `& {...}` intersection — the pattern the file already uses for `streamIdleTimeoutMs` and `thinkingLoopGuard`. The plan never mentions this, and getting it wrong makes the type claim a value the resolver never assigns.",
+      "evidence": "types.ts:963 `export type ResolvedAnthropicCompat = Required<Omit<AnthropicCompat, \"streamIdleTimeoutMs\" | \"thinkingLoopGuard\">> & {`"
+    },
+    {
+      "claim": "The new axis should be authored 'next to prompt-cache-mode / prompt-cache-minimum-tokens / prompt-cache-maximum-checkpoints at :258-266 (and the repeats at :263, :269, :283, :289, :298)'.",
+      "verdict": "misleading",
+      "correction": "The line numbers are right, but the omission is load-bearing: every one of those prompt-cache axes sits inside the `on \"amazon-bedrock\" { ... }` block that opens at anthropic.kdl:255, so they only apply to provider `amazon-bedrock`. Copying the anchor literally authors the new rule for Bedrock only and leaves first-party Anthropic — the family W8's warmer actually serves — with nothing. The rule must additionally appear under an `on \"anthropic\" { ... }` selector (this file has several: :44, :183, and multi-provider variants at :14, :64, :165, :171).",
+      "evidence": "sed -n '250,360p' packages/catalog/src/compat/rules/classes/anthropic.kdl — line 255 is `on \"amazon-bedrock\" {` and the file's `on \"anthropic\"` blocks are at 14, 44, 64, 183."
+    },
+    {
+      "claim": "Test (4) should assert the outgoing payload 'at openai-responses.ts:1168 and openai-completions.ts:1791' by building request params through the public path of the provider.",
+      "verdict": "partly-wrong",
+      "correction": "Possible for the responses path only. `openai-responses.ts:1174` is `export function buildParams` and it calls `applyOpenAIResponsesPromptCachePolicy` at :1365, so params are reachable. But `openai-completions.ts:1797` is plain `function buildParams(` with no export, and its policy function `applyOpenAIChatCompletionsPromptCachePolicy` (:1767) is likewise private, reachable only from :1999. There is no public path to those params. Also note the plan's own follow-up guidance (line 3179) correctly forbids writing this as a source-grep of the two `ttl:` lines — such a test passes even if the axis is wired in backwards, and AGENTS.md bans source-greps outright. Recorded as OQ2 with three concrete options.",
+      "evidence": "grep of `^export ` in openai-completions.ts yields only `applyOpenRouterRoutingVariant`, `isOpenAICompletionsProgressChunk`, `OpenAICompletionsOptions`, `streamOpenAICompletions`, `parseChunkUsage`, `convertMessages` — no buildParams. sed -n '1797,1800p' shows `function buildParams(`."
+    },
+    {
+      "claim": "(plan F5 block) 'The boolean axis doesn't set priority=, so resolve will throw AmbiguousOverlapError — you'll hit it at bun run gen:compat.'",
+      "verdict": "wrong",
+      "correction": "`AmbiguousOverlapError` fires only when two EQUAL-RANK rules contest THE SAME axis key (cascade.ts:245-253 keys winners by axis; the class doc at cascade.ts:6-9 says rules resolve independently per axis). Two DIFFERENT axes never collide, and `collectAxis` errors only on a repeated assignment of the same key within one block. So authoring `prompt-cache-lifetime` alongside `supports-long-prompt-cache-retention` will NOT produce a compiler error. The two-sources-of-truth problem is real and AGENTS.md's spirit forbids it, but it is a design decision with no automated gate — which makes it MORE important to resolve deliberately (OQ1), not less. The plan promises a compiler tripwire that does not exist.",
+      "evidence": "cascade.ts:6-9 'per axis the matching rule with the greatest (model-selector exactness, constrained-dimension count, priority) tuple wins, and an equal-tuple same-axis contest throws AmbiguousOverlapError'; cascade.ts:245-253 keyed on `winners[axis]`; compile-axes.ts `collectAxis` errors only when `axis.key in map`."
+    },
+    {
+      "claim": "Verification is `bun run gen:compat && bun check && bun test packages/catalog/test/prompt-cache-lifetime.test.ts`.",
+      "verdict": "partly-wrong",
+      "correction": "`bun test` is blocked in this environment for every package, including packages/catalog, which has no direct pi-natives dependency but pulls it in transitively via build.ts -> compat/resolve.ts:37 -> compat/cascade.ts:12 -> @oh-my-pi/pi-utils/lru. The documented build shells to bazel, and neither bazel nor bazelisk is on PATH. `bun check` = check:ts + check:rs in parallel (package.json:93) and inherits the same blocker. `bun run gen:compat` DOES work — I ran it and it produced zero diff against the committed rules.json, confirming both that the generator is deterministic and that the baseline is clean. Separately, `bun run check:ts` is currently unreliable in this working tree for a reason unrelated to W7: concurrent agents are writing untracked type-probe scratch files into packages/coding-agent/ that break the coding-agent package's check:types (I observed `w3-scratch-verify.ts`, then `__probe.types.ts`, then `__probe2.types.ts` across three runs). Scope the gate with `bun run --filter @oh-my-pi/pi-catalog check:types` and capture a `check:ts` baseline before starting.",
+      "evidence": "`bun test packages/catalog/test/descriptors.test.ts` -> 0 pass, 1 fail, 'Failed to load pi_natives native addon for darwin-arm64'; `bun -e 'import(\"@oh-my-pi/pi-catalog/build\")'` -> same failure while `import(\"@oh-my-pi/pi-catalog/compat/axes\")` -> OK; `which bazel bazelisk` -> not found; `bun run gen:compat` -> 'wrote src/compat/rules.json (736 rules, 21 classes, 82 catalog providers, 91 auth providers, 221 files)' with empty `git diff --stat`; three consecutive `bun run check:ts` runs each failed on a differently-named probe file."
+    },
+    {
+      "claim": "Regenerate and commit `packages/catalog/src/compat/rules.json` alongside the .kdl change.",
+      "verdict": "incomplete",
+      "correction": "`bun run gen:compat` writes THREE files, not one: rules.json plus `packages/catalog/src/compat/auth-ids.ts` and `packages/catalog/src/compat/provider-ids.ts` (see scripts/compile-compat.ts). In practice the two .ts files only shift if the auth/provider surface changes, which a cache-lifetime axis should not, but the implementer must check `git status` for all three rather than assuming only rules.json moves.",
+      "evidence": "scripts/compile-compat.ts writes outPath, authIdsPath, and providerIdsPath in one run."
+    }
+  ],
+
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W7.spec.json"
+}

@@ -1,0 +1,65 @@
+[
+ {
+  "severity": "major",
+  "location": "Xác minh, khối bash dòng 107-109; cũng được lặp lại ở dòng 20 và dòng 161 (hàng 'Đính chính')",
+  "claim": "Mục 3 của khối Xác minh nói: 'PHẢI ĐỎ XANH, cần addon native (bị chặn cục bộ hôm nay; chạy trong CI hoặc sau `bun --cwd=packages/natives run build`)'. Lệnh gỡ chặn đó được trình bày như chạy được.",
+  "why_wrong": "Trên máy này lệnh đó THẤT BẠI, không phải vì W1 mà vì thiếu `ninja`. Kỹ sư đọc W1 sẽ chạy nó, nhận lỗi cmake, rồi nhiều khả năng kết luận 'môi trường hỏng, bỏ qua' và không bao giờ kiểm bốn test vàng. Bốn test vàng đó là 'tấm lưới thứ hai, độc lập' chống đúng kiểu hỏng mà plan nêu đầu tiên (dòng 131), và toàn bộ phần 'KHOẢNG TRỐNG ĐÃ BIẾT' về vị trí DAP (dòng 88) đứng trên giả định chúng có thể chạy. Nói rõ hơn: tôi đã chạy đúng lệnh gỡ chặn mà tài liệu đưa ra, và nó không chạy được.",
+  "evidence": "$ which ninja → 'ninja not found', exit=1. `ninja --version` → 'command not found: ninja'. `brew` có ở /opt/homebrew/bin/brew.\n$ bun --cwd=packages/natives run build\n  error: failed to run custom build command for `opusic-sys v0.7.5`\n  CMake Error: CMake was unable to find a build program corresponding to \"Ninja\".\n  CMAKE_MAKE_PROGRAM is not set.  You probably need to select a different build tool.\n  CMAKE_GENERATOR = Some(\"Ninja\")\n→ build script failed, exit 101. Không có file .node nào được sinh ra (packages/natives/native/*.node: 'no matches found').\nCũng đã xác nhận lựa chọn 'chạy trong CI' LÀ đúng: scripts/ci-test-ts.ts:254 viết rõ 'all coding-agent buckets run with the native addon available in CI'.",
+  "fix": "1) Ở khối Xác minh, dòng 107-108, thay:\n# PHẢI ĐỎ XANH, cần addon native (bị chặn cục bộ hôm nay;\n# chạy trong CI hoặc sau `bun --cwd=packages/natives run build`):\nbằng:\n# PHẢI ĐỎ XANH, cần addon native. CHẶN CỤC BỘ: addon chưa build, và lệnh\n# gỡ chặn `bun --cwd=packages/natives run build` THẤT BẠI trên máy chưa có\n# ninja (cmake: \"unable to find a build program corresponding to Ninja\").\n# Muốn gỡ chặn cục bộ: `brew install ninja` TRƯỚC, rồi build lại.\n# Đường đã xác minh là chạy ở CI: scripts/ci-test-ts.ts:254 nói mọi bucket\n# của coding-agent đều chạy với addon sẵn có. Ở máy không có ninja thì\n# coi bốn test này là CI-only và đừng tính chúng vào cổng cục bộ.\n\n2) Ở dòng 20, thêm ngay sau câu '...sẽ chạy trong CI nơi addon đã được build.' một câu:\nLưu ý: lệnh gỡ chặn cục bộ `bun --cwd=packages/natives run build` cần `ninja`\n(cài bằng `brew install ninja`); trên máy chưa có ninja thì lệnh đó dừng ở\nbước cmake với lỗi 'unable to find a build program corresponding to Ninja'.",
+  "file": "W1"
+ },
+ {
+  "severity": "major",
+  "location": "Dòng 20 (ô 'đã kiểm chứng?' của `packages/utils/test/wire-name.test.ts`) và dòng 86 (mục 'Hợp đồng test')",
+  "claim": "Dòng 20: 'đã chạy `bun test packages/utils/test/dirs.test.ts` và báo `6 pass 0 fail`, **nên suite utils chạy được không cần addon native**'. Dòng 86 lặp lại: 'Nó nằm ở `packages/utils/test/wire-name.test.ts` **vì suite đó chạy được không cần addon native** (đã kiểm chứng: `bun test packages/utils/test/dirs.test.ts` → 6 pass 0 fail)'.",
+  "why_wrong": "Suy luận nhảy từ MỘT file test lên cả SUITE, và con số đo suite này phủ định điều đó: `bun test packages/utils/test/` hôm nay là 658 pass / 2 skip / **17 fail** / 16 error. Chính repo cũng nói ngược lại trong `scripts/ci-test-ts.ts:86-87`: 'CI still downloads the Linux x64 native addon before this bucket: **shared utility barrels may load native-backed modules**' — và `packages/utils` nằm trong `fastWorkspacePackages` chính dòng đó. Người đọc sẽ tin rằng chạy `bun test packages/utils/test/` sạch, rồi thấy 17 fail và không biết đó là chuyện có sẵn hay do W1. Kết luận thực ra vẫn ĐÚNG (đặt test ở utils là đúng), nhưng lý do được nêu thì sai và đã được kiểm chứng bằng một lệnh mà tài liệu không chạy.",
+  "evidence": "$ bun test packages/utils/test/\n 658 pass\n 2 skip\n 17 fail\n 16 errors\n 4313 expect() calls\nRan 677 tests across 81 files. [1.70s]\n$ grep -n 'natives' scripts/ci-test-ts.ts | head\n87:// addon before this bucket: shared utility barrels may load native-backed modules.\n90:\t\"packages/utils\",\nCòn `packages/utils/src/dirs.ts` (dòng 14-18) chỉ import node:fs, node:os, node:path, ../package.json, ./fs-error — nên bản thân file dirs.ts thì đúng là không kéo addon.",
+  "fix": "Dòng 20, thay câu '...nên suite utils chạy được không cần addon native.' bằng:\n'...nên ĐỒ THỊ IMPORT CỦA `dirs.ts` không kéo addon. Lưu ý: đây là tính chất của\n`dirs.ts`, KHÔNG phải của cả suite — `bun test packages/utils/test/` hôm nay báo\n658 pass / 2 skip / 17 fail / 16 error, và scripts/ci-test-ts.ts:86-87 ghi rõ\n\"shared utility barrels may load native-backed modules\".'\n\nDòng 86, thay 'vì suite đó chạy được không cần addon native (đã kiểm chứng: `bun test packages/utils/test/dirs.test.ts` → 6 pass 0 fail)' bằng:\n'vì đồ thị import của `dirs.ts` không chạm `@oh-my-pi/pi-natives` (đã kiểm chứng:\n`bun test packages/utils/test/dirs.test.ts` → 6 pass 0 fail; lưu ý cả suite utils\nthì KHÔNG sạch — 17 fail vì cùng lý do addon, xem scripts/ci-test-ts.ts:86-87)'",
+  "file": "W1"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 17 (bảng 'File cần chạm tới') và dòng 25 (bước 2)",
+  "claim": "Cùng một chỉ thị viết lại chú thích ở `warp-events.ts:59` được cho HAI văn bản khác nhau.",
+  "why_wrong": "Đây là hai chuỗi thay thế khác nhau cho cùng một dòng, và bước 2 là chỗ kỹ sư thực sự thi hành. Người làm theo bước 2 sẽ tạo ra một dòng diff không khớp với bảng — và vì cổng (4) chỉ kiểm danh sách FILE chứ không kiểm nội dung dòng, sự lệch này sẽ lọt qua im lặng.",
+  "evidence": "$ grep -n 'wire contract' .lavish-wip/m5-md/sections/W1.md\n17:... làm thành `// Warp resolves this via CLIAgent.command_prefix(); the value is the wire contract, see WIRE_NAME.`\n25:... — `// Warp resolves this via CLIAgent.command_prefix(); the value is a wire contract, see WIRE_NAME.`",
+  "fix": "Sửa dòng 25 cho khớp dòng 17, thay 'the value is a wire contract, see WIRE_NAME.' bằng 'the value is the wire contract, see WIRE_NAME.'",
+  "file": "W1"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 26 (bước 3)",
+  "claim": "Bước 3 viết: 'Kiểm bằng `git grep -n '\"omp\"' -- packages/coding-agent/src/modes/acp/acp-agent.ts` — nó không nên trả về hit nào cho chuỗi trần (các hit còn lại, nếu có, là những chuỗi không liên quan như `\"Set up omp in terminal\"` ở dòng 648...)'.",
+  "why_wrong": "Mẫu `'\"omp\"'` là khớp TOÀN VĂN, không phải chuỗi con, nên nó KHÔNG BAO GIỜ khớp `\"Set up omp in terminal\"`. Dòng 648 đúng là có chuỗi đó, nhưng lệnh được chỉ định không thể trả về nó. Ngoài ra cổng (5) nói 'bốn file nguồn coding-agent từng có chuỗi trần' trong khi CÓ NĂM file từng có (thêm `acp-agent.ts` với `title: \"omp\"` ở 657), và lệnh trong khối Xác minh dòng 113 cũng chỉ liệt kê bốn file — nên `acp-agent.ts` không được lệnh nào của cổng (5) quét tới, dù cổng vẫn yêu cầu nó giữ `name: \"oh-my-pi\"`.",
+  "evidence": "$ grep -n '\"omp\"' packages/coding-agent/src/modes/acp/acp-agent.ts\n657:\t\t\t\ttitle: \"omp\",\n→ đúng MỘT hit. Dòng 648 là `name: \"Set up omp in terminal\",` — không khớp mẫu.",
+  "fix": "Bỏ ngoặc trong ngoặc ở dòng 26, thay '(các hit còn lại, nếu có, là những chuỗi không liên quan như `\"Set up omp in terminal\"` ở dòng 648 — đó là văn xuôi HƯỚNG TỚI NGƯỜI DÙNG, không phải wire, và thuộc W3/W8b — đừng đụng vào chúng ở đây)' bằng '(lệnh này khớp toàn văn nên sau khi sửa sẽ không còn hit nào; `\"Set up omp in terminal\"` ở dòng 648 là văn xuôi hướng tới người dùng, KHÔNG khớp mẫu này và thuộc W3/W8b — đừng đụng vào nó ở đây)'.\nVà ở dòng 113, thêm `packages/coding-agent/src/modes/acp/acp-agent.ts` vào danh sách bốn file để cổng (5) thực sự quét cả năm: `git grep -n '\"omp\"' -- packages/coding-agent/src/dap/session.ts packages/coding-agent/src/blob-broker/uploaders-legacy.ts packages/coding-agent/src/modes/warp-events.ts packages/coding-agent/src/hindsight/bank.ts packages/coding-agent/src/modes/acp/acp-agent.ts    # mong đợi KHÔNG có hit`.",
+  "file": "W1"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 163, hàng cuối bảng 'Đính chính so với plan'",
+  "claim": "Hàng này trình bày một neo ĐÃ ĐƯỢC XÁC MINH như hiện hành: '`git rev-parse HEAD` trả về `808b409fa36719c38319a041c0e612b4e702b` ... trên branch `milestone-1`, với chỉ `.lavish-wip/m2-specs/` chưa theo dõi.'",
+  "why_wrong": "HEAD đã đi tiếp và phần trạng cây đã đổi: giờ có 17 thư mục untracked dưới .lavish-wip/, không phải một. Hàng này tự đóng vai 'đính chính sự thật' cho plan, nên một SHA hiện hành-không-còn-đúng là thứ đáng bị gắn nhãn. Tin tốt: tôi đã chạy lại TOÀN BỘ neo của W1 ở HEAD hiện tại và không cái nào sai — dirs.ts:20/21/24/27/36, session.ts:3/1463/1465/1466, uploaders-legacy.ts:236, warp-events.ts:4/59/60, acp-agent.ts:5/648/656/657, bank.ts:25/29/52/87/113, và cả bốn neo test vàng, đều chính xác tuyệt đối.",
+  "evidence": "$ git rev-parse HEAD → 1454dc0a064f19ae9feac963791548282698423f ('docs: record the two architecture decisions — move all of pi, and re-cut packages')\n$ git status --short | wc -l → 17 (m2-specs, m3-specs, m3-md, m3-index, m3-findings, m4-*, m5-*, m6-specs, findings)",
+  "fix": "Thêm vào đầu correction của hàng này, trước mệnh đề SHA: 'Hết hiệu lực ở HEAD 1454dc0 (17 thư mục .lavish-wip/ chưa theo dõi, không phải một) — nhưng sáu neo nguồn và bốn neo test vàng đã được kiểm chứng lại ở HEAD 1454dc0 và toàn bộ đều chính xác.'",
+  "file": "W1"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 19, ô 'đã kiểm chứng?' của `packages/coding-agent/src/hindsight/bank.ts`; lặp lại ở dòng 98 và dòng 86",
+  "claim": "Danh sách test vàng được nêu là đầy đủ: 'Test vàng đã có sẵn và khoá các id dẫn xuất: `packages/coding-agent/test/hindsight-bank.test.ts:82` `{ bankId: \"omp\" }`, `:102` `\"omp-proj\"`, `:108` `\"omp-unknown\"`, `:114` `\"omp-general\"`, `:136` `{ bankId: \"omp\" }`.'",
+  "why_wrong": "Còn BỐN chốt khoá vàng nữa trong đúng file đó, cùng dẫn xuất từ `DEFAULT_BANK_NAME`. Danh sách năm dòng trông như liệt kê đầy đủ (dòng 98 viết thẳng 'dòng 82, 102, 108, 114, 136'), nên người đếm lưới an toàn của W1 sẽ đếm thiếu — và đây là mục duy nhất trong sóng 1 mà lưới an toàn là thứ mang tải. Thiếu sót này làm yếu, không làm sai, nên chỉ là minor.",
+  "evidence": "$ grep -n '\"omp' packages/coding-agent/test/hindsight-bank.test.ts\n55:\tretainContext: \"omp\",\n82:\t\t\t...{ bankId: \"omp\" });\n102:\t\t\t\tbankId: \"omp-proj\",\n108:\t\t\t\tbankId: \"omp-unknown\",\n114:\t\t\t\tbankId: \"omp-general\",\n136:\t\t\t\tbankId: \"omp\",\n210:\t\t\t\tbankId: \"omp-myrepo\",\n220:\t\t\t\tbankId: \"omp-bare-repo.git\",\n277: ...toBe(\"omp-proj\");\n278: ...toBe(\"omp\");\n→ 9 chốt, tài liệu liệt kê 5. (Dòng 55 là fixture `retainContext`, không phải chốt bank id — đó là cái mục 'Cần người quyết' đã nêu đúng.)",
+  "fix": "Ở dòng 19, thêm sau `:136` `{ bankId: \"omp\" }`: ', `:210` `\"omp-myrepo\"`, `:220` `\"omp-bare-repo.git\"`, `:277` `\"omp-proj\"`, `:278` `\"omp\"` (tổng chín chốt, không phải năm)'. Đồng thời ở dòng 98, sửa 'dòng 82, 102, 108, 114, 136' thành 'dòng 82, 102, 108, 114, 136, 210, 220, 277, 278'.",
+  "file": "W1"
+ },
+ {
+  "severity": "minor",
+  "location": "Dòng 16, cột 'thay đổi' của `packages/coding-agent/src/blob-broker/uploaders-legacy.ts`",
+  "claim": "Ô 'đã kiểm chứng? = có' ghi: '(các import duy nhất là `node:buffer` và hai import cục bộ `./uploader-runtime` kiểu type/value)'.",
+  "why_wrong": "File có `node:buffer` cộng BA câu import cục bộ, không phải hai; và `./uploader-runtime` là MỘT câu import duy nhất (dòng 4-14) chứ không phải hai. Bước 4 ở dòng 27 mô tả ĐÚNG ('trước các import cục bộ `./destinations` / `./publication` / `./uploader-runtime`'), nên tài liệu tự mâu thuẫn với chính nó, và ô \"đã kiểm chứng\" của bảng lại gắn nhãn xác minh cho một chi tiết sai.",
+  "evidence": "$ awk 'NR>=1 && NR<=14' packages/coding-agent/src/blob-broker/uploaders-legacy.ts\n1: import { Buffer } from \"node:buffer\";\n2: import type { BlobDestinationId } from \"./destinations\";\n3: import type { BlobUploader, BlobUploadRequest } from \"./publication\";\n4: import {\n5:\tcredentialString,\n...\n14: } from \"./uploader-runtime\";",
+  "fix": "Thay '(các import duy nhất là `node:buffer` và hai import cục bộ `./uploader-runtime` kiểu type/value)' bằng '(các import duy nhất là `node:buffer` và ba câu import cục bộ: `./destinations` và `./publication` kiểu `import type`, cùng một câu `./uploader-runtime` kiểu value/value+type)'",
+  "file": "W1"
+ }
+]

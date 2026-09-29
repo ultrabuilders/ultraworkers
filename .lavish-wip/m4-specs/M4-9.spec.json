@@ -1,0 +1,227 @@
+{
+  "id": "M4-9",
+  "title": "CLI inventory over loadAllExtensions (scoped down: state/shadowed only, no shadow-source)",
+  "wave": "M4 Wave D — Khả năng nhìn thấy triage (shippable: false, waits on M4's shared changelog gate, plan §6.2/§6.3)",
+  "one_line": "Add a read-only `omp extensions-triage` command that prints, for every extension the loader found, whether it is active / disabled / shadowed and which disable policy blocked it, by projecting the exact rows `loadAllExtensions` already returns instead of re-deriving anything.",
+  "user_visible_effect": "A new top-level CLI command. The user runs `omp extensions-triage` (or `--json`) and sees one row per extension with a state column (`active` / `disabled` / `shadowed`) and a reason column, so they can answer \"is my plugin actually loading, and if not, which policy stopped it\". The command is a pure projection: it changes no loader state, toggles nothing, and writes no settings. It does NOT name what shadowed a row — that value is `undefined` everywhere in the current tree (see plan_corrections), and inventing it in the CLI is explicitly out of scope.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m4-specs/M4-9.spec.json",
+  "effort": "S for option (a) (~1 day: 2 new files + 2 modified + 1 test). M for option (b) (~2-3 days: option (a) plus a shared-core change in capability/index.ts and a 6-call-site change in state-manager.ts). The plan's \"S is optimistic\" verdict is correct for (b) only; (a) is genuinely S.",
+  "risk": "Shipping a CLI that re-derives shadowing independently of `loadAllExtensions`, so the inventory and the runtime dashboard disagree — the plan calls this out and is right: an inventory that lies is worse than no inventory. The concrete way this happens in (a) is passing `undefined` for the `disabledIds` argument: the loader still reads `cfgDisabledExtensions` internally, but the `disabledExtensions` Set that `resolveState` consults stays empty, so the CLI reports item-level-disabled rows as `active` while the TUI dashboard reports them `disabled`. The mirror of acp-agent.ts:1191-1193 is mandatory. For option (b) the top risk is different and mechanical: at both `item._shadowed = true` sites the winning item is not recoverable as the code stands (see plan_corrections #5), so a naive `_shadowedBy = existing._source` edit compiles, type-checks, and silently still yields `undefined`.",
+  "depends_on": [
+    "M2 WI-2 (deterministic extension load order + explicit collision resolution) — MUST be merged before this ships. UNMET as of 2026-09-27: packages/coding-agent/test/extension-load-order-determinism.test.ts does not exist and `git grep -n 'extension-load-order' packages/coding-agent/` returns 0 hits, so WI-2's deliverable is not in the tree. If this CLI ships first, it reports an ordering the user never sees in the dashboard.",
+    "Nothing else. Option (a) touches no shared core."
+  ],
+  "blocks": [],
+  "open_questions": [
+    "(a) or (b)? The plan explicitly refuses to choose and requires the choice to be recorded. DECISION GATE — step 1 below. Recommendation: ship (a) now (it needs no core change and answers the triage question), and file (b) as its own work item rather than bundling a shared capability-core change into a CLI PR.",
+    "Command name. Spec uses `extensions-triage`. The registry already has `plugin`, `skill`, `config`; `extensions-triage` is unambiguous against all of them. Confirm before writing the help string.",
+    "Default output: table or one-line-per-row? The spec assumes one sanitized line per row, matching the `omp plugin list` shape at packages/coding-agent/src/cli/plugin-cli.ts:644. Confirm.",
+    "Does Wave D ship in the same changelog decision as M4 Waves B and C, or does it need its own? Plan §6.2 says all three M4 waves merge as ONE changelog decision and none ships before that decision exists. Confirm the owner has actually granted it — `shippable: false` means this cannot be released on its own.",
+    "For option (b): should `_shadowedBy` carry a display string (e.g. `skill:foo` via `makeExtensionId`) or a raw path? Recommend the extension id, because that is what the user can act on and what the TUI inspector already renders at packages/tui/src/overlays/extensions/inspector-model.ts:466-482."
+  ],
+  "code_shape": "// packages/coding-agent/src/cli/extensions-triage-cli.ts  (option (a), the thin projection)\n//\n// RULE: this module must NOT re-derive state, shadowing, or disable policy. Every\n// value below is read off the Extension rows loadAllExtensions already produced. If a\n// field you need is missing, the fix is upstream (option (b)), never a local guess.\n\nimport { Settings } from \"../config/settings\";\nimport { cfgDisabledExtensions } from \"../extensibility/settings\";\nimport { loadAllExtensions } from \"../modes/components/extensions/state-manager\";\nimport type { Extension } from \"@oh-my-pi/pi-tui/overlays/extensions/types\";\n\n// Row shape is a strict subset of Extension — no new vocabulary.\nexport interface ExtensionTriageRow {\n\tid: string;\n\tkind: Extension[\"kind\"];\n\tname: string;\n\tstate: Extension[\"state\"];\n\tdisabledReason?: string;\n\tshadowedBy?: string;\n\tsourceProvider: string;\n\tsourceLevel: string;\n\tpath: string;\n}\n\nexport interface ExtensionTriageArgs {\n\tflags: { json: boolean; cwd?: string };\n}\n\n// Pure projection — export it so the test can assert on it without spawning a process.\nexport function toTriageRow(ext: Extension): ExtensionTriageRow {\n\treturn {\n\t\tid: ext.id,\n\t\tkind: ext.kind,\n\t\tname: ext.name,\n\t\tstate: ext.state,\n\t\tdisabledReason: ext.disabledReason,\n\t\t// Always undefined today. Exposed on purpose: option (a) documents the gap\n\t\t// rather than hiding it. See plan_corrections #2.\n\t\tshadowedBy: ext.shadowedBy,\n\t\tsourceProvider: ext.source.provider,\n\t\tsourceLevel: ext.source.level,\n\t\tpath: ext.path,\n\t};\n}\n\nexport async function runExtensionsTriage(args: ExtensionTriageArgs): Promise<void> {\n\t// MUST mirror packages/coding-agent/src/modes/acp/acp-agent.ts:1191-1193.\n\t// Passing undefined here makes resolveState's disabledExtensions Set empty, so\n\t// item-level-disabled rows render as `active` here and `disabled` in the TUI.\n\tconst sm = await Settings.init();\n\tconst disabledIds = cfgDisabledExtensions.get(sm);\n\n\tconst extensions = await loadAllExtensions(args.flags.cwd, disabledIds);\n\tconst rows = extensions.map(toTriageRow);\n\n\tif (args.flags.json) {\n\t\t// Standalone CLI that exits without entering the TUI: console.log is allowed\n\t\t// here per AGENTS.md \"Logging and CLI Output\". Keep structured stdout clean.\n\t\tconsole.log(JSON.stringify({ extensions: rows }, null, 2));\n\t\treturn;\n\t}\n\n\t// Sanitize before printing (AGENTS.md \"TUI Sanitization\"): tabs -> spaces via\n\t// replaceTabs(), paths -> ~ via shortenPath(). No ad-hoc truncation constants.\n\tfor (const row of rows) {\n\t\tconsole.log(\n\t\t\t`${row.id}\\t${row.state}${row.disabledReason ? ` (${row.disabledReason})` : \"\"}\\t${row.sourceProvider}\\t${shortenPath(row.path)}`,\n\t\t);\n\t}\n}\n\n// ---------------------------------------------------------------------------\n// packages/coding-agent/src/commands/extensions-triage.ts  (thin Command wrapper)\n// Every registered command in cli-commands.ts follows this exact three-part shape:\n//   src/commands/<name>.ts   — oclif-style Command subclass, `export default class`\n//   src/cli/<name>-cli.ts     — the implementation module, top-level imported\n//   src/cli/command-help.ts   — a `{ description } satisfies CommandMetadata` entry\n// See packages/coding-agent/src/commands/config.ts as the reference.\n// ---------------------------------------------------------------------------\n\n// import { Command, Flags } from \"@oh-my-pi/pi-utils/cli\";\n// import { extensionsTriageHelp as commandHelp } from \"../cli/command-help\";\n// import { type ExtensionTriageArgs, runExtensionsTriage } from \"../cli/extensions-triage-cli\";\n//\n// export default class ExtensionsTriage extends Command {\n// \tstatic description = commandHelp.description;\n// \tstatic flags = { json: Flags.boolean({ description: \"Output JSON\" }) };\n// \n// \tasync run(): Promise<void> {\n// \t\tconst { flags } = await this.parse(ExtensionsTriage);\n// \t\tconst cmd: ExtensionTriageArgs = { flags: { json: flags.json } };\n// \t\tawait runExtensionsTriage(cmd);\n// \t}\n// }\n\n// ---------------------------------------------------------------------------\n// OPTION (b) — the upstream half, ONLY if the decision gate selects it.\n// packages/coding-agent/src/capability/index.ts\n//\n// `seen` currently holds KEYS ONLY, so the winning item is unrecoverable at the\n// keySeen branch; `aliasSeen` uses `.some()`, which returns a boolean, not the\n// matching element. Both must change or _shadowedBy stays undefined silently.\n//\n//   :228  const seen = new Set<string>();\n//      -> const seen = new Map<string, T & { _source: SourceMeta }>();\n//\n//   :242  const keySeen = key !== undefined && seen.has(key);\n//   :246  deduped.some(existing => !disabledItems.has(existing) && equivalent(existing, item));\n//   :247  if (keySeen || aliasSeen) item._shadowed = true;\n//      -> const aliasHit = ... .find(existing => ...) // find, not some\n//      -> const winner = keySeen ? seen.get(key) : aliasHit;\n//      -> if (winner) { item._shadowed = true; item._shadowedBy = winner._source; }\n//\n//   :255  if (key !== undefined) seen.add(key);            // suppressed branch: seen.set(key, item)\n//   :264  const keySeen = seen.has(key);\n//   :265  seen.add(key);                                   // seen.set(key, item)\n//   :266-269 aliasSeen ... deduped.some(...)               // -> .find(...)\n//   :271  item._shadowed = true;                           // record winner as above\n//\n//   :273  deduped.push(item)  (winner path)                 // seen.set(key, item) here too\n//\n// Then thread the winner out through the item type (capability/types.ts:165, and the\n// inline intersection types at index.ts:144-146) and hand a real getter to addItems:\n//   packages/coding-agent/src/modes/components/extensions/state-manager.ts\n//     :103  shadowedBy: opts?.getShadowedBy?.(item),\n//   Six call sites must start passing one (:116 skills, :127 rules, :138 tools,\n//   :149 native modules, :209 prompts, :220 slash commands) — e.g.\n//     addItems(skills.all, \"skill\", { ..., getShadowedBy: s => shadowSourceOf(s) });\n// Skipping any one of the six leaves that kind reporting undefined forever.\n",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/cli/extensions-triage-cli.ts",
+      "action": "create",
+      "change": "New implementation module. Pure projection over `loadAllExtensions`: mirrors the ACP route's `Settings.init()` + `cfgDisabledExtensions.get(sm)` call so the CLI and the dashboard agree on disable state, maps each Extension to an ExtensionTriageRow, prints sanitized lines or `--json`. Adds no state, no shadowing inference, no settings writes.",
+      "verified": true,
+      "note": "Does not exist yet (confirmed: `ls packages/coding-agent/src/cli/` shows no extensions-triage file). Directory exists and holds 44 sibling `*-cli.ts` implementation modules — this is the right home. Name matches the plan's proposal."
+    },
+    {
+      "path": "packages/coding-agent/src/commands/extensions-triage.ts",
+      "action": "create",
+      "change": "Thin oclif-style `Command` subclass: `export default class ExtensionsTriage extends Command` with `static description`, a `json: Flags.boolean()` flag, and `run()` that parses args and delegates to `runExtensionsTriage`. Must `export default` because `cli-commands.ts` does `.then(m => m.default)`.",
+      "verified": true,
+      "note": "NOT in the plan. Required: cli-commands.ts:99 shows every entry loading `./commands/<name>.ts` via a dynamic import resolving `.default` (e.g. `load: () => import(\"./commands/config\").then(m => m.default)`). The plan names only the `-cli.ts` file, so following it literally produces a file the registry cannot route to. 49 such wrappers already exist in this directory; commands/config.ts is the smallest complete reference."
+    },
+    {
+      "path": "packages/coding-agent/src/cli/command-help.ts",
+      "action": "modify",
+      "change": "Add `export const extensionsTriageHelp = { description: \"...\" } satisfies CommandMetadata;` alongside the other ~49 help entries. Needed so the lightweight help renderer and `CommandMetadata` help stay in sync.",
+      "verified": true,
+      "note": "NOT in the plan, same omission. Confirmed shape at command-help.ts:3-5 (`acpHelp`) and the `CommandMetadata` interface at packages/utils/src/cli.ts:136-142 ({description?, hidden?, flags?, args?, examples?})."
+    },
+    {
+      "path": "packages/coding-agent/src/cli-commands.ts",
+      "action": "modify",
+      "change": "Add one `CommandEntry` to the exported `commands` array: `{ name: \"extensions-triage\", load: () => import(\"./commands/extensions-triage\").then(m => m.default), help: commandHelp.extensionsTriageHelp }`. This is the only wiring needed for `runCli` to route `omp extensions-triage` instead of forwarding argv to the LLM as a prompt.",
+      "verified": true,
+      "note": "File exists (verified). The module header documents that adding an entry here is sufficient to claim the argv, and cites #1496 ('args silently leak to the LLM') as the regression this split prevents. The `load:` dynamic import is the established, sanctioned lazy-loading surface for the registry — the AGENTS.md no-inline-import rule governs helper and type imports, and every one of the 49 existing entries uses this exact form."
+    },
+    {
+      "path": "packages/coding-agent/test/extensions-triage-cli.test.ts",
+      "action": "create",
+      "change": "Contract test for the projection. Builds a fixture tree with one same-name skill at two levels so exactly one row lands in `shadowed`, runs `toTriageRow` over real `loadAllExtensions` output, and asserts the triage question is answerable: every extension appears exactly once, states are drawn from the real state union, a shadowed row exists and carries `shadowedBy === undefined` (the documented gap), and a policy-disabled row carries its `disabledReason`.",
+      "verified": true,
+      "note": "New file; the directory exists. For reference, packages/coding-agent/test/extensions-discovery.test.ts (32 KB) and packages/coding-agent/test/discovery/disabled-extensions.test.ts already exercise `loadAllExtensions` — read them first and reuse their fixture-tree helper rather than inventing a second one. No `mock.module()`; use `vi.spyOn` on the imported module with `vi.restoreAllMocks()` in afterEach."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under `## [Unreleased]` → `### Added`, leading with the user-visible outcome: `Added \\`omp extensions-triage\\`, a read-only inventory of every discovered extension with its load state and the disable policy that blocked it (--json for machine-readable output)`. No root-cause narration.",
+      "verified": true,
+      "note": "BLOCKED on the Wave D changelog authorization — plan §6.3 marks Wave D `shippable: false` and §6.2 states all three surviving M4 waves merge under a single changelog decision. Do not write this entry until that authorization exists; per AGENTS.md this plan never authors changelog text on its own."
+    },
+    {
+      "path": "packages/coding-agent/src/capability/index.ts",
+      "action": "modify",
+      "change": "OPTION (b) ONLY. Change `seen` from `Set<string>` to `Map<string, Item>` and both `aliasSeen` computations from `.some()` to `.find()` so the winning item is recoverable, then record it as `_shadowedBy` at the two existing `_shadowed = true` sites. Today those sites are bare booleans and the winner is discarded.",
+      "verified": true,
+      "note": "Anchors all confirmed by real grep: `seen = new Set<string>()` at :228; `seen.has(key)` at :242 and :264; `seen.add(key)` at :255 and :265; `deduped.some(...)` at :246 and :269; `item._shadowed = true` at exactly :247 and :271; survivor push at :273. The plan names :247 and :271 as the fix sites and is correct, but omits that :228/:246/:269 must change first or the fix is a silent no-op."
+    },
+    {
+      "path": "packages/coding-agent/src/capability/types.ts",
+      "action": "modify",
+      "change": "OPTION (b) ONLY. Add the `_shadowedBy` field to the item intersection type so the new field is typed at the boundary, not cast at the consumer. `CapabilityResult.all` is already documented as 'All items including shadowed duplicates (for diagnostics)' — this is the sanctioned diagnostic channel.",
+      "verified": true,
+      "note": "`all: Array<T & { _source: SourceMeta; _shadowed?: boolean }>` confirmed at types.ts:165. The same inline intersection type is repeated at capability/index.ts:144, :145, :146, :211, :218 — all must gain the field or the assignment at :247/:271 will not type-check."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/components/extensions/state-manager.ts",
+      "action": "modify",
+      "change": "OPTION (b) ONLY. Pass a real `getShadowedBy` at all six `addItems` call sites so `Extension.shadowedBy` is populated for every kind.",
+      "verified": true,
+      "note": "`loadAllExtensions` confirmed at :69. The read `shadowedBy: opts?.getShadowedBy?.(item)` is at :103 and the type declaration `getShadowedBy?: (item: T) => string | undefined;` at :81 — the ONLY two references in the whole repo. All six call sites (:116, :127, :138, :149, :209, :220) confirmed by grep and none passes it, so the field is always undefined today. `resolveState` is called at :86-89 and also at :180, :236, :267 for the mcp/hook/file kinds, which build their rows by hand rather than through `addItems` — those four need the same treatment or kinds mcp/hook/context-file stay `undefined` even after (b)."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "RECORD THE SCOPE DECISION before writing code. Choose (a) narrow — the CLI reports `state` / `disabledReason` / `shadowed`, never a shadow source — or (b) full — additionally make `shadowedBy` real. Write the choice and one sentence of rationale into the PR description. (a) is the recommendation: it needs no shared-core change, it answers the actual triage question ('is my plugin loaded, and which policy stopped it'), and it keeps a `capability/index.ts` change out of a CLI PR. (b) is a real change to shared discovery state and deserves its own review.",
+      "anchor": "plan COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7982-8012 (M4-9 heading + the a/b fork)"
+    },
+    {
+      "n": 2,
+      "instruction": "Confirm M2 WI-2 has merged. The gate is `packages/coding-agent/test/extension-load-order-determinism.test.ts` existing. If it does not exist, STOP — this item is blocked. On 2026-09-27 it did not exist, so M4-9 is not startable yet and must queue behind WI-2.",
+      "anchor": "packages/coding-agent/test/extension-load-order-determinism.test.ts (absent at 808b365)"
+    },
+    {
+      "n": 3,
+      "instruction": "Read the two existing consumers before designing the row shape: `isShadowedExtension` and the `Extension` interface in the tui package, and the `enablementLabel` / `#getStatusBadge` renderers. They decide what a shadowed row is allowed to look like, and they already render a 'Shadowed by X' string that today never receives a value — decide deliberately whether the CLI should mirror that wording or stay independent of it.",
+      "anchor": "packages/tui/src/overlays/extensions/types.ts:68 (shadowedBy), :84 (isShadowedExtension); inspector-model.ts:466-482; inspector-panel.ts:654-661"
+    },
+    {
+      "n": 4,
+      "instruction": "OPTION (a): create `packages/coding-agent/src/cli/extensions-triage-cli.ts`. Export a pure `toTriageRow(ext: Extension): ExtensionTriageRow` and a `runExtensionsTriage(args)` that does `Settings.init()` then `cfgDisabledExtensions.get(sm)` then `loadAllExtensions(cwd, disabledIds)`. The disabledIds argument is the whole ballgame: passing `undefined` makes the loader read cfg internally but leaves `resolveState`'s `disabledExtensions` Set empty, so item-level disables report as `active` here and `disabled` in the dashboard. Mirror acp-agent.ts:1191-1193 exactly.",
+      "anchor": "packages/coding-agent/src/cli/extensions-triage-cli.ts (new); model on packages/coding-agent/src/modes/acp/acp-agent.ts:1191-1193"
+    },
+    {
+      "n": 5,
+      "instruction": "OPTION (a): render. `--json` emits `{ \"extensions\": [...] }` (precedent: `omp config --json`, `omp skill --json`). Human output is one line per row: id, state, parenthesised disabledReason, provider, shortened path. Run paths through `shortenPath` and tabs through `replaceTabs` from the central helpers — no ad-hoc truncation constants. Use `console.log`: this is a standalone CLI that exits without entering the TUI, which AGENTS.md explicitly permits. If the output ever gets rendered inside the TUI, switch to `logger` at that point, not before.",
+      "anchor": "packages/coding-agent/src/cli/extensions-triage-cli.ts; helpers per AGENTS.md 'TUI Sanitization'"
+    },
+    {
+      "n": 6,
+      "instruction": "OPTION (a): create `packages/coding-agent/src/commands/extensions-triage.ts` as a thin `Command` subclass with a `json` boolean flag, importing the implementation with a TOP-LEVEL import (never `await import`), and `export default class`.",
+      "anchor": "packages/coding-agent/src/commands/extensions-triage.ts (new); reference packages/coding-agent/src/commands/config.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "OPTION (a): add `extensionsTriageHelp` to command-help.ts using the `{ description } satisfies CommandMetadata` form.",
+      "anchor": "packages/coding-agent/src/cli/command-help.ts (modify near :3)"
+    },
+    {
+      "n": 8,
+      "instruction": "OPTION (a): register the command in cli-commands.ts — one entry in the `commands` array. This single edit is what makes `runCli` route `omp extensions-triage` to the command instead of leaking the argv to the LLM as a prompt (the #1496 regression the module header warns about).",
+      "anchor": "packages/coding-agent/src/cli-commands.ts:98-101 (the `config` entry, for shape)"
+    },
+    {
+      "n": 9,
+      "instruction": "OPTION (b) ONLY, after step 1 chose (b): in capability/index.ts change `seen` to a `Map<string, T & { _source: SourceMeta }>`, change the two `deduped.some(...)` alias computations to `.find(...)`, and at each `_shadowed = true` site assign the winner — `seen.get(key)` for the keySeen branch, the `.find()` hit for the aliasSeen branch. Also `seen.set(key, item)` on the survivor path and the suppressed path. Update the repeated inline intersection types at :144/:145/:146/:211/:218 and the public one at types.ts:165 to carry `_shadowedBy`.",
+      "anchor": "packages/coding-agent/src/capability/index.ts:228, :242, :246, :247, :255, :264, :265, :269, :271, :273; packages/coding-agent/src/capability/types.ts:165"
+    },
+    {
+      "n": 10,
+      "instruction": "OPTION (b) ONLY: thread the winner into state-manager. Supply `getShadowedBy` at all SIX addItems call sites, and hand-wire the same read at the three hand-built row sites (mcp :180, hook :236, context-file :267) which bypass addItems entirely. Missing any one leaves that kind permanently undefined — and because the field is optional and silently absent, nothing will fail loudly.",
+      "anchor": "packages/coding-agent/src/modes/components/extensions/state-manager.ts:81, :103, :116, :127, :138, :149, :180, :209, :220, :236, :267"
+    },
+    {
+      "n": 11,
+      "instruction": "Write the contract test. Fixture: one skill with the SAME name present at both user and project level, so exactly one row is shadowed; plus one row blocked by a provider disable so a `disabledReason` is populated. Assert the triage question, not the field names: (1) every discovered extension appears exactly once, keyed by id; (2) each row's state is one of the real `ExtensionState` values; (3) a shadowed row exists AND its `shadowedBy` is undefined — under (a) that is the documented contract a future refactor must be told to revisit, under (b) it is the regression proving the winner was recorded; (4) a policy-disabled row carries a non-empty `disabledReason` different from `\"shadowed\"`. Do NOT assert that `shadowedBy` is undefined as a permanent truth — assert the option-appropriate direction.",
+      "anchor": "packages/coding-agent/test/extensions-triage-cli.test.ts (new)"
+    },
+    {
+      "n": 12,
+      "instruction": "Run the gate: `bun run check:ts`, then `bun test packages/coding-agent/test/extensions-triage-cli.test.ts`. Do NOT use the plan's `bun test packages/coding-agent/test/ -t 'acp'` — see plan_corrections #4; that filter matches test NAMES, and a triage test is not named 'acp', so the command would pass without ever running the new code. If the native addon is unbuilt, `bun test` reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64'; build it or treat the test as not yet run.",
+      "anchor": "package.json:94 (check:ts), :89 (test)"
+    },
+    {
+      "n": 13,
+      "instruction": "Sanity-run the real binary against a real tree: `omp extensions-triage` and `omp extensions-triage --json`, and compare the row set against the `/extensions` dashboard for the same cwd. They must agree. Disagreement means the disabledIds mirroring in step 4 is wrong. Only after that passes, request the Wave D changelog authorization and add the one-line CHANGELOG entry.",
+      "anchor": "packages/coding-agent/CHANGELOG.md under `## [Unreleased]` → `### Added`"
+    }
+  ],
+  "test_contract": "The observable contract is: given a fixture tree where one skill exists at two precedence levels and one extension is blocked by a disable policy, `omp extensions-triage` (and its `--json` form) emits exactly one row per discovered extension, each carrying a state drawn from the real state union and, for anything not active, the reason — and the row set matches what the `/extensions` dashboard shows for the same cwd. If this regresses, a user whose plugin silently failed to load is told the plugin loaded and is active, so they debug the wrong layer entirely: the whole purpose of the command is to make 'loaded but blocked, and blocked by what' answerable without opening the TUI. Under option (a) there is a second, deliberate contract: a shadowed row reports `shadowedBy === undefined`, which pins the current gap so a later refactor that starts populating it knows to revisit this test instead of silently changing what the CLI claims. Under option (b) that same assertion inverts into the regression test for the fix: a shadowed row MUST name its shadow source, and if a refactor reintroduces a bare `item._shadowed = true` the test goes red instead of the field quietly going back to undefined.",
+  "test_files": [
+    "packages/coding-agent/test/extensions-triage-cli.test.ts (new)",
+    "packages/coding-agent/test/extensions-discovery.test.ts (read for fixture helpers; do not duplicate)",
+    "packages/coding-agent/test/discovery/disabled-extensions.test.ts (read for the disable-policy fixture; do not duplicate)",
+    "OPTION (b): packages/coding-agent/test/capability/*.test.ts — the winner-recording assertion belongs in the capability suite, at the layer that owns `seen`/`deduped`, not through the CLI"
+  ],
+  "verification": [
+    "bun run check:ts",
+    "bun test packages/coding-agent/test/extensions-triage-cli.test.ts",
+    "OPTION (b) adds: bun test packages/coding-agent/test/capability/ packages/coding-agent/test/extensions-discovery.test.ts packages/coding-agent/test/discovery/disabled-extensions.test.ts",
+    "REGRESSION WATCH after the change: bun test packages/coding-agent/test/extensions-runner.test.ts packages/coding-agent/test/extension-dashboard-mcp-parity.test.ts packages/tui/test/extension-inspector.test.ts — the dedup change touches shared discovery and the inspector is a live consumer of shadowedBy",
+    "MANUAL (not automatable in-process): run the built binary, `omp extensions-triage --json`, and diff its row set against the /extensions dashboard for the same cwd"
+  ],
+  "gate": "The item is DONE when all of: (1) `bun run check:ts` is clean; (2) `bun test packages/coding-agent/test/extensions-triage-cli.test.ts` passes; (3) the manual diff in step 13 shows the CLI's rows matching the dashboard exactly — specifically, a row the dashboard calls `disabled` is not reported `active` by the CLI, which is the only thing that catches the step-4 mirroring mistake; (4) for (b), a fixture row shadowed by a same-name winner reports a non-empty `shadowedBy` AND a test in the capability suite fails if `_shadowed` is set without the winner; (5) the CHANGELOG line exists and Wave D's `shippable: false` authorization has been granted in writing. Condition (3) is the one that cannot be faked: delete the `Settings.init()` / `cfgDisabledExtensions` mirroring from the CLI and the JSON output will still look plausible, but every item-level disable will flip to `active` and the diff against the dashboard will show it. What the gate does NOT catch, and a reviewer must confirm by eye: whether the new `Command` was actually registered in `cli-commands.ts` — a missing registry entry makes `omp extensions-triage` fall through to `runCli` and forward the argv to the LLM as a prompt (the #1496 regression), and no test listed here would notice. The plan's own suggested command, `bun test packages/coding-agent/test/ -t 'acp'`, would go green against every one of these defects; see plan_corrections #5.",
+  "gate_can_fail": true,
+  "plan_corrections": [
+    {
+      "claim": "`packages/coding-agent/src/modes/components/extensions/state-manager.ts:69` (`loadAllExtensions`)",
+      "verdict": "CONFIRMED",
+      "correction": "None. Line 69 is `export async function loadAllExtensions(cwd?: string, disabledIds?: string[]): Promise<Extension[]>`.",
+      "evidence": "`sed -n '55,130p' packages/coding-agent/src/modes/components/extensions/state-manager.ts` — the signature appears immediately after the `Load all extensions from all capabilities.` doc comment."
+    },
+    {
+      "claim": "`shadowedBy` is read at `state-manager.ts:103` and no `addItems` call site passes `getShadowedBy`, so it is always `undefined` (repo-wide grep returns exactly 2 hits: the type declaration and the read).",
+      "verdict": "CONFIRMED — this is the plan's central claim and it holds exactly.",
+      "correction": "None. The escape criterion the plan set for option (a) is real: naming a shadow source is genuinely impossible without new code, so effort S really is optimistic for (b) and really is cheap for (a). Carry this forward with confidence.",
+      "evidence": "`git grep -n 'getShadowedBy' -- packages/` returns exactly 2 lines: state-manager.ts:81 (`getShadowedBy?: (item: T) => string | undefined;`) and state-manager.ts:103 (`shadowedBy: opts?.getShadowedBy?.(item),`). `git grep -n 'addItems' -- packages/` shows the 6 call sites at :116, :127, :138, :149, :209, :220, none of which passes the option. Corroborated downstream: the TUI's `isShadowedExtension` and the 'Shadowed by X' renderer at inspector-model.ts:466-482 already handle the field, so a string that never arrives is consistent with observed behavior."
+    },
+    {
+      "claim": "The root cause is `packages/coding-agent/src/capability/index.ts:247` and `:271`, where `item._shadowed = true` is assigned as a bare boolean and the winner is discarded.",
+      "verdict": "CONFIRMED, with a material addition the plan omits.",
+      "correction": "The two `_shadowed = true` sites are exactly at :247 and :271 as claimed — but recovering the winner requires THREE more edits the plan does not mention, or the fix compiles and silently does nothing. (i) `seen` is declared `const seen = new Set<string>()` at :228 — keys only, no item reference, so the `keySeen` branch at :242/:264 has nothing to name. It must become a `Map<string, T & { _source: SourceMeta }>`, with `seen.add(key)` at :255 and :265 becoming `seen.set(key, item)`. (ii) `aliasSeen` is computed with `deduped.some(...)` at :246 and :269, which returns a boolean, not the matching element — both must become `.find(...)`. (iii) the inline intersection types at index.ts:144, :145, :146, :211, :218 and the public one at types.ts:165 all declare `_shadowed?: boolean` and must gain the new field, or the assignment does not type-check. An engineer following the plan literally produces code that passes `bun run check:ts` and reports `undefined` forever.",
+      "evidence": "`grep -n 'seen = new Set<string>\\|deduped.some\\|seen.has(key)\\|seen.add(key)\\|_shadowed = true' packages/coding-agent/src/capability/index.ts` → 228, 242, 243, 246, 247, 255, 264, 265, 266, 269, 271, 273. `sed -n '274,320p'` confirms the survivor path at :273. `sed -n '150,180p' packages/coding-agent/src/capability/types.ts` confirms `all: Array<T & { _source: SourceMeta; _shadowed?: boolean }>` at :165. Also confirmed by the same grep: `return { items: deduped, all: ...allItems }` at :290-295 — shadowed items are excluded from `items` but ARE present in `all`, which is what `loadAllExtensions` reads. So shadowed rows really do reach the CLI with `state: \"shadowed\"`."
+    },
+    {
+      "claim": "`packages/coding-agent/src/modes/acp/acp-agent.ts:1189-1196` (route `_omp/extensions`)",
+      "verdict": "NEARLY CONFIRMED — off by one at the end.",
+      "correction": "The `case \"_omp/extensions\":` block is lines 1189-1195. Line 1196 is `case \"_omp/extensions/toggle\":`, the NEXT route. Use 1189-1195. More importantly, the block is load-bearing beyond the plan's use of it: lines 1191-1193 are `const sm = await Settings.init(); const disabledIds = cfgDisabledExtensions.get(sm);` and they are the exact runtime-vs-CLI parity the new command must copy. The plan cites this route only as the place the data is already exposed; an engineer who skims it will miss the mirroring requirement and ship a CLI that under-reports every item-level disable.",
+      "evidence": "`sed -n '1189,1196p' packages/coding-agent/src/modes/acp/acp-agent.ts | cat -n` → 1189 case, 1190 cwd, 1191 Settings.init, 1192 cfgDisabledExtensions.get, 1193 loadAllExtensions(cwd, disabledIds), 1194 return, 1195 closing brace, 1196 next case. Imports confirmed at :48 (`Settings`) and :88 (`cfgDisabledExtensions`)."
+    },
+    {
+      "claim": "Command: `bun check && bun test packages/coding-agent/test/ -t 'acp'`. Testing: a snapshot/CSV test on a fixture tree with a shadowed extension.",
+      "verdict": "WRONG on both counts.",
+      "correction": "The test command is vacuous for this work item. `bun test -t <pattern>` filters by TEST NAME, not by filename — the existing acp tests are named after `describe(\"ACP agent\")` (packages/coding-agent/test/acp-agent.test.ts:556), which is why `-t 'acp'` catches them. A new extensions-triage test will not be named 'acp', so this command runs none of the new code and goes green on a completely broken implementation. Replace it with `bun test packages/coding-agent/test/extensions-triage-cli.test.ts`. Separately, `bun check` runs `check:ts` AND `check:rs`; in the current environment the Rust half and `bun test` are both blocked by the unbuilt native addon, so `check:ts` is the honest gate until the addon is built. On the test style: AGENTS.md bans 'wording/defaults' assertions and snapshot-of-a-fixture tests, and demands the test defend a NAMED observable contract. So: do not snapshot the CSV/text. Assert the transformation — one row per extension keyed by id, states drawn from the real union, a shadowed row present, a policy-disabled row carrying a non-empty `disabledReason`. Text formatting is not a defended contract and asserting it would be a banned wording test.",
+      "evidence": "`grep -n 'describe(' packages/coding-agent/test/acp-agent.test.ts` → :556 `describe(\"ACP agent\")`, :2832, :3437 — names, not filenames. `grep -n '\"check\"\\|\"check:ts\"\\|\"test\"' package.json` → :89 test, :93 check, :94 check:ts. No `pi_natives` `.node` artifact found under the tree, matching the reported addon failure."
+    },
+    {
+      "claim": "New file `packages/coding-agent/src/cli/extensions-triage-cli.ts` + register it in the coding-agent command registry.",
+      "verdict": "INCOMPLETE — under-specifies the file set by two.",
+      "correction": "The registry does not load `-cli.ts` modules. `cli-commands.ts:99` shows the shape: `load: () => import(\"./commands/config\").then(m => m.default)`. A new command needs THREE files plus one registry entry: (1) `src/cli/extensions-triage-cli.ts` — the implementation; (2) `src/commands/extensions-triage.ts` — the thin `Command` subclass that `export default`s it, matching the 49 existing wrappers; (3) an `extensionsTriageHelp` entry in `src/cli/command-help.ts` in the `{ description } satisfies CommandMetadata` form; (4) the `CommandEntry` in `src/cli-commands.ts`. Building only the file the plan names yields a module nothing routes to — and because a missing registry entry makes `runCli` fall through and forward the argv to the LLM as a prompt (the #1496 regression documented in that file's own header), the command would appear to work in a demo and misbehave in real use.",
+      "evidence": "`sed -n '1,60p' packages/coding-agent/src/cli-commands.ts` and `grep -n -A4 'name: \"config\"'` → :98-101. `cat packages/coding-agent/src/commands/config.ts` shows the full wrapper→impl→helpHelp chain. `ls packages/coding-agent/src/commands/` → 49 modules; `sed -n '1,40p' packages/coding-agent/src/cli/command-help.ts` and `git grep -n -A6 'interface CommandMetadata' packages/utils/src/cli.ts` (:136-142) confirm the help shape."
+    },
+    {
+      "claim": "Stated environment: git HEAD 5873776.",
+      "verdict": "STALE — the actual HEAD is 808b365.",
+      "correction": "The working tree is at 808b365 ('docs(plan): fold the spec-verified M1 execution plan into the upgrade plan'), on branch milestone-1. Every anchor in this spec was verified against 808b365, not 5873776. If a different commit was intended, re-verify before implementing — the anchors are correct for 808b365 only.",
+      "evidence": "`git rev-parse --short HEAD` → 808b365; `git status` shows only the untracked `.lavish-wip/` directory, so the tree is clean at that commit."
+    },
+    {
+      "claim": "Dependency: 'M2 WI-2 (post-sort) merged'.",
+      "verdict": "CONFIRMED as unmet — stated as a precondition, not a satisfied fact.",
+      "correction": "WI-2 is not in the tree, so M4-9 is currently NOT startable. The plan lists it as a dependency but a reader could easily assume it had landed. Make the gate explicit in step 2 rather than a background assumption. WI-2's own deliverable is the file `packages/coding-agent/test/extension-load-order-determinism.test.ts` (per plan line 6815), which is the cheapest thing to poll.",
+      "evidence": "`ls packages/coding-agent/test/extension-load-order-determinism.test.ts` → No such file or directory. `git grep -n 'extension-load-order' packages/coding-agent/` → 0 hits. Plan :6815 names that exact file as 'tệp mới của WI-2'."
+    },
+    {
+      "claim": "(Implicit) `shadowedBy` is one field with one meaning.",
+      "verdict": "MISLEADING — the name is overloaded across three unrelated subsystems.",
+      "correction": "Before touching this, know that `shadowedBy` already means two other things in this codebase and neither is the capability-shadowing the plan is about: marketplace plugin summaries use `shadowedBy?: \"project\"` (packages/coding-agent/src/extensibility/plugins/marketplace/types.ts:196, documented at :188) rendered by builtin-marketplace.ts and plugin-settings.ts; and the internal user-config protocol uses `shadowedBy?: string` to mean 'your user config is overridden by your project config' (packages/coding-agent/src/internal-urls/cfg-protocol.ts:83, rendered at interactive-mode.ts:5970-5971). Only the tui extensions `Extension.shadowedBy` is the one this item is about. Conflating them is the easiest mistake in this file and would produce an inventory that reports plugin-scope shadowing as if it were capability shadowing.",
+      "evidence": "`git grep -rn 'shadowedBy' -- packages/` returns 35 hits across six distinct subsystems; the three cited above are at marketplace/types.ts:196, cfg-protocol.ts:83, and tui/overlays/extensions/types.ts:68 respectively."
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+{
+  "id": "WI-9",
+  "title": "Seam unload, khác hẳn suspend — add ExtensionRunner.unloadExtension() that drops an extension from the registry and releases exactly its own buckets and its own fallback trampolines",
+  "wave": "Wave 7 (last position, after WI-8a and WI-8b). Wave 7 is 'Sở hữu của settings và seam unload thật', M–L, ~2.5 weeks, 4 PRs. The plan places WI-9 last in M2 because the resource inventory it asserts is only complete after waves 2 and 4 have given owner-ship to timers, providers and capability state.",
+  "one_line": "Add a real unload path for extensions: today 'disable' only suspends (an extension keeps its module state, its per-extension registration buckets and its installed fallback trampolines), so we add ExtensionRunner.unloadExtension(path) that removes the extension from the runner's registry, disposes exactly that extension's file-write/file-delete trampolines, and drops that extension's runtime flag values — deliberately different from setSuspendedExtensions, which keeps state on purpose so resume needs no rewire.",
+  "user_visible_effect": "none yet — internal. No extension-facing API is exposed; the plan explicitly forbids surfacing unloadExtension on the ExtensionAPI until it has been exercised across all 11 buckets. The user-visible consequence arrives only when a later milestone (WI-12, deferred design) wires unload to a real user gesture; at that point disabling an extension stops its background timers and stops its file-write fallback from intercepting permission-denied writes instead of merely pausing them.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-9.spec.json",
+  "effort": "M — larger than it looks. The bucket teardown itself is ~20 lines; the two prerequisites (per-extension flag values, per-extension fallback disposers) are the real work, and the test matrix is 15 rows because AGENTS.md requires one row per distinct contract.",
+  "risk": "A half-real unload that leaks. An extension is unloaded halfway, half its registrations survive — strictly harder to debug than today's all-or-nothing suspend, because it converts a known limitation into a false promise. Three concrete traps, in the order the plan names them: (1) the registerFlag runtime value, which no bucket assertion can see; (2) disposing the wrong fallback trampoline (or none) — the trampoline is a process-wide module array, so a leaked trampoline keeps `hasFileWriteFallback()` true even after every handler array is emptied; (3) the quietest one — a test row written in the wrong direction passes while gating nothing. Before ticking any row, ask: which mutation turns this row red? A row that cannot answer that is not a test row, however green it is.",
+  "depends_on": [
+    "WI-1 (strict, BOTH halves) — do not build unload before suspend is correct, or unload inherits timer and provider leaks. Verified: managed-timers.ts:22-68 `ManagedTimers` is a flat runner-wide `Set<Timer>` with only `clear(handle)` and `clearAll()`; there is no per-extension timer ownership today, so unload cannot release an extension's timers until WI-1 adds it.",
+    "WI-1 provider half (wave 4) — the existing `unregisterProvider(name, sourceId)` at types.ts:1745 already keys by sourceId, i.e. extension path. That is the precedent the flagValues shape change should mirror.",
+    "WI-4 (wave 2) — so wave 7 has a complete inventory of resources to release.",
+    "WI-5 (wave 3 commit 1) — so the all-runner resource inventory is complete. Specifically `reset()` must already be unconditional."
+  ],
+  "blocks": [
+    "WI-12 (M2 wave 8, design-only, deferred) — the plan states WI-12 cannot be designed without WI-9."
+  ],
+  "open_questions": [
+    "How do CLI-supplied flag values survive the `flagValues` reshape? `runner.ts:1098 setFlagValue(name, value)` and `main.ts:2210 extensionsResult.runtime.flagValues.set(name, value)` are both extension-less writes, and `runner.ts:1094 getFlagValues()` returns a flat `Map<string, boolean|string>`. Under `Map<extensionPath, Map<flagName, value>>` there is no obvious home for a user-typed `--flag=value`. Two candidates: (a) a separate `flagValueOverrides: Map<string, boolean|string>` layer that wins at read time and is untouched by unload; (b) `setFlagValue` fans out to every declaring extension's inner map, and `getFlagValues()` flattens on read. (a) is cleaner and means a user-set value survives unloading the extension that merely supplied the *default* — which is what a user expects. A human must pick; do not invent it.",
+    "Does anything outside the CLI genuinely need `getFlagValues()` to stay flat, or can it become a flatten-over-`this.extensions` at the read boundary only? `cli/extension-flags.ts:11 ExtensionFlagSink` only needs `getFlags()` and `setFlagValue()`, so the flatten can stay inside the runner — but confirm no SDK consumer reads `runtime.flagValues` directly before changing the type.",
+    "Should `unloadExtension` return the removed `Extension` (so a caller could re-add it) or `boolean`? The plan says nothing. `boolean` is the smaller surface and matches `isExtensionActive`'s shape; returning the object invites a re-add path nobody has designed.",
+    "Is a reload (unload + load) in scope for WI-9, or strictly unload? The plan defers cache-busting and calls module cache a follow-up — but see plan_corrections: cache-busting already exists and is already per-load, so if reload IS in scope it inherits the existing mechanism for free and the follow-up disappears. If reload is NOT in scope, WI-9 is purely teardown and there is no module-graph work at all."
+  ],
+  "code_shape": "// packages/coding-agent/src/extensibility/extensions/runner.ts\n// PREREQUISITE 1 — index the fallback disposers by extension so unload can consume\n// exactly its own. Today it is a flat, unkeyed array, so \"that extension's\n// disposer\" is not expressible.\n-#fileFallbackDisposers: Array<() => void> = [];\n+#fileFallbackDisposers = new Map<string, Array<() => void>>();\n+\n// in initialize(), the two push sites (runner.ts:778 and runner.ts:797) become:\n+//   const bucket = this.#fileFallbackDisposers.get(ext.path) ?? [];\n+//   bucket.push(addFileWriteFallback(async req => { /* unchanged closure */ }));\n+//   this.#fileFallbackDisposers.set(ext.path, bucket);\n\n// disposeFileFallbacks() must drain EVERY bucket so the two existing teardown\n// paths (runner.ts:410 session shutdown, runner.ts:747 re-initialize) are\n// behaviorally identical to today.\n disposeFileFallbacks(): void {\n-\tfor (const dispose of this.#fileFallbackDisposers.splice(0)) dispose();\n+\tfor (const disposers of this.#fileFallbackDisposers.values()) {\n+\t\tfor (const dispose of disposers) dispose();\n+\t}\n+\tthis.#fileFallbackDisposers.clear();\n }\n\n// PREREQUISITE 2 — the new method. Note the order: capture the Extension\n// BEFORE splicing, dispose trampolines BEFORE clearing handler arrays, and\n// remove from #loadOrder (not just this.extensions) or a later initialize()\n// re-installs the unloaded extension's trampolines at runner.ts:749.\n unloadExtension(extensionPath: string): boolean {\n-\t// ...\n+\tconst liveIndex = this.extensions.findIndex(ext => ext.path === extensionPath);\n+\tconst orderIndex = this.#loadOrder?.findIndex(ext => ext.path === extensionPath) ?? -1;\n+\tif (liveIndex === -1 && orderIndex === -1) return false;\n+\tconst extension = liveIndex === -1 ? this.#loadOrder![orderIndex] : this.extensions[liveIndex];\n+\tif (liveIndex !== -1) this.extensions.splice(liveIndex, 1);\n+\tif (this.#loadOrder && orderIndex !== -1) this.#loadOrder.splice(orderIndex, 1);\n+\tthis.#suspendedExtensions.delete(extension);\n+\tfor (const dispose of this.#fileFallbackDisposers.get(extensionPath) ?? []) dispose();\n+\tthis.#fileFallbackDisposers.delete(extensionPath);\n+\tthis.#managedTimers.clearExtension(extensionPath);            // WI-1, not yet present\n+\tthis.runtime.unregisterProvider(extensionPath, extensionPath); // WI-1 provider half\n+\tthis.runtime.flagValues.delete(extensionPath);                 // new shape\n+\textension.handlers.clear();\n+\textension.tools.clear();\n+\textension.toolRegistrationListeners?.clear();\n+\textension.assistantThinkingRenderers.length = 0;\n+\textension.fileWriteFallbackHandlers.length = 0;\n+\textension.fileDeleteFallbackHandlers.length = 0;\n+\textension.messageRenderers.clear();\n+\textension.composerShapes.clear();\n+\textension.commands.clear();\n+\textension.flags.clear();\n+\textension.shortcuts.clear();\n+\treturn true;\n}\n\n// PREREQUISITE 3 — flagValues becomes attributable. types.ts:1739 (ExtensionRuntimeState),\n// loader.ts:101 (ExtensionRuntime), loader.ts:184 (dead per-API copy — delete it, and\n// drop `implements IExtensionRuntime` compliance with the flat field if nothing else needs it).\n- flagValues: Map<string, boolean | string>;\n+ flagValues: Map<string, Map<string, boolean | string>>;   // outer key = extension path\n\n// loader.ts:263-266 registerFlag — the write gains attribution it always should have had\n this.extension.flags.set(name, { name, extensionPath: this.extension.path, ...options });\n if (options.default !== undefined) {\n-\tthis.runtime.flagValues.set(name, options.default);\n+\tlet values = this.runtime.flagValues.get(this.extension.path);\n+\tif (!values) {\n+\t\tvalues = new Map();\n+\t\tthis.runtime.flagValues.set(this.extension.path, values);\n+\t}\n+\tvalues.set(name, options.default);\n }\n\n// loader.ts:291-294 getFlag — already gated per-extension by this.extension.flags.has(name);\n// only the value read becomes per-extension. Two extensions declaring the same name no\n// longer overwrite one slot; each owns its own, and last-declaring-wins moves to the read face.\n getFlag(name: string): boolean | string | undefined {\n \tif (!this.extension.flags.has(name)) return undefined;\n-\treturn this.runtime.flagValues.get(name);\n+\treturn this.runtime.flagValues.get(this.extension.path)?.get(name);\n }\n\n// runner.ts:1094 getFlagValues() — flatten over this.extensions in load order, so a flag\n// declared by several extensions still answers \"what is this flag\" with ONE value and a\n// later-declaring extension wins at the READ face, not at the ownership face.\n getFlagValues(): Map<string, boolean | string> {\n-\treturn new Map(this.runtime.flagValues);\n+\tconst flattened = new Map<string, boolean | string>();\n+\tfor (const ext of this.extensions) {\n+\t\tfor (const [name, value] of this.runtime.flagValues.get(ext.path) ?? []) {\n+\t\t\tflattened.set(name, value);\n+\t\t}\n+\t}\n+\treturn flattened;\n }\n\n// runner.ts:1098 setFlagValue — the open question. Do NOT silently widen the inner map to\n// every declaring extension without deciding; see open_questions.",
+  "test_contract": "The observable contract: after ExtensionRunner.unloadExtension(path) returns true, that extension contributes NOTHING to the runner — it is absent from getLoadedExtensions()/isExtensionActive, and each of the 11 registration buckets it populated is empty — while every OTHER extension keeps working, and a flag value declared by a surviving extension is still readable. If any of this regresses, a user re-disabling an extension would see phantom commands, stale tool descriptions, dead shortcuts, duplicate flags, or a file-write fallback that silently brokers their writes to a broker they just turned off. Specifically the 15 rows defend: 11 bucket rows (one contract each, per AGENTS.md); row (a) the file-write seam, whose two halves are (i) the extension's handler is no longer invoked on a permission-denied write, and (ii) hasFileWriteFallback() returns false again — half (ii) is the discriminating one and is the row that fails if unload drains the bucket but forgets the trampoline disposer; row (b) two extensions declaring the same flag name with different defaults, unload one, the readable value must be the SURVIVOR's default — not undefined, not the unloaded extension's value; this is the only row that catches the delete-the-wrong-entry bug; row (c) an onToolRegistered listener registered by extension A does not fire when extension B registers a tool after A was unloaded.",
+  "test_files": [
+    "packages/coding-agent/test/extension-unload.test.ts (NEW — does not exist on HEAD; confirmed by `ls`, and no unloadExtension/removeExtension symbol exists anywhere in src or test)"
+  ],
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/runner.ts",
+      "action": "modify",
+      "change": "PREREQ 1: #fileFallbackDisposers (field decl, line 537) changes from `Array<() => void>` to `Map<string, Array<() => void>>` keyed by ext.path; the two push sites (lines 778, 797) write into the extension's bucket. disposeFileFallbacks() (line 1346) drains all buckets then clears, keeping the session-shutdown (line 410) and re-initialize (line 747) paths behaviorally identical. NEW: unloadExtension(extensionPath): boolean, placed immediately after setSuspendedExtensions (which ends at line 970), releases the trampolines, the buckets, the suspended-set entry, the #loadOrder entry, the managed timers and the provider registration, and the per-extension flagValues entry. PREREQ 3: getFlagValues() (line 1094) flattens over this.extensions instead of copying the runtime map. setFlagValue (line 1098) is left pending the open question.",
+      "verified": true,
+      "note": "All line numbers confirmed by git grep and numbered awk on HEAD 808b365. Note the plan's `:1333` for the dispose sweep is wrong — the real site is disposeFileFallbacks() at 1346-1348."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/loader.ts",
+      "action": "modify",
+      "change": "PREREQ 3: line 101 `flagValues = new Map<string, boolean | string>()` becomes the nested per-extension map. Line 184 `readonly flagValues = new Map<string, boolean | string>()` on ConcreteExtensionAPI is DEAD — nothing ever reads or writes it; delete it. Line 265 `this.runtime.flagValues.set(name, options.default)` becomes a get-or-create on the inner map keyed by this.extension.path. Line 293 `return this.runtime.flagValues.get(name)` becomes `this.runtime.flagValues.get(this.extension.path)?.get(name)`. Line 101 and 184 are the two halves of the plan's claim that the runtime map outlives a discarded per-API copy — both verified accurate.",
+      "verified": true,
+      "note": "Every anchor the plan gave for this file is EXACT: 101, 184, 223, 263, 265, 291-294 all check out on HEAD 808b365. This is the one file whose anchors the plan got perfectly right."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/types.ts",
+      "action": "modify",
+      "change": "Line 1739, on `interface ExtensionRuntimeState` (declared line 1738): `flagValues: Map<string, boolean | string>` becomes `Map<string, Map<string, boolean | string>>` — outer key is the extension path, mirroring the sourceId-keyed `unregisterProvider` at line 1745. The `interface Extension` buckets at lines 1801-1817 are NOT modified — no shape change is needed there, which is the plan's central (and correct) point. Delete the now-orphaned flat declaration on ConcreteExtensionAPI if IExtensionRuntime still requires one.",
+      "verified": true,
+      "note": "The plan's `types.ts:1777-1792` is WRONG — off by ~25. `interface Extension` is at 1801-1817; `toolRegistrationListeners?: Set<ToolRegistrationListener>` is at line 1808, not the plan's 1783. The count of 11 buckets is correct."
+    },
+    {
+      "path": "packages/coding-agent/src/main.ts",
+      "action": "modify",
+      "change": "Line 2210, inside the `extensionFlagSink` literal (2207-2212), writes `extensionsResult.runtime.flagValues.set(name, value)` directly, bypassing the runner entirely. This is the third and least obvious writer of the name-keyed map and MUST be migrated with the shape change or it will not typecheck. Line 543-544 (`setFlagValue: (name, value) => { runner.setFlagValue(name, value); }`) is the fourth.",
+      "verified": true,
+      "note": "Not mentioned anywhere in the plan. Found by `git grep '\\.flagValues' -- packages/coding-agent/src`, whose only hits are loader.ts:265, loader.ts:293, runner.ts:1095, runner.ts:1099, main.ts:2210. The plan's row (b) names only loader.ts:265."
+    },
+    {
+      "path": "packages/coding-agent/test/extension-unload.test.ts",
+      "action": "create",
+      "change": "15 rows: an 11-row table (one row per bucket) plus rows (a) file-write seam, (b) shared flag name, (c) toolRegistrationListener, plus a labelled BASELINE row asserting that a runner with no fallback-registering extension installs no trampoline.",
+      "verified": true,
+      "note": "Confirmed absent on HEAD. Build it on the harness in extensions-runner.test.ts:1-97 — TempDir.createSync('@pi-...-'), getProjectAgentDir(tempDir.path())/extensions, write real .ts extension files, loadExtensions(paths, cwd), new ExtensionRunner(result.extensions, result.runtime, cwd, sessionManager, modelRegistry)."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Change `flagValues` on ExtensionRuntimeState (types.ts:1739) and on the ExtensionRuntime class (loader.ts:101) from `Map<string, boolean | string>` to `Map<string, Map<string, boolean | string>>`, where the outer key is the extension path. Mirror the sourceId-keyed `unregisterProvider(name, sourceId)` two lines below it (types.ts:1745) — same ownership instinct, same key. Do NOT touch the 11 buckets on `interface Extension` (types.ts:1801-1817): they are already per-extension and need no shape change.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:1739"
+    },
+    {
+      "n": 2,
+      "instruction": "Delete the dead `readonly flagValues = new Map<string, boolean | string>()` on ConcreteExtensionAPI (loader.ts:184). It exists only to satisfy `implements IExtensionRuntime` on line 179; nothing reads or writes it — the only `.flagValues` accesses in the whole package go through `this.runtime`. Dropping it is what makes step 1 a genuine shape change rather than two parallel maps.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/loader.ts:184"
+    },
+    {
+      "n": 3,
+      "instruction": "Rewrite the registerFlag write (loader.ts:265) to get-or-create the inner map under `this.extension.path` before setting the default. Keep the `options.default !== undefined` guard at 264 exactly as is — a flag with no default must still not create an inner-map entry.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/loader.ts:259-267"
+    },
+    {
+      "n": 4,
+      "instruction": "Rewrite getFlag (loader.ts:291-294) so the existing per-extension gate `if (!this.extension.flags.has(name)) return undefined;` stays and only the value read becomes `this.runtime.flagValues.get(this.extension.path)?.get(name)`. The gate was already per-extension; this is what stops two extensions sharing a flag name from reading each other's value.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/loader.ts:291-294"
+    },
+    {
+      "n": 5,
+      "instruction": "Convert `#fileFallbackDisposers` from `Array<() => void>` to `Map<string, Array<() => void>>` keyed by `ext.path`, and update the two push sites in initialize() to append into that extension's bucket. Without this there is no way to express \"that extension's disposer\" — the plan requires unload to consume exactly one extension's trampolines and never the whole list.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:537, 778, 797"
+    },
+    {
+      "n": 6,
+      "instruction": "Rewrite disposeFileFallbacks() to drain every bucket and then clear the map, so the two existing teardown paths — session shutdown (line 410) and the re-initialize guard (line 747) — behave exactly as they do today. This is a pure refactor step: run check:ts and confirm nothing downstream of the shape change breaks before adding any new behavior.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:1346-1348"
+    },
+    {
+      "n": 7,
+      "instruction": "Rewrite getFlagValues() (runner.ts:1094-1096) to flatten over `this.extensions` in load order, last-writer-wins on the READ face only. This is the decision the plan pins: two extensions declaring the same flag no longer overwrite each other at the ownership face, but a read of \"what is this flag\" still returns ONE value and the later-declaring extension wins. Ownership stays exact; precedence becomes a read-time concern.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:1094-1096"
+    },
+    {
+      "n": 8,
+      "instruction": "Migrate the remaining two writers of the old flat map: main.ts:2210 (`extensionsResult.runtime.flagValues.set(name, value)`) and main.ts:543-544. Step 7 will not typecheck without this — do not leave it to `bun check` to find. Resolve setFlagValue (runner.ts:1098) per the open_questions decision BEFORE writing row (b) of the test, because a user-supplied `--flag=value` must not silently vanish on unload.",
+      "anchor": "packages/coding-agent/src/main.ts:2207-2212"
+    },
+    {
+      "n": 9,
+      "instruction": "Write `unloadExtension(extensionPath: string): boolean` immediately after setSuspendedExtensions. Order inside the body matters: capture the Extension object before splicing; remove from BOTH `this.extensions` and `#loadOrder` (deleting only from `this.extensions` is the bug — initialize() re-installs trampolines for `getLoadedExtensions()`, which is `#loadOrder ?? this.extensions`, so a re-initialize would resurrect a trampoline for an extension that no longer exists); drop it from `#suspendedExtensions`; dispose its fallback trampolines; call `this.#managedTimers.clearExtension(path)` and `this.runtime.unregisterProvider(path, path)` (both from WI-1 — if either is missing, this item is not unblocked); delete `this.runtime.flagValues.get(path)`; then clear all 11 buckets on the Extension object. Return false when the path is unknown, so a double-unload is a no-op rather than a throw.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:970"
+    },
+    {
+      "n": 10,
+      "instruction": "Do NOT expose unloadExtension on ExtensionAPI. It stays a runner-level method until it has been exercised across all 11 buckets. Also: do not try the DisposableList formulation that the dsh report rejected — that turns 9 registration methods into returning effects. The per-extension buckets ARE the ownership record; only the all-runner resources were missing, and steps 1 and 5 close exactly that gap.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/runner.ts:947"
+    },
+    {
+      "n": 11,
+      "instruction": "Create packages/coding-agent/test/extension-unload.test.ts on the extensions-runner.test.ts harness (TempDir + getProjectAgentDir(tempDir.path())/extensions + real .ts extension files + loadExtensions + new ExtensionRunner). Write the 11-row bucket table first, one contract per row, then the three off-table rows. Before ticking any row, state which mutation turns it red — a row that cannot answer that is not a row.",
+      "anchor": "packages/coding-agent/test/extension-unload.test.ts"
+    },
+    {
+      "n": 12,
+      "instruction": "Run `bun run check:ts` (verified green on HEAD 808b365 — I ran it, all 15 packages Done). `bun test` is BLOCKED on this machine: the native addon is not built, so any test file reports 0 pass / 1 fail with 'Failed to load pi_natives native addon for darwin-arm64' (confirmed by running test/extension-flag-dispatch.test.ts). Write the test file anyway, but do not claim the gate is met until the addon is built and the file actually runs.",
+      "anchor": "package.json:94"
+    }
+  ],
+  "verification": "BLOCKED-PARTIALLY. Runnable today: `bun run check:ts` from the repo root — I ran it on HEAD 808b365 and all 15 packages reported Done, exit 0. NOT runnable today: `bun test` — the native addon is not built, so `cd packages/coding-agent && bun test test/extension-unload.test.ts test/extensions-runner.test.ts` (the plan's stated command) reports '0 pass, 1 fail' with 'Failed to load pi_natives native addon for darwin-arm64' before running a single assertion. I confirmed this by running an existing, known-good test file (test/extension-flag-dispatch.test.ts): 0 pass, 1 fail, 1 error. Once the addon is built, the full gate is: `bun run check:ts && (cd packages/coding-agent && bun test test/extension-unload.test.ts test/extensions-runner.test.ts)` with the new file reporting 15 pass / 0 fail.",
+  "gate": "IMPORTANT — the gate can only fail PARTIALLY, and that must be said plainly. `bun run check:ts` genuinely goes red if any call site of the flagValues reshape is missed (there are four writers and three of them are outside loader.ts), and it goes red if `#fileFallbackDisposers` is re-keyed without updating disposeFileFallbacks. But check:ts is completely green with all 15 test rows deleted, so it cannot by itself certify the bucket-teardown behavior. The discriminating gate is row (a) half (ii) plus row (b): a mutation that drains the buckets but skips the trampoline disposer, or that deletes the wrong flagValues entry, is invisible to check:ts and is caught only by the test run — which cannot execute until the native addon is built. Until then this item is authored-but-unverified and must be reported that way, not marked done on a green check:ts. DONE requires ALL of: (1) `bun run check:ts` exits 0 — the only gate that is actually runnable on this machine today, and it covers the four-file type migration (types.ts:1739, loader.ts:101/184/265/293, runner.ts:537/1094, main.ts:2210) which is where a missed call site would show up; (2) packages/coding-agent/test/extension-unload.test.ts exists with all 15 rows, 11 of them one-per-bucket, and each row's discriminating mutation is written down in the test file as a comment; (3) `bun test test/extension-unload.test.ts` reports 15 pass / 0 fail — THIS IS CURRENTLY BLOCKED by the unbuilt native addon and must not be claimed green; (4) grep confirms no remaining flat `.flagValues.set(name, ...)` / `.flagValues.get(name)` writer or reader anywhere under packages/coding-agent/src. Note that (1) alone is NOT sufficient evidence of completion: check:ts is fully green with the entire test file deleted, so (3) is the gate that can actually fail on a half-finished unload.",
+  "gate_can_fail": true,
+  "plan_corrections": [
+    {
+      "claim": "`runner.ts:1333` — 'cú quét dispose() toàn bộ #fileFallbackDisposers; unload phải tiêu đúng disposer của extension đó'",
+      "verdict": "STALE-LINE + MISSING-PREREQUISITE",
+      "correction": "The sweep is not at 1333 and is not a bare `dispose()`. It is `disposeFileFallbacks()` at runner.ts:1346-1348, called from two places: session shutdown (runner.ts:410) and the re-initialize guard (runner.ts:747). More importantly, the plan's requirement is not expressible today: `#fileFallbackDisposers` (runner.ts:537) is a flat `Array<() => void>` with no association to any extension, so 'that extension's disposer' does not exist. Converting it to a path-keyed Map is mandatory work INSIDE WI-9 that the plan does not list as a step.",
+      "evidence": "git grep -n '#fileFallbackDisposers' → runner.ts:537 (decl), 777, 796 (pushes), 1347 (splice sweep). git grep -n 'disposeFileFallbacks' → runner.ts:410, 747, 1346."
+    },
+    {
+      "claim": "(1) 'module graph được cache bởi runtime, nên unload thật cần cache-busting' … 'coi module cache là follow-up'",
+      "verdict": "WRONG — already implemented",
+      "correction": "Cache-busting is not a follow-up; it already exists and is already per-load. `loadLegacyPiModule` appends a fresh monotonically-increasing tag to the entry specifier on every import, so every load already gets a fresh module graph. There is no cache work for WI-9 to do. The plan's 'resolve bucket teardown first and treat module cache as a follow-up' sequencing advice is aimed at a problem the codebase does not have. If reload is ever in scope it inherits this mechanism for free; if it is not, WI-9 is purely teardown and the module-graph paragraph should be deleted from the plan.",
+      "evidence": "legacy-pi-compat.ts:2630 `return await import(`${entrySpecifier}?mtime=${nextLegacyPiLoadTag()}`)` inside `loadLegacyPiModule` (2613-2637); `nextLegacyPiLoadTag` at 2101-2104 returns `String(Math.max(legacyPiLoadTag + 1, Date.now()))` — monotonic, so no two loads share a tag."
+    },
+    {
+      "claim": "`types.ts:1777-1792` (11 bucket phải giải phóng), `:1783` (toolRegistrationListeners là Set per-extension)",
+      "verdict": "STALE-LINE (off by ~25)",
+      "correction": "`interface Extension` is at types.ts:1801-1817; `toolRegistrationListeners?: Set<ToolRegistrationListener>` is at line 1808. The 11-bucket count and the 'no shape change needed' conclusion are both correct — only the numbers are wrong.",
+      "evidence": "git grep -n on types.ts → handlers 1805, tools 1806, toolRegistrationListeners 1808, assistantThinkingRenderers 1809, fileWriteFallbackHandlers 1810, fileDeleteFallbackHandlers 1811, messageRenderers 1812, composerShapes 1813, commands 1814, flags 1815, shortcuts 1816."
+    },
+    {
+      "claim": "`runner.ts:763` (điều kiện cài trampoline) and `:766-771` (bất biến trampoline cần giữ)",
+      "verdict": "STALE-LINE",
+      "correction": "The skip-guard is at runner.ts:756: `if (ext.fileWriteFallbackHandlers.length === 0 && ext.fileDeleteFallbackHandlers.length === 0) continue;`. The actual installs are `addFileWriteFallback(...)` at 778 and `addFileDeleteFallback(...)` at 797. The invariant comment the plan points at is the 750-755 block. The plan's baseline-row reasoning ('a row asserting an empty seam would be green on HEAD') is nonetheless CORRECT and is the sharpest thing in the item — keep it.",
+      "evidence": "sed -n '750,790p' runner.ts and git grep -n 'addFileWriteFallback|addFileDeleteFallback' → runner.ts:778, 797."
+    },
+    {
+      "claim": "`runner.ts:1290-1292` (timer runtime-scoped)",
+      "verdict": "STALE-LINE (off by ~14)",
+      "correction": "The timer triple is at runner.ts:1304-1306 inside createContext(): setInterval/setTimeout/clearTimer all delegate to the single runner-wide `#managedTimers`. The substantive claim — that the timer store is all-runner with no per-extension owner, which is why WI-1 is a hard prerequisite — is CONFIRMED: ManagedTimers holds one flat `Set<Timer>` and exposes only `clear(handle)` and `clearAll()`. So unload cannot release an extension's timers until WI-1 adds per-extension ownership.",
+      "evidence": "git grep -n 'managedTimers' → runner.ts:518 (field), 1304-1306 (registration), 1336-1337 (clearManagedTimers). managed-timers.ts:22-68, `#timers = new Set<Timer>()`, methods setInterval/setTimeout/clear/clearAll only."
+    },
+    {
+      "claim": "row (b) is about the registerFlag runtime value at `loader.ts:265`",
+      "verdict": "INCOMPLETE — three more call sites the plan never mentions",
+      "correction": "`flagValues` has FOUR writers and one flat reader across the package, and only one is in loader.ts. The other three break silently under the reshape if missed: runner.ts:1099 `setFlagValue` (extension-less — the open question), runner.ts:1095 `getFlagValues()` (returns a flat copy — must become a flatten over this.extensions), and main.ts:2210 `extensionsResult.runtime.flagValues.set(name, value)` (bypasses the runner entirely). The reshaped flagValues is a four-file change, not a loader.ts-local one, and the plan's row (b) does not prepare a human for that.",
+      "evidence": "`git grep -n '\\.flagValues' -- packages/coding-agent/src` returns exactly five hits: loader.ts:265, loader.ts:293, runner.ts:1095, runner.ts:1099, main.ts:2210."
+    },
+    {
+      "claim": "row (c) mechanism: 'extension rời registry, nên nó không còn đăng ký được tool, nên bucket của nó không còn ai drain'",
+      "verdict": "PARTLY-CORRECT — the stated mechanism is weaker than claimed",
+      "correction": "The rest of the analysis is exactly right: the bucket is per-extension, loader.ts:223 is its only reader, and the onToolRegistered disposer (runner.ts:1044-1048) closes over a local `subscriptions` array that unsubscribes that ONE call across all extensions — a different contract, not an unload contract. But 'it can no longer register a tool' is only true of the load-time path. Extension A's API object retains its Extension even after unload, so a retained async closure that calls `api.registerTool` afterwards still drains A's listener set and the listener still fires. The test as the plan writes it (register at extension B) passes either way and does not distinguish. One line — `extension.toolRegistrationListeners?.clear()` inside unloadExtension — makes the stated contract unconditionally true. Write the row to the BEHAVIORAL contract (listener does not fire), which holds regardless, and add the clear so the mechanism matches the claim.",
+      "evidence": "loader.ts:222-223 `this.extension.tools.set(tool.name, registered); for (const listener of this.extension.toolRegistrationListeners ?? []) listener(tool.name);` — the loop is unconditional on registry membership. ConcreteExtensionAPI holds `private readonly extension: Extension` (loader.ts:193) for the API's whole lifetime."
+    },
+    {
+      "claim": "Verification command `bun run check:ts && (cd packages/coding-agent && bun test test/extension-unload.test.ts test/extensions-runner.test.ts)`",
+      "verdict": "PARTIALLY UNRUNNABLE as written",
+      "correction": "The first half runs and is green (I ran it on HEAD 808b365: all 15 packages Done, exit 0). The second half cannot run on this machine: the native addon is unbuilt, so every test file reports 0 pass / 1 fail before asserting anything. State the gate as blocked rather than presenting the compound command as a single pass/fail.",
+      "evidence": "`bun run check:ts` → all 15 @oh-my-pi/*:check:types Done. `cd packages/coding-agent && bun test test/extension-flag-dispatch.test.ts` → '0 pass, 1 fail, 1 error, Ran 1 test across 1 file' with 'Failed to load pi_natives native addon for darwin-arm64' at packages/natives/native/index.js:23:24."
+    },
+    {
+      "claim": "Wave placement: WI-9 last in wave 7, needs the full inventory that only exists after waves 2 and 4 gave owner-ship to timer, provider and capability state",
+      "verdict": "CONFIRMED",
+      "correction": "Nothing to change. The dependency is real and verified: ManagedTimers has no per-extension owner, and the existing `unregisterProvider(name, sourceId)` (types.ts:1745) is already sourceId-keyed — that is the precedent the flagValues reshape should mirror, and the plan is right that WI-9 must not be built first.",
+      "evidence": "managed-timers.ts:22-68 (no per-extension keying); types.ts:1745 `unregisterProvider(name: string, sourceId: string): void;`."
+    },
+    {
+      "claim": "`runner.ts:934-956` (suspend) and `:984-1050` (phóng onToolRegistered), `:1031-1035` (disposer theo từng đăng ký)",
+      "verdict": "STALE-LINE (off by 6-13, regions still recognizable)",
+      "correction": "setSuspendedExtensions is at 947 (doc comment 940-946, body through 970); isExtensionActive is at 937. onToolRegistered's signature is at 997, the per-extension wrapper 1027-1040, and the disposer is 1044-1048, not 1031-1035. The plan's characterization of that disposer is right: it closes over a local `subscriptions` array and unsubscribes one onToolRegistered call across every extension at once.",
+      "evidence": "git grep -n on runner.ts → setSuspendedExtensions 947, onToolRegistered 997, `extension.toolRegistrationListeners.add(wrapped)` 1041, disposer body 1044-1048."
+    }
+  ]
+}

@@ -1,0 +1,239 @@
+{
+  "id": "s5",
+  "title": "Sóng 5 — Người tiêu thụ đầu tiên của seam status line M2 chốt (M3-C2 + M3-D2)",
+  "wave": "M3 wave 5",
+  "one_line": "Two status-line items that are supposed to be the first consumers of the seam M2 settles: C2, a shipped-but-disabled example plugin that runs the user's own shell command and shows its output in the status row, and D2, a `cache_hit_rate` segment that reports the same hit percentage the existing `cache_hit` segment already computes, with no TTL countdown.",
+  "user_visible_effect": "C2: after `omp plugin link` plus flipping its `enabled` setting to true, the stdout of the user's own command appears once in the status row on each documented trigger; with the setting absent or false the status row is byte-identical to a session where the plugin was never loaded. D2: a user who puts `cache_hit_rate` in their status-line preset sees the same cache-hit percentage `cache_hit` shows — never a countdown and never a TTL label.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/examples/extensions/user-shell-status/package.json",
+      "action": "create",
+      "change": "New plugin manifest. `omp` field declaring `extensions: [\"./index.ts\"]` and a `settings.enabled` boolean schema with `default: false`. Shape copied from the verified `with-deps` example: its `omp` block is exactly `{\"extensions\":[\"./index.ts\"]}`.",
+      "verified": true,
+      "note": "Verified template: `packages/coding-agent/examples/extensions/with-deps/package.json` has `\"omp\": {\"extensions\": [\"./index.ts\"]}` at lines 7-11. `files` in `packages/coding-agent/package.json:41` already includes `\"examples\"`, so this ships in the npm tarball with NO package.json edit. Verified."
+    },
+    {
+      "path": "packages/coding-agent/examples/extensions/user-shell-status/index.ts",
+      "action": "create",
+      "change": "The extension. Reads its own opt-in via `getPluginSettings`; a missing or non-true `enabled` returns before any process is created. Only after the gate does it spawn the user command and push stdout through `ctx.ui.setStatus(key, text)`. Must use the centralized logger, never `console.*` (the TUI is alive).",
+      "verified": true,
+      "note": "Setting read path verified: `getPluginSettings(pluginName, cwd)` at `packages/coding-agent/src/extensibility/plugins/loader.ts:474-482` returns `{...global, ...project}`; an absent key yields `undefined`, so the gate must be `settings.enabled === true`, never a truthiness test."
+    },
+    {
+      "path": "packages/coding-agent/test/user-shell-status-line.test.ts",
+      "action": "create",
+      "change": "New test for C2. Negative-off contract first, then the enabled path, the failure paths, the coalescing, and the sanitization/width contracts.",
+      "verified": true,
+      "note": "Test belongs in `packages/coding-agent/test/`, NOT `packages/tui/test/` — the seam's consumer is the coding-agent package and the dependency only runs that direction."
+    },
+    {
+      "path": "packages/tui/src/status-line/schema.ts",
+      "action": "modify",
+      "change": "Add the new `cache_hit_rate` id to the `STATUS_LINE_SEGMENT_IDS` closed union.",
+      "verified": true,
+      "note": "Union array is at lines 2-29 (`] as const;` at 29); the plan's `1-32` also covers the derived `StatusLineSegmentId` type at 31-32. I re-counted the array: exactly 27 members today, so D2 makes 28. Confirmed against the plan's \"27 mục\"."
+    },
+    {
+      "path": "packages/tui/src/status-line/segments.ts",
+      "action": "modify",
+      "change": "Add a `cache_hit_rate` entry to the `SEGMENTS` registry, delegating to the existing `cacheHitSegment` render so there is exactly one computation of the hit rate in the file.",
+      "verified": true,
+      "note": "`SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment>` is at line 919 — an exhaustive Record, so TypeScript forces the new entry. The existing computation is `cacheHitSegment` at lines 718-738 (the plan's `718-737` is its body; the object literal closes at 738). `ALL_SEGMENT_IDS` at 957 is `Object.keys(SEGMENTS)`, so the gallery inventory picks the id up with no gallery edit."
+    },
+    {
+      "path": "packages/tui/test/status-line-cache-hit-rate.test.ts",
+      "action": "create",
+      "change": "New test for D2: same-rate parity with `cache_hit`, the no-countdown negative contract, the zero-contribution-when-no-usage contract, and the no-clock-constant regression guard.",
+      "verified": true,
+      "note": "Sibling `packages/tui/test/status-line-cache-hit.test.ts` exists (2.0 KB) — read it first; it is a sibling, not a replacement."
+    },
+    {
+      "path": "packages/catalog/src/compat/rules/",
+      "action": "modify",
+      "change": "NO CHANGE. This is a guard, not a task. The plan routes any TTL into the KDL tree; D2 deliberately ships no TTL, so there is nothing to declare. Editing anything here is a signal that a countdown crept back in.",
+      "verified": true,
+      "note": "Recorded as a non-action so the implementer does not go looking for a KDL axis to fill. AGENTS.md forbids hand-editing generated compat JSON; not applicable because there is no rule to add."
+    },
+    {
+      "path": "packages/coding-agent/package.json",
+      "action": "modify",
+      "change": "NO CHANGE REQUIRED. Already ships the new example directory.",
+      "verified": true,
+      "note": "`files` at line 41 is `\"examples\"`, verified. The plan correctly says the example directory is the only distribution channel that ships in the tarball; the packaging half is already done."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "STOP and read this before any code. §10 Q6 (trust) is a hard blocker for C2 and it is UNANSWERED as of HEAD 808b365. The plan (line 7435) requires the answer to be copied verbatim into the work item, and to state its SCOPE: does it cover only C2, or also every other artifact M2 hands to plugin code (notably the live `ExtensionUIContext`)? If Q6 has no answer, C2 slips. Do not write a spawn line. D2 is unaffected and may proceed.",
+      "anchor": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7659"
+    },
+    {
+      "n": 2,
+      "instruction": "Confirm the premise behind that blocker in the source rather than trusting the plan's line numbers. Read the two interface comments that state OMP has no per-directory trust gate, and the two call sites that hard-code the return. They are at types.ts:487-494 and types.ts:548-562, and runner.ts:1264 / agent-session.ts:7406 — NOT at the plan's `types.ts:462-470` and `:528-532`, which land in unrelated interface methods.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:487"
+    },
+    {
+      "n": 3,
+      "instruction": "Confirm `--trusted-extension` is a harness tool, not an end-user trust gate: the flag pushes onto `trustedExtensions` at flag-tables.ts:217 (the plan's `:218` is off by one; `:216` is the `-e` alias, not `--extension`), and main.ts:1659-1660 then sets `disableExtensionDiscovery = true` plus an absolute-path allowlist. Record this in the PR so a reviewer can see the blocker was checked, not assumed.",
+      "anchor": "packages/coding-agent/src/cli/flag-tables.ts:217"
+    },
+    {
+      "n": 4,
+      "instruction": "Create the plugin directory with its manifest. Copy the exact `omp` block shape from the with-deps example. Declare `extensions: [\"./index.ts\"]` and declare `settings.enabled` as a boolean setting with `default: false`. The default-false is the whole safety story — a missing key must be treated as off, not on.",
+      "anchor": "packages/coding-agent/examples/extensions/with-deps/package.json:7"
+    },
+    {
+      "n": 5,
+      "instruction": "Write the extension's opt-in gate FIRST, before the spawn. Import `getPluginSettings` from the plugins loader (top-level import, no dynamic import per AGENTS.md) and return early unless `settings.enabled === true`. Use `=== true`, not a truthiness check: `getPluginSettings` merges global and project overrides and returns `undefined` for an absent key.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/loader.ts:474"
+    },
+    {
+      "n": 6,
+      "instruction": "Only after step 5, add the spawn. Run it without blocking the render path: the command must be allowed to hang, and the status row must keep rendering while it does. Push stdout through `ctx.ui.setStatus(key, text)` under a single stable key so repeats replace rather than accumulate. Use `logger.*` for anything diagnostic — `console.*` corrupts the TUI.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:263"
+    },
+    {
+      "n": 7,
+      "instruction": "Before writing the C2 test, read the render path end to end so the test asserts the real contract: `setStatus` is wired at extension-ui-controller.ts:128 → controller.ts:591-594 (which calls `statusLine.setHookStatus` and then `requestRender()` at :593) → component.ts:958-971, which stores into a Map keyed by the status key, sorts, and invalidates the render cache. Because the key is a Map key, a repeated trigger with identical text short-circuits at component.ts:963 — that is what makes 'exactly once' true.",
+      "anchor": "packages/coding-agent/src/modes/controllers/extension-ui-controller.ts:591"
+    },
+    {
+      "n": 8,
+      "instruction": "Write the C2 test in this order. (a) NEGATIVE-OFF FIRST: with no `enabled` key, and again with `enabled: false`, assert zero spawns and that the rendered status row is byte-identical to a baseline captured with the plugin never loaded. (b) Then enable and point the setting at a command that prints a known string; drive each documented trigger and assert the string appears exactly once. (c) A command exiting non-zero still renders. (d) A command that never exits still renders — this is the silent-failure contract and the most important single case. (e) A burst of rapid message events coalesces into one call. (f) A command printing 10,000 characters, and a command printing a tab, both render sanitized and within width.",
+      "anchor": "packages/coding-agent/test/user-shell-status-line.test.ts"
+    },
+    {
+      "n": 9,
+      "instruction": "Ground assertion (f) in the sanitizer chain that already exists rather than adding new sanitization: the `status` segment calls `sanitizeStatusText`, which collapses to `sanitizeDisplaySingleLine` → `sanitizeDisplayText` → `replaceTabs(sanitizeText(text))`, then collapses newline runs and trims. Note carefully that this chain has NO length cap — width is enforced later by `truncateToWidth` at component.ts:3068 and by row layout. So assert the ROW is within width; do not assert the sanitizer truncated.",
+      "anchor": "packages/tui/src/status-line/segments.ts:201"
+    },
+    {
+      "n": 10,
+      "instruction": "For D2, add the new id to the closed union, then add the matching entry to the `SEGMENTS` Record. Delegate the render to the existing `cacheHitSegment` object rather than recomputing, so there is one hit-rate calculation in the file, not two that can drift.",
+      "anchor": "packages/tui/src/status-line/schema.ts:2"
+    },
+    {
+      "n": 11,
+      "instruction": "Write the D2 test. Assert, for identical usage fixtures, that the new segment reports the SAME rate as `cache_hit` (this is what proves there is no second computation). Then the negative contracts: the rendered row contains no countdown and no TTL label; with no usage data the segment contributes nothing rather than guessing; and a regression guard that the new segment reads no wall-clock constant — the existing segment reads `ctx.usageStats` only, and D2 must not introduce a clock.",
+      "anchor": "packages/tui/test/status-line-cache-hit-rate.test.ts"
+    },
+    {
+      "n": 12,
+      "instruction": "Decide the negative contract for C2/D2 from whatever M2-OQ3 actually decided, not from the original dossier text. The plan is explicit that the dossier's unconditional 'unknown ids are rejected' claim matches NONE of the three options and must not be tested. If OQ3 chose the `core:`/`ext:` prefix option, D2's core id literal changes and D2 must be written after that; under the other two options D2 is unblocked today.",
+      "anchor": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7420"
+    },
+    {
+      "n": 13,
+      "instruction": "Run the gate. `bun test` is currently BLOCKED in this environment — the native addon is not built, so it reports 0 pass / 1 fail with 'Failed to load pi_natives native addon for darwin-arm64'. Build it (`bun --cwd=packages/natives run build`) before trusting any test result, and run `bun run check:ts` in the meantime — it does not need the addon and it is the check that actually exercises the exhaustive `SEGMENTS` Record.",
+      "anchor": "package.json:94"
+    }
+  ],
+  "code_shape": "// D2 — one computation, two ids. Delegate; never recompute.\n// packages/tui/src/status-line/schema.ts:2-29 — add to the closed union:\n//   \"cache_hit\",\n//   \"cache_hit_rate\",   // NEW: same rate, no countdown, no TTL label\n//\n// packages/tui/src/status-line/segments.ts:919 — SEGMENTS is an exhaustive\n// Record<StatusLineSegmentId, StatusLineSegment>, so tsgo forces this entry:\n//   cache_hit_rate: cacheHitSegment,   // reuse the object at segments.ts:718-738\n//\n// Note: cacheHitSegment already renders a percentage only:\n//   const total = cacheRead + cacheWrite + input;\n//   const rate = (cacheRead / total) * 100;\n// There is no countdown in it today. D2 must not add one.\n\n// C2 — the opt-in gate, written before the spawn.\n// packages/coding-agent/examples/extensions/user-shell-status/index.ts\nimport { getPluginSettings } from \"../../../src/extensibility/plugins/loader\";\nimport { logger } from \"@oh-my-pi/pi-utils\";\nimport type { ExtensionAPI } from \"../../../src/extensibility/extensions/types\";\n\nconst PLUGIN_NAME = \"user-shell-status\";\nconst STATUS_KEY = \"user-shell\";\n\nexport default function activate(pi: ExtensionAPI): void {\n  pi.on(\"session_start\", async ctx => {\n    // Gate FIRST. getPluginSettings returns undefined for an absent key, so this\n    // must be === true — a truthiness check would treat undefined as off but a\n    // string \"false\" as on.\n    const settings = await getPluginSettings(PLUGIN_NAME, ctx.cwd);\n    if (settings.enabled !== true) return;      // <-- the entire safety contract\n\n    const command = settings.command;\n    if (typeof command !== \"string\" || command.length === 0) return;\n\n    // Spawn non-blocking. A command that never exits must not wedge the row.\n    // Never console.* here — the TUI is alive.\n    logger.debug(\"user-shell-status running\", { command });\n    // ... spawn, then:\n    ctx.ui.setStatus(STATUS_KEY, firstLine(stdout));\n  });\n}\n\n// C2 manifest — packages/coding-agent/examples/extensions/user-shell-status/package.json\n// {\n//   \"name\": \"user-shell-status\",\n//   \"version\": \"1.0.0\",\n//   \"type\": \"module\",\n//   \"omp\": {\n//     \"extensions\": [\"./index.ts\"],\n//     \"settings\": {\n//       \"enabled\": { \"type\": \"boolean\", \"default\": false, \"description\": \"...\" }\n//     }\n//   }\n// }",
+  "test_contract": "C2 defends one contract, above all: 'the plugin ships inert.' With `enabled` absent and with `enabled: false`, no process is ever created and the rendered status row is byte-identical to a baseline captured with the plugin never loaded. A consumer who installs this plugin and never touches the setting sees zero behavior change; if that regresses, a user's shell command starts running on every message in every session. The enabled-path cases defend the complementary contracts: each documented trigger produces exactly one visible update; a non-zero exit still updates; a hanging command still lets the row render (the silent-failure contract — without it a bad command manifests only as a status bar that quietly stops updating, and the non-exiting case is what proves the render path is not blocking on a child); rapid bursts coalesce to a single call; and 10,000-character plus tab-bearing output renders sanitized and within the row's width. D2 defends: the new segment reports the same hit rate as `cache_hit` for identical usage input, proving no second calculation can drift; the row contains no countdown and no TTL label (the entire point of the item — the reference implementation's countdown is a fake TTL that resets on every fresh API response, so porting it would ship a confidently wrong number under a color scale that reads as 'cache about to expire'); with no usage data the segment contributes nothing rather than guessing; and the segment reads no wall-clock constant, which is the regression guard against the countdown being reintroduced. What a consumer sees if either regresses: for C2, shell commands the user never authorized running; for D2, a cache-health number that is confidently wrong in exactly the situation a user is watching it for.",
+  "test_files": [
+    "packages/coding-agent/test/user-shell-status-line.test.ts",
+    "packages/tui/test/status-line-cache-hit-rate.test.ts"
+  ],
+  "verification": "BLOCKED TODAY — `bun test` cannot run in this environment. Verified: `bun test packages/tui/test/status-line-cache-hit.test.ts` returns `0 pass / 1 fail / 1 error` with \"Failed to load pi_natives native addon for darwin-arm64\". Build the addon first: `bun --cwd=packages/natives run build`.\n\nRuns today, no addon required:\n- `bun run check:ts` — verified green at HEAD 808b365 (all 16 packages Done). This is the check that actually exercises D2's exhaustive `SEGMENTS` Record, since a missing registry entry is a type error, not a runtime one.\n\nOnce the addon is built:\n- `bun test packages/coding-agent/test/user-shell-status-line.test.ts`\n- `bun test packages/tui/test/status-line-cache-hit-rate.test.ts`\n- `bun test packages/tui/test/status-line-cache-hit.test.ts` — the sibling, must stay green (no second calculation, no divergence)\n- `bun run check:ts`\n\nAlso verify by hand before merging C2: `git grep -n \"examples/extensions\" -- packages/coding-agent/src` must still return 0 hits. The example directory's defining property is that it ships in the tarball and does NOT auto-load; a single reference from src would make the plugin load itself into every session and violate the inert-by-default contract.",
+  "gate": "DONE means all four of these, and each one is capable of going red on its own. (1) `bun run check:ts` exits 0 — this is the D2 compile gate, and it is genuinely load-bearing: `SEGMENTS` is an exhaustive `Record<StatusLineSegmentId, StatusLineSegment>`, so forgetting the registry entry for the new union member is a type error this catches. (2) With the native addon built, the D2 test is green including its three negative contracts: the rendered row contains no countdown and no TTL label; the new segment's rate equals `cache_hit`'s rate for identical usage; and with no usage data the segment contributes nothing. (3) With the addon built, the C2 test is green and its FIRST case is the negative-off one — no `enabled` key and `enabled: false` both produce zero spawns and a status row byte-identical to the plugin-absent baseline. (4) `git grep -n \"examples/extensions\" -- packages/coding-agent/src` still returns 0 hits. AND, for C2 only, the Q6 trust answer is written into the work item with its scope stated. If Q6 is unanswered, C2 is explicitly allowed to slip — that is the plan's own instruction, and shipping it on an unstated premise is worse than slipping.",
+  "gate_can_fail": "Yes, and specifically rather than nominally. Gate (1) goes red the moment a new id is added to the closed union without a matching `SEGMENTS` entry, because the Record is exhaustive — that is a real class of mistake with no other detector. Gate (2)'s countdown assertion goes red if anyone reintroduces a TTL, which is the single most likely way this item goes wrong, since the reference implementation it is being ported from has a countdown and the temptation is to port it. Its rate-parity assertion goes red if a second hit-rate computation is written instead of delegating, which is the other likely mistake. Its no-usage assertion goes red if the segment divides without guarding a zero denominator. Gate (3)'s negative-off case is the strongest of the four: it goes red if the extension defaults a missing `enabled` key to true, if it checks truthiness instead of `=== true`, or if the spawn is written before the gate — and because it also compares against a plugin-absent baseline, it catches the subtle version where the plugin spawns but harmlessly. Its non-exiting-command case goes red if the spawn is awaited on the render path. Gate (4) goes red if anything in src ever references the examples directory, which would silently make the plugin auto-load and destroy the inert-by-default guarantee. The one honest limitation: gates (2) and (3) cannot run until the native addon is built, so until then only gate (1) is actually enforcing anything.",
+  "depends_on": [
+    "M2-OQ3 — the three-way status-line decision (plan §7.4: prefixed union / contributor Map / mode-reads-ModeRegistry). CONDITIONAL and weaker than the plan states: see plan_corrections #4 and #5. D2 and C2 do not consume `registerStatusLineSegment` at all, so under options 2 and 3 neither is blocked.",
+    "§10 Q6 — the trust question. HARD blocker for C2 only. Unanswered as of HEAD 808b365.",
+    "M2 WI-7 (`registerMode`) only insofar as OQ3 is decided there; no code from WI-7 is imported by either item.",
+    "M3-A1 — the plan lists A1 as a C2 dependency. Not verified as a real code dependency; treat as a scheduling preference, not a build-order constraint."
+  ],
+  "blocks": [
+    "Nothing inside M3. This wave consumes a seam; it opens none. Specifically it does NOT block M3-C1, because M3-C1 no longer exists in this plan."
+  ],
+  "effort": "C2: M, ~3 days, dominated by the test checklist, not the code (a manifest, one extension file, and roughly nine distinct behaviors to pin). D2: S, ~1 day — add one union member, one registry entry, one test. Wave total ~3-4 days. The plan's S for D2 is a CONSEQUENCE of refusing the countdown, not a free estimate; do not use it as license to re-expand the cut half.",
+  "risk": "The single most likely way to get this wrong is to port the reference implementation's countdown along with its hit rate, because the two arrive together in the source being copied. That countdown is `CACHE_TTL_MS - (now - lastResetAt)` where `lastResetAt` resets on every fresh API response — a fake TTL, sitting under a color scale that reads as 'cache about to expire'. The original ships a wrong number confidently. Shipping it here reproduces the exact defect this item exists to avoid, and the `packages/catalog/src/compat/rules/` mention in the plan is the tell: a TTL would need declaring there, and D2 declares nothing. Second-most-likely: writing the C2 spawn before the opt-in gate, or testing `settings.enabled` for truthiness — `getPluginSettings` returns `undefined` for an absent key, so `=== true` is the only safe form. Both are caught by the negative-off contract, which is why it is written first.",
+  "open_questions": [
+    "§10 Q6 — the trust story for M3 artifacts in a project with no trust gate. UNANSWERED, and it BLOCKS C2. The answer must be copied into this work item and must state its scope explicitly: does it cover only C2, or also every other artifact M2 hands to plugin code (notably the live `ExtensionUIContext`, whose writes bypass the frame-cost floor, the 30fps cap, and adaptive backpressure)? Unanswered means C2 slips — that is the plan's own instruction, not a conservative reading of it.",
+    "M2-OQ3 — which of the three options M2 settles on. Still listed as unresolved and still blocking WI-7 step 6 in `.lavish-wip/m2-specs/WI-7.spec.json`. The plan leans option 3 but explicitly did not choose, and notes option 3 does NOT cover a mode wanting a segment outside `mode`. Needed only to write the negative contract correctly, and to know whether D2's id literal must be `core:`-prefixed.",
+    "Does `runDoctorChecks` deserve attention here? It is defined at `packages/coding-agent/src/extensibility/plugins/doctor.ts:5` and re-exported by the barrel at `index.ts:3`, and has ZERO call sites repo-wide. The plan uses it as evidence that `src/extensibility/plugins/` is library code rather than a plugin distribution channel — which is correct and I confirmed it. Dead code noticed in passing, deliberately NOT in scope here.",
+    "Pre-existing duplicate implementation, noticed while verifying the sanitizer: `sanitizeStatusText` is exported once from `packages/tui/src/chrome/shared.ts:9` and separately defined at `packages/tui/src/overlays/annotation-overlay.ts:121`. AGENTS.md treats two implementations of the same thing as a bug even when both work. Out of scope for this wave; flagging so it is not lost."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The trust premise is at `packages/coding-agent/src/extensibility/extensions/types.ts:462-470`, and 'xem thêm `:528-532`'.",
+      "verdict": "WRONG — stale by ~25 and ~20 lines; both cited ranges land in unrelated interface methods.",
+      "correction": "The 'no per-directory trust gate' reasoning is at types.ts:487-494 ('OMP performs no project-trust gating — project-level settings and extensions load unconditionally — so this always returns `true`') and the longer companion comment at types.ts:548-562. The two implementations that hard-code the return are `runner.ts:1264` and `agent-session.ts:7406`, both `isProjectTrusted: () => true`. The SUBSTANCE is fully correct and I reproduced it; only the line numbers are wrong.",
+      "evidence": "sed -n '483,500p' and '548,565p' on types.ts show the comments; `git grep -n isProjectTrusted -- packages/coding-agent/src` returns exactly the two call sites plus the two declarations at :494 and :561."
+    },
+    {
+      "claim": "`registerStatusLineSegment` is M2's seam and this wave's two items are its first consumers, both written after M2-OQ3 has an answer.",
+      "verdict": "SUBSTANTIVELY WRONG — the seam exists and the items do not consume it.",
+      "correction": "`git grep -n registerStatusLineSegment -- packages/` returns 0 hits repo-wide, so the seam is indeed unbuilt (the plan is right that M3-C1 was removed). But neither C2 nor D2 touches it. C2 dispatches through `ctx.ui.setStatus`, which is ALREADY fully wired (types.ts:263 -> controller.ts:128 -> controller.ts:591-594 -> component.ts:958-971). D2 is a core union addition. What M2-OQ3 actually decides for this wave is only the NEGATIVE contract — what happens to an id nobody registered. Write the items; do not gate them behind the seam.",
+      "evidence": "`git grep -c registerStatusLineSegment -- packages/` = 0 hits. `git grep -n setStatus -- packages/coding-agent/src` shows the live chain ending at component.ts:958."
+    },
+    {
+      "claim": "`setStatus` is wired at `extension-ui-controller.ts:119`; `requestRender` is at `extension-ui-controller.ts:586`.",
+      "verdict": "WRONG line numbers; the surrounding warning is CORRECT and worth keeping.",
+      "correction": "The wiring is at controller.ts:128 (`setStatus: (key, text) => this.setHookStatus(key, text)`), and `setHookStatus` spans controller.ts:591-594 with `this.ctx.ui.requestRender()` at :593. The plan's warning — that `requestRender` lives on the controller and NOT on `StatusLineComponent`, so a test driving only the component will hang — is CORRECT and I verified it. Also note the controller is at `src/modes/controllers/`, not under `extensibility/`.",
+      "evidence": "sed -n '578,600p' on the controller shows setHookStatus at 591 with requestRender at 593; `git grep -n requestRender -- packages/coding-agent/src/modes/controllers/extension-ui-controller.ts` shows 6 sites, of which :593 is the status-line one."
+    },
+    {
+      "claim": "D2 is blocked on M2-OQ3.",
+      "verdict": "OVERSTATED — conditionally blocked at most, and only under one of the three options.",
+      "correction": "D2 edits the CORE union, and no extension contributes a segment to it. Under option 2 (contributor Map) or option 3 (mode reads ModeRegistry) the core union is untouched and D2 is implementable today. Only under option 1 does the core id set get rewritten into `core:`-prefixed template literals, which would change D2's id literal. So: proceed with D2 unless OQ3 has landed as option 1.",
+      "evidence": "The union is a plain `as const` array at schema.ts:2-29 with 27 members, unrelated to any extension-contributor path; no `register*` seam exists to block on."
+    },
+    {
+      "claim": "The manifest `omp` field is read at `manager.ts:256`, with two other paths at `:622` and `:845`.",
+      "verdict": "INCOMPLETE — all three are correct, a fourth exists.",
+      "correction": "256, 622 and 845 are all real and all read `pkg.omp || pkg.pi || {...}`. There is a fourth at manager.ts:1084 (`const manifest: PluginManifest | undefined = pluginPkg.omp || pluginPkg.pi;`, note it can be undefined). If the implementer audits 'every place the manifest is read', 1084 must be included or the audit is incomplete.",
+      "evidence": "`git grep -n 'const manifest: PluginManifest' -- packages/coding-agent/src/extensibility/plugins/manager.ts` returns 256, 622, 845, 1084."
+    },
+    {
+      "claim": "`--extension` is at `flag-tables.ts:216`; `--trusted-extension` is at `:218`.",
+      "verdict": "WRONG by one line each.",
+      "correction": "`--extension` is at :215 and :216 is the `-e` alias. `--trusted-extension` is at :217, not :218. Anyone scripting an edit against these numbers touches the wrong flag.",
+      "evidence": "sed -n '205,230p' on flag-tables.ts."
+    },
+    {
+      "claim": "`--trusted-extension` sets `options.disableExtensionDiscovery = true` at `main.ts:1658-1659`.",
+      "verdict": "OFF BY ONE — substance correct.",
+      "correction": "The two assignments are at main.ts:1659-1660; :1658 is the closing `});` of the `.map()` above them. The claim itself — that this disables discovery and substitutes an absolute-path allowlist, making it a harness tool rather than an end-user gate — is correct.",
+      "evidence": "sed -n '1650,1665p' on main.ts."
+    },
+    {
+      "claim": "`ExtensionUIContext` dispatch is at `types.ts:264`; the `setStatus` declaration sits at that anchor.",
+      "verdict": "OFF BY ONE — :264 is a blank line.",
+      "correction": "`setStatus(key, text)` is declared at types.ts:263, inside the `ExtensionUIContext` interface (the neighbourhood the plan cites as `264-277` is right).",
+      "evidence": "sed -n '250,285p' on extensions/types.ts."
+    },
+    {
+      "claim": "The overlay reads the settings schema at `packages/tui/src/overlays/plugin-settings.ts:143`.",
+      "verdict": "OFF BY ONE.",
+      "correction": "The read is `const schemaSettings = plugin.manifest.settings;` at plugin-settings.ts:144, with an early return at :145. Same file, one line down.",
+      "evidence": "`git grep -n schema -- packages/tui/src/overlays/plugin-settings.ts`."
+    },
+    {
+      "claim": "`packages/tui/package.json:39-48` declares no dependency on the coding-agent; the reverse direction is at `packages/coding-agent/package.json:545`.",
+      "verdict": "CORRECT in substance; one line off on the tui range.",
+      "correction": "The tui `dependencies` block is :40-49. It lists omptype, pi-agent-core, pi-ai, pi-catalog, pi-natives, pi-utils, pi-wire, snapcompact — no coding-agent, confirming the test-file placement rule. The reverse direction is exactly right: `@oh-my-pi/pi-tui` is at coding-agent/package.json:545.",
+      "evidence": "`grep -n '\"@oh-my-pi/pi-tui\"' packages/tui/package.json` (absent) and sed -n '540,550p' on the coding-agent manifest."
+    },
+    {
+      "claim": "HEAD is 5873776.",
+      "verdict": "STALE.",
+      "correction": "Actual HEAD is 808b365 ('docs(plan): fold the spec-verified M1 execution plan into the upgrade plan'), on branch milestone-1. Every line number in this spec was re-measured at 808b365.",
+      "evidence": "`git log --oneline -1`."
+    },
+    {
+      "claim": "C2's sanitization and width-limiting is work the item must do (tab output, 10,000 characters).",
+      "verdict": "MISFRAMED — the contract already exists; C2 only has to not break it.",
+      "correction": "The `status` segment ALREADY runs every hook status through `sanitizeStatusText` -> `sanitizeDisplaySingleLine` -> `sanitizeDisplayText` -> `replaceTabs(sanitizeText(text))`, then collapses newline runs and trims. Width is enforced separately by `truncateToWidth` at component.ts:3068 and by row layout. One nuance the test must get right: the sanitizer chain has NO length cap, so assert the ROW is within width — do not assert that the sanitizer truncated. C2's test therefore asserts an existing contract holds for plugin-supplied content, which is a stronger and more honest framing than 'add sanitization'.",
+      "evidence": "packages/tui/src/chrome/shared.ts:9, packages/tui/src/overlays/extensions/display-text.ts, segments.ts:201, component.ts:3068."
+    },
+    {
+      "claim": "D2 is 'add an id to the closed union'.",
+      "verdict": "UNDERSTATED — the union is not the only edit, though the compiler will tell you.",
+      "correction": "`SEGMENTS` at segments.ts:919 is an exhaustive `Record<StatusLineSegmentId, StatusLineSegment>`, so adding a union member without a registry entry is a TYPE error — good, `bun run check:ts` catches it with no addon. Good news for blast radius: `ALL_SEGMENT_IDS` is `Object.keys(SEGMENTS)`, so the CLI gallery inventory picks the new id up automatically, and the gallery's `variantsFor` switch has a `default:` branch, so no gallery edit is required either.",
+      "evidence": "segments.ts:919, :957; packages/coding-agent/src/cli/gallery-fixtures/segments.ts (default branch at the end of variantsFor)."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/s5.spec.json"
+}

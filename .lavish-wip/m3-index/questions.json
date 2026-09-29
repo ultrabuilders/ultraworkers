@@ -1,0 +1,202 @@
+[
+ {
+  "id": "s1",
+  "q": "P1 (blocking A1): all seven presets, or only `full` + `nerd`? Needs a written maintainer answer before the first line of A1 code. Note that `default` is what every current user sees on day one, and `usage` is the widest segment in the catalog — this is a first-run product decision, not a technical one."
+ },
+ {
+  "id": "s1",
+  "q": "P0 (blocking A8): is the tmux prefix-doubling convention black-box (observed on shipped product under tmux) or omp-native (designed here), and what is the evidence location? The evidence must live in the work item, not in the untracked ~/Projects/claude-code-ref checkout."
+ },
+ {
+  "id": "s1",
+  "q": "Are chat-transcript-builder.ts:507 and ui-helpers.ts:663 in A6's scope? They are result-side checks that never call the collapse predicate. My read is that they belong in the must-stay-put bucket, which would make A6 five mechanical sites rather than seven — but that is a call for the maintainer, not for the implementer."
+ },
+ {
+  "id": "s1",
+  "q": "Is acp-event-mapper.ts:645 (`if (raw === undefined || toolName !== \"read\") return raw;`) a read-group membership site? The plan does not mention it. It looks ACP-specific, but it must be explicitly ruled in or out rather than silently ignored."
+ },
+ {
+  "id": "s1",
+  "q": "A1 negative contract: should `showHookStatus` (component.ts:3064, currently defaulting to true) be flipped to default-false so a status hook stops rendering twice? The plan frames this as disabling a path at component.ts:3067; in fact the setting already exists and 3067 is a closing brace. Flipping the default is a product decision affecting every user, and it is out of scope for this wave unless someone explicitly claims it."
+ },
+ {
+  "id": "s1",
+  "q": "A5: where should the per-phase frame-cost accumulator live — an extension of loop-phase.ts, or a new module? loop-phase.ts:45 is in packages/utils and is deliberately lightweight; adding a timing store there widens its blast radius. Needs a decision before step 17."
+ },
+ {
+  "id": "tail1",
+  "q": "§8.6 #5 (HUMAN, blocks step 1): does the clean-room policy get written as a docs/ file, a CONTRIBUTING.md addendum, or both? The plan weighs both and decides neither. This is a five-minute answer from the maintainer and it changes one file in this spec's `files_touched`."
+ },
+ {
+  "id": "tail1",
+  "q": "§8.6 #1 (HUMAN, not resolvable in-repo): has anyone read Anthropic's current Commercial Terms on reverse engineering, derivative works and UI simulation? The plan is explicit that the researcher did NOT. The line 'All rights to Claude Code belong to Anthropic' is CCB's self-representation, not a verified reading of upstream terms. Until answered, the doc's sign-off grid shows this OPEN and asserts no clean-room status."
+ },
+ {
+  "id": "tail1",
+  "q": "§8.6 #4 (HUMAN): should out-of-lock code be forced to declare itself so it can reach the notices file? This turned out to be a different question than the plan frames it — see plan_corrections. Needs a decision on whether a hand-maintained manifest is added, or whether the clean-room rule alone is sufficient."
+ },
+ {
+  "id": "tail1",
+  "q": "GATE OWNERSHIP: should the gate script be wired into CI at all, or stay a reviewer-run script? This spec keeps it reviewer-run because CI enforcement of a source grep is the AGENTS.md-banned shape. If CI enforcement is wanted, the right home is an oxlint rule for the structural invariants and a real test for the behavioural ones — a different work item."
+ },
+ {
+  "id": "tail1",
+  "q": "SCOPE: is tail1 part of milestone 3's definition of done, or a separate close-out? It is not one of the six waves. If it is close-out, it runs once at the end and several gates stay permanently red (G6 if A2/D1 was descoped); if it is a gate on every wave, the red-before property must be preserved per wave rather than once."
+ },
+ {
+  "id": "ctx1",
+  "q": "O1 (process, low stakes): should COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md be corrected in place with the six drifted anchors, or left as the historical record with docs/plugin-surface-closure.md as the corrected source? This spec does NOT touch the plan — it is a tracked file owned by the M1/M2 assemble workflow, and editing it here risks racing that workflow. A maintainer call is needed. Default if nobody answers: leave the plan alone, since the M1 precedent was already 'fold the spec-verified plan into the upgrade plan' as a separate commit."
+ },
+ {
+  "id": "ctx1",
+  "q": "O2 (scope, needs a maintainer): should the doc also cover the two verified M3 additions it currently only mentions in passing — the quota status band and the MCP elicitation form — or stay strictly on the 'why not a plugin' argument? Both are §2 topics and both belong to later waves. Default: stay strictly on §1–§2, since a context doc that grows into a design doc stops being the thing waves cite."
+ },
+ {
+  "id": "ctx1",
+  "q": "O3 (dependency, escalate if it blocks): the native addon does not build in this checkout, so leg (2) of the gate cannot run. Is that expected to be fixed by the time M3 work starts, or should the two test files be written and shipped unexecuted with the blockage recorded? The honest answer for now: do not mark ctx1 done on check:ts alone — check:ts executes zero assertions and this item's entire value is executable invariants."
+ },
+ {
+  "id": "ctx1",
+  "q": "O4 (low stakes, for whoever owns M2 WI-7): §2.1 explicitly hands the status-line segment seam to M2 WI-7 + M2-OQ3 rather than reopening it in M3. This spec verifies the seam is closed and pins it; it does NOT decide the question. Confirm that pinning the closure here does not pre-empt WI-7 — as written it should not, since a test that asserts the catalogs agree passes just as well after WI-7 opens a seam, provided WI-7 updates both catalogs. If WI-7 is expected to add a register* function, the barrel grep in step 11 is the line that changes."
+ },
+ {
+  "id": "tail2",
+  "q": "P0 (blocking, owner: maintainer, in writing, due before wave 1 starts) — for A3, A7, A8 and D2: is the spec source `black-box` or `omp-native`, and where is the evidence? The §8.2 table proposes A7=omp-native, D2=omp-native, A8=black-box+omp-native, A3=omp-native-shape-plus-remeasured-constants. tail2 restates the table and puts it in a row with an owner; it cannot answer it."
+ },
+ {
+  "id": "tail2",
+  "q": "P1 (blocking, owner: maintainer, in writing, due before A1 starts) — does `usage` join all seven status-line presets or a subset, naming each preset? tail2 additionally asks: does the answer include the `custom` preset? The `custom` entry at `packages/tui/src/status-line/presets.ts:96-103` spreads `CUSTOM_STATUS_LINE_DEFAULTS` from `packages/tui/src/status-line/schema.ts:36-42`, so including it means editing schema.ts, and excluding it must be said out loud — otherwise 'full and nerd' reads as a complete answer and quietly leaves `custom` on the old default list."
+ },
+ {
+  "id": "tail2",
+  "q": "A9 S or M (owner: whoever schedules, due before A9 is planned) — extend the existing token list, or generate two hand-tuned themes through the OKLCH primitives already present at `packages/tui/src/theme/session-color.ts:2`? Default is M, ~5 days; S is ~1 day. The reason this must be decided rather than defaulted is the four-day spread, not that S is cheap. 99 palettes to touch either way (verified: `ls packages/tui/src/theme/defaults/*.json | wc -l` → 99)."
+ },
+ {
+  "id": "tail2",
+  "q": "A4 persist half (owner: the A4 implementer plus a reviewer, due before that half starts) — the repo has no secret store to fall back to. `grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` → 0 (verified), and the only keychain reference in the package is a browser-profile payload obfuscator at `packages/coding-agent/src/tools/browser/attach.ts:244-246`, unrelated. So 'what gets typed straight to disk' is a decision with no default. The plan hands it to A4; a human still has to sign the answer."
+ },
+ {
+  "id": "tail2",
+  "q": "M2 scope and exit criterion (owner: maintainer, due before M2 is scheduled) — is `ExtensionUIContext` going to reach the shape the M2 plan describes, where `setHeader`/`setFooter` are no-ops and the specifier remap makes `toolRenderers` reachable? If it does not, B1, B2, B3, C2 and D2 all slide and wave 4 cannot start independently. The plan calls this the largest scheduling risk; tail2 can put it at the top of the table with an owner, and cannot resolve it."
+ },
+ {
+  "id": "tail2",
+  "q": "Headless/SDK policy for MCP elicitation (owner: whoever owns the MCP surface, due before D1) — no answer exists anywhere in the dossier and both wrong answers are visible at the protocol layer. §11 clause 4 says behaviour follows the decided policy, so D1's DoD cannot be judged until this is written down."
+ },
+ {
+  "id": "tail2",
+  "q": "Does a transient notice leave a durable transcript record? (owner: maintainer, not blocking A7) — two different behaviours when scrolling back, and A7 only needs to leave the no-key branch's transcript behaviour exactly as it is. The plan deliberately does not let this gate A7, and tail2 must not let it either."
+ },
+ {
+  "id": "tail2",
+  "q": "Should M4/M5 mint a real `ExtensionAPI.registerToolRenderer`? (owner: M4/M5, not an M3 question) — B1 stays a hole with a pinning test. Note the honest limit, which the plan states and the back matter should repeat: a pinning test detects a refactor that deliberately breaks the mechanism; it does not stop an accidental one. A plugin built on the hole can still break."
+ },
+ {
+  "id": "tail2",
+  "q": "Do git sidebar and the raw-SSE debug viewer join the shared acceleration model? (owner: whoever implements A3, default: yes) — leaving the SSE viewer out would make the debug app internally inconsistent. Note the asymmetry: the 9th site is `packages/tui/src/apps/git/sidebar.ts:897` using `delta * 3`, not `event.wheel * N`, which is exactly why G4 has to run both greps."
+ },
+ {
+  "id": "tail2",
+  "q": "Two unverified claims from the original brief, still unverified: '8 of 8 subsystems' and 'pre-styled ANSI / no cell buffer', plus the counting method behind '7 of 9'. None of them appears in this plan and none should appear in the back matter. A third claim in the same family — that `setFrameProvider` has exactly one non-test call site — was verified and folded into the plan; the other two need either a named feasibility report or deletion."
+ },
+ {
+  "id": "ctx2",
+  "q": "M2-OQ3 (registerStatusLineSegment) is unresolved and blocks D2 + C2 and, through WI-7, the whole `ModeDefinition.statusLine` shape. NOTE: `packages/tui/test/status-line-extension-mode.test.ts`, cited by the plan as M2-WI-7's test, DOES NOT EXIST in the tree. It is a future artifact blocked on that question — do not go looking for it, and do not let its absence read as a regression."
+ },
+ {
+  "id": "ctx2",
+  "q": "O5 is marked CHỐT (locked) in the plan, but a simpler alternative exists that the plan does not mention: `getTool?: (name: string) => AgentTool | undefined` is ALREADY in ChatTranscriptBuilderDeps (chat-transcript-builder.ts:67) and already used at :475, and `AgentTool` is already importable in pi-tui from `@oh-my-pi/pi-agent-core`. The builder could therefore read a membership flag off the resolved tool itself instead of being handed a predicate. A human must decide whether to keep the locked predicate-injection seam or reopen it — I did not overturn a locked decision on my own."
+ },
+ {
+  "id": "ctx2",
+  "q": "Row 21 (plugin secret stored plaintext at manager.ts:942-949) is gated by M2 WI-8a because manager.ts:929-957 is a hotspot row in M2's table and is being replaced. Confirm that gating before anyone opens manager.ts in M3 — otherwise two milestones touch the same function in the same wave."
+ },
+ {
+  "id": "ctx2",
+  "q": "§4.1 says building a second harness inside packages/tui/test/ is 'banned by this document'. That framing is the plan's own reasoning, not an AGENTS.md rule. The underlying fact is solid and independently sufficient (pi-tui has no pi-coding-agent dependency, and git grep for pi-coding-agent under packages/tui/test/ returns nothing), so the conclusion holds without the invented prohibition."
+ },
+ {
+  "id": "s2",
+  "q": "OPEN QUESTION 1 — BLOCKING. What does 'acceleration' mean for the six `handleWheel(delta: -1 | 1)` implementations, given that every one of them is a one-row SELECTION move rather than a scroll (verified: select-list.ts:229, settings-list.ts:241, agent-hub.ts:1247, session-selector.ts:588, oauth-selector.ts:407, extension-list.ts:597)? Recommendation: do NOT accelerate them. Keep one notch = one row for selection, and apply the model only to the nine scroll sites. If the product owner does want list acceleration, it needs its own, much lower cap and its own decision — and the five extra forwarding call sites must be updated too, or the behavior is inconsistent between overlays."
+ },
+ {
+  "id": "s2",
+  "q": "OPEN QUESTION 2 — BLOCKING for the setting's shape. `ui.mouseWheelSpeedMultiplier` as specified is `type: \"number\"` with no `ui.options`, and `registry.ts:42-43` says a numeric setting without options is DELIBERATELY HIDDEN from the settings panel. So as specified it is config-file only. Is that acceptable for an 'escape hatch', or does it need a submenu of discrete values so users can actually reach it? If it stays config-file-only, say so in the changelog entry, because a user reading 'there is a setting' will look for it in the panel and not find it."
+ },
+ {
+  "id": "s2",
+  "q": "OPEN QUESTION 3 — non-blocking but decide now. Should the acceleration cap be a rows-per-notch integer or a float? Every current consumer truncates (`scroll-view.ts:352` does `Math.trunc(delta)`), so a float cap is silently floored per call and a ramp that grows 1→2→3 never lands mid-step. Integer is the safer default; confirm before the model is written."
+ },
+ {
+  "id": "s2",
+  "q": "OPEN QUESTION 4 — carried forward from the plan, explicitly NOT blocking. Whether a keyed transient status that has scrolled out of view should also be recorded in the transcript permanently, or whether the transcript is the complete record and notices are additive only. The plan leaves this open and correctly notes it does not block Wave 2 — A7 only has to keep the unkeyed branch's existing transcript behavior."
+ },
+ {
+  "id": "s3",
+  "q": "HEADLESS/SDK POLICY (plan section 10, question 10 — unanswered, and the implementer must not guess). What does omp do when an MCP server elicits in headless/SDK mode with no interactive surface? The two natural wrong answers — hang the request forever, and silently auto-decline — are both visible at the protocol layer. Recommended default to put in front of a human: auto-decline with a `logger.warn` naming the server and the request message, and make it a real `{ action: \"decline\" }` on the wire rather than an error — plus an opt-in programmatic handler so SDK embedders are not stuck with it. Confirm before step 13."
+ },
+ {
+  "id": "s3",
+  "q": "SECRET MARKER. Is the secret field indicated by MCP's `writeOnly: true`, by `format: \"password\"`, or by an omp-specific extension? The MCP spec uses writeOnly. Confirm which one the servers in the wild actually send before step 8 hard-codes it; getting this wrong means secrets render in plaintext."
+ },
+ {
+  "id": "s3",
+  "q": "ACP RE-ELICITATION. In ACP mode the manager is created per managed session (acp-agent.ts:2667) and the outbound bridge already exists. Should the handler reuse `unstable_createElicitation` verbatim, or should MCP-originated elicitations bypass the editor client and be handled locally? These are very different UXs and the plan does not say."
+ },
+ {
+  "id": "s3",
+  "q": "RPC REQUEST NAME. The exact RPC method name and payload shape for forwarding an elicitation to an RPC client is unspecified. rpc-mode.ts:600 (requestRpcEditor) is the shape to mirror, but the method name needs a decision because RPC clients key off it."
+ },
+ {
+  "id": "s3",
+  "q": "TIMEOUT. Should an elicitation form time out at all? ACP's bridge honors `dialogOptions.timeout`; the MCP request carries no timeout of its own, so this needs an explicit default (and the plan requires timeout to be a THIRD distinct wire outcome, which means the value must be chosen deliberately, not inherited as 'undefined')."
+ },
+ {
+  "id": "s4",
+  "q": "A4-DISPLAY test location. All four units under test live in packages/tui (settings-list.ts, plugin-settings.ts), but the plan names packages/coding-agent/test/plugin-settings-secret.test.ts. The seam is real — buildPluginConfigItems takes a PluginSettingsManager, and a coding-agent test can construct one against a temp dir — so this is a house-style call, not a correctness one. Follow the plan unless packages/tui/test already has a settings-list harness; whichever is chosen, the test must not import the fixture by a path the runtime does not use."
+ },
+ {
+  "id": "s4",
+  "q": "A4-PERSIST destination, and the plan gets this wrong in a way that costs real time. The plan states the repo has no secret store to fall back to, and infers from a grep for `keytar|keychain|safeStorage|encrypt` that none exists. It does: `~/.omp/agent/secrets.yml` and `<cwd>/.omp/secrets.yml`, loaded at `packages/coding-agent/src/secrets/index.ts:163-168`, backed by SecretObfuscator and a per-install key at `~/.omp/agent/secret-placeholder.key` (secrets/index.ts:16-53), documented at `docs/secrets.md:35-42`. The grep missed it because the store is a YAML file, not a keyring API. So the choice is NOT 'invent somewhere to put it' — it is: route secret plugin settings into secrets.yml, or give the Settings registry a secret-marked tier. A human must pick. The tradeoff is real: settings are typed and validated by the registry, secrets.yml is a separate untyped format, and routing through it means plugin settings stop being validated like everything else. Do not let A4-PERSIST start until this is answered."
+ },
+ {
+  "id": "s4",
+  "q": "Does A4-PERSIST even want a separate persistence tier, or is encrypt-at-rest the honest answer? secrets.yml is plaintext on disk with reversible placeholders for the MODEL path; it is a redaction system, not a vault. If a plugin secret is an API token, secrets.yml is still plaintext to anything that can read the file. This is a scope question for whoever owns the item, and it is out of scope for this wave."
+ },
+ {
+  "id": "s4",
+  "q": "B3's tmux-stub assertion (the one that proves A8 ordering) is dropped if A8 has not landed. Confirm with the A8 owner whether to defer the whole item or just that assertion; the plan treats the ordering proof as load-bearing, which argues for deferring."
+ },
+ {
+  "id": "s5",
+  "q": "§10 Q6 — the trust story for M3 artifacts in a project with no trust gate. UNANSWERED, and it BLOCKS C2. The answer must be copied into this work item and must state its scope explicitly: does it cover only C2, or also every other artifact M2 hands to plugin code (notably the live `ExtensionUIContext`, whose writes bypass the frame-cost floor, the 30fps cap, and adaptive backpressure)? Unanswered means C2 slips — that is the plan's own instruction, not a conservative reading of it."
+ },
+ {
+  "id": "s5",
+  "q": "M2-OQ3 — which of the three options M2 settles on. Still listed as unresolved and still blocking WI-7 step 6 in `.lavish-wip/m2-specs/WI-7.spec.json`. The plan leans option 3 but explicitly did not choose, and notes option 3 does NOT cover a mode wanting a segment outside `mode`. Needed only to write the negative contract correctly, and to know whether D2's id literal must be `core:`-prefixed."
+ },
+ {
+  "id": "s5",
+  "q": "Does `runDoctorChecks` deserve attention here? It is defined at `packages/coding-agent/src/extensibility/plugins/doctor.ts:5` and re-exported by the barrel at `index.ts:3`, and has ZERO call sites repo-wide. The plan uses it as evidence that `src/extensibility/plugins/` is library code rather than a plugin distribution channel — which is correct and I confirmed it. Dead code noticed in passing, deliberately NOT in scope here."
+ },
+ {
+  "id": "s5",
+  "q": "Pre-existing duplicate implementation, noticed while verifying the sanitizer: `sanitizeStatusText` is exported once from `packages/tui/src/chrome/shared.ts:9` and separately defined at `packages/tui/src/overlays/annotation-overlay.ts:121`. AGENTS.md treats two implementations of the same thing as a bug even when both work. Out of scope for this wave; flagging so it is not lost."
+ },
+ {
+  "id": "s6",
+  "q": "S or M? The plan insists this be decided before planning and warns against defaulting to the cheap version, on the grounds that the cheap version does not equal the reference's two hand-tuned themes. My recommendation is the opposite, for a specific reason: the plan's stated justification for M was the 99-palette audit, and that audit is now done and clean (see plan_corrections #2). M's remaining benefit is design PARITY with CCB, not correctness — and M buys that parity with a harness that then only checks 2 hand-picked themes, a strictly weaker regression net than the S variant's 101. Ship S now; file M as design follow-up. If a human still wants parity, the honest scope is two new JSON files in `defaults/` plus a designer pass plus an accessibility review — not a code change."
+ },
+ {
+  "id": "s6",
+  "q": "Exact target hues. The code_shape below proposes blue ~250 for the green family, magenta ~350 for error, amber ~80 for dirty-git. Those are my estimates, not measured. Before shipping, someone who is actually red-green colorblind should confirm 250/350/80 are distinguishable to them, and confirm the two amber/orange dirty-git bands that the audit found (orange, amber, gold, bronze, coral, ember variants) still read as 'warning' and not as 'error' at 350."
+ },
+ {
+  "id": "s6",
+  "q": "Should `statusLineGitDirty` change at all? Under pure deuteranopia the load-bearing confusion is red vs green. Once green becomes blue, red stays distinguishable, so dirty-git (amber) arguably needs no remap. I remap it anyway so it is separated from error by hue, but a human should confirm that is an improvement and not just a second change."
+ },
+ {
+  "id": "s6",
+  "q": "Contrast threshold. The repo's only existing constant is `ACCENT_MIN_CONTRAST = 3` (session-color.ts:36, WCAG AA large text). The status line is small text, so AA body (4.5:1) is the defensible gate. Confirm — 4.5 may make some of the 101 existing themes red on day one, which turns a feature PR into a 101-palette remediation project."
+ }
+]

@@ -1,0 +1,433 @@
+{
+  "id": "W10",
+  "title": "Đổi tên bề mặt phân phối: CI, release, Docker, homebrew, nix, installer",
+  "wave": "Wave 4",
+  "one_line": "Đổi tên thương hiệu cũ trên toàn bộ đường phân phối (workflow, tên asset release, image Docker, Formula homebrew, flake/nix, installer curl|sh) — với hai ngoại lệ cứng: nhãn runner `omp-kata` (đăng ký ngoài repo) và mọi `do_not_rename`.",
+  "user_visible_effect": "Sau W10: `docker build -t <new>/<new>:dev .` đóng tag mới, image robomp mở rộng `FROM` đúng tag mới, `brew install` lấy đúng tên asset mới, `nix build` tạo đúng tên lệnh mới, `curl -fsSL https://<domain>/install | sh` tải và cài đúng tên nhị phân mới, và mọi job CI upload artifact đúng tên mà release thật đăng. Người dùng KHÔNG thấy gì đổi cho tới khi W11/W12/W13 ship — đây là hạ tầng, không phải hành vi sản phẩm.",
+
+  "code_shape": "Không có file TypeScript production mới. W10 là một lượt đổi chuỗi có kiểm soát trên ~20 file hạ tầng, cộng MỘT thay đổi dòng `package.json:91` và MỘT quyết định scope cho `nix/home-manager.nix`. Hình dạng quan trọng nhất không nằm ở code mà ở bảng phân loại 3 nhóm: (i) ĐỔI — tên asset release, tên image Docker, tên package nix, tên nhị phân installer; (ii) GIỮ — `omp-kata` (12 dòng `runs-on:` + 12 dòng comment/action), `https://omp.sh/` (domain chưa chắc resolve), `programs.omp` (option home-manager là config người dùng); (iii) BỎ QUA — 12 false-positive tiếng Anh trong `ci.yml` (`cross-compiles`, `--compile`, `compliance`, `compressing`, `computes`…) mà một `sed` không phân biệt sẽ phá hỏng.",
+
+  "depends_on": ["W2", "W7", "W9", "W13'"],
+  "blocks": ["W11", "W12", "W13"],
+  "effort": "M",
+
+  "test_contract": "KHÔNG có test mới. Hợp đồng được bảo vệ bởi 4 bộ test release có sẵn + 1 bộ bị bỏ sót phải đưa vào gate. Cụ thể: (1) `scripts/ci-update-brew-formula.test.ts` (3 pass) là tấm chắn DUY NHẤT cho §3.1 — fixture của nó là chính bản đồ asset và nó assert sha từng asset cạnh url; nó KHÔNG nằm trong `test:scripts` nên phải thêm vào. (2) `scripts/ci-release-build-binaries.test.ts` (4 pass) bảo vệ producer 8 dòng `outfile`. (3) `scripts/ci-release-publish.test.ts` (11 pass) + `scripts/release.test.ts` (17 pass) bảo vệ bản đồ bin. (4) `scripts/musl-release.test.ts` (2 pass). Điều kiện đỏ được: đổi tên asset ở producer mà không đổi consumer (hoặc ngược lại) làm bản đồ lệch và bộ brew/binary đỏ. KHÔNG viết test mới vì mọi thứ W10 đổi đều là chuỗi hạ tầng đã được một bộ test đọc; test mới ở đây chỉ là bản sao của AGENTS.md cấm.",
+
+  "test_files": [
+    "scripts/ci-update-brew-formula.test.ts",
+    "scripts/ci-release-build-binaries.test.ts",
+    "scripts/ci-release-publish.test.ts",
+    "scripts/release.test.ts",
+    "scripts/musl-release.test.ts"
+  ],
+
+  "gate": "bun run check:ts && bun test scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/ci-release-publish.test.ts scripts/release.test.ts scripts/ci-update-brew-formula.test.ts && git diff --quiet -- packages/natives/package.json",
+  "gate_can_fail": true,
+  "gate_notes": "CỐ Ý KHÔNG dùng `bun run test:scripts`. Đã chạy thật: `bun run test:scripts` cho `34 pass / 1 fail / 1 error` vì `scripts/ci-test-ts.test.ts` nạp native addon (`Failed to load pi_natives native addon for darwin-arm64`). Lỗi đó là MÔI TRƯỜNG, không phải hồi quy — nhưng một cổng báo `1 fail` không phân biệt được 'xong' với 'máy thiếu addon'. Cổng ở trên liệt kê tường minh 5 file, tất cả đều là test chuỗi thuần và chạy được: đo thật là 4+2+11+17+3 = 37 pass / 0 fail. Bất kỳ mâu thuẫn tên nào trong logic release/brew làm đỏ. `git diff --quiet -- packages/natives/package.json` là chốt chặn vì `run-ci.sh` có `trap restore_workspace` ghi lại file này — chạy ma trận cài đặt xong phải sạch.",
+
+  "risk": "Cao nhất là `Dockerfile.robomp` — `ARG PI_BASE=oh-my-pi/pi:dev` tại dòng 19 là giá trị mà `FROM ${PI_BASE}` dòng 41 mở rộng; đổi tag ở `Dockerfile` mà bỏ sót file này thì job build image robomp trỏ tới tag không tồn tại, và job đó chạy ít nhất nên sẽ bị bỏ sót lâu nhất. Thứ hai là `nix/home-manager.nix` `programs.omp`: đây là tên option home-manager mà người dùng viết trong config của họ, không phải trạng thái máy — đổi nó phá mọi config home-manager hiện hữu, cùng loại với `.omp` cấp project (N14). Thứ ba là `scripts/install.sh` / `install.ps1`: đây là đường cài primary (`curl -fsSL https://omp.sh/install | sh`, README:40) và nó ghép TÊN ASSET với TÊN NHỊ PHÂN — `:241 BINARY=\"omp-${PLATFORM}-${ARCH}\"` rồi `:266` dựng URL từ đó, nên đổi một vế mà bỏ vế kia là 404. Thứ tư, thứ lặng im nhất: tin rằng `bun run test:scripts` phủ nhánh homebrew — nó không phủ, trước khi `ci-update-brew-formula.test.ts` được thêm vào.",
+
+  "verification": "Mọi số dưới đây đã chạy thật trên HEAD 1454dc0 (branch milestone-1) vào 2026-09-28. `bun run test:scripts` → 34 pass/1 fail/1 error (lỗi addon, không phải hồi quy). `bun test scripts/ci-update-brew-formula.test.ts` → 3 pass/0 fail/15 expect. Bốn file release còn lại chạy riêng: 4/2/11/17 pass, 0 fail. `bun run check:ts` là cổng kiểu duy nhất còn chạy được (exit 0 ~29s trên máy rảnh). `bun test` bị chặn toàn cục bởi native addon; lệnh gỡ chặn `bun --cwd=packages/natives run build` THẤT BẠI trên máy này vì thiếu Ninja — phải `brew install ninja` trước, rồi `cmake` build của opusic-sys mới chạy.",
+
+  "files_touched": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "action": "modify",
+      "verified": true,
+      "change": "Đổi tên brand token sang tên mới TRỪ `omp-kata` (giữ nguyên) và TRỪ 12 false-positive tiếng Anh. Payload thật nằm ở: `binary_path: packages/coding-agent/binaries/omp-*` (776,785,793,802,810,821,909,922 — 8 dòng), tên upload `omp-binary-${{ matrix.target_id }}` (873,994) + `omp-binary-win32-arm64` (1019), glob `packages/coding-agent/binaries/omp-*` (1175,1185), tải về `omp-darwin-arm64` (1206,1207,1210,1211,1213), shim `/usr/local/bin/omp` (864), `omp-smoke` (1024), `Formula/omp.rb` (1321,1329), `omp-browser-relay-extension.zip` (1176,1186), 2 lượt `oh-my-pi`. GIỮ `branches: [main, omp2]` (:34) và `omp-kata`.",
+      "note": "KẾT QUẢ THẬT: 65 lượt `omp` / 62 dòng (lệnh của plan trả đúng 65/62, KHÔNG phải 53/50). Trong đó 12 lượt trên 11 dòng là false-positive tiếng Anh. → brand thật = 53 lượt / 51 dòng. Con số 53 của plan ĐÚNG nhưng lệnh nó ghi thì sai — nếu kỹ sư chạy đúng lệnh plan ghi sẽ tưởng có 12 hit lạ. Regex ghim ở §2.1 vô dụng ở đây: lớp loại trừ sau `omp` có `-`, nên `omp-kata`/`omp-darwin-*` không khớp, chỉ ra 3 hit (867,868,1329)."
+    },
+    {
+      "path": ".github/actionlint.yaml",
+      "action": "modify",
+      "verified": true,
+      "change": "GIỮ `omp-kata` trong allowlist nhãn runner (dòng 6). Xác nhận dòng này còn nguyên sau W10.",
+      "note": "PLAN BỎ SÓT HOÀN TOÀN. Đổi `omp-kata` trong ci.yml mà quên actionlint sẽ làm actionlint đỏ với lỗi kiểu nhãn lạ — đây là cách duy nhất repo BẮT ĐƯỢC vụ đổi nhãn runner, mà §3.2 nói 'không test nào bắt được'."
+    },
+    {
+      "path": ".github/actions/bun-install/action.yml",
+      "action": "modify",
+      "verified": true,
+      "change": "GIỮ `omp-kata` ở 6 chỗ (dòng 5,6,16,54,95,104) — toàn bộ là comment prose về runner image.",
+      "note": "PLAN BỎ SÓT. 6 hit là nhiều nhất trong `.github/actions/`."
+    },
+    {
+      "path": ".github/actions/bazel-cache/action.yml",
+      "action": "modify",
+      "verified": true,
+      "change": "GIỮ `omp-kata` (dòng 7) — comment prose.",
+      "note": "PLAN BỎ SÓT."
+    },
+    {
+      "path": ".github/actions/bazel-natives/action.yml",
+      "action": "modify",
+      "verified": true,
+      "change": "GIỮ `omp-kata` (dòng 5) — comment prose.",
+      "note": "PLAN BỎ SÓT."
+    },
+    {
+      "path": ".github/actions/native-artifacts/action.yml",
+      "action": "modify",
+      "verified": true,
+      "change": "GIỮ `omp-kata` (dòng 6) — comment prose.",
+      "note": "PLAN BỎ SÓT."
+    },
+    {
+      "path": ".github/workflows/bazel-cache-warm.yml",
+      "action": "modify",
+      "verified": true,
+      "change": "GIỮ `omp-kata` (dòng 97) — comment prose.",
+      "note": "PLAN BỎ SÓT. Plan chỉ nói nhãn nằm '1 file, chỉ ci.yml' — sai: nhãn xuất hiện ở 7 file trong `.github/`."
+    },
+    {
+      "path": "Dockerfile",
+      "action": "modify",
+      "verified": true,
+      "change": "Đổi 7 dòng chứa `oh-my-pi`: 3,13,14,17,18,21,186. Đổi shim `omp` ở 180 (`> /usr/local/bin/omp`), 181 (`chmod +x`), 216 (ENTRYPOINT). Cập nhật stage name `pi-base`/`pi-runtime` và tag `oh-my-pi/pi-base:dev` (dòng 14) nếu chọn đổi — stage name phải khớp `Dockerfile.robomp`.",
+      "note": "ANCHOR SAI trong plan: `Dockerfile:178` được liệt kê như hit `oh-my-pi` nhưng dòng 178 thật là `'fi' \\` — không phải hit. Plan đồng thời BỎ SÓT dòng 3 (header `# oh-my-pi — pi image`) và dòng 186 (`docker run oh-my-pi/pi:dev --help`). Số thật của lệnh plan: 11 dòng / 3 file."
+    },
+    {
+      "path": "Dockerfile.robomp",
+      "action": "modify",
+      "verified": true,
+      "change": "Đổi 3 dòng `oh-my-pi`: 5,12,19. DÒNG 19 LÀ `ARG PI_BASE=oh-my-pi/pi:dev` — giá trị thật mà `FROM ${PI_BASE}` (dòng 41) mở rộng. Đổi stage `pi-base` ở 5,39,41 cho khớp `Dockerfile`.",
+      "note": "XÁC NHẬN ĐÚNG đây là file mang tính quyết định như plan nói. Anchor chính xác."
+    },
+    {
+      "path": "Dockerfile.dockerignore",
+      "action": "modify",
+      "verified": true,
+      "change": "Dòng 1 (`oh-my-pi/pi:dev` trong comment). KHÔNG đụng dòng 27 (`.omp/plugins/`) — path literal, thuộc W4/W6.",
+      "note": "Anchor `:1` của plan ĐÚNG."
+    },
+    {
+      "path": ".dockerignore",
+      "action": "modify",
+      "verified": true,
+      "change": "Không có `oh-my-pi`; chỉ có `.omp/plugins/` (dòng 32) và `python/omp-rpc` — GIỮ nguyên, chỉ xác nhận không bị `sed` quét.",
+      "note": "PLAN BỎ SÓT. Đây là file dockerignore thứ BA (ngoài Dockerfile.dockerignore và Dockerfile.robomp.dockerignore); plan chỉ liệt kê 4 file Docker và không nói file này tồn tại."
+    },
+    {
+      "path": "Dockerfile.robomp.dockerignore",
+      "action": "modify",
+      "verified": true,
+      "change": "Không có `oh-my-pi`; giữ `.omp/plugins/` (dòng 32) và các path `python/robomp`. Chỉ xác nhận.",
+      "note": "PLAN BỎ SÓT."
+    },
+    {
+      "path": "scripts/ci-update-brew-formula.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "Sửa 9 dòng plan đã nêu đúng: 76,78,81,83,89,91,94,96 (URL+sha) và 120 (`const targets`). THÊM `HOMEPAGE` dòng 15 — quyết định xem dưới. Sửa 101-104,109 (`bin.install Dir[\"omp-*\"]`, `(bin/\"omp\")`) và 9,10 (usage).",
+      "note": "SỐ SAI: plan ghi 18 lượt `omp`, thật là 28. Danh sách DÒNG plan đưa (76,78,81,83,89,91,94,96,120) là ĐÚNG — đã đối chiếu từng dòng. PHẠM VI THIẾU: `HOMEPAGE = \"https://omp.sh\"` tại dòng 15 là domain SỐNG được nhúng vào Formula; N9 chỉ phủ `APP_URL`/`USER_AGENT` ở `dirs.ts:24,36`, KHÔNG phủ chỗ này."
+    },
+    {
+      "path": "scripts/ci-update-brew-formula.test.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "Cập nhật fixture bản đồ asset sang tên mới, GIỮ cấu trúc assertion (sha cạnh url, từng asset một). Không được xoá assertion nào — đây là tấm chắn duy nhất cho §3.1.",
+      "note": "XÁC NHẬN FILE TỒN TẠI (2.0 KB), chạy được: 3 pass / 0 fail / 15 expect. Xác nhận plan ĐÚNG khi nói `test:scripts` không gọi nó."
+    },
+    {
+      "path": "package.json",
+      "action": "modify",
+      "verified": true,
+      "change": "Dòng 91: thêm `scripts/ci-update-brew-formula.test.ts` vào script `test:scripts` (chèn trước `scripts/release.test.ts`, giữ đúng một space phân tách như 5 file hiện có).",
+      "note": "Anchor `:91` CỦA PLAN ĐÚNG. Thay đổi thực tế là 2 token (tên file + space), không phải 5 như plan mô tả. Lý do bắt buộc: không thêm thì nhánh homebrew không có tấm chắn tự động nào."
+    },
+    {
+      "path": "scripts/ci-release-build-binaries.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "8 dòng `outfile` tại 37,44,51,58,65,72,79,86 (producer của §3.1). PHẢI cùng commit với consumer `update-cli.ts:1206,1208`.",
+      "note": "ANCHOR PLAN ĐÚNG 100% — đã đối chiếu cả 8 dòng. Chú ý thứ tự thật là arm64,x64 rồi linux-**x64**(:51) trước linux-**arm64**(:58) — không phải thứ tự người đọc dễ đoán."
+    },
+    {
+      "path": "packages/coding-agent/src/cli/update-cli.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "KHÔNG SỬA FILE NÀY Ở W10 — dòng 1206/1208 đã đọc `APP_NAME` nên tự đổi theo sau W1/W3. Chỉ dùng làm nửa consumer để đối chiếu.",
+      "note": "Xác nhận consumer ĐÚNG: `:1206` trả `${APP_NAME}-${os}-${archName}.exe`, `:1208` trả `${APP_NAME}-${os}-${archName}`."
+    },
+    {
+      "path": "scripts/install.sh",
+      "action": "modify",
+      "verified": true,
+      "change": "13 lượt `omp` / 11 dòng. DÒNG 241 `BINARY=\"omp-${PLATFORM}-${ARCH}\"` và dòng 266 dựng URL từ nó; 268-269 ghi `${INSTALL_DIR}/omp`; 276-293 verify; 214-215,297-298 thông báo. Đổi TÊN ASSET và TÊN NHỊ PHÂN cùng một lúc.",
+      "note": "PLAN BỎ SÓT HOÀN TOÀN. Đây là đường cài primary — `README.md:40` là `curl -fsSL https://omp.sh/install | sh`. Script này ghép tên asset với tên nhị phân, nên tách hai vế = 404 cho người dùng."
+    },
+    {
+      "path": "scripts/install.ps1",
+      "action": "modify",
+      "verified": true,
+      "change": "10 lượt / 10 dòng. Dòng 49 `$BinaryName = \"omp-windows-$NativeArchitecture.exe\"`, 308 `$OutPath = Join-Path $InstallDir \"omp.exe\"`, 225 tmp `omp-install-*`, 149 settingsDir `.omp\\agent` (PATH — GIỮ, thuộc W4/W6), 29 `$env:LOCALAPPDATA\\omp` (PATH — GIỮ).",
+      "note": "PLAN BỎ SÓT HOÀN TOÀN. `README.md:85` là `irm https://omp.sh/install.ps1 | iex`. Ba giá trị path (29,149,225) phải giữ vì N14."
+    },
+    {
+      "path": "scripts/install-tests/run-ci.sh",
+      "action": "modify",
+      "verified": true,
+      "change": "37 lượt `omp`. Ba nhóm: tên nhị phân (94 `dist/omp`, 103,235 `node_modules/.bin/omp`, 26-36 `$omp_bin`); TÊN TARBALL THEO SCOPE (164 `oh-my-pi-omptype-*.tgz`, 170 `oh-my-pi-snapcompact-*.tgz`, 173 `oh-my-pi-omp-stats-*.tgz`) và scoped deps (190,196,199,221,222 `@oh-my-pi/omptype`…); probe (223,227,228).",
+      "note": "CHỒNG LẤN BA CHIỀU mà plan không nói: file này thuộc W7 (scope) + W9 (tên binary) + W10 (ma trận cài). Plan gán nó RIÊNG cho W10. Phải thống nhất trước khi code, nếu không sẽ có hai commit cùng sửa một file. Có `trap restore_workspace` (dòng 10-19) ghi lại `packages/natives/package.json` — đây là lý do gate có `git diff --quiet`."
+    },
+    {
+      "path": "scripts/install-tests/binary.dockerfile",
+      "action": "modify",
+      "verified": true,
+      "change": "4 lượt `omp` — tên nhị phân trong image test. Sửa cùng W9.",
+      "note": "Xác nhận 4 lượt."
+    },
+    {
+      "path": "scripts/install-tests/source.dockerfile",
+      "action": "modify",
+      "verified": true,
+      "change": "1 lượt — tên nhị phân trong bản cài source-link.",
+      "note": "Xác nhận 1 lượt."
+    },
+    {
+      "path": "scripts/install-tests/tarball.dockerfile",
+      "action": "modify",
+      "verified": true,
+      "change": "1 lượt — tên nhị phân trong bản cài tarball.",
+      "note": "Xác nhận 1 lượt."
+    },
+    {
+      "path": "scripts/install-tests/settings-session.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "9 lượt `omp` — kiểm tra session/settings sau khi cài. Sửa phần tên lệnh, GIỮ phần path `.omp`.",
+      "note": "Xác nhận 9 lượt. Đây là bản cài source-link + tarball mà W10 nói là 'đường duy nhất' chạy cả hai."
+    },
+    {
+      "path": "scripts/install-tests/run-podman.sh",
+      "action": "modify",
+      "verified": true,
+      "change": "3 lượt `omp`.",
+      "note": "Xác nhận 3 lượt."
+    },
+    {
+      "path": "flake.nix",
+      "action": "modify",
+      "verified": true,
+      "change": "Đổi tên package/app attr `omp` (103,106,107,114,117,188,195), đường dẫn `bin/omp` (114), tên module `homeManagerModules.omp` / `nixosModules.omp` (199,201), tên assertion `omp-module-evaluation`/`omp-bun-lock` (174,177). GIỮ `programs.omp.*` (151,152,166) — xem open_questions.",
+      "note": "ANCHOR `flake.nix` của plan ĐÚNG nhưng KHÔNG ĐỦ — plan chỉ liệt kê file này, bỏ qua cả thư mục `nix/`."
+    },
+    {
+      "path": "nix/package.nix",
+      "action": "modify",
+      "verified": true,
+      "change": "`pname = \"omp\"` (115), `install -Dm755 packages/coding-agent/dist/omp \"$out/bin/omp\"` (208), `$out/share/doc/omp/` (209,210), `remove-references-to ... \"$out/bin/omp\"` (227), `pname = \"omp-bun-runtime-template\"` (98), `$out/bin/.omp-wrapped` (245), chuỗi log \"Compiling OMP\" (198).",
+      "note": "PLAN BỎ SÓT HOÀN TOÀN. `pname` là danh tính package trong Nix — đổi nó đổi tên store path và attribute, phải khớp với `flake.nix`."
+    },
+    {
+      "path": "nix/home-manager.nix",
+      "action": "modify",
+      "verified": true,
+      "change": "QUYẾT ĐỊNH, xem open_questions. Ba nhóm: (a) `options.programs.omp` (14) + `config.programs.omp` (9) + `home.activation.ompConfig` (53) — tên option home-manager, là CONFIG NGƯỜI DÙNG; (b) `run mkdir -p \"$HOME/.omp/agent\"` (57) + `run install -m 600 ... \"$HOME/.omp/agent/config.yml\"` (58) — PATH literal, thuộc W4/W6; (c) `defaultText` (20) và comment (28).",
+      "note": "PLAN BỎ SÓT, và đây là khoảng trống NẶNG NHẤT của W10. `programs.omp` là tên option mà người dùng viết trong `home.nix` của họ — đổi nó phá mọi config home-manager hiện hữu, đúng loại vi phạm mà §1.1 cấm. Khuyến nghị: GIỰ (b), thêm vào do_not_rename như N14."
+    },
+    {
+      "path": "nix/nixos-module.nix",
+      "action": "modify",
+      "verified": true,
+      "change": "Xác nhận không có hit `omp` trực tiếp; nó re-export từ `nix/package.nix`.",
+      "note": "PLAN BỎ SÓT nhưng không có payload trực tiếp."
+    },
+    {
+      "path": "nix/dev-shell.nix",
+      "action": "modify",
+      "verified": true,
+      "change": "Xác nhận không có hit `omp` trực tiếp.",
+      "note": "PLAN BỎ SÓT nhưng không có payload trực tiếp."
+    },
+    {
+      "path": "scripts/ci-macos-sign.sh",
+      "action": "modify",
+      "verified": true,
+      "change": "1 lượt: dòng 62 `KEYCHAIN=\"$WORKDIR/omp-signing.keychain-db\"` — tên file keychain tạm, thuần cosmetic, có thể đổi hoặc giữ. KHÔNG có tên nhị phân hardcode.",
+      "note": "ĐÍNH CHÍNH plan: rủi ro 'ký dưới tên file cũ sẽ không notarize' là thật, nhưng KHÔNG phát sinh từ file này. Script nhận `<path-to-binary>` làm tham số (dòng 26) và ký bất kỳ thứ gì được đưa vào. Rủi ro thật là TÊN FILE được nộp lên Apple — nó đến từ `ci.yml:1206-1213`, không phải từ đây."
+    },
+    {
+      "path": "scripts/ci-release-publish.ts",
+      "action": "modify",
+      "verified": true,
+      "change": "KHÔNG SỬA Ở W10 — dòng 165 `publishBin` thuộc W9. Chỉ xác nhận nó tồn tại để ma trận cài biết tên lệnh.",
+      "note": "Plan liệt kê file này trong phạm vi W10 nhưng cũng nói nó thuộc W9. Xác nhận W9 sở hữu."
+    },
+    {
+      "path": "scripts/rename/keep-list.txt",
+      "action": "create",
+      "verified": true,
+      "change": "W10 đóng góp 4 mục: `omp-kata` (N12, lý do 'đăng ký ngoài repo'), `https://omp.sh` (domain, lý do 'chưa chắc domain mới resolve'), `programs.omp` (option home-manager, lý do 'config người dùng viết tay'), `install.sh`/`install.ps1` tên nhị phân (nếu giữ bí danh).",
+      "note": "THƯ MỤC CHƯA TỒN TẠI: `ls scripts/rename/` → No such file or directory. Đây là tiền đề của W7, không phải W10, nhưng W10 không thể chạy nếu nó chưa có — vì không có gì để loại trừ."
+    }
+  ],
+
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "DỪNG. Trước khi sửa dòng nào: xác nhận `scripts/rename/keep-list.txt` tồn tại trên main, đã được một người duyệt KHÁC người viết. Nếu chưa có, W10 không thể bắt đầu — không phải vì khó, mà vì không có danh sách loại trừ để `sed` nạp. Kiểm tra: `ls scripts/rename/keep-list.txt`.",
+      "anchor": "scripts/rename/keep-list.txt (chưa tồn tại)"
+    },
+    {
+      "n": 2,
+      "instruction": "Thêm `scripts/ci-update-brew-formula.test.ts` vào script `test:scripts` ở dòng 91, chèn trước `scripts/release.test.ts`. Đây là tiền đề: phải có tấm chắn homebrew TRƯỚC khi đổi tên, không phải sau. Chạy `bun test scripts/ci-update-brew-formula.test.ts` xanh TRƯỚC khi đổi bất kỳ tên nào — bằng chứng nền.",
+      "anchor": "package.json:91"
+    },
+    {
+      "n": 3,
+      "instruction": "Chụp baseline asset hiện tại, để sau này đối chiếu: `git grep -n 'outfile: \"packages/coding-agent/binaries/' scripts/ci-release-build-binaries.ts > /tmp/w10-assets-before.txt`. Ghi lại nội dung này vào PR.",
+      "anchor": "scripts/ci-release-build-binaries.ts:37,44,51,58,65,72,79,86"
+    },
+    {
+      "n": 4,
+      "instruction": "ĐỔI TÊN ASSET — cả hai vế TRONG CÙNG MỘT COMMIT. Producer: 8 dòng `outfile` ở ci-release-build-binaries.ts. Consumer: KHÔNG sửa (update-cli.ts đã đọc `APP_NAME`). Sửa `scripts/ci-update-brew-formula.ts` 9 dòng 76,78,81,83,89,91,94,96,120 VÀ fixture trong ci-update-brew-formula.test.ts. Đây là bước DỄ SAI NHẤT về thứ tự: thiếu một vế = updater 404.",
+      "anchor": "scripts/ci-release-build-binaries.ts:37-86; scripts/ci-update-brew-formula.ts:76,78,81,83,89,91,94,96,120"
+    },
+    {
+      "n": 5,
+      "instruction": "ĐỔI DOCKER — sửa `Dockerfile` và `Dockerfile.robomp` CÙNG LÚC, không phải tuần tự. `Dockerfile`: 3,13,14,17,18,21,186 (oh-my-pi) + 180,181,216 (shim omp). `Dockerfile.robomp`: 5,12,19 + stage name 39,41. Bắt buộc: `ARG PI_BASE` ở Dockerfile.robomp:19 phải trỏ tới tag MÀ `Dockerfile` thực sự build ra. Kiểm tra bằng `grep -n 'ARG PI_BASE\\|FROM ${PI_BASE}\\|^FROM ' Dockerfile Dockerfile.robomp` và đối chiếu tay từng cặp.",
+      "anchor": "Dockerfile.robomp:19 (ARG PI_BASE) + Dockerfile.robomp:41 (FROM ${PI_BASE})"
+    },
+    {
+      "n": 6,
+      "instruction": "GIỮ NHIỀU HƠN MỘT: xác nhận `.omp/plugins/` trong 3 file dockerignore (`.dockerignore:32`, `Dockerfile.dockerignore:27`, `Dockerfile.robomp.dockerignore:32`) và `~/.omp/agent` trong `nix/home-manager.nix:57,58` vẫn nguyên vẹn. Chúng là PATH, thuộc W4/W6, không thuộc W10. Chạy `git grep -n '\\.omp' -- .dockerignore Dockerfile.dockerignore Dockerfile.robomp.dockerignore nix/home-manager.nix` và xác nhận khớp baseline.",
+      "anchor": ".dockerignore:32; Dockerfile.dockerignore:27; Dockerfile.robomp.dockerignore:32; nix/home-manager.nix:57,58"
+    },
+    {
+      "n": 7,
+      "instruction": "ĐỔI NIX — `nix/package.nix` (pname 115, install 208-210, remove-references 227, pname 98, .omp-wrapped 245, log 198) và `flake.nix` (103,106,107,114,117,174,177,188,195,199,201) phải khớp nhau: `pname` trong package.nix là thuộc tính mà `flake.nix` expose. QUYẾT ĐỊNH riêng cho `nix/home-manager.nix:9,14,53` (`programs.omp`) — xem open_questions; khuyến nghị GIỮ và thêm vào keep-list.",
+      "anchor": "nix/package.nix:115; flake.nix:103; nix/home-manager.nix:14"
+    },
+    {
+      "n": 8,
+      "instruction": "ĐỔI INSTALLER — `scripts/install.sh` và `scripts/install.ps1`. Bắt buộc sửa TÊN ASSET và TÊN NHỊ PHÂN cùng lúc trong install.sh: dòng 241 sinh tên asset, 266 dựng URL, 268-269 ghi file. GIỮ path `.omp\\agent` (install.ps1:149), `$env:LOCALAPPDATA\\omp` (install.ps1:29), `omp-install-*` (install.ps1:225) vì N14. Đây là đường cài primary (README.md:40,85) — plan không nhắc tới nó.",
+      "anchor": "scripts/install.sh:241,266,268-269; scripts/install.ps1:49,308"
+    },
+    {
+      "n": 9,
+      "instruction": "THỐNG NHẤT CHỒNG LẤN TRƯỚC KHI CODE: `scripts/install-tests/run-ci.sh` thuộc W7 (tên tarball theo scope: 164,170,173,190,196,199,221,222) + W9 (tên binary: 94,103,235) + W10 (ma trận cài). Ba work item cùng sửa một file. Phải chọn một chủ sở hữu và ghi quyết định vào PR, nếu không sẽ có conflict và mất thay đổi.",
+      "anchor": "scripts/install-tests/run-ci.sh:94,164,170,173,190,196,199,221,222,235"
+    },
+    {
+      "n": 10,
+      "instruction": "ĐỔI CI — `.github/workflows/ci.yml`. Dùng BẢNG QUYẾT ĐỊNH, không dùng `sed`. Nhóm ĐỔI: binary_path 776,785,793,802,810,821,909,922; upload name 873,994,1019; glob 1175,1185; download 1206,1207,1210,1211,1213; shim 864; omp-smoke 1024; Formula/omp.rb 1321,1329; browser-relay zip 1176,1186; oh-my-pi x2. Nhóm GIỮ: `omp-kata` (12 dòng runs-on: 159,229,285,513,567,598,621,639,657,675,695,711 + 4 comment 85,108,186,573), `branches: [main, omp2]` 34 và comment 578, 12 false-positive tiếng Anh (163,166,200,296,814,849,891,892,948,1006,1106).",
+      "anchor": ".github/workflows/ci.yml:776,785,793,802,810,821,909,922,873,994,1019,1175,1185,1206,1207,1210,1211,1213,864,1024,1321,1329"
+    },
+    {
+      "n": 11,
+      "instruction": "XÁC NHẬN NHIỀU HƠN MỘT Ở `.github/`: chạy `grep -rn 'omp-kata' .github/` và xác nhận vẫn còn NHIỀU HƠN 12 dòng — 7 file, không chỉ ci.yml. Cụ thể phải giữ: actionlint.yaml:2,6 (allowlist nhãn — đổi ci.yml mà quên đây thì actionlint đỏ), bun-install/action.yml:5,6,16,54,95,104, bazel-cache/action.yml:7, bazel-natives/action.yml:5, native-artifacts/action.yml:6, workflows/bazel-cache-warm.yml:97.",
+      "anchor": ".github/actionlint.yaml:6; .github/actions/bun-install/action.yml:5,6,16,54,95,104"
+    },
+    {
+      "n": 12,
+      "instruction": "ĐỐI CHIẾU ASSET HAI VẾ (thay cho lệnh §3.1 của plan, vì lệnh đó không bao giờ xanh — xem plan_corrections). Chạy: `git grep -o 'outfile: \"packages/coding-agent/binaries/[^\"]*\"' scripts/ci-release-build-binaries.ts | sed 's|.*/||; s|\"||' | sort -u` và `grep -n 'APP_NAME}-' packages/coding-agent/src/cli/update-cli.ts`. Rồi đọc `APP_NAME` từ `packages/utils/src/dirs.ts` và xác nhận TIỀN TỐ của cả 8 tên outfile khớp đúng `${APP_NAME}-`. Đây là kiểm tra GIÁ TRỊ ĐÃ PHÂN GIẢI, không phải so khớp văn bản.",
+      "anchor": "scripts/ci-release-build-binaries.ts:37-86 vs packages/coding-agent/src/cli/update-cli.ts:1206,1208"
+    },
+    {
+      "n": 13,
+      "instruction": "CẬP NHẬT keep-list với 4 mục W10 và chạy `git grep -c -f scripts/rename/keep-list.txt` xác nhận chỉ trả về các mục đã liệt kê. Sau đó chạy cổng.",
+      "anchor": "scripts/rename/keep-list.txt"
+    },
+    {
+      "n": 14,
+      "instruction": "Chạy cổng: `bun run check:ts && bun test scripts/ci-release-build-binaries.test.ts scripts/musl-release.test.ts scripts/ci-release-publish.test.ts scripts/release.test.ts scripts/ci-update-brew-formula.test.ts && git diff --quiet -- packages/natives/package.json`. Kỳ vọng 37 pass / 0 fail. KHÔNG dùng `bun run test:scripts` (xem gate_notes). Sau đó mới chạy `bash scripts/install-tests/run-ci.sh` nếu máy có docker/podman.",
+      "anchor": "package.json:91"
+    },
+    {
+      "n": 15,
+      "instruction": "MA TRẬN CÀI ĐẶT — chạy `bash scripts/install-tests/run-ci.sh`. Đây là đường DUY NHẤT chạy cả bản cài source-link lẫn tarball dưới tên mới. Sau khi chạy xong, bắt buộc `git diff --quiet -- packages/natives/package.json` (script có trap khôi phục nhưng đừng tin nó). Nếu máy không có docker hoặc podman, ghi rõ vào PR là CHƯA chạy — đừng tính là pass.",
+      "anchor": "scripts/install-tests/run-ci.sh"
+    }
+  ],
+
+  "open_questions": [
+    "`nix/home-manager.nix:14` đặt `options.programs.omp` — đây là tên option home-manager mà người dùng viết trong `home.nix` của họ. Đổi nó phá mọi config home-manager hiện hữu, cùng loại với `.omp` cấp project (N14) mà W6a đã quyết định giữ. KHUYẾN NGHỊ: giữ `programs.omp` nguyên vẹn, thêm vào `do_not_rename` với lý do 'tên option là config người dùng viết tay, không phải trạng thái máy'. CẦN QUYẾT ĐỊNH TRƯỚC khi sửa `nix/`. Nếu tổ chức muốn đổi, cần alias option mới → option cũ trước.",
+    "`scripts/ci-update-brew-formula.ts:15` `HOMEPAGE = \"https://omp.sh\"` — domain thứ BA đóng attribution (hai cái kia là `APP_URL` ở `dirs.ts:24` và `USER_AGENT` ở `dirs.ts:36`, đã nằm trong N9). Có domain mới thật sự resolve chưa? Nếu chưa, giữ `https://omp.sh` và ghi vào keep-list — Formula trỏ host chết thì `brew install` vẫn chạy nhưng attribution về OpenRouter/Vercel hỏng.",
+    "`README.md:40` (`curl -fsSL https://omp.sh/install | sh`) và `:85` (`irm https://omp.sh/install.ps1 | iex`) phụ thuộc domain. Nếu domain đổi, các lệnh cài này trong README và trên trang chủ phải đổi cùng một lần phát hành. Tài liệu thuộc W13, nhưng W10 sửa `scripts/install.sh` — hai bên phải thống nhất tên.",
+    "`ci.yml:34` `branches: [main, omp2]` và comment `:578`. Đã kiểm tra: KHÔNG có nhánh `omp2` nào trên `origin` (chỉ `main` và `milestone-1`). Đây có thể là filter push chết, hoặc nhánh chỉ tồn tại trên fork gốc. KHÔNG tự ý xoá — hỏi maintainer. Đây là trigger filter, đổi nó ảnh hưởng ai được chạy CI.",
+    "`Cargo.toml:30` `homepage = \"https://omp.sh/\"` và `:31` `repository = \"https://github.com/can1357/oh-my-pi\"` — metadata phân phối crate, trỏ về org cũ. Nằm ngoài danh sách file của plan. Có thuộc W10, hay để W13? Lưu ý `repository` trỏ org khác hẳn (`can1357` vs `ultrabuilders`) — đây có thể là quyết định có chủ ý đã có, đừng đổi bừa.",
+    "W10 có cần một hàng changelog không? AGENTS.md nói changelog chỉ cập nhật khi được yêu cầu, và hướng dẫn M5 nói rõ đừng tự thêm. Đặc tả này KHÔNG đề xuất hàng changelog cho W10 — đây là hạ tầng, người dùng không thấy gì. Nếu release-notes sinh từ commit thì không cần."
+  ],
+
+  "plan_corrections": [
+    {
+      "claim": "W10 §Chi tiết + §2.2 hàng 15: `.github/workflows/ci.yml` có 53 lượt `omp` trên 50 dòng, đo bằng `git grep -o 'omp' -- .github/workflows/ci.yml | wc -l` (→ 53) và `git grep -c 'omp' ...` (→ 50).",
+      "verdict": "sai",
+      "correction": "Con số 53 là ĐÚNG, nhưng lệnh ghi kèm trả về 65/62 — sai. Số thật: 65 lượt trên 62 dòng. Trong đó 12 lượt trên 11 dòng là false-positive tiếng Anh (`cross-compiles`, `--compile`, `cross-compiled`, `cross-compile.`, `Compute`, `compressing`, `compliance`, `completion`, `compiled`, `compares` — dòng 163,166,200,296,814,849,891,892,948,1006,1106). Brand thật = 53 lượt / 51 dòng. Kỹ sư chạy đúng lệnh của plan sẽ thấy 65 và tưởng có 12 hit lạ.",
+      "evidence": "`git grep -o 'omp' -- .github/workflows/ci.yml | wc -l` → 65. `git grep -c 'omp' -- .github/workflows/ci.yml` → `.github/workflows/ci.yml:62`. `grep -oE 'cross-compiles|--compile|cross-compiled|cross-compile\\.|Compute|compressing|compliance|completion|compiled|compares' .github/workflows/ci.yml | wc -l` → 12 trên 11 dòng."
+    },
+    {
+      "claim": "§2.2 hàng 16: Docker = 10 lượt / 4 file; `Dockerfile:13,14,17,18,21,178` (gồm biến thể tag `pi-base`), `Dockerfile.dockerignore:1`, `Dockerfile.robomp:5,12,19`.",
+      "verdict": "sai",
+      "correction": "Số thật của chính lệnh plan: 11 dòng / 3 file. `Dockerfile:178` KHÔNG phải hit — dòng 178 thật là `'fi' \\`. Plan BỎ SÓT `Dockerfile:3` (header `# oh-my-pi — pi image`) và `Dockerfile:186` (`docker run oh-my-pi/pi:dev --help`). Ngoài ra plan không nói tới 2 file dockerignore nữa (`.dockerignore`, `Dockerfile.robomp.dockerignore`) và không nói shim `omp` thật nằm ở `Dockerfile:180,181,216`.",
+      "evidence": "`git grep -n 'oh-my-pi' -- Dockerfile Dockerfile.dockerignore Dockerfile.robomp` cho 11 dòng: Dockerfile:3,13,14,17,18,21,186; Dockerfile.dockerignore:1; Dockerfile.robomp:5,12,19. `sed -n '178p' Dockerfile` → `'fi' \\`. `ls Dockerfile*` → 4 file + `.dockerignore`."
+    },
+    {
+      "claim": "§3.2 + §2.2 hàng 12: nhãn runner `omp-kata` xuất hiện ở 11 dòng `runs-on:` trong ci.yml, tại `:148,237,359,381,398,415,432,451,477,492` (dạng biểu thức) và `:191` (dạng nhãn trần). Toàn bộ repo còn lại chỉ dùng nhãn GitHub-hosted.",
+      "verdict": "sai",
+      "correction": "Số ĐÚNG là 12 dòng `runs-on:.*omp-kata`, tại 159,229,285,513,567,598,621,639,657,675,695,711 (10 biểu thức + 2 nhãn trần tại 229 và 513). Mọi dòng plan liệt kê đều sai. Quan trọng hơn: nhãn KHÔNG chỉ ở ci.yml — nó còn ở 6 file khác trong `.github/` (12 dòng nữa), và `.github/actionlint.yaml:6` liệt kê nó trong allowlist. Plan nói 'không test nào trong repo bắt được' là SAI: actionlint đó chính là thứ bắt được, nếu actionlint chạy trong CI.",
+      "evidence": "`grep -c 'runs-on:.*omp-kata' .github/workflows/ci.yml` → 12, tại các dòng 159,229,285,513,567,598,621,639,657,675,695,711. `grep -rn 'omp-kata' .github/ | grep -v 'workflows/ci.yml'` → actionlint.yaml (2), actions/bun-install/action.yml (6), actions/bazel-cache/action.yml (1), actions/bazel-natives/action.yml (1), actions/native-artifacts/action.yml (1), workflows/bazel-cache-warm.yml (1)."
+    },
+    {
+      "claim": "W10 §Chi tiết: `scripts/ci-update-brew-formula.ts` có 18 lượt.",
+      "verdict": "sai",
+      "correction": "Thật là 28 lượt `omp`. Danh sách DÒNG plan đưa (76,78,81,83,89,91,94,96,120) là ĐÚNG — đã đối chiếu từng dòng. Nhưng plan bỏ sót `HOMEPAGE = \"https://omp.sh\"` ở dòng 15, đây là domain sống được nhúng vào Formula sinh ra, và là nơi thứ BA đóng attribution sau `APP_URL`/`USER_AGENT` (N9 chỉ phủ `dirs.ts:24,36`).",
+      "evidence": "`grep -o 'omp' scripts/ci-update-brew-formula.ts | wc -l` → 28. `git grep -o 'oh-my-pi' -- scripts/ci-update-brew-formula.ts | wc -l` → 1. Dòng 15: `const HOMEPAGE = \"https://omp.sh\";`."
+    },
+    {
+      "claim": "W10 §Test cần viết: `git grep \"ci-update-brew-formula.test\"` trả về KHÔNG kết quả nào trong toàn repo.",
+      "verdict": "sai",
+      "correction": "Lệnh đó KHÔNG rỗng — nó trả về 2 hit, vì chính tài liệu kế hoạch chứa chuỗi đó. Kết luận của plan (file không nằm trong `test:scripts`) vẫn ĐÚNG và đã xác nhận độc lập. Nhưng lệnh bằng chứng thì tự tham chiếu chính nó, nên kỹ sư dùng lại sẽ tưởng plan sai ở chỗ đúng. Lệnh đúng phải loại markdown.",
+      "evidence": "`git grep -n \"ci-update-brew-formula.test\" -- .` → 2 hit, cả hai trong `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:14024,14026`. Lệnh đúng: `git grep -n \"ci-update-brew-formula\" -- ':!*.md'` → 5 hit thật (ci.yml:1321, test.ts:2, ts:9,10,33)."
+    },
+    {
+      "claim": "§3.1 lệnh kiểm tra: `git grep -n 'outfile: \"packages/coding-agent/binaries/' …` + `grep -n 'APP_NAME}-' …` với chú thích 'tiền tố của 8 dòng outfile phải khớp đúng `${APP_NAME}-`'.",
+      "verdict": "sai",
+      "correction": "Cổng này KHÔNG BAO GIỜ XANH. 8 dòng `outfile` là literal hardcode; chúng không thể khớp văn bản với `${APP_NAME}-` — đó là placeholder TypeScript, không xuất hiện trong file đó. Chạy lệnh này sau khi làm đúng mọi thứ vẫn đỏ, hoặc (tệ hơn) kỹ sư sửa lệnh cho 'xanh' bằng cách nới điều kiện, tức là biến nó thành tautology. Phải viết lại thành so sánh GIÁ TRỊ ĐÃ PHÂN GIẢI: đọc `APP_NAME` từ `dirs.ts`, tách tiền tố 8 tên outfile, so trực tiếp.",
+      "evidence": "`grep -n 'outfile:' scripts/ci-release-build-binaries.ts` → 8 literal `omp-*` (dòng 37,44,51,58,65,72,79,86). `grep -n 'APP_NAME}-' packages/coding-agent/src/cli/update-cli.ts` → 1206,1208. Không file nào chứa chuỗi `${APP_NAME}-` ở producer."
+    },
+    {
+      "claim": "W10 §Lệnh: `bun run test:scripts && bash scripts/install-tests/run-ci.sh` là cổng nghiệm thu.",
+      "verdict": "sai",
+      "correction": "Trên máy này cổng đó BỊ CHẶN và báo đỏ vì lý do môi trường, không phải hồi quy: `34 pass / 1 fail / 1 error`, lỗi `Failed to load pi_natives native addon for darwin-arm64`. Nguyên nhân chính xác là `scripts/ci-test-ts.test.ts` (0 pass / 1 fail) — file duy nhất trong 5 file nạp native addon. Bốn file còn lại chạy hoàn hảo. Đây đúng là trường hợp cổng không phân biệt được 'đã làm' với 'test không chạy được': một `1 fail` mơ hồ. Cổng phải liệt kê tường minh 5 file (thêm `ci-update-brew-formula.test.ts`) và bỏ `ci-test-ts.test.ts`.",
+      "evidence": "`bun run test:scripts` → `34 pass / 1 fail / 1 error`, `Ran 35 tests across 5 files`, `error: script \"test:scripts\" exited with code 1`. Chạy từng file: ci-test-ts `0 pass 1 fail`; ci-release-build-binaries `4 pass`; musl-release `2 pass`; ci-release-publish `11 pass`; release `17 pass`; ci-update-brew-formula `3 pass / 15 expect`."
+    },
+    {
+      "claim": "W10 §Chi tiết + §Vị trí: phạm vi nix của W10 là `flake.nix`.",
+      "verdict": "sai",
+      "correction": "Bề mặt nix rộng hơn nhiều. `nix/package.nix` có `pname = \"omp\"` (115) — đây là danh tính package Nix, đổi nó đổi store path và attribute — cùng install (208-210), `remove-references-to` (227), `pname = \"omp-bun-runtime-template\"` (98), `$out/bin/.omp-wrapped` (245). `nix/home-manager.nix` đặt option `programs.omp` (9,14) và `home.activation.ompConfig` (53) — TÊN OPTION MÀ NGƯỜI DÙNG VIẾT TRONG CONFIG CỦA HỌ — đồng thời ghi settings vào `$HOME/.omp/agent/config.yml` (57,58). Đổi `programs.omp` phá mọi config home-manager hiện hữu. Khuyến nghị giữ, thêm vào do_not_rename như N14.",
+      "evidence": "`grep -nE 'omp' nix/package.nix` → 98,115,198,208,209,210,227,230,244,245. `grep -nE 'omp' nix/home-manager.nix` → 9,11,14,20,28,53,57,58. `flake.lock` có 0 hit."
+    },
+    {
+      "claim": "W10 §Chi tiết: phạm vi là ci.yml, 3 file Docker, ci-update-brew-formula.ts, flake.nix, scripts/install-tests/.",
+      "verdict": "sai",
+      "correction": "THIẾU HẲN ĐƯỜNG CÀI PRIMARY. `scripts/install.sh` (13 lượt / 11 dòng) và `scripts/install.ps1` (10 lượt / 10 dòng) tồn tại và là thứ `README.md:40` (`curl -fsSL https://omp.sh/install | sh`) và `:85` (`irm https://omp.sh/install.ps1 | iex`) trỏ tới. install.sh ghép TÊN ASSET với TÊN NHỊ PHÂN: dòng 241 `BINARY=\"omp-${PLATFORM}-${ARCH}\"`, 266 dựng URL từ đó, 268-269 ghi `${INSTALL_DIR}/omp`. Tách hai vế = 404 cho mọi người dùng cài mới.",
+      "evidence": "`ls scripts/install*` → install.sh (9.7 KB), install.ps1 (12 KB). `sed -n '40p;85p' README.md` → `curl -fsSL https://omp.sh/install | sh` / `irm https://omp.sh/install.ps1 | iex`. `grep -c omp scripts/install.sh` → 11 dòng."
+    },
+    {
+      "claim": "W10 §Chi tiết: `scripts/install-tests/*` (`run-ci.sh` và anh em) thuộc phạm vi W10.",
+      "verdict": "sai",
+      "correction": "`run-ci.sh` là điểm CHỒNG LẤN BA CHIỀU mà plan không nói: nó mang TÊN TARBALL THEO SCOPE npm (164 `oh-my-pi-omptype-*.tgz`, 170 `oh-my-pi-snapcompact-*.tgz`, 173 `oh-my-pi-omp-stats-*.tgz`) và scoped deps (190,196,199,221,222) — thuộc W7; TÊN NHỊ PHÂN (94 `dist/omp`, 103, 235 `node_modules/.bin/omp`) — thuộc W9; và ma trận cài — thuộc W10. Ba work item cùng sửa một file mà plan gán riêng cho W10. Ngoài ra run-ci.sh có `trap restore_workspace` (10-19) ghi lại `packages/natives/package.json` — cần một assertion sạch sau khi chạy.",
+      "evidence": "`grep -nE 'omp' scripts/install-tests/run-ci.sh` → 37 lượt, gồm 94,164,170,173,190,196,199,221,222,235. `sed -n '10,19p' scripts/install-tests/run-ci.sh` → `NATIVES_PACKAGE=…; cp …; restore_workspace() { cp …; rm -rf …; }; trap restore_workspace EXIT`."
+    },
+    {
+      "claim": "W10 §Rủi ro: 'bỏ sót bước ký macOS — một binary đã ký dưới tên file cũ sẽ không notarize'.",
+      "verdict": "sai một phần",
+      "correction": "Rủi ro notarize là thật nhưng KHÔNG nằm ở `scripts/ci-macos-sign.sh`. Script nhận `<path-to-binary>` làm tham số (dòng 26) và ký bất kỳ thứ gì được đưa vào — chỉ có 1 lượt `omp` trong toàn file, tên keychain tạm ở dòng 62, thuần cosmetic. Rủi ro thật là TÊN FILE được nộp lên Apple, và nó đến từ `ci.yml:1206-1213` (`curl -o omp-darwin-arm64` rồi codesign/verify/notarize file đó). Nói sai nguồn sẽ khiến kỹ sửa file sai.",
+      "evidence": "`grep -n 'omp' scripts/ci-macos-sign.sh` → chỉ dòng 62 `KEYCHAIN=\"$WORKDIR/omp-signing.keychain-db\"`. Dòng 26: `usage: scripts/ci-macos-sign.sh <path-to-binary>`. `sed -n '1206,1213p' .github/workflows/ci.yml` → curl tải `omp-darwin-arm64` rồi codesign/verify/notarize chính file đó."
+    },
+    {
+      "claim": "§2.3: keep-list sống ở `scripts/rename/keep-list.txt` và là tiền đề của W7.",
+      "verdict": "chưa kiểm chứng — thư mục chưa tồn tại",
+      "correction": "`scripts/rename/` KHÔNG tồn tại trong cây hiện tại. Đây là tiền đề của W7 theo plan, nhưng W10 cũng không thể chạy nếu chưa có: không có keep-list thì không có gì để loại trừ, và bước 1 của đặc tả này là dừng lại chờ nó. Ngoài ra §2.3 nói 'đã kiểm chứng trên HEAD 5873776' trong khi HEAD thật của máy này là `1454dc0` — con số SHA trong plan đã cũ.",
+      "evidence": "`ls -la scripts/rename/` → `No such file or directory`. `git log --oneline -1` → `1454dc0 docs: record the two architecture decisions…`."
+    },
+    {
+      "claim": "Ghi chú đầu bài: work item W10 nằm ở dòng 13919–13939 của plan.",
+      "verdict": "sai",
+      "correction": "Dòng 13919–13939 là W7 và W8a. W10 (bản CI/release/Docker/homebrew/nix) nằm ở dòng 14017–14026. Ngoài ra plan dùng lại ID `W10` BA LẦN: (1) dòng 14017 — CI/release/Docker/homebrew/nix, Wave 4, là mục này; (2) dòng 2451 — hợp đồng telemetry adapter, Wave 4; (3) dòng 14645 — watchdog collab transport. Ba mục khác nhau hoàn toàn. Bất kỳ ticket nào khoá theo chữ `W10` sẽ đụng nhau.",
+      "evidence": "`grep -n '^#### W10' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` → 14017. `grep -n '^## W10' …` → 2451. `grep -n '^### W10' …` → 14645. `sed -n '13919p;13930p' …` → W7 và W8a."
+    }
+  ]
+}

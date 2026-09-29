@@ -1,0 +1,229 @@
+{
+  "id": "WI-8a",
+  "title": "Route plugin settings through Settings as a namespaced overlay (Option A)",
+  "wave": "7 of 8 (M2) — alongside WI-8b and WI-9; depends on nothing, deliberately held here per §5.1 C",
+  "one_line": "Plugin settings stop living in two side-channel JSON files and start living inside the existing Settings layers under a reserved `plugins.<id>.<key>` namespace, so a plugin setting gets the same six-layer tiering (runtime → overlay → project → global → parent → default, plus env) that core settings already get, and `provenance()` can name which layer won.",
+  "user_visible_effect": "Plugin settings become editable in the normal settings panel with a visible source layer, and can be overridden by an environment variable the plugin declares. Nothing changes for a user who never touches a plugin setting: existing values are migrated silently, in place, with no prompt and no re-auth.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m2-specs/WI-8a.spec.json",
+  "one_line_why_this_is_the_whole_job": "Option A changes the SUBSTRATE, not the API. `getPluginSettings` / `setPluginSetting` / `deletePluginSetting` keep their signatures; what changes is which store answers them. Namespacing is the load-bearing half, not the plumbing half, because `register()` throws on a duplicate id — an unnamespaced plugin key that collides with a core id breaks at plugin LOAD time rather than degrading.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/extensibility/settings.ts",
+      "action": "modify",
+      "change": "Add the namespace primitives: `pluginSettingId(pluginId, key)`, `sanitizePluginSegment(raw)`, and an idempotent `registerPluginSetting(definition)` that looks the id up before calling `register()`. This is where a plugin's `manifest.settings` schema becomes typed handles.",
+      "anchor": "packages/coding-agent/src/extensibility/settings.ts:5 (the `import { combine, register, ... } from \"../config/registry\"` line) and :10 (first `register({ id: \"extensions\", ... })`)",
+      "verified": true,
+      "note": "This domain module is ALREADY in the `DOMAINS` array at `config/all-settings.ts:64` (imported at `:27`), so anything registered here is live the moment `config/settings.ts:53` does its side-effect `import \"./all-settings\"`. No `all-settings.ts` edit is needed — which also means this file does NOT touch blocker 1 of WI-8b, so 8b stays unblocked."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/plugins/manager.ts",
+      "action": "modify",
+      "change": "Rewrite `getPluginSettings` (929), `setPluginSetting` (942) and `deletePluginSetting` (954) to read/write through registered `plugins.*` handles on the Settings instance, and add a one-time idempotent migration that folds BOTH legacy files into the new shape.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:929, 942, 954 (the three public methods); migration reads `manager.ts:148` (`#saveRuntimeConfig`) and `manager.ts:153` (`#loadProjectOverrides`)",
+      "verified": true,
+      "note": "`#saveRuntimeConfig` (148-151) and `#loadProjectOverrides` (153-162) become legacy-migration-only readers. The plan did NOT mention that they must be retained for the migration even though they are exactly the store being replaced — deleting them is how the data-loss bug the plan warns about actually happens."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/plugins/loader.ts",
+      "action": "modify",
+      "change": "Make the module-level `getPluginSettings(pluginName, cwd)` (474) delegate to the new substrate instead of re-implementing the merge against the two legacy files.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/loader.ts:474",
+      "verified": true,
+      "note": "THE PLAN NEVER MENTIONS THIS FUNCTION. It is a byte-for-byte second copy of the `{ ...global, ...project }` merge, it is re-exported through the `extensibility/plugins` barrel, and it is the read path an extension calls by name. Migrating only `manager.ts` leaves the extension-facing surface reading the legacy files forever — a second instance of the exact 'two read paths, you migrate one' bug the plan calls out as the main hazard. Verified no in-repo caller, which is precisely why it would have been missed: its consumer is third-party code."
+    },
+    {
+      "path": "packages/coding-agent/test/config/plugin-settings-provenance.test.ts",
+      "action": "create",
+      "change": "New test defending the tiering contract: a namespaced plugin setting with a declared `env` is overridden by the env var at project scope, and `provenance(scope)` NAMES the winning layer.",
+      "anchor": "new file; the `test/config/` directory already exists with 6 sibling files (settings-registry.test.ts, settings-reload.test.ts, ...)",
+      "verified": true,
+      "note": "Setup pattern copied from the existing `test/config/settings-registry.test.ts:1-46` — `Settings.isolated(...)` for the registry tiering rows and a `withEnv` helper for env. The `PluginManager` side uses the `spyOn(piUtils, ...)` pattern already proven in `test/plugin-config.test.ts:25-33`. No `mock.module()` anywhere."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "One line under `## [Unreleased]` → `### Changed`: plugin settings are now stored in the main settings file and can be set by an environment variable the plugin declares.",
+      "anchor": "packages/coding-agent/CHANGELOG.md, `## [Unreleased]` section",
+      "verified": false,
+      "note": "Structure verified from AGENTS.md, not from reading the file — the exact position of the existing `## [Unreleased]` heading was not checked and must be confirmed at implementation time."
+    }
+  ],
+  "code_shape": "// ── packages/coding-agent/src/extensibility/settings.ts ──────────────────────\n// Naming is the load-bearing part: `register()` THROWS on a duplicate id and the\n// registry has NO unregister, so a colliding id breaks plugin load, not degrade.\n\n/** `my-plugin` + `autoContext.enabled` → `my_plugin` + `auto_context_enabled`. */\nexport function sanitizePluginSegment(raw: string): string {\n\treturn raw.toLowerCase().replace(/[^a-z0-9]+/g, \"_\").replace(/^_+|_+$/g, \"\");\n}\n\n/** Reserved namespace root. Nothing outside this module may register under `plugins.`. */\nexport const PLUGIN_SETTINGS_ROOT = \"plugins\";\n\nexport function pluginSettingId(pluginId: string, key: string): string {\n\treturn `${PLUGIN_SETTINGS_ROOT}.${sanitizePluginSegment(pluginId)}.${sanitizePluginSegment(key)}`;\n}\n\n/**\n * Register a plugin-owned setting, or return the handle a previous registration made.\n *\n * The registry is append-only (`byId.set` at config/registry.ts:789 is its only\n * mutation, `ordered.push` at :790 likewise) — there is no unregister and no registry\n * reset. A plugin loaded twice in one process — a reload, a suspend/resume, two\n * PluginManager instances in a test file — must get the SAME handle, not a throw.\n */\nexport function registerPluginSetting<const D extends SettingDefinition>(\n\tpluginId: string,\n\tdefinition: Omit<D, \"id\">,\n): Setting<DefinitionValue<D>> {\n\tconst id = pluginSettingId(pluginId, definition.id as unknown as string);\n\tconst existing = lookup(id);\n\tif (existing) return existing as unknown as Setting<DefinitionValue<D>>;\n\treturn register({ ...definition, id } as D);\n}\n\n// ── the env naming rule, decided in the same commit as the first test ───────────\n// Convention (documented, NOT auto-generated): OMP_<PLUGIN_ID>_<KEY>, uppercase,\n// `-`/`.` → `_`. The plugin states the literal name in `definition.env`; no variable\n// name is ever synthesised from an id. A plugin that declares no `env` opts OUT of the\n// sixth layer: `envValue()` returns undefined at config/registry.ts:515 when the\n// definition declares none, so `provenance()` correctly reports the settings layer.\n\nexport const cfgGraphifyAutoContext = registerPluginSetting(\"@gaodes/pi-graphify\", {\n\tid: \"autoContext.enabled\",\n\ttype: \"boolean\",\n\tdefault: false,\n\tenv: \"OMP_GRAPHIFY_AUTO_CONTEXT_ENABLED\",\n\tui: { tab: \"tools\", group: \"Graphify\", label: \"Auto Context\", description: \"…\" },\n});\n\n// ── packages/coding-agent/src/extensibility/plugins/manager.ts ──────────────────\n// ORDER IS MANDATORY: write the new shape → read BOTH legacy shapes → drop the old reads.\n\nasync getPluginSettings(name: string): Promise<Record<string, unknown>> {\n\tconst settings = this.#settingsScope();\n\tconst out: Record<string, unknown> = {};\n\tfor (const [key, schema] of Object.entries(this.#schemaFor(name))) {\n\t\tconst handle = registerPluginSetting(name, toDefinition(key, schema));\n\t\tout[key] = handle.get(settings);\n\t}\n\treturn out;\n}\n\nasync setPluginSetting(name: string, key: string, value: unknown): Promise<void> {\n\tconst handle = registerPluginSetting(name, toDefinition(key, this.#schemaFor(name)[key]));\n\thandle.set(this.#settingsScope(), value); // global layer; persisted to config.yml\n}\n\nasync deletePluginSetting(name: string, key: string): Promise<void> {\n\t// SEMANTIC CHANGE — see open_questions. `unset` clears the GLOBAL layer only, so a\n\t// project-layer value correctly resurfaces. Today the key is gone from both files.\n\tregisterPluginSetting(name, toDefinition(key, this.#schemaFor(name)[key])).unset(this.#settingsScope());\n}",
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Write the namespace primitives into `extensibility/settings.ts`: `sanitizePluginSegment`, `PLUGIN_SETTINGS_ROOT`, `pluginSettingId`, and `registerPluginSetting`. The idempotency in step 1 is NOT optional polish — it is the difference between this item and a landmine for WI-7 and WI-9. Before writing it, confirm the registry is append-only yourself: grep `byId` and `ordered` in `config/registry.ts` and observe that `byId.set` (:789) and `ordered.push` (:790) are the only mutations, and that `resetRegistryForTest` (:953) touches only the `effects` array, never `byId`/`ordered`. Add the `lookup` import from `../config/registry` alongside the existing `combine`/`register` import.",
+      "anchor": "packages/coding-agent/src/extensibility/settings.ts:5"
+    },
+    {
+      "n": 2,
+      "instruction": "Build the schema→definition adapter. Each plugin declares its settings in its manifest as `PluginSettingSchema` (`extensibility/plugins/types.ts:48` — `settings?: Record<string, PluginSettingSchema>`), which is a looser shape than `SettingDefinition` (it carries `type`, `default`, `description`, `secret`, `options`). Map it: `default` carries over, `description` becomes `ui.description`, `secret` becomes `ui.secret`, `options` becomes `ui.options`, and `type` maps onto the registry's type vocabulary — read the accepted `type` strings off `SettingDefinition` in `config/registry.ts` rather than guessing. Read the manifest through the EXISTING accessor (`manager.ts:256`, and the two other read sites at `:622` and `:845`) — do not open a fourth path to the manifest.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:256"
+    },
+    {
+      "n": 3,
+      "instruction": "Decide and write down the env-variable naming rule BEFORE you write the test, in the same commit: `OMP_<PLUGIN_ID>_<KEY>`, uppercase, `-` and `.` folded to `_`, spelled out literally in `SettingDefinition.env` by the plugin. No variable name is ever synthesised from an id. Note the asymmetry that makes this opt-in and therefore testable: a plugin that declares no `env` does not join the sixth layer at all, because `envValue()` bails at `config/registry.ts:515` when `!this.envName`. A test row asserting `\"env\"` for a key with no declared `env` must FAIL — that is the correct behaviour, not a bug to paper over.",
+      "anchor": "packages/coding-agent/src/config/registry.ts:514"
+    },
+    {
+      "n": 4,
+      "instruction": "Rewrite `setPluginSetting` FIRST — this is the write path and it must land before any read path changes. Route it through `handle.set(scope, value)`, which writes the global layer at `config/settings.ts:828` and queues the debounced save. Confirm the old side-channel write is gone: `setPluginSetting` must no longer call `#saveRuntimeConfig`. Do NOT delete `#saveRuntimeConfig` or `#loadProjectOverrides` yet — step 6 still needs them.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:942"
+    },
+    {
+      "n": 5,
+      "instruction": "Rewrite `getPluginSettings` and `deletePluginSetting` to go through the same registered handles. `deletePluginSetting` becomes `handle.unset(scope)` → `unsetGlobalValue` (`config/settings.ts:845`), which deletes from the GLOBAL layer only and lets a project-layer value resurface. Flag this: the old behaviour deleted the key outright. Raise it (see open_questions) rather than silently shipping the change.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:929 and :954"
+    },
+    {
+      "n": 6,
+      "instruction": "Add the one-time migration, and get its shape right — it is the whole data-loss risk of this item. It MUST read BOTH legacy shapes, because `setPluginSetting` has never once written to the second file: (a) `settings[name]` in the runtime config written by `#saveRuntimeConfig` → `~/.omp/omp-plugins.lock.json` (path from `getPluginsLockfile`, `utils/src/dirs.ts:652`), and (b) `settings?.[name]` in `<project>/.omp/plugin-overrides.json` (`ProjectPluginOverrides`, `extensibility/plugins/types.ts:156`; path from `getProjectPluginOverridesPath`, `utils/src/dirs.ts:1046`), read via `#loadProjectOverrides` (`manager.ts:153`). Merge with project winning — that is the current `{ ...global, ...project }` order — then write into the `plugins.*` handles via `set()`. Guard it with a persisted completion marker.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:148, 153"
+    },
+    {
+      "n": 7,
+      "instruction": "The completion marker is not bookkeeping, it is a correctness requirement. Without it the migration re-runs on every start and RESURRECTS a key the user deliberately deleted after the first migration — a value deleted in the new store is still sitting in the legacy file, so a re-run silently brings it back. The marker must be written only AFTER the new shape is durably persisted, and it must be namespaced to this migration so a future substrate change can migrate again deliberately. Verify the marker's own write path is the Settings layer or a dedicated marker file — never a third plugin store, or this item has recreated the problem it was written to remove.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:148"
+    },
+    {
+      "n": 8,
+      "instruction": "Make `loader.ts`'s module-level `getPluginSettings(pluginName, cwd)` (474) delegate to the new substrate. This function is a byte-for-byte second copy of the merge logic, it is re-exported through the `extensibility/plugins` barrel, and it is the function an extension calls by name. Leaving it on the legacy files means the extension-facing surface never migrates. The plan does not mention this file at all — it is the single most likely way to ship this item half-done, because `git grep` finds no in-repo caller and the code looks dead.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/loader.ts:474"
+    },
+    {
+      "n": 9,
+      "instruction": "Leave the Plugins tab and the TUI overlay alone. `settings-selector.ts:438` (NOT :435 — see plan_corrections) hard-codes `{ id: \"plugins\", label: ... }` and the read path `tui/src/overlays/plugin-settings.ts:147` goes through the unchanged `PluginSettingsHost` interface declared at `:71`. Merging plugin settings into the main settings panel is WI-8b blocker 4, explicitly out of scope here. Confirm by reading that `PluginSettingsManager` (`:71`) still type-checks unchanged — if the host interface had to change, this item has leaked into 8b.",
+      "anchor": "packages/tui/src/overlays/plugin-settings.ts:71 and packages/tui/src/overlays/settings-selector.ts:438"
+    },
+    {
+      "n": 10,
+      "instruction": "Write `test/config/plugin-settings-provenance.test.ts` — three groups, in the order below, because the order encodes the data-loss contract. Row 1 and row 2 are the migration rows; row 3 is the tiering row. See test_contract for the exact assertions.",
+      "anchor": "packages/coding-agent/test/config/plugin-settings-provenance.test.ts (new)"
+    },
+    {
+      "n": 11,
+      "instruction": "Run the gate. `bun test` is BLOCKED in this environment until the native addon is built — the harness reported this and I reproduced it: `0 pass, 1 fail` with `Cannot find module .../pi_natives.darwin-arm64.node`. Build first with `bun --cwd=packages/natives run build`, then run the test. `bun run check:ts` needs no addon and I confirmed it is GREEN on HEAD right now, so it is a usable gate today.",
+      "anchor": "root package.json:94 (`check:ts`)"
+    },
+    {
+      "n": 12,
+      "instruction": "Add the changelog line under `## [Unreleased]` → `### Changed` in `packages/coding-agent/CHANGELOG.md`. One line, user-facing, no root-cause narration: lead with what the user can now do (plugin settings live in the main settings file and honour a declared environment variable).",
+      "anchor": "packages/coding-agent/CHANGELOG.md"
+    }
+  ],
+  "test_contract": {
+    "the_contract": "A namespaced plugin setting participates in the SAME six-layer tiering as a core setting: a project-layer value is overridden by the environment variable the plugin declared, and `Setting.provenance(scope)` NAMES the layer that won.",
+    "how_it_fails_observably": "On the substrate this replaces, the env override is silently ignored for plugin keys and nothing can report which source won, because the side-channel store has no layer to name. A user sets `OMP_GRAPHIFY_AUTO_CONTEXT_ENABLED=1`, the plugin still reads the project file's `false`, and neither the plugin nor the UI can say why. This is invisible until a user actually has a plugin setting configured — which is exactly why it survived five review rounds.",
+    "assert_through": "`Setting.provenance(scope)` at `config/registry.ts:764-765`, NEVER `Settings.getProvenance` (`config/settings.ts:800-808`). The latter checks runtime → overlay → project → global → parent → default and can never return `\"env\"`, even though `\"env\"` is in the `SettingProvenance` union at `settings.ts:62`. Asserting through the wrong surface would pass while the contract is broken.",
+    "assert_both": "BOTH the resolved value AND the reported layer. Asserting the value alone passes on a store that happens to read the right file — which is precisely the accidental-pass the plan warns about.",
+    "fails_on_head_today": "Yes. On HEAD `getPluginSettings` returns `{ ...global, ...project }` with no env step at all, and the `Setting.provenance(scope)` surface does not exist for a plugin key because no `plugins.*` handle is ever registered.",
+    "rows": [
+      {
+        "n": 1,
+        "name": "a value that exists ONLY in the legacy project overrides file still reads back after migration",
+        "why": "The plan's own sharpest warning: `setPluginSetting` has NEVER written to `.omp/plugin-overrides.json`, so for a user who set a project-scope plugin value by hand, that file is the ONLY place the value exists. Drop this read path and every such setting silently reads as its default — data loss with no error, visible only to users who already have a plugin setting configured.",
+        "assert": "Write `<project>/.omp/plugin-overrides.json` with `settings: { \"<plugin>\": { <key>: <value> } }`, run the migration, and assert the value is returned by `getPluginSettings` AND that the handle's `provenance(scope)` reports `\"project\"`."
+      },
+      {
+        "n": 2,
+        "name": "a value that exists ONLY in the legacy runtime config still reads back after migration",
+        "assert": "Write the legacy `omp-plugins.lock.json` `settings[\"<plugin>\"][\"<key>\"]`, run the migration, assert the value is returned AND `provenance(scope)` reports `\"global\"` (it was a global-layer value, so it lands in the global layer of the new shape)."
+      },
+      {
+        "n": 3,
+        "name": "the env layer: a declared env var beats a project-layer value and NAMES itself",
+        "assert": "With the project layer holding a value for the key, set the env var the plugin declared in `definition.env`, and assert BOTH `handle.get(scope)` equals the env-derived value AND `handle.provenance(scope) === \"env\"`. Per-test `withEnv` with save/restore (copy the helper at `test/config/settings-registry.test.ts:25-37`); do NOT mutate `process.env` at file scope — a full-suite-poisoning env write is a broken test per AGENTS.md."
+      }
+    ],
+    "the_trap_in_row_3": "`#effectiveEnv` (`config/registry.ts:526-536`) makes env YIELD to a configured layer when the definition sets `envFallback`. The default is `false` (`registry.ts:478` — `typeof env === \"object\" ? (env.fallback ?? false) : false`), so env wins by default and the row passes. But if the fixture setting declares `envFallback: true`, the env var loses to the project value and `provenance` reports `\"project\"` — the row would fail, and for CORRECT behaviour. The fixture must NOT declare `envFallback`. The plan never mentions this flag; it is the single easiest way to write a test that is red for the wrong reason and then \"fix\" it by weakening the assertion.",
+    "no_mock_module": "Never `mock.module()` — it mutates the global module registry and leaks across files. The `PluginManager` rows use per-test `spyOn(piUtils, \"getPluginsDir\")` / `getPluginsLockfile` / `getProjectDir` / `getProjectPluginOverridesPath` with `mock.restore()` in `afterEach`, exactly as `test/plugin-config.test.ts:25-38` already does. The registry rows use a real `Settings.isolated(...)` instance over a temp dir — no module mocking at all.",
+    "no_source_grep": "The test may assert on the temp config file it wrote (that is behaviour). It may NOT read an implementation `.ts` file and assert on its text — that is banned by AGENTS.md and is not a substitute for any row here."
+  },
+  "test_files": [
+    "packages/coding-agent/test/config/plugin-settings-provenance.test.ts",
+    "packages/coding-agent/test/plugin-config.test.ts (existing — must stay green; it asserts the LEGACY lockfile shape at :51-56, so it is the first thing that breaks and the best early signal)",
+    "packages/coding-agent/test/plugin-config-validate.test.ts (existing — must stay green; it spies `PluginManager.prototype.getPluginSettings` at :63 and :116, which is the shape the rewrite must not break)",
+    "packages/coding-agent/test/config/settings-registry.test.ts (existing — reference for the tiering and `withEnv` patterns; also the place a regression here would surface)"
+  ],
+  "verification": [
+    "bun run check:ts — MUST pass. Does not need the native addon. VERIFIED GREEN on HEAD (milestone-1, 808b365) at the time of writing: oxlint + oxfmt clean, all 17 package check:types Done, no errors.",
+    "bun --cwd=packages/natives run build — required before any `bun test`; VERIFIED REQUIRED. I reproduced the block: `bun test test/config/settings-registry.test.ts` returns `0 pass / 1 fail` with `Cannot find module .../native/pi_natives.darwin-arm64.node`.",
+    "cd packages/coding-agent && bun test test/config/plugin-settings-provenance.test.ts — the new test; runs only after the addon is built.",
+    "cd packages/coding-agent && bun test test/plugin-config.test.ts test/plugin-config-validate.test.ts test/config/settings-registry.test.ts — the existing tests this change must not break.",
+    "NEVER `tsc` / `npx tsc` (AGENTS.md). `bun check` and `bun test` only."
+  ],
+  "gate": "DONE means all four of: (1) `bun run check:ts` is green; (2) `bun test test/config/plugin-settings-provenance.test.ts` passes all three rows — the two migration rows and the env/provenance row; (3) `bun test test/plugin-config.test.ts test/plugin-config-validate.test.ts test/config/settings-registry.test.ts` is still green; (4) the migration has been manually exercised in the stated order against a real temp project containing a hand-written `.omp/plugin-overrides.json`, and a value deleted from the new store is still gone after a second run (the resurrection check from step 7). Note that (2) cannot be evaluated in this environment until the native addon is built — treat (1) as the only immediately executable gate and (2)-(4) as blocked, not as passing.",
+  "gate_can_fail": "YES for the type check and the test rows. The provenance row is a real red-to-green: on HEAD there is no `plugins.*` handle to call `provenance()` on at all, so it cannot pass before the work is done. The two migration rows are real red-to-green: on HEAD the new substrate does not exist, and a migration that read only ONE of the two legacy files would leave row 1 or row 2 red. The gate would NOT catch: a migration that runs but re-runs on every start and resurrects deleted keys (only the manual step-7 check in (4) catches that), a wrong-but-plausible env variable name (the row uses whatever name the fixture declares, so a naming slip is invisible to the suite — hence the naming rule must be written down in step 3 and reviewed, not left to the test), and the `deletePluginSetting` semantic change (no row asserts it). Those three are the honest gaps in this gate.",
+  "depends_on": [],
+  "blocks": [
+    "WI-8b (Option B, `pi.registerSetting`) — explicitly gated on this item. The reason is concrete: 8b's blocker 2 is that a setting id is a bare string with no namespace enforcement, so an extension can collide with a core id, and `register()` throws at `config/registry.ts:787`, breaking at load rather than degrading. The namespace helper built in step 1 IS that enforcement.",
+    "WI-11 / WI-12 (M2 wave 8, design-only) — both reason about the second-store problem that this item removes. The plan's own note at line 5994 calls an MCP-contribution design 'exactly the second-store problem that WI-8a Option A exists to solve'.",
+    "WI-9 (unload) — indirectly. Only after this item lands is plugin settings state owned by a subsystem with a single substrate that unload can actually clean up."
+  ],
+  "effort": "M (~2-3 days). The plan calls it M with LOW risk; I would raise the risk to MEDIUM and keep M, because the plan under-counts the surface: it names six files and misses `loader.ts:474`, and its risk analysis rests entirely on the provenance test catching the failure, when the more likely failure is the untested resurrection and delete-semantics cases. The typing work (schema→definition adapter, `envFallback` asymmetry, the append-only registry) is more subtle than the plan's 'substrate, not API' framing suggests.",
+  "risk": "Registering plugin settings dynamically at load time into a registry that has NO unregister (`byId.set` at `config/registry.ts:789` is its only mutation; `resetRegistryForTest` at :953 touches only `effects`). The first load works; the SECOND load of the same plugin in the same process — a reload, a suspend/resume, a second PluginManager in a test file — throws `Setting \"plugins.x.y\" is registered twice`. That is not a crash in a rare path: suspend/resume is exactly what WI-1 and WI-7 build, and unload is what WI-9 builds, so this item as literally specified would plant a landmine directly in the path of the two items that follow it. The plan's own argument for namespacing is the duplicate throw, and then it specifies a design that walks into it. `registerPluginSetting` returning the existing handle on a repeat lookup is the fix, and it must be step 1, before anything else.",
+  "open_questions": [
+    "`deletePluginSetting` changes meaning. Today it deletes the key outright from the merged store. `handle.unset()` clears the GLOBAL layer only (`unsetGlobalValue`, `config/settings.ts:845`), so a project-layer value correctly resurfaces — that is the right tiering, but it is a behaviour change for `omp plugin config unset` (`cli/plugin-cli.ts:917`). Does 'unset' mean 'forget my global override' (correct tiering, accept the change) or 'remove everywhere' (needs a second project-layer write path)? A human must decide; it is user-visible.",
+    "Which Settings layer is the durable home for a plugin setting? The plan says 'overlay' and never names the layer. Global (`handle.set` → `config.yml`) is what the typed core path does and the only one that persists without new machinery, but it puts machine-written third-party keys in a file users hand-edit. The plan itself flags this tension at line 5946 ('Settings is user-edited YAML and is probably the WRONG substrate for internal plugin state'). If the answer is 'not the global layer', this item grows a new store and the whole 'second store' framing changes.",
+    "Should the migration marker be a Settings-layer key or a dedicated marker file? A marker file is simpler and cannot be edited away by a user cleaning their config; a Settings key is one less file. Either is defensible — but it must be a deliberate choice, not an accident, because a user who deletes it gets a resurrected-settings bug.",
+    "Should a plugin setting be allowed to declare `envFallback`? The naming rule in step 3 covers the opt-IN; it says nothing about the opt-out-that-inverts-priority. Letting a third-party plugin declare `envFallback: true` means its env var yields to a project file, which is probably the opposite of what a plugin author intends.",
+    "What happens to `ProjectPluginOverrides.disabled` and `.features`? This item migrates `settings` only. `.omp/plugin-overrides.json` survives with two of its three fields, so the file is NOT removed. Confirm that is intended rather than half-finished."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "`registry.ts:476-480` — the env layer is opt-in, `envValue()` returns undefined when a setting does not declare `definition.env`.",
+      "verdict": "STALE LINE, SOUND CONCLUSION",
+      "correction": "Lines 476-480 are the CONSTRUCTOR body (`this.#parseEnv = ...` at :477-479, `this.envFallback = ...` at :478), not `envValue`. The function the plan means is `envValue()` at `config/registry.ts:514-522`, whose opt-in guard is the first line: `if (!this.envName || !this.#parseEnv) return undefined;` (:515). Cite :515, or :514-522.",
+      "evidence": "grep -n over packages/coding-agent/src/config/registry.ts: `envValue():` at 514, `#effectiveEnv` at 526, and line 478 is `this.envFallback = typeof env === \"object\" ? (env.fallback ?? false) : false;` — a constructor assignment. The plan's conclusion holds, its pointer does not."
+    },
+    {
+      "claim": "`Settings.getProvenance` (settings.ts:800-808) checks five layers and never returns `\"env\"`; only `Setting.provenance(scope)` at `registry.ts:764-765` can.",
+      "verdict": "VERIFIED CORRECT",
+      "correction": "None. This is the single most load-bearing claim in the item and it holds exactly. `getProvenance` at `config/settings.ts:800-808` returns runtime/overlay/project/global/parent-default, and `Setting.provenance` at `config/registry.ts:763-765` returns `this.#effectiveEnv(scope) !== undefined ? \"env\" : settingsOf(scope).getProvenance(this)`. The `\"env\"` member of the union at `settings.ts:62` is reachable from exactly one surface.",
+      "evidence": "sed of settings.ts:800-808 shows the five-branch return ending in `return this.#parent?.getProvenance(setting) ?? \"default\";`. sed of registry.ts:763-765 shows the `#effectiveEnv` ternary. The test must assert through the latter."
+    },
+    {
+      "claim": "`register()` at `registry.ts:783-792` throws on a duplicate id, which is why namespacing is load-bearing.",
+      "verdict": "VERIFIED CORRECT, BUT INCOMPLETE — AND THE OMISSION IS THE ITEM'S BIGGEST RISK",
+      "correction": "The throw is real at :787 and the doc block starts at :783, so the range is right. What the plan never says is that the registry is APPEND-ONLY: `byId.set` (:789) is the only mutation of `byId`, `ordered.push` (:790) the only mutation of `ordered`, and `resetRegistryForTest` (:953) touches only the `effects` array. There is NO unregister. So a design that registers plugin settings dynamically at load time makes the second load of the same plugin in one process throw — and reload, suspend/resume (WI-1, WI-7) and unload (WI-9) are precisely what the following waves build. The spec adds an idempotent `registerPluginSetting` that returns the existing handle on a repeat lookup, as step 1.",
+      "evidence": "grep -n 'byId' over registry.ts returns exactly four hits: declaration :778, the has() check :787, the set :789, the get :796. grep -n 'ordered' returns the declaration :779 and the push :790 only. `resetRegistryForTest` at :953 has a body calling `unbindEffects()` and iterating `effects` — never `byId`."
+    },
+    {
+      "claim": "The side-channel store is `manager.ts:929-960` reading from two files, and migrating that region is the work.",
+      "verdict": "INCOMPLETE — a second copy of the same merge exists and the plan never mentions it",
+      "correction": "`packages/coding-agent/src/extensibility/plugins/loader.ts:474-483` exports a module-level `getPluginSettings(pluginName, cwd)` that is a byte-for-byte second copy of the `{ ...global, ...project }` merge over the same two legacy files. It is re-exported through the `extensibility/plugins` barrel (`plugins/index.ts:5`) and it is the function an EXTENSION calls by name. Migrating only `manager.ts` leaves the extension-facing read path on the legacy files forever — the same 'two read paths, you migrate one' failure the plan names as its main hazard, reproduced one file over. It is easy to miss precisely because `git grep` finds no in-repo caller: its consumer is third-party code. Step 8 of this spec covers it.",
+      "evidence": "sed of loader.ts:460-483 shows `export async function getPluginSettings(pluginName: string, cwd: string)` calling `loadRuntimeConfig()` and `loadProjectOverrides(cwd)` and returning `{ ...global, ...project }`. `git grep -n getPluginSettings` across packages/ returns only manager.ts, loader.ts, plugin-cli.ts, tui/overlays/plugin-settings.ts, and tests — no production caller of the loader copy."
+    },
+    {
+      "claim": "The Plugins settings tab lives at `packages/tui/src/overlays/settings-selector.ts:435` and must be left alone by this item.",
+      "verdict": "STALE LINE, SOUND INSTRUCTION",
+      "correction": "The hard-coded tab is at :438, not :435: `{ id: \"plugins\", label: ... }`, inside `getSettingsTabs()` (:433-440). There is a second hit at :856. The instruction to leave it alone is correct and is WI-8b blocker 4's problem, not this item's. The same wrong line is repeated in WI-8b's file list.",
+      "evidence": "grep -n 'id: \"plugins\"' over settings-selector.ts returns :438 and :856; sed of 420-450 places the Plugins tab at 438 inside getSettingsTabs()."
+    },
+    {
+      "claim": "`ProjectPluginOverrides` shape at `plugins/types.ts:156-163`, with `settings?` at `:162`.",
+      "verdict": "STALE BY ONE LINE",
+      "correction": "The interface is at :156-162 and the `settings?` field is at :161, not :162. The three fields are `disabled?` (:157), `features?` (:159), `settings?: Record<string, Record<string, unknown>>` (:161). Relevant because this item migrates `settings` only — the file survives with two of its three fields, so it is NOT removed.",
+      "evidence": "sed of types.ts:150-170 shows `export interface ProjectPluginOverrides {` at 156, `disabled?` 157, `features?` 159, `settings?` 161, closing brace 162."
+    },
+    {
+      "claim": "The env layer is where the test's value is overridden by the env var, and the plan calls out that a row asserting `\"env\"` without a declared `env` must fail.",
+      "verdict": "VERIFIED, WITH AN UNSTATED INVERSION THE PLAN MISSES",
+      "correction": "The opt-in and the fail-without-declaration behaviour are both correct. What the plan does not mention is `envFallback`: `#effectiveEnv` (`config/registry.ts:526-536`) makes the env YIELD to any configured layer when the definition sets it, and the default is `false` (:478), so env wins by default. A fixture that declares `envFallback: true` will have the project value win and `provenance` report `\"project\"` — a red test for correct behaviour, which is exactly the shape of mistake that gets 'fixed' by weakening an assertion. The spec calls this out as the trap in row 3.",
+      "evidence": "sed of registry.ts:526-536 shows `if (value === undefined || !this.envFallback) return value;` then the `envFallback === true` and string-compare branches. registry.ts:478 is `this.envFallback = typeof env === \"object\" ? (env.fallback ?? false) : false;`."
+    },
+    {
+      "claim": "Migration risk is fully covered by the provenance test running real tiering.",
+      "verdict": "OVERSTATED",
+      "correction": "The provenance test defends the TIERING, not the MIGRATION. Three failure modes survive it: (a) a migration without a completion marker re-runs every start and resurrects keys the user deleted after the first run — undetectable by a suite that only migrates once; (b) the new durable layer is wrong and values are written somewhere the read path does not consult; (c) `deletePluginSetting` silently changes meaning from 'delete outright' to 'clear the global layer only'. This spec's gate therefore adds a manual step (4) covering the resurrection re-run, and the two related open_questions, instead of resting on the test alone.",
+      "evidence": "`unsetGlobalValue` (`config/settings.ts:845-859`) only ever calls `deleteByPath(this.#global, segments)`; there is no project-layer delete anywhere in the method, and no equivalent existed in the old side-channel delete."
+    },
+    {
+      "claim": "Environment: `bun test` reports 0 pass because the native addon is not built; `bun run check:ts` is the usable gate.",
+      "verdict": "VERIFIED EXACTLY",
+      "correction": "None. Reproduced both. `bun test test/config/settings-registry.test.ts` → `0 pass / 1 fail`, `Cannot find module .../native/pi_natives.darwin-arm64.node`, with the loader's own hint `bun --cwd=packages/natives run build`. `bun run check:ts` → clean, oxlint + oxfmt pass on 5445 files, all 17 package `check:types` Done. The build command is the first half of the gate; the test half is blocked until it runs.",
+      "evidence": "Direct execution of both commands in the repo at HEAD 808b365 on branch milestone-1."
+    }
+  ],
+  "boundary_with_WI_8b": "This item is CORE-side only: the plugin loader turns a manifest schema into namespaced handles. It must NOT add anything to `ExtensionAPI` (that is 8b, adding a 30th method to the 29 it has today) and must NOT change the settings panel's fixed tab list or the `DOMAINS` array — `extensibilitySettings` is already in `DOMAINS` at `config/all-settings.ts:64`, so adding the namespace helper here is free and leaves 8b's blocker 1 untouched. The TUI Plugins tab and the `PluginSettingsHost` interface at `packages/tui/src/overlays/plugin-settings.ts:71` stay byte-identical."
+}

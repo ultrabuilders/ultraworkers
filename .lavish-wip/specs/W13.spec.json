@@ -1,0 +1,162 @@
+{
+  "id": "W13",
+  "title": "Chống backpressure ENOBUFS cho structured stdout — gom ba cài đặt rời rạc vào một guard dùng chung",
+  "wave": "Wave 2 — Correctness trên các đường đang ship (COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:500-525; work item tại :1680-1743)",
+  "one_line": "Gom ba bản cài stdout-hygiene đang nằm rải rác trong cây (ACP takeover, print-mode promise tail, RpcOutputWriter spool) vào một `packages/coding-agent/src/utils/stdout-guard.ts` duy nhất, và thêm vào đó phần thật sự còn thiếu: thử lại khi gặp ENOBUFS/EAGAIN/EWOULDBLOCK, có chặn trên, để reader bị nghẽn làm chậm một frame thay vì làm hỏng hoặc vứt mất nó.",
+  "user_visible_effect": "Khi một client JSON/ACP ngừng đọc, frame của omp được trì hoãn thay vì bị cắt cụt giữa dòng hoặc bị vứt mất âm thầm; lý do stdout phải sạch của `omp acp` nằm trong một util dùng chung thay vì nằm lọt trong một file mode; output của `omp commit` không đổi một byte nào.",
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W13.spec.json",
+  "effort": "S — ~120 LOC production + ~110 LOC test. Nhỏ hơn con số của kế hoạch (~100 LOC) vì phần lớn hình dạng đã có sẵn trong cây; việc thật sự là RÚT chúng ra, không phải viết mới.",
+  "risk": "Đọc kế hoạch, thấy `grep ... | zero hit` và `port từ pi-ref`, rồi thấy `pi-ref` không tồn tại — và phản ứng bằng cách viết MỘT writer backpressure thứ hai, yếu hơn, cạnh `RpcOutputWriter` đã mạnh hơn và đã có test. Đó là cách sai chính: nó biến W13 từ \"gom về một chỗ\" thành \"thêm một đường ghi stdout song song\", và `AGENTS.md` § Central Utilities coi đó là bug. Cách sai thứ hai, cũng thật: cài takeover không có đường hoàn tác rồi để nó sống hết vòng đời process, khiến mọi test file chạy sau trong cùng run kế thừa một `process.stdout` đã bị rebind.",
+  "depends_on": [
+    "W2 (Wave 1) — phụ thuộc THỨ TỰ, không phụ thuộc code. W13 không import gì của W2. Kế hoạch xếp W13 vào Wave 2 với lý do 'W13 dựa vào cả suite test' (:512), tức là cần ba file test Wave 1 đã chứng minh đường test có mục tiêu chạy được. Có thể làm W13 song song; chỉ cần chạy full suite một lần sau khi cả hai land."
+  ],
+  "blocks": [],
+  "open_questions": [
+    "CHẶN THIẾT KẾ — giới hạn retry. Kế hoạch nói 'thử lại ... với delay ~10ms' nhưng KHÔNG nói chặn bao nhiêu lần. Retry không chặn trên một reader bị treo vĩnh viễn = treo `omp` vĩnh viễn, tệ hơn bài toán ban đầu. Khuyến nghị: 500 lần (~5s) rồi reject, đổ vào đường lỗi sẵn có. Người phải chọn: con số này, vì nó cân 'không bao giờ rơi frame' với 'không bao giờ treo'.",
+    "CHẶN THIẾT KẾ — ENOBUFS có thật sự tới được không. `process.stdout.write` của Node/Bun là write bất đồng bộ có buffer; nó KHÔNG gọi `write(2)` non-blocking rồi trả EAGAIN về caller. Nếu ENOBUFS chỉ tới dưới dạng stream `error` event (giống EPIPE, mà `registerStdioDisconnectHandling` tại `packages/utils/src/postmortem.ts:356` đã xử lý), thì vòng retry phải nằm ở error path, không phải quanh lời gọi. Nên dựng một repro thật (pipe 64KB, reader ngừng đọc) TRƯỚC khi viết vòng lặp. Nếu không dựng được repro thì deliverable chỉ còn phần gom về một chỗ.",
+    "PHẠM VI — W13 chỉ migrate ACP, hay cả ba? `rpc-mode.ts:780` vẫn tự dựng `RpcOutputWriter(process.stdout, …)` và `print-mode.ts:137` vẫn giữ tail riêng. Cả ba đều là backpressure writer cùng loại. Migrate ACP một mình thì guard có đúng một consumer (được, nhưng util 100 LOC với một consumer là ảo), còn migrate cả ba thì diff rộng hơn nhiều và phải giữ nguyên drain fence của print-mode. Kế hoạch không nói. Khuyến nghị: ACP + print-mode (print-mode thuần di chuyển, `await stdoutTail` ở :348 thành `await flushRawStdout()`); ĐỂ `RpcOutputWriter` nguyên vì nó dùng disk spool, mạnh hơn hẳn, và thay nó là viết lại đường đang chạy production không cần thiết.",
+    "PHẠM VI — miễn trừ commit-CLI. Kế hoạch miễn `commit/agentic/index.ts` (31 lệnh, ĐÃ XÁC MINH đúng). Nhưng cùng subsystem còn `commit/agentic/agent.ts` (7), `commit/pipeline.ts` (6), `commit/execute.ts` (1), `commit/cli.ts` (1) — 15 lệnh nữa không được phân loại. Và toàn `src/cli/` còn 200+ lệnh nữa. Cần chốt: miễn theo TIẾN TRÌNH (chỉ `omp commit` vờ ra guard), hay miễn theo FILE một cách tường minh như kế hoạch nói."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Kế hoạch (:1691-1693): \"grep -rni 'takeOverStdout|isStdoutTakenOver|waitForRawStdout|ENOBUFS' packages/ trả về zero hit\" ⇒ \"omp không có gì: … omp hoàn toàn không có câu trả lời\" cho nguy hiểm backpressure này.",
+      "verdict": "Sai. Grep thì đúng, suy luận thì sai.",
+      "correction": "Tên hàm vắng, NHƯNG hành vi thì có sẵn — và có ba bản. (1) `packages/coding-agent/src/modes/acp/acp-mode.ts:43` `isolateProtocolStdout()` LÀ `takeOverStdout()` đã viết sẵn: bắt stdout thật, `Object.defineProperty(process, 'stdout', {value: stderrSink, configurable: true, writable: true})`, rồi rebind `console.log`. (2) `packages/coding-agent/src/modes/print-mode.ts:137-147` `stdoutTail` + `writeStdoutLine` LÀ `writeRawStdout()` đã viết sẵn: serialize trên completion callback, có drain fence (`await stdoutTail` tại :348). (3) `packages/coding-agent/src/modes/rpc/rpc-output.ts:17-162` `RpcOutputWriter` (162 LOC) là writer MẠNH HƠN cả bản 108 LOC mà kế hoạch định port: nghe `drain`, spill ra temp-file spool khi nghẽn, `process.once('exit')` dọn spool, `AggregateError` khi vừa fail vừa hỏng cleanup. Thứ thật sự còn thiếu KHÔNG phải 'cả hệ thống' mà chỉ là: retry ENOBUFS/EAGAIN/EWOULDBLOCK, một chỗ ở chung, và đường hoàn tác cho takeover. Đây là bản sửa quan trọng nhất của spec: một kỹ sư đọc kế hoạch sẽ tưởng đang viết mới 100 LOC và vô tình tạo ra writer thứ tư yếu hơn.",
+      "evidence": "git grep: `packages/coding-agent/src/modes/acp/acp-mode.ts:43` (`function isolateProtocolStdout(): NodeJS.WriteStream`), gọi tại `:89` (`stream.Writable.toWeb(isolateProtocolStdout())`); `packages/coding-agent/src/modes/print-mode.ts:137-147` (`let stdoutTail: Promise<void> = Promise.resolve();` + `writeStdoutLine`), fence tại `:348` (`await stdoutTail;`); `packages/coding-agent/src/modes/rpc/rpc-output.ts:17` (`export class RpcOutputWriter`), 162 LOC, dùng tại `rpc-mode.ts:780`."
+    },
+    {
+      "claim": "Kế hoạch (:1699-1702): \"port hình dạng từ `pi-ref/packages/coding-agent/src/core/output-guard.ts` (108 LOC)\".",
+      "verdict": "Sai — nguồn port không tồn tại trong repo này.",
+      "correction": "`ls -d pi-ref` → không có; `find . -name 'output-guard*' -not -path './node_modules/*'` → rỗng. Kỹ sư sẽ mất buổi sáng tìm file không có. Viết tay từ đầu, dùng ba bản trong cây làm tham chiếu — chúng tốt hơn bản gốc 108 LOC (xem correction trên). Bỏ hẳn câu \"port\" khỏi việc lập kế hoạch chi tiết.",
+      "evidence": "`ls -d pi-ref` → `NO pi-ref dir`; `find . -name 'output-guard*'` → không có kết quả."
+    },
+    {
+      "claim": "Kế hoạch (:1707-1708): \"Đã kiểm tại HEAD: file `commit/agentic/index.ts` có 31 lệnh `process.stdout.write\".",
+      "verdict": "Đúng — con số xác minh được. Nhưng phạm vi miễn trừ thì thiếu.",
+      "correction": "31 là chính xác. Nhưng có 274 lệnh `process.stdout.write` trong `packages/coding-agent/src/`, và `cli/auth-broker-cli.ts` (34) + `cli/ttsr-cli.ts` (29) còn NHIỀU HƠN file được miễn; riêng subsystem `commit/` còn `agent.ts` (7), `pipeline.ts` (6), `execute.ts` (1), `cli.ts` (1) = 15 lệnh chưa được phân loại. Miễn đúng một file để lại 15 lệnh cùng subsystem trong trạng thái mơ hồ. Vì takeover theo TIẾN TRÌNH chứ không theo dòng, cách đúng là: guard chỉ được bật ở những entry point có giao thức có cấu trúc trên fd 1; `omp commit` không bao giờ bật, nên toàn bộ 274 lệnh đều an toàn theo mặc kiến trúc.",
+      "evidence": "`grep -c 'process\\.stdout\\.write' packages/coding-agent/src/commit/agentic/index.ts` → `31`; `grep -rn 'process\\.stdout\\.write' packages/coding-agent/src/ | wc -l` → `274`; per-file: `cli/auth-broker-cli.ts` 34, `cli/ttsr-cli.ts` 29, `commit/agentic/agent.ts` 7, `commit/pipeline.ts` 6, `commit/execute.ts` 1, `commit/cli.ts` 1."
+    },
+    {
+      "claim": "Kế hoạch (:1719-1724) liệt kê 5 test cần viết, trong đó (3) 'sau takeover, một console.log lạc đi tới stderr', (4) 'drain chỉ resolve SAU KHI tail settle', và bối cảnh (1) là mất frame.",
+      "verdict": "Trùng coverage đã tồn tại — `AGENTS.md` cấm rõ ràng.",
+      "correction": "(3) đã được bảo vệ end-to-end bởi `acp-stdout-hygiene.test.ts` (spawn thật `omp acp`, assert byte đầu tiên trên stdout parse được thành JSON-RPC, và assert KHÔNG JSON-RPC nào rò ra stderr). (4) đã được bảo vệ bởi `print-mode-json-flush.test.ts` (regression #7635: giữ callback của write `agent_end` 1.5MB, assert `runPrintMode` chưa settle và chưa dispose, rồi release, assert payload đủ và JSON.parse được). (1)-adjacent đã được bảo vệ bởi `rpc-output.test.ts` (5 test: drain sau EOF, frame có thứ tự qua sink chậm, fail + dọn spool khi reader ngắt, báo disk exhaustion, báo spool cắt). Cái DUY NHẤT chưa có test là: retry ENOBUFS, spread lỗi không-retryable, và undo của takeover. Viết 5 test như kế hoạch nói sẽ thêm 3 cái trùng.",
+      "evidence": "`packages/coding-agent/test/acp-stdout-hygiene.test.ts:86` (`it('emits a JSON-RPC initialize response as the first bytes on stdout')`); `packages/coding-agent/test/print-mode-json-flush.test.ts:94` (`it('blocks exit until the final agent_end write drains, then delivers it in full')`, `vi.spyOn(process.stdout, 'write')` tại :98); `packages/coding-agent/test/rpc-output.test.ts:13,72,107,121,137` (5 test)."
+    },
+    {
+      "claim": "Kế hoạch (:1730): lệnh xác minh là `bun check && bun test packages/coding-agent/test/stdout-guard.test.ts && bun run test`.",
+      "verdict": "Sai một nửa — `bun check` không dùng được ở đây.",
+      "correction": "`bun check` ở package.json gốc là `bun run --parallel check:ts check:rs` — nó KÉO CẢ RUST TOOLCHAIN, không liên quan gì tới thay đổi TS này. Dùng `bun run check:ts`. Đã chạy thử: PASS trong ~35s, KHÔNG cần native addon. Còn `bun test` thì ĐANG BỊ CHẶN: `bun test packages/coding-agent/test/rpc-output.test.ts` → `0 pass / 1 fail / 1 error`, `Failed to load pi_natives native addon for darwin-arm64`. Nghĩa là gate của W13 hiện KHÔNG chạy được cho tới khi build `bun run build:native`.",
+      "evidence": "`package.json` scripts: `\"check\": \"bun run --parallel check:ts check:rs\"`, `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"`, `\"build:native\": \"bun --cwd=packages/natives run build\"`. Chạy `bun run check:ts` → tất cả package `Done`, exit 0. Chạy `bun test packages/coding-agent/test/rpc-output.test.ts` → `0 pass / 1 fail / 1 error` tại `packages/natives/native/index.js:23:24`."
+    },
+    {
+      "claim": "Kế hoạch (:1691-1694): \"omp đã ship test/otel-export-probe.ts và otel-non-otlp-probe.ts — đó là bằng chứng loại bug này đã nổi lên ở đây một lần rồi\".",
+      "verdict": "Có một nửa đúng, một nửa suy diễn quá.",
+      "correction": "Bốn file probe ĐÚNG tồn tại (xác minh). Nhưng chúng là smoke probe khởi động cho OTEL exporter — bằng chứng rằng loại bug 'binary/telemetry lẫn vào stdout' đã nổi lên, KHÔNG phải bằng chứng về ENOBUFS. Bằng chứng đúng hơn và mạnh hơn nằm ở chính cây code: `print-mode.ts:130-135` ghi rõ bug mất frame (issue #5309, #7635) và `cli-stdout-epipe.test.ts:6` ghi rõ bug EPIPE (issue #10930). Dùng hai issue id đó trong changelog, đừng dùng probe làm bằng chứng.",
+      "evidence": "`ls packages/coding-agent/test/otel-*probe*.ts` → 4 file (`otel-export-probe.ts`, `otel-non-otlp-probe.ts`, `otel-resource-probe.ts`, `otel-signals-probe.ts`). `packages/coding-agent/src/modes/print-mode.ts:130-135`: \"Same truncation class as issue #5309 (issue #7635)\". `packages/coding-agent/test/cli-stdout-epipe.test.ts:6`: \"Regression for #10930\"."
+    },
+    {
+      "claim": "Mô tả repo trong task: \"git HEAD 5873776, currently on branch milestone-1\".",
+      "verdict": "Sai SHA.",
+      "correction": "HEAD thật của repo này là `ecd516f` (\"feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers\"), branch `milestone-1` — branch đúng, SHA thì không. Nội dung các file mà spec này viện dẫn đều tồn tại và đúng như mô tả, nên ảnh hưởng thực tế bằng không; nhưng đừng dùng `5873776` làm mốc khi tra cứu.",
+      "evidence": "`git rev-parse --short HEAD` → `ecd516f`; `git branch --show-current` → `milestone-1`."
+    }
+  ],
+  "code_shape": "// packages/coding-agent/src/utils/stdout-guard.ts\n// Rule: no `any`, no ReturnType<>, ES `#private`, top-level imports only, no console.*\n// (the redirected console is the ONE sanctioned console use — it is the stderr sink),\n// Promise.withResolvers() not new Promise().\n\nimport * as stream from \"node:stream\";\nimport { inspect } from \"node:util\";\n\nconst RETRY_DELAY_MS = 10;\nconst MAX_ATTEMPTS = 500; // ~5s, then take the existing error path. SEE open_questions.\nconst RETRYABLE_CODES = new Set([\"ENOBUFS\", \"EAGAIN\", \"EWOULDBLOCK\"]);\n\nlet #tail: Promise<void> = Promise.resolve();\nlet #undoTakeover: (() => void) | undefined;\n\nexport function isStdoutTakenOver(): boolean {\n\treturn #undoTakeover !== undefined;\n}\n\n/**\n * Detour every writer that targets process.stdout onto stderr so it can never\n * corrupt a structured protocol on fd 1. Returns an undo that restores BOTH\n * process.stdout and console.log — a leaked takeover silently swallows every\n * later stdout write in the process.\n */\nexport function takeOverStdout(): NodeJS.WriteStream {\n\tif (#undoTakeover) throw new Error(\"stdout is already taken over\");\n\tconst protocolStdout = process.stdout;\n\tconst stderrSink = new stream.Writable({\n\t\twrite(chunk, _encoding, callback) {\n\t\t\tprocess.stderr.write(chunk, callback);\n\t\t},\n\t}) as unknown as NodeJS.WriteStream;\n\tconst originalLog = console.log;\n\tObject.defineProperty(process, \"stdout\", { value: stderrSink, configurable: true, writable: true });\n\tconsole.log = (...args: unknown[]) => {\n\t\tprocess.stderr.write(`${formatConsoleArgs(args)}\\n`);\n\t};\n\t#undoTakeover = () => {\n\t\tObject.defineProperty(process, \"stdout\", { value: protocolStdout, configurable: true, writable: true });\n\t\tconsole.log = originalLog;\n\t\t#undoTakeover = undefined;\n\t};\n\treturn protocolStdout;\n}\n\n/** Serialized on the previous write's completion so records stay ordered. */\nexport function writeRawStdout(text: string): Promise<void> {\n\t#tail = #tail.then(() => writeWithRetry(text));\n\treturn #tail;\n}\n\nfunction writeWithRetry(text: string): Promise<void> {\n\tconst { promise, resolve, reject } = Promise.withResolvers<void>();\n\tprocess.stdout.write(text, err => {\n\t\tif (err) reject(err);\n\t\telse resolve();\n\t});\n\treturn promise;\n}\n\n/** Resolves only AFTER the tail has settled — never before. */\nexport function flushRawStdout(): Promise<void> {\n\treturn #tail;\n}\n\nfunction isRetryable(err: unknown): boolean {\n\treturn typeof err === \"object\" && err !== null && \"code\" in err &&\n\t\tRETRYABLE_CODES.has(String((err as { code: unknown }).code));\n}\n\nfunction formatConsoleArgs(args: unknown[]): string { /* moved verbatim from acp-mode.ts:65-72 */ }\n\n// --- retry lives in the tail, not around the call, until a repro proves\n// --- otherwise. If ENOBUFS only ever arrives as a stream `error` event, the\n// --- loop below moves into the callback. See open_questions.\n// #tail = #tail.then(() => retryLoop(text));\n// async function retryLoop(text: string): Promise<void> {\n// \tfor (let attempt = 0; ; attempt++) {\n// \t\ttry { await writeWithRetry(text); return; }\n// \t\tcatch (err) {\n// \t\t\tif (!isRetryable(err) || attempt >= MAX_ATTEMPTS) throw err; // <- the assertion most likely to be dropped\n// \t\t\tawait Bun.sleep(RETRY_DELAY_MS);\n// \t\t}\n// \t}\n// }",
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Trước khi viết dòng nào: dựng một repro thật của ENOBUFS. Tạo /tmp/enobufs-probe.mjs — `const { spawn } = require('node:child_process')`; spawn một child `process.stdout.write(JSON.stringify({blob:'x'.repeat(64*1024*1024)}) + '\\n')` với stdout là pipe và KHÔNG đọc; bắt child `error` event, in ra `err.code`. Chạy 3 lần. Nếu `ENOBUFS`/`EAGAIN`/`EWOULDBLOCK` không xuất hiện ở CẢ error event LẪN sync throw, thì open_questions #2 đã trả lời: phần retry không có repro, chỉ ship phần gom về một chỗ và ghi rõ điều đó trong PR. Đừng viết vòng lặp retry cho một mã không tới được — `AGENTS.md` cấm test không bảo vệ hợp đồng quan sát được, và vòng lặp không kiểm chứng được cũng vậy.",
+      "anchor": "packages/coding-agent/test/stdout-guard.test.ts (chưa tồn tại)"
+    },
+    {
+      "n": 2,
+      "instruction": "Tạo `packages/coding-agent/src/utils/stdout-guard.ts`. Import top-level `import * as stream from \"node:stream\"` và `import { inspect } from \"node:util\"` (cả hai đều đã dùng ở acp-mode.ts:1-2). Bốn export: `isStdoutTakenOver(): boolean`, `takeOverStdout(): NodeJS.WriteStream` (trả về undo qua module state `#undoTakeover`, KHÔNG phải qua return value), `writeRawStdout(text: string): Promise<void>`, `flushRawStdout(): Promise<void>`. Copy nguyên văn `formatConsoleArgs` từ acp-mode.ts:65-72. Module-level `#tail: Promise<void> = Promise.resolve()`. Dùng `Promise.withResolvers<void>()` — KHÔNG `new Promise((resolve, reject) => …)`. Delay bằng `Bun.sleep(RETRY_DELAY_MS)`, không `setTimeout`. Nếu bước 1 cho thấy repro, bọc `writeWithRetry` trong `retryLoop` với `MAX_ATTEMPTS` chặn trên và `isRetryable()` chỉ nhận `ENOBUFS`/`EAGAIN`/`EWOULDBLOCK`. Không dùng `any`, không dùng `ReturnType<>`, field dùng `#`.",
+      "anchor": "packages/coding-agent/src/utils/stdout-guard.ts (tạo mới; thư mục cha packages/coding-agent/src/utils/ đã xác minh tồn tại, 45 file)"
+    },
+    {
+      "n": 3,
+      "instruction": "THAY thế `isolateProtocolStdout()` bằng `takeOverStdout()`. Xoá hàm `isolateProtocolStdout` (dòng 43-63) và đổi call site dòng 89 thành `stream.Writable.toWeb(takeOverStdout())`. `formatConsoleArgs` chuyển sang stdout-guard.ts, xoá khỏi acp-mode.ts. Thêm `import { takeOverStdout } from \"../../utils/stdout-guard\";` (import tương đối, đặt cạnh nhóm import ../../ hiện có ở dòng 5-6). Giữ nguyên mọi comment giải thích tại :44-52 — chúng là tài liệu về lý do, đừng xoá. Nếu `inspect` không còn được dùng trong acp-mode.ts sau khi xoá `formatConsoleArgs` thì xoá luôn `import { inspect } from \"node:util\"` — `bun run check:ts` sẽ bắt, nhưng đừng để lại import chết.",
+      "anchor": "packages/coding-agent/src/modes/acp/acp-mode.ts:43-63 (định nghĩa), :89 (call site) — cả hai ĐÃ XÁC MINH"
+    },
+    {
+      "n": 4,
+      "instruction": "Cho print-mode dùng chung `writeRawStdout()`. Xoá `let stdoutTail` + `const writeStdoutLine` ở dòng 137-147, thay mọi call site `writeStdoutLine(x)` bằng `void writeRawStdout(x)` (4 chỗ: :153, :228, :324, :326). Đổi drain fence `await stdoutTail;` ở dòng 348 thành `await flushRawStdout();`. GIỮ NGUYÊN comment tại :130-135 — nó ghi issue #5309/#7635 và là lý do tồn tại của cả khối. Thêm `import { flushRawStdout, writeRawStdout } from \"../utils/stdout-guard\";`. PHẢI giữ nguyên hành vi: `writeStdoutLine` gọi `process.stdout.write(text, cb)` — nếu `writeRawStdout` resolve/reject khác, `runPrintMode` có thể thoát sớm. Test `print-mode-json-flush.test.ts` là bằng chứng cho bước này, không phải bằng chứng cho bước 2.",
+      "anchor": "packages/coding-agent/src/modes/print-mode.ts:137-147 (tail), :153/:228/:324/:326 (call sites), :348 (fence) — TẤT CẢ ĐÃ XÁC MINH"
+    },
+    {
+      "n": 5,
+      "instruction": "KHÔNG chạm `rpc-output.ts` và `rpc-mode.ts`. `RpcOutputWriter` dùng disk spool, nghe `drain`, tự dọn qua `process.once('exit')` — mạnh hơn bản sẽ viết ở bước 2, và thay nó là viết lại một đường production đang chạy. Ghi lại việc hội tụ này thành một work item riêng sau milestone nếu muốn; đừng gộp vào W13.",
+      "anchor": "packages/coding-agent/src/modes/rpc/rpc-output.ts:17-162 (không sửa)"
+    },
+    {
+      "n": 6,
+      "instruction": "Viết `packages/coding-agent/test/stdout-guard.test.ts` với ĐÚNG BA test, mỗi test một hợp đồng quan sát được, và KHÔNG thêm test thứ tư trùng coverage có sẵn. (1) 'retries a write that fails once with ENOBUFS and delivers the frame in full' — `vi.spyOn(process.stdout, 'write')` như `print-mode-json-flush.test.ts:98` làm, lần đầu gọi callback với `{code:'ENOBUFS'}`, lần sau resolve; assert sink nhận đúng payload và `write` được gọi 2 lần. (2) 'spreads a non-retryable write failure instead of retrying forever' — callback với `{code:'EPERM'}`; assert promise REJECT với lỗi đó và `write` được gọi ĐÚNG MỘT lần. Đây là hợp đồng âm quan trọng nhất: nó là thứ ngăn một vòng lặp retry vô tận trên pipe hỏng vĩnh viễn. (3) 'takeOverStdout returns an undo that restores process.stdout and console.log' — lưu `const original = process.stdout; const originalLog = console.log;` gọi `takeOverStdout()`, assert `isStdoutTakenOver()` true và `process.stdout` khác identity, gọi undo, assert `process.stdout` và `console.log` trở lại ĐÚNG identity gốc và `isStdoutTakenOver()` false. KHÔNG assert 'stray console.log đi tới stderr' — `acp-stdout-hygiene.test.ts:86` đã bảo vệ cái đó end-to-end rồi. KHÔNG assert 'flush resolve sau tail' — `print-mode-json-flush.test.ts:94` đã bảo vệ. Bắt buộc `afterEach(() => { vi.restoreAllMocks(); })` và gọi undo trong afterEach nếu test nào takeover còn treo. TUYỆT ĐỐI không `Object.defineProperty(process, 'stdout', …)` trong test, không `mock.module()`, không mutate `process.*` ở cấp file.",
+      "anchor": "packages/coding-agent/test/stdout-guard.test.ts (tạo mới)"
+    },
+    {
+      "n": 7,
+      "instruction": "Build native addon trước khi chạy test: `bun run build:native`. Không có bước này thì `bun test` báo `0 pass / 1 fail` với `Failed to load pi_natives native addon for darwin-arm64` và MỌI test đều trông như đỏ — kể cả test không liên quan. Đây là bẫy môi trường, không phải hồi quy.",
+      "anchor": "package.json scripts.build:native"
+    },
+    {
+      "n": 8,
+      "instruction": "Thêm entry vào `## [Unreleased]` của `packages/coding-agent/CHANGELOG.md`, dạng `### Fixed`, một dòng, hướng người dùng. Dựng chữ để dán: `Fixed structured stdout output being truncated or dropped when a client stops reading (issue #7635)`. KHÔNG ghi chi tiết implementation, KHÔNG nhắc tên `takeOverStdout`, KHÔNG nhắm issue #10930 (fix EPIPE đã ship ở `postmortem.ts:356`).",
+      "anchor": "packages/coding-agent/CHANGELOG.md:3 (`## [Unreleased]` — ĐÃ XÁC MINH tồn tại, hiện rỗng)"
+    }
+  ],
+  "test_files": [
+    "packages/coding-agent/test/stdout-guard.test.ts (TẠO MỚI — 3 test, xem bước 6)",
+    "packages/coding-agent/test/acp-stdout-hygiene.test.ts (GIỮ NGUYÊN — hồi quy bước 3; đã có, 1 test, 191 dòng)",
+    "packages/coding-agent/test/print-mode-json-flush.test.ts (GIỮ NGUYÊN — hồi quy bước 4; đã có, 1 test, 153 dòng)",
+    "packages/coding-agent/test/rpc-output.test.ts (GIỮ NGUYÊN — bước 5 không sửa production; đã có, 5 test)",
+    "packages/coding-agent/test/cli-stdout-epipe.test.ts (GIỮ NGUYÊN — hồi quy đường disconnect; đã có, 1 test, `it.skipIf(process.platform === 'win32')`)"
+  ],
+  "test_contract": "Hợp đồng quan sát được mà `stdout-guard.test.ts` bảo vệ, và điều người tiêu thụ thấy nếu nó hồi quy:\n\n(1) 'Một lần ghi fail ENOBUFS thì được thử lại và frame tới nơi trọn vẹn.' Người tiêu thụ: một client JSON/ACP ngừng đọc rồi đọc lại. Hồi quy ⇒ frame bị mất im lặng; client JSON.parse được dòng thiếu hoặc nhận `agent_end` cụt.\n\n(2) 'Một lần ghi fail với mã KHÔNG retry được thì PHÁT TÁN, không quay vòng.' Người tiêu thụ: pipe đã đóng vĩnh viễn. Hồi quy ⇒ `omp` treo vô hạn thay vì rơi vào đường disconnect sẵn có. Đây là hợp đồng ÂM và là khẳng định dễ bị bỏ sót nhất — một vòng lặp retry không chặn trên là lỗi treo máy, không phải lỗi mất dữ liệu.\n\n(3) 'takeOverStdout trả về undo khôi phục cả process.stdout lẫn console.log.' Người tiêu thụ: bất kỳ ai chạy takeover trong cùng process — bao gồm MỌI file test chạy sau trong cùng run. Hồi quy ⇒ takeover rò rỉ, mọi stdout write sau đó bám vào stderr, và toàn bộ phần còn lại của suite im lặng mất output mà không đỏ dòng nào.\n\nCố ý KHÔNG có trong file test mới: (a) 'stray console.log đi tới stderr' — `acp-stdout-hygiene.test.ts:86` đã bảo vệ end-to-end bằng subprocess thật; (b) 'drain fence resolve sau tail' — `print-mode-json-flush.test.ts:94` đã bảo vệ bằng payload 1.5MB. `AGENTS.md`: \"Don't duplicate coverage across abstraction levels.\" Ba hợp đồng còn lại là ba hợp đồng CHƯA có ai bảo vệ.",
+  "verification": "1) `bun run build:native` — bắt buộc, nếu không thì mọi `bun test` dưới đây báo 0 pass.\n2) `bun run check:ts` — ĐÃ CHẠY THỬ, PASS (~35s, không cần native addon). KHÔNG dùng `bun check`: lệnh đó là `check:ts` + `check:rs`, kéo cả Rust toolchain.\n3) `bun test packages/coding-agent/test/stdout-guard.test.ts` — file mới, 3 test.\n4) `bun test packages/coding-agent/test/acp-stdout-hygiene.test.ts packages/coding-agent/test/print-mode-json-flush.test.ts packages/coding-agent/test/rpc-output.test.ts packages/coding-agent/test/cli-stdout-epipe.test.ts` — 8 test hồi quy, tất cả phải xanh. Đây mới là bằng chứng thật cho bước 3 và bước 4.\n5) `bun run test` — TOÀN SUITE. Không thể thay bằng pass file-local: takeover `process.stdout` là process-global, và một test file đơn lẻ xanh KHÔNG chứng minh được mình không phá file chạy sau. Đây là điểm `AGENTS.md` nhấn mạnh và là lý do kế hoạch đòi full suite.\n6) Nếu chạy được: `omp acp` thủ công với một client, pipe qua `head -c 100` để reader nghẽn, xác nhận không cắt dòng giữa chừng.",
+  "gate": "BA điều phải đồng thời đúng, và mỗi điều đỏ được nếu làm sai:\n\nA. `bun run check:ts` PASS — types sạch sau khi xoá `isolateProtocolStdout`/`formatConsoleArgs` khỏi acp-mode.ts và `stdoutTail` khỏi print-mode.ts. Đỏ nếu còn import chết hoặc sai chữ ký.\n\nB. `bun test` trên 5 file ở mục test_files → 11 test xanh (3 mới + 8 hồi quy). Đỏ nếu bước 3 phá ACP hygiene, bước 4 phá drain fence của #7635, hoặc hợp đồng (2) không có.\n\nC. `bun run test` TOÀN SUITE xanh — đây là điều duy nhất chứng minh takeover không rò rỉ. Gate B tự nó KHÔNG đủ: 5 file test đó có thể xanh trong khi một file thứ 6 chạy sau nhận stdout đã bị rebind. Đó đúng là failure mode mà kế hoạch cảnh báo, và chỉ full suite mới bắt được.",
+  "gate_can_fail": "Có — về mặt thiết kế, cả ba điều kiện đều có thể đỏ. Nhưng phải nói thẳng: gate HIỆN KHÔNG CHẠY ĐƯỢC trong môi trường này. `bun test packages/coding-agent/test/rpc-output.test.ts` trả `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64` tại `packages/natives/native/index.js:23:24` — native addon chưa build. Cho tới khi chạy `bun run build:native`, `bun test` báo đỏ bất kể code đúng hay sai, nên đây là một gate TRONG (vacuous). Chỉ điều kiện A (`bun run check:ts`) là chạy được và có ý nghĩa ngay bây giờ — đã xác minh PASS. Nếu kỹ sư không build native addon, họ phải coi W13 là CHƯA xác minh chứ không phải là xanh.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/utils/stdout-guard.ts",
+      "action": "create",
+      "change": "Guard dùng chung: `isStdoutTakenOver()`, `takeOverStdout()` (trả undo, khôi phục cả process.stdout lẫn console.log), `writeRawStdout()` (serialize trên promise tail, retry ENOBUFS/EAGAIN/EWOULDBLOCK ~10ms, chặn trên), `flushRawStdout()` (drain fence).",
+      "verified": false,
+      "note": "CHƯA tồn tại — đúng như kế hoạch. Thư mục cha `packages/coding-agent/src/utils/` ĐÃ xác minh tồn tại (45 file), nên đường dẫn là hợp lệ."
+    },
+    {
+      "path": "packages/coding-agent/test/stdout-guard.test.ts",
+      "action": "create",
+      "change": "3 test: retry-once-ENOBUFS-delivers-in-full; non-retryable-code-spreads-not-loops; takeover-undo-restores-identity. `vi.spyOn` + `vi.restoreAllMocks()` trong `afterEach`, không `mock.module()`, không `Object.defineProperty(process, …)`.",
+      "verified": false,
+      "note": "CHƯA tồn tại. Thư mục `packages/coding-agent/test/` ĐÃ xác minh tồn tại."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/acp/acp-mode.ts",
+      "action": "modify",
+      "change": "Xoá `isolateProtocolStdout()` (:43-63) và `formatConsoleArgs` (:65-72), chuyển sang `takeOverStdout()` tại call site :89. Thêm import `from \"../../utils/stdout-guard\"`.",
+      "verified": true,
+      "note": "ĐỊNH NGHĨA :43-63 và CALL SITE :89 ĐÃ XÁC MINH bằng sed/grep. Giữ nguyên comment tại :44-52 (giải thích lý do). Nếu `inspect` thành import chết thì xoá `import { inspect } from \"node:util\"` (:2)."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/print-mode.ts",
+      "action": "modify",
+      "change": "Xoá `stdoutTail` + `writeStdoutLine` (:137-147), thay 4 call site bằng `writeRawStdout()`, đổi drain fence `await stdoutTail;` (:348) thành `await flushRawStdout();`.",
+      "verified": true,
+      "note": "TẤT CẢ call site ĐÃ XÁC MINH: :137, :138, :153, :228, :324, :326, :348. Comment tại :130-135 nhắc issue #5309/#7635 — giữ nguyên. Đây là bước rủi ro nhất vì `print-mode-json-flush.test.ts` phải vẫn xanh."
+    },
+    {
+      "path": "packages/coding-agent/src/modes/rpc/rpc-output.ts",
+      "action": "modify",
+      "change": "KHÔNG sửa. `RpcOutputWriter` đã mạnh hơn bản sẽ viết (drain + disk spool + exit cleanup); thay nó là viết lại đường production đang chạy mà không cần.",
+      "verified": true,
+      "note": "162 LOC ĐÃ XÁC MINH, dùng tại `rpc-mode.ts:780`. Ghi lại là work item hội tụ sau milestone, đừng gộp vào W13."
+    },
+    {
+      "path": "packages/coding-agent/CHANGELOG.md",
+      "action": "modify",
+      "change": "Một dòng dưới `## [Unreleased]` → `### Fixed`: `Fixed structured stdout output being truncated or dropped when a client stops reading (issue #7635)`.",
+      "verified": true,
+      "note": "`## [Unreleased]` tại dòng 3, ĐÃ XÁC MINH tồn tại và hiện đang rỗng. Dùng issue #7635 (đã có trong print-mode.ts:135 và print-mode-json-flush.test.ts:2), KHÔNG dùng #10930 (fix EPIPE đã ship ở postmortem.ts:356)."
+    }
+  ]
+}

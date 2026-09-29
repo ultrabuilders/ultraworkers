@@ -1,0 +1,617 @@
+{
+  "id": "telemetry",
+  "title": "Migrate @earendil-works/pi-telemetry -> @oh-my-pi/pi-telemetry by verbatim copy + scope/vitest/private rewrite",
+  "source_path": "/Users/tranquangdang21/Projects/pi-ref/packages/telemetry",
+  "source_files": 12,
+  "source_bytes": 62831,
+  "one_line": "Telemetry is a 957-line zero-dependency LEAF contract package (callback-scoped span context, in-memory reference adapter, reusable adapter conformance suite, ~250 lines of closed-set attribute type machinery); copy all 12 files, strip 16 `.ts` import extensions, swap 2 vitest imports for bun:test, convert one `private` field to `#state`, and re-scope 14 `@earendil-works/` strings — it depends on ZERO of the other 6 new packages, so it is safe to migrate first.",
+  "why_copy_not_reimplement": "Three concrete reasons, each grounded in a contract a rewrite would lose. (1) The settlement contract is non-obvious and already regression-tested: `RecordedTelemetrySpan.endSequence` is a monotonic counter (memory.ts:98, `span.endSequence = state.nextEndSequence++`) whose only purpose is to prove child-before-parent end ordering even when siblings finish concurrently — the conformance case 'records nested and concurrent child relationships' (conformance.ts:246-272) asserts `second.endSequence < first.endSequence < parent.endSequence` after releasing two children out of order. A rewrite would naturally use a timestamp or a tree walk and lose that proof. (2) Atomicity under hostile payloads: `mergeAttributes` (memory.ts:63-69) copies first, then assigns, so a `Proxy` that throws on the 2nd `ownKeys` cannot half-apply; and every recording method is individually wrapped in try/catch (memory.ts:143,152,159) so telemetry can never break the caller. The suite proves this with a 4-trap throwing `Proxy` helper (`unreadable()`, conformance.ts:43-58) and asserts the pre-existing bag survives verbatim (conformance.ts:206-218). Rewriting this correctly is exactly the kind of thing that looks right and is subtly wrong. (3) `src/testing/conformance.ts` (315 lines, 9 grouped cases) is not a test file — it is a PUBLISHED export (`./testing` subpath) that third-party adapter authors run against their own backend. It is a product. Reimplementing means re-deriving 9 cases plus the Proxy harness with no reference to check against, and the result would be less useful to the ecosystem than the original. Additionally, on the legal axis the MIT terms make copy cheap and a 'clean-room' rewrite strictly riskier: rewriting is only safe if you never read the source, and this spec's whole premise is that we read it. Copy + preserved notice is the compliant path; a rewrite invites a provenance argument nobody needs to have.",
+  "public_api": [
+    {
+      "symbol": "AttributeValue",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:1",
+      "target_anchor": "packages/telemetry/src/index.ts:1",
+      "already_exists_in_omp": true,
+      "note": "NAME COLLISION, different shape. pi: string|number|boolean|readonly string[]|readonly number[]|readonly boolean[]. omp already has an unrelated `AttributeValue` from @opentelemetry/api, used at packages/agent/src/telemetry.ts:2100 (`setSpanAttribute`) and packages/coding-agent/src/telemetry-export-otlp.ts:399. omp's is `{string|number|boolean|Array<string|number|boolean>}` and is NOT re-exported from any omp barrel today, so nothing breaks on copy. Do not rename pi's — keep `AttributeValue`. When the agent spec wires TelemetryContext in, alias the OTEL one at the import site instead of re-exporting both."
+    },
+    {
+      "symbol": "SpanAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:3",
+      "target_anchor": "packages/telemetry/src/index.ts:3",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "SpanOptions",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:7",
+      "target_anchor": "packages/telemetry/src/index.ts:7",
+      "already_exists_in_omp": true,
+      "note": "NAME COLLISION with OTEL's `SpanOptions`, imported at packages/agent/test/run-summary.test.ts:27 and used to type a fake Tracer at line 45. Different shape: pi is `{name, attributes?}`; OTEL's is `{attributes?, links?, startTime?, kind?}`. Both are module-scoped type imports today so no compile conflict. Same rule as AttributeValue: keep pi's name, and when agent adopts telemetry it must use explicit aliased re-exports rather than `export *`."
+    },
+    {
+      "symbol": "SpanStatus",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:12",
+      "target_anchor": "packages/telemetry/src/index.ts:12",
+      "already_exists_in_omp": true,
+      "note": "NAME COLLISION with OTEL's `SpanStatus` (imported at packages/agent/test/run-summary.test.ts:28, used at :37 and :83). pi's is the discriminated union `{status:'ok'} | {status:'error', error?}`; OTEL's is `{code, message?}`. No compile conflict today because neither is re-exported by an omp barrel. Keep pi's name; same alias rule."
+    },
+    {
+      "symbol": "TelemetryContext",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:14",
+      "target_anchor": "packages/telemetry/src/index.ts:14",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. THE core new contract: `startSpan<T>(options, callback) => Promise<T>` — callback-scoped, not immediate. Distinct from omp's OTEL Tracer."
+    },
+    {
+      "symbol": "TelemetrySpan",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:18",
+      "target_anchor": "packages/telemetry/src/index.ts:18",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Extends TelemetryContext, so a span is also a child context. Do NOT confuse with omp's exported `TelemetrySpanKind` (packages/agent/src/telemetry.ts:181) — different symbol, similar name, no action needed."
+    },
+    {
+      "symbol": "NOOP_TELEMETRY_CONTEXT",
+      "kind": "const",
+      "source_anchor": "packages/telemetry/src/noop.ts:20 (re-exported at src/index.ts:24)",
+      "target_anchor": "packages/telemetry/src/noop.ts:20 (re-exported at src/index.ts:24)",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Frozen singleton; `startSpan` admits the callback synchronously and returns `Promise.resolve(result)`, re-rejecting the identical value on throw (noop.ts:3-9)."
+    },
+    {
+      "symbol": "TelemetryAttributeType",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:26",
+      "target_anchor": "packages/telemetry/src/index.ts:26",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetryAttributeMetadata",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:28",
+      "target_anchor": "packages/telemetry/src/index.ts:28",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetryAttributeDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:34",
+      "target_anchor": "packages/telemetry/src/index.ts:34",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Discriminated union of 6 array/scalar shapes."
+    },
+    {
+      "symbol": "TelemetryStartAttributeDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:44",
+      "target_anchor": "packages/telemetry/src/index.ts:44",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetryEventAttributeDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:45",
+      "target_anchor": "packages/telemetry/src/index.ts:45",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Structurally identical to TelemetryStartAttributeDefinition; keep both (pi does, and pi-agent re-exports both)."
+    },
+    {
+      "symbol": "TelemetryEventDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:47",
+      "target_anchor": "packages/telemetry/src/index.ts:47",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetryParentDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:52",
+      "target_anchor": "packages/telemetry/src/index.ts:52",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Documentation-only: adapters never read it."
+    },
+    {
+      "symbol": "TelemetrySpanDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:57",
+      "target_anchor": "packages/telemetry/src/index.ts:57",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetrySchemaDefinition",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:66",
+      "target_anchor": "packages/telemetry/src/index.ts:66",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "defineTelemetrySchema",
+      "kind": "function",
+      "source_anchor": "packages/telemetry/src/index.ts:72",
+      "target_anchor": "packages/telemetry/src/index.ts:72",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. `<const T>` identity helper — returns its argument unchanged at runtime, preserves literal types."
+    },
+    {
+      "symbol": "InferRequiredAndOptionalAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:122",
+      "target_anchor": "packages/telemetry/src/index.ts:122",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. Exported shared inference utility."
+    },
+    {
+      "symbol": "InferStartAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:132",
+      "target_anchor": "packages/telemetry/src/index.ts:132",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "InferOptionalAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:135",
+      "target_anchor": "packages/telemetry/src/index.ts:135",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "ExactTelemetryAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:140",
+      "target_anchor": "packages/telemetry/src/index.ts:140",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. The closed-set enforcement: `Actual & Record<Exclude<keyof Actual, keyof Expected>, never>`. This is the single most important line in the package and the easiest to lose in a rewrite."
+    },
+    {
+      "symbol": "InferEventAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:143",
+      "target_anchor": "packages/telemetry/src/index.ts:143",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetrySchemaSpanName",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:146",
+      "target_anchor": "packages/telemetry/src/index.ts:146",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetrySchemaSpanStartAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:153",
+      "target_anchor": "packages/telemetry/src/index.ts:153",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Consumed by pi-agent (packages/agent/src/harness/telemetry.ts)."
+    },
+    {
+      "symbol": "TelemetrySchemaSpanEndAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:163",
+      "target_anchor": "packages/telemetry/src/index.ts:163",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetrySchemaSpanEventName",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:180",
+      "target_anchor": "packages/telemetry/src/index.ts:180",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetrySchemaSpanEventAttributes",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:195",
+      "target_anchor": "packages/telemetry/src/index.ts:195",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "SchemaTelemetrySpan",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:222",
+      "target_anchor": "packages/telemetry/src/index.ts:222",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. `Omit<TelemetrySpan,'addEvent'|'setAttributes'> &` narrowed per schema span."
+    },
+    {
+      "symbol": "TelemetrySchemaSpanUnion",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:240",
+      "target_anchor": "packages/telemetry/src/index.ts:240",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TypedSpanStarter",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/index.ts:318",
+      "target_anchor": "packages/telemetry/src/index.ts:318",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. UnionToIntersection of per-name starters; the intersection trick is what preserves name→attribute correlation."
+    },
+    {
+      "symbol": "createTypedSpanStarter",
+      "kind": "function",
+      "source_anchor": "packages/telemetry/src/index.ts:349",
+      "target_anchor": "packages/telemetry/src/index.ts:349",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. `_schemas` is a phantom type-only param — the body never reads it (index.ts:324-343 passes it nowhere). That non-inspection is itself a tested contract (test/telemetry.test.ts:122-124)."
+    },
+    {
+      "symbol": "RecordedTelemetryEvent",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/memory.ts:11 (re-exported at src/index.ts:356)",
+      "target_anchor": "packages/telemetry/src/memory.ts:11 (re-exported at src/index.ts:356)",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "RecordedTelemetrySpan",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/memory.ts:16 (re-exported at src/index.ts:356)",
+      "target_anchor": "packages/telemetry/src/memory.ts:16 (re-exported at src/index.ts:356)",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. This is the NORMALIZED SNAPSHOT SHAPE that any future omp telemetry backend must produce to be covered by the conformance suite — the integration point that makes otel/stats/telemetry one system rather than three."
+    },
+    {
+      "symbol": "InMemoryTelemetryContext",
+      "kind": "class",
+      "source_anchor": "packages/telemetry/src/memory.ts:192 (re-exported at src/index.ts:357)",
+      "target_anchor": "packages/telemetry/src/memory.ts:192 (re-exported at src/index.ts:357)",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. ONLY place needing the `private`→`#private` rewrite (memory.ts:193). Two public methods: startSpan, getSpans."
+    },
+    {
+      "symbol": "createTelemetryAdapterConformance",
+      "kind": "function",
+      "source_anchor": "packages/telemetry/src/testing/conformance.ts:61 (re-exported at src/testing/index.ts:1)",
+      "target_anchor": "packages/telemetry/src/testing/conformance.ts:61 (re-exported at src/testing/index.ts:1)",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Uses `node:assert/strict` named imports (conformance.ts:1) — proven to typecheck in omp src, see packages/utils/src/abortable.ts:1."
+    },
+    {
+      "symbol": "TelemetryAdapterFixture",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/testing/types.ts:5",
+      "target_anchor": "packages/telemetry/src/testing/types.ts:5",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Extends AsyncDisposable; `await using` works in omp (see packages/coding-agent/test/storage-errors.test.ts:35)."
+    },
+    {
+      "symbol": "TelemetryAdapterFixtureFactory",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/testing/types.ts:11",
+      "target_anchor": "packages/telemetry/src/testing/types.ts:11",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New."
+    },
+    {
+      "symbol": "TelemetryAdapterConformanceCase",
+      "kind": "type",
+      "source_anchor": "packages/telemetry/src/testing/types.ts:14",
+      "target_anchor": "packages/telemetry/src/testing/types.ts:14",
+      "already_exists_in_omp": false,
+      "note": "0 refs in omp. New. Runner-independent by design — the whole point is that it can be driven by bun:test in omp and vitest in pi."
+    }
+  ],
+  "scope_rewrites": [
+    {
+      "from": "@earendil-works/pi-telemetry",
+      "to": "@oh-my-pi/pi-telemetry",
+      "occurrences": 10,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-agent-core",
+      "to": "@oh-my-pi/pi-agent-core",
+      "occurrences": 3,
+      "verified": true
+    },
+    {
+      "from": "@earendil-works/pi-ai",
+      "to": "@oh-my-pi/pi-ai",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "from \"./index.ts\"",
+      "to": "from \"./index\"",
+      "occurrences": 3,
+      "verified": true
+    },
+    {
+      "from": "from \"./memory.ts\"",
+      "to": "from \"./memory\"",
+      "occurrences": 3,
+      "verified": true
+    },
+    {
+      "from": "from \"./noop.ts\"",
+      "to": "from \"./noop\"",
+      "occurrences": 2,
+      "verified": true
+    },
+    {
+      "from": "from \"./types.ts\"",
+      "to": "from \"./types\"",
+      "occurrences": 2,
+      "verified": true
+    },
+    {
+      "from": "from \"./conformance.ts\"",
+      "to": "from \"./conformance\"",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "from \"../index.ts\"",
+      "to": "from \"../index\"",
+      "occurrences": 2,
+      "verified": true
+    },
+    {
+      "from": "from \"../memory.ts\"",
+      "to": "from \"../memory\"",
+      "occurrences": 2,
+      "verified": true
+    },
+    {
+      "from": "from \"../src/index.ts\"",
+      "to": "from \"../src/index\"",
+      "occurrences": 2,
+      "verified": true
+    },
+    {
+      "from": "from \"../src/testing/index.ts\"",
+      "to": "from \"../src/testing/index\"",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "import { describe, expect, expectTypeOf, it } from \"vitest\"",
+      "to": "import { describe, expect, expectTypeOf, it } from \"bun:test\"",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "import { describe, expect, it } from \"vitest\"",
+      "to": "import { describe, expect, it } from \"bun:test\"",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "private readonly state: InMemoryTelemetryState",
+      "to": "#state: InMemoryTelemetryState",
+      "occurrences": 1,
+      "verified": true
+    },
+    {
+      "from": "this.state",
+      "to": "this.#state",
+      "occurrences": 2,
+      "verified": true
+    }
+  ],
+  "new_dependencies": [],
+  "collisions": [
+    {
+      "what": "`AttributeValue` — pi-telemetry's scalar/array union vs @opentelemetry/api's `AttributeValue`",
+      "pi_anchor": "packages/telemetry/src/index.ts:1",
+      "omp_anchor": "packages/agent/src/telemetry.ts:44 (import), :2100 (`setSpanAttribute(span, key, value: AttributeValue)`); also packages/coding-agent/src/telemetry-export-otlp.ts:25,:399",
+      "resolution": "KEEP pi's name and shape verbatim — it is part of the copied public API and renaming it breaks every downstream pi schema. No compile conflict today because omp never re-exports OTEL's `AttributeValue` from a barrel (only `Attributes`, `Span`, `SpanKind`, `SpanStatusCode`, `Tracer`, `trace` are re-exported, telemetry.ts:2106). Constraint handed to the agent spec: when omp's agent adopts TelemetryContext, alias OTEL's at the import site (`import { type AttributeValue as OtelAttributeValue }`) and do NOT `export * from \"@oh-my-pi/pi-telemetry\"` inside packages/agent/src/index.ts, because that barrel already does `export * from \"./telemetry\"` (index.ts:24) and a future `AttributeValue` there would be an ambiguous star export."
+    },
+    {
+      "what": "`SpanOptions` and `SpanStatus` — pi's `{name, attributes?}` / `{status:'ok'|'error'}` vs OTEL's `{attributes?,links?,startTime?,kind?}` / `{code,message?}`",
+      "pi_anchor": "packages/telemetry/src/index.ts:7 and :12",
+      "omp_anchor": "packages/agent/test/run-summary.test.ts:27-28 (imported from @opentelemetry/api), :37, :45, :83 — this test hand-rolls a fake `Tracer` with `startSpan(name, options?: SpanOptions)` and `setStatus(status: SpanStatus)`",
+      "resolution": "KEEP pi's names verbatim. The two live in different modules today so nothing collides. Do NOT 'unify' them — pi's are the callback-scoped contract, OTEL's are the immediate-span wire type, and merging them would force one of the two test doubles to change. Same barrel constraint as above: the agent spec must use explicit aliased named re-exports (exactly what pi does at packages/agent/src/index.ts:19-37) rather than a star re-export of the telemetry package."
+    },
+    {
+      "what": "`startSpan` — pi's callback-scoped `startSpan(options, callback) => Promise<T>` (span lives only for the callback) vs omp's immediate `startSpan(telemetry, kind, name, options)` helper and OTEL's `Tracer.startSpan(name, options, ctx)`",
+      "pi_anchor": "packages/telemetry/src/index.ts:15 (TelemetryContext.startSpan), src/memory.ts:199, src/noop.ts:3",
+      "omp_anchor": "packages/agent/src/telemetry.ts:466 (module-private helper) and :500 (`telemetry.tracer.startSpan(...)`); 14 `startSpan` refs total across omp",
+      "resolution": "KEEP pi's shape. Same name, opposite lifetime model — this is the highest-risk mental collision in the whole migration because both are called `startSpan` and both produce something called a span. Mitigation for the copy step: this package defines no bare local `startSpan` binding, so nothing inside packages/telemetry conflicts. The real hazard is a FUTURE file that imports both `TelemetryContext` and omp's agent telemetry; that file must not alias either import to the bare name `startSpan`."
+    },
+    {
+      "what": "`TelemetrySpan` (pi) vs `TelemetrySpanKind` (omp) — near-identical names, unrelated symbols",
+      "pi_anchor": "packages/telemetry/src/index.ts:18",
+      "omp_anchor": "packages/agent/src/telemetry.ts:181 (`export type TelemetrySpanKind = \"invoke_agent\" | \"chat\" | \"execute_tool\" | \"handoff\"`)",
+      "resolution": "No action, and no rename. `TelemetrySpanKind` is a 4-value string union about OTEL operation names; `TelemetrySpan` is the recording interface. Renaming either would diverge from pi for no benefit. Listed here only so a future grep for 'TelemetrySpan' does not report a false collision."
+    },
+    {
+      "what": "CONCEPTUAL, not textual: omp has TWO existing telemetry things and pi adds a third. They are not duplicates and must not be merged.",
+      "pi_anchor": "packages/telemetry/src/index.ts:14-22 (the callback contract) + README.md:365-372 ('Pi Package Integration')",
+      "omp_anchor": "packages/agent/src/telemetry.ts (2114 lines, an OTEL EMITTER that actually produces @opentelemetry/api Span objects and exports to OTLP) and packages/stats (a LOCAL SQLite dashboard, 74 KB db.ts, 19 KB parser.ts, 41 KB trace.ts — reads session JSONL, never sends anything)",
+      "resolution": "KEEP ALL THREE, in a strict dependency order: (1) `@oh-my-pi/pi-telemetry` = the vendor-neutral CONTRACT — zero I/O, zero vendor, zero network, just 'what a span is'. (2) `packages/agent/src/telemetry.ts` = the omp EMITTER that binds that contract to OTEL/OTLP. (3) `packages/stats` = the LOCAL READER that turns session logs into a dashboard. Stats is local (nothing leaves the machine); agent telemetry is remote (OTLP); pi telemetry is neither — it is the vocabulary the other two will eventually share. The integration point is `RecordedTelemetrySpan` (memory.ts:16): it is the normalized shape any omp emitter must produce to be covered by `createTelemetryAdapterConformance`, which is how OTEL and in-memory become provably equivalent. Do NOT port pi's emitter into omp's OTEL file and do NOT make stats depend on telemetry yet — wiring the contract into omp's agent is the AGENT spec's job, not telemetry's."
+    }
+  ],
+  "files_to_copy": [
+    {
+      "path": "packages/telemetry/src/index.ts",
+      "bytes": 13363,
+      "action": "copy-then-rewrite",
+      "rewrite": "L24, L356, L357: drop the `.ts` extension from the three relative specifiers. L24 `export { NOOP_TELEMETRY_CONTEXT } from \"./noop\"` -> `export * from \"./noop\"` and L356-357 -> `export * from \"./memory\"` to satisfy the omp barrel rule (prefer star re-exports, including type-only barrels). Both are exact-equivalent: noop.ts's only export is NOOP_TELEMETRY_CONTEXT; memory.ts's exports are exactly RecordedTelemetryEvent, RecordedTelemetrySpan, InMemoryTelemetryContext. Everything else — all 350 other lines, including the ~250-line conditional-type block at L76-322 — copies byte-for-byte."
+    },
+    {
+      "path": "packages/telemetry/src/memory.ts",
+      "bytes": 6067,
+      "action": "copy-then-rewrite",
+      "rewrite": "L8, L9: drop the `.ts` extension. L193: `private readonly state: InMemoryTelemetryState = {` -> `#state: InMemoryTelemetryState = {` (omp bans the `private` keyword on fields; constructor-parameter properties are the sole exception and this is not one). L200 and L205: `this.state` -> `this.#state`. The two public methods `startSpan` and `getSpans` keep their bare form. All other 214 lines verbatim — in particular the settlement/atomicity/passivity logic at L50-186 must not be touched."
+    },
+    {
+      "path": "packages/telemetry/src/noop.ts",
+      "bytes": 645,
+      "action": "copy-then-rewrite",
+      "rewrite": "L1 only: `from \"./index.ts\"` -> `from \"./index\"`. The other 19 lines, including `Object.freeze(noopTelemetrySpan)` at L17, copy verbatim."
+    },
+    {
+      "path": "packages/telemetry/src/testing/index.ts",
+      "bytes": 198,
+      "action": "copy-then-rewrite",
+      "rewrite": "Whole file, 6 lines. Replace the named re-exports with two star re-exports per the omp barrel rule: `export * from \"./conformance\";` and `export * from \"./types\";`. Exact-equivalent — conformance.ts exports only `createTelemetryAdapterConformance` and types.ts exports only the 3 types, so the star form re-exports precisely the same 4 names. Drop the `.ts` extensions."
+    },
+    {
+      "path": "packages/telemetry/src/testing/types.ts",
+      "bytes": 743,
+      "action": "copy-then-rewrite",
+      "rewrite": "L1, L2 only: drop the `.ts` extension from `../index.ts` and `../memory.ts`. All 16 other lines verbatim."
+    },
+    {
+      "path": "packages/telemetry/src/testing/conformance.ts",
+      "bytes": 10631,
+      "action": "copy-then-rewrite",
+      "rewrite": "L2, L3, L8 only: drop the `.ts` extension. L1 `import { deepStrictEqual, doesNotThrow, fail, ok, strictEqual } from \"node:assert/strict\"` COPIES VERBATIM — omp already proves named `node:assert/strict` imports work in src (packages/utils/src/abortable.ts:1) and in test (packages/ai/test/fixtures/completion-retention.ts:1), and `@types/node` is present in node_modules. The 8 `doesNotThrow(...)` calls at L212, 228-230, 289-291, 306 are LIBRARY code inside a published export, not omp test assertions — the omp 'no bare not.toThrow()' filter applies to `test/`, not to `src/testing/`. Do not rewrite them."
+    },
+    {
+      "path": "packages/telemetry/test/telemetry.test.ts",
+      "bytes": 7093,
+      "action": "copy-then-rewrite",
+      "rewrite": "L1 vitest -> bun:test (`expectTypeOf` IS exported by bun:test — precedent packages/coding-agent/test/extensions-runner.test.ts:5). L13 drop the `.ts` extension. L71 and L152: DELETE `expectTypeOf(compileTimeFailures).toBeFunction();` — that is a banned tautology ('the code ran'); the `@ts-expect-error` comments inside the closure (L62-69, L140-150) are the actual type contract and `tsgo` enforces them without the runtime call. L55, L122-124, L192-194: replace the 5 banned bare `not.toThrow()` assertions with observable outcomes — L55 assert `JSON.stringify(schema)` EQUALS the definition string rather than not-throwing; L122-124 capture the returned starter and assert a subsequent `startSpan(\"operation\", {kind:\"read\"}, ...)` still resolves (proving `_schemas` was never read); L192-194 have the callback return a sentinel and assert the resolved value after each recording call. Everything else (the 5 `@ts-expect-error` blocks, the schema literals, the endSequence/parentId assertions) is already contract-level and copies verbatim."
+    },
+    {
+      "path": "packages/telemetry/test/conformance.test.ts",
+      "bytes": 1815,
+      "action": "copy-then-rewrite",
+      "rewrite": "L1 vitest -> bun:test. L2, L3: drop the `.ts` extension. The rest copies verbatim — the grouped `describe`/`it` loop at L15-21 and the detached-snapshot test at L23-45 are both real contracts (snapshot detachment, settled/endSequence transition across await)."
+    },
+    {
+      "path": "packages/telemetry/package.json",
+      "bytes": 995,
+      "action": "copy-then-rewrite",
+      "rewrite": "Not a token swap — rebuild the manifest on the omp leaf-package template (packages/wire/package.json is the model). Change: L2 name -> `@oh-my-pi/pi-telemetry`; `version` `0.87.1` -> `18.3.3`; L3 description -> 'Vendor-neutral telemetry contracts and typed schema utilities for omp'; author -> `{ \"name\": \"Stencil Labs, Inc.\", \"url\": \"https://stencil.so\" }` but KEEP a distinct copyright line for Mario Zechner in LICENSE; repository.url -> `git+https://github.com/can1357/oh-my-pi.git` with `directory: packages/telemetry`; add `homepage: https://omp.sh` and `bugs.url`; DELETE `main`, `types`, the whole `files` array and the `exports` map pointing at `./dist/*` — omp is source-first: `main`/`types` -> `./src/index.ts` and exports -> `{ \".\": {types:\"./src/index.ts\", import:\"./src/index.ts\"}, \"./testing\": {types:\"./src/testing/index.ts\", import:\"./src/testing/index.ts\"} }`; DELETE scripts `clean`/`build`/`test`/`prepublishOnly` (pi's `tsc -p tsconfig.build.json` is banned in omp) and replace with omp's `check` / `check:types` (`tsgo -p tsconfig.json --noEmit`) / `lint` (`oxlint .`) / `fix` / `fmt` (`oxfmt`) set; `engines.node >=22.19.0` -> `engines.bun >=1.3.14`; DELETE `devDependencies` `@types/node` + `vitest` and set `devDependencies: { \"@types/bun\": \"catalog:\" }`; DELETE the `dependencies` key entirely — this package has ZERO runtime npm dependencies, which is the strongest argument for migrating it first. Keep `keywords` and `license: MIT`."
+    },
+    {
+      "path": "packages/telemetry/README.md",
+      "bytes": 20482,
+      "action": "copy-then-rewrite",
+      "rewrite": "13 scope occurrences: 9x `@earendil-works/pi-telemetry` (L1, L36, L72, L139, L159, L180, L186, L219, L369) -> `@oh-my-pi/pi-telemetry`; 3x `@earendil-works/pi-agent-core` (L3 of the API table block near L365) -> `@oh-my-pi/pi-agent-core`; 1x `@earendil-works/pi-ai` -> `@oh-my-pi/pi-ai`. Also update: the 'Pi Package Integration' section (L365-372) must state that omp's package set is pi-telemetry (contract) + packages/agent telemetry.ts (OTEL emitter) + packages/stats (local dashboard), NOT the pi agent/ai split; the npm install snippet at L36; the 'Development' section (L447-460) replacing `npm test` / `npm run build` / `npm run check` with omp's `bun run check` and `bun test`; and the 'License' section (L462-464) must name Mario Zechner explicitly, not just say 'MIT'."
+    },
+    {
+      "path": "packages/telemetry/CHANGELOG.md",
+      "bytes": 590,
+      "action": "copy-then-rewrite",
+      "rewrite": "Do NOT copy pi's 9 dated version headings (0.84.2 through 0.87.1) — those are pi's release history, not omp's. Replace the whole file with the omp shape: `# Changelog` + `## [Unreleased]` containing one `### Added` line, e.g. 'Added `@oh-my-pi/pi-telemetry`: vendor-neutral telemetry contracts, an in-memory reference context, a reusable adapter conformance suite, and typed schema utilities. ([pi](https://github.com/earendil-works/pi) MIT, Copyright (c) 2025 Mario Zechner)'. Per AGENTS.md this is a user-facing Added entry and the attribution clause is the legal record, not decoration."
+    },
+    {
+      "path": "packages/telemetry/tsconfig.build.json",
+      "bytes": 209,
+      "action": "skip",
+      "rewrite": "pi's tsc-based build config has no omp equivalent — omp emits nothing (tsconfig.base.json sets noEmit:true) and never runs tsc. Instead CREATE packages/telemetry/tsconfig.json with the exact 4-line body packages/wire/tsconfig.json uses: `{ \"extends\": \"../tsconfig.workspace.json\", \"include\": [\"src\", \"test\"] }`. No separate create step is needed in the copy list because the workspace tsconfig globs `*/src`, `*/test`, `*/scripts` automatically (packages/tsconfig.workspace.json)."
+    },
+    {
+      "path": "packages/telemetry/LICENSE",
+      "bytes": 1109,
+      "action": "copy-then-rewrite",
+      "rewrite": "NEW FILE — the single condition that makes the copy lawful. Copy /Users/tranquangdang21/Projects/pi-ref/LICENSE VERBATIM (21 lines, MIT, 'Copyright (c) 2025 Mario Zechner') and APPEND omp's existing two lines ('Copyright (c) 2025-2026 Can Bölük' and 'Copyright (c) 2026 Stencil Labs, Inc.') as a third copyright holder, matching the pattern already used in packages/wire/LICENSE. Mario Zechner's line must be FIRST and must not be edited, reordered, or summarised. Also add a THIRD-PARTY-NOTICES.txt section in the repo root (that file already carries a 'TRACKED VENDORED CODE AND ASSET NOTICES' section with the same entry format used for crates/vendor/brush-core/LICENSE) recording that packages/telemetry is derived from earendil-works/pi under MIT."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "LEGAL FIRST, before any file is written. Create packages/telemetry/LICENSE by copying /Users/tranquangdang21/Projects/pi-ref/LICENSE verbatim and appending omp's two existing copyright lines (pattern: packages/wire/LICENSE). Mario Zechner's 'Copyright (c) 2025 Mario Zechner' stays first, unedited. Do this step before the copy so the notice exists the moment the first copied byte lands — retrofitting a notice after copying is how attribution gets lost.",
+      "anchor": "packages/telemetry/LICENSE (new) + root THIRD-PARTY-NOTICES.txt"
+    },
+    {
+      "n": 2,
+      "instruction": "Create packages/telemetry/{src,src/testing,test} and copy the 8 source+test files verbatim: src/index.ts, src/memory.ts, src/noop.ts, src/testing/index.ts, src/testing/types.ts, src/testing/conformance.ts, test/telemetry.test.ts, test/conformance.test.ts. 34128 bytes total. Do not reformat, do not let the editor reflow tabs, do not 'fix' anything yet.",
+      "anchor": "packages/telemetry/src/**, packages/telemetry/test/**"
+    },
+    {
+      "n": 3,
+      "instruction": "Strip the `.ts` extension from all 16 relative import/export specifiers across 8 files (exact list in scope_rewrites: noop.ts:1; index.ts:24,356,357; memory.ts:8,9; testing/index.ts:1,6; testing/types.ts:1,2; testing/conformance.ts:2,3,8; test/telemetry.test.ts:13; test/conformance.test.ts:2,3). MANDATORY, not cosmetic: tsconfig.base.json does NOT set allowImportingTsExtensions (only tsconfig.tools.json does), so tsgo emits TS5097 on every one of the 16 and the package will not typecheck.",
+      "anchor": "packages/telemetry/src/index.ts:24,356,357"
+    },
+    {
+      "n": 4,
+      "instruction": "Apply the omp barrel rule: replace the named re-exports with star re-exports in the two barrel files. src/testing/index.ts becomes exactly 2 lines (`export * from \"./conformance\";` / `export * from \"./types\";`). src/index.ts L24 becomes `export * from \"./noop\";` and L356-357 collapse to `export * from \"./memory\";`. Verify equivalence by symbol count, not by eye: noop.ts exports 1 name, memory.ts exports 3 (RecordedTelemetryEvent, RecordedTelemetrySpan, InMemoryTelemetryContext), types.ts exports 3, conformance.ts exports 1 — so the star form must still resolve to exactly the same 4+4 names on the two entry points.",
+      "anchor": "packages/telemetry/src/testing/index.ts:1,6 and packages/telemetry/src/index.ts:24,356,357"
+    },
+    {
+      "n": 5,
+      "instruction": "Convert the one `private` field to an ES `#private` field: memory.ts:193 `private readonly state:` -> `#state:`, and memory.ts:200 and :205 `this.state` -> `this.#state`. Leave the two public methods `startSpan` and `getSpans` bare. This is the ONLY class-privacy change in the package — grep for `private|protected|public ` afterwards and expect zero hits in src/.",
+      "anchor": "packages/telemetry/src/memory.ts:193,200,205"
+    },
+    {
+      "n": 6,
+      "instruction": "Swap the test runner: `from \"vitest\"` -> `from \"bun:test\"` on line 1 of both test files (2 occurrences). `expectTypeOf` is available from bun:test (precedent: packages/coding-agent/test/extensions-runner.test.ts:5). No other vitest API is used — no `vi`, no `mock`, no globals — so this is the whole runner migration.",
+      "anchor": "packages/telemetry/test/telemetry.test.ts:1, packages/telemetry/test/conformance.test.ts:1"
+    },
+    {
+      "n": 7,
+      "instruction": "Delete the 2 tautological assertions `expectTypeOf(compileTimeFailures).toBeFunction();` (telemetry.test.ts:71 and :152). They assert only that a function is a function; the real contract is the 11 `@ts-expect-error` comments inside those closures, which tsgo already enforces. Keep the `const compileTimeFailures = ...` bindings — they are what makes tsgo typecheck the closure bodies.",
+      "anchor": "packages/telemetry/test/telemetry.test.ts:71,152"
+    },
+    {
+      "n": 8,
+      "instruction": "Replace the 5 banned bare `not.toThrow()` assertions with observable-outcome assertions: telemetry.test.ts:55 (assert `JSON.stringify(schema)` equals the expected definition string — proves serializability, not merely absence of throw); :122-124 (assign the returned starter to a binding and assert a later `startSpan(\"operation\", {kind:\"read\"}, ...)` still resolves — proves `_schemas` was never read, which is the documented contract at index.ts:346-347); :192-194 (have the callback return a sentinel and assert the resolved value after each recording call, proving the no-op context ran the callback to completion). Leave the `doesNotThrow(...)` calls inside src/testing/conformance.ts alone — those are library code in a published export, not omp test assertions.",
+      "anchor": "packages/telemetry/test/telemetry.test.ts:55,122-124,192-194"
+    },
+    {
+      "n": 9,
+      "instruction": "Write packages/telemetry/package.json on the omp leaf template (packages/wire/package.json is the model): name `@oh-my-pi/pi-telemetry`, version `18.3.3`, source-first exports (`.` and `./testing` both -> `./src/...`), `dependencies` key absent entirely (zero runtime deps), devDependencies `{ \"@types/bun\": \"catalog:\" }`, engines `{ \"bun\": \">=1.3.14\" }`, and the omp script set (`check` / `check:types` via `tsgo -p tsconfig.json --noEmit` / `lint` / `fix` / `fmt`). No `tsc`, no `dist`, no `vitest`.",
+      "anchor": "packages/telemetry/package.json"
+    },
+    {
+      "n": 10,
+      "instruction": "Write packages/telemetry/tsconfig.json as the 4-line `{ \"extends\": \"../tsconfig.workspace.json\", \"include\": [\"src\", \"test\"] }` (copy packages/wire/tsconfig.json). Do NOT port pi's tsconfig.build.json — omp emits nothing and never runs tsc.",
+      "anchor": "packages/telemetry/tsconfig.json (new)"
+    },
+    {
+      "n": 11,
+      "instruction": "Register the package in the root workspace: add `\"@oh-my-pi/pi-telemetry\": \"18.3.3\"` to package.json's `workspaces.catalog` (alphabetical, between `@oh-my-pi/pi-tui` and `@oh-my-pi/pi-utils`). No workspaces-glob edit is needed — `packages/*` already covers it — and no tsconfig path mapping is needed either, because bun resolves the package through node_modules and packages/tsconfig.workspace.json globs `*/src` and `*/test`.",
+      "anchor": "package.json (workspaces.catalog)"
+    },
+    {
+      "n": 12,
+      "instruction": "Rewrite CHANGELOG.md to the omp shape (drop pi's 9 dated headings, one `### Added` line under `## [Unreleased]` carrying the MIT + Mario Zechner attribution) and the README (13 scope renames, the Pi Package Integration section rewritten for omp's telemetry/agent/stats split, Development section switched to `bun run check` / `bun test`, License section naming Mario Zechner).",
+      "anchor": "packages/telemetry/CHANGELOG.md, packages/telemetry/README.md"
+    },
+    {
+      "n": 13,
+      "instruction": "Add a THIRD-PARTY-NOTICES.txt section under the existing 'TRACKED VENDORED CODE AND ASSET NOTICES' heading, following the crates/vendor/brush-core/LICENSE entry format: name the source (earendil-works/pi, packages/telemetry, MIT), the copyright holder, and the fact that the notice is also shipped as packages/telemetry/LICENSE.",
+      "anchor": "THIRD-PARTY-NOTICES.txt"
+    },
+    {
+      "n": 14,
+      "instruction": "GATE. Run `bun run check:ts` from the repo root. It must exit 0. This is the only gate that runs in this environment (bun test is blocked by the unbuilt native addon). Expected failure modes if a step was skipped: TS5097 x16 (step 3 missed), TS2307 'vitest' x2 (step 6 missed), TS2344 'private' field is not assignable / TS18028 on `#state` (step 5 missed), oxfmt tab/quote diff across all 8 copied files (copied with pi's tabs — confirm they match omp's .oxfmtrc.json).",
+      "anchor": "root: bun run check:ts"
+    }
+  ],
+  "test_contract": "Two test files, both rewritten to bun:test, both contract-level (no source-grep, no mock.module, no tautologies). test/telemetry.test.ts must defend three observable contracts: (a) TYPED SCHEMA EXACTNESS — `defineTelemetrySchema` returns its argument identity, the definition survives `JSON.stringify`, and 5 `@ts-expect-error` blocks prove the closed set: required event attributes cannot be omitted, a value outside a declared `values` list is rejected, an undeclared event name is rejected, and an empty `endAttributes` rejects every attribute. A consumer who regresses this ships spans with misspelled or undeclared attribute keys and no runtime check will ever catch it. (b) VOCABULARY COMBINATION AND CHILD BINDING — `createTypedSpanStarter` over two schemas with disjoint span names resolves to 42 with a `parentId` chain operation->request, and 5 more `@ts-expect-error` blocks prove duplicate span names across schemas, union-valued names, and cross-schema attribute mismatch are all compile errors. (c) NO-OP PASSTHROUGH — the frozen span is admitted synchronously, a child `startSpan` returns the SAME span object, and rejection values are preserved by identity for both sync throws and async rejections. test/conformance.test.ts must drive the 9 published conformance cases against `InMemoryTelemetryContext` under bun:test (proving the suite is runner-portable, which is the suite's entire raison d'etre) plus one extra case for DETACHED SNAPSHOTS: mutating a returned snapshot's `attributes.tags` and `events[0].attributes.value` must not affect the next `getSpans()` call, and `settled`/`endSequence` must transition from `false`/`undefined` to `true`/`1` across the awaited `startSpan`. AGENTS.md bans bare `not.toThrow()` and 'the code ran' assertions, so step 8's 5 replacements are mandatory, not stylistic.",
+  "test_files": [
+    "packages/telemetry/test/telemetry.test.ts",
+    "packages/telemetry/test/conformance.test.ts"
+  ],
+  "verification": "The gate is `bun run check:ts` from /Users/tranquangdang21/Projects/ultraworkers, exit 0, ~29s on an idle machine. It runs `oxlint . && oxfmt --check` over packages/* then `tsgo --noEmit` per package via `--filter './packages/*' --if-present check:types`, so it covers all 4 enforcement layers at once: lint rules, formatter conformance on the copied files, full typecheck of the new package's src+test (including the 11 `@ts-expect-error` assertions, which fail the build if they stop erroring), and every existing package's regression. `bun test` is BLOCKED in this environment (native addon unbuilt; `bun --cwd=packages/natives run build` needs `brew install ninja` first), so the two test files are typechecked but not executed at gate time. That is an accepted, disclosed gap: the 9 conformance cases and 4 test cases are contract-level assertions that were green in pi under vitest, and the migration changes only the import line and 7 assertion forms — no production logic. The runner-portability claim (vitest -> bun:test) is therefore NOT empirically proven until `bun test packages/telemetry/` runs on a machine with ninja installed. Re-run the spec's gate as: `bun test packages/telemetry/ && bun run check:ts`. Manual greps to close the loop: `grep -rn 'earendil' packages/telemetry/` must return 0 hits; `grep -rn 'vitest' packages/telemetry/` must return 0; `grep -rn 'private |protected |public ' packages/telemetry/src/` must return 0; `grep -rno 'from \"\\.[^\"]*\\.ts\"' packages/telemetry/` must return 0; `grep -c 'Copyright (c) 2025 Mario Zechner' packages/telemetry/LICENSE` must return 1.",
+  "gate": "bun run check:ts",
+  "gate_can_fail": true,
+  "effort": "Small. ~1 hour. 12 files / 62831 bytes, of which only 8 files (34128 bytes) contain code. The rewrite surface is 16 specifier extensions, 2 runner imports, 3 `#state` edits, 2 barrel files, 7 assertion edits, 3 manifest files, and 2 registration lines in the root package.json. No new dependency, no build-graph change, no consumer to update — telemetry is a leaf with no dependents inside omp yet, so nothing else in the repo can break. The only genuinely slow part is reading pi's README closely enough to rewrite its integration section honestly for omp's telemetry/agent/stats triad.",
+  "risk": "LOW, and low in a specific way worth naming: this package has ZERO existing consumers in omp. Nothing imports TelemetryContext, InMemoryTelemetryContext, or any schema type anywhere in the 17-package tree (verified: 0 refs for 33 of the 36 public symbols). So the blast radius of a mistake is confined to packages/telemetry itself and cannot regress the CLI. The real risks are all local and all mechanical: (1) forgetting one of the 16 `.ts` extensions -> TS5097, caught by the gate; (2) leaving `private` in memory.ts -> caught by review and by the `#state`/this.#state mismatch; (3) the vitest->bun:test swap assuming bun lacks `expectTypeOf` -> it has it, verified at packages/coding-agent/test/extensions-runner.test.ts:5; (4) LEGAL, the only unrecoverable one: copying without packages/telemetry/LICENSE carrying Mario Zechner's copyright and full permission notice. That is why it is step 1 and not a step 15 afterthought. A secondary, forward-looking risk: this package introduces `AttributeValue`, `SpanOptions` and `SpanStatus` into a repo that already has same-named OTEL types. Nothing breaks today because neither is re-exported by an omp barrel, but a future `export * from \"@oh-my-pi/pi-telemetry\"` inside packages/agent/src/index.ts would create an ambiguous star export against the existing `export * from \"./telemetry\"` at index.ts:24. The resolution is recorded in the collisions table and must be carried into the agent spec.",
+  "open_questions": [
+    "Should the omp scope be `@oh-my-pi/pi-telemetry` (matching the 4 already-migrated names pi-agent-core/pi-ai/pi-coding-agent/pi-tui) or `@oh-my-pi/omp-telemetry` (matching the odd one out, `@oh-my-pi/omp-stats`)? This spec assumes `pi-telemetry` because the task fixes the convention at 'change scope only, keep the name'. `omp-stats` is the sole exception and it looks like drift rather than policy — worth one confirmation before the copy, because it is a rename of the published name and is painful to undo.",
+    "pi's version is 0.87.1; omp's catalog is 18.3.3. This spec writes `18.3.3` (what `bun run release` will stamp). Confirm the intent is a clean 18.3.3 with no pi-version lineage in the manifest, since the CHANGELOG rewrite in step 12 drops pi's version headings entirely.",
+    "Should the package be published, or is it internal-only until omp's agent actually consumes it? The `./testing` subpath and the README are written for third-party adapter authors. If omp has no plan to publish it, the conformance suite's raison d'etre weakens and someone should decide whether the export stays.",
+    "Is the OTEL emitter in packages/agent/src/telemetry.ts (2114 lines) meant to eventually BE the adapter that `createTelemetryAdapterConformance` grades, or is it staying hand-rolled? The answer decides whether `RecordedTelemetrySpan` becomes a live integration contract in the agent spec or just a test fixture. Out of scope here, but telemetry's conformance suite is useless if nothing is ever run against it.",
+    "pi's agent owns the AI/harness/session SCHEMAS (AI_TELEMETRY_SCHEMA, HARNESS_TELEMETRY_SCHEMA, AGENT_TELEMETRY_SCHEMAS, packages/agent/src/harness/telemetry.ts). Copying them is the AGENT spec's job, not this one. Confirm the agent spec will bring them over — without them, `defineTelemetrySchema` and `createTypedSpanStarter` ship in omp with zero in-tree consumers and read as dead code.",
+    "pi uses `'single quotes'` in README code samples and omp uses tabs + double quotes. The README snippets (L72, L139, L186, L219) are illustrative, not compiled — confirm omp wants them restyled to double quotes for consistency, or left as pi wrote them."
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m1-expand-specs/telemetry.spec.json"
+}

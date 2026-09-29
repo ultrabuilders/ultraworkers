@@ -1,0 +1,148 @@
+{
+  "id": "W11",
+  "title": "Khoá hợp đồng `strict` qua extension-tool bridge — test-only, KHÔNG port",
+  "wave": "Wave 4 (Hợp đồng hướng provider — W11 + W10). Không bị chặn bởi wave nào; không chặn mục nào. Đứng trước W10 vì rẻ nhất milestone.",
+  "one_line": "Thêm đúng MỘT file test khoá lại việc `strict` đi qua extension-tool bridge mà không bị rơi (opt-in `true` vẫn là `true`) và không bị bịa thêm (vắng mặt vẫn là `undefined`, không phải `true`); không sửa một dòng production nào, không tạo `constrained-sampling.ts`.",
+  "user_visible_effect": "none — internal. Không có thay đổi hành vi runtime, không có file production nào, không có mặt UI hay CLI nào.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/test/tools/strict-declaration-guard.test.ts",
+      "action": "create",
+      "change": "File test MỚI, hai hợp đồng trên giá trị mà bridge trả về: (1) `strict: true` trên CustomTool đi qua `customToolToDefinition` → `wrapRegisteredTool` → `RegisteredToolAdapter` và đọc ra `=== true`; (2) tool KHÔNG khai báo `strict` đọc ra `=== undefined`, không phải `true`.",
+      "verified": false,
+      "note": "Đã xác nhận file KHÔNG tồn tại tại HEAD ecd516f (`ls` → exit 1). Đường dẫn đúng vì `bun run check:tools` (package.json:95) fmt/lint toàn bộ `packages/*/{test,bench,examples,scripts}/**/*.ts`, nên file mới nằm trong gate đó."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Đọc `packages/coding-agent/src/extensibility/tool-proxy.ts` (35 dòng, cả file) TRƯỚC khi viết. Đây là cơ chế thật sự quyết định hợp đồng, và nó KHÔNG nằm ở wrapper.ts như plan nói. Ghi nhận dòng 12: `if (key === \"constructor\" || visited.has(key) || key in wrapper) { continue; }` — mọi key đã có sẵn trên wrapper bị BỎ QUA, không proxy.",
+      "anchor": "packages/coding-agent/src/extensibility/tool-proxy.ts:12"
+    },
+    {
+      "n": 2,
+      "instruction": "Đọc `packages/coding-agent/src/extensibility/extensions/wrapper.ts` dòng 32-48. `RegisteredToolAdapter` khai `declare strict: boolean;` ở dòng 37 — `declare` là TYPE-ONLY, KHÔNG emit field runtime. Constructor gọi `applyToolProxy(registeredTool.definition, this)` ở dòng 47. Vì `declare` không emit gì, `\"strict\" in wrapper` là `false` lúc proxy chạy ⇒ `strict` ĐƯỢC proxy. Đây chính là cơ chế làm cho tool có strict sống sót tới adapter.",
+      "anchor": "packages/coding-agent/src/extensibility/extensions/wrapper.ts:37,47"
+    },
+    {
+      "n": 3,
+      "instruction": "Xác nhận nguồn đầu vào: `customToolToDefinition` ở `sdk.ts:1188` gán `strict: tool.strict` ở dòng 1205, với comment giải thích đúng lý do (#4336/#4340). Đây là chỗ nhận `strict` từ `CustomTool`.",
+      "anchor": "packages/coding-agent/src/sdk.ts:1188,1205"
+    },
+    {
+      "n": 4,
+      "instruction": "Chép khuôn khung từ `packages/coding-agent/test/task-executor-mcp-parity.test.ts` dòng 64-80 (test `\"survives the custom-tool → definition bridge into the registered session tool\"`) — nó đã đi đúng chuỗi `customToolToDefinition` → `wrapRegisteredTool` và assert giá trị trên adapter. CHỈ chép HÌNH DẠNG và cách cast `{ definition, extensionPath } as RegisteredTool`; tool của nó là `strict: false` nên không dùng lại được assertion.",
+      "anchor": "packages/coding-agent/test/task-executor-mcp-parity.test.ts:64-80"
+    },
+    {
+      "n": 5,
+      "instruction": "Viết hợp đồng 1 (opt-in sống sót qua bridge): một `CustomTool` có `strict: true` → `customToolToDefinition` → `wrapRegisteredTool` → `expect(adapter.strict).toBe(true)`. Dùng tên tool KHÔNG nằm trong allowlist Anthropic (`bash`/`python`/`edit`/`find`) để test không vô tình phụ thuộc nhánh allowlist.",
+      "anchor": "packages/coding-agent/test/tools/strict-declaration-guard.test.ts"
+    },
+    {
+      "n": 6,
+      "instruction": "Viết hợp đồng 2 (vắng mặt không được bịa thành opt-in): tool KHÔNG khai báo `strict` (phải OMIT hẳn key, không gán `undefined`) → `expect(adapter.strict).toBeUndefined()`. Đây là hợp đồng phủ định có lý do cụ thể: hai provider opt-in sẽ siết ngay mọi tool extension nếu bridge có giá trị mặc định — `openai-codex-responses.ts:5078` (`!!tool.strict`) và `devin.ts:659` (`tool.strict ?? false`).",
+      "anchor": "packages/coding-agent/test/tools/strict-declaration-guard.test.ts"
+    },
+    {
+      "n": 7,
+      "instruction": "Viết comment ngay trên hợp đồng 2 cảnh báo KHÔNG đọc sai: đây KHÔNG phải 'vắng mặt = non-strict'. `openai-completions.ts:2594` đọc `tool.strict !== false` nên vắng mặt VẪN ra strict ở provider đó. Hợp đồng đang khoá là 'bridge không tự bịa opt-in', không phải 'wire mặc định là non-strict' — đổi mặc định wire là việc khác, không thuộc W11.",
+      "anchor": "packages/coding-agent/test/tools/strict-declaration-guard.test.ts"
+    },
+    {
+      "n": 8,
+      "instruction": "Chạy `bun run check:ts` từ repo root (chạy được NGAY, không cần native addon) và `bunx oxfmt --check 'packages/coding-agent/test/tools/strict-declaration-guard.test.ts'`. Cả hai phải xanh trước khi coi là xong.",
+      "anchor": "package.json:94-95"
+    },
+    {
+      "n": 9,
+      "instruction": "Sau khi native addon được build (`bun --cwd=packages/natives run build`), chạy `bun test packages/coding-agent/test/tools/strict-declaration-guard.test.ts` và xác nhận 2 pass. TRƯỚC khi build, `bun test` BÁO ĐỎ TOÀN BỘ (kể cả test có sẵn) — xem `risk`.",
+      "anchor": "packages/natives/native/loader-state.js:970"
+    }
+  ],
+  "code_shape": "import { describe, expect, it } from \"bun:test\";\nimport type { CustomTool } from \"../src/extensibility/custom-tools/types\";\nimport type { ExtensionRunner } from \"../src/extensibility/extensions/runner\";\nimport type { RegisteredTool } from \"../src/extensibility/extensions/types\";\nimport { wrapRegisteredTool } from \"../src/extensibility/extensions/wrapper\";\nimport { customToolToDefinition } from \"../src/sdk\";\n\n// The adapter only needs a context factory; it is never exercised on this path.\nconst STUB_RUNNER = { createContext: () => ({}) } as unknown as ExtensionRunner;\n\nfunction stubTool(name: string, strict?: boolean): CustomTool {\n\tconst tool: CustomTool = {\n\t\tname,\n\t\tlabel: name,\n\t\tdescription: `stub ${name}`,\n\t\tparameters: { type: \"object\", properties: {} },\n\t\tasync execute() {\n\t\t\treturn { content: [{ type: \"text\", text: \"ok\" }] };\n\t\t},\n\t};\n\t// Assign only when the caller asked for a value, so the \"absent\" case omits\n\t// the key outright — that omitted state is what contract 2 is about.\n\tif (strict !== undefined) tool.strict = strict;\n\treturn tool;\n}\n\nfunction toSessionAdapter(name: string, strict?: boolean) {\n\tconst definition = customToolToDefinition(stubTool(name, strict));\n\treturn wrapRegisteredTool({ definition, extensionPath: \"<test>\" } as RegisteredTool, STUB_RUNNER);\n}\n\ndescribe(\"strict across the extension-tool bridge\", () => {\n\tit(\"keeps an explicit strict:true opt-in on the registered session tool\", () => {\n\t\t// applyToolProxy skips any key already present on the wrapper\n\t\t// (tool-proxy.ts:12). It works today only because `declare strict` on\n\t\t// RegisteredToolAdapter (wrapper.ts:37) emits no runtime field.\n\t\texpect(toSessionAdapter(\"opt-in\", true).strict).toBe(true);\n\t});\n\n\tit(\"does not fabricate an opt-in for a tool that never declared strict\", () => {\n\t\t// NOT \"absent means non-strict\": openai-completions.ts:2594 reads\n\t\t// `tool.strict !== false`, so an omitted flag is still strict there. What is\n\t\t// locked here is narrower — the bridge must not invent a value, because the\n\t\t// two opt-in providers would tighten every extension tool on its own:\n\t\t// openai-codex-responses.ts:5078 (`!!tool.strict`), devin.ts:659\n\t\t// (`tool.strict ?? false`).\n\t\texpect(toSessionAdapter(\"no-strict\").strict).toBeUndefined();\n\t});\n});",
+  "test_contract": "Hai hợp đồng, cùng một file, CẢ HAI assert trên giá trị mà bridge trả về — không phải trên field của class nguồn. (1) OPT-IN SỐNG SÓT: một `CustomTool` khai `strict: true` phải đọc ra `=== true` ở `RegisteredToolAdapter` sau khi đi qua `customToolToDefinition` → `wrapRegisteredTool`. Đây KHÔNG phải success-passthrough: giá trị đi qua một proxy phản ánh (`applyToolProxy`) dùng `Reflect.ownKeys` + `Object.defineProperty`, và cơ chế `key in wrapper` ở tool-proxy.ts:12 có thể BỎ QUA nó. (2) VĂNG MẶT KHÔNG ĐƯỢC BỊA THÀNH OPT-IN: tool không khai báo `strict` phải đọc ra `=== undefined`, không phải `true` — hợp đồng phủ định, vì hai provider opt-in (`openai-codex-responses.ts:5078` `!!tool.strict`, `devin.ts:659` `tool.strict ?? false`) sẽ siết ngay MỌI tool extension nếu bridge có giá trị mặc định. Nếu hồi quy: ai đó sửa `customToolToDefinition` (sdk.ts:1205) hoặc `applyToolProxy`, `strict` rơi khỏi đường extension và hành vi đổi THEO PROVIDER — `devin`/`codex` mất strict, còn OpenAI/Anthropic không đổi (vì chúng opt-out bằng `!== false` và `bash`/`edit` đều nằm trong allowlist) — nên không ai truy ra nguồn. Đó đúng là lý do file test này tồn tại. Cố ý KHÔNG khoá năm dòng `readonly strict = true` của builtin (bash.ts:604, read.ts:861, write.ts:440, ast-edit.ts:187, edit/index.ts:329): không có cách rẻ nào khoá chúng mà không biến thành static echo, và theo phân tích ba trạng thái + ba phép so sánh provider, xoá dòng đó chỉ đổi hành vi trên HAI provider opt-in — một assertion đọc field class không bắt được. Khoá thật sẽ là provider round-trip, cỡ M. Với wave hiện tại (S), mặc định là KHÔNG khoá, và người đọc phải biết khoảng trống đó còn ở đó.",
+  "test_files": [
+    "packages/coding-agent/test/tools/strict-declaration-guard.test.ts"
+  ],
+  "verification": "CHẠY ĐƯỢC NGAY (không cần native addon):\n  bun run check:ts                                                    # đã verify PASS tại HEAD ecd516f\n  bunx oxfmt --check 'packages/coding-agent/test/tools/strict-declaration-guard.test.ts'\n  bunx oxlint packages/coding-agent/test/tools/strict-declaration-guard.test.ts\n\nBỊ CHẶN cho tới khi build addon:\n  bun test packages/coding-agent/test/tools/strict-declaration-guard.test.ts\n  # build trước bằng: bun --cwd=packages/natives run build\n\nTUYỆT ĐỐI KHÔNG dùng `tsc` / `npx tsc` — phải `bun check` / `bun run check:ts`.\nLưu ý: `bun check` = `check:ts` + `check:rs` (package.json:93); `check:rs` cần cargo nên trong bài toán này chỉ chạy được `check:ts`.",
+  "gate": "`bun test packages/coding-agent/test/tools/strict-declaration-guard.test.ts` báo 2 pass, SAU KHI native addon đã build. Điều kiện tiên quyết bắt buộc: `bun --cwd=packages/natives run build` — ở HEAD ecd516f addon CHƯA build, nên `bun test` hiện đỏ 0 pass / 1 fail ngay cả với file test ĐÃ TỒN TẠI (đã verify chạy thật `task-executor-mcp-parity.test.ts` → `0 pass, 1 fail, 1 error`: `Failed to load pi_natives native addon for darwin-arm64`). Trước khi build, tiêu chuẩn nghiệm thu là `bun run check:ts` xanh (typecheck + oxlint + oxfmt). Gate KHÔNG dùng: đếm số tool có strict, đọc `readonly strict = true` trên 5 builtin, hoặc bất kỳ cách nào source-grep file implementation — AGENTS.md cấm, và cả ba đều là static echo.",
+  "gate_can_fail": "true — và đã chứng minh bằng thực nghiệm, không phải suy luận. Tôi đã chạy một bản replica trung thực của vòng lặp `applyToolProxy` (guard `key in wrapper`) với đúng hình dạng class của `RegisteredToolAdapter` và đo được: với `declare strict: boolean` (hiện tại) thì `strict` ĐƯỢC proxy và `adapter.strict === true`; khi `declare` biến thành field runtime thật (`strict: boolean = false`), field initializer chạy TRƯỚC thân constructor nên `key in this` thành `true`, guard BỎ QUA proxy, và `adapter.strict` đọc ra `false` dù definition có `strict: true` — silent breakage, không throw, không cảnh báo. Đó chính xác là hồi quy mà test nào cũng chưa bắt được, và nó phân kỳ theo provider. LƯU Ý TRUNG THỰC: trong môi trường hiện tại gate không chạy được vì addon chưa build — nó sẽ đỏ vì lý do MÔI TRƯỜNG chứ không phải vì lý do hợp đồng, nên phải build addon trước khi dùng gate này làm tiêu chuẩn nghiệm thu.",
+  "depends_on": [],
+  "blocks": [],
+  "effort": "S — một file test, hai hợp đồng trên output của bridge, không file production nào, không cần provider round-trip nên không cần network hay addon ở giai đoạn typecheck.",
+  "risk": "Rủi ro thật duy nhất là SỐNG SÓT SAI LẦM: ai đó đọc D-1, thấy cỡ S, rồi vẫn port vì bản gốc viết rõ — dựng `constrained-sampling.ts` cạnh `normalize.ts` và thêm field thứ hai cạnh `strict`. Kết quả là HAI nguồn sự thật cho cùng một điều, đúng cái lỗi dossier chỉ ra ở W7, và sửa `ToolDefinition` — bề mặt authoring của extension — ngay trong M1, đúng cái seam header dành cho M2 WI-10. Cách sai thứ hai: đi tìm một `edit.ts` không tồn tại rồi bị kẹt — bề mặt edit của omp là `write` + `ast_edit` + `edit/index.ts` cộng wire alias `apply_patch` (đã verify: `extensions-runner.test.ts:2436`, `customWireName: \"apply_patch\"` trên tool tên `edit`). Cách sai thứ ba, nhẹ hơn: viết lại hai hợp đồng ĐÃ CÓ — `strict: false` tường minh sống sót tới wire đã có test ở `packages/ai/test/openai-tool-strict-mode.test.ts:196,215,801,817,835`, và schema không biểu đạt được suy giảm xuống non-strict thay vì ném đã có ở `packages/ai/test/schema-strict-mode.test.ts:755,781`.",
+  "open_questions": [
+    "CÓ, và phải nói ra chứ không lặng lẽ bỏ: năm dòng `readonly strict = true` của builtin CỐ Ý KHÔNG được khoá bởi file test này. Muốn khoá thật thì phải assert trên wire của một provider opt-in (dựng tool list với `bash` rồi đọc payload `openai-codex-responses.ts:5078` hoặc `devin.ts:659` phát ra) — đó là provider round-trip, cỡ M, không phải S. Câu hỏi cho milestone: có nâng W11 lên M không? Nếu không, hãy ghi rõ khoảng trống này vào bảng wave để người đọc không tưởng là sót.",
+    "CHUYỂN SANG M2, KHÔNG quyết ở M1: có nên nhận ngữ nghĩa ba trạng thái `strict: \"prefer\"` của `pi` (tool không strict-safe vẫn chạy không ràng buộc) hay giữ boolean của `omp` không. Đây là quyết định về bề mặt authoring của extension (`ToolDefinition`), đúng loại câu hỏi mà header tài liệu dành cho M2 WI-10. M1 giữ boolean."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "Repo ở git HEAD `5873776` (nói ở phần ENVIRONMENT của task và lặp lại ở W11).",
+      "verdict": "STALE",
+      "correction": "HEAD thật là `ecd516f`, branch `milestone-1`. Recent commit là `ecd516f feat: initial publish — oh-my-pi 18.3.3 under ultrabuilders/ultraworkers`. Mọi line number dưới đây đã verify tại `ecd516f`.",
+      "evidence": "`git rev-parse --short HEAD` → `ecd516f`; `git rev-parse --abbrev-ref HEAD` → `milestone-1`."
+    },
+    {
+      "claim": "`interface ToolDefinition` nằm ở `packages/coding-agent/src/extensibility/extensions/types.ts:611`, field `strict` ở `:636` (đây là mục W11 tự sửa lần trước).",
+      "verdict": "STALE — bản sửa trước tự nó sai, và đảo ngược hai số",
+      "correction": "Interface `ToolDefinition` ở dòng **636**; field `strict?: boolean` ở dòng **661**. Bản sửa trước đã hoán đổi hai con số cho nhau. Cả hai đều lệch +25 so với 5873776.",
+      "evidence": "`grep -n '^export interface ToolDefinition' .../extensions/types.ts` → `636`; `grep -n 'strict?: boolean' .../extensions/types.ts` → `661`."
+    },
+    {
+      "claim": "Bản thứ hai của field `strict` ở `packages/ai/src/types.ts:1442`.",
+      "verdict": "STALE (+1)",
+      "correction": "Dòng **1443**, trên `interface Tool<TParameters>` định nghĩa ở dòng 1438. Đây là kiểu mà `AgentTool extends Tool` kế thừa, nên `adapter.strict` type là `boolean | undefined` và cả hai assertion đều typecheck.",
+      "evidence": "`sed -n '1438,1443p' packages/ai/src/types.ts`."
+    },
+    {
+      "claim": "3 opt-out `readonly strict = false` tại `mcp/tool-bridge.ts:663`, `:773`; `task/index.ts:561`.",
+      "verdict": "STALE (+2 mỗi cái)",
+      "correction": "`mcp/tool-bridge.ts:665` và `:775`; `task/index.ts:563`. Tổng số vẫn đúng: 40 hit, 37 `= true`, 3 opt-out.",
+      "evidence": "`grep -rn 'readonly strict = ' packages/coding-agent/src/ | grep -v '= true'` → đúng ba dòng trên."
+    },
+    {
+      "claim": "`applyToolProxy` ở `packages/coding-agent/src/extensibility/extensions/wrapper.ts:47` (W11 mô tả nó như một hàm của wrapper.ts, và danh sách file-đích của RỦI RO không hề nhắc tới nó).",
+      "verdict": "INCOMPLETE — nhầm call site với definition",
+      "correction": "wrapper.ts:47 là CALL SITE đúng. Nhưng ĐỊNH NGHĨA nằm ở file khác: `packages/coding-agent/src/extensibility/tool-proxy.ts:6`. Đây là file thật sự quyết định hợp đồng — kỹ sư ở bước 1 của spec — và nó có tiền lệ tiếp được dùng ở 4 chỗ khác (`modes/rpc/host-tools.ts:59`, `custom-tools/wrapper.ts:27`, `hooks/tool-wrapper.ts:38`, `extensions/wrapper.ts:166`). Sửa `customToolToDefinition` HOẶC sửa file này đều làm rơi `strict` theo khuôn mẫu đã mô tả.",
+      "evidence": "`grep -rn 'applyToolProxy' packages/coding-agent/src/` → 6 hit, definition tại `extensibility/tool-proxy.ts:6`."
+    },
+    {
+      "claim": "`openai-codex-responses.ts:5078` → `!!(tool.strict)`.",
+      "verdict": "IMPERFECT",
+      "correction": "Dòng 5078 đúng, biểu thức thật là `!!(!NO_STRICT && tool.strict)` — có thêm guard bypass toàn cục `NO_STRICT` mà plan bỏ sót. Không ảnh hưởng kết luận (vẫn là opt-in), nhưng khi viết comment trong test thì nên ghi `!!tool.strict` cho ngắn, đừng ghi sai biểu thức đầy đủ.",
+      "evidence": "`sed -n '5078p' packages/ai/src/providers/openai-codex-responses.ts`."
+    },
+    {
+      "claim": "Khuôn mẫu để chép ở `packages/coding-agent/test/task-executor-mcp-parity.test.ts:65-80`.",
+      "verdict": "NEARLY EXACT (lệch 1)",
+      "correction": "Test bắt đầu ở dòng **64** (`it(\"survives the custom-tool → definition bridge into the registered session tool\"`), kết thúc ở 80. Nội dung và hình dạng đúng như plan mô tả, kể cả việc nó đi qua `customToolToDefinition` rồi `wrapRegisteredTool` và assert giá trị trên adapter.",
+      "evidence": "`sed -n '55,80p' packages/coding-agent/test/task-executor-mcp-parity.test.ts`."
+    },
+    {
+      "claim": "`tools/provider-schema-compatibility.test.ts:99-101` chỉ phủ `true`/`false` tường minh, không phủ trường hợp vắng.",
+      "verdict": "NEARLY EXACT (lệch 1) — kết luận ĐÚNG",
+      "correction": "Hai assertion nằm ở dòng **100-101** (`expect(task.strict).toBe(false)` và `expect(adaptSchemaForStrict(...).strict).toBe(false)`). Kết luận của plan vẫn đúng: chỉ phủ giá trị tường minh, không có test nào phủ trường hợp tool không khai báo `strict` — đúng khoảng trống mà hợp đồng 2 của W11 lấp.",
+      "evidence": "`sed -n '90,102p' packages/coding-agent/test/tools/provider-schema-compatibility.test.ts`."
+    },
+    {
+      "claim": "Giả định ngầm rằng `strict` chỉ cần một `if` ở adapter là được bảo vệ.",
+      "verdict": "PLAN THIẾU — đây là phát hiện mới, không phải chỗ sai",
+      "correction": "W11 không nói tới `declare strict: boolean;` tại `wrapper.ts:37`, và đó chính là cơ chế làm hợp đồng mong manh. `declare` là type-only, KHÔNG emit field runtime, nên `\"strict\" in wrapper` là `false` lúc `applyToolProxy` chạy và `strict` ĐƯỢC proxy. Tôi đã chạy replica trung thực của vòng lặp `applyToolProxy` và đo được cả hai nhánh: hiện tại `adapter.strict === true`; nếu `declare` đổi thành field runtime thật (`strict: boolean = false`), field initializer chạy trước thân constructor nên guard `key in wrapper` (tool-proxy.ts:12) BỎ QUA proxy và `adapter.strict` đọc ra `false` dù definition có `strict: true` — silent, không throw. Đây là lý do cụ thể khiến hợp đồng 1 KHÔNG phải success-passthrough, và là hồi quy mà comment trong test nên trích dẫn.",
+      "evidence": "`sed -n '32,48p' packages/coding-agent/src/extensibility/extensions/wrapper.ts` (dòng 37 `declare strict: boolean;`, dòng 47 `applyToolProxy(...)`); `sed -n '12p' packages/coding-agent/src/extensibility/tool-proxy.ts`; probe chạy thật cho cả hai nhánh."
+    },
+    {
+      "claim": "`bun check && bun test <file>` là lệnh xác minh (W11 dòng 1536).",
+      "verdict": "INCOMPLETE — thiếu tiền điều kiện môi trường",
+      "correction": "`bun test` hiện KHÔNG chạy được, và đây không phải hạn chế riêng của test mới. Đã verify: `bun test packages/coding-agent/test/task-executor-mcp-parity.test.ts` (file ĐÃ TỒN TẠI) → `0 pass, 1 fail, 1 error`, `Failed to load pi_natives native addon for darwin-arm64`. Lỗi này chặn TOÀN BỘ module graph của coding-agent, kể cả khi chạy `bun run` thuần (không chỉ `bun test`). Lệnh verify dùng ngay là `bun run check:ts` — đã chạy thật, PASS tại ecd516f. Ngoài ra `bun check` = `check:ts` + `check:rs` (package.json:93), mà `check:rs` cần cargo, nên trong bài toán này chỉ chạy được `check:ts`.",
+      "evidence": "`bun run check:ts` → tất cả package `Done`; `bun test packages/coding-agent/test/task-executor-mcp-parity.test.ts` → `0 pass 1 fail 1 error`; `package.json:93`."
+    },
+    {
+      "claim": "Các anchor còn lại: 5 builtin `strict = true`; `tryEnforceStrictSchema`; CONSTRAINTS.md dòng 51/56; cả 5 provider read site; allowlist Anthropic; `strict: tool.strict`; `wrapRegisteredTool`; `RegisteredToolAdapter`; 5 anchor test trong packages/ai; alias `apply_patch`; `constrainedSampling` = 0 hit.",
+      "verdict": "VERIFIED EXACT — không cần sửa",
+      "correction": "Tất cả khớp tuyệt đối tại ecd516f. Dùng chúng nguyên văn trong comment của test.",
+      "evidence": "bash.ts:604, read.ts:861, write.ts:440, ast-edit.ts:187, edit/index.ts:329; normalize.ts:2436; CONSTRAINTS.md:51 (`MUST return { strict: false, schema: original }`) và :56 (`MUST preserve an author's explicit tool.strict === false`); openai-completions.ts:2594, openai-responses.ts:1492, anthropic.ts:5870 (+ allowlist :5453 = bash/python/edit/find, gate :5869 và keyword :5871), openai-codex-responses.ts:5078, devin.ts:659; sdk.ts:1205; wrapper.ts:100 và :32; openai-tool-strict-mode.test.ts:196/215/801/817/835; schema-strict-mode.test.ts:755/781; extensions-runner.test.ts:2436; `grep -rn constrainedSampling packages/` → 0."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W11.spec.json"
+}

@@ -1,0 +1,146 @@
+[
+ {
+  "severity": "blocking",
+  "location": "dòng 23 (bảng file cần chép, hàng packages/client/src/index.ts), lặp lại ở dòng 213 (Rủi ro) và mâu thuẫn trực tiếp với dòng 103 (bảng va chạm)",
+  "claim": "\"Hệ quả phải chấp nhận có chủ ý: dạng star làm package root MỚI xuất `toError` và `toDisconnectedError`, điều bản tường minh của pi không xuất.\" — và dòng 213 lặp lại: \"thay danh sách export tường minh của pi bằng bốn star re-export làm package root MỚI phơi bày `toError` và `toDisconnectedError`\".",
+  "why_wrong": "Sai về ngữ nghĩa TypeScript. Bước 8(d) xoá `export function toError` khỏi errors.ts và thay bằng `import { toError } from \"@oh-my-pi/pi-utils\";` — đó là một IMPORT, không phải export. `export * from \"./errors\"` chỉ re-export TÊN ĐƯỢC export, không bao giờ re-export tên được import. Nên `toError` KHÔNG xuất hiện ở package root. Chênh lệch thật duy nhất so với barrel tường minh của pi là MỘT tên: `toDisconnectedError`. Tệ hơn nữa, dòng 103 nói ngược lại — \"`toError` không nằm trong barrel `index.ts` hôm nay và không được thêm vào nó\" — tức là tài liệu tự mâu thuẫn ở bốn chỗ. Người đọc cẩn thận sẽ thêm `export { toError }` vào errors.ts để \"khớp với cảnh báo rủi ro\", vi phạm đúng điều dòng 103 cấm, và phơi một helper của pi-utils ra khỏi một gói lá.",
+  "evidence": "`sed -n '31,34p' src/errors.ts` của pi cho thấy `toError` là export; bản sau sửa chỉ còn `import { toError } from \"@oh-my-pi/pi-utils\";`. `export *` không re-export import. Barrel tường minh của pi (`src/index.ts:1-12`) export 13 tên: Client, createClientServiceTransport, ClientDisposedError, DisconnectedError, ServerError, + 8 type. Script kiểm trùng tên trên 4 module: `dups: NONE, total exported: 17`.",
+  "fix": "Thay câu ở dòng 23 bằng: \"Hệ quả phải chấp nhận có chủ ý: dạng star làm package root MỚI xuất `toDisconnectedError` (hàm này ở lại errors.ts và pi KHÔNG export ở barrel tường minh) — đó là toàn bộ chênh lệch bề mặt API. `toError` KHÔNG xuất hiện ở package root: bước 8(d) biến nó thành một `import` trong errors.ts, mà `export *` không bao giờ re-export tên được import. Dù có muốn giữ tuyệt đối parity với upstream thì cũng KHÔNG được đưa danh sách tường minh trở lại.\" — và sửa dòng 213 thành: \"...làm package root MỚI phơi bày `toDisconnectedError`, điều pi không export. `toError` thì không: sau bước 8(d) nó chỉ là một import nội bộ của errors.ts, và `export *` không re-export import.\"",
+  "file": "client"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 32 (hàng packages/client/LICENSE), dòng 5, dòng 36 (Ghi chú về byte), dòng 116 (bước 1)",
+  "claim": "\"`packages/client/LICENSE` | 1073 | chép rồi sửa ... Đây là byte-identical với LICENSE gốc của omp và khớp mọi `packages/*/LICENSE` khác.\"",
+  "why_wrong": "1073 không tái lập được từ bất kỳ đâu. LICENSE của pi là 1069 byte (không phải 1073). Chèn 2 dòng bản quyền cho 1143 — cộng thêm 1 byte vì LICENSE của pi KHÔNG có newline cuối còn LICENSE của omp có — mới ra đúng 1144, khớp chính xác `wc -c LICENSE` ở gốc omp. Điểm nguy hiểm nhất là vế \"khớp mọi packages/*/LICENSE khác\": omp có HAI hình LICENSE. Bốn gói pi-derived (agent, ai, coding-agent, tui) + LICENSE gốc = 1144 byte, có dòng Mario Zechner. Tám gói còn lại (catalog, mnemopi, natives, omptype, snapcompact, stats, utils, **wire** — chính gói khuôn mà tài liệu bảo dùng làm mẫu) = 1111 byte và KHÔNG có dòng Mario Zechner. Một reviewer đối chiếu với `packages/wire/LICENSE` sẽ thấy khác, còn nếu ai đó \"sửa cho khớp wire\" thì xoá mất dòng copyright Mario Zechner khỏi một file MIT được chép từ repo của ông — đó là lỗi gán công, không phải lỗi hình thức.",
+  "evidence": "`wc -c /Users/tranquangdang21/Projects/pi-ref/LICENSE` → 1069. `wc -c /Users/tranquangdang21/Projects/ultraworkers/LICENSE` → 1144. `diff` báo `21c23 ... \\ No newline at end of file`. Vòng lặp `for f in packages/*/LICENSE; do wc -c < $f; done` → 1144 ×4 (agent, ai, coding-agent, tui), 1111 ×8 (catalog, mnemopi, natives, omptype, snapcompact, stats, utils, wire). `head -5 packages/wire/LICENSE` không có dòng Mario Zechner.",
+  "fix": "Đổi cột `bytes` của hàng LICENSE thành `1144`, và sửa câu \"Đây là byte-identical với LICENSE gốc của omp và khớp mọi `packages/*/LICENSE` khác\" thành: \"Đây là byte-identical với LICENSE gốc của omp và với bốn `packages/*/LICENSE` pi-derived (agent, ai, coding-agent, tui — đều 1144 byte). Tám gói chỉ có mã first-party (catalog, mnemopi, natives, omptype, snapcompact, stats, utils, wire — 1111 byte) KHÔNG mang dòng Mario Zechner; đừng lấy wire làm khuôn cho file này.\" Đồng thời ở dòng 36 và dòng 5, thay mọi `1073` bằng `1144` (tổng bảng đúng là 70192, không phải 70121).",
+  "file": "client"
+ },
+ {
+  "severity": "blocking",
+  "location": "dòng 20 (hàng packages/client/src/unix.ts), cộng dòng 26/27 (hai file test Unix) — và thiếu hẳn trong bước 8/9 và phần \"Các bước\"",
+  "claim": "\"Các import `node:fs/promises` / `node:net` / `node:path` đã đúng dạng omp mong đợi — không sửa gì.\"",
+  "why_wrong": "Ngược lại. AGENTS.md của omp: \"Always use namespace imports for `node:fs`, `node:path`, `node:os`\". Cây omp tự nó tuân thủ áp đảo: 1330 file dùng `import * as path from \"node:path\"` so với 46 file dùng named import. Tài liệu vừa tuyên bố một vi phạm quy tắc cứng là \"đúng dạng\", vừa không thêm sửa nào — 6 dòng import, 12 tên được named-import và 28 call site sẽ chép nguyên văn vi phạm. `oxlint` không bắt được: `.oxlintrc.json` không bật rule nào về node namespace import. Riêng `node:net`, `node:events`, `node:child_process` KHÔNG nằm trong danh sách của quy tắc nên để nguyên là đúng.",
+  "evidence": "`git grep -c 'import \\* as .* from \"node:path\"' -- 'packages/*'` → tổng 1330; `git grep -c 'import { .* } from \"node:path\"'` → 46. Pi client có: `src/unix.ts:1 import { lstat, readdir } from \"node:fs/promises\"`, `src/unix.ts:3 import { join } from \"node:path\"`; `test/unix.test.ts:3` (6 tên), `test/unix.test.ts:5` (join); `test/unix-transport.test.ts:1` (mkdtemp, rm), `:3` (join). Call site: unix.ts 3, unix.test.ts 21, unix-transport.test.ts 4.",
+  "fix": "Thay câu ở dòng 20 bằng: \"Các import `node:fs/promises` và `node:path` phải ĐỔI sang namespace theo quy tắc Node module imports của omp: L1 `import { lstat, readdir } from \"node:fs/promises\";` → `import * as fs from \"node:fs/promises\";` và L3 `import { join } from \"node:path\";` → `import * as path from \"node:path\";`, rồi đổi 3 call site (`readdir`→`fs.readdir` L47, `lstat`→`fs.lstat` L69, `join`→`path.join` L56). `node:net` KHÔNG đổi — nó không nằm trong danh sách của quy tắc. Cùng đợt đó, trong test: `unix.test.ts:3,5` và `unix-transport.test.ts:1,3` cũng chuyển namespace (tương ứng 21 và 4 call site).\" Và thêm vào bước 8 một mục (g) NAMESPACE với số đếm: \"3 file, 6 dòng import, 28 call site\".",
+  "file": "client"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 5 (\"Quy mô\") và dòng 126 (bước 6)",
+  "claim": "\"7 file src được chép (33718 byte, chưa tính file thứ 8 `packages/client/src/promise.ts` 582 byte bị cố ý xoá ở bước 7)\" — lặp lại ở bước 6: \"33718 byte trên 7 file\".",
+  "why_wrong": "Con số sai 1267 byte. Tổng thật của 7 file src sẽ chép là 34985. Chỉ khi thay 33718 bằng 34985 thì phân rã 19 file trong tài liệu mới khớp: 34985 + 582 (promise.ts) + 27504 (test) + 7412 (metadata) = 70483, đúng bằng tổng thật của thư mục. Với 33718, phép cộng thiếu 1267 byte và không ai kiểm tra lại được. Đây cũng là nguồn gốc của con số sai trong `light.json` (\"7 files / 33718 bytes\").",
+  "evidence": "`cd pi-ref/packages/client && wc -c src/client.ts src/connection.ts src/errors.ts src/index.ts src/transport.ts src/types.ts src/unix.ts` → `34985 total`. Tổng 19 file: `find . -type f -exec wc -c {} + | tail -1` → `70483 total`.",
+  "fix": "Thay mọi `33718` bằng `34985` (dòng 5 và dòng 126). Đồng thời sửa câu giải thích ở dòng 5 cho khớp: \"7 file src được chép (34985 byte, chưa tính file thứ 8 `packages/client/src/promise.ts` 582 byte bị cố ý xoá ở bước 7), 5 file test (27504 byte), 6 file metadata (7412 byte…), cộng 1144 byte LICENSE MỚI. 8 × src + 5 × test + 6 × metadata = 19 file, 70483 byte.\"",
+  "file": "client"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 90 (bảng Dependency mới, hàng @oh-my-pi/pi-protocol) và dòng 211 (Rủi ro)",
+  "claim": "\"Phụ thuộc cứng, 22 symbol đặt danh trên 5 file — bề mặt rộng nhất trong toàn bộ đợt migrate này\" (dòng 90), và dòng 211: \"38 symbol được import\".",
+  "why_wrong": "Cả hai con số sai, và \"5 file\" mâu thuẫn với chính danh sách ngay dưới nó (dòng 90 liệt kê 8 file: client.ts, connection.ts, unix.ts, errors.ts, types.ts, client.test.ts, support.ts, unix-transport.test.ts). Thật là 21 tên phân biệt trên 8 file, với 37 lần xuất hiện trong câu import. Nên tổng là 16 + 21 = 37, không phải 38. (Con số 16 của chord thì ĐÚNG: 16 tên phân biệt, 18 lần xuất hiện, 3 file bare + 2 subpath.)",
+  "evidence": "Trích bằng regex `import\\s*(?:type\\s*)?\\{([^}]*)\\}\\s*from\\s*\"@earendil-works/pi-protocol\"`: `files=8 occurrences=37 distinct=21` với danh sách AttachmentEnvelope, ClientMessage, ClientMessageDecoder, DEFAULT_MAX_FRAME_LENGTH, PROTOCOL_VERSION, ProtocolError, ProtocolErrorCode, ProtocolValidationError, ResponseEnvelope, RpcTarget, ServerHello, ServerId, ServerMessage, ServerMessageDecoder, ServiceEventEnvelope, SessionTarget, encodeCbor, encodeClientMessage, encodeFrame, encodeServerMessage, isServerId. Với chord: `distinct=16` ✓.",
+  "fix": "Sửa dòng 90 thành: \"Phụ thuộc cứng, 21 symbol đặt danh trên 8 file (37 lần xuất hiện trong câu import) — bề mặt rộng nhất trong toàn bộ đợt migrate này.\" Và dòng 211: \"(1) Phụ thuộc cứng vào chord và protocol: 37 symbol được import (16 + 21), không một cái nào tồn tại ở omp hôm nay\".",
+  "file": "client"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 130 (bước 8, mục (a) SCOPE và dòng \"Neo:\"), dòng 132 (bước 9)",
+  "claim": "Bước 8(a): \"1 lần pi-protocol + 1 lần pi-client + 1 lần pi-utils trong unix.ts (pi-utils là mới)\"; dòng \"Neo:\" ghi \"25 extension + 9 scope + 2 promise + 1 barrel + 1 ReturnType\". Bước 9: \"6 lần pi-protocol, 2 lần chord/chord-context, 1 lần pi-client trên ba file test\".",
+  "why_wrong": "Cả hai vế đều bịa. `unix.ts` chỉ có ĐÚNG MỘT scoped specifier (`@earendil-works/pi-protocol`, L4-9) — không có `@earendil-works/pi-client`, không có `@earendil-works/pi-utils`; cả hai chuỗi đó có 0 hit trên toàn bộ src/ và test/. Import `pi-utils` là import MỚI sẽ thêm vào `errors.ts` ở bước 8(d), không phải vào unix.ts. Ngoài ra unix.ts không hề import `toError`. Số thật: 8 scope site trong src/ (client.ts 3, types.ts 2, connection.ts 1, errors.ts 1, unix.ts 1) và 5 trong test/ (support.ts 1, client.test.ts 2, unix-transport.test.ts 2) = 13 — không phải \"9\" và không phải \"6/2/1 = 9\". Vì số đếm sai, vòng quét ở bước 10 dễ bị bỏ sót một site mà không ai biết là đã sót.",
+  "evidence": "`grep -rn '@earendil-works/' src/ test/ | wc -l` → 13; `grep -rn '@earendil-works/' src/ | wc -l` → 8; `grep -rn '@earendil-works/' test/ | wc -l` → 5. `grep -rn 'pi-client\\|pi-utils' src/ test/` → chỉ khớp `test/unix-transport.test.ts:16` trong chuỗi `\"/tmp\", \"pi-client-transport-\"` (một string tên thư mục tạm, không phải specifier). `sed -n '1,18p' src/unix.ts` xác nhận chỉ 1 scoped import.",
+  "fix": "Thay mệnh đề sai trong bước 8(a) bằng: \"…; 1 lần pi-protocol trong connection.ts, errors.ts, types.ts và unix.ts\" rồi bỏ hẳn \"1 lần pi-client + 1 lần pi-utils trong unix.ts\". Sửa dòng \"Neo:\" thành: \"Neo: `packages/client/src/**` (16 extension + 8 scope + 2 promise + 1 barrel + 1 ReturnType + 3 namespace)\". Sửa bước 9 thành: \"3 lần pi-protocol (support.ts:1, client.test.ts:2, unix-transport.test.ts:5), 2 lần chord (client.test.ts:1 subpath `/context`, unix-transport.test.ts:4 bare) trên ba file test; KHÔNG có scope nào của pi-client trong test\".",
+  "file": "client"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 124 (bước 5) và dòng 29 (hàng packages/client/package.json)",
+  "claim": "\"script là bốn script của omp (check / check:types / lint / fmt) — chép nguyên văn từ `packages/wire/package.json`\" và \"không devDependencies (bỏ vitest và shx)\".",
+  "why_wrong": "Hai sai lệch so với chính khuôn mẫu mà tài liệu bảo sao chép. (1) `packages/wire/package.json` có NĂM script — `check`, `check:types`, `lint`, `fix`, `fmt` — không phải bốn; `fix` bị rơi. (2) 15 trên 16 package omp đều khai báo `\"@types/bun\": \"catalog:\"` trong devDependencies, kể cả `packages/wire`; chỉ `packages/tui` (thư viện TUI thuần) không có. Gói client CẦN nó: chính tài liệu này đưa vào `NodeJS.Timeout` (unix.ts:247) và `Bun.sleep` (helper waitFor), còn `tsconfig.base.json` khoá `\"types\": [\"bun\", \"assets\"]`. Viết package.json không có devDependencies là lệch khỏi dạng nhà và có thể làm `check:types` ở bước 11 đỏ ngay lần chạy đầu.",
+  "evidence": "`python3 -c \"import json;print(list(json.load(open('packages/wire/package.json'))['scripts']))\"` → `['check','check:types','lint','fix','fmt']`; `devDependencies {'@types/bun': 'catalog:'}`. Vòng lặp trên `packages/*/package.json` cho thấy 15/16 có `@types/bun` (thiếu duy nhất là `packages/tui`, devDeps chỉ có `kitty-vt-wasm`). `grep -n '\"@types/bun\"' package.json` trong catalog → `^1.3.14`. `grep -n '\"types\"' tsconfig.base.json` → `\"types\": [\"bun\", \"assets\"]`.",
+  "fix": "Ở dòng 124, thay \"script là bốn script của omp (check / check:types / lint / fmt)\" bằng \"script là NĂM script của omp (check / check:types / lint / fix / fmt)\"; và thay \"không devDependencies (bỏ vitest và shx)\" bằng \"devDependencies chỉ có `\\\"@types/bun\\\": \\\"catalog:\\\"` — bỏ `shx` và `vitest`, giữ `@types/bun` vì tsconfig của repo khoá `\\\"types\\\": [\\\"bun\\\", \\\"assets\\\"]` và mã chép dùng `NodeJS.Timeout` lẫn `Bun.sleep`; 15/16 package omp đều khai báo nó\". Áp dụng cùng hai sửa đó cho hàng package.json ở dòng 29.",
+  "file": "client"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 130 (bước 8, mục (b)) và dòng 132 (bước 9)",
+  "claim": "Bước 8(b): \"bỏ `.ts` khỏi cả 25 specifier tương đối\" (trong ngữ cảnh bước 8 chỉ làm src/). Bước 9: \"bỏ `.ts` khỏi 8 specifier tương đối\". Dòng \"Neo:\" ở bước 8 cũng ghi \"25 extension\".",
+  "why_wrong": "Con số 25 là tỔNG của cả src+test, nhưng lại được gán cho bước 8 vốn chỉ động vào src. Thật: src/ có 16 specifier tương đối `.ts`, test/ có 9 (support.ts 1, client.test.ts 2, unix-transport.test.ts 2, unix.test.ts 4 — trong đó 3 là xuyên package `../../server/src/...`). 16 + 9 = 25, và 25 + 8 = 33 trong khi thật là 34. Vòng quét ở bước 10 (`grep -rn 'from \"[.][^\"]*\\.ts\"' packages/client/src packages/client/test`) sẽ bắt được, nhưng người đọc đã bị dạy một bộ đếm sai nên có thể tự kết luận là đã xử lý xong khi còn thiếu 1.",
+  "evidence": "`grep -rho 'from \"[.][^\"]*\\.ts\"' src/ | wc -l` → 16; `grep -rho 'from \"[.][^\"]*\\.ts\"' test/ | wc -l` → 9. Kiểm chéo: `grep -c` trên từng file test cho 1+2+2+4 = 9, và `src/client.ts` có đúng 4 (L31, L32, L33, L34-41) như dòng 17 nói.",
+  "fix": "Sửa bước 8(b) thành: \"EXTENSIONS: bỏ `.ts` khỏi 16 specifier tương đối trong src/ (tổng 25 nếu tính cả test — xem bước 9)\". Sửa bước 9 thành: \"bỏ `.ts` khỏi 9 specifier tương đối trong test (kể cả 3 cái xuyên package của `unix.test.ts`)\". Sửa dòng \"Neo:\" của bước 8 thành \"16 extension + 8 scope + 2 promise + 1 barrel + 1 ReturnType + 3 namespace\".",
+  "file": "client"
+ },
+ {
+  "severity": "major",
+  "location": "dòng 199-203 (\"### Cổng hoàn thành\") so với dòng 138 (bước 12) và dòng 183 (\"Test là `cd packages/client && bun test`\")",
+  "claim": "\"### Cổng hoàn thành\\n`bun run check:ts`\\n\\nCổng CÓ THỰC SỰ ĐỎ ĐƯỢC. Nhưng chỉ một phần: vì nó chạy với `--if-present`…\"",
+  "why_wrong": "Cổng hoàn thành chỉ liệt kê `check:ts`, một lệnh không nhìn thấy BẤT KỲ test hành vi nào. Chính phần Rủi ro của tài liệu nói mối nguy hiểm thật sự \"không phải lỗi compile mà là hồi quy hành vi LẶNG LẼ nếu ai đó 'cải thiện' mã đã chép\" — loại hỏng mà `check:ts` không thể phát hiện. 25 test case là toàn bộ giá trị của lần port này. Tài liệu cũng đã tự biết cổng có lỗ hổng `--if-present` và yêu cầu xác nhận dòng `@oh-my-pi/pi-client:check:types`; bỏ `bun test` khỏi ô cổng hoàn thành là cùng một loại lỗ hổng, và làm cho mục \"Bốn file test, 27504 byte, 33 test case\" cùng toàn bộ danh sách hợp đồng test ở dòng 146-165 trở nên không ràng buộc gì.",
+  "evidence": "`bun run check:ts` từ gốc → exit 0, output chỉ liệt kê 16 dòng `@oh-my-pi/<pkg>:check:types` (browser-relay, collab-web, omp-stats, omptype, pi-agent-core, pi-ai, pi-catalog, pi-coding-agent, pi-metaharness, pi-mnemopi, pi-natives, pi-tui, pi-utils, pi-wire, snapcompact, typescript-edit-benchmark) — không dòng nào cho thấy test đã chạy. Vòng đếm `git grep -c '^\\s*test(\\|^\\s*test\\.describe' -- 'packages/*/test/*.ts'` → 4125 test trong toàn repo.",
+  "fix": "Thay khối \"### Cổng hoàn thành\" bằng: \"### Cổng hoàn thành\\n1. `bun run check:ts` từ `/Users/tranquangdang21/Projects/ultraworkers` — exit 0, VÀ phải thấy dòng `@oh-my-pi/pi-client:check:types` trong output (nếu không, package bị `--if-present` bỏ qua lặng lẽ và cổng vẫn xanh).\\n2. `cd packages/client && bun test` — 25/25 test case pass (14 + 3 + 8). Không được coi là xong nếu chỉ chạy (1): `check:ts` không thấy bất kỳ hồi quy hành vi nào, mà đó chính là chế độ hỏng nguy hiểm nhất của lần port này.\"",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 25 (hàng test/support.ts), lặp lại ở dòng 106 và dòng 167",
+  "claim": "\"Rồi sửa cả 20 tham chiếu `this.X` tại L23,24,28,30,44(x2),51,55,56,60,61,65,66,71,72,77,78,80.\"",
+  "why_wrong": "Con số 20 không tái lập được và danh sách vị trí thiếu 1 site. Thật: 25 lần xuất hiện `this.X` trong file; 6 thuộc thành viên công khai phải để trần (`messages`×3, `serverId`×2, `clientCloseCount`×1), 1 thuộc method công khai `send`, còn lại 18 thuộc scope riêng tư (`handlers`×11, `decoder`×2, `messageWaiters`×4, `resolveMessageWaiters`×1). Danh sách của tài liệu chỉ có 17 dòng với `44(x2)` đếm hai lần = 18 mục, và BỎ SÓT L77 (`this.messageWaiters.length - 1`) — dòng duy nhất có `this.messageWaiters` mà danh sách không nêu.",
+  "evidence": "`grep -o 'this\\.[A-Za-z]*' test/support.ts | sort | uniq -c` → `1 this.clientCloseCount / 2 this.decoder / 11 this.handlers / 3 this.messages / 4 this.messageWaiters / 1 this.resolveMessageWaiters / 1 this.send / 2 this.serverId`, tổng 25. `grep -n 'this\\.\\(handlers\\|decoder\\|messageWaiters\\|resolveMessageWaiters\\)'` trả về 18 dòng: 23,24,28,30,44,51,55,56,60,61,65,66,71,72,77,78,80 (17 dòng, 44 có 2).",
+  "fix": "Thay \"cả 20 tham chiếu `this.X` tại L23,24,28,30,44(x2),51,55,56,60,61,65,66,71,72,77,78,80\" bằng \"18 tham chiếu `this.X` trên 17 dòng: L23,24,28,30,44(x2),51,55,56,60,61,65,66,71,72,77,78,80\" (giữ nguyên danh sách dòng, chỉ sửa con số) — và sửa hai chỗ lặp lại ở dòng 106 và 167 theo cách nhất quán.",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 33 (hàng README.md) và dòng 142 (bước 14)",
+  "claim": "\"6 sửa chuỗi scope (L1, cộng 5 chỗ nữa trong ba mẫu code fenced ở các ví dụ `Client.connect`, `createUnixTransportFactory`, `discoverUnixServers`).\"",
+  "why_wrong": "README của pi chứa đúng 5 chuỗi scope, không phải 6. Ba code fence chứa 4 chuỗi (L6, L51+52, L64), cộng dòng tiêu đề L1 = 5. Người đọc sẽ đi tìm chuỗi thứ 6 không tồn tại, hoặc sửa nhầm một chuỗi không liên quan.",
+  "evidence": "`grep -n '@earendil-works' README.md` → đúng 5 dòng: `1:# @earendil-works/pi-client`, `6:import { Client, type ByteTransportFactory } from \"@earendil-works/pi-client\";`, `51:import { Client } from \"@earendil-works/pi-client\";`, `52:import { createUnixTransportFactory } from \"@earendil-works/pi-client/unix\";`, `64:import { discoverUnixServers } from \"@earendil-works/pi-client/unix\";`.",
+  "fix": "Thay \"6 sửa chuỗi scope (L1, cộng 5 chỗ nữa trong ba mẫu code fenced…)\" bằng \"5 sửa chuỗi scope: L1 (tiêu đề) và L6, L51, L52, L64 (trong ba mẫu code fenced cho `Client.connect`, `createUnixTransportFactory`, `discoverUnixServers`)\" ở cả dòng 33 và dòng 142.",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 26 (hàng test/unix-transport.test.ts)",
+  "claim": "\"Cả 5 test port nguyên vẹn.\"",
+  "why_wrong": "File này chỉ có 3 khối `test(...)`, không phải 5. Con số này là một phần của chuỗi \"33 test case\" mà tài liệu dùng làm cơ sở cho kết luận rủi ro (8/33), nên sai số ở đây làm hỏng luôn phép tính đó.",
+  "evidence": "`grep -c '[^.a-zA-Z]test(' test/unix-transport.test.ts` → 3 (`describe`=0, `it`=0). Đối chiếu: `client.test.ts` → describe=2 + test=14; `unix.test.ts` → describe=1 + test=8. Tổng 25, khớp với \"14 khối test/describe\" của client.test.ts và \"8 test\" của unix.test.ts.",
+  "fix": "Thay \"Cả 5 test port nguyên vẹn\" bằng \"Cả 3 test port nguyên vẹn\". Đồng thời đổi \"33 test case\" ở dòng 146 và dòng 211 thành \"25 test case\" (14 + 3 + 8), và đổi \"8 trong 33 test\" thành \"8 trong 25 test\".",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 105 (bảng Va chạm, hàng ReturnType) và dòng 220",
+  "claim": "\"Cách viết đúng kiểu omp nhìn thấy tại `packages/coding-agent/src/collab/relay-client.ts:100` (`#retryTimer: NodeJS.Timeout | undefined;`)\"",
+  "why_wrong": "Trích sai nội dung dòng: tên field thật là `#backpressureDrainTimer`, không phải `#retryTimer`. Dòng và kiểu đúng, nhưng tên bịa ra khiến người đọc grep `#retryTimer` trong omp và không thấy gì, rồi nghi ngờ cả neo dòng 100. Đây là neo được gắn nhãn \"đã kiểm chứng\", nên sai tên ở đây tệ hơn một lỗi đếm thường.",
+  "evidence": "`sed -n '98,102p' packages/coding-agent/src/collab/relay-client.ts` → `98: #backpressureDrainTimer: NodeJS.Timeout | undefined;` (dòng thật 100), `99: #attempt = 0;`, `100/101` là doc comment. `git grep -c '#retryTimer' -- 'packages/*'` → không có hit.",
+  "fix": "Thay `(#retryTimer: NodeJS.Timeout | undefined;)` bằng `(#backpressureDrainTimer: NodeJS.Timeout | undefined;)`.",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 110 (bảng Va chạm, cặp ClientOptions / Unsubscribe)",
+  "claim": "\"`Unsubscribe`: 3 file — packages/coding-agent/src/mcp/client.ts:425 (văn xuôi JSDoc), packages/coding-agent/src/extensibility/hooks/runner.ts:149 (thẻ `@returns`), packages/coding-agent/src/mcp/manager.ts:505,1685 (comment inline)\"",
+  "why_wrong": "Thật là 4 file, không phải 3. Từ `ClientOptions` (2 file) thì đúng. Vì danh sách này tồn tại đúng để \"để người review sau này grep hai tên này không nhầm các hit là va chạm thật\", một số file bị thiếu khiến người grep lại thấy một hit lạ và báo va chạm giả.",
+  "evidence": "`git grep -n '\\bUnsubscribe\\b' -- 'packages/*'` → 5 dòng trên 4 file: mcp/client.ts:425, mcp/manager.ts:505, mcp/manager.ts:1685, extensibility/hooks/runner.ts:149. Chạy từ gốc repo không lọc còn thêm `packages/coding-agent/test/fixtures/before-compaction.jsonl:7` (một transcript đã ghi có chứa chuỗi này).",
+  "fix": "Thay \"3 file\" bằng \"4 file\" và bổ sung file thứ tư vào danh sách. Đề xuất câu thay thế: \"`Unsubscribe`: 4 file — packages/coding-agent/src/mcp/client.ts:425 (văn xuôi JSDoc), packages/coding-agent/src/extensibility/hooks/runner.ts:149 (thẻ `@returns`), packages/coding-agent/src/mcp/manager.ts:505,1685 (comment inline) — cộng một hit trong `packages/coding-agent/test/fixtures/before-compaction.jsonl` (transcript test đã ghi) mà `git grep` không lọc sẽ thấy. Không cái nào là TypeScript.\"",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 118 (bước 2), dòng 183 (Xác minh) và dòng 185",
+  "claim": "\"BASELINE ĐO TRÊN MÁY NÀY: exit 0, 34.2s wall (88.97s user, 5.76s system, 277% cpu)\"; \"trên máy này `bun test` ở repo root hiện bị chặn vì native addon chưa build\".",
+  "why_wrong": "Con số baseline không tái lập được: tôi đo lại cùng lệnh được 24.9s wall (77.24s user, 4.33s system, 327% cpu) — vẫn nằm trong dải pass 22-40s mà tài liệu tự đặt, nên phần \"coi 22-40s là dải pass\" là đúng và đủ dùng số cũ. Vế thứ hai mô tả quá nặng: root `bun test` KHÔNG bị chặn toàn bộ, chỉ 17 test chạm native mới hỏng. Người đọc tin là suite chết sẽ không đi tìm cách chạy `cd packages/client && bun test`, đúng cái lệnh mà tài liệu khuyên.",
+  "evidence": "`(time bun run check:ts)` từ /Users/tranquangdang21/Projects/ultraworkers → `EXIT=0`, `77.24s user 4.33s system 327% cpu 24.941 total`. `bun test packages/utils` → `658 pass / 2 skip / 17 fail / 16 errors / Ran 677 tests across 81 files`, kèm lỗi `Failed to load pi_natives native addon for darwin-arm64`. `which ninja` → `ninja not found`; `bun --cwd=packages/natives run build` → `error: script \"build\" exited with code 1`.",
+  "fix": "Sửa dòng 118 và 183: thay \"34.2s wall (88.97s user, 5.76s system, 277% cpu)\" bằng \"24.9s wall (77.2s user, 4.3s system, 327% cpu) — đo lại ngày 2026-09-28; các lần đo trước cho 34.2s, nên 22-40s là dải pass\". Sửa dòng 185: thay \"trên máy này `bun test` ở repo root hiện bị chặn vì native addon chưa build\" bằng \"trên máy này `bun test` ở repo root chạy được nhưng 17 test chạm native HỎNG vì addon chưa build (đo được: 658 pass, 2 skip, 17 fail, 16 errors trên 81 file)\". Giữ nguyên phần `ninja`/`brew install ninja` — đã kiểm chứng đúng.",
+  "file": "client"
+ },
+ {
+  "severity": "minor",
+  "location": "dòng 130 (bước 8) và dòng 187-197 (danh sách grep tiền kiểm)",
+  "claim": "Bước 5 nói \"XOÁ cả khối `scripts`\" nhưng không bao giờ nói tới `tsc`; danh sách grep ở phần \"Xác minh\" không có lệnh nào kiểm tra `tsc` còn sót.",
+  "why_wrong": "pi package của chính file này mang hai lệnh bị cấm tuyệt đối: `\"build\": \"tsc -p tsconfig.build.json\"` và `\"typecheck\": \"tsc -p tsconfig.test.json\"`. Việc xoá cả khối scripts khiến chúng biến mất — nên về kết quả là đúng — nhưng tài liệu không hề gọi tên `tsc`, và vòng quét xác minh không có lệnh nào chặn trường hợp ai đó thêm lại script gọi `tsc` (rất dễ xảy ra khi sao chép từ wire rồi bổ sung nhanh). Đây là lỗ hổng xác minh, không phải lỗi kế hoạch.",
+  "evidence": "`grep -rn 'tsc\\b' .` trong packages/client của pi → `package.json:27: \"build\": \"tsc -p tsconfig.build.json\"` và `package.json:29: \"typecheck\": \"tsc -p tsconfig.test.json\"`. Script được đề xuất cho omp dùng `tsgo -p tsconfig.json --noEmit` (khớp `packages/wire/package.json`), nên phía đích đã sạch.",
+  "fix": "Thêm một dòng vào khối grep ở dòng 190-194 và một ghi chú ngắn ở bước 5. Gợi ý câu chữ: ở bước 5, sau \"XOÁ cả khối `scripts`\", thêm \"— đây cũng là chỗ dọn `build: tsc -p tsconfig.build.json` và `typecheck: tsc -p tsconfig.test.json` của pi, hai lệnh mà AGENTS.md cấm tuyệt đối; thay bằng `tsgo -p tsconfig.json --noEmit`\". Ở phần Xác minh, thêm vào khối lệnh: `grep -n 'tsc ' packages/client/package.json` và ghi rõ dòng này phải rỗng.",
+  "file": "client"
+ }
+]

@@ -1,0 +1,273 @@
+{
+  "id": "tail2",
+  "title": "§9–11: rủi ro, câu hỏi mở, định nghĩa hoàn thành (+ bảng đính chính anchor đã kiểm chứng)",
+  "wave": "Back matter (mục 9–11) — không phải một sóng triển khai. Chạy SONG SONG với sóng 6, nhưng chỉ ghép được sau khi các lát s1–s6 đã có đặc tả; và cổng P0/P1 phải đóng trước khi s1 bắt đầu.",
+  "one_line": "Write the closing three sections of the M3 execution plan — the risk register, the open-question table a maintainer can answer in one sitting, and the definition of done — with every file:line re-checked against the actual tree, plus a corrections table for the 13 anchors the plan got wrong (two of which, as written, would send an engineer to the wrong line or chase a phantom violation).",
+  "user_visible_effect": "none — internal. No code, no runtime behaviour changes. The reader is the maintainer on Monday morning: P0 and P1 must be answerable from this document alone, and no anchor in it may point at a line that no longer says what the plan claims it says.",
+  "files_touched": [
+    {
+      "path": ".lavish-wip/m3-md/90-back1.md",
+      "change": "Create. Two sections in Vietnamese: \"## 9. Rủi ro\" and \"## 10. Câu hỏi mở\". §9 is a consolidated table (hạng mục | rủi ro | cách giảm) — NOT the plan's 12-item narrative; group the risks that share one failure mode and say why those matter. §10 is one table row per question (câu hỏi | chủ quyết định | hạn | vì sao nó chặn | mặc định nếu không trả lời), sorted blocking-first, keeping every one of the plan's 12 plus the 2 new ones listed in open_questions below, and marking the plan's 4 already-closed entries as closed rather than deleting them.",
+      "action": "create",
+      "verified": false,
+      "note": "Does not exist yet. Parent `.lavish-wip/` exists (verified). Follows the M1 back-matter convention in `.lavish-wip/m1-backmatter.js` — M1's equivalent fragments are `.lavish-wip/md/90-back1.md` (46 KB) and `90-back2.md` (82 KB), so these are expected to be tens of KB, not a page."
+    },
+    {
+      "path": ".lavish-wip/m3-md/90-back2.md",
+      "change": "Create. One section: \"## 11. Định nghĩa hoàn thành\" — the 12 clauses restated so each is objectively checkable, plus the M3-C2 slip clause and the sentence saying how the milestone as a whole is judged done. Every clause that the plan words loosely must be tightened here; see the clause rewrites in steps.",
+      "action": "create",
+      "verified": false,
+      "note": "Does not exist yet. §11 is short in the plan (lines 7669-7690) but each clause carries anchors, so this file is where the anchor checker earns its keep."
+    },
+    {
+      "path": ".lavish-wip/m3-md/90-back3.md",
+      "change": "Create. Two sections: \"## Đính chính so với plan M3\" — a table of the 16 entries in plan_corrections below, grouped by kind (stale line number / stale path / a gate that is RED on a compliant tree / an internal contradiction), stating the kind once in a sentence and then listing compactly; and \"## Những điều chưa được kiểm chứng\" — short and honest, covering that M3 was specified by reading code and running commands rather than by executing the work, that no gate here has been observed going green, and that every coding-agent gate additionally depends on the native addon being built.",
+      "action": "create",
+      "verified": false,
+      "note": "Does not exist yet. This section is the M3 analogue of M1's \"## Đính chính so với plan tổng\" and is the single highest-value thing this item delivers — see the risk field."
+    },
+    {
+      "path": ".lavish-wip/m3-md/check-anchors.mjs",
+      "change": "Create. A documentation-consistency checker (NOT a test). It scans the three back-matter .md files for `path:line` and `path:a-b` tokens, resolves each against the repo root, and exits 1 if a path is missing or a range end is past EOF; plus an optional `<!-- assert: <path> <line> <literal> -->` form that additionally requires the literal to appear on that line. Prints one line per anchor.",
+      "action": "create",
+      "verified": false,
+      "note": "Does not exist yet. AGENTS.md bans source-grep *tests* — a test that reads an implementation file and asserts on its text. This is a doc checker that reads the produced Markdown and resolves its own citations; it asserts nothing about code behaviour and must live outside `packages/*/test/`. State that distinction in a header comment so a reviewer does not misread it."
+    },
+    {
+      "path": ".lavish-wip/assemble-m3.py",
+      "change": "Create. Clone of `.lavish-wip/assemble-m1.py` with PARTS = sections/s1..s6.md, 90-back1.md, 90-back2.md, 90-back3.md, target `MILESTONE_3_EXECUTION_PLAN.md`. Keep M1's existing guards: every part must exist, be >= 800 bytes, and contain an even number of ``` fences — M1's guard exists because a truncated agent write is the failure mode, and the plan's M1 fold produced exactly that class of bug.",
+      "action": "create",
+      "verified": false,
+      "note": "Does not exist yet. `.lavish-wip/assemble-m1.py` verified present and readable. Do not modify the M1 script — M2/M3 assembly is additive."
+    },
+    {
+      "path": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md",
+      "change": "READ ONLY. Do not edit. Lines 7615-7691 (§9-11), 7242-7449 (waves 1-5), 7449-7539 (wave 6 + §7 acceptance + §6.8 test conventions), 7539-7615 (§8 legal), 7042-7242 (§1-5) and 7137-7178 (§4 component map) are the inputs. This file is 1.1 MB — read with offset/limit, never whole.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified present, 10209+ lines of headings, `## 9. RỦI RO` at 7615, `## 10. CÂU HỎI MỞ` at 7652, `## 11. ĐỊNH NGHĨA HOÀN THÀNH` at 7669, `# 13. M4` at 7692. Marked `modify` only because the schema has no `read` action; no edit is intended or permitted."
+    },
+    {
+      "path": ".lavish-wip/m3-specs/",
+      "change": "Do not write. Sibling slices s1, s4, s5 and s6 were present when this spec was written (s2 and s3 were not yet, presumably in flight from parallel agents). tail2 depends on their work-item ids and gates; it must not create or edit their spec files.",
+      "action": "modify",
+      "verified": true,
+      "note": "Verified by `ls -la` at spec time: s1.spec.json (49 KB), s4.spec.json (41 KB), s5.spec.json (34 KB), s6.spec.json (26 KB). Marked `modify` only because the schema has no `none` action; no edit is intended."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Re-read plan lines 7615-7691 (this item's own text: §9 twelve risks, §10 twelve open questions, §11 twelve completion clauses plus the M3-C2 slip sentence) and lines 7473-7539 (§7 the eleven gates G1-G11 that §11's clauses restate). Do not paraphrase from memory — the whole point of this item is that the plan's text has drifted from the tree.",
+      "anchor": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7615-7691"
+    },
+    {
+      "n": 2,
+      "instruction": "Re-run, from the repo root, the two gates the plan says are already RED before the work, and paste their real output into 90-back3.md. G4: `{ grep -rn \"event\\.wheel \\* [0-9]\" packages/tui/src --include='*.ts'; grep -rn \"delta \\* [0-9]\" packages/tui/src --include='*.ts'; } | grep -v \"^packages/tui/src/mouse-wheel\\.ts:\" | wc -l` must print 9. G5: the bash block in §7.1 must print 10 lines with `left=7` and `kept=3`. Both were reproduced at HEAD 808b365 while writing this spec; a maintainer should be able to reproduce them in under a minute. If either prints a different number, the tree moved since this spec was written and 90-back3.md must say so.",
+      "anchor": "COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:7510-7537"
+    },
+    {
+      "n": 3,
+      "instruction": "Run the plan's own hygiene gate and record that it is WRONG: `git grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` returns 2 hits, both comments that warn against the practice (`packages/coding-agent/test/tools/lsp-regressions.test.ts:111` and `packages/tui/test/loop-watchdog-wiring.test.ts:13`). Replace G10 everywhere it appears (§7.1 and §11 clause 10) with a form that excludes prose: `git grep -rn 'mock\\.module(' -- packages/coding-agent/test packages/tui/test` must return 0. Carrying the plan's literal form would send a compliant implementer hunting a violation that does not exist.",
+      "anchor": "packages/coding-agent/test/tools/lsp-regressions.test.ts:111"
+    },
+    {
+      "n": 4,
+      "instruction": "Write §9 Rủi ro as a consolidated table, not the plan's 12-item list. Six rows, one per failure mode that actually ends the milestone: (a) building something that already exists — verified true, the quota reader, the working-message override and the loop watchdog are all in the tree, so the checklist must name what was confirmed rather than what is missing; (b) a countdown cache-pill — the hit-rate arithmetic at segments.ts:718-735 is `cacheRead / (cacheRead + cacheWrite + input) * 100` and nothing else, so any TTL is a number that means nothing; (c) ordering — A2 must land in the same commit as D1, handler second-half included, because advertising an MCP capability with no handler makes a probing server worse off, not better; (d) the tool-renderer hole survives on an export-map wildcard (`packages/tui/package.json:93-96`) plus a loader remap closure (`packages/tui/src/tools/index.ts:73`), and a barrel refactor or an Object.freeze breaks it silently at plugin load — no Object.freeze exists today, verified; (e) chrome-scroll leaking into the main transcript, whose no-scroll-state invariant is documented at docs/tui-core-renderer.md:174 and never to be relaxed; (f) the M2 boundary — see step 5. Name the per-item risk only where it is not already covered by one of the six.",
+      "anchor": "packages/tui/src/status-line/segments.ts:718"
+    },
+    {
+      "n": 5,
+      "instruction": "Correct risk #9 before writing it down. The plan says six of fifteen execution items (A4, B1, B2, B3, C2, D2) cannot start until M2 finishes. A4 is not one of them: the plan's own A4 item and its §4 row 20 both say the DISPLAY half (`plugin-settings.ts:30`, `:166`) is unblocked and belongs to wave 1, because `plugin-settings.ts` appears nowhere in the M2 plan. Only A4's PERSIST half (`packages/coding-agent/src/extensibility/plugins/manager.ts:942-949`) is blocked, and it is blocked on M2 WI-8a specifically, not on 'M2 finishing'. The correct blocked set is therefore five items — B1, B2, B3, C2, D2 — which is what §6's own effort split already says ('7 ngày ở 5 hạng mục bị M2 chặn'). Write the five, and write A4 as a two-halves row.",
+      "anchor": "packages/coding-agent/src/extensibility/plugins/manager.ts:942-949"
+    },
+    {
+      "n": 6,
+      "instruction": "Write §10 Câu hỏi mở as one answerable table. Sort so the questions that block STARTING an item come first. Keep all twelve of the plan's entries; mark the four the plan already closes (B1 stays a hole with a pinning test, A7 anchors on the composer, O5's cross-package seam is settled, the M3-C1 status-line question moved to M2-OQ3) as closed in place rather than deleting them, because a reader who remembers the question needs to see where it went. Then add the two new ones this spec found. (a) Does P1's `usage` answer include the `custom` preset? The `custom` preset at `presets.ts:96-103` spreads `CUSTOM_STATUS_LINE_DEFAULTS`, which lives at `packages/tui/src/status-line/schema.ts:36-42` — so 'all seven presets' is edited in schema.ts, not presets.ts, and a maintainer answering 'full + nerd' has silently left `custom` behind unless the question says which. (b) Who decides what A4's persist half types to disk? The plan states the repo has no secret store to fall back to (`grep -c secret manager.ts` → 0, verified) and that the decision is A4's own to bring — so it is a named hole, not an omitted one.",
+      "anchor": "packages/tui/src/status-line/schema.ts:36-42"
+    },
+    {
+      "n": 7,
+      "instruction": "Write §11 clause 1 so the P1 answer is checkable by name, not by paraphrase. The clause must name every preset the maintainer chose and must forbid `status` in any of them — `status` already renders through a separate keyed path at `packages/tui/src/status-line/component.ts:3065-3068` under a flag defaulting true at `packages/coding-agent/src/modes/settings.ts:262-265`, so adding it to a preset renders every hook status TWICE. Carry the two negative contracts verbatim in shape: at 80 columns with a full usage context the quota segment still renders, and with `ctx.usage` undefined the row renders byte-identical to before. Every preset outside the P1 set must also render byte-identical.",
+      "anchor": "packages/tui/src/status-line/component.ts:3065-3068"
+    },
+    {
+      "n": 8,
+      "instruction": "Write §11 clause 6 without inventing a mechanism. The plan is explicit that the negative contract depends on which of M2's three directions M2-OQ3 picks: under a `core:`/`ext:` prefix a bare id is rejected; under a map fallback it is an UNREGISTERED id that is rejected, at render time; under a generic `mode` reading there is no per-id registration to reject. §11 must say 'per the mechanism M2 fixed' and enumerate the three branches, not pick one. Add the positive half: the hit-rate segment reports the SAME number as the existing `cache_hit` segment and carries no countdown and no TTL label.",
+      "anchor": "packages/tui/src/status-line/segments.ts:941"
+    },
+    {
+      "n": 9,
+      "instruction": "Write 90-back3.md from the plan_corrections list in this spec, verbatim on the evidence column — every one was reproduced at HEAD 808b365 with a real command. Do not soften them and do not drop the two that change what a gate does (the mock.module gate, and the A4 blocking contradiction). Add a one-line provenance note that these were measured on 808b365 on branch milestone-1, so a reader in three weeks knows when the table expires.",
+      "anchor": ".lavish-wip/m3-specs/tail2.spec.json"
+    },
+    {
+      "n": 10,
+      "instruction": "Write check-anchors.mjs (sketch in code_shape) so that every `file:line` in the three back-matter files is resolvable, and re-run it. It must exit 0 on what you wrote. Then deliberately break one anchor in a scratch copy and confirm it exits 1 — an anchor checker nobody has seen go red is not a gate.",
+      "anchor": ".lavish-wip/m3-md/check-anchors.mjs"
+    },
+    {
+      "n": 11,
+      "instruction": "Write assemble-m3.py and run it only once s1-s6 fragments exist. Until then, verify the script itself by pointing PARTS at the three back-matter files alone and confirming the guards fire correctly on a deliberately truncated input — the 800-byte and even-fence checks are the ones that catch a half-written agent turn.",
+      "anchor": ".lavish-wip/assemble-m3.py"
+    }
+  ],
+  "code_shape": "// .lavish-wip/m3-md/check-anchors.mjs\n// A DOCUMENTATION-CONSISTENCY CHECKER, not a test.\n// AGENTS.md bans source-grep *tests* — a test that reads an implementation file and\n// asserts on its text. This reads the back matter WE wrote, resolves the citations in\n// it, and asserts nothing about any code's behaviour. It lives outside packages/*/test/\n// on purpose. It is the cheapest guard against the exact failure this spec found 13 times:\n// a file:line that no longer says what the document claims it says.\nimport { readdirSync, readFileSync, statSync } from \"node:fs\";\nimport { join, relative, resolve } from \"node:path\";\n\nconst REPO = resolve(import.meta.dir, \"../..\");\nconst DIR = import.meta.dir;\nconst MD_FILES = [\"90-back1.md\", \"90-back2.md\", \"90-back3.md\"].map(f => join(DIR, f));\n\n// `path/to/file.ts:123`  or  `path/to/file.ts:12-18`\nconst ANCHOR = /`([A-Za-z0-9_@./-]+\\.(?:ts|tsx|js|mjs|json|py|md|kdl|rs|yml|yaml|txt))`?\\s*:(\\d+)(?:-(\\d+))?`/g;\n// <!-- assert: <path> <line> <literal> -->\nconst ASSERT = /^<!--\\s*assert:\\s*(\\S+)\\s+(\\d+)\\s+(.+?)\\s*-->$/gm;\n\nconst problems = [];\nlet checked = 0;\n\nfunction lineCount(path) {\n\ttry {\n\t\treturn readFileSync(path, \"utf8\").split(\"\\n\").length;\n\t} catch {\n\t\treturn null;\n\t}\n}\n\nfor (const md of MD_FILES) {\n\tlet text;\n\ttry {\n\t\ttext = readFileSync(md, \"utf8\");\n\t} catch {\n\t\tproblems.push(`${relative(REPO, md)}: missing`);\n\t\tcontinue;\n\t}\n\n\tfor (const m of text.matchAll(ANCHOR)) {\n\t\tconst [, rel, startRaw, endRaw] = m;\n\t\tconst start = Number(startRaw);\n\t\tconst end = endRaw ? Number(endRaw) : start;\n\t\tchecked++;\n\t\tconst abs = join(REPO, rel);\n\t\tif (!statSync(abs, { throwIfNoEntry: false })) {\n\t\t\tproblems.push(`${relative(REPO, md)}: ${rel}:${startRaw} — no such file`);\n\t\t\tcontinue;\n\t\t}\n\t\tconst n = lineCount(abs);\n\t\tif (n !== null && end > n) {\n\t\t\tproblems.push(`${relative(REPO, md)}: ${rel}:${startRaw}${endRaw ? `-${endRaw}` : \"\"} — past EOF (${n} lines)`);\n\t\t}\n\t}\n\n\tfor (const m of text.matchAll(ASSERT)) {\n\t\tconst [, rel, lineRaw, literal] = m;\n\t\tchecked++;\n\t\tconst abs = join(REPO, rel);\n\t\tconst lines = readFileSync(abs, \"utf8\").split(\"\\n\");\n\t\tconst idx = Number(lineRaw) - 1;\n\t\tif (idx >= lines.length) {\n\t\t\tproblems.push(`${relative(REPO, md)}: assert ${rel}:${lineRaw} — past EOF (${lines.length} lines)`);\n\t\t} else if (!lines[idx].includes(literal)) {\n\t\t\tproblems.push(`${relative(REPO, md)}: assert ${rel}:${lineRaw} — expected ${JSON.stringify(literal)}`);\n\t\t}\n\t}\n}\n\nfor (const p of problems) console.log(`FAIL ${p}`);\nconsole.log(`${checked} anchors checked, ${problems.length} problem(s)`);\nif (problems.length) process.exit(1);\n",
+  "test_contract": "No `.test.ts` is added or modified by this item, and none should be — this is a documentation work item and a new test that asserts the plan document says the right thing would be exactly the banned shape.\n\nThe observable contract is between the document and its reader, and it has two halves.\n\nFirst, CITATION: every `file:line` in the three back-matter files resolves — the file exists and the cited range does not run past EOF. The consumer who regresses is the Monday implementer: a wrong anchor sends them to edit a line that has nothing to do with the feature, and the plan supplied 13 of them (see plan_corrections). Two are actively harmful rather than merely stale: the `mock.module` gate as written is RED on a fully compliant tree, and risk #9 would convince a maintainer that A4 is blocked when its own item text says the display half ships in wave 1.\n\nSecond, HONESTY: no gate in the closing sections may be stated as if it had been observed. G4 and G5 were run and are RED today; G1, G2, G3, G6-G9 and G11 were not run at all and the document must say so. If a reader trusts a gate that was never executed, the milestone reports green on work that never happened — the failure mode the M1 back matter's \"Những điều chưa được kiểm chứng\" section exists to prevent.\n\nOne asymmetry the engineer must preserve in the text: a counting gate is only a gate if it returns a NON-ZERO number today. G4 (9) and G5 (left=7) qualify. A gate phrased as 'the count is unchanged' is self-fulfilling and must be written the other way round — the plan itself makes this argument at length and then contradicts it in G10.",
+  "test_files": [
+    ".lavish-wip/m3-md/check-anchors.mjs"
+  ],
+  "verification": "Run from the repo root. All of the following were executed at HEAD 808b365 on branch milestone-1 while writing this spec.\n\n1. Types and lint (the only universally green gate — no native addon needed):\n   `bun run check:ts` → exit 0, verified here (all 16 packages report `Done`, exit 0).\n\n2. The two RED-before-green gates, to prove they are still non-vacuous:\n   `{ grep -rn \"event\\.wheel \\* [0-9]\" packages/tui/src --include='*.ts'; grep -rn \"delta \\* [0-9]\" packages/tui/src --include='*.ts'; } | grep -v \"^packages/tui/src/mouse-wheel\\.ts:\" | wc -l` → 9.\n   G5 bash block → 10 lines, `left=7`, `kept=3`.\n\n3. The corrected hygiene gate, which must be 0 today:\n   `git grep -rn 'mock\\.module(' -- packages/coding-agent/test packages/tui/test` → 0.\n   And, to document WHY the plan's form had to change, note that the plan's form (`mock.module` without the paren) → 2.\n\n4. This item's own gate:\n   `bun .lavish-wip/m3-md/check-anchors.mjs` → exit 0.\n   `python3 .lavish-wip/assemble-m3.py` → prints the per-part byte table, refuses to assemble if any part is missing, < 800 bytes, or has an odd number of ``` fences.\n\n5. NO `bun test` in this item's own verification. `bun test` is not universally blocked and it is not universally green: `bun test packages/tui/test/mouse.test.ts` passes 13/13 today, while `bun test packages/coding-agent/test/status-line-settings-cache.test.ts` and `packages/tui/test/status-line-cache-hit.test.ts` both fail 0/1 with \"Failed to load pi_natives native addon for darwin-arm64\". Whether a test runs depends on whether its module graph reaches pi-natives, which is a per-file question. Build the addon with `bun --cwd=packages/natives run build` before trusting any coding-agent gate. The back matter must state this split, because it decides which of the eleven gates can be checked before Monday and which cannot.",
+  "gate": "M3 is DONE when all four hold, and each can fail:\n\n(1) `bun .lavish-wip/m3-md/check-anchors.mjs` exits 0 AND has been seen to exit 1. Checked anchors must number in the dozens, not zero — a back matter with no `file:line` in it has evaded the check rather than passed it.\n\n(2) `python3 .lavish-wip/assemble-m3.py` refuses to run when fed a truncated part. The 800-byte and even-fence guards are the whole reason the script exists.\n\n(3) `git grep -rn 'mock\\.module(' -- packages/coding-agent/test packages/tui/test` returns 0, and the plan's uncorrected form (`mock.module`, no paren) is NOT what appears in 90-back1.md or 90-back2.md. This can fail: grep the back matter for the uncorrected token and it is found if someone copied §7 forward.\n\n(4) Every claim in 90-back3.md's corrections table is reproducible on demand. Spot-check any three: run the command in the evidence column, get the same answer. A corrections table nobody spot-checked is worse than no corrections table, because it converts 'unverified' into 'asserted'.\n\nPlus the two content gates, stated negatively: §10's table must contain a row for P0 and a row for P1 with a named owner and a deadline before A1 starts, and §11 must contain a clause naming the M3-C2 slip and a clause that A9 may NOT slip.",
+  "gate_can_fail": "Yes, on every leg, and leg (1) fails in the most useful way. check-anchors.mjs is a plain script over files this item wrote: rename a cited file, move a cited line past EOF, or copy a stale anchor forward from the plan and it exits 1 with the offending citation named. The failure is guaranteed rather than hypothetical because this spec found 13 citations in the plan that are already wrong — so the corpus of anchors an implementer would copy forward is known-bad, and an uncorrected copy is detectable. Legs (2) and (3) are mechanical and were each run against a deliberately wrong input while writing this spec. Leg (4) is the only soft one: it is a discipline, not a script, and it can be satisfied by asserting something false. That is why the spec carries the evidence column verbatim with the exact command for each entry — a claim a reader can re-run in ten seconds is not the same as a claim someone merely typed.",
+  "depends_on": [
+    "s1 — wave 1 items (A1 usage presets, A8 tmux key hints, A6 read-group membership, A5 stall indicator). §11 clauses 1, 2, 3, 7 and 9 are statements about s1's gates and cannot be written without them.",
+    "s4 — wave 4 items (B1 tool-renderer pinning, B2 working message, B3 keybinding hint strip). §11 clause 7 and the B1 row of §10 depend on s4's pin-test design.",
+    "s5 — wave 5 items (A2 elicitation capability, C2 shell-call status strip, D2 hit-rate segment, D1 elicitation handler). §11 clauses 4 and 6 are about s5, and both of those clauses are void until M2-OQ3 has an answer — which is a dependency on M2, not on s5.",
+    "s6 — wave 6 (A9 daltonized theme). §11 clause 9 and the M3-C2 slip sentence both hinge on A9's S-versus-M decision, which §10 question 7 carries and nobody has answered.",
+    "P0 — the maintainer's written confirmation of the §8.2 spec table for A3, A7, A8, D2. Must be closed before wave 1 starts. tail2 cannot close it; it can only make it a table row with an owner and a deadline.",
+    "P1 — the maintainer's written answer to whether `usage` joins all seven status-line presets or a subset, naming each preset. Must be closed before A1 starts, and its answer is the target of §11 clause 1.",
+    "M2-OQ3 — the status-line extension-registration mechanism. §11 clause 6 is written as three branches precisely because this is unanswered; tail2 does not need the answer to write the clause, but s5 cannot implement C2 and D2 without it."
+  ],
+  "blocks": [
+    "MILESTONE_3_EXECUTION_PLAN.md — the assembled execution plan. assemble-m3.py cannot run to completion until 90-back1/2/3.md exist.",
+    "M2 scheduling — §9 risk row (f) and §10 question 1 exist to answer 'what is M2's scope and exit criterion', which is the question that decides whether 7 engineer-days stay blocked."
+  ],
+  "effort": "~2 engineer-days. Roughly 0.5 day to re-verify and write the corrections table — most of that is already done here, and the evidence column is written out, so it is transcription plus a re-run. 0.5 day to write §9 and §10 as tables. 0.5 day to write §11 and the unverified section. 0.5 day to build and shake out check-anchors.mjs and assemble-m3.py. Not on the critical path for any code item: it can be written in parallel with s1-s6 and only needs to land before the plan is handed over.",
+  "risk": "The single most likely way to get this wrong is to write the closing sections as a faithful summary of the plan. That is the failure this whole item exists to prevent, and it is attractive precisely because it is easy: the plan's §9-§11 are already well-written, they read as authoritative, and copying them forward looks like diligence. The result would be a document in which thirteen citations are wrong, one gate is red on a compliant tree, and one risk entry contradicts the item text two hundred lines above it — all of it inherited, none of it visible unless a reader happens to open the cited file. The countermeasure is structural, not a reminder: every citation in the back matter is written so check-anchors.mjs resolves it, so a stale one cannot survive unnoticed, and the two gates whose failure modes are semantic rather than positional — the mock.module gate and the A4 blocking contradiction — are called out by name in 90-back3.md rather than left to be re-derived. A second, quieter way to get this wrong is to write §11 as a restatement of §7's gates. §7 states what a gate should be; §11 must state what must be true, and the two differ exactly where a gate is a bad instrument.",
+  "open_questions": [
+    "P0 (blocking, owner: maintainer, in writing, due before wave 1 starts) — for A3, A7, A8 and D2: is the spec source `black-box` or `omp-native`, and where is the evidence? The §8.2 table proposes A7=omp-native, D2=omp-native, A8=black-box+omp-native, A3=omp-native-shape-plus-remeasured-constants. tail2 restates the table and puts it in a row with an owner; it cannot answer it.",
+    "P1 (blocking, owner: maintainer, in writing, due before A1 starts) — does `usage` join all seven status-line presets or a subset, naming each preset? tail2 additionally asks: does the answer include the `custom` preset? The `custom` entry at `packages/tui/src/status-line/presets.ts:96-103` spreads `CUSTOM_STATUS_LINE_DEFAULTS` from `packages/tui/src/status-line/schema.ts:36-42`, so including it means editing schema.ts, and excluding it must be said out loud — otherwise 'full and nerd' reads as a complete answer and quietly leaves `custom` on the old default list.",
+    "A9 S or M (owner: whoever schedules, due before A9 is planned) — extend the existing token list, or generate two hand-tuned themes through the OKLCH primitives already present at `packages/tui/src/theme/session-color.ts:2`? Default is M, ~5 days; S is ~1 day. The reason this must be decided rather than defaulted is the four-day spread, not that S is cheap. 99 palettes to touch either way (verified: `ls packages/tui/src/theme/defaults/*.json | wc -l` → 99).",
+    "A4 persist half (owner: the A4 implementer plus a reviewer, due before that half starts) — the repo has no secret store to fall back to. `grep -c secret packages/coding-agent/src/extensibility/plugins/manager.ts` → 0 (verified), and the only keychain reference in the package is a browser-profile payload obfuscator at `packages/coding-agent/src/tools/browser/attach.ts:244-246`, unrelated. So 'what gets typed straight to disk' is a decision with no default. The plan hands it to A4; a human still has to sign the answer.",
+    "M2 scope and exit criterion (owner: maintainer, due before M2 is scheduled) — is `ExtensionUIContext` going to reach the shape the M2 plan describes, where `setHeader`/`setFooter` are no-ops and the specifier remap makes `toolRenderers` reachable? If it does not, B1, B2, B3, C2 and D2 all slide and wave 4 cannot start independently. The plan calls this the largest scheduling risk; tail2 can put it at the top of the table with an owner, and cannot resolve it.",
+    "Headless/SDK policy for MCP elicitation (owner: whoever owns the MCP surface, due before D1) — no answer exists anywhere in the dossier and both wrong answers are visible at the protocol layer. §11 clause 4 says behaviour follows the decided policy, so D1's DoD cannot be judged until this is written down.",
+    "Does a transient notice leave a durable transcript record? (owner: maintainer, not blocking A7) — two different behaviours when scrolling back, and A7 only needs to leave the no-key branch's transcript behaviour exactly as it is. The plan deliberately does not let this gate A7, and tail2 must not let it either.",
+    "Should M4/M5 mint a real `ExtensionAPI.registerToolRenderer`? (owner: M4/M5, not an M3 question) — B1 stays a hole with a pinning test. Note the honest limit, which the plan states and the back matter should repeat: a pinning test detects a refactor that deliberately breaks the mechanism; it does not stop an accidental one. A plugin built on the hole can still break.",
+    "Do git sidebar and the raw-SSE debug viewer join the shared acceleration model? (owner: whoever implements A3, default: yes) — leaving the SSE viewer out would make the debug app internally inconsistent. Note the asymmetry: the 9th site is `packages/tui/src/apps/git/sidebar.ts:897` using `delta * 3`, not `event.wheel * N`, which is exactly why G4 has to run both greps.",
+    "Two unverified claims from the original brief, still unverified: '8 of 8 subsystems' and 'pre-styled ANSI / no cell buffer', plus the counting method behind '7 of 9'. None of them appears in this plan and none should appear in the back matter. A third claim in the same family — that `setFrameProvider` has exactly one non-test call site — was verified and folded into the plan; the other two need either a named feasibility report or deletion."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The task framing states: 'Milestone 2 occupies lines 7042 to 7692 of that file.'",
+      "verdict": "wrong",
+      "correction": "Lines 7042-7692 are MILESTONE 3, not milestone 2. Line 7042 is the heading '# MILESTONE 3 — BỀ MẶT UI/UX KIẾU CLAUDE CODE' and line 7692 is '# 13. M4 — DeepSeek-Harness-derived core and plugin workflow'. M2 occupies 4165-7041. The output directory this item writes to (`.lavish-wip/m3-specs/`) is the correct one; only the milestone label in the framing is off by one. Everything in the work item text — §9 RỦI RO, §10 CÂU HỎI MỞ, §11 ĐỊNH NGHĨA HOÀN THÀNH — is M3 back matter, as the Vietnamese content itself makes obvious (it names M3-A9, M3-C1, M2-OQ3, waves 1-6 of M3).",
+      "evidence": "grep -n '^# ' on the plan returns 4165:'# 11 — M2: Composable, loadable extensions...', 7042:'# MILESTONE 3 — BỀ MẶT UI/UX KIẾU CLAUDE CODE', 7692:'# 13. M4 — DeepSeek-Harness-derived core and plugin workflow'."
+    },
+    {
+      "claim": "§11 clause 10 and §7 gate G10: `grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` in the diff must return 0.",
+      "verdict": "wrong — this gate is RED on a fully compliant tree",
+      "correction": "It returns 2 today, and both hits are comments that warn against the practice. A gate that is red before any work has been done, on a tree that has never violated the rule, is not a gate. Replace with a form that excludes prose: `git grep -rn 'mock\\.module(' -- packages/coding-agent/test packages/tui/test` (note the trailing paren) must return 0. Carry the corrected form in both §7.1 and §11 clause 10, and say in 90-back3.md why the original was wrong so a future reader does not 'restore' it.",
+      "evidence": "`git grep -rn 'mock.module' packages/coding-agent/test packages/tui/test` → packages/coding-agent/test/tools/lsp-regressions.test.ts:111 '// object (NOT `mock.module`, which would leak across files); the suite's' and packages/tui/test/loop-watchdog-wiring.test.ts:13 ' * Spies the prototype (never `mock.module`, which leaks across files) so the'. Both are prose, exit 0, rc=0."
+    },
+    {
+      "claim": "§9 risk #9: '6 trên 15 hạng mục thực thi (A4, B1, B2, B3, C2, D2) vẫn không thể bắt đầu cho tới khi M2 xong'.",
+      "verdict": "self-contradictory — the plan says the opposite two hundred lines earlier",
+      "correction": "A4 is not blocked. §6's A4 item states the display half (`plugin-settings.ts:30`, `:166`) 'không chặn gì' and belongs to wave 1, and §4 row 20 says the same. Only A4's persist half (`manager.ts:942-949`) is blocked, and on M2 WI-8a specifically — not on 'M2 finishing'. §6's own effort split already agrees: '7 ngày ở 5 hạng mục bị M2 chặn — B1, B2, B3, C2, D2', with A4 counted in the unblocked 27 as 'nửa hiển thị'. The correct blocked set is five. Write §9 with the five, and give A4 its own two-halves row so the half that ships in wave 1 is not held hostage to the half that cannot.",
+      "evidence": "Plan line 7384 (A4 size): 'S, ~1 ngày cho nửa hiển thị ... đó là phần **không chặn gì** và làm được ngay ở sóng 1'. Plan line 7388: 'Nửa **lưu** (`manager.ts:942-949`; hàng bản đồ 21) **chặn đúng M2 WI-8a**'. §4 row 20: 'Cổng riêng: không chặn gì ... Làm được ở sóng 1'."
+    },
+    {
+      "claim": "§9 risk #9 / §10 #1: the M2 seam is invisible from this repo, so 6 of 15 items 'vẫn không thể bắt đầu'.",
+      "verdict": "partly wrong, and overstated in the other direction",
+      "correction": "The premise 'ranh giới M2/M3 ... nhìn thấy được từ repo này' is itself the plan's argument, and its supporting facts all verify: 27 closed ids, a pure barrel, no `register*` anywhere, and the ExtensionUIContext neighbourhood the plan calls the M2 re-shape. Keep that half. Change only the count and the membership, per the entry above.",
+      "evidence": "`grep -rn register packages/tui/src/status-line/` → no matches. `packages/tui/src/status-line/index.ts` is six star re-exports and nothing else. `STATUS_LINE_SEGMENT_IDS` in packages/tui/src/status-line/schema.ts:2-30 holds exactly 27 ids (counted: pi, status, model, mode, path, git, pr, subagents, token_in, token_out, token_total, token_rate, cost, context_pct, context_total, time_spent, time, session, hostname, cache_read, cache_write, cache_hit, session_name, usage, collab, stream, vim). types.ts:264-277 does span setStatus through setHeader."
+    },
+    {
+      "claim": "§10 #6 and §8.2: 'isProjectTrusted() luôn trả true vì project-level settings và extensions nạp vô điều kiện (packages/coding-agent/src/extensibility/extensions/types.ts:462-470, :528-532)'.",
+      "verdict": "claim confirmed, both anchors stale",
+      "correction": "The claim is right and independently tested. The citations are not: types.ts:455-475 is `mode` / `getContextUsage` / `cwd` / `sessionManager`, and types.ts:522-536 is `setTimeout` / `clearTimer` / `addAdditionalContext`. The two `isProjectTrusted` declarations are at types.ts:494 and types.ts:561; the two implementations that return the literal `true` are at `packages/coding-agent/src/extensibility/extensions/runner.ts:1264` and `packages/coding-agent/src/session/agent-session.ts:7406`. Cite those four. The consequence for C2 is unchanged: the trust question at §10 #6 is real and still blocks C2.",
+      "evidence": "`grep -rn isProjectTrusted packages/` → runner.ts:1264 'isProjectTrusted: () => true,' and agent-session.ts:7406 'isProjectTrusted: () => true,' plus the two type declarations. Two test files already assert it: packages/coding-agent/test/extension-context-project-trust.test.ts:14 and packages/coding-agent/test/issue-7955-extension-project-trusted.test.ts:19,24."
+    },
+    {
+      "claim": "§8.2 (A7 row) and §4 row 8: 'showStatus tại ui-helpers.ts:141' and dedupe at 'ui-helpers.ts:141-160'.",
+      "verdict": "stale path and stale line, and the plan is internally inconsistent about the path",
+      "correction": "The file is at `packages/coding-agent/src/modes/utils/ui-helpers.ts` — the `utils/` segment is missing from the plan's citation — and `showStatus` is declared at line 143, not 141. The plan's own G5 bash block at §7.1 uses the correct full path `packages/coding-agent/src/modes/utils/ui-helpers.ts`, so the two halves of the document disagree. Use the full path everywhere; it is the form the executable gate already relies on.",
+      "evidence": "`find packages/coding-agent/src -name 'ui-helpers*'` → exactly one hit, packages/coding-agent/src/modes/utils/ui-helpers.ts. `sed -n '138,146p'` on `packages/coding-agent/src/modes/ui-helpers.ts` → 'No such file or directory'. Line 143 → 'showStatus(message: string, options?: { dim?: boolean }): void {'."
+    },
+    {
+      "claim": "§4 row 8 and §8.2 (A7 row): '#handleNotice tại event-controller.ts:1244-1251'.",
+      "verdict": "stale — off by five lines",
+      "correction": "`#handleNotice` is at line 1249. Lines 1244-1247 are `markBackgroundTaskCalls`, which is a different method entirely. A5-anchored work that seeks to 1244 lands on the wrong method.",
+      "evidence": "`sed -n '1240,1256p' packages/coding-agent/src/modes/controllers/event-controller.ts` → 1244 'markBackgroundTaskCalls(toolCallIds: Iterable<string>): void {', 1245-1247 its body, 1248 blank, 1249 'async #handleNotice(event: Extract<AgentSessionEvent, { type: \"notice\" }>): Promise<void> {'."
+    },
+    {
+      "claim": "§4 row 4 and §5 O7: the trailer slot is 'đã bị chiếm bởi packages/coding-agent/src/modes/interactive-mode.ts:6674'.",
+      "verdict": "stale — off by fifty lines, and the line cited is a closing brace",
+      "correction": "The one and only `setTrailer` call site outside the method definition is at `packages/coding-agent/src/modes/interactive-mode.ts:6624`. Line 6674 is `}`. The CLAIM is confirmed and load-bearing (A5 must merge with the existing occupant rather than install a second one) — only the number is wrong, and it is wrong by enough to be found only by grepping, not reading.",
+      "evidence": "`grep -rn setTrailer packages/` → exactly two hits: interactive-mode.ts:6624 'this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());' and packages/tui/src/components/loader.ts:141 (the definition). `sed -n '6670,6678p'` → 6674 is '}'."
+    },
+    {
+      "claim": "§6 (A4) and §4 row 21: 'plugin-settings.ts:662 (empty: \"cancel\")' is the guard that must be left alone.",
+      "verdict": "stale — off by seven lines",
+      "correction": "`empty: \"cancel\"` is at `packages/tui/src/overlays/plugin-settings.ts:669`; line 662 is `const field = new TextFormField({`. The guard's behaviour is confirmed and matters: `form.ts:296-303` routes a whitespace-only submit to `onCancel` before `onSubmit` is ever called, which is why §11 clause 5's 'empty submit still cancels' contract already passes today. The companion citation `form.ts:295-301` (in the plan's corrections table) is one off; `submit()` is declared at 296.",
+      "evidence": "`grep -n 'empty: \"cancel\"' packages/tui/src/overlays/plugin-settings.ts` → 669. `sed -n '294,304p' packages/tui/src/components/form.ts` → 296 'submit(): void {', 298 'if (value.trim().length === 0) {', 299 'const empty = this.#options.empty ?? \"submit\";', 300 'if (empty === \"cancel\") {', 301 'this.#options.onCancel();'."
+    },
+    {
+      "claim": "§7 G4's prose lists the constant sites as agent-transcript-viewer.ts:469, copy-selector.ts:212, plan-review-overlay.ts:581, rewind-selector.ts:232, git-tui.ts:693, raw-sse.ts:167, log-viewer.ts:638, and usage-dashboard.ts:753.",
+      "verdict": "file list exactly right, every line number wrong",
+      "correction": "The seven `* 3` files and the one `* 2` file are correct and complete — 7 + 1 = 8 constant sites, plus `sidebar.ts:897` using `delta * 3` as the ninth, which G4's own prose gets right. But all eight cited line numbers are off: the real ones are 470, 214, 580, 245, 697, 168, 639 and 759. The gate's COUNT is unaffected (G4 still prints 9), so this is a documentation defect, not a gate defect — but §11 clause 2 and the risk register both cite these numbers, so they must be corrected together. Offsets range from -1 to +13, so a reader cannot infer the shift.",
+      "evidence": "The plan's G4 command `{ grep -rn \"event\\.wheel \\* [0-9]\" ...; grep -rn \"delta \\* [0-9]\" ...; } | grep -v mouse-wheel | wc -l` → 9, with hits at agent-transcript-viewer.ts:470, usage-dashboard.ts:759, plan-review-overlay.ts:580, rewind-selector.ts:245, copy-selector.ts:214, git-tui.ts:697, raw-sse.ts:168, log-viewer.ts:639, sidebar.ts:897."
+    },
+    {
+      "claim": "§7 G4's negative command excludes 'packages/tui/src/mouse-wheel.ts'.",
+      "verdict": "confirmed, and currently a no-op worth stating",
+      "correction": "That file does not exist today — it is the module A3 will create, so the `grep -v` is inert now and load-bearing after A3. The back matter should say so, because an engineer reading the gate today sees an exclusion that matches nothing and may conclude the gate is broken.",
+      "evidence": "`ls packages/tui/src/mouse-wheel.ts` → ABSENT. The G4 command still returns 9, i.e. the exclusion removed nothing."
+    },
+    {
+      "claim": "§8.2 and §4 row 13: 'packages/tui/src/status-line/schema.ts:1-32 khai union đóng 27 id'.",
+      "verdict": "confirmed, range slightly loose, and it matters for P1",
+      "correction": "27 ids is exactly right. The array literal spans lines 2-30; line 1 is its doc comment, 30 is `] as const;`, and 32 is the doc comment on the derived type. Separately and more consequentially: `CUSTOM_STATUS_LINE_DEFAULTS` occupies schema.ts:36-42 exactly, and the `custom` preset spreads it. Since §10 question 2 (P1) asks which presets get `usage`, the answer's shape depends on a fact the plan states in passing — an implementer who reads 'all seven presets' and edits presets.ts:96 will not change what renders. §10 must ask the question in a way that makes the maintainer answer for `custom` explicitly.",
+      "evidence": "`sed -n '1,45p' packages/tui/src/status-line/schema.ts` — array opens at 2, 27 id lines follow, closes at 30; `CUSTOM_STATUS_LINE_DEFAULTS` at 36-42; `CONTEXT_LINE_MODE_VALUES` at 44. `sed -n '96,103p' packages/tui/src/status-line/presets.ts` — custom: { leftSegments: [...CUSTOM_STATUS_LINE_DEFAULTS.left], rightSegments: [...CUSTOM_STATUS_LINE_DEFAULTS.right], ... }."
+    },
+    {
+      "claim": "§5.1: the colorBlindMode branch is at 'packages/tui/src/theme/loader.ts:142-157'. §6 (A9) repeats 'loader.ts:142' for the flag and ':153-157' for the branch.",
+      "verdict": "stale at the edges; the substance is confirmed",
+      "correction": "The if-block is lines 153-158; 153-157 is the block without its closing brace. Line 142 is the `colorBlindMode?: boolean` field in the `CreateThemeOptions` interface, not the branch. Line 145 (`COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 }`) is correct. §10 question 7's substance — 'only adjusts exactly one token' — is exactly right and is the reason A9 exists.",
+      "evidence": "`sed -n '138,160p' packages/tui/src/theme/loader.ts` → 142 'colorBlindMode?: boolean;', 145 'const COLORBLIND_ADJUSTMENT = { h: 60, s: 0.71 };', 153 'if (colorBlindMode) {', 154 'const added = resolvedColors.toolDiffAdded;', 156 'resolvedColors.toolDiffAdded = adjustHsv(added, COLORBLIND_ADJUSTMENT);', 157 '}', 158 '}'."
+    },
+    {
+      "claim": "The plan never distinguishes MCP elicitation from ACP elicitation; §4 row 16 and DoD clause 4 read as though elicitation is entirely absent from the tree.",
+      "verdict": "an omission that will mislead the D1 implementer",
+      "correction": "MCP elicitation is genuinely absent — `git grep -n elicitation -- packages/coding-agent/src/mcp packages/coding-agent/test/mcp` returns nothing, so both halves of A2/D1 are real work, which is what the plan's atomicity argument rests on. But `elicitation` already exists in the ACP surface, where it is a URL-mode form with its own `elicitationId` field on five distinct type positions. An implementer who greps the tree for prior art will land there and may reuse the field names. Record the distinction in 90-back3.md and in D1's work item: ACP's elicitation is a different protocol with a different shape; MCP's is a form, and the repo's reusable form primitives are at packages/tui/src/components/form.ts:104, :270, :352.",
+      "evidence": "`git grep -n elicitation -- packages/coding-agent/src/mcp packages/coding-agent/test/mcp` → 0 hits, rc=0. `git grep -n elicitation -- packages/utils/src/acp/protocol.ts` → 150 'elicitation?: { form?: Record<string, unknown>; url?: Record<string, unknown> };', 426, 437, 444, 447, all carrying `elicitationId`. Also present in packages/utils/src/acp/connection.ts, packages/coding-agent/src/sdk.ts, packages/coding-agent/src/modes/acp/acp-agent.ts, and three docs."
+    },
+    {
+      "claim": "§6.8: 'Quy mô: find packages/tui -name \"*.test.ts\" ... → 221; find packages/coding-agent … → 1511'.",
+      "verdict": "stale by 1 and 9; the convention the numbers support is confirmed",
+      "correction": "The actual counts today are 222 and 1520. The point the numbers support is right and worth keeping: tests live in `packages/<pkg>/test/`, never beside their source — `ls packages/tui/src/overlays/*.test.ts` matches nothing, confirmed. An engineer placing a new test beside its source produces a file the runner never sees. Keep the rule; drop or re-measure the numbers, and date them.",
+      "evidence": "`find packages/tui -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` → 222. `find packages/coding-agent -name '*.test.ts' -not -path '*/node_modules/*' | wc -l` → 1520. `ls packages/tui/src/overlays/*.test.ts` → 'no matches found'."
+    },
+    {
+      "claim": "The task framing states: 'the native addon is not built, so `bun test` currently reports 0 pass ... treat `bun test` as blocked until the addon is built.'",
+      "verdict": "too broad — `bun test` is neither uniformly blocked nor uniformly green",
+      "correction": "Whether a test runs depends on whether its module graph reaches pi-natives, which is a per-file question. `bun test packages/tui/test/mouse.test.ts` passes 13/13 right now. `bun test packages/tui/test/status-line-cache-hit.test.ts` fails 0 pass / 1 fail, and `bun test packages/coding-agent/test/status-line-settings-cache.test.ts` fails the same way, both with 'Failed to load pi_natives native addon for darwin-arm64'. So the tui-side work (A1's overflow harness, A3, A5, A6, A8, A9, D3) is substantially checkable before the addon exists, and the coding-agent side is not. §11's 'Những điều chưa được kiểm chứng' section must carry this split, because it decides which gates a maintainer can trust on Monday. Build the addon with `bun --cwd=packages/natives run build` for the rest.",
+      "evidence": "`bun test packages/tui/test/mouse.test.ts` → '13 pass / 0 fail / 38 expect() calls'. `bun test packages/tui/test/status-line-cache-hit.test.ts` → '0 pass / 1 fail / 1 error'. `bun test packages/coding-agent/test/status-line-settings-cache.test.ts` → '0 pass / 1 fail / 1 error', with 'Failed to load pi_natives native addon for darwin-arm64' and both candidate paths reported missing. `bun run check:ts` → exit 0. packages/natives/package.json scripts.build → 'bun ../../scripts/bazel-natives.ts host --dest native'."
+    },
+    {
+      "claim": "§9 risk #1: the previous round's inventory of 'what omp is missing' was wrong in three places — the 5-window quota, the working-message override and the stall watchdog already exist.",
+      "verdict": "confirmed — all three exist, which is exactly why A1 is a one-day wiring job",
+      "correction": "All three verified. The quota reader `usageSegment` is at packages/tui/src/status-line/segments.ts:864 and renders tier plus five windows — 5h, 1d, 7d, mo and resetCredits — with per-window round-vs-floor and minutes-vs-hours policy at the call sites. The working-message override is declared at packages/coding-agent/src/extensibility/extensions/types.ts:267 (`setWorkingMessage(message?: string)`). The loop watchdog exists at packages/tui/src/loop-watchdog.ts:57 with its threshold check at :123-124. Write §9 so a reader knows the first three questions ('does the quota exist', 'can a plugin set the working message', 'is there a stall detector') are already answered — that is the whole reason the risk section is worth writing.",
+      "evidence": "`sed -n '864,900p' packages/tui/src/status-line/segments.ts` → 'const usageSegment: StatusLineSegment = {' and the five formatQuotaWindow/push sites. `sed -n '264,268p' types.ts` → 267 'setWorkingMessage(message?: string): void;'. `sed -n '55,58p' packages/tui/src/loop-watchdog.ts` → 57 'export class LoopWatchdog {'; `sed -n '121,126p'` → 123 'if (blockedMs > this.#thresholdMs) {'."
+    },
+    {
+      "claim": "§9 risk #4: the tool-renderer override survives on an export-map wildcard plus a loader remap, and a barrel refactor or an Object.freeze would break it silently.",
+      "verdict": "confirmed, and stronger than the plan states",
+      "correction": "The mechanism is exactly as described and there is currently no Object.freeze anywhere near it. `toolRenderers` is a plain mutable `Record` at `packages/tui/src/tools/index.ts:35`, reachable through the `\"./tools\"` export and the `\"./*\"` wildcard at `packages/tui/package.json:93-96`; the host-side remap is `setXdevRendererLookup(name => toolRenderers[name])` at `packages/tui/src/tools/index.ts:73`, a second live reference that must see any mutation. `grep` at `tools/index.ts:46` and the loader remap at `packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:2742` and `:2752-2754` all verify. The plan's conclusion that B1 must ship a pinning test in the same commit is right, and its own caveat — a pinning test catches a deliberate break, not an accidental one — belongs in the risk row.",
+      "evidence": "`sed -n '25,80p' packages/tui/src/tools/index.ts` → 35 'export const toolRenderers: Record<string, ToolRenderer> = {', 46 'grep: grepToolRenderer,', 73 'setXdevRendererLookup(name => toolRenderers[name]);'. `grep -n Object.freeze packages/tui/src/tools/index.ts` → none. `sed -n '92,97p' packages/tui/package.json` → the `\"./*\"` wildcard mapping."
+    },
+    {
+      "claim": "§9 risk #5: the main transcript has no scroll state, so D3 must stay inside the overlay viewer.",
+      "verdict": "confirmed",
+      "correction": "No scroll state exists in the main transcript path, and the invariant is written down twice in docs/tui-core-renderer.md — the prose statement at :106 and invariant 8 at :174, both of which forbid probing terminal scroll position or forking history policy. One citation is off by one (the plan says :107; the sentence begins at 106), and the load-bearing citation :174 is exact. §11 clause 8's 'transcript chính render giống byte trước và sau' is therefore a machine-checkable gate (G9), not a judgement call.",
+      "evidence": "`grep -rn 'scrollOffset|scrollTop|scroll_state' packages/tui/src/chat/chat-transcript-builder.ts packages/tui/src/chrome/transcript-container.ts` → no output. `sed -n '100,115p' docs/tui-core-renderer.md` → 106 'The renderer never probes the user\\'s scroll position.'. `sed -n '170,180p'` → 174 '8. The renderer never probes terminal scroll position or forks history policy'."
+    },
+    {
+      "claim": "§4 row 18: 'right.pop() tại :2705' is the mechanism that decides which status-line segment dies first when columns run out.",
+      "verdict": "confirmed exactly — this is the load-bearing fact under §11 clause 1's width contract",
+      "correction": "Line 2705 is `right.pop();` inside the `while (totalWidth() > topFillWidth && right.length > 0)` loop at 2704. So appending `usage` at the END of `rightSegments` makes it the first thing dropped when the line is narrow, while `context_pct` and `cost` on the left survive. That is the entire reason §11 clause 1 requires the quota segment to still render at 80 columns rather than merely being present in the preset. Cite :2704-2707 so the loop condition travels with the pop.",
+      "evidence": "`sed -n '2703,2707p' packages/tui/src/status-line/component.ts` → 2704 'while (totalWidth() > topFillWidth && right.length > 0) {', 2705 'right.pop();'."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m3-specs/tail2.spec.json"
+}

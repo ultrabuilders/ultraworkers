@@ -1,0 +1,1024 @@
+[
+ {
+  "id": "W1",
+  "claim": "`packages/catalog/src/wire/codex.ts:52` is a read-only reference point, and the wire set is exactly the five sites plus this file.",
+  "verdict": "PARTLY WRONG — the file is genuinely read-only, but its upstream source is not, and the plan's framing hides a live hazard.",
+  "correction": "The anchor is real (`ORIGINATOR_CODEX: \"omp\"` at line 52, confirmed, and it feeds `OPENAI_HEADERS.ORIGINATOR` at 8 call sites across packages/ai, packages/agent, packages/catalog, packages/coding-agent). But it is not a hand-written literal — it compiles from `packages/catalog/src/compat/rules/auth/openai-codex.kdl:12` (`originator \"omp\"`). AGENTS.md forbids hand-editing the compiled `rules.json`, so the only way to change this value is to edit the KDL. Consequence: W7's `git grep -o '@oh-my-pi/'` sweep does not touch it (no slash), W8b's display-token sweep might, and a `bun run gen:compat` after an unrelated KDL edit can move the originator with no TypeScript diff. This item should treat codex.ts:52 as read-only as instructed, but the milestone owner needs to know the value is not frozen by this item and is not protected by any test that would notice a KDL-level change.",
+  "evidence": "`git grep -n ORIGINATOR_CODEX` → 9 hits: definition at `packages/catalog/src/wire/codex.ts:52`, consumers at `packages/agent/src/compaction/compaction-v2-streaming.ts:435`, `packages/agent/src/compaction/openai.ts:832`, `packages/ai/src/images/openai-hosted.ts:70`, `packages/ai/src/providers/openai-codex-responses.ts:4781`, `packages/ai/src/registry/oauth/openai-codex.ts:137`, `packages/catalog/src/discovery/codex.ts:210`, `packages/coding-agent/src/web/search/providers/codex.ts:306`, plus `packages/ai/test/openai-codex.test.ts:24`. `sed -n '1,20p' packages/catalog/src/compat/rules/auth/openai-codex.kdl` → line 12: `originator \"omp\"`."
+ },
+ {
+  "id": "W1",
+  "claim": "The wire set is five positions; the plan's stated risk is that an engineer adds 'a sixth position not on the list'.",
+  "verdict": "WRONG IN PREMISE — there are at least six more bare `\"omp\"` values that are wire, not display. The plan's own risk warning therefore points at the wrong thing: the real danger is not an engineer adding a sixth, it is the milestone shipping with an incomplete wire map and a later mechanical sweep renaming values nobody inventoried.",
+  "correction": "Verified additional wire values not in the plan's set: (a) `packages/catalog/src/compat/rules/auth/stencil.kdl:13` `client-id \"omp\"` — the OAuth client id is code-defined at the Stencil issuer per the file's own comment; renaming breaks Stencil login; it is KDL, so a TS constant cannot be substituted. (b) `packages/catalog/src/compat/rules/auth/openai-codex.kdl:12` (above). (c) `packages/coding-agent/src/cli/git-tui/avatar.ts:50` `\"User-Agent\": \"omp\"` on api.github.com. (d) `packages/coding-agent/src/tools/report-tool-issue.ts:441` `agent: { name: \"omp\", version: VERSION }` in a JSON body POSTed to the grievance endpoint. (e) `packages/coding-agent/src/internal-urls/omp-protocol.ts:28` `readonly scheme = \"omp\"` — the `omp://` URL scheme, which appears in user-typed URLs and persisted sessions. (f) `packages/coding-agent/src/hindsight/settings.ts:172` `default: \"omp\"` for `cfgHindsightRetainContext`, the same bank identity as `bank.ts:29` via a second path. This spec keeps W1 at the plan's five (the plan forbids expanding it unilaterally) but records all six as an explicit escalation, because the correct outcome is a human assigning them, not an engineer finding them.",
+  "evidence": "`git grep -n '\"omp\"' -- packages/coding-agent/src packages/catalog/src packages/utils/src packages/tui/src` → 50+ hits; the six above were each opened and confirmed by `sed`. Cross-check: `sed -n '45,55p' packages/coding-agent/src/cli/git-tui/avatar.ts` shows the literal inside a `Record<string, string>` header map; `sed -n '439,443p' packages/coding-agent/src/tools/report-tool-issue.ts` shows it inside a `JSON.stringify` body; `sed -n '26,30p' packages/coding-agent/src/internal-urls/omp-protocol.ts` shows `readonly scheme = \"omp\";`."
+ },
+ {
+  "id": "W1",
+  "claim": "Test to write: 'one test per position, build the value sent and assert it equals the configured constant, not a literal.'",
+  "verdict": "BACKWARDS — following this instruction literally would destroy the safety mechanism it is meant to create.",
+  "correction": "If a test asserts `emitted === WIRE_NAME`, then setting `WIRE_NAME = \"ultraworkers\"` makes every such test pass while breaking all five integrations. The constant is the thing being renamed; the literal is the contract. The golden-literal assertions already in the tree are the correct design and must be preserved verbatim: `warp-events.test.ts:111` pins `agent: \"omp\"` inside an exact `JSON.stringify` of the whole OSC body, `acp-initialize-conformance.test.ts:237` pins `title: \"omp\"`, `blob-uploaders-self-hosted-legacy.test.ts:342` pins `form.get(\"z\") === \"omp\"`, and `hindsight-bank.test.ts` pins the derived ids `\"omp\"`/`\"omp-proj\"`/`\"omp-unknown\"`/`\"omp-general\"`. The correct split is two-sided and the plan collapsed it: the EXISTING tests keep the literal (they defend the wire bytes), and the ONE new test pins that the shared constant still equals that literal (it defends that the sites read the constant at all). If the new test also compared against the constant, the rename detection would evaporate.",
+  "evidence": "Four existing goldens confirmed by direct read: `sed -n '105,117p' packages/coding-agent/test/modes/warp-events.test.ts` (exact JSON.stringify including `agent: \"omp\"`); `sed -n '233,241p' packages/coding-agent/test/acp-initialize-conformance.test.ts` (objectContaining with `name: \"oh-my-pi\"`, `title: \"omp\"`); `sed -n '336,343p' packages/coding-agent/test/blob-uploaders-self-hosted-legacy.test.ts` (`expect(form.get(\"z\")).toBe(\"omp\")`); `sed -n '80,140p' packages/coding-agent/test/hindsight-bank.test.ts` (bankId `\"omp\"`, `\"omp-proj\"`, `\"omp-unknown\"`, `\"omp-general\"`). None of these four should be edited by W1 — and gate (3) makes that a hard requirement."
+ },
+ {
+  "id": "W1",
+  "claim": "The test files that already assert these values are `warp-events.test.ts` and `acp-agent.test.ts`.",
+  "verdict": "UNDERCOUNTED — there are four golden files, not two, and one of the two named is the wrong file.",
+  "correction": "`packages/coding-agent/test/acp-agent.test.ts` does NOT assert the agentInfo wire values at all (`grep -n 'agentInfo|oh-my-pi'` returns no agentInfo hit in it — it imports from acp-agent but tests other behaviour). The file that actually pins `agentInfo.name` and `agentInfo.title` is `packages/coding-agent/test/acp-initialize-conformance.test.ts:233-238`. And the plan misses two golden files entirely: `packages/coding-agent/test/blob-uploaders-self-hosted-legacy.test.ts:342` (puush `z`) and `packages/coding-agent/test/hindsight-bank.test.ts` (five derived bank ids). This is good news for W1 — four of the five sites are already byte-pinned, so the item's 'no user-visible change' acceptance is mechanically enforced for free — but the plan's engineer would have gone looking for coverage in a file that does not contain it.",
+  "evidence": "`grep -n 'agentInfo' packages/coding-agent/test/acp-agent.test.ts` → no match. `grep -n 'agentInfo' packages/coding-agent/test/acp-initialize-conformance.test.ts` → lines 26, 228, 233, 240. `grep -c '\"omp\"'` per file: warp-events.test.ts 2, acp-initialize-conformance.test.ts 1, blob-uploaders-self-hosted-legacy.test.ts 1, hindsight-bank.test.ts 4 (plus the `\"omp-proj\"`/`\"omp-unknown\"`/`\"omp-general\"` variants)."
+ },
+ {
+  "id": "W1",
+  "claim": "The environment blocks `bun test` entirely (0 pass, \"Failed to load pi_natives native addon for darwin-arm64\"), so verify with `bun run check:ts` and treat `bun test` as blocked.",
+  "verdict": "TOO BROAD — the blocker is per-import-graph, not global, and the distinction changes where W1's one new test should live.",
+  "correction": "`bun test` is blocked only for test files whose import graph reaches `@oh-my-pi/pi-natives`. I ran two files to establish this: `bun test packages/utils/test/dirs.test.ts` → `6 pass 0 fail`, while `bun test packages/coding-agent/test/modes/warp-events.test.ts` → `0 pass 1 fail` with `Cannot find module .../packages/natives/native/pi_natives.darwin-arm64.node`. Consequence for W1: the new test must be placed in `packages/utils/test/`, not `packages/coding-agent/test/`, or the only test this item adds would itself be unrunnable today. The four existing coding-agent goldens stay blocked locally and run in CI.",
+  "evidence": "Two `bun test` invocations run at HEAD 808b365; outputs quoted above. The utils suite is addon-free because `packages/utils/src/dirs.ts` imports only `node:fs`, `node:os`, `node:path`, its own `package.json`, and `./fs-error` (see `sed -n '14,18p' packages/utils/src/dirs.ts`)."
+ },
+ {
+  "id": "W1",
+  "claim": "Effort S, about 10 lines; test files to touch are two.",
+  "verdict": "NEARLY RIGHT, but the line count omits the new test file and the site count omits the fifth golden.",
+  "correction": "Source change is genuinely tiny: one added line in `dirs.ts` plus five edits totalling about six lines. The item also adds one new ~15-line test file and edits zero existing test files (by design — see the two-sided testing correction). Net ~40 lines across 7 paths. The plan's real error was not effort but the test-file inventory, which understated both the existing coverage (2 named, 4 actual) and the new work (0 named as new).",
+  "evidence": "`git diff --stat` scope is enumerable: 6 modified source files + 1 new test file, listed in the files_touched section of this spec."
+ },
+ {
+  "id": "W1",
+  "claim": "The repo is at git HEAD 5873776 on branch milestone-1.",
+  "verdict": "STALE — HEAD is 808b365.",
+  "correction": "`git rev-parse HEAD` returns `808b409fa36719c38319a041c0e612b4e702b` (`docs(plan): fold the spec-verified M1 execution plan into the upgrade plan`), on branch `milestone-1`, with only `.lavish-wip/m2-specs/` untracked. All six W1 source anchors were re-verified against this HEAD and all six are exact, so the stale SHA does not invalidate the spec — but any engineer who checks out 5873776 will not find the milestone-1 execution-plan commits and may be confused about the wave-1 baseline.",
+  "evidence": "`git log --oneline -3` → 808b365, 33d6e33, ecd516f. `git status --short` → only `?? .lavish-wip/m2-specs/`."
+ },
+ {
+  "id": "W1",
+  "claim": "`acp-agent.ts:656` (`name: \"oh-my-pi\"`) should be brought into W1's wire set or pinned by a test — the plan calls this N5 and leaves the choice open.",
+  "verdict": "RESOLVED — the plan's second option is already satisfied by existing code, and the first option would be wrong.",
+  "correction": "Do not route `\"oh-my-pi\"` through `WIRE_NAME`. It is a scoped npm package name, a different identity from the bare `\"omp\"` token, and a constant named `WIRE_NAME` holding a scoped name would misrepresent what the constant is — the same reasoning AGENTS.md applies when it distinguishes a package-basename list from a scope list. The plan's alternative ('assert by test that it intentionally stands still') is already in place: `acp-initialize-conformance.test.ts:233-238` asserts `expect(response.agentInfo).toEqual(expect.objectContaining({ name: \"oh-my-pi\", title: \"omp\", version: VERSION }))`. So the plan's 'don't let it fall into the gap' requirement is met by leaving line 656 untouched and letting that test do its job. Line 656 needs no edit and no new test; it needs only that this spec says so explicitly, which is what resolves it.",
+  "evidence": "`sed -n '228,241p' packages/coding-agent/test/acp-initialize-conformance.test.ts` shows the objectContaining assertion with `name: \"oh-my-pi\"` and `title: \"omp\"`. `grep -n 'name: \"oh-my-pi\"' packages/coding-agent/src/modes/acp/acp-agent.ts` → line 656 only. Plan cross-reference: `N5` row at plan line 8227, and the W9 do-not-rename entry at plan line 8796."
+ },
+ {
+  "id": "W2",
+  "claim": "W2 can ship on its own in wave 1, as a separate commit, BEFORE W7. ('Phải là một commit riêng, trước W7' — plan:8677; 'Effort: S — 2 sửa chuỗi cộng một test' — plan:8681.)",
+  "verdict": "wrong",
+  "correction": "W2 as a single commit cannot ship before W7. Setting `CANONICAL_PI_SCOPE = \"@ultraworkers\"` before the 16 manifests are renamed points the canonicalizer at a scope that does not exist: in dev mode every remap throws and the throw is swallowed at :1144-1149, and in a compiled binary every bundled extension load dies at :752-754. Split it: W2a (wave 1) adds `\"ultraworkers\"` to `PI_SCOPE_ALIASES` only and is genuinely shippable alone; W2b flips `CANONICAL_PI_SCOPE` and ships with or immediately after W7. W2a on its own is a no-op today (the scope does not exist yet) and already correct the moment W7 lands, so no commit in the history ever aims the canonicalizer at a missing scope. Note this also violates the plan's own structural requirement at line 8650 that every wave be independently shippable.",
+  "evidence": "`bun -e 'Bun.resolveSync(\"@ultraworkers/pi-utils\", process.cwd())'` → `Cannot find module '@ultraworkers/pi-utils' from '/Users/tranquangdang21/Projects/ultraworkers'`, while the same call for `@oh-my-pi/pi-utils` → `/Users/.../packages/utils/src/index.ts`. Source: `legacy-pi-compat.ts:1077` (`Bun.resolveSync` in `getResolvedSpecifier`), `:1144-1149` (the swallowing try/catch), `:751-754` (`loadBundledModule` throws on an unregistered key), and `packages/coding-agent/scripts/legacy-pi-virtual-module.ts:126` (`addEntry(manifest.name, ...)` — registry keys are the literal manifest name, still `@oh-my-pi/pi-ai`). A full simulation of the post-W2 filter/remap/resolve chain confirmed all four scope spellings now remap to an unresolvable `@ultraworkers/*` target."
+ },
+ {
+  "id": "W2",
+  "claim": "'File test mới: packages/coding-agent/test/extension-scope-canonicalization.test.ts' — a NEW test file (plan:8678).",
+  "verdict": "wrong",
+  "correction": "An equivalent test already exists: `packages/coding-agent/test/pi-scope-aliases.test.ts` (135 lines). It builds a probe plugin importing each aliased scope alongside the `Bun.resolveSync` absolute path and throws unless the two bindings are object-identical (lines 109-117) — which is exactly the equivalence assertion the plan asks the new file to make, and it already covers `@oh-my-pi` (lines 53, 55-59) and `@mariozechner` (lines 61-66). Add the `@ultraworkers` case to its `CASES` array. Creating the named file would duplicate coverage at a second level, which AGENTS.md explicitly bans, and the two would drift.",
+  "evidence": "`cat -n packages/coding-agent/test/pi-scope-aliases.test.ts` — 135 lines; lines 43-83 are the `CASES` table; lines 109-117 emit `if (alias${idx} !== canonical${idx}) throw new Error(...)`; line 129-134 is the single gating test. `ls packages/coding-agent/test/ | grep -i 'scope'` returns exactly this one file; no `extension-scope-canonicalization.test.ts` exists and none should be added."
+ },
+ {
+  "id": "W2",
+  "claim": "W2's second test case: 'a plugin declaring `@ultraworkers` in `peerDependencies` still resolves' (plan:8682).",
+  "verdict": "correct-but-misleading",
+  "correction": "The loader never reads a plugin's `peerDependencies` to decide resolution — `isBareExtensionDependencySpecifier` (:1453-1466) only classifies the specifier shape, and `resolveExtensionBareDependency` looks in the PLUGIN's own node_modules, which by construction will not contain a peer. So the declaration is inert, and the case is only meaningful as a negative: it proves resolution came from the host canonicalizer rather than from a locally installed peer. Express it as a `peerDependencies` field on the probe plugin's `package.json` in the existing harness, not as a separate file or a separate loader path. It must be added in W2b, not W2a, because `Bun.resolveSync('@ultraworkers/pi-utils')` cannot produce the canonical-path column before W7.",
+  "evidence": "`legacy-pi-compat.ts:1453-1466` (`isBareExtensionDependencySpecifier` — pure shape classification, no manifest read); `:1158-1161` (the bare-dep fallback is only reached AFTER the canonicalizer has already failed, and operates on the original specifier). Simulation confirms `isBareExtensionDependencySpecifier('@ultraworkers/pi-utils')` returns true."
+ },
+ {
+  "id": "W2",
+  "claim": "W2 must precede W7 because the two scope strings are what the W7 sed 'does not reach', so the compatibility mechanism has to be in place first (plan:8781, plan:8784 'W2 (cứng)').",
+  "verdict": "partly-right",
+  "correction": "The mechanism claim is right but the sed-clobbering reasoning is not the operative one, and conflating the two leads to the wrong ordering. The W7 pattern is `@oh-my-pi/` WITH a trailing slash; neither `\"@oh-my-pi\"` (:796) nor `\"oh-my-pi\"` (:802) contains a trailing slash, so the sed provably cannot touch either line — which is exactly what the plan itself says at 8503 and 8964. The real constraint is a RESOLVABILITY constraint: W2b is only legal once the `@ultraworkers` scope exists, i.e. after W7's manifest pass. The genuinely order-dependent piece is W2a: the alias-table widening is what keeps old-scope plugins canonicalizing across the W7 rename, and that half does belong before W7. Splitting the item separates the one real ordering constraint from the one that is only a sed-hygiene concern.",
+  "evidence": "`git grep -n 'CANONICAL_PI_SCOPE\\|PI_SCOPE_ALIASES'` at HEAD: only `legacy-pi-compat.ts:796,802` in source — both bare-quoted, no trailing slash. Plan line 8503 and line 8964 both state the sed pattern is trailing-slash and that the bare form needs its own grep."
+ },
+ {
+  "id": "W2",
+  "claim": "The work-item brief states the repo is at git HEAD 5873776.",
+  "verdict": "stale",
+  "correction": "HEAD is 808b365 on branch `milestone-1` (`docs(plan): fold the spec-verified M1 execution plan into the upgrade plan`). Branch is right; SHA is not. Every anchor this spec cites — :796, :802, :805, :807, :808, :837, :951-953, :1057-1069, :1077, :1144-1149, :1453-1466, :751-754 — was re-verified byte-for-byte at 808b365 and every one of them is correct as written in the plan. Do not spend time hunting for a commit named 5873776.",
+  "evidence": "`git log --oneline -1` → `808b365 docs(plan): fold the spec-verified M1 execution plan into the upgrade plan`; `git rev-parse --short HEAD` → `808b365`; `git branch --show-current` → `milestone-1`."
+ },
+ {
+  "id": "W2",
+  "claim": "`PI_PACKAGE_NAMES` (:805) holds the package list the canonicalizer serves, so adding `ultraworkers` to the scope implies the list should track the new scope (implicit reading of the parenthetical at plan:8678).",
+  "verdict": "correct-as-stated, worth pinning down",
+  "correction": "`PI_PACKAGE_NAMES` is a BASENAME list of host-bundled packages and is deliberately decoupled from the scope list. It holds 6 entries while the repo publishes 16 scoped packages, so 10 published basenames — `pi-catalog`, `pi-metaharness`, `pi-mnemopi`, `pi-wire`, `omp-stats`, `omptype`, `snapcompact`, `browser-relay`, `collab-web`, `typescript-edit-benchmark` — have never matched `LEGACY_PI_SPECIFIER_FILTER` and are not canonicalized today. W2 does not change that, and this spec's tests deliberately assert nothing about them so the decision stays where N17 put it. Say this in the PR description, because the mismatch (6 vs 16) is exactly what invites a well-meaning 'fix' during review.",
+  "evidence": "`legacy-pi-compat.ts:805` lists exactly 6 `pi-*` basenames; `for f in packages/*/package.json; do grep -m1 '\"name\"' ...; done` returns exactly 16 scoped package names. A simulation confirms `@ultraworkers/omp-stats` does NOT match the post-W2 filter."
+ },
+ {
+  "id": "W3",
+  "claim": "Tiêu chí nghiệm thu: \"cấu hình vẫn phân giải dưới root `.omp` cũ\" (config vẫn resolve về root .omp cũ).",
+  "verdict": "SAI cho người dùng XDG — đây là lỗi nghiêm trọng nhất của spec.",
+  "correction": "APP_NAME cũng là đoạn segment cuối của XDG app root (dirs.ts:360: `const appRoot = path.join(value, APP_NAME)`), nên đổi APP_NAME dời $XDG_DATA_HOME/omp, $XDG_STATE_HOME/omp, $XDG_CACHE_HOME/omp. Cùng loại hazard di chuyển dữ liệu mà W6 sinh ra và có cổng chặn. Phải chốt open_questions[0] TRƯỚC khi code; nếu chọn (b) thì W3 mới thực sự chỉ đổi tên hiển thị.",
+  "evidence": "sed -n '360,372p' packages/utils/src/dirs.ts → `const appRoot = path.join(value, APP_NAME);` kèm guard `if (fs.existsSync(appRoot)) return appRoot;`. Xác nhận qua dirs.ts:983 (secret-placeholder.key dưới $XDG_STATE_HOME/omp), dirs.ts:748 (autoqa.db dưới $XDG_DATA_HOME/omp), dirs.ts:890/894 (cache dưới $XDG_CACHE_HOME/omp), dirs.ts:990 (run/daemons). `grep -n APP_NAME packages/utils/src/dirs.ts` trả về đúng 5 chỗ: 21, 360, 621, 961, 1084."
+ },
+ {
+  "id": "W3",
+  "claim": "\"Test cần viết\" — test bảo vệ tên file log, thực hiện bằng setTransports({file: <tmp>}) rồi đọc readdirSync.",
+  "verdict": "Đã tồn tại sẵn và tốt hơn hẳn đề xuất của plan — không cần viết mới.",
+  "correction": "packages/utils/test/logger-contract.test.ts đã ghim đúng hợp đồng này bằng child-process spawn (tách singleton, an toàn full-suite theo AGENTS.md). Việc của W3 là CẬP NHẬT 4 chỗ trong file đó theo APP_NAME, không phải viết test mới. Cách setTransports() của plan tệ hơn: nó mutate singleton toàn cục nên phải thêm afterEach khôi phục, đúng thứ AGENTS.md cảnh báo.",
+  "evidence": "packages/utils/test/logger-contract.test.ts:77 `logFileNames` lọc bằng regex /^omp\\.\\d{4}-\\d{2}-\\d{2}\\.\\d+\\.log(?:\\.\\d+)?$/; :135, :296, :333 đọc `.omp.${result.pid}-audit.json`. Harness runScenario() (:38-73) spawn `process.execPath --preload <preload> <probe>` với HOME/USERPROFILE trỏ vào mkdtemp và PI_CONFIG_DIR: \".omp\"."
+ },
+ {
+  "id": "W3",
+  "claim": "Danh sách test hiện có chỉ gồm packages/tui/test/desktop-notify.test.ts và packages/tui/test/terminal-capabilities.test.ts; lệnh nghiệm thu chỉ chạy 2 file đó.",
+  "verdict": "Thiếu 2 file test vỡ, và lệnh nghiệm thu không chạy package utils nên không thể bắt được lỗi chính của W3.",
+  "correction": "Bổ sung packages/utils/test/dirs.test.ts (ghim basename log) và packages/utils/test/composer-shape-preview.test.ts (tương tự), và mở rộng lệnh verify sang `cd packages/utils && bun test test/logger-contract.test.ts test/dirs.test.ts test/stderr-guard.test.ts`.",
+  "evidence": "packages/utils/test/dirs.test.ts:82 `expect(path.basename(getLogPath(date, 123))).toBe(\"omp.2026-05-31.123.log\")` — 4 chỗ literal khác. packages/tui/test/composer-shape-preview.test.ts:45,49,54,59 đều `expect(...).toContain(\"omp\")`. packages/tui/test/desktop-notify.test.ts có 9 literal \"omp\" tại dòng 114,117,132,144,147,153,163,166,202. Lệnh trong plan không có `cd packages/utils`."
+ },
+ {
+  "id": "W3",
+  "claim": "Danh sách 7 literal trùng lặp là trọn vẹn (5 chuỗi trong 3 file + 2 tên file log).",
+  "verdict": "Thiếu 2 literal nguồn.",
+  "correction": "Thêm packages/tui/src/overlays/composer-shape-preview.ts:45 `const PREVIEW_TITLE = \"omp\"` (tiêu đề dự phòng hiển thị trong setup composer — cùng package tui với 2 trong 5 literal đã liệt kê) và packages/utils/src/dirs.ts:956 getCrashLogPath ghim \"omp-crash.log\" cứng, lệch với người anh em getDebugLogPath (:960) vốn đã dùng `${APP_NAME}-debug.log`.",
+  "evidence": "sed -n '44,46p' packages/tui/src/overlays/composer-shape-preview.ts → `/** Stand-in session title shown while the previewed session is unnamed. */ const PREVIEW_TITLE = \"omp\";`, dùng ở :62,64,66,111 và render bởi setup/scenes/composer.ts:86. sed -n '955,961p' packages/utils/src/dirs.ts → getCrashLogPath dùng \"omp-crash.log\" cứng, getDebugLogPath dùng `${APP_NAME}-debug.log`. Sweep `git grep -nE '\"omp[-._][^\"]*\"' -- 'packages/**/src/**'`."
+ },
+ {
+  "id": "W3",
+  "claim": "Plan nêu filenamePrefix phải đổi nhưng không giải thích vì sao.",
+  "verdict": "Đúng kết luận, thiếu lý do — bổ sung để kỹ sư không tối ưu hoá bằng cách bỏ qua nó.",
+  "correction": "Lý do cứng: getLogPath() (dirs.ts:620-622) ĐÃ dựng tên từ APP_NAME, và stderr-guard.ts:105 dùng nó làm đích redirect stderr mặc định. Nếu chỉ đổi APP_NAME mà để filenamePrefix:\"omp\", stderr sẽ bị ghi vào một file mà không ai đọc, còn report-bundle.ts:208,253 (đóng gói log để báo bug) và main.ts:285 (dòng gợi ý log cho người dùng) trỏ sang file trống.",
+  "evidence": "sed -n '619,622p' packages/utils/src/dirs.ts → `return path.join(getLogsDir(), `${APP_NAME}.${localDay(date)}.${pid}.log`)`. packages/utils/src/stderr-guard.ts:105 `const redirectPath = options?.redirectPath ?? getLogPath();`. packages/coding-agent/src/debug/report-bundle.ts:208,253. packages/coding-agent/src/main.ts:285."
+ },
+ {
+  "id": "W3",
+  "claim": "Yêu cầu: không được dùng ReturnType<>, không any, không inline import, ES #private, logger thay console.*, bun check chứ không phải tsc.",
+  "verdict": "Đã kiểm tra — không có xung đột nào trong diff này.",
+  "correction": "Giữ nguyên. Lưu ý thêm một quy tắc ít ai nhớ: sau khi đổi tên, doc comment tại dirs.ts:609 ('log files are named `omp.<day>.<pid>.log`') thành sai — nên sửa luôn trong cùng commit (comment, không phải test).",
+  "evidence": "sed -n '607,614p' packages/utils/src/dirs.ts. Ngoài ra import surface đã có sẵn ở mọi nơi: packages/utils/src/index.ts:5 `export * from \"./dirs\"`; logger.ts:17 đã import { getLogsDir } từ \"./dirs\"; packages/tui/src/setup/wizard-overlay.ts:8 và packages/coding-agent/src/cli/args.ts:5 đã dùng đúng pattern import APP_NAME. Không có chu trình import vì dirs.ts không import logger (grep 'from \"./logger\"' packages/utils/src/dirs.ts → rỗng)."
+ },
+ {
+  "id": "W4",
+  "claim": "PI_CONFIG_DIR has 68 occurrences across 25 files (16 .ts files).",
+  "verdict": "STALE — off by one on each figure.",
+  "correction": "On the current tree at HEAD 84cbac9, excluding the plan document itself: 69 occurrences across 26 files — 17 .ts, 7 .md, 2 .rs. Reproduce with `git grep -o 'PI_CONFIG_DIR' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l` and the same command with -l. The plan measured at commit 5873776, which is not in this repository's history, so this is staleness rather than a wrong method.",
+  "evidence": "git grep -o 'PI_CONFIG_DIR' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l -> 69; git grep -l 'PI_CONFIG_DIR' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l -> 26; of those, grep -c '\\.ts$' -> 17, '\\.md$' -> 7, '\\.rs$' -> 2. Including the plan document the totals are 81 and 27."
+ },
+ {
+  "id": "W4",
+  "claim": "The two Rust files that read PI_CONFIG_DIR are not mentioned anywhere in W4, so extending ULTRAWORKERS_CONFIG_DIR is a TypeScript-only change.",
+  "verdict": "INCOMPLETE — a real parity gap.",
+  "correction": "crates/pi-natives/src/crash_handler.rs:269 and crates/pi-natives/src/oauth_callback/darwin.rs:441 both read the variable directly. The crash-log directory would ignore the new alias on every platform, and the macOS OAuth legacy-recovery path would ignore it on macOS only — a failure no Linux CI run can observe. W4 must extend both, with the new name beating the legacy one and the existing empty-value filters preserved.",
+  "evidence": "crash_handler.rs:269 `let config_override = std::env::var_os(\"PI_CONFIG_DIR\");` with fallback `DEFAULT_CONFIG_DIR` = \".omp\" at :49, used at :286 and :344. darwin.rs:439-446 `context.env.get(\"PI_CONFIG_DIR\")... .unwrap_or(\".omp\")`. Confirmed by opening both files, not by grepping. git grep -ln 'PI_CONFIG_DIR' -- '*.rs' returns exactly these two."
+ },
+ {
+  "id": "W4",
+  "claim": "The project-root hazard is getProjectAgentDir() at dirs.ts:589-591, which W6a handles as a separate sub-task.",
+  "verdict": "UNDERSCOPED — four more sites, same hazard.",
+  "correction": "packages/coding-agent/src/discovery/helpers.ts:1032, :1034, :1049 and :1079 call getConfigDirName() with a PROJECT cwd as the parent, to build <project>/plugins/installed_plugins.json. Leaving them on the home accessor means a project with a committed .omp stops resolving once the new root wins. W4 is where the divergence is created, so W4 is where these four sites should move to the project-pinned constant. This is the same failure the plan already predicts for XDG ('lỗi chia theo nền tảng mà một lần chạy test trên một nền tảng sẽ không bắt'), applied to a path the plan never names.",
+  "evidence": "helpers.ts:1032 `await fs.promises.stat(path.join(dir, getConfigDirName()))` and :1034/:1049/:1079 `path.join(dir, getConfigDirName(), 'plugins', 'installed_plugins.json')`, all inside resolveActiveProjectRegistryPath / resolveOrDefaultProjectRegistryPath walking up from a project cwd. By contrast helpers.ts:49 `projectDir: CONFIG_DIR_NAME` already reads the constant directly and needs no change."
+ },
+ {
+  "id": "W4",
+  "claim": "Resolve the candidate list by first existence, then cache — copying the pattern already at MAIN_CONFIG_FILENAMES (dirs.ts:30).",
+  "verdict": "THE TEMPLATE DOES NOT SUPPLY THE CACHING, and the caching is the risky half.",
+  "correction": "MAIN_CONFIG_FILENAMES is a plain ordered array of filenames with a first-hit-wins loop at the call sites (settings.ts:2129, auth-broker/discover.ts:198) — it performs no existence check at module load and caches nothing. So the ordering is the reusable template; the cache is a new mechanism W4 must design. It must be cleared from all four places the module freezes directory state, or eight test files that assign process.env.PI_CONFIG_DIR at runtime read a stale root.",
+  "evidence": "dirs.ts:30 `export const MAIN_CONFIG_FILENAMES = [\"config.yml\", \"config.yaml\"] as const;` — a constant, no logic. Consumers loop and return on first load: settings.ts:2129-2133 `for (const filename of MAIN_CONFIG_FILENAMES) { ... if (loaded) return { settings: loaded, configPath }; }`. Rebuild paths that would strand a cache: refreshDirsFromEnv at :484, setAgentDir at :502, setProfile at :541, plus the import-time `let dirs = new DirResolver({...})` at :449. Runtime env assigners: 8 files listed in step 6."
+ },
+ {
+  "id": "W4",
+  "claim": "The gate is `bun run check && (cd packages/utils && bun test test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts test/config-dir-write-root.test.ts)`.",
+  "verdict": "WORKS BUT NEEDS A PATH PREFIX, and the environment premise behind it is wrong.",
+  "correction": "Drop the leading './' from each path or Bun treats the argument as a name filter instead of a path. Separately, `bun test` is NOT blocked on this machine: the pi_natives addon is missing, but it only affects files that import it (logger-contract.test.ts, procmgr.test.ts in packages/utils). The dirs-level surface W4 needs runs green. `bun run check` is not the same as `bun run check:ts` and is much heavier; `check:ts` exits 0 and is the signal to use.",
+  "evidence": "`bun test packages/utils/test/install-id.test.ts` -> 5 pass / 0 fail / 11 expect() calls. `bun test packages/utils/test/dirs-python-gateway.test.ts` -> 2 pass / 0 fail. Full packages/utils -> 658 pass / 2 skip / 17 fail / 16 errors, failures confined to logger-contract.test.ts and procmgr.test.ts (procmgr.test.ts alone -> 0 pass / 1 fail / 1 error). `bun test test/config-dir-dual-root.test.ts` (missing) -> exit 1; `bun test ./test/install-id.test.ts` (real) -> exit 0. `bun run check:ts` -> exit 0."
+ },
+ {
+  "id": "W4",
+  "claim": "Line anchors: getInstallId's body sits 'just below :1090'; the orphan-profile comment is at :341-352.",
+  "verdict": "NEAR MISS — both land inside the right region but not on it.",
+  "correction": "getInstallId is declared at :1104 (its doc comment opens at :1092), so :1090 is 14 lines early. The orphan-profile comment block runs :340-355 with the word 'orphaning' on :348, so the plan's range clips the top. Every other W4 anchor in the plan verified exactly: :27, :30, :114-116, :297-298, :302-305, :360, :384, :589-591, :1076, :1083-1086.",
+  "evidence": "grep -n on packages/utils/src/dirs.ts: `export function getInstallId(): string` -> 1104; `// XDG is a Linux convention` -> 340; 'orphaning' -> 348; `const appRoot = path.join(value, APP_NAME)` -> 360; `// XDG flattens the agent/` -> 384."
+ },
+ {
+  "id": "W5",
+  "claim": "\"Bỏ sót `VALID_ACTIONS` thì … `parseConfigArgs` tại `config-cli.ts:82` in `Unknown config command: migrate` rồi `process.exit(1)` — lỗi chỉ xuất hiện khi người dùng gõ lệnh.\" This is the plan's stated reason for editing all four action-list sites, and the reason it tells the reviewer to count four lines.",
+  "verdict": "WRONG — the function is dead code with zero callers; that failure mode cannot occur",
+  "correction": "`parseConfigArgs` is defined at config-cli.ts:72 and is exported, but nothing in the repository ever calls it. The real user-facing dispatch is the ocelot `Command` class in `packages/coding-agent/src/commands/config.ts`, registered at `packages/coding-agent/src/cli-commands.ts:98` (`{ name: \"config\", load: () => import(\"./commands/config\").then(m => m.default) }`). So forgetting `VALID_ACTIONS` produces no user-visible error at all. The plan's instruction to edit it is still correct as consistency — a dead parser that silently rejects `migrate` is a trap for whoever revives it — but the plan's stated failure mode is not real, and a reviewer who goes looking for that error message will not find it.",
+  "evidence": "`git grep -rn 'parseConfigArgs' -- .` returns exactly three hits: the definition at `packages/coding-agent/src/cli/config-cli.ts:72`, and two plan documents (`COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:12092` and `:13770`). A filesystem-wide `grep -rn` for the same symbol across .ts/.tsx/.md/.js adds no source hit. `git grep -rn 'runConfigCommand'` shows the only production caller is `config.ts:50`; `initXdg` is likewise called only from `config-cli.ts:183`."
+ },
+ {
+  "id": "W5",
+  "claim": "The plan's failure mode for a forgotten `ACTIONS` entry is the message `Unknown config command: migrate` from `config-cli.ts:83`.",
+  "verdict": "WRONG LAYER — the real error comes from the framework, with a different message",
+  "correction": "`ACTIONS` is passed as `options: ACTIONS` to `Args.string(...)` at `config.ts:18`. The validation is in the ocelot layer at `packages/utils/src/cli.ts:278-283`, which throws `CliUsageError` with the text `Expected action to be one of: list, get, set, reset, path, init-xdg; got \"migrate\"`. So the site is right (the array does have to be updated) but the mechanism and the message are both different from what the plan describes. Engineers debugging from the plan's message will be looking for a string the program never prints.",
+  "evidence": "`sed -n '259,290p' packages/utils/src/cli.ts` — `const argVal = args[argName]; if (argVal !== undefined && desc.options && typeof argVal === \"string\") { if (!desc.options.includes(argVal)) { throw new CliUsageError(`Expected ${argName} to be one of: ${[...desc.options].join(\", \")}; got \"${argVal}``) } }`. `class CliUsageError extends Error` is at `packages/utils/src/cli.ts:38`. The `options: ACTIONS` binding is at `config.ts:18`."
+ },
+ {
+  "id": "W5",
+  "claim": "The plan's risk list names four ways to get this wrong. It does not name the one that fails silently.",
+  "verdict": "INCOMPLETE — the most dangerous failure is a silent no-op, and the plan misses it",
+  "correction": "Forgetting the `case \"migrate\"` arm in `switch (cmd.action)` at `config-cli.ts:166` is worse than anything on the plan's list. With the union and `ACTIONS` updated, `omp config migrate` parses successfully, `runConfigCommand` matches no case, and the function returns having done nothing: **exit 0, no output, no error**. The user concludes their data moved; it did not. There is no exhaustiveness check to catch this — TypeScript does not require a union-typed switch to be complete unless `strict` mode's related flag or an explicit guard is in play, this repo's tsconfig sets no `noImplicitReturns`, and `.oxlintrc.json` contains no switch-exhaustiveness rule. This deserves a test and a reviewer check that the plan does not currently ask for.",
+  "evidence": "`sed -n '163,186p' config-cli.ts` — the switch has arms for `list`, `get`, `set`, `reset`, `path`, `init-xdg` and no `default`. `git grep -n 'noImplicitReturns\\|strict' -- tsconfig.json packages/coding-agent/tsconfig.json` returns nothing. The full `.oxlintrc.json` rule list (read in full) contains only prefer-const, no-unused-vars, no-thenable, no-unused-private-class-members, no-eval, no-shadow-restricted-names, no-template-curly-in-string, and a block of explicit `off` entries — no exhaustiveness rule."
+ },
+ {
+  "id": "W5",
+  "claim": "\"Cả bốn đều là `[\"list\", \"get\", \"set\", \"reset\", \"path\", \"init-xdg\"]` — bốn bản sao của cùng một danh sách.\" Four copies.",
+  "verdict": "INCOMPLETE — there is a fifth copy, and it is also dead code",
+  "correction": "`printConfigHelp()` at `config-cli.ts:405` contains a fifth rendering of the same list, in its Commands block, ending at line 414 with `  init-xdg           Initialize XDG Base Directory structure`. It too has zero callers. So the count of live copies is correctly four, but a reviewer counting the string `init-xdg` across the two files will find five occurrences and may either miss one or add a redundant one. The help text is unreachable today (oclot renders its own help from `static args`, and `commandHelp.configHelp` at `command-help.ts:51` is only a description string), so updating it is for consistency and for the day someone revives it — say that explicitly rather than counting it as load-bearing.",
+  "evidence": "`git grep -rn 'printConfigHelp' -- packages/` returns exactly one line: the definition at `packages/coding-agent/src/cli/config-cli.ts:405`. `sed -n '405,432p'` shows the Commands block and the Options block (`--json  Output as JSON`, which is also where a `--apply` row would belong if the function is ever revived). `command-help.ts:51` is `export const configHelp = { description: \"Manage configuration settings\" } satisfies CommandMetadata;` — no action list."
+ },
+ {
+  "id": "W5",
+  "claim": "The plan directs the engineer to read `packages/utils/src/dirs.ts:1076, 341-352, 360, 384`, and elsewhere cites the `DirResolver` comment at `dirs.ts:341-352` as the record of a real orphan-profile bug.",
+  "verdict": "ALMOST — three of four line references are exact; the comment range is off by one at both ends",
+  "correction": "`1076`, `360` and `384` are exactly right: line 1076 is `const INSTALL_ID_FILE = \"install-id\";`, line 360 is `const appRoot = path.join(value, APP_NAME);`, line 384 is `// XDG flattens the agent/ prefix: ~/.omp/agent/sessions → $XDG_DATA_HOME/omp/sessions`. The orphan-profile comment is at **340-351**, not 341-352 — line 352 is the first line of code after it (`let xdgData: string | undefined;`). The content claim is right and important: the comment records that a named profile can resolve to `~/.omp/profiles/<name>` on first activation and silently move to `$XDG_*_HOME/omp/profiles/<name>` the moment the base appears, orphaning the earlier state.",
+  "evidence": "`awk 'NR>=336 && NR<=356 {print NR\": \"$0}' packages/utils/src/dirs.ts` — line 338 is `const isDefault = ...;`, 339 blank, 340 begins `// XDG is a Linux convention. On supported platforms, default profile state`, 351 is `// migrates it (e.g. by mkdir'ing the XDG profile dir).`, 352 is `let xdgData: string | undefined;`. `grep -n` confirms `const appRoot = path.join(value, APP_NAME);` at 360, `const profilePath = path.join(appRoot, \"profiles\", profile);` at 362, and the XDG-flatten comment at 384."
+ },
+ {
+  "id": "W5",
+  "claim": "\"di chuyển … và xử lý riêng layout profile có tên … Sai lầm thứ hai: di chuyển cây mà không xử lý riêng layout profile có tên, làm mất trạng thái profile\". Named profiles are presented as a distinct layout needing separate handling.",
+  "verdict": "OVERSTATED — profiles are nested, not a separate layout; the real hazard is narrower and different",
+  "correction": "A named profile is not a separate layout. `getProfileConfigRoot()` returns `path.join(getBaseConfigRoot(), \"profiles\", profile)`, so every named profile lives *inside* the base root and a recursive root move carries it automatically. There is no separate profile root to handle. The genuine named-profile hazard is the XDG one: the XDG profile path `$XDG_*_HOME/omp/profiles/<name>` is consulted only when it already exists (`if (fs.existsSync(profilePath)) return profilePath;`), so a partial or wrong XDG move changes which root a profile resolves to and orphans its state. Keep the named-profile test case — it is worth having — but write it against the XDG profile path, and do not let it justify extra handling code for the plain `profiles/` case that a rename already covers.",
+  "evidence": "`sed -n '118,121p' packages/utils/src/dirs.ts` — `function getProfileConfigRoot(profile) { const root = getBaseConfigRoot(); return profile ? path.join(root, \"profiles\", profile) : root; }`, with `getBaseConfigRoot()` at 114-115 being `path.join(os.homedir(), getConfigDirName())`. The XDG profile existence guard is at `dirs.ts:361-365`. Verified on this machine: `ls ~/.omp/profiles` returns nothing, and a real `~/.omp` contains `agent/`, `cache/`, `logs/`, `run/`, `natives/`, `puppeteer/`, `ssh-control/`, `install-id`, `autoqa.db`, `gpu_cache.json`."
+ },
+ {
+  "id": "W5",
+  "claim": "\"**Lệnh:** `bun run check && (cd packages/coding-agent && bun test test/config-migrate.test.ts)`\" — and the plan puts the new test at `packages/coding-agent/test/config-migrate.test.ts`.",
+  "verdict": "UNUSABLE AS A GATE ON THIS MACHINE — the test cannot run, so red and green carry no information",
+  "correction": "The plan's gate is a tautology here: it is red before the work and after the work, for a reason that has nothing to do with the work. Every `packages/coding-agent` test transitively loads `@oh-my-pi/pi-natives`, which has no built addon on this machine. The fix is not to install the addon (that needs `brew install ninja` first) but to place the engine and its test where the import graph is clean: the engine in `packages/utils/src/config-migrate.ts`, the test in `packages/utils/test/config-migrate.test.ts`, imported by subpath. That surface is verified working today, so the gate is genuinely falsifiable. The CLI-level test still belongs in `packages/coding-agent` for completeness, but it must be labelled as not-gating on this machine rather than quoted as acceptance.",
+  "evidence": "`bun test packages/coding-agent/test/config-cli.test.ts` → `0 pass / 1 fail / 1 error`, error text `Cannot find module '.../packages/natives/native/pi_natives.darwin-arm64.node' from '.../packages/natives/native/loader-state.js'`, EXIT=1. Same for `config-cli-credentials.test.ts`. `bun test packages/utils/test/install-id.test.ts` → `5 pass / 0 fail`, EXIT=0 — it imports `@oh-my-pi/pi-utils/dirs` (subpath), not the barrel. `packages/utils/package.json:36-39` declares `\"./*\": {\"types\": \"./src/*.ts\", \"import\": \"./src/*.ts\"}`. `bun test packages/utils/test/does-not-exist.test.ts` → EXIT=1, so the gate is red before the work exists. `bun run check:ts` → EXIT=0, measured twice, ~40s."
+ },
+ {
+  "id": "W5",
+  "claim": "The plan's command list for W5 contains no mention of the `--apply` flag at all, despite `--apply` being the entire user-facing contract of the work item (\"yêu cầu `--apply` tường minh\").",
+  "verdict": "INCOMPLETE — the flag needs four more edit sites the plan does not count",
+  "correction": "Adding `--apply` is four edits beyond the four action-list sites, and an engineer following the plan's \"four places, count four lines\" instruction will produce a command that accepts `migrate` and then ignores the flag. The four are: (1) `ConfigCommandArgs.flags` at `config-cli.ts:26-28`, which currently declares only `json?: boolean` — so `apply` has nowhere to live; (2) the `--apply` branch in the `parseConfigArgs` flag loop at `config-cli.ts:93-101`, next to the existing `--json` branch; (3) `static flags` in `config.ts:31-33`, which currently declares only `json` — the oclot parser will reject an undeclared flag, so this one is user-visible even if the others are fixed; (4) the `cmd.flags` object literal in `config.ts:44-46`, which currently passes only `json: flags.json`. Total: eight sites in `config-cli.ts`, four in `config.ts`. The plan's own instruction — review by counting lines — is right, but the number to count is twelve, not four.",
+  "evidence": "`sed -n '20,29p' config-cli.ts` — `flags: { json?: boolean; }` is the whole type. `sed -n '92,101p'` — the loop has an `if (arg === \"--json\")` branch and an `else if (!arg.startsWith(\"-\"))` positional branch, with no other flag. `cat -n config.ts` — line 31-33 `static flags = { json: Flags.boolean({ description: \"Output JSON\" }) };`, line 44-46 `flags: { json: flags.json, }`. `packages/utils/src/cli.ts:243-258` is where an undeclared `--apply` would be rejected."
+ },
+ {
+  "id": "W5",
+  "claim": "Not a plan claim, but a plan omission with a direct cost: nothing in the plan says an EXDEV-safe move helper already exists in the tree.",
+  "verdict": "OMISSION — the helper exists and AGENTS.md forbids forking it",
+  "correction": "`gc-cli.ts:528` already implements exactly the move this work item needs, including the cross-device fallback: mkdir the destination parent, `fs.rename`, and on `code === \"EXDEV\"` do `fs.cp(…, { recursive: true })` + `fs.rm(…, { recursive: true, force: true })` for a directory or `copyFile` + `unlink` for a file. It is module-private and therefore invisible to someone writing a new file, which is exactly how a second implementation appears. AGENTS.md is explicit that this is a bug: \"Two implementations of the same thing is a bug even when both work\" and \"Missing capability? Extend the central helper … don't fork its logic locally.\" The cross-device case is not theoretical for this work item — the base root and the XDG roots can sit on different volumes, and a bare rename leaves the user half-migrated.",
+  "evidence": "`sed -n '528,546p' packages/coding-agent/src/cli/gc-cli.ts` — `async function movePath(source: string, destination: string): Promise<void>` with the EXDEV branch. `git grep -rn 'movePath' -- packages/` returns exactly three lines: the definition at 528 and calls at 673 and 682 — confirming it is unexported and used only there. EXDEV handling is a recognised pattern across the repo: `session/session-manager.ts:235,300,2017,2054`, `lsp/edits.ts:364`, `internal-urls/url-filesystem.ts:407`."
+ },
+ {
+  "id": "W5",
+  "claim": "W4's note that `PI_CONFIG_DIR` keeps \"**68 lượt / 25 file** (16 file `.ts`)\".",
+  "verdict": "STALE — measured counts do not match",
+  "correction": "Not this work item's dependency surface, but recorded because it was measured while verifying and W5's correctness depends on `PI_CONFIG_DIR` keeping working (N16: the `PI_*`/`OMP_*` prefix is kept permanently). Full repo: **78 occurrences across 27 files**. `.ts` only: **52 occurrences across 17 files**. The plan's 68/25/16 is off by 10 hits and 2 files repo-wide. Nothing in W5 depends on the exact count, but a downstream `sed` budget built on 68 would under-scan.",
+  "evidence": "`git grep -n 'PI_CONFIG_DIR' -- . | wc -l` → 78; `git grep -l 'PI_CONFIG_DIR' -- . | wc -l` → 27; `git grep -n 'PI_CONFIG_DIR' -- '*.ts' | wc -l` → 52; `git grep -l 'PI_CONFIG_DIR' -- '*.ts' | wc -l` → 17. Scoped to `packages/` only: 53 occurrences across 18 files, which is the closest reading to the plan's figure but still does not match it."
+ },
+ {
+  "id": "W6",
+  "claim": "W6a scope is the single direct read at dirs.ts:589-591 — \"Dòng :590 đọc trực tiếp CONFIG_DIR_NAME\" presented as the one project-root site the plan missed.",
+  "verdict": "STALE / INCOMPLETE — the site is real but it is not the only one",
+  "correction": "There are THREE project-root reads of CONFIG_DIR_NAME, not one. In addition to dirs.ts:590 there is packages/coding-agent/src/modes/controllers/omfg-controller.ts:285 (path.join(cwd, CONFIG_DIR_NAME, 'rules', name.md), the omfg project-scope rules feature) and packages/coding-agent/src/discovery/helpers.ts:47 (projectDir: CONFIG_DIR_NAME in SOURCE_PATHS.native, consumed by discovery/builtin.ts:44 and discovery/skillshare.ts:93). Both must be repointed to PROJECT_DIR_NAME in the same commit. The plan's claim that a missed site produces no signal is also wrong — omfg-controller.test.ts already hard-codes <projectDir>/.omp/rules at lines 178,198,202,215,220 and the option label 'This project (.omp/rules)' at line 15, so a missed site produces a loudly red test.",
+  "evidence": "git grep -n CONFIG_DIR_NAME -- '*.ts' returns 3 non-utils call sites that build project-root paths: dirs.ts:590, omfg-controller.ts:285, discovery/helpers.ts:47. sed -n '275,295p' omfg-controller.ts and sed -n '40,55p' discovery/helpers.ts confirm both. omfg-controller.test.ts:15,178,198,202,215,220 confirm the literal .omp/rules assertions."
+ },
+ {
+  "id": "W6",
+  "claim": "The plan's W6 command is `bun run check && (cd packages/utils && bun test test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts)` and W6 needs no test for the main flip beyond W6a's.",
+  "verdict": "INCOMPLETE — omits a test that will fail",
+  "correction": "packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts:14 asserts `expect(CONFIG_DIR_NAME).toBe(\".omp\")` — an exact literal that fails the moment the flip lands. The plan never mentions it. Its contract (per its own title) is the barrel wiring described at legacy-pi-coding-agent-shim.ts:1587-1591, not the value, so the fix is to replace the value pin with a binding assertion: the shim's CONFIG_DIR_NAME equals the home-root constant and is NOT the project-root constant. That second half only gains teeth after the two constants diverge.",
+  "evidence": "sed -n '1,30p' packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts shows line 14. legacy-pi-coding-agent-shim.ts:1592 is `export { CONFIG_DIR_NAME } from \"@oh-my-pi/pi-utils\";` and the docblock at :1587-1591 explains the export exists to avoid a Bun static-export failure during extension validation."
+ },
+ {
+  "id": "W6",
+  "claim": "ENVIRONMENT premise (harness): the native addon is not built, so `bun test` reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64' and must be treated as blocked.",
+  "verdict": "FALSE — tests run on this machine",
+  "correction": "The native addon loads. `bun test packages/utils/test/dirs.test.ts` reports 6 pass / 0 fail, and `bun test packages/utils/test/dirs-python-gateway.test.ts` reports 2 pass / 0 fail — the latter imports @oh-my-pi/pi-natives, so the addon is definitely working. W6's gate can and should be a real test run, not a type-check-only substitute. This makes the gate materially stronger than the plan assumed.",
+  "evidence": "Both commands executed at HEAD 808b365; node_modules/@oh-my-pi/pi-natives is a symlink to packages/natives and resolves."
+ },
+ {
+  "id": "W6",
+  "claim": "Plan line anchors `dirs.ts:27` (CONFIG_DIR_NAME), `:297-298` (getConfigDirName), `:360` (XDG join), `:589-591` (getProjectAgentDir), `:24` (APP_URL), `:36` (USER_AGENT).",
+  "verdict": "VERIFIED ACCURATE — no correction needed",
+  "correction": "All six anchors are correct as of HEAD 808b365. Specifically: 27 is CONFIG_DIR_NAME, 297/298 are getConfigDirName's signature and its `return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;`, 360 is `const appRoot = path.join(value, APP_NAME);` (the XDG join W4 must cover), 589/590/591 are getProjectAgentDir and its direct CONFIG_DIR_NAME join, 24 is APP_URL and 36 is USER_AGENT. The engineer can type these anchors without re-deriving them.",
+  "evidence": "grep -n CONFIG_DIR_NAME packages/utils/src/dirs.ts → 27, 298, 590. grep -n 'path.join(value, APP_NAME)' → 360. sed -n '24p;36p' → APP_URL and USER_AGENT."
+ },
+ {
+  "id": "W6",
+  "claim": "W6's gate command runs `bun test test/config-dir-dual-root.test.ts test/install-id-legacy-read.test.ts`.",
+  "verdict": "STALE — those files do not exist yet",
+  "correction": "Neither file exists at HEAD; neither does config-dir-write-root.test.ts (which W4's own text adds as a third). `ls` on all three returns 'No such file or directory'. This is correct and expected — they are W4's deliverables and W6 is hard-gated on W4 — but the gate command cannot run until step 1 confirms they exist. Note also that `bun run check` is `check:ts` AND `check:rs` (root package.json:93-94), so the plan's command pulls in a cargo build for a change that touches no Rust; `bun run check:ts` is the correct gate here.",
+  "evidence": "ls on the three paths returns 'No such file or directory' for each. package.json:93 `\"check\": \"bun run --parallel check:ts check:rs\"` and :94 `\"check:ts\": \"bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types\"`."
+ },
+ {
+  "id": "W6",
+  "claim": "The new config root name is unstated in W6 (\"sang tên mới\").",
+  "verdict": "RESOLVED — the plan decides it elsewhere, W6a just omits it",
+  "correction": "The new value is \".ultraworkers\". The plan states it as settled in three places — the §1.2 cost analysis ('chuyển ~/.omp sang ~/.ultraworkers'), the §5.4 on-disk-identity decision ('CONFIG_DIR_NAME trở thành tên mới (dirs.ts:27) và ghi mới rơi vào ~/.ultraworkers'), and W5's own detail line ('di chuyển ~/.omp → ~/.ultraworkers'). It is NOT an open question and the implementer should not reopen it.",
+  "evidence": "Plan lines 8136, 8585, and the W5 detail paragraph (~8712) all name ~/.ultraworkers as the new root."
+ },
+ {
+  "id": "W6a",
+  "claim": "Plan line 13796 / 13800: `getProjectAgentDir` at packages/utils/src/dirs.ts:589-591 reads CONFIG_DIR_NAME directly, 'the dual-root candidate list from W4 does not apply, config migrate from W5 does not touch it, and W6's acceptance condition (which covers only the home dir and install-id) does not see it.'",
+  "verdict": "CONFIRMED but INCOMPLETE — the plan's diagnosis is right and its remedy is under-scoped.",
+  "correction": "The line number, the direct read, and the W4/W5/W6 blindness are all verified exactly: dirs.ts:590 is `return path.join(cwd, CONFIG_DIR_NAME);` and `grep -n CONFIG_DIR_NAME packages/utils/src/dirs.ts` returns exactly 3 hits (27, 298, 590). What the plan misses is that dirs.ts:590 is only ONE of three project-level reads. `git grep -n CONFIG_DIR_NAME -- '*.ts' ':!*test*'` returns two more project-root joins outside dirs.ts: packages/coding-agent/src/discovery/helpers.ts:47 (`projectDir: CONFIG_DIR_NAME`, consumed by getProjectPath() at :127-131 as path.join(ctx.cwd, paths.projectDir, subpath)) and packages/coding-agent/src/modes/controllers/omfg-controller.ts:285 (project-scope rules write path). Neither goes through getProjectAgentDir(), so neither is covered by repointing line 590, and the plan's W6a text names neither. A third site — packages/coding-agent/src/config.ts:12 — is a product decision (open question 1), because priorityList feeds both the user and the project base maps from one value. Implementing W6a exactly as the plan describes it leaves two live project-root reads bound to the flipping constant.",
+  "evidence": "`git grep -n CONFIG_DIR_NAME -- '*.ts' ':!*test*'` -> 9 hits, of which 4 are project-root: dirs.ts:590, discovery/helpers.ts:47, omfg-controller.ts:285, config.ts:12. `sed -n '35,60p' packages/coding-agent/src/discovery/helpers.ts` shows projectDir feeding getProjectPath() at :127-131. `sed -n '275,295p' packages/coding-agent/src/modes/controllers/omfg-controller.ts` shows the project-scope rules join. `sed -n '84,93p' packages/coding-agent/src/config.ts` shows priorityList feeding both USER_CONFIG_BASES and PROJECT_CONFIG_BASES. Confirmed that omfg-controller.test.ts:15,178,198 and agent-session-rules-reload.test.ts:89,156 hard-code .omp paths and therefore go red if the repointing is skipped — verified by reading those exact lines."
+ },
+ {
+  "id": "W6a",
+  "claim": "Plan line 13809: 'Effort: S under the recommended option (b) — a separate constant, one do_not_rename line, one test case asserting getProjectAgentDir() still returns .omp after W6 flips.'",
+  "verdict": "UNDERSTATED — the grade S holds, but the enumerated work is short by two call sites, one test file, one edited test line, and a blocking product decision.",
+  "correction": "Real count: 1 new constant; 4 call sites repointed (3 mechanical + 1 decision); 1 new test file with 4 assertions; 1 line of an existing test relaxed (legacy-pi-cli-exports.test.ts:14); 1 do_not_rename row plus creation of scripts/rename/keep-list.txt itself. The plan's 'one test case' is also weaker than it looks: a single assertion that getProjectAgentDir() returns '.omp' is satisfied by any implementation that happens to return that string, and cannot distinguish a deliberate pin from an accidental coupling to CONFIG_DIR_NAME. The assertion that carries the contract is DIVERGENCE (PROJECT_DIR_NAME !== CONFIG_DIR_NAME) — it is the only one that goes red when a future refactor re-merges the two constants, and no test in the repository currently makes it.",
+  "evidence": "Enumerated from `git grep -n CONFIG_DIR_NAME -- '*.ts'`: dirs.ts:27/298/590, help-extra.ts:3,66, config.ts:4,12,135, discovery/helpers.ts:6,47, legacy-pi-coding-agent-shim.ts:1588,1589,1592, omfg-controller.ts:2,285. `ls scripts/rename` -> 'No such file or directory', so keep-list.txt must be created. `sed -n '1,20p' packages/coding-agent/test/extensibility/legacy-pi-cli-exports.test.ts` confirms line 14 is the literal pin."
+ },
+ {
+  "id": "W6a",
+  "claim": "Brief/environment note: '`bun test` is BLOCKED — the native addon is not built, every test reports 0 pass / 1 fail / 1 error with Failed to load pi_natives native addon for darwin-arm64.'",
+  "verdict": "FALSE as a general statement — true for packages/coding-agent/test/, false for packages/utils/test/.",
+  "correction": "The blocker is package-scoped, not global. Measured on this machine at HEAD 84cbac9: `bun test packages/utils/test/dirs.test.ts` -> 6 pass, 0 fail, 9 expect() calls, 121ms; `bun test packages/utils/test/install-id.test.ts` -> 5 pass, 0 fail, 11 expect() calls, 115ms; `bun test packages/coding-agent/test/config/settings-reload.test.ts` -> 0 pass, 1 fail, 1 error. Cause: packages/utils/src/dirs.ts imports only node:fs, node:os, node:path and its own ../package.json — no path to the native addon. Consequence for this spec, which the harness explicitly asked about: a test placed in packages/coding-agent/test/ would be a gate that CANNOT go red on this machine, which is exactly the 'done vs. test did not run' confusion to avoid. The new W6a test therefore goes in packages/utils/test/. This also means the harness's 'bun run check:ts is the primary signal' is not the only usable one — a real red/green test signal exists for the package that owns this work item.",
+  "evidence": "Direct runs quoted above. Import list of dirs.ts confirmed via `sed -n '1,17p' packages/utils/src/dirs.ts` (node:fs, node:os, node:path, ../package.json, ./fs-error). The coding-agent failure output names the missing module and prints the two paths it tried."
+ },
+ {
+  "id": "W6a",
+  "claim": "Plan line 13199 / N14: 'The project-level .omp root (see W6a — recommendation is keep it) ... must go into do_not_rename.'",
+  "verdict": "CONFIRMED, and the tree makes the case more concrete than the plan states.",
+  "correction": "This repository's own project-level .omp is git-tracked with 14 files, so the failure W6a prevents is not hypothetical for this codebase: a flip would break the maintainer's own .omp/commands (5 markdown files: cleanup, fix-issues, release, review-prs, triage), .omp/skills (6 files across semantic-compression, system-prompts, tool-prompt-optimization) and .omp/tools (3 files: package.json, bun.lock, tui.ts). The plan treats the project root as a general user concern; it is also this repo's own working configuration. The do_not_rename row is mandatory either way.",
+  "evidence": "`git ls-files | grep '^\\.omp/'` -> 14 paths, enumerated in full. `ls -la .omp` -> commands/, skills/, tools/."
+ },
+ {
+  "id": "W7",
+  "claim": "Lượt 1 chạy trên 4107 file chứa 17169 lượt `@oh-my-pi/`.",
+  "verdict": "stale",
+  "correction": "Tại HEAD `84cbac9` (nhánh milestone-1) con số thật là **4149 file / 17697 lượt** cho toàn bộ file theo dõi. Sau khi loại N11 (13 changelog / 85 lượt), `.lavish-wip/**` (13 file / 68 lượt) và 5 tài liệu kế hoạch (5 file / 332 lượt), tập in-scope đề xuất là **4118 file / 17212 lượt**. Dùng 4118/17212, không dùng 4107/17169. Trong tập in-scope: 18 file là manifest + lock (16 `packages/*/package.json` + `package.json` gốc + `bun.lock`), 4100 file còn lại là mã và tài liệu.",
+  "evidence": "`git grep -l '@oh-my-pi/' -- . | wc -l` = 4149; `git grep -o '@oh-my-pi/' -- . | wc -l` = 17697. Tập in-scope đếm bằng script với `git ls-files` + bốn `:(exclude)` = 4118 file / 17212 lượt."
+ },
+ {
+  "id": "W7",
+  "claim": "Các mục kiểm chứng của plan được xác nhận trên HEAD `5873776`.",
+  "verdict": "unverifiable",
+  "correction": "Commit `5873776` KHÔNG tồn tại trong repo này: `git cat-file -t 5873776` trả `fatal: Not a valid object name`. Không claim nào ghim vào SHA đó kiểm lại được. Lấy lại toàn bộ mốc bằng `git rev-parse HEAD` tại thời điểm thực thi. Đáng chú ý: mốc N11 (13 file / 85 lượt) VẪN đúng ở `84cbac9` — drift nằm ở phần ngoài changelog, không nằm ở changelog.",
+  "evidence": "`git cat-file -t 5873776` → `fatal: Not a valid object name 5873776`; `git rev-list --count 5873776..HEAD` → `fatal: unknown revision`. HEAD hiện tại: `84cbac9`."
+ },
+ {
+  "id": "W7",
+  "claim": "Rủi ro sai lầm thứ hai: 'đổi scope trong manifest mà bỏ sót khóa subpath của `exports` map hoặc một mục `peerDependencies`'.",
+  "verdict": "partly-wrong",
+  "correction": "Vế `exports` map KHÔNG đúng và không cần lo. Tôi đã kiểm tra: mọi khóa subpath trong `exports` đều là đường dẫn tương đối (`./compaction`, `./error`, `./*`) chứ không phải scope, và repo KHÔNG có trường `imports` ở bất kỳ manifest nào. Nên không có khóa subpath nào mang scope. Vế `peerDependencies` thì ĐÚNG và còn lớn hơn plan nghĩ: 90 lượt trong 16 manifest, không phải 16 dòng `name`. Rủi ro thật là bỏ sót mục phụ thuộc, và nó chỉ lộ ra trên bản cài sạch.",
+  "evidence": "`git grep -n '\"\\./' -- 'packages/*/package.json'` trả toàn khóa tương đối; `git grep -ln '\"imports\"' -- 'packages/*/package.json'` trả rỗng; `git grep -o '@oh-my-pi/' -- 'packages/*/package.json' package.json | wc -l` = 90."
+ },
+ {
+  "id": "W7",
+  "claim": "16 basename sau dấu `/` tách ba nhóm: 10 `pi-*`, 2 thương hiệu cũ, 4 không thuộc họ nào (`browser-relay`, `collab-web`, `snapcompact`, `typescript-edit-benchmark`).",
+  "verdict": "confirmed",
+  "correction": "Giữ nguyên, và con số này là thứ plan làm đúng nhất. Tôi đã liệt kê đủ 16 `name` từ manifest thật và phân nhóm khớp N17 chính xác. Bổ sung: catalog ở `package.json` gốn chỉ ghim 12 trong 16 — `browser-relay`, `collab-web`, `pi-metaharness`, `typescript-edit-benchmark` không có mục ghim. Đừng 'sửa cho đủ 16' ở bước 8.",
+  "evidence": "`git grep -n '\"name\": \"@oh-my-pi/' -- '**/package.json'` trả đúng 16 dòng; `git grep -n '@oh-my-pi/' -- package.json` trả đúng 12 dòng, liên tiếp :19–:30."
+ },
+ {
+  "id": "W7",
+  "claim": "Plan liệt kê loại trừ cứng: `@mariozechner/*`, `@earendil-works/*`, `@sinclair/typebox`, `node_modules`, `packages/*/CHANGELOG.md`, và toàn bộ `do_not_rename`.",
+  "verdict": "overstated",
+  "correction": "Ba scope nước ngoài và `node_modules` KHÔNG THỂ bị vi phạm: mẫu `@oh-my-pi/` là chuỗi literal có dấu `/` ở cuối, nên về mặt cấu trúc nó không khớp `@mariozechner/`, `@earendil-works/`, `@sinclair/typebox`; `git grep` cũng không đi vào `node_modules`. Loại trừ thật sự có tác dụng chỉ có hai: `packages/*/CHANGELOG.md` (85 lượt) và 4 manifest ví dụ của N2 — nhưng tôi đã kiểm và 4 manifest N2 có **0** lượt `@oh-my-pi/`, nên chúng cũng không cần loại trừ. Nói cách khác: rủi ro thật của W7 nằm ở tập file KHÔNG ai liệt kê (`.lavish-wip/`, 5 tài liệu kế hoạch, 2 transcript `.jsonl`), chứ không nằm ở danh sách loại trừ mà plan nhấn mạnh.",
+  "evidence": "Số lượt: `@mariozechner/` = 34, `@earendil-works/` = 77, `@sinclair/typebox` = 25 — nhưng mẫu không thể khớp chúng. `git grep -c '@oh-my-pi/'` trên cả 4 file N2 = 0."
+ },
+ {
+  "id": "W7",
+  "claim": "Dạng trần `\"oh-my-pi\"` nằm trong 15 file (W8a).",
+  "verdict": "stale",
+  "correction": "Ở HEAD `84cbac9` có **16** file khớp `git grep -lE '\"oh-my-pi\"' -- .`. File thứ 16 là `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` — chính tài liệu kế hoạch. Plan tự đếm ngoài chính nó. Không thuộc phạm vi W7 (sed của W7 chỉ khớp dạng có `/`), nhưng Gate C của W7 bàn giao baseline 16 file cho W8a, và W8a nên biết là có file thứ 16 đó.",
+  "evidence": "`git grep -lE '\"oh-my-pi\"' -- . | wc -l` = 16; danh sách gồm 15 file plan liệt kê cộng `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`."
+ },
+ {
+  "id": "W7",
+  "claim": "Ba bước sau pass 1 — đổi 16 trường `name`, cập nhật 12 mục ghim, tạo lại `bun.lock` — được trình bày như các chỉnh sửa riêng.",
+  "verdict": "misleading",
+  "correction": "Không có chỉnh sửa tay nào trong ba bước đó: mẫu `@oh-my-pi/` đã phủ cả 16 trường `name`, cả 12 mục ghim, và cả 90 lượt phụ thuộc trong manifest. Chúng phải được viết lại thành bước XÁC MINH, không phải bước SỬA — vì nếu kỹ sư hiểu là 'sửa tay 16 dòng name' sau pass, họ sẽ tạo ra một pass thứ hai, và đó chính là sai lầm phá N17 mà plan cảnh báo. Tôi đã viết lại thành bước 8 (verify, 4 lệnh kiểm, không sửa) và bước 9 (`bun install` cho `bun.lock`).",
+  "evidence": "`git grep -c '@oh-my-pi/' -- 'packages/*/package.json'` cho từng file đều > 1 (coding-agent 12, snapcompact 6, tui 9, agent 8, metaharness 8) — tức phần lớn lượt không nằm ở dòng `name`."
+ },
+ {
+  "id": "W7",
+  "claim": "Rủi ro lớn nhất về mặt quy tắc repo là để mẫu `git grep -o '@oh-my-pi/' -- .` quét tới `packages/*/CHANGELOG.md`.",
+  "verdict": "confirmed-and-understated",
+  "correction": "Đúng, và tôi đã dựng Gate B chống đúng điều đó. Nhưng còn một nhóm thứ hai mà plan không nhắc tới và cũng sẽ bị mẫu toàn-repo quét: 13 file `.lavish-wip/specs/*.spec.json` (68 lượt, workflow scratch đã bị commit) và 5 tài liệu kế hoạch (332 lượt). Cộng lại 400 lượt ngoài danh sách — lớn hơn nhiều so với 85 lượt changelog mà plan coi là rủi ro lớn nhất.",
+  "evidence": "`git grep -l '@oh-my-pi/' -- .lavish-wip` trả 13 file; `git grep -c '@oh-my-pi/' -- 'MILESTONE_*'` cho 112 lượt trên 4 file, suy ra `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` có 220 lượt."
+ },
+ {
+  "id": "W7",
+  "claim": "Lệnh nghiệm thu của W7: `bun install && bun run check && bun run test:ts`.",
+  "verdict": "unverifiable",
+  "correction": "Không chạy được trên máy này. `bun run test:ts` là `bun scripts/ci-test-ts.ts local-ts` và `bun test` bị chặn bởi native addon chưa build (`Failed to load pi_natives native addon for darwin-arm64`); `bun --cwd=packages/natives run build` thất bại vì thiếu `ninja` (`CMake was unable to find a build program corresponding to \"Ninja\"`). `bun run check` còn gọi thêm `check:rs` cần cargo, chưa xác minh. Tôi đã thay bằng `bun run check:ts` (đã đo exit 0 ở HEAD) và tách cổng test thành Gate E ghi rõ `NOT RUN — environment blocked`. Cần dạy kèm `brew install ninja` trước bất kỳ lệnh build nào.",
+  "evidence": "`bun run check:ts` exit 0 ở HEAD `84cbac9` (14/14 workspace `check:types` Done, oxfmt sạch 5445 file). Lỗi native addon và ninja đã được xác nhận bằng lệnh thật trên máy này."
+ },
+ {
+  "id": "W7",
+  "claim": "Plan không nói gì về `loader-state.js:70` và sáu leaf package `@oh-my-pi/pi-natives-<tag>`.",
+  "verdict": "gap-in-plan",
+  "correction": "Đây là phần thất bại im lặng đắt nhất của W7 và plan bỏ sót nó. `packages/natives/native/loader-state.js:70` gọi `require_.resolve(`@oh-my-pi/pi-natives-${platformTag}/package.json`)`. Sáu tên leaf package này KHÔNG nằm trong repo — chúng được publish lên registry (`.github/workflows/ci.yml:326` chạy `npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball`, và :1035 nói rõ 'Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages'). Đổi scope trong loader TRƯỚC khi leaf package tồn tại dưới scope mới ⇒ `require_.resolve` ném ⇒ `catch { return null }` chạy ⇒ loader rơi sang nhánh dự phòng khác, không một lỗi nào được ném, không một test nào đỏ. W7 không tự giải quyết được; cần câu trả lời của open_question Q1 trước khi merge.",
+  "evidence": "`git grep -n 'pi-natives-' -- . ':!bun.lock'` → `.github/workflows/ci.yml:326,1035` và `packages/natives/native/loader-state.js:70`. `git ls-files 'packages/natives*/package.json'` chỉ trả `packages/natives/package.json` — không có manifest leaf package nào trong repo."
+ },
+ {
+  "id": "W8a",
+  "claim": "W8a xử lý \"15 file có literal dạng trần `oh-my-pi`\", và lệnh mà W8b Gate 0 dùng để sinh danh sách là `git grep -lE '\"oh-my-pi\"' -- .` với kỳ vọng 15 file.",
+  "verdict": "misleading",
+  "correction": "Con so 15 chi dung sau khi loai chính file ke hoach. Lenh ghi trong Gate 0 cua W8b tra 16 tren HEAD `84cbac9`, va file thu 16 la `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` — chinh tai lieu ke hoach, no chua 20 luot dang truan trong bang N1–N17 va cac doan trich dan ma W8/W8b nen giu nguyen. Hai fix: (1) moi lenh dem o M5 phai co `:!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md`; (2) con so dung cho W8a la 15 file / 23 luot, va 15 do KHONG phai 7 nguon + 5 test + 1 doc nhu plan ngam y — no la 7 nguon + 7 test + 1 doc. Day la mau so cua W8b Gate 0 se do neu khong loai file ke hoach.",
+  "evidence": "`git grep -lE '\"oh-my-pi\"' -- . | wc -l` = 16; `git grep -lE '\"oh-my-pi\"' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l` = 15; `git grep -oE '\"oh-my-pi\"' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l` = 23. Phan loai 15 file bang lenh shell: 7 SRC, 7 TEST, 1 DOC."
+ },
+ {
+  "id": "W8a",
+  "claim": "Danh sách 11 file còn lại gồm \"4 file .ts dưới `packages/ai` + `packages/coding-agent/src/web/search/providers/exa.ts`, 5 file test, và `docs/provider-quirks.md:1`\".",
+  "verdict": "wrong",
+  "correction": "Hai nhan sai, tong thi dung. (a) KHONG phai 4 file .ts duoi `packages/ai` — chi co DUNG MOT file duoi packages/ai la `packages/ai/src/registry/oauth/zai.ts`; 6 file nguon con lai deu nam duoi `packages/coding-agent`. (b) KHONG phai 5 file test — co 7 file test. Phan bo thật: 7 nguon + 7 test + 1 doc = 15. File thu 8 nguon ma plan khong lieu ke trong danh sach 11 do la `packages/coding-agent/src/mcp/oauth-flow.ts`, no chi duoc nhac trong van xuoi chu khong bao gio duoc danh vao danh sach day du. (c) `docs/provider-quirks.md` khong co hit o dong 1 — dong 1 la tieu de `# Provider quirks: special casings, streams, auth, and catalog handling`. Hit thật o DONG 1706 trong file 1750 dong.",
+  "evidence": "`git grep -nE '\"oh-my-pi\"' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md'` tra 23 dong; phan loai theo duong dan cho 7 SRC / 7 TEST / 1 DOC. `sed -n '1,3p' docs/provider-quirks.md` in tieu de; `sed -n '1706p' docs/provider-quirks.md` in dong mo ta `mintZaiApiKey` va `KEY_NAME`."
+ },
+ {
+  "id": "W8a",
+  "claim": "`packages/coding-agent/src/cli/gallery-fixtures/segments.ts` — 2 lượt trong \"fixture transcript đã ghi\". Đây là phán đoán: coi như LỊCH SỬ giống session record, không coi là danh tính — trừ khi demo gallery được định nghĩa là để trình diễn thương hiệu mới, thì phải sửa.",
+  "verdict": "wrong",
+  "correction": "Khong co transcript nao o file nay va lap luận 'lich su' khong ap dung. `segments.ts` la BO KHUNG HIEN THI TONG HOP: `createGallerySegmentContext()` tra ve mot `SegmentContext` nhan dinh, va comment tai dong 23 ghi ro 'Deterministic full context for isolated status-segment previews and tests'. Hai gia tri `relativeRepoRoot` (dong 33) va `projectName` (dong 164) la chuoi hien thi duoc render ra stdout. `gallery` la lenh CLI DA DANG KY va PHA HANH — `cli-commands.ts:121-126` khai bao `name: \"gallery\"` troi sang `commands/gallery`, va `gallery-cli.ts:1-9` mo ta '`omp gallery` — render every built-in tool's renderer across its lifecycle ... and prints the rendered output to stdout', kem `captureGalleryScreenshots`. Nen dieu kien 'tru khi demo gallery duoc dinh nghia la de trinh dien thuong hieu moi' da duoc tra loi RO: co, chinh la. DISPOSITION: doi ca hai sang `ultraworkers`. Day la thay doi nguon duy nhat cua ca W8a — 2 dong trong 1 file.",
+  "evidence": "`sed -n '1,18p' packages/coding-agent/src/cli/gallery-fixtures/segments.ts` (khai bao ham `createGallerySegmentContext`, comment dong 23); `sed -n '20,45p'` va `sed -n '155,172p'` (hai literal); `sed -n '121,126p' packages/coding-agent/src/cli-commands.ts` (`name: \"gallery\"`); `sed -n '1,9p' packages/coding-agent/src/cli/gallery-cli.ts`."
+ },
+ {
+  "id": "W8a",
+  "claim": "\"11 cái còn lại ... phần lớn là tên host HTTP hoặc kỳ vọng test, không phải danh tính — nhưng phải xác nhận từng file, không giả định\". Và bốn mục \"quan trọng nhất\" đã được xử lý (N7 telemetry, N5 acp, gallery, N8 alias).",
+  "verdict": "gap-in-plan",
+  "correction": "BA file nguon trong nhom \"con lai\" la gia tri wire gui cho BEN THU BA, va KHONG co muc nao trong bang N1–N17 nao phu chung. Chuyen tinh: (1) `zai.ts:25` `KEY_NAME` la `name` gui trong payload `businessLogin`/key-mint cua Z.AI — comment tai dong 24 noi ro y nghia: \"OMP's own key name so sign-in never mutates ZCode's `zcode-api-key`\", tuc la danh tinh SUUU HUU khoa, va doi ten nghia la tao mot khoa moi trong tai khoan Z.AI cua nguoi dung thay vi tai dung khoa cu (cung loai voi N3). (2) `exa.ts:26` `EXA_MCP_SOURCE` duoc gui o header `x-exa-source` tai dong 369 — attribution phia Exa, cung loai voi N9. (3) `oauth-flow.ts:629` `client_name` la payload dang ky client DONG RFC 7591 gui toi may chu OAuth, va docblock ngay tren (dong 612-620) neu Figma tu choi client ngoi danh sach — tức provider dung payload nay de lap allowlist. Khong cai nao la 'ten host HTTP' (ca ba deu la gia tri, khong phai hostname). TAT CA BA phai giu va phai duoc them vao keep-list — neu khong, mot ke su doc keep-list se khong biet phai giu va se doi chung.",
+  "evidence": "`grep -n 'KEY_NAME' packages/ai/src/registry/oauth/zai.ts` -> 25 (khai bao), 167 (so sanh khoa hien co), 171 (`postJson(keysUrl, { name: KEY_NAME })`); `sed -n '24,25p'` in comment. `grep -rn 'EXA_MCP_SOURCE' packages/coding-agent/src/` -> 26 va 369 (`\"x-exa-source\": EXA_MCP_SOURCE`). `sed -n '610,640p' packages/coding-agent/src/mcp/oauth-flow.ts` -> `registrationBody.client_name` va docblock ve Figma allowlist."
+ },
+ {
+  "id": "W8a",
+  "claim": "Test cần viết: \"Telemetry: khẳng định giá trị thuộc tính resource được export đúng bằng giá trị đã quyết định, và ghim nó bằng một test\". File test mới: `packages/coding-agent/test/telemetry-export-otlp.test.ts`.",
+  "verdict": "partly-wrong",
+  "correction": "`SERVICE_NAME` KHONG duoc export (`grep -n 'export' telemetry-export-otlp.ts` khong co dong nao export no), va co MOT seam san sapping dung cho viec nay: `packages/coding-agent/test/otel-resource-probe.ts`, chay nhip boi `telemetry-export.test.ts:118-124`. Nhung probe do dat `OTEL_SERVICE_NAME = \"svc-probe\"` (dong 37) va comment dong 59 noi 'OTEL_SERVICE_NAME must win over the service.name in OTEL_RESOURCE_ATTRIBUTES' — tuc no TON TAI de chung minh bien moi truong THANG gia tri fallback. Do do probe hien co KHONG BAO GIO quan sat duoc gia tri fallback, va sua no de khang dinh `\"oh-my-pi\"` se pha dung hop dong precedence ma no sinh ra. Fix: tao probe ANH EM `otel-service-name-probe.ts` bo `OTEL_SERVICE_NAME` va `OTEL_RESOURCE_ATTRIBUTES`, va them no vao mang `probes` hien co — khong can ha tang moi, khong can sua probe cu. Ten file trong plan (`telemetry-export-otlp.test.ts`) nen doi thanh ten probe de trung voi quy uoc sibling cua file hien co.",
+  "evidence": "`ls packages/coding-agent/test/telemetry-export-otlp.test.ts` -> No such file; `grep -n 'export' packages/coding-agent/src/telemetry-export-otlp.ts` -> khong co `SERVICE_NAME`; `cat packages/coding-agent/test/otel-resource-probe.ts` -> dong 37 `process.env.OTEL_SERVICE_NAME = \"svc-probe\"`, dong 59 comment precedence; `sed -n '118,145p' packages/coding-agent/test/telemetry-export.test.ts` -> mang `probes` 3 phan tu va `expect(Object.fromEntries(results))`."
+ },
+ {
+  "id": "W8a",
+  "claim": "Lệnh nghiệm thu của W8a: `bun run check && (cd packages/coding-agent && bun test test/extension-scope-canonicalization.test.ts test/telemetry-export-otlp.test.ts)`, và \"Phần cần viết: phân giải extension, trong file test của W2\".",
+  "verdict": "wrong",
+  "correction": "`test/extension-scope-canonicalization.test.ts` KHONG TON TAI — dang tao spec W2 cua chinh milestone nay dat ten file la `packages/coding-agent/test/pi-scope-aliases.test.ts`. Lenh nghiem thu do tro toi mot file khong ai se tao, nen no do ma khong lien quan gi den viec cua ky su. Về `bun run check`: no goi them `check:rs` can cargo, chua xac minh trong W8a; phan chay duoc va cham toi file W8a sua la `bun run check:ts`, da do exit 0 tai HEAD. Ve `bun test`: bi chan boi native addon chua build tren may nay, nen lenh do phan biet duoc 'da lam' voi 'test khong chay duoc' — day la ly do Gate A–F trong dac ta nay viet de khong can chay mot dong test nao, va Gate G ghi ro NOT RUN.",
+  "evidence": "`ls -la packages/coding-agent/test/extension-scope-canonicalization.test.ts` -> No such file; `bun -e` doc `.lavish-wip/m5-specs/W2.spec.json` -> `test_files: [\"packages/coding-agent/test/pi-scope-aliases.test.ts\"]`. `bun run check:ts` exit 0, oxlint + oxfmt tren 5445 file, 16/16 package `check:types` Done."
+ },
+ {
+  "id": "W8a",
+  "claim": "\"W7 đẩy 585 file .ts có token `omp` sang 'làm theo từng file'\" và W8a là 15 file dạng trần; ranh giới của W8a là phần literal dạng trần mà sed scope của W7 KHÔNG chạm tới.",
+  "verdict": "partly-wrong",
+  "correction": "Ranh gioi DUNG o CAP LINH, SAI o CAP FILE. Lenh scope cua W7 la `perl -pi -e 's{\\@oh-my-pi/}{@ultraworkers/}g'` — no khong the nao chua duoc mot literal dung trong, nen 23 luot nay deu song sau. NHUNG 14/15 file trong bang W8a CUNG chua dang co dau `/`: chi co `packages/ai/src/registry/oauth/zai.ts` co bang 0 luot scope; 14 file con lai co tu 1 den 16 luot (acp-lazy-startup 16, acp-initialize-conformance 10, acp-agent 8, legacy-pi-compat 7, cursor-exec-modern va zai-oauth 6 moi co, web-search-exa 6, segments 5, oauth-flow 5, telemetry 4, git-hosting 2, exa 2, oauth-flow.test 2, provider-quirks 1). Nghia la W7 DA sua 14/15 file cua W8a, va chi mot file duy nhat la W8a so huu toan bo. Hai hệ qua phai noi ro: (1) Gate C cua W7 (so sanh tap dung truan) la thu bao ve W8a — W8a ma chay truoc se lam no do; (2) khi review W8a, phai so sanh voi baseline W8a chu KHONG phai voi `main`, neu khong se thay 14 file co hon hang tram dong thay doi cua W7 tron vao diff cua W8a. Chi co mot file (zai.ts) ma W8a sua ma W7 khong dung.",
+  "evidence": "Vong `for f in <15 file>; do grep -c -F '@oh-my-pi/' $f; done` cho 0,1,6,6,5,7,5,8,4,2,10,16,2,2,6 theo thu tu bang. `git grep -l '@oh-my-pi/' -- . | wc -l` = 4149 voi 17697 luot, nen phan lon tap W7 la file ma W8a cung nam trong do."
+ },
+ {
+  "id": "W8a",
+  "claim": "W8a phụ thuộc \"W2, và M2 đã merge cho phần tài liệu\".",
+  "verdict": "gap-in-plan",
+  "correction": "Danh sach phu thuoc thieu W7, va day la phu thuoc CUNG chua mot dieu kien mo — khong phai chi thu tu thoi quan. Gate C cua W7 chup baseline 16 file dang truan roi so sanh sau pass; neu W8a doi mot literal dang truan truoc, Gate C do va W7 khong the merge, dong thoi W8a cung khong the chay. Cac file tai lieu ma plan giao cho W8a (`docs/extension-loading.md:231`, `docs/porting-from-pi-mono.md:46-51`) cung khong co literal dang truan — `grep -cE '\"oh-my-pi\"'` tren ca hai deu bang 0, chung chi co dang co dau `/` thuoc W7. Nghia la phan tai lieu cua W8a la sua VAN XUOI sau W7, khong phai thay chuoi; chay mot pass thay chuoi o buoc 10 se khong co gi de thay.",
+  "evidence": "`grep -cE '\"oh-my-pi\"' docs/extension-loading.md docs/porting-from-pi-mono.md` -> 0 va 0. `awk 'NR>=228 && NR<=232'` -> dong 231 la bullet ve `onLoad` hook voi `@oh-my-pi/pi-catalog/models` va `@mariozechner/*`. `awk 'NR>=44 && NR<=52' docs/porting-from-pi-mono.md` -> dong 46-50 la bang 5 map `@mariozechner/pi-*` -> `@oh-my-pi/pi-*`."
+ },
+ {
+  "id": "W8b",
+  "claim": "§2.2 hàng 6 và toàn bộ mục W8b: '1826 lượt / 585 file `.ts` chứa token `omp` đứng riêng', và cổng 0 của W8b dùng đúng con số 585 làm kỳ vọng.",
+  "verdict": "SAI Ở CẢ HAI CON SỐ. Đây là phát hiện quan trọng nhất của đặc tả này.",
+  "correction": "Tại HEAD 84cbac9: **599 file** và **1853 lượt** — nhiều hơn con số của plan lần lượt là 14 file và 27 lượt. Mọi con số trong W8b dùng 585/1826 phải đổi thành 599/1853, và cổng phải so với số đo lại chứ không so với hằng số của plan. Nguyên nhân gần như chắc chắn là cây đã trôi từ HEAD mà plan dùng (`5873776`, nhắc ở §2.3 và §2.4) sang `84cbac9` — nhưng kể cả khi đó, cột 'Hành động theo' của bảng và tiêu đề của W8b đang phát ra một lệnh cụ thể cho kỹ sư, nên sai 14 file là sai một cách có hậu quả.",
+  "evidence": "`git -C /Users/tranquangdang21/Projects/ultraworkers grep -lE '(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)' -- '*.ts' | wc -l` → 599. Cùng lệnh với `-o` thay `-l` → 1853. Đếm lại độc lập bằng perl lookaround trên đúng 599 đường dẫn (một tiến trình, `(?<![A-Za-z0-9_.\\/-])omp(?![A-Za-z0-9_.\\-])`) cho `occurrences=1853 files_with_hits=599` — xác nhận 1853 không phải hệ quả của việc regex nuốt dấu phân cách. HEAD xác nhận bằng `git rev-parse --short HEAD` → 84cbac9."
+ },
+ {
+  "id": "W8b",
+  "claim": "§2.1 và mọi mục khác giả định có thể chạy lệnh đếm 'từ bất kỳ đâu trong repo' và so kết quả với con số đã ghi.",
+  "verdict": "BẪT THẬT, ĐÃ TÁI LẬP. Đây là bẫy âm thầm nguy hiểm nhất của toàn bộ mục này.",
+  "correction": "`git grep` KHÔNG có pathspec thì chỉ quét thư mục đang đứng. Chạy đúng biểu thức của plan từ `.lavish-wip/m5-specs/` trả về **0 file và 0 lượt** — trông y hệt một cây đã đổi tên xong sạch. Vì vậy mọi lệnh trong đặc tả này đều phải chạy từ repo root, và cổng phải từ chối chạy khi cwd không phải gốc repo thay vì im lặng trả về 0.",
+  "evidence": "Lần chạy đầu tiên của tôi, cwd = `/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m5-specs`: `git grep -lE '(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)' -- '*.ts' | wc -l` → 0, `-o` → 0, và cả lệnh không pathspec → 0. Chạy lại bằng `git -C /Users/tranquangdang21/Projects/ultraworkers ...` → 599 và 1853."
+ },
+ {
+  "id": "W8b",
+  "claim": "Cổng nghiệm thu 2 của W8b: '`bun run check && bun run test:ts`' — và phần cổng này được coi là bằng chứng rằng việc đổi tên không phá gì.",
+  "verdict": "CỔNG KHÔNG ĐỎ ĐƯỢC TRÊN MÁY NÀY. Nó đỏ sẵn, trước cả khi bạn sửa một dòng nào, nên nó không phân biệt được 'tôi làm hỏng' với 'hạ tầng chưa sẵn sàng'.",
+  "correction": "`bun run test:ts` hiện exit 1 với `3 chunks passed / 185 failed`, nguyên nhân là `Error: Failed to load pi_natives native addon for darwin-arm64` — không liên quan gì đến việc đổi tên. Đặc tả này vì vậy thay cổng này bằng hai cổng luôn chạy được: `bun scripts/rename/check-disposition.ts --stage=post` (thuần Bun, không đụng addon) và `bun run check:ts` (đã xanh). `test:ts` chỉ còn là cổng thông tin, phải báo kết quả kèm lý do nếu không chạy được, và tuyệt đối không phải điều kiện nghiệm thu. Lệnh gỡ chặn phải kèm `brew install ninja` TRƯỚC, vì `bun --cwd=packages/natives run build` thất bại ngay ở bước cmake.",
+  "evidence": "`bun run test:ts` → `Ran 188 test command(s) in 114.3s`, `3 chunks passed`, `185 failed`, `error: script \"test:ts\" exited with code 1`, kèm `Cannot find module '.../packages/natives/native/pi_natives.darwin-arm64.node'`. `bun --cwd=packages/natives run build` → `CMake Error: CMake was unable to find a build program corresponding to \"Ninja\". CMAKE_MAKE_PROGRAM is not set.`, exit 1. `command -v ninja` → rỗng; `command -v cmake` → `/opt/homebrew/bin/cmake`; `command -v brew` → `/opt/homebrew/bin/brew`. Ngược lại `bun run check:ts` → exit 0, đã chạy thật."
+ },
+ {
+  "id": "W8b",
+  "claim": "§2.2 hàng 6 và mọi cổng của M5 giả định có thể viết điều kiện chạy bằng ranh giới từ `\\b`.",
+  "verdict": "ĐÚNG LÀ BẪT, VÀ NÓ BIẾN MỘT CỔNG THÀNH CỔNG KHÔNG BAO GIỜ ĐỎ. Biểu thức đã ghim ở §2.1 không mắc lỗi này — nhưng bất kỳ ai viết lại cổng bằng trực giác thì mắc.",
+  "correction": "Trên máy này `git grep` dùng regcomp và KHÔNG hiểu `\\b`; `grep` trên PATH là `ugrep 7.8.4` thì CÓ. Cùng một mẫu trên cùng một file cho hai kết quả trái ngược. Một cổng viết bằng `git grep -E '\\bomp\\b'` luôn trả 0 dòng, tức luôn xanh, kể cả khi cây còn đầy tên cũ. Đặc tả này cấm `\\b` và `\\<` trong mọi lệnh kiểm và bắt dùng đúng biểu thức đã ghim ở §2.1.",
+  "evidence": "`git grep -cE '\\bomp\\b' -- packages/utils/src/dirs.ts` → không in dòng nào, exit 1. `grep -cE '\\bomp\\b' packages/utils/src/dirs.ts` → 104. `grep -cE '[[:<:]]omp' packages/utils/src/dirs.ts` → 104. Biểu thức đã ghim ở §2.1 trên cùng file → 19 dòng. `grep --version` → `ugrep 7.8.4 aarch64-apple-macosx`."
+ },
+ {
+  "id": "W8b",
+  "claim": "W8b: 'Danh sách loại trừ bắt buộc: 7 mục trong `do_not_rename`' — gợi ý cả 7 vị trí wire nằm trong tập 585 file và được bảo vệ bởi biểu thức đã ghim.",
+  "verdict": "SAI MỘT NỬA. 5 trên 7 vị trí khớp biểu thức; 2 vị trí không khớp.",
+  "correction": "`acp-agent.ts:656` (N5, `name: \"oh-my-pi\"`) và `telemetry-export-otlp.ts:51` (N7, `SERVICE_NAME = \"oh-my-pi\"`) là dạng TRẦN nên dòng đó không chứa token `omp` và không khớp biểu thức. Cả hai file ĐỀU nằm trong tập 599 (vì có hit khác), nên cái thật sự sai không phải 'file không được bảo vệ' mà là 'bảo vệ theo tên file không bảo vệ đúng dòng' — một rule dạng 'loại trừ cả file' sẽ tạo cảm giác an toàn giả. Vì vậy các hàng `keep-wire` phải ghi ở mức mà cột `hits` tách được, và quy trình rà phải mở đúng dòng, không chỉ đúng file.",
+  "evidence": "Với `E='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'`, kiểm `sed -n '<line>p' <file> | grep -qE \"$E\"`: `packages/catalog/src/wire/codex.ts:52` MATCHES; `packages/coding-agent/src/dap/session.ts:1465` MATCHES; `packages/coding-agent/src/blob-broker/uploaders-legacy.ts:236` MATCHES; `packages/coding-agent/src/modes/warp-events.ts:60` MATCHES; `packages/ai/src/providers/gitlab-duo-workflow.ts:2232` MATCHES; `packages/coding-agent/src/modes/acp/acp-agent.ts:656` **no-match**; `packages/coding-agent/src/telemetry-export-otlp.ts:51` **no-match**. Cả hai file vẫn có mặt trong tập 599 khi tra bằng `grep -qxF`."
+ },
+ {
+  "id": "W8b",
+  "claim": "§2.2 hàng 8 và mục W8b dùng làm số loại trừ: literal `\".omp\"` = 258 lượt / 89 file.",
+  "verdict": "SAI. Con số thật là 280 lượt / 94 file.",
+  "correction": "Cùng lệnh, cùng cây, khác kết quả. Vì W8b dùng con số này làm tiền đề để nói '258 literal này thuộc W4/W6, không phải ở đây', sai ở đây có nghĩa là 22 lượt trong 5 file không ai nhận trách nhiệm.",
+  "evidence": "`git grep -oE '\"\\.omp\"' -- . | wc -l` → 280; `git grep -lE '\"\\.omp\"' -- . | wc -l` → 94. Trong riêng tập 599 file `.ts`, 26 file có literal `\".omp\"`."
+ },
+ {
+  "id": "W8b",
+  "claim": "W8b: 'toàn bộ 28 vị trí selector của W9' là phần bắt buộc của danh sách loại trừ; §2.2 hàng 9 ghi 28 lượt / 13 file.",
+  "verdict": "SAI Ở CẢ HAI CON SỐ. Lệnh nguyên bản của plan giờ cho ra 30 dòng / 14 file.",
+  "correction": "Bằng đúng lệnh của plan (`git grep -n '__omp_worker_' -- '*.ts' ':!*test*' | wc -l`) → **30 dòng**, và `git grep -l '__omp_worker_' -- '*.ts' ':!*test*' | wc -l` → **14 file**. Trong toàn bộ `.ts` (kể cả test) có 74 dòng; trong toàn bộ file đã track có 89 dòng. Số chuỗi selector phân biệt trong `.ts` là **21**, trong đó có hai giá trị trông như giá trị thử nghiệm (`__omp_worker_does_not_exist`, `__omp_worker_test`) và một tiền tố trần `__omp_worker_` được khẳng định nguyên văn trong `packages/utils/test/worker-host.test.ts`. Danh sách loại trừ của W8b phải ghi '30 dòng / 14 file / 21 chuỗi phân biệt' chứ không ghi 28.",
+  "evidence": "Các lệnh `git grep` nêu trên chạy từ repo root. `git grep -oh '__omp_worker_[a-z_]*' -- '*.ts' | sort -u | wc -l` → 21, liệt kê đủ 21 chuỗi. `packages/coding-agent/src/cli/worker-selectors.ts:9-21` chứa 8 hằng số selector (blob_broker, computer, daemon_broker, ida_host, lsp_mux, stats_activity, text_predict, terminal_output); `packages/coding-agent/src/cli.ts:182-189` chứa 8 hằng số khác (tiny_inference, stats_sync, tab, js_eval, js_eval_process, stt, tts, mnemopi_embed) — các neo này của plan ĐÚNG."
+ },
+ {
+  "id": "W8b",
+  "claim": "§2.2 hàng 2 và mục W8: literal dạng trần `\"oh-my-pi\"` nằm ở 15 file (14 `.ts` + `docs/provider-quirks.md`).",
+  "verdict": "Gần đúng nhưng thiếu một file: 16, không phải 15.",
+  "correction": "Lệnh `git grep -lE '\"oh-my-pi\"' -- .` cho ra 16 file: 14 file `.ts` (khớp con số của plan) cộng `docs/provider-quirks.md` (plan đã tính) và `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` — chính file plan. File plan chứa `oh-my-pi` trong chính văn bản đặc tả nên nó tự nhiễm vào mọi lệnh đếm toàn repo. Đây không phải lỗi nghiêm trọng, nhưng nó có nghĩa là mọi lệnh `git grep -l ... -- .` trong M5 đang đếm thêm chính tài liệu kế hoạch, và ai chạy lại sẽ phải tự loại nó ra mà không có hướng dẫn.",
+  "evidence": "`git grep -lE '\"oh-my-pi\"' -- '*.ts' | wc -l` → 14; `git grep -lE '\"oh-my-pi\"' -- . | wc -l` → 16; `git grep -lE '\"oh-my-pi\"' -- . | grep -v '\\.ts$'` → `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` và `docs/provider-quirks.md`."
+ },
+ {
+  "id": "W8b",
+  "claim": "W11 (mục nghiệm thu phụ thuộc của W8b) phạm vi 68 file test, và W8b được mô tả như thể toàn bộ 585 file là việc của riêng nó.",
+  "verdict": "SAI Ở CON SỐ, VÀ BỎ SÓT MỘT VA CHẠM SỞ HỮU NGUYÊN TẺ.",
+  "correction": "Tập W11 tính lại được là **70 file** (61 file có `\".omp\"` + 9 file có `__omp_worker_`), không phải 68. Quan trọng hơn con số: **226 trong 599 file của W8b là file test**, và **24 file trong số đó trùng với tập 70 file của W11**. Danh sách loại trừ mà W8b nêu (7 mục do_not_rename + selector + `\".omp\"`) không hề nhắc tới file test, trong khi 38% tập 599 là file test và W11 ở wave 5 — sau W8b. Đây là khoảng trống thật trong kế hoạch chứ không phải sai số: không ai đã nói W8b và W11 chia tay tập file test thế nào. Câu hỏi đã đưa vào `open_questions[1]`.",
+  "evidence": "`git grep -lE '\"\\.omp\"' -- 'packages/**/test/**' | wc -l` → 61; `git grep -l '__omp_worker_' -- 'packages/**/test/**' | wc -l` → 9; hợp nhất hai tập → 70. Lọc tập 599 bằng `(^|/)(test|tests)/|\\.test\\.ts$` → 226. `comm -12 <(tập W11) <(tập file test của W8b) | wc -l` → 24, gồm `packages/coding-agent/test/acp-agent.test.ts`, `packages/coding-agent/test/modes/...`, `packages/utils/test/logger-contract.test.ts` và 21 file khác. 373 + 226 = 599."
+ },
+ {
+  "id": "W8b",
+  "claim": "Các neo `dirs.ts:21,24,27,30,36` và `getConfigDirName()` tại `dirs.ts:298` mà M5 dùng làm trung tâm toàn bộ việc đổi tên.",
+  "verdict": "ĐÚNG TOÀN BỘ. Đã mở file và đối chiếu từng dòng.",
+  "correction": "Không cần sửa. Ghi lại ở đây vì đây là nhóm neo duy nhất của M5 còn nguyên vẹn, và vì nó là đối chứng cho các con số đã trôi ở trên: cấu trúc của cây không đổi, chỉ số lượng file khớp biểu thức đã tăng lên.",
+  "evidence": "`sed -n '15,40p' packages/utils/src/dirs.ts` cho: dòng 21 `export const APP_NAME: string = \"omp\";`, dòng 24 `export const APP_URL: string = \"https://omp.sh/\";`, dòng 27 `export const CONFIG_DIR_NAME: string = \".omp\";`, dòng 30 `export const MAIN_CONFIG_FILENAMES = [\"config.yml\", \"config.yaml\"] as const;`, dòng 36 `export const USER_AGENT = \\`omp/${VERSION}\\`;`. `sed -n '294,302p'` cho dòng 298 `return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;`. Ngoài ra `dirs.ts:1084` là `const value = process.env.OMP_APP_NAME?.trim();` trong `getAppName()`."
+ },
+ {
+  "id": "W8b",
+  "claim": "Giao việc bàn giao: '`bun run check:ts` chạy được: exit 0 sau ~29 giây trên máy rảnh'.",
+  "verdict": "Exit 0 thì đúng, con số 29 giây thì SAI trong lần chạy lạnh. (Lỗi này nằm ở giao việc bàn giao, không phải trong plan.)",
+  "correction": "Lần chạy lạnh ngày 2026-09-28 cho thấy riêng gói `typescript-edit-benchmark` đã mất 211.83s và `pi-metaharness` 152.51s. Khoảng 29 giây chỉ đúng khi bộ nhớ đệm kiểu của từng gói đã ấm. Kỹ sư chạy lần đầu và thấy lệnh còn chạy sau vài phút sẽ tưởng treo và giết nhầm — nên đặc tả này ghi rõ các mốc thời gian quan sát được thay vì một con số.",
+  "evidence": "`bun run check:ts` → exit 0 với các dòng `@oh-my-pi/typescript-edit-benchmark:check:types | Done in 211.83s`, `@oh-my-pi/pi-metaharness:check:types | Done in 152.51s`, `@oh-my-pi/pi-tui:check:types | Done in 74.87s`, `@oh-my-pi/snapcompact:check:types | Done in 21.15s`."
+ },
+ {
+  "id": "W9",
+  "claim": "`scripts/ci-release-publish.ts:165` (`publishBin: { omp: \"dist/cli.js\" }`) — vị trí khai báo bin thứ nhất trong ba.",
+  "verdict": "SAI số dòng (lệch 21 dòng). Nội dung thì đúng.",
+  "correction": "Dòng thật là `:186`. Kế hoạch trỏ sai dòng sẽ khiến kỹ sư không tìm thấy gì ở 165 và phải grep lại.",
+  "evidence": "`grep -n publishBin scripts/ci-release-publish.ts` → khai báo type ở `:69`, dùng ở `:243`, `:298`, `:301`, và GIÁ TRỊ `publishBin: { omp: \"dist/cli.js\" }` ở `:186`. Đã đọc trực tiếp, dòng 165 là `{ dir: \"packages/omptype\", kind: \"typescript\", publishJs: true }` — không liên quan."
+ },
+ {
+  "id": "W9",
+  "claim": "`packages/coding-agent/src/cli.ts:179-186` — 8 hằng số selector.",
+  "verdict": "SAI số dòng (thật là `:182-189`).",
+  "correction": "8 hằng số nằm ở `cli.ts:182-189`. Dòng 179-181 là phần đuôi của `runSmokeTest()` và dấu `}`.",
+  "evidence": "`grep -n '__omp_worker_' packages/coding-agent/src/cli.ts` → 182 TINY, 183 STATS_SYNC, 184 TAB, 185 JS_EVAL, 186 JS_EVAL_PROCESS, 187 STT, 188 TTS, 189 MNEMOPI_EMBED. Đúng 8, đúng thứ tự như kế hoạch liệt kê."
+ },
+ {
+  "id": "W9",
+  "claim": "`worker-selectors.ts:9,11,13,15,17,19,21` — 7 hằng số (BLOB_BROKER, COMPUTER, DAEMON_BROKER, IDA_HOST, LSP_MUX, STATS_ACTIVITY, TERMINAL_OUTPUT).",
+  "verdict": "SAI — thiếu một hằng số ở `:23`, và danh sách tên trong §3.5 tự mâu thuẫn (nó liệt kê 7 dòng nhưng đếm tên là TERMINAL_OUTPUT chứ không có TEXT_PREDICT).",
+  "correction": "Thật là 8 hằng số ở `:9,11,13,15,17,19,21,23`; hằng số thứ 8 là `TEXT_PREDICT_WORKER_ARG` ở `:23`. Bỏ sót nó là bỏ sót selector `__omp_worker_text_predict` — worker dự đoán văn bản sẽ không bao giờ dispatch.",
+  "evidence": "Đọc trực tiếp file. Xác nhận thêm bằng `cli.ts`: `runWorkerEntrypoint` so sánh đủ 16 hằng số, trong đó có `if (arg === TEXT_PREDICT_WORKER_ARG)`."
+ },
+ {
+  "id": "W9",
+  "claim": "Có **15 loại selector** (mục nghiệm thu: \"15/15 loại selector phân giải\").",
+  "verdict": "SAI — thật là **16 loại**. Con số này xuất hiện ít nhất 4 lần trong kế hoạch (tiêu đề §3.5, chi tiết W9, nghiệm thu W9, mục sai lầm thứ ba).",
+  "correction": "16 = 8 hằng số ở `cli.ts` + 8 hằng số ở `worker-selectors.ts`. Mọi con số phải nói 16, và cổng phải nói 16/16.",
+  "evidence": "Đếm bằng `grep -hoE '^(export )?const [A-Z_]+_ARG'` trên cả hai file → đúng 16 tên hằng. Đối chiếu `runWorkerEntrypoint` bằng awk: 16 nhánh `if (arg === ...)` khớp 16 hằng, không thừa không thiếu. Danh sách 16: blob_broker, computer, daemon_broker, ida_host, lsp_mux, stats_activity, text_predict, terminal_output, tiny_inference, stats_sync, tab, js_eval, js_eval_process, stt, tts, mnemopi_embed."
+ },
+ {
+  "id": "W9",
+  "claim": "Bề mặt selector là **13 file** với **24 vị trí** khai báo/thật.",
+  "verdict": "SAI ở cả hai con số, theo hai cách đo khác nhau — và số 13/24 bỏ sót một file nguồn thật.",
+  "correction": "Đo theo file NGUỒN (không tính test/tài liệu): **14 file, 30 vị trí**, gồm 25 literal mã + 5 dòng comment. Đo theo toàn repo (trừ chính file kế hoạch): **28 file, 97 lượt**.",
+  "evidence": "`git grep -o '__omp_worker_' -- . ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | wc -l` → 97. Tách: nguồn 30 lượt / 14 file; test 54 lượt / 9 file; tài liệu+snapshot 13 lượt / 5 file. 14+9+5=28, 30+54+13=97."
+ },
+ {
+  "id": "W9",
+  "claim": "§3.5 liệt kê 4 dòng comment có chứa selector: `blob-broker/server.ts:2`, `embed-client.ts:119`, `embed-worker.ts:4`, `activity-worker.ts:4`.",
+  "verdict": "SAI — có 5 dòng comment, và `predict/daemon.ts:3` bị bỏ sót hoàn toàn.",
+  "correction": "Thêm `packages/coding-agent/src/predict/daemon.ts:3` (` * `__omp_worker_text_predict`, started through the `text-predict` global broker).`). Đây là comment của worker thứ 8 trong `worker-selectors.ts` — đúng cái hằng số mà correction #3 cho thấy kế hoạch đã bỏ sót. Ngoài ra `embed-client.ts` phải là `:122`, không phải `:119`.",
+  "evidence": "grep từng file. `predict/daemon.ts:3` và `activity-worker.ts:4` đều là dòng docblock, đều nằm trong khoảng dòng 2-4 như `blob-broker/server.ts:2` và `embed-worker.ts:4` mà §3.5 đã liệt kê — bỏ sót đúng một file là bất đối xứng không thể giải thích bằng tiêu chí lọc nào."
+ },
+ {
+  "id": "W9",
+  "claim": "`embed-client.ts:35`, `stt/asr-client.ts:71`, `tts/tts-client.ts:134` là vị trí khai báo selector.",
+  "verdict": "SAI cả ba số dòng (mỗi sai đúng 3, 1 và 1 dòng). Nội dung thì đúng — ba file này khai báo bản trùng của hằng số đã có ở `cli.ts`.",
+  "correction": "`embed-client.ts:38`, `asr-client.ts:72`, `tts-client.ts:135`.",
+  "evidence": "`grep -n '__omp_worker_'` trên từng file. Tại `asr-client.ts:72` hằng số được dùng ở `:80` (`resolveWorkerSpawnCmd(STT_WORKER_ARG)`), còn `cli.ts:187` giữ bản trùng và dùng ở `:258` — hai chuỗi chỉ khớp nhau vì chúng bằng nhau, không phải vì cùng tham chiếu."
+ },
+ {
+  "id": "W9",
+  "claim": "`packages/coding-agent/src/subprocess/worker-client.ts:132` (fallback PATH `$which(\"omp\")`).",
+  "verdict": "SAI số dòng — `:132` là dấu `];` đóng mảng `candidates`.",
+  "correction": "`$which(\"omp\", ...)` nằm ở `:131`; comment giải thích nó nằm ở `:130`.",
+  "evidence": "`grep -n 'which(\"omp\"'` → `131`. Đã đọc `:120-140` để xác nhận ngữ cảnh: 131 là phần tử cuối của mảng `candidates`, 132 là `];`."
+ },
+ {
+  "id": "W9",
+  "claim": "`packages/coding-agent/src/cli/completion-gen.ts` có **109** lượt `omp`, \"phải sinh lại cho tên mới\".",
+  "verdict": "SAI TRONG CÁCH ĐẾM, và nguy hiểm vì nó gợi ý sai việc phải làm. 109 là con số đúng cho một `grep -o omp` thô — nhưng 109 đó phần lớn KHÔNG phải thương hiệu.",
+  "correction": "Trong 109 lượt thô, **58 nằm trong chữ `completion`/`complete`** (CompletionFlag, generateCompletion, `__complete`, ...). Chỉ **29 lượt** là token thương hiệu đứng riêng (đếm bằng `grep -oE '(^|[^a-zA-Z])omp([^a-zA-Z]|$)'`), và tất cả đều là TÊN HÀM SHELL trong script được sinh ra: `_omp`, `_omp_root`, `_omp_comma`, `_omp_call`, `_omp_tools`, `_omp_models_list`, `_omp_commands`, `_omp_cmd_*`, `__fish_omp_no_subcommand`. QUAN TRỌNG NHẤT: tên binary KHÔNG ghim trong file này. Nó đến qua `spec.bin` ← `config.bin: APP_NAME` tại `commands/completions.ts:29`. Nghĩa là W3 đã làm phần việc lớn nhất của W9 ở file này rồi, và lệnh `omp completions bash` sẽ tự phát ra tên mới.",
+  "evidence": "`grep -oiE 'complet[a-z]*' completion-gen.ts | wc -l` → 58. `grep -o omp | wc -l` → 109. `grep -oE '(^|[^a-zA-Z])omp([^a-zA-Z]|$)' | wc -l` → 29. Đã đọc `completion-gen.ts:149` (`return { bin: config.bin, ... }`), `:226,303` (`complete -F _omp ${bin}`), `:371,453` (`compdef _omp ${bin}`), `:498` (`complete -c ${bin}`), và `completions.ts:29` (`const config: CliConfig = { bin: APP_NAME, ... }`; dòng 46 còn gợi ý ghi ra `~/.config/fish/completions/${APP_NAME}.fish`). Nhận xét thêm: đổi `_omp` thành `_ultraworkers` là TÙY CHỌN và an toàn về mặt kỹ thuật vì fish chỉ dùng chuỗi `-n '__fish_omp_no_subcommand'` làm điều kiện, không yêu cầu khớp tên lệnh — nhưng nó đổi quy ước tên file autoload của zsh (`:447` ghi rõ \"autoloaded from $fpath (file named _omp)\")."
+ },
+ {
+  "id": "W9",
+  "claim": "Độ phủ của `bun run ci:test:smoke` là **2 trong 15** loại selector (stats sync + tiny model), theo AGENTS.md. Sai lầm thứ ba của W9: \"coi `ci:test:smoke` là phủ đủ — nó phủ 2/15\".",
+  "verdict": "SAI, và sai theo HƯỚNG NGƯỢC LẠI so với mối lo sợ của kế hoạch: độ phủ cao hơn nhiều, không phải thấp hơn. Đây là correction quan trọng nhất của đặc tả này vì nó đổi hình dạng của cổng.",
+  "correction": "`runSmokeTest()` tại `cli.ts:136-179` gọi **14 hời gọi `await smokeTest*`**, ánh xạ tới **13 loại selector trên darwin** và **14 loại trên Linux**. Riêng 2 loại không được smoke nào chạm tới: `tab` và `js_eval_process`. Nói cách khác: smoke phủ 13/16 trên máy dev, không phải 2/16.",
+  "evidence": "Đã đọc `cli.ts:136-179` và map từng lời gọi: SyncWorker→stats_sync, StatsActivity→stats_activity, TinyTitle→tiny_inference, Stt→stt, JsEval→js_eval, Computer→computer, Tts→tts, MnemopiEmbed→mnemopi_embed, DaemonBroker→daemon_broker, LspMux→lsp_mux, IdaHost→ida_host, BlobBroker→blob_broker, TerminalOutput→terminal_output, TextPredict→text_predict. Xác nhận mỗi client đi qua `resolveWorkerSpawnCmd(<CONST>)` bằng `grep -c 'resolveWorkerSpawnCmd\\|workerHostEntry'` trên 19 file client. Đối chiếu: `git grep -c resolveWorkerSpawnCmd` cho thấy mỗi smoke client có mặt trong danh sách."
+ },
+ {
+  "id": "W9",
+  "claim": "AGENTS.md (dòng 62) là nguồn của con số \"2/15\": \"`omp --smoke-test` spawns the stats sync worker and the tiny-model subprocess, pings them, and exits\".",
+  "verdict": "TÀI LIỆU ĐÃ CŨ — và nó là nguồn gốc của correction #11. AGENTS.md là file W9 buộc phải sửa, nên nó phải được cập nhật trong cùng commit.",
+  "correction": "Câu này mô tả một bản `--smoke-test` cũ. Code hiện tại spawn 14 worker. Nếu kỹ sư tin AGENTS.md, họ sẽ tưởng smoke chỉ phủ 2 loại và bỏ qua 11 loại khác — tức là bỏ qua chính những thứ W9 đang cố bảo vệ.",
+  "evidence": "So sánh trực tiếp `AGENTS.md:62` với `cli.ts:151-179`. Ngoài ra AGENTS.md còn có 5 lượt `__omp_worker_` (dòng 52 và 57 trong khối tài liệu 'Worker scripts') phải đổi theo tên mới."
+ },
+ {
+  "id": "W9",
+  "claim": "Phần thứ hai của cảnh báo độ phủ: `stats_sync` không được smoke chạm tới.",
+  "verdict": "ĐÚNG — nhưng kế hoạch gắn nó sai chỗ và không nêu cơ chế.",
+  "correction": "`smokeTestSyncWorker` tại `packages/stats/src/aggregator.ts:193-194` là `if (process.platform === \"darwin\") return;` ngay dòng đầu của hàm. Docblock ở `:186-189` giải thích: worker spawn surface không reachable từ CLI trên macOS, và probe dưới hardened runtime sẽ chạm lại vào Bun-worker abort surface. Hệ quả: trên darwin, `__omp_worker_stats_sync` — chính là LITERAL THÔ khó chạm nhất — không có cổng nào chạm tới. Chỉ CI Linux bắt được.",
+  "evidence": "Đã đọc `aggregator.ts:186-200`. `process.platform` cũng xuất hiện ở `lsp/mux/daemon.ts:325`, `ida/client.ts:477`, `predict/client.ts:329` nhưng chỉ để chọn đường ố trên win32 — không skip, nên không ảnh hưởng độ phủ."
+ },
+ {
+  "id": "W9",
+  "claim": "`profile-alias.ts:30-33` (mặc định `display`/`posix`/`fish`/`powerShell`) và `:157-158` (chốt chặn alias che lệnh gốc).",
+  "verdict": "HAI DÒNG ĐÚNG, NHƯNG CHỈ MỘT PHNĂN. File này có **13** token `omp` đứng riêng, không phải 6 dòng.",
+  "correction": "Thêm 4 vị trí mà kế hoạch không nhắc, và 2 trong số đó là bẫy tương thích thật: `:268` (`posixJoinUnc(configHome, \"fish\", \"conf.d\", \"omp-profiles.fish\")` — TÊN FILE trên đĩa mà tool ghi ra), `:286-287` + `:309-310` (marker `# >>> omp profile alias: ... >>>` mà `upsertBlock` đọc ngược từ file rc của người dùng), `:292` (`--wraps omp` trong thân hàm fish). Bắt buộc phải đổi: `:30-33` (lệnh alias gọi), `:157-158` (chốt chặn — CẦN NHÁNH THỨ HAI cho tên mới như plan đã nói đúng), `:292` (nếu không, alias fish gọi lệnh cũ). Cần quyết định: `:268` và `:286-287,309-310`.",
+  "evidence": "Đã đọc `profile-alias.ts:200-330`. `upsertBlock` tại `:308-327` làm `content.indexOf(start)` với `start` dựng từ chuỗi marker ở `:309`; trả -1 thì rơi vào nhánh append ở `:325-326`. Còn `resolveProfileAliasCommandFromProcess` (`:200-222`) trả `DEFAULT_ALIAS_COMMAND` khi `compiled` — tức bản compiled binary dùng đúng giá trị ở `:30-33`."
+ },
+ {
+  "id": "W9",
+  "claim": "Ca test (2): `packages/coding-agent/test/worker-selector.test.ts` (đã tồn tại) vào gate, khẳng định TẤT CẢ loại selector khớp tiền tố.",
+  "verdict": "SAI — file tồn tại nhưng KHÔNG khẳng định điều đó. Không có ca nào trong file liệt kê hay so sánh bộ selector.",
+  "correction": "File có 7 ca: selector lạ → exit 1 + stderr; `workerHostEntry` được khai báo trước dispatch; root flag bình thường không bị đụng; selector IPC không có kênh IPC thì thoát nhanh; hai ca reap orphan (js_eval_process); PID 1 trong container; và computer worker entry side-effect-free. Toàn bộ chuỗi `__omp_worker_` trong file là `__omp_worker_does_not_exist` (cố ý sai) và `__omp_worker_js_eval_process`. Nó vẫn bắt được một lớp lỗi (đổi tiền tố mà quên literal thì ca 'unknown selector' sẽ đỏ vì chuỗi cũ không còn được nhận là selector) — nhưng đó là hệ quả, không phải thiết kế, và nó KHÔNG bắt được trường hợp ngược lại (đổi tiền tố nhưng bỏ sót một hằng số cũ ở nơi khác). Cần một ca parity MỚI.",
+  "evidence": "Đã đọc toàn bộ 215 dòng. `grep -n '__omp_worker_'` → 8 lượt, đúng hai giá trị khác nhau. Không có import nào của `WORKER_HOST_SELECTOR_PREFIX` hay của `worker-selectors.ts` trong file."
+ },
+ {
+  "id": "W9",
+  "claim": "Ca test (4): \"một kiểm tra CI khẳng định mọi literal `__<brand>_worker_` còn lại đều dẫn xuất từ `WORKER_HOST_SELECTOR_PREFIX`\".",
+  "verdict": "HỢP LÝ VỀ Ý, SAI VỀ CƠ CHẾ — và nó sẽ đụng luật của AGENTS.md.",
+  "correction": "AGENTS.md cấm source-grep trong test: khẳng định trên TEXT của file nguồn là kiểm tra 'code trông thế nào', đỏ vì refactor vô hại và xanh khi hành vi hỏng. Có hai lối thoát đúng: (a) CÁCH ĐÃ CÓ SẴN TRONG REPO — `packages/coding-agent/test/fixtures/compiled-worker-selector-host.ts:5` viết `${WORKER_HOST_SELECTOR_PREFIX}stats_sync`. Áp dụng đúng mẫu đó cho 3 literal thô và 5 cặp trùng lặp, sau đó KHÔNG CÒN literal nào để quét, và cổng chuyển sang một ca runtime parity thuần. (b) Nếu vẫn muốn một kiểm tra CI quét, nó phải là script trong `scripts/`, không phải test — và phải chạy SAU khi (a) đã xong, lúc đó nó chỉ còn là lưới an toàn.",
+  "evidence": "Đã đọc `packages/coding-agent/test/fixtures/compiled-worker-selector-host.ts:2,5,23` — dùng `WORKER_HOST_SELECTOR_PREFIX` để dựng selector và `arg.startsWith(WORKER_HOST_SELECTOR_PREFIX)` để nhận diện. Đường import là `@oh-my-pi/pi-utils/worker-host` (xác nhận qua `cli.ts:31` và subpath `./*` của `packages/utils/package.json`)."
+ },
+ {
+  "id": "W9",
+  "claim": "Môi trường: `bun test` bị chặn hoàn toàn — mọi test báo `0 pass / 1 fail / 1 error` với lỗi addon native.",
+  "verdict": "SAI — chặn có chọn lọc, và cách hiểu sai này sẽ làm kỹ sư bỏ một cổng đang chạy tốt.",
+  "correction": "Đo thật trên máy này: `bun test packages/utils/test/worker-host.test.ts` → **4 pass / 0 fail**, chạy được NGAY không cần build. `cd packages/coding-agent && bun test test/profile-alias.test.ts` → **23 pass / 0 fail**, cũng không cần build. Chỉ `bun test test/worker-selector.test.ts` mới đỏ (`Failed to load pi_natives native addon for darwin-arm64`) vì nó import `@oh-my-pi/pi-utils/procmgr`. Nghĩa là HAI file test quan trọng nhất cho tiền tố và cho chốt chặn alias đều chạy được, và cổng phải dựa vào chúng chứ không dựa vào file bị chặn.",
+  "evidence": "Đã chạy cả ba lệnh, kết quả nêu trên. `worker-selector.test.ts:3` import `isPidRunning` từ `@oh-my-pi/pi-utils/procmgr` — đó là đường kéo addon native. Ngoài ra `bun run check:ts` đã chạy thật và exit 0 (pi-metaharness chậm nhất 39.85s, còn lại dưới 40s)."
+ },
+ {
+  "id": "W9",
+  "claim": "Lệnh kiểm của W9: `bun run check && bun run ci:test:smoke && (cd packages/coding-agent && bun test test/worker-selector.test.ts test/profile-alias.test.ts)`.",
+  "verdict": "Không chạy được trên máy này, và cổng đề xuất sẽ ĐỎ với lý do không liên quan tới W9.",
+  "correction": "`bun run check` kéo `check:rs` cần cargo/ninja; `bun test .../worker-selector.test.ts` đỏ vì addon chưa build. Người đọc sẽ không phân biệt được 'W9 làm hỏng' với 'máy chưa build'. Đặc tả này thay bằng cổng 3 tầng, tầng nào cũng phân biệt được hai trường hợp (xem trường `gate`).",
+  "evidence": "Đã chạy `bun test test/worker-selector.test.ts` → `0 pass / 1 fail / 1 error`, lỗi nêu ở correction trên. `which ninja` → không có, khớp với ghi chú môi trường (cmake của opusic-sys cần ninja)."
+ },
+ {
+  "id": "W9",
+  "claim": "Ba khai báo bin là toàn bộ bề mặt tên lệnh.",
+  "verdict": "THIẾU MỘT — `packages/stats/package.json:27` khai báo `\"bin\": { \"omp-stats\": \"./src/index.ts\" }`.",
+  "correction": "Đây là tên lệnh thứ tư được cài vào PATH, kế hoạch không nhắc ở đâu cả. Nó không thuộc N17 (N17 giữ BASENAME của gói, không giữ tên bin). Đã đưa thành open_questions[2] thay vì tự quyết.",
+  "evidence": "Duyệt `bin` bằng `node -e` trên mọi package.json: coding-agent `{omp}`, metaharness `{metaharness}`, mnemopi `{mnemopi}`, stats `{omp-stats}`. Ngoài ra `packages/coding-agent/package.json:13` có `\"homepage\": \"https://omp.sh\"` và `:538` có `\"@oh-my-pi/omp-stats\"` — CẢ HAI đều không thuộc W9 (N9 chặn homepage tới khi có domain mới; N17 giữ basename)."
+ },
+ {
+  "id": "W9",
+  "claim": "§3.5 nói 3 chuỗi thô ở `context-manager.ts:1010`, `tab-supervisor.ts:1615`, `aggregator.ts:130` \"không dẫn xuất từ hằng số nào cả\".",
+  "verdict": "ĐÚNG, và đây là phần tốt nhất của §3.5 — giữ nguyên, chỉ bổ sung.",
+  "correction": "Xác nhận cả ba dòng và tìm ra mối liên hệ mà kế hoạch chưa nói: mỗi cái đều trùng với một hằng số ĐÃ TỒN TẠI ở `cli.ts` — `JS_EVAL_WORKER_ARG` (:185) ↔ `:1010`, `TAB_WORKER_ARG` (:184) ↔ `tab-supervisor.ts:1615`, `STATS_SYNC_WORKER_ARG` (:183) ↔ `aggregator.ts:130`. Nghĩa là fix không cần hằng số mới, chỉ cần làm spawn site dùng hằng số đã có. Điều này làm diff nhỏ hơn kế hoạch tưởng.",
+  "evidence": "`cli.ts:182-189` liệt kê 8 hằng; so từng cặp với 3 literal thô, giá trị khớp từng ký tự. Ngược lại, 5 hằng trùng lặp (STT/TTS/MNEMOPI_EMBED/TINY/JS_EVAL_PROCESS) nằm ở file KHÁC và được dùng ở client khác — xem correction #7."
+ },
+ {
+  "id": "W9",
+  "claim": "Số 13 file trong tiêu đề W9 bao trọn bề mặt selector.",
+  "verdict": "Thiếu hai đích test mà CHÍNH kế hoạch đã nhắc tên chung: `test/eval/worker-core.test.ts` (30 lượt) và `test/fixtures/computer-worker-cli-selector.ts` + `test/eval/process-entry-import.test.ts` (mỗi cái 1).",
+  "correction": "Nhưng cả ba KHÔNG nên đổi: `worker-core.test.ts` dùng `__omp_worker_core_gate` là tên thuộc tính `globalThis` (không liên quan worker host), `__omp_worker_test` trong `executable-fallback.test.ts` (8 lượt) là argv tùy ý chỉ để chuyển tiếp, `__omp_worker_does_not_exist` là selector cố ý sai. Ba file test `issue-1606/3031/7352-repro.test.ts` chỉ chứa selector trong DOCBLOCK, không phải literal. Đã đưa thành open_questions[5].",
+  "evidence": "`git grep -o '__omp_worker_' | cut -d: -f1 | sort | uniq -c | sort -rn` → 30 / 8 / 8 / 8 / 8 / 2 / 2 / 2 rồi 1. Đã đọc `worker-core.test.ts:105,113,155,222,291` (gán `globalThis.__omp_worker_core_gate`) và `executable-fallback.test.ts:35,59,83,139` (`resolveWorkerSpawnCmd(\"__omp_worker_test\")`). Đọc `issue-1606-repro.test.ts:11`, `issue-3031-repro.test.ts:13`, `issue-7352-repro.test.ts:6` — cả ba là dòng ` * `."
+ },
+ {
+  "id": "W9",
+  "claim": "Không có gì trong repo ngoài 13 file selector chứa chuỗi này.",
+  "verdict": "SAI — có một file KHÔNG PHẢI selector thật, và `sed` toàn repo sẽ bắt nó.",
+  "correction": "`crates/pi-natives/src/utok/claude/testdata/fixtures.json` có 5 lượt `__omp_worker_` nằm trong trường `\"text\"` của một snapshot tokenizer (dòng 2919 chứa nguyên văn AGENTS.md). Nó KHÔNG phải mã. Đừng sed nó: fixture đo hành vi tokenizer trên văn bản thật, đổi nội dung là đổi điều kiện thử chứ không phải đổi sản phẩm.",
+  "evidence": "`grep -n` hiện dòng 2919 với nội dung là text AGENTS.md. `git grep -ln fixtures.json -- crates/pi-natives` cho thấy `src/utok/claude/mod.rs` và `src/utok/tests/claude.rs` dùng nó — đó là test tokenizer Rust."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Chi tiết + §2.2 hàng 15: `.github/workflows/ci.yml` có 53 lượt `omp` trên 50 dòng, đo bằng `git grep -o 'omp' -- .github/workflows/ci.yml | wc -l` (→ 53) và `git grep -c 'omp' ...` (→ 50).",
+  "verdict": "sai",
+  "correction": "Con số 53 là ĐÚNG, nhưng lệnh ghi kèm trả về 65/62 — sai. Số thật: 65 lượt trên 62 dòng. Trong đó 12 lượt trên 11 dòng là false-positive tiếng Anh (`cross-compiles`, `--compile`, `cross-compiled`, `cross-compile.`, `Compute`, `compressing`, `compliance`, `completion`, `compiled`, `compares` — dòng 163,166,200,296,814,849,891,892,948,1006,1106). Brand thật = 53 lượt / 51 dòng. Kỹ sư chạy đúng lệnh của plan sẽ thấy 65 và tưởng có 12 hit lạ.",
+  "evidence": "`git grep -o 'omp' -- .github/workflows/ci.yml | wc -l` → 65. `git grep -c 'omp' -- .github/workflows/ci.yml` → `.github/workflows/ci.yml:62`. `grep -oE 'cross-compiles|--compile|cross-compiled|cross-compile\\.|Compute|compressing|compliance|completion|compiled|compares' .github/workflows/ci.yml | wc -l` → 12 trên 11 dòng."
+ },
+ {
+  "id": "W10",
+  "claim": "§2.2 hàng 16: Docker = 10 lượt / 4 file; `Dockerfile:13,14,17,18,21,178` (gồm biến thể tag `pi-base`), `Dockerfile.dockerignore:1`, `Dockerfile.robomp:5,12,19`.",
+  "verdict": "sai",
+  "correction": "Số thật của chính lệnh plan: 11 dòng / 3 file. `Dockerfile:178` KHÔNG phải hit — dòng 178 thật là `'fi' \\`. Plan BỎ SÓT `Dockerfile:3` (header `# oh-my-pi — pi image`) và `Dockerfile:186` (`docker run oh-my-pi/pi:dev --help`). Ngoài ra plan không nói tới 2 file dockerignore nữa (`.dockerignore`, `Dockerfile.robomp.dockerignore`) và không nói shim `omp` thật nằm ở `Dockerfile:180,181,216`.",
+  "evidence": "`git grep -n 'oh-my-pi' -- Dockerfile Dockerfile.dockerignore Dockerfile.robomp` cho 11 dòng: Dockerfile:3,13,14,17,18,21,186; Dockerfile.dockerignore:1; Dockerfile.robomp:5,12,19. `sed -n '178p' Dockerfile` → `'fi' \\`. `ls Dockerfile*` → 4 file + `.dockerignore`."
+ },
+ {
+  "id": "W10",
+  "claim": "§3.2 + §2.2 hàng 12: nhãn runner `omp-kata` xuất hiện ở 11 dòng `runs-on:` trong ci.yml, tại `:148,237,359,381,398,415,432,451,477,492` (dạng biểu thức) và `:191` (dạng nhãn trần). Toàn bộ repo còn lại chỉ dùng nhãn GitHub-hosted.",
+  "verdict": "sai",
+  "correction": "Số ĐÚNG là 12 dòng `runs-on:.*omp-kata`, tại 159,229,285,513,567,598,621,639,657,675,695,711 (10 biểu thức + 2 nhãn trần tại 229 và 513). Mọi dòng plan liệt kê đều sai. Quan trọng hơn: nhãn KHÔNG chỉ ở ci.yml — nó còn ở 6 file khác trong `.github/` (12 dòng nữa), và `.github/actionlint.yaml:6` liệt kê nó trong allowlist. Plan nói 'không test nào trong repo bắt được' là SAI: actionlint đó chính là thứ bắt được, nếu actionlint chạy trong CI.",
+  "evidence": "`grep -c 'runs-on:.*omp-kata' .github/workflows/ci.yml` → 12, tại các dòng 159,229,285,513,567,598,621,639,657,675,695,711. `grep -rn 'omp-kata' .github/ | grep -v 'workflows/ci.yml'` → actionlint.yaml (2), actions/bun-install/action.yml (6), actions/bazel-cache/action.yml (1), actions/bazel-natives/action.yml (1), actions/native-artifacts/action.yml (1), workflows/bazel-cache-warm.yml (1)."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Chi tiết: `scripts/ci-update-brew-formula.ts` có 18 lượt.",
+  "verdict": "sai",
+  "correction": "Thật là 28 lượt `omp`. Danh sách DÒNG plan đưa (76,78,81,83,89,91,94,96,120) là ĐÚNG — đã đối chiếu từng dòng. Nhưng plan bỏ sót `HOMEPAGE = \"https://omp.sh\"` ở dòng 15, đây là domain sống được nhúng vào Formula sinh ra, và là nơi thứ BA đóng attribution sau `APP_URL`/`USER_AGENT` (N9 chỉ phủ `dirs.ts:24,36`).",
+  "evidence": "`grep -o 'omp' scripts/ci-update-brew-formula.ts | wc -l` → 28. `git grep -o 'oh-my-pi' -- scripts/ci-update-brew-formula.ts | wc -l` → 1. Dòng 15: `const HOMEPAGE = \"https://omp.sh\";`."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Test cần viết: `git grep \"ci-update-brew-formula.test\"` trả về KHÔNG kết quả nào trong toàn repo.",
+  "verdict": "sai",
+  "correction": "Lệnh đó KHÔNG rỗng — nó trả về 2 hit, vì chính tài liệu kế hoạch chứa chuỗi đó. Kết luận của plan (file không nằm trong `test:scripts`) vẫn ĐÚNG và đã xác nhận độc lập. Nhưng lệnh bằng chứng thì tự tham chiếu chính nó, nên kỹ sư dùng lại sẽ tưởng plan sai ở chỗ đúng. Lệnh đúng phải loại markdown.",
+  "evidence": "`git grep -n \"ci-update-brew-formula.test\" -- .` → 2 hit, cả hai trong `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:14024,14026`. Lệnh đúng: `git grep -n \"ci-update-brew-formula\" -- ':!*.md'` → 5 hit thật (ci.yml:1321, test.ts:2, ts:9,10,33)."
+ },
+ {
+  "id": "W10",
+  "claim": "§3.1 lệnh kiểm tra: `git grep -n 'outfile: \"packages/coding-agent/binaries/' …` + `grep -n 'APP_NAME}-' …` với chú thích 'tiền tố của 8 dòng outfile phải khớp đúng `${APP_NAME}-`'.",
+  "verdict": "sai",
+  "correction": "Cổng này KHÔNG BAO GIỜ XANH. 8 dòng `outfile` là literal hardcode; chúng không thể khớp văn bản với `${APP_NAME}-` — đó là placeholder TypeScript, không xuất hiện trong file đó. Chạy lệnh này sau khi làm đúng mọi thứ vẫn đỏ, hoặc (tệ hơn) kỹ sư sửa lệnh cho 'xanh' bằng cách nới điều kiện, tức là biến nó thành tautology. Phải viết lại thành so sánh GIÁ TRỊ ĐÃ PHÂN GIẢI: đọc `APP_NAME` từ `dirs.ts`, tách tiền tố 8 tên outfile, so trực tiếp.",
+  "evidence": "`grep -n 'outfile:' scripts/ci-release-build-binaries.ts` → 8 literal `omp-*` (dòng 37,44,51,58,65,72,79,86). `grep -n 'APP_NAME}-' packages/coding-agent/src/cli/update-cli.ts` → 1206,1208. Không file nào chứa chuỗi `${APP_NAME}-` ở producer."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Lệnh: `bun run test:scripts && bash scripts/install-tests/run-ci.sh` là cổng nghiệm thu.",
+  "verdict": "sai",
+  "correction": "Trên máy này cổng đó BỊ CHẶN và báo đỏ vì lý do môi trường, không phải hồi quy: `34 pass / 1 fail / 1 error`, lỗi `Failed to load pi_natives native addon for darwin-arm64`. Nguyên nhân chính xác là `scripts/ci-test-ts.test.ts` (0 pass / 1 fail) — file duy nhất trong 5 file nạp native addon. Bốn file còn lại chạy hoàn hảo. Đây đúng là trường hợp cổng không phân biệt được 'đã làm' với 'test không chạy được': một `1 fail` mơ hồ. Cổng phải liệt kê tường minh 5 file (thêm `ci-update-brew-formula.test.ts`) và bỏ `ci-test-ts.test.ts`.",
+  "evidence": "`bun run test:scripts` → `34 pass / 1 fail / 1 error`, `Ran 35 tests across 5 files`, `error: script \"test:scripts\" exited with code 1`. Chạy từng file: ci-test-ts `0 pass 1 fail`; ci-release-build-binaries `4 pass`; musl-release `2 pass`; ci-release-publish `11 pass`; release `17 pass`; ci-update-brew-formula `3 pass / 15 expect`."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Chi tiết + §Vị trí: phạm vi nix của W10 là `flake.nix`.",
+  "verdict": "sai",
+  "correction": "Bề mặt nix rộng hơn nhiều. `nix/package.nix` có `pname = \"omp\"` (115) — đây là danh tính package Nix, đổi nó đổi store path và attribute — cùng install (208-210), `remove-references-to` (227), `pname = \"omp-bun-runtime-template\"` (98), `$out/bin/.omp-wrapped` (245). `nix/home-manager.nix` đặt option `programs.omp` (9,14) và `home.activation.ompConfig` (53) — TÊN OPTION MÀ NGƯỜI DÙNG VIẾT TRONG CONFIG CỦA HỌ — đồng thời ghi settings vào `$HOME/.omp/agent/config.yml` (57,58). Đổi `programs.omp` phá mọi config home-manager hiện hữu. Khuyến nghị giữ, thêm vào do_not_rename như N14.",
+  "evidence": "`grep -nE 'omp' nix/package.nix` → 98,115,198,208,209,210,227,230,244,245. `grep -nE 'omp' nix/home-manager.nix` → 9,11,14,20,28,53,57,58. `flake.lock` có 0 hit."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Chi tiết: phạm vi là ci.yml, 3 file Docker, ci-update-brew-formula.ts, flake.nix, scripts/install-tests/.",
+  "verdict": "sai",
+  "correction": "THIẾU HẲN ĐƯỜNG CÀI PRIMARY. `scripts/install.sh` (13 lượt / 11 dòng) và `scripts/install.ps1` (10 lượt / 10 dòng) tồn tại và là thứ `README.md:40` (`curl -fsSL https://omp.sh/install | sh`) và `:85` (`irm https://omp.sh/install.ps1 | iex`) trỏ tới. install.sh ghép TÊN ASSET với TÊN NHỊ PHÂN: dòng 241 `BINARY=\"omp-${PLATFORM}-${ARCH}\"`, 266 dựng URL từ đó, 268-269 ghi `${INSTALL_DIR}/omp`. Tách hai vế = 404 cho mọi người dùng cài mới.",
+  "evidence": "`ls scripts/install*` → install.sh (9.7 KB), install.ps1 (12 KB). `sed -n '40p;85p' README.md` → `curl -fsSL https://omp.sh/install | sh` / `irm https://omp.sh/install.ps1 | iex`. `grep -c omp scripts/install.sh` → 11 dòng."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Chi tiết: `scripts/install-tests/*` (`run-ci.sh` và anh em) thuộc phạm vi W10.",
+  "verdict": "sai",
+  "correction": "`run-ci.sh` là điểm CHỒNG LẤN BA CHIỀU mà plan không nói: nó mang TÊN TARBALL THEO SCOPE npm (164 `oh-my-pi-omptype-*.tgz`, 170 `oh-my-pi-snapcompact-*.tgz`, 173 `oh-my-pi-omp-stats-*.tgz`) và scoped deps (190,196,199,221,222) — thuộc W7; TÊN NHỊ PHÂN (94 `dist/omp`, 103, 235 `node_modules/.bin/omp`) — thuộc W9; và ma trận cài — thuộc W10. Ba work item cùng sửa một file mà plan gán riêng cho W10. Ngoài ra run-ci.sh có `trap restore_workspace` (10-19) ghi lại `packages/natives/package.json` — cần một assertion sạch sau khi chạy.",
+  "evidence": "`grep -nE 'omp' scripts/install-tests/run-ci.sh` → 37 lượt, gồm 94,164,170,173,190,196,199,221,222,235. `sed -n '10,19p' scripts/install-tests/run-ci.sh` → `NATIVES_PACKAGE=…; cp …; restore_workspace() { cp …; rm -rf …; }; trap restore_workspace EXIT`."
+ },
+ {
+  "id": "W10",
+  "claim": "W10 §Rủi ro: 'bỏ sót bước ký macOS — một binary đã ký dưới tên file cũ sẽ không notarize'.",
+  "verdict": "sai một phần",
+  "correction": "Rủi ro notarize là thật nhưng KHÔNG nằm ở `scripts/ci-macos-sign.sh`. Script nhận `<path-to-binary>` làm tham số (dòng 26) và ký bất kỳ thứ gì được đưa vào — chỉ có 1 lượt `omp` trong toàn file, tên keychain tạm ở dòng 62, thuần cosmetic. Rủi ro thật là TÊN FILE được nộp lên Apple, và nó đến từ `ci.yml:1206-1213` (`curl -o omp-darwin-arm64` rồi codesign/verify/notarize file đó). Nói sai nguồn sẽ khiến kỹ sửa file sai.",
+  "evidence": "`grep -n 'omp' scripts/ci-macos-sign.sh` → chỉ dòng 62 `KEYCHAIN=\"$WORKDIR/omp-signing.keychain-db\"`. Dòng 26: `usage: scripts/ci-macos-sign.sh <path-to-binary>`. `sed -n '1206,1213p' .github/workflows/ci.yml` → curl tải `omp-darwin-arm64` rồi codesign/verify/notarize chính file đó."
+ },
+ {
+  "id": "W10",
+  "claim": "§2.3: keep-list sống ở `scripts/rename/keep-list.txt` và là tiền đề của W7.",
+  "verdict": "chưa kiểm chứng — thư mục chưa tồn tại",
+  "correction": "`scripts/rename/` KHÔNG tồn tại trong cây hiện tại. Đây là tiền đề của W7 theo plan, nhưng W10 cũng không thể chạy nếu chưa có: không có keep-list thì không có gì để loại trừ, và bước 1 của đặc tả này là dừng lại chờ nó. Ngoài ra §2.3 nói 'đã kiểm chứng trên HEAD 5873776' trong khi HEAD thật của máy này là `1454dc0` — con số SHA trong plan đã cũ.",
+  "evidence": "`ls -la scripts/rename/` → `No such file or directory`. `git log --oneline -1` → `1454dc0 docs: record the two architecture decisions…`."
+ },
+ {
+  "id": "W10",
+  "claim": "Ghi chú đầu bài: work item W10 nằm ở dòng 13919–13939 của plan.",
+  "verdict": "sai",
+  "correction": "Dòng 13919–13939 là W7 và W8a. W10 (bản CI/release/Docker/homebrew/nix) nằm ở dòng 14017–14026. Ngoài ra plan dùng lại ID `W10` BA LẦN: (1) dòng 14017 — CI/release/Docker/homebrew/nix, Wave 4, là mục này; (2) dòng 2451 — hợp đồng telemetry adapter, Wave 4; (3) dòng 14645 — watchdog collab transport. Ba mục khác nhau hoàn toàn. Bất kỳ ticket nào khoá theo chữ `W10` sẽ đụng nhau.",
+  "evidence": "`grep -n '^#### W10' COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` → 14017. `grep -n '^## W10' …` → 2451. `grep -n '^### W10' …` → 14645. `sed -n '13919p;13930p' …` → W7 và W8a."
+ },
+ {
+  "id": "W11",
+  "claim": "「Cỡ đúng: 178 file rộng / 59 có `\".omp\"` / 4 có `APP_NAME` / 9 có `__omp_worker_`」",
+  "verdict": "PARTIALLY_FALSE",
+  "correction": "Số 59 sai: thật là 61 file. Số 4 và 9 đúng. Số trần 178 không tái lập được bằng bất kỳ bộ lọc nào của plan — mẫu gần nhất cho ra 188 với regex lỏng hơn, và 61+9=70 mới là con số hành động. Bỏ hẳn 178 khỏi đặc tả.",
+  "evidence": "`git grep -lE '\"\\.omp\"' -- 'packages/*/test/**' | wc -l` → 61; `git grep -lE '__omp_worker_' -- 'packages/*/test/**' | wc -l` → 9; `git grep -lE 'APP_NAME' -- 'packages/*/test/**' | wc -l` → 4. Thử `\"\\.omp\"`=61, `\\.omp`=126, `\"omp\"`=54, `\"\\.?omp\"|\\.omp|/\\.omp|omp/`=188 — không mẫu nào ra 178."
+ },
+ {
+  "id": "W11",
+  "claim": "「Số phải hành động là 68 file phân biệt (59 + 9, hai tập không giao nhau)」",
+  "verdict": "PARTIALLY_FALSE",
+  "correction": "Vế 'hai tập không giao nhau' là ĐÚNG (comm -12 cho 0 file). Tổng thì sai: 61 + 9 = 70, không phải 68.",
+  "evidence": "`comm -12 <(git grep -lE '\"\\.omp\"' -- 'packages/*/test/**'|sort) <(git grep -lE '__omp_worker_' -- 'packages/*/test/**'|sort) | wc -l` → 0."
+ },
+ {
+  "id": "W11",
+  "claim": "「9 có `__omp_worker_`」 — ngụ ý cả 9 đều khẳng định tên cũ.",
+  "verdict": "PARTIALLY_FALSE",
+  "correction": "9 file / 54 lượt là đúng, nhưng chỉ 5 file thật sự khẳng định một selector. 1 file (worker-core.test.ts, 20 lượt — chính là 37% của tổng) là globalThis instrument trùng tiền tố một cách tình cờ. 3 file chỉ có doc comment. 1 trong 5 là fixture chứ không phải test. Nếu không phân loại, W11 sẽ tốn công sửa tên biến nội bộ vô nghĩa và báo cáo thành công giả.",
+  "evidence": "worker-core.test.ts:105,113,139,155,165,204,222,232,291,307,325,359,399,414,460,461 đều là `globalThis.__omp_worker_core_gate` / `__omp_worker_cwd_gate`. issue-1606-repro.test.ts:11, issue-3031-repro.test.ts:13, issue-7352-repro.test.ts:6 đều nằm trong block comment. fixtures/computer-worker-cli-selector.ts:3 là argv của fixture."
+ },
+ {
+  "id": "W11",
+  "claim": "「4 file có `APP_NAME`」 — ngụ ý cả 4 cần sửa.",
+  "verdict": "PARTIALLY_FALSE",
+  "correction": "Đếm 4 là đúng nhưng kết luận sai. 2 file đã đọc hằng số sẵn (profile-cli.test.ts, resume-command.test.ts) — không cần việc gì. 1 file là transcript lịch sử 2.3 MB không được tham chiếu ở đâu (before-compaction.jsonl) — phải đóng băng. CHỈ 1 file cần sửa thật: export-html-template.test.ts.",
+  "evidence": "profile-cli.test.ts:9 import APP_NAME, dùng :154,:179,:205. resume-command.test.ts:3 import, dùng :14,:21. `git grep -rn 'before-compaction' -- .` → không kết quả."
+ },
+ {
+  "id": "W11",
+  "claim": "「Ca đặc biệt: packages/coding-agent/test/export-html-template.test.ts:26,32 mang một specifier mock nội tuyến ... phải sửa ở cả hai nửa」",
+  "verdict": "PARTIALLY_FALSE",
+  "correction": "Về specifier mock thì plan đúng. Nhưng plan bỏ sót dòng nguy hiểm nhất của chính file đó: :143. Ba dòng mang tên trong một file, ba phân định khác nhau: :26 tiền tố tmpdir (cosmetíc), :32 mock specifier (phải theo hằng số), :143 khẳng định localStorage key `omp-export-theme` (phải GIỮ NGUYÊN).",
+  "evidence": "`:26 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), \"omp-html-template-\"))`; `:32 \"@oh-my-pi/pi-utils\": 'export const APP_NAME = \"omp\"; ...'`; `:143 expect(first).toContain(\"const THEME_STORAGE_KEY = 'omp-export-theme';\")` và `packages/coding-agent/src/export/html/template.js:4` định nghĩa `const THEME_STORAGE_KEY = 'omp-export-theme'` được đọc/ghi qua localStorage tại :8 và :18."
+ },
+ {
+  "id": "W11",
+  "claim": "「Test wire hiện có: packages/coding-agent/test/modes/warp-events.test.ts, packages/coding-agent/test/acp-agent.test.ts」 — cả hai được gợi ý là ứng viên chuyển sang WIRE_NAME.",
+  "verdict": "FALSE",
+  "correction": "warp-events.test.ts:111 đúng là phản chiếu site wire W1 (`src/modes/warp-events.ts:60`), nên chuyển sang WIRE_NAME là đúng. acp-agent.test.ts thì KHÔNG: nó khẳng định `extMethod(\"_omp/sessions/listAll\")`, một tên ext method ACP hardcode tại `src/modes/acp/acp-agent.ts:1135`, KHÔNG dẫn xuất từ APP_NAME. Chuyển nó sang APP_NAME sẽ làm test đỏ vì app không còn nhận ext method đó. Đây là wire literal thứ 6, nằm ngoài danh sách 5 site của W1 (W1 phụ `title: \"omp\"` ở :657, không phụ :1135) — và không work item nào trong M5 sở hữu nó.",
+  "evidence": "`git grep -n 'sessions/listAll' -- packages/coding-agent/src` → đúng 1 hit: `acp-agent.ts:1135 case \"_omp/sessions/listAll\": {`. acp-agent.test.ts:1140 dùng `_omp/sessions/listAll`, :1144 dùng `omp/sessions/listAll` và assert bị reject."
+ },
+ {
+  "id": "W11",
+  "claim": "「Bộ test Python ... `python/omp-rpc/tests/test_user_group.py:26,34,36,40,45` ... chúng khẳng định group Unix `omp` phải được giữ」",
+  "verdict": "PARTIALLY_FALSE",
+  "correction": "Con số 5 dòng đúng, nhưng mô tả sai: chỉ 2 dòng (:36 và :40) là khẳng định group Unix. Ba dòng :26, :34, :45 là tham số `executable=\"omp\"` — tên lệnh được spawn, thuộc phạm vi W13' (client.py:455), không phải group. Gọi cả 5 là 'group' khiến người đọc bảo vệ sai thứ, đồng thời tạo mâu thuẫn với W13' vốn phải sửa tên lệnh.",
+  "evidence": "`:26 call = _start_and_capture(executable=\"omp\")`; `:34 executable=\"omp\"`; `:36 group=\"omp\"`; `:40 assert call.kwargs[\"group\"] == \"omp\"`; `:45 call = _start_and_capture(executable=\"omp\", extra_groups=[])`."
+ },
+ {
+  "id": "W11",
+  "claim": "「Lệnh: `bun run check && bun run test:ts && bun run test:py`」 là cổng nghiệm thu.",
+  "verdict": "FALSE",
+  "correction": "Không phải cổng đỏ được trên máy này, vì cả ba lệnh đều không cho tín hiệu. `bun run test:ts` đỏ vì thiếu native addon (5/8 package), `bun run test:py` đỏ vì thiếu pytest, `bun run check` kéo cả `check:rs` cần cargo. Lệnh đỏ KHÔNG phân biệt được 'W11 chưa làm' với 'máy chưa build được'. Đặc tả này thay bằng cổng ba tầng, trong đó tầng 1 chạy được ngay và tầng 2 có canary bắt buộc chữ ký môi trường bị chặn.",
+  "evidence": "`bun test packages/utils/test/worker-host.test.ts` → 4 pass 0 fail; `bun test packages/omptype/test/ark/arrays/array.test.ts` → 24 pass; `bun test packages/coding-agent/test/worker-selector.test.ts` → 0 pass 1 fail 1 error, `Failed to load pi_natives native addon for darwin-arm64`; `python3 -m pytest --version` → `No module named pytest`; `bun run check:ts` → exit 0 trong 4m14s."
+ },
+ {
+  "id": "W11",
+  "claim": "「bun run test:ts đi qua scripts/ci-test-ts.ts và chỉ quét `packages/*` cộng `python/robomp/web`」",
+  "verdict": "VERIFIED_TRUE",
+  "correction": "Giữ nguyên. Đây là cơ sở đúng để bắt buộc ghép `bun run test:py` vào cổng — không có lệnh TS nào nhìn thấy `python/**/tests/`.",
+  "evidence": "`scripts/ci-test-ts.ts:109-110`: comment 'robomp-web lives under python/robomp and is outside every CI TS bucket' và `const localOnlyWorkspacePackages = [\"python/robomp/web\"];`"
+ },
+ {
+  "id": "W11",
+  "claim": "Cả 5 vị trí wire mà W1 sẽ gom về `WIRE_NAME`",
+  "verdict": "VERIFIED_TRUE",
+  "correction": "Giữ nguyên, và bổ sung: `WIRE_NAME` hiện KHÔNG tồn tại trong source — nó chỉ xuất hiện trong chính tài liệu kế hoạch. Đây là lý do W11 phụ thuộc W1 theo đúng thứ tự.",
+  "evidence": "`git grep -n 'WIRE_NAME' -- .` → chỉ khớp trong COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md. Năm site: `src/dap/session.ts:1465-1466` (clientID/clientName), `src/blob-broker/uploaders-legacy.ts:236` (z), `src/modes/warp-events.ts:60` (agent), `src/modes/acp/acp-agent.ts:657` (title), `src/hindsight/bank.ts:29` (DEFAULT_BANK_NAME) — tất cả đúng dòng plan nêu."
+ },
+ {
+  "id": "W12",
+  "claim": "`scripts/ci-release-publish.ts:165` holds `publishBin: { omp: \"dist/cli.js\" }`.",
+  "verdict": "wrong-line",
+  "correction": "It is at line 186, on the `packages/coding-agent` entry of the exported `packages[]` array (`:164`). Line 165 is a blank line inside a docblock.",
+  "evidence": "`grep -n 'publishBin\\|manifest\\.bin\\|\"bin\"' scripts/ci-release-publish.ts` returns 16, 69, 186, 243, 298, 301. `sed -n '160,175p'` shows 165 is blank; `sed -n '178,192p'` shows `publishBin: { omp: \"dist/cli.js\" }` at 186."
+ },
+ {
+  "id": "W12",
+  "claim": "`ci-release-publish.ts:220` and `:278` overwrite `manifest.bin` unconditionally from `publishBin`, which is why the stub needs its own `publishBin`.",
+  "verdict": "wrong-line-and-wrong-mechanism",
+  "correction": "Both line numbers are wrong and the 'unconditional' characterization is false. The only in-publish overwrite is at :243 and it IS conditional: `if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };`. Line 301 is inside `applyPublishBin()`, a separate exported function (:296-303) that throws if the package has no `publishBin`; its only caller is `scripts/install-tests/run-ci.sh:156`, an install-test helper, not the release publish path. The hazard the plan describes is still REAL but for a different reason: the single static `publishBin` on the `packages[]` entry (:186) is applied to every publish of that directory, so once W9 renames it, a stub published from the same directory ships `bin: { ultraworkers: ... }`. Stating the wrong reason is dangerous here — an engineer who checks it may conclude the hazard is also wrong and skip the fix.",
+  "evidence": "`sed -n '240,244p'` shows `if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };` at 243. `sed -n '296,303p'` shows applyPublishBin. `grep -rn 'applyPublishBin'` returns exactly two hits: the definition at :296 and `scripts/install-tests/run-ci.sh:156`."
+ },
+ {
+  "id": "W12",
+  "claim": "W12 should extend `packages/coding-agent/test/cli/update-rename-migration.integration.test.ts` with a manifest whose `rename` points to a real new package, plus a second case where `dist` is the binary value.",
+  "verdict": "already-covered-and-misplaced",
+  "correction": "Both cases already exist, in a different file. `packages/coding-agent/test/cli/update-cli.test.ts:60-79` already asserts a real two-package rename (`@oh-my-pi/pi-coding-agent` -> `@new/omp`) resolving version, dist and package names from the final manifest, including the exact two-hop registry URL sequence; the cycle guard follows at :90+. Parser unit cases are at `packages/coding-agent/test/update-cli.test.ts:642-653` and `:1420-1431` (the latter includes the unknown-value-coerces-to-binary case). Separately, `update-rename-migration.integration.test.ts` has NO manifest seam at all: it drives `migrateRenamedInstall` through injected `RenameMigrationSteps` against real npm and real bun over local `file:` fixtures, and never calls either resolver. Writing manifest cases there would duplicate existing coverage in a file built for a different seam.",
+  "evidence": "`sed -n '60,79p' packages/coding-agent/test/cli/update-cli.test.ts` shows the rename fixture and its assertions. `grep -n 'resolveReleaseDist\\|resolveReleaseRename' packages/coding-agent/test/update-cli.test.ts` returns 29, 30, 642, 646, 650, 651, 652, 653, 1420, 1421, 1425, 1429, 1430, 1431. The integration test's 171 lines contain `RenameMigrationSteps` at :108-120 and :149-161 and no resolver call."
+ },
+ {
+  "id": "W12",
+  "claim": "W12 acceptance includes `codesign --verify --strict` succeeding on the renamed artifact, implying this needs building.",
+  "verdict": "already-exists",
+  "correction": "The gate already exists in two places and needs no new code. `scripts/ci-macos-sign.sh:109` runs `codesign --verify --strict --verbose=4 \"$BINARY\"` and is already name-parameterized (`BINARY=\"${1:-}\"` at :35), called from `ci.yml:974`. W12's actual work is RE-RUNNING signing under the new filename — a prerequisite, not an edit. The one thing that will break it is in W10's file: `ci.yml` hardcodes `omp-darwin-arm64` in 9 places, so the verify job will curl a 404 after the asset rename.",
+  "evidence": "`grep -rn 'codesign\\|notarytool\\|notariz' .github/workflows/ scripts/` returns ci.yml:962, 965, 1210, 1211, 1218, 1222; ci-macos-sign.sh:83, 84, 90, 91, 94, 98, 103, 109, 110, 112, 120, 122, 135, 137, 145. `grep -c 'omp-darwin-arm64' .github/workflows/ci.yml` = 9, at lines 922, 1206, 1207, 1210, 1211, 1213, 1214, 1218, 1225."
+ },
+ {
+  "id": "W12",
+  "claim": "W12's gate is `(cd packages/coding-agent && bun test test/cli/update-rename-migration.integration.test.ts) && bun run test:scripts`.",
+  "verdict": "false-red",
+  "correction": "This gate cannot distinguish 'done' from 'test could not run' — it is red in this environment no matter what the engineer does. `bun test` on any test importing pi_natives exits 1 with 0 pass / 1 fail / 1 error and `Failed to load pi_natives native addon for darwin-arm64`. Both halves of the gate are affected, and `bun run test:scripts` is blocked for exactly one of its five members (`scripts/ci-test-ts.test.ts`); the other four exit 0 individually. Rewritten as a four-tier gate (see the `gate` field) so the one tier that can actually go red — `scripts/ci-release-publish.test.ts`, which runs here — is the discriminating signal, and the blocked tiers are labelled BLOCKED rather than passed. Unblocking tier 3 also needs `brew install ninja` first: `ninja` is not installed on this machine and the natives build cannot run without it.",
+  "evidence": "Measured 2026-09-27: `bun test packages/coding-agent/test/cli/update-rename-migration.integration.test.ts` -> exit 1 (0 pass / 1 fail / 1 error, pi_natives load error); `bun test packages/coding-agent/test/update-cli.test.ts` -> exit 1; `bun run check:ts` -> exit 0. Per-member of test:scripts: ci-test-ts 1, ci-release-build-binaries 0, musl-release 0, ci-release-publish 0, release 0. `bun test scripts/ci-release-publish.test.ts` alone -> 11 pass / 0 fail / exit 0. `which ninja` -> not found; `brew list ninja` -> 'No such keg: /opt/homebrew/Cellar/ninja'."
+ },
+ {
+  "id": "W12",
+  "claim": "W12's 'Vị trí' lists the stub manifest, the parser, the publish script, and the signing step as the whole surface.",
+  "verdict": "incomplete",
+  "correction": "One real dependency is missing from the plan entirely: `scripts/install-tests/run-ci.sh:94` copies `packages/coding-agent/dist/omp` into the test bin dir and :103 smokes `$BUN_INSTALL/bin/omp`. A stub that only carries a `bin` map pointing at a `dist/omp` that no longer exists fails the install matrix, which is W10's stated acceptance. W12 must either require a real `omp` shim artifact in the stub or get an explicit handoff decision from W10; leaving it undecided blocks both items.",
+  "evidence": "`grep -n 'dist/omp\\|BUN_INSTALL/bin\\|BINARY_DIR' scripts/install-tests/run-ci.sh` returns 92, 93, 94, 95, 101, 103."
+ },
+ {
+  "id": "W13",
+  "claim": "§2.2 hàng 7 và W13 (dòng 13978): '723 lượt token `omp` trên 105 file' trong `.md`.",
+  "verdict": "SAI",
+  "correction": "Trên HEAD `84cbac9`, biểu thức đã ghim ở §2.1 cho 1293 lượt trên 109 file. Nếu trừ 13 file changelog và 5 file kế hoạch ở gốc (chúng không thuộc W13 vì bất biến / không phải tài liệu sản phẩm), bề mặt thật của W13 là 549 lượt trên 93 file. Con số để vào allow-list là 93, không phải 105.",
+  "evidence": "P='(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)'; `git grep -ohE \"$P\" -- '*.md' | wc -l` = 1293; `git grep -lE \"$P\" -- '*.md' | wc -l` = 109; thêm `':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md'` thì ra 549 / 93. Con số 723 không tái lập được bằng bất kỳ biến thể nào của biểu thức đã ghim."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13975: 'Có 603 file markdown được track'.",
+  "verdict": "SAI",
+  "correction": "612 file markdown được track. Lệnh: `git ls-files '*.md' | wc -l`. Chênh 9 file — khớp đúng với 9 file runtime dưới `.omp/` mà tôi phát hiện, nhiều khả năng số cũ đếm trước khi chúng được thêm.",
+  "evidence": "`git ls-files '*.md' | wc -l` = 612; `git ls-files '.omp/**/*.md' | wc -l` = 9."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13975: '79 chứa `@oh-my-pi/`'.",
+  "verdict": "SAI",
+  "correction": "84 file `.md` chứa `@oh-my-pi/`. Sau khi trừ 13 file changelog (bất biến) và 5 file kế hoạch ở gốc, còn 66 file — đó mới là bề mặt scope thật của W13.",
+  "evidence": "`git grep -l '@oh-my-pi/' -- '*.md' | wc -l` = 84; `git grep -l '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' | wc -l` = 13; `git ls-files '*.md' | grep -cE 'MILESTONE_[0-9]_EXECUTION_PLAN\\.md$|^COMPREHENSIVE_PLAN'` = 5; 84 − 13 − 5 = 66."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13975: '82 trong `docs/` ở cấp đỉnh (134 nếu tính mọi cấp)'.",
+  "verdict": "ĐÚNG",
+  "correction": "Giữ nguyên. Lưu ý kỹ thuật: `git ls-files 'docs/*.md'` KHÔNG cho ra 82 — dấu `*` của git pathspec khớp cả dấu `/`, nên lệnh đó ra 134. Muốn 82 phải lọc bằng `grep -E '^docs/[^/]+\\.md$'`.",
+  "evidence": "`git ls-files '*.md' | grep -cE '^docs/[^/]+\\.md$'` = 82; `git ls-files '*.md' | grep -cE '^docs/.+\\.md$'` = 134."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13977 và §2.2 hàng 21: `docs/environment-variables.md` liệt kê 100 biến `PI_*`/`OMP_*`.",
+  "verdict": "ĐÚNG",
+  "correction": "Giữ nguyên. Nhưng phải thêm: file có 11 bảng với header riêng, và cột tương thích phải thêm vào CẢ 11, không chỉ bảng đầu. Plan không nói cấu trúc bảng nên dễ làm thiếu.",
+  "evidence": "`grep -cE '^\\| .(PI|OMP)_[A-Z0-9_]+' docs/environment-variables.md` = 100; `wc -l` = 648; `grep -nE '^\\| *Variable'` ra các dòng 37, 117, 128, 191, 203, 220, 232, 244, 260, 270 và các bảng còn lại."
+ },
+ {
+  "id": "W13",
+  "claim": "W13: '`docs/extension-loading.md:231` và `docs/porting-from-pi-mono.md:46-51` đã thuộc W8'.",
+  "verdict": "ĐÚNG VỀ NỘI DUNG, SAI VỀ SỞ HỮU",
+  "correction": "Hai neo dòng chính xác — tôi đã mở và xác nhận nội dung khớp. Nhưng W8a (plan dòng 13841) đã NHẬN SỞ HỮU chúng ràng rõ, trong khi W13 lại liệt kê lại. Phải chọn một chủ sở hữu. Đề xuất W8a.",
+  "evidence": "`sed -n '231p' docs/extension-loading.md` trả về câu về `onLoad` hook và các shim legacy; `sed -n '46,51p' docs/porting-from-pi-mono.md` trả về 5 dòng map `@mariozechner/pi-*` → `@oh-my-pi/pi-*` cộng dòng `@earendil-works/*`. Plan dòng 13841 (W8a): '`docs/extension-loading.md:231` cùng `docs/porting-from-pi-mono.md:46-51` phải được viết lại'."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13978 liệt kê `CONTRIBUTING.md` như file mang thương hiệu trong văn xuôi.",
+  "verdict": "ĐÚNG NHƯNG QUÁ NHỎ ĐỂ LÀ CÁI RIÊNG",
+  "correction": "Chỉ 1 dòng thật sự khớp biểu thức §2.1: dòng 1 `# Contributing to omp`. Dòng 84 có `OMP` viết hoa, không khớp biểu thức viết thường. Không cần một mục riêng — gộp vào lượt văn xuôi.",
+  "evidence": "`grep -nE 'oh.my.pi|\\bomp\\b|ultraworker' CONTRIBUTING.md` → dòng 1, dòng 84; `git grep -ohE \"$P\" -- CONTRIBUTING.md | wc -l` = 1."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13975: 'quy tắc scope không bao giờ hardcode trong TS của AGENTS.md giữ cách diễn đạt trung lập về thương hiệu — hãy kiểm tra, đừng giả định là cần sửa'.",
+  "verdict": "NỬA ĐÚNG",
+  "correction": "Câu đó về MỘT quy tắc thì đúng. Nhưng AGENTS.md nói chung KHÔNG trung lập về thương hiệu — nó cần sửa. 11 dòng mang tên cũ: 4 đường dẫn import `@oh-my-pi/pi-*`, `~/.omp/logs/omp.YYYY-MM-DD.log`, `__omp_worker_*` selector, `omp --smoke-test`, `omp-stats`, và 2 URL attribution `github.com/can1357/oh-my-pi`. Sửa AGENTS.md là đổi hành vi của coding agent, nên cần hỏi trước.",
+  "evidence": "`grep -nE 'oh-my-pi|\\bomp\\b' AGENTS.md` ra 15 dòng khớp (`grep -c` = 15; trong đó 3 lượt khớp biểu thức §2.1 và 9 dòng có `@oh-my-pi/`), ở các dòng 19, 24, 52, 54, 60, 62, 66, 69, 83, 150, 220, 227, 235, 337, 338."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13976 và N11: '`packages/*/CHANGELOG.md`' được nhắc như một mục đơn.",
+  "verdict": "ĐÚNG VỀ NGUYÊN TẮC, SAI VỀ SỐ",
+  "correction": "Có 14 file changelog, không phải 13. 13 file chứa `@oh-my-pi/` (`packages/natives/CHANGELOG.md` là file không có scope) và 11 file chứa token `omp`. Con số 13 xuất hiện ở plan dòng 13828 và khớp với '13 file có scope' — nhưng W13 nói 'packages/*/CHANGELOG.md' chung chung, nên khi đếm phải nói rõ 14 tổng / 13 có scope.",
+  "evidence": "`git ls-files 'packages/*/CHANGELOG.md' | wc -l` = 14; `git grep -l '@oh-my-pi/' -- 'packages/*/CHANGELOG.md' | wc -l` = 13; `git grep -lwE 'omp' -- 'packages/*/CHANGELOG.md' | wc -l` = 11."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13983: 'Lệnh: `bun run check`' là cổng nghiệm thu.",
+  "verdict": "SAI — KHÔNG ĐỎ ĐƯỢC",
+  "correction": "`bun run check` là `bun run --parallel check:ts check:rs`: typecheck + cargo. Cả hai đều xanh dù W13 chưa sửa một dòng nào, và không cái nào đọc nội dung markdown. Nó không phân biệt được 'đã làm' với 'chưa làm'. Thay bằng ba quy tắc ở mục `gate`; giữ `bun run check:ts` như điều kiện phụ vì nó bắt được lỗi import nếu ai đó đổi tên `internal-urls/omp.md`.",
+  "evidence": "`node -e \"console.log(require('./package.json').scripts.check)\"` → `bun run --parallel check:ts check:rs`; `check:ts` → `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`; `check:tools` → `oxlint . && oxfmt --check ...`. Tôi chạy `bun run check:ts` được exit 0 sau ~56s. `check:rs` cần cargo."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13982: 'Test cần viết: không có test. Nội dung tài liệu không phải hợp đồng runtime quan sát được.'",
+  "verdict": "ĐÚNG VỀ KẾT LUẬN, THIẾU MỘT NỬA",
+  "correction": "Đúng là không viết `bun test` — AGENTS.md cấm assert trên chữ của file, và đúng là DoD 'không có biến mới nào mồ côi' của plan KHÔNG thể kiểm bằng `bun run check`. Nhưng kết luận 'không có test' kéo theo việc KHÔNG CÓ GÌ ÉP AI, và đó là chỗ hởng. Thay bằng checker có exit code `scripts/rename/check-docs-rename.ts` chạy được ngay cả khi `bun test` đang bị chặn trên máy này.",
+  "evidence": "AGENTS.md mục Testing: 'Bad: wording/defaults. NEVER assert prompt/UI boilerplate' và cấm source-grep. Plan dòng 14042 nêu DoD hai chiều cho họ `PI_*`/`OMP_*`, mà `bun run check` không đụng tới. Baseline đo được: `git grep -ohE '(process\\.env|Bun\\.env)\\.ULTRAWORKERS_[A-Z0-9_]+' -- '*.ts'` = 0, nên quy tắc B xanh ngay bây giờ và đỏ đúng lúc W4 land mà W13 bỏ sót doc."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 giả định toàn bộ 603 file `.md` là văn xuôi có thể sed.",
+  "verdict": "SAI — THIẾU MỘT LOẠI FILE NGUY HIỂM",
+  "correction": "Ít nhất 10 file `.md` được track KHÔNG phải tài liệu mà là asset nạp lúc chạy. `packages/coding-agent/src/prompts/internal-urls/omp.md` được import theo đường dẫn — đổi tên file là `bun run check:ts` đỏ. 9 file dưới `.omp/commands/` và `.omp/skills/` là prompt corpus, cố ý nằm trong thư mục dot. Chúng nằm trong tập 93 file của lệnh `git grep -- '*.md'`, nên phải loại theo ĐƯỜNG DẪN, không phải theo phần mở rộng.",
+  "evidence": "`packages/coding-agent/src/internal-urls/omp-protocol.ts:10`: `import ompDoc from \"../prompts/internal-urls/omp.md\" with { type: \"text\" };`. `git ls-files '.omp/**/*.md' | wc -l` = 9. `packages/coding-agent/src/compress/index.ts:58`: '`dot: true` — prompt corpora live under dot directories such as `.omp/commands`'. Ngoài ra `.omp.md` còn là đuôi file tạm tại `input-controller.ts:2515` và trong `packages/coding-agent/test/external-editor.test.ts:91,99` — ba vị trí phải giữ nguyên."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13977: cần 'thêm cột tương thích: mỗi biến phải có một dòng nêu tên mới tương ứng', và §2.2 hàng 21: '100 dòng phải bổ sung tên mới'.",
+  "verdict": "SAI — NẾU ĐỌC THẲNG SẼ PHÁT MINH 100 BÍ DANH MỚI",
+  "correction": "Cơ chế bí danh cho biến môi trường ĐÃ TỒN TẠI và đã được tài liệu hoá: `parseEnvFile` mirror mọi khoá `OMP_*` sang `PI_*`, và dòng 29 của chính file doc nói đúng điều đó. W4 chỉ thêm MỘT tên mới (`ULTRAWORKERS_CONFIG_DIR`). Vậy cột tương thích nên ghi lại cơ chế có sẵn, và chỉ một dòng mang tên mới. Đọc 'mỗi biến phải có tên mới' thành 100 tên mới là 100 chỗ đọc env trong code mà không work item nào sở hữu, và trái N16.",
+  "evidence": "`packages/utils/src/env.ts:277-282`: `// OMP_ overrides PI_` rồi `for (const k in result) { if (k.startsWith(\"OMP_\")) result[\\`PI_${k.slice(4)}\\`] = result[k]; }`. `docs/environment-variables.md:29`: 'every `OMP_*` key is mirrored to its `PI_*` alias, and that mirrored value replaces a same-file `PI_*` value'. `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` = 0 — W4 chưa land."
+ },
+ {
+  "id": "W13",
+  "claim": "W13: không có việc gì với URL `github.com/can1357/oh-my-pi` (24 lượt trong 13 file `.md`, 54 file `.ts`).",
+  "verdict": "KHOẢNG TRỐNG TRONG PLAN",
+  "correction": "Bề mặt này không thuộc hàng nào của bảng `do_not_rename` N1–N17 và không work item nào sở hữu. Vì GitHub giữ redirect khi repo được đổi tên nên URL cũ KHÔNG gãy — đó là lý do dễ bị bỏ sót vĩnh viễn, và AGENTS.md dùng đúng mẫu URL đó làm ví dụ attribution trong mục Changelog (dòng 337-338). Cần câu hỏi mở, không cần quyết ngay trong W13.",
+  "evidence": "`git grep -ohE 'github\\.com/[A-Za-z0-9_.-]+/oh-my-pi' -- '*.md' ':!packages/*/CHANGELOG.md' ':!MILESTONE_*_EXECUTION_PLAN.md' ':!COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md' | sort | uniq -c` → 24 lượt, toàn bộ là `github.com/can1357/oh-my-pi`; `git grep -lE 'github\\.com/[A-Za-z0-9_.-]+/oh-my-pi' -- '*.md' ... | wc -l` = 13; cùng mẫu trong `*.ts` = 54 file. Bảng N1–N17 ở plan dòng 13266-13282 không có hàng nào nhắc URL."
+ },
+ {
+  "id": "W13",
+  "claim": "W13 dòng 13980: 'Phụ thuộc: tất cả mục trước; M2 cho hai tài liệu hợp đồng.'",
+  "verdict": "QUÁ MƠ HỒ ĐỂ LÀM ĐIỀU KIỆN CHẶN",
+  "correction": "'Tất cả mục trước' không kiểm được bằng máy. Thay bằng ba điều kiện cụ thể có lệnh: (a) `git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts'` khác 0 — hiện bằng 0, tức W4 chưa land; (b) `scripts/rename/keep-list.txt` và `scripts/rename/disposition.tsv` tồn tại — hiện thư mục `scripts/rename/` không có; (c) `git log --oneline -- docs/extension-loading.md` cho thấy W8a đã chạm file. Thiếu (a) thì cột tương thích không có nội dung và phần việc nặng nhất của W13 biến mất trong im lặng.",
+  "evidence": "`git grep -c 'ULTRAWORKERS_CONFIG_DIR' -- '*.ts' | wc -l` = 0 (0 file khớp). `ls scripts/rename/` → `No such file or directory (os error 2)`; `ls scripts/rename/disposition.tsv scripts/rename/keep-list.txt` → cả hai `No such file or directory`."
+ },
+ {
+  "id": "W13p",
+  "claim": "§3.3 and W13': `grep '\"omp\"'` in `python/` returns 24 occurrences across 8 files, and 4 of them need to change while 20 stay.",
+  "verdict": "The count is right; the budget is wrong.",
+  "correction": "24 across 8 files is confirmed exactly, and the 4 / 8 / 12 split holds. But 4 is not the number of sites that must change. There are 6, because two more default-command sites exist that the `\"omp\"` grep cannot see: `python/robomp/docker-compose.yml:81` and `python/robomp/.env.example:185` both set `ROBOMP_OMP_COMMAND` to the old name, and a compose environment value OVERRIDES the pydantic default at `config.py:95`. An engineer who follows the plan exactly produces a diff that satisfies every stated acceptance criterion and a robomp container that still spawns the old binary. The 20-remaining check passes, the residual count is exactly right, and the product is broken in the one place it executes.",
+  "evidence": "`git grep -c '\"omp\"' -- 'python/**/*.py'` → 24 across 8 files (client.py 1, test_client.py 2, test_user_group.py 5, config.py 1, sandbox.py 2, worker.py 2, test_sandbox.py 8, test_worker.py 3). `git grep -n 'ROBOMP_OMP_COMMAND' -- python/` → 5 hits: `config.py:95` (definition), `worker.py:647` (consumer), `docker-compose.yml:81` (`ROBOMP_OMP_COMMAND: omp` under the `# --- container-fixed paths ---` header at :80), `.env.example:185`, and a doc reference in `test_worker_smoke.py:4`. The two extra sites are outside the 24 because the value is not written as a bare `\"omp\"` literal."
+ },
+ {
+  "id": "W13p",
+  "claim": "§3.3 set (iii): the sandbox on-disk root is 12 occurrences at `sandbox.py:549,588` and `test_sandbox.py:759,828,1071,1073,1075,1105,1107,1109` and `test_worker.py:345,387`.",
+  "verdict": "The 12 is right for what it counts; both the line numbers and the scope of the category are wrong.",
+  "correction": "Two separate problems. (1) Every one of the eight `test_sandbox.py` line numbers is off by exactly +1; the real lines are 760, 829, 1072, 1074, 1076, 1106, 1108, 1110. An engineer who trusts the plan edits the line above each target. (2) Set (iii) describes 12 occurrences, but the `.omp*` on-disk family in `python/` is 108 occurrences across 12 files, of which 63 are quoted literals: `.omp-xdg` 30, `.omp-tmp` 14, `.omp-session` 10, `.omp` 6, `.omp-session-v1.2.4` 1, `.omp-session-v1.2.3` 2. The plan counts only the 12 that happen to be the bare `\"omp\"` path segment and so misses `.omp-tmp` (which `sandbox.py:500,574` creates and `test_sandbox.py:726,735,749,824,1070,1104,2420,2430,2447` asserts) and `.omp-session*` (which `sandbox.py:899,1047` and `tasks.py:364` create). N15's keep-list names only `.omp-xdg` and `<xdg_root>/omp`, so a keep-list written straight from the plan is incomplete on this family.",
+  "evidence": "`grep -n '\"omp\"' python/robomp/tests/test_sandbox.py` → 760, 829, 1072, 1074, 1076, 1106, 1108, 1110. `git grep -o '\\.omp' -- python/ | wc -l` → 108. `git grep -ohE '\"\\.omp[a-z0-9.-]*\"' -- python/ | sort | uniq -c` → 30 `.omp-xdg`, 14 `.omp-tmp`, 10 `.omp-session`, 6 `.omp`, 2 `.omp-session-v1.2.3`, 1 `.omp-session-v1.2.4`."
+ },
+ {
+  "id": "W13p",
+  "claim": "W13' and §2.3: the only identities in `python/` that must be preserved are the N13 Unix group and the N15 sandbox XDG layout; the taxonomy is three disjoint sets.",
+  "verdict": "Incomplete — there is a fourth identity with the opposite disposition, and it belongs to another work item.",
+  "correction": "`worker.py:145,168,209` and `entrypoint.sh:60,61,65,66,77,78,79,80,81` reference `_AGENT_HOME / \".omp\"` where `_AGENT_HOME = Path(\"/srv/agent-home\")` (`worker.py:136`). That is the CLI's OWN config dir — `CONFIG_DIR_NAME` from `dirs.ts:27` — not a sandbox layout and not a Unix group. It is owned by W4 (dual-root reader) and W6 (the flip), and it must stay on `.omp` during the transition precisely BECAUSE W4 keeps reading the legacy root. This matters because a sweep of the `.omp*` family in `python/**` — the natural thing to run after reading set (iii) — moves robomp's staging off the root the CLI is still reading, a container-only break that neither the Python tests nor `check:ts` can see. `test_worker.py:278,290,295,296` assert the same staged-home layout. The plan needs a fourth keep-list row naming it, attributed to W4/W6 rather than to N13 or N15.",
+  "evidence": "`git grep -n '\\.omp' -- python/robomp/src/worker.py` → `:145` `for rel in (Path(\".agent\"), Path(\".omp/agent\"))`, `:168` `if root_path == _AGENT_HOME / \".omp\"`, `:209` `run_dir = _AGENT_HOME / \".omp\" / \"run\"`. `_AGENT_HOME = Path(\"/srv/agent-home\")` at `worker.py:136`. `git grep -n '\\.omp' -- python/robomp/entrypoint.sh` → `:60,61,65,66,77,78,79,80,81` all under `/srv/agent-home/.omp`. Cross-reference: `packages/utils/src/dirs.ts:27` `CONFIG_DIR_NAME = \".omp\"`, which N14 and W6a already own for the TypeScript side."
+ },
+ {
+  "id": "W13p",
+  "claim": "W13' lists `python/robomp/pyproject.toml:22` (`\"omp-rpc>=0.1.0\"`) as one of the six distribution-metadata sites to change, alongside `:6`, `:8`, and the four in `python/omp-rpc/pyproject.toml`.",
+  "verdict": "Self-contradictory — it conflicts with the open-questions default in the same document.",
+  "correction": "Line 22 is a PEP 508 dependency requirement on the `omp-rpc` DISTRIBUTION name, not descriptive metadata. The open-questions table at the end of M5 decides that name and its stated default is KEEP `omp-rpc` permanently, because renaming breaks every existing `pip install omp-rpc`. Under that default, `:6` keeps the name and `:22` MUST keep matching it. Renaming `:22` while `:6` stays makes robomp's dependency unresolvable: `uv pip install` fails at resolve time and the entire bot does not install. Same coupling at `Dockerfile:164` (`pip install /tmp/wheels/omp_rpc-*.whl`, which resolves against the built wheel filename) and at `python/omp-rpc/pyproject.toml:31` (`package-dir`). Correct reading: `:22` is not a rename site at all — it is a consequence of a decision that belongs to the open-questions table, and under the default it is a KEEP line sitting in the middle of a change list.",
+  "evidence": "`sed -n '14,23p' python/robomp/pyproject.toml` → `dependencies = [ ..., \"omp-rpc>=0.1.0\", ]` at line 22. `python/omp-rpc/pyproject.toml:6` → `name = \"omp-rpc\"`, unchanged. Open-questions row in the M5 back-matter: 'Giữ `omp-rpc` vĩnh viễn, chỉ đổi metadata mô tả (`description`, `keywords`, `Homepage`) và tên lệnh mặc định' — three descriptive fields, which is `:8`, `:14`, `:26` and NOT `:22`. The plan's own §3.3 says the same thing in prose and then lists `:22` among the sites to change."
+ },
+ {
+  "id": "W13p",
+  "claim": "W13' command: `bun run check && bun run test:py && git grep -n '\"omp\"' -- 'python/**/*.py'`, and its 'Test cần viết' says to update `test_client.py:1044,1061` to match.",
+  "verdict": "The command cannot distinguish success from an unrunnable environment, and the test instruction produces a test that asserts nothing.",
+  "correction": "Two separate defects. (1) The command: `bun run test:py` FAILS on this machine with `No module named pytest` (exit 1) and `bun run lint:py` FAILS with `ruff: command not found` (exit 127) — both indistinguishable, by exit code alone, from a genuine test failure. Worse, `bun run check` is structurally blind to this item: `check:ts` filters `./packages/*` and oxlint is JS/TS-only, so no edit to any file under `python/**` can make it red, while `check:rs` adds a Rust toolchain invocation to work that touches no Rust. Both halves are cost without signal. (2) The test: `test_client.py:1044` passes `executable=\"omp\"` in and `:1061` asserts `\"omp\"` out — an explicit value echoed back, which AGENTS.md bans as a success-passthrough. Swapping both strings leaves a test that passes under EITHER name, so the suite goes green without ever checking that the default moved. The fix is to drop the explicit argument and assert the computed default, which is also the transformation assertion the item's own test contract asks for.",
+  "evidence": "`bun run test:py` on HEAD 84cbac9 → `python3.14: No module named pytest`, exit 1. `bun run lint:py` → `ruff: command not found`, exit 127. `bun run check:ts` → exit 0 in ~29s; `package.json` defines it as `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types`. `sed -n '1040,1063p' python/omp-rpc/tests/test_client.py` → the test constructs `RpcClient(executable=\"omp\", ...)` and asserts `client.command == (\"omp\", \"--mode\", \"rpc\", ...)`. Working baseline obtained instead via `uv venv` + `uv pip install -e python/omp-rpc -e python/robomp`: 81 passed + 17 subtests (omp-rpc), 665 passed + 4 skipped (robomp)."
+ },
+ {
+  "id": "W13p",
+  "claim": "§3.3 verification command list: `git grep -n 'omp' -- 'python/**/pyproject.toml'` returns 15 lines, to be read as 2 path-noise + 6 display-branding + 7 distribution/module names; 'Đừng đếm 15 làm ngân sách sửa'.",
+  "verdict": "Correct, and worth keeping verbatim — but it does not see two real surfaces.",
+  "correction": "The 15-line breakdown checks out exactly: 2 noise (`robomp:63` '\"C4\"', `:67` '\"E501\"', which match only because the path `python/robomp/pyproject.toml` contains the substring 'omp'), 6 branding (`omp-rpc:8,14,26` and `robomp:8,22`), 7 distribution/module (`omp-rpc:37` and `robomp:6,34,37,38,41,75`). The instruction not to treat 15 as an edit budget is right and should be preserved. What the command cannot see: `python/omp-rpc/pyproject.toml:27,28` carry `https://github.com/can1357/oh-my-pi` in `Repository` and `Documentation`. The bare string `oh-my-pi` does not contain the substring `omp`, so this grep misses it — and no work item claims it either, since W7's pattern is `@oh-my-pi/` with a trailing slash and W8a is scoped to TypeScript.",
+  "evidence": "`git grep -n 'omp' -- 'python/**/pyproject.toml'` → 15 lines, matching the plan's 2/6/7 split. `git grep -n 'oh-my-pi' -- python/omp-rpc/pyproject.toml` → `:27 Repository = \"https://github.com/can1357/oh-my-pi\"` and `:28 Documentation = \"https://github.com/can1357/oh-my-pi/blob/main/docs/rpc.md\"`. The two commands return disjoint sets, which is the proof that neither covers the other."
+ }
+]

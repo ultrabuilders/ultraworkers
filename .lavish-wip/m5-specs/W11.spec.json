@@ -1,0 +1,304 @@
+{
+  "id": "W11",
+  "title": "Chỉ bộ test khẳng định tên về hằng số",
+  "wave": "Wave 5",
+  "one_line": "Đổi 70 file test từ literal tên cũ sang đọc hằng số (APP_NAME / WIRE_NAME / CONFIG_DIR_NAME / tiền tố selector), giữ một test ghim giá trị thật cho mỗi bề mặt, và thêm một detector CI đọc disposition.tsv để cổng đỏ được ngay cả khi bộ test không chạy được.",
+  "user_visible_effect": "Không có gì thấy được. Đây là work item kỹ thuật thuần: nó làm lần đổi tên kế tiếp rẻ đi, và — nếu làm sai — làm hỏng âm thầm bộ test theo cách tệ nhất: một bộ test đã viết lại để đọc hằng số sẽ xanh với một hằng số bị đổi sai, tức là nó tự bỏ mất khả năng phát hiện hồi quy mà nó sinh ra để thay thế.",
+  "files_touched": [
+    {
+      "action": "modify",
+      "path": "packages/utils/test/worker-host.test.ts",
+      "change": "GIỮ NGUYÊN VĂN dòng 24 `expect(WORKER_HOST_SELECTOR_PREFIX).toBe(\"__omp_worker_\")` (đây là pin). Đổi dòng 25-26 sang template `` `${WORKER_HOST_SELECTOR_PREFIX}stats_sync` `` và `` `${WORKER_HOST_SELECTOR_PREFIX}computer` ``.",
+      "verified": true,
+      "note": "3 lượt `__omp_worker_` tại :24,:25,:26 — đã xác nhận bằng sed. Đây là file test DUY NHẤT trong toàn bộ 70 file mà chạy được trên máy này (4 pass / 0 fail), nên pin ở đây là pin có giá trị gate cục bộ. TUYỆT ĐỐI KHÔNG đổi :24 thành `expect(PREFIX).toBe(PREFIX)` — đó là tautology."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/worker-selector.test.ts",
+      "change": "Tách 8 lượt thành 3 nhóm: (a) 4 lượt `__omp_worker_js_eval_process` (:66,:87,:136,:189) + 1 lượt :24 → dựng từ `WORKER_HOST_SELECTOR_PREFIX`; (b) 3 lượt `__omp_worker_does_not_exist` (:24 dùng ở :24,:27,:41) → dựng từ prefix NHƯNG giữ hậu tố `does_not_exist` nguyên văn, vì test này khẳng định selector KHÔNG hợp lệ bị từ chối; (c) 1 comment :7 → sửa chữ.",
+      "verified": true,
+      "note": "Đây cũng là cổng của W9 (khẳng định 15/15 loại selector phân giải). W11 KHÔNG được làm yếu nó. Sửa :24-27 thành hàm cục bộ `const INVALID = `${PREFIX}does_not_exist`` vẫn giữ được cả tính chất 'không hợp lệ' lẫn việc theo hằng số."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/executable-fallback.test.ts",
+      "change": "8 lượt `__omp_worker_test` (:35,:36,:59,:60,:83,:84,:139,:140) → dựng từ `WORKER_HOST_SELECTOR_PREFIX` + hậu tố `test`; hoặc tốt hơn, dùng selector thật đã có.",
+      "verified": true,
+      "note": "Đã xác nhận 8 lượt bằng grep. Test này chỉ khẳng định `resolveWorkerSpawnCmd` trả về argv đúng — tên selector là chuỗi tùy ý, nên chuyển sang hằng số là an toàn."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/eval/process-entry-import.test.ts",
+      "change": "1 lượt :33 `argv: string[] = [\"__omp_worker_computer\"]` → `` [`${WORKER_HOST_SELECTOR_PREFIX}computer`] ``.",
+      "verified": true,
+      "note": "Selector thật, khớp `cli/worker-selectors.ts`."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/fixtures/computer-worker-cli-selector.ts",
+      "change": "1 lượt :3 `argv: [\"__omp_worker_computer\"]` → dựng từ `WORKER_HOST_SELECTOR_PREFIX`.",
+      "verified": true,
+      "note": "Là FIXTURE chứ không phải test, nhưng nó được argv thật dùng nên phải đi theo."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/eval/worker-core.test.ts",
+      "change": "KHÔNG đổi giá trị. 20 lượt `__omp_worker_` ở đây KHÔNG phải selector — chúng là globalThis instrument `__omp_worker_core_gate` / `__omp_worker_cwd_gate` (:105,:113,:139,:140,:155,:165,:204,:205,:222,:232,:291,:292,:307,:325,:359,:360,:399,:414,:460,:461) trùng tiền tố một cách tình cờ. Chỉ thêm 1 dòng comment giải thích vì sao file này nằm ngoài phạm vi W11, để detector của đợt sau không báo nhầm.",
+      "verified": true,
+      "note": "FALSE POSITIVE lớn nhất mà plan không nêu: 1/9 file selector, 20/54 lượt selector, không khẳng định gì về tên. Chạy sed trên đây là thay tên biến nội bộ vô nghĩa."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/issue-1606-repro.test.ts",
+      "change": "1 lượt `__omp_worker_tiny_inference` tại :11 nằm TRONG DOC COMMENT. Sửa chữ hoặc để nguyên — không có khẳng định nào phụ thuộc.",
+      "verified": true,
+      "note": "Cùng loại với issue-3031-repro.test.ts:13 và issue-7352-repro.test.ts:6. Ba file này cộng lại là 3/9 file 'selector' của plan, và chúng chẳng assert gì."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/issue-3031-repro.test.ts",
+      "change": "1 lượt `__omp_worker_mnemopi_embed` tại :13 trong doc comment.",
+      "verified": true,
+      "note": "Xem issue-1606-repro.test.ts."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/issue-7352-repro.test.ts",
+      "change": "1 lượt `__omp_worker_mnemopi_embed` tại :6 trong doc comment.",
+      "verified": true,
+      "note": "Xem issue-1606-repro.test.ts."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/export-html-template.test.ts",
+      "change": "BA phân định khác nhau trong MỘT file — plan chỉ nêu 2 và bỏ sót phần nguy hiểm nhất. (:26) `\"omp-html-template-\"` là tiền tố thư mục tạm, đổi thuần cosmetíc. (:32) mock specifier `'export const APP_NAME = \"omp\"; ...'` PHẢI theo APP_NAME, nếu không probe biên dịch với một specifier không còn phân giải. (:143) `expect(first).toContain(\"const THEME_STORAGE_KEY = 'omp-export-theme';\")` PHẢI GIỮ NGUYÊN vì nó khẳng định một localStorage key đã bị persist.",
+      "verified": true,
+      "note": "Đã xác nhận cả 3 dòng. `omp-export-theme` định nghĩa tại packages/coding-agent/src/export/html/template.js:4 và được đọc/ghi bằng localStorage — đổi tên nó làm mất theme đã lưu của MỌI người dùng hiện hữu, và không có lỗi nào."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/modes/warp-events.test.ts",
+      "change": ":111 `agent: \"omp\"` → đọc `WIRE_NAME`. Giữ MỘT pin literal ở đâu đó khác cho bề mặt wire (xem brand-constants.test.ts).",
+      "verified": true,
+      "note": "Đây là test khớp wire site thứ 3 trong 5 site của W1 (`packages/coding-agent/src/modes/warp-events.ts:60` `agent: \"omp\"`). Giá trị KHÔNG đổi qua rename — W1 cố ý giữ `\"omp\"`."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/acp-agent.test.ts",
+      "change": "KHÔNG chuyển :1140,:1144 sang APP_NAME. Giữ literal `\"_omp/sessions/listAll\"` và thêm pin khẳng định nó vẫn dispatch được. Plan gọi file này là 'test wire' nhưng lại hàm ý chuyển sang hằng số — làm vậy sẽ HỎNG test.",
+      "verified": true,
+      "note": "`packages/coding-agent/src/modes/acp/acp-agent.ts:1135` là `case \"_omp/sessions/listAll\":` — literal cứng, KHÔNG dẫn xuất từ APP_NAME (grep toàn src chỉ ra đúng 1 hit). Đây là wire literal thứ 6, nằm NGOÀI danh sách 5 site của W1 (W1 phủ `title: \"omp\"` ở :657, không phủ :1135). Chuyển nó sang APP_NAME là test đỏ vì app không còn nhận ext method đó."
+    },
+    {
+      "action": "modify",
+      "path": "packages/coding-agent/test/** (57 file), packages/tui/test/** (2 file), packages/ai/test/helpers/index.ts (1 file), packages/utils/test/logger-contract.test.ts (1 file)",
+      "change": "Đổi 217 lượt `\".omp\"` sang đọc hằng số hoặc danh sách ứng viên hai root. PHẢI phân loại từng lượt trước, không sed hàng loạt: lượt nào là config root của app dưới test → `CONFIG_DIR_NAME` hoặc candidate list của W4; lượt nào là đường dẫn LEGACY được seed để chứng minh dual-read → GIỮ LITERAL kèm comment.",
+      "verified": true,
+      "note": "Đếm bằng lệnh thật: `git grep -lE '\"\\.omp\"' -- 'packages/*/test/**' | wc -l` = 61 file, `git grep -oE '\"\\.omp\"' -- 'packages/*/test/**' | wc -l` = 217 lượt. Phân bố: coding-agent 57, tui 2, ai 1, utils 1. Chỉ 1 trong 61 (utils/test/logger-contract.test.ts) nằm ở package test chạy được cục bộ."
+    },
+    {
+      "action": "create",
+      "path": "scripts/ci-rename-test-literals.ts",
+      "change": "Detector CI: quét `packages/*/test/**`, thu thập mọi dòng khớp bộ literal tên cũ (`\".omp\"`, `\"omp\"`, `__omp_worker_`, `_omp/`, `omp-export-theme`, `\"oh-my-pi\"`), nạp `scripts/rename/disposition.tsv`, và exit 1 nếu có bất kỳ hit nào không khớp một hàng disposition đã duyệt có `reason` khác rỗng.",
+      "verified": false,
+      "note": "File MỚI, chưa tồn tại — đây là thứ làm cho cổng đỏ được. Tại HEAD nó exit 1 (270 hit: 217 + 54, và `scripts/rename/` chưa tồn tại). Không phải `bun test` — là script chạy được không cần native addon."
+    },
+    {
+      "action": "create",
+      "path": "packages/utils/test/brand-constants.test.ts",
+      "change": "Pin duy nhất, chạy được cục bộ: khẳng định `APP_NAME` và `CONFIG_DIR_NAME` bằng GIÁ TRỊ literal mới, `WIRE_NAME` bằng giá trị literal CŨ (vì W1 cố ý không đổi nó), và `WIRE_NAME !== APP_NAME` để chứng minh hai lớp danh tính là hai thứ khác nhau.",
+      "verified": false,
+      "note": "Đặt trong `packages/utils` vì đó là package DUY NHẤT có test chạy được trên máy này (worker-host.test.ts → 4 pass / 0 fail). Đây là pin có giá trị gate cục bộ, không chỉ CI."
+    },
+    {
+      "action": "create",
+      "path": "packages/utils/test/persisted-identity-keys.test.ts",
+      "change": "Pin hai giá trị đã persist mà một sed hàng loạt sẽ phá: `THEME_STORAGE_KEY` trong `src/export/html/template.js` phải giữ `omp-export-theme`, và ext method ACP `_omp/sessions/listAll` phải còn được dispatch.",
+      "verified": false,
+      "note": "Hai literal này không thuộc 5 site của W1, không có hằng số nào chứa chúng, và đổi chúng là mất dữ liệu người dùng im lặng. Chúng cần một pin riêng."
+    },
+    {
+      "action": "modify",
+      "path": "scripts/rename/disposition.tsv",
+      "change": "W8b tạo ra. W11 chỉ THÊM hàng cho mọi hit còn lại trong test source, không định nghĩa schema. Mỗi hit phải có một hàng với `reason` khác rỗng, nếu không detector ở trên exit 1.",
+      "verified": true,
+      "note": "`ls scripts/rename` → không tồn tại tại HEAD. DoD của plan (dòng 14039) nói đây là nơi DUY NHẤT một disposition được ghi lại và là thứ CI đọc — detector ở trên chính là hiện thực hoá câu đó."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "git grep -cE '\"\\.omp\"' -- 'packages/*/test/**' | awk -F: '{s+=$2} END {print s}'",
+      "instruction": "CHỐT BASELINE trước khi sửa: ghi ra con số 217 lượt `\".omp\"` / 61 file và 54 lượt `__omp_worker_` / 9 file. Toàn bộ detector của đợt này so với chính con số này, nên phải có nó trước khi file đầu tiên bị đụng."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/test/profile-cli.test.ts:9, packages/coding-agent/test/utils/resume-command.test.ts:3, packages/coding-agent/test/fixtures/before-compaction.jsonl",
+      "instruction": "TRUOC KHI SUA GI, chot danh sach KHONG DUNG TOI - day la ba file ma bo loc theo ten se bat vao mot cach sai. (1) profile-cli.test.ts va resume-command.test.ts DA import APP_NAME tu @oh-my-pi/pi-utils/dirs va da dung no (lan luot :154,:179,:205 va :14,:21) - chung la 2 trong 4 file 'co APP_NAME' ma plan liet ke, va chung da dung san. (2) before-compaction.jsonl la transcript lich su 2.3 MB chua 26 luot APP_NAME ben trong noi dung toolResult da ghi; sua no la bia lai lich su. Ba file nay khong nam trong files_touched vi W11 khong sua chung - chung o day de KHONG ai sed cham vao."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/utils/test/brand-constants.test.ts (file mới)",
+      "instruction": "Viết pin TRƯỚC mọi thay đổi khác, và viết nó theo hai pha: (a) chạy nó ở TÊN CŨ và xác nhận nó XANH với giá trị cũ, (b) chỉ sau đó mới sửa giá trị pin sang tên mới. Nếu không làm (a), bạn không biết pin của mình có thật sự bắt được gì không. Pin gồm: APP_NAME = tên mới; CONFIG_DIR_NAME = `.` + tên mới; WIRE_NAME = `\"omp\"` (KHÔNG đổi — đây là cả ý nghĩa của W1); và `expect(WIRE_NAME).not.toBe(APP_NAME)`."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/test/export-html-template.test.ts:32",
+      "instruction": "Sửa mock specifier ở :32 để `APP_NAME` trong chuỗi mock dùng giá trị mới. Đây là chỗ duy nhất trong toàn bộ 70 file mà một literal sai sẽ làm HỎNG BIÊN DỊCH thay vì chỉ làm hỏng một khẳng định. Sửa :26 (tiền tố tmpdir) là tuỳ chọn. TUYỆT ĐỐI KHÔNG đụng :143."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/test/acp-agent.test.ts:1140,1144 + packages/coding-agent/src/modes/acp/acp-agent.ts:1135",
+      "instruction": "Giữ nguyên literal `_omp/sessions/listAll` tại :1140 và :1144, và chuyển chúng thành hằng số cục bộ trong test (một `const ACP_EXT_LIST_ALL = \"_omp/sessions/listAll\"` dùng ở cả hai chỗ) để có một chỗ sửa thay vì hai. KHÔNG dùng APP_NAME ở đây. Nếu bạn dùng APP_NAME, test sẽ đỏ vì `acp-agent.ts:1135` không dẫn xuất từ nó — đó là bằng chứng bạn đã hiểu sai, không phải lỗi cấu hình."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/test/modes/warp-events.test.ts:111",
+      "instruction": "Đổi `agent: \"omp\"` sang `WIRE_NAME`. Đây là ca DUY NHẤT trong nhóm test mà việc đọc hằng số là đúng, vì nó phản chiếu đúng một site wire của W1. Không có pin literal riêng ở đây — pin của nhóm wire nằm ở brand-constants.test.ts."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/utils/test/worker-host.test.ts:24",
+      "instruction": "ĐỔI HAI DÒNG :25,:26 sang template dựng từ `WORKER_HOST_SELECTOR_PREFIX`. DÒNG :24 GIỮ NGUYÊN VĂN. Chạy `bun test packages/utils/test/worker-host.test.ts` và xác nhận vẫn `4 pass / 0 fail` — đây là lệnh kiểm duy nhất trong toàn bộ W11 chạy được ngay trên máy này."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/test/worker-selector.test.ts + executable-fallback.test.ts + eval/process-entry-import.test.ts + fixtures/computer-worker-cli-selector.ts",
+      "instruction": "Đổi 4 file selector thật sang dựng từ `WORKER_HOST_SELECTOR_PREFIX`, GIỮ hậu tố nguyên văn (`js_eval_process`, `computer`, `test`). Riêng `does_not_exist` PHẢI giữ nguyên hậu tố — test khẳng định selector không hợp lệ bị từ chối, đổi nó thành tên có thật sẽ làm test nói sai điều nó đang bảo vệ."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/test/eval/worker-core.test.ts:105,113,139,...",
+      "instruction": "KHÔNG SỬA giá trị. 20 lượt ở đây là globalThis instrument `__omp_worker_core_gate`/`__omp_worker_cwd_gate`, trùng tiền tố một cách tình cờ chứ không phải selector. Thêm MỘT dòng comment giải thích điều đó. Đây là bước tiết kiệm nhiều giờ nhất nếu bỏ qua: nó loại 20/54 lượt 'selector' khỏi ngân sách."
+    },
+    {
+      "n": 10,
+      "anchor": "packages/coding-agent/test/issue-1606-repro.test.ts:11, issue-3031-repro.test.ts:13, issue-7352-repro.test.ts:6",
+      "instruction": "Ba lượt còn lại trong 9 file selector nằm trong doc comment. Sửa chữ cho khớp hoặc bỏ qua — không có khẳng định nào phụ thuộc. Ghi chúng vào disposition.tsv với `reason=comment-only` để detector không báo lại mỗi lần chạy."
+    },
+    {
+      "n": 11,
+      "anchor": "git grep -lE '\"\\.omp\"' -- 'packages/*/test/**'",
+      "instruction": "Đây là bước tốn công nhất (61 file / 217 lượt) và KHÔNG được sed. Với từng file, phân loại từng lượt vào đúng một trong ba tập trước khi sửa: (i) config root của app dưới test → `CONFIG_DIR_NAME` hoặc candidate list hai root của W4; (ii) đường dẫn LEGACY được seed để chứng minh dual-read vẫn đọc được → GIỮ LITERAL, thêm comment nói rõ đây là legacy; (iii) tên trong chuỗi không phải đường dẫn (ví dụ `-omp-html-template-`, id transcript) → giữ hoặc đổi tuỳ ngữ nghĩa. Sai lầm chết người ở đây là xoá HẾT `.omp` cho sạch: test dual-read sẽ được viết thành 'root mới tồn tại' và mất đúng cái mà W4 sinh ra để bảo vệ."
+    },
+    {
+      "n": 12,
+      "anchor": "scripts/ci-rename-test-literals.ts (file mới)",
+      "instruction": "Viết detector. Nó phải: quét `packages/*/test/**`; khớp bộ literal tên cũ; đối chiếu TỪNG hit (file + line) với `scripts/rename/disposition.tsv`; exit 1 + in ra danh sách hit không có disposition khi có bất kỳ hit nào; exit 0 khi tất cả đã được giải thích. Chạy nó NGAY TRƯỚC khi làm bước 10 xong để chứng minh nó đỏ được: nó phải đỏ ở trạng thái giữa chừng."
+    },
+    {
+      "n": 13,
+      "anchor": "python/omp-rpc/tests/test_client.py:1044,1061",
+      "instruction": "KHÔNG SỬA — W13' sở hữu hai dòng này. W11 chỉ thêm `bun run test:py` vào cổng, vì `scripts/ci-test-ts.ts:109-110` xác nhận `localOnlyWorkspacePackages = [\"python/robomp/web\"]` và comment 'robomp-web lives under python/robomp and is outside every CI TS bucket', nên `bun run test:ts` không nhìn thấy `python/**/tests/`."
+    },
+    {
+      "n": 14,
+      "anchor": "python/omp-rpc/tests/test_user_group.py:36,40 + python/robomp/tests/test_worker.py:465 + python/robomp/tests/test_sandbox.py:759,828,1071,1073,1075,1105,1107,1109",
+      "instruction": "KHÔNG SỬA, và ghi vào disposition.tsv với lý do. Đây là 16/18 lượt `\"omp\"` trong `python/**/tests/` phải GIỮ: 2 lượt group Unix (test_user_group.py:36 `group=\"omp\"` + :40 assert; test_worker.py:465 `extra_groups == [\"omp\"]`) và 8 lượt layout sandbox `.omp-xdg` + 6 lượt `(path / \"omp\").is_dir()` XDG. Sửa chúng là xoá tấm chắn duy nhất chống việc ai đó đổi tên group máy."
+    }
+  ],
+  "code_shape": "Không có hình dạng code mới nào ngoài hai file pin và một script detector. Toàn bộ 70 file test chỉ đổi hằng số chứ không đổi hành vi: một literal `\"omp\"` thành `APP_NAME`, một literal `__omp_worker_x` thành `` `${WORKER_HOST_SELECTOR_PREFIX}x` ``, một literal `.omp` thành `CONFIG_DIR_NAME` hoặc một hằng số candidate hai root do W4 cung cấp. Xu hướng cấm của AGENTS.md áp dụng cho phần mới: import top-level (không `await import()`), không `any`, không `ReturnType<>`, không `mock.module()` (dùng `vi.spyOn` + `vi.restoreAllMocks()`), `bun check`/`bun test` chứ không bao giờ `tsc`. Detector là script Bun đọc file và nạp TSV — nó KHÔNG phải test, và không được viết dưới dạng test vì AGENTS.md cấm test khẳng định trên văn bản file nguồn; ranh giới này là có chủ đích và phải nói ra trong PR.",
+  "test_contract": "Mỗi test W11 viết hoặc sửa phải bảo vệ MỘT hợp đồng quan sát được, và hợp đồng đó KHÔNG được là 'hằng số bằng giá trị này' trừ khi đó chính là điều cần ghim. Cụ thể: (1) brand-constants.test.ts bảo vệ 'tên hiển thị và tên tệp/cấu hình là hai thứ khác nhau' — nó ghim APP_NAME = tên mới, CONFIG_DIR_NAME = `.` + tên mới, WIRE_NAME = `omp` cũ, và WIRE_NAME khác APP_NAME; nếu W1 lỡ đặt WIRE_NAME bằng tên mới thì pin này đỏ. (2) worker-host.test.ts:24 bảo vệ tiền tố selector còn được nhận — một ai đó đổi tiền tố mà quên một selector sẽ làm `isWorkerHostSelector` trả false và worker im lặng không chạy. (3) worker-selector.test.ts bảo vệ 'selector lạ bị từ chối với exit code khác 0' — đây là chốt chặn chống selector gõ sai trông giống sức khoẻ. (4) acp-agent.test.ts bảo vệ 'tên ext method ACP là hợp đồng bên thứ ba' — đổi nó làm app không còn nhận lệnh từ host. (5) persisted-identity-keys.test.ts bảo vệ 'tên đã lưu trên máy người dùng không đổi' — theme key và ext method. KHÔNG được tạo bất kỳ khẳng định nào chỉ đọc hằng số rồi so với chính hằng số đó: đó là tautology, AGENTS.md cấm, và nó tệ hơn chính bộ test hardcode mà nó thay thế.",
+  "test_files": [
+    "packages/utils/test/brand-constants.test.ts",
+    "packages/utils/test/persisted-identity-keys.test.ts",
+    "packages/utils/test/worker-host.test.ts",
+    "packages/coding-agent/test/worker-selector.test.ts",
+    "packages/coding-agent/test/executable-fallback.test.ts",
+    "packages/coding-agent/test/eval/process-entry-import.test.ts",
+    "packages/coding-agent/test/fixtures/computer-worker-cli-selector.ts",
+    "packages/coding-agent/test/eval/worker-core.test.ts",
+    "packages/coding-agent/test/issue-1606-repro.test.ts",
+    "packages/coding-agent/test/issue-3031-repro.test.ts",
+    "packages/coding-agent/test/issue-7352-repro.test.ts",
+    "packages/coding-agent/test/export-html-template.test.ts",
+    "packages/coding-agent/test/modes/warp-events.test.ts",
+    "packages/coding-agent/test/acp-agent.test.ts",
+    "scripts/ci-rename-test-literals.ts"
+  ],
+  "verification": "Đã đo bằng lệnh thật trên HEAD 84cbac9, không suy đoán. ĐÚNG với plan: 9 file có `__omp_worker_`; 4 file có `APP_NAME`; `test:py` tồn tại tại package.json:135; `test:scripts` tại package.json:91; `scripts/ci-test-ts.ts:109-110` xác nhận runner TS không quét `python/**/tests/`; cả 5 site wire của W1 nằm đúng dòng plan nêu (dap/session.ts:1465-1466, blob-broker/uploaders-legacy.ts:236, modes/warp-events.ts:60, modes/acp/acp-agent.ts:657, hindsight/bank.ts:29); `WIRE_NAME` chưa tồn tại trong source; 18 lượt `\"omp\"` trong `python/**/tests/*.py` trên 4 file (test_client.py 2, test_user_group.py 5, test_sandbox.py 8, test_worker.py 3) khớp đúng plan; 2 tệp chặn thật là test_client.py:1044 và :1061. SAI với plan: 61 file `.omp` chứ không phải 59; 217 lượt chứ không phải con số plan; 70 file phân biệt chứ không phải 68; trần 178 không tái lập được. Về môi trường (đo, không tin): `bun run check:ts` exit 0 nhưng mất 4m14s, không phải ~29s. `bun test` KHÔNG bị chặn toàn cục — nó chặn theo package: `packages/utils` 4 pass/0 fail, `packages/omptype` 24 pass, `packages/mnemopi` 3 pass; còn `packages/tui`, `packages/ai`, `packages/catalog`, `packages/agent`, `packages/coding-agent` đều ra `0 pass / 1 fail / 1 error` với `Failed to load pi_natives native addon for darwin-arm64` (thiếu `packages/natives/native/pi_natives.darwin-arm64.node`). `bun run test:py` chặn vì lý do khác: `python3 -m pytest --version` → `No module named pytest`.",
+  "gate": "CỔNG BA TẦNG, vì lệnh của plan (`bun run check && bun run test:ts && bun run test:py`) không phân biệt được 'W11 xong' với 'máy này không build được' — cả ba lệnh đều không chạy được ở đây. TẦNG 1 — chạy được NGAY trên máy này, và mỗi lệnh đều phân biệt được xanh-với-nothing-to-do: (a) `bun run check:ts` — exit 0, đo được 4m14s; nó bắt được import hỏng, hằng số chưa tồn tại, và scope đổi sai sau W7. (b) `bun test packages/utils/test/worker-host.test.ts` — phải in `4 pass` và `0 fail`; đây là pin tiền tố selector, file test selector DUY NHẤT chạy được cục bộ. (c) `bun scripts/ci-rename-test-literals.ts` — detector mới, exit 1 khi còn hit chưa có disposition, exit 0 khi sạch; chạy được không cần native addon. TẦNG 2 — nghiệm thu thật, CHỈ CI, kèm canary bắt buộc: `bun run test:ts` và `bun run test:py` phải cùng chạy; canary là một script khẳng định run cho ra số pass > 0 VÀ không chứa chữ ký `Failed to load pi_natives native addon` / `No module named pytest`, để một môi trường bị chặn không bao giờ được báo là xanh. TẦNG 3 — thứ KHÔNG phải cổng: không một khẳng định nào được tạo ra mà chỉ đọc hằng số. Gỡ chặn cho máy dev: `brew install ninja` TRƯỚC (cmake build của opusic-sys cần build program, thiếu thì `bun --cwd=packages/natives run build` fail với `CMAKE_MAKE_PROGRAM is not set`), rồi `bun --cwd=packages/natives run build`; và `python3 -m pip install pytest` cho test:py.",
+  "gate_can_fail": true,
+  "depends_on": [
+    "W1 (hằng số WIRE_NAME — chưa tồn tại trong source; W11 không thể chuyển warp-events.test.ts sang nó nếu W1 chưa xong)",
+    "W3 (hằng số lớp hiển thị + 5 literal nhân bản)",
+    "W4 (danh sách ứng viên hai root — 217 lượt `.omp` cần biết candidate list mới có tên gì mới phân loại được tập (i) với tập (ii))",
+    "W7 (sed scope — tên import trong 70 file test đổi trước; W11 sửa sau nếu không thì sẽ sửa hai lần)",
+    "W8b (scripts/rename/disposition.tsv — detector đọc file này; file chưa tồn tại tại HEAD)",
+    "W9 (tên binary + tiền tố selector — 9 file selector chỉ ổn định sau khi W9 chốt tiền tố)"
+  ],
+  "blocks": [
+    "W13 (quét tài liệu — nghiệm thu của nó là 'một grep token omp đứng riêng trên .md chỉ trả về tập legacy có chủ ý', cùng họ detector với W11)"
+  ],
+  "effort": "M (2,5 ngày công theo thang của plan: S = 1, M = 2,5, L = chưa quy ra được). Cao hơn M một chút so với dự kiến, vì số file thật là 70 chứ không phải 68, vì có một lớp false-positive mà plan không nhận ra (20/54 lượt selector nằm trong globalThis instrument), và vì detector ở bước 11 là code mới chứ không phải sửa test. Trong đó ~0,5 ngày là viết detector + canary, ~1,5 ngày là phân loại 217 lượt `.omp` theo ba tập, ~0,5 ngày là 9 file selector và 4 file APP_NAME.",
+  "risk": "Sai lầm lớn nhất, và nó là sai lầm mà W11 tự tạo ra: thay literal bằng tham chiếu hằng số một cách hàng loạt. Kết quả là một bộ test đọc hằng số sẽ XANH với một hằng số bị đổi sai — tệ hơn chính bộ test hardcode mà nó thay thế, vì nó còn mang lại cảm giác an toàn giả. Chống bằng cách ghim giá trị ở MỘT chỗ cho mỗi bề mặt (bước 2) và để phần còn lại dẫn xuất. Sai lầm thứ hai, ngược chiều: xoá HẾT mọi hit `.omp` trong test cho sạch — sẽ phá test dual-read của W4 và xoá tấm chắn duy nhất chống việc ai đó đổi tên group Unix `omp` ở máy người dùng. Sai lầm thứ ba, âm thầm nhất và chỉ W11 mới thấy: chuyển `acp-agent.test.ts:1140,1144` sang `APP_NAME`, vì nó TRÔNG như một khẳng định tên hiển thị. `_omp/sessions/listAll` là tên ext method ACP hardcode tại `acp-agent.ts:1135`, không dẫn xuất từ APP_NAME, và nó là wire literal thứ 6 nằm ngoài danh sách 5 site của W1 — chuyển nó làm app ngừng nhận lệnh từ host. Sai lầm thứ tư: chạy pass 'đọc hằng số' lên `python/**/tests/` — sẽ xoá 16/18 lượt phải giữ. Sai lầm thứ năm, thuộc về cổng chứ không phải về test: tin `bun run test:ts` là cổng nghiệm thu mà không kiểm môi trường — trên máy này nó đỏ vì thiếu native addon, nên 'đỏ' mang hai nghĩa khác nhau và một trong hai không liên quan gì đến W11.",
+  "open_questions": [
+    "Sau W4, tên của candidate list hai root là gì? 217 lượt `.omp` không phân loại được thành tập (i) 'config root của app' và tập (ii) 'đường dẫn legacy được seed' nếu không biết hằng số candidate đó tên gì. Đây là câu hỏi chặn thật sự, và nó là lý do W11 phụ thuộc W4 chứ không chỉ phụ thuộc W1/W3.",
+    "`packages/coding-agent/test/fixtures/before-compaction.jsonl` (2.3 MB) không được tham chiếu ở bất kỳ đâu — `git grep -rn 'before-compaction' -- .` không trả về gì. Nó là fixture chết. Giữ đóng băng (đề xuất của tôi, vì nó là transcript lịch sử) hay xoá? Xoá là việc ngoài phạm vi W11 và cần quyết định riêng.",
+    "Detector `scripts/ci-rename-test-literals.ts` có được phép là một script grep trong CI không, hay phải là một `bun test`? AGENTS.md cấm source-grep BÊN TRONG test; nó không cấm một detector CI, và DoD của chính plan (dòng 14034-14039) là grep-based với `disposition.tsv` làm nơi CI đọc. Tôi đọc là được phép, nhưng đây là ranh giới diễn giải nên nói thẳng trong PR chứ không giấu.",
+    "5 file test có `.omp` nằm ngoài `packages/coding-agent` (tui 2, ai 1, utils 1) — có file nào trong số đó thực ra là contract đáng giữ (ví dụ `tui/test/render-utils.test.ts` khẳng định chuỗi hiển thị có sanitize đúng không) hơn là chỉ là đường dẫn tạm? Tôi mới chỉ phân loại qua mẫu, chưa đọc hết 61 file."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "「Cỡ đúng: 178 file rộng / 59 có `\".omp\"` / 4 có `APP_NAME` / 9 có `__omp_worker_`」",
+      "verdict": "PARTIALLY_FALSE",
+      "correction": "Số 59 sai: thật là 61 file. Số 4 và 9 đúng. Số trần 178 không tái lập được bằng bất kỳ bộ lọc nào của plan — mẫu gần nhất cho ra 188 với regex lỏng hơn, và 61+9=70 mới là con số hành động. Bỏ hẳn 178 khỏi đặc tả.",
+      "evidence": "`git grep -lE '\"\\.omp\"' -- 'packages/*/test/**' | wc -l` → 61; `git grep -lE '__omp_worker_' -- 'packages/*/test/**' | wc -l` → 9; `git grep -lE 'APP_NAME' -- 'packages/*/test/**' | wc -l` → 4. Thử `\"\\.omp\"`=61, `\\.omp`=126, `\"omp\"`=54, `\"\\.?omp\"|\\.omp|/\\.omp|omp/`=188 — không mẫu nào ra 178."
+    },
+    {
+      "claim": "「Số phải hành động là 68 file phân biệt (59 + 9, hai tập không giao nhau)」",
+      "verdict": "PARTIALLY_FALSE",
+      "correction": "Vế 'hai tập không giao nhau' là ĐÚNG (comm -12 cho 0 file). Tổng thì sai: 61 + 9 = 70, không phải 68.",
+      "evidence": "`comm -12 <(git grep -lE '\"\\.omp\"' -- 'packages/*/test/**'|sort) <(git grep -lE '__omp_worker_' -- 'packages/*/test/**'|sort) | wc -l` → 0."
+    },
+    {
+      "claim": "「9 có `__omp_worker_`」 — ngụ ý cả 9 đều khẳng định tên cũ.",
+      "verdict": "PARTIALLY_FALSE",
+      "correction": "9 file / 54 lượt là đúng, nhưng chỉ 5 file thật sự khẳng định một selector. 1 file (worker-core.test.ts, 20 lượt — chính là 37% của tổng) là globalThis instrument trùng tiền tố một cách tình cờ. 3 file chỉ có doc comment. 1 trong 5 là fixture chứ không phải test. Nếu không phân loại, W11 sẽ tốn công sửa tên biến nội bộ vô nghĩa và báo cáo thành công giả.",
+      "evidence": "worker-core.test.ts:105,113,139,155,165,204,222,232,291,307,325,359,399,414,460,461 đều là `globalThis.__omp_worker_core_gate` / `__omp_worker_cwd_gate`. issue-1606-repro.test.ts:11, issue-3031-repro.test.ts:13, issue-7352-repro.test.ts:6 đều nằm trong block comment. fixtures/computer-worker-cli-selector.ts:3 là argv của fixture."
+    },
+    {
+      "claim": "「4 file có `APP_NAME`」 — ngụ ý cả 4 cần sửa.",
+      "verdict": "PARTIALLY_FALSE",
+      "correction": "Đếm 4 là đúng nhưng kết luận sai. 2 file đã đọc hằng số sẵn (profile-cli.test.ts, resume-command.test.ts) — không cần việc gì. 1 file là transcript lịch sử 2.3 MB không được tham chiếu ở đâu (before-compaction.jsonl) — phải đóng băng. CHỈ 1 file cần sửa thật: export-html-template.test.ts.",
+      "evidence": "profile-cli.test.ts:9 import APP_NAME, dùng :154,:179,:205. resume-command.test.ts:3 import, dùng :14,:21. `git grep -rn 'before-compaction' -- .` → không kết quả."
+    },
+    {
+      "claim": "「Ca đặc biệt: packages/coding-agent/test/export-html-template.test.ts:26,32 mang một specifier mock nội tuyến ... phải sửa ở cả hai nửa」",
+      "verdict": "PARTIALLY_FALSE",
+      "correction": "Về specifier mock thì plan đúng. Nhưng plan bỏ sót dòng nguy hiểm nhất của chính file đó: :143. Ba dòng mang tên trong một file, ba phân định khác nhau: :26 tiền tố tmpdir (cosmetíc), :32 mock specifier (phải theo hằng số), :143 khẳng định localStorage key `omp-export-theme` (phải GIỮ NGUYÊN).",
+      "evidence": "`:26 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), \"omp-html-template-\"))`; `:32 \"@oh-my-pi/pi-utils\": 'export const APP_NAME = \"omp\"; ...'`; `:143 expect(first).toContain(\"const THEME_STORAGE_KEY = 'omp-export-theme';\")` và `packages/coding-agent/src/export/html/template.js:4` định nghĩa `const THEME_STORAGE_KEY = 'omp-export-theme'` được đọc/ghi qua localStorage tại :8 và :18."
+    },
+    {
+      "claim": "「Test wire hiện có: packages/coding-agent/test/modes/warp-events.test.ts, packages/coding-agent/test/acp-agent.test.ts」 — cả hai được gợi ý là ứng viên chuyển sang WIRE_NAME.",
+      "verdict": "FALSE",
+      "correction": "warp-events.test.ts:111 đúng là phản chiếu site wire W1 (`src/modes/warp-events.ts:60`), nên chuyển sang WIRE_NAME là đúng. acp-agent.test.ts thì KHÔNG: nó khẳng định `extMethod(\"_omp/sessions/listAll\")`, một tên ext method ACP hardcode tại `src/modes/acp/acp-agent.ts:1135`, KHÔNG dẫn xuất từ APP_NAME. Chuyển nó sang APP_NAME sẽ làm test đỏ vì app không còn nhận ext method đó. Đây là wire literal thứ 6, nằm ngoài danh sách 5 site của W1 (W1 phụ `title: \"omp\"` ở :657, không phụ :1135) — và không work item nào trong M5 sở hữu nó.",
+      "evidence": "`git grep -n 'sessions/listAll' -- packages/coding-agent/src` → đúng 1 hit: `acp-agent.ts:1135 case \"_omp/sessions/listAll\": {`. acp-agent.test.ts:1140 dùng `_omp/sessions/listAll`, :1144 dùng `omp/sessions/listAll` và assert bị reject."
+    },
+    {
+      "claim": "「Bộ test Python ... `python/omp-rpc/tests/test_user_group.py:26,34,36,40,45` ... chúng khẳng định group Unix `omp` phải được giữ」",
+      "verdict": "PARTIALLY_FALSE",
+      "correction": "Con số 5 dòng đúng, nhưng mô tả sai: chỉ 2 dòng (:36 và :40) là khẳng định group Unix. Ba dòng :26, :34, :45 là tham số `executable=\"omp\"` — tên lệnh được spawn, thuộc phạm vi W13' (client.py:455), không phải group. Gọi cả 5 là 'group' khiến người đọc bảo vệ sai thứ, đồng thời tạo mâu thuẫn với W13' vốn phải sửa tên lệnh.",
+      "evidence": "`:26 call = _start_and_capture(executable=\"omp\")`; `:34 executable=\"omp\"`; `:36 group=\"omp\"`; `:40 assert call.kwargs[\"group\"] == \"omp\"`; `:45 call = _start_and_capture(executable=\"omp\", extra_groups=[])`."
+    },
+    {
+      "claim": "「Lệnh: `bun run check && bun run test:ts && bun run test:py`」 là cổng nghiệm thu.",
+      "verdict": "FALSE",
+      "correction": "Không phải cổng đỏ được trên máy này, vì cả ba lệnh đều không cho tín hiệu. `bun run test:ts` đỏ vì thiếu native addon (5/8 package), `bun run test:py` đỏ vì thiếu pytest, `bun run check` kéo cả `check:rs` cần cargo. Lệnh đỏ KHÔNG phân biệt được 'W11 chưa làm' với 'máy chưa build được'. Đặc tả này thay bằng cổng ba tầng, trong đó tầng 1 chạy được ngay và tầng 2 có canary bắt buộc chữ ký môi trường bị chặn.",
+      "evidence": "`bun test packages/utils/test/worker-host.test.ts` → 4 pass 0 fail; `bun test packages/omptype/test/ark/arrays/array.test.ts` → 24 pass; `bun test packages/coding-agent/test/worker-selector.test.ts` → 0 pass 1 fail 1 error, `Failed to load pi_natives native addon for darwin-arm64`; `python3 -m pytest --version` → `No module named pytest`; `bun run check:ts` → exit 0 trong 4m14s."
+    },
+    {
+      "claim": "「bun run test:ts đi qua scripts/ci-test-ts.ts và chỉ quét `packages/*` cộng `python/robomp/web`」",
+      "verdict": "VERIFIED_TRUE",
+      "correction": "Giữ nguyên. Đây là cơ sở đúng để bắt buộc ghép `bun run test:py` vào cổng — không có lệnh TS nào nhìn thấy `python/**/tests/`.",
+      "evidence": "`scripts/ci-test-ts.ts:109-110`: comment 'robomp-web lives under python/robomp and is outside every CI TS bucket' và `const localOnlyWorkspacePackages = [\"python/robomp/web\"];`"
+    },
+    {
+      "claim": "Cả 5 vị trí wire mà W1 sẽ gom về `WIRE_NAME`",
+      "verdict": "VERIFIED_TRUE",
+      "correction": "Giữ nguyên, và bổ sung: `WIRE_NAME` hiện KHÔNG tồn tại trong source — nó chỉ xuất hiện trong chính tài liệu kế hoạch. Đây là lý do W11 phụ thuộc W1 theo đúng thứ tự.",
+      "evidence": "`git grep -n 'WIRE_NAME' -- .` → chỉ khớp trong COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md. Năm site: `src/dap/session.ts:1465-1466` (clientID/clientName), `src/blob-broker/uploaders-legacy.ts:236` (z), `src/modes/warp-events.ts:60` (agent), `src/modes/acp/acp-agent.ts:657` (title), `src/hindsight/bank.ts:29` (DEFAULT_BANK_NAME) — tất cả đúng dòng plan nêu."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/m5-specs/W11.spec.json"
+}

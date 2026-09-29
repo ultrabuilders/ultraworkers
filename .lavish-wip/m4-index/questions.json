@@ -1,0 +1,78 @@
+[
+ {
+  "id": "M4-6",
+  "q": "Should the panel be LOUD or QUIET on a shadowed write? The spec returns a result and the panel shows an inline message. But a user who typed a value into a text field and pressed enter, and then sees it silently revert, may read that as data loss. Options: (a) reject the write and show why, (b) allow the write, keep it in config.yml, and only annotate the row. Option (b) is what `omp config set` already does today (config-cli.ts:315-317 — it reports the shadow in yellow and leaves the value written), so it has shipped precedent; option (a) is what the dsh precedent did. This is a product decision, not an engineering one, and it changes whether the rollback half of the guard exists at all."
+ },
+ {
+  "id": "M4-6",
+  "q": "The plan's dsh precedent (`packages/boot/config-editor/src/index.ts:127-129` and `:133-137`) DOES NOT EXIST in this repo — there is no `packages/boot/` package at all. The rollback-by-bytes half of the plan's design therefore rests on precedent that cannot be inspected here. The in-repo precedent is config-cli.ts:295-318, which verifies post-write but reports rather than rolls back. Decide which precedent governs before writing the guard."
+ },
+ {
+  "id": "M4-6",
+  "q": "Should `provenanceNote` (step 10) be applied to the settings' persistent description, or only shown after a write? A persistent description note is strictly more informative and costs nothing, but it changes the description of every shadowed row, which is a wider visual change than the plan scoped. It also grows the entry list, which is rebuilt on every tab switch (`#buildItemsForDefs` at settings-selector.ts:1280) — cheap, but worth confirming with a real settings count."
+ },
+ {
+  "id": "M4-6",
+  "q": "Confirm the M2 WI-8a / WI-8b dependency has actually landed. The plan states it as a hard blocker but M2 has not been executed; if those items changed the settings-registration surface, step 3's interface addition may need to match a shape that does not exist yet."
+ },
+ {
+  "id": "M4-7",
+  "q": "WHICH KEY gets renamed? The plan says only 'Cuối cùng mới bỏ khoá ma thuật' (finally remove the magic key) and its risk note says a rename 'without updating the hidden list makes the key show up in the JSON tree'. It never says WHICH key. The two candidates are genuinely different jobs. RECOMMENDED: rename only the INNER key written at xdev.ts:57 (a 2-site change: xdev.ts:57 and the strip at xdev.ts:114, plus json-tree.ts:23) and make `rawArgs` purely ADDITIVE for the outer stream. That preserves bash.ts / edit.ts / eval.ts untouched and leaves the six literal-pinning test files valid as written. The alternative — retiring `__partialJson` entirely from the outer args object and moving bash/edit/eval onto `options.rawArgs.json` — is the reading that matches the plan's expectation that all six test files need updating, and it is roughly 3x the surface. DECISION PROCEDURE: this is a maintainer call, not an implementer call, because the two branches ship different amounts of renderer churn under one changelog decision. If nobody decides, take the recommended branch and record the deviation in the PR description."
+ },
+ {
+  "id": "M4-7",
+  "q": "Should `rawArgs.complete` be redundant with the existing `argsComplete`? `RenderResultOptions` already carries `argsComplete?: boolean`, and `rawArgs.complete` would say nearly the same thing. Two sources of truth for one fact is a drift risk. RECOMMENDED: keep both for now — `argsComplete` is set from `setArgsComplete` (a lifecycle event) while `rawArgs.complete` describes the buffer the renderer actually holds — but if the implementer finds the two can disagree, that disagreement IS the finding and should be raised, not smoothed over."
+ },
+ {
+  "id": "M4-7",
+  "q": "Does the M4 changelog decision (§6.2) get a user-facing line about `argsComplete`/`executionStarted` now reaching extensions, separate from the `__partialJson` rename line? The plan treats the adapter fix as 'cùng một dòng, và nó đóng một bug đang sống' (same line, it closes a live bug) — i.e. not separately user-visible. Confirm that reading before the PR is written, because the changelog is a single decision for all of M4 and an out-of-repo extension author is exactly who would notice."
+ },
+ {
+  "id": "M4-7",
+  "q": "Is `renderContext` supposed to be fixed in this PR too? The same two adapters drop it (`#renderState.renderContext` is set at tool-execution.ts:959 and :1121, and `RenderResultContextOptions` at renderer.ts:30 exists precisely to carry it). The plan mentions only `argsComplete` and `executionStarted`. RECOMMENDED: do NOT fix it here — it is a separate observable behaviour change and this item is already at three waves' worth of churn. But record it as a known follow-up, because leaving it means the adapter forwarding fix is still partial and the next reader will not know that was a decision."
+ },
+ {
+  "id": "M4-4",
+  "q": "Who decides `application: 'applied' | 'restart-required'`? `PluginManager` has no HMR knowledge and the string has zero referents in this repo (git grep 'restart-required' → 0 hits). The overlay path does only a PARTIAL reload: settings-selector.ts:1329 → selector-controller.ts:305-312 calls clearPluginRootsAndCaches + refreshSkillState + refreshSlashCommandState + resetCapabilities, but does NOT call `refreshAgentDiscovery`, which the real `reloadPlugins` does (acp-agent.ts:2167). So a toggle arguably half-applies. A human must decide: (a) PluginManager always returns 'restart-required' and the overlay upgrades to 'applied' when it knows a reload ran, (b) the value is computed at the tui layer, or (c) 'applied' is claimed once refreshAgentDiscovery is added to the settings path. The plan's model for this type is `packages/boot/plugin-manager/src/types.ts:111-114` — which DOES NOT EXIST in this repo (see plan_corrections)."
+ },
+ {
+  "id": "M4-4",
+  "q": "Is `PluginSettingsMarketplaceManager.setPluginEnabled` in scope for the return-type change? The plan lists it as 'the fourth mutator', but it is implemented by a DIFFERENT class — `MarketplaceManager` at marketplace/manager.ts:686 — and writes the marketplace registry, not the plugins lockfile. It never touches `#saveRuntimeConfig`. It shares only the tui overlay package. Widening its return type is a separate breaking change with its own changelog weight."
+ },
+ {
+  "id": "M4-4",
+  "q": "Is `MarketplaceManager.#writeRuntimeConfig` (marketplace/manager.ts:923-925) in scope? It is a second runtime-config writer with the identical read-modify-write shape, no lock, and it does not go through `atomicWriteJson`. The plan never mentions it, but leaving it untouched is precisely the 'two implementations' violation the plan's own risk 2 warns about."
+ },
+ {
+  "id": "M4-4",
+  "q": "Should the extracted `atomicWriteJson` keep the FIXED `${filePath}.tmp` suffix, or move to the hardened `${filePath}.${process.pid}.${random}.tmp` form that packages/ai/src/auth-broker/snapshot-cache.ts:93 uses? A shared temp name is safe only while every writer of a given file takes the same lock — which is true for the lockfile after this change but NOT for the two marketplace registries, which do not lock. Worth deciding before the util becomes central."
+ },
+ {
+  "id": "M4-4",
+  "q": "Changelog sequencing: the plan (section 6.2) says M4 ships as ONE changelog decision covering Waves B, C and D, and that this plan never writes its own entries. So the three CHANGELOG.md edits above are placeholders to track, not work to do now. Confirm that reading before anyone adds an entry."
+ },
+ {
+  "id": "M4-4",
+  "q": "Does the `secret` guard belong in this PR's gate at all? `grep -c secret manager.ts` is already 0 at baseline, so it cannot distinguish 'M3-A4 landed' from 'M3-A4 never existed'. If M3-A4 lands after this PR, the guard is still worth keeping — but it should be described as a M3 guard this PR must not break, not as evidence about M3-A4's state."
+ },
+ {
+  "id": "M4-9",
+  "q": "(a) or (b)? The plan explicitly refuses to choose and requires the choice to be recorded. DECISION GATE — step 1 below. Recommendation: ship (a) now (it needs no core change and answers the triage question), and file (b) as its own work item rather than bundling a shared capability-core change into a CLI PR."
+ },
+ {
+  "id": "M4-9",
+  "q": "Command name. Spec uses `extensions-triage`. The registry already has `plugin`, `skill`, `config`; `extensions-triage` is unambiguous against all of them. Confirm before writing the help string."
+ },
+ {
+  "id": "M4-9",
+  "q": "Default output: table or one-line-per-row? The spec assumes one sanitized line per row, matching the `omp plugin list` shape at packages/coding-agent/src/cli/plugin-cli.ts:644. Confirm."
+ },
+ {
+  "id": "M4-9",
+  "q": "Does Wave D ship in the same changelog decision as M4 Waves B and C, or does it need its own? Plan §6.2 says all three M4 waves merge as ONE changelog decision and none ships before that decision exists. Confirm the owner has actually granted it — `shippable: false` means this cannot be released on its own."
+ },
+ {
+  "id": "M4-9",
+  "q": "For option (b): should `_shadowedBy` carry a display string (e.g. `skill:foo` via `makeExtensionId`) or a raw path? Recommend the extension id, because that is what the user can act on and what the TUI inspector already renders at packages/tui/src/overlays/extensions/inspector-model.ts:466-482."
+ }
+]

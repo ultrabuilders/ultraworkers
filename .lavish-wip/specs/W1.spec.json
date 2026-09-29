@@ -1,0 +1,228 @@
+{
+  "id": "W1",
+  "title": "Restore the disposer returned by the extension and hook `on()` APIs",
+  "wave": "Wave 1 — Lifecycle foundation (work items W1, W2, W3, W5)",
+  "one_line": "Make `pi.on(event, handler)` hand back a one-shot unsubscribe function that removes only that exact handler and deletes the event's Map key when the list empties — on both the extension API and the hook API.",
+  "user_visible_effect": "None directly — no UI, no output, no default behaviour changes. The returned disposer is simply an unused return value until a later work item (W8 cache warmer) registers and calls one. The user-visible effect is negative: an extension author who already wrote `const off = pi.on(...)` gets a working `off()` instead of `undefined`, and no existing caller is affected because TypeScript previously returned `void` so nothing could have been assigned.",
+  "files_touched": [
+    {
+      "path": "packages/coding-agent/src/extensibility/utils.ts",
+      "action": "modify",
+      "change": "Add exported `createHandlerDisposer(handlers: Map<string, HandlerFn[]>, event: string, handler: HandlerFn): () => void` — identity-safe splice plus Map-key deletion. This is the single shared implementation both loaders call, so the dedup rule in AGENTS.md ('two implementations of the same thing is a bug even when both work') is satisfied.",
+      "verified": true,
+      "note": "File exists, 7.4 KB, currently exports resolvePath / createNoOpUIContext / ExtensionExitError / withHostGuard. `HandlerFn` is not exported from this file — either type the Map as `Map<string, (...args: unknown[]) => Promise<unknown>>` inline or import the type. BOTH loaders already do `import { resolvePath, withHostGuard } from \"../utils\";` (extensions/loader.ts:40, hooks/loader.ts:15), so only the imported name changes in each."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/loader.ts",
+      "action": "modify",
+      "change": "`ConcreteExtensionAPI.on` (line 210) return type `void` -> `() => void`; body appends `return createHandlerDisposer(this.extension.handlers, event, handler);` after the existing three lines. Add `createHandlerDisposer` to the existing `../utils` import at line 40.",
+      "verified": true,
+      "note": "Exact current text at 210-214:\n  on<F extends HandlerFn>(event: string, handler: F): void {\n    const list = this.extension.handlers.get(event) ?? [];\n    list.push(handler);\n    this.extension.handlers.set(event, list);\n  }\n  Class declared at 179 as `class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime` — this `implements` is a HARD type check, so a type-file-only change fails loudly here. `HandlerFn` is a local type alias at line 61."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/hooks/loader.ts",
+      "action": "modify",
+      "change": "Object-literal `on` (line 93) return type `void` -> `() => void`; body appends `return createHandlerDisposer(handlers, event, handler);` after line 97. Add `createHandlerDisposer` to the existing `../utils` import at line 15.",
+      "verified": true,
+      "note": "Exact current text at 93-98:\n  on(event: string, handler: HandlerFn): void {\n    if (!handlers.has(event)) {\n      handlers.set(event, []);\n    }\n    handlers.get(event)!.push(handler);\n  },\n  The cast `} as HookAPI;` is at line 128, NOT line 92 (line 92 is `const api = {`; lines 90-91 are a comment mentioning the cast). See plan_corrections #3 and #5."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/extensions/types.ts",
+      "action": "modify",
+      "change": "All 41 `on(event: \"...\"): void;` overloads inside `export interface ExtensionAPI` (declared line 1256; overloads span lines 1280-1340) become `on(event: \"...\"): () => void;`. Signature text is otherwise untouched.",
+      "verified": true,
+      "note": "Count verified: `grep -c 'on(event: \"'` = 41, and all 41 fall inside 1256-1400, i.e. inside ExtensionAPI. No other `on(event: \"` exists in the file. The plan's anchor `interface ToolDefinition ... at :611` is STALE — ToolDefinition is at line 636; line 611 is `export interface ToolSessionEvent {`. ToolDefinition itself needs NO change (it is not an event handler)."
+    },
+    {
+      "path": "packages/coding-agent/src/extensibility/hooks/types.ts",
+      "action": "modify",
+      "change": "All 24 `on(event: \"...\"): void;` overloads inside `export interface HookAPI` (declared line 469; overloads span lines 471-500) become `on(event: \"...\"): () => void;`.",
+      "verified": true,
+      "note": "Count verified: 24. DO NOT touch line 134 — `) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,` is the UI-component dispose, an unrelated return type. The plan flags this correctly."
+    },
+    {
+      "path": "packages/coding-agent/test/extensions-disposer.test.ts",
+      "action": "create",
+      "change": "New test file with four cases, split across the two surfaces. See test_contract.",
+      "verified": true,
+      "note": "Does not exist — confirmed. Directory packages/coding-agent/test/ holds 791 .test.ts files. Follows the naming style of neighbours (extension-*.test.ts, hook-*.test.ts)."
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "anchor": "packages/coding-agent/src/extensibility/utils.ts",
+      "instruction": "Record the pre-existing baseline BEFORE editing. Run `cd packages/coding-agent && bun run check:types`. Today this FAILS with exactly one error — `test/collab/w3-probe.test.ts(76,15): error TS2352` — but that file is an UNTRACKED leftover probe from W3 research, not committed source. Move it aside (`mv packages/coding-agent/test/collab/w3-probe.test.ts /tmp/`) and re-run: it is green. Restore the file afterwards. Your gate is 'no NEW errors', not 'zero errors'."
+    },
+    {
+      "n": 2,
+      "anchor": "packages/coding-agent/src/extensibility/utils.ts",
+      "instruction": "Add the exported `createHandlerDisposer(handlers, event, handler)` helper exactly as in code_shape section 1, with the scope-limit comment (this withdraws a handler registration; it is not an unload, and the Bun.plugin() hooks in extensibility/plugins/legacy-pi-compat.ts are process-global and permanent — see the comment at legacy-pi-compat.ts:1990-1992)."
+    },
+    {
+      "n": 3,
+      "anchor": "packages/coding-agent/src/extensibility/extensions/loader.ts:210",
+      "instruction": "Change `on<F extends HandlerFn>(event: string, handler: F): void` to return `() => void` and append the `return createHandlerDisposer(this.extension.handlers, event, handler);` line inside the existing body. Add `createHandlerDisposer` to the `import { resolvePath, withHostGuard } from \"../utils\";` at line 40. Do not restructure the body — the existing push/set is already identity-correct."
+    },
+    {
+      "n": 4,
+      "anchor": "packages/coding-agent/src/extensibility/hooks/loader.ts:93",
+      "instruction": "Same change on the object-literal `on` at line 93, passing the captured `handlers` map. Add `createHandlerDisposer` to the `../utils` import at line 15. The `} as HookAPI;` cast at line 128 stays as-is."
+    },
+    {
+      "n": 5,
+      "anchor": "packages/coding-agent/src/extensibility/extensions/types.ts:1280-1340",
+      "instruction": "Change the trailing `): void;` to `): () => void;` on all 41 overloads. Safest mechanical form: within lines 1280-1340 only, replace the suffix `): void;` that terminates an `on(` declaration. Do NOT blanket-replace `): void;` — the file has many other `register*` methods that must stay `void`. Verify with `git diff --stat` showing exactly 41 changed lines (plus surrounding reflow from the formatter)."
+    },
+    {
+      "n": 6,
+      "anchor": "packages/coding-agent/src/extensibility/hooks/types.ts:471-500",
+      "instruction": "Same, for the 24 overloads in 471-500. Note two of them are multi-line (e.g. `on(event: \"session_before_compact\", ...)` at 476-479, and `ttsr_triggered` around 497) — the `): void;` terminator is on the closing line, not the `on(` line. Verify exactly 24 changed lines."
+    },
+    {
+      "n": 7,
+      "anchor": "packages/coding-agent/test/extensions-disposer.test.ts",
+      "instruction": "Write the four test cases described in test_contract. Two on the extension surface via `loadExtensionFromFactory` (exported, extensions/loader.ts:464 — it takes an INLINE factory, so a closure captures the disposers; no temp file). Two on the hooks surface via `loadHooks` (exported, hooks/loader.ts:191 — it dynamic-imports a real path, so write a temp hook file and hand the disposers back through `globalThis`, the same handoff already used at extension-prepared-rebind.test.ts:46). No `mock.module()` anywhere; no `vi.spyOn` needed either. Clean up `globalThis` keys in `afterEach` with `Reflect.deleteProperty` so the file is full-suite safe."
+    },
+    {
+      "n": 8,
+      "anchor": "packages/coding-agent/test/extensions-disposer.test.ts",
+      "instruction": "Build the native addon once (`bun --cwd=packages/natives run build`) — without it `bun test` reports 0 pass / 'Failed to load pi_natives native addon for darwin-arm64' and you cannot tell your test passed from your test never ran. Then run the file and confirm the pass count is > 0."
+    },
+    {
+      "n": 9,
+      "anchor": "packages/coding-agent/test/extensions-disposer.test.ts",
+      "instruction": "Run `cd packages/coding-agent && bun run check:types` again and confirm the ONLY error is the pre-existing `w3-probe.test.ts` one — i.e. zero new errors. Also run the extension/hook suites that already exist to catch a regression: `bun test packages/coding-agent/test/extensions-runner.test.ts packages/coding-agent/test/extensions-discovery.test.ts packages/coding-agent/test/plugin-extensions-discovery.test.ts`."
+    }
+  ],
+  "code_shape": "// ---------------------------------------------------------------------------\n// 1) NEW shared helper — packages/coding-agent/src/extensibility/utils.ts\n//    (both loaders ALREADY import from \"../utils\", so only the import name is\n//     added in each loader; no new module, no dynamic import)\n// ---------------------------------------------------------------------------\n\n/**\n * Build an identity-safe disposer for one registered handler.\n *\n * Scope note: this withdraws a single handler registration. It is NOT an\n * unload — extension modules are never unloaded, and the `Bun.plugin()` hooks\n * in extensibility/plugins/legacy-pi-compat.ts are process-global and permanent\n * by construction.\n *\n * Removal is by identity, never by index: between `on()` and the disposer call\n * the list may have shifted, and a second call to the same disposer must be a\n * no-op rather than evicting whichever neighbour moved into the old slot.\n * When the list empties, the Map key is deleted so the key set does not grow\n * across extension reloads.\n */\nexport function createHandlerDisposer(\n\thandlers: Map<string, HandlerFn[]>,\n\tevent: string,\n\thandler: HandlerFn,\n): () => void {\n\treturn () => {\n\t\tconst list = handlers.get(event);\n\t\tif (!list) return;\n\t\tconst index = list.indexOf(handler);\n\t\tif (index === -1) return;\n\t\tlist.splice(index, 1);\n\t\tif (list.length === 0) handlers.delete(event);\n\t};\n}\n\n// ---------------------------------------------------------------------------\n// 2) IMPL — packages/coding-agent/src/extensibility/extensions/loader.ts:210\n//    (was `on<F extends HandlerFn>(event: string, handler: F): void`)\n// ---------------------------------------------------------------------------\n\n\ton<F extends HandlerFn>(event: string, handler: F): () => void {\n\t\tconst list = this.extension.handlers.get(event) ?? [];\n\t\tlist.push(handler);\n\t\tthis.extension.handlers.set(event, list);\n\t\treturn createHandlerDisposer(this.extension.handlers, event, handler);\n\t}\n\n// ---------------------------------------------------------------------------\n// 3) IMPL — packages/coding-agent/src/extensibility/hooks/loader.ts:93\n//    (inside the `const api = { ... } as HookAPI` object literal ending :128)\n// ---------------------------------------------------------------------------\n\n\t\ton(event: string, handler: HandlerFn): () => void {\n\t\t\tif (!handlers.has(event)) {\n\t\t\t\thandlers.set(event, []);\n\t\t\t}\n\t\t\thandlers.get(event)!.push(handler);\n\t\t\treturn createHandlerDisposer(handlers, event, handler);\n\t\t},\n\n// ---------------------------------------------------------------------------\n// 4) TYPES — return type only; the 41 (ext) + 24 (hooks) overload bodies are\n//    untouched. Every one goes `): void;` -> `): () => void;`\n// ---------------------------------------------------------------------------\n\n// packages/coding-agent/src/extensibility/extensions/types.ts  — 41 sites, lines 1280-1340\n\ton(event: \"session_start\", handler: ExtensionHandler<SessionStartEvent>): () => void;\n\t// ... 40 more, all inside `export interface ExtensionAPI` (declared line 1256)\n\n// packages/coding-agent/src/extensibility/hooks/types.ts — 24 sites, lines 471-500\n\ton(event: \"session_start\", handler: HookHandler<SessionStartEvent>): () => void;\n\t// ... 23 more, all inside `export interface HookAPI` (declared line 469)\n\n// DO NOT TOUCH packages/coding-agent/src/extensibility/hooks/types.ts:134\n//   ) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,\n// That is the UI-component `dispose`, not a handler disposer.\n\n// ---------------------------------------------------------------------------\n// 5) TEST — packages/coding-agent/test/extensions-disposer.test.ts (new)\n//\n// No mock.module() anywhere. Two independent surfaces, tested separately,\n// because they are two different objects with two different handler Maps.\n// ---------------------------------------------------------------------------\n\n// --- Extension surface: `loadExtensionFromFactory` (loader.ts:464) takes an\n// --- inline factory, so a closure captures the disposers. No temp file needed.\nconst extension = await loadExtensionFromFactory(\n\tasync (api) => {\n\t\tdisposeA = api.on(\"session_start\", handlerA);\n\t\tdisposeB = api.on(\"session_start\", handlerB);\n\t\tdisposeC = api.on(\"session_start\", handlerC);\n\t},\n\tcwd,\n\tnew EventBus(),\n\tnew ExtensionRuntime(),\n\t\"w1-probe\",\n);\nexpect(extension.handlers.get(\"session_start\")).toHaveLength(3);\n\ndisposeA();\nexpect(extension.handlers.get(\"session_start\")).toHaveLength(2);\n\n// disposing the middle handler, then disposing it AGAIN, must not evict C\n// (which has shifted into B's old slot)\ndisposeB();\nexpect(extension.handlers.get(\"session_start\")).toEqual([handlerA, handlerC]);\ndisposeB(); // second call: no-op\nexpect(extension.handlers.get(\"session_start\")).toEqual([handlerA, handlerC]);\n\ndisposeA();\ndisposeC();\nexpect(extension.handlers.has(\"session_start\")).toBe(false); // key DELETED\n\n// --- Hooks surface: `loadHooks` (hooks/loader.ts:191) dynamic-imports a real\n// --- file, so the temp hook module hands disposers back via globalThis — the\n// --- same handoff pattern already used by extension-prepared-rebind.test.ts:46\nconst hookSource = `\n\texport default async function (api) {\n\t\tglobalThis.__w1 = {\n\t\t\ta: api.on(\"tool_call\", async () => { globalThis.__w1Hits.push(\"a\"); }),\n\t\t\tb: api.on(\"tool_call\", async () => { globalThis.__w1Hits.push(\"b\"); }),\n\t\t};\n\t}\n`;\nawait Bun.write(hookPath, hookSource);\nconst { hooks, errors } = await loadHooks([hookPath], cwd);\nexpect(errors).toHaveLength(0);\nconst { a, b } = Reflect.get(globalThis, \"__w1\") as { a: () => void; b: () => void };\nconst map = hooks[0]!.handlers;\n\na();\nexpect(map.get(\"tool_call\")).toHaveLength(1);\nb();\nexpect(map.has(\"tool_call\")).toBe(false);\nReflect.deleteProperty(globalThis, \"__w1\");\nReflect.deleteProperty(globalThis, \"__w1Hits\");\n\n// --- JS caller that ignores the return value is unaffected (plan test #4).\n//     A plain `.ts` hook/extension calling `api.on(ev, h);` as a statement and\n//     then registering a second handler proves the added return value is inert.\n",
+  "test_contract": {
+    "summary": "Withdrawing one handler registration removes exactly that handler, leaves its siblings registered and still firing, and leaves no empty event key behind. A repeated dispose is inert rather than evicting a neighbour that shifted into the freed slot.",
+    "what_a_consumer_observes_if_it_regresses": "If removal were a blind `splice(indexOf(originalFn))` with no identity guarantee, or a blind `splice(0, 1)`, then disposing handler A would silently unregister handler B. Because every dispatch site guards on `handlers && handlers.length > 0` (extensions/runner.ts:1163, hooks/runner.ts:173) and `handlers.length === 0` (hooks/runner.ts:286), the failure is NOT a crash — it is a handler that simply stops running, with no error anywhere. That is the contract worth defending. If the Map key is not deleted on the last removal, the key set grows by one event name per disposed registration across extension reloads; a slow memory leak, likewise silent. If the hooks disposer is never wired (see plan_corrections #5), `off()` is `undefined` and the caller throws `TypeError: off is not a function`.",
+    "cases": [
+      {
+        "n": 1,
+        "name": "sibling survives a single removal",
+        "surface": "both, tested separately",
+        "asserts": "Register three handlers on one event, dispose the FIRST, assert the stored list is exactly [B, C] (length 2, and the surviving array contains the original function identities in order). This is identity-safe removal, not a blind shift.",
+        "defends": "A disposer that splices the wrong element silently disables a handler that the caller never unregistered. The assertion is on function identity, not on a count, because a count-only assertion also passes for a swap-the-wrong-two bug."
+      },
+      {
+        "n": 2,
+        "name": "Map key is deleted when the list empties",
+        "surface": "both, tested separately",
+        "asserts": "Dispose the last remaining handler and assert `handlers.has(event) === false` — asserted DIRECTLY on the Map, not via dispatch.",
+        "defends": "The only-splice-naive port leaves an empty array under the key. Critically: nothing in the codebase iterates the handlers Map's keys (verified — every reader is a `.get(eventType)` plus a length guard), so an empty leftover array is behaviourally invisible and a dispatch-based assertion would pass on the broken implementation. This case must read the Map."
+      },
+      {
+        "n": 3,
+        "name": "double dispose is inert",
+        "surface": "both, tested separately",
+        "asserts": "Register A, B, C. Dispose B (the MIDDLE one) -> list is [A, C]. Dispose B again -> list is STILL [A, C] and length is 2.",
+        "defends": "This is the neighbour-shift trap the whole item exists to prevent. After the first splice, C has moved into the slot B occupied. A disposer keyed on a captured INDEX rather than identity evicts C on the second call — a handler the caller never touched disappears, and the handler list silently shrinks on every retry. `indexOf` identity + `=== -1` early return is what makes the second call a no-op."
+      },
+      {
+        "n": 4,
+        "name": "a caller that ignores the return value is unaffected",
+        "surface": "both, tested separately",
+        "asserts": "In a temp hook module / inline extension factory, call `api.on(event, h)` as a bare statement (discarding the return) and then register a second handler for the same event; assert the list has both handlers in order and `handlers.has(event)` is true.",
+        "defends": "The return type changed from `void` to `() => void` on a public extension/hook API. Existing extension and hook modules in the wild discard that value; if the refactor had accidentally changed the registration path (double-push, early return, reordering) these callers would break with no compile error, because a discarded return value type-checks either way."
+      }
+    ],
+    "banned": [
+      "mock.module() — mutates the global module registry and leaks across files (Bun #12823). Use the exported loader entry points instead; neither needs it.",
+      "Source-grepping loader.ts to assert the disposer exists. Assert the Map and the returned closure instead.",
+      "Bare not.toThrow() or non-empty checks — they cannot distinguish the fixed implementation from the broken one.",
+      "Long-lived globalThis mutations: every globalThis key stashed by a test must be deleted in afterEach."
+    ]
+  },
+  "test_files": [
+    "packages/coding-agent/test/extensions-disposer.test.ts"
+  ],
+  "verification": {
+    "commands_that_must_pass": [
+      "cd /Users/tranquangdang21/Projects/ultraworkers/packages/coding-agent && bun run check:types   # 0 NEW errors (1 pre-existing in untracked test/collab/w3-probe.test.ts is expected)",
+      "bun --cwd=packages/natives run build   # once — bun test is 0-pass without it",
+      "cd /Users/tranquangdang21/Projects/ultraworkers && bun test packages/coding-agent/test/extensions-disposer.test.ts   # must be > 0 pass, NOT 0 pass / addon error",
+      "cd /Users/tranquangdang21/Projects/ultraworkers && bun test packages/coding-agent/test/extensions-runner.test.ts packages/coding-agent/test/extensions-discovery.test.ts packages/coding-agent/test/plugin-extensions-discovery.test.ts   # no regression"
+    ],
+    "do_not_use_as_the_gate": [
+      "`bun check` — it is `check:ts` + `check:rs`; the Rust half needs a cargo toolchain and takes many minutes. `check:types` inside packages/coding-agent is the fast, sufficient gate for a types-only-plus-small-impl change."
+    ],
+    "diff_sanity": [
+      "git diff --stat should show 41 changed lines in extensions/types.ts and 24 in hooks/types.ts (plus formatter reflow). If the ext file shows far more, a non-`on` method's `): void;` was hit.",
+      "git status should still show `packages/coding-agent/src/collab/crypto.ts` as modified and `packages/coding-agent/test/collab/w3-probe.test.ts` as untracked. Neither is W1's work — do not revert the former (it is a W3 decode guard already in progress) and do not commit either under W1."
+    ]
+  },
+  "gate": "Three assertions, all of which fail on today's HEAD: (a) `bun test packages/coding-agent/test/extensions-disposer.test.ts` reports >= 4 passing tests and 0 failures; (b) case 3 shows a middle-handler double-dispose leaving the list at length 2; (c) case 2 shows `handlers.has(event) === false` on BOTH surfaces after the final dispose. Plus `bun run check:types` in packages/coding-agent introduces no new error.",
+  "gate_can_fail": true,
+  "depends_on": [],
+  "blocks": [
+    "W2 — the reverse-order, error-isolating drain helper is the template for the teardown queue in W12, and teardown can only drain disposers that exist.",
+    "W8 — the cache warmer registers a disposer on session teardown; against today's `void` return it has nothing to call and an in-flight request leaks. This is the plan's stated 'must land before W8' dependency and the reason W1 is first in Wave 1."
+  ],
+  "effort": "S — roughly 35-45 changed lines across 5 production files (2 return-type-only type files, 2 impl sites, 1 new 8-line helper) plus one ~120-line test file. Larger than the plan's earlier ~15 because there is a second type file and a second implementation.",
+  "risk": "The `as HookAPI` cast at hooks/loader.ts:128 is lenient enough that changing hooks/types.ts WITHOUT the hooks/loader.ts impl may still type-check cleanly — TypeScript's return-type-void rule makes `(…) => () => void` assignable to a signature returning `void`, so the cast does not complain in either direction. The extension half is safe (ConcreteExtensionAPI `implements ExtensionAPI` at line 179 is a hard check), but the hooks half can ship broken code that compiles. `bun check` is therefore NOT sufficient evidence for the hooks disposer; only the runtime test case that actually calls the returned closure proves it. The second-order risk is writing the disposer to remove a *wrapper* rather than the pushed value: the plan claims extensions wrap handlers, which is FALSE here (both impls push `handler` verbatim — extensions/loader.ts:212, hooks/loader.ts:97), so copying a wrapped-handler port from the reference would be a `indexOf === -1` silent no-op.",
+  "open_questions": [
+    "Should the helper live in `extensibility/utils.ts` (recommended — both loaders already import from it) or be inlined twice? The AGENTS.md dedup rule argues for the shared helper; a reviewer preferring the minimal 4-file diff may argue for inlining. This is the one genuine design choice in the item.",
+    "Does `HandlerFn` need to be exported from `extensibility/utils.ts`, or should the helper type the Map as `Map<string, (...args: unknown[]) => Promise<unknown>>` inline? `HandlerFn` is currently a private alias duplicated in extensions/loader.ts:61, extensions/types.ts:1696, and hooks/loader.ts:21. Consolidating it is tempting but is a wider refactor than W1 should absorb.",
+    "Is the untracked `packages/coding-agent/test/collab/w3-probe.test.ts` (1 type error) to be deleted, committed, or left for the W3 owner? Until it is resolved, `bun run check:ts` for the whole repo is permanently red and this repo's only clean type-check gate is package-scoped."
+  ],
+  "plan_corrections": [
+    {
+      "claim": "The reference shape is pi's loader, 16 lines, at `pi-ref/.../extensions/loader.ts:256-271`.",
+      "verdict": "UNVERIFIABLE — the path does not exist",
+      "correction": "There is no `pi-ref` directory anywhere in this repo (`find . -maxdepth 3 -name pi-ref -type d` returns nothing; no `pi-ref` at the top level). The repo is a single-commit squashed publish (`ecd516f feat: initial publish — oh-my-pi 18.3.3`), so there is no history to recover it from either. Do not go looking for that file or budget time trying to match it. The code_shape in this spec is written against the ACTUAL code at HEAD, which is the authority.",
+      "evidence": "`find . -maxdepth 3 -name pi-ref -type d` -> empty; `ls pi-ref` -> 'NO pi-ref dir at top level'; `git log --oneline` -> single commit ecd516f."
+    },
+    {
+      "claim": "`packages/coding-agent/src/extensibility/extensions/types.ts` — `interface ToolDefinition` at `:611`.",
+      "verdict": "STALE — wrong line",
+      "correction": "ToolDefinition is at line 636, not 611. Line 611 is `export interface ToolSessionEvent {`. Neither needs changing for W1 (ToolDefinition is a tool registration, not an event handler), so this anchor is harmless — but do not let it send you editing the wrong interface. The interface that actually matters is `export interface ExtensionAPI` at line 1256.",
+      "evidence": "`grep -n 'interface ToolDefinition' packages/coding-agent/src/extensibility/extensions/types.ts` -> `636:export interface ToolDefinition<...>`; `sed -n '605,650p'` shows 611 = `export interface ToolSessionEvent {`."
+    },
+    {
+      "claim": "Impl: object HookAPI at `packages/coding-agent/src/extensibility/hooks/loader.ts:92-98` (currently `on(...): void`), cast `as HookAPI` right at `:92`.",
+      "verdict": "WRONG on both numbers",
+      "correction": "The `on` impl is at lines 93-98, not 92-98 (line 92 is `const api = {`). More importantly, the cast `} as HookAPI;` is at line 128, NOT line 92 — lines 90-91 are just a two-line comment that mentions the cast. If you go to line 92 looking for a cast you will find the start of the object literal and may mis-edit.",
+      "evidence": "`grep -n 'as HookAPI' packages/coding-agent/src/extensibility/hooks/loader.ts` -> `128:\\t} as HookAPI;`; `sed -n '86,100p'` shows 90-91 = the comment, 92 = `const api = {`, 93 = `on(event: string, handler: HandlerFn): void {`."
+    },
+    {
+      "claim": "The likeliest mistake is splicing the ORIGINAL handler rather than the wrapper that was actually pushed — 'extensions wrap handlers, so indexOf(originalFn) is -1'.",
+      "verdict": "FACTUALLY FALSE for this codebase",
+      "correction": "Neither implementation wraps. `extensions/loader.ts:212` is a literal `list.push(handler)` and `hooks/loader.ts:97` is `handlers.get(event)!.push(handler)` — the caller's function object is stored by reference, unwrapped. The class constructor (extensions/loader.ts:196-207) rebinds prototype methods onto the instance for detached-callback safety but never touches handler identity, and there is no Proxy on the API object in the registration path. So a disposer that closes over `handler` and does `indexOf(handler)` is CORRECT. Porting a wrapped-handler disposer from the (nonexistent) reference would produce a permanent silent no-op — which is the opposite failure from the one the plan warns about, and the plan's warning would send a careful engineer to add a needless lookup indirection.",
+      "evidence": "`sed -n '210,214p' packages/coding-agent/src/extensibility/extensions/loader.ts` -> `list.push(handler);`; `sed -n '93,98p' packages/coding-agent/src/extensibility/hooks/loader.ts` -> `handlers.get(event)!.push(handler);`; `grep -n 'Proxy'` in extensions/loader.ts -> no hits (only extensions/wrapper.ts, for tool definitions)."
+    },
+    {
+      "claim": "Because of the `as HookAPI` cast, both implementations must keep signature-compatible types or the cast breaks type-check.",
+      "verdict": "PARTLY FALSE — holds for extensions, NOT guaranteed for hooks",
+      "correction": "The extension half IS enforced: `class ConcreteExtensionAPI implements ExtensionAPI` (extensions/loader.ts:179) is a hard structural check, so changing the 41 overloads without the class method fails `bun check` loudly. The hooks half is NOT guaranteed: a function returning `() => void` is assignable to a signature returning `void` (TypeScript's return-type-void rule), and comparability for an `as` assertion is satisfied if EITHER direction holds — so a hooks/types.ts-only change would most likely still compile and ship a disposer that returns `undefined` at runtime. Consequence for this spec: prove the hooks disposer with the runtime test, not with the type checker. Do not let 'bun check is green' be the evidence for that half.",
+      "evidence": "`sed -n '179p'` -> `class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime;`; `sed -n '128p'` -> `} as HookAPI;` (an assertion, not an `implements`). Reasoning is a type-system argument, not a reproduced error — treat as strong-but-unexecuted; the runtime test is the real guard."
+    },
+    {
+      "claim": "Verification: `bun check && bun test packages/coding-agent/test/extensions-disposer.test.ts`.",
+      "verdict": "UNRUNNABLE as written in this repo",
+      "correction": "Three separate blockers. (1) `bun check` is `check:ts` + `check:rs`; the Rust half needs a cargo toolchain and is very slow — use `cd packages/coding-agent && bun run check:types` instead. (2) `bun test` currently reports 0 pass / 1 fail with 'Failed to load pi_natives native addon for darwin-arm64' — the addon is not built. Build it first with `bun --cwd=packages/natives run build`, or a green run and a 'test never ran' are indistinguishable. (3) `bun run check:ts` for the whole repo is ALREADY RED on HEAD: exactly one error, `test/collab/w3-probe.test.ts(76,15): error TS2352`. That file is UNTRACKED (`git ls-files --error-unmatch` -> 'did not match any file(s) known to git') — a leftover W3 research probe. Move it aside and `bun run check:types` in packages/coding-agent is green. Your gate is 'no NEW errors'.",
+      "evidence": "`bun test <any test>` -> '0 pass, 1 fail, 1 error ... Failed to load pi_natives native addon for darwin-arm64'; no `pi_natives*.node` anywhere; `bun run check:types` -> 1 error, all in the untracked probe; probe removed -> check:types silent (green); `git status --short` -> ` M packages/coding-agent/src/collab/crypto.ts` and `?? packages/coding-agent/test/collab/w3-probe.test.ts`."
+    },
+    {
+      "claim": "The working tree at branch milestone-1 is clean enough to build on.",
+      "verdict": "FALSE — the tree is dirty, and it is W3's work, not W1's",
+      "correction": "`packages/coding-agent/src/collab/crypto.ts` is modified and UNCOMMITTED (+42/-1): it adds a `FRAME_REQUIRED_FIELDS` table and an `assertCollabFrame` decode guard — that is W3 ('a blind cast as CollabFrame at crypto.ts:57'), already half-built by an earlier probe. It type-checks clean, so it does not block W1, but: do not revert it, and do not let it ride along in a W1 commit. Also beware — a `git diff` at the start of W1 will show 43 lines of crypto.ts changes that are not yours.",
+      "evidence": "`git diff --stat packages/coding-agent/src/collab/crypto.ts` -> '1 file changed, 42 insertions(+), 1 deletion(-)'; diff shows `+const FRAME_REQUIRED_FIELDS: Record<CollabFrame[\"t\"], readonly string[]>` and `+function assertCollabFrame(value: unknown): CollabFrame`."
+    },
+    {
+      "claim": "The Map-key deletion is the half 'a splice-only port drops', and its absence 'is a slow leak on every extension reload'.",
+      "verdict": "TRUE but weaker than stated — it is a memory claim only, which changes how the test must be written",
+      "correction": "The leak is real, but no consumer can observe it, which means a dispatch-based test for this half proves nothing. Verified: every reader of a handlers Map is a `.get(eventType)` followed by a length guard — extensions/runner.ts:1163 (`handlers && handlers.length > 0`), hooks/runner.ts:173 (same), hooks/runner.ts:286 (`if (!handlers || handlers.length === 0) continue`), and similarly at 285/333/365/402 and extensions/runner.ts:1476/1488/1534/1596. Nothing anywhere iterates the handlers Map's keys. So an empty array left under the key is behaviourally invisible. Case 2 of the test suite MUST assert `handlers.has(event) === false` directly on the Map object. Writing it as 'the event no longer dispatches' would pass on the broken implementation and give false confidence.",
+      "evidence": "`grep -rn 'handlers\\.\\(entries\\|keys\\|values\\|forEach\\)' packages/coding-agent/src/` -> only unrelated hits (tools/browser/tab-worker.ts, task/subprocess-tool-registry.ts, internal-urls/router.ts — none of them a handlers Map from these loaders); runner.ts:1161-1166 `hasHandlers` reads `.get(eventType)` and length-guards."
+    },
+    {
+      "claim": "Only two production files implement these APIs.",
+      "verdict": "CONFIRMED — and the test stubs are safe",
+      "correction": "Grepped the whole repo: the only production implementers are `ConcreteExtensionAPI` (extensions/loader.ts:179, hard `implements`) and the hooks object literal (hooks/loader.ts:128, `as HookAPI`). Six test files build partial stubs via `as unknown as ExtensionAPI` (autoresearch-tools.test.ts:70, autoresearch-git.test.ts:40, autoresearch-state.test.ts:474 and :620, autoresearch-before-agent-start.test.ts:43, modes/warp-events.test.ts:47) — a double assertion, so no compatibility check fires and they need no change. Worth knowing only so you do not go hunting for a fifth implementer.",
+      "evidence": "`grep -rn --include='*.ts' -e 'implements ExtensionAPI' -e 'as HookAPI' -e 'as unknown as ExtensionAPI' packages/` -> exactly the 2 production sites plus 6 double-asserted test stubs."
+    }
+  ],
+  "written_to": "/Users/tranquangdang21/Projects/ultraworkers/.lavish-wip/specs/W1.spec.json"
+}

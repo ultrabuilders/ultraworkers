@@ -9,7 +9,7 @@
 
 import { Loader } from "../components/loader";
 import { Text } from "../components/text";
-import { Container, type TUI } from "../tui";
+import { Container, type ExtensionTUISurface } from "../tui";
 import { getSymbolTheme, theme } from "../theme/theme";
 import type { OutputArtifactError } from "../tools/streaming-output";
 import { formatArtifactErrorNotice, formatTruncationMetaNotice, type TruncationMeta } from "../tools/output-meta";
@@ -50,7 +50,7 @@ export type ExecutionColorKey = "dim" | "bashMode" | "pythonMode";
  */
 export function buildExecutionFrame(
 	parent: Container,
-	ui: TUI,
+	ui: ExtensionTUISurface,
 	colorKey: ExecutionColorKey,
 ): { contentContainer: Container; loader: Loader } {
 	const borderColor = (str: string) => theme.fg(colorKey, str);

@@ -496,7 +496,7 @@ export class ChatTranscriptBuilder {
 					showImages: displayPreferences.showImages,
 				},
 				this.#deps.getTool?.(content.name),
-				this.#deps.ui as unknown as TUI,
+				this.#deps.ui,
 				this.#deps.cwd,
 				content.id,
 			);

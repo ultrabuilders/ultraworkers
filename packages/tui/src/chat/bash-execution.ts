@@ -48,8 +48,8 @@ let nextBashExecutionId = 0;
 /** PTY size for `!` commands: the execution frame's inner content area. */
 export function bashPtyViewport(ui: ExtensionTUISurface): { cols: number; rows: number } {
 	return {
-		cols: Math.max(20, ui.viewportSize.columns - 2),
-		rows: Math.max(5, ui.viewportSize.rows - 4),
+		cols: Math.max(20, (ui.viewportSize?.columns ?? 80) - 2),
+		rows: Math.max(5, (ui.viewportSize?.rows ?? 24) - 4),
 	};
 }
 
@@ -102,7 +102,7 @@ export class BashExecutionComponent extends Container {
 		// Use dim border for excluded-from-context commands (!! prefix)
 		const colorKey = excludeFromContext ? "dim" : "bashMode";
 		this.#colorKey = colorKey;
-		const { contentContainer, loader } = buildExecutionFrame(this, ui as unknown as TUI, colorKey);
+		const { contentContainer, loader } = buildExecutionFrame(this, ui, colorKey);
 		this.#contentContainer = contentContainer;
 		this.#loader = loader;
 		this.#outputPane = new OutputPane(theme, {

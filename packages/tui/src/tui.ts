@@ -787,10 +787,31 @@ export interface ExtensionTUISurface extends Container {
 	renderNow(): void;
 	/** Present `component` as an overlay. Returns a handle to hide or re-show it. */
 	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle;
-	/** Remove an overlay previously passed to {@link showOverlay}. */
-	hideOverlay(component: Component): void;
-	/** True when `component` is currently mounted as an overlay. */
-	hasOverlay(component: Component): boolean;
+	/**
+	 * Dismiss the topmost overlay, and whatever it was showing.
+	 *
+	 * No argument, and that is not an oversight: the real signature is
+	 * `hideOverlay()`. Declaring a `component` parameter here would have been a
+	 * lie the compiler cannot catch (a zero-arg function is assignable to a
+	 * one-arg signature), and the first extension to trust it would close
+	 * someone else's overlay. Use the handle {@link showOverlay} returns to
+	 * dismiss a specific one.
+	 */
+	hideOverlay(): void;
+	/** True when any overlay is mounted. Global, not per-component. */
+	hasOverlay(): boolean;
+	/**
+	 * Stop the TUI and hand the terminal to something else — an external
+	 * `$EDITOR`, for instance — then {@link start} it again.
+	 *
+	 * A full stop/start, and deliberately not something lighter: the render
+	 * engine, the debug server and the native bridge all hold terminal state, and
+	 * a component that wanted an editor would otherwise have to unwind each of
+	 * them. `start()` force-renders on the way back, so nothing is needed after it.
+	 */
+	stop(): void;
+	/** Undo {@link stop}. */
+	start(options?: { deferInput?: boolean }): void;
 	/** Which component holds keyboard focus, if any. `null` when nothing is focused. */
 	getFocused(): Component | null;
 	/**
@@ -807,21 +828,14 @@ export interface ExtensionTUISurface extends Container {
 	 * that the user may have changed.
 	 */
 	readonly imageBudget: ImageBudget;
-	/**
-	 * Stop reading terminal input, leaving rendering running, and hand the
-	 * terminal to something else — an external `$EDITOR`, for instance.
-	 *
-	 * This is deliberately not `stop()`. `stop()` tears down the render engine,
-	 * the debug server and the native bridge; a component that wanted to open an
-	 * editor would then have to restart the whole TUI to get it back, and any
-	 * other overlay mounted at the same time would lose its engine. Pair with
-	 * {@link resumeInput} once the external editor has exited.
-	 */
-	suspendInput(): void;
-	/** Undo {@link suspendInput}. */
-	resumeInput(): void;
 	/** Milliseconds the last frame took to paint, for a component deciding its own budget. */
 	readonly lastFrameCostMs: number;
+	/**
+	 * Whether the terminal honours synchronized-output frames. Read-only: a
+	 * component may need to know before it schedules a partial repaint, but
+	 * turning the mode on or off is the host's decision, not an extension's.
+	 */
+	readonly synchronizedOutput: boolean;
 }
 
 /**
@@ -2134,24 +2148,6 @@ export class TUI extends Container {
 		this.terminal.enableInput?.();
 		this.#querySixelSupport();
 		this.#queryCellSize();
-	}
-
-	/**
-	 * Hand the terminal to something else while rendering keeps running — an
-	 * external `$EDITOR`, for instance. Bytes arriving meanwhile are not read, so
-	 * they land in the editor rather than being parsed as keybindings; the ones
-	 * already queued are drained first so a key held down across the switch does
-	 * not fire a command when input resumes.
-	 */
-	suspendInput(): void {
-		if (this.#stopped || this.#inputDeferred) return;
-		this.#inputDeferred = true;
-		this.terminal.drainInput(50);
-	}
-
-	/** Undo {@link suspendInput}, replaying anything typed while suspended. */
-	resumeInput(): void {
-		this.enableInput();
 	}
 
 	addStartListener(listener: StartListener): () => void {

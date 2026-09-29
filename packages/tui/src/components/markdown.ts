@@ -1943,7 +1943,6 @@ export class Markdown implements Component {
 		return this.#transientRenderCache ? (this.#streamPrefixText ?? "") : "";
 	}
 
-
 	get transientRenderCache(): boolean {
 		return this.#transientRenderCache;
 	}

@@ -50,7 +50,6 @@ describe("ToolExecutionComponent custom renderer failures", () => {
 		const ui: ToolExecutionUi = {
 			requestRender() {},
 			requestComponentRender(_component: Component) {},
-			resetDisplay() {},
 		};
 		const component = new ToolExecutionComponent(
 			"graphify_graph",
@@ -88,7 +87,6 @@ describe("ToolExecutionComponent custom renderer failures", () => {
 		const ui: ToolExecutionUi = {
 			requestRender() {},
 			requestComponentRender(_component: Component) {},
-			resetDisplay() {},
 		};
 		const component = new ToolExecutionComponent(
 			"crashy_result_renderer",
@@ -121,7 +119,6 @@ describe("ToolExecutionComponent custom renderer failures", () => {
 		const ui: ToolExecutionUi = {
 			requestRender() {},
 			requestComponentRender(_component: Component) {},
-			resetDisplay() {},
 		};
 		const component = new ToolExecutionComponent(
 			"recall",

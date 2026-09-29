@@ -183,7 +183,6 @@ class SafeToolRendererComponent implements Component {
 export interface ToolExecutionUi {
 	requestRender(): void;
 	requestComponentRender(component: Component): void;
-	resetDisplay(): void;
 	imageBudget?: ExtensionTUISurface["imageBudget"];
 }
 

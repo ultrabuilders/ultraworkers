@@ -203,7 +203,7 @@ export class AgentTranscriptViewer implements Component {
 			requestRender: deps.requestRender,
 		});
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.#deps.ui.viewportSize?.rows || process.stdout.rows || 40,
+			getHeight: () => this.#deps.ui.viewportSize?.rows ?? process.stdout.rows ?? 40,
 			frame: context => this.#frame(context),
 			followBottom: true,
 		});

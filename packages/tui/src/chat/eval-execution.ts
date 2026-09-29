@@ -66,14 +66,19 @@ export class EvalExecutionComponent extends Container {
 		return new Text(headerLines.join("\n"), 1, 0);
 	}
 
-	constructor(code: string, ui: ExtensionTUISurface, excludeFromContext = false, language: EvalExecutionLanguage = "python") {
+	constructor(
+		code: string,
+		ui: ExtensionTUISurface,
+		excludeFromContext = false,
+		language: EvalExecutionLanguage = "python",
+	) {
 		super();
 		this.#code = code;
 		this.#excludeFromContext = excludeFromContext;
 		this.#language = language;
 
 		const colorKey: ExecutionColorKey = this.#excludeFromContext ? "dim" : "pythonMode";
-		const { contentContainer, loader } = buildExecutionFrame(this, ui as unknown as TUI, colorKey);
+		const { contentContainer, loader } = buildExecutionFrame(this, ui, colorKey);
 		this.#contentContainer = contentContainer;
 		this.#loader = loader;
 		this.#outputPane = new OutputPane(theme, {

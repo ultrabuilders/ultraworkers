@@ -33,6 +33,13 @@ export interface SessionTeardownDeps {
 	 * persist the real exit reason instead of the generic `"dispose"`.
 	 */
 	disposeSession: (reason?: postmortem.Reason) => Promise<void>;
+	/**
+	 * Deliver a session lifecycle event to extension tools. Optional so a caller
+	 * with no extension runner can omit it, but every mode that has a session
+	 * passes one — that is the point: a tool holding a resource open must hear
+	 * about shutdown in `print` and `rpc`, not only in the interactive TUI.
+	 */
+	emitSessionEvent?: (reason: "shutdown") => Promise<void>;
 }
 
 /**
@@ -72,6 +79,15 @@ export function createSessionTeardown(deps: SessionTeardownDeps): SessionTeardow
 			await deps.saveDraft(draftText);
 		} catch (err) {
 			logger.warn("Failed to save session draft during teardown", { error: String(err) });
+		}
+		// Before dispose: after it, the extension runner is gone and the handler
+		// that needed to release something has nothing left to release it from.
+		if (deps.emitSessionEvent) {
+			try {
+				await deps.emitSessionEvent("shutdown");
+			} catch (err) {
+				logger.warn("Extension session_shutdown dispatch failed", { error: String(err) });
+			}
 		}
 		await deps.disposeSession(reason);
 	};

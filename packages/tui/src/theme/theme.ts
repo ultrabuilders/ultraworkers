@@ -15,6 +15,7 @@ import {
 	loadThemeJson,
 	loadThemeJsonSync,
 	loadThemeSync,
+	resolveThemeJson,
 } from "./loader";
 import { isValidThemeBg, isValidThemeColor, type ThemeColor, type ThemeJson } from "./schema";
 import type { SymbolPreset } from "./symbols";
@@ -879,10 +880,15 @@ export function getNativeThemePalette(): NativeThemePalette {
  */
 export function isLightTheme(themeName?: string): boolean {
 	const name = themeName ?? "dark";
-	const builtinThemes = getBuiltinThemes();
 	let themeJson: ThemeJson | undefined;
-	if (name in builtinThemes) {
-		themeJson = builtinThemes[name];
+	// resolveThemeJson covers built-in AND extension-registered themes. This
+	// function used to re-derive the built-in-wins rule itself and knew nothing
+	// about the registry, so a light theme registered by an extension was always
+	// classified as dark — the settings migration and setup wizard would then
+	// paint the wrong background. One resolver, so the two cannot drift.
+	const registered = resolveThemeJson(name);
+	if (registered) {
+		themeJson = registered;
 	} else {
 		try {
 			const customPath = path.join(getCustomThemesDir(), `${name}.json`);

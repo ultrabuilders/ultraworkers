@@ -333,7 +333,9 @@ export interface ExtensionUIContext {
 	 * required by interactive mode.
 	 */
 	setEditorComponent(
-		factory: ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
+		factory:
+			| ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor)
+			| undefined,
 	): void;
 
 	/** Get the current theme for styling. */

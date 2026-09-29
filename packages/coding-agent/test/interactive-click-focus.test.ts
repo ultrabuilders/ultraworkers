@@ -74,7 +74,6 @@ describe("inline click-to-focus geometry", () => {
 			{
 				requestRender: () => mode.ui.requestRender(),
 				requestComponentRender: () => {},
-				resetDisplay: () => {},
 			},
 			tempDir.path(),
 		);
@@ -130,7 +129,6 @@ describe("inline click-to-focus geometry", () => {
 			{
 				requestRender: () => mode.ui.requestRender(),
 				requestComponentRender: () => {},
-				resetDisplay: () => {},
 			},
 			tempDir.path(),
 		);

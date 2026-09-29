@@ -75,8 +75,7 @@ describe("exportSessionToHtml format selection", () => {
 				{
 					id: "markdown",
 					mimeType: "text/markdown",
-					format: (ctx: OutputFormatContext) =>
-						bytes(`# Session\n\n${ctx.entries.length} entries\n`),
+					format: (ctx: OutputFormatContext) => bytes(`# Session\n\n${ctx.entries.length} entries\n`),
 				},
 			],
 		]);
@@ -91,10 +90,7 @@ describe("exportSessionToHtml format selection", () => {
 		const { exportSessionToHtml } = await import("@oh-my-pi/pi-coding-agent/export/html");
 		const sm = makeSession(await sessionFile());
 		const formats = new Map<string, OutputFormat>([
-			[
-				"markdown",
-				{ id: "markdown", extension: ".md", mimeType: "text/markdown", format: () => bytes("x") },
-			],
+			["markdown", { id: "markdown", extension: ".md", mimeType: "text/markdown", format: () => bytes("x") }],
 		]);
 		const path = await exportSessionToHtml(sm, undefined, { formatId: "markdown", formats });
 		expect(path.endsWith(".md")).toBe(true);
@@ -118,9 +114,7 @@ describe("exportSessionToHtml format selection", () => {
 				},
 			],
 		]);
-		expect(
-			exportSessionToHtml(sm, undefined, { formatId: "broken", formats }),
-		).rejects.toThrow("formatter exploded");
+		expect(exportSessionToHtml(sm, undefined, { formatId: "broken", formats })).rejects.toThrow("formatter exploded");
 	});
 
 	it("passes the transcript entries and the resolved theme names", async () => {
@@ -156,17 +150,10 @@ describe("exportSessionToHtml format selection", () => {
 
 describe("registerOutputFormat", () => {
 	async function register(factory: (api: ExtensionAPI) => void) {
-		const { ExtensionRuntime, loadExtensionFromFactory } = await import(
-			"@oh-my-pi/pi-coding-agent/extensibility/extensions/loader"
-		);
+		const { ExtensionRuntime, loadExtensionFromFactory } =
+			await import("@oh-my-pi/pi-coding-agent/extensibility/extensions/loader");
 		const { EventBus } = await import("@oh-my-pi/pi-coding-agent/utils/event-bus");
-		return loadExtensionFromFactory(
-			factory,
-			"/ext",
-			new EventBus(),
-			new ExtensionRuntime(),
-			"formats",
-		);
+		return loadExtensionFromFactory(factory, "/ext", new EventBus(), new ExtensionRuntime(), "formats");
 	}
 
 	it("refuses a second format with the same id", async () => {

@@ -284,7 +284,9 @@ export interface InteractiveModeContext {
 	/** Stack extension autocomplete behavior on top of the built-in editor provider. */
 	addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
 	setEditorComponent(
-		factory: ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor) | undefined,
+		factory:
+			| ((tui: ExtensionTUISurface, theme: EditorTheme, keybindings: KeybindingsManager) => CustomEditor)
+			| undefined,
 	): void;
 
 	// UI helpers

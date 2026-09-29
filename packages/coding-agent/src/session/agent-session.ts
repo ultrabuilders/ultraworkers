@@ -12120,6 +12120,55 @@ export class AgentSession implements SettingsScope {
 	 * @param outputPath Optional output path
 	 * @param useUserThemes Bundle the dark and light TUI themes selected in settings
 	 */
+	/**
+	 * Deliver a session lifecycle event to every extension tool that registered
+	 * `onSession`.
+	 *
+	 * This lives here rather than on the interactive UI controller because it is
+	 * not a UI concern: a tool that keeps a session open, or releases a resource
+	 * on shutdown, needs to hear about it in `print`, `rpc` and `json` modes too.
+	 * When it lived on the UI controller, `print`/`rpc`/`json` had no path to it
+	 * at all, so a handler that never touched the UI still never ran — a real
+	 * resource leak in exactly the modes used for automation.
+	 *
+	 * `onToolError` is called when a handler throws. The interactive mode passes
+	 * a presenter; the others pass nothing and the error is logged, because a
+	 * non-interactive run has nowhere to show a chat bubble.
+	 */
+	async emitCustomToolSessionEvent(
+		reason: "start" | "switch" | "branch" | "tree" | "shutdown",
+		options?: { previousSessionFile?: string; onToolError?: (tool: string, error: string) => void },
+	): Promise<number> {
+		const runner = this.#extensionRunner;
+		if (!runner) return 0;
+		const event = { reason, previousSessionFile: options?.previousSessionFile };
+		const uiContext = runner.getUIContext();
+		let delivered = 0;
+		for (const registeredTool of runner.getAllRegisteredTools() ?? []) {
+			const onSession = registeredTool.definition.onSession;
+			if (!onSession) continue;
+			try {
+				await onSession(event, {
+					...runner.createContext(),
+					ui: uiContext,
+					// A mode with no UI passes no context; the handler decides whether
+					// it can work without one rather than being skipped for it.
+					hasUI: uiContext !== undefined,
+				});
+				delivered++;
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				const name = registeredTool.definition.name;
+				if (options?.onToolError) {
+					options.onToolError(name, message);
+				} else {
+					logger.error("Extension tool onSession handler failed", { tool: name, error: message });
+				}
+			}
+		}
+		return delivered;
+	}
+
 	async exportToHtml(
 		outputPath?: string,
 		useUserThemes = false,

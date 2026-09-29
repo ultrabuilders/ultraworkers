@@ -24,15 +24,15 @@ async function editAnnotationDraft(
 ): Promise<void> {
 	const editor = getEditorCommand();
 	if (!editor) throw new Error("Set $VISUAL or $EDITOR to edit an annotation externally.");
-	// Hand the terminal to the editor, not to a stopped TUI: stop() tears down the
-	// render engine and the debug server, so coming back from it would have to
-	// restart the whole TUI while this overlay is still mounted.
-	tui.suspendInput();
+	// A full stop/start, because that is what actually returns the terminal:
+	// a lighter "pause input" flag is not read anywhere on the input path, so the
+	// editor would still compete with this TUI for the same keystrokes. start()
+	// force-renders on the way back, so nothing else is needed.
+	tui.stop();
 	try {
 		commit(await openInEditor(editor, draft, { extension: ".md" }));
 	} finally {
-		tui.resumeInput();
-		tui.requestRender();
+		tui.start();
 	}
 }
 

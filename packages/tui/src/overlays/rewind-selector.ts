@@ -174,7 +174,7 @@ export class RewindSelectorComponent implements Component {
 		this.#builder = this.#replay(tail);
 		this.#selected = Math.max(0, this.#targets.length - 1);
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.deps.ui.viewportSize.rows || process.stdout.rows || 40,
+			getHeight: () => this.deps.ui.viewportSize?.rows ?? process.stdout.rows ?? 40,
 			frame: context => this.#frame(context.contentWidth),
 		});
 	}

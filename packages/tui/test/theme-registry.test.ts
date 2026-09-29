@@ -2,12 +2,8 @@ import { describe, expect, it } from "bun:test";
 // Imported from the package root on purpose: an extension can only reach a
 // seam the barrel exports, and a registry reachable only by deep path is the
 // same dead seam this bead exists to remove.
-import {
-	getBuiltinThemes,
-	getRegisteredThemes,
-	registerTheme,
-	resolveThemeJson,
-} from "@oh-my-pi/pi-tui";
+import { getBuiltinThemes, getRegisteredThemes, registerTheme, resolveThemeJson } from "@oh-my-pi/pi-tui";
+import { isLightTheme } from "@oh-my-pi/pi-tui/theme/theme";
 
 // Contract: an extension contributes a theme, and a name collision with a
 // built-in is REPORTED rather than silently resolved in the built-in's favour.
@@ -81,5 +77,20 @@ describe("built-in resolution is unchanged", () => {
 		registerTheme("reg-order-b", theme("#0b0b0b"));
 		expect(resolveThemeJson("dark")).toBe(getBuiltinThemes().dark);
 		expect(resolveThemeJson("reg-order-b")).toBeDefined();
+	});
+});
+
+describe("a registered theme is classified like its content", () => {
+	it("isLightTheme sees extension-registered themes", () => {
+		// `isLightTheme` used to re-derive the built-in-wins rule on its own and
+		// knew nothing about the registry, so a light theme an extension
+		// registered was always reported dark. The settings migration and the
+		// setup wizard both read this, and would have painted the wrong
+		// background for a theme the user had chosen.
+		registerTheme("reg-light-clone", getBuiltinThemes().light);
+		expect(isLightTheme("reg-light-clone")).toBe(true);
+		// And a dark one stays dark, so the fix is not just "everything is light".
+		registerTheme("reg-dark-clone", getBuiltinThemes().dark);
+		expect(isLightTheme("reg-dark-clone")).toBe(false);
 	});
 });

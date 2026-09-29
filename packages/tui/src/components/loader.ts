@@ -1,10 +1,10 @@
+import type { ExtensionTUISurface } from "../tui";
 import type { TspProps } from "@oh-my-pi/pi-wire";
 import { elapsed, kbd, keyed, node, row, span, text } from "../native/describe";
 import { plainText } from "../native/spans";
 import type { DescribeContext, NativeChild, NativeNode, NativeUiEvent } from "../native/node";
 import { isNativeRendering } from "../native/state";
 import { describeShimmer, type ShimmerPalette, shimmerEnabled } from "../theme/shimmer";
-import type { TUI } from "../tui";
 import { getPaddingX, padding, sliceByColumn, visibleWidth } from "../utils";
 import { Text } from "./text";
 
@@ -109,7 +109,7 @@ export class Loader extends Text {
 	#frames = DEFAULT_SPINNER_FRAMES;
 	#currentFrame = 0;
 	#intervalId?: NodeJS.Timeout;
-	#ui: TUI | null = null;
+	#ui: ExtensionTUISurface | null = null;
 	#lastSpinnerTick = 0;
 	#layoutSource?: readonly string[];
 	#layout?: readonly {
@@ -129,7 +129,7 @@ export class Loader extends Text {
 	#nativeTimer?: NodeJS.Timeout;
 
 	constructor(
-		ui: TUI,
+		ui: ExtensionTUISurface,
 		private spinnerColorFn: ColorFn,
 		private messageColorFn: LoaderMessageColorFn,
 		private message: string | (() => string) = "Loading...",

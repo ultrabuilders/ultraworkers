@@ -68,7 +68,9 @@ flag = [f for f, r in rows if isinstance(r, Exception) or r["verdict"]["choice"]
 **JavaScript:**
 
 ```js
-const handles = Object.fromEntries(Object.entries(diffs).map(([f, d]) => [f, judge({ file: f, subject: SUBJECT, diff: d.slice(0, CAP) }, QUESTIONS)]));
+const handles = Object.fromEntries(
+	Object.entries(diffs).map(([f, d]) => [f, judge({ file: f, subject: SUBJECT, diff: d.slice(0, CAP) }, QUESTIONS)]),
+);
 const results = await wait(Object.values(handles), { raiseErrors: false });
 ```
 

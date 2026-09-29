@@ -42,7 +42,6 @@ describe("Tool image rendering", () => {
 		const component = new ToolExecutionComponent("read", { path: "repro.jpg" }, {}, undefined, {
 			requestRender,
 			requestComponentRender: vi.fn(),
-			resetDisplay: vi.fn(),
 		});
 
 		component.updateResult({ content: [IMAGE] }, false);
@@ -58,7 +57,6 @@ describe("Tool image rendering", () => {
 			{
 				requestRender: vi.fn(),
 				requestComponentRender: vi.fn(),
-				resetDisplay: vi.fn(),
 			},
 		);
 
@@ -214,7 +212,6 @@ describe("Kitty PNG conversion cache", () => {
 		const ui = {
 			requestRender: vi.fn(() => displayed.notify()),
 			requestComponentRender: vi.fn(),
-			resetDisplay: vi.fn(),
 		};
 		const component = new ToolExecutionComponent("read", { path: "shot.webp" }, { showImages: true }, undefined, ui);
 		component.updateResult({ content: [liveImage] }, false);

@@ -20,7 +20,7 @@ phạm vi M3 theo đo**, không phải theo giả định.
 ### Ràng buộc pháp lý đã chốt, không mở lại
 
 Nguồn là `claude-code-best/claude-code`, tựa đề tự nó là **"Reverse-engineered Anthropic Claude Code
-CLI"**. Repo đó **không có file `LICENSE`**, `package.json` không khai `license`, và README gõ
+CLI"**. Repo đó **không cấp quyền ở gốc** *(đính chính 2026-09-29: câu cũ "không có file `LICENSE` ở bất kỳ path nào" là **sai** — `packages/workflow-engine/LICENSE` có tồn tại (MIT, 1.073 byte) và `packages/acp-link` khai `"license": "MIT"` không kèm file. Cách viết đúng: **root không cấp quyền cụm; 2/13 package là carve-out MIT hẹp, và không cái nào thuộc phần M3 port**)*, `package.json` ở gốc không khai `license`, và bản **đã phát hành lên npm** (`claude-code-best@2.8.4`) cũng có **0 trường `license`** — tức đường phân phối cũng đóng, không chỉ đường nguồn; README gõ
 *"This project is for educational and research purposes only. All rights to Claude Code belong to
 Anthropic."* — xem [§2.0 của phần này trong plan tổng](COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md#ràng-buộc-pháp-lý-đã-chốt-không-mở-lại).
 
@@ -31,7 +31,7 @@ Mọi mục dưới đây đều theo ranh giới đó.
 
 | Hướng | Kết luận | Bằng chứng |
 |---|---|---|
-| (a) Chạy app Ink của CCB như tiến trình con | **Loại** | CCB không phải thư viện UI mà là **agent thứ hai**: 558.328 LOC; `src/screens/REPL.tsx` dài 6.684 dòng tự quản lý session; và nó **tự giành terminal** — `setRawMode` ở `App.tsx:317`, alternate screen, 52 file ghi thẳng `process.stdout`, 20 file đọc `process.stdin` |
+| (a) Chạy app Ink của CCB như tiến trình con | **Loại** | CCB không phải thư viện UI mà là **agent thứ hai**: 558.328 LOC; `src/screens/REPL.tsx` dài 6.684 dòng tự quản lý session; và nó **tự giành terminal** — `setRawMode` ở `packages/@ant/ink/src/components/App.tsx:317` *(đính chính 2026-09-29: neo cũ ghi `App.tsx:317`, nhưng `src/components/App.tsx` chỉ có **36 dòng** — dòng 317 chỉ tồn tại trong bản vendor `packages/@ant/ink/`, khai `name: "@anthropic/ink"`, `private: true`, **không có trường `license`**. Tức bằng chứng pháp lý của M3 đang trỏ vào một fork vendor không cấp quyền — đã đo lại: 36 dòng với 780 dòng, dòng 317 là `stdin.setRawMode(true);`)*, alternate screen, 52 file ghi thẳng `process.stdout`, 20 file đọc `process.stdin` |
 | (b) Nhúng Ink (React) vào bên trong omp | **Loại** | Không chỉ vì bundle. `packages/tui/src/tui.ts:224` định nghĩa `Component { render(width): readonly string[]; handleInput?; invalidate?; dispose? }` — **mệnh lệnh, không VDOM, không reconciler**. Ink là cây React-retained trên yoga. Cả hai hệ đều tin mình sở hữu stdin + scroll region + raw mode + synchronized output trên cùng một tty, nên output hỏng **theo cấu trúc**, không phải đôi khi. Chặn là **hợp đồng render**, không phải kích thước bundle. |
 | (c) Viết lại component trên TUI của omp | **Khả thi** | Nhưng phải định nghĩa lại "100%" — xem ngay dưới |
 

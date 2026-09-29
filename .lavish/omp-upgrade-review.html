@@ -95,8 +95,8 @@
         <div class="text-xs text-base-content/60">câu hỏi chưa chốt <span class="line-through opacity-50">6</span></div>
       </div>
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
-        <div class="text-2xl font-bold text-warning">17</div>
-        <div class="text-xs text-base-content/60">quyết định còn mở ở M8–M10</div>
+        <div class="text-2xl font-bold text-warning">4</div>
+        <div class="text-xs text-base-content/60">quyết định còn mở ở M8</div>
       </div>
       <div class="rounded-box border border-base-content/10 bg-base-100 p-3">
         <div class="text-2xl font-bold text-error">51</div>
@@ -166,11 +166,11 @@
           <h3 class="card-title text-base">Ba milestone mới — không milestone nào trước đó sở hữu chúng</h3>
           <ul class="vlist list-disc pl-5 text-sm">
             <li><strong>M8 — Containment</strong>, 9 item. M6 từng ghi "chưa xây trong M6" rồi đẩy ra ngoài phạm vi, nhưng không work item nào nhận. Còn M2:3849 viết thẳng "KHÔNG ĐƯỢC BIẾN THÀNH SANDBOX" — ba tài liệu, ba thế chỗ, không khớp nhau.</li>
-            <li><strong>M9 — Orchestration</strong>, 7 item. 29 file đã có dưới <code class="mono">src/task/</code>, <strong>không work item nào phát triển</strong>. Cái thiếu là bốn quyết định, không phải code.</li>
-            <li><strong>M10 — Hợp đồng bền</strong>, 13 item. M4 ở tầng cổng CI, M6 ở tầng kỷ luật quy trình; <strong>giữa hai tầng đó omp trống</strong>.</li>
+            <li><strong>M8 — Trust Boundaries</strong>. Đổi tên sau khi containment tầng OS bị defer. Còn lại: `tools.approval.eval` (chặn đường thoát thứ hai) · `tools.approvalMode` <em>bỏ — omp không cần</em> · W6 tiếp nhận `WI-20` (trust enforcement, chưa có chủ) · trạng thái ba ngày cho cổng · nhốt code model viết · báo trong `omp doctor`.</li>
+            <li><strong>M9 và M10 đã bị bỏ.</strong> Cả hai đến từ đợt tra đi lệch trục: M9 hỏi *còn thiếu chức năng nào* (thực ra omp đã đủ chức năng — vấn đề là chúng đang hardcode), M10 hỏi *kỷ luật quy trình* (không phải seam). Không milestone nào trước đó sở hữu chúng và không cái nào sửa thứ hỏng.</li>
           </ul>
           <p class="text-sm text-base-content/70 mt-2">
-            Tên M8/M9 từng bị hai đề xuất độc lập tranh cùng một tên — giờ đã ghi lại lịch sử để không lặp lại.
+            <p class="text-sm text-base-content/70 mt-2">Đợt tra đi lệch trục đã bị phát hiện và sửa framing. Trục đúng của chương trình là <strong>de-hardcode thành seam</strong>, không phải bổ sung chức năng.</p>
           </p>
         </div>
       </div>
@@ -195,7 +195,7 @@
           <code class="mono">bun test</code> không chạy được trên máy này (thiếu native addon
           <code class="mono">pi_natives.win32-x64.node</code>). <strong>Không phát hiện nào trong hai vòng
           tra đã được xác nhận bằng runtime</strong> — tất cả là đọc tĩnh có phản biện. Một suite đỏ ở
-          đây không phải test fail; đó đúng là trường hợp mà M10 W7 sinh ra để phân biệt.
+          đây không phải test fail. Đây là trường hợp mà cổng ba ngày của M8 sinh ra để phân biệt.
         </p>
       </div>
     </div>

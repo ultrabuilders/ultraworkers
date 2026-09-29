@@ -3204,7 +3204,7 @@ Cổng cài sạch rẻ: bắt được lỗi mà typecheck không bắt.
 
 Bản cũ viết `node -e '…' | grep . && { echo …; exit 1; }` và **không bao giờ xanh** — đo trên ba trạng thái thật: cây sạch (exit 1, im lặng, không in gì), bản registry (exit 1, in `NOT WORKSPACE` rồi `GATE F FAIL`), và `node_modules/@ultraworkers` chưa tồn tại (exit 1, im lặng). Nguyên nhân: `grep .` trả 1 khi producer không in dòng nào, và `&&` rồi trả chính 1 đó — nên cả trường hợp ĐÚNG cũng đỏ, còn lỗi của `readdirSync` (ENOENT) cũng đỏ nhưng không in thông điệp, không phân biệt được với cổng đã bắt được lỗi thật. Bản mới để chính script node quyết định exit code, nên phân biệt được cả ba trạng thái.
 
-**Cổng này có thực sự đỏ được không?** Có — `gate_can_fail = true`. GATE 0, A, B, C, D đều có lệnh `exit 1` in ra thông điệp FAIL, và cả năm đều đã được đo là chạy được trên máy này. GATE F cũng đỏ được và chạy được. Riêng GATE E **không** đỏ được ở máy này vì `bun test` không chạy — nó phải được ghi `NOT RUN — environment blocked`, tuyệt đối không ghi `pass`.
+**Cổng này có thực sự đỏ được không?** Có — `gate_can_fail = true`. GATE 0, A, B, C, D đều có lệnh `exit 1` in ra thông điệp FAIL, và cả năm đều đã được đo là chạy được trên máy này. GATE F cũng đỏ được và chạy được. GATE E **cũng** đỏ được và đã chạy thật ở máy này — addon đã build nên `bun run test:ts` chạy được (đo lại `bun test packages/omptype/test/` → 1056 pass / 0 fail). **TUYỆT ĐỐI không ghi `NOT RUN — environment blocked` cho GATE E ở máy này — chạy nó.** Đúng ba chữ ấy chỉ dành cho máy mà `ls packages/natives/native/pi_natives.darwin-arm64.node` thất bại; tiền đề tái lập được là `brew install ninja && bun --cwd=packages/natives run build` (xem [Điều kiện tiên quyết](#điều-kiện-tiên-quyết)).
 
 ### Phụ thuộc
 
@@ -3752,7 +3752,7 @@ awk -F'\t' '$1=="bare-oh-my-pi"' scripts/rename/disposition.tsv | wc -l   # phai
 
 Phân biệt được: W8b Gate 0 dùng lệnh ghi "15 file" cho `scope=bare-oh-my-pi`, nhưng lệnh đó trả 16 trên HEAD hiện tại. Xem Đính chính #1 — W8b phải loại `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` theo đường dẫn, nếu không Gate 0 của W8b sẽ đỏ vì một hàng thuộc về tài liệu kế hoạch.
 
-**Cổng có thực sự đỏ được không?** Có — `gate_can_fail: true`. Gate 0, A, B, C, D, E, F, H đều phân biệt được "đã làm" với "chưa làm" và mỗi cổng có một đường đỏ riêng. Riêng Gate G thì **không**: nó không chạy được trên máy này, nên nếu ghi `pass` cho nó thì đó là khai sai; nó chỉ ghi được `NOT RUN — environment blocked`.
+**Cổng có thực sự đỏ được không?** Có — `gate_can_fail: true`. Gate 0, A, B, C, D, E, F, H đều phân biệt được "đã làm" với "chưa làm" và mỗi cổng có một đường đỏ riêng. Gate G **cũng** chạy được và đã chạy thật ở máy này — addon đã build nên `bun test packages/coding-agent/test/telemetry-export.test.ts packages/coding-agent/test/pi-scope-aliases.test.ts` cho **9 pass / 0 fail** và **1 pass / 0 fail**. Nên khi nó xanh thì ghi `pass`; chỉ ghi `NOT RUN — environment blocked` trên máy mà `ls packages/natives/native/pi_natives.darwin-arm64.node` thất bại, với cùng tiền đề tái lập được `brew install ninja && bun --cwd=packages/natives run build`.
 
 ### Phụ thuộc
 

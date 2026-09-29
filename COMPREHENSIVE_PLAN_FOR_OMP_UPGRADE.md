@@ -185,8 +185,8 @@ Vì giữ nguyên slogan, điều kiện phải được **công khai chứ khô
    "mọi thứ là plugin" càng đúng về nghĩa đen, thì plugin càng chính là bề mặt tấn công, nên trust
    gate càng phải được chốt.
 3. **Seam M2 cắt theo hướng nào?** Theo (i), những gì *không* thể là plugin vì nằm dưới app shell
-   (`setFrameProvider`, cell buffer / damage rect) **ở lại trong core** — và danh sách đó phải được
-   viết ra, không được suy ra sau.
+   (`setFrameProvider`, cell buffer) **ở lại trong core** — và danh sách đó phải được
+   viết ra, không được suy ra sau. Danh sách đó chỉ được nêu **tên thứ tồn tại ở HEAD**; xem *Đính chính* ở trên: cell buffer có, còn damage rect thì không (0 hit).
 
 ---
 
@@ -244,18 +244,18 @@ phép, không kèm toàn văn.
 ## ĐIỀU KIỆN MÔI TRƯỜNG ĐỂ CHẠY LỆNH VERIFY
 
 **Đọc mục này trước khi chạy bất kỳ lệnh nào trong tài liệu.** Tài liệu này viết lệnh verify ở
-dạng `bun check` và `bun test`. Trên máy đã dùng để soạn, **các lệnh `bun test` đều báo
-`0 pass` kèm lỗi `Failed to load pi_natives native addon for darwin-arm64`** — vì native addon
-`pi_natives.darwin-arm64.node` chưa được build.
+dạng `bun check` và `bun test`. **Tiền đề đã dựng xong trên cây này** — đo lại ngày 2026-09-29, không
+phải suy ra: `bun test packages/utils/test/` → **743 pass / 10 skip / 0 fail** (753 test, 80 file), và
+`bun run check:ts` → **exit 0**.
 
-Đây là **điều kiện môi trường, không phải lỗi kế hoạch**. Nhưng người implementer sẽ tưởng mình
-đã làm hỏng thứ gì đó nếu lệnh đầu tiên chạy ra đỏ.
+Những câu còn nhắc `0 pass` kèm `Failed to load pi_natives native addon for darwin-arm64` là **ảnh chụp của
+một máy chưa build**, không phải hiện trạng — chúng từng là bằng chứng cho điều vẫn đúng: **một `bun test` đỏ không phân biệt được "việc của bạn hỏng" với "thiếu tiền đề"**.
 
 | Việc | Ghi chú |
 |---|---|
 | `bun install` **không** phải bước thiếu | `node_modules/` và `bun.lock` đều đã có; chạy lại là no-op |
-| Cần build native addon | `packages/natives/native/` chưa có file `.node` cho `darwin-arm64` |
-| Lệnh build **chưa được xác minh** | `bazel` / `bazelisk` không có trên PATH của máy đã dùng. Cơ chế hỏng đã được xác minh bằng cách chạy test thật; việc lệnh build có thành công thì **không** — tài liệu này không ghi một build chưa từng chạy |
+| Native addon **đã build** | `packages/natives/native/pi_natives.darwin-arm64.node` có mặt (185 MB) |
+| Lệnh build **đã được xác minh** | `brew install ninja` rồi `bun --cwd=packages/natives run build` → **exit 0**; `bazel` / `bazelisk` không cần trên PATH |
 | Nhiều test trong kế hoạch **chưa tồn tại** | Đó chính là thứ các work item tạo ra. Lệnh của chúng chỉ chạy được sau khi test được viết |
 
 Lệnh kiểm tra sớm nhất khi môi trường đã sẵn sàng, để biết mình đang đứng ở đâu:
@@ -272,8 +272,8 @@ Không dùng `tsc` — AGENTS.md cấm.
 
 | Chỉ số | Giá trị |
 |---|---|
-| Work item | **83** |
-| Wave (mỗi wave ship và verify độc lập) | **36** |
+| Work item | ⚠️ **chưa chốt** — **83** theo bảng này · **99** nếu cộng cột *Work item* của bảng Thứ tự Milestone ngay dưới. Chênh 16 là do các ô đếm lệch nhau (M1 17-vs-21, M2 15, M3 16, M6 15, M8 5). Không tự chọn số nào |
+| Wave (mỗi wave ship và verify độc lập) | ⚠️ **chưa chốt** — **36** theo bảng này · **46** nếu cộng cột *Wave* của bảng Thứ tự Milestone ngay dưới |
 | Gap / phát hiện mới đã kiểm chứng | **48** |
 | Claim trong report cũ **không** giữ được, đã đính chính | **50** (toàn cục) + **141** ở M1 + **129** ở M2 + **134** ở M3 + **34** ở M4 + **146** ở M5 |
 | Rủi ro đã ghi nhận | **51** |
@@ -286,11 +286,11 @@ Không dùng `tsc` — AGENTS.md cấm.
 
 | # | ID | Milestone | Phụ thuộc | Work item | Wave | Effort |
 |---|---|---|---|---|---|---|
-| 1 | **M1** | Bao trọn `pi` — **Phần A**: parity + nền tảng vòng đời · **Phần B** (gộp từ M1B, 2026-09-29): port 6 package | — | 17 (Phần A) + 6 package (Phần B) | 8 (A) | L (~4 tuần phần A) |
+| 1 | **M1** | Bao trọn `pi` — **Phần A**: parity + nền tảng vòng đời · **Phần B** (gộp từ M1B, 2026-09-29): port 6 package | — | ⚠️ **đang mâu thuẫn, chưa chốt**: ô này ghi 17 (Phần A) + 6 package, thân M1 ghi "21 work item" ở hai chỗ, và có **22** mục `## W` (W8 đã rời bảng). **Phần B không có đặc tả trong file này** — `WI-ECOSYS-*` / `GAP-M1B-*` xuất hiện 0 lần ở đây và 47 lần trong `MILESTONE_1_EXECUTION_PLAN.md` mục `# PHẦN B`; muốn gõ Phần B thì phải mở file đó | 8 (A) | L (~4 tuần phần A) |
 | 2 | **M2** | Composable extensions thay hardcoded core | M1 | 15 | 8 | ~8–10 engineer-weeks |
 | 3 | **M3** | Claude Code UI/UX | M2 | 16 | 6 | L (9/15 hạng mục thực thi làm được ngay hôm nay; 16 nếu tính cả A9) |
 | 4 | **M4** | Kỷ luật & workflow theo deepseek-harness | M2 | 4 | 3 | M (2.5–3 tuần cho phần core) |
-| 5 | **M5** | Rebrand `ultraworkers` | M1–M4 | 16 | 6 | L (phần lớn là **phân phối**, không phải code) |
+| 5 | **M5** | Rebrand `ultraworkers` | M1, M2 — **không** phải M3/M4 (xem *Đường găng thẽ*) | 16 | 6 | L (phần lớn là **phân phối**, không phải code) |
 | 6 | **M6** | Bài học từ codex / opencode / gajae | M1–M5 | 15 | 5 | S+M (~4–6 ngày XS/S, +2–3 tuần M) |
 | 7 | **M7** | Cái riêng của senpi — tách khỏi M5 (2026-09-28) | M2 | 5 | 6 | ~10–12 ngày. **Quan hệ với M6 chưa ghi ở đâu** — cần chủ quyết |
 | 8 | **M8** | Trust Boundaries — trust, approval, enforcement | M2 | 5 | 4 | XS–L. **Containment tầng OS đã DEFER (2026-09-29)**; giữ lại phần không cần kernel |
@@ -300,7 +300,7 @@ trình có 6 milestone. M7 và M8 đã tồn tại nhưng không có mặt. M1 n
 trong chính file M1). **Cột *Quan hệ* của M7 vẫn trống** — đó là một câu hỏi mở, không phải quan hệ đã
 xác lập.
 
-`R0` không phải tiền đề của M1 — nó là tiền đề của **Phần B của M1** (gộp từ `M1B` ngày 2026-09-29), theo `PACKAGE_REORGANIZATION_PLAN.md:3`. Bảy tài liệu kế hoạch thay vì tám: `MILESTONE_1_EXECUTION_PLAN.md` nay chứa cả hai phần.
+`R0` không phải tiền đề của M1 — nó là tiền đề của **Phần B của M1** (gộp từ `M1B` ngày 2026-09-29), theo `PACKAGE_REORGANIZATION_PLAN.md:3`. **Tám** tài liệu kế hoạch trên đĩa, đếm ngày 2026-09-29: `MILESTONE_1_EXECUTION_PLAN.md` … `MILESTONE_8_EXECUTION_PLAN.md`, và file M1 nay chứa cả hai phần. Lưu ý khi tìm: file này nhúng M1–M7 thành mục `KẾ HOẠCH THỰC THIỆN`, còn **M8 không được nhúng** — nó chỉ tồn tại ở `MILESTONE_8_EXECUTION_PLAN.md`.
 
 ### Đường găng thẽ
 
@@ -433,7 +433,7 @@ Toàn bộ 50 dòng nằm ở [Bảng điều chỉnh tổng hợp](#bảng-đi�
 | **M3** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Vì sao không port được dạng plugin · Bối cảnh §1–§5 · 6 sóng, 17 hạng mục (A1–A9, B1–B3, C1–C2, D1–D3) · **Cổng chấp nhận và pháp lý §7–§8** · **Bảng 50 quyết định cần bạn chốt** · **Đính chính so với plan tổng (134 mục)** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |
 | **M4** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Vì sao chỉ mượn kỷ luật · **Phạm vi đã thu hẹp** (sáu work item đã rời sang M2/M1) · 4 hạng mục còn lại, sóng B/C/D · **Pháp lý §7 — neo chưa kiểm chứng được** · **Bảng 19 quyết định cần bạn chốt** · **Đính chính so với plan tổng** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |
 | **M5** | **Kế hoạch thực thiện — đã kiểm chứng lại trên source thật.** Vì sao đổi tên là việc nguy hiểm · Danh tính hai lớc · `do_not_rename` · Bốn nhóm vỡ âm thầm · 6 sóng, 16 hạng mục (W1–W13 + W6a, W8a, W8b, W13′) · **Bảng 73 quyết định cần bạn chốt** · **Đính chính so với plan tổng** · Định nghĩa hoàn thành · Những điều chưa được kiểm chứng |
-| **M5 phần cuối** | Rủi ro, câu hỏi, định nghĩa hoàn thành |
+| **M1 · M7 · M8** | ⚠️ Ba mục này **không có hàng riêng** ở bảng này, và M1 là milestone đầu tiên kỹ sư gõ. **M1** (Phần A+B) = mục `KẾ HOẠCH THỰC THIỆN` đầu tiên trong file; **M7** = mục `KẾ HOẠCH THỰC THIỆN` cuối; **M8** không được nhúng vào file này — chỉ có ở `MILESTONE_8_EXECUTION_PLAN.md`. M5 phần cuối (rủi ro, câu hỏi, định nghĩa hoàn thành) nằm trong mục M5 ở trên |
 | **M6** | **Audit bốn repo, đã kiểm chứng bằng lệnh.** `opencode` (MIT — quyết định layout cho M3) · `openai/codex` (Apache-2.0 — Rust và snapshot test) · `gajae-code` (MIT) · `claude-code-best` (không có LICENSE) · Bảng quyết định cần bạn chốt · Những điều chưa được kiểm chứng |
 | **Phụ lục** | Bảng gap, bảng điều chỉnh, pháp lý, rủi ro, câu hỏi, định nghĩa hoàn thành |
 

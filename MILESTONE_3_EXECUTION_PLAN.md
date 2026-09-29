@@ -135,7 +135,7 @@ Thứ tự ưu tiên, xếp theo **tỉ lệ presentational chứ không theo LO
 | GAP-M3-B8 công tắc mẹ animation | **MỞ LÕI** | một seam chung cho mọi hiệu ứng + probe |
 | GAP-M3-B9 hot-swap renderer | **MỞ LÕI** | chọn renderer ở mức ứng dụng |
 
-**MỞ LÕI = 10 · CÓ SẴN = 12 · 32/34 file đích đã tồn tại** (con số file đo cho 16 mục gốc, không tính sáu mục bổ sung).
+**MỞ LÕI = 11 · CÓ SẴN = 11 · 32/34 file đích đã tồn tại** (con số file đo cho 16 mục gốc, không tính sáu mục bổ sung). Đếm lại từ chính bảng trên: 22 hàng, 11 hàng `MỞ LÕI` và 11 hàng `CÓ SẴN` (trong đó 8 hàng viết `CÓ SẬN` — cùng nghĩa, sai dấu). Con số `10 / 12` từng ghi ở đây là sai và đã bị bảng tự phủ nhận.
 
 #### Ba phát hiện làm thay đổi kế hoạch
 
@@ -268,7 +268,7 @@ chứng là tương thích. Port ý tưởng nghĩa là port cái người dùng
 
 ## Điều kiện tiên quyết
 
-**Tiền đề môi trường: cần addon native.** Trên máy sạch, `bun test packages/coding-agent/test/**` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64` — đây **không phải hạn chế của máy**, mà là thiếu một bước build. Làm một lần:
+**Tiền đề môi trường: addon native — ĐÃ build tại cây này, đo lại ngày 2026-09-29.** `packages/natives/native/pi_natives.darwin-arm64.node` có mặt (185 MB), `bun run check:ts` exit 0, và `bun test packages/tui/test/` chạy đủ 222/222 file. Vì vậy mọi câu kiểu "trên máy sạch `bun test` chết" nêu dưới đây là **tiền đề tái lập được, KHÔNG phải sự thật hiện hành**: nó mô tả đúng một máy *chưa* build, và chỉ máy đó mới đỏ. Đừng đọc chúng là trạng thái của cây bạn đang đứng. Nếu `ls packages/natives/native/pi_natives.darwin-arm64.node` trả về một file thì bạn đã ở phía sau của tiền đề, và bước dưới là để dựng lại nó khi cần:
 
 ```bash
 brew install ninja                              # 1.13.2
@@ -454,7 +454,7 @@ Tác động ra ngoài: **không có** — nội bộ. Tài liệu là tham chi�
 | path | hành động | thay đổi | đã kiểm chứng? |
 | --- | --- | --- | --- |
 | `docs/plugin-surface-closure.md` | tạo | Tài liệu mới: mục tiêu cùng sáu loại trừ ở tầng quyết định; ba phát hiện mở đầu; ba lý do port bằng plugin thất bại; và một mục "what this does NOT prove". Mọi neo mang theo số dòng đã đối chiếu lại tại HEAD 808b365, chứ không theo lời plan nói. Năm trong mười hai neo dòng của plan sai; tài liệu này ghi lại số đúng để không kỹ sư S1–S6 nào điều hướng bằng một con số cũ. | Có — `verified: true`. Tiền lệ là `docs/tui-core-renderer.md`, mà chính plan cũng dẫn ở `:107` và `:174` làm thẩm quyền viết cho bất biến scroll của renderer — cùng một hình dạng: một bất biến văn xuôi mà các đặc tả về sau trích dẫn theo dòng. Kiểm chứng trực tiếp: `docs/tui-core-renderer.md:107` đúng là `The renderer never probes the user's scroll position.` và `:174` đúng là `8. The renderer never probes terminal scroll position or forks history policy`. Cả hai chính xác như plan nói. |
-| `packages/tui/test/status-line-segment-closure.test.ts` | tạo | Test mới ghim hai catalog status-line đã đóng vào nhau. (a) Mọi id trong `STATUS_LINE_SEGMENT_IDS` có một entry trong `SEGMENTS`, và mọi khoá của `SEGMENTS` nằm trong hợp — hợp và sổ đăng ký được duy trì bằng tay trong hai file khác nhau, mà chưa có gì kiểm tra mối nối đó. (b) `renderSegment` với một id không có entry trong sổ đăng ký trả về `{ content: "", visible: false }` chứ không ném lỗi, và bộ lọc overflow của `StatusLineComponent` tại `component.ts:2590` và `:2603` loại nó khỏi thanh mà không cảnh báo — đúng cái biến mất âm thầm mà một hợp bị nới nửa vời tạo ra. (c) Ba thứ tự được duy trì bằng tay thống nhất với nhau. | Có — `verified: true`. `packages/tui/test/` tồn tại và quy ước đã đối chiếu với `packages/tui/test/status-line-cache-hit.test.ts:1-25`, vốn đã import `renderSegment` từ `../src/status-line/segments`, dựng `SegmentContext`, và gọi `initTheme()` trong `beforeAll`. Bám đúng hình dạng đó. **Tiền đề môi trường:** trên máy sạch, `bun test` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64` (đã chạy `bun test packages/tui/test/status-line-model.test.ts` và tái hiện). Đây không phải hạn chế của máy, mà là thiếu một bước build: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). Sau đó file này chạy được. |
+| `packages/tui/test/status-line-segment-closure.test.ts` | tạo | Test mới ghim hai catalog status-line đã đóng vào nhau. (a) Mọi id trong `STATUS_LINE_SEGMENT_IDS` có một entry trong `SEGMENTS`, và mọi khoá của `SEGMENTS` nằm trong hợp — hợp và sổ đăng ký được duy trì bằng tay trong hai file khác nhau, mà chưa có gì kiểm tra mối nối đó. (b) `renderSegment` với một id không có entry trong sổ đăng ký trả về `{ content: "", visible: false }` chứ không ném lỗi, và bộ lọc overflow của `StatusLineComponent` tại `component.ts:2590` và `:2603` loại nó khỏi thanh mà không cảnh báo — đúng cái biến mất âm thầm mà một hợp bị nới nửa vời tạo ra. (c) Ba thứ tự được duy trì bằng tay thống nhất với nhau. | Có — `verified: true`. `packages/tui/test/` tồn tại và quy ước đã đối chiếu với `packages/tui/test/status-line-cache-hit.test.ts:1-25`, vốn đã import `renderSegment` từ `../src/status-line/segments`, dựng `SegmentContext`, và gọi `initTheme()` trong `beforeAll`. Bám đúng hình dạng đó. **Tiền đề môi trường:** addon **đã build ở cây này** (đo 2026-09-29), nên file này chạy được ngay. Nhánh "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó `bun test` chết ngay ở bước import với `Failed to load pi_natives native addon for darwin-arm64` (đã chạy `bun test packages/tui/test/status-line-model.test.ts` và tái hiện). Đó không phải hạn chế của máy, mà là thiếu một bước build: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). |
 | `packages/coding-agent/test/status-line-segment-picker.test.ts` | tạo | Test mới ghim catalog đã đóng thứ ba: từ vựng mà picker cấu hình đưa ra. `cfgStatusLineLeftSegments` / `cfgStatusLineRightSegments` đăng ký với `items: { values: STATUS_LINE_SEGMENT_IDS }`, nên picker tương tác chỉ có thể trình bày id thuộc hợp đã đóng băng. Test khẳng định một segment id có trong `SEGMENTS` nhưng vắng mặt khỏi `values` của picker là một lỗi được gọi đích danh, và rằng giá trị mặc định đã đăng ký bằng `CUSTOM_STATUS_LINE_DEFAULTS` (mặc định cấu hình và từ vựng picker không thể trôi khỏi nhau). | Có — `verified: true`. Neo đã kiểm chứng trực tiếp: `packages/coding-agent/src/modes/settings.ts:280` và `:287` đều mang `items: { values: STATUS_LINE_SEGMENT_IDS, label: "status line segment" }`, với `default: CUSTOM_STATUS_LINE_DEFAULTS.left` / `.right` ở dòng liền trước. `packages/coding-agent/test/` đã có 16 file `status-line-*.test.ts`, nên tên và vị trí khớp. |
 | `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md` | sửa — **cố ý KHÔNG sửa** | Plan là file được track, nhưng nó thuộc sở hữu của workflow assemble M1/M2 và các đặc tả S1–S6 đã mang plan_corrections riêng. Sửa nó ở đây sẽ đụng độ với workflow đó. Các đính chính nằm trong đặc tả này và trong `docs/plugin-surface-closure.md`. | Có — `verified: true`. Được track (`git ls-files` khớp đúng 1 file); không nằm trong gitignore. Cố ý để nguyên — xem câu hỏi mở O1, hỏi maintainer nên sửa luôn hay để plan làm bản ghi lịch sử. |
 
@@ -568,7 +568,7 @@ bun run check:ts
 bun test packages/tui/test/status-line-segment-closure.test.ts packages/coding-agent/test/status-line-segment-picker.test.ts
 ```
 
-**Tiền đề môi trường — đừng diễn giải thất bại đó là một khiếm khuyết trong công việc này.** Native addon là thứ duy nhất còn thiếu: trên máy sạch runner báo 0 pass / 1 fail / 1 error với `Failed to load pi_natives native addon for darwin-arm64` tại `packages/natives/native/index.js:23`. Điều này đã được tái hiện trên một test **không sửa đổi** có sẵn (`packages/tui/test/status-line-model.test.ts`), xác nhận nó là vấn đề môi trường chứ không phải do hai file mới. Build một lần là gỡ: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) — đây là một **bước build còn thiếu**, không phải hạn chế của máy này. Hai file này phải được chạy, và ctx1 không xong cho tới khi chúng đã chạy.
+**Tiền đề môi trường — đừng diễn giải thất bại đó là một khiếm khuyết trong công việc này.** Addon native là thứ duy nhất có thể chặn, và **tại cây này nó đã build** (đo 2026-09-29: `pi_natives.darwin-arm64.node` 185 MB, `bun test packages/tui/test/` chạy đủ 222/222 file). Nhánh "trên máy sạch" chỉ mô tả máy *chưa* build: ở đó runner báo 0 pass / 1 fail / 1 error với `Failed to load pi_natives native addon for darwin-arm64` tại `packages/natives/native/index.js:23`, và điều đó đã được tái hiện trên một test **không sửa đổi** có sẵn (`packages/tui/test/status-line-model.test.ts`) — chứng minh nó là vấn đề môi trường chứ không phải do hai file mới. Build một lần là gỡ: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) — đây là một **bước build còn thiếu**, không phải hạn chế của máy này. Hai file này phải được chạy, và ctx1 không xong cho tới khi chúng đã chạy.
 
 Đối chiếu lại neo — đây mới là bàn giao thật sự; chạy lại trước khi tin bất kỳ số dòng nào trong tài liệu:
 
@@ -669,9 +669,9 @@ Ghi chú kèm theo:
 
 1. Đọc dòng 8551-8741 của plan để lấy trong một lượt khung sóng M3 cùng §3/§4/§4.1/§5. KHÔNG đọc cả file — nó dài 1.1 MB. Neo: `COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md:8551-8741`.
 2. Xác nhận HEAD thật trước khi tin bất kỳ claim nào kiểu `@ HEAD 5873776` trong plan. `git rev-parse HEAD` trả về e040a60, và `git branch --show-current` trả về milestone-1. Coi mọi số dòng tương đối trong plan là chưa kiểm chứng cho tới khi tái lập được. Neo: `git rev-parse HEAD`.
-> ⛔ **TIỀN ĐỀ NÀY MÂU THUẪN WI-4 CỦA M2 (đính chính 2026-09-29) — phải chốt trước khi WI-4 merge.**
-> Bước này assert `toolRenderers` là **record ghi được, không đóng băng**. Nhưng `WI-4` của M2 yêu cầu `Object.freeze` + `Readonly` trên đúng registry đó (`MILESTONE_2_EXECUTION_PLAN.md:2608`, `:2636`, `:2658`). M3:258 đẩy quyết định sang "nợ bàn giao M4/M5 #4" — mà `grep -c registerToolRenderer` trên cả M4 và M5 → **0 và 0**, nên **không milestone nào nhận**. Merge M2 trước M3 làm đỏ.
-> **Câu hỏi:** plugin có được sở hữu renderer của built-in không? **(i)** đóng băng không ngoại lệ → bước này phải đổi tiền đề; **(ii)** đóng băng + một đường đăng ký tường minh do WI-9 sở hữu → bước này đổi từ "ghi trực tiếp" sang gọi đường đăng ký, giữ bất biến mà B1 cần mà không cần sửa WI-4. Chốt ở bảng quyết định của M2, **không** chốt lại ở đây.
+> ⛔ **TIỀN ĐỀ NÀY TỪNG MÂU THUẪN WI-4 CỦA M2 (đính chính 2026-09-29) — ĐÃ CHỐT, đọc khối ✅ ngay dưới trước khi đọc khối này.**
+> Bước này **từng** assert `toolRenderers` là **record ghi được, không đóng băng**. Nhưng `WI-4` của M2 yêu cầu `Object.freeze` + `Readonly` trên đúng registry đó (`MILESTONE_2_EXECUTION_PLAN.md:2608`, `:2636`, `:2658`). M3:258 đẩy quyết định sang "nợ bàn giao M4/M5 #4" — mà `grep -c registerToolRenderer` trên cả M4 và M5 → **0 và 0**, nên **không milestone nào nhận**. Merge M2 trước M3 làm đỏ. **Cả hai vế của dòng trên đã hết hiệu lực:** quyết định đã đóng ở khối ✅ kế tiếp theo phương án (i), nên tiền đề của bước 3 đã viết lại thành "registry là `Readonly` + đóng băng" và mâu thuẫn với WI-4 không còn tồn tại. Giữ khối này lại chỉ để nhắc vì sao bước 3 không được viết theo bản gốc.
+> **Câu hỏi đã chốt:** plugin có được sở hữu renderer của built-in không? **(i)** đóng băng không ngoại lệ → bước này phải đổi tiền đề; **(ii)** đóng băng + một đường đăng ký tường minh do WI-9 sở hữu → bước này đổi từ "ghi trực tiếp" sang gọi đường đăng ký, giữ bất biến mà B1 cần mà không cần sửa WI-4. Chốt ở bảng quyết định của M2, **không** chốt lại ở đây.
 
 > ✅ **ĐÃ CHỐT (2026-09-29): phương án (i) — KHÔNG được ghi đè renderer của built-in tool mà plugin không sở hữu.**
 > WI-4 của M2 đóng băng trọn vẹn, và **bước này phải viết lại**: assert registry là `Readonly` + đóng băng
@@ -712,14 +712,14 @@ Ba file test được dẫn đường trong sổ này (không sửa, không thê
 
 ### Xác minh
 
-Môi trường, đã kiểm chứng ngày 2026-09-27 tại HEAD e040a60 trên nhánh milestone-1:
+Môi trường, kiểm chứng ngày 2026-09-27 tại HEAD e040a60 trên nhánh milestone-1, và **đo lại 2026-09-29** ở cây này:
 
 ```bash
 bun test packages/coding-agent/test/status-line-overflow.test.ts
-  -> chạy được sau khi build addon. Trên máy sạch nó chết ở bước import:
-     'Failed to load pi_natives native addon for darwin-arm64'.
-  => Đây là tiền đề môi trường, KHÔNG phải hạn chế của máy. Build một lần:
-     brew install ninja && bun --cwd=packages/natives run build
+  -> chạy được NGAY ở cây này (addon đã build). Nhánh "máy sạch" bên dưới là tiền đề tái lập được,
+     KHÔNG phải trạng thái hiện tại — nó chỉ xảy ra khi thiếu đúng file 'pi_natives.darwin-arm64.node',
+     và lúc đó lệnh chết ở bước import với 'Failed to load pi_natives native addon for darwin-arm64'.
+  => Build một lần là gỡ: brew install ninja && bun --cwd=packages/natives run build
      Sau đó cổng M3 được đặt lên lệnh này như bình thường.
 
 bun run --filter './packages/tui' --if-present check:types
@@ -1037,7 +1037,7 @@ bun run check:ts
 
 Lệnh này đã chạy lại ở HEAD `808b365` (nhánh milestone-1) và PASS với exit code 0. Nó KHÔNG chậm: chạy nền xong trong 35 giây, không tới mức cần chạy nền. Hãy chạy thẳng giữa các hạng mục. Nếu máy bạn tải nặng và nó kéo dài, chạy nền và chờ exit code; đừng kill sớm. Theo bằng chứng ghi lại trong đặc tả, `check:ts` là `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types` (`package.json:94`); dự án cấm gọi `tsc` trực tiếp, nên đừng thay thế nó bằng `tsc`/`npx tsc`.
 
-**LƯU Ý:** `bun test` cần addon native. Trên máy sạch runner chết ngay ở bước import kèm `Failed to load pi_natives native addon for darwin-arm64` — đây là **tiền đề môi trường**, không phải hạn chế của máy. Build một lần: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). Sau đó toàn bộ lệnh test dưới đây chạy được.
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Nhánh "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó runner chết ngay ở bước import kèm `Failed to load pi_natives native addon for darwin-arm64`; đó là **tiền đề môi trường tái lập được**, không phải hạn chế của máy và không phải tín hiệu đỏ của công việc. Nếu máy bạn chưa có: build một lần bằng `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). Sau đó toàn bộ lệnh test dưới đây chạy được.
 
 Khi addon đã build, các lệnh test theo từng hạng mục là:
 
@@ -1309,7 +1309,7 @@ CHẠY ĐƯỢC NGAY HÔM NAY. Baseline lập ngày 2026-09-27 trên nhánh `mil
 
 2. `bun test packages/tui/test/mouse.test.ts` — ĐÃ KIỂM CHỨNG CHẠY ĐƯỢC NGAY: `13 pass, 0 fail, 38 expect() calls, Ran 13 tests across 1 file`. (Thời gian chạy dao động 22–32ms giữa các lần, nên không ghim vào tài liệu.)
 
-3. **`bun test` cần addon native — build một lần là cả sóng này chạy được.** Trên máy sạch, 205 trong 222 file test của `packages/tui/test` chết ngay ở `Failed to load pi_natives native addon for darwin-arm64`; chỉ 17 file thuần mới chạy. Đó là **tiền đề môi trường, không phải hạn chế của máy** — `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là toàn bộ 222 file chạy. Trong đúng các file sóng này cần: `mouse.test.ts` chạy ngay cả khi chưa build (13 pass — nó chỉ import `../src/mouse`, module giải mã thuần), còn `packages/coding-agent/test/interactive-mode-status.test.ts` — file mà cổng (c) và cổng (e) đều dựa vào — báo `0 pass, 1 fail` với chính lỗi đó, và `packages/tui/test/transcript-container.test.ts` (file lân cận mà D3 khai sẽ ngồi cạnh) cũng vậy. Sau khi build, cả ba chạy được. Trong ba file test MỚI, `wheel-acceleration.test.ts` (hàm thuần) không cần addon; `notice-queue.test.ts` và `transcript-viewer-scroll-chrome.test.ts` dựng component nên cần addon.
+3. **`bun test` cần addon native — và addon đã build ở cây này.** Đo lại 2026-09-29: `bun test packages/tui/test/` chạy đủ **222/222 file** (2807 pass / 5 skip / 8 fail, 2820 test, 61.63s) — không file nào chết vì addon. Con số "205 trong 222 file chết, chỉ 17 file thuần mới chạy" là phép đo **trước khi build**, và nó chỉ tái lập được trên máy thiếu `packages/natives/native/pi_natives.darwin-arm64.node` — đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là toàn bộ 222 file chạy. Trong đúng các file sóng này cần: `mouse.test.ts` chạy được **cả khi chưa build** (13 pass — nó chỉ import `../src/mouse`, module giải mã thuần), còn `packages/coding-agent/test/interactive-mode-status.test.ts` — file mà cổng (c) và cổng (e) đều dựa vào — và `packages/tui/test/transcript-container.test.ts` (file lân cận mà D3 khai sẽ ngồi cạnh) thì **không**: trên máy chưa build chúng báo `0 pass, 1 fail` với chính lỗi đó. Cả ba chạy được sau khi build. Trong ba file test MỚI, `wheel-acceleration.test.ts` (hàm thuần) không cần addon; `notice-queue.test.ts` và `transcript-viewer-scroll-chrome.test.ts` dựng component nên cần addon.
    **BƯỚC 0 BẮT BUỘC, chạy trước mọi việc khác:** `bun --cwd=packages/natives run build` (cần Rust toolchain), rồi chạy lại `bun test packages/coding-agent/test/interactive-mode-status.test.ts` và xác nhận nó **xanh trước** khi sửa một dòng A7 nào. Nếu không build được thì cổng (c) và cổng (e) không đỏ được, và mọi kết luận về A7 trong sóng này là bằng chứng suông.
 
 4. Sau khi hiện thực, theo thứ tự:
@@ -1592,11 +1592,11 @@ bun run check:ts
 # bị chặn cho tới khi addon native được build:
 #   bun test packages/coding-agent/test/mcp/elicitation-capability.test.ts packages/coding-agent/test/mcp/elicitation-form.test.ts
 #
-# Baseline đã kiểm chứng ở HEAD e040a60: `bun run check:ts` XANH (oxlint + oxfmt + tsgo
-# trên cả 16 package, exit 0). `bun test` cần addon native: trên máy sạch nó chết ở bước
-#   import với
-#   Failed to load pi_natives native addon for darwin-arm64
-#   (packages/natives/native/pi_natives.darwin-arm64.node missing)
+# Baseline đã kiểm chứng ở HEAD e040a60: `bun run check:ts` XANH (oxlint + oxfmt + tsgo trên cả
+# 16 package, exit 0 — đo lại 2026-09-29 ở cây này, vẫn 16/16 Done, exit 0). `bun test` cần addon
+# native, và addon ĐÃ build ở cây này. Hai dòng dưới mô tả máy CHƯA build, không phải cây bạn đang
+# đứng — ở đó lệnh chết ở bước import với `Failed to load pi_natives native addon for darwin-arm64`
+# (packages/natives/native/pi_natives.darwin-arm64.node missing)
 # Đó là lỗi môi trường, KHÔNG phải tín hiệu đỏ của công việc, và KHÔNG phải hạn chế của máy.
 # Build addon một lần là xong (bước này là điều kiện (0) của Cổng hoàn thành — xem mục đó):
 #   brew install ninja
@@ -1819,15 +1819,15 @@ bun test packages/coding-agent/test/plugin-settings-secret.test.ts \
          packages/coding-agent/test/plugin-tool-renderer-override.test.ts \
          packages/coding-agent/test/extension-working-message.test.ts \
          packages/coding-agent/test/extension-status-hint-strip.test.ts
-#   Runs once the addon above is built. On a clean machine before that step,
-#   NO test file in the repo runs — not just these four. Verified:
+#   Runs now — the addon above is already built on this tree. What follows describes
+#   a machine BEFORE that step, i.e. the conditional premise, not this tree: there most
+#   (not all) test files in the repo die at import, e.g.
 #     bun test packages/coding-agent/test/bash-executor.test.ts → 0 pass, 1 fail, 1 error
 #     bun test packages/tui/test/apply-patch-preview-render.test.ts → 0 pass, 1 fail, 1 error
-#   Same error for both:
-#     error: Failed to load pi_natives native addon for darwin-arm64.
-#   Verified directly. The four test files must still be WRITTEN and their
-#   assertions reviewed. Do not report this wave as verified on the strength of
-#   check:ts alone — check:ts does not run a single assertion.
+#   Same error for both: `Failed to load pi_natives native addon for darwin-arm64`.
+#   Not universal even there: `bun test packages/tui/test/` still ran 17 of 222 files.
+#   The four test files must still be WRITTEN and their assertions reviewed. Do not report this
+#   wave as verified on the strength of check:ts alone — check:ts does not run a single assertion.
 ```
 
 ### Cổng hoàn thành
@@ -2199,7 +2199,7 @@ bun run check:ts
 bun test packages/tui/test/daltonized-theme.test.ts packages/tui/test/theme-contrast-harness.test.ts
 ```
 
-Baseline đã xác nhận ở HEAD `808b365`: `bun run check:ts` pass (cả 15 package Done, pi-tui 6.67s). `bun test` cần addon native — build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là chạy được; đây là **tiền đề môi trường, không phải hạn chế của máy này**. Trên máy sạch chưa build, nó báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`; một lần chạy đỏ như vậy không phải bằng chứng của một lỗi thật.
+Baseline đã xác nhận ở HEAD `808b365`: `bun run check:ts` pass, và **đo lại 2026-09-29 ở cây này cho cùng con số đó: cả 16 package Done, exit 0** (con số `15` từng ghi ở đây là sai và đã bị ba chỗ khác trong chính tài liệu này phủ nhận — xem dòng `Điều kiện tiên quyết` và hàng `tail1-9`). `bun test` cần addon native, và addon **đã build ở cây này**; nếu máy bạn thì build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là chạy được — đây là **tiền đề môi trường tái lập được, không phải hạn chế của máy này**. Trên máy sạch chưa build, nó báo `0 pass / 1 fail / 1 error` kèm `Failed to load pi_natives native addon for darwin-arm64`; một lần chạy đỏ như vậy không phải bằng chứng của một lỗi thật.
 
 ### Cổng hoàn thành
 
@@ -2289,7 +2289,7 @@ Rủi ro còn lại đã được nêu ở **Cần người quyết** và là r�
 bun run check:ts
 ```
 
-**LƯU Ý:** `bun test` cần addon native — trên máy sạch nó chết ở bước import kèm `Failed to load pi_natives native addon for darwin-arm64`, nhưng đây là **tiền đề môi trường, không phải hạn chế của máy**. Build một lần là xong: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0); sau đó lệnh dưới chạy được. **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`** — `check:ts` là `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types` (`package.json:94`).
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import kèm `Failed to load pi_natives native addon for darwin-arm64`; đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Nếu máy bạn chưa có: build một lần là xong — `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0); sau đó lệnh dưới chạy được. **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`** — `check:ts` là `bun run check:tools && bun run --filter './packages/*' --sequential --if-present check:types` (`package.json:94`).
 
 Khi addon đã build:
 
@@ -2372,7 +2372,7 @@ Cách nhiều khả năng nhất để làm sai là **sửa `#rebuild()`**. `get
 bun run check:ts
 ```
 
-**LƯU Ý:** `bun test` cần addon native — trên máy sạch nó chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`), nhưng đây là **tiền đề môi trường, không phải hạn chế của máy**. Build một lần là xong: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Build một lần là xong: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
 
 Khi addon đã build:
 
@@ -2547,7 +2547,7 @@ Là một overlay TUI mới nên thuộc M3 theo miền bề mặt. Nhưng **KH�
 bun run check:ts
 ```
 
-**LƯU Ý:** `bun test` cần addon native — trên máy sạch nó chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`), nhưng đây là **tiền đề môi trường, không phải hạn chế của máy**. Lối ra: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Lối ra nếu máy bạn chưa có: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
 
 Khi addon đã build:
 
@@ -2632,7 +2632,7 @@ Cách nhiều khả năng nhất để làm sai là **viết hàm cảnh báo th
 bun run check:ts
 ```
 
-**LƯU Ý:** `bun test` cần addon native — trên máy sạch nó chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`), nhưng đây là **tiền đề môi trường, không phải hạn chế của máy**. Lối ra: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Lối ra nếu máy bạn chưa có: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
 
 Khi addon đã build:
 
@@ -2719,7 +2719,7 @@ M3 là milestone bề mặt người dùng, và đây là thay đổi bề mặt
 bun run check:ts
 ```
 
-**LƯU Ý:** `bun test` cần addon native — trên máy sạch nó chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`), nhưng đây là **tiền đề môi trường, không phải hạn chế của máy**. Lối ra: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
+**LƯU Ý:** `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Cụm "trên máy sạch" chỉ mô tả máy *chưa* build — ở đó lệnh chết ở bước import (`Failed to load pi_natives native addon for darwin-arm64`); đó là **tiền đề môi trường tái lập được, không phải hạn chế của máy**. Lối ra nếu máy bạn chưa có: `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0). **TUYỆT ĐỐI không gọi `tsc` / `npx tsc`.**
 
 Khi addon đã build:
 
@@ -2932,10 +2932,10 @@ grep -rn 'claude-code-best' packages/ scripts/ docs/ | grep -v node_modules | wc
 # T6 — the whole milestone typechecks (does not need the native addon; verified exit 0 at HEAD e040a60).
 bun run check:ts
 
-# T7 — build the native addon first (`brew install ninja` then
-#     `bun --cwd=packages/natives run build`, exit 0); a machine without that step
-#     reports 0 pass with 'Failed to load pi_natives native addon for darwin-arm64'.
-#     With the addon built, all of the below run.
+# T7 — the native addon (`brew install ninja` then `bun --cwd=packages/natives run build`,
+#     exit 0) is ALREADY built on this tree as of 2026-09-29, so the below run as written.
+#     A machine WITHOUT that step reports 0 pass with 'Failed to load pi_natives native
+#     addon for darwin-arm64' — that is the conditional premise, not this tree.
 bun test packages/tui/test/mouse.test.ts packages/tui/test/loop-watchdog.test.ts \
           packages/coding-agent/test/status-line-overflow.test.ts \
           packages/coding-agent/test/status-line-settings-cache.test.ts \
@@ -3028,7 +3028,7 @@ Ba cách M3 nhiều khả năng đi sai nhất, xếp theo xác suất:
 2. **Chép neo cũ từ văn xuôi kế hoạch.** Số dòng đã trôi: bảy neo `* 3` trong kế hoạch sai hết (lệch **−1 đến +13**; riêng `plan-review-overlay` neo kế hoạch nằm **cao hơn** thực tế một dòng), `usage-dashboard.ts:753` thực ra là 759. Bản gốc của kế hoạch liệt 7 site `* 3`; cây có 9 (7 `* 3` + 1 `* 2` ở `usage-dashboard.ts:759` + 1 `delta * 3` ở `sidebar.ts:897`). Kế hoạch đã sửa số này và xây G4 quanh nó — đó là lý do G4 phải quét **hai** mẫu — nên bảy neo `* 3` và `usage-dashboard.ts:753` còn sót lại là loại trôi âm thầm hơn, không phải loại đếm thiếu. Mọi đặc tả sóng đều mượn tiền đề của ctx1/ctx2, nên làm ctx sau sẽ biến một neo hỏng thành bảy.
 3. **Câu hỏi của người bị trả lời ngầm bằng code.** P0/P1 chặn cứng sóng 1, Q6 chặn cứng C2, M2-OQ3 chặn sóng 5. Câu trả lời chưa ghi trông y hệt câu đã ghi cho tới khi ai đó mở file đặc tả ra kiểm. s5 nói thẳng: nếu Q6 chưa có, C2 được phép TRƯỢT — ship trên tiền đề không nói ra còn tệ hơn trượt.
 
-**Trước khi đọc bảng:** mọi cổng gọi `bun test` cần addon native — build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là tất cả chạy được. Đây là **tiền đề môi trường dùng chung, không phải hạn chế của máy này**. ctx2 ghi rõ `bun test` nằm ngoài phạm vi cổng của nó, ctx1 dừng ở chân (2) chính vì thế, và s5 thừa nhận chỉ cổng (1) mới thật sự siết. Trạng thái đó phải báo lên chứ không vòng qua. Một test đỏ lúc addon chưa build không chứng minh điều gì; test xanh cũng vậy, vì nó có thể chỉ là một test rỗng chạy được.
+**Trước khi đọc bảng:** mọi cổng gọi `bun test` cần addon native, và addon **đã build ở cây này** (đo 2026-09-29: `bun test packages/tui/test/` chạy đủ 222/222 file). Build một lần (`brew install ninja` rồi `bun --cwd=packages/natives run build`, exit 0) là tất cả chạy được — đây là **tiền đề môi trường dùng chung, tái lập được, không phải hạn chế của máy này**. ctx2 ghi rõ `bun test` nằm ngoài phạm vi cổng của nó, ctx1 dừng ở chân (2) chính vì thế, và s5 thừa nhận chỉ cổng (1) mới thật sự siết. Trạng thái đó phải báo lên chứ không vòng qua. Một test đỏ lúc addon chưa build không chứng minh điều gì; test xanh cũng vậy, vì nó có thể chỉ là một test rỗng chạy được.
 
 | work item / sóng | rủi ro | cách giảm |
 | --- | --- | --- |
@@ -3170,7 +3170,7 @@ Phần 1 của 2. **68 đính chính** cho ctx1, ctx2, s1, tail1, tail2 — tron
 | tail1-6 · §8.5 | grep `claude-code-best` toàn bộ `.ts`/`.md`/`.json` của đích không có hit thật, chỉ hai false positive là glyph-bundle.json:140 và light-canyon.json:7 | Kết luận đúng; cả hai chi tiết đưa ra đều cũ. | Hai false positive cũ không còn tồn tại — `grep -c 'claude-code-best'` trả 0 ở CẢ HAI file. Và grep toàn repo nay trả 5 hit, TẤT CẢ nằm trong COMPREHENSIVE_PLAN_FOR_OMP_UPGRADE.md (dòng 7046, 7541, 7603, 10015, 10016) — một mệnh đề đúng về tài liệu plan, một báo động giả về sản phẩm. Giới hạn đúng là `packages/ scripts/ docs/` thì đếm 0. Step 5 mã hóa G12 với scope đó, loại plan và `.lavish-wip/`; cổng toàn repo sẽ đỏ vĩnh viễn vì một lý do không liên quan gì tới code. |
 | tail1-7 · §8.2 và §6 | Neo: ui-helpers.ts:141, segments.ts:718-737, keybinding-hints.ts:10-55, tmux.ts:5/:48-49; loader.ts:142/:153-157, settings.ts:108, session-color.ts:2, schema.ts:77-78/:140-141 | **SAI LẪN ĐÚNG** — ba cái sai, còn lại đúng tuyệt đối. | SAI: `ui-helpers.ts:141` → `showStatus` ở :143 (xem tail2-6). `settings.ts:108` → `colorBlindMode` ở :110. `segments.ts` phải phân giải rõ là `packages/tui/src/status-line/segments.ts` (có `segments.ts` thứ hai ở `packages/coding-agent/src/cli/gallery-fixtures/`); trong file đúng, `cacheHitSegment` bắt đầu ở :718 nên khoảng đó ổn. ĐÚNG CHÍNH XÁC: `loader.ts:142` (cờ colorBlindMode), `loader.ts:153-157` (nhánh điều chỉnh — tail2-13 nói khối thật là 153-158), `session-color.ts:2` (import OKLCH), `schema.ts:77-78` (statusLineGitClean/Dirty), `schema.ts:140-141` (fallback của chúng), `tmux.ts:48-49`, `event-controller.ts:1250` (`#handleNotice`; dải plan trích 1244-1251 cắt nhầm vào `markBackgroundTaskCalls`), `manager.ts:1039` (lỗi −32601 mà G6 phụ thuộc) — đầy đủ là `packages/coding-agent/src/mcp/manager.ts:1039` (`code: -32601` trong `throw Object.assign(new Error(...))`); **không phải** `extensibility/plugins/manager.ts`, bản đó grep `32601` trả rỗng, và còn một bản thứ ba ở `extensibility/plugins/marketplace/manager.ts`, `docs/tui-core-renderer.md:107` và `:174` (cả hai bất biến G9; 106 là dòng trống), `LICENSE:1`, `package.json:5`, và cả năm neo THIRD-PARTY-NOTICES.txt (8, 827, 835, 1053, 10804). |
 | tail1-8 · §7.1 G8 | "`loader.ts:107` chỉ render trailer khi `lines.length > 1`" | ĐÚNG, nhưng đường dẫn mơ hồ một cách nguy hiểm. | Site là `packages/tui/src/components/loader.ts:107` — `if (this.#trailer && lines.length > 1) {`. Một file KHÁC tên loader.ts nằm ở `packages/tui/src/theme/loader.ts`, và đó là file mà dòng A9 của §8.2 đang bàn, nên hai mục dùng cùng một tên rút gọn cho code không liên quan. Grep chạy nhầm file sẽ không khớp gì và cổng pass vacuously. Cả script lẫn doc phải mang full path. |
-| tail1-9 | "native addon chưa build, nên `bun test` báo 0 pass … coi `bun test` là bị chặn tới khi addon build" | ĐÚNG VỀ LỖI, SAI Ở HAI ĐIỂM — và kết luận rút ra còn đảo ngược | Lỗi có thật và câu chữ chính xác — bất kỳ test nào import transitively `@oh-my-pi/pi-natives` đều chết với 'Failed to load pi_natives native addon for darwin-arm64' trên máy sạch (ví dụ `packages/coding-agent/test/mcp/request-id.test.ts` → 0 pass, 1 fail). Nhưng nó THEO TỪNG FILE, không phải toàn cục — và hệ quả thì ngược với cái hàng này đoán. Đo **trước khi build addon**: toàn bộ `packages/tui/test` cho **149 pass / 205 fail / 205 errors** trên 354 test, tức **58% bị chặn**; `packages/tui/test/mouse.test.ts` (13/13) là file tui chạy được *duy nhất*. Thứ hai, đây **không phải hạn chế của máy** — `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là 205 file kia chạy. Người triển khai không nên giả định cả suite đang tắt, cũng không nên giả định phía tui thì mở. `bun run check:ts` dùng được — đo exit 0 tại HEAD 808b365 với cả **16** package type-check Done (12 là con số package *xuất bản* ở tail1-11, đừng lẫn). Trùng s1-18, tail2-16. |
+| tail1-9 | "native addon chưa build, nên `bun test` báo 0 pass … coi `bun test` là bị chặn tới khi addon build" | ĐÚNG VỀ LỖI, SAI Ở HAI ĐIỂM — và kết luận rút ra còn đảo ngược | Lỗi có thật và câu chữ chính xác — bất kỳ test nào import transitively `@oh-my-pi/pi-natives` đều chết với 'Failed to load pi_natives native addon for darwin-arm64' trên máy sạch (ví dụ `packages/coding-agent/test/mcp/request-id.test.ts` → 0 pass, 1 fail). Nhưng nó THEO TỪNG FILE, không phải toàn cục — và hệ quả thì ngược với cái hàng này đoán. Đo **trước khi build addon**: toàn bộ `packages/tui/test` cho **149 pass / 205 fail / 205 errors** trên 354 test, tức **58% bị chặn**; 222 − 205 ⇒ **17 file vẫn chạy được**, và `packages/tui/test/mouse.test.ts` (13/13) là file được nêu tên nhiều nhất chứ không phải file duy nhất — cụm "chạy được *duy nhất*" từng ghi ở đây mâu thuẫn với chính 205 của hàng này và đã bị sửa. Đo **sau khi build** (2026-09-29, cây này): 222/222 file chạy, 2807 pass / 5 skip / 8 fail. Thứ hai, đây **không phải hạn chế của máy** — `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) là 205 file kia chạy. Người triển khai không nên giả định cả suite đang tắt, cũng không nên giả định phía tui thì mở. `bun run check:ts` dùng được — đo exit 0 tại HEAD 808b365 với cả **16** package type-check Done (12 là con số package *xuất bản* ở tail1-11, đừng lẫn). Trùng s1-18, tail2-16. |
 | tail1-10 · §6.8 | "find packages/tui … → **221**; find packages/coding-agent … → **1511**" | Trôi dạng hình thức; luận điểm QUY ƯỚC bên dưới thì đã kiểm chứng trọn vẹn. | Số nay là 222 và 1520. Điều đáng giữ là quy ước vẫn đúng như đã nói: test nằm ở `packages/<pkg>/test/`, phần MCP là `packages/coding-agent/test/mcp/`, và KHÔNG test file nào nằm cạnh source — `ls packages/tui/src/overlays/*.test.ts` không khớp gì. Đường dẫn file ở step 6 bám quy ước đó. Trùng tail2-15. |
 | tail1-11 · §8.5, §7.2 | "cả 12 package xuất bản đều khai MIT" và 'the reference tree is not the judging standard' | ĐÃ KIỂM CHỨNG, kèm một bổ sung hữu ích. | Cả 16 package workspace đều khai `license: "MIT"`; 12 được publish (không private) và 4 private — con số 12 là chính xác. Bổ sung: đây không chỉ là quy ước mà bị cưỡng chế lúc publish. `scripts/ci-release-publish.ts:100` `legalPayloadFiles()` throw khi license thiếu hoặc không MIT, và `scripts/ci-release-publish.test.ts:143-146` assert cả hai throw. Đó là lý do tail1 không thêm test license riêng. |
 | **ctx1** | | | |
@@ -3400,7 +3400,7 @@ Mỗi dòng là một cổng có thể đỏ. Cổng xanh trên một sóng khô
 
 - **Phần độ trung thành UI là cổng người, không phải cổng CI.** §7.2 của bản kế hoạch tự nói phần này không chứng minh được bằng máy. Ngưỡng cuộn bánh xe ở S2 bắt buộc phải đo tay trên từng terminal rồi mới điền vào `MEASURED_THRESHOLDS`. Một lượt cổng với 12 dòng XANH (mục 7.1 của bản kế hoạch liệt kê 12 cổng: G1–G11 cộng G4b) không nói gì về việc bánh xe có chạm đúng trên Ghostty hay không. Cùng loại, các cổng người còn lại: P0, P1 (S1), hai câu hỏi mở ở S2, Q6 ở S5, Q-A ở tail1.
 
-- **Mọi thứ phụ thuộc native addon cần build một lần trước.** Trên máy sạch, `bun test` báo `Failed to load pi_natives native addon for darwin-arm64`; lối ra là `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0) — đây là **tiền đề tái lập được, không phải hạn chế của máy**. Ngay cả trước khi build, tình trạng này **không phải toàn cục**: `packages/tui/test/mouse.test.ts` chạy được 13/13, còn `status-line-settings-cache.test.ts` và `status-line-cache-hit.test.ts` thì 0/1 — nên xem từng file, không gộp. Hệ quả: cổng test của S1, S3, S4, S5, S6 và ctx1 cần bước build một lần trước, rồi coi là kiểm chứng được. Riêng S5 nói thẳng rằng tới lúc đó chỉ còn cổng (1) là thật sự ràng buộc.
+- **Tiền đề native addon — ĐÃ build ở cây này, đo lại 2026-09-29.** `packages/natives/native/pi_natives.darwin-arm64.node` có mặt (185 MB); `bun run check:ts` exit 0 với cả **16** package `check:types` Done; `bun test packages/tui/test/` chạy đủ **222/222 file** (2807 pass / 5 skip / 8 fail). Vì vậy mọi câu "cần build một lần trước" trong tài liệu này là **tiền đề tái lập được, không phải trạng thái hiện tại và không phải hạn chế của máy**: lối ra cho máy thiếu file là `brew install ninja` rồi `bun --cwd=packages/natives run build` (exit 0), và trên máy đó `bun test` báo `Failed to load pi_natives native addon for darwin-arm64`. Ngay cả trước khi build, tình trạng này **không phải toàn cục** — 17/222 file vẫn chạy, trong đó `packages/tui/test/mouse.test.ts` 13/13 — nên xem từng file, không gộp. Hệ quả: cổng test của S1, S3, S4, S5, S6 và ctx1 là kiểm chứng được ngay trên cây này. Riêng S5 nói thẳng rằng tới lúc đó chỉ còn cổng (1) là thật sự ràng buộc.
 
 - **Neo `file:line` là ảnh chụp tại một thời điểm.** 60 neo của ctx2 và mọi neo ở ctx1/tail1 chụp ở HEAD 808b365, nhánh `milestone-1`, ngày 2026-09-27. Bộ neo đã trôi sẵn 13 chỗ so với bản kế hoạch (cả 7 neo `* 3` lệch **−1 đến +13** — `plan-review-overlay.ts` là neo duy nhất lệch ngược: kế hoạch 581, cây thật 580; `usage-dashboard.ts:753` thực ra là 759) — tức có sẵn một tập neo sai để sao chép. Ngay cả số package được báo cho cùng một lệnh `check:ts` cũng chưa thống nhất giữa các spec (12, 15, 16); chỉ chạy thật một lần mới biết.
 

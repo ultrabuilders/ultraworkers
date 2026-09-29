@@ -41,18 +41,18 @@ repo) là ứng viên **tệ nhất**, vì `pi/ai/src/auth/` đã tồn tại v�
 
 ## Cổng kiểm bắt buộc
 
-- `bun run check:ts` exit 0 (0 lỗi, 16 package) — chạy được ngay, **không** cần addon.
-- `bun test packages/tui` và `packages/ai` — chạy được; `coding-agent` thì **bị chặn một phần** bởi
-  native addon (đo lại 2026-09-29: 855 pass / 1.439 fail, trong đó 1.433 lỗi là `pi-natives` chưa
-  build). Vì vậy cắt bên trong `coding-agent` **không có kiểm thử đầy đủ** cho tới khi addon build
-  được — đây là ràng buộc thứ tự thật, không phải lưu ý.
+- **Tiền đề tái lập được — đo 2026-09-29 ở `bf3a2f6`, addon ĐÃ build (`packages/natives/native/pi_natives.darwin-arm64.node`, 185 MB, 08:47):**
+  `bun run check:ts` → **exit 0**, 16/16 package Done · `bun test packages/utils/test/` → **743 pass / 10 skip / 0 fail** (753 test / 80 file / 15,4s) · `bun test packages/coding-agent/test/{config,tools}/` → 48 + 2.033 pass, **0 fail**.
+- Dòng *"855 pass / 1.439 fail, trong đó 1.433 lỗi vì `pi-natives` chưa build"* từng nằm ở đây là **claim đã hết hiệu lực** — nó đo trên cây lúc addon chưa build. Ở HEAD không còn lỗi `pi_natives`, nhưng **đừng đọc thành "toàn bộ `coding-agent` đã xanh"**: full suite vẫn ra một số fail (vùng MCP / speculative compaction / provider subagent).
+- Vì vậy cổng test ở đây là **so-với-baseline, có ngưỡng**: chụp `bun test packages/coding-agent/test/` trên cây sạch, lưu danh sách fail, mỗi bước gộp chỉ đỏ khi có fail **mới** — không có ngưỡng thì cổng này luôn xanh theo nghĩa đen. Cổng **không kiểm được ở máy này** (npm scope, ký Apple, container) thì ghi *"chưa kiểm được"*, **không** ghi *"đã biết là đỏ"*.
 - Mỗi bước gộp phải là **một commit**, để hoàn tác được bằng `git revert`.
 - **Bất biến số file.** Chụp `git ls-files packages/ | wc -l` **trước bước gộp đầu tiên**, và sau **mỗi**
   commit gộp chạy lại đúng lệnh đó: tổng số file trong `packages/` **không được giảm**. `prompts/` và
   `tools/puppeteer/` cũng vậy — đo riêng từng thư mục, cũng không được giảm. Cổng này không thừa: một
-  file mồ côi biến mất lúc gộp **không** làm đỏ `check:ts`, và cũng **không** làm đỏ test, vì
-  `coding-agent` đã đỏ sẵn (xem dòng trên). Không có phép đo này thì mất file là mất việc, và không ai
-  thấy.
+  file mồ côi biến mất lúc gộp **không** làm đỏ `check:ts`, và cũng **không** làm đỏ test — vì mọi
+  import trỏ tới nó đã được viết lại trong cùng commit, nên không còn ai chỉ tới để đỏ.
+  Không có phép đo này thì mất file là mất việc, và không ai thấy.
+- Bước gộp chỉ được coi là xong khi **cả ba** cổng trên xanh trên cây đã gộp: `check:ts` exit 0, `bun test packages/coding-agent/test/` không có fail mới, và bất biến số file giữ nguyên.
 - Mọi thao tác ở đây là `git mv` + sửa import. **Không thao tác nào được phép xoá file**; xoá là một
   work item riêng với lý do riêng.
 
@@ -144,7 +144,7 @@ vào cột `files` lẫn `lines`.
 | if-bench | 4 | 779 | 2 | **0** | 2 |
 | exa | 3 | 435 | 1 | 0 | 2 |
 
-Cột `importers` là **chi phí**, không phải **giá trị**. Số lớn = đắt. Số nhỏ = rẻ.
+Cột `importers` là **chi phí**, không phải **giá trị**. Số lớn = đắt. Số nhỏ = rẻ. **Cảnh báo đọc số:** cột này và cột `ext_importers` ở §1.2 là **hai phép đo khác nhau**, và cho hai số khác nhau cho cùng một thư mục — `config` **949** vs 56, `session` **769** vs 44, `tools` **444** vs 37, `capability` **136** vs 74, `web` 66 vs 9. Ngưỡng phân loại ở §6 và ngưỡng ">200 = xương sống" ở *Mô hình tổng thể* **dùng cột của bảng này** (khớp số ở Nhóm A/B/C); số ở §1.2 chỉ để đọc *edge* của hub, không dùng để xếp hạng cắt.
 
 ---
 
@@ -369,7 +369,7 @@ dùng bên ngoài có thể đang import bất kỳ đường dẫn nào. Xem m�
 
 ### 1.2 Bảng xếp hạng thật: file × importer-bên-ngoài × edge
 
-`ext_importers` = số file **bên ngoài** thư mục đó có import vào nó.
+`ext_importers` = số file **bên ngoài** thư mục đó có import vào nó, đếm trong phạm vi `coding-agent/src` — **khác** cột `importers` ở §1, đếm toàn cây. Vì vậy hai bảng cho hai số khác nhau cho cùng một thư mục, và đây là số **không** dùng để phân loại cắt (xem dòng dưới bảng §1).
 `out-edges` = số câu import đi ra ngoài (số import phải viết lại nếu tách package).
 `in-edges` = số câu import đi vào từ bên ngoài.
 
@@ -931,7 +931,7 @@ Nhóm `embeddings` (3 file/175), `judgment` (5/725), `rerank` (3/172), `speech` 
 
 ## 3. Ứng viên TÁCH
 
-### 3.1 `ai/src/auth` → package `@oh-my-pi/pi-auth` — **CÓ, cắt được** (ứng viên mạnh nhất)
+### 3.1 `ai/src/auth` → package `@oh-my-pi/pi-auth` — **CÓ, cắt được** (ứng viên mạnh nhất) · ⚠ **CHƯA CHỐT — mâu thuẫn với §7**
 
 Đây là ứng viên duy nhất trong hai package đã vượt qua cả ba tiêu chí.
 
@@ -958,7 +958,7 @@ Nhóm `embeddings` (3 file/175), `judgment` (5/725), `rerank` (3/172), `speech` 
   trong *một* `tsconfig`; tách ra là nó thành vòng giữa hai project và `tsgo` sẽ báo lỗi kiểu ở chỗ
   khó đoán. `auth/sqlite-credential-store.ts` 74 KB dùng `bun:sqlite` — cần chắc chắn không ai
   monkey-patch `Bun.*` toàn cục (AGENTS.md cấm, nhưng cần test-suite-safe).
-- **Ưu tiên:** **cao nhất trong hai package này.** Đây là thứ duy nhất đo ra là cắt được.
+- **Ưu tiên:** **cao nhất trong hai package này.** Đây là thứ duy nhất đo ra là cắt được. · ⚠ **MÂU THUẪN CHƯA GIẢI QUYẾT:** §7 dành ngược lại — lý do ở đó là `pi/ai/src/auth/` **đã tồn tại**, nên `auth/` đã đúng độ mịn. §7 nói *đừng cắt*, §3.1 và §8 nói *cắt, ưu tiên cao nhất*. **Đừng gõ theo cả hai vế** — cần chủ sở hữu chọn một trước, và chừa quyết đó lại.
 
 ### 3.2 `tui/src/apps` → `@oh-my-pi/pi-tui-apps` — **KHÔNG, đừng cắt**
 
@@ -1072,7 +1072,7 @@ Ngân sách cả gói reorg `tui`+`ai` nằm gọn trong ~30 import và ~5 lần
 1. **`tui` không cần cắt.** Nó đã mịn hơn `pi` (13 thư mục + file tách sẵn so với 1 thư mục).
    Bảy thư mục có > 45 importer từ `coding-agent` và đều là public subpath → cắt là thua.
    Cải thiện rẻ nhất: gộp `latex-*` (7 importer) và gom `utils.ts` vào `utils/`.
-2. **`ai` có đúng MỘT ứng viên tách thật: `ai/src/auth`** (19 file · 10.603 dòng · 2 importer ·
+2. **`ai` có đúng MỘT ứng viên tách thật: `ai/src/auth`** (19 file · 10.603 dòng · 2 importer · ⚠ *xem §3.1 — mâu thuẫn với §7, chưa chốt* ·
    0 cross-package · không có trong barrel). Cắt kèm `auth-broker` + `auth-gateway` để thành
    một miền auth duy nhất — việc này làm việc chép về sau cơ học *vì* xoá 5 điểm neo thành 1,
    chứ không phải vì giống `pi`.
@@ -1197,27 +1197,27 @@ nhầm.
 ```
 Giai đoạn 0  Không di chuyển gì. Chỉ thêm script đo fan-in vào CI.
              Lý do: mọi quyết định dưới đây dựa trên số đo, và số đo phải chạy lại được
-             sau mỗi lần di chuyển. Không có cái này thì phần còn lại là niềm tin.
+             sau mỗi lần di chuyển. Không có cái này thì phần còn lại là niềm tin. XONG KHI: script chạy exit 0 trên cây sạch, in ra đúng cột `importers` của §1, chạy lại được sau mỗi commit gộp.
 
 Giai đoạn 1  Gộp các thư mục lá 0-vòng (bước 1 trong Loại 1). ~16 thư mục, ~50 file.
-             Chi phí: 1 lần bun check. Rủi ro: gần như không có — không ai import ngược chúng.
+             Chi phí: 1 lần bun check. Rủi ro: gần như không có — không ai import ngược chúng. XONG KHI: `check:ts` exit 0, `bun test packages/coding-agent/test/` không có fail mới, `git ls-files packages/ | wc -l` **không giảm**.
 
 Giai đoạn 2  Gộp theo domain: speech/, trust/, memory/ (bước 2-5). ~70 file.
-             Chi phí: 2-3 lần bun check. Rủi ro: đổi đường dẫn import, không đổi hành vi.
+             Chi phí: 2-3 lần bun check. Rủi ro: đổi đường dẫn import, không đổi hành vi. XONG KHI: ba thư mục đó tồn tại, số file không giảm, `check:ts` exit 0, **và** `bun run ci:test:smoke` xanh — `tts-worker`/`asr-worker` đi qua argv selector nên hỏng ở đây trước khi hỏng ở test.
 
 Giai đoạn 3  Cắt `blob-broker` → package `pi-blob`. Đây là cắt package ĐẦU TIÊN
              và có thể là duy nhất. Lý do: fan-in 18 là thấp để làm an toàn.
-             Chi phí: 18 file import + package.json + exports + workspace entry + 2 lần bun check.
+             Chi phí: 18 file import + package.json + exports + workspace entry + 2 lần bun check. XONG KHI: `check:ts` exit 0 trên **17** package, số file không giảm, `git grep -rn "coding-agent/src/blob-broker" -- packages/` trả về 0 dòng.
 
 Giai đoạn 4  Gộp `collab`+`irc`+`registry` rồi cắt ra `pi-chord`.
-             Phải gộp TRƯỚC khi cắt: cắt lần lượt 3 package sẽ tạo 3 seam nơi chỉ cần 1.
+             Phải gộp TRƯỚC khi cắt: cắt lần lượt 3 package sẽ tạo 3 seam nơi chỉ cần 1. XONG KHI: `pi-chord` resolve được từ cây con, `check:ts` exit 0, số file không giảm, export key cũ vẫn trỏ tới file còn tồn tại.
 
 Giai đoạn 5  Viết mới `pi-protocol` / `pi-client` / `pi-server` / `pi-telemetry` nếu muốn
              khớp 12-package của pi. Đây là việc MỚI, không phải di chuyển. Tách riêng
-             khỏi roadmap reorg — nó không thuộc đợt này.
+             khỏi roadmap reorg — nó không thuộc đợt này. XONG KHI: **không có** — điều kiện của GĐ5 là *được gỡ khỏi đợt này*, và nó đã đạt. Không mở lại như giai đoạn reorg.
 
 Giai đoạn 6  `tui`: gộp 10 thư mục → 1-2, theo hình dạng `pi/tui/src` (1 thư mục + file phẳng).
-             Chỉ làm sau khi coding-agent ổn, vì cả `session` và `modes` import `tui` nặng.
+             Chỉ làm sau khi coding-agent ổn, vì cả `session` và `modes` import `tui` nặng. XONG KHI: `bun test packages/tui` 0 fail, `check:ts` exit 0, số file trong `packages/tui` không giảm, subpath `exports` của `pi-tui` vẫn resolve.
 ```
 
 ---

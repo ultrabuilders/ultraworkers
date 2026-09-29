@@ -6,12 +6,12 @@ M1 bọc trọn `pi` làm tiền đề, M2 cắt seam composable, M3 dựng tr�
 
 | | |
 | --- | --- |
-| Work item còn lại | **11** — 4 mục gốc (M4-4, M4-6, M4-7, M4-9) + 7 mục `GAP-M4-10`..`GAP-M4-16` thêm 2026-09-29 — trên tổng 17 (10 ban đầu + 7 mới) |
+| Work item còn lại | **10** — 4 mục gốc (M4-4, M4-6, M4-7, M4-9) + 6 mục `GAP-M4-10`..`GAP-M4-15` thêm 2026-09-29 — trên tổng 16 (10 ban đầu + 6 mới). `GAP-M4-16` được chủ sở hữu tách ra cùng ngày nhưng **chưa có mục đặc tả, chưa vào sóng nào, chưa có hàng trong bảng quyết định** — nên nó không nằm trong con số này; xem mục `GAP-M4-16` ở phần *Mục tiêu* |
 | File được chạm | **69** mục đã kiểm chứng đường dẫn (37 của bốn mục gốc + 32 của sáu mục mới), trong đó 2 mục `[create,UNVERIFIED]` |
 | Câu hỏi mở / đính chính | **25 câu hỏi mở, 41 đính chính** (34 của bốn mục gốc + 7 của sáu mục mới) |
 | Sóng | 3 (B, C, D) — **cả ba đều `shippable: false`**, và nay có 10 work item thay vì 4 |
-| Cổng đang đỏ ngay bây giờ | 3/6 bước kiểm của M4-4 đỏ — (b) vì file test mới chưa tồn tại; (c)(d) vì refactor chưa thực thi. (a)(e)(f) đã xanh từ 2026-09-29, sau khi build addon native |
-| Phụ thuộc chưa thoả | **4** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 đã lên sổ M1 (W18, `MILESTONE_1_EXECUTION_PLAN.md:3730`) nhưng CHƯA merge — nó chặn `GAP-M4-15` tuyệt đối và phải merge trước `GAP-M4-10`**; M2 Wave 1b (WI-PRESTEP-1) cho M4-4) |
+| Cổng đang đỏ ngay bây giờ | 3/6 bước kiểm của M4-4 đỏ — (b) vì file test mới chưa tồn tại; (c)(d) vì refactor chưa thực thi. (a)(e)(f) đã xanh từ 2026-09-29, sau khi build addon native. **Hệ chữ (a)-(f) ở đây KHÔNG phải hệ số 1-6 của khối *Xác minh*:** trong khối đó ba lệnh `grep` dồn thành một bước số 6 và bị ghi là "checklist của người, không phải test", nên mục *Cổng hoàn thành* của M4-4 đếm **1** bước đỏ chứ không phải 3. Hai con số cùng đúng, đừng đọc chúng là mâu thuẫn |
+| Phụ thuộc chưa thoả | **4** (M2 WI-8a/8b cho M4-6; M2 WI-2 cho M4-9; **GAP-M1-18 đã lên sổ M1 (W18, `MILESTONE_1_EXECUTION_PLAN.md:3730`) nhưng CHƯA merge — nó chặn `GAP-M4-15` tuyệt đối; ngược chiều, `GAP-M4-10` phải merge trước `GAP-M1-18` vì không có `LEDGER.md` thì doctor không có gì để báo**; M2 Wave 1b (WI-PRESTEP-1) cho M4-4) |
 
 Đây **không phải** một milestone bắt đầu từ xanh. Hai trong bốn work item gốc phụ thuộc công việc M2 **chưa được thực thi** trên nhánh này, và item lớn nhất về mặt cơ học (M4-4) vẫn đỏ ở ba trong sáu cổng sau khi addon native đã build.
 
@@ -75,7 +75,7 @@ Nghĩa là **mọi key** trong `.claude/settings.json` đè lên cấu hình pro
 
 **Test hợp đồng phải bảo vệ (theo `AGENTS.md`: một hợp đồng quan sát được, không source-grep, không `mock.module()`):** khởi tạo settings với cùng một key ở cả `.omp/config.yml` và `.claude/settings.json`, rồi assert key đó resolve theo thứ tự đã chốt — chạy qua public API.
 
-**Cổng mở:** cần một lần build native addon. Hiện `bun test packages/coding-agent/test/settings-group-shadowing.test.ts` → `0 pass / 1 fail / 1 error`, `Cannot find module ...pi_natives.win32-x64.node`, nên **toàn bộ** kết luận trên là đọc tĩnh.
+**Cổng mở — đã mở, không còn là cổng chết.** Addon native đã build xong 2026-09-29 (`packages/natives/native/pi_natives.darwin-arm64.node`, 185 MB), và `bun test packages/coding-agent/test/settings-group-shadowing.test.ts` đo lại hôm nay ra **6 pass / 0 fail**. Dòng cũ ghi `0 pass / 1 fail / 1 error` kèm `Cannot find module ...pi_natives.win32-x64.node` sai ở **hai** chỗ: nó quy cho môi trường một lỗi đã hết, và nó trỏ nhầm sang addon `win32-x64` trong khi máy đo là `darwin-arm64`. Lưu ý giới hạn: mục này **chưa** có mục đặc tả riêng, chưa thuộc sóng nào, nên con số này chỉ nói về **bước đo**, không phải về một cổng đã chốt.
 
 **Thành thật về phần vô hình.** Ba trong bốn item gốc chỉ hiện ra khi có chuyện xấu xảy ra — một ghi file thất bại, một setting bị che, một extension bị chặn. Chỉ M4-7 có tác dụng nhìn thấy liên tục trên màn hình. Ngoài ra M4 tạo ra hạ tầng mà người dùng không bao giờ chạm tới: một `atomicWriteJson` dùng chung trong `packages/utils`, một `shadowing.ts` mới, một module capability mới, và một entry đăng ký lệnh CLI mới. Trong sáu mục mới, **năm trên sáu cũng chỉ hiện ra khi có chuyện xấu xảy ra** — một getter `message` ném, một hook hỏng, một transcript không trả lời được, một bản vá không ai giải thích được, một key cấu hình biến mất. Đổi lại, milestone này **giữ kỷ luật cho những milestone sau**: một release gate duy nhất, một quyết định changelog duy nhất, và các PR được phép merge nhưng không được phép release cho tới khi cả ba sóng xong.
 
@@ -384,7 +384,7 @@ Và nó **là** một cổng thật cho cả bốn work item gốc — không ph
 | Quyết định con người về câu hỏi mở 1 (ai sở hữu `application`) | M4-4 (điều kiện DONE) | Chờ bạn |
 | Quyết định changelog của M4 (plan:§6.2) | Mở PR của Wave B | Chờ bạn — merge thì được, release thì không |
 | Ủy quyền `shippable: false` của Wave D bằng văn bản | M4-9, `GAP-M4-10`, `GAP-M4-14`, `GAP-M4-15` | Chờ bạn |
-| **GAP-M1-18** (`omp doctor`) phải merge, và danh sách check của nó phải đã đóng | `GAP-M4-15` (điều kiện tiên quyết tuyệt đối) | **ĐÃ LÊN SỔ M1, CHƯA MERGE** — mục `W18` tồn tại ở `MILESTONE_1_EXECUTION_PLAN.md:3730` (Wave 8), và danh sách check `GAP-D4` của nó **đã đóng và liệt kê** tại `:3754`. *(Đính chính 2026-09-29: bản trước ghi "CHƯA CÓ" dựa trên `grep` trả 0 hit — con số đó sai, lệnh thật trả **19 hit**.)* Kết luận không đổi: `runDoctorChecks` chỉ có **1 hit toàn repo** (chính dòng định nghĩa) và `grep -c 'name: "doctor"'` trả 0, nên `omp doctor` **chưa có** và đây vẫn là tiền đề tuyệt đối. Theo GAP-D4, hàng check phải vào **danh sách** trước khi code |
+| **GAP-M1-18** (`omp doctor`) phải merge, và danh sách check của nó phải đã đóng | `GAP-M4-15` (điều kiện tiên quyết tuyệt đối) | **ĐÃ LÊN SỔ M1, CHƯA MERGE** — mục `W18` tồn tại ở `MILESTONE_1_EXECUTION_PLAN.md:3730` (Wave 8), và danh sách check `GAP-D4` của nó **đã đóng và liệt kê** tại `:3754`. *(Đính chính 2026-09-29: bản trước ghi "CHƯA CÓ" dựa trên `grep` trả 0 hit — con số đó sai, lệnh thật trả **19 hit**.)* Kết luận không đổi: `runDoctorChecks` chỉ có **1 hit toàn repo** (chính dòng định nghĩa) và `grep -c 'name: "doctor"'` trả 0, nên `omp doctor` **chưa có** và đây vẫn là tiền đề tuyệt đối. Theo GAP-D4, hàng check phải vào **danh sách** trước khi code. *** Neo `MILESTONE_1_EXECUTION_PLAN.md:3730` ở các dòng trên đã trôi so với HEAD hiện tại — mục `## W18` thật nằm ở dòng 5806, lệch 2076. Đừng sửa con số đó: file M1 còn tiếp tục trôi, và đã có tiền lệ sửa neo rồi hỏng chỗ khác. Tra bằng `grep -n '^## W18' MILESTONE_1_EXECUTION_PLAN.md` — lệnh này ổn định, còn số dòng thì không. ***
 | Merge order của `GAP-M4-10` với GAP-M1-18 | `GAP-M4-10` | `GAP-M4-10` merge **trước** — không có `LEDGER.md` thì doctor không có gì để báo |
 | Quyết định merge order với **M2 WI-9** | `GAP-M4-12` | Chưa có — WI-9 sửa đường đăng ký handler mà item này sửa đường gọi; hai mặt của cùng một seam |
 | **GAP-D8** (tiêu chí chọn trong 895 call site) + tên owner của phần nợ còn lại | `GAP-M4-11` | Chờ bạn |
@@ -412,7 +412,7 @@ Ba sóng, theo thứ tự **B → C → D**. Lưu ý: đây là thứ tự **mer
 - `git grep -n saveRuntimeConfig -- packages/` → **0 hit**
 - `git grep -n atomicWriteJson -- packages/` → **đúng một** định nghĩa, trong `packages/utils`
 - `grep -c secret .../manager.ts` → **0**
-- `grep -c 'settings\.set(' packages/tui/src/overlays/settings-selector.ts` → **0** (cổng chống trôi: nó đỏ ngay khi có call site thứ 14 xuất hiện)
+- `grep -cF 'settings.set('` **cộng** `grep -cF 'settings.unset('` trên `packages/tui/src/overlays/settings-selector.ts` → **tổng 0** (hôm nay là 13 + 1 = 14; cổng chống trôi, đỏ ngay khi có call site thứ 15 xuất hiện — đếm riêng `settings.set(` là cổng cũ, đã bỏ)
 - `bun test packages/utils/test/file-lock.test.ts` → xanh (đã xanh từ 2026-09-29, sau khi build addon native)
 - Test tranh chấp **và** control phản âm của nó đã từng được thấy đỏ
 - Test project-shadow khẳng định trên **byte thật** của file rằng sau khi panel ghi, key không có trong `config.yml` toàn cục và giá trị **trước khi ghi** vẫn còn — rollback in-memory xảy ra trước khi debounce `#queueSave` 100ms ráo nên ghi và rollback của nó hợp nhất thành một lần save
@@ -1287,7 +1287,7 @@ Lưu ý về lệnh 6: đừng dùng `grep -c 'shadowingSource'` để kiểm tr
 
 Bốn cổng, tất cả đều máy-móc. Cả bốn đều chạy được sau khi build addon native một lần (đã xong 2026-09-29); 2 và 3 cần bước build đó làm tiền đề (xem môi trường ở trên).
 
-1. `grep -c 'settings\.set(' packages/tui/src/overlays/settings-selector.ts` in ra 0 — không lần ghi nào lách chốt chặn. Đây là cổng chống trôi: nó đỏ ngay khi bất kỳ ai thêm chỗ gọi thứ 14, thứ mà danh sách dòng hardcode của plan sẽ lặng lẽ bỏ sót. Điều kiện để con số 0 là thật đã được chốt ở bước 7: `#writeSetting` gọi `host.set(...)` chứ không gọi `settings.set(...)`, nên thân helper không tự khớp regex của chính cổng này.
+1. `grep -cF 'settings.set(' packages/tui/src/overlays/settings-selector.ts` **cộng** `grep -cF 'settings.unset('` trên cùng file, **tổng phải bằng 0** — không lần ghi nào lách chốt chặn. Hôm nay chúng in **13** và **1**, tổng **14** (một `settings.unset(def.path)` tại `settings-selector.ts:1112`, đường xoá giá trị đã lưu trong ô text). **Đếm riêng `settings.set(` là cổng cũ và phải bỏ** — nó bỏ sót đúng call site `unset` kia, và bảng *Định nghĩa hoàn thành* ở cuối file đã ghi rõ điều đó. Đây là cổng chống trôi: nó đỏ ngay khi bất kỳ ai thêm chỗ gọi thứ 15, thứ mà danh sách dòng hardcode của plan sẽ lặng lẽ bỏ sót. Điều kiện để tổng bằng 0 là thật đã được chốt ở bước 7: `#writeSetting` gọi `host.set(...)` chứ không gọi `settings.set(...)`, nên thân helper không tự khớp regex của chính cổng này.
 2. Test project-shadow khẳng định `YAML.parse(await Bun.file(globalConfigPath).text())` KHÔNG chứa khoá sau một lần ghi từ panel, và có chứa giá trị TRƯỚC lúc ghi — một khẳng định ở mức byte trên file thật, đó là nghĩa của rollback ở đây (revert trong bộ nhớ trước khi debounce `#queueSave` 100ms rã xuống, nên lần ghi và lần rollback của nó gộp thành một lần save; đã kiểm chứng `settings.ts:818-838` và `#queueSave`).
 3. Test đối chứng không-che khẳng định cùng khoá đó CÓ trong `config.yml` sau một lần ghi từ panel khi không có gì che. Không có nó, cổng (1) và (2) đều thoả được bằng một chốt chặn từ chối mọi lần ghi.
 4. `bun run check:ts` sạch, điều này còn ép nốt rằng `SettingsProvenance` của tui và `SettingProvenance` của coding-agent chưa trôi lệch nhau.
@@ -3708,7 +3708,7 @@ Mục này XONG khi tất cả đồng thời đúng:
 4. `assertKnownSettingPaths` **vẫn chỉ** được gọi từ lớp override của constructor.
 5. GAP-M1-18 đã merge, và danh sách check của nó đã có hàng này **từ trước khi code**.
 
-**Cổng này có thực sự đỏ được không: có**, và cổng quyết định là hàng âm (3) ở trong hợp đồng test — gọi `droppedForeignKeys` **trước** `projectLayerForMerge` thì một key đã bị loại chủ động sẽ bị báo, và hàng đỏ. Điều kiện (4) thì là một kiểm tra của con người — nó cố ý bảo vệ một hành vi **không đổi**, nên không có cách nào làm nó đỏ mà không phá hành vi đang đúng.
+**Cổng này có thực sự đỏ được không: (1)(2)(3) thì có** — cổng quyết định là hàng âm (3) ở trong hợp đồng test: gọi `droppedForeignKeys` **trước** `projectLayerForMerge` thì một key đã bị loại chủ động sẽ bị báo, và hàng đỏ. **Điều kiện (4) thì không**: nó cố ý bảo vệ một hành vi **không đổi**, nên không có cách nào làm nó đỏ mà không phá hành vi đang đúng. **Điều kiện (5) thì tệ hơn (4) và cũng không tự đỏ được — nó là cổng chết, và câu "có" ở đây không nói ra.** (5) đòi `GAP-M1-18` đã merge và hàng này đã vào *danh sách* check **trước khi code**; không có lệnh nào bắt được, và **nếu bạn bỏ hẳn (5) thì mục này vẫn xanh toàn bộ** — nó không bắt được việc item đã làm đúng phần việc duy nhất mà nó nói tới. Hãy gộp (4)+(5) thành **một** điều kiện văn bản duy nhất ghi trong PR body, và **không** đưa vào checklist tự động: một cổng luôn xanh còn tệ hơn không có cổng, vì nó tạo cảm giác an toàn giả. (Phiếu triển khai của chính item này đã ghi đúng như vậy ở mục *Cổng có đỏ được không*.)
 
 ### Phụ thuộc
 

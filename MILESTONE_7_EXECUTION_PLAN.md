@@ -51,11 +51,11 @@ Và điều quan trọng nhất, vì nó quyết định phạm vi:
 | sau merge 18.4.0 | **3 work item** | upstream đã làm xong warm cache (599 dòng + 399 test) |
 | đợt GAP-REGISTER-2 (2026-09-29) | **+4 work item** (0c) | sổ khoảng trống: 1 RCE đang sống + 1 rug-pull + 2 biên compaction. **Một mục là lỗ hổng, không phải cải tiến** — xem Sóng 0c |
 
-**Con số còn lại sau tất cả:** **7 work item** — W0 (pháp lý, điều kiện tiên quyết), SEAM
-(bốn seam API), và SEAMFREE (nhóm builtin chạy được ngay) — cộng LOOKAT ở sóng 2 vì phạm vi
-đã bị đảo ngược, **cộng Sóng 0c** (4 mục: `GAP-M7-01` … `GAP-M7-04`, xem mục đó). Tổng
-**~10-11,5 engineer-day**, không phải con số của "port 40 builtin", và không
-phải con số của "3 work item" mà bản thảo đầu đặt ra.
+**Con số còn lại sau tất cả:** **8 work item** — W0 (pháp lý, điều kiện tiên quyết), SEAM (bốn seam API), và SEAMFREE (nhóm builtin chạy được ngay) — cộng LOOKAT ở sóng 2 vì phạm vi đã bị đảo ngược, **cộng Sóng 0c** (4 mục: `GAP-M7-01` … `GAP-M7-04`, xem mục đó): 1 + 4 + 1 + 1 + 1 = **8**. *(Bản thảo trước ghi "7" — sai.)* Tổng **~10-11,5 engineer-day**, không phải con số của "port 40 builtin", và không phải con số của "3 work item" mà bản thảo đầu đặt ra.
+
+### Câu hỏi đúng của chương trình: bề mặt này đã có seam cho extension chưa
+
+Đo lại 2026-09-29 trên `extensibility/extensions/types.ts` (1.874 dòng) — **không** phải "còn thiếu năng lực gì", mà là "extension có seam để chạm vào không": tool → `registerTool` ✓ · slash command → `registerCommand` ✓ · **config key** → `settings` trong `ExtensionContext` ✓ · **TUI panel** → `ctx.ui.custom<T>()` ✓ · **lifecycle hook** → `on(event: "…")` có **41** event ✓. **5/5 bề mặt của phép thử đã có seam trong core.** M7 **không** mở milestone cho một năng lực mới — nó gỡ hardcode ở phần *limb*: ba `on(...)` mà senpi có mà omp không (`agent_settled`, `model_select`, `session_abort`), `replaces` của entry renderer, và hạ tầng attribution. Đây là trục đúng của chương trình.
 
 **Ba builtin của senpi bắt nguồn từ chính omp.** `ttsr` và `todotools` được senpi ghi trong
 `NOTICE.md` của họ là *"ported and adapted from oh-my-pi"*. Cả 7 file nguồn đều có trong omp
@@ -374,8 +374,8 @@ phải một.** Đây là lý do nghiên cứu cũ nói "vẫn phải giữ dòn
    pháp lý nào:** xác nhận rằng cơ chế attribution của omp là **`NOTICE` cạnh code + nhân bản
    vào `THIRD-PARTY-NOTICES.txt`**, và **không** tạo `NOTICE.md` ở root. Ghi câu trả lời
    nguyên văn vào work item này trong kế hoạch đã track. **Không** ghi vào file trong
-   `.lavish-wip/` — thư mục đó chưa được track, nên không sống sót cùng commit và người
-   review sẽ không thấy. Vì sao cần hỏi: cả ba lựa chọn (tạo `NOTICE.md` mới / dùng
+   `.lavish-wip/` — người review đọc kế hoạch đã track, không đọc thư mục đó. *(Lưu ý: `.lavish-wip/`
+   thực ra **có** được track — lý do đúng là quy ước đọc, xem mục Sáu file phản biện.)* Vì sao cần hỏi: cả ba lựa chọn (tạo `NOTICE.md` mới / dùng
    `THIRD-PARTY-NOTICES.txt` / sửa `LICENSE`) đều *hợp pháp về mặt pháp lý* — điều B3 chứng
    minh là cái nào **tới được người dùng**, và đó là tiêu chí duy nhất để chọn. Đây là quyết
    định về **bề mặt phân phối**, không phải về luật, nên không tự ý quyết được.
@@ -992,11 +992,11 @@ pi.on("model_select", async (event, ctx) => {
 });
 ```
 
-17 builtin có chuỗi `systemPrompt` ở đâu đó, nhưng phần lớn là *cục bộ* (`systemPromptHash`, `systemPromptFile`, `systemPromptMode` trong `anthropic-subscription`, `bash-timeout`, `compaction`...) — chúng không đi qua kết quả của `model_select`. Quét riêng `before_agent_start` trả về **0** builtin nào trả `systemPrompt`. Vậy nhu cầu thật là **1 trên 40**, không phải 16.
+17 builtin có chuỗi `systemPrompt` ở đâu đó, nhưng phần lớn là *cục bộ* (`systemPromptHash`, `systemPromptFile`, `systemPromptMode` trong `anthropic-subscription`, `bash-timeout`, `compaction`...) — chúng không đi qua kết quả của `model_select`. Quét riêng `before_agent_start` trả về **7** builtin trả `systemPrompt` (`anthropic-bash`, `anthropic-web-search`, `bash-timeout`, `imagegen`, `openai-image-gen`, `openai-web-search`, `terminal` — đo lại 2026-09-29, danh sách đầy đủ ở `§3.2`; bản thảo đầu ghi "0" và con số đó sai). Vậy nhu cầu thật qua `model_select` là **1 trên 40**, không phải 16.
 
 **Và đây là phát hiện quan trọng nhất của cả work item:** omp **đã** trao quyền thay system prompt rồi, qua một đường khác. `BeforeAgentStartEventResult` (`types.ts:1194`) có `systemPrompt?: string[]` với chú thích *"Replace policy for the next request and its continuations, until the next preparation. Extensions chain in order."* Nghĩa là chữ ký `string[]`, nối tiếp theo thứ tự — một mô hình *chính sách*, không phải *thay thế tự do*.
 
-Sự khác biệt này quyết định cả P3: senpi dùng `string | null` (thay thế tự do, `null` là reset), omp dùng `string[]` (chính sách, nối chuỗi). **Nếu P3 chọn (b) chép nguyên `string | null` thì omp sẽ có HAI ngữ nghĩa thay system prompt cùng tồn tại** — một qua `before_agent_start` theo chính sách, một qua `model_select` theo thay thế. Đó là hai nguồn sự thật cho cùng một quyền, và là loại phức tạp mà không test nào bắt được nếu không có test chống trùng.
+Sự khác biệt này quyết định cả P3: senpi dùng `string | null` (thay thế tự do, `null` là reset), omp dùng `string[]` (chính sách, nối chuỗi). **Nếu P3 chọn (iii) chép nguyên `string | null` thì omp sẽ có HAI ngữ nghĩa thay system prompt cùng tồn tại** — một qua `before_agent_start` theo chính sách, một qua `model_select` theo thay thế. Lý do đúng để bác (iii) không phải "chưa ai dùng" mà là **7 builtin đã dùng** `before_agent_start` theo ngữ nghĩa chính sách: thêm `string | null` sẽ phá vỡ hành vi **đang chạy**, không chỉ tạo ra hai cách diễn giải lý thuyết. Đó là hai nguồn sự thật cho cùng một quyền, và là loại phức tạp mà không test nào bắt được nếu không có test chống trùng.
 
 **Ba lựa chọn trình bày cho P3, kèm khuyến nghị:**
 
@@ -1035,7 +1035,7 @@ Lập luận chung cho cả mục này: tiêu chuẩn mở một seam không ph�
 
 ## Các bước
 
-1. **CỔNG P3 — lấy câu trả lời bằng văn bản từ người duy trì TRƯỚC KHI viết dòng S3 nào:** `model_select` có kèm quyền thay system prompt không, và theo dạng nào — (i) không kèm, (ii) `string[]` chính sách giống `before_agent_start`, hay (iii) `string | null` như senpi? Ghi nguyên văn câu trả lời vào work item S3 của `MILESTONE_7_EXECUTION_PLAN.md` đã track, KHÔNG ghi vào `.lavish-wip/` (thư mục này chưa được track nên không sống sót cùng commit và người review không thấy). S3 là seam đắt nhất (16/40 builtin) và là seam duy nhất có thể tạo ra hai nguồn sự thật về cùng một quyền — không bắt đầu khi P3 còn mở. *(anchor: `packages/coding-agent/src/extensibility/extensions/types.ts:1194` (quyền đã có sẵn), senpi `core/extensions/types.ts:1369` (dạng sẽ chép nếu chọn iii))*
+1. **CỔNG P3 — lấy câu trả lời bằng văn bản từ người duy trì TRƯỚC KHI viết dòng S3 nào:** `model_select` có kèm quyền thay system prompt không, và theo dạng nào — (i) không kèm, (ii) `string[]` chính sách giống `before_agent_start`, hay (iii) `string | null` như senpi? Ghi nguyên văn câu trả lời vào work item S3 của `MILESTONE_7_EXECUTION_PLAN.md` đã track, ghi vào kế hoạch đã track (người review đọc kế hoạch, không đọc `.lavish-wip/`). S3 là seam đắt nhất (16/40 builtin) và là seam duy nhất có thể tạo ra hai nguồn sự thật về cùng một quyền — không bắt đầu khi P3 còn mở. *(anchor: `packages/coding-agent/src/extensibility/extensions/types.ts:1194` (quyền đã có sẵn), senpi `core/extensions/types.ts:1369` (dạng sẽ chép nếu chọn iii))*
 
 2. **CỔNG P2 — lấy câu trả lời bằng văn bản cho S2, SAU khi P3 đã trả lời:** chọn phương án nào trong ba phương án, và nếu chọn (a) thì ghi rõ tên **5 builtin bị mất nguyên vẹn** (`cache-keepalive`, `goal`, `loop`, `mcp`, `rule-activation`) — không được viết kiểu "một vài builtin". Ghi nguyên văn vào work item S2. S2 không được bắt đầu khi P2 còn mở, vì nó đặt tiền lệ cho mọi extension viết sau. *(anchor: `packages/coding-agent/src/extensibility/extensions/loader.ts:269` (điểm chèn), :114 (bản hook))*
 
@@ -1094,7 +1094,7 @@ Cổng G2 là cổng quan trọng nhất và là cổng dễ bỏ nhất: G1 (kh
 
 ### Phản biện — đọc trước khi làm
 
-Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-seam.md`. Các sửa bắt buộc đã được đưa vào thân work item; những gì còn lại ở đây.
+Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-seam.md`. **Các sửa bắt buộc chưa được đưa vào thân work item** — đo lại 2026-09-29: câu “`before_agent_start` trả về 0 builtin” đã sửa thành **7 builtin**, nên luận điểm bác phương án (iii) giờ đứng trên căn cứ đúng. **Còn nợ, chưa áp:** khối `on(...)` ghi `:1280-1314` nhưng thực tế tới `:1280-1340` · `replaces` ghi “3 hit” nhưng thật là **4 hit** · `CustomEntry` ghi “38 hit” nhưng thật là **8 dòng / 4 file** trong `packages/coding-agent/src/` · `setModel` ghi “22 file” nhưng thật là **53 file** · `agent-session.ts` (điểm phát `agent_end`) chưa có trong bảng “File cần chạm tới”, nên G6 sẽ báo nhầm người làm đúng. Phần còn lại của bài bác bỏ ở đây.
 
 **Đối tượng:** `.lavish-wip/m7-md/w-seam.md` (219 dòng)
 **Cây kiểm:** omp `/Users/tranquangdang21/Projects/ultraworkers` · senpi `/Users/tranquangdang21/Projects/senpi-ref`
@@ -1347,7 +1347,7 @@ Một vi phạm **tiềm ẩn** đáng ghi: nếu P2 chọn phương án (b), b�
 
 > Nguồn: `SENPI_FINDINGS.md` Phần 4 §4-§5, Phần 6 §6.1/§6.3, Phần 7 §7.1/§7.13/§7.18 · Tổng hợp §4-§6.
 > Cây đích: `/Users/tranquangdang21/Projects/ultraworkers` (gọi tắt **omp**) · cây nguồn: `/Users/tranquangdang21/Projects/senpi-ref` (gọi tắt **senpi**), ghim theo `ea9216269e9254b821446130b60d1e00759761dc`.
-> Chính sách pháp lý: senpi MIT thuần. Ba nghĩa vụ — giữ MIT notice · ghi attribution vào `NOTICE.md` (omp **chưa có** file này) · không lấy thương hiệu. Mọi mục "chép" dưới đây đều chịu ba nghĩa vụ này.
+> Chính sách pháp lý: senpi MIT thuần. Ba nghĩa vụ — giữ MIT notice · ghi attribution theo **khuôn W0** (`NOTICE` cạnh code + nhân bản vào `THIRD-PARTY-NOTICES.txt`; **không** tạo `NOTICE.md` ở root — xem mục B3) · không lấy thương hiệu. Mọi mục "chép" dưới đây đều chịu ba nghĩa vụ này.
 
 ## Sóng / phạm vi
 
@@ -1478,11 +1478,11 @@ Công của hạng 4-6 là **ước lượng**, chưa kiểm chứng bằng các
 | `packages/coding-agent/test/senpi-ported-help.test.ts` | tạo | Test hạng 1 | Có (chưa tồn tại) |
 | `packages/coding-agent/test/senpi-ported-history-search.test.ts` | tạo | Test hạng 3. **Bắt buộc** có fixture JSONL hỏng | Có (chưa tồn tại) |
 | `packages/coding-agent/test/senpi-ported-tool-pair-guard.test.ts` | tạo | Test hạng 2 | Có (chưa tồn tại) |
-| `NOTICE.md` | **tạo** | File **chưa tồn tại** ở omp. Bắt buộc vì `AGENTS.md` không nêu nhưng `SENPI_FINDINGS.md` §1.2 + `task` yêu cầu: ghi attribution senpi MIT cho mọi dòng chép | Có. `SENPI_FINDINGS.md` §1.2 nêu rõ omp chưa có file này; senpi có `NOTICE.md` 2.1 KB |
+| `*(thư mục đích)/NOTICE` | tạo | Theo **khuôn W0** (mục B3): **KHÔNG** tạo `NOTICE.md` ở root — attribution đặt trong `NOTICE` cạnh code rồi nhân bản vào `THIRD-PARTY-NOTICES.txt`, đó mới là payload `stageLegalPayloads` chép đi. Thư mục đích do hạng mục port chọn. | Có. `ls NOTICE.md` → không tồn tại. `legalPayloadFiles()` (`scripts/ci-release-publish.ts:97`) trả `["LICENSE", "THIRD-PARTY-NOTICES.txt"]` — không có `NOTICE.md`, nên file ở root sẽ không tới người dùng. Khuôn: `crates/pi-shell/NOTICE`. |
 
 ## Các bước
 
-1. **CỔNG — lấy P0 bằng văn bản: `/help` của sóng này có được phép liệt kê lệnh của extension không?** Nếu câu trả lời là "không", `help` rơi xuống hạng 5 và hạng 1 của sóng này thành `tool-pair-guard`. Ghi câu trả lời nguyên văn vào kế hoạch đã track — **không** ghi vào `.lavish-wip/` (thư mục đó chưa được track, người review không thấy). Không viết dòng code nào của `help` khi P0 còn mở. *(anchor: `types.ts:1504` `getCommands(): SlashCommandInfo[]`)*
+1. **CỔNG — lấy P0 bằng văn bản: `/help` của sóng này có được phép liệt kê lệnh của extension không?** Nếu câu trả lời là "không", `help` rơi xuống hạng 5 và hạng 1 của sóng này thành `tool-pair-guard`. Ghi câu trả lời nguyên văn vào kế hoạch đã track — (người review đọc kế hoạch đã track, không đọc `.lavish-wip/`). Không viết dòng code nào của `help` khi P0 còn mở. *(anchor: `types.ts:1504` `getCommands(): SlashCommandInfo[]`)*
 
 2. **`help` — viết `buildHelpMarkdown` theo nguồn sự thật của omp, KHÔNG chép bản senpi.** senpi import nó từ `modes/interactive/help-content.ts` — file này **không tồn tại** ở omp. Nguồn cho nội dung là registry lệnh của chính omp, đừng chép danh sách của senpi. *(anchor: `packages/coding-agent/src/extensibility/extensions/types.ts:1504`)*
 
@@ -1498,7 +1498,7 @@ Công của hạng 4-6 là **ước lượng**, chưa kiểm chứng bằng các
 
 8. **Nối cả 3 vào loader — nhưng CHỈ sau khi bước 1-7 có test xanh.** Và **không sửa `directory-resolution.ts`**. Nếu cuối cùng vẫn muốn dùng cơ chế `package.json.extensions`, làm nó ở **PR sau**, khi thư mục đã tồn tại và đã có test bảo vệ. *(anchor: `packages/coding-agent/src/extensibility/extensions/directory-resolution.ts:69`)*
 
-9. **`NOTICE.md` — tạo file, ghi attribution senpi MIT, ghim theo commit SHA `ea9216269e9254b821446130b60d1e00759761dc`.** Không ghi "bản mới nhất". Không lấy thương hiệu senpi. Giữ MIT notice gốc. *(anchor: `SENPI_FINDINGS.md` §1.2; senpi `NOTICE.md` 2.1 KB)*
+9. **Attribution — theo khuôn W0 (B3), KHÔNG tạo `NOTICE.md` ở root.** Tạo `NOTICE` cạnh thư mục đích theo khuôn `crates/pi-shell/NOTICE`, ghi attribution senpi MIT và ghim commit SHA `ea9216269e9254b821446130b60d1e00759761dc`, rồi nhân bản vào `THIRD-PARTY-NOTICES.txt`. Không ghi "bản mới nhất". Không lấy thương hiệu senpi. Giữ MIT notice gốc. *(anchor: Sóng 0a — W0 mục B3; `scripts/ci-release-publish.ts:97`)*
 
 10. **`bun check` (KHÔNG dùng `tsc`/`npx tsc`) và chạy đúng 3 file test mới.** Không `mock.module()`. Nếu cần spy thì `vi.spyOn` trên namespace đã import + `vi.restoreAllMocks()` trong `afterEach`. *(anchor: `AGENTS.md` "Testing Guidance")*
 
@@ -1535,7 +1535,7 @@ Mỗi cổng phải **phân biệt được "đã làm" với "không chạy đ�
 | **G4** | JSONL hỏng **không làm hỏng** | Test với fixture có dòng JSON hỏng ⇒ không ném lỗi, entry hợp lệ hai bên vẫn trả về | Bảo vệ cổng `parseJsonlLenient` |
 | **G5** | **Không hồi quy** | `bash-timeout` (`bash.ts:330-357`), `imagegen` (`image-gen.ts` + wiring `sdk.ts:3218`), `webfetch` (`fetch.ts` 53 KB) — **không file nào trong ba đó bị sửa**. `git diff --cached --stat` không được chứa chúng | Ba cái này rơi vì omp đã mạnh hơn. Chạm vào chúng = phá hệ thống đang chạy |
 | **G6** | `bun check` sạch, 3 file test xanh, **không `mock.module()`** | `bun check` + `bun test` trên 3 file mới | `tsc` bị cấm |
-| **G7** | `NOTICE.md` tồn tại và ghi SHA `ea9216269e9254b821446130b60d1e00759761dc` | Đọc file, kiểm tra có SHA | Nghĩa vụ pháp lý thứ hai; ghim SHA chứ không ghi "latest" |
+| **G7** | Attribution của phần chép **nằm trong payload pháp lý thật**: chạy `stageLegalPayloads` rồi khẳng định payload xuất ra có dòng `Copyright (c) 2026 Yeongyu Kim and senpi contributors` **và** SHA `ea9216269e9254b821446130b60d1e00759761dc` | Chạy hàm thật, đọc **byte đi ra ngoài** — không đọc file nguồn | Đây là cùng hợp đồng T1 của W0, dùng lại thay vì viết cổng `grep` thứ hai. Cổng cũ (`NOTICE.md` tồn tại ⇒ xanh) **xanh khi chưa port dòng nào** và **trỏ vào một file mà `legalPayloadFiles()` không chép** — xem `§D`. Nghĩa vụ pháp lý thứ hai; ghim SHA chứ không ghi "latest" |
 
 ## Rủi ro
 
@@ -1570,7 +1570,7 @@ Mỗi cổng phải **phân biệt được "đã làm" với "không chạy đ�
 
 ### Phản biện — đọc trước khi làm
 
-Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-seamfree.md`. Các sửa bắt buộc đã được đưa vào thân work item; những gì còn lại ở đây.
+Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-seamfree.md`. **Các sửa bắt buộc chưa được đưa vào thân work item** — đo lại 2026-09-29: G7 đã chuyển sang kiểm payload pháp lý thật (cổng cũ xanh khi chưa port gì). **Còn nợ, chưa áp:** `modes/interactive/help-content.ts` — thư mục `modes/interactive/` **không tồn tại** ở omp, phải đổi sang nơi thật trước khi tạo file · “omp phải tự viết `isReadToolResult`” là sai, hàm đã export sẵn và có test · “`ToolCallLoopGuard` đã dùng ở `stream-guards.ts:220`” là sai, `:220` chỉ là chuỗi **nhãn thông báo**, class có test nhưng **không có consumer sản xuất** · “đúng hai caller” nói về dòng import, hai call site thật là `extensions/loader.ts:653` và `plugins/loader.ts:321` · G1 còn dùng `git add -A`, nên nó xanh được vì `.lavish-wip/` untracked. Phần còn lại của bài bác bỏ ở đây.
 
 > File bị bác bỏ: `.lavish-wip/m7-md/w-seamfree.md` (224 dòng).
 > Cây kiểm: omp = `/Users/tranquangdang21/Projects/ultraworkers` · senpi = `/Users/tranquangdang21/Projects/senpi-ref` @ `ea9216269e9254b821446130b60d1e00759761dc` (HEAD, đã xác nhận).
@@ -1799,7 +1799,7 @@ Hai điều đo được, đủ để đảo kết luận:
 | --- | --- | --- | --- |
 | `packages/coding-agent/src/utils/image-question.ts` | **sửa, 1 chỗ** | Bỏ ưu tiên **cùng provider** ở dòng 65-67 (xem Rủi ro R2). Đây là khác biệt duy nhất giữa hai bản `resolveVisionModel`. | Có. `model ??= availableModels.find(candidate => candidate.provider === activeProvider && sendsImageInputOnWire(candidate))` — chỉ có trong bản omp, không có trong bản senpi. |
 | `packages/coding-agent/src/tools/read.ts` | **sửa, nếu P-L1-2 trả "làm"** | Cho phép truyền **câu hỏi tự do** vào `?q=` mà không cần người dùng can thiệp. Hiện chuỗi ở `:1276` **tự nói cho model biết** phải dùng `?q=` — nghĩa là model phải tự nhớ. Một tool `look_at` gọi thẳng sẽ bỏ được bước "nhớ". | Có. |
-| `NOTICE.md` | **tạo** | Pháp lý — attribution senpi. omp **CHƯA CÓ** file này. | Có. Chỉ cần nếu còn port bất kỳ dòng nào. Nếu P-L1-2 trả "không port gì", **không cần file này cho hạng mục này**. |
+| `*(thư mục đích)/NOTICE` | tạo | Pháp lý — attribution senpi, theo khuôn W0 (B3). **KHÔNG** tạo `NOTICE.md` ở root. | Có. Chỉ cần nếu còn port bất kỳ dòng nào. Nếu P-L1-2 trả "không port gì", **không cần attribution cho hạng mục này**. |
 
 ### Những file của senpi **KHÔNG** chạm tới
 
@@ -1848,7 +1848,7 @@ const AMBIGUOUS_ID_PROVIDER_PREFERENCE: readonly string[] = ["openai", "google",
 
 ## Các bước
 
-1. **CỔNG — chốt P-L1-2 bằng văn bản TRƯỚC khi viết dòng code nào:** `read <ảnh>?q=<câu-hỏi>` đã đủ chưa, hay cần một tool `look_at` riêng? Ghi câu trả lời nguyên văn vào work item này trong kế hoạch đã track — **không** ghi vào `.lavish-wip/` (thư mục chưa được track, không sống cùng commit). Nêu rõ **ai là người quyết** vì đây là quyết định phạm vi, không phải kỹ thuật. *(anchor: `SENPI_FINDINGS.md:2323` (kết luận cũ, sai âm tính), `packages/coding-agent/src/tools/read.ts:1276` (bằng chứng ngược lại))*
+1. **CỔNG — chốt P-L1-2 bằng văn bản TRƯỚC khi viết dòng code nào:** `read <ảnh>?q=<câu-hỏi>` đã đủ chưa, hay cần một tool `look_at` riêng? Ghi câu trả lời nguyên văn vào work item này trong kế hoạch đã track — (người review đọc kế hoạch đã track, không đọc `.lavish-wip/`). Nêu rõ **ai là người quyết** vì đây là quyết định phạm vi, không phải kỹ thuật. *(anchor: `SENPI_FINDINGS.md:2323` (kết luận cũ, sai âm tính), `packages/coding-agent/src/tools/read.ts:1276` (bằng chứng ngược lại))*
 
 2. **Không port `model-selector.ts`.** Nếu P-L1-2 trả "làm tool", tool mới **phải gọi `resolveImageQuestionModel()`** (`image-question.ts:35`) chứ không được mang `DEFAULT_LOOK_AT_CHAIN` (`model-selector.ts:6-11`) hay `AMBIGUOUS_ID_PROVIDER_PREFERENCE` (`model-selector.ts:13`) sang. Đây là điều khoản bắt buộc, không phải gợi ý. *(anchor: `senpi .../look-at/model-selector.ts:6-11,13`; omp `packages/coding-agent/src/utils/image-question.ts:35-79`)*
 
@@ -1860,7 +1860,7 @@ const AMBIGUOUS_ID_PROVIDER_PREFERENCE: readonly string[] = ["openai", "google",
 
 6. **Bỏ qua hoàn toàn `commands.ts` / `render.ts` / `prompts.ts` / `settings.ts`** ở sóng 1. Riêng `prompts.ts` (22 dòng, `LOOK_AT_DESCRIPTION` + `LOOK_AT_PROMPT_SNIPPET`) chỉ có nghĩa nếu tool mới được bơm mô tả vào system prompt — mà omp đã có prompt riêng ở `prompts/tools/image-question-system.md`. *(anchor: `senpi .../look-at/prompts.ts:22`; omp `packages/coding-agent/src/prompts/tools/image-question-system.md`)*
 
-7. **Nếu có bất kỳ dòng nào của senpi được mang sang** (kể cả một hằng số), tạo `NOTICE.md` ở gốc repo, ghi attribution senpi (MIT), và ghim theo commit SHA `ea9216269e9254b821446130b60d1e00759761dc` — không ghim "bản mới nhất". Không lấy thương hiệu senpi. **Nếu P-L1-2 trả "không port dòng nào", bỏ qua bước này.** *(anchor: gốc repo, file mới)*
+7. **Nếu có bất kỳ dòng nào của senpi được mang sang** (kể cả một hằng số), tạo `NOTICE` **cạnh thư mục đích** theo khuôn `crates/pi-shell/NOTICE`, ghi attribution senpi (MIT), ghim theo commit SHA `ea9216269e9254b821446130b60d1e00759761dc` — không ghim "bản mới nhất" — rồi nhân bản vào `THIRD-PARTY-NOTICES.txt`. Không lấy thương hiệu senpi. **KHÔNG tạo `NOTICE.md` ở gốc repo** (W0 B3: `legalPayloadFiles()` không chép file đó, nên attribution ở đó không tới được người dùng). **Nếu P-L1-2 trả "không port dòng nào", bỏ qua bước này.** *(anchor: Sóng 0a — W0 mục B3; `scripts/ci-release-publish.ts:97`)*
 
 ## Hợp đồng test
 
@@ -1883,15 +1883,15 @@ Ràng buộc: **không source-grep** (AGENTS.md cấm), **không `mock.module()`
 | --- | --- | --- |
 | **P-L1-1** (cần người quyết) | Bỏ hay giữ auto-bật/tắt `look_at` khi model đổi? Nếu giữ thì **bắt buộc** mở seam `model_select` (omp **không có**, 0 hit; senpi có 16 chỗ gọi ở 15 thư mục). Nếu bỏ, hạng mục này **không cần seam nào** và chạy được ngay ở sóng 1. | Trả lời bằng văn bản, tên người quyết. Đây là cổng quyết định **cấu trúc milestone**, không phải chi tiết. |
 | **P-L1-2** (cần người quyết) | `read <ảnh>?q=` đã đủ chưa? Nếu đủ → hạng mục này **đóng**, không code gì. Nếu chưa → dựng tool. | Ghi rõ: `"đóng"` là một kết quả **hợp lệ** của cổng, không phải cổng thất bại. |
-| **G-L1-3** (tự kiểm) | `bun check` sạch; `bun test` xanh; `git add -A && git diff --cached --stat` **có dòng**. | Cổng này **trả về thành công khi không nhìn thấy gì** nếu dùng `git diff --stat`. Dùng `--cached`. |
-| **G-L1-4** (tự kiểm) | Không có **tên model nào** trong TS mới. Kiểm bằng `git grep -w` (KHÔNG dùng `-E '\btên\b'` — `\b` là backspace trên macOS, trả 0 và làm ba tài liệu trước sai). | Phải soi **cả diff**, không chỉ file mới — một tên model lọt vào test fixture cũng vi phạm tinh thần mục đích. |
-| **G-L1-5** (tự kiểm) | Nếu có port dòng nào: `NOTICE.md` tồn tại, có attribution, và SHA `ea9216269e9254b821446130b60d1e00759761dc` được ghim. | Kiểm file, không kiểm "đã nhớ chưa". |
+| **G-L1-3** (tự kiểm) | `bun check` sạch; `bun test` xanh; `git diff --cached --stat` **có dòng**. **Nếu P-L1-2 trả "đóng" thì cổng này được miễn** — kết quả đó là hợp lệ, xem `§5.3`. | Cổng này **trả về thành công khi không nhìn thấy gì** nếu dùng `git diff --stat`. Dùng `--cached`. Đừng dùng `git add -A`: nó stage cả `.lavish-wip/`, nên cổng có thể xanh chỉ vì tài liệu — chỉ định rõ đường dẫn thay vì `-A`. |
+| **G-L1-4** (tự kiểm) | **Không** có tên model nào **trong phần diff**. Chạy `git diff --cached > /tmp/m7.diff` rồi `grep -w -e gpt-5.6-terra -e gemini-3.1-pro-preview -e gemini-3.5-flash -e kimi-k3 /tmp/m7.diff` ⇒ phải **rỗng**. (KHÔNG dùng `-E '\btên\b'` — `\b` là backspace trên macOS, trả 0 và làm ba tài liệu trước sai.) | Đo lại 2026-09-29: `git grep -l -w <tên> -- '*.ts'` cho **25 / 9 / 30 / 25 file** trên cây sạch, và 23/25 file hit `gpt-5.6-terra` nằm dưới `test/`. Lệnh cũ quét **toàn cây** nên **đỏ ngay từ đầu, không bao giờ xanh** — xem `§5.2`. Lệnh mới soi **đúng diff**, và vẫn soi cả test fixture mới chứ không chỉ file mới. |
+| **G-L1-5** (tự kiểm) | Nếu có port dòng nào: attribution nằm trong **payload pháp lý thật** — chạy `stageLegalPayloads` (`scripts/ci-release-publish.ts:111`) rồi khẳng định payload xuất ra chứa SHA `ea9216269e9254b821446130b60d1e00759761dc`. Cùng hợp đồng T1 của W0. | Kiểm byte đi ra ngoài, không kiểm "đã nhớ chưa". **KHÔNG** kiểm `NOTICE.md` ở root — W0 B3 cấm tạo file đó, nên cổng cũ **không bao giờ xanh** khi làm đúng. |
 
 ## Rủi ro
 
-**R1 — Pháp lý (mức: cao nếu còn port).** Nếu P-L1-2 trả "làm tool" mà vẫn giữ `DEFAULT_LOOK_AT_CHAIN`, thì bốn chuỗi tên model của senpi đi vào repo. Ngoài AGENTS.md, đó là **vấn đề pháp lý thật**: ba nghĩa vụ MIT — giữ notice, ghi attribution, không lấy thương hiệu — và omp **chưa có `NOTICE.md`**, nghĩa là hạng mục này sẽ là lý do phải tạo file đó. Giảm rủi ro: port **cấu trúc**, không port **hằng số**.
+**R1 — Pháp lý (mức: cao nếu còn port).** Nếu P-L1-2 trả "làm tool" mà vẫn giữ `DEFAULT_LOOK_AT_CHAIN`, thì bốn chuỗi tên model của senpi đi vào repo. Ngoài AGENTS.md, đó là **vấn đề pháp lý thật**: ba nghĩa vụ MIT — giữ notice, ghi attribution, không lấy thương hiệu. Hạng mục này sẽ là lý do phải tạo `NOTICE` cạnh code + nhân bản vào `THIRD-PARTY-NOTICES.txt` theo khuôn W0 — **không** phải lý do tạo `NOTICE.md` ở root (W0 B3 đã đo và kết luận ngược lại). Giảm rủi ro: port **cấu trúc**, không port **hằng số**.
 
-**R2 — Ưu tiên cùng provider là điểm khác biệt duy nhất giữa hai bản, và nó có thể là cố ý.** `image-question.ts:65-67` ưu tiên model thị giác **cùng provider** với model đang chạy, trước khi rơi về model thị giác đầu tiên. Bản senpi (`image-vision-fallback.ts:104-119`) **không** có bước này. Sự khác biệt này có thể là quyết định có chủ đích (giữ cùng hạ tầng credentials/billing) chứ không phải thừa. **Không gỡ vội.** Bước 3 chỉ chạy sau khi đã trả lời P-L1-2 và xác nhận bằng `git log -S` rằng khối đó cố ý.
+**R2 — Ưu tiên cùng provider là điểm khác biệt duy nhất giữa hai bản, và nó có thể là cố ý.** `image-question.ts:65-67` ưu tiên model thị giác **cùng provider** với model đang chạy, trước khi rơi về model thị giác đầu tiên. Bản senpi (`image-vision-fallback.ts:104-119`) **không** có bước này. Sự khác biệt này có thể là quyết định có chủ đích (giữ cùng hạ tầng credentials/billing) chứ không phải thừa. **Không gỡ vội.** Bước 3 chỉ chạy sau khi đã trả lời P-L1-2. ~~Xác nhận bằng `git log -S` rằng khối đó cố ý.~~ **Bước xác nhận này đã bị gỡ** — xem `§5.1`: mọi dòng `src/` đến từ commit bóp phẳng, nên `git log -S` trả về đúng một commit cho **mọi** kết quả và không phân biệt được "cố ý" với "thừa". R2 tự nói "không gỡ vội" ⇒ **cứ giữ nguyên khối `:65-67`**, đó là hành động rẻ và an toàn hơn một cổng không đo được gì.
 
 **R3 — Sai âm tính theo tên sẽ lặp lại.** Nghiên cứu đã kết luận *"omp chưa giải bài toán này"* chỉ vì `git grep -il 'look_at\|lookAt'` trả 0. Bất kỳ work item M7 nào khác cũng dễ dính: tìm **khả năng**, không tìm **tên**. Trước khi ghi "thiếu thật" cho bất kỳ hạng mục port nào, phải đo lại theo hành vi. Đây là bài học chung cho cả M7, không riêng `look_at`.
 
@@ -1913,7 +1913,7 @@ Một chi tiết phụ đáng ghi vì nó cũng là bẫy: `findExactModelRefere
 
 ### Phản biện — đọc trước khi làm
 
-Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-lookat.md`. Các sửa bắt buộc đã được đưa vào thân work item; những gì còn lại ở đây.
+Agent phản biện đọc toàn bộ work item trên và cố **bác bỏ** nó. Bản đầy đủ: `.lavish-wip/m7-md/verify-lookat.md`. **Các sửa bắt buộc chưa được đưa vào thân work item** — đo lại 2026-09-29: R2 đã bỏ bước `git log -S`; G-L1-4 đã soi diff (xanh trên cây sạch, đỏ khi vi phạm); G-L1-3 đã miễn khi P-L1-2 trả "đóng"; G-L1-5 đã bỏ yêu cầu `NOTICE.md` ở root. **Còn nợ, chưa áp:** `vision-guard.ts:52` → thật là `:58` · `splitImageQuestionTarget` `:1544` là chỗ gọi, định nghĩa ở `:656` · `splitThinkingSuffix` "8 chỗ" → thật là **12** · senpi `model_select` "16/15" → **18/18** · `axes.ts` "40 axis" → đo lại **44**, không nên tin. Phần còn lại của bài bác bỏ ở đây.
 
 **Công cụ:** đối chiếu trực tiếp trên cây thật (omp = `/Users/tranquangdang21/Projects/ultraworkers`, senpi = `/Users/tranquangdang21/Projects/senpi-ref`).
 **Nguyên tắc:** mặc định là sai. Không tìm được bằng chứng trái chiều thì ghi "chưa bác bỏ được".
@@ -2041,11 +2041,11 @@ Một commit. Nhưng đó **không phải bằng chứng gì**, và tôi đã t�
 
 | kiểm | kết quả |
 | --- | --- |
-| `git rev-list --count HEAD` | **23** |
+| `git rev-list --count HEAD` | **64** (đo lại 2026-09-29; bản thảo ghi 23 — con số này tăng theo mỗi commit tài liệu, **đừng dùng làm tiền đề**) |
 | `git log --oneline -- <file>` | **1** commit |
 | `git log --diff-filter=A -- <file>` | `ecd516f`, 2026-09-27, *"initial publish"* |
 
-Toàn bộ 23 commit của repo là **vòng kế hoạch M1–M6** (docs/fix). Mọi dòng `src/` đều đến từ **một** commit bóp phẳng tên `initial publish`.
+Toàn bộ lịch sử `src/` của repo là **vòng kế hoạch + một commit bóp phẳng** tên `initial publish`. Mọi dòng `src/` đều đến từ commit đó — **đo lại ngày 2026-09-29**: `git log --oneline -- packages/coding-agent/src` trả **3** commit (`ecd516f` bóp phẳng, `f804d66` sync upstream 18.4.0 cũng bóp phẳng 167 commit, `5acb674` fix M7). Tính chất vấn đề **không đổi**: mỗi chuỗi trong `src/` vẫn chỉ trả về **một** commit, vì cả ba đều là commit bóp phẳng hoặc commit tài liệu.
 
 Hệ quả: `git log -S` trên bất kỳ file `src/` nào **luôn trả về đúng `ecd516f`**, bất kể chuỗi đó là quyết định cố ý hay sót từ nháp. Lệnh này **không thể** phân biệt "cố ý" với "thừa" — vì trong lịch sử này không có "sau đó", chỉ có "trước khi tồn tại".
 
@@ -2231,8 +2231,8 @@ Bảy trong số những lần sửa quan trọng nhất:
 | PAIRGUARD | Một cổng tự khớp chính file đang viết; và hai con số "3" trong tài liệu là hai thứ khác nhau nên cổng dựa trên chúng vô nghĩa. |
 | (tất cả) | Bẫy `git grep` không lọc đuôi file: `executeTool` khớp 2 file nếu không giới hạn `*.ts`, vì hai file đó là `changes.md` **của chính senpi**. Claim gốc (0 file) là đúng; phép đo suy ra sai thì tôi tự phát hiện khi kiểm lại. |
 
-Toàn bộ file đặc tả và phản biện nằm ở `.lavish-wip/m7-md/` (12 file, 2.977 dòng) — thư mục đó
-gitignored, nên **reviewer phải đọc tài liệu này, không đọc thư mục đó**.
+Toàn bộ file đặc tả và phản biện nằm ở `.lavish-wip/m7-md/` (đo lại 2026-09-29: **14 file**, 2.977 dòng — bản thảo ghi 12 file). Thư mục này **không** gitignored và **có** được track (`git ls-files .lavish-wip/m7-md` trả về tên file), nên các câu "ghi vào `.lavish-wip/` sẽ không sống sót cùng commit" rải trong tài liệu này là **sai**.
+Quy tắc đúng vẫn giữ: **ghi câu trả lời cổng vào kế hoạch đã track** — nhưng lý do là **quy ước đọc** (đó là nơi người review đọc), không phải vì `.lavish-wip/` bị git loại.
 
 ## Những điều chưa được kiểm chứng
 
@@ -2251,8 +2251,8 @@ gitignored, nên **reviewer phải đọc tài liệu này, không đọc thư m
 
 M7 xong khi, và chỉ khi:
 
-1. W0 đóng: `NOTICE.md` của omp tồn tại, có attribution cho từng đóng góp lấy từ senpi, kèm
-   commit SHA; và có test đỏ được khi hai bản sao lệch nhau.
+1. W0 đóng: attribution cho từng đóng góp lấy từ senpi nằm trong **payload pháp lý mà `stageLegalPayloads` giao cho npm** (`LICENSE` + `THIRD-PARTY-NOTICES.txt`), kèm commit SHA; và có test đỏ được khi hai bản sao lệch nhau.
+   **Không** phải `NOTICE.md` ở root — `legalPayloadFiles()` không chép file đó, nên attribution đặt ở đó không tới được người dùng.
 2. Cả bốn seam mở, hoặc có quyết định bằng văn bản rằng bốn cái tên sẽ **không** mở.
 3. Warm cache chạy, có mặc định chi phí đã chốt, và tắt được mà không phát thêm request nào.
 4. Cổng `parseJsonlLenient` của mọi work item đọc session đều xanh **và cổng JSONL đỏ được**

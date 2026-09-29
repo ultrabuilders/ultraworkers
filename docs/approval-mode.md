@@ -71,6 +71,22 @@ These explicit chain and segment restrictions are resolved before the existing r
 
 This pattern policy controls approval for the `bash` tool; it is not process or filesystem containment. An approved command retains the shell's ambient filesystem, network, and subprocess access. The `eval` tool also declares the `exec` tier and can spawn a shell via subprocess, so a `bash.patterns` `deny` rule does not apply to the same command run through `eval` — under `yolo`, that `exec` call resolves to `allow`. To gate the shell `eval` can reach, add a `tools.approval.eval` policy (`prompt` or `deny`) alongside `bash.patterns`.
 
+> **This is a decision, not an oversight (settled 2026-09-29).** The absence of OS-level containment
+> described above is deliberate: containment at the OS tier — `FileSystemSandboxPolicy` and
+> `NetworkSandboxPolicy`, requiring syscall-level enforcement or an OS profile — has been **deferred**.
+> Approval is the only execution boundary this project commits to maintaining today. The items that
+> need no kernel stay in scope and are tracked in `MILESTONE_8_EXECUTION_PLAN.md`.
+>
+> Three consequences follow, and they are the reason this note exists:
+>
+> 1. **Trust policy is settled, and it is separate from containment.** Project-local extensions must
+>    not auto-load; the user must grant permission explicitly; `ctx.exec` is denied for untrusted
+>    extensions. Its *enforcement* is not yet installed — `isProjectTrusted()` is still `() => true`.
+> 2. **`eval` is a second exit from the installed policy**, named in the paragraph above. Gating it is
+>    in scope and is not deferred.
+> 3. **Approval mode defaults to `yolo`**, so a fresh install runs tools without asking. Changing that
+>    default is a product decision that has not been made.
+
 ### Computer safety
 
 The disabled-by-default Eval [`computer` API](./computer-use.md) chooses its tier per call:

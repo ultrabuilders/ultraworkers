@@ -1,4 +1,6 @@
-# KẾ HOẠCH THỰC THIỆN — MILESTONE 8: CONTAINMENT (HAI TRỤC TÁCH RỜI)
+# KẾ HOẠCH THỰC THIỆN — MILESTONE 8: RANH GIỚI TIN CẬY (TRUST, APPROVAL, ENFORCEMENT)
+
+> **Đổi tên 2026-09-29.** Milestone này từng tên *Containment*. Sau khi chủ sở hữu chốt **defer containment tầng OS**, cái tên đó mô tả phần đã bị hoãn chứ không phải phần còn làm. Nội dung còn lại là **trust + approval + enforcement** — và đó là tên ở đây. Xem *Phạm vi sau quyết định DEFER*.
 
 > **Vì sao file này tồn tại.** `MILESTONE_6_EXECUTION_PLAN.md:1282` ghi nguyên văn *"Chọn: chưa xây trong M6"* về sandbox, và đẩy nó ra khỏi phạm vi — nhưng **không work item nào nhận nó**. Đó là một khoảng trống có chủ ở M6 và không có chủ ở đâu cả. M6 gọi đây là *"thứ tự đáng giá nhất"*, nên nó hẳn phải đứng ở đâu đó. Đây là chỗ đó.
 >

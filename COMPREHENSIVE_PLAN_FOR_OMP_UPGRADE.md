@@ -26256,7 +26256,7 @@ Xếp theo mức độ chặn. **Câu 1 phải có câu trả lời trước khi
 - **Đã chốt:** extension project-local **không** tự động load; phải được người dùng cho phép **tường minh**; `ctx.exec` bị **từ chối** với extension không tin cậy. Câu hỏi đã đóng.
 - **Vì sao chặn:** hiện **không có trust gate nào**, `ctx.exec` trao quyền thực thi tùy ý, và suspend không gỡ provider (credential còn lại). Ở mô hình "every plugin" thì đây là lỗ hổng.
 - **Nối với Câu 1:** Câu 1 đã chọn phương án (i), và (i) **không** phải lý do để hoãn WI-0 — slogan đúng nghĩa đen hơn thì plugin càng chính là bề mặt tấn công, nên trust gate càng phải được chốt.
-- **Phần cài enforcement vẫn nằm ngoài M2**, và nay thuộc **M8 W6** (`MILESTONE_8_EXECUTION_PLAN.md`): `isProjectTrusted()` vẫn là `() => true` tại `extensibility/extensions/runner.ts:1293` và `session/agent-session.ts:7552`.
+- **Phần cài enforcement vẫn nằm ngoài M2**, và nay thuộc **M8 W6 — Trust Boundaries** (`MILESTONE_8_EXECUTION_PLAN.md`): `isProjectTrusted()` vẫn là `() => true` tại `extensibility/extensions/runner.ts:1293` và `session/agent-session.ts:7552`.
 
 ### 4. ✅ CẬP NHẬT CHANGELOG — ĐÃ CHỐT (2026-09-29): **không**
 

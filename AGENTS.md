@@ -1,5 +1,41 @@
 # Development Rules
 
+## Programme Goal
+
+`oh-my-pi` — rebranding to **`ultraworkers`** — is **one coding agent in which everything is a plugin**.
+
+The order is a loop, not a feature list:
+
+1. **Copy every capability from `pi`** (`earendil-works/pi`, MIT — copy, don't rewrite).
+2. **Decompose what exists** into a *core* (what the host guarantees) plus *limbs* (every
+   user- and extension-facing surface).
+3. **Once core + one limb exist, build another limb.** Claude Code's UX is the first one.
+4. **Repair what the new limb exposes**, then learn from other projects.
+
+**The test, and there is only one:** an extension written *outside this repo* installs and
+registers a tool + slash command + config key + lifecycle hook + TUI panel **without changing a
+single line of core**. Every milestone exists to move that statement from aspirational to true.
+
+### Ask the right question
+
+For any surface the question is **"does an extension have a seam to reach this?"** — never
+"what capability is missing". omp already has the capabilities; the work is de-hardcoding.
+
+- Core-owned **with** a registration seam → **already decomposed**. Do not propose it again.
+- Core-owned with **no** seam → that is the finding, and the thing to fix.
+
+**Core is a promise, not a slogan.** Saying "everything is a plugin" obliges you to publish the
+list of what stays in core, by name, and to hold it stable. A change to that list is a breaking
+change for extension authors who have already published against it. A core list that names
+things that do not exist at HEAD is worse than no list.
+
+### Scope discipline
+
+Research and plan the de-hardcoding axis. Do not open a milestone for a *new capability* unless
+the owner asks for one. A previous pass researched "what is missing", produced three
+capability-shaped milestones, and all three were deleted — the capability axis is not this
+programme's axis.
+
 ## Default Context
 
 This repo contains multiple packages, but **`packages/coding-agent/`** is the primary focus. Unless otherwise specified, assume work refers to this package.

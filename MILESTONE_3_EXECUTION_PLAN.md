@@ -673,7 +673,19 @@ Ghi chú kèm theo:
 > Bước này assert `toolRenderers` là **record ghi được, không đóng băng**. Nhưng `WI-4` của M2 yêu cầu `Object.freeze` + `Readonly` trên đúng registry đó (`MILESTONE_2_EXECUTION_PLAN.md:2608`, `:2636`, `:2658`). M3:258 đẩy quyết định sang "nợ bàn giao M4/M5 #4" — mà `grep -c registerToolRenderer` trên cả M4 và M5 → **0 và 0**, nên **không milestone nào nhận**. Merge M2 trước M3 làm đỏ.
 > **Câu hỏi:** plugin có được sở hữu renderer của built-in không? **(i)** đóng băng không ngoại lệ → bước này phải đổi tiền đề; **(ii)** đóng băng + một đường đăng ký tường minh do WI-9 sở hữu → bước này đổi từ "ghi trực tiếp" sang gọi đường đăng ký, giữ bất biến mà B1 cần mà không cần sửa WI-4. Chốt ở bảng quyết định của M2, **không** chốt lại ở đây.
 
-3. Kiểm chứng tiền đề của §2 rằng không plugin nào chạm tới được renderer: assert `toolRenderers` là record ghi được, không đóng băng, tại `tools/index.ts:35`; bản đồ export `./*` trỏ tới `./src/*.ts`; và barrel của status-line không export `register*` nào. Cả ba đều đã xác nhận — `grep -rn register packages/tui/src/status-line/` trả về không kết quả. Neo: `packages/tui/src/tools/index.ts:35`.
+> ✅ **ĐÃ CHỐT (2026-09-29): phương án (i) — KHÔNG được ghi đè renderer của built-in tool mà plugin không sở hữu.**
+> WI-4 của M2 đóng băng trọn vẹn, và **bước này phải viết lại**: assert registry là `Readonly` + đóng băng
+> tại `tools/index.ts:35`, thay vì assert nó là record ghi được. Fixture B1 **không được gán trực tiếp**
+> vào registry nữa — nó phải đi qua `ToolDefinition` (`renderCall`/`renderResult`).
+> Lý do chốt: **0 writer trong repo hôm nay** (13 tham chiếu, tất cả là lượt đọc), nên không consumer
+> nào trong repo cần quyền ghi. Phương án "đóng băng + đường đăng ký" bị loại vì `WI-9` **không** sở hữu
+> `toolRenderers` — 0 hit trong `M2:5211-5640`.
+> **Còn treo:** có plugin ngoài repo nào đang mutate registry không — repo không có dữ liệu hệ sinh thái
+> plugin, và không suy ra được từ code. Thêm nữa, chưa quan sát được extension trong binary compile có
+> nhận đúng instance của host hay không (`/$bunfs/` qua `bundledModuleVirtualSpecifier`; bảng override
+> chỉ khoá package root, không subpath nào).
+
+3. Kiểm chứng tiền đề của §2 ~~rằng không plugin nào chạm tới được renderer: assert `toolRenderers` là record ghi được, không đóng băng~~ **rằng registry là `Readonly` + đóng băng**, tại `tools/index.ts:35`; bản đồ export `./*` trỏ tới `./src/*.ts`; và barrel của status-line không export `register*` nào. Cả ba đều đã xác nhận — `grep -rn register packages/tui/src/status-line/` trả về không kết quả. Neo: `packages/tui/src/tools/index.ts:35`.
 4. Kiểm chứng catalog status-line đã đóng băng: đếm 27 id trong `STATUS_LINE_SEGMENT_IDS`, xác nhận `status` ở chỉ số 1 và `usage` ở chỉ số 23, và xác nhận `CUSTOM_STATUS_LINE_DEFAULTS` (`schema.ts:36-42`) chứa không cái nào trong hai cái đó. Cả ba đều đã xác nhận bằng cách đọc `schema.ts:1-42`. Neo: `packages/tui/src/status-line/schema.ts:1-42`.
 5. Đọc trọn cả bảy preset và ghi lại id nào xuất hiện. Đã xác nhận: không preset nào chứa `usage`, và cũng không preset nào chứa `status` — đó chính là toàn bộ nền tảng của mối nguy hiểm width-ladder ở §4.1. Neo: `packages/tui/src/status-line/presets.ts:5,16,26,36,59,84,96`.
 6. Kiểm chứng từng dòng giá trị-đảo của §3, ghi lại cho từng dòng: claim / verdict / dòng đã sửa. Khoảng một nửa số dòng trong plan lệch 1-5; hai dòng lệch 28-50; ba claim mang tính thực chất (số điểm ctrl+o, số nơi gọi keyHint, khóa schema colorblind) sai hoàn toàn. Không mang dòng nào trong số đó sang mà chưa kiểm chứng. Neo: `packages/tui/src/status-line/segments.ts:864-913`.

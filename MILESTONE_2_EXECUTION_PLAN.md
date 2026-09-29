@@ -266,7 +266,33 @@ Với WI-8a: ba dòng của `plugin-settings-provenance.test.ts` xanh (hai dòng
 > **Đây là lỗi đỏ chắc chắn, không phải rủi ro lịch trình.** Nó không tự hiện ra cho tới khi Cả hai type
 > test của WI-4 chạy cùng lúc với gate của B1 — tức là ở điểm sát nhất mà cả hai đều tưởng mình đã xong.
 >
-> **Câu hỏi phải có đúng một câu trả lời:** plugin có được sở hữu renderer của built-in không?
+> **✅ ĐÃ CHỐT (2026-09-29): phương án (i) — KHÔNG.** Plugin **không** được ghi đè renderer của một
+> built-in tool mà nó không sở hữu. WI-4 đóng băng trọn vẹn; **B1 của M3 phải viết lại** để không cưỡi
+> tên built-in.
+>
+> **Cơ sở đo (25 fact sống sót phản biện, 16 bị bác):**
+> - **0 writer trong repo hôm nay** — 13 tham chiếu trên 5 file, *tất cả là lượt đọc*; grep writer trả
+>   exit 1. Đóng băng **không phá consumer hiện hữu nào**.
+> - **Có hai cổng đỏ độc lập**, không phải một: type-level (`TS2542`) và grep-level (gate b, regex đã
+>   chạy và trúng đúng dòng fixture của B1). Sửa một cái không đủ.
+> - **Mâu thuẫn là một chiều** — nạn nhân duy nhất là B1; WI-4 không bao giờ là nạn nhân.
+> - **Phương án (ii) bị loại và có lý do:** `WI-9` **không** sở hữu `toolRenderers` — 0 hit trong
+>   `M2:5211-5640`, và 11 bucket của `Extension` interface không có bucket nào là tool-renderer. Nên
+>   "dùng lại đường đăng ký sẵn có" là không tồn tại; nó phải dựng bucket, wiring ưu tiên và unload
+>   từ đầu.
+>
+> **Cái giá, ghi thẳng:** đây là **breaking change với plugin ngoài repo đang mutate registry**.
+> `packages/tui` được publish (v18.4.0) và exports map `"./*": {"import": "./src/*.ts"}` mở cho
+> *mọi* specifier, nên importer ngoài repo là khách hàng thật. **Repo không có dữ liệu hệ sinh thái
+> plugin để biết có ai đang dựa vào nó hay không** — và không có cách nào suy ra từ code.
+>
+> **Một ẩn số chưa đóng, liên quan trực tiếp tới cái giá trên:** chưa quan sát được extension trong
+> binary đã compile có nhận **đúng instance** của host hay một instance thứ hai (host module nằm trong
+> `/$bunfs/` qua `bundledModuleVirtualSpecifier`, và bảng override chỉ khoá package root — không
+> subpath nào). Nếu là instance thứ hai, mutation vốn đã không có tác dụng lên host, và cái giá
+> breaking thực ra bằng không. **Đo được ở dev/source-link, không đo được ở binary.**
+
+> ~~**Câu hỏi phải có đúng một câu trả lời:** plugin có được sở hữu renderer của built-in không?~~
 > - **(i) Đóng băng, không ngoại lệ** — WI-4 giữ nguyên; B1 của M3 phải đổi tiền đề.
 > - **(ii) Đóng băng + một đường đăng ký tường minh** — WI-4 giữ `Object.freeze` trên bản ghi, và M3
 >   đổi từ "ghi trực tiếp" sang gọi đường đăng ký mà WI-9 sở hữu. Đây là lựa chọn đáng cân: nó giữ

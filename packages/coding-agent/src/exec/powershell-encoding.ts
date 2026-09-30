@@ -9,15 +9,21 @@ import { isPowerShell } from "@oh-my-pi/pi-utils/procmgr";
  * has no console at all (a redirected handle) rejects it, and a command that
  * only wants to read a file should not fail over it.
  *
- * ASSUMPTION, NOT A MEASUREMENT: this has never been run against a real
- * PowerShell — both authors of this change were on macOS, where `pwsh` is not
- * installed. `[Console]::OutputEncoding` sets the BCL encoding layer, which is
- * the one that governs output when the handle is a pipe, which is the case for
- * every spawn site here. Windows also has a second layer — the console code
- * page, set by `chcp 65001` — which can govern output even through a pipe, and
- * it is deliberately NOT set: a second layer nobody has observed failing is a
- * guess, and this one is documented as a guess. Untested for `pwsh` 7+ and for a
- * genuine console handle.
+ * ASSUMPTION, NOT A MEASUREMENT — but a cheap one to retire. This has never been
+ * run against a real PowerShell; it was written on macOS, where `pwsh` is not
+ * installed. The repo already has somewhere to settle it: the
+ * `release_smoke_win32_arm64` job (`.github/workflows/ci.yml`) runs on real
+ * Windows ARM hardware with `shell: pwsh`. Adding
+ * `pwsh -c "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; 'héllo'"`
+ * there and asserting the emitted bytes are UTF-8 would end this paragraph.
+ *
+ * What the reasoning rests on meanwhile: `[Console]::OutputEncoding` sets the BCL
+ * encoding layer, which governs output when the handle is a pipe — the case for
+ * every spawn site here. Windows also has a second layer, the console code page
+ * (`chcp 65001`), which can govern output even through a pipe. It is deliberately
+ * NOT set: nobody has observed it failing, and adding a second mechanism on a
+ * guess is its own kind of bug. If the CI check above shows otherwise, this
+ * paragraph is the place to correct.
  *
  * Not covered: the interactive PTY path. `wrapShellLineForClientTerminal` is
  * called only for the client-terminal bridge command (`tools/bash.ts`); the PTY

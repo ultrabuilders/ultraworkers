@@ -429,6 +429,20 @@ export class CommandController {
 				info += `${theme.fg("dim", "Committed Credits:")} ${formatCreditValue(stats.credits.committedCost)}\n`;
 				info += `${theme.fg("dim", "Committed ACU:")} ${formatCreditValue(stats.credits.acuCost)}\n`;
 			}
+
+			// Attribution: which model spent it, not just how much. Subagent work is
+			// a peer row here, not a footnote — it is one of the things that spent
+			// the money, and rendering it apart would imply it annotates the others.
+			const breakdown = stats.usageBreakdown;
+			if (breakdown !== undefined && breakdown.buckets.length > 0) {
+				info += `\n${theme.bold("By model")}\n`;
+				for (const bucket of breakdown.buckets) {
+					info += `${theme.fg("dim", `${bucket.key}:`)} ${bucket.cost.toFixed(4)}\n`;
+				}
+				if (breakdown.cacheMiss.missedCost > 0) {
+					info += `${theme.fg("dim", "Cache misses:")} ${breakdown.cacheMiss.missedCost.toFixed(4)}\n`;
+				}
+			}
 		}
 
 		if (this.ctx.lspServers && this.ctx.lspServers.length > 0) {

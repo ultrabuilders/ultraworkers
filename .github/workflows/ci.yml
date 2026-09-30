@@ -1036,6 +1036,93 @@ jobs:
               & "packages/coding-agent/binaries/omp-windows-arm64.exe" --smoke-test
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+   # Gate 6 of the process-hardening bead: `hardenProcess()` must be a CLEAN
+   # no-op where prctl and setrlimit do not exist. Nothing could check that —
+   # the only Windows job above runs a release binary's `--version`, and its
+   # addon comes from the release artifact, so on Windows the hardening path was
+   # asserted nowhere. It needed a job of its own: `procmgr` and `dirs` both
+   # dlopen the native addon, so the test cannot even import on a host without
+   # one, and `setCoreLimit` returns its "no equivalent" sentinel there rather
+   # than a syscall code.
+   #
+   # Fail-closed on purpose. A Windows job that could go quietly missing is the
+   # exact failure this one exists to end, so a broken runner is a red build to
+   # investigate, not a warning to scroll past.
+   windows_arm64_unit:
+      name: "Test process hardening (Windows ARM64)"
+      runs-on: windows-11-arm
+      needs: [native_addons_cross]
+      # `native_addons_cross` publishes only on non-PR events, so on a PR its
+      # result is legitimately `skipped` rather than a failure. Both are accepted
+      # because the PR path below sources the addon from npm instead. What is NOT
+      # accepted is `failure` — that means the addon could not be built at all,
+      # and testing against last release's binary would hide a native break.
+      if: ${{ !cancelled() && (needs.native_addons_cross.result == 'success' || needs.native_addons_cross.result == 'skipped') }}
+      timeout-minutes: 20
+      steps:
+         - uses: actions/checkout@v4
+           # Not ./.github/actions/bun-install: that action installs Bun with
+           # `curl bun.sh/install | bash`, whose Windows pick under Git Bash is not
+           # something this repo can verify. Bun publishes a native Windows ARM64
+           # build (`bun-windows-aarch64.zip`), so take that asset directly. The
+           # repo pins `bun@>=1.4`, a floor — latest satisfies it by construction,
+           # and the assertion below proves it rather than assuming it.
+         - name: Install Bun (Windows ARM64 build)
+           shell: pwsh
+           run: |
+            $ErrorActionPreference = "Stop"
+            $release = Invoke-RestMethod "https://api.github.com/repos/oven-sh/bun/releases/latest"
+            $asset = $release.assets | Where-Object { $_.name -eq "bun-windows-aarch64.zip" } | Select-Object -First 1
+            if (-not $asset) { throw "bun-windows-aarch64.zip missing from bun $($release.tag_name); Windows ARM64 unit runs cannot install Bun" }
+            $zip = Join-Path $env:RUNNER_TEMP "bun.zip"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+            $dest = Join-Path $env:RUNNER_TEMP "bun"
+            Expand-Archive -Path $zip -DestinationPath $dest -Force
+            # The archive nests a `bun-windows-aarch64/` directory; put the real
+            # executable on PATH rather than depending on that layout.
+            $exe = Get-ChildItem -Path $dest -Filter "bun.exe" -Recurse | Select-Object -First 1
+            if (-not $exe) { throw "bun.exe not found inside $zip" }
+            echo "$($exe.DirectoryName)" >> $env:GITHUB_PATH
+         - name: Report Bun version
+           shell: pwsh
+           run: |
+            $ErrorActionPreference = "Stop"
+            $version = & bun --version
+            echo "bun $version on $env:RUNNER_OS/$env:RUNNER_ARCH"
+            if ($version -notmatch '^1\.(\d+)\.') { throw "unexpected bun version: $version" }
+            if ([int]$Matches[1] -lt 4) { throw "repo pins bun@>=1.4; runner has $version" }
+         - name: Install dependencies
+           shell: pwsh
+           run: bun install --frozen-lockfile
+           # PR runs publish only natives-linux-x64, so the cross artifact this job
+           # would otherwise restore does not exist. Same fallback `native_addons`
+           # uses, and the same tradeoff it documents: the addon then reflects the
+           # last release rather than this branch's Rust. Native changes are
+           # validated post-merge on main and at release. What is still checked on
+           # every PR is the TypeScript contract — which is what gate 6 is about.
+         - name: Fetch the Windows ARM64 addon (PR runs)
+           if: github.event_name == 'pull_request'
+           shell: pwsh
+           run: |
+            $ErrorActionPreference = "Stop"
+            $tarball = (& npm view "@oh-my-pi/pi-natives-win32-arm64@latest" dist.tarball).Trim()
+            echo "Fetching $tarball"
+            $tgz = Join-Path $env:RUNNER_TEMP "addon.tgz"
+            Invoke-WebRequest -Uri $tarball -OutFile $tgz
+            & tar -xzf $tgz -C $env:RUNNER_TEMP
+            Copy-Item "$env:RUNNER_TEMP/package/pi_natives.win32-arm64.node" "packages/natives/native/"
+         - name: Install the native addon
+           if: github.event_name != 'pull_request'
+           uses: ./.github/actions/native-artifacts
+           with:
+            targets: win32-arm64
+           # The point of the job. `bun test <file>` rather than a ci:test:* bucket:
+           # a full Windows unit run is a much wider claim, and this one file is the
+           # only thing currently asserted nowhere.
+         - name: Test process hardening (Windows)
+           shell: pwsh
+           run: bun test packages/coding-agent/test/harden-process.test.ts
+
    # Publishes the six @oh-my-pi/pi-natives-<tag> leaf packages once
    # validation passes and every binary built. Runs on one linux runner: leaf
    # publishing is platform-agnostic file packaging (gen-npm-packages reads

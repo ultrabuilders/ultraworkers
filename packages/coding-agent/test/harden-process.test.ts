@@ -38,14 +38,40 @@ function coreLimitLogs(spy: { mock: { calls: unknown[][] } }): unknown[] {
 	return spy.mock.calls.filter(call => String(call[0]).includes("RLIMIT_CORE")).map(call => call[1]);
 }
 
+/**
+ * `setrlimit(RLIMIT_CORE)` exists on Linux and macOS. Windows has no equivalent,
+ * so the contract is two-sided: where the call exists a refusal must surface,
+ * and where it does not the ABSENCE must be reported rather than left to read as
+ * success.
+ *
+ * Both branches are asserted inside the same test rather than split into two
+ * `describe`s, one of which is empty per platform. An empty describe is a file
+ * that passes while proving nothing — and the platform that has no `setrlimit`
+ * is the one no developer runs this on, which is exactly why the gate exists.
+ */
+const HAS_SETRLIMIT = process.platform !== "win32";
+
 describe("hardenProcess", () => {
-	it("leaves the process able to make another syscall afterwards", () => {
+	it("leaves the process able to work afterwards", async () => {
 		// A guard that leaves omp unable to launch is worse than the hole it closes:
 		// the user sees a broken tool rather than a compromised one. A bare
-		// `not.toThrow()` would not catch a wedged runtime, so the observable is a
-		// real dlopen + FFI round-trip completing AFTER hardening ran.
+		// `not.toThrow()` would not catch a wedged runtime.
+		//
+		// Two probes, because "can it still work" is not one question. Where the FFI
+		// path exists, `setCoreLimit` is a real dlopen + FFI round-trip — the same
+		// thing hardening itself performs, so it would catch an FFI handle leaked or
+		// closed on the wrong path. Where it does not (Windows), hardening's only
+		// action is stripping env, and the honest question is whether the process
+		// still runs a child at all.
 		hardenProcess();
-		expect(setCoreLimit(0, 0)).toBe(0);
+		if (HAS_SETRLIMIT) expect(setCoreLimit(0, 0)).toBe(0);
+
+		const child = Bun.spawn([process.execPath, "-e", "console.log('alive')"], {
+			stdout: "pipe",
+			stderr: "ignore",
+		});
+		expect(await new Response(child.stdout).text()).toBe("alive\n");
+		expect(await child.exited).toBe(0);
 	});
 });
 
@@ -276,26 +302,48 @@ describe("loader variables reaching a real child", () => {
 });
 
 describe("setCoreLimit", () => {
-	it("reports a REFUSED limit instead of letting it read as success", () => {
+	it("never lets a refusal read as success, and never pretends to make a call it cannot", () => {
+		const debug = spyOn(logger, "debug").mockImplementation(() => {});
+		const rc = setCoreLimit(5, 1);
+
+		if (!HAS_SETRLIMIT) {
+			// The SENTINEL plus the silence, together, are the contract here — not the
+			// absence of a throw.
+			//
+			// `-1` alone cannot carry it, and this is measured rather than assumed:
+			// `setrlimit` returns -1 for a refused call, so a Linux refusal and a
+			// Windows no-op are the SAME number (measured: `setCoreLimit(5, 1)` → -1).
+			// What separates "attempted and refused" from "never attempted" is
+			// whether anything was logged. So this asserts both halves, and a future
+			// sentinel that disambiguates the return code would let the log half go.
+			expect(rc).toBe(-1);
+			// And silent: a Windows host that logged on every launch would train an
+			// operator to ignore the line that does matter on Linux.
+			expect(coreLimitLogs(debug)).toEqual([]);
+			return;
+		}
+
 		// The heart of it. A valid struct SUCCEEDS on this machine, so a test using
 		// one would pass with the `rc !== 0` check deleted -- it would be a green
 		// test protecting nothing. `rlim_cur > rlim_max` is EINVAL under POSIX, and
 		// that refusal is reachable anywhere: no Linux runner, no injected syscall,
 		// just a struct no caller could legitimately pass.
-		const debug = spyOn(logger, "debug").mockImplementation(() => {});
-		const rc = setCoreLimit(5, 1);
-
 		expect(rc).not.toBe(0);
 		expect(coreLimitLogs(debug)).toEqual([{ rc }]);
 	});
 
 	it("stays silent for a limit it actually applied", () => {
-		// The negative half. Without this, a `logger.debug` that fires on EVERY call
-		// would satisfy the test above while telling an operator their core dumps were
-		// refused each time they were in fact disabled.
 		const debug = spyOn(logger, "debug").mockImplementation(() => {});
 		const rc = setCoreLimit(0, 0);
 
+		if (!HAS_SETRLIMIT) {
+			expect(coreLimitLogs(debug)).toEqual([]);
+			return;
+		}
+
+		// The negative half. Without this, a `logger.debug` that fires on EVERY call
+		// would satisfy the test above while telling an operator their core dumps were
+		// refused each time they were in fact disabled.
 		expect(rc).toBe(0);
 		expect(coreLimitLogs(debug)).toEqual([]);
 	});

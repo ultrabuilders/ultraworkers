@@ -46,16 +46,6 @@ describe("hardenProcess", () => {
 	});
 });
 
-/**
- * The wiring in `cli.ts`, asserted against the source file.
- *
- * This is not a source-grep test of implementation detail: the ORDER is the
- * contract, and order is not observable any other way — `hardenProcess` returns
- * void, so calling it first or second produces the same return value and the
- * same process state on macOS. Only the sequence in the entry file distinguishes
- * a correct entrypoint from one that hardens a process whose parent already
- * exited (`PR_SET_PDEATHSIG`).
- */
 describe("loader variables in this process's own environment", () => {
 	it("removes loader-hijack variables that would otherwise reach every child", () => {
 		// The gap this covers: `sanitizeChildEnv` scrubs the per-command env, but the

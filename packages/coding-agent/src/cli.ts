@@ -63,8 +63,8 @@ if (isProcessEntry) {
 	hardenProcess();
 }
 
-// After harden, not before: `PR_SET_PDEATHSIG` means something different on a
-// process whose parent has already exited, so the order is behaviour, not style.
+// Naming happens here because `process.title` renames the process and has no
+// bearing on the parent liveness `PR_SET_PDEATHSIG` reads -- the two are orthogonal.
 try {
 	process.title = APP_NAME;
 } catch {}

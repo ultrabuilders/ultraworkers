@@ -32,6 +32,9 @@ doctor` is — so it now says so instead of being sent to the model as a prompt
 
 ### Added
 
+- Per-model cost attribution: a new pure `buildUsageBreakdown()` splits a session's totals by the model
+  that served each turn, with subagent usage on its own row
+
 - A `task` fan-out larger than the planning threshold now needs a plan (`goal`, `steps`,
   `verification`) before it will run. Smaller fan-outs are unaffected, and the error names
   exactly which fields are missing

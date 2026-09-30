@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { readdirSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -214,6 +215,29 @@ function workspaceTestCommand(pkg: string, parallel: number, options: { extraArg
 // Rust under the same progress stream / failure report. Delegates to
 // run-rs-task.ts, which self-skips when no Rust-affecting files changed locally
 // (printing a one-line notice) and resolves the cargo/nextest invocation.
+// The packaging gates under `scripts/` are Node's own `node:test` files, not
+// `bun test` ones — `check-runtime-deps` drives typescript/unstable/sync, which
+// needs a real Node child-process stream. They therefore run as one `node --test`
+// process rather than through the `bun test` workspace fan-out, and declare no
+// `parallel` width so `applyChunkBudget` leaves their argv alone.
+//
+// Collected from disk rather than listed, so a new gate's test is picked up by
+// adding the test file and nothing else: a hand-maintained list is exactly the
+// kind that silently stops protecting anything.
+const nodeInvariantTestCommand = (): TestCommand => ({
+	label: "packaging gates (node:test)",
+	cwd: ".",
+	command: ["node", "--test", ...discoverNodeInvariantTests()],
+});
+
+function discoverNodeInvariantTests(): string[] {
+	const entries = readdirSync(path.join(repoRoot, "scripts"), { withFileTypes: true });
+	return entries
+		.filter(entry => entry.isFile() && entry.name.endsWith(".test.mjs"))
+		.map(entry => path.join("scripts", entry.name))
+		.sort();
+}
+
 function rustTestCommand(): TestCommand {
 	return {
 		label: "rust (cargo nextest; skipped if no Rust changes)",
@@ -348,6 +372,7 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 				...(await commandsForMode("workspace")),
 				...(await commandsForMode("native")),
 				...(await commandsForMode("coding-agent-heavy")),
+				nodeInvariantTestCommand(),
 			];
 		// `local-ts` is the full local TypeScript run that root `bun run test:ts`
 		// drives: every package the old `--workspaces` fan-out covered (the CI
@@ -360,6 +385,7 @@ async function commandsForMode(mode: Mode): Promise<TestCommand[]> {
 				...nativeAndIntegrationPackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
 				...localOnlyWorkspacePackages.map(pkg => workspaceTestCommand(pkg, 4, { extraArgs: onlyFailuresArgs })),
 				...(await commandsForMode("coding-agent-heavy")),
+				nodeInvariantTestCommand(),
 			];
 		// `local` is what root `bun run test` drives: the full TS suite plus the
 		// Rust task, so a single invocation reports TS and Rust together. The Rust

@@ -13,6 +13,8 @@
 
 - A malformed collab frame is now rejected at the decode boundary instead of reaching the frame
   handler as if it were whole. An unknown frame variant from a newer peer is still accepted
+- `omp doctor` no longer starts a model conversation. It is not a top-level command — `omp plugin
+  doctor` is — so it now says so instead of being sent to the model as a prompt
 - Concurrent edits to the same file within one session no longer interleave and lose one of the changes.
   Edits, writes and deletes now serialise per file — including through a symlink, which previously took a
   separate lock for the same file — while edits to different files still run in parallel. Two separate

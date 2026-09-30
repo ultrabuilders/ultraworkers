@@ -329,6 +329,8 @@ const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 		'`omp enable` is not a top-level command. Use `omp plugin enable <name@marketplace>` to enable a plugin, or run `omp launch enable` if you meant to send "enable" as a prompt.',
 	disable:
 		'`omp disable` is not a top-level command. Use `omp plugin disable <name@marketplace>` to disable a plugin, or run `omp launch disable` if you meant to send "disable" as a prompt.',
+	doctor:
+		'`omp doctor` is not a top-level command. Use `omp plugin doctor` to run the health check, or run `omp launch doctor` if you meant to send "doctor" as a prompt.',
 };
 
 // Sub-actions that make `omp marketplace <sub>` unambiguously a management

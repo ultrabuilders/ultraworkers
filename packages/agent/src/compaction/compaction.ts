@@ -5,6 +5,7 @@
  * and after compaction the session is reloaded.
  */
 
+import * as os from "node:os";
 import {
 	type Api,
 	type ApiKey,
@@ -359,10 +360,119 @@ export function resolveBudgetReserveTokens(contextWindow: number, settings: Comp
 }
 
 /**
- * Check if compaction should trigger based on context usage.
+ * Reason a compaction was triggered. `token` is the normal user-configurable path;
+ * the rest are emergency floors that no setting can turn off.
  */
-export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
+export type CompactionTriggerReason =
+	| "token"
+	| "heap"
+	| "retainedMemory"
+	| "transcriptFile"
+	| "providerBytes"
+	| "messageCount"
+	| "imageBytes";
+
+/** What the emergency floors measure. None of these is a token count. */
+export interface EmergencyCompactionSample {
+	/** Resident heap bytes (e.g. `process.memoryUsage().heapUsed`). */
+	heapUsedBytes: number;
+	/** Approximate serialized provider-context bytes. */
+	providerBytes: number;
+	/** Provider-visible message count. */
+	messageCount: number;
+	/** Approximate inline image bytes in the provider context. */
+	imageBytes: number;
+	/** Bytes retained by non-provider materialized/session-local caches. */
+	materializedResidentBytes?: number;
+	/** Bytes retained by TUI render caches. */
+	tuiCachedRenderBytes?: number;
+	/** On-disk JSONL transcript file size; 0/undefined when unknown. */
+	transcriptFileBytes?: number;
+}
+
+export interface EmergencyCompactionLimits {
+	heapUsedBytes: number;
+	providerBytes: number;
+	messageCount: number;
+	imageBytes: number;
+	retainedMemoryBytes?: number;
+	transcriptFileBytes?: number;
+}
+
+const MAX_EMERGENCY_HEAP_FLOOR_BYTES = 1_536 * 1024 * 1024; // 1.5 GiB resident heap
+const EMERGENCY_RETAINED_MEMORY_BYTES = 128 * 1024 * 1024;
+const EMERGENCY_TRANSCRIPT_FILE_BYTES = 48 * 1024 * 1024; // 48 MiB (75% of the 64 MiB managed cap)
+
+/**
+ * Resolve the emergency floors against this machine's memory.
+ *
+ * The total is read through `os.totalmem()`, which can be 0, NaN, or negative on
+ * an exotic platform or a bad injection. That must NEVER disable the heap floor —
+ * a floor switched off by a broken read is worse than having no floor, because the
+ * reason the floor exists is that the token threshold was not going to fire.
+ */
+export function resolveEmergencyCompactionLimits(totalMemoryBytes: number = os.totalmem()): EmergencyCompactionLimits {
+	const safeTotal =
+		Number.isFinite(totalMemoryBytes) && totalMemoryBytes > 0 ? totalMemoryBytes : Number.POSITIVE_INFINITY;
+	return {
+		heapUsedBytes: Math.min(MAX_EMERGENCY_HEAP_FLOOR_BYTES, Math.floor(0.5 * safeTotal)),
+		providerBytes: 24 * 1024 * 1024, // 24 MiB serialized provider context
+		messageCount: 4000,
+		imageBytes: 64 * 1024 * 1024, // 64 MiB inline image bytes
+		retainedMemoryBytes: EMERGENCY_RETAINED_MEMORY_BYTES,
+		transcriptFileBytes: EMERGENCY_TRANSCRIPT_FILE_BYTES,
+	};
+}
+
+/**
+ * The first emergency floor the sample has crossed, or `undefined`.
+ *
+ * Ordered by how quickly each one means the process is in trouble: resident heap
+ * first, then memory held outside the provider context, then the on-disk
+ * transcript, then the serialized context itself, then its size in messages.
+ *
+ * One question for the caller rather than six, and it is pure — the caller routes
+ * the result through the same pair-safe `compact()` cut as a token-triggered
+ * compaction, so a `tool_use`/`tool_result` pair is never split by either path.
+ */
+export function firstExceededEmergencyLimit(
+	sample: EmergencyCompactionSample,
+	limits: EmergencyCompactionLimits = resolveEmergencyCompactionLimits(),
+): CompactionTriggerReason | undefined {
+	const retainedMemoryBytes = (sample.materializedResidentBytes ?? 0) + (sample.tuiCachedRenderBytes ?? 0);
+	if (sample.heapUsedBytes >= limits.heapUsedBytes) return "heap";
+	if (limits.retainedMemoryBytes !== undefined && retainedMemoryBytes >= limits.retainedMemoryBytes) {
+		return "retainedMemory";
+	}
+	if (
+		limits.transcriptFileBytes !== undefined &&
+		sample.transcriptFileBytes !== undefined &&
+		sample.transcriptFileBytes >= limits.transcriptFileBytes
+	) {
+		return "transcriptFile";
+	}
+	if (sample.providerBytes >= limits.providerBytes) return "providerBytes";
+	if (sample.imageBytes >= limits.imageBytes) return "imageBytes";
+	if (sample.messageCount >= limits.messageCount) return "messageCount";
+	return undefined;
+}
+
+/**
+ * Check if compaction should trigger based on context usage.
+ *
+ * `sample` is optional and additive: with no sample, and no floor exceeded, the
+ * decision is byte-for-byte what it has always been. That is the whole reason the
+ * parameter is optional — the token threshold stays the user-configurable path,
+ * and a resource floor is a separate, non-disableable reason to compact.
+ */
+export function shouldCompact(
+	contextTokens: number,
+	contextWindow: number,
+	settings: CompactionSettings,
+	sample?: EmergencyCompactionSample,
+): boolean {
 	if (!settings.enabled || settings.strategy === "off" || contextWindow <= 0) return false;
+	if (sample && firstExceededEmergencyLimit(sample) !== undefined) return true;
 	const thresholdTokens = resolveThresholdTokens(contextWindow, settings);
 	return contextTokens > thresholdTokens;
 }

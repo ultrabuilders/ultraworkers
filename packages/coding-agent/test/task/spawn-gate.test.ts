@@ -53,4 +53,16 @@ describe("evaluateSpawnGate", () => {
 		// Otherwise a plan of three empty strings satisfies the gate and buys nothing.
 		expect(evaluateSpawnGate(DEFAULT_SPAWN_THRESHOLD + 1, { ...COMPLETE, steps: "   " }).ok).toBe(false);
 	});
+
+	it("treats the threshold as a parameter, not a baked-in number", () => {
+		// The threshold is a judgement of magnitude that wants measuring on a tree
+		// that actually runs large fan-outs — this one runs four. Pinning that the
+		// number is a PARAMETER means re-measuring it later is a constant change,
+		// not a refactor, and stops the default from quietly becoming load-bearing.
+		const plan = { goal: "g", steps: "s", verification: "v" };
+		expect(evaluateSpawnGate(9, undefined, 12).ok).toBe(true); // 9 <= 12: no receipt needed at all
+		expect(evaluateSpawnGate(9, plan, 12).ok).toBe(true);
+		expect(evaluateSpawnGate(13, undefined, 12).ok).toBe(false); // above a higher bar
+		expect(evaluateSpawnGate(13, plan, 12).ok).toBe(true);
+	});
 });

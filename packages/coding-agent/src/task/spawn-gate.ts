@@ -9,6 +9,14 @@
  * Pure on purpose: no I/O, no state, no clock. A gate that decides whether to
  * launch N subagents must be answerable from its inputs alone, or a test cannot
  * present the failure it exists to catch.
+ *
+ * Why it is NOT disableable: an unplanned fan-out fails unattributably — N
+ * subagents die, and the batch reads as N unrelated problems rather than one
+ * missing plan. That is a failure the user cannot diagnose from the transcript,
+ * which is a different thing from a safety rail (it is closer to a useful
+ * default). The escape hatch is stated in the rejection itself: split the work
+ * into batches under the threshold. Turning the gate off is only ever the right
+ * answer when the work genuinely cannot be split, which has no demonstrated case.
  */
 
 /**
@@ -29,7 +37,7 @@ export const DEFAULT_SPAWN_THRESHOLD = 8;
  */
 export const REQUIRED_PLAN_FIELDS = ["goal", "steps", "verification"] as const;
 
-export interface SpawnPlan {
+export interface PlanReceipt {
 	readonly goal?: unknown;
 	readonly steps?: unknown;
 	readonly verification?: unknown;
@@ -55,7 +63,7 @@ export interface SpawnPlanReceipt {
  * as a missing one, and treating them differently would let a model satisfy the
  * gate with whitespace.
  */
-export function findMissingPlanFields(plan: SpawnPlan | undefined): readonly string[] {
+export function findMissingPlanFields(plan: PlanReceipt | undefined): readonly string[] {
 	if (!plan) return REQUIRED_PLAN_FIELDS;
 	return REQUIRED_PLAN_FIELDS.filter(field => {
 		const value = plan[field];
@@ -66,7 +74,7 @@ export function findMissingPlanFields(plan: SpawnPlan | undefined): readonly str
 /** Decide whether a fan-out of `spawnCount` may proceed. */
 export function evaluateSpawnGate(
 	spawnCount: number,
-	plan?: SpawnPlan,
+	plan?: PlanReceipt,
 	threshold: number = DEFAULT_SPAWN_THRESHOLD,
 ): SpawnPlanReceipt {
 	if (spawnCount <= threshold) {

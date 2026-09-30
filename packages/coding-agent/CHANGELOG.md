@@ -17,6 +17,11 @@
 
 ### Added
 
+- Documented which extension authoring surface is the canonical one, and which are kept only for
+  compatibility: `docs/extension-writing-surfaces.md` now ranks all six surfaces in one table with a
+  reviewable status each, so you can tell at a glance whether to write an extension, keep a hook
+  module, or drop into core. Hooks and custom commands are marked compatibility-only, and the
+  capability registry is marked core-only
 - `/reload-extensions` reloads extensions, skills, commands and plugin state in place, and tells
   extensions to re-contribute their resources — the `resources_discover` event's `reload` reason
   previously had no caller, so an extension could never be told a reload happened. It asks before

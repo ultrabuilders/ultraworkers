@@ -986,10 +986,4 @@ Provide `renderCall` / `renderResult` on `registerTool` definitions for custom t
 
 ## Extensions vs hooks vs custom-tools
 
-Use the right surface:
-
-- **Extensions** (`src/extensibility/extensions/*`): unified system (events + tools + commands + renderers + provider registration).
-- **Hooks** (`src/extensibility/hooks/*`): separate legacy event API.
-- **Custom-tools** (`src/extensibility/custom-tools/*`): tool-focused modules; when loaded alongside extensions they are adapted and still pass through extension interception wrappers.
-
-If you need one package that owns policy, tools, command UX, and rendering together, use extensions.
+The ranking of these surfaces — which is canonical, which is compatibility-only — is decided in [extension-writing-surfaces.md](./extension-writing-surfaces.md). Short version: use extensions for new authoring.

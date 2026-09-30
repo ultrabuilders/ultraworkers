@@ -102,12 +102,21 @@ packages/coding-agent/bench/boot-baseline.json
 # Artifacts `omp` writes into the CWD when a run is exercised end-to-end from a
 # scratch session (`omp session`, browser recording). They are output, not source:
 # a `git add -A` in a repo root that has one on disk would commit a stray `.probe`
-# and a pair of frames. Matched at the repo root so a real file of the same name
-# deeper in the tree is still tracked.
-/omp-session-*.md
-/omp-session-*.markdown
-/omp-session-*.probe
-/omp-browser-recording-*/
+# and a pair of frames.
+#
+# Matched at ANY depth, not just the repo root. These land wherever omp ran, and
+# a run from `packages/coding-agent/` writes them *there* — the root-anchored
+# form let exactly those through, so they showed up as untracked noise. That noise
+# is not cosmetic: a peer read `git status` mid-session, saw files no owner
+# recognised, and drew the wrong conclusion about who was working on what.
+# `session.jsonl` and its lock are runtime output too, and a tracked fixture is
+# spelled `large-session.jsonl`, so the exact name does not collide.
+**/omp-session-*.md
+**/omp-session-*.markdown
+**/omp-session-*.probe
+**/omp-browser-recording-*/
+**/session.jsonl
+**/.session.jsonl.lock*
 
 # Scratch directories a throwaway probe gets written into. These keep recurring —
 # `.probe`, then the session artifacts above, then `.scratch` — and each time the

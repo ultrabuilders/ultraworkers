@@ -110,18 +110,75 @@ describe("parseMarketplaceCatalog", () => {
 			expect(catalog.plugins[0]?.hooks).toEqual({ onToolCall: "x" });
 		});
 
-		it("accepts strict: true without it changing anything", () => {
-			const lenient = parseMarketplaceCatalog(
-				catalogWith({ hooks: { totallyMadeUpKey: 1 } }),
+		it("rejects a nested config that is not an object when strict is set", () => {
+			// The flag was declared and read by nothing. What strict can actually
+			// check is SHAPE: these maps are written to disk verbatim, so a value
+			// that is not an object produces a config file nothing could load.
+			for (const field of ["hooks", "mcpServers", "lspServers", "dapAdapters"]) {
+				expect(() =>
+					parseMarketplaceCatalog(catalogWith({ strict: true, [field]: 123 }), "/fake/marketplace.json"),
+				).toThrow(new RegExp(field));
+			}
+		});
+
+		it("rejects a nested config whose entry is not an object", () => {
+			expect(() =>
+				parseMarketplaceCatalog(
+					catalogWith({ strict: true, mcpServers: { alpha: "oops" } }),
+					"/fake/marketplace.json",
+				),
+			).toThrow(/must be an object/);
+		});
+
+		it("still accepts a nested scalar when strict is not set", () => {
+			// Leniency at the edge is the default and stays it: a publisher who
+			// never opted in must not meet a stricter parser than they used to.
+			const catalog = parseMarketplaceCatalog(
+				catalogWith({ mcpServers: { alpha: "anything" } }),
 				"/fake/marketplace.json",
 			);
-			const strict = parseMarketplaceCatalog(
-				catalogWith({ strict: true, hooks: { totallyMadeUpKey: 1 } }),
+			expect(catalog.plugins[0]?.mcpServers).toEqual({ alpha: "anything" });
+		});
+
+		it("keeps author-chosen keys, because there is no closed key set to check against", () => {
+			// These maps are looked up by whatever name the author gave. Rejecting
+			// an unusual key would break working catalogs, and there is no
+			// vocabulary to check a typo against in the first place.
+			const catalog = parseMarketplaceCatalog(
+				catalogWith({ strict: true, mcpServers: { "My_Server.2": { command: "x" } } }),
 				"/fake/marketplace.json",
 			);
-			// Same entry, same keys. The flag is carried and ignored.
-			expect(strict.plugins[0]?.hooks).toEqual(lenient.plugins[0]?.hooks);
-			expect(strict.plugins[0]?.strict).toBe(true);
+			expect(catalog.plugins[0]?.mcpServers).toEqual({ "My_Server.2": { command: "x" } });
+		});
+
+		it("accepts a path string for a nested field under strict", () => {
+			// The string form points at a file inside the plugin and is checked
+			// where it is resolved, not here.
+			const catalog = parseMarketplaceCatalog(
+				catalogWith({ strict: true, lspServers: "./.lsp.json" }),
+				"/fake/marketplace.json",
+			);
+			expect(catalog.plugins[0]?.lspServers).toBe("./.lsp.json");
+		});
+
+		it("fails the whole catalog under strict, because a check that skips is not a check", () => {
+			// The default parser drops one bad entry and keeps the rest. Under
+			// strict that would leave the author with a warning in a log file and a
+			// marketplace that quietly lost a plugin — so strict propagates instead.
+			const raw = JSON.parse(catalogWith({ strict: true, hooks: 123 })) as { plugins: unknown[] };
+			raw.plugins.push({ name: "good-plugin", source: "./plugins/good-plugin" });
+			expect(() => parseMarketplaceCatalog(JSON.stringify(raw), "/fake/marketplace.json")).toThrow();
+		});
+
+		it("ignores nested config entirely when strict is off", () => {
+			// Leniency at the edge, unchanged: without `strict` a bad nested field
+			// is not even a bad ENTRY — the plugin still loads, carrying the value
+			// nobody will read. That is the behaviour a publisher who never opted
+			// in has always had, and narrowing it is what strict is for.
+			const raw = JSON.parse(catalogWith({ hooks: 123 })) as { plugins: unknown[] };
+			raw.plugins.push({ name: "good-plugin", source: "./plugins/good-plugin" });
+			const catalog = parseMarketplaceCatalog(JSON.stringify(raw), "/fake/marketplace.json");
+			expect(catalog.plugins.map(p => p.name)).toEqual(["hello-plugin", "good-plugin"]);
 		});
 	});
 

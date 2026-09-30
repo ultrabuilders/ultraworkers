@@ -134,6 +134,13 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 	const validPlugins: unknown[] = [];
 	const pluginNameKeys = new Set<string>();
 	for (let i = 0; i < plugins.length; i++) {
+		// Read before the try: the catch below needs it to decide whether a
+		// failure is this entry's fault or the catalog's.
+		const rawEntry = plugins[i];
+		const strictEntry =
+			typeof rawEntry === "object" && rawEntry !== null && !Array.isArray(rawEntry)
+				? (rawEntry as Record<string, unknown>).strict === true
+				: false;
 		try {
 			const entry = plugins[i];
 			assertField(typeof entry === "object" && entry !== null && !Array.isArray(entry), `plugins[${i}]`, filePath);
@@ -179,11 +186,55 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 					assertField(false, `plugins[${i}].source.source (unknown variant: "${variant}")`, filePath);
 				}
 			}
+			// `strict` is declared on the entry and read by nothing, so an author who
+			// set it expected a check that never ran. These four fields are
+			// author-facing config that gets written straight to disk — `.lsp.json`
+			// and `dap.json` are produced by stringifying the object verbatim — so a
+			// typo does not merely survive, it lands in a config file that nothing
+			// will ever read a key out of.
+			//
+			// Off by default: unknown fields survive everywhere else, and a publisher
+			// who omits `strict` gets today's behaviour, not a suddenly stricter
+			// parser.
+			if (strictEntry) {
+				for (const field of ["hooks", "mcpServers", "lspServers", "dapAdapters"] as const) {
+					const value = (p as Record<string, unknown>)[field];
+					if (value === undefined) continue;
+					// A string is the "read this file instead" form, and is
+					// validated where it is resolved, not here. Only a non-string
+					// non-object is a shape error.
+					if (typeof value === "string") continue;
+					if (typeof value !== "object" || value === null || Array.isArray(value)) {
+						assertField(false, `plugins[${i}].${field} (must be a path string or an object)`, filePath);
+					}
+					// Only the shape is checkable. These are lookup maps keyed by
+					// whatever name the author chose — there is no closed set of
+					// valid keys to check a typo against, so a key that merely looks
+					// wrong is left alone. What strict does catch is a config file
+					// that could never be loaded: an entry whose value is not an
+					// object at all.
+					for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+						assertField(key.length > 0, `plugins[${i}].${field} has an empty key`, filePath);
+						assertField(
+							typeof entry === "object" && entry !== null && !Array.isArray(entry),
+							`plugins[${i}].${field}["${key}"] must be an object`,
+							filePath,
+						);
+					}
+				}
+			}
+
 			const pluginNameKey = nameSegmentCollisionKey(p.name);
 			assertField(!pluginNameKeys.has(pluginNameKey), `plugins[${i}].name (case-equivalent duplicate)`, filePath);
 			pluginNameKeys.add(pluginNameKey);
 			validPlugins.push(entry);
 		} catch (err) {
+			// `strict` asked for this entry to be checked, and a check that logs
+			// while silently dropping the plugin is not a check — the author gets a
+			// warning in a log file and a marketplace that quietly lost an entry.
+			// So a strict failure propagates; only the default keeps the blast
+			// radius narrow.
+			if (strictEntry) throw err;
 			// Warn and skip invalid plugin entries instead of failing the entire catalog.
 			// This lets the rest of the marketplace load even if one entry has a bad name/source.
 			const name =

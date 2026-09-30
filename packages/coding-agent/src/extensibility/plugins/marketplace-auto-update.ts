@@ -35,6 +35,19 @@ async function runMarketplaceAutoUpdate(options: MarketplaceAutoUpdateOptions): 
 			clearPluginRootsCache: options.clearPluginRootsCache,
 		});
 		await mgr.refreshStaleMarketplaces();
+
+		// Reported before the update check, because a delisting produces no
+		// update: `checkForUpdates` skips a plugin the catalog no longer lists, so
+		// "will never update again" and "up to date" looked the same. An early
+		// return on an empty update list would then swallow it.
+		const delisted = await mgr.findDelistedPlugins();
+		if (delisted.length > 0) {
+			const names = delisted.map(d => `${d.pluginId} (${d.scope})`).join(", ");
+			logger.warn(
+				`${delisted.length} marketplace plugin(s) are no longer listed by their marketplace and will not be updated: ${names}`,
+			);
+		}
+
 		const updates = await mgr.checkForUpdates();
 		if (updates.length === 0) return;
 		if (options.autoUpdate === "auto") {

@@ -1269,6 +1269,71 @@ describe("MarketplaceManager", () => {
 			expect(updates).toEqual([]);
 		});
 
+		// A delisted plugin produces no update, so `checkForUpdates` cannot report
+		// it: the catalog entry is gone, which read as the same as "no version" and
+		// as "catalog unreachable". These three cases must not be collapsed.
+		describe("findDelistedPlugins", () => {
+			it("reports a plugin the catalog no longer lists", async () => {
+				await ctx.manager.addMarketplace(FIXTURE_DIR);
+				await ctx.manager.installPlugin("hello-plugin", "test-marketplace");
+
+				const catalogPath = await getCatalogPath();
+				const catalog = JSON.parse(await Bun.file(catalogPath).text()) as {
+					plugins: unknown[];
+				};
+				catalog.plugins.length = 0;
+				await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+
+				expect(await ctx.manager.findDelistedPlugins()).toEqual([
+					{ pluginId: "hello-plugin@test-marketplace", scope: "user" },
+				]);
+				// And it is genuinely invisible to the update path — that is the
+				// gap this closes, so assert it rather than assume it.
+				expect(await ctx.manager.checkForUpdates()).toEqual([]);
+			});
+
+			it("does not report a listed plugin that simply has no version", async () => {
+				await ctx.manager.addMarketplace(FIXTURE_DIR);
+				await ctx.manager.installPlugin("hello-plugin", "test-marketplace");
+
+				const catalogPath = await getCatalogPath();
+				const catalog = JSON.parse(await Bun.file(catalogPath).text()) as {
+					plugins: Array<Record<string, unknown>>;
+				};
+				delete catalog.plugins[0].version;
+				await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+
+				// Listed is listed. Treating a missing version as a delisting would
+				// tell users their plugin was pulled when the publisher just never
+				// tagged a release.
+				expect(await ctx.manager.findDelistedPlugins()).toEqual([]);
+			});
+
+			it("does not report a plugin whose catalog cannot be read", async () => {
+				await ctx.manager.addMarketplace(FIXTURE_DIR);
+				await ctx.manager.installPlugin("hello-plugin", "test-marketplace");
+				fs.unlinkSync(await getCatalogPath());
+
+				// An unreadable catalog proves nothing about listing. Reporting here
+				// would uninstall on a network error.
+				expect(await ctx.manager.findDelistedPlugins()).toEqual([]);
+			});
+
+			it("does not report an installed plugin whose marketplace is gone", async () => {
+				await ctx.manager.addMarketplace(FIXTURE_DIR);
+				await ctx.manager.installPlugin("hello-plugin", "test-marketplace");
+
+				const regPath = path.join(ctx.tmpDir, "marketplaces.json");
+				const reg = JSON.parse(fs.readFileSync(regPath, "utf-8")) as {
+					marketplaces: unknown[];
+				};
+				reg.marketplaces.length = 0;
+				fs.writeFileSync(regPath, JSON.stringify(reg, null, 2));
+
+				expect(await ctx.manager.findDelistedPlugins()).toEqual([]);
+			});
+		});
+
 		it("upgradePlugin updates the installed version", async () => {
 			await ctx.manager.addMarketplace(FIXTURE_DIR);
 			await ctx.manager.installPlugin("hello-plugin", "test-marketplace");

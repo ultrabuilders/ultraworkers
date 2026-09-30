@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `atomicWriteJson(filePath, data)` — writes JSON through a uniquely-named temp file and a single
+  rename, so a reader never sees a half-written file. Each temp name is unique per call, so
+  concurrent writers of one path need no external lock. A rename that keeps failing is retried and
+  then reported rather than worked around by deleting the target, which previously opened a window
+  where the file did not exist and a failed retry left the previous contents unrecoverable
+
 ### Fixed
 
 - A compiled binary that starts inside a sandbox no longer comes up with an empty environment: the

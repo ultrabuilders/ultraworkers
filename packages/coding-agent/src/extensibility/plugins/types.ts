@@ -175,6 +175,12 @@ export interface DoctorCheck {
 	message: string;
 	/** Whether --fix resolved this issue */
 	fixed?: boolean;
+	/**
+	 * Whether --fix actually rewrote the lockfile. Distinct from `fixed`: a
+	 * repair can run and succeed while the file was already in the target
+	 * state, so reporting `fixed` alone would claim a write that never happened.
+	 */
+	changedOnDisk?: boolean;
 }
 
 // =============================================================================

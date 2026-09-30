@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+	atomicWriteJson,
 	getPluginsDir,
 	getPluginsLockfile,
 	getPluginsNodeModules,
@@ -10,6 +11,7 @@ import {
 	getProjectPluginOverridesPath,
 	isEnoent,
 	logger,
+	withFileLock,
 } from "@oh-my-pi/pi-utils";
 import { resolveActiveProjectRegistryPath } from "../../discovery/helpers";
 import { loadExtensions } from "../extensions/loader";
@@ -112,12 +114,33 @@ interface RuntimePackageJson {
 // Plugin Manager
 // =============================================================================
 
+/** Outcome of a plugin-config mutation, as observed on disk. */
+export interface ChangeResult {
+	/** False when the mutation was a no-op, so nothing was written. */
+	changed: boolean;
+	/** Whether the running session already reflects the write. */
+	application: "applied" | "restart-required";
+}
+
 export class PluginManager {
 	#runtimeConfig: PluginRuntimeConfig | null = null;
 	#cwd: string;
 
-	constructor(cwd: string = getProjectDir()) {
+	constructor(
+		cwd: string = getProjectDir(),
+		/**
+		 * Overrides the plugins home, so the lockfile resolves under it. Read,
+		 * lock and write must all agree on one path; passing it per instance is
+		 * what lets a test drive two managers at two different lockfiles.
+		 */
+		readonly home?: string,
+	) {
 		this.#cwd = cwd;
+	}
+
+	/** The single lockfile path this instance reads, locks and writes. */
+	#getLockfile(): string {
+		return getPluginsLockfile(this.home);
 	}
 
 	// ==========================================================================
@@ -135,7 +158,7 @@ export class PluginManager {
 	}
 
 	async #loadRuntimeConfig(): Promise<PluginRuntimeConfig> {
-		return this.#readRuntimeConfigAt(getPluginsLockfile());
+		return this.#readRuntimeConfigAt(this.#getLockfile());
 	}
 
 	async #ensureConfigLoaded(): Promise<PluginRuntimeConfig> {
@@ -145,9 +168,24 @@ export class PluginManager {
 		return this.#runtimeConfig;
 	}
 
-	async #saveRuntimeConfig(): Promise<void> {
-		await this.#ensureConfigLoaded();
-		await Bun.write(getPluginsLockfile(), JSON.stringify(this.#runtimeConfig, null, 2));
+	async #mutateConfig(
+		mutate: (config: PluginRuntimeConfig) => void,
+		application: ChangeResult["application"],
+	): Promise<ChangeResult> {
+		return await withFileLock(this.#getLockfile(), async () => {
+			// Re-read INSIDE the lock rather than trusting the memoized copy: a
+			// second process may have written since it was taken, and mutating
+			// that stale object would silently drop their changes on our write.
+			const config = await this.#loadRuntimeConfig();
+			const before = JSON.stringify(config);
+			mutate(config);
+			const changed = JSON.stringify(config) !== before;
+			this.#runtimeConfig = config;
+			if (changed) {
+				await atomicWriteJson(this.#getLockfile(), config);
+			}
+			return { changed, application };
+		});
 	}
 
 	async #loadProjectOverrides(): Promise<ProjectPluginOverrides> {
@@ -659,13 +697,13 @@ export class PluginManager {
 			await this.#validateInstalledExtensions(installedPlugin);
 
 			// Update runtime config
-			const config = await this.#ensureConfigLoaded();
-			config.plugins[pkg.name] = {
-				version: pkg.version,
-				enabledFeatures,
-				enabled: true,
-			};
-			await this.#saveRuntimeConfig();
+			await this.#mutateConfig(config => {
+				config.plugins[pkg.name] = {
+					version: pkg.version,
+					enabledFeatures,
+					enabled: true,
+				};
+			}, "restart-required");
 
 			return installedPlugin;
 		} catch (err) {
@@ -718,10 +756,10 @@ export class PluginManager {
 		await fs.promises.rm(path.join(getPluginsNodeModules(), name), { recursive: true, force: true });
 
 		// Remove from runtime config
-		const config = await this.#ensureConfigLoaded();
-		delete config.plugins[name];
-		delete config.settings[name];
-		await this.#saveRuntimeConfig();
+		await this.#mutateConfig(config => {
+			delete config.plugins[name];
+			delete config.settings[name];
+		}, "restart-required");
 	}
 
 	/**
@@ -848,14 +886,19 @@ export class PluginManager {
 		const manifest: PluginManifest = pkg.omp || pkg.pi || { version: pkg.version };
 		manifest.version = pkg.version;
 
+		// Captured as a const: the `if (!pkg.name) throw` above narrows `pkg.name`
+		// to string, but that narrowing does not survive into a callback for a
+		// `let`, where the compiler must assume it may have been reassigned.
+		const pluginName = pkg.name;
+
 		// Add to runtime config
-		const config = await this.#ensureConfigLoaded();
-		config.plugins[pkg.name] = {
-			version: pkg.version,
-			enabledFeatures: null,
-			enabled: true,
-		};
-		await this.#saveRuntimeConfig();
+		await this.#mutateConfig(config => {
+			config.plugins[pluginName] = {
+				version: pkg.version,
+				enabledFeatures: null,
+				enabled: true,
+			};
+		}, "restart-required");
 
 		return {
 			name: pkg.name,
@@ -874,13 +917,13 @@ export class PluginManager {
 	/**
 	 * Enable or disable a plugin globally.
 	 */
-	async setEnabled(name: string, enabled: boolean): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (!config.plugins[name]) {
-			throw new Error(`Plugin ${name} not found in runtime config`);
-		}
-		config.plugins[name].enabled = enabled;
-		await this.#saveRuntimeConfig();
+	async setEnabled(name: string, enabled: boolean): Promise<ChangeResult> {
+		return await this.#mutateConfig(config => {
+			if (!config.plugins[name]) {
+				throw new Error(`Plugin ${name} not found in runtime config`);
+			}
+			config.plugins[name].enabled = enabled;
+		}, "restart-required");
 	}
 
 	// ==========================================================================
@@ -898,28 +941,37 @@ export class PluginManager {
 	/**
 	 * Set enabled features for a plugin.
 	 */
-	async setEnabledFeatures(name: string, features: string[] | null): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (!config.plugins[name]) {
-			throw new Error(`Plugin ${name} not found in runtime config`);
-		}
-
-		// Validate features if setting specific ones
+	async setEnabledFeatures(name: string, features: string[] | null): Promise<ChangeResult> {
+		// Read the manifest BEFORE taking the lock. Validating a feature name is
+		// read-only, so a TOCTOU race here is harmless — whereas holding an OS
+		// lock across manifest I/O would make every other process queue behind
+		// this one for the duration of a disk read.
+		let manifestFeatures: Record<string, unknown> | undefined;
 		if (features && features.length > 0) {
 			const plugin = await this.getPlugin(name, { path: path.join(getPluginsNodeModules(), name) });
-			if (plugin?.manifest.features) {
+			manifestFeatures = plugin?.manifest.features;
+		}
+
+		return await this.#mutateConfig(config => {
+			// Not-found still wins over an unknown feature, as it did before the
+			// lock was introduced: the caller's mistake is the same either way,
+			// but "no such plugin" is the more useful message.
+			if (!config.plugins[name]) {
+				throw new Error(`Plugin ${name} not found in runtime config`);
+			}
+
+			if (features && features.length > 0 && manifestFeatures) {
 				for (const feat of features) {
-					if (!(feat in plugin.manifest.features)) {
+					if (!(feat in manifestFeatures)) {
 						throw new Error(
-							`Unknown feature "${feat}" in ${name}. Available: ${Object.keys(plugin.manifest.features).join(", ")}`,
+							`Unknown feature "${feat}" in ${name}. Available: ${Object.keys(manifestFeatures).join(", ")}`,
 						);
 					}
 				}
 			}
-		}
 
-		config.plugins[name].enabledFeatures = features;
-		await this.#saveRuntimeConfig();
+			config.plugins[name].enabledFeatures = features;
+		}, "restart-required");
 	}
 
 	// ==========================================================================
@@ -942,24 +994,29 @@ export class PluginManager {
 	/**
 	 * Set a plugin setting value.
 	 */
-	async setPluginSetting(name: string, key: string, value: unknown): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (!config.settings[name]) {
-			config.settings[name] = {};
-		}
-		config.settings[name][key] = value;
-		await this.#saveRuntimeConfig();
+	async setPluginSetting(name: string, key: string, value: unknown): Promise<ChangeResult> {
+		return await this.#mutateConfig(config => {
+			if (!config.settings[name]) {
+				config.settings[name] = {};
+			}
+			config.settings[name][key] = value;
+		}, "restart-required");
 	}
 
 	/**
 	 * Delete a plugin setting.
 	 */
-	async deletePluginSetting(name: string, key: string): Promise<void> {
-		const config = await this.#ensureConfigLoaded();
-		if (config.settings[name]) {
-			delete config.settings[name][key];
-			await this.#saveRuntimeConfig();
-		}
+	async deletePluginSetting(name: string, key: string): Promise<ChangeResult> {
+		return await this.#mutateConfig(config => {
+			// No `if (config.settings[name])` early return. Deleting a key that
+			// was never there is a no-op, and the diff reports `changed: false`
+			// for it. The old guard skipped the write entirely, which left
+			// "nothing to delete" indistinguishable from "deleted" — and callers
+			// now branch on that difference.
+			if (config.settings[name]) {
+				delete config.settings[name][key];
+			}
+		}, "restart-required");
 	}
 
 	// ==========================================================================
@@ -1038,12 +1095,13 @@ export class PluginManager {
 								fixed,
 							});
 						} else {
-							const fixed = options.fix ? await this.#removeOrphanedConfig(name) : false;
+							const repair = options.fix ? await this.#removeOrphanedConfig(name) : null;
 							checks.push({
 								name: `orphan:${name}`,
 								status: "warning",
 								message: "Plugin in config but not installed",
-								fixed,
+								fixed: repair?.fixed ?? false,
+								changedOnDisk: repair?.change.changed ?? false,
 							});
 						}
 					} else {
@@ -1137,12 +1195,13 @@ export class PluginManager {
 			if (runtimeState?.enabledFeatures && manifest?.features) {
 				for (const feat of runtimeState.enabledFeatures) {
 					if (!(feat in manifest.features)) {
-						const fixed = options.fix ? await this.#removeInvalidFeature(name, feat) : false;
+						const repair = options.fix ? await this.#removeInvalidFeature(name, feat) : null;
 						checks.push({
 							name: `plugin:${name}:feature:${feat}`,
 							status: "warning",
 							message: `Enabled feature "${feat}" not in manifest`,
-							fixed,
+							fixed: repair?.fixed ?? false,
+							changedOnDisk: repair?.change.changed ?? false,
 						});
 					}
 				}
@@ -1216,23 +1275,37 @@ export class PluginManager {
 		}
 	}
 
-	async #removeInvalidFeature(name: string, feat: string): Promise<boolean> {
-		const config = await this.#ensureConfigLoaded();
-		const state = config.plugins[name];
-		if (state?.enabledFeatures) {
-			state.enabledFeatures = state.enabledFeatures.filter(f => f !== feat);
-			await this.#saveRuntimeConfig();
-			return true;
+	/**
+	 * Drop a feature the manifest no longer declares.
+	 *
+	 * `fixed` keeps the boolean this always returned — "did we run the repair".
+	 * `change` is new and says whether the lockfile actually moved, which is a
+	 * different question: a feature already absent from the list is repaired
+	 * successfully and writes nothing.
+	 */
+	async #removeInvalidFeature(name: string, feat: string): Promise<{ fixed: boolean; change: ChangeResult }> {
+		if (!(await this.#ensureConfigLoaded()).plugins[name]?.enabledFeatures) {
+			return { fixed: false, change: { changed: false, application: "restart-required" } };
 		}
-		return false;
+		const change = await this.#mutateConfig(config => {
+			const state = config.plugins[name];
+			if (state?.enabledFeatures) {
+				state.enabledFeatures = state.enabledFeatures.filter(f => f !== feat);
+			}
+		}, "restart-required");
+		return { fixed: true, change };
 	}
 
-	async #removeOrphanedConfig(name: string): Promise<boolean> {
-		const config = await this.#ensureConfigLoaded();
-		delete config.plugins[name];
-		delete config.settings[name];
-		await this.#saveRuntimeConfig();
-		return true;
+	/**
+	 * Drop config for a plugin that is no longer installed. `fixed` and `change`
+	 * mean the same two things as in {@link #removeInvalidFeature}.
+	 */
+	async #removeOrphanedConfig(name: string): Promise<{ fixed: boolean; change: ChangeResult }> {
+		const change = await this.#mutateConfig(config => {
+			delete config.plugins[name];
+			delete config.settings[name];
+		}, "restart-required");
+		return { fixed: true, change };
 	}
 }
 

@@ -133,14 +133,29 @@ export interface InstalledPluginSummary {
 }
 
 /** Runtime plugin manager capabilities required by the settings UI. */
+/**
+ * Outcome of a plugin-config mutation, as observed on disk.
+ *
+ * Declared here rather than imported from the coding-agent package: TUI is a
+ * lower layer, so importing upward would invert the dependency. The concrete
+ * manager satisfies this structurally — the members are identical, and a
+ * manager returning a different shape fails to type-check at the call site.
+ */
+export interface PluginChangeResult {
+	/** False when the mutation was a no-op, so nothing was written. */
+	changed: boolean;
+	/** Whether the running session already reflects the write. */
+	application: "applied" | "restart-required";
+}
+
 export interface PluginSettingsManager {
 	list(): Promise<InstalledPlugin[]>;
 	getPlugin(name: string, options?: { path?: string }): Promise<InstalledPlugin | undefined>;
 	getPluginSettings(name: string): Promise<Record<string, unknown>>;
-	setEnabled(name: string, enabled: boolean): Promise<void>;
+	setEnabled(name: string, enabled: boolean): Promise<PluginChangeResult>;
 	getEnabledFeatures(name: string): Promise<string[] | null>;
-	setEnabledFeatures(name: string, features: string[] | null): Promise<void>;
-	setPluginSetting(name: string, key: string, value: unknown): Promise<void>;
+	setEnabledFeatures(name: string, features: string[] | null): Promise<PluginChangeResult>;
+	setPluginSetting(name: string, key: string, value: unknown): Promise<PluginChangeResult>;
 }
 
 /** Marketplace manager capabilities required by the settings UI. */
@@ -963,8 +978,11 @@ export class PluginSettingsComponent extends Container {
 
 		this.#viewComponent = new PluginDetailComponent(plugin, this.#manager, {
 			onEnabledChange: async enabled => {
-				await this.#manager.setEnabled(plugin.name, enabled);
-				await this.callbacks.onPluginChanged();
+				// Only refresh when the lockfile actually moved. A no-op write
+				// leaves the list identical, and re-rendering it would present an
+				// unchanged state as though the toggle had taken effect.
+				const result = await this.#manager.setEnabled(plugin.name, enabled);
+				if (result.changed) await this.callbacks.onPluginChanged();
 			},
 			onFeatureChange: async (feature, enabled) => {
 				const current = new Set((await this.#manager.getEnabledFeatures(plugin.name)) ?? []);
@@ -973,12 +991,12 @@ export class PluginSettingsComponent extends Container {
 				} else {
 					current.delete(feature);
 				}
-				await this.#manager.setEnabledFeatures(plugin.name, [...current]);
-				await this.callbacks.onPluginChanged();
+				const result = await this.#manager.setEnabledFeatures(plugin.name, [...current]);
+				if (result.changed) await this.callbacks.onPluginChanged();
 			},
 			onConfigChange: async (key, value) => {
-				await this.#manager.setPluginSetting(plugin.name, key, value);
-				await this.callbacks.onPluginChanged();
+				const result = await this.#manager.setPluginSetting(plugin.name, key, value);
+				if (result.changed) await this.callbacks.onPluginChanged();
 			},
 			onBack: () => this.#showPluginList(),
 			requestRender: this.callbacks.requestRender,

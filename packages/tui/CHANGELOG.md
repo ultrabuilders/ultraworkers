@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `PluginSettingsManager.setEnabled`, `setEnabledFeatures` and `setPluginSetting` now resolve to
+  `PluginChangeResult` (`{ changed, application }`) instead of `void`. Out-of-repo implementors of
+  that interface must widen their return type; the concrete `PluginManager` already satisfies it
+
 ### Added
 
 - `ExtensionTUISurface` — the narrowed surface an extension receives for building a component, with

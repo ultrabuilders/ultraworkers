@@ -8,7 +8,7 @@ import * as path from "node:path";
 import { APP_NAME, getPluginsNodeModules, getProjectDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { resolveOrDefaultProjectRegistryPath } from "../discovery/helpers";
-import { PluginManager, parseSettingValue, validateSetting } from "../extensibility/plugins";
+import { type ChangeResult, PluginManager, parseSettingValue, validateSetting } from "../extensibility/plugins";
 import {
 	getInstalledPluginsRegistryPath,
 	getMarketplacesCacheDir,
@@ -57,6 +57,26 @@ export interface PluginCommandArgs {
 // =============================================================================
 // Argument Parser
 // =============================================================================
+
+/**
+ * Report what a plugin-config write actually did.
+ *
+ * `changed: false` means the value was already in the requested state and
+ * nothing was written, so announcing "Set …" there would claim a write that
+ * never happened. `restart-required` is reported separately because a user
+ * toggling a plugin from the shell otherwise has no way to know the running
+ * session is unaffected.
+ */
+function reportChange(result: ChangeResult, verb: string, subject: string): void {
+	if (!result.changed) {
+		console.log(chalk.dim(`${subject} was already in that state — nothing written`));
+		return;
+	}
+	console.log(chalk.green(`${theme.status.success} ${verb} ${subject}`));
+	if (result.application === "restart-required") {
+		console.log(chalk.dim("Restart omp for this to apply to the running session."));
+	}
+}
 
 const VALID_ACTIONS: PluginAction[] = [
 	"install",
@@ -771,8 +791,8 @@ async function handleFeatures(
 			}
 		}
 
-		await manager.setEnabledFeatures(pluginName, [...currentFeatures]);
-		console.log(chalk.green(`${theme.status.success} Updated features for ${pluginName}`));
+		const result = await manager.setEnabledFeatures(pluginName, [...currentFeatures]);
+		reportChange(result, "Updated features for", pluginName);
 	}
 
 	// Display current state
@@ -916,8 +936,8 @@ async function handleConfig(
 				}
 			}
 
-			await manager.setPluginSetting(pluginName, key, value);
-			console.log(chalk.green(`${theme.status.success} Set ${key}`));
+			const result = await manager.setPluginSetting(pluginName, key, value);
+			reportChange(result, "Set", `${key} for ${pluginName}`);
 			break;
 		}
 
@@ -927,8 +947,8 @@ async function handleConfig(
 				process.exit(1);
 			}
 
-			await manager.deletePluginSetting(pluginName, key);
-			console.log(chalk.green(`${theme.status.success} Deleted ${key}`));
+			const result = await manager.deletePluginSetting(pluginName, key);
+			reportChange(result, "Deleted", `${key} from ${pluginName}`);
 			break;
 		}
 
@@ -1048,11 +1068,13 @@ async function handleSetEnabled(
 		}
 
 		try {
-			await manager.setEnabled(name, enabled);
+			const result = await manager.setEnabled(name, enabled);
 			if (flags.json) {
-				console.log(JSON.stringify({ [jsonKey]: name }));
+				// Structured output carries the outcome rather than prose, so a
+				// script can tell a no-op write from a real one.
+				console.log(JSON.stringify({ [jsonKey]: name, changed: result.changed, application: result.application }));
 			} else {
-				console.log(chalk.green(`${theme.status.success} ${pastTense} ${name}`));
+				reportChange(result, pastTense, name);
 			}
 		} catch (err) {
 			console.error(chalk.red(`${theme.status.error} Failed to ${action} ${name}: ${err}`));

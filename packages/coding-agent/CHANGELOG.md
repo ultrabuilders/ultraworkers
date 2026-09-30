@@ -4,6 +4,12 @@
 
 ### Breaking Changes
 
+- Plugin config mutations (`setEnabled`, `setEnabledFeatures`, `setPluginSetting`,
+  `deletePluginSetting`) now return `{ changed, application }`. A `changed: false` result means the
+  value was already in that state and nothing was written, which the CLI reports instead of
+  claiming success, and `--json` output carries `changed` and `application` so a script can tell a
+  no-op from a real write. Enabling a plugin from the shell now says a restart is needed, because
+  the running session does not pick the change up
 - An extension written as `api => api.on(...)` no longer type-checks: `on()` returns an unsubscribe
   function, and TypeScript's "assignable where `void` is expected" rule does not survive a union.
   Write the factory with a block body, or return `undefined` explicitly. Nothing breaks at runtime —

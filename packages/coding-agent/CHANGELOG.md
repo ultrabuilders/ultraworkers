@@ -18,6 +18,12 @@
 
 ### Added
 
+- `omp` now routes structured stdout through one shared guard instead of three separate arrangements,
+  so every mode that owns stdout as a protocol channel detours stray console output to stderr and keeps
+  records in order by the same rule
+
+### Added
+
 - Extensions building a custom component or a custom editor receive a narrowed TUI surface instead of
   the render engine itself; `setFrameProvider`, `resetDisplay` and the terminal stay off it
 - `registerOutputFormat` lets an extension contribute a transcript format, so the exporter can produce

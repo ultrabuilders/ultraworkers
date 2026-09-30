@@ -18,6 +18,7 @@ import { formatPersistenceDurabilityFailure, formatPersistenceFailure } from "./
 import { initializeExtensions } from "./runtime-init";
 
 import { cfgPlanDefaultOnStartup, cfgPlanEnabled } from "../plan-mode/settings";
+import { flushRawStdout, writeRawStdout } from "../utils/stdout-guard";
 
 /**
  * Options for print mode.
@@ -134,23 +135,16 @@ async function runPrintModeCore(
 	// Serialize every stdout write on the previous write's completion callback so
 	// records stay ordered and honor backpressure, then block shutdown on the
 	// tail before dispose/exit. Same truncation class as issue #5309 (issue #7635).
-	let stdoutTail: Promise<void> = Promise.resolve();
-	const writeStdoutLine = (text: string): void => {
-		stdoutTail = stdoutTail.then(() => {
-			const { promise, resolve, reject } = Promise.withResolvers<void>();
-			process.stdout.write(text, err => {
-				if (err) reject(err);
-				else resolve();
-			});
-			return promise;
-		});
-	};
+	// Captured ONCE, before anything can reassign `process.stdout`. A takeover (see
+	// `takeOverStdout`) replaces that property with the stderr sink, so reading it
+	// at each call site would let a takeover silently divert structured records.
+	const structuredOut = process.stdout;
 
 	// Emit session header for JSON mode
 	if (mode === "json") {
 		const header = session.sessionManager.getHeader();
 		if (header) {
-			writeStdoutLine(`${JSON.stringify(header)}\n`);
+			void writeRawStdout(structuredOut, `${JSON.stringify(header)}\n`);
 		}
 	}
 	// Set up extensions for print mode (no UI, no command context)
@@ -225,7 +219,7 @@ async function runPrintModeCore(
 	session.subscribe(event => {
 		// In JSON mode, output all events
 		if (mode === "json") {
-			writeStdoutLine(`${JSON.stringify(printableEvent(event))}\n`);
+			void writeRawStdout(structuredOut, `${JSON.stringify(printableEvent(event))}\n`);
 		} else if (event.type === "notice" && event.source === CREDENTIAL_DISABLED_NOTICE_SOURCE) {
 			// Text mode renders no session notices, but an automatic sign-out must not stay
 			// hidden behind a sibling account that quietly answers the prompt.
@@ -321,9 +315,9 @@ async function runPrintModeCore(
 			// Output text content
 			for (const content of assistantMsg.content) {
 				if (content.type === "text") {
-					writeStdoutLine(`${sanitizeText(content.text)}\n`);
+					void writeRawStdout(structuredOut, `${sanitizeText(content.text)}\n`);
 				} else if (printThoughts && content.type === "thinking" && content.thinking.trim().length > 0) {
-					writeStdoutLine(`${sanitizeText(content.thinking)}\n`);
+					void writeRawStdout(structuredOut, `${sanitizeText(content.thinking)}\n`);
 				}
 			}
 		}
@@ -345,7 +339,7 @@ async function runPrintModeCore(
 	// Block shutdown until every serialized stdout write (including the final
 	// agent_end and late JSON advisor events) has drained; process.exit would
 	// otherwise discard the buffered tail and truncate the last record.
-	await stdoutTail;
+	await flushRawStdout();
 	// Dispose before returning the status instead of hard-exiting ahead of it:
 	// the awaited `dispose()` runs the browser reaper (releaseTabsForOwner), so
 	// an OMP-owned Chromium cannot survive the exit (issue #5643).

@@ -62,8 +62,8 @@ const REASONS: Record<string, { why: string; patterns: string[] }> = {
 		patterns: ["packages/collab-web/src/**"],
 	},
 	sink: {
-		why: "This IS the sink. `logger` writes to `~/.omp/logs` by way of `console.error`, so banning console here would make the logger unable to log.",
-		patterns: ["packages/utils/src/logger.ts"],
+		why: "These ARE the sinks, or the code that installs one. `logger` writes to `~/.omp/logs` by way of `console.error`, so banning console there would make the logger unable to log. `stdout-guard` reassigns `console.log` to stderr during a protocol takeover — that reassignment is the entire point of the module.",
+		patterns: ["packages/utils/src/logger.ts", "packages/coding-agent/src/utils/stdout-guard.ts"],
 	},
 };
 

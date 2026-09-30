@@ -102,7 +102,7 @@
 			"rules": { "eslint/no-console": "off" }
 		},
 		{
-			"files": ["packages/utils/src/logger.ts"],
+			"files": ["packages/utils/src/logger.ts", "packages/coding-agent/src/utils/stdout-guard.ts"],
 			"rules": { "eslint/no-console": "off" }
 		}
 	]

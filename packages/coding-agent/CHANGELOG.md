@@ -11,6 +11,10 @@
 
 ### Fixed
 
+- `/info` now prices a prompt-cache miss instead of leaving the line out. The attribution table was
+  built without a missed-token count or a price, so the "Cache misses" line could never render; a
+  compaction that threw away a warm prompt cache was invisible in the cost the session reported
+
 - Unloading an extension that is currently suspended no longer throws, and no longer leaves a
   background timer running. A suspended extension is held in the runner's load order but not in its
   active list, and the unload path read only the active list — so it found no extension to release

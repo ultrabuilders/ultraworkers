@@ -131,9 +131,11 @@ describe("ExtensionRunner.unloadExtension", () => {
 		// the factory above.
 		runner.onToolRegistered(() => {});
 
-		// Filled, so emptying is a real transition rather than an assertion about
-		// something that was already empty.
-		expect(bucketSizes(ext)).not.toEqual(EMPTY_BUCKETS);
+		// Every bucket non-empty, checked ELEMENT BY ELEMENT. Comparing the whole
+		// vector against an all-zero vector would pass with a single bucket left
+		// unfilled — `[1,1,…,1,0]` is not the zero vector — so the test could not
+		// answer "which bucket did we forget to fill", only "was anything filled".
+		expect(bucketSizes(ext).every(size => size > 0)).toBe(true);
 		expect(runner.unloadExtension("/ext/buckets")).toBe(true);
 
 		// The object survives in the caller's array — the runner only mutates its own

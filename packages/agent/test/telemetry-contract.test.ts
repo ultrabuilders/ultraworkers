@@ -81,3 +81,38 @@ describe("TelemetrySpan", () => {
 		expect(span.name).toBe("probe");
 	});
 });
+
+describe("toTelemetrySpan", () => {
+	it("translates a vendor span and drops the keys OTEL would reject", async () => {
+		// The adapter is where the contract earns its keep: OTEL's setter takes no
+		// `undefined` value, and the contract uses `undefined` to mean "drop this
+		// key". A readonly array is also not a vendor array.
+		const { toTelemetrySpan } = await import("@oh-my-pi/pi-agent-core/telemetry/context");
+		const written: Record<string, unknown> = [];
+		const events: Array<{ name: string; attributes?: unknown }> = [];
+		const statuses: unknown[] = [];
+		const fake = {
+			setAttribute: (k: string, v: unknown) => {
+				written[k] = v;
+			},
+			setAttributes: (a: unknown) => Object.assign(written, a),
+			addEvent: (n: string, a?: unknown) => events.push({ name: n, attributes: a }),
+			recordException: () => {},
+			setStatus: (s: unknown) => statuses.push(s),
+			end: () => {},
+		} as never;
+
+		const span = toTelemetrySpan(fake);
+		span.setAttribute("kept", ["a", null]);
+		span.setAttributes({ present: 1, absent: undefined });
+		span.setStatus("error", "boom");
+
+		// Readonly array copied into a mutable one rather than rejected.
+		expect(written.kept).toEqual(["a", null]);
+		// `absent` never reaches the vendor at all.
+		expect("absent" in written).toBe(false);
+		expect(written.present).toBe(1);
+		// "error" maps to OTEL's ERROR code, not to the string.
+		expect(statuses).toEqual([{ code: 2, message: "boom" }]);
+	});
+});

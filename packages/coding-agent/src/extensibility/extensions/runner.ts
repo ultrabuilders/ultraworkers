@@ -102,6 +102,8 @@ import type {
 	UserPythonEvent,
 	UserPythonEventResult,
 } from "./types";
+import { unregisterOwned } from "../../config/registry";
+import { extensionSettingOwner } from "./loader";
 import { unavailableFrameMessage } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
@@ -1202,6 +1204,10 @@ export class ExtensionRunner {
 			if (this.modelRegistry.providerSource(name) !== extension.path) continue;
 			this.modelRegistry.unregisterProvider(name);
 		}
+		// Its settings go with it. A setting whose extension is gone still reads
+		// back a value and still shows in the panel, so it looks configured while
+		// nothing can ever write it again.
+		unregisterOwned(extensionSettingOwner(extension));
 		clearExtensionBuckets(extension);
 		return true;
 	}

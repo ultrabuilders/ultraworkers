@@ -805,6 +805,87 @@ export type AnySetting = Setting<unknown>;
 
 const byId = new Map<string, AnySetting>();
 const ordered: AnySetting[] = [];
+/**
+ * Which extension (or `"core"`) declared each setting.
+ *
+ * Ownership is what makes an extension's setting removable: without it, unloading
+ * an extension can only leave its settings behind forever, because `ordered` is
+ * append-only and nothing knows which rows are that extension's. Kept beside the
+ * id map rather than inferred from the id prefix, because the prefix is a
+ * convention an extension author can get wrong and a stale setting is worse than
+ * a name collision.
+ */
+const ownerById = new Map<string, string>();
+const idsByOwner = new Map<string, string[]>();
+
+/**
+ * Drop every setting an owner declared.
+ *
+ * Returns the removed ids. Loading and unloading must be symmetric: an extension
+ * that re-registers on reload would otherwise collide with its own previous
+ * settings, and the error would name a setting the author cannot see.
+ */
+export function unregisterOwned(owner: string): string[] {
+	const ids = idsByOwner.get(owner);
+	if (!ids) return [];
+	for (const id of ids) {
+		const handle = byId.get(id);
+		if (!handle) continue;
+		byId.delete(id);
+		ownerById.delete(id);
+		const index = ordered.indexOf(handle);
+		if (index >= 0) ordered.splice(index, 1);
+	}
+	idsByOwner.delete(owner);
+	invalidateOrderedSettings();
+	return ids;
+}
+
+/**
+ * Called when the registry's membership changes, so the next `orderedSettings()`
+ * recomputes instead of returning a memo that no longer matches `ordered`.
+ *
+ * Lives here rather than in `all-settings.ts` because that module's memo is the
+ * thing that goes stale, and importing it from here would close a cycle: it
+ * already imports every domain from this file.
+ */
+let invalidateOrderedSettingsImpl: (() => void) | undefined;
+
+/** @internal — wired once by `all-settings.ts` at module load. */
+export function setOrderedSettingsInvalidator(invalidate: () => void): void {
+	invalidateOrderedSettingsImpl = invalidate;
+}
+
+/** @internal */
+export function invalidateOrderedSettings(): void {
+	invalidateOrderedSettingsImpl?.();
+}
+
+/**
+ * Declares a setting on behalf of `owner` and returns its typed handle.
+ *
+ * @throws Error when `id` is already registered.
+ */
+export function registerOwned<const D extends SettingDefinition>(
+	owner: string,
+	definition: D,
+): Setting<DefinitionValue<D>, D["id"]> {
+	if (byId.has(definition.id)) throw new Error(`Setting "${definition.id}" is registered twice`);
+	const handle = new Setting<DefinitionValue<D>, D["id"]>(definition);
+	byId.set(definition.id, handle as AnySetting);
+	ordered.push(handle as AnySetting);
+	ownerById.set(definition.id, owner);
+	const ids = idsByOwner.get(owner);
+	if (ids) ids.push(definition.id);
+	else idsByOwner.set(owner, [definition.id]);
+	invalidateOrderedSettings();
+	return handle;
+}
+
+/** Owner that declared `id`, or `undefined` for an unknown id. */
+export function ownerOf(id: string): string | undefined {
+	return ownerById.get(id);
+}
 
 /**
  * Declares a setting and returns its typed handle.
@@ -812,11 +893,7 @@ const ordered: AnySetting[] = [];
  * @throws Error when `id` is already registered.
  */
 export function register<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]> {
-	if (byId.has(definition.id)) throw new Error(`Setting "${definition.id}" is registered twice`);
-	const handle = new Setting<DefinitionValue<D>, D["id"]>(definition);
-	byId.set(definition.id, handle as AnySetting);
-	ordered.push(handle as AnySetting);
-	return handle;
+	return registerOwned("core", definition);
 }
 
 /** Handle for `id`, or `undefined` when no setting has that id. */

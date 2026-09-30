@@ -3,7 +3,7 @@
  * {@link orderedSettings} lists them by domain order, then declaration order within a domain;
  * `PLACED_DOMAINS` splice a domain into another domain's rows.
  */
-import { all, type AnySetting, Setting } from "./registry";
+import { all, type AnySetting, Setting, setOrderedSettingsInvalidator } from "./registry";
 import * as modesSettings from "../modes/settings";
 import * as sessionSettings from "../session/settings";
 import * as advisorSettings from "../advisor/settings";
@@ -120,6 +120,21 @@ export function orderedSettings(): readonly AnySetting[] {
 			result.push(handle);
 		}
 	}
+	// Anything registered but not reachable from a DOMAINS entry — extension-owned
+	// settings, today — is appended in declaration order. Without this the handle
+	// exists, `lookup` finds it, and it is invisible to the settings panel: the
+	// worst of both, because a setting that reads back correctly but never appears
+	// looks to its author like a panel bug.
+	for (const handle of all()) {
+		if (!seen.has(handle)) result.push(handle);
+	}
 	ordered = result;
 	return result;
 }
+
+/** Drop the memo so the next `orderedSettings()` sees the current registry. */
+export function invalidateOrderedSettings(): void {
+	ordered = undefined;
+}
+
+setOrderedSettingsInvalidator(invalidateOrderedSettings);

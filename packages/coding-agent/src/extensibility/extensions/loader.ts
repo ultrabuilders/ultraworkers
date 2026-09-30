@@ -31,6 +31,8 @@ import type { SendUserMessageOptions } from "../../session/agent-session";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
 import type { CompactionProtection } from "../../tools/compaction-protection";
+import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
+import { lookup as lookupSetting, registerOwned } from "../../config/registry";
 import { isFilesystemSourcePath } from "../../tools/path-utils";
 import { EventBus } from "../../utils/event-bus";
 import * as TypeBox from "../legacy-typebox";
@@ -178,6 +180,19 @@ export class ExtensionRuntime implements IExtensionRuntime {
  * Registration methods write to the extension object.
  * Action methods delegate to the shared runtime.
  */
+/**
+ * Stable owner key for an extension's settings.
+ *
+ * `resolvedPath` rather than `path`: `path` can be a specifier or a URL that
+ * resolves to the same file, so reloading by a different-but-equivalent path
+ * would register a second owner and orphan the first one's settings. The
+ * resolved path is the same string for the same file, which is what "reload
+ * cleanly" needs.
+ */
+export function extensionSettingOwner(extension: { resolvedPath: string }): string {
+	return `extension:${extension.resolvedPath}`;
+}
+
 class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	readonly logger = logger;
 	readonly typebox = TypeBox;
@@ -263,6 +278,20 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		},
 	): void {
 		this.extension.shortcuts.set(shortcut, { shortcut, extensionPath: this.extension.path, ...options });
+	}
+
+	registerSetting<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]> {
+		const owner = extensionSettingOwner(this.extension);
+		// Idempotent across a rebind: re-running the factory must not re-register.
+		// Without this, a reload of an unchanged extension would collide with its
+		// own settings and fail on an id the author cannot see the origin of.
+		if (this.extension.settingIds.includes(definition.id)) {
+			const existing = lookupSetting(definition.id);
+			if (existing) return existing as Setting<DefinitionValue<D>, D["id"]>;
+		}
+		const handle = registerOwned(owner, definition);
+		this.extension.settingIds.push(definition.id);
+		return handle;
 	}
 
 	registerFlag(
@@ -435,6 +464,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
 		outputFormats: new Map(),
+		settingIds: [],
 		toolNameResolvers: [] as ToolNameResolver[],
 		composerShapes: new Map(),
 		commands: new Map(),

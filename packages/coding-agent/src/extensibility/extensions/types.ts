@@ -1,3 +1,4 @@
+import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 /**
  * Extension system types.
  *
@@ -1603,6 +1604,19 @@ export interface ExtensionAPI {
 		},
 	): void;
 
+	/**
+	 * Declare a typed setting owned by this extension, returning its handle.
+	 *
+	 * The setting is registered in the same table as core's, so it reads back
+	 * through the settings API and appears in the settings panel alongside
+	 * everything else — the point being that an extension does not need a core
+	 * edit to own a configuration key.
+	 *
+	 * Unloading the extension removes its settings, so a reload starts clean
+	 * rather than colliding with its own previous registration.
+	 */
+	registerSetting<const D extends SettingDefinition>(definition: D): Setting<DefinitionValue<D>, D["id"]>;
+
 	/** Register a CLI flag. */
 	registerFlag(
 		name: string,
@@ -2128,6 +2142,14 @@ export interface Extension {
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	outputFormats: Map<string, OutputFormat>;
+	/**
+	 * Setting ids this extension declared, so unloading can remove exactly those.
+	 *
+	 * Recorded rather than derived from the id string: the id prefix is a
+	 * convention the author can get wrong, and a stale setting outliving its
+	 * extension is worse than a name collision.
+	 */
+	settingIds: string[];
 	/**
 	 * Tool-name resolvers in registration order. The first to return a tool wins,
 	 * so a resolver that guesses shadows every later one.

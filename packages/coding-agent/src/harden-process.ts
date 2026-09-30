@@ -76,7 +76,7 @@ export function hardenProcess(): void {
 	try {
 		disableCoreDumps();
 	} catch (error) {
-		logger.debug("harden-process: setrlimit(RLIMIT_CORE) failed", { error: String(error) });
+		logger.debug("harden-process: setrlimit(RLIMIT_CORE) threw", { error: String(error) });
 	}
 
 	const prctl = getPrctl();
@@ -103,18 +103,34 @@ export function hardenProcess(): void {
 }
 
 function disableCoreDumps(): void {
-	if (!LIBC) return;
+	// Zero both fields: the soft limit alone would still be raisable.
+	setCoreLimit(0, 0);
+}
+
+/**
+ * Set RLIMIT_CORE. Returns the syscall's return code, or -1 when the platform has
+ * no equivalent — never throws, so the caller decides what to do about a refusal.
+ *
+ * Split out with the limits as arguments so a test can pass an IMPOSSIBLE struct.
+ * `rlim_cur > rlim_max` is EINVAL, and that refusal is reachable on any platform:
+ * a test which only passes a valid struct proves nothing, because the success path
+ * never logs.
+ */
+export function setCoreLimit(rlimCur: number, rlimMax: number): number {
+	if (!LIBC) return -1;
 	const libc = dlopen(LIBC, {
 		setrlimit: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
 	});
 	try {
 		const buf = new Uint8Array(RLIMIT_STRUCT_BYTES);
-		// Both fields zero: soft and hard limit. Setting only the soft limit lets a
-		// process raise it again; setting both makes the cap un-raisable.
+		const view = new DataView(buf.buffer);
+		view.setBigUint64(0, BigInt(rlimCur), true);
+		view.setBigUint64(8, BigInt(rlimMax), true);
 		const rc = libc.symbols.setrlimit(RLIMIT_CORE, ptr(buf));
 		// FFI reports refusal as a return value, not an exception. Without this
 		// check a refused call is indistinguishable from a successful one.
 		if (rc !== 0) logger.debug("harden-process: setrlimit(RLIMIT_CORE) refused", { rc });
+		return rc;
 	} finally {
 		libc.close();
 	}

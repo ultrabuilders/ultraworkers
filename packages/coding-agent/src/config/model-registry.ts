@@ -2985,6 +2985,24 @@ export class ModelRegistry {
 	/**
 	 * Remove one extension-registered provider and restore its static models.
 	 */
+	/**
+	 * Which extension source currently owns a registered provider name.
+	 *
+	 * `registerProvider` performs a handoff when a second source claims a name
+	 * that is already registered: the previous source is dropped and ownership
+	 * moves. `unregisterProvider` resolves the source from the NAME, so a caller
+	 * acting on a stale record — one extension's list, after ownership moved —
+	 * would remove the NEW owner's provider.
+	 *
+	 * Callers that hold a per-extension record must check this before
+	 * unregistering. Additive on purpose: changing `unregisterProvider`'s
+	 * signature would break every existing caller, while adding this asks for
+	 * nothing.
+	 */
+	providerSource(providerName: string): string | undefined {
+		return this.#runtimeProviderSourceByName.get(providerName);
+	}
+
 	unregisterProvider(providerName: string): void {
 		const sourceId = this.#runtimeProviderSourceByName.get(providerName);
 		if (sourceId) {

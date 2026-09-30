@@ -224,4 +224,54 @@ describe("/tan extension auth over a shared registry", () => {
 			authStorage.close();
 		}
 	}, 20_000);
+
+	it("does not let a stale provider record remove another extension's provider", async () => {
+		// `registerProvider` hands a claimed name to the later source and drops the
+		// earlier one. So after a handoff, the FIRST extension's record is stale —
+		// and unregistering by name resolves to whoever owns it NOW. Without the
+		// ownership check, suspending extension A removes extension B's provider.
+		using tempDir = TempDir.createSync("omp-provider-handoff-");
+		const cwd = path.resolve(tempDir.path());
+		const authStorage = await AuthStorage.create(tempDir.join("auth.db"));
+		const modelRegistry = new ModelRegistry(authStorage, tempDir.join("models.yml"));
+
+		try {
+			const shared = {
+				baseUrl: "https://handoff.example.invalid/v1",
+				apiKey: "handoff-key",
+				api: "openai-completions",
+				models: [
+					{
+						id: "handoff-model",
+						name: "Handoff Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 8192,
+					},
+				],
+			} as const;
+
+			// A registers, then B claims the same name: ownership moves to B.
+			modelRegistry.registerProvider(PROVIDER, shared as never, "/ext/a.ts");
+			modelRegistry.registerProvider(PROVIDER, shared as never, "/ext/b.ts");
+			expect(modelRegistry.providerSource(PROVIDER)).toBe("/ext/b.ts");
+
+			// A's record is stale. Acting on it must NOT remove B's provider.
+			if (modelRegistry.providerSource(PROVIDER) === "/ext/a.ts") {
+				modelRegistry.unregisterProvider(PROVIDER);
+			}
+			expect(modelRegistry.find(PROVIDER, "handoff-model")).toBeDefined();
+			expect(modelRegistry.providerSource(PROVIDER)).toBe("/ext/b.ts");
+
+			// And the owner CAN still remove it — the guard skips only non-owners.
+			if (modelRegistry.providerSource(PROVIDER) === "/ext/b.ts") {
+				modelRegistry.unregisterProvider(PROVIDER);
+			}
+			expect(modelRegistry.find(PROVIDER, "handoff-model")).toBeUndefined();
+		} finally {
+			authStorage.close();
+		}
+	}, 20_000);
 });

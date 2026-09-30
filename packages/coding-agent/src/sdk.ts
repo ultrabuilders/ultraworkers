@@ -4797,6 +4797,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				// provider back only for the next sync to remove again.
 				for (const extension of suspended) {
 					for (const { name } of extension.registeredProviders) {
+						// Skip names this extension no longer owns. `registerProvider`
+						// hands a claimed name to the later source and drops the earlier
+						// one, so a stale record here would unregister the NEW owner's
+						// provider instead — the wrong extension's models vanishing with
+						// no error.
+						if (modelRegistry.providerSource(name) !== extension.path) continue;
 						modelRegistry.unregisterProvider(name);
 					}
 				}

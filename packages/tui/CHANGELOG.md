@@ -8,6 +8,9 @@
   repaint scheduling, overlays, focus, viewport dimensions and the image budget
 - `registerTheme(name, theme)` adds a theme at runtime, exported from the package root, and reports a
   name collision with a built-in rather than dropping the theme in silence
+- Transcript search over rendered lines: `TranscriptSearchComponent` (the three-line search bar) and
+  `TranscriptSearchIndex` (the cached, column-accurate match finder), with the `tui.transcript.*`
+  keybindings they read
 
 ### Fixed
 

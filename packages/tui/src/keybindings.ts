@@ -40,6 +40,11 @@ export interface Keybindings {
 	"tui.select.pageDown": true;
 	"tui.select.confirm": true;
 	"tui.select.cancel": true;
+	// Transcript search
+	"tui.transcript.search": true;
+	"tui.transcript.searchNext": true;
+	"tui.transcript.searchPrevious": true;
+	"tui.transcript.searchClose": true;
 }
 
 export type Keybinding = keyof Keybindings;
@@ -138,6 +143,28 @@ export const TUI_KEYBINDINGS = {
 	"tui.select.cancel": {
 		defaultKeys: ["escape", "ctrl+c"],
 		description: "Cancel selection",
+	},
+	// Defaults from pi-ref's `tui.altScreen.*` search bindings, MINUS the ones that
+	// are already taken here. pi binds next to ["enter", "ctrl+g"], but `ctrl+g` is
+	// `app.editor.external` in app-keybindings.ts, so only `enter` carries over.
+	//
+	// `enter`/`shift+enter` are also bound to input/select actions elsewhere; that is
+	// intended — the search overlay resolves them while it holds focus.
+	"tui.transcript.search": {
+		defaultKeys: "ctrl+shift+f",
+		description: "Search the transcript",
+	},
+	"tui.transcript.searchNext": {
+		defaultKeys: ["enter"],
+		description: "Select the next search match",
+	},
+	"tui.transcript.searchPrevious": {
+		defaultKeys: ["shift+enter"],
+		description: "Select the previous search match",
+	},
+	"tui.transcript.searchClose": {
+		defaultKeys: "escape",
+		description: "Close transcript search",
 	},
 } as const satisfies KeybindingDefinitions;
 

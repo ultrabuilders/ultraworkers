@@ -18,8 +18,14 @@ import { customToolToDefinition } from "../../src/sdk";
 // changed their mind.
 //
 // This locks "the bridge does not fabricate an opt-in". It does NOT decide what
-// the wire default should be — that is a different change, and conflating the two
-// is how a negative contract quietly turns into a positive one.
+// the wire default should be. If a future change sets one, it must be a separate
+// decision made against each provider's reading — not a consequence of this test.
+//
+// `wrapToolWithMetaNotice` — which several `sdk.ts` registration sites apply on
+// the way to `ExtensionToolWrapper` — mutates the tool in place via
+// `Object.defineProperties` and returns that same object, so it cannot drop the
+// key. Verified directly: identity is preserved, an opt-in survives, and absence
+// stays absence.
 
 // The adapter only needs a context factory; it is never exercised on this path.
 const STUB_RUNNER = { createContext: () => ({}) } as unknown as ExtensionRunner;

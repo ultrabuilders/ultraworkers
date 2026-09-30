@@ -489,6 +489,22 @@ export const TOP_LEVEL_AGENT: ExtensionAgentIdentity = Object.freeze({
 });
 
 /**
+ * Thrown when an extension uses a context belonging to an unloaded extension.
+ *
+ * Named because the alternative is indistinguishable at the call site: an
+ * anonymous throw here reads as an extension bug and gets investigated in the
+ * wrong place entirely.
+ */
+export class ExtensionContextDisposedError extends Error {
+	constructor(extensionPath: string) {
+		super(
+			`Extension "${extensionPath}" was unloaded; this context is dead. Create a new one after reloading rather than holding one across an unload.`,
+		);
+		this.name = "ExtensionContextDisposedError";
+	}
+}
+
+/**
  * Empty every registration bucket on an extension.
  *
  * A single place, because "every bucket" is exactly the kind of list that rots:
@@ -889,7 +905,7 @@ export class ExtensionRunner {
 					ext.path,
 					addFileWriteFallback(async req => {
 						if (this.#suspendedExtensions.has(ext)) return false;
-						const ctx = this.createContext();
+						const ctx = this.createContext(undefined, undefined, ext);
 						for (const handler of ext.fileWriteFallbackHandlers) {
 							try {
 								if (await handler(req, ctx)) return true;
@@ -909,7 +925,7 @@ export class ExtensionRunner {
 					ext.path,
 					addFileDeleteFallback(async req => {
 						if (this.#suspendedExtensions.has(ext)) return false;
-						const ctx = this.createContext();
+						const ctx = this.createContext(undefined, undefined, ext);
 						for (const handler of ext.fileDeleteFallbackHandlers) {
 							try {
 								if (await handler(req, ctx)) return true;
@@ -1454,10 +1470,20 @@ export class ExtensionRunner {
 			signal?: AbortSignal;
 			onUpdate?: AgentToolUpdateCallback;
 		},
+		extension?: Extension,
 	): ExtensionContext {
 		const getModel = model ? () => model : this.#getModel;
 		const runEphemeralTurn = this.#runEphemeralTurnFn;
-		return {
+		// Checked when a member is USED, not when the context is built: a closure
+		// reads the runner's field on invocation, so a check at build time could
+		// never fire. The failure only appears after an unload — exactly when
+		// nothing else reports it.
+		const alive = (): void => {
+			if (extension && !this.extensions.includes(extension)) {
+				throw new ExtensionContextDisposedError(extension.path);
+			}
+		};
+		const context: ExtensionContext = {
 			ui: this.#uiContext,
 			mode: this.#mode,
 			getContextUsage: () => this.#getContextUsageFn(),
@@ -1524,6 +1550,38 @@ export class ExtensionRunner {
 							})
 					: undefined,
 		};
+		if (!extension) return context;
+		// Every member is guarded, not only the ones that visibly read a runner
+		// field. `model` is the trap: it is a getter, so a narrow rule would let an
+		// unloaded extension keep observing — and steering — a session that has
+		// moved on. Guarding uniformly is also what a future member inherits free.
+		//
+		// Descriptors, NOT `{ ...context }`: a spread invokes getters, which would
+		// evaluate `model` at build time and defeat the whole point.
+		const descriptors = Object.getOwnPropertyDescriptors(context);
+		for (const key of Object.keys(descriptors)) {
+			const descriptor = descriptors[key]!;
+			if (typeof descriptor.value === "function") {
+				const fn = descriptor.value as (...args: unknown[]) => unknown;
+				descriptors[key] = {
+					...descriptor,
+					value: (...args: unknown[]) => {
+						alive();
+						return fn(...args);
+					},
+				};
+			} else if (descriptor.get) {
+				const get = descriptor.get;
+				descriptors[key] = {
+					...descriptor,
+					get: () => {
+						alive();
+						return get.call(context);
+					},
+				};
+			}
+		}
+		return Object.defineProperties({}, descriptors) as ExtensionContext;
 	}
 
 	/**

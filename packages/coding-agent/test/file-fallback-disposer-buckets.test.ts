@@ -2,7 +2,10 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
+import {
+	ExtensionContextDisposedError,
+	ExtensionRunner,
+} from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { getProjectAgentDir } from "@oh-my-pi/pi-utils";
 import { loadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
@@ -132,6 +135,49 @@ describe("unloadExtension", () => {
 			runner.initialize(ACTIONS, {} as never, undefined, undefined, "rpc");
 			runner.unloadExtension(loaded.extensions[0]!.path);
 			expect(hasFileWriteFallback()).toBe(true);
+		} finally {
+			runner.disposeFileFallbacks();
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("extension context self-invalidation", () => {
+	it("throws a NAMED error once the owning extension is unloaded", async () => {
+		// An unloaded extension keeping its context keeps steering the session, and
+		// can end up steering a NEWER extension through it with nothing logged. The
+		// name matters as much as the throw: anonymous here reads as an extension bug.
+		const { dir, runner, loaded } = await harness();
+		try {
+			runner.initialize(ACTIONS, {} as never, undefined, undefined, "rpc");
+			const ext = loaded.extensions[0]!;
+			const ctx = runner.createContext(undefined, undefined, ext);
+
+			// Alive: both a method and the GETTER must work. The getter is the trap —
+			// a guard built with `{...ctx}` evaluates it at build time and breaks here.
+			expect(typeof ctx.hasUI).toBe("boolean");
+			expect(ctx.mode).toBeDefined();
+
+			expect(runner.unloadExtension(ext.path)).toBe(true);
+
+			let thrown: unknown;
+			try {
+				(ctx as unknown as { getContextUsage: () => unknown }).getContextUsage();
+			} catch (error) {
+				thrown = error;
+			}
+			expect(thrown).toBeInstanceOf(ExtensionContextDisposedError);
+			expect((thrown as Error).name).toBe("ExtensionContextDisposedError");
+			expect((thrown as Error).message).toContain(ext.path);
+
+			// The getter is guarded too, not just methods.
+			let getterThrew = false;
+			try {
+				void ctx.model;
+			} catch (error) {
+				getterThrew = error instanceof ExtensionContextDisposedError;
+			}
+			expect(getterThrew).toBe(true);
 		} finally {
 			runner.disposeFileFallbacks();
 			await fs.rm(dir, { recursive: true, force: true });

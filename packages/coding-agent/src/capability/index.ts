@@ -550,10 +550,35 @@ export function getAllProvidersInfo(): ProviderInfo[] {
 // =============================================================================
 
 /**
- * Reset all caches. Call after chdir or filesystem changes.
+ * Drop the on-filesystem discovery cache. Call after a chdir or any change to
+ * the filesystem.
+ *
+ * This is NOT the registry: the `capabilities` map, the provider maps and the
+ * attribution maps are untouched here, because a chdir does not un-define a
+ * capability — it only invalidates the cached answer to "does this path hold a
+ * capability?". See {@link resetRegistry} for the other operation, which the
+ * name `reset` used to hide.
  */
-export function reset(): void {
+export function invalidateAllCaches(): void {
 	clearFsCache();
+}
+
+/**
+ * Drop the capability DEFINITIONS, and nothing else.
+ *
+ * Test-only, and reserved for a future extension-reload path. No live call site
+ * calls it, and that is deliberate rather than provisional: ESM evaluates each
+ * module exactly once, so a module-level `defineCapability` in
+ * `capability/tool.ts` and its siblings has already run by the time anyone
+ * reaches this function. Clearing the map does not re-run those registrations —
+ * it removes them for the remaining life of the process. Anything reaching for
+ * this needs a real reload, not a map clear.
+ *
+ * Provider arrays, `providerCapabilities`, `providerMeta`, provider enable/disable
+ * sets, the fs cache and the source-attribution maps are all left alone.
+ */
+export function resetRegistry(): void {
+	capabilities.clear();
 }
 
 /**

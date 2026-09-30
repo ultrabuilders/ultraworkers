@@ -67,8 +67,9 @@ export {
 	// Loading API
 	loadCapability,
 	// Cache management
-	reset,
+	invalidateAllCaches,
 	resetCapabilityForTests,
+	resetRegistry,
 	setDisabledProviders,
 	setEnabledProviders,
 } from "../capability";

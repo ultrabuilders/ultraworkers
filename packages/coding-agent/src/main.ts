@@ -23,7 +23,7 @@ import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as postmortem from "@oh-my-pi/pi-utils/postmortem";
 import { fuzzyFilter } from "@oh-my-pi/pi-tui/fuzzy";
 import chalk from "@oh-my-pi/pi-utils/chalk";
-import { reset as resetCapabilities } from "./capability";
+import { invalidateAllCaches } from "./capability";
 import { type Args, reportInvalidFlagValues, reportUnrecognizedFlags, validateToolNames } from "./cli/args";
 import { applyExtensionFlags, type ExtensionFlagSink } from "./cli/extension-flags";
 import { processFileArguments } from "./cli/file-processor";
@@ -901,7 +901,7 @@ async function switchToResumedProject(
 		return { cwd: launchCwd, chdirFailed: resumedCwd };
 	}
 	clearPluginRootsAndCaches();
-	resetCapabilities();
+	invalidateAllCaches();
 	const cwd = getProjectDir();
 	// clearPluginRootsAndCaches only kicks off an unawaited re-warm; await a fresh
 	// destination preload so sync consumers (plugin-provided LSP/DAP config) never

@@ -16,7 +16,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { resetSettingsForTest, Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { initializeWithSettings, reset as resetDiscoveryCache } from "@oh-my-pi/pi-coding-agent/discovery";
+import { initializeWithSettings, invalidateAllCaches } from "@oh-my-pi/pi-coding-agent/discovery";
 import { readMCPConfigFile, setMcpServerEnabled, setServerDisabled } from "@oh-my-pi/pi-coding-agent/mcp/config-writer";
 import { loadAllExtensions } from "@oh-my-pi/pi-coding-agent/modes/components/extensions/state-manager";
 import { __resetDirsFromEnvForTests, getMCPConfigPath, removeWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
@@ -238,7 +238,7 @@ describe("loadAllExtensions MCP parity with /mcp list (issue #3827)", () => {
 		// beforeEach's Settings.init() already cached an absent opencode.json
 		// for this projectDir, so drop the capability fs cache before the first
 		// dashboard load picks the file up.
-		resetDiscoveryCache();
+		invalidateAllCaches();
 
 		const before = (await loadAllExtensions(projectDir, [])).find(e => e.id === "mcp:opencode-server");
 		expect(before).toBeDefined();

@@ -22,7 +22,7 @@ import {
 	resolveAdvisorConfigEditPath,
 	saveWatchdogConfigFile,
 } from "../../advisor";
-import { reset as resetCapabilities } from "../../capability";
+import { invalidateAllCaches } from "../../capability";
 import type { AdvisorConfigScope } from "@oh-my-pi/pi-tui/overlays/advisor-config";
 import { showGitOverlay } from "../../cli/git-tui";
 import { formatLoginIdentity } from "../../cli/oauth-terminal";
@@ -314,7 +314,7 @@ export class SelectorController {
 						clearPluginRootsAndCaches(projectPath ? [projectPath] : undefined);
 						await this.ctx.refreshSkillState();
 						await this.ctx.refreshSlashCommandState();
-						resetCapabilities();
+						invalidateAllCaches();
 						this.ctx.ui.requestRender();
 					},
 					onCancel: () => {

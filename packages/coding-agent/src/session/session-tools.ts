@@ -3,7 +3,7 @@ import type { Agent, AgentTool, AgentToolContext } from "@oh-my-pi/pi-agent-core
 import type { Model } from "@oh-my-pi/pi-ai";
 import { resolveDelegationBias } from "@oh-my-pi/pi-catalog/compat/delegation";
 import { isRecord, logger, prompt, stringProperty, structuredCloneJSON, untilAborted } from "@oh-my-pi/pi-utils";
-import { reset as resetCapabilities } from "../capability";
+import { invalidateAllCaches } from "../capability";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import type { ModelRegistry } from "../config/model-registry";
 import { formatModelString } from "../config/model-resolver";
@@ -1709,7 +1709,7 @@ export class SessionTools {
 
 	/** Rediscovers reloadable skills and refreshes prompt metadata. */
 	async refreshSkills(): Promise<void> {
-		resetCapabilities();
+		invalidateAllCaches();
 		if (this.#skillsReloadable) {
 			const skillsSettings = cfgSkills.get(this.#host.settings);
 			const discovered = await loadSkills({

@@ -48,7 +48,7 @@ import {
 import { AsyncJobManager } from "./async";
 import { AutoLearnController, buildAutoLearnInstructions } from "./autolearn/controller";
 import { createAutoresearchExtension } from "./autoresearch";
-import { loadCapability, reset as resetCapabilities } from "./capability";
+import { invalidateAllCaches, loadCapability } from "./capability";
 import {
 	MAIN_AGENT_RULE_NAME,
 	type Rule,
@@ -3683,7 +3683,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			// context-file refresh above. The rule buckets are otherwise frozen at
 			// session creation, so a `RULES.md` (or any rule) created or edited while omp
 			// runs never reaches the prompt on /clear or /new until restart (issue #10940).
-			// resetCapabilities() clears the fs cache at those boundaries, so this observes
+			// invalidateAllCaches() clears the fs cache at those boundaries, so this observes
 			// the current file. TTSR registrations are replaced from the new snapshot while
 			// injection state is retained only for rule names that remain registered.
 			// Sessions handed an explicit rule set (subagents inherit the parent's) keep it
@@ -4776,7 +4776,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				// Explicit-only sessions (`--no-extensions`, trusted allowlists) ignore both settings.
 				if (roots.mode === "explicit-only") return;
 				for (const configured of roots.configured) seenConfiguredExtensions.add(configured);
-				resetCapabilities();
+				invalidateAllCaches();
 				const cwdNow = sessionManager.getCwd();
 				const [governedPaths, enabledPaths] = await Promise.all([
 					discoverExtensionPaths([...roots.explicit, ...seenConfiguredExtensions], cwdNow, []),

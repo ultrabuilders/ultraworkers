@@ -110,7 +110,7 @@ import type { AdvisorConfig } from "@oh-my-pi/pi-tui/overlays/advisor-config";
 import { formatUsageResetWindow } from "@oh-my-pi/pi-tui/overlays/usage-display";
 import { loadAdvisorTranscriptCosts } from "../advisor";
 import { ASYNC_JOB_MANAGER_SHUTDOWN_REASON, type AsyncJob, AsyncJobManager } from "../async";
-import { reset as resetCapabilities } from "../capability";
+import { invalidateAllCaches } from "../capability";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import { shouldEnableAppendOnlyContext } from "../config/append-only-context-mode";
 import type { ModelRegistry } from "../config/model-registry";
@@ -5691,7 +5691,7 @@ export class AgentSession implements SettingsScope {
 		// pre-reset history.
 		this.sessionManager.appendResetBoundary();
 
-		resetCapabilities();
+		invalidateAllCaches();
 		await this.refreshBaseSystemPrompt();
 
 		return { droppedCount };
@@ -6076,7 +6076,7 @@ export class AgentSession implements SettingsScope {
 		const refresh = this.#skillsAndCommandsRefresh
 			.catch(() => {})
 			.then(async () => {
-				resetCapabilities();
+				invalidateAllCaches();
 				this.#slashCommands = await loadSlashCommands({
 					cwd: this.sessionManager.getCwd(),
 					extensionRoots: this.effectiveExtensionRoots,
@@ -9224,7 +9224,7 @@ export class AgentSession implements SettingsScope {
 			// The workspace-roots block must also reflect the new session's
 			// directory set, not the previous session's — refresh before the next
 			// turn goes out.
-			resetCapabilities();
+			invalidateAllCaches();
 			await this.refreshBaseSystemPrompt();
 
 			// Emit session_switch event with reason "new" to hooks

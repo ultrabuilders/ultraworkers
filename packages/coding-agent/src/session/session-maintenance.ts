@@ -2,6 +2,7 @@
 
 import { scheduler } from "node:timers/promises";
 import {
+	type EmergencyCompactionSample,
 	type Agent,
 	type AgentMessage,
 	type AgentTurnEndContext,
@@ -117,6 +118,39 @@ import {
 	cfgSnapcompactShape,
 } from "./context-settings";
 import { cfgRetry } from "./settings";
+
+/**
+ * Resource sample for the emergency compaction floors.
+ *
+ * Reports ONLY what this layer actually knows. `providerBytes`, the transcript
+ * size and the retained-cache figures are left undefined rather than guessed,
+ * and the floors treat undefined as "not reported" — so a partial sample narrows
+ * what can trigger a floor, and can never widen it. A wrong number here would
+ * compact a healthy session; a missing one just means we wait for the token
+ * threshold as before.
+ */
+function sampleEmergencyCompaction(messages: readonly unknown[]): EmergencyCompactionSample {
+	let imageBytes = 0;
+	for (const message of messages) {
+		const content = (message as { content?: unknown }).content;
+		if (!Array.isArray(content)) continue;
+		for (const block of content) {
+			const image = block as { type?: unknown; data?: unknown };
+			if (image.type !== "image" || typeof image.data !== "string") continue;
+			// Standard base64 decoded size: 3 bytes per 4 chars, less the '='
+			// padding. Computed rather than decoded — decoding every inline image
+			// to measure it would cost more than the check is worth.
+			const padding = image.data.endsWith("==") ? 2 : image.data.endsWith("=") ? 1 : 0;
+			imageBytes += Math.floor((image.data.length * 3) / 4) - padding;
+		}
+	}
+	return {
+		heapUsedBytes: process.memoryUsage().heapUsed,
+		providerBytes: 0,
+		messageCount: messages.length,
+		imageBytes,
+	};
+}
 
 export type CompactionCheckResult = Readonly<{
 	deferredHandoff: boolean;
@@ -2511,7 +2545,7 @@ export class SessionMaintenance {
 		const contextTokens = this.#estimatePrePromptContextTokens(messages, contextWindow);
 		const pendingMidTurnDeadEnd = this.#midTurnDeadEndPendingPrePrompt;
 		this.#midTurnDeadEndPendingPrePrompt = false;
-		if (!shouldCompact(contextTokens, contextWindow, compactionSettings)) {
+		if (!shouldCompact(contextTokens, contextWindow, compactionSettings, sampleEmergencyCompaction(messages))) {
 			this.maybeStartSpeculativeCompaction(contextTokens, contextWindow);
 			return;
 		}
@@ -2643,7 +2677,14 @@ export class SessionMaintenance {
 		const billedContextTokens = calculateContextTokens(lastAssistant.usage);
 		const storedContextTokens = this.#estimateStoredContextTokens();
 		const contextTokens = compactionContextTokens(billedContextTokens, storedContextTokens);
-		if (!shouldCompact(contextTokens, contextWindow, compactionSettings)) {
+		if (
+			!shouldCompact(
+				contextTokens,
+				contextWindow,
+				compactionSettings,
+				sampleEmergencyCompaction(this.#host.agent.state.messages),
+			)
+		) {
 			this.maybeStartSpeculativeCompaction(contextTokens, contextWindow);
 			return;
 		}
@@ -3209,7 +3250,12 @@ export class SessionMaintenance {
 			storedContextTokens,
 		);
 		const thresholdTokens = resolveThresholdTokens(contextWindow, compactionSettings);
-		const shouldThresholdCompact = shouldCompact(contextTokens, contextWindow, compactionSettings);
+		const shouldThresholdCompact = shouldCompact(
+			contextTokens,
+			contextWindow,
+			compactionSettings,
+			sampleEmergencyCompaction(this.#host.agent.state.messages),
+		);
 		logger.debug("Auto-compaction threshold decision", {
 			phase: "post-agent-end",
 			goalModeEnabled: this.#goalModeState?.enabled === true,

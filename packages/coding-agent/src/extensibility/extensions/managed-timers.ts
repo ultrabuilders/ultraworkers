@@ -15,25 +15,52 @@
  * on session teardown via {@link clearAll}.
  */
 import { logger } from "@oh-my-pi/pi-utils";
+// Type-only, so it is erased at compile time and cannot form a runtime cycle:
+// `types.ts` never imports this module.
+import type { Extension } from "./types";
+
+/**
+ * Owner for a timer scheduled before an owning context existed.
+ *
+ * The trampoline contexts are not extension-scoped — they back `createContext`
+ * before `#ownTimers` shadows them per extension — so they have no extension to
+ * attribute a timer to. Rather than throw (which would break every such caller and
+ * the four unit tests that build a context directly), they get a sentinel that
+ * `clearFor` can never match, so those timers are cleared by `clearAll` at
+ * teardown exactly as before and survive every per-extension operation.
+ *
+ * A real object, not `undefined`: ownership is matched on `path`, so the sentinel
+ * needs a path — and one no extension can have, since paths are absolute file
+ * paths and this cannot be. That makes "clearable by whichever extension unloads
+ * first" impossible rather than merely unlikely.
+ */
+export const UNOWNED_TIMERS = { path: "\0unowned" } as unknown as Extension;
 
 /** Callback invoked when a managed timer's callback throws or rejects. */
 export type ManagedTimerErrorHandler = (event: string, error: string, stack?: string) => void;
 
 export class ManagedTimers {
-	readonly #timers = new Set<Timer>();
+	/**
+	 * Each handle remembers the extension that scheduled it.
+	 *
+	 * A `Set<Timer>` could answer "is this handle still managed" but not "whose is
+	 * it", and without that, suspending or unloading one extension cannot touch its
+	 * timers without touching every neighbour's too.
+	 */
+	readonly #timers = new Map<Timer, Extension>();
 
 	constructor(private readonly onError: ManagedTimerErrorHandler) {}
 
 	/** Schedule a repeating callback whose throws are contained. */
-	setInterval(callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): Timer {
+	setInterval(owner: Extension, callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): Timer {
 		const timer = setInterval(() => this.#run("interval", callback, args), ms, ...args);
 		timer.unref?.();
-		this.#timers.add(timer);
+		this.#timers.set(timer, owner);
 		return timer;
 	}
 
 	/** Schedule a one-shot callback whose throws are contained. Deregisters after it fires. */
-	setTimeout(callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): Timer {
+	setTimeout(owner: Extension, callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): Timer {
 		const timer = setTimeout(
 			() => {
 				this.#timers.delete(timer);
@@ -43,7 +70,7 @@ export class ManagedTimers {
 			...args,
 		);
 		timer.unref?.();
-		this.#timers.add(timer);
+		this.#timers.set(timer, owner);
 		return timer;
 	}
 
@@ -54,9 +81,31 @@ export class ManagedTimers {
 		clearTimeout(timer);
 	}
 
+	/**
+	 * Clear every timer scheduled by ONE extension, leaving its neighbours running.
+	 *
+	 * The point of tracking ownership: a suspended or unloaded extension must not
+	 * take down work that a different extension is still doing.
+	 *
+	 * Matched on `path`, not object identity. A re-initialise or a reload rebuilds
+	 * the `Extension` objects, so identity would match nothing on the second pass
+	 * and silently clear nothing — the failure mode being a leak, not an error.
+	 */
+	clearFor(owner: Extension): number {
+		let cleared = 0;
+		for (const [timer, holder] of [...this.#timers]) {
+			if (holder?.path !== owner.path) continue;
+			this.#timers.delete(timer);
+			clearInterval(timer);
+			clearTimeout(timer);
+			cleared += 1;
+		}
+		return cleared;
+	}
+
 	/** Clear every outstanding managed timer. Called on session teardown. */
 	clearAll(): void {
-		for (const timer of this.#timers) {
+		for (const timer of this.#timers.keys()) {
 			clearInterval(timer);
 			clearTimeout(timer);
 		}

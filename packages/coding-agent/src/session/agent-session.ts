@@ -157,7 +157,7 @@ import type {
 	TurnStartEvent,
 } from "../extensibility/extensions";
 import { emitSessionShutdownEvent, TOP_LEVEL_AGENT } from "../extensibility/extensions";
-import { ManagedTimers } from "../extensibility/extensions/managed-timers";
+import { ManagedTimers, UNOWNED_TIMERS } from "../extensibility/extensions/managed-timers";
 import { noOpUIContext } from "../extensibility/extensions/runner";
 import { createExtensionModelQuery } from "../extensibility/extensions/model-api";
 import type { CompactOptions, ContextUsage, OutputFormat, ToolSessionEvent } from "../extensibility/extensions/types";
@@ -7657,8 +7657,10 @@ export class AgentSession implements SettingsScope {
 			},
 			getSystemPrompt: () => this.systemPrompt,
 			runEphemeralTurn: args => this.runEphemeralTurn(args),
-			setInterval: (callback, ms, ...args) => this.#fallbackTimers().setInterval(callback, ms, ...args),
-			setTimeout: (callback, ms, ...args) => this.#fallbackTimers().setTimeout(callback, ms, ...args),
+			setInterval: (callback, ms, ...args) =>
+				this.#fallbackTimers().setInterval(UNOWNED_TIMERS, callback, ms, ...args),
+			setTimeout: (callback, ms, ...args) =>
+				this.#fallbackTimers().setTimeout(UNOWNED_TIMERS, callback, ms, ...args),
 			clearTimer: timer => this.#fallbackTimers().clear(timer),
 		};
 	}

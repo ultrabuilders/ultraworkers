@@ -39,7 +39,7 @@ import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
-import { ManagedTimers } from "./managed-timers";
+import { ManagedTimers, UNOWNED_TIMERS } from "./managed-timers";
 import { createExtensionModelQuery } from "./model-api";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type {
@@ -1412,8 +1412,8 @@ export class ExtensionRunner {
 				: undefined,
 			localProtocolOptions: this.localProtocolOptions,
 			memory: this.#getMemoryFn?.(),
-			setInterval: (callback, ms, ...args) => this.#managedTimers.setInterval(callback, ms, ...args),
-			setTimeout: (callback, ms, ...args) => this.#managedTimers.setTimeout(callback, ms, ...args),
+			setInterval: (callback, ms, ...args) => this.#managedTimers.setInterval(UNOWNED_TIMERS, callback, ms, ...args),
+			setTimeout: (callback, ms, ...args) => this.#managedTimers.setTimeout(UNOWNED_TIMERS, callback, ms, ...args),
 			clearTimer: timer => this.#managedTimers.clear(timer),
 			addAdditionalContext: delegation?.context?.addAdditionalContext,
 			invokeTool:

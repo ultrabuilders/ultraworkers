@@ -103,10 +103,6 @@ export class ManagedTimers {
 	 * rather than being a caveat; if that dedupe is ever relaxed, this comment is
 	 * the thing to re-check first.
 	 */
-	clearFor(owner: Extension): number {
-		return this.clearForPath(owner.path);
-	}
-
 	/**
 	 * Release every timer held by one extension path.
 	 *

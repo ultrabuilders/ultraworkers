@@ -1143,20 +1143,15 @@ export class ExtensionRunner {
 	unloadExtension(extensionPath: string): boolean {
 		// Captured BEFORE the splice: after removal there is nothing to read.
 		const index = this.extensions.findIndex(ext => ext.path === extensionPath);
-		const extension = index >= 0 ? this.extensions[index] : undefined;
-		if (!extension) {
-			// Reachable, not hypothetical: `setSuspendedExtensions` splices
-			// `extensions` down to the active set while `#loadOrder` keeps ALL of
-			// them. So a SUSPENDED extension is present in one and absent from the
-			// other, and unloading it lands here.
-			//
-			// `true` is deliberate: the extension IS gone from the registry after
-			// this, which is what the caller asked for. What it cannot do is empty
-			// the buckets or drop providers — the object holding them is not
-			// reachable from `extensions`, so there is nothing to clear. Trampolines
-			// and timers are released by path below and are unaffected.
-			if (!this.#loadOrder?.some(ext => ext.path === extensionPath)) return false;
-		}
+		// `#loadOrder` is the fallback, and it is load-bearing rather than defensive.
+		// `setSuspendedExtensions` splices `extensions` down to the active set while
+		// `#loadOrder` keeps every extension ever bound, so a SUSPENDED extension is
+		// present in one and absent from the other. Reading only `extensions` made
+		// `extension` undefined on exactly that path — and an undefined owner then
+		// dereferenced by the timers release below, so unloading a suspended extension
+		// with a live timer threw instead of unloading.
+		const extension = index >= 0 ? this.extensions[index] : this.#loadOrder?.find(ext => ext.path === extensionPath);
+		if (!extension) return false;
 
 		if (index >= 0) this.extensions.splice(index, 1);
 		// `#loadOrder` must lose it too: `getLoadedExtensions()` reads `#loadOrder`
@@ -1166,22 +1161,24 @@ export class ExtensionRunner {
 			const loadIndex = this.#loadOrder.findIndex(ext => ext.path === extensionPath);
 			if (loadIndex >= 0) this.#loadOrder.splice(loadIndex, 1);
 		}
-		this.#suspendedExtensions.delete(extension as Extension);
+		// By object, not by the `as Extension` cast this used to carry: deleting
+		// `undefined` was a silent no-op, so an unloaded extension stayed in the
+		// suspended set and resurfaced as a phantom "resumed" entry on every later
+		// suspend/resume cycle.
+		this.#suspendedExtensions.delete(extension);
 
 		// Its own trampolines only — a neighbour's stay installed.
 		this.disposeFileFallbacksFor(extensionPath);
-		this.#managedTimers.clearFor(extension as Extension);
+		this.#managedTimers.clearForPath(extensionPath);
 
-		if (extension) {
-			for (const { name } of extension.registeredProviders) {
-				// Ownership check: `registerProvider` hands a claimed name to the later
-				// source, so a stale record here would unregister the NEW owner's
-				// provider — the wrong extension's models vanishing with no error.
-				if (this.modelRegistry.providerSource(name) !== extension.path) continue;
-				this.modelRegistry.unregisterProvider(name);
-			}
-			clearExtensionBuckets(extension);
+		for (const { name } of extension.registeredProviders) {
+			// Ownership check: `registerProvider` hands a claimed name to the later
+			// source, so a stale record here would unregister the NEW owner's
+			// provider — the wrong extension's models vanishing with no error.
+			if (this.modelRegistry.providerSource(name) !== extension.path) continue;
+			this.modelRegistry.unregisterProvider(name);
 		}
+		clearExtensionBuckets(extension);
 		return true;
 	}
 
@@ -1479,14 +1476,14 @@ export class ExtensionRunner {
 		// never fire. The failure only appears after an unload — exactly when
 		// nothing else reports it.
 		//
-		// `this.extensions`, and deliberately NOT `#loadOrder` or
-		// `#suspendedExtensions`: it is the only one of the three that means "still
-		// loaded". `#loadOrder` keeps every extension ever bound, including unloaded
-		// ones, so asking it would never throw. `#suspendedExtensions` answers
-		// "currently suspended", and killing the context of a merely-suspended
-		// extension would break the very thing suspend exists to allow — resume.
+		// `this.extensions` alone cannot answer this. It holds the ACTIVE set, and
+		// `setSuspendedExtensions` splices a suspended extension out of it — so
+		// reading it reported a merely-suspended extension as dead, killing the very
+		// thing suspend exists to allow. `#loadOrder` is the other half to skip: it
+		// keeps every extension ever bound, so it would never throw at all. A
+		// context is dead only when the extension is in NEITHER list.
 		const alive = (): void => {
-			if (extension && !this.extensions.includes(extension)) {
+			if (extension && !this.extensions.includes(extension) && !this.#suspendedExtensions.has(extension)) {
 				throw new ExtensionContextDisposedError(extension.path);
 			}
 		};
@@ -1540,8 +1537,15 @@ export class ExtensionRunner {
 				: undefined,
 			localProtocolOptions: this.localProtocolOptions,
 			memory: this.#getMemoryFn?.(),
-			setInterval: (callback, ms, ...args) => this.#managedTimers.setInterval(UNOWNED_TIMERS, callback, ms, ...args),
-			setTimeout: (callback, ms, ...args) => this.#managedTimers.setTimeout(UNOWNED_TIMERS, callback, ms, ...args),
+			// Owned by the extension whose context this is, so unloading it releases
+			// them. `UNOWNED_TIMERS` was the only owner ever passed, which made the
+			// per-path release unload performs a no-op and let a background callback
+			// outlive the extension that scheduled it. The sentinel still covers a
+			// context built without one, where no extension can be blamed later.
+			setInterval: (callback, ms, ...args) =>
+				this.#managedTimers.setInterval(extension ?? UNOWNED_TIMERS, callback, ms, ...args),
+			setTimeout: (callback, ms, ...args) =>
+				this.#managedTimers.setTimeout(extension ?? UNOWNED_TIMERS, callback, ms, ...args),
 			clearTimer: timer => this.#managedTimers.clear(timer),
 			addAdditionalContext: delegation?.context?.addAdditionalContext,
 			invokeTool:

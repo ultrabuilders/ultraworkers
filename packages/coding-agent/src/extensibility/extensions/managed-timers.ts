@@ -104,9 +104,20 @@ export class ManagedTimers {
 	 * the thing to re-check first.
 	 */
 	clearFor(owner: Extension): number {
+		return this.clearForPath(owner.path);
+	}
+
+	/**
+	 * Release every timer held by one extension path.
+	 *
+	 * Takes the path rather than the owner so a caller that has only a path — an
+	 * unload, where the extension object is spliced out of the active list before
+	 * the release runs — cannot pass `undefined` into an API that dereferences it.
+	 */
+	clearForPath(path: string): number {
 		let cleared = 0;
 		for (const [timer, holder] of [...this.#timers]) {
-			if (holder?.path !== owner.path) continue;
+			if (holder?.path !== path) continue;
 			this.#timers.delete(timer);
 			clearInterval(timer);
 			clearTimeout(timer);

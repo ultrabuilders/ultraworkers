@@ -162,12 +162,29 @@ describe("executeBash", () => {
 			data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
 		};
 		const frame = await encodeTerminalImage(image);
-		const result = await executeBash(`printf '%s' ${shellQuote(frame)}; printf '%060000d\n' 0; printf tail; exit 7`, {
-			cwd: tempDir,
-			timeout: 5000,
-		});
+		// The flood is MANY SHORT LINES, not one long one, and that is the whole
+		// point of this test being stable.
+		//
+		// `OutputSink` applies a per-LINE column cap (`tools.outputMaxColumns`,
+		// default 768) that drops every remaining byte up to the next `\n`. A
+		// single unbroken run of characters therefore loses the tail the moment
+		// the line trips the cap — which is what the previous `printf '%060000d'`
+		// flood did. Worse, that path leaves `truncated` FALSE, because the
+		// per-line cap is a different counter from the size budget: the result
+		// looks untruncated while the tail is silently gone. So the assertion
+		// below passed or failed on where the tail happened to land, which is
+		// load-dependent — the definition of a flake that reads like a regression.
+		//
+		// Short lines keep every line under the cap, so the tail survives on its
+		// own line, and the flood is comfortably past the 50 KB size budget (640
+		// x 80 = 51 KB, 3x headroom) so truncation is real rather than incidental.
+		const result = await executeBash(
+			`printf '%s' ${shellQuote(frame)}; yes ${"0".repeat(80)} | head -n 640; printf 'tail'; exit 7`,
+			{ cwd: tempDir, timeout: 5000 },
+		);
 
 		expect(result.exitCode).toBe(7);
+		expect(result.truncated).toBe(true);
 		expect(result.images).toHaveLength(1);
 		expect(result.images?.[0]).toMatchObject({ type: "image", mimeType: "image/png" });
 		expect(result.output).toContain("tail");

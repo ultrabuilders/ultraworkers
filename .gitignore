@@ -108,3 +108,12 @@ packages/coding-agent/bench/boot-baseline.json
 /omp-session-*.markdown
 /omp-session-*.probe
 /omp-browser-recording-*/
+
+# Scratch directories a throwaway probe gets written into. These keep recurring —
+# `.probe`, then the session artifacts above, then `.scratch` — and each time the
+# fix blocked exactly ONE instance. `bun test` scans `test/`, so an untracked
+# scratch dir under it runs as a passing test that protects nothing, and a
+# `git add -A` commits it. Matched at ANY depth: the location is the point, not
+# the name, and a scratch dir is scratch wherever it is created.
+**/.probe/
+**/.scratch/

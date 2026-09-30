@@ -22,9 +22,6 @@
 - An extension that is only suspended keeps its context usable. Suspending hides an extension so it
   can be resumed; it does not retire it, and a context held across a suspend no longer reports the
   extension as unloaded
-- On Linux, a debugger can no longer attach to the running process and a core dump is no longer written.
-  Best-effort and per-call: a platform without the calls is a clean no-op, never a startup failure
-
 - Shell and subprocesses no longer inherit `LD_PRELOAD` and the other loader-hijack variables from omp's
   environment. `PATH`, `NODE_PATH` and toolchain prefixes are left alone, so LSP servers, kernels and
   browsers are unaffected

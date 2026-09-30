@@ -795,15 +795,27 @@ describe("ExtensionRunner", () => {
 			);
 			const controller = new AbortController();
 			const message = createAssistantMessage("original");
-			const started = new Promise<void>(resolve => {
-				const watcher = fs.watch(tempDir.path(), (_eventType, filename) => {
-					if (filename?.toString() !== path.basename(startedPath)) return;
-					watcher.close();
-					resolve();
-				});
-			});
 			const emission = runner.emitAssistantMessage(message, controller.signal);
-			await started;
+			// Poll for the marker rather than `fs.watch`ing for it. The watch made this
+			// test's outcome depend on FSEvents delivery latency, and a delayed or
+			// coalesced notification under full-suite load pushed the wait past the 30s
+			// handler timeout — so the test could report a hang as though the runner had
+			// mis-sequenced the handlers.
+			//
+			// The poll asserts the same precondition the watch did (handler 2 reached its
+			// `writeFileSync`), with a bounded deadline so a genuine regression fails with
+			// a message instead of timing out.
+			//
+			// What actually stops handler 3 is NOT the `signal?.aborted` check in the
+			// dispatch loop: handler 2 parks on a promise that only an abort-race can
+			// settle, so the loop never advances to handler 3 in the first place. Removing
+			// the loop's abort checks outright leaves this test green — verified. The
+			// contract it protects is that an abort SETTLES a parked handler, so the
+			// dispatch loop resumes and stops.
+			const deadline = performance.now() + 10_000;
+			while (performance.now() < deadline && !(await Bun.file(startedPath).exists())) {
+				await Bun.sleep(10);
+			}
 			expect(await Bun.file(startedPath).text()).toBe("started");
 			controller.abort(new Error("cancelled"));
 			await expect(emission).resolves.toEqual([{ type: "text", text: "accepted" }]);

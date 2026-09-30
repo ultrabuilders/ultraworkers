@@ -23,6 +23,7 @@
  */
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { logger } from "@oh-my-pi/pi-utils";
+import { sanitizeChildEnv } from "./exec/sanitize-child-env";
 
 // Linux prctl options. Both are stable ABI constants.
 const PR_SET_PDEATHSIG = 1;
@@ -62,16 +63,51 @@ function getPrctl(): Prctl | null {
 }
 
 /**
- * Deny debugger attach and core dumps on Linux.
+ * Delete loader-hijack variables from this process's own environment.
  *
- * `PR_SET_DUMPABLE = 0` stops a debugger attaching and stops another user reading
- * `/proc/<pid>/mem`. `PR_SET_PDEATHSIG = SIGKILL` means the process dies with the
- * shell that launched it, instead of surviving as an orphan holding an API key.
+ * Reuses `sanitizeChildEnv`'s blocklist rather than repeating it — two lists of
+ * loader variables is exactly the kind of pair that drifts, and the copy that
+ * rots is the one nobody edits.
  *
- * A no-op on macOS and Windows, which is a deliberate platform difference rather
- * than a failure — `RLIMIT_CORE` has an equivalent there, but prctl does not.
+ * Best-effort by contract: `process.env` is read-only on some runtimes, and a
+ * failure here means children may inherit a loader variable, not that omp cannot
+ * start. That is why it is caught and logged rather than thrown.
+ */
+function stripLoaderEnvFromProcess(): void {
+	try {
+		const scrubbed = sanitizeChildEnv({ ...process.env } as Record<string, string>);
+		for (const key of Object.keys(process.env)) {
+			if (key in scrubbed) continue;
+			delete process.env[key];
+		}
+	} catch (error) {
+		logger.debug("harden-process: could not strip loader env", { error: String(error) });
+	}
+}
+
+/**
+ * Strip loader hijack, deny debugger attach, and disable core dumps.
+ *
+ * Every step is individually guarded and degrades to a no-op. The env strip is
+ * first because it is the one that matters on macOS, where prctl has no
+ * equivalent at all.
  */
 export function hardenProcess(): void {
+	// Strip loader-hijack variables from OUR OWN environment, first.
+	//
+	// `sanitizeChildEnv` scrubs the per-command env, but the base layer is built
+	// from `Bun.env` via `filterChildShellEnv`, which strips nothing of this kind
+	// (measured: LD_PRELOAD and DYLD_INSERT_LIBRARIES both survive it). So without
+	// this, a loader variable set before omp launched reaches every child through
+	// the layer the scrub does not cover.
+	//
+	// Done here, at the source, rather than in each spawn path: a scrub added to
+	// the base env builder protects the paths that exist AND any added later.
+	//
+	// Deleted, never set to empty — presence is the trigger, and an empty value
+	// still resolves as "configured".
+	stripLoaderEnvFromProcess();
+
 	// Portable first: the core limit is the one that applies everywhere.
 	try {
 		disableCoreDumps();

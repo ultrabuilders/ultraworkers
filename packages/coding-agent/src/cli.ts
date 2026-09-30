@@ -29,6 +29,8 @@ import {
 } from "@oh-my-pi/pi-utils/dirs";
 
 import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";
+import { isProcessEntry } from "./cli-process-entry";
+import { hardenProcess } from "./harden-process";
 import { extractProfileFlags } from "./cli/profile-bootstrap";
 import {
 	BLOB_BROKER_WORKER_ARG,
@@ -50,17 +52,22 @@ if (Bun.semver.order(Bun.version, MIN_BUN_VERSION) < 0) {
 	process.exit(1);
 }
 
+// Harden BEFORE anything else touches the process, and ONLY on the real entry.
+//
+// `bun test` and SDK embedding reach this same module, and an unguarded call
+// would make the test runner itself non-dumpable: a test that crashes on purpose
+// then goes silent, with the evidence nowhere. `hardenProcess` is a no-op on
+// macOS and Windows and swallows its own failures, so the worst case here is that
+// nothing happens.
+if (isProcessEntry) {
+	hardenProcess();
+}
+
+// After harden, not before: `PR_SET_PDEATHSIG` means something different on a
+// process whose parent has already exited, so the order is behaviour, not style.
 try {
 	process.title = APP_NAME;
 } catch {}
-
-// `Bun.build`-API compiled Windows executables report `import.meta.main ===
-// false`: the standalone loader keys the entry module with native backslashes
-// (`B:\~BUN\root\cli.js`) but registers the main path with forward slashes
-// (`B:/~BUN/root/cli.js`), so Bun's internal match fails. `bun build --compile`
-// CLI builds are unaffected. A compiled binary's entry module is by definition
-// the process entry, so the define-folded PI_COMPILED marker stands in.
-const isProcessEntry = import.meta.main || process.env.PI_COMPILED === "true";
 
 /**
  * Worker inboxes must attach before this entry module reaches its first await,

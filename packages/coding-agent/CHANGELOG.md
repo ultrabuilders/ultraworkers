@@ -35,9 +35,11 @@
 - An extension that is only suspended keeps its context usable. Suspending hides an extension so it
   can be resumed; it does not retire it, and a context held across a suspend no longer reports the
   extension as unloaded
-- Shell and subprocesses no longer inherit `LD_PRELOAD` and the other loader-hijack variables from omp's
-  environment. `PATH`, `NODE_PATH` and toolchain prefixes are left alone, so LSP servers, kernels and
-  browsers are unaffected
+- Shell and subprocesses no longer inherit loader-hijack variables from omp's environment, on Linux or
+  macOS. `LD_PRELOAD` and `DYLD_INSERT_LIBRARIES` and their families are stripped from omp's own
+  environment at startup as well as from each spawned command, so a variable exported before omp
+  launched no longer reaches anything it runs. `PATH`, `NODE_PATH` and toolchain prefixes are left
+  alone, so LSP servers, kernels and browsers are unaffected
 
 - Turning an extension off now also stops its model providers; turning it back on restores them. Previously a
   disabled extension kept offering its models and its stored credential

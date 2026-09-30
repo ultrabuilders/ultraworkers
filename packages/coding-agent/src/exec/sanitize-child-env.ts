@@ -23,9 +23,32 @@ const LOADER_HIJACK_VARS = [
 	"LD_NEWFILE",
 	"LD_AUTOLOAD",
 	"LD_ORIGIN_PATH",
+	// macOS. `DYLD_*` is the same hijack with a different prefix, and this is the
+	// platform omp ships on most often — leaving it unfiltered meant the guard
+	// covered Linux and left the most common target open.
+	"DYLD_INSERT_LIBRARIES",
+	"DYLD_LIBRARY_PATH",
+	"DYLD_FRAMEWORK_PATH",
+	"DYLD_FALLBACK_LIBRARY_PATH",
+	"DYLD_FALLBACK_FRAMEWORK_PATH",
 ] as const;
 
+/**
+ * Prefixes stripped wholesale.
+ *
+ * The enumerated names above are the ones with known behaviour; these cover the
+ * rest of each family's namespace without a second list to keep in sync. Both
+ * prefixes are loader-specific, so nothing a child legitimately needs matches.
+ */
+const BLOCKED_PREFIXES = ["LD_", "DYLD_"] as const;
+
 const BLOCKED = new Set<string>(LOADER_HIJACK_VARS);
+
+/** Whether a variable redirects library loading and must not reach a child. */
+function isBlocked(key: string): boolean {
+	if (BLOCKED.has(key)) return true;
+	return BLOCKED_PREFIXES.some(prefix => key.startsWith(prefix));
+}
 
 /**
  * Return `env` without loader-hijack variables.
@@ -36,7 +59,7 @@ const BLOCKED = new Set<string>(LOADER_HIJACK_VARS);
 export function sanitizeChildEnv(env: Record<string, string>): Record<string, string> {
 	let removed = false;
 	for (const key of Object.keys(env)) {
-		if (!BLOCKED.has(key)) continue;
+		if (!isBlocked(key)) continue;
 		removed = true;
 		break;
 	}
@@ -47,7 +70,7 @@ export function sanitizeChildEnv(env: Record<string, string>): Record<string, st
 
 	const result: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
-		if (BLOCKED.has(key)) continue;
+		if (isBlocked(key)) continue;
 		result[key] = value;
 	}
 	return result;

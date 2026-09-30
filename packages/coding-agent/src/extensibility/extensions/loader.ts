@@ -223,7 +223,10 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 			sourceInfo: extensionToolSourceInfo(tool, this.extension.resolvedPath),
 		};
 		this.extension.tools.set(tool.name, registered);
-		for (const listener of this.extension.toolRegistrationListeners ?? []) listener(tool.name);
+		// No `?? []`: the bucket is required on `Extension`, and an empty-array
+		// fallback here would turn a missing bucket into ZERO listener calls —
+		// silently dropping a tool-registration callback rather than failing.
+		for (const listener of this.extension.toolRegistrationListeners) listener(tool.name);
 	}
 
 	registerFileWriteFallback(handler: FileWriteFallbackHandler): void {

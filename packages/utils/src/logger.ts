@@ -175,6 +175,15 @@ function ensureDir(dir: string): string {
 	if (!fs.existsSync(dir)) {
 		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	}
+	// `mode` applies ONLY to a directory this call creates. With `recursive`, an
+	// existing directory is a silent success, so anyone who ran omp before this
+	// landed keeps a 0755 log directory forever — and they are the group with the
+	// most accumulated transcripts in it. Measured: new dir 0700, pre-existing dir
+	// 0755 both before and after without this line.
+	//
+	// Windows has no POSIX mode bits, and `chmod` there is a no-op that throws on
+	// some paths, so it is skipped rather than wrapped.
+	if (process.platform !== "win32") fs.chmodSync(dir, 0o700);
 	return dir;
 }
 

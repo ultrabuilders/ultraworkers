@@ -31,6 +31,21 @@ function tempRoot(): string {
 }
 
 describe("log directory permissions", () => {
+	test("tightens a directory that already existed at the wider mode", () => {
+		// The state of every machine that ran omp before the mode was set: the
+		// directory is already there, so `mkdir` succeeds silently and never touches
+		// the mode. Those users hold the MOST logs, so leaving them at umask is the
+		// worst outcome, and it is the one `mode` alone cannot fix.
+		const dir = path.join(tempRoot(), "logs");
+		fs.mkdirSync(dir, { recursive: true });
+		expect(fs.statSync(dir).mode & 0o777).toBe(0o755);
+
+		setTransports({ file: dir });
+		info("probe");
+
+		expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+	});
+
 	test("creates the directory readable and writable only by its owner", () => {
 		const dir = path.join(tempRoot(), "logs");
 		setTransports({ file: dir });

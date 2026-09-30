@@ -1564,6 +1564,22 @@ export interface ExtensionAPI {
 	 */
 	registerOutputFormat(format: OutputFormat): void;
 
+	/**
+	 * Register a resolver that maps a mistyped or aliased tool name onto a real
+	 * one, consulted when an exact dispatch misses.
+	 *
+	 * The host already has one of these — an MCP name canonicaliser, and a device
+	 * bridge resolver — but both are module-level functions with no way in, so an
+	 * extension that names its tools differently had to be discovered by
+	 * mis-transcription at runtime.
+	 *
+	 * A resolver must be **conservative**: return a tool only on a unique match.
+	 * Guessing between two plausible targets dispatches a tool the model never
+	 * asked for, which is worse than the error it was meant to remove. The host
+	 * holds this rule for the resolvers it ships and does not relax it for yours.
+	 */
+	registerToolNameResolver(resolver: ToolNameResolver): void;
+
 	/** Set the display label for this extension, or set a label on a specific entry. */
 	setLabel(entryIdOrLabel: string, label?: string | undefined): void;
 
@@ -1828,6 +1844,18 @@ export interface ExtensionFlag {
  * offer markdown, or a format for a consumer that already has a renderer. They
  * pass an `id` to the exporter instead.
  */
+/**
+ * Maps a name that did not dispatch onto a real tool.
+ *
+ * Return `undefined` unless the match is unique; the host calls every resolver in
+ * registration order and stops at the first hit, so a resolver that fires on a
+ * guess shadows every later one.
+ */
+export type ToolNameResolver = (
+	name: string,
+	advertised: readonly { readonly name: string }[],
+) => { readonly name: string } | undefined;
+
 export interface OutputFormat {
 	/** Format id, e.g. `markdown`. Non-empty and trimmed. */
 	readonly id: string;
@@ -1984,6 +2012,11 @@ export interface Extension {
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	outputFormats: Map<string, OutputFormat>;
+	/**
+	 * Tool-name resolvers in registration order. The first to return a tool wins,
+	 * so a resolver that guesses shadows every later one.
+	 */
+	toolNameResolvers: ToolNameResolver[];
 }
 
 /**

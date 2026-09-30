@@ -7092,6 +7092,13 @@ export class InteractiveMode implements InteractiveModeContext {
 				[` ${appKey(this.keybindings, "app.interrupt")}`],
 			);
 
+			// An indicator set before the row existed has to be replayed now. Holding
+			// it without applying it would silently drop the extension's frames for
+			// the rest of the session.
+			if (this.#pendingWorkingIndicator) {
+				this.loadingAnimation.setIndicator(this.#pendingWorkingIndicator);
+				this.#pendingWorkingIndicator = undefined;
+			}
 			this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());
 			this.loadingAnimation.setWorkingRow(
 				() => this.#workingRowSpec(),

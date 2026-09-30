@@ -55,6 +55,7 @@ import type {
 	ToolDefinition,
 	ToolInfo,
 	OutputFormat,
+	ToolNameResolver,
 } from "./types";
 
 installLegacyPiSpecifierShim();
@@ -267,6 +268,13 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		}
 	}
 
+	registerToolNameResolver(resolver: ToolNameResolver): void {
+		// Appended, not replaced: the host ships its own resolvers and an
+		// extension's joins them. Order matters — the first hit wins — so
+		// registration order is the only thing a caller can reason about.
+		this.extension.toolNameResolvers.push(resolver);
+	}
+
 	registerOutputFormat(format: OutputFormat): void {
 		const id = format.id;
 		// Charset, not just trimming: the id becomes part of the output filename
@@ -408,6 +416,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
 		outputFormats: new Map(),
+		toolNameResolvers: [] as ToolNameResolver[],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),

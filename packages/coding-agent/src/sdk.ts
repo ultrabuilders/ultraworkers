@@ -4317,7 +4317,24 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			// Recovery only fires on turns without tool calls and appends a new one,
 			// so streamed calls (and their speculation sessions) are never rewritten.
 			transformAssistantMessagePreservesToolCalls: true,
-			resolveFallbackTool: resolveDeviceTool,
+			resolveFallbackTool: (name, advertised = []) => {
+				// Device mounts first: an exact mounted name is not a guess, and
+				// letting a resolver claim it would make a guess look authoritative.
+				const device = resolveDeviceTool(name, advertised);
+				if (device) return device;
+				// Then every extension resolver, in registration order. The host
+				// ships resolvers with the same uniqueness rule and does not relax
+				// it for extensions: guessing between two plausible targets
+				// dispatches a tool the model never asked for.
+				for (const ext of extensionRunner?.getLoadedExtensions() ?? []) {
+					for (const resolver of ext.toolNameResolvers) {
+						const hit = resolver(name, advertised);
+						const matched = hit ? advertised.find(t => t.name === hit.name) : undefined;
+						if (matched) return matched;
+					}
+				}
+				return undefined;
+			},
 			suggestFallbackToolNames: suggestDeviceToolNames,
 			intentTracing: cfgToolsIntentTracing.get(settings),
 			pruneToolDescriptions: resolveInlineToolDescriptors(),

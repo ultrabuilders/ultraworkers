@@ -599,6 +599,49 @@ export const HIDDEN_TOOLS: Record<HiddenToolName, ToolFactory> = {
 	goal: s => new GoalTool(s),
 };
 
+/**
+ * Built-in tool factories registered at runtime, in registration order.
+ *
+ * `BUILTIN_TOOLS` and `HIDDEN_TOOLS` are literals compiled into the SDK, so adding
+ * a first-party tool means editing source. This is the same shape as every other
+ * registry in the extension API: declare it once, and the rest of the pipeline —
+ * `createTools`, the active-name set, the settings gate — picks it up unchanged.
+ *
+ * It is deliberately additive. A name here is built-in and is gated exactly like
+ * one in the literals, and an extension registering the same name is still
+ * refused by the extension registry. Narrowing the built-in/extension privilege
+ * boundary is a separate piece of work: it changes the core list, which
+ * AGENTS.md calls a breaking change.
+ */
+const registeredBuiltinTools = new Map<string, ToolFactory>();
+
+/**
+ * Register a first-party tool factory. Returns false when the name is empty or
+ * already taken by a literal, so a registration cannot silently shadow one of
+ * the built-ins the product ships.
+ */
+export function registerBuiltinTool(name: string, factory: ToolFactory): boolean {
+	if (name.length === 0 || name !== name.trim()) return false;
+	if (name in BUILTIN_TOOLS || name in HIDDEN_TOOLS) return false;
+	if (registeredBuiltinTools.has(name)) return false;
+	registeredBuiltinTools.set(name, factory);
+	return true;
+}
+
+/** Registered factories, in registration order. */
+export function getRegisteredBuiltinTools(): ReadonlyMap<string, ToolFactory> {
+	return registeredBuiltinTools;
+}
+
+/**
+ * The factories a session may construct: the literals plus anything registered.
+ * This is what decides what counts as built-in, so it is the one place a
+ * first-party tool has to appear to be constructed.
+ */
+export function allBuiltinToolFactories(): Record<string, ToolFactory> {
+	return { ...BUILTIN_TOOLS, ...HIDDEN_TOOLS, ...Object.fromEntries(registeredBuiltinTools) };
+}
+
 export type ToolName = BuiltinToolName;
 
 /**
@@ -804,10 +847,14 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		requestedTools.push("yield");
 	}
 
-	const names = requestedTools?.filter(
-		name => (name in BUILTIN_TOOLS || name in HIDDEN_TOOLS) && isToolAllowed(name),
-	) ?? [
+	// `allBuiltinToolFactories()` rather than the two literals, so a factory
+	// registered at runtime is selected by an explicit request and included in
+	// the default set — otherwise registration would succeed and the tool would
+	// never be constructed, which is a dead seam wearing a live one.
+	const knownBuiltin = allBuiltinToolFactories();
+	const names = requestedTools?.filter(name => name in knownBuiltin && isToolAllowed(name)) ?? [
 		...Object.keys(BUILTIN_TOOLS).filter(isToolAllowed),
+		...Array.from(registeredBuiltinTools.keys()).filter(isToolAllowed),
 		...(externalThinkingActive ? ["think"] : []),
 		...(includeYield ? ["yield"] : []),
 		...(goalModeActive ? ["goal"] : []),
@@ -847,7 +894,10 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		session.deviceOnlyWrite = undefined;
 		session.pendingFullWriteDescription = undefined;
 	}
-	const allTools: Record<string, ToolFactory> = { ...BUILTIN_TOOLS, ...HIDDEN_TOOLS };
+	// The one place that decides what counts as built-in. Registered factories
+	// join the literals here, so a first-party tool added at runtime is gated,
+	// ordered and reported by exactly the same code as one compiled in.
+	const allTools = allBuiltinToolFactories();
 	const baseEntries = names.map(name => [name, allTools[name]] as const);
 
 	const activeToolNames = new Set(names);

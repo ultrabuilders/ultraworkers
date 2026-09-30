@@ -758,8 +758,8 @@ class GatedAtomicFailureStorage extends MemorySessionStorage {
 	#nextFailure:
 		| {
 				error: Error;
-				started: ReturnType<typeof Promise.withResolvers<void>>;
-				release: ReturnType<typeof Promise.withResolvers<void>>;
+				started: PromiseWithResolvers<void>;
+				release: PromiseWithResolvers<void>;
 		  }
 		| undefined;
 

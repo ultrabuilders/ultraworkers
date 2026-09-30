@@ -106,8 +106,8 @@ class ExitFaultStorage extends FileSessionStorage {
 	#readGate:
 		| {
 				filePath: string;
-				started: ReturnType<typeof Promise.withResolvers<void>>;
-				release: ReturnType<typeof Promise.withResolvers<void>>;
+				started: PromiseWithResolvers<void>;
+				release: PromiseWithResolvers<void>;
 		  }
 		| undefined;
 

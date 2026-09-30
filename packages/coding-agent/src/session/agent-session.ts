@@ -160,6 +160,7 @@ import { emitSessionShutdownEvent, TOP_LEVEL_AGENT } from "../extensibility/exte
 import { ManagedTimers, UNOWNED_TIMERS } from "../extensibility/extensions/managed-timers";
 import { noOpUIContext } from "../extensibility/extensions/runner";
 import { createExtensionModelQuery } from "../extensibility/extensions/model-api";
+import type { ToolCallEventResult } from "../extensibility/shared-events";
 import type { CompactOptions, ContextUsage, OutputFormat, ToolSessionEvent } from "../extensibility/extensions/types";
 import type { CustomCommandContext } from "../extensibility/custom-commands/types";
 import { SkillDescriptionCatalog } from "../extensibility/skill-descriptions";
@@ -4520,7 +4521,7 @@ export class AgentSession implements SettingsScope {
 			? { actions: computer.actions, pendingSafetyChecks: computer.pendingSafetyChecks }
 			: ctx.args;
 		runner.markToolCallEmitted(ctx.toolCall.id, ctx.tool.name);
-		let callResult: Awaited<ReturnType<ExtensionRunner["emitToolCall"]>>;
+		let callResult: ToolCallEventResult | undefined;
 		try {
 			callResult = await runner.emitToolCall(
 				{

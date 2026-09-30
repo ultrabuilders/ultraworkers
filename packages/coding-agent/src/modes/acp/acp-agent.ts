@@ -1187,9 +1187,14 @@ export class AcpAgent implements Agent {
 				return { sessions: sorted.map(s => this.#toSessionInfo(s)) };
 			}
 			case "_omp/usage": {
-				const [firstRecord] = this.#sessions.values();
-				const target = firstRecord?.session ?? this.#initialSession;
+				// Resolve the session the caller NAMED. Destructuring the first entry
+				// answered a different question — "any session" — so with two sessions
+				// open, asking about the second returned the first one's usage.
+				const sessionId = typeof params.sessionId === "string" ? params.sessionId : "";
+				const target = this.#sessions.get(sessionId)?.session ?? this.#initialSession;
 				if (!target) {
+					// An unknown session id reports no usage rather than erroring: usage
+					// is a report, and refusing to produce one is worse than an empty one.
 					return { reports: [] };
 				}
 				const reports = await target.fetchUsageReports();

@@ -11,6 +11,9 @@
 
 ### Fixed
 
+- `_omp/usage` now reports the session you asked about. With more than one ACP session open it
+  returned the first one regardless of the id in the request
+
 - A malformed collab frame is now rejected at the decode boundary instead of reaching the frame
   handler as if it were whole. An unknown frame variant from a newer peer is still accepted
 - `omp doctor` no longer starts a model conversation. It is not a top-level command — `omp plugin

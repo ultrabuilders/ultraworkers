@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { AgentBusyError } from "@oh-my-pi/pi-agent-core";
-import type { Model } from "@oh-my-pi/pi-ai";
+import type { Model, UsageReport } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { resetSettingsForTest, Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { ExtensionUIContext } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
@@ -145,6 +145,13 @@ class FakeAgentSession {
 	waitForIdleBlocker: (() => Promise<void>) | undefined;
 	asyncJobDrain: ((options?: { timeoutMs?: number }) => Promise<boolean>) | undefined;
 	usageFallbackConfirmer: ((confirmation: UsageFallbackConfirmation) => Promise<boolean>) | undefined;
+	/** Per-session usage payload, so two fake sessions are distinguishable. */
+	usageReports: UsageReport[] = [];
+	/** Mirrors the real `fetchUsageReports`; the fake ignores the signal, as the
+	 * production call site passes none. */
+	async fetchUsageReports(): Promise<UsageReport[] | null> {
+		return this.usageReports;
+	}
 	retryResult = false;
 	retryCalls = 0;
 	#listeners = new Set<(event: AgentSessionEvent) => void>();
@@ -547,6 +554,17 @@ async function createHarness(
 	};
 }
 
+/**
+ * A usage report that identifies its own session in `metadata`.
+ *
+ * The session id is embedded so the assertion is not a tautology: two identical
+ * payloads would pass whether the gate resolved the right session or simply the
+ * first one.
+ */
+function usageReportFor(sessionId: string): UsageReport {
+	return { provider: "anthropic", fetchedAt: 0, limits: [], metadata: { sessionId } };
+}
+
 /** Fire `#scheduleBootstrapUpdates`'s guard without paying wall-clock time. */
 async function advanceBootstrapGuard(): Promise<void> {
 	vi.advanceTimersByTime(ACP_BOOTSTRAP_RACE_GUARD_MS);
@@ -554,6 +572,25 @@ async function advanceBootstrapGuard(): Promise<void> {
 }
 
 describe("ACP agent", () => {
+	it("scopes _omp/usage to the session the caller named", async () => {
+		const harness = await createHarness();
+		const first = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
+		const second = await harness.agent.newSession({ cwd: harness.cwdB, mcpServers: [] });
+
+		const firstSession = harness.findSession(first.sessionId);
+		const secondSession = harness.findSession(second.sessionId);
+		firstSession!.usageReports = [usageReportFor(first.sessionId)];
+		secondSession!.usageReports = [usageReportFor(second.sessionId)];
+
+		// Ask about the SECOND session. Taking the first entry of the session map
+		// would answer about the first one and still return a well-formed report —
+		// the failure is invisible unless the two payloads differ.
+		const secondReport = await harness.agent.extMethod("_omp/usage", { sessionId: second.sessionId });
+		expect(secondReport).toBeDefined();
+		expect(JSON.stringify(secondReport)).toContain(second.sessionId);
+		expect(JSON.stringify(secondReport)).not.toContain(first.sessionId);
+	});
+
 	it("supports multiple live ACP sessions with model and lifecycle handlers", async () => {
 		const harness = await createHarness();
 		const first = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });

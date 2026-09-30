@@ -32,6 +32,9 @@ doctor` is — so it now says so instead of being sent to the model as a prompt
 
 ### Added
 
+- A vendor-neutral telemetry contract (`TelemetrySpan`, `TelemetryAttributeValue`, `SpanStatus`) so a
+  second backend becomes an adapter rather than an edit of every call site
+
 - Per-model cost attribution: a new pure `buildUsageBreakdown()` splits a session's totals by the model
   that served each turn, with subagent usage on its own row
 

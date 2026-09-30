@@ -87,9 +87,20 @@ export class ManagedTimers {
 	 * The point of tracking ownership: a suspended or unloaded extension must not
 	 * take down work that a different extension is still doing.
 	 *
-	 * Matched on `path`, not object identity. A re-initialise or a reload rebuilds
-	 * the `Extension` objects, so identity would match nothing on the second pass
-	 * and silently clear nothing — the failure mode being a leak, not an error.
+	 * Matched on `path` because a PATH is an extension's identity and object
+	 * identity is only one LOAD of it. Every load builds a fresh `Extension`
+	 * (`createExtension`), so identity would answer "which load?" when the question
+	 * is "which extension?" — and unload must clear every leftover load of that
+	 * extension, not just the live one. Getting it backwards fails as a silent
+	 * leak: a reload leaves the old instance's timers keyed to an object nothing
+	 * holds any more, and the clear reports success having cleared nothing.
+	 *
+	 * ASSUMPTION: ownership is per path, so two `Extension` objects sharing a
+	 * path would clear each other's timers — also silent, and the opposite
+	 * failure. That should not happen (a path names one extension), but nothing
+	 * here enforces it and this was not verified against the loader's
+	 * registration path. Treat it as the thing to check if a path ever turns out
+	 * to be ambiguous.
 	 */
 	clearFor(owner: Extension): number {
 		let cleared = 0;

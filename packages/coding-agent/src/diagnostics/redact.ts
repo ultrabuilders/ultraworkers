@@ -11,10 +11,15 @@ export const REDACTED = "<redacted>";
 const SENSITIVE_KEY = /(?:^|[-_])(api[-_]?key|secret|token|password|passwd|credential|authorization|cookie)(?:$|[-_])/i;
 
 /**
- * The `.replace()` is the whole point of this function: camelCase is normalised
- * to snake_case *before* the pattern is tested. Without it `apiKey` does not
- * match `SENSITIVE_KEY`, and the most common spelling in this project's own
- * config sails through unredacted.
+ * The `.replace()` inserts word separators into camelCase before the pattern is
+ * tested, and those separators are the only thing the `(?:^|[-_])` boundary can
+ * hook onto.
+ *
+ * A bare `apiKey` matches on its own, because `SENSITIVE_KEY` is
+ * case-insensitive — it would be caught with or without the normalisation. What
+ * does not match without it is a *prefixed* camelCase key: in `myApiKey` the
+ * `Api` follows a letter rather than a separator, so nothing matches and the
+ * secret sails through unredacted.
  */
 export function isSensitiveKey(key: string): boolean {
 	return SENSITIVE_KEY.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));

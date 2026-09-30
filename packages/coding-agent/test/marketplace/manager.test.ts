@@ -1284,7 +1284,7 @@ describe("MarketplaceManager", () => {
 				catalog.plugins.length = 0;
 				await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
-				expect(await ctx.manager.findDelistedPlugins()).toEqual([
+				expect((await ctx.manager.findDelistedPlugins()).delisted).toEqual([
 					{ pluginId: "hello-plugin@test-marketplace", scope: "user" },
 				]);
 				// And it is genuinely invisible to the update path — that is the
@@ -1306,7 +1306,31 @@ describe("MarketplaceManager", () => {
 				// Listed is listed. Treating a missing version as a delisting would
 				// tell users their plugin was pulled when the publisher just never
 				// tagged a release.
-				expect(await ctx.manager.findDelistedPlugins()).toEqual([]);
+				expect((await ctx.manager.findDelistedPlugins()).delisted).toEqual([]);
+			});
+
+			it("separates a listed-but-unversioned plugin from a delisted one", async () => {
+				// The case `checkForUpdates` hides inside the same `continue` as a
+				// delisting, and it is the quieter of the two: the plugin looks
+				// current, so nothing tells the user it is pinned to a build no
+				// publisher will revise. `version` is optional, so a catalog can
+				// list a plugin with no version at all.
+				await ctx.manager.addMarketplace(FIXTURE_DIR);
+				await ctx.manager.installPlugin("hello-plugin", "test-marketplace");
+
+				const catalogPath = await getCatalogPath();
+				const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf-8")) as {
+					plugins: Array<Record<string, unknown>>;
+				};
+				delete catalog.plugins[0].version;
+				fs.writeFileSync(catalogPath, JSON.stringify(catalog, null, 2));
+
+				const result = await ctx.manager.findDelistedPlugins();
+				expect(result.delisted).toEqual([]);
+				expect(result.unversioned).toEqual([{ pluginId: "hello-plugin@test-marketplace", scope: "user" }]);
+				// And it really is invisible to the update path, which is the
+				// whole reason it needed its own channel.
+				expect(await ctx.manager.checkForUpdates()).toEqual([]);
 			});
 
 			it("does not report a plugin whose catalog cannot be read", async () => {
@@ -1316,7 +1340,7 @@ describe("MarketplaceManager", () => {
 
 				// An unreadable catalog proves nothing about listing. Reporting here
 				// would uninstall on a network error.
-				expect(await ctx.manager.findDelistedPlugins()).toEqual([]);
+				expect((await ctx.manager.findDelistedPlugins()).delisted).toEqual([]);
 			});
 
 			it("does not report an installed plugin whose marketplace is gone", async () => {
@@ -1330,7 +1354,7 @@ describe("MarketplaceManager", () => {
 				reg.marketplaces.length = 0;
 				fs.writeFileSync(regPath, JSON.stringify(reg, null, 2));
 
-				expect(await ctx.manager.findDelistedPlugins()).toEqual([]);
+				expect((await ctx.manager.findDelistedPlugins()).delisted).toEqual([]);
 			});
 		});
 

@@ -89,6 +89,42 @@ describe("parseMarketplaceCatalog", () => {
 		expect(catalog.plugins[0].name).toBe("hello-plugin");
 	});
 
+	// A per-entry `strict` flag is declared on MarketplacePluginEntry and read by
+	// nothing. These pin what actually happens today, so turning it on is a visible
+	// change rather than a silent one.
+	describe("strict and nested config", () => {
+		function catalogWith(extra: Record<string, unknown>): string {
+			return JSON.stringify({
+				name: "test-marketplace",
+				owner: { name: "Test Author", email: "test@example.com" },
+				metadata: { description: "A test marketplace" },
+				plugins: [{ name: "hello-plugin", source: "./plugins/hello-plugin", ...extra }],
+			});
+		}
+
+		it("accepts a nested config key that is not a real field", () => {
+			// A typo in an author's marketplace.json is indistinguishable from a
+			// valid key, and the plugin installs with a config nothing reads.
+			const catalog = parseMarketplaceCatalog(catalogWith({ hooks: { onToolCall: "x" } }), "/fake/marketplace.json");
+			expect(catalog.plugins).toHaveLength(1);
+			expect(catalog.plugins[0]?.hooks).toEqual({ onToolCall: "x" });
+		});
+
+		it("accepts strict: true without it changing anything", () => {
+			const lenient = parseMarketplaceCatalog(
+				catalogWith({ hooks: { totallyMadeUpKey: 1 } }),
+				"/fake/marketplace.json",
+			);
+			const strict = parseMarketplaceCatalog(
+				catalogWith({ strict: true, hooks: { totallyMadeUpKey: 1 } }),
+				"/fake/marketplace.json",
+			);
+			// Same entry, same keys. The flag is carried and ignored.
+			expect(strict.plugins[0]?.hooks).toEqual(lenient.plugins[0]?.hooks);
+			expect(strict.plugins[0]?.strict).toBe(true);
+		});
+	});
+
 	it("parses a catalog whose name has uppercase letters (#10827)", () => {
 		const catalog = parseMarketplaceCatalog(
 			JSON.stringify({

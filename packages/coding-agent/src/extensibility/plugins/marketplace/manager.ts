@@ -822,9 +822,14 @@ export class MarketplaceManager {
 	 * upgrade is an offer, a delisting is a fact, and conflating them would make
 	 * every caller act on both.
 	 */
-	async findDelistedPlugins(): Promise<Array<{ pluginId: string; scope: "user" | "project" }>> {
+	async findDelistedPlugins(): Promise<{
+		delisted: Array<{ pluginId: string; scope: "user" | "project" }>;
+		/** Listed, but the catalog entry carries no version — a broken catalog, not a withdrawal. */
+		unversioned: Array<{ pluginId: string; scope: "user" | "project" }>;
+	}> {
 		const mktReg = await readMarketplacesRegistry(this.#opts.marketplacesRegistryPath);
 		const delisted: Array<{ pluginId: string; scope: "user" | "project" }> = [];
+		const unversioned: Array<{ pluginId: string; scope: "user" | "project" }> = [];
 
 		const registryEntries: Array<["user" | "project", string | undefined]> = [
 			["user", this.#opts.installedRegistryPath],
@@ -844,21 +849,34 @@ export class MarketplaceManager {
 				const mktEntry = mktReg.marketplaces.find(m => m.name === parsed.marketplace);
 				if (!mktEntry) continue;
 
-				// A catalog we cannot read proves nothing about listing. Only a
-				// catalog we DID read and which lacks the plugin is a delisting —
-				// conflating the two would uninstall on a network error.
-				let listed: boolean;
+				// A catalog we cannot read proves nothing. Only a catalog we DID read
+				// tells us anything, and it separates two states that
+				// `checkForUpdates` collapses into one `continue`:
+				//
+				//  - the plugin is gone from the catalog: delisted, and it will never
+				//    be updated again;
+				//  - the plugin is listed but its entry carries no `version`, which
+				//    is optional. That is a broken catalog, not a withdrawal, and it
+				//    is the quieter of the two: the plugin looks current, so nothing
+				//    tells the user it is pinned to a build no one will revise.
+				//
+				// Reporting only the first leaves the second invisible.
+				let entry: { version?: string } | undefined;
 				try {
 					const catalog = await this.#readCatalog(mktEntry);
-					listed = catalog.plugins.some(p => p.name === parsed.name);
+					entry = catalog.plugins.find(p => p.name === parsed.name);
 				} catch {
 					continue;
 				}
-				if (!listed) delisted.push({ pluginId, scope });
+				if (!entry) {
+					delisted.push({ pluginId, scope });
+				} else if (entry.version === undefined) {
+					unversioned.push({ pluginId, scope });
+				}
 			}
 		}
 
-		return delisted;
+		return { delisted, unversioned };
 	}
 
 	// Re-install a specific plugin at the latest catalog version (force-overwrites).

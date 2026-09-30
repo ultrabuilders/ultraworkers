@@ -40,11 +40,23 @@ async function runMarketplaceAutoUpdate(options: MarketplaceAutoUpdateOptions): 
 		// update: `checkForUpdates` skips a plugin the catalog no longer lists, so
 		// "will never update again" and "up to date" looked the same. An early
 		// return on an empty update list would then swallow it.
-		const delisted = await mgr.findDelistedPlugins();
+		const { delisted, unversioned } = await mgr.findDelistedPlugins();
 		if (delisted.length > 0) {
+			// Wording matters here. The common reason a publisher pulls a plugin is a
+			// security problem, and "will not be updated again" reads like a footnote
+			// on that. Say what the user is actually left running, and that the
+			// reason is not something we know.
 			const names = delisted.map(d => `${d.pluginId} (${d.scope})`).join(", ");
 			logger.warn(
-				`${delisted.length} marketplace plugin(s) are no longer listed by their marketplace and will not be updated: ${names}`,
+				`SECURITY: ${delisted.length} installed plugin(s) were removed from their marketplace and will receive no further updates, including security fixes. You are still running the last published build. The reason for removal is not published, so assume the worst: ${names}`,
+			);
+		}
+		if (unversioned.length > 0) {
+			// Not a withdrawal — a broken catalog. The plugin looks current, which is
+			// what makes this the quieter of the two.
+			const names = unversioned.map(d => `${d.pluginId} (${d.scope})`).join(", ");
+			logger.warn(
+				`${unversioned.length} installed plugin(s) are listed without a version, so the marketplace cannot offer them an update: ${names}`,
 			);
 		}
 

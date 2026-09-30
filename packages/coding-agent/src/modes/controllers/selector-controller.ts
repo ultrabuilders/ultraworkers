@@ -94,6 +94,7 @@ import { AgentHubOverlayComponent } from "@oh-my-pi/pi-tui/overlays/agent-hub";
 import { createAgentHubRuntime } from "../agent-hub-runtime";
 import { AgentsHubComponent } from "@oh-my-pi/pi-tui/overlays/agents-hub";
 import { CopySelectorComponent } from "@oh-my-pi/pi-tui/overlays/copy-selector";
+import { TranscriptSearchOverlay } from "@oh-my-pi/pi-tui/overlays/transcript-search";
 import { ExtensionDashboard } from "@oh-my-pi/pi-tui/overlays/extensions/extension-dashboard";
 import { listLiveToolRecords, liveToolRecordFromSession } from "@oh-my-pi/pi-tui/overlays/extensions/live-tool-session";
 import { createExtensionDashboardRuntime } from "../components/extensions/dashboard-runtime";
@@ -1270,6 +1271,58 @@ export class SelectorController {
 			fullscreen: true,
 		});
 		this.ctx.ui.setFocus(selector);
+		this.ctx.ui.requestRender();
+	}
+
+	/**
+	 * Open fullscreen search over the whole branch.
+	 *
+	 * Shaped after {@link showCopySelector}: same entry source, same mount options,
+	 * same focus-then-render. The transcript is rebuilt from the FULL branch rather
+	 * than a recent tail, because a search that cannot see the rest of the session
+	 * cannot find what the user is looking for.
+	 */
+	showTranscriptSearch(): void {
+		const entries = this.ctx.sessionManager.getBranch().filter(isTranscriptEntry);
+		if (entries.length === 0) {
+			this.ctx.showStatus("Nothing to search yet.");
+			return;
+		}
+
+		let overlay: TranscriptSearchOverlay | undefined;
+		const done = () => {
+			overlayHandle?.hide();
+			overlay?.dispose();
+			overlay = undefined;
+			this.focusActiveEditorArea();
+			this.ctx.ui.requestRender();
+		};
+		const overlayHandle = this.ctx.ui.showOverlay(
+			(overlay = new TranscriptSearchOverlay({
+				entries,
+				builder: {
+					ui: this.ctx.ui,
+					getTool: name => this.ctx.session.getToolByName(name),
+					isBuiltInTool: name => this.ctx.session.hasBuiltInTool(name),
+					getMessageRenderer: type => this.ctx.session.extensionRunner?.getMessageRenderer(type),
+					cwd: this.ctx.sessionManager.getCwd(),
+					hideThinkingBlock: () => this.ctx.effectiveHideThinkingBlock,
+					proseOnlyThinking: () => this.ctx.proseOnlyThinking,
+					linkTargets: getAssistantMessageLinkTargets(this.ctx),
+					requestRender: () => this.ctx.ui.requestRender(),
+				},
+				getHeight: () => this.ctx.ui.terminal.rows,
+				onClose: done,
+			})),
+			{
+				anchor: "bottom-center",
+				width: "100%",
+				maxHeight: "100%",
+				margin: 0,
+				fullscreen: true,
+			},
+		);
+		this.ctx.ui.setFocus(overlay);
 		this.ctx.ui.requestRender();
 	}
 

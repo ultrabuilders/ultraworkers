@@ -373,6 +373,15 @@ export class InputController {
 					this.ctx.showHistorySearch();
 					return { consume: true };
 				}
+				if (this.ctx.keybindings.matches(data, "app.transcript.search")) {
+					// No `instanceof` self-guard, unlike history search above: that one
+					// exists because showHistorySearch swaps the editor slot rather than
+					// mounting an overlay. This mounts through showOverlay, so
+					// hasOverlay() already covers the case where it is already open.
+					if (this.ctx.ui.hasOverlay()) return undefined;
+					this.ctx.showTranscriptSearch();
+					return { consume: true };
+				}
 				if (this.ctx.keybindings.matches(data, "app.editor.external")) {
 					if (this.ctx.ui.hasOverlay()) return undefined;
 					const focused = this.ctx.ui.getFocused();

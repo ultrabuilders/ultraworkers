@@ -7600,6 +7600,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#selectorController.showHistorySearch();
 	}
 
+	showTranscriptSearch(): void {
+		this.#selectorController.showTranscriptSearch();
+	}
+
 	showExtensionsDashboard(): void {
 		void this.#selectorController.showExtensionsDashboard();
 	}

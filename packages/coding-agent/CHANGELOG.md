@@ -11,6 +11,8 @@
 
 ### Added
 
+- `Ctrl+Shift+F` searches the rendered transcript and steps through matches
+
 - Documented the extension trust model: extensions are trusted in-process code with no capability
   gate, project-scoped ones arrive with the repository while plugins resolve to a registry install
   path outside it, and `ctx.isProjectTrusted()` currently always returns `true`. The open question of

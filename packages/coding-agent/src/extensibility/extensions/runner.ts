@@ -488,6 +488,31 @@ export const TOP_LEVEL_AGENT: ExtensionAgentIdentity = Object.freeze({
 	depth: 0,
 });
 
+/**
+ * Empty every registration bucket on an extension.
+ *
+ * A single place, because "every bucket" is exactly the kind of list that rots:
+ * a new registration added to `Extension` but not here would keep serving after
+ * an unload, which is the failure unload exists to prevent. Deliberately does NOT
+ * clear `registeredProviders` — the record of what was registered is what makes a
+ * re-load or a resume able to restore it.
+ */
+function clearExtensionBuckets(extension: Extension): void {
+	extension.handlers.clear();
+	extension.tools.clear();
+	extension.assistantThinkingRenderers.length = 0;
+	extension.fileWriteFallbackHandlers.length = 0;
+	extension.fileDeleteFallbackHandlers.length = 0;
+	extension.messageRenderers.clear();
+	extension.composerShapes.clear();
+	extension.commands.clear();
+	extension.flags.clear();
+	extension.shortcuts.clear();
+	extension.outputFormats.clear();
+	extension.toolNameResolvers.length = 0;
+	extension.toolRegistrationListeners?.clear();
+}
+
 export class ExtensionRunner {
 	#uiContext: ExtensionUIContext;
 	#mode: ExtensionMode = "print";
@@ -1078,7 +1103,7 @@ export class ExtensionRunner {
 				this.#suspendedExtensions.add(extension);
 				suspended.push(extension);
 			} else {
-				this.#suspendedExtensions.delete(extension);
+				if (extension) this.#suspendedExtensions.delete(extension);
 				resumed.push(extension);
 			}
 		}
@@ -1087,6 +1112,52 @@ export class ExtensionRunner {
 			this.extensions.splice(0, this.extensions.length, ...active);
 		}
 		return { suspended, resumed };
+	}
+
+	/**
+	 * Remove one extension from the registry and release everything it owned.
+	 *
+	 * Distinct from suspend, which only toggles visibility. Suspend leaves the
+	 * extension loaded so resume is cheap; unload means the extension is gone, so
+	 * every per-extension registration it made must go with it.
+	 *
+	 * Returns false for an unknown path, so unloading twice is a no-op rather than
+	 * a throw — a caller racing a disable toggle should not have to guard.
+	 */
+	unloadExtension(extensionPath: string): boolean {
+		// Captured BEFORE the splice: after removal there is nothing to read.
+		const index = this.extensions.findIndex(ext => ext.path === extensionPath);
+		const extension = index >= 0 ? this.extensions[index] : undefined;
+		if (!extension) {
+			// `#loadOrder` can still hold a path that is no longer in `extensions`.
+			if (!this.#loadOrder?.some(ext => ext.path === extensionPath)) return false;
+		}
+
+		if (index >= 0) this.extensions.splice(index, 1);
+		// `#loadOrder` must lose it too: `getLoadedExtensions()` reads `#loadOrder`
+		// first, so leaving it there means a re-initialize reinstalls trampolines for
+		// an extension that no longer exists.
+		if (this.#loadOrder) {
+			const loadIndex = this.#loadOrder.findIndex(ext => ext.path === extensionPath);
+			if (loadIndex >= 0) this.#loadOrder.splice(loadIndex, 1);
+		}
+		this.#suspendedExtensions.delete(extension as Extension);
+
+		// Its own trampolines only — a neighbour's stay installed.
+		this.disposeFileFallbacksFor(extensionPath);
+		this.#managedTimers.clearFor(extension as Extension);
+
+		if (extension) {
+			for (const { name } of extension.registeredProviders) {
+				// Ownership check: `registerProvider` hands a claimed name to the later
+				// source, so a stale record here would unregister the NEW owner's
+				// provider — the wrong extension's models vanishing with no error.
+				if (this.modelRegistry.providerSource(name) !== extension.path) continue;
+				this.modelRegistry.unregisterProvider(name);
+			}
+			clearExtensionBuckets(extension);
+		}
+		return true;
 	}
 
 	/** Get all registered tools from all extensions. */

@@ -92,3 +92,49 @@ describe("file fallback disposer buckets", () => {
 		await fs.rm(dir, { recursive: true, force: true });
 	});
 });
+
+describe("unloadExtension", () => {
+	it("removes the extension from the registry and from the load order", async () => {
+		const { dir, runner, loaded } = await harness();
+		try {
+			runner.initialize(ACTIONS, {} as never, undefined, undefined, "rpc");
+			const path = loaded.extensions[0]!.path;
+			expect(runner.isExtensionActive(path)).toBe(true);
+
+			expect(runner.unloadExtension(path)).toBe(true);
+
+			expect(runner.isExtensionActive(path)).toBe(false);
+			// `#loadOrder` must lose it too: `getLoadedExtensions()` reads that first,
+			// so leaving it would reinstall trampolines on the next initialize().
+			expect(runner.getLoadedExtensions().map(e => e.path)).not.toContain(path);
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("is a no-op for an unknown path, so a double unload does not throw", async () => {
+		const { dir, runner, loaded } = await harness();
+		try {
+			runner.initialize(ACTIONS, {} as never, undefined, undefined, "rpc");
+			const path = loaded.extensions[0]!.path;
+			expect(runner.unloadExtension(path)).toBe(true);
+			// A caller racing a disable toggle must not have to guard.
+			expect(runner.unloadExtension(path)).toBe(false);
+			expect(runner.unloadExtension("/ext/never-loaded.ts")).toBe(false);
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves the surviving extension's fallback installed", async () => {
+		const { dir, runner, loaded } = await harness();
+		try {
+			runner.initialize(ACTIONS, {} as never, undefined, undefined, "rpc");
+			runner.unloadExtension(loaded.extensions[0]!.path);
+			expect(hasFileWriteFallback()).toBe(true);
+		} finally {
+			runner.disposeFileFallbacks();
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+});

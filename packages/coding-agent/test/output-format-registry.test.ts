@@ -47,7 +47,7 @@ describe("exportSessionToHtml format selection", () => {
 		const out = await tmpFile("s.html");
 		const path = await exportSessionToHtml(sm, undefined, { outputPath: out });
 		const html = await readFile(path, "utf8");
-		expect(html).toContain("<!doctype html>");
+		expect(html).toContain("<!DOCTYPE html>");
 		expect(path.endsWith(".html")).toBe(true);
 	});
 
@@ -63,7 +63,7 @@ describe("exportSessionToHtml format selection", () => {
 			formatId: "not-registered",
 			formats: new Map(),
 		});
-		expect(await readFile(path, "utf8")).toContain("<!doctype html>");
+		expect(await readFile(path, "utf8")).toContain("<!DOCTYPE html>");
 	});
 
 	it("uses a registered format and derives the extension from its id", async () => {

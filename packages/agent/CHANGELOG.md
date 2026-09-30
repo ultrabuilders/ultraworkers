@@ -19,7 +19,8 @@
 - `derivationInvariant` on the agent and agent loop: asserts on every provider request that the messages
   sent are reproducible from the message history, so a transform, converter or provider normalization
   that stops being a pure function of its input fails at the call site instead of silently sending a
-  history the session does not hold. Off in production, on by default under `bun test`
+  history the session does not hold. On by default under `bun test` for pipelines with no
+  `transformContext`, and off in production; set it explicitly for a pipeline whose transform is pure
 
 ### Changed
 

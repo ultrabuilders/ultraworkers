@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { isAbsolute } from "node:path";
 import { ManagedTimers, UNOWNED_TIMERS } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/managed-timers";
 import type { Extension } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
 
@@ -63,5 +64,15 @@ describe("ManagedTimers ownership", () => {
 	it("reports nothing to clear for an extension that scheduled nothing", () => {
 		const timers = new ManagedTimers(() => {});
 		expect(timers.clearFor(extension("/ext/never-seen"))).toBe(0);
+	});
+
+	it("keeps the sentinel unmatchable by any real path", () => {
+		// An invariant, not a behaviour: the sentinel is only safe while no
+		// extension can carry its path. Paths are absolute file paths and a NUL byte
+		// cannot appear in one, so it can never collide. Changing the sentinel to a
+		// real path leaves every behavioural test green while destroying exactly the
+		// property that makes it safe — so assert the property.
+		expect(UNOWNED_TIMERS.path.includes("\0")).toBe(true);
+		expect(isAbsolute(UNOWNED_TIMERS.path)).toBe(false);
 	});
 });

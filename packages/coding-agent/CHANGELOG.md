@@ -18,9 +18,12 @@
 - `Ctrl+Shift+F` searches the rendered transcript and steps through matches
 
 - Documented the extension trust model: extensions are trusted in-process code with no capability
-  gate, project-scoped ones arrive with the repository while plugins resolve to a registry install
-  path outside it, and `ctx.isProjectTrusted()` currently always returns `true`. The open question of
-  what it should mean is written up in `docs/extension-trust-model.md`
+  gate, project-scoped ones load unconditionally — from `.omp/extensions` inside the repository and
+  from plugin registry `installPath` values outside it, where a project entry shadows the user's own
+  entry for the same plugin ID — and `ctx.isProjectTrusted()` always returns `true` by design, as a
+  compatibility shim. `ctx.exec` is deliberately outside the gate, on the reasoning that a loaded
+  extension is already trusted. The decision, its scope, and its revisit triggers are written up in
+  `docs/extension-trust-model.md`
 
 ### Fixed
 

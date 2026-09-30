@@ -41,15 +41,20 @@ Extensions are trusted code. An extension is a TypeScript module evaluated
 in-process, not a sandboxed format, so it can reach anything the agent can reach.
 Reviewing what you install is the control — there is no capability gate.
 
-Project-scoped extensions are discovered under `<cwd>/.omp`, so they arrive with
-the repository. Plugins resolve to their registry `installPath` instead, which
-need not be inside the workspace.
+Project-scoped extensions load unconditionally. They are discovered under
+`<cwd>/.omp`, so they arrive with the repository — but plugins resolve to a
+registry `installPath` instead, which need not be inside the workspace, and a
+project entry takes precedence over your own entry for the same plugin ID.
 
-`ctx.isProjectTrusted()` exists and currently always returns `true`. Do not branch
-on it: the branch cannot be exercised, so the safe path is never taken.
+`ctx.isProjectTrusted()` always returns `true`, by design: it is a compatibility
+shim for extensions authored against upstream Pi, not an unfinished check. Do not
+branch on it — the branch cannot be exercised, so the safe path is never taken.
+For the same reason `ctx.exec` is deliberately outside any gate: an extension
+that has loaded is treated as trusted.
 
-The open question — what that call should mean — is written up, with the
-measurements behind it, in [extension-trust-model.md](./extension-trust-model.md).
+That posture is a recorded decision with a named owner and a revisit date, not an
+accident. The decision, what it explicitly does not assert, and the triggers that
+reopen it are in [extension-trust-model.md](./extension-trust-model.md).
 
 ## Runtime model
 

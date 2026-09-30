@@ -222,6 +222,22 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 
 	/**
+	 * Assert, on every provider request, that the messages being sent are
+	 * reproducible from `context.messages` through this same pipeline.
+	 *
+	 * Defaults to ON under `bun test` and OFF otherwise, so the production path
+	 * is byte-for-byte unchanged while every agent test still exercises it. This
+	 * is how a divergence gets *noticed* rather than discovered later as a
+	 * mysteriously cold provider cache: any transform, converter or provider
+	 * normalization that stops being a pure function of its input throws at the
+	 * call site instead of quietly sending something the history does not
+	 * account for. Set it explicitly to override either default.
+	 *
+	 * @see {@link assertDerivable}
+	 */
+	derivationInvariant?: boolean;
+
+	/**
 	 * Optional transform applied to the context before `convertToLlm`.
 	 *
 	 * Use this for operations that work at the AgentMessage level:

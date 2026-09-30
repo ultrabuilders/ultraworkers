@@ -51,8 +51,16 @@ import {
 	recoverHarmonyToolCall,
 	signalListLabel,
 } from "@oh-my-pi/pi-ai/utils/harmony-leak";
-import { cloneJsonTree, logger, normalizeErrorMessage, sanitizeText, structuredCloneJSON } from "@oh-my-pi/pi-utils";
+import {
+	cloneJsonTree,
+	isBunTestRuntime,
+	logger,
+	normalizeErrorMessage,
+	sanitizeText,
+	structuredCloneJSON,
+} from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
+import { assertDerivable } from "./derivation-invariant";
 import { LiveSteeringChannel } from "./live-steering";
 import { agentPauseGate } from "./pause";
 import { type AgentRunCoverage, type AgentRunSummary, ToolCallBlockedError } from "./run-collector";
@@ -1797,7 +1805,7 @@ async function emitHarmonyAudit(
 	);
 }
 
-interface PreparedProviderCall {
+export interface PreparedProviderCall {
 	model: Model;
 	context: Context;
 	promptToolWireTools: Context["tools"];
@@ -1868,13 +1876,25 @@ function openLiveSteering(
 	});
 }
 
-async function prepareProviderCall(
+export async function prepareProviderCall(
 	context: AgentContext,
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 ): Promise<PreparedProviderCall> {
 	const model = config.getModel?.() ?? config.model;
 	let messages = context.messages;
+	// Snapshot the PRE-transform context. `transformContext` may return the very
+	// array it was handed, so `messages` below stops being the source; the
+	// derivation check needs the source to re-derive FROM, and comparing a value
+	// against a re-derivation of itself is circular — it agrees by construction.
+	//
+	// Default ON under test, off in production. An invariant nothing turns on is a
+	// gate that can never fire, and the "0 desyncs" measurement behind option A
+	// only means something if it is re-checked rather than remembered — so every
+	// agent test now carries it, and the claim "this has never caught anything"
+	// becomes falsifiable on each run instead of a one-off number.
+	const derivationEnabled = config.derivationInvariant ?? isBunTestRuntime();
+	const derivationSource = derivationEnabled ? messages.slice() : undefined;
 	if (config.transformContext) {
 		messages = await config.transformContext(messages, signal);
 	}
@@ -1903,6 +1923,26 @@ async function prepareProviderCall(
 	}
 	if (config.transformProviderContext) {
 		llmContext = await config.transformProviderContext(llmContext, model);
+	}
+
+	// Off in production by default, on under test. It lives here rather than at a
+	// dispatch site because BOTH callers reach this function — the
+	// speculative-stream path pre-builds the call and passes it in, so a check at
+	// the dispatch site would be skipped by exactly the path most likely to hold
+	// a stale derivation. The comparison runs on the post-convert messages
+	// actually handed to the provider, and re-derives them through the loop's own
+	// pipeline rather than a reimplementation of it.
+	if (derivationEnabled) {
+		// Re-run the WHOLE pipeline from the pre-transform context, and compare its
+		// output to what was just sent. Re-deriving from an already-transformed
+		// value would run the second half of a drifting pipeline twice and can
+		// agree by accident — which is the failure this exists to catch, not to
+		// reproduce.
+		const source = derivationSource as readonly AgentMessage[];
+		const expected = await config.convertToLlm(
+			config.transformContext ? await config.transformContext(source, signal) : source,
+		);
+		assertDerivable(normalizedMessages, source, () => expected);
 	}
 
 	let promptToolWireTools: Context["tools"];

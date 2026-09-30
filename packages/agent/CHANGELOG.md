@@ -16,6 +16,10 @@
   second telemetry backend is an adapter rather than an edit of every call site
 - Emergency compaction floors: a session that holds too much heap, serialized context, images, messages, or
   transcript on disk now compacts even when it is under its token threshold
+- `derivationInvariant` on the agent and agent loop: asserts on every provider request that the messages
+  sent are reproducible from the message history, so a transform, converter or provider normalization
+  that stops being a pure function of its input fails at the call site instead of silently sending a
+  history the session does not hold. Off in production, on by default under `bun test`
 
 ### Changed
 

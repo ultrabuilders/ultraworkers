@@ -291,6 +291,14 @@ export interface AgentOptions {
 	 * the loop's {@link AgentLoopConfig.abortOnFabricatedToolResult}.
 	 */
 	abortOnFabricatedToolResult?: boolean;
+	/**
+	 * Assert, on every provider request, that the messages sent are reproducible
+	 * from the agent's own message history. Defaults to ON under `bun test` and OFF
+	 * otherwise; the production path is unchanged when it is off. Leave unset to
+	 * take that default, or set it to override. Forwarded to the loop's
+	 * {@link AgentLoopConfig.derivationInvariant}.
+	 */
+	derivationInvariant?: boolean;
 	/** Dynamic tool-choice directive (hard {@link ToolChoice} or {@link SoftToolRequirement}), resolved once per turn. */
 	getToolChoice?: () => ToolChoiceDirective | undefined;
 	/** Reject a deferred hard choice when its named tool is no longer active. */
@@ -473,6 +481,7 @@ export class Agent {
 	#dialect?: Dialect;
 	#dialectResolver?: (model: Model) => Dialect | undefined;
 	#abortOnFabricatedToolResult?: boolean;
+	#derivationInvariant?: boolean;
 	#getToolChoice?: () => ToolChoiceDirective | undefined;
 	#onToolChoiceUnavailable?: () => void;
 	#softToolRequirementState: NonNullable<AgentLoopConfig["softToolRequirementState"]> = { escalations: 0 };
@@ -575,6 +584,7 @@ export class Agent {
 		this.#dialect = opts.dialect;
 		this.#dialectResolver = opts.dialectResolver;
 		this.#abortOnFabricatedToolResult = opts.abortOnFabricatedToolResult;
+		this.#derivationInvariant = opts.derivationInvariant;
 		this.#getToolChoice = opts.getToolChoice;
 		this.#onToolChoiceUnavailable = opts.onToolChoiceUnavailable;
 		this.#onAssistantMessageEvent = opts.onAssistantMessageEvent;
@@ -1813,6 +1823,7 @@ export class Agent {
 			dialect: this.#dialect,
 			getDialect: this.#dialectResolver,
 			abortOnFabricatedToolResult: this.#abortOnFabricatedToolResult,
+			derivationInvariant: this.#derivationInvariant,
 			appendOnlyContext: this.#appendOnlyContext,
 			beforeToolCall: this.beforeToolCall ? (ctx, signal) => this.beforeToolCall?.(ctx, signal) : undefined,
 			afterToolCall: this.afterToolCall ? (ctx, signal) => this.afterToolCall?.(ctx, signal) : undefined,

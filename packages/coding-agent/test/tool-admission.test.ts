@@ -25,12 +25,18 @@ import {
 
 let settings: Settings;
 
-beforeAll(async () => {
-	// Real settings, not a stub: every rule reads its gate through the config
-	// registry, which memoises against the instance's revision. A `{}` stand-in
-	// makes every rule throw before it can answer — which reads as "the table is
-	// broken" rather than "the harness is".
-	settings = await Settings.loadIsolated();
+beforeAll(() => {
+	// `isolated()`, NOT `loadIsolated()`: the latter reads the real user config, so
+	// every case below would answer "is this laptop configured for it" while its
+	// comments claim to answer "does an unset session see it". A case whose stated
+	// question and actual question differ is wrong regardless of the verdict — the
+	// readWrite pairs all held here only because this machine happens to have
+	// autolearn and a memory backend on.
+	//
+	// A `{}` stand-in is not an option either: every rule reads its gate through the
+	// config registry, which throws before it can answer, and that reads as "the
+	// table is broken" rather than "the harness is".
+	settings = Settings.isolated();
 });
 
 const contextWith = (

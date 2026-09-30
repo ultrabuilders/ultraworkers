@@ -46,6 +46,58 @@ export async function sealSerialized(key: CryptoKey, frame: string): Promise<Uin
 	return out;
 }
 
+/**
+ * Non-optional fields per {@link CollabFrame} variant, checked at the decode boundary.
+ *
+ * Required-field, NOT exact-shape: a peer that predates this build may add fields
+ * we do not know yet, and a stricter check would reject it. The `Record<CollabFrame["t"], …>`
+ * annotation is the exhaustiveness mechanism — adding a variant to `CollabFrame` without a
+ * row here is a compile error, while an unknown tag at runtime still falls through.
+ */
+const FRAME_REQUIRED_FIELDS: Record<CollabFrame["t"], readonly string[]> = {
+	hello: ["proto", "name"],
+	prompt: ["text"],
+	"ui-response": ["reqId"],
+	abort: [],
+	"agent-cmd": ["cmd", "agentId"],
+	"fetch-transcript": ["reqId", "agentId", "fromByte"],
+	welcome: ["proto", "header", "state", "agents", "entryCount"],
+	"snapshot-chunk": ["entries", "final"],
+	entry: ["entry"],
+	event: ["event"],
+	state: ["state"],
+	bus: ["channel", "data"],
+	agents: ["agents"],
+	"ui-request": ["request"],
+	"ui-request-end": ["reqId"],
+	transcript: ["reqId", "text", "newSize"],
+	bye: ["reason"],
+	error: ["message"],
+};
+
+/** Widened view so an unrecognised tag can be looked up without a cast at the call site. */
+const FRAME_REQUIRED_LOOKUP: Readonly<Record<string, readonly string[] | undefined>> = FRAME_REQUIRED_FIELDS;
+
+function assertCollabFrame(value: unknown): CollabFrame {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error("collab frame is not a JSON object");
+	}
+	const tag = (value as { t?: unknown }).t;
+	if (typeof tag !== "string") {
+		throw new Error(`collab frame has no string "t" discriminator (got ${typeof tag})`);
+	}
+	const required = FRAME_REQUIRED_LOOKUP[tag];
+	// Tolerant default: a variant this build has never heard of passes through untouched,
+	// matching the documented house style in packages/wire/src/index.ts:9-12.
+	if (!required) return value as CollabFrame;
+	for (const field of required) {
+		if (!(field in value)) {
+			throw new Error(`collab frame "${tag}" is missing required field "${field}"`);
+		}
+	}
+	return value as CollabFrame;
+}
+
 /** Inverse of {@link seal}. Throws on auth failure or malformed input. */
 export async function open(key: CryptoKey, data: Uint8Array): Promise<CollabFrame> {
 	if (data.byteLength <= IV_LENGTH) {
@@ -54,7 +106,7 @@ export async function open(key: CryptoKey, data: Uint8Array): Promise<CollabFram
 	const iv = asStrict(data.subarray(0, IV_LENGTH));
 	const ciphertext = asStrict(data.subarray(IV_LENGTH));
 	const plaintext = new Uint8Array(await crypto.subtle.decrypt({ name: AES_ALGORITHM, iv }, key, ciphertext));
-	return JSON.parse(TEXT_DECODER.decode(plaintext)) as CollabFrame;
+	return assertCollabFrame(JSON.parse(TEXT_DECODER.decode(plaintext)));
 }
 
 function asStrict(bytes: Uint8Array): Uint8Array<ArrayBuffer> {

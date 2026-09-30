@@ -5,6 +5,7 @@ import {
 	importRoomKey,
 	open,
 	seal,
+	sealSerialized,
 } from "@oh-my-pi/pi-coding-agent/collab/crypto";
 import {
 	type CollabFrame,
@@ -37,6 +38,57 @@ describe("collab crypto", () => {
 		const sealed = await seal(await importRoomKey(generateRoomKey()), { t: "abort" });
 		const otherKey = await importRoomKey(generateRoomKey());
 		expect(open(otherKey, sealed)).rejects.toThrow();
+	});
+});
+
+describe("collab frame decode guard", () => {
+	// `open()` used to cast the decoded JSON straight to `CollabFrame`, so a frame
+	// missing a field its handler reads reached the handler as if it were whole. The
+	// consumer difference is a crash or a silent wrong answer inside the collab
+	// handler, with the malformed payload already past the boundary that should have
+	// stopped it.
+	// One key for the whole block: `importRoomKey` is async and handing its promise
+	// to `sealSerialized` would fail at the SubtleCrypto boundary, not here.
+	let keyPromise: Promise<CryptoKey> | undefined;
+	const key = async (): Promise<CryptoKey> => (keyPromise ??= importRoomKey(generateRoomKey()));
+
+	it("rejects a payload that is not a JSON object", async () => {
+		for (const payload of [null, 42, "a string", [1, 2, 3]]) {
+			const sealed = await sealSerialized(await key(), JSON.stringify(payload));
+			await expect(open(await key(), sealed)).rejects.toThrow(/not a JSON object/);
+		}
+	});
+
+	it("rejects a frame with no string discriminator", async () => {
+		const sealed = await sealSerialized(await key(), JSON.stringify({ text: "no tag here" }));
+		await expect(open(await key(), sealed)).rejects.toThrow(/no string "t" discriminator/);
+	});
+
+	it("rejects a known variant that is missing a required field", async () => {
+		// `agent-cmd` without `agentId` reads its own field further down the handler,
+		// so this is the shape that produced a crash past the boundary.
+		const sealed = await sealSerialized(await key(), JSON.stringify({ t: "agent-cmd", cmd: "ls" }));
+		await expect(open(await key(), sealed)).rejects.toThrow(/missing required field "agentId"/);
+	});
+
+	it("accepts a complete known variant", async () => {
+		const sealed = await sealSerialized(await key(), JSON.stringify({ t: "bye", reason: "done" }));
+		await expect(open(await key(), sealed)).resolves.toEqual({ t: "bye", reason: "done" });
+	});
+
+	it("passes an unknown tag through rather than rejecting it", async () => {
+		// Forward compatibility is deliberate: a newer peer may send a variant this
+		// build has never heard of, and rejecting it would break the session over a
+		// field it does not even know how to read.
+		const future = { t: "variant-from-the-future", payload: { anything: true } };
+		const sealed = await sealSerialized(await key(), JSON.stringify(future));
+		// Asserted on the discriminator rather than deep-equality: the point is that
+		// the unknown variant comes back out intact, not that it satisfies the
+		// `CollabFrame` union — which by definition it does not.
+		const opened = await open(await key(), sealed);
+		// `String()` because `t` is typed as the literal union of KNOWN tags, so an
+		// unknown one cannot be spelled as a literal at the call site.
+		expect(String(opened.t)).toBe("variant-from-the-future");
 	});
 });
 

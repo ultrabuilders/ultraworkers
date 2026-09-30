@@ -37,11 +37,24 @@ describe("viewportRows / viewportColumns", () => {
 		expect(columns).toBeGreaterThan(0);
 	});
 
-	it("ignores a zero size rather than collapsing the pane", () => {
-		// A surface can report 0 before the first resize lands. `||` and `??` differ
-		// exactly here, and `??` would return 0 and produce a zero-height pane.
-		expect(viewportRows(withSize(100, 0))).toBeGreaterThan(0);
-		expect(viewportColumns(withSize(0, 40))).toBeGreaterThan(0);
+	it("treats a reported zero as a measurement, not a missing value", () => {
+		// A surface can report 0 before the first resize lands, and a caller that
+		// deliberately asks for a collapsed pane must get one. Using `||` here would
+		// make "no height" and "height 0" the same answer, which silently gave a
+		// collapsed rail a full-height one.
+		expect(viewportRows(withSize(100, 0))).toBe(0);
+		expect(viewportColumns(withSize(0, 40))).toBe(0);
+	});
+
+	it("honours a caller-supplied fallback", () => {
+		// The two fallbacks were never interchangeable — a transcript overlay
+		// needs room for chrome plus its three-row minimum, a PTY pane does not —
+		// so collapsing them to one constant changed what those overlays draw, and
+		// nothing failed until a rewind-selector test caught it.
+		expect(viewportRows(withNothing(), 40)).toBeGreaterThanOrEqual(24);
+		expect(viewportRows(withNothing(), 40)).toBe(viewportRows(withNothing(), 40));
+		// A reported size still wins over whatever fallback was passed.
+		expect(viewportRows(withSize(100, 33), 40)).toBe(33);
 	});
 });
 

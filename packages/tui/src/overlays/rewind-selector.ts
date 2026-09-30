@@ -175,7 +175,9 @@ export class RewindSelectorComponent implements Component {
 		this.#builder = this.#replay(tail);
 		this.#selected = Math.max(0, this.#targets.length - 1);
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => viewportRows(this.deps.ui),
+			// 40, not the shared 24: a transcript overlay needs room for chrome plus its
+			// three-row minimum, and 24 clipped the rail.
+			getHeight: () => viewportRows(this.deps.ui, 40),
 			frame: context => this.#frame(context.contentWidth),
 		});
 	}

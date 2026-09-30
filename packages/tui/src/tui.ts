@@ -855,14 +855,34 @@ const MIN_PANE_ROWS = 5;
  * policy is testable once instead of nine times. Tolerates a surface with no
  * live viewport, which is the case in a static render and in a fake.
  */
-export function viewportRows(surface: { viewportSize?: { rows: number } }): number {
-	// `process.stdout.rows` is 0 on a non-tty, hence the last resort.
-	return surface.viewportSize?.rows || process.stdout.rows || DEFAULT_VIEWPORT_ROWS;
+/**
+ * Rows available to lay out.
+ *
+ * Every overlay needs this, and they disagreed: the transcript overlays fell back
+ * to 40 rows while the PTY panes fell back to 24. One function, one policy.
+ *
+ * The fallback is a parameter, not a constant, because the two were never
+ * interchangeable: a transcript overlay renders chrome plus a three-row minimum,
+ * and 24 clipped it. Collapsing them to one number changed what those overlays
+ * draw, silently, with nothing failing until a test caught it.
+ *
+ * A reported `0` is a measurement, not a missing value: a caller asking for a
+ * zero-height window gets one. Only `undefined` means "not reported", and only
+ * `process.stdout.rows` needs a floor, because it is 0 on a non-tty.
+ */
+export function viewportRows(surface: { viewportSize?: { rows: number } }, fallback = DEFAULT_VIEWPORT_ROWS): number {
+	const reported = surface.viewportSize?.rows;
+	if (reported !== undefined) return reported;
+	const tty = process.stdout.rows;
+	return tty > 0 ? tty : fallback;
 }
 
 /** Columns available to lay out. See {@link viewportRows} for why one function. */
 export function viewportColumns(surface: { viewportSize?: { columns: number } }): number {
-	return surface.viewportSize?.columns || process.stdout.columns || DEFAULT_VIEWPORT_COLUMNS;
+	const reported = surface.viewportSize?.columns;
+	if (reported !== undefined) return reported;
+	const tty = process.stdout.columns;
+	return tty > 0 ? tty : DEFAULT_VIEWPORT_COLUMNS;
 }
 
 /** Terminal inset kept free on each side of a full-bleed pane. */

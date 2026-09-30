@@ -1237,13 +1237,19 @@ export class ExtensionRunner {
 					trackRegistration(Promise.reject(error));
 				}
 			};
-			extension.toolRegistrationListeners ??= new Set();
+			// No `??=` fallback: the bucket is required on `Extension` and seeded by
+			// `createExtension`, so re-creating it here would mask the exact rename the
+			// compiler is supposed to catch at the clear site.
 			extension.toolRegistrationListeners.add(wrapped);
 			subscriptions.push({ extension, listener: wrapped });
 		}
 		return () => {
 			for (const subscription of subscriptions) {
-				subscription.extension.toolRegistrationListeners?.delete(subscription.listener);
+				// `subscriptions` holds a live reference to the extension, and the
+				// bucket is required, so this is a Set whether or not the extension was
+				// unloaded since. The `?.` implied a half-torn-down extension that the
+				// type no longer permits.
+				subscription.extension.toolRegistrationListeners.delete(subscription.listener);
 			}
 		};
 	}

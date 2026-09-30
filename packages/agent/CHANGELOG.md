@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Span failure details are now bounded before they are exported: a depth and byte budget, and only
+  allowlisted fields. A payload carrying a key outside the allowlist is refused rather than exported
+  in part. Exceptions are still recorded through the standard path
+
 ### Added
 
 - Emergency compaction floors: a session that holds too much heap, serialized context, images, messages, or

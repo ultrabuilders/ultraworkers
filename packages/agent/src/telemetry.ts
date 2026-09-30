@@ -23,6 +23,7 @@
  * cheap pass-throughs.
  */
 
+import { boundedSerialize } from "./bounded-serialize";
 import {
 	type Api,
 	type AssistantMessage,
@@ -1188,6 +1189,28 @@ export async function finishChatSpan(
  * span-end side effects and pushes a failed `ChatRecord` to the collector so
  * the run summary still reflects the failed step.
  */
+/**
+ * The status message is retained telemetry, so it is bounded before it is set.
+ *
+ * A span status message travels further than a log line: it is exported, retained,
+ * and read later by someone who was not present. An Error message can carry a
+ * whole request body, so it gets a byte budget — and no exception may be thrown
+ * from the path that exists to instrument the code.
+ */
+const STATUS_MESSAGE_MAX_BYTES = 2048;
+
+function boundedStatusMessage(message: string): string {
+	const result = boundedSerialize(
+		{ message },
+		{ maxDepth: 1, maxBytes: STATUS_MESSAGE_MAX_BYTES, allowlist: ["message"] },
+	);
+	// `ok: false` cannot happen for a single allowlisted key, but a helper that
+	// silently trusted that would be one refactor away from exporting a raw string.
+	if (!result.ok) return "[error message withheld: unexpected shape]";
+	const bounded = (result.value as { message?: unknown }).message;
+	return typeof bounded === "string" ? bounded : String(message);
+}
+
 export function failChatSpan(
 	telemetry: AgentTelemetry | undefined,
 	span: Span | undefined,
@@ -1202,12 +1225,16 @@ export function failChatSpan(
 	applyGatewayAttributes(span, options.responseHeaders, options.baseUrl);
 	const err = options.errorObject;
 	if (err instanceof Error) {
+		// Kept, deliberately: `recordException` is the standard OTel path and the
+		// primary way to debug a failing span. What it does NOT do is bound what it
+		// carries — an Error can hold a whole request body — so it is bounded below
+		// rather than removed.
 		span.recordException(err);
 		span.setAttribute(GenAIAttr.ErrorType, options.errorType ?? err.name ?? "Error");
-		span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+		span.setStatus({ code: SpanStatusCode.ERROR, message: boundedStatusMessage(String(err)) });
 	} else {
 		span.setAttribute(GenAIAttr.ErrorType, options.errorType ?? "Error");
-		span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+		span.setStatus({ code: SpanStatusCode.ERROR, message: boundedStatusMessage(String(err)) });
 	}
 	telemetry?.collector.failChat(span, {
 		errorType: options.errorType ?? (err instanceof Error ? err.name || "Error" : "Error"),

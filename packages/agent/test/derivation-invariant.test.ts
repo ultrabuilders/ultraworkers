@@ -196,4 +196,47 @@ describe("the wired path", () => {
 		const prepared = await prepareProviderCall(context, config, undefined);
 		expect(prepared.context.messages).toHaveLength(2);
 	});
+
+	test("a pipeline with a transformContext is not auto-checked, so extension handlers run once", async () => {
+		// The cost that made the automatic half narrow. `transformContext` is where
+		// extension `context` handlers run — `sdk.ts` wires it to
+		// `extensionRunner.emitContext` — so re-deriving would execute arbitrary
+		// extension code a second time per request, and the check would perturb the
+		// very pipeline it is measuring. `coding-agent` always sets one, which is
+		// why an unqualified test-runtime default would have leaked this into
+		// another package's suite.
+		let transformCalls = 0;
+		const context = { messages: [user("hello"), assistant("hi")], systemPrompt: ["sys"] } as never;
+		const config = {
+			model: { id: "m", provider: "anthropic", api: "anthropic-messages" },
+			transformContext: (messages: AgentMessage[]) => {
+				transformCalls++;
+				return messages;
+			},
+			convertToLlm: (messages: AgentMessage[]) => derive(messages),
+		} as never;
+
+		await prepareProviderCall(context, config, undefined);
+		expect(transformCalls).toBe(1);
+	});
+
+	test("a pure transformContext is still checkable when the flag asks for it", async () => {
+		// The half a host opts into on purpose. Narrowing the automatic default
+		// must not make the transform case unreachable, or the one seam this
+		// invariant exists to police could never be tested.
+		let calls = 0;
+		const context = { messages: [user("hello"), assistant("hi")], systemPrompt: ["sys"] } as never;
+		const config = {
+			model: { id: "m", provider: "anthropic", api: "anthropic-messages" },
+			transformContext: (messages: AgentMessage[]) => messages,
+			convertToLlm: (messages: AgentMessage[]) => {
+				calls++;
+				const converted = derive(messages);
+				return calls === 1 ? converted : converted.slice(0, converted.length - 1);
+			},
+			derivationInvariant: true,
+		} as never;
+
+		await expect(prepareProviderCall(context, config, undefined)).rejects.toThrow(/log-reconstruction desync/);
+	});
 });

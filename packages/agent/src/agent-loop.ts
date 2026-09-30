@@ -1893,7 +1893,17 @@ export async function prepareProviderCall(
 	// only means something if it is re-checked rather than remembered — so every
 	// agent test now carries it, and the claim "this has never caught anything"
 	// becomes falsifiable on each run instead of a one-off number.
-	const derivationEnabled = config.derivationInvariant ?? isBunTestRuntime();
+	//
+	// Gated on the ABSENCE of `transformContext`, which is not a technicality.
+	// Re-deriving calls `transformContext` a second time, and that hook is where
+	// extension `context` handlers run (`sdk.ts` wires it to
+	// `extensionRunner.emitContext`) — so checking such a pipeline would execute
+	// arbitrary extension code twice per request and let the check perturb the
+	// thing it measures. With no `transformContext` there is nothing to re-run and
+	// the comparison is pure. A host whose transform is pure can still opt in via
+	// the flag, and `packages/agent` tests do exactly that.
+	const derivationEnabled =
+		config.derivationInvariant ?? (config.transformContext === undefined && isBunTestRuntime());
 	const derivationSource = derivationEnabled ? messages.slice() : undefined;
 	if (config.transformContext) {
 		messages = await config.transformContext(messages, signal);

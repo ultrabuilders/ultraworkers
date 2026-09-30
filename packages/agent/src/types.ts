@@ -225,13 +225,20 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Assert, on every provider request, that the messages being sent are
 	 * reproducible from `context.messages` through this same pipeline.
 	 *
-	 * Defaults to ON under `bun test` and OFF otherwise, so the production path
-	 * is byte-for-byte unchanged while every agent test still exercises it. This
-	 * is how a divergence gets *noticed* rather than discovered later as a
-	 * mysteriously cold provider cache: any transform, converter or provider
-	 * normalization that stops being a pure function of its input throws at the
-	 * call site instead of quietly sending something the history does not
-	 * account for. Set it explicitly to override either default.
+	 * Defaults to ON under `bun test` when the pipeline carries no
+	 * `transformContext`, and OFF otherwise. Production is unaffected either way.
+	 * The automatic half is deliberately narrow: re-deriving calls
+	 * `transformContext` a second time, and that is where extension `context`
+	 * handlers run, so a pipeline that has one cannot be checked without executing
+	 * extension code twice per request. With no `transformContext` the comparison
+	 * is pure, and every agent test gets it for free. Set this explicitly to check
+	 * a pipeline that does have one and is known to be pure.
+	 *
+	 * Either way this is how a divergence gets *noticed* rather than discovered
+	 * later as a mysteriously cold provider cache: any transform, converter or
+	 * provider normalization that stops being a pure function of its input throws
+	 * at the call site instead of quietly sending something the history does not
+	 * account for.
 	 *
 	 * @see {@link assertDerivable}
 	 */

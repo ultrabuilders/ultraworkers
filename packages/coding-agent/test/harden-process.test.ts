@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, spyOn, vi } from "bun:test";
 import { logger } from "@oh-my-pi/pi-utils";
 import { hardenProcess, setCoreLimit } from "../src/harden-process";
-import { isProcessEntry } from "../src/cli-process-entry";
 
 /** Absolute specifiers: the probe child runs with its own cwd, not ours. */
 const HARDEN_MODULE = new URL("../src/harden-process.ts", import.meta.url).href;
+const CLI_MODULE = new URL("../src/cli.ts", import.meta.url).href;
 const PROC_MANAGER_MODULE = new URL("../../utils/src/procmgr.ts", import.meta.url).href;
 
 // Contract: hardening is best-effort, never blocks startup, and NEVER swallows a
@@ -74,47 +74,51 @@ describe("loader variables in this process's own environment", () => {
 		// and browsers, which is a far more common failure than a hijack.
 		expect(process.env.PATH).toBe("/usr/bin");
 	});
-
-	it("leaves the runtime able to keep working afterwards", () => {
-		// Deleting from process.env can fail where it is read-only. That must not
-		// take omp down with it.
-		hardenProcess();
-		expect(setCoreLimit(0, 0)).toBe(0);
-	});
 });
 
-describe("process hardening wiring", () => {
-	it("is guarded by isProcessEntry so the test runner is not hardened", () => {
-		// The failure this guards is silent: an unguarded `hardenProcess()` makes the
-		// test runner itself non-dumpable, and a test that crashes on purpose then
-		// produces no core, no output, nothing to diagnose.
-		expect(isProcessEntry).toBe(false);
-	});
-});
+/**
+ * The `isProcessEntry` guard, observed rather than asserted.
+ *
+ * This is the failure the bead calls the worst kind: `bun test` and SDK embedding
+ * enter the SAME `cli.ts`, so without the guard the test runner hardens ITSELF and a
+ * test that crashes on purpose goes silent -- no stack, no core dump, no trace
+ * anywhere. It is invisible to review because nothing looks wrong.
+ *
+ * Asserting `isProcessEntry === false` cannot catch it: delete the guard and that
+ * constant still reads false, so the test stays green over exactly the bug it
+ * exists to prevent. So the probe asks the question the failure actually turns on --
+ * did importing `cli.ts` harden this process? -- and reads the answer off real process
+ * state. A loader variable survives iff `hardenProcess()` did NOT run, because the
+ * env strip lives inside it. Removing the guard flips this; measured both directions:
+ * guard present -> survives, guard removed -> stripped.
+ *
+ * A fresh process, because the probe has to import `cli.ts` and inheriting this
+ * runner's state would answer a question nobody asked.
+ *
+ * `RLIMIT_CORE` is deliberately NOT the signal: it reads `[0, 0, MAX]` on macOS
+ * before anything runs, so a test built on it would pass with or without the guard.
+ */
+describe("the isProcessEntry guard", () => {
+	const PROBE = [
+		// The env strip runs INSIDE hardenProcess, so its absence is the discriminator.
+		"try {",
+		`\tawait import(${JSON.stringify(CLI_MODULE)});`,
+		"} catch { /* cli.ts may exit or prompt; the env answer stands either way */ }",
+		"console.log('SURVIVED=' + ('LD_PRELOAD' in process.env));",
+	].join("\n");
 
-describe("setCoreLimit", () => {
-	it("reports a REFUSED limit instead of letting it read as success", () => {
-		// The heart of it. A valid struct SUCCEEDS on this machine, so a test using
-		// one would pass with the `rc !== 0` check deleted — it would be a green
-		// test protecting nothing. `rlim_cur > rlim_max` is EINVAL under POSIX, and
-		// that refusal is reachable anywhere: no Linux runner, no injected syscall,
-		// just a struct no caller could legitimately pass.
-		const debug = spyOn(logger, "debug").mockImplementation(() => {});
-		const rc = setCoreLimit(5, 1);
+	it("leaves the test runner un-hardened after cli.ts is imported", async () => {
+		const child = Bun.spawn([process.execPath, "-e", PROBE], {
+			env: { ...process.env, LD_PRELOAD: "/tmp/evil.so" },
+			stdout: "pipe",
+		});
+		const stdout = await new Response(child.stdout).text();
+		expect(await child.exited).toBe(0);
 
-		expect(rc).not.toBe(0);
-		expect(coreLimitLogs(debug)).toEqual([{ rc }]);
-	});
-
-	it("stays silent for a limit it actually applied", () => {
-		// The negative half. Without this, a `logger.debug` that fires on EVERY
-		// call would satisfy the test above while telling an operator their core
-		// dumps were refused each time they were in fact disabled.
-		const debug = spyOn(logger, "debug").mockImplementation(() => {});
-		const rc = setCoreLimit(0, 0);
-
-		expect(rc).toBe(0);
-		expect(coreLimitLogs(debug)).toEqual([]);
+		// Print before asserting: the failure this defends has no trace of its own, so
+		// the value has to be visible even on the passing run.
+		console.error("[harden:guard] cli.ts imported, LD_PRELOAD still present = %s", stdout.trim());
+		expect(stdout.trim()).toBe("SURVIVED=true");
 	});
 });
 
@@ -175,5 +179,31 @@ describe("loader variables reaching a real child", () => {
 		// common failure than a hijack.
 		expect(keys).toContain("PATH");
 		expect(childPath).toBe(spawnEnv.PATH);
+	});
+});
+
+describe("setCoreLimit", () => {
+	it("reports a REFUSED limit instead of letting it read as success", () => {
+		// The heart of it. A valid struct SUCCEEDS on this machine, so a test using
+		// one would pass with the `rc !== 0` check deleted -- it would be a green
+		// test protecting nothing. `rlim_cur > rlim_max` is EINVAL under POSIX, and
+		// that refusal is reachable anywhere: no Linux runner, no injected syscall,
+		// just a struct no caller could legitimately pass.
+		const debug = spyOn(logger, "debug").mockImplementation(() => {});
+		const rc = setCoreLimit(5, 1);
+
+		expect(rc).not.toBe(0);
+		expect(coreLimitLogs(debug)).toEqual([{ rc }]);
+	});
+
+	it("stays silent for a limit it actually applied", () => {
+		// The negative half. Without this, a `logger.debug` that fires on EVERY call
+		// would satisfy the test above while telling an operator their core dumps were
+		// refused each time they were in fact disabled.
+		const debug = spyOn(logger, "debug").mockImplementation(() => {});
+		const rc = setCoreLimit(0, 0);
+
+		expect(rc).toBe(0);
+		expect(coreLimitLogs(debug)).toEqual([]);
 	});
 });

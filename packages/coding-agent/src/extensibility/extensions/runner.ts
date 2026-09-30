@@ -510,7 +510,7 @@ function clearExtensionBuckets(extension: Extension): void {
 	extension.shortcuts.clear();
 	extension.outputFormats.clear();
 	extension.toolNameResolvers.length = 0;
-	extension.toolRegistrationListeners?.clear();
+	extension.toolRegistrationListeners.clear();
 }
 
 export class ExtensionRunner {
@@ -1129,7 +1129,16 @@ export class ExtensionRunner {
 		const index = this.extensions.findIndex(ext => ext.path === extensionPath);
 		const extension = index >= 0 ? this.extensions[index] : undefined;
 		if (!extension) {
-			// `#loadOrder` can still hold a path that is no longer in `extensions`.
+			// Reachable, not hypothetical: `setSuspendedExtensions` splices
+			// `extensions` down to the active set while `#loadOrder` keeps ALL of
+			// them. So a SUSPENDED extension is present in one and absent from the
+			// other, and unloading it lands here.
+			//
+			// `true` is deliberate: the extension IS gone from the registry after
+			// this, which is what the caller asked for. What it cannot do is empty
+			// the buckets or drop providers — the object holding them is not
+			// reachable from `extensions`, so there is nothing to clear. Trampolines
+			// and timers are released by path below and are unaffected.
 			if (!this.#loadOrder?.some(ext => ext.path === extensionPath)) return false;
 		}
 

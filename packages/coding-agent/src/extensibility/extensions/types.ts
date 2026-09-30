@@ -2038,7 +2038,13 @@ export interface Extension {
 	label?: string;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool<any, any>>;
-	toolRegistrationListeners?: Set<ToolRegistrationListener>;
+	/**
+	 * Optional-typed but always created: `createExtension` seeds every bucket, and a
+	 * bucket that "might be missing" is a bucket callers must guard and unload
+	 * silently cannot rely on. Made required so the compiler says so at the one
+	 * place it would matter.
+	 */
+	toolRegistrationListeners: Set<ToolRegistrationListener>;
 	assistantThinkingRenderers: AssistantThinkingRenderer[];
 	fileWriteFallbackHandlers: FileWriteFallbackHandler[];
 	fileDeleteFallbackHandlers: FileDeleteFallbackHandler[];

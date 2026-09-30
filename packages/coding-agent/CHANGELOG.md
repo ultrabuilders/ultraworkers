@@ -154,6 +154,10 @@ doctor` is — so it now says so instead of being sent to the model as a prompt
 
 ### Changed
 
+- Extension load order is now deterministic, so a duplicate tool name resolves to the same
+  extension everywhere; a collision is reported by the new
+  `ExtensionRunner#getToolCollisionDiagnostics()`, which names the shadowed extension and
+  lists every registrant in its message
 - Running `omp "prompt"` without a terminal on stdin (scripts, CI, `</dev/null`) now runs the prompt headless like `-p`; a bare `omp` without a terminal exits 2 with an error instead of exiting silently ([#13623](https://github.com/can1357/oh-my-pi/pull/13623) by [@H4vC](https://github.com/H4vC))
 - Invalid `--thinking`, `--approval-mode`, and `--mode` values are now rejected with a usage error (exit 2) listing the valid values, instead of being silently ignored ([#13623](https://github.com/can1357/oh-my-pi/pull/13623) by [@H4vC](https://github.com/H4vC))
 - The default web search chain is now free-only: Parallel, the session's own model (new `web/hosted`), Exa, Firecrawl, SearXNG, and the credential-free scrapers. Paid engines (Perplexity, Tavily, Brave, Kagi, …) and other providers' chat models run only when you set them on the `web` role or its fallback chain.

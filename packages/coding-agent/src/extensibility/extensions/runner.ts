@@ -79,6 +79,7 @@ import type {
 	CacheWarmingDecisionEventResult,
 	McpNotificationEvent,
 	MessageRenderer,
+	ExtensionRegistrationDiagnostic,
 	RegisteredCommand,
 	RegisteredTool,
 	ResourcesDiscoverEvent,
@@ -552,7 +553,7 @@ export class ExtensionRunner {
 	#reloadHandler: () => Promise<void> = async () => {};
 	#shutdownHandler: ShutdownHandler = () => {};
 	#getMemoryFn?: () => MemoryRuntimeContext | undefined;
-	#commandDiagnostics: Array<{ type: string; message: string; path: string }> = [];
+	#registrationDiagnostics: ExtensionRegistrationDiagnostic[] = [];
 	#toolRegistrationScope = new AsyncLocalStorage<ToolRegistrationScope>();
 	#toolRegistrationBarrier: Promise<void> | undefined;
 	#initialized = false;
@@ -1193,7 +1194,15 @@ export class ExtensionRunner {
 		return tools;
 	}
 
-	/** Get the effective registered tool for a name using normal last-extension-wins precedence. */
+	/**
+	 * Get the effective registered tool for a name.
+	 *
+	 * Precedence: extensions bind in `discoverExtensionPaths` order, which is sorted
+	 * by path, and on a contested tool name the registration from the LAST path wins.
+	 * A shadowed registration stays reachable through
+	 * {@link getAllRegisteredTools}, and the collision is reported by
+	 * {@link getToolCollisionDiagnostics} rather than only happening silently.
+	 */
 	getRegisteredTool(name: string): RegisteredTool | undefined {
 		for (let index = this.extensions.length - 1; index >= 0; index -= 1) {
 			const tool = this.extensions[index]?.tools.get(name);
@@ -1417,14 +1426,19 @@ export class ExtensionRunner {
 	}
 
 	getRegisteredCommands(reserved?: ReadonlySet<string>): RegisteredCommand[] {
-		this.#commandDiagnostics = [];
+		this.#registrationDiagnostics = [];
 
 		const commands = new Map<string, RegisteredCommand>();
 		for (const ext of this.extensions) {
 			for (const command of ext.commands.values()) {
 				if (reserved?.has(command.name)) {
 					const message = `Extension command '${command.name}' from ${ext.path} conflicts with built-in commands. Skipping.`;
-					this.#commandDiagnostics.push({ type: "warning", message, path: ext.path });
+					this.#registrationDiagnostics.push({
+						type: "warning",
+						message,
+						path: ext.path,
+						paths: [ext.path],
+					});
 					if (!this.hasUI()) {
 						logger.warn(message);
 					}
@@ -1434,11 +1448,71 @@ export class ExtensionRunner {
 				commands.set(command.name, command);
 			}
 		}
+
+		// Collected here so the command list and the tool collisions arrive together,
+		// but stored separately: see #collectToolNameCollisions for why the tool side
+		// is recomputed on demand rather than cached in #registrationDiagnostics.
+		this.#registrationDiagnostics.push(...this.#collectToolNameCollisions());
 		return [...commands.values()];
 	}
 
-	getCommandDiagnostics(): Array<{ type: string; message: string; path: string }> {
-		return this.#commandDiagnostics;
+	/**
+	 * Conflicts found while resolving reserved command names.
+	 *
+	 * Populated only once {@link getRegisteredCommands} has run, so it is empty on a
+	 * runner that has never been asked for its commands.
+	 */
+	getCommandDiagnostics(): ExtensionRegistrationDiagnostic[] {
+		return this.#registrationDiagnostics;
+	}
+
+	/**
+	 * Extensions that registered the same tool name, with the shadowed ones named.
+	 *
+	 * Recomputed on every call rather than read from
+	 * {@link #registrationDiagnostics}: those are only populated by
+	 * {@link getRegisteredCommands}, and a collision is worth reporting whether or not
+	 * anybody has asked for the command list.
+	 *
+	 * Reported, never logged. A plugin tree can generate a great many collisions, and
+	 * the reserved-command branch above only logs when `!this.hasUI()`; recording
+	 * them keeps startup quiet while still exposing them to any consumer.
+	 */
+	getToolCollisionDiagnostics(): ExtensionRegistrationDiagnostic[] {
+		return this.#collectToolNameCollisions();
+	}
+
+	/**
+	 * One diagnostic per tool name registered by two or more extensions.
+	 *
+	 * Walks `this.extensions` in load order, so the collected paths are in load order
+	 * and the LAST one is the winner -- the same precedence
+	 * {@link getRegisteredTool} implements by scanning backwards. Map insertion order
+	 * also makes the diagnostic list itself deterministic, given a deterministic load
+	 * order (see `discoverExtensionPaths`).
+	 */
+	#collectToolNameCollisions(): ExtensionRegistrationDiagnostic[] {
+		const registrants = new Map<string, string[]>();
+		for (const ext of this.extensions) {
+			for (const name of ext.tools.keys()) {
+				const paths = registrants.get(name);
+				if (paths) paths.push(ext.path);
+				else registrants.set(name, [ext.path]);
+			}
+		}
+
+		const diagnostics: ExtensionRegistrationDiagnostic[] = [];
+		for (const [name, paths] of registrants) {
+			if (paths.length < 2) continue;
+			const winner = paths[paths.length - 1]!;
+			diagnostics.push({
+				type: "warning",
+				message: `Tool '${name}' registered by ${paths.length} extensions: ${paths.join(", ")}. Using ${winner}.`,
+				path: winner,
+				paths: [...paths],
+			});
+		}
+		return diagnostics;
 	}
 
 	getCommand(name: string): RegisteredCommand | undefined {

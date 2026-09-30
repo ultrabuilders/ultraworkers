@@ -1851,6 +1851,22 @@ export interface RegisteredTool<TParams extends TSchema = TSchema, TDetails = un
 	sourceInfo: SourceInfo;
 }
 
+/** A registration conflict surfaced by the extension runner. */
+export interface ExtensionRegistrationDiagnostic {
+	/** `"warning"` for both current producers; lets a future one be filtered. */
+	type: string;
+	/**
+	 * Human-readable text naming EVERY conflicting side, so a consumer that only
+	 * reads `message` -- a log line, a crash dump -- still sees the full picture
+	 * without having to learn the record shape.
+	 */
+	message: string;
+	/** The winning side under last-extension-wins, or the single side when unconflicted. */
+	path: string;
+	/** Every conflicting side in load order; the last element is the winner. */
+	paths: string[];
+}
+
 /** Internal observer invoked when an already-loaded extension registers or replaces a tool. */
 export type ToolRegistrationListener = (toolName: string) => void;
 

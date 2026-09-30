@@ -775,7 +775,16 @@ async function discoverLinkedExtensionModuleFiles(dir: string): Promise<{
 	indexFiles: Array<{ path: string }>;
 	packageJsonFiles: Array<{ path: string }>;
 }> {
-	const entries = await readDirEntries(dir);
+	// `readDirEntries` hands back the module-level `dirCache` array BY REFERENCE, so
+	// sorting it in place would reorder the cache for every other consumer sharing it
+	// (builtin, cline, gemini, omp-extension-roots, omp-plugins) and for this file's
+	// own three other call sites. Copy first.
+	//
+	// This sort is load-bearing on its own: the `Promise.all` below pushes into the
+	// shared arrays from inside its callbacks, so the result order is I/O-completion
+	// order. A post-sort in `discoverExtensionPaths` cannot repair that, because by
+	// then the ordering information is already lost.
+	const entries = [...(await readDirEntries(dir))].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 	const indexFiles: Array<{ path: string }> = [];
 	const packageJsonFiles: Array<{ path: string }> = [];
 

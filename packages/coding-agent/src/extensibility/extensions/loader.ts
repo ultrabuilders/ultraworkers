@@ -719,6 +719,19 @@ export async function discoverExtensionPaths(
 		addPath(resolved);
 	}
 
+	// Deterministic load order.
+	//
+	// `allPaths` accumulates in discovery order, which is raw-`readdir` order for
+	// ambient/configured scans and I/O-completion order for the linked-module branch
+	// -- both filesystem-dependent. Registration is last-extension-wins (see
+	// ExtensionRunner#getRegisteredTool), so that order IS user-visible behavior:
+	// without this, which extension wins a contested tool name changes from machine
+	// to machine with no signal at all.
+	//
+	// Sorted once, here, after dedup and after all four discovery branches, so every
+	// branch contributes to a single order. Code-unit order, deliberately not
+	// localeCompare: the winner must not depend on the host's locale.
+	allPaths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 	return allPaths;
 }
 

@@ -162,10 +162,18 @@ function schedulePruneStaleProcessLogs(dir: string): void {
 	immediate.unref();
 }
 
-/** Ensure a logs directory exists; return the resolved path. */
+/**
+ * Ensure a logs directory exists; return the resolved path.
+ *
+ * `0o700`, not the default `0o777` masked by umask. A log line can carry a request
+ * header, a resolved URL, or a tool argument, and `~/.omp/logs` sits inside the
+ * user's home directory where every other local account can list it. `recursive`
+ * is kept deliberately: it creates intermediate directories too, and `mode`
+ * applies to every one of them.
+ */
 function ensureDir(dir: string): string {
 	if (!fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true });
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	}
 	return dir;
 }

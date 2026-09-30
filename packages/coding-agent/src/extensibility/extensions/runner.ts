@@ -1025,10 +1025,14 @@ export class ExtensionRunner {
 	}
 
 	hasUI(): boolean {
-		// Read it off the context rather than comparing against a sentinel: a second
-		// sentinel elsewhere would make a reference comparison report the wrong answer
-		// with nothing failing.
-		return this.#uiContext.hasUI;
+		// Both signals, because a host may build a context either way: a literal
+		// that declares `hasUI`, or one derived from the no-op via
+		// `Object.create` and overriding only the methods it cares about. Reading
+		// the field alone reports the second as "no UI" — it inherits `false` from
+		// the prototype it was built on — and the reference check alone reports
+		// the first wrong once a second sentinel exists. The field is authoritative
+		// when it says true, since only a real UI sets it.
+		return this.#uiContext.hasUI || this.#uiContext !== noOpUIContext;
 	}
 
 	getExtensionPaths(): string[] {

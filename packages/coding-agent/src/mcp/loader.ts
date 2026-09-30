@@ -31,7 +31,13 @@ export interface MCPToolsLoadOptions {
 	onStatus?: (event: McpConnectionStatusEvent) => void;
 	/** Initial non-blocking discovery window in milliseconds (environment override wins). */
 	startupTimeoutMs?: number;
-	/** Whether to load project-level config (default: true) */
+	/**
+	 * Whether to load project-level config (default: false).
+	 *
+	 * Off by default because a project-scope mcp.json arrives WITH the repository,
+	 * so honouring it lets a cloned repo start processes and run `!command` env
+	 * values. See `cfgMcpEnableProjectConfig` in `mcp/settings.ts` for the opt-in.
+	 */
 	enableProjectConfig?: boolean;
 	/** Whether to filter out Exa MCP servers (default: true) */
 	filterExa?: boolean;

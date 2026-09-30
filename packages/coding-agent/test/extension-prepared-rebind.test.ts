@@ -54,4 +54,23 @@ describe("prepared extension rebinding", () => {
 		Reflect.deleteProperty(globalThis, counterKey);
 		Reflect.deleteProperty(globalThis, bindingsKey);
 	});
+
+	it("refuses a duplicate extension path instead of loading an ambiguous pair", async () => {
+		// Every path-keyed lookup — what suspend and unload use to decide what
+		// belongs to an extension — becomes ambiguous with two Extensions on one
+		// path, and one extension's teardown would reach another's handlers and
+		// timers. Refusing the second keeps "a path names one extension" true.
+		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "omp-dup-extension-"));
+		temporaryDirectories.push(directory);
+		const extensionPath = path.join(directory, "dup.ts");
+		await Bun.write(extensionPath, "export default function dupExtension() {}\n");
+
+		const loaded = await loadExtensions([extensionPath], directory);
+		const one = loaded.preparedExtensions![0]!;
+		const result = await bindPreparedExtensions([one, one], directory);
+
+		expect(result.extensions).toHaveLength(1);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.error).toContain("Duplicate extension path");
+	});
 });

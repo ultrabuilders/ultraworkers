@@ -537,8 +537,17 @@ export async function bindPreparedExtensions(
 	const errors: Array<{ path: string; error: string }> = [];
 	const resolvedEventBus = eventBus ?? new EventBus();
 	const runtime = new ExtensionRuntime();
+	// Two extensions sharing a path would make every path-keyed lookup ambiguous —
+	// and those lookups are what SUSPEND and UNLOAD use to decide what belongs to
+	// an extension, so one extension's teardown would reach another's handlers,
+	// timers and providers. Refuse the second rather than load an ambiguous pair.
+	const seenPaths = new Set<string>();
 
 	for (const prepared of preparedExtensions) {
+		if (seenPaths.has(prepared.path)) {
+			errors.push({ path: prepared.path, error: "Duplicate extension path: already loaded in this session" });
+			continue;
+		}
 		const { extension, error } = await bindExtension(prepared.path, prepared, cwd, resolvedEventBus, runtime);
 
 		if (error) {
@@ -547,6 +556,7 @@ export async function bindPreparedExtensions(
 		}
 
 		if (extension) {
+			seenPaths.add(extension.path);
 			extensions.push(extension);
 		}
 	}

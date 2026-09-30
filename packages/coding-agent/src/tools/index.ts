@@ -48,6 +48,7 @@ import { AstEditTool } from "./ast-edit";
 import { AstGrepTool } from "./ast-grep";
 import { BashTool } from "./bash";
 import { type BuiltinToolName, type HiddenToolName, normalizeToolNames } from "./builtin-names";
+import { isToolAdmitted, type ToolAdmissionContext } from "./tool-admission";
 import { type CheckpointState, CheckpointTool, type CompletedRewindState, RewindTool } from "./checkpoint";
 import { ContextNotesTool, NewContextTool } from "./context-notes";
 import { DebugTool } from "./debug";
@@ -780,69 +781,20 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 			}
 		}
 	}
-	const isToolAllowed = (name: string) => {
-		// Never in the default set. Explicitly activatable while goal.enabled and
-		// no goal record exists yet — /guided-goal enables it so the agent can
-		// finish the interview with `goal create`, which turns goal mode on. Once
-		// a goal record exists, only an enabled goal keeps the tool: a completed
-		// (exiting) or paused goal must stop advertising it on the next rebuild.
-		if (name === "goal") {
-			if (!goalEnabled || restrictToolNames) return false;
-			const goalState = session.getGoalModeState?.();
-			return goalState === undefined || goalState.enabled === true || goalState.goal.status === "dropped";
-		}
-		if (name === "lsp") return enableLsp && cfgLspEnabled.get(session.settings);
-		if (name === "bash") return cfgBashEnabled.get(session.settings);
-		if (name === "eval") return allowEval;
-		if (name === "debug") return cfgDebugEnabled.get(session.settings);
-		if (name === "ida") return cfgIdaAvailable.get(session.settings);
-		if (name === "todo")
-			return (!includeYield || session.prewalkArmed === true) && cfgTodoEnabled.get(session.settings);
-		if (name === "glob") return cfgGlobEnabled.get(session.settings);
-		if (name === "grep") return cfgGrepEnabled.get(session.settings);
-		if (name === "find") return isFindEnabled(session);
-		if (name === "github") return cfgGithubEnabled.get(session.settings);
-		if (name === "ast_grep") return cfgAstGrepEnabled.get(session.settings);
-		if (name === "ast_edit") return cfgAstEditEnabled.get(session.settings);
-		if (name === "web_search") return cfgWebSearchEnabled.get(session.settings);
-		if (name === "security_scan") return cfgSecurityEnabled.get(session.settings);
-		if (name === "think") return externalThinkingActive;
-		if (name === "ask") return cfgAskEnabled.get(session.settings);
-		if (name === "context_notes" || name === "new_context")
-			return cfgCompactionExperimentalContextManagement.get(session.settings);
-		if (name === "checkpoint" || name === "rewind")
-			return (
-				cfgCheckpointEnabled.get(session.settings) &&
-				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined)
-			);
-		if (name === "wait") {
-			return (
-				cfgAsyncEnabled.get(session.settings) ||
-				(session.enableIrc !== false && isIrcEnabled(session.settings, session.taskDepth ?? 0)) ||
-				cfgLaunchEnabled.get(session.settings)
-			);
-		}
-		if (name === "retain" || name === "recall" || name === "reflect") {
-			return ["hindsight", "mnemopi"].includes(cfgMemoryBackend.get(session.settings));
-		}
-		if (name === "memory_edit") return cfgMemoryBackend.get(session.settings) === "mnemopi";
-		if (name === "manage_skill")
-			return (
-				cfgAutolearnEnabled.get(session.settings) &&
-				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined)
-			);
-		if (name === "learn") {
-			return (
-				cfgAutolearnEnabled.get(session.settings) &&
-				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined) &&
-				["hindsight", "mnemopi", "local"].includes(cfgMemoryBackend.get(session.settings))
-			);
-		}
-		if (name === "task") {
-			return canSpawnAtDepth(cfgTaskMaxRecursionDepth.get(session.settings), session.taskDepth ?? 0);
-		}
-		return true;
+	// One context, one table: admission is a lookup keyed by tool name, not a
+	// chain of `if (name === ...)`. `requestedTools` is held by reference, so the
+	// `yield` auto-include below still reaches the rules that test it for identity.
+	const admissionContext: ToolAdmissionContext = {
+		session,
+		restrictToolNames,
+		requestedTools,
+		includeYield,
+		enableLsp,
+		goalEnabled,
+		externalThinkingActive,
+		allowEval,
 	};
+	const isToolAllowed = (name: string) => isToolAdmitted(name, admissionContext);
 	if (includeYield && requestedTools && !requestedTools.includes("yield")) {
 		requestedTools.push("yield");
 	}

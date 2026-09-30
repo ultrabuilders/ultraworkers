@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { existsSync, writeFileSync } from "node:fs";
+import { logger } from "@oh-my-pi/pi-utils";
 import { closeQuietly, type DatabasePath, openDatabase } from "../../db";
 
 export const ANNOTATION_KINDS = ["mentions", "fact", "occurred_on", "has_source"] as const;
@@ -142,18 +143,32 @@ function migrateRows(db: Database, rows: readonly TripleCandidateRow[]): number 
 	return written;
 }
 
+/**
+ * Default sink for the migration report.
+ *
+ * This is deliberately NOT the terminal. `migrate()` is reached from
+ * `autoMigrateAnnotations()` during `BeamMemory` construction, i.e. while the TUI
+ * owns stdout, so a hard-wired `console.log` default corrupts rendering and cannot
+ * be redirected by the process owner. `logger`'s default transport is file-only
+ * (`~/.omp/logs/omp.YYYY-MM-DD.log`); the console transport is off unless someone
+ * opts in via `setTransports`, which is a process-level decision rather than a
+ * hard-wiring in this library. Callers that want the report on screen pass their
+ * own `logFn`.
+ */
+const defaultLogSink = (line: string): void => logger.info(line);
+
 export function migrate(
 	dbPathOrOptions: DatabasePath | MigrationOptions,
 	dryRun = false,
 	backup = true,
-	logFn: (line: string) => void = console.log,
+	logFn: (line: string) => void = defaultLogSink,
 ): number {
 	const options =
 		typeof dbPathOrOptions === "string" ? { dbPath: dbPathOrOptions, dryRun, backup, logFn } : dbPathOrOptions;
 	const dbPath = options.dbPath;
 	const effectiveDryRun = options.dryRun ?? false;
 	const effectiveBackup = options.backup ?? true;
-	const effectiveLog = options.logFn ?? console.log;
+	const effectiveLog = options.logFn ?? defaultLogSink;
 	if (dbPath === ":memory:" || !existsSync(dbPath)) {
 		effectiveLog(`ERROR: database not found: ${dbPath}`);
 		throw new Error(`database not found: ${dbPath}`);

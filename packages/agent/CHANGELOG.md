@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Telemetry consumer warnings now go to the log file instead of the terminal.
+
 ### Fixed
 
 - Fixed GPT models on Amazon Bedrock's OpenAI routes (bedrock-runtime and bedrock-mantle `/openai/...`) falling back to a local summary instead of OpenAI's native remote compaction; set `remoteCompaction.enabled: false` to opt out ([#13311](https://github.com/can1357/oh-my-pi/pull/13311) by [@mustafaabidali](https://github.com/mustafaabidali)).

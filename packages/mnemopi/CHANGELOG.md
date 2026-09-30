@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidation warnings and the triplestore-split migration report now go to the log file instead of the terminal.
+
 ## [18.4.1] - 2026-09-28
 
 ### Fixed

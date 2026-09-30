@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VeracityConsolidator } from "@oh-my-pi/pi-mnemopi/core/veracity-consolidation";
 import { closeQuietly } from "@oh-my-pi/pi-mnemopi/db";
+import { logger } from "@oh-my-pi/pi-utils";
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -28,7 +29,7 @@ describe("VeracityConsolidator sibling write methods", () => {
 			const conflict = cons.getConflicts()[0];
 			if (conflict === undefined) throw new Error("expected Alice conflict");
 
-			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 			cons.resolveConflict(conflict.id, conflict.fact_a_id);
 			cons.resolveConflict(conflict.id, conflict.fact_b_id);
 			expect(warnSpy).toHaveBeenCalledTimes(1);

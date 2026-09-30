@@ -22,7 +22,7 @@ import {
 	WebSearchRequestResponseSchema,
 } from "@oh-my-pi/pi-catalog/discovery/cursor-proto";
 import { create, toBinary } from "@oh-my-pi/pi-catalog/discovery/protobuf";
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env, logger } from "@oh-my-pi/pi-utils";
 
 const NOT_IMPLEMENTED_SUFFIX = "not implemented by this client";
 
@@ -67,7 +67,7 @@ function log(type: string, subtype?: string, data?: unknown): void {
 	if (!$env.DEBUG_CURSOR) return;
 	const verbose = $env.DEBUG_CURSOR === "2" || $env.DEBUG_CURSOR === "verbose";
 	const dataStr = verbose && data ? ` ${JSON.stringify(data)?.slice(0, 500)}` : "";
-	console.error(`[CURSOR] ${type}${subtype ? `: ${subtype}` : ""}${dataStr}`);
+	logger.error(`[CURSOR] ${type}${subtype ? `: ${subtype}` : ""}${dataStr}`);
 }
 
 function sendInteractionResponse(h2Request: http2.ClientHttp2Stream, queryId: number, result: InteractionResult): void {

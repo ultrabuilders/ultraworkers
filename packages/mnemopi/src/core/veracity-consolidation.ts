@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { logger } from "@oh-my-pi/pi-utils";
 import { type DatabasePath, openDatabase } from "../db";
 
 export const VERACITY_WEIGHTS = Object.freeze({
@@ -139,7 +140,7 @@ export function clampVeracity(raw: unknown, context = "veracity"): Veracity {
 		rawString.length > VERACITY_WARN_VALUE_CAP
 			? `${rawString.slice(0, VERACITY_WARN_VALUE_CAP)}...[truncated]`
 			: rawString;
-	console.warn(`${context} received unknown veracity ${JSON.stringify(rawForLog)}; clamping to 'unknown'`);
+	logger.warn(`${context} received unknown veracity ${JSON.stringify(rawForLog)}; clamping to 'unknown'`);
 	return "unknown";
 }
 export function aggregateVeracity(sourceVeracities: readonly string[] | null | undefined): Veracity {
@@ -333,18 +334,22 @@ export class VeracityConsolidator {
 			const conflict = this.conn.query("SELECT * FROM conflicts WHERE id = ?").get(conflictId) as ConflictRow | null;
 			if (conflict === null) return;
 			if (conflict.resolution !== null) {
-				console.warn(
-					`resolve_conflict: conflict ${conflictId} already resolved (resolution=${JSON.stringify(conflict.resolution)}); ignoring re-resolution attempt with winning_fact_id=${JSON.stringify(winningFactId)}`,
-				);
+				logger.warn("resolve_conflict: conflict already resolved; ignoring re-resolution attempt", {
+					conflictId,
+					resolution: conflict.resolution,
+					winningFactId,
+				});
 				return;
 			}
 			let losingId: string;
 			if (winningFactId === conflict.fact_a_id) losingId = conflict.fact_b_id;
 			else if (winningFactId === conflict.fact_b_id) losingId = conflict.fact_a_id;
 			else {
-				console.warn(
-					`resolve_conflict: winning_fact_id ${JSON.stringify(winningFactId)} matches neither fact_a_id ${JSON.stringify(conflict.fact_a_id)} nor fact_b_id ${JSON.stringify(conflict.fact_b_id)}; declining to resolve`,
-				);
+				logger.warn("resolve_conflict: winning_fact_id matches neither fact_a_id nor fact_b_id; declining", {
+					winningFactId,
+					factAId: conflict.fact_a_id,
+					factBId: conflict.fact_b_id,
+				});
 				return;
 			}
 			const now = nowIso();

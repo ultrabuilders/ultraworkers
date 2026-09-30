@@ -403,7 +403,7 @@ function log(type: string, subtype?: string, data?: unknown): void {
 	const entry: CursorLogEntry = { ts: Date.now(), type, subtype, data: normalizedData };
 	const verbose = $env.DEBUG_CURSOR === "2" || $env.DEBUG_CURSOR === "verbose";
 	const dataStr = verbose && normalizedData ? ` ${JSON.stringify(normalizedData, debugReplacer)?.slice(0, 500)}` : "";
-	console.error(`[CURSOR] ${type}${subtype ? `: ${subtype}` : ""}${dataStr}`);
+	logger.error(`[CURSOR] ${type}${subtype ? `: ${subtype}` : ""}${dataStr}`);
 	void appendCursorDebugLog(entry);
 }
 

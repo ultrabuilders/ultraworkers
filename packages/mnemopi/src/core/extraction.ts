@@ -1,3 +1,4 @@
+import { logger } from "@oh-my-pi/pi-utils";
 import { getDiagnostics, safeForLog } from "./extraction/diagnostics";
 import { callHostLlm, getHostLlmBackend } from "./llm-backends";
 import {
@@ -404,7 +405,7 @@ export async function extractFactCategories(
 		} catch (exc) {
 			diag.recordFailure("host", exc, "configured_completion_raised");
 			diag.recordCall({ succeeded: false });
-			console.warn(`extractFacts: configured completion raised: ${safeForLog(exc)}`);
+			logger.warn("extractFacts: configured completion raised", { error: safeForLog(exc) });
 			return emptyFactCategories();
 		}
 		return localFallback(prompt, text, diag);
@@ -430,7 +431,7 @@ export async function extractFactCategories(
 		diag.recordAttempt("host");
 		diag.recordFailure("host", exc, "host_adapter_raised");
 		diag.recordCall({ succeeded: false });
-		console.warn(`extractFacts: host LLM adapter raised: ${safeForLog(exc)}`);
+		logger.warn("extractFacts: host LLM adapter raised", { error: safeForLog(exc) });
 		return emptyFactCategories();
 	}
 
@@ -462,7 +463,7 @@ export async function extractFactCategories(
 		diag.recordNoOutput("remote");
 	} catch (exc) {
 		diag.recordFailure("remote", exc, "remote_call_raised");
-		console.warn(`extractFacts: remote LLM raised: ${safeForLog(exc)}`);
+		logger.warn("extractFacts: remote LLM raised", { error: safeForLog(exc) });
 	}
 
 	return localFallback(prompt, text, diag);
@@ -482,7 +483,7 @@ export async function extractFactCategoriesSafe(text: string | null | undefined)
 		const diag = getDiagnostics();
 		diag.recordFailure("wrapper", exc, "outer_wrapper_caught");
 		diag.recordCall({ succeeded: false });
-		console.warn(`extractFactsSafe: extractFacts() raised: ${safeForLog(exc)}`);
+		logger.warn("extractFactsSafe: extractFacts() raised", { error: safeForLog(exc) });
 		return emptyFactCategories();
 	}
 }

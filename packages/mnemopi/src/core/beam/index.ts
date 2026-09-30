@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
+import { logger } from "@oh-my-pi/pi-utils";
 import { ftsWeight, importanceWeight, maxEpisodeChars, proactiveLinkingEnabled, vectorWeight } from "../../config";
 import { closeQuietly, openDatabase } from "../../db";
 import { AnnotationStore } from "../annotations";
@@ -98,8 +99,11 @@ function autoMigrateAnnotations(db: Database, dbPath: string | undefined): void 
 				"SELECT COUNT(*) AS count FROM triples WHERE predicate IN ('mentions', 'fact', 'occurred_on', 'has_source')",
 			)
 			.get() as { count: number };
-		console.warn(
-			`MNEMOPI_AUTO_MIGRATE=0: ${row.count} annotation rows pending; run scripts/migrate_triplestore_split.py manually.`,
+		logger.warn(
+			"MNEMOPI_AUTO_MIGRATE=0: annotation rows pending; run scripts/migrate_triplestore_split.py manually.",
+			{
+				pending: row.count,
+			},
 		);
 		return;
 	}

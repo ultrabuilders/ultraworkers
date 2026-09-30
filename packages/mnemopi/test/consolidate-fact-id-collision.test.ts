@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeFactId, VeracityConsolidator } from "@oh-my-pi/pi-mnemopi/core/veracity-consolidation";
 import { closeQuietly } from "@oh-my-pi/pi-mnemopi/db";
+import { logger } from "@oh-my-pi/pi-utils";
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -134,7 +135,7 @@ describe("consolidate_fact id collision behavior", () => {
 			const conflict = cons.getConflicts()[0];
 			if (conflict === undefined) throw new Error("expected Grace conflict");
 
-			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 			cons.resolveConflict(conflict.id, "cf_definitely_not_in_db_0000000000");
 			expect(warnSpy).toHaveBeenCalledTimes(1);
 			expect(warnSpy.mock.calls[0]?.[0]).toContain("matches neither fact_a_id");

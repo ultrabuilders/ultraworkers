@@ -39,6 +39,7 @@ import {
 	type ToolChoice,
 	type Usage,
 } from "@oh-my-pi/pi-ai";
+import { logger } from "@oh-my-pi/pi-utils";
 import {
 	type Attributes,
 	type AttributeValue,
@@ -401,7 +402,7 @@ export interface AgentTelemetryConfig {
 	 * {@link AgentRunCoverage} value without parsing OTEL spans.
 	 *
 	 * **Non-fatal.** Exceptions thrown from this callback are caught, logged
-	 * via `console.warn`, and swallowed — a misbehaving telemetry consumer can
+	 * via `logger.warn`, and swallowed — a misbehaving telemetry consumer can
 	 * NEVER turn a successful agent run into a failed one.
 	 */
 	readonly onRunEnd?: (summary: AgentRunSummary, coverage: AgentRunCoverage) => void;
@@ -649,14 +650,14 @@ export function recordTelemetryWarning(telemetry: AgentTelemetry | undefined, wa
 function emitTelemetryWarning(telemetry: AgentTelemetry | undefined, warning: AgentTelemetryWarning): void {
 	const hook = telemetry?.config.onTelemetryWarning;
 	if (!hook) {
-		if (warning.error === undefined) console.warn(`[pi-agent] ${warning.message}`);
-		else console.warn(`[pi-agent] ${warning.message}`, warning.error);
+		if (warning.error === undefined) logger.warn(`[pi-agent] ${warning.message}`);
+		else logger.warn(`[pi-agent] ${warning.message}`, { error: warning.error });
 		return;
 	}
 	try {
 		hook(warning);
 	} catch (err) {
-		console.warn("[pi-agent] onTelemetryWarning threw; swallowing:", err);
+		logger.warn("[pi-agent] onTelemetryWarning threw; swallowing", { error: err });
 	}
 }
 
@@ -2077,7 +2078,7 @@ export function finishInvokeAgentSpan(
 
 /**
  * Invoke {@link AgentTelemetryConfig.onRunEnd} on `telemetry` if set. Throws
- * are caught and surfaced via the `onTelemetryWarning` hook (falling back to `console.warn`
+ * are caught and surfaced via the `onTelemetryWarning` hook (falling back to `logger.warn`
  * when no hook is set) — telemetry callbacks NEVER turn a
  * successful agent run into a failed one. Idempotent at the call site via
  * {@link AgentRunCollector.markRunEnded}; callers must check that before

@@ -4,6 +4,7 @@
 		"correctness": "warn"
 	},
 	"rules": {
+		"eslint/no-console": "error",
 		"eslint/prefer-const": "error",
 		"eslint/no-unused-vars": [
 			"warn",
@@ -55,5 +56,54 @@
 		"**/*.mjs",
 		"**/*.cjs",
 		"**/*.d.ts"
+	],
+
+	// The allow-list for `no-console` lives HERE, not in `ignorePatterns`.
+	// `ignorePatterns` switches off every rule on the files it matches — type-safety
+	// and formatting included — so routing exemptions through it would leave the
+	// entrypoint files, the ones people edit most, with no guardrails at all. An
+	// `overrides` entry disables this one rule and leaves the rest standing.
+	//
+	// Each path below must also carry a stated reason in
+	// packages/coding-agent/test/lint-no-console-allowlist.test.ts, so a new
+	// entrypoint cannot become exempt by copying a glob.
+	"overrides": [
+		{
+			"files": [
+				"packages/*/src/cli/**",
+				"packages/*/src/commands/**",
+				"packages/metaharness/src/tb/cli.ts",
+				"packages/stats/src/index.ts"
+			],
+			"rules": { "eslint/no-console": "off" }
+		},
+		{
+			"files": [
+				"**/test/**",
+				"**/bench/**",
+				"**/scripts/**",
+				"**/examples/**",
+				"packages/*/build.ts",
+				"packages/typescript-edit-benchmark/**"
+			],
+			"rules": { "eslint/no-console": "off" }
+		},
+		{
+			"files": [
+				"packages/coding-agent/src/compress/**",
+				"packages/coding-agent/src/config/model-resolver.ts",
+				"packages/coding-agent/src/blob-broker/server.ts",
+				"packages/mnemopi/src/diagnose.ts"
+			],
+			"rules": { "eslint/no-console": "off" }
+		},
+		{
+			"files": ["packages/collab-web/src/**"],
+			"rules": { "eslint/no-console": "off" }
+		},
+		{
+			"files": ["packages/utils/src/logger.ts"],
+			"rules": { "eslint/no-console": "off" }
+		}
 	]
 }

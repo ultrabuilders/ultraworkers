@@ -326,7 +326,6 @@ export class Loader extends Text {
 			this.#startNativeCountdown();
 			return;
 		}
-		const cadence = this.#intervalMs;
 		const intervalMs =
 			this.#intervalMs ?? (this.messageColorFn.animated === true ? RENDER_INTERVAL_MS : SPINNER_ADVANCE_MS);
 		this.#scheduleTick(intervalMs, intervalMs);

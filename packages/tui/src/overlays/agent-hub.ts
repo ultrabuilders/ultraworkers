@@ -23,7 +23,7 @@ import type {
 	TspSpan,
 	TspTreeNode,
 } from "@oh-my-pi/pi-wire";
-import { Container, type ExtensionTUISurface, type OverlayHandle } from "../tui";
+import { Container, type ExtensionTUISurface, type OverlayHandle, viewportRows } from "../tui";
 import { matchesKey } from "../keys";
 import { routeSelectListMouse, routeSgrMouseInput, type SelectListMouseTarget } from "../mouse";
 import { padding, visibleWidth, wrapTextWithAnsi } from "../utils";
@@ -553,7 +553,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 	}
 
 	override render(width: number): readonly string[] {
-		const termHeight = this.#ui.viewportSize?.rows ?? process.stdout.rows ?? 40;
+		const termHeight = viewportRows(this.#ui);
 		const frame = (
 			this.#section === "activity"
 				? this.#renderActivityTable(width, termHeight)

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 // Imported from the package root on purpose: an extension can only reach a
 // seam the barrel exports, and a registry reachable only by deep path is the
 // same dead seam this bead exists to remove.
-import { getBuiltinThemes, getRegisteredThemes, registerTheme, resolveThemeJson } from "@oh-my-pi/pi-tui";
+import { getBuiltinThemes, registerTheme, resolveThemeJson } from "@oh-my-pi/pi-tui";
 import { getAvailableThemes, getAvailableThemesWithPaths } from "@oh-my-pi/pi-tui/theme/loader";
 import { isLightTheme } from "@oh-my-pi/pi-tui/theme/theme";
 
@@ -24,7 +24,9 @@ describe("registerTheme", () => {
 	it("makes a registered theme resolvable", () => {
 		expect(registerTheme("reg-basic", theme("#101010"))).toBe(true);
 		expect(resolveThemeJson("reg-basic")).toBeDefined();
-		expect(getRegisteredThemes().get("reg-basic")).toBeDefined();
+		// Observable, not a Map echoing itself back: the registered theme is the one
+		// `resolveThemeJson` returns, which is the only accessor the loaders use.
+		expect(resolveThemeJson("reg-basic")).toBeDefined();
 	});
 
 	it("refuses a name a built-in already uses, and keeps the built-in", () => {
@@ -52,7 +54,8 @@ describe("registerTheme", () => {
 		// every lookup goes through the same trim-free comparison.
 		expect(registerTheme("", theme("#000"))).toBe(false);
 		expect(registerTheme(" reg-space ", theme("#000"))).toBe(false);
-		expect(getRegisteredThemes().has("")).toBe(false);
+		// The empty name is refused, so nothing can ever resolve under it.
+		expect(resolveThemeJson("")).toBeUndefined();
 	});
 
 	it("resolves an unknown name to undefined", () => {

@@ -12155,17 +12155,22 @@ export class AgentSession implements SettingsScope {
 	}
 
 	async exportToHtml(
-		outputPath?: string,
-		useUserThemes = false,
-		options?: { formatId?: string; formats?: ReadonlyMap<string, OutputFormat> },
+		options: {
+			outputPath?: string;
+			/** Bundle the user's TUI themes rather than the omp web themes. */
+			useUserThemes?: boolean;
+			formatId?: string;
+			formats?: ReadonlyMap<string, OutputFormat>;
+		} = {},
 	): Promise<string> {
+		const { outputPath, useUserThemes = false } = options;
 		// Lazy import: the export module embeds the HTML template and pre-built
 		// tool renderers as text; only `/export` should pay that load.
 		const { exportSessionToHtml } = await import("../export/html");
 		return exportSessionToHtml(this.sessionManager, this.state, {
 			outputPath,
-			formatId: options?.formatId,
-			formats: options?.formats,
+			formatId: options.formatId,
+			formats: options.formats,
 			palette: useUserThemes ? "theme" : "web",
 			themeNames: useUserThemes
 				? {

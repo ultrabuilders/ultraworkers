@@ -28,7 +28,7 @@ import type { AgentHubRegistry, AgentStatus } from "./agent-hub-types";
 import type { SessionMessageEntryLike } from "../chat/transcript-entry";
 import type { ObservableSession, SessionObserverRegistry } from "./session-observer-registry";
 import type { ExtensionTUISurface } from "../tui";
-import type { Component } from "../tui";
+import { type Component, viewportRows } from "../tui";
 import { getEditorTheme, theme } from "../theme/theme";
 import { matchesSelectDown, matchesSelectUp } from "../keybinding-matchers";
 import type { AgentHubRemote } from "./agent-hub";
@@ -203,7 +203,7 @@ export class AgentTranscriptViewer implements Component {
 			requestRender: deps.requestRender,
 		});
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.#deps.ui.viewportSize?.rows ?? process.stdout.rows ?? 40,
+			getHeight: () => viewportRows(this.#deps.ui),
 			frame: context => this.#frame(context),
 			followBottom: true,
 		});

@@ -28,7 +28,25 @@ import { ExtensionUiController } from "@oh-my-pi/pi-coding-agent/modes/controlle
 // symptom is a resource outliving its session. So these assert delivery, not
 // that a function exists.
 
+/**
+ * Constructing a session means a real ExtensionRunner, model registry and
+ * extension load, and the suite needed five. Memoised on the tool definitions, so
+ * the cases that share tools build once and the per-test cost is only for the
+ * ones that genuinely differ.
+ */
+const sessionCache = new Map<string, Promise<AgentSession>>();
+
 async function makeSession(defs: { name: string; onSession?: unknown }[]): Promise<AgentSession> {
+	const key = JSON.stringify(defs.map(d => [d.name, typeof d.onSession === "function" || undefined]));
+	let hit = sessionCache.get(key);
+	if (!hit) {
+		hit = buildSession(defs);
+		sessionCache.set(key, hit);
+	}
+	return hit;
+}
+
+async function buildSession(defs: { name: string; onSession?: unknown }[]): Promise<AgentSession> {
 	const dir = await mkdtemp(join(tmpdir(), "omp-sess-evt-"));
 	const settings = Settings.isolated({
 		"compaction.enabled": false,

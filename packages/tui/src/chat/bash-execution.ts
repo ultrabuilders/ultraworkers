@@ -7,7 +7,7 @@ import { Image } from "../components/image";
 import type { Loader } from "../components/loader";
 import { Text } from "../components/text";
 import { getImageDimensions, imageFallback, ImageProtocol, TERMINAL } from "../terminal-capabilities";
-import { Container, type ExtensionTUISurface } from "../tui";
+import { Container, type ExtensionTUISurface, availableColumns, availableRows } from "../tui";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import type { Terminal as XtermTerminalType } from "@oh-my-pi/pi-utils/vterm";
 import { theme } from "../theme/theme";
@@ -47,8 +47,8 @@ let nextBashExecutionId = 0;
 /** PTY size for `!` commands: the execution frame's inner content area. */
 export function bashPtyViewport(ui: ExtensionTUISurface): { cols: number; rows: number } {
 	return {
-		cols: Math.max(20, (ui.viewportSize?.columns ?? 80) - 2),
-		rows: Math.max(5, (ui.viewportSize?.rows ?? 24) - 4),
+		cols: availableColumns(ui),
+		rows: availableRows(ui),
 	};
 }
 

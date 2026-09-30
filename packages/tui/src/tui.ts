@@ -840,6 +840,46 @@ export interface ExtensionTUISurface extends Container {
 	readonly synchronizedOutput: boolean;
 }
 
+/** Fallback when nothing reports a size: a conventional 80x24 terminal. */
+const DEFAULT_VIEWPORT_COLUMNS = 80;
+const DEFAULT_VIEWPORT_ROWS = 24;
+/** Smallest pane worth rendering, whatever the terminal reports. */
+const MIN_PANE_COLUMNS = 20;
+const MIN_PANE_ROWS = 5;
+
+/**
+ * Rows available to lay out.
+ *
+ * Every overlay needs this, and they disagreed: four of them fell back to 40
+ * and two to 24, with nothing saying why. One function, one policy — and the
+ * policy is testable once instead of nine times. Tolerates a surface with no
+ * live viewport, which is the case in a static render and in a fake.
+ */
+export function viewportRows(surface: { viewportSize?: { rows: number } }): number {
+	// `process.stdout.rows` is 0 on a non-tty, hence the last resort.
+	return surface.viewportSize?.rows || process.stdout.rows || DEFAULT_VIEWPORT_ROWS;
+}
+
+/** Columns available to lay out. See {@link viewportRows} for why one function. */
+export function viewportColumns(surface: { viewportSize?: { columns: number } }): number {
+	return surface.viewportSize?.columns || process.stdout.columns || DEFAULT_VIEWPORT_COLUMNS;
+}
+
+/** Terminal inset kept free on each side of a full-bleed pane. */
+export const PANE_BORDER_COLUMNS = 2;
+/** Terminal inset kept free above and below a full-bleed pane. */
+export const PANE_BORDER_ROWS = 4;
+
+/** Columns a full-bleed pane may occupy inside the given surface. */
+export function availableColumns(surface: { viewportSize?: { columns: number } }): number {
+	return Math.max(MIN_PANE_COLUMNS, viewportColumns(surface) - PANE_BORDER_COLUMNS);
+}
+
+/** Rows a full-bleed pane may occupy inside the given surface. */
+export function availableRows(surface: { viewportSize?: { rows: number } }): number {
+	return Math.max(MIN_PANE_ROWS, viewportRows(surface) - PANE_BORDER_ROWS);
+}
+
 /**
  * TUI - Main class for managing terminal UI with differential rendering
  */

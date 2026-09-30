@@ -57,11 +57,6 @@ export function registerTheme(name: string, theme: ThemeJson): boolean {
 	return true;
 }
 
-/** Themes an extension registered, in registration order. */
-export function getRegisteredThemes(): ReadonlyMap<string, ThemeJson> {
-	return REGISTERED_THEMES;
-}
-
 /**
  * Resolve a theme name to its definition, extension themes included.
  *

@@ -38,6 +38,7 @@ import { expandKeyHint, replaceTabs } from "../render/render-utils";
 import { formatKeyHint } from "../app-keybindings";
 import { editorKey, editorKeys } from "../chrome/keybinding-hints";
 import { highlightCode, type ThemeColor, theme } from "../theme/theme";
+import { viewportRows } from "@oh-my-pi/pi-tui";
 import { commandFromToolCall, extractBlocks, extractLinks } from "./copy-targets";
 import { matchesAppToolsExpand, matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../keybinding-matchers";
 import { ChatTranscriptBuilder } from "../chat/chat-transcript-builder";
@@ -371,7 +372,7 @@ export class CopySelectorComponent implements Component {
 		this.#builder = this.#replay(tail);
 		this.#selected = Math.max(0, this.#targets.length - 1);
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.deps.ui.viewportSize?.rows ?? process.stdout.rows ?? 40,
+			getHeight: () => viewportRows(this.deps.ui),
 			frame: context => this.#frame(context.contentWidth),
 		});
 	}

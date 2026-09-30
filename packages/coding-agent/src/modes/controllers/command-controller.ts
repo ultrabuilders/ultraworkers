@@ -172,7 +172,7 @@ export class CommandController {
 
 			// The viewed session: the focused subagent's transcript (plus its own
 			// subagents) from a focused view, otherwise the main session.
-			const filePath = await this.ctx.viewSession.exportToHtml(outputPath, useUserThemes);
+			const filePath = await this.ctx.viewSession.exportToHtml({ outputPath, useUserThemes });
 			this.ctx.showStatus(`Session exported to: ${filePath}`);
 			this.openInBrowser(filePath);
 		} catch (error: unknown) {
@@ -297,7 +297,7 @@ export class CommandController {
 		if (customShare) {
 			const tmpFile = path.join(os.tmpdir(), `${Snowflake.next()}.html`);
 			try {
-				await this.ctx.session.exportToHtml(tmpFile);
+				await this.ctx.session.exportToHtml({ outputPath: tmpFile });
 				const result = await customShare.fn(tmpFile);
 				if (loader.signal.aborted) return;
 				restoreEditor();

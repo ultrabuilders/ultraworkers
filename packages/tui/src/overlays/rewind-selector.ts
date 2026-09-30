@@ -38,6 +38,7 @@ import {
 	visibleWidth,
 } from "../index";
 import type { MessageRenderer } from "../chat/extension-types";
+import { viewportRows } from "../tui";
 import { recentTranscriptEntries, type TranscriptEntryLike as TranscriptEntry } from "../chat/transcript-entry";
 import { theme } from "../theme/theme";
 import { matchesAppToolsExpand, matchesSelectCancel, matchesSelectDown, matchesSelectUp } from "../keybinding-matchers";
@@ -174,7 +175,7 @@ export class RewindSelectorComponent implements Component {
 		this.#builder = this.#replay(tail);
 		this.#selected = Math.max(0, this.#targets.length - 1);
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => this.deps.ui.viewportSize?.rows ?? process.stdout.rows ?? 40,
+			getHeight: () => viewportRows(this.deps.ui),
 			frame: context => this.#frame(context.contentWidth),
 		});
 	}

@@ -187,7 +187,7 @@ export const BUILTIN_COLLABORATION_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpe
 				if (outputPath === "--copy" || outputPath === "clipboard" || outputPath === "copy") {
 					return usage("Use /dump to copy the session to clipboard.", runtime);
 				}
-				const filePath = await runtime.session.exportToHtml(outputPath, useUserThemes);
+				const filePath = await runtime.session.exportToHtml({ outputPath, useUserThemes });
 				await runtime.output(`Session exported to: ${filePath}`);
 				return commandConsumed();
 			} catch (err) {

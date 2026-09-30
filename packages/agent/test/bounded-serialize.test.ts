@@ -75,6 +75,19 @@ describe("boundedSerialize", () => {
 		expect(() => boundedSerialize(cyclic, OPTS)).not.toThrow();
 		expect(() => boundedSerialize({ name: 10n }, OPTS)).not.toThrow();
 	});
+	it("cuts at the depth budget when every key is ALLOWED", () => {
+		// Without this, every other depth test proves nothing about depth: the
+		// allowlist rejects first, so `maxDepth` is never the thing doing the work.
+		// All keys here are allowlisted, so only depth can trigger the cut.
+		const result = boundedSerialize(
+			{ a: { b: { c: { d: { e: "too deep" } } } } },
+			{ maxDepth: 2, maxBytes: 4096, allowlist: ["a", "b", "c", "d", "e"] },
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.truncated).toBe(true);
+		expect(JSON.stringify(result.value)).toContain("[max depth reached]");
+	});
 });
 
 describe("every recordException exit is bounded", () => {

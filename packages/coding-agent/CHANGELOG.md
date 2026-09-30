@@ -22,6 +22,12 @@
   so every mode that owns stdout as a protocol channel detours stray console output to stderr and keeps
   records in order by the same rule
 
+### Fixed
+
+- Non-ASCII output from a PowerShell shell is no longer mojibake on Windows. Commands spawned through
+  the user's configured shell, and through a client's terminal, now set the console encoding to UTF-8
+  before running. Non-PowerShell shells are unaffected
+
 ### Added
 
 - Extensions building a custom component or a custom editor receive a narrowed TUI surface instead of

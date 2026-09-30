@@ -20,6 +20,7 @@ import { resolveOutputMaxColumns, resolveOutputSinkHeadBytes } from "../tools/ou
 import { getOrCreateSnapshot } from "../utils/shell-snapshot";
 import { TerminalGraphicsDecoder } from "../utils/terminal-graphics";
 import { loadDirenvEnv } from "./direnv";
+import { withPowerShellUtf8Output } from "./powershell-encoding";
 import { buildNonInteractiveEnv } from "./non-interactive-env";
 
 import {
@@ -377,7 +378,11 @@ function quoteShellArg(value: string): string {
 }
 
 function buildUserShellCommand(shell: string, args: string[], command: string): string {
-	return [shell, ...ensureInteractiveShellArgs(shell, args), command].map(quoteShellArg).join(" ");
+	// The guard goes on the command BEFORE quoting, so the quoting wraps the whole
+	// thing as one argument rather than letting PowerShell see the assignment as a
+	// separate statement. Non-PowerShell shells get the command back unchanged.
+	const guarded = withPowerShellUtf8Output(command, shell);
+	return [shell, ...ensureInteractiveShellArgs(shell, args), guarded].map(quoteShellArg).join(" ");
 }
 
 function resolveUserShellConfig(settings: Settings, baseConfig: ShellConfig): ShellConfig {

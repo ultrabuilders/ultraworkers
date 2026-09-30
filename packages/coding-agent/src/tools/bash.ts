@@ -78,6 +78,7 @@ import {
 } from "../exec/settings";
 import { cfgSkillful } from "../session/settings";
 import { cfgWorktreeClone } from "../task/settings";
+import { withPowerShellUtf8Output } from "../exec/powershell-encoding";
 
 const BASH_APPROVAL_SHELL_CONTROL_CHARS: Record<string, true> = {
 	"\n": true,
@@ -164,7 +165,11 @@ export function wrapShellLineForClientTerminal(
 	line: string,
 	shellConfig: { shell: string; args: string[]; prefix?: string | undefined },
 ): { command: string; args: string[] } {
-	const finalLine = shellConfig.prefix ? `${shellConfig.prefix} ${line}` : line;
+	// The client's terminal is spawned as a real PowerShell on Windows hosts, and
+	// without this its output comes back transcoded through a legacy code page.
+	// Applied before `prefix` so the shell init still runs first.
+	const guarded = withPowerShellUtf8Output(line, shellConfig.shell);
+	const finalLine = shellConfig.prefix ? `${shellConfig.prefix} ${guarded}` : guarded;
 	return { command: shellConfig.shell, args: [...shellConfig.args, finalLine] };
 }
 

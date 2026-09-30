@@ -88,15 +88,14 @@ describe("toTelemetrySpan", () => {
 		// `undefined` value, and the contract uses `undefined` to mean "drop this
 		// key". A readonly array is also not a vendor array.
 		const { toTelemetrySpan } = await import("@oh-my-pi/pi-agent-core/telemetry/context");
-		const written: Record<string, unknown> = [];
-		const events: Array<{ name: string; attributes?: unknown }> = [];
+		const written: Record<string, unknown> = {};
 		const statuses: unknown[] = [];
 		const fake = {
 			setAttribute: (k: string, v: unknown) => {
 				written[k] = v;
 			},
 			setAttributes: (a: unknown) => Object.assign(written, a),
-			addEvent: (n: string, a?: unknown) => events.push({ name: n, attributes: a }),
+			addEvent: () => {},
 			recordException: () => {},
 			setStatus: (s: unknown) => statuses.push(s),
 			end: () => {},

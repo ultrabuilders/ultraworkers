@@ -1525,3 +1525,88 @@ describe("applyDirenvPreflight direnv-load clamp", () => {
 		expect(spy.mock.calls[0][1]?.timeoutMs).toBe(30_000);
 	});
 });
+
+/**
+ * The two `sanitizeChildEnv` call sites in `bash-executor.ts`, observed from inside
+ * a real command.
+ *
+ * `applyDirenvPreflight` scrubs the env on TWO branches — the no-direnv path and the
+ * merged-direnv path — and a test that called the helper and inspected its return
+ * value would pass with either branch unwired, because the other one would answer.
+ * Worse, asserting the helper's return value never crosses the part that matters:
+ * the scrub has to survive `buildNonInteractiveEnv` and the embedded shell's spawn
+ * before it is worth anything. So each case below runs an actual command and has
+ * the command read ITS OWN environment, which is the only place the contract is
+ * observable.
+ *
+ * `LD_PRELOAD` is the discriminator because macOS ignores `LD_*` outright, so it
+ * arrives through the environment rather than aborting the child at exec time the
+ * way an inherited `DYLD_INSERT_LIBRARIES` would.
+ *
+ * `loadDirenvEnv` is spied rather than driven by a real `.envrc`: the diff is the
+ * INPUT to the branch under test, and mocking it keeps the case hermetic — no
+ * direnv binary, no `direnv allow`, no HOME redirection. Everything downstream of
+ * the diff is real.
+ */
+describe("executeBash loader-hijack scrub, per call site", () => {
+	let tempDir: string;
+
+	beforeEach(async () => {
+		tempDir = makeTempDir();
+		resetSettingsForTest();
+		await Settings.init({ inMemory: true, cwd: tempDir });
+	});
+
+	afterEach(() => {
+		resetSettingsForTest();
+		vi.restoreAllMocks();
+		if (fs.existsSync(tempDir)) removeSyncWithRetries(tempDir);
+	});
+
+	/**
+	 * `<LD_PRELOAD>|<probe>|<PATH survived>` as the command itself sees it.
+	 * A plain string, not a template: `${…}` is shell expansion here and would
+	 * otherwise be eaten as JS interpolation.
+	 */
+	const PROBE = 'printf \'%s|%s|%s\' "${LD_PRELOAD:-}" "$PI_PROBE" "${PATH:+set}"';
+
+	/**
+	 * A scrub that also ate the rest of the env would be a far more common failure
+	 * than the hijack it prevents: it breaks every LSP server, browser, and package
+	 * manager. So the same assertion that proves the removal proves the filter is
+	 * narrow enough to ship.
+	 */
+	function expectScrubbedAndIntact(result: { output: string }): void {
+		expect(result.output.trim()).toBe("|ok|set");
+	}
+
+	it("removes a caller-supplied loader variable on the no-direnv branch", async () => {
+		// bash-executor.ts:162 — `opts.callerEnv ? sanitizeChildEnv(opts.callerEnv) : undefined`.
+		// The `callerEnv` truthiness guard means this branch only scrubs when the
+		// caller passed an overlay at all, which is exactly the case here.
+		vi.spyOn(direnvModule, "loadDirenvEnv").mockResolvedValue(null);
+
+		const result = await executeBash(PROBE, {
+			cwd: tempDir,
+			timeout: 5000,
+			env: { LD_PRELOAD: "/tmp/evil.so", PI_PROBE: "ok" },
+		});
+
+		expectScrubbedAndIntact(result);
+	});
+
+	it("removes a direnv-supplied loader variable on the merged branch", async () => {
+		// bash-executor.ts:166 — the OTHER call site, on the path a repo with a
+		// `.envrc` takes. Both branches need covering: a repo that has a `.envrc`
+		// never reaches :162, so passing here while :162 rotted would still be the
+		// hijack for exactly the developers who use direnv.
+		vi.spyOn(direnvModule, "loadDirenvEnv").mockResolvedValue({
+			set: { LD_PRELOAD: "/tmp/evil.so", PI_PROBE: "ok" },
+			unset: [],
+		});
+
+		const result = await executeBash(PROBE, { cwd: tempDir, timeout: 5000 });
+
+		expectScrubbedAndIntact(result);
+	});
+});

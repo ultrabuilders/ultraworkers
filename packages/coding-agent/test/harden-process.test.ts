@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, spyOn, vi } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { logger } from "@oh-my-pi/pi-utils";
 import { hardenProcess, setCoreLimit } from "../src/harden-process";
 
@@ -113,6 +116,81 @@ describe("the isProcessEntry guard", () => {
 });
 
 /**
+ * Contract (1): the ORDER, observed rather than asserted.
+ *
+ * The bead asks for the order specifically — "assert thứ tự, không assert 'có gọi
+ * harden'" — and an order is not observable by looking at either endpoint. Reading
+ * `cli.ts` and checking which line comes first is a source grep, which AGENTS.md
+ * bans: it passes while the behaviour is broken and breaks on a harmless reflow.
+ *
+ * So the probe asks the question the ordering actually decides. `hardenProcess()`
+ * strips the loader variables as its first action, and `process.title` is assigned
+ * later in the same module body. Intercepting the `title` SETTER and asking "was
+ * the loader variable already gone at the instant the process was renamed?" answers
+ * it directly: gone means harden ran first, still-present means it ran second.
+ *
+ * `PI_COMPILED` is how the probe gets `isProcessEntry` true without being the real
+ * entry module — it is the marker a `bun build --compile` binary carries, and it is
+ * the same code path the guard above is protecting.
+ *
+ * Measured in both directions: as shipped the loader variable is already stripped
+ * (`false`); moving the `process.title` assignment above the harden call makes it
+ * `true`.
+ *
+ * The setter fires more than once — `setProcessName` assigns again further down —
+ * so only the FIRST invocation is recorded. Recording the last is what made the
+ * first attempt at this probe report `false` under sabotage as well, and look like
+ * it had proven something it had not.
+ */
+describe("harden-before-title ordering", () => {
+	const PROBE = [
+		"const { writeFileSync } = await import('node:fs');",
+		"let recorded = false;",
+		"const d = Object.getOwnPropertyDescriptor(process, 'title');",
+		"Object.defineProperty(process, 'title', {",
+		"  configurable: true,",
+		"  get() { return d.get.call(process); },",
+		"  set() {",
+		// Only the first assignment: `setProcessName` renames the process again
+		// later, and that later rename happens after harden either way, so
+		// recording it would mask a swap of the two statements under test.
+		"    if (recorded) return;",
+		"    recorded = true;",
+		"    writeFileSync(process.env.ORDER_OUT, 'loaderPresentAtFirstTitleAssign=' + ('LD_PRELOAD' in process.env));",
+		// Answered and done: the rest of `cli.ts` is a full CLI startup, and there
+		// is nothing after this line worth waiting for.
+		"    process.exit(0);",
+		"  },",
+		"});",
+		"process.env.LD_PRELOAD = '/tmp/evil.so';",
+		"process.argv = [process.execPath, 'omp', '--version'];",
+		`try { await import(${JSON.stringify(CLI_MODULE)}); } catch { /* the answer is already on disk */ }`,
+	].join("\n");
+
+	it("renames the process only after the loader variables are already gone", async () => {
+		const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "omp-harden-order-")), "order.txt");
+		try {
+			const child = Bun.spawn([process.execPath, "-e", PROBE], {
+				env: { ...process.env, PI_COMPILED: "true", ORDER_OUT: outFile },
+				stdin: "ignore",
+				stdout: "ignore",
+				stderr: "ignore",
+			});
+			expect(await child.exited).toBe(0);
+
+			// Print before asserting: the whole failure mode this defends is a
+			// reordering that still hardens, just later than it should, so the
+			// value has to be legible on the passing run too.
+			const recorded = fs.readFileSync(outFile, "utf8").trim();
+			console.error("[harden:order] at first process.title assign = %s", recorded);
+			expect(recorded).toBe("loaderPresentAtFirstTitleAssign=false");
+		} finally {
+			fs.rmSync(path.dirname(outFile), { recursive: true, force: true });
+		}
+	});
+});
+
+/**
  * The end-to-end contract, and the only one that proves the fix.
  *
  * Everything above observes a function or a constant. This spawns a child whose
@@ -142,7 +220,9 @@ describe("loader variables reaching a real child", () => {
 		// The real spawn env, not a hand-built approximation of it.
 		"const { env } = getShellConfig();",
 		"const child = Bun.spawn([process.execPath, '-e',",
-		JSON.stringify("console.log(JSON.stringify({ keys: Object.keys(process.env).sort(), path: process.env.PATH }))"),
+		JSON.stringify(
+			"console.log(JSON.stringify({ keys: Object.keys(process.env).sort(), path: process.env.PATH, nodePath: process.env.NODE_PATH }))",
+		),
 		"], { env, stdout: 'pipe' });",
 		"process.stdout.write(await new Response(child.stdout).text());",
 	].join("\n");
@@ -151,7 +231,18 @@ describe("loader variables reaching a real child", () => {
 		// `LD_PRELOAD` is inherited for real. macOS ignores `LD_*` outright and Linux's
 		// `ld.so` only warns on a missing object, so unlike `DYLD_*` this one is safe to
 		// arrive through the environment — and does, which is the path being fixed.
-		const spawnEnv: Record<string, string> = { ...process.env, LD_PRELOAD: "/tmp/evil.so" };
+		//
+		// `LD_LIBRARY_PATH` rides along because the blocklist is prefix-based, and a
+		// prefix rule that only ever removed one of the names in its own table would
+		// be indistinguishable from a one-entry list. `NODE_PATH` is the sharper
+		// survivor: it starts with no `LD_`, so it only survives if the filter is
+		// genuinely narrow rather than accidentally narrow.
+		const spawnEnv: Record<string, string> = {
+			...process.env,
+			LD_PRELOAD: "/tmp/evil.so",
+			LD_LIBRARY_PATH: "/tmp/evil-libs",
+			NODE_PATH: "/tmp/node-modules",
+		};
 		const child = Bun.spawn([process.execPath, "-e", PROBE], { env: spawnEnv, stdout: "pipe", stderr: "pipe" });
 		const [stdout, stderr, exitCode] = await Promise.all([
 			new Response(child.stdout).text(),
@@ -161,14 +252,26 @@ describe("loader variables reaching a real child", () => {
 		expect(stderr).toBe("");
 		expect(exitCode).toBe(0);
 
-		const { keys, path: childPath } = JSON.parse(stdout.trim()) as { keys: string[]; path: string };
+		const {
+			keys,
+			path: childPath,
+			nodePath,
+		} = JSON.parse(stdout.trim()) as {
+			keys: string[];
+			path: string;
+			nodePath: string;
+		};
 		expect(keys).not.toContain("LD_PRELOAD");
+		expect(keys).not.toContain("LD_LIBRARY_PATH");
 		expect(keys).not.toContain("DYLD_INSERT_LIBRARIES");
 		// The other direction, and the one that makes the filter safe to ship: a scrub
 		// that also ate `PATH` would break every LSP server and browser, a far more
-		// common failure than a hijack.
+		// common failure than a hijack. Byte-for-byte, not merely present — the bead
+		// asks for the exact value, because a filter that mangled the separator would
+		// pass a presence check and still break every lookup.
 		expect(keys).toContain("PATH");
 		expect(childPath).toBe(spawnEnv.PATH);
+		expect(nodePath).toBe("/tmp/node-modules");
 	});
 });
 

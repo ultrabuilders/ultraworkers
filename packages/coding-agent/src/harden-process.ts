@@ -30,8 +30,12 @@ const PR_SET_DUMPABLE = 4;
 const SIGKILL = 9;
 const RLIMIT_CORE = 4;
 
-/** dlopen takes a library path, not a null handle — the process itself. */
-const LIBC = process.platform === "linux" ? "libc.so.6" : "libc.dylib";
+/**
+ * dlopen takes a library PATH, not the process handle, so the name differs per
+ * platform. `null` where there is no equivalent — not "some name that will fail",
+ * which would make a platform difference look like a broken call.
+ */
+const LIBC = process.platform === "linux" ? "libc.so.6" : process.platform === "darwin" ? "libc.dylib" : null;
 
 type Prctl = (option: number, arg: number) => number;
 
@@ -44,8 +48,9 @@ let cachedPrctl: Prctl | null | undefined;
 function getPrctl(): Prctl | null {
 	if (process.platform !== "linux") return null;
 	if (cachedPrctl !== undefined) return cachedPrctl;
+	// Reachable only on Linux, where LIBC is a string.
 	try {
-		const libc = dlopen(LIBC, {
+		const libc = dlopen(LIBC as string, {
 			prctl: { args: [FFIType.i32, FFIType.u64], returns: FFIType.i32 },
 		});
 		cachedPrctl = libc.symbols.prctl as Prctl;
@@ -77,19 +82,28 @@ export function hardenProcess(): void {
 	const prctl = getPrctl();
 	if (!prctl) return;
 
+	// FFI returns a value; it does NOT throw on a refused call. A try/catch alone
+	// would let EPERM pass silently, which is the difference between a guard that
+	// works and one that only exists. Check the return code.
 	try {
-		prctl(PR_SET_DUMPABLE, 0);
+		const rc = prctl(PR_SET_DUMPABLE, 0);
+		if (rc !== 0) logger.debug("harden-process: prctl(PR_SET_DUMPABLE) refused", { rc });
 	} catch (error) {
-		logger.debug("harden-process: prctl(PR_SET_DUMPABLE) failed", { error: String(error) });
+		logger.debug("harden-process: prctl(PR_SET_DUMPABLE) threw", { error: String(error) });
 	}
 	try {
-		prctl(PR_SET_PDEATHSIG, SIGKILL);
+		// Only effective if the parent was ALIVE when this is set — a signal is not
+		// replayed for a parent that died earlier. So a late `hardenProcess` can
+		// believe it is protected and not be.
+		const rc = prctl(PR_SET_PDEATHSIG, SIGKILL);
+		if (rc !== 0) logger.debug("harden-process: prctl(PR_SET_PDEATHSIG) refused", { rc });
 	} catch (error) {
-		logger.debug("harden-process: prctl(PR_SET_PDEATHSIG) failed", { error: String(error) });
+		logger.debug("harden-process: prctl(PR_SET_PDEATHSIG) threw", { error: String(error) });
 	}
 }
 
 function disableCoreDumps(): void {
+	if (!LIBC) return;
 	const libc = dlopen(LIBC, {
 		setrlimit: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
 	});
@@ -97,7 +111,10 @@ function disableCoreDumps(): void {
 		const buf = new Uint8Array(RLIMIT_STRUCT_BYTES);
 		// Both fields zero: soft and hard limit. Setting only the soft limit lets a
 		// process raise it again; setting both makes the cap un-raisable.
-		libc.symbols.setrlimit(RLIMIT_CORE, ptr(buf));
+		const rc = libc.symbols.setrlimit(RLIMIT_CORE, ptr(buf));
+		// FFI reports refusal as a return value, not an exception. Without this
+		// check a refused call is indistinguishable from a successful one.
+		if (rc !== 0) logger.debug("harden-process: setrlimit(RLIMIT_CORE) refused", { rc });
 	} finally {
 		libc.close();
 	}

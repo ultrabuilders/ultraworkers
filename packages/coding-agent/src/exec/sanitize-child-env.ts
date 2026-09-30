@@ -34,6 +34,17 @@ const BLOCKED = new Set<string>(LOADER_HIJACK_VARS);
  * cannot be the reason a user's LSP server stops starting.
  */
 export function sanitizeChildEnv(env: Record<string, string>): Record<string, string> {
+	let removed = false;
+	for (const key of Object.keys(env)) {
+		if (!BLOCKED.has(key)) continue;
+		removed = true;
+		break;
+	}
+	// The common case has nothing to strip, and returning the ORIGINAL object keeps
+	// identity intact — callers compare `env === callerEnv`, so copying
+	// unconditionally is a behaviour change dressed as a refactor.
+	if (!removed) return env;
+
 	const result: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
 		if (BLOCKED.has(key)) continue;

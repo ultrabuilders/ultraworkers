@@ -48,4 +48,13 @@ describe("sanitizeChildEnv", () => {
 		sanitizeChildEnv(env);
 		expect(env.LD_PRELOAD).toBe("/tmp/evil.so");
 	});
+
+	it("returns the SAME object when nothing needs stripping", () => {
+		// Identity, not just equality: callers compare `env === callerEnv`, so copying
+		// unconditionally would be a behaviour change dressed as a refactor. This is
+		// the contract that broke when the scrub was wired in and the direnv suite
+		// went red.
+		const env = { PATH: "/usr/bin", FOO: "bar" };
+		expect(sanitizeChildEnv(env)).toBe(env);
+	});
 });

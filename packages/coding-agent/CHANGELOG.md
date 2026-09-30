@@ -17,6 +17,11 @@
 
 ### Added
 
+- `omp extensions-triage`: a read-only inventory of every discovered extension with its load
+  state, the policy that blocked it, its provider, and its path. It projects the same
+  `loadAllExtensions` call the Extension Control Center uses, so the two cannot disagree
+  about what is loaded. `--json` emits the same rows
+
 - Documented which extension authoring surface is the canonical one, and which are kept only for
   compatibility: `docs/extension-writing-surfaces.md` now ranks all six surfaces in one table with a
   reviewable status each, so you can tell at a glance whether to write an extension, keep a hook

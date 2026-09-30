@@ -50,6 +50,10 @@ export const compressHelp = {
 
 export const configHelp = { description: "Manage configuration settings" } satisfies CommandMetadata;
 
+export const extensionsTriageHelp = {
+	description: "List every discovered extension with its load state and the reason it is blocked",
+} satisfies CommandMetadata;
+
 export const dryBalanceHelp = {
 	description: "Dry-run OAuth account balancing across random session ids",
 } satisfies CommandMetadata;

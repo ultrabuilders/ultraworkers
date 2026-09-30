@@ -100,6 +100,11 @@ export const commands: CommandEntry[] = [
 		help: commandHelp.configHelp,
 	},
 	{
+		name: "extensions-triage",
+		load: () => import("./commands/extensions-triage").then(m => m.default),
+		help: commandHelp.extensionsTriageHelp,
+	},
+	{
 		name: "dry-balance",
 		load: () => import("./commands/dry-balance").then(m => m.default),
 		help: commandHelp.dryBalanceHelp,

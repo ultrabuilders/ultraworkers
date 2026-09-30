@@ -2547,6 +2547,7 @@ describe("ExtensionRunner", () => {
 					// and it now reads that off the context rather than comparing
 					// against a sentinel.
 					hasUI: true,
+					setWorkingIndicator: () => {},
 					select,
 					confirm: async () => false,
 					input: async () => undefined,

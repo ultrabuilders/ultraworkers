@@ -280,6 +280,16 @@ export interface ExtensionUIContext {
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
+	/**
+	 * Replace the working indicator's spinner frames and cadence. Pass `undefined`
+	 * to restore the product's own.
+	 *
+	 * `setWorkingMessage` made the text configurable and stopped there, so the
+	 * frames — the part a user actually sees moving — were the one thing an
+	 * extension could not reach without rebuilding the animation.
+	 */
+	setWorkingIndicator(indicator?: { frames?: string[]; intervalMs?: number }): void;
+
 	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
 	setWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void;
 

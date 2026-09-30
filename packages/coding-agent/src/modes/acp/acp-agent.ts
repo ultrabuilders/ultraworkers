@@ -582,6 +582,8 @@ export function createAcpExtensionUiContext(
 		onTerminalInput: () => () => {},
 		setStatus: () => {},
 		setWorkingMessage: () => {},
+		// ACP drives its own indicator; this client context does not animate one.
+		setWorkingIndicator: () => {},
 		setWidget: () => {},
 		setFooter: () => {},
 		setHeader: () => {},

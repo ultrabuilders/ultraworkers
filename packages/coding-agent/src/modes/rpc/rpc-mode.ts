@@ -912,6 +912,11 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			// Not supported in RPC mode
 		}
 
+		setWorkingIndicator(_indicator?: { frames?: string[]; intervalMs?: number }): void {
+			// The remote client renders its own indicator, so there is nothing for
+			// this side to animate.
+		}
+
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {

@@ -81,3 +81,39 @@ describe("the resolve failure is detectable", () => {
 		}
 	});
 });
+
+describe("the resolve failure is reachable without editing the doctor", () => {
+	it("reports a registered theme that will not load", async () => {
+		// The finding behind the seam: this branch could only be proven by editing
+		// the module, because `runDoctorChecks` read the live registries with no
+		// way to present a failure. A background run doing exactly that left the
+		// tree broken. With a snapshot the state is presented instead of produced.
+		const { runDoctorChecks } = await import("@oh-my-pi/pi-coding-agent/extensibility/plugins/doctor");
+		const checks = await runDoctorChecks({
+			themes: ["good", "ghost"],
+			resolveTheme: name => (name === "good" ? { bg: {} } : undefined),
+			builtinTools: [],
+		});
+		const err = checks.find(c => c.name === "seam:themes-resolve");
+		expect(err).toBeDefined();
+		expect(err!.status).toBe("error");
+		expect(err!.message).toContain("ghost");
+		expect(err!.message).not.toContain("good,");
+	});
+
+	it("stays silent when every registered theme resolves", async () => {
+		const { runDoctorChecks } = await import("@oh-my-pi/pi-coding-agent/extensibility/plugins/doctor");
+		const checks = await runDoctorChecks({
+			themes: ["a", "b"],
+			resolveTheme: () => ({ bg: {} }),
+			builtinTools: [],
+		});
+		expect(checks.some(c => c.name === "seam:themes-resolve")).toBe(false);
+	});
+
+	it("reports runtime tool registrations from the snapshot", async () => {
+		const { runDoctorChecks } = await import("@oh-my-pi/pi-coding-agent/extensibility/plugins/doctor");
+		const checks = await runDoctorChecks({ themes: [], resolveTheme: () => undefined, builtinTools: ["t1"] });
+		expect(check(checks, "seam:tools").message).toContain("t1");
+	});
+});

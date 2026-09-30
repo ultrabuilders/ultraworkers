@@ -3,29 +3,45 @@ import { theme } from "@oh-my-pi/pi-tui/theme";
 import type { DoctorCheck } from "./types";
 import { allBuiltinToolFactories, BUILTIN_TOOLS, HIDDEN_TOOLS } from "../../tools";
 
-// The theme registry lives in pi-tui and its accessor was removed when the two
-// listing functions stopped going through it. Read the observable path instead:
-// a name is registered when the loader would find it for the theme picker.
-async function getRegisteredThemesForDoctor(): Promise<string[]> {
-	const { getAvailableThemes, getBuiltinThemes } = await import("@oh-my-pi/pi-tui/theme");
-	const builtin = new Set(Object.keys(getBuiltinThemes()));
-	return (await getAvailableThemes()).filter(name => !builtin.has(name));
+/**
+ * What the seam checks read. Defaults to the live registries; a caller may pass a
+ * snapshot so a test can present a broken state without editing this module.
+ *
+ * That the doctor needed this is the finding rather than an inconvenience: a
+ * tool whose job is catching a broken registry cannot itself be checked for a
+ * broken registry, because it read everything live and offered no seam to
+ * present a failure through. Proving the failure branch therefore meant editing
+ * the source — which is how a background run once left the tree broken.
+ */
+export interface DoctorSnapshot {
+	/** Theme names the loader would list, excluding the shipped built-ins. */
+	readonly themes: readonly string[];
+	/** Resolve a theme by name; undefined when it will not load. */
+	resolveTheme(name: string): unknown;
+	/** First-party tool factories registered at runtime, excluding the literals. */
+	readonly builtinTools: readonly string[];
 }
 
-async function resolveThemeJsonForDoctor(name: string): Promise<unknown> {
-	const { resolveThemeJson } = await import("@oh-my-pi/pi-tui/theme");
-	return resolveThemeJson(name);
+async function liveSnapshot(): Promise<DoctorSnapshot> {
+	const { getAvailableThemes, getBuiltinThemes, resolveThemeJson } = await import("@oh-my-pi/pi-tui/theme");
+	// "Shipped with the product" and "active as a builtin" are different
+	// questions, and the second is not the same set. The session's
+	// `LiveToolRecord.source === "builtin"` means ACTIVE: `#builtInToolNames` is
+	// fed by runtime registration (`activateVibeTools`, the reconcile paths), so
+	// it includes tools that were never in the literals. Comparing against
+	// BUILTIN_TOOLS is what makes this a report of registrations rather than a
+	// reprint of the table — but if this ever reuses `source`, it will be wrong.
+	const builtinThemes = new Set(Object.keys(getBuiltinThemes()));
+	const builtinTools = new Set([...Object.keys(BUILTIN_TOOLS), ...Object.keys(HIDDEN_TOOLS)]);
+	return {
+		themes: (await getAvailableThemes()).filter(name => !builtinThemes.has(name)),
+		resolveTheme: name => resolveThemeJson(name),
+		builtinTools: Object.keys(allBuiltinToolFactories()).filter(name => !builtinTools.has(name)),
+	};
 }
 
-function registeredBuiltinToolNames(): string[] {
-	// Anything the combined map holds that neither literal does was registered at
-	// runtime. Comparing against the literals is what makes this a report of
-	// runtime registrations rather than a listing of every built-in.
-	const literals = new Set([...Object.keys(BUILTIN_TOOLS), ...Object.keys(HIDDEN_TOOLS)]);
-	return Object.keys(allBuiltinToolFactories()).filter(name => !literals.has(name));
-}
-
-export async function runDoctorChecks(): Promise<DoctorCheck[]> {
+export async function runDoctorChecks(snapshot?: DoctorSnapshot): Promise<DoctorCheck[]> {
+	const snap = snapshot ?? (await liveSnapshot());
 	const checks: DoctorCheck[] = [];
 
 	// Check external tools
@@ -60,7 +76,7 @@ export async function runDoctorChecks(): Promise<DoctorCheck[]> {
 		});
 	}
 
-	checks.push(...(await checkExtensionSeams()));
+	checks.push(...checkExtensionSeams(snap));
 
 	return checks;
 }
@@ -73,10 +89,10 @@ export async function runDoctorChecks(): Promise<DoctorCheck[]> {
  * that silently never appears. Every check here answers a question a user could
  * otherwise only answer by noticing something missing.
  */
-async function checkExtensionSeams(): Promise<DoctorCheck[]> {
+function checkExtensionSeams(snap: DoctorSnapshot): DoctorCheck[] {
 	const checks: DoctorCheck[] = [];
 
-	const themes = await getRegisteredThemesForDoctor();
+	const themes = [...snap.themes];
 	checks.push({
 		name: "seam:themes",
 		status: "ok",
@@ -86,7 +102,7 @@ async function checkExtensionSeams(): Promise<DoctorCheck[]> {
 				: `${themes.length} theme(s) registered: ${themes.join(", ")}`,
 	});
 
-	const tools = registeredBuiltinToolNames();
+	const tools = [...snap.builtinTools];
 	checks.push({
 		name: "seam:tools",
 		status: "ok",
@@ -99,10 +115,7 @@ async function checkExtensionSeams(): Promise<DoctorCheck[]> {
 	// The one check that can fail. A registered theme that no longer resolves is
 	// a registration that will never apply, and nothing else in the system would
 	// say so.
-	const resolvable: string[] = [];
-	for (const name of themes) {
-		if ((await resolveThemeJsonForDoctor(name)) !== undefined) resolvable.push(name);
-	}
+	const resolvable = themes.filter(name => snap.resolveTheme(name) !== undefined);
 	if (resolvable.length !== themes.length) {
 		const broken = themes.filter(name => !resolvable.includes(name));
 		checks.push({

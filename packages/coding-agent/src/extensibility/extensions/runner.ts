@@ -451,6 +451,8 @@ export const noOpUIContext: ExtensionUIContext = {
 	onTerminalInput: () => () => {},
 	setStatus: () => {},
 	setWorkingMessage: () => {},
+	// The no-op context cannot animate anything, so there is nothing to set.
+	setWorkingIndicator: () => {},
 	setWidget: () => {},
 	setFooter: () => {},
 	setHeader: () => {},

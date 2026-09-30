@@ -134,6 +134,7 @@ export class ExtensionUiController {
 			onTerminalInput: handler => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setHookStatus(key, text),
 			setWorkingMessage: message => this.ctx.setWorkingMessage(message),
+			setWorkingIndicator: indicator => this.ctx.setWorkingIndicator(indicator),
 			setWidget: (key, content, options) => this.setHookWidget(key, content, options),
 			setTitle: title => setExtensionTerminalTitle(title),
 			custom: (factory, options) => this.showHookCustom(factory, options),

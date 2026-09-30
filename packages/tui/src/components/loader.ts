@@ -40,6 +40,12 @@ export interface WorkingRowSpec {
 	readonly palette?: ShimmerPalette;
 	/** Live tok/s, docked before the stop control. */
 	readonly rate?: number;
+	/**
+	 * Frame interval for the spinner, in milliseconds. Defaults to the product's
+	 * own cadence. A slow terminal wants a slower spinner, and until this existed
+	 * the only way to change it was to edit the theme's frames.
+	 */
+	readonly intervalMs?: number;
 	/** Key id that interrupts (`escape`); undefined hides the stop control (Esc would not cancel). */
 	readonly interruptKey?: string;
 }
@@ -109,6 +115,8 @@ export class Loader extends Text {
 	#frames = DEFAULT_SPINNER_FRAMES;
 	#currentFrame = 0;
 	#intervalId?: NodeJS.Timeout;
+	/** Caller-supplied cadence, or the product default when unset. */
+	#intervalMs?: number;
 	#ui: ExtensionTUISurface | null = null;
 	#lastSpinnerTick = 0;
 	#layoutSource?: readonly string[];
@@ -134,9 +142,11 @@ export class Loader extends Text {
 		private messageColorFn: LoaderMessageColorFn,
 		private message: string | (() => string) = "Loading...",
 		spinnerFrames?: string[],
+		intervalMs?: number,
 	) {
 		super("", 1, 0);
 		this.#ui = ui;
+		this.#intervalMs = intervalMs !== undefined && intervalMs > 0 ? intervalMs : undefined;
 		if (spinnerFrames && spinnerFrames.length > 0) {
 			this.#frames = spinnerFrames;
 		}
@@ -313,8 +323,44 @@ export class Loader extends Text {
 			this.#startNativeCountdown();
 			return;
 		}
-		const intervalMs = this.messageColorFn.animated === true ? RENDER_INTERVAL_MS : SPINNER_ADVANCE_MS;
+		const cadence = this.#intervalMs;
+		const intervalMs =
+			this.#intervalMs ?? (this.messageColorFn.animated === true ? RENDER_INTERVAL_MS : SPINNER_ADVANCE_MS);
 		this.#scheduleTick(intervalMs, intervalMs);
+	}
+
+	/**
+	 * Replace the spinner frames and cadence after construction. Passing
+	 * `undefined` restores the product defaults.
+	 *
+	 * Exists because the frames were fixed at construction, so a `/reload` or an
+	 * extension that wanted a different spinner had to rebuild the whole
+	 * animation to get one.
+	 */
+	setIndicator(indicator: { frames?: string[]; intervalMs?: number } | undefined): void {
+		this.#intervalMs =
+			indicator?.intervalMs !== undefined && indicator.intervalMs > 0 ? indicator.intervalMs : undefined;
+		const frames = indicator?.frames;
+		this.#frames = frames && frames.length > 0 ? frames : DEFAULT_SPINNER_FRAMES;
+		// Same dedupe-by-width the constructor does: frames of equal display
+		// width share one layout entry so the row cannot jitter between them.
+		const representatives = new Map<number, string>();
+		this.#layoutFrames = this.#frames.map(frame => {
+			const width = visibleWidth(frame);
+			const representative = representatives.get(width);
+			if (representative !== undefined) return representative;
+			representatives.set(width, frame);
+			return frame;
+		});
+		if (this.#currentFrame >= this.#layoutFrames.length) this.#currentFrame = 0;
+		this.#layoutFrame = this.#layoutFrames[0];
+		// Re-derive the text the same way the tick does. The cached layout records
+		// whether each line begins with the spinner, decided against the OLD
+		// `#layoutFrame`; keep it and the row keeps rendering the old glyph, and
+		// treats it as the message — so a swapped spinner silently rewrites what
+		// the user reads.
+		this.#syncText();
+		this.#requestPaint();
 	}
 
 	stop() {

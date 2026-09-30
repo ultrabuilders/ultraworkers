@@ -334,6 +334,7 @@ export interface InteractiveModeContext {
 	flushPendingBashComponents(): void;
 	flushPendingModelSwitch(): Promise<void>;
 	setWorkingMessage(message?: string): void;
+	setWorkingIndicator(indicator?: { frames?: string[]; intervalMs?: number }): void;
 	applyPendingWorkingMessage(): void;
 	ensureLoadingAnimation(): void;
 	/** Interrupt key id for a maintenance working row's stop control; undefined while Esc would not cancel it. */

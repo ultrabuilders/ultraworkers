@@ -1165,6 +1165,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	autoCompactionLoader: Loader | undefined = undefined;
 	retryLoader: Loader | undefined = undefined;
 	#pendingWorkingMessage: string | undefined;
+	#pendingWorkingIndicator?: { frames?: string[]; intervalMs?: number };
 	#retryHintRow: DescribedComponent | undefined;
 	#workingMessageAccentCacheKey?: WorkingMessageAccentCacheKey;
 	#workingMessageAccentCacheValue?: WorkingMessageAccent;
@@ -7085,6 +7086,10 @@ export class InteractiveMode implements InteractiveModeContext {
 				// status rows so the interrupt glyph reads as indented.
 				[` ${appKey(this.keybindings, "app.interrupt")}`],
 			);
+			if (this.#pendingWorkingIndicator) {
+				this.loadingAnimation.setIndicator(this.#pendingWorkingIndicator);
+				this.#pendingWorkingIndicator = undefined;
+			}
 			this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());
 			this.loadingAnimation.setWorkingRow(
 				() => this.#workingRowSpec(),
@@ -7129,6 +7134,36 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 
 		this.#pendingWorkingMessage = message;
+	}
+
+	/**
+	 * Replace the working indicator's frames and cadence.
+	 *
+	 * An extension could set the message but not the spinner, so "fully
+	 * configurable" stopped one level short: the frames the product hardcoded in
+	 * `Loader`'s construction were the part no extension could reach. Passing
+	 * `undefined` restores the product's own, which is what a user gets after a
+	 * `/reload`.
+	 *
+	 * Ported from senpi's `LoaderIndicatorOptions` rather than the bare
+	 * `spinnerFrames` omp already had, because the interval was the part that
+	 * actually needed naming: a slow terminal wants a slower spinner.
+	 */
+	setWorkingIndicator(indicator: { frames?: string[]; intervalMs?: number } | undefined): void {
+		if (indicator === undefined) {
+			this.#pendingWorkingIndicator = undefined;
+			if (this.loadingAnimation) {
+				this.loadingAnimation.setIndicator(undefined);
+			}
+			return;
+		}
+		if (this.loadingAnimation) {
+			this.loadingAnimation.setIndicator(indicator);
+			return;
+		}
+		// The Loader is not built until the first turn starts, so hold it the way
+		// the message is held and apply it when the animation appears.
+		this.#pendingWorkingIndicator = indicator;
 	}
 
 	applyPendingWorkingMessage(): void {

@@ -57,6 +57,7 @@ The catalog file lives at either `.omp-plugin/marketplace.json` or `.claude-plug
 | `metadata.description` | no | Short description of the marketplace |
 | `metadata.version` | no | Catalog metadata version string |
 | `metadata.pluginRoot` | no | String prepended to all relative plugin source paths |
+| `metadata.strict` | no | Reject the catalog if a plugin's `lspServers`/`dapAdapters` entry is missing a field its loader requires |
 | extra top-level fields | no | Preserved by the parser but not used by marketplace install/runtime logic |
 
 ### Plugin entry fields
@@ -73,7 +74,6 @@ The catalog file lives at either `.omp-plugin/marketplace.json` or `.claude-plug
 | `tags` / `keywords` | no | Arrays of string tags/keywords |
 | `repository` | no | Repository URL |
 | `license` | no | License string |
-| `strict` | no | Boolean metadata flag; preserved but not used by install/runtime logic |
 | `commands`, `agents`, `hooks`, `mcpServers` | no | Catalog metadata preserved by the parser; runtime discovery comes from the installed plugin tree and manifests |
 | `lspServers` | no | Inline server map or path inside the plugin; installation writes `.lsp.json` |
 | `dapAdapters` | no | Inline adapter map or JSON/YAML path inside the plugin; installation writes `.dap.json`, `.dap.yaml`, or `.dap.yml` |

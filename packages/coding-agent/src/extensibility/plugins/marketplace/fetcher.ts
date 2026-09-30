@@ -9,6 +9,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { validateAdapterConfig } from "../../../dap/config";
+import { validateServerConfig as validateLspServerConfig } from "../../../lsp/config";
 
 import {
 	isValidNameSegment,
@@ -97,13 +99,49 @@ function assertField(condition: boolean, field: string, filePath: string): asser
 }
 
 /**
+ * Plugin fields that are written to disk during installation and then read back by
+ * a loader that drops what it cannot use.
+ *
+ * `hooks` and `mcpServers` are deliberately absent. Nothing in installation reads
+ * them — `docs/marketplace.md` records both as "preserved", with runtime
+ * configuration coming from the plugin manifest/tree instead — so validating them
+ * would be validating a dead field and would only make it look load-bearing.
+ */
+const INSTALLED_CONFIG_FIELDS = ["lspServers", "dapAdapters"] as const;
+
+/**
+ * Why one entry would be dropped, per the rule of the loader that owns it.
+ *
+ * Each field is delegated to the validator its own consumer already uses, so strict
+ * rejects exactly the set the loader discards. Anything looser would tell an author
+ * their plugin is broken when it would have worked; anything stricter would reject a
+ * valid catalog.
+ */
+function serverConfigErrors(
+	field: (typeof INSTALLED_CONFIG_FIELDS)[number],
+	serverName: string,
+	config: unknown,
+): string[] {
+	return field === "lspServers"
+		? validateLspServerConfig(serverName, config)
+		: validateAdapterConfig(serverName, config);
+}
+
+/**
  * Parse and validate a marketplace.json catalog from raw JSON content.
  *
  * Required fields: name (valid name segment), owner.name, plugins array.
  * Each plugin entry requires name (string) and source (string or object
  * with a "source" field). Extra fields are preserved via spread.
  *
- * @throws on JSON parse failure or missing/invalid required fields.
+ * A catalog that sets `metadata.strict` is additionally rejected as a whole if any
+ * plugin's `lspServers` or `dapAdapters` entry would be silently dropped by the
+ * loader that reads it. That flag is catalog-level on purpose: parsing is
+ * all-or-nothing, so a per-entry flag would let a remote author fail an entire
+ * marketplace — including the plugins that were fine — from one entry of theirs.
+ *
+ * @throws on JSON parse failure, missing/invalid required fields, or — only under
+ * `metadata.strict` — server config the loaders would discard.
  */
 export function parseMarketplaceCatalog(content: string, filePath: string): MarketplaceCatalog {
 	let raw: unknown;
@@ -130,17 +168,26 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 	// plugins: required array
 	assertField(Array.isArray(obj.plugins), "plugins", filePath);
 
+	// Strict is a property of the CATALOG, not of an entry, and the distinction is
+	// load-bearing: parsing is all-or-nothing, so a per-entry flag handed a remote
+	// author the power to fail an entire marketplace — including every plugin that
+	// was fine — by setting it on one entry of theirs. Deciding how forgiving your
+	// own catalog is belongs to whoever publishes it.
+	const strictCatalog =
+		typeof obj.metadata === "object" &&
+		obj.metadata !== null &&
+		!Array.isArray(obj.metadata) &&
+		(obj.metadata as Record<string, unknown>).strict === true;
+
+	// Every violation is collected and thrown once at the end, so the author sees
+	// all of them rather than whichever entry happened to come first, and so the
+	// message does not depend on the order entries appear in the file.
+	const strictViolations: string[] = [];
+
 	const plugins = obj.plugins as unknown[];
 	const validPlugins: unknown[] = [];
 	const pluginNameKeys = new Set<string>();
 	for (let i = 0; i < plugins.length; i++) {
-		// Read before the try: the catch below needs it to decide whether a
-		// failure is this entry's fault or the catalog's.
-		const rawEntry = plugins[i];
-		const strictEntry =
-			typeof rawEntry === "object" && rawEntry !== null && !Array.isArray(rawEntry)
-				? (rawEntry as Record<string, unknown>).strict === true
-				: false;
 		try {
 			const entry = plugins[i];
 			assertField(typeof entry === "object" && entry !== null && !Array.isArray(entry), `plugins[${i}]`, filePath);
@@ -186,40 +233,37 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 					assertField(false, `plugins[${i}].source.source (unknown variant: "${variant}")`, filePath);
 				}
 			}
-			// `strict` is declared on the entry and read by nothing, so an author who
-			// set it expected a check that never ran. These four fields are
-			// author-facing config that gets written straight to disk — `.lsp.json`
-			// and `dap.json` are produced by stringifying the object verbatim — so a
-			// typo does not merely survive, it lands in a config file that nothing
-			// will ever read a key out of.
+			// Under a strict catalog, an entry whose server config the loaders would
+			// silently drop is rejected here rather than discovered later.
 			//
-			// Off by default: unknown fields survive everywhere else, and a publisher
-			// who omits `strict` gets today's behaviour, not a suddenly stricter
-			// parser.
-			if (strictEntry) {
-				for (const field of ["hooks", "mcpServers", "lspServers", "dapAdapters"] as const) {
+			// The rule is deliberately the LOADER'S, not a key list copied here. An
+			// earlier version of this checked that each map value was an object —
+			// which the type already guarantees and `normalizeConfig` tolerates — so
+			// it rejected the one case that was already handled correctly and loudly,
+			// and let through `{ comand: "x" }`, where `normalizeServerConfig` finds no
+			// `command` and drops the server with only a `logger.warn`. The user then
+			// has a plugin whose LSP server silently does not exist.
+			//
+			// Checking against a hand-copied key list instead would be worse still:
+			// it goes stale the moment `ServerConfig` gains a field, and then a
+			// perfectly valid catalog is rejected on an omp upgrade. So strict
+			// validates the REQUIRED fields, which is precisely the set that would
+			// vanish — no more, and nothing that a future field can break.
+			if (strictCatalog) {
+				for (const field of INSTALLED_CONFIG_FIELDS) {
 					const value = (p as Record<string, unknown>)[field];
 					if (value === undefined) continue;
-					// A string is the "read this file instead" form, and is
-					// validated where it is resolved, not here. Only a non-string
-					// non-object is a shape error.
+					// A string is the "read this file instead" form, resolved and
+					// validated at that point, where the path is actually known.
 					if (typeof value === "string") continue;
-					if (typeof value !== "object" || value === null || Array.isArray(value)) {
-						assertField(false, `plugins[${i}].${field} (must be a path string or an object)`, filePath);
-					}
-					// Only the shape is checkable. These are lookup maps keyed by
-					// whatever name the author chose — there is no closed set of
-					// valid keys to check a typo against, so a key that merely looks
-					// wrong is left alone. What strict does catch is a config file
-					// that could never be loaded: an entry whose value is not an
-					// object at all.
-					for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-						assertField(key.length > 0, `plugins[${i}].${field} has an empty key`, filePath);
-						assertField(
-							typeof entry === "object" && entry !== null && !Array.isArray(entry),
-							`plugins[${i}].${field}["${key}"] must be an object`,
-							filePath,
-						);
+					// Anything else goes to the validator AS IS. Pre-filtering here
+					// used to skip a non-object entry, which is precisely the case both
+					// validators open by rejecting — so the one thing that made a server
+					// vanish was the one thing strict never saw.
+					for (const [serverName, serverConfig] of Object.entries(value as Record<string, unknown>)) {
+						for (const reason of serverConfigErrors(field, serverName, serverConfig)) {
+							strictViolations.push(`plugins[${i}].${field}["${serverName}"]: ${reason}`);
+						}
 					}
 				}
 			}
@@ -229,12 +273,13 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 			pluginNameKeys.add(pluginNameKey);
 			validPlugins.push(entry);
 		} catch (err) {
-			// `strict` asked for this entry to be checked, and a check that logs
-			// while silently dropping the plugin is not a check — the author gets a
-			// warning in a log file and a marketplace that quietly lost an entry.
-			// So a strict failure propagates; only the default keeps the blast
-			// radius narrow.
-			if (strictEntry) throw err;
+			// A strict catalog asked to be told about a malformed entry, and a check
+			// that logs while silently dropping the plugin is not a check — the author
+			// gets a line in a log file and a marketplace that quietly lost an entry.
+			// So a strict failure propagates; only the default keeps the blast radius
+			// narrow. `strict` is catalog-wide precisely so that this throw is the
+			// publisher's own choice about their own catalog.
+			if (strictCatalog) throw err;
 			// Warn and skip invalid plugin entries instead of failing the entire catalog.
 			// This lets the rest of the marketplace load even if one entry has a bad name/source.
 			const name =
@@ -244,6 +289,23 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 			logger.warn(`Skipping invalid plugin ${name}: ${(err as Error).message}`);
 		}
 	}
+
+	// Thrown once, after every entry has been read, so the author is told about all
+	// of their broken servers rather than the first one, and so the message does not
+	// depend on the order entries happen to appear in the file.
+	if (strictViolations.length > 0) {
+		// The catalog name is in the message because this error is the only thing the
+		// user gets: `cloneAndReadCatalog` deletes the temporary clone on failure, so
+		// there is nothing left on disk to diff against. "Which catalog, and which of
+		// my plugins" has to be answerable from this string alone.
+		const catalogName = typeof obj.name === "string" ? obj.name : "(unnamed)";
+		throw new Error(
+			`Marketplace catalog "${catalogName}" (${filePath}) sets metadata.strict but has ` +
+				`${strictViolations.length} server config(s) the loaders would silently drop:\n` +
+				strictViolations.map(v => `  - ${v}`).join("\n"),
+		);
+	}
+
 	// Replace the plugins array with only valid entries
 	obj.plugins = validPlugins;
 

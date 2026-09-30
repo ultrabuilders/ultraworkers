@@ -130,6 +130,17 @@ A marketplace catalog lives at `.omp-plugin/marketplace.json` in the repository 
 
 Top-level `metadata.description`, `metadata.version`, and `metadata.pluginRoot` are optional. When `metadata.pluginRoot` is set, it is prepended to relative plugin `source` paths.
 
+`metadata.strict` is also optional, and is a property of the **catalog**, not of an individual
+plugin entry. With it set, a catalog is rejected at parse time if any plugin's `lspServers` or
+`dapAdapters` entry is missing a field its loader requires — a typo'd `command`, say. Without it,
+such an entry installs and is then discarded by the loader with only a log line, so the plugin's
+language server silently never starts.
+
+Two things it deliberately does not do. It rejects only what would **vanish**, not what merely
+differs from expectation: a misspelled *optional* field costs an override, not a server. And it is
+catalog-level because parsing is all-or-nothing — a per-entry flag would let one entry from a
+remote marketplace fail every other plugin in it.
+
 ### Plugin entry fields
 
 | Field         | Required | Description                                                                                    |
@@ -145,7 +156,6 @@ Top-level `metadata.description`, `metadata.version`, and `metadata.pluginRoot` 
 | `keywords`    | no       | Array of string keywords                                                                       |
 | `category`    | no       | Category string (e.g. `development`, `productivity`, `security`)                               |
 | `tags`        | no       | Array of string tags                                                                           |
-| `strict`      | no       | Boolean metadata flag; preserved but not used by install/runtime logic                         |
 | `commands`    | no       | Command metadata; preserved but runtime commands are discovered from the installed plugin tree |
 | `agents`      | no       | Agent metadata; preserved but not consumed by marketplace installation                         |
 | `hooks`       | no       | Hook metadata; preserved but runtime hooks are discovered from the installed plugin tree       |

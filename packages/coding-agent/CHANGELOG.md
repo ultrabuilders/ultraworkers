@@ -9,6 +9,15 @@
 - `registerOutputFormat` lets an extension contribute a transcript format, so the exporter can produce
   something other than HTML. A format id is held to a charset because it becomes part of the filename
 - `getAllThemes` in ACP and RPC mode returns the real theme list instead of an empty array
+- `metadata.strict` in a marketplace catalog rejects the catalog when a plugin's `lspServers` or
+  `dapAdapters` entry is missing a field its loader requires. Previously such an entry installed and
+  was then dropped with only a log line, so the plugin's language server silently never started.
+  Off by default, and it rejects only config that would disappear — not config that merely differs
+  from expectations
+- Library-layer diagnostics now go to the log file instead of the terminal: the Cursor provider's
+  `DEBUG_CURSOR` output, memory consolidation warnings, and the triplestore-split migration report.
+  Commands that print their own output are unaffected — `omp compress f.md > out.md`, `omp --model`,
+  the `mnemopi` JSON report, and the blob broker's readiness banner all still write to stdout
 
 
 - Extensions building a custom component or a custom editor now receive a narrowed TUI surface instead of the render engine itself. They keep component composition, repaint scheduling, overlay mounting, focus, viewport dimensions and the image budget; they no longer receive `setFrameProvider`, `resetDisplay` or the terminal object.

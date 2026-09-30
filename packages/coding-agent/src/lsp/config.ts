@@ -69,16 +69,64 @@ function normalizeExtensionToFileTypes(value: unknown): string[] | null {
 	return extensions.length > 0 ? extensions : null;
 }
 
+/**
+ * The three required values, resolved once.
+ *
+ * Both the validator and the normalizer go through these, so "is this valid" and
+ * "what are the values" cannot drift apart. Deriving the answer twice and asserting
+ * the second copy non-null is how an `undefined` reaches `ServerConfig` at runtime
+ * instead of as a compile error.
+ */
+function resolveServerCommand(config: unknown): string | null {
+	if (!isRecord(config)) return null;
+	return typeof config.command === "string" && config.command.length > 0 ? config.command : null;
+}
+function resolveFileTypes(config: unknown): string[] | null {
+	if (!isRecord(config)) return null;
+	return normalizeStringArray(config.fileTypes) ?? normalizeExtensionToFileTypes(config.extensionToLanguage);
+}
+function resolveRootMarkers(config: unknown): string[] | null {
+	if (!isRecord(config)) return null;
+	return normalizeStringArray(config.rootMarkers) ?? (config.extensionToLanguage ? ["."] : null);
+}
+
+/**
+ * Why a raw LSP server entry would be dropped, in the same shape as
+ * `validateServerConfig` in `mcp/config.ts`.
+ *
+ * This is the acceptance rule `normalizeServerConfig` already enforced, lifted out
+ * so a caller can ask "would this entry load?" without going through the drop. The
+ * marketplace parser needs exactly that: it wants to reject an entry that would
+ * silently vanish, and it must reject the same set the loader drops — no more, or a
+ * catalog author gets told their plugin is broken when it would have worked.
+ *
+ * Takes `unknown` deliberately. A caller holding parsed JSON must be able to ask
+ * about an entry that is not an object at all, which is exactly the case a
+ * pre-filter in the caller tends to skip.
+ */
+export function validateServerConfig(name: string, config: unknown): string[] {
+	if (!isRecord(config)) return [`Server "${name}": must be an object`];
+	const errors: string[] = [];
+	if (resolveServerCommand(config) === null) errors.push(`Server "${name}": missing required field "command"`);
+	if (resolveFileTypes(config) === null) errors.push(`Server "${name}": missing required field "fileTypes"`);
+	if (resolveRootMarkers(config) === null) errors.push(`Server "${name}": missing required field "rootMarkers"`);
+	return errors;
+}
+
 function normalizeServerConfig(name: string, config: RawServerConfig): ServerConfig | null {
-	const command = typeof config.command === "string" && config.command.length > 0 ? config.command : null;
-	const fileTypes =
-		normalizeStringArray(config.fileTypes) ?? normalizeExtensionToFileTypes(config.extensionToLanguage);
-	const rootMarkers = normalizeStringArray(config.rootMarkers) ?? (config.extensionToLanguage ? ["."] : null);
+	const command = resolveServerCommand(config);
+	const fileTypes = resolveFileTypes(config);
+	const rootMarkers = resolveRootMarkers(config);
 	const languageId =
 		typeof config.languageId === "string" && config.languageId.length > 0 ? config.languageId : undefined;
 
-	if (!command || !fileTypes || !rootMarkers) {
-		logger.warn("Ignoring invalid LSP server config (missing required fields).", { name });
+	// Every reason is logged, not one generic line: a server that vanishes is already
+	// quiet, so the log is the only place its author will ever hear about it.
+	if (command === null || fileTypes === null || rootMarkers === null) {
+		logger.warn("Ignoring invalid LSP server config (missing required fields).", {
+			name,
+			reasons: validateServerConfig(name, config),
+		});
 		return null;
 	}
 

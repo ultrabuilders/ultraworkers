@@ -89,92 +89,145 @@ describe("parseMarketplaceCatalog", () => {
 		expect(catalog.plugins[0].name).toBe("hello-plugin");
 	});
 
-	// A per-entry `strict` flag is declared on MarketplacePluginEntry and read by
-	// nothing. These pin what actually happens today, so turning it on is a visible
-	// change rather than a silent one.
+	// `metadata.strict` makes the parser reject, rather than accept, a plugin whose
+	// installed server config would be silently dropped by the loader that reads it.
 	describe("strict and nested config", () => {
-		function catalogWith(extra: Record<string, unknown>): string {
+		function catalogWith(extra: Record<string, unknown>, strict = false): string {
 			return JSON.stringify({
 				name: "test-marketplace",
 				owner: { name: "Test Author", email: "test@example.com" },
-				metadata: { description: "A test marketplace" },
+				metadata: { description: "A test marketplace", ...(strict ? { strict: true } : {}) },
 				plugins: [{ name: "hello-plugin", source: "./plugins/hello-plugin", ...extra }],
 			});
 		}
 
-		it("accepts a nested config key that is not a real field", () => {
-			// A typo in an author's marketplace.json is indistinguishable from a
-			// valid key, and the plugin installs with a config nothing reads.
-			const catalog = parseMarketplaceCatalog(catalogWith({ hooks: { onToolCall: "x" } }), "/fake/marketplace.json");
-			expect(catalog.plugins).toHaveLength(1);
-			expect(catalog.plugins[0]?.hooks).toEqual({ onToolCall: "x" });
+		const VALID_LSP = { command: "rust-analyzer", fileTypes: [".rs"], rootMarkers: ["Cargo.toml"] };
+		const VALID_DAP = { command: "lldb-dap" };
+
+		it("rejects an LSP entry whose command is a typo", () => {
+			// The failure this exists for. `{ comand: ... }` parses, installs, and
+			// writes `.lsp.json` — then `normalizeServerConfig` finds no `command`
+			// and drops the server with a single `logger.warn`. The user's LSP server
+			// simply never starts, and nothing said why.
+			expect(() =>
+				parseMarketplaceCatalog(
+					catalogWith({ lspServers: { rust: { comand: "rust-analyzer" } } }, true),
+					"/fake/marketplace.json",
+				),
+			).toThrow(/command/);
 		});
 
-		it("rejects a nested config that is not an object when strict is set", () => {
-			// The flag was declared and read by nothing. What strict can actually
-			// check is SHAPE: these maps are written to disk verbatim, so a value
-			// that is not an object produces a config file nothing could load.
-			for (const field of ["hooks", "mcpServers", "lspServers", "dapAdapters"]) {
+		it("rejects a DAP adapter with no command", () => {
+			// Same silent disappearance, and quieter than LSP: `normalizeAdapterConfig`
+			// used to `return null` with nothing logged at all.
+			expect(() =>
+				parseMarketplaceCatalog(catalogWith({ dapAdapters: { lldb: { args: ["--x"] } } }, true), "/fake/m.json"),
+			).toThrow(/command/);
+		});
+
+		it("rejects a server entry that is not an object at all", () => {
+			// `{ alpha: "oops" }` reaches `.lsp.json`, and the loader drops it: the entry
+			// is not a config, so no server exists and only a log line says so. An
+			// earlier version of this check skipped non-object entries as "not a
+			// server config at all" — so it passed exactly the case strict exists to
+			// catch. The validators reject this; the parser must let them.
+			for (const field of ["lspServers", "dapAdapters"]) {
 				expect(() =>
-					parseMarketplaceCatalog(catalogWith({ strict: true, [field]: 123 }), "/fake/marketplace.json"),
-				).toThrow(new RegExp(field));
+					parseMarketplaceCatalog(catalogWith({ [field]: { alpha: "oops" } }, true), "/fake/m.json"),
+				).toThrow(/must be an object/);
 			}
 		});
 
-		it("rejects a nested config whose entry is not an object", () => {
+		it("names the catalog and the server, because the message is the only thing left", () => {
+			// `cloneAndReadCatalog` deletes the temporary clone when parsing fails, so
+			// there is nothing on disk to diff. "Which catalog, and which of my
+			// plugins" has to be answerable from the error string alone.
 			expect(() =>
-				parseMarketplaceCatalog(
-					catalogWith({ strict: true, mcpServers: { alpha: "oops" } }),
-					"/fake/marketplace.json",
-				),
-			).toThrow(/must be an object/);
+				parseMarketplaceCatalog(catalogWith({ lspServers: { rust: {} } }, true), "/fake/marketplace.json"),
+			).toThrow(/test-marketplace.*rust/s);
 		});
 
-		it("still accepts a nested scalar when strict is not set", () => {
-			// Leniency at the edge is the default and stays it: a publisher who
-			// never opted in must not meet a stricter parser than they used to.
+		it("reports every broken entry, not only the first", () => {
+			// An author fixing a catalog should see all of their mistakes in one run.
+			// Reporting only the first makes the fix a sequence of trial-and-error
+			// rounds, and makes the message depend on entry order.
+			let message = "";
+			try {
+				parseMarketplaceCatalog(
+					catalogWith({ lspServers: { alpha: {}, bravo: {} } }, true),
+					"/fake/marketplace.json",
+				);
+			} catch (err) {
+				message = (err as Error).message;
+			}
+			expect(message).toContain("alpha");
+			expect(message).toContain("bravo");
+		});
+
+		it("does not tighten a catalog that never opted in", () => {
+			// The opt-out must stay a real opt-out. The same entry that strict
+			// rejects has to keep parsing unchanged for everyone else, or turning the
+			// flag on would have been a breaking change nobody asked for.
 			const catalog = parseMarketplaceCatalog(
-				catalogWith({ mcpServers: { alpha: "anything" } }),
+				catalogWith({ lspServers: { rust: { comand: "rust-analyzer" } } }),
+				"/fake/marketplace.json",
+			);
+			expect(catalog.plugins).toHaveLength(1);
+			expect(catalog.plugins[0]?.lspServers).toEqual({ rust: { comand: "rust-analyzer" } });
+		});
+
+		it("keeps author-chosen server names, which are not a closed vocabulary", () => {
+			// The OUTER key is a lookup name the author invented, so there is no set
+			// to check it against. Only the config INSIDE it has required fields.
+			// Valid DAP rides along because the two fields must agree: a gate that
+			// rejected good config would be indistinguishable from one that works.
+			const catalog = parseMarketplaceCatalog(
+				catalogWith({ lspServers: { "My_Server.2": VALID_LSP }, dapAdapters: { "My.Debug.2": VALID_DAP } }, true),
+				"/fake/marketplace.json",
+			);
+			expect(catalog.plugins[0]?.lspServers).toEqual({ "My_Server.2": VALID_LSP });
+			expect(catalog.plugins[0]?.dapAdapters).toEqual({ "My.Debug.2": VALID_DAP });
+		});
+
+		it("does not validate hooks or mcpServers, which nothing installs", () => {
+			// Neither field has a consumer: `docs/marketplace.md` records both as
+			// preserved metadata, with runtime config read from the plugin
+			// manifest/tree. Validating them would be validating a dead field and
+			// would only make it look load-bearing.
+			const catalog = parseMarketplaceCatalog(
+				catalogWith({ hooks: { onToolCall: "x" }, mcpServers: { alpha: "anything" } }, true),
 				"/fake/marketplace.json",
 			);
 			expect(catalog.plugins[0]?.mcpServers).toEqual({ alpha: "anything" });
 		});
 
-		it("keeps author-chosen keys, because there is no closed key set to check against", () => {
-			// These maps are looked up by whatever name the author gave. Rejecting
-			// an unusual key would break working catalogs, and there is no
-			// vocabulary to check a typo against in the first place.
+		it("accepts the path form, which is checked where it resolves", () => {
 			const catalog = parseMarketplaceCatalog(
-				catalogWith({ strict: true, mcpServers: { "My_Server.2": { command: "x" } } }),
-				"/fake/marketplace.json",
-			);
-			expect(catalog.plugins[0]?.mcpServers).toEqual({ "My_Server.2": { command: "x" } });
-		});
-
-		it("accepts a path string for a nested field under strict", () => {
-			// The string form points at a file inside the plugin and is checked
-			// where it is resolved, not here.
-			const catalog = parseMarketplaceCatalog(
-				catalogWith({ strict: true, lspServers: "./.lsp.json" }),
+				catalogWith({ lspServers: "./.lsp.json" }, true),
 				"/fake/marketplace.json",
 			);
 			expect(catalog.plugins[0]?.lspServers).toBe("./.lsp.json");
 		});
 
+		it("accepts config that merely differs from expectation, without losing a server", () => {
+			// Strict rejects what would VANISH, not what is merely unfamiliar. An
+			// optional key spelled wrongly costs an override, not a server — and a
+			// copied key list would reject this valid catalog the moment omp grows a
+			// field, blaming the author for our staleness.
+			const catalog = parseMarketplaceCatalog(
+				catalogWith({ lspServers: { rust: { ...VALID_LSP, warmupTimoutMs: 500 } } }, true),
+				"/fake/marketplace.json",
+			);
+			expect(catalog.plugins[0]?.lspServers).toEqual({ rust: { ...VALID_LSP, warmupTimoutMs: 500 } });
+		});
+
 		it("fails the whole catalog under strict, because a check that skips is not a check", () => {
-			// The default parser drops one bad entry and keeps the rest. Under
-			// strict that would leave the author with a warning in a log file and a
-			// marketplace that quietly lost a plugin — so strict propagates instead.
-			const raw = JSON.parse(catalogWith({ strict: true, hooks: 123 })) as { plugins: unknown[] };
+			const raw = JSON.parse(catalogWith({ lspServers: { rust: {} } }, true)) as { plugins: unknown[] };
 			raw.plugins.push({ name: "good-plugin", source: "./plugins/good-plugin" });
 			expect(() => parseMarketplaceCatalog(JSON.stringify(raw), "/fake/marketplace.json")).toThrow();
 		});
 
 		it("ignores nested config entirely when strict is off", () => {
-			// Leniency at the edge, unchanged: without `strict` a bad nested field
-			// is not even a bad ENTRY — the plugin still loads, carrying the value
-			// nobody will read. That is the behaviour a publisher who never opted
-			// in has always had, and narrowing it is what strict is for.
 			const raw = JSON.parse(catalogWith({ hooks: 123 })) as { plugins: unknown[] };
 			raw.plugins.push({ name: "good-plugin", source: "./plugins/good-plugin" });
 			const catalog = parseMarketplaceCatalog(JSON.stringify(raw), "/fake/marketplace.json");

@@ -65,6 +65,20 @@ export interface MarketplaceCatalogMetadata {
 	version?: string;
 	/** If set, prepended to relative plugin source paths. */
 	pluginRoot?: string;
+	/**
+	 * Reject the whole catalog at parse time when a plugin entry carries server
+	 * config that the loaders would silently drop.
+	 *
+	 * Catalog-level, not per-entry, and that is the load-bearing part. Parsing is
+	 * all-or-nothing, so a per-entry flag gave a remote author the power to brick
+	 * an entire marketplace — including N plugins that were fine — by setting it on
+	 * one entry. The author of the catalog is the person entitled to decide how
+	 * forgiving their own catalog is to be.
+	 *
+	 * Off by default: unknown fields survive everywhere else, and a publisher who
+	 * omits it gets a lenient parse, not a suddenly stricter one.
+	 */
+	strict?: boolean;
 }
 
 export interface MarketplaceCatalog {
@@ -91,7 +105,6 @@ export interface MarketplacePluginEntry {
 	keywords?: string[];
 	category?: string;
 	tags?: string[];
-	strict?: boolean;
 	commands?: string | string[];
 	agents?: string | string[];
 	hooks?: string | Record<string, unknown>;

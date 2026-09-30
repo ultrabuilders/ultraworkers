@@ -44,12 +44,41 @@ function normalizeObject(value: unknown): Record<string, unknown> {
 	return isRecord(value) ? { ...value } : {};
 }
 
-function normalizeAdapterConfig(config: unknown): DapAdapterConfig | null {
+/** The one required value, resolved once for both the validator and the normalizer. */
+function resolveAdapterCommand(config: Record<string, unknown>): string | null {
+	return typeof config.command === "string" && config.command.length > 0 ? config.command : null;
+}
+
+/**
+ * Why a raw DAP adapter entry would be dropped, in the same shape as
+ * `validateServerConfig` in `lsp/config.ts` and `mcp/config.ts`.
+ *
+ * The drop itself is already logged by callers, so this is not about adding
+ * another warning — it is that the warning said "invalid" without ever saying
+ * which field was wrong. Exposing the rule lets a caller say which, and lets the
+ * marketplace parser reject an entry that would vanish before installation
+ * reaches the point of noticing.
+ *
+ * Takes `unknown` deliberately: a caller holding parsed JSON must be able to ask
+ * about an entry that is not an object at all, which is exactly the case a
+ * pre-filter in the caller tends to skip.
+ */
+export function validateAdapterConfig(name: string, config: unknown): string[] {
+	if (!isRecord(config)) return [`Adapter "${name}": must be an object`];
+	const errors: string[] = [];
+	if (resolveAdapterCommand(config) === null) {
+		errors.push(`Adapter "${name}": missing required field "command"`);
+	}
+	return errors;
+}
+
+function normalizeAdapterConfig(name: string, config: unknown): DapAdapterConfig | null {
 	if (!isRecord(config)) return null;
-	if (typeof config.command !== "string" || config.command.length === 0) return null;
+	const command = resolveAdapterCommand(config);
+	if (command === null) return null;
 	const connectMode = config.connectMode === "socket" || config.connectMode === "tcp" ? config.connectMode : undefined;
 	return {
-		command: config.command,
+		command,
 		args: normalizeStringArray(config.args),
 		languages: normalizeStringArray(config.languages),
 		fileTypes: normalizeStringArray(config.fileTypes).map(entry => entry.toLowerCase()),
@@ -73,7 +102,7 @@ function readConfigFile(filePath: string): NormalizedConfig | null {
 function getDefaults(): Record<string, DapAdapterConfig> {
 	const adapters: Record<string, DapAdapterConfig> = {};
 	for (const [name, config] of Object.entries(DEFAULTS)) {
-		const normalized = normalizeAdapterConfig(config);
+		const normalized = normalizeAdapterConfig(name, config);
 		if (normalized) {
 			adapters[name] = normalized;
 		}
@@ -105,7 +134,7 @@ function mergeAdapters(
 								: undefined,
 					}
 				: config;
-		const normalized = normalizeAdapterConfig(candidate);
+		const normalized = normalizeAdapterConfig(name, candidate);
 		if (normalized) {
 			merged[name] = normalized;
 		} else if (merged[name]) {

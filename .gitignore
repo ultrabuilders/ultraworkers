@@ -94,3 +94,7 @@ packages/coding-agent/bench/boot-baseline.json
 /.bazelrc.user
 
 .parity/
+
+# Scratch working files for this session. Ignored, not committed: `git clean -fd`
+# does not touch ignored paths, which is what keeps them from being swept away.
+.lavish-wip/

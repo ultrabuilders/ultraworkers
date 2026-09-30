@@ -447,6 +447,7 @@ export interface RoleModelCycleResult {
 	role: string;
 }
 
+import type { UsageBreakdown } from "./usage-breakdown";
 import type { ResolvedRoleModel } from "@oh-my-pi/pi-tui/overlays/model-picker";
 export type { ResolvedRoleModel } from "@oh-my-pi/pi-tui/overlays/model-picker";
 
@@ -472,6 +473,13 @@ export interface ContextUsageBreakdown {
 export interface SessionStats {
 	sessionFile: string | undefined;
 	sessionId: string;
+	/**
+	 * The same totals, attributed to the model that spent them.
+	 *
+	 * Optional so a caller with no per-model data is unaffected — the flat totals
+	 * beside it remain the authoritative numbers.
+	 */
+	usageBreakdown?: UsageBreakdown;
 	userMessages: number;
 	assistantMessages: number;
 	toolCalls: number;

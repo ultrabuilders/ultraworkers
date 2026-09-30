@@ -20,6 +20,7 @@ import type { ContextUsageBreakdown, SessionStats } from "./agent-session-types"
 import { getLatestCompactionEntry } from "./session-context";
 import type { ModelUsageEntry, SessionEntry } from "./session-entries";
 import type { SessionManager } from "./session-manager";
+import { buildUsageBreakdown, TOOLS_SUMMARIES_BUCKET, type UsageBucketInput } from "./usage-breakdown";
 import { cfgSkillful } from "./settings";
 
 interface PendingContextSnapshot {
@@ -130,6 +131,7 @@ export class SessionStatsTracker {
 		let committedAcuCost = 0;
 		let hasCredits = false;
 		const routedModels: Record<string, number> = {};
+		const bucketInputs: UsageBucketInput[] = [];
 		const addUsage = (usage: Usage): void => {
 			totalInput += usage.input;
 			totalOutput += usage.output;
@@ -154,7 +156,12 @@ export class SessionStatsTracker {
 				toolResults++;
 				if (message.toolName === "task") {
 					const usage = taskToolUsage(message.details);
-					if (usage) addUsage(usage);
+					// A `task` result is a CHILD process's usage, not the user's model,
+					// so it gets its own bucket instead of being folded into the caller.
+					if (usage) {
+						addUsage(usage);
+						bucketInputs.push({ key: TOOLS_SUMMARIES_BUCKET, isTurn: false, usage });
+					}
 				}
 			} else if (message.role === "assistant") {
 				assistantMessages++;
@@ -165,12 +172,22 @@ export class SessionStatsTracker {
 				const usage = message.usage;
 				if (!usage) continue;
 				addUsage(usage);
+				bucketInputs.push({
+					key: `${message.provider}/${message.upstreamModel ?? message.model}`,
+					isTurn: true,
+					usage,
+				});
 				if (message.upstreamModel !== undefined) {
 					routedModels[message.upstreamModel] = (routedModels[message.upstreamModel] ?? 0) + 1;
 				}
 			}
 		}
-		for (const entry of activeModelUsageEntries(this.#host.sessionManager.getBranch())) addUsage(entry.usage);
+		for (const entry of activeModelUsageEntries(this.#host.sessionManager.getBranch())) {
+			addUsage(entry.usage);
+			// Model-usage entries describe subagent models, so they belong with the
+			// other subagent work rather than under a model the user never selected.
+			bucketInputs.push({ key: TOOLS_SUMMARIES_BUCKET, isTurn: false, usage: entry.usage });
+		}
 		return {
 			sessionFile: this.#host.sessionManager.getSessionFile(),
 			sessionId: this.#host.sessionId(),
@@ -199,6 +216,9 @@ export class SessionStatsTracker {
 					}
 				: undefined),
 			...(Object.keys(routedModels).length > 0 ? { routedModels } : undefined),
+			// Fed from the SAME three sources as the flat totals above, so the
+			// attribution and the total cannot disagree.
+			usageBreakdown: buildUsageBreakdown({ buckets: bucketInputs }),
 			contextUsage: this.getContextUsage(),
 		};
 	}

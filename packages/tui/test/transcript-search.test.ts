@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { sliceByColumn } from "@oh-my-pi/pi-tui/utils";
 import {
 	buildSearchCorpus,
 	findTranscriptSearchMatches,
@@ -22,8 +23,6 @@ import {
  * search that is correct on plain text and wrong on emoji or CJK is the exact
  * bug the dual path exists to avoid, and it is invisible unless both are pinned.
  */
-
-const plain = (lines: readonly string[]) => Bun.stripANSI(lines.join("\n"));
 
 function onlyMatch(matches: readonly TranscriptSearchMatch[]): TranscriptSearchMatch {
 	expect(matches).toHaveLength(1);
@@ -108,7 +107,82 @@ describe("transcript search column mapping", () => {
 		const match = onlyMatch(findTranscriptSearchMatches([line], "needle"));
 		// The escape occupies no columns, so the hit starts at column 0 of the screen.
 		expect(match.segments[0]!.startCol).toBe(0);
-		expect(plain([line]).slice(match.segments[0]!.startCol, match.segments[0]!.endCol)).toBe("needle");
+	});
+});
+
+/**
+ * The RENDERER half of the contract.
+ *
+ * The index reports DISPLAY columns measured on the ANSI-stripped line; a
+ * renderer slices the RAW line. Those are different coordinate spaces, and the
+ * index's own tests cannot catch a mismatch between them — asserting the index is
+ * correct proves nothing about the consumer. Every case here therefore runs the
+ * actual slice the overlay performs and checks the VISIBLE text that comes out,
+ * which is what a user would see highlighted.
+ *
+ * Asserting on the visible text rather than the raw slice is deliberate: a match
+ * spanning two style runs legitimately carries the escapes between them, and
+ * `"need\x1b[0m\x1b[31mle"` is correct output, not a leak.
+ */
+function highlightedText(line: string, query: string): string {
+	const match = onlyMatch(findTranscriptSearchMatches([line], query));
+	const segment = match.segments[0]!;
+	return Bun.stripANSI(sliceByColumn(line, segment.startCol, segment.endCol - segment.startCol));
+}
+
+describe("highlighting a match on the line the renderer draws", () => {
+	test("selects the matched text when the line carries an escape", () => {
+		// Slicing this line by the reported columns yields "\x1b[31mn" -- the escape
+		// occupies no column but does occupy string units, so the numbers are wrong
+		// for the raw line by exactly its length.
+		expect(highlightedText("\x1b[31mneedle\x1b[0m", "needle")).toBe("needle");
+	});
+
+	test("selects a wide-glyph run, which is shorter in string units than in columns", () => {
+		expect(highlightedText("日本語 needle", "日本語")).toBe("日本語");
+	});
+
+	test("selects text on a line that mixes escapes and wide glyphs", () => {
+		expect(highlightedText("\x1b[1m日本語\x1b[0m needle", "needle")).toBe("needle");
+	});
+
+	test("selects a match the renderer splits across two style runs", () => {
+		expect(highlightedText("\x1b[1mneed\x1b[0m\x1b[31mle\x1b[0m", "needle")).toBe("needle");
+	});
+
+	test("selects text after an OSC hyperlink, which is invisible and multi-line", () => {
+		expect(highlightedText("\x1b]8;;http://example.com\x07needle\x1b]8;;\x07", "needle")).toBe("needle");
+	});
+
+	test("selects text following an astral emoji", () => {
+		expect(highlightedText("🌈 needle", "needle")).toBe("needle");
+	});
+
+	test("selects plain text unchanged", () => {
+		expect(highlightedText("a needle here", "needle")).toBe("needle");
+	});
+});
+
+describe("slicing a match with the central column helper", () => {
+	test("takes a LENGTH, so an end column would over-read by the start offset", () => {
+		// The helper's third argument is a count. Passing an end column instead
+		// reads one column-group too many, which is off by exactly startCol.
+		expect(sliceByColumn("a needle here", 2, 6)).toBe("needle");
+		expect(sliceByColumn("a needle here", 2, 8)).not.toBe("needle");
+	});
+
+	test("does not let an escape count as a column, and keeps the styling it cuts", () => {
+		// The helper returns the styled text so the caller can re-colour it — the
+		// escapes come back out, which is why the assertion is on the visible text.
+		const cut = sliceByColumn("\x1b[31mneedle\x1b[0m", 0, 6);
+		expect(Bun.stripANSI(cut)).toBe("needle");
+		// Six columns of a line whose first six columns are "needle": if the escape
+		// had counted, the cut would have been two characters short.
+		expect(cut).toContain("needle");
+	});
+
+	test("measures wide glyphs in columns, not code units", () => {
+		expect(sliceByColumn("日本語x", 0, 6)).toBe("日本語");
 	});
 });
 

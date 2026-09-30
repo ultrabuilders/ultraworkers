@@ -60,6 +60,7 @@ interface AppKeybindings {
 	"app.tree.unfoldOrDown": true;
 	"app.plan.toggle": true;
 	"app.history.search": true;
+	"app.transcript.search": true;
 	"app.stt.toggle": true;
 	"app.live.toggle": true;
 }
@@ -236,6 +237,10 @@ export const KEYBINDINGS = {
 	"app.history.search": {
 		defaultKeys: "ctrl+r",
 		description: "Search history",
+	},
+	"app.transcript.search": {
+		defaultKeys: "ctrl+shift+f",
+		description: "Search the transcript",
 	},
 	"app.stt.toggle": {
 		defaultKeys: [],

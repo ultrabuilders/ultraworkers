@@ -77,8 +77,12 @@ function harness(initial: Record<string, unknown> = {}): Harness {
 	const settings: SettingsHost = {
 		entries: ENTRIES,
 		get: path => values.get(path),
-		set: (path, value) => void values.set(path, value),
+		set: (path, value) => {
+			values.set(path, value);
+			return { status: "applied" };
+		},
 		unset: path => void values.set(path, ENTRIES.find(entry => entry.path === path)?.defaultValue),
+		provenance: () => "global",
 		normalizeProviderLimits: () => ({}),
 		validateProviderLimits: () => ({}),
 	};
@@ -87,10 +91,10 @@ function harness(initial: Record<string, unknown> = {}): Harness {
 			list: async () => [],
 			getPlugin: async () => undefined,
 			getPluginSettings: async () => ({}),
-			setEnabled: async () => {},
+			setEnabled: async () => ({ changed: true, application: "restart-required" as const }),
 			getEnabledFeatures: async () => null,
-			setEnabledFeatures: async () => {},
-			setPluginSetting: async () => {},
+			setEnabledFeatures: async () => ({ changed: true, application: "restart-required" as const }),
+			setPluginSetting: async () => ({ changed: true, application: "restart-required" as const }),
 		},
 		createMarketplaceManager: async () => ({
 			listInstalledPlugins: async () => [],

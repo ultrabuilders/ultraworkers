@@ -144,6 +144,7 @@ import type {
 	MessageStartEvent,
 	MessageUpdateEvent,
 	PreparedExtension,
+	RunnerEmitEvent,
 	SessionBeforeBranchResult,
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
@@ -620,6 +621,53 @@ function cloneMessageEndNotification(message: AgentMessage): AgentMessage {
 	return snapshot as unknown as AgentMessage;
 }
 
+/**
+ * Session event kinds the extension relay forwards.
+ *
+ * Deliberately a subset of `AgentSessionEvent["type"]`: `model_changed`,
+ * `config_warnings_changed`, `advisor_cost_changed`, `advisor_yielded`,
+ * `todo_auto_clear`, `irc_message`, `notice`, `thinking_level_changed` and
+ * `tool_stream_update` are delivered to in-process subscribers only and have no
+ * extension-facing hook. Adding a name here without adding an arm below is a
+ * compile error, which is the entire point of this table.
+ */
+type RelayableEventKind = Extract<
+	AgentSessionEvent["type"],
+	| "agent_start"
+	| "agent_end"
+	| "turn_start"
+	| "turn_end"
+	| "message_start"
+	| "message_update"
+	| "message_end"
+	| "tool_execution_start"
+	| "tool_execution_update"
+	| "tool_execution_end"
+	| "auto_compaction_start"
+	| "auto_compaction_end"
+	| "auto_retry_start"
+	| "auto_retry_end"
+	| "retry_fallback_applied"
+	| "retry_fallback_succeeded"
+	| "ttsr_triggered"
+	| "todo_reminder"
+	| "goal_updated"
+>;
+
+/**
+ * One relay arm per relayable kind, each keyed to its OWN event variant.
+ *
+ * A mapped type rather than a plain `Record`: this is what lets each arm read
+ * `event.message` / `event.toolCallId` / `event.goal` without a cast, because
+ * the `event` parameter is contextually narrowed to the variant that key names.
+ * `Record<RelayableEventKind, (event: AgentSessionEvent) => ...>` would force a
+ * cast in all nineteen arms, and a cast is exactly what would let a branch keep
+ * compiling after the event shape it reads changed underneath it.
+ */
+type SessionEventRelays = {
+	[E in RelayableEventKind]: (event: Extract<AgentSessionEvent, { type: E }>) => Promise<RunnerEmitEvent | undefined>;
+};
+
 const INTERRUPTED_THINKING_MIN_CHARS = 60;
 const SESSION_CWD_CHANGE_REJECTED = Symbol("sessionCwdChangeRejected");
 
@@ -842,6 +890,177 @@ export class AgentSession implements SettingsScope {
 	#adoptedResetMarkers = new Map<string, number>();
 	// Extension system
 	#extensionRunner: ExtensionRunner | undefined = undefined;
+	/**
+	 * Session-event → extension-payload relay, one arm per {@link RelayableEventKind}.
+	 *
+	 * A field initializer rather than a local inside the dispatcher: `message_update`
+	 * fires on every streamed delta, so rebuilding nineteen closures per event is a
+	 * real per-token cost. Arms read `this.#turnIndex` only when CALLED, so this
+	 * initializer needs no ordering guarantee against `#turnIndex` further down.
+	 *
+	 * `satisfies` is the load-bearing operator here — it is what turns a missing arm
+	 * into a compile error instead of a silently dropped event at runtime.
+	 */
+	#sessionEventRelay = {
+		agent_start: async () => {
+			this.#turnIndex = 0;
+			return { type: "agent_start" };
+		},
+		// `agent_end` is a documented no-op, not a missing feature: its extension
+		// notification is emitted from the settled agent_end maintenance path
+		// (`#emitAgentEndNotification`) so `session_stop` control hooks are not
+		// blocked by unrelated notification-only work. Precedent for an intentional
+		// empty arm: `event-controller.ts` `turn_start` and `goal_updated`.
+		agent_end: async () => undefined,
+		turn_start: async () => {
+			const hookEvent: TurnStartEvent = {
+				type: "turn_start",
+				turnIndex: this.#turnIndex,
+				timestamp: Date.now(),
+			};
+			return hookEvent;
+		},
+		turn_end: async event => {
+			const hookEvent: TurnEndEvent = {
+				type: "turn_end",
+				turnIndex: this.#turnIndex,
+				message: event.message,
+				toolResults: event.toolResults,
+			};
+			// The increment moves INTO this arm, ahead of the dispatch. The table
+			// returns a payload and the dispatcher emits it, so leaving the bump
+			// after the emit would read a stale index on the next turn. Equivalent
+			// to the previous placement: `#turnIndex` is read only by the
+			// `turn_start`/`turn_end` arms and by `turn_id` on the session_stop
+			// continuation path, all of which run later in the turn's lifetime, and
+			// an extension `turn_end` handler receives an `ExtensionContext` with no
+			// reach into session internals.
+			this.#turnIndex++;
+			return hookEvent;
+		},
+		message_start: async event => {
+			const extensionEvent: MessageStartEvent = {
+				type: "message_start",
+				message: event.message,
+			};
+			return extensionEvent;
+		},
+		message_update: async event => {
+			const extensionEvent: MessageUpdateEvent = {
+				type: "message_update",
+				message: event.message,
+				assistantMessageEvent: event.assistantMessageEvent,
+			};
+			return extensionEvent;
+		},
+		message_end: async event => {
+			// `message_end` is a notification, not a context-rewrite hook. Detach its
+			// payload from agent-owned history so an async observer that mutates the
+			// event after an `await` cannot race mid-run maintenance and enlarge (or
+			// otherwise rewrite) the next provider request after its threshold check.
+			// Explicit `tool_result` / `context` hooks remain the supported mutation
+			// surfaces. Third-party metadata that is not structured-cloneable is
+			// sanitized field-by-field without retaining nested live references.
+			const extensionEvent: MessageEndEvent = {
+				type: "message_end",
+				message: cloneMessageEndNotification(event.message),
+			};
+			return extensionEvent;
+		},
+		tool_execution_start: async event => {
+			const extensionEvent: ToolExecutionStartEvent = {
+				type: "tool_execution_start",
+				toolCallId: event.toolCallId,
+				toolName: event.toolName,
+				args: event.args,
+				intent: event.intent,
+			};
+			return extensionEvent;
+		},
+		tool_execution_update: async event => {
+			const extensionEvent: ToolExecutionUpdateEvent = {
+				type: "tool_execution_update",
+				toolCallId: event.toolCallId,
+				toolName: event.toolName,
+				args: event.args,
+				partialResult: event.partialResult,
+			};
+			return extensionEvent;
+		},
+		tool_execution_end: async event => {
+			const extensionEvent: ToolExecutionEndEvent = {
+				type: "tool_execution_end",
+				toolCallId: event.toolCallId,
+				toolName: event.toolName,
+				result: event.result,
+				isError: event.isError ?? false,
+			};
+			return extensionEvent;
+		},
+		auto_compaction_start: async event => {
+			return {
+				type: "auto_compaction_start",
+				reason: event.reason,
+				action: event.action,
+			};
+		},
+		auto_compaction_end: async event => {
+			return {
+				type: "auto_compaction_end",
+				action: event.action,
+				result: event.result,
+				aborted: event.aborted,
+				willRetry: event.willRetry,
+				errorMessage: event.errorMessage,
+				skipped: event.skipped,
+			};
+		},
+		auto_retry_start: async event => {
+			return {
+				type: "auto_retry_start",
+				attempt: event.attempt,
+				maxAttempts: event.maxAttempts,
+				delayMs: event.delayMs,
+				errorMessage: event.errorMessage,
+				errorId: event.errorId,
+			};
+		},
+		auto_retry_end: async event => {
+			return {
+				type: "auto_retry_end",
+				success: event.success,
+				attempt: event.attempt,
+				finalError: event.finalError,
+				retryErrors: event.retryErrors,
+			};
+		},
+		retry_fallback_applied: async event => {
+			return {
+				type: "retry_fallback_applied",
+				from: event.from,
+				to: event.to,
+				role: event.role,
+				reason: event.reason,
+			};
+		},
+		retry_fallback_succeeded: async event => {
+			return { type: "retry_fallback_succeeded", model: event.model, role: event.role };
+		},
+		ttsr_triggered: async event => {
+			return { type: "ttsr_triggered", rules: event.rules };
+		},
+		todo_reminder: async event => {
+			return {
+				type: "todo_reminder",
+				todos: event.todos,
+				attempt: event.attempt,
+				maxAttempts: event.maxAttempts,
+			};
+		},
+		goal_updated: async event => {
+			return { type: "goal_updated", goal: event.goal, state: event.state };
+		},
+	} satisfies SessionEventRelays;
 	#getEvalPreludes: (() => readonly EvalPreludeDefinition[]) | undefined;
 	#reconcileBrowserMcpFilter: AgentSessionConfig["reconcileBrowserMcpFilter"];
 	#skillDescriptions: SkillDescriptionCatalog;
@@ -4662,150 +4881,25 @@ export class AgentSession implements SettingsScope {
 
 	/** Emit extension events based on session events */
 	async #emitExtensionEvent(event: AgentSessionEvent): Promise<void> {
-		if (!this.#extensionRunner) return;
-		if (event.type === "agent_start") {
-			this.#turnIndex = 0;
-			await this.#extensionRunner.emit({ type: "agent_start" });
-			return;
-		}
+		const runner = this.#extensionRunner;
+		if (!runner) return;
+		// Two casts, not one. The key cast narrows the 28-member event union to the
+		// 19 the table covers; the value cast collapses 19 distinct function types
+		// into one callable signature. The value cast is the same shape the TUI
+		// dispatcher already uses at `event-controller.ts`.
+		const arm = this.#sessionEventRelay[event.type as RelayableEventKind] as
+			| ((event: AgentSessionEvent) => Promise<RunnerEmitEvent | undefined>)
+			| undefined;
+		if (!arm) return;
 
-		if (!this.#extensionRunner.hasHandlers(event.type)) return;
-		if (event.type === "agent_end") {
-			// `agent_end` extension notification is emitted from the settled
-			// agent_end maintenance path so `session_stop` control hooks are not
-			// blocked by unrelated notification-only work.
-		} else if (event.type === "turn_start") {
-			const hookEvent: TurnStartEvent = {
-				type: "turn_start",
-				turnIndex: this.#turnIndex,
-				timestamp: Date.now(),
-			};
-			await this.#extensionRunner.emit(hookEvent);
-		} else if (event.type === "turn_end") {
-			const hookEvent: TurnEndEvent = {
-				type: "turn_end",
-				turnIndex: this.#turnIndex,
-				message: event.message,
-				toolResults: event.toolResults,
-			};
-			await this.#extensionRunner.emit(hookEvent);
-			this.#turnIndex++;
-		} else if (event.type === "message_start") {
-			const extensionEvent: MessageStartEvent = {
-				type: "message_start",
-				message: event.message,
-			};
-			await this.#extensionRunner.emit(extensionEvent);
-		} else if (event.type === "message_update") {
-			const extensionEvent: MessageUpdateEvent = {
-				type: "message_update",
-				message: event.message,
-				assistantMessageEvent: event.assistantMessageEvent,
-			};
-			await this.#extensionRunner.emit(extensionEvent);
-		} else if (event.type === "message_end") {
-			// `message_end` is a notification, not a context-rewrite hook. Detach its
-			// payload from agent-owned history so an async observer that mutates the
-			// event after an `await` cannot race mid-run maintenance and enlarge (or
-			// otherwise rewrite) the next provider request after its threshold check.
-			// Explicit `tool_result` / `context` hooks remain the supported mutation
-			// surfaces. Third-party metadata that is not structured-cloneable is
-			// sanitized field-by-field without retaining nested live references.
-			const extensionEvent: MessageEndEvent = {
-				type: "message_end",
-				message: cloneMessageEndNotification(event.message),
-			};
-			await this.#extensionRunner.emit(extensionEvent);
-		} else if (event.type === "tool_execution_start") {
-			const extensionEvent: ToolExecutionStartEvent = {
-				type: "tool_execution_start",
-				toolCallId: event.toolCallId,
-				toolName: event.toolName,
-				args: event.args,
-				intent: event.intent,
-			};
-			await this.#extensionRunner.emit(extensionEvent);
-		} else if (event.type === "tool_execution_update") {
-			const extensionEvent: ToolExecutionUpdateEvent = {
-				type: "tool_execution_update",
-				toolCallId: event.toolCallId,
-				toolName: event.toolName,
-				args: event.args,
-				partialResult: event.partialResult,
-			};
-			await this.#extensionRunner.emit(extensionEvent);
-		} else if (event.type === "tool_execution_end") {
-			const extensionEvent: ToolExecutionEndEvent = {
-				type: "tool_execution_end",
-				toolCallId: event.toolCallId,
-				toolName: event.toolName,
-				result: event.result,
-				isError: event.isError ?? false,
-			};
-			await this.#extensionRunner.emit(extensionEvent);
-		} else if (event.type === "auto_compaction_start") {
-			await this.#extensionRunner.emit({
-				type: "auto_compaction_start",
-				reason: event.reason,
-				action: event.action,
-			});
-		} else if (event.type === "auto_compaction_end") {
-			await this.#extensionRunner.emit({
-				type: "auto_compaction_end",
-				action: event.action,
-				result: event.result,
-				aborted: event.aborted,
-				willRetry: event.willRetry,
-				errorMessage: event.errorMessage,
-				skipped: event.skipped,
-			});
-		} else if (event.type === "auto_retry_start") {
-			await this.#extensionRunner.emit({
-				type: "auto_retry_start",
-				attempt: event.attempt,
-				maxAttempts: event.maxAttempts,
-				delayMs: event.delayMs,
-				errorMessage: event.errorMessage,
-				errorId: event.errorId,
-			});
-		} else if (event.type === "auto_retry_end") {
-			await this.#extensionRunner.emit({
-				type: "auto_retry_end",
-				success: event.success,
-				attempt: event.attempt,
-				finalError: event.finalError,
-				retryErrors: event.retryErrors,
-			});
-		} else if (event.type === "retry_fallback_applied") {
-			await this.#extensionRunner.emit({
-				type: "retry_fallback_applied",
-				from: event.from,
-				to: event.to,
-				role: event.role,
-				reason: event.reason,
-			});
-		} else if (event.type === "retry_fallback_succeeded") {
-			await this.#extensionRunner.emit({
-				type: "retry_fallback_succeeded",
-				model: event.model,
-				role: event.role,
-			});
-		} else if (event.type === "ttsr_triggered") {
-			await this.#extensionRunner.emit({ type: "ttsr_triggered", rules: event.rules });
-		} else if (event.type === "todo_reminder") {
-			await this.#extensionRunner.emit({
-				type: "todo_reminder",
-				todos: event.todos,
-				attempt: event.attempt,
-				maxAttempts: event.maxAttempts,
-			});
-		} else if (event.type === "goal_updated") {
-			await this.#extensionRunner.emit({
-				type: "goal_updated",
-				goal: event.goal,
-				state: event.state,
-			});
-		}
+		// `agent_start` stays ungated: its arm resets the turn counter, which also
+		// feeds `turn_id` on the session_stop continuation path and must not depend
+		// on any extension being subscribed. Every other relayable kind keeps the
+		// pre-existing zero-handler fast path.
+		if (event.type !== "agent_start" && !runner.hasHandlers(event.type)) return;
+
+		const payload = await arm(event);
+		if (payload) await runner.emit(payload);
 	}
 
 	/**
@@ -9843,10 +9937,10 @@ export class AgentSession implements SettingsScope {
 		// event.
 		//
 		// Fan-out uses the synchronous `#emit`, matching `thinking_level_changed`:
-		// `model_changed` has no extension-facing hook (`#emitExtensionEvent`
-		// never maps it), so routing it through `#emitSessionEvent` would only
-		// add an extension-delivery await inside every model switch — including
-		// retry-fallback on the error path.
+		// routing it through `#emitSessionEvent` would add an extension-delivery await
+		// inside every model switch — including retry-fallback on the error path.
+		// `model_changed` is deliberately absent from `RelayableEventKind`; add it
+		// there together with a real relay arm, never on its own.
 		if (isChanging) {
 			this.#emit({ type: "model_changed" });
 		}

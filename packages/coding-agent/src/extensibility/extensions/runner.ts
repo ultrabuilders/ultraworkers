@@ -374,7 +374,7 @@ const MAX_PENDING_MCP_NOTIFICATIONS = 100;
  * Events handled by the generic emit() method.
  * Events with dedicated emitXxx() methods are excluded for stronger type safety.
  */
-type RunnerEmitEvent = Exclude<
+export type RunnerEmitEvent = Exclude<
 	ExtensionEvent,
 	| ToolCallEvent
 	| ToolResultEvent

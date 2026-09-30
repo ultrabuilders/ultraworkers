@@ -11,6 +11,10 @@
 
 ### Added
 
+- `/reload-extensions` reloads extensions, skills, commands and plugin state in place, and tells
+  extensions to re-contribute their resources — the `resources_discover` event's `reload` reason
+  previously had no caller, so an extension could never be told a reload happened. It asks before
+  discarding live extension state, and only when there is state to discard
 - `Ctrl+Shift+F` searches the rendered transcript and steps through matches
 
 - Documented the extension trust model: extensions are trusted in-process code with no capability

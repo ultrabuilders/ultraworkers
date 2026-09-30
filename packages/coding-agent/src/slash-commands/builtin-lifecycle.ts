@@ -24,6 +24,7 @@ import { isLowSignalTitleInput } from "../tiny/text";
 import { resolveToCwd } from "../tools/path-utils";
 import { commandConsumed, errorMessage, usage } from "./helpers/parse";
 import { handleSshAcp } from "./helpers/ssh";
+import { tuiRuntimeAsSlashCommand } from "./helpers/tui-runtime";
 import type {
 	ParsedSlashCommand,
 	SlashCommandResult,
@@ -868,7 +869,112 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 			await runtime.ctx.restart();
 		},
 	},
+	{
+		name: "reload-extensions",
+		icon: "restart",
+		description: "Reload extensions, skills and plugin state in place",
+		getTuiAutocompleteDescription: runtime => {
+			const live = liveExtensionCount(runtime.ctx.session);
+			return live > 0
+				? `Reload extensions: ${live} active, their running state is discarded`
+				: "Reload extensions: no active extensions, nothing to lose";
+		},
+		handle: async (_command, runtime) => {
+			// The headless tier cannot ask. `SlashCommandRuntime` carries no UI handle
+			// and an `ExtensionUIContext` is a TUI concept, so there is nothing to
+			// present a dialog with here — this tier does what the command says and
+			// reports what it discarded, and `handleTui` below is where the question
+			// gets asked. Saying so beats silently guessing what the operator wanted.
+			const live = liveExtensionCount(runtime.session);
+			await reloadExtensionState(runtime);
+			await runtime.output(reloadReport(live, "not confirmed — no dialog is reachable from this mode"));
+			return commandConsumed();
+		},
+		handleTui: async (_command, runtime) => {
+			clearSubmittedText(runtime);
+			const live = liveExtensionCount(runtime.ctx.session);
+
+			// Ask only when something is actually lost. A dialog on a session with no
+			// extensions trains the operator to dismiss dialogs unread — and the one
+			// time it matters, they dismiss this one too.
+			if (live > 0) {
+				const ui = runtime.ctx.getToolUIContext();
+				if (ui) {
+					const confirmed = await ui
+						.confirm(
+							"Reload extensions",
+							`${live} active extension${live === 1 ? "" : "s"} will be unloaded and loaded again. ` +
+								"Timers, registered tools and provider registrations they hold are discarded, and a turn in flight is interrupted. Reload?",
+						)
+						.catch(() => false);
+					if (!confirmed) {
+						runtime.ctx.showHookNotify("Reload cancelled.", "info");
+						return;
+					}
+				} else {
+					// No UI primitives yet — hooks not initialised. Reloading is still
+					// what the command was asked for, so do it rather than fail, but
+					// say plainly that nobody was asked first.
+					runtime.ctx.showHookNotify(
+						`Reloading ${live} active extension${live === 1 ? "" : "s"} without confirmation: no dialog is available yet.`,
+						"warning",
+					);
+				}
+			}
+
+			// Same body as the headless tier, on the same shared adapter the TUI
+			// dispatcher uses for `handle`-only specs. One reload path, not two.
+			await reloadExtensionState(tuiRuntimeAsSlashCommand(runtime.ctx));
+			runtime.ctx.showHookNotify(reloadReport(live, "confirmed"), "info");
+		},
+	},
 ];
+
+/**
+ * Extensions loaded AND not suspended.
+ *
+ * `getLoadedExtensions()` alone would over-count: it returns `#loadOrder`, which
+ * keeps every extension ever bound, so a SUSPENDED extension is in that list even
+ * though reloading cannot lose anything it holds. Filtering through
+ * `isExtensionActive` asks the question the dialog actually needs answered — is
+ * there running state to discard.
+ */
+function liveExtensionCount(session: AgentSession): number {
+	const runner = session.extensionRunner;
+	if (!runner) return 0;
+	return runner.getLoadedExtensions().filter(extension => runner.isExtensionActive(extension.path)).length;
+}
+
+/**
+ * The reload body, shared by both dispatchers.
+ *
+ * `rescopeHeadlessToCwd` IS the existing reload tier — settings for the cwd, the
+ * memory backend rebind, prompt roots, skills/commands, plugin reload — and it
+ * already has four call sites. Calling it with the cwd the session is already at
+ * is "re-rescope to where I am", so this adds no tier beside it.
+ */
+async function reloadExtensionState(runtime: SlashCommandRuntime): Promise<void> {
+	await rescopeHeadlessToCwd(runtime, runtime.cwd);
+
+	// What that tier does NOT do: tell extensions to re-contribute their resources.
+	// `emitResourcesDiscover` was written, typed and wired into the runner with a
+	// `reason` of "startup" | "reload", and had no call site at all — so the
+	// `"reload"` arm was unreachable code that read as a finished feature. This is
+	// the call site that makes it live.
+	const runner = runtime.session.extensionRunner;
+	if (runner) {
+		await runner.emitResourcesDiscover(runtime.cwd, "reload");
+	}
+}
+
+/** One line naming what the reload discarded, so the operator is not guessing. */
+function reloadReport(live: number, consent: string): string {
+	const lost =
+		live > 0
+			? `${live} active extension${live === 1 ? "" : "s"} unloaded and loaded again (${consent}).`
+			: "No active extensions to reload.";
+	return `Reloaded extensions, skills and plugin state. ${lost}`;
+}
 async function rescopeHeadlessToCwd(runtime: SlashCommandRuntime, cwd: string): Promise<void> {
 	setProjectDir(cwd);
 	await runtime.settings.reloadForCwd(cwd);

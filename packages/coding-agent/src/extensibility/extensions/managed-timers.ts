@@ -95,17 +95,13 @@ export class ManagedTimers {
 	 * leak: a reload leaves the old instance's timers keyed to an object nothing
 	 * holds any more, and the clear reports success having cleared nothing.
 	 *
-	 * VERIFIED, AND NOT GUARANTEED: "one path names one extension" does not hold
-	 * anywhere in this package. `loadExtensions` pushes onto `extensions` with no
-	 * dedupe check, and `isExtensionActive` only ANSWERS with a path lookup
-	 * rather than preventing one. So two `Extension` objects sharing a path are
-	 * possible, and `clearFor` would clear both — worse than the leak this design
-	 * was chosen over, because it is also silent, and because it means `clearFor`
-	 * cannot actually tell two extensions apart.
-	 *
-	 * Not fixed here: a dedupe is a different concern and belongs in its own
-	 * commit. Until then, treat a duplicate path as a real bug to report rather
-	 * than a hypothetical.
+	 * Relies on "a path names one extension", which was NOT true when this was
+	 * written: `bindPreparedExtensions` pushed without a dedupe, and
+	 * `isExtensionActive` only answers with a path lookup rather than preventing
+	 * one. With a duplicate, `clearFor` would clear both and could not tell the
+	 * two apart. `3f3e42c126` refuses the second load, so the invariant holds
+	 * rather than being a caveat; if that dedupe is ever relaxed, this comment is
+	 * the thing to re-check first.
 	 */
 	clearFor(owner: Extension): number {
 		let cleared = 0;

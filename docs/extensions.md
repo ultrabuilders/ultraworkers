@@ -35,6 +35,22 @@ Extensions can combine all of the following in one module:
 - custom message rendering
 - session/message injection APIs (`sendMessage`, `sendUserMessage`, `appendEntry`)
 
+## Trust
+
+Extensions are trusted code. An extension is a TypeScript module evaluated
+in-process, not a sandboxed format, so it can reach anything the agent can reach.
+Reviewing what you install is the control — there is no capability gate.
+
+Project-scoped extensions are discovered under `<cwd>/.omp`, so they arrive with
+the repository. Plugins resolve to their registry `installPath` instead, which
+need not be inside the workspace.
+
+`ctx.isProjectTrusted()` exists and currently always returns `true`. Do not branch
+on it: the branch cannot be exercised, so the safe path is never taken.
+
+The open question — what that call should mean — is written up, with the
+measurements behind it, in [extension-trust-model.md](./extension-trust-model.md).
+
 ## Runtime model
 
 1. Extensions are imported and their factory functions run.

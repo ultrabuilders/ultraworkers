@@ -9,6 +9,13 @@
   Write the factory with a block body, or return `undefined` explicitly. Nothing breaks at runtime —
   the host discards the return value — so this is a source-level change for extension authors only
 
+### Added
+
+- Documented the extension trust model: extensions are trusted in-process code with no capability
+  gate, project-scoped ones arrive with the repository while plugins resolve to a registry install
+  path outside it, and `ctx.isProjectTrusted()` currently always returns `true`. The open question of
+  what it should mean is written up in `docs/extension-trust-model.md`
+
 ### Fixed
 
 - Two extensions registering a CLI flag with the same name no longer overwrite each other's value:

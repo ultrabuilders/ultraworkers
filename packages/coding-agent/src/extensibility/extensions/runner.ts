@@ -1043,7 +1043,7 @@ export class ExtensionRunner {
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
 			if (!handlers || handlers.length === 0) continue;
-			const ctx = this.createContext();
+			const ctx = this.createContext(undefined, undefined, ext);
 			for (const handler of handlers) {
 				const result = (await this.#runHandlerWithTimeout(
 					handler,
@@ -1761,7 +1761,6 @@ export class ExtensionRunner {
 		// timeout machinery) to the first matching handler. Streaming sessions emit
 		// message_update / tool_execution_* per delta with usually no extension
 		// subscribed; building `ctx` for a zero-handler event is pure waste.
-		let ctx: ExtensionContext | undefined;
 		let result: SessionBeforeEventResult | SessionCompactingResult | SessionStopEventResult | undefined;
 
 		if (this.#isSessionShutdownEvent(event)) {
@@ -1770,7 +1769,10 @@ export class ExtensionRunner {
 			for (const ext of this.extensions) {
 				const handlers = ext.handlers.get(event.type);
 				if (!handlers || handlers.length === 0) continue;
-				ctx ??= this.createContext();
+				// Per extension, not per event: a shared context has no owner, so it
+				// cannot carry the disposed guard. Still deferred to the first
+				// matching handler, which is what the lazy `ctx` was for.
+				const ctx = this.createContext(undefined, undefined, ext);
 				for (const handler of handlers) {
 					promises.push(this.#runHandlerWithTimeout(handler, event, ctx, ext, timeoutMs));
 				}
@@ -1782,7 +1784,7 @@ export class ExtensionRunner {
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
 			if (!handlers || handlers.length === 0) continue;
-			ctx ??= this.createContext();
+			const ctx = this.createContext(undefined, undefined, ext);
 
 			for (const handler of handlers) {
 				const handlerResult = await this.#runHandlerWithTimeout(

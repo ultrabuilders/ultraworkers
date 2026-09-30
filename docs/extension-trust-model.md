@@ -2,9 +2,10 @@
 
 ## Status
 
-**Proposed — decision recorded, ratification pending.**
+**Proposed — unratified.** The decision below is an agent's proposal, not an
+owner decision.
 
-- **Decider:** `tranquangdang21` (product owner) — ratification outstanding
+- **Decider:** _unassigned — owner ratification required_
 - **Date:** 2026-10-01
 - **Work item:** `m2-wi-0-030` (MILESTONE_2_EXECUTION_PLAN · `WI-0`)
 - **Anchors measured against:** `895fd263a2`
@@ -74,15 +75,23 @@ exposures and are not merged into one claim anywhere in this document.
 for the same plugin ID.**
 
 ```
-packages/coding-agent/src/discovery/helpers.ts:1297
-    // Project entries take precedence over user entries for the same plugin ID.
+packages/coding-agent/src/discovery/helpers.ts:1335-1341
+    // Project entries shadow user entries for the same plugin ID.
+    if (projectRoots.length > 0) {
+        const projectIds = new Set(projectRoots.map(r => r.id));
+        const deduped = roots.filter(r => !projectIds.has(r.id));
+        roots.length = 0;
+        roots.push(...projectRoots, ...deduped);
+    }
 ```
 
-This is stated in the code and is the load-order consequence that matters: a
-cloned repository's registry can shadow, not merely add to, what the user has
-installed. From there, `plugins/loader.ts:95` enumerates `<root>/node_modules`
-per root and `plugins/loader.ts:331`/`:407` resolve the `omp.extensions` manifest
-key, so the shadowed plugin's extension modules load as project-scoped roots.
+This is not an ordering preference — the `filter` **removes** the user's own
+entry for a colliding plugin ID before the merged list is rebuilt. A cloned
+repository's registry therefore substitutes for what the user installed rather
+than adding to it. From there, `plugins/loader.ts:95` enumerates
+`<root>/node_modules` per root and `plugins/loader.ts:331`/`:407` resolve the
+`omp.extensions` manifest key, so the shadowed plugin's extension modules load as
+project-scoped roots.
 
 **(c) `isProjectTrusted()` is declared twice on the extension-facing context.**
 
@@ -220,8 +229,12 @@ are now written down rather than inferred from a changelog line.
 it, including M3. This ADR assigns it:**
 
 - **Name:** `M–L` — gate project-scoped extension loading
-- **Owner:** `tranquangdang21` (product owner)
-- **Date:** 2026-12-31
+- **Owner:** _unassigned_
+- **Date:** _not scheduled_
+
+> Owner has not ratified this decision, so no owner and no date are recorded here
+> deliberately. A deadline invented to satisfy a completeness gate is worse than
+> no deadline: it reads as a commitment nobody made and will be treated as one.
 
 Scope for that item, per the measured facts above: the two load paths in `(b)`
 must be decided **separately** — `(b′)` shows they are not equivalent exposures,

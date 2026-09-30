@@ -52,8 +52,8 @@ branch on it — the branch cannot be exercised, so the safe path is never taken
 For the same reason `ctx.exec` is deliberately outside any gate: an extension
 that has loaded is treated as trusted.
 
-That posture is a recorded decision with a named owner and a revisit date, not an
-accident. The decision, what it explicitly does not assert, and the triggers that
+That posture is written down as a proposal awaiting owner ratification, not left
+implicit. The decision, what it explicitly does not assert, and the triggers that
 reopen it are in [extension-trust-model.md](./extension-trust-model.md).
 
 ## Runtime model

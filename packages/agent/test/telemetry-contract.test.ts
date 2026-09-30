@@ -5,6 +5,7 @@ import type {
 	TelemetryAttributes,
 	TelemetrySpan,
 } from "@oh-my-pi/pi-agent-core/telemetry/context";
+import { toTelemetrySpan } from "@oh-my-pi/pi-agent-core/telemetry/context";
 
 // Contract for the vendor-neutral telemetry types.
 //
@@ -83,11 +84,10 @@ describe("TelemetrySpan", () => {
 });
 
 describe("toTelemetrySpan", () => {
-	it("translates a vendor span and drops the keys OTEL would reject", async () => {
+	it("translates a vendor span and drops the keys OTEL would reject", () => {
 		// The adapter is where the contract earns its keep: OTEL's setter takes no
 		// `undefined` value, and the contract uses `undefined` to mean "drop this
 		// key". A readonly array is also not a vendor array.
-		const { toTelemetrySpan } = await import("@oh-my-pi/pi-agent-core/telemetry/context");
 		const written: Record<string, unknown> = {};
 		const statuses: unknown[] = [];
 		const fake = {

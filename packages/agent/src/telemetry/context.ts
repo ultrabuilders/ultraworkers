@@ -78,6 +78,32 @@ export interface TelemetrySpan {
 	end(endTime?: number): void;
 }
 
+// ── Context ────────────────────────────────────────────────────────────
+
+/**
+ * What a telemetry backend hands the code that records against it.
+ *
+ * `startSpan` is a CALLBACK, not a begin/end pair. A begin/end pair leaks a span
+ * whenever the body throws, and the leak is invisible: the caller sees its own
+ * error and has no reason to suspect the span. A callback cannot leak, and it
+ * hands the span to the body without threading it through a return value the
+ * body might forget to produce.
+ *
+ * The span is closed when the body finishes, THROWING OR NOT — a body that throws
+ * never reaches the statement after `startSpan`, so leaving closure to the caller
+ * would leave the span open with nothing to attribute the error to. An explicit
+ * `end()` inside the body is therefore redundant rather than required, and
+ * `endTime` is stamped at the point the body actually finished.
+ *
+ * `fn` MAY return a promise, and nesting survives an `await`: the span stays
+ * current for the whole body, so a span opened after an `await` nests under this
+ * one rather than under whatever happened to be current. A backend must not
+ * restore the enclosing span until the returned promise settles.
+ */
+export interface TelemetryContext {
+	startSpan<T>(name: string, fn: (span: TelemetrySpan) => T): T;
+}
+
 // ── Adapter ──────────────────────────────────────────────────────────────
 //
 // Proof that the contract is actually implementable, not just describable.

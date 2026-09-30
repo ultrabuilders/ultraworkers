@@ -22,6 +22,15 @@ export * from "./sent-tool-definitions";
 export * from "./speculative-execution";
 // Telemetry
 export * from "./telemetry";
+// Vendor-neutral telemetry contract, its two reference backends, and the suite
+// a third backend has to pass. Split into `./telemetry/context` and friends
+// rather than a `telemetry/index.ts` because `./telemetry` is already an 86KB
+// module with five relative importers — a directory beside it would make that
+// specifier ambiguous.
+export * from "./telemetry/conformance";
+export * from "./telemetry/context";
+export * from "./telemetry/memory";
+export * from "./telemetry/noop";
 // Thinking selectors
 export * from "./thinking";
 // Tool-context augmentation

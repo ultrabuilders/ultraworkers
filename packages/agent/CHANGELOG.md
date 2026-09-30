@@ -11,6 +11,9 @@
 
 ### Added
 
+- A vendor-neutral telemetry contract (`TelemetryContext`/`TelemetrySpan`) with a no-op backend, an
+  in-memory recording backend, and a shared conformance suite any backend can be run against — so a
+  second telemetry backend is an adapter rather than an edit of every call site
 - Emergency compaction floors: a session that holds too much heap, serialized context, images, messages, or
   transcript on disk now compacts even when it is under its token threshold
 

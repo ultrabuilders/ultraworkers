@@ -273,22 +273,25 @@ describe("registerFlag with built-in-named flags (r3323473227)", () => {
 			new EventBus(),
 			runtime,
 		);
+		// The sink calls the SAME static main.ts calls. It used to re-implement that
+		// write by hand, so the test exercised a copy of the production path rather
+		// than the path itself — and would have kept passing if the two diverged.
 		const sink: ExtensionFlagSink = {
 			getFlags: () => ExtensionRunner.aggregateFlags([ext]),
 			setFlagValue: (name, value) => {
-				runtime.flagValues.set(name, value);
+				ExtensionRunner.applyFlagValue([ext], name, value);
 			},
 		};
 
 		const args = applyExtensionFlags(sink, ["--spawn-peer", "reviewer", "review the diff"]);
-		expect(runtime.flagValues.get("spawn-peer")).toBe("reviewer");
+		expect(ext.flags.get("spawn-peer")?.value).toBe("reviewer");
 		expect(args?.messages).toEqual(["review the diff"]);
 
 		// A string flag's `@`-value is the flag's value, not a file arg (P1#1) — so
 		// classifying it requires this extension-aware parse, which is only possible
 		// once the flag set is known before the session exists.
 		const withFileLikeValue = applyExtensionFlags(sink, ["--spawn-peer", "@notes.md", "hello"]);
-		expect(runtime.flagValues.get("spawn-peer")).toBe("@notes.md");
+		expect(ext.flags.get("spawn-peer")?.value).toBe("@notes.md");
 		expect(withFileLikeValue?.fileArgs).toEqual([]);
 		expect(withFileLikeValue?.messages).toEqual(["hello"]);
 	});

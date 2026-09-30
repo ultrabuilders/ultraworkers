@@ -1310,12 +1310,27 @@ export class ExtensionRunner {
 		return ExtensionRunner.aggregateFlags(this.extensions);
 	}
 
-	getFlagValues(): Map<string, boolean | string> {
-		return new Map(this.runtime.flagValues);
+	/**
+	 * Hand a CLI-parsed value to every extension that declared `name`.
+	 *
+	 * `applyExtensionFlags` parses the command line once, with no way to know which
+	 * extension asked for a flag, so the value is applied to all of them. That is
+	 * the interim behaviour while the collision policy — reject at load, namespace
+	 * the flag, or warn and keep last-wins — is still an open product decision; it
+	 * is the one option all three of those can be layered on top of.
+	 */
+	static applyFlagValue(extensions: readonly Extension[], name: string, value: boolean | string): void {
+		for (const extension of extensions) {
+			const flag = extension.flags.get(name);
+			// A name nobody declared is skipped rather than stored: a typo on the
+			// command line must not leave a value that some extension registering the
+			// same name later would silently inherit.
+			if (flag) flag.value = value;
+		}
 	}
 
 	setFlagValue(name: string, value: boolean | string): void {
-		this.runtime.flagValues.set(name, value);
+		ExtensionRunner.applyFlagValue(this.extensions, name, value);
 	}
 
 	static readonly #RESERVED_SHORTCUTS: Record<string, true> = {

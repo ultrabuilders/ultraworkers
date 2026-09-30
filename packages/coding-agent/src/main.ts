@@ -2237,7 +2237,11 @@ export async function runRootCommand(
 			const extensionFlagSink: ExtensionFlagSink = {
 				getFlags: () => ExtensionRunner.aggregateFlags(extensionsResult.extensions),
 				setFlagValue: (name, value) => {
-					extensionsResult.runtime.flagValues.set(name, value);
+					// Applied to the declarations themselves. Writing straight into a
+					// shared map here was a second door into the same state the loader
+					// maintains, and it is how a value reached extensions that never
+					// declared the flag.
+					ExtensionRunner.applyFlagValue(extensionsResult.extensions, name, value);
 				},
 			};
 			const initialArgs = applyExtensionFlags(extensionFlagSink, rawArgs) ?? parsedArgs;

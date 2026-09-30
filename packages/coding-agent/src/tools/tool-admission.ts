@@ -3,8 +3,6 @@ import { isIrcEnabled } from "../irc/messaging";
 import { cfgAutolearnEnabled } from "../autolearn/settings";
 import { cfgBashEnabled } from "../exec/settings";
 import { cfgCompactionExperimentalContextManagement } from "../session/context-settings";
-import { cfgExternalThinking } from "../session/settings";
-import { cfgGoalEnabled } from "../goals/settings";
 import { cfgLspEnabled } from "../lsp/settings";
 import { cfgMemoryBackend } from "../memory-backend/settings";
 import { cfgTaskMaxRecursionDepth } from "../task/settings";

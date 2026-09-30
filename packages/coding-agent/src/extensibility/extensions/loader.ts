@@ -100,7 +100,6 @@ export class ExtensionRuntimeNotInitializedError extends Error {
  * These are replaced with real implementations during initialization.
  */
 export class ExtensionRuntime implements IExtensionRuntime {
-	flagValues = new Map<string, boolean | string>();
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; sourceId: string }> = [];
 
 	registerProvider(name: string, config: ProviderConfig, sourceId: string): void {
@@ -183,7 +182,6 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	readonly typebox = TypeBox;
 	readonly arktype = type;
 	readonly zod = zod;
-	readonly flagValues = new Map<string, boolean | string>();
 	readonly pendingProviderRegistrations: Array<{
 		name: string;
 		config: ProviderConfig;
@@ -266,10 +264,19 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		name: string,
 		options: { description?: string; type: "boolean" | "string"; default?: boolean | string },
 	): void {
-		this.extension.flags.set(name, { name, extensionPath: this.extension.path, ...options });
-		if (options.default !== undefined) {
-			this.runtime.flagValues.set(name, options.default);
-		}
+		// The value is seeded onto the declaration, not into a shared map. Two
+		// extensions may declare the same name; each keeps its own value, so loading
+		// order stops deciding what the other one reads.
+		//
+		// No duplicate-name guard here. What a collision should MEAN — reject,
+		// namespace, or warn — is a product decision that is still open, and adding a
+		// wall now would silently pick one of them.
+		this.extension.flags.set(name, {
+			name,
+			extensionPath: this.extension.path,
+			...options,
+			value: options.default,
+		});
 	}
 
 	registerToolNameResolver(resolver: ToolNameResolver): void {
@@ -326,8 +333,9 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	}
 
 	getFlag(name: string): boolean | string | undefined {
-		if (!this.extension.flags.has(name)) return undefined;
-		return this.runtime.flagValues.get(name);
+		// A name this extension never declared is `undefined` — not another
+		// extension's value, and not a CLI value that arrived for someone else.
+		return this.extension.flags.get(name)?.value;
 	}
 
 	sendMessage<T = unknown>(

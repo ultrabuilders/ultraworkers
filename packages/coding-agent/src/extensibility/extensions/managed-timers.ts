@@ -112,7 +112,9 @@ export class ManagedTimers {
 	 */
 	clearForPath(path: string): number {
 		let cleared = 0;
-		for (const [timer, holder] of [...this.#timers]) {
+		// Deleting from a Map while iterating it is specified, not accidental: entries
+		// removed before the cursor is reached are simply not visited.
+		for (const [timer, holder] of this.#timers) {
 			if (holder?.path !== path) continue;
 			this.#timers.delete(timer);
 			clearInterval(timer);

@@ -1860,6 +1860,16 @@ export interface ExtensionFlag {
 	type: "boolean" | "string";
 	default?: boolean | string;
 	extensionPath: string;
+	/**
+	 * The value `getFlag` returns: `default` until a CLI flag overrides it.
+	 *
+	 * Carried HERE rather than in a map shared by every extension. The declaration
+	 * was always per-extension — it carries `extensionPath` — so a shared value map
+	 * let the last extension to register a name decide what all the others read.
+	 * Two extensions declaring `--verbose` with different defaults meant one of them
+	 * silently got the other's answer, with no error to notice it by.
+	 */
+	value: boolean | string | undefined;
 }
 
 /**
@@ -1960,7 +1970,6 @@ export type SetServiceTierHandler = (family: ServiceTierFamily, tier: ServiceTie
 
 /** Shared state created by loader, used during registration and runtime. */
 export interface ExtensionRuntimeState {
-	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed during session initialization */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; sourceId: string }>;
 	/** Queue a provider registration until initialization, then apply it immediately. */

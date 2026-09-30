@@ -11,6 +11,10 @@
 
 ### Fixed
 
+- Two extensions registering a CLI flag with the same name no longer overwrite each other's value:
+  each keeps its own default, so `getFlag()` returns what that extension declared instead of whatever
+  the last-loaded extension registered. Passing the flag on the command line still applies it to every
+  extension that declared it
 - `/info` now prices a prompt-cache miss instead of leaving the line out. The attribution table was
   built without a missed-token count or a price, so the "Cache misses" line could never render; a
   compaction that threw away a warm prompt cache was invisible in the cost the session reported

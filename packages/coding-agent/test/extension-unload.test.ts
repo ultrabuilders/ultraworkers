@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { addFileWriteFallback, hasFileWriteFallback } from "@oh-my-pi/pi-coding-agent/tools/file-write-fallback";
 import { Type } from "@oh-my-pi/omptype/typebox";
 import { boxComposerStyle } from "@oh-my-pi/pi-tui/components/composer/box";
 import { EventBus } from "@oh-my-pi/pi-coding-agent/utils/event-bus";
@@ -34,26 +35,57 @@ function runnerFor(extensions: Extension[]): ExtensionRunner {
 
 const commandsOf = (ext: Extension): string[] => [...ext.commands.keys()];
 
-/** One number per bucket `clearExtensionBuckets` empties, in the order it empties them. */
-function bucketSizes(ext: Extension): number[] {
-	return [
-		ext.handlers.size,
-		ext.tools.size,
-		ext.assistantThinkingRenderers.length,
-		ext.fileWriteFallbackHandlers.length,
-		ext.fileDeleteFallbackHandlers.length,
-		ext.messageRenderers.size,
-		ext.composerShapes.size,
-		ext.commands.size,
-		ext.flags.size,
-		ext.shortcuts.size,
-		ext.outputFormats.size,
-		ext.toolNameResolvers.length,
-		ext.toolRegistrationListeners.size,
-	];
-}
-
-const EMPTY_BUCKETS = new Array(13).fill(0);
+/**
+ * Every bucket `clearExtensionBuckets` empties, each with the mutation ONLY that
+ * line can catch.
+ *
+ * The mutation column is the whole reason this is a table and not a loop. A bucket
+ * dropped from `clearExtensionBuckets` — or cleared with the wrong trampoline — is
+ * invisible to `check:ts` and to a whole-vector compare: `[1,1,...,1,0]` is not the
+ * zero vector, so a loop DOES go red, but it reports "some bucket survived" and
+ * leaves the reader to bisect thirteen lines to find which. Each row asserts one
+ * bucket by name, so the failing line names the bucket, and its comment names the
+ * edit that would break it while leaving every sibling green.
+ */
+const BUCKETS: ReadonlyArray<{ name: string; read: (ext: Extension) => number; mutation: string }> = [
+	{ name: "handlers", read: e => e.handlers.size, mutation: "deleting `handlers.clear()`" },
+	{ name: "tools", read: e => e.tools.size, mutation: "deleting `tools.clear()`" },
+	{
+		name: "assistantThinkingRenderers",
+		read: e => e.assistantThinkingRenderers.length,
+		mutation: "clearing with `.splice(0)` instead of assigning `length = 0`",
+	},
+	{
+		name: "fileWriteFallbackHandlers",
+		read: e => e.fileWriteFallbackHandlers.length,
+		mutation: "confusing the write fallback with the delete fallback — both are arrays of the same shape",
+	},
+	{
+		name: "fileDeleteFallbackHandlers",
+		read: e => e.fileDeleteFallbackHandlers.length,
+		mutation: "clearing the write fallback twice and this one never",
+	},
+	{ name: "messageRenderers", read: e => e.messageRenderers.size, mutation: "deleting `messageRenderers.clear()`" },
+	{ name: "composerShapes", read: e => e.composerShapes.size, mutation: "deleting `composerShapes.clear()`" },
+	{ name: "commands", read: e => e.commands.size, mutation: "deleting `commands.clear()`" },
+	{
+		name: "flags",
+		read: e => e.flags.size,
+		mutation: "clearing `flags` but forgetting the parallel `flagValues` map — the shape the bead calls out",
+	},
+	{ name: "shortcuts", read: e => e.shortcuts.size, mutation: "deleting `shortcuts.clear()`" },
+	{ name: "outputFormats", read: e => e.outputFormats.size, mutation: "deleting `outputFormats.clear()`" },
+	{
+		name: "toolNameResolvers",
+		read: e => e.toolNameResolvers.length,
+		mutation: "clearing with `.splice(0)` instead of assigning `length = 0`",
+	},
+	{
+		name: "toolRegistrationListeners",
+		read: e => e.toolRegistrationListeners.size,
+		mutation: "omitting the listener trampoline, since no registration method fills it from the factory",
+	},
+];
 
 describe("ExtensionRunner.unloadExtension", () => {
 	it("releases a suspended extension's timers instead of throwing on a missing owner", async () => {
@@ -93,11 +125,14 @@ describe("ExtensionRunner.unloadExtension", () => {
 		expect(resumed.map(extension => extension.path)).not.toContain("/ext/gone");
 	});
 
-	it("empties every registration bucket the unloaded extension filled", async () => {
-		// Every bucket, not a representative few. `clearExtensionBuckets` is the one
-		// place that lists them, and a bucket added there but not filled here would
-		// still keep serving after an unload while this test stayed green — the exact
-		// rot the shared helper's own comment warns about.
+	/**
+	 * An extension that filled every bucket `clearExtensionBuckets` empties.
+	 *
+	 * Filled through the factory for the buckets the API reaches, and through the
+	 * runner for `toolRegistrationListeners`, which has no registration method on the
+	 * extension API at all.
+	 */
+	async function filledExt(): Promise<Extension> {
 		const ext = await loadExt(api => {
 			api.on("session_start", () => {});
 			api.registerTool({
@@ -124,24 +159,211 @@ describe("ExtensionRunner.unloadExtension", () => {
 			api.registerOutputFormat({ id: "probe-fmt", mimeType: "text/plain", format: () => new Uint8Array() });
 			api.registerToolNameResolver(() => undefined);
 		}, "/ext/buckets");
+		runnerFor([ext]).onToolRegistered(() => {});
+		return ext;
+	}
 
-		const runner = runnerFor([ext]);
-		// Filled through the runner, not the loader: `toolRegistrationListeners` has no
-		// registration method on the extension API at all, so it is unreachable from
-		// the factory above.
-		runner.onToolRegistered(() => {});
+	// Distinguishing mutation: see BUCKETS["handlers"].mutation.
+	it("empties the handlers bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "handlers")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "handlers")!.read(ext)).toBe(0);
+	});
 
-		// Every bucket non-empty, checked ELEMENT BY ELEMENT. Comparing the whole
-		// vector against an all-zero vector would pass with a single bucket left
-		// unfilled — `[1,1,…,1,0]` is not the zero vector — so the test could not
-		// answer "which bucket did we forget to fill", only "was anything filled".
-		expect(bucketSizes(ext).every(size => size > 0)).toBe(true);
-		expect(runner.unloadExtension("/ext/buckets")).toBe(true);
+	// Distinguishing mutation: see BUCKETS["tools"].mutation.
+	it("empties the tools bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "tools")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "tools")!.read(ext)).toBe(0);
+	});
 
-		// The object survives in the caller's array — the runner only mutates its own
-		// view. What must be empty is the CONTENT, so re-registering the same path
-		// cannot resurrect a command the author believed they removed.
-		expect(bucketSizes(ext)).toEqual(EMPTY_BUCKETS);
+	// Distinguishing mutation: see BUCKETS["assistantThinkingRenderers"].mutation.
+	it("empties the assistantThinkingRenderers bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "assistantThinkingRenderers")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "assistantThinkingRenderers")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["fileWriteFallbackHandlers"].mutation.
+	it("empties the fileWriteFallbackHandlers bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "fileWriteFallbackHandlers")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "fileWriteFallbackHandlers")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["fileDeleteFallbackHandlers"].mutation.
+	it("empties the fileDeleteFallbackHandlers bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "fileDeleteFallbackHandlers")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "fileDeleteFallbackHandlers")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["messageRenderers"].mutation.
+	it("empties the messageRenderers bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "messageRenderers")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "messageRenderers")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["composerShapes"].mutation.
+	it("empties the composerShapes bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "composerShapes")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "composerShapes")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["commands"].mutation.
+	it("empties the commands bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "commands")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "commands")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["flags"].mutation.
+	it("empties the flags bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "flags")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "flags")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["shortcuts"].mutation.
+	it("empties the shortcuts bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "shortcuts")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "shortcuts")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["outputFormats"].mutation.
+	it("empties the outputFormats bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "outputFormats")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "outputFormats")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["toolNameResolvers"].mutation.
+	it("empties the toolNameResolvers bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "toolNameResolvers")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "toolNameResolvers")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["toolRegistrationListeners"].mutation.
+	it("empties the toolRegistrationListeners bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "toolRegistrationListeners")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "toolRegistrationListeners")!.read(ext)).toBe(0);
+	});
+
+	// The file-fallback seam, observed through the registry rather than the runner's
+	// private disposer map.
+	//
+	// `#pushFallbackDisposer` is private and reachable only from `initialize()`, which
+	// needs a full actions/context scaffold this unit does not have. Asserting on the
+	// map itself would mean adding an accessor purely for the test, so these use the
+	// registry the trampolines land in — the thing whose emptiness is the actual
+	// contract: a handler bound to a torn-down session must never fire again.
+	it("leaves no file-write fallback in the registry once the session shuts down", () => {
+		// Each registration disposes itself -- there is no exported registry-wide
+		// reset, so clearing via the returned disposer is the only supported path and
+		// is also exactly what the runner does.
+		const dispose = addFileWriteFallback(async () => false);
+		try {
+			expect(hasFileWriteFallback()).toBe(true);
+		} finally {
+			dispose();
+		}
+		expect(hasFileWriteFallback()).toBe(false);
+	});
+
+	// Distinguishing mutation: releasing with a stale index after the array shifted, so
+	// a disposal removes the WRONG handler and the real one survives. A boolean check
+	// alone would call that correct.
+	it("removes the exact registration, not whatever shifted into its place", () => {
+		const first = addFileWriteFallback(async () => false);
+		const second = addFileWriteFallback(async () => true);
+		try {
+			// Releasing out of order is the case an index-based splice gets wrong: the
+			// second removal must not take the first handler with it.
+			second();
+			expect(hasFileWriteFallback()).toBe(true);
+			first();
+			expect(hasFileWriteFallback()).toBe(false);
+		} finally {
+			// Leave nothing behind for whichever test runs next in this process.
+			first();
+			second();
+		}
+	});
+
+	// Distinguishing mutation: clearing the bucket by extension identity instead of by
+	// flag NAME when two extensions declare the same name. The neighbour's flag would
+	// vanish with the unload, and `check:ts` is blind to it.
+	it("empties the flags bucket per extension, so a shared flag name survives for its owner", async () => {
+		const keep = await loadExt(api => {
+			api.registerFlag("--shared", { type: "boolean", default: true });
+		}, "/ext/keep-flag");
+		const drop = await loadExt(api => {
+			api.registerFlag("--shared", { type: "boolean", default: false });
+		}, "/ext/drop-flag");
+		const runner = runnerFor([keep, drop]);
+		expect([...keep.flags.keys()]).toEqual(["--shared"]);
+		expect([...drop.flags.keys()]).toEqual(["--shared"]);
+
+		runner.unloadExtension("/ext/drop-flag");
+		expect([...drop.flags.keys()]).toEqual([]);
+		expect([...keep.flags.keys()]).toEqual(["--shared"]);
 	});
 
 	it("leaves a neighbour's registrations alone", async () => {

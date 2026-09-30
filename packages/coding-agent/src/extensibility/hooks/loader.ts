@@ -12,7 +12,7 @@ import { loadCapability } from "../../discovery";
 import * as PiCodingAgent from "../../index";
 import type { CustomMessagePayload } from "../../session/messages";
 import * as typebox from "../legacy-typebox";
-import { resolvePath, withHostGuard } from "../utils";
+import { createHandlerDisposer, resolvePath, withHostGuard } from "../utils";
 import { execCommand } from "./runner";
 import type { ExecOptions, HookAPI, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types";
 
@@ -90,11 +90,12 @@ async function createHookAPI(
 	// Cast to HookAPI - the implementation is more general (string event names)
 	// but the interface has specific overloads for type safety in hooks
 	const api = {
-		on(event: string, handler: HandlerFn): void {
+		on(event: string, handler: HandlerFn): () => void {
 			if (!handlers.has(event)) {
 				handlers.set(event, []);
 			}
 			handlers.get(event)!.push(handler);
+			return createHandlerDisposer(handlers, event, handler);
 		},
 		sendMessage<T = unknown>(
 			message: CustomMessagePayload<T>,

@@ -469,36 +469,45 @@ export interface RegisteredCommand {
  */
 export interface HookAPI {
 	// Session events
-	on(event: "session_start", handler: HookHandler<SessionStartEvent>): void;
-	on(event: "session_before_switch", handler: HookHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>): void;
-	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): void;
-	on(event: "session_before_branch", handler: HookHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>): void;
-	on(event: "session_branch", handler: HookHandler<SessionBranchEvent>): void;
+	on(event: "session_start", handler: HookHandler<SessionStartEvent>): () => void;
+	on(
+		event: "session_before_switch",
+		handler: HookHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>,
+	): () => void;
+	on(event: "session_switch", handler: HookHandler<SessionSwitchEvent>): () => void;
+	on(
+		event: "session_before_branch",
+		handler: HookHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>,
+	): () => void;
+	on(event: "session_branch", handler: HookHandler<SessionBranchEvent>): () => void;
 	on(
 		event: "session_before_compact",
 		handler: HookHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,
-	): void;
-	on(event: "session.compacting", handler: HookHandler<SessionCompactingEvent, SessionCompactingResult>): void;
-	on(event: "session_compact", handler: HookHandler<SessionCompactEvent>): void;
-	on(event: "session_shutdown", handler: HookHandler<SessionShutdownEvent>): void;
-	on(event: "session_before_tree", handler: HookHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
-	on(event: "session_tree", handler: HookHandler<SessionTreeEvent>): void;
+	): () => void;
+	on(event: "session.compacting", handler: HookHandler<SessionCompactingEvent, SessionCompactingResult>): () => void;
+	on(event: "session_compact", handler: HookHandler<SessionCompactEvent>): () => void;
+	on(event: "session_shutdown", handler: HookHandler<SessionShutdownEvent>): () => void;
+	on(event: "session_before_tree", handler: HookHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): () => void;
+	on(event: "session_tree", handler: HookHandler<SessionTreeEvent>): () => void;
 
 	// Context and agent events
-	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult>): void;
-	on(event: "before_agent_start", handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
-	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): void;
-	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): void;
-	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): void;
-	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): void;
-	on(event: "auto_compaction_start", handler: HookHandler<AutoCompactionStartEvent>): void;
-	on(event: "auto_compaction_end", handler: HookHandler<AutoCompactionEndEvent>): void;
-	on(event: "auto_retry_start", handler: HookHandler<AutoRetryStartEvent>): void;
-	on(event: "auto_retry_end", handler: HookHandler<AutoRetryEndEvent>): void;
-	on(event: "ttsr_triggered", handler: HookHandler<TtsrTriggeredEvent>): void;
-	on(event: "todo_reminder", handler: HookHandler<TodoReminderEvent>): void;
-	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): void;
-	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): void;
+	on(event: "context", handler: HookHandler<ContextEvent, ContextEventResult>): () => void;
+	on(
+		event: "before_agent_start",
+		handler: HookHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>,
+	): () => void;
+	on(event: "agent_start", handler: HookHandler<AgentStartEvent>): () => void;
+	on(event: "agent_end", handler: HookHandler<AgentEndEvent>): () => void;
+	on(event: "turn_start", handler: HookHandler<TurnStartEvent>): () => void;
+	on(event: "turn_end", handler: HookHandler<TurnEndEvent>): () => void;
+	on(event: "auto_compaction_start", handler: HookHandler<AutoCompactionStartEvent>): () => void;
+	on(event: "auto_compaction_end", handler: HookHandler<AutoCompactionEndEvent>): () => void;
+	on(event: "auto_retry_start", handler: HookHandler<AutoRetryStartEvent>): () => void;
+	on(event: "auto_retry_end", handler: HookHandler<AutoRetryEndEvent>): () => void;
+	on(event: "ttsr_triggered", handler: HookHandler<TtsrTriggeredEvent>): () => void;
+	on(event: "todo_reminder", handler: HookHandler<TodoReminderEvent>): () => void;
+	on(event: "tool_call", handler: HookHandler<ToolCallEvent, ToolCallEventResult>): () => void;
+	on(event: "tool_result", handler: HookHandler<ToolResultEvent, ToolResultEventResult>): () => void;
 
 	/**
 	 * Send a custom message to the session. Creates a CustomMessageEntry that

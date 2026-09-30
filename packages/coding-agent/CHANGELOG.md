@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- An extension written as `api => api.on(...)` no longer type-checks: `on()` returns an unsubscribe
+  function, and TypeScript's "assignable where `void` is expected" rule does not survive a union.
+  Write the factory with a block body, or return `undefined` explicitly. Nothing breaks at runtime —
+  the host discards the return value — so this is a source-level change for extension authors only
+
 ### Added
 
 - Extensions building a custom component or a custom editor receive a narrowed TUI surface instead of
@@ -14,6 +21,8 @@
   was then dropped with only a log line, so the plugin's language server silently never started.
   Off by default, and it rejects only config that would disappear — not config that merely differs
   from expectations
+- Extensions and hooks now get an unsubscribe function back from `on()`, so a handler registered
+  under a condition can be withdrawn when that condition ends instead of outliving it
 - Library-layer diagnostics now go to the log file instead of the terminal: the Cursor provider's
   `DEBUG_CURSOR` output, memory consolidation warnings, and the triplestore-split migration report.
   Commands that print their own output are unaffected — `omp compress f.md > out.md`, `omp --model`,

@@ -46,6 +46,48 @@ export function createNoOpUIContext(): HookUIContext {
 }
 
 /**
+ * A registered handler. Structurally identical to the `HandlerFn` each loader
+ * declares locally, so their values pass straight in without the loaders having
+ * to import from here.
+ */
+type HandlerFn = (...args: unknown[]) => Promise<unknown>;
+
+/**
+ * Build an identity-safe disposer for one registered handler.
+ *
+ * Scope note: this withdraws a single handler registration. It is NOT an unload —
+ * extension modules are never unloaded, and the `Bun.plugin()` hooks in
+ * `extensibility/plugins/legacy-pi-compat.ts` are process-global and permanent by
+ * construction. What it buys is that a caller who registered a handler under a
+ * condition can take it back out when the condition ends, instead of the handler
+ * outliving whatever justified it.
+ *
+ * Removal is by identity, never by index: between `on()` and the disposer call the
+ * list may have shifted, and a second call must be a no-op rather than evicting
+ * whichever neighbour moved into the old slot. When the list empties, the Map key
+ * is deleted so the key set does not grow across extension reloads.
+ *
+ * Identity is the only thing that can distinguish two registrations, so registering
+ * the SAME function reference twice and then disposing both removes it after the
+ * first. That is the correct reading of "each `on()` is one registration", not a
+ * bug — but it reads like one, hence this note.
+ */
+export function createHandlerDisposer(
+	handlers: Map<string, HandlerFn[]>,
+	event: string,
+	handler: HandlerFn,
+): () => void {
+	return () => {
+		const list = handlers.get(event);
+		if (!list) return;
+		const index = list.indexOf(handler);
+		if (index === -1) return;
+		list.splice(index, 1);
+		if (list.length === 0) handlers.delete(event);
+	};
+}
+
+/**
  * Raised by {@link withHostGuard} when a guarded callback synchronously
  * attempts to terminate the host process. Callers catch this like any other
  * load-time failure so the extension/hook is skipped with a logged error

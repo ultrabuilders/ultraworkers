@@ -37,7 +37,7 @@ import { resolveExtensionDirectory } from "./directory-resolution";
 import { installLegacyPiSpecifierShim, loadLegacyPiModule } from "../plugins/legacy-pi-compat";
 import { getAllPluginExtensionPaths } from "../plugins/loader";
 
-import { resolvePath, withHostGuard } from "../utils";
+import { createHandlerDisposer, resolvePath, withHostGuard } from "../utils";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type {
 	AssistantThinkingRenderer,
@@ -209,10 +209,11 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		}
 	}
 
-	on<F extends HandlerFn>(event: string, handler: F): void {
+	on<F extends HandlerFn>(event: string, handler: F): () => void {
 		const list = this.extension.handlers.get(event) ?? [];
 		list.push(handler);
 		this.extension.handlers.set(event, list);
+		return createHandlerDisposer(this.extension.handlers, event, handler);
 	}
 
 	registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(tool: ToolDefinition<TParams, TDetails>): void {

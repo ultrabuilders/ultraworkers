@@ -129,6 +129,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEnoent, isFsError, logger } from "@oh-my-pi/pi-utils";
+import { withFileMutationQueue } from "../utils/file-mutation-queue";
 import type { BunFile } from "bun";
 import type { ExtensionContext } from "../extensibility/extensions/types";
 import { resolveSyscallTarget } from "./path-utils";
@@ -303,6 +304,13 @@ export function withFileMutationSession<T>(sessionId: string | undefined, fn: ()
  * must propagate — `edit`'s `REM` turns it into a `NotFoundError`.
  */
 export async function deleteFileWithFallback(dst: string, file?: BunFile): Promise<void> {
+	// Deliberately the same queue as writes. A delete landing on top of a
+	// concurrent write is a lost update, which is the exact failure this lock
+	// exists to prevent — putting it on a separate queue would let them race.
+	return withFileMutationQueue(dst, () => deleteFileWithFallbackLocked(dst, file));
+}
+
+async function deleteFileWithFallbackLocked(dst: string, file?: BunFile): Promise<void> {
 	try {
 		if (file) {
 			await file.unlink();
@@ -400,6 +408,12 @@ async function classifyWriteFailure(dst: string, error: unknown): Promise<WriteF
 }
 
 export async function writeFileWithFallback(dst: string, content: string, file?: BunFile): Promise<void> {
+	// Every create/update of this file now passes one lock, so two sessions editing
+	// the same path cannot interleave a read-modify-write between them.
+	return withFileMutationQueue(dst, () => writeFileWithFallbackLocked(dst, content, file));
+}
+
+async function writeFileWithFallbackLocked(dst: string, content: string, file?: BunFile): Promise<void> {
 	// Attempt 0 is the plain write. The single retry is reachable only when the
 	// first failure turned out to be a parent-directory race this call repaired,
 	// which bounds the loop at two writes.

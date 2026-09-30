@@ -36,6 +36,7 @@ import {
 import { PREVIEW_PENDING_NOTICE, queueResolveHandler } from "./resolve";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { toolResult } from "./tool-result";
+import { withFileMutationQueue } from "../utils/file-mutation-queue";
 
 const astEditOpSchema = type({
 	pat: type("string").describe("ast pattern"),
@@ -84,16 +85,23 @@ async function runAstEditTargets(
 	let limitReached = false;
 	let applied = !options.dryRun;
 	for (const target of targets) {
-		const targetResult = await astEdit({
-			rewrites: options.rewrites,
-			path: target.basePath,
-			glob: target.glob,
-			dryRun: options.dryRun,
-			maxFiles: options.maxFiles,
-			failOnParseError: options.failOnParseError,
-			signal: options.signal,
-			filesystem: options.filesystem,
-		});
+		// `ast_edit` does NOT go through `writeFileWithFallback`, so the file
+		// mutation queue has to be entered here explicitly or this tool keeps racing
+		// itself. Locked on the shared base path rather than per target: one call can
+		// rewrite many files under the scope, so a per-file lock would serialise
+		// nothing, while two calls on the same scope must not interleave.
+		const targetResult = await withFileMutationQueue(commonBasePath, () =>
+			astEdit({
+				rewrites: options.rewrites,
+				path: target.basePath,
+				glob: target.glob,
+				dryRun: options.dryRun,
+				maxFiles: options.maxFiles,
+				failOnParseError: options.failOnParseError,
+				signal: options.signal,
+				filesystem: options.filesystem,
+			}),
+		);
 		totalReplacements += targetResult.totalReplacements;
 		filesSearched += targetResult.filesSearched;
 		limitReached = limitReached || targetResult.limitReached;
@@ -134,16 +142,21 @@ function runAstEditOnce(
 	if (targets) {
 		return runAstEditTargets(targets, resolvedSearchPath, options);
 	}
-	return astEdit({
-		rewrites: options.rewrites,
-		path: resolvedSearchPath,
-		glob: globFilter,
-		dryRun: options.dryRun,
-		maxFiles: options.maxFiles,
-		failOnParseError: options.failOnParseError,
-		signal: options.signal,
-		filesystem: options.filesystem,
-	});
+	// Same reasoning as the multi-target path above. `dryRun` is passed through
+	// untouched: a preview only parses, and taking the lock for it would serialise
+	// every preview behind whatever write happens to be in flight.
+	return withFileMutationQueue(resolvedSearchPath, () =>
+		astEdit({
+			rewrites: options.rewrites,
+			path: resolvedSearchPath,
+			glob: globFilter,
+			dryRun: options.dryRun,
+			maxFiles: options.maxFiles,
+			failOnParseError: options.failOnParseError,
+			signal: options.signal,
+			filesystem: options.filesystem,
+		}),
+	);
 }
 
 type AstEditSchemaInfer = typeof astEditSchema.infer;

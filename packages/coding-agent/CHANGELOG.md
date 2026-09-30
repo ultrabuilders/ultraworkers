@@ -9,6 +9,13 @@
   Write the factory with a block body, or return `undefined` explicitly. Nothing breaks at runtime —
   the host discards the return value — so this is a source-level change for extension authors only
 
+### Fixed
+
+- Concurrent edits to the same file within one session no longer interleave and lose one of the changes.
+  Edits, writes and deletes now serialise per file — including through a symlink, which previously took a
+  separate lock for the same file — while edits to different files still run in parallel. Two separate
+  `omp` processes editing one file are still not coordinated
+
 ### Added
 
 - Extensions building a custom component or a custom editor receive a narrowed TUI surface instead of

@@ -69,14 +69,16 @@ describe("Loader.setIndicator", () => {
 		expect(currentFrame(loader)).toBeLessThan(2);
 	});
 
-	it("restores the product frames when given nothing", () => {
-		const loader = make(["A", "B", "C"]);
+	it("restores the constructor frames when given nothing", () => {
+		const loader = make(["Q", "R"]);
 		loader.setIndicator({ frames: ["X"] });
 		expect(rows(loader)).toContain("X");
 
 		loader.setIndicator(undefined);
-		// Back to the built-in braille frames, which no caller passed in.
-		expect(rows(loader)).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+		// Back to what the Loader was built with — not the global default, which
+		// would be a third set the caller never chose.
+		expect(rows(loader)).toContain("Q");
+		expect(rows(loader)).not.toContain("X");
 	});
 
 	it("ignores an empty frame list rather than rendering nothing", () => {
@@ -106,5 +108,27 @@ describe("Loader.setIndicator", () => {
 		// index past the end.
 		expect(rows(loader)).toContain("Z");
 		expect(currentFrame(loader)).toBeLessThan(1);
+	});
+});
+
+describe("the working row keeps its interrupt affordance", () => {
+	it("keeps constructor frames when a caller supplies its own", () => {
+		// The regression this guards is real, and it was mine. The working row
+		// passes its interrupt glyph as the loader's constructor frames, so
+		// overwriting them with a caller's left the user with a spinner and no
+		// visible way to stop the turn — the row still painted, so nothing was red.
+		const loader = make([" esc"]);
+		expect(rows(loader, 30)).toContain("esc");
+
+		// Appending is what protects the affordance, but it also puts the caller's
+		// spinner FIRST, so the row leads with their glyph and the hint only
+		// appears on later ticks. For a hint the product put there on purpose to
+		// always be visible, that is the wrong order — which is why the two are
+		// held separately rather than concatenated.
+		loader.setIndicator({ frames: ["X", "Y"] });
+		expect(rows(loader, 30)).toContain("X");
+
+		loader.setIndicator(undefined);
+		expect(rows(loader, 30)).toContain("esc");
 	});
 });

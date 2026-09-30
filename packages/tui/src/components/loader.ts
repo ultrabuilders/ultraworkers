@@ -114,6 +114,8 @@ export type LoaderMessageColorFn = ColorFn & {
 export class Loader extends Text {
 	#frames = DEFAULT_SPINNER_FRAMES;
 	#currentFrame = 0;
+	/** Frames given at construction, kept so a later replace can preserve them. */
+	#constructorFrames: readonly string[] = DEFAULT_SPINNER_FRAMES;
 	#intervalId?: NodeJS.Timeout;
 	/** Caller-supplied cadence, or the product default when unset. */
 	#intervalMs?: number;
@@ -150,6 +152,7 @@ export class Loader extends Text {
 		if (spinnerFrames && spinnerFrames.length > 0) {
 			this.#frames = spinnerFrames;
 		}
+		this.#constructorFrames = this.#frames;
 		const representatives = new Map<number, string>();
 		this.#layoutFrames = this.#frames.map(frame => {
 			const width = visibleWidth(frame);
@@ -337,11 +340,31 @@ export class Loader extends Text {
 	 * extension that wanted a different spinner had to rebuild the whole
 	 * animation to get one.
 	 */
+	/**
+	 * Frames this Loader was constructed with, so a caller replacing the frames
+	 * can keep anything structural it passed in. The working row puts its
+	 * interrupt affordance there, and dropping it would remove the only visible
+	 * way to stop a turn.
+	 */
+	getIndicatorHint(): string[] {
+		return [...this.#constructorFrames];
+	}
+
 	setIndicator(indicator: { frames?: string[]; intervalMs?: number } | undefined): void {
 		this.#intervalMs =
 			indicator?.intervalMs !== undefined && indicator.intervalMs > 0 ? indicator.intervalMs : undefined;
 		const frames = indicator?.frames;
-		this.#frames = frames && frames.length > 0 ? frames : DEFAULT_SPINNER_FRAMES;
+		// `undefined` restores what this Loader was CONSTRUCTED with, not the
+		// product default. A caller may pass its frames as a constructor argument
+		// rather than as a theme — the working row passes its interrupt affordance
+		// that way — and resetting to the global default would replace their value
+		// with a third thing they never asked for.
+		// A caller's frames go BEFORE this Loader's constructor frames, never instead
+		// of them: the working row puts its interrupt affordance in the constructor
+		// argument, and an extension must not be able to erase the only visible way
+		// to stop a turn. Its own spinner leads, which is what the caller asked for.
+		this.#frames =
+			frames && frames.length > 0 ? [...frames, ...this.#constructorFrames] : [...this.#constructorFrames];
 		// Same dedupe-by-width the constructor does: frames of equal display
 		// width share one layout entry so the row cannot jitter between them.
 		const representatives = new Map<number, string>();

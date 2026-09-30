@@ -7084,12 +7084,14 @@ export class InteractiveMode implements InteractiveModeContext {
 				// leads with the interrupt affordance instead of a second spinner.
 				// The leading space nudges the row one column right of the flush-left
 				// status rows so the interrupt glyph reads as indented.
+				//
+				// It is the loader's CONSTRUCTOR frames, which `setIndicator`
+				// preserves and re-applies. Passing it as an ordinary frame set
+				// would let an extension's frames overwrite the one thing the
+				// product put here on purpose.
 				[` ${appKey(this.keybindings, "app.interrupt")}`],
 			);
-			if (this.#pendingWorkingIndicator) {
-				this.loadingAnimation.setIndicator(this.#pendingWorkingIndicator);
-				this.#pendingWorkingIndicator = undefined;
-			}
+
 			this.loadingAnimation.setTrailer(() => this.#workingRowTrailer());
 			this.loadingAnimation.setWorkingRow(
 				() => this.#workingRowSpec(),

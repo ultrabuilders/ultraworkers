@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { Type } from "@oh-my-pi/omptype/typebox";
+import { boxComposerStyle } from "@oh-my-pi/pi-tui/components/composer/box";
 import { EventBus } from "@oh-my-pi/pi-coding-agent/utils/event-bus";
 import { ExtensionRuntime, loadExtensionFromFactory } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
@@ -31,6 +33,27 @@ function runnerFor(extensions: Extension[]): ExtensionRunner {
 }
 
 const commandsOf = (ext: Extension): string[] => [...ext.commands.keys()];
+
+/** One number per bucket `clearExtensionBuckets` empties, in the order it empties them. */
+function bucketSizes(ext: Extension): number[] {
+	return [
+		ext.handlers.size,
+		ext.tools.size,
+		ext.assistantThinkingRenderers.length,
+		ext.fileWriteFallbackHandlers.length,
+		ext.fileDeleteFallbackHandlers.length,
+		ext.messageRenderers.size,
+		ext.composerShapes.size,
+		ext.commands.size,
+		ext.flags.size,
+		ext.shortcuts.size,
+		ext.outputFormats.size,
+		ext.toolNameResolvers.length,
+		ext.toolRegistrationListeners.size,
+	];
+}
+
+const EMPTY_BUCKETS = new Array(13).fill(0);
 
 describe("ExtensionRunner.unloadExtension", () => {
 	it("releases a suspended extension's timers instead of throwing on a missing owner", async () => {
@@ -71,18 +94,52 @@ describe("ExtensionRunner.unloadExtension", () => {
 	});
 
 	it("empties every registration bucket the unloaded extension filled", async () => {
+		// Every bucket, not a representative few. `clearExtensionBuckets` is the one
+		// place that lists them, and a bucket added there but not filled here would
+		// still keep serving after an unload while this test stayed green — the exact
+		// rot the shared helper's own comment warns about.
 		const ext = await loadExt(api => {
+			api.on("session_start", () => {});
+			api.registerTool({
+				name: "probe_tool",
+				label: "Probe",
+				description: "d",
+				parameters: Type.Object({}),
+				execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+			});
+			api.registerAssistantThinkingRenderer(() => undefined);
+			api.registerFileWriteFallback(async () => false);
+			api.registerFileDeleteFallback(async () => false);
+			api.registerMessageRenderer("probe_custom", () => undefined);
+			// A real built-in style, re-identified: `ComposerStyle` carries enough required
+			// fields that a hand-written literal would be a cast, and a cast here would
+			// stop type-checking the very shape the bucket is supposed to hold.
+			api.registerComposerShape({
+				label: "Probe",
+				style: { ...boxComposerStyle, id: "probe-style" },
+			});
 			api.registerCommand("one", { description: "d", handler: async () => {} });
+			api.registerFlag("--probe", { type: "boolean", default: true });
 			api.registerShortcut("s", { description: "d", handler: async () => {} });
+			api.registerOutputFormat({ id: "probe-fmt", mimeType: "text/plain", format: () => new Uint8Array() });
+			api.registerToolNameResolver(() => undefined);
 		}, "/ext/buckets");
 
 		const runner = runnerFor([ext]);
+		// Filled through the runner, not the loader: `toolRegistrationListeners` has no
+		// registration method on the extension API at all, so it is unreachable from
+		// the factory above.
+		runner.onToolRegistered(() => {});
+
+		// Filled, so emptying is a real transition rather than an assertion about
+		// something that was already empty.
+		expect(bucketSizes(ext)).not.toEqual(EMPTY_BUCKETS);
 		expect(runner.unloadExtension("/ext/buckets")).toBe(true);
+
 		// The object survives in the caller's array — the runner only mutates its own
 		// view. What must be empty is the CONTENT, so re-registering the same path
 		// cannot resurrect a command the author believed they removed.
-		expect(commandsOf(ext)).toEqual([]);
-		expect([...ext.shortcuts.keys()]).toEqual([]);
+		expect(bucketSizes(ext)).toEqual(EMPTY_BUCKETS);
 	});
 
 	it("leaves a neighbour's registrations alone", async () => {

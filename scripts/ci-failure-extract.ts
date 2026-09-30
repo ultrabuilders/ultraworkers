@@ -159,7 +159,22 @@ if (import.meta.main) {
 		process.exit(2);
 	}
 	const result = extractFailures(await Bun.file(file).text());
-	console.log(JSON.stringify(result, null, 2));
+	// `JSON.stringify` drops an `undefined` property, so a log with no summary
+	// would print JSON with `reportedFailCount` simply ABSENT — and a consumer
+	// reading the file cannot tell "the runner printed no tally" from "this tool
+	// has no such field". `null` says which one it is. The exported function keeps
+	// `undefined`, because that is the faithful shape for a TypeScript caller.
+	console.log(
+		JSON.stringify(
+			{
+				...result,
+				reportedFailCount: result.reportedFailCount ?? null,
+				reportedErrorCount: result.reportedErrorCount ?? null,
+			},
+			null,
+			2,
+		),
+	);
 	// Fail closed so a regression in the patterns surfaces as a non-zero exit
 	// rather than a quietly truncated list — in either direction, and including
 	// the "there was nothing to check against" case.

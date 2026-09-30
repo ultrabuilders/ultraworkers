@@ -224,6 +224,11 @@ describe("the wired path", () => {
 		// The half a host opts into on purpose. Narrowing the automatic default
 		// must not make the transform case unreachable, or the one seam this
 		// invariant exists to police could never be tested.
+		//
+		// The one production host that qualifies today is the auto-learn capture
+		// agent in `sdk.ts`, whose `transformContext` is `wrapSteeringForModel` —
+		// copy-on-write, and its own comment says the wire bytes must be a pure
+		// function of the message itself.
 		let calls = 0;
 		const context = { messages: [user("hello"), assistant("hi")], systemPrompt: ["sys"] } as never;
 		const config = {
@@ -238,5 +243,26 @@ describe("the wired path", () => {
 		} as never;
 
 		await expect(prepareProviderCall(context, config, undefined)).rejects.toThrow(/log-reconstruction desync/);
+	});
+
+	test("only transformContext and convertToLlm are re-run; the provider-context transform is not", async () => {
+		// The other half of "what can the derivation reach", pinned so the gate in
+		// `prepareProviderCall` cannot quietly grow a third re-run hook. Anything
+		// downstream of `convertToLlm` is applied once and left alone, so image
+		// normalisation, dialect rewriting and secret obfuscation cannot be
+		// doubled by enabling this.
+		let providerContextCalls = 0;
+		const context = { messages: [user("hello"), assistant("hi")], systemPrompt: ["sys"] } as never;
+		const config = {
+			model: { id: "m", provider: "anthropic", api: "anthropic-messages" },
+			convertToLlm: (messages: AgentMessage[]) => derive(messages),
+			transformProviderContext: (ctx: { messages: Message[] }) => {
+				providerContextCalls++;
+				return ctx;
+			},
+		} as never;
+
+		await prepareProviderCall(context, config, undefined);
+		expect(providerContextCalls).toBe(1);
 	});
 });

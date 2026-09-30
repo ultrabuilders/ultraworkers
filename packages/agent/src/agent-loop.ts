@@ -1895,13 +1895,20 @@ export async function prepareProviderCall(
 	// becomes falsifiable on each run instead of a one-off number.
 	//
 	// Gated on the ABSENCE of `transformContext`, which is not a technicality.
-	// Re-deriving calls `transformContext` a second time, and that hook is where
-	// extension `context` handlers run (`sdk.ts` wires it to
-	// `extensionRunner.emitContext`) — so checking such a pipeline would execute
-	// arbitrary extension code twice per request and let the check perturb the
-	// thing it measures. With no `transformContext` there is nothing to re-run and
-	// the comparison is pure. A host whose transform is pure can still opt in via
-	// the flag, and `packages/agent` tests do exactly that.
+	// Re-deriving re-runs exactly two host-supplied hooks — `transformContext` and
+	// `convertToLlm` — and nothing else. Everything downstream of them
+	// (`transformProviderContext`, image normalisation, dialect rewriting) is NOT
+	// re-run, so it cannot be perturbed and is out of scope.
+	//
+	// `transformContext` is the one that can carry arbitrary code: `sdk.ts` wires
+	// it to `extensionRunner.emitContext`, which runs extension `context`
+	// handlers. Re-deriving would execute them twice per request and let the check
+	// perturb the thing it measures, so a pipeline that has one is not checked
+	// automatically. With none, the only re-run hook left is `convertToLlm`, which
+	// is host-supplied and contractually a pure function — the auto-learn capture
+	// agent in `sdk.ts` uses `wrapSteeringForModel`, which copies on write and
+	// never mutates its input. A host whose transform IS pure opts in with the
+	// flag; `packages/agent` tests do exactly that.
 	const derivationEnabled =
 		config.derivationInvariant ?? (config.transformContext === undefined && isBunTestRuntime());
 	const derivationSource = derivationEnabled ? messages.slice() : undefined;

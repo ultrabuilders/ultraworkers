@@ -227,12 +227,15 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 *
 	 * Defaults to ON under `bun test` when the pipeline carries no
 	 * `transformContext`, and OFF otherwise. Production is unaffected either way.
-	 * The automatic half is deliberately narrow: re-deriving calls
-	 * `transformContext` a second time, and that is where extension `context`
-	 * handlers run, so a pipeline that has one cannot be checked without executing
-	 * extension code twice per request. With no `transformContext` the comparison
-	 * is pure, and every agent test gets it for free. Set this explicitly to check
-	 * a pipeline that does have one and is known to be pure.
+	 * The automatic half is deliberately narrow: re-deriving re-runs exactly two
+	 * host-supplied hooks — `transformContext` and `convertToLlm` — and nothing
+	 * downstream of them. `transformContext` is the one that can carry arbitrary
+	 * code, because `sdk.ts` wires it to `extensionRunner.emitContext`, which runs
+	 * extension `context` handlers; re-deriving would execute them twice per
+	 * request and let the check perturb what it measures. A pipeline that has one
+	 * is therefore not checked automatically. Set this explicitly for a pipeline
+	 * whose `transformContext` is pure — the auto-learn capture agent in `sdk.ts`
+	 * qualifies today, since its transform is `wrapSteeringForModel`.
 	 *
 	 * Either way this is how a divergence gets *noticed* rather than discovered
 	 * later as a mysteriously cold provider cache: any transform, converter or

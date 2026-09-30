@@ -107,6 +107,37 @@ export function stripGitRepoLocationEnv(
 	}
 }
 
+/**
+ * Workaround for https://github.com/oven-sh/bun/issues/27802
+ *
+ * Copied verbatim from `pi-ref/packages/coding-agent/src/bun/restore-sandbox-env.ts`
+ * (earendil-works/pi, MIT).
+ *
+ * Bun compiled binaries have an empty `process.env` when running inside sandbox
+ * environments (e.g. nono on Linux/macOS). On Linux the environment can be
+ * recovered from `/proc/self/environ`.
+ */
+export function restoreSandboxEnv(): void {
+	if (!process.versions?.bun) return;
+
+	// If process.env already has entries, nothing to fix.
+	if (Object.keys(process.env).length > 0) return;
+
+	try {
+		const data = fs.readFileSync("/proc/self/environ", "utf-8");
+		for (const entry of data.split("\0")) {
+			const idx = entry.indexOf("=");
+			if (idx > 0) {
+				process.env[entry.slice(0, idx)] = entry.slice(idx + 1);
+			}
+		}
+	} catch {
+		// /proc/self/environ may not be readable, or this is not Linux at all.
+		// Silent by design: failing to recover an environment is a degradation,
+		// and throwing here would be a startup failure over a missing convenience.
+	}
+}
+
 // Bun autoloads the project's dotenv files into `process.env` before user code
 // runs — including inside `bun build --compile` binaries — so a snapshot of
 // `Bun.env` is only pre-dotenv when autoloading was explicitly disabled. Linux
@@ -131,6 +162,11 @@ function readLaunchEnv(): ReadonlyMap<string, string> | undefined {
 	return values;
 }
 
+// Restore the environment BEFORE `readLaunchEnv()` snapshots it, and before
+// dotenv. Order matters and is easy to get wrong: a snapshot taken while
+// `process.env` is empty records nothing to restore from, and taking it after
+// dotenv would make every dotenv value look like launch environment.
+restoreSandboxEnv();
 const launchEnvValues = readLaunchEnv();
 const projectEnvNamesLoadedByOmp = new Set<string>();
 

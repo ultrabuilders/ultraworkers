@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A compiled binary that starts inside a sandbox no longer comes up with an empty environment: the
+  launch environment is recovered from procfs before it is snapshotted and before dotenv runs
+
 ## [18.4.3] - 2026-09-28
 
 ### Added

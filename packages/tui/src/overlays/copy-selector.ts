@@ -372,7 +372,10 @@ export class CopySelectorComponent implements Component {
 		this.#builder = this.#replay(tail);
 		this.#selected = Math.max(0, this.#targets.length - 1);
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => viewportRows(this.deps.ui),
+			getHeight: () =>
+				// 40, not the shared 24: transcript overlays render chrome plus a three-row
+				// minimum, and 24 clipped their rails.
+				viewportRows(this.deps.ui, 40),
 			frame: context => this.#frame(context.contentWidth),
 		});
 	}

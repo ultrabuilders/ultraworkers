@@ -485,7 +485,10 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			({
 				requestRender: () => deps.requestRender(),
 				requestComponentRender: () => deps.requestRender(),
-				viewportSize: { columns: 80, rows: 24 },
+				// No `viewportSize` here on purpose. A static fallback would shadow
+				// the real terminal, so a test — or a host — that adjusts
+				// `process.stdout.rows` would be ignored, and the row budget would
+				// silently come from a constant instead of the window.
 				getFocused: () => null,
 				setFocus: () => {},
 			} as unknown as ExtensionTUISurface);

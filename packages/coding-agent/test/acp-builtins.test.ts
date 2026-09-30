@@ -52,7 +52,12 @@ interface FakeAcpBuiltinSession {
 	fork(): Promise<boolean>;
 	handoff(instr?: string): Promise<{ document: string; savedPath?: string } | undefined>;
 	dispose(): Promise<void>;
-	exportToHtml(outputPath?: string): Promise<string>;
+	exportToHtml(options?: {
+		outputPath?: string;
+		useUserThemes?: boolean;
+		formatId?: string;
+		formats?: ReadonlyMap<string, unknown>;
+	}): Promise<string>;
 	effectiveExtensionRoots: unknown;
 	setTitleSystemPrompt(prompt: string | undefined): void;
 	setSlashCommands(commands: unknown[]): void;
@@ -140,8 +145,11 @@ function createRuntime() {
 		async handoff(_instr?: string) {
 			return undefined;
 		},
-		async exportToHtml(outputPath?: string) {
-			return outputPath ?? "/tmp/exported-session.html";
+		// Mirrors the real signature: one options object, not a positional path.
+		// A mock that takes `outputPath` positionally returns "[object Object]" and
+		// the failure reads like a path bug rather than a stale mock.
+		async exportToHtml(options?: { outputPath?: string }) {
+			return options?.outputPath ?? "/tmp/exported-session.html";
 		},
 		getTodoPhases() {
 			return this._todoPhases;

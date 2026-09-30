@@ -203,7 +203,10 @@ export class AgentTranscriptViewer implements Component {
 			requestRender: deps.requestRender,
 		});
 		this.#browser = new TranscriptBrowser({
-			getHeight: () => viewportRows(this.#deps.ui),
+			getHeight: () =>
+				// 40, not the shared 24: transcript overlays render chrome plus a three-row
+				// minimum, and 24 clipped their rails.
+				viewportRows(this.#deps.ui, 40),
 			frame: context => this.#frame(context),
 			followBottom: true,
 		});

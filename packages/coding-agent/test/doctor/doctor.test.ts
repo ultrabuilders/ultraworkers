@@ -58,7 +58,7 @@ describe("patch ledger check", () => {
 		const root = tracked(repoFixture(["a.patch"], { dep: "patches/a.patch" }));
 		const outcome = checkPatchLedger(liveEnvironment(root));
 		expect(isUnavailable(outcome)).toBe(false);
-		expect((outcome as { status: string }).status).toBe("ok");
+		expect(outcome.status).toBe("ok");
 	});
 
 	it("reports error when the manifest declares a patch that is not on disk", () => {
@@ -66,28 +66,39 @@ describe("patch ledger check", () => {
 		// patches than it claims to.
 		const root = tracked(repoFixture([], { dep: "patches/missing.patch" }));
 		const outcome = checkPatchLedger(liveEnvironment(root));
-		expect((outcome as { status: string }).status).toBe("error");
-		expect((outcome as { message: string }).message).toContain("declared but missing");
+		expect(outcome.status).toBe("error");
+		expect(outcome.message).toContain("declared but missing");
 	});
 
 	it("reports error when a patch file is present but nothing declares it", () => {
 		// The other direction: applied by nobody, so manifest and directory drifted.
 		const root = tracked(repoFixture(["orphan.patch"], {}));
 		const outcome = checkPatchLedger(liveEnvironment(root));
-		expect((outcome as { status: string }).status).toBe("error");
-		expect((outcome as { message: string }).message).toContain("present but undeclared");
+		expect(outcome.status).toBe("error");
+		expect(outcome.message).toContain("present but undeclared");
 	});
 
 	it("says it could not check when patches/ does not exist, rather than passing", () => {
 		// THE case. With no premise, "ok" would be a claim the check never earned.
 		const outcome = checkPatchLedger(environment({ patchesDirExists: false }));
 		expect(isUnavailable(outcome)).toBe(true);
-		expect((outcome as { message: string }).message).toContain("not checked");
+		expect(outcome.message).toContain("not checked");
 	});
 
 	it("says it could not check when the manifest is unreadable", () => {
 		const outcome = checkPatchLedger(environment({ patchesDirExists: true, manifest: undefined }));
 		expect(isUnavailable(outcome)).toBe(true);
+	});
+
+	it("names the check it could not run, so the report line is attributable", () => {
+		// `collectDoctorChecks` flattens the registry entries and their names go with
+		// them, so the outcome has to carry its own. Without this, an `unavailable`
+		// line identifies itself only by the message happening to repeat the check's
+		// name — reword the message and the line is unlabelled, with nothing to
+		// catch it. Every other case in this file passes with `name` absent.
+		const outcome = checkPatchLedger(environment({ patchesDirExists: false }));
+		expect(isUnavailable(outcome)).toBe(true);
+		expect(outcome.name).toBe("patch_ledger");
 	});
 });
 

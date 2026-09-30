@@ -20,6 +20,18 @@ import type { DoctorCheck } from "./types";
 /** Why a check could not run. Distinct from a finding: nothing is wrong yet. */
 export interface CheckUnavailable {
 	readonly status: "unavailable";
+	/**
+	 * Which check could not run.
+	 *
+	 * Carried on the outcome rather than left to the registry entry, because
+	 * `collectDoctorChecks` flattens the entries and the name goes with them: a
+	 * `flatMap` that dropped it would produce report lines nobody could attribute,
+	 * and the only thing left identifying them would be the message happening to
+	 * repeat the check's own name. Rewording a message would then silently unlabel
+	 * the line. `DoctorCheck` already has `name`; without it here the union admits
+	 * an outcome that cannot say what it is about.
+	 */
+	readonly name: string;
 	/** What could not be checked, and the premise that was missing. */
 	readonly message: string;
 }
@@ -75,12 +87,17 @@ export function liveEnvironment(root: string): DoctorEnvironment {
 export function checkPatchLedger(env: DoctorEnvironment): CheckOutcome {
 	if (!env.patchesDirExists) {
 		return {
+			name: "patch_ledger",
 			status: "unavailable",
 			message: `No patches/ directory under ${env.root} — patch ledger not checked`,
 		};
 	}
 	if (!env.manifest) {
-		return { status: "unavailable", message: "package.json could not be read — patch ledger not checked" };
+		return {
+			name: "patch_ledger",
+			status: "unavailable",
+			message: "package.json could not be read — patch ledger not checked",
+		};
 	}
 
 	const declared = env.manifest.patchedDependencies ?? {};

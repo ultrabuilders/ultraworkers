@@ -21,6 +21,13 @@
 
 ### Added
 
+- `manage_skill` gained a `list` action: pass an optional `query` to find skills by name or
+  description and get back names and one-line descriptions, never bodies. Skills past the
+  system prompt's `<skills>` cap stay reachable this way, so a large install remains
+  searchable instead of dropping silently out of the model's reach
+- The `<skills>` block in the system prompt is capped at 20 entries, keeping the first
+  declared and telling the model how many were held back and how to list them. Installs
+  below the cap render exactly as before
 - `omp extensions-triage`: a read-only inventory of every discovered extension with its load
   state, the policy that blocked it, its provider, and its path. It projects the same
   `loadAllExtensions` call the Extension Control Center uses, so the two cannot disagree

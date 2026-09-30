@@ -1478,6 +1478,13 @@ export class ExtensionRunner {
 		// reads the runner's field on invocation, so a check at build time could
 		// never fire. The failure only appears after an unload — exactly when
 		// nothing else reports it.
+		//
+		// `this.extensions`, and deliberately NOT `#loadOrder` or
+		// `#suspendedExtensions`: it is the only one of the three that means "still
+		// loaded". `#loadOrder` keeps every extension ever bound, including unloaded
+		// ones, so asking it would never throw. `#suspendedExtensions` answers
+		// "currently suspended", and killing the context of a merely-suspended
+		// extension would break the very thing suspend exists to allow — resume.
 		const alive = (): void => {
 			if (extension && !this.extensions.includes(extension)) {
 				throw new ExtensionContextDisposedError(extension.path);
@@ -1905,7 +1912,6 @@ export class ExtensionRunner {
 	 * result; joined `additionalContext` rides along whenever any handler set it.
 	 */
 	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
-		const ctx = this.createContext();
 		const currentEvent: ToolResultEvent = { ...event };
 		let modified = false;
 		const contexts: string[] = [];
@@ -1913,6 +1919,11 @@ export class ExtensionRunner {
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get("tool_result");
 			if (!handlers || handlers.length === 0) continue;
+			// One context PER EXTENSION, built here rather than once for the whole
+			// loop. A shared context has no owner, so it cannot carry the disposed
+			// guard — and the handler below would keep running against a session
+			// whose extension had already been unloaded.
+			const ctx = this.createContext(undefined, undefined, ext);
 
 			for (const handler of handlers) {
 				const handlerResult = (await this.#runHandlerWithTimeout(

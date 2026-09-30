@@ -11,6 +11,9 @@
 
 ### Fixed
 
+- On Linux, a debugger can no longer attach to the running process and a core dump is no longer written.
+  Best-effort and per-call: a platform without the calls is a clean no-op, never a startup failure
+
 - Shell and subprocesses no longer inherit `LD_PRELOAD` and the other loader-hijack variables from omp's
   environment. `PATH`, `NODE_PATH` and toolchain prefixes are left alone, so LSP servers, kernels and
   browsers are unaffected

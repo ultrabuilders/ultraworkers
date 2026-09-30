@@ -51,6 +51,7 @@ import {
 	type ExtensionUIContext,
 	type ExtensionUIDialogOptions,
 	getExtensionUISelectOptionLabel,
+	unavailableFrameMessage,
 } from "../../extensibility/extensions";
 import { runExtensionCompact } from "../../extensibility/extensions/compact-handler";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
@@ -585,8 +586,12 @@ export function createAcpExtensionUiContext(
 		// ACP drives its own indicator; this client context does not animate one.
 		setWorkingIndicator: () => {},
 		setWidget: () => {},
-		setFooter: () => {},
-		setHeader: () => {},
+		setFooter: () => {
+			throw new Error(unavailableFrameMessage("setFooter", "ACP mode"));
+		},
+		setHeader: () => {
+			throw new Error(unavailableFrameMessage("setHeader", "ACP mode"));
+		},
 		setTitle: () => {},
 		custom: async () => undefined as never,
 		pasteToEditor: () => {},

@@ -247,6 +247,16 @@ describe("ExtensionUiController Ask dialog input", () => {
 });
 
 describe("ExtensionUiController editor UI", () => {
+	it("rejects setHeader / setFooter instead of swallowing the call", async () => {
+		// The interactive context is the one place a footer *could* mount, and it
+		// still cannot today. Silence here is what shipped: an extension set a
+		// footer, got no error, and the footer never appeared.
+		const ui = await makeHarness().init();
+
+		expect(() => ui.setFooter(undefined)).toThrow(/setFooter/);
+		expect(() => ui.setHeader(undefined)).toThrow(/setHeader/);
+	});
+
 	it("requests a render after extension pasteToEditor mutates the prompt", async () => {
 		const harness = makeHarness();
 		const ui = await harness.init();

@@ -23,6 +23,7 @@ import {
 	type ExtensionUISelectItem,
 	type ExtensionWidgetOptions,
 	getExtensionUISelectOptionLabel,
+	unsupportedSurfaceMessage,
 } from "../../extensibility/extensions";
 import {
 	type BuiltSkillPromptMessage,
@@ -933,11 +934,11 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 		}
 
 		setFooter(_factory: unknown): void {
-			// Custom footer not supported in RPC mode - requires TUI access
+			throw new Error(unsupportedSurfaceMessage("setFooter", "RPC mode"));
 		}
 
 		setHeader(_factory: unknown): void {
-			// Custom header not supported in RPC mode - requires TUI access
+			throw new Error(unsupportedSurfaceMessage("setHeader", "RPC mode"));
 		}
 
 		setTitle(title: string): void {

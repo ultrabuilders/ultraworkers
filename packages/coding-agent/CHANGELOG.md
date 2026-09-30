@@ -4,6 +4,10 @@
 
 ### Breaking Changes
 
+- `ui.setHeader` and `ui.setFooter` now throw in any mode that cannot mount a component — headless,
+  print, subagent, ACP, RPC, and the interactive context itself. They previously returned silently,
+  so an extension could set a footer, see no error, and ship one that never appeared. Guard the call
+  with `ui.hasUI`, or use `ui.setWidget` / `ui.setStatus`, which work without a frame
 - Plugin config mutations (`setEnabled`, `setEnabledFeatures`, `setPluginSetting`,
   `deletePluginSetting`) now return `{ changed, application }`. A `changed: false` result means the
   value was already in that state and nothing was written, which the CLI reports instead of

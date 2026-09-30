@@ -101,6 +101,7 @@ import type {
 	UserPythonEvent,
 	UserPythonEventResult,
 } from "./types";
+import { unavailableFrameMessage } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
 
@@ -455,8 +456,12 @@ export const noOpUIContext: ExtensionUIContext = {
 	// The no-op context cannot animate anything, so there is nothing to set.
 	setWorkingIndicator: () => {},
 	setWidget: () => {},
-	setFooter: () => {},
-	setHeader: () => {},
+	setFooter: () => {
+		throw new Error(unavailableFrameMessage("setFooter", "this mode"));
+	},
+	setHeader: () => {
+		throw new Error(unavailableFrameMessage("setHeader", "this mode"));
+	},
 	setTitle: () => {},
 	custom: async () => undefined as never,
 	setEditorText: () => {},

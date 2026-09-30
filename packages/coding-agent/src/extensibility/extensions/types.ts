@@ -293,10 +293,22 @@ export interface ExtensionUIContext {
 	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
 	setWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void;
 
-	/** Set a custom footer component, or undefined to restore the built-in footer. */
+	/**
+	 * Set a custom footer component, or undefined to restore the built-in footer.
+	 *
+	 * Throws in any context that cannot mount a component — headless, print,
+	 * subagent, ACP and RPC, and the interactive context itself. It used to
+	 * return silently, so an extension could set a footer, see no error, and ship
+	 * one that never appeared. Check `ui.hasUI` first, or use `setWidget` /
+	 * `setStatus`, which work without a frame.
+	 */
 	setFooter(factory: ExtensionUiComponentFactory | undefined): void;
 
-	/** Set a custom header component, or undefined to restore the built-in header. */
+	/**
+	 * Set a custom header component, or undefined to restore the built-in header.
+	 *
+	 * Throws wherever `setFooter` does, for the same reason.
+	 */
 	setHeader(factory: ExtensionUiComponentFactory | undefined): void;
 
 	/** Set the terminal window/tab title. */

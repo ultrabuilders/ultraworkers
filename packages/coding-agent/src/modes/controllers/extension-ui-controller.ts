@@ -22,6 +22,7 @@ import type {
 	SendUserMessageHandler,
 	TerminalInputHandler,
 } from "../../extensibility/extensions";
+import { unsupportedSurfaceMessage } from "../../extensibility/extensions";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
 import {
 	type AskDialogPromptValue,
@@ -162,8 +163,12 @@ export class ExtensionUiController {
 				// Theme object passed directly - not supported in current implementation
 				return Promise.resolve({ success: false, error: "Direct theme object not supported" });
 			},
-			setFooter: () => {},
-			setHeader: () => {},
+			setFooter: () => {
+				throw new Error(unsupportedSurfaceMessage("setFooter", "this TUI context"));
+			},
+			setHeader: () => {
+				throw new Error(unsupportedSurfaceMessage("setHeader", "this TUI context"));
+			},
 			setEditorComponent: factory => this.ctx.setEditorComponent(factory),
 			getToolsExpanded: () => this.ctx.toolOutputExpanded,
 			setToolsExpanded: expanded => this.ctx.setToolsExpanded(expanded),

@@ -23,6 +23,7 @@ import { loadDirenvEnv } from "./direnv";
 import { withPowerShellUtf8Output } from "./powershell-encoding";
 import { buildNonInteractiveEnv } from "./non-interactive-env";
 
+import { sanitizeChildEnv } from "./sanitize-child-env";
 import {
 	cfgBashDirenv,
 	cfgBashDirenvLoadTimeoutMs,
@@ -152,11 +153,17 @@ export async function applyDirenvPreflight(
 			: opts.timeoutMs;
 	const direnvDiff =
 		opts.direnvSetting === "off" ? null : await loadDirenvEnv(cwd, { timeoutMs: loadTimeoutMs, signal: opts.signal });
+	// Loader-hijack variables never reach the child. Applied to the caller's env
+	// on the no-direnv path too, so the scrub does not depend on whether a `.envrc`
+	// happened to exist.
 	if (!direnvDiff) {
-		return { command: withPrefix(command), env: opts.callerEnv };
+		return {
+			command: withPrefix(command),
+			env: opts.callerEnv ? sanitizeChildEnv(opts.callerEnv) : undefined,
+		};
 	}
 	// The caller's explicit env still wins over direnv-provided values.
-	const mergedEnv = { ...direnvDiff.set, ...opts.callerEnv };
+	const mergedEnv = sanitizeChildEnv({ ...direnvDiff.set, ...opts.callerEnv });
 	// direnv can also *remove* inherited variables (a `.envrc` doing
 	// `unset AWS_PROFILE`). An env overlay can only add/override, so prepend a
 	// real `unset` for those — unless the caller re-supplied the same var

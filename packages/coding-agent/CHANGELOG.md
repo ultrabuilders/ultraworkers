@@ -11,6 +11,10 @@
 
 ### Fixed
 
+- Shell and subprocesses no longer inherit `LD_PRELOAD` and the other loader-hijack variables from omp's
+  environment. `PATH`, `NODE_PATH` and toolchain prefixes are left alone, so LSP servers, kernels and
+  browsers are unaffected
+
 - Turning an extension off now also stops its model providers; turning it back on restores them. Previously a
   disabled extension kept offering its models and its stored credential
 

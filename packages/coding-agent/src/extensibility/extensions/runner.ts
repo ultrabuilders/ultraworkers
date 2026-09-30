@@ -37,6 +37,7 @@ import type { AsyncJobSnapshot } from "../../session/agent-session";
 import { MAIN_AGENT_ID } from "../../registry/agent-registry";
 import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
+import { addCompactionProtection } from "../../tools/compaction-protection";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
 import { ManagedTimers, UNOWNED_TIMERS } from "./managed-timers";
@@ -525,6 +526,7 @@ function clearExtensionBuckets(extension: Extension): void {
 	extension.assistantThinkingRenderers.length = 0;
 	extension.fileWriteFallbackHandlers.length = 0;
 	extension.fileDeleteFallbackHandlers.length = 0;
+	extension.compactionProtections.length = 0;
 	extension.messageRenderers.clear();
 	extension.composerShapes.clear();
 	extension.commands.clear();
@@ -878,6 +880,22 @@ export class ExtensionRunner {
 		// accumulate duplicate global registrations — drop the prior generation before
 		// installing this one's trampolines.
 		this.disposeFileFallbacks();
+		// Prune-pass protection rides the same lifecycle: installed once here,
+		// released by `disposeFileFallbacks()` above, and bucketed by extension so
+		// unloading ONE extension releases exactly its own contribution. Without
+		// this an unloaded extension's matcher would keep pinning context forever.
+		//
+		// A separate loop from the write/delete trampolines below on purpose: those
+		// install a callable that is consulted at mutation time, whereas protection is
+		// plain data the prune pass reads. Merging the loops would couple two seams
+		// whose `continue` guards mean genuinely different things — a contribution
+		// with no matcher and no key must still install, so it can be rejected by
+		// name, rather than being skipped as "registered nothing".
+		for (const ext of this.getLoadedExtensions()) {
+			for (const protection of ext.compactionProtections) {
+				this.#pushFallbackDisposer(ext.path, addCompactionProtection(ext.path, protection));
+			}
+		}
 		// Suspended extensions keep a (gated) trampoline so resuming them needs no rewire.
 		for (const ext of this.getLoadedExtensions()) {
 			// Nothing registered by this extension means no trampoline, so a host with

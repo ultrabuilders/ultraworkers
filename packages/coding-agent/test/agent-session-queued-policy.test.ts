@@ -48,6 +48,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
 		fileDeleteFallbackHandlers: [],
+		compactionProtections: [],
 		messageRenderers: new Map(),
 
 		outputFormats: new Map(),

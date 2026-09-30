@@ -21,6 +21,12 @@
 
 ### Added
 
+- `pi.registerCompactionProtection({ protectedTools, supersedeKey })` lets an extension keep its own
+  tool results out of the context prune pass, and declare that a later call supersedes an earlier
+  one. Both prune extension points were core-only until now: `protectedTools` had a single producer
+  (the plan-file matcher) and `supersedeKey` a single implementation hardcoded to `read`. A
+  contribution that protects every result is refused by name rather than accepted, since it would
+  pin the whole context and stop compaction freeing anything
 - `manage_skill` gained a `list` action: pass an optional `query` to find skills by name or
   description and get back names and one-line descriptions, never bodies. Skills past the
   system prompt's `<skills>` cap stay reachable this way, so a large install remains

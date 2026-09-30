@@ -95,6 +95,7 @@ import type { ReadToolDetails } from "@oh-my-pi/pi-tui/tools/read";
 import type { ApprovalMode } from "../../tools/approval";
 import type { BashToolDetails } from "@oh-my-pi/pi-tui/tools/bash";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
+import type { CompactionProtection } from "../../tools/compaction-protection";
 import type { EventBus } from "../../utils/event-bus";
 import type {
 	AgentEndEvent,
@@ -1520,6 +1521,41 @@ export interface ExtensionAPI {
 	registerFileWriteFallback(handler: FileWriteFallbackHandler): void;
 
 	/**
+	 * Contribute protection to the context prune pass, so results an extension owns
+	 * are not dropped out from under it as the context fills.
+	 *
+	 * Until this seam existed both prune extension points were core-only:
+	 * `PruneConfig.protectedTools` had exactly one producer (`#withPlanProtection`,
+	 * the plan-file read matcher) and `PruneConfig.supersedeKey` had exactly one
+	 * implementation (`readToolSupersedeKey`, hardcoded to `read`). An extension with
+	 * its own stateful tool could not keep that tool's results alive, nor declare
+	 * that a second call supersedes a first, without a core edit.
+	 *
+	 * ```ts
+	 * pi.registerCompactionProtection({
+	 *   protectedTools: [ctx => ctx.toolCall?.name === "mytool" && ctx.toolResult?.isError !== true],
+	 *   supersedeKey: (name, args) => (name === "mytool" ? String(args?.id) : undefined),
+	 * });
+	 * ```
+	 *
+	 * The registry is PROCESS-WIDE, so protection applies to every session in the
+	 * process, not only this extension's own — a protected result is a property of
+	 * the tool rather than of the session that happened to produce it.
+	 *
+	 * Call this during extension load, like the other `register*` methods: the
+	 * contribution is installed when the runner initializes, and removing it again
+	 * (suspend, unload, reload) restores the pre-seam behaviour exactly.
+	 *
+	 * @throws when the contribution cannot be honoured — a matcher that is neither
+	 * a tool name nor a predicate, a matcher that protects EVERY result (which
+	 * would pin the whole context and defeat compaction), or a non-callable
+	 * `supersedeKey`. The error names this extension. A rejected registration is
+	 * reported rather than dropped in silence, because an ignored one is
+	 * indistinguishable from one that was never made.
+	 */
+	registerCompactionProtection(protection: CompactionProtection): void;
+
+	/**
 	 * Register a fallback deleter consulted when a native `edit`/`apply_patch` unlink is
 	 * denied with a permission error (`EPERM`/`EACCES`/`EROFS`). Covers `edit`'s `REM`,
 	 * the source side of a hashline `MV`, and `apply_patch`'s delete op. Return `true`
@@ -2085,6 +2121,7 @@ export interface Extension {
 	assistantThinkingRenderers: AssistantThinkingRenderer[];
 	fileWriteFallbackHandlers: FileWriteFallbackHandler[];
 	fileDeleteFallbackHandlers: FileDeleteFallbackHandler[];
+	compactionProtections: CompactionProtection[];
 	messageRenderers: Map<string, MessageRenderer>;
 	composerShapes: Map<string, ComposerShapeDefinition>;
 	commands: Map<string, RegisteredCommand>;

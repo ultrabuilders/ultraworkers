@@ -30,6 +30,7 @@ import * as PiCodingAgent from "../../index";
 import type { SendUserMessageOptions } from "../../session/agent-session";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
+import type { CompactionProtection } from "../../tools/compaction-protection";
 import { isFilesystemSourcePath } from "../../tools/path-utils";
 import { EventBus } from "../../utils/event-bus";
 import * as TypeBox from "../legacy-typebox";
@@ -235,6 +236,10 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.fileDeleteFallbackHandlers.push(handler);
 	}
 
+	registerCompactionProtection(protection: CompactionProtection): void {
+		this.extension.compactionProtections.push(protection);
+	}
+
 	registerCommand(
 		name: string,
 		options: {
@@ -426,6 +431,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		toolRegistrationListeners: new Set(),
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
+		compactionProtections: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
 		outputFormats: new Map(),

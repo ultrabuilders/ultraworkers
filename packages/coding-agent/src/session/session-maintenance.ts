@@ -118,6 +118,7 @@ import {
 	cfgSnapcompactShape,
 } from "./context-settings";
 import { cfgRetry } from "./settings";
+import { compactionProtectedTools, compactionSupersedeKey } from "../tools/compaction-protection";
 
 /**
  * Resource sample for the emergency compaction floors.
@@ -687,7 +688,15 @@ export class SessionMaintenance {
 	 */
 	#withPlanProtection<T extends { protectedTools: ProtectedToolMatcher[] }>(config: T): T {
 		const planMatcher = createPlanReadMatcher(() => this.#host.planReferencePath());
-		return { ...config, protectedTools: [...config.protectedTools, planMatcher] };
+		// Extension-contributed matchers are appended AFTER the plan matcher so core
+		// policy is evaluated first: protection is a veto, and the order only decides
+		// which matcher gets to report a reason. With no extension registered this
+		// spread contributes nothing, so the config is byte-identical to the
+		// pre-seam one — the red gate's "exactly as before" depends on that.
+		return {
+			...config,
+			protectedTools: [...config.protectedTools, planMatcher, ...compactionProtectedTools()],
+		};
 	}
 
 	async #pruneToolOutputs(): Promise<{ prunedCount: number; tokensSaved: number } | undefined> {
@@ -742,7 +751,7 @@ export class SessionMaintenance {
 			branchEntries,
 			this.#tokenizer,
 			this.#withPlanProtection({
-				supersedeKey: supersedeReads ? readToolSupersedeKey : undefined,
+				supersedeKey: supersedeReads ? compactionSupersedeKey(readToolSupersedeKey) : undefined,
 				pruneUseless: dropUseless,
 				protectedTools: [...DEFAULT_PRUNE_CONFIG.protectedTools],
 				// Never re-write summarized-away entries; only flush the whole sent

@@ -2145,6 +2145,12 @@ export interface TaskItem {
 	tools?: string[];
 	/** Run this spawn in an isolated worktree (batch form; flat form carries it top-level). */
 	isolated?: boolean;
+	/**
+	 * Plan receipt, required once a fan-out passes the task tool's planning
+	 * threshold. Optional in the type because a small fan-out must not need one —
+	 * the gate decides whether it is required, not the type.
+	 */
+	plan?: { goal?: string; steps?: string; verification?: string };
 }
 
 /**
@@ -2176,6 +2182,12 @@ export interface TaskParams {
 	context?: string;
 	/** Run in an isolated worktree (flat form; per-item in batch form). */
 	isolated?: boolean;
+	/**
+	 * Plan receipt, required once a fan-out passes the task tool's planning
+	 * threshold. Optional in the type because a small fan-out must not need one —
+	 * the gate decides whether it is required, not the type.
+	 */
+	plan?: { goal?: string; steps?: string; verification?: string };
 }
 
 /**

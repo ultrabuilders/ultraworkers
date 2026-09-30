@@ -67,6 +67,20 @@ const taskItemSchemaIsolated = type({
 	"+": "delete",
 });
 
+/**
+ * The plan receipt, required once a fan-out passes the planning threshold.
+ *
+ * One declaration shared by every TOP-LEVEL schema variant. Per-item schemas are
+ * deliberately left alone: the receipt describes the whole fan-out, so putting it
+ * on an item would let each subagent answer for the batch.
+ */
+const spawnPlanSchema = type({
+	"goal?": "string",
+	"steps?": "string",
+	"verification?": "string",
+	"+": "delete",
+});
+
 export const taskSchema = type({
 	"name?": "string",
 	agent: "string = 'task'",
@@ -76,6 +90,7 @@ export const taskSchema = type({
 	"schemaMode?": '"permissive" | "strict"',
 	"tools?": "string[]",
 	"isolated?": "boolean",
+	"plan?": spawnPlanSchema,
 	"+": "delete",
 });
 const taskSchemaNoIsolation = type({
@@ -91,11 +106,13 @@ const taskSchemaNoIsolation = type({
 const taskSchemaBatch = type({
 	context: "string",
 	tasks: taskItemSchemaIsolated.array(),
+	"plan?": spawnPlanSchema,
 	"+": "delete",
 });
 const taskSchemaBatchNoIsolation = type({
 	context: "string",
 	tasks: taskItemSchema.array(),
+	"plan?": spawnPlanSchema,
 	"+": "delete",
 });
 const ALL_TASK_SCHEMAS = [taskSchema, taskSchemaNoIsolation, taskSchemaBatch, taskSchemaBatchNoIsolation] as const;

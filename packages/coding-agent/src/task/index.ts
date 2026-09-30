@@ -65,6 +65,7 @@ import { SpawnRun, type SpawnPermit } from "./spawn-run";
 import { type TaskLauncher, TaskLaunchSession } from "./speculative-launch";
 
 import { cfgAsyncEnabled } from "../tools/settings";
+import { evaluateSpawnGate } from "./spawn-gate";
 import {
 	cfgTaskBatch,
 	cfgTaskDisabledAgents,
@@ -851,6 +852,20 @@ export class TaskTool implements AgentTool<TaskToolSchemaInstance, TaskToolDetai
 			return createTaskModeError(plan);
 		}
 		const { params, items: spawnItems, spawns: normalizedSpawnParams } = plan;
+
+		// The PLANNING gate, not the concurrency limiter. `parallel.ts` and
+		// `workpool.ts` cap how many run AT ONCE; this asks whether a fan-out this
+		// large should be planned at all. Two layers, not one — wiring it into the
+		// concurrency cap would bound throughput instead of preventing an unplanned
+		// burst.
+		const gate = evaluateSpawnGate(spawnItems.length, params.plan);
+		if (!gate.ok) {
+			return createTaskModeError(
+				`Task fan-out of ${spawnItems.length} exceeds the ${gate.threshold}-spawn planning threshold and the plan is missing: ${gate.missing.join(", ")}. ` +
+					`Add the missing field(s), or split the work into batches of ${gate.threshold} or fewer.`,
+			);
+		}
+
 		const evalToolNames = spawnItems.flatMap(item => item.tools ?? []);
 		if (evalToolNames.length > 0) {
 			if (this.session.getPlanModeState?.()?.enabled === true) {

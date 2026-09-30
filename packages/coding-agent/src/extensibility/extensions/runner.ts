@@ -567,7 +567,14 @@ export class ExtensionRunner {
 	 * the cost is that a first registration for that seam after `initialize` never
 	 * takes effect, which is why the API documents load-time registration.
 	 */
-	#fileFallbackDisposers: Array<() => void> = [];
+	/**
+	 * Trampoline disposers, bucketed by the extension that caused them.
+	 *
+	 * Bucketed rather than one flat list so unloading ONE extension releases
+	 * exactly its own trampolines; a flat list can only express "release all of
+	 * them", which is the same all-or-nothing behaviour unload is meant to avoid.
+	 */
+	#fileFallbackDisposers: Map<string, Array<() => void>> = new Map();
 	/**
 	 * Dedup markers for `tool_call` emission, keyed `${toolCallId}:${toolName}`.
 	 * The agent loop emits `tool_call` at arg-prep time (before scheduling and
@@ -853,7 +860,8 @@ export class ExtensionRunner {
 			// registered — breaking both the documented "a throwing handler is skipped"
 			// contract and registration order for a backup-handler setup.
 			if (ext.fileWriteFallbackHandlers.length > 0) {
-				this.#fileFallbackDisposers.push(
+				this.#pushFallbackDisposer(
+					ext.path,
 					addFileWriteFallback(async req => {
 						if (this.#suspendedExtensions.has(ext)) return false;
 						const ctx = this.createContext();
@@ -872,7 +880,8 @@ export class ExtensionRunner {
 				);
 			}
 			if (ext.fileDeleteFallbackHandlers.length > 0) {
-				this.#fileFallbackDisposers.push(
+				this.#pushFallbackDisposer(
+					ext.path,
 					addFileDeleteFallback(async req => {
 						if (this.#suspendedExtensions.has(ext)) return false;
 						const ctx = this.createContext();
@@ -1454,8 +1463,32 @@ export class ExtensionRunner {
 	 * on a re-{@link initialize}) so a handler bound to a torn-down session's
 	 * context can never fire for another session sharing this process.
 	 */
+	/** File one trampoline disposer under the extension that caused it. */
+	#pushFallbackDisposer(extensionPath: string, dispose: () => void): void {
+		const bucket = this.#fileFallbackDisposers.get(extensionPath);
+		if (bucket) bucket.push(dispose);
+		else this.#fileFallbackDisposers.set(extensionPath, [dispose]);
+	}
+
+	/**
+	 * Release ONE extension's trampolines, and forget them.
+	 *
+	 * The bucket is deleted as well as drained. Leaving it behind means a later
+	 * unload re-runs disposers for an extension that no longer exists — a small
+	 * leak, and silent, which is the only kind that compounds.
+	 */
+	disposeFileFallbacksFor(extensionPath: string): void {
+		const bucket = this.#fileFallbackDisposers.get(extensionPath);
+		if (!bucket) return;
+		this.#fileFallbackDisposers.delete(extensionPath);
+		for (const dispose of bucket) dispose();
+	}
+
 	disposeFileFallbacks(): void {
-		for (const dispose of this.#fileFallbackDisposers.splice(0)) dispose();
+		for (const bucket of this.#fileFallbackDisposers.values()) {
+			for (const dispose of bucket) dispose();
+		}
+		this.#fileFallbackDisposers.clear();
 	}
 
 	createCommandContext(): ExtensionCommandContext {

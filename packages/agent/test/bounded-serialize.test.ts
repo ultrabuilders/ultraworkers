@@ -76,3 +76,28 @@ describe("boundedSerialize", () => {
 		expect(() => boundedSerialize({ name: 10n }, OPTS)).not.toThrow();
 	});
 });
+
+describe("every recordException exit is bounded", () => {
+	// Not a source-grep — this asserts the CONTRACT at the one place it can be
+	// observed: an Error carrying a huge message must not survive into a recorded
+	// exception, whichever span recorded it.
+	//
+	// It exists because the first version of this bounded the chat path and left
+	// the executeTool path open. A guard on one of three exits reads as safety while
+	// a secret still walks out through the other two — and executeTool is the exit
+	// most likely to be carrying user-typed tool output.
+	it("does not let an oversized exception message reach the span", async () => {
+		const { failChatSpan } = await import("@oh-my-pi/pi-agent-core/telemetry");
+		const recorded: Array<{ name?: string; message?: string }> = [];
+		const span = {
+			recordException: (e: unknown) => recorded.push(e as { name?: string; message?: string }),
+			setAttribute: () => {},
+			setStatus: () => {},
+			end: () => {},
+		};
+		const huge = "x".repeat(50_000);
+		failChatSpan(undefined, span as never, { errorType: "Error", errorObject: new Error(huge) });
+		expect(recorded).toHaveLength(1);
+		expect(recorded[0]?.message?.length ?? 0).toBeLessThanOrEqual(2048);
+	});
+});

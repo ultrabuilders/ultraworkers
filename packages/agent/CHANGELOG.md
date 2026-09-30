@@ -6,7 +6,8 @@
 
 - Span failure details are now bounded before they are exported: a depth and byte budget, and only
   allowlisted fields. A payload carrying a key outside the allowlist is refused rather than exported
-  in part. Exceptions are still recorded through the standard path
+  in part. Every span that records an exception — chat, tool execution and run level — now records a
+  bounded one, so an error carrying tool input cannot be retained verbatim
 
 ### Added
 

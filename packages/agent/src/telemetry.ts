@@ -1199,6 +1199,25 @@ export async function finishChatSpan(
  */
 const STATUS_MESSAGE_MAX_BYTES = 2048;
 
+/**
+ * The `Error` OTel records, with its message bounded.
+ *
+ * `recordException` is the standard path and stays — what it does not do is bound
+ * what it carries. An Error from `executeTool` can hold tool input and output,
+ * which is user-typed text, so every exit that records an exception needs this,
+ * not just the chat one: a guard on a third of the paths is worse than none,
+ * because it reads as safety.
+ *
+ * The stack is preserved deliberately — it is the reason to record an exception
+ * at all — and the name is preserved so classification still works.
+ */
+function boundedError(err: Error): Error {
+	const bounded = new Error(boundedStatusMessage(err.message));
+	bounded.name = err.name;
+	if (err.stack) bounded.stack = err.stack;
+	return bounded;
+}
+
 function boundedStatusMessage(message: string): string {
 	const result = boundedSerialize(
 		{ message },
@@ -1207,8 +1226,15 @@ function boundedStatusMessage(message: string): string {
 	// `ok: false` cannot happen for a single allowlisted key, but a helper that
 	// silently trusted that would be one refactor away from exporting a raw string.
 	if (!result.ok) return "[error message withheld: unexpected shape]";
-	const bounded = (result.value as { message?: unknown }).message;
-	return typeof bounded === "string" ? bounded : String(message);
+	// Two shapes can come back: the payload itself, or — when even the sliced
+	// strings push it past the byte budget — a `{truncated, bytes, preview}`
+	// summary that has NO `message` key. Falling back to the original string there
+	// would fail OPEN, which is the exact hazard this guard exists to prevent, so
+	// the preview is used and the raw message is never a fallback.
+	const value = result.value as { message?: unknown; preview?: unknown };
+	if (typeof value.message === "string") return value.message;
+	if (typeof value.preview === "string") return value.preview;
+	return "[error message withheld: unexpected shape]";
 }
 
 export function failChatSpan(
@@ -1229,7 +1255,7 @@ export function failChatSpan(
 		// primary way to debug a failing span. What it does NOT do is bound what it
 		// carries — an Error can hold a whole request body — so it is bounded below
 		// rather than removed.
-		span.recordException(err);
+		span.recordException(boundedError(err));
 		span.setAttribute(GenAIAttr.ErrorType, options.errorType ?? err.name ?? "Error");
 		span.setStatus({ code: SpanStatusCode.ERROR, message: boundedStatusMessage(String(err)) });
 	} else {
@@ -2025,7 +2051,7 @@ export function finishExecuteToolSpan(
 		span.setAttribute(EXECUTE_TOOL_STATUS_ATTR, status);
 	}
 	if (options.errorObject instanceof Error) {
-		span.recordException(options.errorObject);
+		span.recordException(boundedError(options.errorObject));
 	}
 	telemetry?.collector.endTool(span, { status, errorType });
 	span.end();
@@ -2095,9 +2121,9 @@ export function finishInvokeAgentSpan(
 		fireOnRunEnd(telemetry, snapshot.summary, snapshot.coverage);
 	}
 	if (options.errorObject instanceof Error) {
-		span.recordException(options.errorObject);
+		span.recordException(boundedError(options.errorObject));
 		span.setAttribute(GenAIAttr.ErrorType, options.errorObject.name || "Error");
-		span.setStatus({ code: SpanStatusCode.ERROR, message: options.errorObject.message });
+		span.setStatus({ code: SpanStatusCode.ERROR, message: boundedStatusMessage(options.errorObject.message) });
 	}
 	span.end();
 	return snapshot;

@@ -1,6 +1,29 @@
 import { $which } from "@oh-my-pi/pi-utils";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 import type { DoctorCheck } from "./types";
+import { allBuiltinToolFactories, BUILTIN_TOOLS, HIDDEN_TOOLS } from "../../tools";
+
+// The theme registry lives in pi-tui and its accessor was removed when the two
+// listing functions stopped going through it. Read the observable path instead:
+// a name is registered when the loader would find it for the theme picker.
+async function getRegisteredThemesForDoctor(): Promise<string[]> {
+	const { getAvailableThemes, getBuiltinThemes } = await import("@oh-my-pi/pi-tui/theme");
+	const builtin = new Set(Object.keys(getBuiltinThemes()));
+	return (await getAvailableThemes()).filter(name => !builtin.has(name));
+}
+
+async function resolveThemeJsonForDoctor(name: string): Promise<unknown> {
+	const { resolveThemeJson } = await import("@oh-my-pi/pi-tui/theme");
+	return resolveThemeJson(name);
+}
+
+function registeredBuiltinToolNames(): string[] {
+	// Anything the combined map holds that neither literal does was registered at
+	// runtime. Comparing against the literals is what makes this a report of
+	// runtime registrations rather than a listing of every built-in.
+	const literals = new Set([...Object.keys(BUILTIN_TOOLS), ...Object.keys(HIDDEN_TOOLS)]);
+	return Object.keys(allBuiltinToolFactories()).filter(name => !literals.has(name));
+}
 
 export async function runDoctorChecks(): Promise<DoctorCheck[]> {
 	const checks: DoctorCheck[] = [];
@@ -34,6 +57,58 @@ export async function runDoctorChecks(): Promise<DoctorCheck[]> {
 			name: key.name,
 			status: hasKey ? "ok" : "warning",
 			message: hasKey ? "Configured" : `Not set - ${key.description} unavailable`,
+		});
+	}
+
+	checks.push(...(await checkExtensionSeams()));
+
+	return checks;
+}
+
+/**
+ * Report what the extension seams currently hold.
+ *
+ * A registry that accepted a registration and is never consulted is a dead seam
+ * wearing a live one: nothing throws, and the only symptom is a tool or theme
+ * that silently never appears. Every check here answers a question a user could
+ * otherwise only answer by noticing something missing.
+ */
+async function checkExtensionSeams(): Promise<DoctorCheck[]> {
+	const checks: DoctorCheck[] = [];
+
+	const themes = await getRegisteredThemesForDoctor();
+	checks.push({
+		name: "seam:themes",
+		status: "ok",
+		message:
+			themes.length === 0
+				? "No themes registered by extensions"
+				: `${themes.length} theme(s) registered: ${themes.join(", ")}`,
+	});
+
+	const tools = registeredBuiltinToolNames();
+	checks.push({
+		name: "seam:tools",
+		status: "ok",
+		message:
+			tools.length === 0
+				? "No first-party tools registered at runtime"
+				: `${tools.length} first-party tool(s) registered: ${tools.join(", ")}`,
+	});
+
+	// The one check that can fail. A registered theme that no longer resolves is
+	// a registration that will never apply, and nothing else in the system would
+	// say so.
+	const resolvable: string[] = [];
+	for (const name of themes) {
+		if ((await resolveThemeJsonForDoctor(name)) !== undefined) resolvable.push(name);
+	}
+	if (resolvable.length !== themes.length) {
+		const broken = themes.filter(name => !resolvable.includes(name));
+		checks.push({
+			name: "seam:themes-resolve",
+			status: "error",
+			message: `Registered but not resolvable: ${broken.join(", ")} — these themes will never load`,
 		});
 	}
 

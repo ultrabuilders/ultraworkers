@@ -409,6 +409,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 	return {
 		path: extensionPath,
 		resolvedPath,
+		registeredProviders: [],
 		handlers: new Map(),
 		tools: new Map(),
 		toolRegistrationListeners: new Set(),

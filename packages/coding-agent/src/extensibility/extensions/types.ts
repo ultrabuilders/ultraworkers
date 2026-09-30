@@ -2026,6 +2026,15 @@ export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionAction
 export interface Extension {
 	path: string;
 	resolvedPath: string;
+	/**
+	 * Model providers this extension registered, recorded at registration time.
+	 *
+	 * Recorded rather than re-derived: the config is what was passed to
+	 * `registerProvider`, and rebuilding it at resume would let a provider come
+	 * back subtly different from the one that was withdrawn. It is also the only
+	 * way a resume can restore EXACTLY what a suspend removed.
+	 */
+	registeredProviders: Array<{ name: string; config: ProviderConfig }>;
 	label?: string;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool<any, any>>;

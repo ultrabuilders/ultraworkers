@@ -39,6 +39,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 	return {
 		path: name,
 		resolvedPath: name,
+		registeredProviders: [],
 		handlers: new Map([
 			["before_agent_start", [async (...args: unknown[]) => handler(args[0] as BeforeAgentStartEvent)]],
 		]),

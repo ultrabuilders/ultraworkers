@@ -2619,8 +2619,13 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			}
 		}
 		if (extensionsResult.runtime.pendingProviderRegistrations.length > 0) {
+			// Recorded on the extension that owns each provider, so a suspend can
+			// withdraw exactly this set and a resume can restore exactly it.
+			const extensionsByPath = new Map(extensionsResult.extensions.map(e => [e.path, e]));
 			for (const { name, config, sourceId } of extensionsResult.runtime.pendingProviderRegistrations) {
 				modelRegistry.registerProvider(name, config, sourceId);
+				// `sourceId` is the extension path, per `ConcreteExtensionAPI.registerProvider`.
+				extensionsByPath.get(sourceId)?.registeredProviders.push({ name, config });
 			}
 			extensionsResult.runtime.pendingProviderRegistrations = [];
 		}
@@ -4782,6 +4787,25 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				const { suspended, resumed } = extensionRunner.setSuspendedExtensions(
 					extension => governed.has(extension.resolvedPath) && !enabled.has(extension.resolvedPath),
 				);
+				// Providers follow the extension's lifecycle. Suspending an extension
+				// already withdraws its tools; leaving its model providers registered
+				// means a disabled extension keeps offering models, and its stored
+				// credential outlives the permission that granted it.
+				//
+				// `syncExtensionSources` is NOT called here: it prunes sources that left
+				// the active list, and running it before re-registering would add a
+				// provider back only for the next sync to remove again.
+				for (const extension of suspended) {
+					for (const { name } of extension.registeredProviders) {
+						modelRegistry.unregisterProvider(name);
+					}
+				}
+				for (const extension of resumed) {
+					for (const { name, config } of extension.registeredProviders) {
+						modelRegistry.registerProvider(name, config, extension.path);
+					}
+				}
+
 				const loadedPaths = new Set(extensionRunner.getLoadedExtensions().map(extension => extension.resolvedPath));
 				const unloaded = [...enabled].filter(
 					extensionPath => !loadedPaths.has(extensionPath) && !announcedUnloadedExtensions.has(extensionPath),

@@ -4542,6 +4542,7 @@ describe("ExtensionRunner", () => {
 			const extension: Extension = {
 				path: extensionPath,
 				resolvedPath: extensionPath,
+				registeredProviders: [],
 				handlers: new Map([["input", [async (...args: unknown[]) => handler(args[0] as InputEvent)]]]),
 				tools: new Map(),
 				assistantThinkingRenderers: [],

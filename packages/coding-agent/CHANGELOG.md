@@ -11,6 +11,9 @@
 
 ### Fixed
 
+- Turning an extension off now also stops its model providers; turning it back on restores them. Previously a
+  disabled extension kept offering its models and its stored credential
+
 - `_omp/usage` now reports the session you asked about. With more than one ACP session open it
   returned the first one regardless of the id in the request
 

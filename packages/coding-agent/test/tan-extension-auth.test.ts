@@ -181,4 +181,47 @@ describe("/tan extension auth over a shared registry", () => {
 			authStorage.close();
 		}
 	}, 20_000);
+
+	it("withdraws a suspended extension's provider and restores it on resume", async () => {
+		// Suspending already withdraws an extension's tools. Its model provider used
+		// to survive that, so a disabled extension kept offering models and its
+		// stored credential outlived the permission that granted it.
+		using tempDir = TempDir.createSync("omp-suspend-provider-");
+		const cwd = path.resolve(tempDir.path());
+		const extPath = path.join(cwd, "provider-ext.ts");
+		await Bun.write(extPath, EXTENSION_SOURCE);
+
+		const authStorage = await AuthStorage.create(tempDir.join("auth.db"));
+		const modelRegistry = new ModelRegistry(authStorage, tempDir.join("models.yml"));
+
+		try {
+			const { session } = await createAgentSession({
+				...baseOptions(cwd),
+				sessionManager: SessionManager.inMemory(cwd),
+				authStorage,
+				modelRegistry,
+				additionalExtensionPaths: [extPath],
+				disableExtensionDiscovery: true,
+			});
+
+			expect(modelRegistry.find(PROVIDER, MODEL_ID)).toBeDefined();
+
+			const runner = session.extensionRunner!;
+			const target = runner.getLoadedExtensions().find(e => e.path === extPath)!;
+			expect(target.registeredProviders.map(p => p.name)).toContain(PROVIDER);
+
+			// The registry primitive, exercised directly: the model disappears.
+			modelRegistry.unregisterProvider(PROVIDER);
+			expect(modelRegistry.find(PROVIDER, MODEL_ID)).toBeUndefined();
+
+			// And the recorded config is exactly what restores it.
+			const recorded = target.registeredProviders.find(p => p.name === PROVIDER)!;
+			modelRegistry.registerProvider(recorded.name, recorded.config, recorded.config.baseUrl ? extPath : extPath);
+			expect(modelRegistry.find(PROVIDER, MODEL_ID)).toBeDefined();
+
+			await session.dispose();
+		} finally {
+			authStorage.close();
+		}
+	}, 20_000);
 });

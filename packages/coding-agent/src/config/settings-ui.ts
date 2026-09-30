@@ -3,6 +3,7 @@ import { SETTING_TABS, type SettingsDisplayEntry, type SettingsHost } from "@oh-
 import { isSettingsInitialized, Settings, settings } from "./settings";
 import { orderedSettings } from "./all-settings";
 import { type AnySetting, lookup } from "./registry";
+import { globalLayerValue, shadowingSource } from "./shadowing";
 
 import { cfgPlanAutosave, cfgPlanEnabled } from "../plan-mode/settings";
 import {
@@ -44,6 +45,17 @@ function envNote(setting: AnySetting): string {
 }
 
 /**
+ * Description suffix for whichever layer is shadowing this setting, not just
+ * the environment. Reuses `shadowingSource`'s released wording so the panel and
+ * `omp config set` describe the same shadowing identically.
+ */
+function provenanceNote(setting: AnySetting, scope: Settings): string {
+	if (!setting.envName || setting.envValue() !== undefined) return envNote(setting);
+	const shadow = shadowingSource(setting, scope);
+	return shadow ? ` ${shadow.message}` : "";
+}
+
+/**
  * Adapt the application schema and settings store to the terminal overlay. The panel shows and
  * edits the value of the settings layers, never an environment-supplied one (so an env credential
  * is never pre-filled or written to config); descriptions note an active environment variable.
@@ -54,7 +66,7 @@ export function createSettingsHost(): SettingsHost {
 		for (const setting of orderedSettings()) {
 			const ui = setting.ui;
 			if (ui?.tab !== tab) continue;
-			const note = envNote(setting);
+			const note = provenanceNote(setting, settings);
 			entries.push({
 				path: setting.id,
 				type: setting.type,
@@ -74,8 +86,37 @@ export function createSettingsHost(): SettingsHost {
 	return {
 		entries,
 		get: path => lookup(path)?.layered(settings),
-		set: (path, value) => resolve(path).set(settings, value),
+		set: (path, value) => {
+			const setting = resolve(path);
+
+			// The post-write latch. A layer above global can supply the effective
+			// value, in which case a value saved to global is written, reported
+			// as saved, and then never takes effect — the user sees their edit in
+			// the file and not in the behaviour. So: remember what was there,
+			// write, then ask who actually won. If the answer is not us, undo it.
+			const previous = globalLayerValue(setting, settings);
+			setting.set(settings, value);
+
+			// Read back what landed *after* normalization, and what is actually
+			// in force — a normalization pass alone can change the value.
+			const written = globalLayerValue(setting, settings);
+			const effective = setting.get(settings);
+			const shadow = shadowingSource(setting, settings);
+
+			// A higher layer holding the very same value is not really shadowing:
+			// the outcome is identical, so the write stands and no rollback runs.
+			if (!shadow || Bun.deepEquals(effective, written)) return { status: "applied" };
+
+			if (previous === undefined) setting.unset(settings);
+			else setting.set(settings, previous);
+
+			return { status: "shadowed", source: shadow.source, message: shadow.message };
+		},
 		unset: path => resolve(path).unset(settings),
+		// Not a cast: the declared return type is what forces coding-agent's
+		// `SettingProvenance` and the TUI's `SettingsProvenance` to stay the
+		// same union. Add a member to one and this stops type-checking.
+		provenance: path => resolve(path).provenance(settings),
 		normalizeProviderLimits: normalizeProviderMaxInFlightRequests,
 		validateProviderLimits: validateProviderMaxInFlightRequests,
 	};

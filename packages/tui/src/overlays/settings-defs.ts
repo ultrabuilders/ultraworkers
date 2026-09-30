@@ -142,15 +142,45 @@ export interface SettingsDisplayEntry {
 	condition?: () => boolean;
 }
 
+/**
+ * Which layer supplies a setting's effective value, highest precedence first.
+ *
+ * `runtime` is a programmatic override, `overlay` is `--config` /
+ * `PI_CONFIG_FILES`, `project` is the workspace's own file, `global` is the user
+ * config, and `default` is the schema. An environment variable is not a member:
+ * it is consulted ahead of these and applies only while it is set, so a host
+ * reports it through {@link SettingsHost.provenance} only where it is the answer.
+ */
+export type SettingsProvenance = "env" | "runtime" | "overlay" | "project" | "global" | "default";
+
+/**
+ * What a write did. `shadowed` means the value was rolled back because a higher
+ * layer already supplies the effective one, so keeping it would have shown a
+ * saved value that is not in force.
+ */
+export type SettingsWriteResult =
+	| { status: "applied" }
+	| {
+			status: "shadowed";
+			source: Exclude<SettingsProvenance, "global" | "default">;
+			message: string;
+	  };
+
 export interface SettingsHost {
 	entries: readonly SettingsDisplayEntry[];
 	get(path: string): unknown;
-	set(path: string, value: unknown): void;
+	set(path: string, value: unknown): SettingsWriteResult;
 	/**
 	 * Removes the value from the global config: a project or other layer, or an environment
 	 * variable, that configures the setting still applies; otherwise the default does.
 	 */
 	unset(path: string): void;
+	/**
+	 * Which layer supplies this path's effective value. Callers use it to warn
+	 * *before* a write, so the shadowing is visible rather than discovered after
+	 * the fact by noticing an unchanged field.
+	 */
+	provenance(path: string): SettingsProvenance;
 	normalizeProviderLimits(value: unknown): Record<string, number>;
 	validateProviderLimits(value: unknown): Record<string, number>;
 }

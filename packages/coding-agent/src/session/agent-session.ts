@@ -99,6 +99,7 @@ import {
 	isInteractiveHost,
 	isRecord,
 	logger,
+	normalizeErrorMessage,
 	postmortem,
 	prompt,
 	Snowflake,
@@ -3010,7 +3011,7 @@ export class AgentSession implements SettingsScope {
 			}
 		} catch (error) {
 			logger.warn("Failed to persist async follow-up artifact", {
-				error: error instanceof Error ? error.message : String(error),
+				error: normalizeErrorMessage(error),
 			});
 		}
 		return preview;
@@ -3032,13 +3033,13 @@ export class AgentSession implements SettingsScope {
 				if (isPromise(result)) {
 					result.catch(err => {
 						logger.warn("AgentSession listener rejected", {
-							error: err instanceof Error ? err.message : String(err),
+							error: normalizeErrorMessage(err),
 						});
 					});
 				}
 			} catch (err) {
 				logger.warn("AgentSession listener threw", {
-					error: err instanceof Error ? err.message : String(err),
+					error: normalizeErrorMessage(err),
 				});
 			}
 		}
@@ -3050,7 +3051,7 @@ export class AgentSession implements SettingsScope {
 				listener(state);
 			} catch (error) {
 				logger.warn("AgentSession run-state listener threw", {
-					error: error instanceof Error ? error.message : String(error),
+					error: normalizeErrorMessage(error),
 				});
 			}
 		}
@@ -3125,7 +3126,7 @@ export class AgentSession implements SettingsScope {
 				sessionId: this.sessionManager.getSessionId(),
 				sessionFile: this.sessionManager.getSessionFile(),
 				reason,
-				error: error instanceof Error ? error.message : String(error),
+				error: normalizeErrorMessage(error),
 			});
 		}
 	}
@@ -3172,7 +3173,7 @@ export class AgentSession implements SettingsScope {
 			void extensionEmit.catch(error => {
 				logger.warn("Detached session event extension emit failed", {
 					type: event.type,
-					error: error instanceof Error ? error.message : String(error),
+					error: normalizeErrorMessage(error),
 				});
 			});
 		} else {
@@ -4494,7 +4495,7 @@ export class AgentSession implements SettingsScope {
 				source: request.options.source,
 				schedulerToken: request.schedulerToken,
 				coalescedSources: [...coalescedSources].filter(source => source !== request.options.source),
-				error: error instanceof Error ? error.message : String(error),
+				error: normalizeErrorMessage(error),
 				stack: error instanceof Error ? error.stack : undefined,
 			});
 			return { status: "failed", error };
@@ -7679,7 +7680,7 @@ export class AgentSession implements SettingsScope {
 			this.#extensionRunner.emitError({
 				extensionPath: `command:${commandName}`,
 				event: "command",
-				error: err instanceof Error ? err.message : String(err),
+				error: normalizeErrorMessage(err),
 			});
 			return true;
 		}
@@ -7805,10 +7806,10 @@ export class AgentSession implements SettingsScope {
 				this.#extensionRunner.emitError({
 					extensionPath: `custom-command:${commandName}`,
 					event: "command",
-					error: err instanceof Error ? err.message : String(err),
+					error: normalizeErrorMessage(err),
 				});
 			} else {
-				const message = err instanceof Error ? err.message : String(err);
+				const message = normalizeErrorMessage(err);
 				logger.error("Custom command failed", { commandName, error: message });
 			}
 			return ""; // Command was handled (with error)
@@ -8789,7 +8790,7 @@ export class AgentSession implements SettingsScope {
 						await this.refreshBaseSystemPrompt();
 					} catch (republishError) {
 						logger.warn("WorkPool yield contract republish failed", {
-							error: republishError instanceof Error ? republishError.message : String(republishError),
+							error: normalizeErrorMessage(republishError),
 						});
 						throw error;
 					}
@@ -8837,7 +8838,7 @@ export class AgentSession implements SettingsScope {
 			.catch(err => {
 				logger.warn("title-generator: replan refresh failed", {
 					sessionId,
-					error: err instanceof Error ? err.message : String(err),
+					error: normalizeErrorMessage(err),
 				});
 			})
 			.finally(() => {
@@ -8897,7 +8898,7 @@ export class AgentSession implements SettingsScope {
 				logger.warn("title-generator: uncaught auto-title error", {
 					sessionId: this.sessionId,
 					reason: "uncaught-auto-title-error",
-					error: err instanceof Error ? err.message : String(err),
+					error: normalizeErrorMessage(err),
 				});
 			})
 			.finally(() => {
@@ -9769,7 +9770,7 @@ export class AgentSession implements SettingsScope {
 				});
 			} catch (error) {
 				logger.warn("Rewind branch checkpoint missing, falling back to root", {
-					error: error instanceof Error ? error.message : String(error),
+					error: normalizeErrorMessage(error),
 				});
 				this.sessionManager.branchWithSummary(null, report, { startedAt: checkpointState.startedAt });
 			}
@@ -10850,13 +10851,13 @@ export class AgentSession implements SettingsScope {
 						rollbackFailure = "cwd rollback was rejected";
 					}
 				} catch (rollbackError) {
-					rollbackFailure = `cwd rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`;
+					rollbackFailure = `cwd rollback failed: ${normalizeErrorMessage(rollbackError)}`;
 				}
 				if (rollbackFailure) {
 					this.beginDispose();
 					this.#bash.finishSessionTransition(bashTransition, false);
 					logger.warn("Failed to restore cwd after session switch", { cwd: previousSessionState.cwd });
-					const original = error instanceof Error ? error.message : String(error);
+					const original = normalizeErrorMessage(error);
 					throw new Error(`${original} (${rollbackFailure}; the process may remain in ${cwdChangeTarget})`);
 				}
 			}
@@ -12239,7 +12240,7 @@ export class AgentSession implements SettingsScope {
 				});
 				delivered++;
 			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
+				const message = normalizeErrorMessage(err);
 				const name = registeredTool.definition.name;
 				if (options?.onToolError) {
 					options.onToolError(name, message);

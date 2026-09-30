@@ -15,6 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isPromise } from "node:util/types";
 import { getLogsDir, localDay } from "./dirs";
+import { normalizeErrorMessage } from "./normalize-error";
 import { RotatingFileSink } from "./logger/rotating-file";
 import { setStderrRedirectTarget } from "./stderr-guard";
 import { drainModuleLoadEvents } from "./timing-buffer";
@@ -194,10 +195,11 @@ function ensureDir(dir: string): string {
  * forensic logs showed only an opaque empty object.
  */
 function jsonReplacer(_key: string, value: unknown): unknown {
-	if (value instanceof Error) {
+	if (!(value instanceof Error)) return value;
+	try {
 		const out: Record<string, unknown> = {
 			name: value.name,
-			message: value.message,
+			message: normalizeErrorMessage(value),
 			stack: value.stack,
 		};
 		// Preserve `.cause` and any custom enumerable fields the caller attached.
@@ -205,8 +207,23 @@ function jsonReplacer(_key: string, value: unknown): unknown {
 		for (const k in errAsRecord) out[k] = errAsRecord[k];
 		if (value.cause !== undefined) out.cause = value.cause;
 		return out;
+	} catch {
+		// A subclass with a throwing `name`/`stack` getter, or a revoked Proxy.
+		// This runs INSIDE `JSON.stringify`, so letting it escape would abort the
+		// whole log record — losing every other field of the entry, not just this
+		// one. Degrade to the fields that can still be read.
+		return { name: safeErrorField(value, "name"), message: normalizeErrorMessage(value) };
 	}
-	return value;
+}
+
+/** Read one Error field without letting a throwing getter abort the log line. */
+function safeErrorField(error: Error, key: "name" | "stack"): string | undefined {
+	try {
+		const raw = error[key];
+		return typeof raw === "string" ? raw : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 interface NormalizedLogInfo extends Record<string, unknown> {

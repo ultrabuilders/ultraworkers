@@ -51,7 +51,7 @@ import {
 	recoverHarmonyToolCall,
 	signalListLabel,
 } from "@oh-my-pi/pi-ai/utils/harmony-leak";
-import { cloneJsonTree, logger, sanitizeText, structuredCloneJSON } from "@oh-my-pi/pi-utils";
+import { cloneJsonTree, logger, normalizeErrorMessage, sanitizeText, structuredCloneJSON } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
 import { LiveSteeringChannel } from "./live-steering";
 import { agentPauseGate } from "./pause";
@@ -2914,8 +2914,7 @@ async function prepareToolCallDispatch(
 					return fallback;
 				}
 				entry.args = "__parseError" in args ? { __parseError: args.__parseError } : args;
-				entry.validationErrorMessage =
-					validationError instanceof Error ? validationError.message : String(validationError);
+				entry.validationErrorMessage = normalizeErrorMessage(validationError);
 				return undefined;
 			}
 		};
@@ -3437,7 +3436,7 @@ async function executeToolCalls(
 			} catch (e) {
 				caughtError = e;
 				result = {
-					content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+					content: [{ type: "text", text: normalizeErrorMessage(e) }],
 					details: {},
 				};
 				isError = true;
@@ -3474,7 +3473,7 @@ async function executeToolCalls(
 				} catch (e) {
 					caughtError = e;
 					result = {
-						content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+						content: [{ type: "text", text: normalizeErrorMessage(e) }],
 						details: {},
 					};
 					isError = true;

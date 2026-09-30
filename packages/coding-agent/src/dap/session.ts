@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as timers from "node:timers/promises";
-import { logger, ptree, untilAborted } from "@oh-my-pi/pi-utils";
+import { logger, normalizeErrorMessage, ptree, untilAborted } from "@oh-my-pi/pi-utils";
 import { NON_INTERACTIVE_ENV } from "../exec/non-interactive-env";
 import { DapClient } from "./client";
 import type {
@@ -115,9 +115,14 @@ const HEARTBEAT_INTERVAL_MS = 5 * 1000;
 const MAX_OUTPUT_BYTES = 128 * 1024;
 const STOP_CAPTURE_TIMEOUT_MS = 5_000;
 
+/**
+ * Kept as a local, private function rather than deleted in favour of
+ * {@link normalizeErrorMessage}: this sits on the debugger interface, where a
+ * reshaped failure string is a hard-to-reproduce regression for whoever is
+ * attaching a DAP client.
+ */
 function toErrorMessage(value: unknown): string {
-	if (value instanceof Error) return value.message;
-	return String(value);
+	return normalizeErrorMessage(value);
 }
 
 interface DapStartRequestFailure {

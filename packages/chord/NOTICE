@@ -1,0 +1,85 @@
+This package is a port of the `chord` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below and listed per file.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every file: relative specifiers no longer carry a `.ts` suffix, as this
+     repository's `check-ts-relative-imports` invariant requires.
+  2. Formatting: oxfmt is the only formatter here, so arrow-function bodies are
+     parenthesized (`key => ...` becomes `(key) => ...`) and other upstream
+     layout differences are normalized.
+  3. Entry points: `src/index.ts`, `src/node.ts` and `src/bundler.ts` are
+     re-exported through this package's export map, and `src/types.ts` no longer
+     separately re-exports `RemoteServiceError`/`RemoteServiceProvider`, which
+     the barrel star already carries.
+  4. Runtime: `src/context/index.ts` uses `Promise.withResolvers()` instead of a
+     hand-rolled Promise constructor; `src/node/bundle.ts` and
+     `src/node/package.ts` replace `Awaited<ReturnType<typeof ...>>` with the
+     named esbuild `BuildResult` and the `Stats` type from `node:fs`, since this
+     repository forbids `ReturnType<>`.
+  5. Naming: esbuild externals in `src/node/bundle.ts` match this repository's
+     package scope, `@oh-my-pi/chord`, rather than upstream's
+     `@earendil-works/chord`.
+
+Adapted files:
+  src/api.ts
+  src/bundler.ts
+  src/context/index.ts
+  src/delta/apply-immutable-trusted.ts
+  src/delta/diff.ts
+  src/delta/index.ts
+  src/delta/revision-validator.ts
+  src/delta/tracker.ts
+  src/facets/host.ts
+  src/facets/loader.ts
+  src/index.ts
+  src/json.ts
+  src/node.ts
+  src/node/bundle-loader.ts
+  src/node/bundle.ts
+  src/node/package.ts
+  src/services/consumer.ts
+  src/services/instances.ts
+  src/services/loopback.ts
+  src/services/provider.ts
+  src/services/state-codec.ts
+  src/services/state-internals.ts
+  src/services/state.ts
+  src/services/wire.ts
+  src/types.ts
+
+Copied verbatim:
+  src/delta/draft.ts
+  src/node/manifest.ts
+  src/services/errors.ts
+  src/services/handle.ts
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

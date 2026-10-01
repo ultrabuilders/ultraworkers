@@ -118,6 +118,12 @@ export const nativeAndIntegrationPackages = [
 	// An integration harness: drives pi-natives, pi-coding-agent and
 	// typescript-edit-benchmark, the last of which is already in this bucket.
 	"packages/metaharness",
+	// chord's suite is heap- and subprocess-sensitive rather than a short pure
+	// library: delta-tracker/retention.worker.ts asserts retained heap after a
+	// forced GC (a concurrent neighbour perturbs the measurement), and
+	// bundle.test.ts drives esbuild as a real child process. Both want the
+	// low-concurrency runner this bucket already provides.
+	"packages/chord",
 ];
 
 // Packages the CI buckets deliberately skip but a local full run should still

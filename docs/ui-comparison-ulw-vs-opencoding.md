@@ -1,0 +1,179 @@
+# So sánh bề mặt UI — ULW (`ultraworkers`) vs `opencoding`
+
+**Đo:** 2026-10-02 · ULW `packages/tui/src/` · opencoding `HEAD 1fc59d9` (`quangdang46/opencoding`)
+**Mục đích:** owner chọn cái nào để dựng lại trong `~/.ultraworkers/extension/ulw-openTUI`.
+
+> ⚠️ **Hai bên vẽ bằng hai thứ khác nhau.** opencoding dùng **React + `@opencoding/ink`** (441 + 409 import);
+> ULW dùng **TUI tự viết, differential rendering** (1 file import react trong `src/`).
+> Extension ULW nhận `ExtensionUiComponentFactory = (tui, theme) => ExtensionUiComponent` — **component của ULW, không phải cây React**.
+> ⇒ **Không chép code được.** Chép *thiết kế*, viết lại trên primitive ULW.
+
+> ⚠️ **Cột "Làm được bằng extension?"** — ô ✅ nghĩa là qua `setWidget`/`setHeader`/`setFooter`/`setEditorComponent`,
+> **làm được ngay hôm nay**. Ô ❌ nghĩa là cần `registerEntryRenderer` (0 hit ở ULW, bead `m2-wi-16` đang `deferred`).
+> Ô 🔒 nghĩa là thuộc `PromptInput`/editor — thay được nhưng phải thay cả ô nhập.
+
+Ô trống = **bên đó không có**.
+
+---
+
+## A. Hiển thị hội thoại
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| Tin nhắn assistant | `tui/chat/assistant-message.ts` (70 KB) | `messages/AssistantTextMessage.tsx` (6.4 KB) | ❌ |
+| Tin nhắn thinking | `tui/chat/thinking-display.ts` (14 KB) | `messages/AssistantThinkingMessage.tsx` (1.5) + `HighlightedThinkingText.tsx` (2.5) | ❌ |
+| Tool đang chạy | `tui/chat/tool-execution.ts` (73 KB) | `messages/AssistantToolUseMessage.tsx` (9.6) | ❌ |
+| Kết quả tool | `tui/chat/tool-execution.ts` | `messages/UserToolResultMessage/` (8 file, 14 KB) | ❌ |
+| Tool lỗi / bị từ chối | `tui/chat/tool-execution.ts` | `UserToolErrorMessage` (2.5) · `UserToolRejectMessage` (1.5) · `RejectedToolUseMessage` (0.3) · `UserToolCanceledMessage` (0.3) | ❌ |
+| Group đọc-file | `tui/chat/read-tool-group.ts` (43 KB) | `messages/CollapsedReadSearchContent.tsx` (19.1) · `GroupedToolUseContent.tsx` (2.1) | ❌ |
+| Tin nhắn hệ thống | `tui/chat/late-diagnostics-message.ts` (6.1) | `messages/SystemTextMessage.tsx` (13.7) · `SystemAPIErrorMessage.tsx` (2.0) | ❌ |
+| Tin nhắn người dùng | `tui/chat/chat-transcript-builder.ts` (24 KB) | `messages/UserTextMessage.tsx` (6.7) · `UserPromptMessage.tsx` (3.8) | ❌ |
+| Đính kèm | `tui/prompt/composer-attachments.ts` (14 KB) | `messages/AttachmentMessage.tsx` (18.7) | ❌ |
+| Ảnh trong hội thoại | `tui/components/image.ts` (37 KB) | `messages/UserImageMessage.tsx` (1.2) | ❌ |
+| Ranh giới compact | `tui/chat/compaction-summary-message.ts` (12 KB) | `messages/CompactBoundaryMessage.tsx` (0.4) | ❌ |
+| Ranh giới snip | | `messages/SnipBoundaryMessage.tsx` (0.7) | |
+| Xin duyệt kế hoạch | | `messages/PlanApprovalMessage.tsx` (5.8) | ❌ |
+| Chạm rate limit | | `messages/RateLimitMessage.tsx` (4.0) | ❌ |
+| Tắt máy | | `messages/ShutdownMessage.tsx` (3.2) | ❌ |
+| Bị người dùng ngắt | | `messages/InterruptedByUser.tsx` (0.4) | ❌ |
+| Nhóm đồng đội | `tui/chat/advisor-message.ts` (8.8) | `messages/UserTeammateMessage.tsx` (5.9) · `teamMemCollapsed.tsx` (2.4) | ❌ |
+| Skill | `tui/chat/skill-message.ts` (10 KB) | `messages/UserMemoryInputMessage.tsx` (1.1) | ❌ |
+| Hook progress | `tui/chat/hook-message.ts` (0.7) | `messages/HookProgressMessage.tsx` (1.8) | ❌ |
+| Shell output | `tui/chat/bash-execution.ts` (16 KB) | `components/shell/OutputLine.tsx` (3.8) · `ShellProgressMessage.tsx` (2.6) | ❌ |
+| Markdown render | `tui/components/markdown.ts` (**154 KB**) | `Markdown.tsx` (7.1) + `MarkdownTable.tsx` (13.3) | ❌ |
+
+## B. Ô nhập
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| Ô nhập chính | `tui/prompt/composer.ts` (42 KB) + `tui/components/editor.ts` (**174 KB**) | `PromptInput/PromptInput.tsx` (**96.3 KB**) | 🔒 |
+| Chân ô nhập | `tui/status-line/footer.ts` (15 KB) | `PromptInput/PromptInputFooter.tsx` (15.5) + `PromptInputFooterLeftSide.tsx` (25.4) + `PromptInputFooterSuggestions.tsx` (7.6) | 🔒 |
+| Thông báo trong ô nhập | `tui/prompt/composer-attachments.ts` | `PromptInput/Notifications.tsx` (10.6) | 🔒 |
+| Chip đính kèm | `tui/prompt/attachment-chips.ts` (11 KB) | | |
+| Gợi ý nơi nhập | `tui/prompt/welcome.ts` (32 KB) | `usePromptInputPlaceholder.ts` (2.3) | 🔒 |
+| Ô nhập lấp lánh | `tui/theme/shimmer.ts` (12 KB) | `PromptInput/ShimmeredInput.tsx` (4.0) | 🔒 |
+| Lệnh đã xếp hàng | `tui/prompt/queued-messages.ts` (3.2) | `PromptInput/PromptInputQueuedCommands.tsx` (5.5) | 🔒 |
+| Chỉ báo chế độ | `tui/prompt/input-modes` | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | 🔒 |
+| Mic | `tui/prompt/video.ts` (1.5) | `PromptInput/VoiceIndicator.tsx` (2.0) | |
+| Menu trợ giúp | `tui/prompt/composer-hints.ts` (3.0) | `PromptInput/PromptInputHelpMenu.tsx` (4.7) | 🔒 |
+| Cảnh báo sandbox | | `PromptInput/SandboxPromptFooterHint.tsx` (1.7) | |
+| Autocomplete ký tự | `tui/prompt/word-completion.ts` (8.6) + `macos-spelling.ts` (13 KB) | | |
+| Autocomplete emoji | `tui/prompt/emoji-autocomplete.ts` (9.2) | | |
+| Autocomplete model | `tui/prompt/model-mention-autocomplete.ts` (4.2) | | |
+| Autocomplete GitHub ref | `tui/prompt/github-ref-autocomplete.ts` (3.3) | | |
+| Autocomplete hành động | `tui/prompt/prompt-action-autocomplete.ts` (12 KB) | | |
+
+## C. Chrome & trạng thái
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| Status line | `tui/status-line/component.ts` (**139 KB**) + `segments.ts` (50 KB) | `components/StatusLine.tsx` (21.0) | ✅ |
+| Chân status | `tui/status-line/footer.ts` (15 KB) | `components/BuiltinStatusLine.tsx` (3.8) | ✅ |
+| Mức dùng context | `tui/status-line/context-usage.ts` (32 KB) | `components/ContextVisualization.tsx` (16.6) + `MemoryUsageIndicator.tsx` (1.2) | ✅ |
+| Khung tin nhắn | `tui/chrome/message-frame.ts` (7.2) | | |
+| Khối hội thoại | `tui/chrome/transcript-container.ts` (48 KB) | `components/VirtualMessageList.tsx` (42.6) | ❌ |
+| Bộ đệm tin nhắn | | `components/Messages.tsx` (46.9) + `MessageSelector.tsx` (28.5) | ❌ |
+| Dải phân cách | `tui/chrome/message-divider.ts` (3.0) | | |
+| Lưu ý dưới tin nhắn | `tui/chrome/message-notice.ts` (5.6) + `status-notice.ts` (1.5) | | |
+| Hộp phủ | `tui/chrome/overlay-box.ts` (12 KB) | | |
+| QR | `tui/chrome/qrcode.ts` (19 KB) + `collab-qrcode.ts` (4.2) | `components/CollapedQrCode` | ✅ |
+| Hẹn giờ đếm ngược | `tui/chrome/countdown-timer.ts` (2.6) | | |
+| Ngưỡng context | `tui/chrome/context-thresholds.ts` (3.6) | | |
+| Diff trong chrome | `tui/chrome/diff.ts` (12 KB) | `StructuredDiff/Fallback.tsx` (14.8) + `colorDiff.ts` | ✅ |
+| Bảng chọn | `tui/components/select-list.ts` (30 KB) | `CustomSelect/select.tsx` (28.5) + `SelectMulti.tsx` (6.3) | ✅ |
+| Cây chọn | `tui/components/tree-view.ts` (20 KB) | `components/ui/TreeSelect.tsx` (9.5) | ✅ |
+| Bảng | `tui/components/table.ts` (5.9) | `components/MarkdownTable.tsx` (13.3) | ✅ |
+| Tab | `tui/components/tab-bar.ts` (11 KB) | `components/TagTabs.tsx` (5.4) | ✅ |
+| Danh sách key-value | `tui/components/key-value-list.ts` (4.0) | | |
+| Thanh tiến | `tui/components/progress-bar.ts` (6.9) | | |
+| Cuộn | `tui/components/scroll-view.ts` (18 KB) + `scroll-viewport.ts` (5.5) | `ScrollKeybindingHandler.tsx` (46.2) | 🔒 |
+| Hộp | `tui/components/box.ts` (8.7) | | |
+| Mô tả mở/đóng | `tui/components/disclosure.ts` (9.1) | | |
+| Biểu đồ metric | `tui/components/metric.ts` (6.2) | | |
+
+## D. Bộ chọn & hộp thoại
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| Chọn model | `tui/overlays/model-picker.ts` (18 KB) + `model-hub.ts` (137 KB) + `model-browser.ts` (73 KB) | `components/ModelPicker.tsx` (13.6) | ✅ |
+| Hub agent | `tui/overlays/agent-hub.ts` (94 KB) + `agents-hub.ts` (65 KB) | `components/agents/AgentsList.tsx` (9.5) + `AgentsMenu.tsx` (11.3) | ✅ |
+| Cấu hình advisor | `tui/overlays/advisor-config.ts` (45 KB) | `components/AdvisorMessage` | ✅ |
+| Mức cố gắng | | `EffortPanel/EffortPanel.tsx` (14.3) + `EffortCallout.tsx` (5.2) + `EffortIndicator.ts` (1.2) | ✅ |
+| Cài MCP | `tui/overlays/mcp-add-wizard.ts` (50 KB) | `components/mcp/MCPSettings.tsx` (7.6) + `MCPRemoteServerMenu.tsx` (27.6) + `MCPStdioServerMenu.tsx` (7.2) | ✅ |
+| Elicitation MCP | `tui/overlays/mcp-elicitation-form.ts` (6.0) | `components/mcp/ElicitationDialog.tsx` (**47.3**) | ✅ |
+| Danh sách MCP | | `components/mcp/MCPListPanel.tsx` (11.7) + `MCPToolDetailView.tsx` (4.0) | ✅ |
+| Hỏi người dùng | `tui/overlays/ask-dialog.ts` (58 KB) | `permissions/AskUserQuestionPermissionRequest/` (7 file, 62 KB) | ✅ |
+| Xin duyệt | `tui/overlays/login-dialog.ts` (15 KB) | `permissions/` (15 file + 13 nhánh, 68+ KB) | ✅ |
+| Chọn bản ghi | `tui/overlays/copy-selector.ts` (43 KB) | | ✅ |
+| Chú thích | `tui/overlays/annotation-overlay.ts` (54 KB) | | ✅ |
+| Panel "btw" | `tui/overlays/btw-panel.ts` (8.2) + `btw-history-panel.ts` (28 KB) | | ✅ |
+| Panel cleanse | `tui/overlays/cleanse-panel.ts` (9.1) | | ✅ |
+| Panel việc | `tui/overlays/jobs-panel.ts` (3.6) | `tasks/` (14 file) + `BackgroundTasksDialog.tsx` (31.6) | ✅ |
+| Hoạt động agent | `tui/overlays/agent-activity.ts` (3.3) | `components/AgentProgressLine.tsx` (2.5) + `CoordinatorAgentStatus.tsx` (7.8) | ✅ |
+| Chọn hook | `tui/overlays/hook-selector.ts` (35 KB) + `hook-editor.ts` (14 KB) | `hooks/` (6 file) + `HooksConfigMenu.tsx` (10.5) | ✅ |
+| Tìm trong lịch sử | `tui/overlays/history-search.ts` (13 KB) + `tui/chat/transcript-browser.ts` (9.0) | `HistorySearchDialog.tsx` (4.5) + `GlobalSearchDialog.tsx` (10.4) | ✅ |
+| Cài đặt | `tui/components/settings-list.ts` (41 KB) | `Settings/` (4 file) + `Config.tsx` (**80 KB**) | ✅ |
+| Trợ giúp | | `HelpV2/` (3 file) + `Commands.tsx` (2.0) | ✅ |
+| Chủ đề | `tui/theme/loader.ts` (9.0) + `theme.ts` (31 KB) | `components/ThemePicker.tsx` (7.2) | ✅ |
+| Bảng chọn tệp | | `components/MemoryFileSelector.tsx` (10.8) | ✅ |
+| Băng chào | `tui/setup/startup-splash.ts` (4.1) + `tui/prompt/welcome.ts` (32 KB) | `Onboarding.tsx` (8.3) | ✅ |
+| Trình hướng dẫn | `tui/setup/wizard.ts` + `wizard-overlay.ts` (14 KB) | `wizard/` (6 file) | ✅ |
+| Thẻ sở hữu | | `TrustDialog/` (14 KB) | ✅ |
+| Phản hồi | | `FeedbackSurvey/` (11 file, 47 KB) | ✅ |
+| Nhật ký | `tui/overlays/` | `LogSelector.tsx` (44.7) | ✅ |
+
+## E. Spinner & hiệu ứng
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| Spinner | `tui/components/loader.ts` (18 KB) | `Spinner/Spinner.tsx` (23.1) + `SpinnerAnimationRow.tsx` (12.4) | ✅ |
+| Spinner nhóm | | `Spinner/TeammateSpinnerLine.tsx` (10.2) + `TeammateSpinnerTree.tsx` (4.5) | ✅ |
+| Chớp ký tự | `tui/theme/shimmer.ts` (12 KB) | `Spinner/ShimmerChar.tsx` (0.6) + `useShimmerAnimation.ts` (1.2) | ✅ |
+| Nhấp nháy | | `Spinner/FlashingChar.tsx` (1.1) + `useStalledAnimation.ts` (2.4) | ✅ |
+| Glyph spinner | | `Spinner/SpinnerGlyph.tsx` (2.1) | ✅ |
+| Pháo hoa reset | `tui/overlays/codex-reset-fireworks.ts` (14 KB) | | ✅ |
+| Logo động | | `LogoV2/AnimatedAsterisk.tsx` (1.9) + `AnimatedClawd.tsx` (3.3) | ✅ |
+| Logo / màn hình chào | | `LogoV2/LogoV2.tsx` (16.7) + `WelcomeV2.tsx` (11.3) + `CondensedLogo.tsx` (4.1) | ✅ |
+| Bảng chữ chạy | | `LogoV2/Feed.tsx` (2.8) + `FeedColumn.tsx` (0.8) + `Clawd.tsx` (3.4) | ✅ |
+
+## F. Tool renderer
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| **Todo** | `tui/tools/todo.ts` (**27 KB**) | *(render trong `messageActions.tsx`)* | ❌ |
+| **Web search** | `tui/tools/web-search.ts` (14 KB) + `web-search-types.ts` (2.7) | *(render trong `messageActions.tsx`)* | ❌ |
+| Ô code | `tui/render/code-cell.ts` (12 KB) | `components/HighlightedCode.tsx` (4.2) | ✅ |
+| Danh sách tệp | `tui/render/file-list.ts` (3.2) | | ✅ |
+| Cây kết quả | `tui/render/tree-list.ts` (8.7) | | ✅ |
+| Thẻ tool | `tui/render/tool-card.ts` (15 KB) | | ✅ |
+| Khối output | `tui/render/output-block.ts` (14 KB) + `output-pane.ts` (12 KB) | | ✅ |
+| Sixel / ảnh | `tui/render/sixel.ts` (2.3) | | ✅ |
+| Siêu liên kết | `tui/render/hyperlink.ts` (9.4) | | ✅ |
+| Nghiên cứu tự động | `tui/tools/autoresearch.ts` (15 KB) | | ✅ |
+
+## G. Bảng điều khiển (app)
+
+| Chức năng | ULW | opencoding | Extension? |
+|---|---|---|---|
+| Bảng thống kê | `tui/apps/ps-top.ts` (28 KB) + `ps-data.ts` | `components/Stats.tsx` (34.3) | ✅ |
+| Nghiên cứu | `tui/apps/autoresearch-dashboard.ts` (33 KB) | | ✅ |
+| Trực quan hoá trực tiếp | `tui/apps/live-visualizer.ts` (10 KB) | | ✅ |
+| Cleanse | `tui/apps/cleanse-board.ts` (20 KB) | | ✅ |
+| Chọn phiên | `tui/apps/session-picker.ts` (3.2) | `screens/ResumeConversation.tsx` (16) | ✅ |
+| Chẩn đoán | `tui/apps/` | `screens/Doctor.tsx` (15) | ✅ |
+| Git | `tui/apps/git/` | | ✅ |
+| Debug | `tui/apps/debug/` | | ✅ |
+
+---
+
+## Tóm tắt cho owner
+
+| | ULW | opencoding |
+|---|---|---|
+| Tổng file UI | ~390 file `packages/tui/src` | 418 file `src/components` + `src/screens` |
+| Hệ hiển thị | TUI tự viết, differential | React + `@opencoding/ink` |
+| Chép code được? | — | ❌ **không** |
+| Làm bằng extension hôm nay | ✅ | ~373/418 file |
+| Cần `m2-wi-16` trước | — | `messages/` 45 file (147 KB) + nhóm E |
+
+**Hai bên đều có** `todo` và `websearch` — ULW có bản riêng (`todo.ts` 27 KB, `web-search.ts` 14 KB), opencoding render chung trong `messageActions.tsx`. **Ở phần này nên giữ UI của ULW**, đúng như bạn nói.

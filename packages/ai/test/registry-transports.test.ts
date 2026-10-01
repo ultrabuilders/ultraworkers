@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "bun:test";
 import { getBundledModel } from "@oh-my-pi/pi-catalog";
 import { bridge, LAZY_TRANSPORT_KEYS, memoize, PROVIDER_TRANSPORTS } from "@oh-my-pi/pi-ai/registry/transports";
@@ -20,7 +23,56 @@ import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream"
  *    optimisation that degraded a provider into `Cannot find module` would make
  *    a working provider vanish into an untraceable bundler message, which is
  *    strictly worse than the slow import it replaced.
+ *
+ * SCOPE — the five *stream* transports are out of the graph; `google-auth` is not.
+ * Vertex's token helper is lazy at its call site, but `stream.ts` value-imports
+ * `./providers/register-builtins`, which value-imports `google`, `google-vertex`
+ * and `google-gemini-cli`, and `google-vertex` pulls in `google-auth`. Two hops,
+ * still eager. So the graph assertion below covers the five transports and claims
+ * nothing about google: measured with `scripts/check-entry-graphs.mjs`'s own
+ * walker, `stream.ts` reaches 284 files, 50 of them provider modules, and
+ * `google-auth.ts` is one of them.
  */
+
+/**
+ * The transitive closure of value imports reachable from an entry module.
+ *
+ * Value imports only: `import type` is erased before the runtime ever sees it, so
+ * counting it would over-report the graph and make a healthy entry look heavier
+ * than it is. That direction of error is the safe one — it raises false alarms
+ * rather than missing a regression — but it is still the wrong number.
+ *
+ * Resolution is deliberately shallow-per-file but transitive across files: a specifier
+ * is followed only when it names a file that exists, so an unresolvable or external
+ * specifier ends that branch instead of throwing. Dynamic `import()` is not followed,
+ * which is the property under test.
+ */
+async function valueImportClosure(entry: URL): Promise<string[]> {
+	const seen = new Set<string>();
+	const queue = [fileURLToPath(entry)];
+
+	while (queue.length > 0) {
+		const file = queue.pop()!;
+		if (seen.has(file) || !existsSync(file)) continue;
+		seen.add(file);
+
+		// `import`/`export ... from "<spec>"`, excluding the `import type` form.
+		const source = await Bun.file(file).text();
+		const specifiers = [...source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?!type\s)[^;]*?from\s*["']([^"']+)["']/g)];
+		for (const [, specifier] of specifiers) {
+			if (!specifier.startsWith(".")) continue;
+			const base = resolve(dirname(file), specifier);
+			for (const candidate of [`${base}.ts`, `${base}/index.ts`]) {
+				if (existsSync(candidate)) {
+					queue.push(candidate);
+					break;
+				}
+			}
+		}
+	}
+
+	return [...seen];
+}
 
 function model(provider: string, api: string): Model<"openai-completions"> {
 	return {
@@ -47,29 +99,28 @@ describe("provider transport registry", () => {
 		]);
 	});
 
-	it("leaves no provider transport in stream.ts's static import graph", async () => {
+	it("keeps the five stream transports out of stream.ts's transitive value-import graph", async () => {
 		// The observation the shape assertions above cannot make. Every other test
 		// in this file would stay green if someone reverted the registry to plain
 		// static imports, because the keys and the error path would be unchanged.
-		// This one reads `stream.ts`'s own source and fails if one of the five
-		// lazily-loaded transports is imported by value again.
 		//
-		// Scope note: `stream.ts` still value-imports `./providers/register-builtins`
-		// for the other thirteen providers, which this bead does not cover. That
-		// import is deliberately excluded below rather than asserted away — the
-		// claim here is exactly "these five", not "no providers at all".
-		const source = await Bun.file(new URL("../src/stream.ts", import.meta.url).pathname).text();
+		// This walks the graph, it does not grep one file. That distinction is the
+		// whole point: `stream.ts` imports `./providers/register-builtins` by value,
+		// and that module pulls in thirteen providers including the three google
+		// ones. A source grep of `stream.ts` alone therefore reports a transport as
+		// "lazy" while the module is still loaded eagerly two hops downstream —
+		// which is exactly how `google-auth` stayed in the graph while this test
+		// passed. Only the transitive closure tells the truth about what a consumer
+		// of `stream.ts` actually pays for.
+		//
+		// The graph is resolved at runtime, so a reverted registry (or a new value
+		// import anywhere upstream of one) fails here rather than passing.
+		const graph = await valueImportClosure(new URL("../src/stream.ts", import.meta.url));
 
-		for (const module of [
-			"./providers/gitlab-duo",
-			"./providers/gitlab-duo-workflow",
-			"./providers/kimi",
-			"./providers/pi-native-client",
-			"./providers/synthetic",
-			"./providers/google-auth",
-		]) {
-			const valueImport = new RegExp(`^import\\s+(?!type\\s)[^;]*?from\\s+"${module.replace(".", "\\.")}"`, "m");
-			expect(`${module}: ${valueImport.test(source) ? "STILL IMPORTED" : "lazy"}`).toBe(`${module}: lazy`);
+		for (const transport of ["gitlab-duo", "gitlab-duo-workflow", "kimi", "pi-native-client", "synthetic"]) {
+			expect(`${transport}: ${graph.some(file => file.endsWith(`/providers/${transport}.ts`)) ? "IN GRAPH" : "out"}`).toBe(
+				`${transport}: out`,
+			);
 		}
 	});
 

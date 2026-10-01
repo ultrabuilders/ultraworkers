@@ -31,7 +31,7 @@ import {
 import {
 	groupedReadUsageCallIds,
 	ReadToolGroupComponent,
-	readArgsCollapseIntoGroup,
+	isReadToolGroupMember,
 } from "@oh-my-pi/pi-tui/chat/read-tool-group";
 import { SkillMessageComponent } from "@oh-my-pi/pi-tui/chat/skill-message";
 import { StrippedToolCallsPlaceholder } from "@oh-my-pi/pi-tui/chat/stripped-tool-calls-placeholder";
@@ -548,7 +548,7 @@ export class UiHelpers {
 					const renderToolName = toolRenderName(content.name, tool);
 					resolveWaitingPoll(renderToolName);
 
-					if (renderToolName === "read" && readArgsCollapseIntoGroup(content.arguments)) {
+					if (isReadToolGroupMember(renderToolName, content.arguments)) {
 						if (hasErrorStop && errorMessage) {
 							if (!readGroup) {
 								readGroup = new ReadToolGroupComponent({

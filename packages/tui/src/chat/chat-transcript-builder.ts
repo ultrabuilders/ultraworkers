@@ -64,7 +64,7 @@ import {
 	LateDiagnosticsMessageComponent,
 	routeLateDiagnostics,
 } from "./late-diagnostics-message";
-import { groupedReadUsageCallIds, ReadToolGroupComponent, readArgsCollapseIntoGroup } from "./read-tool-group";
+import { groupedReadUsageCallIds, isReadToolGroupMember, ReadToolGroupComponent } from "./read-tool-group";
 import { SkillMessageComponent } from "./skill-message";
 import { ToolExecutionComponent } from "./tool-execution";
 import { TranscriptContainer } from "../chrome/transcript-container";
@@ -463,7 +463,7 @@ export class ChatTranscriptBuilder {
 			this.#resolveWaitingPoll(content.name);
 
 			const afterToolSegment = timeline.afterToolCalls.get(content.id);
-			if (content.name === "read" && readArgsCollapseIntoGroup(content.arguments)) {
+			if (isReadToolGroupMember(content.name, content.arguments)) {
 				if (hasErrorStop && errorMessage) {
 					const group = this.#ensureReadGroup();
 					group.updateArgs(content.arguments, content.id);

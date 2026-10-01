@@ -68,6 +68,29 @@ export function readArgsCollapseIntoGroup(args: unknown): boolean {
 }
 
 /**
+ * Whether a tool call renders as part of the compact {@link ReadToolGroupComponent}.
+ *
+ * The complete membership decision, and the only place it should be written.
+ * {@link readArgsCollapseIntoGroup} answers the half that depends on arguments —
+ * files and external targets collapse, registered internal-URL schemes render
+ * full — while the other half is the tool's name. Every call site needs both,
+ * so splitting the decision left each one re-deriving the name check in whatever
+ * shape suited it: `name === "read" && …`, `name !== "read" || !…`, or an
+ * enclosing `if`. Those are the same rule written three ways, which is how they
+ * drift apart.
+ *
+ * `name` is the *rendered* name (`toolRenderName`), not the raw tool name: a
+ * renamed or bridged tool is grouped by what it presents as, not by what it is
+ * called underneath.
+ *
+ * @param name - The rendered tool name.
+ * @param args - The raw tool arguments.
+ */
+export function isReadToolGroupMember(name: string, args: unknown): boolean {
+	return name === "read" && readArgsCollapseIntoGroup(args);
+}
+
+/**
  * Return the collapsed read calls that can own a turn's usage row. Mixed-tool
  * turns and visible content after a read keep the standalone row so request
  * metrics retain their transcript ordering.
@@ -77,7 +100,7 @@ export function groupedReadUsageCallIds(message: AssistantMessage): string[] | u
 	let sawToolCall = false;
 	for (const content of message.content) {
 		if (content.type === "toolCall") {
-			if (content.name !== "read" || !readArgsCollapseIntoGroup(content.arguments)) return undefined;
+			if (!isReadToolGroupMember(content.name, content.arguments)) return undefined;
 			sawToolCall = true;
 			toolCallIds.push(content.id);
 			continue;

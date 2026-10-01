@@ -11,7 +11,7 @@ import { detectCacheInvalidation } from "@oh-my-pi/pi-tui/chat/cache-invalidatio
 import {
 	groupedReadUsageCallIds,
 	ReadToolGroupComponent,
-	readArgsCollapseIntoGroup,
+	isReadToolGroupMember,
 	readArgsHaveTarget,
 } from "@oh-my-pi/pi-tui/chat/read-tool-group";
 import { TodoReminderComponent } from "@oh-my-pi/pi-tui/chat/todo-reminder";
@@ -1409,7 +1409,7 @@ export class EventController {
 						// Creating either component now would lock the read into the wrong shape.
 						continue;
 					}
-					if (readArgsCollapseIntoGroup(content.arguments)) {
+					if (isReadToolGroupMember(renderToolName, content.arguments)) {
 						const existing = this.ctx.pendingTools.get(content.id);
 						if (existing) {
 							this.#trackReadToolCall(content.id, content.arguments);
@@ -1750,7 +1750,7 @@ export class EventController {
 					this.ctx.chatContainer.removeChild(stale);
 				}
 			}
-			if (renderToolName === "read" && readArgsCollapseIntoGroup(event.args)) {
+			if (isReadToolGroupMember(renderToolName, event.args)) {
 				this.#trackReadToolCall(event.toolCallId, event.args);
 				if (!this.#toolTimelineComponents.has(event.toolCallId)) {
 					const group = this.#getReadGroup();

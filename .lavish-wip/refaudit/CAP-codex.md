@@ -993,6 +993,7 @@ Nguồn: 6 lens (structure, agent-core, plugin, surface, integration, ops); mọ
 ## codex.124 Bảng quyền tác động tới việc gõ tiếp theo
 
 - **where:** codex-rs/tui/src/bottom_pane/approval_overlay.rs (92 KB) + permissions_menu.rs + permission_popups.rs + config/src/permissions_toml.rs
+- **ANCHOR CŨ, đã đo lại 2026-10-01:** `permissions_menu.rs` và `permission_popups.rs` **không còn tồn tại** ở HEAD của `codex-ref` (`find codex-rs -name "*permission*"` không thấy). `approval_overlay.rs` còn, và là nơi **ý hay nhất** nằm: `exec_options()` (`:832`) dựng option list từ `available_decisions` mà backend khai báo (core quyết định không gian quyết định, overlay chỉ render), và tại `:854` **rút luôn** tuỳ chọn prefix khi prefix chứa newline/carriage return thay vì render nó — một quyết định an toàn, không phải format. Ai port bằng cách diễn giải sẽ làm sai chỗ này.
 - **what:** `/permissions` và `request_user_input` hiển thị quyền sắp bị xin (kể cả rule dạng prefix), cho duyệt theo phiên hoặc theo prefix, phím tắt riêng (y / a / p / d).
 - **how:** `ApprovalKeymap` 8 action riêng; `open_fullscreen` mặc định `Ctrl+A` và `Ctrl+Shift+A`. Bố cục thật từ snapshot: "Would you like to run the following command?" → Environment → Reason → `$ lệnh` → "› 1. Yes, proceed (y)" → "2. No … (esc)".
 - **solves:** Người dùng hiểu ngay lệnh sắp chạy, chạy ở đâu, và vì sao — rồi quyết định có nhớ hay không.

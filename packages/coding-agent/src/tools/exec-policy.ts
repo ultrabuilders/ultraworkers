@@ -21,6 +21,23 @@
  * user's own `allow` is reached before anything an extension contributed. An
  * extension can therefore never pre-empt a decision the user made.
  *
+ * **Two guarantees, and they are not the same one.** Ordering (above) is about
+ * *policy*: the user's rules are consulted first. The floor is about *effects*:
+ * `resolveEffectFloor` runs at `tools/approval.ts:262`, ahead of both the `yolo`
+ * branch (`:274`) and the `decision.override` branch (`:306`), and `bash`
+ * declares the `subprocess` effect (`tools/effects.ts:46`). So a contributed
+ * `allow` cannot escape a user who wrote `effects: { subprocess: "deny" }` — the
+ * floor is non-empty for bash and sits under every path that could otherwise
+ * wave the call through. Ordering alone would not give this: a rule that is
+ * merely *first* still decides what "allow" means.
+ *
+ * **The asymmetry, stated rather than left to be discovered.** The safety floor
+ * is closed to plugins and the `allow` direction is open to them. If a user has
+ * no rule for `npm *` and an extension contributes one, that command runs
+ * without asking. That is the point of the seam — the alternative is the user
+ * hand-writing a glob for every tool they trust — but it is a real opening, and
+ * it is the deliberate counterpart to leaving `CRITICAL_BASH_PATTERNS` shut.
+ *
  * **What this does not open:** `CRITICAL_BASH_PATTERNS` (`tools/bash.ts:193`)
  * stays core-owned and unregistered. Those patterns force the `exec` tier, so a
  * contributed one could only ever raise scrutiny and never lower it — but the

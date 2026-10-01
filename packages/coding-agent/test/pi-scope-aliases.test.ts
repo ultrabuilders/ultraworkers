@@ -73,6 +73,20 @@ const CASES: readonly AliasCase[] = [
 		// `oauth.d.ts`; it makes a stable probe across both layouts.
 		symbol: "refreshOAuthToken",
 	},
+	// @ultraworkers — the scope this project renames to (W2a). Lives here rather
+	// than in the W2b batch because the reason it was held back does not hold:
+	// `aliasSpecifier` is only interpolated into the generated probe (the lines
+	// below), it resolves nothing at module scope, and `canonicalUtils` is
+	// already resolved at line 29. Dropping "ultraworkers" from PI_SCOPE_ALIASES
+	// turns this red with a module-not-found, which is the whole point: losing an
+	// alias is a runtime failure, so compile and unit gates stay green and only a
+	// user loading a real plugin finds out.
+	{
+		id: "ultraworkers-utils",
+		aliasSpecifier: "@ultraworkers/pi-utils",
+		canonicalPath: canonicalUtils,
+		symbol: "logger",
+	},
 	// `Key` runtime helper restored on pi-tui (plannotator + rpiv-* import it).
 	{
 		id: "earendil-tui-key",

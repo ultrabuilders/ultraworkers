@@ -257,6 +257,35 @@ describe("ExtensionUiController editor UI", () => {
 		expect(() => ui.setHeader(undefined)).toThrow(/setHeader/);
 	});
 
+	it("names setEditorComponent, the one surface here that mounts a component", async () => {
+		// AND, not OR. The previous assertion on this file's sibling used
+		// `/setWidget|setStatus|hasUI/`, which stays green when any one alternative is
+		// deleted — a gate that only goes red if you remove everything catches nothing.
+		// The bead requires both supported alternatives to be named, so each is checked
+		// for presence; dropping either one is now a failing test rather than a message
+		// that quietly loses a road.
+		//
+		// `setEditorComponent` is the load-bearing one: `setWidget` renders a component-free
+		// overlay and `setStatus` is text, so an author who wanted to draw a component and
+		// is sent to those two has been sent to two dead ends.
+		const ui = await makeHarness().init();
+
+		const message = (() => {
+			try {
+				ui.setFooter(undefined);
+				return "";
+			} catch (error) {
+				return (error as Error).message;
+			}
+		})();
+		expect(message).not.toBe("");
+		expect(message).toContain("setEditorComponent");
+		expect(message).toContain("setWidget");
+		// And the surface that actually failed is named, so the reader knows which call
+		// to change.
+		expect(message).toContain("setFooter");
+	});
+
 	it("requests a render after extension pasteToEditor mutates the prompt", async () => {
 		const harness = makeHarness();
 		const ui = await harness.init();

@@ -21,14 +21,16 @@
   untouched, as is a backtick run sitting next to text.
 
 - Long runs of Markdown containing a link, an email address, or a line break are no longer
-  quadratic in three more places. The inline lexer decided whether the text ahead held an `@` by
+  quadratic in four more places. The inline lexer decided whether the text ahead held an `@` by
   scanning everything left of the cursor on every single character, asked the same question of
-  the remaining text every time it reached a `[`, and searched for a hard line break with a
-  pattern that retried from every position whenever the run contained no newline. All three
-  facts are now settled once per run instead of once per character, so the work grows with the
-  length of the text rather than with its square. Rendering is unchanged: the lexer produces
-  byte-identical output to the previous version across 28,786 inputs — every paragraph of every
-  Markdown file in this repository, plus targeted cases for each pattern.
+  the remaining text every time it reached a `[`, searched for a hard line break with a pattern
+  that retried from every position whenever the run contained no newline, and — on ordinary
+  prose, not just runs of punctuation — scanned the rest of the paragraph for an `@` on every
+  step, because prose always has a formatting character further ahead. All four facts are now
+  settled once per run instead of once per character, so the work grows with the length of the
+  text rather than with its square. Rendering is unchanged: the lexer produces byte-identical
+  output to the previous version across 28,786 inputs — every paragraph of every Markdown file
+  in this repository, plus targeted cases for each pattern.
 
 - Runs of ordinary inline Markdown get markedly cheaper as they grow. The lexer read the last character of the text token it was still building, and because that token is accumulated as a rope, reading either end of it forces the engine to flatten it — so every iteration of a run with nothing to format paid to flatten the whole run again. The read now happens only in the two branches that use the value, and it is gone for plain text. This entry originally stopped here, warning that `*` and `_` runs were still quadratic because the guard deliberately skips them — the value they need is the one that costs. That warning is now **out of date**: the cost it pointed at was found and removed by the entries above, and those runs measure linear.
 

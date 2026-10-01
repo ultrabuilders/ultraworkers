@@ -18,6 +18,7 @@ import type {
 } from "@oh-my-pi/pi-ai";
 import { isBuiltinComposerStyle, type KeyId } from "@oh-my-pi/pi-tui";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { registerSubcommand as registerSubcommandVerb } from "../../cli-commands";
 import {
 	type CompactionTransactionObserver,
 	registerCompactionTransactionObserver,
@@ -362,6 +363,23 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		},
 	): void {
 		this.extension.commands.set(name, { name, ...options });
+	}
+
+	/**
+	 * Register a top-level `omp <verb>`, distinct from {@link registerCommand}'s
+	 * session slash command. The verb goes straight into the routing registry
+	 * `cli-commands.ts` reads, because there is no second place for it to live:
+	 * a name that is not in that registry is forwarded to the model as a prompt.
+	 *
+	 * The extension path is the collision owner, so a duplicate names both sides
+	 * rather than one anonymous loser.
+	 */
+	registerSubcommand(name: string): void {
+		if (!registerSubcommandVerb(name, this.extension.path)) {
+			logger.warn(
+				`Extension ${this.extension.path}: top-level verb "${name}" is already registered — the first registration keeps routing; see subcommandCollisionDiagnostics() for both owners`,
+			);
+		}
 	}
 
 	setLabel(label: string): void {

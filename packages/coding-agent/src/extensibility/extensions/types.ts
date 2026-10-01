@@ -241,6 +241,29 @@ export interface ExtensionWidgetOptions {
 	owner?: string;
 }
 
+/** Options for `setHeader` / `setFooter`. */
+export interface ExtensionSurfaceOptions {
+	/**
+	 * The name this surface is registered under. Defaults to the calling
+	 * extension's path.
+	 *
+	 * This is a label, not a claim on a single slot. Two extensions that pass
+	 * the same key both keep their surface: the later one is registered under
+	 * `key~2` and a warning names both, which is the collision policy skills
+	 * already use (`extensibility/skills.ts`). Silently letting the second
+	 * `Map.set` evict the first would take away a surface its author can still
+	 * see and never asked to give up.
+	 */
+	key?: string;
+	/**
+	 * Which extension placed this surface.
+	 *
+	 * Stamped by the runner, never by the extension itself, for the same reason
+	 * as {@link ExtensionWidgetOptions.owner}.
+	 */
+	owner?: string;
+}
+
 /** Options for `ExtensionUIContext.custom()` (overlay rendering of a custom component). */
 export interface ExtensionCustomOptions {
 	/** Render the component as an overlay over the transcript instead of replacing the editor area. */
@@ -320,22 +343,22 @@ export interface ExtensionUIContext {
 	setWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void;
 
 	/**
-	 * Set a custom footer component, or undefined to restore the built-in footer.
+	 * Mount a component in the band below the prompt surface, or pass
+	 * `undefined` to withdraw this extension's footer.
 	 *
 	 * Throws in any context that cannot mount a component — headless, print,
-	 * subagent, ACP and RPC, and the interactive context itself. It used to
-	 * return silently, so an extension could set a footer, see no error, and ship
-	 * one that never appeared. Check `ui.hasUI` first, or use `setWidget` /
+	 * subagent, ACP and RPC. Check `ui.hasUI` first, or use `setWidget` /
 	 * `setStatus`, which work without a frame.
 	 */
-	setFooter(factory: ExtensionUiComponentFactory | undefined): void;
+	setFooter(factory: ExtensionUiComponentFactory | undefined, options?: ExtensionSurfaceOptions): void;
 
 	/**
-	 * Set a custom header component, or undefined to restore the built-in header.
+	 * Mount a component in the band above the prompt surface, or pass
+	 * `undefined` to withdraw this extension's header.
 	 *
 	 * Throws wherever `setFooter` does, for the same reason.
 	 */
-	setHeader(factory: ExtensionUiComponentFactory | undefined): void;
+	setHeader(factory: ExtensionUiComponentFactory | undefined, options?: ExtensionSurfaceOptions): void;
 
 	/** Set the terminal window/tab title. */
 	setTitle(title: string): void;
@@ -1747,6 +1770,23 @@ export interface ExtensionAPI {
 			handler: RegisteredCommand["handler"];
 		},
 	): void;
+
+	/**
+	 * Register a top-level `omp <verb>` command, so `omp <verb> …` routes to this
+	 * extension instead of being forwarded to the model as a prompt.
+	 *
+	 * Distinct from {@link registerCommand}, which registers a *slash* command
+	 * inside a session. Naming a slash command here does not create a top-level
+	 * verb, and registering a verb here does not add a slash command — the two
+	 * registries stay separate on purpose.
+	 *
+	 * Routing is decided in `cli-commands.ts` before extensions load, so a verb
+	 * registered here is picked up when the process re-reads the registry after
+	 * extensions are loaded. A verb colliding with one already claimed is
+	 * reported through `subcommandCollisionDiagnostics()` with both owners
+	 * named, and the first registration keeps routing.
+	 */
+	registerSubcommand(name: string): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(

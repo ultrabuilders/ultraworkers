@@ -188,6 +188,14 @@ jobs:
               cargo deny --locked --offline check licenses sources
          - name: Type check workspace
            run: bun run ci:check:full
+         # The R0 reorganisation beads (`r0-grp-a-102`, `r0-grp-b-103`,
+         # `r0-grp-c-104`) all quote an `importers` column that no tool produced, and
+         # all three require a baseline gate to exist *before* the first merge. This is
+         # that gate: it fails when a directory's fan-in rises above the committed
+         # baseline, or when the tracked file count under packages/ falls — the
+         # deletion the R0 invariant forbids.
+         - name: Fan-in baseline (R0)
+           run: bun run measure:fan-in:check
          - name: Build collab web
            run: bun run collab:web:build
 

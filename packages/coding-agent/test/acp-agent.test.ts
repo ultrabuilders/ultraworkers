@@ -23,7 +23,7 @@ import { SILENT_ABORT_MARKER } from "@oh-my-pi/pi-coding-agent/session/messages"
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { TaskTool } from "@oh-my-pi/pi-coding-agent/task";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
-import { getConfigRootDir, setAgentDir } from "@oh-my-pi/pi-utils";
+import { getConfigRootDir, setAgentDir, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type {
 	AgentSideConnection,
 	ClientCapabilities,
@@ -571,6 +571,17 @@ async function advanceBootstrapGuard(): Promise<void> {
 	await Promise.resolve();
 }
 
+// `AcpAgent.extMethod` dispatches on `` `_${WIRE_NAME}/…` ``, so the method name is a
+// wire value the product owns. Spelling it as a literal here left these tests calling a
+// name the switch can never match: `_omp/usage` fell through to `default:` and every
+// assertion after it measured the throw, not the handler. Deriving from the same
+// constant keeps the test on the name that is actually dispatched. One literal pin
+// remains below so a rename of `WIRE_NAME` cannot silently redefine both sides at once
+// and leave this file green against a product that stopped answering.
+const ACP_EXT_PREFIX = `_${WIRE_NAME}/`;
+const ACP_EXT_LIST_ALL = `${ACP_EXT_PREFIX}sessions/listAll`;
+const PIN_ACP_EXT_PREFIX = "_ultraworkers/";
+
 describe("ACP agent", () => {
 	it("scopes _omp/usage to the session the caller named", async () => {
 		const harness = await createHarness();
@@ -585,7 +596,7 @@ describe("ACP agent", () => {
 		// Ask about the SECOND session. Taking the first entry of the session map
 		// would answer about the first one and still return a well-formed report —
 		// the failure is invisible unless the two payloads differ.
-		const secondReport = await harness.agent.extMethod("_omp/usage", { sessionId: second.sessionId });
+		const secondReport = await harness.agent.extMethod(`${ACP_EXT_PREFIX}usage`, { sessionId: second.sessionId });
 		expect(secondReport).toBeDefined();
 		expect(JSON.stringify(secondReport)).toContain(second.sessionId);
 		expect(JSON.stringify(secondReport)).not.toContain(first.sessionId);
@@ -1174,10 +1185,19 @@ describe("ACP agent", () => {
 	it("accepts OMP extension methods and rejects unknown unprefixed methods", async () => {
 		const harness = await createHarness();
 
-		const result = await harness.agent.extMethod("_omp/sessions/listAll", { limit: 2 });
+		// The pin is the point of this test: the derived name above tracks whatever
+		// `WIRE_NAME` says, so on its own it would still pass if the product's prefix
+		// were renamed in lockstep. Asserting the literal wire spelling is what makes a
+		// rename of the prefix a visible failure here instead of a silent one.
+		expect(ACP_EXT_PREFIX).toBe(PIN_ACP_EXT_PREFIX);
+
+		const result = await harness.agent.extMethod(ACP_EXT_LIST_ALL, { limit: 2 });
 
 		expect(Array.isArray(result.sessions)).toBe(true);
 		expect(typeof result.total).toBe("number");
+		// Unprefixed, and deliberately not derived: this asserts the switch rejects a
+		// name that lost its `_` prefix, so building it from `ACP_EXT_PREFIX` would
+		// assert the opposite of what it claims.
 		await expect(harness.agent.extMethod("omp/sessions/listAll", { limit: 2 })).rejects.toThrow(
 			"Unknown ACP ext method",
 		);
@@ -1186,7 +1206,7 @@ describe("ACP agent", () => {
 		await Bun.sleep(0);
 	});
 
-	// The `_omp/*` names are a wire contract: a client calls them by literal string.
+	// The `_<wire>/*` names are a wire contract: a client calls them by literal string.
 	// The dispatch is a `switch`, so a name that loses its prefix or picks up a typo
 	// falls straight through to `default:` and the caller gets "Unknown ACP ext
 	// method" — the method silently stops existing. Two of these validate their own
@@ -1194,14 +1214,16 @@ describe("ACP agent", () => {
 	it("routes every _omp extension method to a handler rather than the unknown-method fallthrough", async () => {
 		const harness = await createHarness();
 
-		const projects = await harness.agent.extMethod("_omp/projects/list", {});
+		const projects = await harness.agent.extMethod(`${ACP_EXT_PREFIX}projects/list`, {});
 		expect(Array.isArray(projects.projects)).toBe(true);
 
-		const extensions = await harness.agent.extMethod("_omp/extensions", {});
+		const extensions = await harness.agent.extMethod(`${ACP_EXT_PREFIX}extensions`, {});
 		expect(Array.isArray(extensions.extensions)).toBe(true);
 
-		await expect(harness.agent.extMethod("_omp/chats/byCwd", {})).rejects.toThrow("cwd required");
-		await expect(harness.agent.extMethod("_omp/extensions/toggle", {})).rejects.toThrow("providerId required");
+		await expect(harness.agent.extMethod(`${ACP_EXT_PREFIX}chats/byCwd`, {})).rejects.toThrow("cwd required");
+		await expect(harness.agent.extMethod(`${ACP_EXT_PREFIX}extensions/toggle`, {})).rejects.toThrow(
+			"providerId required",
+		);
 
 		harness.abortController.abort();
 		await Bun.sleep(0);

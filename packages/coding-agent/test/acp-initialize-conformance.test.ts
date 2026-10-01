@@ -15,7 +15,7 @@ import { AcpAgent } from "@oh-my-pi/pi-coding-agent/modes/acp/acp-agent";
 import { ACP_TERMINAL_AUTH_FLAG, prepareAcpTerminalAuthArgs } from "@oh-my-pi/pi-coding-agent/modes/acp/terminal-auth";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { getConfigRootDir, setAgentDir, VERSION } from "@oh-my-pi/pi-utils";
+import { getConfigRootDir, setAgentDir, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type { AgentSideConnection, InitializeRequest } from "@oh-my-pi/pi-utils/acp";
 import { expectAcpStructure } from "./helpers/acp-schema";
 
@@ -232,11 +232,32 @@ describe("ACP initialize conformance", () => {
 		const pkg = (await Bun.file(pkgPath).json()) as { version: string };
 		expect(response.agentInfo).toEqual(
 			expect.objectContaining({
-				title: "omp",
+				title: WIRE_NAME,
 				version: VERSION,
 			}),
 		);
 		expect(response.agentInfo!.version).toBe(pkg.version);
+	});
+
+	it("declares the published binary name, in name and title alike", async () => {
+		// Anchored to the **published `package.json#bin` key**, not to `WIRE_NAME`.
+		// Asserting against the constant would be a tautology: `name` and the
+		// expected value both read `WIRE_NAME`, so nothing about a rename could ever
+		// fail it. The bin key is the one fact here that is not derived from the same
+		// source — it is what a user can actually type.
+		//
+		// This is the row that would have caught the drift this fixes: `title` came
+		// from `WIRE_NAME` while its sibling `name` was an inline `"omp"` in the same
+		// object literal. Nothing tied the two together, and nothing tied either to
+		// the binary the package publishes.
+		const agent = await createAgent();
+		const response = await agent.initialize(buildInitializeRequest());
+		const pkg = (await Bun.file(path.join(import.meta.dir, "..", "package.json")).json()) as {
+			bin: Record<string, string>;
+		};
+		const invocable = Object.keys(pkg.bin)[0];
+
+		expect(response.agentInfo).toEqual(expect.objectContaining({ name: invocable, title: invocable }));
 	});
 
 	it("preserves the agentCapabilities contract clients depend on", async () => {

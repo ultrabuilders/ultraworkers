@@ -667,7 +667,7 @@ export class AcpAgent implements Agent {
 		return {
 			protocolVersion: PROTOCOL_VERSION,
 			agentInfo: {
-				name: "omp",
+				name: WIRE_NAME,
 				title: WIRE_NAME,
 				version: VERSION,
 			},

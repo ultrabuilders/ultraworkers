@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-	$env,
-	$which,
+	WIRE_NAME,
+	WhichCachePolicy,
 	isBunTestRuntime,
 	isCompiledBinary,
 	isExecutable,
@@ -12,8 +12,9 @@ import {
 	openCloexecSync,
 	postmortem,
 	stripWindowsExtendedLengthPathPrefix,
-	WhichCachePolicy,
 	workerHostEntry,
+	$env,
+	$which,
 } from "@oh-my-pi/pi-utils";
 import { stripGitRepoLocationEnv } from "@oh-my-pi/pi-utils/env";
 import type { Subprocess } from "bun";
@@ -127,8 +128,8 @@ export function resolveExecutablePath(): string {
 			// Prefer the original launcher when invoked with an absolute path
 			isFullyQualifiedPath(argv0) ? argv0 : null,
 			!isPath ? $which(argv0, { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }) : null,
-			// Generic fallback to finding "omp" on PATH
-			$which("omp", { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }),
+			// Generic fallback to finding the installed command on PATH
+			$which(WIRE_NAME, { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }),
 		];
 		for (const candidate of candidates) {
 			if (candidate && isExecutable(candidate)) {

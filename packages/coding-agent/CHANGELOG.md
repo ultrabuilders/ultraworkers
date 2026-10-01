@@ -86,6 +86,17 @@
   was fine. The address forms the check covers include the IPv4-mapped IPv6 (`::ffff:127.0.0.1`)
   and zone-id (`fe80::1%eth0`) spellings, the trailing-dot FQDN (`localhost.`), and the whole
   `*.localhost` name space — a plugin naming one of these no longer registers a server
+- `pi.registerSetting(...)` lets an extension declare its own configuration key, under a
+  `plugins.<id>.<key>` id, and have it resolve through the same layer stack a core setting
+  uses — so it reports its provenance like any other, including naming the `env` layer when
+  the definition declares an env name and it is set. The key is withdrawn when the extension
+  unloads, rather than being left behind under an id its owner no longer holds.
+  Registering the same key twice is idempotent instead of a collision, so re-running a
+  factory on reload does not fail on the extension's own id, while two extensions claiming
+  one id is refused naming both. The settings panel shows a declared key only when it carries
+  a `ui.tab` naming one of the panel's existing tabs; there is no extension-owned tab yet, so
+  a key that does not name one resolves and reports provenance but is not editable in the
+  panel
 
 ### Changed
 

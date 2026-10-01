@@ -6,10 +6,11 @@ import {
 	type SessionMessageEntry,
 } from "@oh-my-pi/pi-agent-core/compaction";
 import type { AssistantMessage, Model, ProviderResponseMetadata, Usage } from "@oh-my-pi/pi-ai";
-import { isRecord } from "@oh-my-pi/pi-utils";
 import type { ModelRegistry } from "../config/model-registry";
 import type { Settings } from "../config/settings";
 
+import { addUsageInto, emptyUsage } from "@oh-my-pi/pi-catalog/usage-merge";
+import { reportedToolUsage } from "../tools/usage-reporter";
 import type { ContextUsage } from "../extensibility/extensions/types";
 import {
 	computeNonMessageBreakdown,
@@ -228,50 +229,32 @@ export class SessionStatsTracker {
 		let assistantMessages = 0;
 		let toolResults = 0;
 		let toolCalls = 0;
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalReasoning = 0;
-		let totalCacheWrite = 0;
-		let totalTokens = 0;
-		let totalCost = 0;
-		let totalPremiumRequests = 0;
-		let creditCost = 0;
-		let committedCreditCost = 0;
-		let committedAcuCost = 0;
-		let hasCredits = false;
 		const routedModels: Record<string, number> = {};
 		const bucketInputs: UsageBucketInput[] = [];
+		// One canonical total, folded through the shared helper, read once at the
+		// end. This closure used to name eight fields by hand, so any field it did
+		// not name was dropped here while another path kept it — the divergence the
+		// shared helper exists to end. Reading `reasoning`, `premiumRequests` and
+		// the credit meters off the SAME total also means the reported scalars
+		// cannot disagree with the token totals about which records carried them.
+		const usageTotal = emptyUsage();
 		const addUsage = (usage: Usage): void => {
-			totalInput += usage.input;
-			totalOutput += usage.output;
-			totalReasoning += usage.reasoningTokens ?? 0;
-			totalCacheRead += usage.cacheRead;
-			totalCacheWrite += usage.cacheWrite;
-			totalTokens += usage.totalTokens;
-			totalPremiumRequests += usage.premiumRequests ?? 0;
-			totalCost += usage.cost.total;
-			const credits = usage.credits;
-			if (credits !== undefined) {
-				hasCredits = true;
-				creditCost += credits.cost ?? 0;
-				committedCreditCost += credits.committedCost ?? 0;
-				committedAcuCost += credits.acuCost ?? 0;
-			}
+			addUsageInto(usageTotal, usage);
 		};
 		for (const message of state.messages) {
 			if (message.role === "user") {
 				userMessages++;
 			} else if (message.role === "toolResult") {
 				toolResults++;
-				if (message.toolName === "task") {
-					const usage = taskToolUsage(message.details);
-					// A `task` result is a CHILD process's usage, not the user's model,
-					// so it gets its own bucket instead of being folded into the caller.
-					if (usage) {
-						addUsage(usage);
-						bucketInputs.push({ key: TOOLS_SUMMARIES_BUCKET, isTurn: false, usage });
-					}
+				const usage = reportedToolUsage(message.toolName, message.details);
+				// A sub-run's usage is a CHILD process's usage, not the user's model,
+				// so it gets its own bucket instead of being folded into the caller.
+				// The tool name is no longer tested here: every tool with a
+				// registered reporter contributes, and one without contributes
+				// nothing — the pre-seam behaviour for every name but `task`.
+				if (usage) {
+					addUsage(usage);
+					bucketInputs.push({ key: TOOLS_SUMMARIES_BUCKET, isTurn: false, usage });
 				}
 			} else if (message.role === "assistant") {
 				assistantMessages++;
@@ -308,21 +291,21 @@ export class SessionStatsTracker {
 			toolResults,
 			totalMessages: state.messages.length,
 			tokens: {
-				input: totalInput,
-				output: totalOutput,
-				reasoning: totalReasoning,
-				cacheRead: totalCacheRead,
-				cacheWrite: totalCacheWrite,
-				total: totalTokens,
+				input: usageTotal.input,
+				output: usageTotal.output,
+				reasoning: usageTotal.reasoningTokens ?? 0,
+				cacheRead: usageTotal.cacheRead,
+				cacheWrite: usageTotal.cacheWrite,
+				total: usageTotal.totalTokens,
 			},
-			cost: totalCost,
-			premiumRequests: totalPremiumRequests,
-			...(hasCredits
+			cost: usageTotal.cost.total,
+			premiumRequests: usageTotal.premiumRequests ?? 0,
+			...(usageTotal.credits !== undefined
 				? {
 						credits: {
-							cost: creditCost,
-							committedCost: committedCreditCost,
-							acuCost: committedAcuCost,
+							cost: usageTotal.credits.cost ?? 0,
+							committedCost: usageTotal.credits.committedCost ?? 0,
+							acuCost: usageTotal.credits.acuCost ?? 0,
 						},
 					}
 				: undefined),
@@ -554,22 +537,4 @@ export class SessionStatsTracker {
 			responseStatus: response.status,
 		});
 	}
-}
-
-function taskToolUsage(details: unknown): Usage | undefined {
-	if (!details || typeof details !== "object") return undefined;
-	const usage = Reflect.get(details, "usage");
-	return isUsage(usage) ? usage : undefined;
-}
-
-function isUsage(value: unknown): value is Usage {
-	if (!isRecord(value) || !isRecord(value.cost)) return false;
-	return (
-		typeof value.input === "number" &&
-		typeof value.output === "number" &&
-		typeof value.cacheRead === "number" &&
-		typeof value.cacheWrite === "number" &&
-		typeof value.totalTokens === "number" &&
-		typeof value.cost.total === "number"
-	);
 }

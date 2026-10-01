@@ -24,6 +24,7 @@ import type {
 	ToolSpeculationPolicy,
 } from "@oh-my-pi/pi-agent-core";
 import type { Usage } from "@oh-my-pi/pi-ai";
+import { addUsageInto, emptyUsage } from "@oh-my-pi/pi-catalog/usage-merge";
 import { $env, logger, prompt } from "@oh-my-pi/pi-utils";
 import type { ToolSession } from "..";
 import type { EffectiveExtensionRoots } from "../capability/types";
@@ -85,43 +86,19 @@ function renderSubagentUserPrompt(assignment: string): string {
 	});
 }
 
+/**
+ * Totals for one batch of spawned sub-tasks.
+ *
+ * The fold itself is the shared canonical helper; this alias exists so the batch
+ * code below still reads as "usage totals" rather than reaching for the generic
+ * accumulator name at each call site.
+ */
 function createUsageTotals(): Usage {
-	return {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-	};
+	return emptyUsage();
 }
 
 function addUsageTotals(target: Usage, usage: Partial<Usage>): void {
-	const input = usage.input ?? 0;
-	const output = usage.output ?? 0;
-	const cacheRead = usage.cacheRead ?? 0;
-	const cacheWrite = usage.cacheWrite ?? 0;
-	const totalTokens = usage.totalTokens ?? input + output + cacheRead + cacheWrite;
-	const cost =
-		usage.cost ??
-		({
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			total: 0,
-		} satisfies Usage["cost"]);
-
-	target.input += input;
-	target.output += output;
-	target.cacheRead += cacheRead;
-	target.cacheWrite += cacheWrite;
-	target.totalTokens += totalTokens;
-	target.cost.input += cost.input;
-	target.cost.output += cost.output;
-	target.cost.cacheRead += cost.cacheRead;
-	target.cost.cacheWrite += cost.cacheWrite;
-	target.cost.total += cost.total;
+	addUsageInto(target, usage);
 }
 
 // Re-export types and utilities

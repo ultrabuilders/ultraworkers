@@ -83,6 +83,7 @@ describe("every drawing surface on a frameless context must not swallow", () => 
 		["setWorkingMessage", () => noOpUIContext.setWorkingMessage("x")],
 		["setWorkingIndicator", () => noOpUIContext.setWorkingIndicator({ frames: ["."] })],
 		["setToolsExpanded", () => noOpUIContext.setToolsExpanded(true)],
+		["custom", () => noOpUIContext.custom(() => null as never)],
 	];
 
 	for (const [name, call] of FRAMELESS_THROWS) {
@@ -102,6 +103,22 @@ describe("every drawing surface on a frameless context must not swallow", () => 
 			expect(message).toContain(name);
 		});
 	}
+
+	it("does not offer setStatus for a surface that returns a value", () => {
+		// `custom` resolves with the author's own value, so "show text instead" is not
+		// a substitute — setStatus cannot return it. The frameless message splits on
+		// this, and nothing else would notice if that split were quietly removed: every
+		// other row asserts the surface name, and a unified message still names it.
+		let message = "";
+		try {
+			noOpUIContext.custom(() => null as never);
+		} catch (error) {
+			message = (error as Error).message;
+		}
+		expect(message).toContain("custom");
+		expect(message).toContain("hasUI");
+		expect(message, "pointed an author at a surface that cannot return their value").not.toContain("setStatus");
+	});
 
 	it("still offers a way forward that works here", () => {
 		// A failure with no exit is a wall. `hasUI` and `setStatus` are named because

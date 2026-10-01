@@ -493,7 +493,14 @@ export const noOpUIContext: ExtensionUIContext = {
 	setTitle: () => {
 		throw new Error(unavailableFrameMessage("setTitle", "this mode"));
 	},
-	custom: async () => undefined as never,
+	custom: () => {
+		// Throws rather than resolving `undefined as never`. That cast satisfied the
+		// declared `Promise<T>` while handing the caller a value its factory never
+		// produced, so an author awaiting a result got `undefined` and no error. The
+		// documented usage (hooks/types.ts) is `const result = await ctx.ui.custom(...)`,
+		// which is exactly the shape this lied to.
+		throw new Error(unavailableFrameMessage("custom", "this mode"));
+	},
 	setEditorText: () => {
 		throw new Error(unavailableFrameMessage("setEditorText", "this mode"));
 	},

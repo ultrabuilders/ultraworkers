@@ -24,10 +24,15 @@
  * exists to remove. `setStatus` and `hasUI` are named because they hold on all of them.
  */
 export function unavailableFrameMessage(surface: "setHeader" | "setFooter" | FramelessSurface, mode: string): string {
-	return (
+	const base =
 		`${surface} is not available in ${mode}: there is no interactive frame to mount the component into. ` +
-		`Guard the call with pi.ui.hasUI, or use pi.ui.setStatus for text that does not need a component.`
-	);
+		`Guard the call with pi.ui.hasUI`;
+	// `custom` resolves with a value the caller supplies, so "show text instead" is not
+	// a substitute — setStatus cannot return the author's result, and naming it there
+	// would point at a surface that cannot answer the question being asked.
+	return surface === "custom"
+		? `${base}. There is no text-only substitute: the call yields your own value, and nothing ran to produce it.`
+		: `${base}, or use pi.ui.setStatus for text that does not need a component.`;
 }
 
 /**
@@ -45,7 +50,8 @@ export type FramelessSurface =
 	| "setTitle"
 	| "setWorkingMessage"
 	| "setWorkingIndicator"
-	| "setToolsExpanded";
+	| "setToolsExpanded"
+	| "custom";
 
 /**
  * For a mode that has a frame but routes this specific surface elsewhere.

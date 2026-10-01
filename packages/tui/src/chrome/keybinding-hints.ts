@@ -1,7 +1,7 @@
 /**
  * Utilities for formatting keybinding hints in the UI.
  */
-import { getKeybindings, type KeyId, type Keybinding } from "../keybindings";
+import { getKeybindings, type KeybindingConflict, type KeyId, type Keybinding } from "../keybindings";
 import {
 	type AppKeybinding,
 	formatKeyHint,
@@ -10,6 +10,7 @@ import {
 	type KeybindingsManager,
 } from "../app-keybindings";
 import { theme } from "../theme/index";
+import { replaceTabs, TRUNCATE_LENGTHS, truncateToWidth } from "../render/render-utils";
 
 /**
  * Primary (first) key bound to an editor action, formatted for footer hints;
@@ -77,4 +78,29 @@ export function appKeyHint(keybindings: KeybindingsManager, action: AppKeybindin
  */
 export function rawKeyHint(keys: KeyName | readonly KeyName[], description: string): string {
 	return theme.fg("dim", formatKeyHints(keys)) + theme.fg("muted", ` ${description}`);
+}
+
+/**
+ * Render the keys two or more actions are both bound to, one per line: the key
+ * first, then every action sharing it. Empty when nothing conflicts, so a caller
+ * can pass `getConflicts()` straight through and skip the check itself.
+ *
+ * Names come from the user's own `keybindings.yml`, so they are untrusted text
+ * on their way to the TUI — a tab in an action name punches a hole in the
+ * layout, and a long one wraps into the next line's column. Both are sanitised
+ * here rather than at the call site so no future caller can forget.
+ *
+ * @param conflicts - As returned by `KeybindingsManager.getConflicts()`
+ */
+export function formatKeybindingConflicts(conflicts: readonly KeybindingConflict[]): string {
+	if (conflicts.length === 0) return "";
+	const lines: string[] = [];
+	for (const conflict of conflicts) {
+		// The cap is on the finished line, not on each fragment: capping the key
+		// and the names separately still lets `key: ` push the row past the width,
+		// and a row that overflows wraps under the next line's key column.
+		const actions = conflict.keybindings.map(binding => replaceTabs(binding)).join(", ");
+		lines.push(truncateToWidth(`${formatKeyHint(conflict.key)}: ${actions}`, TRUNCATE_LENGTHS.LINE));
+	}
+	return lines.join("\n");
 }

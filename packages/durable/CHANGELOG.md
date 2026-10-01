@@ -27,20 +27,29 @@
 - This package does not typecheck yet: 12 errors remain, in three groups whose resolution is a
   decision rather than a port. Reproduce with `bun run check:types` in this package.
 
-  - **`SystemMessage` (5)** — `src/harness/prompt.ts:2` imports it from `@oh-my-pi/pi-ai`, which
-    does not export it, and the four follow-on errors at `prompt.ts:11,11,12,14` come from that.
-    omp's `Message` union is `User | Developer | Assistant | ToolResult`; there is no system role,
-    and `DeveloperMessage` carries no `sections`. The section messages this package writes reach
-    the provider unfiltered — `src/harness/context.ts:91` pushes every `entry.model` message into
-    the `Message[]` handed to `streamSimple` — so retargeting them at `DeveloperMessage` would
-    compile and then silently stop replaying sections.
+   Measured against both sides rather than inferred: every symbol below **exists in `pi-ref` and
+   exists nowhere in omp**. This package was ported against pi's model-service API, and omp has
+   never carried that subsystem.
 
-  - **`Models` (3)** — `src/harness/scheduler.ts:3`, `src/harness/types.ts:3`, `src/types.ts:3`.
-    The type is used as a field type, but four methods are called on it in
-    `src/harness/generation.ts` (`getModel`, `streamSimple`, `fetchDeferred`, `cancelDeferred`);
-    omp's `ModelManager` exposes only `refresh`, and the two `*Deferred` methods exist nowhere in
-    the workspace.
+   - **`SystemMessage` (5)** — `src/harness/prompt.ts:2`, with follow-ons at `:11,11,12,14`.
+     The role itself is only a rename: pi has `SystemMessage` in its `Message` union
+     (`pi-ref/packages/ai/src/types.ts:610`) and omp calls the same slot `DeveloperMessage`. What
+     is missing is the payload. pi's `SystemMessage` carries `sections`, `toolsAdded` and
+     `toolsRemoved`; omp's `DeveloperMessage` carries none of the three, under any name.
 
-  - **`deferred` (4)** — `src/harness/context.ts:8` and `src/harness/generation.ts:237,238`.
-    `StopReason` in `@oh-my-pi/pi-wire` has no `"deferred"` member and `AssistantMessage` has no
-    `deferred` property.
+      Retargeting the role alone would compile and then do nothing useful: `replaySections`
+      (`prompt.ts:9-18`) tests `message.sections`, which is `undefined` on every omp message, so it
+      would return an empty map and durable would stop replaying prompt sections — silently, at
+      runtime, with the types satisfied. That is why the role rename was not applied as a fix.
+
+   - **`Models` (3)** — `src/harness/scheduler.ts:3`, `src/harness/types.ts:3`, `src/types.ts:3`.
+     pi declares it as an experimental service (`pi-ref/.../experimental/services/models.ts:26`).
+     Four methods are called on it here (`getModel`, `streamSimple`, `fetchDeferred`,
+     `cancelDeferred`); omp's `ModelManager` exposes `refresh` and none of those. The two
+     `*Deferred` methods have no occurrence anywhere in the workspace. Note `Models` in omp is an
+     unrelated CLI command class — a colliding basename, not this symbol.
+
+   - **`deferred` (4)** — `src/harness/context.ts:8`, `src/harness/generation.ts:237,238`.
+     `StopReason` in `@oh-my-pi/pi-wire` has no `"deferred"` member and `AssistantMessage` has no
+     `deferred` property. This is the same missing subsystem as the group above: deferred
+     generation is a pi feature, not a rename.

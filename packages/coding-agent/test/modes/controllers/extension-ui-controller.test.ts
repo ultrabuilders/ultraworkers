@@ -704,4 +704,46 @@ describe("hook widgets are owned, and a session switch re-seats them", () => {
 		expect(harness.hookWidgetContainerAbove.children).not.toContain(first.component);
 		expect(first.component.dispose).toHaveBeenCalledTimes(1);
 	});
+	it("keeps both widgets when two extensions claim one key, and names both owners", async () => {
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner, other]);
+		const ui = await harness.init();
+		const alphaWidget = widget();
+		const betaWidget = widget();
+
+		ui.setWidget("shared", alphaWidget.content, { owner });
+		ui.setWidget("shared", betaWidget.content, { owner: other });
+
+		// The contract: the first extension's widget is not silently evicted. A
+		// disappearing widget with nothing logged is indistinguishable from one
+		// that was never placed, so its author has no way to learn why.
+		expect(harness.hookWidgetContainerAbove.children).toContain(alphaWidget.component);
+		// And the second is still placed, under its own key rather than replacing
+		// the first — both surfaces kept, matching `setExtensionSurface`.
+		expect(harness.hookWidgetContainerAbove.children).toContain(betaWidget.component);
+		// Neither was disposed: nothing was taken away from anyone.
+		expect(alphaWidget.component.dispose).not.toHaveBeenCalled();
+		expect(betaWidget.component.dispose).not.toHaveBeenCalled();
+	});
+
+	it("withdraws only the caller's own widget when two extensions shared a key", async () => {
+		const harness = makeHarness();
+		harness.setLiveExtensions([owner, other]);
+		const ui = await harness.init();
+		const alphaWidget = widget();
+		const betaWidget = widget();
+
+		ui.setWidget("shared", alphaWidget.content, { owner });
+		ui.setWidget("shared", betaWidget.content, { owner: other });
+
+		// Beta unloads and withdraws. Alpha's widget must survive: a withdrawal
+		// matched on the key alone would take the first extension's widget with
+		// it, which is the failure this scoping exists to prevent.
+		ui.setWidget("shared", undefined, { owner: other });
+
+		expect(harness.hookWidgetContainerAbove.children).not.toContain(betaWidget.component);
+		expect(harness.hookWidgetContainerAbove.children).toContain(alphaWidget.component);
+		expect(betaWidget.component.dispose).toHaveBeenCalledTimes(1);
+		expect(alphaWidget.component.dispose).not.toHaveBeenCalled();
+	});
 });

@@ -388,23 +388,67 @@ export class ExtensionUiController {
 
 	setHookWidget(key: string, content: ExtensionWidgetContent, options?: ExtensionWidgetOptions): void {
 		const placement = options?.placement ?? "aboveEditor";
-		this.#removeHookWidget(this.#hookWidgetsAbove, key);
-		this.#removeHookWidget(this.#hookWidgetsBelow, key);
 
 		if (content === undefined) {
+			// Withdrawal is scoped by owner, never by key alone. Two extensions can
+			// hold the same key, so a key-scoped removal would let the second one's
+			// cleanup take the first one's widget with it. This is the same rule
+			// `setExtensionSurface` already applies, and for the same reason.
+			this.#removeHookWidget(this.#hookWidgetsAbove, key, options?.owner);
+			this.#removeHookWidget(this.#hookWidgetsBelow, key, options?.owner);
 			this.#rebuildHookWidgets();
 			return;
 		}
 
 		const target = placement === "belowEditor" ? this.#hookWidgetsBelow : this.#hookWidgetsAbove;
-		target.set(key, { owner: options?.owner, component: this.#createHookWidget(content) });
+		// Moving a widget between placements is a move, not a collision: clear the
+		// other side first so the entry does not exist twice.
+		const other = placement === "belowEditor" ? this.#hookWidgetsAbove : this.#hookWidgetsBelow;
+		this.#removeHookWidget(other, key, options?.owner);
+
+		// A key already held by ANOTHER owner is namespaced rather than overwritten.
+		// The previous behaviour was last-writer-wins with nothing said, which is
+		// indistinguishable from the widget never having been placed — the first
+		// extension's author sees their widget vanish and has no way to learn why.
+		// Both are kept, both are named in the warning, and the second is reachable
+		// under a suffixed key. This mirrors `setExtensionSurface` exactly; the two
+		// are the same kind of surface exposed by the same API.
+		const holder = target.get(key);
+		let resolved = key;
+		if (holder && holder.owner !== options?.owner) {
+			let n = 2;
+			while (target.has(`${key}~${n}`)) n++;
+			resolved = `${key}~${n}`;
+			logger.warn("Extension widget key collision; both widgets kept", {
+				key,
+				availableAs: resolved,
+				placement,
+				heldBy: holder.owner ?? "(unowned)",
+				claimedBy: options?.owner ?? "(unowned)",
+			});
+		}
+
+		// Same owner re-registering: this is the update path, so the old component is
+		// retired rather than left mounted beside its replacement. A holder belonging
+		// to ANOTHER owner is NOT disposed — its entry stays mounted under `key` while
+		// this one takes `resolved`, and disposing here would leave that map pointing
+		// at a torn-down component. Caught by the two-extensions-one-key test, which
+		// is the only case that reaches this line with a foreign holder.
+		if (holder && holder.owner === options?.owner) holder.component.dispose?.();
+		target.set(resolved, { owner: options?.owner, component: this.#createHookWidget(content) });
 		this.#rebuildHookWidgets();
 	}
 
-	#removeHookWidget(widgets: HookWidgetMap, key: string): void {
-		const existing = widgets.get(key);
-		existing?.component.dispose?.();
-		widgets.delete(key);
+	#removeHookWidget(widgets: HookWidgetMap, key: string, owner?: string): void {
+		for (const [candidate, entry] of widgets) {
+			// A suffixed key belongs to whichever owner lost the collision, so an
+			// owner withdrawing its own widget has to match the suffixed form too.
+			const base = candidate.split("~")[0] ?? candidate;
+			const isMine = owner !== undefined ? entry.owner === owner : base === key;
+			if (!isMine) continue;
+			entry.component.dispose?.();
+			widgets.delete(candidate);
+		}
 	}
 
 	#createHookWidget(content: ExtensionWidgetContent): ExtensionUiComponent {

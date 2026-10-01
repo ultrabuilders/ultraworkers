@@ -379,12 +379,12 @@ export class CommandController {
 
 	async handleSessionCommand(): Promise<void> {
 		const stats = this.ctx.session.getSessionStats();
-		// `SessionStats.premiumRequests` is `number` (agent-session-types.ts), and
-		// `getSessionStats` always assigns it — `usageTotal.premiumRequests ?? 0` at
-		// session-stats.ts:302. A guard for a missing field could therefore never
-		// fall through, and if one ever did it would silently mix a LIFETIME count
-		// into a block whose every other row is windowed to the active transcript,
-		// making the `Totals` block disagree with itself. Read the one source.
+		// `SessionStats.premiumRequests` is `number` (agent-session-types.ts) and
+		// `getSessionStats` always assigns it, defaulting to 0. A guard for a
+		// missing field could therefore never fall through, and if one ever did it
+		// would silently mix a LIFETIME count into a block whose every other row
+		// is windowed to the active transcript, making the `Totals` block disagree
+		// with itself. Read the one source.
 		const normalizedPremiumRequests = Math.round((stats.premiumRequests + Number.EPSILON) * 100) / 100;
 
 		let info = "";

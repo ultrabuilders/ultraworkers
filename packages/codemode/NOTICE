@@ -1,0 +1,52 @@
+This package is a port of the `codemode` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae. Upstream license: MIT (see LICENSE).
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below and listed per file.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every source and test file: relative specifiers no longer carry a `.ts`
+     suffix, as this repository's `check-ts-relative-imports` invariant requires.
+  2. Test runner: the three test files import `describe`/`it`/`expect`/`afterEach`
+     from `bun:test` instead of `vitest`, and the package's `test` script is
+     `bun test --parallel`. The upstream suite uses only five matchers
+     (`toBe`, `toEqual`, `toContain`, `toMatch`, `toMatchObject`), none of which
+     is vitest-specific, and it never touches `vi`. The vitest-specific
+     `vitest.config.ts` is therefore not carried over.
+  3. Package metadata: `package.json` follows this repository's package
+     conventions — `@oh-my-pi/pi-codemode` in the `@oh-my-pi` scope, `catalog:`
+     devDependencies, `oxlint`/`oxfmt`/`tsgo` scripts, `main`/`types`/`exports`
+     pointing at `./src` rather than a build `dist`, and the repository's own
+     author, repository, bugs and homepage fields.
+  4. Formatting: oxfmt is the only formatter here, so arrow-function bodies are
+     parenthesized and other upstream layout differences are normalized.
+  5. `tsconfig.json` extends this repository's `packages/tsconfig.workspace.json`;
+     upstream's `tsconfig.build.json` is not carried over, because this
+     repository's packages publish from source rather than from a build output.
+
+No behavioral change was made to the runtime. `src/` is otherwise byte-identical
+to upstream modulo adaptations 1 and 4.
+
+Adapted files:
+  src/declarations.ts
+  src/identifier.ts
+  src/index.ts
+  src/runtime/host.ts
+  src/runtime/prelude-source.ts
+  src/runtime/protocol.ts
+  src/runtime/worker.ts
+  src/source.ts
+  src/types.ts
+  src/wasm.ts
+  test/declarations.test.ts
+  test/sandbox.test.ts
+  test/source.test.ts
+
+Not carried over:
+  vitest.config.ts        (adaptation 2)
+  tsconfig.build.json     (adaptation 5)
+  CHANGELOG.md            (replaced with this repository's changelog format)

@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { $env, $which, APP_NAME, compareVersions, isEnoent, VERSION } from "@oh-my-pi/pi-utils";
+import { $env, $which, APP_NAME, compareVersions, isEnoent, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { withFileLock } from "@oh-my-pi/pi-utils/file-lock";
 import { $ } from "bun";
@@ -459,7 +459,7 @@ async function getNpmGlobalBinDir(): Promise<string | undefined> {
 
 async function getHomebrewFormulaPrefix(): Promise<string | undefined> {
 	if (!$which("brew")) return undefined;
-	for (const formula of [HOMEBREW_FORMULA, APP_NAME]) {
+	for (const formula of [HOMEBREW_FORMULA, WIRE_NAME]) {
 		try {
 			const result = await $`brew --prefix ${formula}`.quiet().nothrow();
 			if (result.exitCode !== 0) continue;
@@ -1171,9 +1171,16 @@ export function isMuslLinuxForTest(options: Required<MuslDetectionOptions>): boo
 }
 
 /**
- * Get the appropriate binary name for this platform.
+ * The release asset this platform downloads.
+ *
+ * Built from `WIRE_NAME`, not the display name: CI publishes `omp-<platform>-<arch>`
+ * and the updater resolves its download by exact asset name, so a display name here
+ * matches nothing and every binary update throws.
+ *
+ * Exported because it is the one value that must agree with what CI publishes, and
+ * nothing in-process could observe that agreement until it was checked directly.
  */
-function getBinaryName(): string {
+export function getBinaryName(): string {
 	const platform = process.platform;
 	const arch = process.arch;
 
@@ -1205,16 +1212,16 @@ function getBinaryName(): string {
 	}
 
 	if (os === "windows") {
-		return `${APP_NAME}-${os}-${archName}.exe`;
+		return `${WIRE_NAME}-${os}-${archName}.exe`;
 	}
-	return `${APP_NAME}-${os}-${archName}`;
+	return `${WIRE_NAME}-${os}-${archName}`;
 }
 
 /**
  * Resolve the path that `omp` maps to in the user's PATH.
  */
 function resolveOmpPath(): string | undefined {
-	return $which(APP_NAME) ?? undefined;
+	return $which(WIRE_NAME) ?? undefined;
 }
 
 /**
@@ -1226,8 +1233,17 @@ function resolveOmpPath(): string | undefined {
  * being mistaken for an unreplaced launcher.
  */
 export function parseReportedVersion(output: string): string | undefined {
-	if (!output.startsWith(`${APP_NAME}/`)) return undefined;
-	return output.slice(APP_NAME.length + 1).match(/^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)?.[1];
+	// Both identities are in the wild at once. Measured on this machine:
+	// `~/.bun/bin/omp --version` prints `omp/18.2.4` (a pre-rebrand build), while
+	// the current source prints `ultraworkers/18.4.3`. Gating on one alone makes
+	// the updater blind to the other, and `validateExistingUpdateTarget` reads
+	// that blindness as "this is not an OMP binary" and REFUSES to replace it —
+	// so a user on any pre-rebrand build could not self-update at all.
+	//
+	// Neither name is a prefix of the other, so the order below cannot shadow.
+	const identity = [WIRE_NAME, APP_NAME].find(name => output.startsWith(`${name}/`));
+	if (!identity) return undefined;
+	return output.slice(identity.length + 1).match(/^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)?.[1];
 }
 
 async function reportedVersionAtPath(binaryPath: string): Promise<string | undefined> {
@@ -1953,10 +1969,10 @@ export async function updateViaBinaryAt(
  * launching the replaced install.
  */
 const SHIM_FORWARDERS: Record<string, string> = {
-	"": `#!/bin/sh\nexec "$(dirname "$0")/${APP_NAME}.exe" "$@"\n`,
-	".cmd": `@"%~dp0${APP_NAME}.exe" %*\r\n`,
-	".bat": `@"%~dp0${APP_NAME}.exe" %*\r\n`,
-	".ps1": `& "$PSScriptRoot\\${APP_NAME}.exe" @args\nexit $LASTEXITCODE\n`,
+	"": `#!/bin/sh\nexec "$(dirname "$0")/${WIRE_NAME}.exe" "$@"\n`,
+	".cmd": `@"%~dp0${WIRE_NAME}.exe" %*\r\n`,
+	".bat": `@"%~dp0${WIRE_NAME}.exe" %*\r\n`,
+	".ps1": `& "$PSScriptRoot\\${WIRE_NAME}.exe" @args\nexit $LASTEXITCODE\n`,
 };
 
 /**
@@ -1986,7 +2002,7 @@ export async function updateViaShimTakeover(
 ): Promise<void> {
 	const binaryName = options.binaryName ?? getBinaryName();
 	const launcherDir = path.dirname(shimPath);
-	const exePath = path.join(launcherDir, `${APP_NAME}.exe`);
+	const exePath = path.join(launcherDir, `${WIRE_NAME}.exe`);
 	const attempt = `${Date.now()}.${process.pid}.${updateAttemptSeq++}`;
 	const tempPath = `${exePath}.${attempt}.new`;
 	const asset = await getReleaseBinaryAsset(
@@ -2011,7 +2027,7 @@ export async function updateViaShimTakeover(
 	// never retire the same shims or reclaim a live run's backup before its
 	// verification can roll it back.
 	await withFileLock(exePath, async () => {
-		console.log(chalk.dim(`Installing ${APP_NAME}.exe beside the script launcher...`));
+		console.log(chalk.dim(`Installing ${WIRE_NAME}.exe beside the script launcher...`));
 		await fs.promises.rename(tempPath, exePath);
 		// Retire the shims so PATH resolution lands on the new exe. Renamed, not
 		// deleted: restorable on verification failure, and Windows permits
@@ -2022,7 +2038,7 @@ export async function updateViaShimTakeover(
 		const backupSuffix = `${attempt}.bak`;
 		const retired: Array<{ launcher: string; backup: string }> = [];
 		for (const ext of ["", ".cmd", ".ps1", ".bat"]) {
-			const launcher = path.join(launcherDir, `${APP_NAME}${ext}`);
+			const launcher = path.join(launcherDir, `${WIRE_NAME}${ext}`);
 			const backup = `${launcher}.${backupSuffix}`;
 			try {
 				await fs.promises.rename(launcher, backup);
@@ -2065,7 +2081,7 @@ export async function updateViaShimTakeover(
 		}
 		// Reclaim exe backups and retired-shim leftovers from earlier attempts.
 		for (const ext of [".exe", "", ".cmd", ".ps1", ".bat"]) {
-			await sweepStaleUpdateArtifacts(path.join(launcherDir, `${APP_NAME}${ext}`));
+			await sweepStaleUpdateArtifacts(path.join(launcherDir, `${WIRE_NAME}${ext}`));
 		}
 	});
 	for (const { launcher } of forwarded) {

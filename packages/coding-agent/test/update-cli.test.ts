@@ -14,6 +14,7 @@ import {
 	buildNpmInstallArgs,
 	buildRenameCleanupPackages,
 	downloadVerifiedBinary,
+	getBinaryName,
 	type InstalledVersionVerification,
 	isMuslLinuxForTest,
 	type ManagerUpdateSteps,
@@ -38,7 +39,7 @@ import {
 	updateViaShimTakeover,
 } from "@oh-my-pi/pi-coding-agent/cli/update-cli";
 import Update from "@oh-my-pi/pi-coding-agent/commands/update";
-import { $which, APP_NAME, removeWithRetries } from "@oh-my-pi/pi-utils";
+import { $which, APP_NAME, removeWithRetries, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type { CliConfig } from "@oh-my-pi/pi-utils/cli";
 import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
 
@@ -169,14 +170,78 @@ describe("GitHub update credentials", () => {
 	});
 });
 
+describe("the release asset name", () => {
+	// Every `binary_path` the release workflow publishes, as basenames.
+	async function publishedAssetNames(): Promise<Set<string>> {
+		const workflow = Bun.YAML.parse(
+			await Bun.file(new URL("../../../.github/workflows/ci.yml", import.meta.url)).text(),
+		);
+		const names = new Set<string>();
+		const walk = (node: unknown): void => {
+			if (Array.isArray(node)) {
+				node.forEach(walk);
+				return;
+			}
+			if (node === null || typeof node !== "object") return;
+			const record = node as Record<string, unknown>;
+			const published = record.binary_path;
+			if (typeof published === "string" && published.includes("/")) {
+				names.add(path.basename(published));
+			}
+			Object.values(record).forEach(walk);
+		};
+		walk(workflow);
+		return names;
+	}
+
+	it("is a name the release actually publishes", async () => {
+		// The updater resolves its download by EXACT asset name, and every other
+		// test in this file passes `binaryName` in explicitly — which is why the
+		// default had no coverage at all. When it returned the display identity
+		// instead of the wire one, `resolveReleaseBinaryAsset` matched zero assets
+		// and every binary update threw for every user, with nothing red anywhere.
+		//
+		// Asserting "it starts with WIRE_NAME" would be the same constant on both
+		// sides of the equals sign and could not fail for the reason that actually
+		// broke. This compares the two independent declarations instead: the code
+		// that downloads, and the workflow that uploads.
+		const published = await publishedAssetNames();
+		expect(published.size).toBeGreaterThan(0);
+
+		const wanted = getBinaryName();
+		expect([...published], `release publishes ${[...published].join(", ")}`).toContain(wanted);
+	});
+
+	it("is what the shim takeover installs and retires beside", async () => {
+		// Same name, three places: the exe it writes, the shims it moves aside, and
+		// the asset it downloads. They drifted apart during the rebrand, which left
+		// the takeover retiring four names that cannot exist beside the three that
+		// can — a silent no-op on Windows, where `.ps1` outranks `.exe`.
+		expect(getBinaryName()).not.toContain(APP_NAME);
+	});
+});
+
 describe("parseReportedVersion", () => {
-	it("preserves the prerelease suffix so a canary launcher verifies as up to date", () => {
+	// The identity strings are written as LITERALS here on purpose. Interpolating
+	// the constant would make the row pass for any value it is given — including
+	// a wrong one — so it could never detect the constant being wrong, which is
+	// the only thing this function is in a position to get wrong.
+	it("reads the identity a current build reports", () => {
 		// Regression: dropping `-canary.1` made a correctly installed canary
 		// build look like a stale `X.Y.Z` launcher, triggering a binary repair
 		// that rejects the prerelease GitHub release.
-		expect(parseReportedVersion(`${APP_NAME}/18.0.6-canary.1`)).toBe("18.0.6-canary.1");
-		expect(parseReportedVersion(`${APP_NAME}/18.0.5`)).toBe("18.0.5");
+		expect(parseReportedVersion("ultraworkers/18.0.6-canary.1")).toBe("18.0.6-canary.1");
+		expect(parseReportedVersion("ultraworkers/18.0.5")).toBe("18.0.5");
 		expect(parseReportedVersion("not a version")).toBeUndefined();
+	});
+
+	it("still reads the wire identity a pre-rebrand build reports", () => {
+		// Both populations exist right now — measured: the installed
+		// `~/.bun/bin/omp` prints `omp/18.2.4` while the current source prints
+		// `ultraworkers/18.4.3`. Refusing the older one makes `validateExistingUpdateTarget`
+		// call a user's own binary "not an OMP binary" and decline the update.
+		expect(parseReportedVersion("omp/18.2.4")).toBe("18.2.4");
+		expect(parseReportedVersion("omp/18.0.6-canary.1")).toBe("18.0.6-canary.1");
 	});
 
 	it("rejects version output from a different executable", () => {
@@ -1508,7 +1573,7 @@ describe("update-cli script-shim takeover", () => {
 			githubToken: "test-token",
 		});
 
-		expect(await Bun.file(path.join(dir, `${APP_NAME}.exe`)).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).text()).toBe(exe);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).exists()).toBe(false);
 		}
@@ -1530,7 +1595,7 @@ describe("update-cli script-shim takeover", () => {
 				githubToken: "test-token",
 			}),
 		).rejects.toThrow("is a prerelease");
-		expect(await Bun.file(path.join(dir, `${APP_NAME}.exe`)).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).exists()).toBe(false);
 
 		// allowPrerelease threads through to the asset resolver, so the canary
 		// exe installs and the shims are retired.
@@ -1540,7 +1605,7 @@ describe("update-cli script-shim takeover", () => {
 			allowPrerelease: true,
 			githubToken: "test-token",
 		});
-		expect(await Bun.file(path.join(dir, `${APP_NAME}.exe`)).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).text()).toBe(exe);
 	});
 
 	it("drops bun's launcher metadata when the standalone binary takes the .exe over", async () => {
@@ -1602,7 +1667,7 @@ describe("update-cli script-shim takeover", () => {
 			new RegExp(`still reports 17\\.2\\.12 \\(expected 18\\.0\\.0\\); restored previous ${APP_NAME} launcher`),
 		);
 
-		expect(await Bun.file(path.join(dir, `${APP_NAME}.exe`)).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).exists()).toBe(false);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).text()).toBe(shims[name]);
 		}
@@ -1635,12 +1700,12 @@ describe("update-cli script-shim takeover", () => {
 			renameSpy.mockRestore();
 		}
 
-		expect(await Bun.file(path.join(dir, `${APP_NAME}.exe`)).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).text()).toBe(exe);
 		expect(await Bun.file(path.join(dir, "omp")).exists()).toBe(false);
 		expect(await Bun.file(path.join(dir, "omp.cmd")).exists()).toBe(false);
 		// PowerShell resolves .ps1 before .exe: the locked shim must now exec
 		// the new binary instead of keeping its old body.
-		expect(await Bun.file(path.join(dir, "omp.ps1")).text()).toContain(`& "$PSScriptRoot\\${APP_NAME}.exe" @args`);
+		expect(await Bun.file(path.join(dir, "omp.ps1")).text()).toContain(`& "$PSScriptRoot\\${WIRE_NAME}.exe" @args`);
 	});
 
 	it("restores a forwarded shim's original body when verification fails", async () => {
@@ -1660,7 +1725,7 @@ describe("update-cli script-shim takeover", () => {
 			renameSpy.mockRestore();
 		}
 
-		expect(await Bun.file(path.join(dir, `${APP_NAME}.exe`)).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, `${WIRE_NAME}.exe`)).exists()).toBe(false);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).text()).toBe(shims[name]);
 		}

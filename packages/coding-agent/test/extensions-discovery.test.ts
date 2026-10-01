@@ -660,6 +660,14 @@ describe("extensions discovery", () => {
 			`,
 		);
 
+		// `recordedHookHash` (`config/hook-settings.ts:38`) defaults its scope to the
+		// module-level `settings` singleton, and `beforeEach` calls
+		// `resetSettingsForTest()` — so ambient hook discovery reached an
+		// uninitialised Settings and threw "Settings not initialized" before it ever
+		// looked at this file. Passing a real one is what makes the row stand on its
+		// own instead of on whichever earlier file happened to re-init the singleton.
+		await Settings.init({ inMemory: true, cwd: tempDir.path() });
+
 		const result = await discoverForTest([], true);
 		const loadedHook = result.extensions.find(extension => extension.path === hookPath);
 

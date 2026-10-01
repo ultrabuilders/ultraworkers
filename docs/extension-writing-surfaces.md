@@ -258,15 +258,30 @@ was written to prevent.
 
 ## 6. Consequences
 
-What this document unblocks:
+**Measured 2026-10-02 against the ledger: this decision unblocks nothing that is
+still open.** An earlier draft of this section listed three work items it
+"unlocked". Two of them are already closed and the third is waiting on a
+different question, so the list was credit claimed for work that had already
+landed. Correcting it here rather than deleting it, because the error is the
+instructive part.
 
-- **WI-5, commits 2-3** — whether extension *source identity* is infrastructure
-  the programme needs or dead weight, now that the surfaces that would carry it
-  are ranked.
-- **WI-7** — whether the mode registry is built **on** the capability layer or
-  **beside** it, which was undecidable while the capability layer's ownership was
-  open.
-- **WI-11 / WI-12** — which foundation those two target.
+| work item | status at HEAD | does M2-OQ2 = YES bear on it? |
+| --- | --- | --- |
+| WI-5 (`m2-wi-5-038`) — capability registry ownership | **closed** | No. Already delivered; the ruling postdates it. |
+| WI-11 (`m2-wi-11-046`) — per-extension state | **closed** | No. Already delivered. |
+| WI-7 (`m2-wi-7-042`) | `in_progress` | No. Its one remaining step waits on **M2-OQ4** — which tab of the settings panel an extension's key belongs in. `SettingTab` (`packages/tui/src/overlays/settings-defs.ts`) is a closed union of ten literals, so the answer is a user-facing schema decision, not an ownership one. |
+| WI-12 (`m2-wi-12-047`) | **blocked** | No. It waits on the **trust-tier** question, which `docs/extension-trust-model.md` §4 answered by *deferring the behaviour change* and ratifying the shipped posture. |
+
+So the honest statement is the negative one: **every work item this ruling
+touches is either closed or blocked on a question this ruling does not answer.**
+A reader looking for work to pick up from this document will not find any, and
+should read that as information rather than as an omission.
+
+What the ruling *does* do is settle a question that later proposals must not
+re-open: a milestone that proposes a capability already present in the registry
+will be declined, and a decomposition of `capability/` that hardcodes the
+registry back into core contradicts this section. That is a constraint on future
+work, not a handoff of pending work.
 
 What it does **not** unblock:
 

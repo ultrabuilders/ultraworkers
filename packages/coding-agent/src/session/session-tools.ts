@@ -38,7 +38,8 @@ import { resolveEditMode } from "../utils/edit-mode";
 import {
 	extractPermissionLocations,
 	getPermissionIntent,
-	PERMISSION_OPTIONS,
+	permissionOptions,
+	describeApprovalScope,
 	PERMISSION_OPTIONS_BY_ID,
 	PERMISSION_REQUIRED_TOOLS,
 } from "./acp-permission-gate";
@@ -969,7 +970,7 @@ export class SessionTools {
 									permissionIntent.paths,
 								),
 							},
-							PERMISSION_OPTIONS,
+							permissionOptions(describeApprovalScope(target.name, args)),
 							signal,
 						).then(outcome => ({ kind: "permission" as const, outcome }));
 						raced = await Promise.race([permissionPromise, abortPromise]);

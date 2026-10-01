@@ -18,6 +18,7 @@ import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/ex
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type {
 	ClientBridge,
+	ClientBridgePermissionOption,
 	ClientBridgePermissionOutcome,
 	ClientBridgePermissionToolCall,
 } from "@oh-my-pi/pi-coding-agent/session/client-bridge";
@@ -841,7 +842,14 @@ it("allow_always: caches decision and calls bridge only once for subsequent exec
 	// First call — bridge is consulted, decision cached.
 	await wrappedBash!.execute("call-1", { command: "echo a" }, undefined, undefined as never, undefined as never);
 	// Second call — must skip the bridge entirely.
-	await wrappedBash!.execute("call-2", { command: "echo b" }, undefined, undefined as never, undefined as never);
+	//
+	// This used to be `echo b`, and it passed because the decision was cached under
+	// the *tool name*, so approving `echo a` silently approved `echo b` too. That is
+	// the defect GAP-M1-20 is about, not a property of caching, so the second call
+	// is now the same command and the row still tests what its title says: that a
+	// decision is remembered. The narrowing direction — a different command asking
+	// again — is covered by its own row below.
+	await wrappedBash!.execute("call-2", { command: "echo a" }, undefined, undefined as never, undefined as never);
 
 	expect(permissionSpy).toHaveBeenCalledTimes(1);
 	expect(bashTool.executeCalls).toBe(2);
@@ -926,4 +934,132 @@ it("setActiveToolsByName normalizes legacy tool names", async () => {
 	await session.setActiveToolsByName(["Search", "glob", "grep"]);
 
 	expect(session.getActiveToolNames()).toEqual(["grep", "glob"]);
+});
+
+// ---------------------------------------------------------------------------
+// The scope of an "always" decision
+// ---------------------------------------------------------------------------
+
+/**
+ * A bridge that answers the first prompt with `first`, then with whatever the
+ * caller queued. The queue is what lets one row observe both what a grant covers
+ * and what it does not, in a single session — the cache lives on the session, so
+ * the second call has to happen in the same one.
+ */
+function makeQueueBridge(
+	first: ClientBridgePermissionOutcome,
+	rest: ClientBridgePermissionOutcome,
+): ClientBridge & {
+	seen: ClientBridgePermissionOption[][];
+} {
+	const seen: ClientBridgePermissionOption[][] = [];
+	let call = 0;
+	return {
+		seen,
+		capabilities: { requestPermission: true },
+		async requestPermission(_toolCall: ClientBridgePermissionToolCall, options: ClientBridgePermissionOption[]) {
+			seen.push(options);
+			call++;
+			return call === 1 ? first : rest;
+		},
+	} as ClientBridge & { seen: ClientBridgePermissionOption[][] };
+}
+
+/** Run `command` through the gated bash tool of a live session. */
+async function runBash(session: AgentSession, command: string): Promise<void> {
+	await session.setActiveToolsByName(["bash"]);
+	const bash = session.agent.state.tools.find(tool => tool.name === "bash");
+	await bash!.execute(`call-${command}`, { command }, undefined, undefined as never, undefined as never);
+}
+
+it("an always-allow for one bash command does not carry to a different command", async () => {
+	const bashTool = makeFakeTool("bash");
+	const bridge = makeQueueBridge(
+		{ outcome: "selected", optionId: "allow_always", kind: "allow_always" },
+		{
+			outcome: "selected",
+			optionId: "allow_once",
+			kind: "allow_once",
+		},
+	);
+	const permissionSpy = spyOn(bridge, "requestPermission");
+	session = await createSession([bashTool], bridge);
+
+	// The negative that gives this item its meaning: without it, narrowing the key
+	// is decoration, and a "fix" that prompts for everything also passes.
+	await runBash(session, "git status");
+	expect(permissionSpy).toHaveBeenCalledTimes(1);
+
+	// Same tool, different action. Under the old tool-name key this ran without
+	// asking, so approving `git status` had also approved `rm -rf`.
+	await runBash(session, "rm -rf ./build");
+	expect(permissionSpy).toHaveBeenCalledTimes(2);
+
+	expect(bashTool.executeCalls).toBe(2);
+});
+
+it("an always-allow does carry to the same bash command again", async () => {
+	const bashTool = makeFakeTool("bash");
+	const bridge = makeQueueBridge(
+		{ outcome: "selected", optionId: "allow_always", kind: "allow_always" },
+		{
+			outcome: "selected",
+			optionId: "allow_once",
+			kind: "allow_once",
+		},
+	);
+	const permissionSpy = spyOn(bridge, "requestPermission");
+	session = await createSession([bashTool], bridge);
+
+	// The other direction. Asserting only the row above would also be satisfied by
+	// a change that re-asked for everything, which is not a fix.
+	await runBash(session, "git status");
+	await runBash(session, "git status");
+
+	expect(permissionSpy).toHaveBeenCalledTimes(1);
+	expect(bashTool.executeCalls).toBe(2);
+});
+
+it("the always options name the scope being granted", async () => {
+	const bashTool = makeFakeTool("bash");
+	const bridge = makeQueueBridge(
+		{ outcome: "selected", optionId: "allow_once", kind: "allow_once" },
+		{
+			outcome: "selected",
+			optionId: "allow_once",
+			kind: "allow_once",
+		},
+	);
+	session = await createSession([bashTool], bridge);
+
+	await runBash(session, "git status");
+
+	const labels = (bridge.seen[0] ?? []).map(option => option.name);
+	// A narrower key is worth nothing while the button still reads "Always allow".
+	expect(labels.join(" ")).toContain("git status");
+});
+
+it("an always-reject sticks for that action only", async () => {
+	const bashTool = makeFakeTool("bash");
+	const bridge = makeQueueBridge(
+		{ outcome: "selected", optionId: "reject_always", kind: "reject_always" },
+		{
+			outcome: "selected",
+			optionId: "allow_once",
+			kind: "allow_once",
+		},
+	);
+	const permissionSpy = spyOn(bridge, "requestPermission");
+	session = await createSession([bashTool], bridge);
+
+	// Rejected permanently: no prompt the second time, and it must not run.
+	await expect(runBash(session, "rm -rf ./build")).rejects.toThrow();
+	await expect(runBash(session, "rm -rf ./build")).rejects.toThrow();
+	expect(permissionSpy).toHaveBeenCalledTimes(1);
+
+	// A different action is still a separate question — reject_always shares the
+	// key with allow_always deliberately, and narrowing must apply to both.
+	await runBash(session, "git status");
+	expect(permissionSpy).toHaveBeenCalledTimes(2);
+	expect(bashTool.executeCalls).toBe(1);
 });

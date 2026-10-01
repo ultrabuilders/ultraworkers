@@ -49,6 +49,8 @@
 
 ### Fixed
 
+- An "Always allow" or "Always reject" for a tool call is now remembered against the action rather than the tool's name. It was cached under the tool name, so approving one `bash` call granted every later one for the rest of the session — a user who allowed `git status` had also allowed `rm -rf ./build`, and nothing on screen said so. Bash is now keyed on its parsed command segments (using the shell tokenizer `bash-interceptor` already uses, so the two cannot disagree on quoting), `delete` and `move` on the path, and `edit` on which destructive operation was detected. The two always-options also name the scope they are about to grant, since a narrower grant the user cannot see is no narrower. Decisions stay in memory for the session, so nothing is carried over a restart
+
 - `--profile <name>` loaded the default profile's `.env` instead of the selected one's, so settings
   kept in a profile's agent directory were ignored at startup. The process-hardening module reached
   the environment loader through the `@oh-my-pi/pi-utils` barrel, and the CLI imports that module

@@ -2,7 +2,7 @@
 
 `omp` resolves settings from built-in defaults, a persistent global config file, optional project-local config, one-shot CLI overlays, and in-memory runtime overrides. Reach for project settings when one repository needs a different provider set, model role, tool policy, memory backend, or UI behavior than your global defaults — without touching your machine-wide configuration.
 
-Settings are stored as plain YAML mappings. Every key, its type, default, and enum values come from its setting definition (declared with `register(...)` next to the owning feature, e.g. `packages/coding-agent/src/tools/settings.ts`). `omp config` exposes the complete schema; the interactive `/settings` panel exposes the schema entries that have UI metadata.
+Settings are stored as plain YAML mappings. Every key, its type, default, and enum values come from its setting definition (declared with `register(...)` next to the owning feature, e.g. `packages/coding-agent/src/tools/settings.ts`). `ultraworkers config` exposes the complete schema; the interactive `/settings` panel exposes the schema entries that have UI metadata.
 
 - For model/provider credentials, `.env` files, and the env-var table that resolves API keys, see [Providers](./providers.md).
 - For custom model definitions in `models.yml`, see [Models](./models.md).
@@ -14,14 +14,14 @@ Settings are stored as plain YAML mappings. Every key, its type, default, and en
 
 | Scope             | Path                                                  | Read behavior                                                                                                                            | Write behavior                                                                                                                                                                   |
 | ----------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Global            | `~/.omp/agent/config.yml` (or existing `config.yaml`) | The main persistent settings file. `config.yml` is the canonical write target; an existing `config.yaml` is loaded and updated in place. | `/settings`, `omp config set`, and `omp config reset` write here.                                                                                                                |
+| Global            | `~/.omp/agent/config.yml` (or existing `config.yaml`) | The main persistent settings file. `config.yml` is the canonical write target; an existing `config.yaml` is loaded and updated in place. | `/settings`, `ultraworkers config set`, and `ultraworkers config reset` write here.                                                                                                                |
 | Global legacy     | `~/.omp/agent/settings.json`                          | Migrated into `config.yml` once, only when neither main YAML filename exists.                                                            | Not written after migration; the original is renamed to `settings.json.bak`.                                                                                                     |
 | Project           | `<cwd>/.omp/config.yml` (plus `.omp/settings.json`)   | Loaded when the process working directory has a non-empty `.omp/`.                                                                       | Settings commands do not write arbitrary project keys. With `modelRoleStorage: project`, model-selector role assignments update only `modelRoles` here; edit other keys by hand. |
 | Project legacy    | `<cwd>/.omp/settings.json`                            | Still read; project `config.yml` is merged on top of it.                                                                                 | Not written by settings commands.                                                                                                                                                |
 | CLI overlay       | Any file passed with `--config <file>`                | Loaded after global and project settings, for that one process. Repeatable.                                                              | Never persisted.                                                                                                                                                                 |
 | Runtime overrides | In-memory only                                        | Set by dedicated CLI flags (`--model`, `--approval-mode`, …) and feature env vars.                                                       | Never persisted.                                                                                                                                                                 |
 
-`PI_CODING_AGENT_DIR` relocates the `~/.omp/agent` base directory. When it is set, the global `config.yml`, the auth store (`agent.db`), and everything else under the agent directory move with it. Use `omp config path` to print the active agent directory.
+`PI_CODING_AGENT_DIR` relocates the `~/.omp/agent` base directory. When it is set, the global `config.yml`, the auth store (`agent.db`), and everything else under the agent directory move with it. Use `ultraworkers config path` to print the active agent directory.
 
 Native project settings are intentionally scoped to the process working directory's `.omp/` folder — settings discovery does **not** walk ancestor directories looking for the nearest `.omp/`. Other discovery providers (Claude, Codex, Gemini, Cursor, OpenCode) can also contribute project-level settings from their own files; those are read-only from `omp` settings commands and can be turned off by provider id (see [Provider and source disabling](#provider-and-source-disabling)).
 
@@ -35,23 +35,23 @@ The canonical global file is YAML at `config.yml`; `config.yaml` is accepted as 
 
 ## Reading and writing settings
 
-Use the interactive `/settings` panel inside a session, or the `omp config` command from a shell. Both read merged effective settings. Ordinary persistent writes land in the **global** file; model-selector role changes are the exception when `modelRoleStorage: project` (see [Where writes go](#where-writes-go)).
+Use the interactive `/settings` panel inside a session, or the `ultraworkers config` command from a shell. Both read merged effective settings. Ordinary persistent writes land in the **global** file; model-selector role changes are the exception when `modelRoleStorage: project` (see [Where writes go](#where-writes-go)).
 
 ```bash
-omp config list                 # all settings with current effective values
-omp config list --json          # same, machine-readable
-omp config get theme.dark       # one value
-omp config get theme.dark --json
-omp config set compaction.enabled false
-omp config set defaultThinkingLevel medium
-omp config reset steeringMode   # remove a key from config.yml so its default applies
-omp config path                 # print the active agent directory
+ultraworkers config list                 # all settings with current effective values
+ultraworkers config list --json          # same, machine-readable
+ultraworkers config get theme.dark       # one value
+ultraworkers config get theme.dark --json
+ultraworkers config set compaction.enabled false
+ultraworkers config set defaultThinkingLevel medium
+ultraworkers config reset steeringMode   # remove a key from config.yml so its default applies
+ultraworkers config path                 # print the active agent directory
 ```
 
 For users who want the full first-run animation on normal launches, set `startup.showSplash`:
 
 ```bash
-omp config set startup.showSplash true
+ultraworkers config set startup.showSplash true
 ```
 
 This only controls the startup splash animation. It does not rerun setup or change setup state, and `startup.quiet: true` still suppresses all startup chrome including the splash.
@@ -60,18 +60,18 @@ This only controls the startup splash animation. It does not rerun setup or chan
 
 | Command                        | Effect                                                                                                                                                                                                                                                                                            |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `omp config list`              | Print every setting grouped by tab, with its current value and type. `--json` emits an object keyed by setting path with `{ value, type, description }`. Configured credential fields are masked as `********` in human output; in JSON their `value` is omitted and `redacted: true` is emitted. |
-| `omp config get <key>`         | Print the effective value of one key. Unknown keys exit non-zero. `--json` emits `{ key, value, type, description }`. This is an explicit single-key request, so credential values are returned unmasked.                                                                                         |
-| `omp config set <key> <value>` | Parse `<value>` against the key's schema type, write it to the global main YAML file, and print the value written. When another source still supplies the effective value, it says which instead (`--json`: `overriddenBy` is the env var name, or `project`, `overlay`, or `runtime`; `fallbackEnv` names a fallback env var used while the saved value is blank). |
-| `omp config reset <key>`       | Delete the key from the global config, so any other layer that configures it (such as project config) or else the schema default applies, and later default changes still reach you. Prints the resulting effective value.                                                                        |
-| `omp config path`              | Print the active agent directory (honors `PI_CODING_AGENT_DIR`).                                                                                                                                                                                                                                  |
-| `omp config init-xdg`          | On Linux and macOS, create the `omp` directories under the effective XDG data, state, and cache homes. It does not move existing files or set the XDG environment variables. Other platforms exit non-zero.                                                                                       |
+| `ultraworkers config list`              | Print every setting grouped by tab, with its current value and type. `--json` emits an object keyed by setting path with `{ value, type, description }`. Configured credential fields are masked as `********` in human output; in JSON their `value` is omitted and `redacted: true` is emitted. |
+| `ultraworkers config get <key>`         | Print the effective value of one key. Unknown keys exit non-zero. `--json` emits `{ key, value, type, description }`. This is an explicit single-key request, so credential values are returned unmasked.                                                                                         |
+| `ultraworkers config set <key> <value>` | Parse `<value>` against the key's schema type, write it to the global main YAML file, and print the value written. When another source still supplies the effective value, it says which instead (`--json`: `overriddenBy` is the env var name, or `project`, `overlay`, or `runtime`; `fallbackEnv` names a fallback env var used while the saved value is blank). |
+| `ultraworkers config reset <key>`       | Delete the key from the global config, so any other layer that configures it (such as project config) or else the schema default applies, and later default changes still reach you. Prints the resulting effective value.                                                                        |
+| `ultraworkers config path`              | Print the active agent directory (honors `PI_CODING_AGENT_DIR`).                                                                                                                                                                                                                                  |
+| `ultraworkers config init-xdg`          | On Linux and macOS, create the `omp` directories under the effective XDG data, state, and cache homes. It does not move existing files or set the XDG environment variables. Other platforms exit non-zero.                                                                                       |
 
-`omp config` with no subcommand, `--help`, or `-h` lists settings. The `--json` flag is accepted by `list`, `get`, `set`, and `reset`.
+`ultraworkers config` with no subcommand, `--help`, or `-h` lists settings. The `--json` flag is accepted by `list`, `get`, `set`, and `reset`.
 
 ### Value parsing
 
-`omp config set` parses the value string according to the target key's schema type. The string is trimmed first.
+`ultraworkers config set` parses the value string according to the target key's schema type. The string is trimmed first.
 
 | Type    | Accepted input                                      | Notes                                                             |
 | ------- | --------------------------------------------------- | ----------------------------------------------------------------- |
@@ -86,7 +86,7 @@ Keys must match a real schema path exactly. There is no shorthand — set `theme
 
 ### Where writes go
 
-`omp config set`, `omp config reset`, `/settings`, and ordinary runtime settings changes write the global main YAML file under the active agent directory. They do not write arbitrary keys to `<cwd>/.omp/config.yml`. The one supported project write path is a model-selector role assignment when `modelRoleStorage` is `project`; it updates only that role under `<cwd>/.omp/config.yml`, and missing project roles continue to fall back to global roles. To create any other project-local override, edit the project file directly (see [Project-local config](#project-local-config)). Saves are debounced and re-read the file under a lock, so external edits made while a session is open are preserved.
+`ultraworkers config set`, `ultraworkers config reset`, `/settings`, and ordinary runtime settings changes write the global main YAML file under the active agent directory. They do not write arbitrary keys to `<cwd>/.omp/config.yml`. The one supported project write path is a model-selector role assignment when `modelRoleStorage` is `project`; it updates only that role under `<cwd>/.omp/config.yml`, and missing project roles continue to fall back to global roles. To create any other project-local override, edit the project file directly (see [Project-local config](#project-local-config)). Saves are debounced and re-read the file under a lock, so external edits made while a session is open are preserved.
 
 Saves through a symlinked main config preserve the link and update its resolved target. Targets containing `.` or `..` follow the operating system's rules: Windows collapses those segments before following intermediate links, while POSIX traverses each component on disk. A target such as `alias/../config.yml` can therefore name different files on the two platforms.
 
@@ -266,8 +266,8 @@ Keep secrets out of committed project config unless your repository policy allow
 Use `--config` for a temporary layer that should not persist:
 
 ```bash
-omp --config ./local/ci-settings.yml "check this failure"
-omp --config ./base.yml --config ./experiment.yml "try this model"
+ultraworkers --config ./local/ci-settings.yml "check this failure"
+ultraworkers --config ./base.yml --config ./experiment.yml "try this model"
 ```
 
 `--config` is accepted by the default launch command, `acp`, and `models`.
@@ -338,7 +338,7 @@ The default is an empty array (nothing disabled). For the two subsystems' provid
 
 ## Settings catalog
 
-The catalog below highlights common settings; it is not the complete schema. `omp config list` is the authoritative reference for every key, current value, type, and description. Defaults and enum values shown here come from the schema. Settings that accept an env or flag override are noted; those overrides are process-local and not persisted.
+The catalog below highlights common settings; it is not the complete schema. `ultraworkers config list` is the authoritative reference for every key, current value, type, and description. Defaults and enum values shown here come from the schema. Settings that accept an env or flag override are noted; those overrides are process-local and not persisted.
 
 ### Models
 
@@ -397,11 +397,11 @@ enabledModels:
 
 Built-in chat roles are `default`, `smol`, `slow`, `vision`, `plan`, `commit`, `tiny`, `memory`, `task`, and `advisor`. The `tiny` and `memory` roles accept both `tiny` catalog models and ordinary chat models. Built-in model-kind roles are `image`, `web`, `speech`, `dictation`, and `judge`; they select image, search/grounded-chat, TTS, STT, and judgment runners respectively. `judge` also accepts tiny and chat models, which is why aliases such as `@tiny` are valid fallbacks. Catalog kinds are `chat`, `tiny`, `image`, `tts`, `stt`, `search`, and `judge`; a custom model with no `kind` remains a chat model.
 
-Open `/model` and enter the **Roles** view to assign roles and edit their fallback rows. Chat roles and model-kind roles appear in separate capability sections, and the picker filters assignments to models accepted by the selected role. List the same catalog directly with `omp models --kind chat`, `omp models --kind tiny`, `omp models --kind image`, `omp models --kind tts`, `omp models --kind stt`, `omp models --kind search`, or `omp models --kind judge`; use `--kind all` for everything.
+Open `/model` and enter the **Roles** view to assign roles and edit their fallback rows. Chat roles and model-kind roles appear in separate capability sections, and the picker filters assignments to models accepted by the selected role. List the same catalog directly with `ultraworkers models --kind chat`, `ultraworkers models --kind tiny`, `ultraworkers models --kind image`, `ultraworkers models --kind tts`, `ultraworkers models --kind stt`, `ultraworkers models --kind search`, or `ultraworkers models --kind judge`; use `--kind all` for everything.
 
 For a role, `modelRoles.<role>` is the primary and `retry.fallbackChains.<role>` is the fallback list. For model-kind roles, an unset chain uses that role's built-in priority list; `[]` explicitly means **no fallbacks**. The `retry.fallbackChains.default` chain is for chat-role/session fallback and never replaces a model-kind role's own chain. Explicit search entries such as `web/parallel`, `web/perplexity`, `web/exa`, and `web/firecrawl` are attempted as configured candidates, including their supported anonymous modes; missing required credentials still produce an availability error for that explicit entry.
 
-For one-shot searches, `omp search`, `omp q`, and `omp web-search` accept a catalog selector through `--model`, for example `omp web-search --model web/duckduckgo "current Bun release"`. The in-session `web_search` tool has no per-call model override: it follows `modelRoles.web` and `retry.fallbackChains.web`.
+For one-shot searches, `omp search`, `ultraworkers q`, and `ultraworkers web-search` accept a catalog selector through `--model`, for example `ultraworkers web-search --model web/duckduckgo "current Bun release"`. The in-session `web_search` tool has no per-call model override: it follows `modelRoles.web` and `retry.fallbackChains.web`.
 
 Image selection likewise uses full catalog model selectors, not provider names: set `modelRoles.image`, its fallback chain, or the `generate_image` request's optional `model`. OpenRouter image models run through OpenRouter's native images API.
 
@@ -560,7 +560,7 @@ tools:
 | ------------------------------ | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tools.format`                 | enum    | `auto`  | Tool wire format: `auto`, `native`, `glm`, `hermes`, `kimi`, `xml`, `anthropic`, `deepseek`, `harmony`, `qwen3`, `gemini`, `gemma`, or `minimax`. `native` always uses provider-native tool calls. `auto` also uses native calls unless the selected model explicitly has `supportsTools: false`; then it selects the model-family owned dialect, falling back to GLM when no specific family dialect is known. Other values force that owned in-band dialect. `xml` is the [generic XML format](./toolconv/xml.md); `minimax` is the [MiniMax format](./toolconv/minimax.md). See [GLM](./toolconv/glm-4.5.md), [Qwen3/Hermes](./toolconv/qwen3.md), [Kimi](./toolconv/kimi-k2.md), [Anthropic](./toolconv/anthropic.md), [DeepSeek](./toolconv/deepseek.md), [Harmony](./toolconv/harmony.md), [Gemini](./toolconv/gemini.md), and [Gemma](./toolconv/gemma.md). |
 | `tools.approvalMode`           | enum    | `yolo`  | `always-ask` (auto-approve read-only), `write` (auto-approve read + workspace-write), `yolo` (auto-approve all tiers). `--approval-mode` and `--auto-approve`/`--yolo` override per run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `tools.approval`               | record  | `{}`    | Per-tool policy keyed by tool name; each value is `allow`, `deny`, or `prompt`. e.g. `omp config set tools.approval '{"bash":"prompt"}'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `tools.approval`               | record  | `{}`    | Per-tool policy keyed by tool name; each value is `allow`, `deny`, or `prompt`. e.g. `ultraworkers config set tools.approval '{"bash":"prompt"}'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `tools.maxTimeout`             | number  | `0`     | Max tool runtime in seconds; `0` = no cap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `tools.intentTracing`          | boolean | `true`  | Record per-call intent strings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `tools.outputMaxColumns`       | number  | `768`   | Per-line byte cap for streaming output; `0` disables.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -721,7 +721,7 @@ memory:
 | `autolearn.autoContinue`      | boolean | `false`       | When `autolearn.enabled`, auto-run one capture turn at stop (uses extra tokens). Off = a passive reminder rides your next turn.                                                                                                           |
 | `autolearn.minToolCalls`      | number  | `5`           | Only nudge after a turn that used at least this many tools.                                                                                                                                                                               |
 
-`compaction` has additional tuning keys (idle compaction, supersede/drop heuristics) visible in `omp config list`. See [Compaction](./compaction.md) for the full strategy reference.
+`compaction` has additional tuning keys (idle compaction, supersede/drop heuristics) visible in `ultraworkers config list`. See [Compaction](./compaction.md) for the full strategy reference.
 
 Per-agent compaction triggers for task/eval subagents. This keeps the main session at 40,000 tokens while `scout` compacts at 80% of its window and `task` at 90,000 tokens:
 
@@ -852,7 +852,7 @@ searxng:
 | `providers.webSearchTimeoutSeconds` | number  | `60`      | Per-candidate web-search transport timeout. Values above `300` are capped at five minutes. This is not a whole-chain deadline; the `web` role advances to its next candidate after a timeout.                                                                                                                                                                                                                                                                                                         |
 | `providers.fetch`                   | enum    | `auto`    | `auto`, `native`, `trafilatura`, `lynx`, `parallel`, `firecrawl`, `jina`.                                                                                                                                                                                                                                                                                                                                                              |
 | `providers.tinyModelDevice`         | enum    | `default` | ONNX execution provider, or `mlx` (Apple silicon, via mlx-lm), for local tiny models. Overridden by `PI_TINY_DEVICE`.                                                                                                                                                                                                                                                                                                                                                         |
-| `providers.maxInFlightRequests`     | record  | `{}`      | Positive per-provider concurrency limits for LLM HTTP requests, shared across local `omp` processes using the same config root. Omitted providers are unlimited. `omp config set` rejects non-positive or non-numeric values.                                                                                                                                                                                                          |
+| `providers.maxInFlightRequests`     | record  | `{}`      | Positive per-provider concurrency limits for LLM HTTP requests, shared across local `omp` processes using the same config root. Omitted providers are unlimited. `ultraworkers config set` rejects non-positive or non-numeric values.                                                                                                                                                                                                          |
 | `providers.tinyModelDtype`          | enum    | `default` | ONNX precision for local tiny models. Overridden by `PI_TINY_DTYPE`.                                                                                                                                                                                                                                                                                                                                                                   |
 | `tts.localVoice`                    | enum    | `af_heart` | Voice used by the local Kokoro TTS runner. Available local voices remain configurable independently of `modelRoles.speech`.                                                                                                                                                                                                                                                                                                           |
 | `speech.voice`                      | enum    | `af_heart` | Kokoro voice used when assistant-output vocalization is enabled.                                                                                                                                                                                                                                                                                                                                                                     |
@@ -878,7 +878,7 @@ Provider credentials and custom model definitions are configured separately — 
 
 ### Other groups
 
-Every schema path not individually tabulated in this catalog is explicitly deferred to `omp config list`. Additional groups include:
+Every schema path not individually tabulated in this catalog is explicitly deferred to `ultraworkers config list`. Additional groups include:
 
 - Agent behavior and safety: `ask.*`, `eval.*`, `features.*`, `goal.*`, `loop.*`, `model.loopGuard.*`, `model.toolCallLoopGuard.*`, `prewalk.*`, `recap.*`, `tools.*`, and `vault.*`.
 - Execution and content: `commit.*`, `completion.*`, `edit.*`, `error.*`, `extensionHandlers.*`, `generate_image.*`, `git.*`, `images.*`, `live.*`, `paste.*`, `power.*`, `read.*`, `shellMinimizer.*`, `speech.*`, `terminal.*`, and `title.*`.
@@ -923,7 +923,7 @@ Applied whenever raw settings are loaded (global, project, overlays, and runtime
 - Start `omp` from the directory that contains `.omp/config.yml`. Settings discovery only checks the current working directory's `.omp/`, not ancestor directories.
 - Ensure `.omp/` is non-empty; empty config directories are ignored.
 - Confirm the file is valid YAML and its top level is a mapping.
-- Run `omp config get <key>` from that directory to see the effective value.
+- Run `ultraworkers config get <key>` from that directory to see the effective value.
 - Remember that `--config` overlays and runtime flags override project config.
 
 ### A global array disappeared in a project
@@ -937,9 +937,9 @@ Arrays replace; they do not append. If a project sets `disabledProviders`, `enab
 - Credentials can still come from environment variables, `.env`, OAuth, stored auth, or `models.yml`; disabling a provider blocks selection regardless, but verify you edited the right layer. See [Providers](./providers.md).
 - Restart the session if the model list was already initialized.
 
-### `omp config set` changed the wrong file
+### `ultraworkers config set` changed the wrong file
 
-`omp config set` and `omp config reset` always write the global `config.yml` under the active agent directory. Run `omp config path` to print it. For project-local settings, edit `<repo>/.omp/config.yml` directly.
+`ultraworkers config set` and `ultraworkers config reset` always write the global `config.yml` under the active agent directory. Run `ultraworkers config path` to print it. For project-local settings, edit `<repo>/.omp/config.yml` directly.
 
 ### A `--config` overlay fails at startup
 
@@ -949,6 +949,6 @@ Arrays replace; they do not append. If a project sets `disabledProviders`, `enab
 
 Some settings (model roles, eval backends, tiny-model device/precision, auth broker, PTY) are overridable by env vars or CLI flags for per-machine convenience, and those take precedence over `config.yml`. Unset the variable or drop the flag to let the persisted value win. See [Environment overrides](#environment-overrides) and [Environment variables](./environment-variables.md).
 
-### `omp config set <key>` says "Unknown setting"
+### `ultraworkers config set <key>` says "Unknown setting"
 
-Keys must match a schema path exactly, with no shorthand. Use `theme.dark`, not `theme`. Run `omp config list` to see every valid key.
+Keys must match a schema path exactly, with no shorthand. Use `theme.dark`, not `theme`. Run `ultraworkers config list` to see every valid key.

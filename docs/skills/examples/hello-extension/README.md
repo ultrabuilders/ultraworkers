@@ -12,7 +12,7 @@ cp -r . ~/.omp/agent/extensions/hello-extension
 
 Restart `omp`. You will see the startup notification immediately.
 
-With `omp --profile <name>`, use `~/.omp/profiles/<name>/agent/extensions/hello-extension` instead. `PI_CODING_AGENT_DIR` likewise changes the agent directory.
+With `ultraworkers --profile <name>`, use `~/.omp/profiles/<name>/agent/extensions/hello-extension` instead. `PI_CODING_AGENT_DIR` likewise changes the agent directory.
 
 **Option B — point the settings `extensions` array at it:**
 
@@ -30,7 +30,7 @@ ultraworkers --extension ./hello-extension
 
 ## Usage
 
-After loading, type `/hello` or `/hello Ada` in the omp prompt. The command sends a visible greeting custom message into the conversation and shows a "Message sent!" notification.
+After loading, type `/hello` or `/hello Ada` in the ultraworkers prompt. The command sends a visible greeting custom message into the conversation and shows a "Message sent!" notification.
 
 ## What it demonstrates
 

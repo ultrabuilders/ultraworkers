@@ -203,7 +203,7 @@ The catalog's current family-affinity helper maps every model id containing
 serving endpoint itself with its `qwen3_xml` parser. `qwen3_xml` is not an
 OMP-owned dialect and therefore is not a valid `tools.format` value.
 
-The omp renderer always writes a nested `arguments` object and renders
+The ultraworkers renderer always writes a nested `arguments` object and renders
 parallel calls newline-separated. Results become newline-delimited
 `<tool_response>` blocks inside the synthetic user history message. The
 scanner mints an id (`ptc_…`) and emits `toolStart` as soon as the leading JSON

@@ -161,7 +161,7 @@ Moonshot's hosted API (`platform.moonshot.ai`) exposes both OpenAI- and Anthropi
 
 - **ID → name parsing differs between references.** The official
   `tool_call_guidance.md` uses `function_id.split('.')[1].split(':')[0]`,
-  while vLLM and omp take the last dot-separated segment before the colon.
+  while vLLM and ultraworkers take the last dot-separated segment before the colon.
   The latter tolerates additional namespace segments, but neither convention
   can preserve a literal dot as part of the function name; tool names SHOULD
   follow the documented `functions.{name}:{idx}` shape without dots in

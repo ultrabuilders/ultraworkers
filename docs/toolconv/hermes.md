@@ -2,7 +2,7 @@
 
 Tool-calling convention originated by NousResearch's **Hermes 2 Pro** (Llama-3-based open models) and carried on by the **Hermes 3** line, plus a long tail of community fine-tunes. The envelope is **ChatML**: every turn is `<|im_start|>{role}\n{body}<|im_end|>\n`. Available tools are advertised in the system turn inside a `<tools>…</tools>` block as OpenAI-style JSON tool objects; the model emits each call as a `<tool_call>\n{json}\n</tool_call>` block whose `arguments` is a **nested JSON object** (not a stringified JSON); tool results are fed back inside a **dedicated `<|im_start|>tool` turn** as `<tool_response>…</tool_response>` wrapping a `{"name": …, "content": …}` object — the result carries the function name, so results are self-describing as to the function called, but remain order-bound because the wire format has no unique call ID. Qwen3 adopted this convention with two tweaks (results folded into `user` turns with bare content, and the `FunctionCall` schema line dropped) — see [qwen3.md](qwen3.md). Hermes 3 adds an optional GOAP `<scratch_pad>` reasoning framework in front of calls; the classic Hermes 2 Pro function-calling spec has **no** dedicated thinking channel, although the omp scanner also recognizes `<think>…</think>` from R1-style fine-tunes (see the omp section).
 
-Verified against: the NousResearch `Hermes-Function-Calling` README (read in full — the canonical system prompts, the call/result formats, and the inference example below are quoted from it), the vLLM tool-calling docs (`hermes` parser), and the omp implementation on `main` @ `4324de2` (every omp claim below carries a `file:line` reference).
+Verified against: the NousResearch `Hermes-Function-Calling` README (read in full — the canonical system prompts, the call/result formats, and the inference example below are quoted from it), the vLLM tool-calling docs (`hermes` parser), and the ultraworkers implementation on `main` @ `4324de2` (every ultraworkers claim below carries a `file:line` reference).
 
 ## Special tokens
 
@@ -197,7 +197,7 @@ omp's own agent flow is unaffected either way: the owned-tool stream always cons
 - **Regex/streaming parse:** the vLLM `hermes` parser keys on the literal `<tool_call>`/`</tool_call>` substrings and JSON-decodes the body, buffering from `<tool_call>` until it can incrementally parse `name` then `arguments` — full detail in [qwen3.md](qwen3.md) §Parsing notes.
 - **Result binding:** classic Hermes 2 Pro includes the function name as metadata in the `{"name": …, "content": …}` nesting under a `tool` turn, but call/result binding remains positional because names need not be unique. Qwen3 also relies on ordering, with bare content under a `user` turn.
 - **No thinking channel in the spec:** Hermes 2 Pro's function-calling prompt defines none, and Hermes 3's `<scratch_pad>` GOAP markup is **not** parsed by omp's hermes scanner (it recognizes only `<tool_call>` and `<think>`, `hermes.ts:15-19`) — scratchpad text stays visible. R1-style `<think>` blocks are handled (see the thinking default above).
-- **History rerender:** omp re-renders stored `<think>` blocks for **every** assistant turn (`rendering.ts:116-123`), unlike Qwen3's chat template, which trims reasoning from all but the trailing assistant turns — keep that asymmetry in mind when comparing transcripts across the two dialects.
+- **History rerender:** ultraworkers re-renders stored `<think>` blocks for **every** assistant turn (`rendering.ts:116-123`), unlike Qwen3's chat template, which trims reasoning from all but the trailing assistant turns — keep that asymmetry in mind when comparing transcripts across the two dialects.
 - **Robustness:** the format is prompt-driven, so malformed output is possible (truncated JSON, missing `</tool_call>`, prose mixed into a call, stringified arguments). omp's scanner consumes a recognized block and emits no call when the outer JSON/name cannot be recovered; EOF mid-call leaves a started call with empty arguments (see Scanning).
 
 ## Sources
@@ -205,4 +205,4 @@ omp's own agent flow is unaffected either way: the owned-tool stream always cons
 - NousResearch Hermes-Function-Calling README (canonical prompt formats, call/result shapes, inference example): https://github.com/NousResearch/Hermes-Function-Calling
 - vLLM tool-calling docs (`hermes` parser, auto tool choice): https://docs.vllm.ai/en/latest/features/tool_calling/
 - [qwen3.md](qwen3.md) — Qwen3's adoption of this convention, shared vLLM parser behavior, and the `qwen3`/`hermes` dialect split
-- omp implementation on `main` @ `4324de2` — every omp-specific claim above is cited `file:line` inline
+- ultraworkers implementation on `main` @ `4324de2` — every omp-specific claim above is cited `file:line` inline

@@ -1,6 +1,6 @@
 # Mnemopi memory backend
 
-omp can use `@oh-my-pi/pi-mnemopi` as a local long-term memory backend.
+ultraworkers can use `@oh-my-pi/pi-mnemopi` as a local long-term memory backend.
 
 Set:
 

@@ -16,7 +16,7 @@ This page indexes README-only user-facing package CLIs and features that need ro
 Sources: [`python/robomp/README.md`](../python/robomp/README.md), [`python/robomp/pyproject.toml`](../python/robomp/pyproject.toml), [`python/robomp/.env.example`](../python/robomp/.env.example), [`python/robomp/docker-compose.yml`](../python/robomp/docker-compose.yml).
 
 - Python package: `robomp` (Python 3.11 or newer); bin: `robomp`, with `serve`, `triage`, `replay`, `status`, and `cleanup` commands.
-- Feature: self-hosted service that receives GitHub webhooks for allowlisted repositories, classifies issues, resumes an `omp --mode rpc` session per issue, comments or opens a fix PR, and handles follow-up issue and PR conversations.
+- Feature: self-hosted service that receives GitHub webhooks for allowlisted repositories, classifies issues, resumes an `ultraworkers --mode rpc` session per issue, comments or opens a fix PR, and handles follow-up issue and PR conversations.
 - Dashboard/API: FastAPI serves the operator dashboard at `/` alongside health, event, issue, and replay endpoints. The bundled Compose deployment publishes it at `http://localhost:6543/`; `bun run robomp:web:dev` runs the dashboard frontend in development, and `bun run robomp:web:build` rebuilds its static bundle.
 - Inputs/storage: configuration comes from `python/robomp/.env` and the mounted `~/.omp/agent/models.container.yml`; GitHub webhook events feed a SQLite-backed queue. The Compose deployment persists the database, per-issue worktrees, session transcripts, and logs in the `robomp_data` volume under `/data`.
 - Root commands: `bun run robomp:install` installs the Python package for host development; `bun run robomp:serve` runs it on the host; `bun run robomp:build`/`bun run robomp:rebuild`, `bun run robomp:up`, `bun run robomp:down`, `bun run robomp:restart`, `bun run robomp:logs`, `bun run robomp:dev`, and `bun run robomp:reset` manage the container deployment.
@@ -72,8 +72,8 @@ Sources: [`packages/metaharness/README.md`](../packages/metaharness/README.md), 
 
 Sources: [`packages/browser-relay/README.md`](../packages/browser-relay/README.md), [`packages/browser-relay/package.json`](../packages/browser-relay/package.json), [`packages/coding-agent/src/tools/browser/relay/`](../packages/coding-agent/src/tools/browser/relay/).
 
-- Package: private `@oh-my-pi/browser-relay`; user command: `omp browser-relay`.
-- Setup: run `omp browser-relay install`, load the unpacked extension from
+- Package: private `@oh-my-pi/browser-relay`; user command: `ultraworkers browser-relay`.
+- Setup: run `ultraworkers browser-relay install`, load the unpacked extension from
   `~/.omp/browser-relay/extension`, then opt in per call with `app.relay: true` — or set
   `browser.relay`, which makes the relay the profile-wide default across projects (scope
   details in the package README).

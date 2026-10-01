@@ -15,7 +15,7 @@ the file it names is the thing to fix; this document follows the code.
 
 ## 1. Framework anatomy
 
-omp composes **string rows**. There is no flexbox, no retained scene graph, and
+ultraworkers composes **string rows**. There is no flexbox, no retained scene graph, and
 no widget tree you mutate — a component is a pure-ish function from a width to an
 array of physical rows, and layout is arithmetic on those widths.
 
@@ -147,7 +147,7 @@ there is not room for both pane minima, instead of letting one pane collapse to
 nothing.
 
 The portable idea, independent of those specific numbers: **declare a content
-floor, and let every decoration yield to it.** omp expresses this as
+floor, and let every decoration yield to it.** ultraworkers expresses this as
 `rightMinWidth` / `leftSize.min` on `SplitPane`; the numbers are per-surface.
 
 ---

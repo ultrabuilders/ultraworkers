@@ -23,7 +23,7 @@ prints
   waiting for sessions in /work/proj …
 ```
 
-Then start omp in the same directory from another terminal (as many times as you like). Each session started while `omp stream` runs attaches automatically and shows `● LIVE 3` in its footer (`3` = current viewers). The viewer page shows each session as its own pane; a pane disappears when its session exits. Ctrl-C in the streamer ends the broadcast and every attached session drops its badge.
+Then start ultraworkers in the same directory from another terminal (as many times as you like). Each session started while `omp stream` runs attaches automatically and shows `● LIVE 3` in its footer (`3` = current viewers). The viewer page shows each session as its own pane; a pane disappears when its session exits. Ctrl-C in the streamer ends the broadcast and every attached session drops its badge.
 
 Sessions that were already running before `omp stream` started are not attached — restart them.
 
@@ -61,7 +61,7 @@ Only terminal rows. The session process:
 3. **Redacts** the row (below).
 4. Diffs against the last sent viewport and sends row patches — never session entries, prompts, tool arguments, or file contents as data.
 
-Rows cross a private local socket (`0600`, under the per-directory omp runtime dir) to the `omp stream` process, which multiplexes sessions into panes and forwards them to the server in plaintext over WSS. The server keeps each pane's viewport and the last 2000 history rows in memory so late viewers get a snapshot; nothing is persisted.
+Rows cross a private local socket (`0600`, under the per-directory ultraworkers runtime dir) to the `omp stream` process, which multiplexes sessions into panes and forwards them to the server in plaintext over WSS. The server keeps each pane's viewport and the last 2000 history rows in memory so late viewers get a snapshot; nothing is persisted.
 
 ### Redaction
 
@@ -85,8 +85,8 @@ Redaction cannot know about secrets it has never seen: a token pasted from elsew
 Recordings are written to `<tmpdir>/omp-recordings/<utc-time>-<session>.ompcast`, a JSON Lines file similar to asciicast: a header line `{"ompcast":1,"cols":…,"rows":…,"title":…,"createdAt":…}`, then one `[ms, frame]` line per screen frame (`reset`, `history`, `resize`, `viewport`, `patch`).
 
 ```
-omp play                      # newest recording
-omp play <file> -s 2 -i 1     # 2× speed, pauses capped at 1s
+ultraworkers play                      # newest recording
+ultraworkers play <file> -s 2 -i 1     # 2× speed, pauses capped at 1s
 ```
 
 Playback runs on the normal screen: the recorded viewport occupies the bottom of the terminal and recorded scrollback scrolls into your terminal's scrollback, so the output stays after playback ends. Space pauses/resumes; `q`, Esc, or Ctrl-C quits.
@@ -94,11 +94,11 @@ Playback runs on the normal screen: the recorded viewport occupies the bottom of
 ### Clips
 
 ```
-omp clip                                          # newest recording
-omp clip <file> -t "Streaming the lexer" -d "…"   # title and description
+ultraworkers clip                                          # newest recording
+ultraworkers clip <file> -t "Streaming the lexer" -d "…"   # title and description
 ```
 
-`omp clip` uploads a recording to `live.omp.sh` with the same Stencil credential as `omp stream` and prints its page, `live.omp.sh/c/<id>`. The page plays the clip in the live viewer's terminal pane, with the title, description, and a comment thread underneath; signing in with Stencil lets viewers comment and the owner edit the title and description. Rows were already redacted when recorded; nothing is re-read from your machine at upload time.
+`ultraworkers clip` uploads a recording to `live.omp.sh` with the same Stencil credential as `omp stream` and prints its page, `live.omp.sh/c/<id>`. The page plays the clip in the live viewer's terminal pane, with the title, description, and a comment thread underneath; signing in with Stencil lets viewers comment and the owner edit the title and description. Rows were already redacted when recorded; nothing is re-read from your machine at upload time.
 
 ## Server
 

@@ -18,7 +18,7 @@
 It is a TypeScript port of the default (`cascade`) strategy of [jegrep](https://github.com/can1357/jegrep); request shapes, budgets, and ordering match the reference so benchmark results carry over.
 
 ## CLI
-`omp find "<query>" [path] [-k keyword]... [--hidden] [--json] [-q]` runs the same cascade from the shell (`packages/coding-agent/src/cli/find-cli.ts`): the judge resolves from your settings' `judge` role, progress goes to stderr, and the ranked digest (or `--json` with hits and stats) to stdout. `path` takes the same host paths and internal URLs as the tool, and hits print relative to the shell cwd. Exits 1 when every judgment request failed.
+`ultraworkers find "<query>" [path] [-k keyword]... [--hidden] [--json] [-q]` runs the same cascade from the shell (`packages/coding-agent/src/cli/find-cli.ts`): the judge resolves from your settings' `judge` role, progress goes to stderr, and the ranked digest (or `--json` with hits and stats) to stdout. `path` takes the same host paths and internal URLs as the tool, and hits print relative to the shell cwd. Exits 1 when every judgment request failed.
 
 ## Inputs
 
@@ -60,7 +60,7 @@ Each judged phase drains through a dispatcher with 16 requests in flight before 
 ## Limits & Caps
 - Candidates judged by name: 128; files read: 20; windows per file: 24; window size: 8 KB; sketch: 384 B; passages verified: 40; sketch cutoff 0.45; hit threshold 0.20 (`packages/coding-agent/src/tools/jfind/cascade.ts`).
 - Native scan timeout: 30 s. Judge attempts time out per `TypeSafeJudge` (10 s, three attempts).
-- Per-call wall-clock budget: `20_000ms` (`FIND_TIMEOUT_MS` in `packages/coding-agent/src/tools/jfind/index.ts`); hitting it raises `find timed out after 20.0s` instead of blocking the turn. The `omp find` CLI is not bounded this way.
+- Per-call wall-clock budget: `20_000ms` (`FIND_TIMEOUT_MS` in `packages/coding-agent/src/tools/jfind/index.ts`); hitting it raises `find timed out after 20.0s` instead of blocking the turn. The `ultraworkers find` CLI is not bounded this way.
 - Files over 4 MB are scanned by the lexical pass only up to the native grep cap and read only up to 4 MB (trimmed to the last full line).
 
 ## Errors

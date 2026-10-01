@@ -43,12 +43,12 @@ For Claude Code, Codex, Gemini CLI, Cursor, and Windsurf, the project entry is e
 
 ### Profiles
 
-Named profiles (`omp --profile <name>`, the `--alias` shortcut, or `OMP_PROFILE`/`PI_PROFILE`) isolate user-level MCP config. When a profile is active, the **user** scope resolves to the profile's agent directory instead of the default one:
+Named profiles (`ultraworkers --profile <name>`, the `--alias` shortcut, or `OMP_PROFILE`/`PI_PROFILE`) isolate user-level MCP config. When a profile is active, the **user** scope resolves to the profile's agent directory instead of the default one:
 
 - Default profile: `~/.omp/agent/mcp.json`
 - Profile `<name>`: `~/.omp/profiles/<name>/agent/mcp.json`
 
-Discovery, the `/mcp` commands, and the config writer all follow the active profile, so a profile sees **only** its own user-level servers — never the default profile's `~/.omp/agent/mcp.json`. Add a server to a profile by launching under it (`omp --profile <name>`) and running `/mcp add` → User level, or by editing `~/.omp/profiles/<name>/agent/mcp.json` directly.
+Discovery, the `/mcp` commands, and the config writer all follow the active profile, so a profile sees **only** its own user-level servers — never the default profile's `~/.omp/agent/mcp.json`. Add a server to a profile by launching under it (`ultraworkers --profile <name>`) and running `/mcp add` → User level, or by editing `~/.omp/profiles/<name>/agent/mcp.json` directly.
 
 Project-scoped MCP config (`.omp/mcp.json`) is keyed to the working directory, not the profile, so it applies under every profile. External-tool configs (`.claude/`, `.cursor/`, etc.) are also profile-independent because they belong to those tools rather than to an OMP profile.
 
@@ -531,7 +531,7 @@ Run `/mcp list`. OMP discovers many third-party MCP files, but project-level loa
 
 OMP drops recognized browser-automation servers at config load, before any connection attempt, whenever the built-in browser prelude is available (`browser.enabled` defaults to `true`). The filter matches servers named `playwright`, `puppeteer`, `browserbase`, `browser-tools`, `browser-use` or `browser`, plus any server whose command or args reference a browser MCP package (for example `@playwright/mcp`) or whose URL points at browserbase.com or browser-use.com. The drop is silent: the server never reaches `/mcp list`, and no error or warning is recorded. This filter is separate from `disabledServers`.
 
-To run a browser MCP server instead of the native browser tool, set `browser.enabled: false` in your settings. `omp read` does not apply this filter.
+To run a browser MCP server instead of the native browser tool, set `browser.enabled: false` in your settings. `ultraworkers read` does not apply this filter.
 
 ### A namespaced server works but the editor rejects its name
 

@@ -22,6 +22,7 @@ import { type ExtensionModule, extensionModuleCapability } from "../../capabilit
 import { type Hook, hookCapability } from "../../capability/hook";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
 import { loadCapability } from "../../discovery";
+import { ExtensionContextStaleError, STALE_CONTEXT_MESSAGE } from "./stale-context";
 import { getExtensionNameFromPath } from "../../discovery/helpers";
 import type { ExecOptions } from "../../exec/exec";
 import { execCommand } from "../../exec/exec";
@@ -104,6 +105,26 @@ export class ExtensionRuntimeNotInitializedError extends Error {
  */
 export class ExtensionRuntime implements IExtensionRuntime {
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; sourceId: string }> = [];
+
+	/**
+	 * First invalidation reason wins.
+	 *
+	 * Held on the runtime rather than on any context, because the contexts are
+	 * what goes stale: they are minted per handler run and outlive neither a
+	 * session replacement nor a reload, while the runtime is built once and lives
+	 * across both.
+	 */
+	#staleMessage: string | undefined;
+
+	assertActive(): void {
+		if (this.#staleMessage !== undefined) {
+			throw new ExtensionContextStaleError(this.#staleMessage);
+		}
+	}
+
+	invalidate(message?: string): void {
+		this.#staleMessage ??= message;
+	}
 
 	registerProvider(name: string, config: ProviderConfig, sourceId: string): void {
 		this.pendingProviderRegistrations.push({ name, config, sourceId });
@@ -230,6 +251,19 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		return createHandlerDisposer(this.extension.handlers, event, handler);
 	}
 
+	/**
+	 * Delegate to the shared runtime rather than tracking staleness per
+	 * extension: every extension loaded into this process shares one session
+	 * lifetime, so a stale context is stale for all of them at once.
+	 */
+	assertActive(): void {
+		this.runtime.assertActive();
+	}
+
+	invalidate(message?: string): void {
+		this.runtime.invalidate(message);
+	}
+
 	registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(tool: ToolDefinition<TParams, TDetails>): void {
 		const registered = {
 			definition: tool,
@@ -253,6 +287,38 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	registerCompactionProtection(protection: CompactionProtection): void {
 		this.extension.compactionProtections.push(protection);
+	}
+
+	/**
+	 * Claim the double-Escape gesture for an action.
+	 *
+	 * Validated at the door rather than at the keystroke: a malformed action that
+	 * is silently ignored is indistinguishable from one that was never registered,
+	 * and the user just sees double-Escape stop working.
+	 *
+	 * @throws when `id` is not a non-empty string, when the same extension
+	 * registers that id twice, or when `handler` is not callable — each naming
+	 * the extension, since "your gesture silently stopped working" is the worst
+	 * possible failure report for this seam.
+	 */
+	registerDoubleEscapeAction(action: {
+		id: string;
+		description?: string;
+		handler: (ctx: ExtensionContext) => Promise<void> | void;
+	}): void {
+		const extensionPath = this.extension.path;
+		if (typeof action.id !== "string" || action.id.length === 0) {
+			throw new TypeError(`Extension ${extensionPath}: doubleEscapeAction id must be a non-empty string`);
+		}
+		if (typeof action.handler !== "function") {
+			throw new TypeError(`Extension ${extensionPath}: doubleEscapeAction ${action.id} handler must be a function`);
+		}
+		if (this.extension.doubleEscapeActions.some(registered => registered.id === action.id)) {
+			throw new Error(
+				`Extension ${extensionPath}: doubleEscapeAction id ${action.id} is already registered — ids must be unique within an extension so a thrown handler can be attributed`,
+			);
+		}
+		this.extension.doubleEscapeActions.push({ ...action, extensionPath });
 	}
 
 	registerCommand(
@@ -461,6 +527,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
 		compactionProtections: [],
+		doubleEscapeActions: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
 		outputFormats: new Map(),

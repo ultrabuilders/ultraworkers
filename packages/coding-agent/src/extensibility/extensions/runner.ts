@@ -11,6 +11,7 @@ import {
 	isNonBlankContext,
 	joinAdditionalContext,
 } from "@oh-my-pi/pi-agent-core";
+import { ExtensionContextStaleError, STALE_CONTEXT_MESSAGE } from "./stale-context";
 import type {
 	AssistantMessage,
 	CredentialDisabledEvent,
@@ -63,6 +64,7 @@ import type {
 	ExtensionAgentIdentity,
 	ExtensionCommandContext,
 	ExtensionCommandContextActions,
+	ReplacedSessionContext,
 	ExtensionContext,
 	ExtensionContextActions,
 	ExtensionError,
@@ -71,6 +73,7 @@ import type {
 	ExtensionMode,
 	ExtensionRuntime,
 	ExtensionShortcut,
+	DoubleEscapeAction,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	InputEvent,
@@ -563,6 +566,17 @@ export class ExtensionRunner {
 	#shutdownHandler: ShutdownHandler = () => {};
 	#getMemoryFn?: () => MemoryRuntimeContext | undefined;
 	#registrationDiagnostics: ExtensionRegistrationDiagnostic[] = [];
+	/**
+	 * Bumped whenever the session behind this runner is replaced.
+	 *
+	 * A counter rather than a boolean because the escape hatch needs both: a
+	 * context minted AFTER the replacement must work, while every context minted
+	 * before it must not. A boolean cannot tell those apart — it would leave the
+	 * `withSession` context just as dead as the one it replaced.
+	 */
+	#generation = 0;
+	/** First invalidation reason wins, so the original cause is the one reported. */
+	#staleMessage: string | undefined;
 	#toolRegistrationScope = new AsyncLocalStorage<ToolRegistrationScope>();
 	#toolRegistrationBarrier: Promise<void> | undefined;
 	#initialized = false;
@@ -1419,6 +1433,23 @@ export class ExtensionRunner {
 		return allShortcuts;
 	}
 
+	/**
+	 * Every registered double-Escape action, in load order, across all loaded
+	 * extensions — the seam's empty-state invariant is that this is empty until
+	 * an extension registers one.
+	 *
+	 * A snapshot rather than a live view: the input controller iterates it while
+	 * responding to a keystroke, and an extension unloading mid-iteration would
+	 * otherwise splice the collection under it.
+	 */
+	getDoubleEscapeActions(): DoubleEscapeAction[] {
+		const actions: DoubleEscapeAction[] = [];
+		for (const ext of this.extensions) {
+			for (const action of ext.doubleEscapeActions) actions.push(action);
+		}
+		return actions;
+	}
+
 	onError(listener: ExtensionErrorListener): () => void {
 		this.#errorListeners.add(listener);
 		return () => this.#errorListeners.delete(listener);
@@ -1764,16 +1795,98 @@ export class ExtensionRunner {
 		this.#fileFallbackDisposers.clear();
 	}
 
+	/**
+	 * Mark every context minted so far as stale, and record why.
+	 *
+	 * Additive: calling this changes nothing an extension can already observe,
+	 * because contexts only refuse to act when their author asks them to via
+	 * {@link assertActive}. What it does guarantee is that the generation moves,
+	 * so the context handed to `withSession` is the live one and every earlier
+	 * one is distinguishable from it.
+	 */
+	invalidate(message: string = STALE_CONTEXT_MESSAGE): void {
+		this.#staleMessage ??= message;
+		this.#generation++;
+	}
+
+	/**
+	 * Throw if this runtime has been invalidated.
+	 *
+	 * The opt-in half of the seam. An extension that wants a hard failure instead
+	 * of silent use-after-free calls this itself — from its own `session_switch`
+	 * handler, or at the top of work it defers across a replacement — and gets a
+	 * message naming the replacement calls and the `withSession` way out.
+	 */
+	assertActive(): void {
+		if (this.#staleMessage !== undefined) {
+			throw new ExtensionContextStaleError(this.#staleMessage);
+		}
+	}
+
+	/** Whether this runtime has been invalidated, for extensions that prefer a check to a throw. */
+	get isStale(): boolean {
+		return this.#staleMessage !== undefined;
+	}
+
+	/**
+	 * Run the tail every session replacement owes its caller: the old contexts
+	 * stop being current, then `withSession` gets one that is.
+	 *
+	 * Invalidation happens FIRST so that a `withSession` callback which itself
+	 * replaces the session again leaves the context it was handed stale, rather
+	 * than resurrecting a chain of contexts that all claim to be live.
+	 */
+	async #finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
+		this.invalidate();
+		if (withSession) await withSession(this.createReplacedSessionContext());
+	}
+
+	/**
+	 * A command context minted after a replacement, carrying the messaging
+	 * actions the pre-replacement context never had.
+	 *
+	 * The same builder as {@link createCommandContext}, called again *after* the
+	 * generation moved — which is the whole reason it works where the old
+	 * context cannot.
+	 */
+	createReplacedSessionContext(): ReplacedSessionContext {
+		return {
+			...this.createCommandContext(),
+			sendMessage: (message, options) => this.runtime.sendMessage(message, options),
+			sendUserMessage: (content, options) => this.runtime.sendUserMessage(content, options),
+		};
+	}
+
 	createCommandContext(): ExtensionCommandContext {
 		return {
 			...this.createContext(),
 			getContextUsage: () => this.#getContextUsageFn(),
 			waitForIdle: () => this.#waitForIdleFn(),
-			newSession: options => this.#newSessionHandler(options),
-			branch: entryId => this.#branchHandler(entryId),
+			newSession: async options => {
+				// `withSession` is consumed here rather than forwarded: the host
+				// handlers predate it and must not have to know about it, and the
+				// generation can only move once, in one place.
+				const { withSession, ...rest } = options ?? {};
+				const result = await this.#newSessionHandler(rest);
+				if (!result.cancelled) await this.#finishSessionReplacement(withSession);
+				return result;
+			},
+			branch: async (entryId, options) => {
+				const result = await this.#branchHandler(entryId);
+				if (!result.cancelled) await this.#finishSessionReplacement(options?.withSession);
+				return result;
+			},
 			navigateTree: (targetId, options) => this.#navigateTreeHandler(targetId, options),
-			switchSession: sessionPath => this.#switchSessionHandler(sessionPath),
-			reload: () => this.#reloadHandler(),
+			switchSession: async (sessionPath, options) => {
+				const result = await this.#switchSessionHandler(sessionPath);
+				if (!result.cancelled) await this.#finishSessionReplacement(options?.withSession);
+				return result;
+			},
+			reload: async () => {
+				const result = await this.#reloadHandler();
+				this.invalidate();
+				return result;
+			},
 			compact: instructionsOrOptions => this.#compactFn(instructionsOrOptions),
 		};
 	}

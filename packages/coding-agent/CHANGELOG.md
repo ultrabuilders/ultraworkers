@@ -21,6 +21,16 @@
 
 ### Added
 
+- `pi.registerDoubleEscapeAction({ id, description, handler })` lets an extension claim the
+  double-Escape gesture — two Escapes inside 500 ms on an empty editor. The gesture was a closed
+  `rewind` | `tree` | `none` enum dispatched by a hardcoded branch, so an extension could add no
+  action of its own; `registerShortcut` bound a different key instead. Registered actions are
+  consulted before core's branch, so yours runs _instead of_ the built-in one, and the first in load
+  order wins. The 500 ms recogniser, the rewind target set, and the `"none"` opt-out stay core-owned;
+  `"none"` suppresses extension actions too, since a user who turned the gesture off does not expect
+  a third party to answer it. Registering a malformed action — empty id, non-callable handler, or a
+  duplicate id within one extension — refuses the whole extension at load with an error naming it,
+  rather than leaving a gesture that silently does nothing
 - `pi.registerCompactionProtection({ protectedTools, supersedeKey })` lets an extension keep its own
   tool results out of the context prune pass, and declare that a later call supersedes an earlier
   one. Both prune extension points were core-only until now: `protectedTools` had a single producer

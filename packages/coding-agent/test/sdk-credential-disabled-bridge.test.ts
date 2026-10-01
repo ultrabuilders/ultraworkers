@@ -461,6 +461,7 @@ describe("createAgentSession credential_disabled subscription", () => {
 				commands: new Map(),
 				flags: new Map(),
 				shortcuts: new Map(),
+				doubleEscapeActions: [],
 				settingIds: [],
 			};
 			const runtime = new ExtensionRuntime();

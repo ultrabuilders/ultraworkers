@@ -10,6 +10,7 @@ import {
 	type SlashCommand,
 } from "@oh-my-pi/pi-tui";
 import { isEnoent, logger, postmortem, sanitizeText } from "@oh-my-pi/pi-utils";
+import { errorMessage } from "@oh-my-pi/pi-utils/errors";
 import { formatDoubleTap } from "@oh-my-pi/pi-tui/app-keybindings";
 import { appKey, editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import { formatModelRoleAlias, roleCandidatePool } from "../../config/model-roles";
@@ -576,11 +577,20 @@ export class InputController {
 				this.ctx.lastEscapeTime = 0;
 			} else {
 				// Double-interrupt with an empty editor runs the configured action:
-				// the transcript rewind selector (default) or the session tree.
+				// the transcript rewind selector (default) or the session tree — or an
+				// action an extension registered for this gesture, which is consulted
+				// first so a registered action runs *instead of* the hardcoded branch.
 				const doubleEscapeAction = cfgDoubleEscapeAction.get(settings);
+				// `"none"` is an explicit user opt-out of the gesture, so it also
+				// suppresses extension actions: a user who turned double-Escape off
+				// does not expect a third party to answer it anyway.
 				if (doubleEscapeAction !== "none") {
 					const now = Date.now();
 					if (now - this.ctx.lastEscapeTime < 500) {
+						// Consumed before dispatching, whichever way it goes: leaving the
+						// window armed would let a third Esc re-fire the same action.
+						this.ctx.lastEscapeTime = 0;
+						if (this.runDoubleEscapeAction()) return;
 						if (doubleEscapeAction === "tree") {
 							this.ctx.showTreeSelector();
 						} else {
@@ -592,7 +602,6 @@ export class InputController {
 						// on long sessions — the selector opens invisibly and double-Esc
 						// reads as dead. O(viewport) is enough to settle the editor-slot swap.
 						this.ctx.ui.requestRender(true);
-						this.ctx.lastEscapeTime = 0;
 					} else {
 						this.ctx.lastEscapeTime = now;
 					}
@@ -2764,6 +2773,45 @@ export class InputController {
 			this.ctx.ui.start();
 			this.ctx.ui.requestRender();
 		}
+	}
+
+	/**
+	 * Run the first live extension action registered for the double-Escape gesture.
+	 *
+	 * Returns `false` when nothing claims it, which leaves core's `rewind`/`tree`
+	 * dispatch to run unchanged. This is consulted only after the 500 ms window
+	 * has matched and only when the setting is not `"none"` — the gesture recogniser
+	 * and the user's opt-out both stay core-owned.
+	 *
+	 * First-registered-wins rather than "every action runs": the gesture names one
+	 * action, so running all of them would stack overlays. Load order is the
+	 * tiebreak because it is the only order an extension author can predict.
+	 *
+	 * A handler that throws is reported and does NOT fall through to core: an
+	 * extension that claimed the gesture and then failed must not silently hand
+	 * the user a different action than the one that was registered — that would
+	 * look like core ignoring the extension rather than the extension breaking.
+	 */
+	private runDoubleEscapeAction(): boolean {
+		const runner = this.ctx.session.extensionRunner;
+		if (!runner) return false;
+
+		for (const action of runner.getDoubleEscapeActions()) {
+			// Bound once at startup; a live `disabledExtensions` edit may have suspended the owner since.
+			if (!runner.isExtensionActive(action.extensionPath)) continue;
+			try {
+				runner.runScoped(() => action.handler(runner.createCommandContext()));
+			} catch (err) {
+				runner.emitError({
+					extensionPath: action.extensionPath,
+					event: `doubleEscapeAction:${action.id}`,
+					error: errorMessage(err),
+					stack: err instanceof Error ? err.stack : undefined,
+				});
+			}
+			return true;
+		}
+		return false;
 	}
 
 	registerExtensionShortcuts(): void {

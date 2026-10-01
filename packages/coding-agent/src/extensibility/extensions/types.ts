@@ -620,22 +620,49 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	newSession(options?: {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }>;
 
 	/** Branch from a specific entry, creating a new session file. */
-	branch(entryId: string): Promise<{ cancelled: boolean }>;
+	branch(
+		entryId: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	): Promise<{
+		cancelled: boolean;
+	}>;
 
 	/** Navigate to a different point in the session tree. */
 	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
 
 	/** Switch to a different session file. */
-	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+	switchSession(
+		sessionPath: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	): Promise<{
+		cancelled: boolean;
+	}>;
 
 	/** Reload the current session/runtime state. */
 	reload(): Promise<void>;
 
 	/** Compact the session context (interactive mode shows UI). */
 	compact(instructionsOrOptions?: string | CompactOptions): Promise<void>;
+}
+
+/**
+ * Command-capable context minted after a session was replaced.
+ *
+ * Passed to the `withSession` callback of `newSession`, `branch`, and
+ * `switchSession`. It is the sanctioned way to do work that belongs to the NEW
+ * session: the context a command captured before the replacement still refers to
+ * the session that was torn down, and it carries `sendMessage` /
+ * `sendUserMessage` so post-replacement work does not have to reach for a
+ * different object to speak to the session it is now driving.
+ */
+export interface ReplacedSessionContext extends ExtensionCommandContext {
+	/** Declared as the handler types rather than restated, so this cannot drift from what the runtime actually accepts. */
+	sendMessage: SendMessageHandler;
+	sendUserMessage: SendUserMessageHandler;
 }
 
 // ============================================================================
@@ -1557,6 +1584,51 @@ export interface ExtensionAPI {
 	registerCompactionProtection(protection: CompactionProtection): void;
 
 	/**
+	 * Claim the double-Escape gesture for an action of your own.
+	 *
+	 * Double-Escape — two Escapes inside 500 ms with an empty editor — used to be
+	 * a closed enum (`rewind` | `tree` | `none`) dispatched by a hardcoded branch,
+	 * so an extension could neither add a third action nor answer the gesture in
+	 * the place core answers it. `registerShortcut` was the only alternative, and
+	 * it binds a different key rather than this one.
+	 *
+	 * ```ts
+	 * pi.registerDoubleEscapeAction({
+	 *   id: "bookmarks",
+	 *   description: "Jump to a bookmarked message",
+	 *   handler: async ctx => {
+	 *     const pick = await ctx.ui.select("Bookmarks", items);
+	 *     if (pick) void ctx.sessionManager.jumpTo(pick);
+	 *   },
+	 * });
+	 * ```
+	 *
+	 * Registered actions are consulted BEFORE core's own branch, so yours runs
+	 * *instead of* `rewind`/`tree` rather than after it. When more than one
+	 * extension registers one, the first in load order wins — the gesture names a
+	 * single action, so running them all would stack overlays.
+	 *
+	 * Three things stay core-owned and are deliberately not negotiable here: the
+	 * 500 ms gesture recogniser, the rewind *target set* (which transcript entries
+	 * are rewindable), and the `"none"` setting — an explicit user opt-out that
+	 * suppresses extension actions too, because a user who turned double-Escape
+	 * off does not expect a third party to answer it anyway.
+	 *
+	 * The contribution lives on the extension, so suspending or unloading the
+	 * extension restores core's behaviour exactly, with no unwiring.
+	 *
+	 * @throws when `id` is not a non-empty string, when `handler` is not
+	 * callable, or when the same extension registers that `id` twice — each
+	 * naming this extension, because a gesture that silently stopped responding
+	 * is the worst failure report this seam could give.
+	 */
+	registerDoubleEscapeAction(action: {
+		id: string;
+		description?: string;
+		handler: (ctx: ExtensionContext) => Promise<void> | void;
+	}): void;
+
+	/**
 	 * Register a fallback deleter consulted when a native `edit`/`apply_patch` unlink is
 	 * denied with a permission error (`EPERM`/`EACCES`/`EROFS`). Covers `edit`'s `REM`,
 	 * the source side of a hashline `MV`, and `apply_patch`'s delete op. Return `true`
@@ -2005,6 +2077,27 @@ export interface ExtensionShortcut {
 	extensionPath: string;
 }
 
+/**
+ * One action an extension claims for the double-Escape gesture.
+ *
+ * Registered through `registerDoubleEscapeAction` and consulted by the input
+ * controller BEFORE core's own `rewind`/`tree` dispatch, so a registered action
+ * runs instead of the hardcoded branch rather than after it.
+ *
+ * The gesture itself — two Escapes inside a 500 ms window on an empty editor —
+ * is core-owned and is not re-implemented here. An extension that wants the same
+ * effect on its own key can already use `registerShortcut`; what it could not do
+ * is answer "the user pressed double-Escape" in the place core answers it.
+ */
+export interface DoubleEscapeAction {
+	/** Stable id, unique within the extension. Named in diagnostics when the handler throws. */
+	id: string;
+	/** What this action does, shown wherever double-Escape actions are listed. */
+	description?: string;
+	handler: (ctx: ExtensionContext) => Promise<void> | void;
+	extensionPath: string;
+}
+
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
 export type SendMessageHandler = <T = unknown>(
@@ -2054,6 +2147,23 @@ export interface ExtensionRuntimeState {
 	registerProvider(name: string, config: ProviderConfig, sourceId: string): void;
 	/** Remove a queued or initialized provider registration. */
 	unregisterProvider(name: string, sourceId: string): void;
+	/**
+	 * Throw if this runtime has been invalidated, otherwise return.
+	 *
+	 * Additive by construction: nothing calls this on a path an extension can
+	 * already reach, so an extension that keeps using a captured context across a
+	 * session replacement behaves exactly as it did before this existed. That
+	 * matters because the alternative — asserting on every action — is a breaking
+	 * change for any extension already published against the old behaviour, which
+	 * this repo's own programme forbids without the owner deciding it first.
+	 */
+	assertActive(): void;
+	/**
+	 * Mark every context minted from this runtime as stale, and record why.
+	 *
+	 * First message wins, so the original cause survives later, vaguer calls.
+	 */
+	invalidate(message?: string): void;
 }
 
 /** Action implementations for ExtensionAPI methods. */
@@ -2095,11 +2205,22 @@ export interface ExtensionCommandContextActions {
 	newSession: (options?: {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
-	branch: (entryId: string) => Promise<{ cancelled: boolean }>;
+	branch: (
+		entryId: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	) => Promise<{
+		cancelled: boolean;
+	}>;
 	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
 	compact: (instructionsOrOptions?: string | CompactOptions) => Promise<void>;
-	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+	switchSession: (
+		sessionPath: string,
+		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+	) => Promise<{
+		cancelled: boolean;
+	}>;
 	reload: () => Promise<void>;
 }
 
@@ -2141,6 +2262,7 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	doubleEscapeActions: DoubleEscapeAction[];
 	outputFormats: Map<string, OutputFormat>;
 	/**
 	 * Setting ids this extension declared, so unloading can remove exactly those.

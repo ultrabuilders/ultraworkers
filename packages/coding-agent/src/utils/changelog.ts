@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { WIRE_NAME, getLastChangelogVersionPath, isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getLastChangelogVersionPath, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { Lexer } from "@oh-my-pi/pi-utils/marked";
 import type { BunFile } from "bun";
 import bundledChangelogPath from "../../CHANGELOG.md" with { type: "file" };
@@ -135,7 +135,12 @@ function categoryLabel(category: string, count: number): string {
 export function formatStartupChangelogSummary(selection: StartupChangelogSelection): string {
 	const latestVersion = selection.latestVersion;
 	if (!latestVersion || selection.selectedEntries === 0) {
-		return `Updated ${WIRE_NAME}. Use /changelog for recent changes.`;
+		// APP_NAME, not WIRE_NAME: this is the product's display name in a
+		// sentence about a release, not a command the reader should type. The
+		// two constants are equal today, so the rendered text is identical either
+		// way — which is exactly why the choice has to be made on meaning. The
+		// moment they diverge, a WIRE_NAME here silently misnames the product.
+		return `Updated ${APP_NAME}. Use /changelog for recent changes.`;
 	}
 
 	const releaseCount = selection.selectedEntries;

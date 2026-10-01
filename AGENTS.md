@@ -85,17 +85,17 @@ When authorized to create or edit a contributor-submitted PR, follow the checkli
 - **Class privacy**: use ES `#private` fields; leave externally accessible members bare. **No `private`/`protected`/`public` keyword on fields or methods**, except on **constructor parameter properties** where TypeScript requires it (e.g. `constructor(private readonly session: ToolSession)`).
 - **Promises**: use `Promise.withResolvers()` instead of `new Promise((resolve, reject) => ...)`.
 - **Prompts**: never build prompts in code (no inline strings, template literals, or concatenation). Prompts live in static `.md` files; use Handlebars for dynamic content. Import them via `import content from "./prompt.md" with { type: "text" }` — not `readFile`.
-- **Worker scripts**: workers re-enter the CLI entrypoint; never spawn separate worker entry modules. `cli.ts` declares itself as the worker host at startup (`declareWorkerHostEntry()` from `@oh-my-pi/pi-utils/env`) and dispatches hidden argv selectors (`__omp_worker_stats_sync`, `__omp_worker_tab`, `__omp_worker_js_eval`, `__omp_worker_tiny_inference`) before loading the command registry. Spawn sites use:
+- **Worker scripts**: workers re-enter the CLI entrypoint; never spawn separate worker entry modules. `cli.ts` declares itself as the worker host at startup (`declareWorkerHostEntry()` from `@oh-my-pi/pi-utils/env`) and dispatches hidden argv selectors (`__ultraworkers_worker_stats_sync`, `__ultraworkers_worker_tab`, `__ultraworkers_worker_js_eval`, `__ultraworkers_worker_tiny_inference`) before loading the command registry. Spawn sites use:
   ```ts
   import { workerHostEntry } from "@oh-my-pi/pi-utils";
   const hostEntry = workerHostEntry();
   const worker = hostEntry
-  	? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_<name>"] })
+  	? new Worker(hostEntry, { type: "module", argv: ["__ultraworkers_worker_<name>"] })
   	: new Worker(new URL("./<worker>.ts", import.meta.url).href, { type: "module" });
   ```
   When the process was started from the omp CLI — source `cli.ts`, npm-bundle `dist/cli.js`, or compiled binary — `workerHostEntry()` is `Bun.main` and the worker re-enters the single entry module, so no per-worker `--compile` entrypoints or bundle entries exist. Outside a CLI host (`bun test`, SDK embedding, standalone `omp-stats`) it returns `null` and the direct-module fallback loads the worker source. New worker kinds MUST add their selector to the dispatch table in `cli.ts` and keep the fallback branch.
   History: `with { type: "file" }` only copied the entry as a raw asset (workers crashed silently in compiled binaries — issues #1011, #1027), and the later literal-path + extra-entrypoint pattern required keeping spawn literals and two build scripts in sync (issue #1150). The smoke probe below is the live validation of this contract.
-  Validate any new worker with the dedicated smoke probe: `omp --smoke-test` spawns the stats sync worker and the tiny-model subprocess, pings them, and exits — it's wired into `ci:test:smoke` and `scripts/install-tests/run-ci.sh` so binary, source-link, and tarball installs all exercise it. Add a sibling smoke if the new worker is on a different module graph.
+  Validate any new worker with the dedicated smoke probe: `ultraworkers --smoke-test` runs 14 worker probes, pings each, and exits — it's wired into `ci:test:smoke` and `scripts/install-tests/run-ci.sh` so binary, source-link, and tarball installs all exercise it. Add a sibling smoke if the new worker is on a different module graph. **Coverage is 13 of the 16 dispatchable selectors on darwin and 14 of 16 on Linux** — the gap is `stats_sync`, which `smokeTestSyncWorker` skips on darwin because the hardened runtime in `scripts/ci-macos-sign.sh` would re-enter the Bun-worker abort surface. A green smoke run is therefore *not* evidence that every selector is correct; re-derive the counts with `grep -c 'await smokeTest' packages/coding-agent/src/cli.ts` and the `_ARG` definitions in `cli.ts` and `cli/worker-selectors.ts` before relying on them.
 
 ## Central Utilities
 

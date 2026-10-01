@@ -3,8 +3,8 @@
  *
  * A selector is a string the CLI matches against to decide which worker to run.
  * They are invisible on a command line and nothing surfaces them at runtime: if
- * a spawn site passes `__omp_worker_tab` while the dispatcher tests for
- * `__ultraworkers_worker_tab`, the Worker starts, the entry module matches
+ * a spawn site passes `${PREFIX}tab` while the dispatcher tests for
+ * `${PREFIX}browser_tab`, the Worker starts, the entry module matches
  * nothing, and the process exits silently. No error, no log line, no stack — the
  * feature is simply absent.
  *
@@ -36,9 +36,20 @@ import { TTS_WORKER_ARG } from "../src/tts/tts-client";
 import { JS_EVAL_PROCESS_ARG } from "../src/eval/js/context-manager";
 
 /**
- * Every selector the CLI can dispatch. Kept as one list so a newly added worker
- * has to be added here too — that is the point: an unlisted worker is a worker
- * whose selector nothing checks.
+ * Every selector the CLI can dispatch *that lives outside `cli.ts` itself*.
+ * Kept as one list so a newly added worker has to be added here too.
+ *
+ * Three are deliberately absent: `stats_sync`, `tab` and `js_eval`. Those stay
+ * module-private in `cli.ts` because exporting them would drag a native addon
+ * and the whole worker runtime into every ordinary `launch` — the regression
+ * `process-entry-import.test.ts` exists to catch. So this list covers 13 of the
+ * 16 dispatchable selectors, and the other three are checked only by
+ * `isWorkerHostSelector` agreeing with the prefix they are built from.
+ *
+ * The gap is worth stating rather than papering over: `stats_sync` is the
+ * selector most likely to be missed, and `--smoke-test` never exercises it on
+ * darwin (`smokeTestSyncWorker` returns early there), so nothing at runtime
+ * would notice a divergence in it either.
  */
 const SELECTORS: Record<string, string> = {
 	BLOB_BROKER_WORKER_ARG,

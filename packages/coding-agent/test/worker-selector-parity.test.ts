@@ -70,9 +70,7 @@ describe("worker selector parity", () => {
 	it("gives every selector a distinct suffix under that prefix", () => {
 		// Two workers sharing a selector means one is dead on arrival, and the
 		// dispatcher cannot tell you which: the first branch simply wins.
-		const suffixes = Object.values(SELECTORS).map(value =>
-			value.slice(WORKER_HOST_SELECTOR_PREFIX.length),
-		);
+		const suffixes = Object.values(SELECTORS).map(value => value.slice(WORKER_HOST_SELECTOR_PREFIX.length));
 		const duplicates = suffixes.filter((s, i) => suffixes.indexOf(s) !== i);
 		expect(duplicates, "selectors that collide").toEqual([]);
 		expect(new Set(suffixes).size).toBe(suffixes.length);

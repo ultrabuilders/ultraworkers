@@ -29,7 +29,12 @@ import {
 	WIRE_NAME,
 } from "@oh-my-pi/pi-utils/dirs";
 
-import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";
+import {
+	declareWorkerHostEntry,
+	installWorkerInbox,
+	isWorkerHostSelector,
+	WORKER_HOST_SELECTOR_PREFIX,
+} from "@oh-my-pi/pi-utils/worker-host";
 import { resolveIsProcessEntry } from "./cli-process-entry";
 import { hardenProcess } from "./harden-process";
 import { extractProfileFlags } from "./cli/profile-bootstrap";
@@ -192,14 +197,30 @@ async function runSmokeTest(): Promise<void> {
 	process.stdout.write("smoke-test: ok\n");
 }
 
-const TINY_WORKER_ARG = "__omp_worker_tiny_inference";
-const STATS_SYNC_WORKER_ARG = "__omp_worker_stats_sync";
-const TAB_WORKER_ARG = "__omp_worker_tab";
-const JS_EVAL_WORKER_ARG = "__omp_worker_js_eval";
-const JS_EVAL_PROCESS_ARG = "__omp_worker_js_eval_process";
-const STT_WORKER_ARG = "__omp_worker_stt";
-const TTS_WORKER_ARG = "__omp_worker_tts";
-const MNEMOPI_EMBED_WORKER_ARG = "__omp_worker_mnemopi_embed";
+// Worker argv selectors. These were eight hand-written literals; spelling them
+// out meant a rename had nine places to move and a missed one matched nothing,
+// silently — the worker starts, the entry module matches no branch, and the
+// process exits with no error anywhere.
+//
+// Each worker module also exports its own selector, and `packages/stats` exports
+// its own. They are NOT imported here on purpose: every one of them lives
+// behind a graph this file deliberately loads lazily (see runSmokeTest), and a
+// top-level value import would pull a native addon and the whole worker runtime
+// into every ordinary `omp launch`. That is a real regression, and
+// process-entry-import.test.ts is what catches it.
+//
+// So all eight derive from the same WORKER_HOST_SELECTOR_PREFIX instead. That
+// leaves one source of truth for the prefix — the thing that actually has to
+// agree — while `worker-selector-parity.test.ts` is what holds every copy of it
+// to that source, including the ones over in the worker modules.
+const TINY_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tiny_inference`;
+const STATS_SYNC_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stats_sync`;
+const TAB_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tab`;
+const JS_EVAL_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}js_eval`;
+const JS_EVAL_PROCESS_ARG = `${WORKER_HOST_SELECTOR_PREFIX}js_eval_process`;
+const STT_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stt`;
+const TTS_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tts`;
+const MNEMOPI_EMBED_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}mnemopi_embed`;
 
 async function runWorkerEntrypoint(arg: string | undefined): Promise<boolean> {
 	if (arg === TINY_WORKER_ARG) {

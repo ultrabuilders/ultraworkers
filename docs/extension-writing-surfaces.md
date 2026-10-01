@@ -112,6 +112,29 @@ Recorded so a later reader does not mistake silence for a decision.
   `extensibility/slash-commands.ts`) and can register *model* providers, but
   cannot register a capability provider. If that ever changes, it is a change to
   this table's last row and needs its own decision record.
+- **Reading that row as permission to remove the legacy `pi` shims would be
+  wrong, and the removal is out of scope for M2 under every answer to M2-OQ2.**
+  The shims are what keeps already-published extensions loading; they are not
+  unfinished work.
+
+  | shim | what it is | where |
+  | --- | --- | --- |
+  | `isProjectTrusted()` | Declared twice on the extension context; both implementations return a constant | declared `extensions/types.ts:558` and `:625`; implemented `extensions/runner.ts:1810` and `session/agent-session.ts:7708`, both `isProjectTrusted: () => true` |
+  | `@earendil-works/*` specifier shim | Redirects a legacy bare specifier onto the canonical package | installed at `extensions/loader.ts:79` (`installLegacyPiSpecifierShim()`), imported at `:53`; the module it hands back is loaded through `loadLegacyPiModule` at `:712` |
+  | package-root shims for `pi-ai`, `pi-coding-agent`, `pi-tui` | Re-export a canonical surface under each pre-rebrand package root | `plugins/legacy-pi-compat.ts:967`, `:978`, `:985` |
+
+  The four source files total **4,697 lines** (`legacy-pi-compat.ts`, then
+  `legacy-pi-coding-agent-shim.ts`, `legacy-pi-ai-shim.ts`, `legacy-pi-tui-shim.ts`).
+  They are process-global by construction: `Bun.plugin()` hooks installed by
+  `legacy-pi-compat.ts` cannot be withdrawn, which is why `extensibility/utils.ts:76`
+  distinguishes a handler disposer from an unload.
+
+  **This is a decision boundary, not a task.** `YES`, `NO` and `DEFERRED` all
+  leave these files in place for M2; none of them authorises deletion. Removing
+  them breaks every extension published against the pre-rebrand specifier, so it
+  is a breaking-change project with its own milestone — outside M2, and outside
+  whatever M2-OQ2 is answered. `docs/extension-trust-model.md:209` already records
+  the same fact for `isProjectTrusted()`.
 
 ### Measured, not assumed: two things that look like findings and are not
 

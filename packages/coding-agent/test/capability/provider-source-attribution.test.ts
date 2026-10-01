@@ -76,15 +76,14 @@ describe("capability provider source attribution", () => {
 		//
 		// SCOPE, stated honestly: this row pins the observable consequence of the
 		// handoff — after ownership moves, tearing down the previous source leaves the
-		// provider standing. It does NOT uniquely pin the `!== sourceId` guard inside
-		// `unregisterProvidersForSource`, and the plan's spec believed that it did.
-		// Measured: deleting the guard leaves this file green, because the handoff in
-		// `registerProvider` already removed the id from the old source's set, so the
-		// teardown finds an empty map and returns before the guard is reached. The two
-		// are redundant — either alone is sufficient. The guard is kept anyway: the
-		// failure it prevents is a live extension silently losing a provider, and a
-		// redundant check on a destructive path is cheap. What is NOT claimed is a test
-		// that proves it necessary.
+		// provider standing. It does not pin any guard inside
+		// `unregisterProvidersForSource`; there is none. The plan's spec said a
+		// `!== sourceId` check there was "exactly what row (b) exists to catch", and
+		// that check has since been deleted as dead code — measured, it was
+		// unreachable, because the handoff already removed the id from the old
+		// source's set and the teardown returned before reaching it. What keeps a
+		// live extension's provider safe is that invariant, and this row is the
+		// regression check on the invariant's observable consequence.
 		registerProvider(toolCapability.id, provider("attrib-shared"), "/ext/b");
 		registerProvider(toolCapability.id, provider("attrib-shared"), "/ext/c");
 		expect(resolvedIds()).toContain("attrib-shared");

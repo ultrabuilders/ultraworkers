@@ -636,21 +636,20 @@ export function resetRegistry(): void {
  * Remove every capability provider one extension source registered.
  *
  * Ported from `ModelRegistry.clearSourceRegistrations`
- * (`config/model-registry.ts:2966-2980`), including the guard that makes it
- * safe: a provider id whose ownership has since moved to another source is
- * skipped rather than removed. A caller acting on a stale record — one
- * extension's list, read before a handoff — would otherwise delete the new
- * owner's provider, and the capability would silently lose a provider that is
- * still live.
+ * (`config/model-registry.ts:2966-2980`).
  *
- * That guard is redundant here and is kept as such. `registerProvider`'s
- * handoff already drops the id from the previous owner's set, so the lookup
- * below normally finds an empty map and returns before the guard is reached —
- * measured, by deleting the guard and watching the suite stay green. It stays
- * because the two mechanisms can only disagree if a future change adds a
- * registration path that updates ownership without updating the reverse set,
- * and the failure that guard prevents is a live extension losing a provider
- * with no error raised anywhere.
+ * **Safety here comes from one invariant, not from a check in this function.**
+ * `registerProvider`'s handoff removes a claimed id from the previous owner's
+ * set before the new owner records it, so a source's set only ever contains
+ * ids that source still owns — which is why iterating it needs no
+ * re-verification. `clearSourceRegistrations` guards with
+ * `!== sourceId` because it is also reached by a path that resolves ownership
+ * from a caller-supplied name; this function is not, and a guard added here
+ * would be unreachable code. Measured: deleting it left the suite green.
+ *
+ * The invariant and this function must change together. A future registration
+ * path that sets `providerSourceByName` without updating `providersBySource`
+ * would let a teardown remove a live extension's provider, silently.
  *
  * Providers registered without a `sourceId` are core registrations and are
  * never reachable from here; see {@link registerProvider}.
@@ -662,17 +661,20 @@ export function unregisterProvidersForSource(sourceId: string): void {
 	}
 	providersBySource.delete(sourceId);
 	for (const providerId of sourceProviders) {
-		if (providerSourceByName.get(providerId) !== sourceId) {
-			continue;
-		}
 		providerSourceByName.delete(providerId);
 		for (const capabilityId of providerCapabilities.get(providerId) ?? []) {
 			const capability = capabilities.get(capabilityId);
 			if (!capability) continue;
 			const providers = capability.providers as Provider<unknown>[];
-			const idx = providers.findIndex(p => p.id === providerId);
-			if (idx !== -1) {
-				providers.splice(idx, 1);
+			// Every entry with this id, not the first. Registering the same provider id
+			// twice — two sources, or one source re-registering — leaves two objects
+			// with that id in the array, and a provider id names one provider, so a
+			// teardown that removed only the first would leave a live copy behind and
+			// still read as "the provider is gone".
+			for (let i = providers.length - 1; i >= 0; i--) {
+				if (providers[i].id === providerId) {
+					providers.splice(i, 1);
+				}
 			}
 		}
 		// Safe to drop unconditionally: the loop above removed the provider from

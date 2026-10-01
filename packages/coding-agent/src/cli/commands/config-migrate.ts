@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { $ } from "bun";
 import {
 	type MigrationKind,
+	type MigrationMove,
 	type MigrationOptions,
 	type MigrationPlan,
 	executeConfigMigration,
@@ -25,6 +26,7 @@ import {
 	$which,
 	CONFIG_DIR_NAME_NEXT,
 	getAgentDbPath,
+	getAgentDir,
 	getDaemonRuntimeRoot,
 	getHistoryDbPath,
 	LEGACY_CONFIG_DIR_NAME,
@@ -97,7 +99,37 @@ export interface LiveHolder {
 }
 
 /**
+ * The layout *under* a config root, observed from the live resolver rather than
+ * written out as a literal: `agent/agent.db`, `run/daemons`, and so on. Hardcoding
+ * those segments would be a second copy of the directory structure, which is a
+ * pair that drifts — and a guard pointed at the wrong path still looks like a
+ * guard.
+ */
+const CONFIG_ROOT = path.dirname(getAgentDir());
+const DB_LAYOUT: readonly string[] = [getAgentDbPath(), getHistoryDbPath()].map(file =>
+	path.relative(CONFIG_ROOT, file),
+);
+const DAEMON_LAYOUT = path.relative(CONFIG_ROOT, getDaemonRuntimeRoot());
+
+/**
  * The files whose live handle makes a directory rename unsafe.
+ *
+ * Keyed to the roots the plan is about to RENAME, not to whichever root the
+ * resolver happens to read from. Those two usually agree, and the agreement is
+ * what made the first version of this correct — but they agree by coincidence
+ * of two independent rules: a move is planned only when the destination does
+ * not exist, and the read root is the first candidate that does. Change either
+ * one and the guard keeps running while inspecting a directory nobody is about
+ * to touch, which is the failure mode of a check that cannot report itself as
+ * having checked nothing.
+ *
+ * Measured on a machine holding both roots: the read root resolved to the
+ * DESTINATION, whose `agent.db` is a different file from the 2 MB `~/.omp` one.
+ * No data was at risk there either — with both roots present the base move
+ * becomes a conflict and is skipped, so there is nothing to rename. That is why
+ * this is a structural fix and not a bug report: the exploit is unreachable
+ * today, and this makes it unreachable by construction rather than by two rules
+ * that have to keep coinciding.
  *
  * Two roots, and they are not the same root: the SQLite databases live at the
  * DATA root while daemons register under the STATE root, so a check that only
@@ -108,16 +140,25 @@ export interface LiveHolder {
  * held open through its write-ahead log alone, and because a hot `-wal` is the
  * clearest evidence that the database is live rather than merely present.
  */
-export function guardedPaths(): string[] {
-	const paths = [getAgentDbPath(), getHistoryDbPath()];
-	const withSiblings = paths.flatMap(file => [file, `${file}-wal`, `${file}-shm`]);
-	return [...withSiblings, ...daemonRuntimePaths()];
+export function guardedPaths(moves: readonly MigrationMove[]): string[] {
+	// No moves means nothing will be renamed, so there is nothing whose open handle
+	// can hurt. Returning the read-root paths here would guard a directory the
+	// migration is not touching and refuse a command that cannot do damage.
+	const paths: string[] = [];
+	for (const root of new Set(moves.map(move => move.from))) {
+		for (const layout of DB_LAYOUT) {
+			const file = path.join(root, layout);
+			paths.push(file, `${file}-wal`, `${file}-shm`);
+		}
+		paths.push(...daemonRuntimePaths(path.join(root, DAEMON_LAYOUT)));
+	}
+	return paths;
 }
 
-/** Whatever a running daemon leaves behind under the state root. */
-function daemonRuntimePaths(): string[] {
+/** Whatever a running daemon leaves behind under one root's state directory. */
+function daemonRuntimePaths(runtimeRoot: string): string[] {
 	try {
-		return fs.readdirSync(getDaemonRuntimeRoot()).map(name => path.join(getDaemonRuntimeRoot(), name));
+		return fs.readdirSync(runtimeRoot).map(name => path.join(runtimeRoot, name));
 	} catch {
 		// No daemon root yet is the ordinary case on a fresh install.
 		return [];
@@ -194,7 +235,7 @@ export async function configMigrate(apply: boolean, force = false): Promise<void
 	// are open, and on POSIX the rename succeeds — the holder keeps writing to the
 	// renamed inode while the config root it thinks it is in is gone. That reads
 	// to the user as the tool losing their history, with no error anywhere.
-	const holders = await findLiveHolders(guardedPaths());
+	const holders = await findLiveHolders(guardedPaths(plan.moves));
 	if (holders.length > 0 && !force) {
 		for (const line of openRootWarning(holders)) console.error(chalk.red(line));
 		// `process.exitCode` + return, not `process.exit`, matching how this same

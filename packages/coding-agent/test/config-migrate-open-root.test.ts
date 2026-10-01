@@ -21,7 +21,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findLiveHolders, openRootWarning } from "@oh-my-pi/pi-coding-agent/cli/commands/config-migrate";
+import { findLiveHolders, guardedPaths, openRootWarning } from "@oh-my-pi/pi-coding-agent/cli/commands/config-migrate";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "omp-migrate-open-"));
 const heldFile = path.join(scratch, "agent.db");
@@ -97,6 +97,52 @@ describe("openRootWarning", () => {
  * `~/.omp`. A child with its own `HOME` resolves `~/.omp/agent/agent.db` — and
  * therefore `getAgentDbPath()` — inside a scratch tree.
  */
+describe("guardedPaths follows the roots the plan will rename", () => {
+	// The failure this pins: an earlier version derived the guarded paths from
+	// `getAgentDbPath()`, which resolves through the READ root — the first config
+	// root that exists. On a machine holding both roots, that is the DESTINATION,
+	// so the guard inspected a different file from the one about to be renamed and
+	// reported itself as clean. Measured on such a machine: read root
+	// `~/.ultraworkers`, real file `~/.omp/agent/history.db` at 2 MB, never checked.
+	//
+	// No data was at risk — with both roots present the base move becomes a
+	// conflict and nothing is renamed — but that safety came from two independent
+	// rules coinciding, not from the guard looking where it looks. These rows make
+	// the looking correct on its own.
+	test("guards the database inside the root being moved, not the one being read", () => {
+		const paths = guardedPaths([{ kind: "base", from: "/tmp/legacy-root", to: "/tmp/new-root" }]);
+
+		// What the rename destroys.
+		expect(paths).toContain("/tmp/legacy-root/agent/agent.db");
+		expect(paths).toContain("/tmp/legacy-root/agent/history.db");
+		// And the sibling files a live SQLite connection can be held through.
+		expect(paths).toContain("/tmp/legacy-root/agent/agent.db-wal");
+		expect(paths).toContain("/tmp/legacy-root/agent/history.db-shm");
+		// Never the destination: nothing there is being renamed, so a holder on it
+		// must not be able to refuse this command.
+		expect(paths).not.toContain("/tmp/new-root/agent/agent.db");
+	});
+
+	test("guards nothing when the plan will move nothing", () => {
+		// The split-root case: both roots exist, so the base move is a conflict and
+		// `plan.moves` is empty. Refusing here would block a command that cannot do
+		// damage — and, worse, would do it while pointing at the wrong directory.
+		expect(guardedPaths([])).toEqual([]);
+	});
+
+	test("covers every root the plan moves, including XDG ones", () => {
+		const paths = guardedPaths([
+			{ kind: "base", from: "/tmp/legacy", to: "/tmp/new" },
+			{ kind: "xdg-state", from: "/tmp/xdg-state-old", to: "/tmp/xdg-state-new" },
+		]);
+
+		expect(paths).toContain("/tmp/legacy/agent/agent.db");
+		// The XDG move is a different root and is renamed too; a guard that only knew
+		// the base root would miss it.
+		expect(paths).toContain("/tmp/xdg-state-old/agent/agent.db");
+	});
+});
+
 describe("config migrate --apply on an open root", () => {
 	/** cwd is the package, so the import below resolves against real sources. */
 	const packageDir = import.meta.dir.replace(/\/test$/, "");

@@ -594,6 +594,29 @@ export class KeybindingsManager extends TuiKeybindingsManager {
 	}
 
 	/**
+	 * Every key currently bound to a built-in action, defaults and user remaps alike.
+	 *
+	 * This is the answer to "may an extension own this key?", derived from the
+	 * bindings themselves. The alternative is a hand-maintained reserved list, and a
+	 * hand-maintained list is wrong the moment a user remaps a default onto a key it
+	 * does not mention: the extension then claims a key the user has already given
+	 * to a built-in, and the remap silently stops working.
+	 *
+	 * Declared here rather than in the caller because the definitions are the only
+	 * place that knows the full set — a caller that wanted this had to keep its own
+	 * copy, which is the table this method exists to delete.
+	 */
+	claimedKeyIds(): Set<KeyId> {
+		const claimed = new Set<KeyId>();
+		for (const keys of Object.values(this.getResolvedBindings())) {
+			for (const key of Array.isArray(keys) ? keys : [keys]) {
+				if (typeof key === "string") claimed.add(key.toLowerCase() as KeyId);
+			}
+		}
+		return claimed;
+	}
+
+	/**
 	 * Create from config files at agentDir/keybindings.yml and the default profile.
 	 * Legacy keybindings.json is migrated to keybindings.yml on load.
 	 */

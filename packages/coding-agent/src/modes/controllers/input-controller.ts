@@ -2818,7 +2818,7 @@ export class InputController {
 		const runner = this.ctx.session.extensionRunner;
 		if (!runner) return;
 
-		const shortcuts = runner.getShortcuts();
+		const shortcuts = runner.getShortcuts(this.ctx.keybindings.claimedKeyIds());
 		for (const [keyId, shortcut] of shortcuts) {
 			this.ctx.editor.setCustomKeyHandler(keyId, () => {
 				// Bound once at startup; a live `disabledExtensions` edit may have suspended the owner since.

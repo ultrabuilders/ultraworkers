@@ -236,7 +236,14 @@ describe("Group C separation cannot be undone by disabling the rulings", () => {
 		for (const name of ["commit", "commands", "dap", "stream", "security", "cleanse"]) {
 			if (!measured.some(m => m.module === name)) continue;
 			expect(split.candidates.map(v => v.module)).not.toContain(name);
-			expect(["merge", "no-cut"]).toContain(split.merge.concat(split.noCut).find(v => v.module === name)?.decision);
+			// The module is measured, so it must have been classified. `?.decision`
+			// used to swallow that: an unclassified module arrived here as
+			// `undefined` and was compared against the decision list rather than
+			// reported as the miss it is. The sentinel cannot occur in the data, so
+			// if it shows up in a failure it names the real problem — and it
+			// narrows the type, which a bare `toBeDefined()` does not.
+			const decision = split.merge.concat(split.noCut).find(v => v.module === name)?.decision;
+			expect(["merge", "no-cut"]).toContain(decision ?? "<not classified>");
 		}
 	});
 });

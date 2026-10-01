@@ -108,6 +108,13 @@ async function runRunner(mode: string, env: Record<string, string | undefined>):
 		allowNonZero: true,
 		stderr: "full",
 	});
+	// `exitCode` is `number | null`, and null means the child died on a signal
+	// rather than exiting. Coercing it to 0 or -1 would let a killed runner read
+	// as a clean pass in every `toBe(0)` below, so the anomaly is raised instead:
+	// these tests assert on the exit status, and there is no status to assert.
+	if (result.exitCode === null) {
+		throw new Error(`ci-test-ts runner was killed by a signal.\n${result.stderr}`);
+	}
 	return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 }
 

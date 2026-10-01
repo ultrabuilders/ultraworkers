@@ -99,7 +99,7 @@ describe("specifiersIn", () => {
 			"ts",
 		);
 
-		expect(specifiers.sort()).toEqual(["../lazy", "./run"]);
+		expect([...specifiers].sort()).toEqual(["../lazy", "./run"]);
 	});
 
 	it("also reports the type-position import the transpiler erases", () => {

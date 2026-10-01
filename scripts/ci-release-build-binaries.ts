@@ -61,7 +61,14 @@ const targets: BinaryTarget[] = [
 		id: "linux-musl-x64",
 		platform: "linux",
 		arch: "x64",
-		target: "bun-linux-x64-musl-baseline",
+		// `bun-linux-x64-musl-baseline` is absent from bun's generated
+		// `CompileTarget` union, but it is not a typo: `bun build --compile
+		// --target=bun-linux-x64-musl-baseline` succeeds and emits an 87 MB
+		// binary, and the value has been here since the initial publish. The type
+		// lags the runtime. Changing the string would silently redefine a shipped
+		// release artifact to satisfy a typechecker, so it stays and the cast
+		// records why.
+		target: "bun-linux-x64-musl-baseline" as Bun.Build.CompileTarget,
 		outfile: "packages/coding-agent/binaries/ultraworkers-linux-musl-x64",
 	},
 	{

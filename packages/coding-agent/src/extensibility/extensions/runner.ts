@@ -40,6 +40,8 @@ import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
 import { addCompactionProtection } from "../../tools/compaction-protection";
 import { addContextTransform } from "../../tools/compaction-transforms";
+import { registerHostRenderStrategy, type HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import { addUsageReporter } from "../../tools/usage-reporter";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
 import { ManagedTimers, UNOWNED_TIMERS } from "./managed-timers";
@@ -542,8 +544,36 @@ function clearExtensionBuckets(extension: Extension): void {
 	extension.shortcuts.clear();
 	extension.outputFormats.clear();
 	extension.toolNameResolvers.length = 0;
+	extension.usageReporters.length = 0;
+	extension.hostRenderStrategies.length = 0;
 	extension.toolRegistrationListeners.clear();
 }
+
+/**
+ * Built-in keys an extension may not claim, used when the caller does not supply the
+ * live set. This is a FLOOR, not the answer: it names the defaults omp ships with, and
+ * a user who remaps one of them onto a key it does not mention is not represented here.
+ * Pass `KeybindingsManager.claimedKeyIds()` to get the real set.
+ */
+const RESERVED_SHORTCUT_KEYS: ReadonlySet<KeyId> = new Set([
+	"ctrl+c",
+	"ctrl+d",
+	"ctrl+z",
+	"ctrl+k",
+	"ctrl+p",
+	"ctrl+l",
+	"ctrl+o",
+	"ctrl+t",
+	"ctrl+g",
+	"alt+m",
+	// Default chord for `app.message.followUp` (Windows Terminal can't deliver Ctrl+Enter; #1903).
+	"ctrl+q",
+	"shift+tab",
+	"shift+ctrl+p",
+	"alt+enter",
+	"escape",
+	"enter",
+]);
 
 export class ExtensionRunner {
 	#uiContext: ExtensionUIContext;
@@ -925,6 +955,16 @@ export class ExtensionRunner {
 				this.#pushFallbackDisposer(ext.path, addContextTransform(ext.path, transform));
 			}
 		}
+		// Host render strategies install beside the other process-wide registries for
+		// the same reason: the resize gate reads its registry from module scope, long
+		// after extension load, and an unloaded extension must stop advising the
+		// terminal renderer. No re-apply call is needed — unlike a composer shape, the
+		// gate consults the registry lazily on each resize, so installing is enough.
+		for (const ext of this.getLoadedExtensions()) {
+			for (const strategy of ext.hostRenderStrategies) {
+				this.#pushFallbackDisposer(ext.path, registerHostRenderStrategy(strategy));
+			}
+		}
 		// Usage reporters install beside compaction protections for the same reason:
 		// the fold that reads them runs in the session index and the stats tracker,
 		// neither of which holds an ExtensionRunner, so the registry has to be
@@ -932,6 +972,8 @@ export class ExtensionRunner {
 		// extension releases exactly its own contribution — otherwise a stale
 		// reporter keeps adding a dead extension's tokens to the live ledger.
 		for (const ext of this.getLoadedExtensions()) {
+			for (const { toolName, reporter } of ext.usageReporters) {
+				this.#pushFallbackDisposer(ext.path, addUsageReporter(ext.path, toolName, reporter));
 			}
 		}
 		// Suspended extensions keep a (gated) trampoline so resuming them needs no rewire.
@@ -1356,6 +1398,15 @@ export class ExtensionRunner {
 	}
 
 	/** Composer shapes registered during extension load, with later extensions winning id collisions. */
+	/**
+	 * Every registered host render strategy, in registration order across
+	 * extensions. First opinion wins, so the order is the tiebreak — an
+	 * extension loaded later cannot displace one that already has a say.
+	 */
+	getHostRenderStrategies(): HostRenderStrategy[] {
+		return this.extensions.flatMap(extension => extension.hostRenderStrategies);
+	}
+
 	getComposerShapes(): ComposerShapeDefinition[] {
 		const shapes = new Map<string, ComposerShapeDefinition>();
 		for (const extension of this.extensions) {
@@ -1407,33 +1458,24 @@ export class ExtensionRunner {
 		ExtensionRunner.applyFlagValue(this.extensions, name, value);
 	}
 
-	static readonly #RESERVED_SHORTCUTS: Record<string, true> = {
-		"ctrl+c": true,
-		"ctrl+d": true,
-		"ctrl+z": true,
-		"ctrl+k": true,
-		"ctrl+p": true,
-		"ctrl+l": true,
-		"ctrl+o": true,
-		"ctrl+t": true,
-		"ctrl+g": true,
-		"alt+m": true,
-		// Default chord for `app.message.followUp` (Windows Terminal can't deliver Ctrl+Enter; #1903).
-		"ctrl+q": true,
-		"shift+tab": true,
-		"shift+ctrl+p": true,
-		"alt+enter": true,
-		escape: true,
-		enter: true,
-	};
-
-	getShortcuts(): Map<KeyId, ExtensionShortcut> {
+	/**
+	 * `claimedKeys` is every key a built-in action currently owns — defaults and the
+	 * user's remaps together, normally from `KeybindingsManager.claimedKeyIds()`.
+	 *
+	 * It is a parameter rather than a hardcoded set because a hardcoded set is stale
+	 * the moment a user remaps a default onto a key it never mentioned: the
+	 * extension claims that key, the remap silently stops working, and nothing logs
+	 * an error because nothing here knows the remap happened. Omitting it falls back
+	 * to the built-in defaults, which is the pre-existing behaviour.
+	 */
+	getShortcuts(claimedKeys?: ReadonlySet<KeyId>): Map<KeyId, ExtensionShortcut> {
+		const reserved: ReadonlySet<KeyId> = claimedKeys ?? RESERVED_SHORTCUT_KEYS;
 		const allShortcuts = new Map<KeyId, ExtensionShortcut>();
 		for (const ext of this.extensions) {
 			for (const [key, shortcut] of ext.shortcuts) {
 				const normalizedKey = key.toLowerCase() as KeyId;
 
-				if (ExtensionRunner.#RESERVED_SHORTCUTS[normalizedKey]) {
+				if (reserved.has(normalizedKey)) {
 					logger.warn("Extension shortcut conflicts with built-in shortcut", {
 						key,
 						extensionPath: shortcut.extensionPath,

@@ -28,6 +28,7 @@ import { assumedTspHello, NativeBackend, type NativeHost } from "./native/backen
 import { col } from "./native/describe";
 import { TSP_PREFIX, type TspHello } from "./native/encode";
 import type { DescribeContext, NativeNode, NativeSurfaceProvider, NativeUiEvent } from "./native/node";
+import { resizeInPlaceEnvOverride, resolveInPlaceResize } from "./host-render-strategy";
 import { STDOUT_BACKLOG_CLEAR_BYTES, setAltScreenActive, type Terminal } from "./terminal";
 import {
 	encodeKittyDeleteAllImages,
@@ -102,18 +103,6 @@ const MOUSE_TRACKING_OFF = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 
 type MouseTrackingState = "off" | "inline" | "full";
 
-/**
- * `PI_TUI_RESIZE_IN_PLACE=1|true` forces in-place resize (no alt-buffer borrow).
- * `0|false` forces the alt-buffer path even on Warp. Unset defers to Warp detection:
- * Warp re-reports its size on CSI ?1049h / CSI ?1049l, which the resize alt-borrow
- * turns into a flicker loop.
- */
-function resizeInPlaceOverride(): boolean | null {
-	const override = Bun.env.PI_TUI_RESIZE_IN_PLACE;
-	if (override === "1" || override === "true") return true;
-	if (override === "0" || override === "false") return false;
-	return null;
-}
 type InputListenerResult = { consume?: boolean; data?: string } | undefined;
 type InputListener = (data: string) => InputListenerResult;
 type StartListener = () => void;
@@ -1792,10 +1781,15 @@ export class TUI extends Container {
 	 * {@link ResizeScrollbackMode} rebuild that erases conhost's stale copy.
 	 */
 	#resizeRepaintsInPlace(): boolean {
-		const override = resizeInPlaceOverride();
-		if (override !== null) return override;
-		if (isInsideTerminalMultiplexer() || this.terminal.hostOwnsGridOnResize === true) return false;
-		return Bun.env.TERM_PROGRAM?.toLowerCase() === "warpterminal";
+		// The precedence — env override, then core's multiplexer/ConPTY safety
+		// veto, then any extension strategy, then Warp detection — lives in
+		// `resolveInPlaceResize`, which is pure and takes the environment as an
+		// argument. See that module for why the veto outranks a strategy.
+		return resolveInPlaceResize({
+			env: Bun.env,
+			hostOwnsGridOnResize: this.terminal.hostOwnsGridOnResize === true,
+			platform: process.platform,
+		});
 	}
 
 	#noteAltBufferToggle(): void {
@@ -2022,7 +2016,7 @@ export class TUI extends Container {
 		if (
 			this.terminal.hostOwnsGridOnResize === true &&
 			!isInsideTerminalMultiplexer() &&
-			resizeInPlaceOverride() !== true
+			resizeInPlaceEnvOverride(Bun.env) !== true
 		) {
 			this.#resolveResizeAnchor(undefined);
 			return;

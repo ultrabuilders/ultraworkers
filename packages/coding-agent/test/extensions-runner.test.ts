@@ -4570,6 +4570,8 @@ describe("ExtensionRunner", () => {
 				outputFormats: new Map(),
 
 				toolNameResolvers: [],
+				usageReporters: [],
+				hostRenderStrategies: [],
 				composerShapes: new Map(),
 				commands: new Map(),
 				flags: new Map(),

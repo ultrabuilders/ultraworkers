@@ -32,6 +32,7 @@ import type { SendUserMessageOptions } from "../../session/agent-session";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
 import type { CompactionProtection } from "../../tools/compaction-protection";
+import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
 import type { ContextTransform } from "../../tools/compaction-transforms";
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 import { lookup as lookupSetting, registerOwned } from "../../config/registry";
@@ -61,6 +62,8 @@ import type {
 	ToolInfo,
 	OutputFormat,
 	ToolNameResolver,
+	UsageReporter,
+	UsageReporterRegistration,
 } from "./types";
 
 installLegacyPiSpecifierShim();
@@ -384,11 +387,58 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		});
 	}
 
+	registerUsageReporter(toolName: string, reporter: UsageReporter): void {
+		// Duplicates are refused rather than first-wins: two reporters folding one
+		// tool would add the same tokens to /usage, the ACP usage update and
+		// packages/stats twice, and which one "won" would then decide how badly the
+		// ledger over-reports. Per-extension is the right scope for the guard —
+		// addUsageReporter is what rejects the process-wide case.
+		if (this.extension.usageReporters.some(r => r.toolName === toolName)) {
+			throw new Error(
+				`Extension ${this.extension.path}: a usage reporter for tool '${toolName}' is already registered — tool names must be unique within an extension so its usage lands once`,
+			);
+		}
+		if (typeof toolName !== "string" || toolName.length === 0 || toolName !== toolName.trim()) {
+			throw new TypeError(
+				`Extension ${this.extension.path}: usageReporter tool name must be a non-empty trimmed string`,
+			);
+		}
+		if (typeof reporter !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: usageReporter for '${toolName}' must be a function, got ${typeof reporter}`,
+			);
+		}
+		this.extension.usageReporters.push({ toolName, reporter });
+	}
+
 	registerToolNameResolver(resolver: ToolNameResolver): void {
 		// Appended, not replaced: the host ships its own resolvers and an
 		// extension's joins them. Order matters — the first hit wins — so
 		// registration order is the only thing a caller can reason about.
 		this.extension.toolNameResolvers.push(resolver);
+	}
+
+	registerHostRenderStrategy(strategy: HostRenderStrategy): void {
+		const id = typeof strategy.id === "string" ? strategy.id.trim() : "";
+		// Re-validated here, not only in `registerHostRenderStrategy`: the
+		// registry is a module singleton, so a definition that skipped its own
+		// check would otherwise be refused at install time with no extension named.
+		if (id.length === 0) {
+			throw new TypeError(
+				`Extension ${this.extension.path}: host render strategy id must be a non-empty trimmed string`,
+			);
+		}
+		if (typeof strategy.label !== "string" || strategy.label.trim().length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: host render strategy "${id}" must have a label`);
+		}
+		if (typeof strategy.decide !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: host render strategy "${id}" must provide decide(), got ${typeof strategy.decide}`,
+			);
+		}
+		// Appended, not replaced: an extension's strategies join the host's own
+		// gate rather than displacing it, and order is the tiebreak.
+		this.extension.hostRenderStrategies.push({ ...strategy, id });
 	}
 
 	registerOutputFormat(format: OutputFormat): void {
@@ -539,6 +589,8 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		outputFormats: new Map(),
 		settingIds: [],
 		toolNameResolvers: [] as ToolNameResolver[],
+		usageReporters: [] as UsageReporterRegistration[],
+		hostRenderStrategies: [] as HostRenderStrategy[],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),

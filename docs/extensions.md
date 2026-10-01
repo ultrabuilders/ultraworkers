@@ -877,6 +877,33 @@ for (const entry of ctx.sessionManager.getBranch()) {
 
 ## Rendering extension points
 
+## Host render strategy
+
+`registerHostRenderStrategy` contributes a rule for how a terminal **resize** repaints: in place, or by borrowing the alternate screen and replaying the transcript. Core already has an opinion, and it is a closed one — a private gate reading `Bun.env`, a hardcoded multiplexer classifier, and `TERM_PROGRAM`. An extension whose terminal none of those recognise had no way in.
+
+```ts
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+
+export default function register(pi: ExtensionAPI): void {
+  pi.registerHostRenderStrategy({
+    id: "myterm",
+    label: "MyTerminal repaints its viewport in place",
+    decide: ({ env }) => (env.TERM_PROGRAM === "MyTerm" ? "in-place" : "defer"),
+  });
+}
+```
+
+`decide` is called once per resize and returns `"in-place"`, `"alt-borrow"`, or `"defer"` to abstain and let the next strategy — or core — decide.
+
+Precedence, in order:
+
+1. **`PI_TUI_RESIZE_IN_PLACE`** — the user's own override, ahead of everything including extensions.
+2. **Core's safety veto** — inside a terminal multiplexer, or on a ConPTY host. Both go to the borrow path, and **no strategy can override this**: those hosts are measurably broken for in-place repaint, and a vendor's opinion does not change that. A consequence worth knowing: `decide` never observes `hostOwnsGridOnResize === true`, because the gate returns before consulting anyone.
+3. **The first strategy that does not `defer`** — first wins, so load order is the tiebreak.
+4. **Core's Warp default.**
+
+A strategy may claim a host core has never seen, and may force the conservative borrow path. It may not talk core out of a host that is broken without one. Registration throws on an empty or untrimmed `id`, a blank `label`, a non-callable `decide`, or a duplicate `id`.
+
 ## Composer shape renderer
 
 `registerComposerShape` adds an extension-owned input-editor layout to **Appearance → Composer Shape**. Register it from the extension factory; the renderer is used by the live editor and its settings preview.

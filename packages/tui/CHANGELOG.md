@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `registerHostRenderStrategy`: an extension can now contribute a rule for how a terminal resize
+  repaints, for hosts omp's closed multiplexer/`TERM_PROGRAM` classifier does not recognise. The
+  precedence is the user's `PI_TUI_RESIZE_IN_PLACE` first, then core's multiplexer/ConPTY safety
+  veto — which a strategy cannot override — then the first strategy that does not `defer`, then the
+  Warp default. `resolveInPlaceResize` is pure, taking the environment as an argument, so every host
+  combination is testable without mutating `process.env`
+
 ### Breaking Changes
 
 - `PluginSettingsManager.setEnabled`, `setEnabledFeatures` and `setPluginSetting` now resolve to

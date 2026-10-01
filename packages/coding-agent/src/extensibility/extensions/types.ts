@@ -68,10 +68,13 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 } from "@oh-my-pi/pi-tui";
+import type { Usage } from "@oh-my-pi/pi-catalog/usage-merge";
 import type { RawToolArgs } from "@oh-my-pi/pi-tui/tools/renderer";
 import type { logger as PiLogger } from "@oh-my-pi/pi-utils";
 import type { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
+import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+export type { HostRenderStrategy, HostRenderDecision, HostRenderContext } from "@oh-my-pi/pi-tui/host-render-strategy";
 export type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type { ModelRegistry } from "../../config/model-registry";
 import type { EditToolDetails } from "@oh-my-pi/pi-tui/tools/edit";
@@ -1776,6 +1779,31 @@ export interface ExtensionAPI {
 	 */
 	registerToolNameResolver(resolver: ToolNameResolver): void;
 
+	/**
+	 * Register a usage reporter for one of this extension's tools.
+	 *
+	 * A tool that makes a nested model call spends tokens the parent transcript
+	 * never shows: the sub-run's assistant messages live in the child's own
+	 * session, so without a reporter that spend is invisible to `/usage`, the
+	 * status line, the ACP usage update, and `packages/stats`.
+	 *
+	 * The reporter is called with the tool result's `details` payload — the part
+	 * that survives into the persisted `toolResult` message — so a resumed session
+	 * attributes exactly what the live one did.
+	 *
+	 * **Throws** when the tool name is not a non-empty trimmed string, when
+	 * `reporter` is not callable, or when that tool name already has a reporter.
+	 * Two reporters folding one tool would count the same tokens twice, and a
+	 * registration that is merely ignored is indistinguishable from one that never
+	 * happened.
+	 *
+	 * @example
+	 * ```typescript
+	 * pi.registerUsageReporter("summarize", details => details?.usage);
+	 * ```
+	 */
+	registerUsageReporter(toolName: string, reporter: UsageReporter): void;
+
 	/** Set the display label for this extension, or set a label on a specific entry. */
 	setLabel(entryIdOrLabel: string, label?: string | undefined): void;
 
@@ -1799,6 +1827,42 @@ export interface ExtensionAPI {
 	 * replaced; when extensions reuse an id, the later extension wins.
 	 */
 	registerComposerShape(definition: ComposerShapeDefinition): void;
+
+	/**
+	 * Contribute a rule for how a terminal resize should repaint: in place, or by
+	 * borrowing the alternate screen and replaying the transcript.
+	 *
+	 * Core already has an opinion, and it is a closed one — a private gate that
+	 * reads `Bun.env`, a hardcoded multiplexer classifier, and `TERM_PROGRAM`. An
+	 * extension whose terminal none of those recognise had no way in, and
+	 * `ExtensionTUISurface` does not expose the TUI itself, so it could not reach
+	 * `setResizeScrollback` either.
+	 *
+	 * ```ts
+	 * pi.registerHostRenderStrategy({
+	 *   id: "myterm",
+	 *   label: "MyTerminal repaints in place",
+	 *   decide: ({ env }) => (env.TERM_PROGRAM === "MyTerm" ? "in-place" : "defer"),
+	 * });
+	 * ```
+	 *
+	 * Precedence, in order: the user's `PI_TUI_RESIZE_IN_PLACE`, then core's
+	 * multiplexer/ConPTY safety veto, then the first strategy that does not
+	 * `defer`, then core's Warp default. A strategy may claim a host core has
+	 * never seen and may force the conservative borrow path, but it **cannot**
+	 * override the safety veto — those hosts are measurably broken for in-place
+	 * repaint, and a vendor's opinion does not change that.
+	 *
+	 * Call this during extension load, like the other `register*` methods: the
+	 * contribution is installed when the runner initializes, and removing it
+	 * again restores the pre-seam behaviour exactly.
+	 *
+	 * @throws when `id` is empty or untrimmed, when `label` is blank, when
+	 * `decide` is not callable, or when that id is already registered — a rejected
+	 * registration is reported rather than dropped in silence, because an ignored
+	 * one is indistinguishable from one that was never made.
+	 */
+	registerHostRenderStrategy(strategy: HostRenderStrategy): void;
 
 	// =========================================================================
 	// Actions
@@ -2088,6 +2152,22 @@ export interface ExtensionFlag {
  * registration order and stops at the first hit, so a resolver that fires on a
  * guess shadows every later one.
  */
+/**
+ * Extract the usage a tool result contributes to session totals.
+ *
+ * Return `undefined` for a result that spent nothing — "no opinion" is the normal
+ * answer and leaves the fold untouched rather than adding a zero. See
+ * `tools/usage-reporter.ts` for why this reads the PERSISTED `details` payload
+ * rather than the live result object.
+ */
+export type UsageReporter = (details: unknown) => Usage | undefined;
+
+/** One extension's usage reporter, as stored on {@link Extension}. */
+export interface UsageReporterRegistration {
+	toolName: string;
+	reporter: UsageReporter;
+}
+
 export type ToolNameResolver = (
 	name: string,
 	advertised: readonly { readonly name: string }[],
@@ -2328,6 +2408,9 @@ export interface Extension {
 	 * so a resolver that guesses shadows every later one.
 	 */
 	toolNameResolvers: ToolNameResolver[];
+	usageReporters: UsageReporterRegistration[];
+	/** Host render strategies, in registration order. First opinion wins. */
+	hostRenderStrategies: HostRenderStrategy[];
 }
 
 /**

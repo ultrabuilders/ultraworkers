@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `pi.registerHostRenderStrategy(...)`: an extension can contribute how a terminal resize repaints,
+  for a host omp's built-in multiplexer/`TERM_PROGRAM` detection does not recognise. A strategy
+  cannot override the user's `PI_TUI_RESIZE_IN_PLACE` or core's multiplexer/ConPTY safety veto;
+  unloading the extension restores the pre-seam decision exactly
+
 
 ### Breaking Changes
 

@@ -70,6 +70,8 @@ export type * from "./symbols";
 // Terminal interface and implementations
 export * from "./terminal";
 // Terminal image support
+// Host render strategy seam (resize repair choice, extension-contributed)
+export * from "./host-render-strategy";
 export * from "./terminal-capabilities";
 // Theme runtime (active theme singleton, loaders, shimmer, session accents, path → language)
 export * from "./theme";

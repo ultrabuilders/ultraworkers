@@ -81,6 +81,16 @@ const BUCKETS: ReadonlyArray<{ name: string; read: (ext: Extension) => number; m
 		mutation: "clearing with `.splice(0)` instead of assigning `length = 0`",
 	},
 	{
+		name: "usageReporters",
+		read: e => e.usageReporters.length,
+		mutation: "deleting `usageReporters.length = 0` — a stale reporter keeps adding a dead extension's tokens",
+	},
+	{
+		name: "hostRenderStrategies",
+		read: e => e.hostRenderStrategies.length,
+		mutation: "deleting `hostRenderStrategies.length = 0` — a dead extension keeps steering how the terminal repaints on resize",
+	},
+	{
 		name: "toolRegistrationListeners",
 		read: e => e.toolRegistrationListeners.size,
 		mutation: "omitting the listener trampoline, since no registration method fills it from the factory",
@@ -158,6 +168,7 @@ describe("ExtensionRunner.unloadExtension", () => {
 			api.registerShortcut("s", { description: "d", handler: async () => {} });
 			api.registerOutputFormat({ id: "probe-fmt", mimeType: "text/plain", format: () => new Uint8Array() });
 			api.registerToolNameResolver(() => undefined);
+			api.registerUsageReporter("probe_tool", () => undefined);
 		}, "/ext/buckets");
 		runnerFor([ext]).onToolRegistered(() => {});
 		return ext;
@@ -293,6 +304,17 @@ describe("ExtensionRunner.unloadExtension", () => {
 		expect(BUCKETS.find(b => b.name === "toolNameResolvers")!.read(ext)).toBeGreaterThan(0);
 		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
 		expect(BUCKETS.find(b => b.name === "toolNameResolvers")!.read(ext)).toBe(0);
+	});
+
+	// Distinguishing mutation: see BUCKETS["usageReporters"].mutation.
+	it("empties the usageReporters bucket", async () => {
+		const ext = await filledExt();
+		// Precondition first: an unfilled bucket passes this assertion no matter what
+		// the unload does, so a fixture that silently stopped filling would make the
+		// line green for the wrong reason.
+		expect(BUCKETS.find(b => b.name === "usageReporters")!.read(ext)).toBeGreaterThan(0);
+		expect(runnerFor([ext]).unloadExtension("/ext/buckets")).toBe(true);
+		expect(BUCKETS.find(b => b.name === "usageReporters")!.read(ext)).toBe(0);
 	});
 
 	// Distinguishing mutation: see BUCKETS["toolRegistrationListeners"].mutation.

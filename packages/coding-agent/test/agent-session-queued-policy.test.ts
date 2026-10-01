@@ -55,6 +55,8 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		outputFormats: new Map(),
 
 		toolNameResolvers: [],
+		usageReporters: [],
+	hostRenderStrategies: [],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),

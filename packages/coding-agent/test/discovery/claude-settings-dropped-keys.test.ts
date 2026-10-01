@@ -43,19 +43,26 @@ describe("a .claude/settings.json whose keys omp does not implement", () => {
 		fs.writeFileSync(path.join(cwd, ".claude", "settings.json"), JSON.stringify(contents));
 	}
 
+	/**
+	 * Warnings belonging to THIS test's project only.
+	 *
+	 * `loadCapability` resolves the user's home config from the real `os.homedir()`, with
+	 * no way to point it elsewhere — so a developer's own `~/.claude/settings.json` can
+	 * contribute warnings here. Matching on this test's temp cwd keeps the assertions
+	 * about what this test wrote, instead of about whoever is running it.
+	 */
+	function warningsForThisProject(warnings: readonly string[] | undefined): string[] {
+		return (warnings ?? []).filter(w => w.includes(cwd));
+	}
+
 	function load(): Promise<{ warnings?: string[] }> {
-		return loadCapability<Record<string, unknown>>(settingsCapability.id, {
-			cwd,
-			// Pinned so the test never reads the developer's own ~/.claude, and never
-			// mutates process.env either — that would leak into every other suite.
-			home: path.join(tempDir.path(), "home"),
-		});
+		return loadCapability<Record<string, unknown>>(settingsCapability.id, { cwd });
 	}
 
 	it("warns that a `hooks` block in the file is ignored, and says where hooks really live", async () => {
 		await writeSettings({ hooks: { PreToolUse: [{ matcher: "Bash" }] } });
 
-		const warnings = (await load()).warnings ?? [];
+		const warnings = warningsForThisProject((await load()).warnings);
 		const hookWarning = warnings.find(w => w.includes("hooks"));
 
 		// The whole point of the item: without this line the user's `hooks` block is a
@@ -74,7 +81,7 @@ describe("a .claude/settings.json whose keys omp does not implement", () => {
 		// registered today, so it does not rot when the registry changes.
 		await writeSettings({});
 
-		expect((await load()).warnings ?? []).toEqual([]);
+		expect(warningsForThisProject((await load()).warnings)).toEqual([]);
 	});
 
 	it("lists other unimplemented keys without volunteering hook advice", async () => {
@@ -83,7 +90,7 @@ describe("a .claude/settings.json whose keys omp does not implement", () => {
 		// send users looking for a feature they did not ask about.
 		await writeSettings({ permissions: {}, statusLine: {} });
 
-		const warnings = (await load()).warnings ?? [];
+		const warnings = warningsForThisProject((await load()).warnings);
 		const warning = warnings.find(w => w.includes("permissions"));
 
 		expect(warning).toBeDefined();

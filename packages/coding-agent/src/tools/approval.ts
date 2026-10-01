@@ -27,7 +27,7 @@ export interface ResolvedExecuteTimeApproval {
 	userPolicies: Record<string, unknown>;
 }
 
-type ApprovalSubject = Pick<AgentTool, "name" | "approval" | "formatApprovalDetails"> & {
+export type ApprovalSubject = Pick<AgentTool, "name" | "approval" | "formatApprovalDetails"> & {
 	/**
 	 * Previous public name of this tool, when a rename changed how it mints.
 	 * MCP tools minted before digits were kept carry their digit-stripped name

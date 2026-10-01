@@ -22,7 +22,6 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import * as path from "node:path";
-import type { ToolCallEvent } from "@oh-my-pi/pi-coding-agent/extensibility/shared-events";
 import type { ToolCallEventResult } from "@oh-my-pi/pi-coding-agent/extensibility/shared-events";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
@@ -33,7 +32,10 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { TempDir } from "@oh-my-pi/pi-utils";
 
-const CALL_EVENT = { type: "tool_call", toolName: "bash", toolCallId: "call-1", input: { command: "ls" } };
+// One literal serves both runners: they declare structurally identical but nominally
+// separate `ToolCallEvent` types. `as const` on `type` is what lets one object satisfy
+// both without a cast at every call site.
+const CALL_EVENT = { type: "tool_call" as const, toolName: "bash", toolCallId: "call-1", input: { command: "ls" } };
 
 describe("a tool_call hook that breaks vs one that denies", () => {
 	let tempDir: TempDir;
@@ -90,7 +92,7 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 		it("labels a throwing handler hook-failed, and still fails closed", async () => {
 			const result = (await extensionRunner(async () => {
 				throw new Error("extension exploded");
-			}).emitToolCall(CALL_EVENT as ToolCallEvent)) as ToolCallEventResult;
+			}).emitToolCall(CALL_EVENT)) as ToolCallEventResult;
 
 			// Preservation first. `block` staying true is the fail-closed contract: a
 			// crashed pre-execution gate must never read as consent to run the tool.
@@ -111,7 +113,7 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 				block: true,
 				reason: "not allowed in this repo",
 				kind: "denied",
-			})).emitToolCall(CALL_EVENT as ToolCallEvent)) as ToolCallEventResult;
+			})).emitToolCall(CALL_EVENT)) as ToolCallEventResult;
 
 			expect(result.block).toBe(true);
 			expect(result.kind).toBe("denied");
@@ -124,7 +126,7 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 			// "something denied it".
 			const result = (await extensionRunner(async () => ({
 				additionalContext: ["repo uses tabs"],
-			})).emitToolCall(CALL_EVENT as ToolCallEvent)) as ToolCallEventResult | undefined;
+			})).emitToolCall(CALL_EVENT)) as ToolCallEventResult | undefined;
 
 			expect(result?.kind).toBeUndefined();
 		});
@@ -144,7 +146,7 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 			// Fail-closed is unchanged: the throw still propagates, so the caller blocks.
 			let thrown: Error | undefined;
 			try {
-				await runner.emitToolCall(CALL_EVENT as ToolCallEvent);
+				await runner.emitToolCall(CALL_EVENT);
 			} catch (err) {
 				thrown = err as Error;
 			}
@@ -162,7 +164,7 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 				block: true,
 				reason: "denied by policy",
 				kind: "denied",
-			})).emitToolCall(CALL_EVENT as ToolCallEvent)) as ToolCallEventResult;
+			})).emitToolCall(CALL_EVENT)) as ToolCallEventResult;
 
 			expect(result.kind).toBe("denied");
 		});

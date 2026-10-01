@@ -1,7 +1,7 @@
 {
   "capturedAt": "2026-10-02",
-  "head": "28ce317fe8",
-  "note": "Real capture, not synthetic. Captured at 28ce317fe8 by running packages/coding-agent/test/ once. The gate tolerates exactly the names below and goes red only on a NEW name. A failing test that stops failing is reported as healed, not punished - drop it here in a follow-up. Captured by running the suite once; names are the gate's own (fail) lines with bun's trailing duration stripped, which is the normalization it applies. THE TWO COUNTS IN THIS FILE ARE NOT THE SAME NUMBER, and reading them as one is what makes this artifact look self-contradictory: bun tallied 718 failures, and `failures` below holds 716 DISTINCT identities. The gap is duplicate identities - the same test name failing in more than one file, or reported twice by the runner - which bun counts once per line and this list counts once per name. Confirmed on an independent full run of the same suite: 727 (fail) lines, 1 suite-level error, 722 distinct identities, so 5 lines collapsed to names, and ci-failure-extract flags that as `overCounted` with `discrepant: true`. The array is the authority for what the gate compares; the prose tally is bun's, and neither is wrong.",
+  "head": "bb487549d1",
+  "note": "Real capture, not synthetic. Captured at 28ce317fe8 by running packages/coding-agent/test/ once. The gate tolerates exactly the names below and goes red only on a NEW name. A failing test that stops failing is reported as healed, not punished - drop it here in a follow-up. Captured by running the suite once; names are the gate's own (fail) lines with bun's trailing duration stripped, which is the normalization it applies. THE TWO COUNTS IN THIS FILE ARE NOT THE SAME NUMBER, and reading them as one is what makes this artifact look self-contradictory: bun tallied 718 failures, and `failures` below holds 716 DISTINCT identities. The gap is duplicate identities - the same test name failing in more than one file, or reported twice by the runner - which bun counts once per line and this list counts once per name. Confirmed on an independent full run of the same suite: 727 (fail) lines, 1 suite-level error, 722 distinct identities, so 5 lines collapsed to names, and ci-failure-extract flags that as `overCounted` with `discrepant: true`. The array is the authority for what the gate compares; the prose tally is bun's, and neither is wrong. Entries verified healed on 2026-10-02 (gate run 6, 713 present + 3 healed = 716) were removed: two Warp CLI-agent event tests (b99ef80db3) and the feature-mechanism table proof (5470acb28e). Each was then run 3x directly at flat load, 6/6 pass.",
   "failures": [
     "/branch slash command > opens the branch selector even when double-Escape is disabled",
     "/collab slash command QR code rendering > keeps the browser URL on the first status row so transcript clipping cannot hide it",
@@ -214,8 +214,6 @@
     "UiHelpers.renderInitialMessages \u2014 responsiveness > yields across a large parallel read-result batch",
     "UiHelpers.renderSessionContext \u2014 error-stop tool calls > keeps the synthetic assistant error result instead of replaying a later tool result",
     "UiHelpers.renderSessionContext \u2014 mid-stream tool call rebuild > decodes streamed write content from partialJson, not the provider's stale parsed arguments",
-    "Warp CLI-agent events > emits an exact OSC 777 stop event",
-    "Warp CLI-agent events > maps approval requests to Warp permission requests",
     "WorkPool dispatch > auto-delivers one aggregate completion under the pool id",
     "WorkPool dispatch > close drops queued items but lets the in-flight turn finish",
     "WorkPool dispatch > hands a queued batch to a follow-up turn after the first turn settles",
@@ -297,7 +295,6 @@
     "disabledExtensions runtime filtering > hides disabled context files from runtime loads by default",
     "disabledExtensions runtime filtering > keeps the runtime context winner active in the dashboard when its competitor is disabled",
     "disabledExtensions runtime filtering > marks a disabled lower-priority row shadowed when an enabled higher-priority item owns the key",
-    "docs/feature-mechanism.md > a proof names a test under packages/*/test, or is a `none` that owes one to a named work item",
     "eval judge() bridge > answers through the smol chat model and returns typed answers with the backend",
     "eval judge() bridge > rejects malformed questions before touching any backend",
     "eval judge() bridge > rejects when the chat model answers off-format",

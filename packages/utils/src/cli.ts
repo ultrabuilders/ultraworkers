@@ -149,7 +149,18 @@ export interface CommandCtor extends CommandMetadata {
 
 /** Configuration passed to every command instance and help renderers. */
 export interface CliConfig<TCommand extends CommandMetadata = CommandCtor> {
+	/**
+	 * What the program CALLS ITSELF: the `--version` banner and the root-help
+	 * header. A brand, and the rebrand may change it freely.
+	 */
 	bin: string;
+	/**
+	 * What the user TYPES: every `$ <name> <command>` usage line. Defaults to
+	 * `bin`, and differs from it whenever the shipped command name is not the
+	 * brand — printing the brand here yields a line nobody can paste, because the
+	 * command on PATH is named by `bin` in the package manifest, not by the app.
+	 */
+	command?: string;
 	version: string;
 	/** All registered commands keyed by their canonical name. */
 	commands: Map<string, TCommand>;
@@ -294,11 +305,11 @@ export abstract class Command {
 
 /** Render full root help: header, default command details, subcommand list. */
 export function renderRootHelp(config: CliConfig<CommandMetadata>): void {
-	const { bin, version, commands } = config;
+	const { bin, command = bin, version, commands } = config;
 	const lines: string[] = [];
 	lines.push(`${bin} v${version}\n`);
 	lines.push("USAGE");
-	lines.push(`  $ ${bin} [COMMAND]\n`);
+	lines.push(`  $ ${command} [COMMAND]\n`);
 
 	// Show the default command's flags/args/examples inline.
 	// The default command is the one marked hidden (it's the implicit entry point).
@@ -338,17 +349,17 @@ function formatUsageArgs(Cmd: CommandCtor): string {
 }
 
 /** Build the single USAGE line for a command (without the leading label). */
-export function commandUsageLine(bin: string, id: string, Cmd: CommandCtor): string {
+export function commandUsageLine(command: string, id: string, Cmd: CommandCtor): string {
 	const hasFlags = Object.keys(Cmd.flags ?? {}).length > 0;
-	return `$ ${bin} ${id}${formatUsageArgs(Cmd)}${hasFlags ? " [FLAGS]" : ""}`;
+	return `$ ${command} ${id}${formatUsageArgs(Cmd)}${hasFlags ? " [FLAGS]" : ""}`;
 }
 
 /** Render help for a single command. */
-export function renderCommandHelp(bin: string, id: string, Cmd: CommandCtor): void {
+export function renderCommandHelp(command: string, id: string, Cmd: CommandCtor): void {
 	const lines: string[] = [];
 	if (Cmd.description) lines.push(`${Cmd.description}\n`);
 	lines.push("USAGE");
-	lines.push(`  ${commandUsageLine(bin, id, Cmd)}\n`);
+	lines.push(`  ${commandUsageLine(command, id, Cmd)}\n`);
 	renderCommandBody(lines, Cmd);
 	process.stdout.write(lines.join("\n"));
 }
@@ -415,6 +426,8 @@ export interface CommandEntry {
 
 export interface RunOptions {
 	bin: string;
+	/** The typeable command name. Defaults to `bin`; see {@link CliConfig.command}. */
+	command?: string;
 	version: string;
 	argv: string[];
 	commands: CommandEntry[];
@@ -437,6 +450,7 @@ function findEntry(commands: CommandEntry[], id: string): CommandEntry | undefin
  */
 export async function run(opts: RunOptions): Promise<void> {
 	const { bin, version, argv } = opts;
+	const command = opts.command ?? bin;
 
 	const commandId = argv[0] ?? "";
 	const commandArgv = argv.slice(1);
@@ -469,7 +483,7 @@ export async function run(opts: RunOptions): Promise<void> {
 		const entry = findEntry(opts.commands, commandId);
 		if (entry) {
 			const Cmd = await loadEntry(entry);
-			renderCommandHelp(bin, entry.name, Cmd);
+			renderCommandHelp(command, entry.name, Cmd);
 		} else {
 			process.stderr.write(`Unknown command: ${commandId}\n`);
 		}
@@ -486,7 +500,7 @@ export async function run(opts: RunOptions): Promise<void> {
 	}
 
 	const Cmd = await loadEntry(entry);
-	const config: CliConfig = { bin, version, commands: new Map([[entry.name, Cmd]]) };
+	const config: CliConfig = { bin, command, version, commands: new Map([[entry.name, Cmd]]) };
 	const instance = new Cmd(commandArgv, config);
 	try {
 		await instance.run();
@@ -497,8 +511,8 @@ export async function run(opts: RunOptions): Promise<void> {
 		// plain argument error (issue #5369).
 		if (error instanceof CliUsageError) {
 			process.stderr.write(`error: ${error.message}\n\n`);
-			process.stderr.write(`USAGE\n  ${commandUsageLine(bin, entry.name, Cmd)}\n`);
-			process.stderr.write(`\nRun \`${bin} ${entry.name} --help\` for details.\n`);
+			process.stderr.write(`USAGE\n  ${commandUsageLine(command, entry.name, Cmd)}\n`);
+			process.stderr.write(`\nRun \`${command} ${entry.name} --help\` for details.\n`);
 			process.exitCode = 1;
 			return;
 		}
@@ -517,7 +531,7 @@ async function loadEntry(entry: CommandEntry): Promise<CommandCtor> {
 /** Load every command constructor for backward-compatible custom help callbacks. */
 async function loadAllCommands(opts: RunOptions): Promise<CliConfig> {
 	const loaded = await Promise.all(opts.commands.map(async entry => [entry.name, await loadEntry(entry)] as const));
-	return { bin: opts.bin, version: opts.version, commands: new Map(loaded) };
+	return { bin: opts.bin, command: opts.command, version: opts.version, commands: new Map(loaded) };
 }
 
 /** Resolve static command metadata for lightweight root help. */
@@ -525,5 +539,5 @@ async function loadAllCommandMetadata(opts: RunOptions): Promise<CliConfig<Comma
 	const loaded = await Promise.all(
 		opts.commands.map(async entry => [entry.name, entry.help ?? (await loadEntry(entry))] as const),
 	);
-	return { bin: opts.bin, version: opts.version, commands: new Map(loaded) };
+	return { bin: opts.bin, command: opts.command, version: opts.version, commands: new Map(loaded) };
 }

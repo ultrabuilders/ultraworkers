@@ -11,6 +11,11 @@ import type { CliConfig, CommandCtor } from "@oh-my-pi/pi-utils/cli";
 // output here defends the exact bytes each shell parses without booting the CLI.
 const spec: CompletionSpec = {
 	bin: "omp",
+	// Deliberately NOT equal to `bin`. A fixture where the two names coincide
+	// cannot observe a generator that picked the wrong one: every role would
+	// read the same value and the defect would be invisible. Distinct values are
+	// what make the row below able to fail.
+	brand: "brandname",
 	root: {
 		flags: [
 			{ name: "model", description: "Model to use", value: { kind: "models", multiple: false }, repeatable: false },
@@ -136,6 +141,23 @@ describe("generateCompletion — zsh", () => {
 		expect(out).toContain("compdef _omp omp");
 	});
 
+	it("spends the invocable name on everything the shell resolves and the brand on prose alone", () => {
+		// The two failure modes are separate and both are silent, which is why they
+		// need separate assertions rather than one "mentions the right name" check.
+		//
+		// `#compdef` and the `compdef` tail are what `compinit`/`compdef` BIND the
+		// user's typed command to; the `command ${bin} __complete` line is what the
+		// script EXECUTES. Measured against zsh directly: a file tagged
+		// `#compdef brandname` leaves `acme` with no completion at all. So all
+		// three must carry `omp`, and none may carry the brand.
+		expect(out).toContain(`#compdef ${spec.bin}\n`);
+		expect(out).toContain(`compdef _omp ${spec.bin}`);
+		expect(out).toContain(`command ${spec.bin} __complete`);
+		// Prose is the one place the brand is correct — it tells the reader what
+		// product the file is for without being resolved by anything.
+		expect(out).toContain(`# zsh completion for ${spec.brand}`);
+	});
+
 	it("maps value sources to the right _arguments actions", () => {
 		expect(out).toContain("'--model[Model to use]:model:_omp_call models'");
 		expect(out).toContain("'--models[Model list]:models:_omp_models_list'");
@@ -236,6 +258,21 @@ describe("buildSpec", () => {
 });
 
 describe("live completion surface", () => {
+	/**
+	 * The command an installer actually puts on PATH. Read from the manifest, not
+	 * from WIRE_NAME and not as a literal: a hand-kept copy stays green after the
+	 * binary it copies is renamed, which is one defect three times over in this repo
+	 * (`BUNDLED_PACKAGES`, `cacheKey`, and the name a user is told to paste).
+	 */
+	async function invocableCommand(): Promise<string> {
+		const manifest = (await Bun.file(path.resolve(import.meta.dir, "../../package.json")).json()) as {
+			bin: Record<string, string>;
+		};
+		const name = Object.keys(manifest.bin)[0];
+		expect(name).toBeTruthy();
+		return name;
+	}
+
 	it("generates a zsh script reflecting the registered commands and flags", async () => {
 		const stdout = await generateLiveCompletion("zsh");
 
@@ -256,9 +293,40 @@ describe("live completion surface", () => {
 		// itself shells out to `omp __complete $kind`.
 		expect(stdout).toContain("_omp_call models");
 		expect(stdout).toContain("_omp_call sessions");
-		expect(stdout).toContain("command omp __complete $kind");
+		expect(stdout).toContain(`command ${await invocableCommand()} __complete $kind`);
 		// Hidden/default commands must NOT surface as completable subcommands.
 		expect(stdout).not.toContain("_omp_cmd_launch");
 		expect(stdout).not.toContain("_omp_cmd___complete");
+	}, 30_000);
+
+	it("binds the generated file to the command the installer ships, not to the brand", async () => {
+		// This is the row that covers the defect in the artifact itself rather than
+		// in the spec fed to the generator. At HEAD the spec carried `bin: APP_NAME`,
+		// so `omp completions zsh` emitted `#compdef ultraworkers` and
+		// `command ultraworkers __complete`. Nothing reported it: the script is still
+		// valid shell, it simply never matched a command the user types, so the
+		// shell's completions did nothing at all with no error anywhere.
+		//
+		// Asserted against the manifest so that renaming `package.json#bin` — the
+		// one event that makes the copy wrong — turns this red rather than leaving
+		// it green beside a stale expectation.
+		const stdout = await generateLiveCompletion("zsh");
+		const invocable = await invocableCommand();
+
+		expect(stdout.startsWith(`#compdef ${invocable}\n`)).toBe(true);
+		expect(stdout).toContain(`compdef _omp ${invocable}`);
+
+		// The negative half, stated as the contract rather than as a brand check:
+		// every command the script EXECUTES must be the invocable one. Written this
+		// way it needs no brand constant, so it cannot be disarmed by renaming the
+		// brand — a `not.toContain(APP_NAME)` would silently stop meaning anything
+		// the day APP_NAME changed, which is the event it exists to catch.
+		//
+		// Anchored on `$(command X …` because the bare word appears in real flag
+		// help ("Timeout per command in milliseconds"), so a looser match would
+		// collect descriptions and fail for the wrong reason.
+		const executed = [...stdout.matchAll(/\$\(\s*command\s+([\w.-]+)/g)].map(m => m[1]);
+		expect(executed.length).toBeGreaterThan(0);
+		expect([...new Set(executed)]).toEqual([invocable]);
 	}, 30_000);
 });

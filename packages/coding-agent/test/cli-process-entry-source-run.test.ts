@@ -18,7 +18,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import * as path from "node:path";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, TempDir } from "@oh-my-pi/pi-utils";
 
 const repoRoot = path.resolve(import.meta.dir, "../../..");
 const cliEntry = path.join(repoRoot, "packages/coding-agent/src/cli.ts");
@@ -65,6 +65,47 @@ describe("the CLI entry runs from source", () => {
 
 		expect(run.stdout.length).toBeGreaterThan(0);
 		expect(run.exitCode).toBe(0);
+	});
+
+	/**
+	 * The command an installer actually puts on PATH. Read from the manifest rather
+	 * than from `WIRE_NAME`: a hand-kept copy stays green after the binary it copies
+	 * is renamed, which is one defect three times over in this repo (55's
+	 * `BUNDLED_PACKAGES`, 63's `cacheKey`, and this). The manifest is the floor.
+	 */
+	async function invocableCommand(): Promise<string> {
+		const manifest = (await Bun.file(path.join(repoRoot, "packages/coding-agent/package.json")).json()) as {
+			bin: Record<string, string>;
+		};
+		const name = Object.keys(manifest.bin)[0];
+		expect(name).toBeTruthy();
+		return name;
+	}
+
+	it("prints the invocable command, not the brand, in a usage line", async () => {
+		// Split from the banner row on purpose. With both assertions in one row, a
+		// wrong brand kills the row and the usage line's correctness is never seen to
+		// survive; two rows let a single wrong value move exactly one of them, which
+		// is the whole evidence that the two roles are independent.
+		const help = await runCli(["update", "--help"]);
+		expect(help.stdout).toContain(`$ ${await invocableCommand()} update`);
+	});
+
+	it("prints examples naming the invocable command, not the brand", async () => {
+		// `static examples` had no coverage at all, which is why it was still a
+		// hand-written literal when the rebrand moved every rendered name at once.
+		// Separate row from the usage line because the two are rendered by different
+		// code — a fix that reached only `renderRootHelp` would leave this red.
+		const help = await runCli(["update", "--help"]);
+		expect(help.stdout).toContain(`${await invocableCommand()} update --canary`);
+	});
+
+	it("prints the brand, not the invocable command, on the version banner", async () => {
+		// The banner is what the updater parses. `parseReportedVersion` accepts either
+		// identity while the rename is in flight, so pinning the brand here is a
+		// statement about intent, not a gate on today's value.
+		const version = await runCli(["--version"]);
+		expect(version.stdout.startsWith(`${APP_NAME}/`)).toBe(true);
 	});
 
 	it("a subcommand runs and reports through the same entry", async () => {

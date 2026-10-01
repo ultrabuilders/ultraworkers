@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
+import * as path from "node:path";
 import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { fixedNpmRegistry } from "../../src/cli/npm-registry";
 import { getLatestRelease, runUpdateCommand } from "../../src/cli/update-cli";
@@ -187,6 +188,23 @@ describe("getLatestRelease configured registry", () => {
 		// thing under test — unlike the version banner, where it was the suspect.
 		await expect(getLatestRelease({ channel: "canary", registries: feed })).rejects.toThrow(
 			`Try \`${WIRE_NAME} update --stable\``,
+		);
+		// The row above is necessary but not sufficient, and the gap is the interesting
+		// part. It interpolates the same constant the code does, so it stays green if
+		// that constant drifts away from the command an installer actually ships:
+		// rename `package.json#bin` to `ultraworkers` and this row still passes while
+		// the remedy tells the reader to type a command they do not have.
+		//
+		// So the remedy is also checked against the manifest, which is the ground
+		// truth for "a command you can paste". Renaming the bin key turns THIS row
+		// red and leaves the one above green — the pair is what closes the copy.
+		const manifest = (await Bun.file(path.resolve(import.meta.dir, "../../package.json")).json()) as {
+			bin: Record<string, string>;
+		};
+		const invocable = Object.keys(manifest.bin)[0];
+		expect(invocable).toBeTruthy();
+		await expect(getLatestRelease({ channel: "canary", registries: feed })).rejects.toThrow(
+			`Try \`${invocable} update --stable\``,
 		);
 	});
 });

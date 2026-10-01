@@ -26,6 +26,7 @@ import {
 	resolveProfileEnv,
 	setProfile,
 	VERSION,
+	WIRE_NAME,
 } from "@oh-my-pi/pi-utils/dirs";
 
 import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";
@@ -616,7 +617,17 @@ export async function runCli(argv: string[]): Promise<void> {
 			return;
 		}
 		runningCommand = resolved.argv[0];
-		await run({ bin: APP_NAME, version: VERSION, argv: resolved.argv, commands, metadataHelp: showHelp });
+		await run({
+			bin: APP_NAME,
+			// The command on PATH is `omp` (see the package `bin`); the brand is not.
+			// Printing the brand in a usage line produced `$ ultraworkers update`,
+			// which a reader cannot paste.
+			command: WIRE_NAME,
+			version: VERSION,
+			argv: resolved.argv,
+			commands,
+			metadataHelp: showHelp,
+		});
 	} finally {
 		stopStartupComposer?.();
 	}

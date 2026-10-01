@@ -1,12 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-	__resetDirsFromEnvForTests,
-	getConfigAgentDirName,
-	PROJECT_AGENT_DIR_NAME,
-	TempDir,
-} from "@oh-my-pi/pi-utils";
+import { __resetDirsFromEnvForTests, getConfigAgentDirName, PROJECT_AGENT_DIR_NAME, TempDir } from "@oh-my-pi/pi-utils";
 import {
 	buildSystemPrompt,
 	discoverSystemPromptOverride,

@@ -34,6 +34,7 @@ import type { CustomMessagePayload } from "../../session/messages";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
 import type { CompactionProtection } from "../../tools/compaction-protection";
 import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 import type { ContextTransform } from "../../tools/compaction-transforms";
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 import { lookup as lookupSetting, registerOwned } from "../../config/registry";
@@ -470,6 +471,29 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.hostRenderStrategies.push({ ...strategy, id });
 	}
 
+	registerCopyTargetProvider(provider: CopyTargetProvider): void {
+		const id = typeof provider.id === "string" ? provider.id.trim() : "";
+		// Re-validated here, not only in `registerCopyTargetProvider`: the registry
+		// is a module singleton, so a definition that skipped its own check would
+		// otherwise be refused at install time with no extension named.
+		if (id.length === 0) {
+			throw new TypeError(
+				`Extension ${this.extension.path}: copy target provider id must be a non-empty trimmed string`,
+			);
+		}
+		if (typeof provider.label !== "string" || provider.label.trim().length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: copy target provider "${id}" must have a label`);
+		}
+		if (typeof provider.collect !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: copy target provider "${id}" must provide collect(), got ${typeof provider.collect}`,
+			);
+		}
+		// Appended, not replaced: a provider's blocks join core's own extraction
+		// rather than displacing it, and order is the tiebreak.
+		this.extension.copyTargetProviders.push({ ...provider, id });
+	}
+
 	registerOutputFormat(format: OutputFormat): void {
 		const id = format.id;
 		// Charset, not just trimming: the id becomes part of the output filename
@@ -620,6 +644,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		toolNameResolvers: [] as ToolNameResolver[],
 		usageReporters: [] as UsageReporterRegistration[],
 		hostRenderStrategies: [] as HostRenderStrategy[],
+		copyTargetProviders: [] as CopyTargetProvider[],
 		diagnostics: [] as ExtensionDiagnostic[],
 		composerShapes: new Map(),
 		commands: new Map(),

@@ -4,6 +4,8 @@
 
 ### Added
 
+- `pi.registerCopyTargetProvider(...)`: an extension can contribute its own copy targets to the `/copy` picker. A tool an extension registered previously produced only the generic `<toolName> result` block, because the picker's target set was a closed core function over transcript message roles. A provider is asked per transcript entry and returns nothing for entries it does not own, so core's own extraction — fenced code, quotes, links, commands, tool results — runs first and is never displaced; a provider appends. A contributed block cannot forge provenance (the entry is stamped by core), and one that cannot be a copy target is dropped with the provider id recorded rather than shown broken, so a misbehaving provider never takes the picker's built-in targets with it. Registration refuses a blank id, a blank label, a non-callable `collect`, or a duplicate id, naming the extension
+
 - `omp session list|archive|unarchive`: manage sessions from the shell. `list` reads through the same enumeration `omp gc` uses, so the two commands cannot disagree about which sessions exist, and a session whose transcript is truncated still lists under its real title because the title lives in a fixed-width slot at the head of the file. `archive` files a session exactly where `omp gc` already reconciles archived sessions, so gc stops treating it as live; `unarchive` restores it, decompressed, to a path the session scanner finds again. `--last` prints a bare path for `--resume`, `--all` includes archived sessions, and `--json` emits the same rows as a machine-readable form
 
 - `pi.registerDiagnostic(...)`: an extension can contribute its own check to `omp plugin doctor`, so a

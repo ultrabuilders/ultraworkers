@@ -904,6 +904,35 @@ Precedence, in order:
 
 A strategy may claim a host core has never seen, and may force the conservative borrow path. It may not talk core out of a host that is broken without one. Registration throws on an empty or untrimmed `id`, a blank `label`, a non-callable `decide`, or a duplicate `id`.
 
+### `registerCopyTargetProvider` — adding your own copy targets
+
+`registerCopyTargetProvider` contributes blocks to the `/copy` picker. Core's target set was a closed function: it walked transcript entries, switched on the message role, and emitted a fixed set — fenced code, quotes, links, a bash/eval command, a tool result. A tool an extension registered produced only the generic `<toolName> result` block, and there was no way to add a copy kind, a label, or a preview language.
+
+```ts
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+
+export default function register(pi: ExtensionAPI): void {
+  pi.registerCopyTargetProvider({
+    id: "deploy",
+    label: "Deploy targets",
+    collect: entry => {
+      const message = entry.type === "message" ? entry.message : undefined;
+      if (message?.role !== "toolResult" || message.toolName !== "deploy") return undefined;
+      return [{ label: "release id", content: "v2.4.0", kind: "command" }];
+    },
+  });
+}
+```
+
+A provider is asked once per transcript entry and returns nothing for entries it does not own. Core's extraction runs first and is never displaced, so a provider **appends** — your blocks appear after the built-in ones for that turn, and a provider cannot remove a user's fenced code. Setting `href` turns the block into a link block whose `o` opens the URL; `language` picks the preview highlighter.
+
+Two rules keep this from being a foot-gun:
+
+- **A block always names the turn it came from.** `entry` is stamped by core, not by you, so a custom tool's output cannot claim to be a user's message.
+- **Malformed contributions are dropped, not shown broken.** Empty content, a blank label, a non-string `href`, a non-array return, or a `collect()` that throws are each skipped with the provider id recorded; a throwing provider never takes the built-in targets down with it.
+
+Registration throws on an empty or untrimmed `id`, a blank `label`, a non-callable `collect`, or a duplicate `id` — naming the offending extension, because a registration that is silently ignored is indistinguishable from one that never happened.
+
 ## Composer shape renderer
 
 `registerComposerShape` adds an extension-owned input-editor layout to **Appearance → Composer Shape**. Register it from the extension factory; the renderer is used by the live editor and its settings preview.

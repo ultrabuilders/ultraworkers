@@ -41,6 +41,7 @@ import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-wr
 import { addCompactionProtection } from "../../tools/compaction-protection";
 import { addContextTransform } from "../../tools/compaction-transforms";
 import { registerHostRenderStrategy, type HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 import { releaseDiagnostics } from "./diagnostics";
 import { addUsageReporter } from "../../tools/usage-reporter";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
@@ -552,6 +553,7 @@ export function clearExtensionBuckets(extension: Extension): void {
 	releaseDiagnostics(extension.path);
 	extension.diagnostics.length = 0;
 	extension.hostRenderStrategies.length = 0;
+	extension.copyTargetProviders.length = 0;
 	extension.toolRegistrationListeners.clear();
 }
 
@@ -1411,6 +1413,15 @@ export class ExtensionRunner {
 	 */
 	getHostRenderStrategies(): HostRenderStrategy[] {
 		return this.extensions.flatMap(extension => extension.hostRenderStrategies);
+	}
+
+	/**
+	 * Every registered copy-target provider, in registration order across
+	 * extensions. The picker appends what they return after core's own blocks,
+	 * so this order decides which contributed block a user sees first.
+	 */
+	getCopyTargetProviders(): CopyTargetProvider[] {
+		return this.extensions.flatMap(extension => extension.copyTargetProviders);
 	}
 
 	getComposerShapes(): ComposerShapeDefinition[] {

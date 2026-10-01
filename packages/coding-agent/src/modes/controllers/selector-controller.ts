@@ -1241,6 +1241,7 @@ export class SelectorController {
 			hideThinkingBlock: () => this.ctx.effectiveHideThinkingBlock,
 			proseOnlyThinking: () => this.ctx.proseOnlyThinking,
 			linkTargets: getAssistantMessageLinkTargets(this.ctx),
+			copyTargetProviders: this.ctx.session.extensionRunner?.getCopyTargetProviders() ?? [],
 			requestRender: () => this.ctx.ui.requestRender(),
 			onPick: (content, label) => {
 				done();

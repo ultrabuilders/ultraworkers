@@ -75,7 +75,13 @@ import type { logger as PiLogger } from "@oh-my-pi/pi-utils";
 import type { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 export type { HostRenderStrategy, HostRenderDecision, HostRenderContext } from "@oh-my-pi/pi-tui/host-render-strategy";
+export type {
+	CopyTargetProvider,
+	CopyTargetBlock,
+	CopyTargetContext,
+} from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 export type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
 import type { ModelRegistry } from "../../config/model-registry";
 import type { EditToolDetails } from "@oh-my-pi/pi-tui/tools/edit";
@@ -1781,6 +1787,21 @@ export interface ExtensionAPI {
 	registerToolNameResolver(resolver: ToolNameResolver): void;
 
 	/**
+	 * Register a copy-target provider for the `/copy` picker.
+	 *
+	 * The picker's target set was core-owned: a tool this extension registers
+	 * produced only the generic `<toolName> result` block, and there was no way to
+	 * add a copy kind, a label, or a preview language. A provider is asked per
+	 * transcript entry and returns blocks for the ones it owns.
+	 *
+	 * Core's own extraction runs first and is never displaced — a provider appends.
+	 * A block that cannot be a copy target (empty content, blank label, a
+	 * non-string `href`) is dropped rather than shown broken, and a provider that
+	 * throws is skipped without taking the picker's built-in targets with it.
+	 */
+	registerCopyTargetProvider(provider: CopyTargetProvider): void;
+
+	/**
 	 * Register a usage reporter for one of this extension's tools.
 	 *
 	 * A tool that makes a nested model call spends tokens the parent transcript
@@ -2443,6 +2464,7 @@ export interface Extension {
 	usageReporters: UsageReporterRegistration[];
 	/** Host render strategies, in registration order. First opinion wins. */
 	hostRenderStrategies: HostRenderStrategy[];
+	copyTargetProviders: CopyTargetProvider[];
 	/** Diagnostics contributed to `omp plugin doctor`, in registration order. */
 	diagnostics: ExtensionDiagnostic[];
 }

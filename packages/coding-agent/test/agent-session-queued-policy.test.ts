@@ -58,6 +58,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		usageReporters: [],
 		diagnostics: [],
 		hostRenderStrategies: [],
+		copyTargetProviders: [],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),

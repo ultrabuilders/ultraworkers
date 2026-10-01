@@ -4,6 +4,8 @@
 
 ### Added
 
+- `registerCopyTargetProvider`: an extension can now contribute copy targets to the `/copy` picker. Core's target set was a closed function over transcript message roles, so a tool an extension registered produced only the generic `<toolName> result` block and there was no way to add a copy kind, label, or preview language. A provider is asked per entry and returns nothing for entries it does not own; core's extraction runs first and is never displaced, so a provider appends rather than replaces. Provenance is core's, so a contributed block always names the turn it came from; a block with empty content or a blank label, a non-string `href`, a non-array return, or a `collect()` that throws is dropped and recorded against the provider rather than shown broken
+
 - `registerHostRenderStrategy`: an extension can now contribute a rule for how a terminal resize
   repaints, for hosts omp's closed multiplexer/`TERM_PROGRAM` classifier does not recognise. The
   precedence is the user's `PI_TUI_RESIZE_IN_PLACE` first, then core's multiplexer/ConPTY safety

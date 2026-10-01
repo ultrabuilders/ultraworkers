@@ -99,7 +99,7 @@ The current weather in Tokyo is 15 degrees Celsius and sunny.<turn|>
 - **Bare scalars.** A value not wrapped in `<|"|>` is `true`/`false` → bool, `null`/`none` → null, numeric → number, otherwise a bare string (e.g. an unquoted enum or type name like `STRING`).
 - **Tool-call ids are synthesized.** The format carries no id; after receiving a complete closed block, OMP parses it and emits adjacent `toolStart`/`toolEnd` events with a newly minted id. Rendered responses are correlated by surrounding message order/name.
 - **Not Gemma 3 / hosted Gemini.** Those use the Pythonic `tool_code` / `default_api` form in `gemini.md`. Gemma 4 replaced it with this token syntax; the two are not interchangeable.
-- **Gemma 3 automatic-selection caveat.** OMP's current family affinity maps Gemma 3 and Gemma 4 model IDs to `gemma`. If a Gemma 3 model is marked `supportsTools: false`, `tools.format=auto` therefore chooses this Gemma 4 grammar even though Gemma 3 requires the Pythonic convention in `gemini.md`; set `tools.format=gemini` explicitly.
+- **Gemma 3 automatic-selection caveat.** ultraworkers' current family affinity maps Gemma 3 and Gemma 4 model IDs to `gemma`. If a Gemma 3 model is marked `supportsTools: false`, `tools.format=auto` therefore chooses this Gemma 4 grammar even though Gemma 3 requires the Pythonic convention in `gemini.md`; set `tools.format=gemini` explicitly.
 
 ## Sources
 

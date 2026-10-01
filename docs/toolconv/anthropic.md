@@ -323,7 +323,7 @@ Rich result (text + image blocks):
 
 Server tools require **no** `tool_result` from you — Anthropic executes them and injects the result inline in the assistant turn. (Legacy XML feeds results back as `<function_results><result><tool_name>…</tool_name><stdout>…</stdout></result></function_results>`, or `<error>…</error>` on failure.)
 
-OMP's prompt-driven dialect is different from Anthropic's server-tool behavior. It renders client results as:
+ultraworkers' prompt-driven dialect is different from Anthropic's server-tool behavior. It renders client results as:
 
 ```text
 <function_results>

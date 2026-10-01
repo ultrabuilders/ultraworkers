@@ -154,7 +154,7 @@ Requires `cloud_configuration_id`. It reports the current step and finished/pend
 
 ### `cloud_pull`
 
-Requires `cloud_configuration_id`. It fetches the configuration, status, and all attributed finding details, converts them to OMP's canonical schema, generates a report and SARIF, and persists a completed imported scan.
+Requires `cloud_configuration_id`. It fetches the configuration, status, and all attributed finding details, converts them to ultraworkers' canonical schema, generates a report and SARIF, and persists a completed imported scan.
 
 Import fails closed unless the current project has an `origin` remote whose normalized repository identity matches the cloud configuration URL. Cloud coverage is recorded as `unknown` because the findings API does not expose coverage receipts. `details.importedScan` contains the new scan ID and finding count.
 
@@ -168,7 +168,7 @@ Import fails closed unless the current project has an `origin` remote whose norm
 
 Publication rejects absolute, parent-traversing, or out-of-scope finding and evidence paths. Repeated findings with the same canonical fingerprint are deduplicated. A second successful publication call fails. If the scan session ends without publication, the scan is persisted as `partial`; a successful publication remains `completed` even if later metrics/output refresh fails.
 
-Canonical state is private and project-keyed under OMP's security state root. A completed native output directory contains:
+Canonical state is private and project-keyed under ultraworkers' security state root. A completed native output directory contains:
 
 - `scan.json` — public scan manifest, written last as the commit marker;
 - `findings.json`;

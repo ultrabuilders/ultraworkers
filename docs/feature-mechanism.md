@@ -1,51 +1,47 @@
 # Feature → mechanism
 
-`docs/` is organised by subsystem. This table answers the inverse question: for a
-behaviour a user can see, **which code path actually makes it happen**, and **which
-gate proves it**.
+For a behaviour a user can see: **which mechanism actually makes it true.** Not
+which package it lives in — `capability` is where code sits, not what makes the
+behaviour real, and a row naming a package is a worthless row.
 
-Both halves of that answer are load-bearing:
+Scope: the four items M4 declares for itself. A table is only worth reading if it
+is maintained by something that can fail, so the invariants below are enforced by
+`scripts/check-feature-mechanism.ts` rather than by discipline.
 
-- `mechanism` names a **path**, not a package. A row that says `capability` or
-  `coding-agent` is a useless row — that is where code *lives*, not the mechanism
-  that makes the behaviour real. It still looks like a table, which is what makes it
-  quietly worthless.
-- `proof` names a **gate that has gone red**, or the literal `none` plus the work
-  item that will produce one.
-
-The two contracts are kept honest by
-`packages/coding-agent/test/feature-mechanism-table.test.ts`:
-
-1. A row pointing at a deleted file turns the table red.
-2. Every `proof: none` names the work item that will produce its gate, **and that
-   work item must still be open**. This is why there is no numeric cap on `none`:
-   a cap is a number somebody has to remember to update, and it drifts. Naming the
-   work item instead makes the row **self-clearing** — when `m4-m4-6-052` or
-   `m4-m4-7-053` closes, the test goes red and the row has to become a real gate.
-   A `none` that cannot name a work item is rejected, so a vague "no test yet" can
-   never enter the table.
-
-When this table and the documentation disagree, **the documentation is what is
-wrong**. Nothing generates this table, so the table is not the source of truth the
-way a diff-generated ledger is.
-
-## The four M4 claims
+## The table
 
 | feature | mechanism | proof |
 | --- | --- | --- |
-| Enabling or disabling a plugin in `/settings` reports the change that actually reached disk, and two processes cannot lose each other's write | `PluginManager.#mutateConfig` (`packages/coding-agent/src/extensibility/plugins/manager.ts:171`) re-reads the config *inside* `withFileLock` (`packages/utils/src/file-lock.ts:70`) and persists only when the serialised config actually changed, via `atomicWriteJson` (`packages/utils/src/atomic-write.ts:37`) | `packages/coding-agent/test/plugin-runtime-config-lock.test.ts` |
-| The `/settings` panel names which layer is shadowing a row | `shadowingSource` (`packages/coding-agent/src/config/shadowing.ts:32`) produces the source, json and message; `createSettingsHost` reuses it at `packages/coding-agent/src/config/settings-ui.ts:54` so the panel and any other consumer cannot drift apart | `none` — `m4-m4-6-052` |
-| An extension renderer receives `rawArgs` / `argsComplete` / `executionStarted` | `RegisteredToolAdapter.renderResult` (`packages/coding-agent/src/sdk.ts:1338`) rebuilds the options literal with only `expanded` / `isPartial` / `spinnerFrame`, so the `argsComplete` and `executionStarted` fields `packages/tui/src/tools/renderer.ts:12` declares never cross into an extension — this is the seam `m4-m4-7-053` cuts | `none` — `m4-m4-7-053` |
-| `ultraworkers extensions-triage` prints every extension the loader found, inferring nothing | `runExtensionsTriage` (`packages/coding-agent/src/cli/extensions-triage-cli.ts:73`) is a pure projection of the loader's own result through `toTriageRow`; it does not re-scan, re-order or guess | `packages/coding-agent/test/extensions-triage-cli.test.ts` |
+| Toggling a plugin in `/settings` reports whether it truly reached disk | `PluginManager.#mutateConfig` (`extensibility/plugins/manager.ts:242`) takes `withFileLock` on the lockfile (`:246`) and only then `atomicWriteJson` (`:256`) | `plugin-runtime-config-lock.test.ts` |
+| The `/settings` panel names which layer is shadowing a row | `createSettingsHost` (`config/settings-ui.ts:63`) routes every row through `shadowingSource` (`config/settings-ui.ts:54`), the same helper the environment copy imports (`config/shadowing.ts`) | `config/settings-provenance-guard.test.ts` |
+| An extension renderer receives `rawArgs` / `argsComplete` / `executionStarted` | `RegisteredToolAdapter.renderResult` (`extensibility/extensions/wrapper.ts:63`) forwards the whole `options` object rather than re-picking fields | `extensions/raw-args-render-channel.test.ts` |
+| `omp extensions-triage` lists every extension the loader found | a pure projection over `loadAllExtensions` (`modes/components/extensions/state-manager.ts:69`); it reports what the loader returned and infers nothing | `extensions-triage-cli.test.ts` |
 
-## Adding a row
+## Invariants, and what each one is for
 
-`proof` accepts **only** a repo-relative path to a test under `packages/*/test/`.
-It deliberately does not accept a command in `scripts/`: a second kind of address
-means a second table to keep in step with the first, which is how one document ends
-up telling two stories. If a row genuinely needs a `scripts/` check, say so in prose
-next to the row rather than giving it an address.
+1. **Every `proof` names a file that exists.** A row pointing at a deleted file
+   turns this table red. This is the whole gate: it is what makes the table worth
+   more than a list of intentions. A row whose mechanism was renamed away does
+   not become true by continuing to exist here.
+2. **A `proof` of `none` must carry a reason.** "No test yet" is a legitimate
+   answer. "No test yet" with nothing else is a row nobody has to look at.
+3. **`none` rows are capped.** The cap is `NONE_CEILING` in
+   `scripts/check-feature-mechanism.ts`. It is set to the measured count today —
+   all four rows carry a real gate, so the count is **0** — and it is a
+   registered number rather than a moving target. A ledger whose `none` count
+   climbs one row at a time is a dead ledger: every addition reads as reasonable,
+   nothing goes red, and the table stays technically correct while proving
+   nothing. **The owner owns this number.** Raising it is a one-line change and
+   belongs in the same commit that adds the row.
 
-If the behaviour has no gate yet, write `none` **and** the id of the work item that
-will add one. If you cannot name that work item, you do not have a row — you have a
-wish.
+## When the table and the code disagree
+
+**Fix the code reference, not the row to match.** Nothing generates this table,
+so there is no artefact that is authoritative over it — a stale row is a stale
+row. The exception is a *mechanism that was deliberately replaced*: that is a
+decision, and the row should record the new one with the date, not be quietly
+rewritten to whatever the code now says.
+
+Anchors in this file are `file:line` and they rot. Re-measure before trusting
+one: the M4 planning notes cited `settings-ui.ts:77` for `createSettingsHost`,
+which is at `:63` today.

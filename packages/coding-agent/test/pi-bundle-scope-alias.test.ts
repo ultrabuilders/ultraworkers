@@ -1,13 +1,13 @@
 /**
- * The canonical pi scope must equal the scope every bundled package declares.
+ * Every bundled package must declare the one scope the shim serves.
  *
  * `legacy-pi-compat.ts` builds virtual specifiers from `CANONICAL_PI_SCOPE` to
  * hand a plugin its dependencies out of the host bundle. A virtual specifier is
- * only meaningful if it matches a real package name: if `packages/ai` is
- * `@oh-my-pi/pi-ai` but the constant says something else, a plugin's
- * `import … from "@oh-my-pi/pi-ai"` matches no bundled module, falls through to
- * the plugin's own `node_modules`, and the host silently ends up with two copies
- * of the module in one process — the double-instance failure that
+ * only meaningful if it matches a real package name: if `packages/ai` declares
+ * a scope the constant does not name, a plugin's `import … from
+ * "@oh-my-pi/pi-ai"` matches no bundled module, falls through to the plugin's
+ * own `node_modules`, and the host silently ends up with two copies of the
+ * module in one process — the double-instance failure that
  * `issue-6449-legacy-pi-cjs-double-instance.test.ts` exists to prevent,
  * arriving by another door.
  *
@@ -19,78 +19,107 @@
  * missed the constant would turn every plugin-bound import into a silent second
  * copy with nothing red.
  *
- * This reads the names from the manifests rather than restating the scope in the
- * test: a fixture built from the same constant as the implementation cannot fail
- * when the constant is wrong — which is exactly the trap in
- * `update-cli.test.ts`, where an `APP_NAME`-derived expectation agrees with the
- * implementation no matter what `APP_NAME` is. The value under test is the one
- * in the files.
+ * The scope is therefore read from the shim's own output rather than restated:
+ * a literal here would agree with a wrong constant by construction, which is the
+ * trap in `update-cli.test.ts`, where an `APP_NAME`-derived expectation passes
+ * no matter what `APP_NAME` is. The value under test is the one the shim uses.
+ *
+ * The package set is discovered from the workspace, not listed. An earlier
+ * version of this file enumerated ten directories by hand; `packages/natives`
+ * and eleven others were simply not in the list, so renaming their scope left
+ * the gate green. A list is a promise to update it, and W7 depends on this gate
+ * not being kept.
  */
 import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { __buildLegacyPiPackageRootOverrides } from "../src/extensibility/plugins/legacy-pi-compat";
 
-/** Packages whose modules the legacy shim layer hands back to plugins. */
-const BUNDLED_PACKAGES = [
-	"ai",
-	"agent",
-	"tui",
-	"utils",
-	"protocol",
-	"chord",
-	"client",
-	"codemode",
-	"evals",
-	"omptype",
-] as const;
+const REPO_ROOT = path.join(import.meta.dir, "..", "..", "..");
+const PACKAGES_DIR = path.join(REPO_ROOT, "packages");
 
 interface PackageManifest {
 	name?: string;
+	private?: boolean;
 }
 
-async function readManifest(packageDir: string): Promise<PackageManifest> {
-	const manifestPath = path.join(import.meta.dir, "..", "..", packageDir, "package.json");
-	const manifest = (await Bun.file(manifestPath).json()) as PackageManifest;
-	return manifest;
+/** Every package manifest under `packages/`, discovered rather than listed. */
+async function findManifests(): Promise<string[]> {
+	// The trailing star is written with a non-adjacent slash so the pattern
+	// cannot be mistaken for a comment terminator where this is quoted above.
+	const found = [...new Bun.Glob("packages/*" + "/package.json").scanSync({ cwd: REPO_ROOT, onlyFiles: true })];
+	return found.sort();
+}
+
+async function readManifest(relativePath: string): Promise<PackageManifest> {
+	return (await Bun.file(path.join(REPO_ROOT, relativePath)).json()) as PackageManifest;
+}
+
+function scopeOf(packageName: string): string {
+	return packageName.slice(0, packageName.indexOf("/") + 1);
+}
+
+/**
+ * The scope the shim actually serves, read off its own canonical specifiers.
+ *
+ * `CANONICAL_PI_SCOPE` is module-private, but every key this builder emits is
+ * the canonical scope joined to a package basename — so the keys carry the
+ * constant without the test restating it. Non-bundled mode emits the three
+ * compat roots and nothing else, which is enough to read the scope off.
+ */
+function canonicalScopeFromShim(): string {
+	const specifiers = Object.keys(__buildLegacyPiPackageRootOverrides(false));
+	if (specifiers.length === 0) throw new Error("shim produced no canonical specifiers");
+	const scopes = new Set(specifiers.map(specifier => scopeOf(specifier)));
+	if (scopes.size !== 1) {
+		throw new Error(`shim serves more than one scope: ${[...scopes].sort().join(", ")}`);
+	}
+	return [...scopes][0]!;
 }
 
 describe("canonical pi scope vs declared package names", () => {
-	// One scope across every bundled package is what makes a single
-	// `CANONICAL_PI_SCOPE` able to name all of them. A package that drifts to a
-	// different scope stops matching the constant, and its plugin-bound imports
-	// resolve outside the bundle.
-	const declaredScopes = new Map<string, string[]>();
+	test("the gate covers every package directory, not a hand-kept list", async () => {
+		const manifests = await findManifests();
+		const covered = new Set(manifests.map(relativePath => relativePath.split("/")[1]));
 
-	for (const packageDir of BUNDLED_PACKAGES) {
-		test(`${packageDir} declares a scoped package name`, async () => {
-			const manifest = await readManifest(packageDir);
-			// Read, not asserted against a literal: a restated scope here would
-			// agree with a wrong constant by construction.
-			expect(typeof manifest.name).toBe("string");
-			expect(manifest.name).toMatch(/^@[^/]+\//);
+		const entries = await fs.readdir(PACKAGES_DIR, { withFileTypes: true });
+		const directories = entries
+			.filter(entry => entry.isDirectory())
+			.map(entry => entry.name)
+			.sort();
 
-			const scope = manifest.name!.slice(0, manifest.name!.indexOf("/") + 1);
-			const others = declaredScopes.get(scope) ?? [];
-			others.push(packageDir);
-			declaredScopes.set(scope, others);
-		});
-	}
+		// The scope rows below are only as strong as the set they range over, and
+		// a discovered set that silently missed a directory would shrink to
+		// "all of these agree" — green for a package nobody looked at. This row
+		// is what makes the others non-vacuous.
+		expect(directories.filter(directory => !covered.has(directory))).toEqual([]);
+	});
 
-	test("every bundled package shares one scope", async () => {
-		const scopes = new Map<string, string[]>();
-		for (const packageDir of BUNDLED_PACKAGES) {
-			const { name } = await readManifest(packageDir);
-			const scope = name!.slice(0, name!.indexOf("/") + 1);
-			scopes.set(scope, [...(scopes.get(scope) ?? []), packageDir]);
+	test("every bundled package declares a scoped name", async () => {
+		const unscoped: string[] = [];
+		for (const relativePath of await findManifests()) {
+			const { name } = await readManifest(relativePath);
+			if (typeof name !== "string" || !/^@[^/]+\//.test(name)) unscoped.push(relativePath);
+		}
+		expect(unscoped).toEqual([]);
+	});
+
+	test("every bundled package shares the scope the shim serves", async () => {
+		const byScope = new Map<string, string[]>();
+		for (const relativePath of await findManifests()) {
+			const { name } = await readManifest(relativePath);
+			const scope = scopeOf(name!);
+			byScope.set(scope, [...(byScope.get(scope) ?? []), relativePath]);
 		}
 
-		// Reported per-scope rather than as a single equality so a rename failure
-		// names which packages moved, not just that something did. Both sides are
-		// sorted — comparing declaration order against sorted order would fail on a
-		// green tree, which teaches the reader to ignore this row.
-		expect(
-			[...scopes.entries()]
-				.map(([scope, members]) => ({ scope, members: members.sort() }))
-				.sort((a, b) => a.scope.localeCompare(b.scope)),
-		).toEqual([{ scope: [...scopes.keys()][0]!, members: [...BUNDLED_PACKAGES].sort() }]);
+		// Grouped by scope and sorted on both sides: a rename failure then names
+		// which packages moved, rather than only that something did. Comparing
+		// declaration order against sorted order would fail on a green tree,
+		// which teaches the reader to ignore this row.
+		const observed = [...byScope.entries()]
+			.map(([scope, members]) => ({ scope, members: members.sort() }))
+			.sort((left, right) => left.scope.localeCompare(right.scope));
+
+		expect(observed).toEqual([{ scope: canonicalScopeFromShim(), members: (await findManifests()).sort() }]);
 	});
 });

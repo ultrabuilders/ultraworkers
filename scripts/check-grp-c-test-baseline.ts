@@ -160,8 +160,8 @@ const healed = [...known].filter(name => !current.has(name)).sort();
 
 // CONFIRM ONCE, THEN STOP.
 //
-// A new failure is re-checked by re-running the files that produced it, alone.
-// The reason is measured, not hypothetical: wired into `check:ts`, this gate
+// A new failure is re-checked by re-running the suite once. The reason is
+// measured, not hypothetical: wired into `check:ts`, this gate
 // went red on five tests that pass on an idle box, and five identical runs of
 // one file on one commit returned 5 fail, 5 fail, 0, 0, 0 — the *names* changed
 // between runs, so it was the machine, not the code. Those tests drive a real

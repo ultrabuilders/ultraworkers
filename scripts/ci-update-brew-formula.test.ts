@@ -18,7 +18,12 @@ describe("renderFormula", () => {
 	it("attaches `using: :nounzip` to every per-platform url stanza", () => {
 		const matches = formula.match(/using: :nounzip/g) ?? [];
 		expect(matches).toHaveLength(4);
-		for (const arch of ["ultraworkers-darwin-arm64", "ultraworkers-darwin-x64", "ultraworkers-linux-arm64", "ultraworkers-linux-x64"]) {
+		for (const arch of [
+			"ultraworkers-darwin-arm64",
+			"ultraworkers-darwin-x64",
+			"ultraworkers-linux-arm64",
+			"ultraworkers-linux-x64",
+		]) {
 			expect(formula).toMatch(
 				new RegExp(
 					`url "https://github\\.com/[^"]+/${arch}",\\s+using: :nounzip\\s+sha256 "${SUMS[arch as keyof typeof SUMS]}"`,

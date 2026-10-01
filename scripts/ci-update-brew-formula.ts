@@ -117,7 +117,12 @@ async function main(): Promise<void> {
 	const version = tag.replace(/^v/, "");
 	const assets = await fetchAssets(tag);
 
-	const targets = ["ultraworkers-darwin-arm64", "ultraworkers-darwin-x64", "ultraworkers-linux-arm64", "ultraworkers-linux-x64"];
+	const targets = [
+		"ultraworkers-darwin-arm64",
+		"ultraworkers-darwin-x64",
+		"ultraworkers-linux-arm64",
+		"ultraworkers-linux-x64",
+	];
 	const sums: Record<string, string> = {};
 	for (const name of targets) sums[name] = sha256For(assets, name);
 

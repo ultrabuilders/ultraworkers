@@ -23,6 +23,16 @@ import { ptree, TempDir } from "@oh-my-pi/pi-utils";
 
 const GATE = path.join(import.meta.dir, "check-grp-c-test-baseline.ts");
 
+/**
+ * The gate parses failures with this repo's own extractor rather than a private
+ * regex, because that extractor reconciles the `(fail)` lines against bun's tally.
+ * Copying the gate alone would therefore leave it importing a module that is not
+ * there, and all four tests would go red for a missing file — a harness failure
+ * wearing the costume of a gate failure. Both modules travel together, as they do
+ * in the repo.
+ */
+const EXTRACTOR = path.join(import.meta.dir, "ci-failure-extract.ts");
+
 const BASELINE = {
 	capturedAt: "2026-10-02",
 	head: "test",
@@ -41,6 +51,7 @@ async function installGate(dir: string, suite: string): Promise<string> {
 	expect(source.split(anchored)).toHaveLength(2); // exactly one — a rename must fail loudly here
 	const target = path.join(dir, "check-grp-c-test-baseline.ts");
 	await Bun.write(target, source.replace(anchored, `const SUITE = "${suite}";`));
+	await Bun.write(path.join(dir, path.basename(EXTRACTOR)), await Bun.file(EXTRACTOR).text());
 	await Bun.write(path.join(dir, "r0-grp-c-test-baseline.json"), `${JSON.stringify(BASELINE, null, 2)}\n`);
 	return target;
 }
@@ -48,7 +59,50 @@ async function installGate(dir: string, suite: string): Promise<string> {
 const runGate = (dir: string, gate: string) =>
 	ptree.exec([process.execPath, gate], { cwd: dir, allowNonZero: true, env: { ...Bun.env, NO_COLOR: "1" } });
 
+/**
+ * Runs the gate against a run it cannot reconcile: named `(fail)` lines with no
+ * `<n> fail` summary to check them against.
+ *
+ * That is the shape of a silently truncated measurement, and it is the one case
+ * the reference implementation let through — its own header calls it "the one
+ * that looks most like a complete list". A gate that decided "no new failures"
+ * from such a list would report a partial observation as a clean suite.
+ *
+ * Produced for real rather than stubbed: a test that calls `process.exit` kills
+ * the runner before it prints the summary, which is what a crashed or externally
+ * killed suite does. My first fixture used a `beforeEach` throw instead, and the
+ * test's own control caught it — bun tallies that as an `error`, which the
+ * extractor already subtracts, so the run reconciled fine and proved nothing.
+ */
+async function installUnreconcilableSuite(dir: string): Promise<void> {
+	await Bun.write(
+		path.join(dir, "tally.test.ts"),
+		'import { test, expect } from "bun:test";\n' +
+			'test("gets a name", () => { expect(1).toBe(2); });\n' +
+			'test("dies before the summary prints", () => { process.exit(1); });\n',
+	);
+}
+
 describe("R0 GRP-C test-baseline gate", () => {
+	test("a failure list it cannot reconcile is not a clean list", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-discrepant-");
+		await installUnreconcilableSuite(dir.absolute());
+		const gate = await installGate(dir.absolute(), "./");
+
+		// Control: the fixture really does produce a run with names and NO summary.
+		// Without this the assertions below could pass via a different branch.
+		const raw = await ptree.exec(["bun", "test", "./"], { cwd: dir.absolute(), allowNonZero: true });
+		const out = `${raw.stdout}${raw.stderr}`;
+		expect(out.split("\n").filter(line => line.startsWith("(fail)")).length).toBeGreaterThan(0);
+		expect(/^\s*\d+\s+fail\b/m.test(out)).toBe(false);
+
+		const result = await runGate(dir.absolute(), gate);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("could not be reconciled");
+		// The precise harm: a list this run cannot vouch for must not be allowed
+		// to reach the "all present in the baseline" verdict.
+		expect(result.stdout).not.toContain("all present in the baseline");
+	}, 60_000);
 	test("a suite that cannot load is not a clean suite", async () => {
 		using dir = TempDir.createSync("omp-grp-c-baseline-broken-");
 		await Bun.write(

@@ -31,6 +31,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { tmpdir } from "node:os";
+import { extractFailures } from "./ci-failure-extract";
 
 const BASELINE = path.join(import.meta.dir, "r0-grp-c-test-baseline.json");
 
@@ -65,24 +66,36 @@ async function collectFailures(): Promise<Set<string> | null> {
 	await fs.mkdir(REPORT_DIR, { recursive: true });
 	await Bun.write(REPORT, `${stdout}${stderr}`);
 
-	const failures = new Set<string>();
-	// Parse BOTH streams, not just stdout. `bun test` writes its per-test
-	// `(fail) <name>` lines to STDERR, so a stdout-only parse finds nothing and
-	// the gate reports green on a suite with hundreds of failures. That is the
-	// worst possible failure for this file: a gate that cannot fail.
+	// Delegate the parse to the repo's own extractor. It strips the `[12.30ms]`
+	// duration (which changes every run, so keying on it would report every
+	// baseline failure as new forever) and — the reason it exists rather than a
+	// second private regex — reconciles the named `(fail)` lines against bun's own
+	// `<n> fail` tally. Its header names this gate as the consumer it was written
+	// for, so re-implementing the parse here would fork the one piece of this file
+	// that was already reviewed.
 	//
-	// This was caught by running it, not by reading it. An empty baseline must
-	// make every current failure appear as NEW; it reported zero and exit 0.
-	//
-	// The trailing `[12.30ms]` is bun's duration, not part of the name, and it
-	// changes every run. Keying on it would report every baseline failure as
-	// new forever, so it is stripped: the name is the stable contract, and file
-	// paths move during a package reorganization where test names do not.
-	const DURATION = /\s*\[\d+(?:\.\d+)?m?s\]$/;
-	for (const line of `${stdout}\n${stderr}`.split("\n")) {
-		const match = /^\(fail\)\s+(.*\S)\s*$/.exec(line);
-		if (match) failures.add(match[1]!.replace(DURATION, ""));
+	// Both streams are concatenated: `bun test` writes its `(fail)` lines to
+	// STDERR, and a stdout-only parse finds nothing and reports green on a suite
+	// with hundreds of failures. That was caught by running it, not by reading it.
+	const raw = `${stdout}\n${stderr}`;
+	const extracted = extractFailures(raw);
+
+	// A list that cannot be reconciled against the runner's tally is not a list
+	// that can be trusted, and this gate's whole value is that "no new failures"
+	// means "no new failures". Reporting a short list as complete is the failure
+	// mode `ci-failure-extract.ts` was ported to prevent.
+	if (extracted.discrepant) {
+		console.error("grp-c baseline gate: the failure list could not be reconciled.");
+		console.error(
+			`runner tallied ${extracted.reportedFailCount ?? "?"} fail / ${extracted.reportedErrorCount ?? 0} error, ` +
+				`parsed ${extracted.failures.length} line(s) naming ${extracted.identities.length} identity(ies).\n` +
+				"Deciding 'no new failures' from a list this run cannot vouch for would report a\n" +
+				"silently truncated measurement as a clean suite. Fix the parse, not the baseline.",
+		);
+		return null;
 	}
+
+	const failures = new Set(extracted.identities);
 
 	// A run that found no failure but exited non-zero never measured anything.
 	// The common cause is a suite that cannot load: `bun test` reports that as

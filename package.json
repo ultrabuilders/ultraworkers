@@ -91,6 +91,7 @@
 		"check:tools": "oxlint . && oxfmt --check 'packages/*/src/**/*.{ts,tsx}' 'packages/*/{test,bench,examples,scripts}/**/*.ts' 'packages/*/*.ts' 'scripts/**/*.ts'",
 		"check:invariants": "bun scripts/run-node-invariants.mjs",
 		"measure:fan-in": "bun scripts/measure-fan-in.ts",
+		"measure:fan-in:update": "bun scripts/measure-fan-in.ts --update",
 		"measure:fan-in:check": "bun scripts/measure-fan-in.ts --check",
 		"test:invariants": "bun scripts/run-node-invariants.mjs --test",
 		"check:rs": "bun scripts/run-rs-task.ts check:rs",

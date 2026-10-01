@@ -8,7 +8,14 @@
  * having no gate at all.
  */
 import { describe, expect, it } from "bun:test";
-import { computeFanIn, type ImportEdge, resolveModule, findRegressions, specifiersIn } from "./measure-fan-in";
+import {
+	computeFanIn,
+	findRegressions,
+	findWeakening,
+	type ImportEdge,
+	resolveModule,
+	specifiersIn,
+} from "./measure-fan-in";
 
 const ROOT = "/repo/packages/coding-agent/src";
 
@@ -134,5 +141,52 @@ describe("findRegressions", () => {
 		// with no baseline entry is not a regression — there is nothing to have risen
 		// above — and treating it as one would make the gate fail on any addition.
 		expect(findRegressions([entry("brand-new", 900)], new Map([["stream", 4]]))).toEqual([]);
+	});
+});
+
+describe("findWeakening", () => {
+	// The contract this defends: the measurement must not be able to buy itself
+	// a pass. A gate that owns its own threshold is not a gate — running it and
+	// committing the result moves the bar to wherever the code already is, so the
+	// next run has nothing to report. Measured on this tree: a bare
+	// `bun run measure:fan-in` had silently carried `packageFileCount` from 6778
+	// to 6793, erasing that much deletion headroom with nothing but a dirty file.
+	const baseline = {
+		capturedAt: "2026-10-01",
+		definition: "d",
+		packageFileCount: 6778,
+		modules: { stream: 4, commit: 9, tools: 120 },
+	};
+
+	it("names a ceiling that moved up and a floor that moved down", () => {
+		// stream gained an importer (ceiling up) and files were deleted (floor down):
+		// the two ways an update can make the gate accept more than it accepted.
+		const weakened = findWeakening(baseline, {
+			...baseline,
+			packageFileCount: 6700,
+			modules: { stream: 5, commit: 9, tools: 120 },
+		});
+
+		expect(weakened.map(w => w.detail)).toEqual(["stream ceiling 4 -> 5", "tracked files floor 6778 -> 6700"]);
+	});
+
+	it("allows progress: ceilings down, floor up, and new modules", () => {
+		// Everything moving the right way at once. An added module has no recorded
+		// ceiling yet, so it is not a weakening — otherwise the first module to
+		// appear after a decomposition would be unrecordable.
+		expect(
+			findWeakening(baseline, {
+				...baseline,
+				packageFileCount: 6800,
+				modules: { stream: 3, commit: 4, tools: 118, widgets: 0 },
+			}),
+		).toEqual([]);
+	});
+
+	it("does not punish a module that stopped existing", () => {
+		// `findRegressions` already treats an unrecorded module as never-failing;
+		// inventing a regression for one that vanished would make deleting dead code
+		// the only thing this gate blocks.
+		expect(findWeakening(baseline, { ...baseline, modules: { stream: 4, tools: 120 } })).toEqual([]);
 	});
 });

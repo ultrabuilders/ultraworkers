@@ -272,7 +272,14 @@ async function trackedPackageFileCount(repoRoot: string): Promise<number> {
 		stderr: "ignore",
 	});
 	const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-	if (code !== 0) return -1;
+	// Fail CLOSED. This used to return -1, and the caller read that as "count
+	// unknown, skip the deletion check" — the one failure mode a deletion guard
+	// must never have. With git broken the count is unknown, and "unknown" was
+	// being reported as "nothing was deleted". A gate that cannot see is not a
+	// gate that passes; throwing makes CI red instead of silently dropping the R0
+	// invariant for the length of whatever broke git.
+	if (code !== 0)
+		throw new Error(`${PREFIX} git ls-files failed (exit ${code}); cannot verify the deletion invariant`);
 	return out.split("\n").filter(Boolean).length;
 }
 
@@ -309,10 +316,46 @@ async function readBaseline(repoRoot: string): Promise<Baseline | undefined> {
 	}
 }
 
+/** A baseline move that would make the gate accept more than it accepted before. */
+export interface Weakening {
+	readonly detail: string;
+}
+
+/**
+ * Changes to the baseline that weaken the gate rather than record progress.
+ *
+ * The two numbers pull in opposite directions, which is why one flag cannot
+ * guard both. Each module's count is a CEILING: decomposition should drive it
+ * down, so a rise means something new reached into that module. `packageFileCount`
+ * is a FLOOR: R0 forbids deletion, so a drop means files vanished. Progress is
+ * ceiling down and floor up; anything else is the gate being loosened.
+ *
+ * A module that disappeared entirely is not listed. Absence is already
+ * unrecorded-and-never-failed by `findRegressions`, and inventing a
+ * regression for a module nobody imports any more would punish deletion of dead
+ * code — the opposite of what this programme is for.
+ */
+export function findWeakening(current: Baseline, next: Baseline): Weakening[] {
+	const weakened: Weakening[] = [];
+	for (const [module, was] of Object.entries(current.modules)) {
+		const now = next.modules[module];
+		if (now === undefined) continue;
+		if (now > was) weakened.push({ detail: `${module} ceiling ${was} -> ${now}` });
+	}
+	if (next.packageFileCount < current.packageFileCount) {
+		weakened.push({
+			detail: `tracked files floor ${current.packageFileCount} -> ${next.packageFileCount}`,
+		});
+	}
+	return weakened;
+}
+
 async function main(): Promise<void> {
 	const repoRoot = process.cwd();
 	const moduleRoot = path.join(repoRoot, "packages/coding-agent/src");
 	const check = process.argv.includes("--check");
+	const update = process.argv.includes("--update");
+	const acceptRegression = process.argv.includes("--accept-regression");
 
 	const files = await collectSourceFiles(moduleRoot);
 	const [scan, packageFileCount] = await Promise.all([scanTree(files), trackedPackageFileCount(repoRoot)]);
@@ -322,28 +365,57 @@ async function main(): Promise<void> {
 	// table, which reads exactly like "every module has zero importers".
 	console.error(`${PREFIX} ${modules.length} modules, ${files.length} files, ${scan.edges.length} import edges`);
 
-	if (!check) {
-		const baseline: Baseline = {
+	// Measuring is not committing. The bare command used to overwrite the baseline
+	// with whatever the tree happened to contain, which made
+	// `bun run measure:fan-in && git commit` a complete way to switch the gate off:
+	// the threshold moved to match the code, so the next run had nothing to report,
+	// and the deletion floor travelled with it. `bun run measure:fan-in:check` in CI
+	// compares against that same file, so it agreed with whatever it was handed.
+	// Only `--update` writes, and below that only when the move is not a weakening.
+	if (update) {
+		if (process.env.CI) {
+			console.error(
+				`${PREFIX} FAIL --update is refused in CI. The baseline is a commitment made by a person, not a value CI may rewrite. Push the change from a checkout instead.`,
+			);
+			process.exit(1);
+		}
+		const next: Baseline = {
 			capturedAt: new Date().toISOString().slice(0, 10),
 			definition: "distinct files outside the module directory importing it or anything beneath it",
 			packageFileCount,
 			modules: Object.fromEntries(modules.map(entry => [entry.module, entry.externalImporters])),
 		};
-		await Bun.write(baselinePath(repoRoot), `${JSON.stringify(baseline, null, "\t")}\n`);
+		const current = await readBaseline(repoRoot);
+		const weakened = current === undefined ? [] : findWeakening(current, next);
+		if (weakened.length > 0 && !acceptRegression) {
+			for (const entry of weakened) console.error(`${PREFIX} FAIL update would weaken the gate: ${entry.detail}`);
+			console.error(
+				`${PREFIX} A ceiling may only fall and a floor may only rise. If this weakening is deliberate, re-run with --accept-regression and say why in the commit.`,
+			);
+			process.exit(1);
+		}
+		await Bun.write(baselinePath(repoRoot), `${JSON.stringify(next, null, "\t")}\n`);
 		console.error(`${PREFIX} wrote ${path.relative(repoRoot, baselinePath(repoRoot))}`);
 		console.log(renderTable(modules));
 		return;
 	}
 
+	console.log(renderTable(modules));
+	if (!check) {
+		console.error(`${PREFIX} measured only — ${path.relative(repoRoot, baselinePath(repoRoot))} was not touched`);
+	}
+
+	if (!check) return;
+
 	const baseline = await readBaseline(repoRoot);
 	if (baseline === undefined) {
 		console.error(
-			`${PREFIX} FAIL no baseline — run \`bun run measure:fan-in\` and commit scripts/fan-in-baseline.json`,
+			`${PREFIX} FAIL no baseline — run \`bun run measure:fan-in:update\` and commit scripts/fan-in-baseline.json`,
 		);
 		process.exit(1);
 	}
 	const regressions = findRegressions(modules, new Map(Object.entries(baseline.modules)));
-	const fileDropped = packageFileCount >= 0 && baseline.packageFileCount > packageFileCount;
+	const fileDropped = baseline.packageFileCount > packageFileCount;
 	if (regressions.length === 0 && !fileDropped) return;
 
 	for (const regression of regressions) {

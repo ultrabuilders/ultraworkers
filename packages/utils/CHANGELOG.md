@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `sanitizeText` no longer truncates its input at a BEL-terminated escape sequence. Command output
+  is sanitized before it reaches the model, and a BEL-terminated DCS or APC — the shape a binary
+  dump, a terminal replay, or an inline-image escape takes — made the stripper treat the rest of
+  the text as the body of that sequence and delete it. The output came back short and looked
+  complete: nothing reported the truncation, and neither the user nor the model was told anything
+  was missing. A multi-line capture could lose every line after the sequence.
+
 ### Added
 
 - A byte-equivalence harness makes "this change to the Markdown lexer did not alter rendering"

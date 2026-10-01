@@ -43,6 +43,27 @@ describe("sanitizeText", () => {
 		expect(sanitizeText("before\x1bPpayload\x1b\\after")).toBe("beforeafter");
 	});
 
+	it("strips DCS sequences terminated by BEL, keeping the text after them", () => {
+		// The row above covers the same sequence type with the ST terminator, which is
+		// why this gap survived: BEL is the other legal terminator, and it is the one
+		// that does not work. `Bun.stripANSI` does not recognise BEL as closing a
+		// string-introduced sequence, so it treats everything after it as part of the
+		// sequence and deletes it.
+		expect(sanitizeText("before\x1bPpayload\x07after")).toBe("beforeafter");
+		expect(sanitizeText("before\x1b_payload\x07after")).toBe("beforeafter");
+	});
+
+	it("keeps later lines of command output that follows a BEL-terminated DCS", () => {
+		// The reachable case, and it is data loss rather than a rendering artefact.
+		// `cleanse/checkers.ts` runs `sanitizeText` over a command's stdout/stderr, so
+		// any output containing one of these sequences — a binary dump, a terminal
+		// replay, an inline-image escape — was silently cut off at that byte. Nothing
+		// reported the truncation: the caller received a short string that looked
+		// complete, and the model was never told anything was missing.
+		const stdout = "line one\nline two\n\x1b_pi:c\x07\nline four\nline five";
+		expect(sanitizeText(stdout)).toBe("line one\nline two\n\nline four\nline five");
+	});
+
 	it("handles single-byte ESC finals (e.g. ESC c reset)", () => {
 		expect(sanitizeText("a\x1bcb")).toBe("ab");
 	});

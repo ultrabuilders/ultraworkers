@@ -124,6 +124,25 @@ Hook events are strongly typed in `types.ts`.
 
 This is the hook subsystem’s core pre/post interception model. Eval prelude invocations such as `browser.open(...)`, direct `BrowserTab` helpers, `tab.run(...)`, direct `computer` helpers, and `computer.run(fnOrCode, options)` are host bridge calls, not AgentTool calls, so they do not emit `tool_call` or `tool_result`.
 
+### Per-event contract
+
+**This table is documentation, not a source of truth.** The runtime is the source of truth;
+where it lives is named in the last column so a reader can check any row rather than
+trust it. If a row here disagrees with that symbol, the symbol is right and this table is a bug.
+
+| Convention | Value | Where the runtime decides it |
+| --- | --- | --- |
+| `timeoutMs` | `30_000` for every event except `session_shutdown`, which gets `2_000` | `handlerTimeoutForEvent` in `extensions/runner.ts`; the two constants are `EXTENSION_HANDLER_TIMEOUT_MS` and `SESSION_SHUTDOWN_HANDLER_TIMEOUT_MS` |
+| `awaitBehavior` | Result-bearing session events run **sequentially**, handler by handler, in registration order. `session_shutdown` runs **concurrently** via `Promise.all`, because nothing reads its results | the `for` loop in `ExtensionRunner.emit` vs. the `promises.push` branch above it |
+| `errorBehavior` | A handler that throws or times out is reported through `onError` and skipped; the remaining handlers still run. One bad handler never cancels the others | `#runHandlerWithTimeout`, via its `onFailure` callback |
+| `errorBehavior` (bad return value) | A result whose shape the host cannot act on is **dropped, never coerced**, and reported with a stable `code` | `validateHookResult` in `hooks/result-validation.ts`, called at the single entry point `#runHandlerWithTimeout` |
+| `authority` | **No such axis exists.** No event grants a handler a permission another lacks; authority is implied by which surface the event carries, not by a per-event level | no runtime symbol — searched `src/extensibility/` for `authority`, zero hits |
+| `trustRequirement` | **No such axis exists.** "Trusted" appears in the runtime only for handler-authored `additionalContext`, where it describes *how text is delivered* (outside tool output, at developer/system priority), not a precondition an event places on a handler | the `additionalContext` doc comments in `shared-events.ts`; no per-event trust symbol |
+
+Two of the six conventions in the original work item have no runtime counterpart. They are
+listed as absent rather than filled in with plausible values: a table asserting a trust
+level the host does not check is the second source of truth this section exists to avoid.
+
 ```text
 Hook tool interception flow
 

@@ -2325,4 +2325,20 @@ export interface ExtensionError {
 	event: string;
 	error: string;
 	stack?: string;
+	/**
+	 * Stable machine-readable classification, when the host recognised the failure
+	 * rather than merely reporting it.
+	 *
+	 * Optional because most errors are a handler throwing, which the host can only
+	 * describe, not classify. It is set when the host rejected a value or a state
+	 * on purpose. Codes are stable: host control flow and tests branch on them, so
+	 * add one rather than repurposing one.
+	 */
+	code?: string;
+	/**
+	 * The classified detail, kept out of `error` so a consumer can read it without
+	 * parsing the human-readable sentence. `error` carries the same text prefixed
+	 * with the code, because `error` is what a log line shows.
+	 */
+	detail?: string;
 }

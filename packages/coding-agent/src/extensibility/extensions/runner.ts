@@ -107,6 +107,7 @@ import type {
 } from "./types";
 import { unregisterOwned } from "../../config/registry";
 import { extensionSettingOwner } from "./loader";
+import { type HookResultRejection, validateHookResult } from "../hooks/result-validation";
 import { unavailableFrameMessage } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
@@ -1992,7 +1993,34 @@ export class ExtensionRunner {
 			});
 			return onFailure?.("error", message);
 		}
+		const verdict = validateHookResult(event.type, handlerResult);
+		if (!verdict.ok) {
+			this.#rejectHookResult(ext, event.type, verdict);
+			return undefined;
+		}
 		return handlerResult as R | undefined;
+	}
+
+	/**
+	 * Report a hook return value the host refuses to act on.
+	 *
+	 * The value is dropped, never coerced. A `cancel: "false"` read as a boolean
+	 * would cancel the switch the extension meant to allow, so a shape the host
+	 * cannot interpret stays out of control flow entirely and the extension is
+	 * told which event produced it.
+	 *
+	 * `error` carries the code as a prefix because that is what a log line shows;
+	 * `code` and `detail` are set alongside so a listener can branch without
+	 * parsing the sentence back apart.
+	 */
+	#rejectHookResult(ext: Extension, eventType: string, verdict: HookResultRejection): void {
+		this.emitError({
+			extensionPath: ext.path,
+			event: eventType,
+			error: `${verdict.code}: ${verdict.detail}`,
+			code: verdict.code,
+			detail: verdict.detail,
+		});
 	}
 
 	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {

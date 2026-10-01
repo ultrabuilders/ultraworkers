@@ -27,10 +27,15 @@ export function idaHostReadyBanner(endpoint: string): string {
 	return `omp ida host listening on ${endpoint}`;
 }
 
-/** Message text of any thrown value, for logs and wire errors. */
-export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+/**
+ * Message text of any thrown value, for logs and wire errors.
+ *
+ * Re-exported from `@oh-my-pi/pi-utils/errors` rather than kept here: this copy was
+ * byte-identical to two others and none of the three was total — a value whose
+ * `message` or `toString` throws escaped the `catch` meant to contain it. The shared
+ * helper handles that case and cannot drift from its siblings.
+ */
+export { errorMessage } from "@oh-my-pi/pi-utils/errors";
 
 /** Feed every complete newline-terminated, non-blank line received on `socket` to `onLine`. */
 export function readSocketLines(socket: net.Socket, onLine: (line: string) => void): void {

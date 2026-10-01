@@ -45,9 +45,11 @@ export function errorText(error: unknown): string {
 	return error instanceof Error ? (error.stack ?? error.message) : String(error);
 }
 
-export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+export { errorMessage } from "@oh-my-pi/pi-utils/errors";
+import { errorMessage as sharedErrorMessage } from "@oh-my-pi/pi-utils/errors";
+
+/** Local alias: this module uses the shared total implementation below. */
+const errorMessage = sharedErrorMessage;
 
 // ── Structured logging ──────────────────────────────────────────────
 

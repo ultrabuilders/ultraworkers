@@ -63,9 +63,7 @@ export function parseSubcommand(input: string): ParsedSubcommand {
 	return { verb: trimmed.slice(0, spaceIdx).toLowerCase(), rest: trimmed.slice(spaceIdx + 1).trim() };
 }
 
-export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+export { errorMessage } from "@oh-my-pi/pi-utils/errors";
 
 /**
  * Parse `<name?> [--scope project|user]`-style argument strings used by

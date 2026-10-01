@@ -4,6 +4,15 @@
 
 ### Added
 
+- `errorMessage(value)` — turns any thrown value into text and never throws, so it is safe
+  to call from inside a `catch`. The common one-liner it replaces
+  (`value instanceof Error ? value.message : String(value)`) is not total: a `message` getter
+  or a `toString`/`Symbol.toPrimitive` that throws escapes the `catch` meant to contain it,
+  so a value with broken coercion could take the process down from inside error handling.
+  A value that cannot be coerced at all now reports `<unprintable thrown value>` instead of
+  propagating, and an `Error` with an empty message reports its type name rather than an
+  empty string that used to flow into logs looking like a rendered value
+
 - `atomicWriteJson(filePath, data)` — writes JSON through a uniquely-named temp file and a single
   rename, so a reader never sees a half-written file. Each temp name is unique per call, so
   concurrent writers of one path need no external lock. A rename that keeps failing is retried and

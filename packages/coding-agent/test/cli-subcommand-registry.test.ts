@@ -109,4 +109,17 @@ describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 		// where the real one lives. Registration must not have disarmed that.
 		expect(resolved).toHaveProperty("error");
 	});
+
+	it("NEGATIVE: a real extension's slash command is still not a top-level verb", () => {
+		// `pirate` is a shipped example (`packages/coding-agent/examples/extensions/
+		// pirate.ts:18`) that calls `pi.registerCommand("pirate", …)` — a *slash*
+		// command. Opening a top-level registry must not quietly promote every
+		// extension command into `omp <verb>` routing, which would shadow real
+		// prompts. Taken from the anchor this file replaces (671263e7db), which
+		// pinned the dead seam using this example rather than an invented fixture.
+		expect(isSubcommand("pirate")).toBe(false);
+		const resolved = resolveCliArgv(["pirate", "arg"]);
+
+		expect(dispatchArgv(resolved)[0]).toBe("launch");
+	});
 });

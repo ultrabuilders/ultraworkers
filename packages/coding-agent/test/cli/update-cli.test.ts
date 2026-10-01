@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
-import { APP_NAME, WIRE_NAME } from "@oh-my-pi/pi-utils";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { fixedNpmRegistry } from "../../src/cli/npm-registry";
 import { getLatestRelease, LEGACY_WIRE_NAME, parseReportedVersion, runUpdateCommand } from "../../src/cli/update-cli";
 
@@ -263,9 +263,13 @@ describe("parseReportedVersion identity matching", () => {
 		// pass even if the matcher attributed a banner to the wrong identity,
 		// because the digits would still be right; pairing each identity with its
 		// own version is what makes the attribution observable.
+		//
+		// `APP_NAME` is deliberately not a row of its own: it is the same string as
+		// `WIRE_NAME` today, so a row for each would assert the identical call twice
+		// and could never fail independently of the other. If a future identity
+		// change splits them, that is the moment to give `APP_NAME` its own version.
 		for (const [identity, version] of [
 			[WIRE_NAME, "18.4.3"],
-			[APP_NAME, "18.4.3"],
 			[LEGACY_WIRE_NAME, "18.2.4"],
 		] as const) {
 			expect(parseReportedVersion(`${identity}/${version}`)).toBe(version);

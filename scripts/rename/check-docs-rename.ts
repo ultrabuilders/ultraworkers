@@ -47,12 +47,24 @@ const EXCLUDED_ROOT = /^(?:[A-Z0-9_]*EXECUTION_PLAN\.md|PACKAGE_REORGANIZATION_P
  */
 const EXCLUDED_FILES = /(?:^|\/)CHANGELOG\.md$/;
 
+/**
+ * Markdown under a package's `src/` is RUNTIME PROMPT CORPUS, not
+ * documentation: `import discoveryPrompt from "./prompts/discovery.md" with
+ * { type: "text" }` puts it straight into a system prompt. Renaming a token
+ * there changes what the model is told — a documentation sweep must never do
+ * that. Markdown under `test/` is fixture text, owned by whoever writes the
+ * test. Neither is in scope for a rename sweep, and a recursive markdown glob
+ * puts both in scope by accident.
+ */
+const EXCLUDED_PACKAGE_PATHS = /^packages\/[^/]+\/(?:src|test|bench)\//;
+
 /** The legacy token. Word-bounded on both sides — see the `-E` note above. */
 const LEGACY_TOKEN = /\bomp\b/g;
 
 export function isExcluded(relPath: string): boolean {
 	if (EXCLUDED_PREFIXES.some(prefix => relPath.startsWith(prefix))) return true;
 	if (EXCLUDED_ROOT.test(relPath)) return true;
+	if (EXCLUDED_PACKAGE_PATHS.test(relPath)) return true;
 	return EXCLUDED_FILES.test(relPath);
 }
 

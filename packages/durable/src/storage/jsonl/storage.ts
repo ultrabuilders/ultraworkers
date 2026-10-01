@@ -188,7 +188,7 @@ const parseMainMarker = (text: string, line: number): MainMarker => {
 		format: FORMAT_VERSION,
 		type: "commit",
 		seq: seqFromNumber(value.seq),
-		writes: value.writes.map((write) => validateMainOperation(write, description)),
+		writes: value.writes.map(write => validateMainOperation(write, description)),
 	};
 };
 
@@ -436,7 +436,7 @@ export class JsonlStorage implements Storage {
 
 		const sidecars = new Map<string, string>();
 		for (const [file, fileRecords] of records) {
-			sidecars.set(file, fileRecords.map((record) => jsonLine(record)).join(""));
+			sidecars.set(file, fileRecords.map(record => jsonLine(record)).join(""));
 		}
 		const marker: MainMarker = {
 			format: FORMAT_VERSION,
@@ -554,8 +554,8 @@ export class JsonlStorage implements Storage {
 			}
 		}
 		const sidecarFiles = listed.value
-			.filter((info) => info.kind === "file" && isSidecarFileName(info.name))
-			.map((info) => info.name)
+			.filter(info => info.kind === "file" && isSidecarFileName(info.name))
+			.map(info => info.name)
 			.sort();
 		const parsedFiles = new Map<string, ParsedFile<SidecarRecord>>();
 		const recordByKey = new Map<string, ParsedLine<SidecarRecord>>();
@@ -596,7 +596,7 @@ export class JsonlStorage implements Storage {
 				}
 			}
 		}
-		const retiredCurrentOnlyDocuments = new Set([...retiredDocuments].filter((id) => currentOnlyDocuments.has(id)));
+		const retiredCurrentOnlyDocuments = new Set([...retiredDocuments].filter(id => currentOnlyDocuments.has(id)));
 
 		const latestBases = new Map<DocumentId, SidecarRecord>();
 		for (const { value: marker } of main.lines) {
@@ -732,7 +732,7 @@ export class JsonlStorage implements Storage {
 			}
 
 			const numericId = Number(file.slice(file.indexOf("-") + 1, -".jsonl".length));
-			const confirmedLines = parsed.lines.filter((line) =>
+			const confirmedLines = parsed.lines.filter(line =>
 				confirmed.has(sidecarKey(file, line.value.seq, line.value.ordinal)),
 			);
 			let retainedLines: readonly ParsedLine<SidecarRecord>[] | undefined;
@@ -744,7 +744,7 @@ export class JsonlStorage implements Storage {
 					retainedLines = [];
 				} else if (latestBases.has(documentId)) {
 					retainedLines = confirmedLines.filter(
-						(line) => !isBeforeLatestBase(documentId, line.value.seq, line.value.ordinal),
+						line => !isBeforeLatestBase(documentId, line.value.seq, line.value.ordinal),
 					);
 				}
 			}
@@ -752,7 +752,7 @@ export class JsonlStorage implements Storage {
 				retainedLines !== undefined &&
 				(retainedLines.length < confirmedLines.length || retainedLines.length === 0)
 			) {
-				reclamations.set(file, retainedLines.map((line) => jsonLine(line.value)).join(""));
+				reclamations.set(file, retainedLines.map(line => jsonLine(line.value)).join(""));
 			}
 		}
 		await this.reclaimSidecars(reclamations, context);

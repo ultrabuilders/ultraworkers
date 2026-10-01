@@ -25,7 +25,7 @@ export class Submissions {
 		this.#storage = storage;
 		this.#now = now;
 		this.#resume = resume;
-		session.subscribeCommits((publication) => this.#observe(publication));
+		session.subscribeCommits(publication => this.#observe(publication));
 		session.subscribeClose(() => {
 			this.#closed = true;
 			this.#waiters.rejectAll(closedError());
@@ -39,7 +39,7 @@ export class Submissions {
 	 */
 	async submit(conversationId: ConversationId, draft: SubmissionDraft, context: Context): Promise<Submission> {
 		this.#resume();
-		const id = await this.#session.commitWith(async (tx) => {
+		const id = await this.#session.commitWith(async tx => {
 			if (draft.requestId !== undefined) {
 				const existing = await tx.submissionByRequest(conversationId, draft.requestId);
 				if (existing !== undefined) {
@@ -97,7 +97,7 @@ export class Submissions {
 
 	/** Withdraw a queued submission; placed inputs and settled submissions are reported, not changed. */
 	abort(id: SubmissionId, context: Context, conversationId?: ConversationId): Promise<AbortResult | "not_found"> {
-		return this.#session.commitWith(async (tx) => {
+		return this.#session.commitWith(async tx => {
 			const record = await tx.submission(id);
 			if (record === undefined || (conversationId !== undefined && record.conversationId !== conversationId)) {
 				return "not_found";

@@ -30,7 +30,7 @@ export const LiveDoc = defineDoc<LiveState>({
 	initial: () => ({}),
 	// A complete base whenever nothing is in flight, so the delta chain spans at most one generation, including its
 	// retries and deferred polls, or one tool round.
-	checkpointWhen: (value) => value.generation === undefined,
+	checkpointWhen: value => value.generation === undefined,
 });
 
 /** Built-in task kinds that can own `pi.live.run`. */

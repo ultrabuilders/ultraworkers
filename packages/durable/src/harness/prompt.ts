@@ -63,23 +63,23 @@ export function planSystemEntries(
 	timestamp: number,
 ): SystemDraft[] {
 	const head = view.head;
-	if (head !== undefined && !view.entries.some((entry) => SystemEntry.is(entry) && entry.id > head.id)) {
+	if (head !== undefined && !view.entries.some(entry => SystemEntry.is(entry) && entry.id > head.id)) {
 		const edits: ContextEdit[] = view.entries
-			.filter((entry) => SystemEntry.is(entry))
-			.map((entry) => ({ target: entry.id, action: "omit" }));
+			.filter(entry => SystemEntry.is(entry))
+			.map(entry => ({ target: entry.id, action: "omit" }));
 		const baseline = systemEntry(Object.fromEntries(desired), timestamp);
 		return [edits.length === 0 ? baseline : { ...baseline, edits }];
 	}
 
 	const shown = replaySections(view.messages);
 	const patchedOrder = [
-		...[...shown.keys()].filter((key) => desired.has(key)),
-		...[...desired.keys()].filter((key) => !shown.has(key)),
+		...[...shown.keys()].filter(key => desired.has(key)),
+		...[...desired.keys()].filter(key => !shown.has(key)),
 	];
 	const desiredOrder = [...desired.keys()];
 	if (patchedOrder.some((key, index) => key !== desiredOrder[index])) {
 		return [
-			systemEntry(Object.fromEntries([...shown.keys()].map((key) => [key, null])), timestamp),
+			systemEntry(Object.fromEntries([...shown.keys()].map(key => [key, null])), timestamp),
 			systemEntry(Object.fromEntries(desired), timestamp),
 		];
 	}

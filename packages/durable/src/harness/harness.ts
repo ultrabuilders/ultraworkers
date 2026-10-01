@@ -81,7 +81,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 
 	setModel(model: ModelRef | undefined, context: Context): Promise<void> {
-		return this.#editConfig((config) => {
+		return this.#editConfig(config => {
 			if (model === undefined) delete config.model;
 			else config.model = { provider: model.provider, modelId: model.modelId };
 		}, context);
@@ -92,7 +92,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 
 	setThinkingLevel(level: ModelThinkingLevel, context: Context): Promise<void> {
-		return this.#editConfig((config) => {
+		return this.#editConfig(config => {
 			config.thinkingLevel = level;
 		}, context);
 	}
@@ -102,7 +102,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 
 	setActiveTools(names: readonly string[], context: Context): Promise<void> {
-		return this.#editConfig((config) => {
+		return this.#editConfig(config => {
 			if (new Set(names).size !== names.length) throw new Error("Active tools list a name more than once");
 			requireRegistered(this.#host.registry.snapshot(), names, config.activeTools);
 			config.activeTools = [...names];
@@ -114,7 +114,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 
 	setStreamOptions(options: ConversationStreamOptions, context: Context): Promise<void> {
-		return this.#editConfig((config) => {
+		return this.#editConfig(config => {
 			config.streamOptions = options;
 		}, context);
 	}
@@ -124,7 +124,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 
 	setRetryPolicy(policy: ConversationRetryPolicy | undefined, context: Context): Promise<void> {
-		return this.#editConfig((config) => {
+		return this.#editConfig(config => {
 			if (policy === undefined) delete config.retry;
 			else config.retry = policy;
 		}, context);
@@ -177,7 +177,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 
 	#editConfig(edit: (config: Draft<ConversationConfigState>) => void, context: Context): Promise<void> {
-		return this.#host.harness.commitWith(async (tx) => {
+		return this.#host.harness.commitWith(async tx => {
 			edit(await tx.doc(ConversationConfig, this.id));
 		}, context);
 	}
@@ -240,7 +240,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			const snapshot = this.#registry.snapshot();
 			const { scheduling, tasks } = this.#tasks.inspect(snapshot);
 			const scan = (status: "queued" | "placed") =>
-				scanAll((cursor) => this.#storage.scanSubmissions({ status }, SCAN_PAGE_SIZE, cursor, context));
+				scanAll(cursor => this.#storage.scanSubmissions({ status }, SCAN_PAGE_SIZE, cursor, context));
 			const submissions = [...(await scan("queued")), ...(await scan("placed"))].sort((a, b) => a.id - b.id);
 			return { scheduling, tasks, submissions, registry: snapshot.failures() };
 		});
@@ -298,7 +298,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 
 	async #create(target: CreateTarget, init: ConversationInit | undefined, context: Context): Promise<Conversation> {
 		this.#assertOpen();
-		const id = await this.commitWith(async (tx) => {
+		const id = await this.commitWith(async tx => {
 			if (target.kind === "root" && (await tx.conversation(ROOT_CONVERSATION_ID)) !== undefined) {
 				return ROOT_CONVERSATION_ID;
 			}
@@ -351,7 +351,7 @@ function requireRegistered<Tool extends ToolRegistration>(
 ): void {
 	const existing = new Set(previous);
 	const registered = new Set(snapshot.toolNames());
-	const missing = names.filter((name) => !existing.has(name) && !registered.has(name));
+	const missing = names.filter(name => !existing.has(name) && !registered.has(name));
 	if (missing.length > 0) throw new Error(`Tools are not registered: ${missing.join(", ")}`);
 }
 
@@ -367,8 +367,8 @@ export const Harness = {
 	): Promise<Harness> {
 		context.abortSignal?.throwIfAborted();
 		const snapshot = options.registry.snapshot();
-		const missing = BUILTIN_TASKS.filter((task) => snapshot.task(task.definition.name) === undefined).map(
-			(task) => `task ${task.definition.name}`,
+		const missing = BUILTIN_TASKS.filter(task => snapshot.task(task.definition.name) === undefined).map(
+			task => `task ${task.definition.name}`,
 		);
 		if (!snapshot.conversationSetups().some(({ key }) => key === BUILTIN_SETUP_KEY))
 			missing.push("conversation setup pi");

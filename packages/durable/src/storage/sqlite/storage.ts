@@ -251,7 +251,7 @@ export class SqliteStorage implements Storage {
 			...params,
 		);
 		return page(
-			rows.map((row) => parseJson<ConversationRecord>(row.record)),
+			rows.map(row => parseJson<ConversationRecord>(row.record)),
 			limit,
 		);
 	}
@@ -357,7 +357,7 @@ export class SqliteStorage implements Storage {
 				this.db.prepare(`SELECT record FROM entries WHERE ${clauses.join(" AND ")} ORDER BY id DESC LIMIT ?`),
 				...params,
 			);
-			values.push(...rows.map((row) => parseJson<EntryRecord>(row.record)));
+			values.push(...rows.map(row => parseJson<EntryRecord>(row.record)));
 			if (values.length > limit || conversation.parent === undefined) break;
 			upper = upper === undefined ? conversation.parent.at : Math.min(upper, conversation.parent.at);
 			if (query.minEntryId !== undefined && upper < query.minEntryId) break;
@@ -407,7 +407,7 @@ export class SqliteStorage implements Storage {
 			...params,
 		);
 		return page(
-			rows.map((row) => parseJson<StoredTask>(row.record)),
+			rows.map(row => parseJson<StoredTask>(row.record)),
 			limit,
 		);
 	}
@@ -441,7 +441,7 @@ export class SqliteStorage implements Storage {
 			...params,
 		);
 		return page(
-			rows.map((row) => parseJson<SubmissionRecord>(row.record)),
+			rows.map(row => parseJson<SubmissionRecord>(row.record)),
 			limit,
 		);
 	}
@@ -513,7 +513,7 @@ export class SqliteStorage implements Storage {
 			...params,
 		);
 		return page(
-			rows.map((row) => parseJson<DocumentRecord>(row.record)),
+			rows.map(row => parseJson<DocumentRecord>(row.record)),
 			limit,
 		);
 	}

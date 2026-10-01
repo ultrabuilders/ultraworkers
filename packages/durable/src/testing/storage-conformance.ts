@@ -68,18 +68,18 @@ type AssertionResult = {
 
 function assertionFacade(assertions: StorageConformanceAssertions) {
 	return (actual: unknown): AssertionResult => ({
-		toBe: (expected) => assertions.strictEqual(actual, expected),
+		toBe: expected => assertions.strictEqual(actual, expected),
 		toBeDefined: () => assertions.ok(actual !== undefined, "Expected value to be defined"),
-		toBeGreaterThan: (expected) => assertions.greaterThan(actual as number, expected),
+		toBeGreaterThan: expected => assertions.greaterThan(actual as number, expected),
 		toBeUndefined: () => assertions.strictEqual(actual, undefined),
-		toEqual: (expected) => assertions.deepEqual(actual, expected),
-		toHaveLength: (expected) => assertions.strictEqual((actual as { readonly length: unknown }).length, expected),
-		toMatchObject: (expected) => assertions.partialDeepEqual(actual, expected),
+		toEqual: expected => assertions.deepEqual(actual, expected),
+		toHaveLength: expected => assertions.strictEqual((actual as { readonly length: unknown }).length, expected),
+		toMatchObject: expected => assertions.partialDeepEqual(actual, expected),
 		rejects: {
-			toThrow: (messageIncludes) => assertions.rejects(Promise.resolve(actual), messageIncludes),
+			toThrow: messageIncludes => assertions.rejects(Promise.resolve(actual), messageIncludes),
 		},
 		resolves: {
-			toBe: async (expected) => assertions.strictEqual(await Promise.resolve(actual), expected),
+			toBe: async expected => assertions.strictEqual(await Promise.resolve(actual), expected),
 		},
 	});
 }
@@ -92,7 +92,7 @@ function createCase(options: StorageConformanceOptions, name: string, test: Conf
 export function createStorageConformance(options: StorageConformanceOptions): readonly StorageConformanceCase[] {
 	const expect = assertionFacade(options.assertions);
 	return [
-		createCase(options, "reserves ID 1 for the immutable root conversation", async (storage) => {
+		createCase(options, "reserves ID 1 for the immutable root conversation", async storage => {
 			expect(await storage.mintId<ConversationId>()).toBe(2);
 			await expect(createRoot(storage)).resolves.toBe(ROOT_CONVERSATION_ID);
 			expect(await storage.conversation(ROOT_CONVERSATION_ID, context)).toEqual({ id: ROOT_CONVERSATION_ID });
@@ -104,7 +104,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 		createCase(
 			options,
 			"commits mixed table writes atomically and rolls all of them back on failure",
-			async (storage) => {
+			async storage => {
 				const rootId = await createRoot(storage);
 				const entryId = await storage.mintId<EntryId>();
 				const taskId = await storage.mintId<TaskId<JsonValue>>();
@@ -163,7 +163,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			},
 		),
 
-		createCase(options, "detaches retained writes and every returned record", async (storage) => {
+		createCase(options, "detaches retained writes and every returned record", async storage => {
 			const rootId = await createRoot(storage);
 			const entryId = await storage.mintId<EntryId>();
 			const taskId = await storage.mintId<TaskId<JsonValue>>();
@@ -220,7 +220,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect((await storage.submission(submissionId, context))?.detail).toEqual({ codes: ["initial"] });
 		}),
 
-		createCase(options, "detaches prototype-like JSON keys without changing object prototypes", async (storage) => {
+		createCase(options, "detaches prototype-like JSON keys without changing object prototypes", async storage => {
 			const rootId = await createRoot(storage);
 			const entryId = await storage.mintId<EntryId>();
 			const data = JSON.parse(
@@ -245,7 +245,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(Reflect.get(secondRead, "toString")).toBe("value");
 		}),
 
-		createCase(options, "indexes entries committed out of ID order", async (storage) => {
+		createCase(options, "indexes entries committed out of ID order", async storage => {
 			const rootId = await createRoot(storage);
 			await storage.commit(
 				[
@@ -267,7 +267,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect((await storage.findLatestHeadMarker(rootId, undefined, context))?.id).toBe(20);
 		}),
 
-		createCase(options, "continues an entry cursor below its last item after a newer commit", async (storage) => {
+		createCase(options, "continues an entry cursor below its last item after a newer commit", async storage => {
 			const rootId = await createRoot(storage);
 			const oldestId = await storage.mintId<EntryId>();
 			const middleId = await storage.mintId<EntryId>();
@@ -290,7 +290,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(second.next).toBeUndefined();
 		}),
 
-		createCase(options, "paginates conversations by opaque cursor in ascending ID order", async (storage) => {
+		createCase(options, "paginates conversations by opaque cursor in ascending ID order", async storage => {
 			const rootId = await createRoot(storage);
 			const secondId = await storage.mintId<ConversationId>();
 			const thirdId = await storage.mintId<ConversationId>();
@@ -311,7 +311,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(second.next).toBeUndefined();
 		}),
 
-		createCase(options, "filters and pages conversations by durable owner edges", async (storage) => {
+		createCase(options, "filters and pages conversations by durable owner edges", async storage => {
 			const rootId = await createRoot(storage);
 			const otherOwnerId = await storage.mintId<ConversationId>();
 			const firstTaskId = await storage.mintId<TaskId<JsonValue>>();
@@ -361,7 +361,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			).toEqual([firstId]);
 		}),
 
-		createCase(options, "scans deep fork history newest-first through every ancestor cap", async (storage) => {
+		createCase(options, "scans deep fork history newest-first through every ancestor cap", async storage => {
 			const rootId = await createRoot(storage);
 			const rootFirst = await storage.mintId<EntryId>();
 			const rootForkPoint = await storage.mintId<EntryId>();
@@ -500,7 +500,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			).rejects.toThrow("Unknown conversation");
 		}),
 
-		createCase(options, "replaces complete task records and pages filtered task scans", async (storage) => {
+		createCase(options, "replaces complete task records and pages filtered task scans", async storage => {
 			const rootId = await createRoot(storage);
 			const firstId = await storage.mintId<TaskId<JsonValue>>();
 			const secondId = await storage.mintId<TaskId<JsonValue>>();
@@ -555,7 +555,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 		createCase(
 			options,
 			"indexes request IDs per conversation and replaces complete submission records",
-			async (storage) => {
+			async storage => {
 				const rootId = await createRoot(storage);
 				const secondConversationId = await storage.mintId<ConversationId>();
 				await storage.commit([{ type: "conversation", value: { id: secondConversationId } }], context);
@@ -628,7 +628,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			},
 		),
 
-		createCase(options, "stores passive write submissions without input-only lifecycle states", async (storage) => {
+		createCase(options, "stores passive write submissions without input-only lifecycle states", async storage => {
 			const rootId = await createRoot(storage);
 			const doneId = await storage.mintId<SubmissionId>();
 			const failedId = await storage.mintId<SubmissionId>();
@@ -678,7 +678,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(await storage.submissionByRequest(rootId, "passive-failed", context)).toEqual(unanswered);
 		}),
 
-		createCase(options, "reconstructs rewindable documents and preserves half-open incarnations", async (storage) => {
+		createCase(options, "reconstructs rewindable documents and preserves half-open incarnations", async storage => {
 			const rootId = await createRoot(storage);
 			const firstId = await storage.mintId<DocumentId>();
 			const firstRecord = {
@@ -801,7 +801,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect((await storage.document(secondId, "current", context))?.value).toEqual({ items: ["new"] });
 		}),
 
-		createCase(options, "streams long document tails across root replacement deltas", async (storage) => {
+		createCase(options, "streams long document tails across root replacement deltas", async storage => {
 			const rootId = await createRoot(storage);
 			const id = await storage.mintId<DocumentId>();
 			const record = {
@@ -894,210 +894,206 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect((await storage.document(id, "current", context))?.value).toEqual(current);
 		}),
 
-		createCase(
-			options,
-			"copies stored document bases independently and rejects ambiguous sources",
-			async (storage) => {
-				const rootId = await createRoot(storage);
-				const childId = await storage.mintId<ConversationId>();
-				const secondChildId = await storage.mintId<ConversationId>();
-				await storage.commit(
-					[
-						{ type: "conversation", value: { id: childId } },
-						{ type: "conversation", value: { id: secondChildId } },
-					],
-					context,
-				);
-				const sourceId = await storage.mintId<DocumentId>();
-				const sourceRecord = {
-					id: sourceId,
-					kind: "copy.source",
-					scope: { kind: "conversation", conversationId: rootId },
-					history: "rewindable",
-					fork: "asOf",
-				} satisfies DocumentCreate;
-				const createdAt = await storage.commit(
-					[
-						{
-							type: "document.create",
-							record: sourceRecord,
-							content: { kind: "base", version: 2, value: { count: 1, rows: [{ value: "base" }] } },
+		createCase(options, "copies stored document bases independently and rejects ambiguous sources", async storage => {
+			const rootId = await createRoot(storage);
+			const childId = await storage.mintId<ConversationId>();
+			const secondChildId = await storage.mintId<ConversationId>();
+			await storage.commit(
+				[
+					{ type: "conversation", value: { id: childId } },
+					{ type: "conversation", value: { id: secondChildId } },
+				],
+				context,
+			);
+			const sourceId = await storage.mintId<DocumentId>();
+			const sourceRecord = {
+				id: sourceId,
+				kind: "copy.source",
+				scope: { kind: "conversation", conversationId: rootId },
+				history: "rewindable",
+				fork: "asOf",
+			} satisfies DocumentCreate;
+			const createdAt = await storage.commit(
+				[
+					{
+						type: "document.create",
+						record: sourceRecord,
+						content: { kind: "base", version: 2, value: { count: 1, rows: [{ value: "base" }] } },
+					},
+				],
+				context,
+			);
+			await storage.commit(
+				[
+					{
+						type: "document.change",
+						id: sourceId,
+						content: {
+							kind: "delta",
+							version: 2,
+							ops: [
+								["s", ["count"], 2],
+								["p", ["rows"], 1, 0, [{ value: "current" }]],
+							],
 						},
-					],
-					context,
-				);
-				await storage.commit(
-					[
-						{
-							type: "document.change",
-							id: sourceId,
-							content: {
-								kind: "delta",
-								version: 2,
-								ops: [
-									["s", ["count"], 2],
-									["p", ["rows"], 1, 0, [{ value: "current" }]],
-								],
-							},
+					},
+				],
+				context,
+			);
+			const historicalCopyId = await storage.mintId<DocumentId>();
+			const currentCopyId = await storage.mintId<DocumentId>();
+			const retiredCopyId = await storage.mintId<DocumentId>();
+			const childRecord = (id: DocumentId, conversationId: ConversationId): DocumentCreate => ({
+				id,
+				kind: sourceRecord.kind,
+				scope: { kind: "conversation", conversationId },
+				history: "rewindable",
+				fork: "asOf",
+			});
+			await storage.commit(
+				[
+					{
+						type: "document.copy",
+						record: childRecord(historicalCopyId, childId),
+						source: { id: sourceId, at: createdAt },
+					},
+					{
+						type: "document.copy",
+						record: childRecord(currentCopyId, secondChildId),
+						source: { id: sourceId, at: "current" },
+					},
+					{
+						type: "document.copy",
+						record: childRecord(retiredCopyId, rootId),
+						source: { id: sourceId, at: "current" },
+					},
+					{ type: "document.retire", id: retiredCopyId },
+				],
+				context,
+			);
+			expect(await storage.document(historicalCopyId, "current", context)).toMatchObject({
+				version: 2,
+				value: { count: 1, rows: [{ value: "base" }] },
+			});
+			expect(await storage.document(currentCopyId, "current", context)).toMatchObject({
+				version: 2,
+				value: { count: 2, rows: [{ value: "base" }, { value: "current" }] },
+			});
+			expect(await storage.document(retiredCopyId, "current", context)).toBeUndefined();
+
+			await storage.commit(
+				[
+					{
+						type: "document.change",
+						id: sourceId,
+						content: { kind: "base", version: 2, value: { count: 99, rows: [] } },
+					},
+					{ type: "document.retire", id: sourceId },
+				],
+				context,
+			);
+			expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
+				count: 2,
+				rows: [{ value: "base" }, { value: "current" }],
+			});
+
+			const latestSourceId = await storage.mintId<DocumentId>();
+			const latestCopyId = await storage.mintId<DocumentId>();
+			const latestSource = {
+				id: latestSourceId,
+				kind: "copy.latest",
+				scope: { kind: "conversation", conversationId: rootId },
+				history: "latest",
+				fork: "current",
+			} satisfies DocumentCreate;
+			await storage.commit(
+				[
+					{
+						type: "document.create",
+						record: latestSource,
+						content: { kind: "base", version: 4, value: { retained: "copy" } },
+					},
+				],
+				context,
+			);
+			await storage.commit(
+				[
+					{
+						type: "document.copy",
+						record: {
+							...latestSource,
+							id: latestCopyId,
+							scope: { kind: "conversation", conversationId: childId },
 						},
-					],
-					context,
-				);
-				const historicalCopyId = await storage.mintId<DocumentId>();
-				const currentCopyId = await storage.mintId<DocumentId>();
-				const retiredCopyId = await storage.mintId<DocumentId>();
-				const childRecord = (id: DocumentId, conversationId: ConversationId): DocumentCreate => ({
-					id,
-					kind: sourceRecord.kind,
-					scope: { kind: "conversation", conversationId },
-					history: "rewindable",
-					fork: "asOf",
-				});
+						source: { id: latestSourceId, at: "current" },
+					},
+				],
+				context,
+			);
+			await storage.commit(
+				[
+					{
+						type: "document.change",
+						id: latestSourceId,
+						content: { kind: "base", version: 4, value: { retained: "source-only" } },
+					},
+					{ type: "document.retire", id: latestSourceId },
+				],
+				context,
+			);
+			expect(await storage.document(latestCopyId, "current", context)).toMatchObject({
+				version: 4,
+				value: { retained: "copy" },
+			});
+
+			const conflictId = await storage.mintId<DocumentId>();
+			let conflictError: unknown;
+			try {
 				await storage.commit(
 					[
 						{
 							type: "document.copy",
-							record: childRecord(historicalCopyId, childId),
-							source: { id: sourceId, at: createdAt },
+							record: childRecord(conflictId, childId),
+							source: { id: currentCopyId, at: "current" },
 						},
-						{
-							type: "document.copy",
-							record: childRecord(currentCopyId, secondChildId),
-							source: { id: sourceId, at: "current" },
-						},
-						{
-							type: "document.copy",
-							record: childRecord(retiredCopyId, rootId),
-							source: { id: sourceId, at: "current" },
-						},
-						{ type: "document.retire", id: retiredCopyId },
+						{ type: "document.retire", id: currentCopyId },
 					],
 					context,
 				);
-				expect(await storage.document(historicalCopyId, "current", context)).toMatchObject({
-					version: 2,
-					value: { count: 1, rows: [{ value: "base" }] },
-				});
-				expect(await storage.document(currentCopyId, "current", context)).toMatchObject({
-					version: 2,
-					value: { count: 2, rows: [{ value: "base" }, { value: "current" }] },
-				});
-				expect(await storage.document(retiredCopyId, "current", context)).toBeUndefined();
+			} catch (error) {
+				conflictError = error;
+			}
+			expect((conflictError as Error | undefined)?.name).toBe("StorageRejected");
+			expect(await storage.document(conflictId, "current", context)).toBeUndefined();
+			expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
+				count: 2,
+				rows: [{ value: "base" }, { value: "current" }],
+			});
 
-				await storage.commit(
-					[
-						{
-							type: "document.change",
-							id: sourceId,
-							content: { kind: "base", version: 2, value: { count: 99, rows: [] } },
-						},
-						{ type: "document.retire", id: sourceId },
-					],
-					context,
-				);
-				expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
-					count: 2,
-					rows: [{ value: "base" }, { value: "current" }],
-				});
-
-				const latestSourceId = await storage.mintId<DocumentId>();
-				const latestCopyId = await storage.mintId<DocumentId>();
-				const latestSource = {
-					id: latestSourceId,
-					kind: "copy.latest",
-					scope: { kind: "conversation", conversationId: rootId },
-					history: "latest",
-					fork: "current",
-				} satisfies DocumentCreate;
-				await storage.commit(
-					[
-						{
-							type: "document.create",
-							record: latestSource,
-							content: { kind: "base", version: 4, value: { retained: "copy" } },
-						},
-					],
-					context,
-				);
+			const mismatchId = await storage.mintId<DocumentId>();
+			let mismatchError: unknown;
+			try {
 				await storage.commit(
 					[
 						{
 							type: "document.copy",
-							record: {
-								...latestSource,
-								id: latestCopyId,
-								scope: { kind: "conversation", conversationId: childId },
-							},
-							source: { id: latestSourceId, at: "current" },
+							record: { ...childRecord(mismatchId, childId), kind: "copy.mismatch" },
+							source: { id: currentCopyId, at: "current" },
 						},
 					],
 					context,
 				);
-				await storage.commit(
-					[
-						{
-							type: "document.change",
-							id: latestSourceId,
-							content: { kind: "base", version: 4, value: { retained: "source-only" } },
-						},
-						{ type: "document.retire", id: latestSourceId },
-					],
-					context,
-				);
-				expect(await storage.document(latestCopyId, "current", context)).toMatchObject({
-					version: 4,
-					value: { retained: "copy" },
-				});
-
-				const conflictId = await storage.mintId<DocumentId>();
-				let conflictError: unknown;
-				try {
-					await storage.commit(
-						[
-							{
-								type: "document.copy",
-								record: childRecord(conflictId, childId),
-								source: { id: currentCopyId, at: "current" },
-							},
-							{ type: "document.retire", id: currentCopyId },
-						],
-						context,
-					);
-				} catch (error) {
-					conflictError = error;
-				}
-				expect((conflictError as Error | undefined)?.name).toBe("StorageRejected");
-				expect(await storage.document(conflictId, "current", context)).toBeUndefined();
-				expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
-					count: 2,
-					rows: [{ value: "base" }, { value: "current" }],
-				});
-
-				const mismatchId = await storage.mintId<DocumentId>();
-				let mismatchError: unknown;
-				try {
-					await storage.commit(
-						[
-							{
-								type: "document.copy",
-								record: { ...childRecord(mismatchId, childId), kind: "copy.mismatch" },
-								source: { id: currentCopyId, at: "current" },
-							},
-						],
-						context,
-					);
-				} catch (error) {
-					mismatchError = error;
-				}
-				expect((mismatchError as Error | undefined)?.name).toBe("StorageRejected");
-				expect(await storage.document(mismatchId, "current", context)).toBeUndefined();
-			},
-		),
+			} catch (error) {
+				mismatchError = error;
+			}
+			expect((mismatchError as Error | undefined)?.name).toBe("StorageRejected");
+			expect(await storage.document(mismatchId, "current", context)).toBeUndefined();
+		}),
 
 		createCase(
 			options,
 			"uses bases for version transitions and rejects historical reads of current-only documents",
-			async (storage) => {
+			async storage => {
 				await createRoot(storage);
 				const id = await storage.mintId<DocumentId>();
 				const record = {
@@ -1134,7 +1130,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			},
 		),
 
-		createCase(options, "indexes logical addresses and exact-scope scans independently", async (storage) => {
+		createCase(options, "indexes logical addresses and exact-scope scans independently", async storage => {
 			const rootId = await createRoot(storage);
 			const firstId = await storage.mintId<DocumentId>();
 			const secondId = await storage.mintId<DocumentId>();
@@ -1276,7 +1272,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 		createCase(
 			options,
 			"keeps document lifecycle failures atomic and gives create-plus-retire an empty lifetime",
-			async (storage) => {
+			async storage => {
 				const rootId = await createRoot(storage);
 				const firstId = await storage.mintId<DocumentId>();
 				const secondId = await storage.mintId<DocumentId>();
@@ -1343,7 +1339,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 		createCase(
 			options,
 			"rolls back record tables and secondary indexes when a document command fails",
-			async (storage) => {
+			async storage => {
 				const rootId = await createRoot(storage);
 				const taskId = await storage.mintId<TaskId<JsonValue>>();
 				const submissionId = await storage.mintId<SubmissionId>();
@@ -1416,7 +1412,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			},
 		),
 
-		createCase(options, "keeps indexed string identities lossless", async (storage) => {
+		createCase(options, "keeps indexed string identities lossless", async storage => {
 			const rootId = await createRoot(storage);
 			const first = "\ud800";
 			const second = "\ud801";
@@ -1518,7 +1514,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			).toEqual([firstKindDocumentId]);
 		}),
 
-		createCase(options, "keeps one global record ID namespace and rejects exhausted ID minting", async (storage) => {
+		createCase(options, "keeps one global record ID namespace and rejects exhausted ID minting", async storage => {
 			const rootId = await createRoot(storage);
 			const explicitEntryId = idFromNumber<EntryId>(100);
 			await storage.commit([{ type: "entry", value: entry(explicitEntryId, rootId) }], context);
@@ -1538,7 +1534,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			await expect(storage.mintId<EntryId>()).rejects.toThrow("ID space is exhausted");
 		}),
 
-		createCase(options, "rejects every operation after close", async (storage) => {
+		createCase(options, "rejects every operation after close", async storage => {
 			await createRoot(storage);
 			await storage.close(context);
 			await expect(storage.conversation(ROOT_CONVERSATION_ID, context)).rejects.toThrow("closed");

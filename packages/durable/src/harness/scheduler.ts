@@ -143,12 +143,12 @@ export class TaskScheduler {
 
 	/** Load live tasks and change surviving `running` tasks back to `pending`. Dispatches nothing. */
 	async open(context: Context): Promise<void> {
-		this.#session.subscribeCommits((publication) => this.#observe(publication));
+		this.#session.subscribeCommits(publication => this.#observe(publication));
 		this.#session.subscribeClose(() => this.#seal());
 		this.#unsubscribeRegistry = this.#registry.subscribe(() => this.#kick());
-		await this.#session.commitWith(async (tx) => {
+		await this.#session.commitWith(async tx => {
 			const scan = (status: "pending" | "running") =>
-				scanAll((cursor) => tx.scanTasks({ status }, SCAN_PAGE_SIZE, cursor)) as Promise<LiveTaskRecord[]>;
+				scanAll(cursor => tx.scanTasks({ status }, SCAN_PAGE_SIZE, cursor)) as Promise<LiveTaskRecord[]>;
 			const pending = await scan("pending");
 			const running = await scan("running");
 			for (const record of [...pending, ...running]) this.#live.set(record.id, record);
@@ -166,7 +166,7 @@ export class TaskScheduler {
 
 	/** Wait for every invocation signalled by `#seal()`. Writes nothing. */
 	async join(): Promise<void> {
-		await Promise.allSettled([...this.#invocations.values()].map((invocation) => invocation.done));
+		await Promise.allSettled([...this.#invocations.values()].map(invocation => invocation.done));
 	}
 
 	/**
@@ -174,7 +174,7 @@ export class TaskScheduler {
 	 * join the run invocation seen on the line. The next drain starts the abort invocation.
 	 */
 	async abort(id: TaskId, context: Context): Promise<"marked" | "terminal"> {
-		const marked = await this.#session.commitWith(async (tx) => {
+		const marked = await this.#session.commitWith(async tx => {
 			const current = await tx.task(id);
 			if (current === undefined) throw new Error(`Task ${id} does not exist`);
 			if (current.state.status === "terminal") return { result: "terminal" as const };
@@ -276,7 +276,7 @@ export class TaskScheduler {
 	async #reserve(): Promise<Reservation[]> {
 		const reservations: Reservation[] = [];
 		try {
-			await this.#session.commitWith(async (tx) => {
+			await this.#session.commitWith(async tx => {
 				if (!this.#enabled || this.#closing) return;
 				// Taken once per pass, and only when some task is a candidate.
 				let snapshot: RegistrySnapshot | undefined;
@@ -345,7 +345,7 @@ export class TaskScheduler {
 	/** Live dependencies a run waits for; an abort mark bypasses them and a running task has passed them. */
 	#waitingOn(record: LiveTaskRecord): TaskId[] {
 		if (record.abortRequested || record.state.status !== "pending") return [];
-		return record.after.filter((id) => this.#live.has(id));
+		return record.after.filter(id => this.#live.has(id));
 	}
 
 	/**
@@ -491,7 +491,7 @@ export class TaskScheduler {
 		decide: (tx: Transaction, current: ErasedRunningTask) => Decision,
 	): Promise<ErasedRunningTask | undefined> {
 		try {
-			return await this.#session.commitWith(async (tx) => {
+			return await this.#session.commitWith(async tx => {
 				const current = this.#live.get(invocation.taskId) as ErasedRunningTask | undefined;
 				const decision = current !== undefined && !this.#closing ? decide(tx, current) : false;
 				if (decision === true) return current;
@@ -580,7 +580,7 @@ export class TaskScheduler {
 			context: (conversationId, context, at) =>
 				this.#read(invocation, () => readContext(this.#session, this.#storage, conversationId, context, at)),
 			now: () => this.#now(),
-			report: (error) => this.#report(error),
+			report: error => this.#report(error),
 		};
 	}
 
@@ -598,7 +598,7 @@ export class TaskScheduler {
 	): Promise<T> {
 		if (invocation.ended) return Promise.reject(endedError(invocation));
 		return this.#session.commitWith(
-			async (tx) => {
+			async tx => {
 				if (invocation.ended) throw endedError(invocation);
 				if (this.#closing) throw closedError();
 				const current = this.#live.get(invocation.taskId) as ErasedRunningTask | undefined;
@@ -706,5 +706,5 @@ function jsonEqual(left: JsonValue | undefined, right: JsonValue | undefined): b
 	}
 	const keys = Object.keys(left);
 	if (keys.length !== Object.keys(right).length) return false;
-	return keys.every((key) => Object.hasOwn(right, key) && jsonEqual(left[key], right[key]));
+	return keys.every(key => Object.hasOwn(right, key) && jsonEqual(left[key], right[key]));
 }

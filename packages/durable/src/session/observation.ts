@@ -164,7 +164,7 @@ export class SessionDocumentWatch implements WatchHandle<ObservedDocumentValue> 
 	constructor(value: Readonly<JsonObject>, detach: () => void) {
 		this.#value = value;
 		this.#detach = detach;
-		this.#closedPromise = new Promise((resolve) => {
+		this.#closedPromise = new Promise(resolve => {
 			this.#resolveClosed = resolve;
 		});
 	}

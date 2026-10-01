@@ -91,7 +91,7 @@ type State = {
 
 const clone = <T>(value: T): T => {
 	if (value === null || typeof value !== "object") return value;
-	if (Array.isArray(value)) return value.map((item) => clone(item)) as T;
+	if (Array.isArray(value)) return value.map(item => clone(item)) as T;
 	const source = value as Record<string, unknown>;
 	const nullPrototype = Object.getPrototypeOf(value) === null;
 	const result = (nullPrototype ? Object.create(null) : {}) as Record<string, unknown>;
@@ -252,7 +252,7 @@ export class MemoryStorage implements Storage {
 		if (!Number.isSafeInteger(seq) || seq < this.nextSeq) {
 			throw new Error(`Commit sequence ${seq} does not strictly increase`);
 		}
-		const detachedWrites = freeze(this.resolveDocumentCopies(writes.map((write) => clone(write))));
+		const detachedWrites = freeze(this.resolveDocumentCopies(writes.map(write => clone(write))));
 		this.checkGlobalIds(detachedWrites);
 		const documentActions = this.prepareDocumentActions(detachedWrites);
 		this.checkDocumentActions(documentActions);
@@ -271,7 +271,7 @@ export class MemoryStorage implements Storage {
 	}
 
 	private resolveDocumentCopies(writes: StorageWrite[]): StorageWrite[] {
-		if (!writes.some((write) => write.type === "document.copy")) return writes;
+		if (!writes.some(write => write.type === "document.copy")) return writes;
 		const changedDocumentIds = new Set<DocumentId>();
 		for (const write of writes) {
 			if (write.type === "document.create" || write.type === "document.copy") {
@@ -280,7 +280,7 @@ export class MemoryStorage implements Storage {
 				changedDocumentIds.add(write.id);
 			}
 		}
-		return writes.map((write) => {
+		return writes.map(write => {
 			if (write.type !== "document.copy") return write;
 			try {
 				if (changedDocumentIds.has(write.source.id)) {
@@ -639,7 +639,7 @@ export class MemoryStorage implements Storage {
 			throw new Error(`Document ${id} does not retain historical content`);
 		}
 		if (!isAliveAt(stored.record, at)) return undefined;
-		const revisions = at === "current" ? stored.revisions : stored.revisions.filter((revision) => revision.seq <= at);
+		const revisions = at === "current" ? stored.revisions : stored.revisions.filter(revision => revision.seq <= at);
 		let baseIndex = revisions.length - 1;
 		while (baseIndex >= 0 && revisions[baseIndex]!.kind !== "base") baseIndex--;
 		const base = revisions[baseIndex];

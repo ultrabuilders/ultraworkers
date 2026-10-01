@@ -193,7 +193,7 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 
 	constructor() {
 		this.tools = {
-			add: (tool) => this.#register({ kind: "tool", tool }, `tool\0${tool.name}`, `Tool ${tool.name}`),
+			add: tool => this.#register({ kind: "tool", tool }, `tool\0${tool.name}`, `Tool ${tool.name}`),
 			wrap: (name, key, wrapper) =>
 				this.#register(
 					{ kind: "toolWrap", name, wrapper },
@@ -219,7 +219,7 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 			},
 		};
 		this.tasks = {
-			add: (task) => {
+			add: task => {
 				const name = task.definition.name;
 				return this.#register({ kind: "task", task }, `task\0${name}`, `Task ${name}`);
 			},
@@ -316,7 +316,7 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 	/** Validate the final staged state, then publish it synchronously. */
 	#publish(batch: Batch<Tool>): void {
 		if (batch.added.length === 0 && batch.disposed.size === 0) return;
-		const records = [...this.#current.records.filter((record) => !batch.disposed.has(record)), ...batch.added];
+		const records = [...this.#current.records.filter(record => !batch.disposed.has(record)), ...batch.added];
 		const keys = new Set<string>();
 		for (const record of records) {
 			if (record.key === undefined) continue;

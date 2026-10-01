@@ -78,7 +78,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const report = (error: unknown) => runtime.report(error);
 			const desired = await renderSections(registry.sections(), input, shown, report, context);
 			const entries = planSystemEntries(view, desired, runtime.now());
-			await runtime.commit(async (tx) => {
+			await runtime.commit(async tx => {
 				let cutoff = (await tx.scanEntries({ conversationId }, 1)).items[0]?.id;
 				for (const entry of entries) cutoff = (await tx.appendEntry(SystemEntry, conversationId, entry)).id;
 				if (cutoff === undefined) throw new Error(`Conversation ${conversationId} has no entries to send`);
@@ -90,7 +90,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 		request: async (task, runtime, context) => {
 			const { attempt, model: ref, thinkingLevel, streamOptions, cutoff } = task.state.checkpoint;
 			const conversationId = runtime.conversationId;
-			await runtime.commit(async (tx) => {
+			await runtime.commit(async tx => {
 				const live = await tx.doc(LiveDoc, conversationId);
 				await convertPartial(tx, live, conversationId);
 				live.generation = { attempt };
@@ -110,7 +110,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 		retry: async (task, runtime, context) => {
 			const { attempt, until } = task.state.checkpoint;
 			await runtime.sleep(until, context);
-			await runtime.commit(async (tx) => {
+			await runtime.commit(async tx => {
 				(await tx.doc(LiveDoc, runtime.conversationId)).generation = { attempt: attempt + 1 };
 				return { status: "running", checkpoint: { phase: "prepare", attempt: attempt + 1 } };
 			}, context);
@@ -137,7 +137,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}
 		}
 		const conversationId = runtime.conversationId;
-		await runtime.commit(async (tx) => {
+		await runtime.commit(async tx => {
 			const live = await tx.doc(LiveDoc, conversationId);
 			await convertPartial(tx, live, conversationId);
 			endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "aborted" });
@@ -150,7 +150,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 async function failNoModel(runtime: Runtime, ref: ModelRef | undefined, context: Context): Promise<void> {
 	const message =
 		ref === undefined ? "No model is configured" : `Model ${ref.provider}/${ref.modelId} is not available`;
-	await runtime.commit(async (tx) => {
+	await runtime.commit(async tx => {
 		const live = await tx.doc(LiveDoc, runtime.conversationId);
 		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "no_model" });
 		return { status: "terminal", outcome: { status: "failed", error: { message, detail: { reason: "no_model" } } } };
@@ -189,7 +189,7 @@ async function streamResponse(
 		inFlight = (async () => {
 			// Copy synchronously: the provider keeps mutating its partial.
 			const message = copyJson(partial, { omitUndefinedProperties: true });
-			await runtime.commit(async (tx) => {
+			await runtime.commit(async tx => {
 				const live = await tx.doc(LiveDoc, runtime.conversationId);
 				live.generation ??= { attempt };
 				assignJson(live.generation as Draft<Record<string, JsonValue>>, "message", message);
@@ -241,7 +241,7 @@ async function classify(
 			runtime.now() + (handle.pollAfterMs ?? DEFAULT_POLL_AFTER_MS),
 			previousPollAt === undefined ? Number.NEGATIVE_INFINITY : previousPollAt + 1,
 		);
-		await runtime.commit(async (tx) => {
+		await runtime.commit(async tx => {
 			(await tx.doc(LiveDoc, conversationId)).generation = { attempt, deferred: { pollAt } };
 			return { status: "running", checkpoint: { phase: "poll", attempt, model: ref, handle, pollAt } };
 		}, context);

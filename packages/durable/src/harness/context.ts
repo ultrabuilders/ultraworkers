@@ -83,7 +83,7 @@ export async function deriveContext(
 	const edits = new Map<EntryId, ContextEdit>();
 	for (const entry of range) for (const edit of entry.edits ?? []) edits.set(edit.target, edit);
 
-	const entries = head === undefined ? range : [head, ...range.filter((entry) => entry.head === undefined)];
+	const entries = head === undefined ? range : [head, ...range.filter(entry => entry.head === undefined)];
 	const messages: Message[] = [];
 	for (const entry of entries) {
 		const edit = edits.get(entry.id);

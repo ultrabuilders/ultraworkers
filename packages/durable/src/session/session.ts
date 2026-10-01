@@ -64,9 +64,9 @@ export class SessionImpl implements Session {
 		this.#storage = storage;
 		this.#host = {
 			storage,
-			cached: (id) => this.#documents.get(id),
+			cached: id => this.#documents.get(id),
 			load: (definition, addressId, address, context) => this.#loadDocument(definition, addressId, address, context),
-			install: (document) => {
+			install: document => {
 				this.#documents.set(document.addressId, document);
 			},
 			evict: (id, recordId) => {

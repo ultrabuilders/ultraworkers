@@ -57,8 +57,8 @@ export class OutputCapture {
 		this.#publisher = new AdaptivePublisher({
 			snapshot: () => this.snapshot(),
 			update: updateFrom,
-			measure: (update) => utf8ByteLength(JSON.stringify(update)),
-			publish: (update) => this.#onUpdate?.(update, this.#context),
+			measure: update => utf8ByteLength(JSON.stringify(update)),
+			publish: update => this.#onUpdate?.(update, this.#context),
 			onError: handlers.onError,
 			minIntervalMs: OUTPUT_MIN_EMIT_INTERVAL_MS,
 			targetBytesPerSecond: OUTPUT_TARGET_BYTES_PER_SECOND,

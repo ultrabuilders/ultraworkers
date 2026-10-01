@@ -100,6 +100,12 @@ async function initializeConnection(
 		protocolVersion: MCP_PROTOCOL_VERSION,
 		capabilities: {
 			roots: { listChanged: false },
+			// Declared together with MCPManager.setElicitationHandler: a server
+			// that sees this capability will call `elicitation/create`, and with
+			// no handler installed the request comes back -32601. Advertising it
+			// without answering it is what makes a spec-compliant server look
+			// broken.
+			elicitation: {},
 		},
 		clientInfo: CLIENT_INFO,
 	};

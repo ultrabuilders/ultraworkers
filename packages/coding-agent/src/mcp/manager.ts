@@ -50,6 +50,10 @@ import type { MCPToolCache } from "./tool-cache";
 import { setGeneratedHeader } from "./transports/header-policy";
 import type {
 	MCPAuthChallenge,
+	MCPElicitationHandler,
+	MCPElicitOutcome,
+	MCPElicitPropertySchema,
+	MCPElicitRequest,
 	MCPGetPromptResult,
 	MCPPrompt,
 	MCPRequestOptions,
@@ -247,6 +251,66 @@ export interface MCPDiscoverOptions {
 export type MCPAuthHandler = (serverName: string, challenge: MCPAuthChallenge) => Promise<MCPServerConfig | undefined>;
 
 /**
+ * Validate an incoming `elicitation/create` params object.
+ *
+ * A server that sends a malformed schema gets a JSON-RPC error rather than a
+ * form built from undefined fields, which would fail later and further from the
+ * cause. `required` is unioned with the per-property flags because servers set it
+ * either way — a field marked `required` on the property and absent from the
+ * array is still required, and dropping it would let an empty value through.
+ */
+function parseElicitRequest(params: unknown): MCPElicitRequest {
+	if (typeof params !== "object" || params === null) {
+		throw Object.assign(new Error("elicitation/create requires an object params"), { code: -32602 });
+	}
+	const record = params as Record<string, unknown>;
+	const schema = record.requestedSchema;
+	if (typeof schema !== "object" || schema === null) {
+		throw Object.assign(new Error("elicitation/create requires requestedSchema"), { code: -32602 });
+	}
+	const rawProperties = (schema as Record<string, unknown>).properties;
+	if (typeof rawProperties !== "object" || rawProperties === null) {
+		throw Object.assign(new Error("elicitation/create requires requestedSchema.properties"), { code: -32602 });
+	}
+	const declared = Array.isArray((schema as Record<string, unknown>).required)
+		? ((schema as Record<string, unknown>).required as unknown[]).filter(
+				(name): name is string => typeof name === "string",
+			)
+		: [];
+	const properties: Record<string, MCPElicitPropertySchema> = {};
+	for (const [name, raw] of Object.entries(rawProperties as Record<string, unknown>)) {
+		if (typeof raw !== "object" || raw === null) continue;
+		const field = raw as Record<string, unknown>;
+		properties[name] = {
+			type: typeof field.type === "string" ? field.type : "string",
+			...(typeof field.title === "string" ? { title: field.title } : {}),
+			...(typeof field.description === "string" ? { description: field.description } : {}),
+			required: field.required === true || declared.includes(name),
+			writeOnly: field.writeOnly === true,
+		};
+	}
+	return {
+		message: typeof record.message === "string" ? record.message : "",
+		requestedSchema: {
+			properties,
+			...(declared.length > 0 ? { required: declared } : {}),
+		},
+	};
+}
+
+/** Narrow an untrusted outcome to one the MCP union can carry. */
+function isElicitOutcome(value: unknown): value is MCPElicitOutcome {
+	if (typeof value !== "object" || value === null) return false;
+	const action = (value as Record<string, unknown>).action;
+	if (action !== "accept" && action !== "decline" && action !== "cancel") return false;
+	if (action === "accept") {
+		const content = (value as Record<string, unknown>).content;
+		return typeof content === "object" && content !== null && !Array.isArray(content);
+	}
+	return true;
+}
+
+/**
  * MCP Server Manager.
  *
  * Manages connections to MCP servers and provides tools to the agent.
@@ -279,6 +343,7 @@ export class MCPManager {
 	#sources = new Map<string, SourceMeta>();
 	#authStorage: AuthStorage | null = null;
 	#authHandler?: MCPAuthHandler;
+	#elicitationHandler?: MCPElicitationHandler;
 	#notificationListeners = new Set<(serverName: string, method: string, params: unknown) => void>();
 	#connectionStatusListeners = new Set<(event: McpConnectionStatusEvent) => void>();
 	#catalogChangeListeners = new Set<(event: McpCatalogChangeEvent) => void>();
@@ -536,6 +601,19 @@ export class MCPManager {
 	}
 
 	/**
+	 * Set the presenter for `elicitation/create` requests from servers.
+	 *
+	 * With no handler the request is rejected with -32601, like any other
+	 * unknown server-to-client method — so declaring the capability in
+	 * {@link MCPClient} without installing one is a protocol error the user
+	 * would see as a broken server. The two are declared together for that
+	 * reason.
+	 */
+	setElicitationHandler(handler: MCPElicitationHandler | undefined): void {
+		this.#elicitationHandler = handler;
+	}
+
+	/**
 	 * Discover and connect to all MCP servers from .mcp.json files.
 	 * Returns tools and any connection errors.
 	 */
@@ -767,7 +845,7 @@ export class MCPManager {
 						this.#handleServerNotification(name, method, params);
 					},
 					onRequest: (method, params) => {
-						return this.#handleServerRequest(method, params);
+						return this.#handleServerRequest(method, params, name);
 					},
 				});
 			})().then(
@@ -1080,15 +1158,44 @@ export class MCPManager {
 	}
 
 	/** Handle server-to-client JSON-RPC requests (e.g. ping, roots/list). */
-	async #handleServerRequest(method: string, _params: unknown): Promise<unknown> {
+	async #handleServerRequest(method: string, params: unknown, serverName: string): Promise<unknown> {
 		switch (method) {
 			case "ping":
 				return {};
 			case "roots/list":
 				return this.#getRoots();
+			case "elicitation/create":
+				return this.#handleElicitationCreate(serverName, params);
 			default:
 				throw Object.assign(new Error(`Unsupported server request: ${method}`), { code: -32601 });
 		}
+	}
+
+	/**
+	 * Answer `elicitation/create`, preserving which of the three outcomes occurred.
+	 *
+	 * The returned object goes straight onto the wire as the JSON-RPC result, so
+	 * `action` is the only thing the server gets. Nothing here normalises or
+	 * defaults it: the handler's choice is the server's answer, and a handler that
+	 * throws surfaces as a JSON-RPC error rather than an unhandled rejection at
+	 * the transport.
+	 */
+	async #handleElicitationCreate(serverName: string, params: unknown): Promise<MCPElicitOutcome> {
+		const handler = this.#elicitationHandler;
+		if (!handler) {
+			throw Object.assign(new Error("Unsupported server request: elicitation/create"), { code: -32601 });
+		}
+		const outcome = await handler(serverName, parseElicitRequest(params));
+		// A host handler that resolves to something outside the union would put a
+		// value on the wire that no server can interpret, and it would do so
+		// without any local error — the same silent failure as collapsing decline
+		// into cancel. Rejecting here keeps a malformed answer visible.
+		if (!isElicitOutcome(outcome)) {
+			throw Object.assign(new Error(`elicitation handler for "${serverName}" returned an invalid outcome`), {
+				code: -32603,
+			});
+		}
+		return outcome;
 	}
 
 	#getRoots(): { roots: Array<{ uri: string; name: string }> } {
@@ -1597,7 +1704,7 @@ export class MCPManager {
 				this.#handleServerNotification(name, method, params);
 			},
 			onRequest: (method, params) => {
-				return this.#handleServerRequest(method, params);
+				return this.#handleServerRequest(method, params, name);
 			},
 		});
 

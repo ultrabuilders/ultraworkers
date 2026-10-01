@@ -3,6 +3,7 @@ import type { CompactionOutcome } from "@oh-my-pi/pi-agent-core/compaction";
 import type { AssistantMessage, ImageContent, Model, Usage, UsageReport } from "@oh-my-pi/pi-ai";
 import type { Component, Container, EditorTheme, Loader, TUI } from "@oh-my-pi/pi-tui";
 import type { StatusNotice } from "@oh-my-pi/pi-tui/chrome/status-notice";
+import type { OverlayPanel } from "@oh-my-pi/pi-tui/chrome/overlay-box";
 import type { CollabController } from "../collab/controller";
 import type { CollabGuestLink } from "../collab/guest";
 import type { CollabHost } from "../collab/host";
@@ -41,7 +42,6 @@ import type { CustomEditor } from "@oh-my-pi/pi-tui/prompt/custom-editor";
 import type { ExtensionTUISurface } from "@oh-my-pi/pi-tui";
 import type { EvalExecutionComponent } from "@oh-my-pi/pi-tui/chat/eval-execution";
 import type { HookEditorComponent } from "@oh-my-pi/pi-tui/overlays/hook-editor";
-import type { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
 import type { HookSelectorComponent, HookSelectorOptions } from "@oh-my-pi/pi-tui/overlays/hook-selector";
 import type { ServedModelTracker } from "@oh-my-pi/pi-tui/chat/served-model-marker";
 import type { StatusLineComponent } from "@oh-my-pi/pi-tui/status-line";
@@ -260,7 +260,16 @@ export interface InteractiveModeContext {
 	 *  doomed teardown or merely clear the editor (#12238). */
 	readonly teardownFailed: boolean;
 	hookSelector: HookSelectorComponent | undefined;
-	hookInput: HookInputComponent | undefined;
+	/**
+	 * The single-file dialog surface currently held by the editor container.
+	 *
+	 * Typed as the shared base rather than as `HookInputComponent` because more
+	 * than one presenter occupies this slot — the hook input and the MCP
+	 * elicitation form are both shown here, and both queue behind each other via
+	 * the same surface. Narrowing it back to one class would push a cast into
+	 * every presenter that is not that class.
+	 */
+	hookInput: OverlayPanel | undefined;
 	hookEditor: HookEditorComponent | undefined;
 	lastStatus: StatusNotice | undefined;
 	fileSlashCommands: Set<string>;

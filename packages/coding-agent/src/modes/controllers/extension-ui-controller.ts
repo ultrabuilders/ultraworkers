@@ -34,6 +34,8 @@ import { installExtensionComposerShape } from "@oh-my-pi/pi-tui/overlays/compose
 import { EditorTopGap } from "@oh-my-pi/pi-tui/prompt/editor-top-gap";
 import { HookEditorComponent, type HookEditorOptions } from "@oh-my-pi/pi-tui/overlays/hook-editor";
 import { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
+import { McpElicitationFormComponent } from "@oh-my-pi/pi-tui/overlays/mcp-elicitation-form";
+import { TIMEOUT_ACTION, type MCPElicitOutcome, type MCPElicitRequest } from "../../mcp/types";
 import { HookSelectorComponent, type HookSelectorSlider } from "@oh-my-pi/pi-tui/overlays/hook-selector";
 import { getAvailableThemesWithPaths, getThemeByName, setTheme, type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext, InteractiveSelectorDialogOptions } from "../../modes/types";
@@ -1062,6 +1064,45 @@ export class ExtensionUiController {
 		this.ctx.hookInput = undefined;
 		this.ctx.ui.setFocus(this.ctx.editor);
 		this.ctx.ui.requestRender();
+	}
+
+	/**
+	 * Present an MCP `elicitation/create` request and answer it on the wire.
+	 *
+	 * Routed through {@link #presentDialog} rather than drawn straight into the
+	 * editor container, because a server may elicit at any moment — including
+	 * while a permission prompt holds the single-file dialog surface. Presenting
+	 * directly would put two overlays on one surface and fight for focus, and the
+	 * loser would be the user mid-answer. The queue decides the order instead.
+	 *
+	 * A timeout resolves to {@link TIMEOUT_ACTION} rather than to `undefined`:
+	 * the MCP union has no arm for "unanswered", and resolving to nothing would
+	 * put a value on the wire that no server can read as an answer.
+	 */
+	async showElicitationForm(serverName: string, request: MCPElicitRequest): Promise<MCPElicitOutcome> {
+		const fields = Object.entries(request.requestedSchema.properties).map(([name, schema]) => ({
+			name,
+			title: schema.title ?? name,
+			...(schema.description ? { description: schema.description } : {}),
+			required: schema.required === true,
+			writeOnly: schema.writeOnly === true,
+		}));
+
+		return this.#presentDialog<MCPElicitOutcome>(undefined, settle => {
+			this.ctx.hookInput = new McpElicitationFormComponent({
+				title: `${serverName} is asking`,
+				message: request.message,
+				fields,
+				onAccept: content => settle({ action: "accept", content }),
+				onDecline: () => settle({ action: "decline" }),
+				onCancel: () => settle({ action: "cancel" }),
+			});
+			this.ctx.editorContainer.clear();
+			this.ctx.editorContainer.addChild(this.ctx.hookInput);
+			this.ctx.ui.setFocus(this.ctx.hookInput);
+			this.ctx.ui.requestRender();
+			return () => this.hideHookInput();
+		}).then(outcome => outcome ?? { action: TIMEOUT_ACTION });
 	}
 
 	/**

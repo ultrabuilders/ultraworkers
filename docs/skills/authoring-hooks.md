@@ -14,8 +14,8 @@ Hooks are event-driven interceptors that run alongside the agent loop. They are 
 ```ts
 import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
-export default function myHook(omp: HookAPI): void {
-  omp.on("tool_call", async (event, ctx) => {
+export default function myHook(pi: HookAPI): void {
+  pi.on("tool_call", async (event, ctx) => {
     // intercept every tool call
   });
 }
@@ -82,7 +82,7 @@ Extension-only events such as `tool_execution_start`, `tool_execution_update`, `
 Return `{ block: true, reason: "..." }` from a `tool_call` handler to prevent execution:
 
 ```ts
-omp.on("tool_call", async (event, ctx) => {
+pi.on("tool_call", async (event, ctx) => {
   if (event.toolName === "bash") {
     const cmd = String(event.input.command ?? "");
     if (/\brm\s+-rf\s+\//.test(cmd)) {
@@ -106,7 +106,7 @@ Contract:
 Return `{ content, details, isError, additionalContext }` from a `tool_result` handler to patch what the LLM sees and/or attach trusted guidance outside the tool output:
 
 ```ts
-omp.on("tool_result", async (event, ctx) => {
+pi.on("tool_result", async (event, ctx) => {
   if (event.toolName === "read" && !event.isError) {
     const redacted = event.content.map(chunk => {
       if (chunk.type !== "text") return chunk;
@@ -137,7 +137,7 @@ Contract:
 Return `{ messages: [...] }` from a `context` handler to rewrite the message list before each LLM API call:
 
 ```ts
-omp.on("context", async (event, ctx) => {
+pi.on("context", async (event, ctx) => {
   // Remove debug-only custom messages from LLM context
   const filtered = event.messages.filter(
     msg => !(msg.role === "custom" && msg.customType === "debug-only")
@@ -159,8 +159,8 @@ Contract:
 ```ts
 import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
-export default function rmRfBlocker(omp: HookAPI): void {
-  omp.on("tool_call", async (event, ctx) => {
+export default function rmRfBlocker(pi: HookAPI): void {
+  pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "bash") return;
 
     const cmd = String(event.input.command ?? "");
@@ -197,8 +197,8 @@ const SECRET_PATTERNS = [
   /\b[a-zA-Z0-9_-]{20,}\s*=\s*["']?[a-zA-Z0-9._/+=-]{20,}["']?/g,
 ];
 
-export default function apiKeyRedactor(omp: HookAPI): void {
-  omp.on("tool_result", async (event) => {
+export default function apiKeyRedactor(pi: HookAPI): void {
+  pi.on("tool_result", async (event) => {
     if (event.isError) return;
 
     let changed = false;
@@ -222,8 +222,8 @@ export default function apiKeyRedactor(omp: HookAPI): void {
 ```ts
 import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
-export default function contextFilter(omp: HookAPI): void {
-  omp.on("context", async (event) => {
+export default function contextFilter(pi: HookAPI): void {
+  pi.on("context", async (event) => {
     const MAX_TOOL_OUTPUT_CHARS = 8_000;
 
     const trimmed = event.messages.map(msg => {

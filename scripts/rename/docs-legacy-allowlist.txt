@@ -81,7 +81,6 @@ docs/session.md	4
 docs/settings.md	39
 docs/skills.md	10
 docs/skills/authoring-extensions.md	21
-docs/skills/authoring-hooks.md	11
 docs/skills/authoring-marketplaces.md	17
 docs/skills/examples/hello-extension/README.md	6
 docs/skills/examples/mini-marketplace/README.md	3

@@ -600,6 +600,10 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 	// ahead?", and deriving that by scanning what is left of the run is quadratic when the
 	// answer is no — the loop calls it once per character. Hoisted for the same reason.
 	const lastBracket = src.lastIndexOf("]");
+	// Whether the run contains anything that could start a bare URL, resolved once for the
+	// same reason as the two above: the unanchored scheme search would otherwise rescan the
+	// whole remainder on every iteration and find nothing.
+	const srcHasScheme = /(?:https?:\/\/|ftp:\/\/|www\.)/i.test(src);
 	while (rest !== "") {
 		let custom: Tokens.Generic | undefined;
 		for (const extension of lexer.extensions.inline) {
@@ -814,8 +818,15 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			// bắt đầu — O(n²) ngay trong engine, 671 ms cho 32 KB. Quét ngược từ `@`
 			// đầu tiên cho đúng cùng kết quả trong O(n). Giới hạn `{1,64}` thì nhanh
 			// hơn nữa nhưng **cắt cụt** mọi địa chỉ dài hơn 64 ký tự.
-			const url = /(?:https?:\/\/|ftp:\/\/|www\.)/i.exec(rest.slice(1));
-			if (url && url.index + 1 < next) next = url.index + 1;
+			// Cổng `srcHasScheme`: regex này **không neo `^`**, nên khi không có URL nó quét
+			// hết phần còn lại rồi trả null — ở **mọi** iteration, vì prose luôn vào khối
+			// này. Đo trên đoạn văn thật: 7 → 112 lần gọi (×2.00/lần nhân đôi) và **100%**
+			// là lần quét hết ⇒ O(n) lần × O(n) = bậc hai. Không có scheme trong `src` thì
+			// không suffix nào có, nên bỏ qua là **tương đương**, không phải cắt cụt.
+			if (srcHasScheme) {
+				const url = /(?:https?:\/\/|ftp:\/\/|www\.)/i.exec(rest.slice(1));
+				if (url && url.index + 1 < next) next = url.index + 1;
+			}
 			// Duyệt từng `@` từ trái sang. Một `@` trần (không có ký tự local-part
 			// đứng trước) không phải email — regex `+` yêu cầu ít nhất một ký tự — nên
 			// phải đi tiếp thay vì dừng, ví dụ `@@a@b.co` khớp ở `@` thứ hai.

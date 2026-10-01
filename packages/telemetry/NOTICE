@@ -1,0 +1,69 @@
+This package is a port of the `telemetry` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below.
+
+Adaptations, in order of how widely they apply:
+
+  1. Relative specifiers no longer carry a `.ts` suffix, per this repository's
+     `check-ts-relative-imports` invariant. Sixteen specifiers across the eight
+     copied files.
+  2. Barrels use star re-exports: `src/index.ts` re-exports `./noop` and
+     `./memory` as stars, and `src/testing/index.ts` is two stars over
+     `./conformance` and `./types`. The symbol sets are unchanged — the copied
+     modules export 1 + 3 names and 3 + 1 names respectively — so this is a
+     formatting change with no effect on what either entry point resolves.
+  3. Class privacy: one field, `InMemoryTelemetryContext.state`, became an ES
+     `#state` field, since AGENTS.md bans the `private` keyword. The public
+     `startSpan` and `getSpans` methods stay bare.
+  4. Tests moved from `vitest` to `bun:test`. No other vitest API was in use —
+     no `vi`, no mocks, no globals — so this is the whole runner migration.
+     `expectTypeOf` is provided by `bun:test`.
+
+No `src/` file is byte-identical to its upstream counterpart, so none is listed
+as copied verbatim.
+
+Test assertions were replaced where the upstream form could not fail. Two
+`expectTypeOf(compileTimeFailures).toBeFunction()` statements asserted only that
+a function is a function; the contract they stood in for is the nine
+`@ts-expect-error` comments inside those closures, which `tsgo` enforces, and
+the bindings are kept so it keeps doing so. Five bare `not.toThrow()` statements
+became assertions on observable results: the serialised schema is compared
+against its exact JSON, a starter built from unreadable schemas is bound and a
+later span is shown to still resolve, and the no-op context's callback returns a
+sentinel that is asserted after each write call.
+
+Added by this port, with no upstream counterpart: `LICENSE`, `NOTICE`,
+`CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
+repository. Upstream's `tsconfig.build.json` was dropped — this repository sets
+`noEmit` and forbids the `tsc -p tsconfig.build.json` build it served. The
+version is `18.4.3`, this repository's release line; upstream's `0.87.1` is not
+carried into the manifest.
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

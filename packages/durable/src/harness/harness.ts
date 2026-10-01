@@ -1,6 +1,5 @@
 import type { Context, Draft, JsonValue } from "@oh-my-pi/chord";
 import { withoutAbortSignal } from "@oh-my-pi/chord/context";
-import type { ModelThinkingLevel } from "@oh-my-pi/pi-ai";
 import { SessionImpl } from "../session/session";
 import type { Transaction } from "../session/transaction";
 import type {
@@ -36,6 +35,7 @@ import type {
 	HarnessOptions,
 	Harness as HarnessType,
 	ModelRef,
+	ModelThinkingLevel,
 	RegistryReader,
 	RegistrySnapshot,
 	SettledTask,

@@ -1,6 +1,5 @@
-import type { ModelThinkingLevel } from "@oh-my-pi/pi-ai";
 import { defineDoc } from "../documents";
-import type { ConversationRetryPolicy, ConversationStreamOptions } from "./types";
+import type { ConversationRetryPolicy, ConversationStreamOptions, ModelThinkingLevel } from "./types";
 
 /** Durable per-conversation model, thinking level, request options, and desired tool loadout. */
 export type ConversationConfigState = {

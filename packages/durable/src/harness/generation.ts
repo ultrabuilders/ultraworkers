@@ -6,7 +6,6 @@ import {
 	isRetryableAssistantError,
 	type Message,
 	type Model,
-	type ModelThinkingLevel,
 	retryDelayMs,
 	type SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai";
@@ -16,7 +15,7 @@ import type { ConversationId, EntryId, NextTaskState, TaskRuntime, Tx } from "..
 import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config";
 import { endRun, LiveDoc, type LiveState } from "./live";
 import { planSystemEntries, renderSections, replaySections } from "./prompt";
-import type { ConversationStreamOptions, ModelRef } from "./types";
+import type { ConversationStreamOptions, ModelRef, ModelThinkingLevel } from "./types";
 
 export type GenerationInput = Record<string, never>;
 

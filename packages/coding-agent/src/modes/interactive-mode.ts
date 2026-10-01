@@ -70,7 +70,7 @@ import type { CollabGuestLink } from "../collab/guest";
 import { CollabController } from "../collab/controller";
 import type { CollabHost } from "../collab/host";
 import { formatKeyHint, KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
-import { appKey, editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
+import { appKey, editorKey, formatKeybindingConflicts } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import { formatModelString, type ResolvedModelRoleValue } from "../config/model-resolver";
 import { isSettingsInitialized, Settings, settings } from "../config/settings";
 import { clearClaudePluginRootsCache } from "../discovery/helpers";
@@ -228,7 +228,7 @@ import { EditorTopGap } from "@oh-my-pi/pi-tui/prompt/editor-top-gap";
 import { ErrorBannerComponent } from "@oh-my-pi/pi-tui/overlays/error-banner";
 import type { EvalExecutionComponent } from "@oh-my-pi/pi-tui/chat/eval-execution";
 import type { HookEditorComponent } from "@oh-my-pi/pi-tui/overlays/hook-editor";
-import type { HookInputComponent } from "@oh-my-pi/pi-tui/overlays/hook-input";
+import type { OverlayPanel } from "@oh-my-pi/pi-tui/chrome/overlay-box";
 import type { HookSelectorComponent, HookSelectorSlider } from "@oh-my-pi/pi-tui/overlays/hook-selector";
 import { type PlanReviewAnnotationState, PlanReviewOverlay } from "@oh-my-pi/pi-tui/overlays/plan-review-overlay";
 import { PlanSaveOverlay, type PlanSaveOverlayResult } from "@oh-my-pi/pi-tui/overlays/plan-save-overlay";
@@ -1341,7 +1341,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.#isShuttingDown;
 	}
 	hookSelector: HookSelectorComponent | undefined = undefined;
-	hookInput: HookInputComponent | undefined = undefined;
+	hookInput: OverlayPanel | undefined = undefined;
 	hookEditor: HookEditorComponent | undefined = undefined;
 	lastStatus: StatusNotice | undefined = undefined;
 	fileSlashCommands: Set<string> = new Set();
@@ -1878,6 +1878,15 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.isInitialized) return;
 
 		this.keybindings = logger.time("InteractiveMode.init:keybindings", () => KeybindingsManager.create());
+		// A key bound to two actions means one of them silently stopped responding
+		// when the user remapped it. That is invisible until they press the key and
+		// nothing happens, so say so at load rather than waiting to be asked. Warned
+		// once per session at construction — remapping mid-session is the
+		// /keybindings panel's business, not this path's.
+		const keybindingConflicts = formatKeybindingConflicts(this.keybindings.getConflicts());
+		if (keybindingConflicts) {
+			this.#uiHelpers.showWarning(`Conflicting keybindings:\n${keybindingConflicts}`);
+		}
 		// Before first paint, so hints the user already learned never flash on.
 		await logger.time("InteractiveMode.init:hintUsage", () => hintUsage.load());
 
@@ -7922,6 +7931,13 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	// Hook UI methods
 	initHooksAndCustomTools(): Promise<void> {
+		// Not beside the `setAuthHandler` call in the constructor: that runs
+		// before `#extensionUiController` is assigned, so reading it here would
+		// be a use-before-assignment. This method runs after construction, which
+		// is the whole reason the handler is installed here.
+		this.mcpManager?.setElicitationHandler((serverName, request) =>
+			this.#extensionUiController.showElicitationForm(serverName, request),
+		);
 		return this.#extensionUiController.initHooksAndCustomTools();
 	}
 

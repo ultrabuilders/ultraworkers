@@ -954,23 +954,60 @@ it("setActiveToolsByName normalizes legacy tool names", async () => {
  * and what it does not, in a single session — the cache lives on the session, so
  * the second call has to happen in the same one.
  */
+/** One prompt as the bridge saw it: what was asked, under which key. */
+interface PromptRecord {
+	action: string;
+	cacheKey: string;
+	options: ClientBridgePermissionOption[];
+}
+
+/** The action a tool call represents, for the log line. */
+function describeAction(call: ClientBridgePermissionToolCall): string {
+	const raw = call.rawInput as { command?: unknown } | undefined;
+	if (typeof raw?.command === "string") return raw.command;
+	return call.title ?? call.toolName;
+}
+
+/**
+ * Print the prompt history before asserting on how many prompts happened.
+ *
+ * The count is this file's whole observable, and a bare count says nothing about
+ * *which* key was too wide — printing the key alongside the action is what turns
+ * a red run into a one-line diagnosis instead of a bisect.
+ */
+function reportPrompts(tag: string, prompts: PromptRecord[], extra?: Record<string, unknown>): void {
+	console.error(
+		`[${tag}] prompts=%o`,
+		prompts.map(({ action, cacheKey }) => ({ action, cacheKey })),
+	);
+	if (extra) console.error(`[${tag}] %o`, extra);
+}
+
 function makeQueueBridge(
 	first: ClientBridgePermissionOutcome,
 	rest: ClientBridgePermissionOutcome,
 ): ClientBridge & {
 	seen: ClientBridgePermissionOption[][];
+	prompts: PromptRecord[];
 } {
 	const seen: ClientBridgePermissionOption[][] = [];
+	const prompts: PromptRecord[] = [];
 	let call = 0;
 	return {
 		seen,
+		prompts,
 		capabilities: { requestPermission: true },
-		async requestPermission(_toolCall: ClientBridgePermissionToolCall, options: ClientBridgePermissionOption[]) {
+		async requestPermission(toolCall: ClientBridgePermissionToolCall, options: ClientBridgePermissionOption[]) {
 			seen.push(options);
+			prompts.push({
+				action: describeAction(toolCall),
+				cacheKey: canonicalizeApprovalKey(toolCall.toolName, toolCall.rawInput),
+				options,
+			});
 			call++;
 			return call === 1 ? first : rest;
 		},
-	} as ClientBridge & { seen: ClientBridgePermissionOption[][] };
+	} as ClientBridge & { seen: ClientBridgePermissionOption[][]; prompts: PromptRecord[] };
 }
 
 /** Run `command` through the gated bash tool of a live session. */
@@ -995,12 +1032,15 @@ it("an always-allow for one bash command does not carry to a different command",
 
 	// The negative that gives this item its meaning: without it, narrowing the key
 	// is decoration, and a "fix" that prompts for everything also passes.
-	await runBash(session, "git status");
+	const actions = ["git status", "rm -rf ./build"];
+	await runBash(session, actions[0]);
+	reportPrompts("perm:negative", bridge.prompts, { actions, promptsSoFar: 1 });
 	expect(permissionSpy).toHaveBeenCalledTimes(1);
 
 	// Same tool, different action. Under the old tool-name key this ran without
 	// asking, so approving `git status` had also approved `rm -rf`.
-	await runBash(session, "rm -rf ./build");
+	await runBash(session, actions[1]);
+	reportPrompts("perm:negative", bridge.prompts, { actions, promptsSoFar: 2 });
 	expect(permissionSpy).toHaveBeenCalledTimes(2);
 
 	expect(bashTool.executeCalls).toBe(2);
@@ -1021,9 +1061,13 @@ it("an always-allow does carry to the same bash command again", async () => {
 
 	// The other direction. Asserting only the row above would also be satisfied by
 	// a change that re-asked for everything, which is not a fix.
-	await runBash(session, "git status");
-	await runBash(session, "git status");
+	const sameAction = "git status";
+	await runBash(session, sameAction);
+	await runBash(session, sameAction);
 
+	// The action is printed as well as the count: "did not prompt" is only
+	// evidence if the row also proves which action it declined to ask about.
+	reportPrompts("perm:reuse", bridge.prompts, { sameAction, promptedAgain: false });
 	expect(permissionSpy).toHaveBeenCalledTimes(1);
 	expect(bashTool.executeCalls).toBe(2);
 });
@@ -1042,7 +1086,13 @@ it("the always options name the scope being granted", async () => {
 
 	await runBash(session, "git status");
 
-	const labels = (bridge.seen[0] ?? []).map(option => option.name);
+	// Both the whole option array and the joined label: the array says whether the
+	// scope landed on the right *option*, the label says whether it is readable.
+	// A run where they disagree is a different bug from one where the label is
+	// simply wrong, and printing only the label hides which of the two it was.
+	const options = bridge.seen[0] ?? [];
+	const labels = options.map(option => option.name);
+	console.error("[perm:scope] options=%o label=%o", options, labels.join(" "));
 	// A narrower key is worth nothing while the button still reads "Always allow".
 	expect(labels.join(" ")).toContain("git status");
 });
@@ -1063,11 +1113,17 @@ it("an always-reject sticks for that action only", async () => {
 	// Rejected permanently: no prompt the second time, and it must not run.
 	await expect(runBash(session, "rm -rf ./build")).rejects.toThrow();
 	await expect(runBash(session, "rm -rf ./build")).rejects.toThrow();
+	reportPrompts("perm:reject", bridge.prompts, { rejected: "rm -rf ./build", sameReprompts: 1 });
 	expect(permissionSpy).toHaveBeenCalledTimes(1);
 
 	// A different action is still a separate question — reject_always shares the
 	// key with allow_always deliberately, and narrowing must apply to both.
 	await runBash(session, "git status");
+	reportPrompts("perm:reject", bridge.prompts, {
+		rejected: "rm -rf ./build",
+		otherAction: "git status",
+		otherPrompts: 2,
+	});
 	expect(permissionSpy).toHaveBeenCalledTimes(2);
 	expect(bashTool.executeCalls).toBe(1);
 });

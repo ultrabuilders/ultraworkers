@@ -9,6 +9,7 @@ import {
 import { isEnoent } from "@oh-my-pi/pi-utils";
 import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
+import { checkWritePolicy, WRITE_POLICY_DENIAL_MESSAGES, type WritePolicy } from "../plan-mode/write-policy";
 import type { ToolSession } from ".";
 import { resolveToCwd } from "./path-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -121,10 +122,26 @@ export async function resolvePlanPath(session: ToolSession, targetPath: string, 
 }
 
 /**
+ * The built-in plan mode's policy: no renames, no deletes, and nothing outside
+ * the `local://` sandbox. Every field is set, because this mode refuses all
+ * three; a mode that permits an operation simply omits the flag.
+ */
+const PLAN_MODE_WRITE_POLICY: WritePolicy = {
+	denyRename: true,
+	denyDelete: true,
+	denyWorkingTree: true,
+};
+
+/**
  * Plan mode keeps the working tree read-only while letting the agent draft its
  * plan. Writes and edits to the `local://` artifact sandbox are allowed (that is
  * where the plan and any scratch notes live); anything that would touch the
  * working tree — or rename/delete a file — is rejected.
+ *
+ * The decision itself lives in `plan-mode/write-policy.ts` as data, so a mode
+ * other than the built-in plan mode can supply its own policy without this
+ * guard growing a branch per mode. What stays here is the part that needs the
+ * session: reading the active policy, and resolving where the write lands.
  */
 export async function enforcePlanModeWrite(
 	session: ToolSession,
@@ -134,17 +151,12 @@ export async function enforcePlanModeWrite(
 	const state = session.getPlanModeState?.();
 	if (!state?.enabled) return;
 
-	if (options?.move) {
-		throw new ToolError("Plan mode: renaming files is not allowed.");
-	}
+	const denial = checkWritePolicy(PLAN_MODE_WRITE_POLICY, {
+		move: options?.move,
+		op: options?.op,
+		sandbox: await targetsLocalSandbox(session, targetPath, options?.signal),
+	});
+	if (!denial) return;
 
-	if (options?.op === "delete") {
-		throw new ToolError("Plan mode: deleting files is not allowed.");
-	}
-
-	if (await targetsLocalSandbox(session, targetPath, options?.signal)) return;
-
-	throw new ToolError(
-		"Plan mode: the working tree is read-only. Write your plan to a local://<slug>-plan.md file instead.",
-	);
+	throw new ToolError(WRITE_POLICY_DENIAL_MESSAGES[denial]);
 }

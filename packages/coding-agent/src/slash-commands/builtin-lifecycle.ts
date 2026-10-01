@@ -1,3 +1,10 @@
+import {
+	buildBugReportBundle,
+	hasSessionOptIn,
+	pendingCrashNotice,
+	reportWritten,
+	writeBundleArchive,
+} from "./helpers/bug-report";
 import { clearSubmittedText } from "./helpers/draft";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -551,6 +558,28 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 		handleTui: async (_command, runtime) => {
 			await runtime.ctx.showDebugSelector();
 			clearSubmittedText(runtime);
+		},
+	},
+	{
+		name: "bug-report",
+		icon: "bug",
+		description: "Build a redacted bug report and archive it locally",
+		handle: async (command, runtime) => {
+			const bundle = await buildBugReportBundle(runtime, {
+				includeSession: hasSessionOptIn(command),
+				...(command.args ? { hint: command.args } : {}),
+			});
+			const destination = await writeBundleArchive(bundle);
+			const crash = pendingCrashNotice(runtime);
+			if (crash) await runtime.output(crash);
+			if (!destination) {
+				await runtime.output("Could not write the bug report archive.");
+				return commandConsumed();
+			}
+			await runtime.output(
+				`${reportWritten(destination)}\nSession transcript included: ${bundle.sessionJsonl !== undefined}`,
+			);
+			return commandConsumed();
 		},
 	},
 	{

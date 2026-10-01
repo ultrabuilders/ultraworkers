@@ -154,7 +154,14 @@ export function collectBugReportMetadata(options: CollectBugReportMetadataOption
 
 /** The minimal session surface this needs — a narrower contract than the whole manager. */
 export interface BugReportSessionReader {
-	getEntries(): ReadonlyArray<{ id: string; type: string; timestamp: number; message?: Record<string, unknown> }>;
+	// `unknown` for the message: SessionManager's entries carry a typed
+	// AgentMessage, and a reader that demands a looser shape would reject the
+	// real manager. Narrowing happens per-entry below, where the role is checked.
+	// timestamp is a string on some entry variants here and a number on
+	// others, so it stays `string | number`; nothing downstream orders on it.
+	getEntries(): ReadonlyArray<{ id: string; type: string; timestamp: string | number; message?: unknown }>;
+	// Widenable to `string | undefined`: SessionManager returns a plain
+	// string, and a reader demanding the wider type would reject it.
 	getSessionId(): string | undefined;
 }
 
@@ -172,7 +179,18 @@ export function collectBugReportDiagnostics(
 	let assistantMessageCount = 0;
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
-		const message = entry.message;
+		const message = entry.message as
+			| {
+					role?: string;
+					diagnostics?: unknown;
+					stopReason?: string;
+					rawStopReason?: string;
+					errorMessage?: string;
+					provider?: string;
+					model?: string;
+					api?: string;
+			  }
+			| undefined;
 		if (!message || message.role !== "assistant") continue;
 		assistantMessageCount++;
 		const diagnostics = (message.diagnostics ?? []) as unknown[];
@@ -187,11 +205,11 @@ export function collectBugReportDiagnostics(
 		assistant.push({
 			entryId: entry.id,
 			timestamp: entry.timestamp,
-			provider: message.provider as string | undefined,
-			model: message.model as string | undefined,
-			api: message.api as string | undefined,
-			stopReason: message.stopReason as string | undefined,
-			...(message.rawStopReason === undefined ? {} : { rawStopReason: message.rawStopReason as string }),
+			...(message.provider === undefined ? {} : { provider: message.provider }),
+			...(message.model === undefined ? {} : { model: message.model }),
+			...(message.api === undefined ? {} : { api: message.api }),
+			...(message.stopReason === undefined ? {} : { stopReason: message.stopReason }),
+			...(message.rawStopReason === undefined ? {} : { rawStopReason: message.rawStopReason }),
 			...(message.errorMessage === undefined ? {} : { errorMessage: message.errorMessage as string }),
 			diagnostics,
 		});

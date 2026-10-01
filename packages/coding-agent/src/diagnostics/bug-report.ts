@@ -18,7 +18,7 @@ export const BUG_REPORT_CUSTOM_ENTRY_TYPE = "omp.bug-report";
 /** One recorded assistant turn that failed, aborted, or carried diagnostics. */
 export interface BugReportAssistantEntry {
 	entryId: string;
-	timestamp: number;
+	timestamp: string | number;
 	provider?: string;
 	model?: string;
 	api?: string;

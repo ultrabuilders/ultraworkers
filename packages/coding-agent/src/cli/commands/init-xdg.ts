@@ -22,5 +22,8 @@ export async function initXdg(): Promise<void> {
 
 	console.log("\nXDG directories initialized.");
 	console.log("Ensure XDG_DATA_HOME, XDG_STATE_HOME, and XDG_CACHE_HOME");
-	console.log("are set in your shell profile for omp to use them.");
+	// This names the binary the user just ran, so it reads APP_NAME rather than a
+	// literal: the command is `ultraworkers config init-xdg`, and telling them to
+	// configure "omp" sends them to an executable that no longer exists.
+	console.log(`are set in your shell profile for ${APP_NAME} to use them.`);
 }

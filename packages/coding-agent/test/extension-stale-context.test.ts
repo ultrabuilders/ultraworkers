@@ -101,7 +101,7 @@ function harness(): Harness {
 }
 
 describe("stale-context invalidation seam", () => {
-	it("hands a usable context to withSession after a successful replacement", () => {
+	it("hands a usable context to withSession after a successful replacement", async () => {
 		// The contract an extension author actually depends on: the callback runs,
 		// and the context it receives works. A context that is merely present but
 		// dead would make `withSession` a trapdoor, and the seam worse than useless.
@@ -109,14 +109,17 @@ describe("stale-context invalidation seam", () => {
 		const ctx = runner.createCommandContext();
 		let replacement: ReplacedSessionContext | undefined;
 
-		return ctx.newSession({ withSession: async fresh => (replacement = fresh) }).then(async () => {
-			expect(replacement).toBeDefined();
-			expect(typeof replacement?.getContextUsage).toBe("function");
-			expect(typeof replacement?.sendMessage).toBe("function");
-			// Usable, not merely present: a host action runs through it.
-			await replacement?.newSession();
-			expect(calls).toEqual(["newSession", "newSession"]);
+		await ctx.newSession({
+			withSession: async fresh => {
+				replacement = fresh;
+			},
 		});
+		expect(replacement).toBeDefined();
+		expect(typeof replacement?.getContextUsage).toBe("function");
+		expect(typeof replacement?.sendMessage).toBe("function");
+		// Usable, not merely present: a host action runs through it.
+		await replacement?.newSession();
+		expect(calls).toEqual(["newSession", "newSession"]);
 	});
 
 	it("does not invalidate or fire withSession when the host refuses the replacement", async () => {
@@ -128,7 +131,11 @@ describe("stale-context invalidation seam", () => {
 		const ctx = runner.createCommandContext();
 		let fired = false;
 
-		await ctx.newSession({ withSession: async () => (fired = true) });
+		await ctx.newSession({
+			withSession: async () => {
+				fired = true;
+			},
+		});
 
 		expect(fired).toBe(false);
 		expect(() => runtime.assertActive()).not.toThrow();
@@ -177,7 +184,11 @@ describe("stale-context invalidation seam", () => {
 		const { runtime, runner } = harness();
 		let first: ReplacedSessionContext | undefined;
 
-		await runner.createCommandContext().newSession({ withSession: async fresh => (first = fresh) });
+		await runner.createCommandContext().newSession({
+			withSession: async fresh => {
+				first = fresh;
+			},
+		});
 		await first?.newSession();
 
 		expect(() => runtime.assertActive()).toThrow(/stale/);

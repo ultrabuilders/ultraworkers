@@ -40,6 +40,26 @@ export function classifySourcePin(source: PluginSource): SourcePin {
 	return source.sha !== undefined && FULL_SHA.test(source.sha) ? "immutable" : "mutable";
 }
 
+/**
+ * Refuse to restore an entry whose source is not pinned to one commit.
+ *
+ * Scoped to RESTORE, never to install. A plugin installed from a tag or branch
+ * is a supported state and must keep installing; what cannot be allowed is
+ * silently reinstalling a mutable entry as though it were the reviewed commit
+ * the user approved. Wiring this into the install path would turn "pin the
+ * source" into "ban the source" and strand plugins already in use.
+ *
+ * Throws rather than warns, and names the entry: a warning here is invisible
+ * at the moment it matters, because the restore appears to have succeeded.
+ */
+export function assertPinnedSource(source: PluginSource, entryName: string): void {
+	if (classifySourcePin(source) === "immutable") return;
+	throw new Error(
+		`Cannot restore "${entryName}": its source is not pinned to a commit. ` +
+			`Re-install it explicitly to accept whatever the ref resolves to now.`,
+	);
+}
+
 export interface ResolveContext {
 	/** Absolute path to the cloned/local marketplace directory. Required for relative sources. */
 	marketplaceClonePath?: string;

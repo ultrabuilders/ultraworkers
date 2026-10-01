@@ -15,7 +15,7 @@
 #
 # HOW SECTION 1 WAS GENERATED (regenerate with exactly this, do not hand-edit)
 #   git grep -l "@oh-my-pi/" -- 'packages/*/package.json' > /tmp/manifests.txt
-#   Regenerated 2026-10-01 at commit 452a4e2994: 23 manifests.
+#   Regenerated 2026-10-01 at commit 1afdc3cebb: 24 manifests.
 #
 # DRIFT CONSTRAINT — a gate must compare this list against that command and fail
 #   when they differ. A keep-list written by hand decays SILENTLY: each new
@@ -40,6 +40,7 @@ packages/client/package.json
 packages/codemode/package.json
 packages/coding-agent/package.json
 packages/collab-web/package.json
+packages/durable/package.json
 packages/evals/package.json
 packages/metaharness/package.json
 packages/mnemopi/package.json

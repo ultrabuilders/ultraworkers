@@ -102,11 +102,13 @@ export const fastWorkspacePackages = [
 	// WASI is in-process and holds no native addon. Measured: 57 pass / 0 fail in
 	// 1.8s on its own.
 	"packages/codemode",
-	// `packages/protocol` is deliberately NOT here. It is untracked in-flight work
-	// whose `src/framing.ts:45` does not parse (`#readonly header = ...`), so its
-	// suite segfaults Bun rather than failing. It belongs in this bucket by shape
-	// (3 files, no spawn, no server) once it compiles — recorded here so the next
-	// person does not have to rediscover that it is missing.
+	// `packages/protocol` is deliberately NOT here yet. It is untracked in-flight
+	// work owned by whoever is writing it; `ci-select-affected` names it, and that
+	// gate going red is the point — it exists so a package cannot be added and
+	// forgotten. Adding it to a bucket is its owner's call, not a way to quieten
+	// the gate. Measured: 3 test files, no Bun.spawn/child_process, no
+	// Bun.serve/listen, and green on its own — so `fast` is where it belongs once
+	// it lands. Recorded so the next person need not re-measure.
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,

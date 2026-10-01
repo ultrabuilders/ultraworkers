@@ -61,6 +61,7 @@ import {
 	type SessionWorktree,
 } from "../../session/session-worktree";
 import { formatShakeSummary, type ShakeMode, type ShakeResult } from "../../session/shake-types";
+import type { UsageBreakdown } from "../../session/usage-breakdown";
 import {
 	codexUsagePlan,
 	formatActiveAccountLabel,
@@ -464,13 +465,7 @@ export class CommandController {
 			// the money, and rendering it apart would imply it annotates the others.
 			const breakdown = stats.usageBreakdown;
 			if (breakdown !== undefined && breakdown.buckets.length > 0) {
-				info += `\n${theme.bold("By model")}\n`;
-				for (const bucket of breakdown.buckets) {
-					info += `${theme.fg("dim", `${bucket.key}:`)} ${bucket.cost.toFixed(4)}\n`;
-				}
-				if (breakdown.cacheMiss.missedCost > 0) {
-					info += `${theme.fg("dim", "Cache misses:")} ${breakdown.cacheMiss.missedCost.toFixed(4)}\n`;
-				}
+				info += renderUsageAttribution(breakdown, theme);
 			}
 		}
 
@@ -1890,6 +1885,30 @@ export function renderProviderSection(details: ProviderDetails, uiTheme: Pick<Th
 		lines.push(`${uiTheme.fg("dim", `${field.label}:`)} ${field.value}`);
 	}
 	return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Render the `By model` attribution block.
+ *
+ * The bucket rows are a PARTITION: they sum to exactly the `Cost` total printed
+ * above them, and `buildUsageBreakdown` is what keeps that true. The cache-miss
+ * row is not a summand — `missedTokens` is walked over the whole branch rather
+ * than the active transcript, because only the branch still carries the
+ * `compaction` and `model_change` entries that explain WHY a read collapsed.
+ *
+ * So it is a different quantity in a summing block. Drawn in the summands'
+ * `key: 0.0000` format it reads as one more addend, and a user who adds the
+ * visible column gets a total that disagrees with the `Cost` printed above it.
+ * The separator is presentational — the number is kept, because a user who paid
+ * for a collapsed cache needs to see it, and deleting it would hide real spend.
+ */
+export function renderUsageAttribution(breakdown: UsageBreakdown, uiTheme: Pick<Theme, "fg" | "bold">): string {
+	const rows = breakdown.buckets.map(bucket => `${uiTheme.fg("dim", `${bucket.key}:`)} ${bucket.cost.toFixed(4)}\n`);
+	const out = `\n${uiTheme.bold("By model")}\n${rows.join("")}`;
+	if (breakdown.cacheMiss.missedCost > 0) {
+		return `${out}\n${uiTheme.fg("dim", "Cache misses (not in the total):")} ${breakdown.cacheMiss.missedCost.toFixed(4)}\n`;
+	}
+	return out;
 }
 
 function resolveProviderUsageTotal(reports: UsageReport[]): number {

@@ -98,6 +98,32 @@ describe("rule A scanning", () => {
 		expect(violations).toEqual([{ path: "packages/x/README.md", occurrences: 1 }]);
 		await fs.rm(dir, { recursive: true, force: true });
 	});
+
+	// The scan walks the FILESYSTEM (`Bun.Glob` with `dot: true`), not the index,
+	// and a filesystem walk does not consult `.gitignore`. Measured on this tree
+	// before the exclusion existed: the walk covered 1516 markdown files where the
+	// repository has 972, and the entire 544-file difference was installed
+	// dependencies. 278 of those already contained the letter sequence inside
+	// longer words (`pr-omp-t`), and none were word-bounded — so the gate was green
+	// by a one-dependency margin, and one dependency whose README says "omp" as a
+	// standalone word would have moved the number the whole M5 sweep is measured
+	// against, naming a file nobody can legitimately allow-list.
+	//
+	// A real scan over a real package-shaped tree, not an `isExcluded` call: the
+	// row above records a widening that survived because every other case tested
+	// the predicate in isolation and never asked the scan to honour it.
+	it("does not report an installed dependency's markdown, and still reports the repo's own", async () => {
+		const dir = await fixture({
+			"docs/a.md": "run omp\n",
+			// Word-bounded on purpose: this is the string that would have moved the
+			// gate. It has to be excluded for the right reason, not because it
+			// happens to be spelled inside a longer word.
+			"node_modules/some-dep/README.md": "the omp binary\n",
+			"node_modules/@scope/pkg/notes.md": "omp\n",
+		});
+		expect(await scanRuleA(dir)).toEqual([{ path: "docs/a.md", occurrences: 1 }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
 });
 
 describe("rule A allow-list", () => {

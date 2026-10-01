@@ -44,8 +44,29 @@
  */
 import * as path from "node:path";
 
-/** Path prefixes excluded from the rule, not from the allow-list. */
-const EXCLUDED_PREFIXES = [".lavish-wip/", ".lavish/", ".omp/"];
+/**
+ * Path prefixes excluded from the rule, not from the allow-list.
+ *
+ * `node_modules/` is here because the scan below is a FILESYSTEM walk
+ * (`Bun.Glob` with `dot: true`), not an index read, and a filesystem walk does
+ * not consult `.gitignore`. Measured on this tree: the walk saw 1516 markdown
+ * files where the repository actually has 972 — the 544-file difference was
+ * entirely installed dependencies.
+ *
+ * That is not a style preference, it is a correctness problem. The corpus was
+ * "whatever is installed", which varies with lockfile resolution and per-platform
+ * optional deps, so the same commit could reach two verdicts on two machines —
+ * and a violation would name a file nobody can legitimately allow-list, because
+ * it is not this repository's. 278 of those 544 files already contained the
+ * letter sequence inside longer words (`pr-omp-t`); none were word-bounded yet,
+ * so the gate was green by a one-dependency margin.
+ *
+ * Excluding the directory does not change what the report counts: the 669
+ * outstanding occurrences were always measured over the intended corpus, and
+ * `node_modules` was never part of it. It only stops a third party's README
+ * from being able to move the number.
+ */
+const EXCLUDED_PREFIXES = [".lavish-wip/", ".lavish/", ".omp/", "node_modules/"];
 
 /** Root-level plan documents: history, not shipped documentation. */
 const EXCLUDED_ROOT = /^(?:[A-Z0-9_]*EXECUTION_PLAN\.md|PACKAGE_REORGANIZATION_PLAN\.md|COMPREHENSIVE_PLAN.*\.md)$/;

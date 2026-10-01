@@ -520,7 +520,8 @@ These affect where coding-agent stores data and which process-local settings ove
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `OMP_PROFILE`                                       | Canonical named profile selector; wins over `PI_PROFILE` even when explicitly empty                                        |
 | `PI_PROFILE`                                        | Legacy profile selector used only when `OMP_PROFILE` is undefined                                                          |
-| `PI_CONFIG_DIR`                                     | Config root dirname under home (default `.omp`)                                                                            |
+| `ULTRAWORKERS_CONFIG_DIR`                         | Canonical config root dirname under home; wins over `PI_CONFIG_DIR` even when explicitly empty                               |
+| `PI_CONFIG_DIR`                                   | Permanent legacy alias for the config root dirname; used only when `ULTRAWORKERS_CONFIG_DIR` is unset                        |
 | `PI_CODING_AGENT_DIR`                               | Full agent-directory override for the default profile only; named profiles ignore it                                       |
 | `PI_CODING_AGENT_SESSION_DIR`                       | Initial session-directory override consumed by launch argument parsing                                                     |
 | `PI_CONFIG_FILES`                                   | Platform path-list of settings overlays (`:` on Unix, `;` on Windows); loaded in order before explicit `--config` overlays |
@@ -531,6 +532,14 @@ These affect where coding-agent stores data and which process-local settings ove
 | `OMP_GITHUB_CACHE_DB`                               | Overrides the GitHub view cache database path (default `~/.omp/cache/github-cache.db`)                                                                                                     |
 
 ---
+
+**Config root resolution.** Without either variable, the root is resolved per
+direction: a read picks the first candidate directory that exists under home
+(`.ultraworkers`, then `.omp`), while a write always goes to `.ultraworkers`.
+An install that still only has `~/.omp` therefore keeps reading its settings from
+there while new writes land in the new directory — the two only converge once
+the legacy directory is removed. Setting either variable overrides both
+directions. This mirrors the `OMP_PROFILE` / `PI_PROFILE` precedence above.
 
 ## 7) Shell/tool execution environment
 

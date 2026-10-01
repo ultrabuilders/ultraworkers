@@ -436,9 +436,13 @@ fn remove_own_registration(
 }
 
 fn legacy_recovery_path(context: &Context) -> PathBuf {
+	// Newest spelling first, legacy second — same precedence as
+	// `getConfigDirName()` in `packages/utils/src/dirs.ts`. Not compiler-checked:
+	// both arms are `Option`, so a swap still builds.
 	let config_directory = context
 		.env
-		.get("PI_CONFIG_DIR")
+		.get("ULTRAWORKERS_CONFIG_DIR")
+		.or_else(|| context.env.get("PI_CONFIG_DIR"))
 		.map(|value| value.trim())
 		.filter(|value| !value.is_empty())
 		.unwrap_or(".omp");

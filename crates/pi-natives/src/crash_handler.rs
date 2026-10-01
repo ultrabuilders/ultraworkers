@@ -45,7 +45,8 @@ use std::{
 };
 
 /// Default directory name for OMP's per-user state (overridable via
-/// `PI_CONFIG_DIR`, matching `packages/utils/src/dirs.ts`).
+/// `ULTRAWORKERS_CONFIG_DIR`, then `PI_CONFIG_DIR`, matching
+/// `packages/utils/src/dirs.ts`).
 const DEFAULT_CONFIG_DIR: &str = ".omp";
 
 /// App name used as the XDG-root subdirectory (`$XDG_STATE_HOME/omp/`),
@@ -266,7 +267,12 @@ fn build_crash_log_path(dir: &Path, kind: CrashKind, pid: u32, now_ms: u128) -> 
 
 fn logs_dir() -> Option<PathBuf> {
 	let home = home_dir()?;
-	let config_override = std::env::var_os("PI_CONFIG_DIR");
+	// Newest spelling first, legacy second, matching the precedence chain in
+	// `packages/utils/src/dirs.ts`. Order is the whole contract here, and it is
+	// not something the compiler checks: `var_os` returns an `Option`, so
+	// swapping these two still compiles and silently reverses the precedence.
+	let config_override =
+		std::env::var_os("ULTRAWORKERS_CONFIG_DIR").or_else(|| std::env::var_os("PI_CONFIG_DIR"));
 	let xdg_logs = xdg_state_logs_from_env(&home, config_override.as_deref());
 	Some(resolve_logs_dir(&home, config_override.as_deref(), xdg_logs))
 }

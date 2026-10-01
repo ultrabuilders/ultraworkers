@@ -30,6 +30,39 @@ export const APP_URL: string = "https://omp.sh/";
 /** Config directory name (e.g. ".omp") */
 export const CONFIG_DIR_NAME: string = ".omp";
 
+/**
+ * Legacy spelling of the home-scoped config root, kept resolvable for reads.
+ *
+ * Not the same constant as {@link CONFIG_DIR_NAME}: that one is what W6 owns,
+ * and flipping it is W6's decision to review. Naming the legacy spelling here
+ * is what lets W4 make reads fall back without touching what W6 will change.
+ */
+export const LEGACY_CONFIG_DIR_NAME: string = ".omp";
+
+/** Canonical spelling of the home-scoped config root — the write target. */
+export const CONFIG_DIR_NAME_NEXT: string = ".ultraworkers";
+
+/**
+ * Ordered home-scoped candidates: canonical write target first, legacy
+ * read-compatible fallback second.
+ *
+ * The order IS the contract, exactly the shape
+ * {@link MAIN_CONFIG_FILENAMES} already models. Every read and write path
+ * derives from this one list via {@link getConfigDirCandidates}, because two
+ * lists that agree today are two lists that drift.
+ */
+export const CONFIG_DIR_CANDIDATES: readonly string[] = [CONFIG_DIR_NAME_NEXT, LEGACY_CONFIG_DIR_NAME];
+
+/**
+ * Ordered XDG candidates — deliberately NOT {@link CONFIG_DIR_CANDIDATES}.
+ *
+ * A home root is dot-prefixed because it derives from a config-dir name; an
+ * XDG `appRoot` is bare because it joins `APP_NAME`. Sharing one list would be
+ * wrong for exactly one of the two, and wrong *invisibly* while
+ * `XDG_*_HOME` is unset — the case where nobody is looking.
+ */
+export const XDG_CONFIG_DIR_CANDIDATES: readonly string[] = ["ultraworkers", "omp"];
+
 /** Ordered main settings filenames: canonical write target first, legacy-compatible YAML fallback second. */
 export const MAIN_CONFIG_FILENAMES = ["config.yml", "config.yaml"] as const;
 
@@ -114,9 +147,26 @@ function readProfileFromEnvSafe(): string | undefined {
 	}
 }
 
-/** Profile-independent config root (~/.omp), shared by every omp profile. */
+/**
+ * Profile-independent config root a READ uses, shared by every omp profile.
+ *
+ * Keeps its name and its read meaning: `collab/registry.ts` imports it, and
+ * silently re-pointing that import at the write root would break a path that has
+ * nothing to do with the rebrand. Writes go to {@link getBaseConfigWriteRoot}.
+ */
 export function getBaseConfigRoot(): string {
 	return path.join(os.homedir(), getConfigDirName());
+}
+
+/**
+ * Profile-independent config root a WRITE uses.
+ *
+ * An explicit sibling rather than a flag on {@link getBaseConfigRoot}, so every
+ * existing reader stays a reader by construction — a boolean argument here
+ * would let a caller "fix" a read into a write without the type noticing.
+ */
+export function getBaseConfigWriteRoot(): string {
+	return path.join(os.homedir(), getConfigWriteRootName());
 }
 
 function getProfileConfigRoot(profile: string | undefined): string {
@@ -308,7 +358,78 @@ export function getSafeProjectCwd(): string {
 
 /** Get the config directory name relative to home (e.g. ".omp" or PI_CONFIG_DIR override). */
 export function getConfigDirName(): string {
-	return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;
+	// Explicit overrides, newest spelling first, then the resolved read root, then
+	// the write root. A fresh install with no directory at all must still resolve
+	// to the canonical name, so the last step is the write root and never the
+	// legacy spelling — falling back to legacy here would make a brand-new
+	// install create `.omp`, which is the opposite of the migration.
+	return (
+		process.env.ULTRAWORKERS_CONFIG_DIR ||
+		process.env.PI_CONFIG_DIR ||
+		getConfigReadRootName() ||
+		getConfigWriteRootName()
+	);
+}
+
+/**
+ * The ordered candidate spellings for the home-scoped config root.
+ *
+ * Pure: no filesystem, no cache, no env read. Both the read side and the write
+ * side pull from here so they cannot drift — a read that consults one list and
+ * a write that consults another is how a half-migrated install happens.
+ */
+export function getConfigDirCandidates(): string[] {
+	return [...CONFIG_DIR_CANDIDATES];
+}
+
+/**
+ * Test seam for the read-root cache, named after the sibling
+ * `__resetInstallIdCacheForTests` / `__resetProfileSnapshotForTests` /
+ * `__resetDirsFromEnvForTests` seams already in this module.
+ *
+ * Not optional: the resolver singletons below exist precisely to rebuild after
+ * the environment changes, and a config-root cache they do not clear outlives
+ * the very invalidation mechanism the module is built around.
+ */
+export function __resetConfigDirCacheForTests(): void {
+	cachedConfigReadRootName = undefined;
+}
+
+let cachedConfigReadRootName: string | undefined;
+
+/**
+ * The home-scoped config root a READ should use: the first candidate that
+ * exists on disk, so an existing install keeps resolving where its state is.
+ *
+ * Cached for the process lifetime because a config root that moves mid-process
+ * is worse than one that is briefly stale — and every caller that can change
+ * the answer (`refreshDirsFromEnv`, `setAgentDir`, `setProfile`) clears it.
+ * Falls through to the write root when nothing exists, so a fresh install gets
+ * the canonical name rather than the legacy one.
+ */
+export function getConfigReadRootName(): string {
+	if (cachedConfigReadRootName !== undefined) return cachedConfigReadRootName;
+	const home = os.homedir();
+	for (const candidate of getConfigDirCandidates()) {
+		try {
+			if (fs.existsSync(path.join(home, candidate))) {
+				cachedConfigReadRootName = candidate;
+				return candidate;
+			}
+		} catch {}
+	}
+	return getConfigWriteRootName();
+}
+
+/**
+ * The home-scoped config root a WRITE must use: the canonical name, always.
+ *
+ * No filesystem probe and no cache, deliberately — a write path that asked the
+ * disk would keep writing into `.omp` for as long as the legacy directory
+ * existed, which is the opposite of migrating away from it.
+ */
+export function getConfigWriteRootName(): string {
+	return CONFIG_DIR_NAME_NEXT;
 }
 
 /** Get the config agent directory name relative to home (e.g. ".omp/agent" or PI_CONFIG_DIR + "/agent"). */
@@ -369,19 +490,27 @@ class DirResolver {
 			const resolveIf = (envVar: string) => {
 				const value = process.env[envVar];
 				if (!value) return undefined;
-				try {
-					const appRoot = path.join(value, APP_NAME);
-					if (profile) {
-						const profilePath = path.join(appRoot, "profiles", profile);
-						if (fs.existsSync(profilePath)) {
-							return profilePath;
+				// Both spellings, canonical first — see
+				// {@link XDG_CONFIG_DIR_CANDIDATES} for why this is not the home
+				// candidate list. The profile pinning below is unchanged and still
+				// decides by profile path; it simply gets asked once per spelling,
+				// so a profile that lives under the legacy root keeps resolving there
+				// instead of jumping to the new one the moment it appears.
+				for (const name of XDG_CONFIG_DIR_CANDIDATES) {
+					try {
+						const appRoot = path.join(value, name);
+						if (profile) {
+							const profilePath = path.join(appRoot, "profiles", profile);
+							if (fs.existsSync(profilePath)) {
+								return profilePath;
+							}
+							continue;
 						}
-						return undefined;
-					}
-					if (fs.existsSync(appRoot)) {
-						return appRoot;
-					}
-				} catch {}
+						if (fs.existsSync(appRoot)) {
+							return appRoot;
+						}
+					} catch {}
+				}
 				return undefined;
 			};
 			xdgData = resolveIf("XDG_DATA_HOME");
@@ -496,6 +625,7 @@ const RESOLVER_HOME = os.homedir();
  * `preProfileAgentDirEnv` snapshot is intentionally left untouched.
  */
 export function refreshDirsFromEnv(): void {
+	__resetConfigDirCacheForTests();
 	dirs = new DirResolver({
 		agentDirOverride: resolveActiveAgentDirOverride(),
 		profile: activeProfile,
@@ -514,6 +644,7 @@ export function getConfigRootDir(): string {
 /** Set the coding agent directory. Creates a fresh resolver, invalidating all cached paths. */
 export function setAgentDir(dir: string): void {
 	activeProfile = undefined;
+	__resetConfigDirCacheForTests();
 	dirs = new DirResolver({ agentDirOverride: dir });
 	process.env.PI_CODING_AGENT_DIR = dir;
 	preProfileAgentDirEnv = dir;
@@ -565,6 +696,10 @@ export function setProfile(profile: string | undefined): void {
 			readPiProfileFromEnvSafe(),
 		);
 	}
+	// Same obligation as `setAgentDir` / `refreshDirsFromEnv`: this function
+	// exists to rebuild the resolver after the environment changes, so a config
+	// root cache it leaves behind is frozen at the moment of the switch.
+	__resetConfigDirCacheForTests();
 	activeProfile = next;
 	if (activeProfile) {
 		dirs = new DirResolver({ profile: activeProfile });
@@ -598,9 +733,20 @@ export function getAgentDir(): string {
 	return dirs.agentDir;
 }
 
+/**
+ * Project-scoped config directory name, pinned to the legacy spelling.
+ *
+ * Deliberately NOT following the home-side rename, and deliberately not
+ * `CONFIG_DIR_NAME`: a `.omp` directory inside a project is usually already
+ * committed to that project's git history. Renaming it rewrites the user's
+ * repository rather than this product — so it is pinned here and the reason is
+ * recorded next to the constant instead of in a bead that closes.
+ */
+export const PROJECT_AGENT_DIR_NAME: string = LEGACY_CONFIG_DIR_NAME;
+
 /** Get the project-local config directory (.omp). */
 export function getProjectAgentDir(cwd: string = getProjectDir()): string {
-	return path.join(cwd, CONFIG_DIR_NAME);
+	return path.join(cwd, PROJECT_AGENT_DIR_NAME);
 }
 
 // =============================================================================
@@ -1124,13 +1270,49 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * profile shares one id and the global cache stays correct no matter the
  * profile / `getInstallId` call order.
  */
+/**
+ * Persist an install id, tolerating the races this module has always tolerated.
+ *
+ * `O_EXCL` so a concurrent first call cannot clobber a winner, and a swallowed
+ * failure so the caller keeps a usable in-memory value for the rest of the
+ * process. Mirrors the create path in {@link getInstallId} rather than inventing
+ * a second write discipline for the same file.
+ */
+function writeInstallId(filePath: string, id: string): void {
+	try {
+		fs.mkdirSync(path.dirname(filePath), { recursive: true });
+		const fd = fs.openSync(filePath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+		try {
+			fs.writeSync(fd, `${id}\n`);
+		} finally {
+			fs.closeSync(fd);
+		}
+	} catch {}
+}
+
 export function getInstallId(): string {
 	if (cachedInstallId) return cachedInstallId;
-	const filePath = path.join(getBaseConfigRoot(), INSTALL_ID_FILE);
+
+	// Writes land in the canonical root, always. Reads walk the candidates in
+	// order, so an install that still only has a legacy id is found there — and
+	// the first assertion any test of this makes is that the SAME uuid comes
+	// back, not merely that some uuid comes back. A test that only checked the
+	// second would let the system read the legacy root forever and never
+	// converge, which is the failure this line exists to prevent.
+	const home = os.homedir();
+	// An explicit override names the one root to use for BOTH directions — the
+	// same precedence `getConfigDirName` applies. Deriving the write path from
+	// the write root alone would silently ignore `PI_CONFIG_DIR`, so an install
+	// that redirects its config root kept reading and writing somewhere else.
+	const override = process.env.ULTRAWORKERS_CONFIG_DIR || process.env.PI_CONFIG_DIR;
+	const writePath = override
+		? path.join(home, override, INSTALL_ID_FILE)
+		: path.join(home, getConfigWriteRootName(), INSTALL_ID_FILE);
+	const legacyPath = override ? writePath : path.join(home, LEGACY_CONFIG_DIR_NAME, INSTALL_ID_FILE);
 
 	let observedInvalid = false;
 	try {
-		const existing = fs.readFileSync(filePath, "utf8").trim();
+		const existing = fs.readFileSync(writePath, "utf8").trim();
 		if (UUID_RE.test(existing)) {
 			cachedInstallId = existing;
 			return existing;
@@ -1138,6 +1320,22 @@ export function getInstallId(): string {
 		// File present but unparseable — fall through and overwrite below.
 		observedInvalid = existing.length > 0;
 	} catch {}
+
+	if (!observedInvalid) {
+		// No usable id in the canonical root. The legacy one, if any, is this
+		// install's real identity — adopting it is what stops the rebrand from
+		// re-identifying every existing user as a new install.
+		try {
+			const legacy = fs.readFileSync(legacyPath, "utf8").trim();
+			if (UUID_RE.test(legacy)) {
+				writeInstallId(writePath, legacy);
+				cachedInstallId = legacy;
+				return legacy;
+			}
+		} catch {}
+	}
+
+	const filePath = writePath;
 
 	const next = crypto.randomUUID();
 	try {

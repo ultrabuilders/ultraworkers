@@ -255,6 +255,52 @@ describe("marked inline lexing is linear in input size", () => {
 			{ type: "br", raw: "  \n" },
 			{ type: "text", raw: "next line", text: "next line", escaped: false },
 		]);
+		// Regression: an earlier attempt bounded the local-part to `{1,64}`, which made
+		// the quadratic go away but silently truncated every address longer than 64
+		// characters — and only when the address was preceded by text, so an
+		// offset-0 check passed. The bound bought speed by discarding data; the fix
+		// scans backwards from `@` instead and places no limit at all.
+		for (const length of [1, 63, 64, 65, 66, 200]) {
+			const address = `${"a".repeat(length)}@x.io`;
+			expect(paragraphTokens(`write to ${address}`)).toContainEqual({
+				type: "link",
+				raw: address,
+				text: address,
+				href: `mailto:${address}`,
+				tokens: [{ type: "text", raw: address, text: address }],
+			});
+			// Same address at offset 0, where the bounded version happened to agree.
+			expect(paragraphTokens(address)).toContainEqual({
+				type: "link",
+				raw: address,
+				text: address,
+				href: `mailto:${address}`,
+				tokens: [{ type: "text", raw: address, text: address }],
+			});
+		}
+
+		// A bare `@` with no local-part character before it is not an email, so the
+		// scan must advance to the NEXT `@` rather than give up — the leftmost-match
+		// regex did exactly that. An early version stopped at the first `@` and lost
+		// the link entirely on `@@a@b.co`.
+		// Mỗi ca ghi kỳ vọng riêng: địa chỉ khớp ở `@` ĐẦU TIÊN có local-part đứng
+		// trước, tức là `@` cuối cùng mà phần trước nó là ký tự local-part.
+		for (const [source, address] of [
+			["@@a@b.co", "a@b.co"],
+			["(@@a@b.co)", "a@b.co"],
+			["x @y@z.co", "y@z.co"],
+			["a@b@c.co", "b@c.co"],
+			["see @y@z.co", "y@z.co"],
+		] as const) {
+			expect(paragraphTokens(source)).toContainEqual({
+				type: "link",
+				raw: address,
+				text: address,
+				href: `mailto:${address}`,
+				tokens: [{ type: "text", raw: address, text: address }],
+			});
+		}
+
 		expect(paragraphTokens("mail a.b+c@co.io now")).toEqual([
 			{ type: "text", raw: "mail ", text: "mail ", escaped: false },
 			{

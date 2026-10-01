@@ -342,6 +342,9 @@ const DEFAULTS: MarkedOptions = {
 	extensions: null,
 };
 const PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/;
+// Ký tự hợp lệ trong local-part của email, dùng để quét ngược từ một `@` tìm đầu
+// địa chỉ. Tách ra khỏi regex email để không phải để engine tự lùi (O(n²)).
+const EMAIL_LOCAL_PART = /[A-Za-z0-9._+-]/;
 
 function tokenList(links: Links = Object.create(null)): TokensList {
 	const list = [] as unknown as TokensList;
@@ -678,10 +681,26 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		// Không cắt cửa sổ `rest.slice(1)` — một kết quả khớp bắt đầu trước `next` vẫn có
 		// thể kéo dài qua `next` (hard break chính là ví dụ: dấu \n nằm ngay tại `next`).
 		if (next > 1) {
-			// `{1,64}` chứ không `+`: một chuỗi ký tự lớp này không có `@` sẽ khiến `+`
-			// khớp tham lam rồi lùi ở MỌI vị trí bắt đầu — O(n²) ngay trong engine.
-			const urlAt = /(?:https?:\/\/|ftp:\/\/|www\.|[A-Za-z0-9._+-]{1,64}@)/i.exec(rest.slice(1));
-			if (urlAt && urlAt.index + 1 < next) next = urlAt.index + 1;
+			// Vị trí bắt đầu sớm nhất của một URL hoặc email. Phần URL để regex quét
+			// (nhanh, không lùi). Phần email KHÔNG dùng `/[A-Za-z0-9._+-]+@/`: với một
+			// chuỗi ký tự lớp này không có `@`, `+` khớp tham lam rồi lùi ở MỌI vị trí
+			// bắt đầu — O(n²) ngay trong engine, 671 ms cho 32 KB. Quét ngược từ `@`
+			// đầu tiên cho đúng cùng kết quả trong O(n). Giới hạn `{1,64}` thì nhanh
+			// hơn nữa nhưng **cắt cụt** mọi địa chỉ dài hơn 64 ký tự.
+			const url = /(?:https?:\/\/|ftp:\/\/|www\.)/i.exec(rest.slice(1));
+			if (url && url.index + 1 < next) next = url.index + 1;
+			// Duyệt từng `@` từ trái sang. Một `@` trần (không có ký tự local-part
+			// đứng trước) không phải email — regex `+` yêu cầu ít nhất một ký tự — nên
+			// phải đi tiếp thay vì dừng, ví dụ `@@a@b.co` khớp ở `@` thứ hai.
+			// Dừng ngay khi tìm ra: regex là leftmost, khớp sớm nhất rồi thôi.
+			for (let at = rest.indexOf("@", 1); at !== -1; at = rest.indexOf("@", at + 1)) {
+				let start = at;
+				while (start > 1 && EMAIL_LOCAL_PART.test(rest[start - 1])) start--;
+				if (start < at && start < next) {
+					next = start;
+					break;
+				}
+			}
 			const hardBreak = /(?: {2,}|\\)\n/.exec(rest.slice(1));
 			if (hardBreak && hardBreak.index + 1 < next) next = hardBreak.index + 1;
 		}

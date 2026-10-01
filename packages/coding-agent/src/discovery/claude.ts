@@ -32,6 +32,8 @@ import {
 	scanSkillsFromDir,
 } from "./helpers";
 import type { Setting } from "../config/registry";
+import { all as allSettings } from "../config/registry";
+import { droppedForeignKeys, foreignSettingsWarning } from "../config/foreign-settings-keys";
 
 import {
 	cfgCommandsEnableClaudeProject,
@@ -530,6 +532,16 @@ async function loadSystemPrompts(ctx: LoadContext): Promise<LoadResult<SystemPro
 async function loadSettings(ctx: LoadContext): Promise<LoadResult<Settings>> {
 	const items: Settings[] = [];
 	const warnings: string[] = [];
+	const knownSettingIds = new Set(allSettings().map(setting => setting.id));
+
+	// A shared Claude settings file half-applies: keys omp implements take effect, and
+	// the rest are discarded in silence. `hooks` is the one that misleads most, because
+	// omp reads hooks from directories instead — so a valid `hooks` block does nothing
+	// at all, with no error to explain why.
+	const reportDropped = (filePath: string, data: Record<string, unknown>): void => {
+		const warning = foreignSettingsWarning(filePath, droppedForeignKeys(data, knownSettingIds));
+		if (warning) warnings.push(warning);
+	};
 
 	const userBase = getUserClaude(ctx);
 	if (userBase) {
@@ -539,6 +551,7 @@ async function loadSettings(ctx: LoadContext): Promise<LoadResult<Settings>> {
 		if (userContent) {
 			const data = tryParseJson<Record<string, unknown>>(userContent);
 			if (data) {
+				reportDropped(userSettingsJson, data);
 				items.push({
 					path: userSettingsJson,
 					data,
@@ -557,6 +570,7 @@ async function loadSettings(ctx: LoadContext): Promise<LoadResult<Settings>> {
 	if (projectContent) {
 		const data = tryParseJson<Record<string, unknown>>(projectContent);
 		if (data) {
+			reportDropped(projectSettingsJson, data);
 			items.push({
 				path: projectSettingsJson,
 				data,

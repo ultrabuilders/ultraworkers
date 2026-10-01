@@ -183,7 +183,7 @@ export const packages: PublishPackage[] = [
 	{
 		dir: "packages/coding-agent",
 		kind: "typescript",
-		publishBin: { omp: "dist/cli.js" },
+		publishBin: { ultraworkers: "dist/cli.js" },
 		packLock: STATS_CLIENT_LOCK,
 	},
 ];

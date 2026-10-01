@@ -24,6 +24,8 @@ The agent/root locations respect profiles, `PI_CONFIG_DIR`, and—only for the d
 
 Additional rule inside each `.env` file: every `OMP_*` key is mirrored to its `PI_*` alias, and that mirrored value replaces a same-file `PI_*` value. This mirroring applies to parsed dotenv files, not arbitrary variables inherited from the parent process.
 
+Above that mirror sits one rename, and it is the only environment variable in this document that has a new name: `ULTRAWORKERS_CONFIG_DIR` is the canonical spelling, and it wins over `PI_CONFIG_DIR` — including when it is set to an empty string, which is a deliberate "use the default location" and not an unset value. `PI_CONFIG_DIR` remains a permanent legacy alias (see [§6](#6-storage-and-config-root-paths) for both), so an existing `.env` keeps working unchanged; mirroring `OMP_*` → `PI_*` is unaffected and continues to apply to every other key in this file. No other variable was renamed: the `PI_*` and `OMP_*` spellings below are kept deliberately, so there is no mapping table to read — the "New name" column exists only on the rows that actually moved.
+
 Variables declared on a setting definition (see [settings precedence](./settings.md#precedence)) are parsed by the setting's type unless noted otherwise. Boolean ones (`PI_PY`, `PI_JS`, `PI_INTENT_TRACING`, `PI_AUTO_QA`, `HINDSIGHT_AUTO_RECALL`, …) follow `parseFlag`: an empty value is ignored, so the setting applies; `1`, `y`, `true`, `yes`, and `on` (all-lowercase or all-uppercase) mean true; any other non-empty value means false.
 
 ---
@@ -516,20 +518,20 @@ are ignored.
 
 These affect where coding-agent stores data and which process-local settings overlays it loads.
 
-| Variable                                            | Default / behavior                                                                                                         |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `OMP_PROFILE`                                       | Canonical named profile selector; wins over `PI_PROFILE` even when explicitly empty                                        |
-| `PI_PROFILE`                                        | Legacy profile selector used only when `OMP_PROFILE` is undefined                                                          |
-| `ULTRAWORKERS_CONFIG_DIR`                         | Canonical config root dirname under home; wins over `PI_CONFIG_DIR` even when explicitly empty                               |
-| `PI_CONFIG_DIR`                                   | Permanent legacy alias for the config root dirname; used only when `ULTRAWORKERS_CONFIG_DIR` is unset                        |
-| `PI_CODING_AGENT_DIR`                               | Full agent-directory override for the default profile only; named profiles ignore it                                       |
-| `PI_CODING_AGENT_SESSION_DIR`                       | Initial session-directory override consumed by launch argument parsing                                                     |
-| `PI_CONFIG_FILES`                                   | Platform path-list of settings overlays (`:` on Unix, `;` on Windows); loaded in order before explicit `--config` overlays |
-| `OMP_AUTORESEARCH_DB_DIR`                           | Directory override for per-project autoresearch DB and project-artifact roots                                              |
-| `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | On macOS/Linux, redirect corresponding ultraworkers paths only when the target `omp` root (or named-profile root) already exists    |
-| `PWD`                                               | Used when matching canonical current working directory in path helpers                                                     |
-| `OMP_WORKTREE_DIR`                                  | Agent-managed worktrees directory override (default `~/.omp/wt`); must be absolute or `~`-relative, relative paths are ignored; wins over the `worktree.base` setting                      |
-| `OMP_GITHUB_CACHE_DB`                               | Overrides the GitHub view cache database path (default `~/.omp/cache/github-cache.db`)                                                                                                     |
+| Variable                                            | Default / behavior                                                                                                         | New name |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `OMP_PROFILE`                                       | Canonical named profile selector; wins over `PI_PROFILE` even when explicitly empty                                        | — |
+| `PI_PROFILE`                                        | Legacy profile selector used only when `OMP_PROFILE` is undefined                                                          | — |
+| `ULTRAWORKERS_CONFIG_DIR`                         | Canonical config root dirname under home; wins over `PI_CONFIG_DIR` even when explicitly empty                               | ← `PI_CONFIG_DIR` |
+| `PI_CONFIG_DIR`                                   | Permanent legacy alias for the config root dirname; used only when `ULTRAWORKERS_CONFIG_DIR` is unset                        | → `ULTRAWORKERS_CONFIG_DIR` |
+| `PI_CODING_AGENT_DIR`                               | Full agent-directory override for the default profile only; named profiles ignore it                                       | — |
+| `PI_CODING_AGENT_SESSION_DIR`                       | Initial session-directory override consumed by launch argument parsing                                                     | — |
+| `PI_CONFIG_FILES`                                   | Platform path-list of settings overlays (`:` on Unix, `;` on Windows); loaded in order before explicit `--config` overlays | — |
+| `OMP_AUTORESEARCH_DB_DIR`                           | Directory override for per-project autoresearch DB and project-artifact roots | — |
+| `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | On macOS/Linux, redirect corresponding ultraworkers paths only when the target `omp` root (or named-profile root) already exists | — |
+| `PWD`                                               | Used when matching canonical current working directory in path helpers | — |
+| `OMP_WORKTREE_DIR`                                  | Agent-managed worktrees directory override (default `~/.omp/wt`); must be absolute or `~`-relative, relative paths are ignored; wins over the `worktree.base` setting | — |
+| `OMP_GITHUB_CACHE_DB`                               | Overrides the GitHub view cache database path (default `~/.omp/cache/github-cache.db`) | — |
 
 ---
 

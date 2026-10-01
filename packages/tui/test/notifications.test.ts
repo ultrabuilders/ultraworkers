@@ -12,6 +12,7 @@ import {
 	wrapTmuxPassthrough,
 } from "@oh-my-pi/pi-tui/terminal-capabilities";
 import { setTerminalHeadless } from "@oh-my-pi/pi-utils";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 
 const stdinIsTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
 const stdoutIsTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
@@ -74,6 +75,13 @@ function setupProcessTerminal() {
 // setupProcessTerminal() drives the real ProcessTerminal start()/probe path, so
 // these cases opt out of the test-default headless suppression.
 let previousHeadless = false;
+
+/**
+ * The OSC 99 app-name field, base64 as the protocol requires. Derived so the
+ * assertion below still pins the exact wire bytes — a rename must not silently
+ * change what a terminal decodes as the sending app.
+ */
+const APP_NAME_B64 = btoa(APP_NAME);
 
 describe("terminal notifications", () => {
 	beforeEach(() => {
@@ -149,7 +157,7 @@ describe("terminal notifications", () => {
 		});
 
 		expect(out).toBe(
-			"\x1b]99;i=complete-1:f=b21w:a=focus:u=1:t=Y29tcGxldGlvbg==:n=aW5mbw==:s=aW5mbw==:w=5000:d=0;Session\x1b\\" +
+			`\x1b]99;i=complete-1:f=${APP_NAME_B64}:a=focus:u=1:t=${btoa("completion")}:n=${btoa("info")}:s=${btoa("info")}:w=5000:d=0;Session\x1b\\` +
 				"\x1b]99;i=complete-1:p=body;Complete\x1b\\",
 		);
 	});
@@ -158,7 +166,7 @@ describe("terminal notifications", () => {
 		setOsc99Supported(true);
 		const terminal = getTerminalInfo("kitty");
 		const out = terminal.formatNotification({ title: "Line 1\nLine 2", id: "unsafe" });
-		expect(out).toBe("\x1b]99;i=unsafe:f=b21w:e=1;TGluZSAxCkxpbmUgMg==\x1b\\");
+		expect(out).toBe(`\x1b]99;i=unsafe:f=${APP_NAME_B64}:e=1;${btoa("Line 1\nLine 2")}\x1b\\`);
 	});
 
 	it("queries and confirms OSC 99 support before rich notifications", () => {
@@ -304,7 +312,7 @@ describe("terminal notifications", () => {
 		TERMINAL.sendNotification({ title: "-x session", body: "Complete", type: "completion" });
 
 		const titles = spawn.mock.calls.map(call => (call[0] as unknown as { cmd: string[] }).cmd[3]);
-		expect(titles).toEqual(["omp", "-x session"]);
+		expect(titles).toEqual([APP_NAME, "-x session"]);
 	});
 
 	it("keeps the OSC fallback when the Herdr pane id is absent", () => {

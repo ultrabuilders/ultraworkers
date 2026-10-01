@@ -1,4 +1,4 @@
-# @earendil-works/pi-server
+# @oh-my-pi/pi-server
 
 Experimental local server for the new durable Session and Agent Harness interfaces.
 
@@ -15,27 +15,28 @@ The current slice supports server- and Session-scoped facet-service routing and 
 A Session may have multiple presentation attachments. Repeating `attach` from one connection is idempotent; every successful attachment has a server-generated `attachmentId` delivered only as routing control data. Session requests carry `{ serverId, sessionId, attachmentId }`, and the server rejects stale or mismatched routes. Losing a connection rejects its local responses but releases its attachment only after admitted service calls settle. The host decides when zero presentation demand and worker-local Harness activity permit worker retirement. Server shutdown closes every routed Session handle, releasing its worker and Session writer ownership.
 
 ```ts
-import { randomUUID } from "node:crypto";
-import { MemorySessionRepo, type Session } from "@earendil-works/pi-agent-core";
+import * as crypto from "node:crypto";
+import type { Context } from "@oh-my-pi/chord";
+import type { RoutedSessionHandle, ServerHost, SessionMetadata } from "@oh-my-pi/pi-server";
 import {
   type RoutedServerServiceHost,
-  type RoutedSessionHandle,
-  type ServerHost,
   SessionAmbiguousError,
   SessionNotFoundError,
-} from "@earendil-works/pi-server";
-import { createUnixServer, getUnixSocketPath } from "@earendil-works/pi-server/unix";
+} from "@oh-my-pi/pi-server";
+import { createUnixServer, getUnixSocketPath } from "@oh-my-pi/pi-server/unix";
 
 async function startServer(
   serverServices: RoutedServerServiceHost,
-  openRoutedSession: (session: Session) => Promise<RoutedSessionHandle>,
+  openRoutedSession: (session: SessionMetadata) => Promise<RoutedSessionHandle>,
+  releaseSession: (session: SessionMetadata, context: Context) => Promise<void>,
 ) {
-  const sessions = new MemorySessionRepo();
+  // Session discovery is application-owned. This example keeps the catalog in
+  // memory; a real deployment reads it from wherever it stores sessions.
+  const catalog = new Map<string, SessionMetadata>();
   const host: ServerHost = {
     serverServices,
-    async resolveSession(sessionId, context) {
-      const matches = (await sessions.list(undefined, context))
-        .filter((metadata) => metadata.id === sessionId);
+    async resolveSession(sessionId) {
+      const matches = [...catalog.values()].filter((metadata) => metadata.id === sessionId);
       if (matches.length === 0) {
         throw new SessionNotFoundError(`Unknown session: ${sessionId}`);
       }
@@ -43,12 +44,13 @@ async function startServer(
       return matches[0];
     },
     async openSession(metadata, context) {
-      const session = await sessions.open(metadata, context);
       try {
-        return await openRoutedSession(session);
+        return await openRoutedSession(metadata);
       } catch (error) {
+        // Releasing the half-built Session is the host's job, and its failure
+        // is reported alongside the original rather than replacing it.
         try {
-          await session.close(context);
+          await releaseSession(metadata, context);
         } catch (cleanupError) {
           throw new AggregateError(
             [error, cleanupError],
@@ -60,7 +62,7 @@ async function startServer(
     },
   };
 
-  const serverId = randomUUID();
+  const serverId = crypto.randomUUID();
   const server = createUnixServer(host, {
     serverId,
     path: getUnixSocketPath(serverId, "/run/user/1000/pi"),
@@ -74,6 +76,16 @@ Applications supply a required server service host, a bounded Session resolver, 
 
 `serverId` is a logical identity supplied by the launcher, not a socket address. The Unix preset requires an explicit physical `path`; `getUnixSocketPath()` derives one from a caller-selected directory. Choose a short, private runtime directory rather than deriving the route from an unbounded home-directory path. A long-lived launcher can reuse the same ID and path when replacing a server process.
 
-`Server` composes transports through `ServerListener`; peer authentication remains application policy and is not implemented by the experimental Unix transport. The Unix submodule provides `createUnixListener()` and `createUnixServer()`. Low-level routed-envelope validation, CBOR, and framing come from `@earendil-works/pi-protocol`; Chord owns service-control parsing, error codes, snapshots and updates, and each subscription's replicated-state encoder.
+`Server` composes transports through `ServerListener`; peer authentication remains application policy and is not implemented by the experimental Unix transport. The Unix submodule provides `createUnixListener()` and `createUnixServer()`. Low-level routed-envelope validation, CBOR, and framing come from `@oh-my-pi/pi-protocol`; Chord owns service-control parsing, error codes, snapshots and updates, and each subscription's replicated-state encoder.
+
+## What this is not
+
+This is not a collab-web server and not a metaharness. It speaks CBOR length-framed
+routed envelopes over whatever `ServerListener` you give it, and the only
+transport shipped here is the Unix-domain-socket one, which authenticates
+nobody. WebSocket, TLS and peer identity are the application's problem, not
+this package's. It also does not own Session lifecycle: it asks a `ServerHost`
+to resolve metadata and to open a routed handle, and it releases that handle on
+shutdown, but deciding when a Session may retire belongs to the host.
 
 Server and worker lifecycle is managed outside the public Pi protocol. The replaceable application server converts connection attachments into private demand updates; the worker combines generation-tagged demand with authoritative Harness activity. The experimental coordinator only supplies stable routing and reports generic server-generation connection changes.

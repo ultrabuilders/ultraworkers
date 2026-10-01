@@ -26,10 +26,18 @@
  * Measured at the commit the tables cite (`bf3a2f6`) as well as at HEAD, under three
  * definitions — distinct files scoped to `coding-agent/src`, import occurrences scoped the
  * same way, and distinct files repo-wide. `dap` matched at 5, but `subprocess` was claimed
- * at 25 against 20 measured, and `config` at 949 against 226 files that even import it — a
- * figure no definition of "importers" can produce, since it exceeds the file count. No
- * single definition fits across rows, which is what hand-collection looks like. Both
- * measurements of the cited commit agree with HEAD on this subtree, so the gap is not drift.
+ * at 25 against 20 measured, and `config` at 949 against 166 external importer files at the
+ * captured baseline. No single definition fits across rows, which is what hand-collection
+ * looks like. Both measurements of the cited commit agree with HEAD on this subtree, so the
+ * gap is not drift.
+ *
+ * The `config` row is where this is visible. An earlier version of this header justified it
+ * with "949 exceeds the file count", and that was wrong in both halves: `coding-agent/src`
+ * holds 1372 tracked `.ts` files, so 949 does not exceed it, and the 226 it quoted alongside
+ * reproduced under no definition tried (275 scoped, 1116 repo-wide, 614 counting every file
+ * type). A justification that cannot be re-derived is worse than none — it reads as evidence
+ * and stops anyone checking. The claim above rests on the rows disagreeing with each other,
+ * which is checkable, rather than on a bound that was not.
  *
  * So this script does not try to reproduce those numbers, and the baseline it writes is the
  * first measurement of record rather than a reconciliation of an earlier one.

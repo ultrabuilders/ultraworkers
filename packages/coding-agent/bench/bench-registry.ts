@@ -10,6 +10,7 @@
  *
  * Units are transcribed from each script's own output, not assigned by category.
  */
+import * as fs from "node:fs/promises";
 import type { BenchUnit } from "./perf-corpus-schema";
 
 export interface BenchEntry {
@@ -31,8 +32,8 @@ export const BENCH_INDEX: readonly BenchEntry[] = [
 	entry("direnv-prefetch", "ms/op"),
 	entry("edit-lsp-writethrough", "ms"),
 	entry("llm-assembly", "ratio"),
-	entry("persist-truncate", "ms"),
-	entry("session-branch", "ms"),
+	entry("persist-truncate", "us/op"),
+	entry("session-branch", "us/op"),
 	entry("session-tree-nav", "ms/op"),
 	entry("speculative-eval-integration", "ratio"),
 	entry("speculative-shadow-planning", "ms/op"),
@@ -67,3 +68,48 @@ export const EXPECTED_BENCH_NAMES: readonly string[] = [
 	"tool-args-reveal",
 	"transcript-compose",
 ];
+
+const SUFFIX = ".bench.ts";
+
+export interface BenchRoster {
+	/** Registry entries with a script behind them. */
+	readonly present: readonly BenchEntry[];
+	/** Registered here, absent from `dir` — a measurement that cannot be run. */
+	readonly missing: readonly string[];
+	/** A script in `dir` with no registry entry, so its unit is unknown. */
+	readonly unlisted: readonly string[];
+}
+
+/**
+ * Read the directory and compare it with the registry, both ways.
+ *
+ * A report that printed `loaded ${BENCH_INDEX.length}/${BENCH_INDEX.length}`
+ * would say 14/14 with a file deleted, which is the one sentence this whole
+ * ledger exists to make impossible. The two sides are read independently so
+ * both a deletion and an unclassified addition are named.
+ */
+export async function readBenchRoster(dir: string): Promise<BenchRoster> {
+	const dirents = await fs.readdir(dir, { withFileTypes: true });
+	const onDisk = new Map<string, boolean>();
+	for (const dirent of dirents) {
+		if (!dirent.name.endsWith(SUFFIX)) continue;
+		onDisk.set(dirent.name.slice(0, -SUFFIX.length), dirent.isFile());
+	}
+
+	const registry = new Map(BENCH_INDEX.map(item => [item.name, item]));
+	const present: BenchEntry[] = [];
+	const unlisted: string[] = [];
+	for (const name of [...onDisk.keys()].sort()) {
+		// Only a runnable file is a measurement. Skipping the rest here rather
+		// than after the fact keeps a name from appearing in `present` and
+		// `missing` at once, which would make `loaded n/14` disagree with itself.
+		if (onDisk.get(name) !== true) continue;
+		const known = registry.get(name);
+		if (known) present.push(known);
+		else unlisted.push(name);
+	}
+	// A directory that took a bench's name is missing, not present: it cannot be
+	// run, so reporting it as loaded would be the same false sentence.
+	const missing = BENCH_INDEX.filter(item => onDisk.get(item.name) !== true).map(item => item.name);
+	return { present, missing, unlisted };
+}

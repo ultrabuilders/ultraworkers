@@ -1,7 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
-import { BENCH_INDEX, EXPECTED_BENCH_NAMES } from "../bench/bench-registry";
+import { BENCH_INDEX, EXPECTED_BENCH_NAMES, readBenchRoster } from "../bench/bench-registry";
 import type { BenchUnit } from "../bench/perf-corpus-schema";
 import {
 	APPLIED_PERF_THRESHOLDS,
@@ -10,6 +11,12 @@ import {
 	reportPerfThresholdLedger,
 	validatePerfThresholdLedger,
 } from "../bench/perf-threshold.ledger";
+
+const tempDirs: string[] = [];
+
+afterAll(() => {
+	for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 /** A record that asks to be enforced while carrying the evidence to justify it. */
 function promotable(overrides: Partial<PerfThresholdEvidence> = {}): PerfThresholdEvidence {
@@ -177,5 +184,106 @@ describe("bench index", () => {
 	it("has no duplicate bench names", () => {
 		const names = BENCH_INDEX.map(e => e.name);
 		expect(new Set(names).size).toBe(names.length);
+	});
+
+	it("names a measurement that is gone, and one that was never registered", async () => {
+		// The report prints `loaded n/14`, so the only thing standing between that
+		// line and a lie is that the denominator comes from disk and the
+		// differences are named. A registry that counted itself could not.
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-bench-roster-"));
+		tempDirs.push(dir);
+		await Bun.write(path.join(dir, "session-branch.bench.ts"), "// bench\n");
+		// A directory holding a bench's name: the script cannot be run, so the
+		// measurement is gone even though the name is still there.
+		fs.mkdirSync(path.join(dir, "count-lines.bench.ts"));
+		await Bun.write(path.join(dir, "brand-new.bench.ts"), "// bench\n");
+
+		const roster = await readBenchRoster(dir);
+
+		expect(roster.present.map(e => e.name)).toEqual(["session-branch"]);
+		expect(roster.missing).toContain("count-lines");
+		expect(roster.missing).not.toContain("session-branch");
+		expect(roster.unlisted).toEqual(["brand-new"]);
+	});
+
+	it("denominates the per-op benches in the unit those benches print", async () => {
+		// `ALLOWED_UNITS` membership is a closed-vocabulary check: it cannot tell
+		// `ms` from `us/op`, both of which are allowed. So the unit is grounded
+		// against the two scripts that report a per-operation figure, run here
+		// rather than read — a bench whose unit is wrong by 1000x still satisfies
+		// every other test in this file, and the error then lands in a threshold
+		// that compares a 4.4us cost against a 4.4ms budget.
+		const perOp = BENCH_INDEX.filter(e => e.name === "session-branch" || e.name === "persist-truncate");
+		expect(perOp.map(e => e.unit)).toEqual(["us/op", "us/op"]);
+
+		for (const entry of perOp) {
+			// `command` is a shell-style string, not a path — split it rather than
+			// hand-assembling an argv that could drift from what the registry says.
+			const [runner, script] = entry.command.split(" ");
+			const proc = Bun.spawnSync([runner ?? "bun", script ?? entry.name], {
+				cwd: path.resolve(import.meta.dir, "../../.."),
+			});
+			const out = proc.stdout.toString();
+			// The bench's own stderr rides along: a spawn that fails for an
+			// environmental reason is otherwise indistinguishable from one that
+			// failed because the script broke.
+			expect(`${entry.name} (${proc.stderr.toString().trim()})`).toBe(`${entry.name} ()`);
+			expect(proc.exitCode).toBe(0);
+			expect(out).toContain("us/op");
+			// The total is milliseconds and the per-op figure is not, so a registry
+			// reading the other number is reading a different scale.
+			expect(out).toMatch(/ms total \([\d.]+us\/op\)/);
+		}
+	});
+});
+
+describe("validatePerfThresholdLedger", () => {
+	it("refuses a ledger that claims enforcement it has not earned", () => {
+		// Without this the validator is only ever called on a ledger that is
+		// already clean, so a validator that returned [] unconditionally would
+		// pass every test in the file.
+		const errors = validatePerfThresholdLedger([
+			promotable({ name: "bench.dupe.enforced" }),
+			promotable({
+				name: "bench.dupe.enforced",
+				benchmarkEvidence: undefined,
+				humanApprovalEvidence: undefined,
+				varianceCharacterized: false,
+			}),
+		]);
+
+		expect(errors).toHaveLength(2);
+		expect(errors.some(e => e.includes("duplicate threshold name"))).toBe(true);
+		expect(errors.some(e => e.includes("is not promotable"))).toBe(true);
+	});
+});
+
+describe("a ratio metric is not a time metric", () => {
+	it("promotes a sample where the ratio went up, because that is the improvement", () => {
+		// `llm-assembly` and `speculative-eval-integration` report speedups, where
+		// larger is better. Folding ratio into the time-like set would refuse
+		// every genuine improvement and block the promotion that should land.
+		const faster = promotable({
+			benchmarkEvidence: {
+				suite: "llm-assembly",
+				command: "bun packages/coding-agent/bench/llm-assembly.bench.ts",
+				beforeAfter: { metric: "convert_grow_speedup", before: 1.2, after: 1.8, unit: "ratio" },
+				status: "passed",
+			},
+		});
+
+		const decision = evaluatePromotion(faster);
+
+		expect(decision.hardEligible).toBe(true);
+		// The same shape in milliseconds is the opposite verdict, which is what
+		// makes the unit load-bearing rather than decoration.
+		const slower: PerfThresholdEvidence = {
+			...faster,
+			benchmarkEvidence: {
+				...faster.benchmarkEvidence!,
+				beforeAfter: { ...faster.benchmarkEvidence!.beforeAfter, unit: "ms" },
+			},
+		};
+		expect(evaluatePromotion(slower).hardEligible).toBe(false);
 	});
 });

@@ -8,7 +8,7 @@
  * while the resolved list still showed a dead extension's provider — which is
  * the entire failure mode this file exists to catch.
  */
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
 	defineCapability,
 	getCapability,
@@ -19,6 +19,7 @@ import {
 } from "@oh-my-pi/pi-coding-agent/capability";
 import { toolCapability } from "@oh-my-pi/pi-coding-agent/capability/tool";
 import type { Provider } from "@oh-my-pi/pi-coding-agent/capability/types";
+import { snapshotCapabilityRegistry } from "./restore-capability-registry";
 
 /** A provider that loads nothing: these rows are about attribution, not resolution. */
 function provider(id: string): Provider<never> {
@@ -97,18 +98,45 @@ describe("capability provider source attribution", () => {
 	});
 
 	test("resetRegistry() drops definitions without disturbing either source's providers", () => {
-		const live = getCapability(toolCapability.id);
-		const before = live?.providers.map(p => p.id) ?? [];
-		expect(before).toContain("attrib-shared");
+		const restore = snapshotCapabilityRegistry();
+		try {
+			const live = getCapability(toolCapability.id);
+			const before = live?.providers.map(p => p.id) ?? [];
+			expect(before).toContain("attrib-shared");
 
-		resetRegistry();
+			resetRegistry();
 
-		// The definition is gone — that is the half of the contract `resetRegistry`
-		// is named for.
-		expect(getCapability(toolCapability.id)).toBeUndefined();
-		// And the provider arrays it was holding are untouched, which is the half
-		// that is easy to break by widening the clear to "everything". `attrib-shared`
-		// is still registered against `/ext/c`, and nothing about the reset reached it.
-		expect(live?.providers.map(p => p.id)).toEqual(before);
+			// The definition is gone — that is the half of the contract `resetRegistry`
+			// is named for.
+			expect(getCapability(toolCapability.id)).toBeUndefined();
+			// And the provider arrays it was holding are untouched, which is the half
+			// that is easy to break by widening the clear to "everything". `attrib-shared`
+			// is still registered against `/ext/c`, and nothing about the reset reached it.
+			expect(live?.providers.map(p => p.id)).toEqual(before);
+		} finally {
+			// The snapshot carries the providers across, so restoring returns this
+			// file's world intact rather than emptying it a second time.
+			restore();
+
+			// A definition restored with an empty `providers` array would satisfy
+			// "the definition is back" while silently dropping every provider — the
+			// same observable failure this file exists to catch, reached by a second
+			// route. `attrib-shared` survived the reset on its provider array above; it
+			// has to survive the restore too.
+			expect(getCapabilityInfo(toolCapability.id)?.providers.map(p => p.id)).toContain("attrib-shared");
+		}
+	});
+
+	afterAll(() => {
+		// The last row above is the only one that empties the registry, and this file
+		// is the one that empties it for whichever file lands in the same Bun worker
+		// next. Restore here so the damage does not outlive the row that caused it.
+		if (getCapability(toolCapability.id)) return;
+		defineCapability({
+			id: toolCapability.id,
+			key: toolCapability.key,
+			displayName: toolCapability.displayName,
+			description: toolCapability.description,
+		});
 	});
 });

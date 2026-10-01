@@ -8,9 +8,10 @@
  * person to need the second one had no name to reach for — and no test to catch
  * a conflation.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { getCapability, invalidateAllCaches, resetRegistry } from "@oh-my-pi/pi-coding-agent/capability";
 import { toolCapability } from "@oh-my-pi/pi-coding-agent/capability/tool";
+import { snapshotCapabilityRegistry } from "./restore-capability-registry";
 
 describe("capability cache vs registry", () => {
 	// ORDER IS LOAD-BADEN. Both rows mutate process-wide module state, so running
@@ -26,8 +27,26 @@ describe("capability cache vs registry", () => {
 	});
 
 	test("resetRegistry() drops capability definitions", () => {
-		resetRegistry();
+		const restore = snapshotCapabilityRegistry();
+		try {
+			resetRegistry();
 
-		expect(getCapability(toolCapability.id)).toBeUndefined();
+			expect(getCapability(toolCapability.id)).toBeUndefined();
+		} finally {
+			// Hand the next file a populated registry. `resetRegistry()` clears a
+			// process-wide map that module evaluation will never refill, so without
+			// this the teardown outlives the row that asked for it — and Bun shares
+			// module state across files in one worker, so the casualty is whichever
+			// unrelated file happens to land here next. Measured: pairing this file
+			// with `mermaid-rendering.test.ts` turns that file's 0 fail into 1
+			// (`Unknown capability: "tools"`).
+			restore();
+		}
+	});
+
+	afterEach(() => {
+		// Belt and braces for a row that throws before its `finally`: the invariant
+		// under test is that this file leaves the registry as it found it.
+		expect(getCapability(toolCapability.id)).toBeDefined();
 	});
 });

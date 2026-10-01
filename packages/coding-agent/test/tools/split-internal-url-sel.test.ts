@@ -1,5 +1,15 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { InternalUrlRouter } from "@oh-my-pi/pi-coding-agent/internal-urls/router";
+
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test
+// files across parallel workers. The helpers below capture the singleton at module
+// scope, so the reset BRACKETS the file: a per-test reset would leave them holding
+// a detached instance.
+InternalUrlRouter.resetForTests();
+
+afterAll(() => {
+	InternalUrlRouter.resetForTests();
+});
 
 const split = (input: string) => InternalUrlRouter.instance().split(input);
 const peelWriteSelector = (input: string) => InternalUrlRouter.instance().peelWriteSelector(input, "write");

@@ -1,5 +1,16 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { InternalUrlRouter } from "@oh-my-pi/pi-coding-agent/internal-urls";
+
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test files
+// across parallel workers — so a handler registered here would otherwise survive into
+// whichever unrelated file shares the worker, and the failure would surface there.
+beforeEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
+afterEach(() => {
+	InternalUrlRouter.resetForTests();
+});
 
 describe("OmpProtocolHandler", () => {
 	it("treats omp://docs as the documentation root", async () => {

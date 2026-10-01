@@ -1,10 +1,22 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import { InternalUrlRouter } from "@oh-my-pi/pi-coding-agent/internal-urls";
 import { parseInternalUrl } from "@oh-my-pi/pi-coding-agent/internal-urls/parse";
 import { RpcHostUriBridge } from "@oh-my-pi/pi-coding-agent/modes/rpc/host-uris";
 import type { RpcHostUriCancelRequest, RpcHostUriRequest } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test
+// files across parallel workers. This file captures the singleton at module scope,
+// so the reset has to BRACKET the file rather than interleave between its tests —
+// a `beforeEach` reset would leave `router` below pointing at a detached instance.
+InternalUrlRouter.resetForTests();
+
 const router = InternalUrlRouter.instance();
+
+afterAll(() => {
+	// Hand the next file a clean singleton: a scheme registered here must not
+	// survive into whichever unrelated file shares this worker.
+	InternalUrlRouter.resetForTests();
+});
 
 afterEach(() => {
 	// Tests register transient schemes on the global router; clean them up

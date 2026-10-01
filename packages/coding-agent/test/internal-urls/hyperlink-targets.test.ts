@@ -21,6 +21,17 @@ import {
 	cfgTuiMaxInlineImageRows,
 } from "@oh-my-pi/pi-coding-agent/modes/settings";
 
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test files
+// across parallel workers — so a handler registered here would otherwise survive into
+// whichever unrelated file shares the worker, and the failure would surface there.
+beforeEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
+afterEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
 function extractAnyTerminatorLinkUri(text: string): string | undefined {
 	return text.match(/\x1b\]8;[^;]*;([^\x1b\x07]+)(?:\x1b\\|\x07)/)?.[1];
 }

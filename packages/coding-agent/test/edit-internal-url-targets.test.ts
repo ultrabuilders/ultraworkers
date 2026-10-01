@@ -10,6 +10,17 @@ import type { ProtocolHandler } from "@oh-my-pi/pi-coding-agent/internal-urls/ty
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test files
+// across parallel workers — so a handler registered here would otherwise survive into
+// whichever unrelated file shares the worker, and the failure would surface there.
+beforeEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
+afterEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
 let tmpDir: string;
 let artifactsDir: string;
 

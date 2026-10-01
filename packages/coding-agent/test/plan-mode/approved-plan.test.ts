@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
 	humanizePlanTitle,
 	normalizePlanTitle,
@@ -7,6 +7,17 @@ import {
 	resolvePlanTitle,
 } from "@oh-my-pi/pi-coding-agent/plan-mode/approved-plan";
 import { InternalUrlRouter } from "@oh-my-pi/pi-coding-agent/internal-urls/router";
+
+// `InternalUrlRouter.instance()` is memoized per process, and Bun batches test files
+// across parallel workers — so a handler registered here would otherwise survive into
+// whichever unrelated file shares the worker, and the failure would surface there.
+beforeEach(() => {
+	InternalUrlRouter.resetForTests();
+});
+
+afterEach(() => {
+	InternalUrlRouter.resetForTests();
+});
 
 describe("planFileUrlForSlug", () => {
 	it("maps a slug to its local plan URL", () => {

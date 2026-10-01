@@ -64,11 +64,12 @@ await server.stop(true);
 
 const payload = body ? body.toString("latin1") : "";
 
-// The key and its value are adjacent in the encoded map entry — measured at 13
-// bytes apart — so requiring them to be near each other is what ties the value
-// to THIS key. Two independent `includes` checks would also pass if the same
-// string appeared somewhere else in the payload, which is exactly what happens
-// with the sibling probe's tracer name.
+// The key and its value are adjacent in the encoded map entry — measured at 16
+// bytes apart (key at offset 9, value at offset 25) — so requiring them to be
+// near each other is what ties the value to THIS key. Two independent `includes`
+// checks would also pass if the same string appeared somewhere else in the
+// payload, which is exactly what happens with the sibling probe's tracer name.
+// The bound below leaves 8 bytes of slack over the measured distance.
 const keyAt = payload.indexOf("service.name");
 const valueAt = payload.indexOf(FALLBACK_SERVICE_NAME);
 const named = keyAt !== -1 && valueAt > keyAt && valueAt - keyAt < 24;

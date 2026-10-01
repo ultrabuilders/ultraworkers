@@ -6,6 +6,10 @@
 
 - The installed command is now `ultraworkers` instead of `omp`, and the worker selector namespace moved with it (`__omp_worker_*` → `__ultraworkers_worker_*`). `WIRE_NAME` is the single constant every internal reference derives from, so the user-facing command, the `User-Agent` sent to integrations and the internal argv selectors now agree on one identity. The separate `omp-stats` command keeps its name.
 
+### Fixed
+
+- The worker selector prefix is now derived from `WIRE_NAME` instead of being written out beside it. The two were independent literals, so renaming the wire identity moved one and left the other — a tree could hold `WIRE_NAME = "omp"` next to `__ultraworkers_worker_` with every test green, because the selector parity test asserts how selectors relate to the prefix rather than what the prefix spells. That drift already reverted a completed rename once, in c7c8da296e, where a commit about selector derivation silently carried three unrelated files back to their old names.
+
 
 ### Added
 

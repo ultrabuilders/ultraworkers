@@ -132,6 +132,46 @@ export function declaredEffects(toolName: string): ReadonlySet<ToolEffect> {
 }
 
 /**
+ * Withdraw every effect an owner declared, across all of its tools.
+ *
+ * The disposer returned by {@link declareToolEffects} is per-call, which is the
+ * right unit for a caller that keeps it. A loader does not: it registers tools
+ * from a directory and tears the directory down as a unit, and a tool registered
+ * during a load that later throws would never have its disposer stored at all.
+ * Keyed by owner so unloading one extension cannot withdraw another's — the same
+ * reason contributions are reference counted per (tool, effect) rather than
+ * overwritten.
+ */
+const ownerWithdrawals = new Map<string, Array<() => void>>();
+
+/** Record a declaration against an owner so {@link releaseToolEffects} can undo it. */
+export function declareToolEffectsFor(toolName: string, effects: Iterable<ToolEffect>, owner: string): () => void {
+	const withdraw = declareToolEffects(toolName, effects);
+	const held = ownerWithdrawals.get(owner) ?? [];
+	held.push(withdraw);
+	ownerWithdrawals.set(owner, held);
+	return () => {
+		withdraw();
+		const live = ownerWithdrawals.get(owner);
+		if (!live) return;
+		const at = live.indexOf(withdraw);
+		// Idempotent: an unload path may call this after an explicit withdrawal, and
+		// dropping a disposer twice would withdraw a co-tenant's declaration.
+		if (at !== -1) live.splice(at, 1);
+	};
+}
+
+/** Withdraw everything `owner` declared. Returns how many declarations were undone. */
+export function releaseToolEffects(owner: string): number {
+	const held = ownerWithdrawals.get(owner);
+	if (!held) return 0;
+	ownerWithdrawals.delete(owner);
+	// Snapshot first: each disposer mutates the array it lives in.
+	for (const withdraw of [...held]) withdraw();
+	return held.length;
+}
+
+/**
  * Fold the user's per-effect policies into the floor a tool cannot go below.
  *
  * The combination rule is bash's own, quoted rather than reinvented: "any matching

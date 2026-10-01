@@ -45,6 +45,7 @@ import { addContextTransform } from "../../tools/compaction-transforms";
 import { registerHostRenderStrategy, type HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
 import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 import { releaseDiagnostics } from "./diagnostics";
+import { releaseToolEffects } from "../../tools/effects";
 import { addUsageReporter } from "../../tools/usage-reporter";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
@@ -554,6 +555,10 @@ export function clearExtensionBuckets(extension: Extension): void {
 	// reporting on a directory that is no longer loaded.
 	releaseDiagnostics(extension.path);
 	extension.diagnostics.length = 0;
+	// Declared effects are the same shape of residue: the gate reads a registry by
+	// tool name, so a tool left declared after its extension unloads would keep
+	// narrowing calls under a name the extension no longer owns.
+	releaseToolEffects(extension.path);
 	extension.hostRenderStrategies.length = 0;
 	extension.copyTargetProviders.length = 0;
 	extension.toolRegistrationListeners.clear();

@@ -23,6 +23,7 @@ import {
 	registerCompactionTransactionObserver,
 } from "../../session/compaction-transaction";
 import { type ExtensionModule, extensionModuleCapability } from "../../capability/extension-module";
+import { declareToolEffectsFor } from "../../tools/effects";
 import { type Hook, hookCapability } from "../../capability/hook";
 import { recordHookHash, recordedHookHash } from "../../config/hook-settings";
 import { settings } from "../../config/settings";
@@ -288,6 +289,16 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 			sourceInfo: extensionToolSourceInfo(tool, this.extension.resolvedPath),
 		};
 		this.extension.tools.set(tool.name, registered);
+		// Declared at the door rather than at call time: the gate reads a registry
+		// keyed by tool name, and a declaration made inside `execute` would arrive
+		// after the floor has already been resolved for that call. Keyed by the
+		// extension path so unloading one cannot withdraw another's declaration.
+		if (tool.effects) {
+			// `resolvedPath`, not `path`: the teardown side releases by `extension.path`,
+			// and for a factory-loaded extension the two are the same name, while
+			// `path` may be a specifier or URL that is not a filesystem identity.
+			declareToolEffectsFor(tool.name, tool.effects, this.extension.resolvedPath);
+		}
 		// No `?? []`: the bucket is required on `Extension`, and an empty-array
 		// fallback here would turn a missing bucket into ZERO listener calls —
 		// silently dropping a tool-registration callback rather than failing.

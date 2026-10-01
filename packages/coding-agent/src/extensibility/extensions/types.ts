@@ -107,6 +107,7 @@ import type { GlobToolDetails } from "@oh-my-pi/pi-tui/tools/glob";
 import type { GrepToolDetails } from "@oh-my-pi/pi-tui/tools/grep";
 import type { ReadToolDetails } from "@oh-my-pi/pi-tui/tools/read";
 import type { ApprovalMode } from "../../tools/approval";
+import type { ToolEffect } from "../../tools/effects";
 import type { BashToolDetails } from "@oh-my-pi/pi-tui/tools/bash";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
 import type { CompactionProtection } from "../../tools/compaction-protection";
@@ -768,6 +769,15 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	/** Tool approval tier. Defaults to `"exec"` when omitted.
 	 *  `"read"`: read-only operations. `"write"`: mutations. `"exec"`: code execution. */
 	approval?: ToolApproval;
+	/**
+	 * What this tool reaches, so a user's per-effect policy can apply to it without
+	 * anyone writing a command pattern for it.
+	 *
+	 * A declaration, never containment: it can only raise the approval floor, and
+	 * the resource it names is not the resource it is confined to. Omit it and the
+	 * tool is gated only by its `approval` tier.
+	 */
+	effects?: ToolEffect[];
 	/** Structured-output strict grammar opt-in/out. `false` is meaningful: OpenAI-family
 	 *  serializers preserve an explicit `strict: false` on the wire (#4336/#4340). */
 	strict?: boolean;

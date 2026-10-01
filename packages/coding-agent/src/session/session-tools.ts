@@ -950,6 +950,16 @@ export class SessionTools {
 					type PermissionRaceResult =
 						| { kind: "permission"; outcome: ClientBridgePermissionOutcome }
 						| { kind: "aborted" };
+					// Audit half one, written before the prompt leaves: a crash while the
+					// prompt is open must leave "asked" behind, or the log cannot tell a
+					// denial from a process that died mid-question.
+					this.#host.sessionManager.appendApprovalEntry({
+						requestId: toolCallId,
+						phase: "asked",
+						toolName: target.name,
+						policyKey: permissionIntent.cacheKey,
+						source: "acp",
+					});
 					const { promise: abortPromise, resolve: resolveAbort } = Promise.withResolvers<PermissionRaceResult>();
 					const onAbort = () => resolveAbort({ kind: "aborted" });
 					signal?.addEventListener("abort", onAbort, { once: true });
@@ -984,10 +994,23 @@ export class SessionTools {
 					if (outcome.outcome === "cancelled") {
 						throw new ToolAbortError("Permission request cancelled");
 					}
+
 					const selectedOption = PERMISSION_OPTIONS_BY_ID.get(outcome.optionId);
 					if (!selectedOption) {
 						throw new ToolError(`Tool permission response used unknown option ID: ${outcome.optionId}`);
 					}
+					const selectedKind = selectedOption.kind;
+					// Audit half two. `selectedOption.kind` is the decision that was
+					// applied, so a replay of the log answers "was this allowed" without
+					// re-running the gate.
+					this.#host.sessionManager.appendApprovalEntry({
+						requestId: toolCallId,
+						phase: "answered",
+						toolName: target.name,
+						policyKey: permissionIntent.cacheKey,
+						decision: selectedKind,
+						source: "acp",
+					});
 					if (selectedOption.kind === "allow_always") {
 						this.#acpPermissionDecisions.set(permissionIntent.cacheKey, "allow_always");
 					} else if (selectedOption.kind === "reject_always") {

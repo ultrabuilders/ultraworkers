@@ -40,6 +40,7 @@ export type SessionTreeEntry = { id: string; parentId: string | null } & (
 	| { type: "credential_pin"; provider: string }
 	| { type: "ttsr_injection"; injectedRules: string[] }
 	| { type: "session_init" | "reset_boundary" }
+	| { type: "approval"; toolName: string; phase: "asked" | "answered"; decision?: string }
 );
 
 /** Session tree shape consumed by the selector. */
@@ -516,6 +517,14 @@ class TreeList implements Component {
 				break;
 			case "title_change":
 				parts.push("title", entry.title);
+				break;
+			case "approval":
+				// The pair reads as one story in the tree: what was asked, and what
+				// it was answered. `decision` is absent on the `asked` half.
+				parts.push(
+					"approval",
+					entry.phase === "answered" ? `${entry.toolName}: ${entry.decision}` : `${entry.toolName}: asked`,
+				);
 				break;
 			case "mode_change":
 				parts.push("mode", entry.mode);

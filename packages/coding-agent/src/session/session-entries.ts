@@ -18,6 +18,8 @@ export const SESSION_TITLE_SLOT_ENTRY_TYPE = "title";
 
 export const TITLE_CHANGE_ENTRY_TYPE = "title_change";
 
+export const APPROVAL_ENTRY_TYPE = "approval";
+
 export type SessionTitleSource = "auto" | "user";
 
 /** Fixed-width first-line slot carrying the mutable current session title. */
@@ -197,11 +199,55 @@ export interface TitleChangeEntry extends SessionEntryBase {
 	trigger?: string;
 }
 
+/**
+ * One half of an approval audit pair: what was asked, and what was decided.
+ *
+ * ## Why this is in the log and not in the model's context
+ *
+ * Structurally, not by a filter. `SessionMessageEntry` is the only union member
+ * that carries an `AgentMessage`, so every other entry is metadata the model
+ * cannot receive — which is why `TitleChangeEntry` needs no special handling
+ * either. That is also why there is deliberately no `EPHEMERAL_*` sentinel here:
+ * that marker exists for `model_change`, which *does* change what the model sees
+ * mid-turn. An approval record changes nothing about the conversation, and adding
+ * a marker for it would be a state nothing reads.
+ *
+ * ## Why a pair rather than one record
+ *
+ * After a crash the question is "who approved this". A record written only at the
+ * answer cannot distinguish a denial from a process that died while the prompt was
+ * open, and a record written only at the ask cannot say what was decided. So both
+ * halves are written, and they share `requestId`.
+ *
+ * ## What is recorded, and from where
+ *
+ * `policyKey` is whatever `resolveApproval` reported — the key that actually
+ * decided this call — rather than the tool name the call site knows. Those differ
+ * whenever a tool declares a narrower policy key or inherits a renamed tool's, and
+ * the audit trail has to name the rule that fired, not the tool that asked.
+ */
+export interface ApprovalEntry extends SessionEntryBase {
+	type: typeof APPROVAL_ENTRY_TYPE;
+	/** Ties the `asked` and `answered` halves of one prompt together. */
+	requestId: string;
+	phase: "asked" | "answered";
+	toolName: string;
+	/** The key `resolveApproval` resolved the policy under. Present on both halves. */
+	policyKey?: string;
+	/** The policy in force when the question was asked. */
+	policy?: string;
+	/** What the user chose. `asked` has none. */
+	decision?: string;
+	/** Whether an ACP client answered rather than a local prompt. */
+	source?: "user" | "mode" | "tool" | "acp";
+}
+
 declare module "@oh-my-pi/pi-agent-core/compaction/entries" {
 	interface CustomCompactionSessionEntries {
 		titleChange: TitleChangeEntry;
 		credentialPin: CredentialPinEntry;
 		modelUsage: ModelUsageEntry;
+		approval: ApprovalEntry;
 	}
 }
 
@@ -313,6 +359,7 @@ export type SessionEntry =
 	| SessionInitEntry
 	| ModeChangeEntry
 	| CredentialPinEntry
+	| ApprovalEntry
 	| ResetBoundaryEntry;
 
 /** Raw logical file entry after loaders strip any fixed-width title slot. */

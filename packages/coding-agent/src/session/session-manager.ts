@@ -65,6 +65,9 @@ import {
 	type SessionTitleSource,
 	type SessionTreeNode,
 	type ThinkingLevelChangeEntry,
+	type ApprovalEntry,
+	type SessionEntryBase,
+	APPROVAL_ENTRY_TYPE,
 	TITLE_CHANGE_ENTRY_TYPE,
 	type TitleChangeEntry,
 	type TtsrInjectionEntry,
@@ -3041,6 +3044,20 @@ export class SessionManager {
 
 	appendCustomEntry(customType: string, data?: unknown): string {
 		const entry: CustomEntry = { type: "custom", customType, data, ...this.#freshEntryFields() };
+		this.#recordEntry(entry);
+		return entry.id;
+	}
+
+	/**
+	 * Append one half of an approval audit pair.
+	 *
+	 * A dedicated method rather than a `appendCustomEntry("approval", ...)`
+	 * because that would produce a `CustomEntry`, leaving the `ApprovalEntry`
+	 * union member with no producer — a type that names a shape nothing can
+	 * create is a shape nothing can rely on when reading the log back.
+	 */
+	appendApprovalEntry(half: Omit<ApprovalEntry, keyof SessionEntryBase>): string {
+		const entry: ApprovalEntry = { ...half, type: APPROVAL_ENTRY_TYPE, ...this.#freshEntryFields() };
 		this.#recordEntry(entry);
 		return entry.id;
 	}

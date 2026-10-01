@@ -16,6 +16,7 @@ import { EditTool } from "@oh-my-pi/pi-coding-agent/edit";
 import type { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
 import { canonicalizeApprovalKey } from "@oh-my-pi/pi-coding-agent/session/acp-permission-gate";
+import { APPROVAL_ENTRY_TYPE, type ApprovalEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type {
 	ClientBridge,
@@ -1097,4 +1098,82 @@ it("a bash call with no command does not share a grant with other bash calls", (
 
 	expect(empty).not.toBe(withCommand);
 	expect(empty).not.toBe("bash");
+});
+
+/**
+ * The approval audit pair.
+ *
+ * After a crash the only question that matters is "who approved this, and what
+ * was approved". A single record cannot answer it: written only at the answer it
+ * cannot tell a denial from a process that died while the prompt was open, and
+ * written only at the ask it cannot say what was decided. So both halves go to
+ * the log, joined by the tool call id.
+ */
+it("records both halves of an approval, and neither reaches the model", async () => {
+	const bashTool = makeFakeTool("bash");
+	const bridge = makeBridge({ outcome: "selected", optionId: "allow_once", kind: "allow_once" });
+	session = await createSession([bashTool], bridge);
+
+	await session.setActiveToolsByName(["bash"]);
+	const wrappedBash = session.agent.state.tools.find(t => t.name === "bash");
+	await wrappedBash!.execute(
+		"call-audit",
+		{ command: "rm -rf ./build" },
+		undefined,
+		undefined as never,
+		undefined as never,
+	);
+
+	const entries = session.sessionManager
+		.getEntries()
+		.filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+	expect(entries.map(e => e.phase)).toEqual(["asked", "answered"]);
+
+	// The pair must be joinable, or a crash log is two unrelated lines.
+	const [asked, answered] = entries;
+	expect(answered.requestId).toBe(asked.requestId);
+
+	// The decision that was actually applied, and the action it was applied to.
+	expect(answered.decision).toBe("allow_once");
+	expect(asked.policyKey).toBe("bash:rm -rf ./build");
+
+	// The load-bearing half of the contract. `SessionMessageEntry` is the only
+	// union member carrying an AgentMessage, so this is structural — but if it ever
+	// stops being true, the model starts reading its own permission history, and
+	// the test is what notices.
+	const modelMessages = session.agent.state.messages;
+	expect(modelMessages.some(m => JSON.stringify(m).includes("rm -rf ./build"))).toBe(false);
+});
+
+it("an approval recorded as asked but never answered is distinguishable", async () => {
+	// The crash case the pair exists for. A bridge that never answers leaves only
+	// the `asked` half in the log, which is what tells a reader the question was
+	// open when the process died rather than denied.
+	const bashTool = makeFakeTool("bash");
+	const bridge: ClientBridge = {
+		capabilities: { requestPermission: true },
+		requestPermission: () => new Promise<ClientBridgePermissionOutcome>(() => {}),
+	};
+	session = await createSession([bashTool], bridge, { "tools.approval": { bash: "prompt" } });
+
+	await session.setActiveToolsByName(["bash"]);
+	const wrappedBash = session.agent.state.tools.find(t => t.name === "bash");
+	await Promise.race([
+		wrappedBash!
+			.execute(
+				"call-open",
+				{ command: "git status" },
+				AbortSignal.timeout(60),
+				undefined as never,
+				undefined as never,
+			)
+			.catch(() => {}),
+		Bun.sleep(60),
+	]);
+
+	const entries = session.sessionManager
+		.getEntries()
+		.filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+	expect(entries.some(e => e.phase === "asked")).toBe(true);
+	expect(entries.some(e => e.phase === "answered")).toBe(false);
 });

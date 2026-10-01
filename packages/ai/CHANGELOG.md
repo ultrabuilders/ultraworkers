@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- The message-level retry helpers are now reachable from the package root. `isRetryableAssistantMessage`,
+  `isProviderRetryableError` and `isTransientStatus` were exported by their module but the barrel
+  re-exported only `./error/rate-limit`, so `import { isRetryableAssistantMessage } from "@oh-my-pi/pi-ai"`
+  failed even though the function existed and was documented.
+
 ### Changed
 
 - `DEBUG_CURSOR` provider debug output now goes to the log file instead of the terminal.

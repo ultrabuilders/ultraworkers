@@ -54,6 +54,7 @@ import {
 import "./all-settings";
 import { cfgModelRoles, cfgModelRoleStorage } from "./model-settings";
 import { cfgShellPath } from "../exec/settings";
+import { collectConfigReloadDeferrals } from "./reload-observer";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -648,6 +649,12 @@ export class Settings {
 	#watchingFiles = false;
 	/** Directory watchers for config sources, keyed by directory, with the basenames that trigger a reload. */
 	#fileWatchers = new Map<string, { watcher: fs.FSWatcher; names: Set<string> }>();
+	/**
+	 * Watched path that last tripped the debounce, so a deferred reload can say
+	 * WHICH file the user edited. Empty until the first event: a reload can also be
+	 * triggered directly, and naming no file is better than naming a stale one.
+	 */
+	#lastWatchedSource = "";
 	/** Debounce timer for watcher-triggered reloads. */
 	#watchReloadTimer?: NodeJS.Timeout;
 
@@ -1145,6 +1152,7 @@ export class Settings {
 					const entry = this.#fileWatchers.get(dir);
 					if (!entry || entry.watcher !== watcher) return;
 					if (filename && !entry.names.has(path.basename(filename.toString()))) return;
+					this.#lastWatchedSource = filename ? path.join(dir, filename.toString()) : dir;
 					this.#scheduleWatchReload();
 				});
 			} catch (error) {
@@ -1173,6 +1181,19 @@ export class Settings {
 
 	async #reloadFromWatch(): Promise<void> {
 		if (!this.#watchingFiles) return;
+		// Asked before the apply, not after: a handler that only learns a config
+		// edit landed has already lost the chance to hold it. A deferral leaves the
+		// previous values in force and the watcher armed, so the next edit retries —
+		// the user's change is never dropped.
+		const deferrals = await collectConfigReloadDeferrals({ source: this.#lastWatchedSource, changedCount: 1 });
+		if (deferrals.length > 0) {
+			logger.debug("Settings: config reload deferred by an observer", {
+				source: this.#lastWatchedSource,
+				reasons: deferrals,
+			});
+			this.#syncFileWatchers();
+			return;
+		}
 		try {
 			await this.#exclusive("keep-last-good", () => this.#reloadPersistedLayers("keep-last-good"));
 		} catch (error) {

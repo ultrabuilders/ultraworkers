@@ -12,13 +12,14 @@ import { type AnySetting, lookup } from "../config/registry";
 import { globalLayerValue, shadowingSource } from "../config/shadowing";
 import { Settings, settings } from "../config/settings";
 import { theme } from "@oh-my-pi/pi-tui/theme";
+import { configMigrate } from "./commands/config-migrate";
 import { initXdg } from "./commands/init-xdg";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export type ConfigAction = "list" | "get" | "set" | "reset" | "path" | "init-xdg";
+export type ConfigAction = "list" | "get" | "set" | "reset" | "path" | "init-xdg" | "migrate";
 
 export interface ConfigCommandArgs {
 	action: ConfigAction;
@@ -26,6 +27,8 @@ export interface ConfigCommandArgs {
 	value?: string;
 	flags: {
 		json?: boolean;
+		/** Opt in to the destructive path. `config migrate` alone never writes. */
+		apply?: boolean;
 	};
 }
 // =============================================================================
@@ -64,7 +67,7 @@ function findSettingDef(path: string): CliSettingDef | undefined {
 // Argument Parser
 // =============================================================================
 
-const VALID_ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg"];
+const VALID_ACTIONS: ConfigAction[] = ["list", "get", "set", "reset", "path", "init-xdg", "migrate"];
 
 /**
  * Parse config subcommand arguments.
@@ -96,6 +99,8 @@ export function parseConfigArgs(args: string[]): ConfigCommandArgs | undefined {
 		const arg = args[i];
 		if (arg === "--json") {
 			result.flags.json = true;
+		} else if (arg === "--apply") {
+			result.flags.apply = true;
 		} else if (!arg.startsWith("-")) {
 			positionalArgs.push(arg);
 		}
@@ -182,6 +187,9 @@ export async function runConfigCommand(cmd: ConfigCommandArgs): Promise<void> {
 			break;
 		case "init-xdg":
 			await initXdg();
+			break;
+		case "migrate":
+			await configMigrate(cmd.flags.apply === true);
 			break;
 	}
 }
@@ -368,9 +376,11 @@ ${chalk.bold("Commands:")}
   reset <key>        Remove a setting from config.yml so its default applies
   path               Print the config directory path
   init-xdg           Initialize XDG Base Directory structure
+  migrate            Move the config root to its new name (dry run; --apply to move)
 
 ${chalk.bold("Options:")}
   --json             Output as JSON
+  --apply           Actually move directories (config migrate only)
 
 ${chalk.bold("Examples:")}
   ${APP_NAME} config list
@@ -381,6 +391,8 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} config reset steeringMode
   ${APP_NAME} config list --json
   ${APP_NAME} config init-xdg
+  ${APP_NAME} config migrate
+  ${APP_NAME} config migrate --apply
 
 ${chalk.bold("Boolean Values:")}
   true, false, yes, no, on, off, 1, 0

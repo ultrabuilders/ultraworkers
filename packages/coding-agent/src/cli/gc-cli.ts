@@ -18,6 +18,7 @@ import {
 	normalizePathForComparison,
 	readLines,
 } from "@oh-my-pi/pi-utils";
+import { movePath } from "@oh-my-pi/pi-utils/fs-move";
 import { Settings } from "../config/settings";
 import type { Setting } from "../config/registry";
 
@@ -523,24 +524,6 @@ function sessionCwdKey(sessionsRoot: string, session: SessionInfo): string {
 	if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return session.cwd || ".";
 	const dirname = path.dirname(relativePath);
 	return dirname === "." ? session.cwd || "." : dirname;
-}
-
-async function movePath(source: string, destination: string): Promise<void> {
-	await fs.mkdir(path.dirname(destination), { recursive: true });
-	try {
-		await fs.rename(source, destination);
-		return;
-	} catch (error) {
-		if (codeOf(error) !== "EXDEV") throw error;
-	}
-	const stat = await fs.stat(source);
-	if (stat.isDirectory()) {
-		await fs.cp(source, destination, { recursive: true });
-		await fs.rm(source, { recursive: true, force: true });
-		return;
-	}
-	await fs.copyFile(source, destination);
-	await fs.unlink(source);
 }
 
 function sessionArtifactsPath(sessionPath: string): string {

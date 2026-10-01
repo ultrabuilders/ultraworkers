@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+
 ### Breaking Changes
 
 - `ui.setHeader` and `ui.setFooter` now throw in any mode that cannot mount a component — headless,
@@ -20,6 +21,8 @@
   the host discards the return value — so this is a source-level change for extension authors only
 
 ### Added
+
+- Added `omp config migrate` — moves the config root to its new name, along with the XDG data, state and cache roots. It is a dry run unless you pass `--apply`. When both the old and the new root exist it reports the pair and leaves it alone rather than merging, so a migration can never silently drop one of the two installs.
 
 - `pi.registerDoubleEscapeAction({ id, description, handler })` lets an extension claim the
   double-Escape gesture — two Escapes inside 500 ms on an empty editor. The gesture was a closed
@@ -70,6 +73,10 @@
 
 ### Fixed
 
+- Fixed a long session on a small-context model re-compacting and re-sending forever after a
+  completed turn overflowed. Each round of the `compact → overflow → compact` cycle succeeded at
+  recovering, so it never surfaced as an error and just spent a full model turn per round. Overflow
+  recovery now gets one retry per incident, then stops and reports why instead of looping silently
 - An MCP server can no longer widen its own reach after you have trusted it. Trust is granted to the
   connection, but `notifications/tools/list_changed` let a server add or retract a tool at any moment:
   a newly pushed tool became active immediately, so a server you had already approved could hand the

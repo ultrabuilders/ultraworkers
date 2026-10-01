@@ -3,6 +3,7 @@ export * from "./async";
 export * from "./atomic-write";
 export * from "./binary";
 export * from "./color";
+export * from "./config-migrate";
 export * from "./dirs";
 export * from "./env";
 export * from "./executable";

@@ -75,7 +75,17 @@ export interface ImagesProviderFileSnapshot {
 	readonly lastError?: string;
 }
 
-export type ImagesDoctorSeverity = "ok" | "warn" | "error";
+/**
+ * What a check concluded.
+ *
+ * `unavailable` is deliberately separate from `warn`. A `warn` is a **measurement**
+ * ("the cache directory is not writable"), whereas `unavailable` means **no
+ * measurement was taken** ("the daemon could not be reached"). Reporting those two
+ * the same way makes "nothing is wrong" indistinguishable from "nothing was
+ * checked", and health derived from the absence of errors then certifies a
+ * subsystem nobody successfully asked about.
+ */
+export type ImagesDoctorSeverity = "ok" | "warn" | "error" | "unavailable";
 
 export interface ImagesDoctorCheck {
 	readonly name: string;
@@ -523,7 +533,7 @@ async function collectDoctor(
 		} catch {
 			checks.push({
 				name: "config:provider-files",
-				severity: "warn",
+				severity: "unavailable",
 				detail: "Provider authentication storage could not be inspected",
 			});
 		} finally {
@@ -532,7 +542,11 @@ async function collectDoctor(
 	}
 	const daemon = await deps.queryDoctor(projectDir, { probe: true });
 	if (!daemon) {
-		checks.push({ name: "daemon", severity: "warn", detail: "Image daemon is stopped or unreachable" });
+		checks.push({
+			name: "daemon",
+			severity: "unavailable",
+			detail: "Image daemon is stopped or unreachable",
+		});
 	} else {
 		for (const check of daemon.checks) {
 			checks.push({
@@ -542,7 +556,10 @@ async function collectDoctor(
 			});
 		}
 	}
-	const healthy = !checks.some(check => check.severity === "error");
+	// Enumerated, not inferred: health means every subsystem positively cleared, so a
+	// check that could not run withholds it. Deriving it from "nothing is an error"
+	// alone is what let a stopped daemon read as healthy — see the severity union.
+	const healthy = !checks.some(check => check.severity === "error" || check.severity === "unavailable");
 	return { action: "doctor", exitCode: healthy ? 0 : 1, projectDir, healthy, checks };
 }
 

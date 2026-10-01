@@ -55,6 +55,8 @@
 
 ### Fixed
 
+- `omp images doctor` no longer reports images as healthy when it could not check them. A stopped or unreachable image daemon was reported the same way as a daemon that had answered and found something to warn about, and health was derived from the absence of errors — so a command used as a gate passed with exit code 0 while the one component able to prove image health was never asked. A check that could not run is now `unavailable`, its own verdict rather than a warning, and it withholds the healthy result. `omp images doctor --json` gains that `severity` value for the two cases that report it (daemon unreachable, provider auth storage unreadable); a genuine warning still reports `warn` and still leaves the command healthy
+
 - An "Always allow" or "Always reject" for a tool call is now remembered against the action rather than the tool's name. It was cached under the tool name, so approving one `bash` call granted every later one for the rest of the session — a user who allowed `git status` had also allowed `rm -rf ./build`, and nothing on screen said so. Bash is now keyed on its parsed command segments (using the shell tokenizer `bash-interceptor` already uses, so the two cannot disagree on quoting), `delete` and `move` on the path, and `edit` on which destructive operation was detected. The two always-options also name the scope they are about to grant, since a narrower grant the user cannot see is no narrower. Decisions stay in memory for the session, so nothing is carried over a restart
 
 - `--profile <name>` loaded the default profile's `.env` instead of the selected one's, so settings

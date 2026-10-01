@@ -320,6 +320,26 @@ describe("images doctor", () => {
 		expect(requests.filter(request => request.pathname === "/doctor")).toHaveLength(3);
 		expect(stderr).toEqual([]);
 	});
+
+	test("does not certify images healthy when the daemon could not be asked at all", async () => {
+		// A daemon that *answers* `warn` has measured something — the case the row
+		// above pins. A daemon that is **not running** has measured nothing:
+		// `queryBlobBrokerDoctor` returns `null` precisely when there is no socket to
+		// ask. Both land on `severity: "warn"` today, and `healthy` is derived only
+		// from "is any check an error", so the second reads as healthy and the command
+		// exits 0.
+		//
+		// What a consumer observes if this regresses: anything gating on
+		// `omp images doctor` — a CI step, a pre-deploy check — is told images are
+		// fine while the one component able to prove it was never consulted. "No
+		// errors" is not the same claim as "checked, and healthy", and a diagnostic
+		// that collapses the two reads as coverage it does not have.
+		stdout.length = 0;
+		const result = await runImagesCommand(args("doctor"), dependencies({ queryDoctor: async () => null }));
+
+		expect(result).toMatchObject({ action: "doctor", healthy: false, exitCode: 1 });
+		expect(output()).toContain("daemon");
+	});
 });
 
 describe("images probe", () => {

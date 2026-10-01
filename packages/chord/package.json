@@ -42,6 +42,10 @@
 			"types": "./src/context/index.ts",
 			"import": "./src/context/index.ts"
 		},
+		"./delta": {
+			"types": "./src/delta/index.ts",
+			"import": "./src/delta/index.ts"
+		},
 		"./*": {
 			"types": "./src/*.ts",
 			"import": "./src/*.ts"

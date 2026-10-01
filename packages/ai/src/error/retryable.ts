@@ -8,6 +8,7 @@ import {
 	status,
 	TRANSIENT_TRANSPORT_PATTERN,
 } from "./flags";
+import type { AssistantMessage } from "../types";
 
 /**
  * Whether a numeric HTTP status is in the canonical transient/retryable set:
@@ -62,4 +63,29 @@ export function isProviderRetryableError(error: unknown): boolean {
 		return true;
 	}
 	return isRetryableError(error);
+}
+
+/**
+ * Whether a finished assistant turn failed in a way worth replaying.
+ *
+ * The message-level view of {@link isProviderRetryableError}: that predicate
+ * answers "is this error transient" and wants an `Error` carrying an HTTP
+ * status, but a completed turn only keeps `stopReason` plus the provider's
+ * text. A turn that ended any other way — `stop`, `length`, `toolUse`,
+ * `aborted` — is not a failure and must never be replayed.
+ *
+ * Composed on {@link isProviderRetryableError} rather than matching patterns
+ * here, so the provider-transient vocabulary stays owned by one module. The
+ * transport status is genuinely absent from a stored turn, which is the same
+ * position `pi` is in: its counterpart is text-only too.
+ *
+ * `errorClassificationMessage` is preferred over `errorMessage` because the
+ * latter may carry display-only diagnostics that would make an otherwise
+ * retryable turn look like an arbitrary failure.
+ */
+export function isRetryableAssistantMessage(message: AssistantMessage): boolean {
+	if (message.stopReason !== "error") return false;
+	const text = message.errorClassificationMessage ?? message.errorMessage;
+	if (!text) return false;
+	return isProviderRetryableError(new Error(text));
 }

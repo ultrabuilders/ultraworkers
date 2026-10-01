@@ -35,6 +35,7 @@ import type {
 	WriteResult,
 } from "@oh-my-pi/pi-catalog/discovery/cursor-proto";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
+import type { JsonValue } from "./judgment/types";
 import type { Api, FetchImpl, KnownApi, Model, Provider, ThinkingBudgets, Usage } from "@oh-my-pi/pi-catalog/types";
 import type { ApiKey } from "./auth-retry";
 import type { BedrockOptions } from "./providers/amazon-bedrock";
@@ -822,6 +823,27 @@ export interface AnthropicServerToolContent {
 				content: unknown;
 				[key: string]: unknown;
 		  };
+}
+
+/**
+ * A provider's handle to an assistant response that has not finished streaming.
+ *
+ * Providers that accept a request and finish it later (batch APIs, long-running
+ * generations) hand back an identifier plus whatever reconstruction data the
+ * final assistant message needs. `expiresAt` and `pollAfterMs` let the caller
+ * schedule the next poll without re-reading provider documentation for the
+ * lifetime of each provider's handle.
+ */
+export interface DeferredHandle {
+	provider: string;
+	modelId: string;
+	api: string;
+	/** Provider token, such as a response id or batch id plus row id. */
+	id: string;
+	expiresAt?: number;
+	pollAfterMs?: number;
+	/** Provider conversion data required to reconstruct the final assistant message. */
+	data?: JsonValue;
 }
 
 /** Provider-native uploaded file reference for image reuse without retransmitting bytes. */

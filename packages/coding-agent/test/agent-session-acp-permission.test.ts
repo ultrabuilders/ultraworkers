@@ -231,6 +231,12 @@ function noUiRunner(): ExtensionRunner {
 		consumeToolCallEmitted: () => false,
 		hasUI: () => false,
 		sessionId: "acp-permission-test",
+		// This fake is not attached to a session, so it has nowhere to put an approval
+		// record. It is a deliberate no-op rather than a silent catch: the rows using it
+		// are about whether the ACP bridge satisfies or fails the inner gate, and the
+		// audit those rows would drop is asserted elsewhere against a real SessionManager
+		// (`records both halves of an approval, and neither reaches the model`).
+		recordApprovalEntry: () => {},
 		runScoped<T>(fn: () => T): T {
 			return fn();
 		},

@@ -354,6 +354,45 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			const hasApprovalHandlers =
 				this.runner.hasHandlers("tool_approval_requested") || this.runner.hasHandlers("tool_approval_resolved");
 			const sessionId = context?.sessionManager?.getSessionId() ?? "";
+
+			// Approval audit pair, for the reason the ACP gate records one: after a crash the
+			// only question that matters is who approved this, and a record at either end
+			// alone cannot answer it — one written at the answer cannot tell a denial from a
+			// process that died with the prompt open.
+			//
+			// `policyKey` comes from `resolveApproval`, the one place policy is decided, and
+			// is deliberately not the tool name: `explicitPrompt` above keys off
+			// `resolved.policyKey ?? this.tool.name`, so a tool that declares a narrower key
+			// was decided by a rule its name would misreport.
+			//
+			// Reaching this block *is* the fact that a question was asked. The paths that
+			// resolve a policy without asking — yolo, an `xd://` bypass, an ACP-approved call
+			// replaying here — leave `approvalCheck.required` false and record nothing,
+			// which is the honest answer: nothing was asked of anyone.
+			this.runner.recordApprovalEntry({
+				requestId: toolCallId,
+				phase: "asked",
+				toolName: this.tool.name,
+				policyKey: resolved.policyKey ?? this.tool.name,
+				source: "user",
+			});
+			// Idempotent by construction: every terminal outcome below funnels through
+			// `emitApprovalResolved`, but a gate whose recorder double-writes would corrupt
+			// the very absence — "asked with no answer" — that makes a crash legible.
+			let approvalAnswered = false;
+			const recordApprovalAnswered = (decision: string): void => {
+				if (approvalAnswered) return;
+				approvalAnswered = true;
+				this.runner.recordApprovalEntry({
+					requestId: toolCallId,
+					phase: "answered",
+					toolName: this.tool.name,
+					policyKey: resolved.policyKey ?? this.tool.name,
+					decision,
+					source: "user",
+				});
+			};
+
 			if (hasApprovalHandlers) {
 				await this.runner.emit({
 					type: "tool_approval_requested",
@@ -366,6 +405,10 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			}
 
 			const emitApprovalResolved = async (approved: boolean, reason?: string) => {
+				// Ahead of the `hasApprovalHandlers` guard on purpose. The pair is the
+				// session's own record of who approved what; whether an extension happens to
+				// subscribe to the event must not decide whether it exists.
+				recordApprovalAnswered(approved ? "approved" : "denied");
 				if (!hasApprovalHandlers) return;
 				await this.runner.emit({
 					type: "tool_approval_resolved",

@@ -37,6 +37,7 @@ import { type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { AsyncJobSnapshot } from "../../session/agent-session";
 import { MAIN_AGENT_ID } from "../../registry/agent-registry";
 import { registerCompactionTransactionObserver } from "../../session/compaction-transaction";
+import type { ApprovalEntry, SessionEntryBase } from "../../session/session-entries";
 import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
 import { addCompactionProtection } from "../../tools/compaction-protection";
@@ -863,6 +864,22 @@ export class ExtensionRunner {
 	 */
 	get sessionId(): string {
 		return this.sessionManager.getSessionId();
+	}
+
+	/**
+	 * Append one half of an approval audit pair to this session's log.
+	 *
+	 * Deliberately *not* reached through `context.sessionManager`. That is
+	 * `ReadonlySessionManager` — a `Pick` of read-only methods, and the facade
+	 * extensions see on purpose. Adding `appendApprovalEntry` to it would hand
+	 * every installed extension write access to the session transcript to buy core
+	 * a single append, so the seam is here, on the core runner that already holds
+	 * the real manager.
+	 *
+	 * Core-only: nothing reachable from an extension's `ToolContext` lands here.
+	 */
+	recordApprovalEntry(half: Omit<ApprovalEntry, keyof SessionEntryBase>): void {
+		this.sessionManager.appendApprovalEntry(half);
 	}
 
 	/**

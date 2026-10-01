@@ -15,6 +15,10 @@
  * machine. Growth from n to 4n is a statement about the code — linear work gives ~4, squared
  * work gives ~16 — so this stays meaningful on a loaded or faster box. Threshold 8 sits
  * between them: measured 2.65-3.32 with the fix, 16.90-20.64 without.
+ *
+ * If this ever flakes on CI, the fix is to RAISE the threshold. Do not weaken it into
+ * "growth < 8 OR time < X" — that is an OR gate, which only goes red when both halves fail
+ * at once, and it would pass on any single healthy reading.
  */
 import { describe, expect, it } from "bun:test";
 import { Lexer } from "../src/marked";
@@ -43,5 +47,5 @@ describe("a run of backticks does not cost its own square", () => {
 		// Squared work multiplies by 16 across a 4x input; linear work multiplies by 4.
 		const growth = at4N / atN;
 		expect(growth).toBeLessThan(8);
-	}, 30_000);
+	}, 15_000);
 });

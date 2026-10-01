@@ -411,6 +411,8 @@ export class ExtensionList implements Component {
 				return theme.fg("dim", theme.status.disabled);
 			case "shadowed":
 				return theme.fg("warning", theme.status.shadowed);
+			case "modified":
+				return theme.fg("warning", theme.status.warning);
 		}
 	}
 

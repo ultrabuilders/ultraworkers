@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The extension list and inspector can now render a `modified` state, alongside the existing `active` / `disabled` / `shadowed`. A hook whose file changed after the user approved it is refused by the loader, and it now carries that fact all the way to the row that lists it instead of being indistinguishable from one that is running. It reuses `theme.status.warning` rather than introducing a status symbol: a blocked hook *is* a warning, and a new glyph would mean a fourth preset table entry, a theme-class field and a symbol key to keep in step for one more triangle
+
 ### Fixed
 
 - `sanitizeErrorLine` no longer reduces a string argument to `[object String]`. It takes `unknown`,

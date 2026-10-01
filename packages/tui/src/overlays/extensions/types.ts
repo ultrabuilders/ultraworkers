@@ -28,12 +28,21 @@ export type ExtensionKind =
 /**
  * Extension state (active, disabled, or shadowed).
  */
-export type ExtensionState = "active" | "disabled" | "shadowed";
+/**
+ * Why an extension is not running.
+ *
+ * `modified` is not a flavour of `disabled`: the item is enabled and its file
+ * is perfectly loadable, but the loader refuses to import it because its
+ * contents changed after the user approved them. Folding it into `disabled`
+ * would make the dashboard's own toggle look like the cause — the user would
+ * disable and re-enable an item and see nothing change.
+ */
+export type ExtensionState = "active" | "disabled" | "shadowed" | "modified";
 
 /**
  * Reason why an extension is disabled.
  */
-export type DisabledReason = "provider-disabled" | "user-opt-in" | "item-disabled" | "shadowed";
+export type DisabledReason = "provider-disabled" | "user-opt-in" | "item-disabled" | "shadowed" | "hook-modified";
 
 /**
  * Unified extension representation for the dashboard.

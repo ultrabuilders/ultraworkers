@@ -18,6 +18,10 @@ import type {
 } from "@oh-my-pi/pi-ai";
 import { isBuiltinComposerStyle, type KeyId } from "@oh-my-pi/pi-tui";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
+import {
+	type CompactionTransactionObserver,
+	registerCompactionTransactionObserver,
+} from "../../session/compaction-transaction";
 import { type ExtensionModule, extensionModuleCapability } from "../../capability/extension-module";
 import { type Hook, hookCapability } from "../../capability/hook";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
@@ -150,6 +154,10 @@ export class ExtensionRuntime implements IExtensionRuntime {
 	}
 
 	appendEntry(): void {
+		throw new ExtensionRuntimeNotInitializedError();
+	}
+
+	registerCompactionTransactionObserver(): () => void {
 		throw new ExtensionRuntimeNotInitializedError();
 	}
 
@@ -559,6 +567,13 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	appendEntry(customType: string, data?: unknown): void {
 		this.runtime.appendEntry(customType, data);
+	}
+
+	registerCompactionTransactionObserver(observer: CompactionTransactionObserver): () => void {
+		// Straight to the module registry rather than through the runtime: the
+		// registry is process-global, so routing it through a per-host field would
+		// add a wiring step that could only ever forward to the same set.
+		return registerCompactionTransactionObserver(observer);
 	}
 
 	exec(command: string, args: string[], options?: ExecOptions) {

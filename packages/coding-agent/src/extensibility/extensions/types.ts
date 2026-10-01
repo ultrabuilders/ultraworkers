@@ -1,3 +1,5 @@
+import type { CompactionTransactionObserver } from "../../session/compaction-transaction";
+export type { CompactionTransactionObserver };
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 import type { ExtensionDiagnostic } from "./diagnostics";
 /**
@@ -1950,6 +1952,20 @@ export interface ExtensionAPI {
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
+	/**
+	 * Observe compaction as a log-bracketed transaction.
+	 *
+	 * `opened` fires synchronously before the durable rewrite and `closed` once
+	 * after it settles, carrying the same transaction id — write those two moments
+	 * as custom entries and an interrupted compaction stays visible in the log on
+	 * the next replay, instead of vanishing with no record that it ever started.
+	 * `findUnclosedCompactionTransaction` reads them back.
+	 *
+	 * Returns the unregister function. With nothing registered, no transaction is
+	 * announced and no entry is written: the session log is unchanged.
+	 */
+	registerCompactionTransactionObserver(observer: CompactionTransactionObserver): () => void;
+
 	/** Execute a shell command. */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 
@@ -2354,6 +2370,8 @@ export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
+	/** Optional: the runner falls back to the module's own process-global registry. */
+	registerCompactionTransactionObserver?: (observer: CompactionTransactionObserver) => () => void;
 	setLabel: (targetId: string, label: string | undefined) => void;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;

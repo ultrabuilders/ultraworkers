@@ -79,6 +79,7 @@ import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import type { AgentSessionEvent } from "./agent-session-events";
 import type { ContextUsageBreakdown, HandoffResult, SessionHandoffOptions } from "./agent-session-types";
 import { findCompactMode } from "./compact-modes";
+import { runCompactionTransaction } from "./compaction-transaction";
 import {
 	type CompactionMethod,
 	canUseRemoteCompaction,
@@ -2477,29 +2478,40 @@ export class SessionMaintenance {
 		advisorResetReason: string;
 		detachExtensionEmit?: boolean;
 	}): Promise<CompactionEntry | undefined> {
-		const entryId = this.#host.sessionManager.appendCompaction(
-			args.summary,
-			args.shortSummary,
-			args.firstKeptEntryId,
-			args.tokensBefore,
-			{
-				details: args.details,
-				fromExtension: args.fromExtension,
-				preserveData: args.preserveData,
-				method: args.method,
-				providerReplayThroughEntryId: args.providerReplayThroughEntryId,
-				tokensAfter:
-					isRecord(args.details) && args.details.kind === "experimental-context-rollover"
-						? this.#projectExperimentalContextRolloverTokens(args)
-						: this.#projectCompactedContextTokens(args),
-			},
-		);
-		// A committed compaction starts a new cycle; native compaction gets a fresh try.
-		this.#failedNativeSpeculation = undefined;
-		const newEntries = this.#host.sessionManager.getEntries();
-		const sessionContext = this.#host.buildDisplaySessionContext();
-		this.#host.agent.replaceMessages(sessionContext.messages);
-		this.#host.rebaseAfterCompaction();
+		// Bracketed so an observer sees a transaction spanning the durable rewrite,
+		// not just the append. The close lands before the extension fan-out below:
+		// a `session_compact` handler is another party's code, and holding the
+		// compaction open across someone else's await would report a slow handler
+		// as a compaction that never finished.
+		const committed = runCompactionTransaction(`commit:${args.method ?? "extension"}`, async () => {
+			const id = this.#host.sessionManager.appendCompaction(
+				args.summary,
+				args.shortSummary,
+				args.firstKeptEntryId,
+				args.tokensBefore,
+				{
+					details: args.details,
+					fromExtension: args.fromExtension,
+					preserveData: args.preserveData,
+					method: args.method,
+					providerReplayThroughEntryId: args.providerReplayThroughEntryId,
+					tokensAfter:
+						isRecord(args.details) && args.details.kind === "experimental-context-rollover"
+							? this.#projectExperimentalContextRolloverTokens(args)
+							: this.#projectCompactedContextTokens(args),
+				},
+			);
+			// A committed compaction starts a new cycle; native compaction gets a fresh try.
+			this.#failedNativeSpeculation = undefined;
+			// Read here, not after the transaction closes: `rebaseAfterCompaction`
+			// runs below and a snapshot taken later is a different list.
+			const newEntries = this.#host.sessionManager.getEntries();
+			const sessionContext = this.#host.buildDisplaySessionContext();
+			this.#host.agent.replaceMessages(sessionContext.messages);
+			this.#host.rebaseAfterCompaction();
+			return { id, newEntries };
+		});
+		const { id: entryId, newEntries } = await committed;
 		// Compaction discarded the conversation history that carried the approved
 		// plan reference. Clear the sent-flag so #buildPlanReferenceMessage re-reads
 		// the plan from disk and re-injects it on the next turn (issue #1246).
@@ -4232,28 +4244,36 @@ export class SessionMaintenance {
 		const rebuilt = snapcompact.getPreservedArchive(result.preserveData);
 		if (!rebuilt || rebuilt.frames.length >= archive.frames.length) return undefined;
 
-		const rebuiltEntryId = this.#host.sessionManager.appendCompaction(
-			result.summary,
-			result.shortSummary,
-			result.firstKeptEntryId,
-			result.tokensBefore,
-			{
-				details: result.details,
-				preserveData: result.preserveData,
-				method: "snapcompact",
-				tokensAfter: this.#projectCompactedContextTokens({
-					summary: result.summary,
-					shortSummary: result.shortSummary,
-					tokensBefore: result.tokensBefore,
-					firstKeptEntryId: result.firstKeptEntryId,
+		// Bracketed like the regular append. This path exists precisely because the
+		// `session_before_compact` hook has already been passed by the time it runs
+		// (`runAutoCompaction` reaches it at ~4595 and emits the hook at ~4706), so
+		// an observer relying on that hook alone would see a compaction commit with
+		// no transaction around it.
+		const rebuiltEntryId = await runCompactionTransaction("commit:snapcompact-rescue", async () => {
+			const id = this.#host.sessionManager.appendCompaction(
+				result.summary,
+				result.shortSummary,
+				result.firstKeptEntryId,
+				result.tokensBefore,
+				{
+					details: result.details,
 					preserveData: result.preserveData,
-				}),
-			},
-		);
-		this.#failedNativeSpeculation = undefined;
-		const sessionContext = this.#host.buildDisplaySessionContext();
-		this.#host.agent.replaceMessages(sessionContext.messages);
-		this.#host.rebaseAfterCompaction();
+					method: "snapcompact",
+					tokensAfter: this.#projectCompactedContextTokens({
+						summary: result.summary,
+						shortSummary: result.shortSummary,
+						tokensBefore: result.tokensBefore,
+						firstKeptEntryId: result.firstKeptEntryId,
+						preserveData: result.preserveData,
+					}),
+				},
+			);
+			this.#failedNativeSpeculation = undefined;
+			const sessionContext = this.#host.buildDisplaySessionContext();
+			this.#host.agent.replaceMessages(sessionContext.messages);
+			this.#host.rebaseAfterCompaction();
+			return id;
+		});
 		// Same post-rewrite bookkeeping as the regular compaction append: the
 		// rebuilt context no longer carries the transient plan reference (#1246),
 		// and advisor cursors / todo phases were derived from the replaced

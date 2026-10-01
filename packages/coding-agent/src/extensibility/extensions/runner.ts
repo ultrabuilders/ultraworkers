@@ -36,6 +36,7 @@ import type { MemoryRuntimeContext } from "../../memory-backend";
 import { type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { AsyncJobSnapshot } from "../../session/agent-session";
 import { MAIN_AGENT_ID } from "../../registry/agent-registry";
+import { registerCompactionTransactionObserver } from "../../session/compaction-transaction";
 import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
 import { addCompactionProtection } from "../../tools/compaction-protection";
@@ -884,6 +885,12 @@ export class ExtensionRunner {
 		this.runtime.sendMessage = actions.sendMessage;
 		this.runtime.sendUserMessage = actions.sendUserMessage;
 		this.runtime.appendEntry = actions.appendEntry;
+		// Falls back to the module's own registry so every host wiring an
+		// ExtensionActions gets the seam without having to remember it. The registry
+		// is process-global, so a per-host action could only ever be a different
+		// function over the same set.
+		this.runtime.registerCompactionTransactionObserver =
+			actions.registerCompactionTransactionObserver ?? registerCompactionTransactionObserver;
 		this.runtime.getActiveTools = actions.getActiveTools;
 		this.runtime.getAllTools = actions.getAllTools;
 		this.runtime.setActiveTools = async toolNames => {

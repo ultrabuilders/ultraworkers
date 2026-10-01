@@ -87,6 +87,19 @@ test("leaves bare and package specifiers alone", async t => {
 	assert.equal(result.status, 0, result.stderr);
 });
 
+test("inspects .tsx, not just .ts", async t => {
+	// The failure this defends is silence, not a wrong verdict: a walk that only
+	// collects `.ts` leaves every `.tsx` in the repo uninspected, and a gate that
+	// cannot see a file reports nothing about it — indistinguishable from clean.
+	// There are 116 `.tsx` files in this tree, so that is not hypothetical.
+	const result = await check(t, {
+		"src/a.tsx": 'import { b } from "./b.ts";\nexport const C = () => <div>{b}</div>;\n',
+	});
+	assert.equal(result.status, 1, result.stderr);
+	assert.equal(verdicts(result.stderr).length, 1, result.stderr);
+	assert.match(result.stderr, /FAIL src\/a\.tsx:1:/);
+});
+
 test("reports how many files it scanned, so scanning nothing cannot look clean", async t => {
 	// The failure this defends: a gate whose file walk silently matches nothing
 	// still prints "0 errors" and reads exactly like a clean tree.

@@ -25,7 +25,17 @@ function collectTypescriptFiles(directory) {
 			continue;
 		}
 
-		if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
+		// `.tsx` is collected for the same reason `.ts` is: a specifier that lies
+		// is a lie in any file that carries imports. Skipping it would leave the
+		// 116 `.tsx` files in this tree silently uninspected — a gate that cannot
+		// see a file type reports nothing about it, which reads exactly like
+		// "clean". `.d.ts` stays excluded: it is declarations, not a module that
+		// resolves at runtime.
+		if (
+			entry.isFile() &&
+			(entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
+			!entry.name.endsWith(".d.ts")
+		) {
 			files.push(join(directory, entry.name));
 		}
 	}

@@ -3,7 +3,7 @@ import { SETTING_TABS, type SettingsDisplayEntry, type SettingsHost } from "@oh-
 import { isSettingsInitialized, Settings, settings } from "./settings";
 import { orderedSettings } from "./all-settings";
 import { type AnySetting, lookup } from "./registry";
-import { globalLayerValue, shadowingSource } from "./shadowing";
+import { shadowingSource, writeGlobalSetting } from "./shadowing";
 
 import { cfgPlanAutosave, cfgPlanEnabled } from "../plan-mode/settings";
 import {
@@ -87,30 +87,13 @@ export function createSettingsHost(): SettingsHost {
 		entries,
 		get: path => lookup(path)?.layered(settings),
 		set: (path, value) => {
-			const setting = resolve(path);
-
-			// The post-write latch. A layer above global can supply the effective
-			// value, in which case a value saved to global is written, reported
-			// as saved, and then never takes effect — the user sees their edit in
-			// the file and not in the behaviour. So: remember what was there,
-			// write, then ask who actually won. If the answer is not us, undo it.
-			const previous = globalLayerValue(setting, settings);
-			setting.set(settings, value);
-
-			// Read back what landed *after* normalization, and what is actually
-			// in force — a normalization pass alone can change the value.
-			const written = globalLayerValue(setting, settings);
-			const effective = setting.get(settings);
-			const shadow = shadowingSource(setting, settings);
-
-			// A higher layer holding the very same value is not really shadowing:
-			// the outcome is identical, so the write stands and no rollback runs.
-			if (!shadow || Bun.deepEquals(effective, written)) return { status: "applied" };
-
-			if (previous === undefined) setting.unset(settings);
-			else setting.set(settings, previous);
-
-			return { status: "shadowed", source: shadow.source, message: shadow.message };
+			// The post-write latch lives in `shadowing.ts`, shared with `omp config
+			// set` so the two surfaces cannot detect shadowing differently. The panel
+			// reverts: someone editing a value in a live session means the edit they
+			// are making now, and a value saved to the file that never takes effect
+			// is the case they cannot diagnose. `written: "reverted"` is what makes
+			// the TUI's own `SettingsWriteResult` claim true.
+			return writeGlobalSetting(resolve(path), settings, value, "revert");
 		},
 		unset: path => resolve(path).unset(settings),
 		// Not a cast: the declared return type is what forces coding-agent's

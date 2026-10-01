@@ -9,7 +9,7 @@ import { APP_NAME, getAgentDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { orderedSettings } from "../config/all-settings";
 import { type AnySetting, lookup } from "../config/registry";
-import { globalLayerValue, shadowingSource } from "../config/shadowing";
+import { globalLayerValue, writeGlobalSetting } from "../config/shadowing";
 import { Settings, settings } from "../config/settings";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 import { configMigrate } from "./commands/config-migrate";
@@ -309,25 +309,34 @@ async function handleSet(key: string | undefined, value: string | undefined, fla
 		process.exit(1);
 	}
 
+	// Validate before write, and report the value that is in force. Parsing sits
+	// inside the `try` because it is what rejects a value the definition will not
+	// accept: an invalid entry must fail here, with the reason, and never reach
+	// `config.yml`. The shared latch in `shadowing.ts` then asks who won, under the
+	// CLI's own policy of `keep` — someone running `omp config set` may be
+	// configuring a checkout where the layer that shadows the value here does not
+	// exist, so discarding their edit would destroy something they meant to keep.
+	// The write stays on disk and the shadowing is reported, which is what makes
+	// the value observable rather than silently ineffective. Detection and wording
+	// come from `shadowing.ts`, so this surface and the settings panel cannot
+	// disagree about *why* a value is not in force.
 	try {
-		def.setting.set(settings, def.setting.parse(value));
+		const outcome = writeGlobalSetting(def.setting, settings, def.setting.parse(value), "keep");
 		await settings.flush();
+
+		const saved = globalLayerValue(def.setting, settings);
+		if (flags.json) {
+			console.log(
+				JSON.stringify({ key: def.path, value: saved, ...(outcome.status === "shadowed" ? outcome.json : {}) }),
+			);
+			return;
+		}
+		console.log(chalk.green(`${theme.status.success} Set ${def.path} = ${formatValue(saved)}`));
+		if (outcome.status === "shadowed") console.log(chalk.yellow(`${theme.status.warning} ${outcome.message}`));
 	} catch (err) {
 		console.error(chalk.red(String(err)));
 		process.exit(1);
 	}
-
-	// Report the value written to config.yml. When another layer or an environment variable still
-	// supplies the effective value, say which instead of echoing its value as if it had been set.
-	const saved = globalLayerValue(def.setting, settings);
-	const shadow = shadowingSource(def.setting, settings);
-
-	if (flags.json) {
-		console.log(JSON.stringify({ key: def.path, value: saved, ...shadow?.json }));
-		return;
-	}
-	console.log(chalk.green(`${theme.status.success} Set ${def.path} = ${formatValue(saved)}`));
-	if (shadow) console.log(chalk.yellow(`${theme.status.warning} ${shadow.message}`));
 }
 
 async function handleReset(key: string | undefined, flags: { json?: boolean }): Promise<void> {

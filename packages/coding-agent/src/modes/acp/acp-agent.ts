@@ -1146,7 +1146,7 @@ export class AcpAgent implements Agent {
 		switch (method) {
 			case SPEECH_MODELS_LIST_METHOD:
 				return buildAcpSpeechModelsCatalog();
-			case "_omp/sessions/listAll": {
+			case `_${WIRE_NAME}/sessions/listAll`: {
 				const limit = typeof params.limit === "number" ? Math.max(1, Math.min(5000, params.limit as number)) : 1000;
 				const sessions = await SessionManager.listAll();
 				const sorted = sessions.sort((l, r) => r.modified.getTime() - l.modified.getTime()).slice(0, limit);
@@ -1155,7 +1155,7 @@ export class AcpAgent implements Agent {
 					total: sessions.length,
 				};
 			}
-			case "_omp/projects/list": {
+			case `_${WIRE_NAME}/projects/list`: {
 				const sessions = await SessionManager.listAll();
 				const buckets = new Map<
 					string,
@@ -1183,7 +1183,7 @@ export class AcpAgent implements Agent {
 				const projects = Array.from(buckets.values()).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 				return { projects, totalSessions: sessions.length };
 			}
-			case "_omp/chats/byCwd": {
+			case `_${WIRE_NAME}/chats/byCwd`: {
 				const cwd = typeof params.cwd === "string" ? (params.cwd as string) : undefined;
 				if (!cwd) throw new Error("cwd required");
 				const limit = typeof params.limit === "number" ? Math.max(1, Math.min(500, params.limit as number)) : 100;
@@ -1191,7 +1191,7 @@ export class AcpAgent implements Agent {
 				const sorted = sessions.sort((l, r) => r.modified.getTime() - l.modified.getTime()).slice(0, limit);
 				return { sessions: sorted.map(s => this.#toSessionInfo(s)) };
 			}
-			case "_omp/usage": {
+			case `_${WIRE_NAME}/usage`: {
 				// Resolve the session the caller NAMED. Destructuring the first entry
 				// answered a different question — "any session" — so with two sessions
 				// open, asking about the second returned the first one's usage.
@@ -1205,14 +1205,14 @@ export class AcpAgent implements Agent {
 				const reports = await target.fetchUsageReports();
 				return { reports: reports ?? [] };
 			}
-			case "_omp/extensions": {
+			case `_${WIRE_NAME}/extensions`: {
 				const cwd = typeof params.cwd === "string" ? (params.cwd as string) : undefined;
 				const sm = await Settings.init();
 				const disabledIds = cfgDisabledExtensions.get(sm);
 				const extensions = await loadAllExtensions(cwd, disabledIds);
 				return { extensions: extensions as unknown as Array<{ [key: string]: unknown }> };
 			}
-			case "_omp/extensions/toggle": {
+			case `_${WIRE_NAME}/extensions/toggle`: {
 				const providerId = params.providerId;
 				if (typeof providerId !== "string") throw new Error("providerId required");
 				if (params.enabled === false) {

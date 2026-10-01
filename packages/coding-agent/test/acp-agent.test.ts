@@ -1186,6 +1186,27 @@ describe("ACP agent", () => {
 		await Bun.sleep(0);
 	});
 
+	// The `_omp/*` names are a wire contract: a client calls them by literal string.
+	// The dispatch is a `switch`, so a name that loses its prefix or picks up a typo
+	// falls straight through to `default:` and the caller gets "Unknown ACP ext
+	// method" — the method silently stops existing. Two of these validate their own
+	// params, so the error they throw IS the proof they reached a handler body.
+	it("routes every _omp extension method to a handler rather than the unknown-method fallthrough", async () => {
+		const harness = await createHarness();
+
+		const projects = await harness.agent.extMethod("_omp/projects/list", {});
+		expect(Array.isArray(projects.projects)).toBe(true);
+
+		const extensions = await harness.agent.extMethod("_omp/extensions", {});
+		expect(Array.isArray(extensions.extensions)).toBe(true);
+
+		await expect(harness.agent.extMethod("_omp/chats/byCwd", {})).rejects.toThrow("cwd required");
+		await expect(harness.agent.extMethod("_omp/extensions/toggle", {})).rejects.toThrow("providerId required");
+
+		harness.abortController.abort();
+		await Bun.sleep(0);
+	});
+
 	it("replays messageIds and returns turn usage for prompts", async () => {
 		const harness = await createHarness();
 		const stored = new FakeAgentSession(harness.cwdA);

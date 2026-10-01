@@ -264,3 +264,30 @@ Two extensions registering the same CLI flag name currently both receive the
 command-line value (`setFlagValue` applies to every extension declaring it).
 Whether a collision should be rejected at load, namespaced, or warned about is
 undecided. See bead `m2-wi-11-046`.
+
+## 8. Owner ruling: the capability registry is extension-reachable
+
+**RATIFIED — owner decision, 2026-10-01.** Relayed by peer `ultraworkers-a4`;
+recorded here so the next reader does not have to re-derive it.
+
+**M2-OQ2 = YES.** The capability registry becomes a surface an out-of-repo
+extension can reach, on the same terms as every other registration seam in this
+programme. It is `packages/coding-agent/src/capability/index.ts` — **614 lines**
+measured 2026-10-01, not the 588 first quoted; the figure moved with the file.
+
+This is a *ruling on ownership*, not a completed implementation. It settles the
+question "does an extension have a seam to reach this?" — the registry is in
+scope for decomposition, and a milestone proposing a capability that already
+exists there will be declined. It does **not** by itself create the seam, and it
+does not say which limb the capability lands in.
+
+Two consequences worth stating so they are not re-litigated:
+
+- A decomposition of `capability/` must keep the registration seam reachable
+  from outside the repo. A move that hardcodes the registry back into core
+  contradicts this section.
+- The programme's single test still governs: an extension written outside this
+  repo must reach the capability registry **without changing a line of core**.
+
+Tracked by `m2-wi-5-038`. Sections 1-7 above are unaffected by this ruling; it
+adds a ratified decision, it does not ratify the proposal in Section 4.

@@ -524,11 +524,12 @@ function matchLink(src: string, lexer: Lexer): Tokens.Link | Tokens.Image | unde
 	const image = src.startsWith("![");
 	if (!(image || src.startsWith("["))) return undefined;
 	const labelStart = image ? 2 : 1;
-	// `findClosingBracket` quét tới cuối chuỗi khi không có ngoặc đóng. Với một chuỗi
-	// toàn `[`, vòng lặp block gọi hàm này O(n) lần (mỗi lần tiến đúng 1 ký tự), mỗi
-	// lần quét O(n) ⇒ bậc hai. `indexOf` trả lời "không có ngoặc đóng ở đâu cả" bằng
-	// một lần quét, và khi đã có ngoặc đóng thì `findClosingBracket` vẫn chạy như cũ.
-	if (src.indexOf("]", labelStart) === -1) return undefined;
+	// The caller has already established that a `]` exists somewhere in this text, from a
+	// fact hoisted out of its loop (`lastBracket` in `inlineTokens`). Re-deriving it here with
+	// `indexOf` scans the whole remaining suffix again, which is what kept a run of `[`
+	// quadratic: the loop calls this once per character, so n calls each scanning n. For a
+	// string opening with `[` or `![` the first characters can never be `]`, so "contains one"
+	// and "contains one at or after `labelStart`" ask the same question.
 	const labelEnd = findClosingBracket(src, labelStart, "[", "]");
 	if (labelEnd === -1) return undefined;
 	const label = src.slice(labelStart, labelEnd);
@@ -595,6 +596,10 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 	// `@` exactly when `lastAt >= src.length - rest.length`. Computing this inside the loop
 	// instead is what kept the bare-URL gate quadratic — see the branch below.
 	const lastAt = src.lastIndexOf("@");
+	// Same fact for the link branch: `matchLink` answers "is there a closing bracket anywhere
+	// ahead?", and deriving that by scanning what is left of the run is quadratic when the
+	// answer is no — the loop calls it once per character. Hoisted for the same reason.
+	const lastBracket = src.lastIndexOf("]");
 	while (rest !== "") {
 		let custom: Tokens.Generic | undefined;
 		for (const extension of lexer.extensions.inline) {
@@ -651,7 +656,7 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			prevChar = html.at(-1) ?? prevChar;
 			continue;
 		}
-		const link = matchLink(rest, lexer);
+		const link = lastBracket >= src.length - rest.length ? matchLink(rest, lexer) : undefined;
 		if (link) {
 			output.push(link);
 			rest = rest.slice(link.raw.length);

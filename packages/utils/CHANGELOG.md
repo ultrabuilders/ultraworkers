@@ -11,13 +11,14 @@
 ### Fixed
 
 - Long runs of Markdown containing a link, an email address, or a line break are no longer
-  quadratic in two more places. The inline lexer decided whether the text ahead held an `@` by
-  scanning everything left of the cursor on every single character, and it searched for a hard
-  line break with a pattern that retried from every position whenever the run contained no
-  newline. Both facts are now settled once per run instead of once per character, so the work
-  grows with the length of the text rather than with its square. Rendering is unchanged: the
-  lexer produces byte-identical output to the previous version across 28,786 inputs — every
-  paragraph of every Markdown file in this repository, plus targeted cases for each pattern.
+  quadratic in three more places. The inline lexer decided whether the text ahead held an `@` by
+  scanning everything left of the cursor on every single character, asked the same question of
+  the remaining text every time it reached a `[`, and searched for a hard line break with a
+  pattern that retried from every position whenever the run contained no newline. All three
+  facts are now settled once per run instead of once per character, so the work grows with the
+  length of the text rather than with its square. Rendering is unchanged: the lexer produces
+  byte-identical output to the previous version across 28,786 inputs — every paragraph of every
+  Markdown file in this repository, plus targeted cases for each pattern.
 
 - Runs of ordinary inline Markdown get markedly cheaper as they grow. The lexer read the last character of the text token it was still building, and because that token is accumulated as a rope, reading either end of it forces the engine to flatten it — so every iteration of a run with nothing to format paid to flatten the whole run again. The read now happens only in the two branches that use the value, and it is gone for plain text. A 64 KB run of plain text lexes in about 14 ms (median of 9 interleaved runs). This is **not** a claim of linear scaling: the remaining growth ratio is around 2.6 per doubling, so a further cost that grows with the run is still there and still open. Runs built from `*` or `_` are unchanged and still quadratic — the guard deliberately skips them, since the value they need is the one that costs.
 

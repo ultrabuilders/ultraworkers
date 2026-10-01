@@ -2175,12 +2175,25 @@ export class SessionTools {
 		}
 		const previousMcpManagerToolNames = new Set(this.#mcpManagerToolNames);
 		const previousActiveMcpToolNames = this.getEnabledToolNames().filter(isMCPToolName);
+		// The WHOLE active set, not just its MCP half. Rollback has to restore this
+		// too: `#applyActiveToolsByName` is what commits the new selection, so a throw
+		// partway through leaves the session running the set the previous generation
+		// asked for. Restoring only the registry would leave the active set a blend
+		// of pre- and post-refresh — tools vanishing mid-turn with no error and no
+		// warning. Harmless while the refresh activated everything; a live regression
+		// now that the refresh computes a conditional set.
+		const previousActiveToolNames = this.getEnabledToolNames();
 		const restorePreviousMcpTools = () => {
 			for (const name of this.#toolRegistry.keys()) {
 				if (isMCPToolName(name)) this.#toolRegistry.delete(name);
 			}
 			for (const [name, tool] of previousMcpTools) this.#toolRegistry.set(name, tool);
 			this.#mcpManagerToolNames = previousMcpManagerToolNames;
+			// Restoring the active set is itself an async mutation, so this cannot
+			// stay a synchronous disposer. The callers already await the rejected
+			// promise; they must await the repair too, or a caller that immediately
+			// retried would race the rollback and win with a blend.
+			return this.#applyActiveToolsByName(previousActiveToolNames);
 		};
 
 		const extensionRunner = this.#host.extensionRunner();
@@ -2202,29 +2215,44 @@ export class SessionTools {
 			if (managerToolSet.has(tool)) this.#mcpManagerToolNames.add(tool.name);
 		}
 
-		// Connected manager tools become active immediately. Extension-owned MCP
-		// tools retain their prior selection while both sets share one registry.
+		// A manager tool keeps its selection across a refresh, but a tool the server
+		// only just pushed does NOT get one. Trusting the server was extended is the
+		// rug-pull: a connected, already-trusted server can widen its own reach at any
+		// moment via `notifications/tools/list_changed`, and the user was never asked
+		// about the new tool. So the arriving catalog is registered in full — the model
+		// can still see it, and the user can still enable it — while the ACTIVE set
+		// carries over only what was already active.
+		//
+		// Note this gates activation, not registration: `#mcpManagerToolNames` below is
+		// the full new catalog, which is what makes `beta` visible-but-off rather than
+		// absent. Asserting "the registry has it" would pass on the unpatched tree —
+		// the boundary that matters is registered ≠ active.
+		const retainedActiveManagerToolNames = previousActiveMcpToolNames.filter(name =>
+			this.#mcpManagerToolNames.has(name),
+		);
+		// Extension-owned MCP tools retain their prior selection unchanged: they do not
+		// arrive through the manager path and are not subject to its gate.
 		const retainedActiveExtensionToolNames = previousActiveMcpToolNames.filter(
 			name => this.#extensionMcpTools.has(name) && this.#toolRegistry.has(name),
 		);
 		const nextActive = [
 			...new Set([
 				...this.#getActiveNonMCPToolNames(),
-				...this.#mcpManagerToolNames,
+				...retainedActiveManagerToolNames,
 				...retainedActiveExtensionToolNames,
 			]),
 		];
 		try {
 			await this.#applyActiveToolsByName(nextActive);
 			if (this.#host.isDisposed()) {
-				restorePreviousMcpTools();
+				await restorePreviousMcpTools();
 			} else {
 				// The settled mutation promise may retain this async frame; drop
 				// rollback references as soon as the new generation commits.
 				previousMcpTools.clear();
 			}
 		} catch (error) {
-			restorePreviousMcpTools();
+			await restorePreviousMcpTools();
 			throw error;
 		}
 	}

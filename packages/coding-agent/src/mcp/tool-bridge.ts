@@ -763,6 +763,88 @@ export class MCPTool implements CustomTool<TSchema, MCPToolDetails> {
 }
 
 /**
+ * Substring every withdrawn-tool refusal contains.
+ *
+ * Exported so the contract has one definition: the message is what the user reads
+ * when a call they already started outlives the tool, and a test asserting it must
+ * not re-spell the sentence.
+ */
+export const TOOL_NO_LONGER_OFFERED = "no longer offered";
+
+/**
+ * Tombstone left in place of an MCP tool its server has withdrawn.
+ *
+ * A server that offers tools is not bound to keep offering them: it can retract
+ * one via `notifications/tools/list_changed` at any moment. When it does, the
+ * manager used to drop the tool outright, so a call already in flight landed on
+ * the dispatch-miss path — a bare "unknown tool" that reads like the model
+ * hallucinated a name, when in fact the server moved underneath it.
+ *
+ * This answers that call with what actually happened. It performs no I/O and
+ * cannot reach the server, which is the point: a retracted tool must not be
+ * callable even if the server would happily serve it again.
+ *
+ * Approval is `exec` rather than the `write` an {@link MCPTool} declares, so the
+ * most restrictive tier applies if anything ever tries to route around
+ * {@link execute}.
+ */
+export class WithdrawnMCPTool implements CustomTool<TSchema, MCPToolDetails> {
+	readonly name: string;
+	readonly label: string;
+	readonly description: string;
+	readonly parameters: TSchema;
+	readonly mcpServerName: string;
+	readonly mcpToolName: string;
+	readonly legacyName?: string;
+	readonly approval = "exec" as const;
+	readonly strict = false as const;
+
+	constructor(
+		private readonly withdrawn: CustomTool<TSchema, MCPToolDetails>,
+		readonly serverName: string,
+	) {
+		this.name = withdrawn.name;
+		this.label = withdrawn.label;
+		this.description = withdrawn.description;
+		this.parameters = withdrawn.parameters;
+		this.mcpServerName = serverName;
+		this.mcpToolName = withdrawn.mcpToolName ?? withdrawn.name;
+		this.legacyName = withdrawn.legacyName;
+	}
+
+	/** True for tombstones, so a second withdrawal pass cannot tombstone a tombstone. */
+	get isWithdrawn(): boolean {
+		return true;
+	}
+
+	async execute(): Promise<CustomToolResult<MCPToolDetails>> {
+		return {
+			content: [
+				{
+					type: "text",
+					text:
+						`Tool \`${this.name}\` is ${TOOL_NO_LONGER_OFFERED} by MCP server \`${this.serverName}\`. ` +
+						`It was withdrawn after this call started, so it was not run.`,
+				},
+			],
+			isError: true,
+		};
+	}
+}
+
+/**
+ * Whether a tool is a {@link WithdrawnMCPTool} tombstone.
+ *
+ * A structural check on the marker rather than `instanceof`: the manager and the
+ * bridge can end up holding objects from two copies of this module, and
+ * `instanceof` reports `false` across that boundary — which would silently let a
+ * tombstone mint another tombstone on every refresh.
+ */
+export function isWithdrawnMCPTool(tool: CustomTool<TSchema, MCPToolDetails>): tool is WithdrawnMCPTool {
+	return (tool as { isWithdrawn?: boolean }).isWithdrawn === true;
+}
+
+/**
  * CustomTool wrapping an MCP tool with deferred connection resolution.
  */
 export class DeferredMCPTool implements CustomTool<TSchema, MCPToolDetails> {

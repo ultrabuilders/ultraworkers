@@ -44,7 +44,7 @@ import type { McpConnectionStatusEvent } from "./startup-events";
 import { resolveMCPStartupTimeoutMs } from "./timeout";
 
 import type { MCPToolDetails } from "@oh-my-pi/pi-tui/tools/mcp";
-import { DeferredMCPTool, MCPTool } from "./tool-bridge";
+import { DeferredMCPTool, isWithdrawnMCPTool, MCPTool, WithdrawnMCPTool } from "./tool-bridge";
 import type { MCPToolCache } from "./tool-cache";
 import { setGeneratedHeader } from "./transports/header-policy";
 import type {
@@ -940,8 +940,21 @@ export class MCPManager {
 	 * with sanitized characters never prefix-matches its own tools at all.
 	 */
 	#replaceServerTools(name: string, tools: CustomTool<TSchema, MCPToolDetails>[]): void {
+		const incoming = new Set(tools.map(t => t.name));
+		// A server may retract a tool at any time via `notifications/tools/list_changed`.
+		// Leave a tombstone for each one it withdraws so a call already in flight
+		// gets an answer that says what happened, instead of falling through to the
+		// dispatch-miss path and reading as a hallucinated tool name.
+		//
+		// Everything this server offered and no longer does is carried across, and an
+		// existing tombstone is carried AS ITSELF rather than re-wrapped: dropping it
+		// would silently restore the dispatch-miss hole on the next refresh, and
+		// re-wrapping it would mint a fresh tombstone on every refresh, forever.
+		const withdrawn = this.#tools
+			.filter(t => t.mcpServerName === name && !incoming.has(t.name))
+			.map(t => (isWithdrawnMCPTool(t) ? t : new WithdrawnMCPTool(t, name)));
 		this.#tools = this.#tools.filter(t => t.mcpServerName !== name);
-		this.#tools.push(...tools);
+		this.#tools.push(...tools, ...withdrawn);
 		// Stable sort by name so reconnect order does not perturb the array.
 		// See `sortMCPToolsByName` for the cache-stability rationale.
 		sortMCPToolsByName(this.#tools);

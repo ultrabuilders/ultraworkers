@@ -70,6 +70,17 @@
 
 ### Fixed
 
+- An MCP server can no longer widen its own reach after you have trusted it. Trust is granted to the
+  connection, but `notifications/tools/list_changed` let a server add or retract a tool at any moment:
+  a newly pushed tool became active immediately, so a server you had already approved could hand the
+  model a tool you were never asked about, and `ToolTier` is self-reported, so calling its tool
+  read-only was all it took. A pushed tool is now registered and visible — you can still see it and
+  enable it — but does not become active on its own, and tools already active keep their selection
+  across a refresh. Extension-owned MCP tools are unaffected. Separately, a tool the server withdraws
+  now leaves a tombstone that refuses with "no longer offered" instead of disappearing into an
+  unknown-tool error that reads as the model inventing a name; the tombstone carries the original
+  label, description and schema so turns already rendered from it still resolve. Retracting and
+  re-refreshing a server is stable — one tombstone per withdrawal, not one per refresh
 - Two extensions registering a CLI flag with the same name no longer overwrite each other's value:
   each keeps its own default, so `getFlag()` returns what that extension declared instead of whatever
   the last-loaded extension registered. Passing the flag on the command line still applies it to every

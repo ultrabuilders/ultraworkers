@@ -1,6 +1,6 @@
 # hello-extension
 
-A minimal `omp` extension that demonstrates the two most common authoring patterns: subscribing to `session_start` to notify on load, and registering a `/hello` slash command that sends a greeting into the conversation. It is intentionally small — use it as a copy-paste starting point for your own extension.
+A minimal `ultraworkers` extension that demonstrates the two most common authoring patterns: subscribing to `session_start` to notify on load, and registering a `/hello` slash command that sends a greeting into the conversation. It is intentionally small — use it as a copy-paste starting point for your own extension.
 
 ## Install
 
@@ -10,7 +10,7 @@ A minimal `omp` extension that demonstrates the two most common authoring patter
 cp -r . ~/.omp/agent/extensions/hello-extension
 ```
 
-Restart `omp`. You will see the startup notification immediately.
+Restart `ultraworkers`. You will see the startup notification immediately.
 
 With `ultraworkers --profile <name>`, use `~/.omp/profiles/<name>/agent/extensions/hello-extension` instead. `PI_CODING_AGENT_DIR` likewise changes the agent directory.
 

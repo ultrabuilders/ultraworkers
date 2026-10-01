@@ -123,7 +123,7 @@ packages/coding-agent/src/session/agent-session.ts:7701
 
 **The attacker is anyone who controls a repository you clone, or a pinned plugin
 version in that repository's lockfile. The asset is arbitrary code execution with
-your credentials and shell, reached by running `omp` inside a directory you were
+your credentials and shell, reached by running `ultraworkers` inside a directory you were
 told was safe to open.**
 
 **Reach, in order of how easily it is obtained:**

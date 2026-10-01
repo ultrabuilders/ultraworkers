@@ -89,7 +89,7 @@ The catalog file lives at either `.omp-plugin/marketplace.json` or `.claude-plug
     "email": "plugins@acme.example"
   },
   "metadata": {
-    "description": "Official Acme plugins for omp"
+    "description": "Official Acme plugins for ultraworkers"
   },
   "plugins": [
     {

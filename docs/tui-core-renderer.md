@@ -155,7 +155,7 @@ terminal's acknowledgements instead of the render cadence. None of this
 document's history, viewport, resize-replay or CPR machinery runs on that path;
 SIGWINCH only refreshes the width used by `rows` fallback nodes. While a surface
 is live the nerd symbol preset is forced process-locally, and icon glyphs are
-sent as `icon` spans. Each surface receives omp's resolved theme (`t`: every
+sent as `icon` spans. Each surface receives ultraworkers's resolved theme (`t`: every
 theme token as hex, dark and light variants) after `o` and before its first
 frame, and again whenever the theme changes. The debug socket's `doc` op returns the reference document
 (every sent frame applied by `native/apply.ts`), and `tsp` returns recent frames.

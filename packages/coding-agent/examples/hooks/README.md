@@ -6,7 +6,7 @@ Example hooks for omp-coding-agent.
 
 ```bash
 # Load a hook with --hook flag
-omp --hook examples/hooks/permission-gate.ts
+ultraworkers --hook examples/hooks/permission-gate.ts
 
 # Or copy to hooks directory for auto-discovery
 cp permission-gate.ts ~/.omp/agent/hooks/

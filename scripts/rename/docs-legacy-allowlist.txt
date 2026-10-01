@@ -33,7 +33,6 @@
 #     1  root README — highest-traffic file, swept by hand in a later W13 batch
 
 AGENTS.md	6
-CONTRIBUTING.md	1
 README.md	85
 docs/ERRATA-GPT5-HARMONY.md	1
 docs/advisor-watchdog.md	6
@@ -92,10 +91,7 @@ docs/stream.md	10
 docs/system-prompt-customization.md	11
 docs/task-agent-discovery.md	16
 docs/theme.md	4
-docs/toolconv/glm-4.5.md	1
-docs/toolconv/kimi-k2.md	1
 docs/toolconv/minimax.md	1
-docs/toolconv/qwen3.md	1
 docs/toolconv/xml.md	1
 docs/tools/ast-grep.md	1
 docs/tools/browser.md	2
@@ -114,7 +110,6 @@ docs/tools/rewind.md	1
 docs/tools/security_scan.md	1
 docs/tools/task.md	5
 docs/tools/web_search.md	3
-docs/tui-core-renderer.md	1
 docs/user-facing-packages.md	8
 infra/docs/03-runner-image.md	32
 infra/docs/04-arc-and-caching.md	34
@@ -122,7 +117,6 @@ infra/docs/README.md	1
 packages/agent/README.md	1
 packages/ai/README.md	8
 packages/browser-relay/README.md	17
-packages/catalog/README.md	1
 packages/coding-agent/DEVELOPMENT.md	3
 packages/coding-agent/README.md	3
 packages/coding-agent/examples/README.md	1
@@ -132,14 +126,10 @@ packages/coding-agent/examples/hooks/README.md	3
 packages/coding-agent/examples/sdk/README.md	2
 packages/collab-web/README.md	5
 packages/metaharness/README.md	10
-packages/mnemopi/README.md	2
-packages/snapcompact/README.md	1
 packages/stats/README.md	10
 packages/utils/README.md	4
-packages/wire/README.md	1
 python/omp-rpc/README.md	4
 python/robomp/AGENTS.md	21
 python/robomp/README.md	15
-python/robomp/docs/pr-review-handoff.md	1
 scripts/session-stats/README.md	5
 scripts/session-stats/audit-prompt.md	2

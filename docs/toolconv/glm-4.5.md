@@ -284,7 +284,7 @@ With a server parser active (`--tool-call-parser glm45 --reasoning-parser glm45`
   structural newlines: the function name can sit directly before the first
   `<arg_key>`, zero-argument calls can be `<tool_call>func</tool_call>`, and
   parallel calls can abut. vLLM/SGLang require their distinct GLM-4.7
-  parsers for this variant. omp's repository scanner is intentionally broader:
+  parsers for this variant. ultraworkers's repository scanner is intentionally broader:
   it accepts newline, `<arg_key>`, or `</tool_call>` as the name delimiter, so
   the same `glm` dialect scanner handles both layouts.
 

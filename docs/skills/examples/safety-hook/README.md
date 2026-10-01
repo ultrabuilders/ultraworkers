@@ -1,6 +1,6 @@
 # safety-hook
 
-An `omp` extension that demonstrates `tool_call` blocking. It intercepts `bash` tool calls and returns `{ block: true, reason: "..." }` when the command contains `rm -rf /` with normal whitespace, preventing the tool from executing.
+An `ultraworkers` extension that demonstrates `tool_call` blocking. It intercepts `bash` tool calls and returns `{ block: true, reason: "..." }` when the command contains `rm -rf /` with normal whitespace, preventing the tool from executing.
 
 ## What it demonstrates
 
@@ -14,7 +14,7 @@ An `omp` extension that demonstrates `tool_call` blocking. It intercepts `bash` 
 cp -r . ~/.omp/agent/extensions/safety-hook
 ```
 
-Restart `omp`. The hook is active for all sessions.
+Restart `ultraworkers`. The hook is active for all sessions.
 
 Or load once:
 

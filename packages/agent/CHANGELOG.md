@@ -11,6 +11,13 @@
 
 ### Added
 
+- Deterministic context reduction: `collapseToolResultRuns` folds a run of same-kind `read`/`grep`/`bash`
+  results into one line naming what they covered, and `shrinkVerboseAssistantText` truncates older
+  over-budget assistant answers behind a `[response shrunk]` marker. Both take the same shape as the
+  compaction prune pass, so an extension registers one with `registerContextTransform` and the
+  summarizer is billed for shape rather than bytes. Neither runs unless the whole pass clears a savings
+  threshold — a rewrite that reclaims a handful of tokens costs more in prompt-cache churn than it
+  returns
 - A vendor-neutral telemetry contract (`TelemetryContext`/`TelemetrySpan`) with a no-op backend, an
   in-memory recording backend, and a shared conformance suite any backend can be run against — so a
   second telemetry backend is an adapter rather than an edit of every call site

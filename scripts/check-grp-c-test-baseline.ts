@@ -3,6 +3,15 @@
  * R0 GRP-C — GATE. Fail only on test failures the captured baseline does not
  * already contain.
  *
+ * WHAT A GREEN RUN DOES NOT MEAN
+ * ------------------------------
+ * This gate protects against **regression**: a failure name that was not in the
+ * baseline. It has no opinion on whether the baseline's own contents are correct.
+ * A green run means "no NEW failures" — it does NOT mean "the baseline is right",
+ * and the two must not be read as one. Whether the recorded entries are the right
+ * entries is a different question, answered by measuring the importer counts this
+ * bead is scoped to, not by asking this gate.
+ *
  * WHY A BASELINE INSTEAD OF `bun test` PASSING
  * --------------------------------------------
  * `packages/coding-agent/test/` is not green at HEAD. There are pre-existing

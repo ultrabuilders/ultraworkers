@@ -831,7 +831,7 @@ async function fetchLatestManifest(
 		}
 	};
 	const noCanary = () =>
-		new Error(`No canary release has been published for ${pkg} yet. Try \`${APP_NAME} update --stable\`.`);
+		new Error(`No canary release has been published for ${pkg} yet. Try \`${WIRE_NAME} update --stable\`.`);
 
 	let response = await get(npmRegistryPackageUrl(registry, pkg, tag));
 	let data: unknown;

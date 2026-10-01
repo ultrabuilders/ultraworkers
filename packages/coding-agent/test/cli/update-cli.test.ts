@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { fixedNpmRegistry } from "../../src/cli/npm-registry";
 import { getLatestRelease, runUpdateCommand } from "../../src/cli/update-cli";
 
@@ -177,6 +178,15 @@ describe("getLatestRelease configured registry", () => {
 
 		await expect(getLatestRelease({ channel: "canary", registries: feed })).rejects.toThrow(
 			"No canary release has been published",
+		);
+		// The remedy in that message is a command the reader is expected to paste.
+		// `bin` in the package is `omp`, so a hint printed with the display name
+		// is a suggestion that fails with "command not found". Derived from
+		// WIRE_NAME rather than a literal, because here the constant is the
+		// established wire contract (`wire-name.test.ts` pins it) and not the
+		// thing under test — unlike the version banner, where it was the suspect.
+		await expect(getLatestRelease({ channel: "canary", registries: feed })).rejects.toThrow(
+			`Try \`${WIRE_NAME} update --stable\``,
 		);
 	});
 });

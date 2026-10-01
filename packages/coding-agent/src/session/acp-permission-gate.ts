@@ -173,7 +173,10 @@ function describeUnrecognizedToolScope(toolName: string, args: unknown): string 
 		.join(" ");
 	if (summary.length <= SCOPE_SUMMARY_LIMIT) return `${toolName} ${summary}`;
 
-	const digest = Bun.hash.wyhash(JSON.stringify(args) ?? "").toString(16).slice(0, 8);
+	const digest = Bun.hash
+		.wyhash(JSON.stringify(args) ?? "")
+		.toString(16)
+		.slice(0, 8);
 	return `${toolName} ${summary.slice(0, SCOPE_SUMMARY_LIMIT)}… (${digest})`;
 }
 

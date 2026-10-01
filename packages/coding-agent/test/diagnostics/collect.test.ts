@@ -10,6 +10,8 @@ function settings(raw: Record<string, unknown>) {
 
 const BASE = {
 	sessionId: "s1",
+	// Mandatory by design: the collector has no default for a disclosure gate.
+	includeSession: false,
 	cwd: "/Users/someone/private/project",
 	includeSummary: false,
 	messageCount: 4,

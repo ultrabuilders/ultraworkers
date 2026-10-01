@@ -95,6 +95,19 @@ const BUDGETS = {
 
 const SPEC = /(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^;]*?\sfrom\s*)?["']([^"']+)["']/g;
 
+/**
+ * `resolveSpec` answers `null` for a `node:` specifier and for anything not in
+ * `WORKSPACE`. Those two are different facts that used to arrive as the same
+ * answer: a third-party dependency genuinely is out of graph, but so is one of
+ * OUR packages whose name never made it into `WORKSPACE`. The gate could not tell
+ * them apart, so dropping a package from the map shrank every graph and it still
+ * reported "within budget" — a gate that measures less and says the same thing.
+ *
+ * The marker is what separates them: a bare specifier naming a directory that
+ * exists under `packages/` is ours, so a miss there is a gate bug, not a boundary.
+ */
+const FORGOTTEN = Symbol("workspace-package-not-in-WORKSPACE");
+
 function resolveSpec(spec, fromFile) {
 	if (spec.startsWith("node:")) return null;
 	if (spec.startsWith(".")) {
@@ -113,11 +126,48 @@ function resolveSpec(spec, fromFile) {
 			if (existsSync(file) && statSync(file).isFile()) return file;
 		}
 	}
-	return null; // external dependency: not part of the workspace graph
+	// Not in WORKSPACE. If the specifier names one of OUR packages, the map is stale
+	// and this graph is about to be measured short — say so rather than under-report.
+	if (OUR_PACKAGES.has(specifierPackage(spec))) return FORGOTTEN;
+	return null; // external dependency: genuinely not part of the workspace graph
+}
+
+/**
+ * Our packages that have a source tree to walk, read from the manifests rather
+ * than from the directory layout — `@oh-my-pi/pi-tui` lives in `packages/tui`, so
+ * `packages/<name>` is not a thing and a check written that way silently matches
+ * nothing.
+ *
+ * A package with no `src/` is a leaf in exactly the sense a third-party
+ * dependency is: `pi-natives` ships compiled native bindings and has no TypeScript
+ * to follow. Excluding those is correct, and including them would report a
+ * workspace miss for a package that was never in the graph to begin with.
+ */
+const OUR_PACKAGES = new Set(
+	readdirSync(resolve(ROOT, "packages"), { withFileTypes: true })
+		.filter(dirent => dirent.isDirectory())
+		.map(dirent => {
+			const dir = resolve(ROOT, "packages", dirent.name);
+			if (!existsSync(resolve(dir, "src"))) return undefined;
+			try {
+				return JSON.parse(readFileSync(resolve(dir, "package.json"), "utf8")).name;
+			} catch {
+				return undefined;
+			}
+		})
+		.filter(name => typeof name === "string"),
+);
+
+/** The package name a bare specifier starts with, or undefined if it is not a bare specifier. */
+function specifierPackage(spec) {
+	if (spec.startsWith(".") || spec.startsWith("node:")) return undefined;
+	const parts = spec.split("/");
+	return spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
 }
 
 function walk(entryFile) {
 	const seen = new Set();
+	const forgotten = new Set();
 	const queue = [entryFile];
 	while (queue.length > 0) {
 		const file = queue.pop();
@@ -125,10 +175,14 @@ function walk(entryFile) {
 		seen.add(file);
 		for (const match of readFileSync(file, "utf8").matchAll(SPEC)) {
 			const target = resolveSpec(match[2], file);
+			if (target === FORGOTTEN) {
+				forgotten.add(match[2]);
+				continue;
+			}
 			if (target) queue.push(target);
 		}
 	}
-	return seen;
+	return { seen, forgotten };
 }
 
 /** `./dist/harness/context.js` in the exports map is `src/harness/context.ts` on disk. */
@@ -136,6 +190,12 @@ function sourceFor(pkgDir, distPath) {
 	const rel = distPath.replace(/^\.\/dist\//, "").replace(/\.js$/, ".ts");
 	const file = resolve(ROOT, pkgDir, "src", rel);
 	return existsSync(file) ? file : undefined;
+}
+
+/** The graph as repo-relative paths, plus any of our own packages the walk could not resolve. */
+function measure(source) {
+	const { seen, forgotten } = walk(source);
+	return { graph: [...seen].map(file => relative(ROOT, file)), forgotten };
 }
 
 function expand(pkgDir, entry, target) {
@@ -159,7 +219,14 @@ for (const [pkgDir, budgets] of Object.entries(BUDGETS)) {
 				failures += 1;
 				continue;
 			}
-			const graph = [...walk(source)].map(file => relative(ROOT, file));
+			const { graph, forgotten } = measure(source);
+			if (forgotten.size > 0) {
+				console.error(
+					`${pkgDir} ${entry} imports workspace packages missing from WORKSPACE, so its graph ` +
+						`is UNDER-MEASURED: ${[...forgotten].join(", ")}`,
+				);
+				failures += 1;
+			}
 			if (graph.length > budget.maxFiles) {
 				console.error(
 					`${pkgDir} ${entry} reaches ${graph.length} files, budget ${budget.maxFiles}\n` +
@@ -190,7 +257,14 @@ for (const [pkgDir, budgets] of Object.entries(BUDGETS)) {
 				failures += 1;
 				continue;
 			}
-			const graph = [...walk(source)].map(file => relative(ROOT, file));
+			const { graph, forgotten } = measure(source);
+			if (forgotten.size > 0) {
+				console.error(
+					`${pkgDir} ${entry} imports workspace packages missing from WORKSPACE, so its graph ` +
+						`is UNDER-MEASURED: ${[...forgotten].join(", ")}`,
+				);
+				failures += 1;
+			}
 			if (graph.length > budget.maxFiles) {
 				console.error(
 					`${pkgDir} export "${name}" reaches ${graph.length} files, budget ${budget.maxFiles}\n` +

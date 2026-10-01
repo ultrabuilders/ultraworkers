@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -259,5 +259,48 @@ describe("published manifest topology", () => {
 				import: "./src/ar/index.ts",
 			},
 		});
+	});
+});
+
+describe("old-scope stub publish keeps the old command name", () => {
+	// A stub published under the OLD npm scope after the rename is what updates
+	// reach for people who never ran `omp update`. `rewriteManifest` applies the
+	// table's single static `publishBin`, which after W9 names the NEW command —
+	// so a stub would publish a manifest whose `bin` has no `omp` key at all, and
+	// a fresh `npm i -g` of the old scope installs a package with no old-named
+	// binary. Nothing in the publish path errors; the user just finds `omp`
+	// missing after installing what they have always installed.
+	//
+	// The state is built here rather than read from the tree because the tree is
+	// already post-rename: this row has to keep holding after W9 lands, and it
+	// cannot get there by asserting today's `publishBin`.
+	afterEach(() => {
+		const pkg = packages.find(entry => entry.dir === "packages/coding-agent");
+		if (pkg) pkg.publishBin = { ultraworkers: "dist/cli.js" };
+		delete (pkg as { stubPublishBin?: unknown } | undefined)?.stubPublishBin;
+	});
+
+	it("publishes the stub with bin.omp even though the table names the new command", async () => {
+		const pkg = packages.find(entry => entry.dir === "packages/coding-agent");
+		if (!pkg) throw new Error("coding-agent missing from publish set");
+
+		const manifest = await rewriteManifest(
+			{ ...pkg, stub: true, stubPublishBin: { omp: "dist/cli.js" }, publishBin: { ultraworkers: "dist/cli.js" } },
+			false,
+		);
+
+		expect(manifest.bin).toEqual({ omp: "dist/cli.js" });
+	});
+
+	it("keeps the new command name on a non-stub publish of the same package", async () => {
+		// The negative half. Without it, a fix that simply made `rewriteManifest`
+		// ignore `publishBin` would satisfy the row above and ship the renamed
+		// package with no binary at all.
+		const pkg = packages.find(entry => entry.dir === "packages/coding-agent");
+		if (!pkg) throw new Error("coding-agent missing from publish set");
+
+		const manifest = await rewriteManifest(pkg, false);
+
+		expect(manifest.bin).toEqual({ ultraworkers: "dist/cli.js" });
 	});
 });

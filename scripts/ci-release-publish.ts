@@ -68,6 +68,20 @@ export interface PublishPackage {
 	 */
 	publishBin?: Readonly<Record<string, string>>;
 	/**
+	 * `bin` map for a publish of this package under a DIFFERENT npm scope.
+	 *
+	 * A stub published under the old scope after a rename serves users who never
+	 * ran the updater, so its manifest has to keep carrying the old command name
+	 * even though `publishBin` now names the new one. Separate from
+	 * `publishBin` rather than a flag that swaps it, so the common publish is
+	 * untouched and a stub publish is an explicit, visible override.
+	 */
+	stubPublishBin?: Readonly<Record<string, string>>;
+	/**
+	 * Whether this publish is the old-scope stub. Selects `stubPublishBin`.
+	 */
+	stub?: boolean;
+	/**
 	 * Packages sharing a lock never run `bun pm pack` concurrently. Needed when
 	 * one package's `prepack` rewrites files another package ships.
 	 */
@@ -184,6 +198,10 @@ export const packages: PublishPackage[] = [
 		dir: "packages/coding-agent",
 		kind: "typescript",
 		publishBin: { ultraworkers: "dist/cli.js" },
+		// A stub published under the old scope after the rename must keep
+		// handing out the old command name, or users who never run the updater
+		// lose the binary they have always installed. See `stubPublishBin`.
+		stubPublishBin: { omp: "dist/cli.js" },
 		packLock: STATS_CLIENT_LOCK,
 	},
 ];
@@ -240,7 +258,8 @@ function rewriteExports(exports: JsonValue, publishJs: boolean): JsonValue {
 export async function rewriteManifest(pkg: PublishPackage, write: boolean): Promise<PackageManifest> {
 	const manifestPath = path.join(repoRoot, pkg.dir, "package.json");
 	const manifest = (await Bun.file(manifestPath).json()) as PackageManifest;
-	if (pkg.publishBin) manifest.bin = { ...pkg.publishBin };
+	const bin = pkg.stub ? pkg.stubPublishBin : pkg.publishBin;
+	if (bin) manifest.bin = { ...bin };
 	if (typeof manifest.types === "string" && manifest.types.startsWith("./src/")) {
 		manifest.types = rewriteSrcToTypes(manifest.types);
 	}

@@ -211,7 +211,7 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    install -Dm755 packages/coding-agent/dist/omp "$out/bin/omp"
+    install -Dm755 packages/coding-agent/dist/ultraworkers "$out/bin/omp"
     install -Dm644 LICENSE "$out/share/doc/omp/LICENSE"
     install -Dm644 THIRD-PARTY-NOTICES.txt "$out/share/doc/omp/THIRD-PARTY-NOTICES.txt"
 

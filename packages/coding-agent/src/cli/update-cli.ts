@@ -1232,6 +1232,15 @@ function resolveOmpPath(): string | undefined {
  * verifies as up to date instead of appearing to report a stale `X.Y.Z` and
  * being mistaken for an unreplaced launcher.
  */
+/**
+ * The wire identity this project shipped under before the rename.
+ *
+ * Not derived from {@link WIRE_NAME} and not a rename candidate: it names
+ * binaries that are already installed on user machines, which is the only
+ * reason anything still has to recognise it.
+ */
+export const LEGACY_WIRE_NAME = "omp";
+
 export function parseReportedVersion(output: string): string | undefined {
 	// Both identities are in the wild at once. Measured on this machine:
 	// `~/.bun/bin/omp --version` prints `omp/18.2.4` (a pre-rebrand build), while
@@ -1240,8 +1249,16 @@ export function parseReportedVersion(output: string): string | undefined {
 	// that blindness as "this is not an OMP binary" and REFUSES to replace it —
 	// so a user on any pre-rebrand build could not self-update at all.
 	//
-	// Neither name is a prefix of the other, so the order below cannot shadow.
-	const identity = [WIRE_NAME, APP_NAME].find(name => output.startsWith(`${name}/`));
+	// `LEGACY_WIRE_NAME` is the historical value and cannot be derived from
+	// anything: it names binaries that were already installed, and nothing in
+	// this tree produces one any more. It was previously covered by accident —
+	// WIRE_NAME and APP_NAME used to be the two distinct strings "omp" and
+	// "ultraworkers" — and the rename made them equal, so the alternation
+	// collapsed to one entry and every pre-rebrand binary went unrecognized.
+	// That is why it is written out here rather than reached through a constant.
+	//
+	// None of the three is a prefix of another, so the order cannot shadow.
+	const identity = [WIRE_NAME, APP_NAME, LEGACY_WIRE_NAME].find(name => output.startsWith(`${name}/`));
 	if (!identity) return undefined;
 	return output.slice(identity.length + 1).match(/^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)?.[1];
 }
@@ -2037,20 +2054,33 @@ export async function updateViaShimTakeover(
 		// so one can succeed where the other fails.
 		const backupSuffix = `${attempt}.bak`;
 		const retired: Array<{ launcher: string; backup: string }> = [];
+		// Both identities, because both can be sitting in `launcherDir`. A user
+		// upgrading from a pre-rebrand install has `omp.cmd` / `omp.ps1` there, and
+		// PowerShell resolves `.ps1` ahead of `.exe` — so retiring only the current
+		// name's shims leaves the freshly installed exe shadowed, which is the one
+		// outcome this function exists to prevent, and it fails silently and for
+		// precisely the users who most needed the update.
+		//
+		// A `Set` because the two names are distinct today but must not be walked
+		// twice if they ever converge: the rollback below restores `retired` in
+		// order, and a duplicated entry would restore onto itself.
+		const launcherNames = [...new Set([WIRE_NAME, LEGACY_WIRE_NAME])];
 		for (const ext of ["", ".cmd", ".ps1", ".bat"]) {
-			const launcher = path.join(launcherDir, `${WIRE_NAME}${ext}`);
-			const backup = `${launcher}.${backupSuffix}`;
-			try {
-				await fs.promises.rename(launcher, backup);
-				retired.push({ launcher, backup });
-			} catch (err) {
-				if (isEnoent(err)) continue;
+			for (const name of launcherNames) {
+				const launcher = path.join(launcherDir, `${name}${ext}`);
+				const backup = `${launcher}.${backupSuffix}`;
 				try {
-					const original = await Bun.file(launcher).text();
-					await Bun.write(launcher, SHIM_FORWARDERS[ext]);
-					forwarded.push({ launcher, original });
-				} catch {
-					stuck.push(launcher);
+					await fs.promises.rename(launcher, backup);
+					retired.push({ launcher, backup });
+				} catch (err) {
+					if (isEnoent(err)) continue;
+					try {
+						const original = await Bun.file(launcher).text();
+						await Bun.write(launcher, SHIM_FORWARDERS[ext]);
+						forwarded.push({ launcher, original });
+					} catch {
+						stuck.push(launcher);
+					}
 				}
 			}
 		}

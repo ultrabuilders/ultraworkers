@@ -212,13 +212,19 @@ describe("the release asset name", () => {
 		expect([...published], `release publishes ${[...published].join(", ")}`).toContain(wanted);
 	});
 
-	it("is what the shim takeover installs and retires beside", async () => {
-		// Same name, three places: the exe it writes, the shims it moves aside, and
-		// the asset it downloads. They drifted apart during the rebrand, which left
-		// the takeover retiring four names that cannot exist beside the three that
-		// can — a silent no-op on Windows, where `.ps1` outranks `.exe`.
-		expect(getBinaryName()).not.toContain(APP_NAME);
-	});
+	// A row that used to live here asserted `getBinaryName()` does not contain
+	// APP_NAME — a proxy for "the asset name is the wire name, not the display
+	// name", written back when those were two different strings ("omp" and
+	// "ultraworkers"). The rename made them one value, so the proxy became
+	// unsatisfiable rather than wrong, and the distinction it stood in for is no
+	// longer there to assert.
+	//
+	// Its comment recorded the failure it was written for: the three places — the
+	// exe installed, the shims retired beside it, the asset downloaded — drifted
+	// apart, leaving a silent no-op on Windows where `.ps1` outranks `.exe`. That
+	// contract did not go away with the row; it is what the test above now proves
+	// directly, by comparing the name against what CI actually uploads rather
+	// than against another constant.
 });
 
 describe("parseReportedVersion", () => {

@@ -51,9 +51,32 @@
  * WHY NOT A TEST
  * --------------
  * AGENTS.md bans source-grep *tests*: a test asserting on an implementation file's
- * text breaks on harmless refactors. This is a corpus scanner wired into `check:ts`,
- * the same shape as W13's and W14's gates. The pure helpers below are covered by
+ * text breaks on harmless refactors. The pure helpers below are covered by
  * `check-disposition.test.ts` against fixtures.
+ *
+ * NOT COLLECTED BY ANY RUNNER — measured 2026-10-02, and an earlier draft of this
+ * header claimed the opposite ("wired into `check:ts`, the same shape as W13's and
+ * W14's gates"). That claim was false, and a header that says a gate is enforced is
+ * worse than one that says nothing: it stops the next reader from watching the table.
+ *
+ *   grep -c check-disposition package.json   -> 0    (this gate)
+ *   grep -c check-docs-rename    package.json -> 1    (its sibling: wired)
+ *   grep -c check-runtime-rename package.json -> 1    (its sibling: wired)
+ *   grep -rln check-disposition .github/ scripts/install-tests/  -> nothing
+ *
+ * Both siblings are wired; this one is not, so the disposition table — the only thing
+ * making the W8b rename auditable — rots unwatched. Running it by hand today reports:
+ *
+ *   disposition(pre): 701 failures over 5 rows
+ *
+ * 5 rows in `disposition.tsv` against a corpus of ~706 `*.ts` files carrying the
+ * pinned expression. Two separate decisions sit here, and only the first is urgent:
+ *
+ *   1. This comment was wrong. Fixing it costs one line and changes no behaviour.
+ *   2. WIRING THE GATE IN IS NOT FREE, and must not be done casually. `check:ts` is a
+ *      shared gate; turning it red at 5/706 rows makes it red for every agent on the
+ *      tree, for a table that is legitimately still being filled. Wire it when the
+ *      table is complete, and tell the tree first.
  */
 
 import * as path from "node:path";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test, vi } from "bun:test";
 import { Lexer, Marked, type TokenizerAndRendererExtension } from "../src/marked";
 import goldens from "./fixtures/marked/goldens.json";
 
@@ -376,15 +376,62 @@ describe("a hard break consumes its whole run of spaces", () => {
 });
 
 /**
- * A run of backticks with no closing run is text, and the lexer now consumes it in
- * one step. It was quadratic before: `STOP_CHAR` matches a backtick at index 0, so
- * the loop advanced one backtick per iteration while re-running `/^`+/` — which
- * matches the whole remaining run — over each shrinking remainder.
+ * The token assertions below cannot tell the fix from its absence. A backtick run was
+ * already one text token before the change and still is after it, so every
+ * output-comparing test passes identically on both trees — including a tree with the
+ * consuming branch deleted outright. Those tests defend the *shape of the output*,
+ * which is worth having, but they are not evidence the fix is present.
  *
- * The contract is that the run is ONE text token. It was already one before the
- * change, because `appendText` coalesces adjacent text, which is what makes
- * consuming it in a single step safe: same output, once, instead of a character at
- * a time. If a future change splits that run into per-backtick tokens, this fails.
+ * This block is the evidence. It counts how many times the lexer evaluates the
+ * opening-delimiter pattern, which is observable from outside the module and does not
+ * depend on the clock — the machine this runs on is too contended for a timing
+ * assertion to mean anything. Against the unfixed lexer the count equals the run
+ * length; with the fix it is one, and it does not move when the run grows.
+ */
+describe("a backtick run costs one delimiter scan, not one per backtick", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	function countOpenerScans(input: string): number {
+		const original = RegExp.prototype.exec;
+		let count = 0;
+		// Delegating to the original keeps `lastIndex` handling intact for the `g`
+		// regexes the lexer uses, so this observes rather than perturbs.
+		const spy = vi.spyOn(RegExp.prototype, "exec").mockImplementation(function (this: RegExp, s: string) {
+			if (this.source === "^`+") count++;
+			return original.call(this, s);
+		});
+		try {
+			Lexer.lexInline(input);
+		} finally {
+			spy.mockRestore();
+		}
+		return count;
+	}
+
+	test("does not grow with the length of the run", () => {
+		// 1024 and 4096 separate one pass from one-per-character cheaply. The
+		// unfixed lexer returns 1024 and 4096 here, so the equality is the assertion
+		// that dies when the fix is removed.
+		const small = countOpenerScans("`".repeat(1024));
+		const large = countOpenerScans("`".repeat(4096));
+		expect(small, "the run should be examined once, not once per backtick").toBeLessThanOrEqual(2);
+		expect(large, "the count grew with the run, so the work is still per-character").toBe(small);
+	});
+
+	test("still scans once per backtick when a span does close", () => {
+		// The negative control, and the reason the count above is not simply always 1:
+		// many separate spans in one input are each opened, and that is correct.
+		const spans = countOpenerScans("`a` and `b` and `c`");
+		expect(spans).toBeGreaterThan(1);
+	});
+});
+/**
+ * The output half of the same contract. A backtick run is one text token, and it was
+ * one before the fix too — `appendText` coalesces adjacent text, which is exactly what
+ * makes consuming the run in a single step safe rather than a new merge. The block
+ * above is what proves the fix is present; this one pins the result it produces.
  */
 describe("a backtick run with no closer is one text token", () => {
 	for (const width of [1, 2, 3, 4, 5, 8, 17, 64]) {

@@ -2,9 +2,50 @@ import type { JsonValue, ServiceCall } from "@oh-my-pi/chord";
 import { type Context } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import type { SessionMetadata } from "../types";
-import { MemorySessionRepo, type Session } from "./memory-session-repo";
 import { SessionAmbiguousError, SessionNotFoundError } from "../errors";
 import type { RoutedServerServiceHost, RoutedSessionHandle, ServerHost } from "../types";
+
+/** The Session handle a `TestSessionRepo` hands back. */
+export interface Session {
+	readonly metadata: SessionMetadata;
+	close(context: Context): Promise<void>;
+}
+
+interface TestSessionCreateOptions {
+	id: string;
+	parentSessionId?: string;
+}
+
+/**
+ * The Session catalog `TestServerHost` resolves against.
+ *
+ * Upstream this is `MemorySessionRepo` from `pi-agent-core`, which this
+ * repository does not have. It is a plain map on purpose. A test double that
+ * carried a session engine of its own — id generation, an open/closed state
+ * machine, its own rejection paths — would be exercised by these tests instead
+ * of the routing contract they exist to cover, and it would hand back a green
+ * suite that says nothing about the server. The three operations below are the
+ * only ones `ServerHost` asks of a Session store.
+ */
+class TestSessionRepo {
+	readonly #catalog = new Map<string, SessionMetadata>();
+
+	async list(_options: undefined, _context: Context): Promise<SessionMetadata[]> {
+		return [...this.#catalog.values()];
+	}
+
+	async open(metadata: SessionMetadata, _context: Context): Promise<Session> {
+		return { metadata, close: async () => {} };
+	}
+
+	async create(options: TestSessionCreateOptions, _context: Context): Promise<Session> {
+		// Fixed rather than `Date.now()`, so metadata is comparable across runs.
+		const metadata: SessionMetadata = { id: options.id, createdAt: 1, storageVersion: 1 };
+		if (options.parentSessionId !== undefined) metadata.parentSessionId = options.parentSessionId;
+		this.#catalog.set(metadata.id, metadata);
+		return { metadata, close: async () => {} };
+	}
+}
 
 export class Deferred<T> {
 	readonly promise: Promise<T>;
@@ -156,7 +197,7 @@ export function createTestServerServices(): RoutedServerServiceHost {
 
 export class TestServerHost implements ServerHost {
 	readonly serverServices = createTestServerServices();
-	readonly repo = new MemorySessionRepo({ now: () => 1 });
+	readonly repo = new TestSessionRepo();
 	readonly harnesses = new Map<string, TestHarness[]>();
 	openSessionCount = 0;
 	nextOpenSessionError?: Error;

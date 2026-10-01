@@ -50,10 +50,14 @@ copied verbatim. The `#private` conversion alone touches all seventeen.
 
 Added by this port, with no upstream counterpart: `LICENSE`, `NOTICE`,
 `CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
-repository, and `test/helpers.ts` plus `src/testing/memory-session-repo.ts`
-are new. Upstream's `vitest.config.ts`, `tsconfig.build.json` and
-`tsconfig.test.json` were dropped — the runner change removes the first, and
-AGENTS.md forbids the `tsc -p tsconfig.build.json` build the other two served.
+repository, and `test/helpers.ts` is new. `src/testing/host.ts` carries a
+`TestSessionRepo` in place of upstream's `MemorySessionRepo` import; it is a
+plain `Map` exposing only `list`, `open` and `create`, because a test double
+with a session engine of its own gets exercised by these tests instead of the
+routing contract they cover. Upstream's `vitest.config.ts`,
+`tsconfig.build.json` and `tsconfig.test.json` were dropped — the runner change
+removes the first, and AGENTS.md forbids the `tsc -p tsconfig.build.json` build
+the other two served.
 
 The `package.json` `exports` map also gained explicit `./testing` and `./unix`
 entries. The wildcard `./*` entry maps `./unix` to `./src/unix.ts`, which does

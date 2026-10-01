@@ -96,13 +96,37 @@ describe("the doctor reports a ledger it could not check", () => {
 		const lines = await renderedLines();
 		// Matched structurally — icon, then `name:` — rather than against a list of
 		// glyphs, so adding a status cannot silently stop being counted here.
-		const printed = lines.filter(line => /^\S+\s+\S+:/.test(line.trim())).length;
+		// Scoped to the plugin block: the summary read below is that block's, so
+		// the lines it must account for are that block's too.
+		const printed = blockLines(lines, "Plugin Health Check").filter(line => /^\S+\s+\S+:/.test(line.trim())).length;
 		expect(printed).toBeGreaterThan(1);
 		const counts = summaryCounts(lines);
 		const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 		expect(total).toBe(printed);
 	});
 });
+
+/**
+ * The lines belonging to ONE report block, so a count and the lines it accounts
+ * for are measured over the same scope.
+ *
+ * The doctor prints two blocks — plugin health, then environment health — and
+ * only the first carries a `Summary:`. Counting check lines across the whole
+ * output while reading the first summary compares a numerator and a denominator
+ * from different sets, which goes red the moment a second collector exists
+ * without saying anything about the partition.
+ *
+ * This narrows the SCOPE, not the strength: both blocks are formatted by the
+ * same `formatDoctorResults`, so asserting the partition over one block still
+ * exercises the exact bucketing arithmetic the other block goes through.
+ */
+function blockLines(lines: string[], heading: string): string[] {
+	const start = lines.findIndex(line => line.trim() === heading);
+	expect(start).toBeGreaterThanOrEqual(0);
+	const rest = lines.slice(start + 1);
+	const nextHeading = rest.findIndex(line => /^\S.*Check$/.test(line.trim()));
+	return nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+}
 
 describe("the summary buckets partition the report", () => {
 	// The rows below hand the renderer a fixed set of outcomes rather than a real
@@ -123,9 +147,9 @@ describe("the summary buckets partition the report", () => {
 		return lines;
 	}
 
-	/** Lines printed, each of which must land in exactly one bucket. */
+	/** Lines printed in the plugin block, each of which must land in exactly one bucket. */
 	function printedCheckLines(lines: string[]): string[] {
-		const printed = lines.filter(line => /^\S+\s+\S+:/.test(line.trim()));
+		const printed = blockLines(lines, "Plugin Health Check").filter(line => /^\S+\s+\S+:/.test(line.trim()));
 		expect(printed.length).toBeGreaterThan(0);
 		return printed;
 	}

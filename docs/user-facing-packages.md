@@ -26,9 +26,9 @@ Sources: [`python/robomp/README.md`](../python/robomp/README.md), [`python/robom
 
 Sources: [`packages/stats/README.md`](../packages/stats/README.md), [`packages/stats/package.json`](../packages/stats/package.json), [`packages/coding-agent/src/cli/stats-cli.ts`](../packages/coding-agent/src/cli/stats-cli.ts).
 
-- Package: `@oh-my-pi/omp-stats`; bin: `omp-stats`; main user path: `omp stats`.
+- Package: `@oh-my-pi/omp-stats`; bin: `omp-stats`; main user path: `ultraworkers stats`.
 - Feature: local observability dashboard for AI usage statistics from session JSONL logs.
-- CLI modes: `omp stats` starts the dashboard server, opens `http://localhost:3847`, and keeps running; `omp stats --port <port>` changes the port; `omp stats --summary` prints a console summary; `omp stats --json` prints JSON and exits.
+- CLI modes: `ultraworkers stats` starts the dashboard server, opens `http://localhost:3847`, and keeps running; `ultraworkers stats --port <port>` changes the port; `ultraworkers stats --summary` prints a console summary; `ultraworkers stats --json` prints JSON and exits.
 - Programmatic API: exports helpers such as `syncAllSessions()` and `getDashboardStats()` for embedding.
 - Inputs/storage: reads `~/.omp/agent/sessions/`; stores aggregates in `~/.omp/stats.db`.
 - Outputs: dashboard metrics and API endpoints including `/api/stats`, `/api/stats/models`, `/api/stats/folders`, `/api/stats/timeseries`, and `/api/sync`.

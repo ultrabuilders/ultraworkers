@@ -401,7 +401,7 @@ Open `/model` and enter the **Roles** view to assign roles and edit their fallba
 
 For a role, `modelRoles.<role>` is the primary and `retry.fallbackChains.<role>` is the fallback list. For model-kind roles, an unset chain uses that role's built-in priority list; `[]` explicitly means **no fallbacks**. The `retry.fallbackChains.default` chain is for chat-role/session fallback and never replaces a model-kind role's own chain. Explicit search entries such as `web/parallel`, `web/perplexity`, `web/exa`, and `web/firecrawl` are attempted as configured candidates, including their supported anonymous modes; missing required credentials still produce an availability error for that explicit entry.
 
-For one-shot searches, `omp search`, `ultraworkers q`, and `ultraworkers web-search` accept a catalog selector through `--model`, for example `ultraworkers web-search --model web/duckduckgo "current Bun release"`. The in-session `web_search` tool has no per-call model override: it follows `modelRoles.web` and `retry.fallbackChains.web`.
+For one-shot searches, `ultraworkers search`, `ultraworkers q`, and `ultraworkers web-search` accept a catalog selector through `--model`, for example `ultraworkers web-search --model web/duckduckgo "current Bun release"`. The in-session `web_search` tool has no per-call model override: it follows `modelRoles.web` and `retry.fallbackChains.web`.
 
 Image selection likewise uses full catalog model selectors, not provider names: set `modelRoles.image`, its fallback chain, or the `generate_image` request's optional `model`. OpenRouter image models run through OpenRouter's native images API.
 

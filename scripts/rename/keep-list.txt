@@ -118,16 +118,25 @@ packages/wire/package.json
 #       the alias mechanism already knows the new scope; renaming this literal
 #       would make the alias list reference itself and drop every legacy scope.
 #
-#   packages/coding-agent/src/cli/gallery-fixtures/segments.ts:33
-#       relativeRepoRoot: "oh-my-pi",
-#   packages/coding-agent/src/cli/gallery-fixtures/segments.ts:164
-#       projectName: "oh-my-pi",
-#       CHANGE — these two are the exception in this section, and they are the
-#       only bare literals the rename SHOULD touch. They are gallery test
-#       fixture data naming a repository, not a wire identity: nothing outside
-#       the test reads them. They become the new project name. Recorded here
-#       rather than left to the pass because a rule that says "bare literals are
-#       always frozen" would otherwise skip them forever.
+#   segments.ts (gallery fixtures) — CHANGED, 2026-10-02, no longer a freeze
+#       Was the one exception in this section: `relativeRepoRoot` and
+#       `projectName` were gallery fixture data naming a repository, not a wire
+#       identity, so they were the only bare literals the rename SHOULD touch.
+#       Both now carry the new project name, and the file holds no bare
+#       `oh-my-pi` literal.
+#
+#       It therefore leaves this section, and that is the gate agreeing rather
+#       than the gate being satisfied: `keep-list-wire.test.mjs` asserts both
+#       directions — every file holding a bare literal is recorded here, AND
+#       every file recorded here still holds one. A completed change is not a
+#       freeze, and keeping the citation would make this list claim to protect a
+#       string that no longer exists.
+#
+#       The decision is recorded rather than deleted because the reason still
+#       governs: a rule reading "bare literals are always frozen" would skip
+#       this file forever if the two values were ever reverted. Referenced by
+#       bare filename on purpose — a `packages/**.ts` path after this header is
+#       read as a live freeze citation by the gate, and this one is not live.
 #
 # RULE OF THUMB, agreed for the rename pass: it does not change wire-visible
 # strings. Changing one by mistake is silent and unrecoverable; leaving a

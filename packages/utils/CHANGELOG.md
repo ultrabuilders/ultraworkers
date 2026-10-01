@@ -4,6 +4,8 @@
 
 ### Changed
 
+- New config, sessions and settings are written to `~/.ultraworkers` instead of `~/.omp`, and existing installs are read from both. The two names are resolved from one ordered list rather than two that agree today by accident, so a home directory holding either spelling resolves without configuration. Nothing is moved for you: `omp config migrate` shows what would move and writes only with `--apply`. A project-local `.omp` directory is deliberately **not** renamed — that directory is normally committed to your repository, so renaming it would rewrite your working tree rather than this product, and it keeps its name regardless of what the home directory is called.
+
 - The installed command is now `ultraworkers` instead of `omp`, and the worker selector namespace moved with it (`__omp_worker_*` → `__ultraworkers_worker_*`). `WIRE_NAME` is the single constant every internal reference derives from, so the user-facing command, the `User-Agent` sent to integrations and the internal argv selectors now agree on one identity. The separate `omp-stats` command keeps its name.
 
 ### Fixed

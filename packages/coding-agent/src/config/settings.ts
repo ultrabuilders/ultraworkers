@@ -54,7 +54,7 @@ import {
 import "./all-settings";
 import { cfgModelRoles, cfgModelRoleStorage } from "./model-settings";
 import { cfgShellPath } from "../exec/settings";
-import { collectConfigReloadDeferrals } from "./reload-observer";
+import { collectConfigReloadDeferrals, WatchSourceAccumulator } from "./reload-observer";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -650,11 +650,14 @@ export class Settings {
 	/** Directory watchers for config sources, keyed by directory, with the basenames that trigger a reload. */
 	#fileWatchers = new Map<string, { watcher: fs.FSWatcher; names: Set<string> }>();
 	/**
-	 * Watched path that last tripped the debounce, so a deferred reload can say
-	 * WHICH file the user edited. Empty until the first event: a reload can also be
-	 * triggered directly, and naming no file is better than naming a stale one.
+	 * Watched paths that changed since the last completed pass, so a reload can say
+	 * WHICH files the user edited. A set, not a single field: one debounced pass
+	 * merges every file that changed inside the window, and a handler told about
+	 * only the last one cannot see the co-applied edits. Empty until the first
+	 * event: a reload can also be triggered directly, and naming no file is better
+	 * than naming a stale one.
 	 */
-	#lastWatchedSource = "";
+	#pendingWatchSources = new WatchSourceAccumulator();
 	/** Debounce timer for watcher-triggered reloads. */
 	#watchReloadTimer?: NodeJS.Timeout;
 
@@ -1152,7 +1155,7 @@ export class Settings {
 					const entry = this.#fileWatchers.get(dir);
 					if (!entry || entry.watcher !== watcher) return;
 					if (filename && !entry.names.has(path.basename(filename.toString()))) return;
-					this.#lastWatchedSource = filename ? path.join(dir, filename.toString()) : dir;
+					this.#pendingWatchSources.add(filename ? path.join(dir, filename.toString()) : dir);
 					this.#scheduleWatchReload();
 				});
 			} catch (error) {
@@ -1185,12 +1188,10 @@ export class Settings {
 		// edit landed has already lost the chance to hold it. A deferral leaves the
 		// previous values in force and the watcher armed, so the next edit retries —
 		// the user's change is never dropped.
-		const deferrals = await collectConfigReloadDeferrals({ source: this.#lastWatchedSource, changedCount: 1 });
+		const sources = this.#pendingWatchSources.snapshot();
+		const deferrals = await collectConfigReloadDeferrals({ sources });
 		if (deferrals.length > 0) {
-			logger.debug("Settings: config reload deferred by an observer", {
-				source: this.#lastWatchedSource,
-				reasons: deferrals,
-			});
+			logger.debug("Settings: config reload deferred by an observer", { sources, reasons: deferrals });
 			this.#syncFileWatchers();
 			return;
 		}
@@ -1199,6 +1200,10 @@ export class Settings {
 		} catch (error) {
 			logger.warn("Settings: failed to apply on-disk config change", { error: String(error) });
 		}
+		// The pass is over, so its sources are history. A deferral returns above
+		// without clearing, because that edit was never applied and the retry has
+		// to name it again.
+		this.#pendingWatchSources.clear();
 		// Sources may have appeared, moved, or vanished; re-target the watchers.
 		this.#syncFileWatchers();
 	}
@@ -1282,6 +1287,10 @@ export class Settings {
 	async reloadFromDisk(): Promise<void> {
 		if (!this.#persist) return;
 		await this.#exclusive("strict", () => this.#reloadPersistedLayers("strict"));
+		// Everything on disk is now applied, so no watched change is outstanding.
+		// Skipped on the throwing path above, where the reload did not land and the
+		// sources are still pending.
+		this.#pendingWatchSources.clear();
 	}
 
 	/**

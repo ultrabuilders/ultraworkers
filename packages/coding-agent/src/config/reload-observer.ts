@@ -21,12 +21,22 @@
  * Dropping the edit would silently discard something the user typed.
  */
 
-/** What a handler is told about the reload it may hold. */
+/**
+ * What a handler is told about the reload it may hold.
+ *
+ * A debounced pass merges everything that changed within `CONFIG_WATCH_DEBOUNCE_MS`
+ * into a single apply, so this is a *list*. An editor that writes two files, or a
+ * tool that touches the global config and a project settings file at once,
+ * produces one pass with two sources.
+ *
+ * There is deliberately no `count` field. It would be `sources.length`, and a
+ * field that is a function of another field is a field that can disagree with it
+ * — which is worse than no field, because a handler trusting it acts on a number
+ * the type system still promises is right.
+ */
 export interface ConfigReloadInfo {
-	/** Which on-disk source triggered it: a watched config file's path. */
-	readonly source: string;
-	/** How many distinct sources changed in this debounced pass. */
-	readonly changedCount: number;
+	/** Every distinct watched path that tripped this pass, in first-seen order. */
+	readonly sources: readonly string[];
 }
 
 /**
@@ -80,4 +90,49 @@ export async function collectConfigReloadDeferrals(info: ConfigReloadInfo): Prom
 		if (typeof reason === "string" && reason.trim().length > 0) reasons.push(reason.trim());
 	}
 	return reasons;
+}
+
+/**
+ * Collects the watched paths that changed since the last completed pass.
+ *
+ * This lives beside {@link ConfigReloadInfo} rather than inside `Settings` so the
+ * part that decides *what a pass contains* is reachable without standing up a
+ * process-global watcher, which is the one thing the wiring in `Settings` cannot
+ * be tested around.
+ *
+ * **Why a set, and why not a single field.** `fs.watch` emits an event per write,
+ * and several files routinely change inside one debounce window. Holding only the
+ * most recent path — the one-field version, which this replaced — reports every
+ * pass as a single change and names whichever file tripped *last*, so the others
+ * are invisible to every observer: a handler told "settings.json changed" when a
+ * `config.yml` edit was co-applied has no way to know it. A set deduplicates the
+ * repeats and preserves first-seen order, so `sources.length` means "distinct files
+ * that changed", not "events observed".
+ */
+export class WatchSourceAccumulator {
+	readonly #sources = new Set<string>();
+
+	/** Record a path that changed. A direct reload names no file, so empty is ignored. */
+	add(source: string): void {
+		if (source.length > 0) this.#sources.add(source);
+	}
+
+	/** The paths changed so far. Does not consume them. */
+	snapshot(): readonly string[] {
+		return [...this.#sources];
+	}
+
+	/**
+	 * Forget everything, once the pass has been consulted and applied.
+	 *
+	 * Deliberately not consumed by {@link snapshot}: a deferred pass never happens,
+	 * so its sources are still pending and the retry has to name them again.
+	 * Clearing on a deferral would make the edit an observer just held the one edit
+	 * it never hears about again — the holder would be told to let go, wait for the
+	 * next change, and never learn that the change it was protecting had landed
+	 * while it wasn't looking.
+	 */
+	clear(): void {
+		this.#sources.clear();
+	}
 }

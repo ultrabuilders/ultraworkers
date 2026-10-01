@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import {
 	collectConfigReloadDeferrals,
 	hasConfigReloadHandlers,
 	onBeforeConfigReload,
+	WatchSourceAccumulator,
 	type ConfigReloadHandler,
 } from "@oh-my-pi/pi-coding-agent/config/reload-observer";
 
@@ -29,7 +27,6 @@ import {
  */
 
 const disposers: Array<() => void> = [];
-const temps: string[] = [];
 
 function register(handler: ConfigReloadHandler): () => void {
 	const dispose = onBeforeConfigReload(handler);
@@ -37,35 +34,26 @@ function register(handler: ConfigReloadHandler): () => void {
 	return dispose;
 }
 
-function tempDir(): string {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-config-reload-"));
-	temps.push(dir);
-	return dir;
-}
-
 afterEach(() => {
 	while (disposers.length > 0) disposers.pop()?.();
-	while (temps.length > 0) {
-		fs.rmSync(temps.pop() as string, { recursive: true, force: true });
-	}
 });
 
-const INFO = { source: "/tmp/omp/config.yml", changedCount: 1 };
+const INFO = { sources: ["/tmp/omp/config.yml"] };
 
 describe("a registered handler sees a reload before it is applied", () => {
-	it("is told which file triggered it", async () => {
-		// The user is editing a specific file and needs to know which. A handler
+	it("is told which files triggered it", async () => {
+		// The user is editing specific files and needs to know which. A handler
 		// told only "something changed" cannot tell a config.yml edit from a
 		// project settings edit, and those have different owners.
-		let seen: string | undefined;
+		let seen: readonly string[] | undefined;
 		register(info => {
-			seen = info.source;
+			seen = info.sources;
 			return undefined;
 		});
 
 		await collectConfigReloadDeferrals(INFO);
 
-		expect(seen).toBe("/tmp/omp/config.yml");
+		expect(seen).toEqual(["/tmp/omp/config.yml"]);
 	});
 
 	it("lets the reload through when no handler objects", async () => {
@@ -162,6 +150,72 @@ describe("a bad registration is refused with a reason", () => {
 		expect(hasConfigReloadHandlers()).toBe(false);
 		register(() => undefined);
 		expect(hasConfigReloadHandlers()).toBe(true);
+	});
+});
+
+describe("a debounced pass reports every file it merged, not just the last", () => {
+	// The debounce collapses everything that changed inside a 200 ms window into
+	// one apply. These cases defend what a pass is *told* to contain, which is the
+	// half of the seam that is reachable without a process-global watcher.
+
+	it("reports both files when two changed inside one pass", async () => {
+		// The regression this shape was introduced to fix. `fs.watch` fires once per
+		// write and the debounce restarts on each, so an editor that writes
+		// `config.yml` and a project settings file at once produced a single apply.
+		// Holding only the last path named just one of them, and the handler had no
+		// way to know the other edit was being applied in the same pass — so it held
+		// the reload for one file while the other silently landed.
+		const accumulator = new WatchSourceAccumulator();
+		accumulator.add("/tmp/omp/config.yml");
+		accumulator.add("/tmp/omp/project/settings.json");
+
+		let seen: readonly string[] = [];
+		register(info => {
+			seen = info.sources;
+			return undefined;
+		});
+
+		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
+
+		expect(seen).toEqual(["/tmp/omp/config.yml", "/tmp/omp/project/settings.json"]);
+	});
+
+	it("counts a file once however many events it emitted", () => {
+		// A single save can produce more than one `fs.watch` event (write, rename,
+		// chmod). Reported twice, a handler comparing counts sees two changed files
+		// when one changed, and a "was anything else touched?" check misfires.
+		const accumulator = new WatchSourceAccumulator();
+		accumulator.add("/tmp/omp/config.yml");
+		accumulator.add("/tmp/omp/config.yml");
+
+		expect(accumulator.snapshot()).toEqual(["/tmp/omp/config.yml"]);
+	});
+
+	it("still names the held edit on the retry that follows a deferral", async () => {
+		// The failure mode a consume-on-read accumulator would create: the handler
+		// holds the reload, the pass returns early, and the sources are gone. The
+		// next change arrives, the handler is asked again, sees a different file,
+		// and releases a lock protecting an edit that landed while it wasn't
+		// looking. Snapshot must not consume.
+		const accumulator = new WatchSourceAccumulator();
+		accumulator.add("/tmp/omp/config.yml");
+		const asked: (readonly string[])[] = [];
+		register(info => {
+			asked.push(info.sources);
+			return "busy";
+		});
+
+		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
+		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
+
+		expect(asked).toEqual([["/tmp/omp/config.yml"], ["/tmp/omp/config.yml"]]);
+
+		// ...and once the pass really does complete, they are history from here on.
+		accumulator.clear();
+		accumulator.add("/tmp/omp/project/settings.json");
+		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
+
+		expect(asked[2]).toEqual(["/tmp/omp/project/settings.json"]);
 	});
 });
 

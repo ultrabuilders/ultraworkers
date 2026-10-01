@@ -96,6 +96,17 @@ export const fastWorkspacePackages = [
 	"packages/agent",
 	"packages/mnemopi",
 	"packages/evals",
+	// codemode runs QuickJS through WASI: 3 test files, no Bun.spawn/child_process
+	// and no Bun.serve/listen, so it is the short pure-TS shape this bucket is for.
+	// The rule that decides the split is suite shape, not what the code executes —
+	// WASI is in-process and holds no native addon. Measured: 57 pass / 0 fail in
+	// 1.8s on its own.
+	"packages/codemode",
+	// `packages/protocol` is deliberately NOT here. It is untracked in-flight work
+	// whose `src/framing.ts:45` does not parse (`#readonly header = ...`), so its
+	// suite segfaults Bun rather than failing. It belongs in this bucket by shape
+	// (3 files, no spawn, no server) once it compiles — recorded here so the next
+	// person does not have to rediscover that it is missing.
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,

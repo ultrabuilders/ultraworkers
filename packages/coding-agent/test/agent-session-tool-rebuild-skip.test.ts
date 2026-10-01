@@ -799,7 +799,7 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		expect(session.getSkillHintVisible()).toBe(true);
 	});
 
-	it("rebuilds when the refresh argument tool order changes", async () => {
+	it("ignores the refresh argument tool order once the tools are active", async () => {
 		let rebuildCount = 0;
 		const { session } = newSession(async toolNames => {
 			rebuildCount++;
@@ -812,10 +812,21 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		// All connected MCP tools are active, so their ordering contributes to the
 		// rendered prompt and changing it must rebuild.
 		await session.refreshMCPTools([a, b]);
-		expect(rebuildCount).toBe(1);
+		await session.setActiveToolsByName([...session.getActiveToolNames(), a.name, b.name]);
+		const activeBefore = [...session.getActiveToolNames()];
+		const promptBefore = [...session.systemPrompt];
+		const countBefore = rebuildCount;
 
+		// Reordering the arriving catalog changes nothing the model or the user can
+		// observe: a refresh carries the active set over in the order the user
+		// already selected, so the rebuilt signature is unchanged and no rebuild
+		// fires. Asserting the old "ordering must rebuild" would pin a behaviour the
+		// trust fix deliberately dropped — retention is by prior selection, not by
+		// the order the server happened to answer in.
 		await session.refreshMCPTools([b, a]);
-		expect(rebuildCount).toBe(2);
+		expect(session.getActiveToolNames()).toEqual(activeBefore);
+		expect(session.systemPrompt).toEqual(promptBefore);
+		expect(rebuildCount).toBe(countBefore);
 	});
 
 	it("rebuilds when an MCP tool's label changes", async () => {

@@ -1,8 +1,20 @@
-import { $which } from "@oh-my-pi/pi-utils";
+import * as fs from "node:fs";
+import { $which, getLogsDir } from "@oh-my-pi/pi-utils";
 import { getAvailableThemes, getBuiltinThemes, resolveThemeJson } from "@oh-my-pi/pi-tui/theme";
 import type { CheckOutcome, DoctorCheck } from "./types";
 import { isUnavailable } from "./types";
 import { allBuiltinToolFactories, BUILTIN_TOOLS, HIDDEN_TOOLS } from "../../tools";
+/**
+ * The mode the logger enforces on the log directory.
+ *
+ * Duplicated as a named constant rather than imported from `logger.ts` because
+ * that module's `ensureDir` is private, and a diagnostic that has to reach into a
+ * logging module's internals to read a permission bit is a diagnostic that will
+ * break when the logger is refactored. The two must agree; `logger.ts` documents
+ * the same `0o700` at its own `ensureDir`, and the check below reports the observed
+ * mode so a divergence surfaces as a finding rather than as a wrong "ok".
+ */
+const EXPECTED_LOG_DIR_MODE = 0o700;
 
 /**
  * What the seam checks read. Defaults to the live registries; a caller may pass a
@@ -21,6 +33,21 @@ export interface DoctorSnapshot {
 	resolveTheme(name: string): unknown;
 	/** First-party tool factories registered at runtime, excluding the literals. */
 	readonly builtinTools: readonly string[];
+	/**
+	 * POSIX mode bits of the log directory, or `undefined` when it does not exist
+	 * yet. `undefined` is a distinct third state from `0o700` and from a loose
+	 * mode: a fresh profile has no log directory because the logger creates it
+	 * lazily on first write, so a check that treated "absent" as a failure would
+	 * report a problem where there is nothing yet to protect.
+	 */
+	readonly logDirMode?: number;
+	/**
+	 * Mode the logger will enforce when it does create the directory. Optional
+	 * because callers that predate this check pass partial snapshots; omitting it
+	 * falls back to {@link EXPECTED_LOG_DIR_MODE} rather than reporting against
+	 * `undefined`.
+	 */
+	readonly expectedLogDirMode?: number;
 }
 
 async function liveSnapshot(): Promise<DoctorSnapshot> {
@@ -37,7 +64,36 @@ async function liveSnapshot(): Promise<DoctorSnapshot> {
 		themes: (await getAvailableThemes()).filter(name => !builtinThemes.has(name)),
 		resolveTheme: name => resolveThemeJson(name),
 		builtinTools: Object.keys(allBuiltinToolFactories()).filter(name => !builtinTools.has(name)),
+		// Path-only: `getLogsDir()` computes the location and creates nothing, so
+		// asking what its mode is cannot bring the directory into existence. Reading
+		// it after an `ensureDir` would report the mode the logger just enforced and
+		// therefore never find the problem this check exists to find.
+		...(await readLogDirMode()),
+		expectedLogDirMode: 0o700,
 	};
+}
+
+/**
+ * The log directory's mode bits, or `undefined` when it is not there.
+ *
+ * `stat` throws `ENOENT` for a directory the logger has not created yet, which is
+ * every fresh profile — the sink is built lazily on first write. That is reported
+ * as "no directory yet" rather than as a failure, because a directory that does not
+ * exist exposes nothing to any other account on the machine.
+ */
+async function readLogDirMode(): Promise<{ logDirMode?: number }> {
+	if (process.platform === "win32") return {};
+	try {
+		// `fs.promises.stat` rather than a sync call: this runs inside an async
+		// collector that already awaits the theme loader.
+		const stat = await fs.promises.stat(getLogsDir());
+		// `mode & 0o777` because stat carries the file-type bits in the same field.
+		return { logDirMode: stat.mode & 0o777 };
+	} catch {
+		// Absent, or unreadable for a reason this check does not own. Either way
+		// there is no observed mode to report, and the caller says so out loud.
+		return {};
+	}
 }
 
 export async function runDoctorChecks(snapshot?: DoctorSnapshot): Promise<DoctorCheck[]> {
@@ -77,8 +133,62 @@ export async function runDoctorChecks(snapshot?: DoctorSnapshot): Promise<Doctor
 	}
 
 	checks.push(...checkExtensionSeams(snap));
+	checks.push(checkLogDirPermissions(snap));
 
 	return checks;
+}
+
+/**
+ * Report the log directory's real permissions, not the ones the logger intends.
+ *
+ * The logger creates the directory `0o700` and re-asserts it on every write, so the
+ * interesting case is a directory that predates that: `mkdirSync`'s `mode` applies
+ * only to a directory the call creates, so a `~/.omp/logs` left by an older build
+ * keeps whatever mode it was born with, and it is the directory holding the most
+ * accumulated transcripts. A log line can carry a request header, a resolved URL, or
+ * a tool argument, and a group- or world-readable log directory hands those to every
+ * other account on the machine.
+ *
+ * The mode is read before the logger runs, so this reports the state on disk rather
+ * than the state the logger would impose.
+ */
+function checkLogDirPermissions(snap: DoctorSnapshot): DoctorCheck {
+	// Defaulted rather than trusted: this snapshot field was added after callers
+	// were already passing partial snapshots, and a required field that a runtime
+	// value can be missing anyway is not a contract — it is a crash waiting for the
+	// first caller that predates it. `EXPECTED_LOG_DIR_MODE` is the same constant the
+	// logger enforces, so a caller that omits it gets the real contract rather than
+	// a silently different one.
+	const expected = snap.expectedLogDirMode ?? EXPECTED_LOG_DIR_MODE;
+	const actual = snap.logDirMode;
+	if (actual === undefined) {
+		// Not a failure and not a pass: nothing exists to expose yet. Reported so a
+		// reader is never left wondering whether the check ran.
+		return {
+			name: "logs:permissions",
+			status: "ok",
+			message: `No log directory yet; it will be created ${formatMode(expected)} on first write`,
+		};
+	}
+	if (actual === expected) {
+		return { name: "logs:permissions", status: "ok", message: `Log directory is ${formatMode(actual)}` };
+	}
+	// Group- and world-readable are the cases worth stopping a user over; owner-only
+	// but not exactly 0700 is tighter than the contract, not looser, so it is not
+	// reported as a problem.
+	const exposed = (actual & 0o077) !== 0;
+	return {
+		name: "logs:permissions",
+		status: exposed ? "error" : "warning",
+		message: exposed
+			? `Log directory is ${formatMode(actual)} — readable by other accounts on this machine. It holds request headers, URLs and tool arguments. The logger re-asserts ${formatMode(expected)} on its next write; run \`omp doctor --fix\` now to narrow it.`
+			: `Log directory is ${formatMode(actual)}, not the expected ${formatMode(expected)} (owner-only, so nothing is exposed)`,
+	};
+}
+
+/** Render mode bits the way `ls -l` would, so the message is comparable at a glance. */
+function formatMode(mode: number): string {
+	return `0${mode.toString(8).padStart(3, "0")}`;
 }
 
 /**

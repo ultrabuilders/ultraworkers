@@ -25,7 +25,22 @@
 ### Known
 
 - This package does not typecheck yet: 12 errors remain, in three groups whose resolution is a
-  decision rather than a port. `SystemMessage` (5) — omp's `Message` union has no system role and
-  `DeveloperMessage` carries no `sections`, so the named prompt sections this package writes into
-  context have no representation on the receiving side. `Models` (3) and `deferred` (4) — omp has
-  no deferred or resumable stream, so `fetchDeferred` / `cancelDeferred` do not exist.
+  decision rather than a port. Reproduce with `bun run check:types` in this package.
+
+  - **`SystemMessage` (5)** — `src/harness/prompt.ts:2` imports it from `@oh-my-pi/pi-ai`, which
+    does not export it, and the four follow-on errors at `prompt.ts:11,11,12,14` come from that.
+    omp's `Message` union is `User | Developer | Assistant | ToolResult`; there is no system role,
+    and `DeveloperMessage` carries no `sections`. The section messages this package writes reach
+    the provider unfiltered — `src/harness/context.ts:91` pushes every `entry.model` message into
+    the `Message[]` handed to `streamSimple` — so retargeting them at `DeveloperMessage` would
+    compile and then silently stop replaying sections.
+
+  - **`Models` (3)** — `src/harness/scheduler.ts:3`, `src/harness/types.ts:3`, `src/types.ts:3`.
+    The type is used as a field type, but four methods are called on it in
+    `src/harness/generation.ts` (`getModel`, `streamSimple`, `fetchDeferred`, `cancelDeferred`);
+    omp's `ModelManager` exposes only `refresh`, and the two `*Deferred` methods exist nowhere in
+    the workspace.
+
+  - **`deferred` (4)** — `src/harness/context.ts:8` and `src/harness/generation.ts:237,238`.
+    `StopReason` in `@oh-my-pi/pi-wire` has no `"deferred"` member and `AssistantMessage` has no
+    `deferred` property.

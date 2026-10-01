@@ -1125,7 +1125,6 @@ class RpcClientTests(unittest.TestCase):
 
     def test_command_builder_supports_common_rpc_options(self) -> None:
         client = RpcClient(
-            executable="omp",
             model="openrouter/anthropic/claude-sonnet-4.6",
             cwd="/tmp/workspace",
             thinking="high",
@@ -1142,7 +1141,10 @@ class RpcClientTests(unittest.TestCase):
         self.assertEqual(
             client.command,
             (
-                "omp",
+                # No `executable=` is passed above, so this is the client's own
+                # default rather than an argument echoed back: swapping the literal
+                # for any other name the test supplied would still pass.
+                "ultraworkers",
                 "--mode",
                 "rpc",
                 "--model",

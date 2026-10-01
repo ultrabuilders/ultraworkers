@@ -1,7 +1,12 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
-import { __resetDirsFromEnvForTests, CONFIG_DIR_NAME, getConfigAgentDirName, TempDir } from "@oh-my-pi/pi-utils";
+import {
+	__resetDirsFromEnvForTests,
+	getConfigAgentDirName,
+	PROJECT_AGENT_DIR_NAME,
+	TempDir,
+} from "@oh-my-pi/pi-utils";
 import {
 	buildSystemPrompt,
 	discoverSystemPromptOverride,
@@ -39,7 +44,7 @@ async function withDiscoveryHome<T>(fn: (paths: DiscoveryPaths) => Promise<T>): 
 	try {
 		return await fn({
 			cwd: tempDir.join("project"),
-			projectConfig: tempDir.join("project", CONFIG_DIR_NAME),
+			projectConfig: tempDir.join("project", PROJECT_AGENT_DIR_NAME),
 			userConfig: path.join(home, getConfigAgentDirName()),
 		});
 	} finally {
@@ -108,7 +113,7 @@ describe("system prompt Handlebars templates", () => {
 		});
 	});
 
-	for (const directory of [CONFIG_DIR_NAME, ".agents"]) {
+	for (const directory of [PROJECT_AGENT_DIR_NAME, ".agents"]) {
 		it(`preserves ancestor ${directory}/SYSTEM.md over a user template`, async () => {
 			await withDiscoveryHome(async ({ cwd, userConfig }) => {
 				const nestedCwd = path.join(cwd, "nested");
@@ -123,7 +128,7 @@ describe("system prompt Handlebars templates", () => {
 			});
 		});
 	}
-	for (const directory of [CONFIG_DIR_NAME, ".agents"]) {
+	for (const directory of [PROJECT_AGENT_DIR_NAME, ".agents"]) {
 		it(`discovers an ancestor ${directory}/SYSTEM_TEMPLATE.md from a nested cwd`, async () => {
 			await withDiscoveryHome(async ({ cwd, userConfig }) => {
 				const nestedCwd = path.join(cwd, "nested");

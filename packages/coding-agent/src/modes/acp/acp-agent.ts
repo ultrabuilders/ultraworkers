@@ -593,7 +593,14 @@ export function createAcpExtensionUiContext(
 			throw new Error(unavailableFrameMessage("setHeader", "ACP mode"));
 		},
 		setTitle: () => {},
-		custom: async () => undefined as never,
+		custom: () => {
+			// Same lie its neighbours stopped telling on `noOpUIContext`, fixed for the
+			// same reason. `select`/`confirm`/`input`/`editor` above are REAL elicitations
+			// here — an ACP client renders them — which is exactly why `custom` being a
+			// stub is the defect: an author who guards on `hasUI` sees a working surface
+			// next door and reasonably expects this one to answer too.
+			throw new Error(unavailableFrameMessage("custom", "ACP mode"));
+		},
 		pasteToEditor: () => {},
 		setEditorText: () => {},
 		getEditorText: () => "",

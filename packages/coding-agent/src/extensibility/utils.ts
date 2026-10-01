@@ -4,6 +4,7 @@ import { theme } from "@oh-my-pi/pi-tui/theme";
 import { extractUriScheme } from "../internal-urls/parse";
 import { InternalUrlRouter } from "../internal-urls/router";
 import { expandPath } from "../tools/path-utils";
+import { unavailableFrameMessage } from "./extensions/unavailable-ui";
 import type { HookUIContext } from "./hooks/types";
 
 /**
@@ -35,7 +36,15 @@ export function createNoOpUIContext(): HookUIContext {
 		input: async () => undefined,
 		notify: () => {},
 		setStatus: () => {},
-		custom: async () => undefined as never,
+		custom: () => {
+			// The same lie as `noOpUIContext.custom` and the ACP/RPC contexts, fixed for
+			// the same reason: `undefined as never` satisfies `Promise<T>` while handing
+			// back a value the author's factory never produced. A custom tool's module
+			// body runs during `load()`, so this context is live before `setUIContext`
+			// swaps it — a top-level `await pi.ui.custom(...)` would get `undefined` and
+			// no error, with nothing having run to produce it.
+			throw new Error(unavailableFrameMessage("custom", "a headless mode"));
+		},
 		setEditorText: () => {},
 		getEditorText: () => "",
 		editor: async () => undefined,

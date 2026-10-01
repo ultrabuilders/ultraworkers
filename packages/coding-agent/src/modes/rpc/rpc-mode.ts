@@ -23,6 +23,7 @@ import {
 	type ExtensionUISelectItem,
 	type ExtensionWidgetOptions,
 	getExtensionUISelectOptionLabel,
+	unavailableFrameMessage,
 	unsupportedSurfaceMessage,
 } from "../../extensibility/extensions";
 import {
@@ -952,9 +953,13 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			} as RpcExtensionUIRequest);
 		}
 
-		async custom(): Promise<never> {
-			// Custom UI not supported in RPC mode
-			return undefined as never;
+		custom(): Promise<never> {
+			// The comment this replaces said "not supported" and returned `undefined as
+			// never` anyway — which is not a missing feature but a false report of one:
+			// the declared return is `Promise<T>`, so an author awaiting a result got
+			// `undefined`, no error, and no factory run. Same fix as `noOpUIContext`.
+			// (`never` is assignable to `Promise<T>`, so the signature still checks.)
+			throw new Error(unavailableFrameMessage("custom", "RPC mode"));
 		}
 
 		pasteToEditor(text: string): void {

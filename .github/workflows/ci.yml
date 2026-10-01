@@ -1426,3 +1426,37 @@ jobs:
                   -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
                   commit -m "omp ${{ needs.release_metadata.outputs.release-tag }}" -- Formula/omp.rb
               git push origin HEAD:main
+
+   # Report the perf threshold ledger. Advisory by default: every threshold in
+   # it is report-only until it carries variance characterisation, a passed
+   # before/after benchmark, and human approval — so this job measures and
+   # merges, and never blocks a PR over a threshold nobody chose. Set
+   # PERF_LEDGER_MODE=hard to opt into gating.
+   perf_report:
+      name: Perf threshold report
+      runs-on: ubuntu-22.04
+      env:
+         PERF_LEDGER_MODE: ${{ vars.PERF_LEDGER_MODE || 'advisory' }}
+      steps:
+         - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+         - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+           with:
+              bun-version: ${{ vars.BUN_VERSION }}
+         - name: Report perf threshold ledger
+           run: |
+              # Advisory (the default) reports and merges even when every
+              # threshold is under-evidenced. Only `hard` turns the same ledger
+              # into a gate, and only then may this step fail the job.
+              flag=""
+              if [ "$PERF_LEDGER_MODE" = "hard" ]; then flag="--hard"; fi
+              bun scripts/perf-threshold-report.ts $flag > perf-threshold-report.txt 2>&1 || {
+                 code=$?
+                 cat perf-threshold-report.txt
+                 exit "$code"
+              }
+              cat perf-threshold-report.txt
+         - name: Upload perf threshold report
+           uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+           with:
+              name: perf-threshold-report
+              path: perf-threshold-report.txt

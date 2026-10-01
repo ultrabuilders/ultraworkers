@@ -89,11 +89,28 @@ function toWireSelectOptions(options: ExtensionUISelectItem[]): CollabUiSelectIt
 	);
 }
 
+/**
+ * One mounted hook widget, and the extension that placed it.
+ *
+ * `owner` is the extension's resolved path, supplied by the runner when it hands
+ * an extension its `ui` (see `ExtensionRunner#uiContextFor`). It is `undefined`
+ * for a widget placed through a `ui` that had no extension behind it — a bare
+ * tool call's own context — and such a widget is treated as unowned: it cannot be
+ * traced to anyone, so it survives a switch rather than being disposed on the
+ * strength of a guess.
+ */
+interface HookWidgetEntry {
+	owner: string | undefined;
+	component: ExtensionUiComponent;
+}
+
+type HookWidgetMap = Map<string, HookWidgetEntry>;
+
 export class ExtensionUiController {
 	#extensionTerminalInputUnsubscribers = new Set<() => void>();
 	#composerShapeDisposers: Array<() => void> = [];
-	#hookWidgetsAbove = new Map<string, ExtensionUiComponent>();
-	#hookWidgetsBelow = new Map<string, ExtensionUiComponent>();
+	#hookWidgetsAbove = new Map<string, HookWidgetEntry>();
+	#hookWidgetsBelow = new Map<string, HookWidgetEntry>();
 	// Single-file dialog surface (`editorContainer` + focus) is shared by the
 	// selector / input / editor modals, so only one may be presented at a time;
 	// the rest queue. See `#presentDialog`.
@@ -258,7 +275,7 @@ export class ExtensionUiController {
 
 				// Create new session
 				this.clearExtensionTerminalInputListeners();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const success = await this.ctx.session.newSession({ parentSession: options?.parentSession });
 				if (!success) {
 					return { cancelled: true };
@@ -319,7 +336,7 @@ export class ExtensionUiController {
 			compact: async instructionsOrOptions => this.#handleInteractiveCompact(instructionsOrOptions),
 			switchSession: async sessionPath => {
 				await this.ctx.prepareSessionSwitch();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const result = await this.ctx.session.switchSession(sessionPath);
 				if (!result) {
 					return { cancelled: true };
@@ -366,13 +383,13 @@ export class ExtensionUiController {
 		}
 
 		const target = placement === "belowEditor" ? this.#hookWidgetsBelow : this.#hookWidgetsAbove;
-		target.set(key, this.#createHookWidget(content));
+		target.set(key, { owner: options?.owner, component: this.#createHookWidget(content) });
 		this.#rebuildHookWidgets();
 	}
 
-	#removeHookWidget(widgets: Map<string, ExtensionUiComponent>, key: string): void {
+	#removeHookWidget(widgets: HookWidgetMap, key: string): void {
 		const existing = widgets.get(key);
-		existing?.dispose?.();
+		existing?.component.dispose?.();
 		widgets.delete(key);
 	}
 
@@ -401,7 +418,7 @@ export class ExtensionUiController {
 
 	#renderHookWidgetContainer(
 		container: Container,
-		widgets: Map<string, ExtensionUiComponent>,
+		widgets: HookWidgetMap,
 		spacerWhenEmpty: boolean,
 		leadingSpacer: boolean,
 	): void {
@@ -418,7 +435,7 @@ export class ExtensionUiController {
 			container.addChild(new Spacer(1));
 		}
 		for (const widget of widgets.values()) {
-			container.addChild(widget);
+			container.addChild(widget.component);
 		}
 	}
 
@@ -490,7 +507,7 @@ export class ExtensionUiController {
 
 				// Create new session
 				this.clearExtensionTerminalInputListeners();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const success = await this.ctx.session.newSession({ parentSession: options?.parentSession });
 				if (!success) {
 					return { cancelled: true };
@@ -548,7 +565,7 @@ export class ExtensionUiController {
 			compact: async instructionsOrOptions => this.#handleInteractiveCompact(instructionsOrOptions),
 			switchSession: async sessionPath => {
 				await this.ctx.prepareSessionSwitch();
-				this.clearHookWidgets();
+				this.remountHookWidgets();
 				const result = await this.ctx.session.switchSession(sessionPath);
 				if (!result) {
 					return { cancelled: true };
@@ -1253,15 +1270,34 @@ export class ExtensionUiController {
 		};
 	}
 
-	clearHookWidgets(): void {
-		for (const widget of this.#hookWidgetsAbove.values()) {
-			widget.dispose?.();
+	/**
+	 * Re-seat every widget after a session switch, keeping the ones that still
+	 * have an author.
+	 *
+	 * This replaces a global wipe at the five session-switch sites. A switch is
+	 * not an unload: wiping took down the widget of an extension that was not
+	 * involved and had not gone anywhere, and the extension only got it back if
+	 * it happened to re-register on `session_start`. Anything owned by an
+	 * extension that is genuinely gone is disposed here — that is the part a
+	 * blanket `clear()` was doing correctly and had no other way to do.
+	 *
+	 * There is deliberately no "wipe everything" counterpart any more. Every
+	 * caller wanted a re-seat, and a second method nothing calls would be the
+	 * same unreachable seam this change exists to close.
+	 *
+	 * Unowned widgets are kept. They were placed through a `ui` with no extension
+	 * behind it, so nobody can be named as their author; disposing them would be
+	 * guessing, and the guess is the same silent data loss this replaces.
+	 */
+	remountHookWidgets(): void {
+		const live = new Set(this.ctx.session.extensionRunner?.getExtensionPaths() ?? []);
+		for (const widgets of [this.#hookWidgetsAbove, this.#hookWidgetsBelow]) {
+			for (const [key, entry] of widgets) {
+				if (entry.owner === undefined || live.has(entry.owner)) continue;
+				entry.component.dispose?.();
+				widgets.delete(key);
+			}
 		}
-		for (const widget of this.#hookWidgetsBelow.values()) {
-			widget.dispose?.();
-		}
-		this.#hookWidgetsAbove.clear();
-		this.#hookWidgetsBelow.clear();
 		this.#rebuildHookWidgets();
 	}
 

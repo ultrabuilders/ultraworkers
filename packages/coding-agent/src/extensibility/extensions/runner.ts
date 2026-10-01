@@ -613,6 +613,15 @@ const RESERVED_SHORTCUT_KEYS: ReadonlySet<KeyId> = new Set([
 
 export class ExtensionRunner {
 	#uiContext: ExtensionUIContext;
+	/**
+	 * One `ui` wrapper per extension, memoised on the extension itself.
+	 *
+	 * Identity is the point, not a cache: the wrapper is what carries
+	 * `options.owner` into `setWidget`, and a fresh object per `createContext`
+	 * call would make two contexts for the same extension compare unequal for no
+	 * reason a caller could see.
+	 */
+	#ownedUiContexts = new WeakMap<Extension, ExtensionUIContext>();
 	#mode: ExtensionMode = "print";
 	#toolApprovalPreviewWaiter?: (toolCallId: string) => Promise<void>;
 	#errorListeners: Set<ExtensionErrorListener> = new Set();
@@ -1768,7 +1777,7 @@ export class ExtensionRunner {
 			}
 		};
 		const context: ExtensionContext = {
-			ui: this.#uiContext,
+			ui: this.#uiContextFor(extension),
 			mode: this.#mode,
 			getContextUsage: () => this.#getContextUsageFn(),
 			compact: instructionsOrOptions => this.#compactFn(instructionsOrOptions),
@@ -1873,6 +1882,32 @@ export class ExtensionRunner {
 			}
 		}
 		return Object.defineProperties({}, descriptors) as ExtensionContext;
+	}
+
+	/**
+	 * The shared `ui`, tagged with which extension is calling it.
+	 *
+	 * Only `setWidget` is wrapped, and only to add `owner`. Every other member
+	 * is forwarded by reference, so this cannot change what any of them does —
+	 * it exists so a widget can be traced to the extension that placed it, which
+	 * is what lets one extension's widgets survive a session switch that was
+	 * meant for another.
+	 *
+	 * Without an extension there is nobody to own the widget, so the shared
+	 * context goes through untouched: a tool call's own `ui` has no author to
+	 * attribute a persistent surface to.
+	 */
+	#uiContextFor(extension: Extension | undefined): ExtensionUIContext {
+		if (!extension) return this.#uiContext;
+		const existing = this.#ownedUiContexts.get(extension);
+		if (existing) return existing;
+		const wrapped: ExtensionUIContext = {
+			...this.#uiContext,
+			setWidget: (key, content, options) =>
+				this.#uiContext.setWidget(key, content, { ...options, owner: extension.resolvedPath }),
+		};
+		this.#ownedUiContexts.set(extension, wrapped);
+		return wrapped;
 	}
 
 	/**

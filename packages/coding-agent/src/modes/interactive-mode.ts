@@ -6505,7 +6505,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.#sttController = undefined;
 		}
 		this.#extensionUiController.clearExtensionTerminalInputListeners();
-		this.#extensionUiController.clearHookWidgets();
+		this.#extensionUiController.remountHookWidgets();
 		this.#extensionUiController.disposeComposerShapes();
 		for (const unsubscribe of this.#eventBusUnsubscribers) {
 			unsubscribe();

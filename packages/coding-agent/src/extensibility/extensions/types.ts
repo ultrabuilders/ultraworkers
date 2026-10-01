@@ -230,6 +230,15 @@ export type WidgetPlacement = "aboveEditor" | "belowEditor";
 
 export interface ExtensionWidgetOptions {
 	placement?: WidgetPlacement;
+	/**
+	 * Which extension placed this widget.
+	 *
+	 * Set by the runner when it hands an extension its `ui`, never by the
+	 * extension itself: an owner an extension can name for itself is an owner
+	 * that proves nothing, and this is what decides whose widget survives a
+	 * session switch and whose is disposed with its author.
+	 */
+	owner?: string;
 }
 
 /** Options for `ExtensionUIContext.custom()` (overlay rendering of a custom component). */

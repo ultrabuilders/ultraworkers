@@ -348,6 +348,8 @@ const EMAIL_LOCAL_PART = /[A-Za-z0-9._+-]/;
 // URL có scheme, không cần `@`. Tách khỏi BARE_URL_OR_EMAIL để nhánh email chỉ
 // chạy khi thật sự có `@` — xem chỗ dùng để biết vì sao cần cổng đó.
 const BARE_URL = /^(?:https?:\/\/|ftp:\/\/|www\.)[^\s<]+/i;
+// Scheme ở dạng **không neo** — chỉ dùng để liệt kê vị trí, không dùng để khớp trực tiếp.
+const SCHEME_ANY = /(?:https?:\/\/|ftp:\/\/|www\.)/gi;
 // Nhánh email của regex link trần. `+` tham lam đứng ngay trước ký tự bắt buộc
 // `@` nên để engine tự lùi là bậc hai; giữ riêng để cổng `indexOf("@")` bỏ qua nó.
 const BARE_EMAIL = /^[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+/i;
@@ -600,10 +602,17 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 	// ahead?", and deriving that by scanning what is left of the run is quadratic when the
 	// answer is no — the loop calls it once per character. Hoisted for the same reason.
 	const lastBracket = src.lastIndexOf("]");
-	// Whether the run contains anything that could start a bare URL, resolved once for the
-	// same reason as the two above: the unanchored scheme search would otherwise rescan the
-	// whole remainder on every iteration and find nothing.
-	const srcHasScheme = /(?:https?:\/\/|ftp:\/\/|www\.)/i.test(src);
+	// **Every** position in `src` that can start a bare URL, in absolute coordinates and in
+	// ascending order. The bare-URL branch needs "the leftmost scheme at or after where we
+	// currently are", and `consumed` only ever increases, so the answer is a pointer walking
+	// this list — O(1) amortised per iteration instead of a fresh unanchored scan of the whole
+	// remainder. A boolean `srcHasScheme` cannot answer it: one link anywhere keeps that flag
+	// true for the entire run, so the scan fires on every iteration and re-reads the tail.
+	// One pass here is O(n) once, and the list is empty — so the branch never runs — when the
+	// run has no URL at all.
+	const schemeAt: number[] = [];
+	for (const m of src.matchAll(SCHEME_ANY)) schemeAt.push(m.index);
+	let schemeIdx = 0;
 	while (rest !== "") {
 		let custom: Tokens.Generic | undefined;
 		for (const extension of lexer.extensions.inline) {
@@ -818,14 +827,18 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			// bắt đầu — O(n²) ngay trong engine, 671 ms cho 32 KB. Quét ngược từ `@`
 			// đầu tiên cho đúng cùng kết quả trong O(n). Giới hạn `{1,64}` thì nhanh
 			// hơn nữa nhưng **cắt cụt** mọi địa chỉ dài hơn 64 ký tự.
-			// Cổng `srcHasScheme`: regex này **không neo `^`**, nên khi không có URL nó quét
-			// hết phần còn lại rồi trả null — ở **mọi** iteration, vì prose luôn vào khối
-			// này. Đo trên đoạn văn thật: 7 → 112 lần gọi (×2.00/lần nhân đôi) và **100%**
-			// là lần quét hết ⇒ O(n) lần × O(n) = bậc hai. Không có scheme trong `src` thì
-			// không suffix nào có, nên bỏ qua là **tương đương**, không phải cắt cụt.
-			if (srcHasScheme) {
-				const url = /(?:https?:\/\/|ftp:\/\/|www\.)/i.exec(rest.slice(1));
-				if (url && url.index + 1 < next) next = url.index + 1;
+			// Cổng vị trí, không phải boolean: regex scheme **không neo `^`**, nên quét
+			// `rest.slice(1)` là quét hết phần còn lại — ở **mọi** iteration, vì prose
+			// luôn vào khối này. Đo trên đoạn văn thật: 7 → 112 lần gọi (×2.00/lần nhân
+			// đôi) và **100%** là lần quét hết ⇒ O(n) lần × O(n) = bậc hai. Một cờ
+			// `srcHasScheme` phỏng vấn *cả chuỗi* không sửa được: đúng một link cũng đủ
+			// giữ cờ bật tới hết vòng lặp. Ở đây `schemeIdx` chỉ tiến, nên mỗi vòng là
+			// O(1) amortised và cả lượt là O(n) cho **mọi** số link — đo ở mục dưới.
+			// `consumed` = `src.length - rest.length`, đúng như hai cổng hoist ở trên.
+			const consumed = src.length - rest.length;
+			while (schemeIdx < schemeAt.length && schemeAt[schemeIdx] <= consumed) schemeIdx++;
+			if (schemeIdx < schemeAt.length && schemeAt[schemeIdx] - consumed < next) {
+				next = schemeAt[schemeIdx] - consumed;
 			}
 			// Duyệt từng `@` từ trái sang. Một `@` trần (không có ký tự local-part
 			// đứng trước) không phải email — regex `+` yêu cầu ít nhất một ký tự — nên

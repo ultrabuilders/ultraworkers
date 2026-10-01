@@ -32,6 +32,17 @@
   output to the previous version across 28,786 inputs — every paragraph of every Markdown file
   in this repository, plus targeted cases for each pattern.
 
+- A paragraph containing a single link is no longer quadratic. The entry above settled the
+  question "is there a URL ahead?" once for the whole run, which is exactly right for text with
+  no links — the check never runs — but one link anywhere keeps that answer true for the entire
+  paragraph, so the search re-read everything ahead of the cursor on every character. The check
+  now follows the next link position as the cursor advances, and is skipped entirely when the
+  paragraph holds none. Measured by counting rather than by the clock: a 121 kB paragraph with
+  one link went from 428 million characters scanned to a single pass over the text, and the work
+  now grows with the length of the paragraph on both link-free and link-bearing input. Output is
+  unchanged, verified against 40,219 inputs including links, addresses, and the case where the
+  cursor comes to rest exactly on a link.
+
 - Runs of ordinary inline Markdown get markedly cheaper as they grow. The lexer read the last character of the text token it was still building, and because that token is accumulated as a rope, reading either end of it forces the engine to flatten it — so every iteration of a run with nothing to format paid to flatten the whole run again. The read now happens only in the two branches that use the value, and it is gone for plain text. This entry originally stopped here, warning that `*` and `_` runs were still quadratic because the guard deliberately skips them — the value they need is the one that costs. That warning is now **out of date**: the cost it pointed at was found and removed by the entries above, and those runs measure linear.
 
 - The worker selector prefix is now derived from `WIRE_NAME` instead of being written out beside it. The two were independent literals, so renaming the wire identity moved one and left the other — a tree could hold `WIRE_NAME = "omp"` next to `__ultraworkers_worker_` with every test green, because the selector parity test asserts how selectors relate to the prefix rather than what the prefix spells. That drift already reverted a completed rename once, in c7c8da296e, where a commit about selector derivation silently carried three unrelated files back to their old names.

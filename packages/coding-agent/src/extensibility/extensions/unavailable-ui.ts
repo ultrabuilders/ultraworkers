@@ -18,10 +18,17 @@
  * For a mode that has no frame at all — headless, print, subagent, ACP.
  *
  * `setEditorComponent` is deliberately NOT offered here, even though it is the one
- * surface that mounts a component on a framed context. It is a silent no-op on every
- * frameless context this message is used from (`runner.ts:487`, `acp-agent.ts:613`), so
- * pointing an author at it would trade a loud failure for the exact silence this helper
- * exists to remove. `setStatus` and `hasUI` are named because they hold on all of them.
+ * surface that mounts a component on a framed context. On every frameless context this
+ * message is used from it does nothing an author could act on — it throws on
+ * `noOpUIContext` (`runner.ts:511`) and is a bare `() => {}` on the ACP context
+ * (`acp-agent.ts:613`) — so naming it would send them to a dead end either way.
+ *
+ * `setStatus` and `hasUI` are named because they are the two that never throw: on
+ * `noOpUIContext` and the ACP context `setStatus` is itself a silent no-op, so this is
+ * advice for the guarded path, not a promise that text appears here. `hasUI` is the
+ * check that reaches it. The one surface excluded for a different reason is `custom`,
+ * which returns the caller's own value — `setStatus` cannot return that, so offering
+ * it would answer a question the author did not ask.
  */
 export function unavailableFrameMessage(surface: "setHeader" | "setFooter" | FramelessSurface, mode: string): string {
 	const base =

@@ -56,12 +56,19 @@ async function renderedLines(): Promise<string[]> {
 	return lines;
 }
 
-/** The `Summary: ...` line, parsed back into its named counts. */
+/**
+ * The `Summary: ...` line, parsed back into its named counts.
+ *
+ * The label is captured whole, so a bucket named with two words (`not checked`)
+ * is read rather than half-parsed and dropped. A parser that only understood
+ * single-word labels would silently omit that bucket from the total — making the
+ * partition look correct while excluding the very line it exists to account for.
+ */
 function summaryCounts(lines: string[]): Record<string, number> {
 	const summary = lines.find(line => line.startsWith("Summary:"));
 	expect(summary).toBeDefined();
 	const counts: Record<string, number> = {};
-	for (const match of summary!.matchAll(/(\d+) ([a-z]+)/g)) counts[match[2]!] = Number(match[1]);
+	for (const match of summary!.matchAll(/(\d+) ([a-z]+(?: [a-z]+)*)/g)) counts[match[2]!] = Number(match[1]);
 	return counts;
 }
 
@@ -94,5 +101,66 @@ describe("the doctor reports a ledger it could not check", () => {
 		const counts = summaryCounts(lines);
 		const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 		expect(total).toBe(printed);
+	});
+});
+
+describe("the summary buckets partition the report", () => {
+	// The rows below hand the renderer a fixed set of outcomes rather than a real
+	// project's, because the interesting shapes are the ones a clean checkout never
+	// produces. The renderer itself is still the real one — only its data source is
+	// supplied, so the arithmetic under test is the shipped arithmetic.
+	async function render(outcomes: CheckOutcome[]): Promise<string[]> {
+		const lines: string[] = [];
+		spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+			lines.push(args.map(String).join(" "));
+		});
+		const exits: number[] = [];
+		spyOn(process, "exit").mockImplementation(((code?: number) => {
+			exits.push(code ?? 0);
+		}) as never);
+		await handleDoctor({ doctor: async () => outcomes } as unknown as PluginManager, {});
+		expect(exits).toEqual([]);
+		return lines;
+	}
+
+	/** Lines printed, each of which must land in exactly one bucket. */
+	function printedCheckLines(lines: string[]): string[] {
+		const printed = lines.filter(line => /^\S+\s+\S+:/.test(line.trim()));
+		expect(printed.length).toBeGreaterThan(0);
+		return printed;
+	}
+
+	test("a repaired check is counted once, as fixed, not also as ok", async () => {
+		// `doctor --fix` emits exactly this pair: an orphaned plugin restored from
+		// its pinned source is `status: "ok"` AND `fixed: true`. Counting it as both
+		// named more checks than were printed, so the summary was wrong precisely
+		// when a run had actually repaired something and a user was reading it.
+		const lines = await render([
+			{ name: "repaired", status: "ok", message: "restored from its pinned source", fixed: true },
+			{ name: "healthy", status: "ok", message: "all good" },
+		]);
+		const counts = summaryCounts(lines);
+		expect(counts.fixed).toBe(1);
+		expect(counts.ok).toBe(1);
+		expect(lines.filter(line => line.includes("repaired:")).length).toBe(1);
+		expect(Object.values(counts).reduce((sum, n) => sum + n, 0)).toBe(printedCheckLines(lines).length);
+	});
+
+	test("an unavailable check alongside a repaired one still sums to the lines printed", async () => {
+		// Both non-`ok` buckets at once. The two defects are independent — one
+		// dropped an unmeasurable line entirely, the other counted a repaired one
+		// twice — so a gate covering only one of them would stay green through the
+		// other.
+		const lines = await render([
+			{ name: "patch_ledger", status: "unavailable", message: "no patches/ — not checked" },
+			{ name: "repaired", status: "ok", message: "restored", fixed: true },
+			{ name: "warned", status: "warning", message: "not found" },
+		]);
+		const counts = summaryCounts(lines);
+		expect(counts["not checked"]).toBe(1);
+		expect(counts.fixed).toBe(1);
+		expect(counts.warnings).toBe(1);
+		expect(counts.ok ?? 0).toBe(0);
+		expect(Object.values(counts).reduce((sum, n) => sum + n, 0)).toBe(printedCheckLines(lines).length);
 	});
 });

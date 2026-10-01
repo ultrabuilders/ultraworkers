@@ -742,12 +742,18 @@ export async function handleDoctor(manager: PluginManager, flags: { json?: boole
 		}
 	}
 
+	// A PARTITION, and every line belongs to exactly one bucket.
+	//
+	// `fixed` is a bucket here, not an overlay, so all three status buckets exclude
+	// it. Only errors and warnings did: `ok` did not, so a check with
+	// `status: "ok", fixed: true` — which `--fix` really does emit when it restores
+	// an orphaned plugin from its pinned source — was counted twice, and the summary
+	// named more checks than it printed. The buckets only summed correctly while no
+	// check had been fixed, which is precisely when nobody is reading the summary.
+	const fixed = checks.filter(c => !isUnavailable(c) && c.fixed).length;
 	const errors = checks.filter(c => !isUnavailable(c) && c.status === "error" && !c.fixed).length;
 	const warnings = checks.filter(c => !isUnavailable(c) && c.status === "warning" && !c.fixed).length;
-	const ok = checks.filter(c => !isUnavailable(c) && c.status === "ok").length;
-	// Counted on the union, not on DoctorCheck: narrowing the array first would be a
-	// filter that could silently drop the line it was supposed to account for.
-	const fixed = checks.filter(c => !isUnavailable(c) && c.fixed).length;
+	const ok = checks.filter(c => !isUnavailable(c) && c.status === "ok" && !c.fixed).length;
 	const unavailable = checks.filter(isUnavailable).length;
 
 	console.log("");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renderFormula } from "./ci-update-brew-formula";
+import { formulaClassName, renderFormula } from "./ci-update-brew-formula";
 
 const SUMS = {
 	"ultraworkers-darwin-arm64": "darwin_arm64_sha",
@@ -8,8 +8,50 @@ const SUMS = {
 	"ultraworkers-linux-x64": "linux_x64_sha",
 };
 
+/**
+ * The path CI writes the formula to (`.github/workflows/ci.yml`: `--out
+ * homebrew-tap/Formula/ultraworkers.rb`). Pinned here so moving either half of
+ * the rename — the filename or the class name — fails this test instead of
+ * producing a formula that cannot be loaded.
+ */
+const CI_OUT_PATH = "homebrew-tap/Formula/ultraworkers.rb";
+
+describe("formulaClassName", () => {
+	// Homebrew resolves `Formula/<name>.rb` by matching the file's basename to
+	// the formula class name, and a mismatch fails at LOAD rather than at
+	// download — so `brew install can1357/tap/ultraworkers` reports an error
+	// about a class the user never named, with nothing installed.
+	//
+	// The `ultraworkers` expectation is pinned rather than derived here: it is
+	// the name the README tells users to install, and nothing else in the repo
+	// states it without grepping `ci.yml`.
+	it("derives the class Homebrew expects from the path CI writes to", () => {
+		expect(formulaClassName(CI_OUT_PATH)).toBe("Ultraworkers");
+	});
+
+	it("camel-cases the segments Homebrew splits a name on", () => {
+		expect(formulaClassName("tap/Formula/my-cool_agent.rb")).toBe("MyCoolAgent");
+	});
+
+	// Rendering to stdout has no `--out`, so the derivation must fall back to
+	// the product name rather than emitting `class  < Formula`.
+	it("falls back to the product name when there is no output path", () => {
+		expect(formulaClassName(null)).toBe("Ultraworkers");
+	});
+});
+
 describe("renderFormula", () => {
-	const formula = renderFormula("15.12.1", SUMS);
+	const formula = renderFormula("15.12.1", SUMS, formulaClassName(CI_OUT_PATH));
+
+	// The class is interpolated, not written as a literal. A hardcoded
+	// `class Omp` here survived a rename that had already moved the filename to
+	// `ultraworkers.rb`, so this asserts the template consumes the name it is
+	// given rather than asserting today's value.
+	it("emits the class name it is given", () => {
+		const sentinel = renderFormula("15.12.1", SUMS, "SentinelName");
+		expect(sentinel.match(/^class (\S+) < Formula/)?.[1]).toBe("SentinelName");
+		expect(formula.match(/^class (\S+) < Formula/)?.[1]).toBe("Ultraworkers");
+	});
 
 	// Regression: bare-binary URLs must opt out of Homebrew's UnpackStrategy.
 	// Without `using: :nounzip` the default CurlDownloadStrategy nests the file

@@ -52,9 +52,37 @@ function sha256For(assets: readonly ReleaseAsset[], name: string): string {
 	return asset.digest.slice("sha256:".length);
 }
 
+/**
+ * The formula's filename stem, used when rendering to stdout (no `--out`).
+ * It is also the name the README tells users to install, so it is the single
+ * place the product's Homebrew identity is written down.
+ */
+const FORMULA_STEM = "ultraworkers";
+
+/**
+ * Homebrew resolves `Formula/<name>.rb` by matching the file's basename to the
+ * formula class name, and a mismatch fails at LOAD rather than at download — so
+ * `brew install can1357/tap/ultraworkers` would report an error about a class
+ * the user never named, with nothing installed.
+ *
+ * The class name is therefore DERIVED from the `--out` path rather than written
+ * out separately. A rename that moves the filename but not the class name is
+ * exactly the half-migrated state that breaks the tap, and deriving makes that
+ * state unrepresentable instead of merely detectable.
+ */
+export function formulaClassName(outPath: string | null): string {
+	const base = outPath?.split("/").pop() ?? `${FORMULA_STEM}.rb`;
+	const stem = base.endsWith(".rb") ? base.slice(0, -".rb".length) : base;
+	const pascal = stem
+		.split(/[-_]/)
+		.map(part => part.charAt(0).toUpperCase() + part.slice(1))
+		.join("");
+	return pascal === "" ? FORMULA_STEM : pascal;
+}
+
 // `${...}` is JS interpolation; the literal `#{version}` / `#{bin}` below are
 // Ruby interpolations Homebrew resolves when it evaluates the formula.
-export function renderFormula(version: string, sums: Record<string, string>): string {
+export function renderFormula(version: string, sums: Record<string, string>, className: string): string {
 	// Each `url` carries `using: :nounzip` because the release assets are bare
 	// Mach-O/ELF executables, not archives. Without it Homebrew's default
 	// CurlDownloadStrategy routes through UnpackStrategy::Uncompressed#extract_nestedly,
@@ -65,7 +93,7 @@ export function renderFormula(version: string, sums: Record<string, string>): st
 	// the writable staging dir so `generate_completions_from_executable` does
 	// not touch the real `/Users/<user>/.omp` (denied by Homebrew's sandbox
 	// profile, which would otherwise fail the popen).
-	return `class Omp < Formula
+	return `class ${className} < Formula
   desc "${DESC}"
   homepage "${HOMEPAGE}"
   version "${version}"
@@ -126,7 +154,7 @@ async function main(): Promise<void> {
 	const sums: Record<string, string> = {};
 	for (const name of targets) sums[name] = sha256For(assets, name);
 
-	const formula = renderFormula(version, sums);
+	const formula = renderFormula(version, sums, formulaClassName(out));
 	if (out) {
 		await Bun.write(out, formula);
 		console.log(`wrote ${out} for ${tag}`);

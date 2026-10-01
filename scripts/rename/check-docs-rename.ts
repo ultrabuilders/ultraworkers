@@ -176,23 +176,51 @@ export function staleAllowlistEntries(
 	return allowlist.map(entry => entry.path).filter(entry => !seen.has(entry));
 }
 
+/**
+ * The gate reports two different things and conflating them is how it came to
+ * read as a done signal: `blocking` is what FAILED the gate, while everything
+ * the allow-list accepted is still carrying the legacy token in a file nobody
+ * has classified yet. A run with zero blocking is "no regression", not "the
+ * sweep is done", and the line has to say which it is — otherwise the count is
+ * on screen but reads as a verdict about the allow-list rather than as
+ * outstanding work.
+ *
+ * The wording is "awaiting classification", not "unswept": `\bomp\b` matches
+ * `.omp/` inside a path reference, and the bead keeps those verbatim, so many
+ * accepted occurrences will legitimately end up kept rather than rewritten.
+ */
+export function formatRuleAReport(
+	violations: readonly RuleAViolation[],
+	allowlist: readonly AllowlistEntry[],
+	blocking: readonly RuleAViolation[],
+	stale: readonly string[],
+): string {
+	const accepted = violations.length - blocking.length;
+	const acceptedOccurrences = violations
+		.filter(violation => blocking.indexOf(violation) < 0)
+		.reduce((sum, violation) => sum + violation.occurrences, 0);
+	const outstanding =
+		`${acceptedOccurrences} occurrence(s) in ${accepted} file(s) still carry the legacy token ` +
+		`awaiting classification or sweep`;
+	return (
+		`REPORT ruleA ${outstanding}; ${blocking.length} file(s) unapproved, ${stale.length} stale line(s) ` +
+		`in ${ALLOWLIST_PATH} (${allowlist.length} line(s))\n`
+	);
+}
+
 if (import.meta.main) {
 	const root = process.argv[2] ?? process.cwd();
 	const violations = await scanRuleA(root);
 	const allowlist = await loadAllowlist(root);
 	const blocking = ungatedViolations(violations, allowlist);
 	const stale = staleAllowlistEntries(violations, allowlist);
-	const occurrences = violations.reduce((sum, v) => sum + v.occurrences, 0);
 	for (const violation of blocking) {
 		process.stdout.write(`FAIL ruleA ${violation.occurrences} ${violation.path}\n`);
 	}
 	for (const entry of stale) {
 		process.stdout.write(`WARN ruleA stale ${entry} — on the allow-list but no longer matches; drop the line\n`);
 	}
-	process.stdout.write(
-		`REPORT ruleA ${violations.length} files, ${occurrences} occurrences; ` +
-			`${blocking.length} not on the allow-list, ${stale.length} stale (${ALLOWLIST_PATH})\n`,
-	);
+	process.stdout.write(formatRuleAReport(violations, allowlist, blocking, stale));
 	if (blocking.length > 0) {
 		process.stdout.write(
 			`FAIL ruleA ${blocking.length} file(s) carry the legacy display token without an accepted reason. ` +

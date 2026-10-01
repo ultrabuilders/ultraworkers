@@ -2,7 +2,14 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isExcluded, loadAllowlist, scanRuleA, staleAllowlistEntries, ungatedViolations } from "./check-docs-rename";
+import {
+	formatRuleAReport,
+	isExcluded,
+	loadAllowlist,
+	scanRuleA,
+	staleAllowlistEntries,
+	ungatedViolations,
+} from "./check-docs-rename";
 
 /**
  * The gate's contract, in the terms a user of the gate experiences:
@@ -140,5 +147,41 @@ describe("rule A allow-list", () => {
 		});
 		expect(await loadAllowlist(dir)).toEqual([{ path: "docs/a.md", budget: 7 }, { path: "docs/b.md" }]);
 		await fs.rm(dir, { recursive: true, force: true });
+	});
+});
+
+describe("rule A reporting", () => {
+	// The regression these two rows exist for: the gate printed only its own
+	// metrics (`0 not on the allow-list`), so a green run with 869 occurrences
+	// behind the allow-list read as a finished sweep. The count was on screen
+	// and unlabeled. Deleting the outstanding clause from the line kills row 1.
+	function outstanding(line: string): { occurrences: number; files: number } | null {
+		const match = /(\d+) occurrence\(s\) in (\d+) file\(s\)/.exec(line);
+		return match ? { occurrences: Number(match[1]), files: Number(match[2]) } : null;
+	}
+
+	it("surfaces the accepted occurrences still awaiting classification", () => {
+		// `docs/b.md` is allow-listed at its current size, so it passes the gate —
+		// but its 4 occurrences are still legacy tokens in an unclassified file,
+		// and that is the number a reader needs to judge the sweep.
+		const violations = [
+			{ path: "docs/a.md", occurrences: 3 },
+			{ path: "docs/b.md", occurrences: 4 },
+			{ path: "docs/c.md", occurrences: 5 },
+		];
+		const allowlist = [
+			{ path: "docs/b.md", budget: 4 },
+			{ path: "docs/c.md", budget: 9 },
+		];
+		const blocking = ungatedViolations(violations, allowlist);
+		expect(blocking).toHaveLength(1);
+		const line = formatRuleAReport(violations, allowlist, blocking, staleAllowlistEntries(violations, allowlist));
+		expect(outstanding(line)).toEqual({ occurrences: 9, files: 2 });
+	});
+
+	// Without this, row 1 also passes on a hardcoded constant.
+	it("reports nothing outstanding once the allow-list is empty of matches", () => {
+		const line = formatRuleAReport([], [], [], []);
+		expect(outstanding(line)).toEqual({ occurrences: 0, files: 0 });
 	});
 });

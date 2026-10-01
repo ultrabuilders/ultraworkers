@@ -611,15 +611,36 @@ export function emptyAgentRunCoverage(): AgentRunCoverage {
 }
 
 /**
+ * Why a tool call was stopped before the tool ran.
+ *
+ * `denied` — something chose this. `hook-failed` — nothing chose anything; the gate
+ * that judges the call threw or timed out. Both stop the tool, so the DECISION is the
+ * same; what differs is whether anybody meant it, and a reader that cannot tell a
+ * refusal from a crash is being told a third-party extension malfunctioned every time
+ * a user says no.
+ */
+export type ToolCallBlockKind = "denied" | "hook-failed";
+
+/**
  * Distinguishable error class thrown when `beforeToolCall` returns
  * `{ block: true }`. Lets the catch arm of `runTool` set the terminal status
  * on the execute_tool span to `"blocked"` instead of conflating with a real
  * tool exception.
+ *
+ * ONE class, in this package, deliberately. Extension and hook gates run in
+ * `coding-agent` and throw this same type through the same `runTool` catch arm, so the
+ * `instanceof` below decides their telemetry too. When each package declared its own
+ * identically-named class the check silently failed for every extension-blocked call —
+ * a decision was recorded as `"error"`, the same bucket as a crash, and `kind` stopped
+ * at the package boundary with nothing downstream to read it.
  */
 export class ToolCallBlockedError extends Error {
 	override readonly name = "ToolCallBlockedError";
-	constructor(reason?: string) {
+	readonly kind: ToolCallBlockKind;
+
+	constructor(reason?: string, kind: ToolCallBlockKind = "denied") {
 		super(reason ?? "Tool execution was blocked");
+		this.kind = kind;
 	}
 }
 

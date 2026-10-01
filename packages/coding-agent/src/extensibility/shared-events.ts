@@ -13,6 +13,10 @@
  * `types.ts` files and is documented there.
  */
 import { type AgentMessage, isNonBlankContext, joinAdditionalContext } from "@oh-my-pi/pi-agent-core";
+import {
+	ToolCallBlockedError as AgentToolCallBlockedError,
+	type ToolCallBlockKind,
+} from "@oh-my-pi/pi-agent-core/run-collector";
 import type { CompactionPreparation, CompactionResult } from "@oh-my-pi/pi-agent-core/compaction";
 import type { AssistantRetryRecovery, ImageContent, TextContent, ToolResultMessage } from "@oh-my-pi/pi-ai";
 import type { Rule } from "../capability/rule";
@@ -361,19 +365,26 @@ export interface ToolCallEventResult {
 /**
  * A `tool_call` gate refused the call — or broke while judging it.
  *
- * Carries `kind` as a field so whatever renders the failure can tell a decision from a
+ * Re-exported from `@oh-my-pi/pi-agent-core/run-collector` rather than declared here.
+ * The reason is `instanceof`: `runTool` in `packages/agent` decides a call's terminal
+ * span status with `caughtError instanceof ToolCallBlockedError`, importing THAT class.
+ * A second declaration with the same name in this package is a different constructor,
+ * so the check was false for every extension-blocked call — a refusal was recorded as
+ * `"error"` beside genuine crashes, and `kind` stopped here where nothing read it.
+ *
+ * `kind` is a field so whatever renders the failure can tell a decision from a
  * malfunction without matching on prose. The message is deliberately unchanged from the
  * plain `Error` this replaces: existing transcript text and assertions depend on it, and
  * relabelling that text is a separate, user-facing decision. What this type adds is the
  * structure that decision needs.
+ *
+ * Argument order differs between the two spellings on purpose: the class here is
+ * constructed kind-first at the two throw sites, so the shim below re-orders rather than
+ * touching call sites that already read correctly.
  */
-export class ToolCallBlockedError extends Error {
-	readonly kind: "denied" | "hook-failed";
-
-	constructor(kind: "denied" | "hook-failed", reason: string) {
-		super(reason);
-		this.kind = kind;
-		this.name = "ToolCallBlockedError";
+export class ToolCallBlockedError extends AgentToolCallBlockedError {
+	constructor(kind: ToolCallBlockKind, reason: string) {
+		super(reason, kind);
 	}
 }
 

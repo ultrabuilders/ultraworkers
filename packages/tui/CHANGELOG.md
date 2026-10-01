@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `sanitizeErrorLine` no longer reduces a string argument to `[object String]`. It takes `unknown`,
+  so a string is a valid input, but it normalized every non-`Error` structurally and a message passed
+  as a string came back as its `Object.prototype.toString` tag. An aborted `/btw` session operation
+  reported its whole safety notice — "BTW history could not be saved … the session operation was
+  stopped; retry after fixing storage" — as the literal text `[object String]`, while the underlying
+  `cause` kept the real message. Strings are now sanitized as written; `Error` values take the
+  previous path unchanged
+
 ### Added
 
 - `registerCopyTargetProvider`: an extension can now contribute copy targets to the `/copy` picker. Core's target set was a closed function over transcript message roles, so a tool an extension registered produced only the generic `<toolName> result` block and there was no way to add a copy kind, label, or preview language. A provider is asked per entry and returns nothing for entries it does not own; core's extraction runs first and is never displaced, so a provider appends rather than replaces. Provenance is core's, so a contributed block always names the turn it came from; a block with empty content or a blank label, a non-string `href`, a non-array return, or a `collect()` that throws is dropped and recorded against the provider rather than shown broken

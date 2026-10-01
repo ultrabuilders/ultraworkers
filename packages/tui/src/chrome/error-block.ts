@@ -10,13 +10,22 @@ const CONTINUATION_INDENT = "  ";
  * Plain, bounded error text to sanitize before applying terminal styles.
  * Match embedded home paths (including quoted names with spaces), not URL
  * paths or home-prefix siblings. Callers retain the original error for logs.
+ *
+ * A **string** argument is already message text and is sanitized as-is.
+ * `normalizeErrorMessage` does not do this on its own: it describes non-Error
+ * values structurally, so a string comes back as `"[object String]"` — losing
+ * the text and leaving the caller with no signal that anything went wrong.
+ * Measured at the call site that motivated it (`btw-controller.ts`): a session
+ * operation aborted with "BTW history could not be saved: … The session
+ * operation was stopped; retry after fixing storage" reached the user as the
+ * literal `[object String]`, while `cause` still carried the real message.
  */
 export function sanitizeErrorLine(
 	error: unknown,
 	maxWidth: number = TRUNCATE_LENGTHS.LINE,
 	homeDir: string = os.homedir(),
 ): string {
-	const message = normalizeErrorMessage(error);
+	const message = typeof error === "string" ? error : normalizeErrorMessage(error);
 	const text = shortenEmbeddedPaths(replaceTabs(sanitizeText(message.replace(/\r\n?/g, "\n"))), homeDir, true);
 	return truncateToWidth(text.replace(/\s+/g, " ").trim() || "Unknown error", Math.max(0, maxWidth));
 }

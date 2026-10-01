@@ -311,4 +311,46 @@ describe("R0 GRP-C test-baseline gate", () => {
 		expect(second.exitCode).toBe(0);
 		expect(second.stdout).toContain("1 failure(s) present in the baseline");
 	}, 60_000);
+
+	test("two unnamed failures in different files get different identities", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-unnamed-two-");
+		// The single-file case above cannot catch this: with one unnamed failure
+		// there is exactly one site, so scanning the whole log returns the right
+		// answer for the wrong reason. Two files are what separate "picked the only
+		// site" from "picked the site belonging to this failure".
+		//
+		// The failure this catches is not only lossy but false. Scanning from the
+		// top of the log gave EVERY unnamed failure the first site in the log, so
+		// these two collapsed into one identity and the second was written into the
+		// baseline under the first file's name — an entry no later run could ever
+		// reproduce, which reads as a permanent regression rather than a bug.
+		for (const file of ["alpha", "beta"]) {
+			await Bun.write(
+				path.join(dir.absolute(), `${file}.test.ts`),
+				`import { test, expect } from "bun:test";\ntest("", () => { expect(1).toBe(2); });\n`,
+			);
+		}
+		const gate = await installGate(dir.absolute(), "./");
+
+		const first = await runGate(dir.absolute(), gate);
+		expect(first.exitCode).toBe(1);
+
+		// Two distinct names, and each must name ITS OWN file. The old code
+		// produced one name mentioning `alpha` twice.
+		const learned = [...first.stderr.matchAll(/\+ (unnamed @ \S+)/g)].map(m => m[1]!);
+		expect(new Set(learned).size).toBe(2);
+		expect(learned.filter(name => name.includes("alpha")).length).toBe(1);
+		expect(learned.filter(name => name.includes("beta")).length).toBe(1);
+
+		// And the direction that matters in CI: both must be tolerated once the
+		// baseline knows them. If either name moved, the gate is red forever on a
+		// reason nobody can fix.
+		await Bun.write(
+			path.join(dir.absolute(), "r0-grp-c-test-baseline.json"),
+			`${JSON.stringify({ ...BASELINE, failures: learned }, null, 2)}\n`,
+		);
+		const second = await runGate(dir.absolute(), gate);
+		expect(second.exitCode).toBe(0);
+		expect(second.stdout).toContain("2 failure(s) present in the baseline");
+	}, 60_000);
 });

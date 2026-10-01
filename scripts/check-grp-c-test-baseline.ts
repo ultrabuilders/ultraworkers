@@ -61,15 +61,37 @@ const FAILURE_SITE = /^\s*at <anonymous> \((\S+?):\d+:\d+\)\s*$/gm;
  * never match its own baseline entry and is reported as a new failure forever,
  * which is a gate that is permanently red for a reason no one can fix.
  *
- * Keyed on the file bun blames instead, which is stable. Two unnamed failures in
- * one file still collapse to a single identity — that limit is honest rather than
- * hidden, and no cheaper key is available from the runner's output.
+ * Keyed on the file bun blames instead, which is stable. The site is found by
+ * searching outward **from the failing line**, never from the top of the log: the
+ * first `at <anonymous>` in the whole log belongs to whichever failure happened
+ * to be printed first, so scanning globally gave every unnamed failure that one
+ * file. Two unnamed failures in different files then collapsed into a single
+ * identity, and the second was recorded in the baseline under the *wrong* file —
+ * a name that is not merely lossy but false, and that no later run could
+ * reproduce.
+ *
+ * Direction matters and was measured, not assumed. Bun prints the frame
+ * immediately BEFORE the `(fail)` line:
+ *
+ *     at <anonymous> (/repo/beta.test.ts:2:28)
+ *     (fail)  [0.13ms]
+ *
+ * so an upward-only search from the failing line finds the *next* test's frame
+ * and mispairs in the opposite direction. The nearest site in either direction is
+ * therefore taken, preferring the one above. The residual limit is two unnamed
+ * failures sharing a site, which is honest rather than hidden.
  */
-function stabilizeUnnamed(log: string, identity: string): string {
+function stabilizeUnnamed(log: string, identity: string, failLine: number): string {
 	if (!UNNAMED_IDENTITY.test(identity)) return identity;
-	const site = FAILURE_SITE.exec(log);
-	FAILURE_SITE.lastIndex = 0; // a /g regex carries lastIndex between calls
-	return site?.[1] ? `unnamed @ ${site[1]}` : `unnamed @ ${identity}`;
+	const lines = log.split("\n");
+	// One line of slack either side: the frame is adjacent, and reaching further
+	// would cross into a neighbouring test's output and pair them wrongly.
+	for (let offset = -1; offset <= 1; offset++) {
+		FAILURE_SITE.lastIndex = 0; // a /g regex carries lastIndex between calls
+		const site = FAILURE_SITE.exec(lines[failLine - 1 + offset] ?? "");
+		if (site?.[1]) return `unnamed @ ${site[1]}`;
+	}
+	return `unnamed @ ${identity}`;
 }
 
 /**
@@ -125,7 +147,11 @@ async function collectFailures(target: string = SUITE): Promise<Set<string> | nu
 		return null;
 	}
 
-	const failures = new Set(extracted.identities.map(name => stabilizeUnnamed(raw, name)));
+	// The line number travels with the identity because an unnamed failure can only
+	// be given a stable name by the site the runner printed beneath it, and that
+	// site is found relative to its own line — not relative to the top of the log.
+	const lineOf = new Map(extracted.failures.map(f => [f.identity, f.line]));
+	const failures = new Set(extracted.identities.map(name => stabilizeUnnamed(raw, name, lineOf.get(name) ?? 1)));
 
 	// A run that found no failure but exited non-zero never measured anything.
 	// The common cause is a suite that cannot load: `bun test` reports that as

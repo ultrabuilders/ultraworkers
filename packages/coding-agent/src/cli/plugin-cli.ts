@@ -17,7 +17,8 @@ import {
 	MarketplaceManager,
 	parsePluginId,
 } from "../extensibility/plugins/marketplace/index";
-import { type InstalledPlugin, isUnavailable } from "../extensibility/plugins/types";
+import { type InstalledPlugin } from "../extensibility/plugins/types";
+import { formatDoctorResults } from "../extensibility/plugins/doctor";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 
 // =============================================================================
@@ -74,7 +75,7 @@ function reportChange(result: ChangeResult, verb: string, subject: string): void
 	}
 	console.log(chalk.green(`${theme.status.success} ${verb} ${subject}`));
 	if (result.application === "restart-required") {
-		console.log(chalk.dim("Restart omp for this to apply to the running session."));
+		console.log(chalk.dim(`Restart ${APP_NAME} for this to apply to the running session.`));
 	}
 }
 
@@ -718,57 +719,32 @@ export async function handleDoctor(manager: PluginManager, flags: { json?: boole
 		return;
 	}
 
-	console.log(chalk.bold("Plugin Health Check\n"));
-
-	for (const check of checks) {
-		// `isUnavailable` FIRST. It is a separate member of the union, not a fourth
-		// status, so this branch is forced by the compiler: a renderer that forgot to
-		// handle it would not compile. Folding it into the ternary below is what let
-		// an unreachable check render as a red failure — reading as "broken" when the
-		// truth was "never asked".
-		if (isUnavailable(check)) {
-			console.log(`${chalk.dim("?")} ${check.name}: ${check.message}`);
-			continue;
-		}
-		const icon =
-			check.status === "ok"
-				? chalk.green(theme.status.success)
-				: check.status === "warning"
-					? chalk.yellow(theme.status.warning)
-					: chalk.red(theme.status.error);
-		console.log(`${icon} ${check.name}: ${check.message}`);
-		if (check.fixed) {
-			console.log(chalk.dim(`  ${theme.nav.cursor} Fixed`));
-		}
-	}
-
-	// A PARTITION, and every line belongs to exactly one bucket.
-	//
-	// `fixed` is a bucket here, not an overlay, so all three status buckets exclude
-	// it. Only errors and warnings did: `ok` did not, so a check with
-	// `status: "ok", fixed: true` — which `--fix` really does emit when it restores
-	// an orphaned plugin from its pinned source — was counted twice, and the summary
-	// named more checks than it printed. The buckets only summed correctly while no
-	// check had been fixed, which is precisely when nobody is reading the summary.
-	const fixed = checks.filter(c => !isUnavailable(c) && c.fixed).length;
-	const errors = checks.filter(c => !isUnavailable(c) && c.status === "error" && !c.fixed).length;
-	const warnings = checks.filter(c => !isUnavailable(c) && c.status === "warning" && !c.fixed).length;
-	const ok = checks.filter(c => !isUnavailable(c) && c.status === "ok" && !c.fixed).length;
-	const unavailable = checks.filter(isUnavailable).length;
-
-	console.log("");
-	console.log(
-		`Summary: ${ok} ok, ${warnings} warnings, ${errors} errors${fixed > 0 ? `, ${fixed} fixed` : ""}` +
-			// Named, not folded into `ok`. Omitting it made the buckets sum to fewer
-			// lines than were printed, so a run where three checks never ran still
-			// looked like complete coverage.
-			`${unavailable > 0 ? `, ${unavailable} not checked` : ""}`,
+	// The report is built by the shared formatter rather than inlined here, so the
+	// bucketing that produced two wrong summaries in a row has one implementation
+	// and one set of tests instead of a copy per renderer. The styles and icons
+	// stay local: colouring is this CLI's decision, the partition is not.
+	const report = formatDoctorResults(
+		checks,
+		{
+			heading: text => chalk.bold(text),
+			ok: icon => chalk.green(icon),
+			warning: icon => chalk.yellow(icon),
+			error: icon => chalk.red(icon),
+			dim: text => chalk.dim(text),
+		},
+		{
+			ok: theme.status.success,
+			warning: theme.status.warning,
+			error: theme.status.error,
+			unavailable: "?",
+			fixed: theme.nav.cursor,
+		},
+		{ heading: "Plugin Health Check" },
 	);
 
-	if (errors > 0) {
-		if (!flags.fix) {
-			console.log(chalk.dim("\nRun with --fix to attempt automatic repair"));
-		}
+	for (const line of report.lines) console.log(line);
+
+	if (report.errors > 0 && !flags.fix) {
 		process.exit(1);
 	}
 }

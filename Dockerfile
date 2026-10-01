@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7-labs
 ###############################################################################
-# oh-my-pi — pi image
+# ultraworkers — pi image
 #
 # Stages:
 #   natives-builder — Rust + Bun → pi_natives.linux-<arch>.node
@@ -10,15 +10,15 @@
 #   pi-runtime      — pi-base + pi source + bun install      (DEFAULT, runnable)
 #
 # Build:
-#     docker build -t oh-my-pi/pi:dev .                          # default = pi-runtime
-#     docker build --target pi-base -t oh-my-pi/pi-base:dev .    # base for derived images
+#     docker build -t ultraworkers/pi:dev .                          # default = pi-runtime
+#     docker build --target pi-base -t ultraworkers/pi-base:dev .    # base for derived images
 #
 # Run:
-#     docker run --rm oh-my-pi/pi:dev --help
-#     docker run --rm -it -v "$PWD":/work oh-my-pi/pi:dev cli    # interactive ultraworkers
+#     docker run --rm ultraworkers/pi:dev --help
+#     docker run --rm -it -v "$PWD":/work ultraworkers/pi:dev cli    # interactive ultraworkers
 #
 # Consume as a base in another Dockerfile (see Dockerfile.robomp):
-#     ARG PI_BASE=oh-my-pi/pi:dev
+#     ARG PI_BASE=ultraworkers/pi:dev
 #     FROM ${PI_BASE} AS pi-base
 ###############################################################################
 
@@ -108,7 +108,7 @@ COPY python/omp-rpc /src
 RUN python -m build --wheel --outdir /out
 
 ############################
-# 3) pi-base — python + bun + rustup + natives + omp_rpc + omp shim
+# 3) pi-base — python + bun + rustup + natives + omp_rpc + ultraworkers shim
 #
 # Sharable runtime base. Derived images (pi-runtime below, Dockerfile.robomp)
 # extend this and overlay their own source tree. Default PI_ROOT=/work/pi is
@@ -183,7 +183,7 @@ RUN printf '%s\n' \
 ############################
 # 4) pi-runtime — pi-base + pi source + bun install (DEFAULT)
 #
-# A self-contained, runnable ultraworkers image. `docker run oh-my-pi/pi:dev --help`
+# A self-contained, runnable ultraworkers image. `docker run ultraworkers/pi:dev --help`
 # Just Works without a host checkout.
 ############################
 FROM pi-base AS pi-runtime

@@ -88,6 +88,19 @@
 
 ### Breaking Changes
 
+- The Nix package now installs the command as `ultraworkers`, matching every other install path —
+  `install.sh`, the npm `bin` entry, and the release tarballs already shipped it under that name, so
+  `nix profile install` was the one installer that produced a differently-named command for the same
+  program. The flake keeps its old attribute names (`packages.omp`, `apps.omp`, `overlays.omp`,
+  `homeManagerModules.omp`, `nixosModules.omp`) as aliases pointing at the renamed package, so an
+  existing `inputs.<this>.packages.${system}.omp` keeps resolving; the `ultraworkers` spelling is
+  preferred and the aliases are marked deprecated. The home-manager and NixOS option `programs.omp` is
+  unchanged — renaming it would invalidate every existing user configuration, which is a separate call
+- The Docker image tag built by `bun run pi:image` is now `ultraworkers/pi:dev`, changed together with
+  the `PI_BASE` default in `Dockerfile.robomp` and in `python/robomp/docker-compose.yml` — the three
+  only work as a set, since the derived image resolves its base by that exact tag. Set `PI_IMAGE` to
+  keep using a differently-named tag
+
 - `ui.setHeader` and `ui.setFooter` now throw in any mode that cannot mount a component — headless,
   print, subagent, ACP, RPC, and the interactive context itself. They previously returned silently,
   so an extension could set a footer, see no error, and ship one that never appeared. Guard the call

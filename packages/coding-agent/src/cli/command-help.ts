@@ -54,6 +54,10 @@ export const extensionsTriageHelp = {
 	description: "List every discovered extension with its load state and the reason it is blocked",
 } satisfies CommandMetadata;
 
+export const approvalAuditHelp = {
+	description: "Show who approved each tool call in a session transcript, and which prompts were never resolved",
+} satisfies CommandMetadata;
+
 export const dryBalanceHelp = {
 	description: "Dry-run OAuth account balancing across random session ids",
 } satisfies CommandMetadata;

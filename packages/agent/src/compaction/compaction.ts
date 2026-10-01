@@ -60,6 +60,7 @@ import {
 	storeCompactionV2PreserveData,
 	V2_RETAINED_MESSAGE_TOKEN_BUDGET,
 } from "./compaction-v2-streaming";
+import { dropFailedAssistantTurns } from "./drop-failed-assistant-turns";
 import type { CompactionEntry, SessionEntry } from "./entries";
 import { NativeCompactionError } from "./errors";
 import {
@@ -1520,6 +1521,24 @@ export function prepareCompaction(
 		if (!message) continue;
 		compactionEntries.push(entry);
 		compactionMessages.push(message);
+	}
+
+	// Count and cut the same set the next provider request will carry. A failed
+	// assistant turn is the provider's reply to the previous request, never part
+	// of one, so `buildSessionContext` strips it — along with the tool results
+	// only that turn declared — before `convertToLlm`. Leaving it in charged a
+	// dead partial turn against `keepRecentTokens`, so the keep budget and the
+	// cut point disagreed with what actually gets sent.
+	//
+	// Both arrays are spliced at the SAME index so they stay index-parallel by
+	// construction. Filtering one and not the other is a silent regression: it
+	// desynchronizes the pair, which mis-scales the usage ratio below and shifts
+	// the cut point without throwing or warning.
+	const retainedMessages = new Set(dropFailedAssistantTurns(compactionMessages));
+	for (let i = compactionMessages.length - 1; i >= 0; i--) {
+		if (retainedMessages.has(compactionMessages[i])) continue;
+		compactionMessages.splice(i, 1);
+		compactionEntries.splice(i, 1);
 	}
 
 	const lastUsage = getLastAssistantUsage(pathEntries);

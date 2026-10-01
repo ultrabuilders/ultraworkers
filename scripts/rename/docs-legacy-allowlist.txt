@@ -130,5 +130,10 @@ packages/utils/README.md	4
 python/omp-rpc/README.md	4
 python/robomp/AGENTS.md	21
 python/robomp/README.md	15
+# W8b. This file documents the decision table that governs the legacy token, so it
+# has to name the token and the pinned expression verbatim — a reader must be able
+# to reproduce the counts the gate derives. Renaming them here would make the
+# documentation describe a pattern that no longer matches the gate.
+scripts/rename/README.md	6
 scripts/session-stats/README.md	5
 scripts/session-stats/audit-prompt.md	2

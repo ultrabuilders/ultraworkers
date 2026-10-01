@@ -22,7 +22,14 @@
  * already does dlopen-per-platform here.
  */
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { logger } from "@oh-my-pi/pi-utils";
+// The SUBPATH, not the `@oh-my-pi/pi-utils` barrel. The barrel re-exports
+// `./env`, which eagerly loads the agent directory's `.env` at module-init — and
+// `cli.ts` imports this module statically, ahead of the profile bootstrap that
+// decides WHICH agent directory that is. Through the barrel, every consumer of
+// `cli.ts` (the CLI, the SDK, and each test that imports `runCli`) snapshotted
+// the default profile's `.env` before `--profile` could be applied. `logger.ts`
+// reaches no module that loads `.env`, so this costs nothing and closes the leak.
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { sanitizeChildEnv } from "./exec/sanitize-child-env";
 
 // Linux prctl options. Both are stable ABI constants.

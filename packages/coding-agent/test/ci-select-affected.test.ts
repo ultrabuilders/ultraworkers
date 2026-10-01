@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { selectAffected } from "../../../scripts/ci-test-ts";
+import { existsSync, readdirSync } from "node:fs";
+import * as path from "node:path";
+import {
+	fastWorkspacePackages,
+	localOnlyWorkspacePackages,
+	nativeAndIntegrationPackages,
+	selectAffected,
+} from "../../../scripts/ci-test-ts";
 
 /**
  * `selectAffected` decides what `bun run test` runs from a diff.
@@ -117,5 +124,85 @@ describe("selectAffected", () => {
 			"packaging gates (node:test)",
 		]);
 		expect(selectAffected(commands, ["scripts/other.test.mjs"])).toHaveLength(commands.length);
+	});
+});
+
+/**
+ * A workspace package with no CI bucket is a suite that runs locally and never in
+ * CI — the failure mode that is invisible precisely because it never goes red.
+ * Three packages sat in this state while the ones that *were* registered passed
+ * every run, which is what let it look healthy.
+ *
+ * The contract is coverage of the package list, not of any particular package:
+ * adding `packages/evals`, `packages/stats` and `packages/metaharness` to a CI
+ * bucket is invisible in review, because a bucket is a bare string in a file
+ * nobody reads. This asserts the other direction — every directory with a
+ * `package.json` is named somewhere — which fails the moment a package is added
+ * and registered nowhere.
+ */
+describe("every workspace package is claimed by a CI bucket", () => {
+	const repoRoot = path.resolve(import.meta.dir, "../../..");
+
+	// Coding-agent is routed by its own bucket planner rather than by a package
+	// list, so it has no entry to be missing from. Everything else must be named.
+	const routedSeparately = new Set(["packages/coding-agent"]);
+
+	const onDisk = readdirSync(path.join(repoRoot, "packages"), { withFileTypes: true })
+		.filter(entry => entry.isDirectory())
+		.map(entry => `packages/${entry.name}`)
+		.filter(pkg => existsSync(path.join(repoRoot, pkg, "package.json")));
+
+	const registered = new Set([
+		...fastWorkspacePackages,
+		...nativeAndIntegrationPackages,
+		...localOnlyWorkspacePackages,
+	]);
+
+	// Same definition `collectTestsUnder` uses, so this gate and the collector
+	// cannot disagree about what counts as a test.
+	function countTests(pkg: string): number {
+		let total = 0;
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				if (entry.isDirectory()) walk(path.join(dir, entry.name));
+				else if (entry.isFile() && entry.name.endsWith(".test.ts")) total++;
+			}
+		};
+		walk(path.join(repoRoot, pkg));
+		return total;
+	}
+
+	it("names every package that has tests, so a new one cannot be added and forgotten", () => {
+		// "Has tests" is the gate, not "exists": `packages/wire` and
+		// `packages/browser-relay` carry no `*.test.ts`, so a bucket naming them
+		// would spawn a chunk that runs nothing and reports green. An empty package
+		// legitimately needs no bucket; a package whose tests never run does.
+		const missing = onDisk.filter(pkg => !registered.has(pkg) && !routedSeparately.has(pkg) && countTests(pkg) > 0);
+
+		// Reported as the list itself rather than a count: the reader needs the
+		// names to act on, and a bare "expected 0, got 3" would not say which.
+		expect(missing).toEqual([]);
+	});
+
+	it("points every registered package at a directory that exists", () => {
+		// The other direction, and it fails the same way: a bucket naming a
+		// directory that was renamed or removed runs nothing, and reports green
+		// because `bun test` in a missing directory is not obviously a failure.
+		const dangling = [...registered].filter(pkg => !existsSync(path.join(repoRoot, pkg)));
+
+		expect(dangling).toEqual([]);
+	});
+
+	it("registers a package in exactly one bucket, so CI does not run its suite twice", () => {
+		const seen = new Map<string, string[]>();
+		for (const [bucket, packages] of [
+			["fast", fastWorkspacePackages],
+			["native", nativeAndIntegrationPackages],
+			["local", localOnlyWorkspacePackages],
+		] as const) {
+			for (const pkg of packages) seen.set(pkg, [...(seen.get(pkg) ?? []), bucket]);
+		}
+
+		expect([...seen].filter(([, buckets]) => buckets.length > 1).map(([pkg]) => pkg)).toEqual([]);
 	});
 });

@@ -87,7 +87,7 @@ const codingAgentBucketPlans: Record<CodingAgentBucket, { label: string; paralle
 // Smaller workspace packages stay separate from native/TUI/integration suites so
 // their short TS suites can run together. CI still downloads the Linux x64 native
 // addon before this bucket: shared utility barrels may load native-backed modules.
-const fastWorkspacePackages = [
+export const fastWorkspacePackages = [
 	"packages/omptype",
 	"packages/utils",
 	"packages/catalog",
@@ -101,16 +101,28 @@ const fastWorkspacePackages = [
 // These suites cover the native package, TUI/browser-ish behavior, local servers,
 // or coding-agent-adjacent benchmark paths. Keep them low-concurrency and in jobs
 // that have downloaded the Linux x64 native addon artifacts.
-const nativeAndIntegrationPackages = [
+// Bucket rule, so the next package added here does not need a ruling: the split is
+// the SHAPE of the suite, not whether it happens to load a native addon. The
+// `fast` bucket above still downloads the native addon before it runs, so
+// "no pi-natives dependency" is not an argument for `fast`. What decides it is
+// whether the suite is a short pure-TS library that can share a runner with its
+// peers — anything UI, web, TUI, a local server, or a harness that drives other
+// packages belongs here, at low concurrency.
+export const nativeAndIntegrationPackages = [
 	"packages/natives",
 	"packages/tui",
 	"packages/collab-web",
 	"packages/typescript-edit-benchmark",
+	// A react dashboard, so the same shape as collab-web above.
+	"packages/stats",
+	// An integration harness: drives pi-natives, pi-coding-agent and
+	// typescript-edit-benchmark, the last of which is already in this bucket.
+	"packages/metaharness",
 ];
 
 // Packages the CI buckets deliberately skip but a local full run should still
 // cover. robomp-web lives under python/robomp and is outside every CI TS bucket.
-const localOnlyWorkspacePackages = ["python/robomp/web"];
+export const localOnlyWorkspacePackages = ["python/robomp/web"];
 
 const codingAgentNativePathPatterns = [
 	/(^|\/)[^/]*(bash|native|browser|cmux|mnemopi|hindsight|memory)[^/]*\.test\.ts$/i,

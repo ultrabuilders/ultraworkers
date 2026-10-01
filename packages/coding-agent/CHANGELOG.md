@@ -33,6 +33,11 @@
 
 ### Fixed
 
+- `omp --help` no longer points at a config directory the install does not use. The session-storage
+  and `omp agents unpack` lines interpolated the old directory name as a constant, while the
+  directory itself is resolved at startup from a candidate list. On any machine that never had the
+  old directory — a fresh install, a new laptop, a CI runner — the help advertised
+  `~/.omp/agent` for a session store that lives in `~/.ultraworkers/agent`
 - `omp plugin doctor` no longer hangs for five seconds after it has finished printing, when an
   extension contributed a check of its own
 

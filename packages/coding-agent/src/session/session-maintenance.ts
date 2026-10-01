@@ -190,6 +190,24 @@ const COMPACTION_CHECK_BLOCK_AUTOMATIC_CONTINUATION: CompactionCheckResult = {
  */
 export const INCOMPLETE_RECOVERY_MAX_RETRIES = 3;
 
+/**
+ * Consecutive context-overflow recoveries spent on a single overflow incident —
+ * the `compact → overflow → compact` cycle, not the whole session.
+ *
+ * {@link INCOMPLETE_RECOVERY_MAX_RETRIES} cannot bound this one: that counter is
+ * reset by any turn that delivered output, and an overflow turn delivers none,
+ * so a completed-then-overflowed turn resets it and the cycle never trips. It
+ * also counts a different cause (`length` stops), and folding overflow into it
+ * would let one transient network failure silently disable context recovery.
+ *
+ * One retry is the whole budget on purpose: the retry exists to let a
+ * just-shrunk history succeed once. If it overflows again, more compaction of
+ * the same history cannot help — the loop only spends a full model turn per
+ * round and, because each round *succeeds* at recovering, never appears in the
+ * error log. Past the cap, recovery stops and reports.
+ */
+export const OVERFLOW_RECOVERY_MAX_RETRIES = 1;
+
 /** Whether a configured preference list contains at least one automatic method. */
 function hasConfiguredCompactionMethod(settings: CompactionSettings): boolean {
 	return resolveCompactionMethodOrder(settings.methodOrder).length > 0;
@@ -583,6 +601,14 @@ export class SessionMaintenance {
 	 * prompt ({@link resetForNewPrompt}).
 	 */
 	#incompleteRecoveryAttempts = 0;
+	/**
+	 * Overflow recoveries spent on the current overflow incident. Bounded by
+	 * {@link OVERFLOW_RECOVERY_MAX_RETRIES} and counted *by cause*: only an
+	 * overflow turn spends it, so an unrelated failure between two overflows
+	 * cannot silently exhaust context recovery. Reset by any turn that did not
+	 * fail on overflow and on every new user prompt ({@link resetForNewPrompt}).
+	 */
+	#overflowRecoveryAttempts = 0;
 	/** Latest rollover boundary that already received its pre-threshold notebook reminder. */
 	#experimentalNotesReminderBoundaryId: string | undefined;
 	readonly #host: SessionMaintenanceHost;
@@ -636,6 +662,7 @@ export class SessionMaintenance {
 	/** Clears per-prompt recovery counters when a new user prompt starts. */
 	resetForNewPrompt(): void {
 		this.#incompleteRecoveryAttempts = 0;
+		this.#overflowRecoveryAttempts = 0;
 	}
 
 	/** Whether manual or automatic context maintenance is active. */
@@ -2815,6 +2842,10 @@ export class SessionMaintenance {
 		// inheriting a stale count from an earlier loop. Signed reasoning alone does
 		// not count, or a model burning every budget on thinking retries forever.
 		if (assistantTurnDelivered(assistantMessage)) this.#incompleteRecoveryAttempts = 0;
+		// Same reasoning for the overflow budget: a turn that actually delivered
+		// output proves the previous overflow recovery broke through, so the next
+		// overflow is a fresh incident rather than a continuation of the last one.
+		if (assistantTurnDelivered(assistantMessage)) this.#overflowRecoveryAttempts = 0;
 		// Skip overflow check if the message came from a different model.
 		// This handles the case where user switched from a smaller-context model (e.g. opus)
 		// to a larger-context model (e.g. codex) - the overflow error from the old model
@@ -2926,7 +2957,14 @@ export class SessionMaintenance {
 		}
 		const overflowEvidence =
 			sameModel && !errorIsFromBeforeCompaction && AIError.isContextOverflow(assistantMessage, contextWindow);
-		if (overflowEvidence || (payloadRejection && !trustedPayloadRejection)) {
+		const overflowing = overflowEvidence || (payloadRejection && !trustedPayloadRejection);
+		// The overflow budget is spent per *cause*, not per turn: a turn that
+		// failed for any other reason (a 503, a `length` stop, a delivered turn)
+		// closes the incident, so the next overflow starts with a fresh retry
+		// rather than inheriting a stale count. Without this, one transient
+		// network failure between two overflows silently disables recovery.
+		if (!overflowing) this.#overflowRecoveryAttempts = 0;
+		if (overflowing) {
 			this.#host.removeAssistantMessageFromActiveContext(assistantMessage);
 
 			// Try context promotion first - switch to a larger model and retry without compacting
@@ -2944,6 +2982,29 @@ export class SessionMaintenance {
 
 			// No promotion target available fall through to compaction
 			if (compactionAvailable) {
+				// Bound the compact → overflow → compact cycle. Every round of it
+				// *succeeds* at recovering, so an unbounded loop never surfaces in
+				// the error log — it just spends a full model turn per round,
+				// forever. The single retry exists to let a just-shrunk history
+				// succeed once; a second overflow means compaction of this history
+				// cannot help, so stop and say so rather than keep paying for it.
+				if (this.#overflowRecoveryAttempts >= OVERFLOW_RECOVERY_MAX_RETRIES) {
+					const attempts = this.#overflowRecoveryAttempts;
+					this.#overflowRecoveryAttempts = 0;
+					const droppedEntryId = await this.#host.dropPersistedAssistantTurn(assistantMessage);
+					if (droppedEntryId) await this.#host.sessionManager.discardEntryDurably(droppedEntryId);
+					const finalError = `Context overflow recovery gave up after ${attempts} compact-and-retry ${attempts === 1 ? "attempt" : "attempts"} from ${assistantMessage.provider}/${assistantMessage.model} — the context still overflows after compaction. Try switching to a larger-context model, reducing the conversation, or clearing large tool output.`;
+					logger.warn("Context overflow recovery cap reached; halting retries", {
+						model: `${assistantMessage.provider}/${assistantMessage.model}`,
+						attempts,
+					});
+					this.#host.emitNotice("error", finalError, "compaction");
+					// Without this the dropped turn leaves no error behind, so the task
+					// executor reads the run as idle and re-prompts into the same loop.
+					this.#host.retainTerminalFailure({ ...assistantMessage, stopReason: "error", errorMessage: finalError });
+					return COMPACTION_CHECK_BLOCK_AUTOMATIC_CONTINUATION;
+				}
+				this.#overflowRecoveryAttempts++;
 				const compactionResult = await this.#host.runRecoveryCompactionWithRollback(
 					"overflow",
 					assistantMessage,

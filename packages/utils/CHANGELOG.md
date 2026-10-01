@@ -10,6 +10,16 @@
 
 ### Fixed
 
+- A run of backticks with no closing backtick is no longer quadratic. The lexer looked for the
+  closing run one backtick at a time, and every one of those steps re-matched the *whole*
+  remaining run to measure the opening delimiter, so the work grew with the square of the run.
+  A run that cannot possibly close is now recognised once and consumed in a single step.
+  Measured by counting rather than by the clock, which is not reliable on a loaded machine: a
+  65,536-character run went from 65,536 passes through the loop to 1. Output is unchanged — a
+  backtick run was already a single text token, because adjacent text is coalesced, so this is
+  the same result reached once instead of a character at a time. Code spans that do close are
+  untouched, as is a backtick run sitting next to text.
+
 - Long runs of Markdown containing a link, an email address, or a line break are no longer
   quadratic in three more places. The inline lexer decided whether the text ahead held an `@` by
   scanning everything left of the cursor on every single character, asked the same question of

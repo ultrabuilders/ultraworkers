@@ -639,6 +639,21 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 				prevChar = raw.at(-1) ?? prevChar;
 				continue;
 			}
+			// `rest` toàn backtick ⇒ không thể có run đóng dài bằng `opener`, nên `end`
+			// chắc chắn là -1 và nhánh trên không thể vào. Không có nhánh này thì vòng
+			// lặp đi **một backtick mỗi lần** (`STOP_CHAR` khớp ngay index 0 nên `next`
+			// là 1), và mỗi lần lại chạy `/^`+/` trên **cả run còn lại**: O(n) việc cho
+			// mỗi bước tiến O(1) ⇒ bậc hai. Cùng dạng với cổng `indexOf("@")` ở trên.
+			//
+			// `appendText` đã gộp run thành **một** token `text` sẵn, nên nuốt cả run ở
+			// đây cho đúng kết quả cũ — vòng lặp vốn chỉ trả giá từng ký tự cho cùng một
+			// token đó. Không phải gộp mới, và không giới hạn bề rộng.
+			if (opener.length === rest.length) {
+				appendText(output, rest);
+				prevChar = rest.at(-1) ?? prevChar;
+				rest = "";
+				break;
+			}
 		}
 		const auto = /^<((?:https?:\/\/|ftp:\/\/)[^ >]+|[^ <>@]+@[^ <>@]+)>/i.exec(rest);
 		if (auto) {

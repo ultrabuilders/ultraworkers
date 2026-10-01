@@ -376,12 +376,48 @@ describe("a hard break consumes its whole run of spaces", () => {
 });
 
 /**
- * The bare-link regex is now split so its email branch is skipped unless `rest`
- * actually contains an `@` — the branch had a greedy `+` in front of a required `@`,
- * which is quadratic on any run of `_`. The gate must not cost a match: an address
- * whose local part is nothing but the characters that trigger the quadratic case is
- * the input most likely to be dropped by an over-eager short-circuit.
+ * A run of backticks with no closing run is text, and the lexer now consumes it in
+ * one step. It was quadratic before: `STOP_CHAR` matches a backtick at index 0, so
+ * the loop advanced one backtick per iteration while re-running `/^`+/` — which
+ * matches the whole remaining run — over each shrinking remainder.
+ *
+ * The contract is that the run is ONE text token. It was already one before the
+ * change, because `appendText` coalesces adjacent text, which is what makes
+ * consuming it in a single step safe: same output, once, instead of a character at
+ * a time. If a future change splits that run into per-backtick tokens, this fails.
  */
+describe("a backtick run with no closer is one text token", () => {
+	for (const width of [1, 2, 3, 4, 5, 8, 17, 64]) {
+		test(`${width} backticks lex as a single text token`, () => {
+			const run = "`".repeat(width);
+			const tokens = [...Lexer.lexInline(run)];
+			expect(tokens).toHaveLength(1);
+			expect(tokens[0]).toMatchObject({ type: "text", raw: run });
+		});
+	}
+
+	test("a run next to text is still coalesced, not split", () => {
+		// The adjacency case: `appendText` merges into the preceding text token, so
+		// consuming the run early must not leave a boundary the old path did not have.
+		const tokens = [...Lexer.lexInline("a`b`c")];
+		expect(tokens.map(t => [t.type, t.raw])).toEqual([
+			["text", "a"],
+			["codespan", "`b`"],
+			["text", "c"],
+		]);
+	});
+
+	test("spans that do close are unaffected", () => {
+		for (const [source, expected] of [
+			["`a`", 1],
+			["`a` and `b`", 2],
+			["``a`b``", 1],
+		] as const) {
+			const spans = [...Lexer.lexInline(source)].filter(t => t.type === "codespan");
+			expect(spans, source).toHaveLength(expected);
+		}
+	});
+});
 describe("the bare-link email branch still matches when an @ is present", () => {
 	test("a local part made only of the quadratic trigger characters links", () => {
 		expect([...Lexer.lexInline("_@a.co")]).toEqual([

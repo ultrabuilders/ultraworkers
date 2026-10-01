@@ -66,8 +66,7 @@ export type WritePolicyDenial = "rename" | "delete" | "workingTree";
 export const WRITE_POLICY_DENIAL_MESSAGES: Readonly<Record<WritePolicyDenial, string>> = {
 	rename: "Plan mode: renaming files is not allowed.",
 	delete: "Plan mode: deleting files is not allowed.",
-	workingTree:
-		"Plan mode: the working tree is read-only. Write your plan to a local://<slug>-plan.md file instead.",
+	workingTree: "Plan mode: the working tree is read-only. Write your plan to a local://<slug>-plan.md file instead.",
 };
 
 /**

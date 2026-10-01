@@ -1780,13 +1780,20 @@ export interface ExtensionAPI {
 	 * verb, and registering a verb here does not add a slash command — the two
 	 * registries stay separate on purpose.
 	 *
-	 * Routing is decided in `cli-commands.ts` before extensions load, so a verb
-	 * registered here is picked up when the process re-reads the registry after
-	 * extensions are loaded. A verb colliding with one already claimed is
-	 * reported through `subcommandCollisionDiagnostics()` with both owners
-	 * named, and the first registration keeps routing.
+	 * Routing is decided in `cli-commands.ts` before extensions load, so the CLI
+	 * primes this registry before routing whenever the first argv token could be
+	 * a verb, and re-reads it per call rather than from a snapshot. A verb
+	 * colliding with one already claimed — or with a built-in command name — is
+	 * reported through `subcommandCollisionDiagnostics()` with both owners named,
+	 * and the first registration keeps routing.
+	 *
+	 * `handler` receives the argv that follows the verb, so `omp deploy staging`
+	 * arrives as `["staging"]`. It runs in the CLI process before any session
+	 * exists: close over what you captured here, and use it for work that is
+	 * genuinely top-level. Anything needing a session belongs in
+	 * {@link registerCommand}.
 	 */
-	registerSubcommand(name: string): void;
+	registerSubcommand(name: string, handler: (argv: string[]) => Promise<void>): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(

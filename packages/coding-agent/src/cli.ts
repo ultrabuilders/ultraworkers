@@ -625,10 +625,16 @@ export async function runCli(argv: string[]): Promise<void> {
 	}
 
 	try {
-		const [{ run }, { commands, resolveCliArgv }] = await Promise.all([
-			import("@oh-my-pi/pi-utils/cli"),
-			import("./cli-commands"),
-		]);
+		const [
+			{ run },
+			{ commands, resolveCliArgv, couldBeExtensionSubcommand, preloadExtensionSubcommands, extensionCommandEntries },
+		] = await Promise.all([import("@oh-my-pi/pi-utils/cli"), import("./cli-commands")]);
+		// Extensions load *inside* the session `run()` dispatches to, so a verb they
+		// register cannot be known when routing decides — the two would wait on each
+		// other. Priming the registry first closes that loop; skipped entirely for a
+		// token that cannot be a verb, which keeps `omp "two word prompt"` off the
+		// extension-loading path.
+		if (couldBeExtensionSubcommand(resolvedArgv[0])) await preloadExtensionSubcommands();
 		// --help and --version are handled by run() directly; --license returned above.
 		// Everything else that isn't a known subcommand routes to "launch".
 		const resolved = resolveCliArgv(resolvedArgv);
@@ -646,7 +652,10 @@ export async function runCli(argv: string[]): Promise<void> {
 			command: WIRE_NAME,
 			version: VERSION,
 			argv: resolved.argv,
-			commands,
+			// Built-ins first: `findEntry` takes the first match, so this ordering is
+			// what makes a verb registered under a built-in name inert — which is why
+			// `registerSubcommand` refuses those registrations outright.
+			commands: [...commands, ...extensionCommandEntries()],
 			metadataHelp: showHelp,
 		});
 	} finally {

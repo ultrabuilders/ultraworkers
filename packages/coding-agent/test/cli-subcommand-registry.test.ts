@@ -23,11 +23,14 @@
  * while the file still compiles and the negative branch still passes. That is
  * the proof this file is not green by construction.
  */
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	type ResolvedCliArgv,
+	commands,
+	couldBeExtensionSubcommand,
+	extensionCommandEntries,
 	isSubcommand,
 	registerSubcommand,
 	resetSubcommandRegistry,
@@ -36,6 +39,7 @@ import {
 } from "@oh-my-pi/pi-coding-agent/cli-commands";
 import { loadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
+import { run } from "@oh-my-pi/pi-utils/cli";
 
 /**
  * `ResolvedCliArgv` is a union, so reading `.argv` has to narrow first.
@@ -46,6 +50,15 @@ function dispatchArgv(resolved: ResolvedCliArgv): string[] {
 	if ("error" in resolved) throw new Error(`expected a dispatch, but routing refused: ${resolved.error}`);
 	return resolved.argv;
 }
+
+/** Records what a verb was invoked with, so "it ran" is observable. */
+function recordingHandler(calls: string[][]): (argv: string[]) => Promise<void> {
+	return async argv => {
+		calls.push(argv);
+	};
+}
+
+const noopHandler = async (): Promise<void> => {};
 
 describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 	beforeEach(() => {
@@ -65,7 +78,7 @@ describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 	});
 
 	it("dispatches a registered verb instead of forwarding it as a prompt", () => {
-		expect(registerSubcommand("deploy", "ext:ci")).toBe(true);
+		expect(registerSubcommand("deploy", "ext:ci", noopHandler)).toBe(true);
 
 		const resolved = resolveCliArgv(["deploy", "staging"]);
 
@@ -82,13 +95,13 @@ describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 		// after the module has already been evaluated is the ordinary case, so it
 		// gets its own case rather than being folded into the one above.
 		expect(isSubcommand("later")).toBe(false);
-		registerSubcommand("later", "ext:late");
+		registerSubcommand("later", "ext:late", noopHandler);
 		expect(isSubcommand("later")).toBe(true);
 	});
 
 	it("reports a duplicate verb with both claimants named", () => {
-		registerSubcommand("deploy", "ext:ci");
-		const second = registerSubcommand("deploy", "ext:other");
+		registerSubcommand("deploy", "ext:ci", noopHandler);
+		const second = registerSubcommand("deploy", "ext:other", noopHandler);
 
 		expect(second).toBe(false);
 		const [collision] = subcommandCollisionDiagnostics();
@@ -99,7 +112,7 @@ describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 	});
 
 	it("NEGATIVE: a verb nobody registered still becomes a prompt", () => {
-		registerSubcommand("deploy", "ext:ci");
+		registerSubcommand("deploy", "ext:ci", noopHandler);
 
 		const resolved = resolveCliArgv(["unregistered-verb", "text"]);
 
@@ -155,7 +168,7 @@ describe("registerSubcommand: the ExtensionAPI producer", () => {
 		const entry = path.join(dir, "index.ts");
 		fs.writeFileSync(
 			entry,
-			`export default function(pi) {\n\tpi.registerSubcommand(${JSON.stringify(verb)});\n}\n`,
+			`export default function(pi) {\n\tpi.registerSubcommand(${JSON.stringify(verb)}, async argv => {\n\t\tprocess.stdout.write(${JSON.stringify(`RAN ${verb}:`)} + argv.join(","));\n\t});\n}\n`,
 			"utf-8",
 		);
 		return entry;
@@ -211,5 +224,173 @@ describe("registerSubcommand: the ExtensionAPI producer", () => {
 		await loadExtensions([entry], cwd);
 
 		expect(isSubcommand("greet")).toBe(false);
+	});
+});
+
+/**
+ * The half that was actually missing: `omp <verb>` must *run* the handler.
+ *
+ * Everything above proves the verb reaches the router. Routing is not dispatch:
+ * `run()` matches `argv[0]` against a static `CommandEntry[]`, so a registry that
+ * records a handler nobody passes to `run()` produces a verb that resolves
+ * correctly and then dies on `command not found` — or worse, never reaches the
+ * router at all because extensions never loaded first.
+ *
+ * The control pair is what makes this file's verdict mean something. Same verb,
+ * same argv, same `run()`: once unregistered it must be *rejected*, and once
+ * registered it must *run*. If `extensionCommandEntries` returned nothing, both
+ * halves would be identical and this file would be green on the broken fix.
+ *
+ * `run()` is driven directly rather than through `runCli`, so the assertion is on
+ * the dispatch contract itself and does not need the process-entry side effects.
+ * The producer path is exercised end-to-end in the last case: real extension
+ * module → real loader → real `run()`, which is the only path a user can take.
+ */
+describe("registerSubcommand: omp <verb> runs the handler", () => {
+	let tempDir: TempDir;
+	let cwd: string;
+	let stdout: ReturnType<typeof spyOn<typeof process.stdout, "write">>;
+	let stderr: ReturnType<typeof spyOn<typeof process.stderr, "write">>;
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+	/** Drive the real dispatcher over the registry the CLI actually builds. */
+	async function runVerb(argv: string[]): Promise<void> {
+		await run({
+			bin: "omp",
+			version: "0.0.0-test",
+			argv,
+			commands: [...commands, ...extensionCommandEntries()],
+		});
+	}
+
+	/** Everything `run()` told the user, as one string. */
+	function stderrText(): string {
+		return stderr.mock.calls.map(call => String(call[0])).join("");
+	}
+
+	beforeEach(() => {
+		resetSubcommandRegistry();
+		tempDir = TempDir.createSync("@pi-subcommand-run-");
+		cwd = tempDir.absolute();
+		setAgentDir(path.join(cwd, "agent"));
+		// Asserted through these two streams, never through `process.exitCode`:
+		// `run()` sets it on the not-found path, and the test runner re-asserts its
+		// own value between cases, so an assertion on it is decided by the runner
+		// rather than by this file.
+		stdout = spyOn(process.stdout, "write").mockImplementation(() => true);
+		stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+	});
+
+	afterEach(() => {
+		stdout.mockRestore();
+		stderr.mockRestore();
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		__resetDirsFromEnvForTests();
+		resetSubcommandRegistry();
+		tempDir?.removeSync();
+	});
+
+	it("CONTROL: the same verb is rejected by run() before anything registers it", async () => {
+		await runVerb(["deploy", "staging"]);
+
+		expect(stderrText()).toContain("command deploy not found");
+		expect(stdout).not.toHaveBeenCalled();
+	});
+
+	it("runs the handler with the argv that follows the verb", async () => {
+		const calls: string[][] = [];
+		registerSubcommand("deploy", "ext:ci", recordingHandler(calls));
+
+		await runVerb(["deploy", "staging", "--force"]);
+
+		expect(calls).toEqual([["staging", "--force"]]);
+		expect(stderrText()).not.toContain("not found");
+	});
+
+	it("NEGATIVE: an unregistered verb is still rejected while others are registered", async () => {
+		registerSubcommand("deploy", "ext:ci", noopHandler);
+
+		await runVerb(["nope"]);
+
+		expect(stderrText()).toContain("command nope not found");
+	});
+
+	it("refuses a verb shadowing a built-in, naming omp as the other claimant", async () => {
+		// `install` is a real command in the static table, and `run()` matches that
+		// table first — so a handler registered under this name would be unreachable.
+		// Refusing loudly is the whole point: a silent no-op here is the invisible
+		// override WI-2 named.
+		expect(registerSubcommand("install", "ext:greedy", noopHandler)).toBe(false);
+
+		const [collision] = subcommandCollisionDiagnostics();
+		expect(collision.verb).toBe("install");
+		expect(collision.existingOwner).toBe("omp");
+	});
+
+	it("the composed command list still resolves a refused shadow to the built-in", () => {
+		registerSubcommand("install", "ext:greedy", noopHandler);
+		registerSubcommand("deploy", "ext:ci", noopHandler);
+
+		// The order `cli.ts` composes, and the same `findEntry` match `run()` does:
+		// first entry wins. Asserted on the list rather than by dispatching, because
+		// dispatching `install` would execute the real installer.
+		const composed = [...commands, ...extensionCommandEntries()];
+		const installIndex = composed.findIndex(e => e.name === "install");
+		const deployIndex = composed.findIndex(e => e.name === "deploy");
+
+		// `install` still resolves to the built-in's own slot — the refused handler
+		// contributed no second entry to shadow it.
+		expect(installIndex).toBe(commands.findIndex(e => e.name === "install"));
+		// And the built-in precedes the extension verb, so `findEntry` cannot reach
+		// an extension entry before a core one.
+		expect(installIndex).toBeLessThan(deployIndex);
+	});
+
+	it("routes a verb a real extension registered, from module to handler", async () => {
+		const dir = path.join(cwd, "ext");
+		fs.mkdirSync(dir, { recursive: true });
+		const entry = path.join(dir, "index.ts");
+		fs.writeFileSync(
+			entry,
+			`export default function(pi) {\n\tpi.registerSubcommand("deploy", async argv => {\n\t\tprocess.stdout.write("RAN:" + argv.join(","));\n\t});\n}\n`,
+			"utf-8",
+		);
+
+		const loaded = await loadExtensions([entry], cwd);
+		expect(loaded.errors).toHaveLength(0);
+
+		await runVerb(["deploy", "staging"]);
+
+		// The handler's own output, through the real loader and the real dispatcher.
+		expect(stdout).toHaveBeenCalledWith("RAN:staging");
+	});
+});
+
+/**
+ * The gate that decides whether extensions load at all.
+ *
+ * `cli.ts` primes the registry before routing, and priming means scanning and
+ * loading extensions. Doing that unconditionally would put extension loading on
+ * `omp --version` and every prompt. The discriminator is that a verb is a single
+ * bare token: whitespace can only appear if the user quoted the whole prompt,
+ * which is the ordinary way to send one.
+ */
+describe("couldBeExtensionSubcommand", () => {
+	it("NEGATIVE: a quoted multi-word prompt must not trigger extension loading", () => {
+		expect(couldBeExtensionSubcommand("deploy staging")).toBe(false);
+		expect(couldBeExtensionSubcommand("how do I refactor this")).toBe(false);
+	});
+
+	it("NEGATIVE: flags and @file arguments are never verbs", () => {
+		expect(couldBeExtensionSubcommand("--version")).toBe(false);
+		expect(couldBeExtensionSubcommand("-h")).toBe(false);
+		expect(couldBeExtensionSubcommand("@notes.md")).toBe(false);
+		expect(couldBeExtensionSubcommand(undefined)).toBe(false);
+	});
+
+	it("a bare word is treated as a possible verb", () => {
+		expect(couldBeExtensionSubcommand("deploy")).toBe(true);
+		expect(couldBeExtensionSubcommand("run")).toBe(true);
 	});
 });

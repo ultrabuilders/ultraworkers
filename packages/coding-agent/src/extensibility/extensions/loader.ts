@@ -374,10 +374,10 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	 * The extension path is the collision owner, so a duplicate names both sides
 	 * rather than one anonymous loser.
 	 */
-	registerSubcommand(name: string): void {
-		if (!registerSubcommandVerb(name, this.extension.path)) {
+	registerSubcommand(name: string, handler: (argv: string[]) => Promise<void>): void {
+		if (!registerSubcommandVerb(name, this.extension.path, handler)) {
 			logger.warn(
-				`Extension ${this.extension.path}: top-level verb "${name}" is already registered — the first registration keeps routing; see subcommandCollisionDiagnostics() for both owners`,
+				`Extension ${this.extension.path}: top-level verb "${name}" is already registered — the first registration keeps routing and this handler will not run; see subcommandCollisionDiagnostics() for both owners`,
 			);
 		}
 	}

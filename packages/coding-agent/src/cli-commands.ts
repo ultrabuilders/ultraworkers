@@ -18,66 +18,6 @@ import {
 	VALUELESS_FLAGS,
 } from "./cli/flag-tables";
 
-// =============================================================================
-// Extension-registered top-level verbs
-// =============================================================================
-//
-// `SUBCOMMAND_NAMES` above is a snapshot: it is built when this module is first
-// evaluated, and pushing onto the exported `commands` array afterwards changes
-// nothing, because every lookup reads the closed Set. A `registerSubcommand`
-// that only appended there would compile, export a correctly-named function,
-// and dispatch nothing — the verb keeps falling through to `launch` and the
-// argv reaches the model as a prompt. Nothing throws and nothing logs.
-//
-// So extension verbs are held in a Set that is read per call, never snapshotted.
-// This is the shape `cli/extension-flags.ts` already uses for flags: the
-// registry is consulted at the point of use, and there is no built-in name list
-// for a plugin author to collide with.
-//
-// Two extensions claiming one verb is a mistake worth surfacing rather than a
-// race to win, following the tool-collision contract WI-2 set: the collision
-// records *both* claimants and the first registration still routes, so dispatch
-// stays deterministic. Silent last-writer-wins is the invisible-override class
-// WI-2 called out by name.
-
-const registeredSubcommands = new Map<string, string>();
-const subcommandCollisions: Array<{ verb: string; owner: string; existingOwner: string }> = [];
-
-/**
- * Register a top-level verb owned by an extension.
- *
- * Returns `false` when `verb` was already claimed so the caller can surface the
- * collision; the existing registration is kept, keeping dispatch deterministic.
- */
-export function registerSubcommand(verb: string, owner: string): boolean {
-	const existing = registeredSubcommands.get(verb);
-	if (existing !== undefined) {
-		subcommandCollisions.push({ verb, owner, existingOwner: existing });
-		return false;
-	}
-	registeredSubcommands.set(verb, owner);
-	return true;
-}
-
-/** Whether an extension has registered `verb`. Read per call — never cached. */
-function isRegisteredSubcommand(verb: string): boolean {
-	return registeredSubcommands.has(verb);
-}
-
-/** Every verb collision seen so far, naming both claimants. */
-export function subcommandCollisionDiagnostics(): ReadonlyArray<{
-	verb: string;
-	owner: string;
-	existingOwner: string;
-}> {
-	return subcommandCollisions;
-}
-
-/** Test-only: drop all registrations so one file cannot poison another's. */
-export function resetSubcommandRegistry(): void {
-	registeredSubcommands.clear();
-	subcommandCollisions.length = 0;
-}
 import type * as LaunchHelp from "./commands/launch-help";
 
 function loadLaunchHelp(): typeof LaunchHelp.launchHelp {
@@ -368,6 +308,146 @@ for (const command of commands) {
 	if (command.aliases) {
 		for (const alias of command.aliases) SUBCOMMAND_NAMES.add(alias);
 	}
+}
+
+// =============================================================================
+// Extension-registered top-level verbs
+// =============================================================================
+//
+// `SUBCOMMAND_NAMES` is a snapshot: it is built when this module is first
+// evaluated, and pushing onto the exported `commands` array afterwards changes
+// nothing, because every lookup reads the closed Set. A `registerSubcommand`
+// that only appended there would compile, export a correctly-named function,
+// and dispatch nothing — the verb keeps falling through to `launch` and the
+// argv reaches the model as a prompt. Nothing throws and nothing logs.
+//
+// So extension verbs are held in a Map that is read per call, never snapshotted.
+// This is the shape `cli/extension-flags.ts` already uses for flags: the
+// registry is consulted at the point of use, and there is no built-in name list
+// for a plugin author to collide with.
+//
+// Two extensions claiming one verb is a mistake worth surfacing rather than a
+// race to win, following the tool-collision contract WI-2 set: the collision
+// records *both* claimants and the first registration still routes, so dispatch
+// stays deterministic. Silent last-writer-wins is the invisible-override class
+// WI-2 called out by name.
+
+/**
+ * Runs a registered verb, receiving the argv that follows it.
+ *
+ * The handler closes over whatever it captured from the extension API at
+ * registration time, so it needs nothing from core to reach its own state.
+ */
+export type SubcommandHandler = (argv: string[]) => Promise<void>;
+
+interface RegisteredSubcommand {
+	owner: string;
+	handler: SubcommandHandler;
+}
+
+const registeredSubcommands = new Map<string, RegisteredSubcommand>();
+const subcommandCollisions: Array<{ verb: string; owner: string; existingOwner: string }> = [];
+
+/**
+ * Register a top-level verb owned by an extension, plus the handler `omp <verb>`
+ * runs.
+ *
+ * Returns `false` when `verb` was already claimed so the caller can surface the
+ * collision; the existing registration is kept, keeping dispatch deterministic.
+ * A verb shadowing a *built-in* command is refused for the same reason, with
+ * `"omp"` as the other claimant: {@link extensionCommandEntries} entries are
+ * matched after the static table, so a handler registered under a built-in name
+ * would never be reached — and a silently-unreachable handler is precisely the
+ * invisible override this registry exists to make loud.
+ */
+export function registerSubcommand(verb: string, owner: string, handler: SubcommandHandler): boolean {
+	const existing = registeredSubcommands.get(verb);
+	if (existing !== undefined) {
+		subcommandCollisions.push({ verb, owner, existingOwner: existing.owner });
+		return false;
+	}
+	if (SUBCOMMAND_NAMES.has(verb)) {
+		subcommandCollisions.push({ verb, owner, existingOwner: "omp" });
+		return false;
+	}
+	registeredSubcommands.set(verb, { owner, handler });
+	return true;
+}
+
+/** Whether an extension has registered `verb`. Read per call — never cached. */
+function isRegisteredSubcommand(verb: string): boolean {
+	return registeredSubcommands.has(verb);
+}
+
+/** Every verb collision seen so far, naming both claimants. */
+export function subcommandCollisionDiagnostics(): ReadonlyArray<{
+	verb: string;
+	owner: string;
+	existingOwner: string;
+}> {
+	return subcommandCollisions;
+}
+
+/** Test-only: drop all registrations so one file cannot poison another's. */
+export function resetSubcommandRegistry(): void {
+	registeredSubcommands.clear();
+	subcommandCollisions.length = 0;
+}
+
+/**
+ * Whether `first` could name an extension verb, and so whether extensions must
+ * be loaded before routing decides.
+ *
+ * A verb is a single bare token, so a token containing whitespace cannot be one
+ * — and such a token only arrives if the user quoted it, which is the ordinary
+ * way to send a multi-word prompt. Priming the registry for those would buy
+ * nothing. Every other bare word *could* be a verb, so it must be asked.
+ */
+export function couldBeExtensionSubcommand(first: string | undefined): boolean {
+	if (!first || first.startsWith("-") || first.startsWith("@")) return false;
+	return !/\s/.test(first);
+}
+
+/**
+ * Load extensions far enough that their `registerSubcommand` calls have run.
+ *
+ * Extensions are otherwise loaded *inside* the session `run()` dispatches to, so
+ * a verb an extension registers cannot be known at routing time: without this,
+ * the two wait on each other and every extension verb stays unreachable.
+ * Priming the registry here closes that loop and leaves `run()` untouched.
+ *
+ * Discovery runs ambient-only — user, project, and installed-plugin extensions.
+ * Paths configured in settings belong to the session that owns them and are
+ * deliberately not read here; doing so would pull the settings manager onto a
+ * path that currently costs one filesystem scan.
+ */
+export async function preloadExtensionSubcommands(): Promise<void> {
+	// Lazy for the same reason every command entry above is lazy: this module is
+	// reached by `omp --version` and `omp --help`, and a static import of the
+	// loader would drag its whole graph onto those paths.
+	const { discoverAndLoadExtensions } = await import("./extensibility/extensions/loader");
+	await discoverAndLoadExtensions([], process.cwd(), undefined, undefined, { includeAmbientHooks: false });
+}
+
+/**
+ * The registered verbs, shaped as the command entries `run()` dispatches on.
+ *
+ * `run()` matches `argv[0]` against a static `CommandEntry[]` and knows nothing
+ * about extensions. Rather than teach it a second concept, each verb becomes a
+ * real entry whose class calls the handler from `run()` — so an extension verb
+ * reaches the same dispatch path, with the same argv slicing and the same
+ * `CliUsageError` handling, as every built-in command.
+ */
+export function extensionCommandEntries(): CommandEntry[] {
+	return Array.from(registeredSubcommands, ([verb, { handler }]) => ({
+		name: verb,
+		// Lazy through `load`, like every other entry in the table above: the class
+		// is only needed once a verb actually dispatches. That also keeps `Command` a
+		// type-only edge here — importing it as a value would drag
+		// `@oh-my-pi/pi-utils/cli` into the `cli.ts` entry graph and break its
+		// budget. See `cli/extension-subcommand.ts`.
+		load: () => import("./cli/extension-subcommand").then(module => module.createSubcommandClass(handler)),
+	}));
 }
 
 /** Commands that accept launch-global flags before their command token. */

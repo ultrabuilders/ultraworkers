@@ -312,6 +312,7 @@ import type {
 	InteractiveModeInitOptions,
 	InteractiveSelectorDialogOptions,
 	RenderSessionContextOptions,
+	StatusLineEntry,
 	SubmittedUserInput,
 } from "./types";
 import type { TodoItem, TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
@@ -1059,6 +1060,14 @@ export class InteractiveMode implements InteractiveModeContext {
 	readonly composer: Composer;
 	ui: TUI;
 	chatContainer: TranscriptContainer;
+	/**
+	 * Anchored container for keyed status notices, mounted directly above the editor.
+	 *
+	 * Kept out of `chatContainer` so a keyed line can be removed without disturbing
+	 * a turn's transcript — a transcript child is not removable once committed, and
+	 * a line that cannot leave is not a notice, it is log spam.
+	 */
+	noticeContainer: Container;
 	pendingMessagesContainer: Container;
 	/** Judge-batch and automatic-download progress rows above the working line. */
 	progressHudContainer: Container;
@@ -1344,6 +1353,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	hookInput: OverlayPanel | undefined = undefined;
 	hookEditor: HookEditorComponent | undefined = undefined;
 	lastStatus: StatusNotice | undefined = undefined;
+	/** Keyed status lines, newest last. See {@link StatusLineEntry}. */
+	keyedStatusLines: StatusLineEntry[] = [];
 	fileSlashCommands: Set<string> = new Set();
 	skillCommands: Map<string, Skill> = new Map();
 	oauthManualInput: OAuthManualInputManager = new OAuthManualInputManager();
@@ -1661,6 +1672,9 @@ export class InteractiveMode implements InteractiveModeContext {
 		);
 		this.ui.setInlineMouseTrackingProvider(() => this.#mouseCapture);
 		this.chatContainer = new TranscriptContainer();
+		// Keyed notices live here, not in the transcript: a keyed line has to be
+		// removable without disturbing a turn's output, which a transcript child is not.
+		this.noticeContainer = new Container();
 		this.pendingMessagesContainer = new AnchoredLiveContainer();
 		this.progressHudContainer = new AnchoredLiveContainer();
 		this.progressHudContainer.addChild(this.#judgmentBatchProgressHud);
@@ -2019,6 +2033,10 @@ export class InteractiveMode implements InteractiveModeContext {
 				// composer collapses that gap so its status band sits flush).
 				this.statusContainer,
 				this.attachmentChipsContainer,
+				// Keyed notices sit directly above the editor's hook-widget top margin,
+				// so they read next to the prompt without a turn's worth of transcript
+				// between them and the composer.
+				this.noticeContainer,
 				this.hookWidgetContainerAbove,
 				this.editorContainer,
 				this.hookWidgetContainerBelow,
@@ -2041,6 +2059,9 @@ export class InteractiveMode implements InteractiveModeContext {
 					this.progressHudContainer,
 					this.statusContainer,
 					this.pendingMessagesContainer,
+					// Same position in the native dock: a keyed notice must not move when
+					// the dock swaps in, or it would jump when the composer collapses.
+					this.noticeContainer,
 					this.hookWidgetContainerAbove,
 					this.editorContainer,
 					this.hookWidgetContainerBelow,

@@ -45,7 +45,13 @@ import { decodeStreamedToolArgs, streamingStringKeysForTool } from "../../modes/
 import { materializeImageReferenceLinksSync } from "@oh-my-pi/pi-tui/prompt/image-references";
 import { imageAttachmentSource } from "@oh-my-pi/pi-tui/prompt/image-source";
 import { theme } from "@oh-my-pi/pi-tui/theme";
-import type { CompactionQueuedMessage, InteractiveModeContext, RenderSessionContextOptions } from "../../modes/types";
+import type {
+	CompactionQueuedMessage,
+	InteractiveModeContext,
+	RenderSessionContextOptions,
+	ShowStatusOptions,
+	StatusLineEntry,
+} from "../../modes/types";
 import { LAUNCH_COMPLETION_MESSAGE_TYPE } from "../../session/launch-completion";
 import {
 	BACKGROUND_TAN_DISPATCH_MESSAGE_TYPE,
@@ -135,14 +141,26 @@ export class UiHelpers {
 	 *
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
+	 *
+	 * A message carrying `key` is a keyed line: it goes to `noticeContainer` and can
+	 * be replaced, invalidated, or folded by a later notice. A message without one is
+	 * unchanged from before keyed notices existed — same container, same fold-into-
+	 * previous behaviour, same bytes — because 337 call sites pass no options and
+	 * they are the contract, not an implementation detail.
 	 */
-	showStatus(message: string, options?: { dim?: boolean }): void {
-		const children = this.ctx.chatContainer.children;
-		const last = children.length > 0 ? children[children.length - 1] : undefined;
+	showStatus(message: string, options?: ShowStatusOptions): void {
 		const useDim = options?.dim ?? true;
 		// Resolve the dim color lazily so a later theme change re-shapes the line
 		// instead of leaving the palette that was active when it was presented.
 		const styleFn = useDim ? (t: string) => theme.fg("dim", t) : undefined;
+
+		if (options?.key !== undefined) {
+			this.#showKeyedStatus(message, options.key, styleFn, options);
+			return;
+		}
+
+		const children = this.ctx.chatContainer.children;
+		const last = children.length > 0 ? children[children.length - 1] : undefined;
 
 		if (last && last === this.ctx.lastStatus) {
 			this.ctx.lastStatus.setMessage(message, styleFn);
@@ -153,6 +171,91 @@ export class UiHelpers {
 		const notice = new StatusNotice(message, styleFn);
 		this.ctx.present([notice]);
 		this.ctx.lastStatus = notice;
+	}
+
+	/**
+	 * The keyed half of {@link showStatus}.
+	 *
+	 * Order matters and is not interchangeable: an invalidation is applied before the
+	 * incoming line is placed, so a notice can invalidate the line it is replacing
+	 * without the removal racing the add. Folding reads the line being folded INTO,
+	 * so `fold: "x"` on a message that is itself keyed `x` merges with itself and is
+	 * ignored rather than doubling the count.
+	 */
+	#showKeyedStatus(
+		message: string,
+		key: string,
+		styleFn: ((text: string) => string) | undefined,
+		options: ShowStatusOptions,
+	): void {
+		const lines = this.ctx.keyedStatusLines;
+
+		if (options.invalidates !== undefined) {
+			this.#removeKeyedLine(options.invalidates);
+		}
+
+		// Fold first: merging into an existing line is the one case where the
+		// incoming message does not become a component of its own. Naming the
+		// message's OWN key is the ordinary case, not a degenerate one — a status
+		// that re-emits per token passes `fold` with the key it already uses, and
+		// skipping that would grow the container by one line per emission.
+		if (options.fold !== undefined) {
+			const target = lines.find(entry => entry.key === options.fold && !entry.removed);
+			if (target) {
+				target.count += 1;
+				target.notice.setMessage(`${message} (${target.count})`, styleFn);
+				this.ctx.ui.requestRender();
+				return;
+			}
+		}
+
+		const existing = lines.find(entry => entry.key === key && !entry.removed);
+		if (existing) {
+			// A repeat of a key already showing updates that line in place. Appending a
+			// second line for the same key would make "which one is current" unanswerable.
+			existing.notice.setMessage(message, styleFn);
+			this.ctx.ui.requestRender();
+			return;
+		}
+
+		const notice = new StatusNotice(message, styleFn);
+		const entry: StatusLineEntry = {
+			key,
+			notice,
+			count: 1,
+			immediate: options.immediate ?? false,
+			removed: false,
+		};
+		lines.push(entry);
+
+		if (entry.immediate) {
+			// `immediate` means this line supersedes whatever is showing rather than
+			// queueing under it, so the lines it displaces are dropped, not hidden.
+			for (const other of lines) {
+				if (other !== entry) this.#removeKeyedLine(other.key);
+			}
+		}
+
+		this.ctx.noticeContainer.addChild(notice);
+		this.ctx.ui.requestRender();
+	}
+
+	/**
+	 * Drop a keyed line from the queue and the container.
+	 *
+	 * Marked `removed` before the child is detached so a rebuild racing this call
+	 * cannot re-present a line that is on its way out. A no-op for an unknown key:
+	 * invalidating something that is not showing is not an error, it is the common
+	 * case when a keyed notice is emitted once per attempt.
+	 */
+	#removeKeyedLine(key: string): void {
+		const lines = this.ctx.keyedStatusLines;
+		const index = lines.findIndex(entry => entry.key === key && !entry.removed);
+		if (index < 0) return;
+		const [entry] = lines.splice(index, 1);
+		if (!entry) return;
+		entry.removed = true;
+		this.ctx.noticeContainer.removeChild(entry.notice);
 	}
 
 	addMessageToChat(message: AgentMessage, options?: AddMessageOptions): Component[] {

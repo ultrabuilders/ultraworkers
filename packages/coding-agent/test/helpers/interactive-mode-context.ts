@@ -38,6 +38,7 @@ import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import { ServedModelTracker } from "@oh-my-pi/pi-tui/chat/served-model-marker";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
 import { OAuthManualInputManager } from "@oh-my-pi/pi-coding-agent/modes/oauth-manual-input";
+import type { StatusLineEntry } from "@oh-my-pi/pi-coding-agent/modes/types";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
@@ -211,9 +212,15 @@ export function createInteractiveModeContext(overrides: ContextOverrides = {}): 
 		for (const item of Array.isArray(content) ? content : [content as Component]) chatContainer.addChild(item);
 		ui.requestRender();
 	};
+	const noticeContainer = new Container();
 	const ctx = {
 		ui,
 		chatContainer,
+		// Keyed notices go here so a test can assert a line is present in one
+		// container and ABSENT from the other — the contract that a line rendering
+		// into both would pass a non-empty check.
+		noticeContainer,
+		keyedStatusLines: [] as StatusLineEntry[],
 		statusContainer: new Container(),
 		editorContainer: new Container(),
 		pendingMessagesContainer: new Container(),

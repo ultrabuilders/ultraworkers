@@ -109,6 +109,59 @@ export interface AgentHubOpenOptions {
 	initialSection?: "agents" | "activity";
 }
 
+/**
+ * A status notice that carries a `key`, tracked so a later notice can replace,
+ * invalidate, or fold into it.
+ *
+ * `key` is the identity. `count` is what `fold` accumulates, and it is kept on the
+ * entry rather than baked into the message text so folding three notices reads as
+ * one line with a count of 3 instead of a message that has to be re-split later.
+ */
+export interface StatusLineEntry {
+	/** Identity for replace / invalidate / fold. Never reused after removal. */
+	key: string;
+	notice: StatusNotice;
+	/** How many emissions this line represents; 1 until `fold` merges another in. */
+	count: number;
+	/** Whether this line replaces an existing one instead of queueing behind it. */
+	immediate: boolean;
+	/**
+	 * Whether this line is still wanted. A notice invalidated while off-screen must
+	 * not come back when the transcript is rebuilt, so removal is recorded here as
+	 * well as in the container.
+	 */
+	removed: boolean;
+}
+
+/**
+ * Options for {@link InteractiveModeContext.showStatus}.
+ *
+ * Every field is optional and the empty object must behave exactly as it did before
+ * any of them existed: 337 call sites pass a message and nothing else, and they are
+ * the reason the keyed path is a branch rather than a rewrite.
+ */
+export interface ShowStatusOptions {
+	dim?: boolean;
+	/**
+	 * Make this notice keyed. A keyed notice lives in `noticeContainer` and can be
+	 * replaced or invalidated by a later one; an unkeyed notice goes to the
+	 * transcript as before.
+	 */
+	key?: string;
+	/** Replace this line instead of queueing behind it. Ignored without `key`. */
+	immediate?: boolean;
+	/**
+	 * Remove the notice whose key this names. The removed line does not come back on
+	 * a later rebuild — see {@link StatusLineEntry.removed}.
+	 */
+	invalidates?: string;
+	/**
+	 * Merge into the line carrying this key rather than adding a second one,
+	 * incrementing its count. Ignored when no such line is showing.
+	 */
+	fold?: string;
+}
+
 export interface InteractiveModeContext {
 	// UI access
 	ui: TUI;
@@ -272,6 +325,25 @@ export interface InteractiveModeContext {
 	hookInput: OverlayPanel | undefined;
 	hookEditor: HookEditorComponent | undefined;
 	lastStatus: StatusNotice | undefined;
+	/**
+	 * Keyed status lines, newest last.
+	 *
+	 * Held on the context rather than inside `UiHelpers` so a notice outlives the
+	 * helper that made it: `present` can be called during a rebuild, and a queue
+	 * living in a per-call object would silently empty itself. Read by `showStatus`
+	 * to decide whether a keyed notice replaces, folds into, or queues behind an
+	 * existing one.
+	 */
+	keyedStatusLines: StatusLineEntry[];
+	/**
+	 * Anchored container for keyed notices, mounted above the editor.
+	 *
+	 * Separate from `chatContainer` on purpose: an unkeyed notice must land in the
+	 * transcript exactly as it always has, and a keyed one must be able to leave
+	 * without taking a turn's worth of transcript with it. A keyed notice in
+	 * `chatContainer` could be neither removed nor distinguished from real output.
+	 */
+	noticeContainer: Container;
 	fileSlashCommands: Set<string>;
 	skillCommands: Map<string, Skill>;
 	oauthManualInput: OAuthManualInputManager;
@@ -323,7 +395,7 @@ export interface InteractiveModeContext {
 	 * leak.
 	 */
 	resetTranscript(): void;
-	showStatus(message: string, options?: { dim?: boolean }): void;
+	showStatus(message: string, options?: ShowStatusOptions): void;
 	/** Show the ctrl+p role chip track above the editor, `activeIndex` filled. */
 	showModelCycleTrack(segments: readonly TrackSegment[], activeIndex: number): void;
 	showError(message: string): void;

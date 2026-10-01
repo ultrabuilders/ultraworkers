@@ -629,10 +629,19 @@ jobs:
               OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: |
               bun run ci:test:ts:workspace
-              # Not `test:scripts`: scripts/musl-release.test.ts fails on main
-              # (its install.sh smoke-check executes a fake binary), so running
-              # the whole group here would red this job on an unrelated break.
-              bun test scripts/ci-test-ts.test.ts scripts/release.test.ts scripts/ci-failure-extract.test.ts
+              # The whole classified group, through the manifest, instead of three
+              # hand-named files. That hardcoded list and `test:scripts` were two
+              # lists with no single place that had to be right: measured, 16 test
+              # files existed, the two lists covered 7 between them, and 9 ran
+              # nowhere — including gen-patch-ledger.test.ts, which was green and
+              # gating nothing. `run-script-tests.ts` refuses to run at all when a
+              # file on disk is unclassified, so a new test cannot be committed
+              # without a decision about it.
+              #
+              # The old comment here excluded musl-release.test.ts for failing on
+              # main. Measured, it passes (2 pass), so the exclusion no longer held
+              # and it is now run rather than carried on a stale reason.
+              bun run test:scripts
 
    test_coding_agent_singleton:
       name: Test coding-agent singleton/global-state (TS)

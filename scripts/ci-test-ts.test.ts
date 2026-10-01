@@ -131,27 +131,48 @@ describe("ci-test-ts diff selection through the runner", () => {
 	// A PR that only edits markdown selects no chunk. The job must still run
 	// something named — a docs-only PR reporting green is indistinguishable
 	// from a job that ran no tests at all.
-	test("a diff that touches no test runs the named smoke set, not nothing", async () => {
+	//
+	// The fallback is EVERY chunk, not a smoke set. `selectAffected` fails
+	// closed (fb77734ae8): when no changed file maps to a chunk it returns the
+	// whole list rather than a subset, because running two `--version` probes
+	// and reporting that as the test result is a smaller lie than running
+	// everything and reporting the truth. This test used to assert the smoke
+	// set; the branch it named no longer exists, so it now asserts the contract
+	// that branch was standing in for.
+	test("a diff that touches no test runs every chunk rather than nothing", async () => {
 		const result = await runRunner("coding-agent-runtime", {
 			OMP_TEST_AFFECTED: "docs/readme.md\nAGENTS.md",
 		});
 		expect(result.exitCode).toBe(0);
-		expect(result.stdout).toContain("selector empty for this diff -> running minimal smoke:");
-		expect(result.stdout).toContain("selected=2 mode=smoke");
-		// Names, not just a count: a count could come from an unnamed list.
-		expect(result.stdout).toContain("smoke: cli boots (--version/--help)");
-		expect(result.stdout).toContain("smoke: worker ping (--smoke-test)");
-		expect(plannedCommands(result.stdout)).toEqual([
-			"bun packages/coding-agent/src/cli.ts --version",
-			"bun packages/coding-agent/src/cli.ts --smoke-test",
-		]);
+		// Both files are reported as mapping to nothing, so the fallback is a
+		// decision rather than an accident of the diff.
+		expect(result.stdout).toContain("docs/readme.md -> (no test covers this)");
+		expect(result.stdout).toContain("AGENTS.md -> (no test covers this)");
+		expect(result.stdout).toContain("mode=diff");
+
+		// Fail closed: everything the mode offers, so the selected count equals the
+		// chunk count rather than a hand-picked subset.
+		const shards = result.stdout.match(/of (\d+) chunks -> (\d+) selected/);
+		expect(shards).not.toBeNull();
+		expect(shards?.[2]).toBe(shards?.[1]);
+
+		// And the thing that matters: real test commands, not just a version probe.
+		const planned = plannedCommands(result.stdout);
+		expect(planned.length).toBeGreaterThan(0);
+		expect(planned.some(cmd => cmd.includes("bun test"))).toBe(true);
 	}, 130_000);
 
 	// The three shards of one diff partition the shard's chunks. Asserting the
 	// union covers every chunk and the sets are pairwise disjoint catches both
 	// directions of a silent regression — a chunk running twice, and a chunk
 	// that never runs at all.
-	test("three shards of one diff still cover every chunk exactly once", async () => {
+	//
+	// "Exactly once" no longer holds under the fail-closed selector: a shard that
+	// does not own the changed file falls back to its WHOLE shard rather than to
+	// smoke, so a chunk can legitimately appear in more than one shard. What must
+	// still hold is the half that matters — the owning shard narrows to the
+	// changed file, and no shard reports having run nothing.
+	test("the shard owning the changed file narrows, and no shard runs nothing", async () => {
 		const affected = "packages/coding-agent/test/extension-stale-context.test.ts";
 		const full = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: affected });
 		expect(full.exitCode).toBe(0);
@@ -166,8 +187,8 @@ describe("ci-test-ts diff selection through the runner", () => {
 		for (const shard of shards) {
 			expect(shard.exitCode).toBe(0);
 		}
-		// Exactly one shard owns the changed file; the others fall back to
-		// smoke, which is what keeps a shard from silently reporting nothing.
+		// Exactly one shard owns the changed file, and on that shard the
+		// selection is that file's chunk — the narrowing that saves the work.
 		const owning = shards.filter(shard =>
 			plannedCommands(shard.stdout).some(cmd => cmd.includes("extension-stale-context")),
 		);
@@ -175,8 +196,11 @@ describe("ci-test-ts diff selection through the runner", () => {
 		expect(plannedCommands(owning[0].stdout).filter(cmd => cmd.includes("extension-stale-context"))).toEqual(
 			expected,
 		);
+		// The shards that do not own it fall back to everything they were given,
+		// so each reports real work. A shard running nothing is the failure this
+		// whole assertion exists to prevent.
 		for (const shard of shards.filter(s => !owning.includes(s))) {
-			expect(shard.stdout).toContain("mode=smoke");
+			expect(plannedCommands(shard.stdout).length).toBeGreaterThan(0);
 		}
 	}, 400_000);
 

@@ -1,0 +1,6 @@
+scope	path	hits	disposition	reason	keep_refs
+src	packages/catalog/src/wire/codex.ts	1	keep-wire	N3 wire originator: a third-party protocol compares this exact string, renaming it changes the handshake	N3
+src	packages/coding-agent/src/modes/warp-events.ts	1	keep-wire	N4: the value is resolved through WIRE_NAME already; the literal here is the documented wire contract	N4
+src	packages/ai/src/providers/gitlab-duo-workflow.ts	1	keep-wire	N6 serverName is MCP tool metadata consumed by the client, not a display string. Blocked on m6-gap-m6-12-081	N6
+src	packages/coding-agent/src/modes/acp/acp-agent.ts	1	keep-wire	N5 ACP client identity. Bare form so the pinned expression does not match it; recorded because a file-level rule would keep the wrong line	N5
+src	packages/coding-agent/src/telemetry-export-otlp.ts	1	keep-wire	N7 OTLP service.name shipped to collectors. Bare form so the pinned expression does not match it	N7

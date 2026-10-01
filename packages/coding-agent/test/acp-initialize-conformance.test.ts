@@ -242,14 +242,23 @@ describe("ACP initialize conformance", () => {
 	it("declares the published binary name, in name and title alike", async () => {
 		// Anchored to the **published `package.json#bin` key**, not to `WIRE_NAME`.
 		// Asserting against the constant would be a tautology: `name` and the
-		// expected value both read `WIRE_NAME`, so nothing about a rename could ever
-		// fail it. The bin key is the one fact here that is not derived from the same
-		// source — it is what a user can actually type.
+		// expected value would both read `WIRE_NAME`, so nothing about a rename
+		// could ever fail it.
 		//
 		// This is the row that would have caught the drift this fixes: `title` came
 		// from `WIRE_NAME` while its sibling `name` was an inline `"omp"` in the same
 		// object literal. Nothing tied the two together, and nothing tied either to
 		// the binary the package publishes.
+		//
+		// **What this defends, and what it cannot.** It defends the *values*: an
+		// `agentInfo.name` that drifts from the invocable binary is a real ACP
+		// conformance break, and this goes red for it. It does **not** defend the
+		// *link* — replacing `WIRE_NAME` with an inline literal survives here
+		// whenever that literal happens to equal the bin key, because two equal
+		// values are indistinguishable to a comparison. Detecting "the constant is
+		// no longer the source" is a structural invariant, so it belongs in a type
+		// test or an oxlint rule rather than in a runtime row; a `bun test` cannot
+		// change the value of an imported `const` to find out.
 		const agent = await createAgent();
 		const response = await agent.initialize(buildInitializeRequest());
 		const pkg = (await Bun.file(path.join(import.meta.dir, "..", "package.json")).json()) as {

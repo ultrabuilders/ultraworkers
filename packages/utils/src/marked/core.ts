@@ -607,8 +607,15 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		// run pay O(n) to fetch the last character of a token that `appendText` had just
 		// built by `raw += char`: `raw` is a rope, and reading either end of a rope forces
 		// V8 to flatten it, so a run with nothing to emphasise — the case with the most
-		// iterations — was quadratic. Measured on 64 KB of `!`: 253.6 ms before, 8.2 ms
-		// after. Where the branches do read it, the value is unchanged.
+		// iterations — was quadratic. Where the branches do read it, the value is
+		// unchanged.
+		//
+		// No before/after figures: the pair this comment used to quote was taken from
+		// single runs, and single runs on this workload vary by roughly 3x on unchanged
+		// code, so neither number could be reproduced. The mechanism is what is asserted,
+		// and it is checkable — an append-and-read loop that grows its buffer each
+		// iteration runs ~1000x slower than the same appends without the read, while the
+		// same read on a buffer that never grows is free because V8 caches the flatten.
 		const previous = marker === "*" || marker === "_" ? (output.at(-1)?.raw.at(-1) ?? "\n") : "\n";
 		if (
 			(marker === "*" || marker === "_") &&

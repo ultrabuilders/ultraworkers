@@ -8,7 +8,7 @@ owner decision.
 - **Decider:** _unassigned — owner ratification required_
 - **Date:** 2026-10-01
 - **Work item:** `m2-wi-0-030` (MILESTONE_2_EXECUTION_PLAN · `WI-0`)
-- **Anchors measured against:** `895fd263a2`
+- **Anchors measured against:** `8e6246204e`
 
 Section 1 is settled fact, measured against the tree. Section 2 is analysis.
 Section 4 is the decision; it is written, and it is the one the shipped code
@@ -96,16 +96,16 @@ project-scoped roots.
 **(c) `isProjectTrusted()` is declared twice on the extension-facing context.**
 
 ```
-packages/coding-agent/src/extensibility/extensions/types.ts:520
-packages/coding-agent/src/extensibility/extensions/types.ts:587
+packages/coding-agent/src/extensibility/extensions/types.ts:558
+packages/coding-agent/src/extensibility/extensions/types.ts:625
 ```
 
 **(d) Both implementations are the literal `() => true`.**
 
 ```
-packages/coding-agent/src/extensibility/extensions/runner.ts:1589
+packages/coding-agent/src/extensibility/extensions/runner.ts:1810
     isProjectTrusted: () => true,
-packages/coding-agent/src/session/agent-session.ts:7701
+packages/coding-agent/src/session/agent-session.ts:7708
     isProjectTrusted: () => true,
 ```
 
@@ -116,6 +116,16 @@ packages/coding-agent/src/session/agent-session.ts:7701
 > at these sites. The work item also ships its own correction table measured on
 > `65cc6c1`; every anchor in that table has drifted again and none matches this
 > commit. Verify against the symbol, not the line number.
+>
+> This has now happened twice, so treat the numbers as a convenience rather than
+> a citation. Re-measured 2026-10-02 against `8e6246204e`: five of the eleven
+> anchors in this document had rotted — both `isProjectTrusted` declarations
+> (`types.ts:520`/`:587` → `:558`/`:625`), both implementations
+> (`runner.ts:1589`/`agent-session.ts:7701` → `:1810`/`:7708`), the `ctx.exec`
+> declaration (`:1653` → `:1989`), the two posture comments (`:513-520`/`:582-586`
+> → `:613-624`/`:551-557`), and the `#7955` changelog entry (`:1394` → `:1587`).
+> The five that survived were re-checked by content, not by line. If you are
+> citing this document, cite the symbol.
 
 ---
 
@@ -148,10 +158,10 @@ that cannot be false: the branch is never exercised and the safe path is never
 taken. That is worse than its absence, because absence is visible and this is not.
 
 **This is already true today, not a future risk.** The posture is stated three
-times in shipped code and docs — `types.ts:513-520`, `types.ts:582-586` ("ultraworkers has
+times in shipped code and docs — `types.ts:613-624`, `types.ts:551-557` ("ultraworkers has
 no equivalent per-directory trust gate … always returns `true`, truthfully
 reflecting that ultraworkers already trusts project-local inputs by default"), and the
-released changelog entry for #7955 (`packages/coding-agent/CHANGELOG.md:1394`).
+released changelog entry for #7955 (`packages/coding-agent/CHANGELOG.md:1587`).
 The gap is the absence of a decision, not the presence of a defect.
 
 ---
@@ -162,7 +172,7 @@ The gap is the absence of a decision, not the presence of a defect.
 extension which has loaded at all has already been trusted.**
 
 It is declared on the extension context at
-`packages/coding-agent/src/extensibility/extensions/types.ts:1653`:
+`packages/coding-agent/src/extensibility/extensions/types.ts:1989`:
 
 ```
 exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
@@ -187,13 +197,13 @@ rather than changed.
 
 **Why not A (prompt per project).** It is the cheapest in code — the seam already
 has the right shape — but it is not free, and the ADR should say so rather than
-summarize it away. Two implementations must change (`runner.ts:1589`,
-`agent-session.ts:7701`); two existing tests assert the current value
+summarize it away. Two implementations must change (`runner.ts:1810`,
+`agent-session.ts:7708`); two existing tests assert the current value
 (`test/extension-context-project-trust.test.ts`,
 `test/issue-7955-extension-project-trusted.test.ts`) and go red; and it
-contradicts a **released** changelog entry at `CHANGELOG.md:1394`, making it a
+contradicts a **released** changelog entry at `CHANGELOG.md:1587`, making it a
 user-visible behaviour change requiring its own changelog entry and issue link.
-Its blast radius also exceeds this ADR: the `types.ts:582-586` comment describes
+Its blast radius also exceeds this ADR: the `types.ts:613-624` comment describes
 project trust as covering `extensions, settings, skills, resources`, so A either
 gates more than this document decides or contradicts itself.
 
@@ -251,7 +261,7 @@ Reopen this decision if any of the following becomes true:
   `(b′)` is reachable without a clone.
 - A sandbox or process-isolation boundary lands for extensions, making `ctx.exec`
   bounded and section 3's reasoning change.
-- The `types.ts:582-586` scope (`extensions, settings, skills, resources`) gains a
+- The `types.ts:613-624` scope (`extensions, settings, skills, resources`) gains a
   second implementation, making a partial gate actively misleading.
 - Issue #7955's premise is revisited upstream in Pi, changing what the shim must
   mirror.
@@ -272,8 +282,9 @@ recorded here so the next reader does not have to re-derive it.
 
 **M2-OQ2 = YES.** The capability registry becomes a surface an out-of-repo
 extension can reach, on the same terms as every other registration seam in this
-programme. It is `packages/coding-agent/src/capability/index.ts` — **614 lines**
-measured 2026-10-01, not the 588 first quoted; the figure moved with the file.
+programme. It is `packages/coding-agent/src/capability/index.ts` — **718 lines**
+measured 2026-10-02, not the 614 quoted on 2026-10-01 and the 588 before that; the
+figure moves with the file, so treat it as a snapshot, not a specification.
 
 This is a *ruling on ownership*, not a completed implementation. It settles the
 question "does an extension have a seam to reach this?" — the registry is in

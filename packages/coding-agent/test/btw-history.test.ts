@@ -463,11 +463,30 @@ describe("BtwHistoryStore", () => {
 		const terminal = { ...saved, answer: "Retried checkpoint" };
 		const successful = store.retry(terminal);
 		const conflicting = store.retry(record("collision"));
-		const failedRetry = expect(conflicting).rejects.toThrow("BTW history conflict");
-		const failedFlush = expect(store.flush()).rejects.toThrow("BTW history conflict");
-		await successful;
-		await failedRetry;
-		await failedFlush;
+		// Neither rejection can be asserted through `expect(p).rejects` here. On
+		// Bun 1.3.14 that matcher settles only when the rejection has ALREADY
+		// happened at the moment the matcher is created, and these are still
+		// pending behind the retry queue at this line — so a matcher built now
+		// hangs the test instead of failing it, which is the worse outcome
+		// because nothing reports it. Capturing the rejections and asserting on
+		// them afterwards asserts the same contract without the dead end. See
+		// epic-j0yo.
+		const failedFlush = store.flush();
+		let retryError: unknown;
+		let flushError: unknown;
+		await Promise.all([
+			successful,
+			conflicting.catch((error: unknown) => {
+				retryError = error;
+			}),
+			failedFlush.catch((error: unknown) => {
+				flushError = error;
+			}),
+		]);
+		expect(retryError).toBeInstanceOf(Error);
+		expect((retryError as Error).message).toMatch(/BTW history conflict/);
+		expect(flushError).toBeInstanceOf(Error);
+		expect((flushError as Error).message).toMatch(/BTW history conflict/);
 		await expect(store.upsert({ ...terminal, answer: "Must remain blocked" })).rejects.toThrow(
 			"BTW history conflict",
 		);

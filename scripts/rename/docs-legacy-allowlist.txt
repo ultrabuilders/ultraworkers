@@ -136,7 +136,6 @@ packages/metaharness/README.md	10
 packages/mnemopi/README.md	2
 packages/snapcompact/README.md	1
 packages/stats/README.md	10
-packages/telemetry/README.md	5
 packages/utils/README.md	4
 packages/wire/README.md	1
 python/omp-rpc/README.md	4

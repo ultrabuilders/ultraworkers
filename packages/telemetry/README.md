@@ -32,7 +32,7 @@ Applications can use the in-memory reference or provide an adapter for OpenTelem
 
 ## Installation
 
-This package lives in the omp workspace and is consumed by path:
+This package lives in the `ultraworkers` workspace and is consumed by path:
 
 ```ts
 import { InMemoryTelemetryContext } from "@oh-my-pi/pi-telemetry";
@@ -367,7 +367,7 @@ Parent metadata is descriptive schema data:
 
 Adapters do not need to understand schema objects. Instrumentation helpers and tests use them to keep emitted names and attributes consistent.
 
-## omp Telemetry Integration
+## `ultraworkers` Telemetry Integration
 
 Three things answer to the word "telemetry" here, and they are not
 interchangeable:
@@ -375,7 +375,7 @@ interchangeable:
 - `@oh-my-pi/pi-telemetry` (this package) owns the vendor-neutral contract. It
   performs no I/O, names no vendor, opens no socket. It only defines what a span
   is.
-- `packages/agent/src/telemetry.ts` is omp's real emitter. It honours the
+- `packages/agent/src/telemetry.ts` is the real `ultraworkers` emitter. It honours the
   contract above and turns spans into OpenTelemetry objects exported over OTLP.
 - `packages/stats` is a local reader. It turns session JSONL into a dashboard on
   disk and sends nothing anywhere.
@@ -384,13 +384,13 @@ They are deliberately not merged. Collapsing the contract into the OTEL emitter
 would make the contract depend on a vendor SDK; collapsing `stats` into either
 would make a local dashboard look like remote telemetry.
 
-The join point is `RecordedTelemetrySpan`: the normalised shape any omp emitter
+The join point is `RecordedTelemetrySpan`: the normalised shape any `ultraworkers` emitter
 must produce to be scored by `createTelemetryAdapterConformance`. That is how
 you show an OTEL adapter and the in-memory reference really are equivalent,
 rather than asserting it.
 
 Wiring this contract into `packages/agent` — including which schemas live there —
-is work owned by the agent milestone, not by this package. Nothing in the omp
+is work owned by the agent milestone, not by this package. Nothing in the `ultraworkers`
 tree imports `TelemetryContext` yet.
 
 ## Security and Portability

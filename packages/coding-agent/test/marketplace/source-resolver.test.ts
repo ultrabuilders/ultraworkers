@@ -3,7 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { MarketplacePluginEntry } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/marketplace";
-import { resolvePluginSource, validatePluginSource } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/marketplace";
+import {
+	classifySourcePin,
+	resolvePluginSource,
+	validatePluginSource,
+} from "@oh-my-pi/pi-coding-agent/extensibility/plugins/marketplace";
 import { removeSyncWithRetries } from "@oh-my-pi/pi-utils";
 
 // Fixture: a cloned marketplace with a single plugin at ./plugins/hello-plugin
@@ -98,5 +102,65 @@ describe("resolvePluginSource", () => {
 		await expect(resolvePluginSource(entry, { marketplaceClonePath: FIXTURE_DIR, tmpDir })).rejects.toThrow(
 			/does not exist/,
 		);
+	});
+});
+
+describe("classifySourcePin", () => {
+	// The 40-hex boundary is the whole contract. Each case below is a distinct
+	// branch of that one predicate, and the 7-char case is the expensive
+	// direction: `manager.ts` displays `sha.slice(0, 7)`, so a classifier that
+	// accepts an abbreviated sha would mark every already-installed entry on a
+	// user's machine immutable and silently freeze their updates.
+
+	const FULL = "a".repeat(40);
+
+	it("treats a full 40-hex sha as a pin", () => {
+		expect(classifySourcePin({ source: "github", repo: "owner/repo", sha: FULL })).toBe("immutable");
+	});
+
+	it("does not treat an abbreviated sha as a pin", () => {
+		expect(classifySourcePin({ source: "github", repo: "owner/repo", sha: FULL.slice(0, 7) })).toBe("mutable");
+	});
+
+	it("rejects a 39-hex sha — the boundary is exact, not a minimum length", () => {
+		expect(classifySourcePin({ source: "url", url: "https://example.com/r.git", sha: FULL.slice(0, 39) })).toBe(
+			"mutable",
+		);
+	});
+
+	it("rejects a 41-hex sha — a longer run is not a sha either", () => {
+		expect(classifySourcePin({ source: "url", url: "https://example.com/r.git", sha: `${FULL}a` })).toBe("mutable");
+	});
+
+	it("rejects 40 hex-looking characters that are not a sha", () => {
+		// Length alone would pass; only the alphabet check rejects this.
+		expect(classifySourcePin({ source: "github", repo: "owner/repo", sha: "g".repeat(40) })).toBe("mutable");
+	});
+
+	it("does not treat a branch ref as a pin", () => {
+		expect(classifySourcePin({ source: "github", repo: "owner/repo", ref: "main" })).toBe("mutable");
+	});
+
+	it("does not treat a tag ref as a pin", () => {
+		expect(classifySourcePin({ source: "github", repo: "owner/repo", ref: "v1.2.3" })).toBe("mutable");
+	});
+
+	it("does not treat a bare source with neither ref nor sha as a pin", () => {
+		expect(classifySourcePin({ source: "github", repo: "owner/repo" })).toBe("mutable");
+	});
+
+	// Negative contract: sources with no git identity must classify, not throw.
+	// A classifier reached from a restore path has to answer for every entry in
+	// the registry, including the ones it can never pin.
+	it("classifies non-git sources as mutable rather than rejecting them", () => {
+		expect(classifySourcePin("./plugins/hello-plugin")).toBe("mutable");
+		expect(classifySourcePin({ source: "npm", package: "hello-plugin", version: "1.0.0" })).toBe("mutable");
+	});
+
+	it("pins a git-subdir source only on a full sha", () => {
+		expect(classifySourcePin({ source: "git-subdir", url: "owner/repo", path: "plugins/foo", sha: FULL })).toBe(
+			"immutable",
+		);
+		expect(classifySourcePin({ source: "git-subdir", url: "owner/repo", path: "plugins/foo" })).toBe("mutable");
 	});
 });

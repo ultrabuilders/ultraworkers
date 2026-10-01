@@ -84,6 +84,18 @@
         "@types/bun": "catalog:",
       },
     },
+    "packages/client": {
+      "name": "@oh-my-pi/pi-client",
+      "version": "18.4.3",
+      "dependencies": {
+        "@oh-my-pi/chord": "catalog:",
+        "@oh-my-pi/pi-protocol": "catalog:",
+      },
+      "devDependencies": {
+        "@oh-my-pi/pi-server": "catalog:",
+        "@types/bun": "catalog:",
+      },
+    },
     "packages/codemode": {
       "name": "@oh-my-pi/pi-codemode",
       "version": "18.4.3",
@@ -259,6 +271,17 @@
         "@types/bun": "catalog:",
       },
     },
+    "packages/server": {
+      "name": "@oh-my-pi/pi-server",
+      "version": "18.4.3",
+      "dependencies": {
+        "@oh-my-pi/chord": "catalog:",
+        "@oh-my-pi/pi-protocol": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+    },
     "packages/snapcompact": {
       "name": "@oh-my-pi/snapcompact",
       "version": "18.4.3",
@@ -390,6 +413,8 @@
     "@oh-my-pi/pi-coding-agent": "18.4.3",
     "@oh-my-pi/pi-mnemopi": "18.4.3",
     "@oh-my-pi/pi-natives": "18.4.3",
+    "@oh-my-pi/pi-protocol": "18.4.3",
+    "@oh-my-pi/pi-server": "18.4.3",
     "@oh-my-pi/pi-tui": "18.4.3",
     "@oh-my-pi/pi-utils": "18.4.3",
     "@oh-my-pi/pi-wire": "18.4.3",
@@ -806,6 +831,8 @@
 
     "@oh-my-pi/pi-catalog": ["@oh-my-pi/pi-catalog@workspace:packages/catalog"],
 
+    "@oh-my-pi/pi-client": ["@oh-my-pi/pi-client@workspace:packages/client"],
+
     "@oh-my-pi/pi-codemode": ["@oh-my-pi/pi-codemode@workspace:packages/codemode"],
 
     "@oh-my-pi/pi-coding-agent": ["@oh-my-pi/pi-coding-agent@workspace:packages/coding-agent"],
@@ -819,6 +846,8 @@
     "@oh-my-pi/pi-natives": ["@oh-my-pi/pi-natives@workspace:packages/natives"],
 
     "@oh-my-pi/pi-protocol": ["@oh-my-pi/pi-protocol@workspace:packages/protocol"],
+
+    "@oh-my-pi/pi-server": ["@oh-my-pi/pi-server@workspace:packages/server"],
 
     "@oh-my-pi/pi-tui": ["@oh-my-pi/pi-tui@workspace:packages/tui"],
 

@@ -38,6 +38,10 @@
 			"types": "./src/index.ts",
 			"import": "./src/index.ts"
 		},
+		"./context": {
+			"types": "./src/context/index.ts",
+			"import": "./src/context/index.ts"
+		},
 		"./*": {
 			"types": "./src/*.ts",
 			"import": "./src/*.ts"

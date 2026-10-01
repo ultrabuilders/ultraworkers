@@ -25,6 +25,8 @@
 			"@oh-my-pi/pi-coding-agent": "18.4.3",
 			"@oh-my-pi/pi-mnemopi": "18.4.3",
 			"@oh-my-pi/pi-natives": "18.4.3",
+			"@oh-my-pi/pi-protocol": "18.4.3",
+			"@oh-my-pi/pi-server": "18.4.3",
 			"@oh-my-pi/pi-tui": "18.4.3",
 			"@oh-my-pi/pi-utils": "18.4.3",
 			"@oh-my-pi/pi-wire": "18.4.3",

@@ -16,7 +16,7 @@ import {
 	getPluginsCacheDir,
 	MarketplaceManager,
 	parsePluginId,
-} from "../extensibility/plugins/marketplace/index.js";
+} from "../extensibility/plugins/marketplace/index";
 import type { InstalledPlugin } from "../extensibility/plugins/types";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 

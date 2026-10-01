@@ -4,7 +4,7 @@ import {
 	clearPluginRootsAndCaches,
 	resolveActiveProjectRegistryPath,
 	resolveOrDefaultProjectRegistryPath,
-} from "../discovery/helpers.js";
+} from "../discovery/helpers";
 import { PluginManager } from "../extensibility/plugins";
 import {
 	getInstalledPluginsRegistryPath,

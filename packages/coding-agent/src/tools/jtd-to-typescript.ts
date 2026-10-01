@@ -5,7 +5,7 @@
  * helping models understand expected output structure.
  */
 
-import type { JTDPrimitive } from "./jtd-utils.js";
+import type { JTDPrimitive } from "./jtd-utils";
 import {
 	isJTDDiscriminator,
 	isJTDElements,
@@ -14,7 +14,7 @@ import {
 	isJTDRef,
 	isJTDType,
 	isJTDValues,
-} from "./jtd-utils.js";
+} from "./jtd-utils";
 
 const primitiveMap: Record<JTDPrimitive, string> = {
 	boolean: "boolean",

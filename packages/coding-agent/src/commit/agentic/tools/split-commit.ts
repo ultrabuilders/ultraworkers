@@ -13,7 +13,7 @@ import {
 import { validateScope } from "../../../commit/analysis/validation";
 import { normalizeDetails } from "../../../commit/utils";
 import type { CustomTool } from "../../../extensibility/custom-tools/types";
-import { commitTypeSchema, detailSchema } from "./schemas.js";
+import { commitTypeSchema, detailSchema } from "./schemas";
 
 const fileChangeSchema = type({ path: "string", kind: "'all'" })
 	.or({ path: "string", kind: "'indices'", indices: "number[]" })

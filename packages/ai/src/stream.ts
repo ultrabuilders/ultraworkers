@@ -26,17 +26,13 @@ import type { AnthropicOptions } from "./providers/anthropic";
 import type { AppleFoundationModelsOptions } from "./providers/apple-foundation-models";
 import type { CursorOptions } from "./providers/cursor";
 import type { DevinOptions } from "./providers/devin";
-import { streamGitLabDuo } from "./providers/gitlab-duo";
-import { type GitLabDuoWorkflowOptions, streamGitLabDuoWorkflow } from "./providers/gitlab-duo-workflow";
+import type { GitLabDuoWorkflowOptions } from "./providers/gitlab-duo-workflow";
 import type { GoogleOptions } from "./providers/google";
-import { getVertexAccessToken } from "./providers/google-auth";
+import { getVertexAccessTokenLazily } from "./registry/transports";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli";
 import type { GoogleVertexOptions } from "./providers/google-vertex";
-import { streamKimi } from "./providers/kimi";
 import type { OllamaChatOptions } from "./providers/ollama";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions";
-import { streamPiNative } from "./providers/pi-native-client";
-import { streamSynthetic } from "./providers/synthetic";
 import {
 	streamAnthropic,
 	streamAppleFoundationModels,
@@ -52,7 +48,7 @@ import {
 	streamOpenAICompletions,
 	streamOpenAIResponses,
 } from "./providers/register-builtins";
-import { getProviderDefinition, PROVIDER_REGISTRY } from "./registry";
+import { getProviderDefinition, PROVIDER_REGISTRY, PROVIDER_TRANSPORTS } from "./registry";
 import type {
 	Api,
 	AssistantMessage,
@@ -781,10 +777,13 @@ function withProviderInFlightLimit<TOptions extends Pick<StreamOptions, "signal"
 	return outer;
 }
 
-function createVertexAuthenticatedFetch(options: StreamOptions | undefined): FetchImpl {
+function createVertexAuthenticatedFetch(model: Model<Api>, options: StreamOptions | undefined): FetchImpl {
 	const baseFetch = options?.fetch ?? fetch;
 	const vertexFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-		const token = await getVertexAccessToken({ signal: options?.signal, fetch: baseFetch });
+		const token = await getVertexAccessTokenLazily(
+			{ model, context: { messages: [] }, options: {} },
+			{ signal: options?.signal, fetch: baseFetch },
+		);
 		const headers = new Headers(init?.headers);
 		headers.set("Authorization", `Bearer ${token}`);
 		const rewritten = resolveVertexRequest(input);
@@ -1001,9 +1000,10 @@ function streamDispatch<TApi extends Api>(
 		if (!apiKey) {
 			throw new AIError.MissingApiKeyError(model.provider);
 		}
-		return streamGitLabDuo(model, context, {
-			...(requestOptions as SimpleStreamOptions),
-			apiKey,
+		return PROVIDER_TRANSPORTS.gitlabDuo({
+			model,
+			context,
+			options: { ...(requestOptions as SimpleStreamOptions), apiKey },
 		});
 	}
 
@@ -1012,10 +1012,14 @@ function streamDispatch<TApi extends Api>(
 		if (!apiKey) {
 			throw new AIError.MissingApiKeyError(model.provider);
 		}
-		return streamGitLabDuoWorkflow(model as Model<"gitlab-duo-agent">, context, {
-			...(requestOptions as StreamOptions | undefined),
-			apiKey,
-		} as GitLabDuoWorkflowOptions);
+		return PROVIDER_TRANSPORTS.gitlabDuoWorkflow({
+			model,
+			context,
+			options: {
+				...(requestOptions as StreamOptions | undefined),
+				apiKey,
+			} as unknown as GitLabDuoWorkflowOptions,
+		});
 	}
 
 	// Vertex AI and Bedrock Converse authenticate outside the generic API-key path.
@@ -1039,7 +1043,7 @@ function streamDispatch<TApi extends Api>(
 		? {
 				...preparedOptions,
 				apiKey: "vertex-adc",
-				fetch: createVertexAuthenticatedFetch(preparedOptions),
+				fetch: createVertexAuthenticatedFetch(model, preparedOptions),
 			}
 		: { ...preparedOptions, apiKey };
 
@@ -1478,7 +1482,7 @@ function streamSimpleRequest<TApi extends Api>(
 								headers: forwardBedrockUserAgent(model.headers, opts?.headers),
 							}
 						: opts;
-				return streamPiNative(model, context, nativeOptions);
+				return PROVIDER_TRANSPORTS.piNative({ model, context, options: nativeOptions });
 			}),
 		);
 	}
@@ -1520,9 +1524,10 @@ function streamSimpleRequest<TApi extends Api>(
 	if (model.provider === "gitlab-duo") {
 		return withThinkingLoopGuard(model, requestOptions, opts =>
 			withProviderInFlightLimit(model, opts, () =>
-				streamGitLabDuo(model, context, {
-					...opts,
-					apiKey,
+				PROVIDER_TRANSPORTS.gitlabDuo({
+					model,
+					context,
+					options: { ...opts, apiKey },
 				}),
 			),
 		);
@@ -1534,9 +1539,10 @@ function streamSimpleRequest<TApi extends Api>(
 		return withThinkingLoopGuard(model, requestOptions, opts =>
 			healLeakedThinking(
 				model,
-				streamGitLabDuoWorkflow(model as Model<"gitlab-duo-agent">, context, {
-					...opts,
-					apiKey,
+				PROVIDER_TRANSPORTS.gitlabDuoWorkflow({
+					model,
+					context,
+					options: { ...opts, apiKey } as unknown as GitLabDuoWorkflowOptions,
 				}),
 			),
 		);
@@ -1552,10 +1558,10 @@ function streamSimpleRequest<TApi extends Api>(
 		const kimiOptions = normalizeMandatoryReasoningOptions(model, requestOptions);
 		return withThinkingLoopGuard(model, kimiOptions, opts =>
 			withProviderInFlightLimit(model, opts, () =>
-				streamKimi(model as Model<"openai-completions">, context, {
-					...opts,
-					apiKey,
-					format: opts?.kimiApiFormat,
+				PROVIDER_TRANSPORTS.kimi({
+					model,
+					context,
+					options: { ...opts, apiKey, format: opts?.kimiApiFormat },
 				}),
 			),
 		);
@@ -1566,10 +1572,10 @@ function streamSimpleRequest<TApi extends Api>(
 		// Pass raw SimpleStreamOptions - streamSynthetic handles mapping internally.
 		return withThinkingLoopGuard(model, requestOptions, opts =>
 			withProviderInFlightLimit(model, opts, () =>
-				streamSynthetic(model as Model<"openai-completions">, context, {
-					...opts,
-					apiKey,
-					format: opts?.syntheticApiFormat ?? "openai",
+				PROVIDER_TRANSPORTS.synthetic({
+					model,
+					context,
+					options: { ...opts, apiKey, format: opts?.syntheticApiFormat ?? "openai" },
 				}),
 			),
 		);

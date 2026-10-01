@@ -126,6 +126,10 @@
 			"types": "./src/registry/index.ts",
 			"import": "./src/registry/index.ts"
 		},
+		"./registry/transports": {
+			"types": "./src/registry/transports.ts",
+			"import": "./src/registry/transports.ts"
+		},
 		"./registry/oauth": {
 			"types": "./src/registry/oauth/index.ts",
 			"import": "./src/registry/oauth/index.ts"

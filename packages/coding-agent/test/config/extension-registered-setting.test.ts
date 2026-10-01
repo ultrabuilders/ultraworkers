@@ -39,7 +39,7 @@ describe("a setting registered by an owner is removable by that owner", () => {
 		// never told about it can only ever be added. Unloading an extension then leaves
 		// its rows behind forever, and reloading it collides with its own previous
 		// registration — an error naming a setting the author cannot see.
-		const id = "test.owner.removable";
+		const id = "plugins.test.removable";
 		own("test-owner-a", { id, type: "string", default: "x" });
 
 		expect(lookup(id)).toBeDefined();
@@ -67,8 +67,8 @@ describe("a setting registered by an owner is removable by that owner", () => {
 		// one extension would silently strip every other extension's settings — and
 		// the failure would surface much later, as a setting that has quietly reverted
 		// to its default.
-		const keptId = "test.owner.kept";
-		const droppedId = "test.owner.dropped";
+		const keptId = "plugins.test.kept";
+		const droppedId = "plugins.test.dropped";
 		own("test-owner-keep", { id: keptId, type: "string", default: "keep" });
 		own("test-owner-drop", { id: droppedId, type: "string", default: "drop" });
 
@@ -98,11 +98,11 @@ describe("a collision between two settings is reported, not silently resolved", 
 		// with different semantics, and NEITHER author is told. The author's only clue
 		// is that their key stopped taking effect, which looks like a config-layer bug
 		// and sends them looking in the wrong place entirely.
-		own("test-owner-first", { id: "test.owner.collide", type: "string", default: "first" });
+		own("test-owner-first", { id: "plugins.test.collide", type: "string", default: "first" });
 
 		let thrown: Error | undefined;
 		try {
-			registerOwned("test-owner-second", { id: "test.owner.collide", type: "number", default: 7 } as never);
+			registerOwned("test-owner-second", { id: "plugins.test.collide", type: "number", default: 7 } as never);
 		} catch (error) {
 			thrown = error as Error;
 		}
@@ -110,7 +110,7 @@ describe("a collision between two settings is reported, not silently resolved", 
 		expect(thrown, "the second registration was allowed to win").toBeDefined();
 		// The id must be in the message: an author who cannot see WHICH key collided
 		// has to bisect their whole setting list.
-		expect(thrown!.message).toContain("test.owner.collide");
+		expect(thrown!.message).toContain("plugins.test.collide");
 		// The holder, so the author knows it is not a core setting they collided with
 		// and can find the other extension by name rather than by bisecting.
 		expect(thrown!.message).toContain("test-owner-first");
@@ -123,7 +123,7 @@ describe("a collision between two settings is reported, not silently resolved", 
 		// `Settings` instance: a handle resolves against the layer stack, so passing a
 		// bare object here would throw inside `settingsOf` rather than prove anything
 		// about which declaration survived.
-		const survivor = lookup("test.owner.collide");
+		const survivor = lookup("plugins.test.collide");
 		expect(survivor?.get(Settings.isolated())).toBe("first");
 	});
 });
@@ -152,16 +152,16 @@ describe("an extension registering the same setting twice is idempotent, not a c
 		// told their own setting name was taken — by themselves.
 		const temp = TempDir.createSync("@pi-ext-setting-");
 		try {
-			const extDir = writeExtension(temp.join("ext"), "test.owner.rebind");
+			const extDir = writeExtension(temp.join("ext"), "plugins.test.rebind");
 			const result = await loadExtensions([extDir], process.cwd());
 
 			expect(result.errors).toEqual([]);
 			const extension = result.extensions[0]!;
 			// Registered once, though the factory declared it twice.
-			expect(extension.settingIds.filter(id => id === "test.owner.rebind")).toHaveLength(1);
-			expect(lookup("test.owner.rebind")).toBeDefined();
+			expect(extension.settingIds.filter(id => id === "plugins.test.rebind")).toHaveLength(1);
+			expect(lookup("plugins.test.rebind")).toBeDefined();
 			// The second declaration must not have created a second row in the panel.
-			const rows = orderedSettings().filter(s => s.id === "test.owner.rebind");
+			const rows = orderedSettings().filter(s => s.id === "plugins.test.rebind");
 			expect(rows).toHaveLength(1);
 
 			touched.push(String((extension as unknown as { path: string }).path));
@@ -179,13 +179,13 @@ describe("an extension registering the same setting twice is idempotent, not a c
 		// swallowed the collision.
 		const temp = TempDir.createSync("@pi-ext-collide-");
 		try {
-			const a = writeExtension(temp.join("a"), "test.owner.shared");
-			const b = writeExtension(temp.join("b"), "test.owner.shared");
+			const a = writeExtension(temp.join("a"), "plugins.test.shared");
+			const b = writeExtension(temp.join("b"), "plugins.test.shared");
 			const result = await loadExtensions([a, b], process.cwd());
 
 			expect(result.errors.length, "the collision was not reported at all").toBeGreaterThan(0);
 			const reported = result.errors.map(e => e.error).join("\n");
-			expect(reported).toContain("test.owner.shared");
+			expect(reported).toContain("plugins.test.shared");
 		} finally {
 			temp.removeSync();
 		}
@@ -211,15 +211,15 @@ describe("the env layer is opt-in per setting", () => {
 			fs.writeFileSync(
 				path.join(temp.join("ext"), "index.js"),
 				`export default function activate(ctx) {
-  ctx.registerSetting({ id: "test.owner.envYes", type: "string", default: "default", env: ${JSON.stringify(withEnv)} });
-  ctx.registerSetting({ id: "test.owner.envNo", type: "string", default: "default" });
+  ctx.registerSetting({ id: "plugins.test.envYes", type: "string", default: "default", env: ${JSON.stringify(withEnv)} });
+  ctx.registerSetting({ id: "plugins.test.envNo", type: "string", default: "default" });
 }
 `,
 			);
 			await loadExtensions([temp.join("ext")], process.cwd());
 
-			const yes = lookup("test.owner.envYes");
-			const no = lookup("test.owner.envNo");
+			const yes = lookup("plugins.test.envYes");
+			const no = lookup("plugins.test.envNo");
 			expect(yes).toBeDefined();
 			expect(no).toBeDefined();
 			if (!yes || !no) return;
@@ -256,13 +256,13 @@ describe("a dynamically registered setting joins the same five-layer stack as a 
 		fs.writeFileSync(
 			path.join(temp.join("ext"), "index.js"),
 			`export default function activate(ctx) {
-  ctx.registerSetting({ id: "test.owner.layered", type: "string", default: "built-in" });
+  ctx.registerSetting({ id: "plugins.test.layered", type: "string", default: "built-in" });
 }
 `,
 		);
 		try {
 			await loadExtensions([temp.join("ext")], process.cwd());
-			const handle = lookup("test.owner.layered");
+			const handle = lookup("plugins.test.layered");
 			expect(handle).toBeDefined();
 			if (!handle) return;
 
@@ -275,7 +275,7 @@ describe("a dynamically registered setting joins the same five-layer stack as a 
 			// With an overlay supplying a different value, the overlay must win AND be
 			// reported as the winner. A store that ignored layers would return the
 			// default and still pass a value-only check on the previous line.
-			await Bun.write(overlay, "test:\n  owner:\n    layered: from-overlay\n");
+			await Bun.write(overlay, "plugins:\n  test:\n    layered: from-overlay\n");
 			const settings = await Settings.loadIsolated({ agentDir, cwd: agentDir, configFiles: [overlay] });
 			const scoped = settings;
 			expect(handle.provenance(scoped)).toBe("overlay");

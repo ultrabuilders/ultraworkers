@@ -160,3 +160,61 @@ export const cfgExtensionHandlersToolCallTimeoutMs = register({
 			"Positive finite active-work timeout for extension tool_call handlers; invalid values use 30000ms, and time awaiting OMP-owned dialogs does not count",
 	},
 });
+
+// ── Plugin setting identity ─────────────────────────────────────────────────────
+
+/**
+ * Reserved root for settings an extension owns.
+ *
+ * The registry's `byId` map is global and flat, so today an extension may claim any id
+ * it likes — including one a core setting already uses, in which case one of the two
+ * silently loses. Putting extension settings under a reserved root makes the collision
+ * impossible to express rather than merely unlikely, and it is the same discipline the
+ * tool and command registries already follow for the same reason.
+ *
+ * Lives here, beside the extension settings, rather than in `config/registry.ts` so the
+ * naming rule has one home. `registry.ts` holds only the bare-id rejection, which it
+ * must enforce itself because it is the thing being protected.
+ */
+export const PLUGIN_SETTINGS_ROOT = "plugins";
+
+/**
+ * Fold one id or key segment to the shape used inside a plugin setting id.
+ *
+ * `my-plugin` → `my_plugin`, `autoContext.enabled` → `auto_context_enabled`. Camel-case
+ * boundaries become `_`, every run of other non-alphanumerics becomes a single `_`, and
+ * there is no leading or trailing `_` — the last part matters because `plugins..key` and
+ * `plugins.key` must not both be reachable.
+ *
+ * The camel-case rule is not cosmetic. Lowercasing alone maps both `autoContext` and
+ * `autocontext` to `autocontext`, so two keys a plugin author considers distinct would
+ * silently become one — the exact collision the reserved root exists to make impossible.
+ * Folding keeps them apart, at the cost of treating `autoContext` and `auto-context` as
+ * one name, which is the trade the other way.
+ *
+ * The spec's own sketch (`.lavish-wip/m2-specs/WI-8a.spec.json`) lowercases without folding
+ * and so contradicts the mapping in its own docblock; this follows the docblock.
+ *
+ * An empty result is a real case, not a guard against a hypothetical: a key made only of
+ * punctuation folds to `""`. Callers that build an id must decide what that means rather
+ * than emit `plugins..`.
+ */
+export function sanitizePluginSegment(raw: string): string {
+	return raw
+		.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "");
+}
+
+/**
+ * The registry id for a plugin-owned setting: `plugins.<plugin>.<key>`.
+ *
+ * Both segments are sanitized, so a plugin named `my-plugin` and one named `my_plugin`
+ * resolve to the same id. That is deliberate — it is the same collision the reserved
+ * root exists to surface, and folding them is better than letting two spellings of one
+ * plugin own two sets of keys.
+ */
+export function pluginSettingId(pluginId: string, key: string): string {
+	return `${PLUGIN_SETTINGS_ROOT}.${sanitizePluginSegment(pluginId)}.${sanitizePluginSegment(key)}`;
+}

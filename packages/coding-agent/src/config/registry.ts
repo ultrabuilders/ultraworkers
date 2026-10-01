@@ -861,19 +861,45 @@ export function invalidateOrderedSettings(): void {
 	invalidateOrderedSettingsImpl?.();
 }
 
-/** Reserved root for settings an extension owns. See `.lavish-wip/m2-specs/WI-8a.spec.json`. */
+/**
+ * Reserved root for settings an extension owns.
+ *
+ * Duplicated as a literal rather than imported from `extensibility/settings.ts`, which is
+ * where `pluginSettingId()` builds ids: `config/` must not depend on `extensibility/`, and
+ * that direction is already fixed (every domain imports this file, none is imported back).
+ * A test asserts the two literals agree, so the copy cannot drift silently.
+ */
 const PLUGIN_SETTINGS_ROOT = "plugins";
+
+/**
+ * Owner used by `register`, which is what all 41 in-tree core declaration sites call.
+ *
+ * Named rather than inferred from the id, because "core" is the one owner allowed to
+ * declare a bare id — see `registerOwned`. Core must keep working exactly as it does
+ * today, and exempting it by name is what keeps this change from being a breaking one.
+ */
+const CORE_OWNER = "core";
 
 /**
  * Declares a setting on behalf of `owner` and returns its typed handle.
  *
  * @throws Error when `id` is already registered, naming the id, the owner that holds
  * it, and the namespace rule an extension must follow.
+ * @throws Error when a non-core owner declares a bare id.
  */
 export function registerOwned<const D extends SettingDefinition>(
 	owner: string,
 	definition: D,
 ): Setting<DefinitionValue<D>, D["id"]> {
+	if (owner !== CORE_OWNER && !definition.id.startsWith(`${PLUGIN_SETTINGS_ROOT}.`)) {
+		throw new Error(
+			`Setting "${definition.id}" was declared by ${owner} outside the reserved ` +
+				`"${PLUGIN_SETTINGS_ROOT}." namespace. Settings an extension owns must be ` +
+				`registered as "${PLUGIN_SETTINGS_ROOT}.<id>.<key>" — build the id with ` +
+				`pluginSettingId() from extensibility/settings — so an extension cannot ` +
+				`collide with a core setting or with another extension's.`,
+		);
+	}
 	if (byId.has(definition.id)) {
 		const holder = ownerById.get(definition.id) ?? "an unknown owner";
 		throw new Error(

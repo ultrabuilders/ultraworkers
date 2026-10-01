@@ -20,6 +20,7 @@ import { isPosixShell } from "@oh-my-pi/pi-utils/procmgr";
 import { raceJobSettlement, resolveAutoBackgroundWaitMs } from "../async";
 import type { Settings } from "../config/settings";
 import { applyDirenvPreflight, type BashResult, executeBash } from "../exec/bash-executor";
+import { contributedExecPolicyRules } from "./exec-policy";
 import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
 import { InternalUrlFilesystem, UrlFsError } from "../internal-urls/url-filesystem";
@@ -506,7 +507,13 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 	readonly approval = (args: unknown): ToolApprovalDecision => {
 		const rawCommand = (args as Partial<BashToolInput>).command;
 		const command = typeof rawCommand === "string" ? rawCommand : "";
-		const patternRules = getBashApprovalPatternRules(cfgBashPatterns.get(this.session.settings));
+		// User policy first, contributed rules after: the matcher keeps ordered
+		// first-match semantics, so a user's own `allow` is reached before anything an
+		// extension contributed and a provider can never pre-empt their decision.
+		const patternRules = [
+			...getBashApprovalPatternRules(cfgBashPatterns.get(this.session.settings)),
+			...contributedExecPolicyRules(),
+		];
 		const shell = cfgBashAllowCompoundCommands.get(this.session.settings)
 			? this.session.settings.getShellConfig().shell
 			: undefined;

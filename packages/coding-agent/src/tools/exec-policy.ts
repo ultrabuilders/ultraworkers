@@ -140,6 +140,15 @@ export function hasExecPolicyProviders(): boolean {
  * Evaluated per decision rather than cached, because a provider is free to read
  * live state — a skill directory, a project rule file — and a cached snapshot
  * would go stale exactly when the user changed what they meant to gate.
+ *
+ * **More than once per decision, so `rules()` must be cheap and idempotent.**
+ * Measured: an extension tool's `execute` resolves approval twice — once against
+ * the original arguments to short-circuit a deny before the runner is touched,
+ * and again against the arguments a handler may have revised, closing the
+ * "approve one thing, run another" gap (`extensions/wrapper.ts:247` and `:320`) —
+ * so `rules()` is called twice for one tool call there, and once on the direct
+ * path. A provider that counts calls, memoizes, or has a side effect observes that
+ * side effect once per resolution rather than once per user decision.
  */
 export function contributedExecPolicyRules(): ExecPolicyRule[] {
 	const out: ExecPolicyRule[] = [];

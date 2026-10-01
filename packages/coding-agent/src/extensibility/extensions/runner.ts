@@ -1806,6 +1806,10 @@ export class ExtensionRunner {
 	 */
 	invalidate(message: string = STALE_CONTEXT_MESSAGE): void {
 		this.#staleMessage ??= message;
+		// The runtime is what an extension's `pi` holds, so it is the object whose
+		// `assertActive` the author can actually reach. Bumping only the runner's
+		// own counter would leave that path permanently green.
+		this.runtime.invalidate(message);
 		this.#generation++;
 	}
 

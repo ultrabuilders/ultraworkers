@@ -1,8 +1,8 @@
-import type { Context } from "@earendil-works/chord";
-import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
-import type { SessionImpl } from "../session/session.ts";
-import type { ContextEdit, ConversationId, Cursor, EntryId, EntryRecord, Storage } from "../types.ts";
-import type { ContextView } from "./types.ts";
+import type { Context } from "@oh-my-pi/chord";
+import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@oh-my-pi/pi-ai";
+import type { SessionImpl } from "../session/session";
+import type { ContextEdit, ConversationId, Cursor, EntryId, EntryRecord, Storage } from "../types";
+import type { ContextView } from "./types";
 
 const SCAN_PAGE_SIZE = 256;
 const EXCLUDED_STOP_REASONS: ReadonlySet<AssistantMessage["stopReason"]> = new Set(["aborted", "error", "deferred"]);

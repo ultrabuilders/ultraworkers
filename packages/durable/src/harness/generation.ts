@@ -1,4 +1,4 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@earendil-works/chord";
+import { type Context, copyJson, type Draft, type JsonValue } from "@oh-my-pi/chord";
 import {
 	type Api,
 	type AssistantMessage,
@@ -9,14 +9,14 @@ import {
 	type ModelThinkingLevel,
 	retryDelayMs,
 	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
-import { AssistantEntry, SystemEntry } from "../entries.ts";
-import { defineTask } from "../tasks.ts";
-import type { ConversationId, EntryId, NextTaskState, TaskRuntime, Tx } from "../types.ts";
-import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config.ts";
-import { endRun, LiveDoc, type LiveState } from "./live.ts";
-import { planSystemEntries, renderSections, replaySections } from "./prompt.ts";
-import type { ConversationStreamOptions, ModelRef } from "./types.ts";
+} from "@oh-my-pi/pi-ai";
+import { AssistantEntry, SystemEntry } from "../entries";
+import { defineTask } from "../tasks";
+import type { ConversationId, EntryId, NextTaskState, TaskRuntime, Tx } from "../types";
+import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config";
+import { endRun, LiveDoc, type LiveState } from "./live";
+import { planSystemEntries, renderSections, replaySections } from "./prompt";
+import type { ConversationStreamOptions, ModelRef } from "./types";
 
 export type GenerationInput = Record<string, never>;
 

@@ -1,4 +1,4 @@
-import type { Storage } from "../types.ts";
+import type { Storage } from "../types";
 
 export interface StorageConformanceAssertions {
 	ok(value: unknown, message?: string): void;

@@ -1,4 +1,4 @@
-import type { Id, Seq } from "./types.ts";
+import type { Id, Seq } from "./types";
 
 /** Apply an erased ID brand at a trusted numeric allocation or decoding boundary. */
 export function idFromNumber<I extends Id<string>>(value: number): I {

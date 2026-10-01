@@ -3,10 +3,10 @@ import type {
 	ReplicatedStateSource,
 	ReplicatedStateSourceAttachment,
 	ReplicatedStateSourceFrame,
-} from "@earendil-works/chord";
-import { withoutAbortSignal } from "@earendil-works/chord/context";
-import type { Op } from "@earendil-works/chord/delta";
-import type { JsonObject, WatchEnd, WatchHandle } from "../types.ts";
+} from "@oh-my-pi/chord";
+import { withoutAbortSignal } from "@oh-my-pi/chord/context";
+import type { Op } from "@oh-my-pi/chord/delta";
+import type { JsonObject, WatchEnd, WatchHandle } from "../types";
 
 export type ObservedDocumentValue = Readonly<JsonObject> | null;
 

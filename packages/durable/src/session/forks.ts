@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import { addressId } from "../documents.ts";
+import type { Context } from "@oh-my-pi/chord";
+import { addressId } from "../documents";
 import type {
 	ConversationId,
 	Cursor,
@@ -10,7 +10,7 @@ import type {
 	DocumentRecord,
 	EntryId,
 	Storage,
-} from "../types.ts";
+} from "../types";
 
 const SCAN_PAGE_SIZE = 256;
 

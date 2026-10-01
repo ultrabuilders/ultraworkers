@@ -1,8 +1,8 @@
-import { type Context, copyJson, type JsonValue } from "@earendil-works/chord";
-import { awaitWithContext, withAbortSignal } from "@earendil-works/chord/context";
-import type { Models } from "@earendil-works/pi-ai";
-import type { SessionImpl } from "../session/session.ts";
-import type { Transaction } from "../session/transaction.ts";
+import { type Context, copyJson, type JsonValue } from "@oh-my-pi/chord";
+import { awaitWithContext, withAbortSignal } from "@oh-my-pi/chord/context";
+import type { Models } from "@oh-my-pi/pi-ai";
+import type { SessionImpl } from "../session/session";
+import type { Transaction } from "../session/transaction";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -16,8 +16,8 @@ import type {
 	TaskRecord,
 	TaskRuntime,
 	TaskState,
-} from "../types.ts";
-import { readContext } from "./context.ts";
+} from "../types";
+import { readContext } from "./context";
 import type {
 	AnyTask,
 	HarnessInspection,
@@ -25,8 +25,8 @@ import type {
 	RegistrySnapshot,
 	SettledTask,
 	TaskInspection,
-} from "./types.ts";
-import { closedError, scanAll, Waiters } from "./util.ts";
+} from "./types";
+import { closedError, scanAll, Waiters } from "./util";
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type LiveTaskRecord = Extract<AnyTaskRecord, { readonly state: { readonly status: "pending" | "running" } }>;

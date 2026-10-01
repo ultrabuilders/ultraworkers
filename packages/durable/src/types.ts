@@ -1,7 +1,7 @@
-import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@earendil-works/chord";
-import type { Op } from "@earendil-works/chord/delta";
-import type { Message, Models } from "@earendil-works/pi-ai";
-import type { ContextView, RegistrySnapshot } from "./harness/types.ts";
+import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@oh-my-pi/chord";
+import type { Op } from "@oh-my-pi/chord/delta";
+import type { Message, Models } from "@oh-my-pi/pi-ai";
+import type { ContextView, RegistrySnapshot } from "./harness/types";
 
 /** JSON object used as the root of every durable document. */
 export type JsonObject = { [key: string]: JsonValue };

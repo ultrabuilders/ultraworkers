@@ -1,6 +1,6 @@
-import type { Context } from "@earendil-works/chord";
-import { NodeExecutionEnv } from "../../env/node.ts";
-import { JsonlStorage, type JsonlStorageOptions } from "./storage.ts";
+import type { Context } from "@oh-my-pi/chord";
+import { NodeExecutionEnv } from "../../env/node";
+import { JsonlStorage, type JsonlStorageOptions } from "./storage";
 
 /** Open or create a JSONL storage directory using the local Node filesystem. */
 export async function openNodeJsonlStorage(
@@ -11,4 +11,4 @@ export async function openNodeJsonlStorage(
 	return JsonlStorage.open(directory, new NodeExecutionEnv({ cwd: process.cwd() }), context, options);
 }
 
-export { JsonlStorage, type JsonlStorageOptions } from "./storage.ts";
+export { JsonlStorage, type JsonlStorageOptions } from "./storage";

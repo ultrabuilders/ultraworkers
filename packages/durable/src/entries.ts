@@ -1,5 +1,5 @@
-import type { JsonValue } from "@earendil-works/chord";
-import type { Entry, EntryRecord, TypedEntry } from "./types.ts";
+import type { JsonValue } from "@oh-my-pi/chord";
+import type { Entry, EntryRecord, TypedEntry } from "./types";
 
 /** Define a typed entry kind whose `is()` guard narrows by `EntryRecord.kind`. */
 export function defineEntry<D extends JsonValue = never>(kind: string): Entry<D> {

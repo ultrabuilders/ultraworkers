@@ -1,16 +1,16 @@
-export { defineDoc, defineDocFamily } from "./documents.ts";
-export { AssistantEntry, defineEntry, SystemEntry, ToolResultEntry, UserEntry } from "./entries.ts";
-export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors.ts";
-export { ConversationConfig, type ConversationConfigState } from "./harness/config.ts";
+export { defineDoc, defineDocFamily } from "./documents";
+export { AssistantEntry, defineEntry, SystemEntry, ToolResultEntry, UserEntry } from "./entries";
+export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors";
+export { ConversationConfig, type ConversationConfigState } from "./harness/config";
 export {
 	type GenerationCheckpoint,
 	type GenerationInput,
 	type GenerationResult,
 	GenerationTask,
-} from "./harness/generation.ts";
-export { Harness } from "./harness/harness.ts";
-export { LiveDoc, type LiveState } from "./harness/live.ts";
-export { createRegistry } from "./harness/registry.ts";
+} from "./harness/generation";
+export { Harness } from "./harness/harness";
+export { LiveDoc, type LiveState } from "./harness/live";
+export { createRegistry } from "./harness/registry";
 export type {
 	AnyTask,
 	ContextView,
@@ -47,10 +47,10 @@ export type {
 	ToolRegistration,
 	ToolWrapper,
 	UserInput,
-} from "./harness/types.ts";
-export { createSession } from "./session/session.ts";
-export { MemoryStorage } from "./storage/memory.ts";
-export { defineTask } from "./tasks.ts";
+} from "./harness/types";
+export { createSession } from "./session/session";
+export { MemoryStorage } from "./storage/memory";
+export { defineTask } from "./tasks";
 export type {
 	CheckpointInfo,
 	CommitChange,
@@ -127,5 +127,5 @@ export type {
 	TypedEntryDraft,
 	WatchEnd,
 	WatchHandle,
-} from "./types.ts";
-export { ROOT_CONVERSATION_ID } from "./types.ts";
+} from "./types";
+export { ROOT_CONVERSATION_ID } from "./types";

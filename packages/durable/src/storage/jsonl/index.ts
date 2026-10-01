@@ -3,4 +3,4 @@ export {
 	JsonlStorage,
 	type JsonlStorageOptions,
 	JsonlStoragePoisonedError,
-} from "./storage.ts";
+} from "./storage";

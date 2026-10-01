@@ -1,7 +1,7 @@
-import type { JsonValue } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Op } from "@earendil-works/chord/delta";
-import { idFromNumber } from "../ids.ts";
+import type { JsonValue } from "@oh-my-pi/chord";
+import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
+import type { Op } from "@oh-my-pi/chord/delta";
+import { idFromNumber } from "../ids";
 import {
 	type ConversationId,
 	type Cursor,
@@ -18,8 +18,8 @@ import {
 	type SubmissionRecord,
 	type TaskId,
 	type TaskRecord,
-} from "../types.ts";
-import type { StorageConformanceAssertions, StorageConformanceCase, StorageConformanceOptions } from "./types.ts";
+} from "../types";
+import type { StorageConformanceAssertions, StorageConformanceCase, StorageConformanceOptions } from "./types";
 
 const context = BACKGROUND_CONTEXT;
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;

@@ -1,15 +1,15 @@
-import { type Context, type JsonValue, replicatedState } from "@earendil-works/chord";
-import { awaitWithContext, withoutAbortSignal } from "@earendil-works/chord/context";
-import { type Op, track } from "@earendil-works/chord/delta";
+import { type Context, type JsonValue, replicatedState } from "@oh-my-pi/chord";
+import { awaitWithContext, withoutAbortSignal } from "@oh-my-pi/chord/context";
+import { type Op, track } from "@oh-my-pi/chord/delta";
 import {
 	type AnyDocToken,
 	checkRecordScope,
 	checkRecordVersion,
 	materializeDocument,
 	resolveAddress,
-} from "../documents.ts";
-import { StorageRejected } from "../errors.ts";
-import { idFromNumber } from "../ids.ts";
+} from "../documents";
+import { StorageRejected } from "../errors";
+import { idFromNumber } from "../ids";
 import type {
 	CommitChange,
 	CommitPublication,
@@ -35,9 +35,9 @@ import type {
 	TaskDocToken,
 	TaskId,
 	Tx,
-} from "../types.ts";
-import { RETIREMENT_OPERATIONS, SessionDocumentSource, SessionDocumentWatch } from "./observation.ts";
-import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
+} from "../types";
+import { RETIREMENT_OPERATIONS, SessionDocumentSource, SessionDocumentWatch } from "./observation";
+import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction";
 
 /** Open a Session kernel over one storage backend. */
 export function createSession(storage: Storage): Session {

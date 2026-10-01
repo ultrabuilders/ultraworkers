@@ -1,7 +1,7 @@
-import type { Context } from "@earendil-works/chord";
-import type { ShellOutputCaptureOptions, ShellOutputMetadata, ShellOutputUpdate, ShellOutputView } from "../index.ts";
-import { AdaptivePublisher } from "./adaptive-publisher.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateHead, truncateTail, utf8ByteLength } from "./truncate.ts";
+import type { Context } from "@oh-my-pi/chord";
+import type { ShellOutputCaptureOptions, ShellOutputMetadata, ShellOutputUpdate, ShellOutputView } from "../index";
+import { AdaptivePublisher } from "./adaptive-publisher";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateHead, truncateTail, utf8ByteLength } from "./truncate";
 
 export const OUTPUT_MIN_EMIT_INTERVAL_MS = 100;
 export const OUTPUT_TARGET_BYTES_PER_SECOND = 100 * 1024;

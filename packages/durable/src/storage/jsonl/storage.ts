@@ -1,6 +1,6 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
-import type { FileError, FileSystem } from "../../env/index.ts";
-import { idFromNumber, seqFromNumber } from "../../ids.ts";
+import type { Context, JsonValue } from "@oh-my-pi/chord";
+import type { FileError, FileSystem } from "../../env/index";
+import { idFromNumber, seqFromNumber } from "../../ids";
 import type {
 	ConversationId,
 	ConversationQuery,
@@ -22,8 +22,8 @@ import type {
 	TaskId,
 	TaskQuery,
 	TaskRecord,
-} from "../../types.ts";
-import { MemoryStorage } from "../memory.ts";
+} from "../../types";
+import { MemoryStorage } from "../memory";
 
 const FORMAT_VERSION = 1;
 const MAIN_FILE = "main.jsonl";

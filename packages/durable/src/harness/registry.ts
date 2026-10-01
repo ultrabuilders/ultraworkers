@@ -1,7 +1,7 @@
-import type { ConversationRecord, Tx } from "../types.ts";
-import { ConversationConfig } from "./config.ts";
-import { GenerationTask } from "./generation.ts";
-import { LiveDoc } from "./live.ts";
+import type { ConversationRecord, Tx } from "../types";
+import { ConversationConfig } from "./config";
+import { GenerationTask } from "./generation";
+import { LiveDoc } from "./live";
 import type {
 	AnyTask,
 	ConversationSetup,
@@ -16,7 +16,7 @@ import type {
 	RegistrySnapshot,
 	ToolRegistration,
 	ToolWrapper,
-} from "./types.ts";
+} from "./types";
 
 const SECTION_KEY = /^[a-z][a-z0-9_-]*$/;
 

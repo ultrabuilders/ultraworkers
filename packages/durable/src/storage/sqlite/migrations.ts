@@ -1,4 +1,4 @@
-import type { SqliteDatabase } from "./database.ts";
+import type { SqliteDatabase } from "./database";
 
 export type SqliteMigration = {
 	readonly version: number;

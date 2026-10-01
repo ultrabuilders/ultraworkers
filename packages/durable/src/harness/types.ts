@@ -1,4 +1,4 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
+import type { Context, JsonValue } from "@oh-my-pi/chord";
 import type {
 	CacheRetention,
 	Message,
@@ -8,7 +8,7 @@ import type {
 	ToolResultMessage,
 	Transport,
 	UserMessage,
-} from "@earendil-works/pi-ai";
+} from "@oh-my-pi/pi-ai";
 import type {
 	ConversationId,
 	ConversationOwnership,
@@ -31,7 +31,7 @@ import type {
 	TaskRecord,
 	TaskState,
 	Tx,
-} from "../types.ts";
+} from "../types";
 
 /** Provider and model ID resolved through pi-ai `Models`. */
 export type ModelRef = {

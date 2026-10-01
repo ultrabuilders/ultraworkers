@@ -2,8 +2,8 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SQLInputValue, StatementSync } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
-import type { SqliteDatabase, SqliteStatement, SqliteValue } from "./database.ts";
-import { SqliteStorage } from "./storage.ts";
+import type { SqliteDatabase, SqliteStatement, SqliteValue } from "./database";
+import { SqliteStorage } from "./storage";
 
 /** Node SQLite connection settings for a durable storage file. */
 export type NodeSqliteStorageOptions = {

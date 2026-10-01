@@ -1,6 +1,6 @@
-import { copyJson, type JsonValue } from "@earendil-works/chord";
-import type { Op } from "@earendil-works/chord/delta";
-import { idFromNumber } from "./ids.ts";
+import { copyJson, type JsonValue } from "@oh-my-pi/chord";
+import type { Op } from "@oh-my-pi/chord/delta";
+import { idFromNumber } from "./ids";
 import type {
 	CheckpointInfo,
 	CommonDocDefinition,
@@ -28,7 +28,7 @@ import type {
 	TaskDocFamilyToken,
 	TaskDocToken,
 	TaskId,
-} from "./types.ts";
+} from "./types";
 
 type FamilyInput<T extends JsonObject, I extends JsonValue> = Omit<CommonDocDefinition<T>, "initial"> & {
 	readonly family: true;

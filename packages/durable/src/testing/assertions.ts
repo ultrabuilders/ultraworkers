@@ -1,4 +1,4 @@
-import type { StorageConformanceAssertions } from "./types.ts";
+import type { StorageConformanceAssertions } from "./types";
 
 export type ExpectLike = (actual: unknown, message?: string) => unknown;
 

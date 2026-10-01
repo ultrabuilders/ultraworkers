@@ -18,7 +18,7 @@ import {
 import { homedir, constants as osConstants, tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@oh-my-pi/chord";
 import {
 	type ExecutionEnv,
 	ExecutionError,
@@ -33,8 +33,8 @@ import {
 	type TextLine,
 	type TextLineReader,
 	toError,
-} from "./index.ts";
-import { OutputCapture } from "./utils/output-capture.ts";
+} from "./index";
+import { OutputCapture } from "./utils/output-capture";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;

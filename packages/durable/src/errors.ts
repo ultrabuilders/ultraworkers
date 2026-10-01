@@ -1,4 +1,4 @@
-import type { ConversationId } from "./types.ts";
+import type { ConversationId } from "./types";
 
 /** A transaction read a table after its first table write. Read every required row before writing. */
 export class ReadAfterWrite extends Error {

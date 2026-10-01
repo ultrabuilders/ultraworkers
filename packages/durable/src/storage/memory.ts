@@ -1,7 +1,7 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
-import { applyImmutableBatches, type Op } from "@earendil-works/chord/delta";
-import { StorageRejected } from "../errors.ts";
-import { idFromNumber, seqFromNumber } from "../ids.ts";
+import type { Context, JsonValue } from "@oh-my-pi/chord";
+import { applyImmutableBatches, type Op } from "@oh-my-pi/chord/delta";
+import { StorageRejected } from "../errors";
+import { idFromNumber, seqFromNumber } from "../ids";
 import type {
 	ConversationId,
 	ConversationQuery,
@@ -30,7 +30,7 @@ import type {
 	TaskId,
 	TaskQuery,
 	TaskRecord,
-} from "../types.ts";
+} from "../types";
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type TaskStatus = StoredTask["state"]["status"];

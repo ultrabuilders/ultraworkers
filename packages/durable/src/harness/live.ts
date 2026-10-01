@@ -1,9 +1,9 @@
-import type { Draft, JsonRepresentation, JsonValue } from "@earendil-works/chord";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { defineDoc } from "../documents.ts";
-import type { Transaction } from "../session/transaction.ts";
-import type { SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types.ts";
-import type { SchedulerOutcome } from "./scheduler.ts";
+import type { Draft, JsonRepresentation, JsonValue } from "@oh-my-pi/chord";
+import type { AssistantMessage } from "@oh-my-pi/pi-ai";
+import { defineDoc } from "../documents";
+import type { Transaction } from "../session/transaction";
+import type { SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types";
+import type { SchedulerOutcome } from "./scheduler";
 
 /** Built-in live conversation state: run control and presentation of the current generation. */
 export type LiveState = {

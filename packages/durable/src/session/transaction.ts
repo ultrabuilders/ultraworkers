@@ -1,5 +1,5 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@earendil-works/chord";
-import { type Change, type Op, type Prepared, type Tracker, track } from "@earendil-works/chord/delta";
+import { type Context, copyJson, type Draft, type JsonValue } from "@oh-my-pi/chord";
+import { type Change, type Op, type Prepared, type Tracker, track } from "@oh-my-pi/chord/delta";
 import {
 	type AnyDocDefinition,
 	type AnyDocToken,
@@ -10,8 +10,8 @@ import {
 	materializeDocumentValue,
 	type ResolvedAddress,
 	resolveAddress,
-} from "../documents.ts";
-import { ReadAfterWrite } from "../errors.ts";
+} from "../documents";
+import { ReadAfterWrite } from "../errors";
 import type {
 	ConversationDocFamilyToken,
 	ConversationDocToken,
@@ -51,9 +51,9 @@ import type {
 	Tx,
 	TypedEntry,
 	TypedEntryDraft,
-} from "../types.ts";
-import { ROOT_CONVERSATION_ID } from "../types.ts";
-import { prepareForkDocumentCopies } from "./forks.ts";
+} from "../types";
+import { ROOT_CONVERSATION_ID } from "../types";
+import { prepareForkDocumentCopies } from "./forks";
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
 

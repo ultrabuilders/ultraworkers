@@ -1,5 +1,5 @@
-import type { JsonValue } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { JsonValue } from "@oh-my-pi/chord";
+import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import type {
 	ConversationId,
 	DocumentCreate,
@@ -11,8 +11,8 @@ import type {
 	SubmissionId,
 	TaskId,
 	TaskRecord,
-} from "../types.ts";
-import { ROOT_CONVERSATION_ID } from "../types.ts";
+} from "../types";
+import { ROOT_CONVERSATION_ID } from "../types";
 
 export type StorageBenchmarkScale = {
 	readonly name: string;

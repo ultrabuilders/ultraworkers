@@ -1,8 +1,8 @@
-import type { Context, Draft, JsonValue } from "@earendil-works/chord";
-import { withoutAbortSignal } from "@earendil-works/chord/context";
-import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { SessionImpl } from "../session/session.ts";
-import type { Transaction } from "../session/transaction.ts";
+import type { Context, Draft, JsonValue } from "@oh-my-pi/chord";
+import { withoutAbortSignal } from "@oh-my-pi/chord/context";
+import type { ModelThinkingLevel } from "@oh-my-pi/pi-ai";
+import { SessionImpl } from "../session/session";
+import type { Transaction } from "../session/transaction";
 import type {
 	ConversationId,
 	ConversationOwnership,
@@ -17,14 +17,14 @@ import type {
 	TaskId,
 	TaskRecord,
 	Tx,
-} from "../types.ts";
-import { ROOT_CONVERSATION_ID } from "../types.ts";
-import { ConversationConfig, type ConversationConfigState, DEFAULT_RETRY_POLICY } from "./config.ts";
-import { readContext } from "./context.ts";
-import { settleSchedulerOutcome } from "./live.ts";
-import { BUILTIN_SETUP_KEY, BUILTIN_TASKS } from "./registry.ts";
-import { TaskScheduler } from "./scheduler.ts";
-import { Submissions } from "./submissions.ts";
+} from "../types";
+import { ROOT_CONVERSATION_ID } from "../types";
+import { ConversationConfig, type ConversationConfigState, DEFAULT_RETRY_POLICY } from "./config";
+import { readContext } from "./context";
+import { settleSchedulerOutcome } from "./live";
+import { BUILTIN_SETUP_KEY, BUILTIN_TASKS } from "./registry";
+import { TaskScheduler } from "./scheduler";
+import { Submissions } from "./submissions";
 import type {
 	ContextView,
 	Conversation,
@@ -42,8 +42,8 @@ import type {
 	Submission,
 	SubmissionDraft,
 	ToolRegistration,
-} from "./types.ts";
-import { scanAll } from "./util.ts";
+} from "./types";
+import { scanAll } from "./util";
 
 const SCAN_PAGE_SIZE = 256;
 

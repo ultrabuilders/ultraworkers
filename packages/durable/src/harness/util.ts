@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import type { Cursor, Page } from "../types.ts";
+import type { Context } from "@oh-my-pi/chord";
+import type { Cursor, Page } from "../types";
 
 /** Pending waits by key. Each settles once: through `resolve`, `rejectAll`, or cancellation of its context. */
 export class Waiters<K, T> {

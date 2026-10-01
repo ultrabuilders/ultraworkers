@@ -1,7 +1,7 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
-import { apply, type Op } from "@earendil-works/chord/delta";
-import { StorageRejected } from "../../errors.ts";
-import { idFromNumber, seqFromNumber } from "../../ids.ts";
+import type { Context, JsonValue } from "@oh-my-pi/chord";
+import { apply, type Op } from "@oh-my-pi/chord/delta";
+import { StorageRejected } from "../../errors";
+import { idFromNumber, seqFromNumber } from "../../ids";
 import type {
 	ConversationId,
 	ConversationQuery,
@@ -30,9 +30,9 @@ import type {
 	TaskId,
 	TaskQuery,
 	TaskRecord,
-} from "../../types.ts";
-import type { SqliteDatabase, SqliteStatement, SqliteValue } from "./database.ts";
-import { applySqliteMigrations } from "./migrations.ts";
+} from "../../types";
+import type { SqliteDatabase, SqliteStatement, SqliteValue } from "./database";
+import { applySqliteMigrations } from "./migrations";
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type TableName = "conversation" | "entry" | "task" | "submission" | "document";

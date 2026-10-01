@@ -1,8 +1,8 @@
-import type { Context } from "@earendil-works/chord";
-import type { Message, SystemMessage } from "@earendil-works/pi-ai";
-import { SystemEntry } from "../entries.ts";
-import type { ContextEdit, TypedEntryDraft } from "../types.ts";
-import type { ContextView, PromptInput, PromptSection, ToolRegistration } from "./types.ts";
+import type { Context } from "@oh-my-pi/chord";
+import type { Message, SystemMessage } from "@oh-my-pi/pi-ai";
+import { SystemEntry } from "../entries";
+import type { ContextEdit, TypedEntryDraft } from "../types";
+import type { ContextView, PromptInput, PromptSection, ToolRegistration } from "./types";
 
 /** Sections in effect after replaying system messages in order: set in place, `null` deletes, re-adding appends. */
 export function replaySections(messages: readonly Message[]): Map<string, string> {

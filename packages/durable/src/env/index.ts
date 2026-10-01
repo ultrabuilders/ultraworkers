@@ -1,5 +1,5 @@
-import type { Context } from "@earendil-works/chord";
-import type { TruncationResult } from "./utils/truncate.ts";
+import type { Context } from "@oh-my-pi/chord";
+import type { TruncationResult } from "./utils/truncate";
 
 /** Result of a fallible operation. Expected failures are returned instead of thrown. */
 export type Result<TValue, TError> = { ok: true; value: TValue } | { ok: false; error: TError };

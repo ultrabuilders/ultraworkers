@@ -1,12 +1,12 @@
-import type { Context } from "@earendil-works/chord";
-import { UserEntry } from "../entries.ts";
-import { ConversationBusy } from "../errors.ts";
-import type { SessionImpl } from "../session/session.ts";
-import type { CommitPublication, ConversationId, Storage, SubmissionId, SubmissionRecord } from "../types.ts";
-import { GenerationTask } from "./generation.ts";
-import { LiveDoc } from "./live.ts";
-import type { SettledSubmissionRecord, Submission, SubmissionDraft } from "./types.ts";
-import { closedError, Waiters } from "./util.ts";
+import type { Context } from "@oh-my-pi/chord";
+import { UserEntry } from "../entries";
+import { ConversationBusy } from "../errors";
+import type { SessionImpl } from "../session/session";
+import type { CommitPublication, ConversationId, Storage, SubmissionId, SubmissionRecord } from "../types";
+import { GenerationTask } from "./generation";
+import { LiveDoc } from "./live";
+import type { SettledSubmissionRecord, Submission, SubmissionDraft } from "./types";
+import { closedError, Waiters } from "./util";
 
 type AbortResult = "aborted" | "already_placed" | "settled";
 

@@ -288,6 +288,62 @@ interface Baseline {
 	readonly definition: string;
 	readonly packageFileCount: number;
 	readonly modules: Record<string, number>;
+	/**
+	 * `Bun.hash` over every other field, in the order they are written.
+	 *
+	 * This is a tamper MARKER, not a signature: the threat is someone loosening a
+	 * threshold by editing this file and forgetting, not an adversary who can
+	 * recompute a hash. The ratchet already refuses a weakening on the `--update`
+	 * path, but `--check` only compared two numbers — so a hand-edited baseline
+	 * stayed green forever, which is the one thing a ratchet exists to prevent.
+	 *
+	 * The other option is comparing against the blob at a recorded commit. That is
+	 * NOT circular — `git show HEAD:scripts/fan-in-baseline.json` needs no sha
+	 * recorded in the file — and it was the better choice on paper, because the
+	 * seal then cannot be recomputed by anyone editing the file. Rejected for two
+	 * concrete reasons instead: it makes a legitimate `--update` commit read as a
+	 * hand edit until it is merged, so the first PR to run it would need the file
+	 * skipped, and it puts git in the path of a check that otherwise runs from a
+	 * plain checkout.
+	 */
+	readonly contentHash?: string;
+}
+
+/** A baseline with no seal — the shape {@link sealBaseline} hashes. */
+type UnsealedBaseline = Omit<Baseline, "contentHash">;
+
+/**
+ * The exact string the seal covers: every field except the seal itself.
+ *
+ * The object is REBUILT here in a fixed key order rather than stringified from
+ * whatever order the file happens to use, so the seal does not depend on how the
+ * JSON is laid out. Measured: reordering the file's keys leaves the seal
+ * identical. An earlier version of this comment claimed the opposite and was
+ * wrong — a key-sorting formatter would have reddened the baseline with a
+ * "hand edit" message for a change that changed nothing.
+ */
+function sealInput(baseline: UnsealedBaseline): string {
+	return JSON.stringify({
+		capturedAt: baseline.capturedAt,
+		definition: baseline.definition,
+		packageFileCount: baseline.packageFileCount,
+		modules: baseline.modules,
+	});
+}
+
+export function sealBaseline(baseline: UnsealedBaseline): Baseline {
+	return { ...baseline, contentHash: Bun.hash(sealInput(baseline)).toString() };
+}
+
+/**
+ * Whether a baseline still matches its own seal.
+ *
+ * `undefined` is not a pass: a baseline with no seal predates this check, and
+ * treating that as valid would leave every existing file unverified.
+ */
+export function isSealedIntact(baseline: Baseline): boolean {
+	if (typeof baseline.contentHash !== "string") return false;
+	return Bun.hash(sealInput(baseline)).toString() === baseline.contentHash;
 }
 
 function baselinePath(repoRoot: string): string {
@@ -394,7 +450,8 @@ async function main(): Promise<void> {
 			);
 			process.exit(1);
 		}
-		await Bun.write(baselinePath(repoRoot), `${JSON.stringify(next, null, "\t")}\n`);
+		const sealed = sealBaseline(next);
+		await Bun.write(baselinePath(repoRoot), `${JSON.stringify(sealed, null, "\t")}\n`);
 		console.error(`${PREFIX} wrote ${path.relative(repoRoot, baselinePath(repoRoot))}`);
 		console.log(renderTable(modules));
 		return;
@@ -414,6 +471,20 @@ async function main(): Promise<void> {
 		);
 		process.exit(1);
 	}
+	// Verified before the numbers are compared. A hand-edited baseline would
+	// otherwise be judged against itself: loosen a ceiling and --check agrees,
+	// because the file it reads is the file that was edited. The seal is the only
+	// thing here that is not under the same edit.
+	if (!isSealedIntact(baseline)) {
+		console.error(
+			`${PREFIX} FAIL ${path.relative(repoRoot, baselinePath(repoRoot))} does not match its own contentHash.`,
+		);
+		console.error(
+			`${PREFIX} That is a hand edit, not a measurement. Re-run \`bun run measure:fan-in:update\` and commit the result, so the loosening is a reviewed diff.`,
+		);
+		process.exit(1);
+	}
+
 	const regressions = findRegressions(modules, new Map(Object.entries(baseline.modules)));
 	const fileDropped = baseline.packageFileCount > packageFileCount;
 	if (regressions.length === 0 && !fileDropped) return;

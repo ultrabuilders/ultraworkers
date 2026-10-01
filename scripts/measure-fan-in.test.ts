@@ -7,11 +7,14 @@
  * that cannot see that rise reports the tree as clean, which is indistinguishable from
  * having no gate at all.
  */
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
+import * as path from "node:path";
 import {
 	computeFanIn,
 	findRegressions,
 	findWeakening,
+	isSealedIntact,
+	sealBaseline,
 	type ImportEdge,
 	resolveModule,
 	specifiersIn,
@@ -189,4 +192,115 @@ describe("findWeakening", () => {
 		// the only thing this gate blocks.
 		expect(findWeakening(baseline, { ...baseline, modules: { stream: 4, tools: 120 } })).toEqual([]);
 	});
+});
+
+describe("baseline seal", () => {
+	const base = {
+		capturedAt: "2026-10-01",
+		definition: "d",
+		packageFileCount: 6778,
+		modules: { stream: 4, commit: 9 },
+	};
+
+	it("accepts a baseline that still matches its own hash", () => {
+		expect(isSealedIntact(sealBaseline(base))).toBe(true);
+	});
+
+	it("refuses a baseline with no seal at all", () => {
+		// `undefined` must not read as valid, or every file written before this
+		// check existed would be unverified — which is the state the check was
+		// added to fix. Measured: an unsealed committed baseline makes --check red.
+		expect(isSealedIntact(base)).toBe(false);
+		expect(isSealedIntact({ ...sealBaseline(base), contentHash: undefined })).toBe(false);
+	});
+
+	it("catches a hand-LOOSENED ceiling, which is the hole the seal exists for", () => {
+		// The ratchet refuses a weakening on the --update path, but --check only ever
+		// compared two numbers. Editing the file to raise a ceiling made the gate
+		// agree with the edit, because the file it read was the file that changed.
+		const loosened = sealBaseline(base);
+		const tampered = { ...loosened, modules: { ...loosened.modules, stream: 99 } };
+		expect(isSealedIntact(tampered)).toBe(false);
+	});
+
+	it("catches a hand-LOWERED floor, which erases deletion headroom", () => {
+		const tampered = { ...sealBaseline(base), packageFileCount: 100 };
+		expect(isSealedIntact(tampered)).toBe(false);
+	});
+
+	it("does not depend on how the JSON is laid out", () => {
+		// `sealInput` rebuilds a fixed-order object, so a key-sorting formatter
+		// cannot redden the baseline. Measured, because an earlier comment here
+		// asserted the opposite and was wrong.
+		const sealed = sealBaseline(base);
+		const reordered = {
+			modules: sealed.modules,
+			packageFileCount: sealed.packageFileCount,
+			definition: sealed.definition,
+			capturedAt: sealed.capturedAt,
+			contentHash: sealed.contentHash,
+		};
+		expect(isSealedIntact(reordered)).toBe(true);
+	});
+
+	it("is a marker against carelessness, not a signature — state the limit", () => {
+		// Measured, and recorded so nobody mistakes it for more than it is: anyone
+		// who edits the baseline can recompute the hash and --check goes green
+		// again. What it buys is that the loosening is a *reviewed diff* rather
+		// than a silent one, because --update is the only thing that writes the
+		// file and its own guard refuses the same edit.
+		const resigned = sealBaseline({ ...base, modules: { ...base.modules, stream: 99 } });
+		expect(isSealedIntact(resigned)).toBe(true);
+	});
+});
+
+describe("--check enforces the seal", () => {
+	// The unit rows above call `isSealedIntact` directly, which leaves the wiring
+	// unpinned: disabling the call inside `--check` left all of them green, and a
+	// hand-loosened baseline then sailed through with exit 0. So this runs the real
+	// command against a tampered baseline.
+	//
+	// It edits a tracked file, which is why it restores in a `finally` — the same
+	// discipline as gen-patch-ledger.test.ts. A test that leaves the tree
+	// different is worse than no test.
+	const baseline = path.join(import.meta.dir, "fan-in-baseline.json");
+
+	test("a hand-edited baseline fails the real command, naming the seal", async () => {
+		const original = await Bun.file(baseline).text();
+		try {
+			const parsed = JSON.parse(original) as { modules: Record<string, number> };
+			parsed.modules.stream = 999;
+			await Bun.write(baseline, `${JSON.stringify(parsed, null, "\t")}\n`);
+
+			const proc = Bun.spawn(["bun", path.join(import.meta.dir, "measure-fan-in.ts"), "--check"], {
+				cwd: path.join(import.meta.dir, ".."),
+				stdout: "pipe",
+				stderr: "pipe",
+				stdin: "ignore",
+			});
+			const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+
+			expect(exitCode).toBe(1);
+			// Named as a hand edit, not as a fan-in regression. The distinction is
+			// the whole point: a regression is a real finding to fix, whereas this is
+			// the gate refusing to be edited into agreeing with itself.
+			expect(stderr).toContain("does not match its own contentHash");
+			expect(stderr).toContain("hand edit, not a measurement");
+		} finally {
+			await Bun.write(baseline, original);
+		}
+	}, 60_000);
+
+	test("the untouched baseline passes the same command", async () => {
+		const proc = Bun.spawn(["bun", path.join(import.meta.dir, "measure-fan-in.ts"), "--check"], {
+			cwd: path.join(import.meta.dir, ".."),
+			stdout: "pipe",
+			stderr: "pipe",
+			stdin: "ignore",
+		});
+		const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+
+		expect(stderr).not.toContain("contentHash");
+		expect(exitCode).toBe(0);
+	}, 60_000);
 });

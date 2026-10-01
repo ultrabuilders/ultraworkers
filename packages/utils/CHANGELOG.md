@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- A byte-equivalence harness makes "this change to the Markdown lexer did not alter rendering"
+  something you can check instead of assume. `bun run packages/utils/scripts/marked-equivalence.ts
+  <ref-a> [ref-b]` renders every Markdown file in the repository plus a generated set of edge
+  cases through two revisions of the lexer inside a single process, and reports any difference in
+  either the token stream or the rendered HTML. With one revision it compares against the working
+  tree, so an uncommitted change can be checked too.
+
 ### Changed
 
 - New config, sessions and settings are written to `~/.ultraworkers` instead of `~/.omp`, and existing installs are read from both. The two names are resolved from one ordered list rather than two that agree today by accident, so a home directory holding either spelling resolves without configuration. Nothing is moved for you: `omp config migrate` shows what would move and writes only with `--apply`. A project-local `.omp` directory is deliberately **not** renamed — that directory is normally committed to your repository, so renaming it would rewrite your working tree rather than this product, and it keeps its name regardless of what the home directory is called.

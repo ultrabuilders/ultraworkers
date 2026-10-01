@@ -48,6 +48,18 @@ export interface ConfigReloadInfo {
 }
 
 /**
+ * What one pass did, as reported back to the caller that owns the apply.
+ */
+export interface ConfigReloadPassResult {
+	/** Whether the pass ran to completion. False only when a handler held it. */
+	readonly applied: boolean;
+	/** The files the pass covered, whether it was held or applied. */
+	readonly sources: readonly string[];
+	/** Which handlers held it; empty when the pass went through. */
+	readonly deferrals: readonly string[];
+}
+
+/**
  * Consulted before a watched change is applied. Return a reason to defer it, or
  * nothing to let it through. Deferred reloads stay pending rather than being
  * dropped, so the user's edit is not silently discarded.
@@ -168,6 +180,37 @@ export async function collectConfigReloadDeferrals(info: ConfigReloadInfo): Prom
 		if (typeof reason === "string" && reason.trim().length > 0) reasons.push(reason.trim());
 	}
 	return reasons;
+}
+
+/**
+ * Run one watched pass end to end: ask the before-handlers, apply only if nobody
+ * held it, then tell the after-handlers it landed.
+ *
+ * **The pairing lives here, not in the two registries.** `collectConfigReloadDeferrals`
+ * and `notifyConfigReloadApplied` do not call each other, so nothing in either one
+ * encodes "a veto means no notification" — that is a statement about the order of
+ * three steps, and the order had exactly one home, inside `Settings`, which is only
+ * reachable through the process-global watcher. A caller that consulted the two
+ * registries directly would be free to notify after a reload nobody applied.
+ *
+ * {@link apply} is called only when no handler deferred. **A throw from `apply`
+ * propagates**, and no after-handler runs — this function will not report a pass it
+ * did not complete. Keeping the failure with the caller is deliberate: the caller
+ * owns the apply, so it owns what a failed apply means (keep-last-good leaves the
+ * previous values in force, which is not the same event as "the reload you were
+ * waiting for has landed"). The caller that wants both properties — a recorded
+ * failure *and* a closed pass — handles them where it already does, by handling the
+ * throw itself. `Settings` does exactly that.
+ */
+export async function runConfigReloadPass(
+	info: ConfigReloadInfo,
+	apply: () => Promise<void>,
+): Promise<ConfigReloadPassResult> {
+	const deferrals = await collectConfigReloadDeferrals(info);
+	if (deferrals.length > 0) return { applied: false, sources: info.sources, deferrals };
+	await apply();
+	await notifyConfigReloadApplied(info);
+	return { applied: true, sources: info.sources, deferrals: [] };
 }
 
 /**

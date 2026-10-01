@@ -54,7 +54,7 @@ import {
 import "./all-settings";
 import { cfgModelRoles, cfgModelRoleStorage } from "./model-settings";
 import { cfgShellPath } from "../exec/settings";
-import { collectConfigReloadDeferrals, notifyConfigReloadApplied, WatchSourceAccumulator } from "./reload-observer";
+import { runConfigReloadPass, WatchSourceAccumulator } from "./reload-observer";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -1189,26 +1189,26 @@ export class Settings {
 		// previous values in force and the watcher armed, so the next edit retries —
 		// the user's change is never dropped.
 		const sources = this.#pendingWatchSources.snapshot();
-		const deferrals = await collectConfigReloadDeferrals({ sources });
-		if (deferrals.length > 0) {
-			logger.debug("Settings: config reload deferred by an observer", { sources, reasons: deferrals });
+		// The veto/apply/notify order lives in `runConfigReloadPass` so the pairing —
+		// a held pass produces no notification — is reachable without a process-global
+		// watcher. `apply` swallows its own failure exactly as it did inline: the pass
+		// is over either way, and the after-handlers are told so.
+		const pass = await runConfigReloadPass({ sources }, async () => {
+			try {
+				await this.#exclusive("keep-last-good", () => this.#reloadPersistedLayers("keep-last-good"));
+			} catch (error) {
+				logger.warn("Settings: failed to apply on-disk config change", { error: String(error) });
+			}
+		});
+		if (!pass.applied) {
+			logger.debug("Settings: config reload deferred by an observer", { sources, reasons: pass.deferrals });
 			this.#syncFileWatchers();
 			return;
-		}
-		try {
-			await this.#exclusive("keep-last-good", () => this.#reloadPersistedLayers("keep-last-good"));
-		} catch (error) {
-			logger.warn("Settings: failed to apply on-disk config change", { error: String(error) });
 		}
 		// The pass is over, so its sources are history. A deferral returns above
 		// without clearing, because that edit was never applied and the retry has
 		// to name it again.
 		this.#pendingWatchSources.clear();
-		// Only now, once the values are actually in force: a handler that re-derives
-		// something from them — an extension re-contributing its resources, a cache
-		// keyed on a setting — would otherwise run against values that a deferral
-		// was about to roll back.
-		await notifyConfigReloadApplied({ sources });
 		// Sources may have appeared, moved, or vanished; re-target the watchers.
 		this.#syncFileWatchers();
 	}

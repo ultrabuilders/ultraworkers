@@ -182,6 +182,13 @@ export interface InteractiveModeContext {
 	editorContainer: Container;
 	hookWidgetContainerAbove: Container;
 	hookWidgetContainerBelow: Container;
+	/**
+	 * Page-level bands above and below the prompt surface, owned by the composer
+	 * because it mounts them beside the editor. Extensions fill these through
+	 * `ui.setHeader` / `ui.setFooter`.
+	 */
+	extensionHeaderContainer: Container;
+	extensionFooterContainer: Container;
 	statusLine: StatusLineComponent;
 	syncComposerShape(): void;
 

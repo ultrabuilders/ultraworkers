@@ -17,12 +17,12 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionUISelectItem,
 	ExtensionUiComponent,
+	ExtensionSurfaceOptions,
 	ExtensionWidgetContent,
 	ExtensionWidgetOptions,
 	SendUserMessageHandler,
 	TerminalInputHandler,
 } from "../../extensibility/extensions";
-import { unsupportedSurfaceMessage } from "../../extensibility/extensions";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
 import {
 	type AskDialogPromptValue,
@@ -39,6 +39,7 @@ import { TIMEOUT_ACTION, type MCPElicitOutcome, type MCPElicitRequest } from "..
 import { HookSelectorComponent, type HookSelectorSlider } from "@oh-my-pi/pi-tui/overlays/hook-selector";
 import { getAvailableThemesWithPaths, getThemeByName, setTheme, type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext, InteractiveSelectorDialogOptions } from "../../modes/types";
+import { logger } from "@oh-my-pi/pi-utils";
 import { normalizeCustomMessagePayload, USER_INTERRUPT_LABEL } from "../../session/messages";
 import { disambiguateDisplayLabels, sanitizeCarriageReturns } from "@oh-my-pi/pi-tui/render/render-utils";
 import { setExtensionTerminalTitle, setSessionTerminalTitle } from "../../utils/title-generator";
@@ -106,11 +107,28 @@ interface HookWidgetEntry {
 
 type HookWidgetMap = Map<string, HookWidgetEntry>;
 
+/**
+ * One mounted extension header or footer, and the extension that placed it.
+ *
+ * Same provenance rule as {@link HookWidgetEntry}: `owner` is stamped by the
+ * runner, and `undefined` means nobody claimed it (a bare tool call's own `ui`),
+ * which is why withdrawal falls back to the key rather than to an owner match.
+ */
+interface ExtensionSurfaceEntry {
+	owner: string | undefined;
+	component: ExtensionUiComponent;
+}
+
+/** Which of the two page-level bands a surface lives in. */
+type ExtensionSurfaceBand = "header" | "footer";
+
 export class ExtensionUiController {
 	#extensionTerminalInputUnsubscribers = new Set<() => void>();
 	#composerShapeDisposers: Array<() => void> = [];
 	#hookWidgetsAbove = new Map<string, HookWidgetEntry>();
 	#hookWidgetsBelow = new Map<string, HookWidgetEntry>();
+	#extensionHeaders = new Map<string, ExtensionSurfaceEntry>();
+	#extensionFooters = new Map<string, ExtensionSurfaceEntry>();
 	// Single-file dialog surface (`editorContainer` + focus) is shared by the
 	// selector / input / editor modals, so only one may be presented at a time;
 	// the rest queue. See `#presentDialog`.
@@ -182,12 +200,8 @@ export class ExtensionUiController {
 				// Theme object passed directly - not supported in current implementation
 				return Promise.resolve({ success: false, error: "Direct theme object not supported" });
 			},
-			setFooter: () => {
-				throw new Error(unsupportedSurfaceMessage("setFooter", "this TUI context"));
-			},
-			setHeader: () => {
-				throw new Error(unsupportedSurfaceMessage("setHeader", "this TUI context"));
-			},
+			setFooter: (factory, options) => this.setExtensionSurface("footer", factory, options),
+			setHeader: (factory, options) => this.setExtensionSurface("header", factory, options),
 			setEditorComponent: factory => this.ctx.setEditorComponent(factory),
 			getToolsExpanded: () => this.ctx.toolOutputExpanded,
 			setToolsExpanded: expanded => this.ctx.setToolsExpanded(expanded),
@@ -437,6 +451,72 @@ export class ExtensionUiController {
 		for (const widget of widgets.values()) {
 			container.addChild(widget.component);
 		}
+	}
+
+	/**
+	 * Mount, replace or withdraw an extension-owned component in one of the two
+	 * page-level bands the composer owns.
+	 *
+	 * Keyed and many-owned, like {@link setHookWidget}: two extensions that pass
+	 * the same key both keep their surface. The obvious `Map.set` would evict the
+	 * first one, which is the silent-loss failure this surface exists to end — an
+	 * author would watch its header disappear with no error and no way to tell the
+	 * call was dropped. So a colliding key is registered as `key~2` and both
+	 * render, which is how `extensibility/skills.ts` already settles a name clash:
+	 * nobody loses what they registered, and the clash stays visible.
+	 */
+	setExtensionSurface(
+		band: ExtensionSurfaceBand,
+		factory: Parameters<ExtensionUIContext["setHeader"]>[0],
+		options?: ExtensionSurfaceOptions,
+	): void {
+		const surfaces = band === "header" ? this.#extensionHeaders : this.#extensionFooters;
+
+		if (factory === undefined) {
+			for (const [key, entry] of surfaces) {
+				// Owner scopes the withdrawal, never the key: two extensions can hold
+				// the same key, and matching on it would let the second one's cleanup
+				// take the first one's surface with it. Key is only the fallback for a
+				// caller with no owner to be scoped by.
+				const mine = options?.owner !== undefined ? entry.owner === options.owner : key === options?.key;
+				if (!mine) continue;
+				entry.component.dispose?.();
+				surfaces.delete(key);
+			}
+			this.#renderExtensionSurfaces(band);
+			return;
+		}
+
+		const requested = options?.key ?? options?.owner ?? "extension";
+		const holder = surfaces.get(requested);
+		let key = requested;
+		if (holder && holder.owner !== options?.owner) {
+			let n = 2;
+			while (surfaces.has(`${requested}~${n}`)) n++;
+			key = `${requested}~${n}`;
+			logger.warn("Extension surface name collision; both surfaces kept", {
+				surface: band,
+				name: requested,
+				availableAs: key,
+				heldBy: holder.owner ?? "(unowned)",
+				claimedBy: options?.owner ?? "(unowned)",
+			});
+		}
+		// Same owner re-registering: this is the update path, so the old component
+		// is retired rather than left mounted beside its replacement.
+		holder?.component.dispose?.();
+		surfaces.set(key, { owner: options?.owner, component: factory(this.ctx.ui, theme) });
+		this.#renderExtensionSurfaces(band);
+	}
+
+	#renderExtensionSurfaces(band: ExtensionSurfaceBand): void {
+		const container = band === "header" ? this.ctx.extensionHeaderContainer : this.ctx.extensionFooterContainer;
+		const surfaces = band === "header" ? this.#extensionHeaders : this.#extensionFooters;
+		container.clear();
+		for (const entry of surfaces.values()) {
+			container.addChild(entry.component);
+		}
+		this.ctx.ui.requestRender();
 	}
 
 	initializeHookRunner(uiContext: ExtensionUIContext, _hasUI: boolean): void {

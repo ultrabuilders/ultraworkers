@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from "bun:test";
-import { type Component, Container, isFocusable, type OverlayOptions, setKeybindings } from "@oh-my-pi/pi-tui";
+import { type Component, Container, isFocusable, type OverlayOptions, setKeybindings, Text } from "@oh-my-pi/pi-tui";
 import { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ExtensionAskDialogQuestion, ExtensionUIContext } from "../../../src/extensibility/extensions";
 import { AskDialogComponent } from "@oh-my-pi/pi-tui/overlays/ask-dialog";
@@ -26,6 +26,8 @@ function makeHarness() {
 	let liveExtensionPaths: string[] = [];
 	const hookWidgetContainerAbove = new Container();
 	const hookWidgetContainerBelow = new Container();
+	const extensionHeaderContainer = new Container();
+	const extensionFooterContainer = new Container();
 	const editorContainer = new Container();
 	editorContainer.addChild(editor);
 	const requestRender = vi.fn();
@@ -57,6 +59,8 @@ function makeHarness() {
 		editorContainer,
 		hookWidgetContainerAbove,
 		hookWidgetContainerBelow,
+		extensionHeaderContainer,
+		extensionFooterContainer,
 		session: {
 			// Settable so a row can retire one extension between two remounts, which
 			// is the whole difference between the old global wipe and the re-seat.
@@ -89,6 +93,8 @@ function makeHarness() {
 		addAutocompleteProvider,
 		hookWidgetContainerAbove,
 		hookWidgetContainerBelow,
+		extensionHeaderContainer,
+		extensionFooterContainer,
 		/** The extensions the runner currently reports as loaded. */
 		setLiveExtensions(paths: string[]): void {
 			liveExtensionPaths = paths;
@@ -270,43 +276,42 @@ describe("ExtensionUiController Ask dialog input", () => {
 });
 
 describe("ExtensionUiController editor UI", () => {
-	it("rejects setHeader / setFooter instead of swallowing the call", async () => {
-		// The interactive context is the one place a footer *could* mount, and it
-		// still cannot today. Silence here is what shipped: an extension set a
-		// footer, got no error, and the footer never appeared.
-		const ui = await makeHarness().init();
+	it("mounts setHeader / setFooter into their bands instead of refusing", async () => {
+		// This row used to assert the opposite: the interactive context refused both
+		// surfaces, because it was the one context that COULD mount a component and
+		// still could not. That refusal is what shipped — an extension set a footer,
+		// got no error, and the footer never appeared — so the fix is not to restore
+		// the throw. It is to mount.
+		//
+		// Asserting on the painted band rather than "did not throw" is the whole point:
+		// the failure this bead exists to end is precisely the one where the call
+		// succeeds and nothing appears, so an assertion that cannot see the output
+		// would stay green through a complete regression.
+		const harness = makeHarness();
+		const ui = await harness.init();
 
-		expect(() => ui.setFooter(undefined)).toThrow(/setFooter/);
-		expect(() => ui.setHeader(undefined)).toThrow(/setHeader/);
+		ui.setHeader((() => new Text("HDR", 0, 0)) as never, { key: "banner" });
+		ui.setFooter((() => new Text("FTR", 0, 0)) as never, { key: "legend" });
+
+		const painted = (container: Container): string =>
+			container
+				.render(80)
+				.map(row => Bun.stripANSI(row))
+				.join("\n");
+		expect(painted(harness.extensionHeaderContainer)).toContain("HDR");
+		expect(painted(harness.extensionFooterContainer)).toContain("FTR");
 	});
 
-	it("names setEditorComponent, the one surface here that mounts a component", async () => {
-		// AND, not OR. The previous assertion on this file's sibling used
-		// `/setWidget|setStatus|hasUI/`, which stays green when any one alternative is
-		// deleted — a gate that only goes red if you remove everything catches nothing.
-		// The bead requires both supported alternatives to be named, so each is checked
-		// for presence; dropping either one is now a failing test rather than a message
-		// that quietly loses a road.
-		//
-		// `setEditorComponent` is the load-bearing one: `setWidget` renders a component-free
-		// overlay and `setStatus` is text, so an author who wanted to draw a component and
-		// is sent to those two has been sent to two dead ends.
-		const ui = await makeHarness().init();
+	it("withdraws a surface when the same key is set to undefined", async () => {
+		// The other half of mounting: a surface an extension cannot take back is a
+		// surface it cannot correct. Undefined must clear the band it owns.
+		const harness = makeHarness();
+		const ui = await harness.init();
 
-		const message = (() => {
-			try {
-				ui.setFooter(undefined);
-				return "";
-			} catch (error) {
-				return (error as Error).message;
-			}
-		})();
-		expect(message).not.toBe("");
-		expect(message).toContain("setEditorComponent");
-		expect(message).toContain("setWidget");
-		// And the surface that actually failed is named, so the reader knows which call
-		// to change.
-		expect(message).toContain("setFooter");
+		ui.setHeader((() => new Text("HDR", 0, 0)) as never, { key: "banner", owner: "/ext/a.ts" });
+		ui.setHeader(undefined, { key: "banner", owner: "/ext/a.ts" });
+
+		expect(harness.extensionHeaderContainer.render(80)).toHaveLength(0);
 	});
 
 	it("requests a render after extension pasteToEditor mutates the prompt", async () => {

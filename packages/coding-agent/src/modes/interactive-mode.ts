@@ -1088,6 +1088,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	attachmentChipsContainer: Container;
 	hookWidgetContainerAbove: Container;
 	hookWidgetContainerBelow: Container;
+	extensionHeaderContainer: Container;
+	extensionFooterContainer: Container;
 	statusLine: StatusLineComponent;
 
 	isInitialized = false;
@@ -1729,6 +1731,11 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.hookWidgetContainerAbove = new Container();
 		this.hookWidgetContainerAbove.addChild(new EditorTopGap(() => this.statusRowOccupied));
 		this.hookWidgetContainerBelow = new Container();
+		// Owned by the composer (it mounts them beside the editor) and only lent
+		// here so the extension controller has the same shape of handle it has for
+		// the hook widget bands.
+		this.extensionHeaderContainer = this.composer.extensionHeader;
+		this.extensionFooterContainer = this.composer.extensionFooter;
 		this.attachmentChipsContainer = new Container();
 		const attachmentChips = new AttachmentChipsBand(this.editor, this.ui.imageBudget, () => this.ui.requestRender());
 		this.attachmentChipsContainer.addChild(attachmentChips);

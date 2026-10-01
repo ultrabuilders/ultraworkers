@@ -1908,13 +1908,14 @@ export class ExtensionRunner {
 	/**
 	 * The shared `ui`, tagged with which extension is calling it.
 	 *
-	 * Only `setWidget` is wrapped, and only to add `owner`. Every other member
-	 * is forwarded by reference, so this cannot change what any of them does —
-	 * it exists so a widget can be traced to the extension that placed it, which
-	 * is what lets one extension's widgets survive a session switch that was
-	 * meant for another.
+	 * Only the surfaces that persist past the call are wrapped, and only to add
+	 * `owner`. Every other member is forwarded by reference, so this cannot
+	 * change what any of them does — it exists so a widget, header or footer can
+	 * be traced to the extension that placed it, which is what lets one
+	 * extension's surfaces survive a session switch that was meant for another,
+	 * and what makes a name collision between two extensions attributable.
 	 *
-	 * Without an extension there is nobody to own the widget, so the shared
+	 * Without an extension there is nobody to own the surface, so the shared
 	 * context goes through untouched: a tool call's own `ui` has no author to
 	 * attribute a persistent surface to.
 	 */
@@ -1926,6 +1927,10 @@ export class ExtensionRunner {
 			...this.#uiContext,
 			setWidget: (key, content, options) =>
 				this.#uiContext.setWidget(key, content, { ...options, owner: extension.resolvedPath }),
+			setHeader: (factory, options) =>
+				this.#uiContext.setHeader(factory, { ...options, owner: extension.resolvedPath }),
+			setFooter: (factory, options) =>
+				this.#uiContext.setFooter(factory, { ...options, owner: extension.resolvedPath }),
 		};
 		this.#ownedUiContexts.set(extension, wrapped);
 		return wrapped;

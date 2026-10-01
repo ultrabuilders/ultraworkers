@@ -2,7 +2,7 @@
 
 import { Args, Command, Flags } from "@oh-my-pi/pi-utils/cli";
 import { imagesHelp as commandHelp } from "../cli/command-help";
-import { IMAGES_ACTIONS, type ImagesAction, type ImagesCommandArgs, runImagesCommand } from "../cli/images-cli";
+import { IMAGES_ACTIONS, type ImagesAction, type ImagesCommandArgs, runImagesCommandAndExit } from "../cli/images-cli";
 
 export default class Images extends Command {
 	static description = commandHelp.description;
@@ -42,7 +42,7 @@ export default class Images extends Command {
 				timeout: flags.timeout,
 			},
 		};
-		const result = await runImagesCommand(command);
+		const result = await runImagesCommandAndExit(command);
 		if (result.exitCode !== 0) process.exitCode = result.exitCode;
 	}
 }

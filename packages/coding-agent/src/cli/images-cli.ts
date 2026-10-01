@@ -10,6 +10,7 @@ import {
 	queryBlobBrokerPurge,
 	queryBlobBrokerStatus,
 } from "../blob-broker/daemon";
+import { closeDaemonClients } from "../launch/client";
 import {
 	type BlobDestinationId,
 	type BlobDestinationMetadata,
@@ -837,4 +838,29 @@ export async function runImagesCommand(
 	else if ("error" in result) deps.writeStderr(renderHuman(result));
 	else deps.writeStdout(renderHuman(result));
 	return result;
+}
+
+/**
+ * Run one standalone images command, then release the sockets it opened.
+ *
+ * The daemon queries reach a process-shared broker client, whose socket outlives
+ * the query that created it. A one-shot CLI process that returns while holding
+ * it never reaches an empty event loop, so `omp images status|doctor|purge`
+ * printed their complete report and then hung forever — the command was
+ * unusable and any CI step using it hung with it. `probe` escaped only because
+ * it short-circuits before touching the daemon when no backend is configured.
+ *
+ * The close belongs to the command rather than to the client: the client is
+ * shared, so tearing it down where it is created would break every other user
+ * in the process. `ps`, `read` and `predict` already close it the same way.
+ */
+export async function runImagesCommandAndExit(
+	args: ImagesCommandArgs,
+	overrides?: Partial<ImagesCliDependencies>,
+): Promise<ImagesCommandResult> {
+	try {
+		return await runImagesCommand(args, overrides);
+	} finally {
+		await closeDaemonClients();
+	}
 }

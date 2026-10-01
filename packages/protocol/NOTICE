@@ -1,0 +1,70 @@
+This package is a port of the `protocol` package from pi
+(https://github.com/earendil-works/pi), pinned at commit
+8eb2bccf2603c28907ef3a583a04cafb1af284ae.
+
+Provenance: this is a fork-and-adapt port, not a clean-room reimplementation.
+The upstream sources were read directly and their structure, naming and
+algorithms were carried across; the changes are the adaptations to this
+repository's runtime and module layout, summarized below and listed per file.
+
+Adaptations, in order of how widely they apply:
+
+  1. Every file: relative specifiers no longer carry a `.ts` suffix, as this
+     repository's `check-ts-relative-imports` invariant requires.
+  2. Class privacy: 30 `private` members across four files became ES `#private`
+     fields, with their `this.<name>` references rewritten to `this.#<name>`.
+  3. Validation: upstream used `typebox` (`Type` builders plus `Check` from
+     `typebox/value`). That dependency is not carried over; schemas are built
+     from `@oh-my-pi/omptype/typebox` instead. Two call-shape changes follow:
+     `Type.Unsafe<JsonValue>(Type.Unknown())` becomes `Type.Unsafe<JsonValue>()`,
+     because the facade's `Unsafe` takes an optional raw JSON Schema and ignores
+     it; and `Check(schema, value)` becomes a discriminant test against the
+     facade's `__validator`, which returns either the validated value or a
+     failure carrying `message`. `codec.ts` routes both parse functions through
+     one `isValid` helper, which also supplies the narrowing that `Check` used to
+     provide implicitly.
+  4. Tests: the runner moved from `vitest` to `bun:test`. The CBOR vectors,
+     framing byte-loop cases and protocol fixtures are otherwise unchanged.
+
+Added by this port, with no upstream counterpart: `src/index.ts` and
+`src/protocol.ts` keep their upstream export lists; `LICENSE`, `NOTICE`,
+`CHANGELOG.md`, `tsconfig.json` and `package.json` were rewritten for this
+repository. Upstream's `vitest.config.ts`, `tsconfig.build.json` and
+`tsconfig.test.json` were dropped — the runner change removes the first, and
+AGENTS.md forbids the `tsc -p tsconfig.build.json` build the other two served.
+
+Adapted files:
+  src/cbor/decoder.ts
+  src/cbor/encoder.ts
+  src/cbor/index.ts
+  src/codec.ts
+  src/framing.ts
+  src/index.ts
+  src/protocol.ts
+
+Copied verbatim:
+  src/cbor/options.ts
+
+Upstream license follows.
+
+MIT License
+
+Copyright (c) 2025 Mario Zechner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

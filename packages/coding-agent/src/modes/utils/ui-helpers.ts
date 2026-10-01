@@ -231,7 +231,12 @@ export class UiHelpers {
 		if (entry.immediate) {
 			// `immediate` means this line supersedes whatever is showing rather than
 			// queueing under it, so the lines it displaces are dropped, not hidden.
-			for (const other of lines) {
+			//
+			// Over a COPY. `#removeKeyedLine` splices `lines`, so walking `lines`
+			// directly would shift everything left one slot while the iterator
+			// advances one — skipping every other entry, which is invisible at one
+			// displaced line and leaks half the queue at two.
+			for (const other of [...lines]) {
 				if (other !== entry) this.#removeKeyedLine(other.key);
 			}
 		}

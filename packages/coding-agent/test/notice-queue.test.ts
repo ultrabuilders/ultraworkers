@@ -172,6 +172,33 @@ describe("a keyed notice is temporary and lives in the notice container", () => 
 		expect(h.lines[0]?.key).toBe("b");
 	});
 
+	it("displaces every showing notice, not every other one", () => {
+		// Parameterised on N because the count is the wrong assertion for this row.
+		// The displacement loop removes entries from the array it is walking, so an
+		// implementation that skipped every other entry still leaves ONE line behind
+		// — indistinguishable from correct at N=1, and wrong from N=2 onward:
+		//
+		//   N=0 → [z]      N=1 → [z]        (the only N the count row covers)
+		//   N=2 → [b, z]   N=3 → [b, z]     N=4 → [b, d, z]
+		//
+		// Asserting the exact surviving key set is what makes the boundary visible;
+		// `toHaveLength(1)` above is the row that could not see it.
+		for (const n of [0, 1, 2, 3, 4, 5]) {
+			const h = harness();
+			for (let i = 0; i < n; i++) h.helpers.showStatus(`step ${i}`, { key: `k${i}` });
+
+			h.helpers.showStatus("urgent", { key: "z", immediate: true });
+
+			const contract = `N=${n}`;
+			const survivors = h.lines.map(line => line.key);
+			expect({ contract, survivors }).toEqual({ contract, survivors: ["z"] });
+
+			// Both halves again: the queue and the screen are separate stores, and a
+			// line dropped from one but not the other is the residue this file is about.
+			expect({ contract, shown: h.noticeContainer.children.length }).toEqual({ contract, shown: 1 });
+		}
+	});
+
 	it("keeps queueing a non-immediate notice behind what is showing", () => {
 		const h = harness();
 		h.helpers.showStatus("first", { key: "a" });

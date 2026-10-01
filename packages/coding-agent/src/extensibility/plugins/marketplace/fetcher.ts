@@ -102,10 +102,18 @@ function assertField(condition: boolean, field: string, filePath: string): asser
  * Plugin fields that are written to disk during installation and then read back by
  * a loader that drops what it cannot use.
  *
- * `hooks` and `mcpServers` are deliberately absent. Nothing in installation reads
- * them — `docs/marketplace.md` records both as "preserved", with runtime
- * configuration coming from the plugin manifest/tree instead — so validating them
- * would be validating a dead field and would only make it look load-bearing.
+ * `hooks` and `mcpServers` are deliberately absent. No consumer in
+ * `MarketplacePluginEntry` reads them — `docs/marketplace.md` records both as
+ * "preserved", with runtime configuration coming from the plugin manifest/tree
+ * instead — so validating them would give a catalog author a rejection for a field
+ * that works, and would only make it look load-bearing.
+ *
+ * "No consumer reads them" is not "they are dropped". Extra fields survive parsing by
+ * spread (see the catalog docblock), so both arrive in the entry and stay there; they
+ * are simply not consulted. That distinction is why they are kept: a catalog carrying
+ * `hooks` still has them after parse. Deleting them from `MarketplacePluginEntry`
+ * would be an input-visible change — the field would stop surviving — which is a
+ * different decision from this one.
  */
 const INSTALLED_CONFIG_FIELDS = ["lspServers", "dapAdapters"] as const;
 

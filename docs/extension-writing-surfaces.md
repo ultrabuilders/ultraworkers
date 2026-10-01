@@ -2,13 +2,19 @@
 
 ## Status
 
-**Proposed — unratified.** The decision below is an agent's proposal, not an
-owner decision.
+Capability registry: YES
 
-- **Decider:** _unassigned — owner ratification required_
+The surface ranking below is **proposed — unratified**. It is an agent's
+proposal, not an owner decision. One cell is no longer a proposal: the
+capability registry's *ownership* was ruled on by the owner, and this document
+carries that ruling rather than choosing again.
+
+- **Decider:** _unassigned — owner ratification required_ for the ranking
+  below. The capability-registry answer is **owner-ratified, 2026-10-01** —
+  `docs/extension-trust-model.md` §8: "**M2-OQ2 = YES.**"
 - **Date:** 2026-10-01
 - **Work item:** `m2-wi-10-045` (MILESTONE_2_EXECUTION_PLAN · `WI-10`)
-- **Anchors measured against:** `6313c713a2`
+- **Anchors measured against:** `6313c713a2`, re-measured 2026-10-02
 
 Every status in the table below was read out of the tree at that commit, not
 inferred from a plan. Where this document and the tree disagree, the tree is
@@ -21,7 +27,7 @@ right and this document is the bug.
 | Surface | Path | Status | What it is for | Evidence |
 | --- | --- | --- | --- | --- |
 | Extension factory (TypeScript) | `src/extensibility/extensions/` | CANONICAL | Everything an extension can do: events, tools, commands, renderers, provider registration | [Superset argument](#2-why-the-extension-surface-is-canonical) — four in-tree markers |
-| Hooks | `src/extensibility/hooks/` | COMPATIBILITY-ONLY / FROZEN | Legacy event API; a hook module already written keeps working | `docs/extensions.md:827` marks `hookMessage` "migration only"; the hook guide at `docs/skills/authoring-hooks.md:271` points readers *away* from it toward `ExtensionAPI` |
+| Hooks | `src/extensibility/hooks/` | COMPATIBILITY-ONLY / FROZEN | Legacy event API; a hook module already written keeps working | `docs/extensions.md:833` marks `hookMessage` "migration only"; the hook guide at `docs/skills/authoring-hooks.md:271` points readers *away* from it toward `ExtensionAPI` |
 | Custom tools | `src/extensibility/custom-tools/` | COMPATIBILITY-ONLY / FROZEN | Tool-focused modules; adapted into the extension path when loaded together | `src/extensibility/hooks/tool-wrapper.ts:2` — "wraps tools with hook callbacks for interception"; the tree routes hook output toward `custom` (see the `hookMessage` row above) |
 | Custom commands | `src/extensibility/custom-commands/` | COMPATIBILITY-ONLY / FROZEN | Command modules authored as **TypeScript**, loaded with native Bun import; also the home of core's own bundled commands (`bundled/ci-green`, `bundled/annotate`, `bundled/review`) | `src/extensibility/custom-commands/loader.ts:2` — "loads **TypeScript** command modules using native Bun import"; the same file imports core's bundled commands from `./bundled/` (`src/extensibility/custom-commands/loader.ts:18` imports `GreenCommand`), so the directory is core infrastructure as well as a loading seam |
 | Plugin manifest package | `src/extensibility/plugins/` | CANONICAL | Shipping an extension as an installable package with a `package.json` manifest | `docs/skills/authoring-extensions.md:229` — "Shipping as a marketplace plugin → **Extension** (use `package.json` manifest)" |
@@ -35,16 +41,59 @@ right and this document is the bug.
 - **COMPATIBILITY-ONLY / FROZEN** — it still loads and still works, and it will
   not be extended. Bugs get fixed; features do not get added. A new capability
   that would need one of these belongs on the extension-factory row.
-- **CORE-ONLY** — core keeps it. It is listed here precisely so its absence is a
-  decision rather than an oversight, and so a future move to extension-facing is
-  a visible change to this table.
+- **CORE-ONLY** — core keeps it *today*. It is listed here precisely so its
+  absence is a decision rather than an oversight, and so a future move to
+  extension-facing is a visible change to this table. **CORE-ONLY describes who
+  owns a surface now; it is not the answer to whether it should become
+  extension-reachable.** For that question see the `Capability registry:` line
+  at the top of this document — the two are different questions, and only the
+  second one is answered `YES`.
 
 ---
 
 ## 2. Why the extension surface is canonical
 
-Four markers already in the tree say the extension surface strictly contains
-the hook surface. Quoted verbatim:
+### The type definitions say it in code
+
+Four markers in the type definitions themselves say the extension surface
+strictly contains the hook surface. Quoted verbatim from
+`src/extensibility/extensions/types.ts` (line numbers re-measured 2026-10-02):
+
+**(c1)** `:286`, above `ExtensionUIContext`
+
+> // Parallel to HookUIContext: extensions expose a strictly larger UI surface
+> // (custom editor component, header/footer, widgets, theming, terminal input)
+> // and may be invoked from event handlers that have already taken the agent
+> // loop's lock — hooks intentionally cannot.
+
+**(c2)** `:482`, above the runtime context
+
+> // Parallel to HookContext: extensions expose a strictly larger runtime
+> // surface (model registry, system prompt, shutdown, full session manager
+> // access). Field overlap is incidental; merging into a base would require
+> // hooks to widen their public contract.
+
+**(c3)** `:655`, above `ExtensionCommandContext`
+
+> // Parallel to HookCommandContext: same method names, different invariants —
+> // extension commands additionally permit `switchSession` and `reload`,
+> // which hooks must not call to avoid deadlocking the agent loop.
+
+**(c4)** `:1448`, above `RegisteredCommand`
+
+> // Parallel to HookAPI's RegisteredCommand: extensions add
+> // `getArgumentCompletions` and bind handlers to ExtensionCommandContext.
+
+All four sit directly beneath a `// fallow-ignore-next-line code-duplication`
+marker. That is worth more than a comment's presence: a duplication linter is a
+machine that re-reads these two contexts on every run and is instructed to leave
+the divergence alone. (c2) states the reason outright — "merging into a base
+would require hooks to widen their public contract" — so the superset relation
+is maintained, not merely documented.
+
+### The documentation says it in prose
+
+Four markers in the prose say the same thing. Quoted verbatim:
 
 **(i)** `docs/skills/authoring-extensions.md:231`
 
@@ -60,7 +109,7 @@ routing rows, which send new work away from hooks by name:
 > | Legacy hook module already exists | **Hook** (`HookAPI` from `@oh-my-pi/pi-coding-agent/extensibility/hooks`) |
 > | Registering a provider, shortcut, or CLI flag | **Extension only** |
 
-**(iv)** `docs/extensions.md:827`
+**(iv)** `docs/extensions.md:833`
 
 > | `hookMessage`                  | Legacy hook-injected message (migration only; use `custom`).               |
 
@@ -70,9 +119,11 @@ hook-origin output toward a migration path, in two independent places. A surface
 described as legacy in its own subsystem's docs is not a peer of the surface
 those docs tell you to use.
 
-The four markers are deliberately four, and deliberately not two: a single
-"supersets" sentence is an assertion anyone can re-litigate, while four
-independent places in three files have to be re-litigated four times.
+The markers are deliberately many, and deliberately not two: a single
+"supersets" sentence is an assertion anyone can re-litigate, while eight
+independent places across four files have to be re-litigated eight times — and
+the four in `types.ts` cannot be re-litigated by editing prose at all, because
+they sit next to the declarations they describe.
 
 **One marker did not survive this document.** An earlier draft cited
 `docs/extensions.md:992` — "**Hooks** … separate legacy event API" — as a fifth
@@ -110,8 +161,14 @@ Recorded so a later reader does not mistake silence for a decision.
 - **The capability registry has no extension-facing *registration* seam today.**
   Extensions read capabilities (`extensibility/skills.ts`,
   `extensibility/slash-commands.ts`) and can register *model* providers, but
-  cannot register a capability provider. If that ever changes, it is a change to
-  this table's last row and needs its own decision record.
+  cannot register a capability provider. That measurement is unchanged; what
+  changed is the answer. The question of whether the registry *should* become
+  extension-reachable was ruled on — `docs/extension-trust-model.md` §8,
+  `M2-OQ2 = YES`, owner-ratified 2026-10-01 — and that ruling is explicitly "a
+  decision on ownership, not a completed implementation". So the seam is owed
+  and does not yet exist, and building it is not this document's work. When it
+  lands, this table's last row changes from CORE-ONLY, and that row changing is
+  the visible record of it.
 - **Reading that row as permission to remove the legacy `pi` shims would be
   wrong, and the removal is out of scope for M2 under every answer to M2-OQ2.**
   The shims are what keeps already-published extensions loading; they are not
@@ -120,21 +177,29 @@ Recorded so a later reader does not mistake silence for a decision.
   | shim | what it is | where |
   | --- | --- | --- |
   | `isProjectTrusted()` | Declared twice on the extension context; both implementations return a constant | declared `extensions/types.ts:558` and `:625`; implemented `extensions/runner.ts:1810` and `session/agent-session.ts:7708`, both `isProjectTrusted: () => true` |
-  | `@earendil-works/*` specifier shim | Redirects a legacy bare specifier onto the canonical package | installed at `extensions/loader.ts:79` (`installLegacyPiSpecifierShim()`), imported at `:53`; the module it hands back is loaded through `loadLegacyPiModule` at `:712` |
-  | package-root shims for `pi-ai`, `pi-coding-agent`, `pi-tui` | Re-export a canonical surface under each pre-rebrand package root | `plugins/legacy-pi-compat.ts:967`, `:978`, `:985` |
+  | `@earendil-works/*` specifier shim | Redirects a legacy bare specifier onto the canonical package | imported at `extensions/loader.ts:54` from `../plugins/legacy-pi-compat`, installed at `:80`; the module it hands back is loaded through `loadLegacyPiModule` at `:730` |
+  | package-root shims for `pi-ai`, `pi-coding-agent`, `pi-tui`, `typebox` | Re-export a canonical surface under each pre-rebrand package root | `plugins/legacy-pi-compat.ts:967`, `:978`, `:985`; `legacy-typebox.ts:12` re-exports `@oh-my-pi/omptype/typebox` |
 
-  The four source files total **4,697 lines** (`legacy-pi-compat.ts`, then
-  `legacy-pi-coding-agent-shim.ts`, `legacy-pi-ai-shim.ts`, `legacy-pi-tui-shim.ts`).
+  The five source files total **4,876 lines**, re-measured 2026-10-02:
+  `legacy-pi-coding-agent-shim.ts` (1,661), `plugins/legacy-pi-compat.ts`
+  (2,799), `legacy-pi-ai-shim.ts` (194), `legacy-typebox.ts` (179), and
+  `legacy-pi-tui-shim.ts` (43). An earlier draft of this line said 4,697 across
+  four files — arithmetically correct for the four it named, and wrong by
+  omission, because `legacy-typebox.ts` is a pre-rebrand root re-export like the
+  others. Line counts drift with the files; re-derive this number rather than
+  inheriting it.
   They are process-global by construction: `Bun.plugin()` hooks installed by
   `legacy-pi-compat.ts` cannot be withdrawn, which is why `extensibility/utils.ts:76`
   distinguishes a handler disposer from an unload.
 
-  **This is a decision boundary, not a task.** `YES`, `NO` and `DEFERRED` all
-  leave these files in place for M2; none of them authorises deletion. Removing
-  them breaks every extension published against the pre-rebrand specifier, so it
-  is a breaking-change project with its own milestone — outside M2, and outside
-  whatever M2-OQ2 is answered. `docs/extension-trust-model.md:209` already records
-  the same fact for `isProjectTrusted()`.
+  **This is a decision boundary, not a task.** The answer is `YES`, and `YES`
+  still leaves every one of these files exactly where it is. Making the registry
+  extension-reachable is additive; it is not a licence to withdraw what keeps
+  already-published extensions loading. Removing them breaks every extension
+  published against the pre-rebrand specifier, so it is a breaking-change project
+  with its own milestone — outside M2, and outside the M2-OQ2 answer.
+  `docs/extension-trust-model.md:96` already records the same fact for
+  `isProjectTrusted()`.
 
 ### Measured, not assumed: two things that look like findings and are not
 
@@ -159,7 +224,55 @@ not have to re-derive them.
 
 `docs/extension-trust-model.md` records what extension *loading* means today and
 which parts of that record are still an owner's call. This document does not
-ratify it and does not depend on it — but it is why "canonical" here means
-"the surface new authoring targets", not "the surface is trusted". A canonical
-surface can still be loaded under an unratified trust model; that ambiguity is
-recorded there, not resolved here.
+ratify it, and the ranking below does not depend on it — but it is why
+"canonical" here means "the surface new authoring targets", not "the surface is
+trusted". A canonical surface can still be loaded under an unratified trust
+model; that ambiguity is recorded there, not resolved here. The one thing this
+document does carry across is §8's ownership ruling, which is why the capability
+registry's answer above is `YES` rather than a third draft's guess.
+
+---
+
+## 5. The accepted rule
+
+**A new capability must name its target surface in the pull request that adds
+it.** One of the six rows above, quoted by name. A PR that adds a capability
+without saying which row it belongs under has not finished the change, and the
+reviewer should ask before approving.
+
+**Nothing enforces this.** There is no lint rule and no CI step that checks a PR
+mentions a surface, and this document is not adding one: a "does the PR name a
+surface" check has no consuming contract — nothing downstream breaks when it is
+absent — which `AGENTS.md`'s Testing Guidance rejects explicitly, and a check
+whose absence is invisible to every consumer is a maintenance cost with no
+return. Enforcement is therefore a review norm. That is a deliberate choice, not
+an oversight: the rule exists to make the reviewer ask the question, and a
+reviewer who asks the question is the whole mechanism.
+
+This rule is also what keeps the table honest. A capability that lands without a
+named surface is the exact event that would make this document stale — and a
+stale ranking that still reads as authoritative is the failure this work item
+was written to prevent.
+
+---
+
+## 6. Consequences
+
+What this document unblocks:
+
+- **WI-5, commits 2-3** — whether extension *source identity* is infrastructure
+  the programme needs or dead weight, now that the surfaces that would carry it
+  are ranked.
+- **WI-7** — whether the mode registry is built **on** the capability layer or
+  **beside** it, which was undecidable while the capability layer's ownership was
+  open.
+- **WI-11 / WI-12** — which foundation those two target.
+
+What it does **not** unblock:
+
+- **No lines of code.** Implementing the M2-OQ2 answer — giving the registry an
+  extension-facing registration seam — is explicitly outside M2. This document
+  records a decision and its consequences; it authorises no deletion, no
+  refactor, and no shim removal. A reader who takes a ratified posture for
+  permission to start deleting will find nothing here that permits it, and
+  §3's shim table is the part they should have read twice.

@@ -15,7 +15,13 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { EditTool } from "@oh-my-pi/pi-coding-agent/edit";
 import type { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
-import { canonicalizeApprovalKey } from "@oh-my-pi/pi-coding-agent/session/acp-permission-gate";
+import {
+	PERMISSION_OPTIONS,
+	PERMISSION_OPTIONS_BY_ID,
+	canonicalizeApprovalKey,
+	describeApprovalScope,
+	permissionOptions,
+} from "@oh-my-pi/pi-coding-agent/session/acp-permission-gate";
 import { APPROVAL_ENTRY_TYPE, type ApprovalEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type {
@@ -1160,6 +1166,95 @@ it("a bash call with no command does not share a grant with other bash calls", (
 
 	expect(empty).not.toBe(withCommand);
 	expect(empty).not.toBe("bash");
+});
+
+/**
+ * The scope label, which is the words the user reads before granting for the
+ * session. `describeApprovalScope` states its own contract — "it names the same
+ * thing the key does" — and these rows are that contract.
+ *
+ * **Why the unit, when there is no end-to-end path.** For the same reason the
+ * fallback row above is a unit: `getPermissionIntent` routes only `bash`,
+ * `delete`, `move` and `edit`, and the caller executes without a prompt when it
+ * returns `undefined`. So no tool reaches this branch end-to-end today, and no
+ * e2e row could fail if the branch were wrong. This branch is a trap for the day
+ * a fifth gated tool arrives — and on that day it is the label, not the gate,
+ * that would be quietly lying.
+ *
+ * The regression these rows defend is one-directional, so they are checked
+ * against the key rather than against fixed strings: whatever the label says,
+ * two calls the key separates must not read alike.
+ */
+it("names the payload of an unrecognised tool, so two scopes cannot read alike", () => {
+	// The load-bearing pair. `every acme-fetch call` satisfies the old fallback and
+	// satisfies nothing here: it describes a grant an order of magnitude wider than
+	// the one two different payloads actually get.
+	const first = describeApprovalScope("acme-fetch", { url: "https://example.test/a" });
+	const second = describeApprovalScope("acme-fetch", { url: "https://example.test/b" });
+
+	expect(first).not.toBe(second);
+	// The key is the thing being described, so the pair has to move together.
+	expect(canonicalizeApprovalKey("acme-fetch", { url: "https://example.test/a" })).not.toBe(
+		canonicalizeApprovalKey("acme-fetch", { url: "https://example.test/b" }),
+	);
+});
+
+it("gives one payload one label, so a grant can take effect", () => {
+	// The counterpart, and the reason the label is derived rather than randomised:
+	// "always" has to mean something on the second identical call.
+	expect(describeApprovalScope("acme-fetch", { url: "https://example.test/a" })).toBe(
+		describeApprovalScope("acme-fetch", { url: "https://example.test/a" }),
+	);
+});
+
+it("keeps two long payloads apart when the readable part is cut", () => {
+	// Truncation is the one way the fix could reintroduce its own defect: both
+	// labels start the same 60 characters, so without a digest they are the same
+	// string and two separate grants read as one.
+	const filler = "x".repeat(200);
+	const first = describeApprovalScope("acme-fetch", { url: `${filler}AAAA` });
+	const second = describeApprovalScope("acme-fetch", { url: `${filler}BBBB` });
+
+	expect(first).not.toBe(second);
+});
+
+it("still says 'every call' when there is nothing to tell two calls apart", () => {
+	// The one case the old wording was true in: no payload means every call shares
+	// the single key `acme-fetch:<hash of {}>`, so "every acme-fetch call" is exact
+	// rather than a guess. Narrowing this would be a cosmetic regression.
+	expect(describeApprovalScope("acme-fetch", {})).toBe("every acme-fetch call");
+});
+
+it("leaves the four branched tools labelling exactly as before", () => {
+	// Byte identity, not semantics: every one of these strings has already been
+	// printed in a permission prompt, and the branched labels are the ones whose
+	// correspondence to the key is already correct.
+	expect(describeApprovalScope("bash", { command: "git status" })).toBe("git status");
+	expect(describeApprovalScope("delete", { path: "build/out.js" })).toBe("delete build/out.js");
+	expect(describeApprovalScope("move", { oldPath: "a", newPath: "b" })).toBe("move a to b");
+	expect(describeApprovalScope("edit", { path: "/tmp/gone.ts", edits: [{ op: "delete" }] })).toBe(
+		"every delete in an edit",
+	);
+});
+
+it("carries the scope onto the two options that persist and no others", () => {
+	// The wire half. `permissionOptions` is what the client renders, so a label that
+	// is computed correctly but dropped here would leave the user reading nothing at
+	// all — and the once-options must not grow a scope they do not have, since they
+	// do not persist anything.
+	const options = permissionOptions(describeApprovalScope("acme-fetch", { url: "https://example.test/a" }));
+	const named = new Map(options.map(option => [option.kind, option.name]));
+
+	expect(named.get("allow_always")).toContain("acme-fetch url=https://example.test/a");
+	expect(named.get("reject_always")).toContain("acme-fetch url=https://example.test/a");
+	expect(named.get("allow_once")).toBe("Allow once");
+	expect(named.get("reject_once")).toBe("Reject");
+	// Ids and kinds are the wire contract for resolving an answer back; the label
+	// must not disturb them.
+	expect(options.map(option => option.optionId)).toEqual(PERMISSION_OPTIONS.map(option => option.optionId));
+	for (const option of options) {
+		expect(PERMISSION_OPTIONS_BY_ID.get(option.optionId)?.kind).toBe(option.kind);
+	}
 });
 
 /**

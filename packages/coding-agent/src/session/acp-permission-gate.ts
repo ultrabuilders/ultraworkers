@@ -105,6 +105,23 @@ export function canonicalizeApprovalKey(toolName: string, args: unknown): string
  * A narrower key is worthless while the button still reads "Always allow": the
  * grant gets smaller and the user is none the wiser. So this string goes into the
  * option label, and it names the same thing the key does.
+ *
+ * ## The fallback branch
+ *
+ * `canonicalizeApprovalKey` keys an unrecognised tool on its whole argument
+ * payload, so two calls differing in any argument are two different grants.
+ * Saying `every <tool> call` about that is not rounding: it describes a grant an
+ * order of magnitude wider than the one the user is about to get, and it breaks
+ * the contract this function states for itself.
+ *
+ * So the fallback names the payload. It keeps `every <tool> call` for the one
+ * case where that is true — a call with nothing to tell apart, where every call
+ * really does share one key.
+ *
+ * When the readable part is cut, a short digest goes with it. Truncation is the
+ * one way two genuinely different payloads can read alike, and a label that
+ * cannot tell two scopes apart is the defect this branch exists to remove,
+ * reintroduced one character earlier.
  */
 export function describeApprovalScope(toolName: string, args: unknown): string {
 	const input = isRecord(args) ? args : {};
@@ -128,7 +145,36 @@ export function describeApprovalScope(toolName: string, args: unknown): string {
 		const intent = getEditDestructiveIntent(args);
 		return intent ? `every ${intent.kind} in an edit` : toolName;
 	}
-	return `every ${toolName} call`;
+	return describeUnrecognizedToolScope(toolName, args);
+}
+/** How much of an unrecognised tool's payload the label shows before it stops. */
+const SCOPE_SUMMARY_LIMIT = 60;
+
+/**
+ * Name the scope of a tool with no branch above, from the payload its key hashes.
+ *
+ * Every call of such a tool that shares a payload shares a grant, and every call
+ * with a different payload is a separate grant — so the label has to distinguish
+ * exactly as the key does, and in the same direction: never wider.
+ */
+function describeUnrecognizedToolScope(toolName: string, args: unknown): string {
+	if (!isRecord(args)) return `every ${toolName} call`;
+	// Rendered in insertion order, which is the order `JSON.stringify` hands the
+	// key's hash, so the summary reads the same way round as the key naming it.
+	const pairs = Object.entries(args).filter(([, value]) => value !== undefined);
+	if (pairs.length === 0) return `every ${toolName} call`;
+
+	const squeeze = (text: string): string => text.replace(/\s+/g, " ").trim();
+	const summary = pairs
+		.map(([key, value]) => {
+			const rendered = typeof value === "string" ? value : (JSON.stringify(value) ?? "");
+			return `${key}=${squeeze(rendered)}`;
+		})
+		.join(" ");
+	if (summary.length <= SCOPE_SUMMARY_LIMIT) return `${toolName} ${summary}`;
+
+	const digest = Bun.hash.wyhash(JSON.stringify(args) ?? "").toString(16).slice(0, 8);
+	return `${toolName} ${summary.slice(0, SCOPE_SUMMARY_LIMIT)}… (${digest})`;
 }
 
 /**

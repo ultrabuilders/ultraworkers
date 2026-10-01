@@ -1248,13 +1248,16 @@ export class PluginManager {
 		// down with it — the check meant to report a broken extension becoming the
 		// outage.
 		for (const { source, diagnostic } of collectDiagnostics()) {
+			// The timer is CLEARED, not merely raced. `Promise.race` settles as soon
+			// as `run()` does, but an uncleared timer keeps the event loop alive for
+			// the rest of its window: doctor would print every finding and then stand
+			// there for five seconds before the process could exit. Clearing also
+			// discards the pending `reject`, so the fast path cannot fire a rejection
+			// into a race that has already been decided.
+			const { promise: expiry, reject } = Promise.withResolvers<never>();
+			const timer = setTimeout(() => reject(new Error("timed out")), DIAGNOSTIC_TIMEOUT_MS);
 			try {
-				const outcome = await Promise.race([
-					Promise.resolve(diagnostic.run()),
-					new Promise<never>((_, reject) =>
-						setTimeout(() => reject(new Error("timed out")), DIAGNOSTIC_TIMEOUT_MS),
-					),
-				]);
+				const outcome = await Promise.race([Promise.resolve(diagnostic.run()), expiry]);
 				checks.push({
 					name: `extension:${diagnostic.id}`,
 					...outcome,
@@ -1269,6 +1272,8 @@ export class PluginManager {
 					status: "error",
 					message: `[${source}] check failed: ${err instanceof Error ? err.message : String(err)}`,
 				});
+			} finally {
+				clearTimeout(timer);
 			}
 		}
 

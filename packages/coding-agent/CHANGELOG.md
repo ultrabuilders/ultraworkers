@@ -30,6 +30,11 @@
 
 - `omp plugin doctor --fix` now restores a plugin whose installed copy went missing, instead of only deleting its config entry — but only when the recorded source is pinned to a commit. An entry installed from a tag or branch is still removed, because re-fetching that ref now can bring different code than the one the registry recorded, and swapping it in silently would be worse than removing it. Installing from a tag or branch is unaffected: that is you asking for whatever the ref resolves to
 
+### Fixed
+
+- `omp plugin doctor` no longer hangs for five seconds after it has finished printing, when an
+  extension contributed a check of its own
+
 ### Breaking Changes
 
 - `ui.setHeader` and `ui.setFooter` now throw in any mode that cannot mount a component — headless,

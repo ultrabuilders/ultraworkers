@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import type { BlobDestinationId } from "./destinations";
 import type { BlobUploader, BlobUploadRequest } from "./publication";
 import {
@@ -233,7 +234,7 @@ function createPuushUploader(config: DestinationRuntimeConfig, endpoint: URL): B
 		destination,
 		async upload(request) {
 			try {
-				const body = multipartFile(request, "f", { k: apiKey, z: "omp" });
+				const body = multipartFile(request, "f", { k: apiKey, z: WIRE_NAME });
 				const response = await fetchFor(config)(endpoint, { method: "POST", body });
 				await expectOk(response, destination);
 				const values = (await response.text()).trim().split(",");

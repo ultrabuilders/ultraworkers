@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as timers from "node:timers/promises";
-import { logger, normalizeErrorMessage, ptree, untilAborted } from "@oh-my-pi/pi-utils";
+import { logger, normalizeErrorMessage, ptree, untilAborted, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { NON_INTERACTIVE_ENV } from "../exec/non-interactive-env";
 import { DapClient } from "./client";
 import type {
@@ -1467,8 +1467,8 @@ export class DapSessionManager {
 
 	#buildInitializeArguments(adapter: DapResolvedAdapter): DapInitializeArguments {
 		return {
-			clientID: "omp",
-			clientName: "omp",
+			clientID: WIRE_NAME,
+			clientName: WIRE_NAME,
 			adapterID: adapter.name,
 			locale: "en-US",
 			linesStartAt1: true,

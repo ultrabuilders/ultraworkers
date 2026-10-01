@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { AgentBusyError, type AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, Model } from "@oh-my-pi/pi-ai";
-import { getBlobsDir, isEnoent, logger, type postmortem, VERSION } from "@oh-my-pi/pi-utils";
+import { getBlobsDir, isEnoent, logger, type postmortem, VERSION, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import {
 	type Agent,
 	type AgentSideConnection,
@@ -668,7 +668,7 @@ export class AcpAgent implements Agent {
 			protocolVersion: PROTOCOL_VERSION,
 			agentInfo: {
 				name: "omp",
-				title: "omp",
+				title: WIRE_NAME,
 				version: VERSION,
 			},
 			authMethods,

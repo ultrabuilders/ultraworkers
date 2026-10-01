@@ -21,6 +21,9 @@ import { isEnoent, isEnotdir } from "./fs-error";
 /** App name (e.g. "omp") */
 export const APP_NAME: string = "omp";
 
+/** Wire identity — the third-party contract value; do not change without a compatibility decision. */
+export const WIRE_NAME: string = "omp";
+
 /** Public homepage that inference gateways (OpenRouter, Vercel AI Gateway) credit omp traffic to. */
 export const APP_URL: string = "https://omp.sh/";
 

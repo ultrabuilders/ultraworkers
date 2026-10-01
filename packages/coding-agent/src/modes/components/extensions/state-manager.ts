@@ -56,9 +56,15 @@ function resolveState(
 ): { state: ExtensionState; disabledReason?: DisabledReason } {
 	if (isDisabled) return { state: "disabled", disabledReason: "item-disabled" };
 	if (isShadowed) return { state: "shadowed", disabledReason: "shadowed" };
-	// Below the two the user set deliberately: a hook edited after approval is
-	// blocked by the loader either way, and reporting the block is more useful
-	// than reporting the switch they flipped a moment ago.
+	// Below the two the user set deliberately, because that is the order the
+	// loader decides in. Not a claim that both paths block a modified hook — an
+	// earlier version of this comment said that, and it was not true in either
+	// direction: the loader's `addPaths` disabled-check (:920) is not on the path
+	// the trust gate takes, since the trust loop calls `addPath` (:910) directly.
+	// The reason to keep this order is only that the dashboard must reach the same
+	// verdict as the loader. One that disagrees is worse than none — it marks a
+	// running hook blocked, or shows a blocked one active — so the order is
+	// pinned to the loader's, not chosen for what reads best.
 	if (isModified) return { state: "modified", disabledReason: "hook-modified" };
 	if (!isProviderEnabled(source.provider)) return { state: "disabled", disabledReason: "provider-disabled" };
 	if (source.provider === "claude-plugins" && source.origin !== undefined && source.origin !== "claude") {

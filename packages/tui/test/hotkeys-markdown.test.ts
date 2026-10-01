@@ -94,4 +94,35 @@ describe("buildHotkeysMarkdown", () => {
 		expect(markdown).not.toContain("Option+");
 		expect(markdown).not.toContain("Cmd+");
 	});
+
+	it("lists a shortcut contributed through the registration seam, after the built-in groups", () => {
+		const markdown = buildHotkeysMarkdown({
+			keybindings: { ...noForwardDelete, getDisplayString: () => "Disabled" },
+			extraGroups: [
+				{
+					title: "Deploy helper",
+					rows: [{ keys: ["ctrl+shift+d"], action: "Deploy to staging" }],
+				},
+			],
+		});
+
+		// The row a user reads to learn their extension's key exists at all:
+		// formatted through the same path as a built-in row, under its own heading.
+		expect(markdown).toContain("**Deploy helper**");
+		expect(markdown).toContain("| `Ctrl+Shift+D` | Deploy to staging |");
+		// Rendered after core's groups, so a registrant never displaces a built-in row.
+		expect(markdown.indexOf("**Deploy helper**")).toBeGreaterThan(markdown.indexOf("**Other**"));
+	});
+
+	it("leaves the reference byte-identical when nothing is contributed", () => {
+		const keybindings = { ...noForwardDelete, getDisplayString: () => "Disabled" };
+		const withoutSeam = buildHotkeysMarkdown({ keybindings });
+		const withEmptyContributions = buildHotkeysMarkdown({ keybindings, extraGroups: [] });
+
+		// The negative half of the seam contract: an extension that registers no
+		// shortcut must not be able to change what /hotkeys prints — including by
+		// contributing a group, which must not leave an empty heading behind.
+		expect(withEmptyContributions).toBe(withoutSeam);
+		expect(withoutSeam).not.toContain("****");
+	});
 });

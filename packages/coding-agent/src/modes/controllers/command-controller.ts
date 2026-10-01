@@ -42,7 +42,11 @@ import type { InteractiveModeContext } from "../../modes/types";
 import { ContextUsageView } from "@oh-my-pi/pi-tui/status-line/context-usage";
 import { JobsPanel } from "@oh-my-pi/pi-tui/overlays/jobs-panel";
 import { computeSessionContextBreakdown } from "../../session/context-usage-runtime";
-import { buildHotkeysMarkdown, HotkeysSheetComponent } from "@oh-my-pi/pi-tui/hotkeys-markdown";
+import {
+	buildHotkeysMarkdown,
+	type HotkeyGroupContribution,
+	HotkeysSheetComponent,
+} from "@oh-my-pi/pi-tui/hotkeys-markdown";
 import { isNativeRendering } from "@oh-my-pi/pi-tui/native/state";
 import { buildToolsMarkdown } from "@oh-my-pi/pi-tui/prompt/tools-markdown";
 import type { AsyncJobSnapshotItem } from "../../session/agent-session";
@@ -88,11 +92,34 @@ import { formatRemainingOnlyTotal, isUsedOnlyAbsoluteAmount } from "@oh-my-pi/pi
 import type { UnavailableUsageAccount } from "@oh-my-pi/pi-tui/overlays/usage-dashboard";
 
 import { cfgTerminalShowImages } from "../settings";
+import { shortenPath } from "@oh-my-pi/pi-tui/render/render-utils";
 import { cfgProviderAppendOnlyContext } from "../../session/settings";
 import { cfgShareRedactSecrets, cfgShareServerUrl, cfgShareStore } from "../../commands/settings";
 
 function formatCreditValue(value: number): string {
 	return value.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+/**
+ * Shortcut groups contributed by loaded extensions, so `/hotkeys` lists what an
+ * extension actually registered instead of only core's closed action vocabulary.
+ *
+ * One group per extension rather than one per shortcut, because a registrant
+ * with four shortcuts wants them findable as their own thing. An extension with
+ * no shortcuts contributes nothing at all — the empty case has to render exactly
+ * what it did before this seam existed, and that is the contract.
+ */
+function extensionHotkeyGroups(session: InteractiveModeContext["session"]): HotkeyGroupContribution[] {
+	const groups: HotkeyGroupContribution[] = [];
+	for (const extension of session.extensionRunner?.getLoadedExtensions() ?? []) {
+		if (extension.shortcuts.size === 0) continue;
+		const rows = [...extension.shortcuts.values()].map(shortcut => ({
+			keys: [shortcut.shortcut] as const,
+			action: shortcut.description ?? "Extension shortcut",
+		}));
+		groups.push({ title: extension.label ?? shortenPath(extension.path), rows });
+	}
+	return groups;
 }
 
 function showMarkdownPanel(ctx: InteractiveModeContext, title: string, markdown: string): void {
@@ -703,7 +730,10 @@ export class CommandController {
 	}
 
 	handleHotkeysCommand(): void {
-		const bindings = { keybindings: this.ctx.keybindings };
+		const bindings = {
+			keybindings: this.ctx.keybindings,
+			extraGroups: extensionHotkeyGroups(this.ctx.session),
+		};
 		if (isNativeRendering()) {
 			// A native terminal gets a dismissable sheet with keycaps instead of a transcript table.
 			const sheet = new HotkeysSheetComponent(bindings, () => {

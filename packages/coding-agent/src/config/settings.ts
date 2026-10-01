@@ -54,7 +54,7 @@ import {
 import "./all-settings";
 import { cfgModelRoles, cfgModelRoleStorage } from "./model-settings";
 import { cfgShellPath } from "../exec/settings";
-import { collectConfigReloadDeferrals, WatchSourceAccumulator } from "./reload-observer";
+import { collectConfigReloadDeferrals, notifyConfigReloadApplied, WatchSourceAccumulator } from "./reload-observer";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -1204,6 +1204,11 @@ export class Settings {
 		// without clearing, because that edit was never applied and the retry has
 		// to name it again.
 		this.#pendingWatchSources.clear();
+		// Only now, once the values are actually in force: a handler that re-derives
+		// something from them — an extension re-contributing its resources, a cache
+		// keyed on a setting — would otherwise run against values that a deferral
+		// was about to roll back.
+		await notifyConfigReloadApplied({ sources });
 		// Sources may have appeared, moved, or vanished; re-target the watchers.
 		this.#syncFileWatchers();
 	}

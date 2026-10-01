@@ -19,7 +19,15 @@
  * **A veto defers, it does not discard.** Returning a reason leaves the previous
  * values in force and the watcher armed, so the next qualifying edit retries.
  * Dropping the edit would silently discard something the user typed.
+ *
+ * **Two moments, because "hold it" and "it landed" are different questions.**
+ * {@link onBeforeConfigReload} runs before the apply and can defer it;
+ * {@link onAfterConfigReload} runs once it has actually been applied. Only the
+ * first existed, which left a host with exactly one way to react to a config
+ * change — refuse it — and no way to act on one that went through.
  */
+
+import { logger } from "@oh-my-pi/pi-utils";
 
 /**
  * What a handler is told about the reload it may hold.
@@ -73,6 +81,76 @@ export function onBeforeConfigReload(handler: ConfigReloadHandler): () => void {
 /** Whether anything is listening. The seam's absence has to be observable. */
 export function hasConfigReloadHandlers(): boolean {
 	return handlers.size > 0;
+}
+
+/**
+ * Called after a watched change has actually been applied.
+ *
+ * This is the other half of {@link onBeforeConfigReload}: that one can hold a
+ * reload, this one learns that one landed. Without it the only reaction to a
+ * config change is the one `Settings` performs itself, so a long-lived host that
+ * has to re-derive something from the new values — an extension re-contributing
+ * its resources, a cache keyed on a setting — had no seam at all and was reachable
+ * only by restarting.
+ *
+ * Return value is ignored: "I applied it" has already happened by the time this
+ * runs, so there is nothing for a handler to veto.
+ *
+ * **The watched path only.** `Settings.reloadFromDisk()` applies too, and does not
+ * notify: its one caller is the structured-subagent preflight, which re-resolves
+ * the policy it needs from the new values itself, and a direct reload names no
+ * source to report. Extending the notification there is a separate decision with
+ * its own caller, not a consequence of adding this.
+ */
+export type ConfigReloadAppliedHandler = (info: ConfigReloadInfo) => void | Promise<void>;
+
+const appliedHandlers = new Set<ConfigReloadAppliedHandler>();
+
+/**
+ * Register an after-apply handler. Returns the function that unregisters it.
+ *
+ * Refuses a non-function and a duplicate registration for the same reasons
+ * {@link onBeforeConfigReload} does: a handler that throws when the reload fires
+ * would turn "tell me it landed" into "break the config watcher".
+ */
+export function onAfterConfigReload(handler: ConfigReloadAppliedHandler): () => void {
+	if (typeof handler !== "function") {
+		throw new Error(
+			`Config reload handler must be a function, received ${handler === null ? "null" : typeof handler}`,
+		);
+	}
+	if (appliedHandlers.has(handler)) {
+		throw new Error("This config reload handler is already registered; unregister it before registering again");
+	}
+	appliedHandlers.add(handler);
+	return () => {
+		appliedHandlers.delete(handler);
+	};
+}
+
+/** Whether anything is listening after an apply. Absence must be observable. */
+export function hasAfterConfigReloadHandlers(): boolean {
+	return appliedHandlers.size > 0;
+}
+
+/**
+ * Tell every after-apply handler that the reload landed.
+ *
+ * **One handler throwing does not stop the others, and does not propagate.** The
+ * apply has already happened, so a throw here cannot un-apply it — it would only
+ * skip the handlers after it, which are the ones that have to release a lock or
+ * drop a cache. The failure is logged rather than swallowed: a handler that
+ * throws every reload is a real defect, and silently continuing would hide it
+ * until something downstream is mysteriously stale.
+ */
+export async function notifyConfigReloadApplied(info: ConfigReloadInfo): Promise<void> {
+	for (const handler of appliedHandlers) {
+		try {
+			await handler(info);
+		} catch (error) {
+			logger.error("Config reload after-apply handler failed", { error: String(error) });
+		}
+	}
 }
 
 /**

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
 	collectConfigReloadDeferrals,
+	hasAfterConfigReloadHandlers,
 	hasConfigReloadHandlers,
+	notifyConfigReloadApplied,
+	onAfterConfigReload,
 	onBeforeConfigReload,
 	WatchSourceAccumulator,
 	type ConfigReloadHandler,
@@ -27,6 +30,7 @@ import {
  */
 
 const disposers: Array<() => void> = [];
+const appliedDisposers: Array<() => void> = [];
 
 function register(handler: ConfigReloadHandler): () => void {
 	const dispose = onBeforeConfigReload(handler);
@@ -34,8 +38,16 @@ function register(handler: ConfigReloadHandler): () => void {
 	return dispose;
 }
 
+/** Register on the after-apply side, tracked separately so the two never cross-talk. */
+function registerApplied(handler: Parameters<typeof onAfterConfigReload>[0]): () => void {
+	const dispose = onAfterConfigReload(handler);
+	appliedDisposers.push(dispose);
+	return dispose;
+}
+
 afterEach(() => {
 	while (disposers.length > 0) disposers.pop()?.();
+	while (appliedDisposers.length > 0) appliedDisposers.pop()?.();
 });
 
 const INFO = { sources: ["/tmp/omp/config.yml"] };
@@ -219,6 +231,117 @@ describe("a debounced pass reports every file it merged, not just the last", () 
 	});
 });
 
+describe("a host learns that a reload actually landed", () => {
+	// Before this existed the only reaction to a config change was the one
+	// `Settings` performs itself. Anything that had to re-derive from the new
+	// values — an extension re-contributing its resources, a cache keyed on a
+	// setting — could only refuse the reload, never act on one that went through.
+
+	it("is told which files the applied pass covered", async () => {
+		// A host deciding whether to reload has to know what moved. Told only
+		// "something changed", the safe response is to do nothing.
+		let seen: readonly string[] | undefined;
+		registerApplied(info => {
+			seen = info.sources;
+		});
+
+		await notifyConfigReloadApplied(INFO);
+
+		expect(seen).toEqual(["/tmp/omp/config.yml"]);
+	});
+
+	it("awaits an async handler before the notification resolves", async () => {
+		// Firing and forgetting would let the apply finish while the work it
+		// announced is still running, so the next config write races it.
+		let finished = false;
+		registerApplied(async () => {
+			await Bun.sleep(1);
+			finished = true;
+		});
+
+		await notifyConfigReloadApplied(INFO);
+
+		expect(finished).toBe(true);
+	});
+
+	it("consults every handler even when one throws", async () => {
+		// The safety property. The apply already happened, so a throw cannot undo
+		// it — it can only skip the handlers after it, and those are the ones that
+		// have to drop a cache or release a lock.
+		const consulted: string[] = [];
+		registerApplied(() => {
+			throw new Error("this handler is broken");
+		});
+		registerApplied(() => {
+			consulted.push("second");
+		});
+
+		await notifyConfigReloadApplied(INFO);
+
+		expect(consulted).toEqual(["second"]);
+	});
+
+	it("does not let a throwing handler break the config watcher", async () => {
+		// The observer is called from inside the watch path. Letting its exception
+		// escape would turn "tell me it landed" into "the watcher stops applying
+		// config", which is strictly worse than the bug this seam was added for.
+		registerApplied(() => {
+			throw new Error("boom");
+		});
+
+		await expect(notifyConfigReloadApplied(INFO)).resolves.toBeUndefined();
+	});
+
+	it("restores the pass-through answer exactly once unregistered", async () => {
+		// The red gate, same shape as the before-handler's: a seam that cannot be
+		// removed is indistinguishable from a hardwired call.
+		const calls: string[] = [];
+		const dispose = registerApplied(() => {
+			calls.push("host");
+		});
+		await notifyConfigReloadApplied(INFO);
+
+		dispose();
+		await notifyConfigReloadApplied(INFO);
+
+		expect(calls).toEqual(["host"]);
+	});
+
+	it("keeps the two registries apart", async () => {
+		// A before-handler that also answered the after notification would run twice
+		// per pass — and its whole job is deciding whether the pass happens.
+		let before = 0;
+		let after = 0;
+		register(() => {
+			before++;
+			return undefined;
+		});
+		registerApplied(() => {
+			after++;
+		});
+
+		await notifyConfigReloadApplied(INFO);
+
+		expect(before).toBe(0);
+		expect(after).toBe(1);
+	});
+
+	it("reports when nothing is listening", () => {
+		expect(hasAfterConfigReloadHandlers()).toBe(false);
+		registerApplied(() => undefined);
+		expect(hasAfterConfigReloadHandlers()).toBe(true);
+	});
+
+	it("refuses a bad registration rather than storing it", () => {
+		expect(() => onAfterConfigReload(null as unknown as () => void)).toThrow(/must be a function/);
+		expect(hasAfterConfigReloadHandlers()).toBe(false);
+
+		const handler = () => undefined;
+		appliedDisposers.push(onAfterConfigReload(handler));
+		expect(() => onAfterConfigReload(handler)).toThrow(/already registered/);
+	});
+});
+
 describe("the seam is reachable the way an extension reaches it", () => {
 	it("resolves through the published config subpath", async () => {
 		// `./config/*` is already in the package export map, so no new API surface
@@ -229,5 +352,7 @@ describe("the seam is reachable the way an extension reaches it", () => {
 
 		expect(typeof viaPackage.onBeforeConfigReload).toBe("function");
 		expect(typeof viaPackage.collectConfigReloadDeferrals).toBe("function");
+		expect(typeof viaPackage.onAfterConfigReload).toBe("function");
+		expect(typeof viaPackage.notifyConfigReloadApplied).toBe("function");
 	});
 });

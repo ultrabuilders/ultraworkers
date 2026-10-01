@@ -324,9 +324,13 @@ describe("marked inline lexing is linear in input size", () => {
  *     "a     \nb"   →  text "a", br "     \n"   (the whole run)
  *
  * Bounded to `{2,3}` the same input yields br "   \n" and leaves two spaces as a
- * separate text token. Every pre-existing test still passes, and no HTML changes,
- * because trailing spaces before a break are not rendered — so this boundary is
- * guarded here rather than left to the next reader of the perf comment.
+ * separate text token. Every pre-existing test still passes — not because the
+ * rendered HTML is invariant, which it is not, but because none of them lex a run
+ * of four or more spaces before a newline that is followed by inline content. The
+ * HTML does move: at width 4 the mutation renders `<p>a <br>b</p>` where the real
+ * lexer renders `<p>a<br>b</p>`, and the leftover spaces accumulate from there.
+ * Both defences are asserted below — the token boundary directly, and the rendered
+ * output — so neither alone has to be trusted.
  */
 describe("a hard break consumes its whole run of spaces", () => {
 	for (const width of [2, 3, 5, 8, 17]) {
@@ -339,6 +343,22 @@ describe("a hard break consumes its whole run of spaces", () => {
 			]);
 		});
 	}
+
+	test("the rendered output swallows the run too, not just the token stream", () => {
+		// The second defence. The token assertions above pin the boundary directly; this
+		// one pins what a reader actually sees, and it fails for a different reason — a
+		// refactor that keeps the token stream but changes the renderer would pass the
+		// first block and fail here.
+		//
+		// Width 5, where the bounded mutation leaves two stray spaces and renders
+		// "<p>a  <br>b</p>". Widths 2 and 3 are included because they must NOT change:
+		// a fix that widened the match the other way would leave them alone and still
+		// be wrong.
+		const marked = new Marked();
+		expect(marked.parse("a  \nb")).toBe("<p>a<br>b</p>\n");
+		expect(marked.parse("a   \nb")).toBe("<p>a<br>b</p>\n");
+		expect(marked.parse("a     \nb")).toBe("<p>a<br>b</p>\n");
+	});
 
 	test("a single space is not a hard break", () => {
 		// The other side of the `{2,}` boundary: one space must not be promoted, or the

@@ -87,8 +87,7 @@ export async function searchSynthetic(params: SearchParamsWithFetch): Promise<Se
 		key => callSyntheticSearch(key, query, params.signal, fetchImpl, params.timeoutMs),
 		{
 			signal: params.signal,
-			missingKeyMessage:
-				`Synthetic credentials not found. Set SYNTHETIC_API_KEY or login with '${WIRE_NAME} /login synthetic'.`,
+			missingKeyMessage: `Synthetic credentials not found. Set SYNTHETIC_API_KEY or login with '${WIRE_NAME} /login synthetic'.`,
 		},
 	);
 	const sources: SearchSource[] = [];

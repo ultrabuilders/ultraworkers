@@ -25,7 +25,7 @@ extensions:
 **Option C — load once via CLI flag:**
 
 ```
-omp --extension ./hello-extension
+ultraworkers --extension ./hello-extension
 ```
 
 ## Usage

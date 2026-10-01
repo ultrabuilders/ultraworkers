@@ -224,8 +224,8 @@ my-plugin/
 CLI equivalent:
 
 ```
-omp plugin marketplace add owner/repo
-omp plugin install name@marketplace-name
+ultraworkers plugin marketplace add owner/repo
+ultraworkers plugin install name@marketplace-name
 ```
 
 Scope behavior:

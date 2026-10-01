@@ -109,14 +109,16 @@ packages/coding-agent/bench/boot-baseline.json
 # form let exactly those through, so they showed up as untracked noise. That noise
 # is not cosmetic: a peer read `git status` mid-session, saw files no owner
 # recognised, and drew the wrong conclusion about who was working on what.
-# `session.jsonl` and its lock are runtime output too, and a tracked fixture is
-# spelled `large-session.jsonl`, so the exact name does not collide.
+# `session.jsonl` is runtime output too, but it is NOT matched at any depth: the
+# tests build fixtures named exactly `session.jsonl` under `test/`, and a `**/`
+# pattern would silently untrack the day one of those landed. Scoped to the
+# package root instead, which is where a run from the repo leaves it.
 **/omp-session-*.md
 **/omp-session-*.markdown
 **/omp-session-*.probe
 **/omp-browser-recording-*/
-**/session.jsonl
-**/.session.jsonl.lock*
+packages/*/session.jsonl
+packages/*/.session.jsonl.lock*
 
 # Scratch directories a throwaway probe gets written into. These keep recurring —
 # `.probe`, then the session artifacts above, then `.scratch` — and each time the
@@ -126,3 +128,6 @@ packages/coding-agent/bench/boot-baseline.json
 # the name, and a scratch dir is scratch wherever it is created.
 **/.probe/
 **/.scratch/
+
+# bv (beads viewer) local config and caches
+.bv/

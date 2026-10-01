@@ -85,11 +85,27 @@ const BUDGETS = {
 	"packages/coding-agent": {
 		// Measured 24. cli.ts has only 6 static value imports and loads the command
 		// registry, help, and stats through `await import(...)`, so this graph is already
-		// small. The entry that is NOT small is `packages/ai/src/stream.ts` — 341 modules,
-		// 60 of them provider transports, with zero dynamic imports anywhere in the package.
-		// It is absent here because GAP-M1B-1 step 2 names only these two entries.
+		// small. The entry that is NOT small is `packages/ai/src/stream.ts`, budgeted below.
 		"src/cli.ts": { maxFiles: 24 },
 		"src/cli/worker-selectors.ts": { maxFiles: 5 },
+	},
+	"packages/ai": {
+		// 284, and the number came from this gate rather than from a hand: add the entry
+		// with a deliberately-wrong budget, let the gate print `reaches N files, budget 1`,
+		// then pin N. A budget copied from someone's PR is a budget that PR chose.
+		//
+		// This entry is here because the two above could not see GAP-M1B-5. That change moved
+		// eight provider transports behind a lazy `await import()` in registry/transports.ts,
+		// but neither `cli.ts` nor the worker selector table reaches `stream.ts` — cli.ts
+		// touches the `ai` package only through a dynamic import — so the optimisation moved
+		// no number the gate could see, and nothing would have caught it regrowing. 52 of the
+		// 284 are still provider transports.
+		//
+		// It previously carried a note claiming the package had "zero dynamic imports" and
+		// measured 341 modules / 60 transports. All three were true of the pre-GAP-M1B-5 tree
+		// and none is true now: the package has dynamic imports (the transport registry, plus
+		// four pre-existing lazy hook registries), and the graph is 284 / 52.
+		"src/stream.ts": { maxFiles: 284 },
 	},
 };
 

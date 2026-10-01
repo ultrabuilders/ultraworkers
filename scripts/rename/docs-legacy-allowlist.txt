@@ -93,7 +93,6 @@ docs/system-prompt-customization.md	11
 docs/task-agent-discovery.md	16
 docs/theme.md	4
 docs/toolconv/glm-4.5.md	1
-docs/toolconv/hermes.md	7
 docs/toolconv/kimi-k2.md	1
 docs/toolconv/minimax.md	1
 docs/toolconv/qwen3.md	1

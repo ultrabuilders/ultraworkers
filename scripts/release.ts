@@ -13,7 +13,7 @@
  * Example: bun scripts/release.ts minor
  */
 import { $, Glob } from "bun";
-import { compareVersions } from "../packages/utils/src/version.ts";
+import { compareVersions } from "../packages/utils/src/version";
 import { runChangelogFixer } from "./fix-changelogs";
 import { generateNixBunDeps, resolveNixBunDepsGenerator } from "./gen-nix-bun";
 

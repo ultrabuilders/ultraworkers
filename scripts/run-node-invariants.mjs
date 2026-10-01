@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Run the three dependency/packaging invariants, each under Node.
+ * Run the four dependency/packaging invariants, each under Node.
  *
  * `bunfig.toml` sets `[run] bun = true`, so `bun run <script>` executes the
  * script body with Bun. That is right for this repo's own TypeScript — but
@@ -12,6 +12,10 @@
  * Spawning Node here is therefore a runtime requirement, not a preference: this
  * file is the seam that keeps the gates runnable from `bun run check:ts`
  * without loosening the repo-wide Bun setting that everything else depends on.
+ *
+ * `check-ts-relative-imports.mjs` runs on either runtime — it uses the async
+ * TypeScript API — but it lives here with the rest so that one command owns all
+ * four, and so that a fifth gate has exactly one obvious place to join.
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -22,6 +26,7 @@ const gates = [
 	["check-pinned-deps.mjs", "external dependencies must use exact versions"],
 	["check-runtime-deps.mjs", "public package runtime imports must be declared"],
 	["check-lockfile-commit.mjs", "staged lockfile changes must be reviewed"],
+	["check-ts-relative-imports.mjs", "relative specifiers must not name a module that does not exist"],
 ];
 
 // `process.execPath` is Bun when this file runs under `bun run` — spawning it
@@ -49,6 +54,28 @@ try {
  * have to re-derive. Running them as real processes keeps the exit code the
  * gate itself chose.
  */
+const runTests = process.argv.includes("--test");
+
+if (runTests) {
+	// `node --test` is subject to the same shim trap as the gates themselves, so
+	// `test:invariants` cannot simply say `node --test …` in package.json: under
+	// `bun run`, that `node` is the bun binary and it fails with "Cannot use test
+	// outside of the test runner" before a single assertion runs. Resolving the
+	// binary here is the same seam, so there is one place that knows Node is
+	// needed rather than two that assume it.
+	const testFiles = gates.map(([script]) => script.replace(/\.mjs$/, ".test.mjs"));
+	const result = spawnSync(nodePath, ["--test", ...testFiles], {
+		cwd: import.meta.dirname,
+		encoding: "utf8",
+		stdio: "inherit",
+	});
+	if (result.error) {
+		process.stderr.write(`failed to run gate tests: ${result.error.message}\n`);
+		process.exit(1);
+	}
+	process.exit(result.status ?? 1);
+}
+
 for (const [script, description] of gates) {
 	const path = fileURLToPath(new URL(script, import.meta.url));
 	const result = spawnSync(nodePath, [path], {

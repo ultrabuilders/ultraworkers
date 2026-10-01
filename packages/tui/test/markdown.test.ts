@@ -13,8 +13,8 @@ import { type Component, TUI } from "@oh-my-pi/pi-tui/tui";
 import { visibleWidth } from "@oh-my-pi/pi-tui/utils";
 import { Chalk } from "@oh-my-pi/pi-utils/chalk";
 import { mathStartIndex } from "@oh-my-pi/pi-utils/math-delimiters";
-import { defaultMarkdownTheme } from "./test-themes.js";
-import { VirtualTerminal } from "./virtual-terminal.js";
+import { defaultMarkdownTheme } from "./test-themes";
+import { VirtualTerminal } from "./virtual-terminal";
 
 // Force full color in CI so ANSI assertions are deterministic
 const chalk = new Chalk({ level: 3 });

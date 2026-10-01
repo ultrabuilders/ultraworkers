@@ -43,8 +43,8 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { $ } from "bun";
-import { generateNpmPackages, LEAF_TARGETS } from "../packages/natives/scripts/gen-npm-packages.ts";
-import { fixEmitExtensions } from "./fix-emit-extensions.ts";
+import { generateNpmPackages, LEAF_TARGETS } from "../packages/natives/scripts/gen-npm-packages";
+import { fixEmitExtensions } from "./fix-emit-extensions";
 
 export interface PublishPackage {
 	dir: string;

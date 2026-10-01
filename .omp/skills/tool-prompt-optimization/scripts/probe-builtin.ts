@@ -21,7 +21,7 @@ import { parseArgs } from "node:util";
 import { toolWireSchema } from "@oh-my-pi/pi-ai";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { BUILTIN_TOOLS, GithubTool, HIDDEN_TOOLS, IrcTool, type Tool, type ToolFactory, type ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
-import { probe } from "./probe.ts";
+import { probe } from "./probe";
 
 const OPEN_TAG = /^<[a-z_][\w-]*>$/i;
 const CLOSE_TAG = /^<\/[a-z_][\w-]*>$/i;

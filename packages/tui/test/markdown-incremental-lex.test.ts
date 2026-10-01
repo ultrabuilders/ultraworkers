@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { clearRenderCache, Markdown } from "@oh-my-pi/pi-tui/components/markdown";
-import { defaultMarkdownTheme } from "./test-themes.js";
+import { defaultMarkdownTheme } from "./test-themes";
 
 // E2 contract: the streaming incremental lexer (lex(prefix) ++ lex(tail), reusing
 // frozen blank-line-bounded blocks) must produce BYTE-IDENTICAL output to a fresh

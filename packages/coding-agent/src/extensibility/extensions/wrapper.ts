@@ -90,10 +90,14 @@ export class RegisteredToolAdapter implements AgentTool<any, any, any> {
 				);
 		}
 		if (registeredTool.definition.renderResult) {
+			// Forward the whole options object, and apply the theme augmentation
+			// that renderCall already got. Re-listing fields here meant a new one
+			// reached renderCall but silently stopped at this boundary, and the
+			// theme was applied on one path and not the other.
 			this.renderResult = (result: any, options: any, theme: any, args?: any) =>
 				registeredTool.definition.renderResult!(
 					result,
-					{ expanded: options.expanded, isPartial: options.isPartial, spinnerFrame: options.spinnerFrame },
+					renderOptionsWithTheme(options, theme as Theme),
 					theme as Theme,
 					args,
 				);

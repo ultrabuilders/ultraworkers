@@ -1336,11 +1336,9 @@ export function customToolToDefinition(tool: CustomTool, sourcePath?: string): T
 		renderCall: tool.renderCall,
 		renderResult: tool.renderResult
 			? (result, options, theme): Component => {
-					const component = tool.renderResult?.(
-						result,
-						{ expanded: options.expanded, isPartial: options.isPartial, spinnerFrame: options.spinnerFrame },
-						theme,
-					);
+					// Forwarded whole, matching renderCall above. Re-listing the
+					// fields meant a new one reached renderCall and stopped here.
+					const component = tool.renderResult?.(result, options, theme);
 					// Return empty component if undefined to match Component type requirement
 					return component ?? ({ render: () => [] } as unknown as Component);
 				}

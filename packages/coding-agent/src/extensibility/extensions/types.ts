@@ -68,6 +68,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 } from "@oh-my-pi/pi-tui";
+import type { RawToolArgs } from "@oh-my-pi/pi-tui/tools/renderer";
 import type { logger as PiLogger } from "@oh-my-pi/pi-utils";
 import type { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
@@ -677,6 +678,21 @@ export interface ToolRenderResultOptions {
 	isPartial: boolean;
 	/** Current spinner frame index for animated elements (optional) */
 	spinnerFrame?: number;
+	/**
+	 * True once the arguments are final (`message_end`). An exclusive tool can
+	 * sit here while an earlier call is still running.
+	 */
+	argsComplete?: boolean;
+	/** True once this specific call has begun executing. */
+	executionStarted?: boolean;
+	/**
+	 * The unparsed argument stream, when there is one. Declared here so an
+	 * extension can read it without reaching into the decoded args for a magic
+	 * `__partialJson` key — that spelling is a producer convention, not a
+	 * contract, and a renderer that depends on it breaks when a producer
+	 * changes.
+	 */
+	rawArgs?: RawToolArgs;
 }
 
 /**

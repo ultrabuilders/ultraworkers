@@ -126,19 +126,57 @@ export function validateLoadedBindings(
 ): void;
 
 /** Identity of the addon `loadNative()` returned, for missing-export diagnostics. */
-export interface NativeAddonStatus {
-	/** Absolute path of the loaded `.node`. */
-	path: string;
-	/** Release the loaded addon reports (post-link stamp or legacy sentinel), or `null` when unidentified. */
-	version: string | null;
-	/** `package.json#version` of the loader that loaded it. */
-	packageVersion: string;
-	/** True when the addon carries a different release than this package. */
-	stale: boolean;
-}
+/**
+ * Three states, three values — the third is the point.
+ *
+ * `current` and `stale` are separate members rather than one object with a
+ * boolean, so a caller that forgets to check cannot read "the addon is a
+ * different release" as anything like a pass. `unavailable` carries no version
+ * claim at all: it is the honest answer when nothing loaded, and it has no
+ * fields that could be mistaken for a measurement.
+ */
+export type NativeAddonStatus =
+	| {
+			state: "current";
+			/** Absolute path of the loaded `.node`. */
+			path: string;
+			/** Release the loaded addon reports (post-link stamp or legacy sentinel), or `null` when unidentified. */
+			version: string | null;
+			/** `package.json#version` of the loader that loaded it. */
+			packageVersion: string;
+	  }
+	| {
+			state: "stale";
+			/** Absolute path of the loaded `.node`. */
+			path: string;
+			/** Release the loaded addon reports (post-link stamp or legacy sentinel), or `null` when unidentified. */
+			version: string | null;
+			/** `package.json#version` of the loader that loaded it. */
+			packageVersion: string;
+	  }
+	| {
+			/** Nothing loaded, so nothing was measured. */
+			state: "unavailable";
+	  };
 
-/** The addon behind this process's exports; `null` before a successful load. */
-export function nativeAddonStatus(): NativeAddonStatus | null;
+/** The addon behind this process's exports — one of three states, never `null`. */
+export function nativeAddonStatus(): NativeAddonStatus;
+
+/**
+ * What a gate may conclude from the addon it runs against.
+ *
+ * Deliberately has no `deny` member: this measures, it does not adjudicate.
+ * A `deny` here would be a second, silently-equal spelling of "not current",
+ * and it would read as a measured refusal when nothing was determined.
+ */
+export type NativeAddonGateVerdict = "allow" | "unknown";
+
+/**
+ * The verdict a gate may draw. Only a *current* addon yields `allow`; a stale
+ * one and an unloaded one both yield `unknown`, because a release this tree did
+ * not expect supports no verdict at all.
+ */
+export function nativeAddonGateVerdict(addon?: NativeAddonStatus): NativeAddonGateVerdict;
 
 /**
  * Stub for an export the addon does not provide: `undefined` on a current
@@ -146,10 +184,10 @@ export function nativeAddonStatus(): NativeAddonStatus | null;
  */
 export function missingNativeExport(
 	symbolName: string,
-	addon?: NativeAddonStatus | null,
+	addon?: NativeAddonStatus,
 ): (() => never) | undefined;
 
 /** Actionable text for {@link missingNativeExport}. */
-export function missingNativeExportMessage(symbolName: string, addon?: NativeAddonStatus | null): string;
+export function missingNativeExportMessage(symbolName: string, addon?: NativeAddonStatus): string;
 
 export function loadNative(): Record<string, unknown>;

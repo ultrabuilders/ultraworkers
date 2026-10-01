@@ -20,19 +20,20 @@ import { missingNativeExport, missingNativeExportMessage, nativeAddonStatus } fr
 
 const addonPath = "/w/packages/natives/native/pi_natives.linux-x64-modern.node";
 
-function status(overrides: Partial<NativeAddonStatus> = {}): NativeAddonStatus {
+type LoadedAddon = Extract<NativeAddonStatus, { state: "current" | "stale" }>;
+
+function status(state: "current" | "stale"): LoadedAddon {
 	return {
+		state,
 		path: addonPath,
-		version: "18.1.18",
+		version: state === "stale" ? "18.1.18" : "18.2.6",
 		packageVersion: "18.2.6",
-		stale: true,
-		...overrides,
 	};
 }
 
 describe("native exports missing from a stale addon", () => {
 	it("throws a stub naming the symbol, the addon, both releases, and the rebuild", () => {
-		const stub = missingNativeExport("hashlineIsReadTruncationNotice", status());
+		const stub = missingNativeExport("hashlineIsReadTruncationNotice", status("stale"));
 		expect(typeof stub).toBe("function");
 		for (const expected of [
 			"hashlineIsReadTruncationNotice",
@@ -46,23 +47,26 @@ describe("native exports missing from a stale addon", () => {
 	});
 
 	it("reports an unidentified addon without inventing a version", () => {
-		const message = missingNativeExportMessage("search", status({ version: null }));
+		const message = missingNativeExportMessage("search", { ...status("stale"), version: null });
 		expect(message).toContain("an addon without a release stamp");
 		expect(message).toContain("bun run build:native");
 	});
 
 	it("keeps the absence a plain undefined on a current addon", () => {
-		const current = status({ version: "18.2.6", stale: false });
+		const current = status("current");
 		expect(missingNativeExport("macOSSpellCheckerAvailable", current)).toBeUndefined();
 		expect(missingNativeExportMessage("macOSSpellCheckerAvailable", current)).toContain(addonPath);
 	});
 
 	it("reports the addon it actually loaded, not an assumed one", () => {
 		const loaded = nativeAddonStatus();
-		expect(loaded).not.toBeNull();
-		expect(loaded?.path.endsWith(".node")).toBe(true);
-		// Whatever the tree's build state, the flag the stubs branch on must be
-		// the one the reported release implies.
-		expect(loaded?.stale).toBe(loaded?.version !== loaded?.packageVersion);
+		// A real load in this tree, so the addon exists; whether it matches this
+		// package's release is the tree's business, not this test's.
+		expect(loaded.state).not.toBe("unavailable");
+		if (loaded.state === "unavailable") throw new Error("unreachable: narrowed by the assertion above");
+		// Whatever the build state, the state the stubs branch on must be the one
+		// the reported release implies — otherwise a current addon could serve a
+		// stale stub, or a stale one silently look measured.
+		expect(loaded.state).toBe(loaded.version === loaded.packageVersion ? "current" : "stale");
 	});
 });

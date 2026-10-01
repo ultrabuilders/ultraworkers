@@ -728,7 +728,7 @@ export function validateLoadedBindings(ctx, bindings, candidate) {
 /**
  * Identity of the addon `loadNative()` returned, in the shape the
  * missing-export diagnostic reports. Null until a load succeeds.
- * @type {{ path: string; version: string | null; packageVersion: string; stale: boolean } | null}
+ * @type {{ state: "current" | "stale"; path: string; version: string | null; packageVersion: string } | null}
  */
 let loadedAddon = null;
 
@@ -742,19 +742,57 @@ let loadedAddon = null;
 function describeLoadedAddon(bindings, candidate, ctx) {
 	const version = bindingsReleaseVersion(bindings);
 	return {
+		state: version === ctx.packageVersion ? "current" : "stale",
 		path: candidate,
 		version,
 		packageVersion: ctx.packageVersion,
-		stale: version !== ctx.packageVersion,
 	};
 }
 
 /**
  * The addon behind this process's `@oh-my-pi/pi-natives` exports.
- * @returns {{ path: string; version: string | null; packageVersion: string; stale: boolean } | null}
+ *
+ * Three states, three values. A gate that reports "OK" has to be able to say
+ * it *measured*, and the old shape could not: `{ stale: true }` was a boolean
+ * a caller had to remember to read, and `null` was "nothing loaded" wearing
+ * the same type as a successful answer. `unavailable` carries no version claim
+ * at all, so it cannot be mistaken for a measurement even by a caller that
+ * forgets to branch.
+ * @returns {typeof UNMEASURED | { state: "current" | "stale"; path: string; version: string | null; packageVersion: string }}
  */
 export function nativeAddonStatus() {
-	return loadedAddon;
+	return loadedAddon ?? UNMEASURED;
+}
+
+/**
+ * What a containment gate may conclude from the addon it is running against.
+ *
+ * There is no `deny` member, and that is deliberate rather than an oversight.
+ * This function measures; it does not adjudicate. Emitting `deny` here would
+ * be a second, silently-equal way of saying "not current" — one that reads as
+ * a measured refusal when nothing was actually determined. A caller that wants
+ * to refuse has its own policy to apply to `unmeasured`.
+ */
+const GATE_VERDICT_MEASURED = "allow";
+const GATE_VERDICT_UNMEASURED = "unknown";
+
+/**
+ * The addon state no measurement can be drawn from.
+ * @type {{ readonly state: "unavailable" }}
+ */
+const UNMEASURED = { state: "unavailable" };
+
+/**
+ * What a gate may conclude from the addon behind this process's exports.
+ *
+ * Only a *current* addon yields `allow`. A stale addon is not a measured
+ * pass and not a measured refusal — it is a release this tree did not expect,
+ * so any verdict drawn from it would be fiction.
+ * @param {ReturnType<typeof nativeAddonStatus>} [addon]
+ * @returns {"allow" | "unknown"}
+ */
+export function nativeAddonGateVerdict(addon = nativeAddonStatus()) {
+	return addon.state === "current" ? GATE_VERDICT_MEASURED : GATE_VERDICT_UNMEASURED;
 }
 
 /**
@@ -776,8 +814,8 @@ export function nativeAddonStatus() {
  * @param {ReturnType<typeof nativeAddonStatus>} [addon]
  * @returns {((...args: unknown[]) => never) | undefined}
  */
-export function missingNativeExport(symbolName, addon = loadedAddon) {
-	if (!addon?.stale) return undefined;
+export function missingNativeExport(symbolName, addon = nativeAddonStatus()) {
+	if (addon.state !== "stale") return undefined;
 	return () => {
 		throw new Error(missingNativeExportMessage(symbolName, addon));
 	};
@@ -790,10 +828,12 @@ export function missingNativeExport(symbolName, addon = loadedAddon) {
  * @param {ReturnType<typeof nativeAddonStatus>} [addon]
  * @returns {string}
  */
-export function missingNativeExportMessage(symbolName, addon = loadedAddon) {
+export function missingNativeExportMessage(symbolName, addon = nativeAddonStatus()) {
 	const rebuild = "rebuild it with `bun run build:native`";
-	if (!addon) return `@oh-my-pi/pi-natives does not export \`${symbolName}\`; ${rebuild}.`;
-	if (!addon.stale) {
+	if (addon.state === "unavailable") {
+		return `@oh-my-pi/pi-natives does not export \`${symbolName}\`; ${rebuild}.`;
+	}
+	if (addon.state !== "stale") {
 		return `@oh-my-pi/pi-natives export \`${symbolName}\` is missing from ${addon.path}; ${rebuild}.`;
 	}
 	const loaded = addon.version

@@ -1,54 +1,73 @@
 /**
- * A missing native export has three causes, and the diagnostic must not merge them.
+ * The addon behind this process has three states, and the middle one used to be
+ * invisible.
  *
- * No addon, a current addon missing the symbol, and a stale addon missing it
- * are three situations with three different fixes — install, accept that this
- * build does not implement the symbol, or rebuild. `missingNativeExportMessage`
- * words all three differently, and that wording is what a user reads when a
- * symbol turns out to be missing, so merging any two of them sends the reader
- * to the wrong place.
+ * `nativeAddonStatus()` returned `{ stale: boolean } | null`. That shape makes
+ * two of the three situations reachable by accident: a caller that never reads
+ * `stale` sees a stale addon as an object like any other, and `null` wears the
+ * same type as a successful answer. So a gate whose assertion depends on the
+ * addon being the release it expects could report `allow` while having measured
+ * nothing — the two outcomes a gate must never confuse.
  *
- * The no-addon branch is the one with no other coverage. `stale-addon-export.test.ts`
- * pins the current and stale wordings, and `legacy-desktop-sentinel.test.ts` owns
- * `validateLoadedBindings` outright; nothing asserted that the third wording is
- * distinct from the other two, so a reword that folded "no addon" into the
- * current-addon sentence would have stayed green.
- *
- * This deliberately does not assert the *gate* for the no-addon case.
- * `missingNativeExport` answers `undefined` there, the same answer it gives for
- * "this build does not implement it" — the collapse `m8-w7-099` exists to
- * prevent. Asserting today's answer would enshrine the defect, and changing it
- * is a type change on an API with no production caller, so it waits for a
- * ruling. The ruling only has to move that one branch; the wording it produces
- * is pinned here and will not need to change with it.
+ * These rows pin the shape, the decision drawn from it, the diagnostic wording,
+ * and the fact that the passing path is unchanged.
  */
-import { describe, expect, test } from "bun:test";
-import { missingNativeExportMessage, type NativeAddonStatus } from "../native/loader-state.js";
+import { describe, expect, it } from "bun:test";
+import type { NativeAddonStatus } from "../native/loader-state.js";
+import { missingNativeExport, missingNativeExportMessage, nativeAddonGateVerdict } from "../native/loader-state.js";
 
-const addonPath = "/w/packages/natives/native/pi_natives.darwin-arm64.node";
+const ADDON_PATH = "/w/packages/natives/native/pi_natives.linux-x64-modern.node";
+const PACKAGE_VERSION = "18.2.6";
 
-function status(overrides: Partial<NativeAddonStatus> = {}): NativeAddonStatus {
-	return { path: addonPath, version: "18.2.6", packageVersion: "18.2.6", stale: false, ...overrides };
-}
+const loaded = (state: "current" | "stale", version: string | null): NativeAddonStatus => ({
+	state,
+	path: ADDON_PATH,
+	version,
+	packageVersion: PACKAGE_VERSION,
+});
 
-describe("missing-export diagnostics separate the three addon states", () => {
-	test("no addon is worded distinctly from both kinds of loaded addon", () => {
-		const absent = missingNativeExportMessage("readProjection");
-		const current = missingNativeExportMessage("readProjection", status());
-		const stale = missingNativeExportMessage("readProjection", status({ version: "18.1.18", stale: true }));
+const UNAVAILABLE: NativeAddonStatus = { state: "unavailable" };
 
-		// Pairwise rather than against a set: three distinct strings would also
-		// satisfy a set, but what the reader needs is that no two *causes* share
-		// a sentence, and a cause is a pair of wordings.
-		expect(absent).not.toBe(current);
-		expect(absent).not.toBe(stale);
+describe("addon state has three values, not two", () => {
+	// The contract itself. A boolean-flagged object still satisfies "is it
+	// stale?" for a caller that asks the right question, so this row has to ask
+	// about the *state* — the regression it guards is a caller that does not.
+	it("gives the three real situations three distinct values", () => {
+		const current = loaded("current", PACKAGE_VERSION);
+		const stale = loaded("stale", "18.1.18");
+		const states = [current.state, stale.state, UNAVAILABLE.state];
+		expect(new Set(states).size).toBe(3);
+	});
 
-		// The load-bearing difference, not a rewording. Only the stale case can
-		// name two different releases — that is the entire reason it earns a
-		// sentence of its own rather than a variant of the current-addon one.
+	// Negative contract, focused. T1 above asks about the type; this asks about
+	// the decision. An install that coerces the third state to `allow` passes
+	// T1 and fails here, and it is precisely that install W7 exists to stop.
+	it("never turns an addon it could not measure into a pass", () => {
+		expect(nativeAddonGateVerdict(loaded("current", PACKAGE_VERSION))).toBe("allow");
+		expect(nativeAddonGateVerdict(loaded("stale", "18.1.18"))).toBe("unknown");
+		expect(nativeAddonGateVerdict(UNAVAILABLE)).toBe("unknown");
+	});
+
+	// The diagnostic path is where a user actually reads when something breaks.
+	// Two causes, two fixes; merging the wording sends them to debug the wrong
+	// one. Asserting only "the message is non-empty" would pass for both.
+	it("tells a stale addon apart from an absent one in the diagnostic", () => {
+		const stale = missingNativeExportMessage("search", loaded("stale", "18.1.18"));
+		const absent = missingNativeExportMessage("search", UNAVAILABLE);
 		expect(stale).toContain("18.1.18");
-		expect(stale).toContain("18.2.6");
-		expect(current).toContain(addonPath);
-		expect(current).not.toContain("18.1.18");
+		expect(stale).toContain(PACKAGE_VERSION);
+		expect(absent).not.toContain(ADDON_PATH);
+		expect(stale).not.toBe(absent);
+	});
+
+	// Preservation: W7 adds a state, it does not tighten a gate. A current addon
+	// must keep returning the bare `undefined` that callers probe with
+	// (`typeof native.x === "function"`), or every capability probe breaks.
+	it("leaves a current addon's absent export a plain undefined", () => {
+		expect(missingNativeExport("write", loaded("current", PACKAGE_VERSION))).toBeUndefined();
+		// And the stub still exists where it must: the stale path is the one that
+		// gains a diagnostic, so a regression that silenced it would hide the
+		// very failure this whole mechanism reports.
+		expect(typeof missingNativeExport("write", loaded("stale", "18.1.18"))).toBe("function");
 	});
 });

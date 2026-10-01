@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `nativeAddonStatus()` now returns a three-way result — `current`, `stale`, or `unavailable` — instead of `{ stale: boolean } | null`. A stale addon was previously an object a caller could read as an ordinary one if it never checked the flag, and an unloaded addon was a `null` wearing the same type as a successful answer, so a gate depending on the expected addon release could report a pass having measured nothing. The new `nativeAddonGateVerdict()` returns `allow` only for a `current` addon and `unknown` otherwise; it has no `deny` member, because it measures rather than adjudicates. `missingNativeExport` and `missingNativeExportMessage` are unchanged for callers that pass no addon.
+
 ### Fixed
 
 - Fixed `computer.window(id).ax()` and `find()` failing with `AxFailed` on macOS sheets, popovers and open menus that `computer.windows()` lists, such as TextEdit's Save sheet or a Calendar event popover ([#13659](https://github.com/can1357/oh-my-pi/pull/13659) by [@will-bogusz](https://github.com/will-bogusz)).

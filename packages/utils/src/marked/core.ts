@@ -792,9 +792,16 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 
 		let next = rest.length;
 		{
-			STOP_CHAR.lastIndex = 0;
-			const stop = STOP_CHAR.exec(rest.slice(1));
-			if (stop) next = stop.index + 1;
+			// `lastIndex = 1` bỏ qua `rest[0]` mà không cắt chuỗi: `rest.slice(1)` dựng một
+			// substring ở **mỗi** iteration. `lastIndex` làm đúng việc đó, miễn phí.
+			//
+			// Đây là thay đổi **hằng số, không phải hình dạng**: đo lại, tỉ lệ tăng gấp đôi
+			// không đổi, nên công việc vẫn Θ(n²) — thời gian chỉ giảm vài phần trăm. Khi
+			// tôi viết bản comment đầu tiên ở đây, tôi gọi đây là "chi phí còn lại lớn
+			// nhất"; phép đo của chính tôi không ủng hộ câu đó, nên đã ghi đúng lại.
+			STOP_CHAR.lastIndex = 1;
+			const stop = STOP_CHAR.exec(rest);
+			if (stop) next = stop.index;
 		}
 		// `next` luôn >= 1. Khi `next <= 1` thì `index + 1 < next` không thể đúng với
 		// `index >= 0`, nên cả hai regex đều không thể thu hẹp `next`: bỏ qua chúng.

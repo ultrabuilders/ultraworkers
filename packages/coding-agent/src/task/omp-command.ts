@@ -1,6 +1,6 @@
 import process from "node:process";
 
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env, WIRE_NAME } from "@oh-my-pi/pi-utils";
 
 interface OmpCommand {
 	cmd: string;
@@ -8,7 +8,12 @@ interface OmpCommand {
 	shell: boolean;
 }
 
-const DEFAULT_CMD = process.platform === "win32" ? "omp.cmd" : "omp";
+// The command this agent re-invokes must be the one an installer puts on PATH, not
+// the brand. Deriving it from WIRE_NAME is what makes a rename correct in one
+// place; a literal here stays right until the binary is renamed, then silently
+// spawns a command that does not exist. `W9.spec.json` recommended APP_NAME --
+// that is the wrong constant: it is display identity.
+export const DEFAULT_CMD = `${WIRE_NAME}${process.platform === "win32" ? ".cmd" : ""}`;
 const DEFAULT_SHELL = process.platform === "win32";
 
 export function resolveOmpCommand(): OmpCommand {

@@ -28,6 +28,38 @@ import type { AgentMessage } from "./types";
 import type { Message } from "@oh-my-pi/pi-ai";
 
 /**
+ * Take the source snapshot a derivation is checked against.
+ *
+ * Deep, not shallow — and the reason is narrower than it first looks. A mutation
+ * made *inside* the pipeline does not need this: the re-derivation runs the same
+ * transform over the same input and reproduces it, so a `slice()` catches that
+ * already. What a shallow copy cannot survive is a mutation from *outside* the
+ * pipeline, landing after the snapshot and before the send. A `slice()` shares
+ * every message object with the live context, so that edit would reach the
+ * snapshot too, both sides would agree, and the check would certify a history
+ * that never existed.
+ *
+ * The published signature does not rule that out: `convertToLlm` is typed
+ * `(messages: AgentMessage[]) => Message[]`, which permits mutation and merely
+ * declines to require it.
+ *
+ * Affordable because the snapshot only exists while the check runs, which by
+ * default means under test — production never pays for it.
+ *
+ * Falls back to a shallow copy when a message carries something
+ * `structuredClone` rejects (`ToolResultMessage.details` and `ProviderPayload`
+ * both can): a weaker snapshot still catches structural mutations, and failing
+ * closed would drop a session over a diagnostic value.
+ */
+export function snapshotForDerivation(messages: readonly AgentMessage[]): AgentMessage[] {
+	try {
+		return structuredClone([...messages]);
+	} catch {
+		return [...messages];
+	}
+}
+
+/**
  * Compare the messages about to be sent against a fresh derivation of the
  * source context, and throw when they differ.
  *
@@ -38,23 +70,15 @@ import type { Message } from "@oh-my-pi/pi-ai";
  * designed.
  *
  * @param sent - The messages handed to the provider, post-convert.
- * @param source - The pre-convert context they were derived from. Must be a
- *   snapshot taken BEFORE the pipeline ran: re-deriving from the value the
- *   pipeline already produced compares a derivation with itself, which agrees by
- *   construction and catches nothing.
- * @param derive - The derivation to re-run, normally the loop's own
- *   `transformContext` followed by `convertToLlm`. Synchronous by design: an
- *   async one that is not awaited would stringify a Promise to `{}` and report a
+ * @param derive - Re-runs the pipeline over a source taken BEFORE the real one
+ *   ran (see {@link snapshotForDerivation}). Synchronous by design: an async
+ *   one that is not awaited would stringify a Promise to `{}` and report a
  *   desync that is not there, which is worse than no check at all. Callers
  *   `await` their own pipeline and pass the resolved array.
  * @throws Error when the two disagree.
  */
-export function assertDerivable(
-	sent: readonly Message[],
-	source: readonly AgentMessage[],
-	derive: (messages: readonly AgentMessage[]) => readonly Message[],
-): void {
-	const expected = derive(source);
+export function assertDerivable(sent: readonly Message[], derive: () => readonly Message[]): void {
+	const expected = derive();
 	const difference = firstDifference(sent, expected);
 	if (difference.kind === "equal") return;
 	throw new Error(describeDesync(sent, expected, difference));
@@ -63,12 +87,7 @@ export function assertDerivable(
 /** Where two message lists first stop agreeing. */
 type Difference =
 	| { readonly kind: "equal" }
-	| {
-			readonly kind: "index";
-			readonly index: number;
-			readonly sent: Message | undefined;
-			readonly expected: Message | undefined;
-	  }
+	| { readonly kind: "index"; readonly index: number }
 	| { readonly kind: "keys"; readonly index: number; readonly key: string };
 
 /**
@@ -86,7 +105,7 @@ function firstDifference(sent: readonly Message[], expected: readonly Message[])
 	for (let index = 0; index < limit; index++) {
 		const a = sent[index];
 		const b = expected[index];
-		if (a === undefined || b === undefined) return { kind: "index", index, sent: a, expected: b };
+		if (a === undefined || b === undefined) return { kind: "index", index };
 		if (a === b) continue;
 		const key = firstDifferingKey(a, b);
 		if (key !== undefined) return { kind: "keys", index, key };
@@ -114,14 +133,30 @@ function canonical(message: Message, key: string): string {
 	return JSON.stringify(sorted((message as unknown as Record<string, unknown>)[key]));
 }
 
-function sorted(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(sorted);
+/**
+ * Recursively rebuild a value with object keys in sorted order.
+ *
+ * Cycle-safe because tool results carry a `details` object that extensions are
+ * free to make cyclic, and the provider path tolerates that. Without the guard
+ * this recurses until the stack gives out, so a message referencing itself would
+ * make the *diagnostic* fail instead of the thing it is meant to diagnose —
+ * turning a survivable payload into a crash. Re-entering a value already on the
+ * path becomes `[circular]`, so two different cyclic payloads still differ.
+ */
+function sorted(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+	if (Array.isArray(value)) {
+		if (seen.has(value)) return "[circular]";
+		seen.add(value);
+		return value.map(item => sorted(item, seen));
+	}
 	if (value !== null && typeof value === "object") {
+		if (seen.has(value)) return "[circular]";
+		seen.add(value);
 		const source = value as Record<string, unknown>;
 		return Object.fromEntries(
 			Object.keys(source)
 				.sort()
-				.map(key => [key, sorted(source[key])]),
+				.map(key => [key, sorted(source[key], seen)]),
 		);
 	}
 	return value;
@@ -133,17 +168,27 @@ function sorted(value: unknown): unknown {
  * The first differing index is the useful fact: it is where a reader starts
  * looking. A raw diff of two multi-megabyte transcripts is unreadable, and an
  * invariant nobody can read is an invariant nobody trusts.
+ *
+ * The parameter excludes `"equal"` so the compiler — not a comment — refuses to
+ * let a no-difference case reach a formatter with no index to report. The two
+ * arrays are re-read at `difference.index` rather than carried on the union: a
+ * key-level difference has no `sent`/`expected` of its own to print, and adding
+ * them to every variant would widen the surface for no gain.
  */
-function describeDesync(sent: readonly Message[], expected: readonly Message[], difference: Difference): string {
+function describeDesync(
+	sent: readonly Message[],
+	expected: readonly Message[],
+	difference: Exclude<Difference, { kind: "equal" }>,
+): string {
 	const prefix = "llm request diverges from the dispatch-time durable derivation (log-reconstruction desync)";
 	const counts = `sent ${sent.length} messages, derived ${expected.length}`;
 	if (difference.kind === "index") {
-		return `${prefix} at message ${difference.index}: sent ${describe(difference.sent)}, derived ${describe(difference.expected)} (${counts})`;
+		return `${prefix} at message ${difference.index}: sent ${describe(sent[difference.index])}, derived ${describe(expected[difference.index])} (${counts})`;
 	}
 	// A key-level difference. Printing only the role would report
 	// "sent user, derived user" and leave the reader with two identical-looking
 	// values and no explanation, so name the field that actually differs.
-	return `${prefix} at message ${difference.index}, field "${difference.key}": sent ${field(difference.sent, difference.key)}, derived ${field(difference.expected, difference.key)} (${counts})`;
+	return `${prefix} at message ${difference.index}, field "${difference.key}": sent ${field(sent[difference.index], difference.key)}, derived ${field(expected[difference.index], difference.key)} (${counts})`;
 }
 
 function describe(message: Message | undefined): string {

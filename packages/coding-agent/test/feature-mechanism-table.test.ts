@@ -13,7 +13,6 @@
  * closes, this test goes red until the row becomes a real gate.
  */
 import { describe, expect, test } from "bun:test";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");

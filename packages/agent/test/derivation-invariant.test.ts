@@ -9,7 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
-import { assertDerivable } from "@oh-my-pi/pi-agent-core/derivation-invariant";
+import { assertDerivable, snapshotForDerivation } from "@oh-my-pi/pi-agent-core/derivation-invariant";
 import { prepareProviderCall } from "@oh-my-pi/pi-agent-core/agent-loop";
 import type { Message } from "@oh-my-pi/pi-ai";
 
@@ -37,13 +37,28 @@ function assistant(text: string): AgentMessage {
 	};
 }
 
-/** The pipeline under test: a pure derivation, standing in for transform+convert. */
+/**
+ * The pipeline under test: a pure derivation, standing in for transform+convert.
+ *
+ * An assistant `Message` must carry `api`, `provider`, `model`, `usage` and
+ * `stopReason`, so the assistant branch spreads the source rather than inventing
+ * a partial one — a fixture that omits required fields would assert a shape the
+ * real converter never produces, and would fail typecheck for the wrong reason.
+ *
+ * Only user and assistant survive: the remaining `AgentMessage` variants have no
+ * `content` field at all, and reaching for one is what `convertToLlm` does in
+ * reality — it drops them, incomplete thinking not being replayable.
+ */
 function derive(messages: readonly AgentMessage[]): Message[] {
-	return messages.map(message =>
-		message.role === "user"
-			? ({ role: "user", content: message.content, timestamp: 0 } satisfies Message)
-			: ({ role: "assistant", content: message.content, timestamp: 0 } satisfies Message),
-	);
+	const derived: Message[] = [];
+	for (const message of messages) {
+		if (message.role === "assistant") {
+			derived.push({ ...message } satisfies Message);
+		} else if (message.role === "user") {
+			derived.push({ role: "user", content: message.content, timestamp: 0 } satisfies Message);
+		}
+	}
+	return derived;
 }
 
 describe("assertDerivable", () => {
@@ -64,7 +79,7 @@ describe("assertDerivable", () => {
 			return derive(messages).slice(0, calls === 1 ? messages.length : messages.length - 1);
 		};
 		const sent = drifting(source);
-		expect(() => assertDerivable(sent, source, drifting)).toThrow(/log-reconstruction desync/);
+		expect(() => assertDerivable(sent, () => drifting(source))).toThrow(/log-reconstruction desync/);
 	});
 
 	test("key order alone is not a divergence", () => {
@@ -75,7 +90,7 @@ describe("assertDerivable", () => {
 		// divergence with it.
 		const source: AgentMessage[] = [user("hello")];
 		const sent: Message[] = [{ content: [{ type: "text", text: "hello" }], role: "user", timestamp: 0 } as Message];
-		expect(() => assertDerivable(sent, source, derive)).not.toThrow();
+		expect(() => assertDerivable(sent, () => derive(source))).not.toThrow();
 	});
 
 	test("a field difference is reported by name, not as two identical roles", () => {
@@ -84,7 +99,7 @@ describe("assertDerivable", () => {
 		// what to look at.
 		const source: AgentMessage[] = [user("hello")];
 		const sent: Message[] = [{ role: "user", content: [{ type: "text", text: "goodbye" }], timestamp: 0 }];
-		expect(() => assertDerivable(sent, source, derive)).toThrow(/field "content"/);
+		expect(() => assertDerivable(sent, () => derive(source))).toThrow(/field "content"/);
 	});
 
 	test("throws when the sent messages carry an edit the source does not", () => {
@@ -95,7 +110,7 @@ describe("assertDerivable", () => {
 			...derive(source),
 			{ role: "user", content: [{ type: "text", text: "injected" }], timestamp: 0 },
 		];
-		expect(() => assertDerivable(sent, source, derive)).toThrow(/log-reconstruction desync/);
+		expect(() => assertDerivable(sent, () => derive(source))).toThrow(/log-reconstruction desync/);
 	});
 
 	test("throws when a message is silently rewritten in place", () => {
@@ -103,7 +118,7 @@ describe("assertDerivable", () => {
 		// length-only check would pass this.
 		const source: AgentMessage[] = [user("original")];
 		const sent: Message[] = [{ role: "user", content: [{ type: "text", text: "rewritten" }], timestamp: 0 }];
-		expect(() => assertDerivable(sent, source, derive)).toThrow(/log-reconstruction desync/);
+		expect(() => assertDerivable(sent, () => derive(source))).toThrow(/log-reconstruction desync/);
 	});
 
 	test("throws when the same length diverges at a later index", () => {
@@ -111,7 +126,7 @@ describe("assertDerivable", () => {
 		// the top of a two-sided dump of a multi-megabyte transcript.
 		const source: AgentMessage[] = [user("first"), assistant("second"), user("third")];
 		const sent: Message[] = derive([user("first"), assistant("CHANGED"), user("third")]);
-		expect(() => assertDerivable(sent, source, derive)).toThrow(/at message 1/);
+		expect(() => assertDerivable(sent, () => derive(source))).toThrow(/at message 1/);
 	});
 
 	test("a non-deterministic derivation is caught, not tolerated", () => {
@@ -125,7 +140,7 @@ describe("assertDerivable", () => {
 		};
 		const source: AgentMessage[] = [user("a"), assistant("b")];
 		const sent = unstable(source);
-		expect(() => assertDerivable(sent, source, unstable)).toThrow(/log-reconstruction desync/);
+		expect(() => assertDerivable(sent, () => unstable(source))).toThrow(/log-reconstruction desync/);
 	});
 });
 
@@ -243,6 +258,28 @@ describe("the wired path", () => {
 		} as never;
 
 		await expect(prepareProviderCall(context, config, undefined)).rejects.toThrow(/log-reconstruction desync/);
+	});
+
+	test("the snapshot does not alias the messages it was taken from", () => {
+		// What the deep snapshot actually buys, stated precisely — because the
+		// obvious claim for it is wrong.
+		//
+		// A mutation made INSIDE the pipeline is reproduced by the re-derivation,
+		// since the same transform runs over both sides, so a shallow copy already
+		// catches it. What a shallow copy cannot survive is a mutation from
+		// OUTSIDE the pipeline, after the snapshot and before the send: the live
+		// context and the snapshot would share the message object, the edit would
+		// land on both, and the comparison would agree on a history that never
+		// existed. That is the shape `message-cache.ts` warns about, and it is why
+		// the snapshot is deep rather than a `slice()`.
+		const messages: AgentMessage[] = [user("hello")];
+		const snapshot = snapshotForDerivation(messages);
+
+		expect(snapshot).toEqual(messages);
+		expect(snapshot[0]).not.toBe(messages[0]);
+
+		(messages[0] as { content: unknown }).content = [{ type: "text", text: "edited in place" }];
+		expect((snapshot[0] as { content: { text: string }[] }).content[0]?.text).toBe("hello");
 	});
 
 	test("only transformContext and convertToLlm are re-run; the provider-context transform is not", async () => {

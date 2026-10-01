@@ -94,8 +94,14 @@ export interface CollectBugReportMetadataOptions {
 	hint?: string;
 	sessionId: string;
 	cwd: string;
-	/** Mandatory, and the gate for cwd — not an advisory flag. */
-	includeSession: boolean;
+	/**
+	 * Opt-in, defaulting closed. Absent means the transcript does not ship, so a
+	 * caller who forgets gets the private answer rather than the leaky one — the
+	 * asymmetry a disclosure gate should have. Where a caller really must state
+	 * it, omitting the field is still a visible omission in review, not a compile
+	 * error forcing every unrelated caller to make a privacy decision.
+	 */
+	includeSession?: boolean;
 	includeSummary: boolean;
 	messageCount: number;
 	model?: Model<Api>;
@@ -119,12 +125,12 @@ export function collectBugReportMetadata(options: CollectBugReportMetadataOption
 		environment: collectEnvironment(),
 		session: {
 			id: options.sessionId,
-			included: options.includeSession,
+			included: options.includeSession === true,
 			summaryIncluded: options.includeSummary,
 			messageCount: options.messageCount,
 			// The working directory is a real disclosure, so it ships only when the
 			// transcript does — not because a flag asked nicely.
-			...(options.includeSession ? { cwd: options.cwd } : {}),
+			...(options.includeSession === true ? { cwd: options.cwd } : {}),
 		},
 		model: options.model ? describeModel(options.model) : null,
 		provider: options.provider

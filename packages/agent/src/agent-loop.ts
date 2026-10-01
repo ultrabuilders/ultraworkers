@@ -60,7 +60,7 @@ import {
 	structuredCloneJSON,
 } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
-import { assertDerivable } from "./derivation-invariant";
+import { assertDerivable, snapshotForDerivation } from "./derivation-invariant";
 import { LiveSteeringChannel } from "./live-steering";
 import { agentPauseGate } from "./pause";
 import { type AgentRunCoverage, type AgentRunSummary, ToolCallBlockedError } from "./run-collector";
@@ -1911,7 +1911,7 @@ export async function prepareProviderCall(
 	// flag; `packages/agent` tests do exactly that.
 	const derivationEnabled =
 		config.derivationInvariant ?? (config.transformContext === undefined && isBunTestRuntime());
-	const derivationSource = derivationEnabled ? messages.slice() : undefined;
+	const derivationSource = derivationEnabled ? snapshotForDerivation(messages) : undefined;
 	if (config.transformContext) {
 		messages = await config.transformContext(messages, signal);
 	}
@@ -1949,17 +1949,17 @@ export async function prepareProviderCall(
 	// a stale derivation. The comparison runs on the post-convert messages
 	// actually handed to the provider, and re-derives them through the loop's own
 	// pipeline rather than a reimplementation of it.
-	if (derivationEnabled) {
-		// Re-run the WHOLE pipeline from the pre-transform context, and compare its
+	if (derivationSource) {
+		// Re-run the WHOLE pipeline from the pre-transform snapshot, and compare its
 		// output to what was just sent. Re-deriving from an already-transformed
 		// value would run the second half of a drifting pipeline twice and can
 		// agree by accident — which is the failure this exists to catch, not to
 		// reproduce.
-		const source = derivationSource as readonly AgentMessage[];
+		const source = [...derivationSource];
 		const expected = await config.convertToLlm(
 			config.transformContext ? await config.transformContext(source, signal) : source,
 		);
-		assertDerivable(normalizedMessages, source, () => expected);
+		assertDerivable(normalizedMessages, () => expected);
 	}
 
 	let promptToolWireTools: Context["tools"];

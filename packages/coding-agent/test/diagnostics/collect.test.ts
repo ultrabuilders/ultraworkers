@@ -10,8 +10,6 @@ function settings(raw: Record<string, unknown>) {
 
 const BASE = {
 	sessionId: "s1",
-	// Mandatory by design: the collector has no default for a disclosure gate.
-	includeSession: false,
 	cwd: "/Users/someone/private/project",
 	includeSummary: false,
 	messageCount: 4,
@@ -43,6 +41,14 @@ describe("collectBugReportMetadata", () => {
 
 	// The cwd is a real disclosure of where the user works. It ships only with
 	// the transcript, which is why `included` alone must never be the gate.
+	// The default matters more than the explicit case: a caller who says nothing
+	// must get the private answer.
+	test("omits cwd when the caller says nothing at all", () => {
+		const meta = collectBugReportMetadata({ ...BASE });
+		expect(meta.session.cwd).toBeUndefined();
+		expect(meta.session.included).toBe(false);
+	});
+
 	test("omits cwd unless the transcript is going in", () => {
 		const without = collectBugReportMetadata({ ...BASE, includeSession: false });
 		expect(without.session.cwd).toBeUndefined();

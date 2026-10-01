@@ -86,6 +86,50 @@ const NO_CUT_MODULES_INTERNAL = new Map<string, string>([
 	["modes-ui", "tui spine — plan §3"],
 ]);
 
+/**
+ * §7: modules `pi` has no counterpart for. The plan rules these `merge`, not `no-cut` —
+ * cutting them does nothing for "copy from pi", it only reduces the subdirectory count,
+ * so the correct outcome is to fold them into a neighbour.
+ *
+ * Recorded explicitly because a list of candidates with no rejected rows is a tell that
+ * nobody read §7: these eleven look like candidates and are not.
+ */
+const MERGE = new Map<string, string>([
+	["commit", "plan §7: no pi counterpart; cutting does not make copying from pi easier"],
+	["commands", "plan §7: no pi counterpart"],
+	["dap", "plan §7: no pi counterpart"],
+	["stream", "plan §7: no pi counterpart"],
+	["security", "plan §7: no pi counterpart"],
+	["tts", "plan §7: no pi counterpart"],
+	["stt", "plan §7: no pi counterpart"],
+	["ida", "plan §7: no pi counterpart"],
+	["cleanse", "plan §7: no pi counterpart"],
+	["autoresearch", "plan §7: no pi counterpart"],
+	["compress", "plan §7: no pi counterpart"],
+	["judgment", "plan §3.3: group to merge, not cut"],
+]);
+
+/**
+ * Rows this script cannot produce, named so their absence is not read as "ruled in".
+ *
+ * `measure-fan-in.ts` scans `packages/coding-agent/src` only, so the plan's §3 `tui/src`
+ * rejections (`apps`, `setup`, `components`, `theme`, `overlays`, `chat`, `render`,
+ * `chrome`, `prompt`, `status-line`, `tools`) and §3.3's `rerank` / `speech` /
+ * `transcription` / `video` / `embeddings` are outside its view. `rerank`, `speech`,
+ * `transcription`, `video` and `embeddings` are not modules of `coding-agent/src` at all.
+ *
+ * Listing them keeps the report honest about its own reach: a rejection that is merely
+ * invisible here is not the same as a rejection that did not happen.
+ */
+export const OUT_OF_SCOPE_ROWS: readonly string[] = [
+	"tui/src/apps (§3, cost/value: bad)",
+	"tui/src/setup (§3, cutting pulls 7 siblings)",
+	"tui/src/components (§3, central hub, nothing reduced)",
+	"tui/src/theme, overlays, chat, render, chrome, prompt, status-line, tools (§3 spine)",
+	"rerank, speech, transcription, video, embeddings (§3.3 merge group, not coding-agent/src modules)",
+	"ai/auth (§3.1 vs §7 contradict; unsettled, so excluded rather than guessed)",
+];
+
 /** Exported for tests: the modules the plan has already ruled on. */
 export const NO_CUT_MODULES = new Set(NO_CUT_MODULES_INTERNAL.keys());
 
@@ -105,7 +149,7 @@ export interface Verdict {
 	readonly module: string;
 	readonly importers: number;
 	readonly inBand: boolean;
-	readonly decision: "candidate" | "no-cut" | "out-of-band";
+	readonly decision: "candidate" | "no-cut" | "merge" | "out-of-band";
 	readonly reason: string;
 }
 
@@ -113,6 +157,7 @@ export interface Split {
 	readonly band: { readonly min: number; readonly max: number };
 	readonly candidates: Verdict[];
 	readonly noCut: Verdict[];
+	readonly merge: Verdict[];
 	readonly outOfBand: Verdict[];
 }
 
@@ -139,9 +184,13 @@ export function readBaseline(baseline: { modules: Record<string, number> }): {
 export function classify(measured: readonly { module: string; importers: number }[]): Split {
 	const verdicts: Verdict[] = measured.map(entry => {
 		const inBand = entry.importers >= BAND.min && entry.importers <= BAND.max;
-		const reason = NO_CUT_MODULES_INTERNAL.get(entry.module);
-		if (reason !== undefined) {
-			return { ...entry, inBand, decision: "no-cut", reason };
+		const noCut = NO_CUT_MODULES_INTERNAL.get(entry.module);
+		if (noCut !== undefined) {
+			return { ...entry, inBand, decision: "no-cut", reason: noCut };
+		}
+		const merge = MERGE.get(entry.module);
+		if (merge !== undefined) {
+			return { ...entry, inBand, decision: "merge", reason: merge };
 		}
 		if (!inBand) {
 			return {
@@ -164,12 +213,66 @@ export function classify(measured: readonly { module: string; importers: number 
 		band: BAND,
 		candidates: verdicts.filter(v => v.decision === "candidate").sort(byName),
 		noCut: verdicts.filter(v => v.decision === "no-cut").sort(byName),
+		merge: verdicts.filter(v => v.decision === "merge").sort(byName),
 		outOfBand: verdicts.filter(v => v.decision === "out-of-band").sort(byName),
 	};
 }
 
 const width = (s: string, n: number) => s.padEnd(n);
 const num = (n: number, w: number) => String(n).padStart(w);
+
+/**
+ * Render the report as a pure function of the split.
+ *
+ * Every row `classify` produced must appear in this text. That is the point of keeping
+ * rendering separate from printing: a test can assert "the report mentions every overlap
+ * module", which catches a row being dropped, not merely mis-classified. Mutation testing
+ * found that gap the hard way — hiding the overlap left the suite 8/8 green, because every
+ * other row constrained `classify` and none constrained what got printed.
+ */
+export function renderReport(split: Split, capturedAt: string): string {
+	const out: string[] = [];
+	const line = (v: Verdict) => `  ${width(v.module, 22)}${num(v.importers, 5)}  ${v.reason}`;
+
+	out.push(`band ${split.band.min}-${split.band.max} · sealed baseline ${capturedAt}`);
+	out.push(`\nCANDIDATES (in band, not ruled on by the plan) — ${split.candidates.length}`);
+	for (const v of split.candidates) out.push(line(v));
+
+	// All no-cut rows are printed, not only the in-band ones. `internal-urls` (38) and
+	// `config` (166) are both ruled no-cut; the first falls below the band and the second
+	// sits in the overlap, so printing only the overlap hid it entirely while the count
+	// elsewhere implied a complete accounting.
+	const overlap = overlapOf(split);
+	out.push(`\nNO-CUT — ${split.noCut.length} (of which ${overlap.length} inside the band)`);
+	for (const v of split.noCut) {
+		out.push(`${line(v)}${v.inBand ? "   [in band]" : ""}`);
+	}
+
+	out.push(`\nMERGE (plan §7: no pi counterpart) — ${split.merge.length}`);
+	for (const v of split.merge) out.push(line(v));
+
+	// Every out-of-band row is printed. An earlier version printed the first 12 and
+	// labelled the section with the true count, so a no-cut module such as `config` —
+	// 166 importers, ruled no-cut — appeared in no section at all. The label said 51 and
+	// the reader saw 12, which reads like the rest were empty rather than unprinted.
+	out.push(`\nOUT OF BAND — ${split.outOfBand.length}`);
+	for (const v of split.outOfBand) out.push(line(v));
+
+	out.push(
+		`\nOVERLAP: ${overlap.length ? overlap.map(v => v.module).join(", ") : "none"}`,
+		"A non-empty overlap is a finding, not a bug: the numeric criterion and the",
+		"architectural argument disagree, and only the owner can settle which wins.",
+	);
+
+	// Named so an absent rejection is never mistaken for a module nobody considered.
+	out.push(
+		`\nRULED OUT BUT OUTSIDE THIS MEASUREMENT (${OUT_OF_SCOPE_ROWS.length})`,
+		"  measure-fan-in.ts scans packages/coding-agent/src only, so these cannot appear above:",
+	);
+	for (const row of OUT_OF_SCOPE_ROWS) out.push(`  - ${row}`);
+
+	return out.join("\n");
+}
 
 if (import.meta.main) {
 	const baseline = (await Bun.file(BASELINE_PATH).json()) as Parameters<typeof isSealedIntact>[0];
@@ -181,26 +284,5 @@ if (import.meta.main) {
 		);
 		process.exit(1);
 	}
-
-	const split = classify(readBaseline(baseline));
-	const line = (v: Verdict) => `  ${width(v.module, 22)}${num(v.importers, 5)}  ${v.reason}`;
-
-	console.log(`band ${split.band.min}-${split.band.max} · sealed baseline ${baseline.capturedAt}\n`);
-
-	console.log(`CANDIDATES (in band, not ruled on by the plan) — ${split.candidates.length}`);
-	if (split.candidates.length === 0) console.log("  (none)");
-	for (const v of split.candidates) console.log(line(v));
-
-	const overlap = overlapOf(split);
-	console.log(`\nIN BAND BUT NO-CUT — ${overlap.length}`);
-	for (const v of overlap) console.log(line(v));
-
-	console.log(`\nOUT OF BAND — ${split.outOfBand.length} of ${split.outOfBand.length} shown`);
-	for (const v of split.outOfBand.slice(0, 12)) console.log(line(v));
-
-	console.log(
-		`\nOVERLAP: ${overlap.length ? overlap.map(v => v.module).join(", ") : "none"}\n` +
-			"A non-empty overlap is a finding, not a bug: the numeric criterion and the\n" +
-			"architectural argument disagree, and only the owner can settle which wins.",
-	);
+	console.log(renderReport(classify(readBaseline(baseline)), baseline.capturedAt));
 }

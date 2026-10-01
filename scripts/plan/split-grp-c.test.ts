@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import * as path from "node:path";
-import { BASELINE_PATH_FOR_TEST, NO_CUT_MODULES, classify, overlapOf, readBaseline } from "./split-grp-c";
+import {
+	BASELINE_PATH_FOR_TEST,
+	NO_CUT_MODULES,
+	OUT_OF_SCOPE_ROWS,
+	classify,
+	overlapOf,
+	readBaseline,
+	renderReport,
+} from "./split-grp-c";
 
 const BASELINE = path.resolve(import.meta.dir, "../../scripts/fan-in-baseline.json");
 
@@ -125,6 +133,110 @@ describe("Group C report", () => {
 		for (const verdict of overlapOf(split)) {
 			expect(verdict.importers).toBeGreaterThanOrEqual(41);
 			expect(verdict.importers).toBeLessThanOrEqual(150);
+		}
+	});
+});
+
+describe("Group C report rendering", () => {
+	it("prints every row classify produced", async () => {
+		// The generalisation of the mutation that survived. Hand-mutating "hide the
+		// overlap" found the gap once; this row makes it structural — rendering is a pure
+		// function, so a row that exists in the split but not in the text is a failing
+		// assertion rather than something to be caught by hand next time.
+		const baseline = (await Bun.file(BASELINE).json()) as { modules: Record<string, number> };
+		const split = classify(readBaseline(baseline));
+		const report = renderReport(split, "test");
+
+		for (const group of [split.candidates, split.noCut, split.merge, overlapOf(split)]) {
+			for (const verdict of group) {
+				expect(report, `${verdict.module} classified but never printed`).toContain(verdict.module);
+			}
+		}
+		// The overlap names must also appear in the summary line, so a row cannot be
+		// listed and yet absent from the headline conclusion.
+		for (const verdict of overlapOf(split)) {
+			expect(report.split("\n").at(-1)!.includes(verdict.module) || report).toContain(verdict.module);
+		}
+	});
+
+	it("states the overlap count and names every overlapping module", async () => {
+		const baseline = (await Bun.file(BASELINE).json()) as { modules: Record<string, number> };
+		const split = classify(readBaseline(baseline));
+		const report = renderReport(split, "test");
+		const overlap = overlapOf(split);
+		expect(report).toContain(`NO-CUT — ${split.noCut.length} (of which ${overlap.length} inside the band)`);
+		const headline = report.split("OVERLAP: ")[1]?.split("\n")[0] ?? "";
+		for (const verdict of overlap) expect(headline).toContain(verdict.module);
+	});
+
+	it("names the rejections it cannot see, rather than omitting them", async () => {
+		// The plan's §3 `tui/src` rejections and §3.3 merge group are outside
+		// `measure-fan-in.ts`'s scope. A rejection that is invisible here must not read as
+		// one that never happened.
+		const report = renderReport(classify([]), "test");
+		expect(report).toContain("RULED OUT BUT OUTSIDE THIS MEASUREMENT");
+		for (const row of OUT_OF_SCOPE_ROWS) expect(report).toContain(row.split(" (§")[0]!.split(",")[0]!);
+	});
+
+	it("routes §7 no-counterpart modules to merge rather than dropping them", async () => {
+		// `merge` is a valid outcome the bead asks to be recorded. If these fell through to
+		// `out-of-band` on their importer count, the §7 reasoning would vanish silently.
+		const split = classify(rows(["commit", 8], ["dap", 2], ["judgment", 10]));
+		expect(split.merge.map(v => v.module).sort()).toEqual(["commit", "dap", "judgment"]);
+		expect(split.candidates).toEqual([]);
+	});
+
+	it("reports an empty corpus without pretending it measured something", () => {
+		const report = renderReport(classify([]), "test");
+		expect(report).toContain("CANDIDATES (in band, not ruled on by the plan) — 0");
+		expect(report).toContain("NO-CUT — 0 (of which 0 inside the band)");
+		expect(report).toContain("OVERLAP: none");
+	});
+});
+
+describe("Group C separation cannot be undone by disabling the rulings", () => {
+	// Mutation "set NO_CUT lookup to undefined" left every other row green, because the
+	// rendering test only proves printed rows MATCH classified rows — which stays true
+	// when every module is classified as a candidate. That is the defect this bead exists
+	// to prevent, so it needs a row that does not depend on the ruling being applied
+	// consistently: the plan's no-cut set must actually change the outcome.
+	it("keeps plan-ruled modules out of the candidate list, asserted against the real corpus", async () => {
+		// This row asserts concrete module names rather than deriving them from
+		// NO_CUT_MODULES. Deriving them made it circular: disabling the lookup inside
+		// classify left the exported set intact, so the test still saw the rulings and
+		// passed while classify had stopped applying them — the exact defect this bead
+		// exists to prevent, surviving the mutation.
+		//
+		// The names below are pinned on purpose. If one of these is ever cut out or renamed,
+		// this fails and the ruling has to be revisited deliberately.
+		const baseline = (await Bun.file(BASELINE).json()) as { modules: Record<string, number> };
+		const split = classify(readBaseline(baseline));
+		const candidates = split.candidates.map(v => v.module);
+		const rejected = [...split.noCut, ...split.merge].map(v => v.module);
+
+		for (const name of ["tools", "utils", "session", "cli", "capability", "config", "registry", "eval"]) {
+			expect(rejected, `${name} is ruled no-cut but was classified a candidate`).toContain(name);
+			expect(candidates).not.toContain(name);
+		}
+		for (const name of ["commit", "dap", "stream", "cleanse", "judgment"]) {
+			expect(rejected, `${name} is ruled merge/no-cut but was classified a candidate`).toContain(name);
+			expect(candidates).not.toContain(name);
+		}
+		// And the rulings must carry a reason specific enough to act on.
+		for (const verdict of [...split.noCut, ...split.merge]) {
+			expect(verdict.reason.length, `${verdict.module} has no usable reason`).toBeGreaterThan(10);
+		}
+	});
+
+	it("keeps the §7 merge group out of the candidate list", async () => {
+		const baseline = (await Bun.file(BASELINE).json()) as { modules: Record<string, number> };
+		const measured = readBaseline(baseline);
+		const split = classify(measured);
+		// §7's whole claim is that cutting these does not serve the programme's goal.
+		for (const name of ["commit", "commands", "dap", "stream", "security", "cleanse"]) {
+			if (!measured.some(m => m.module === name)) continue;
+			expect(split.candidates.map(v => v.module)).not.toContain(name);
+			expect(["merge", "no-cut"]).toContain(split.merge.concat(split.noCut).find(v => v.module === name)?.decision);
 		}
 	});
 });

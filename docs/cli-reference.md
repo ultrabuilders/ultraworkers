@@ -1,43 +1,43 @@
 # CLI reference
 
-`omp` is invoked as:
+`ultraworkers` is invoked as:
 
 ```sh
-omp [command] [flags] [messages...]
+ultraworkers [command] [flags] [messages...]
 ```
 
-When the first non-flag argument is **not** a registered subcommand, `omp`
+When the first non-flag argument is **not** a registered subcommand, `ultraworkers`
 routes to the default [`launch`](#launch-the-default-command) command and treats
-the arguments as the initial prompt. So `omp "fix the build"` launches a session
+the arguments as the initial prompt. So `ultraworkers "fix the build"` launches a session
 with that message, while `ultraworkers models` runs the `models` subcommand.
 
 Runtime help is also available:
 
 - `ultraworkers --help` lists user-facing subcommands and common launch flags.
-- `omp <command> --help` prints that command's public flags and examples.
+- `ultraworkers <command> --help` prints that command's public flags and examples.
 
 This page is the consolidated reference for the shared **launch surface** (the
-flags accepted by `omp` / `ultraworkers launch`) and every top-level **subcommand**.
+flags accepted by `ultraworkers` / `ultraworkers launch`) and every top-level **subcommand**.
 Per-subcommand flags (for example `ultraworkers auth-broker --json`) are documented by
 each command's `--help`.
 
 ## Launch (the default command)
 
-`omp` and `ultraworkers launch` start a coding session. Positional arguments become the
+`ultraworkers` and `ultraworkers launch` start a coding session. Positional arguments become the
 initial message(s):
 
 ```sh
 # Interactive session
-omp
+ultraworkers
 
 # Interactive session with an initial prompt
-omp "List all .ts files in src/"
+ultraworkers "List all .ts files in src/"
 
 # Attach files/images to the initial message (prefix with @)
-omp @prompt.md @image.png "What color is the sky?"
+ultraworkers @prompt.md @image.png "What color is the sky?"
 
 # Non-interactive: process the prompt and exit (headless / print mode)
-omp -p "List all .ts files in src/"
+ultraworkers -p "List all .ts files in src/"
 
 # Continue the previous session
 ultraworkers --continue "What did we discuss?"
@@ -158,27 +158,27 @@ See [providers](./providers.md) and [models](./models.md) for model resolution.
 
 | Flag | Description |
 | --- | --- |
-| `--help`, `-h` | Show help for `omp` or a subcommand and exit. |
+| `--help`, `-h` | Show help for `ultraworkers` or a subcommand and exit. |
 | `--version`, `-v` | Print the installed version and exit. |
 
 ### Headless / print mode
 
-`--print` / `-p` runs `omp` non-interactively: it processes the prompt, streams
+`--print` / `-p` runs `ultraworkers` non-interactively: it processes the prompt, streams
 the result to stdout, and exits without entering the TUI. This is the entry point
 for scripting and automation.
 
 ```sh
 # Print the answer and exit
-omp -p "Summarize the changes in the last commit"
+ultraworkers -p "Summarize the changes in the last commit"
 
 # Include the model's thinking blocks in the printed text
-omp -p --print-thoughts "Explain your reasoning for this refactor"
+ultraworkers -p --print-thoughts "Explain your reasoning for this refactor"
 
 # Machine-readable output for pipelines
-omp -p --mode json "List every TODO in src/" > todos.json
+ultraworkers -p --mode json "List every TODO in src/" > todos.json
 
 # Pipe a prompt via stdin
-echo "review this diff" | omp -p
+echo "review this diff" | ultraworkers -p
 ```
 
 Related flags for headless runs:
@@ -205,7 +205,7 @@ print-mode disposal semantics when the advisor runtime is enabled.
 
 ## Subcommands
 
-Run `omp <command> --help` for each command's own flags and examples.
+Run `ultraworkers <command> --help` for each command's own flags and examples.
 
 | Command | Purpose | See also |
 | --- | --- | --- |

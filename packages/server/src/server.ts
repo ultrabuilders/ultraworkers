@@ -49,98 +49,98 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 	/** Resolves after shutdown, or rejects when listener or routed-Session cleanup fails. */
 	readonly closed: Promise<void>;
 
-	private readonly host: ServerHost<TMetadata>;
-	private readonly listeners: readonly ServerListener[];
-	private readonly maxFrameLength: number;
-	private readonly handshakeTimeoutMs: number;
-	private readonly onConnectionCountChanged: ((count: number) => void) | undefined;
-	private readonly onError: ((error: Error) => void) | undefined;
-	private readonly connections = new Set<ConnectionState>();
-	private readonly sessions: SessionRouter<TMetadata>;
-	private closing = false;
-	private closePromise?: Promise<void>;
-	private closedSettled = false;
-	private rejectClosed!: (error: unknown) => void;
-	private resolveClosed!: () => void;
-	private startPromise?: Promise<this>;
-	private started = false;
+	readonly #host: ServerHost<TMetadata>;
+	readonly #listeners: readonly ServerListener[];
+	readonly #maxFrameLength: number;
+	readonly #handshakeTimeoutMs: number;
+	readonly #onConnectionCountChanged: ((count: number) => void) | undefined;
+	readonly #onError: ((error: Error) => void) | undefined;
+	readonly #connections = new Set<ConnectionState>();
+	readonly #sessions: SessionRouter<TMetadata>;
+	#closing = false;
+	#closePromise?: Promise<void>;
+	#closedSettled = false;
+	#rejectClosed!: (error: unknown) => void;
+	#resolveClosed!: () => void;
+	#startPromise?: Promise<this>;
+	#started = false;
 
 	constructor(host: ServerHost<TMetadata>, options: ServerOptions) {
 		const resolved = resolveOptions(options);
-		this.host = host;
-		this.listeners = options.listeners;
+		this.#host = host;
+		this.#listeners = options.listeners;
 		this.serverId = options.serverId;
-		this.maxFrameLength = resolved.maxFrameLength;
-		this.handshakeTimeoutMs = resolved.handshakeTimeoutMs;
-		this.onConnectionCountChanged = options.onConnectionCountChanged;
-		this.onError = options.onError;
-		this.sessions = new SessionRouter({
+		this.#maxFrameLength = resolved.maxFrameLength;
+		this.#handshakeTimeoutMs = resolved.handshakeTimeoutMs;
+		this.#onConnectionCountChanged = options.onConnectionCountChanged;
+		this.#onError = options.onError;
+		this.#sessions = new SessionRouter({
 			host,
 			serverId: this.serverId,
-			isClosing: () => this.closing,
+			isClosing: () => this.#closing,
 			publishAttachment: async (client, attachment) => {
-				await this.sendMessage(client as ConnectionState, {
+				await this.#sendMessage(client as ConnectionState, {
 					type: "attachment",
 					attachment: attachment ?? null,
 				});
 			},
-			reportError: error => this.reportError(error),
+			reportError: error => this.#reportError(error),
 		});
 		const closed = Promise.withResolvers<void>();
 		this.closed = closed.promise;
-		this.resolveClosed = closed.resolve;
-		this.rejectClosed = closed.reject;
+		this.#resolveClosed = closed.resolve;
+		this.#rejectClosed = closed.reject;
 		void this.closed.catch(() => {});
 	}
 
 	start(): Promise<this> {
-		if (this.started) return Promise.reject(new Error("Server is already started"));
-		if (this.startPromise) return Promise.reject(new Error("Server is already starting"));
-		if (this.closing) return Promise.reject(new Error("Server is closing or closed"));
-		this.startPromise = this.startInternal();
-		return this.startPromise;
+		if (this.#started) return Promise.reject(new Error("Server is already started"));
+		if (this.#startPromise) return Promise.reject(new Error("Server is already starting"));
+		if (this.#closing) return Promise.reject(new Error("Server is closing or closed"));
+		this.#startPromise = this.#startInternal();
+		return this.#startPromise;
 	}
 
-	private async startInternal(): Promise<this> {
+	async #startInternal(): Promise<this> {
 		const started: ServerListener[] = [];
 		try {
-			for (const listener of this.listeners) {
+			for (const listener of this.#listeners) {
 				await listener.start(connection => this.accept(connection));
 				started.push(listener);
 			}
-			this.started = true;
+			this.#started = true;
 			return this;
 		} catch (error) {
-			this.closing = true;
+			this.#closing = true;
 			const cleanupErrors: unknown[] = [];
 			const listenerResults = await Promise.allSettled(started.map(listener => listener.close()));
 			for (const result of listenerResults) {
 				if (result.status === "rejected") cleanupErrors.push(result.reason);
 			}
 			try {
-				await this.closeServerState();
+				await this.#closeServerState();
 			} catch (cleanupError) {
 				cleanupErrors.push(cleanupError);
 			}
 			if (cleanupErrors.length > 0) {
 				const failure = new AggregateError([error, ...cleanupErrors], "Server startup and cleanup failed");
-				this.settleClosed(failure);
+				this.#settleClosed(failure);
 				throw failure;
 			}
-			this.settleClosed();
+			this.#settleClosed();
 			throw error;
 		} finally {
-			this.startPromise = undefined;
+			this.#startPromise = undefined;
 		}
 	}
 
 	accept(connection: ByteConnection): ByteConnectionHandler {
-		if (this.closing) {
-			void this.closeConnection(connection);
+		if (this.#closing) {
+			void this.#closeConnection(connection);
 			return {
 				onData: () => {},
 				onClose: () => {},
-				onError: error => this.reportError(error),
+				onError: error => this.#reportError(error),
 			};
 		}
 
@@ -150,15 +150,15 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		const handshakeTimeout = setTimeout(() => {
 			const pending = handshake.state;
 			if (!pending) return;
-			void this.failProtocol(pending, {
+			void this.#failProtocol(pending, {
 				code: "invalid_request",
 				message: "Handshake timeout",
 			});
-		}, this.handshakeTimeoutMs);
+		}, this.#handshakeTimeoutMs);
 		handshakeTimeout.unref();
 		const state: ConnectionState = {
 			connection,
-			decoder: new ClientMessageDecoder({ maxFrameLength: this.maxFrameLength }),
+			decoder: new ClientMessageDecoder({ maxFrameLength: this.#maxFrameLength }),
 			serviceStateEncoders: new Map(),
 			stage: "awaitingHello",
 			disconnected: false,
@@ -166,84 +166,84 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 			activeRequests: new Map(),
 		};
 		handshake.state = state;
-		this.connections.add(state);
-		this.notifyConnectionCountChanged();
+		this.#connections.add(state);
+		this.#notifyConnectionCountChanged();
 
 		return {
-			onData: chunk => this.receive(state, chunk),
-			onClose: () => this.transportClosed(state),
+			onData: chunk => this.#receive(state, chunk),
+			onClose: () => this.#transportClosed(state),
 			onError: error => {
-				this.reportError(error);
-				void this.closeConnection(connection).then(() => this.disconnect(state));
+				this.#reportError(error);
+				void this.#closeConnection(connection).then(() => this.#disconnect(state));
 			},
 		};
 	}
 
 	async close(): Promise<void> {
-		if (this.closePromise) return this.closePromise;
-		this.closing = true;
-		this.closePromise = this.closeInternal();
-		return this.closePromise;
+		if (this.#closePromise) return this.#closePromise;
+		this.#closing = true;
+		this.#closePromise = this.#closeInternal();
+		return this.#closePromise;
 	}
 
-	private async closeInternal(): Promise<void> {
-		const starting = this.startPromise;
+	async #closeInternal(): Promise<void> {
+		const starting = this.#startPromise;
 		if (starting) await starting.catch(() => {});
 		const errors: unknown[] = [];
-		const listenerResults = await Promise.allSettled(this.listeners.map(listener => listener.close()));
+		const listenerResults = await Promise.allSettled(this.#listeners.map(listener => listener.close()));
 		for (const result of listenerResults) {
 			if (result.status === "rejected") errors.push(result.reason);
 		}
 		try {
-			await this.closeServerState();
+			await this.#closeServerState();
 		} catch (error) {
 			errors.push(error);
 		}
-		this.started = false;
+		this.#started = false;
 		if (errors.length > 0) {
 			const failure =
 				errors.length === 1 && errors[0] instanceof Error
 					? errors[0]
 					: new AggregateError(errors, "Server shutdown failed");
-			this.settleClosed(failure);
+			this.#settleClosed(failure);
 			throw failure;
 		}
-		this.settleClosed();
+		this.#settleClosed();
 	}
 
-	private receive(state: ConnectionState, chunk: Uint8Array): void {
+	#receive(state: ConnectionState, chunk: Uint8Array): void {
 		if (isTerminalConnection(state)) return;
 		let messages: ClientMessage[];
 		try {
 			messages = state.decoder.push(chunk);
 		} catch (error) {
-			void this.failProtocol(state, this.toProtocolError(error));
+			void this.#failProtocol(state, this.#toProtocolError(error));
 			return;
 		}
 		for (const message of messages) {
 			if (isTerminalConnection(state)) return;
-			this.dispatchMessage(state, message);
+			this.#dispatchMessage(state, message);
 		}
 	}
 
-	private dispatchMessage(state: ConnectionState, message: ClientMessage): void {
+	#dispatchMessage(state: ConnectionState, message: ClientMessage): void {
 		if (state.stage === "awaitingHello") {
 			if (message.type !== "hello") {
-				void this.failProtocol(state, {
+				void this.#failProtocol(state, {
 					code: "invalid_request",
 					message: "The first client message must be hello",
 				});
 				return;
 			}
 			state.stage = "handshaking";
-			state.handshake = this.finishHandshake(state, message).catch((error: unknown) =>
-				this.failProtocol(state, this.toProtocolError(error)),
+			state.handshake = this.#finishHandshake(state, message).catch((error: unknown) =>
+				this.#failProtocol(state, this.#toProtocolError(error)),
 			);
 			return;
 		}
 
 		if (message.type === "hello") {
-			void this.failProtocol(state, {
+			void this.#failProtocol(state, {
 				code: "invalid_request",
 				message: "hello may only be sent as the first message",
 			});
@@ -251,8 +251,8 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		}
 
 		if (state.stage === "ready") {
-			if (message.type === "cancel") this.handleCancel(state, message);
-			else void this.handleRequest(state, message);
+			if (message.type === "cancel") this.#handleCancel(state, message);
+			else void this.#handleRequest(state, message);
 			return;
 		}
 		if (state.stage !== "handshaking") return;
@@ -260,37 +260,37 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		if (!handshake) return;
 		void handshake.then(() => {
 			if (state.stage !== "ready" || state.disconnected) return;
-			if (message.type === "cancel") this.handleCancel(state, message);
-			else void this.handleRequest(state, message);
+			if (message.type === "cancel") this.#handleCancel(state, message);
+			else void this.#handleRequest(state, message);
 		});
 	}
 
-	private async finishHandshake(state: ConnectionState, hello: ClientHello): Promise<void> {
+	async #finishHandshake(state: ConnectionState, hello: ClientHello): Promise<void> {
 		if (!isSupportedProtocolVersion(hello.version)) {
-			await this.failProtocol(state, {
+			await this.#failProtocol(state, {
 				code: "version",
 				message: `Unsupported protocol version ${hello.version}; expected ${PROTOCOL_VERSION}`,
 			});
 			return;
 		}
 
-		if (this.closing || state.disconnected || state.stage !== "handshaking" || state.connection.closed) return;
-		const services = await this.host.serverServices.attachClient(
+		if (this.#closing || state.disconnected || state.stage !== "handshaking" || state.connection.closed) return;
+		const services = await this.#host.serverServices.attachClient(
 			{
 				attachSession: async (sessionId, context) => {
-					await this.sessions.attachClient(state, sessionId, context);
+					await this.#sessions.attachClient(state, sessionId, context);
 				},
-				detachSession: context => this.sessions.detachClient(state, context),
-				prepareSessionRemoval: (sessionId, context) => this.sessions.removeSession(sessionId, context),
+				detachSession: context => this.#sessions.detachClient(state, context),
+				prepareSessionRemoval: (sessionId, context) => this.#sessions.removeSession(sessionId, context),
 			},
 			TODO_CONTEXT,
 		);
-		if (this.closing || state.disconnected || state.stage !== "handshaking" || state.connection.closed) {
+		if (this.#closing || state.disconnected || state.stage !== "handshaking" || state.connection.closed) {
 			await services.release(TODO_CONTEXT);
 			return;
 		}
 		state.serverServices = services;
-		const sent = await this.sendMessage(state, {
+		const sent = await this.#sendMessage(state, {
 			type: "hello",
 			version: PROTOCOL_VERSION,
 			serverId: this.serverId,
@@ -301,7 +301,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		}
 	}
 
-	private handleCancel(state: ConnectionState, envelope: CancelEnvelope): void {
+	#handleCancel(state: ConnectionState, envelope: CancelEnvelope): void {
 		if (envelope.target.serverId !== this.serverId) return;
 		const active = state.activeRequests.get(envelope.id);
 		if (active !== undefined && sameTarget(active.target, envelope.target)) {
@@ -309,9 +309,9 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		}
 	}
 
-	private async handleRequest(state: ConnectionState, envelope: RequestEnvelope): Promise<void> {
+	async #handleRequest(state: ConnectionState, envelope: RequestEnvelope): Promise<void> {
 		if (state.activeRequests.has(envelope.id)) {
-			await this.sendMessage(state, {
+			await this.#sendMessage(state, {
 				type: "response",
 				id: envelope.id,
 				ok: false,
@@ -323,7 +323,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		try {
 			call = parseServiceCall(envelope.call);
 		} catch {
-			await this.sendMessage(state, {
+			await this.#sendMessage(state, {
 				type: "response",
 				id: envelope.id,
 				ok: false,
@@ -346,7 +346,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 				pendingUpdates.push({ update });
 				return;
 			}
-			await this.sendServiceUpdate(state, subscriptionId, update);
+			await this.#sendServiceUpdate(state, subscriptionId, update);
 		};
 		try {
 			if (envelope.target.serverId !== this.serverId) throw new WrongServerError();
@@ -355,7 +355,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 			}
 			let result: JsonValue | undefined;
 			if ("sessionId" in envelope.target) {
-				result = await this.sessions.executeServiceCall(call, envelope.target, state, publish, context);
+				result = await this.#sessions.executeServiceCall(call, envelope.target, state, publish, context);
 			} else if (state.serverServices !== undefined) {
 				result = await state.serverServices.invokeService(call, publish, context);
 			} else {
@@ -371,7 +371,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 			} else if (control?.type === "unsubscribe") {
 				state.serviceStateEncoders.delete(control.subscriptionId);
 			}
-			await this.sendMessage(
+			await this.#sendMessage(
 				state,
 				result === undefined
 					? { type: "response", id: envelope.id, ok: true }
@@ -382,7 +382,7 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 				while (pendingUpdates.length > 0) {
 					const pending = pendingUpdates.shift();
 					if (pending !== undefined)
-						await this.sendServiceUpdate(state, subscribing.subscriptionId, pending.update);
+						await this.#sendServiceUpdate(state, subscribing.subscriptionId, pending.update);
 				}
 				subscriptionReady = true;
 			}
@@ -391,17 +391,17 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 				state.serviceStateEncoders.delete(subscribing.subscriptionId);
 			}
 			if (responded) {
-				this.reportError(error);
-				await this.closeConnection(state.connection);
-				this.disconnect(state);
+				this.#reportError(error);
+				await this.#closeConnection(state.connection);
+				this.#disconnect(state);
 			} else {
-				await this.sendMessage(state, {
+				await this.#sendMessage(state, {
 					type: "response",
 					id: envelope.id,
 					ok: false,
 					error: controller.signal.aborted
 						? { code: "cancelled", message: "RPC request cancelled" }
-						: this.toProtocolError(error),
+						: this.#toProtocolError(error),
 				} satisfies ResponseEnvelope);
 			}
 		} finally {
@@ -409,18 +409,18 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		}
 	}
 
-	private transportClosed(connection: ConnectionState): void {
+	#transportClosed(connection: ConnectionState): void {
 		if (!connection.disconnected && connection.stage !== "closing") {
 			try {
 				connection.decoder.end();
 			} catch (error) {
-				this.reportError(error);
+				this.#reportError(error);
 			}
 		}
-		this.disconnect(connection);
+		this.#disconnect(connection);
 	}
 
-	private disconnect(connection: ConnectionState): void {
+	#disconnect(connection: ConnectionState): void {
 		if (connection.disconnected) return;
 		connection.disconnected = true;
 		connection.stage = "closed";
@@ -430,123 +430,123 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 		}
 		connection.activeRequests.clear();
 		connection.serviceStateEncoders.clear();
-		if (this.connections.delete(connection)) this.notifyConnectionCountChanged();
+		if (this.#connections.delete(connection)) this.#notifyConnectionCountChanged();
 		const serverServices = connection.serverServices;
 		delete connection.serverServices;
 		void Promise.allSettled([
-			this.sessions.disconnect(connection, TODO_CONTEXT),
+			this.#sessions.disconnect(connection, TODO_CONTEXT),
 			serverServices?.release(TODO_CONTEXT),
 		]).then(results => {
-			for (const result of results) if (result.status === "rejected") this.reportError(result.reason);
+			for (const result of results) if (result.status === "rejected") this.#reportError(result.reason);
 		});
 	}
 
-	private async sendServiceUpdate(
+	async #sendServiceUpdate(
 		connection: ConnectionState,
 		subscriptionId: string,
 		update: ServiceProviderUpdate,
 	): Promise<void> {
 		const stateEncoder = connection.serviceStateEncoders.get(subscriptionId);
 		if (stateEncoder === undefined) return;
-		await this.sendMessage(connection, {
+		await this.#sendMessage(connection, {
 			type: "service_update",
 			subscriptionId,
 			update: stateEncoder.encodeUpdate(update) as unknown as JsonValue,
 		});
 	}
 
-	private async sendMessage(connection: ConnectionState, message: ServerMessage): Promise<boolean> {
+	async #sendMessage(connection: ConnectionState, message: ServerMessage): Promise<boolean> {
 		if (connection.disconnected || connection.connection.closed) return false;
 		let frame: Uint8Array;
 		try {
-			frame = encodeServerMessage(message, { maxFrameLength: this.maxFrameLength });
+			frame = encodeServerMessage(message, { maxFrameLength: this.#maxFrameLength });
 		} catch (error) {
-			this.reportError(error);
-			await this.closeConnection(connection.connection);
-			this.disconnect(connection);
+			this.#reportError(error);
+			await this.#closeConnection(connection.connection);
+			this.#disconnect(connection);
 			return false;
 		}
 		try {
 			await connection.connection.send(frame);
 			return true;
 		} catch (error) {
-			this.reportError(error);
-			await this.closeConnection(connection.connection);
-			this.disconnect(connection);
+			this.#reportError(error);
+			await this.#closeConnection(connection.connection);
+			this.#disconnect(connection);
 			return false;
 		}
 	}
 
-	private async failProtocol(connection: ConnectionState, error: ProtocolError): Promise<void> {
+	async #failProtocol(connection: ConnectionState, error: ProtocolError): Promise<void> {
 		if (connection.disconnected || connection.stage === "closing" || connection.stage === "closed") return;
 		connection.stage = "closing";
 		clearTimeout(connection.handshakeTimeout);
 		const message: ServerHelloError = { type: "hello_error", error };
 		let finalFrame: Uint8Array | undefined;
 		try {
-			finalFrame = encodeServerMessage(message, { maxFrameLength: this.maxFrameLength });
+			finalFrame = encodeServerMessage(message, { maxFrameLength: this.#maxFrameLength });
 		} catch (encodeError) {
-			this.reportError(encodeError);
+			this.#reportError(encodeError);
 		}
-		await this.closeConnection(connection.connection, finalFrame);
-		this.disconnect(connection);
+		await this.#closeConnection(connection.connection, finalFrame);
+		this.#disconnect(connection);
 	}
 
-	private async closeServerState(): Promise<void> {
-		const connections = [...this.connections];
+	async #closeServerState(): Promise<void> {
+		const connections = [...this.#connections];
 		for (const connection of connections) {
 			connection.stage = "closing";
 			clearTimeout(connection.handshakeTimeout);
 		}
-		await Promise.all(connections.map(connection => this.closeConnection(connection.connection)));
-		for (const connection of connections) this.disconnect(connection);
-		const cleanup = await Promise.allSettled([this.sessions.close(BACKGROUND_CONTEXT)]);
-		this.connections.clear();
+		await Promise.all(connections.map(connection => this.#closeConnection(connection.connection)));
+		for (const connection of connections) this.#disconnect(connection);
+		const cleanup = await Promise.allSettled([this.#sessions.close(BACKGROUND_CONTEXT)]);
+		this.#connections.clear();
 		const errors = cleanup.flatMap(result => (result.status === "rejected" ? [result.reason] : []));
 		if (errors.length === 1) throw errors[0];
 		if (errors.length > 1) throw new AggregateError(errors, "Failed to close server Sessions");
 	}
 
-	private async closeConnection(connection: ByteConnection, finalChunk?: Uint8Array): Promise<void> {
+	async #closeConnection(connection: ByteConnection, finalChunk?: Uint8Array): Promise<void> {
 		try {
 			await connection.close(finalChunk);
 		} catch (error) {
-			this.reportError(error);
+			this.#reportError(error);
 		}
 	}
 
-	private toProtocolError(error: unknown): ProtocolError {
+	#toProtocolError(error: unknown): ProtocolError {
 		if (error instanceof ServerError || error instanceof RemoteServiceError) {
 			return { code: error.code, message: error.message };
 		}
 		if (error instanceof ProtocolValidationError) {
 			return { code: "invalid_request", message: error.message };
 		}
-		this.reportError(error);
+		this.#reportError(error);
 		return { code: "internal_error", message: INTERNAL_SERVER_ERROR_MESSAGE };
 	}
 
-	private notifyConnectionCountChanged(): void {
+	#notifyConnectionCountChanged(): void {
 		try {
-			this.onConnectionCountChanged?.(this.connections.size);
+			this.#onConnectionCountChanged?.(this.#connections.size);
 		} catch (error) {
-			this.reportError(error);
+			this.#reportError(error);
 		}
 	}
 
-	private reportError(error: unknown): void {
+	#reportError(error: unknown): void {
 		try {
-			this.onError?.(error instanceof Error ? error : new Error(String(error)));
+			this.#onError?.(error instanceof Error ? error : new Error(String(error)));
 		} catch {
 			// Error observers cannot affect server state.
 		}
 	}
 
-	private settleClosed(error?: unknown): void {
-		if (this.closedSettled) return;
-		this.closedSettled = true;
-		if (error === undefined) this.resolveClosed();
-		else this.rejectClosed(error);
+	#settleClosed(error?: unknown): void {
+		if (this.#closedSettled) return;
+		this.#closedSettled = true;
+		if (error === undefined) this.#resolveClosed();
+		else this.#rejectClosed(error);
 	}
 }
 

@@ -26,20 +26,20 @@ export interface WireChannel {
 
 export class ProtocolTestClient {
 	readonly messages: ServerMessage[] = [];
-	private readonly channel: WireChannel;
-	private readonly decoder = new ServerMessageDecoder();
-	private readonly waiters = new Set<MessageWaiter>();
-	private readonly closedDeferred = new Deferred<void>();
-	private requestSequence = 0;
-	private attachment: { sessionId: string; attachmentId: string } | undefined;
-	private closedValue = false;
+	readonly #channel: WireChannel;
+	readonly #decoder = new ServerMessageDecoder();
+	readonly #waiters = new Set<MessageWaiter>();
+	readonly #closedDeferred = new Deferred<void>();
+	#requestSequence = 0;
+	#attachment: { sessionId: string; attachmentId: string } | undefined;
+	#closedValue = false;
 
 	constructor(channel: WireChannel) {
-		this.channel = channel;
+		this.#channel = channel;
 	}
 
 	get closed(): boolean {
-		return this.closedValue;
+		return this.#closedValue;
 	}
 
 	hello(version: number = PROTOCOL_VERSION): Promise<ServerMessage> {
@@ -51,7 +51,7 @@ export class ProtocolTestClient {
 	async requestService(
 		target: RpcTarget,
 		call: ServiceCall,
-		id = `request-${++this.requestSequence}`,
+		id = `request-${++this.#requestSequence}`,
 	): Promise<ResponseEnvelope> {
 		const response = this.next(
 			(message): message is ResponseEnvelope => message.type === "response" && message.id === id,
@@ -73,7 +73,7 @@ export class ProtocolTestClient {
 		call: ServiceCall,
 		id?: string,
 	): Promise<ResponseEnvelope> {
-		const attachment = this.attachment;
+		const attachment = this.#attachment;
 		const target: RpcTarget =
 			attachment === undefined || attachment.sessionId !== sessionId
 				? { serverId, sessionId, attachmentId: "missing-attachment" }
@@ -82,15 +82,15 @@ export class ProtocolTestClient {
 	}
 
 	sendMessage(message: ClientMessage): Promise<void> {
-		return this.channel.send(encodeClientMessage(message));
+		return this.#channel.send(encodeClientMessage(message));
 	}
 
 	sendBytes(chunk: Uint8Array): Promise<void> {
-		return this.channel.send(chunk);
+		return this.#channel.send(chunk);
 	}
 
 	sendFragmentedMessage(message: ClientMessage, splitAt: number): Promise<void> {
-		return this.channel.sendFragmented(encodeClientMessage(message), splitAt);
+		return this.#channel.sendFragmented(encodeClientMessage(message), splitAt);
 	}
 
 	next(predicate: (message: ServerMessage) => boolean): Promise<ServerMessage> {
@@ -100,27 +100,27 @@ export class ProtocolTestClient {
 	nextFrom(index: number, predicate: (message: ServerMessage) => boolean): Promise<ServerMessage> {
 		const existing = this.messages.slice(index).find(predicate);
 		if (existing) return Promise.resolve(existing);
-		if (this.closedValue) return Promise.reject(new Error("Wire client is closed"));
+		if (this.#closedValue) return Promise.reject(new Error("Wire client is closed"));
 		// Kept as `new Promise` rather than `Promise.withResolvers()`: the
 		// resolved value is derived from `predicate` by the waiter loop in
 		// `receive()`, not by anything bound at construction, so a deferred
 		// cannot express it.
-		return new Promise((resolve, reject) => this.waiters.add({ predicate, resolve, reject }));
+		return new Promise((resolve, reject) => this.#waiters.add({ predicate, resolve, reject }));
 	}
 
 	waitForClose(): Promise<void> {
-		return this.closedValue ? Promise.resolve() : this.closedDeferred.promise;
+		return this.#closedValue ? Promise.resolve() : this.#closedDeferred.promise;
 	}
 
 	close(): Promise<void> {
-		return this.channel.close();
+		return this.#channel.close();
 	}
 
 	receive(chunk: Uint8Array): void {
 		try {
-			for (const message of this.decoder.push(chunk)) {
+			for (const message of this.#decoder.push(chunk)) {
 				if (message.type === "attachment") {
-					this.attachment =
+					this.#attachment =
 						message.attachment === null
 							? undefined
 							: {
@@ -129,9 +129,9 @@ export class ProtocolTestClient {
 								};
 				}
 				this.messages.push(message);
-				for (const waiter of this.waiters) {
+				for (const waiter of this.#waiters) {
 					if (!waiter.predicate(message)) continue;
-					this.waiters.delete(waiter);
+					this.#waiters.delete(waiter);
 					waiter.resolve(message);
 				}
 			}
@@ -141,15 +141,15 @@ export class ProtocolTestClient {
 	}
 
 	markClosed(): void {
-		if (this.closedValue) return;
-		this.closedValue = true;
-		this.closedDeferred.resolve(undefined);
+		if (this.#closedValue) return;
+		this.#closedValue = true;
+		this.#closedDeferred.resolve(undefined);
 		this.fail(new Error("Wire connection closed"));
 	}
 
 	fail(error: Error): void {
-		for (const waiter of this.waiters) waiter.reject(error);
-		this.waiters.clear();
+		for (const waiter of this.#waiters) waiter.reject(error);
+		this.#waiters.clear();
 	}
 }
 

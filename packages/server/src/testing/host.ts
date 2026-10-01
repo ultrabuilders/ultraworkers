@@ -43,8 +43,8 @@ export class TestHarness {
 	failClose?: Error;
 	nextServiceError?: Error;
 	nextServiceResult: JsonValue | undefined = { ok: true };
-	private nextCloseGate?: OpenGate;
-	private nextServiceGate?: OpenGate;
+	#nextCloseGate?: OpenGate;
+	#nextServiceGate?: OpenGate;
 
 	constructor(session: Session) {
 		this.session = session;
@@ -75,9 +75,9 @@ export class TestHarness {
 			this.nextServiceError = undefined;
 			throw error;
 		}
-		const gate = this.nextServiceGate;
+		const gate = this.#nextServiceGate;
 		if (gate) {
-			this.nextServiceGate = undefined;
+			this.#nextServiceGate = undefined;
 			gate.entered.resolve(undefined);
 			await gate.release.promise;
 		}
@@ -88,9 +88,9 @@ export class TestHarness {
 
 	async close(context: Context): Promise<void> {
 		this.closeCount += 1;
-		const gate = this.nextCloseGate;
+		const gate = this.#nextCloseGate;
 		if (gate) {
-			this.nextCloseGate = undefined;
+			this.#nextCloseGate = undefined;
 			gate.entered.resolve(undefined);
 			await gate.release.promise;
 		}
@@ -111,13 +111,13 @@ export class TestHarness {
 
 	gateNextClose(): OpenGate {
 		const gate = { entered: new Deferred<void>(), release: new Deferred<void>() };
-		this.nextCloseGate = gate;
+		this.#nextCloseGate = gate;
 		return gate;
 	}
 
 	gateNextServiceCall(): OpenGate {
 		const gate = { entered: new Deferred<void>(), release: new Deferred<void>() };
-		this.nextServiceGate = gate;
+		this.#nextServiceGate = gate;
 		return gate;
 	}
 }
@@ -161,7 +161,7 @@ export class TestServerHost implements ServerHost {
 	openSessionCount = 0;
 	nextOpenSessionError?: Error;
 	nextHarnessCloseError?: Error;
-	private nextOpenSessionGate?: OpenGate;
+	#nextOpenSessionGate?: OpenGate;
 
 	async resolveSession(sessionId: string, context: Context): Promise<SessionMetadata> {
 		const matches = (await this.repo.list(undefined, context)).filter(({ id }) => id === sessionId);
@@ -172,9 +172,9 @@ export class TestServerHost implements ServerHost {
 
 	async openSession(metadata: SessionMetadata, context: Context): Promise<RoutedSessionHandle> {
 		this.openSessionCount += 1;
-		const gate = this.nextOpenSessionGate;
+		const gate = this.#nextOpenSessionGate;
 		if (gate) {
-			this.nextOpenSessionGate = undefined;
+			this.#nextOpenSessionGate = undefined;
 			gate.entered.resolve(undefined);
 			await gate.release.promise;
 		}
@@ -209,7 +209,7 @@ export class TestServerHost implements ServerHost {
 
 	gateNextOpenSession(): OpenGate {
 		const gate = { entered: new Deferred<void>(), release: new Deferred<void>() };
-		this.nextOpenSessionGate = gate;
+		this.#nextOpenSessionGate = gate;
 		return gate;
 	}
 

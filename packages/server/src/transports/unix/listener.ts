@@ -27,36 +27,36 @@ interface FileIdentity {
 	ino: number;
 }
 class UnixListener implements ServerListener {
-	private readonly options: ResolvedUnixListenerOptions;
-	private readonly path: string;
-	private readonly mode: number;
-	private readonly connections = new Set<UnixByteConnection>();
-	private server?: net.Server;
-	private socketIdentity?: FileIdentity;
-	private ownedBindPath?: string;
-	private closing = false;
-	private closePromise?: Promise<void>;
-	private accept?: ByteConnectionAcceptor;
+	readonly #options: ResolvedUnixListenerOptions;
+	readonly #path: string;
+	readonly #mode: number;
+	readonly #connections = new Set<UnixByteConnection>();
+	#server?: net.Server;
+	#socketIdentity?: FileIdentity;
+	#ownedBindPath?: string;
+	#closing = false;
+	#closePromise?: Promise<void>;
+	#accept?: ByteConnectionAcceptor;
 
 	constructor(options: UnixListenerOptions) {
-		this.options = resolveUnixListenerOptions(options);
-		this.path = this.options.path;
-		this.mode = this.options.mode;
+		this.#options = resolveUnixListenerOptions(options);
+		this.#path = this.#options.path;
+		this.#mode = this.#options.mode;
 	}
 
 	async start(accept: ByteConnectionAcceptor): Promise<void> {
-		if (this.server) throw new Error("Unix listener is already started");
-		if (this.closing) throw new Error("Unix listener is closing or closed");
-		this.accept = accept;
+		if (this.#server) throw new Error("Unix listener is already started");
+		if (this.#closing) throw new Error("Unix listener is closing or closed");
+		this.#accept = accept;
 
-		const ownedBindPath = getOwnedBindPath(this.path);
-		await fs.mkdir(path.dirname(this.path), { recursive: true, mode: 0o700 });
-		await removeStaleSocket(this.path);
+		const ownedBindPath = getOwnedBindPath(this.#path);
+		await fs.mkdir(path.dirname(this.#path), { recursive: true, mode: 0o700 });
+		await removeStaleSocket(this.#path);
 		await removeStaleSocket(ownedBindPath);
-		this.ownedBindPath = ownedBindPath;
-		const server = net.createServer(socket => this.acceptSocket(socket));
-		server.on("error", error => this.reportError(error));
-		this.server = server;
+		this.#ownedBindPath = ownedBindPath;
+		const server = net.createServer(socket => this.#acceptSocket(socket));
+		server.on("error", error => this.#reportError(error));
+		this.#server = server;
 		try {
 			const listening = Promise.withResolvers<void>();
 			const onError = (error: Error): void => {
@@ -73,37 +73,37 @@ class UnixListener implements ServerListener {
 			await listening.promise;
 			const stats = await fs.lstat(ownedBindPath);
 			if (!stats.isSocket()) throw new Error(`Unix listener path is not a socket after binding: ${ownedBindPath}`);
-			this.socketIdentity = { dev: stats.dev, ino: stats.ino };
-			await fs.link(ownedBindPath, this.path);
-			await setSocketMode(this.path, this.mode);
+			this.#socketIdentity = { dev: stats.dev, ino: stats.ino };
+			await fs.link(ownedBindPath, this.#path);
+			await setSocketMode(this.#path, this.#mode);
 			await removePath(ownedBindPath);
-			this.ownedBindPath = undefined;
+			this.#ownedBindPath = undefined;
 		} catch (error) {
-			await this.closeServerAndCleanup(server);
-			this.server = undefined;
+			await this.#closeServerAndCleanup(server);
+			this.#server = undefined;
 			throw error;
 		}
 	}
 
 	async close(): Promise<void> {
-		if (this.closePromise) return this.closePromise;
-		this.closing = true;
-		this.closePromise = this.closeInternal();
-		return this.closePromise;
+		if (this.#closePromise) return this.#closePromise;
+		this.#closing = true;
+		this.#closePromise = this.#closeInternal();
+		return this.#closePromise;
 	}
 
-	private acceptSocket(socket: net.Socket): void {
-		if (this.closing) {
+	#acceptSocket(socket: net.Socket): void {
+		if (this.#closing) {
 			socket.destroy();
 			return;
 		}
 		const connection = new UnixByteConnection(
 			socket,
-			this.options.gracefulCloseTimeoutMs,
-			this.options.maxPendingBytes,
+			this.#options.gracefulCloseTimeoutMs,
+			this.#options.maxPendingBytes,
 		);
-		this.connections.add(connection);
-		const accept = this.accept;
+		this.#connections.add(connection);
+		const accept = this.#accept;
 		if (!accept) {
 			socket.destroy();
 			return;
@@ -119,48 +119,48 @@ class UnixListener implements ServerListener {
 		});
 		socket.once("close", () => {
 			connection.markClosed();
-			this.connections.delete(connection);
+			this.#connections.delete(connection);
 			handler.onClose();
 		});
 	}
 
-	private async closeInternal(): Promise<void> {
-		const serverClosed = this.server ? this.closeServerAndCleanup(this.server) : this.cleanupOwnedSocket();
-		await Promise.all([...this.connections].map(connection => connection.close()));
+	async #closeInternal(): Promise<void> {
+		const serverClosed = this.#server ? this.#closeServerAndCleanup(this.#server) : this.#cleanupOwnedSocket();
+		await Promise.all([...this.#connections].map(connection => connection.close()));
 		await serverClosed;
-		if (this.ownedBindPath) await removePath(this.ownedBindPath);
-		this.ownedBindPath = undefined;
-		this.connections.clear();
-		this.server = undefined;
+		if (this.#ownedBindPath) await removePath(this.#ownedBindPath);
+		this.#ownedBindPath = undefined;
+		this.#connections.clear();
+		this.#server = undefined;
 	}
 
-	private async closeServerAndCleanup(server: net.Server): Promise<void> {
+	async #closeServerAndCleanup(server: net.Server): Promise<void> {
 		try {
-			await closeNetServer(server, error => this.reportError(error));
+			await closeNetServer(server, error => this.#reportError(error));
 		} finally {
 			// Remove an unpublished startup bind path before the public route.
-			if (this.ownedBindPath) await removePath(this.ownedBindPath);
-			this.ownedBindPath = undefined;
-			await this.cleanupOwnedSocket();
+			if (this.#ownedBindPath) await removePath(this.#ownedBindPath);
+			this.#ownedBindPath = undefined;
+			await this.#cleanupOwnedSocket();
 		}
 	}
 
-	private async cleanupOwnedSocket(): Promise<void> {
-		const identity = this.socketIdentity;
-		this.socketIdentity = undefined;
+	async #cleanupOwnedSocket(): Promise<void> {
+		const identity = this.#socketIdentity;
+		this.#socketIdentity = undefined;
 		if (!identity) return;
 		let current: Stats;
 		try {
-			current = await fs.lstat(this.path);
+			current = await fs.lstat(this.#path);
 		} catch (error) {
 			if (isErrorCode(error, "ENOENT")) return;
 			throw error;
 		}
 		if (!current.isSocket() || current.dev !== identity.dev || current.ino !== identity.ino) return;
 
-		const preserved = path.join(path.dirname(this.path), `cleanup-${crypto.randomUUID().slice(0, 6)}`);
+		const preserved = path.join(path.dirname(this.#path), `cleanup-${crypto.randomUUID().slice(0, 6)}`);
 		try {
-			await fs.rename(this.path, preserved);
+			await fs.rename(this.#path, preserved);
 		} catch (error) {
 			if (isErrorCode(error, "ENOENT")) return;
 			throw error;
@@ -171,17 +171,17 @@ class UnixListener implements ServerListener {
 			return;
 		}
 		try {
-			await fs.lstat(this.path);
+			await fs.lstat(this.#path);
 		} catch (error) {
-			if (isErrorCode(error, "ENOENT")) await fs.rename(preserved, this.path);
+			if (isErrorCode(error, "ENOENT")) await fs.rename(preserved, this.#path);
 			else throw error;
 		}
 		throw new Error(`Unix listener path changed during cleanup; preserved replacement at ${preserved}`);
 	}
 
-	private reportError(error: unknown): void {
+	#reportError(error: unknown): void {
 		try {
-			this.options.onError?.(error instanceof Error ? error : new Error(String(error)));
+			this.#options.onError?.(error instanceof Error ? error : new Error(String(error)));
 		} catch {
 			// Error observers cannot affect listener state.
 		}
@@ -190,86 +190,86 @@ class UnixListener implements ServerListener {
 
 /** @internal Exported only for transport-level verification. */
 export class UnixByteConnection implements ByteConnection {
-	private readonly socket: net.Socket;
-	private readonly gracefulCloseTimeoutMs: number;
-	private readonly maxPendingBytes: number;
-	private pendingBytes = 0;
-	private closedValue = false;
-	private closing = false;
-	private writeTail: Promise<void> = Promise.resolve();
-	private closePromise?: Promise<void>;
-	private resolveClose?: () => void;
+	readonly #socket: net.Socket;
+	readonly #gracefulCloseTimeoutMs: number;
+	readonly #maxPendingBytes: number;
+	#pendingBytes = 0;
+	#closedValue = false;
+	#closing = false;
+	#writeTail: Promise<void> = Promise.resolve();
+	#closePromise?: Promise<void>;
+	#resolveClose?: () => void;
 
 	constructor(socket: net.Socket, gracefulCloseTimeoutMs: number, maxPendingBytes: number) {
-		this.socket = socket;
-		this.gracefulCloseTimeoutMs = gracefulCloseTimeoutMs;
-		this.maxPendingBytes = maxPendingBytes;
+		this.#socket = socket;
+		this.#gracefulCloseTimeoutMs = gracefulCloseTimeoutMs;
+		this.#maxPendingBytes = maxPendingBytes;
 	}
 
 	get closed(): boolean {
-		return this.closedValue;
+		return this.#closedValue;
 	}
 
 	send(chunk: Uint8Array): Promise<void> {
 		if (!(chunk instanceof Uint8Array)) {
 			return Promise.reject(new TypeError("Unix connection chunks must be Uint8Array"));
 		}
-		if (this.closedValue || this.closing) return Promise.reject(new Error("Unix connection is closed"));
-		if (this.pendingBytes + chunk.byteLength > this.maxPendingBytes) {
+		if (this.#closedValue || this.#closing) return Promise.reject(new Error("Unix connection is closed"));
+		if (this.#pendingBytes + chunk.byteLength > this.#maxPendingBytes) {
 			return Promise.reject(new Error("Unix connection exceeded its pending byte limit"));
 		}
-		this.pendingBytes += chunk.byteLength;
+		this.#pendingBytes += chunk.byteLength;
 		const bytes = chunk.slice();
-		const write = this.writeTail.then(() => this.write(bytes));
+		const write = this.#writeTail.then(() => this.#write(bytes));
 		const tracked = write.finally(() => {
-			this.pendingBytes -= bytes.byteLength;
+			this.#pendingBytes -= bytes.byteLength;
 		});
-		this.writeTail = tracked.catch(() => {});
+		this.#writeTail = tracked.catch(() => {});
 		return tracked;
 	}
 
 	close(finalChunk?: Uint8Array): Promise<void> {
-		if (this.closedValue || this.socket.destroyed) {
+		if (this.#closedValue || this.#socket.destroyed) {
 			this.markClosed();
 			return Promise.resolve();
 		}
-		if (this.closePromise) return this.closePromise;
-		this.closing = true;
+		if (this.#closePromise) return this.#closePromise;
+		this.#closing = true;
 		const finalBytes = finalChunk?.slice();
 		const closing = Promise.withResolvers<void>();
-		this.closePromise = closing.promise;
-		this.resolveClose = closing.resolve;
+		this.#closePromise = closing.promise;
+		this.#resolveClose = closing.resolve;
 		const timer = setTimeout(() => {
-			if (!this.socket.destroyed) this.socket.destroy();
+			if (!this.#socket.destroyed) this.#socket.destroy();
 			this.markClosed();
-		}, this.gracefulCloseTimeoutMs);
+		}, this.#gracefulCloseTimeoutMs);
 		timer.unref();
-		this.socket.once("close", () => clearTimeout(timer));
-		void this.writeTail.then(() => {
-			if (this.socket.destroyed) {
+		this.#socket.once("close", () => clearTimeout(timer));
+		void this.#writeTail.then(() => {
+			if (this.#socket.destroyed) {
 				this.markClosed();
 				return;
 			}
 			try {
-				if (finalBytes) this.socket.end(finalBytes);
-				else this.socket.end();
+				if (finalBytes) this.#socket.end(finalBytes);
+				else this.#socket.end();
 			} catch {
-				this.socket.destroy();
+				this.#socket.destroy();
 			}
 		});
-		return this.closePromise;
+		return this.#closePromise;
 	}
 
 	markClosed(): void {
-		if (this.closedValue) return;
-		this.closedValue = true;
-		this.closing = true;
-		this.resolveClose?.();
-		this.resolveClose = undefined;
+		if (this.#closedValue) return;
+		this.#closedValue = true;
+		this.#closing = true;
+		this.#resolveClose?.();
+		this.#resolveClose = undefined;
 	}
 
-	private write(chunk: Uint8Array): Promise<void> {
-		if (this.closedValue || this.closing || !this.socket.writable) {
+	#write(chunk: Uint8Array): Promise<void> {
+		if (this.#closedValue || this.#closing || !this.#socket.writable) {
 			return Promise.reject(new Error("Unix connection is closed"));
 		}
 		const written = Promise.withResolvers<void>();
@@ -278,13 +278,13 @@ export class UnixByteConnection implements ByteConnection {
 		const finish = (error?: Error | null): void => {
 			if (settled) return;
 			settled = true;
-			this.socket.off("close", onClose);
+			this.#socket.off("close", onClose);
 			if (error) written.reject(error);
 			else written.resolve();
 		};
-		this.socket.once("close", onClose);
+		this.#socket.once("close", onClose);
 		try {
-			this.socket.write(chunk, finish);
+			this.#socket.write(chunk, finish);
 		} catch (error) {
 			finish(error instanceof Error ? error : new Error(String(error)));
 		}

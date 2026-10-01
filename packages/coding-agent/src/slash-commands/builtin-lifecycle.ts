@@ -570,7 +570,7 @@ export const BUILTIN_LIFECYCLE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> =
 				...(command.args ? { hint: command.args } : {}),
 			});
 			const destination = await writeBundleArchive(bundle);
-			const crash = pendingCrashNotice(runtime);
+			const crash = pendingCrashNotice();
 			if (crash) await runtime.output(crash);
 			if (!destination) {
 				await runtime.output("Could not write the bug report archive.");

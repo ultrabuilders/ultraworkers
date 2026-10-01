@@ -76,8 +76,11 @@ export async function writeBundleArchive(bundle: BugReportBundle): Promise<strin
 	}
 }
 
-/** Surface any crash recorded since the user last saw one, without consuming it. */
-export function pendingCrashNotice(runtime: SlashCommandRuntime): string | undefined {
+/**
+ * The newest crash the user has not been shown yet, marked as announced as a
+ * side effect of reading it — so it is reported once, not on every command.
+ */
+export function pendingCrashNotice(): string | undefined {
 	const crash = takeUnnotifiedCrash();
 	if (!crash) return undefined;
 	return `Last crash: ${crash.message}${crash.cwd ? ` (${shortenPath(crash.cwd)})` : ""}`;

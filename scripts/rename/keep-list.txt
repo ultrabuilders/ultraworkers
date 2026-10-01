@@ -149,6 +149,16 @@ packages/wire/package.json
 # decisions in a form a rename pass can consume, so a `sed` that rewrites bare
 # "oh-my-pi" cannot take them even if it never reads a word of section 2.
 #
+# NO PASS READS SECTION 3 TODAY. Measured 2026-10-02: the only two consumers of
+# this file are `scripts/keep-list-drift.test.mjs` (section 1, the manifest
+# list) and `scripts/keep-list-wire.test.mjs` (section 2, the bare literals);
+# neither parses a section-3 marker, and `check-runtime-rename.ts` does not read
+# this file at all. So the rows below are currently documentation and review
+# material, not an enforced input — they exist for the next rename pass and for
+# human reviewers. Stating this is the point: a header that says a pass "can"
+# consume the section reads as though one does, and the day someone trusts that
+# is the day a frozen literal gets renamed.
+#
 # Gate B keeps the VALUE in code; this keeps the DECISION in the keep-list.
 # Both are needed: a future pass that honours this list and ignores the code
 # still preserves the value, and a pass that reads only the code still finds

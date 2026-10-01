@@ -4571,6 +4571,7 @@ describe("ExtensionRunner", () => {
 
 				toolNameResolvers: [],
 				usageReporters: [],
+				diagnostics: [],
 				hostRenderStrategies: [],
 				composerShapes: new Map(),
 				commands: new Map(),

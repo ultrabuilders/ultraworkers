@@ -1,4 +1,5 @@
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
+import type { ExtensionDiagnostic } from "./diagnostics";
 /**
  * Extension system types.
  *
@@ -1804,6 +1805,37 @@ export interface ExtensionAPI {
 	 */
 	registerUsageReporter(toolName: string, reporter: UsageReporter): void;
 
+	/**
+	 * Contribute a check to `omp plugin doctor`.
+	 *
+	 * The surface for reporting on an extension's own state — a half-loaded
+	 * resource, a dependency that resolved but is unusable, a repair the user can
+	 * make. The check joins the ones the plugin manager builds for itself; it
+	 * cannot displace them, because a doctor whose own findings an extension can
+	 * suppress is not a doctor.
+	 *
+	 * `run` is called when the doctor runs rather than now, so a check describes
+	 * current state instead of the state at load time.
+	 *
+	 * @throws when `id` is empty or untrimmed, when `label` is blank, when `run`
+	 * is not callable, or when that id is already registered in this extension —
+	 * a rejected registration is reported rather than dropped in silence, because
+	 * an ignored one is indistinguishable from one that never happened.
+	 *
+	 * @example
+	 * ```typescript
+	 * pi.registerDiagnostic({
+	 *   id: "model-cache",
+	 *   label: "model cache is writable",
+	 *   run: async () =>
+	 *     (await writable(CACHE_DIR))
+	 *       ? { status: "ok", message: "writable" }
+	 *       : { status: "error", message: "run: rm the cache and retry" },
+	 * });
+	 * ```
+	 */
+	registerDiagnostic(diagnostic: ExtensionDiagnostic): void;
+
 	/** Set the display label for this extension, or set a label on a specific entry. */
 	setLabel(entryIdOrLabel: string, label?: string | undefined): void;
 
@@ -2411,6 +2443,8 @@ export interface Extension {
 	usageReporters: UsageReporterRegistration[];
 	/** Host render strategies, in registration order. First opinion wins. */
 	hostRenderStrategies: HostRenderStrategy[];
+	/** Diagnostics contributed to `omp plugin doctor`, in registration order. */
+	diagnostics: ExtensionDiagnostic[];
 }
 
 /**

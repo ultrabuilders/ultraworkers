@@ -459,6 +459,7 @@ describe("createAgentSession credential_disabled subscription", () => {
 
 				toolNameResolvers: [],
 				usageReporters: [],
+				diagnostics: [],
 				hostRenderStrategies: [],
 				composerShapes: new Map(),
 				commands: new Map(),

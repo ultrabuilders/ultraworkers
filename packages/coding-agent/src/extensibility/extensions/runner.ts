@@ -41,6 +41,7 @@ import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-wr
 import { addCompactionProtection } from "../../tools/compaction-protection";
 import { addContextTransform } from "../../tools/compaction-transforms";
 import { registerHostRenderStrategy, type HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
+import { releaseDiagnostics } from "./diagnostics";
 import { addUsageReporter } from "../../tools/usage-reporter";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
@@ -529,7 +530,7 @@ export class ExtensionContextDisposedError extends Error {
  * clear `registeredProviders` — the record of what was registered is what makes a
  * re-load or a resume able to restore it.
  */
-function clearExtensionBuckets(extension: Extension): void {
+export function clearExtensionBuckets(extension: Extension): void {
 	extension.handlers.clear();
 	extension.tools.clear();
 	extension.assistantThinkingRenderers.length = 0;
@@ -545,6 +546,11 @@ function clearExtensionBuckets(extension: Extension): void {
 	extension.outputFormats.clear();
 	extension.toolNameResolvers.length = 0;
 	extension.usageReporters.length = 0;
+	// Diagnostics live in a process-wide registry the doctor reads from another
+	// subsystem, so emptying the array alone would leave the check running and
+	// reporting on a directory that is no longer loaded.
+	releaseDiagnostics(extension.path);
+	extension.diagnostics.length = 0;
 	extension.hostRenderStrategies.length = 0;
 	extension.toolRegistrationListeners.clear();
 }

@@ -22,6 +22,7 @@ import { type ExtensionModule, extensionModuleCapability } from "../../capabilit
 import { type Hook, hookCapability } from "../../capability/hook";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
 import { loadCapability } from "../../discovery";
+import { addDiagnostic, type ExtensionDiagnostic } from "./diagnostics";
 import { ExtensionContextStaleError, STALE_CONTEXT_MESSAGE } from "./stale-context";
 import { getExtensionNameFromPath } from "../../discovery/helpers";
 import type { ExecOptions } from "../../exec/exec";
@@ -418,6 +419,34 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.toolNameResolvers.push(resolver);
 	}
 
+	registerDiagnostic(diagnostic: ExtensionDiagnostic): void {
+		const id = typeof diagnostic?.id === "string" ? diagnostic.id.trim() : "";
+		if (id.length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: diagnostic id must be a non-empty trimmed string`);
+		}
+		if (typeof diagnostic.label !== "string" || diagnostic.label.trim().length === 0) {
+			throw new TypeError(`Extension ${this.extension.path}: diagnostic "${id}" must have a label`);
+		}
+		if (typeof diagnostic.run !== "function") {
+			throw new TypeError(
+				`Extension ${this.extension.path}: diagnostic "${id}" must provide run(), got ${typeof diagnostic.run}`,
+			);
+		}
+		// Refused rather than silently shadowed: two checks with one name make the
+		// doctor report twice under a name the user cannot tell apart, and which of
+		// them ran is then anyone's guess.
+		if (this.extension.diagnostics.some(entry => entry.id === id)) {
+			throw new TypeError(`Extension ${this.extension.path}: diagnostic "${id}" is already registered`);
+		}
+		const entry: ExtensionDiagnostic = { ...diagnostic, id };
+		this.extension.diagnostics.push(entry);
+		// Also into the process-wide registry the doctor reads, because the command
+		// that runs it lives in another subsystem with no handle on this extension.
+		// `releaseDiagnostics(path)` undoes exactly this extension's contributions on
+		// unload, which the runner calls beside its other per-extension teardown.
+		addDiagnostic(this.extension.path, entry);
+	}
+
 	registerHostRenderStrategy(strategy: HostRenderStrategy): void {
 		const id = typeof strategy.id === "string" ? strategy.id.trim() : "";
 		// Re-validated here, not only in `registerHostRenderStrategy`: the
@@ -591,6 +620,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		toolNameResolvers: [] as ToolNameResolver[],
 		usageReporters: [] as UsageReporterRegistration[],
 		hostRenderStrategies: [] as HostRenderStrategy[],
+		diagnostics: [] as ExtensionDiagnostic[],
 		composerShapes: new Map(),
 		commands: new Map(),
 		flags: new Map(),

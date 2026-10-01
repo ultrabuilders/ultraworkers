@@ -15,6 +15,7 @@ import {
 } from "@oh-my-pi/pi-utils";
 import { resolveActiveProjectRegistryPath } from "../../discovery/helpers";
 import { loadExtensions } from "../extensions/loader";
+import { collectDiagnostics } from "../extensions/diagnostics";
 import { refreshBunGitCache } from "./bun-git-cache";
 import { type GitSource, parseGitUrl } from "./git-url";
 import { resolvePluginManifestEntries } from "./loader";
@@ -128,6 +129,9 @@ export interface ChangeResult {
 	/** Whether the running session already reflects the write. */
 	application: "applied" | "restart-required";
 }
+
+/** A contributed diagnostic that never settles must not take the doctor down with it. */
+const DIAGNOSTIC_TIMEOUT_MS = 5_000;
 
 export class PluginManager {
 	#runtimeConfig: PluginRuntimeConfig | null = null;
@@ -1230,6 +1234,41 @@ export class PluginManager {
 						});
 					}
 				}
+			}
+		}
+
+		// Extension-contributed checks join the built-in ones; they never replace
+		// them. A doctor whose own findings an extension could suppress would stop
+		// being able to report a fault in the very extension that supplied it,
+		// which is the one case where a plugin is most likely to be at fault.
+		//
+		// Each is run with a timeout rather than awaited bare: a diagnostic is
+		// third-party code on a path that must still print the built-in findings.
+		// An extension that hangs here would otherwise take `omp plugin doctor`
+		// down with it — the check meant to report a broken extension becoming the
+		// outage.
+		for (const { source, diagnostic } of collectDiagnostics()) {
+			try {
+				const outcome = await Promise.race([
+					Promise.resolve(diagnostic.run()),
+					new Promise<never>((_, reject) =>
+						setTimeout(() => reject(new Error("timed out")), DIAGNOSTIC_TIMEOUT_MS),
+					),
+				]);
+				checks.push({
+					name: `extension:${diagnostic.id}`,
+					...outcome,
+					message: `[${source}] ${outcome.message}`,
+				});
+			} catch (err) {
+				checks.push({
+					name: `extension:${diagnostic.id}`,
+					// An error is not a pass. Reported as an error naming the reason,
+					// because a check that silently vanished would leave the user
+					// believing an unverified surface was verified.
+					status: "error",
+					message: `[${source}] check failed: ${err instanceof Error ? err.message : String(err)}`,
+				});
 			}
 		}
 

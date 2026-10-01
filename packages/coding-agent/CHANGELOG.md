@@ -4,6 +4,14 @@
 
 ### Added
 
+- `pi.registerDiagnostic(...)`: an extension can contribute its own check to `omp plugin doctor`, so a
+  half-loaded resource or an unusable dependency can report itself instead of staying silent. The
+  check is evaluated when the doctor runs rather than at load, so it describes current state; it is
+  named with the extension that contributed it; and it joins the built-in checks without displacing
+  them, since a doctor whose own findings an extension could suppress could not report a fault in
+  the extension that supplied it. A diagnostic that throws is reported as an error rather than
+  dropped, because a check that vanishes leaves the user reading the rest as "everything else is
+  fine", and unloading an extension releases exactly its own checks
 - `pi.registerHostRenderStrategy(...)`: an extension can contribute how a terminal resize repaints,
   for a host omp's built-in multiplexer/`TERM_PROGRAM` detection does not recognise. A strategy
   cannot override the user's `PI_TUI_RESIZE_IN_PLACE` or core's multiplexer/ConPTY safety veto;

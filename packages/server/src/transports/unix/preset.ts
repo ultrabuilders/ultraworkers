@@ -1,4 +1,4 @@
-import type { SessionMetadata } from "../../session-metadata";
+import type { SessionMetadata } from "../../types";
 import { Server } from "../../server";
 import type { ServerHost } from "../../types";
 import { createUnixListener } from "./listener";

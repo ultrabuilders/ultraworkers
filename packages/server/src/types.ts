@@ -1,7 +1,8 @@
-import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@oh-my-pi/chord";
-import type { Context } from "@oh-my-pi/chord";
-import type { SessionMetadata } from "./session-metadata";
+import type { Context, JsonValue, ServiceCall, ServiceProviderUpdate } from "@oh-my-pi/chord";
+import type { MaybePromise } from "@oh-my-pi/pi-utils/acp/protocol";
 import type { ServerListener } from "./listener";
+
+export type { MaybePromise };
 
 export interface ServerOptions {
 	listeners: readonly ServerListener[];
@@ -13,7 +14,26 @@ export interface ServerOptions {
 	onError?: (error: Error) => void;
 }
 
-export type MaybePromise<T> = T | Promise<T>;
+/**
+ * The Session identity a `ServerHost` resolves and opens.
+ *
+ * Upstream this interface lives in `pi-agent-core`
+ * (`packages/agent/src/harness/session/types.ts`) and is imported from there;
+ * this repository has no `pi-agent-core`, so it is declared here and the
+ * package's own consumers extend it rather than fork it. All six upstream
+ * fields are carried verbatim, including `legacyParentSessionPath`, which this
+ * package never reads: narrowing the shape would make a caller's wider
+ * `SessionMetadata` structurally incompatible with the one a `ServerHost`
+ * resolves, which is the opposite of what the port needs.
+ */
+export interface SessionMetadata {
+	id: string;
+	createdAt: number;
+	storageVersion: number;
+	cwd?: string;
+	parentSessionId?: string;
+	legacyParentSessionPath?: string;
+}
 
 /** One presentation connection's live capability for a hosted Session. */
 export interface RoutedSessionAttachment {

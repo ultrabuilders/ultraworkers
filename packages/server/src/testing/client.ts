@@ -1,5 +1,5 @@
-import { once } from "node:events";
-import { createConnection, type Socket } from "node:net";
+import * as events from "node:events";
+import * as net from "node:net";
 import type { JsonValue, ServiceCall } from "@oh-my-pi/chord";
 import {
 	type ClientMessage,
@@ -101,6 +101,10 @@ export class ProtocolTestClient {
 		const existing = this.messages.slice(index).find(predicate);
 		if (existing) return Promise.resolve(existing);
 		if (this.closedValue) return Promise.reject(new Error("Wire client is closed"));
+		// Kept as `new Promise` rather than `Promise.withResolvers()`: the
+		// resolved value is derived from `predicate` by the waiter loop in
+		// `receive()`, not by anything bound at construction, so a deferred
+		// cannot express it.
 		return new Promise((resolve, reject) => this.waiters.add({ predicate, resolve, reject }));
 	}
 
@@ -150,8 +154,8 @@ export class ProtocolTestClient {
 }
 
 export async function connectUnixTestClient(path: string): Promise<ProtocolTestClient> {
-	const socket = createConnection(path);
-	await once(socket, "connect");
+	const socket = net.createConnection(path);
+	await events.once(socket, "connect");
 	const client = new ProtocolTestClient({
 		send: chunk => writeSocket(socket, chunk),
 		async sendFragmented(chunk, splitAt) {
@@ -160,7 +164,7 @@ export async function connectUnixTestClient(path: string): Promise<ProtocolTestC
 		},
 		async close() {
 			if (socket.destroyed) return;
-			const closed = once(socket, "close");
+			const closed = events.once(socket, "close");
 			socket.destroy();
 			await closed;
 		},
@@ -174,11 +178,11 @@ export async function connectUnixTestClient(path: string): Promise<ProtocolTestC
 	return client;
 }
 
-function writeSocket(socket: Socket, chunk: Uint8Array): Promise<void> {
-	return new Promise<void>((resolve, reject) => {
-		socket.write(chunk, error => {
-			if (error) reject(error);
-			else resolve();
-		});
+function writeSocket(socket: net.Socket, chunk: Uint8Array): Promise<void> {
+	const settled = Promise.withResolvers<void>();
+	socket.write(chunk, error => {
+		if (error) settled.reject(error);
+		else settled.resolve();
 	});
+	return settled.promise;
 }

@@ -1,23 +1,27 @@
 import type { JsonValue, ServiceCall } from "@oh-my-pi/chord";
 import { type Context } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
-import type { SessionMetadata } from "../session-metadata";
+import type { SessionMetadata } from "../types";
 import { MemorySessionRepo, type Session } from "./memory-session-repo";
 import { SessionAmbiguousError, SessionNotFoundError } from "../errors";
 import type { RoutedServerServiceHost, RoutedSessionHandle, ServerHost } from "../types";
 
 export class Deferred<T> {
 	readonly promise: Promise<T>;
-	private resolvePromise!: (value: T) => void;
+	readonly #resolvePromise: (value: T) => void;
 
 	constructor() {
-		this.promise = new Promise<T>(resolve => {
-			this.resolvePromise = resolve;
-		});
+		// `Promise.withResolvers()` also produces a `reject`, which is
+		// deliberately dropped: `Deferred` is a one-way latch and is public API
+		// (`src/testing/index.ts` re-exports it, and the conformance suite
+		// constructs it directly).
+		const { promise, resolve } = Promise.withResolvers<T>();
+		this.promise = promise;
+		this.#resolvePromise = resolve;
 	}
 
 	resolve(value: T): void {
-		this.resolvePromise(value);
+		this.#resolvePromise(value);
 	}
 }
 

@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
+import * as crypto from "node:crypto";
 import type { JsonValue, ServiceCall, ServiceProviderUpdate } from "@oh-my-pi/chord";
 import { type Context } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
-import type { SessionMetadata } from "./session-metadata";
+import type { SessionMetadata } from "./types";
 import type { RpcTarget, SessionTarget } from "@oh-my-pi/pi-protocol";
 import { ServerDrainingError, SessionNotAttachedError } from "./errors";
 import type { RoutedSessionAttachment, RoutedSessionHandle, ServerHost } from "./types";
@@ -167,7 +167,7 @@ export class SessionRouter<TMetadata extends SessionMetadata = SessionMetadata> 
 		if (this.options.isClosing() || this.disconnectedClients.has(client)) throw new ServerDrainingError();
 		if (current) await this.releaseAttachment(current, context, false);
 		const attachment: ClientAttachment = {
-			id: randomUUID(),
+			id: crypto.randomUUID(),
 			client,
 			session: hosted,
 			operations: new Set(),

@@ -9,7 +9,7 @@ import {
 	type ServiceProviderUpdate,
 } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT, TODO_CONTEXT, withAbortSignal } from "@oh-my-pi/chord/context";
-import type { SessionMetadata } from "./session-metadata";
+import type { SessionMetadata } from "./types";
 import {
 	type CancelEnvelope,
 	type ClientHello,
@@ -86,10 +86,10 @@ export class Server<TMetadata extends SessionMetadata = SessionMetadata> {
 			},
 			reportError: error => this.reportError(error),
 		});
-		this.closed = new Promise((resolve, reject) => {
-			this.resolveClosed = resolve;
-			this.rejectClosed = reject;
-		});
+		const closed = Promise.withResolvers<void>();
+		this.closed = closed.promise;
+		this.resolveClosed = closed.resolve;
+		this.rejectClosed = closed.reject;
 		void this.closed.catch(() => {});
 	}
 

@@ -27,7 +27,7 @@ export interface ConnectionState {
 	stage: ConnectionStage;
 	disconnected: boolean;
 	handshake?: Promise<void>;
-	handshakeTimeout: NodeJS.Timeout;
+	handshakeTimeout: Timer;
 	serverServices?: RoutedServerServiceAttachment;
 	activeRequests: Map<string, { controller: AbortController; target: RpcTarget }>;
 }

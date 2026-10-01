@@ -1,5 +1,5 @@
 import type { Context } from "@oh-my-pi/chord";
-import type { SessionMetadata } from "../session-metadata";
+import type { SessionMetadata } from "../types";
 
 /** Options for {@link MemorySessionRepo.create}. */
 export interface MemorySessionCreateOptions {

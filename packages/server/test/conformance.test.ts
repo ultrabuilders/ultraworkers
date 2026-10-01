@@ -1,6 +1,6 @@
 import type { ServiceCall } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
-import type { SessionMetadata } from "../src/session-metadata";
+import type { SessionMetadata } from "../src/types";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ByteConnection, ByteConnectionHandler } from "../src/connection";
 import { SessionAmbiguousError } from "../src/errors";

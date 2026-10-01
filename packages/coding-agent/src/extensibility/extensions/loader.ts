@@ -32,6 +32,7 @@ import type { SendUserMessageOptions } from "../../session/agent-session";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
 import type { CompactionProtection } from "../../tools/compaction-protection";
+import type { ContextTransform } from "../../tools/compaction-transforms";
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
 import { lookup as lookupSetting, registerOwned } from "../../config/registry";
 import { isFilesystemSourcePath } from "../../tools/path-utils";
@@ -289,6 +290,10 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.compactionProtections.push(protection);
 	}
 
+	registerContextTransform(transform: ContextTransform): void {
+		this.extension.contextTransforms.push(transform);
+	}
+
 	/**
 	 * Claim the double-Escape gesture for an action.
 	 *
@@ -527,6 +532,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		assistantThinkingRenderers: [],
 		fileWriteFallbackHandlers: [],
 		compactionProtections: [],
+		contextTransforms: [],
 		doubleEscapeActions: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),

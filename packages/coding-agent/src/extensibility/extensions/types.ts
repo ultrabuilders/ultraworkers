@@ -98,6 +98,7 @@ import type { ApprovalMode } from "../../tools/approval";
 import type { BashToolDetails } from "@oh-my-pi/pi-tui/tools/bash";
 import type { FileDeleteFallbackHandler, FileWriteFallbackHandler } from "../../tools/file-write-fallback";
 import type { CompactionProtection } from "../../tools/compaction-protection";
+import type { ContextTransform } from "../../tools/compaction-transforms";
 import type { EventBus } from "../../utils/event-bus";
 import type {
 	AgentEndEvent,
@@ -1600,6 +1601,39 @@ export interface ExtensionAPI {
 	registerCompactionProtection(protection: CompactionProtection): void;
 
 	/**
+	 * Register a context-reduction transform that runs in the compaction prune
+	 * pass, before summarization.
+	 *
+	 * Core's prune pass decides what may leave the context, and until this seam
+	 * it offered extensions exactly two extension points — which results are
+	 * protected, and which supersede which — both of which say what to KEEP.
+	 * Neither lets an extension reduce the context in its own way, so the two
+	 * transforms an extension is most likely to want had no home: collapsing runs
+	 * of same-kind results into a one-line label, and truncating long assistant
+	 * text. Both were reachable only by editing core.
+	 *
+	 * The transform gets the same contract the two core transforms use —
+	 * `(entries, tokenizer) => PruneResult` — so it composes with them rather
+	 * than replacing them. Mutate `entries` in place and report what you did.
+	 *
+	 * ```ts
+	 * pi.registerContextTransform({
+	 *   name: "collapse-mytool-runs",
+	 *   transform: (entries, tokenizer) => { /* … *\/ },
+	 * });
+	 * ```
+	 *
+	 * The registry is PROCESS-WIDE, so the transform runs for every session in the
+	 * process. It is installed when the runner initializes and removed again on
+	 * unload, restoring the pre-seam behaviour exactly.
+	 *
+	 * @throws when `name` is not a non-empty string, when `transform` is not
+	 * callable, or when this extension already registered that name. The error
+	 * names this extension.
+	 */
+	registerContextTransform(transform: ContextTransform): void;
+
+	/**
 	 * Claim the double-Escape gesture for an action of your own.
 	 *
 	 * Double-Escape — two Escapes inside 500 ms with an empty editor — used to be
@@ -2273,6 +2307,7 @@ export interface Extension {
 	fileWriteFallbackHandlers: FileWriteFallbackHandler[];
 	fileDeleteFallbackHandlers: FileDeleteFallbackHandler[];
 	compactionProtections: CompactionProtection[];
+	contextTransforms: ContextTransform[];
 	messageRenderers: Map<string, MessageRenderer>;
 	composerShapes: Map<string, ComposerShapeDefinition>;
 	commands: Map<string, RegisteredCommand>;

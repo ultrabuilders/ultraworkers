@@ -50,6 +50,7 @@ import {
 	readToolSupersedeKey,
 } from "@oh-my-pi/pi-agent-core/compaction/pruning";
 import type { ProtectedToolMatcher } from "@oh-my-pi/pi-agent-core/compaction/tool-protection";
+import { hasContextTransforms, runContextTransforms } from "../tools/compaction-transforms";
 import type {
 	AssistantMessage,
 	CodexCompactionContext,
@@ -729,6 +730,35 @@ export class SessionMaintenance {
 	async #pruneToolOutputs(): Promise<{ prunedCount: number; tokensSaved: number } | undefined> {
 		const branchEntries = this.#host.sessionManager.getBranch();
 		const keepBoundaryId = getLatestCompactionEntry(branchEntries)?.firstKeptEntryId;
+
+		// Extension transforms run BEFORE core's own pass, not after: core decides
+		// which results to drop by walking the branch and honouring a
+		// `minimumSavings` threshold, so the better input for that decision is the
+		// branch an extension has already reduced rather than the raw one.
+		//
+		// The whole block sits behind `hasContextTransforms()`. With no extension
+		// registered — the overwhelmingly common case — nothing below executes and
+		// core's own `result` is returned unchanged, so the pre-seam path returns the
+		// same object rather than an equal-looking copy. That is what makes the red
+		// gate's "exactly as before" hold rather than merely approximate.
+		if (hasContextTransforms()) {
+			const outcome = runContextTransforms(branchEntries, this.#tokenizer);
+			for (const failure of outcome.errors) {
+				logger.warn("Context transform failed; continuing without it", {
+					extensionPath: failure.extensionPath,
+					transform: failure.name,
+					error: failure.error,
+				});
+			}
+			if (outcome.total.tokensSaved > 0) {
+				logger.debug("Context transforms reduced the branch", {
+					transforms: outcome.outcomes.map(o => `${o.name}(${o.tokensSaved}t/${o.prunedCount})`),
+					tokensSaved: outcome.total.tokensSaved,
+					prunedCount: outcome.total.prunedCount,
+				});
+			}
+		}
+
 		const result = pruneToolOutputs(
 			branchEntries,
 			this.#tokenizer,

@@ -49,6 +49,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		fileWriteFallbackHandlers: [],
 		fileDeleteFallbackHandlers: [],
 		compactionProtections: [],
+		contextTransforms: [],
 		messageRenderers: new Map(),
 
 		outputFormats: new Map(),

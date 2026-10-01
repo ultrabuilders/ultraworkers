@@ -4564,6 +4564,7 @@ describe("ExtensionRunner", () => {
 				fileWriteFallbackHandlers: [],
 				fileDeleteFallbackHandlers: [],
 				compactionProtections: [],
+				contextTransforms: [],
 				messageRenderers: new Map(),
 
 				outputFormats: new Map(),

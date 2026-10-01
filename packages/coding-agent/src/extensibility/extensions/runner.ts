@@ -39,6 +39,7 @@ import { MAIN_AGENT_ID } from "../../registry/agent-registry";
 import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
 import { addCompactionProtection } from "../../tools/compaction-protection";
+import { addContextTransform } from "../../tools/compaction-transforms";
 import type { BranchHandler, NavigateTreeHandler, NewSessionHandler } from "../session-handler-types";
 import { accumulateToolCallResult, buildAggregatedToolCallResult } from "../shared-events";
 import { ManagedTimers, UNOWNED_TIMERS } from "./managed-timers";
@@ -533,6 +534,7 @@ function clearExtensionBuckets(extension: Extension): void {
 	extension.fileWriteFallbackHandlers.length = 0;
 	extension.fileDeleteFallbackHandlers.length = 0;
 	extension.compactionProtections.length = 0;
+	extension.contextTransforms.length = 0;
 	extension.messageRenderers.clear();
 	extension.composerShapes.clear();
 	extension.commands.clear();
@@ -911,6 +913,25 @@ export class ExtensionRunner {
 		for (const ext of this.getLoadedExtensions()) {
 			for (const protection of ext.compactionProtections) {
 				this.#pushFallbackDisposer(ext.path, addCompactionProtection(ext.path, protection));
+			}
+		}
+		// Context transforms install beside protections for the same reason and with
+		// the same lifecycle: the prune pass reads the registry from module scope,
+		// long after extension load, and an unloaded extension must stop reducing a
+		// live transcript. Disposer-per-registration, so releasing ONE extension
+		// leaves every other extension's transform running.
+		for (const ext of this.getLoadedExtensions()) {
+			for (const transform of ext.contextTransforms) {
+				this.#pushFallbackDisposer(ext.path, addContextTransform(ext.path, transform));
+			}
+		}
+		// Usage reporters install beside compaction protections for the same reason:
+		// the fold that reads them runs in the session index and the stats tracker,
+		// neither of which holds an ExtensionRunner, so the registry has to be
+		// reachable from module scope. Disposer-per-registration, so unloading ONE
+		// extension releases exactly its own contribution — otherwise a stale
+		// reporter keeps adding a dead extension's tokens to the live ledger.
+		for (const ext of this.getLoadedExtensions()) {
 			}
 		}
 		// Suspended extensions keep a (gated) trampoline so resuming them needs no rewire.

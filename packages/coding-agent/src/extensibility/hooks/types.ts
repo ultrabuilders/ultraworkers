@@ -389,6 +389,14 @@ export type ToolResultEvent =
 	| CustomToolResultEvent;
 
 /**
+ * Whether a hook may run, decided by comparing its current content against the
+ * hash recorded for it. Declared in `./trust`, re-exported here so it sits with
+ * the rest of the hook vocabulary; there is deliberately no `untrusted` member,
+ * and `./trust` says why.
+ */
+export type { HookState, HookTrustStatus } from "./trust";
+
+/**
  * Union of all hook event types.
  */
 export type HookEvent =

@@ -88,6 +88,14 @@
 - Added `omp config migrate` — moves the config root to its new name, along with the XDG data, state and cache roots. It is a dry run unless you pass `--apply`. When both the old and the new root exist it reports the pair and leaves it alone rather than merging, so a migration can never silently drop one of the two installs.
 
 - `pi.registerDoubleEscapeAction({ id, description, handler })` lets an extension claim the
+- `pi.registerDoubleEscapeAction(
+- `pi.registerUsageReporter(toolName, reporter)` lets an extension report the tokens and cost a tool
+  of its own spent on nested model calls, so that spend reaches `/usage`, the status line, the ACP
+  usage update and `packages/stats`. The reporter is called with the tool result's `details` — the
+  part that survives into the persisted transcript — so a resumed session attributes exactly what the
+  live one did. Registration throws on a second reporter for the same tool, since folding both would
+  count the same tokens twice
+{ id, description, handler })` lets an extension claim the
   double-Escape gesture — two Escapes inside 500 ms on an empty editor. The gesture was a closed
   `rewind` | `tree` | `none` enum dispatched by a hardcoded branch, so an extension could add no
   action of its own; `registerShortcut` bound a different key instead. Registered actions are
@@ -140,6 +148,13 @@
   completed turn overflowed. Each round of the `compact → overflow → compact` cycle succeeded at
   recovering, so it never surfaced as an error and just spent a full model turn per round. Overflow
   recovery now gets one retry per incident, then stops and reports why instead of looping silently
+- Fixed sub-task usage records reporting `reasoningTokens: 0` for providers that never reported
+  reasoning at all. The field documents `undefined` as "unknown, NOT zero", and the task executor
+  was seeding it with a zero, so `/usage` and every persisted sub-agent record claimed the model
+  thought for zero tokens. Session, task and stats totals now share one field-by-field accumulator,
+  so an optional field no side reported stays absent instead of reading `0` on one path and absent
+  on another
+
 - An MCP server can no longer widen its own reach after you have trusted it. Trust is granted to the
   connection, but `notifications/tools/list_changed` let a server add or retract a tool at any moment:
   a newly pushed tool became active immediately, so a server you had already approved could hand the

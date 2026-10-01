@@ -24,6 +24,9 @@ import {
 } from "../../session/compaction-transaction";
 import { type ExtensionModule, extensionModuleCapability } from "../../capability/extension-module";
 import { type Hook, hookCapability } from "../../capability/hook";
+import { recordHookHash, recordedHookHash } from "../../config/hook-settings";
+import { settings } from "../../config/settings";
+import { hookContentHash, hookModifiedMessage, hookTrustKey, hookTrustStatus } from "../hooks/trust";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
 import { loadCapability } from "../../discovery";
 import { addDiagnostic, type ExtensionDiagnostic } from "./diagnostics";
@@ -914,11 +917,32 @@ export async function discoverExtensionPaths(
 	if (ambient) {
 		if (options.includeAmbientHooks !== false) {
 			const hooks = await loadCapability<Hook>(hookCapability.id, loadOptions);
-			for (const hookPath of hooks.items
-				.map(hook => hook.path)
-				.filter(hookPath => isExtensionFile(path.basename(hookPath)))) {
-				addPath(hookPath);
+			// Trust gate. A hook whose file changed after its content was recorded
+			// does not load, and says so rather than vanishing — the alternative is
+			// edited code running at the privilege the user approved for different
+			// code. First sight records the hash instead of blocking, so hooks that
+			// already exist keep working across an upgrade; see ../hooks/trust.
+			let recordedAny = false;
+			for (const hook of hooks.items) {
+				if (!isExtensionFile(path.basename(hook.path))) continue;
+				const key = hookTrustKey(hook);
+				const hash = await hookContentHash(hook);
+				const recorded = recordedHookHash(key);
+				if (recorded !== undefined && hookTrustStatus(recorded, hash) === "modified") {
+					logger.warn(hookModifiedMessage(hook, recorded));
+					continue;
+				}
+				if (recordHookHash(key, hash)) recordedAny = true;
+				addPath(hook.path);
 			}
+			// One flush for the whole scan, and only when something was newly
+			// recorded — the steady state must not rewrite the user's config on every
+			// load. The flush is not redundant even though `Settings.set` debounces
+			// its own write: a process that exits before that timer fires would
+			// leave the record unwritten, and the next run would be first sight
+			// again. That window is closed here by argument; the test covers the
+			// behaviour, not the window.
+			if (recordedAny) await settings.flush();
 		}
 	} else {
 		for (const configuredPath of configuredPaths) {

@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { ptree, TempDir } from "@oh-my-pi/pi-utils";
-import { selectShard } from "./ci-test-ts";
+import { selectAffected, selectShard } from "./ci-test-ts";
 
 describe("test runner watchdog", () => {
 	// Parent fake timers cannot drive the real watchdog inside the isolated runner process.
@@ -61,5 +61,216 @@ describe("OMP_TEST_SHARD", () => {
 	test("rejects a shard that selects no chunks", () => {
 		expect(() => selectShard([1], "2/2")).toThrow("selects no chunks");
 		expect(() => selectShard([], "1/1")).toThrow("selects no chunks");
+	});
+});
+
+// The selector's env comes from the process, so these run the real entrypoint
+// the way CI does: same argv, same `OMP_TEST_SHARD`, same `--dry-run` that
+// prints the chunk set instead of running it. A helper called with arguments
+// would never touch the env path CI depends on.
+const repoRoot = new URL("../", import.meta.url).pathname;
+
+interface RunnerResult {
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+}
+
+// The commands the runner says it will run, in order. Parsed from the
+// dry-run's `$ <argv>` lines — the exact set CI would execute.
+function plannedCommands(stdout: string): string[] {
+	return stdout
+		.split("\n")
+		.filter(line => line.startsWith("$ "))
+		.map(line => line.slice(2).trim());
+}
+
+async function runRunner(mode: string, env: Record<string, string | undefined>): Promise<RunnerResult> {
+	// The two selector inputs are cleared by default so the ambient shell
+	// cannot leak a diff into a case that means "no diff": an inherited value
+	// would make the runner narrow, and the assertion would be measuring the
+	// caller's environment instead of the path under test.
+	const childEnv: Record<string, string | undefined> = {
+		...Bun.env,
+		// Absent by default: an empty value is a *different* input to the
+		// selector (a caller that had a base and found it blank), so the two
+		// "no diff" shapes have to be set deliberately, not by omission.
+		OMP_TEST_AFFECTED: undefined,
+		OMP_TEST_DIFF_BASE: undefined,
+		OMP_TEST_CONCURRENCY: "",
+		NO_COLOR: "1",
+		...env,
+	};
+	const result = await ptree.exec([process.execPath, "scripts/ci-test-ts.ts", mode, "--dry-run"], {
+		cwd: repoRoot,
+		env: childEnv,
+		timeout: 120_000,
+		allowNonZero: true,
+		stderr: "full",
+	});
+	return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+}
+
+// The chunks the runner chose, with the pool-width suffix stripped: the
+// selection is what these tests assert, not the budget it runs them at.
+function plannedChunks(stdout: string): string[] {
+	return plannedCommands(stdout).map(cmd => cmd.replace(/ --parallel=\d+/, ""));
+}
+
+describe("ci-test-ts diff selection through the runner", () => {
+	const savedAffected = Bun.env.OMP_TEST_AFFECTED;
+	const savedBase = Bun.env.OMP_TEST_DIFF_BASE;
+
+	afterEach(() => {
+		if (savedAffected === undefined) delete Bun.env.OMP_TEST_AFFECTED;
+		else Bun.env.OMP_TEST_AFFECTED = savedAffected;
+		if (savedBase === undefined) delete Bun.env.OMP_TEST_DIFF_BASE;
+		else Bun.env.OMP_TEST_DIFF_BASE = savedBase;
+	});
+
+	// A PR that only edits markdown selects no chunk. The job must still run
+	// something named — a docs-only PR reporting green is indistinguishable
+	// from a job that ran no tests at all.
+	test("a diff that touches no test runs the named smoke set, not nothing", async () => {
+		const result = await runRunner("coding-agent-runtime", {
+			OMP_TEST_AFFECTED: "docs/readme.md\nAGENTS.md",
+		});
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("selector empty for this diff -> running minimal smoke:");
+		expect(result.stdout).toContain("selected=2 mode=smoke");
+		// Names, not just a count: a count could come from an unnamed list.
+		expect(result.stdout).toContain("smoke: cli boots (--version/--help)");
+		expect(result.stdout).toContain("smoke: worker ping (--smoke-test)");
+		expect(plannedCommands(result.stdout)).toEqual([
+			"bun packages/coding-agent/src/cli.ts --version",
+			"bun packages/coding-agent/src/cli.ts --smoke-test",
+		]);
+	}, 130_000);
+
+	// The three shards of one diff partition the shard's chunks. Asserting the
+	// union covers every chunk and the sets are pairwise disjoint catches both
+	// directions of a silent regression — a chunk running twice, and a chunk
+	// that never runs at all.
+	test("three shards of one diff still cover every chunk exactly once", async () => {
+		const affected = "packages/coding-agent/test/extension-stale-context.test.ts";
+		const full = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: affected });
+		expect(full.exitCode).toBe(0);
+		const expected = plannedCommands(full.stdout).filter(cmd => cmd.includes("extension-stale-context"));
+		expect(expected.length).toBe(1);
+
+		const shards = await Promise.all(
+			["1/3", "2/3", "3/3"].map(shard =>
+				runRunner("coding-agent-runtime", { OMP_TEST_SHARD: shard, OMP_TEST_AFFECTED: affected }),
+			),
+		);
+		for (const shard of shards) {
+			expect(shard.exitCode).toBe(0);
+		}
+		// Exactly one shard owns the changed file; the others fall back to
+		// smoke, which is what keeps a shard from silently reporting nothing.
+		const owning = shards.filter(shard =>
+			plannedCommands(shard.stdout).some(cmd => cmd.includes("extension-stale-context")),
+		);
+		expect(owning.length).toBe(1);
+		expect(plannedCommands(owning[0].stdout).filter(cmd => cmd.includes("extension-stale-context"))).toEqual(
+			expected,
+		);
+		for (const shard of shards.filter(s => !owning.includes(s))) {
+			expect(shard.stdout).toContain("mode=smoke");
+		}
+	}, 400_000);
+
+	// Diff selection narrows; it never widens. With no diff *input at all* the
+	// runner falls back to the working tree, which is the local path — so this
+	// asserts the CI-shaped no-diff instead: a blank base, exactly what a push to
+	// main sends. Turning the new path off must return today's behaviour exactly,
+	// because a seam that cannot be turned off breaks current users.
+	test("with no diff supplied the runner still runs every chunk", async () => {
+		const withDiff = await runRunner("workspace", { OMP_TEST_AFFECTED: "packages/utils/src/index.ts" });
+		const withoutDiff = await runRunner("workspace", { OMP_TEST_DIFF_BASE: "" });
+		expect(withoutDiff.exitCode).toBe(0);
+		expect(withoutDiff.stdout).toContain("mode=shard-only");
+		expect(plannedChunks(withoutDiff.stdout).length).toBeGreaterThan(plannedChunks(withDiff.stdout).length);
+	}, 130_000);
+
+	// A push to main sets the base to an empty string, because there is no PR
+	// to diff against. CI's checkout is clean, so falling through to the
+	// working tree there reads "nothing changed" and narrows a push to the
+	// suites that happened to be touched locally. Main must run everything.
+	test("a blank diff base runs every chunk instead of reading the clean CI checkout", async () => {
+		const pushedToMain = await runRunner("workspace", { OMP_TEST_DIFF_BASE: "" });
+		expect(pushedToMain.exitCode).toBe(0);
+		expect(pushedToMain.stdout).toContain("no diff available");
+		expect(pushedToMain.stdout).toContain("mode=shard-only");
+		// The empty affected list is the "caller supplied nothing" shape, so the
+		// two must agree chunk-for-chunk: both run everything.
+		expect(plannedChunks(pushedToMain.stdout)).toEqual(
+			plannedChunks((await runRunner("workspace", { OMP_TEST_AFFECTED: "" })).stdout),
+		);
+	}, 130_000);
+
+	// A base the runner cannot fetch must degrade to a full run, never to a
+	// narrow one. This is the difference between a green job that ran
+	// everything and a green job that ran nothing.
+	test("an unfetchable diff base warns and runs every chunk", async () => {
+		const result = await runRunner("workspace", {
+			OMP_TEST_DIFF_BASE: "0000000000000000000000000000000000000000",
+		});
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain("failed to fetch diff base");
+		expect(result.stdout).toContain("mode=shard-only");
+	}, 130_000);
+
+	// The gate has to fire at the CI layer, not only under a unit test, or a
+	// misconfigured matrix shard is invisible until it merges.
+	test("a shard past the chunk count still fails the job", async () => {
+		const result = await runRunner("workspace", { OMP_TEST_SHARD: "9/9" });
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stdout + result.stderr).toContain("selects no chunks");
+	}, 130_000);
+
+	test("a malformed shard spec still fails the job", async () => {
+		const result = await runRunner("workspace", { OMP_TEST_SHARD: "0/2" });
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stdout + result.stderr).toContain("Invalid OMP_TEST_SHARD");
+	}, 130_000);
+});
+
+describe("selectAffected", () => {
+	const chunk = (label: string, cwd: string, files: string[]) => ({
+		label,
+		cwd,
+		command: ["bun", "test", ...files],
+	});
+
+	test("selects the chunk owning a changed test file and not its siblings", () => {
+		const commands = [
+			chunk("pkg (chunk 1/2)", "packages/demo", ["test/a.test.ts", "test/b.test.ts"]),
+			chunk("pkg (chunk 2/2)", "packages/demo", ["test/c.test.ts", "test/d.test.ts"]),
+		];
+		const selected = selectAffected(commands, ["packages/demo/test/c.test.ts"]);
+		expect(selected.map(c => c.label)).toEqual(["pkg (chunk 2/2)"]);
+	});
+
+	// The negative contract: no diff means "run everything", which is what
+	// local runs and any caller that cannot compute one rely on.
+	test("an absent diff keeps every chunk", () => {
+		const commands = [chunk("pkg", "packages/demo", ["test/a.test.ts"])];
+		expect(selectAffected(commands, undefined)).toEqual(commands);
+	});
+
+	test("a repo-wide file such as the lockfile runs every chunk", () => {
+		const commands = [
+			chunk("demo", "packages/demo", ["test/a.test.ts"]),
+			chunk("other", "packages/other", ["test/b.test.ts"]),
+		];
+		expect(selectAffected(commands, ["bun.lock"])).toEqual(commands);
+	});
+
+	// A package-level chunk runs its whole package, so any file under that
+	// package selects it — unlike a chunk that names its own files.
+	test("a whole-package chunk reacts to any file in its package", () => {
+		const commands = [chunk("demo pkg", "packages/demo", []), chunk("other pkg", "packages/other", [])];
+		expect(selectAffected(commands, ["packages/demo/src/index.ts"]).map(c => c.label)).toEqual(["demo pkg"]);
 	});
 });

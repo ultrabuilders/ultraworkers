@@ -4,6 +4,7 @@ import { readdirSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { $ } from "bun";
 
 type Mode =
 	| "all"
@@ -942,6 +943,92 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	}
 }
 
+// Repo-wide files that can break any suite regardless of which package owns
+// the change: the lockfile pins every dependency, the workspace manifest and
+// the shared TS config feed every build. A diff touching one of these must run
+// everything — the alternative is silently skipping a suite because a rename
+// moved its trigger somewhere the package map does not cover.
+const repoWideAffectedFiles = new Set(["bun.lock", "package.json", "tsconfig.json"]);
+
+// One chunk's worth of test files, recovered from its argv. Chunks are built
+// as `["bun", "test", ...onlyFailuresArgs, ...testFiles]`, so the trailing
+// arguments that are not runner flags are the files. Read back off the command
+// rather than kept in a parallel field so a chunk can never drift between the
+// label it reports and the files it actually runs.
+function chunkTestFiles(testCommand: TestCommand): string[] {
+	// Drop the `bun test` invocation prefix before reading the argv as files.
+	// Filtering on "not a flag" alone is not enough: it keeps the runner binary
+	// itself, which would make every package-level chunk look like a chunk that
+	// names its own files and so stop reacting to its whole package.
+	const rest = testCommand.command.slice(1);
+	return rest.filter(arg => arg !== "test" && !onlyFailuresArgs.includes(arg) && !arg.startsWith("-"));
+}
+
+// Decides whether a chunk is affected by a diff, given the changed file and
+// the chunk's package root. Returns the reason so the caller can log which
+// file selected which chunk instead of only counting matches.
+function chunkIsAffected(testCommand: TestCommand, changedFile: string): string | undefined {
+	const packageRoot = testCommand.cwd === "." ? "" : `${testCommand.cwd}/`;
+	// A chunk that names its own test files reacts only to those exact files.
+	// Membership, not a path prefix: the chunks of one bucket all share a
+	// package root, so a prefix test would mark every chunk of the bucket
+	// affected the moment any one of its test files changed.
+	const testFiles = chunkTestFiles(testCommand);
+	if (testFiles.length > 0) {
+		return testFiles.includes(
+			changedFile.startsWith(packageRoot) ? changedFile.slice(packageRoot.length) : changedFile,
+		)
+			? "test file"
+			: undefined;
+	}
+	// A chunk that names no files runs its whole package (`bun test` with no
+	// path), so anything under that package — or anything repo-wide — affects it.
+	if (packageRoot === "") return "repo";
+	return changedFile.startsWith(packageRoot) ? "package" : undefined;
+}
+
+// The minimal smoke set run when a diff maps to no test file at all. Named
+// chunks, not a bare `[]`: the point of this path is that a CI job stays
+// distinguishable from a CI job that silently ran nothing. Mirrors the
+// `ci:test:smoke` root script so the fallback is the same work that script
+// already gates on.
+function smokeCommands(): TestCommand[] {
+	return [
+		{
+			label: "smoke: cli boots (--version/--help)",
+			cwd: ".",
+			command: ["bun", "packages/coding-agent/src/cli.ts", "--version"],
+		},
+		{
+			label: "smoke: worker ping (--smoke-test)",
+			cwd: ".",
+			command: ["bun", "packages/coding-agent/src/cli.ts", "--smoke-test"],
+		},
+	];
+}
+
+// Chooses the chunks a diff actually exercises. `changedFiles` empty means
+// "no diff was supplied", which is the local/no-CI case and must keep today's
+// behaviour of running everything. A diff that was supplied but matches no
+// test returns the named smoke set instead of `[]`, because an empty selection
+// would be indistinguishable from a CI job that ran nothing and passed.
+export function selectAffected(commands: TestCommand[], changedFiles: string[] | undefined): TestCommand[] {
+	if (!changedFiles) return commands;
+	const normalized = changedFiles.map(file => file.replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean);
+	const repoWide = normalized.filter(file => repoWideAffectedFiles.has(file.split("/").pop() ?? ""));
+	if (repoWide.length > 0) return commands;
+
+	const selected = new Set<TestCommand>();
+	for (const changedFile of normalized) {
+		for (const testCommand of commands) {
+			if (chunkIsAffected(testCommand, changedFile)) {
+				selected.add(testCommand);
+			}
+		}
+	}
+	return selected.size > 0 ? [...selected] : smokeCommands();
+}
+
 // `OMP_TEST_SHARD=i/n` splits a mode's chunk commands across n CI jobs; job i
 // runs every chunk whose index ≡ i-1 (mod n). Round-robin rather than
 // contiguous ranges because the chunk list follows sorted file order, so slow
@@ -963,6 +1050,113 @@ export function selectShard<T>(commands: T[], spec: string | undefined): T[] {
 	return selected;
 }
 
+// Changed-file list for the selector. Two sources, in priority order:
+// `OMP_TEST_AFFECTED` is a newline/comma-separated list some caller already
+// computed; `OMP_TEST_DIFF_BASE` is a commit the workflow can see the PR's
+// merge base through (`github.event.pull_request.base.sha`), fetched shallow
+// because CI checks out depth 1. With neither, the working tree is the diff.
+// Every failure returns "no diff", which runs everything — a diff nobody could
+// compute must never turn into a suite nobody ran.
+async function changedFilesForSelection(): Promise<string[] | undefined> {
+	const supplied = Bun.env.OMP_TEST_AFFECTED?.trim();
+	if (supplied) {
+		return supplied
+			.split(/[\n,]/)
+			.map(file => file.trim())
+			.filter(Boolean);
+	}
+	// Set but empty is the same "caller had nothing to give" shape as a blank
+	// base, and must resolve the same way: run everything. Falling through to
+	// the working tree here would make the two spellings of "no diff" disagree,
+	// and a caller cannot tell which one it used.
+	if (Bun.env.OMP_TEST_AFFECTED !== undefined) return undefined;
+
+	const base = Bun.env.OMP_TEST_DIFF_BASE;
+	if (base !== undefined) {
+		// Set but blank means the workflow had no PR base to diff against — a
+		// push to main. That is a full run, never a narrow one: main has no
+		// "changed files" to narrow by, and falling through to the working
+		// tree there would read CI's clean checkout as "nothing changed".
+		const trimmedBase = base.trim();
+		if (!trimmedBase) return undefined;
+		const fetched = await $`git fetch --no-tags --depth=1 origin ${trimmedBase}`.cwd(repoRoot).quiet().nothrow();
+		if (fetched.exitCode !== 0) {
+			console.warn(`Warning: failed to fetch diff base ${trimmedBase}. Running every chunk.`);
+			return undefined;
+		}
+		const diff = await $`git diff --name-only ${trimmedBase}...HEAD`.cwd(repoRoot).quiet().nothrow();
+		if (diff.exitCode !== 0) {
+			console.warn(`Warning: failed to diff against ${trimmedBase}. Running every chunk.`);
+			return undefined;
+		}
+		return new TextDecoder()
+			.decode(diff.stdout)
+			.split("\n")
+			.map(file => file.trim())
+			.filter(Boolean);
+	}
+
+	// Local runs have no merge base, so the working tree is the diff. Same
+	// porcelain shape and same conservative fallback as run-rs-task.ts.
+	const result = await $`git status --porcelain -z`.cwd(repoRoot).quiet().nothrow();
+	if (result.exitCode !== 0) {
+		const stderr = result.stderr.toString().trim();
+		const suffix = stderr === "" ? `exit ${result.exitCode}` : stderr;
+		console.warn(`Warning: failed to inspect the diff: ${suffix}. Running every chunk.`);
+		return undefined;
+	}
+	return getChangedPathsFromPorcelain(result.stdout);
+}
+
+function getChangedPathsFromPorcelain(buf: Uint8Array): string[] {
+	const entries = new TextDecoder().decode(buf).split("\0").filter(Boolean);
+	const changedPaths: string[] = [];
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		if (entry.length < 4) continue;
+		const status = entry.slice(0, 2);
+		const changedPath = entry.slice(3);
+		if (changedPath !== "") {
+			changedPaths.push(changedPath);
+		}
+		if (status.includes("R") || status.includes("C")) {
+			const renamedPath = entries[index + 1];
+			if (renamedPath) {
+				changedPaths.push(renamedPath);
+				index += 1;
+			}
+		}
+	}
+	return changedPaths;
+}
+
+// The per-file mapping lines. Printed one line per changed file — never just
+// a count — because a count cannot tell a reader *which* file fell through the
+// selector, and "the diff had files but none mapped" is the exact shape of the
+// bug this path can introduce.
+function reportDiffSelection(
+	allCommands: TestCommand[],
+	changedFiles: string[] | undefined,
+	selected: TestCommand[],
+): void {
+	if (!changedFiles) {
+		console.log(`diff files: 0 (no diff available) -> running every chunk (${selected.length})`);
+		return;
+	}
+	console.log(`diff files: ${changedFiles.length}`);
+	const normalized = changedFiles.map(file => file.replace(/\\/g, "/").replace(/^\.\//, ""));
+	for (const changedFile of normalized) {
+		const matched = allCommands.filter(testCommand => chunkIsAffected(testCommand, changedFile));
+		console.log(
+			`  ${changedFile} -> ${matched.length > 0 ? matched.map(c => c.label).join(", ") : "(no test covers this)"}`,
+		);
+	}
+	const usedSmoke = selected.length > 0 && selected.every(testCommand => testCommand.label.startsWith("smoke:"));
+	if (usedSmoke || selected.length === 0) {
+		console.log(`selector empty for this diff -> running minimal smoke: ${selected.map(c => c.label).join(", ")}`);
+	}
+}
+
 // Skipped when imported (e.g. by the runner's own unit tests), where
 // `process.argv` carries test-file paths rather than a mode/flags.
 if (import.meta.main) {
@@ -972,7 +1166,20 @@ if (import.meta.main) {
 		);
 	}
 
-	const requestedCommands = selectShard(await commandsForMode(requestedMode as Mode), Bun.env.OMP_TEST_SHARD);
+	const allCommands = await commandsForMode(requestedMode as Mode);
+	// Sharding is reported before the diff filter runs, so a wrong chunk set is
+	// visible as a sharding-layer problem rather than a selector-layer one.
+	const shardSpec = Bun.env.OMP_TEST_SHARD?.trim();
+	const shardedCommands = selectShard(allCommands, shardSpec);
+	console.log(`shard ${shardSpec ?? "(unset)"} of ${allCommands.length} chunks -> ${shardedCommands.length} selected`);
+	const changedFiles = await changedFilesForSelection();
+	const affectedCommands = selectAffected(shardedCommands, changedFiles);
+	reportDiffSelection(allCommands, changedFiles, affectedCommands);
+	const smokeFallback = changedFiles !== undefined && affectedCommands.every(c => c.label.startsWith("smoke:"));
+	console.log(
+		`selected=${affectedCommands.length} mode=${changedFiles === undefined ? "shard-only" : smokeFallback ? "smoke" : "diff"}`,
+	);
+	const requestedCommands = affectedCommands;
 	const explicitConcurrency = Boolean(Bun.env.OMP_TEST_CONCURRENCY?.trim());
 	// CI defaults to one process at a time, but memory-sized workflow buckets
 	// explicitly opt into bounded process concurrency. Local runs fan out by
@@ -989,4 +1196,8 @@ if (import.meta.main) {
 			await runTestCommand(testCommand);
 		}
 	}
+	// The conclusion line pairs the selection with what it cost. Without the
+	// exit code a green job and a job that selected nothing are both just
+	// "CI passed" in the log.
+	console.log(`exit=${process.exitCode ?? 0}`);
 }

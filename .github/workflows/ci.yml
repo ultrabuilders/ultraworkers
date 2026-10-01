@@ -591,6 +591,7 @@ jobs:
            env:
               OMP_TEST_CONCURRENCY: "4"
               OMP_TEST_SHARD: ${{ matrix.shard }}
+              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:native
 
    test_workspace:
@@ -609,6 +610,7 @@ jobs:
          - name: Test workspace packages and repo scripts (TS)
            env:
               OMP_TEST_CONCURRENCY: "4"
+              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: |
               bun run ci:test:ts:workspace
               # Not `test:scripts`: scripts/musl-release.test.ts fails on main
@@ -632,6 +634,8 @@ jobs:
          - name: Test coding-agent singleton/global-state bucket
            # Keep global Settings/env/fake-timer tests serial; native addon
            # artifacts are still available like every other coding-agent bucket.
+           env:
+              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:singleton
 
    test_ts_native:
@@ -650,6 +654,7 @@ jobs:
          - name: Test native/TUI/browser-ish packages (TS)
            env:
               OMP_TEST_CONCURRENCY: "4"
+              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:ts:native
 
    test_coding_agent_ui:
@@ -668,6 +673,7 @@ jobs:
          - name: Test coding-agent UI/TUI bucket
            env:
               OMP_TEST_CONCURRENCY: "2"
+              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:ui
 
    test_coding_agent_runtime:
@@ -688,6 +694,7 @@ jobs:
            # separate for concurrency, not as a native-free guardrail.
            env:
               OMP_TEST_CONCURRENCY: "4"
+              OMP_TEST_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
            run: bun run ci:test:coding-agent:runtime
 
    test_smoke:

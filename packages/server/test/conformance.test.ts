@@ -313,13 +313,24 @@ describe("Session protocol", () => {
 		const harness = host.latestHarness("session-1");
 		const gate = harness.gateNextServiceCall();
 		const calling = client.requestSessionService(serverId, "session-1", sessionCall("run"));
-		const disconnectedCall = expect(calling).rejects.toThrow(/closed/i);
+		// `calling` is still pending here and only rejects once the client
+		// disconnects, so this cannot use `expect(calling).rejects`: on Bun
+		// 1.3.14 that matcher settles only when the rejection has already
+		// happened when it is created, and never settles otherwise (reproduced
+		// in test/tmp-repro.test.ts, probe C). Capturing the rejection and
+		// asserting on it afterwards asserts the same contract.
+		let callError: unknown;
+		const disconnectedCall = calling.catch((error: unknown) => {
+			callError = error;
+		});
 		await gate.entered.promise;
 
 		await client.close();
 		expect(harness.attachedClients).toBe(1);
 		gate.release.resolve(undefined);
 		await disconnectedCall;
+		expect(callError).toBeInstanceOf(Error);
+		expect((callError as Error).message).toMatch(/closed/i);
 		await waitFor(() => expect(harness.attachedClients).toBe(0));
 	});
 
@@ -491,6 +502,13 @@ describe("routed Session acquisition failures", () => {
 		await client.hello();
 		const gate = host.gateNextOpenSession();
 		const attach = client.attach(serverId, "session-1");
+		// `attach` rejects from the same synchronous teardown that settles
+		// `closing`, but its expectation is not reached until two awaits later.
+		// Bun reports a rejection that lands with no handler attached as an
+		// unhandled rejection and fails the test even though the assertion below
+		// passes. This marks it handled at creation; `attach` itself still
+		// rejects, so the assertion is unchanged.
+		attach.catch(() => {});
 		await gate.entered.promise;
 
 		const closing = server.close();

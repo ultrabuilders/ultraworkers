@@ -340,11 +340,15 @@ function isSocketLive(path: string): Promise<boolean> {
 	return new Promise<boolean>((resolve, reject) => {
 		const socket = createConnection(path);
 		let settled = false;
-		const timerBox: { current?: NodeJS.Timeout } = {};
+		// `timer` and `finish` are mutually referential and neither is invoked
+		// before both are bound: the timeout fires on a macrotask, and the
+		// listeners below are registered after both declarations.
+		const timer = setTimeout(() => finish(true), SOCKET_PROBE_TIMEOUT_MS);
+		timer.unref();
 		const finish = (result: boolean, error?: Error): void => {
 			if (settled) return;
 			settled = true;
-			if (timerBox.current) clearTimeout(timerBox.current);
+			clearTimeout(timer);
 			socket.removeAllListeners();
 			socket.destroy();
 			if (error) reject(error);
@@ -358,8 +362,6 @@ function isSocketLive(path: string): Promise<boolean> {
 			}
 			finish(false, error);
 		});
-		timerBox.current = setTimeout(() => finish(true), SOCKET_PROBE_TIMEOUT_MS);
-		timerBox.current.unref();
 	});
 }
 

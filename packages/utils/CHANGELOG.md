@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The installed command is now `ultraworkers` instead of `omp`, and the worker selector namespace moved with it (`__omp_worker_*` → `__ultraworkers_worker_*`). `WIRE_NAME` is the single constant every internal reference derives from, so the user-facing command, the `User-Agent` sent to integrations and the internal argv selectors now agree on one identity. The separate `omp-stats` command keeps its name.
+
+
 ### Added
 
 - `errorMessage(value)` — turns any thrown value into text and never throws, so it is safe

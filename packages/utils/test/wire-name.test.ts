@@ -8,7 +8,7 @@ describe("WIRE_NAME", () => {
 	// once, and nothing in those packages would fail — they would just start sending
 	// a name their peers do not recognise.
 	it("pins the shared wire identity to the value the DAP, Warp, ACP and puush integrations are golden-pinned to", () => {
-		expect(WIRE_NAME).toBe("omp");
+		expect(WIRE_NAME).toBe("ultraworkers");
 	});
 
 	it("is still the name an installer puts on PATH", async () => {

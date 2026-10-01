@@ -48,7 +48,7 @@ import {
 import { AsyncJobManager } from "./async";
 import { AutoLearnController, buildAutoLearnInstructions } from "./autolearn/controller";
 import { createAutoresearchExtension } from "./autoresearch";
-import { invalidateAllCaches, loadCapability } from "./capability";
+import { invalidateAllCaches, loadCapability, unregisterProvidersForSource } from "./capability";
 import {
 	MAIN_AGENT_RULE_NAME,
 	type Rule,
@@ -4803,6 +4803,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 						if (modelRegistry.providerSource(name) !== extension.path) continue;
 						modelRegistry.unregisterProvider(name);
 					}
+					// Capability providers withdraw on the same signal, keyed by the
+					// same `path` the model registry uses as a source id. This is inert
+					// today — nothing registers a capability provider with a `sourceId`
+					// yet — and it is here so that WI-10 has the seam rather than
+					// having to add the call site at the same time it adds the caller.
+					unregisterProvidersForSource(extension.path);
 				}
 				for (const extension of resumed) {
 					for (const { name, config } of extension.registeredProviders) {

@@ -39,6 +39,23 @@ const providerCapabilities = new Map<string, Set<string>>();
 /** Provider display metadata (shared across capabilities) */
 const providerMeta = new Map<string, { displayName: string; description: string }>();
 
+/**
+ * Which extension source registered each capability provider, and the reverse.
+ *
+ * Deliberately the same shape as the model registry's
+ * `#runtimeProvidersBySource` / `#runtimeProviderSourceByName`
+ * (`config/model-registry.ts:304-305`), so both registries answer "which
+ * source owns this name, and what did it register" by the same lookup rather
+ * than by a second invention. A source id is an extension `path`, the same
+ * value the model registry keys on.
+ *
+ * Absent entry means "registered without attribution" — the 84 call sites that
+ * pass no `sourceId`. Those are core registrations, and they are deliberately
+ * not reachable through {@link unregisterProvidersForSource}.
+ */
+const providersBySource = new Map<string, Set<string>>();
+const providerSourceByName = new Map<string, string>();
+
 /** Provider switches in effect while no settings instance is bound ({@link initializeWithSettings}). */
 let unboundDisabledProviders = new Set<string>();
 let unboundEnabledProviders = new Set<string>();
@@ -97,8 +114,23 @@ export function defineCapability<T>(def: Omit<Capability<T>, "providers">): Capa
 
 /**
  * Register a provider for a capability.
+ *
+ * `sourceId` is the extension that contributed it, and is optional on purpose:
+ * the overwhelming majority of call sites register core providers and pass
+ * nothing. Two rules follow from that, both ported from the model registry's
+ * `registerProvider` (`config/model-registry.ts:3077-3094`):
+ *
+ * - **No `sourceId` means no attribution.** The provider is registered and is
+ *   not reachable from {@link unregisterProvidersForSource}, so a teardown
+ *   aimed at one extension can never remove a core provider.
+ * - **A `sourceId` claims ownership, taking it from whoever held it.** When a
+ *   second source registers the same provider id, the previous owner is evicted
+ *   from its set and the reverse entry is dropped before the new one is
+ *   recorded. Without that handoff, `providerSourceByName` would keep naming
+ *   the old source, and tearing that source down would delete a provider the
+ *   new source still needs.
  */
-export function registerProvider<T>(capabilityId: string, provider: Provider<T>): void {
+export function registerProvider<T>(capabilityId: string, provider: Provider<T>, sourceId?: string): void {
 	const capability = capabilities.get(capabilityId);
 	if (!capability) {
 		throw new Error(`Unknown capability: "${capabilityId}". Define it first with defineCapability().`);
@@ -125,6 +157,25 @@ export function registerProvider<T>(capabilityId: string, provider: Provider<T>)
 		providers.push(provider);
 	} else {
 		providers.splice(idx, 0, provider);
+	}
+
+	// Ownership handoff, ported from `config/model-registry.ts:3077-3094`. The
+	// model registry reloads static models when a handoff happens; there is
+	// nothing to reload here, because a capability provider is read from the
+	// array it was just spliced into rather than from a cached projection.
+	if (sourceId) {
+		const previousSourceId = providerSourceByName.get(provider.id);
+		if (previousSourceId && previousSourceId !== sourceId) {
+			const previousProviders = providersBySource.get(previousSourceId);
+			previousProviders?.delete(provider.id);
+			if (previousProviders && previousProviders.size === 0) {
+				providersBySource.delete(previousSourceId);
+			}
+		}
+		const sourceProviders = providersBySource.get(sourceId) ?? new Set<string>();
+		sourceProviders.add(provider.id);
+		providersBySource.set(sourceId, sourceProviders);
+		providerSourceByName.set(provider.id, sourceId);
 	}
 }
 
@@ -579,6 +630,57 @@ export function invalidateAllCaches(): void {
  */
 export function resetRegistry(): void {
 	capabilities.clear();
+}
+
+/**
+ * Remove every capability provider one extension source registered.
+ *
+ * Ported from `ModelRegistry.clearSourceRegistrations`
+ * (`config/model-registry.ts:2966-2980`), including the guard that makes it
+ * safe: a provider id whose ownership has since moved to another source is
+ * skipped rather than removed. A caller acting on a stale record — one
+ * extension's list, read before a handoff — would otherwise delete the new
+ * owner's provider, and the capability would silently lose a provider that is
+ * still live.
+ *
+ * That guard is redundant here and is kept as such. `registerProvider`'s
+ * handoff already drops the id from the previous owner's set, so the lookup
+ * below normally finds an empty map and returns before the guard is reached —
+ * measured, by deleting the guard and watching the suite stay green. It stays
+ * because the two mechanisms can only disagree if a future change adds a
+ * registration path that updates ownership without updating the reverse set,
+ * and the failure that guard prevents is a live extension losing a provider
+ * with no error raised anywhere.
+ *
+ * Providers registered without a `sourceId` are core registrations and are
+ * never reachable from here; see {@link registerProvider}.
+ */
+export function unregisterProvidersForSource(sourceId: string): void {
+	const sourceProviders = providersBySource.get(sourceId);
+	if (!sourceProviders || sourceProviders.size === 0) {
+		return;
+	}
+	providersBySource.delete(sourceId);
+	for (const providerId of sourceProviders) {
+		if (providerSourceByName.get(providerId) !== sourceId) {
+			continue;
+		}
+		providerSourceByName.delete(providerId);
+		for (const capabilityId of providerCapabilities.get(providerId) ?? []) {
+			const capability = capabilities.get(capabilityId);
+			if (!capability) continue;
+			const providers = capability.providers as Provider<unknown>[];
+			const idx = providers.findIndex(p => p.id === providerId);
+			if (idx !== -1) {
+				providers.splice(idx, 1);
+			}
+		}
+		// Safe to drop unconditionally: the loop above removed the provider from
+		// every capability it was registered for, and these two entries only ever
+		// exist for a registered provider.
+		providerCapabilities.delete(providerId);
+		providerMeta.delete(providerId);
+	}
 }
 
 /**

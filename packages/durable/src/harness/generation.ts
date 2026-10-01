@@ -3,7 +3,7 @@ import {
 	type Api,
 	type AssistantMessage,
 	type DeferredHandle,
-	isRetryableAssistantError,
+	isRetryableAssistantMessage,
 	type Message,
 	type Model,
 	retryDelayMs,
@@ -249,7 +249,7 @@ async function classify(
 	const policy = (await runtime.snapshot(ConversationConfig, conversationId, context))?.retry ?? DEFAULT_RETRY_POLICY;
 	const retry =
 		message.stopReason === "error" &&
-		isRetryableAssistantError(message) &&
+		isRetryableAssistantMessage(message) &&
 		policy.enabled &&
 		attempt <= policy.maxRetries;
 	const until = retry ? runtime.now() + retryDelayMs(policy, attempt) : 0;

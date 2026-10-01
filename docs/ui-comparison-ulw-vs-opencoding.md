@@ -8,9 +8,9 @@
 > Extension ULW nhận `ExtensionUiComponentFactory = (tui, theme) => ExtensionUiComponent` — **component của ULW, không phải cây React**.
 > ⇒ **Không chép code được.** Chép *thiết kế*, viết lại trên primitive ULW.
 
-> ⚠️ **Cột "Làm được bằng extension?"** — ô ✅ nghĩa là qua `setWidget`/`setHeader`/`setFooter`/`setEditorComponent`,
+> ⚠️ **Cột "Làm được băng extension?"** — ô ✅ nghĩa là qua `setWidget`/`setHeader`/`setFooter`/`setEditorComponent`,
 > **làm được ngay hôm nay**. Ô ❌ nghĩa là cần `registerEntryRenderer` (0 hit ở ULW, bead `m2-wi-16` đang `deferred`).
-> Ô 🔒 nghĩa là thuộc `PromptInput`/editor — thay được nhưng phải thay cả ô nhập.
+> Ô 🔒 nghĩa là **nằm ngoài mọi seam** — không phải chờ việc bao trọn `pi`, mà là việc chưa tồn tại.
 
 Ô trống = **bên đó không có**.
 
@@ -44,19 +44,32 @@
 
 ## B. Ô nhập
 
+> ℹ️ **Vùng này tôi đã đánh dấu 🔒 sai lần đầu.** Nguyên nhân: tôi suy từ "nó thuộc editor" mà không kiểm
+> `setEditorComponent` đã tồn tại. Nó **có**, ở HEAD, không chờ bead nào (`types.ts:414`,
+> `interactive-mode.ts:6772`, `extension-ui-controller.ts:205`, `unavailable-ui.ts:74`).
+> `CustomEditor` là **subpath public**: `packages/tui/package.json` có `"./*": "./src/*.ts"`, nên
+> `@oh-my-pi/pi-tui/prompt/custom-editor` import được từ ngoài repo.
+> Đo trong `custom-editor.ts`: shimmer **18** hit, queue **33**, chips **8**, placeholder **3**.
+> ⇒ Tất cả nằm trong `CustomEditor` → ✅ hết.
+>
+> **Cái giới hạn thật:** core **gán đè** sau khi factory trả về (`interactive-mode.ts:6791+`) —
+> `placeholder`, `composerState`, `attachmentChips`, `imageReferenceHyperlink`, `skillFilePath`,
+> `modelMentionLabel`, `magicKeywordsEnabled`, viewport, vim, spelling. Thay editor ≠ mua được
+> `placeholder` tuỳ ý; phải đi qua closure core đặt sẵn.
+
 | Chức năng | ULW | opencoding | Extension? |
 |---|---|---|---|
-| Ô nhập chính | `tui/prompt/composer.ts` (42 KB) + `tui/components/editor.ts` (**174 KB**) | `PromptInput/PromptInput.tsx` (**96.3 KB**) | 🔒 |
+| Ô nhập chính | `tui/prompt/composer.ts` (42 KB) + `tui/components/editor.ts` (**174 KB**) | `PromptInput/PromptInput.tsx` (**96.3 KB**) | ✅ |
 | Chân ô nhập | `tui/status-line/footer.ts` (15 KB) | `PromptInput/PromptInputFooter.tsx` (15.5) + `PromptInputFooterLeftSide.tsx` (25.4) + `PromptInputFooterSuggestions.tsx` (7.6) | 🔒 |
-| Thông báo trong ô nhập | `tui/prompt/composer-attachments.ts` | `PromptInput/Notifications.tsx` (10.6) | 🔒 |
-| Chip đính kèm | `tui/prompt/attachment-chips.ts` (11 KB) | | |
-| Gợi ý nơi nhập | `tui/prompt/welcome.ts` (32 KB) | `usePromptInputPlaceholder.ts` (2.3) | 🔒 |
-| Ô nhập lấp lánh | `tui/theme/shimmer.ts` (12 KB) | `PromptInput/ShimmeredInput.tsx` (4.0) | 🔒 |
-| Lệnh đã xếp hàng | `tui/prompt/queued-messages.ts` (3.2) | `PromptInput/PromptInputQueuedCommands.tsx` (5.5) | 🔒 |
-| Chỉ báo chế độ | `tui/prompt/input-modes` | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | 🔒 |
-| Mic | `tui/prompt/video.ts` (1.5) | `PromptInput/VoiceIndicator.tsx` (2.0) | |
-| Menu trợ giúp | `tui/prompt/composer-hints.ts` (3.0) | `PromptInput/PromptInputHelpMenu.tsx` (4.7) | 🔒 |
-| Cảnh báo sandbox | | `PromptInput/SandboxPromptFooterHint.tsx` (1.7) | |
+| Thông báo trong ô nhập | `tui/prompt/composer-attachments.ts` | `PromptInput/Notifications.tsx` (10.6) | ✅ |
+| Chip đính kèm | `tui/prompt/attachment-chips.ts` (11 KB) | | ✅ |
+| Gợi ý nơi nhập | `tui/prompt/welcome.ts` (32 KB) | `usePromptInputPlaceholder.ts` (2.3) | ✅ |
+| Ô nhập lấp lánh | `tui/theme/shimmer.ts` (12 KB) | `PromptInput/ShimmeredInput.tsx` (4.0) | ✅ |
+| Lệnh đã xếp hàng | `tui/prompt/queued-messages.ts` (3.2) | `PromptInput/PromptInputQueuedCommands.tsx` (5.5) | ✅ |
+| Chỉ báo chế độ | `tui/status-line/segments.ts` (badge plan/bypass — không có file `input-modes`) | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | 🔒 |
+| Mic | `tui/prompt/video.ts` (1.5) | `PromptInput/VoiceIndicator.tsx` (2.0) | ✅ |
+| Menu trợ giúp | `tui/prompt/composer-hints.ts` (3.0) | `PromptInput/PromptInputHelpMenu.tsx` (4.7) | ✅ |
+| Cảnh báo sandbox | | `PromptInput/SandboxPromptFooterHint.tsx` (1.7) | 🔒 |
 | Autocomplete ký tự | `tui/prompt/word-completion.ts` (8.6) + `macos-spelling.ts` (13 KB) | | |
 | Autocomplete emoji | `tui/prompt/emoji-autocomplete.ts` (9.2) | | |
 | Autocomplete model | `tui/prompt/model-mention-autocomplete.ts` (4.2) | | |
@@ -175,5 +188,22 @@
 | Chép code được? | — | ❌ **không** |
 | Làm bằng extension hôm nay | ✅ | ~373/418 file |
 | Cần `m2-wi-16` trước | — | `messages/` 45 file (147 KB) + nhóm E |
+
+### Trả lời: "làm bao trọn `pi` thì 🔒 có mở không?"
+
+**Vùng ô nhập (nhóm B): không — và không cần.** 🔒 ở đó là tôi đánh dấu sai ở lần đầu.
+`setEditorComponent` đã có sẵn ở HEAD. **Bao trọn `pi` không mở thêm khoá nào ở nhóm B.**
+
+**Bao trọn `pi` mở vùng hội thoại (nhóm A)** — qua `registerEntryRenderer`, bead `m2-wi-16`.
+
+### Còn đúng 3 dòng 🔒, và cả 3 **không** thuộc phạm vi bao trọn `pi`
+
+| Dòng | Vì sao không phải việc bù thiếu của `pi` |
+|---|---|
+| Chân ô nhập (`status-line/footer.ts`) | Nó là `Container` riêng của composer (`composer.ts:227` `extensionFooter`), **không** nằm trong `CustomEditor`. `setFooter` của extension nhắm vào `extensionFooter` — **không phải** file này. |
+| Chỉ báo chế độ | Badge plan/bypass nằm ở `status-line/segments.ts`. Cùng lý do dòng trên. |
+| Cuộn (`ScrollKeybindingHandler` 46 KB) | Hành vi phím **toàn cục**, không ai đăng ký được. `pi` cũng không có seam cho nó. |
+
+Cả 3 là **việc mới**, không phải thứ `pi` đã làm mà ta chưa copy.
 
 **Hai bên đều có** `todo` và `websearch` — ULW có bản riêng (`todo.ts` 27 KB, `web-search.ts` 14 KB), opencoding render chung trong `messageActions.tsx`. **Ở phần này nên giữ UI của ULW**, đúng như bạn nói.

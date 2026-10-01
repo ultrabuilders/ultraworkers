@@ -179,8 +179,34 @@ describe("extensions triage over a real discovery tree", () => {
 
 		const discovered = filterUserScoped(await loadAllExtensions(projectDir), [projectDir, homeDir]);
 		const rows = discovered.map(toTriageRow);
-		const states: ExtensionState[] = ["active", "disabled", "shadowed"];
-		const reasons: DisabledReason[] = ["provider-disabled", "user-opt-in", "item-disabled", "shadowed"];
+		const states = ["active", "disabled", "shadowed", "modified"] as const;
+		const reasons = [
+			"provider-disabled",
+			"user-opt-in",
+			"item-disabled",
+			"shadowed",
+			"hook-modified",
+		] as const satisfies readonly DisabledReason[];
+
+		// Exhaustive by construction — see the same guard in
+		// extensions-triage-cli.test.ts. Without it this list is just a copy that
+		// can fall behind the union while still passing: a short array assigned
+		// to a union typechecks, so a member added to `ExtensionState` after this
+		// file was written would leave `toContain(row.state)` rejecting every row
+		// that legitimately carried it.
+		const _statesExhaustive: Record<ExtensionState, true> = {
+			active: true,
+			disabled: true,
+			shadowed: true,
+			modified: true,
+		};
+		const _reasonsExhaustive: Record<DisabledReason, true> = {
+			"provider-disabled": true,
+			"user-opt-in": true,
+			"item-disabled": true,
+			shadowed: true,
+			"hook-modified": true,
+		};
 
 		expect(rows.length).toBeGreaterThan(0);
 		// Guard the premise: if the tree stopped producing a blocked row this

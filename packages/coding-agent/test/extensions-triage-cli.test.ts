@@ -77,8 +77,34 @@ describe("extensions triage projection", () => {
 	it("preserves states and reasons that are real union members, not free strings", () => {
 		// The row widens nothing: if the projection invented a state or a reason,
 		// a consumer switching on it would silently miss a branch.
-		const states: ExtensionState[] = ["active", "disabled", "shadowed"];
-		const reasons: DisabledReason[] = ["provider-disabled", "user-opt-in", "item-disabled", "shadowed"];
+		const states = ["active", "disabled", "shadowed", "modified"] as const;
+		const reasons = [
+			"provider-disabled",
+			"user-opt-in",
+			"item-disabled",
+			"shadowed",
+			"hook-modified",
+		] as const satisfies readonly DisabledReason[];
+
+		// Exhaustive by construction. A plain `ExtensionState[]` annotation would
+		// not catch a missing member — a short array assigned to a union
+		// typechecks fine — which is how this list came to be missing `modified`
+		// while still passing, and stopped checking the union it names. These two
+		// objects are a compile error the moment a member is added to either
+		// union without being added here.
+		const _statesExhaustive: Record<ExtensionState, true> = {
+			active: true,
+			disabled: true,
+			shadowed: true,
+			modified: true,
+		};
+		const _reasonsExhaustive: Record<DisabledReason, true> = {
+			"provider-disabled": true,
+			"user-opt-in": true,
+			"item-disabled": true,
+			shadowed: true,
+			"hook-modified": true,
+		};
 
 		for (const state of states) {
 			expect(toTriageRow(extension({ id: `skill:s-${state}`, state })).state).toBe(state);

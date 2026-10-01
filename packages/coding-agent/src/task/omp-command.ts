@@ -13,6 +13,10 @@ interface OmpCommand {
 // place; a literal here stays right until the binary is renamed, then silently
 // spawns a command that does not exist. `W9.spec.json` recommended APP_NAME --
 // that is the wrong constant: it is display identity.
+//
+// Keep it WIRE_NAME even after the binary is renamed to `ultraworkers`: the two
+// constants then happen to agree, but they agree by coincidence, not by logic. The
+// next rename would break APP_NAME again and leave this line correct.
 export const DEFAULT_CMD = `${WIRE_NAME}${process.platform === "win32" ? ".cmd" : ""}`;
 const DEFAULT_SHELL = process.platform === "win32";
 

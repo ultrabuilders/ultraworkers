@@ -18,8 +18,17 @@ import { expandWindowsLongPath } from "@oh-my-pi/pi-natives/path";
 import { engines, version } from "../package.json" with { type: "json" };
 import { isEnoent, isEnotdir } from "./fs-error";
 
-/** App name (e.g. "omp") */
-export const APP_NAME: string = "omp";
+/**
+ * Display name of the app: what the user sees in help text, `process.title`,
+ * notification titles and log filenames.
+ *
+ * Deliberately NOT where state lives. The config root is resolved through
+ * {@link CONFIG_DIR_CANDIDATES} and {@link XDG_CONFIG_DIR_CANDIDATES}, both frozen
+ * lists that already carry the old spelling for migration — so flipping this
+ * value moves the app's identity without moving a single byte of user data.
+ * Keep it that way: nothing that decides *where to store* may read this.
+ */
+export const APP_NAME: string = "ultraworkers";
 
 /** Wire identity — the third-party contract value; do not change without a compatibility decision. */
 export const WIRE_NAME: string = "omp";
@@ -398,18 +407,43 @@ export function __resetConfigDirCacheForTests(): void {
 let cachedConfigReadRootName: string | undefined;
 
 /**
- * The home-scoped config root a READ should use: the first candidate that
- * exists on disk, so an existing install keeps resolving where its state is.
+ * The home-scoped config root a READ should use, chosen in priority order so an
+ * unrelated directory cannot capture the install:
+ *
+ *   1. the first candidate that actually holds a main config file — evidence it
+ *      is a config root, not just a directory somebody created;
+ *   2. otherwise the first candidate that exists — the pre-migration behaviour,
+ *      kept as a fallback so an install whose config predates every candidate
+ *      spelling still resolves where its state is rather than reading empty;
+ *   3. otherwise the write root, so a fresh install gets the canonical name.
+ *
+ * Step 1 is what makes the rule safe. "First that exists" alone is not a config
+ * root test: `getInstallId` and `adoptLegacyFile` both `mkdirSync` the canonical
+ * parent as a side effect, so merely *asking* a question could create an empty
+ * directory that then won the next read — and omp would read an empty config
+ * while a full one sat in the legacy root. A directory created that way holds no
+ * config file, so it loses step 1 and the real root wins.
+ *
+ * The marker is ANY name in {@link MAIN_CONFIG_FILENAMES}, not just the first.
+ * Writes always target `MAIN_CONFIG_FILENAMES[0]`, but every read path loops the
+ * whole list, so a root holding only the `.yaml` spelling is a legitimate config
+ * root — keying on `[0]` alone would ignore exactly that install.
  *
  * Cached for the process lifetime because a config root that moves mid-process
  * is worse than one that is briefly stale — and every caller that can change
  * the answer (`refreshDirsFromEnv`, `setAgentDir`, `setProfile`) clears it.
- * Falls through to the write root when nothing exists, so a fresh install gets
- * the canonical name rather than the legacy one.
  */
 export function getConfigReadRootName(): string {
 	if (cachedConfigReadRootName !== undefined) return cachedConfigReadRootName;
 	const home = os.homedir();
+	for (const candidate of getConfigDirCandidates()) {
+		try {
+			if (hasMainConfigFile(path.join(home, candidate))) {
+				cachedConfigReadRootName = candidate;
+				return candidate;
+			}
+		} catch {}
+	}
 	for (const candidate of getConfigDirCandidates()) {
 		try {
 			if (fs.existsSync(path.join(home, candidate))) {
@@ -419,6 +453,38 @@ export function getConfigReadRootName(): string {
 		} catch {}
 	}
 	return getConfigWriteRootName();
+}
+
+/**
+ * True when this config root holds a main config file somewhere omp would
+ * actually read one from.
+ *
+ * The file lives in the root's **agent** directory, not the root itself —
+ * `<root>/agent/config.yml`, or `<root>/profiles/<profile>/agent/config.yml`
+ * when a profile is active — because every reader joins MAIN_CONFIG_FILENAMES
+ * onto `#agentDir`. Probing the root directly would find nothing on a real
+ * install and silently fall through to the next candidate.
+ *
+ * Both levels are checked so the probe does not depend on which profile happens
+ * to be active at the moment the root is resolved: a root is a config root
+ * because it holds config, not because the caller is currently looking at it.
+ */
+function hasMainConfigFile(configDir: string): boolean {
+	const agentDirs = [path.join(configDir, "agent")];
+	try {
+		const profilesDir = path.join(configDir, "profiles");
+		for (const entry of fs.readdirSync(profilesDir, { withFileTypes: true })) {
+			if (entry.isDirectory()) agentDirs.push(path.join(profilesDir, entry.name, "agent"));
+		}
+	} catch {}
+	for (const dir of agentDirs) {
+		for (const filename of MAIN_CONFIG_FILENAMES) {
+			try {
+				if (fs.existsSync(path.join(dir, filename))) return true;
+			} catch {}
+		}
+	}
+	return false;
 }
 
 /**
@@ -523,7 +589,10 @@ class DirResolver {
 			state: xdgState ?? this.configRoot,
 			cache: xdgCache ?? this.configRoot,
 		};
-		// XDG flattens the agent/ prefix: ~/.omp/agent/sessions → $XDG_DATA_HOME/omp/sessions
+		// XDG flattens the agent/ prefix: ~/.omp/agent/sessions → $XDG_DATA_HOME/<dir>/sessions,
+		// where <dir> comes from XDG_CONFIG_DIR_CANDIDATES (new spelling first, old
+		// second). Not APP_NAME: that one is display identity only, and these
+		// paths are where user state actually lives.
 		this.#agentDirs = {
 			data: xdgData ?? this.agentDir,
 			state: xdgState ?? this.agentDir,

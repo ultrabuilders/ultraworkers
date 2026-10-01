@@ -16,6 +16,13 @@
  * files live, which is the whole point — this bead exists to move directories,
  * and a gate that pinned paths would red on every legitimate move.
  *
+ * A MANIFEST IS NOT A TREE
+ * -----------------------
+ * `git ls-files` reads the index, so on its own it cannot see a file that was removed
+ * from disk and never staged: the index still lists it, the count holds, and the gate
+ * reports a full directory for one that has lost a file. `measure()` subtracts
+ * `git ls-files --deleted` for exactly that reason — see the comment there.
+ *
  * THREE COUNTERS, NOT ONE
  * -----------------------
  * `prompts/` is not one directory. It is a name repeated across ~29 directories
@@ -54,11 +61,34 @@ const COUNTERS: Counter[] = [
 
 type Counts = Record<string, number>;
 
-async function measure(counter: Counter): Promise<number> {
-	const proc = Bun.spawn(["git", "ls-files", counter.paths], { stdout: "pipe", stderr: "pipe" });
+async function lsFiles(...args: string[]): Promise<string[]> {
+	const proc = Bun.spawn(["git", "ls-files", ...args], { stdout: "pipe", stderr: "pipe" });
 	const out = await new Response(proc.stdout as ReadableStream<Uint8Array>).text();
 	await proc.exited;
-	return out.split("\n").filter(line => line !== "").length;
+	return out.split("\n").filter(line => line !== "");
+}
+
+/**
+ * `git ls-files` reads the INDEX, not the working tree. A file removed from disk but
+ * never staged is still in the index, so the manifest is unchanged and this gate would
+ * report a full directory for one that has lost a file — the exact failure it exists to
+ * prevent, and invisible to a count that only ever goes up. `--deleted` names precisely
+ * the index entries whose file is gone, so subtracting them makes the count describe the
+ * tree as it is rather than as it was staged.
+ *
+ * A `git rm` needs no special case: that drops the index entry, so the count falls on
+ * its own. This catches the half that never reached the index.
+ *
+ * The cost, stated plainly: on a working tree where a deletion is in flight, this now
+ * goes red — locally and before the commit, not just on CI. That is the intended
+ * reading. A missing file is a missing file whether or not anyone has staged it yet,
+ * and this gate is deliberately built to fail when it cannot prove nothing was lost
+ * (see "IT MUST BE RED BOTH WAYS" above).
+ */
+async function measure(counter: Counter): Promise<number> {
+	const listed = await lsFiles(counter.paths);
+	const gone = await lsFiles("--deleted", counter.paths);
+	return listed.length - gone.length;
 }
 
 const current: Counts = {};

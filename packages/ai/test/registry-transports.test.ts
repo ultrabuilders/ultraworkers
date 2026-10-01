@@ -58,7 +58,9 @@ async function valueImportClosure(entry: URL): Promise<string[]> {
 
 		// `import`/`export ... from "<spec>"`, excluding the `import type` form.
 		const source = await Bun.file(file).text();
-		const specifiers = [...source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?!type\s)[^;]*?from\s*["']([^"']+)["']/g)];
+		const specifiers = [
+			...source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?!type\s)[^;]*?from\s*["']([^"']+)["']/g),
+		];
 		for (const [, specifier] of specifiers) {
 			if (!specifier.startsWith(".")) continue;
 			const base = resolve(dirname(file), specifier);
@@ -118,9 +120,9 @@ describe("provider transport registry", () => {
 		const graph = await valueImportClosure(new URL("../src/stream.ts", import.meta.url));
 
 		for (const transport of ["gitlab-duo", "gitlab-duo-workflow", "kimi", "pi-native-client", "synthetic"]) {
-			expect(`${transport}: ${graph.some(file => file.endsWith(`/providers/${transport}.ts`)) ? "IN GRAPH" : "out"}`).toBe(
-				`${transport}: out`,
-			);
+			expect(
+				`${transport}: ${graph.some(file => file.endsWith(`/providers/${transport}.ts`)) ? "IN GRAPH" : "out"}`,
+			).toBe(`${transport}: out`);
 		}
 	});
 

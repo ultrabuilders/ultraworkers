@@ -164,6 +164,21 @@ describe("hook trust", () => {
 		expect((await loadHookPaths(agentDir)).loaded).toEqual([hookPath]);
 	});
 
+	/**
+	 * Timeout is 30s, not Bun's 5s default, because this row spawns THREE cold `bun`
+	 * processes where the others spawn one or two — and each cold process pays ~1.1s
+	 * to load the coding-agent package. Measured: 3.3s of work inside a 5s budget,
+	 * i.e. 33% headroom, against a file whose wall time varied 9.1s–16.1s across five
+	 * identical runs on an idle machine. It failed at 5009ms on a cold run and then
+	 * passed five times running, which is a budget problem rather than a contract
+	 * problem: the same assertions hold every time.
+	 *
+	 * This is NOT a permission to wait longer for a hang. The three spawns are
+	 * inherent — each assertion needs a fresh process, because `os.homedir()` binds at
+	 * process start and the settings singleton is process-wide — so the work cannot be
+	 * collapsed, only budgeted. 30s matches the convention in `cli-unsettled-command`
+	 * and `acp-stdout-hygiene`, which spawn processes too.
+	 */
 	test("a hook that moves to another root keeps loading", async () => {
 		const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-hook-trust-move-")));
 		temps.push(agentDir);
@@ -186,5 +201,5 @@ describe("hook trust", () => {
 		// And the tripwire still fires on a genuine edit at the new location.
 		await Bun.write(path.join(newRoot, hookName), `${HOOK_SOURCE}\n// edited\n`);
 		expect((await loadHookPaths(agentDir, [newRoot])).loaded).toEqual([]);
-	});
+	}, 30_000);
 });

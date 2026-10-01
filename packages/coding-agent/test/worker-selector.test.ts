@@ -8,6 +8,15 @@ import { runCli } from "../src/cli";
 // dispatches any more — and it still passed, because the sentinel assertions
 // nearby match on the same literal.
 import { JS_EVAL_PROCESS_ARG } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
+
+// A selector reaches the dispatcher as argv, so the prefix is a wire value the
+// product owns. Deriving it here keeps these assertions on the name the CLI
+// actually dispatches. The suffix stays a literal because the point of these
+// tests is the *shape* of the name — the negative case is what proves an
+// unrecognized selector fails loudly — and a suffix built from the same
+// constant would make that case assert nothing about the unknown path.
+const UNKNOWN_SELECTOR = `${WORKER_HOST_SELECTOR_PREFIX}does_not_exist`;
 
 // The worker-host re-entry seam dispatches any `__ultraworkers_worker_*` selector to
 // `runWorkerEntrypoint`. An unrecognized selector must fail loudly rather than
@@ -26,10 +35,10 @@ describe("worker selector dispatch", () => {
 	it("fails with a nonzero exit and stderr error on an unknown selector", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-		await runCli(["__ultraworkers_worker_does_not_exist"]);
+		await runCli([UNKNOWN_SELECTOR]);
 
 		expect(process.exitCode).toBe(1);
-		expect(stderr).toHaveBeenCalledWith("Error: unknown worker selector: __ultraworkers_worker_does_not_exist\n");
+		expect(stderr).toHaveBeenCalledWith(`Error: unknown worker selector: ${UNKNOWN_SELECTOR}\n`);
 	});
 	it("declares workerHostEntry in process entry before dispatching worker selector", async () => {
 		const repoRoot = path.resolve(__dirname, "../../..");
@@ -43,7 +52,7 @@ describe("worker selector dispatch", () => {
 				process.stdout.write("ENTRY=" + (workerHostEntry() ?? "null"));
 				process.exit(0);
 				`,
-				"__ultraworkers_worker_does_not_exist",
+				UNKNOWN_SELECTOR,
 			],
 			cwd: repoRoot,
 			env: { ...process.env, PI_COMPILED: "true" },

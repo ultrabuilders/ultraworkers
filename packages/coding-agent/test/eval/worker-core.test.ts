@@ -102,7 +102,18 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __omp_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__omp_worker_core_gate = {
+		// `__ultraworkers_worker_core_gate` (and `__ultraworkers_worker_cwd_gate` below)
+		// share the `__ultraworkers_worker_` prefix with the real dispatch selectors, but
+		// they are NOT selectors: nothing in `cli/worker-selectors.ts` or the `cli.ts`
+		// dispatch table names them, and they are never passed as argv. They are globals
+		// this file installs so a worker script can block at a chosen point and let the
+		// test observe the worker mid-operation. The shared prefix is coincidental, so
+		// these stay literal — deriving them from `WORKER_HOST_SELECTOR_PREFIX` would
+		// imply a dispatch relationship that does not exist, and would break silently if
+		// a selector of that name were ever added.
+		(
+			globalThis as { __ultraworkers_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__ultraworkers_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -112,7 +123,7 @@ describe("WorkerCore", () => {
 			first.send({
 				type: "run",
 				runId: "hold-for-reinit",
-				code: "globalThis.__omp_worker_core_gate.entered(); await globalThis.__omp_worker_core_gate.wait;",
+				code: "globalThis.__ultraworkers_worker_core_gate.entered(); await globalThis.__ultraworkers_worker_core_gate.wait;",
 				filename: "[reinit-first].js",
 				snapshot: { cwd, sessionId: "reinit-first", localRoots: {} },
 			});
@@ -151,8 +162,8 @@ describe("WorkerCore", () => {
 		} finally {
 			uninstall();
 			gate.resolve();
-			delete (globalThis as { __omp_worker_core_gate?: { entered(): void; wait: Promise<void> } })
-				.__omp_worker_core_gate;
+			delete (globalThis as { __ultraworkers_worker_core_gate?: { entered(): void; wait: Promise<void> } })
+				.__ultraworkers_worker_core_gate;
 			first.send({ type: "close" });
 			second.send({ type: "close" });
 		}
@@ -169,7 +180,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __omp_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__omp_worker_core_gate = {
+		(
+			globalThis as { __ultraworkers_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__ultraworkers_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -179,7 +192,7 @@ describe("WorkerCore", () => {
 			first.send({
 				type: "run",
 				runId: "hold-for-multi-init",
-				code: "globalThis.__omp_worker_core_gate.entered(); await globalThis.__omp_worker_core_gate.wait;",
+				code: "globalThis.__ultraworkers_worker_core_gate.entered(); await globalThis.__ultraworkers_worker_core_gate.wait;",
 				filename: "[init-live-first].js",
 				snapshot: { cwd, sessionId: "init-live-first", localRoots: {} },
 			});
@@ -238,8 +251,8 @@ describe("WorkerCore", () => {
 		} finally {
 			uninstall();
 			gate.resolve();
-			delete (globalThis as { __omp_worker_core_gate?: { entered(): void; wait: Promise<void> } })
-				.__omp_worker_core_gate;
+			delete (globalThis as { __ultraworkers_worker_core_gate?: { entered(): void; wait: Promise<void> } })
+				.__ultraworkers_worker_core_gate;
 			first.send({ type: "close" });
 			second.send({ type: "close" });
 			third.send({ type: "close" });
@@ -254,7 +267,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __omp_worker_core_gate?: { entered(): void; wait: Promise<void> } }).__omp_worker_core_gate = {
+		(
+			globalThis as { __ultraworkers_worker_core_gate?: { entered(): void; wait: Promise<void> } }
+		).__ultraworkers_worker_core_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -272,7 +287,7 @@ describe("WorkerCore", () => {
 			first.send({
 				type: "run",
 				runId: "hold-for-first-init",
-				code: "globalThis.__omp_worker_core_gate.entered(); await globalThis.__omp_worker_core_gate.wait; __omp_session__.sessionId;",
+				code: "globalThis.__ultraworkers_worker_core_gate.entered(); await globalThis.__ultraworkers_worker_core_gate.wait; __omp_session__.sessionId;",
 				filename: "[first-init-live-first].js",
 				snapshot: { cwd, sessionId: "first-init-live-first", localRoots: {} },
 			});
@@ -306,8 +321,8 @@ describe("WorkerCore", () => {
 		} finally {
 			uninstall();
 			gate.resolve();
-			delete (globalThis as { __omp_worker_core_gate?: { entered(): void; wait: Promise<void> } })
-				.__omp_worker_core_gate;
+			delete (globalThis as { __ultraworkers_worker_core_gate?: { entered(): void; wait: Promise<void> } })
+				.__ultraworkers_worker_core_gate;
 			first.send({ type: "close" });
 			second.send({ type: "close" });
 		}
@@ -346,7 +361,9 @@ describe("WorkerCore", () => {
 
 		const gate = Promise.withResolvers<void>();
 		const entered = Promise.withResolvers<void>();
-		(globalThis as { __omp_worker_cwd_gate?: { entered(): void; wait: Promise<void> } }).__omp_worker_cwd_gate = {
+		(
+			globalThis as { __ultraworkers_worker_cwd_gate?: { entered(): void; wait: Promise<void> } }
+		).__ultraworkers_worker_cwd_gate = {
 			entered: () => entered.resolve(),
 			wait: gate.promise,
 		};
@@ -361,7 +378,7 @@ describe("WorkerCore", () => {
 			harness.send({
 				type: "run",
 				runId: "cwd-hold",
-				code: "globalThis.__omp_worker_cwd_gate.entered(); await globalThis.__omp_worker_cwd_gate.wait;",
+				code: "globalThis.__ultraworkers_worker_cwd_gate.entered(); await globalThis.__ultraworkers_worker_cwd_gate.wait;",
 				filename: "[cwd-race-hold].js",
 				snapshot: { cwd: dirA, sessionId: "cwd-race", localRoots: {} },
 			});
@@ -407,8 +424,8 @@ describe("WorkerCore", () => {
 			expect(chdirs.at(-1)).toBe(dirB);
 		} finally {
 			gate.resolve();
-			delete (globalThis as { __omp_worker_cwd_gate?: { entered(): void; wait: Promise<void> } })
-				.__omp_worker_cwd_gate;
+			delete (globalThis as { __ultraworkers_worker_cwd_gate?: { entered(): void; wait: Promise<void> } })
+				.__ultraworkers_worker_cwd_gate;
 			harness.send({ type: "close" });
 			await fs.rm(dirA, { recursive: true, force: true });
 			await fs.rm(dirB, { recursive: true, force: true });

@@ -21,9 +21,13 @@ import {
  */
 describe("worker-host selectors", () => {
 	it("recognizes the shared selector namespace without claiming ordinary CLI arguments", () => {
+		// The literal is the pin: it is the one assertion that would notice a rename of
+		// `WIRE_NAME` moving the prefix out from under every extension that ships one.
+		// The two below therefore derive from the constant — if the prefix changed, the
+		// pin goes red first instead of the two following it going quietly stale.
 		expect(WORKER_HOST_SELECTOR_PREFIX).toBe("__ultraworkers_worker_");
-		expect(isWorkerHostSelector("__ultraworkers_worker_stats_sync")).toBeTrue();
-		expect(isWorkerHostSelector("__ultraworkers_worker_computer")).toBeTrue();
+		expect(isWorkerHostSelector(`${WORKER_HOST_SELECTOR_PREFIX}stats_sync`)).toBeTrue();
+		expect(isWorkerHostSelector(`${WORKER_HOST_SELECTOR_PREFIX}computer`)).toBeTrue();
 		expect(isWorkerHostSelector("--version")).toBeFalse();
 		expect(isWorkerHostSelector(undefined)).toBeFalse();
 	});

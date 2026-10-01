@@ -1,9 +1,9 @@
 {
 	"capturedAt": "2026-10-01",
 	"definition": "distinct files outside the module directory importing it or anything beneath it",
-	"packageFileCount": 7073,
+	"packageFileCount": 7094,
 	"modules": {
-		"config": 166,
+		"config": 167,
 		"tools": 124,
 		"utils": 111,
 		"session": 86,
@@ -12,7 +12,7 @@
 		"task": 45,
 		"discovery": 41,
 		"internal-urls": 38,
-		"extensibility": 35,
+		"extensibility": 37,
 		"registry": 33,
 		"eval": 30,
 		"modes": 29,
@@ -87,5 +87,5 @@
 		"telemetry-settings.ts": 0,
 		"workspace-tree.ts": 0
 	},
-	"contentHash": "7775892549685582911"
+	"contentHash": "4419275677801747514"
 }

@@ -35,6 +35,20 @@ interface RunOutcome {
  * hang survive. A child that outlives the budget is killed and reported as
  * `terminated: false`, so the assertion fails on the hang itself rather than on
  * a test timeout that says nothing about which expectation broke.
+ *
+ * ## Why the pipes are read after the exit
+ *
+ * A test that goes red because the *harness* ran out of time is not evidence.
+ * It looks identical in the log to a red that came from the assertion, and it
+ * is red the same way whether the code is correct or not — so it teaches the
+ * reader something false about the system. Two versions of this test were
+ * useless in exactly that way: one spawned `cli/images-cli.ts` directly, which
+ * is a module with no entry block and so printed nothing and exited at once
+ * (a green gate over a command that was never invoked), and one awaited the
+ * child's pipes alongside its exit, so a wedged process held the read open and
+ * the whole case died on a suite timeout. Both failed for reasons that had
+ * nothing to do with the hang. Awaiting the exit first, and only then draining
+ * what the child left behind, is what makes a red here mean the process hung.
  */
 async function runImagesAction(action: string): Promise<RunOutcome> {
 	const child = Bun.spawn(["bun", CLI_ENTRY, "images", action, "--dir", REPO_ROOT], {

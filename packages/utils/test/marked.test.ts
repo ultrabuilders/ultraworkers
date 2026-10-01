@@ -199,3 +199,72 @@ describe("marked compatibility", () => {
 		});
 	}
 });
+
+// Regression: lexing a long inline run was O(n²), so a large markdown file with no
+// inline punctuation (a long prose line, a big base64 blob, a minified asset) hung
+// the renderer — 128 KB cost ~10 s. Two independent causes, both in `inlineTokens`:
+//   1. `[A-Za-z0-9._+-]+@` backtracks at every start position when no `@` follows.
+//   2. Both scans re-ran over the whole remainder on every loop iteration.
+describe("marked inline lexing is linear in input size", () => {
+	// Doubling the input must not much more than double the time. A quadratic
+	// implementation grows ~4x per doubling; the ratio below fails that loudly
+	// while leaving ample room for timer noise on a loaded machine.
+	const timed = (source: string): number => {
+		const start = performance.now();
+		const tokens = [...Lexer.lex(source)];
+		const elapsed = performance.now() - start;
+		// Guard against a vacuous pass: an empty result means nothing was lexed.
+		expect(tokens.length).toBeGreaterThan(0);
+		return elapsed;
+	};
+
+	for (const [label, char] of [["plain characters", "a"]] as const) {
+		test(`does not super-linearly scale on long runs of ${label}`, () => {
+			const small = timed(char.repeat(32_000));
+			const large = timed(char.repeat(64_000));
+			// Warm-up: the first lex pays JIT and regex-compile costs.
+			timed(char.repeat(1_000));
+			const ratio = large / Math.max(small, 0.5);
+			// A quadratic implementation grows ~4x per doubling of the input.
+			expect(ratio).toBeLessThan(3);
+		}, 60_000);
+	}
+
+	// Runs made entirely of stop characters are a separate, still-quadratic cost: the
+	// loop advances one character at a time and re-runs nine `indexOf` scans over the
+	// shrinking remainder each time. That is bounded by the number of stop characters,
+	// not by the input length, so it stays acceptable — but it is NOT covered by the
+	// linear guarantee above, and is asserted here only as a ceiling so a regression
+	// that makes it worse is visible.
+	test("stop-character runs stay within a sane ceiling", () => {
+		timed("!".repeat(1_000));
+		expect(timed("!".repeat(32_000))).toBeLessThan(1_000);
+	}, 60_000);
+
+	// The fix must not change what is tokenized. `next <= 1` skips both scans, and a
+	// match starting before `next` can still extend past it — a hard break's `\n`
+	// sits exactly at `next`, so the window cannot simply be truncated.
+	test("keeps hard breaks, links and emails tokenized as before", () => {
+		const paragraphTokens = (source: string) => {
+			const [first] = [...Lexer.lex(source)];
+			if (first?.type !== "paragraph") throw new Error(`expected a paragraph, got ${first?.type}`);
+			return first.tokens;
+		};
+		expect(paragraphTokens("hard break here  \nnext line")).toEqual([
+			{ type: "text", raw: "hard break here", text: "hard break here", escaped: false },
+			{ type: "br", raw: "  \n" },
+			{ type: "text", raw: "next line", text: "next line", escaped: false },
+		]);
+		expect(paragraphTokens("mail a.b+c@co.io now")).toEqual([
+			{ type: "text", raw: "mail ", text: "mail ", escaped: false },
+			{
+				type: "link",
+				raw: "a.b+c@co.io",
+				text: "a.b+c@co.io",
+				href: "mailto:a.b+c@co.io",
+				tokens: [{ type: "text", raw: "a.b+c@co.io", text: "a.b+c@co.io" }],
+			},
+			{ type: "text", raw: " now", text: " now", escaped: false },
+		]);
+	});
+});

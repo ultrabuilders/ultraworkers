@@ -673,10 +673,18 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			const at = rest.indexOf(char, 1);
 			if (at !== -1 && at < next) next = at;
 		}
-		const urlAt = /(?:https?:\/\/|ftp:\/\/|www\.|[A-Za-z0-9._+-]+@)/i.exec(rest.slice(1));
-		if (urlAt && urlAt.index + 1 < next) next = urlAt.index + 1;
-		const hardBreak = /(?: {2,}|\\)\n/.exec(rest.slice(1));
-		if (hardBreak && hardBreak.index + 1 < next) next = hardBreak.index + 1;
+		// `next` luôn >= 1. Khi `next <= 1` thì `index + 1 < next` không thể đúng với
+		// `index >= 0`, nên cả hai regex đều không thể thu hẹp `next`: bỏ qua chúng.
+		// Không cắt cửa sổ `rest.slice(1)` — một kết quả khớp bắt đầu trước `next` vẫn có
+		// thể kéo dài qua `next` (hard break chính là ví dụ: dấu \n nằm ngay tại `next`).
+		if (next > 1) {
+			// `{1,64}` chứ không `+`: một chuỗi ký tự lớp này không có `@` sẽ khiến `+`
+			// khớp tham lam rồi lùi ở MỌI vị trí bắt đầu — O(n²) ngay trong engine.
+			const urlAt = /(?:https?:\/\/|ftp:\/\/|www\.|[A-Za-z0-9._+-]{1,64}@)/i.exec(rest.slice(1));
+			if (urlAt && urlAt.index + 1 < next) next = urlAt.index + 1;
+			const hardBreak = /(?: {2,}|\\)\n/.exec(rest.slice(1));
+			if (hardBreak && hardBreak.index + 1 < next) next = hardBreak.index + 1;
+		}
 		for (const extension of lexer.extensions.inline) {
 			const at = extension.start?.call({ lexer }, rest);
 			if (typeof at === "number" && at > 0 && at < next) next = at;

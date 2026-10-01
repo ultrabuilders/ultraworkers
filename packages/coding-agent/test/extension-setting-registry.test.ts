@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { registerOwned, unregisterOwned, ownerOf, lookup } from "../src/config/registry";
+import { registerOwned, unregisterOwned, ownerOf, ownedBy, lookup } from "../src/config/registry";
 import { orderedSettings } from "../src/config/all-settings";
 
 /**
@@ -52,6 +52,46 @@ describe("extension-owned settings", () => {
 		} finally {
 			unregisterOwned("extension:/tmp/mine.ts");
 			unregisterOwned("extension:/tmp/theirs.ts");
+		}
+	});
+
+	it("answers which ids an owner holds, and reports none once they are unloaded", () => {
+		// `ownerOf` answers id -> owner. `ownedBy` is the other direction, and it is
+		// the one an extension needs on reload: a setting left behind by an earlier
+		// load is invisible to its author, and `unregisterOwned` drops it without ever
+		// naming it. Without this the author can only keep their own list, which is
+		// exactly what a previous process was supposed to have remembered for them.
+		expect(ownedBy("extension:/tmp/neither.ts")).toEqual([]);
+
+		registerOwned("extension:/tmp/reload.ts", {
+			id: "plugins.demo.reload",
+			type: "boolean",
+			default: false,
+		});
+		registerOwned("extension:/tmp/reload.ts", {
+			id: "plugins.demo.reloadTo",
+			type: "string",
+			default: "",
+		});
+		try {
+			expect(ownedBy("extension:/tmp/reload.ts")).toEqual(["plugins.demo.reload", "plugins.demo.reloadTo"]);
+
+			// The negative half: unloading must return the owner to exactly the state a
+			// never-registered owner is in, or the next load inherits a phantom key.
+			unregisterOwned("extension:/tmp/reload.ts");
+			expect(ownedBy("extension:/tmp/reload.ts")).toEqual([]);
+			expect(lookup("plugins.demo.reload")).toBeUndefined();
+		} finally {
+			unregisterOwned("extension:/tmp/reload.ts");
+		}
+
+		// A caller must not be able to edit the index through the returned array.
+		registerOwned("extension:/tmp/copy.ts", { id: "plugins.demo.copy", type: "boolean", default: false });
+		try {
+			(ownedBy("extension:/tmp/copy.ts") as string[]).push("plugins.demo.injected");
+			expect(ownedBy("extension:/tmp/copy.ts")).toEqual(["plugins.demo.copy"]);
+		} finally {
+			unregisterOwned("extension:/tmp/copy.ts");
 		}
 	});
 

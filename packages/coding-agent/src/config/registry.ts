@@ -944,6 +944,24 @@ export function all(): readonly AnySetting[] {
 	return ordered;
 }
 
+/**
+ * The ids `owner` currently holds, in declaration order.
+ *
+ * The reader half of the owner index that `registerOwned`/`unregisterOwned` maintain.
+ * Without it an extension author can only learn what they declared by keeping their own
+ * list — and the failure that matters is exactly the one they cannot see: a setting
+ * left behind by an earlier load, whose id `unregisterOwned` would drop without telling
+ * anyone a key existed at all.
+ *
+ * Returns a copy, and returns `[]` for an owner that has registered nothing, so a caller
+ * that drops an extension that never registered a setting needs no guard. Reading the
+ * live array would let a caller splice the index out from under a later `registerOwned`.
+ */
+export function ownedBy(owner: string): readonly string[] {
+	const ids = idsByOwner.get(owner);
+	return ids === undefined ? [] : [...ids];
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Warn-once diagnostics
 // ═══════════════════════════════════════════════════════════════════════════

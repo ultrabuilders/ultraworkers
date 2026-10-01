@@ -612,6 +612,13 @@ export class UiHelpers {
 						{
 							useBuiltInRenderer: this.ctx.viewSession.hasBuiltInTool(renderToolName),
 							showImages: cfgTerminalShowImages.get(settings),
+							// A card rebuilt from transcript history has no live stream to
+							// publish through, so the raw buffer it was rebuilt from is
+							// handed over here. That is what keeps a rebuilt card and a
+							// live one showing the same thing mid-parse. A surviving
+							// buffer is by definition not final — once the JSON closes
+							// the reveal drops it and the final-args render wins.
+							...(partialJson ? { rawArgs: { json: partialJson, complete: false } } : {}),
 						},
 						tool,
 						this.ctx.ui,

@@ -8,6 +8,22 @@ import type { NativeChild } from "../native/node";
 import type { Component } from "../tui";
 import type { Theme } from "../theme/theme";
 
+/**
+ * The argument buffer as it has actually streamed in, before it parses.
+ *
+ * `json` is the accumulated text of the tool call's arguments and `complete`
+ * reports whether that text is final. This is a side channel: it carries what
+ * the provider has sent so far even when nothing has parsed yet, which is the
+ * window a decoded-args view cannot show. Once the object parses, the decoded
+ * value is the better source and this stops being interesting.
+ */
+export interface RawToolArgs {
+	/** Accumulated raw argument text, exactly as streamed. */
+	json: string;
+	/** Whether `json` is final rather than a partial buffer. */
+	complete: boolean;
+}
+
 /** Display state handed to `renderCall`/`renderResult`. */
 export interface RenderResultOptions {
 	/** Whether the result view is expanded */
@@ -26,6 +42,12 @@ export interface RenderResultOptions {
 	 * Streamed `xd://` previews stay queued until this is set.
 	 */
 	executionStarted?: boolean;
+	/**
+	 * The unparsed argument stream, when there is one. Typed rather than smuggled
+	 * through a magic property on the decoded args, so a renderer can read it
+	 * without knowing how any particular producer happens to spell it.
+	 */
+	rawArgs?: RawToolArgs;
 }
 
 /** Render options for a result, plus the tool-specific context the transcript threads through. */

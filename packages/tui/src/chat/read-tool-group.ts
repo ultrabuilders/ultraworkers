@@ -21,7 +21,7 @@ import type { ToolExecutionHandle } from "./tool-execution";
 import { formatUsageRow } from "../overlays/usage-row";
 import { formatCount } from "@oh-my-pi/pi-utils";
 import type { TspCardStatus, TspSpan, TspText } from "@oh-my-pi/pi-wire";
-import type { NativeToolHead } from "../tools/renderer";
+import type { NativeToolHead, RawToolArgs } from "../tools/renderer";
 import { card, code, keyed, node, span, text, withHidden } from "../native/describe";
 import {
 	type DescribeContext,
@@ -562,6 +562,15 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 	setExecutionStarted(_toolCallId?: string): void {
 		this.#updateDisplay();
 	}
+
+	/**
+	 * The group has no raw-args consumer: it renders the resolved read targets
+	 * from `details`, not the unparsed argument stream, and `updateArgs`
+	 * already repaints on every change to the decoded path. Repainting here
+	 * would be work for a signal this component deliberately ignores, so the
+	 * channel is accepted and dropped.
+	 */
+	setRawArgs(_raw: RawToolArgs | undefined, _toolCallId?: string): void {}
 
 	setExpanded(expanded: boolean): void {
 		if (this.#expanded !== expanded) this.#blockVersion++;

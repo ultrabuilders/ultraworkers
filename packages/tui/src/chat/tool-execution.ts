@@ -21,6 +21,7 @@ import {
 } from "../tools/index";
 import { BASH_DEFAULT_PREVIEW_LINES } from "../tools/bash";
 import { describeDefaultToolExecution, formatDefaultToolExecution } from "../tools/default-renderer";
+import type { RawToolArgs } from "../tools/renderer";
 import { INTENT_FIELD, type TspCardStatus, type TspPreview, type TspText, type TspTone } from "@oh-my-pi/pi-wire";
 import { card, col, EMPTY_NODE, node, span, text, withHidden } from "../native/describe";
 import {
@@ -190,10 +191,23 @@ export interface ToolExecutionOptions {
 	showImages?: boolean; // default: true (only used if terminal supports images)
 	/** Allow the name-keyed renderer registry only when the active tool is the built-in implementation. */
 	useBuiltInRenderer?: boolean;
+	/**
+	 * The unparsed argument stream this call was rebuilt from, when the card is
+	 * being reconstructed from history rather than driven live. The live path
+	 * uses {@link ToolExecutionHandle.setRawArgs} instead.
+	 */
+	rawArgs?: RawToolArgs;
 }
 
 export interface ToolExecutionHandle extends Component {
 	updateArgs(args: unknown, toolCallId?: string): void;
+	/**
+	 * Publish the unparsed argument stream. Separate from {@link updateArgs}
+	 * because the two change on different signals: decoded args are re-allocated
+	 * only when the parse advances, while the raw buffer advances on every
+	 * delta — including the ones that decode to nothing new.
+	 */
+	setRawArgs(raw: RawToolArgs | undefined, toolCallId?: string): void;
 	updateStreamPreview?(update: unknown): void;
 	updateResult(
 		result: {
@@ -367,6 +381,7 @@ export class ToolExecutionComponent extends Container {
 	// Track if args are still being streamed (for edit/write spinner)
 	#argsComplete = false;
 	#executionStarted = false;
+	#rawArgs: RawToolArgs | undefined;
 	// Sealed once the tool reaches a terminal state (result delivered, or the
 	// turn abandoned it without one). Until then the block remains active so a
 	// late result can update its streaming preview.
@@ -399,6 +414,7 @@ export class ToolExecutionComponent extends Container {
 		isPartial: boolean;
 		argsComplete?: boolean;
 		executionStarted?: boolean;
+		rawArgs?: RawToolArgs;
 		renderContext?: Record<string, unknown>;
 	} = {
 		expanded: false,
@@ -426,6 +442,7 @@ export class ToolExecutionComponent extends Container {
 		this.#tool = tool;
 		this.#ui = ui;
 		this.#args = args;
+		this.#rawArgs = options.rawArgs;
 		this.#editMode = resolveEditModeForTool(toolName, tool);
 		if (this.#editMode) this.#previewReady = Promise.withResolvers<void>();
 
@@ -454,12 +471,35 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	updateArgs(args: unknown, _toolCallId?: string): void {
-		// Reference-equality short-circuit before any further work. Callers
-		// always allocate a new arg object on each streamed delta (see
-		// event-controller.ts and ui-helpers.ts), so a same-reference assignment
-		// signals "nothing meaningful changed" and the renderer can skip.
+		// Reference-equality short-circuit for the *decoded* args. This is a
+		// real no-op signal, but only for this channel: the reveal path returns
+		// the same object when neither the parse nor the raw prefix advanced
+		// (tool-args-reveal.ts), so "same reference" means "nothing new to
+		// decode" — not "nothing changed". The raw stream is published
+		// separately via setRawArgs, which does its own comparison, so a delta
+		// that grows the buffer without completing the JSON still repaints.
 		if (args === this.#args) return;
 		this.#args = args;
+		this.#displayInputVersion++;
+		this.#updateSpinnerAnimation();
+		this.#updateDisplay();
+	}
+
+	/**
+	 * Publish the unparsed argument stream.
+	 *
+	 * Compared by value rather than by reference because the live producers
+	 * hand out a fresh object per delta, which would make a reference check
+	 * repaint on every token even when the text is identical. Once the args
+	 * parse, the decoded value wins and the channel is dropped.
+	 */
+	setRawArgs(raw: RawToolArgs | undefined, _toolCallId?: string): void {
+		if (raw === this.#rawArgs) return;
+		if (raw && this.#rawArgs && raw.json === this.#rawArgs.json && raw.complete === this.#rawArgs.complete) {
+			return;
+		}
+		this.#rawArgs = raw;
+		if (this.#argsComplete) return;
 		this.#displayInputVersion++;
 		this.#updateSpinnerAnimation();
 		this.#updateDisplay();
@@ -1326,6 +1366,7 @@ export class ToolExecutionComponent extends Container {
 		this.#renderState.argsComplete = this.#argsComplete;
 		this.#renderState.executionStarted = this.#executionStarted;
 		this.#renderState.spinnerFrame = this.#spinnerFrame;
+		this.#renderState.rawArgs = this.#rawArgs;
 
 		// Interrupted waits carry only model-facing retry guidance, not user-facing output.
 		if (this.#toolName === "wait" && this.#isBenignSkip()) {

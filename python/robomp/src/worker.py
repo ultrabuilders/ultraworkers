@@ -226,7 +226,7 @@ def _ensure_agent_run_dir() -> None:
 
 
 def _build_extra_env(settings: Settings) -> dict[str, str]:
-    """Build the env overlay passed to the omp subprocess.
+    """Build the env overlay passed to the ultraworkers subprocess.
 
     `omp_rpc` merges this dict on top of `os.environ`, so overlaying empty
     strings for the sensitive keys is what actually masks them in the
@@ -440,7 +440,7 @@ def _drive_turn(
 
 
 def _has_prior_session(session_dir: Path) -> bool:
-    """Return True iff `session_dir` already contains an omp JSONL transcript.
+    """Return True iff `session_dir` already contains an ultraworkers JSONL transcript.
 
     pi's `coding-agent` writes one `*.jsonl` per session into `--session-dir`.
     The presence of any such file is the signal that `--continue` will pick
@@ -663,7 +663,7 @@ def _run_rpc_blocking(
         group=inputs.slot_uid if inputs.slot_uid is not None else None,
         extra_groups=["omp"] if inputs.slot_uid is not None else None,
     ) as client:
-        # Arm cancellation: from this point the API can kill the omp subprocess
+        # Arm cancellation: from this point the API can kill the ultraworkers subprocess
         # out from under us, which makes `prompt_and_wait` raise an `RpcError`
         # we'll let propagate. The `with` exit calls `client.stop()` again, but
         # it's idempotent.
@@ -770,12 +770,12 @@ def _run_rpc_blocking(
             finally:
                 hard_timer.cancel()
             if hard_timeout_fired.is_set():
-                raise TimeoutError("omp task exceeded hard timeout")
+                raise TimeoutError("ultraworkers task exceeded hard timeout")
             if turn is not None and turn.assistant_message is not None:
                 stop_reason = turn.assistant_message.get("stopReason")
                 if stop_reason == "error":
                     error_msg = turn.assistant_message.get("errorMessage") or "model returned error"
-                    raise RuntimeError(f"omp agent error (stopReason=error): {error_msg}")
+                    raise RuntimeError(f"ultraworkers agent error (stopReason=error): {error_msg}")
             log.info(
                 "rpc_done",
                 extra={

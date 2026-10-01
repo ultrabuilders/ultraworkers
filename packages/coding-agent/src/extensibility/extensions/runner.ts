@@ -466,25 +466,44 @@ export const noOpUIContext: ExtensionUIContext = {
 	input: async (_title, _placeholder, _dialogOptions) => undefined,
 	notify: () => {},
 	onTerminalInput: () => () => {},
+	// `setStatus` stays silent deliberately, and is the one member here that keeps a
+	// working alternative: it is the text path the frameless message below tells authors
+	// to reach for, and `annotate/index.ts:286,303` calls it on this context. Making it
+	// throw would break a live caller and contradict the advice in the same message.
 	setStatus: () => {},
-	setWorkingMessage: () => {},
-	// The no-op context cannot animate anything, so there is nothing to set.
-	setWorkingIndicator: () => {},
-	setWidget: () => {},
+	setWorkingMessage: () => {
+		throw new Error(unavailableFrameMessage("setWorkingMessage", "this mode"));
+	},
+	setWorkingIndicator: () => {
+		throw new Error(unavailableFrameMessage("setWorkingIndicator", "this mode"));
+	},
+	// This one had no comment at all, which made it read as an oversight rather than a
+	// decision. It is the same decision as its neighbours, so it now says so: there is no
+	// frame to draw the widget into, and silence would leave the author believing a panel
+	// is on screen. Zero in-repo callers, so throwing narrows nothing that was working.
+	setWidget: () => {
+		throw new Error(unavailableFrameMessage("setWidget", "this mode"));
+	},
 	setFooter: () => {
 		throw new Error(unavailableFrameMessage("setFooter", "this mode"));
 	},
 	setHeader: () => {
 		throw new Error(unavailableFrameMessage("setHeader", "this mode"));
 	},
-	setTitle: () => {},
+	setTitle: () => {
+		throw new Error(unavailableFrameMessage("setTitle", "this mode"));
+	},
 	custom: async () => undefined as never,
-	setEditorText: () => {},
+	setEditorText: () => {
+		throw new Error(unavailableFrameMessage("setEditorText", "this mode"));
+	},
 	pasteToEditor: () => {},
 	getEditorText: () => "",
 	editor: async () => undefined,
 	addAutocompleteProvider: () => {},
-	setEditorComponent: () => {},
+	setEditorComponent: () => {
+		throw new Error(unavailableFrameMessage("setEditorComponent", "this mode"));
+	},
 	get theme() {
 		return theme;
 	},
@@ -492,7 +511,9 @@ export const noOpUIContext: ExtensionUIContext = {
 	getTheme: () => Promise.resolve(undefined),
 	setTheme: (_theme: string | Theme) => Promise.resolve({ success: false, error: "UI not available" }),
 	getToolsExpanded: () => false,
-	setToolsExpanded: () => {},
+	setToolsExpanded: () => {
+		throw new Error(unavailableFrameMessage("setToolsExpanded", "this mode"));
+	},
 };
 
 interface ToolRegistrationScope {

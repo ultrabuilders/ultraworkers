@@ -23,12 +23,29 @@
  * pointing an author at it would trade a loud failure for the exact silence this helper
  * exists to remove. `setStatus` and `hasUI` are named because they hold on all of them.
  */
-export function unavailableFrameMessage(surface: "setHeader" | "setFooter", mode: string): string {
+export function unavailableFrameMessage(surface: "setHeader" | "setFooter" | FramelessSurface, mode: string): string {
 	return (
 		`${surface} is not available in ${mode}: there is no interactive frame to mount the component into. ` +
 		`Guard the call with pi.ui.hasUI, or use pi.ui.setStatus for text that does not need a component.`
 	);
 }
+
+/**
+ * Surfaces that need a frame to do anything at all.
+ *
+ * Wider than `setHeader`/`setFooter` because the same reasoning covers every member
+ * that draws: a widget the author never sees, a title that never changes, an editor
+ * that never opens. All of them were silent no-ops in `noOpUIContext` until this
+ * list was made to throw.
+ */
+export type FramelessSurface =
+	| "setWidget"
+	| "setEditorComponent"
+	| "setEditorText"
+	| "setTitle"
+	| "setWorkingMessage"
+	| "setWorkingIndicator"
+	| "setToolsExpanded";
 
 /**
  * For a mode that has a frame but routes this specific surface elsewhere.

@@ -9,6 +9,17 @@ repository's runtime and module layout, each listed below.
 
 Adapted files:
   src/plan.ts                    copied verbatim; no adaptation needed yet
+  src/harness.ts                 copied verbatim except two type-level
+                                 adaptations: the model-selection environment
+                                 parameter gained an index signature (the copied
+                                 weak type is rejected by TypeScript as a
+                                 default for process.env), and
+                                 verifySystemPrompt takes the two option fields
+                                 it reads instead of a Pick<> from the unported
+                                 harness options type. No behavioural change.
+                                 The harness RUNNERS are not ported: they depend
+                                 on vitest-evals, which this repository does not
+                                 use.
 
 Upstream license follows.
 

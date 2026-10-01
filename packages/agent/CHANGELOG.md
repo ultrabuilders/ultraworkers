@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The package README told you to `npm install @oh-my-pi/pi-agent` and imported from that name in every
+  example. No such package has ever been published — the install 404s and the imports do not resolve.
+  The package is `@oh-my-pi/pi-agent-core`, and all seven references now name it
 - Span failure details are now bounded before they are exported: a depth and byte budget, and only
   allowlisted fields. A payload carrying a key outside the allowlist is refused rather than exported
   in part. Every span that records an exception — chat, tool execution and run level — now records a

@@ -175,6 +175,23 @@ describe("LoopWatchdog stall phase", () => {
 		wd.stop();
 	});
 
+	test("reports a stall that has no phase, without pretending the loop is idle", () => {
+		const h = harness();
+		h.wd.start();
+		// No phase pushed. `takeRecentLoopPhase()` returns undefined for an
+		// interval that had no phase, so a block can be real and unnamed — the
+		// log line already writes `phase ?? "unknown"` for exactly this.
+		h.set(500);
+		h.fire();
+
+		// The two facts are distinct and must stay distinct: the loop IS blocked,
+		// yet no name is available. A reader that inferred "not blocked" from an
+		// undefined phase would hide the stall, which is the one moment the
+		// indicator matters.
+		expect(h.wd.isStalled()).toBe(true);
+		expect(h.wd.stallPhase).toBeUndefined();
+	});
+
 	test("forgets the phase across a stop/start cycle", () => {
 		const h = harness();
 		h.wd.start();

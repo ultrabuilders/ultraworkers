@@ -14,6 +14,7 @@
 		"packages/coding-agent/bench/bench-registry.ts",
 		"packages/coding-agent/bench/perf-threshold.ledger.ts",
 		"packages/coding-agent/bench/perf-corpus-schema.ts",
+		"packages/coding-agent/bench",
 		"packages/utils/src"
 	],
 	"exclude": ["node_modules"]

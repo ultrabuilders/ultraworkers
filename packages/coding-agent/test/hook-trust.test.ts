@@ -39,15 +39,24 @@ afterEach(async () => {
 /**
  * Run `discoverExtensionPaths` in a fresh process against `agentDir` and report
  * which hook files it would load, plus whether the record reached config.yml.
+ *
+ * `extraRoots` are injected as additional extension roots, the way `--extension`
+ * does at startup. They are the case that broke: every root is scanned into one
+ * flat hook list, so two roots can each hold a `pre/guard.ts`.
  */
-async function loadHookPaths(agentDir: string): Promise<{ loaded: string[]; config: string }> {
+async function loadHookPaths(
+	agentDir: string,
+	extraRoots: string[] = [],
+): Promise<{ loaded: string[]; config: string }> {
 	const script = [
+		'import { injectOmpExtensionCliRoots } from "@oh-my-pi/pi-coding-agent/discovery/omp-extension-roots";',
 		'import { discoverExtensionPaths } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";',
 		'import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";',
 		// The startup path initialises the settings singleton before anything reads
 		// it; a bare probe that skips this fails on the uninitialised proxy rather
 		// than on the behaviour under test.
 		"await Settings.init({ cwd: process.cwd(), agentDir: process.env.PI_CODING_AGENT_DIR });",
+		`injectOmpExtensionCliRoots(${JSON.stringify(extraRoots)}, process.env.HOME ?? "/tmp", process.cwd(), { replace: true, mode: "merge" });`,
 		"const paths = await discoverExtensionPaths([], process.cwd(), undefined, { ambient: true });",
 		'process.stdout.write(JSON.stringify({ loaded: paths.filter(p => p.includes("guard.ts")) }));',
 	].join("\n");
@@ -64,7 +73,10 @@ async function loadHookPaths(agentDir: string): Promise<{ loaded: string[]; conf
 
 	const configPath = path.join(agentDir, "config.yml");
 	const config = await fs.readFile(configPath, "utf8").catch(() => "");
-	return { loaded: (JSON.parse(stdout) as { loaded: string[] }).loaded, config };
+	return {
+		loaded: (JSON.parse(stdout) as { loaded: string[] }).loaded,
+		config,
+	};
 }
 
 /** A hook factory file. Only its bytes matter here, not what it registers. */
@@ -132,5 +144,47 @@ describe("hook trust", () => {
 		// would collide here and one hook's approval would stand in for the other's.
 		expect(config).toContain("pre:");
 		expect(config).toContain("post:");
+	});
+
+	test("a hook that is unreadable once is not locked out afterwards", async () => {
+		const { agentDir, hookPath } = await makeAgentDirWithHook(HOOK_SOURCE);
+
+		// Briefly unreadable — a sync that has not landed, a permissions change, a
+		// network mount that blinked. No hash can be computed, so nothing is
+		// recorded and nothing is judged.
+		await fs.chmod(hookPath, 0o000);
+		expect((await loadHookPaths(agentDir)).loaded).toEqual([]);
+
+		// Readable again. This is the row that matters: recording a stand-in hash
+		// for the unreadable moment would make this read as an edit and refuse the
+		// hook forever, until the user found the record in config.yml by hand and
+		// deleted it. The lockout is caused by the gate, not by anything the user
+		// did.
+		await fs.chmod(hookPath, 0o644);
+		expect((await loadHookPaths(agentDir)).loaded).toEqual([hookPath]);
+	});
+
+	test("a hook that moves to another root keeps loading", async () => {
+		const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-hook-trust-move-")));
+		temps.push(agentDir);
+		const oldRoot = path.join(agentDir, "old");
+		const newRoot = path.join(agentDir, "new");
+		await fs.mkdir(path.join(oldRoot, "hooks", "pre"), { recursive: true });
+		const hookName = path.join("hooks", "pre", "guard.ts");
+		await Bun.write(path.join(oldRoot, hookName), HOOK_SOURCE);
+
+		// Recorded from the old location.
+		expect((await loadHookPaths(agentDir, [oldRoot])).loaded).toEqual([path.join(oldRoot, hookName)]);
+
+		// The user moves their extension directory. Same hook identity — same type,
+		// tool and name — same bytes, different path. This must not read as an edit:
+		// hashing the path into the content hash turned a directory move into a
+		// whole hook tree going `modified` at once, silently, with one warn line.
+		await fs.rename(oldRoot, newRoot);
+		expect((await loadHookPaths(agentDir, [newRoot])).loaded).toEqual([path.join(newRoot, hookName)]);
+
+		// And the tripwire still fires on a genuine edit at the new location.
+		await Bun.write(path.join(newRoot, hookName), `${HOOK_SOURCE}\n// edited\n`);
+		expect((await loadHookPaths(agentDir, [newRoot])).loaded).toEqual([]);
 	});
 });

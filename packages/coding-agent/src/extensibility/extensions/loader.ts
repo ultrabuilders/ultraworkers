@@ -925,8 +925,13 @@ export async function discoverExtensionPaths(
 			let recordedAny = false;
 			for (const hook of hooks.items) {
 				if (!isExtensionFile(path.basename(hook.path))) continue;
-				const key = hookTrustKey(hook);
 				const hash = await hookContentHash(hook);
+				// No hash means the file could not be read. Judge nothing and record
+				// nothing: a stand-in hash here would lock the hook out on the next
+				// load that *can* read it. See hookContentHash for why that is not a
+				// way in — an unreadable hook does not load either.
+				if (hash === undefined) continue;
+				const key = hookTrustKey(hook);
 				const recorded = recordedHookHash(key);
 				if (recorded !== undefined && hookTrustStatus(recorded, hash) === "modified") {
 					logger.warn(hookModifiedMessage(hook, recorded));

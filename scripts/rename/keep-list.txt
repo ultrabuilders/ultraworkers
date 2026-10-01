@@ -132,3 +132,31 @@ packages/wire/package.json
 # RULE OF THUMB, agreed for the rename pass: it does not change wire-visible
 # strings. Changing one by mistake is silent and unrecoverable; leaving a
 # constant that merely LOOKS stale costs nothing.
+
+# ---------------------------------------------------------------------------
+# 3. MACHINE-READABLE FREEZE LIST (W8a rows N18-N20)
+# ---------------------------------------------------------------------------
+# Section 2 above is the reviewer's prose. This section is the same three
+# decisions in a form a rename pass can consume, so a `sed` that rewrites bare
+# "oh-my-pi" cannot take them even if it never reads a word of section 2.
+#
+# Gate B keeps the VALUE in code; this keeps the DECISION in the keep-list.
+# Both are needed: a future pass that honours this list and ignores the code
+# still preserves the value, and a pass that reads only the code still finds
+# the reason here.
+#
+# Format is `<path>  # <reason>` — two spaces, then the reason. The reason is
+# mandatory and not decorative: these three are absent from the N1-N17 table,
+# so a reviewer reading only that table has no way to know they must not move.
+# Nothing in N1-N17 is modified, deleted or reordered by this section.
+#
+# DRIFT, measured 2026-10-02: W8a and the section 2 prose above both cite
+# `oauth-flow.ts:629` for N20. That line is inside `#generateCodeChallenge`
+# (PKCE) and holds no bare literal. The real line is 681, in the dynamic-client
+# `registrationBody`. The row below is corrected to 681, because a keep-list row
+# pointing at the wrong line preserves nothing — it looks like coverage and
+# renames the value anyway. Section 2's prose line is left as written: correcting
+# it is a separate edit, and changing it here would put two diffs in one commit.
+packages/ai/src/registry/oauth/zai.ts:25  # N18 FREEZE. KEY_NAME is a collision-avoidance name in ZCode's own key store so sign-in never mutates `zcode-api-key`. Renaming orphans every key already created under it.
+packages/coding-agent/src/web/search/providers/exa.ts:26  # N19 FREEZE. EXA_MCP_SOURCE ships as the `x-exa-source` request header; the third party reads it. Bare literal, not WIRE_NAME — same gap as SERVICE_NAME.
+packages/coding-agent/src/mcp/oauth-flow.ts:681  # N20 FREEZE. `client_name` is sent to the OAuth provider in the dynamic-client `registrationBody` and shown on the user's consent screen. A third party sees it. Anchor corrected from 629; see DRIFT above.

@@ -2,6 +2,7 @@
 	"name": "@oh-my-pi/pi-evals",
 	"version": "18.4.3",
 	"private": true,
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.{ts,tsx}' '{test,bench,examples,scripts}/**/*.ts' '*.ts' && bun run check:types",

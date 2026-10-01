@@ -16,6 +16,7 @@ import { type Skill, skillCapability } from "../capability/skill";
 import { type SlashCommand, slashCommandCapability } from "../capability/slash-command";
 import { type CustomTool, toolCapability } from "../capability/tool";
 import type { LoadContext, LoadResult } from "../capability/types";
+import { assertUrlAllowed } from "../mcp/network-policy";
 import { legacyProviderAllowed } from "./agent-plugin-format";
 import {
 	discoverRuleFromMarkdown,
@@ -645,6 +646,28 @@ async function loadMCPServers(ctx: LoadContext): Promise<LoadResult<MCPServer>> 
 					`[claude-plugins] Skipping MCP server "${serverName}" in ${sourcePath}: missing command or url`,
 				);
 				continue;
+			}
+			// A third-party bundle's declared endpoint is held to the `plugin` level of
+			// the MCP network policy (GAP-D1 decision (d)): HTTPS only, no embedded
+			// credentials, and no host that is not public.
+			//
+			// This is the half the fetch-time gate cannot do. There, loopback is
+			// allowed because the URL came from the user's own config — but a bundle
+			// naming `127.0.0.1` is not someone stating an intent, it is a bundle
+			// pointing at the user's machine. Refusing it here, at load, is what makes
+			// the server absent; catching it later would only surface as a connection
+			// error with the policy text in it.
+			if (typeof raw.url === "string") {
+				try {
+					assertUrlAllowed(raw.url, "plugin", `[claude-plugins] ${serverName} in ${sourcePath}`);
+				} catch (err) {
+					warnings.push(
+						`[claude-plugins] Skipping MCP server "${serverName}" in ${sourcePath}: ${
+							err instanceof Error ? err.message : String(err)
+						}`,
+					);
+					continue;
+				}
 			}
 			const namespacedName = root.plugin ? `${root.plugin}:${serverName}` : serverName;
 			const substitutedCommand =

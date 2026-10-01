@@ -8,6 +8,15 @@
   for a host omp's built-in multiplexer/`TERM_PROGRAM` detection does not recognise. A strategy
   cannot override the user's `PI_TUI_RESIZE_IN_PLACE` or core's multiplexer/ConPTY safety veto;
   unloading the extension restores the pre-seam decision exactly
+- MCP endpoints are now checked against a network policy, and the check differs by where the URL
+  came from. An MCP server you configured yourself may point at `http://127.0.0.1:3000` or a LAN
+  address and still works — that is you saying what you mean. An MCP server declared by a
+  third-party plugin bundle may not: it must be `https`, must not embed credentials, and must not
+  resolve to loopback, private, link-local, multicast, or unspecified addresses. Every remote hop
+  is re-checked, so a redirect to `169.254.169.254` is refused even though the URL you configured
+  was fine. The address forms the check covers include the IPv4-mapped IPv6 (`::ffff:127.0.0.1`)
+  and zone-id (`fe80::1%eth0`) spellings, the trailing-dot FQDN (`localhost.`), and the whole
+  `*.localhost` name space — a plugin naming one of these no longer registers a server
 
 
 ### Breaking Changes

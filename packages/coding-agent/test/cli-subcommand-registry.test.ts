@@ -24,6 +24,8 @@
  * the proof this file is not green by construction.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
 	type ResolvedCliArgv,
 	isSubcommand,
@@ -32,18 +34,20 @@ import {
 	resolveCliArgv,
 	subcommandCollisionDiagnostics,
 } from "@oh-my-pi/pi-coding-agent/cli-commands";
+import { loadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
+import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
+
+/**
+ * `ResolvedCliArgv` is a union, so reading `.argv` has to narrow first.
+ * Failing here names the error the CLI would have printed, which is the
+ * difference between "the assertion was wrong" and "the verb was rejected".
+ */
+function dispatchArgv(resolved: ResolvedCliArgv): string[] {
+	if ("error" in resolved) throw new Error(`expected a dispatch, but routing refused: ${resolved.error}`);
+	return resolved.argv;
+}
 
 describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
-	/**
-	 * `ResolvedCliArgv` is a union, so reading `.argv` has to narrow first.
-	 * Failing here names the error the CLI would have printed, which is the
-	 * difference between "the assertion was wrong" and "the verb was rejected".
-	 */
-	function dispatchArgv(resolved: ResolvedCliArgv): string[] {
-		if ("error" in resolved) throw new Error(`expected a dispatch, but routing refused: ${resolved.error}`);
-		return resolved.argv;
-	}
-
 	beforeEach(() => {
 		resetSubcommandRegistry();
 	});
@@ -121,5 +125,91 @@ describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 		const resolved = resolveCliArgv(["pirate", "arg"]);
 
 		expect(dispatchArgv(resolved)[0]).toBe("launch");
+	});
+});
+
+/**
+ * The producer half, driven through the surface an extension actually uses.
+ *
+ * The cases above call `registerSubcommand` directly, which means they stay
+ * green if the `ExtensionAPI` method or the loader's call to it is deleted —
+ * the registry would simply have no way in and nothing would notice. That is
+ * the same defect as a test that calls a collaborator directly, pointed the
+ * other way, and it is exactly how `4e1693a998` shipped: a registry with a
+ * read path and no producer.
+ *
+ * So this loads a real extension module through the real loader and asserts the
+ * verb it registered actually routes. Deleting `registerSubcommandVerb(...)`
+ * from the loader turns the routing case red while the cases above stay green —
+ * which is the split that proves the two halves are covered independently.
+ */
+describe("registerSubcommand: the ExtensionAPI producer", () => {
+	let tempDir: TempDir;
+	let cwd: string;
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+	/** An extension module that claims one top-level verb, as a real one would. */
+	function writeExtension(verb: string): string {
+		const dir = path.join(cwd, "ext");
+		fs.mkdirSync(dir, { recursive: true });
+		const entry = path.join(dir, "index.ts");
+		fs.writeFileSync(
+			entry,
+			`export default function(pi) {\n\tpi.registerSubcommand(${JSON.stringify(verb)});\n}\n`,
+			"utf-8",
+		);
+		return entry;
+	}
+
+	beforeEach(() => {
+		resetSubcommandRegistry();
+		tempDir = TempDir.createSync("@pi-subcommand-ext-");
+		cwd = tempDir.absolute();
+		// Steer user-scope discovery at the temp dir, or the scan returns the
+		// developer's own extensions and the suite learns to expect them.
+		setAgentDir(path.join(cwd, "agent"));
+	});
+
+	afterEach(() => {
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		__resetDirsFromEnvForTests();
+		resetSubcommandRegistry();
+		tempDir?.removeSync();
+	});
+
+	it("CONTROL: before the extension loads, its verb is still a prompt", () => {
+		expect(dispatchArgv(resolveCliArgv(["deploy", "staging"]))[0]).toBe("launch");
+	});
+
+	it("routes a verb an extension registered through the real loader", async () => {
+		const entry = writeExtension("deploy");
+
+		const result = await loadExtensions([entry], cwd);
+
+		// The extension must load cleanly, or a later assertion would pass for the
+		// wrong reason — an extension that failed to register anything at all.
+		expect(result.errors).toHaveLength(0);
+
+		const argv = dispatchArgv(resolveCliArgv(["deploy", "staging"]));
+		expect(argv[0]).toBe("deploy");
+		expect(argv[1]).toBe("staging");
+	});
+
+	it("does not promote a slash command into a top-level verb", async () => {
+		// Same extension, registering through `registerCommand` instead. The two
+		// registries are separate, and conflating them would shadow real prompts.
+		const dir = path.join(cwd, "ext");
+		fs.mkdirSync(dir, { recursive: true });
+		const entry = path.join(dir, "slash.ts");
+		fs.writeFileSync(
+			entry,
+			`export default function(pi) {\n\tpi.registerCommand("greet", { handler: async () => ({}) });\n}\n`,
+			"utf-8",
+		);
+
+		await loadExtensions([entry], cwd);
+
+		expect(isSubcommand("greet")).toBe(false);
 	});
 });

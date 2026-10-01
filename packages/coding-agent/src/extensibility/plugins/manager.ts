@@ -31,7 +31,7 @@ import { parsePluginId } from "./marketplace/types";
 import { extractPackageName, parsePluginSpec } from "./parser";
 import { normalizePluginRuntimeConfig } from "./runtime-config";
 import type {
-	DoctorCheck,
+	CheckOutcome,
 	DoctorOptions,
 	InstalledPlugin,
 	InstallOptions,
@@ -132,6 +132,66 @@ export interface ChangeResult {
 
 /** A contributed diagnostic that never settles must not take the doctor down with it. */
 const DIAGNOSTIC_TIMEOUT_MS = 5_000;
+
+/**
+ * Parity between `patches/*.patch` and `package.json.patchedDependencies`.
+ *
+ * MANDATORY to report `unavailable` rather than pass: the ledger is local-only
+ * until the M4 patch-dependency work merges, and a build that silently applies
+ * fewer patches than the manifest claims is a failure nobody would otherwise see.
+ *
+ * Moved here from `doctor-checks.ts`, which no production path reached. The check
+ * is only worth anything if the shipped doctor runs it — a registry nothing calls
+ * is a table of intentions, and it left the live summary reporting every line as
+ * accounted for while this one went unchecked.
+ */
+async function checkPatchLedger(root: string): Promise<CheckOutcome> {
+	const patchesDir = path.join(root, "patches");
+	if (!fs.existsSync(patchesDir)) {
+		return {
+			name: "patch_ledger",
+			status: "unavailable",
+			message: `No patches/ directory under ${root} — patch ledger not checked`,
+		};
+	}
+
+	let manifest: { patchedDependencies?: Record<string, string> } | undefined;
+	try {
+		manifest = (await Bun.file(path.join(root, "package.json")).json()) as typeof manifest;
+	} catch {
+		manifest = undefined;
+	}
+	if (!manifest) {
+		return {
+			name: "patch_ledger",
+			status: "unavailable",
+			message: "package.json could not be read — patch ledger not checked",
+		};
+	}
+
+	const declared = manifest.patchedDependencies ?? {};
+	const declaredFiles = Object.values(declared);
+	const entries = await fs.promises.readdir(patchesDir);
+	const missing = declaredFiles.filter(file => !fs.existsSync(path.join(root, file)));
+
+	// The reverse direction too: a patch file nothing declares is applied by nobody,
+	// so the manifest and the directory have drifted apart.
+	const onDisk = entries.filter(name => name.endsWith(".patch")).map(name => `patches/${name}`);
+	const undeclared = onDisk.filter(file => !declaredFiles.includes(file));
+
+	const problems = [
+		...missing.map(file => `declared but missing: ${file}`),
+		...undeclared.map(file => `present but undeclared: ${file}`),
+	];
+	if (problems.length > 0) {
+		return { name: "patch_ledger", status: "error", message: problems.join("; ") };
+	}
+	return {
+		name: "patch_ledger",
+		status: "ok",
+		message: `${declaredFiles.length} patch(es) declared and present`,
+	};
+}
 
 export class PluginManager {
 	#runtimeConfig: PluginRuntimeConfig | null = null;
@@ -1037,8 +1097,8 @@ export class PluginManager {
 	/**
 	 * Run health checks on the plugin system.
 	 */
-	async doctor(options: DoctorOptions = {}): Promise<DoctorCheck[]> {
-		const checks: DoctorCheck[] = [];
+	async doctor(options: DoctorOptions = {}): Promise<CheckOutcome[]> {
+		const checks: CheckOutcome[] = [];
 
 		// Check 1: Plugins directory exists
 		const pluginsDir = getPluginsDir();
@@ -1276,6 +1336,13 @@ export class PluginManager {
 				clearTimeout(timer);
 			}
 		}
+
+		// The patch ledger. `unavailable` is a real answer here — the
+		// premise (a `patches/` directory to compare against) is missing on any
+		// install that is not this repo — and it must not be folded into the
+		// error/warning/ok counts, or the summary would claim full coverage of
+		// checks that never ran.
+		checks.push(await checkPatchLedger(this.#cwd));
 
 		return checks;
 	}

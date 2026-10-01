@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { PluginManager } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/manager";
-import type { PluginRuntimeState } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/types";
+import { isUnavailable, type PluginRuntimeState } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/types";
 import * as piUtils from "@oh-my-pi/pi-utils";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
@@ -137,7 +137,12 @@ describe("PluginManager.doctor version drift", () => {
 
 		const checks = await new PluginManager(tmpRoot).doctor({ fix: true });
 
-		expect(checks.find(c => c.name === `plugin:${name}:version`)?.fixed).toBe(true);
+		const version = checks.find(c => c.name === `plugin:${name}:version`);
+		expect(version).toBeDefined();
+		// `fixed` lives on a check that RAN; an `unavailable` outcome has no verdict
+		// to repair, so the union has to be narrowed before the property is readable.
+		if (version === undefined || isUnavailable(version)) throw new Error("expected a repairable version check");
+		expect(version.fixed).toBe(true);
 		expect(checks.find(c => c.name === `plugin:${name}:tools`)).toEqual({
 			name: `plugin:${name}:tools`,
 			status: "error",

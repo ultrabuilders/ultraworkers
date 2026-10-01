@@ -1,5 +1,5 @@
 import { $which } from "@oh-my-pi/pi-utils";
-import { theme } from "@oh-my-pi/pi-tui/theme";
+import { getAvailableThemes, getBuiltinThemes, resolveThemeJson } from "@oh-my-pi/pi-tui/theme";
 import type { DoctorCheck } from "./types";
 import { allBuiltinToolFactories, BUILTIN_TOOLS, HIDDEN_TOOLS } from "../../tools";
 
@@ -23,7 +23,6 @@ export interface DoctorSnapshot {
 }
 
 async function liveSnapshot(): Promise<DoctorSnapshot> {
-	const { getAvailableThemes, getBuiltinThemes, resolveThemeJson } = await import("@oh-my-pi/pi-tui/theme");
 	// "Shipped with the product" and "active as a builtin" are different
 	// questions, and the second is not the same set. The session's
 	// `LiveToolRecord.source === "builtin"` means ACTIVE: `#builtInToolNames` is
@@ -126,28 +125,4 @@ function checkExtensionSeams(snap: DoctorSnapshot): DoctorCheck[] {
 	}
 
 	return checks;
-}
-
-export function formatDoctorResults(checks: DoctorCheck[]): string {
-	// Note: This function returns plain text without theming as it may be called outside TUI context.
-	// For TUI usage, the plugin CLI handler applies theme colors.
-	const lines: string[] = ["System Health Check", "=".repeat(40), ""];
-
-	for (const check of checks) {
-		const icon =
-			check.status === "ok"
-				? theme.status.enabled
-				: check.status === "warning"
-					? theme.status.warning
-					: theme.status.error;
-		lines.push(`${icon} ${check.name}: ${check.message}`);
-	}
-
-	const errors = checks.filter(c => c.status === "error").length;
-	const warnings = checks.filter(c => c.status === "warning").length;
-
-	lines.push("");
-	lines.push(`Summary: ${checks.length - errors - warnings} ok, ${warnings} warnings, ${errors} errors`);
-
-	return lines.join("\n");
 }

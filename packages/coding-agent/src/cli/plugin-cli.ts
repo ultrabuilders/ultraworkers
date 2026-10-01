@@ -17,7 +17,7 @@ import {
 	MarketplaceManager,
 	parsePluginId,
 } from "../extensibility/plugins/marketplace/index";
-import type { InstalledPlugin } from "../extensibility/plugins/types";
+import { type InstalledPlugin, isUnavailable } from "../extensibility/plugins/types";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 
 // =============================================================================
@@ -701,7 +701,16 @@ async function handleLink(
 	}
 }
 
-async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix?: boolean }): Promise<void> {
+/**
+ * Render the health check.
+ *
+ * Exported for the same reason `runPluginCommand` is: it takes its manager as a
+ * parameter, and that is the only seam through which a caller can point the
+ * renderer at a project root that genuinely lacks a `patches/` directory. A test
+ * driving the real repo checkout can only ever see the ledger pass, so it could
+ * not cover the branch that matters.
+ */
+export async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix?: boolean }): Promise<void> {
 	const checks = await manager.doctor({ fix: flags.fix });
 
 	if (flags.json) {
@@ -712,6 +721,15 @@ async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix
 	console.log(chalk.bold("Plugin Health Check\n"));
 
 	for (const check of checks) {
+		// `isUnavailable` FIRST. It is a separate member of the union, not a fourth
+		// status, so this branch is forced by the compiler: a renderer that forgot to
+		// handle it would not compile. Folding it into the ternary below is what let
+		// an unreachable check render as a red failure — reading as "broken" when the
+		// truth was "never asked".
+		if (isUnavailable(check)) {
+			console.log(`${chalk.dim("?")} ${check.name}: ${check.message}`);
+			continue;
+		}
 		const icon =
 			check.status === "ok"
 				? chalk.green(theme.status.success)
@@ -724,13 +742,22 @@ async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix
 		}
 	}
 
-	const errors = checks.filter(c => c.status === "error" && !c.fixed).length;
-	const warnings = checks.filter(c => c.status === "warning" && !c.fixed).length;
-	const ok = checks.filter(c => c.status === "ok").length;
-	const fixed = checks.filter(c => c.fixed).length;
+	const errors = checks.filter(c => !isUnavailable(c) && c.status === "error" && !c.fixed).length;
+	const warnings = checks.filter(c => !isUnavailable(c) && c.status === "warning" && !c.fixed).length;
+	const ok = checks.filter(c => !isUnavailable(c) && c.status === "ok").length;
+	// Counted on the union, not on DoctorCheck: narrowing the array first would be a
+	// filter that could silently drop the line it was supposed to account for.
+	const fixed = checks.filter(c => !isUnavailable(c) && c.fixed).length;
+	const unavailable = checks.filter(isUnavailable).length;
 
 	console.log("");
-	console.log(`Summary: ${ok} ok, ${warnings} warnings, ${errors} errors${fixed > 0 ? `, ${fixed} fixed` : ""}`);
+	console.log(
+		`Summary: ${ok} ok, ${warnings} warnings, ${errors} errors${fixed > 0 ? `, ${fixed} fixed` : ""}` +
+			// Named, not folded into `ok`. Omitting it made the buckets sum to fewer
+			// lines than were printed, so a run where three checks never ran still
+			// looked like complete coverage.
+			`${unavailable > 0 ? `, ${unavailable} not checked` : ""}`,
+	);
 
 	if (errors > 0) {
 		if (!flags.fix) {

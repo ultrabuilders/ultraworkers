@@ -183,6 +183,41 @@ export interface DoctorCheck {
 	changedOnDisk?: boolean;
 }
 
+/**
+ * Why a check could not run. Distinct from a finding: nothing is wrong yet.
+ *
+ * This is a separate member of a union rather than a fourth `status` value on
+ * purpose. Adding `"unavailable"` to `status` makes it a string the reader has
+ * to remember to branch on, and nothing turns red when one forgets — the two
+ * renderers this replaced each got it wrong in a different direction while
+ * staying green. As a separate member, a renderer that skips `isUnavailable`
+ * fails to compile, and the summary has to name the bucket because there is
+ * nowhere else for it to go.
+ */
+export interface CheckUnavailable {
+	readonly status: "unavailable";
+	/**
+	 * Which check could not run.
+	 *
+	 * Carried on the outcome rather than left to the producer, because a
+	 * `flatMap` that dropped it would produce report lines nobody could
+	 * attribute — the only thing left identifying them would be the message
+	 * happening to repeat the check's own name, so rewording a message would
+	 * silently unlabel the line.
+	 */
+	readonly name: string;
+	/** What could not be checked, and the premise that was missing. */
+	readonly message: string;
+}
+
+/** Every result a check can produce, including "the premise was missing". */
+export type CheckOutcome = DoctorCheck | CheckUnavailable;
+
+/** Narrow an outcome to the case where the check never ran. */
+export function isUnavailable(outcome: CheckOutcome): outcome is CheckUnavailable {
+	return outcome.status === "unavailable";
+}
+
 // =============================================================================
 // Install Options Types
 // =============================================================================

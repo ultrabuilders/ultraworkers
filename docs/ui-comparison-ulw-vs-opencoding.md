@@ -60,16 +60,24 @@
 | Chức năng | ULW | opencoding | Extension? |
 |---|---|---|---|
 | Ô nhập chính | `tui/prompt/composer.ts` (42 KB) + `tui/components/editor.ts` (**174 KB**) | `PromptInput/PromptInput.tsx` (**96.3 KB**) | ✅ |
-| Chân ô nhập | `tui/status-line/footer.ts` (15 KB) | `PromptInput/PromptInputFooter.tsx` (15.5) + `PromptInputFooterLeftSide.tsx` (25.4) + `PromptInputFooterSuggestions.tsx` (7.6) | 🔒 |
+| Chân ô nhập | `tui/status-line/footer.ts` (15 KB) — ⚠️ **code chết, xem ghi chú bên dưới** | `PromptInput/PromptInputFooter.tsx` (15.5) + `PromptInputFooterLeftSide.tsx` (25.4) + `PromptInputFooterSuggestions.tsx` (7.6) | ✅ |
+
+> ⚠️ **`status-line/footer.ts` là code chết ở production** — tôi đã ghi nó như một mặt UI
+> đang chạy, sai. Đo: `new FooterComponent` trong source = **0**, chỉ 1 chỗ ở
+> `test/footer-jj-label-sanitize.test.ts:84`; `import ".../status-line/footer"` trong source
+> = **1**, chỉ `export *` trong `modes/components/index.ts:17`.
+> Thứ thật sự render status line là `StatusLineComponent` (`component.ts` **139 KB**),
+> dựng ở `interactive-mode.ts:1749`.
+> **Cột ✅ ở dòng này là của status line gốc**, không phải của file 15 KB này.
 | Thông báo trong ô nhập | `tui/prompt/composer-attachments.ts` | `PromptInput/Notifications.tsx` (10.6) | ✅ |
 | Chip đính kèm | `tui/prompt/attachment-chips.ts` (11 KB) | | ✅ |
 | Gợi ý nơi nhập | `tui/prompt/welcome.ts` (32 KB) | `usePromptInputPlaceholder.ts` (2.3) | ✅ |
 | Ô nhập lấp lánh | `tui/theme/shimmer.ts` (12 KB) | `PromptInput/ShimmeredInput.tsx` (4.0) | ✅ |
 | Lệnh đã xếp hàng | `tui/prompt/queued-messages.ts` (3.2) | `PromptInput/PromptInputQueuedCommands.tsx` (5.5) | ✅ |
-| Chỉ báo chế độ | `tui/status-line/segments.ts` (badge plan/bypass — không có file `input-modes`) | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | 🔒 |
+| Chỉ báo chế độ | `tui/status-line/component.ts` (badge plan/bypass, **5** hit; `segments.ts` chỉ 2) | `PromptInput/PromptInputModeIndicator.tsx` (2.8) | 🔒 |
 | Mic | `tui/prompt/video.ts` (1.5) | `PromptInput/VoiceIndicator.tsx` (2.0) | ✅ |
 | Menu trợ giúp | `tui/prompt/composer-hints.ts` (3.0) | `PromptInput/PromptInputHelpMenu.tsx` (4.7) | ✅ |
-| Cảnh báo sandbox | | `PromptInput/SandboxPromptFooterHint.tsx` (1.7) | 🔒 |
+| Cảnh báo sandbox | | `PromptInput/SandboxPromptFooterHint.tsx` (1.7) | ✅ |
 | Autocomplete ký tự | `tui/prompt/word-completion.ts` (8.6) + `macos-spelling.ts` (13 KB) | | |
 | Autocomplete emoji | `tui/prompt/emoji-autocomplete.ts` (9.2) | | |
 | Autocomplete model | `tui/prompt/model-mention-autocomplete.ts` (4.2) | | |
@@ -86,6 +94,17 @@
 | Khung tin nhắn | `tui/chrome/message-frame.ts` (7.2) | | |
 | Khối hội thoại | `tui/chrome/transcript-container.ts` (48 KB) | `components/VirtualMessageList.tsx` (42.6) | ❌ |
 | Bộ đệm tin nhắn | | `components/Messages.tsx` (46.9) + `MessageSelector.tsx` (28.5) | ❌ |
+
+> ℹ️ **"Cuộn" — tôi đánh 🔒 sai, lần thứ hai trong cùng bảng này.**
+> Tôi so `scroll-view.ts` của ULW với `ScrollKeybindingHandler.tsx` của opencoding, rồi kết luận
+> ULW không có bản tương đương. **Sai.** ULW có: `chat/transcript-browser.ts` (9 KB) — đó là
+> "mũi tên lên xem lại input", có `OutlineColumn` và chọn dòng.
+>
+> **Bằng chứng quyết định:** `custom-commands/bundled/annotate/text-source.ts:127`
+> đã `new CopySelectorComponent(...)` — một custom command của chính ULW instantiate
+> overlay này rồi dùng, **không sửa một dòng core nào**. `TranscriptBrowser` là
+> `export class … implements Component` (`:97`) và nằm trong wildcard `./*` của
+> `packages/tui/package.json`.
 | Dải phân cách | `tui/chrome/message-divider.ts` (3.0) | | |
 | Lưu ý dưới tin nhắn | `tui/chrome/message-notice.ts` (5.6) + `status-notice.ts` (1.5) | | |
 | Hộp phủ | `tui/chrome/overlay-box.ts` (12 KB) | | |
@@ -99,7 +118,7 @@
 | Tab | `tui/components/tab-bar.ts` (11 KB) | `components/TagTabs.tsx` (5.4) | ✅ |
 | Danh sách key-value | `tui/components/key-value-list.ts` (4.0) | | |
 | Thanh tiến | `tui/components/progress-bar.ts` (6.9) | | |
-| Cuộn | `tui/components/scroll-view.ts` (18 KB) + `scroll-viewport.ts` (5.5) | `ScrollKeybindingHandler.tsx` (46.2) | 🔒 |
+| Cuộn | `tui/components/scroll-view.ts` (18 KB) + `scroll-viewport.ts` (5.5) + `tui/chat/transcript-browser.ts` (9.0) | `ScrollKeybindingHandler.tsx` (46.2) | ✅ |
 | Hộp | `tui/components/box.ts` (8.7) | | |
 | Mô tả mở/đóng | `tui/components/disclosure.ts` (9.1) | | |
 | Biểu đồ metric | `tui/components/metric.ts` (6.2) | | |
@@ -194,16 +213,26 @@
 **Vùng ô nhập (nhóm B): không — và không cần.** 🔒 ở đó là tôi đánh dấu sai ở lần đầu.
 `setEditorComponent` đã có sẵn ở HEAD. **Bao trọn `pi` không mở thêm khoá nào ở nhóm B.**
 
-**Bao trọn `pi` mở vùng hội thoại (nhóm A)** — qua `registerEntryRenderer`, bead `m2-wi-16`.
+**Bao trọn `pi` mở vùng hội thoại (nhóm A)** — qua `registerEntryRenderer`, bead `m2-wi-16`
+(id thật: **`m2-wi-16-036`**, hiện `deferred`).
 
-### Còn đúng 3 dòng 🔒, và cả 3 **không** thuộc phạm vi bao trọn `pi`
+### 🔒 còn đúng **1 dòng**, và nó **không** thuộc phạm vi bao trọn `pi`
 
-| Dòng | Vì sao không phải việc bù thiếu của `pi` |
+| Dòng | Vì sao |
 |---|---|
-| Chân ô nhập (`status-line/footer.ts`) | Nó là `Container` riêng của composer (`composer.ts:227` `extensionFooter`), **không** nằm trong `CustomEditor`. `setFooter` của extension nhắm vào `extensionFooter` — **không phải** file này. |
-| Chỉ báo chế độ | Badge plan/bypass nằm ở `status-line/segments.ts`. Cùng lý do dòng trên. |
-| Cuộn (`ScrollKeybindingHandler` 46 KB) | Hành vi phím **toàn cục**, không ai đăng ký được. `pi` cũng không có seam cho nó. |
+| **Chỉ báo chế độ** (badge plan/bypass) | Nằm trong `StatusLineComponent` (`component.ts` **139 KB**), mount vào `#statusHost` — và `StatusHost` là **slot đơn**: `setComponent` **thay thế**, không cộng dồn (`composer.ts:131`, `:922`). Không seam nào cho extension. |
 
-Cả 3 là **việc mới**, không phải thứ `pi` đã làm mà ta chưa copy.
+### Sai lầm của tôi trong chính bảng này — ghi lại để không ai tin bảng mù
+
+Tôi **đánh 🔒 sai 3 lần**, cùng một cách: **đọc tên file rồi suy quan hệ, không kiểm chỗ dùng thật.**
+
+| # | Tôi ghi | Thật |
+|---|---|---|
+| 1 | `prompt/input-modes` | **không tồn tại** trong `packages/tui/src/prompt/` |
+| 2 | `status-line/footer.ts` là mặt UI chạy | **code chết** — 0 chỗ mount trong source; thật là `StatusLineComponent` |
+| 3 | ULW không có transcript browser | **có** — `chat/transcript-browser.ts` 9 KB, và `annotate/text-source.ts:127` đã dùng thật |
+
+Cách thoát, áp dụng từ đây: **tìm chỗ ULW đã instantiate component đó ở đâu** — nếu chính ULW đã
+`new` nó mà không sửa core, nó làm được. Đừng suy từ tên file.
 
 **Hai bên đều có** `todo` và `websearch` — ULW có bản riêng (`todo.ts` 27 KB, `web-search.ts` 14 KB), opencoding render chung trong `messageActions.tsx`. **Ở phần này nên giữ UI của ULW**, đúng như bạn nói.

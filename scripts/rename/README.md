@@ -81,13 +81,29 @@ is genuinely *disjoint* from it — a `keep-worker-selector` row can never be re
 ## Measured on the tree at the time of writing
 
 ```
-704 files carry the token        2054 occurrences
+706 files carry the token        2072 occurrences
   1047  prose inside comments    (51%)
   1007  code
 
 318 files have >=1 code occurrence   (164 source + 154 test)
 386 files are comment-only
 ```
+
+DRIFT, corrected 2026-10-02: the file/occurrence totals were `704` / `2054`,
+stale by 2 files and 18 occurrences. Measured with the gate's own code path —
+`hitPaths(".")` from `check-disposition.ts` (glob `**/*.ts`, skipping
+`node_modules/` and `.git/`) returning 706, and the same paths counted against
+the gate's `PINNED` expression returning 2072. Reproduced independently by a
+standalone scan, which agrees at 706/2072.
+
+The scope is **not** the whole tree: `\bomp\b` over every tracked file gives
+1203 files and 16766 occurrences, and `check-runtime-rename.ts` uses that
+different matcher over a different scope. Two numbers both called "occurrences
+of the token" is the trap here — quote the scope whenever you quote the count.
+
+The prose/code/comment-only breakdown below is **not** re-verified here. Only
+the two totals were re-measured; a fresh breakdown must come from a fresh
+count rather than from carrying these lines forward.
 
 **Read the 51% before filling in a row.** A `rename` row is *not* automatically a
 code edit: renaming inside a comment is W13's job, not this table's.

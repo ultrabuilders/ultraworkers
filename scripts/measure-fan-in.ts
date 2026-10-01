@@ -179,8 +179,20 @@ export function findRegressions(
  * It does not report *type-position* `import("…")`, which erases at runtime but is a real
  * compile-time dependency and so a real edit when a directory moves. Those are picked up by
  * the pattern below. It is a regex rather than a second parser because the set it must
- * cover is small and structurally fixed; non-relative hits it may pick up out of string
- * literals are rejected downstream by `resolveModule`, which requires a `./` or `../`.
+ * cover is small and structurally fixed.
+ *
+ * **The measurement is approximate in both directions, and that is worth knowing before
+ * quoting a number from it.** It can undercount — any import form `scanImports` does not
+ * model is simply absent, and nothing counts it. It can also overcount, because the pattern
+ * cannot tell a type-position `import("…")` from the same text sitting in a string:
+ * `eval/js/shared/local-module-loader.ts` holds `"./a"` and `"./b"` as path placeholders, and
+ * those are read as dependencies of the `eval` module. Non-relative hits it picks up out of
+ * such text (`node:fs/promises`, `@oh-my-pi/pi-ai`, `/$bunfs/...`) are rejected downstream by
+ * `resolveModule`, which requires a `./` or `../`, so most of that noise costs nothing.
+ *
+ * The baseline and the check read the tree through these same rules, so a *comparison*
+ * against it stays sound — the overcount is constant while the placeholder stays constant.
+ * An absolute count should be read as "close to", never as exact.
  */
 export function specifiersIn(source: string, loader: "ts" | "tsx"): readonly string[] {
 	// A leading shebang is not JavaScript and the transpiler rejects it outright — which

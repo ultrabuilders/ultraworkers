@@ -1,6 +1,7 @@
 import { type FetchImpl, getEnvApiKey } from "@oh-my-pi/pi-ai";
 import type { AgentStorage } from "../session/agent-storage";
 import { findCredential, withHardTimeout } from "./search/providers/utils";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 
 const PARALLEL_API_URL = "https://api.parallel.ai";
 export const PARALLEL_SEARCH_URL = `${PARALLEL_API_URL}/v1beta/search`;
@@ -303,7 +304,7 @@ export async function searchWithParallel(
 	const apiKey = findParallelApiKey(storage);
 	if (!apiKey) {
 		throw new ParallelApiError(
-			"Parallel credentials not found. Set PARALLEL_API_KEY or login with 'omp /login parallel'.",
+			`Parallel credentials not found. Set PARALLEL_API_KEY or login with '${WIRE_NAME} /login parallel'.`,
 		);
 	}
 
@@ -337,7 +338,7 @@ export async function extractWithParallel(
 	const apiKey = findParallelApiKey(storage);
 	if (!apiKey) {
 		throw new ParallelApiError(
-			"Parallel credentials not found. Set PARALLEL_API_KEY or login with 'omp /login parallel'.",
+			`Parallel credentials not found. Set PARALLEL_API_KEY or login with '${WIRE_NAME} /login parallel'.`,
 		);
 	}
 

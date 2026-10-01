@@ -314,3 +314,82 @@ describe("marked inline lexing is linear in input size", () => {
 		]);
 	});
 });
+
+/**
+ * Hard-break detection was a quadratic regex (`/(?: {2,}|\\)\n/`) and is now a linear
+ * scan. The rewrite is only allowed to be faster, never narrower — and the obvious
+ * way to make that regex linear is to bound the quantifier, which silently changes
+ * what a hard break *consumes*:
+ *
+ *     "a     \nb"   →  text "a", br "     \n"   (the whole run)
+ *
+ * Bounded to `{2,3}` the same input yields br "   \n" and leaves two spaces as a
+ * separate text token. Every pre-existing test still passes, and no HTML changes,
+ * because trailing spaces before a break are not rendered — so this boundary is
+ * guarded here rather than left to the next reader of the perf comment.
+ */
+describe("a hard break consumes its whole run of spaces", () => {
+	for (const width of [2, 3, 5, 8, 17]) {
+		test(`${width} spaces before a newline form one br spanning all ${width}`, () => {
+			const spaces = " ".repeat(width);
+			expect([...Lexer.lexInline(`a${spaces}\nb`)]).toEqual([
+				{ type: "text", raw: "a", text: "a", escaped: false },
+				{ type: "br", raw: `${spaces}\n` },
+				{ type: "text", raw: "b", text: "b", escaped: false },
+			]);
+		});
+	}
+
+	test("a single space is not a hard break", () => {
+		// The other side of the `{2,}` boundary: one space must not be promoted, or the
+		// scan has grown a match the regex never had.
+		expect([...Lexer.lexInline("a \nb")]).toEqual([{ type: "text", raw: "a \nb", text: "a \nb", escaped: false }]);
+	});
+
+	test("a backslash before a newline is a hard break", () => {
+		expect([...Lexer.lexInline("a\\\nb")]).toEqual([
+			{ type: "text", raw: "a", text: "a", escaped: false },
+			{ type: "br", raw: "\\\n" },
+			{ type: "text", raw: "b", text: "b", escaped: false },
+		]);
+	});
+});
+
+/**
+ * The bare-link regex is now split so its email branch is skipped unless `rest`
+ * actually contains an `@` — the branch had a greedy `+` in front of a required `@`,
+ * which is quadratic on any run of `_`. The gate must not cost a match: an address
+ * whose local part is nothing but the characters that trigger the quadratic case is
+ * the input most likely to be dropped by an over-eager short-circuit.
+ */
+describe("the bare-link email branch still matches when an @ is present", () => {
+	test("a local part made only of the quadratic trigger characters links", () => {
+		expect([...Lexer.lexInline("_@a.co")]).toEqual([
+			{
+				type: "link",
+				raw: "_@a.co",
+				text: "_@a.co",
+				href: "mailto:_@a.co",
+				tokens: [{ type: "text", raw: "_@a.co", text: "_@a.co" }],
+			},
+		]);
+	});
+
+	test("a long underscore run followed by an address still links", () => {
+		const run = "_".repeat(64);
+		// Not "the link spans all 64": the leading run is partly consumed as emphasis
+		// first, so the address that survives is shorter. The contract is the one the
+		// `@` gate could break — that an address containing the quadratic trigger
+		// characters is still recognised, not silently left as text.
+		const links = [...Lexer.lexInline(`${run}@a.co`)].filter(t => t.type === "link");
+		expect(links).toHaveLength(1);
+		expect(links[0]!.raw).toEndWith("@a.co");
+		expect(links[0]!.href.startsWith("mailto:")).toBe(true);
+	});
+
+	test("without an @ the same characters stay text", () => {
+		// The negative contract for the gate: skipping the branch must skip it, not
+		// reinterpret the run.
+		expect([...Lexer.lexInline("a_b")]).toEqual([{ type: "text", raw: "a_b", text: "a_b", escaped: false }]);
+	});
+});

@@ -18,6 +18,7 @@
  * silent no-op would leave the test asserting nothing while still going green.
  */
 import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { ptree, TempDir } from "@oh-my-pi/pi-utils";
 
@@ -173,5 +174,101 @@ describe("R0 GRP-C test-baseline gate", () => {
 		const tolerated = await runGate(dir.absolute(), gate);
 		expect(tolerated.exitCode).toBe(0);
 		expect(tolerated.stdout).toContain("all present in the baseline");
+	}, 60_000);
+
+	test("a failure that does not reproduce on re-run is load, not a regression", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-flaky-");
+		// Fails on the first run of the process and passes on the second, which is
+		// what a load-dependent failure looks like from the gate's side — and is
+		// produced deterministically here by a counter file, so the test asserts
+		// the branch rather than waiting for the machine to be busy.
+		await Bun.write(
+			path.join(dir.absolute(), "flaky.test.ts"),
+			'import { test, expect } from "bun:test";\n' +
+				'import * as fs from "node:fs";\n' +
+				`const MARK = ${JSON.stringify(path.join(dir.absolute(), ".gate-runs"))};\n` +
+				'const runs = fs.existsSync(MARK) ? Number(fs.readFileSync(MARK, "utf8")) : 0;\n' +
+				"fs.writeFileSync(MARK, String(runs + 1));\n" +
+				// Fails on the gate's first internal run and passes on its second.
+				// Keyed on a counter this fixture owns, NOT on a one-shot marker: a
+				// marker is consumed by whatever ran first, and my own pre-check
+				// consumed it — the gate's first pass then came back green and the
+				// branch under test was never entered.
+				'test("passes only on the second run", () => {\n' +
+				"  if (runs === 0) expect(1).toBe(2);\n" +
+				"});\n",
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		// Control: the fixture really is red-then-green, so the gate's green verdict
+		// below cannot be explained by a test that simply never fails.
+		const first = await ptree.exec(["bun", "test", "./"], { cwd: dir.absolute(), allowNonZero: true });
+		expect(`${first.stdout}${first.stderr}`).toContain("(fail) passes only on the second run");
+		await fs.rm(path.join(dir.absolute(), ".gate-runs"), { force: true }); // rewind for the gate's own runs
+
+		const result = await runGate(dir.absolute(), gate);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("did not reproduce on re-run");
+		expect(result.stdout).toContain("No third attempt");
+	}, 60_000);
+
+	test("a failure that reproduces on re-run is still red", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-confirmed-");
+		// Deterministically failing, so it fails on the second run as well. This is
+		// the direction that must NOT be forgiven: it is the whole reason the
+		// re-run stops after one attempt. A gate that kept retrying until green
+		// would pass any regression flaky enough, which makes it measure a
+		// probability rather than a fact.
+		await Bun.write(
+			path.join(dir.absolute(), "solid.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("fails every single run", () => { expect(1).toBe(2); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		const result = await runGate(dir.absolute(), gate);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("NEW failure(s) not in the baseline");
+		expect(result.stderr).toContain("fails every single run");
+		// Confirmed, so it must NOT also appear in the load bucket — a name cannot
+		// be both a regression and forgiven noise.
+		expect(result.stderr).not.toContain("~ fails every single run");
+	}, 60_000);
+
+	test("two failures are red even though a third run would be green", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-thirdrun-");
+		// The failure a LOOPING gate would forgive: red, red, then green. This is
+		// the whole reason the re-run stops after one attempt, so it is the case
+		// that decides whether that limit is a contract or a comment.
+		//
+		// My first fixture here failed on every run, which pins nothing: no number
+		// of retries can hide a test that never passes, so the mutant that retries
+		// until green survived it. This one is green on the third run, which is
+		// exactly what that mutant needs.
+		await Bun.write(
+			path.join(dir.absolute(), "thrice.test.ts"),
+			'import { test, expect } from "bun:test";\n' +
+				'import * as fs from "node:fs";\n' +
+				`const MARK = ${JSON.stringify(path.join(dir.absolute(), ".runs"))};\n` +
+				'const runs = fs.existsSync(MARK) ? Number(fs.readFileSync(MARK, "utf8")) : 0;\n' +
+				"fs.writeFileSync(MARK, String(runs + 1));\n" +
+				'test("red twice then green", () => {\n' +
+				"  if (runs < 2) expect(1).toBe(2);\n" +
+				"});\n",
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		const result = await runGate(dir.absolute(), gate);
+		// Fails on both of the gate's runs, so it is red — and the gate must have
+		// stopped there rather than buying a third run that would have been green.
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("red twice then green");
+
+		// Proof it stopped, from the fixture rather than from the gate's own words:
+		// the counter file records how many times the suite ran. Two runs means the
+		// gate declined the third. My first assertion here looked for a "No third
+		// attempt" string on stderr, but that line only prints on the GREEN path —
+		// the gate was right and my assertion was wrong, the same inversion the
+		// first fixture in this file produced.
+		expect(await Bun.file(path.join(dir.absolute(), ".runs")).text()).toBe("2");
 	}, 60_000);
 });

@@ -49,9 +49,21 @@ function makeSession(overrides: Record<string, unknown> = {}): ToolSession {
 	} as unknown as ToolSession;
 }
 
-/** The decision bash actually reaches for a command. */
-function decide(command: string) {
-	return new BashTool(makeSession()).approval({ command });
+/**
+ * The decision bash actually reaches for a command.
+ *
+ * `ToolApprovalDecision` is `ToolTier | { … }`, and bash returns BOTH arms: the
+ * bare tier when no rule matched, the object form when one did. Both are folded
+ * to one shape here rather than cast. The bare tier carries no `policy`, so the
+ * baseline case below is a decision with no policy on it — which is exactly the
+ * pre-seam answer, and reading it as such is the point of the comparison.
+ */
+function decide(
+	command: string,
+	session: ToolSession = makeSession(),
+): { tier: string; reason?: string; override?: boolean; policy?: string } {
+	const decision = new BashTool(session).approval({ command });
+	return typeof decision === "string" ? { tier: decision } : decision;
 }
 
 afterEach(() => {
@@ -96,9 +108,7 @@ describe("a contributed exec-policy rule reaches the bash decision", () => {
 		const session = makeSession({ "bash.patterns": [{ match: "shipit *", approval: "allow" }] });
 		provide([{ match: "shipit *", approval: "deny" }]);
 
-		const decision = new BashTool(session).approval({ command: "shipit --now" });
-
-		expect(decision.policy).toBe("allow");
+		expect(decide("shipit --now", session).policy).toBe("allow");
 	});
 
 	it("matches per shell segment, so a contributed rule cannot be smuggled past", () => {

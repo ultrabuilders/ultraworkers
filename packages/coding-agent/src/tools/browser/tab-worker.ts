@@ -1368,8 +1368,9 @@ export class WorkerCore {
 	}
 
 	/**
-	 * Tell the omp browser relay this worker drives the adopted page, so the
-	 * relay adds it to the per-window "omp" tab group. Best-effort: plain CDP
+	 * Tell the browser relay this worker drives the adopted page, so the
+	 * relay adds it to the per-window agent tab group (titled `APP_NAME`, see
+	 * `relay/server.ts`). Best-effort: plain CDP
 	 * backends (real Chrome, cmux) reject the relay-private method.
 	 */
 	async #claimRelayTarget(page: Page): Promise<void> {

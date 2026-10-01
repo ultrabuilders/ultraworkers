@@ -156,9 +156,13 @@ export interface SourceMeta {
 	/**
 	 * Registry or CLI source that supplied a plugin root, when the provider
 	 * tracks it (currently `claude-plugins`: `"claude"` for `~/.claude/plugins`,
-	 * `"omp"` for omp's own registry, `"plugin-dir"` for `--plugin-dir`). Lets
-	 * user-scope gating distinguish omp's own installs from the foreign Claude
+	 * `"omp"` for the built-in registry, `"plugin-dir"` for `--plugin-dir`). Lets
+	 * user-scope gating distinguish our own installs from the foreign Claude
 	 * tree — see `isSourceEnabled` in `extensibility/skills.ts` (#10743).
+	 *
+	 * `"omp"` here is a persisted origin tag, not a brand. `discovery/helpers.ts`
+	 * writes it and the gating path reads it back to route user-scope decisions,
+	 * so it survives the product rename unchanged — same rule as `~/.omp`.
 	 */
 	origin?: string;
 	/**

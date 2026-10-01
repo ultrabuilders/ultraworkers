@@ -18,7 +18,7 @@ import {
 	setTerminalTitleState,
 } from "@oh-my-pi/pi-coding-agent/utils/title-generator";
 import { setNativeRendering } from "@oh-my-pi/pi-tui/native/state";
-import { isWsl, logger, setTerminalHeadless } from "@oh-my-pi/pi-utils";
+import { APP_NAME, isWsl, logger, setTerminalHeadless } from "@oh-my-pi/pi-utils";
 import { mockWindowsConsoleTitle, type WindowsConsoleTitleMock } from "./terminal-title-test-utils";
 
 function getModelOrThrow(id: string): Model<Api> {
@@ -1175,7 +1175,12 @@ describe("terminal title runtime", () => {
 			expect(emittedTitles().at(-1)).toBe("Renamed · #412");
 			setSessionTerminalTitle(undefined);
 			setTerminalTitlePullRequest(undefined);
-			expect(emittedTitles().at(-1)).toBe("omp");
+			// Pinning APP_NAME rather than a literal: the fallback is the product
+			// name, which is a rename target. A hardcoded snapshot here asserted
+			// nothing about the title's shape — it just broke on the day the name
+			// changed. The exact-match already pins the whole string, so no second
+			// "no π prefix" assertion belongs beside it.
+			expect(emittedTitles().at(-1)).toBe(APP_NAME);
 			setSessionTerminalTitle("Renamed");
 		} finally {
 			setNativeRendering(false);

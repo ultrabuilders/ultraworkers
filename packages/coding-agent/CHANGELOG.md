@@ -28,6 +28,7 @@
 
 ### Changed
 
+- `omp plugin upgrade` no longer moves a plugin whose marketplace source names a ref or sha. Writing `#main` in a source and then upgrading used to silently re-resolve it, so the running plugin changed to whatever that ref pointed at today, with no error to show for it. Pass `--force` to keep following a pinned ref; because the override is not remembered, it has to be passed on every upgrade, and it is logged each time so the move leaves a trace
 - `omp plugin doctor --fix` now restores a plugin whose installed copy went missing, instead of only deleting its config entry — but only when the recorded source is pinned to a commit. An entry installed from a tag or branch is still removed, because re-fetching that ref now can bring different code than the one the registry recorded, and swapping it in silently would be worse than removing it. Installing from a tag or branch is unaffected: that is you asking for whatever the ref resolves to
 
 ### Fixed

@@ -345,10 +345,10 @@ async function handleUpgrade(args: string[], flags: PluginCommandArgs["flags"]):
 	try {
 		if (pluginId) {
 			if (flags.scope) {
-				const result = await manager.upgradePlugin(pluginId, flags.scope);
+				const result = await manager.upgradePlugin(pluginId, flags.scope, { force: flags.force });
 				console.log(chalk.green(`Upgraded ${pluginId} (${flags.scope}) to ${result.version}`));
 			} else {
-				const entries = await manager.upgradePluginAcrossScopes(pluginId);
+				const entries = await manager.upgradePluginAcrossScopes(pluginId, { force: flags.force });
 				for (const entry of entries) {
 					console.log(chalk.green(`Upgraded ${pluginId} (${entry.scope}) to ${entry.version}`));
 				}

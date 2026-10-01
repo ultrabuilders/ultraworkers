@@ -29,6 +29,11 @@ export interface ConfigCommandArgs {
 		json?: boolean;
 		/** Opt in to the destructive path. `config migrate` alone never writes. */
 		apply?: boolean;
+		/**
+		 * Move anyway when the config root is open. Without it a live database or
+		 * daemon refuses the move, because renaming it is what loses the data.
+		 */
+		force?: boolean;
 	};
 }
 // =============================================================================
@@ -101,6 +106,8 @@ export function parseConfigArgs(args: string[]): ConfigCommandArgs | undefined {
 			result.flags.json = true;
 		} else if (arg === "--apply") {
 			result.flags.apply = true;
+		} else if (arg === "--force") {
+			result.flags.force = true;
 		} else if (!arg.startsWith("-")) {
 			positionalArgs.push(arg);
 		}
@@ -189,7 +196,7 @@ export async function runConfigCommand(cmd: ConfigCommandArgs): Promise<void> {
 			await initXdg();
 			break;
 		case "migrate":
-			await configMigrate(cmd.flags.apply === true);
+			await configMigrate(cmd.flags.apply === true, cmd.flags.force === true);
 			break;
 	}
 }
@@ -381,6 +388,7 @@ ${chalk.bold("Commands:")}
 ${chalk.bold("Options:")}
   --json             Output as JSON
   --apply           Actually move directories (config migrate only)
+  --force           Move even when a database or daemon is still using the root
 
 ${chalk.bold("Examples:")}
   ${APP_NAME} config list

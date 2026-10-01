@@ -15,12 +15,12 @@
 #
 # HOW SECTION 1 WAS GENERATED (regenerate with exactly this, do not hand-edit)
 #   git grep -l "@oh-my-pi/" -- 'packages/*/package.json' > /tmp/manifests.txt
-#   Measured 2026-10-01 at commit 8c76ef6cb2: 17 manifests.
+#   Regenerated 2026-10-01 at commit 452a4e2994: 23 manifests.
 #
 # DRIFT CONSTRAINT — a gate must compare this list against that command and fail
 #   when they differ. A keep-list written by hand decays SILENTLY: each new
 #   package that forgets to be added is skipped by the rename with no error and
-#   no way to notice afterwards. "17" above is a claim that goes stale the
+#   no way to notice afterwards. "23" above is a claim that goes stale the
 #   moment a package is added or removed, which is exactly why it is written
 #   down rather than left implicit.
 #
@@ -35,6 +35,9 @@ packages/agent/package.json
 packages/ai/package.json
 packages/browser-relay/package.json
 packages/catalog/package.json
+packages/chord/package.json
+packages/client/package.json
+packages/codemode/package.json
 packages/coding-agent/package.json
 packages/collab-web/package.json
 packages/evals/package.json
@@ -42,8 +45,11 @@ packages/metaharness/package.json
 packages/mnemopi/package.json
 packages/natives/package.json
 packages/omptype/package.json
+packages/protocol/package.json
+packages/server/package.json
 packages/snapcompact/package.json
 packages/stats/package.json
+packages/telemetry/package.json
 packages/tui/package.json
 packages/typescript-edit-benchmark/package.json
 packages/utils/package.json

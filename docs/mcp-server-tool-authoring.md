@@ -94,12 +94,12 @@ Invalid `enabled`/`timeout` values are ignored with warnings rather than failing
 ### OAuth credential injection
 
 For `http`/`sse` servers, an `auth: { type: "oauth", credentialId: "..." }`
-block is optional. OMP honors an explicit arbitrary or legacy credential ID when
+block is optional. ultraworkers honors an explicit arbitrary or legacy credential ID when
 it resolves. A managed, profile-scoped
 `mcp_oauth:profile:<profile>:<url>` ID is accepted only when its profile is
 active and its URL matches the server's expanded or literal URL; a mismatch is
 ignored. If the accepted explicit ID does not resolve—or if there is no `auth`
-block—OMP looks for a credential under deterministic IDs derived from the
+block—ultraworkers looks for a credential under deterministic IDs derived from the
 expanded and literal server URL. These URL-keyed credentials are scoped to the
 active profile, so a shared, definition-only server entry can use each
 profile's independently stored OAuth credential.
@@ -114,8 +114,8 @@ When lookup succeeds:
 - `http`/`sse`: injects `Authorization: Bearer <access_token>` header
 - `stdio`: injects `OAUTH_ACCESS_TOKEN` env var
 
-If no credential resolves, OMP connects without injecting an OAuth value.
-Refresh or credential-resolution failures are logged; when possible, OMP
+If no credential resolves, ultraworkers connects without injecting an OAuth value.
+Refresh or credential-resolution failures are logged; when possible, ultraworkers
 continues with the existing access token.
 
 ### Header/env value resolution

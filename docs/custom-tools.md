@@ -45,7 +45,7 @@ CustomTool.execute(toolCallId, params, onUpdate, ctx, signal)
 `discoverAndLoadCustomTools(configuredPaths, cwd, builtInToolNames, pushPendingAction?, agentDir?)` merges:
 
 1. Capability providers (`toolCapability`), including:
-   - Native OMP config (`<agentDir>/tools`, default `~/.omp/agent/tools`; `.omp/tools`)
+   - Native ultraworkers config (`<agentDir>/tools`, default `~/.omp/agent/tools`; `.omp/tools`)
    - Claude config (`~/.claude/tools`, `.claude/tools`)
    - Codex config (`~/.codex/tools`, `.codex/tools`)
    - Claude marketplace plugin cache provider
@@ -56,7 +56,7 @@ CustomTool.execute(toolCallId, params, onUpdate, ctx, signal)
 
 - Duplicate resolved paths are deduplicated.
 - Tool name conflicts are rejected against built-ins and already-loaded custom tools.
-- Automatic tool-directory scans discover `.ts` and `.js` modules; native OMP discovery also checks immediate subdirectories for `index.ts`. Executable discovery excludes `.d.ts` and filters out metadata and scripts before tool-name deduplication. Declarative metadata such as `.md` and `.json` remains available to capability consumers but is not loaded as executable tools.
+- Automatic tool-directory scans discover `.ts` and `.js` modules; native ultraworkers discovery also checks immediate subdirectories for `index.ts`. Executable discovery excludes `.d.ts` and filters out metadata and scripts before tool-name deduplication. Declarative metadata such as `.md` and `.json` remains available to capability consumers but is not loaded as executable tools.
 - `.mjs` and `.cjs` modules can be loaded through explicitly configured paths or declared plugin tool entries, but the tool-directory scans above do not discover them automatically. Explicitly configured `.md` or `.json` paths still produce a load error.
 - Relative configured paths are resolved from `cwd`; `~` is expanded.
 

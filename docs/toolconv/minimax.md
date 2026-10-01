@@ -1,6 +1,6 @@
 # MiniMax owned tool-calling format (`<minimax:tool_call>`)
 
-ultraworkers' `minimax` dialect is the prompt-driven, in-band tool protocol for MiniMax-family models. Calls are ordinary assistant text: one `<minimax:tool_call>` envelope contains one or more `<invoke>` elements. OMP executes the parsed calls and returns a `<function_results>` block in the next user turn. The format carries no tool-call ids, so calls and results are correlated by order.
+ultraworkers' `minimax` dialect is the prompt-driven, in-band tool protocol for MiniMax-family models. Calls are ordinary assistant text: one `<minimax:tool_call>` envelope contains one or more `<invoke>` elements. ultraworkers executes the parsed calls and returns a `<function_results>` block in the next user turn. The format carries no tool-call ids, so calls and results are correlated by order.
 
 This reference describes ultraworkers' implemented converter, not MiniMax's provider-native structured tool API. It is verified against `packages/ai/src/dialect/minimax.ts`, the shared XML scanner in `packages/ai/src/dialect/anthropic.ts`, prompt assembly in `packages/ai/src/dialect/catalog.ts`, and the streaming projection in `packages/ai/src/dialect/owned-stream.ts`.
 
@@ -13,9 +13,9 @@ tools:
   format: minimax
 ```
 
-`tools.format: minimax` forces this owned dialect for the session. In `auto` mode, OMP keeps provider-native tool calling unless the selected model explicitly has `supportsTools: false`; for a MiniMax-family model id, that fallback resolves to `minimax`. See [`tools.format`](../settings.md#tools-and-approvals).
+`tools.format: minimax` forces this owned dialect for the session. In `auto` mode, ultraworkers keeps provider-native tool calling unless the selected model explicitly has `supportsTools: false`; for a MiniMax-family model id, that fallback resolves to `minimax`. See [`tools.format`](../settings.md#tools-and-approvals).
 
-When an owned dialect is active, OMP:
+When an owned dialect is active, ultraworkers:
 
 1. removes the native structured `tools` field from the provider request;
 2. appends an in-band tool catalog and the MiniMax format guide to the system prompt;
@@ -77,7 +77,7 @@ The scanner resolves string arguments from the supplied tool schemas. A paramete
 - `string="true"` (and any value except `false`, `0`, or `no`) forces verbatim string handling.
 - `string="false"`, `string="0"`, or `string="no"` forces JSON parsing even for a schema-declared string.
 
-For a non-string parameter, surrounding whitespace is trimmed only for the JSON parse. OMP uses its repair-capable JSON parser; if parsing still fails, the original body is retained as a string rather than dropping the argument. Empty bodies also remain empty strings. A parameter with no usable `name` is ignored.
+For a non-string parameter, surrounding whitespace is trimmed only for the JSON parse. ultraworkers uses its repair-capable JSON parser; if parsing still fails, the original body is retained as a string rather than dropping the argument. Empty bodies also remain empty strings. A parameter with no usable `name` is ignored.
 
 ## Multiple and parallel calls
 
@@ -90,11 +90,11 @@ Parallel calls are sibling `<invoke>` elements inside one envelope, in emitted o
 </minimax:tool_call>
 ```
 
-The scanner mints an internal id for each invoke because the wire format has no id. OMP can dispatch the resulting calls as a batch. Tool results must be returned in the same order; the result protocol has no call id with which to repair reordering.
+The scanner mints an internal id for each invoke because the wire format has no id. ultraworkers can dispatch the resulting calls as a batch. Tool results must be returned in the same order; the result protocol has no call id with which to repair reordering.
 
 ## Tool-result envelope
 
-OMP batches consecutive tool results into one `<function_results>` block. Success and failure use different records:
+ultraworkers batches consecutive tool results into one `<function_results>` block. Success and failure use different records:
 
 ```text
 <function_results>
@@ -117,11 +117,11 @@ For every result:
 - stdout/stderr is inserted verbatim; and
 - there is no call id, so the model reads records in call order.
 
-OMP places this text in a synthesized `user` message. Text blocks from one tool result are concatenated; image result blocks remain image blocks after the rendered text. The model must never emit `<function_results>` or `<tool_response>` itself.
+ultraworkers places this text in a synthesized `user` message. Text blocks from one tool result are concatenated; image result blocks remain image blocks after the rendered text. The model must never emit `<function_results>` or `<tool_response>` itself.
 
 ## Thinking and visible text
 
-OMP renders a preserved reasoning block as:
+ultraworkers renders a preserved reasoning block as:
 
 ```text
 <thinking>
@@ -151,7 +151,7 @@ Important failure behavior:
 - **Incomplete wrapper after complete invokes:** already closed invokes remain valid; the wrapper close is not required to emit their `toolEnd` events.
 - **Incomplete thinking:** retained as thinking and logically ended at flush.
 
-OMP also guards against a model fabricating tool output after its call. For this dialect, the first `<function_results>` or `<tool_response>` boundary stops projection. With the default `tools.abortOnFabricatedResult: true`, generation is aborted immediately; when disabled, OMP drains the provider stream but discards the fabricated continuation.
+ultraworkers also guards against a model fabricating tool output after its call. For this dialect, the first `<function_results>` or `<tool_response>` boundary stops projection. With the default `tools.abortOnFabricatedResult: true`, generation is aborted immediately; when disabled, ultraworkers drains the provider stream but discards the fabricated continuation.
 
 ## End-to-end example
 
@@ -173,7 +173,7 @@ I'll check both cities.
 </minimax:tool_call>
 ```
 
-Next user turn produced by OMP:
+Next user turn produced by ultraworkers:
 
 ```text
 <function_results>

@@ -148,9 +148,9 @@ that cannot be false: the branch is never exercised and the safe path is never
 taken. That is worse than its absence, because absence is visible and this is not.
 
 **This is already true today, not a future risk.** The posture is stated three
-times in shipped code and docs — `types.ts:513-520`, `types.ts:582-586` ("OMP has
+times in shipped code and docs — `types.ts:513-520`, `types.ts:582-586` ("ultraworkers has
 no equivalent per-directory trust gate … always returns `true`, truthfully
-reflecting that OMP already trusts project-local inputs by default"), and the
+reflecting that ultraworkers already trusts project-local inputs by default"), and the
 released changelog entry for #7955 (`packages/coding-agent/CHANGELOG.md:1394`).
 The gap is the absence of a decision, not the presence of a defect.
 

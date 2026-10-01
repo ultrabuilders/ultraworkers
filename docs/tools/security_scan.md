@@ -52,7 +52,7 @@ Unused optional fields are ignored by actions that do not read them.
 
 ## Outputs and execution model
 
-Every action returns one text content block plus structured `details` containing `action` and the action-specific object described below. The tool itself does not stream partial arguments or progress updates. `start` returns a queued operation immediately; its separately registered OMP job reports progress, and callers use `status` for durable operation state.
+Every action returns one text content block plus structured `details` containing `action` and the action-specific object described below. The tool itself does not stream partial arguments or progress updates. `start` returns a queued operation immediately; its separately registered ultraworkers job reports progress, and callers use `status` for durable operation state.
 
 ## Action reference
 
@@ -79,7 +79,7 @@ The plan pins:
 
 For `repository`, `scoped_path`, and `working_tree`, the target digest covers in-scope tracked and untracked file paths and contents, executable bits, symlink targets, and the current HEAD (or `unborn`). `ref_diff` instead fingerprints the resolved base/head commits and their raw tree diff. Scope paths must be repository-relative, must exist and resolve inside the repository, and are normalized, deduplicated, and sorted.
 
-If `output_root` is omitted, preflight allocates a private unique directory under the project's OMP security state. A caller-supplied output directory is created during preflight if absent; its parent must already have a canonical identity. Nonempty directories require `archive_existing=true`.
+If `output_root` is omitted, preflight allocates a private unique directory under the project's ultraworkers security state. A caller-supplied output directory is created during preflight if absent; its parent must already have a canonical identity. Nonempty directories require `archive_existing=true`.
 
 ### `start`
 

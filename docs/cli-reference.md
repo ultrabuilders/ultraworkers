@@ -73,8 +73,8 @@ Argument handling:
 | `--continue`, `-c` | Continue the previous session. |
 | `--resume [id]`, `-r`, `--session [id]` | Resume a session by ID prefix or path, or open the picker when no value is given. |
 | `--fork <session>` | Fork a saved session (by ID prefix or path) into a new session. See [session operations](./session-operations-export-share-fork-resume.md). |
-| `--from-claude` | Import a Claude Code session into OMP. |
-| `--from-codex` | Import a Codex session into OMP. |
+| `--from-claude` | Import a Claude Code session into ultraworkers. |
+| `--from-codex` | Import a Codex session into ultraworkers. |
 | `--export <session>` | Export a session file to HTML and exit. |
 | `--no-title` | Disable title auto-generation (equivalent to the `PI_NO_TITLE` [environment variable](./environment-variables.md)). |
 

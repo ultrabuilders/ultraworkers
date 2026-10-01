@@ -173,7 +173,7 @@ approval: (args) =>
 
 ## ACP sessions
 
-ACP (`ultraworkers acp`) uses the same settings resolver as normal OMP launches. Global `~/.omp/agent/config.yml` applies, project config for the ACP session `cwd` applies, and any `--config <file>` overlays passed to the ACP server process apply to sessions created by that process.
+ACP (`ultraworkers acp`) uses the same settings resolver as normal ultraworkers launches. Global `~/.omp/agent/config.yml` applies, project config for the ACP session `cwd` applies, and any `--config <file>` overlays passed to the ACP server process apply to sessions created by that process.
 
 To auto-approve ACP tool calls, set the mode in global or project config:
 
@@ -195,7 +195,7 @@ Precedence is the normal settings precedence: runtime flags (`--approval-mode`, 
 
 `tools.approvalMode: yolo` fully applies to ACP when it is explicitly configured or supplied by a runtime flag. It skips ultraworkers' approval prompts and also skips the ACP client permission gate for `bash`, `edit`, `delete`, and `move` unless `tools.approval.<tool>` is `prompt` or `deny`. The schema default is `yolo`, but default-config ACP sessions still keep the client permission gate; set `tools.approvalMode: yolo` explicitly when the client wants unattended execution.
 
-When ACP approval is required, OMP routes it through the ACP client instead of the terminal TUI. Client-gated `bash`, `edit`, `delete`, and `move` calls use ACP `session/request_permission`; generic approval prompts use form elicitation when the client advertises `elicitation.form`. A rejected, cancelled, or unsupported prompt rejects/cancels the tool call; OMP does not silently allow it.
+When ACP approval is required, ultraworkers routes it through the ACP client instead of the terminal TUI. Client-gated `bash`, `edit`, `delete`, and `move` calls use ACP `session/request_permission`; generic approval prompts use form elicitation when the client advertises `elicitation.form`. A rejected, cancelled, or unsupported prompt rejects/cancels the tool call; ultraworkers does not silently allow it.
 
 ## Subagents
 

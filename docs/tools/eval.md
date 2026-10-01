@@ -164,7 +164,7 @@ display(page.next_cursor);
 ```
 
 Python callers use `result["details"].get("structuredContent")`. The property is
-absent when the server supplies no structured result; OMP does not infer it from
+absent when the server supplies no structured result; ultraworkers does not infer it from
 JSON-looking text. Error results can also carry structured data, so check
 `hasError` before treating a payload as a successful result.
 

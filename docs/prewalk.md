@@ -35,11 +35,11 @@ ultraworkers --prewalk-into @smol
 ultraworkers --prewalk-into openai/gpt-5-mini
 ```
 
-At startup, OMP resolves the target with the normal model-role and model-matching rules. If the target cannot be resolved or has no configured credentials, OMP prints a warning and starts with prewalk unarmed.
+At startup, ultraworkers resolves the target with the normal model-role and model-matching rules. If the target cannot be resolved or has no configured credentials, ultraworkers prints a warning and starts with prewalk unarmed.
 
 ## Handoff trigger
 
-An armed prewalk injects a planning nudge. When the `todo` tool is active, any successful `todo` call—including the read-only `view` operation—opens the handoff gate. OMP then switches models after the first completed `edit` or `write` call.
+An armed prewalk injects a planning nudge. When the `todo` tool is active, any successful `todo` call—including the read-only `view` operation—opens the handoff gate. ultraworkers then switches models after the first completed `edit` or `write` call.
 
 Calls to other tools do not trigger the handoff. A read-only `xd://` device request routed through `write`, such as LSP navigation, also does not count; only device operations classified as workspace writes or execution count.
 
@@ -47,7 +47,7 @@ The switch is one-shot: after the handoff, prewalk disarms itself. The target mo
 
 ## Arm from an active session
 
-Run either slash command without restarting OMP:
+Run either slash command without restarting ultraworkers:
 
 ```text
 /prewalk

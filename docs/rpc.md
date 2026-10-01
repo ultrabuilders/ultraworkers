@@ -256,7 +256,7 @@ Local-only slash commands may emit `command_output` frames before completing. Th
 
 A prompt's `prompt_result` means the **agent yielded**: it finished its turn (`agent_end` with `yielded: true`). The **session is done** only when, in addition, nothing can wake it again — no run is live or admitted, no steer/follow-up is queued, and no background job (auto-backgrounded `bash`, async `task`, `eval`) or pending delivery will inject its result and start a follow-up turn.
 
-- `session_settled` is written once per stretch of agent activity, when the session becomes done. If background work was pending at the yield, OMP waits it out; any follow-up runs it triggers stream normally (`agent_start` … `agent_end`) before `session_settled`. It always follows the `prompt_result` frames of the final yield, and is not emitted for prompts that never reached the agent.
+- `session_settled` is written once per stretch of agent activity, when the session becomes done. If background work was pending at the yield, ultraworkers waits it out; any follow-up runs it triggers stream normally (`agent_start` … `agent_end`) before `session_settled`. It always follows the `prompt_result` frames of the final yield, and is not emitted for prompts that never reached the agent.
 - `prompt_result.sessionSettled` answers the same question at the yield, so a host can tear down immediately when it is `true`.
 - `get_state` reports `isSettled` (same predicate) and `hasPendingAsyncWork`, for hosts that attach mid-stream.
 
@@ -538,7 +538,7 @@ previous set — schemes missing from the new list are unregistered.
 
 Every built-in scheme (`local://`, `skill://`, `artifact://`, `security://`,
 `mcp://`, …) is reserved: RPC hosts cannot register or shadow one, and the
-request fails with `Host URI scheme is reserved by OMP: <scheme>://`.
+request fails with `Host URI scheme is reserved by ultraworkers: <scheme>://`.
 
 ## Event Stream Schema
 
@@ -592,7 +592,7 @@ Extension runner errors are emitted separately as:
 
 `message_start`, `message_update`, and `message_end` carry a `messageId` string assigned by RPC mode. One message keeps the same id from its start through every update to its end; ids are unique within the process. Records injected mid-stream (advisor cards, IRC messages) get their own id and do not disturb the id of the reply streaming around them.
 
-`set_event_filter` restricts which session event frames are written: pass the event `type` strings to forward, or `null` to forward everything (the default). The response echoes the active selection as `{ events }`. The filter applies only to the session events listed above; every other outbound category (responses, `prompt_result`, `session_settled`, extension UI and host tool/URI requests, `extension_error`, `available_commands_update`, subagent frames, builtin slash-command side channels, and session-persistence `notice` frames) is always written. Hosts that fail closed on unknown event kinds can pin the set they understand here instead of breaking when OMP adds an event.
+`set_event_filter` restricts which session event frames are written: pass the event `type` strings to forward, or `null` to forward everything (the default). The response echoes the active selection as `{ events }`. The filter applies only to the session events listed above; every other outbound category (responses, `prompt_result`, `session_settled`, extension UI and host tool/URI requests, `extension_error`, `available_commands_update`, subagent frames, builtin slash-command side channels, and session-persistence `notice` frames) is always written. Hosts that fail closed on unknown event kinds can pin the set they understand here instead of breaking when ultraworkers adds an event.
 
 `agent_end` has this session-level shape (in addition to optional telemetry fields):
 
@@ -619,7 +619,7 @@ in `available_commands_update` frames at startup and after command metadata
 changes. Each command has `name`, `source`, and optional `aliases`,
 `description`, `input.hint`, and `subcommands`.
 
-Command discovery is intentionally an OMP dialect: Pi's `get_commands` (a
+Command discovery is intentionally an ultraworkers dialect: Pi's `get_commands` (a
 `RpcSlashCommand[]` projection over extensions → prompt templates → skills) is
 not served because ultraworkers' richer catalog (builtins/custom/MCP/file commands,
 broader `source` enum, no Pi `sourceInfo`) is not wire-compatible with it.
@@ -628,9 +628,9 @@ broader `source` enum, no Pi `sourceInfo`) is not wire-compatible with it.
 
 The commands and reconciliation semantics below are Pi-compatible, but the
 returned `SessionEntry` payload union is OMP-native, not wire-identical to
-Pi. Concretely: Pi `model_change` carries `provider` + `modelId` while OMP
+Pi. Concretely: Pi `model_change` carries `provider` + `modelId` while ultraworkers
 carries a combined `model` plus role/fallback metadata; Pi uses a `usage`
-entry where OMP uses `model_usage`; and OMP has additional entry types (for
+entry where ultraworkers uses `model_usage`; and ultraworkers has additional entry types (for
 example service-tier, title, mode, credential, and reset records). A
 permissive client that consumes the common structural subset
 (`id`/`parentId` plus message entries) can share one durable-history
@@ -649,10 +649,10 @@ for the live model with `"off"` first (it is accepted by
 `set_thinking_level` but excluded from the effort-only model helper). OMP-only
 `auto`/`inherit` selectors are intentionally omitted from discovery.
 
-Lifecycle stays OMP: terminal settle is `agent_end` with
+Lifecycle stays ultraworkers: terminal settle is `agent_end` with
 `isTerminal !== false`, not Pi's `agent_settled`; `prompt_result`/
 `agentInvoked`, `open_session`, `set_event_filter`, `messageId`, `ready`,
-negotiation, chunking, host tools, and subagents are OMP extensions a
+negotiation, chunking, host tools, and subagents are ultraworkers extensions a
 Pi-family adapter must dialect around.
 
 ### Subagent subscriptions

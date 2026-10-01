@@ -25,7 +25,7 @@ An advisor does not approve actions or mutate primary session state directly. It
 
 The subsystem requires `advisor.enabled: true`. Model selection then depends on the roster:
 
-- Without any discovered `WATCHDOG.yml` advisor entries, OMP creates the legacy/default advisor and resolves its model from `modelRoles.advisor`.
+- Without any discovered `WATCHDOG.yml` advisor entries, ultraworkers creates the legacy/default advisor and resolves its model from `modelRoles.advisor`.
 - With a roster, each enabled entry uses its explicit `model` when present, otherwise `modelRoles.advisor`. An unresolvable entry is reported as `no_model` without preventing other entries from running.
 - `advisors[].enabled: false` keeps an entry visible as paused but does not build its runtime.
 
@@ -69,7 +69,7 @@ persisting `advisor.enabled`:
 omp -p --advisor "Review this task."
 ```
 
-While a primary prompt is running, eligible advisor notes can steer that run. After the final prompt settles, print mode preserves late advisor notes without starting hidden primary turns, then waits up to ten minutes for final reviews before disposing the session. That wait covers a failing advisor's retries and [backup reviewer](#backup-reviewer) switch, so a review that fails on the advisor's model finishes on its fallback instead of being abandoned. Error exits use a 30-second drain budget so failed automation can terminate. If either deadline expires, or the advisor stops for good (halted or quota-paused), OMP logs the reviews that disposal will abandon; completed reviews retain their transcript and token/cost usage.
+While a primary prompt is running, eligible advisor notes can steer that run. After the final prompt settles, print mode preserves late advisor notes without starting hidden primary turns, then waits up to ten minutes for final reviews before disposing the session. That wait covers a failing advisor's retries and [backup reviewer](#backup-reviewer) switch, so a review that fails on the advisor's model finishes on its fallback instead of being abandoned. Error exits use a 30-second drain budget so failed automation can terminate. If either deadline expires, or the advisor stops for good (halted or quota-paused), ultraworkers logs the reviews that disposal will abandon; completed reviews retain their transcript and token/cost usage.
 
 Slash commands:
 

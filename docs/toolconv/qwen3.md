@@ -241,7 +241,7 @@ text.
   through vLLM's structured-outputs backend when using vLLM native tools, but
   owned mode sends no native provider tool definition and therefore cannot rely
   on that backend.
-- **Version/scope:** this `hermes` template covers `Qwen3-*`, `Qwen2.5-*`, and `QwQ-32B`. It does **not** cover `Qwen3-Coder`, which uses a different XML scheme parsed by a serving engine's `qwen3_xml` parser. OMP has no `qwen3_xml` owned dialect; use `tools.format=native` and configure that parser at the endpoint.
+- **Version/scope:** this `hermes` template covers `Qwen3-*`, `Qwen2.5-*`, and `QwQ-32B`. It does **not** cover `Qwen3-Coder`, which uses a different XML scheme parsed by a serving engine's `qwen3_xml` parser. ultraworkers has no `qwen3_xml` owned dialect; use `tools.format=native` and configure that parser at the endpoint.
 
 ## Sources
 

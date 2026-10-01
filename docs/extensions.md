@@ -533,7 +533,7 @@ supports it. Repeats (compared ignoring surrounding whitespace) are dropped at t
 identical to an earlier handler's on the same call, and a call's joined context identical to an earlier
 call's in the same batch. Raw tool output and other untrusted data must stay in the ordinary tool result.
 
-Distinct non-empty context from every non-blocking handler is preserved in registration order. OMP waits
+Distinct non-empty context from every non-blocking handler is preserved in registration order. ultraworkers waits
 until the tool batch settles, then emits the context after the corresponding tool results in
 assistant tool-call order and before the next provider request. Handler context is delivered only when
 the call actually runs and returns a non-error result: if the call is blocked by this or a later

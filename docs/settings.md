@@ -170,7 +170,7 @@ bash:
       approval: allow
 ```
 
-With this configuration, `cmp tmp/result.json artifacts/result.json && rm -f tmp/result.json` can run without a prompt. OMP resolves the ordered rules independently for each original segment: `rm` is explicitly allowed, while the unmatched `cmp` segment inherits the normal standalone bash policy. When any segment is unmatched, the command retains the `exec` tier with no explicit policy, so the generic resolver applies `tools.approval.bash` and then the active approval mode. An unmatched segment therefore prompts only if that tool-wide policy or mode requires it.
+With this configuration, `cmp tmp/result.json artifacts/result.json && rm -f tmp/result.json` can run without a prompt. ultraworkers resolves the ordered rules independently for each original segment: `rm` is explicitly allowed, while the unmatched `cmp` segment inherits the normal standalone bash policy. When any segment is unmatched, the command retains the `exec` tier with no explicit policy, so the generic resolver applies `tools.approval.bash` and then the active approval mode. An unmatched segment therefore prompts only if that tool-wide policy or mode requires it.
 
 Explicit restrictions are combined conservatively across the chain: a resolved `deny` wins, otherwise a resolved `prompt` wins. A `deny` or `prompt` rule that matches the complete chain but no individual segment remains a whole-chain restriction (for example, `cmp * && rm *`). All matching whole-chain restrictions are considered: a later whole-chain `deny` overrides an earlier whole-chain `prompt`. Otherwise, segment rules retain first-match ordering: an earlier `git status` allow is not overridden by a later `git *` deny when evaluating `git status && git status`.
 
@@ -310,7 +310,7 @@ Only string values are kept; malformed scoped entries are ignored. Path scoping 
 
 ## Provider and source disabling
 
-`enabledProviders` opts foreign user-level configuration sources into discovery. Its default is empty, so user roots from Cursor, Codex, Claude, Claude marketplace plugins, Gemini, OpenCode, Windsurf, and GitHub do not load until their provider id is listed (or `*`/`all` is listed). Project roots remain enabled. Native OMP roots—including marketplace plugins registered under `~/.omp/plugins`—are not foreign and do not require an entry.
+`enabledProviders` opts foreign user-level configuration sources into discovery. Its default is empty, so user roots from Cursor, Codex, Claude, Claude marketplace plugins, Gemini, OpenCode, Windsurf, and GitHub do not load until their provider id is listed (or `*`/`all` is listed). Project roots remain enabled. Native ultraworkers roots—including marketplace plugins registered under `~/.omp/plugins`—are not foreign and do not require an entry.
 
 `disabledProviders` is a single shared id namespace that gates two different subsystems, before any credential check:
 

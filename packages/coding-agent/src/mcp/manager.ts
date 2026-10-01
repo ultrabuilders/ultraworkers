@@ -40,6 +40,7 @@ import {
 	refreshStoredManagedMcpOAuthCredential,
 } from "./oauth-credentials";
 import type { MCPStoredOAuthCredential } from "./oauth-flow";
+import { assertUrlAllowed } from "./network-policy";
 import type { McpConnectionStatusEvent } from "./startup-events";
 import { resolveMCPStartupTimeoutMs } from "./timeout";
 
@@ -206,6 +207,14 @@ export interface MCPLoadResult {
 	connectedServers: string[];
 	/** Extracted Exa API keys from filtered MCP servers */
 	exaApiKeys: string[];
+	/**
+	 * Per-server network-policy notices for servers that were ALLOWED — today, a
+	 * user-configured server reaching a loopback address. Distinct from `errors`:
+	 * these servers connected. Optional because every existing producer of this
+	 * shape stays valid — a required field would break each literal that builds
+	 * one, and nothing about the warnings needs that.
+	 */
+	networkWarnings?: string[];
 }
 
 /** Readiness of configured MCP servers after the initial tool handshake. */
@@ -684,12 +693,31 @@ export class MCPManager {
 		let allowBackgroundLogging = false;
 		const statusServerNames: string[] = [];
 		const validationFailures: Array<{ name: string; message: string }> = [];
+		/** Loopback notices for servers that were allowed, surfaced by the panel. */
+		const networkWarnings: string[] = [];
 
 		// Prepare connection tasks
 		const connectionTasks: ConnectionTask[] = [];
 
 		for (const [name, config] of Object.entries(configs)) {
 			this.#startupServers.add(name);
+			// Once per server, here, because this loop already walks every config
+			// exactly once per connect. The fetch-time gate in `mcpFetch` is
+			// deliberately silent — it runs per request, so a loopback server would
+			// emit a line per tool call. This is where the notice the user can read
+			// is produced: a user-configured server is ALLOWED to reach loopback
+			// (GAP-D1 decision (d) — typing 127.0.0.1 is stating an intent), but
+			// "this server can reach services on this machine" should not be silent.
+			const url = (config as { url?: string }).url;
+			if (typeof url === "string") {
+				try {
+					const { warning } = assertUrlAllowed(url, "configured", `MCP server "${name}"`);
+					if (warning) networkWarnings.push(warning);
+				} catch {
+					// A denial here is the fetch gate's job; this loop only reports what
+					// was allowed, so refusing to warn about a refused URL is correct.
+				}
+			}
 			if (sources[name]) {
 				this.#sources.set(name, sources[name]);
 				const existing = this.#connections.get(name);
@@ -925,11 +953,21 @@ export class MCPManager {
 
 		allowBackgroundLogging = true;
 
+		// Reported here rather than at each call site: `connectServers` has five
+		// callers (startup, the /mcp panel, ACP, extension MCP runtime, and one
+		// more) and three of them discarded the whole result. A notice that only
+		// the callers who remembered to read it would surface is not a notice —
+		// and startup, the path that matters most, is one of the three.
+		for (const warning of networkWarnings) {
+			logger.warn(warning);
+		}
+
 		return {
 			tools: this.#tools,
 			errors,
 			connectedServers: Array.from(connectedServers),
 			exaApiKeys: [], // Will be populated by discoverAndConnect
+			networkWarnings,
 		};
 	}
 

@@ -2195,6 +2195,34 @@ export class MCPCommandController {
 		const result = await this.ctx.mcpManager.connectServers({ [name]: config }, source ? { [name]: source } : {});
 		await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
 		this.#showMCPConnectionErrors(result.errors);
+		this.#showMCPNetworkWarnings(result.networkWarnings);
+	}
+
+	/**
+	 * Surface network-policy notices for servers that DID connect.
+	 *
+	 * This is the only channel that reaches the user for the `configured` level
+	 * of the MCP network policy (`mcp/network-policy.ts`). The alternatives were
+	 * measured and all fail: the fetch-time gate runs per request so a log line
+	 * would repeat per tool call, and `validateServerConfig` cannot carry a
+	 * warning at all — a non-empty result drops the server.
+	 *
+	 * Kept separate from {@link #showMCPConnectionErrors} because a warning here
+	 * is not a failure: the server connected, and a user reading "some servers
+	 * failed to connect" above a list of servers that are working fine would be
+	 * misled about which ones broke.
+	 */
+	#showMCPNetworkWarnings(warnings: string[] | undefined): void {
+		if (!warnings || warnings.length === 0) {
+			return;
+		}
+
+		const lines = ["", theme.fg("warning", "MCP network notices:"), ""];
+		for (const warning of warnings) {
+			lines.push(`  ${warning}`);
+		}
+		lines.push("");
+		this.#showMessage(lines.join("\n"));
 	}
 
 	#showMCPConnectionErrors(errors: Map<string, string>): void {
@@ -2247,6 +2275,7 @@ export class MCPCommandController {
 		await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
 
 		this.#showMCPConnectionErrors(result.errors);
+		this.#showMCPNetworkWarnings(result.networkWarnings);
 	}
 
 	/**

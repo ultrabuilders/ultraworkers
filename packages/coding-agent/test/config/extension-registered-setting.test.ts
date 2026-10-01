@@ -111,6 +111,14 @@ describe("a collision between two settings is reported, not silently resolved", 
 		// The id must be in the message: an author who cannot see WHICH key collided
 		// has to bisect their whole setting list.
 		expect(thrown!.message).toContain("test.owner.collide");
+		// The holder, so the author knows it is not a core setting they collided with
+		// and can find the other extension by name rather than by bisecting.
+		expect(thrown!.message).toContain("test-owner-first");
+		// And the rule, so the error carries its own fix: extension-owned settings
+		// belong under the reserved namespace, which is what makes the collision
+		// impossible in the first place. Without this the author has to know a
+		// convention the error never mentions.
+		expect(thrown!.message).toContain("plugins.");
 		// And the first declaration must survive untouched. Read through a real
 		// `Settings` instance: a handle resolves against the layer stack, so passing a
 		// bare object here would throw inside `settingsOf` rather than prove anything

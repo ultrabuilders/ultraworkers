@@ -861,16 +861,28 @@ export function invalidateOrderedSettings(): void {
 	invalidateOrderedSettingsImpl?.();
 }
 
+/** Reserved root for settings an extension owns. See `.lavish-wip/m2-specs/WI-8a.spec.json`. */
+const PLUGIN_SETTINGS_ROOT = "plugins";
+
 /**
  * Declares a setting on behalf of `owner` and returns its typed handle.
  *
- * @throws Error when `id` is already registered.
+ * @throws Error when `id` is already registered, naming the id, the owner that holds
+ * it, and the namespace rule an extension must follow.
  */
 export function registerOwned<const D extends SettingDefinition>(
 	owner: string,
 	definition: D,
 ): Setting<DefinitionValue<D>, D["id"]> {
-	if (byId.has(definition.id)) throw new Error(`Setting "${definition.id}" is registered twice`);
+	if (byId.has(definition.id)) {
+		const holder = ownerById.get(definition.id) ?? "an unknown owner";
+		throw new Error(
+			`Setting "${definition.id}" is already registered by ${holder}. ` +
+				`Settings owned by an extension must live under the reserved ` +
+				`"${PLUGIN_SETTINGS_ROOT}.<id>.<key>" namespace, so two extensions cannot ` +
+				`collide on a bare id and one extension's key cannot shadow another's.`,
+		);
+	}
 	const handle = new Setting<DefinitionValue<D>, D["id"]>(definition);
 	byId.set(definition.id, handle as AnySetting);
 	ordered.push(handle as AnySetting);

@@ -1,80 +1,46 @@
 /**
- * The `eval` deny must happen at the approval layer, BEFORE the backend runs.
+ * What the MODEL sees when `tools.approval.eval` denies its call under `yolo`.
  *
- * `approval-eval-policy.test.ts` proves `resolveApproval` returns the right policy. That is
- * the decision, not the effect. This file proves the effect a user depends on: with
- * `tools.approval.eval: "deny"`, a real eval call is refused and **no child process is
- * spawned** — a gate that decides correctly but runs one layer too late would still let the
- * model reach a shell, and every unit-level assertion above would stay green.
+ * `approval-eval-policy.test.ts` proves `resolveApproval` returns the right policy. That
+ * is the decision; this is the consequence a user reads in their transcript. The refusal
+ * has to name the setting that caused it, or the model retries the same call forever and
+ * the user has nothing to act on.
  *
- * The backend is spied (not mocked away) purely to COUNT invocations. Count 0 is what
- * separates "denied before dispatch" from "denied after doing the work and apologising".
+ * Scope, stated honestly: this exercises the approval gate, not a spawned eval backend.
+ * An earlier version of this file declared a `spawn` mock and asserted it was never
+ * called — but nothing was ever wired to call it, so the zero was true by construction
+ * and proved nothing. Asserting on a mock you did not connect is the same failure as
+ * `expect(true).toBe(true)`, wearing a disguise.
  */
-import { afterEach, describe, expect, it, vi } from "bun:test";
-import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
-import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { describe, expect, it } from "bun:test";
 import { requiresApproval } from "@oh-my-pi/pi-coding-agent/tools/approval";
-import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 
-/** A tool session is structural; only these members are touched on the eval path. */
-function makeSession(): ToolSession {
-	return {
-		cwd: "/tmp",
-		hasUI: false,
-		getSessionFile: () => null,
-		getSessionSpawns: () => null,
-		settings: Settings.isolated(),
-		getEvalPreludes: () => [],
-	} as unknown as ToolSession;
-}
-
+/** The real `EvalTool` identity as declared at `tools/eval.ts`: name `eval`, tier `exec`. */
 const EVAL_TOOL = { name: "eval", approval: "exec" } as const;
 
-afterEach(() => {
-	vi.restoreAllMocks();
-});
-
-describe("a denied eval call is refused before the backend runs", () => {
-	it("spawns nothing and names the deny policy in the message the model sees", () => {
-		// Counts what a real dispatch would do. If the gate is honoured, this is never
-		// reached — which is the point: the assertion is on the zero, not on the return.
-		const spawn = vi.fn(async (): Promise<AgentToolResult<unknown>> => ({
-			content: [{ type: "text", text: "backend ran" }],
-		}));
-
-		const userConfig = { eval: "deny" };
-
-		// The gate, exercised as the runtime exercises it.
+describe("what the model sees when a yolo install denies eval", () => {
+	it("is a refusal naming tools.approval.eval, not a generic failure", () => {
 		let refusal: Error | undefined;
 		try {
-			requiresApproval(EVAL_TOOL, { code: "1" }, "yolo", userConfig);
+			requiresApproval(EVAL_TOOL, { code: "1" }, "yolo", { eval: "deny" });
 		} catch (err) {
 			refusal = err as Error;
 		}
 
 		expect(refusal).toBeDefined();
-		// The message tells the model — and the user reading the transcript — WHY, and
-		// names the setting to change. A generic infrastructure error would leave the
-		// model retrying and the user with nothing to act on.
+		// All three, or the model cannot tell a policy denial from a broken install and
+		// will retry — and the user cannot tell which knob to turn.
 		expect(refusal!.message).toContain("eval");
 		expect(refusal!.message).toContain("blocked by user policy");
 		expect(refusal!.message).toContain("tools.approval.eval");
-
-		// The gate refused, so nothing downstream was reached.
-		expect(spawn).not.toHaveBeenCalled();
 	});
 
-	it("does spawn when no user policy is set, so the zero above is the deny and not a dead path", () => {
-		// Without this, "spawn was never called" would be satisfiable by a build where eval
-		// never dispatches at all — the exact failure a "did not throw" test invites.
-		const spawn = vi.fn(async (): Promise<AgentToolResult<unknown>> => ({
-			content: [{ type: "text", text: "backend ran" }],
-		}));
-
+	it("leaves the same call untouched when no eval policy is configured", () => {
+		// The zero above is only meaningful if the gate has a non-deny side. Without this
+		// row, "it always throws" would satisfy the test above while telling the user
+		// nothing about their own configuration.
 		const check = requiresApproval(EVAL_TOOL, { code: "1" }, "yolo", {});
-		expect(check.required).toBe(false);
 
-		void spawn();
-		expect(spawn).toHaveBeenCalledTimes(1);
+		expect(check.required).toBe(false);
 	});
 });

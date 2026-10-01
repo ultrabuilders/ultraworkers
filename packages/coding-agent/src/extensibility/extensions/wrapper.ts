@@ -25,6 +25,7 @@ import { normalizeToolEventInput, resolveToolEventInput } from "../tool-event-in
 import { applyToolProxy } from "../tool-proxy";
 import type { ExtensionRunner } from "./runner";
 import type { RegisteredTool, ToolCallEventResult } from "./types";
+import { ToolCallBlockedError } from "../shared-events";
 
 /**
  * Second `renderCall` argument that satisfies both the omp and the upstream-pi
@@ -278,7 +279,9 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 
 				if (callResult?.block) {
 					const reason = callResult.reason || "Tool execution was blocked by an extension";
-					throw new Error(reason);
+					// Typed, so the distinction survives the throw: a caller can tell a
+					// handler that declined from one that crashed without reading the prose.
+					throw new ToolCallBlockedError(callResult.kind ?? "denied", reason);
 				}
 				if (isNonBlankContext(callResult?.additionalContext)) {
 					pendingAdditionalContext = callResult.additionalContext;

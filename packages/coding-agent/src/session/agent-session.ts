@@ -4758,7 +4758,14 @@ export class AgentSession implements SettingsScope {
 		}
 		if (callResult?.block) {
 			runner.clearLoopToolCall?.(ctx.toolCall.id, ctx.tool.name);
-			return { block: true, reason: callResult.reason || "Tool execution was blocked by an extension" };
+			// `kind` rides along: this re-wrap is where a classification carried from
+			// the runner would otherwise be dropped, leaving the loop to report a crashed
+			// hook as a refusal.
+			return {
+				block: true,
+				reason: callResult.reason || "Tool execution was blocked by an extension",
+				kind: callResult.kind,
+			};
 		}
 		// A computer call's event input is a synthetic {actions, pendingSafetyChecks}
 		// view, not the execution params — a revision cannot map back onto them.

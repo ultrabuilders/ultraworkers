@@ -2246,6 +2246,10 @@ export class ExtensionRunner {
 							kind === "timeout"
 								? `Extension ${ext.path} timed out after ${timeoutMs}ms`
 								: `Extension ${ext.path} failed: ${message}`,
+						// Fail-closed is unchanged above; this says WHY. A crashed or hung
+						// handler produced no decision, and presenting its block as one is
+						// the "system looks like it decided, and nothing decided" failure.
+						kind: "hook-failed",
 					}),
 					signal,
 				)) as ToolCallEventResult | undefined;
@@ -2261,7 +2265,13 @@ export class ExtensionRunner {
 		}
 
 		if (signal?.aborted) {
-			return { block: true, reason: `Tool execution was cancelled while an extension handler was pending` };
+			// A cancellation is a decision — by the user or by the caller — not a
+			// malfunction, so it must not borrow the hook-failed label.
+			return {
+				block: true,
+				reason: `Tool execution was cancelled while an extension handler was pending`,
+				kind: "denied",
+			};
 		}
 		return buildAggregatedToolCallResult(result, aggregated);
 	}

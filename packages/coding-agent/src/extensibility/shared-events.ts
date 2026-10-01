@@ -317,6 +317,21 @@ export interface ToolCallEventResult {
 	/** Reason for blocking (returned to LLM as error) */
 	reason?: string;
 	/**
+	 * Why the tool was blocked, so a reader can tell a decision from a malfunction.
+	 *
+	 * `denied` — a handler returned `block: true`. Somebody chose this.
+	 * `hook-failed` — a handler threw or timed out. Nobody chose anything; the gate broke.
+	 *
+	 * Required whenever `block` is set, because the two are otherwise indistinguishable
+	 * downstream: both reach the caller as a blocked tool carrying a prose `reason`, and a
+	 * third-party extension that crashes renders exactly like a user who said no. The block
+	 * DECISION is identical either way — this classifies it, it does not relax it.
+	 *
+	 * Absent when no handler blocked the call, so a caller branching on `kind` can treat
+	 * its absence as "no decision was taken" rather than "something denied it".
+	 */
+	kind?: "denied" | "hook-failed";
+	/**
 	 * Replacement input the tool executes with, instead of the original arguments. Ignored when
 	 * `block` is true. This is the raw execution input passed to the tool's `execute` (the handler
 	 * owns its correctness) — not the normalized `event.input` view, which may carry derived
@@ -341,6 +356,25 @@ export interface ToolCallEventResult {
 	 * registration order; ignored when this or a later handler blocks the call.
 	 */
 	additionalContext?: string;
+}
+
+/**
+ * A `tool_call` gate refused the call — or broke while judging it.
+ *
+ * Carries `kind` as a field so whatever renders the failure can tell a decision from a
+ * malfunction without matching on prose. The message is deliberately unchanged from the
+ * plain `Error` this replaces: existing transcript text and assertions depend on it, and
+ * relabelling that text is a separate, user-facing decision. What this type adds is the
+ * structure that decision needs.
+ */
+export class ToolCallBlockedError extends Error {
+	readonly kind: "denied" | "hook-failed";
+
+	constructor(kind: "denied" | "hook-failed", reason: string) {
+		super(reason);
+		this.kind = kind;
+		this.name = "ToolCallBlockedError";
+	}
 }
 
 /**

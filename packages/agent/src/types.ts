@@ -911,6 +911,13 @@ export interface SpeculativeToolExecutionConfig {
 export interface BeforeToolCallResult {
 	block?: boolean;
 	reason?: string;
+	/**
+	 * Why the call was blocked, when `block` is set: `denied` if a gate declined,
+	 * `hook-failed` if a gate threw or timed out. Both fail closed identically, so
+	 * without this the loop reports a crashed third-party hook as a refusal nobody
+	 * made. Optional, and absent when no gate blocked the call.
+	 */
+	kind?: "denied" | "hook-failed";
 	args?: Record<string, unknown>;
 	additionalContext?: string;
 }

@@ -1923,6 +1923,7 @@ describe("ExtensionRunner", () => {
 					expect(await decision).toEqual({
 						block: true,
 						reason: `Extension ${extensionPath} timed out after ${EXTENSION_HANDLER_TIMEOUT_MS}ms`,
+						kind: "hook-failed",
 					});
 				}
 			} finally {
@@ -2219,6 +2220,7 @@ describe("ExtensionRunner", () => {
 				expect(await decision).toEqual({
 					block: true,
 					reason: `Extension ${extensionPath} timed out after 10ms`,
+					kind: "hook-failed",
 				});
 			} finally {
 				vi.useRealTimers();

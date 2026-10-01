@@ -2,6 +2,17 @@
 
 Vendor-neutral telemetry contracts and typed schema utilities for pi packages.
 
+> **Status: not consumed in this workspace.** Nothing under `packages/` imports
+> `@oh-my-pi/pi-telemetry` — measured 2026-10-02, and the only other match for
+> the string "telemetry" is a `mkdtemp` prefix inside `packages/mnemopi/test`,
+> which names a temporary directory rather than importing this package. It is
+> published, typechecks clean and has no failing gate; what it does not have is a
+> caller. The paragraphs below describe the contract it offers, not behaviour
+> anything currently performs — in particular, no pi package passes a telemetry
+> context anywhere, because none of them reference this contract. Tracked in
+> `epic-l8nc`, which is deciding whether this package should exist until it has
+> a consumer, be wired somewhere, or be removed.
+
 This package provides:
 
 - an explicit, callback-based `TelemetryContext` / `TelemetrySpan` contract;

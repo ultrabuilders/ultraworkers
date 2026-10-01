@@ -16,7 +16,9 @@ import {
 	runContextTransforms,
 } from "@oh-my-pi/pi-coding-agent/tools/compaction-transforms";
 import type { PruneResult } from "@oh-my-pi/pi-agent-core/compaction/pruning";
-import type { Tokenizer } from "@oh-my-pi/pi-agent-core/tokenizer";
+import { Tokenizer } from "@oh-my-pi/pi-agent-core/tokenizer";
+import { reduceContext } from "@oh-my-pi/pi-agent-core/compaction/context-reduction";
+import type { Usage } from "@oh-my-pi/pi-ai";
 import type { SessionEntry } from "@oh-my-pi/pi-agent-core/compaction/entries";
 
 /**
@@ -30,7 +32,7 @@ import type { SessionEntry } from "@oh-my-pi/pi-agent-core/compaction/entries";
  * in `afterEach` rather than leaving state for whichever file runs next.
  */
 
-const tokenizer = {} as Tokenizer;
+const tokenizer = new Tokenizer();
 
 function noop(): PruneResult {
 	return { prunedCount: 0, tokensSaved: 0 };
@@ -349,5 +351,113 @@ describe("an extension outside this repo reaches the surface", () => {
 		expect(() => runner!.initialize(dummyActions, dummyContextActions, undefined, undefined, "tui")).toThrow(
 			/context transform name/,
 		);
+	});
+});
+
+/**
+ * The two halves of omp-9jy landed as two commits by two authors: the extension
+ * point (`registerContextTransform`, `tools/compaction-transforms.ts`) and the two
+ * deterministic transforms (`packages/agent/src/compaction/context-reduction.ts`).
+ * Neither half tests the other, so "the bead is complete" was an assertion about
+ * two commits rather than an observation.
+ *
+ * This closes that gap. The transforms live in `@oh-my-pi/pi-agent-core`, the seam
+ * lives in `@oh-my-pi/pi-coding-agent`, and nothing forces those two to fit together
+ * — which is the whole reason a composition test earns its place rather than being
+ * a restatement of each half's own suite.
+ */
+describe("the registered transforms and the seam fit together", () => {
+	/** A run of consecutive `read` results, which is what `collapse` targets. */
+	function readRun(paths: string[]): SessionEntry[] {
+		const entries: SessionEntry[] = [];
+		paths.forEach((path, i) => {
+			const callId = `call-${i}`;
+			entries.push({
+				type: "message",
+				id: `a-${i}`,
+				parentId: null,
+				timestamp: new Date().toISOString(),
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: callId, name: "read", arguments: { path } }],
+					api: "",
+					provider: "",
+					model: "",
+					usage: usage(0),
+					stopReason: "toolUse",
+					timestamp: 0,
+				},
+			} as unknown as SessionEntry);
+			entries.push({
+				type: "message",
+				id: `r-${i}`,
+				parentId: null,
+				timestamp: new Date().toISOString(),
+				message: {
+					role: "toolResult",
+					toolCallId: callId,
+					toolName: "read",
+					content: [{ type: "text", text: `contents of ${path}\n`.repeat(40) }],
+					isError: false,
+					timestamp: 0,
+				},
+			} as unknown as SessionEntry);
+		});
+		return entries;
+	}
+
+	function usage(totalTokens: number): Usage {
+		return {
+			input: totalTokens,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+	}
+
+	it("registers core's collapse transform through the extension point and reduces the branch", () => {
+		const entries = readRun(["a.ts", "b.ts", "c.ts"]);
+		const before = tokenizer.countTokens(JSON.stringify(entries));
+
+		// The adapter an extension actually has to write: `reduceContext` reports
+		// what it did in its own vocabulary, and the seam speaks `PruneResult`. If
+		// that one-line mapping were impossible, the two halves would not compose
+		// and the split would have been a division rather than a whole.
+		addContextTransform("ext-reduce", {
+			name: "collapse",
+			transform: (branch, tok) => {
+				// Thresholds lowered deliberately: the defaults protect the trailing 5
+				// messages / 2000 tokens, which is the whole of a 6-entry branch, so at
+				// defaults this would correctly do nothing and prove nothing.
+				const result = reduceContext(branch, tok, {
+					protectRecentMessages: 0,
+					protectRecentTokens: 0,
+					minimumSavings: 0,
+				});
+				return { prunedCount: result.collapsedResults + result.shrunkMessages, tokensSaved: result.tokensSaved };
+			},
+		});
+
+		const outcome = runContextTransforms(entries, tokenizer);
+
+		expect(outcome.errors).toEqual([]);
+		expect(outcome.total.tokensSaved).toBeGreaterThan(0);
+		expect(outcome.total.prunedCount).toBeGreaterThan(0);
+		// The reduction is real, not just reported: the branch is materially smaller.
+		expect(tokenizer.countTokens(JSON.stringify(entries))).toBeLessThan(before);
+	});
+
+	it("leaves core's transforms alone when no extension registers one", () => {
+		// The empty-state invariant, restated against a real branch: the seam must be
+		// inert until something opts in, or every session pays for a registry nobody
+		// is using.
+		const entries = readRun(["a.ts", "b.ts", "c.ts"]);
+		const before = tokenizer.countTokens(JSON.stringify(entries));
+
+		runContextTransforms(entries, tokenizer);
+
+		expect(tokenizer.countTokens(JSON.stringify(entries))).toBe(before);
 	});
 });

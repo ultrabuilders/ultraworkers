@@ -91,14 +91,20 @@ describe("a settings id is never coarser than the marketplace's notion of a plug
 	// Folding the camel case into the plugin id broke the first direction and was caught
 	// by exactly this comparison: `myPlugin` and `my_plugin` are two different plugins to
 	// the marketplace, but one id to a folding `pluginSettingId`.
+	//
+	// Every row must be able to go red. A row that compares a value with itself settles
+	// nothing: with a pure function it can only fail by throwing or by becoming
+	// non-deterministic, so it reports 0 mutations of 4. `["x","x"]` was such a row and
+	// was replaced by `["Foo.Bar","FOO.BAR"]`, which collides in BOTH layers and so
+	// separates only if the lowercase is dropped — a real way for the two layers to drift.
 	const PAIRS: ReadonlyArray<readonly [string, string]> = [
 		["myPlugin", "my_plugin"],
 		["myPlugin", "myplugin"],
 		["aPlugin", "a-plugin"],
 		["HTTPServer", "httpserver"],
 		["myPlugin", "other"],
-		["x", "x"],
 		["Foo.Bar", "foo_bar"],
+		["Foo.Bar", "FOO.BAR"],
 	];
 
 	for (const [a, b] of PAIRS) {

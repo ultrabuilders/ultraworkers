@@ -25,6 +25,26 @@ that span several packages. A GitHub issue is not a substitute for this
 discussion, and prior discussion does not guarantee that a pull request will be
 merged.
 
+### Adding a dependency patch
+
+A local patch is a `patches/*.patch` file plus a `patchedDependencies` entry
+naming it. Those two are not enough on their own: nothing records what the patch
+changes, which upstream issue it works around, or which release makes it
+droppable, so a version bump that swallows it leaves no trace of what was
+removed.
+
+**Adding a patch and adding its ledger rows are the same pull request.** Run
+`bun run gen:patch-ledger` — it writes `patches/LEDGER.md` from the diffs, one
+row per hunk, and fails if the three sources disagree: `patchedDependencies`,
+the patch files on disk, and the ledger. Both directions are checked, because a
+patch file nobody declared is never applied by Bun, and a declared entry with no
+file breaks the install.
+
+The `file` column is generated; `purpose`, `upstream` and `drop-when` are yours.
+The generator carries them across regenerations, so fill them in the same commit
+rather than a follow-up — an unrecorded row that sits in a merged patch is the
+case the ledger exists to prevent.
+
 ### Do not open an issue for work you are about to submit
 
 If you intend to implement a change yourself, **do not create an issue for it

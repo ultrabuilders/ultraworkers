@@ -93,32 +93,27 @@ export function parsePatchHunks(patchText: string): Map<string, Hunk[]> {
 }
 
 /**
- * The fail condition: a hunk with no ledger row, or a row with no hunk.
+ * `patchedDependencies` ↔ `patches/*.patch`, both directions.
  *
- * Both directions matter, and so does the config↔disk direction — see the file
- * header. `hunksByPatch` must be every patch on disk, not just the declared
- * ones, or the undeclared-patch case is invisible to the check.
+ * Split out from `reconcile` because it involves no ledger at all, and so it
+ * must hold even when the ledger is missing. Folding it into the row check and
+ * skipping that check on a tree with no ledger would mean a repo that lost
+ * `LEDGER.md` also lost this half of the gate — the mismatch would then have to
+ * be introduced a second time, after a perfectly good ledger had been written
+ * back over it, to be noticed.
  */
-export function reconcile(
+export function reconcilePatchInventory(
 	patched: readonly PatchedDependency[],
 	hunksByPatch: ReadonlyMap<string, readonly Hunk[]>,
-	rows: readonly LedgerRow[],
-): { ok: true; table: string } | { ok: false; missing: string[]; orphaned: string[] } {
+): { missing: string[]; orphaned: string[] } {
 	const declared = patched.map(entry => entry.patchPath);
 	const missing: string[] = [];
 	const orphaned: string[] = [];
 
 	for (const patchPath of declared) {
-		const fileHunks = hunksByPatch.get(patchPath);
-		if (fileHunks === undefined) {
+		if (!hunksByPatch.has(patchPath)) {
 			// Declared in package.json, no artifact on disk. Bun cannot apply it.
 			missing.push(`${patchPath} (declared in patchedDependencies, no patch file on disk)`);
-			continue;
-		}
-		for (const hunk of fileHunks) {
-			const bSide = bSideOf(hunk);
-			if (bSide === undefined) continue;
-			if (!rows.some(row => row.file === bSide)) missing.push(`${patchPath}: ${bSide}`);
 		}
 	}
 
@@ -126,6 +121,33 @@ export function reconcile(
 	// image of the case above.
 	for (const patchPath of hunksByPatch.keys()) {
 		if (!declared.includes(patchPath)) orphaned.push(`${patchPath} (patch file on disk, not in patchedDependencies)`);
+	}
+
+	return { missing, orphaned };
+}
+
+/**
+ * The fail condition: a hunk with no ledger row, or a row with no hunk.
+ *
+ * Both directions matter. `hunksByPatch` must be every patch on disk, not just
+ * the declared ones, or the undeclared-patch case is invisible to the check.
+ */
+export function reconcile(
+	patched: readonly PatchedDependency[],
+	hunksByPatch: ReadonlyMap<string, readonly Hunk[]>,
+	rows: readonly LedgerRow[],
+): { ok: true; table: string } | { ok: false; missing: string[]; orphaned: string[] } {
+	const inventory = reconcilePatchInventory(patched, hunksByPatch);
+	const missing = [...inventory.missing];
+	const orphaned = [...inventory.orphaned];
+
+	for (const [patchPath, fileHunks] of hunksByPatch) {
+		if (!patched.some(entry => entry.patchPath === patchPath)) continue;
+		for (const hunk of fileHunks) {
+			const bSide = bSideOf(hunk);
+			if (bSide === undefined) continue;
+			if (!rows.some(row => row.file === bSide)) missing.push(`${patchPath}: ${bSide}`);
+		}
 	}
 
 	// A row pointing at a hunk that is gone reads as current documentation of a
@@ -187,7 +209,10 @@ export function parseLedger(markdown: string): LedgerGroup[] {
 			continue;
 		}
 		if (!line.startsWith("| `")) continue;
-		const cells = line.split("|").slice(1, -1).map(cell => cell.trim());
+		const cells = line
+			.split("|")
+			.slice(1, -1)
+			.map(cell => cell.trim());
 		const file = cells[0]?.replace(/^`|`$/g, "");
 		if (file === undefined || file === "") continue;
 		const upstream = cells[2] ?? "—";
@@ -318,26 +343,44 @@ export async function run(repoRoot: string): Promise<{ ok: true; hunkCount: numb
 	);
 
 	if (ledgerText === null) {
-		// No ledger to reconcile against, so there is nothing that can disagree:
-		// every hunk would be "missing" a row out of a file that does not exist,
-		// which is not a finding. Write the structure — but say so, loudly: any
-		// `purpose` / `upstream` / `drop-when` a maintainer wrote died with the
-		// deleted file, and a silent regeneration would leave a fully-blank ledger
-		// that passes this gate from then on.
+		// The inventory half still has to hold here: a missing ledger says nothing
+		// about whether `patchedDependencies` matches what is on disk. The row
+		// half cannot run, because "no row for this hunk" out of a file that does
+		// not exist yet is not a finding.
+		const inventory = reconcilePatchInventory(patched, hunksByPatch);
+		if (inventory.missing.length > 0 || inventory.orphaned.length > 0) {
+			console.error(`LEDGER: MISMATCH missing=${JSON.stringify(inventory.missing)}`);
+			console.error(`LEDGER: MISMATCH orphaned=${JSON.stringify(inventory.orphaned)}`);
+			return { ok: false };
+		}
+		// Write the structure — but say so, loudly: any `purpose` / `upstream` /
+		// `drop-when` a maintainer wrote died with the deleted file, and a silent
+		// regeneration would leave a fully-blank ledger that passes this gate from
+		// then on.
 		console.error(`LEDGER: BOOTSTRAP — no ${LEDGER_PATH}, wrote ${hunkCount} rows with blank human columns.`);
-		await Bun.write(path.join(repoRoot, LEDGER_PATH), buildLedgerMarkdown(collectLedger(patched, hunksByPatch, existing)));
+		await Bun.write(
+			path.join(repoRoot, LEDGER_PATH),
+			buildLedgerMarkdown(collectLedger(patched, hunksByPatch, existing)),
+		);
 		console.log(`${LEDGER_PATH}: ${hunkCount} hunk rows, all awaiting a maintainer.`);
 		return { ok: true, hunkCount };
 	}
 
-	const result = reconcile(patched, hunksByPatch, existing.flatMap(group => group.rows));
+	const result = reconcile(
+		patched,
+		hunksByPatch,
+		existing.flatMap(group => group.rows),
+	);
 	if (!result.ok) {
 		console.error(`LEDGER: MISMATCH missing=${JSON.stringify(result.missing)}`);
 		console.error(`LEDGER: MISMATCH orphaned=${JSON.stringify(result.orphaned)}`);
 		return { ok: false };
 	}
 
-	await Bun.write(path.join(repoRoot, LEDGER_PATH), buildLedgerMarkdown(collectLedger(patched, hunksByPatch, existing)));
+	await Bun.write(
+		path.join(repoRoot, LEDGER_PATH),
+		buildLedgerMarkdown(collectLedger(patched, hunksByPatch, existing)),
+	);
 	const carried = existing.flatMap(group => group.rows);
 	const unrecorded = carried.filter(row => row.purpose === UNRECORDED).length;
 	console.log(`${LEDGER_PATH}: ${hunkCount} hunk rows, ${unrecorded} awaiting a maintainer.`);

@@ -156,6 +156,7 @@
 		"gen:compat": "bun --cwd=packages/catalog run gen:compat",
 		"gen:models": "bun --cwd=packages/catalog run gen:models",
 		"gen:clippy": "bun scripts/gen-clippy-bazelrc.ts",
+		"gen:patch-ledger": "bun scripts/gen-patch-ledger.ts",
 		"gen:bazel-lock": "bun scripts/gen-bazel-lock.ts",
 		"gen:stats": "bun --cwd=packages/stats run gen:stats",
 		"gen:stats:reset": "bun --cwd=packages/stats run gen:stats:reset",

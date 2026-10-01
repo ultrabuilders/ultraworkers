@@ -27,17 +27,20 @@
 #   themselves for what is still outstanding.
 #
 # CURRENT
-#   99 entries. Every one pins its count with `<TAB>N`.
+#   99 entries, every one pinned to its CURRENT count; the budgets sum to exactly
+#   the 672 occurrences now on disk.
 #
-#   Two were REMOVED rather than re-approved: packages/coding-agent/examples/README.md
-#   named a package that is actually `@oh-my-pi/pi-coding-agent`, and
-#   scripts/session-stats/audit-prompt.md is a system prompt a model reads. Both
-#   were prose, both were wrong, and both are fixed in the tree — which is what
-#   the STALE branch is for: it named exactly those two files. The 166 surplus is a CEILING, not
-#   a claim that 166 more tokens exist: a budget lets a file shrink but not
-#   regrow past what it was accepted at. Do not tighten those figures until the
-#   remaining entries are classified — lowering a budget to today's count would
-#   mark unfinished work as done, which is the failure this file exists to catch.
+#   They were tightened from a seed total of 838, and the direction was measured
+#   before tightening: 35 entries had SHRUNK and NONE had regrown, so every
+#   surplus was a stale ceiling rather than work in progress. That distinction is
+#   the whole reason the check ran first — a file under its ceiling might be
+#   mid-sweep, while a file over one has quietly added legacy tokens.
+#
+#   Two entries were REMOVED rather than re-approved: packages/coding-agent/
+#   examples/README.md named a package that is actually `@oh-my-pi/pi-coding-agent`,
+#   and scripts/session-stats/audit-prompt.md is a system prompt a model reads.
+#   Both were prose, both were wrong, both are fixed in the tree — which is what
+#   the STALE branch is for: it named exactly those two files.
 #
 # SEED SUMMARY (describes the original 113, not the 101 below)
 #    84  docs/ — not yet swept
@@ -54,27 +57,27 @@
 
 # ---
 # on-disk config dir name; npm package @oh-my-pi/omp-stats
-AGENTS.md	6
+AGENTS.md	5
 # on-disk config dir name
-docs/advisor-watchdog.md	6
+docs/advisor-watchdog.md	5
 # on-disk config dir name
 docs/agent-hub.md	1
 # on-disk config dir name
 docs/approval-mode.md	1
 # on-disk config dir name
-docs/auth-broker-gateway.md	7
+docs/auth-broker-gateway.md	4
 # on-disk config dir name
 docs/cli-reference.md	1
 # omp.sh is a live domain; on-disk config dir name
-docs/collab.md	8
+docs/collab.md	7
 # on-disk config dir name
 docs/computer-use.md	2
 # discovery provider id read from user config.yml; on-disk config dir name
 docs/config-usage.md	43
 # discovery provider id read from user config.yml; on-disk config dir name
-docs/context-files.md	47
+docs/context-files.md	44
 # on-disk config dir name
-docs/custom-tools.md	4
+docs/custom-tools.md	3
 # on-disk config dir name
 docs/environment-variables.md	12
 # on-disk config dir name
@@ -84,7 +87,7 @@ docs/extension-loading.md	22
 # on-disk config dir name
 docs/extension-state-persistence.md	1
 # plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
-docs/extension-trust-model.md	10
+docs/extension-trust-model.md	9
 # on-disk config dir name
 docs/extensions.md	1
 # plugin manifest key read from package.json
@@ -94,13 +97,13 @@ docs/hooks.md	7
 # on-disk config dir name
 docs/install-id.md	2
 # on-disk config dir name
-docs/keybindings.md	6
+docs/keybindings.md	2
 # on-disk config dir name
 docs/local-models.md	3
 # on-disk config dir name
 docs/lsp-config.md	5
 # omp.sh is a live domain
-docs/macos-signing-notarization.md	6
+docs/macos-signing-notarization.md	5
 # discovery provider id read from user config.yml; on-disk config dir name
 docs/marketplace.md	15
 # on-disk config dir name
@@ -120,13 +123,13 @@ docs/notebook-tool-runtime.md	1
 # nix flake input/attribute; discovery provider id from user config.yml; plugin manifest key read from package.json; on-disk config dir name
 docs/plugin-manager-installer-plumbing.md	28
 # on-disk config dir name
-docs/porting-from-pi-mono.md	2
+docs/porting-from-pi-mono.md	1
 # on-disk config dir name
 docs/prewalk.md	2
 # omp.sh is a live domain
-docs/provider-quirks.md	5
+docs/provider-quirks.md	4
 # on-disk config dir name
-docs/providers.md	23
+docs/providers.md	16
 # on-disk config dir name
 docs/python-repl.md	6
 # omp-rpc is the bundled python distribution name (python/omp-rpc/pyproject.toml)
@@ -144,19 +147,19 @@ docs/session-switching-and-recent-listing.md	2
 # on-disk config dir name
 docs/session.md	4
 # on-disk config dir name
-docs/settings.md	39
+docs/settings.md	30
 # discovery provider id from user config.yml; on-disk config dir name
 docs/skills.md	10
 # discovery provider id from user config.yml; plugin manifest key read from package.json; on-disk config dir name
-docs/skills/authoring-extensions.md	21
+docs/skills/authoring-extensions.md	20
 # discovery provider id from user config.yml; plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
-docs/skills/authoring-marketplaces.md	17
+docs/skills/authoring-marketplaces.md	16
 # plugin manifest key read from package.json; on-disk config dir name
-docs/skills/examples/hello-extension/README.md	6
+docs/skills/examples/hello-extension/README.md	4
 # plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
-docs/skills/examples/mini-marketplace/README.md	3
+docs/skills/examples/mini-marketplace/README.md	2
 # on-disk config dir name
-docs/skills/examples/safety-hook/README.md	3
+docs/skills/examples/safety-hook/README.md	1
 # discovery provider id read from user config.yml; on-disk config dir name
 docs/slash-command-internals.md	10
 # omp.sh is a live domain; on-disk config dir name
@@ -204,9 +207,9 @@ docs/tools/security_scan.md	1
 # on-disk config dir name
 docs/tools/task.md	5
 # internal URL scheme in a tool description
-docs/tools/web_search.md	3
+docs/tools/web_search.md	1
 # omp.sh is a live domain; on-disk config dir name; npm package @oh-my-pi/omp-stats
-docs/user-facing-packages.md	8
+docs/user-facing-packages.md	7
 # omp-kata / arc-omp-values.yaml are live infra names
 infra/docs/03-runner-image.md	32
 # omp-kata release / arc-omp-values.yaml are live infra names; local host convenience wrapper, not a repo artifact
@@ -216,41 +219,41 @@ infra/docs/README.md	1
 # OTel attribute omp.gen_ai.tool.status shipped to collectors
 packages/agent/README.md	1
 # omp.sh is a live domain
-packages/ai/README.md	8
+packages/ai/README.md	1
 # on-disk config dir name
-packages/browser-relay/README.md	17
+packages/browser-relay/README.md	2
 # build output path dist/omp
-packages/coding-agent/DEVELOPMENT.md	3
+packages/coding-agent/DEVELOPMENT.md	1
 # on-disk config dir name
-packages/coding-agent/examples/custom-tools/README.md	4
+packages/coding-agent/examples/custom-tools/README.md	3
 # on-disk config dir name
 packages/coding-agent/examples/extensions/README.md	1
 # on-disk config dir name
-packages/coding-agent/examples/hooks/README.md	3
+packages/coding-agent/examples/hooks/README.md	2
 # on-disk config dir name
 packages/coding-agent/examples/sdk/README.md	2
 # on-disk config dir name
-packages/coding-agent/README.md	3
+packages/coding-agent/README.md	1
 # omp.sh is a live domain; on-disk config dir name
-packages/collab-web/README.md	5
+packages/collab-web/README.md	3
 # /opt/omp/bin is a real install prefix (metaharness/src/tb/agent.ts:98)
-packages/metaharness/README.md	10
+packages/metaharness/README.md	1
 # on-disk config dir name; npm package @oh-my-pi/omp-stats
-packages/stats/README.md	10
+packages/stats/README.md	5
 # on-disk config dir name
-packages/utils/README.md	4
+packages/utils/README.md	2
 # the distribution name omp-rpc
-python/omp-rpc/README.md	4
+python/omp-rpc/README.md	1
 # on-disk config dir name
-python/robomp/AGENTS.md	21
+python/robomp/AGENTS.md	4
 # on-disk config dir name
-python/robomp/README.md	15
+python/robomp/README.md	3
 # omp.sh is a live domain; nix flake input/attribute; on-disk config dir name; npm package @oh-my-pi/omp-stats
-README.md	85
+README.md	42
 # W8b. This file documents the decision table that governs the legacy token, so it
 # has to name the token and the pinned expression verbatim — a reader must be able
 # to reproduce the counts the gate derives. Renaming them here would make the
 # documentation describe a pattern that no longer matches the gate.
 scripts/rename/README.md	6
 # on-disk config dir name
-scripts/session-stats/README.md	5
+scripts/session-stats/README.md	4

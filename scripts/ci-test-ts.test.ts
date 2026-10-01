@@ -247,11 +247,68 @@ describe("ci-test-ts diff selection through the runner", () => {
 
 	// The gate has to fire at the CI layer, not only under a unit test, or a
 	// misconfigured matrix shard is invisible until it merges.
+	//
+	// The shard index is DERIVED, never written down. It used to be the literal
+	// "9/9", which was a stand-in for "past the end" and quietly stopped being one:
+	// each package added to a CI bucket raises the chunk count, and once it passed
+	// 9, `9/9` became a real shard that runs and passes. The row then failed while
+	// asserting that a valid shard fails — and the obvious repair, loosening the
+	// assertion until it went green, would have deleted the protection the row
+	// exists to provide.
+	//
+	// So the count comes from the runner's own report, and the spec is derived to sit
+	// exactly one past the end. Adding a package moves the row with the tree
+	// instead of silently changing what it means.
+	//
+	// Two shapes look equivalent and are not, and both were measured before this
+	// row was written:
+	//
+	//   - `(n+1)/n` is rejected as `Invalid` before selection. That guard exists,
+	//     but a CI matrix with one shard too many still hands the runner a
+	//     syntactically VALID spec, so testing `Invalid` proves nothing about the
+	//     failure this row is for.
+	//   - `n/n` is a perfectly good shard — it selects the last chunk.
+	//   - `n/(n+1)` still selects chunk 0, so it passes.
+	//   - `(n+1)/(n+1)` is the only one that clears the range check and then finds
+	//     nothing, which is the `selects no chunks` guard.
+	//
+	// The mode matters too: `workspace` with no diff runs every chunk and never
+	// shards (measured `selected=1 mode=shard-only`), so the derived spec would
+	// never be consulted. `coding-agent-runtime` with a diff that touches no test
+	// does shard, and reports its count on the same line.
 	test("a shard past the chunk count still fails the job", async () => {
-		const result = await runRunner("workspace", { OMP_TEST_SHARD: "9/9" });
+		const planned = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: "docs/readme.md" });
+		const reported = planned.stdout.match(/of (\d+) chunks -> \d+ selected/);
+		expect(reported?.[1], `runner did not report a chunk count:\n${planned.stdout}`).toBeDefined();
+		const chunkCount = Number(reported?.[1]);
+		expect(chunkCount).toBeGreaterThan(0);
+
+		const result = await runRunner("coding-agent-runtime", {
+			OMP_TEST_AFFECTED: "docs/readme.md",
+			OMP_TEST_SHARD: `${chunkCount + 1}/${chunkCount + 1}`,
+		});
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stdout + result.stderr).toContain("selects no chunks");
-	}, 130_000);
+	}, 260_000);
+
+	// The row above proves the gate FIRES. This one proves the gate is still
+	// THERE: remove the `selects no chunks` throw and the row must go red, rather
+	// than passing because a bad shard quietly ran an empty selection. Asserting
+	// "the guard exists" by reading the source is a source grep; this observes it.
+	test("the last valid shard still runs, so the row above is not passing on a blanket failure", async () => {
+		const planned = await runRunner("coding-agent-runtime", { OMP_TEST_AFFECTED: "docs/readme.md" });
+		const chunkCount = Number(planned.stdout.match(/of (\d+) chunks -> \d+ selected/)?.[1]);
+		expect(chunkCount).toBeGreaterThan(0);
+
+		// In range: must run. If everything failed, the row above would pass for
+		// the wrong reason and the gate would look proven while permitting any spec.
+		const result = await runRunner("coding-agent-runtime", {
+			OMP_TEST_AFFECTED: "docs/readme.md",
+			OMP_TEST_SHARD: `1/${chunkCount}`,
+		});
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).not.toContain("selects no chunks");
+	}, 260_000);
 
 	test("a malformed shard spec still fails the job", async () => {
 		const result = await runRunner("workspace", { OMP_TEST_SHARD: "0/2" });

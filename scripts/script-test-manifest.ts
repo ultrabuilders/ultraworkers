@@ -50,6 +50,9 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "merge-pr.test.ts", reason: "" },
 	{ file: "musl-release.test.ts", reason: "" },
 	{ file: "release.test.ts", reason: "" },
+	// Pins the local render path only — `rewrite-changelog`'s model call is not
+	// exercised, so this needs no credentials and no network.
+	{ file: "rewrite-changelog.test.ts", reason: "" },
 	{ file: "stamp-native-version.test.ts", reason: "" },
 ];
 

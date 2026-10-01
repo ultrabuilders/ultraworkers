@@ -117,7 +117,7 @@ interface BlobCandidate {
 	mtimeMs: number;
 }
 
-interface ArchiveCandidate {
+export interface ArchiveCandidate {
 	session: SessionInfo;
 	relativePath: string;
 	destinationPath: string;
@@ -212,7 +212,15 @@ export function collectGcErrors(result: GcResult): string[] {
 	];
 }
 
-function getArchivedSessionsDir(agentDir: string): string {
+/**
+ * Where archived sessions live.
+ *
+ * Exported so `omp session archive` writes to the same place rather than keeping a
+ * second copy of the rule. A separate convention would be silently destructive: gc
+ * only stops treating a session as live once it is outside the sessions directory,
+ * so a session filed anywhere else is swept as garbage with nothing to warn the user.
+ */
+export function getArchivedSessionsDir(agentDir: string): string {
 	return path.join(path.dirname(getSessionsDir(agentDir)), "archive", "sessions");
 }
 
@@ -467,7 +475,7 @@ async function runBlobGc(options: ResolvedGcOptions, archiveSessionsRoot: string
 	return result;
 }
 
-async function listActiveSessions(sessionsRoot: string): Promise<SessionInfo[]> {
+export async function listActiveSessions(sessionsRoot: string): Promise<SessionInfo[]> {
 	let entries: Array<{ name: string; isDirectory(): boolean }>;
 	try {
 		entries = await fs.readdir(sessionsRoot, { withFileTypes: true });
@@ -504,7 +512,7 @@ async function hasLiveNestedSessions(session: SessionInfo, archiveBeforeMs: numb
 	return false;
 }
 
-function archiveDestination(
+export function archiveDestination(
 	archiveRoot: string,
 	sessionsRoot: string,
 	session: SessionInfo,
@@ -526,7 +534,7 @@ function sessionCwdKey(sessionsRoot: string, session: SessionInfo): string {
 	return dirname === "." ? session.cwd || "." : dirname;
 }
 
-function sessionArtifactsPath(sessionPath: string): string {
+export function sessionArtifactsPath(sessionPath: string): string {
 	if (sessionPath.endsWith(COMPRESSED_SESSION_SUFFIX)) {
 		return sessionPath.slice(0, -COMPRESSED_SESSION_SUFFIX.length);
 	}
@@ -603,6 +611,52 @@ async function scanArchivedSession(
 	return reader.header;
 }
 
+/**
+ * Put an archived session back where the sessions directory expects it.
+ *
+ * The exact inverse of {@link moveSessionWithArtifacts}, and it lives beside it for
+ * the same reason: the "one archived logical session reconciles every historical
+ * location" invariant is maintained in this file, and an `unarchive` written
+ * elsewhere would encode a second, drifting copy of which files travel together.
+ *
+ * The archived transcript is gzipped by the forward move, so restoring means
+ * decompressing rather than renaming — a plain rename would put a `.gz` back into
+ * the live directory, where the scanner looks for `.jsonl` and would silently
+ * skip it.
+ */
+export async function restoreArchivedSession(
+	archiveRoot: string,
+	sessionsRoot: string,
+	archivedSessionPath: string,
+): Promise<string> {
+	const relativePath = path.relative(archiveRoot, archivedSessionPath);
+	if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+		throw new Error(`Refusing to restore "${archivedSessionPath}": it is not inside the archive directory`);
+	}
+	// Strip only the `.gz` the forward move added, leaving the `.jsonl` the sessions
+	// directory is globbed by. Trimming the whole `.jsonl.gz` instead restores a file
+	// no reader will ever find — the same expression `collectArchivedStatsSessions`
+	// uses, kept identical so the two cannot drift.
+	const restored = path.join(sessionsRoot, relativePath.slice(0, -".gz".length));
+	if (await pathExists(restored)) throw new Error(`restore destination exists: ${restored}`);
+
+	await fs.mkdir(path.dirname(restored), { recursive: true });
+	await pipeline(
+		Bun.file(archivedSessionPath).stream(),
+		createGunzip(),
+		(await fs.open(restored, "w")).createWriteStream(),
+	);
+
+	const sourceArtifacts = sessionArtifactsPath(archivedSessionPath);
+	const destArtifacts = sessionArtifactsPath(restored);
+	if (await pathExists(sourceArtifacts)) {
+		if (await pathExists(destArtifacts)) throw new Error(`restore artifacts destination exists: ${destArtifacts}`);
+		await movePath(sourceArtifacts, destArtifacts);
+	}
+	await fs.unlink(archivedSessionPath);
+	return restored;
+}
+
 async function gzipSessionFile(source: string, destination: string): Promise<void> {
 	await fs.mkdir(path.dirname(destination), { recursive: true });
 	const tempPath = `${destination}.${process.pid}.${Date.now()}.tmp`;
@@ -636,7 +690,7 @@ async function restoreGzipSessionFile(source: string, destination: string): Prom
 	}
 }
 
-async function moveSessionWithArtifacts(candidate: ArchiveCandidate): Promise<void> {
+export async function moveSessionWithArtifacts(candidate: ArchiveCandidate): Promise<void> {
 	const sourceSession = candidate.session.path;
 	const destSession = candidate.destinationPath;
 	const legacyDestSession = destSession.endsWith(".gz") ? destSession.slice(0, -".gz".length) : `${destSession}.gz`;
@@ -763,7 +817,7 @@ const STATS_IDENTITY_COLUMNS: Record<StatsEntryTable, readonly string[]> = {
 	tool_calls: ["entry_id", "timestamp", "tool_call_id"],
 };
 
-interface StatsSession {
+export interface StatsSession {
 	path: string;
 	id: string;
 	parentSession?: string;
@@ -1243,7 +1297,7 @@ function reconcileStatsRowsForSessions(dbPath: string, plans: StatsCleanupPlan[]
 	}
 }
 
-async function collectArchivedStatsSessions(
+export async function collectArchivedStatsSessions(
 	archiveRoot: string,
 	sessionsRoot: string,
 	onError: (file: string, error: unknown) => void,

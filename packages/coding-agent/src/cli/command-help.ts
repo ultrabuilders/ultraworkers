@@ -75,6 +75,10 @@ export const findHelp = {
 	description: "Semantic search: describe a behavior, get the files and line ranges that implement it",
 } satisfies CommandMetadata;
 
+export const sessionHelp = {
+	description: "List, archive, or restore sessions",
+} satisfies CommandMetadata;
+
 export const grepHelp = { description: "Test grep tool" } satisfies CommandMetadata;
 
 export const grievancesHelp = {

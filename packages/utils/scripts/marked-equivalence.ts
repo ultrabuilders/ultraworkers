@@ -17,6 +17,10 @@
  * This reports byte equivalence of tokens and of rendered HTML, and nothing else. It
  * deliberately asserts no timing: work-shape claims need a counter, not a clock, and
  * on a loaded machine a millisecond threshold is noise with a pass/fail attached.
+ *
+ * Two levels of comparison run, and the report prints both counts. Every input goes
+ * through `Marked().parse()`; smaller ones additionally go through `lexInline()` as a
+ * whole document. See MAX_WHOLE_DOCUMENT_INLINE_CHARS for why the second one is capped.
  */
 
 import * as fs from "node:fs/promises";
@@ -199,25 +203,81 @@ interface Mismatch {
 	b: string;
 }
 
-async function compare(label: string, input: string, a: MarkedModule, b: MarkedModule, out: Mismatch[]): Promise<void> {
-	const tokensA = JSON.stringify([...a.Lexer.lexInline(input)]);
-	const tokensB = JSON.stringify([...b.Lexer.lexInline(input)]);
-	if (tokensA !== tokensB) {
-		out.push({ label, kind: "tokens", preview: preview(input), a: tokensA.slice(0, 240), b: tokensB.slice(0, 240) });
+/**
+ * Markdown above this size is still compared through `Marked().parse()` in full, but not fed
+ * through `lexInline()` as one giant inline string. `parse()` is the path consumers take: it
+ * walks the document block by block, so each inline chunk is line-sized. Handing the whole
+ * document to `lexInline()` instead treats block syntax as inline text, which no consumer does,
+ * and on this repository's corpus it is ruinous — the largest document is 3.95 MB, and on the
+ * pre-fix lexer `parse()` renders all of it in ~8 s while `lexInline()` needs ~27 s for the first
+ * 400 kB and is still super-linear (2x the input costs 3.65x). That is not a slower test of the
+ * same contract; it is a different, more expensive one.
+ *
+ * Every file is still compared. This only decides whether a *second*, non-consumer comparison is
+ * run on top of the real one, and the report below prints both counts so the number of
+ * comparisons can never be read as "both, always".
+ */
+const MAX_WHOLE_DOCUMENT_INLINE_CHARS = 64 * 1024;
+
+async function compare(
+	label: string,
+	input: string,
+	a: MarkedModule,
+	b: MarkedModule,
+	out: Mismatch[],
+	wholeDocumentInline: boolean,
+): Promise<number> {
+	let comparisons = 0;
+	if (wholeDocumentInline) {
+		comparisons++;
+		const tokensA = JSON.stringify([...a.Lexer.lexInline(input)]);
+		const tokensB = JSON.stringify([...b.Lexer.lexInline(input)]);
+		if (tokensA !== tokensB) {
+			out.push({
+				label,
+				kind: "tokens",
+				preview: preview(input),
+				a: tokensA,
+				b: tokensB,
+			});
+		}
 	}
 	// `parse` is typed `string | Promise<string>` — it only becomes a promise in async
 	// mode, which this harness does not use. Awaiting is honest about that; casting
 	// would hide the union and break the moment someone turns async on.
+	comparisons++;
 	const htmlA = await new a.Marked().parse(input);
 	const htmlB = await new b.Marked().parse(input);
 	if (htmlA !== htmlB) {
-		out.push({ label, kind: "html", preview: preview(input), a: htmlA.slice(0, 240), b: htmlB.slice(0, 240) });
+		out.push({ label, kind: "html", preview: preview(input), a: htmlA, b: htmlB });
 	}
+	return comparisons;
 }
 
 function preview(input: string): string {
 	const flat = input.replace(/\n/g, "\\n");
 	return JSON.stringify(flat.length > 70 ? `${flat.slice(0, 70)}…` : flat);
+}
+
+/**
+ * Where two renderings actually diverge, with context around that point.
+ *
+ * A fixed head of each side is close to useless here: on a real document the first
+ * difference can sit tens of thousands of characters in, so two visibly identical
+ * 240-character previews would be printed for a genuine behavioural change and the
+ * report would look like the tool had found nothing.
+ */
+function divergence(a: string, b: string): string {
+	const n = Math.min(a.length, b.length);
+	let i = 0;
+	while (i < n && a[i] === b[i]) i++;
+	const from = Math.max(0, i - 60);
+	const window = 160;
+	return (
+		`first difference at char ${i} of ${a.length} vs ${b.length}\n` +
+		`      A: …${a.slice(from, from + window)}…\n` +
+		`      B: …${b.slice(from, from + window)}…`
+	);
 }
 
 async function main(): Promise<number> {
@@ -238,7 +298,7 @@ async function main(): Promise<number> {
 	const adversarial = buildAdversarialCases();
 
 	// A corpus that came back empty is a broken run, not a clean bill of health:
-	// "0 differences out of 0 inputs" and "0 differences out of 28 000 inputs" look
+	// "0 differences out of 0 inputs" and "0 differences out of 1 300 inputs" look
 	// identical on one line, and the first one is worthless.
 	if (repoFiles.length === 0) {
 		console.error("FAIL: no tracked .md files were read — the corpus is empty, so nothing was compared.");
@@ -250,27 +310,40 @@ async function main(): Promise<number> {
 	}
 
 	const mismatches: Mismatch[] = [];
-	for (const { label, text } of repoFiles) await compare(label, text, a, b, mismatches);
-	for (const [i, input] of adversarial.entries()) await compare(`adversarial[${i}]`, input, a, b, mismatches);
+	let comparisons = 0;
+	let inlineCompared = 0;
+	let inlineSkipped = 0;
+	for (const { label, text } of repoFiles) {
+		const wholeDoc = text.length <= MAX_WHOLE_DOCUMENT_INLINE_CHARS;
+		if (wholeDoc) inlineCompared++;
+		else inlineSkipped++;
+		comparisons += await compare(label, text, a, b, mismatches, wholeDoc);
+	}
+	for (const [i, input] of adversarial.entries()) {
+		comparisons += await compare(`adversarial[${i}]`, input, a, b, mismatches, true);
+	}
 
-	const compared = repoFiles.length + adversarial.length;
+	const inputs = repoFiles.length + adversarial.length;
 	console.log("corpus");
 	console.log(`  markdown files from the repo : ${repoFiles.length}  (git ls-files '*.md')`);
 	console.log(`  generated adversarial cases  : ${adversarial.length}`);
-	console.log(`  inputs compared              : ${compared}`);
-	console.log("  compared per input           : lexInline token stream, and Marked().parse() HTML");
+	console.log(`  inputs compared              : ${inputs}`);
+	console.log("  every input                  : Marked().parse() HTML, byte for byte");
+	console.log(
+		`  plus whole-doc lexInline     : ${inlineCompared + adversarial.length} of them — ${inlineSkipped} markdown files over ${MAX_WHOLE_DOCUMENT_INLINE_CHARS} chars skip this second comparison (still fully compared via parse())`,
+	);
+	console.log(`  total comparisons run        : ${comparisons}`);
 	console.log("  thresholds                   : none — byte equality only, no timing\n");
 
 	if (mismatches.length === 0) {
-		console.log(`IDENTICAL across ${compared} inputs (${compared * 2} comparisons: tokens + HTML)`);
+		console.log(`IDENTICAL across ${inputs} inputs (${comparisons} comparisons)`);
 		return 0;
 	}
 
-	console.log(`MISMATCHES: ${mismatches.length} across ${compared} inputs\n`);
+	console.log(`MISMATCHES: ${mismatches.length} across ${inputs} inputs\n`);
 	for (const m of mismatches.slice(0, 20)) {
 		console.log(`  [${m.kind}] ${m.label}  ${m.preview}`);
-		console.log(`      A: ${m.a}`);
-		console.log(`      B: ${m.b}`);
+		console.log(`      ${divergence(m.a, m.b)}`);
 	}
 	if (mismatches.length > 20) console.log(`\n  … and ${mismatches.length - 20} more`);
 	return 1;

@@ -5,11 +5,14 @@
 ### Added
 
 - A byte-equivalence harness makes "this change to the Markdown lexer did not alter rendering"
-  something you can check instead of assume. `bun run packages/utils/scripts/marked-equivalence.ts
-  <ref-a> [ref-b]` renders every Markdown file in the repository plus a generated set of edge
-  cases through two revisions of the lexer inside a single process, and reports any difference in
-  either the token stream or the rendered HTML. With one revision it compares against the working
-  tree, so an uncommitted change can be checked too.
+  something you can check instead of assume:
+  `bun run packages/utils/scripts/marked-equivalence.ts <ref-a> [ref-b]`
+  renders every Markdown file in the repository plus a generated set of edge cases through two
+  revisions of the lexer inside a single process, and reports the first place their output
+  diverges. With one revision it compares against the working tree, so an uncommitted change can
+  be checked too. Every input is compared as rendered HTML; the token-stream comparison
+  additionally runs on inputs up to 64 KB, and the report prints how many inputs each level
+  covered, so the comparison count is never mistaken for "both, everywhere".
 
 ### Changed
 
@@ -20,7 +23,7 @@
 ### Fixed
 
 - A run of backticks with no closing backtick is no longer quadratic. The lexer looked for the
-  closing run one backtick at a time, and every one of those steps re-matched the *whole*
+  closing run one backtick at a time, and every one of those steps re-matched the _whole_
   remaining run to measure the opening delimiter, so the work grew with the square of the run.
   A run that cannot possibly close is now recognised once and consumed in a single step.
   Measured by counting rather than by the clock, which is not reliable on a loaded machine: a
@@ -55,7 +58,6 @@
 - Runs of ordinary inline Markdown get markedly cheaper as they grow. The lexer read the last character of the text token it was still building, and because that token is accumulated as a rope, reading either end of it forces the engine to flatten it — so every iteration of a run with nothing to format paid to flatten the whole run again. The read now happens only in the two branches that use the value, and it is gone for plain text. This entry originally stopped here, warning that `*` and `_` runs were still quadratic because the guard deliberately skips them — the value they need is the one that costs. That warning is now **out of date**: the cost it pointed at was found and removed by the entries above, and those runs measure linear.
 
 - The worker selector prefix is now derived from `WIRE_NAME` instead of being written out beside it. The two were independent literals, so renaming the wire identity moved one and left the other — a tree could hold `WIRE_NAME = "omp"` next to `__ultraworkers_worker_` with every test green, because the selector parity test asserts how selectors relate to the prefix rather than what the prefix spells. That drift already reverted a completed rename once, in c7c8da296e, where a commit about selector derivation silently carried three unrelated files back to their old names.
-
 
 ### Added
 

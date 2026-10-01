@@ -803,7 +803,22 @@ const CANONICAL_PI_SCOPE = "@oh-my-pi";
 const PI_SCOPE_ALIASES = ["ultraworkers", "oh-my-pi", "mariozechner", "earendil-works"] as const;
 
 // Internal pi-* package basenames bundled inside the omp binary.
-const PI_PACKAGE_NAMES = ["pi-agent-core", "pi-ai", "pi-coding-agent", "pi-natives", "pi-tui", "pi-utils"] as const;
+// `chord` is the one entry that does not carry the `pi-` prefix: upstream ships
+// it as `@earendil-works/chord`, and omp publishes the port under the
+// canonicalised `@oh-my-pi/chord`, so the scope rewrite lands on a real package
+// without a subpath remap. The filter matches on these names rather than on a
+// prefix, so listing it here is the whole change — see
+// `remapLegacyPiSubpath`, which only consults `PI_SUBPATH_REMAPS` and passes
+// `chord/delta` through untouched.
+const PI_PACKAGE_NAMES = [
+	"chord",
+	"pi-agent-core",
+	"pi-ai",
+	"pi-coding-agent",
+	"pi-natives",
+	"pi-tui",
+	"pi-utils",
+] as const;
 
 const PI_SCOPE_ALTERNATION = PI_SCOPE_ALIASES.join("|");
 const PI_PACKAGE_ALTERNATION = PI_PACKAGE_NAMES.join("|");

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { afterEach, vi } from "bun:test";
+import { logger } from "@oh-my-pi/pi-utils";
+import type { ExtensionUIContext } from "../src/extensibility/extensions/types";
 import { noOpUIContext } from "../src/extensibility/extensions/runner";
 import { createNoOpUIContext } from "../src/extensibility/utils";
 
@@ -78,5 +81,69 @@ describe("a context that cannot render `custom` must throw, not resolve", () => 
 		}
 		expect(message).toContain("hasUI");
 		expect(message, "pointed an author at a surface that cannot return their value").not.toContain("setStatus");
+	});
+});
+
+/**
+ * `ui.notify` on a context with no frame to draw on. It returns `void`, so unlike
+ * `custom` it cannot hand back a value that was never produced — and it is still
+ * worth pinning, because "returns void" is exactly what made it invisible: the
+ * bundled `annotate` and `review` commands call it on this context, 30 call sites
+ * in all, and `() => {}` left an author with a message that went nowhere and left
+ * no trace that it had.
+ *
+ * Logged, not thrown: throwing would break those callers without telling the
+ * author anything they could act on differently, since `notify` has no alternative
+ * surface to point them at — unlike `setStatus`, which the frameless message names
+ * as the path that still works, and which is silent here for that reason.
+ */
+describe("a context with no frame must record `notify` rather than discard it", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	// The real signature, not a hand-widened one: `(m: string, t?: string)` would type
+	// `type` as `string` and hide a seam that stops forwarding the severity at all.
+	// `check:types` catches that; `bun test` does not, so it would otherwise ship.
+	type NotifyOnly = { notify: ExtensionUIContext["notify"] };
+
+	const FRAMELESS_NOTIFY: ReadonlyArray<readonly [string, () => NotifyOnly]> = [
+		["noOpUIContext", () => noOpUIContext],
+		["createNoOpUIContext", () => createNoOpUIContext()],
+	];
+
+	for (const [name, make] of FRAMELESS_NOTIFY) {
+		it(`${name} leaves a trace of the message and its severity`, () => {
+			const debug = vi.spyOn(logger, "debug").mockImplementation(() => {});
+			make().notify("annotate failed", "error");
+			expect(debug).toHaveBeenCalledTimes(1);
+			// Both fields, not just the text: a log line that drops the severity turns
+			// "an error happened" into one undifferentiated stream of messages.
+			const [, context] = debug.mock.calls[0] as [string, { message: string; type: string }];
+			expect(context.message).toBe("annotate failed");
+			expect(context.type).toBe("error");
+		});
+	}
+
+	it("the two seams are told apart in the log", () => {
+		// Not "the message mentions dropping" — both do, so that assertion stays green
+		// when the distinguishing half is deleted. The contract is that a reader holding
+		// one of these lines can tell WHICH context swallowed the call, so the only
+		// assertion that defends it is that the two differ from each other.
+		//
+		// ONE spy for both calls, cleared between: spying again inside the loop would
+		// re-wrap the method and leave both readings pointing at the same call list.
+		const debug = vi.spyOn(logger, "debug").mockImplementation(() => {});
+		const seen: Array<string | undefined> = [];
+		for (const [, make] of FRAMELESS_NOTIFY) {
+			debug.mockClear();
+			make().notify("m", "info");
+			seen.push(debug.mock.calls[0]?.[0]);
+		}
+		expect(seen[0]).toBeDefined();
+		expect(seen[1]).toBeDefined();
+		expect(seen[0], "both seams logged an identical line, so the log cannot say which one dropped it").not.toBe(
+			seen[1],
+		);
 	});
 });

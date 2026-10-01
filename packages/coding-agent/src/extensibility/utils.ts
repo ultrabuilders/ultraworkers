@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { postmortem } from "@oh-my-pi/pi-utils";
+import { postmortem, logger } from "@oh-my-pi/pi-utils";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 import { extractUriScheme } from "../internal-urls/parse";
 import { InternalUrlRouter } from "../internal-urls/router";
@@ -34,7 +34,14 @@ export function createNoOpUIContext(): HookUIContext {
 		select: async () => undefined,
 		confirm: async () => false,
 		input: async () => undefined,
-		notify: () => {},
+		// Same decision as `noOpUIContext.notify`: logged, not swallowed and not thrown.
+		// See the comment there for why those three are not the same choice. The prefix
+		// names this context so the two are distinguishable in the log — they are the
+		// only two places a `notify` can vanish, and "which seam swallowed it" is the
+		// first question when reading one of these back.
+		notify: (message, type) => {
+			logger.debug("Extension notification dropped (custom tool context)", { message, type });
+		},
 		setStatus: () => {},
 		custom: () => {
 			// The same lie as `noOpUIContext.custom` and the ACP/RPC contexts, fixed for

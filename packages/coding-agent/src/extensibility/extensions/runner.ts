@@ -464,7 +464,21 @@ export const noOpUIContext: ExtensionUIContext = {
 	select: async (_title, _options, _dialogOptions) => undefined,
 	confirm: async (_title, _message, _dialogOptions) => false,
 	input: async (_title, _placeholder, _dialogOptions) => undefined,
-	notify: () => {},
+	// Not silent. `setStatus` below can be, because the frameless message names it as
+	// the text path that still works — an author has somewhere to go. `notify` has no
+	// such alternative named anywhere, so swallowing it turned a dropped message into
+	// an absence with no trace. There is no channel to deliver on here, which is
+	// exactly the situation the ACP context is in, and it logs for the same reason
+	// (`acp-agent.ts`). Logged rather than thrown: it returns `void`, so throwing
+	// would break the bundled commands that call it on this context without telling
+	// the author anything they could act on differently.
+	//
+	// `debug` and not `warn` even for `type: "error"`: `emitLocally` applies no level
+	// filter (`logger.ts:329`), so every level reaches the rotating log file — this is
+	// recorded, not buried, and `debug` is what the analogous ACP seam already uses.
+	notify: (message, type) => {
+		logger.debug("Extension notification dropped (extension runner)", { message, type });
+	},
 	onTerminalInput: () => () => {},
 	// `setStatus` stays silent deliberately, and is the one member here that keeps a
 	// working alternative: it is the text path the frameless message below tells authors

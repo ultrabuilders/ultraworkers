@@ -21,10 +21,25 @@
 #   are filtered by path, which is the other option the bead allows.
 #
 # SEEDED FROM
-#   `bun scripts/rename/check-docs-rename.ts .` at this commit:
-#   113 files, 869 occurrences.
+#   `bun scripts/rename/check-docs-rename.ts .`, originally at
+#   113 files / 869 occurrences. Twelve have since been swept, so the seed
+#   summary below describes the SEED, not the current list — read the entries
+#   themselves for what is still outstanding.
 #
-# SEED SUMMARY
+# CURRENT
+#   99 entries. Every one pins its count with `<TAB>N`.
+#
+#   Two were REMOVED rather than re-approved: packages/coding-agent/examples/README.md
+#   named a package that is actually `@oh-my-pi/pi-coding-agent`, and
+#   scripts/session-stats/audit-prompt.md is a system prompt a model reads. Both
+#   were prose, both were wrong, and both are fixed in the tree — which is what
+#   the STALE branch is for: it named exactly those two files. The 166 surplus is a CEILING, not
+#   a claim that 166 more tokens exist: a budget lets a file shrink but not
+#   regrow past what it was accepted at. Do not tighten those figures until the
+#   remaining entries are classified — lowering a budget to today's count would
+#   mark unfinished work as done, which is the failure this file exists to catch.
+#
+# SEED SUMMARY (describes the original 113, not the 101 below)
 #    84  docs/ — not yet swept
 #    19  package README — documentation surface, not yet swept
 #     4  python/robomp is a SEPARATE tool with its own brand; outside the omp documentation surface
@@ -100,6 +115,7 @@ docs/natives-addon-loader-runtime.md	5
 docs/natives-architecture.md	3
 # omp-kata release / arc-omp-values.yaml are live infra names
 docs/natives-build-release-debugging.md	11
+# MIME type application/x-omp-status sent to the notebook kernel
 docs/notebook-tool-runtime.md	1
 # nix flake input/attribute; discovery provider id from user config.yml; plugin manifest key read from package.json; on-disk config dir name
 docs/plugin-manager-installer-plumbing.md	28
@@ -113,6 +129,7 @@ docs/provider-quirks.md	5
 docs/providers.md	23
 # on-disk config dir name
 docs/python-repl.md	6
+# omp-rpc is the bundled python distribution name (python/omp-rpc/pyproject.toml)
 docs/rpc.md	4
 # discovery provider id read from user config.yml; on-disk config dir name
 docs/rulebook-matching-pipeline.md	13
@@ -154,15 +171,21 @@ docs/theme.md	4
 docs/toolconv/minimax.md	1
 # on-disk config dir name
 docs/toolconv/xml.md	1
+# internal URL namespace (omp://) routed by InternalUrlRouter
 docs/tools/ast-grep.md	1
+# prose: "omp-owned page" names who owns the Chromium page, no literal
 docs/tools/browser.md	2
 # on-disk config dir name
 docs/tools/debug.md	6
+# internal URL scheme omp:// in the path parameter
 docs/tools/find.md	4
+# output filename template omp-image-<snowflake>
 docs/tools/generate_image.md	1
 # on-disk config dir name
 docs/tools/github.md	3
+# internal URL scheme omp:// in the path parameter
 docs/tools/glob.md	2
+# internal URL scheme omp:// in the path parameter
 docs/tools/grep.md	3
 # on-disk config dir name; internal URL scheme
 docs/tools/ida.md	5
@@ -170,13 +193,17 @@ docs/tools/ida.md	5
 docs/tools/learn.md	1
 # on-disk config dir name
 docs/tools/manage_skill.md	1
+# internal URL registry entry (InternalUrlRouter)
 docs/tools/read.md	1
+# hindsight.retainContext value "omp" — read from user config
 docs/tools/retain.md	1
 # on-disk config dir name
 docs/tools/rewind.md	1
+# example output_root path /tmp/omp-security-review
 docs/tools/security_scan.md	1
 # on-disk config dir name
 docs/tools/task.md	5
+# internal URL scheme in a tool description
 docs/tools/web_search.md	3
 # omp.sh is a live domain; on-disk config dir name; npm package @oh-my-pi/omp-stats
 docs/user-facing-packages.md	8
@@ -186,11 +213,13 @@ infra/docs/03-runner-image.md	32
 infra/docs/04-arc-and-caching.md	34
 # omp-kata / arc-omp-values.yaml are live infra names
 infra/docs/README.md	1
+# OTel attribute omp.gen_ai.tool.status shipped to collectors
 packages/agent/README.md	1
 # omp.sh is a live domain
 packages/ai/README.md	8
 # on-disk config dir name
 packages/browser-relay/README.md	17
+# build output path dist/omp
 packages/coding-agent/DEVELOPMENT.md	3
 # on-disk config dir name
 packages/coding-agent/examples/custom-tools/README.md	4
@@ -198,18 +227,19 @@ packages/coding-agent/examples/custom-tools/README.md	4
 packages/coding-agent/examples/extensions/README.md	1
 # on-disk config dir name
 packages/coding-agent/examples/hooks/README.md	3
-packages/coding-agent/examples/README.md	1
 # on-disk config dir name
 packages/coding-agent/examples/sdk/README.md	2
 # on-disk config dir name
 packages/coding-agent/README.md	3
 # omp.sh is a live domain; on-disk config dir name
 packages/collab-web/README.md	5
+# /opt/omp/bin is a real install prefix (metaharness/src/tb/agent.ts:98)
 packages/metaharness/README.md	10
 # on-disk config dir name; npm package @oh-my-pi/omp-stats
 packages/stats/README.md	10
 # on-disk config dir name
 packages/utils/README.md	4
+# the distribution name omp-rpc
 python/omp-rpc/README.md	4
 # on-disk config dir name
 python/robomp/AGENTS.md	21
@@ -222,6 +252,5 @@ README.md	85
 # to reproduce the counts the gate derives. Renaming them here would make the
 # documentation describe a pattern that no longer matches the gate.
 scripts/rename/README.md	6
-scripts/session-stats/audit-prompt.md	2
 # on-disk config dir name
 scripts/session-stats/README.md	5

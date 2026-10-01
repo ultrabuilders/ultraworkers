@@ -784,6 +784,12 @@ ACP installs an elicitation-bridged UI context (`createAcpExtensionUiContext` in
 
 ## Session and state patterns
 
+**There is no per-extension state store today, and nothing below changes what you
+should do today.** A dedicated store has been designed and not built — the
+foundation is chosen in [`extension-state-persistence.md`](./extension-state-persistence.md),
+and the build is deferred with no owner. Treat that document as a record of a
+decision, not as an available API.
+
 For durable extension state:
 
 1. Persist with `pi.appendEntry("com.example.my-extension.state", data)`. The `customType` namespace is global: use a package- or reverse-domain-qualified value and avoid the core-reserved values in the [`custom` session-entry reference](./session.md#custom).

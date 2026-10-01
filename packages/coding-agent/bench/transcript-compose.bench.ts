@@ -105,7 +105,7 @@ function measure(n: number): { median: number; p95: number; replayMs: number } {
 }
 
 await Settings.init({ inMemory: true });
-await initTheme("dark");
+await initTheme(false, undefined, undefined, "dark", "light");
 
 console.log(`\nBenchmark: transcript-compose (live tail tick after committed finalized history, width ${WIDTH})\n`);
 

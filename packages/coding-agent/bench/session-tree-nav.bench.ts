@@ -7,8 +7,8 @@
  * Run: bun packages/coding-agent/bench/session-tree-nav.bench.ts
  */
 
-import type { SessionEntry } from "../src/session/session-manager";
-import { buildSessionContext } from "../src/session/session-manager";
+import type { SessionEntry } from "../src/session/session-entries";
+import { buildSessionContext } from "../src/session/session-context";
 
 // ─── Synthetic session ───────────────────────────────────────────────────────
 
@@ -31,6 +31,10 @@ function buildEntries(): SessionEntry[] {
 		const id = makeId(i);
 		const parentId = i === 0 ? null : makeId(i - 1);
 		const timestamp = new Date(now.getTime() + i * 1000).toISOString();
+		// The entry's own `timestamp` is an ISO string; the message inside it carries
+		// unix milliseconds. Same instant, two clocks — reusing one for both was the
+		// type error this file had been hiding behind its broken import.
+		const messageTimestamp = now.getTime() + i * 1000;
 
 		const codeBlocks = Array.from({ length: CODE_BLOCKS_PER_MSG }, (_, k) =>
 			makeCodeBlock(i * CODE_BLOCKS_PER_MSG + k),
@@ -46,6 +50,7 @@ function buildEntries(): SessionEntry[] {
 				message: {
 					role: "user",
 					content: `User message ${i}: please analyze this code.\n\n${codeBlocks}`,
+					timestamp: messageTimestamp,
 				},
 			} satisfies SessionEntry);
 		} else {
@@ -57,7 +62,20 @@ function buildEntries(): SessionEntry[] {
 				timestamp,
 				message: {
 					role: "assistant",
-					content: [{ type: "text", text: `Assistant reply ${i}:\n\n${codeBlocks}` }],
+					api: "anthropic-messages",
+					provider: "anthropic",
+					model: "bench-model",
+					content: [{ type: "text" as const, text: `Assistant reply ${i}:\n\n${codeBlocks}` }],
+					usage: {
+						input: 1,
+						output: 1,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 2,
+						cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					},
+					stopReason: "stop",
+					timestamp: messageTimestamp,
 				},
 			} satisfies SessionEntry);
 		}

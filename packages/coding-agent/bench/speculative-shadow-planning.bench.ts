@@ -20,17 +20,21 @@ const PROGRAM = [
 	'tool.read({ path: "src/f.ts" });',
 ].join("\n");
 
-function project(): number {
-	const plan = projectJavaScriptShadowPlan(PROGRAM);
+// `projectJavaScriptShadowPlan` is async, so the await is load-bearing rather than
+// stylistic: without it `plan` is the Promise, `plan.barrier` is `undefined` (which
+// made the guard below silently dead), and `plan.operations.length` threw
+// `TypeError` — this bench published no METRIC line at all.
+async function project(): Promise<number> {
+	const plan = await projectJavaScriptShadowPlan(PROGRAM);
 	if (plan.barrier) throw new Error(`Expected a projectable program, got ${plan.barrier.reason}`);
 	return plan.operations.length;
 }
 
-for (let iteration = 0; iteration < WARMUP_ITERATIONS; iteration++) project();
+for (let iteration = 0; iteration < WARMUP_ITERATIONS; iteration++) await project();
 
 const startedAt = performance.now();
 let operations = 0;
-for (let iteration = 0; iteration < MEASURE_ITERATIONS; iteration++) operations += project();
+for (let iteration = 0; iteration < MEASURE_ITERATIONS; iteration++) operations += await project();
 const elapsedMs = performance.now() - startedAt;
 const msPerProjection = elapsedMs / MEASURE_ITERATIONS;
 

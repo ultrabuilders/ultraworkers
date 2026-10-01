@@ -134,7 +134,7 @@ Serving engines expose this convention through the **`hermes` tool-call parser**
 - `message.tool_calls[]`: one entry per `<tool_call>` block, each with a server-generated `id` (the model emits none), `type: "function"`, `function.name`, and `function.arguments` re-serialized as a **JSON string** at the API boundary (`json.loads(...)` it before use).
 - Feeding results back: append `{"role": "tool", "content": <result>, "tool_call_id": <id-from-the-call>}` for each result; the engine renders it into the `<tool_response>` shape above.
 
-## omp / pi converter behavior
+## ultraworkers / pi converter behavior
 
 The repository's `hermes` dialect is an **owned in-band converter**, registered in `packages/ai/src/dialect/factory.ts:16` and defined in `packages/ai/src/dialect/hermes.ts:195-206`. With tools present, the agent appends the Hermes format guide and compact tool catalog to the system prompt, removes native provider tools, rewrites earlier calls and results as text in this syntax, and scans streamed output back into canonical pi tool-call events. `qwen3` remains a separate selectable dialect even though both emit the same basic JSON-in-`<tool_call>` convention.
 

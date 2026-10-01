@@ -186,7 +186,7 @@ message.tool_calls = [
 ]
 ```
 
-## omp / pi converter behavior
+## ultraworkers / pi converter behavior
 
 The repository's `qwen3` dialect is an **owned in-band converter**. Select it
 with `PI_DIALECT=qwen3` (or the equivalent agent configuration). With tools

@@ -179,7 +179,7 @@ Moonshot's hosted API (`platform.moonshot.ai`) exposes both OpenAI- and Anthropi
 - **Parser availability.** vLLM ships both a Python (`KimiK2ToolParser`) and a newer Rust tool parser; SGLang implements its own `kimi_k2` parser. All key off the same five markers and the `functions.{name}:{idx}` ID convention documented here.
 - **Whitespace artifact.** When no `system` message is supplied, the template injects the default system prompt and a small `\n  ` (newline + two spaces) can appear before the first `<|im_user|>` marker. It is harmless (tokenizes around the markers), but supplying an explicit system message yields the clean streams shown above.
 
-## omp / pi converter behavior
+## ultraworkers / pi converter behavior
 
 The repository's `kimi` dialect is an **owned in-band converter**. Select it
 with `PI_DIALECT=kimi` (or the equivalent agent configuration). With tools

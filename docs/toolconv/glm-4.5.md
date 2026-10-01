@@ -288,7 +288,7 @@ With a server parser active (`--tool-call-parser glm45 --reasoning-parser glm45`
   it accepts newline, `<arg_key>`, or `</tool_call>` as the name delimiter, so
   the same `glm` dialect scanner handles both layouts.
 
-## omp / pi converter behavior
+## ultraworkers / pi converter behavior
 
 The repository's `glm` dialect is an **owned in-band converter**. Select it
 with `PI_DIALECT=glm`; legacy `PI_DIALECT=1` and `PI_DIALECT=true` also resolve

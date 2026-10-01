@@ -368,7 +368,7 @@ reuse the same fullwidth pipe (`｜`, U+FF5C), but the body is an Anthropic-styl
   structured `tool_calls`; a parser must heal it back into tool calls and strip the markers from
   user-visible text.
 
-## omp / pi converter behavior
+## ultraworkers / pi converter behavior
 
 The repository's `deepseek` dialect is an **owned in-band converter**, not a
 vLLM parser wrapper. Select it with `PI_DIALECT=deepseek` (or the equivalent

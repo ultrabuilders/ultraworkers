@@ -53,6 +53,46 @@ Resolution per tool call:
 
 Policy strings are trimmed and case-normalized. Invalid user values are ignored.
 
+## Declared effects
+
+A tier says how strong a grant a call needs. It does not say what the call reaches,
+and the gap is visible above: `eval` declares `exec` and can still spawn a shell, so
+a `bash.patterns` deny does not apply to the same command run through `eval`. Until
+now the only remedy was a second hand-written policy per tool.
+
+An **effect** is a tool declaring which resource it reaches. `bash` and `eval` both
+declare `subprocess`; `read` declares `fs-read`; `edit` declares `fs-read` and
+`fs-write`; `web_search` declares `network`. A user writes one policy per resource:
+
+```yaml
+tools:
+  approval:
+    effects:
+      subprocess: deny
+      network: prompt
+```
+
+Effects combine by the same rule bash already uses: **any matching `deny` wins,
+otherwise any matching `prompt` wins**. A tool carrying several effects takes the
+strictest policy among them. The floor is applied after a tool-declared `deny` and a
+per-tool user `deny`, and before the approval mode — so an effect policy still holds
+under `yolo`, which is the mode where a written policy is most likely to be assumed
+lost. A tool's own explicit `allow` is not overridden; effects raise the floor a user
+policy and the mode can lower, not a tool's statement about its own arguments.
+
+An extension declares its tool's effects by calling `declareToolEffects(name, effects)`
+at registration, so a tool published outside this repository is gated by the same rule
+as a built-in one without anything here changing.
+
+**This is not a sandbox, and the limitation is the same one that applies to bash
+pattern policy: it is not process or filesystem containment.** An effect is a
+declaration a user may narrow, not a boundary the runtime enforces. A tool that
+declares no effects is unconstrained, and a tool that declares `fs-read` and then
+writes a file is not stopped — the declaration is the tool telling the user what it
+does, and it is the user's judgement that gives it weight. Enforcing the declaration
+would require intercepting the resource, which is a different mechanism with
+different costs.
+
 ## Safety overrides
 
 A tool can force a prompt with object-form approval:

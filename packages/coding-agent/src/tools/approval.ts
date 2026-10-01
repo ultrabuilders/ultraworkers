@@ -12,6 +12,7 @@ import type { Settings } from "../config/settings";
 import { cfgToolsApproval, cfgToolsApprovalMode } from "./settings";
 
 export type { ToolApproval, ToolApprovalDecision, ToolTier } from "@oh-my-pi/pi-agent-core";
+import { declaredEffects, effectPoliciesFrom, resolveEffectFloor } from "./effects";
 
 export type ApprovalPolicy = "allow" | "deny" | "prompt";
 export type ApprovalMode = "always-ask" | "write" | "yolo";
@@ -252,7 +253,37 @@ export function resolveApproval(
 		};
 	}
 
+	// The declared-effect floor, applied ahead of the mode branch on purpose. Under
+	// `yolo` everything is allowed, so a floor evaluated after this point would
+	// never once apply — the one mode where a user still expects their policy to
+	// hold. Effects may only narrow, so this can turn an `allow` into a `prompt` or
+	// a `deny`, never the reverse.
+	const effects = declaredEffects(tool.name);
+	const effectFloor = resolveEffectFloor(effects, effectPoliciesFrom(userConfig));
+	if (effectFloor?.policy === "deny") {
+		return {
+			policy: "deny",
+			tier: decision.tier,
+			override: false,
+			source: "user",
+			policyKey: `effects.${effectFloor.effect}`,
+			reason: `declared effect "${effectFloor.effect}" is denied by user policy`,
+		};
+	}
+
 	if (mode === "yolo") {
+		// A declared effect the user asked to be prompted for survives `yolo`: the
+		// whole point of declaring one is that the user gets asked anyway.
+		if (effectFloor?.policy === "prompt" && !decision.policy) {
+			return {
+				policy: "prompt",
+				tier: decision.tier,
+				override: false,
+				source: "user",
+				policyKey: `effects.${effectFloor.effect}`,
+				reason: `declared effect "${effectFloor.effect}" requires approval`,
+			};
+		}
 		if (decision.policy) {
 			return {
 				policy: decision.policy,

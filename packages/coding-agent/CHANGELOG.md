@@ -4,6 +4,8 @@
 
 ### Added
 
+- `tools.approval.effects`: gate by the resource a tool reaches rather than one policy per tool. `bash` and `eval` both declare `subprocess`, `read` declares `fs-read`, `edit` declares `fs-read` and `fs-write`, so `effects: { subprocess: deny }` reaches both tools that can spawn a shell — the gap `docs/approval-mode.md` records, where a `bash.patterns` deny does not apply to the same command run through `eval`. Effects combine by the rule bash already uses: any matching `deny` wins, otherwise any matching `prompt` wins. The floor is applied before the approval mode, so it still holds under `yolo`, and an effect can only narrow — a per-effect `allow` unlocks nothing. An extension declares its tool's effects with `declareToolEffects(name, effects)`. As with bash pattern policy, this is a declaration a user may narrow, not containment
+
 - `pi.registerCopyTargetProvider(...)`: an extension can contribute its own copy targets to the `/copy` picker. A tool an extension registered previously produced only the generic `<toolName> result` block, because the picker's target set was a closed core function over transcript message roles. A provider is asked per transcript entry and returns nothing for entries it does not own, so core's own extraction — fenced code, quotes, links, commands, tool results — runs first and is never displaced; a provider appends. A contributed block cannot forge provenance (the entry is stamped by core), and one that cannot be a copy target is dropped with the provider id recorded rather than shown broken, so a misbehaving provider never takes the picker's built-in targets with it. Registration refuses a blank id, a blank label, a non-callable `collect`, or a duplicate id, naming the extension
 
 - `omp session list|archive|unarchive`: manage sessions from the shell. `list` reads through the same enumeration `omp gc` uses, so the two commands cannot disagree about which sessions exist, and a session whose transcript is truncated still lists under its real title because the title lives in a fixed-width slot at the head of the file. `archive` files a session exactly where `omp gc` already reconciles archived sessions, so gc stops treating it as live; `unarchive` restores it, decompressed, to a path the session scanner finds again. `--last` prints a bare path for `--resume`, `--all` includes archived sessions, and `--json` emits the same rows as a machine-readable form
@@ -36,6 +38,12 @@
 - `omp plugin doctor --fix` now restores a plugin whose installed copy went missing, instead of only deleting its config entry — but only when the recorded source is pinned to a commit. An entry installed from a tag or branch is still removed, because re-fetching that ref now can bring different code than the one the registry recorded, and swapping it in silently would be worse than removing it. Installing from a tag or branch is unaffected: that is you asking for whatever the ref resolves to
 
 ### Fixed
+
+- `--profile <name>` loaded the default profile's `.env` instead of the selected one's, so settings
+  kept in a profile's agent directory were ignored at startup. The process-hardening module reached
+  the environment loader through the `@oh-my-pi/pi-utils` barrel, and the CLI imports that module
+  before the profile is chosen — so the loader ran first, against whichever agent directory was
+  current before `--profile` was read. Importing the logger directly costs nothing and closes it
 
 - `omp` run from source produced no output at all. `--version`, `--help` and every subcommand exited
   0 having printed nothing on either stream, because `import.meta.main` is true only for the module

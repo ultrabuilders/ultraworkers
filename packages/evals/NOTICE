@@ -21,6 +21,27 @@ Adapted files:
                                  on vitest-evals, which this repository does not
                                  use.
 
+Not ported (present upstream at the pinned commit, absent here):
+  src/cli.ts, src/docker.ts, src/report.ts
+  evals/            all nine — acme-server.ts, configured-runtime.ts,
+                    custom-provider.docs.eval.ts, documentation-audit.eval.ts,
+                    extensions.docs.eval.ts, models.docs.eval.ts,
+                    openai-provider.docs.eval.ts, smoke.eval.ts, tui.docs.eval.ts
+  docker/entrypoint.ts
+  test/             acme-server.test.ts, comparison.test.ts,
+                    configured-runtime.test.ts, report.test.ts
+  vitest.evals.config.ts, vitest.test.config.ts
+
+  That is 19 of the 23 upstream .ts files; the four above are the only ones
+  carried across. The eval suites are absent for the same reason the harness
+  runners are: the whole eval path stands on vitest-evals, which this
+  repository does not use. `src/report.ts` is a dependency of the unported
+  half of the harness, so it is not independently portable either.
+
+  Counted at pi commit d6af72e1, whose harness.ts is byte-identical in length
+  to the current upstream HEAD — so this list is a scope statement, not an
+  artifact of an upstream revision that has since shrunk.
+
 Upstream license follows.
 
 MIT License

@@ -110,6 +110,12 @@ export * from "../goals";
 export * from "../lsp";
 export * from "@oh-my-pi/pi-tui/tools/streaming-output";
 export * from "../task";
+// `pi` reaches this from its package root via `core/tools/index.ts`, which
+// `pi-coding-agent/src/index.ts` re-exports. Extensions ported from `pi`
+// import `withFileMutationQueue` by name, so it has to sit on the same public
+// surface `pi` put it on — a symbol that only exists on an internal module is
+// not reachable by an extension written outside this repository.
+export * from "../utils/file-mutation-queue";
 export * from "../web/search";
 export * from "./ask";
 export * from "./ast-edit";

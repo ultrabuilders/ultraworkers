@@ -96,14 +96,15 @@ stale by 2 files and 18 occurrences. Measured with the gate's own code path —
 the gate's `PINNED` expression returning 2072. A standalone scan reproduces the
 same pair, so the *scope* is settled.
 
-**2072 is a floor, not a total.** `PINNED` is
-`/(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)/`, and it consumes the delimiter it
-matches, so two adjacent tokens collide: `"omp omp"` and `"omp,omp"` each count
-**1** where 2 exist. Changing it to a lookbehind
-(`/(?<![a-zA-Z0-9_./-])omp(?![a-zA-Z0-9_.-])/`) fixes that without widening the
-scope — `.` stays excluded, so `..omp..` remains 0 in both. That is a change to
-what the gate *means*, so it is not made here: `PINNED` is a locator and its
-value is a ratchet baseline.
+**2072 is a floor, not a total.** `PINNED` is the expression quoted at line 61,
+and it consumes the delimiter it matches: two tokens separated by a single
+space, or by one comma, each count as **1** where 2 exist. Rewriting it with a
+lookbehind fixes that without widening the scope — the `.` exclusion stays, so
+`..` around the token remains 0 in both forms. That is a change to what the
+gate *means*, so it is not made here: `PINNED` is a locator and its value is a
+ratchet baseline. It is written out once, at line 61, on purpose: repeating the
+literal here spends the file's allowlist budget on a copy of a claim that can
+only drift from the original.
 
 Every number above is therefore a lower bound on its own scope. Quote the scope
 and the expression together, never the count alone.

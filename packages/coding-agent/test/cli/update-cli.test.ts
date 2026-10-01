@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
-import { WIRE_NAME } from "@oh-my-pi/pi-utils";
+import { APP_NAME, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { fixedNpmRegistry } from "../../src/cli/npm-registry";
-import { getLatestRelease, runUpdateCommand } from "../../src/cli/update-cli";
+import { getLatestRelease, LEGACY_WIRE_NAME, parseReportedVersion, runUpdateCommand } from "../../src/cli/update-cli";
 
 const npmjs = fixedNpmRegistry();
 
@@ -238,5 +238,56 @@ describe("getLatestRelease proxy errors", () => {
 		// Instead the user gets actionable guidance about supported proxy schemes.
 		expect(err?.message).toMatch(/SOCKS/i);
 		expect(err?.message).toMatch(/https?:\/\//i);
+	});
+});
+
+/**
+ * Which identity a `--version` banner is read under.
+ *
+ * The updater has to recognise every binary a user might have installed, and
+ * `validateExistingUpdateTarget` reads "unrecognised" as "this is not an OMP
+ * binary" and refuses to replace it. A banner this fails to parse is therefore
+ * not a cosmetic miss — it locks that user out of self-update entirely.
+ *
+ * `WIRE_NAME` and `APP_NAME` are the *same* string today, and that is intended
+ * rather than a leftover: the rebrand made them equal, the alternation collapsed
+ * to one entry, and every pre-rebrand binary went unrecognised. The repair was
+ * `LEGACY_WIRE_NAME` — a literal, precisely because the identity it names can no
+ * longer be derived from any constant. So the contract is not "these strings
+ * differ"; it is that each banner is read under the identity it was printed
+ * with, which holds whether or not the constants happen to be equal.
+ */
+describe("parseReportedVersion identity matching", () => {
+	it("reads each identity's own version, so a rebrand cannot hide a pre-rebrand binary", () => {
+		// The version differs per row on purpose. A single expected value would
+		// pass even if the matcher attributed a banner to the wrong identity,
+		// because the digits would still be right; pairing each identity with its
+		// own version is what makes the attribution observable.
+		for (const [identity, version] of [
+			[WIRE_NAME, "18.4.3"],
+			[APP_NAME, "18.4.3"],
+			[LEGACY_WIRE_NAME, "18.2.4"],
+		] as const) {
+			expect(parseReportedVersion(`${identity}/${version}`)).toBe(version);
+		}
+	});
+
+	// The historical defect, kept as its own contract because the row above can
+	// still pass while the alternation holds only one entry: with `WIRE_NAME` and
+	// `APP_NAME` equal, the array reads as three names and matches two. Asserting
+	// the constants are unequal would demand a rename nobody asked for, and would
+	// be a statement about today's strings rather than about the matching.
+	it("still recognises the pre-rebrand banner, which no constant can produce", () => {
+		expect(LEGACY_WIRE_NAME).not.toBe(WIRE_NAME);
+		expect(parseReportedVersion(`${LEGACY_WIRE_NAME}/18.2.4`)).toBe("18.2.4");
+	});
+
+	// Two banners that must NOT parse: a different program that happens to print
+	// a version, and a banner whose version is not semver. A matcher that grew
+	// laxer to cover a new identity would let both through, and the updater would
+	// then offer to replace something it does not own.
+	it("rejects a banner from another program and a non-semver version", () => {
+		expect(parseReportedVersion("totally-not-omp/1.0.0")).toBeUndefined();
+		expect(parseReportedVersion(`${WIRE_NAME}/not-a-version`)).toBeUndefined();
 	});
 });

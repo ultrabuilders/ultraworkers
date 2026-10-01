@@ -6,6 +6,15 @@
 		"emitDeclarationOnly": false,
 		"allowImportingTsExtensions": true
 	},
-	"include": ["scripts", "packages/natives/scripts/gen-npm-packages.ts"],
+	"include": [
+		"scripts",
+		"packages/natives/scripts/gen-npm-packages.ts",
+		"packages/coding-agent/src",
+		"packages/coding-agent/scripts",
+		"packages/coding-agent/bench/bench-registry.ts",
+		"packages/coding-agent/bench/perf-threshold.ledger.ts",
+		"packages/coding-agent/bench/perf-corpus-schema.ts",
+		"packages/utils/src"
+	],
 	"exclude": ["node_modules"]
 }

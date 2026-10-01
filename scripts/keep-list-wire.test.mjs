@@ -36,15 +36,24 @@
  * are documentation, not test inputs: the gate verifies "`zai.ts` contains the
  * bare token", not "line 41 exists".
  *
- * What that looseness costs, stated rather than glossed: a SECOND bare literal
- * added to a file section 2 already cites is invisible here, because the unit
- * is the file. Confirmed by mutation — that variant stayed green. A rename pass
- * that rewrites every bare literal would take the surviving one with it, so the
- * gate cannot be the thing that stops it; `grep -c 'oh-my-pi"' <file>` after the
- * pass is. In exchange the gate does not fire on a comment insertion, which is
- * the failure mode that kills a signal: the first red-on-nothing gets ignored,
- * and the second time someone bulk-updates the line numbers and the signal is
- * dead for good.
+ * One mutation survives, and it is harmless by construction rather than by
+ * allowance: adding a SECOND bare literal to a file section 2 already cites
+ * stays green, because the unit is the file. That is the right outcome. The
+ * keep-list's unit is the file — section 1 lists bare manifest paths, and the
+ * rename pass loads the list into `sed`, which rewrites whole files or skips
+ * them whole. So a file already on the list is skipped in its entirety, and
+ * every literal inside it is protected by that one decision. A second literal
+ * needs no second entry; the coverage is already there.
+ *
+ * Contrast the case that genuinely must go red: a subpath that resolves to
+ * nothing (`assertSafePath(["__proto__"])`) is a DIFFERENT axis — one entry, one
+ * independent resolution — and an unresolvable one belongs in its own right.
+ * Same shape of input, opposite verdict, and only the axis tells them apart.
+ *
+ * What the looseness does buy: the gate does not fire when a comment is
+ * inserted, which is the failure mode that kills a signal. The first red on
+ * nothing gets ignored, and the second time someone bulk-updates the numbers
+ * and the signal is dead for good.
  */
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";

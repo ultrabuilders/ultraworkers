@@ -1,11 +1,13 @@
 /**
- * DRAFT — W13 Rule A. Reports; does not gate. Not wired into `check:ts`.
+ * W13 Rule A — GATE. Every `.md` file that still carries the legacy display
+ * token must either be on the legacy allow-list or have been changed by the
+ * sweep.
  *
- * Rule A: every `.md` file that still carries the legacy display token must
- * either be on the legacy allow-list or get changed by the sweep. This is the
- * half of W13 that can be written before the sweep itself runs; the other two
- * rules are not written here because their shape depends on decisions that are
- * still open (see `docs` note below).
+ * This was a DRAFT that only reported. It is now a gate: it prints `FAIL ruleA
+ * <path>` per violation and exits non-zero, and it is wired into `check:ts`.
+ * The gap it closes is the one that let the draft be "green" over 869
+ * occurrences in 113 files — a scanner that reports is not a scanner anyone has
+ * to answer to.
  *
  * WHY PATH EXCLUSION AND NOT JUST A BIGGER ALLOW-LIST
  * ----------------------------------------------------
@@ -16,8 +18,14 @@
  * is a gate that has stopped gating: it stays green no matter what anyone does.
  *
  * So the corpus is excluded BY PATH in the rule itself, which is the mechanism
- * the bead's acceptance criterion 6 describes. What remains is the real work:
- * 138 files, of which 92 are `docs/**` — documentation users actually read.
+ * the bead's acceptance criterion 6 describes. That choice also covers the two
+ * runtime assets the bead requires be kept WITH a reason —
+ * `packages/coding-agent/src/prompts/internal-urls/omp.md` is imported by
+ * `omp-protocol.ts:10`, and `.omp/**` is runtime prompt corpus — since both
+ * are excluded here by `EXCLUDED_PACKAGE_PATHS` and `EXCLUDED_PREFIXES`. They
+ * are NOT in the allow-list, because an allow-list line means "a human looked at
+ * this and accepted the legacy token", and nobody accepted these: they are not
+ * documentation at all.
  *
  * NOTE `\b` IN BRE
  * ----------------
@@ -26,12 +34,13 @@
  * nothing. This class of "the tool says the corpus is empty and it is really
  * not" failure looks exactly like a clean scan.
  *
- * NOT YET DECIDED (blocking a real gate)
- * ---------------------------------------
+ * NOT YET DECIDED (does not block the gate)
+ * ------------------------------------------
  * The `.lavish` tree is excluded here as the working assumption, pending one
  * line from the owner: are 251 committed work-log files in scope for the rename
- * sweep? If
- * the answer is yes, this exclusion is wrong and the sweep has to touch them.
+ * sweep? The gate is correct for the documentation surface either way — if the
+ * answer is yes, the exclusion is wrong and the sweep has to touch them, which
+ * surfaces as new failures rather than as a silently-passing check.
  */
 import * as path from "node:path";
 
@@ -73,6 +82,51 @@ export interface RuleAViolation {
 	readonly occurrences: number;
 }
 
+/**
+ * Repo-relative path of the allow-list. A line in it means a human accepted the
+ * legacy token in that file; a violation not on it is a failure.
+ */
+const ALLOWLIST_PATH = "scripts/rename/docs-legacy-allowlist.txt";
+
+/** One accepted path, with the occurrence count it was accepted at. */
+export interface AllowlistEntry {
+	readonly path: string;
+	/**
+	 * Occurrences accepted when the line was written, or `undefined` for a bare
+	 * path (accepted at any count).
+	 */
+	readonly budget?: number;
+}
+
+/**
+ * Read the allow-list. A MISSING file is an empty list, not a pass: the first
+ * run of a gate has no allow-list yet, and treating "no allow-list" as "no
+ * violations" would make the gate green precisely when it has nothing to say.
+ *
+ * Syntax: `path` or `path<TAB>N`. A bare path is accepted at any count; the
+ * `<TAB>N` form pins the count so a file on the list cannot quietly regrow.
+ * Inline `#` comments are NOT supported on a path line — a trailing comment
+ * would become part of the path and silently stop matching, which fails open.
+ * Reasons go on their own `#` line above the path.
+ */
+export async function loadAllowlist(root: string): Promise<AllowlistEntry[]> {
+	const file = Bun.file(path.join(root, ALLOWLIST_PATH));
+	if (!(await file.exists())) return [];
+	const entries: AllowlistEntry[] = [];
+	for (const line of (await file.text()).split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "" || trimmed.startsWith("#")) continue;
+		const tab = trimmed.indexOf("\t");
+		if (tab === -1) {
+			entries.push({ path: trimmed });
+			continue;
+		}
+		const budget = Number(trimmed.slice(tab + 1).trim());
+		entries.push(Number.isFinite(budget) ? { path: trimmed.slice(0, tab), budget } : { path: trimmed });
+	}
+	return entries;
+}
+
 /** Count legacy-token occurrences per markdown file, minus the excluded paths. */
 export async function scanRuleA(root: string): Promise<RuleAViolation[]> {
 	const glob = new Bun.Glob("**/*.md");
@@ -86,15 +140,64 @@ export async function scanRuleA(root: string): Promise<RuleAViolation[]> {
 	return violations.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+/**
+ * Violations the gate fails on: anything not accepted, plus any accepted file
+ * that has grown past the count it was accepted at.
+ *
+ * The allow-list is subtracted HERE rather than inside `scanRuleA`, so the scan
+ * still reports the true corpus size. A gate that hides allowed files from its
+ * own scan cannot tell "allowed" from "gone", and criterion 6 in the bead
+ * depends on that distinction: it compares the allow-list length against the
+ * number of files that still match.
+ *
+ * The budget is the part a bare allow-list cannot do. Measured: injecting one
+ * more `omp` into an allow-listed file left the gate at exit 0, because the path
+ * matched and nothing counted. An allow-list that silences a file forever is
+ * how a rename sweep stops converging while still reading green.
+ */
+export function ungatedViolations(
+	violations: readonly RuleAViolation[],
+	allowlist: readonly AllowlistEntry[],
+): RuleAViolation[] {
+	const accepted = new Map(allowlist.map(entry => [entry.path, entry.budget]));
+	return violations.filter(violation => {
+		if (!accepted.has(violation.path)) return true;
+		const budget = accepted.get(violation.path);
+		return budget !== undefined && violation.occurrences > budget;
+	});
+}
+
+/** Paths on the allow-list that no longer match anything — the sweep finished them. */
+export function staleAllowlistEntries(
+	violations: readonly RuleAViolation[],
+	allowlist: readonly AllowlistEntry[],
+): string[] {
+	const seen = new Set(violations.map(violation => violation.path));
+	return allowlist.map(entry => entry.path).filter(entry => !seen.has(entry));
+}
+
 if (import.meta.main) {
 	const root = process.argv[2] ?? process.cwd();
 	const violations = await scanRuleA(root);
+	const allowlist = await loadAllowlist(root);
+	const blocking = ungatedViolations(violations, allowlist);
+	const stale = staleAllowlistEntries(violations, allowlist);
 	const occurrences = violations.reduce((sum, v) => sum + v.occurrences, 0);
-	for (const violation of violations) {
-		process.stdout.write(`REPORT ruleA ${violation.occurrences} ${violation.path}\n`);
+	for (const violation of blocking) {
+		process.stdout.write(`FAIL ruleA ${violation.occurrences} ${violation.path}\n`);
 	}
-	process.stdout.write(`REPORT ruleA total ${violations.length} files, ${occurrences} occurrences\n`);
+	for (const entry of stale) {
+		process.stdout.write(`WARN ruleA stale ${entry} — on the allow-list but no longer matches; drop the line\n`);
+	}
 	process.stdout.write(
-		`REPORT ruleA draft — reporting only, exit 0; the 25-line allow-list budget is unmet until the sweep runs\n`,
+		`REPORT ruleA ${violations.length} files, ${occurrences} occurrences; ` +
+			`${blocking.length} not on the allow-list, ${stale.length} stale (${ALLOWLIST_PATH})\n`,
 	);
+	if (blocking.length > 0) {
+		process.stdout.write(
+			`FAIL ruleA ${blocking.length} file(s) carry the legacy display token without an accepted reason. ` +
+				`Rename them, or add the path to ${ALLOWLIST_PATH} WITH a comment saying why.\n`,
+		);
+		process.exit(1);
+	}
 }

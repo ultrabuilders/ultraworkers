@@ -1,0 +1,147 @@
+# scripts/rename/docs-legacy-allowlist.txt
+#
+# WHAT THIS FILE IS
+#   Paths whose legacy display token (`omp`) is ACCEPTED, one repo-relative path
+#   per line. `scripts/rename/check-docs-rename.ts` exits non-zero when a
+#   markdown file outside this list still carries the token.
+#
+# WHAT A LINE IS NOT
+#   A line is a decision, not a backlog. The seed below records what W13 has NOT
+#   swept yet, each with the reason it is still outstanding, so the gate stays red
+#   about real work instead of reporting 113 identical failures.
+#
+#   Do NOT add a path to turn the gate green. That is the failure mode it exists to
+#   catch (bead criterion 3): a line means a human accepted the legacy token.
+#
+# NOT IN THIS FILE, DELIBERATELY
+#   packages/coding-agent/src/prompts/internal-urls/omp.md — runtime asset,
+#     imported by omp-protocol.ts:10. Excluded by path in the scanner.
+#   .omp/** — runtime prompt corpus under a dot directory. Same.
+#   Neither is documentation, so neither is an accepted documentation choice; both
+#   are filtered by path, which is the other option the bead allows.
+#
+# SEEDED FROM
+#   `bun scripts/rename/check-docs-rename.ts .` at this commit:
+#   113 files, 869 occurrences.
+#
+# SEED SUMMARY
+#    84  docs/ — not yet swept
+#    19  package README — documentation surface, not yet swept
+#     4  python/robomp is a SEPARATE tool with its own brand; outside the omp documentation surface
+#     3  infra/ deployment docs — not yet swept; tracked for the W13 sweep
+#     2  scripts/ operational doc — not yet swept
+#     1  root README — highest-traffic file, swept by hand in a later W13 batch
+
+AGENTS.md	6
+CONTRIBUTING.md	1
+README.md	85
+docs/ERRATA-GPT5-HARMONY.md	1
+docs/advisor-watchdog.md	6
+docs/agent-hub.md	1
+docs/approval-mode.md	1
+docs/auth-broker-gateway.md	7
+docs/cli-reference.md	1
+docs/collab.md	8
+docs/computer-use.md	2
+docs/config-usage.md	43
+docs/context-files.md	47
+docs/custom-tools.md	4
+docs/environment-variables.md	12
+docs/extension-loading.md	22
+docs/extension-state-persistence.md	1
+docs/extension-trust-model.md	10
+docs/extensions.md	1
+docs/gemini-manifest-extensions.md	2
+docs/hooks.md	7
+docs/install-id.md	2
+docs/keybindings.md	6
+docs/local-models.md	3
+docs/lsp-config.md	5
+docs/macos-signing-notarization.md	6
+docs/marketplace.md	15
+docs/mcp-config.md	15
+docs/mcp-server-tool-authoring.md	6
+docs/models.md	5
+docs/natives-addon-loader-runtime.md	5
+docs/natives-architecture.md	3
+docs/natives-build-release-debugging.md	11
+docs/notebook-tool-runtime.md	1
+docs/plugin-manager-installer-plumbing.md	28
+docs/porting-from-pi-mono.md	2
+docs/prewalk.md	2
+docs/provider-quirks.md	5
+docs/providers.md	23
+docs/python-repl.md	6
+docs/rpc.md	4
+docs/rulebook-matching-pipeline.md	13
+docs/sdk.md	1
+docs/secrets.md	4
+docs/session-operations-export-share-fork-resume.md	4
+docs/session-switching-and-recent-listing.md	2
+docs/session.md	4
+docs/settings.md	39
+docs/skills.md	10
+docs/skills/authoring-extensions.md	21
+docs/skills/authoring-hooks.md	11
+docs/skills/authoring-marketplaces.md	17
+docs/skills/examples/hello-extension/README.md	6
+docs/skills/examples/mini-marketplace/README.md	3
+docs/skills/examples/safety-hook/README.md	3
+docs/slash-command-internals.md	10
+docs/stream.md	10
+docs/system-prompt-customization.md	11
+docs/task-agent-discovery.md	16
+docs/theme.md	4
+docs/toolconv/glm-4.5.md	1
+docs/toolconv/hermes.md	7
+docs/toolconv/kimi-k2.md	1
+docs/toolconv/minimax.md	1
+docs/toolconv/qwen3.md	1
+docs/toolconv/xml.md	1
+docs/tools/ast-grep.md	1
+docs/tools/browser.md	2
+docs/tools/debug.md	6
+docs/tools/find.md	4
+docs/tools/generate_image.md	1
+docs/tools/github.md	3
+docs/tools/glob.md	2
+docs/tools/grep.md	3
+docs/tools/ida.md	5
+docs/tools/learn.md	1
+docs/tools/manage_skill.md	1
+docs/tools/read.md	1
+docs/tools/retain.md	1
+docs/tools/rewind.md	1
+docs/tools/security_scan.md	1
+docs/tools/task.md	5
+docs/tools/web_search.md	3
+docs/tui-core-renderer.md	1
+docs/user-facing-packages.md	8
+infra/docs/03-runner-image.md	32
+infra/docs/04-arc-and-caching.md	34
+infra/docs/README.md	1
+packages/agent/README.md	1
+packages/ai/README.md	8
+packages/browser-relay/README.md	17
+packages/catalog/README.md	1
+packages/coding-agent/DEVELOPMENT.md	3
+packages/coding-agent/README.md	3
+packages/coding-agent/examples/README.md	1
+packages/coding-agent/examples/custom-tools/README.md	4
+packages/coding-agent/examples/extensions/README.md	1
+packages/coding-agent/examples/hooks/README.md	3
+packages/coding-agent/examples/sdk/README.md	2
+packages/collab-web/README.md	5
+packages/metaharness/README.md	10
+packages/mnemopi/README.md	2
+packages/snapcompact/README.md	1
+packages/stats/README.md	10
+packages/telemetry/README.md	5
+packages/utils/README.md	4
+packages/wire/README.md	1
+python/omp-rpc/README.md	4
+python/robomp/AGENTS.md	21
+python/robomp/README.md	15
+python/robomp/docs/pr-review-handoff.md	1
+scripts/session-stats/README.md	5
+scripts/session-stats/audit-prompt.md	2

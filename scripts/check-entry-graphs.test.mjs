@@ -24,7 +24,7 @@ const nodePath = resolveNode();
  * and removed whether the run passes or throws.
  */
 function runMutated(t, edits) {
-	const probe = join(new URL(".", import.meta.url).pathname, `.entry-graph-probe-${process.pid}-${t.name}.mjs`);
+	const probe = join(fileURLToPath(new URL(".", import.meta.url)), `.entry-graph-probe-${process.pid}-${t.name}.mjs`);
 	copyFileSync(script, probe);
 	t.after(() => rmSync(probe, { force: true }));
 	let source = readFileSync(probe, "utf8");

@@ -91,8 +91,8 @@ bun --cwd=packages/coding-agent run build
 
 BINARY_DIR="$WORK_DIR/binary-bin"
 mkdir -p "$BINARY_DIR"
-cp packages/coding-agent/dist/omp "$BINARY_DIR/omp"
-smoke_cli "$BINARY_DIR/omp"
+cp packages/coding-agent/dist/ultraworkers "$BINARY_DIR/ultraworkers"
+smoke_cli "$BINARY_DIR/ultraworkers"
 
 section "Source install smoke"
 SOURCE_BUN_HOME="$WORK_DIR/bun-source"
@@ -100,7 +100,7 @@ SOURCE_BUN_HOME="$WORK_DIR/bun-source"
    export BUN_INSTALL="$SOURCE_BUN_HOME"
    export PATH="$BUN_INSTALL/bin:$PATH"
    bun --cwd="$ROOT_DIR/packages/coding-agent" link
-   smoke_cli "$BUN_INSTALL/bin/omp"
+   smoke_cli "$BUN_INSTALL/bin/ultraworkers"
 )
 
 section "Tarball install smoke"
@@ -144,7 +144,7 @@ for pkg in utils wire omptype catalog ai mnemopi snapcompact agent tui stats col
 done
 
 # 4. Pack the coding agent with its *published* manifest: release swaps
-#    `bin.omp` from `src/cli.ts` to the prepack bundle `dist/cli.js`. The repo
+#    `bin.ultraworkers` from `src/cli.ts` to the prepack bundle `dist/cli.js`. The repo
 #    manifest keeps pointing at source so `bun link`/`install.sh --source`
 #    work without a build, so the swap must be reproduced here for the smoke
 #    to exercise the bundled worker-host entry the published package ships.

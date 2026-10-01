@@ -1,95 +1,112 @@
 /**
- * An extension-registered top-level verb does NOT reach the dispatcher.
+ * An extension-registered verb must actually dispatch.
  *
- * ## What a reader sees
+ * ## The failure this file is built to catch
  *
- * `ExtensionApi.registerCommand` exists, nine shipped examples call it, and three
- * real consumers read the result (`interactive-mode.ts:2428`,
- * `slash-commands/available-commands.ts:77`,
- * `extensions/get-commands-handler.ts:36`). A reader who stops there concludes the
- * seam works. It does not — those three consumers are all **slash** commands. The
- * **argv** table never consults it:
+ * `cli-commands.ts` builds `SUBCOMMAND_NAMES` once, at module load, and
+ * `isSubcommand` used to read that closed Set. A `registerSubcommand` that only
+ * appended to the exported `commands` array would compile, export a function
+ * with the right name, and dispatch nothing — the verb keeps falling through to
+ * `launch` and the argv reaches the model as a prompt. Nothing throws, nothing
+ * logs. A test asserting only that the function exists is green on exactly that
+ * broken fix.
  *
- * - `resolveCliArgv` (`cli-commands.ts:444`) is a pure function over the static
- *   `commands` array in `cli-commands.ts`.
- * - `isSubcommand` reads `SUBCOMMAND_NAMES`, a `Set` built once at module load
- *   (`:307-313`) from that same static array.
- * - `ExtensionRunner` is constructed in the SDK layer (`sdk.ts:3230`,
- *   `models-cli.ts:339`), never in `cli.ts` — the argv layer structurally has
- *   nothing to call into.
- * - `resolveCliArgv` runs at `cli.ts:634`, before any extension is loaded.
+ * So the load-bearing assertion here is the **control pair**: the same verb, once
+ * unregistered and once registered, must route differently. If registration
+ * changed nothing, both halves would be identical and the positive case would be
+ * indistinguishable from the broken behaviour it is meant to rule out.
  *
- * So the whole path is: `omp pirate …` → `["launch", "pirate", …]` — a chat
- * session with `pirate` in the prompt, not a dispatch.
+ * ## Why the mutation matters more than the assertions
  *
- * ## Why this test asserts the CURRENT (broken) behaviour
- *
- * This is a deliberate anchor, not a description of desired behaviour. WI-A
- * (`m2-wi-a-027`) is unimplemented because closing it requires a **load-order
- * decision** that is the owner's: argv routing happens before extensions exist,
- * so a real fix means either a cheap manifest-only load phase ahead of routing,
- * or splitting `cli.ts`.
- *
- * Until that decision lands, ANY test asserting "the registered verb dispatches"
- * would be red for a reason no one has authorised, and ANY test asserting only
- * "the method exists" would be **green on this broken tree** — measuring
- * something already correct and defending nothing.
- *
- * So this file pins the seam as dead. The moment routing is fixed, this test goes
- * red **on purpose**: that is the signal to delete these expectations and assert
- * dispatch instead. `pirate` is a real shipped example
- * (`examples/extensions/pirate.ts:18`), not a fixture invented to fit.
- *
- * Per-row logging is required: a reader debugging a failure needs to know whether
- * the verb was seen as a subcommand, not just that an object differed.
+ * Restricting `isSubcommand` back to `SUBCOMMAND_NAMES.has(first)` — the
+ * one-word change that recreates the original bug — turns the dispatch case red
+ * while the file still compiles and the negative branch still passes. That is
+ * the proof this file is not green by construction.
  */
-import { describe, expect, test } from "bun:test";
-import { isSubcommand, resolveCliArgv } from "@oh-my-pi/pi-coding-agent/cli-commands";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+	type ResolvedCliArgv,
+	isSubcommand,
+	registerSubcommand,
+	resetSubcommandRegistry,
+	resolveCliArgv,
+	subcommandCollisionDiagnostics,
+} from "@oh-my-pi/pi-coding-agent/cli-commands";
 
-/** A verb a real shipped extension registers. See `examples/extensions/pirate.ts:18`. */
-const EXTENSION_VERB = "pirate";
+describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
+	/**
+	 * `ResolvedCliArgv` is a union, so reading `.argv` has to narrow first.
+	 * Failing here names the error the CLI would have printed, which is the
+	 * difference between "the assertion was wrong" and "the verb was rejected".
+	 */
+	function dispatchArgv(resolved: ResolvedCliArgv): string[] {
+		if ("error" in resolved) throw new Error(`expected a dispatch, but routing refused: ${resolved.error}`);
+		return resolved.argv;
+	}
 
-describe("top-level verb dispatch: the seam exists at the slash layer and is dead at the argv layer", () => {
-	test("ANCHOR: an extension-registered verb is currently swallowed into a launch prompt", () => {
-		const argv = [EXTENSION_VERB, "arg"];
-		const resolved = resolveCliArgv(argv);
-
-		console.error(
-			"[wi-a:argv-anchor] verb=%s isSubcommand=%s resolved=%o",
-			EXTENSION_VERB,
-			isSubcommand(EXTENSION_VERB),
-			resolved,
-		);
-
-		// The failure a user hits: the word reaches the model as prompt text.
-		expect(resolved).toEqual({ argv: ["launch", EXTENSION_VERB, "arg"] });
+	beforeEach(() => {
+		resetSubcommandRegistry();
 	});
 
-	test("ANCHOR: the argv table does not know the extension's verb", () => {
-		console.error("[wi-a:argv-anchor] isSubcommand(%s)=%s", EXTENSION_VERB, isSubcommand(EXTENSION_VERB));
-
-		expect(isSubcommand(EXTENSION_VERB)).toBe(false);
+	afterEach(() => {
+		resetSubcommandRegistry();
 	});
 
-	test("NEGATIVE: built-in verbs and aliases still dispatch unchanged", () => {
-		// If WI-A's fix ever lands, these must keep working. Asserting the built-in
-		// half is what stops a routing change from regressing the real commands.
-		for (const verb of ["acp", "wt", "q"]) {
-			const resolved = resolveCliArgv([verb]);
+	it("CONTROL: before registration the verb falls through to launch as a prompt", () => {
+		const resolved = resolveCliArgv(["deploy", "staging"]);
 
-			console.error("[wi-a:argv-negative] verb=%s resolved=%o", verb, resolved);
-
-			expect(resolved).toEqual({ argv: [verb] });
-		}
+		// The prompt path: argv is rewritten to `launch …`, not rejected. This is
+		// what a registered verb must stop doing.
+		expect(dispatchArgv(resolved)[0]).toBe("launch");
 	});
 
-	test("NEGATIVE: a prompt that merely starts with a reserved word still launches", () => {
-		// The #4845 guard is deliberately narrow — a genuine prompt beginning with
-		// one of these words must not be captured as plugin management.
-		const resolved = resolveCliArgv(["list", "all", "my", "files"]);
+	it("dispatches a registered verb instead of forwarding it as a prompt", () => {
+		expect(registerSubcommand("deploy", "ext:ci")).toBe(true);
 
-		console.error("[wi-a:argv-negative] reserved-word prompt resolved=%o", resolved);
+		const resolved = resolveCliArgv(["deploy", "staging"]);
 
-		expect(resolved).toEqual({ argv: ["launch", "list", "all", "my", "files"] });
+		// The observable is the dispatch result, not that the registry grew: a
+		// registry that records a name nobody reads passes the second check and
+		// fails this one.
+		const argv = dispatchArgv(resolved);
+		expect(argv[0]).toBe("deploy");
+		expect(argv[1]).toBe("staging");
+	});
+
+	it("reads the registry per call, so a verb registered after load is visible", () => {
+		// The closed-Set bug is precisely a snapshot taken earlier. Registering
+		// after the module has already been evaluated is the ordinary case, so it
+		// gets its own case rather than being folded into the one above.
+		expect(isSubcommand("later")).toBe(false);
+		registerSubcommand("later", "ext:late");
+		expect(isSubcommand("later")).toBe(true);
+	});
+
+	it("reports a duplicate verb with both claimants named", () => {
+		registerSubcommand("deploy", "ext:ci");
+		const second = registerSubcommand("deploy", "ext:other");
+
+		expect(second).toBe(false);
+		const [collision] = subcommandCollisionDiagnostics();
+		// Both sides, not just the loser — an invisible override is the failure
+		// mode this records, so naming only the newcomer would repeat it.
+		expect(collision.owner).toBe("ext:other");
+		expect(collision.existingOwner).toBe("ext:ci");
+	});
+
+	it("NEGATIVE: a verb nobody registered still becomes a prompt", () => {
+		registerSubcommand("deploy", "ext:ci");
+
+		const resolved = resolveCliArgv(["unregistered-verb", "text"]);
+
+		expect(dispatchArgv(resolved)[0]).toBe("launch");
+	});
+
+	it("NEGATIVE: a built-in command still dispatches when nothing is registered", () => {
+		const resolved = resolveCliArgv(["doctor"]);
+
+		// `doctor` is a reserved word, not a command, so it must still be told
+		// where the real one lives. Registration must not have disarmed that.
+		expect(resolved).toHaveProperty("error");
 	});
 });

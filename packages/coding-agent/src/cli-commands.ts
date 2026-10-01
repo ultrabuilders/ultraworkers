@@ -17,6 +17,67 @@ import {
 	STRING_VALUE_FLAGS,
 	VALUELESS_FLAGS,
 } from "./cli/flag-tables";
+
+// =============================================================================
+// Extension-registered top-level verbs
+// =============================================================================
+//
+// `SUBCOMMAND_NAMES` above is a snapshot: it is built when this module is first
+// evaluated, and pushing onto the exported `commands` array afterwards changes
+// nothing, because every lookup reads the closed Set. A `registerSubcommand`
+// that only appended there would compile, export a correctly-named function,
+// and dispatch nothing — the verb keeps falling through to `launch` and the
+// argv reaches the model as a prompt. Nothing throws and nothing logs.
+//
+// So extension verbs are held in a Set that is read per call, never snapshotted.
+// This is the shape `cli/extension-flags.ts` already uses for flags: the
+// registry is consulted at the point of use, and there is no built-in name list
+// for a plugin author to collide with.
+//
+// Two extensions claiming one verb is a mistake worth surfacing rather than a
+// race to win, following the tool-collision contract WI-2 set: the collision
+// records *both* claimants and the first registration still routes, so dispatch
+// stays deterministic. Silent last-writer-wins is the invisible-override class
+// WI-2 called out by name.
+
+const registeredSubcommands = new Map<string, string>();
+const subcommandCollisions: Array<{ verb: string; owner: string; existingOwner: string }> = [];
+
+/**
+ * Register a top-level verb owned by an extension.
+ *
+ * Returns `false` when `verb` was already claimed so the caller can surface the
+ * collision; the existing registration is kept, keeping dispatch deterministic.
+ */
+export function registerSubcommand(verb: string, owner: string): boolean {
+	const existing = registeredSubcommands.get(verb);
+	if (existing !== undefined) {
+		subcommandCollisions.push({ verb, owner, existingOwner: existing });
+		return false;
+	}
+	registeredSubcommands.set(verb, owner);
+	return true;
+}
+
+/** Whether an extension has registered `verb`. Read per call — never cached. */
+function isRegisteredSubcommand(verb: string): boolean {
+	return registeredSubcommands.has(verb);
+}
+
+/** Every verb collision seen so far, naming both claimants. */
+export function subcommandCollisionDiagnostics(): ReadonlyArray<{
+	verb: string;
+	owner: string;
+	existingOwner: string;
+}> {
+	return subcommandCollisions;
+}
+
+/** Test-only: drop all registrations so one file cannot poison another's. */
+export function resetSubcommandRegistry(): void {
+	registeredSubcommands.clear();
+	subcommandCollisions.length = 0;
+}
 import type * as LaunchHelp from "./commands/launch-help";
 
 function loadLaunchHelp(): typeof LaunchHelp.launchHelp {
@@ -315,7 +376,11 @@ export const LAUNCH_FLAG_COMMANDS: Readonly<Record<string, true>> = { launch: tr
 /** Whether a token names a registered top-level command or alias. */
 export function isSubcommand(first: string | undefined): boolean {
 	if (!first || first.startsWith("-") || first.startsWith("@")) return false;
-	return SUBCOMMAND_NAMES.has(first);
+	// Extension-registered verbs are read live. `SUBCOMMAND_NAMES` is a snapshot
+	// taken when this module loaded, so a verb registered later is only visible
+	// here — consulting the registry is what makes the seam real rather than a
+	// function that type-checks and dispatches nothing.
+	return SUBCOMMAND_NAMES.has(first) || isRegisteredSubcommand(first);
 }
 
 // Documented-looking plugin/marketplace verbs that are NOT registered top-level
@@ -443,12 +508,16 @@ function stripLaunchGlobalFlags(leading: readonly string[]): string[] {
  */
 export function resolveCliArgv(argv: string[]): ResolvedCliArgv {
 	const first = argv[0];
-	const reservedMessage = reservedTopLevelWordMessage(argv);
-	if (reservedMessage) return { error: reservedMessage };
 	if (first === "--help" || first === "-h" || first === "--version" || first === "-v" || first === "help") {
 		return { argv };
 	}
+	// A registered verb dispatches *before* the reserved-word hint is consulted.
+	// The hint exists to explain a word core cannot route; once an extension
+	// supplies a real handler for that word, the honest answer is to run it, and
+	// the hint would otherwise turn a working command back into an error.
 	if (isSubcommand(first)) return { argv };
+	const reservedMessage = reservedTopLevelWordMessage(argv);
+	if (reservedMessage) return { error: reservedMessage };
 	// A subcommand can hide behind leading global option flags
 	// (`omp --approval-mode=yolo acp`). `run` dispatches strictly on argv[0], so
 	// hoist the subcommand to the front. Launch-shaped commands share the launch

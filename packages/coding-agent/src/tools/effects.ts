@@ -56,35 +56,79 @@ const BUILTIN_TOOL_EFFECTS: Readonly<Record<string, readonly ToolEffect[]>> = {
 	fetch: ["network"],
 };
 
-const declared = new Map<string, ReadonlySet<ToolEffect>>(
+const builtinEffects = new Map<string, ReadonlySet<ToolEffect>>(
 	Object.entries(BUILTIN_TOOL_EFFECTS).map(([name, effects]) => [name, new Set(effects)]),
 );
 
 /**
- * Declare the effects of a tool, from outside this file.
+ * Extension contributions, as a reference count per (tool, effect).
+ *
+ * Kept separate from `BUILTIN_TOOL_EFFECTS` rather than merged into it, so the
+ * built-in table stays the one place a built-in's effects are written and a
+ * contribution can never overwrite one. Withdrawing decrements rather than
+ * restores a snapshot: two extensions may declare the same effect for one tool
+ * name, and the first one to withdraw must not take the other's with it.
+ */
+const contributions = new Map<string, Map<ToolEffect, number>>();
+
+/**
+ * Declare the effects of a tool, from outside this file. Returns the function
+ * that withdraws the declaration.
  *
  * This is the seam: an extension registering a tool calls this once, and the
  * narrowing rule below applies to it with no change here. Merge rather than
  * replace, because two extensions contributing to one tool name is legitimate and
  * silently dropping the first declaration would be the failure mode.
+ *
+ * The returned disposer is what makes the gate independent of the owner's
+ * lifecycle. An extension that unloads without withdrawing leaves its effects
+ * behind, and the residue is not inert: the next tool registered under the same
+ * name inherits a floor it never declared, and a tool that no longer exists keeps
+ * narrowing one. Withdrawal is idempotent, so an unload path may call it twice.
+ *
+ * Nothing is recorded unless every effect validates, so a rejected declaration
+ * leaves no partial state behind.
  */
-export function declareToolEffects(toolName: string, effects: Iterable<ToolEffect>): void {
-	const existing = declared.get(toolName);
-	const merged = new Set<ToolEffect>(existing ?? []);
+export function declareToolEffects(toolName: string, effects: Iterable<ToolEffect>): () => void {
+	const claimed: ToolEffect[] = [];
 	for (const effect of effects) {
 		if (!TOOL_EFFECTS.has(effect)) {
 			throw new Error(
 				`Unknown tool effect "${effect}" for tool "${toolName}". Known effects: ${[...TOOL_EFFECTS].join(", ")}.`,
 			);
 		}
-		merged.add(effect);
+		if (!claimed.includes(effect)) claimed.push(effect);
 	}
-	declared.set(toolName, merged);
+	const counts = contributions.get(toolName) ?? new Map<ToolEffect, number>();
+	for (const effect of claimed) counts.set(effect, (counts.get(effect) ?? 0) + 1);
+	contributions.set(toolName, counts);
+
+	let withdrawn = false;
+	return () => {
+		if (withdrawn) return;
+		withdrawn = true;
+		const live = contributions.get(toolName);
+		if (!live) return;
+		for (const effect of claimed) {
+			const remaining = (live.get(effect) ?? 0) - 1;
+			if (remaining > 0) live.set(effect, remaining);
+			else live.delete(effect);
+		}
+		if (live.size === 0) contributions.delete(toolName);
+	};
 }
 
-/** The effects declared for a tool; empty when it declares none. */
+/**
+ * The effects declared for a tool: its built-in entry, overlaid with whatever
+ * extensions have declared and not withdrawn. Empty when it declares none.
+ *
+ * Derived on read rather than cached, so a withdrawal cannot be missed by a stale
+ * snapshot and a built-in can never be shadowed by a contribution.
+ */
 export function declaredEffects(toolName: string): ReadonlySet<ToolEffect> {
-	return declared.get(toolName) ?? new Set<ToolEffect>();
+	const out = new Set<ToolEffect>(builtinEffects.get(toolName) ?? []);
+	for (const effect of contributions.get(toolName)?.keys() ?? []) out.add(effect);
+	return out;
 }
 
 /**

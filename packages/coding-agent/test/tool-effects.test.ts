@@ -34,8 +34,9 @@ const subject = (name: string, extra: Partial<ApprovalSubject> = {}): ApprovalSu
 	}) as ApprovalSubject;
 
 describe("declared effects", () => {
-	// The declaration table is process-wide with no removal API, so these cases use
-	// names no other test or extension uses. A shared name would leak across files.
+	// The declaration table is process-wide, so cases that leave a declaration in
+	// place use names no other test or extension uses, and cases that withdraw
+	// restore the table before finishing. A shared name would leak across files.
 
 	it("carries no effects for a tool that declares none", () => {
 		// The negative case that keeps the feature honest: a tool that says nothing is
@@ -58,6 +59,91 @@ describe("declared effects", () => {
 		// A typo that stored successfully would produce a tool that looks protected and
 		// is not — the dangerous direction, because the declaration is the evidence.
 		expect(() => declareToolEffects("ext-tool-b", ["filesystem" as ToolEffect])).toThrow(/Unknown tool effect/);
+	});
+});
+
+describe("an owner can withdraw what it declared", () => {
+	// The gate has to be independent of the owner's lifecycle. An extension that
+	// unloads without withdrawing leaves its effects behind, and the residue is not
+	// inert: the next tool registered under the same name inherits a floor it never
+	// declared, and a tool that no longer exists keeps narrowing one.
+
+	it("returns the declaration to exactly what it was before", () => {
+		// The red gate. A seam that cannot be removed is indistinguishable from a
+		// hardcoded declaration, and the user's session stays narrowed for an extension
+		// that is gone.
+		const before = declaredEffects("ext-tool-withdraw");
+		const dispose = declareToolEffects("ext-tool-withdraw", ["network"]);
+
+		expect([...declaredEffects("ext-tool-withdraw")]).toEqual(["network"]);
+
+		dispose();
+
+		expect([...declaredEffects("ext-tool-withdraw")]).toEqual([...before]);
+	});
+
+	it("leaves another owner's contribution alone", () => {
+		// Two extensions declaring the same effect for one tool name is legitimate.
+		// Restoring a snapshot on withdrawal — the obvious implementation — takes the
+		// second owner's declaration with it, silently un-narrowing a tool that is
+		// still installed.
+		const first = declareToolEffects("ext-tool-shared", ["subprocess"]);
+		declareToolEffects("ext-tool-shared", ["subprocess"]);
+
+		first();
+
+		expect([...declaredEffects("ext-tool-shared")]).toEqual(["subprocess"]);
+	});
+
+	it("can be called twice without dropping a live declaration", () => {
+		// An unload path that runs a disposer twice is an ordinary mistake, not an
+		// exotic one. A second call decrementing again would remove the surviving
+		// owner's effect — the same silent un-narrowing, one call later.
+		const first = declareToolEffects("ext-tool-idempotent", ["network"]);
+		declareToolEffects("ext-tool-idempotent", ["network"]);
+
+		first();
+		first();
+
+		expect([...declaredEffects("ext-tool-idempotent")]).toEqual(["network"]);
+	});
+
+	it("records nothing when one effect in the call is rejected", () => {
+		// Validation happens before anything is stored. Half a declaration would be the
+		// worst outcome: the tool looks narrowed for a resource the author never named,
+		// and the throw that reported the typo has already been discarded.
+		expect(() => declareToolEffects("ext-tool-partial", ["network", "filesystem" as ToolEffect])).toThrow(
+			/Unknown tool effect/,
+		);
+
+		expect(declaredEffects("ext-tool-partial").size).toBe(0);
+	});
+
+	it("keeps a built-in tool's own effect after a contribution is withdrawn", () => {
+		// The other half of "withdrawal must not make the gate lose effect". `bash`
+		// declares `subprocess` in the built-in table; an extension adding `network`
+		// and then withdrawing must not take `subprocess` with it.
+		const dispose = declareToolEffects("bash", ["network"]);
+
+		expect([...declaredEffects("bash")].sort()).toEqual(["network", "subprocess"]);
+
+		dispose();
+
+		expect([...declaredEffects("bash")]).toEqual(["subprocess"]);
+	});
+
+	it("stops narrowing a call once the owner has withdrawn", () => {
+		// The decision, not just the set. Before withdrawal the user's `deny` on the
+		// declared effect is honoured; afterwards the same tool under the same policy
+		// is left alone, which is the whole point of a disposer.
+		const dispose = declareToolEffects("ext-tool-decision", ["network"]);
+		const userPolicy = { effects: { network: "deny" } };
+
+		expect(resolveApproval(subject("ext-tool-decision"), {}, "yolo", userPolicy).policy).toBe("deny");
+
+		dispose();
+
+		expect(resolveApproval(subject("ext-tool-decision"), {}, "yolo", userPolicy).policy).toBe("allow");
 	});
 });
 

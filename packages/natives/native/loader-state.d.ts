@@ -165,9 +165,16 @@ export function nativeAddonStatus(): NativeAddonStatus;
 /**
  * What a gate may conclude from the addon it runs against.
  *
- * Deliberately has no `deny` member: this measures, it does not adjudicate.
+ * The axis is whether a **verdict is available**, not whether the addon was
+ * measured — a stale addon is measured perfectly well; the answer is just
+ * "different release". What is missing there is any basis to reason about a
+ * release this tree does not understand, which is why it yields `unknown`
+ * alongside an addon that never loaded at all. Those two reach `unknown` for
+ * different reasons, and a caller must not read a stale addon as unexamined.
+ *
+ * Deliberately has no `deny` member: this concludes, it does not adjudicate.
  * A `deny` here would be a second, silently-equal spelling of "not current",
- * and it would read as a measured refusal when nothing was determined.
+ * and it would read as a determined refusal when no determination was made.
  */
 export type NativeAddonGateVerdict = "allow" | "unknown";
 

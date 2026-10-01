@@ -773,8 +773,8 @@ export function nativeAddonStatus() {
  * a measured refusal when nothing was actually determined. A caller that wants
  * to refuse has its own policy to apply to `unmeasured`.
  */
-const GATE_VERDICT_MEASURED = "allow";
-const GATE_VERDICT_UNMEASURED = "unknown";
+const GATE_VERDICT_AVAILABLE = "allow";
+const GATE_VERDICT_UNAVAILABLE = "unknown";
 
 /**
  * The addon state no measurement can be drawn from.
@@ -792,7 +792,7 @@ const UNMEASURED = { state: "unavailable" };
  * @returns {"allow" | "unknown"}
  */
 export function nativeAddonGateVerdict(addon = nativeAddonStatus()) {
-	return addon.state === "current" ? GATE_VERDICT_MEASURED : GATE_VERDICT_UNMEASURED;
+	return addon.state === "current" ? GATE_VERDICT_AVAILABLE : GATE_VERDICT_UNAVAILABLE;
 }
 
 /**

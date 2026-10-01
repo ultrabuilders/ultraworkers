@@ -485,6 +485,11 @@ function matchLink(src: string, lexer: Lexer): Tokens.Link | Tokens.Image | unde
 	const image = src.startsWith("![");
 	if (!(image || src.startsWith("["))) return undefined;
 	const labelStart = image ? 2 : 1;
+	// `findClosingBracket` quét tới cuối chuỗi khi không có ngoặc đóng. Với một chuỗi
+	// toàn `[`, vòng lặp block gọi hàm này O(n) lần (mỗi lần tiến đúng 1 ký tự), mỗi
+	// lần quét O(n) ⇒ bậc hai. `indexOf` trả lời "không có ngoặc đóng ở đâu cả" bằng
+	// một lần quét, và khi đã có ngoặc đóng thì `findClosingBracket` vẫn chạy như cũ.
+	if (src.indexOf("]", labelStart) === -1) return undefined;
 	const labelEnd = findClosingBracket(src, labelStart, "[", "]");
 	if (labelEnd === -1) return undefined;
 	const label = src.slice(labelStart, labelEnd);

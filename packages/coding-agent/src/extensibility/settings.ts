@@ -179,27 +179,50 @@ export const cfgExtensionHandlersToolCallTimeoutMs = register({
 export const PLUGIN_SETTINGS_ROOT = "plugins";
 
 /**
- * Fold one id or key segment to the shape used inside a plugin setting id.
+ * Fold a plugin id segment, matching how the marketplace already compares plugin names.
  *
- * `my-plugin` → `my_plugin`, `autoContext.enabled` → `auto_context_enabled`. Camel-case
- * boundaries become `_`, every run of other non-alphanumerics becomes a single `_`, and
- * there is no leading or trailing `_` — the last part matters because `plugins..key` and
- * `plugins.key` must not both be reachable.
+ * Lowercase only — deliberately NOT the same fold as a setting key below. The marketplace
+ * decides plugin identity with `nameSegmentCollisionKey` (`plugins/marketplace/types.ts:24`),
+ * which is `toLowerCase()`, and a catalog may legitimately ship `myPlugin` and `my_plugin` as
+ * two DIFFERENT plugins. Folding the camel case here would map both to `my_plugin` and give
+ * two distinct plugins one settings namespace, so one silently overwrites the other's keys.
  *
- * The camel-case rule is not cosmetic. Lowercasing alone maps both `autoContext` and
- * `autocontext` to `autocontext`, so two keys a plugin author considers distinct would
- * silently become one — the exact collision the reserved root exists to make impossible.
- * Folding keeps them apart, at the cost of treating `autoContext` and `auto-context` as
- * one name, which is the trade the other way.
+ * The invariant this preserves: two plugin ids collide in settings if and only if the
+ * marketplace already treats them as colliding. Settings may never be coarser than the layer
+ * that decides what a plugin is — so nothing else is folded here either, not even the
+ * separator runs the key fold collapses. A dot is legal inside a plugin name
+ * (`NAME_RE` in `plugins/marketplace/types.ts` allows it), and folding `.` to `_` would
+ * merge `foo.bar` with `foo_bar`: two different plugins, one settings namespace, silent
+ * overwrite. `foo-bar` and `foo.bar` are NOT merged, because the marketplace does not
+ * merge them either.
  *
- * The spec's own sketch (`.lavish-wip/m2-specs/WI-8a.spec.json`) lowercases without folding
- * and so contradicts the mapping in its own docblock; this follows the docblock.
- *
- * An empty result is a real case, not a guard against a hypothetical: a key made only of
- * punctuation folds to `""`. Callers that build an id must decide what that means rather
- * than emit `plugins..`.
+ * The id is consequently not round-trippable: `plugins.foo.bar.enabled` does not parse
+ * back into `("foo.bar", "enabled")`. Nothing parses it — the id is an opaque registry key —
+ * and merging two live plugins is worse than an id that cannot be split.
  */
-export function sanitizePluginSegment(raw: string): string {
+export function sanitizePluginIdSegment(raw: string): string {
+	return raw.toLowerCase();
+}
+
+/**
+ * Fold a setting key segment.
+ *
+ * `autoContext.enabled` → `auto_context_enabled`. The camel-case fold is not cosmetic here:
+ * lowercasing alone maps both `autoContext` and `autocontext` to `autocontext`, so two keys
+ * an author considers distinct would silently become one setting. Folding keeps them apart,
+ * at the cost of treating `autoContext` and `auto-context` as one name.
+ *
+ * It has a limit worth knowing: the fold only fires at a lower-to-upper boundary, so
+ * `HTTPServer` folds to `httpserver` — the same result lowercasing alone gives. Two names
+ * that differ only by an internal capital run that way together.
+ *
+ * The spec's own sketch (`.lavish-wip/m2-specs/WI-8a.spec.json`) applies this same fold to
+ * the PLUGIN segment as well. That half is not reproduced here: a setting key has no
+ * upstream identity rule, so folding it merges only names its own author already treats as
+ * spelling variants, whereas folding a plugin id merges two plugins the marketplace is
+ * willing to install side by side. See `sanitizePluginIdSegment`.
+ */
+export function sanitizeSettingKeySegment(raw: string): string {
 	return raw
 		.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
 		.toLowerCase()
@@ -210,11 +233,10 @@ export function sanitizePluginSegment(raw: string): string {
 /**
  * The registry id for a plugin-owned setting: `plugins.<plugin>.<key>`.
  *
- * Both segments are sanitized, so a plugin named `my-plugin` and one named `my_plugin`
- * resolve to the same id. That is deliberate — it is the same collision the reserved
- * root exists to surface, and folding them is better than letting two spellings of one
- * plugin own two sets of keys.
+ * The two segments go through different folds on purpose — see `sanitizePluginIdSegment`
+ * for why a plugin id must track the marketplace's own notion of identity while a setting
+ * key does not.
  */
 export function pluginSettingId(pluginId: string, key: string): string {
-	return `${PLUGIN_SETTINGS_ROOT}.${sanitizePluginSegment(pluginId)}.${sanitizePluginSegment(key)}`;
+	return `${PLUGIN_SETTINGS_ROOT}.${sanitizePluginIdSegment(pluginId)}.${sanitizeSettingKeySegment(key)}`;
 }

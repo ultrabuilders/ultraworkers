@@ -18,6 +18,13 @@ import { loadExtensions } from "../extensions/loader";
 import { refreshBunGitCache } from "./bun-git-cache";
 import { type GitSource, parseGitUrl } from "./git-url";
 import { resolvePluginManifestEntries } from "./loader";
+import { resolveOrDefaultProjectRegistryPath } from "../../discovery/helpers";
+import {
+	getMarketplacesCacheDir,
+	getMarketplacesRegistryPath,
+	getPluginsCacheDir,
+	MarketplaceManager,
+} from "./marketplace/index";
 import { getInstalledPluginsRegistryPath, readInstalledPluginsRegistry } from "./marketplace/registry";
 import { parsePluginId } from "./marketplace/types";
 import { extractPackageName, parsePluginSpec } from "./parser";
@@ -1095,14 +1102,32 @@ export class PluginManager {
 								fixed,
 							});
 						} else {
-							const repair = options.fix ? await this.#removeOrphanedConfig(name) : null;
-							checks.push({
-								name: `orphan:${name}`,
-								status: "warning",
-								message: "Plugin in config but not installed",
-								fixed: repair?.fixed ?? false,
-								changedOnDisk: repair?.change.changed ?? false,
-							});
+							// Restore first, delete second. Putting the plugin back is what
+							// the user wants from `--fix`; deleting their config entry is
+							// only the honest fallback for an entry whose bytes cannot be
+							// proven — a branch or tag re-fetched now is a different commit,
+							// and silently swapping it in would be worse than removing it.
+							const restore = options.fix ? await this.#restoreOrphanedPlugin(name) : null;
+							if (restore?.fixed) {
+								checks.push({
+									name: `orphan:${name}`,
+									status: "ok",
+									message: "Plugin in config but not installed — restored from its pinned source",
+									fixed: true,
+									changedOnDisk: true,
+								});
+							} else {
+								const repair = options.fix ? await this.#removeOrphanedConfig(name) : null;
+								checks.push({
+									name: `orphan:${name}`,
+									status: "warning",
+									message: restore?.reason
+										? `Plugin in config but not installed — not restored: ${restore.reason}`
+										: "Plugin in config but not installed",
+									fixed: repair?.fixed ?? false,
+									changedOnDisk: repair?.change.changed ?? false,
+								});
+							}
 						}
 					} else {
 						checks.push({
@@ -1294,6 +1319,47 @@ export class PluginManager {
 			}
 		}, "restart-required");
 		return { fixed: true, change };
+	}
+
+	/**
+	 * Put back a plugin whose installed copy went missing, when its recorded source
+	 * can prove what would come back.
+	 *
+	 * Returns `fixed: false` with a reason rather than throwing: this runs inside a
+	 * doctor sweep over every configured plugin, and one entry that cannot be
+	 * restored is a finding to report, not a sweep to abort. The caller falls back
+	 * to {@link #removeOrphanedConfig}, because removing the config entry is still
+	 * correct when the bytes cannot be proven.
+	 */
+	async #restoreOrphanedPlugin(name: string): Promise<{ fixed: boolean; reason: string }> {
+		// The installed registry is keyed by `name@marketplace`, but a doctor sweep
+		// only has the bare package name out of the config. The marketplace half is
+		// recoverable from the key; nothing else about the entry is, which is why
+		// the reinstall has to go back through the catalog rather than be assembled
+		// from the registry alone.
+		const registry = await readInstalledPluginsRegistry(getInstalledPluginsRegistryPath());
+		const id = Object.keys(registry.plugins).find(key => key === name || key.startsWith(`${name}@`));
+		if (!id) return { fixed: false, reason: "no installed-registry entry records which marketplace it came from" };
+
+		const parsed = parsePluginId(id);
+		if (!parsed) return { fixed: false, reason: `installed-registry id "${id}" is not a name@marketplace pair` };
+
+		const scope = registry.plugins[id]?.[0]?.scope ?? "user";
+		try {
+			const marketplace = new MarketplaceManager({
+				marketplacesRegistryPath: getMarketplacesRegistryPath(),
+				installedRegistryPath: getInstalledPluginsRegistryPath(),
+				projectInstalledRegistryPath: await resolveOrDefaultProjectRegistryPath(this.#cwd),
+				marketplacesCacheDir: getMarketplacesCacheDir(),
+				pluginsCacheDir: getPluginsCacheDir(),
+			});
+			await marketplace.restorePlugin(parsed.name, parsed.marketplace, { scope });
+			return { fixed: true, reason: "" };
+		} catch (err) {
+			// The pin refusal arrives here like any other failure, and it is the one
+			// that matters: it is the gate refusing, so its message is the finding.
+			return { fixed: false, reason: err instanceof Error ? err.message : String(err) };
+		}
 	}
 
 	/**

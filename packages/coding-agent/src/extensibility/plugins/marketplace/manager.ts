@@ -30,7 +30,7 @@ import {
 	writeInstalledPluginsRegistry,
 	writeMarketplacesRegistry,
 } from "./registry";
-import { resolvePluginSource, validatePluginSource } from "./source-resolver";
+import { assertPinnedSource, resolvePluginSource, validatePluginSource } from "./source-resolver";
 import type {
 	InstalledPluginEntry,
 	InstalledPluginSummary,
@@ -323,10 +323,21 @@ export class MarketplaceManager {
 	async installPlugin(
 		name: string,
 		marketplace: string,
-		options?: { force?: boolean; scope?: "user" | "project" },
+		options?: { force?: boolean; scope?: "user" | "project"; restore?: boolean },
 	): Promise<InstalledPluginEntry> {
 		const { scope, registryPath, catalog, marketplaceClonePath, pluginEntry, pluginId, existing } =
 			await this.#validateInstall(name, marketplace, options);
+
+		// The pin gate, and only for restore. An explicit install is the user saying
+		// "give me whatever this ref resolves to now", so a mutable source is exactly
+		// what they asked for. A restore is the opposite: nobody re-asked, the
+		// registry just lost its copy, and re-fetching a branch would silently put
+		// different bytes where the reviewed commit used to be.
+		//
+		// Placed here rather than at the caller because this is the first point where
+		// the catalog entry — and therefore the declared source — exists. The caller
+		// that discovered the orphan holds only a bare plugin name.
+		if (options?.restore) assertPinnedSource(pluginEntry.source, name);
 
 		// 4. Resolve source path.
 
@@ -877,6 +888,22 @@ export class MarketplaceManager {
 		}
 
 		return { delisted, unversioned };
+	}
+
+	/**
+	 * Restore a plugin whose installed copy went missing, refusing a mutable source.
+	 *
+	 * Distinct from {@link installPlugin} on one axis only: whether the source must be
+	 * pinned. `installPlugin` is a user request and accepts whatever a tag or branch
+	 * resolves to; a restore is not a request at all, so it may only put back the
+	 * commit the registry recorded.
+	 */
+	async restorePlugin(
+		name: string,
+		marketplace: string,
+		options?: { scope?: "user" | "project" },
+	): Promise<InstalledPluginEntry> {
+		return this.installPlugin(name, marketplace, { force: true, restore: true, ...options });
 	}
 
 	// Re-install a specific plugin at the latest catalog version (force-overwrites).

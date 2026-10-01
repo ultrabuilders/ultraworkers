@@ -18,6 +18,9 @@
   and zone-id (`fe80::1%eth0`) spellings, the trailing-dot FQDN (`localhost.`), and the whole
   `*.localhost` name space — a plugin naming one of these no longer registers a server
 
+### Changed
+
+- `omp plugin doctor --fix` now restores a plugin whose installed copy went missing, instead of only deleting its config entry — but only when the recorded source is pinned to a commit. An entry installed from a tag or branch is still removed, because re-fetching that ref now can bring different code than the one the registry recorded, and swapping it in silently would be worse than removing it. Installing from a tag or branch is unaffected: that is you asking for whatever the ref resolves to
 
 ### Breaking Changes
 

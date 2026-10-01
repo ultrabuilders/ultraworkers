@@ -70,6 +70,31 @@ function isTodoToolDetails(details: unknown): details is TodoToolDetails {
 	);
 }
 
+/** Key `agent-loop` writes into `result.details` for a call a gate stopped. */
+const TOOL_BLOCK_KIND_DETAIL = "blockedKind";
+
+/**
+ * The line that tells a reader whether anybody DENIED this call or a gate FAILED while judging
+ * it.
+ *
+ * Both arrive as one line of prose: a handler that returned `{block:true}` and a handler that
+ * crashed both surface as an errored tool call whose message is the handler's own words. Left
+ * unlabelled, a user's own refusal is indistinguishable from a third-party extension falling over
+ * — so "the system decided" is reported where nothing decided. The words that follow are still
+ * the handler's; only the classification is added.
+ *
+ * Only `hook-failed` is labelled. A denial is the ordinary case and its message already says what
+ * was refused, so prefixing it would add a line to every gated call to say nothing new.
+ *
+ * Returns `""` for anything else — including a block with no classification, which is what an
+ * older transcript replays with.
+ */
+function toolBlockLabel(result: { details?: unknown; isError?: boolean } | undefined): string {
+	if (!result?.isError) return "";
+	if (!isRecord(result.details)) return "";
+	return result.details[TOOL_BLOCK_KIND_DETAIL] === "hook-failed" ? "Hook failed: " : "";
+}
+
 interface ToolImageBlock {
 	data?: string;
 	mimeType?: string;
@@ -1182,10 +1207,12 @@ export class ToolExecutionComponent extends Container {
 	#nativeTextOutput(): string {
 		const result = this.#result;
 		if (!result) return "";
-		const output = result.content
-			.filter(block => block.type === "text")
-			.map(block => sanitizeText(block.text || ""))
-			.join("\n");
+		const output =
+			toolBlockLabel(result) +
+			result.content
+				.filter(block => block.type === "text")
+				.map(block => sanitizeText(block.text || ""))
+				.join("\n");
 		if (this.#showImages) return output;
 		const indicators = this.#getAllImageBlocks()
 			.map(image => {
@@ -1769,11 +1796,13 @@ export class ToolExecutionComponent extends Container {
 		const textBlocks = this.#result.content.filter(c => c.type === "text");
 		const imageBlocks = this.#getAllImageBlocks();
 
-		let output = textBlocks
-			.map(c => {
-				return sanitizeWithOptionalSixelPassthrough(c.text || "", sanitizeText);
-			})
-			.join("\n");
+		let output =
+			toolBlockLabel(this.#result) +
+			textBlocks
+				.map(c => {
+					return sanitizeWithOptionalSixelPassthrough(c.text || "", sanitizeText);
+				})
+				.join("\n");
 
 		if (imageBlocks.length > 0 && (!TERMINAL.imageProtocol || !this.#showImages)) {
 			const imageIndicators = imageBlocks

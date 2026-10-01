@@ -533,6 +533,24 @@ function hasSubstantiveToolResultContent(content: AgentToolResult["content"]): b
 	return false;
 }
 
+/** Key under which a blocked call's classification rides in `result.details`. */
+export const TOOL_BLOCK_KIND_DETAIL = "blockedKind";
+
+/**
+ * The `details` payload for a tool call that threw.
+ *
+ * A `ToolCallBlockedError` knows whether a handler DENIED the call or FAILED while judging it,
+ * and that distinction is invisible in the message: both reach here as one line of prose the
+ * user reads the same way. Carrying it in `details` is what lets a surface label the two
+ * differently — a refusal is somebody's decision, a failure is a broken gate, and rendering one
+ * as the other is the conflation this field exists to prevent.
+ *
+ * Returns `{}` for every other error, so an ordinary tool exception is untouched.
+ */
+function blockedCallDetails(error: unknown): Record<string, unknown> {
+	return error instanceof ToolCallBlockedError ? { [TOOL_BLOCK_KIND_DETAIL]: error.kind } : {};
+}
+
 function coerceToolResult(raw: unknown): { result: AgentToolResult<unknown>; malformed: boolean } {
 	const rawObj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
 	const rawContent = rawObj?.content;
@@ -3494,7 +3512,7 @@ async function executeToolCalls(
 				caughtError = e;
 				result = {
 					content: [{ type: "text", text: normalizeErrorMessage(e) }],
-					details: {},
+					details: blockedCallDetails(e),
 				};
 				isError = true;
 			}

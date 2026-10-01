@@ -271,7 +271,7 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 		const releaseFirstRebuild = Promise.withResolvers<void>();
 		const releaseSecondRebuild = Promise.withResolvers<void>();
 		let rebuildCount = 0;
-		const { session } = newSession(async toolNames => {
+		const { session, toolRegistry } = newSession(async toolNames => {
 			rebuildCount++;
 			if (rebuildCount === 1) {
 				firstRebuildStarted.resolve();
@@ -295,8 +295,17 @@ describe("AgentSession refreshMCPTools rebuild skipping", () => {
 
 		releaseFirstRebuild.resolve();
 		await Promise.all([olderRefresh, newerRefresh]);
-		expect(rebuildCount).toBe(2);
-		expect(session.systemPrompt).toEqual(["tools:read,mcp__nucleus_search,mcp__nucleus_fetch"]);
+		// The second refresh pushes `fetch` but does not activate it, so the active
+		// set is unchanged and there is nothing new to commit: one rebuild, not two.
+		expect(rebuildCount).toBe(1);
+		// `fetch` is REGISTERED but NOT ACTIVE — that boundary is the whole point of
+		// the trust fix. Asserting only "the registry has it" would pass on the
+		// unpatched tree, so both halves are asserted: the model can see the tool in
+		// the registry, but it never reached the prompt, because activating it is the
+		// user's decision and this server was already trusted when it pushed it.
+		expect([...toolRegistry.keys()]).toContain(fetch.name);
+		expect(session.getEnabledToolNames()).not.toContain(fetch.name);
+		expect(session.systemPrompt).toEqual(["tools:read,mcp__nucleus_search"]);
 	});
 
 	it("serializes explicit prompt refreshes with registry mutations", async () => {

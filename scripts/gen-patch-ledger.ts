@@ -327,7 +327,11 @@ function parseRoot(argv: readonly string[]): string {
 	return path.resolve(value);
 }
 
-export async function run(repoRoot: string): Promise<{ ok: true; hunkCount: number } | { ok: false }> {
+export async function run(
+	repoRoot: string,
+	options: { check?: boolean } = {},
+): Promise<{ ok: true; hunkCount: number } | { ok: false }> {
+	const check = options.check === true;
 	const patched = await readPatchedDependencies(repoRoot);
 	const hunksByPatch = await readPatchTree(repoRoot);
 	const ledgerText = await readRepoFile(repoRoot, LEDGER_PATH);
@@ -357,6 +361,15 @@ export async function run(repoRoot: string): Promise<{ ok: true; hunkCount: numb
 		// `drop-when` a maintainer wrote died with the deleted file, and a silent
 		// regeneration would leave a fully-blank ledger that passes this gate from
 		// then on.
+		if (check) {
+			// A missing ledger is the one staleness a generator cannot describe: there
+			// is nothing to compare against, so "is it current" has no answer and the
+			// honest report is that it has never been generated.
+			console.error(
+				`LEDGER: MISSING — ${LEDGER_PATH} does not exist. Run \`bun run gen:patch-ledger\` and commit it.`,
+			);
+			return { ok: false };
+		}
 		console.error(`LEDGER: BOOTSTRAP — no ${LEDGER_PATH}, wrote ${hunkCount} rows with blank human columns.`);
 		await Bun.write(
 			path.join(repoRoot, LEDGER_PATH),
@@ -377,10 +390,25 @@ export async function run(repoRoot: string): Promise<{ ok: true; hunkCount: numb
 		return { ok: false };
 	}
 
-	await Bun.write(
-		path.join(repoRoot, LEDGER_PATH),
-		buildLedgerMarkdown(collectLedger(patched, hunksByPatch, existing)),
-	);
+	// Build the text first and compare before writing, because writing first is how a
+	// staleness check becomes a no-op: regenerate, then diff the result against the
+	// regenerated file, and the diff is always empty because the regenerate just made
+	// it so. Measured — the first version of this gate did exactly that and exited 0
+	// against a deliberately stale ledger. A check that repairs the thing it is
+	// checking reports nothing, so check mode must not write.
+	const next = buildLedgerMarkdown(collectLedger(patched, hunksByPatch, existing));
+	if (check) {
+		if (next !== ledgerText) {
+			console.error(
+				`LEDGER: STALE — ${LEDGER_PATH} is not what this generator produces. Run \`bun run gen:patch-ledger\` and commit the result.`,
+			);
+			return { ok: false };
+		}
+		console.log(`${LEDGER_PATH}: up to date, ${hunkCount} hunk rows.`);
+		return { ok: true, hunkCount };
+	}
+
+	await Bun.write(path.join(repoRoot, LEDGER_PATH), next);
 	const carried = existing.flatMap(group => group.rows);
 	const unrecorded = carried.filter(row => row.purpose === UNRECORDED).length;
 	console.log(`${LEDGER_PATH}: ${hunkCount} hunk rows, ${unrecorded} awaiting a maintainer.`);
@@ -388,7 +416,7 @@ export async function run(repoRoot: string): Promise<{ ok: true; hunkCount: numb
 }
 
 async function main(): Promise<void> {
-	const result = await run(parseRoot(Bun.argv.slice(2)));
+	const result = await run(parseRoot(Bun.argv.slice(2)), { check: Bun.argv.includes("--check") });
 	if (!result.ok) process.exitCode = 1;
 }
 

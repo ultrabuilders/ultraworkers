@@ -196,6 +196,14 @@ jobs:
          # deletion the R0 invariant forbids.
          - name: Fan-in baseline (R0)
            run: bun run measure:fan-in:check
+         # The ledger is generated from the patch files themselves, so a patch
+         # merged without regenerating it leaves the human half describing a
+         # different tree than the machine half verifies. It had a script and no
+         # job: unlike the fan-in gate above, nothing in CI called it, so merging
+         # a patch without the regenerate step stayed green. Regenerate and diff —
+         # the check is that the committed ledger is what the generator produces.
+         - name: Patch ledger is current
+           run: bun run gen:patch-ledger:check
          - name: Build collab web
            run: bun run collab:web:build
 

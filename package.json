@@ -95,7 +95,7 @@
 		"check:script-tests": "bun scripts/check-script-tests.ts",
 		"test:rs": "bun scripts/run-rs-task.ts test:rs",
 		"check": "bun run --parallel check:ts check:rs",
-		"check:ts": "bun run check:tools && bun run check:invariants && bun run --filter './packages/*' --sequential --if-present check:types",
+		"check:ts": "bun run check:tools && bun run check:invariants && bun run measure:fan-in:check && bun run --filter './packages/*' --sequential --if-present check:types",
 		"check:tools": "oxlint . && oxfmt --check 'packages/*/src/**/*.{ts,tsx}' 'packages/*/{test,bench,examples,scripts}/**/*.ts' 'packages/*/*.ts' 'scripts/**/*.ts'",
 		"check:invariants": "bun scripts/run-node-invariants.mjs",
 		"measure:fan-in": "bun scripts/measure-fan-in.ts",

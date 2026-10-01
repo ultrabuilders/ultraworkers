@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { type TerminalFramePlan, type TerminalFrameProvider, TUI, type ViewportSize } from "@oh-my-pi/pi-tui";
+import { withoutTerminalMultiplexer } from "./helpers/terminal-multiplexer";
 import { VirtualTerminal } from "./virtual-terminal";
 
 // Regression coverage for a resize on Warp under Windows ConPTY leaving the
@@ -28,7 +29,7 @@ const ED3 = "\x1b[3J";
 const DSR = "\x1b[6n";
 const COMMITTED = ["committed-0", "committed-1", "committed-2"];
 
-const TERMINAL_ENV = ["TERM", "TERM_PROGRAM", "PI_TUI_RESIZE_IN_PLACE", "TMUX", "STY", "ZELLIJ", "HERDR_ENV"] as const;
+const TERMINAL_ENV = ["TERM", "TERM_PROGRAM", "PI_TUI_RESIZE_IN_PLACE"] as const;
 
 /**
  * Windows ConPTY host: answers DSR from its own re-homed cursor (column 1
@@ -119,6 +120,16 @@ function startRig() {
 }
 
 describe("resize on Warp hosted by Windows ConPTY", () => {
+	// The multiplexer markers are scrubbed by the shared helper, NOT by a list
+	// maintained here. A hand-written list is a claim about which environment
+	// variables exist, and it decays silently: this file listed HERDR_ENV but
+	// not the HERDR_* identity vars that `isInsideHerdr` also accepts, so the
+	// whole suite's correctness depended on whether the developer happened to
+	// run it inside a Herdr pane. The failure was real and reproducible — see
+	// the comment on `withoutTerminalMultiplexer` — and it read as a product bug
+	// in `tui.ts` because the probe genuinely was sent twice.
+	withoutTerminalMultiplexer();
+
 	let saved: Record<string, string | undefined> = {};
 
 	beforeEach(() => {

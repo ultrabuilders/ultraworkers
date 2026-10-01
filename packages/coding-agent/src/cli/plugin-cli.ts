@@ -18,7 +18,7 @@ import {
 	parsePluginId,
 } from "../extensibility/plugins/marketplace/index";
 import { type InstalledPlugin } from "../extensibility/plugins/types";
-import { formatDoctorResults } from "../extensibility/plugins/doctor";
+import { formatDoctorResults, runDoctorChecks } from "../extensibility/plugins/doctor";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 
 // =============================================================================
@@ -712,10 +712,32 @@ async function handleLink(
  * not cover the branch that matters.
  */
 export async function handleDoctor(manager: PluginManager, flags: { json?: boolean; fix?: boolean }): Promise<void> {
-	const checks = await manager.doctor({ fix: flags.fix });
+	// Two collectors, one command. `manager.doctor()` answers "is the plugin
+	// system itself healthy"; `runDoctorChecks()` answers "is the environment
+	// this host runs in healthy" — PATH lookups, credentials, and the extension
+	// seam registries. They share no check name at all, so running only the first
+	// reported a clean bill of health to anyone whose registered theme would
+	// never load.
+	//
+	// `runDoctorChecks` used to be exported, tested, and unreachable: nothing in
+	// `src/` called it, so the checks existed only for the tests that called them
+	// directly. A caller can go away while its tests stay green — that is what
+	// "a registry that accepted a registration and is never consulted is a dead
+	// seam wearing a live one" looks like from the outside.
+	//
+	// They are reported as TWO blocks rather than one merged list. Merging is the
+	// obvious shape and it is wrong here: the partition contract the plugin report
+	// is pinned by is stated over the rows that collector produced, and folding
+	// eight machine-dependent environment checks into the same denominator makes
+	// that number a property of the host instead of a property of the code. Two
+	// blocks keep the plugin section exactly what it was and still give the user
+	// both answers. Same module, same formatter — the split is in the report, not
+	// in the implementation.
+	const pluginChecks = await manager.doctor({ fix: flags.fix });
+	const environmentChecks = await runDoctorChecks();
 
 	if (flags.json) {
-		console.log(JSON.stringify(checks, null, 2));
+		console.log(JSON.stringify([...pluginChecks, ...environmentChecks], null, 2));
 		return;
 	}
 
@@ -723,28 +745,54 @@ export async function handleDoctor(manager: PluginManager, flags: { json?: boole
 	// bucketing that produced two wrong summaries in a row has one implementation
 	// and one set of tests instead of a copy per renderer. The styles and icons
 	// stay local: colouring is this CLI's decision, the partition is not.
-	const report = formatDoctorResults(
-		checks,
-		{
-			heading: text => chalk.bold(text),
-			ok: icon => chalk.green(icon),
-			warning: icon => chalk.yellow(icon),
-			error: icon => chalk.red(icon),
-			dim: text => chalk.dim(text),
-		},
-		{
-			ok: theme.status.success,
-			warning: theme.status.warning,
-			error: theme.status.error,
-			unavailable: "?",
-			fixed: theme.nav.cursor,
-		},
-		{ heading: "Plugin Health Check" },
+	const styles = {
+		heading: (text: string) => chalk.bold(text),
+		ok: (icon: string) => chalk.green(icon),
+		warning: (icon: string) => chalk.yellow(icon),
+		error: (icon: string) => chalk.red(icon),
+		dim: (text: string) => chalk.dim(text),
+	};
+	const icons = {
+		ok: theme.status.success,
+		warning: theme.status.warning,
+		error: theme.status.error,
+		unavailable: "?",
+		fixed: theme.nav.cursor,
+	};
+
+	const pluginReport = formatDoctorResults(pluginChecks, styles, icons, { heading: "Plugin Health Check" });
+	const environmentReport = formatDoctorResults(environmentChecks, styles, icons, {
+		heading: "Environment Health Check",
+	});
+
+	// The plugin block prints exactly as it did before the environment half was
+	// added — including its `Summary:` line — so a reader (or a script) that only
+	// cares about plugin health sees an unchanged report.
+	for (const line of pluginReport.lines) console.log(line);
+	console.log("");
+
+	// The environment block prints its checks but NOT its own `Summary:`. Two
+	// summary lines in one report is not a report: a reader cannot tell which one
+	// is the verdict, and any tooling that reads the first `Summary:` it finds
+	// then disagrees with the number of lines above it. The counts ride on a
+	// labelled line instead, so both halves stay legible and only one of them
+	// claims to be the summary.
+	const summaryIndex = environmentReport.lines.findIndex(line => line.startsWith("Summary:"));
+	for (const line of environmentReport.lines.slice(0, summaryIndex)) console.log(line);
+	const env = environmentReport.counts;
+	console.log(
+		styles.dim(
+			`Environment: ${env.ok} ok, ${env.warning} warnings, ${env.error} errors` +
+				`${env.unavailable > 0 ? `, ${env.unavailable} not checked` : ""}` +
+				`${env.fixed > 0 ? `, ${env.fixed} fixed` : ""}`,
+		),
 	);
+	// Anything the formatter appended after its summary (the --fix advice) is
+	// still advice the reader needs.
+	for (const line of environmentReport.lines.slice(summaryIndex + 1)) console.log(line);
 
-	for (const line of report.lines) console.log(line);
-
-	if (report.errors > 0 && !flags.fix) {
+	// Either half failing is a failing health check, so the exit code spans both.
+	if (pluginReport.errors + environmentReport.errors > 0 && !flags.fix) {
 		process.exit(1);
 	}
 }

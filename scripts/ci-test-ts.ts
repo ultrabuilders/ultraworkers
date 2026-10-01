@@ -95,6 +95,7 @@ const fastWorkspacePackages = [
 	"packages/snapcompact",
 	"packages/agent",
 	"packages/mnemopi",
+	"packages/evals",
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,
@@ -948,7 +949,24 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 // the shared TS config feed every build. A diff touching one of these must run
 // everything — the alternative is silently skipping a suite because a rename
 // moved its trigger somewhere the package map does not cover.
-const repoWideAffectedFiles = new Set(["bun.lock", "package.json", "tsconfig.json"]);
+// Config files whose effect is the whole repository, not the directory holding
+// them. `bunfig.toml` is here because it carries `[run] bun = true`, which is
+// precisely what `run-node-invariants.mjs` generates in order to side-step it:
+// a change to that key alters how every test in the repo executes, and a
+// selector that missed it would run none of them.
+const repoWideAffectedFiles = new Set([
+	"bun.lock",
+	"package.json",
+	"tsconfig.json",
+	"bunfig.toml",
+	".oxfmtrc.json",
+	".oxlintrc.json",
+	// This file decides which chunks run at all, so a change to it cannot be
+	// mapped by the very mapping it implements. `--dry-run` reported it as
+	// "(no test covers this)" until it was listed here — a selector blind to its
+	// own edits, which is the failure mode the other entries above guard against.
+	"ci-test-ts.ts",
+]);
 
 // One chunk's worth of test files, recovered from its argv. Chunks are built
 // as `["bun", "test", ...onlyFailuresArgs, ...testFiles]`, so the trailing
@@ -956,12 +974,25 @@ const repoWideAffectedFiles = new Set(["bun.lock", "package.json", "tsconfig.jso
 // rather than kept in a parallel field so a chunk can never drift between the
 // label it reports and the files it actually runs.
 function chunkTestFiles(testCommand: TestCommand): string[] {
-	// Drop the `bun test` invocation prefix before reading the argv as files.
-	// Filtering on "not a flag" alone is not enough: it keeps the runner binary
-	// itself, which would make every package-level chunk look like a chunk that
-	// names its own files and so stop reacting to its whole package.
 	const rest = testCommand.command.slice(1);
-	return rest.filter(arg => arg !== "test" && !onlyFailuresArgs.includes(arg) && !arg.startsWith("-"));
+	// Drop the `bun test` invocation prefix before reading the argv as files.
+	// Filtering on "not a flag" alone keeps the runner binary itself, which would
+	// make every package-level chunk look like a chunk that names its own files
+	// and so stop reacting to its whole package.
+	//
+	// Dropping just that binary is not enough either. `["bun",
+	// "scripts/run-rs-task.ts", "test:rs"]` names no test file at all, yet neither
+	// entry is a flag and neither equals "test" — so the Rust chunk was read as a
+	// chunk listing its own files and reacted only to a file literally named
+	// `scripts/run-rs-task.ts`. A commit touching one `.rs` file then ran no Rust
+	// at all.
+	//
+	// Membership is therefore claimed only by arguments that actually are test
+	// files, in either runner's extension: the TS chunks name `.test.ts`, and the
+	// packaging gates run under `node --test` over `.test.mjs`.
+	return rest
+		.filter(arg => arg !== "test" && !onlyFailuresArgs.includes(arg) && !arg.startsWith("-"))
+		.filter(arg => /\.test\.(?:[cm]?[jt]sx?)$/.test(arg));
 }
 
 // Decides whether a chunk is affected by a diff, given the changed file and
@@ -987,33 +1018,22 @@ function chunkIsAffected(testCommand: TestCommand, changedFile: string): string 
 	return changedFile.startsWith(packageRoot) ? "package" : undefined;
 }
 
-// The minimal smoke set run when a diff maps to no test file at all. Named
-// chunks, not a bare `[]`: the point of this path is that a CI job stays
-// distinguishable from a CI job that silently ran nothing. Mirrors the
-// `ci:test:smoke` root script so the fallback is the same work that script
-// already gates on.
-function smokeCommands(): TestCommand[] {
-	return [
-		{
-			label: "smoke: cli boots (--version/--help)",
-			cwd: ".",
-			command: ["bun", "packages/coding-agent/src/cli.ts", "--version"],
-		},
-		{
-			label: "smoke: worker ping (--smoke-test)",
-			cwd: ".",
-			command: ["bun", "packages/coding-agent/src/cli.ts", "--smoke-test"],
-		},
-	];
-}
-
-// Chooses the chunks a diff actually exercises. `changedFiles` empty means
-// "no diff was supplied", which is the local/no-CI case and must keep today's
-// behaviour of running everything. A diff that was supplied but matches no
-// test returns the named smoke set instead of `[]`, because an empty selection
-// would be indistinguishable from a CI job that ran nothing and passed.
+/**
+ * Narrow `commands` to the chunks a diff touches, failing CLOSED.
+ *
+ * Every branch that cannot name the affected chunks returns ALL of them. That
+ * direction is the whole point: a selector that guesses low runs a subset of the
+ * suite and reports it as the suite. The previous fallback answered every unknown
+ * with two smoke commands, so an empty diff — a clean checkout, the most ordinary
+ * state there is — ran `--version` and `--smoke-test` and nothing else, green.
+ *
+ * Smoke belongs to a diff that resolved into a small group, never to "I don't
+ * know"; `ci:test:smoke` remains the standalone script for that job.
+ */
 export function selectAffected(commands: TestCommand[], changedFiles: string[] | undefined): TestCommand[] {
-	if (!changedFiles) return commands;
+	// `undefined` means the diff itself failed; `[]` means it succeeded and found
+	// nothing to do. Neither is evidence that no test is affected.
+	if (!changedFiles || changedFiles.length === 0) return commands;
 	const normalized = changedFiles.map(file => file.replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean);
 	const repoWide = normalized.filter(file => repoWideAffectedFiles.has(file.split("/").pop() ?? ""));
 	if (repoWide.length > 0) return commands;
@@ -1026,7 +1046,8 @@ export function selectAffected(commands: TestCommand[], changedFiles: string[] |
 			}
 		}
 	}
-	return selected.size > 0 ? [...selected] : smokeCommands();
+	// Unmapped, not empty: fail closed rather than run a subset and call it green.
+	return selected.size > 0 ? [...selected] : commands;
 }
 
 // `OMP_TEST_SHARD=i/n` splits a mode's chunk commands across n CI jobs; job i
@@ -1146,15 +1167,23 @@ function reportDiffSelection(
 	console.log(`diff files: ${changedFiles.length}`);
 	const normalized = changedFiles.map(file => file.replace(/\\/g, "/").replace(/^\.\//, ""));
 	for (const changedFile of normalized) {
+		// The repo-wide class has to be reported the way `selectAffected` treats it.
+		// This loop used to call `chunkIsAffected` alone, which knows nothing about
+		// `repoWideAffectedFiles`, so `--dry-run` printed "(no test covers this)" for
+		// `package.json` and `bun.lock` — the files that in fact select every chunk.
+		// A dry run that misreports why it selected something is worse than none:
+		// it taught the next reader that a whole repo-wide change was unmapped.
+		if (repoWideAffectedFiles.has(changedFile.split("/").pop() ?? "")) {
+			console.log(`  ${changedFile} -> (repo-wide: every chunk)`);
+			continue;
+		}
 		const matched = allCommands.filter(testCommand => chunkIsAffected(testCommand, changedFile));
 		console.log(
 			`  ${changedFile} -> ${matched.length > 0 ? matched.map(c => c.label).join(", ") : "(no test covers this)"}`,
 		);
 	}
-	const usedSmoke = selected.length > 0 && selected.every(testCommand => testCommand.label.startsWith("smoke:"));
-	if (usedSmoke || selected.length === 0) {
-		console.log(`selector empty for this diff -> running minimal smoke: ${selected.map(c => c.label).join(", ")}`);
-	}
+	// No smoke banner: `selectAffected` no longer has a smoke branch, so printing
+	// one here would describe a fallback that cannot occur.
 }
 
 // Skipped when imported (e.g. by the runner's own unit tests), where

@@ -345,6 +345,11 @@ const PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/;
 // Ký tự hợp lệ trong local-part của email, dùng để quét ngược từ một `@` tìm đầu
 // địa chỉ. Tách ra khỏi regex email để không phải để engine tự lùi (O(n²)).
 const EMAIL_LOCAL_PART = /[A-Za-z0-9._+-]/;
+// Ký tự dừng inline. Một lần quét regex thay vì 9 lần `indexOf` — cùng kết quả,
+// ít hơn một bậc số lần quét trên phần còn lại. Quét `rest.slice(1)` để bỏ qua
+// `rest[0]`, đúng như các lần `indexOf` cũ bắt đầu từ 1; reset `lastIndex` vì
+// regex có cờ `g`.
+const STOP_CHAR = /[\\`[<!*_~\n]/g;
 
 function tokenList(links: Links = Object.create(null)): TokensList {
 	const list = [] as unknown as TokensList;
@@ -672,9 +677,10 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 		}
 
 		let next = rest.length;
-		for (const char of ["\\", "`", "<", "[", "!", "*", "_", "~", "\n"]) {
-			const at = rest.indexOf(char, 1);
-			if (at !== -1 && at < next) next = at;
+		{
+			STOP_CHAR.lastIndex = 0;
+			const stop = STOP_CHAR.exec(rest.slice(1));
+			if (stop) next = stop.index + 1;
 		}
 		// `next` luôn >= 1. Khi `next <= 1` thì `index + 1 < next` không thể đúng với
 		// `index >= 0`, nên cả hai regex đều không thể thu hẹp `next`: bỏ qua chúng.

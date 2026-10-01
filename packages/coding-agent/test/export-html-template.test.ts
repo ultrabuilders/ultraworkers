@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { BunPlugin } from "bun";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { getTemplate, resolveBundledHtmlAssetPath } from "../src/export/html/index";
 
 interface HeapProbeResult {
@@ -29,7 +30,10 @@ const bundleDir = path.join(tempRoot, "bundle");
 const compiledPath = path.join(tempRoot, "compiled-template-probe");
 let bundlePath: string;
 const bundledDependencyStubs: Record<string, string> = {
-	"@oh-my-pi/pi-utils": 'export const APP_NAME = "omp"; export const isEnoent = () => false;',
+	// The stub stands in for the real module, so its APP_NAME has to track the
+	// real one. A stub frozen at the old value renders a page that disagrees with
+	// the binary it is supposed to stand in for, and the test still passes.
+	"@oh-my-pi/pi-utils": `export const APP_NAME = ${JSON.stringify(APP_NAME)}; export const isEnoent = () => false;`,
 	"@oh-my-pi/pi-tui/theme":
 		"export const getResolvedThemeColors = async () => ({}); export const getThemeExportColors = async () => ({});",
 	"../../session/session-loader": "export const loadEntriesFromFile = async () => [];",

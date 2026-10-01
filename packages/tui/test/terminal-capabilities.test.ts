@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
@@ -15,6 +16,8 @@ import {
 	shouldEnableHyperlinksByDefault,
 	shouldEnableSynchronizedOutputByDefault,
 	synchronizedOutputUserOverride,
+	setOsc99Supported,
+	TerminalInfo,
 	isInsideHerdr,
 	isInsideTerminalMultiplexer,
 } from "@oh-my-pi/pi-tui/terminal-capabilities";
@@ -757,5 +760,23 @@ describe("detectStyledUnderlineSupport", () => {
 		expect(detectStyledUnderlineSupport("ghostty", { STY: "1234.pts-0.host" })).toBe(false);
 		expect(detectStyledUnderlineSupport("wezterm", { TERM: "screen-256color" })).toBe(false);
 		expect(detectStyledUnderlineSupport("iterm2", { TERM_PROGRAM_VERSION: "3.5.0", ZELLIJ: "0" })).toBe(false);
+	});
+});
+
+describe("OSC 99 notification payloads carry the app name", () => {
+	it("base64-encodes APP_NAME as the source, and prefixes the generated id with it", () => {
+		// Two separate literals used to spell the app name here — the metadata
+		// value and the id prefix. Renaming one and not the other yields a
+		// notification attributed to a different app than the one that sent it,
+		// and nothing in the TUI notices.
+		setOsc99Supported(true);
+		const term = new TerminalInfo("base", null, true, true, NotifyProtocol.Osc99);
+
+		const sequence = term.formatNotification({ title: "Done", body: "ok" });
+
+		expect(sequence).toContain(`f=${Buffer.from(APP_NAME).toString("base64")}`);
+		// The counter is module-global and shared, so the ordinal is incidental;
+		// the prefix is the part that has to track the app name.
+		expect(sequence).toContain(`i=${APP_NAME}-`);
 	});
 });

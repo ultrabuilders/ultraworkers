@@ -17,6 +17,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "../index";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import { type ComposerShape, getComposerShapeOptions } from "./composer-shape-registry";
 import { theme } from "../theme/theme";
 import type { NativeNode } from "../native/node";
@@ -44,7 +45,7 @@ export interface ComposerShapePreviewOptions {
 	status?: ComposerPreviewStatusSource;
 }
 /** Stand-in session title shown while the previewed session is unnamed. */
-const PREVIEW_TITLE = "omp";
+const PREVIEW_TITLE = APP_NAME;
 
 export function renderComposerShapePreview(
 	shape: ComposerShape,

@@ -64,9 +64,12 @@ export function canonicalizeApprovalKey(toolName: string, args: unknown): string
 
 	if (toolName === "bash") {
 		const command = stringProperty(input, "command");
-		if (!command) return toolName;
-		const segments = extractFlatShellCommandSegments(command).map(segment => squeeze(segment.text));
-		return segments.length > 0 ? `bash:${segments.join(" ; ")}` : `bash:${squeeze(command)}`;
+		// No command means there is nothing to canonicalize from, so it deliberately
+		// falls through to the digest below rather than sharing the bare tool name.
+		if (command) {
+			const segments = extractFlatShellCommandSegments(command).map(segment => squeeze(segment.text));
+			return segments.length > 0 ? `bash:${segments.join(" ; ")}` : `bash:${squeeze(command)}`;
+		}
 	}
 	if (toolName === "delete") {
 		const filePath = stringProperty(input, "path");
@@ -83,7 +86,17 @@ export function canonicalizeApprovalKey(toolName: string, args: unknown): string
 		const intent = getEditDestructiveIntent(args);
 		return intent ? `edit:${intent.kind}` : toolName;
 	}
-	return toolName;
+	// A tool this function does not know how to canonicalize. Falling back to the
+	// tool name here would quietly restore exactly the bug this function exists to
+	// remove, and it would restore silently: the day a fifth gated tool is added to
+	// `getPermissionIntent` and its author forgets a branch here, every one of its
+	// calls shares one grant again, and no test goes red.
+	//
+	// So an unrecognised tool keys on its whole argument payload. It cannot know
+	// which parts of that payload constitute the action, so it uses all of them —
+	// which can only ever narrow, never widen. Narrowing costs the user a repeat
+	// question; widening costs them a grant they never gave.
+	return `${toolName}:${Bun.hash.wyhash(JSON.stringify(args) ?? "").toString(16)}`;
 }
 
 /**

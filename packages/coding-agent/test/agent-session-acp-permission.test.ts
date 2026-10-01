@@ -15,6 +15,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { EditTool } from "@oh-my-pi/pi-coding-agent/edit";
 import type { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
+import { canonicalizeApprovalKey } from "@oh-my-pi/pi-coding-agent/session/acp-permission-gate";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type {
 	ClientBridge,
@@ -1062,4 +1063,38 @@ it("an always-reject sticks for that action only", async () => {
 	await runBash(session, "git status");
 	expect(permissionSpy).toHaveBeenCalledTimes(2);
 	expect(bashTool.executeCalls).toBe(1);
+});
+
+/**
+ * The fallback branch of `canonicalizeApprovalKey`.
+ *
+ * This one is asserted at the unit level on purpose. `getPermissionIntent` only
+ * routes `bash`, `delete`, `move` and `edit` — anything else returns `undefined`
+ * and is never gated, so there is no end-to-end path that reaches the fallback
+ * today. The branch exists for the day a fifth gated tool arrives, and that is
+ * exactly the day it matters: an author adds the tool to `getPermissionIntent`,
+ * forgets a branch here, and every call of that tool silently shares one grant
+ * again. There is no e2e row that could fail first, so this row is the gate.
+ */
+it("a tool with no canonicalization branch still separates distinct calls", () => {
+	const first = canonicalizeApprovalKey("some-future-tool", { path: "a.txt" });
+	const second = canonicalizeApprovalKey("some-future-tool", { path: "b.txt" });
+
+	// Falling back to the tool name is the bug this whole change removes. If this
+	// row were written against that fallback it would pass, so it is the mutation
+	// below — not this assertion — that gives it meaning.
+	expect(first).not.toBe(second);
+
+	// The same call twice is still the same action, so a grant can take effect.
+	expect(canonicalizeApprovalKey("some-future-tool", { path: "a.txt" })).toBe(first);
+});
+
+it("a bash call with no command does not share a grant with other bash calls", () => {
+	// The same trap one branch inward: `bash` with no `command` has nothing to
+	// canonicalize, and used to fall back to the bare tool name.
+	const empty = canonicalizeApprovalKey("bash", {});
+	const withCommand = canonicalizeApprovalKey("bash", { command: "git status" });
+
+	expect(empty).not.toBe(withCommand);
+	expect(empty).not.toBe("bash");
 });

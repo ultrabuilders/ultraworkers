@@ -102,13 +102,11 @@ export const fastWorkspacePackages = [
 	// WASI is in-process and holds no native addon. Measured: 57 pass / 0 fail in
 	// 1.8s on its own.
 	"packages/codemode",
-	// `packages/protocol` is deliberately NOT here yet. It is untracked in-flight
-	// work owned by whoever is writing it; `ci-select-affected` names it, and that
-	// gate going red is the point — it exists so a package cannot be added and
-	// forgotten. Adding it to a bucket is its owner's call, not a way to quieten
-	// the gate. Measured: 3 test files, no Bun.spawn/child_process, no
-	// Bun.serve/listen, and green on its own — so `fast` is where it belongs once
-	// it lands. Recorded so the next person need not re-measure.
+	// `packages/protocol` is a pure CBOR codec and framing layer: 3 test files,
+	// no Bun.spawn/child_process and no Bun.serve/listen, so it is the short
+	// pure-TS shape this bucket is for. Measured green on its own — 142 pass /
+	// 0 fail in ~75ms.
+	"packages/protocol",
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,

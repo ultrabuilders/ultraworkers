@@ -25,6 +25,7 @@ import {
 	clearUsageReporters,
 	hasUsageReporter,
 	reportedToolUsage,
+	isUsage,
 } from "@oh-my-pi/pi-coding-agent/tools/usage-reporter";
 import type { Usage } from "@oh-my-pi/pi-catalog/usage-merge";
 
@@ -167,6 +168,55 @@ describe("usage accumulation across the four folds", () => {
 
 		expect(left.input).toBe(10);
 		expect(right.input).toBe(100);
+	});
+});
+
+describe("isUsage domain, not just shape", () => {
+	// `typeof x === "number"` is a shape check, and it admits every figure that
+	// cannot be taken back once it is in the accumulator.
+	const wellFormed = {
+		input: 10,
+		output: 20,
+		cacheRead: 5,
+		cacheWrite: 1,
+		totalTokens: 36,
+		cost: { input: 0.1, output: 0.2, cacheRead: 0.05, cacheWrite: 0.01, total: 0.36 },
+	};
+
+	it("accepts a well-formed figure", () => {
+		expect(isUsage(wellFormed)).toBe(true);
+	});
+
+	it("refuses NaN, which is the one that spreads silently", () => {
+		// The accumulator is `left + right`, so one NaN makes every total after it
+		// NaN for the rest of the session. Nothing reports it: a NaN renders as an
+		// ordinary number in most views and simply reads as "no usage".
+		for (const field of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const) {
+			expect(isUsage({ ...wellFormed, [field]: Number.NaN })).toBe(false);
+		}
+		expect(isUsage({ ...wellFormed, cost: { ...wellFormed.cost, total: Number.NaN } })).toBe(false);
+	});
+
+	it("refuses infinities", () => {
+		expect(isUsage({ ...wellFormed, input: Number.POSITIVE_INFINITY })).toBe(false);
+		expect(isUsage({ ...wellFormed, cost: { ...wellFormed.cost, total: Number.POSITIVE_INFINITY } })).toBe(false);
+		expect(isUsage({ ...wellFormed, cacheRead: Number.NEGATIVE_INFINITY })).toBe(false);
+	});
+
+	it("refuses negatives, so no reporter can subtract another's usage", () => {
+		// A refund is a real thing to want, but it is not a negative token count:
+		// admitting one here would make the total stop being the sum of anything.
+		for (const field of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const) {
+			expect(isUsage({ ...wellFormed, [field]: -1 })).toBe(false);
+		}
+		expect(isUsage({ ...wellFormed, cost: { ...wellFormed.cost, total: -0.01 } })).toBe(false);
+	});
+
+	it("refuses a negative buried in one cost bucket, not only the total", () => {
+		// Checking only `cost.total` is the obvious half-fix: a negative input cost
+		// with a plausible total passes, and the two disagree in the report.
+		expect(isUsage({ ...wellFormed, cost: { ...wellFormed.cost, input: -5 } })).toBe(false);
+		expect(isUsage({ ...wellFormed, cost: { ...wellFormed.cost, cacheWrite: -1 } })).toBe(false);
 	});
 });
 

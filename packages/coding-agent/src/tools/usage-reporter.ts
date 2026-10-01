@@ -172,21 +172,45 @@ export function reportedToolUsage(toolName: string, details: unknown): Usage | u
  * supplied, and the fold needs the same shape test the pre-seam `task` extractor
  * applied to `details.usage`.
  */
+/**
+ * One token count or one cost figure.
+ *
+ * Shape is not enough. `typeof x === "number"` admits `NaN`, `Infinity`, and
+ * negatives, and this is the gate every reported figure passes — including the
+ * core reporter's, so a tightening here applies to both sides at once.
+ *
+ * The domain check is not defensive decoration:
+ *
+ * - `NaN` is the one that does not announce itself. It is silent in a report and
+ *   then spreads: the accumulator is `left + right`, so a single `NaN` makes
+ *   every total after it `NaN` for the rest of the session, and nothing recovers
+ *   it but editing the record by hand.
+ * - A negative lets one reporter subtract usage another reported, so the total
+ *   stops being anyone's total.
+ * - `Infinity` makes the cost dashboard render nonsense rather than a wrong digit.
+ *
+ * Dropping an out-of-domain figure is always the safe direction: the alternative
+ * is admitting a number that cannot be taken back.
+ */
+function isMeasure(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 export function isUsage(value: unknown): value is Usage {
 	if (typeof value !== "object" || value === null) return false;
 	const candidate = value as Partial<Usage>;
-	if (typeof candidate.input !== "number" || typeof candidate.output !== "number") return false;
-	if (typeof candidate.cacheRead !== "number" || typeof candidate.cacheWrite !== "number") return false;
-	if (typeof candidate.totalTokens !== "number") return false;
+	if (!isMeasure(candidate.input) || !isMeasure(candidate.output)) return false;
+	if (!isMeasure(candidate.cacheRead) || !isMeasure(candidate.cacheWrite)) return false;
+	if (!isMeasure(candidate.totalTokens)) return false;
 	const cost = candidate.cost;
 	return (
 		typeof cost === "object" &&
 		cost !== null &&
-		typeof cost.input === "number" &&
-		typeof cost.output === "number" &&
-		typeof cost.cacheRead === "number" &&
-		typeof cost.cacheWrite === "number" &&
-		typeof cost.total === "number"
+		isMeasure(cost.input) &&
+		isMeasure(cost.output) &&
+		isMeasure(cost.cacheRead) &&
+		isMeasure(cost.cacheWrite) &&
+		isMeasure(cost.total)
 	);
 }
 

@@ -16,6 +16,7 @@ import { tinyModelEnvKey, tinyWorkerEnv } from "../tiny/title-client";
 import { safeSend } from "../utils/ipc";
 import { getTtsLocalModelSpec, isTtsLocalModelKey, type TtsLocalModelKey } from "./models";
 import type { TtsProgressEvent, TtsWorkerInbound, TtsWorkerOutbound } from "./tts-protocol";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
 
 /** Decoded PCM returned by a local synthesis request. */
 export interface TtsAudio {
@@ -132,7 +133,7 @@ class AudioChunkChannel {
  * Hidden subcommand on the main CLI that boots the TTS worker in the spawned
  * subprocess. Kept in sync with the dispatch in `cli.ts` (Main-owned).
  */
-export const TTS_WORKER_ARG = "__omp_worker_tts";
+export const TTS_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tts`;
 
 /**
  * Spawn the TTS worker as a subprocess. Exported for tests and the smoke probe;

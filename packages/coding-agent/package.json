@@ -15,10 +15,7 @@
 		"url": "https://github.com/can1357/oh-my-pi/issues"
 	},
 	"license": "MIT",
-	"author": {
-		"name": "Stencil Labs, Inc.",
-		"url": "https://stencil.so"
-	},
+	"author": { "name": "Stencil Labs, Inc.", "url": "https://stencil.so" },
 	"contributors": [
 		"Mario Zechner"
 	],
@@ -28,7 +25,7 @@
 		"directory": "packages/coding-agent"
 	},
 	"bin": {
-		"ultraworkers": "src/cli.ts"
+		"omp": "src/cli.ts"
 	},
 	"files": [
 		"src",

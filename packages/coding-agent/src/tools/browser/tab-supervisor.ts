@@ -43,6 +43,9 @@ import type {
 
 import { cfgBrowserScreenshotDir } from "./settings";
 import { TernTab } from "./tern/tern-tab";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
+
+export const TAB_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tab`;
 
 // Coding-agent binary/bundle workers route through the CLI entrypoint with a
 // hidden argv mode, so compiled/npm builds only need one JavaScript entry.
@@ -1724,7 +1727,7 @@ async function spawnTabWorker(): Promise<WorkerHandle> {
 	try {
 		const hostEntry = workerHostEntry();
 		const worker = hostEntry
-			? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_tab"] })
+			? new Worker(hostEntry, { type: "module", argv: [TAB_WORKER_ARG] })
 			: new Worker(new URL("./tab-worker-entry.ts", import.meta.url).href, { type: "module" });
 		return wrapBunWorker(worker);
 	} catch (err) {

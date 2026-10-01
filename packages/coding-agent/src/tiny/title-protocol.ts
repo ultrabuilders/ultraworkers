@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type { TinyLocalModelKey } from "./models";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
 
 /**
  * Wire protocol between `TinyTitleClient` and a tiny-model worker.
@@ -17,7 +18,7 @@ import type { TinyLocalModelKey } from "./models";
  * Hidden subcommand on the main CLI that boots the ONNX tiny-model worker.
  * Kept in sync with the dispatch in `cli.ts`.
  */
-export const TINY_WORKER_ARG = "__omp_worker_tiny_inference";
+export const TINY_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}tiny_inference`;
 /** Env var carrying the endpoint the ONNX worker must own. */
 export const TINY_WORKER_SOCKET_ENV = "OMP_TINY_WORKER_SOCKET";
 /** Env var naming the single local model the ONNX worker serves. */

@@ -56,6 +56,9 @@ import type {
 	ToolDashboardStats,
 } from "./types";
 import { computeUsageWindowStats, fetchUsageData, type UsageDataSnapshot } from "./usage-windows";
+import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
+
+export const STATS_SYNC_WORKER_ARG = `${WORKER_HOST_SELECTOR_PREFIX}stats_sync`;
 
 const STATS_SYNC_LOCK_RETRY_MS = 25;
 const STATS_SYNC_LOCK_WAIT_MS = 60 * 60 * 1000;
@@ -139,7 +142,7 @@ interface WorkerHandle {
 function createSyncWorker(): Worker {
 	const hostEntry = workerHostEntry();
 	if (hostEntry) {
-		return new Worker(hostEntry, { type: "module", argv: ["__omp_worker_stats_sync"] });
+		return new Worker(hostEntry, { type: "module", argv: [STATS_SYNC_WORKER_ARG] });
 	}
 	return new Worker(new URL("./sync-worker.ts", import.meta.url).href, { type: "module" });
 }

@@ -1,5 +1,4 @@
 import * as path from "node:path";
-import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import * as utils from "@oh-my-pi/pi-utils";
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import { resolveCliEntryCmd, resolveExecutablePath, resolveWorkerSpawnCmd } from "../src/subprocess/worker-client";
@@ -33,8 +32,8 @@ describe("executable fallback on unlinked binary", () => {
 		const whichSpy = vi.spyOn(utils, "$which");
 
 		expect(resolveCliEntryCmd()).toEqual([process.execPath]);
-		expect(resolveWorkerSpawnCmd("__ultraworkers_worker_test")).toEqual({
-			cmd: [process.execPath, "__ultraworkers_worker_test"],
+		expect(resolveWorkerSpawnCmd("__omp_worker_test")).toEqual({
+			cmd: [process.execPath, "__omp_worker_test"],
 		});
 		expect(whichSpy).not.toHaveBeenCalled();
 	});
@@ -49,7 +48,7 @@ describe("executable fallback on unlinked binary", () => {
 		setProcessProp("argv0", originalLauncher);
 
 		vi.spyOn(utils, "$which").mockImplementation((cmd: string) => {
-			if (cmd === WIRE_NAME) return otherOmpInPath;
+			if (cmd === "omp") return otherOmpInPath;
 			return null;
 		});
 		vi.spyOn(utils, "isExecutable").mockImplementation((p: string) => {
@@ -57,8 +56,8 @@ describe("executable fallback on unlinked binary", () => {
 		});
 
 		expect(resolveCliEntryCmd()).toEqual([originalLauncher]);
-		expect(resolveWorkerSpawnCmd("__ultraworkers_worker_test")).toEqual({
-			cmd: [originalLauncher, "__ultraworkers_worker_test"],
+		expect(resolveWorkerSpawnCmd("__omp_worker_test")).toEqual({
+			cmd: [originalLauncher, "__omp_worker_test"],
 		});
 	});
 
@@ -72,7 +71,7 @@ describe("executable fallback on unlinked binary", () => {
 		setProcessProp("argv0", originalLauncher);
 
 		vi.spyOn(utils, "$which").mockImplementation((cmd: string) => {
-			if (cmd === WIRE_NAME) return otherOmpInPath;
+			if (cmd === "omp") return otherOmpInPath;
 			return null;
 		});
 		vi.spyOn(utils, "isExecutable").mockImplementation((p: string) => {
@@ -81,8 +80,8 @@ describe("executable fallback on unlinked binary", () => {
 		});
 
 		expect(resolveCliEntryCmd()).toEqual([otherOmpInPath]);
-		expect(resolveWorkerSpawnCmd("__ultraworkers_worker_test")).toEqual({
-			cmd: [otherOmpInPath, "__ultraworkers_worker_test"],
+		expect(resolveWorkerSpawnCmd("__omp_worker_test")).toEqual({
+			cmd: [otherOmpInPath, "__omp_worker_test"],
 		});
 	});
 
@@ -117,13 +116,8 @@ describe("executable fallback on unlinked binary", () => {
 
 		resolveExecutablePath();
 
-		// Should not pass a drive-relative path like "C:omp" to `which` as a bare
-		// name; only the plain command is queried. Derived rather than written out:
-		// the contract under test is WHICH name gets passed, and a literal here went
-		// stale the moment the installed command was renamed — while the mocks above,
-		// which branch on `cmd === "omp"`, kept passing, so the file stayed mostly
-		// green and this one row went red. That split is exactly why it must derive.
-		expect(whichCalledWith).toBe(WIRE_NAME);
+		// Should not pass "C:omp" to which as a bare name; only "omp" generic fallback is queried
+		expect(whichCalledWith).toBe("omp");
 	});
 
 	it("falls back to $which('omp') when original execPath was unlinked and argv0 has no path", () => {
@@ -134,7 +128,7 @@ describe("executable fallback on unlinked binary", () => {
 
 		const mockUpgradedPath = "/opt/homebrew/bin/omp";
 		vi.spyOn(utils, "$which").mockImplementation((cmd: string) => {
-			if (cmd === WIRE_NAME) return mockUpgradedPath;
+			if (cmd === "omp") return mockUpgradedPath;
 			return null;
 		});
 		vi.spyOn(utils, "isExecutable").mockImplementation((p: string) => {
@@ -142,8 +136,8 @@ describe("executable fallback on unlinked binary", () => {
 		});
 
 		expect(resolveCliEntryCmd()).toEqual([mockUpgradedPath]);
-		expect(resolveWorkerSpawnCmd("__ultraworkers_worker_test")).toEqual({
-			cmd: [mockUpgradedPath, "__ultraworkers_worker_test"],
+		expect(resolveWorkerSpawnCmd("__omp_worker_test")).toEqual({
+			cmd: [mockUpgradedPath, "__omp_worker_test"],
 		});
 	});
 

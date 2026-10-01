@@ -125,13 +125,30 @@ describe("the real patches/ tree reconciles", () => {
 		const ledger = path.join(REPO_ROOT, "patches/LEDGER.md");
 		const before = await Bun.file(ledger).text();
 
-		const result = await runScript();
+		// This row has to run against the REAL tree, and that is the whole design
+		// tension. The contract is "the committed ledger is current" — a statement
+		// about REPO_ROOT — so regenerating into a scratch tree would satisfy it
+		// trivially by comparing the generator against a copy the generator itself
+		// just wrote. There is no scratch-root version of this assertion.
+		//
+		// So it writes for real, and then puts the file back. Without the `finally`,
+		// the assertion is self-defeating: it passes only while the ledger is
+		// already current, so it writes identical bytes and the tree stays clean —
+		// and the moment a peer adds a patch, `bun test scripts/` silently
+		// regenerates a tracked file under four people working the same checkout.
+		// A test that repairs what it is meant to be checking cannot report the
+		// failure it just caused.
+		try {
+			const result = await runScript();
 
-		// Reported even when green: "exit 0" alone does not say which direction
-		// the ledger drifted, and a drifted ledger is the whole failure here.
-		console.error(`[ledger] exit=${result.exitCode} stderr=${result.stderr.trim()}`);
-		expect(result.exitCode).toBe(0);
-		expect(await Bun.file(ledger).text()).toBe(before);
+			// Reported even when green: "exit 0" alone does not say which direction
+			// the ledger drifted, and a drifted ledger is the whole failure here.
+			console.error(`[ledger] exit=${result.exitCode} stderr=${result.stderr.trim()}`);
+			expect(result.exitCode).toBe(0);
+			expect(await Bun.file(ledger).text()).toBe(before);
+		} finally {
+			await Bun.write(ledger, before);
+		}
 	});
 });
 

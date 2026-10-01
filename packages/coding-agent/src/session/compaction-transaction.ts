@@ -181,6 +181,23 @@ interface TransactionMarker {
  * branch whose last transaction markers are balanced returns `undefined`, and so
  * does a branch with none: no observer registered means no markers, and "no
  * markers" must not read as "busy".
+ *
+ * **One escape hatch in the reference is deliberately not ported.** DSH's
+ * `assertCompactionInactive` (`region.ts:313-319`) releases an unmatched start
+ * when a later `session/end-seed` boundary proves the owner belonged to an
+ * earlier session lifecycle, so a stale marker cannot hold the lock forever.
+ * This tree has no session-lifecycle boundary to hang that on — a search for
+ * `end-seed` / `endSeed` / `seedSeq` across `packages/agent/src` and
+ * `packages/coding-agent/src` returns nothing — so porting it would mean
+ * inventing a boundary rather than copying one.
+ *
+ * The consequence is stated rather than hidden: here an unmatched start stays
+ * reported until a closing marker is written, and no unrelated later event can
+ * clear it. That is the right direction to be wrong in — a stale lock announces
+ * itself and whoever reads it can resolve it, whereas a marker that cleared
+ * itself on some unrelated boundary would hide a compaction that really did
+ * crash. When a session lifecycle boundary exists, this is where the release
+ * belongs.
  */
 export function findUnclosedCompactionTransaction(
 	entries: readonly SessionEntry[],

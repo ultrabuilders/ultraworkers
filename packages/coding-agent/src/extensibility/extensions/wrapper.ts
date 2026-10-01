@@ -360,10 +360,16 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			// alone cannot answer it — one written at the answer cannot tell a denial from a
 			// process that died with the prompt open.
 			//
-			// `policyKey` comes from `resolveApproval`, the one place policy is decided, and
+			// `policyKey` comes from `resolveApproval`, which decides the *policy*, and
 			// is deliberately not the tool name: `explicitPrompt` above keys off
 			// `resolved.policyKey ?? this.tool.name`, so a tool that declares a narrower key
 			// was decided by a rule its name would misreport.
+			//
+			// Whether a question is actually asked is *not* decided there alone:
+			// `approvalCheck.required` above folds in `pendingSafetyChecks`, `acpBypass`
+			// and `xdevBypass`, none of which `resolveApproval` sees. A reader auditing
+			// the transcript therefore needs both halves — the policy from here, and the
+			// fact that nothing was asked from `approvalCheck`.
 			//
 			// Reaching this block *is* the fact that a question was asked. The paths that
 			// resolve a policy without asking — yolo, an `xd://` bypass, an ACP-approved call

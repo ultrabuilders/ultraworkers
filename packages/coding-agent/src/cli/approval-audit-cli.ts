@@ -3,9 +3,14 @@
  *
  * RULE: this module must NOT decide, re-derive, or infer anything about
  * approval. Every field is copied from the `ApprovalEntry` lines the session
- * already wrote, which are written from `resolveApproval` — the one place
- * policy is decided. A reader that re-derived "would this have been approved?"
- * would be a second source of truth about the same question.
+ * already wrote. Those entries carry two halves written by two places:
+ * `resolveApproval` decides the *policy* (`policyKey`, `decision`), while
+ * whether a question was asked at all is `approvalCheck.required` in
+ * `extensions/wrapper.ts`, which additionally folds in `pendingSafetyChecks`,
+ * the ACP-approved replay, and the `xd://` bypass — none of which
+ * `resolveApproval` sees. A reader that re-derived "would this have been
+ * approved?" would be a third source of truth about the same question, so read
+ * both halves or neither.
  *
  * ## Why an UNPAIRED `asked` is the point
  *
@@ -119,7 +124,9 @@ function formatRecord(record: ApprovalAuditRecord): string {
 	if (record.unresolved) {
 		// The row that must not be misread. A process that died with the prompt
 		// open has no decision anywhere; saying so is the entire deliverable.
-		return replaceTabs(`${asked}\n${clock(record.answeredAt)}  NO ANSWER  unresolved — the prompt was never resolved`);
+		return replaceTabs(
+			`${asked}\n${clock(record.answeredAt)}  NO ANSWER  unresolved — the prompt was never resolved`,
+		);
 	}
 	return replaceTabs(
 		`${asked}\n${clock(record.answeredAt)}  answered ${record.decision ?? "unknown"}  source=${record.source ?? "unknown"}`,

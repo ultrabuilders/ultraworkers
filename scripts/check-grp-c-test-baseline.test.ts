@@ -86,6 +86,26 @@ describe("R0 GRP-C test-baseline gate", () => {
 		expect(clean.stdout).toContain("now pass");
 	}, 60_000);
 
+	test("a failure absent from the baseline goes red, and names itself", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-new-");
+		await Bun.write(
+			path.join(dir.absolute(), "regressed.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("a regression the baseline never tolerated", () => { expect(1).toBe(2); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		// The primary contract, and the one the other two tests do not reach: they
+		// only ever prove what happens to failures the baseline KNOWS about. If the
+		// `(fail)` parse silently found nothing, those two still pass — the clean run
+		// reports zero failures, and the tolerated run finds no *new* ones. Only a
+		// genuine parse that lands on a name the baseline lacks proves the gate can
+		// see a regression at all, which is the entire reason it exists.
+		const red = await runGate(dir.absolute(), gate);
+		expect(red.exitCode).toBe(1);
+		expect(red.stderr).toContain("NEW failure(s) not in the baseline");
+		expect(red.stderr).toContain("a regression the baseline never tolerated");
+	}, 60_000);
+
 	test("a failure that is in the baseline does not go red", async () => {
 		using dir = TempDir.createSync("omp-grp-c-baseline-tolerated-");
 		await Bun.write(

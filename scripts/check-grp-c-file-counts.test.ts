@@ -34,7 +34,7 @@ async function seed(dir: string): Promise<void> {
 	);
 	await Bun.write(path.join(scripts, "check-grp-c-file-counts.ts"), await Bun.file(GATE).text());
 
-	const git = (...args: string[]) => ptree.exec(["git", ...args], { cwd: dir, quiet: true });
+	const git = (...args: string[]) => ptree.exec(["git", ...args], { cwd: dir });
 	await git("init", "-q", ".");
 	await git("config", "user.email", "gate@test");
 	await git("config", "user.name", "gate");
@@ -77,7 +77,7 @@ describe("R0 GRP-C file-count gate", () => {
 		using dir = TempDir.createSync("omp-grp-c-gate-staged-");
 		await seed(dir.absolute());
 
-		await ptree.exec(["git", "rm", "-q", "packages/utils/src/c.ts"], { cwd: dir.absolute(), quiet: true });
+		await ptree.exec(["git", "rm", "-q", "packages/utils/src/c.ts"], { cwd: dir.absolute() });
 		const staged = await runGate(dir.absolute());
 		expect(staged.exitCode).toBe(1);
 		expect(staged.stderr).toContain("LOST 1 file(s): 3 → 2");
@@ -87,7 +87,6 @@ describe("R0 GRP-C file-count gate", () => {
 		// from HEAD, not the index: `git rm` took the path out of both.
 		await ptree.exec(["git", "checkout", "-q", "HEAD", "--", "packages/utils/src/c.ts"], {
 			cwd: dir.absolute(),
-			quiet: true,
 		});
 		await Bun.write(path.join(dir.absolute(), "packages/utils/src/d.ts"), "export const d = 1;\n");
 		const grown = await runGate(dir.absolute());

@@ -106,6 +106,24 @@ interface Baseline {
 	failures: string[];
 }
 
+// Validate the baseline BEFORE running the suite: it costs ten minutes, and a
+// missing baseline is knowable in milliseconds. Checking it afterwards meant the
+// cheapest failure of this gate was also the slowest to report.
+let baseline: Baseline | null = null;
+try {
+	baseline = (await Bun.file(BASELINE).json()) as Baseline;
+} catch {
+	baseline = null;
+}
+
+if (!baseline) {
+	fail(
+		`grp-c baseline gate: NO BASELINE at ${BASELINE}\n` +
+			`HEAD is red, so "no baseline" cannot mean "clean".\n` +
+			`Restore the file, or capture a new one deliberately and review the diff.`,
+	);
+}
+
 const current = await collectFailures();
 
 if (current === null) {
@@ -117,21 +135,6 @@ if (current === null) {
 			"advise deleting baseline entries that are still real.",
 	);
 	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
-}
-
-let baseline: Baseline | null = null;
-try {
-	baseline = (await Bun.file(BASELINE).json()) as Baseline;
-} catch {
-	baseline = null;
-}
-
-if (!baseline) {
-	fail(
-		`grp-c baseline gate: NO BASELINE at ${BASELINE}\n` +
-			`The suite has ${current.size} failing test(s) at HEAD, so "no baseline" cannot mean "clean".\n` +
-			`Restore the file, or capture a new one deliberately and review the diff.`,
-	);
 }
 
 const known = new Set(baseline.failures);

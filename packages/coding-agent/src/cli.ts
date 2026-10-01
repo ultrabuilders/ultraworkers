@@ -29,7 +29,7 @@ import {
 } from "@oh-my-pi/pi-utils/dirs";
 
 import { declareWorkerHostEntry, installWorkerInbox, isWorkerHostSelector } from "@oh-my-pi/pi-utils/worker-host";
-import { isProcessEntry } from "./cli-process-entry";
+import { resolveIsProcessEntry } from "./cli-process-entry";
 import { hardenProcess } from "./harden-process";
 import { extractProfileFlags } from "./cli/profile-bootstrap";
 import {
@@ -44,6 +44,11 @@ import {
 } from "./cli/worker-selectors";
 import type * as JsProcessEntry from "./eval/js/process-entry";
 import type { WorkerInbound as JsWorkerInbound, WorkerOutbound as JsWorkerOutbound } from "./eval/js/worker-protocol";
+
+// Resolved from THIS module's `import.meta.main`, because that value is
+// per-module: `cli-process-entry` reading its own would answer for itself
+// (always false here) and silently skip the entry block below.
+const isProcessEntry = resolveIsProcessEntry(import.meta.main);
 
 if (Bun.semver.order(Bun.version, MIN_BUN_VERSION) < 0) {
 	process.stderr.write(

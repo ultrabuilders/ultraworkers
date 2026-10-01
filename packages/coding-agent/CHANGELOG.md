@@ -33,6 +33,11 @@
 
 ### Fixed
 
+- `omp` run from source produced no output at all. `--version`, `--help` and every subcommand exited
+  0 having printed nothing on either stream, because `import.meta.main` is true only for the module
+  the runtime was handed — and the entry check read it from a different module, so it was always
+  false and the whole startup path it guards was skipped. Installed binaries were unaffected; this
+  hit `bun src/cli.ts`, `bun run`, and every test that spawns the CLI as a subprocess
 - `omp --help` no longer points at a config directory the install does not use. The session-storage
   and `omp agents unpack` lines interpolated the old directory name as a constant, while the
   directory itself is resolved at startup from a candidate list. On any machine that never had the

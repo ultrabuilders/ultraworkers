@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, CONFIG_DIR_NAME, CONFIG_DIR_NAME_NEXT, TempDir, getConfigDirName } from "@oh-my-pi/pi-utils";
 
 // Regression: `omp config set collab.autoStart control` on a fresh Windows profile over WinRM
 // exited 0 with no output and never wrote config.yml. The CLI entry is a floating `runCli()`
@@ -54,6 +54,30 @@ interface ConfigSetRun {
 	configPath: string;
 }
 
+/**
+ * Where the child actually put `config.yml` under its isolated HOME, or "" if it
+ * wrote none.
+ *
+ * The config root is mid-migration (`.omp` -> `.ultraworkers`) and the resolved name
+ * is STATE-DEPENDENT, measured both ways on this tree: a HOME with no config
+ * directory yet resolves `.omp`, and the same HOME once the directory exists
+ * resolves `.ultraworkers`. So neither literal is a stable expectation — a test that
+ * hard-codes one asserts against whichever side of the rename the machine is on.
+ * (Measured failure of the literal form: ENOENT on `.omp/agent/config.yml` while
+ * the app wrote `.ultraworkers/agent/config.yml`.)
+ *
+ * This asks the question that is actually stable: did the command write the config
+ * where it resolved its own root? Both names are searched, so the test states the
+ * behaviour instead of the migration's current phase.
+ */
+function findWrittenConfig(home: string): string {
+	for (const name of [getConfigDirName(), CONFIG_DIR_NAME, CONFIG_DIR_NAME_NEXT]) {
+		const candidate = path.join(home, name, "agent", "config.yml");
+		if (fs.existsSync(candidate)) return candidate;
+	}
+	return "";
+}
+
 async function runConfigSet(tempDir: TempDir, settingsInit: SettingsInitMode): Promise<ConfigSetRun> {
 	const home = tempDir.join("home");
 	fs.mkdirSync(home);
@@ -87,7 +111,7 @@ async function runConfigSet(tempDir: TempDir, settingsInit: SettingsInitMode): P
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
 	]);
-	return { exitCode, stdout, stderr, configPath: path.join(home, ".omp", "agent", "config.yml") };
+	return { exitCode, stdout, stderr, configPath: findWrittenConfig(home) };
 }
 
 // Each case cold-starts the CLI graph in a child process; the budget covers that transpile.
@@ -97,11 +121,16 @@ describe("one-shot CLI command settlement", () => {
 		const run = await runConfigSet(tempDir, "stall");
 
 		expect(run.exitCode, run.stderr).toBe(1);
-		// Names the stalled subcommand so automation logs show what failed, without its arguments.
-		expect(run.stderr).toContain(`\`omp config\` ${DIAGNOSTIC}`);
+		// Names the stalled subcommand so automation logs show what failed, without its
+		// arguments. The binary name comes from APP_NAME: measured, the literal `omp`
+		// here failed once the rebrand made the diagnostic say `ultraworkers config`.
+		expect(run.stderr).toContain(`\`${APP_NAME} config\` ${DIAGNOSTIC}`);
 		expect(run.stderr).not.toContain("collab.autoStart");
 		expect(run.stdout).toBe("");
-		expect(fs.existsSync(run.configPath)).toBe(false);
+		// "" is what `findWrittenConfig` returns when the child wrote nothing, so
+		// this asserts the whole isolated HOME stayed free of a config file rather
+		// than one hard-coded path's absence.
+		expect(run.configPath).toBe("");
 	}, 30_000);
 
 	it("keeps a completed command's exit 0 and output", async () => {
@@ -111,6 +140,9 @@ describe("one-shot CLI command settlement", () => {
 		expect(run.exitCode, run.stderr).toBe(0);
 		expect(run.stdout).toContain("Set collab.autoStart = control");
 		expect(run.stderr).not.toContain(DIAGNOSTIC);
+		// The write is the observable effect; asserting it happened at all first
+		// keeps a YAML parse of "" from reporting as a parse failure instead.
+		expect(run.configPath).not.toBe("");
 		expect(Bun.YAML.parse(await Bun.file(run.configPath).text())).toMatchObject({ collab: { autoStart: "control" } });
 	}, 30_000);
 
@@ -121,6 +153,7 @@ describe("one-shot CLI command settlement", () => {
 		expect(run.exitCode, run.stderr).toBe(0);
 		expect(run.stdout).toContain("Set collab.autoStart = control");
 		expect(run.stderr).not.toContain(DIAGNOSTIC);
+		expect(run.configPath).not.toBe("");
 		expect(Bun.YAML.parse(await Bun.file(run.configPath).text())).toMatchObject({ collab: { autoStart: "control" } });
 	}, 30_000);
 

@@ -207,6 +207,24 @@ function expand(pkgDir, entry, target) {
 		.map(name => [entry.replace("*", name.replace(/\.ts$/, "")), target.replace("*", name.replace(/\.ts$/, ""))]);
 }
 
+/**
+ * Green output names its numbers too.
+ *
+ * The red line already had to — a violation naming no figures sends the reader back to re-run the
+ * tool to find out what moved. The green line needed the same and did not have it, which matters
+ * more here than on an ordinary gate: these budgets are a ratchet sitting exactly on today's
+ * measurement, so every entry has **zero headroom**, and "within budget" cannot say so. A reader
+ * who cannot see the margin has no way to tell a healthy ratchet from one that is about to fire on
+ * the next unrelated import.
+ *
+ * An under-measured graph is never recorded: its headroom would be arithmetic over a graph already
+ * reported as short, and it would print a number that looks more authoritative than it is.
+ */
+const measured = [];
+function report(label, count, budget) {
+	measured.push(`  ${label}: ${count} files, budget ${budget}, headroom ${budget - count}`);
+}
+
 let failures = 0;
 for (const [pkgDir, budgets] of Object.entries(BUDGETS)) {
 	const manifest = JSON.parse(readFileSync(resolve(ROOT, pkgDir, "package.json"), "utf8"));
@@ -227,6 +245,7 @@ for (const [pkgDir, budgets] of Object.entries(BUDGETS)) {
 				);
 				failures += 1;
 			}
+			if (forgotten.size === 0) report(`${pkgDir} ${entry}`, graph.length, budget.maxFiles);
 			if (graph.length > budget.maxFiles) {
 				console.error(
 					`${pkgDir} ${entry} reaches ${graph.length} files, budget ${budget.maxFiles}\n` +
@@ -265,6 +284,7 @@ for (const [pkgDir, budgets] of Object.entries(BUDGETS)) {
 				);
 				failures += 1;
 			}
+			if (forgotten.size === 0) report(`${pkgDir} export "${name}"`, graph.length, budget.maxFiles);
 			if (graph.length > budget.maxFiles) {
 				console.error(
 					`${pkgDir} export "${name}" reaches ${graph.length} files, budget ${budget.maxFiles}\n` +
@@ -289,4 +309,5 @@ if (failures > 0) {
 	console.error(`\n${failures} entry-point budget violation(s).`);
 	process.exit(1);
 }
+if (measured.length > 0) console.log(measured.join("\n"));
 console.log("Entry point graphs are within budget.");

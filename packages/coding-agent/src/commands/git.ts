@@ -3,7 +3,7 @@
  * staging sidebar, and generated or manual commit composer.
  */
 
-import { getProjectDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getProjectDir } from "@oh-my-pi/pi-utils";
 import { Args, Command, Flags } from "@oh-my-pi/pi-utils/cli";
 import { gitHelp as commandHelp } from "../cli/command-help";
 import { runGitTui } from "../cli/git-tui";
@@ -31,7 +31,7 @@ export default class Git extends Command {
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(Git);
 		if (process.stdout.isTTY !== true || process.stdin.isTTY !== true) {
-			console.error("omp git is interactive and requires a TTY");
+			console.error(`${APP_NAME} git is interactive and requires a TTY`);
 			process.exit(1);
 		}
 		// Load settings first so the user's configured theme/symbol preset apply

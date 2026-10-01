@@ -2224,7 +2224,7 @@ export async function runUpdateCommand(opts: {
 		}
 		if (target.method === "nix") {
 			console.log(chalk.yellow("This installation is managed by Nix and cannot update itself."));
-			console.log(chalk.dim("Update the flake input or profile that provides omp, then rebuild."));
+			console.log(chalk.dim(`Update the flake input or profile that provides ${APP_NAME}, then rebuild.`));
 			return;
 		} else if (target.method === "brew") {
 			await updateViaHomebrew(release.version, opts.force);

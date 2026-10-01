@@ -104,9 +104,12 @@ const BUDGETS = {
 		// It previously carried a note claiming the package had "zero dynamic imports" and
 		// measured 341 modules / 60 transports. Two of those described the pre-GAP-M1B-5 tree
 		// and no longer hold: the graph is 284 / 52, from this gate's own count. The third
-		// never held either — `packages/ai/src` carried 23 `import()` sites across 5 files
-		// before this gate existed. 341 is dropped outright, because nobody has reproduced it
-		// and a number with no source reads like it has one.
+		// never held either — before this gate existed, `packages/ai/src` already carried 22
+		// dynamic imports across 4 files, every one of them under `registry/hooks/`. So the
+		// package's only lazy mechanism was already the hook registries, and already gathered
+		// in one directory; `registry/transports.ts` landing beside them is not a coincidence.
+		// 341 is dropped outright, because nobody has reproduced it and a number with no
+		// source reads like it has one.
 		"src/stream.ts": { maxFiles: 284 },
 	},
 };

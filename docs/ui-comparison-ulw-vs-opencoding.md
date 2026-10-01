@@ -1,3 +1,4 @@
+claude --resume d5884351-0d86-4c51-8465-3fbc06446635
 # So sánh bề mặt UI — ULW (`ultraworkers`) vs `opencoding`
 
 **Đo:** 2026-10-02 · ULW `packages/tui/src/` · opencoding `HEAD 1fc59d9` (`quangdang46/opencoding`)

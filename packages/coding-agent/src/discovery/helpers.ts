@@ -3,7 +3,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { FileType, glob } from "@oh-my-pi/pi-natives";
 import {
-	CONFIG_DIR_NAME,
 	getAgentDir,
 	getConfigDirName,
 	PROJECT_AGENT_DIR_NAME,
@@ -45,7 +44,7 @@ export const SOURCE_PATHS = {
 		get userAgent() {
 			return `${getConfigDirName()}/agent`;
 		},
-		projectDir: CONFIG_DIR_NAME,
+		projectDir: PROJECT_AGENT_DIR_NAME,
 	},
 	claude: {
 		userBase: ".claude",

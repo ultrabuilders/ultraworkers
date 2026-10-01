@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { CONFIG_DIR_NAME, prompt } from "@oh-my-pi/pi-utils";
+import { getProjectAgentDir, prompt } from "@oh-my-pi/pi-utils";
 import { invalidate as invalidateCapabilityCache } from "../../capability";
 import type { Rule } from "../../capability/rule";
 import omfgUserPrompt from "../../prompts/system/omfg-user.md" with { type: "text" };
@@ -282,7 +282,15 @@ export class OmfgController {
 			};
 		}
 		return {
-			filePath: path.join(this.ctx.sessionManager.getCwd(), CONFIG_DIR_NAME, "rules", `${ruleName}.md`),
+			// Resolved through the accessor rather than a hand-rolled
+			// `join(cwd, <dir name>, …)`. The user-level branch above already
+			// delegates to `getAgentDir()`; this branch used to spell the project
+			// directory out itself, against the HOME-scoped constant — so flipping
+			// that constant for the rename would have pointed rule lookups at
+			// `<repo>/.ultraworkers/rules/` and orphaned every `.omp/rules/*.md`
+			// already committed to a user's repository. Delegating makes the second
+			// copy of the answer impossible rather than merely correct today.
+			filePath: path.join(getProjectAgentDir(this.ctx.sessionManager.getCwd()), "rules", `${ruleName}.md`),
 			level: "project",
 		};
 	}

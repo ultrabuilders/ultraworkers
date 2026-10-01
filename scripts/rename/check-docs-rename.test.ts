@@ -167,11 +167,30 @@ describe("rule A allow-list", () => {
 		await fs.rm(dir, { recursive: true, force: true });
 	});
 
-	it("reads a tab-pinned budget and ignores comment lines", async () => {
+	it("reads a tab-pinned budget and attaches the comment above it as the reason", async () => {
+		// The `#`-line-above convention was documented and exercised by this fixture
+		// from the start — the line literally reads "reason goes here" — while the
+		// parser discarded it and the assertion below recorded that as correct. An
+		// allow-list whose stated purpose is to record *why* a path was accepted, and
+		// which cannot read a single reason, is not reviewable.
 		const dir = await fixture({
 			"scripts/rename/docs-legacy-allowlist.txt": ["# reason goes here", "", "docs/a.md\t7", "docs/b.md"].join("\n"),
 		});
-		expect(await loadAllowlist(dir)).toEqual([{ path: "docs/a.md", budget: 7 }, { path: "docs/b.md" }]);
+		expect(await loadAllowlist(dir)).toEqual([
+			{ path: "docs/a.md", budget: 7, reason: "reason goes here" },
+			{ path: "docs/b.md", reason: undefined },
+		]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	it("does not attach the file header to the first entry", async () => {
+		// `# ---` ends the run of comment lines. Without it, the 30-line header that
+		// explains the FORMAT would be recorded as the justification for one
+		// specific path — which reads as audited and is not.
+		const dir = await fixture({
+			"scripts/rename/docs-legacy-allowlist.txt": ["# what this file is", "# ---", "docs/a.md\t3"].join("\n"),
+		});
+		expect(await loadAllowlist(dir)).toEqual([{ path: "docs/a.md", budget: 3, reason: undefined }]);
 		await fs.rm(dir, { recursive: true, force: true });
 	});
 });

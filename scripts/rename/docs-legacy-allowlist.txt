@@ -32,6 +32,13 @@
 #     2  scripts/ operational doc — not yet swept
 #     1  root README — highest-traffic file, swept by hand in a later W13 batch
 
+# Everything below this line is an entry. A `#` line between two paths is the
+# REASON for the path that follows it, read by check-docs-rename.ts. The
+# separator below ends the run of comment lines above, so the file's own header
+# is never recorded as an entry's justification.
+
+# ---
+
 AGENTS.md	6
 README.md	85
 docs/ERRATA-GPT5-HARMONY.md	1

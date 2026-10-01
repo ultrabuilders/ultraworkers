@@ -117,6 +117,17 @@ export interface AllowlistEntry {
 	 * path (accepted at any count).
 	 */
 	readonly budget?: number;
+	/**
+	 * The `#` comment block immediately above this path, joined.
+	 *
+	 * This field existed as a promise in the header before it existed as code: the
+	 * file's own documentation said each entry was recorded "with the reason it is
+	 * still outstanding", and the gate's failure message told a contributor to add
+	 * a path "WITH a comment saying why" — while the parser discarded every `#`
+	 * line. A documented reason that cannot be read is not a reason, and an
+	 * allow-list of unreasoned paths is a list nobody can audit.
+	 */
+	readonly reason?: string;
 }
 
 /**
@@ -128,22 +139,42 @@ export interface AllowlistEntry {
  * `<TAB>N` form pins the count so a file on the list cannot quietly regrow.
  * Inline `#` comments are NOT supported on a path line — a trailing comment
  * would become part of the path and silently stop matching, which fails open.
- * Reasons go on their own `#` line above the path.
+ * Reasons go on their own `#` line above the path, and are now attached to it.
  */
 export async function loadAllowlist(root: string): Promise<AllowlistEntry[]> {
 	const file = Bun.file(path.join(root, ALLOWLIST_PATH));
 	if (!(await file.exists())) return [];
 	const entries: AllowlistEntry[] = [];
+	let pending: string[] = [];
 	for (const line of (await file.text()).split("\n")) {
 		const trimmed = line.trim();
-		if (trimmed === "" || trimmed.startsWith("#")) continue;
+		if (trimmed === "") continue;
+		if (trimmed.startsWith("#")) {
+			// Accumulate the comment block; it belongs to the NEXT path line.
+			//
+			// `# ---` ends the run and discards anything pending, so the file's own
+			// header block is never attached as the "reason" for the first real
+			// entry. Without that separator the header's own words about the FORMAT
+			// would be recorded as the justification for a specific path, which is
+			// worse than having no reason: it looks audited and is not.
+			if (trimmed === "# ---") {
+				pending = [];
+				continue;
+			}
+			pending.push(trimmed.replace(/^#\s?/, ""));
+			continue;
+		}
 		const tab = trimmed.indexOf("\t");
+		const reason = pending.length > 0 ? pending.join(" ") : undefined;
+		pending = [];
 		if (tab === -1) {
-			entries.push({ path: trimmed });
+			entries.push({ path: trimmed, reason });
 			continue;
 		}
 		const budget = Number(trimmed.slice(tab + 1).trim());
-		entries.push(Number.isFinite(budget) ? { path: trimmed.slice(0, tab), budget } : { path: trimmed });
+		entries.push(
+			Number.isFinite(budget) ? { path: trimmed.slice(0, tab), budget, reason } : { path: trimmed, reason },
+		);
 	}
 	return entries;
 }

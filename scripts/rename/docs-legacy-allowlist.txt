@@ -38,109 +38,157 @@
 # is never recorded as an entry's justification.
 
 # ---
-
 AGENTS.md	6
-README.md	85
-docs/ERRATA-GPT5-HARMONY.md	1
+# on-disk config dir name
 docs/advisor-watchdog.md	6
+# on-disk config dir name
 docs/agent-hub.md	1
+# on-disk config dir name
 docs/approval-mode.md	1
 docs/auth-broker-gateway.md	7
+# on-disk config dir name
 docs/cli-reference.md	1
+# omp.sh is a live domain; on-disk config dir name
 docs/collab.md	8
+# on-disk config dir name
 docs/computer-use.md	2
+# discovery provider id read from user config.yml; on-disk config dir name
 docs/config-usage.md	43
+# discovery provider id read from user config.yml; on-disk config dir name
 docs/context-files.md	47
+# on-disk config dir name
 docs/custom-tools.md	4
 docs/environment-variables.md	12
+# on-disk config dir name
+docs/ERRATA-GPT5-HARMONY.md	1
 docs/extension-loading.md	22
+# on-disk config dir name
 docs/extension-state-persistence.md	1
 docs/extension-trust-model.md	10
+# on-disk config dir name
 docs/extensions.md	1
 docs/gemini-manifest-extensions.md	2
+# on-disk config dir name
 docs/hooks.md	7
+# on-disk config dir name
 docs/install-id.md	2
+# on-disk config dir name
 docs/keybindings.md	6
+# on-disk config dir name
 docs/local-models.md	3
+# on-disk config dir name
 docs/lsp-config.md	5
 docs/macos-signing-notarization.md	6
+# discovery provider id read from user config.yml; on-disk config dir name
 docs/marketplace.md	15
+# on-disk config dir name
 docs/mcp-config.md	15
+# on-disk config dir name
 docs/mcp-server-tool-authoring.md	6
 docs/models.md	5
 docs/natives-addon-loader-runtime.md	5
+# on-disk config dir name
 docs/natives-architecture.md	3
 docs/natives-build-release-debugging.md	11
 docs/notebook-tool-runtime.md	1
 docs/plugin-manager-installer-plumbing.md	28
+# on-disk config dir name
 docs/porting-from-pi-mono.md	2
+# on-disk config dir name
 docs/prewalk.md	2
 docs/provider-quirks.md	5
+# on-disk config dir name
 docs/providers.md	23
 docs/python-repl.md	6
 docs/rpc.md	4
+# discovery provider id read from user config.yml; on-disk config dir name
 docs/rulebook-matching-pipeline.md	13
+# on-disk config dir name
 docs/sdk.md	1
+# on-disk config dir name
 docs/secrets.md	4
 docs/session-operations-export-share-fork-resume.md	4
+# on-disk config dir name
 docs/session-switching-and-recent-listing.md	2
+# on-disk config dir name
 docs/session.md	4
+# on-disk config dir name
 docs/settings.md	39
 docs/skills.md	10
 docs/skills/authoring-extensions.md	21
 docs/skills/authoring-marketplaces.md	17
 docs/skills/examples/hello-extension/README.md	6
 docs/skills/examples/mini-marketplace/README.md	3
+# on-disk config dir name
 docs/skills/examples/safety-hook/README.md	3
+# discovery provider id read from user config.yml; on-disk config dir name
 docs/slash-command-internals.md	10
 docs/stream.md	10
+# on-disk config dir name
 docs/system-prompt-customization.md	11
 docs/task-agent-discovery.md	16
+# on-disk config dir name
 docs/theme.md	4
+# on-disk config dir name
 docs/toolconv/minimax.md	1
+# on-disk config dir name
 docs/toolconv/xml.md	1
 docs/tools/ast-grep.md	1
 docs/tools/browser.md	2
 docs/tools/debug.md	6
 docs/tools/find.md	4
 docs/tools/generate_image.md	1
+# on-disk config dir name
 docs/tools/github.md	3
 docs/tools/glob.md	2
 docs/tools/grep.md	3
 docs/tools/ida.md	5
+# on-disk config dir name
 docs/tools/learn.md	1
+# on-disk config dir name
 docs/tools/manage_skill.md	1
 docs/tools/read.md	1
 docs/tools/retain.md	1
+# on-disk config dir name
 docs/tools/rewind.md	1
 docs/tools/security_scan.md	1
 docs/tools/task.md	5
 docs/tools/web_search.md	3
 docs/user-facing-packages.md	8
+# omp-kata / arc-omp-values.yaml are live infra names
 infra/docs/03-runner-image.md	32
 infra/docs/04-arc-and-caching.md	34
+# omp-kata / arc-omp-values.yaml are live infra names
 infra/docs/README.md	1
 packages/agent/README.md	1
+# omp.sh is a live domain
 packages/ai/README.md	8
+# on-disk config dir name
 packages/browser-relay/README.md	17
 packages/coding-agent/DEVELOPMENT.md	3
-packages/coding-agent/README.md	3
-packages/coding-agent/examples/README.md	1
 packages/coding-agent/examples/custom-tools/README.md	4
+# on-disk config dir name
 packages/coding-agent/examples/extensions/README.md	1
 packages/coding-agent/examples/hooks/README.md	3
+packages/coding-agent/examples/README.md	1
 packages/coding-agent/examples/sdk/README.md	2
+# on-disk config dir name
+packages/coding-agent/README.md	3
 packages/collab-web/README.md	5
 packages/metaharness/README.md	10
 packages/stats/README.md	10
+# on-disk config dir name
 packages/utils/README.md	4
 python/omp-rpc/README.md	4
 python/robomp/AGENTS.md	21
+# on-disk config dir name
 python/robomp/README.md	15
+README.md	85
 # W8b. This file documents the decision table that governs the legacy token, so it
 # has to name the token and the pinned expression verbatim — a reader must be able
 # to reproduce the counts the gate derives. Renaming them here would make the
 # documentation describe a pattern that no longer matches the gate.
 scripts/rename/README.md	6
-scripts/session-stats/README.md	5
 scripts/session-stats/audit-prompt.md	2
+# on-disk config dir name
+scripts/session-stats/README.md	5

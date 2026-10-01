@@ -25,7 +25,9 @@
  * `CONFIG_DIR_NAME` — a comment is not a test, and this file is not pretending
  * otherwise.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import { SOURCE_PATHS } from "@oh-my-pi/pi-coding-agent/discovery/helpers";
 import {
@@ -61,5 +63,69 @@ describe("the project-scoped config directory", () => {
 		expect(getProjectAgentDir("/repo")).toBe(path.join("/repo", PROJECT_AGENT_DIR_NAME));
 		expect(path.isAbsolute(getProjectAgentDir("/repo"))).toBe(true);
 		expect(getConfigWriteRootName()).not.toBe(PROJECT_AGENT_DIR_NAME);
+	});
+});
+
+const tempHomes: string[] = [];
+
+afterEach(async () => {
+	for (const dir of tempHomes.splice(0)) await fs.rm(dir, { recursive: true, force: true });
+});
+
+/**
+ * Ask a process with an EMPTY home where each config level resolves to.
+ *
+ * The two levels are supposed to answer differently: the user level follows the
+ * home rename, the project level is pinned. On a machine carrying pre-migration
+ * state they are the same string, so this row would pass against the defect it
+ * exists to catch. An empty home is the only condition that tells them apart.
+ *
+ * A subprocess, because `os.homedir()` is bound at process start — assigning
+ * `process.env.HOME` mid-test changes nothing, and the row would go green while
+ * quietly measuring the developer's own machine instead of the fixture.
+ */
+async function resolveBothLevels(cwd: string): Promise<{ user: string; project: string; userName: string }> {
+	const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-pin-home-")));
+	tempHomes.push(home);
+
+	const script = [
+		'import { getConfigAgentDirName } from "@oh-my-pi/pi-utils";',
+		'import { getConfigDirs } from "@oh-my-pi/pi-coding-agent/config";',
+		"const cwd = " + JSON.stringify(cwd) + ";",
+		'const first = (o) => getConfigDirs("probe", o)[0]?.path ?? "";',
+		"process.stdout.write(JSON.stringify({",
+		"\tuser: first({ cwd, user: true, project: false }),",
+		"\tproject: first({ cwd, user: false, project: true }),",
+		"\tuserName: getConfigAgentDirName(),",
+		"}));",
+	].join("\n");
+
+	const proc = Bun.spawn(["bun", "-e", script], {
+		cwd: process.cwd(),
+		env: { ...process.env, HOME: home, XDG_CONFIG_HOME: "", XDG_DATA_HOME: "" },
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const stdout = await new Response(proc.stdout).text();
+	const stderr = await new Response(proc.stderr).text();
+	if ((await proc.exited) !== 0) throw new Error("probe failed: " + stderr);
+	return JSON.parse(stdout) as { user: string; project: string; userName: string };
+}
+
+describe("the two config levels, resolved on a machine that has neither directory", () => {
+	test("the user level follows the home rename while the project level stays pinned", async () => {
+		const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-pin-cwd-")));
+		tempHomes.push(cwd);
+
+		const resolved = await resolveBothLevels(cwd);
+
+		// Precondition: the two levels must actually differ here, or the row below
+		// proves nothing. Asserted rather than assumed, for the same reason.
+		expect(resolved.userName).not.toBe(PROJECT_AGENT_DIR_NAME);
+
+		// The user level is allowed to move — it is machine-local state.
+		expect(resolved.user).toContain(path.join(resolved.userName, "probe"));
+		// The project level is not: this directory is in the user's repository.
+		expect(resolved.project).toBe(path.join(cwd, PROJECT_AGENT_DIR_NAME, "probe"));
 	});
 });

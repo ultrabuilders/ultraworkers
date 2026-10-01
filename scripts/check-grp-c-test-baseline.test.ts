@@ -173,7 +173,12 @@ describe("R0 GRP-C test-baseline gate", () => {
 		// merge step may not make it redder. It must not go red here.
 		const tolerated = await runGate(dir.absolute(), gate);
 		expect(tolerated.exitCode).toBe(0);
-		expect(tolerated.stdout).toContain("all present in the baseline");
+		// The count reported must be the one the baseline actually accounts for.
+		// This line used to read "1 failure(s), all present in the baseline" from
+		// `current.size`, which is every failure in the run — so once the re-run
+		// forgives a name it claimed numbers the baseline does not contain. A real
+		// run printed `719 failure(s), all present` against a 716-entry baseline.
+		expect(tolerated.stdout).toContain("1 failure(s) present in the baseline");
 	}, 60_000);
 
 	test("a failure that does not reproduce on re-run is load, not a regression", async () => {
@@ -270,5 +275,40 @@ describe("R0 GRP-C test-baseline gate", () => {
 		// the gate was right and my assertion was wrong, the same inversion the
 		// first fixture in this file produced.
 		expect(await Bun.file(path.join(dir.absolute(), ".runs")).text()).toBe("2");
+	}, 60_000);
+
+	test("an unnamed failure keeps one identity across runs", async () => {
+		using dir = TempDir.createSync("omp-grp-c-baseline-unnamed-");
+		// `test("")` makes bun print `(fail)  [0.19ms]`, so a duration-stripping
+		// parse takes the DURATION as the name. Measured on identical code: run A
+		// produced the identity `[0.11ms]` and run B `[0.87ms]` — so such a test
+		// never matches its own baseline entry and is reported as a new failure on
+		// every run forever. A gate that is permanently red for a reason nobody can
+		// fix is a gate that gets switched off.
+		await Bun.write(
+			path.join(dir.absolute(), "anon.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("", () => { expect(1).toBe(2); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		// First run: the identity the gate chooses, and it must be a location rather
+		// than a duration.
+		const first = await runGate(dir.absolute(), gate);
+		expect(first.exitCode).toBe(1);
+		expect(first.stderr).toMatch(/\+ unnamed @ \S+anon\.test\.ts/);
+		expect(first.stderr).not.toMatch(/\+ unnamed @ \[\d/);
+
+		// Second run with that identity in the baseline: it must now be TOLERATED.
+		// This is the direction that matters — if the identity moved, the gate goes
+		// red again here and would have been red on every run in CI.
+		const learned = /\+ (unnamed @ \S+)/.exec(first.stderr)?.[1];
+		expect(learned).toBeDefined();
+		await Bun.write(
+			path.join(dir.absolute(), "r0-grp-c-test-baseline.json"),
+			`${JSON.stringify({ ...BASELINE, failures: [learned!] }, null, 2)}\n`,
+		);
+		const second = await runGate(dir.absolute(), gate);
+		expect(second.exitCode).toBe(0);
+		expect(second.stdout).toContain("1 failure(s) present in the baseline");
 	}, 60_000);
 });

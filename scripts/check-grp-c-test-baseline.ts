@@ -46,10 +46,36 @@ function fail(message: string): never {
 	process.exit(1);
 }
 
+/** An identity that is only a duration is an unnamed test the runner could not name. */
+const UNNAMED_IDENTITY = /^\[[\d.]+\s*m?s\]$/;
+
+/** Where bun says an unnamed failure happened — the `at <anonymous> (…)` line above it. */
+const FAILURE_SITE = /^\s*at <anonymous> \((\S+?):\d+:\d+\)\s*$/gm;
+
+/**
+ * Give an unnamed failure an identity that survives the next run.
+ *
+ * `test("")` prints `(fail)  [0.19ms]`, so a duration-stripping parse captures the
+ * DURATION as the name — and durations change every run. Measured: identical code
+ * yielded the identities `[0.11ms]` and `[0.87ms]` on two runs, so such a test can
+ * never match its own baseline entry and is reported as a new failure forever,
+ * which is a gate that is permanently red for a reason no one can fix.
+ *
+ * Keyed on the file bun blames instead, which is stable. Two unnamed failures in
+ * one file still collapse to a single identity — that limit is honest rather than
+ * hidden, and no cheaper key is available from the runner's output.
+ */
+function stabilizeUnnamed(log: string, identity: string): string {
+	if (!UNNAMED_IDENTITY.test(identity)) return identity;
+	const site = FAILURE_SITE.exec(log);
+	FAILURE_SITE.lastIndex = 0; // a /g regex carries lastIndex between calls
+	return site?.[1] ? `unnamed @ ${site[1]}` : `unnamed @ ${identity}`;
+}
+
 /**
  * Run the suite and return the set of failing test names, or `null` if the run
  * never measured. `target` defaults to the whole suite; the confirmation pass
- * re-runs only the files that produced a new name.
+ * re-runs the suite once to see which new names survive.
  */
 async function collectFailures(target: string = SUITE): Promise<Set<string> | null> {
 	const proc = Bun.spawn(["bun", "test", target], { stdout: "pipe", stderr: "pipe" });
@@ -99,7 +125,7 @@ async function collectFailures(target: string = SUITE): Promise<Set<string> | nu
 		return null;
 	}
 
-	const failures = new Set(extracted.identities);
+	const failures = new Set(extracted.identities.map(name => stabilizeUnnamed(raw, name)));
 
 	// A run that found no failure but exited non-zero never measured anything.
 	// The common cause is a suite that cannot load: `bun test` reports that as
@@ -221,7 +247,18 @@ if (healed.length > 0) {
 	console.log("Drop them from the baseline in a follow-up commit.");
 }
 
+// Count only what the baseline actually accounts for. This line used to print
+// `current.size`, which is every failure in the run — and then claim they were
+// "all present in the baseline". Both halves cannot be true once the re-run has
+// forgiven a name: a real run printed `719 failure(s), all present in the
+// baseline` against a 716-entry baseline, because 4 of the 719 were the very
+// load-flakes the line above had just reported as forgiven. A summary that
+// overstates what was checked is worse than no summary — it is the sentence a
+// reader skims and believes.
+const accounted = [...current].filter(name => known.has(name)).length;
+const forgiven = current.size - accounted;
+const tail = forgiven > 0 ? `, plus ${forgiven} forgiven as load` : "";
 console.log(
-	`grp-c baseline gate: green — ${current.size} failure(s), all present in the baseline ` +
-		`(captured ${baseline.capturedAt}, HEAD ${baseline.head}).`,
+	`grp-c baseline gate: green — ${accounted} failure(s) present in the baseline` +
+		`${tail} (captured ${baseline.capturedAt}, HEAD ${baseline.head}).`,
 );

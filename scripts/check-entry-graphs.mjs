@@ -9,6 +9,14 @@
  * budget per entry, so that regression fails at commit time instead.
  *
  * Only value imports count. `import type` / `export type` are erased before Node sees them.
+ *
+ * SCOPE — external dependencies are deliberately out of the graph. `resolveSpec`
+ * returns `null` for a `node:` specifier and for any package not in `WORKSPACE`, so a
+ * third-party import adds nothing to a graph. That is the tool's point (it budgets
+ * OUR barrels, not npm's), but it has a consequence worth knowing before trusting a
+ * control: adding `import { statSync } from "node:fs"` to a budgeted entry does NOT move
+ * its number, so a probe built that way proves nothing. To check the gate bites, add a
+ * WORKSPACE value import — that moves 5 -> 11 on `worker-selectors.ts` and exits 1.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

@@ -1,0 +1,127 @@
+# scripts/rename/keep-list.txt
+#
+# WHAT THIS FILE IS
+#   The rename plan for `@oh-my-pi/*` → the new npm scope, in two sections that
+#   must never be confused with each other:
+#
+#     1. SCOPE IDENTIFIERS — package.json manifests that MUST be rewritten.
+#     2. WIRE / OPS IDENTITY — bare "oh-my-pi" strings that MUST NOT be
+#        rewritten, each with the reason it is load-bearing.
+#
+#   The filename says "keep-list" because section 2 is the part a reviewer
+#   actually has to keep: section 1 is a mechanical list that a rename pass
+#   consumes, while section 2 is the set of things a rename pass must leave
+#   alone. Do not read section 1 as "also keep these".
+#
+# HOW SECTION 1 WAS GENERATED (regenerate with exactly this, do not hand-edit)
+#   git grep -l "@oh-my-pi/" -- 'packages/*/package.json' > /tmp/manifests.txt
+#   Measured 2026-10-01 at commit 8c76ef6cb2: 17 manifests.
+#
+# DRIFT CONSTRAINT — a gate must compare this list against that command and fail
+#   when they differ. A keep-list written by hand decays SILENTLY: each new
+#   package that forgets to be added is skipped by the rename with no error and
+#   no way to notice afterwards. "17" above is a claim that goes stale the
+#   moment a package is added or removed, which is exactly why it is written
+#   down rather than left implicit.
+#
+# ---------------------------------------------------------------------------
+# 1. SCOPE IDENTIFIERS — rewrite `@oh-my-pi/` → new scope
+# ---------------------------------------------------------------------------
+# These are npm package names. Renaming them is the whole point of W7, and a
+# manifest left behind still resolves under the old scope, which is what makes a
+# half-applied rename hard to spot: nothing errors, the package just stops being
+# the one other packages import.
+packages/agent/package.json
+packages/ai/package.json
+packages/browser-relay/package.json
+packages/catalog/package.json
+packages/coding-agent/package.json
+packages/collab-web/package.json
+packages/evals/package.json
+packages/metaharness/package.json
+packages/mnemopi/package.json
+packages/natives/package.json
+packages/omptype/package.json
+packages/snapcompact/package.json
+packages/stats/package.json
+packages/tui/package.json
+packages/typescript-edit-benchmark/package.json
+packages/utils/package.json
+packages/wire/package.json
+#
+# ---------------------------------------------------------------------------
+# 2. WIRE / OPS IDENTITY — DO NOT REWRITE
+# ---------------------------------------------------------------------------
+# A rename pass rewrites `@oh-my-pi`, so it cannot reach these: they are the
+# bare string "oh-my-pi" with no `@`. That is fortunate, because all of them are
+# places where changing the value is wrong, silently, and not undoable.
+#
+# The repo already has the right pattern for most of this: `WIRE_NAME` in
+# `@oh-my-pi/pi-utils` is the single named constant for the wire identity, used
+# at ~14 call sites (dap/session.ts, blob-broker/uploaders-legacy.ts,
+# hindsight/bank.ts, modes/acp/acp-agent.ts, …). The entries below are the ones
+# that do NOT follow it.
+#
+# Measured 2026-10-01 at commit 8c76ef6cb2 with:
+#   git grep -nE '(^|[^@a-zA-Z0-9_-])"oh-my-pi"' -- 'packages/*/src/*.ts' 'packages/*/src/**/*.ts'
+# 7 occurrences across 6 files. Disposition per line:
+#
+# GOTCHA, verified by measurement, that a future gate must not repeat: the
+# single-glob form `-- 'packages/*/src/**/*.ts'` reports only 5 of the 6 files.
+# git's `**` does not match ZERO directory levels, so a .ts sitting directly in
+# src/ is skipped — and the file it skips is
+# telemetry-export-otlp.ts, a wire identity. A gate written with the short glob
+# would report the inventory as complete while silently omitting the one entry
+# that must never be renamed. `git grep` also only sees TRACKED files, so a
+# peer's untracked new file is invisible to it too; both facts make this
+# command's output a lower bound, not a complete list.
+#
+#   packages/ai/src/registry/oauth/zai.ts:25
+#       const KEY_NAME = "oh-my-pi";
+#       FREEZE. The comment above it states the reason: "OMP's own key name so
+#       sign-in never mutates ZCode's `zcode-api-key`". This is a collision-
+#       avoidance name in a THIRD PARTY's key store, not branding. Renaming it
+#       orphans every key already created under it.
+#
+#   packages/coding-agent/src/telemetry-export-otlp.ts:51
+#       const SERVICE_NAME = "oh-my-pi";
+#       FREEZE — and this one is UNEXPLAINED, not "already handled". It is a
+#       bare literal with no comment giving a reason, and it does not use
+#       WIRE_NAME. It ships as OTLP `service.name` to whatever collects the
+#       team's telemetry, so renaming it splits one service into two in every
+#       dashboard and alert. Listed here as "not yet changed", NOT as "already
+#       fine" — the gap is the missing comment and the missing constant.
+#
+#   packages/coding-agent/src/mcp/oauth-flow.ts:629
+#       client_name: "oh-my-pi",
+#       FREEZE. Sent to the OAuth provider and shown on the user's consent
+#       screen. Third party sees it.
+#
+#   packages/coding-agent/src/web/search/providers/exa.ts:26
+#       const EXA_MCP_SOURCE = "oh-my-pi";
+#       FREEZE. Ships as the `x-exa-source` request header. The third party sees
+#       it. Also a bare literal with no comment, and not WIRE_NAME — same gap as
+#       SERVICE_NAME above.
+#
+#   packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts:803
+#       const PI_SCOPE_ALIASES = ["ultraworkers", "oh-my-pi", "mariozechner", "earendil-works"];
+#       FREEZE — DO NOT ADD "@" AND DO NOT TRIM THE ENTRY. This entry is what
+#       makes an out-of-repo plugin's old `@oh-my-pi/...` import resolve to the
+#       same in-process module. "ultraworkers" is already first in the list, so
+#       the alias mechanism already knows the new scope; renaming this literal
+#       would make the alias list reference itself and drop every legacy scope.
+#
+#   packages/coding-agent/src/cli/gallery-fixtures/segments.ts:33
+#       relativeRepoRoot: "oh-my-pi",
+#   packages/coding-agent/src/cli/gallery-fixtures/segments.ts:164
+#       projectName: "oh-my-pi",
+#       CHANGE — these two are the exception in this section, and they are the
+#       only bare literals the rename SHOULD touch. They are gallery test
+#       fixture data naming a repository, not a wire identity: nothing outside
+#       the test reads them. They become the new project name. Recorded here
+#       rather than left to the pass because a rule that says "bare literals are
+#       always frozen" would otherwise skip them forever.
+#
+# RULE OF THUMB, agreed for the rename pass: it does not change wire-visible
+# strings. Changing one by mistake is silent and unrecoverable; leaving a
+# constant that merely LOOKS stale costs nothing.

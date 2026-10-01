@@ -381,7 +381,12 @@ describe("the bare-link email branch still matches when an @ is present", () => 
 		// first, so the address that survives is shorter. The contract is the one the
 		// `@` gate could break — that an address containing the quadratic trigger
 		// characters is still recognised, not silently left as text.
-		const links = [...Lexer.lexInline(`${run}@a.co`)].filter(t => t.type === "link");
+		const links = [...Lexer.lexInline(`${run}@a.co`)].filter(
+			// A predicate, not a bare comparison: `filter(t => t.type === "link")` leaves
+			// the result as `Token[]`, so `href` below would not typecheck even though it
+			// is present at runtime. `bun test` passes either way — only `tsgo` sees it.
+			(t): t is Extract<typeof t, { type: "link" }> => t.type === "link",
+		);
 		expect(links).toHaveLength(1);
 		expect(links[0]!.raw).toEndWith("@a.co");
 		expect(links[0]!.href.startsWith("mailto:")).toBe(true);

@@ -294,6 +294,41 @@ interface RunResult {
 	changed: RewrittenFile[];
 }
 
+/**
+ * Render the document with every RELEASED region restored verbatim from `original`.
+ *
+ * `applyRewrite` only mutates the `[Unreleased]` section, but `renderChangelog`
+ * re-renders the whole file — so it also re-derives spacing the released sections
+ * already had. Measured on this tree: `packages/tui/CHANGELOG.md` writes a release
+ * heading immediately followed by its category heading with no blank line, and a
+ * plain re-render inserts one. A run whose only job was to rewrite `[Unreleased]`
+ * therefore produced a diff inside a shipped release, which is what this file's
+ * header promises cannot happen.
+ *
+ * Splicing the original text back makes the promise structural rather than
+ * incidental: the renderer decides the new `[Unreleased]`, and everything from the
+ * first released heading onward is copied, not re-derived.
+ *
+ * The separator ABOVE that heading is deliberately not spliced, because the parser
+ * hands it to the `[Unreleased]` subsection — measured, a run of blank lines before
+ * a release heading lands in `subsections[0].lines` alongside the draft entries, so
+ * it is this script's own trailing whitespace to normalize.
+ */
+function renderWithReleasedIntact(document: ChangelogDocument, original: string): string {
+	const lines = original.split("\n");
+	const firstReleased = lines.findIndex(line => line.startsWith("## [") && !line.startsWith("## [Unreleased]"));
+	const rendered = renderChangelog(document);
+	if (firstReleased < 0) return rendered;
+	// Same scan on the rendered side: the released sections are rendered in the same
+	// order they appear in the source, so the two indexes line up by construction.
+	const renderedLines = rendered.split("\n");
+	const firstRenderedReleased = renderedLines.findIndex(
+		line => line.startsWith("## [") && !line.startsWith("## [Unreleased]"),
+	);
+	if (firstRenderedReleased < 0) return rendered;
+	return [renderedLines.slice(0, firstRenderedReleased).join("\n"), lines.slice(firstReleased).join("\n")].join("\n");
+}
+
 function applyRewrite(section: ReleaseSection, sections: RewrittenSection[]): void {
 	section.subsections = sections
 		.map(sec => {
@@ -363,7 +398,7 @@ async function run(options: RunOptions): Promise<RunResult> {
 
 			const rewritten = await rewriteWithFallback(changelogPath, unreleasedBody);
 			applyRewrite(section, rewritten);
-			const next = renderChangelog(document);
+			const next = renderWithReleasedIntact(document, content);
 			if (next === content) continue;
 
 			const rewrittenCount = rewritten.reduce((sum, sec) => sum + sec.items.length, 0);
@@ -489,4 +524,12 @@ if (import.meta.main) {
 	await main();
 }
 
-export { applyRewrite, collectEntries, type RunResult, run, unreleasedSection, validateRewrite };
+export {
+	applyRewrite,
+	collectEntries,
+	renderWithReleasedIntact,
+	type RunResult,
+	run,
+	unreleasedSection,
+	validateRewrite,
+};

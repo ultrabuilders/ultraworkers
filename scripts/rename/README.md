@@ -93,17 +93,33 @@ DRIFT, corrected 2026-10-02: the file/occurrence totals were `704` / `2054`,
 stale by 2 files and 18 occurrences. Measured with the gate's own code path —
 `hitPaths(".")` from `check-disposition.ts` (glob `**/*.ts`, skipping
 `node_modules/` and `.git/`) returning 706, and the same paths counted against
-the gate's `PINNED` expression returning 2072. Reproduced independently by a
-standalone scan, which agrees at 706/2072.
+the gate's `PINNED` expression returning 2072. A standalone scan reproduces the
+same pair, so the *scope* is settled.
+
+**2072 is a floor, not a total.** `PINNED` is
+`/(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)/`, and it consumes the delimiter it
+matches, so two adjacent tokens collide: `"omp omp"` and `"omp,omp"` each count
+**1** where 2 exist. Changing it to a lookbehind
+(`/(?<![a-zA-Z0-9_./-])omp(?![a-zA-Z0-9_.-])/`) fixes that without widening the
+scope — `.` stays excluded, so `..omp..` remains 0 in both. That is a change to
+what the gate *means*, so it is not made here: `PINNED` is a locator and its
+value is a ratchet baseline.
+
+Every number above is therefore a lower bound on its own scope. Quote the scope
+and the expression together, never the count alone.
 
 The scope is **not** the whole tree: `\bomp\b` over every tracked file gives
 1203 files and 16766 occurrences, and `check-runtime-rename.ts` uses that
 different matcher over a different scope. Two numbers both called "occurrences
 of the token" is the trap here — quote the scope whenever you quote the count.
 
-The prose/code/comment-only breakdown below is **not** re-verified here. Only
-the two totals were re-measured; a fresh breakdown must come from a fresh
-count rather than from carrying these lines forward.
+The prose/code/comment-only breakdown below is **wrong under the current
+matcher, not merely stale**. `PINNED` undercounts every bucket, because the
+collision it has on adjacent tokens loses hits wherever tokens sit side by side,
+and each bucket's own percentage therefore moves too — "51%" is a ratio of two
+low numbers and cannot be trusted to the digit. Only the two totals were
+re-measured here. A fresh breakdown must come from a fresh count, and until then
+treat these four lines as an indication of shape, not as figures to quote.
 
 **Read the 51% before filling in a row.** A `rename` row is *not* automatically a
 code edit: renaming inside a comment is W13's job, not this table's.

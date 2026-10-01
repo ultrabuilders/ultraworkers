@@ -32,17 +32,31 @@
  * The 213% bug was not a ratio — it was a *sentence* asserting a saving around
  * a value that had gone negative, and that is the class this gate names.
  *
- * MEASURED BASELINE — 29 benches, 0 sites
- * --------------------------------------
- * All 29 the `<pkg>/bench/<name>.bench.ts` globs scanned; zero printed directional
- * literals. `count-lines`, `proxy-partial-json`, `llm-assembly` and
- * `mnemopi/native-vectors` print `speedup:` ratios and are correctly absent
- * for the reason above.
+ * MEASURED BASELINE — 51 files, 0 sites
+ * -------------------------------------
+ * Every `.ts` under each package's `bench/` directory, not just `*.bench.ts`.
+ * The narrower glob was an unexamined guess that covered 29 of 51 files, and
+ * the 22 it missed included bench infrastructure (`bench-registry.ts`,
+ * `candidates/*.ts`, `_harness.ts`) that prints like anything else. Widening
+ * leaves the baseline at zero, so the omission was free to close — which is
+ * the only reason the number below is worth quoting.
+ *
+ * `count-lines`, `proxy-partial-json`, `llm-assembly` and `mnemopi/native-vectors`
+ * print `speedup:` ratios and are correctly absent for the reason above.
  *
  * A zero here is a MEASUREMENT, and the gate prints it on every run precisely
- * so a reader can tell "scanned 29, found none" from "found nothing because it
+ * so a reader can tell "scanned 51, found none" from "found nothing because it
  * scanned nothing". It is proven able to go red against the historical line
  * rather than trusted to.
+ *
+ * WHAT COUNTS AS PRINTING, AND WHAT DOES NOT
+ * -------------------------------------------
+ * `console.*` and `process.stdout/stderr.write` — the sinks whose argument a
+ * person reads. `Bun.write` is deliberately excluded: measured, its only three
+ * uses under `bench/` write fixtures (a `note.txt` payload, request bodies),
+ * not output, so including it would match file plumbing rather than prose.
+ * Recorded here because "we looked and left it out" and "we never checked"
+ * must not read the same to the next person.
  *
  * WHY NOT A TEST
  * --------------
@@ -61,8 +75,15 @@ const REPO_ROOT = path.resolve(import.meta.dir, "..");
  * Directional literals that assert an outcome in prose rather than report a
  * number. Each one is a word that is simply false when the value beside it is
  * negative.
+ *
+ * Case-insensitive, and that is load-bearing rather than tidy. A first pass
+ * listed `Saved|saved` by hand and left the other two lowercase-only, which
+ * looks deliberate and is not: measured, `SAVED`, `REDUCTION`, `FASTER`,
+ * `Faster` and `Reduction` all escaped it while `Saved` did not. A gate is
+ * allowed to be narrow only when the narrowness is a decision; here it was an
+ * oversight that happened to be invisible on a corpus of zero.
  */
-const DIRECTIONAL = /\b(Saved|saved|reduction|faster)\b/;
+const DIRECTIONAL = /\b(saved|reduction|faster)\b/i;
 
 /** Calls whose string argument reaches a human. */
 const PRINTING = /(console\.(log|warn|error|info)|process\.(stdout|stderr)\.write)\s*\(/;
@@ -118,7 +139,11 @@ interface Site {
 	readonly text: string;
 }
 
-const glob = new Glob("packages/*/bench/*.bench.ts");
+// Every `.ts` under `bench/`, not just `*.bench.ts`: bench infrastructure
+// (`bench-registry.ts`, `candidates/*.ts`) prints too, and a gate that quietly
+// scans 29 of the 51 files in its domain is measuring less while reporting the
+// same. Measured before and after the widening — the site count is 0 either way.
+const glob = new Glob("packages/*/bench/**/*.ts");
 const sites: Site[] = [];
 let scanned = 0;
 

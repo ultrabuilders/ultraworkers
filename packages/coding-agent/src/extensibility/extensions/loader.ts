@@ -17,6 +17,8 @@ import type {
 	TSchema,
 } from "@oh-my-pi/pi-ai";
 import { isBuiltinComposerStyle, type KeyId } from "@oh-my-pi/pi-tui";
+import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
+import { registerTheme as registerThemeInRegistry } from "@oh-my-pi/pi-tui/theme";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { registerSubcommand as registerSubcommandVerb } from "../../cli-commands";
 import {
@@ -398,6 +400,24 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 				`Extension ${this.extension.path}: top-level verb "${name}" is already registered — the first registration keeps routing and this handler will not run; see subcommandCollisionDiagnostics() for both owners`,
 			);
 		}
+	}
+
+	/**
+	 * Contribute a named theme.
+	 *
+	 * Straight delegation to the registry that already owned the policy — the
+	 * built-in-wins rule and its warning live there, so this cannot drift from
+	 * them. The extension path is named in the rejection warning because an
+	 * anonymous loser is exactly what WI-B was raised against: four call sites
+	 * applied "built-in wins" with no exception and no warning, so an extension
+	 * whose theme never appeared had no way to learn why.
+	 */
+	registerTheme(name: string, theme: ThemeJson): boolean {
+		if (registerThemeInRegistry(name, theme)) return true;
+		logger.warn(
+			`Extension ${this.extension.path}: theme "${name}" was not registered — the name is taken by a built-in theme or an earlier registration, and that one is kept. Pick a different name.`,
+		);
+		return false;
 	}
 
 	setLabel(label: string): void {

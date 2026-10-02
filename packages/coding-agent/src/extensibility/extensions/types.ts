@@ -76,6 +76,7 @@ import type { RawToolArgs } from "@oh-my-pi/pi-tui/tools/renderer";
 import type { logger as PiLogger } from "@oh-my-pi/pi-utils";
 import type { KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
 import type { ComposerShapeDefinition } from "@oh-my-pi/pi-tui/overlays/composer-shape-registry";
+import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
 import type { HostRenderStrategy } from "@oh-my-pi/pi-tui/host-render-strategy";
 import type { CopyTargetProvider } from "@oh-my-pi/pi-tui/overlays/copy-target-registry";
 export type { HostRenderStrategy, HostRenderDecision, HostRenderContext } from "@oh-my-pi/pi-tui/host-render-strategy";
@@ -1818,6 +1819,31 @@ export interface ExtensionAPI {
 	 * {@link registerCommand}.
 	 */
 	registerSubcommand(name: string, handler: (argv: string[]) => Promise<void>): void;
+
+	/**
+	 * Contribute a named theme, returning whether it was accepted.
+	 *
+	 * The registry already existed in `@oh-my-pi/pi-tui` with the whole policy — a
+	 * registered theme wins over nothing, a built-in wins over a registration, and
+	 * every rejection is logged rather than swallowed. What it did not have was a
+	 * way in: `registerTheme` had no caller outside its own module and its own
+	 * test, so an extension could not reach it and the registry was an empty seam —
+	 * the exact shape WI-B was raised to eliminate. This is that way in; the policy
+	 * is not re-implemented here.
+	 *
+	 * Selection reads the registry: `resolveThemeJson` and the `loadTheme*` family
+	 * consult a registered theme before falling back to the built-ins, so a theme
+	 * accepted here is selectable by name with nothing else to wire.
+	 *
+	 * `false` means the name was taken — by a built-in, or by an earlier
+	 * registration, in which case the first one is kept. It never means "rejected
+	 * for quality". The built-in winning is deliberate: renaming a user's
+	 * `dark` would silently change what every other tool on the machine expects,
+	 * whereas a colliding extension theme is one this extension can rename. Both
+	 * are logged, because a theme that never appears is otherwise
+	 * indistinguishable from one the author mistyped.
+	 */
+	registerTheme(name: string, theme: ThemeJson): boolean;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(

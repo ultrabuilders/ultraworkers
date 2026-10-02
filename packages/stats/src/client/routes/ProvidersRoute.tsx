@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { format } from "@oh-my-pi/pi-utils/dates";
 import { type ReactNode, useMemo, useState } from "react";
 import { getProviderDashboardStats, getProviderWindowStats } from "../api";
@@ -66,13 +67,20 @@ const TOKEN_MIX = [
 	{ key: "output", label: "Output", color: "var(--chart-secondary)" },
 ] as const;
 
-// `omp usage` is a COMMAND name, not a display name, so it deliberately does not read
-// APP_NAME. The two answer different questions and they are not always the same string:
-// `packages/stats` ships its own bin under a third spelling (`omp-stats`), and the dev
-// launcher symlinks a fourth. Binding a command to the display constant is right only by
-// coincidence — it goes silently wrong the day the binary is renamed without a rebrand.
-// Which spelling ships is epic-4yhd's open owner question; see epic-grse.
-const SNAPSHOT_HINT = "Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, omp usage).";
+// A COMMAND name, not a display name — yet it still reads APP_NAME, deliberately.
+//
+// The literal `omp` is what this replaced, and it is a P1: no package declares an `omp`
+// bin. `packages/coding-agent/package.json` installs `ultraworkers`; `packages/stats`
+// installs `omp-stats`. The `omp` on a maintainer's PATH is a symlink that `bun run
+// setup` writes (scripts/link-omp.sh), so a user who follows this hint on a real install
+// gets command-not-found.
+//
+// So the honest defect is NOT "APP_NAME is the wrong constant". It is that APP_NAME
+// happens to equal the binary name TODAY and nothing enforces that. The correct fix is a
+// command constant reading this package's own `bin` field; epic-grse tracks it. Until
+// then this is right under every answer epic-4yhd can give, and the literal is wrong under
+// all of them.
+const SNAPSHOT_HINT = `Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, ${APP_NAME} usage).`;
 
 interface WindowRef {
 	provider: string;

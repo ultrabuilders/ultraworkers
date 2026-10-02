@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -188,12 +189,11 @@ interface JudgePanelProps {
 	onRunChanged: () => void;
 }
 
-// Two different questions, two different constants. "the omp host process" is the app as
-// a noun and could read APP_NAME; "omp stats" is a COMMAND and must not — see the longer
-// note at ProvidersRoute's SNAPSHOT_HINT, and epic-4yhd / epic-grse for the open question
-// of which spelling the installer actually provides.
-const UNAVAILABLE_HINT =
-	"Judging needs the omp host process: open the dashboard with omp stats and configure a judge model. Until then messages are classified by regex signals.";
+// Both readings use APP_NAME, and the reasoning is the same as ProvidersRoute's
+// SNAPSHOT_HINT, which carries the full note: `omp` is a `bun run setup` symlink, not an
+// installed binary, so the literal spelling here is a command-not-found for a real user.
+// A command constant is the right long-term fix and is tracked as epic-grse.
+const UNAVAILABLE_HINT = `Judging needs the ${APP_NAME} host process: open the dashboard with ${APP_NAME} stats and configure a judge model. Until then messages are classified by regex signals.`;
 
 function JudgePanel({ active, range, judgeAvailable, job, onRunStarted, onRunChanged }: JudgePanelProps) {
 	const [modalOpen, setModalOpen] = useState(false);

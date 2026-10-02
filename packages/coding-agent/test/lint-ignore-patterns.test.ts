@@ -51,6 +51,53 @@ function blanketExtensionExemptions(ignorePatterns: readonly string[]): string[]
 	return ignorePatterns.filter(pattern => /^\*\*\/\*\.(js|mjs|cjs)$/.test(pattern));
 }
 
+/**
+ * How many tracked fixture files a pattern must exempt before it counts as a *fixture*
+ * exemption rather than a vendor or tooling exclusion that happens to clip one.
+ *
+ * Measured, not chosen. At `HEAD=d73fed57a7` exactly three `ignorePatterns` touch a
+ * tracked `test/fixtures/` file, and they are not comparable:
+ *
+ *   the `python` tree                     -> 1 file
+ *   every `.min.js`                       -> 2 files
+ *   `packages/coding-agent/test/fixtures/` -> 95 files
+ *
+ * The first two are exclusions for vendored and Python trees that incidentally contain a
+ * fixture; only the third is an exemption written *for* fixtures. A threshold of 3 is
+ * what separates them, and it is a floor rather than an exact count so that adding one
+ * more vendored fixture does not silently promote a vendor pattern into this rule.
+ *
+ * (The globs are named in prose because a leading `**` followed by a slash contains the
+ * two characters that close this comment — spelled literally, it ends the sentence and
+ * the file fails to parse. That is the same trap the file docblock above records.)
+ */
+const MIN_FIXTURE_FILES = 3;
+
+/**
+ * Ignore patterns that exempt test fixtures from more than one package.
+ *
+ * The regression this catches is **breadth**, not presence. The approved entry covers one
+ * package's `test/fixtures/` directory, written down on purpose. Rewriting it to wildcard
+ * the package segment — or to wildcard every directory named `test/fixtures` anywhere —
+ * keeps the entry looking like the one that is already approved while quietly taking the
+ * other 44 fixture files in this repository out of lint with it. Those 44 are linted
+ * today; after the rewrite nothing reports that they stopped being.
+ *
+ * Keyed on the owning directory rather than a file count, so adding a fixture file does
+ * not trip it, and widening a path does.
+ */
+export function overbroadFixtureExemptions(patterns: readonly string[], fixtureFiles: readonly string[]): string[] {
+	const overbroad: string[] = [];
+	for (const pattern of patterns) {
+		const glob = new Bun.Glob(pattern);
+		const matched = fixtureFiles.filter(file => glob.match(file));
+		if (matched.length < MIN_FIXTURE_FILES) continue;
+		const owners = new Set(matched.map(file => file.split("/test/fixtures/")[0] ?? file));
+		if (owners.size > 1) overbroad.push(`${pattern} (covers ${owners.size} packages: ${[...owners].join(", ")})`);
+	}
+	return overbroad;
+}
+
 async function readOxlintConfig(): Promise<OxlintConfig> {
 	// JSON5, not JSON: oxlint reads this file as JSONC, and it carries the comment
 	// recording why `.mjs` was dropped. A strict parser would fail on exactly the
@@ -87,5 +134,46 @@ describe("the lint ignore-list", () => {
 		// "fixing" the list by dropping the one entry that earns its place.
 		const { ignorePatterns = [] } = await readOxlintConfig();
 		expect(ignorePatterns).toContain("**/*.d.ts");
+	});
+
+	it("does not let one pattern exempt test fixtures across packages", async () => {
+		// Measured against the real tracked tree, because the failure is a pattern matching
+		// more of this repository than its author read. 139 tracked files live under a
+		// `test/fixtures/` directory today; 44 of them are linted, and a widening is exactly
+		// what would stop them being linted while still looking like the approved entry.
+		const { ignorePatterns = [] } = await readOxlintConfig();
+		const tracked = await Bun.$`git ls-files -z`.cwd(repoRoot).quiet().text();
+		const fixtureFiles = tracked.split("\0").filter(file => file.includes("/test/fixtures/"));
+		// Printed so a failure reports the breadth, and so an empty run cannot be mistaken
+		// for a scan that found nothing to look at.
+		console.error(`[ignore-list] tracked fixture files: ${fixtureFiles.length}`);
+		expect(overbroadFixtureExemptions(ignorePatterns, fixtureFiles)).toEqual([]);
+	});
+
+	it("would go red if a fixture exemption were widened across packages", () => {
+		// The control. Without it this rule is the same shape as the one above: a filter
+		// asserted to return `[]`, which a filter that never matches also satisfies.
+		//
+		// The two rewrites below are the ones that would look like an edit rather than a
+		// deletion — each keeps an approved pattern's *name* in view while multiplying what
+		// it covers. Both must be reported, and the anchored original must not be.
+		const sixPackages = [
+			"packages/ai/test/fixtures/a.ts",
+			"packages/client/test/fixtures/b.mjs",
+			"packages/coding-agent/test/fixtures/c.ts",
+			"packages/durable/test/fixtures/d.ts",
+			"packages/server/test/fixtures/e.mjs",
+			"packages/utils/test/fixtures/f.ts",
+		];
+		expect(overbroadFixtureExemptions(["packages/*/test/fixtures/**"], sixPackages)).toHaveLength(1);
+		expect(overbroadFixtureExemptions(["**/test/fixtures/**"], sixPackages)).toHaveLength(1);
+		// …and the approved shape, which covers only one package's fixtures, must survive.
+		expect(overbroadFixtureExemptions(["packages/coding-agent/test/fixtures/**"], sixPackages)).toEqual([]);
+		// Below the fixture threshold: a vendor or tooling exclusion that clips one or two
+		// fixtures is not a fixture exemption, and must not be dragged into this rule.
+		expect(overbroadFixtureExemptions(["**/*.min.js"], sixPackages.slice(0, 2))).toEqual([]);
+		expect(overbroadFixtureExemptions(["python/**"], sixPackages.slice(0, 1))).toEqual([]);
+		// A pattern that matches no fixture at all is likewise not this rule's business.
+		expect(overbroadFixtureExemptions(["**/vendor/**"], sixPackages)).toEqual([]);
 	});
 });

@@ -92,7 +92,7 @@ export const STALE_ROW_BASELINE = 0;
  * on every run so a drift is attributable; a mismatch is information, not a
  * failure, because peers are still filling the table.
  */
-export const BASELINE_TABLE_DIGEST = "2ae4e43f4eab5faa4c3270c4a4455611";
+export const BASELINE_TABLE_DIGEST = "368b46a6c66ba48bd17b2ad6e96ddcd8";
 
 /**
  * The rules the ceiling was measured against, as a literal.
@@ -115,7 +115,7 @@ export const BASELINE_TABLE_DIGEST = "2ae4e43f4eab5faa4c3270c4a4455611";
  * Bumping `RULES_VERSION` in `check-disposition.ts` therefore now needs this
  * literal bumped with it, in the same commit — that is the intended friction.
  */
-export const BASELINE_RULES_VERSION = "2026-10-03.1";
+export const BASELINE_RULES_VERSION = "2026-10-03.2";
 
 const TABLE_PATH = "scripts/rename/disposition.tsv";
 

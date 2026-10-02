@@ -21,10 +21,19 @@ const PREFIX = "[ts-relative-imports]";
 // dot-directories and only the nested-repository guard was standing in the way.
 //
 // Excluding it costs nothing: `git ls-files | grep -E '(^|/)\.claude/'` is empty,
-// at any depth, so no tracked file of this repository lives under one. Note this
-// set is matched by NAME at every level rather than by a root-anchored prefix, so
-// it also skips a `.claude` that appears deeper — which is the same intent, since
-// it is a tool directory wherever it sits.
+// at any depth, so no tracked file of this repository lives under one.
+//
+// THIS SET IS MATCHED BY NAME AT EVERY LEVEL, NOT BY A ROOT-ANCHORED PREFIX, and
+// that is deliberate rather than a slip — do not "fix" it to `.claude/` at the
+// root. A `.claude/` at any depth is project-scoped agent configuration, which is
+// exactly the content no gate should be reading: it is not shipped source, it is
+// not in this repository's index, and it changes per machine. Naming it once here
+// states that rule for every level; a prefix would state it for one and leave the
+// rest to be re-decided. Reviewed and kept in this form (epic-wh2q).
+//
+// The cost of that choice is a walk-up-to-root gate losing a `packages/foo/.claude/`
+// it was never entitled to scan, so the coverage argument does not apply against
+// it — and the measurement above is what says so rather than assuming it.
 const ignoredDirectories = new Set([".git", ".claude", "coverage", "dist", "node_modules"]);
 const files = [];
 

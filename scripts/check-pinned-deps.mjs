@@ -11,6 +11,13 @@ const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-
 // dependency graph with it — governed by a different index, so its ranges are not
 // this repository's supply-chain surface. Measured cost of excluding: zero
 // tracked files, at any depth.
+//
+// Matched by NAME at every level, not by a root-anchored prefix, and that is
+// deliberate — do not narrow it to `.claude/` at the root. A `.claude/` at any
+// depth is project-scoped agent configuration rather than shipped source, so it
+// is not this repository's supply-chain surface to begin with; one name here
+// states that for every level, where a prefix would state it for one and leave
+// the rest to be re-decided. Reviewed and kept in this form (epic-wh2q).
 const ignoredDirectories = new Set([".git", ".claude", "dist", "node_modules"]);
 const internalPackageNames = new Set();
 const packageJsonFiles = [];

@@ -6,6 +6,7 @@ import { registerOAuthProvider, unregisterOAuthProvider, unregisterOAuthProvider
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@oh-my-pi/pi-ai/oauth/types";
 import { setCodexAttestationProvider } from "@oh-my-pi/pi-ai/providers/openai-codex-attestation";
 import { getProviderDefinition } from "@oh-my-pi/pi-ai/registry";
+import type { ProviderDefinition } from "@oh-my-pi/pi-ai/registry";
 import type {
 	Api,
 	Context,
@@ -2783,6 +2784,42 @@ export class ModelRegistry {
 		return this.#modelsForProviderLookup(provider).filter(
 			model => model.provider.toLowerCase() === normalizedProvider,
 		);
+	}
+
+	/**
+	 * The provider's descriptor — its id, display name, auth policy, transports —
+	 * or `undefined` when the id is not one the registry knows.
+	 *
+	 * A delegation, deliberately. The catalogue already compiles every provider into
+	 * a `ProviderDefinition` and `getProviderDefinition` looks it up by id; this is
+	 * the same answer reached through the registry object that extensions hold. It
+	 * is here because `pi-background-tasks` calls `registry.getProvider(...)`, and
+	 * without it the call fails as `registry.getProvider is not a function` — which
+	 * an extension cannot catch or work around, since the registry it is handed is
+	 * this class.
+	 *
+	 * This returns the *static* definition. It deliberately does not fold in the
+	 * runtime overrides that {@link getProviderBaseUrl} consults: a caller asking
+	 * "which provider is this" wants the provider as the catalogue declares it, and
+	 * silently returning a merged object would make the answer depend on whether
+	 * the registry had been refreshed.
+	 */
+	getProvider(provider: string): ProviderDefinition | undefined {
+		return getProviderDefinition(provider);
+	}
+
+	/**
+	 * The provider's display name, falling back to the raw id for an unknown one.
+	 *
+	 * `getProvider(provider)?.name ?? provider` rather than an empty string: a
+	 * provider this build does not ship still has to render somewhere, and a blank
+	 * column is harder to act on than the id that was typed.
+	 *
+	 * Routed through {@link getProvider} rather than the catalogue lookup directly,
+	 * so the two cannot answer differently about the same id.
+	 */
+	getProviderDisplayName(provider: string): string {
+		return this.getProvider(provider)?.name ?? provider;
 	}
 
 	/**

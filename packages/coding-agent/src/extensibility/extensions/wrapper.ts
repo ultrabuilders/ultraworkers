@@ -475,7 +475,6 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 						`  1. Set tools.approvalMode: yolo in /settings\n` +
 						`  2. Add tools.approval.${this.tool.name}: allow to config\n` +
 						`  3. Use an interactive UI to approve the tool call`,
-					"denied",
 				);
 			}
 

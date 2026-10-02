@@ -2198,9 +2198,16 @@ export class MCPCommandController {
 
 		if (!config) {
 			// Previously a silent `refreshMCPTools` and return, which reported
-			// success for a connect that never happened. Say so instead.
+			// success for a connect that never happened. Say so instead, and name
+			// the knob: a project-scope server is absent from the registry precisely
+			// because `mcp.enableProjectConfig` keeps it out, so that is the setting
+			// to reach for. Named as the thing to check rather than asserted as the
+			// cause — the manager can also lack a server it never discovered.
 			await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
-			this.ctx.showError(`Cannot connect "${name}": no server configuration is available for it.`);
+			this.ctx.showError(
+				`Cannot connect "${name}": no server configuration is available for it.` +
+					` If it is declared in a project mcp.json, enable mcp.enableProjectConfig to load it.`,
+			);
 			return;
 		}
 

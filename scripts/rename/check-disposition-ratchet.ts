@@ -52,6 +52,7 @@ import {
 	checkPre,
 	countRename,
 	findCoinedRefs,
+	findPublishedFileRenames,
 	findUnreconciledPinned,
 	parseTable,
 	RULES_VERSION,
@@ -296,6 +297,16 @@ async function main(): Promise<number> {
 	// whose remedy is a judgement call, and `check:ts` is an `&&` chain.
 	const coined = await findCoinedRefs(root, rows);
 	const coinedNames = [...new Set(coined.map(c => c.contract))].sort();
+	// REPORTED, never gated, and NOT a ceiling — the same reasoning as `coined-ref`
+	// above, and for a sharper reason: these rows are not stale debt, they are
+	// INSTRUCTIONS. Each one says "rename this token", and where the file is a
+	// published module that instruction is a breaking change to every consumer
+	// outside this repo. Gating it would not fix that; it would just block the chain
+	// until somebody triaged it. `98` is measuring the scope independently — this is
+	// the rule, not the count, and no constant from that count is baked in here.
+	const published = await findPublishedFileRenames(root, rows);
+	const publishedByDir = new Map<string, number>();
+	for (const r of published.rows) publishedByDir.set(r.dir, (publishedByDir.get(r.dir) ?? 0) + 1);
 	const printed = digest(tableText);
 	const tableDrift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table edited since the ceiling was set";
 	const rulesDrift =
@@ -324,7 +335,19 @@ async function main(): Promise<number> {
 			`[ratchet] name no plan document writes down. Not a ceiling: naming these contracts is a\n` +
 			`[ratchet] decision, and defining them only to silence this line would invent them.\n` +
 			`[ratchet]   coined-ref              = ${coined.length}   (over ${coinedNames.length} distinct contract name(s))\n` +
-			`[ratchet]     ${coinedNames.join(", ") || "(none)"}`,
+			`[ratchet]     ${coinedNames.join(", ") || "(none)"}\n` +
+			`[ratchet] reported, not gated — a rename row whose FILE is a published module of its\n` +
+			`[ratchet] package, so renaming it breaks every consumer outside this repo.\n` +
+			`[ratchet]   published-file-rename = ${published.rows.length}   (over ${published.publishing.size} package(s) publishing src/*)\n` +
+			`[ratchet]     by package: ${
+				[...publishedByDir]
+					.sort((a, b) => b[1] - a[1])
+					.map(([d, n]) => `${d}=${n}`)
+					.join("  ") || "(none)"
+			}\n` +
+			`[ratchet]     partition of ${published.renameRowsTotal} rename rows: ${published.rows.length} published + ` +
+			`${published.notPublishedInSamePackage} same-pkg-not-published + ${published.outsidePublishingPackage} other-package` +
+			`  → reconciles: ${published.reconciles ? "YES" : "NO"}`,
 	);
 
 	if (!verdict.ok) {

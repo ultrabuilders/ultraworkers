@@ -331,6 +331,125 @@ export async function findCoinedRefs(root: string, rows: readonly Row[]): Promis
 }
 
 /**
+ * A `./*.js` → `./src/*.ts` export entry: every `.ts` DIRECTLY under `src/` is a
+ * public module of that package.
+ *
+ * Single-segment on purpose. The key has no `**`, so `src/a/b.ts` is NOT published
+ * and renaming it is safe. Reading it as `**` would report hundreds of nested rows
+ * that carry no breaking change; reading it as matching nothing would report none.
+ * Both errors are silent, so the shape is anchored rather than searched for.
+ */
+const PUBLISHING_EXPORT_KEY = /^\.\/\*\.[a-z]+$/;
+const PUBLISHING_EXPORT_TARGET = /^\.\/src\/\*\.[a-z]+$/;
+
+/** `packages/<pkg>/src/<name>.ts` — one segment under `src/`, which is what a wildcard publishes. */
+const PUBLISHED_MODULE = /^packages\/([^/]+)\/src\/([^/]+)\.(?:ts|tsx|mjs|js)$/;
+
+export interface PublishedRenameRow {
+	readonly path: string;
+	/** 1-based line in the TSV, for error messages. */
+	readonly line: number;
+	/** The `packages/` directory name. */
+	readonly dir: string;
+	/** The package's real published name, which is not always its directory name. */
+	readonly packageName: string;
+	/** The specifier a consumer writes today. Renaming the file breaks exactly this. */
+	readonly specifier: string;
+}
+
+export interface PublishedRenameSurvey {
+	readonly rows: readonly PublishedRenameRow[];
+	/** Directories whose package.json publishes `src/*` as public modules. */
+	readonly publishing: ReadonlySet<string>;
+	readonly renameRowsTotal: number;
+	/** Rename rows in a publishing package that are NOT published modules (nested, or non-`.ts`). */
+	readonly notPublishedInSamePackage: number;
+	/** Rename rows in packages that publish nothing by wildcard. */
+	readonly outsidePublishingPackage: number;
+	/**
+	 * Whether the three buckets sum to the rename total.
+	 *
+	 * Reported so a reader can tell a partitioned population from a number that
+	 * merely looks plausible: if these ever stop summing, one of the buckets is
+	 * silently swallowing rows and the headline count is measuring a subset while
+	 * reading like the whole.
+	 */
+	readonly reconciles: boolean;
+}
+
+/**
+ * `rename` rows whose target file is a PUBLIC module of its package.
+ *
+ * A `rename` row is an instruction to change a token in a file. When that file's
+ * name is a published specifier, the same instruction is a BREAKING CHANGE to every
+ * consumer outside this repo — issued by a table nobody reads as an API surface.
+ * The table cannot express that distinction today, so it is reported instead.
+ *
+ * REPORTED, never gated, and deliberately not a ceiling. Gating it now would redden
+ * CI over rows nobody has triaged yet, and `check:ts` is an `&&` chain — the same trap
+ * `checkPost` fell into. The number is a decision input, not a verdict.
+ *
+ * `private: true` packages are excluded: a private package publishes to nobody, so
+ * renaming inside it breaks no consumer. Including them would inflate the count with
+ * changes that are provably safe.
+ */
+export async function findPublishedFileRenames(root: string, rows: readonly Row[]): Promise<PublishedRenameSurvey> {
+	const publishing = new Map<string, string>(); // dir -> published package name
+	for await (const rel of new Bun.Glob("packages/*/package.json").scan({ cwd: root })) {
+		const dir = rel.slice("packages/".length, rel.length - "/package.json".length);
+		const handle = Bun.file(path.join(root, rel));
+		let manifest: { name?: string; private?: boolean; exports?: Record<string, unknown> };
+		try {
+			manifest = await handle.json();
+		} catch {
+			continue; // unreadable manifest is not evidence that nothing is published
+		}
+		if (manifest.private) continue;
+		for (const [key, val] of Object.entries(manifest.exports ?? {})) {
+			if (!PUBLISHING_EXPORT_KEY.test(key)) continue;
+			const targets = typeof val === "string" ? [val] : Object.keys((val ?? {}) as object);
+			if (!targets.some(t => PUBLISHING_EXPORT_TARGET.test(t))) continue;
+			publishing.set(dir, manifest.name ?? dir);
+		}
+	}
+
+	const found: PublishedRenameRow[] = [];
+	let renameRowsTotal = 0;
+	let notPublishedInSamePackage = 0;
+	let outsidePublishingPackage = 0;
+	for (const row of rows) {
+		if (row.disposition !== "rename") continue;
+		renameRowsTotal++;
+		const module = PUBLISHED_MODULE.exec(row.path);
+		if (module) {
+			const packageName = publishing.get(module[1]!);
+			if (packageName !== undefined) {
+				found.push({
+					path: row.path,
+					line: row.line,
+					dir: module[1]!,
+					packageName,
+					specifier: `${packageName}/${module[2]}`,
+				});
+				continue;
+			}
+		}
+		// Same package but not a published module — a nested path, or a non-`.ts` file.
+		if (module || publishing.has(row.path.split("/")[1] ?? "")) notPublishedInSamePackage++;
+		else outsidePublishingPackage++;
+	}
+
+	return {
+		rows: found,
+		publishing: new Set(publishing.keys()),
+		renameRowsTotal,
+		notPublishedInSamePackage,
+		outsidePublishingPackage,
+		reconciles: found.length + notPublishedInSamePackage + outsidePublishingPackage === renameRowsTotal,
+	};
+}
+
+/**
  * `keep_refs` values this gate does NOT validate, by kind.
  *
  * Reported rather than enforced, because failing them would be failing refs the

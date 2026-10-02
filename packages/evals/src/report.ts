@@ -11,26 +11,85 @@ import type { DocumentationVariant, EvalTask } from "./plan.ts";
 // Only `persistSession` needs it, and it reads two report files off disk to snapshot a
 // session. The comparison contract this file was ported for — paired lift, fail-closed
 // blocked pairs, missing-distinct-from-zero, report formatting — never reaches that
-// function, so the import is deferred rather than replaced. `ReportCase` is a type and
-// only ever appears in signatures, so the local shape below carries it; it is widened
-// again if and when the eval runner itself is ported.
+// function, so the import is deferred rather than replaced.
+//
+// The `await import` below is AGENTS.md's deliberate-lazy-load exception: deferring
+// this one module graph is the entire point, since a top-level import would make the
+// pure comparison contract require the eval runner to be installed. Precedent:
+// `packages/ai/src/registry/transports.ts` (per-provider stream transports).
 //
 // Copy-and-adapt, not a rewrite: everything above this seam is byte-identical to
 // upstream at pi commit d6af72e1.
 
-/** Minimal stand-in for `@vitest-evals/core`'s `ReportCase`, used in signatures only. */
+/**
+ * Minimal stand-in for `@vitest-evals/core`'s `ReportCase`.
+ *
+ * Only `status` is promised here, because that is the only field `classifyCaseStatus`
+ * consumes. The runner's real shape also carries `harness`, `eval` and `fullName`,
+ * which two callers below read; those are widened at the point of use via
+ * {@link ReportCaseFields} rather than exported, so the package contract does not
+ * promise more than a caller can rely on.
+ */
 export interface ReportCase {
 	status: string;
-	[key: string]: unknown;
 }
+
+/** The unported runner's actual case shape, used only inside this module. */
+type ReportCaseFields = ReportCase & {
+	fullName?: string;
+	harness?: { run?: EvalRun };
+	eval?: { avgScore?: unknown };
+};
+
+/**
+ * Token/cost/timing fields `readTaskObservation` reads off a completed run.
+ *
+ * `usage` is present whenever a run exists — upstream reads `run.usage.inputTokens`
+ * with no optional chain, so modelling it as optional here would force a chain the
+ * original code does not have. `metadata` and `timings` genuinely are optional and are
+ * read with `?.`. `artifacts` is read only by `persistSession`.
+ */
+type EvalRun = {
+	artifacts?: Record<string, unknown>;
+	// Required here though upstream's own test fixture declares it optional: line 256
+	// reads `run.errors.length` with no guard, so a run that omits it would throw.
+	// Modelled as required so that read is checked rather than assumed; the value is
+	// expected to be an array, empty when the run succeeded.
+	errors: unknown[];
+	timings?: { totalMs?: number };
+	usage: {
+		provider?: string;
+		model?: string;
+		inputTokens?: number;
+		outputTokens?: number;
+		totalTokens?: number;
+		toolCalls?: number;
+		metadata?: { cacheReadTokens?: number; cacheWriteTokens?: number; estimatedCostUsd?: number };
+	};
+};
+
+/** Shape of the two `@vitest-evals/core` readers, as consumed below. */
+type EvalReports = [
+	{ workspace: { cases: ReportCaseFields[] } },
+	{ testResults: { assertionResults: { fullName: string; status: string }[] }[] },
+];
 
 /**
  * Loaded on demand so the pure comparison contract does not require the eval runner.
- * Throws a named error rather than silently degrading if a caller does reach it.
+ *
+ * When the runner is absent this rejects, and the caller's `.catch(() => undefined)`
+ * turns that into an `errored` observation. That is upstream's own behaviour — the
+ * identical `.catch` sits on the equivalent line there — so a missing eval runner
+ * reports an errored case rather than a silent pass. Measured, not assumed: calling
+ * `readTaskObservation` without the runner installed returns `outcome: "errored"`.
+ *
+ * Typed as {@link EvalReports} rather than `any`: upstream's declarations ship with the
+ * npm package this repository does not install, so the shape is asserted here at the one
+ * seam where it enters. Everything downstream is checked against it.
  */
-async function readEvalReports(reportPath: string): Promise<unknown> {
+async function readEvalReports(reportPath: string): Promise<EvalReports> {
 	const { readReportWorkspace, readVitestJsonReportFile } = await import("@vitest-evals/core/node");
-	return Promise.all([readReportWorkspace([reportPath]), readVitestJsonReportFile(reportPath)]);
+	return (await Promise.all([readReportWorkspace([reportPath]), readVitestJsonReportFile(reportPath)])) as EvalReports;
 }
 
 export const PI_SESSION_SNAPSHOT_ARTIFACT = "piSessionJsonl";
@@ -146,7 +205,7 @@ export function erroredObservation(task: EvalTask): EvalObservation {
 	return { ...taskIdentity(task), outcome: "errored" };
 }
 
-async function persistSession(caseResult: ReportCase, task: EvalTask, artifactDirectory: string): Promise<void> {
+async function persistSession(caseResult: ReportCaseFields, task: EvalTask, artifactDirectory: string): Promise<void> {
 	const session = caseResult.harness?.run?.artifacts?.[PI_SESSION_SNAPSHOT_ARTIFACT];
 	if (typeof session !== "string") return;
 	const identity = JSON.stringify([task.evalSet, task.caseId, task.variant, task.model, task.runNumber]);
@@ -177,7 +236,7 @@ export async function readTaskObservation(
 	const statusOutcome = classifyCaseStatus(assertion.status);
 	if (statusOutcome === "skipped" || statusOutcome === "pending") return { ...identity, outcome: statusOutcome };
 	if (workspace.cases.length !== 1) return { ...identity, outcome: "errored" };
-	const caseResult = workspace.cases[0];
+	const caseResult = workspace.cases[0] as ReportCaseFields;
 	if (caseResult.fullName !== reportedFullName) return { ...identity, outcome: "errored" };
 	if (caseResult.status !== assertion.status) return { ...identity, outcome: "errored" };
 	const run = caseResult.harness?.run;

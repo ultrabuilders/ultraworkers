@@ -88,7 +88,8 @@ const BUCKETS: ReadonlyArray<{ name: string; read: (ext: Extension) => number; m
 	{
 		name: "hostRenderStrategies",
 		read: e => e.hostRenderStrategies.length,
-		mutation: "deleting `hostRenderStrategies.length = 0` — a dead extension keeps steering how the terminal repaints on resize",
+		mutation:
+			"deleting `hostRenderStrategies.length = 0` — a dead extension keeps steering how the terminal repaints on resize",
 	},
 	{
 		name: "toolRegistrationListeners",

@@ -30,11 +30,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { SOURCE_PATHS } from "@oh-my-pi/pi-coding-agent/discovery/helpers";
-import {
-	getConfigWriteRootName,
-	getProjectAgentDir,
-	PROJECT_AGENT_DIR_NAME,
-} from "@oh-my-pi/pi-utils";
+import { getConfigWriteRootName, getProjectAgentDir, PROJECT_AGENT_DIR_NAME } from "@oh-my-pi/pi-utils";
 
 describe("the project-scoped config directory", () => {
 	test("is not the home-scoped write root, which the rename is already moving", () => {

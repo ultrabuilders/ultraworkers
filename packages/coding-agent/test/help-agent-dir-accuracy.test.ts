@@ -56,7 +56,7 @@ async function renderHelpOnFreshHome(): Promise<Probe> {
 		"process.stdout.write(JSON.stringify({",
 		"\tagentDirName: resolved,",
 		'\thelpMentionsResolved: help.includes("~/" + resolved),',
-		'\thelpMentionsLegacyConstant: help.includes(' + JSON.stringify(legacySpelling) + "),",
+		"\thelpMentionsLegacyConstant: help.includes(" + JSON.stringify(legacySpelling) + "),",
 		"}));",
 	].join("\n");
 

@@ -33,10 +33,7 @@
  *
  * The caller passes its own `import.meta.main` because only the caller knows it.
  */
-export function resolveIsProcessEntry(
-	entryModuleIsMain: boolean,
-	env: NodeJS.ProcessEnv = process.env,
-): boolean {
+export function resolveIsProcessEntry(entryModuleIsMain: boolean, env: NodeJS.ProcessEnv = process.env): boolean {
 	return entryModuleIsMain || env.PI_COMPILED === "true";
 }
 

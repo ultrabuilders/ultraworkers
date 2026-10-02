@@ -311,9 +311,7 @@ describe("the transcript actually passes transformers to its components", () => 
 		const helpers = new UiHelpers(ctx);
 		helpers.addMessageToChat({ role: "user", content: "hello", timestamp: 1 });
 
-		const drawn = ctx.chatContainer.children
-			.flatMap(child => child.render(80))
-			.join("\n");
+		const drawn = ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n");
 		expect(drawn).toContain("[seen]");
 	});
 
@@ -328,9 +326,7 @@ describe("the transcript actually passes transformers to its components", () => 
 		const helpers = new UiHelpers(ctx);
 		helpers.addMessageToChat({ role: "user", content: "untouched", timestamp: 1 });
 
-		const drawn = ctx.chatContainer.children
-			.flatMap(child => child.render(80))
-			.join("\n");
+		const drawn = ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n");
 		expect(drawn).toContain("untouched");
 	});
 });

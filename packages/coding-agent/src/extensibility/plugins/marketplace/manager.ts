@@ -1028,11 +1028,19 @@ export class MarketplaceManager {
 		// less common branch.
 		const pin = { respectPin: true, unpin: options?.force ?? false };
 		if (inProject) {
-			const entry = await this.installPlugin(parsed.name, parsed.marketplace, { force: true, scope: "project", ...pin });
+			const entry = await this.installPlugin(parsed.name, parsed.marketplace, {
+				force: true,
+				scope: "project",
+				...pin,
+			});
 			results.push(entry);
 		}
 		if (inUser) {
-			const entry = await this.installPlugin(parsed.name, parsed.marketplace, { force: true, scope: "user", ...pin });
+			const entry = await this.installPlugin(parsed.name, parsed.marketplace, {
+				force: true,
+				scope: "user",
+				...pin,
+			});
 			results.push(entry);
 		}
 

@@ -263,7 +263,6 @@ export class UiHelpers {
 		this.ctx.noticeContainer.removeChild(entry.notice);
 	}
 
-
 	/**
 	 * The extension-facing transformers, mapped to the renderer's contract.
 	 *

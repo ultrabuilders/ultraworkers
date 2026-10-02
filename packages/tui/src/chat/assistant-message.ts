@@ -1210,19 +1210,22 @@ export class AssistantMessageComponent extends Container {
 
 	/** Constructor args mirror the live child Markdown so stable rows prefix the block render. */
 	#createStableMarkdown(kind: StablePartKind, text: string): Markdown {
-		return this.#applyMarkdownTransform(kind === "text"
-			? new Markdown(
-					text,
-					1,
-					0,
-					this.#getProseTheme(),
-					this.#textColorTransform ? { color: this.#textColorTransform } : undefined,
-					0,
-				)
-			: new Markdown(text, 1, 0, getMarkdownTheme(), {
-					color: (value: string) => theme.fg("thinkingText", value),
-					italic: true,
-				}), kind === "text" ? "assistant" : "assistant-thinking");
+		return this.#applyMarkdownTransform(
+			kind === "text"
+				? new Markdown(
+						text,
+						1,
+						0,
+						this.#getProseTheme(),
+						this.#textColorTransform ? { color: this.#textColorTransform } : undefined,
+						0,
+					)
+				: new Markdown(text, 1, 0, getMarkdownTheme(), {
+						color: (value: string) => theme.fg("thinkingText", value),
+						italic: true,
+					}),
+			kind === "text" ? "assistant" : "assistant-thinking",
+		);
 	}
 
 	#stableLedger(width: number): StableRowLedger {

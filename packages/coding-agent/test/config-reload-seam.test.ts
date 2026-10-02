@@ -24,10 +24,12 @@ import {
  * the same thing through a 200 ms sleep that fails for timing reasons instead of
  * contract reasons.
  *
- * NOT covered here, and stated rather than papered over: the call into this
- * registry from `Settings.#reloadFromWatch`. `startWatching()` is a no-op unless
- * it is the persisting process-global instance, so driving it needs a spawned
- * host and a real fs event. There is no row below that pretends otherwise.
+ * The call into this registry from `Settings.#reloadFromWatch` is covered
+ * elsewhere — `config-reload-watch-path.test.ts` — because the registry rows
+ * here cannot witness it. Measured: removing that call entirely (running
+ * `#reloadPersistedLayers` directly) leaves every row below green. Keeping the
+ * two levels apart is what makes that measurable: a single mixed file could not
+ * say which level caught it.
  */
 
 const disposers: Array<() => void> = [];

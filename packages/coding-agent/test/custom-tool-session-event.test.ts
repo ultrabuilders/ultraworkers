@@ -232,6 +232,44 @@ describe("every mode reaches the dispatcher through dispose", () => {
 		}
 	});
 
+	it("print mode also disposes when a signal tears the run down", async () => {
+		// The second exit. Print mode registers a postmortem teardown so SIGINT /
+		// SIGTERM / SIGHUP dispose the session instead of dropping it; without this
+		// row, deleting that registration keeps the suite green.
+		//
+		// Driven through the real `postmortem.cleanup()` — a keep-alive pass, so it
+		// runs every registered teardown and re-arms rather than exiting, which is
+		// what makes it safe to call from a test at all.
+		const { createDelayedSession, makeAssistantMessage } = await import("./helpers/print-mode");
+		const { runPrintMode } = await import("@oh-my-pi/pi-coding-agent/modes/print-mode");
+		const { postmortem } = await import("@oh-my-pi/pi-utils");
+
+		const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			const delayed = createDelayedSession(makeAssistantMessage("done"));
+			const run = runPrintMode(delayed.session, { mode: "text", initialMessage: "hello" });
+			await delayed.promptStarted;
+
+			// The turn is parked on the prompt, so the teardown is registered but
+			// nothing else has disposed yet. Firing the pass is the signal exit.
+			expect(delayed.getDisposeCalls()).toBe(0);
+			await postmortem.cleanup();
+
+			expect(delayed.getDisposeCalls()).toBeGreaterThanOrEqual(1);
+
+			delayed.resolvePrompt();
+			// The run is deliberately not awaited here: the keep-alive pass already
+			// fired the teardown, and print mode's own exit path is the subject of
+			// the row above, not this one. Leaving it parked would leak a pending
+			// promise into later files, so it is raced to settle-or-timeout instead.
+			await Promise.race([run, Bun.sleep(1000)]);
+		} finally {
+			stdout.mockRestore();
+			stderr.mockRestore();
+		}
+	});
+
 	it("no mode object carries its own dispatcher", async () => {
 		// Guards the shape that caused the original leak: a delivery path parked on
 		// a mode, which a headless mode cannot traverse. Checked through the type

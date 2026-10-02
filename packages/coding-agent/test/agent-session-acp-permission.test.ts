@@ -5,7 +5,7 @@
  * `ClientBridge.requestPermission`, while regular file-editing tools keep the same no-approval
  * behavior they have in the TUI.
  */
-import { afterAll, afterEach, beforeAll, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { type } from "@oh-my-pi/omptype";
 import { Agent, type AgentTool } from "@oh-my-pi/pi-agent-core";
 import { createMockModel, type MockModelOptions } from "@oh-my-pi/pi-ai/providers/mock";
@@ -22,7 +22,13 @@ import {
 	describeApprovalScope,
 	permissionOptions,
 } from "@oh-my-pi/pi-coding-agent/session/acp-permission-gate";
-import { APPROVAL_ENTRY_TYPE, type ApprovalEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
+import {
+	APPROVAL_ENTRY_TYPE,
+	isApprovalDenial,
+	TURN_ENTRY_TYPE,
+	type ApprovalEntry,
+	type TurnEntry,
+} from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type {
 	ClientBridge,
@@ -1333,4 +1339,106 @@ it("an approval recorded as asked but never answered is distinguishable", async 
 		.filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
 	expect(entries.some(e => e.phase === "asked")).toBe(true);
 	expect(entries.some(e => e.phase === "answered")).toBe(false);
+});
+
+/**
+ * The join. `blockedBy` is assembled by scanning the log for `isApprovalDenial`,
+ * so the field is only as good as the writers that feed it — and this is the one
+ * writer that answers with the ACP vocabulary rather than a gate's `policy`.
+ *
+ * Both halves were already pinned apart, which is exactly why the join needed its
+ * own row. `records both halves of an approval` proves this path writes an
+ * `ApprovalEntry`, but runs no turn, so `blockedBy` never sees it.
+ * `blockedBy, read back off a real turn` proves the reader works on a real turn,
+ * but builds its entries by calling `appendApprovalEntry` by hand — so it stays
+ * green if this path stops recording entirely. Neither can fail for the reason
+ * that matters here.
+ *
+ * `reject_once` specifically: it is the answer that reaches the log as an option
+ * kind, so a reader that only understood `"denied"` would record the row and then
+ * never surface it.
+ */
+describe("an ACP rejection reaches the turn record", () => {
+	/** Drive one prompt whose turn calls bash, with the bridge answering `kind`. */
+	async function promptThroughGate(
+		kind: "reject_once" | "allow_once",
+		callId: string,
+	): Promise<{ bash: ReturnType<typeof makeFakeTool>; prompts: () => number }> {
+		const bash = makeFakeTool("bash");
+		const bridge = makeBridge({ outcome: "selected", optionId: kind, kind });
+		// Spied before the prompt, so the count is the gate engaging and not a
+		// wrapper that was never installed.
+		const permissionSpy = spyOn(bridge, "requestPermission");
+		session = await createSessionWithMockModel([bash], bridge, [
+			{ content: [{ type: "toolCall", id: callId, name: "bash", arguments: { command: "rm -rf ./build" } }] },
+			{ content: ["done"] },
+		]);
+		await session.prompt("clean the build");
+		return { bash, prompts: () => permissionSpy.mock.calls.length };
+	}
+
+	function approvals(): ApprovalEntry[] {
+		return session!.sessionManager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+	}
+
+	function firstEndedTurn(): TurnEntry | undefined {
+		return session!.sessionManager
+			.getEntries()
+			.find((e): e is TurnEntry => e.type === TURN_ENTRY_TYPE && e.phase === "ended");
+	}
+
+	it("names the refused request on the turn that was refused in", async () => {
+		const { bash, prompts } = await promptThroughGate("reject_once", "call-acp-reject");
+
+		// The gate actually engaged, exactly once. Without this, a run where the
+		// wrapper was never installed satisfies every assertion below vacuously —
+		// and a fixture that cannot fail cannot catch its mutant.
+		expect(prompts()).toBe(1);
+		expect(bash.executeCalls).toBe(0);
+
+		const halves = approvals();
+		// Both halves, joined by requestId. A lone `answered` row would answer "was
+		// this allowed" while proving nothing about what the user was asked.
+		expect(halves.map(e => e.phase)).toEqual(["asked", "answered"]);
+		const [asked, answered] = halves;
+		expect(answered.requestId).toBe(asked.requestId);
+		// The tool call id, so `blockedBy` names the call a reader can go look at.
+		expect(answered.requestId).toBe("call-acp-reject");
+
+		// The ACP vocabulary and provenance, which no other writer emits.
+		expect(answered.decision).toBe("reject_once");
+		expect(answered.source).toBe("acp");
+		expect(asked.policyKey).toBe("bash:rm -rf ./build");
+
+		// The load-bearing link: this function is the reader's only filter. A row it
+		// rejects would be written, counted in the log, and invisible to `blockedBy`.
+		expect(isApprovalDenial(answered)).toBe(true);
+
+		// And the field itself, read off the turn that was open when the refusal
+		// landed. The model continues after a rejected call, so this is the first
+		// ended turn, not the last.
+		expect(firstEndedTurn()?.blockedBy).toEqual(["call-acp-reject"]);
+	});
+
+	it("leaves the turn unblocked when the same gate allows the call", async () => {
+		// The control that gives the row above its meaning. Same writer, same turn,
+		// same tool, same command — only the answer differs. If `blockedBy` were
+		// built from "an approval happened" rather than "an approval was refused",
+		// this turn would read `["call-acp-allow"]` and the row above would be
+		// satisfied by a writer that records every prompt as a refusal.
+		const { bash, prompts } = await promptThroughGate("allow_once", "call-acp-allow");
+
+		// Same proof the row above needs, and the reason `blockedBy` being absent is
+		// meaningful here: an approval really was written and really was not a denial.
+		expect(prompts()).toBe(1);
+		const answered = approvals().find(e => e.phase === "answered");
+		if (!answered) throw new Error("Expected an answered approval half");
+		expect(isApprovalDenial(answered)).toBe(false);
+		expect(answered.decision).toBe("allow_once");
+		expect(bash.executeCalls).toBe(1);
+
+		// Absent, not `[]`: an empty array is indistinguishable from a writer that
+		// meant to populate the field and failed.
+		expect(firstEndedTurn()?.blockedBy).toBeUndefined();
+	});
 });

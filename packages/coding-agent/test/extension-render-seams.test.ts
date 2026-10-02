@@ -544,6 +544,12 @@ describe("a custom entry is drawn with its registered renderer", () => {
 			} as never);
 
 			expect(ctx.chatContainer.children).toHaveLength(before);
+			// The control for the render assertion in the row above. This file has 35
+			// `requestRender()` calls, so "was one called?" proves nothing on its own —
+			// it only means something when the same measurement is *not* called when the
+			// handler bails before mounting. Together the two rows pin the call to the
+			// mount path rather than to `handleEvent` in general.
+			expect(ctx.ui.requestRender).not.toHaveBeenCalled();
 		} finally {
 			controller.dispose();
 		}

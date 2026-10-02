@@ -104,9 +104,12 @@ export type ModelRef = {
  * member would make both call sites untypeable rather than merely optional — the provider-level
  * `if (!provider.fetchDeferred)` guard that makes it optional upstream sits below this interface.
  *
- * The option surface is `{ signal }` because that is all either call site passes. `pi` composes a
- * wider type from parts this repo does not have; naming those here would import a shape with no
- * definition behind it.
+ * The option surface is the same {@link SimpleStreamOptions} `streamSimple` takes, not a
+ * `{ signal }` subset of it. A provider's `fetchDeferred` observes the request it was handed, and
+ * the observable part of that request is `onResponse` — a callback a caller cannot pass through a
+ * narrower type, so a deferred fetch or cancel was unobservable by construction. Naming
+ * `SimpleStreamOptions` adds no new concept: it is the type already declared above, and it is what
+ * the test double in `@oh-my-pi/pi-ai/testing` implements these two members with.
  */
 export interface ModelLookup {
 	getModel(provider: string, modelId: string): Model | undefined;
@@ -120,9 +123,9 @@ export interface ModelLookup {
 	 */
 	streamSimple(model: Model, context: RequestContext, options?: SimpleStreamOptions): AssistantMessageEventStream;
 	/** Resume a deferred generation from `handle` and resolve to its final message. */
-	fetchDeferred(model: Model, handle: DeferredHandle, options?: { signal?: AbortSignal }): Promise<AssistantMessage>;
+	fetchDeferred(model: Model, handle: DeferredHandle, options?: SimpleStreamOptions): Promise<AssistantMessage>;
 	/** Abandon a deferred generation. Safe to call for a handle that already settled. */
-	cancelDeferred(model: Model, handle: DeferredHandle, options?: { signal?: AbortSignal }): Promise<void>;
+	cancelDeferred(model: Model, handle: DeferredHandle, options?: SimpleStreamOptions): Promise<void>;
 }
 
 export type UserInput = UserMessage["content"];

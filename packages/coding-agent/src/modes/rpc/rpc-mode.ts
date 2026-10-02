@@ -32,7 +32,7 @@ import {
  * `RpcExtensionUIContext.hasUI` is `true` on every value, so it cannot be the guard the
  * frameless message names — an author checking it is always let through to the throw.
  * Header and footer route to `unsupportedSurfaceMessage`, which never claimed
- * otherwise; only `custom` reaches this builder.
+ * otherwise; `custom` and the component-factory arm of `setWidget` reach this builder.
  */
 const RPC_FRAMELESS_GUARD = "hasUI-does-not-block-the-call" satisfies FramelessGuard;
 import {
@@ -949,8 +949,15 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					widgetLines: content as string[] | undefined,
 					widgetPlacement: options?.placement,
 				} as RpcExtensionUIRequest);
+				return;
 			}
-			// Component factories are not supported in RPC mode - would need TUI access
+			// A component factory used to fall out of this method silently, and that is the
+			// same lie `custom` stopped telling: the author got no frame, no error, and no
+			// factory run, so a widget that never appears looks exactly like one that did.
+			// The frame is not missing — it renders lines — so it is the component that
+			// cannot cross it, and `RPC_FRAMELESS_GUARD` is the guard that does not block the
+			// call, which is why the message must not tell the author to check `hasUI`.
+			throw new Error(unavailableFrameMessage("setWidget", "RPC mode", RPC_FRAMELESS_GUARD));
 		}
 
 		setFooter(_factory: unknown): void {

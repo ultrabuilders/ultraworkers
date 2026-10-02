@@ -39,6 +39,7 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "ci-release-build-binaries.test.ts", reason: "" },
 	{ file: "ci-release-checksums.test.ts", reason: "" },
 	{ file: "ci-release-publish.test.ts", reason: "" },
+	{ file: "ci-rename-test-literals.test.ts", reason: "" },
 	{ file: "ci-test-ts.test.ts", reason: "" },
 	{ file: "ci-update-brew-formula.test.ts", reason: "" },
 	{ file: "fix-changelogs.test.ts", reason: "" },

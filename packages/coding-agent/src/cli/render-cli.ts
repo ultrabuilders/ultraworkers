@@ -169,7 +169,7 @@ export async function runRenderCommand(args: RenderCommandArgs): Promise<number>
 
 	// Copy before opening: SessionManager.open takes the single-writer lock and
 	// session teardown appends a session_exit entry — neither may touch a live
-	// session file the user has open in another omp.
+	// session file the user has open in another ultraworkers.
 	const tempDir = TempDir.createSync("@omp-render-");
 	const workingCopy = path.join(tempDir.path(), path.basename(sourcePath));
 

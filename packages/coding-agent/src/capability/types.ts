@@ -167,7 +167,7 @@ export interface SourceMeta {
 	origin?: string;
 	/**
 	 * Plugin or package name supplying this item, for registry-backed providers
-	 * (`claude-plugins` and `agent-plugins` use the plugin name, `omp-plugins`
+	 * (`claude-plugins` and `agent-plugins` use the plugin name, `ultraworkers-plugins`
 	 * the extension package directory name, `skillshare` the package name).
 	 * Preferred by `skillNamespace` in `extensibility/skills.ts` over parsing
 	 * the item's path, since installed plugin caches

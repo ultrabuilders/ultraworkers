@@ -1,4 +1,3 @@
-import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { format } from "@oh-my-pi/pi-utils/dates";
 import { type ReactNode, useMemo, useState } from "react";
 import { getProviderDashboardStats, getProviderWindowStats } from "../api";
@@ -67,7 +66,13 @@ const TOKEN_MIX = [
 	{ key: "output", label: "Output", color: "var(--chart-secondary)" },
 ] as const;
 
-const SNAPSHOT_HINT = `Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, ${APP_NAME} usage).`;
+// `omp usage` is a COMMAND name, not a display name, so it deliberately does not read
+// APP_NAME. The two answer different questions and they are not always the same string:
+// `packages/stats` ships its own bin under a third spelling (`omp-stats`), and the dev
+// launcher symlinks a fourth. Binding a command to the display constant is right only by
+// coincidence — it goes silently wrong the day the binary is renamed without a rebrand.
+// Which spelling ships is epic-4yhd's open owner question; see epic-grse.
+const SNAPSHOT_HINT = "Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, omp usage).";
 
 interface WindowRef {
 	provider: string;

@@ -1,4 +1,3 @@
-import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -189,7 +188,12 @@ interface JudgePanelProps {
 	onRunChanged: () => void;
 }
 
-const UNAVAILABLE_HINT = `Judging needs the ${APP_NAME} host process: open the dashboard with ${APP_NAME} stats and configure a judge model. Until then messages are classified by regex signals.`;
+// Two different questions, two different constants. "the omp host process" is the app as
+// a noun and could read APP_NAME; "omp stats" is a COMMAND and must not — see the longer
+// note at ProvidersRoute's SNAPSHOT_HINT, and epic-4yhd / epic-grse for the open question
+// of which spelling the installer actually provides.
+const UNAVAILABLE_HINT =
+	"Judging needs the omp host process: open the dashboard with omp stats and configure a judge model. Until then messages are classified by regex signals.";
 
 function JudgePanel({ active, range, judgeAvailable, job, onRunStarted, onRunChanged }: JudgePanelProps) {
 	const [modalOpen, setModalOpen] = useState(false);

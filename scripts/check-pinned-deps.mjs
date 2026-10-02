@@ -3,7 +3,15 @@ import { join } from "node:path";
 
 const dependencySections = ["dependencies", "devDependencies", "optionalDependencies"];
 const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const ignoredDirectories = new Set([".git", "dist", "node_modules"]);
+// `.claude` carries the same reason and the same measurement as in
+// `check-ts-relative-imports.mjs`: `isNestedRepositoryRoot` catches a worktree
+// because that checkout has a `.git` entry, but nothing caught an ordinary
+// dot-directory at the same path. This gate reads every `package.json` the walk
+// finds, and a checkout under `.claude/worktrees/` brings a whole second
+// dependency graph with it — governed by a different index, so its ranges are not
+// this repository's supply-chain surface. Measured cost of excluding: zero
+// tracked files, at any depth.
+const ignoredDirectories = new Set([".git", ".claude", "dist", "node_modules"]);
 const internalPackageNames = new Set();
 const packageJsonFiles = [];
 

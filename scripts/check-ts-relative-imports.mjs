@@ -13,7 +13,19 @@ import {
 import { API } from "typescript/unstable/async";
 
 const PREFIX = "[ts-relative-imports]";
-const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
+// `.claude` is here for a different reason than `.git`, and the two guards do not
+// overlap. `isNestedRepositoryRoot` below catches a worktree because that
+// checkout carries a `.git` entry; it does not catch an ordinary dot-directory at
+// the same path. Probed against this gate: a `.ts` file under `.wt/` holding the
+// violation this gate exists for IS reported, so the walk does reach plain
+// dot-directories and only the nested-repository guard was standing in the way.
+//
+// Excluding it costs nothing: `git ls-files | grep -E '(^|/)\.claude/'` is empty,
+// at any depth, so no tracked file of this repository lives under one. Note this
+// set is matched by NAME at every level rather than by a root-anchored prefix, so
+// it also skips a `.claude` that appears deeper — which is the same intent, since
+// it is a tool directory wherever it sits.
+const ignoredDirectories = new Set([".git", ".claude", "coverage", "dist", "node_modules"]);
 const files = [];
 
 /**

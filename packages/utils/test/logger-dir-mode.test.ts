@@ -25,14 +25,14 @@ afterEach(() => {
 });
 
 function tempRoot(): string {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), "omp-logmode-"));
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-logmode-"));
 	roots.push(root);
 	return root;
 }
 
 describe("log directory permissions", () => {
 	test("tightens a directory that already existed at the wider mode", () => {
-		// The state of every machine that ran omp before the mode was set: the
+		// The state of every machine that ran ultraworkers before the mode was set: the
 		// directory is already there, so `mkdir` succeeds silently and never touches
 		// the mode. Those users hold the MOST logs, so leaving them at umask is the
 		// worst outcome, and it is the one `mode` alone cannot fix.
@@ -56,7 +56,7 @@ describe("log directory permissions", () => {
 
 		const mode = fs.statSync(dir).mode & 0o777;
 		// Exactly 0700, not "no group/other bits": a mode of 0o750 still lets every
-		// account on the machine read every transcript fragment omp ever logged.
+		// account on the machine read every transcript fragment ultraworkers ever logged.
 		expect(mode).toBe(0o700);
 	});
 });

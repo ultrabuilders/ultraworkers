@@ -24,7 +24,7 @@
  * `~/.omp/auth-gateway.token`.
  *
  * To run: `bun --cwd packages/ai test test/auth-gateway-cross-protocol-caching.test.ts`
- * with the gateway live (`omp auth-gateway serve` or pm2).
+ * with the gateway live (`ultraworkers auth-gateway serve` or pm2).
  */
 import { describe, expect, it } from "bun:test";
 import { AUTH_GATEWAY_E2E_URL, checkAuthGatewayE2EAvailable } from "./helpers";

@@ -316,6 +316,21 @@ fan-in niêm phong) — **không** phải số trong bảng. Số của kế ho�
 "cắt được nhưng phải làm seam" đã rơi **khỏi băng** khi đo lại, và 3 mục còn lại trong băng thì bị
 loại vì lý do kiến trúc. Bảng nháp cũ không thấy điều này vì nó chép số của bảng thay vì đo.
 
+**Rơi khỏi băng là ứng viên yếu, KHÔNG phải việc chưa xong.** Đây là câu hỏi từng treo bead
+`r0-grp-c-104` ("giữ ngưỡng số hay đo lại theo cây"), và nó có hai cách trả lời:
+
+- Hạ ngưỡng để "lấy lại" `eval` (30) và `internal-urls` (38) — tức **chọn ứng viên rồi sửa tiêu
+  chí cho khớp**, biến phép đo thành kết quả.
+- Giữ băng 41-150 và nói thẳng rằng 8 mục kia ngoài băng nên chỉ là ứng viên yếu.
+
+**Phán đoán (a4, 2026-10-02): giữ băng số, không hạ.** Băng 41-150 là **tiêu chí chọn ứng viên**,
+không phải tiêu chí buộc phải cắt. Hạ ngưỡng để thu nạp thêm ứng viên là đảo quan hệ nhân quả:
+chọn xong rồi sửa thước đo cho khớp với kết quả đã chọn.
+
+Hệ quả cho người đọc: một mục ngoài băng **không phải backlog** — nó là mục mà phép đo nói là
+nhỏ quá để là việc thiết kế. Đừng mở lại nó như việc chưa làm. Cột `đo lại` giữ cạnh băng số là
+chỗ đúng; **không sửa ngưỡng.**
+
 `launch` (39 ở bảng cũ, **18** khi đo lại) **không thuộc nhóm C** — dưới băng ở cả hai lần đo.
 Bản nháp cũ để nó trong dòng này với nhãn `(39→B)`: đã bị loại nhưng còn sót.
 

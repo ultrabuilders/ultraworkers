@@ -40,15 +40,35 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
-import { getAvailableThemes, loadThemeJsonSync, resolveThemeJson } from "@oh-my-pi/pi-tui/theme";
+import { getAvailableThemes, getBuiltinThemes, loadThemeJsonSync, resolveThemeJson } from "@oh-my-pi/pi-tui/theme";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
 
 /**
  * The extension's theme. `colors` is the field `createTheme` reads
  * (`resolveThemeColors(themeJson.colors, …)`), so this is a shape the real theme
  * pipeline consumes rather than a token object that only satisfies a Map.
+ *
+ * It is a partial `ThemeJson` on purpose: a full one is 64 required colors, and
+ * spelling them out would bury the one field the contract is about. The
+ * comparison below is therefore written against `accent` specifically, which is
+ * what "the extension's theme reached the loader" actually means — and which a
+ * theme substituted from somewhere else could not satisfy.
  */
-const EXT_THEME = { colors: { accent: "#0a0b0c" } };
+const EXT_ACCENT = "#0a0b0c";
+const EXT_THEME = { colors: { accent: EXT_ACCENT } };
+
+/**
+ * Assert the selected theme is the one the extension contributed.
+ *
+ * `toEqual` against a partial is both a type error and an over-specification:
+ * `ThemeJson` requires `name` and the full color set, so it would also go red if
+ * `loadThemeJsonSync` gained a field — asserting more than the contract states.
+ * Naming the field keeps the assertion exactly as strong as the claim: this
+ * accent came from this extension.
+ */
+function expectSelectedTheme(themeName: string, accent: string): void {
+	expect(loadThemeJsonSync(themeName).colors?.accent).toBe(accent);
+}
 
 /**
  * The registry has no reset — it is a per-process module-level `Map`, and adding
@@ -119,7 +139,7 @@ describe("pi.registerTheme: an extension's theme reaches the user", () => {
 		// from it is a theme the user cannot pick however the loader behaves.
 		expect(await getAvailableThemes()).toContain("seam-loaded");
 		// Loaded: this is what paints the first frame.
-		expect(loadThemeJsonSync("seam-loaded")).toEqual(EXT_THEME);
+		expectSelectedTheme("seam-loaded", EXT_ACCENT);
 	});
 
 	it("NEGATIVE: a theme shadowing a built-in is refused, and the built-in still wins", async () => {
@@ -135,7 +155,12 @@ describe("pi.registerTheme: an extension's theme reaches the user", () => {
 		// appeared — the whole reason the registry returns a boolean.
 		expect(fs.readFileSync(resultPath, "utf-8")).toBe("false");
 		// And the user's `dark` is untouched: this is a refusal, not an override.
-		expect(loadThemeJsonSync("dark")).not.toEqual({ colors: { accent: "#ff0000" } });
+		// Both halves, because `not.toBe("#ff0000")` alone would also pass if `dark`
+		// resolved to nothing at all — a refusal that deleted the built-in would
+		// satisfy it. Identity with the built-in is the actual claim.
+		const builtinDark = getBuiltinThemes().dark;
+		expect(loadThemeJsonSync("dark")).toBe(builtinDark);
+		expect(loadThemeJsonSync("dark").colors?.accent).not.toBe("#ff0000");
 	});
 
 	it("NEGATIVE: a second extension reusing the name loses to the first", async () => {
@@ -150,6 +175,6 @@ describe("pi.registerTheme: an extension's theme reaches the user", () => {
 		await loadExtensions([second], cwd);
 
 		expect(fs.readFileSync(resultPath, "utf-8")).toBe("false");
-		expect(loadThemeJsonSync("seam-shared")).toEqual({ colors: { accent: "#111111" } });
+		expectSelectedTheme("seam-shared", "#111111");
 	});
 });

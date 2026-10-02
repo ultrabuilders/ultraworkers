@@ -455,6 +455,7 @@ describe("createAgentSession credential_disabled subscription", () => {
 				compactionProtections: [],
 				contextTransforms: [],
 				messageRenderers: new Map(),
+				entryRenderers: new Map(),
 
 				outputFormats: new Map(),
 

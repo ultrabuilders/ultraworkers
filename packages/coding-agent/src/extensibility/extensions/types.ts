@@ -102,7 +102,7 @@ import type { EphemeralTurnOptions, EphemeralTurnResult } from "../../session/ag
 import type { CompactMode } from "../../session/compact-modes";
 import type { CustomMessagePayload } from "../../session/messages";
 import type { ReadonlySessionManager, SessionManager } from "../../session/session-manager";
-import type { SessionEntry } from "../../session/session-entries";
+import type { CustomEntry, SessionEntry } from "../../session/session-entries";
 import type { BashToolInput, GlobToolInput, GrepToolInput, ReadToolInput, WriteToolInput } from "../../tools";
 import type { GlobToolDetails } from "@oh-my-pi/pi-tui/tools/glob";
 import type { GrepToolDetails } from "@oh-my-pi/pi-tui/tools/grep";
@@ -1988,6 +1988,25 @@ export interface ExtensionAPI {
 	/** Register a custom renderer for CustomMessageEntry. */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
 
+	/**
+	 * Register a transformer for user and assistant Markdown before it is drawn in
+	 * the interactive transcript.
+	 *
+	 * TUI-only by construction, and that boundary is load-bearing rather than
+	 * documented: a transformer is reachable from the interactive message
+	 * components and from nothing else, so the RPC/JSON transcript a client reads
+	 * stays raw data. A Markdown transform that ran on the RPC path would break
+	 * transcript-reading clients silently, on their side, with no omp stack trace
+	 * to point at.
+	 */
+	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
+
+	/**
+	 * Register a renderer for `custom` session entries. Custom entries do not
+	 * participate in LLM context — this draws them in the transcript only.
+	 */
+	registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void;
+
 	/** Register a renderer for assistant thinking blocks. Rendered after the original thinking text. */
 	registerAssistantThinkingRenderer(renderer: AssistantThinkingRenderer): void;
 
@@ -2547,6 +2566,24 @@ export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionAction
 	setServiceTier: SetServiceTierHandler;
 }
 
+export interface MarkdownTransformContext {
+	messageType: "user" | "assistant" | "assistant-thinking";
+	isStreaming: boolean;
+	availableWidth: number;
+}
+
+export type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
+
+export interface EntryRenderOptions {
+	expanded: boolean;
+}
+
+export type EntryRenderer<T = unknown> = (
+	entry: CustomEntry<T>,
+	options: EntryRenderOptions,
+	theme: Theme,
+) => Component | undefined;
+
 /** Loaded extension with all registered items. */
 export interface Extension {
 	path: string;
@@ -2576,6 +2613,13 @@ export interface Extension {
 	compactionProtections: CompactionProtection[];
 	contextTransforms: ContextTransform[];
 	messageRenderers: Map<string, MessageRenderer>;
+	/**
+	 * Display-only Markdown rewrite, one per extension: a second registration is
+	 * the author overwriting their own, which is refused rather than applied.
+	 */
+	markdownTransformer?: MarkdownTransformer;
+	/** Per-extension renderer for `custom` entries, keyed by customType. */
+	entryRenderers: Map<string, EntryRenderer>;
 	composerShapes: Map<string, ComposerShapeDefinition>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;

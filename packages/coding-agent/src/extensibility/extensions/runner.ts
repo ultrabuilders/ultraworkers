@@ -92,6 +92,8 @@ import type {
 	CacheWarmingDecisionEventResult,
 	McpNotificationEvent,
 	MessageRenderer,
+	EntryRenderer,
+	MarkdownTransformer,
 	ExtensionRegistrationDiagnostic,
 	RegisteredCommand,
 	RegisteredTool,
@@ -588,6 +590,11 @@ export function clearExtensionBuckets(extension: Extension): void {
 	extension.compactionProtections.length = 0;
 	extension.contextTransforms.length = 0;
 	extension.messageRenderers.clear();
+	// Both new seams are withdrawn here, not left to the object being dropped: an
+	// entryRenderers map and a markdownTransformer would otherwise outlive the
+	// extension and collide with its own replacement on reload.
+	extension.entryRenderers.clear();
+	extension.markdownTransformer = undefined;
 	extension.composerShapes.clear();
 	extension.commands.clear();
 	extension.flags.clear();
@@ -1774,6 +1781,75 @@ export class ExtensionRunner {
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * Markdown transformers in extension load order.
+	 *
+	 * Read only by the interactive transcript components; nothing on the RPC/JSON
+	 * path calls this, which is what keeps a client reading the session from
+	 * receiving transformed Markdown. The boundary is structural rather than a
+	 * promise in a docblock: a transformer that reached the RPC path would break
+	 * such a client with no stack trace on omp's side.
+	 */
+	getMarkdownTransformers(): MarkdownTransformer[] {
+		return this.extensions.flatMap(ext => (ext.markdownTransformer ? [ext.markdownTransformer] : []));
+	}
+
+	/**
+	 * Last extension that registered a renderer for this custom type wins.
+	 *
+	 * Scans backwards for the same reason {@link getRegisteredTool} does: extensions
+	 * bind in `discoverExtensionPaths` order, so the last registration takes effect.
+	 * A contested customType is not an error — it is a collision, reported by
+	 * {@link getEntryRendererCollisionDiagnostics} rather than only happening
+	 * silently. The duplicate that IS an error, one extension claiming a type twice,
+	 * is refused at registration.
+	 */
+	getEntryRenderer(customType: string): EntryRenderer | undefined {
+		for (let index = this.extensions.length - 1; index >= 0; index -= 1) {
+			const renderer = this.extensions[index]?.entryRenderers.get(customType);
+			if (renderer) return renderer;
+		}
+		return undefined;
+	}
+
+	getEntryRendererCollisionDiagnostics(): ExtensionRegistrationDiagnostic[] {
+		return this.#collectEntryRendererCollisions();
+	}
+
+	/**
+	 * One diagnostic per customType rendered by two or more extensions.
+	 *
+	 * Walks `this.extensions` in load order, so the collected paths are in load order
+	 * and the LAST is the winner — the same precedence {@link getEntryRenderer}
+	 * implements by scanning backwards. Shaped like {@link getToolCollisionDiagnostics}
+	 * deliberately: two extensions reaching for one id is one situation and should
+	 * have one diagnostic saying so, rather than each registration seam inventing its
+	 * own vocabulary for it.
+	 */
+	#collectEntryRendererCollisions(): ExtensionRegistrationDiagnostic[] {
+		const registrants = new Map<string, string[]>();
+		for (const ext of this.extensions) {
+			for (const customType of ext.entryRenderers.keys()) {
+				const paths = registrants.get(customType);
+				if (paths) paths.push(ext.path);
+				else registrants.set(customType, [ext.path]);
+			}
+		}
+
+		const diagnostics: ExtensionRegistrationDiagnostic[] = [];
+		for (const [customType, paths] of registrants) {
+			if (paths.length < 2) continue;
+			const winner = paths[paths.length - 1]!;
+			diagnostics.push({
+				type: "warning",
+				message: `Entry renderer for '${customType}' registered by ${paths.length} extensions: ${paths.join(", ")}. Using ${winner}.`,
+				path: winner,
+				paths: [...paths],
+			});
+		}
+		return diagnostics;
 	}
 
 	getAssistantThinkingRenderers(): AssistantThinkingRenderer[] {

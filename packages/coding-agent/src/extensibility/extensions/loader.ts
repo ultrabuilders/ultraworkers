@@ -69,6 +69,8 @@ import type {
 	ExtensionRuntime as IExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
+	EntryRenderer,
+	MarkdownTransformer,
 	PreparedExtension,
 	ProviderConfig,
 	RegisteredCommand,
@@ -600,6 +602,31 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 		this.extension.messageRenderers.set(customType, renderer as MessageRenderer);
 	}
 
+	registerMarkdownTransformer(transformer: MarkdownTransformer): void {
+		// One transformer per extension, refused rather than replaced: a second
+		// registration is the author silently overwriting their own, and last-wins
+		// would leave whichever one lost with no way to learn it never runs.
+		if (this.extension.markdownTransformer !== undefined) {
+			throw new Error(
+				`Extension ${this.extension.path}: a Markdown transformer is already registered — an extension transforms Markdown once so its own output is predictable`,
+			);
+		}
+		this.extension.markdownTransformer = transformer;
+	}
+
+	registerEntryRenderer<T>(customType: string, renderer: EntryRenderer<T>): void {
+		// Refused rather than replaced. This differs from a cross-extension
+		// collision, which is kept and reported: a duplicate customType within ONE
+		// extension is the author overwriting their own registration, and no
+		// diagnostic naming "two extensions" would describe it.
+		if (this.extension.entryRenderers.has(customType)) {
+			throw new Error(
+				`Extension ${this.extension.path}: an entry renderer for custom type '${customType}' is already registered — custom types must be unique within an extension so an entry renders once`,
+			);
+		}
+		this.extension.entryRenderers.set(customType, renderer as EntryRenderer);
+	}
+
 	registerAssistantThinkingRenderer(renderer: AssistantThinkingRenderer): void {
 		this.extension.assistantThinkingRenderers.push(renderer);
 	}
@@ -725,6 +752,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		modes: [],
 		fileDeleteFallbackHandlers: [],
 		messageRenderers: new Map(),
+		entryRenderers: new Map(),
 		outputFormats: new Map(),
 		settingIds: [],
 		toolNameResolvers: [] as ToolNameResolver[],

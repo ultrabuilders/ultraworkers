@@ -4702,6 +4702,7 @@ describe("ExtensionRunner", () => {
 				compactionProtections: [],
 				contextTransforms: [],
 				messageRenderers: new Map(),
+				entryRenderers: new Map(),
 
 				outputFormats: new Map(),
 

@@ -52,6 +52,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		compactionProtections: [],
 		contextTransforms: [],
 		messageRenderers: new Map(),
+		entryRenderers: new Map(),
 
 		outputFormats: new Map(),
 

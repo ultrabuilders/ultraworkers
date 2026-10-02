@@ -87,7 +87,7 @@ docs/extension-loading.md	22
 # on-disk config dir name
 docs/extension-state-persistence.md	1
 # plugin manifest key read from package.json; .omp-plugin/ marketplace dir (claude-plugins.ts:478); on-disk config dir name
-docs/extension-trust-model.md	9
+docs/extension-trust-model.md	11
 # on-disk config dir name
 docs/extensions.md	1
 # plugin manifest key read from package.json

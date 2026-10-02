@@ -46,11 +46,13 @@ Project-scoped extensions load unconditionally. They are discovered under
 registry `installPath` instead, which need not be inside the workspace, and a
 project entry takes precedence over your own entry for the same plugin ID.
 
-`ctx.isProjectTrusted()` always returns `true`, by design: it is a compatibility
-shim for extensions authored against upstream Pi, not an unfinished check. Do not
-branch on it — the branch cannot be exercised, so the safe path is never taken.
-For the same reason `ctx.exec` is deliberately outside any gate: an extension
-that has loaded is treated as trusted.
+`ctx.isProjectTrusted()` reports the project's recorded decision (`projectTrust`
+in `config.yml`: `yes`, `no`, or `undecided`, defaulting to `undecided`, which
+answers `false`). It used to be a shim that always returned `true`; it is now a
+real value, so it can be branched on. Branching on it does **not** gate
+anything: no load path consults the decision yet, and `ctx.exec` is outside it by
+choice. Treat the value as the answer to "has this project been decided", not as
+"will my extension run".
 
 That posture is written down as a proposal awaiting owner ratification, not left
 implicit. The decision, what it explicitly does not assert, and the triggers that

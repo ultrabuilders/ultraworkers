@@ -6,15 +6,25 @@
 owner decision.
 
 - **Decider:** _unassigned — owner ratification required_
-- **Date:** 2026-10-01
+- **Date:** 2026-10-01 (proposed) · 2026-10-02 (re-derived against `f6a303150c`)
 - **Work item:** `m2-wi-0-030` (MILESTONE_2_EXECUTION_PLAN · `WI-0`)
-- **Anchors measured against:** `8e6246204e`
+- **Anchors measured against:** `f6a303150c`
 
 Section 1 is settled fact, measured against the tree. Section 2 is analysis.
-Section 4 is the decision; it is written, and it is the one the shipped code
-already implements. It is recorded here so it is visible rather than implicit —
-but ratifying it is the owner's call, and until it is ratified this document is a
+Section 4 is the decision; it is written, and it is the one the shipped code is
+built towards. It is recorded here so it is visible rather than implicit — but
+ratifying it is the owner's call, and until it is ratified this document is a
 proposal, not a policy.
+
+> **Re-derived 2026-10-02.** The previous revision decided **Option C** on the
+> ground that `isProjectTrusted()` was the literal `() => true` and that
+> ratifying that was merely writing it down. Bead `m2-wi-20-049` then landed and
+> made it a real three-valued decision that **refuses by default**, so the
+> premise of C is gone: there is no longer a `() => true` posture to ratify.
+> Leaving the text as it stood would have had this document assert, as settled
+> fact, something the tree had stopped doing. Sections 1(d), 1(e), 2, 3, 4 and 5
+> are rewritten accordingly; the threat model in section 2 is unchanged, because
+> nothing about the attacker or the asset moved.
 
 ---
 
@@ -26,7 +36,7 @@ Five statements about the code as it is. No judgement here — that is section 2
 condition on it is a CLI flag, not a trust decision.**
 
 ```
-packages/coding-agent/src/main.ts:2234
+packages/coding-agent/src/main.ts:2235
     parsedArgs.trustedExtensions?.length
         ? await loadTrustedSessionExtensions(sessionOptions, cwd, eventBus)
         : await loadSessionExtensions(sessionOptions, cwd, settingsInstance, eventBus);
@@ -96,20 +106,71 @@ project-scoped roots.
 **(c) `isProjectTrusted()` is declared twice on the extension-facing context.**
 
 ```
-packages/coding-agent/src/extensibility/extensions/types.ts:558
-packages/coding-agent/src/extensibility/extensions/types.ts:625
+packages/coding-agent/src/extensibility/extensions/types.ts:583
+packages/coding-agent/src/extensibility/extensions/types.ts:650
 ```
 
-**(d) Both implementations are the literal `() => true`.**
+**Their doc comments are stale, and are recorded here rather than fixed here.**
+Both blocks still assert the pre-WI-20 behaviour — `types.ts:577-579` says
+"OMP performs no project-trust gating … so this always returns `true`", and
+`types.ts:645-650` says the method "always returns `true`, truthfully reflecting
+that OMP already trusts project-local inputs by default". Neither is true of the
+code beneath them any more, and the second names `docs/extension-loading.md` as
+its authority — a file that is silent on trust, so the pointer resolves to a
+document that cannot answer the question it is cited for.
+
+This work item forbids it: a decision record that edits a `.ts` file is a change
+made before the decision is ratified, which is the failure the plan names. So the
+defect is **reported, not fixed**, and it belongs to the bead that changed the
+behaviour (`m2-wi-20-049`) rather than to this one. An extension author reading
+the jsdoc on the declaration they call is currently misinformed by it.
+
+**(d) Both implementations are now a real value, and it defaults to `false`.**
+This is the fact that changed under this document, so it is stated at length
+because it is the one most likely to be misread.
 
 ```
-packages/coding-agent/src/extensibility/extensions/runner.ts:1810
-    isProjectTrusted: () => true,
-packages/coding-agent/src/session/agent-session.ts:7708
-    isProjectTrusted: () => true,
+packages/coding-agent/src/extensibility/extensions/runner.ts:2020
+    isProjectTrusted: () => isProjectTrustedForScope(this.settings),
+packages/coding-agent/src/session/agent-session.ts:7795
+    isProjectTrusted: () => isProjectTrustedForScope(this.settings),
 ```
 
-**(e) No prompt, allowlist, or gate exists anywhere on the load path.**
+Both delegate to one function, `isProjectTrustedForScope` in
+`packages/coding-agent/src/config/project-trust.ts:160`, which reads a recorded
+three-valued decision (`yes` / `no` / `undecided`, `project-trust.ts:56`) and
+answers `true` only for `yes`. An undecided project answers `false`
+(`project-trust.ts:161`, `:163`). The value is therefore **real and
+falsifiable**, where the previous literal could not be false at all.
+
+**(e) No prompt, allowlist, or gate exists anywhere on the load path — and
+`assertTrusted`, the one function that could refuse, is never called outside
+tests.**
+
+Measured by grepping every use of each exported primitive across `src/` and
+`test/`, excluding its own module:
+
+| primitive | uses in `src/` | uses in `test/` |
+| --- | --- | --- |
+| `assertTrusted` | **0** | 11 (`test/project-trust-gate.test.ts`) |
+| `isResourceTrusted` | **0** | 2 |
+| `resolveProjectTrust` | **0** | 6 |
+| `setProjectTrust` | **0** | 11 |
+| `isProjectTrustedForScope` | 2 (the call sites in `(d)`) | 4 |
+| `ProjectTrustError` | **0** | 6 |
+
+So the load path is still ungated, exactly as before: `.omp/extensions` and
+project-scoped plugin entries load unconditionally. What WI-20 built is the
+**decision**, its storage, its UI, and its refusals — and no consumer of the
+refusal.
+
+> **The trap worth naming.** `isProjectTrusted()` now returns `false` for an
+> undecided project, and `assertTrusted` would throw. Neither is reachable from
+> the load path. A reader who sees a function returning `false`, and a function
+> that throws `ProjectTrustError`, and concludes that project extensions are
+> blocked, has concluded the opposite of the truth. The gate is **not wired**.
+> This is the same shape as a gate that is exercised only by its own tests: it
+> is green, it is real, and nothing calls it.
 
 > **Anchor note.** The work item cites `runner.ts:1264`, `agent-session.ts:7406`,
 > `types.ts:487-494`, and `types.ts:548-561`. All four had drifted and none points
@@ -117,15 +178,21 @@ packages/coding-agent/src/session/agent-session.ts:7708
 > `65cc6c1`; every anchor in that table has drifted again and none matches this
 > commit. Verify against the symbol, not the line number.
 >
-> This has now happened twice, so treat the numbers as a convenience rather than
-> a citation. Re-measured 2026-10-02 against `8e6246204e`: five of the eleven
-> anchors in this document had rotted — both `isProjectTrusted` declarations
-> (`types.ts:520`/`:587` → `:558`/`:625`), both implementations
-> (`runner.ts:1589`/`agent-session.ts:7701` → `:1810`/`:7708`), the `ctx.exec`
-> declaration (`:1653` → `:1989`), the two posture comments (`:513-520`/`:582-586`
-> → `:613-624`/`:551-557`), and the `#7955` changelog entry (`:1394` → `:1587`).
+> This has now happened three times, so treat the numbers as a convenience
+> rather than a citation. Re-measured 2026-10-02 against `f6a303150c`: the two
+> `isProjectTrusted` declarations (`types.ts:558`/`:625` → `:583`/`:650`), both
+> implementations (`runner.ts:1810`/`agent-session.ts:7708` → `:2020`/`:7795`),
+> the `ctx.exec` declaration (`:1989` → `:2105`), the load branch
+> (`main.ts:2234` → `:2235`), the two posture comments (`:551-557`/`:613-624` →
+> `:576-583`/`:642-650`), and the `#7955` changelog entry (`:1587` → `:1644` at
+> `f6a303150c`, then `:1645` once this document added its own changelog line —
+> a reminder that writing here moves the thing being cited).
 > The five that survived were re-checked by content, not by line. If you are
 > citing this document, cite the symbol.
+>
+> A line number rotting is a citation that got stale. Section 1(d) rotting is not
+> that: the *claim* became false, and every number in it stayed well-formed. A
+> mechanical anchor check would have passed that section indefinitely.
 
 ---
 
@@ -152,36 +219,56 @@ told was safe to open.**
 evaluated in-process, not a sandboxed format. The question is not "what does the
 flag allow" but "what does the process allow" — everything the agent can do.
 
-**What `isProjectTrusted()` buys today.** Nothing (`(d)`). An extension calling it
-learns that the value is `true`, so code written against it branches on a value
-that cannot be false: the branch is never exercised and the safe path is never
-taken. That is worse than its absence, because absence is visible and this is not.
+**What `isProjectTrusted()` buys today.** A real value (`(d)`) and **no
+enforcement** (`(e)`). An extension calling it now learns whether the user
+recorded a decision, so code written against it can branch on a value that can be
+either — but the branch it is about to take is not itself gated, because nothing
+consults the decision before loading. The function became honest without becoming
+load-bearing.
 
-**This is already true today, not a future risk.** The posture is stated three
-times in shipped code and docs — `types.ts:576-583`, `types.ts:642-650` ("OMP has
-no equivalent per-directory trust gate … always returns `true`, truthfully
-reflecting that OMP already trusts project-local inputs by default"), and the
-released changelog entry for #7955 (`packages/coding-agent/CHANGELOG.md:1628`).
-The gap is the absence of a decision, not the presence of a defect.
+**This is already true today, not a future risk.** Project-scoped extension code
+loads unconditionally from both paths in `(b)`, with project entries shadowing
+user entries for the same plugin ID `(b′)`. That part is unchanged and is what
+makes this a schedule problem rather than a hypothetical.
+
+**One shipped sentence is now wrong, and is being left in place.**
+`packages/coding-agent/CHANGELOG.md:1645`, the released entry for #7955, reads
+"(always `true`, since OMP applies no project-trust gating)". `always true` is
+false as of WI-20. It stays wrong on purpose: released sections are immutable
+(`AGENTS.md`, Changelog), and a documentation fix that rewrites history is worse
+than a stale line. The correction belongs to the next release's entry, and the
+next release's entry is section 7's business — not this document's.
 
 ---
 
 ## 3. What `ctx.exec` means here (M2-OQ5)
 
-**Answer: `ctx.exec` is deliberately outside the gate, on the reasoning that an
-extension which has loaded at all has already been trusted.**
+**Answer: `ctx.exec` is outside the trust decision entirely, deliberately, on the
+reasoning that an extension which has loaded at all has already been trusted —
+and the decision has to say that `ctx.exec` is outside the *decision*, not merely
+outside an enforcement that happens not to exist yet.**
 
 It is declared on the extension context at
-`packages/coding-agent/src/extensibility/extensions/types.ts:1989`:
+`packages/coding-agent/src/extensibility/extensions/types.ts:2105`:
 
 ```
 exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 ```
 
-This is stated explicitly because the alternative — blocking module load while
-leaving `ctx.exec` outside — would produce a document that *looks* safe and is
-not. Any gate on loading is worthless unless this call is inside it, and under
-this decision it is not, by choice.
+Two things must be said together, or this section is the failure the work item
+names — a document that *looks* safe and is not:
+
+1. **By choice.** A gate whose boundary is module load, with `ctx.exec` left
+   reachable from anything that passed it, is a boundary drawn in the wrong
+   place. `ctx.exec` is not an escape from a trust decision; it is the reason the
+   decision has to be made about the load path rather than about individual
+   capabilities afterwards.
+2. **And currently moot.** Per `(e)`, no gate is wired, so `ctx.exec` is not
+   outside a working gate — it is outside a *proposed* one. Recording this answer
+   now is what keeps the future gate honest: whoever wires `assertTrusted` into
+   the load path inherits this sentence as a commitment, and a gate that admits
+   modules while leaving process-spawning reachable is not the gate this document
+   decided on.
 
 The consequence is accepted rather than mitigated: the trust boundary is the load
 path, and everything reachable from a loaded extension — including `ctx.exec` — is
@@ -191,54 +278,89 @@ inside the blast radius by design.
 
 ## 4. The decision
 
-**Option C — defer the behaviour change, and record explicitly what M2 asserts and
-does not assert.** The shipped posture is ratified as the documented posture
-rather than changed.
+**Option B — the supply-chain boundary lives in configuration: a recorded,
+per-project, three-valued decision, read from `config.yml`, with no prompt.**
+
+The decision record, its storage, its UI, and its refusals already exist
+(`config/project-trust.ts`, registered as the `projectTrust` setting,
+`project-trust.ts:95`, defaulting to `undecided` and refusing). What does not
+exist is the enforcement. So B is not a proposal here; it is a **direction with
+its first half built**, and the honest way to record it is to name which half.
 
 **Why not A (prompt per project).** It is the cheapest in code — the seam already
-has the right shape — but it is not free, and the ADR should say so rather than
-summarize it away. Two implementations must change (`runner.ts:1943`,
-`agent-session.ts:7794`); two existing tests assert the current value
+has the right shape — and it is the option that would have produced a gate
+without this ambiguity, because a prompt is self-enforcing at the one moment
+enforcement matters. It is not chosen because it is also the only one that
+changes user-visible behaviour on upgrade: a prompt appears for every existing
+install's projects, on first run, with no default that is not itself a decision.
+The cost of A is not code, it is the `CONFIG_DIR_NAME`-class upgrade hazard that
+`extensibility/hooks/trust.ts` already reasoned its way around by making approval
+implicit and one-time — and that reasoning is not available here, because trust
+is per-*directory* and a repository can be untrusted without any single file
+having changed.
+
+Note what the previous revision claimed about A's cost and what is now true of it:
+the two tests it predicted would go red
 (`test/extension-context-project-trust.test.ts`,
-`test/issue-7955-extension-project-trusted.test.ts`) and go red; and it
-contradicts a **released** changelog entry at `CHANGELOG.md:1628`, making it a
-user-visible behaviour change requiring its own changelog entry and issue link.
-Its blast radius also exceeds this ADR: the `types.ts:642-650` comment describes
-project trust as covering `extensions, settings, skills, resources`, so A either
-gates more than this document decides or contradicts itself.
+`test/issue-7955-extension-project-trusted.test.ts`) have both been **rewritten**
+and neither asserts the old value. Their cost is gone, because WI-20 already paid
+it. A still stands against a released changelog entry at
+`CHANGELOG.md:1645`. Its blast radius also exceeds this ADR: the `types.ts:642-650`
+comment describes project trust as covering `extensions, settings, skills,
+resources`, so A either gates more than this document decides or contradicts
+itself.
 
-**Why not B (declaration in config).** No prompt and zero friction, with the
-supply-chain boundary living in configuration — but it demands an explicit
-user-scope entry, which is friction moved rather than removed.
+**Why not C (defer, and document the shipped posture).** C was correct on 2026-10-01
+and is **unavailable** now. C's content was "ratify `isProjectTrusted() === true`
+as the shipped posture" — and WI-20 replaced that literal with a real value that
+refuses by default. There is no unchanged posture left to ratify, so choosing C
+today would mean documenting a state the tree is not in. C is not rejected on the
+merits; it has been overtaken by a change made under bead `m2-wi-20-049` while
+this decision was still unratified. That ordering is itself a fact worth
+recording: **the code moved first, and this document is catching up.**
 
-**The scope statement C requires.**
+**The scope statement B requires.**
 
 M2 **asserts**: project-scoped extension code loads unconditionally, from both
 `.omp/extensions` and project-scoped plugin registry entries; project entries
-shadow user entries for the same plugin ID; `isProjectTrusted()` returns `true`
-by design and is a compatibility shim for upstream Pi, not an unfinished
-feature; and `ctx.exec` is outside the gate by decision, per section 3.
+shadow user entries for the same plugin ID; the project's trust decision is
+three-valued and defaults to refusing; `isProjectTrusted()` reports that decision
+and is a real value, not a compatibility shim; `ctx.exec` is outside the decision
+by choice, per section 3; and **none of this is enforced on the load path**.
 
-M2 **does not assert**: that this is correct. That the two paths in `(b)` deserve
-the same treatment. That a future gate would be cheap. Silence on any of these
-would make this deferral indistinguishable from never having decided.
+M2 **does not assert**: that any of it is correct. That the two paths in `(b)`
+deserve the same treatment — `(b′)` says they are not the same exposure. That
+`undecided`-refuses is the right default, as opposed to merely the safe one. That
+a future gate would be cheap. Silence on any of these would make this decision
+indistinguishable from never having decided.
 
-**Cost of choosing C, stated plainly:** the exposure in section 2 ships
-unmitigated past M2. The execution item in section 5 is what makes that a
-scheduled cost rather than a permanent one.
+**Cost of choosing B, stated plainly:** the exposure in section 2 ships
+unmitigated past M2, and B is *specifically* the option that does not mitigate
+it. A configuration boundary is a boundary only where something reads the
+configuration; per `(e)`, nothing does. Choosing B therefore buys a decision
+without a gate, and the entire remaining risk of this document is concentrated in
+the gap between the two. The execution item in section 5 is what makes that a
+scheduled cost rather than a permanent one — and it is the only part of this
+decision that is not already done.
 
 ---
 
 ## 5. Consequences and the owned execution item
 
-**Unblocked by this decision:** extension authors can rely on
-`isProjectTrusted() === true` and on unconditional project-local loading, and both
-are now written down rather than inferred from a changelog line.
+**Unblocked by this decision:** extension authors can rely on two things, and the
+second one changed under the previous revision of this document, so it is stated
+again explicitly. They can rely on **unconditional project-local loading** — that
+is still true, per `(e)`. They can **no longer** rely on
+`isProjectTrusted() === true`: that was the compatibility shim, and it is gone.
+Code that branches on it now takes a different branch for an undecided project,
+which is the intended behaviour and is a breaking change for an extension that
+assumed the shim. `test/issue-7955-extension-project-trusted.test.ts` asserts
+presence and consistency rather than the old value for exactly this reason.
 
 **The implementation is M–L and outside M2. No milestone in the programme owns
 it, including M3. This ADR assigns it:**
 
-- **Name:** `M–L` — gate project-scoped extension loading
+- **Name:** `M–L` — wire `assertTrusted` into the project-scoped extension load paths
 - **Owner:** _unassigned_
 - **Date:** _not scheduled_
 
@@ -246,10 +368,23 @@ it, including M3. This ADR assigns it:**
 > deliberately. A deadline invented to satisfy a completeness gate is worse than
 > no deadline: it reads as a commitment nobody made and will be treated as one.
 
-Scope for that item, per the measured facts above: the two load paths in `(b)`
-must be decided **separately** — `(b′)` shows they are not equivalent exposures,
-and a single gate applied uniformly would paper over the worse one. Any such
-gate must include `ctx.exec` (section 3) or it is not a gate.
+The scope is now narrower and more specific than "gate project-scoped extension
+loading", because the decision record it needs already exists. Per the measured
+facts above:
+
+- The two load paths in `(b)` must be decided **separately** — `(b′)` shows they
+  are not equivalent exposures, and a single gate applied uniformly would paper
+  over the worse one. A plugin entry's `installPath` need not be inside the
+  workspace at all, so a gate keyed on `<cwd>/.omp` does not cover it.
+- The gate must call `assertTrusted` (`project-trust.ts:179`) at the load
+  boundary, not merely exist. Per `(e)`, the current state is a decision with no
+  consumer, and the consumer is the whole of the remaining work.
+- It must define what happens when the decision is `undecided`, since `undecided`
+  refuses and every existing install is `undecided`. The upgrade path that
+  `extensibility/hooks/trust.ts` used — record on first sight, then treat as
+  approved — is available here too, and choosing it is part of this item rather
+  than a detail of it.
+- Any such gate must include `ctx.exec` (section 3) or it is not a gate.
 
 ---
 
@@ -261,9 +396,13 @@ Reopen this decision if any of the following becomes true:
   `(b′)` is reachable without a clone.
 - A sandbox or process-isolation boundary lands for extensions, making `ctx.exec`
   bounded and section 3's reasoning change.
-- The `types.ts:613-624` scope (`extensions, settings, skills, resources`) gains a
+- The `types.ts:642-650` scope (`extensions, settings, skills, resources`) gains a
   second implementation, making a partial gate actively misleading.
-- Issue #7955's premise is revisited upstream in Pi, changing what the shim must
+- The `projectTrust` decision is actually enforced, at which point the difference
+  between "the user has not decided" and "the user said no" becomes visible in
+  the load path — and the `undecided` upgrade question in section 5 has to be
+  answered before it can be, not after.
+- Issue #7955's premise is revisited upstream in Pi, changing what the value must
   mirror.
 
 ---

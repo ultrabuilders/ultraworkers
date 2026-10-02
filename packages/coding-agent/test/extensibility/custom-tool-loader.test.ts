@@ -241,6 +241,14 @@ describe("custom tool loader", () => {
 	});
 
 	it("resumes host stdin when a tool pauses it at import time", async () => {
+		// Snapshot BOTH halves of stdin's state, the way the sibling test above
+		// does. Restoring only `isPaused()` leaves a `data` listener attached if
+		// the guard under test regressed, and bun runs every file in one process:
+		// a listener leaked here outlives the test and is inherited by whichever
+		// file runs next. Its input handling then depends on a test this one ran
+		// earlier, which is the shape of an order-dependent failure — and this
+		// test is the one that has been observed failing only inside a full suite.
+		const dataBefore = process.stdin.listenerCount("data");
 		const pausedBefore = process.stdin.isPaused();
 		if (pausedBefore) process.stdin.resume();
 		const pauseTool = await writeTool(
@@ -262,6 +270,12 @@ describe("custom tool loader", () => {
 			expect(result.tools.map(tool => tool.tool.name)).toEqual(["stdin_pause_tool"]);
 			expect(process.stdin.isPaused()).toBeFalse();
 		} finally {
+			// Same defensive cleanup as the sibling: drop any listener the guard
+			// leaked so this file cannot decide a later file's stdin behaviour.
+			const leaked = process.stdin.listeners("data").slice(dataBefore);
+			for (const listener of leaked) {
+				process.stdin.removeListener("data", listener as (...args: unknown[]) => void);
+			}
 			if (pausedBefore) process.stdin.pause();
 			else process.stdin.resume();
 		}

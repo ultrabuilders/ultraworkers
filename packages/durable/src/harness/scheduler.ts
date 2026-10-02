@@ -1,6 +1,5 @@
 import { type Context, copyJson, type JsonValue } from "@oh-my-pi/chord";
 import { awaitWithContext, withAbortSignal } from "@oh-my-pi/chord/context";
-import type { Models } from "@oh-my-pi/pi-ai";
 import type { SessionImpl } from "../session/session";
 import type { Transaction } from "../session/transaction";
 import type {
@@ -21,6 +20,7 @@ import { readContext } from "./context";
 import type {
 	AnyTask,
 	HarnessInspection,
+	ModelLookup,
 	RegistryReader,
 	RegistrySnapshot,
 	SettledTask,
@@ -88,7 +88,7 @@ export type TaskSchedulerOptions = {
 	readonly session: SessionImpl;
 	readonly storage: Storage;
 	readonly registry: RegistryReader;
-	readonly models: Models;
+	readonly models: ModelLookup;
 	readonly now: () => number;
 	readonly report: (error: unknown) => void;
 	/** Harness cleanup staged in the same commit as every terminal outcome the scheduler writes itself. */
@@ -112,7 +112,7 @@ export class TaskScheduler {
 	readonly #session: SessionImpl;
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader;
-	readonly #models: Models;
+	readonly #models: ModelLookup;
 	readonly #now: () => number;
 	readonly #report: (error: unknown) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];

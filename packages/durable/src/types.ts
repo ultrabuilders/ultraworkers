@@ -1,7 +1,7 @@
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@oh-my-pi/chord";
 import type { Op } from "@oh-my-pi/chord/delta";
-import type { Message, Models } from "@oh-my-pi/pi-ai";
-import type { ContextView, RegistrySnapshot } from "./harness/types";
+import type { Message } from "@oh-my-pi/pi-ai";
+import type { ContextView, ModelLookup, RegistrySnapshot } from "./harness/types";
 
 /** JSON object used as the root of every durable document. */
 export type JsonObject = { [key: string]: JsonValue };
@@ -154,7 +154,7 @@ export interface TaskRuntime<I, S, R, _H extends object> extends DocumentObserve
 	readonly signal: AbortSignal;
 	/** Registry snapshot of the current phase; refreshed at every phase boundary. */
 	readonly registry: RegistrySnapshot;
-	readonly models: Models;
+	readonly models: ModelLookup;
 
 	/**
 	 * Commit on the Session line after rereading the task. Rejects when the task is terminal, the invocation ended, the

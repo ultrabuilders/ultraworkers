@@ -1,6 +1,15 @@
 import type { Context, JsonValue } from "@oh-my-pi/chord";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
-import type { CacheRetention, Message, Models, Tool, ToolResultMessage, UserMessage } from "@oh-my-pi/pi-ai";
+import type { Model } from "@oh-my-pi/pi-catalog/types";
+import type {
+	AssistantMessageEventStream,
+	CacheRetention,
+	Message,
+	SimpleStreamOptions,
+	Tool,
+	ToolResultMessage,
+	UserMessage,
+} from "@oh-my-pi/pi-ai";
 import type {
 	ConversationId,
 	ConversationOwnership,
@@ -43,11 +52,59 @@ export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
  */
 export type ModelThinkingLevel = "off" | Effort;
 
-/** Provider and model ID resolved through pi-ai `Models`. */
+/** Provider and model ID resolved through {@link ModelLookup}. */
 export type ModelRef = {
 	readonly provider: string;
 	readonly modelId: string;
 };
+
+/**
+ * The model seam durable depends on.
+ *
+ * This replaces pi-ai's `Models`, which durable named in four places and could not construct —
+ * `@oh-my-pi/pi-ai` never exported a `Models` at all. That is why this type exists, and it is
+ * also the reason it must stay narrow; see the deferred note below.
+ *
+ * ### An unchecked symbol hides every access to it
+ *
+ * Because `Models` failed to resolve, it was an *error type*, and member accesses on an error type
+ * are not reported. So `generation.ts` had **never been typechecked** on this seam — not the model
+ * lookups, not the streaming call. A reader who runs the gate at HEAD sees those lines pass and
+ * concludes they are correct; they were merely invisible. Declaring the seam is what brought them
+ * into view, and the count of errors it moved is not the measure of what it did.
+ *
+ * ### Three differences from the resolvers that exist today
+ *
+ * All three are what a host meets when it wires this up for real, and together they are why no
+ * existing function carries across unchanged:
+ *
+ * 1. **A miss is `undefined`, not a cast.** `getBundledModel(provider, modelId)`
+ *    (`@oh-my-pi/pi-catalog/models`) ends in `as Model<TApi>` over a `Map.get`, so an absent model
+ *    comes back typed as a model. Generation distinguishes "unknown model" from "known model" —
+ *    `generation.ts` fails the task via `failNoModel` — and that cast erases exactly the
+ *    distinction the branch is written to make.
+ * 2. **It is not bundled-only.** `getBundledModel` reads bundled `models.json` and knows nothing
+ *    about discovery. `ModelManager` (`@oh-my-pi/pi-catalog/model-manager`) owns a discovered
+ *    roster but exposes **only** `refresh()` — it has no per-id lookup at all. A discovery-backed
+ *    host therefore implements this by scanning `ModelResolutionResult.models`, and neither
+ *    existing function carries across unchanged.
+ * 3. **Provider is a plain `string`.** `getBundledModel` keys on `GeneratedProvider`, the
+ *    catalog's union of known provider ids, while `ModelRef.provider` is `string` because a ref
+ *    may name a provider the host added at runtime. Converting in either direction needs a
+ *    narrowing that is a lie on one of the two sides.
+ *
+ * ### Why the deferred members are absent
+ *
+ * `generation.ts` also calls `fetchDeferred` and `cancelDeferred` on this same object. They are
+ * **deliberately not declared here**: they belong to the deferred feature, which is still an owner
+ * decision. Adding them would publish half of an unratified API — and if the owner later declines
+ * to keep `deferred`, the seam would have to give back part of its surface after the fact. Their
+ * absence is a decision, not an oversight; it resolves when that feature is settled.
+ */
+export interface ModelLookup {
+	getModel(provider: string, modelId: string): Model | undefined;
+	streamSimple(model: Model, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream;
+}
 
 export type UserInput = UserMessage["content"];
 
@@ -319,8 +376,8 @@ export type ConversationRetryPolicy = {
 };
 
 export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
-	/** pi-ai model access used by generation. */
-	readonly models: Models;
+	/** Model resolution used by generation. */
+	readonly models: ModelLookup;
 	readonly registry: RegistryReader<Tool>;
 	readonly now?: () => number;
 	/** Receives extension failures that do not fail the calling operation. Must not throw. */

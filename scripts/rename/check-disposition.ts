@@ -265,12 +265,50 @@ export function parseTable(text: string): ParseResult {
 	return { rows, problems };
 }
 
-/** Every `*.ts` path carrying at least one occurrence of the pinned expression. */
+/**
+ * Path prefixes excluded from the rule, not from the allow-list.
+ *
+ * `node_modules/` is here because the scan below is a FILESYSTEM walk, not an
+ * index read, and a filesystem walk does not consult `.gitignore` —
+ * `check-docs-rename.ts` records the same reason and measures it (1516 markdown
+ * files walked against 972 in the repository).
+ *
+ * Build output belongs here for a sharper version of that reason. Widening the
+ * walk to `.js`/`.mjs` reached four files this repository does not ship, all
+ * gitignored: `packages/collab-web/dist/rmyk4s85.js`,
+ * `packages/stats/dist/client/index.js`, and the two built bundles under
+ * `python/robomp/{src/static,web/dist}`. Two of those names are content hashes
+ * that a rebuild changes, so a `missing-row` naming one is a violation nobody can
+ * legitimately allow-list AND a verdict that differs between a fresh clone and a
+ * machine that has run a build.
+ *
+ * Adding a new build-output root means adding it here. That is a real cost: a
+ * root forgotten here reappears as a `missing-row` on whoever builds next, which
+ * is the failure this list exists to prevent, so it fails loudly rather than
+ * silently narrowing the gate.
+ */
+const EXCLUDED_PREFIXES = ["node_modules/", ".git/", "python/robomp/src/static/", "python/robomp/web/dist/"];
+
+/** Build output: any path with a `dist` segment, matching the per-package dist rule. */
+function isBuildOutput(relPath: string): boolean {
+	return relPath.split("/").includes("dist");
+}
+
+/**
+ * Every source path carrying at least one occurrence of the pinned expression.
+ *
+ * `.js` and `.mjs` are inside the gate because the rename has to hold on every
+ * file the repository ships, not only the ones TypeScript compiles: a `.js` file
+ * under a package's `src` tree, or under `packages/natives/native/`, reaches
+ * production at runtime exactly like a `.ts` beside it, and leaving it outside
+ * made `missing-row` report a domain it was not measuring.
+ */
 export async function hitPaths(root: string): Promise<readonly string[]> {
-	const glob = new Bun.Glob("**/*.ts");
+	const glob = new Bun.Glob("**/*.{ts,js,mjs}");
 	const found: string[] = [];
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
-		if (relPath.startsWith("node_modules/") || relPath.startsWith(".git/")) continue;
+		if (EXCLUDED_PREFIXES.some(prefix => relPath.startsWith(prefix))) continue;
+		if (isBuildOutput(relPath)) continue;
 		const text = await Bun.file(path.join(root, relPath)).text();
 		if (new RegExp(PINNED.source).test(text)) found.push(relPath);
 	}
@@ -296,7 +334,7 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
  *
  * Read by `check-disposition-ratchet.ts`, which reports drift and never blocks on it.
  */
-export const RULES_VERSION = "2026-10-02.2";
+export const RULES_VERSION = "2026-10-02.3";
 
 interface Violation {
 	readonly rule: string;

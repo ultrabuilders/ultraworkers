@@ -13,8 +13,29 @@
  *
  * The registry lives in its own module rather than on `Settings` for the same
  * reason the extension runner does: `Settings` is a config layer, and importing
- * the extension surface from it would invert the dependency. The host wires the
- * two together at startup (`main.ts`, next to `startWatching()`).
+ * the extension surface from it would invert the dependency.
+ *
+ * **The watch path calls this module; nothing in the product registers with
+ * it.** `Settings.#reloadFromWatch` runs every pass through
+ * {@link runConfigReloadPass}, so the ask, the veto and the announcement all
+ * happen — but `onBeforeConfigReload` and `onAfterConfigReload` have no
+ * production caller, and `ExtensionAPI` exposes no method that reaches them.
+ * The registry the watch path consults is therefore empty in every shipped
+ * build, and a handler registered from inside the host is the only thing that
+ * has ever been consulted.
+ *
+ * That sentence was not here before, and the docblock claimed the opposite:
+ * *"The host wires the two together at startup (`main.ts`, next to
+ * `startWatching()`)."* `main.ts` does call `startWatching()` — the anchor was
+ * real — but it registers nothing. Measured, not assumed: `startWatching` at
+ * `main.ts:2466`, zero occurrences of `reload-observer` or `ConfigReload` in
+ * `main.ts`, and zero of `onBeforeConfigReload`/`onAfterConfigReload` outside
+ * this module and its tests. A docblock that describes a wiring which does not
+ * exist is worse than one that admits the gap, because it reads as a finished
+ * feature to exactly the person about to build on it.
+ *
+ * Exposing the seam is a core-list change — a new surface extension authors
+ * would publish against — so it is an owner decision, not a wiring fix.
  *
  * **A veto defers, it does not discard.** Returning a reason leaves the previous
  * values in force and the watcher armed, so the next qualifying edit retries.

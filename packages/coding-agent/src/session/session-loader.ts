@@ -234,10 +234,22 @@ export async function visitEntriesFromFileStream(
 		// and then never closes, so the `for await` below waits forever on a stream
 		// that is already complete. Reproduced without this repo — a 1,049,018-byte
 		// file sliced to 262,238 yields all 262,238 bytes and then hangs past a 2.5s
-		// race, while the same file's unbounded `stream()` finishes in 2ms. It is not
-		// size-dependent (131,127 also hangs), and the same `n` succeeds or hangs
-		// depending on the file, so it is Bun's internal chunking rather than the
-		// content.
+		// race, while the same file's unbounded `stream()` finishes in 2ms, and the
+		// same slice read with `arrayBuffer()` or `text()` finishes in under 1ms.
+		//
+		// This is upstream oven-sh/bun#18192 (also reported as #31675), not a local
+		// mistake, and it is FIXED in Bun 1.4.2: the identical repro completes there in
+		// 0.2ms. Do not "restore upstream parity" here without checking the runtime
+		// floor — `MIN_BUN_VERSION` is 1.3.14, so a supported runtime still hangs, and
+		// this line is the only thing standing between it and an infinite wait. Revisit
+		// when that floor moves to 1.4+.
+		//
+		// What decides the hang is the FILE, not the slice: on an 8,000,000-byte file a
+		// 1-byte slice hangs while `slice(0, 7_999_999)` completes, and the boundary
+		// moved with the file across four sizes (4 MB → 3,670,017; 8 MB → 7,864,321;
+		// 20 MB → 19,660,801; 40 MB → 39,845,889). Deterministic across fresh
+		// processes. Upstream's account is EOF/window accounting in the streaming read
+		// buffer, so a slice is only safe when the file fits under it.
 		//
 		// `createReadStream` is used for the bounded case only, and it bounds the read
 		// in the same place: the OS is never asked for a byte past the cap, which is

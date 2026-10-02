@@ -61,7 +61,9 @@ async function handleAdd(cmd: SSHCommandArgs): Promise<void> {
 	if (!name) {
 		process.stdout.write(chalk.red("Error: Host name required\n"));
 		process.stdout.write(
-			chalk.dim("Usage: omp ssh add <name> --host <address> [--user <user>] [--port <port>] [--key <path>]\n"),
+			chalk.dim(
+				`Usage: ${APP_NAME} ssh add <name> --host <address> [--user <user>] [--port <port>] [--key <path>]\n`,
+			),
 		);
 		process.exitCode = 1;
 		return;

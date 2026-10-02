@@ -382,7 +382,7 @@ export async function runModelsCommand(command: ModelsCommandArgs): Promise<void
 
 	if (action === "find" && (!pattern || pattern.trim().length === 0)) {
 		process.stderr.write(
-			`\`omp models find\` requires a search substring, e.g. \`${APP_NAME} models find minimax\`\n`,
+			`\`${APP_NAME} models find\` requires a search substring, e.g. \`${APP_NAME} models find minimax\`\n`,
 		);
 		process.exitCode = 1;
 		return;

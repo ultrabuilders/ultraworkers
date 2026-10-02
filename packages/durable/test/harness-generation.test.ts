@@ -530,6 +530,8 @@ describe("generation", () => {
 				{ models: chatSetup().models, registry: { snapshot: () => snapshot, subscribe: () => () => {} } },
 				context,
 			),
-		).rejects.toThrow("Registry lacks built-in task pi.generation, conversation setup pi; create it with createRegistry()");
+		).rejects.toThrow(
+			"Registry lacks built-in task pi.generation, conversation setup pi; create it with createRegistry()",
+		);
 	});
 });

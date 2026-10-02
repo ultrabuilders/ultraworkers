@@ -15,7 +15,6 @@ import {
 	analyzeAuthError,
 	discoverOAuthEndpoints,
 	fetchResourceMetadataScopes,
-	loadAllMCPConfigs,
 	MCPManager,
 	type OAuthEndpoints,
 } from "../../mcp";
@@ -1825,7 +1824,7 @@ export class MCPCommandController {
 				}
 				await setServerDisabled(userConfigPath, name, !enabled);
 				if (enabled) {
-					await this.#connectEnabledMCPServer(name);
+					await this.#connectEnabledMCPServer(name, this.ctx.mcpManager?.getServerConfig(name));
 					const state = await this.#waitForServerConnectionWithAnimation(name);
 					const status =
 						state === "connected"
@@ -1862,7 +1861,7 @@ export class MCPCommandController {
 			const updated: MCPServerConfig = { ...found.config, enabled };
 			await updateMCPServer(found.filePath, name, updated);
 			if (enabled) {
-				await this.#connectEnabledMCPServer(name);
+				await this.#connectEnabledMCPServer(name, updated);
 			} else {
 				await this.ctx.mcpManager?.disconnectServer(name);
 				await this.ctx.session.refreshMCPTools(this.ctx.mcpManager?.getTools() ?? []);
@@ -2177,21 +2176,44 @@ export class MCPCommandController {
 		}
 	}
 
-	async #connectEnabledMCPServer(name: string): Promise<void> {
+	/**
+	 * Connect one server, from the config the caller already resolved.
+	 *
+	 * This used to re-derive the whole config set through `loadAllMCPConfigs` and
+	 * look the name up again. That is a second door, and the two did not agree:
+	 * `#findConfiguredServer` reads the user and project files directly, while
+	 * `loadAllMCPConfigs` drops project-scope entries unless
+	 * `mcp.enableProjectConfig` is on — a flag this call site never passed, unlike
+	 * its sibling `reloadServers`. So enabling a project server wrote `enabled:
+	 * true` to disk, reported `Enabled "x" (project config)`, and then connected
+	 * nothing, because the reload could not see the server it had just enabled.
+	 *
+	 * The caller knows the config and wrote it a moment ago; re-reading it through
+	 * a differently-gated loader can only lose it.
+	 */
+	async #connectEnabledMCPServer(name: string, config: MCPServerConfig | undefined): Promise<void> {
 		if (!this.ctx.mcpManager) {
 			return;
 		}
 
-		const { configs, sources } = await loadAllMCPConfigs(getProjectDir(), {
-			extensionRoots: this.ctx.session.effectiveExtensionRoots,
-		});
-		const config = configs[name];
 		if (!config) {
+			// Previously a silent `refreshMCPTools` and return, which reported
+			// success for a connect that never happened. Say so instead.
 			await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
+			this.ctx.showError(`Cannot connect "${name}": no server configuration is available for it.`);
 			return;
 		}
 
-		const source = sources[name];
+		// The source map is not decoration: `connectServers` files it under
+		// `#sources`, hands it to the deferred tool wrapper, and puts `source.path`
+		// in the failure message. It was built from `loadAllMCPConfigs` before, and
+		// dropping it with the reload silently took the provenance of every enabled
+		// server with it. Ask the manager instead of re-deriving it — the manager is
+		// where the discovery layer already left it, and it is genuinely absent for
+		// a project server the setting kept out of the registry. `SourceMeta` is
+		// optional at both consumers, so an unknown source is a blank field, not a
+		// failure; inventing one here would misattribute the file.
+		const source = this.ctx.mcpManager.getSource(name);
 		const result = await this.ctx.mcpManager.connectServers({ [name]: config }, source ? { [name]: source } : {});
 		await this.ctx.session.refreshMCPTools(this.ctx.mcpManager.getTools());
 		this.#showMCPConnectionErrors(result.errors);

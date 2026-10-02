@@ -402,7 +402,7 @@ const TERMINAL_MARKER_PREFIXES = [
 	"WT_",
 	"HERDR_",
 	"PASEO_",
-	"PI_FORCE_IMAGE",
+	"PI_",
 	"__CF",
 	"STY",
 	"TMUX",
@@ -440,6 +440,12 @@ describe("subprocessEnv keeps the suite independent of the terminal it runs in",
 				CMUX_SURFACE_ID: "cmux-1",
 				TERM_FEATURES: "256color",
 				PI_FORCE_IMAGE_PROTOCOL: "kitty",
+				// These two are the ones that make the `PI_` prefix falsifiable.
+				// Neither matches the narrower `PI_FORCE_IMAGE` spelling, so
+				// narrowing the prefix back turns this test red instead of
+				// leaving it passing on the variable it happened to share.
+				PI_NO_TITLE: "1",
+				PI_TUI_RESIZE_IN_PLACE: "1",
 				SOME_UNRELATED_SETTING: "keep me",
 			},
 		);
@@ -449,6 +455,8 @@ describe("subprocessEnv keeps the suite independent of the terminal it runs in",
 		expect(env.CMUX_SURFACE_ID).toBeUndefined();
 		expect(env.TERM_FEATURES).toBeUndefined();
 		expect(env.PI_FORCE_IMAGE_PROTOCOL).toBeUndefined();
+		expect(env.PI_NO_TITLE).toBeUndefined();
+		expect(env.PI_TUI_RESIZE_IN_PLACE).toBeUndefined();
 		// Stripping is targeted: an unrelated variable still reaches the child.
 		expect(env.SOME_UNRELATED_SETTING).toBe("keep me");
 	});

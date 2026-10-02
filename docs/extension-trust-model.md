@@ -5,8 +5,13 @@
 **Proposed — unratified.** The decision below is an agent's proposal, not an
 owner decision.
 
-- **Decider:** _unassigned — owner ratification required_
-- **Date:** 2026-10-01 (proposed) · 2026-10-02 (re-derived against `f6a303150c`)
+- **Decider:** DustyCat (agent) for the choice recorded in section 4, which is a
+  **proposal**. Ratification belongs to `tranquangdang21`, the assignee of
+  `m2-wi-0-030`; nobody has ratified it.
+- **Date:** 2026-10-02 — the date this revision was written and measured.
+  First proposed 2026-10-01, re-derived 2026-10-02 against `f6a303150c`, and
+  corrected 2026-10-02 again after cross-review found the writability error in
+  section 1(e).
 - **Work item:** `m2-wi-0-030` (MILESTONE_2_EXECUTION_PLAN · `WI-0`)
 - **Anchors measured against:** `f6a303150c`
 

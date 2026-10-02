@@ -11,7 +11,7 @@ import { toTelemetrySpan } from "@oh-my-pi/pi-agent-core/telemetry/context";
 //
 // These exist so a second backend is an adapter rather than an edit of every call
 // site. The attribute rules are NOT invented: they are measured from
-// @opentelemetry/api, because omp's attributes must stay assignable to whatever
+// @opentelemetry/api, because ultraworkers' attributes must stay assignable to whatever
 // exporter is in use — a neutral type the current exporter could not satisfy
 // would be a second source of truth rather than a contract.
 //

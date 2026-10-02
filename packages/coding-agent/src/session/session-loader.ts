@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { ConcatSink, getBlobsDir, isEnoent, isEnotdir, parseJsonlLenient } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
@@ -227,8 +228,28 @@ export async function visitEntriesFromFileStream(
 
 	try {
 		const file = Bun.file(filePath);
-		const source = Number.isFinite(maxBytes) ? file.slice(0, maxBytes) : file;
-		for await (const chunk of source.stream()) {
+		// The byte cap is expressed as a stream bound, not as `file.slice(0, maxBytes).stream()`.
+		//
+		// That combination is broken in Bun 1.3.14: the sliced stream yields every byte
+		// and then never closes, so the `for await` below waits forever on a stream
+		// that is already complete. Reproduced without this repo — a 1,049,018-byte
+		// file sliced to 262,238 yields all 262,238 bytes and then hangs past a 2.5s
+		// race, while the same file's unbounded `stream()` finishes in 2ms. It is not
+		// size-dependent (131,127 also hangs), and the same `n` succeeds or hangs
+		// depending on the file, so it is Bun's internal chunking rather than the
+		// content.
+		//
+		// `createReadStream` is used for the bounded case only, and it bounds the read
+		// in the same place: the OS is never asked for a byte past the cap, which is
+		// the point of the cap. `maxBytes` is routinely the whole file size
+		// (`advisor/transcript-recorder.ts` passes `stat(file).size`), so reading the
+		// slice with `arrayBuffer()` instead would load whole files into memory on a
+		// path built specifically to avoid that — the opposite of the fix. The
+		// unbounded branch keeps `Bun.file(...).stream()`, which is unaffected.
+		const source: AsyncIterable<Uint8Array> = Number.isFinite(maxBytes)
+			? fs.createReadStream(filePath, { start: 0, end: maxBytes - 1 })
+			: file.stream();
+		for await (const chunk of source) {
 			if (stopped) break;
 			bytesSinceYield += chunk.byteLength;
 			options.onBytesConsumed?.(chunk.byteLength);

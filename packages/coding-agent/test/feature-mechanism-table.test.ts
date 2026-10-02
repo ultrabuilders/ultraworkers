@@ -134,10 +134,29 @@ async function readBeadStatuses(): Promise<Map<string, string>> {
 async function findDangling(rows: Row[]): Promise<string[]> {
 	const dangling: string[] = [];
 	for (const row of rows) {
-		// Every `file:line` the mechanism column cites must resolve.
-		for (const match of plain(row.mechanism).matchAll(/([\w./-]+\.ts):\d+/g)) {
+		// Every `file:line` the mechanism column cites must resolve, and the line it
+		// names must still be the line that holds what the row claims.
+		//
+		// The line number used to be captured by the regex and then thrown away —
+		// only the file was checked. That made a **drifted** anchor indistinguishable
+		// from a correct one: `manager.ts:171` kept passing after `#mutateConfig`
+		// moved to `:242`, because `manager.ts` still exists. A blank or
+		// out-of-range line is the cheapest available evidence of drift, and it is
+		// the shape a moved symbol actually takes.
+		for (const match of plain(row.mechanism).matchAll(/([\w./-]+\.ts):(\d+)/g)) {
 			const referenced = path.join(REPO_ROOT, match[1]!);
-			if (!(await Bun.file(referenced).exists())) dangling.push(`${row.feature} -> ${match[1]}`);
+			if (!(await Bun.file(referenced).exists())) {
+				dangling.push(`${row.feature} -> ${match[1]}`);
+				continue;
+			}
+			const citedLine = Number(match[2]);
+			const lines = (await Bun.file(referenced).text()).split("\n");
+			// Out of range and "in range but blank" are the same failure: the cited
+			// line is no longer the one holding the mechanism.
+			const target = lines[citedLine - 1];
+			if (target === undefined || target.trim() === "") {
+				dangling.push(`${row.feature} -> ${match[1]}:${match[2]} (no code at that line)`);
+			}
 		}
 		const proofPath = plain(row.proof);
 		if (proofPath.startsWith("none")) continue;
@@ -192,6 +211,50 @@ describe("docs/feature-mechanism.md", () => {
 			"Deleted mechanism -> packages/does-not-exist/deleted.ts",
 			"Deleted proof -> packages/tui/test/gone.test.ts",
 		]);
+	});
+
+	test("a cited line that no longer holds code is reported, not silently accepted", async () => {
+		// The drift branch of contract (1), and the one the real table needed: a
+		// `file:line` whose **file** still exists but whose **line** has moved is the
+		// failure a file-existence check cannot see. `#mutateConfig` moved from
+		// `manager.ts:171` to `:242` and the row stayed green, because
+		// `manager.ts` was still there.
+		//
+		// Three ways to drift, and they travel different paths through the check, so
+		// covering only one leaves the other two unproven: a line past the end of the
+		// file, a line that is blank because code moved off it, and a line that now
+		// holds unrelated code. The third is the one this test cannot assert on
+		// without inventing a symbol contract — it is covered by the real table
+		// instead, which fails today precisely because two of its rows drifted.
+		using dir = TempDir.createSync("@omp-mechanism-drift-");
+		const target = path.join(dir.path(), "widget.ts");
+		await Bun.write(target, ["export const a = 1;", "", "export const b = 2;", ""].join("\n"));
+
+		const broken = path.join(dir.path(), "feature-mechanism.md");
+		const absolute = path.relative(REPO_ROOT, target).replace(/\\/g, "/");
+		await Bun.write(
+			broken,
+			[
+				"| feature | mechanism | proof |",
+				"| --- | --- | --- |",
+				`| Past the end | \`${absolute}:9999\` | none — owes a bead |`,
+				`| Blank line | \`${absolute}:2\` | none — owes a bead |`,
+				`| Real line | \`${absolute}:3\` | none — owes a bead |`,
+				"",
+			].join("\n"),
+		);
+
+		const dangling = await findDangling(await readRows(broken));
+
+		// The specific strings, not the count: an empty array would satisfy a length
+		// assertion, and an empty array is the silent pass this test exists to rule out.
+		expect(dangling).toEqual([
+			`Past the end -> ${absolute}:9999 (no code at that line)`,
+			`Blank line -> ${absolute}:2 (no code at that line)`,
+		]);
+		// `Real line` is absent on purpose: a line that holds code must NOT be flagged,
+		// or the check would reject every correct row along with the drifted ones.
+		expect(dangling.some(entry => entry.startsWith("Real line"))).toBe(false);
 	});
 
 	test("a proof names a test under packages/*/test, or is a `none` that owes one to a named work item", async () => {

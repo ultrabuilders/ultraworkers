@@ -264,3 +264,13 @@ README.md	42
 scripts/rename/README.md	9
 # on-disk config dir name
 scripts/session-stats/README.md	4
+# `.omp` here is the config read root a migrating install still reads from, not a
+# retired brand name. `packages/utils/src/dirs.ts:438` `getConfigReadRootName()`
+# returns the first candidate directory that holds a main config file, and `.omp`
+# is one of those candidates; `:499` `getConfigWriteRootName()` returns
+# `CONFIG_DIR_NAME_NEXT` unconditionally, so no write re-enters `.omp` while that
+# directory exists. This doc names the path a real install reads, so the token is
+# the read root's name — renaming it here would point the doc at a path no install
+# uses. Stated as that invariant, not as a count: the count moves, the two
+# functions above do not.
+docs/ui-comparison-ulw-vs-opencoding.md	8

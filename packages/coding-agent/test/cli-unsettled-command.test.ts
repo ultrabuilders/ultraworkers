@@ -117,7 +117,7 @@ async function runConfigSet(tempDir: TempDir, settingsInit: SettingsInitMode): P
 // Each case cold-starts the CLI graph in a child process; the budget covers that transpile.
 describe("one-shot CLI command settlement", () => {
 	it("exits 1 with a diagnostic when the command's work never settles", async () => {
-		using tempDir = TempDir.createSync("@omp-cli-unsettled-");
+		using tempDir = TempDir.createSync("@ultraworkers-cli-unsettled-");
 		const run = await runConfigSet(tempDir, "stall");
 
 		expect(run.exitCode, run.stderr).toBe(1);
@@ -134,7 +134,7 @@ describe("one-shot CLI command settlement", () => {
 	}, 30_000);
 
 	it("keeps a completed command's exit 0 and output", async () => {
-		using tempDir = TempDir.createSync("@omp-cli-settled-");
+		using tempDir = TempDir.createSync("@ultraworkers-cli-settled-");
 		const run = await runConfigSet(tempDir, "real");
 
 		expect(run.exitCode, run.stderr).toBe(0);
@@ -147,7 +147,7 @@ describe("one-shot CLI command settlement", () => {
 	}, 30_000);
 
 	it("keeps exit 0 when the loop resumes after a premature beforeExit and the command completes", async () => {
-		using tempDir = TempDir.createSync("@omp-cli-resumed-");
+		using tempDir = TempDir.createSync("@ultraworkers-cli-resumed-");
 		const run = await runConfigSet(tempDir, "resume-after-drain");
 
 		expect(run.exitCode, run.stderr).toBe(0);
@@ -158,7 +158,7 @@ describe("one-shot CLI command settlement", () => {
 	}, 30_000);
 
 	it("keeps an explicit exit's code when the loop resumed after a premature beforeExit", async () => {
-		using tempDir = TempDir.createSync("@omp-cli-exited-");
+		using tempDir = TempDir.createSync("@ultraworkers-cli-exited-");
 		const run = await runConfigSet(tempDir, "exit-after-drain");
 
 		expect(run.exitCode, run.stderr).toBe(0);

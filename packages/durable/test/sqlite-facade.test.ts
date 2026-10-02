@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import { describe, expect, it } from "bun:test";
 import { StorageRejected } from "../src/errors";
-import { idFromNumber } from "../src/ids";
+import { idFromNumber, seqFromNumber } from "../src/ids";
 import type { SqliteDatabase, SqliteStatement } from "../src/storage/sqlite/index";
 import { SqliteStorage } from "../src/storage/sqlite/index";
 import { type NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/storage/sqlite/node";
@@ -158,10 +158,10 @@ describe("portable SQLite facade settlement", () => {
 		});
 		await Promise.resolve();
 		expect(committed).toBe(false);
-		expect(await storage.mintId<EntryId>()).toBe(2);
+		expect(await storage.mintId<EntryId>()).toBe(idFromNumber<EntryId>(2));
 		database.settle();
-		await expect(committing).resolves.toBe(1);
-		expect(await storage.mintId<EntryId>()).toBe(101);
+		await expect(committing).resolves.toBe(seqFromNumber(1));
+		expect(await storage.mintId<EntryId>()).toBe(idFromNumber<EntryId>(101));
 
 		database.controlNextSettlement("reject");
 		const rejected = storage.commit(
@@ -173,10 +173,10 @@ describe("portable SQLite facade settlement", () => {
 			],
 			BACKGROUND_CONTEXT,
 		);
-		expect(await storage.mintId<EntryId>()).toBe(102);
+		expect(await storage.mintId<EntryId>()).toBe(idFromNumber<EntryId>(102));
 		database.settle();
 		await expect(rejected).rejects.toThrow("controlled settlement rejection");
-		expect(await storage.mintId<EntryId>()).toBe(103);
+		expect(await storage.mintId<EntryId>()).toBe(idFromNumber<EntryId>(103));
 		expect(await storage.entry(idFromNumber<EntryId>(200), BACKGROUND_CONTEXT)).toBeUndefined();
 		await storage.close(BACKGROUND_CONTEXT);
 	});

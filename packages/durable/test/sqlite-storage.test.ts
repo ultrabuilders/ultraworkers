@@ -6,7 +6,7 @@ import type { Context, JsonValue } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import { registerStorageConformance } from "@oh-my-pi/pi-durable/testing";
 import { afterEach, describe, expect, it, setSystemTime } from "bun:test";
-import { idFromNumber } from "../src/ids";
+import { idFromNumber, seqFromNumber } from "../src/ids";
 import type { SqliteStorage } from "../src/storage/sqlite/index";
 import { type NodeSqliteStorageOptions, openNodeSqliteStorage } from "../src/storage/sqlite/node";
 import type {
@@ -170,9 +170,11 @@ function revisionCount(path: string, documentId: DocumentId): number {
 describe("Pico SqliteStorage", () => {
 	it("persists records, sequence allocation, and global ID allocation across reopen", async () => {
 		const { storage, path } = await createSqliteStorage();
-		expect(await createRoot(storage)).toBe(1);
+		expect(await createRoot(storage)).toBe(seqFromNumber(1));
 		const entryId = await storage.mintId<EntryId>();
-		expect(await storage.commit([{ type: "entry", value: entry(entryId, ROOT_CONVERSATION_ID) }], context)).toBe(2);
+		expect(await storage.commit([{ type: "entry", value: entry(entryId, ROOT_CONVERSATION_ID) }], context)).toBe(
+			seqFromNumber(2),
+		);
 		await storage.close(context);
 		openStorages.delete(storage);
 
@@ -180,15 +182,15 @@ describe("Pico SqliteStorage", () => {
 		openStorages.add(reopened);
 		expect(await reopened.entry(entryId, context)).toEqual({
 			entry: entry(entryId, ROOT_CONVERSATION_ID),
-			commitSeq: 2,
+			commitSeq: seqFromNumber(2),
 		});
-		expect(await reopened.mintId<EntryId>()).toBe(entryId + 1);
+		expect(await reopened.mintId<EntryId>()).toBe(idFromNumber<EntryId>(Number(entryId) + 1));
 		expect(
 			await reopened.commit(
 				[{ type: "task", value: pendingTask(await reopened.mintId<TaskId<JsonValue>>()) }],
 				context,
 			),
-		).toBe(3);
+		).toBe(seqFromNumber(3));
 	});
 
 	it("rejects persisted metadata corruption on reopen", async () => {
@@ -328,7 +330,7 @@ describe("Pico SqliteStorage", () => {
 		expect(await storage.task(transientTaskId, context)).toBeUndefined();
 		const committedId = await storage.mintId<EntryId>();
 		expect(await storage.commit([{ type: "entry", value: entry(committedId, ROOT_CONVERSATION_ID) }], context)).toBe(
-			2,
+			seqFromNumber(2),
 		);
 
 		const db = new DatabaseSync(path, { readOnly: true });

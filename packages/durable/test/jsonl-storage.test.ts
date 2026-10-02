@@ -7,7 +7,7 @@ import { registerStorageConformance } from "@oh-my-pi/pi-durable/testing";
 import { afterEach, describe, expect, it } from "bun:test";
 import { err, FileError, type FileSystem, type Result } from "../src/env/index";
 import { NodeExecutionEnv } from "../src/env/node";
-import { idFromNumber } from "../src/ids";
+import { idFromNumber, seqFromNumber } from "../src/ids";
 import { JsonlStorage } from "../src/storage/jsonl/index";
 import { openNodeJsonlStorage } from "../src/storage/jsonl/node";
 import type {
@@ -444,7 +444,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 				[{ type: "entry", value: { id, conversationId: ROOT_CONVERSATION_ID, kind: "good" } }],
 				context,
 			),
-		).toBe(2);
+		).toBe(seqFromNumber(2));
 	});
 
 	for (const failure of [
@@ -659,7 +659,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 					],
 					context,
 				),
-			).resolves.toBe(4);
+			).resolves.toBe(seqFromNumber(4));
 			expect((await storage.document(id, "current", context))?.value).toEqual({ count: 2 });
 			await storage.close(context);
 
@@ -690,7 +690,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 				context,
 			);
 			env.fail({ operation: "remove", call: 1, mode });
-			await expect(storage.commit([{ type: "document.retire", id }], context)).resolves.toBe(3);
+			await expect(storage.commit([{ type: "document.retire", id }], context)).resolves.toBe(seqFromNumber(3));
 			expect(await storage.document(id, "current", context)).toBeUndefined();
 			await storage.close(context);
 
@@ -731,7 +731,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 					],
 					context,
 				),
-			).resolves.toBe(3);
+			).resolves.toBe(seqFromNumber(3));
 			expect(env.operations).toEqual([
 				`append:doc-${id}.jsonl`,
 				`flush:doc-${id}.jsonl`,
@@ -785,7 +785,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 					],
 					context,
 				),
-			).resolves.toBe(3);
+			).resolves.toBe(seqFromNumber(3));
 			env.clear();
 			await storage.commit(
 				[
@@ -814,7 +814,9 @@ describe("Pico JsonlStorage publication and recovery", () => {
 			const id = await storage.mintId<TaskId<JsonValue>>();
 			await storage.commit([{ type: "task", value: pendingTask(id) }], context);
 			env.fail({ operation: "remove", call: 1, mode });
-			await expect(storage.commit([{ type: "task", value: terminalTask(id) }], context)).resolves.toBe(3);
+			await expect(storage.commit([{ type: "task", value: terminalTask(id) }], context)).resolves.toBe(
+				seqFromNumber(3),
+			);
 			expect(await storage.task(id, context)).toEqual(terminalTask(id));
 			await storage.close(context);
 
@@ -1008,7 +1010,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 				[{ type: "document.change", id: documentId, content: { kind: "delta", version: 1, ops: [] } }],
 				context,
 			),
-		).toBe(3);
+		).toBe(seqFromNumber(3));
 	});
 
 	it("removes complete unconfirmed sidecar tails without resurrecting terminal tasks", async () => {
@@ -1035,7 +1037,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 		const reopened = await openStorage(directory);
 		expect(await fileExists(sidecarPath)).toBe(false);
 		expect(await reopened.task(taskId, context)).toEqual(terminalTask(taskId));
-		expect(await reopened.commit([], context)).toBe(4);
+		expect(await reopened.commit([], context)).toBe(seqFromNumber(4));
 	});
 
 	it("fails open when confirmed sidecar data is missing", async () => {

@@ -190,6 +190,24 @@ describe("system prompt preparation", () => {
 		]);
 	});
 
+	it("sends each patch as its own developer message, so the wire shape is a sequence", async () => {
+		const conversation = await root();
+		await apply(conversation, { a: "1", b: "2" });
+		await apply(conversation, { a: "1", b: "20" });
+		// What the provider receives. `apply` above checks ONE entry's message; this checks the
+		// sequence across entries, which is a different contract: a baseline joins every section,
+		// and each later patch carries only what it changed. A removal contributes nothing.
+		await apply(conversation, { a: "1" });
+		const sent = (await conversation.context(context)).messages.filter(m => m.role === "developer");
+		// The third message is empty on purpose: a patch that only removes a section has no text
+		// of its own, because the entry that set it is still in the transcript carrying it.
+		expect(sent.map(m => m.content)).toEqual(["1\n2", "20", ""]);
+		// Cumulative text is what the model reads, so `b` appears with both its values and the
+		// later one wins by position. Nothing in the code enforces that; it is the shape the
+		// transcript has always had, and this test is here so a change to it is visible.
+		expect(sent.map(m => m.content).join("\n")).toContain("20");
+	});
+
 	it("writes a complete post-head baseline even when replay already matches", async () => {
 		const conversation = await root();
 		await apply(conversation, { a: "1" });

@@ -180,10 +180,37 @@ describe("the ratchet as a runnable gate", () => {
 		// the labelling, not the arithmetic. Each rule is then asserted to carry a value
 		// of its own, so the contract (every ungated number is named) survives the next
 		// rule and deleting any one of these lines still fails.
+		//
+		// The `m` flag and the `\[ratchet\]   ` prefix are load-bearing, not decoration.
+		// `/hits-imbalance\s+= \d+/` is ALSO satisfied by the `literal-hits-imbalance`
+		// line immediately above it, so deleting the real hits-imbalance line left all
+		// nine tests green — measured, not assumed. The sentence above claimed that
+		// deleting any one of these lines fails, and for that one it was simply wrong.
 		expect(out).toMatch(/are CEILINGS, they must fall/);
-		expect(out).toMatch(/missing-row\s+= \d+/);
-		expect(out).toMatch(/literal-hits-imbalance\s+= \d+/);
-		expect(out).toMatch(/hits-imbalance\s+= \d+/);
+		expect(out).toMatch(/^\[ratchet\]   missing-row\s+= \d+/m);
+		expect(out).toMatch(/^\[ratchet\]   literal-hits-imbalance\s+= \d+/m);
+		expect(out).toMatch(/^\[ratchet\]   hits-imbalance\s+= \d+/m);
+		expect(out).toMatch(/^\[ratchet\]   unreconciled-pinned\s+= \d+/m);
 		expect(proc.exitCode).toBe(0);
+	});
+
+	it("carries the unreconciled count through instead of printing a constant", () => {
+		// The control. A ratchet line that always reads the same proves nothing about
+		// whether it is measuring: deleting the metric entirely, or hardcoding it, both
+		// satisfy a test that only checks the line exists. This one moves the input and
+		// requires the number to move with it, which is what makes growth visible on the
+		// next run — the whole reason a4 asked for the ratchet rather than a print.
+		const base = checkRatchet([]);
+		expect(base.unreconciledPinned).toBe(0);
+		expect(base.unreconciledPaths).toBe(0);
+
+		const grown = checkRatchet([], undefined, { occurrences: 85, paths: 31 });
+		expect(grown.unreconciledPinned).toBe(85);
+		expect(grown.unreconciledPaths).toBe(31);
+
+		// Reported, never blocking: the decision to disposition 85 occurrences is the
+		// owner's, so a growing number must not redden the gate mid-sweep. It is still
+		// not allowed to be invisible either, which is what the assertion above holds.
+		expect(grown.ok).toBe(true);
 	});
 });

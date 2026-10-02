@@ -47,7 +47,7 @@
  */
 
 import * as path from "node:path";
-import { checkPre, parseTable, RULES_VERSION } from "./check-disposition";
+import { checkPre, findUnreconciledPinned, parseTable, RULES_VERSION } from "./check-disposition";
 import { readGateArgsOrExit } from "./args";
 
 /**
@@ -134,6 +134,20 @@ export interface RatchetVerdict {
 	 */
 	readonly hitsImbalance: number;
 	/**
+	 * A ceiling in OCCURRENCES, not in rows — the unit that matters here is the pinned
+	 * occurrence no row accounts for, because that is what the sweep would leave behind.
+	 *
+	 * Not a violation and never one: each of these needs a human disposition (a
+	 * `rename` row to consume it, or a pinned `keep` row to justify it), and failing
+	 * them now would redden CI for 31 paths over work nobody has decided yet. It lives
+	 * here rather than only in `check-disposition`'s output because a number printed on
+	 * one run is not a ceiling — nobody re-reads yesterday's stdout. This one is on
+	 * every run and reads against the previous one. Gated once the sweep settles.
+	 */
+	readonly unreconciledPinned: number;
+	/** The same population counted by path, so a jump is attributable to a file. */
+	readonly unreconciledPaths: number;
+	/**
 	 * GATED, unlike every metric above it, and the difference is the point. A sweep
 	 * never changes which plan documents exist, so this count has no legitimate
 	 * non-zero reading. Its siblings are reported-then-gated-later because peers
@@ -151,6 +165,7 @@ export interface RatchetVerdict {
 export function checkRatchet(
 	violations: readonly { readonly rule: string }[],
 	baseline: number = STALE_ROW_BASELINE,
+	unreconciled: { readonly occurrences: number; readonly paths: number } = { occurrences: 0, paths: 0 },
 ): RatchetVerdict {
 	const count = (rule: string) => violations.filter(v => v.rule === rule).length;
 	const staleRow = count("stale-row");
@@ -162,6 +177,8 @@ export function checkRatchet(
 		missingRow: count("missing-row"),
 		literalImbalance: count("literal-hits-imbalance"),
 		hitsImbalance: count("hits-imbalance"),
+		unreconciledPinned: unreconciled.occurrences,
+		unreconciledPaths: unreconciled.paths,
 		danglingKeepRef,
 	};
 }
@@ -194,7 +211,11 @@ async function main(): Promise<number> {
 		return 2;
 	}
 
-	const verdict = checkRatchet(await checkPre(root, rows));
+	const unreconciled = await findUnreconciledPinned(root, rows);
+	const verdict = checkRatchet(await checkPre(root, rows), STALE_ROW_BASELINE, {
+		occurrences: unreconciled.reduce((sum, u) => sum + u.occurrences, 0),
+		paths: unreconciled.length,
+	});
 	const printed = digest(tableText);
 	const tableDrift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table edited since the ceiling was set";
 	const rulesDrift =
@@ -211,10 +232,11 @@ async function main(): Promise<number> {
 			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
 			`[ratchet] gated, must be 0:\n` +
 			`[ratchet]   dangling-keep-ref      = ${verdict.danglingKeepRef}   (a keep_refs id no plan document introduces)\n` +
-			`[ratchet] reported, not gated — all three are CEILINGS, they must fall:\n` +
+			`[ratchet] reported, not gated — all four are CEILINGS, they must fall:\n` +
 			`[ratchet]   missing-row             = ${verdict.missingRow}   (rows still not covered)\n` +
 			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)\n` +
-			`[ratchet]   hits-imbalance          = ${verdict.hitsImbalance}   (a path's rows sum ≠ the file's count)`,
+			`[ratchet]   hits-imbalance          = ${verdict.hitsImbalance}   (a path's rows sum ≠ the file's count)\n` +
+			`[ratchet]   unreconciled-pinned     = ${verdict.unreconciledPinned}   (pinned occurrences over ${verdict.unreconciledPaths} path(s) that no row accounts for)`,
 	);
 
 	if (!verdict.ok) {

@@ -1,18 +1,18 @@
 # `scripts/rename/` — rename decision table (W8b)
 
 This directory holds the **disposition table**: one row per (file, decision class)
-saying how many occurrences of the legacy token in that file were *decided*, and by
+saying how many occurrences of the legacy token in that file were _decided_, and by
 what rule. It exists because a bare `grep` count cannot tell a wire contract from a
 stale comment, and a sweep that treats them alike breaks live clients.
 
-| file | what it is |
-| --- | --- |
-| `disposition.tsv` | the decision table (6 columns, tab-separated, no quoting) |
-| `check-disposition.ts` | the gate: re-derives every number and fails on disagreement |
-| `check-disposition.test.ts` | fixture-driven tests for the gate's pure logic |
-| `check-docs-rename.ts` | W13 — markdown surface, allow-list by path |
-| `check-runtime-rename.ts` | W14 — `console.*` output, allow-list by (path, line) |
-| `bucket-legacy-token.ts` | measurement only; reports, does not gate |
+| file                        | what it is                                                  |
+| --------------------------- | ----------------------------------------------------------- |
+| `disposition.tsv`           | the decision table (6 columns, tab-separated, no quoting)   |
+| `check-disposition.ts`      | the gate: re-derives every number and fails on disagreement |
+| `check-disposition.test.ts` | fixture-driven tests for the gate's pure logic              |
+| `check-docs-rename.ts`      | W13 — markdown surface, allow-list by path                  |
+| `check-runtime-rename.ts`   | W14 — `console.*` output, allow-list by (path, line)        |
+| `bucket-legacy-token.ts`    | measurement only; reports, does not gate                    |
 
 ## The schema
 
@@ -22,7 +22,7 @@ scope	path	hits	disposition	reason	keep_refs
 
 - **`scope`** — grouping label for the row's origin (`src`, `test`, …).
 - **`path`** — repo-relative path. One file may have several rows.
-- **`hits`** — occurrences attributed to *this* class. See "The invariant" below.
+- **`hits`** — occurrences attributed to _this_ class. See "The invariant" below.
 - **`disposition`** — one of a **closed** vocabulary (below).
 - **`reason`** — free text, never empty. This is where ownership goes.
 - **`keep_refs`** — required for every `keep-*` row: which contract authorises it.
@@ -32,12 +32,12 @@ can silently skip a decision, so every explanation belongs in `reason` or here.
 
 ## The vocabulary is closed
 
-| disposition | means | `keep_refs` |
-| --- | --- | --- |
-| `rename` | the token is ours to change | — |
-| `keep-wire` | a third-party contract; renaming breaks a live client | required |
-| `keep-worker-selector` | the hidden argv selector (`__omp_worker_`) | required |
-| `keep-path` | an on-disk path (`.omp`) | required |
+| disposition            | means                                                 | `keep_refs` |
+| ---------------------- | ----------------------------------------------------- | ----------- |
+| `rename`               | the token is ours to change                           | —           |
+| `keep-wire`            | a third-party contract; renaming breaks a live client | required    |
+| `keep-worker-selector` | the hidden argv selector (`__omp_worker_`)            | required    |
+| `keep-path`            | an on-disk path (`.omp`)                              | required    |
 
 A `disposition` outside this set is a **gate failure**, not a new class. Adding one
 is a reviewed act — see "Open question" below for the one currently pending.
@@ -48,7 +48,7 @@ is a reviewed act — see "Open question" below for the one currently pending.
 > occurrence count of the pinned expression.
 
 This is what makes the table falsifiable. Without it, a missed `rename` hides under
-a `keep-*` row for the same file: the file *has* a row, the gate is satisfied, and
+a `keep-*` row for the same file: the file _has_ a row, the gate is satisfied, and
 the leftover occurrence rides along under a decision nobody made.
 
 Splitting `hits` **per class rather than per file** is what closes that hole. A file
@@ -69,13 +69,13 @@ trailing edge).
 Two classes are counted by **literal**, not by this expression, and the reason is
 measured rather than assumed:
 
-| class | literal | pinned count of `__omp_worker_x` |
-| --- | --- | --- |
-| `keep-worker-selector` | `__omp_worker_` | **0** |
-| `keep-path` | `".omp"` | 0 |
+| class                  | literal         | pinned count of `__omp_worker_x` |
+| ---------------------- | --------------- | -------------------------------- |
+| `keep-worker-selector` | `__omp_worker_` | **0**                            |
+| `keep-path`            | `".omp"`        | 0                                |
 
 `_` is excluded on both sides of the pinned expression, so the worker-selector class
-is genuinely *disjoint* from it — a `keep-worker-selector` row can never be reported
+is genuinely _disjoint_ from it — a `keep-worker-selector` row can never be reported
 "missing", because its file may have no pinned hits at all.
 
 ## Measured on the tree at the time of writing
@@ -94,14 +94,14 @@ stale by 2 files and 18 occurrences. Measured with the gate's own code path —
 `hitPaths(".")` from `check-disposition.ts` (glob `**/*.ts`, skipping
 `node_modules/` and `.git/`) returning 706, and the same paths counted against
 the gate's `PINNED` expression returning 2072. A standalone scan reproduces the
-same pair, so the *scope* is settled.
+same pair, so the _scope_ is settled.
 
 **2072 is a floor, not a total.** `PINNED` is the expression quoted at line 61,
 and it consumes the delimiter it matches: two tokens separated by a single
 space, or by one comma, each count as **1** where 2 exist. Rewriting it with a
 lookbehind fixes that without widening the scope — the `.` exclusion stays, so
 `..` around the token remains 0 in both forms. That is a change to what the
-gate *means*, so it is not made here: `PINNED` is a locator and its value is a
+gate _means_, so it is not made here: `PINNED` is a locator and its value is a
 ratchet baseline. It is written out once, at line 61, on purpose: repeating the
 literal here spends the file's allowlist budget on a copy of a claim that can
 only drift from the original.
@@ -122,7 +122,7 @@ low numbers and cannot be trusted to the digit. Only the two totals were
 re-measured here. A fresh breakdown must come from a fresh count, and until then
 treat these four lines as an indication of shape, not as figures to quote.
 
-**Read the 51% before filling in a row.** A `rename` row is *not* automatically a
+**Read the 51% before filling in a row.** A `rename` row is _not_ automatically a
 code edit: renaming inside a comment is W13's job, not this table's.
 
 ### A row expires when its file moves, and that is not an authoring error
@@ -167,11 +167,11 @@ the only legal value. Running only one stage means half the table is never check
 at the moment it matters.
 
 `--stage=pre` fails on: a hit file with no row, a row for a file with no hits
-(*stale*), an empty `reason`, a `keep-*` row with no `keep_refs`, or rows whose
+(_stale_), an empty `reason`, a `keep-*` row with no `keep_refs`, or rows whose
 `hits` do not sum to the file's real count.
 
 `--stage=post` fails on: a `rename` row that still has occurrences, or a `keep-*` row
-that *shrank* — a signed-off contract quietly disappearing is the opposite of what
+that _shrank_ — a signed-off contract quietly disappearing is the opposite of what
 the row authorised.
 
 A **missing table is a failure, not a pass.** Treating "no table" as "no violations"
@@ -179,12 +179,12 @@ would make the gate green precisely when it has nothing to say.
 
 ## Approval process
 
-| step | who | what is blocked until it happens |
-| --- | --- | --- |
-| author writes rows | the implementer | `--stage=pre` cannot go green |
-| second reviewer signs | a peer, **not** the author | the sweep does not start |
-| sweep runs | the implementer, one file at a time | — |
-| `--stage=post` | CI | the work item is not closed |
+| step                  | who                                 | what is blocked until it happens |
+| --------------------- | ----------------------------------- | -------------------------------- |
+| author writes rows    | the implementer                     | `--stage=pre` cannot go green    |
+| second reviewer signs | a peer, **not** the author          | the sweep does not start         |
+| sweep runs            | the implementer, one file at a time | —                                |
+| `--stage=post`        | CI                                  | the work item is not closed      |
 
 The gate itself only prints a warning when a second signature is missing; enforcing
 that is a people problem, not a code one, and pretending otherwise would make the
@@ -202,9 +202,41 @@ so it is an owner decision, not an implementer's. Until it is made, `--stage=pre
 reports those files as `missing-row` — which is the honest answer: nobody has decided
 them yet.
 
+## Writing a test in this directory
+
+Two costs here are paid at the moment of writing, and both were measured while
+landing `epic-wh2q`. They are cheap to avoid and expensive to discover later.
+
+### A control only means something on the gate it was written for
+
+A test's positive control has to be able to come back **non-zero on that specific
+gate**. Controls do not transfer between gates, because the gates do not share an
+exclusion policy.
+
+The concrete case: `.omp/skills/a.md` is the right control for
+`check-disposition` — `.omp/tools/tui.ts` is a tracked file of this repository
+with a live hit, so that gate _must_ reach into dot-directories. Copying that
+control into `check-docs-rename.test.ts` produced a test that passed for the
+wrong reason: `EXCLUDED_PREFIXES` at `check-docs-rename.ts:71` already lists
+`.lavish-wip/`, `.lavish/` and `.omp/`, the control returned `[]`, and the
+assertion would have been satisfied by a gate that scanned nothing at all.
+`bucket-legacy-token` reuses that same `isExcluded`, so it inherited the same
+blind spot.
+
+That failure mode is worse than a red test, because it looks like a success.
+Before trusting a green, check the control was non-zero _first_.
+
+### Every test added here needs a disposition row, in the same commit
+
+A test under `scripts/rename/` that constructs a legacy token adds an occurrence
+to a file the gate scans, so the file's row count goes stale and the gate reports
+`hits-imbalance`. The row moves in the **same commit** as the test that moved the
+number — not as a follow-up, because by then the count has already been wrong on
+someone else's tree, which is how it happened twice in one hour.
+
 ## Not a test
 
-AGENTS.md bans source-grep *tests* — a test asserting on an implementation file's
+AGENTS.md bans source-grep _tests_ — a test asserting on an implementation file's
 text breaks on harmless refactors. This is a corpus scanner wired into `check:ts`,
 the same shape as W13's and W14's gates. Its pure logic is covered by fixtures in
 `check-disposition.test.ts`.

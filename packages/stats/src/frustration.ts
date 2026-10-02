@@ -19,7 +19,7 @@
 import type { ChoiceQuestion, Judge, Model, ScoreQuestion } from "@oh-my-pi/pi-ai";
 import { compareRevision, parseRevision } from "@oh-my-pi/pi-catalog/compat/revision";
 import { classifyModel } from "@oh-my-pi/pi-catalog/compat/taxonomy";
-import { logger } from "@oh-my-pi/pi-utils";
+import { APP_NAME, logger } from "@oh-my-pi/pi-utils";
 import { getTimeRangeConfig } from "./aggregator";
 import {
 	type FrustrationModelRow,
@@ -100,8 +100,7 @@ const ATTEMPTS_PER_TEXT = 3;
 /** Stop the run when this many texts failed before any succeeded: the judge is not working. */
 const CIRCUIT_BREAKER_FAILURES = 25;
 
-const NO_PROVIDER_REASON =
-	"This dashboard was started without a judge (standalone omp-stats). Run `omp stats` to classify.";
+const NO_PROVIDER_REASON = `This dashboard was started without a judge (standalone omp-stats). Run \`${APP_NAME} stats\` to classify.`;
 const NO_MODEL_REASON = "No judge model is available. Configure the `judge` model role.";
 
 let judgeProvider: StatsJudgeProvider | undefined;

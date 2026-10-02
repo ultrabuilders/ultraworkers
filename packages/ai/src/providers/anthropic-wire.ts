@@ -117,14 +117,14 @@ export type ToolRemovalBlockParam = {
 	tool: ToolChangeReferenceParam;
 };
 
-/** Anthropic server-tool history variants omp can replay atomically. */
+/** Anthropic server-tool history variants ultraworkers can replay atomically. */
 export type AnthropicServerToolHistoryBlockParam =
 	| WebSearchServerToolUseBlockParam
 	| WebSearchToolResultBlockParam
 	| ToolSearchServerToolUseBlockParam
 	| ToolSearchToolResultBlockParam;
 
-/** True when a block is complete Anthropic server-tool history omp can replay. */
+/** True when a block is complete Anthropic server-tool history ultraworkers can replay. */
 export function isAnthropicServerToolHistoryBlock(block: {
 	type: string;
 	name?: unknown;

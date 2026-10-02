@@ -3,7 +3,7 @@
  *
  * Copied from the reference implementation in `gajae-ref`
  * (`packages/coding-agent/bench/perf-threshold.ledger.ts`, 97 lines) and
- * adapted to omp's benchmark set.
+ * adapted to ultraworkers' benchmark set.
  *
  * Threshold changes are explicit, evidence-backed records. Wall-clock and RSS
  * thresholds START advisory (report-only, never fail default CI) until variance

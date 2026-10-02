@@ -6,7 +6,7 @@
  * `addUsage`; and `packages/agent/src/harness/utils/usage.ts`) — MIT License,
  * Copyright (c) 2025 Mario Zechner. Upstream defined the conditional-spread
  * rule for its two optional token splits (`reasoning`, `cacheWrite1h`); this
- * file keeps that rule verbatim and extends it to every optional field omp's
+ * file keeps that rule verbatim and extends it to every optional field ultraworkers'
  * `Usage` carries.
  *
  * Upstream had one helper and every call site used it. This tree had four

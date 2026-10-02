@@ -477,7 +477,7 @@ function devinFusionLeadUid(uid: string, liveUids: ReadonlyMap<string, unknown>)
 }
 
 /**
- * Point a Fusion pairing at its lead. omp runs only the lead (the sidekick is
+ * Point a Fusion pairing at its lead. ultraworkers runs only the lead (the sidekick is
  * paired by the native client), so the limits and pricing a caller budgets
  * against are the lead's, not the composite card's.
  */

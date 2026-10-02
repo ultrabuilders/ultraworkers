@@ -15,6 +15,21 @@ export interface TelemetryContext {
 	startSpan<T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T>;
 }
 
+/*
+ * NOT the same contract as `TelemetryContext` in `@oh-my-pi/pi-agent-core`
+ * (`packages/agent/src/telemetry/context.ts`), despite the identical name. That one
+ * is synchronous — `startSpan(name, fn): T` — with a bare name and a `SpanStatus`
+ * of `"unset" | "ok" | "error"`; this one is async, takes a `SpanOptions` object,
+ * and its `SpanStatus` is `{ status: "ok" } | { status: "error", error? }`. Neither
+ * is assignable to the other, so a call site written against one cannot be handed
+ * the other by accident.
+ *
+ * This package is the vendor-neutral type vocabulary plus the typed-schema helpers
+ * (`defineTelemetrySchema`, `createTypedSpanStarter`). The agent-core copy carries
+ * the OpenTelemetry adapter. They are different layers that happen to share a name;
+ * importing the wrong one is the hazard this note exists to prevent.
+ */
+
 export interface TelemetrySpan extends TelemetryContext {
 	addEvent(name: string, attributes?: SpanAttributes): void;
 	setAttributes(attributes: SpanAttributes): void;

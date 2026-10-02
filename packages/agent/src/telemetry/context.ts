@@ -104,6 +104,23 @@ export interface TelemetryContext {
 	startSpan<T>(name: string, fn: (span: TelemetrySpan) => T): T;
 }
 
+/*
+ * NOT the same contract as `@oh-my-pi/pi-telemetry`'s `TelemetryContext`, despite
+ * the identical name. That one is `startSpan(options, cb): Promise<T>` with an
+ * options object and an object-shaped `SpanStatus`; this one is synchronous, takes
+ * a bare name, and uses the string union `"unset" | "ok" | "error"`. Neither is
+ * assignable to the other.
+ *
+ * They are two different layers that share a name, not a fork that was left behind.
+ * A size comparison is what makes them look like one: this file and
+ * `packages/agent/src/telemetry.ts` hold the OTEL adapter (`toVendorValue`,
+ * `vendorAttributes`, and the `@opentelemetry/api` imports below), while the
+ * package holds the vendor-neutral type vocabulary and the typed-schema helpers.
+ * Deleting either on the strength of "one is newer" would remove a working
+ * contract — this one is covered by `telemetry-contract.test.ts` and
+ * `telemetry-conformance.test.ts`.
+ */
+
 // ── Adapter ──────────────────────────────────────────────────────────────
 //
 // Proof that the contract is actually implementable, not just describable.

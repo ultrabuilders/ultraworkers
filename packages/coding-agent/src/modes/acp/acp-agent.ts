@@ -680,7 +680,7 @@ export class AcpAgent implements Agent {
 			authMethods.push({
 				type: "terminal",
 				id: "terminal",
-				name: "Set up omp in terminal",
+				name: `Set up ${WIRE_NAME} in terminal`,
 				description: `Launch the ${WIRE_NAME} TUI to add provider keys and select models.`,
 				args: [ACP_TERMINAL_AUTH_FLAG],
 			});

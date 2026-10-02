@@ -86,9 +86,9 @@
  *   disposition(pre): stale-row = 9
  */
 
-import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { readGateArgsOrExit } from "./args";
+import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
 
 /**
  * The pinned expression. Byte-identical to the bead's, so the table and this gate
@@ -299,38 +299,6 @@ function isBuildOutput(relPath: string): boolean {
 }
 
 /**
- * True when any directory strictly between `root` and `relPath` is itself a
- * repository root — a directory carrying a `.git` entry.
- *
- * `EnterWorktree` writes a complete checkout under `.claude/worktrees/<name>/`,
- * and that checkout has its own `.git` file. `Bun.Glob(..., { dot: true })`
- * descends straight into it, so the gate re-reports every finding the parent
- * repository already owns: measured at 661 phantom failures from one worktree,
- * against a real count of roughly 490.
- *
- * The rule is deliberately NOT "skip dot-directories". `.omp/tools/tui.ts` is a
- * tracked file of THIS repository and carries a live hit, so switching the glob
- * to `dot: false` would silently stop gating it — measured as exactly one lost
- * hit, which is precisely the kind of quiet coverage loss this gate exists to
- * prevent. A nested repository is the distinction that actually separates the
- * two: its files are governed by a different index and a different table.
- */
-function isInsideNestedRepository(root: string, relPath: string, cache: Map<string, boolean>): boolean {
-	const segments = relPath.split("/");
-	// Every proper prefix, shallowest first, so the outermost nested repo wins.
-	for (let depth = 1; depth < segments.length; depth++) {
-		const dir = segments.slice(0, depth).join("/");
-		let nested = cache.get(dir);
-		if (nested === undefined) {
-			nested = existsSync(path.join(root, dir, ".git"));
-			cache.set(dir, nested);
-		}
-		if (nested) return true;
-	}
-	return false;
-}
-
-/**
  * Every source path carrying at least one occurrence of the pinned expression.
  *
  * `.js` and `.mjs` are inside the gate because the rename has to hold on every
@@ -342,11 +310,11 @@ function isInsideNestedRepository(root: string, relPath: string, cache: Map<stri
 export async function hitPaths(root: string): Promise<readonly string[]> {
 	const glob = new Bun.Glob("**/*.{ts,js,mjs}");
 	const found: string[] = [];
-	const nestedRepoCache = new Map<string, boolean>();
+	const nestedRepos = nestedRepoCache();
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
 		if (EXCLUDED_PREFIXES.some(prefix => relPath.startsWith(prefix))) continue;
 		if (isBuildOutput(relPath)) continue;
-		if (isInsideNestedRepository(root, relPath, nestedRepoCache)) continue;
+		if (isInsideNestedRepository(root, relPath, nestedRepos)) continue;
 		const text = await Bun.file(path.join(root, relPath)).text();
 		if (new RegExp(PINNED.source).test(text)) found.push(relPath);
 	}

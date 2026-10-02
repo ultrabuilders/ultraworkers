@@ -44,6 +44,7 @@
 import * as path from "node:path";
 import { isExcluded } from "./check-docs-rename";
 import { readGateArgsOrExit } from "./args";
+import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
 
 /** The legacy token, same shape `check-docs-rename.ts` scans with. */
 const LEGACY_TOKEN = /\bomp\b/g;
@@ -109,8 +110,10 @@ export async function bucketLegacyTokens(root: string): Promise<BucketReport> {
 	let inScopeOccurrences = 0;
 	let inScopeFiles = 0;
 	let excludedOccurrences = 0;
+	const nestedRepos = nestedRepoCache();
 
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
+		if (isInsideNestedRepository(root, relPath, nestedRepos)) continue;
 		const text = await Bun.file(path.join(root, relPath)).text();
 		let sawInScope = false;
 		for (const line of text.split("\n")) {

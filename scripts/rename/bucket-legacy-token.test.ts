@@ -144,3 +144,22 @@ describe("the verdict a single string receives", () => {
 		expect(classify("the agent's display name is omp")).toBe("UNBUCKETED (prose noun)");
 	});
 });
+
+describe("scan scope", () => {
+	it("skips a nested repository but still scans ordinary tracked docs", async () => {
+		// Same rule as the sibling gates: a nested `.git` means another repository and
+		// a different table, not "a dot-directory". The control is `docs/a.md`, not a
+		// dot-directory — this gate reuses check-docs-rename's isExcluded, which already
+		// lists `.lavish-wip/`, `.lavish/` and `.omp/` as excluded prefixes.
+		const root = await tree({
+			"docs/a.md": "uses omp here\n",
+			".claude/worktrees/someone/.git": "gitdir: /elsewhere\n",
+			".claude/worktrees/someone/docs/copied.md": "uses omp here\n",
+		});
+		const report = await bucketLegacyTokens(root);
+		expect(report.inScopeFiles).toBe(1);
+		expect(report.excludedFiles).toBe(0);
+		expect(report.inScopeOccurrences).toBe(1);
+		await fs.rm(root, { recursive: true, force: true });
+	});
+});

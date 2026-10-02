@@ -230,3 +230,22 @@ describe("rule A reporting", () => {
 		expect(outstanding(line)).toEqual({ occurrences: 0, files: 0 });
 	});
 });
+
+describe("scan scope", () => {
+	it("skips a nested repository but still scans ordinary tracked docs", async () => {
+		// `EnterWorktree` writes a whole checkout under `.claude/worktrees/<name>/`
+		// carrying its own `.git` FILE, and the `dot: true` glob descends into it —
+		// 661 phantom failures were measured from one worktree in the sibling gate.
+		// The control is `docs/a.md`, NOT a dot-directory: this gate already lists
+		// `.lavish-wip/`, `.lavish/` and `.omp/` in EXCLUDED_PREFIXES, so a tracked
+		// dot-directory cannot be its positive control the way it is for the source
+		// gate, whose `dot: false` would drop `.omp/tools/tui.ts`.
+		const dir = await fixture({
+			"docs/a.md": "uses omp here\n",
+			".claude/worktrees/someone/.git": "gitdir: /elsewhere\n",
+			".claude/worktrees/someone/docs/copied.md": "uses omp here\n",
+		});
+		expect(await scanRuleA(dir)).toEqual([{ path: "docs/a.md", occurrences: 1 }]);
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+});

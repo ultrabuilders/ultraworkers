@@ -44,6 +44,7 @@
  */
 import * as path from "node:path";
 import { readGateArgsOrExit } from "./args";
+import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
 
 /**
  * Path prefixes excluded from the rule, not from the allow-list.
@@ -184,7 +185,9 @@ export async function loadAllowlist(root: string): Promise<AllowlistEntry[]> {
 export async function scanRuleA(root: string): Promise<RuleAViolation[]> {
 	const glob = new Bun.Glob("**/*.md");
 	const violations: RuleAViolation[] = [];
+	const nestedRepos = nestedRepoCache();
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {
+		if (isInsideNestedRepository(root, relPath, nestedRepos)) continue;
 		if (isExcluded(relPath)) continue;
 		const text = await Bun.file(path.join(root, relPath)).text();
 		const matches = text.match(LEGACY_TOKEN);

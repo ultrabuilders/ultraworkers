@@ -187,7 +187,21 @@ describe("the ratchet as a runnable gate", () => {
 		expect(out).toMatch(/\[ratchet\] table {5}: scripts\/rename\/disposition\.tsv · \d+ rows · md5:[0-9a-f]{32}/);
 		// The ceiling carries the digest it was recorded against, so a number that goes
 		// wrong in a month can be traced back to what it meant today.
-		expect(out).toContain("ad1f1ef25f5c55fc924da3c07ac71b44");
+		//
+		// Asserted through the imported binding, not a literal copy of it. The digest is
+		// re-pinned every time the table changes, so a hardcoded string here turned each
+		// correct update into a red test — a second copy of a policy value, which is the
+		// same defect as carrying a private copy of the gate's own expression: correct
+		// until the value it was copied from moves, then quietly wrong. The two shape
+		// assertions above already hold this to a 32-hex md5, and the `table` line above
+		// already proves the COMPUTED digest is printed, so nothing is lost.
+		//
+		// Matched through the BASELINE line, not as a bare `toContain`. While the table
+		// is unmodified the two digests are equal, so a bare containment is satisfied by
+		// whichever line prints first — and deleting the baseline line entirely would
+		// leave it green. That is not hypothetical: it is exactly the state the next table
+		// edit produces. Same reason the computed digest above is matched through its line.
+		expect(out).toContain(`[ratchet] ceiling set against md5:${BASELINE_TABLE_DIGEST}`);
 		// …and the rules it was measured under, which the digest above cannot cover.
 		expect(out).toMatch(/\[ratchet\] rules {5}: \S+ \(ceiling set against \S+\)/);
 		// A green run must still name the numbers it deliberately does not gate on, and

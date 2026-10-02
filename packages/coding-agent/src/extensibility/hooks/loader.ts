@@ -14,7 +14,14 @@ import type { CustomMessagePayload } from "../../session/messages";
 import * as typebox from "../legacy-typebox";
 import { createHandlerDisposer, resolvePath, withHostGuard } from "../utils";
 import { execCommand } from "./runner";
-import type { ExecOptions, HookAPI, HookFactory, HookMessageRenderer, RegisteredCommand } from "./types";
+import type {
+	ExecOptions,
+	HookAPI,
+	HookEntryRenderer,
+	HookFactory,
+	HookMessageRenderer,
+	RegisteredCommand,
+} from "./types";
 
 /**
  * Generic handler function type.
@@ -50,6 +57,7 @@ export interface LoadedHook {
 	handlers: Map<string, HandlerFn[]>;
 	/** Map of customType to hook message renderer */
 	messageRenderers: Map<string, HookMessageRenderer>;
+	entryRenderers: Map<string, HookEntryRenderer>;
 	/** Map of command name to registered command */
 	commands: Map<string, RegisteredCommand>;
 	/** Set the send message handler for this hook's pi.sendMessage() */
@@ -78,6 +86,7 @@ async function createHookAPI(
 ): Promise<{
 	api: HookAPI;
 	messageRenderers: Map<string, HookMessageRenderer>;
+	entryRenderers: Map<string, HookEntryRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
@@ -85,6 +94,7 @@ async function createHookAPI(
 	let sendMessageHandler: SendMessageHandler | null = null;
 	let appendEntryHandler: AppendEntryHandler | null = null;
 	const messageRenderers = new Map<string, HookMessageRenderer>();
+	const entryRenderers = new Map<string, HookEntryRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
 
 	// Cast to HookAPI - the implementation is more general (string event names)
@@ -115,6 +125,18 @@ async function createHookAPI(
 		registerMessageRenderer<T = unknown>(customType: string, renderer: HookMessageRenderer<T>): void {
 			messageRenderers.set(customType, renderer as HookMessageRenderer);
 		},
+		registerEntryRenderer<T = unknown>(customType: string, renderer: HookEntryRenderer<T>): void {
+			// Same store, same one-renderer-per-type rule as `registerMessageRenderer`
+			// rather than a second mechanism: a hook that registers the same custom
+			// type twice would otherwise silently lose one renderer, and the author
+			// would have no way to learn their second registration never runs.
+			if (entryRenderers.has(customType)) {
+				throw new Error(
+					`Hook entry renderer for custom type '${customType}' is already registered — custom types must be unique so an entry renders once`,
+				);
+			}
+			entryRenderers.set(customType, renderer as HookEntryRenderer);
+		},
 		registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void {
 			commands.set(name, { name, ...options });
 		},
@@ -131,6 +153,7 @@ async function createHookAPI(
 	return {
 		api,
 		messageRenderers,
+		entryRenderers,
 		commands,
 		setSendMessageHandler: (handler: SendMessageHandler) => {
 			sendMessageHandler = handler;
@@ -158,10 +181,8 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 
 		// Create handlers map and API
 		const handlers = new Map<string, HandlerFn[]>();
-		const { api, messageRenderers, commands, setSendMessageHandler, setAppendEntryHandler } = await createHookAPI(
-			handlers,
-			cwd,
-		);
+		const { api, messageRenderers, entryRenderers, commands, setSendMessageHandler, setAppendEntryHandler } =
+			await createHookAPI(handlers, cwd);
 
 		// Call factory to register handlers
 		await withHostGuard(async () => factory(api));
@@ -172,6 +193,7 @@ async function loadHook(hookPath: string, cwd: string): Promise<{ hook: LoadedHo
 				resolvedPath,
 				handlers,
 				messageRenderers,
+				entryRenderers,
 				commands,
 				setSendMessageHandler,
 				setAppendEntryHandler,

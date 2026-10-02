@@ -24,6 +24,7 @@ import type {
 	HookContext,
 	HookError,
 	HookEvent,
+	HookEntryRenderer,
 	HookMessageRenderer,
 	HookUIContext,
 	RegisteredCommand,
@@ -185,6 +186,25 @@ export class HookRunner {
 	getMessageRenderer(customType: string): HookMessageRenderer | undefined {
 		for (const hook of this.hooks) {
 			const renderer = hook.messageRenderers.get(customType);
+			if (renderer) {
+				return renderer;
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Get an entry renderer for the given customType.
+	 * Returns the first renderer found across all hooks, or undefined if none.
+	 *
+	 * Same scan order and same last-wins-by-first-found shape as
+	 * {@link getMessageRenderer}, deliberately: two readers that disagree about
+	 * precedence would make an entry draw differently depending on which seam
+	 * registered it.
+	 */
+	getEntryRenderer(customType: string): HookEntryRenderer | undefined {
+		for (const hook of this.hooks) {
+			const renderer = hook.entryRenderers.get(customType);
 			if (renderer) {
 				return renderer;
 			}

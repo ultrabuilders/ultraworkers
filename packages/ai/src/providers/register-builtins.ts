@@ -42,6 +42,19 @@ export function setBedrockProviderModule(module: Pick<typeof BedrockProvider, "s
 	bedrockStreamOverride = module.streamBedrock;
 }
 
+/**
+ * Drop any host-supplied Bedrock transport, restoring the built-in provider.
+ *
+ * The override is module-level state, so without this a test that installs a
+ * double leaves it in place for every later file in the same process. A double
+ * that ignores its `options` never invokes `options.onPayload`, so the next
+ * file's test awaiting that callback hangs until the runner's timeout instead
+ * of failing on an assertion.
+ */
+export function resetBedrockProviderModule(): void {
+	bedrockStreamOverride = undefined;
+}
+
 /** Install a host-supplied Cursor transport in place of the built-in provider. */
 export function setCursorProviderModule(module: Pick<typeof CursorProvider, "streamCursor">): void {
 	cursorStreamOverride = module.streamCursor;

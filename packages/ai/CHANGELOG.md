@@ -8,6 +8,9 @@
   `isProviderRetryableError` and `isTransientStatus` were exported by their module but the barrel
   re-exported only `./error/rate-limit`, so `import { isRetryableAssistantMessage } from "@oh-my-pi/pi-ai"`
   failed even though the function existed and was documented.
+- `resetBedrockProviderModule()` clears a host-supplied Bedrock transport installed by
+  `setBedrockProviderModule()`. The override was module-level state with no way back to the built-in
+  provider, so anything that installed one kept it for the rest of the process.
 
 ### Changed
 

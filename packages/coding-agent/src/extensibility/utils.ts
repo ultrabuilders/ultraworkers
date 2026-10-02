@@ -186,11 +186,46 @@ let hostGuardStdinWasRaw = false;
  * A depth left above zero by an abandoned window (its `finally` never runs) is a
  * different failure, and a silent one: every later `withHostGuard` in that
  * process becomes a no-op, since neither the snapshot nor the restore branch is
- * reached. What a stranded depth owes the host is still open.
+ * reached. What a stranded depth owes the host is still open; see
+ * {@link hostGuardState} for what can be observed about it.
  */
 function guardedExit(alias: ExitAliasName): (code?: number | string) => never {
 	return (code?: number | string): never => {
 		throw new ExtensionExitError(code, alias);
+	};
+}
+
+/** What the host guard is currently doing to this process. */
+export interface HostGuardState {
+	/** Guard windows opened but not yet closed. Stays above zero after an abandoned window. */
+	readonly depth: number;
+	/** Whether `process.exit` is currently replaced by a throwing stub. */
+	readonly exitGuarded: boolean;
+	/** Whether `process.reallyExit` is currently replaced by a throwing stub. */
+	readonly reallyExitGuarded: boolean;
+}
+
+/**
+ * Report what `withHostGuard` is currently doing to this process.
+ *
+ * The guard fences host-owned state while third-party module code runs and restores it in
+ * a `finally`. A window that is opened and never closed leaves that state fenced for the
+ * rest of the process: `process.exit` stays replaced by a stub that throws, and no later
+ * `withHostGuard` re-arms or restores, because it sees a window already open. A leaked
+ * window is something only an abandoned continuation can produce — a test harness that
+ * starts a guard and never lets it settle — and until now nothing reported it. The guard
+ * then keeps failing for reasons that have nothing to do with whatever the process is
+ * actually doing.
+ *
+ * This reads the guard's own bookkeeping and changes nothing. It exists because "fenced
+ * right now, as intended" and "still fenced long after the window that fenced it is gone"
+ * are indistinguishable from the outside, and only the second is a defect.
+ */
+export function hostGuardState(): HostGuardState {
+	return {
+		depth: hostGuardDepth,
+		exitGuarded: hostGuardOriginalProcessExit !== null,
+		reallyExitGuarded: hostGuardOriginalReallyExit !== null,
 	};
 }
 

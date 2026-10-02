@@ -11,6 +11,7 @@
 - `resetBedrockProviderModule()` clears a host-supplied Bedrock transport installed by
   `setBedrockProviderModule()`. The override was module-level state with no way back to the built-in
   provider, so anything that installed one kept it for the rest of the process.
+- `resetCursorProviderModule()` does the same for `setCursorProviderModule()`.
 
 ### Changed
 

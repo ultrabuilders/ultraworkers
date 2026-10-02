@@ -11,7 +11,11 @@ import {
 	streamCursor,
 	type ToolCallState,
 } from "@oh-my-pi/pi-ai/providers/cursor";
-import { streamCursor as lazyStreamCursor, setCursorProviderModule } from "@oh-my-pi/pi-ai/providers/register-builtins";
+import {
+	resetCursorProviderModule,
+	streamCursor as lazyStreamCursor,
+	setCursorProviderModule,
+} from "@oh-my-pi/pi-ai/providers/register-builtins";
 import type { AssistantMessage, Context, CursorExecHandlers, Model, ToolResultMessage } from "@oh-my-pi/pi-ai/types";
 import { kCursorExecResolved } from "@oh-my-pi/pi-ai/utils/block-symbols";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
@@ -39,6 +43,10 @@ import { logger } from "@oh-my-pi/pi-utils";
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	// `vi.restoreAllMocks()` undoes spies, not this module-level override, so a
+	// Cursor transport installed by a test would otherwise survive into every
+	// later test file in the process.
+	resetCursorProviderModule();
 });
 
 const cursorModel: Model<"cursor-agent"> = buildModel({

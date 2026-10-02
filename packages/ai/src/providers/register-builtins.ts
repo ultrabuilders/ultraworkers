@@ -60,6 +60,17 @@ export function setCursorProviderModule(module: Pick<typeof CursorProvider, "str
 	cursorStreamOverride = module.streamCursor;
 }
 
+/**
+ * Drop any host-supplied Cursor transport, restoring the built-in provider.
+ *
+ * Twin of {@link resetBedrockProviderModule}, for the same reason: the override
+ * is module-level state that {@link setCursorProviderModule} can install and
+ * nothing could take back.
+ */
+export function resetCursorProviderModule(): void {
+	cursorStreamOverride = undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Stream forwarding / error helpers
 // ---------------------------------------------------------------------------

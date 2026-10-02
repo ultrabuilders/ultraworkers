@@ -46,9 +46,22 @@ BlobBackend 14 · BlobRegistryEntry 8 · Upload 16 · ExposureKind 6
 Mọi tên đều bắt đầu bằng `Blob`. Package tên `pi-blob` khớp **từ vựng mà code đã dùng**;
 `pi-storage` sẽ phải giải thích mới hiểu, và giải thích sai một lần là hỏng.
 
-**Tên không trùng gì:** `git ls-files | grep -i durable` → **0 dòng**. Package `pi-durable`
+**Tên không trùng gì** *(đo 2026-09-30 — đã hết hạn, xem đính chính bên dưới)*:
+`git ls-files | grep -i durable` → **0 dòng**. Package `pi-durable`
 **không tồn tại** trong repo. Nó chỉ là một chữ trong file kế hoạch. Nên đổi tên ở đây
 **không phá cài đặt nào** — không có gì để phá.
+
+> **ĐÍNH CHÍNH 2026-10-02 — bằng chứng đã hết hạn, phán quyết thì không.**
+>
+> Cả bốn dòng đo ở mục "Bằng chứng" bên dưới **không còn đúng**. Ngày 2026-10-01, commit
+> `07c1390e05` (*"restore package verbatim from pi-ref before any adaptation"*) đã đưa
+> `packages/durable` vào repo này. Đo lại hôm nay: `git ls-files | grep -i durable` → **49**.
+>
+> **Phán quyết đặt tên không đổi, và nay còn vững hơn trước.** `@oh-my-pi/pi-durable` giờ
+> **đã tồn tại thật** (45 file · 12.840 dòng · publish lên mỗi lần release). Chọn
+> `@oh-my-pi/pi-blob` vì vậy là **tránh trùng có chủ ý**, không phải tránh trùng vô nghĩa.
+>
+> Số ở mục 2 (63 file · 21.093 dòng) đo ở **repo `pi`**, không bị ảnh hưởng — giữ nguyên.
 
 ## Vì sao không phải (b) giữ `pi-durable` + chú thích
 
@@ -108,10 +121,12 @@ $ grep -n "pi-durable" PACKAGE_REORGANIZATION_PLAN.md
 
 ```bash
 # 1. Tên "pi-durable" chỉ tồn tại trong file kế hoạch, không có ở đâu khác
-grep -c "pi-durable" bun.lock                                   # → 0
-grep -rn "pi-durable" --include=package.json packages/ package.json   # → (rỗng)
-ls node_modules/@oh-my-pi/ | grep durable                        # → (rỗng)
-git ls-files | grep -i durable                                   # → 0
+#    ĐO 2026-09-30. HẾT HẠN 2026-10-01 sau 07c1390e05 (xem "ĐÍNH CHÍNH" ở trên).
+#    Số trong ngoặc là giá trị đo lại 2026-10-02 — cả bốn lệnh đều đã không còn rỗng.
+grep -c "pi-durable" bun.lock                                   # → 0   (nay: 2)
+grep -rn "pi-durable" --include=package.json packages/ package.json   # → (rỗng)  (nay: packages/durable/package.json:2)
+ls node_modules/@oh-my-pi/ | grep durable                        # → (rỗng)  (nay: pi-durable → ../../packages/durable)
+git ls-files | grep -i durable                                   # → 0   (nay: 49)
 
 # 2. Phán quyết durable là thật, đo lại ở repo pi
 cd ~/Projects/pi-ref

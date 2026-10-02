@@ -127,7 +127,7 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * Only the LEADING edge changed. The trailing class keeps `.` and `-`, so `.omp/` is still
  * not matched and `omp-like` still is — both are separate axes, not this one.
  */
-const PINNED = /(^|[^a-zA-Z0-9_.-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
+const PINNED = /(^|[^a-zA-Z0-9_-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
 
 /** Repo-relative path of the table. */
 const TABLE_PATH = "scripts/rename/disposition.tsv";
@@ -650,6 +650,14 @@ export interface ClassMatcher {
  * Requiring the extension is what keeps this a filename class. Without it the
  * expression would also match `"omp://"`, `"omp-work"` and every prose quote, which
  * are exactly the classes this one exists to stay clear of.
+ *
+ * It must also stay DISJOINT from PINNED, or an occurrence counts twice and any
+ * subtraction removes it from both sides at once — the "measured wrong in both
+ * directions" failure `countRename`'s own docblock warns about. `"omp-worker.json"`
+ * matches this expression AND the pinned one, in 34 files at this commit; measured
+ * with `countClass`, which is what 0c reported. `keep-path` avoids this because
+ * `".omp"` is invisible to PINNED, so the property to preserve is the same: a
+ * literal class that the pinned expression cannot also see.
  */
 const OMP_FILENAME = /"(omp-[A-Za-z0-9._-]+\.[A-Za-z0-9]+)"/g;
 
@@ -671,10 +679,27 @@ export function classMatcher(disposition: Disposition): ClassMatcher {
 /** Count a class's occurrences in one file's text. */
 export function countClass(text: string, disposition: Disposition): number {
 	const matcher = classMatcher(disposition);
-	if (matcher.literal !== undefined) return text.split(matcher.literal).length - 1;
+	// NOT disjoint from PINNED, and deliberately so — see OMP_FILENAME. Every quoted
+	// "omp-..." token has a quote before it, which PINNED's leading class admits, so
+	// any filename this matches is also pinned-visible. Subtracting the intersection
+	// here would zero out every real occurrence (dirs.ts:891 included) and make the
+	// class unwritable again.
 	if (matcher.filename === true) return (text.match(new RegExp(OMP_FILENAME.source, "g")) ?? []).length;
-	if (matcher.pinned !== true) return 0;
-	return (text.match(new RegExp(PINNED.source, "g")) ?? []).length;
+	if (matcher.pinned !== true) return text.split(matcher.literal as string).length - 1;
+	const pinned = text.match(new RegExp(PINNED.source, "g")) ?? [];
+	// `PINNED` was widened on 2026-10-03 to admit a leading `.`, so `~/.omp/…` counts
+	// at all — it returned 0 before, and `--stage=post` accepts a row once the count
+	// reaches zero, so a file whose occurrences are all dotfile paths read as finished
+	// with the token still in it.
+	//
+	// That widening also made the quoted `keep-path` literal `".omp"` pinned-visible,
+	// so the two classes would both claim it. `rename` subtracts exactly that literal,
+	// and nothing else: the docblock below records two failed attempts to subtract
+	// more broadly, and this is neither — it removes a literal's own occurrences from
+	// the pinned total rather than removing pinned occurrences on another class's
+	// behalf. `keep-path` itself counts by its literal and is unaffected.
+	if (disposition !== "rename") return pinned.length;
+	return pinned.length - (text.split(classMatcher("keep-path").literal as string).length - 1);
 }
 
 /**

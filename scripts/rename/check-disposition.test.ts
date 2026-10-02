@@ -168,7 +168,13 @@ describe("occurrence counting", () => {
 		// must still not match, and neither must `my.omp.sh`.
 		expect(countClass(`~/.omp/agent/extensions/`, "rename")).toBe(1);
 		expect(countClass(`the developer's real \`~/.omp\`.`, "rename")).toBe(1);
-		expect(countClass(`path.join(home, ".omp", "agent")`, "rename")).toBe(1);
+
+		// The quoted form is the OTHER class, and stays that way: `".omp"` is the
+		// `keep-path` literal, so it counts there and not here even though the widened
+		// leading edge can now see it. This is the half that made the naive fix — drop
+		// `.` from the leading class — break three existing rows.
+		expect(countClass(`path.join(home, ".omp", "agent")`, "rename")).toBe(0);
+		expect(countClass(`path.join(home, ".omp", "agent")`, "keep-path")).toBe(1);
 
 		// The domain is still excluded on the leading edge — this is the same wire
 		// value the case above protects, seen through the other edge.

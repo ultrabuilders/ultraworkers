@@ -393,7 +393,7 @@ describe("a decision on one call reaches the calls already asking", () => {
 	 * `pending === 0` against a batch passes whether or not the settled call cleans up
 	 * after itself; only a call that nothing cascades to isolates it.
 	 */
-	async function lone(choice: string): Promise<number> {
+	async function lone(choice: string): Promise<{ pending: number; outcome: Outcome }> {
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 		const runner = makeRunner(settings);
 		Object.assign(runner, {
@@ -413,18 +413,37 @@ describe("a decision on one call reaches the calls already asking", () => {
 				return { output: "ok" };
 			},
 		} as unknown as AgentTool;
-		await (new ExtensionToolWrapper(tool, runner) as unknown as AgentTool)
-			.execute("call-1", { command: "git status" }, undefined, undefined as never, { settings } as never)
-			.catch(() => {});
-		return runner.pendingApprovalCount;
+		// Deny legitimately throws, so the rejection is expected — but "expected" is not
+		// the same as "any". An unrelated crash before the decision would leave the
+		// registry empty and satisfy the row below for a reason that has nothing to do
+		// with cleanup, so the outcome is returned and asserted rather than dropped.
+		let outcome: Outcome = "errored";
+		try {
+			await (new ExtensionToolWrapper(tool, runner) as unknown as AgentTool).execute(
+				"call-1",
+				{ command: "git status" },
+				undefined,
+				undefined as never,
+				{ settings } as never,
+			);
+			outcome = "approved";
+		} catch (err) {
+			outcome = err instanceof ToolCallBlockedError ? "denied" : "errored";
+		}
+		return { pending: runner.pendingApprovalCount, outcome };
 	}
 
 	it("keeps no settled call registered when nothing cascades", async () => {
 		// A released prompt that stays in the registry is later settled by an unrelated
 		// decision on the same key — resolving a promise nobody is waiting on — and the
 		// registry grows for the life of the session.
-		expect(await lone("Approve")).toBe(0);
-		expect(await lone("Deny")).toBe(0);
+		const approved = await lone("Approve");
+		expect(approved.outcome).toBe("approved");
+		expect(approved.pending).toBe(0);
+
+		const denied = await lone("Deny");
+		expect(denied.outcome).toBe("denied");
+		expect(denied.pending).toBe(0);
 	});
 
 	it("keeps no settled call registered once the decision has been made", async () => {
@@ -434,5 +453,84 @@ describe("a decision on one call reaches the calls already asking", () => {
 		// the same key would resolve a promise nobody is waiting on, and the registry
 		// would grow for the life of the session.
 		expect(pending).toBe(0);
+	});
+});
+
+/**
+ * The grant has to survive to the *next* call, not just reach the settings file.
+ *
+ * ## Why this row exists separately from the ones above
+ *
+ * Every other row here stops at the write: the policy lands under the action key and
+ * the file says so. That is not the user's experience of "always". The user's
+ * experience is that the second identical command runs without a question, and for
+ * that the stored key has to be the one the *reader* looks up. Those are two different
+ * keys derived in two different places, so a green write says nothing about a working
+ * grant — which is exactly how a persist that never gets read can ship looking tested.
+ *
+ * The control row is the load-bearing half: it asserts the policy really was written
+ * under `bash:git status`. Without it, a failure here cannot be told apart from a
+ * write that never happened, and the row would report the wrong defect.
+ */
+describe('an "always" grant reaches the next call', () => {
+	// KNOWN BROKEN — this row pins the *defect*, deliberately, so the suite is green
+	// while it stands and goes RED the moment somebody fixes it.
+	//
+	// What is broken: the write lands under `bash:git status`, but the reader
+	// (`resolveApproval`, `tools/approval.ts:214`) resolves under the tool's name. So
+	// "Approve always" persists to disk and the next identical command is asked about
+	// anyway. The control row inside proves the write happened, which is what makes
+	// this a *read* defect rather than a missing write.
+	//
+	// Why it is not simply deleted: deleting it puts the feature back under no test at
+	// all, which is how it got here. Why it is not left red: a permanently failing row
+	// on a shared branch trains everyone to ignore red.
+	//
+	// When the reader is fixed, `2` below becomes wrong and this row goes red. The fix
+	// is to change it to `1` — not to delete it, and not to "fix" it while the code is
+	// still broken.
+	it('KNOWN BROKEN: "always" does not survive to the next call', async () => {
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		const runner = makeRunner(settings);
+		let prompts = 0;
+		Object.assign(runner, {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			getUIContext: () => ({
+				select: async () => {
+					prompts++;
+					return "Approve always";
+				},
+			}),
+			waitForToolApprovalPreview: async () => {},
+			recordApprovalEntry: () => {},
+			runScoped: <T>(fn: () => T): T => fn(),
+		});
+
+		const call = async (id: string): Promise<void> => {
+			const tool = {
+				name: "bash",
+				description: "Runs a shell command",
+				parameters: { type: "object", properties: {} },
+				async execute() {
+					return { output: "ok" };
+				},
+			} as unknown as AgentTool;
+			await (new ExtensionToolWrapper(tool, runner) as unknown as AgentTool)
+				.execute(id, { command: "git status" }, undefined, undefined as never, { settings } as never)
+				.catch(() => {});
+		};
+
+		await call("call-1");
+		// The control. If this fails the defect is in the write, not the read-back.
+		expect(policies(settings)["bash:git status"]).toBe("allow");
+
+		await call("call-2");
+
+		// `2`, not the `1` the feature promises: the stored key is not the key the
+		// approval gate resolves under, so "always" never applies to anything. See the
+		// note above — when the reader is fixed this becomes `1`.
+		expect(prompts).toBe(2);
 	});
 });

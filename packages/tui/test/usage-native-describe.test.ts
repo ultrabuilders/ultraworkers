@@ -225,7 +225,7 @@ describe("ContextUsageView.describe", () => {
 	it("keeps the glyph grid on terminals without `meter`", () => {
 		const described = new ContextUsageView(breakdown, theme).describe(plainCx);
 		expect(findAll(described, n => n.k === "meter")).toEqual([]);
-		expect(findAll(described, n => n.p?.role === "omp.context.usage")).toHaveLength(1);
+		expect(findAll(described, n => n.p?.role === "ultraworkers.context.usage")).toHaveLength(1);
 	});
 });
 
@@ -251,10 +251,10 @@ describe("JobsPanel.describe", () => {
 		expect(findAll(native, n => n.k === "agent").map(n => n.p)).toEqual([
 			expect.objectContaining({ name: "Audit", status: "running", stats: { age: 5_000 } }),
 		]);
-		expect(findAll(native, n => n.p?.role === "omp.jobs.row").map(n => n.key)).toEqual(["j2"]);
+		expect(findAll(native, n => n.p?.role === "ultraworkers.jobs.row").map(n => n.key)).toEqual(["j2"]);
 		const plain = new JobsPanel(snapshot, now, []).describe(plainCx);
 		expect(findAll(plain, n => n.k === "agent")).toEqual([]);
-		expect(findAll(plain, n => n.p?.role === "omp.jobs.row").map(n => n.key)).toEqual(["j1", "j2"]);
+		expect(findAll(plain, n => n.p?.role === "ultraworkers.jobs.row").map(n => n.key)).toEqual(["j1", "j2"]);
 	});
 });
 

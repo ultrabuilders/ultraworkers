@@ -568,7 +568,7 @@ function describeStatusEvent(event: EvalStatusEvent): NativeNode {
 			spans.push(span(` ${key}=`, "muted"), span(sanitizeText(String(value))));
 		}
 	}
-	return text(spans, { truncate: "end", role: "omp.tool.eval.status" });
+	return text(spans, { truncate: "end", role: "ultraworkers.tool.eval.status" });
 }
 
 /**
@@ -665,7 +665,7 @@ function evalOutputNodes(output: string, markdown: boolean, running: boolean, er
 	const tone = error ? "error" : undefined;
 	return splitConsoleTables(output).map(part =>
 		part.kind === "text"
-			? ansi(part.text, { follow: running, tone, role: "omp.tool.eval.output" })
+			? ansi(part.text, { follow: running, tone, role: "ultraworkers.tool.eval.output" })
 			: node("table", {
 					// Node's index column header is noise in a real table.
 					cols: part.head.map((head, i) => ({ id: `c${i}`, head: head === "(index)" ? "" : head })),
@@ -673,7 +673,7 @@ function evalOutputNodes(output: string, markdown: boolean, running: boolean, er
 						id: `r${r}`,
 						cells: Object.fromEntries(cells.map((cell, i) => [`c${i}`, cell])),
 					})),
-					role: "omp.tool.eval.table",
+					role: "ultraworkers.tool.eval.table",
 				}),
 	);
 }
@@ -704,7 +704,7 @@ function evalCellSection(cell: EvalCellSection, index: number, total: number): N
 	}
 	return node(
 		"section",
-		{ head, role: "omp.tool.eval.cell", tone: cell.status === "error" ? "error" : undefined },
+		{ head, role: "ultraworkers.tool.eval.cell", tone: cell.status === "error" ? "error" : undefined },
 		[
 			keyed(codeNode(cell.code, { lang: languageForHighlighter(cell.language), numbers: false }), "code"),
 			...(cell.output ?? []),

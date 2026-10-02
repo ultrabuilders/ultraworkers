@@ -1008,7 +1008,7 @@ export class CustomEditor extends Editor {
 		| undefined;
 
 	/**
-	 * The TSP composer: role `omp.editor[.bash|.python]` (tone `pending` while
+	 * The TSP composer: role `ultraworkers.editor[.bash|.python]` (tone `pending` while
 	 * a turn runs) over the context hairline, the attachment chips, a `line`
 	 * row of the shell-mode chip and the input, and the `bar`: model chip,
 	 * effort chip, the other status facts, usage, then send (Stop while a turn
@@ -1040,9 +1040,12 @@ export class CustomEditor extends Editor {
 			memo?.key === key && memo.facts === facts
 				? memo
 				: this.#describeComposerControls(state, facts, thinkingKey, modelKey, interruptKey);
-		const line = keyed(row(compact([mode, input]), { role: "omp.composer.line", align: "start", gap: "sm" }), "line");
+		const line = keyed(
+			row(compact([mode, input]), { role: "ultraworkers.composer.line", align: "start", gap: "sm" }),
+			"line",
+		);
 		const layout: NativeEditorLayout = {
-			role: shell ? `omp.editor.${shell.kind}` : "omp.editor",
+			role: shell ? `ultraworkers.editor.${shell.kind}` : "ultraworkers.editor",
 			tone: state.running ? "pending" : undefined,
 			children: compact([facts?.context, chips, line, bar]),
 			caret: "line/input",
@@ -1065,7 +1068,7 @@ export class CustomEditor extends Editor {
 			node(
 				"row",
 				{
-					role: "omp.composer.model",
+					role: "ultraworkers.composer.model",
 					gap: "xs",
 					align: "center",
 					tone: facts.model.tone,
@@ -1085,7 +1088,7 @@ export class CustomEditor extends Editor {
 			node(
 				"row",
 				{
-					role: "omp.composer.effort",
+					role: "ultraworkers.composer.effort",
 					gap: "xs",
 					align: "center",
 					title: thinkingKey ? `Thinking effort  ${formatKeyHint(thinkingKey)}` : "Thinking effort",
@@ -1106,7 +1109,7 @@ export class CustomEditor extends Editor {
 			? node(
 					"text",
 					{
-						role: "omp.composer.stop",
+						role: "ultraworkers.composer.stop",
 						text: "Stop",
 						tone: "error",
 						title: `Stop  ${interruptKey === "escape" ? "esc" : formatKeyHint(interruptKey)}`,
@@ -1118,7 +1121,7 @@ export class CustomEditor extends Editor {
 			: node(
 					"kbd",
 					{
-						role: "omp.composer.send",
+						role: "ultraworkers.composer.send",
 						keys: ["enter"],
 						title: `Send  ${formatKeyHint("enter")}`,
 						actions: { click: "submit" },
@@ -1129,7 +1132,7 @@ export class CustomEditor extends Editor {
 		// The status facts are the bar's flexible space; without them a spacer keeps send at the end.
 		const bar = keyed(
 			row(compact([model, effort, facts?.extras ?? node("row", { grow: 1 }, [], "gap"), facts?.usage, submit]), {
-				role: "omp.composer.bar",
+				role: "ultraworkers.composer.bar",
 				gap: "sm",
 				align: "center",
 			}),
@@ -1150,7 +1153,7 @@ export class CustomEditor extends Editor {
 					),
 				]),
 				{
-					role: "omp.composer.mode",
+					role: "ultraworkers.composer.mode",
 					gap: "xs",
 					align: "center",
 					title: shell.excluded ? `${runs} · not sent to the model` : runs,

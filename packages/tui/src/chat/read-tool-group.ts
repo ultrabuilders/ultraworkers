@@ -608,7 +608,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	/**
 	 * The read run as one inline `tool` on terminals that list the kind, else
-	 * the fallback: a bare `card` (role `omp.tool.read`) with `Read <path>` or
+	 * the fallback: a bare `card` (role `ultraworkers.tool.read`) with `Read <path>` or
 	 * `Read (N)` in the head, a `list` of path items (status tone, link,
 	 * correction and conflict detail, nested usage) and, with content previews
 	 * on, a `code` block per read clamped by the card's preview while collapsed.
@@ -623,7 +623,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	/**
 	 * The data-first read (§7.3 read, read group, read error): one inline
-	 * `tool` (role `omp.tool.read`). One file: `Read path:13-36`, a failure's
+	 * `tool` (role `ultraworkers.tool.read`). One file: `Read path:13-36`, a failure's
 	 * message in the head. Several: `Read 3 files` over one 22px row per file
 	 * (glyph, dim dir, strong name, range). Content previews are numbered
 	 * `code` (a section per file in a group), trimmed while collapsed.
@@ -681,7 +681,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 			"tool",
 			{
 				...head,
-				role: "omp.tool.read",
+				role: "ultraworkers.tool.read",
 				name: "read",
 				title: "Read",
 				status,
@@ -761,7 +761,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		const hidden = lines.length - shown;
 		if (hidden > 0) {
 			blocks.push(
-				keyed(text([span(formatCount("more line", hidden), "muted")], { role: "omp.tool.stats" }), "more"),
+				keyed(text([span(formatCount("more line", hidden), "muted")], { role: "ultraworkers.tool.stats" }), "more"),
 			);
 		}
 		return blocks;
@@ -820,7 +820,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 				node(
 					"card",
 					{
-						role: "omp.tool.read.preview",
+						role: "ultraworkers.tool.read.preview",
 						tone: READ_STATUS_TONE[entry.status],
 						head: pathValue ? [title, span(" "), span(pathValue, "path")] : [title],
 						collapsible: true,
@@ -842,7 +842,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		}
 		return card(
 			{
-				role: "omp.tool.read",
+				role: "ultraworkers.tool.read",
 				// A group is plain rows: the per-file previews are the only frames.
 				variant: "bare",
 				status,
@@ -883,7 +883,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	#nativeUsage(usage: ReadUsageRow, key: string): NativeNode {
 		const line = formatUsageRow(usage.usage, usage.durationMs, usage.ttftMs, usage.timestamp, usage.turnElapsedMs);
-		return text([span(plainText(line), "dim")], { wrap: "word", key, role: "omp.usage" });
+		return text([span(plainText(line), "dim")], { wrap: "word", key, role: "ultraworkers.usage" });
 	}
 
 	#updateDisplay(): void {

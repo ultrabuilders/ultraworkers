@@ -13,7 +13,11 @@ export class CustomMessageComponent extends FramedMessageComponent<CustomMessage
 		const isHook = String(message.role) === "hookMessage";
 		super({
 			message,
-			role: isHook ? "omp.hook" : isLiveDelegation ? "omp.custom.delegation" : "omp.custom",
+			role: isHook
+				? "ultraworkers.hook"
+				: isLiveDelegation
+					? "ultraworkers.custom.delegation"
+					: "ultraworkers.custom",
 			// The transcript dispatch routes both `custom` and legacy `hookMessage` roles here:
 			// tag hooks with the hook glyph, other injected messages with a neutral package.
 			icon: () => (isHook ? theme.icon.extensionHook : theme.icon.package),

@@ -62,7 +62,7 @@ export class McpElicitationFormComponent extends OverlayPanel {
 	#lastChoice: McpElicitChoice | undefined;
 
 	constructor(options: McpElicitationFormOptions) {
-		super(options.title, "omp.overlay.mcp-elicitation");
+		super(options.title, "ultraworkers.overlay.mcp-elicitation");
 
 		this.#fields = options.fields;
 		this.#onDecline = options.onDecline;

@@ -60,7 +60,9 @@ export class JobsPanel extends Container {
 		const { running, recent } = this.#snapshot;
 		const children: NativeChild[] = [];
 		if (running.length === 0 && recent.length === 0) {
-			children.push(node("text", { text: "No background jobs", role: "omp.jobs.empty" }, undefined, "empty"));
+			children.push(
+				node("text", { text: "No background jobs", role: "ultraworkers.jobs.empty" }, undefined, "empty"),
+			);
 		}
 		for (const job of running) children.push(this.#describeJob(job, agent));
 		if (recent.length > 0) {
@@ -75,7 +77,7 @@ export class JobsPanel extends Container {
 		}
 		const head: TspSpan[] = [span("Background jobs", "strong")];
 		if (running.length > 0) head.push(span(` · ${running.length} running`, "muted"));
-		const described = card({ role: "omp.jobs", head }, children);
+		const described = card({ role: "ultraworkers.jobs", head }, children);
 		this.#native = { agent, node: described };
 		return described;
 	}
@@ -99,7 +101,12 @@ export class JobsPanel extends Container {
 		}
 		return node(
 			"row",
-			{ role: "omp.jobs.row", gap: "sm", align: "center", title: `${job.id} · ${job.type} · ${job.status}` },
+			{
+				role: "ultraworkers.jobs.row",
+				gap: "sm",
+				align: "center",
+				title: `${job.id} · ${job.type} · ${job.status}`,
+			},
 			[
 				text([DOT[job.status]], { aria: job.status }),
 				text([span(job.label)], { truncate: "end", grow: 1 }),

@@ -380,12 +380,15 @@ export class PsTopComponent implements Component {
 						statusVisible &&
 							this.#statusText !== "" &&
 							keyed(
-								text([span(this.#statusText, this.#statusTone)], { wrap: "word", role: "omp.app.status" }),
+								text([span(this.#statusText, this.#statusTone)], {
+									wrap: "word",
+									role: "ultraworkers.app.status",
+								}),
 								"status",
 							),
 						this.#describeActions(),
 					]),
-					{ role: "omp.app.ps", gap: "md" },
+					{ role: "ultraworkers.app.ps", gap: "md" },
 				);
 			},
 		);
@@ -398,7 +401,7 @@ export class PsTopComponent implements Component {
 			const running = this.#flat.filter(flat => !TERMINAL_STATES[flat.row.snapshot.state]).length;
 			const stopped = this.#flat.length - running;
 			left.push(
-				text("Processes", { role: "omp.app.title" }),
+				text("Processes", { role: "ultraworkers.app.title" }),
 				text(
 					[
 						span(`${running} running`, running > 0 ? "success" : "muted"),
@@ -412,7 +415,7 @@ export class PsTopComponent implements Component {
 			left.push(
 				node("icon", {
 					name: "back",
-					role: "omp.app.ibtn",
+					role: "ultraworkers.app.ibtn",
 					title: "Back  esc",
 					aria: "Back",
 					actions: { click: "back" },
@@ -420,7 +423,7 @@ export class PsTopComponent implements Component {
 				text(
 					this.#view === "logs" ? `Logs · ${entry?.row.snapshot.name ?? "?"}` : (entry?.row.snapshot.name ?? "?"),
 					{
-						role: "omp.app.title",
+						role: "ultraworkers.app.title",
 						truncate: "end",
 					},
 				),
@@ -446,7 +449,7 @@ export class PsTopComponent implements Component {
 							{ id: "all", label: "All scopes" },
 						],
 						active: this.#all ? "all" : "current",
-						role: "omp.app.seg",
+						role: "ultraworkers.app.seg",
 					},
 					undefined,
 					"scope",
@@ -460,23 +463,29 @@ export class PsTopComponent implements Component {
 						{
 							gap: "xs",
 							align: "center",
-							role: "omp.app.fresh",
+							role: "ultraworkers.app.fresh",
 						},
 					)
 				: row([node("spinner", { style: "dots" }), text([span("updating", "dim")])], {
 						gap: "xs",
 						align: "center",
-						role: "omp.app.fresh",
+						role: "ultraworkers.app.fresh",
 					}),
-			node("icon", { name: "x", role: "omp.app.ibtn", title: "Quit  q", aria: "Quit", actions: { click: "quit" } }),
+			node("icon", {
+				name: "x",
+				role: "ultraworkers.app.ibtn",
+				title: "Quit  q",
+				aria: "Quit",
+				actions: { click: "quit" },
+			}),
 		);
 		return keyed(
 			row(
 				[
-					row(left, { gap: "sm", align: "center", role: "omp.app.where" }),
-					row(right, { gap: "md", align: "center", role: "omp.app.tools" }),
+					row(left, { gap: "sm", align: "center", role: "ultraworkers.app.where" }),
+					row(right, { gap: "md", align: "center", role: "ultraworkers.app.tools" }),
 				],
-				{ justify: "between", align: "center", role: "omp.app.head" },
+				{ justify: "between", align: "center", role: "ultraworkers.app.head" },
 			),
 			"head",
 		);
@@ -505,7 +514,7 @@ export class PsTopComponent implements Component {
 						actionButton("Cancel", "kill-cancel"),
 						actionButton("Kill", "kill-confirm", { tone: "error" }),
 					],
-					{ gap: "sm", align: "center", role: "omp.app.confirm", tone: "error" },
+					{ gap: "sm", align: "center", role: "ultraworkers.app.confirm", tone: "error" },
 				),
 				"actions",
 			);
@@ -533,14 +542,14 @@ export class PsTopComponent implements Component {
 			return keyed(
 				col(
 					[
-						text("No broker scopes", { role: "omp.app.empty-title" }),
+						text("No broker scopes", { role: "ultraworkers.app.empty-title" }),
 						text([
 							span("No omp process broker runs here. ", "muted"),
 							span(this.#all ? "Nothing runs anywhere." : "Show every scope with ", "muted"),
 							...(this.#all ? [] : [span("a", "key"), span(".", "muted")]),
 						]),
 					],
-					{ gap: "xs", align: "center", role: "omp.app.empty" },
+					{ gap: "xs", align: "center", role: "ultraworkers.app.empty" },
 				),
 				"empty",
 			);
@@ -549,7 +558,7 @@ export class PsTopComponent implements Component {
 		const sections = this.#reports.map(report =>
 			node(
 				"section",
-				{ head: scopeSpans(report.scope), role: "omp.app.ps.scope" },
+				{ head: scopeSpans(report.scope), role: "ultraworkers.app.ps.scope" },
 				[
 					node(
 						"list",
@@ -559,7 +568,7 @@ export class PsTopComponent implements Component {
 									? stableKey(flatKey(selected))
 									: null,
 							empty: "No processes",
-							role: "omp.ps.processes",
+							role: "ultraworkers.ps.processes",
 						},
 						report.daemons.map(daemon => describeProcess(report.scope, daemon)),
 					),
@@ -567,7 +576,7 @@ export class PsTopComponent implements Component {
 				stableKey(report.scope.runtimeDir),
 			),
 		);
-		return keyed(col(sections, { gap: "lg", grow: 1, role: "omp.app.ps.scopes" }), "scopes");
+		return keyed(col(sections, { gap: "lg", grow: 1, role: "ultraworkers.app.ps.scopes" }), "scopes");
 	}
 
 	#describeInfo(): NativeNode {
@@ -595,21 +604,24 @@ export class PsTopComponent implements Component {
 			body.push(
 				row([text([span("Up for", "muted")]), elapsed(Date.now() - daemon.startedAt)], {
 					gap: "xs",
-					role: "omp.app.fresh",
+					role: "ultraworkers.app.fresh",
 				}),
 			);
 		}
 		body.push(node("kv", { items, layout: "grid" }));
-		return keyed(col(body, { role: "omp.ps.info", gap: "md" }), "info");
+		return keyed(col(body, { role: "ultraworkers.ps.info", gap: "md" }), "info");
 	}
 
 	#describeLogs(): NativeNode {
 		if (this.#logsError) {
-			return keyed(text([span(this.#logsError, "error mono")], { wrap: "word", role: "omp.ps.logs" }), "logs");
+			return keyed(
+				text([span(this.#logsError, "error mono")], { wrap: "word", role: "ultraworkers.ps.logs" }),
+				"logs",
+			);
 		}
 		return node(
 			"ansi",
-			{ text: this.#logsLines.join("\n"), follow: true, role: "omp.ps.logs", grow: 1 },
+			{ text: this.#logsLines.join("\n"), follow: true, role: "ultraworkers.ps.logs", grow: 1 },
 			undefined,
 			"logs",
 		);

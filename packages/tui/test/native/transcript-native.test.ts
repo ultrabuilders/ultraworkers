@@ -125,7 +125,7 @@ describe("native transcript", () => {
 			builder.append(toolTranscript());
 			h.tui.addChild(builder.container);
 		});
-		const cardNode = h.find(node => node.k === "tool" && node.p?.role === "omp.tool.lookup_thing");
+		const cardNode = h.find(node => node.k === "tool" && node.p?.role === "ultraworkers.tool.lookup_thing");
 		expect(cardNode?.p).toMatchObject({ status: "done", collapsible: true, collapsed: true });
 
 		h.event({ ev: "toggle", sf: h.terminal.surface!, id: cardNode!.id, collapsed: false });
@@ -174,7 +174,7 @@ describe("native transcript", () => {
 			builder.append(toolTranscript());
 			h.tui.addChild(builder.container);
 		});
-		const cardNode = h.find(node => node.k === "tool" && node.p?.role === "omp.tool.lookup_thing");
+		const cardNode = h.find(node => node.k === "tool" && node.p?.role === "ultraworkers.tool.lookup_thing");
 		expect(opsSince(h, 0)).toContainEqual(["settle", cardNode!.id]);
 
 		const before = h.frames.length;
@@ -295,21 +295,21 @@ describe("native transcript", () => {
 		const roles = h.findAll(node => typeof node.p?.role === "string").map(node => node.p!.role);
 		expect(roles).toEqual(
 			expect.arrayContaining([
-				"omp.tool.lookup_thing",
-				"omp.user",
-				"omp.user.synthetic",
-				"omp.assistant",
-				"omp.thinking",
-				"omp.bash",
-				"omp.eval",
-				"omp.compaction",
-				"omp.custom",
-				"omp.notice.ttsr",
-				"omp.notice.todo",
-				"omp.diagnostics.late",
-				"omp.marker.cache-miss",
-				"omp.status-block",
-				"omp.advisor",
+				"ultraworkers.tool.lookup_thing",
+				"ultraworkers.user",
+				"ultraworkers.user.synthetic",
+				"ultraworkers.assistant",
+				"ultraworkers.thinking",
+				"ultraworkers.bash",
+				"ultraworkers.eval",
+				"ultraworkers.compaction",
+				"ultraworkers.custom",
+				"ultraworkers.notice.ttsr",
+				"ultraworkers.notice.todo",
+				"ultraworkers.diagnostics.late",
+				"ultraworkers.marker.cache-miss",
+				"ultraworkers.status-block",
+				"ultraworkers.advisor",
 			]),
 		);
 		expect(h.errors).toEqual([]);

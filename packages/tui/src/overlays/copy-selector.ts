@@ -78,7 +78,7 @@ function turnSummary(entry: TranscriptEntry): { label: string; role: string } {
 	const message = transcriptEntryMessage(entry);
 	switch (message?.role) {
 		case "user":
-			return { label: userMessageLabel(message.content), role: "omp.user" };
+			return { label: userMessageLabel(message.content), role: "ultraworkers.user" };
 		case "assistant": {
 			let prose = "";
 			const tools: string[] = [];
@@ -87,26 +87,29 @@ function turnSummary(entry: TranscriptEntry): { label: string; role: string } {
 				else if (content.type === "toolCall") tools.push(content.name);
 			}
 			const label = firstLine(prose) || tools.join(", ") || "thinking";
-			return { label, role: "omp.assistant" };
+			return { label, role: "ultraworkers.assistant" };
 		}
 		case "toolResult":
-			return { label: `${message.toolName} result`, role: `omp.tool.${message.toolName}` };
+			return { label: `${message.toolName} result`, role: `ultraworkers.tool.${message.toolName}` };
 		case "bashExecution":
-			return { label: `$ ${firstLine(message.command)}`, role: "omp.tool.bash" };
+			return { label: `$ ${firstLine(message.command)}`, role: "ultraworkers.tool.bash" };
 		case "pythonExecution":
-			return { label: firstLine(message.code), role: "omp.tool.eval" };
+			return { label: firstLine(message.code), role: "ultraworkers.tool.eval" };
 		case "compactionSummary":
-			return { label: "Compaction summary", role: "omp.summary" };
+			return { label: "Compaction summary", role: "ultraworkers.summary" };
 		case "branchSummary":
-			return { label: "Branch summary", role: "omp.summary" };
+			return { label: "Branch summary", role: "ultraworkers.summary" };
 		case "custom":
 		case "hookMessage": {
 			const draft = userTurnDraft(entry);
-			if (draft !== undefined) return { label: firstLine(draft), role: "omp.user" };
-			return { label: firstLine(textContent(message.content, " ")) || message.customType, role: "omp.custom" };
+			if (draft !== undefined) return { label: firstLine(draft), role: "ultraworkers.user" };
+			return {
+				label: firstLine(textContent(message.content, " ")) || message.customType,
+				role: "ultraworkers.custom",
+			};
 		}
 		default:
-			return { label: entry.id, role: "omp.message" };
+			return { label: entry.id, role: "ultraworkers.message" };
 	}
 }
 
@@ -199,7 +202,7 @@ export function timelineItem(target: OutlineTarget): TspPickerItem {
 				id,
 				label: calls.map(call => toolCallLabel(call.name, call.arguments)).join(" · "),
 				node: "tool",
-				role: `omp.tool.${calls[0]!.name}`,
+				role: `ultraworkers.tool.${calls[0]!.name}`,
 			};
 		}
 		case "toolResult":
@@ -249,7 +252,7 @@ function blockBody(block: CopyBlock): NativeNode {
  * One borderless preview section of the copy picker. A click copies it in the
  * terminal (`copy`) when the preview holds the whole text, else asks ultraworkers to
  * (`pick`); link sections also offer `open`. The focused block's section takes
- * the `omp.picker.block.focused` role and the accent tone.
+ * the `ultraworkers.picker.block.focused` role and the accent tone.
  */
 function previewSection(
 	key: string,
@@ -264,7 +267,7 @@ function previewSection(
 		"section",
 		{
 			head: caption,
-			role: focused ? "omp.picker.block.focused" : "omp.picker.block",
+			role: focused ? "ultraworkers.picker.block.focused" : "ultraworkers.picker.block",
 			...(focused ? { tone: "accent" as const } : {}),
 			...(href ? { href } : {}),
 			actions: { click: whole ? "copy" : "pick", ...(href ? { menu: ["copy", "open"] } : {}) },
@@ -699,7 +702,7 @@ export class CopySelectorComponent implements Component {
 	 * The `timeline` picker: the turns as rows, the selected turn's blocks as
 	 * preview sections (the whole message first), each copied by a click. In
 	 * the block view the focused block's section takes the
-	 * `omp.picker.block.focused` role and the preview owns the focus.
+	 * `ultraworkers.picker.block.focused` role and the preview owns the focus.
 	 */
 	#describePicker(): NativeNode {
 		const memo = `${this.#selected}|${this.#blockSelected}|${this.#truncated}`;
@@ -835,7 +838,7 @@ export class CopySelectorComponent implements Component {
 			span("Copy", "strong"),
 			span(`${theme.sep.dot}pick what to put on the clipboard`, "dim"),
 		];
-		const root = overlayCard("omp.overlay.copy", head, children);
+		const root = overlayCard("ultraworkers.overlay.copy", head, children);
 		this.#native = { memo, targets: this.#targets, blocks: this.#blocks, node: root };
 		return root;
 	}

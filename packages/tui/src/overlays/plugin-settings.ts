@@ -29,6 +29,11 @@ import { col, node, span, text } from "../native/describe";
 import type { TspPrefsControl, TspPrefsSection } from "@oh-my-pi/pi-wire";
 import { actionHint, hintsRow, overlayCard } from "../native/overlay";
 
+// Frozen on the pre-rebrand spelling on purpose: a third party compares this exact
+// string, and `APP_NAME` must never be substituted into it. Guarded by
+// packages/tui/test/plugin-install-command-name.test.ts. Note the HYPHEN in
+// `plugin-settings` — a role matcher built from `[a-zA-Z0-9.]` silently truncates at
+// the dash and renames the frozen value along with every other role.
 const PLUGIN_SETTINGS_ROLE = "omp.overlay.plugin-settings";
 /** A plugin row's control on the native settings page: open the plugin's settings. */
 const PLUGIN_CONFIGURE: TspPrefsControl = { k: "action", label: "Configure", act: "open" };
@@ -66,7 +71,7 @@ function prefsDetailPage(title: string, lead: string, list: SettingsList | undef
 		})),
 		focus: list.prefsFocus().row ?? null,
 		editing: null,
-		editor: open ? col([open.component], { role: "omp.prefs.editor" }) : undefined,
+		editor: open ? col([open.component], { role: "ultraworkers.prefs.editor" }) : undefined,
 	};
 }
 

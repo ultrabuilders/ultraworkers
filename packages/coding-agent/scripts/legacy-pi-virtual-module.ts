@@ -164,7 +164,7 @@ export async function collectBundledPiEntries(): Promise<BundledPiEntry[]> {
 			// the host entrypoints are excluded per match below, because
 			// enumerating them is what #3442 was.
 			const isRootCatchAll = pattern.exportPrefix === "" || pattern.exportPrefix === "/";
-			if (isRootCatchAll) continue;
+			if (isRootCatchAll && !pattern.sourcePrefix) continue;
 
 			const sourceDir = path.join(packageRoot, pattern.sourcePrefix);
 			try {

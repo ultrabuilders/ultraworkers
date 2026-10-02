@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import * as path from "node:path";
 import { ptree, TempDir } from "@oh-my-pi/pi-utils";
 import { formatChunkManifest, selectAffected, selectShard } from "./ci-test-ts";
 
@@ -402,4 +403,82 @@ describe("formatChunkManifest", () => {
 		const manifest = formatChunkManifest([chunk("rs chunk", "scripts/run-rs-task.ts", "test:rs")]);
 		expect(manifest).toContain("(no test files in argv)");
 	});
+});
+
+/**
+ * The manifest, read the way a person hunting a flake actually reads it.
+ *
+ * The tests above call {@link formatChunkManifest} and prove it prints the right string.
+ * That is not the claim in dispute. The claim is that the **real runner calls it at the
+ * right moment**, and the gap between those two is exactly where this gate could have been
+ * decorative: a correct formatter nothing ever calls produces no manifest, and "the log
+ * had nothing" then reads as "the file passed" for the whole run.
+ *
+ * So this runs the real entry, on real files, in a child process — a child because a
+ * failing chunk sets `process.exitCode`, which in-process would turn the test run itself
+ * red and tell us nothing about the runner.
+ */
+describe("chunk manifest through the real runner", () => {
+	test("names a file whose chunk died at import, and still fails that chunk", async () => {
+		using dir = TempDir.createSync("omp-test-manifest-e2e-");
+		// Two files in one chunk, which is the shape that makes the hole visible: the broken
+		// one dies loading, so its name is the only one the replayed output mentions, and the
+		// green one is passed over in silence.
+		await Bun.write(
+			dir.join("green.test.ts"),
+			'import { expect, test } from "bun:test";\ntest("green file passes", () => {\n\texpect(1 + 1).toBe(2);\n});\n',
+		);
+		// `absent` is **used**, and that is load-bearing rather than incidental. An unused
+		// static import of a module that does not exist does not break a bun test file: the
+		// bundler elides the whole import before resolution, so the file loads and its test
+		// passes. Measured at HEAD=4ce046c0cd — `bun test` on a fixture importing
+		// "./module-that-was-never-written" and never mentioning it reported "2 pass, 0 fail".
+		// Written the obvious way, this fixture cannot fail and proves nothing. Using the
+		// binding keeps the import live, so resolution runs and the chunk dies loading.
+		await Bun.write(
+			dir.join("broken.test.ts"),
+			'import { absent } from "./module-that-was-never-written";\nimport { expect, test } from "bun:test";\ntest("never reached", () => {\n\texpect(absent).toBeDefined();\n});\n',
+		);
+
+		const repoRoot = path.join(import.meta.dir, "..");
+		// `cwd` is resolved against the repo root by the runner, so a temp dir outside the
+		// tree is reachable as a relative escape — no repo files touched, which is the only
+		// way this is safe to run on a shared checkout.
+		const commands = [
+			{
+				label: "e2e chunk",
+				cwd: path.relative(repoRoot, dir.absolute()),
+				command: ["bun", "test", "--only-failures", "green.test.ts", "broken.test.ts"],
+				parallel: 1,
+			},
+		];
+		const result = await ptree.exec(
+			[
+				process.execPath,
+				"-e",
+				`import { runTestCommandsInParallel } from ${JSON.stringify(import.meta.resolve("./ci-test-ts.ts"))}; await runTestCommandsInParallel(${JSON.stringify(commands)}, 1);`,
+			],
+			{ env: { ...Bun.env, NO_COLOR: "1" }, timeout: 120_000, detached: true, allowNonZero: true },
+		);
+
+		// The reader's only route to the manifest is the line the runner prints, so that
+		// line is part of the contract. This throw **is** the control for the mutation a4
+		// asked for: delete the manifest write and this is where the test goes red, with the
+		// child's own output quoted so the failure says what did happen instead.
+		const manifestPath = /chunk manifest: (\S+)/.exec(result.stdout)?.[1];
+		if (manifestPath === undefined) {
+			throw new Error(`runner never reported a manifest path. exit=${result.exitCode}\n${result.stdout}`);
+		}
+
+		const manifest = await Bun.file(manifestPath).text();
+		// Both files — the one that ran and the one that never got to run a test. The second
+		// assertion is the load-bearing one: a manifest built from output rather than argv
+		// would name the broken file (it is the only one printed) and silently lose this one.
+		expect(manifest).toContain("green.test.ts");
+		expect(manifest).toContain("broken.test.ts");
+
+		// Recording a broken chunk is not the same as failing on it. Without this the test
+		// would pass against a runner that wrote a perfect manifest and exited 0.
+		expect(result.exitCode).toBe(1);
+	}, 150_000);
 });

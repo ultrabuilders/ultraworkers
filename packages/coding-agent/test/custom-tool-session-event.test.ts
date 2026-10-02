@@ -244,8 +244,19 @@ describe("every mode reaches the dispatcher through dispose", () => {
 		const { runPrintMode } = await import("@oh-my-pi/pi-coding-agent/modes/print-mode");
 		const { postmortem } = await import("@oh-my-pi/pi-utils");
 
-		const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		// Same flush-aware mock as the row above, and for the same reason: print
+		// mode's spinner passes a callback as the last write() argument, so a
+		// mock that returns true without calling it leaves print mode parked
+		// mid-turn. That parked run is what made this file order-dependent — the
+		// teardown it registers outlives the test and the next file's print-mode
+		// run then contends with it.
+		const flush = (_chunk: unknown, ...rest: unknown[]) => {
+			const last = rest[rest.length - 1];
+			if (typeof last === "function") (last as () => void)();
+			return true;
+		};
+		const stdout = vi.spyOn(process.stdout, "write").mockImplementation(flush);
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(flush);
 		try {
 			const delayed = createDelayedSession(makeAssistantMessage("done"));
 			const run = runPrintMode(delayed.session, { mode: "text", initialMessage: "hello" });
@@ -259,11 +270,15 @@ describe("every mode reaches the dispatcher through dispose", () => {
 			expect(delayed.getDisposeCalls()).toBeGreaterThanOrEqual(1);
 
 			delayed.resolvePrompt();
-			// The run is deliberately not awaited here: the keep-alive pass already
-			// fired the teardown, and print mode's own exit path is the subject of
-			// the row above, not this one. Leaving it parked would leak a pending
-			// promise into later files, so it is raced to settle-or-timeout instead.
-			await Promise.race([run, Bun.sleep(1000)]);
+			// Awaited, not raced. A previous version raced this against a 1s sleep
+			// to "avoid leaking a pending promise" — but losing that race is what
+			// leaks it: `run` stays parked with print mode's teardown still
+			// registered, and the next file's print-mode run contends with it.
+			// That made this file order-dependent. The run now settles on its own
+			// because the mock above honours the spinner's flush callback; if it
+			// ever cannot, this row times out here instead of corrupting a
+			// neighbouring file.
+			await run;
 		} finally {
 			stdout.mockRestore();
 			stderr.mockRestore();

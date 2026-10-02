@@ -301,6 +301,19 @@ export interface TurnEntry extends SessionEntryBase {
 	 * a gate refusal, which is observable, rather than a causal claim about the
 	 * turn's end, which is not.
 	 *
+	 * ## Scope: bounded by what `ApprovalEntry` actually records
+	 *
+	 * Read back off the log, so it can only name refusals that reached the log. As
+	 * of this writing exactly two paths append approval halves — the extension tool
+	 * wrapper and the ACP permission path — and the interactive tool path writes
+	 * none: a core tool (bash under a `deny` policy, say) is refused without leaving
+	 * an `ApprovalEntry` to point at. That gap predates this field; it is the audit
+	 * entry's, not this one's.
+	 *
+	 * Stated here rather than left to the name: `blockedBy` is absent or short for
+	 * the refusals nobody recorded, and widening coverage means recording those
+	 * refusals first, not widening this scan.
+	 *
 	 * Deliberately not derived from `ToolResultMessage.isError`: that flag carries
 	 * no policy, so it cannot tell a gate denial from an ordinary tool failure.
 	 * Filling this from it would build a second source that disagrees with

@@ -935,7 +935,17 @@ export class ExtensionRunner {
 		if (depth >= 8) {
 			throw new Error(`invokeTool: delegation depth exceeded 8 (recursive invokeTool for "${name}"?)`);
 		}
-		const toolCallId = `invoke-${name}-${Date.now().toString(36)}-${depth}`;
+		// A uuid rather than `Date.now()`-and-depth. Depth is threaded from the caller,
+		// so two independent delegations of the same tool both sit at depth 0 — and
+		// `Date.now()` has millisecond resolution, so two such calls in one millisecond
+		// minted the *same* id. That is not a rare race: the approval registry keys on
+		// this id, and `Map.set` on a duplicate silently drops the earlier entry, so the
+		// first call's prompt could never be released by a decision on the second. A
+		// prompt that hangs with nothing logged is exactly what the cascade exists to
+		// prevent, so the id has to be unique by construction rather than by timing.
+		//
+		// Same shape as the other synthesized ids in the codebase (`eval/js/tool-bridge.ts`).
+		const toolCallId = `invoke-${name}-${crypto.randomUUID()}`;
 		return (await resolved.tool.execute(
 			toolCallId,
 			params as never,

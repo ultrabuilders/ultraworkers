@@ -125,6 +125,36 @@ treat these four lines as an indication of shape, not as figures to quote.
 **Read the 51% before filling in a row.** A `rename` row is *not* automatically a
 code edit: renaming inside a comment is W13's job, not this table's.
 
+### A row expires when its file moves, and that is not an authoring error
+
+`hits` is a photograph of one file at one commit, so it goes stale without anyone
+touching the table. The first row to expire here did so three commits after it was
+written, and it was **correct** when it was written:
+
+```
+d69fd189d8   7 occurrences   ← the row was authored against this
+f28b972eba  10               ← a stale-assertion fix, +29 lines, unrelated to renaming
+HEAD        10
+```
+
+The author counted correctly and the file then changed underneath the table. The gate
+reported `hits-imbalance`, and that is the gate **working**: it is the one check here
+that can tell a stale number from a wrong one.
+
+Two consequences, because both look like defects and neither is:
+
+- **A red `hits-imbalance` is not evidence of carelessness.** Run `git log -S` on that
+  file before reading the row. If the count moved after the row was authored, the row
+  is stale rather than wrong, and the fix is to re-count — not to re-litigate the class.
+- **A row can expire with no commit touching the table.** The sweeping commit's diff
+  says nothing about it, so this table's diff needs the same reading as the code's.
+
+The same holds for `keep_refs`, and there it is worse, because a stale count at least
+disagrees with itself. A ref can name a contract that has since been retired — one row
+here froze "the name a user has on their PATH" after the installed binary had already
+been renamed, so the ref kept authorising rows on a premise that was no longer true.
+Check that the named contract still exists before trusting the row it justifies.
+
 ## Two stages, and why one is not enough
 
 ```bash

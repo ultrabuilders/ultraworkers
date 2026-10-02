@@ -16,8 +16,12 @@
  *     tree says   eval  30 · capability  56 · task  45 · internal-urls  38 · registry 33
  *                 mcp  24 · discovery 41 · web   9 · slash-commands 11 · async  8 · edit 21
  *
- * Nine of eleven fell BELOW the 41-150 band the group is defined by. Copying the plan's
- * table forward would have carried eleven candidates into a list that no longer holds.
+ * Eight of eleven fell BELOW the 41-150 band the group is defined by (eval, internal-urls,
+ * registry, mcp, web, slash-commands, async, edit — count them off the `tree says` line
+ * above; the band is inclusive at both ends, so `discovery 41` is inside it). Copying the
+ * plan's table forward would have carried eleven candidates into a list that no longer
+ * holds. This sentence used to say "Nine", which no reader could reproduce from the two
+ * lines above it: a hand-maintained tally drifts the same way the plan's own numbers did.
  *
  * So the list is derived here, from `measure-fan-in.ts` output, not transcribed. A
  * hand-maintained importer count is a snapshot; this is a measurement you can re-run.
@@ -70,7 +74,13 @@ const NO_CUT_MODULES_INTERNAL = new Map<string, string>([
 	["modes", "plan §3: needs 5 sibling directories in tui"],
 	["extensibility", "the de-hardcoding axis; this programme's whole subject"],
 	["capability", "registry type consumed across the extension surface — seam, not split"],
-	["eval", "M8 W8 is editing eval/ right now — order must be settled first"],
+	// `eval` was here, ruled no-cut for "M8 W8 is editing eval/ right now — order must be
+	// settled first". That is a schedule event, not a ruling, and it decays: W8 sat blocked
+	// with nobody in eval/ while the row kept claiming otherwise. The plan does rule on
+	// eval, and it rules the other way — §"ngưỡng 41-150" lists
+	// `mcp, registry, discovery, eval, task` together as the cuttable-with-a-seam row. So
+	// eval is a candidate, and at 30 importers it is simply out of band. The sequencing
+	// concern is real but belongs to the R0/W8 ordering decision, not to this table.
 	["internal-urls", "referenced by the installer path, not by feature boundaries"],
 	["registry", "plan §5.1: name collides with catalog; the real work is a merge, not a cut"],
 	["mcp", "plan §4: boundaries follow the client/server split, not the module name"],

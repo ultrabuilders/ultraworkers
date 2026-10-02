@@ -68,7 +68,7 @@ describe("Group C candidate list", () => {
 	it("reads the real baseline and agrees with the group it defines", async () => {
 		// Ties the classifier to the actual artifact. The plan's own Group C numbers
 		// (eval 126, capability 136, web 66, async 50, edit 49) no longer hold, which is
-		// why this list is computed: nine of those eleven fell below the band.
+		// why this list is computed: eight of those eleven fell below the band.
 		const baseline = (await Bun.file(BASELINE).json()) as { modules: Record<string, number> };
 		const measured = readBaseline(baseline);
 		expect(measured.length).toBeGreaterThan(0);
@@ -214,7 +214,14 @@ describe("Group C separation cannot be undone by disabling the rulings", () => {
 		const candidates = split.candidates.map(v => v.module);
 		const rejected = [...split.noCut, ...split.merge].map(v => v.module);
 
-		for (const name of ["tools", "utils", "session", "cli", "capability", "config", "registry", "eval"]) {
+		// `eval` left this list deliberately. It was pinned here on the strength of
+		// "M8 W8 is editing eval/ right now", which is a schedule event; the plan's own
+		// §"ngưỡng 41-150" row lists `mcp, registry, discovery, eval, task` together as
+		// the cuttable-with-a-seam candidates, so the plan rules eval a candidate, not a
+		// no-cut. What keeps it out of the candidate list is now its measurement, and
+		// that is asserted against the real baseline above (`expect(...).toBeLessThan(41)`),
+		// which is a firmer reason than a ruling that decays.
+		for (const name of ["tools", "utils", "session", "cli", "capability", "config", "registry"]) {
 			expect(rejected, `${name} is ruled no-cut but was classified a candidate`).toContain(name);
 			expect(candidates).not.toContain(name);
 		}

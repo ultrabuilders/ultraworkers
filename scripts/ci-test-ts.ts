@@ -107,6 +107,16 @@ export const fastWorkspacePackages = [
 	// pure-TS shape this bucket is for. Measured green on its own — 142 pass /
 	// 0 fail in ~75ms.
 	"packages/protocol",
+	// `packages/telemetry` is vendor-neutral contracts and typed schema helpers:
+	// zero runtime dependencies, no Bun.serve/listen, no child_process. Same
+	// short pure-TS shape as protocol above. Measured green on its own — 15 pass /
+	// 0 fail in ~19ms.
+	//
+	// Its two test files ran in NO CI bucket at all before this entry: the package
+	// ships no `test` script, and this runner invokes `bun test` directly in the
+	// package directory rather than through that script, so the missing script was
+	// never the obstacle — the absence from this list was.
+	"packages/telemetry",
 ];
 
 // These suites cover the native package, TUI/browser-ish behavior, local servers,
@@ -135,6 +145,15 @@ export const nativeAndIntegrationPackages = [
 	// bundle.test.ts drives esbuild as a real child process. Both want the
 	// low-concurrency runner this bucket already provides.
 	"packages/chord",
+	// `packages/server` is the "a local server" case the bucket rule above names
+	// outright: it binds unix sockets in test/listener.test.ts and
+	// test/unix-connection.test.ts. `packages/client` is its transport counterpart
+	// and binds the other end (test/unix-transport.test.ts). Both are socket- and
+	// subprocess-bound rather than short pure-TS, and both depend on chord, which
+	// already sits here. Measured green individually — server 44 pass / 0 fail in
+	// ~148ms, client 27 pass / 0 fail in ~358ms.
+	"packages/server",
+	"packages/client",
 ];
 
 // Packages the CI buckets deliberately skip but a local full run should still

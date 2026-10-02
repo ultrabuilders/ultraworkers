@@ -60,11 +60,32 @@ decision, not a mechanical rewrite, and not something to fold into a formatting 
 An earlier red here, in `extensions-discarded-handler-result.test.ts`, was fixed separately. This is
 a different file and a different failure.
 
-## Link 14 was deliberately not run
+## Link 14 is a baseline gate, not a suite-green gate
 
-`collectFailures(target = SUITE)` spawns `bun test` against the **whole suite**, out of scope here.
-Its row says "not run" rather than carrying a number nobody measured. It is the one link whose cost
-nothing above bounds.
+An earlier version of this file said link 14 "runs the whole suite" and used that to conclude CI
+was not green. The first half is right — `collectFailures(target = SUITE)` does spawn `bun test` —
+but the conclusion is wrong, and the distinction is the whole point of the gate:
+
+> This gate protects against **regression**: a failure name that was not in the baseline. […] A
+> green run means "no NEW failures" — it does NOT mean "the baseline is right". […] `packages/
+> coding-agent/test/` is not green at HEAD. […] running the suite and requiring exit 0 is always
+> red, and a permanently red gate gets switched off within a day.
+
+So link 14 passing does not require the suite to be green, and its absence from a measurement says
+nothing about CI. It is still unmeasured here, and that is a gap in this file rather than a
+finding about the tree.
+
+## Both earlier reds are fixed
+
+At `HEAD=5b99427a1a` — worktree, clean, `git status` 0 before and after every link — **all
+thirteen measured links exited 0**, 45.6s total, and `check:disposition-ratchet` exited 0 with
+`stale-row = 0` and `dangling-keep-ref = 0`. The two reds recorded above (`prefer-const` in
+`packages/durable/test/harness-tasks-recovery.test.ts`, and the `pi-durable` `memo` overload) were
+fixed by other agents in `d0f0af741d` and `90809c775c`; both commits are ancestors of that HEAD.
+
+What this does **not** establish is that CI is green. The test jobs are separate — `ci.yml` runs
+them as `test_workspace`, `test_coding_agent_native` and `test_coding_agent_singleton`, none of
+which `ci:check:full` invokes. Two independent halves, and only one has been measured.
 
 ## No link writes
 

@@ -703,8 +703,8 @@ mod tests {
 					.as_nanos(),
 				TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
 			);
-			let scheme = format!("omp-oauth-test-{unique}");
-			let directory = std::env::temp_dir().join(format!("omp oauth callback {unique}"));
+			let scheme = format!("ultraworkers-oauth-test-{unique}");
+			let directory = std::env::temp_dir().join(format!("ultraworkers oauth callback {unique}"));
 			fs::create_dir_all(&directory).unwrap();
 			let context = Context::new(
 				directory.clone(),
@@ -748,13 +748,13 @@ mod tests {
 
 	#[test]
 	fn command_quotes_native_paths_and_url_as_data() {
-		let helper = Path::new(r#"C:\Program Files\omp\callback "helper".exe"#);
+		let helper = Path::new(r#"C:\Program Files\ultraworkers\callback "helper".exe"#);
 		let callback = Path::new(r"C:\OAuth callbacks\pending\");
 		let command = relay_command(helper, callback).unwrap();
 		assert_eq!(
 			command,
 			OsString::from(
-				r#""C:\Program Files\omp\callback \"helper\".exe" "C:\OAuth callbacks\pending\\" "%1""#
+				r#""C:\Program Files\ultraworkers\callback \"helper\".exe" "C:\OAuth callbacks\pending\\" "%1""#
 			)
 		);
 	}

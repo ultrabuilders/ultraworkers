@@ -120,7 +120,7 @@ fn invalid_scheme_is_rejected_before_filesystem_access() {
 	let _serial = TEST_SERIAL.blocking_lock();
 	assert!(validate_scheme("../another-handler").is_err());
 	assert!(validate_scheme("OMP").is_err());
-	assert!(validate_scheme("omp+oauth.test").is_ok());
+	assert!(validate_scheme("ultraworkers+oauth.test").is_ok());
 }
 
 #[test]

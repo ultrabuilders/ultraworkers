@@ -60,7 +60,7 @@ mod tests {
 			vec![
 				OsString::from("relay"),
 				OsString::from("callback.url"),
-				OsString::from("omp://callback"),
+				OsString::from("ultraworkers://callback"),
 				OsString::from("extra"),
 			],
 		] {

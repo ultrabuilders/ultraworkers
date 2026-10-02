@@ -435,7 +435,7 @@ fn desktop_file(snapshot: &Snapshot) -> anyhow::Result<String> {
 	Ok([
 		"[Desktop Entry]".to_owned(),
 		"Type=Application".to_owned(),
-		"Name=omp OAuth Callback".to_owned(),
+		"Name=ultraworkers OAuth Callback".to_owned(),
 		"NoDisplay=true".to_owned(),
 		"Terminal=false".to_owned(),
 		format!(

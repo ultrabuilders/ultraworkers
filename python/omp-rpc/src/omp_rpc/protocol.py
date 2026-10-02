@@ -1185,7 +1185,7 @@ class PromptError:
 
     message: str
     retryable: bool
-    """The failure is transient: resubmitting later may succeed (omp's own retries are exhausted)."""
+    """The failure is transient: resubmitting later may succeed (ultraworkers's own retries are exhausted)."""
     provider: str | None = None
     model: str | None = None
     http_status: int | None = None

@@ -744,6 +744,55 @@ export async function checkPost(root: string, rows: readonly Row[]): Promise<rea
 	return violations;
 }
 
+/** One path carrying pinned occurrences that nothing in the table accounts for. */
+export interface UnreconciledPath {
+	readonly path: string;
+	readonly occurrences: number;
+}
+
+/**
+ * Pinned occurrences no row accounts for, because every row for the path is
+ * literal-counted.
+ *
+ * `hits-imbalance` is the one check that reconciles a file's pinned count, and it
+ * compares a SUM — so it is skipped outright when the path has no pinned-counted row
+ * (`checkPre`). Three rules each close over that gap without seeing it:
+ *
+ * - `missing-row` needs a path with NO row at all. These paths have one.
+ * - `checkPost`'s `rename-incomplete` needs a `rename` row. These have none.
+ * - `hits-imbalance` needs a pinned row. Their rows are `keep-path` /
+ *   `keep-worker-selector`, counted by their own literal.
+ *
+ * So a `keep-path` row over a file that also carries bare `omp` tokens reconciles
+ * nothing: the `".omp"` literal it declares and the pinned occurrences beside it are
+ * different counts, and only the first is ever checked. Measured 2026-10-03:
+ * 31 paths, 85 occurrences, `pre` clean over 823 rows and `post` naming none of them.
+ *
+ * Reported rather than failed, because each one needs a human disposition — either a
+ * `rename` row to consume the occurrences or a pinned keep row to justify them — and
+ * inventing rows to make the gate pass is exactly what this table exists to prevent.
+ */
+export async function findUnreconciledPinned(root: string, rows: readonly Row[]): Promise<readonly UnreconciledPath[]> {
+	const byPath = new Map<string, Row[]>();
+	for (const row of rows) {
+		const list = byPath.get(row.path);
+		if (list) list.push(row);
+		else byPath.set(row.path, [row]);
+	}
+	const unreconciled: UnreconciledPath[] = [];
+	for (const [filePath, group] of byPath) {
+		if (group.some(row => classMatcher(row.disposition).literal === undefined)) continue;
+		const handle = Bun.file(path.join(root, filePath));
+		if (!(await handle.exists())) continue;
+		const occurrences = countRename(await handle.text());
+		if (occurrences > 0) unreconciled.push({ path: filePath, occurrences });
+	}
+	return unreconciled.sort((a, b) => b.occurrences - a.occurrences || a.path.localeCompare(b.path));
+}
+
+/** How many of a per-run list are named outright; the tail is counted, never dropped. */
+const NAMED = 8;
+
 async function main(): Promise<void> {
 	// Every unrecognised argument is refused rather than defaulted past. `--gate0`
 	// is documented in MILESTONE_5_EXECUTION_PLAN.md as W8b's Gate 0, but nothing
@@ -798,7 +847,6 @@ async function main(): Promise<void> {
 		// by running the gate rather than by re-deriving it. Capped because this is
 		// per-run output on every stage; the tail is named as a count rather than dropped
 		// silently, so a truncated list cannot read as a complete one.
-		const NAMED = 8;
 		const named = unverifiable.byName.slice(0, NAMED);
 		for (const [ref, n] of named) {
 			console.log(`disposition(${stage}):   unverifiable ref ${n} row(s): ${ref}`);
@@ -808,6 +856,28 @@ async function main(): Promise<void> {
 			const restRows = rest.reduce((sum, [, n]) => sum + n, 0);
 			console.log(
 				`disposition(${stage}):   …and ${rest.length} more distinct ref(s) over ${restRows} row(s), not listed`,
+			);
+		}
+	}
+
+	// The gate's other honest limit: occurrences it was never asked to reconcile. Printed
+	// on every run for the same reason as the ref line above — a clean run that reads as
+	// full coverage is the failure both reports exist to close.
+	const unreconciled = await findUnreconciledPinned(root, rows);
+	if (unreconciled.length > 0) {
+		const total = unreconciled.reduce((sum, u) => sum + u.occurrences, 0);
+		console.log(
+			`disposition(${stage}): pinned-not-reconciled = ${unreconciled.length} path(s) / ${total} occurrence(s) ` +
+				`that no row accounts for (every row is literal-counted, so the group sum is skipped)`,
+		);
+		for (const u of unreconciled.slice(0, NAMED)) {
+			console.log(`disposition(${stage}):   ${u.occurrences} occurrence(s): ${u.path}`);
+		}
+		const rest = unreconciled.slice(NAMED);
+		if (rest.length > 0) {
+			const restRows = rest.reduce((sum, u) => sum + u.occurrences, 0);
+			console.log(
+				`disposition(${stage}):   …and ${rest.length} more path(s) over ${restRows} occurrence(s), not listed`,
 			);
 		}
 	}

@@ -18,6 +18,7 @@ import {
 	checkPost,
 	checkPre,
 	countUnverifiableKeepRefs,
+	findUnreconciledPinned,
 	classMatcher,
 	countClass,
 	countRename,
@@ -478,5 +479,79 @@ describe("a keep_ref that names nothing", () => {
 		// `a57q:*` and `bare-non-W` both have 1, and this is the order they must land in.
 		expect(counted.byKind[1]?.[0]).toBe("a57q:*");
 		expect(counted.byKind[2]?.[0]).toBe("bare-non-W");
+	});
+});
+
+/**
+ * `pinned-not-reconciled` — occurrences no rule in the gate can see.
+ *
+ * The contract is a coverage claim, not a count: a path carrying pinned occurrences
+ * must be *reachable* by something, and the three rules that could reach it each
+ * require a row this shape does not have. `missing-row` needs no row at all,
+ * `rename-incomplete` needs a `rename` row, and the group sum is skipped when every
+ * row is literal-counted. So the report is the only thing standing between a file's
+ * brand tokens and a sweep that leaves them behind silently.
+ *
+ * Each test states the failure it defends. The negative cases matter as much as the
+ * positive one: a report that fires on every literal-counted path is noise, and noise
+ * is what gets the report deleted.
+ */
+describe("findUnreconciledPinned", () => {
+	/** `".omp"` is a PATH literal — the dot excludes it from the pinned expression. */
+	const LITERAL_ONLY = `const dir = ".omp";\n`;
+	/** A bare `"omp"` token is pinned, and rides along beside the literal. */
+	const LITERAL_PLUS_PINNED = `const dir = ".omp";\nconst brand = "omp";\n`;
+
+	it("reports a literal-counted path that also carries pinned occurrences", async () => {
+		const root = await tree({ "t.ts": LITERAL_PLUS_PINNED });
+		const rows = [row_("t.ts", 1, "keep-path", "XDG dir", "W1:dir")];
+
+		// The failure: this file's `"omp"` token is never renamed and never reported.
+		const found = await findUnreconciledPinned(root, rows);
+		expect(found).toEqual([{ path: "t.ts", occurrences: 1 }]);
+	});
+
+	it("stays silent for a literal-counted path carrying no pinned occurrences", async () => {
+		const root = await tree({ "t.ts": LITERAL_ONLY });
+		const rows = [row_("t.ts", 1, "keep-path", "XDG dir", "W1:dir")];
+
+		// The negative contract. Without it the report fires on every `keep-path` row in
+		// the table, and a report that always fires is one nobody reads.
+		expect(await findUnreconciledPinned(root, rows)).toEqual([]);
+	});
+
+	it("leaves a path that has a pinned row to the group sum", async () => {
+		const root = await tree({ "t.ts": LITERAL_PLUS_PINNED });
+		const rows = [row_("t.ts", 1, "keep-path", "XDG dir", "W1:dir"), row_("t.ts", 1, "rename", "brand", "")];
+
+		// Precedence, and the reason this report cannot simply be "any file with pinned
+		// occurrences": `hits-imbalance` already reconciles this path's sum, and the two
+		// would report the same file for the same reason.
+		expect(await findUnreconciledPinned(root, rows)).toEqual([]);
+	});
+
+	it("orders by occurrence count so the cap names the worst first", async () => {
+		const many = `const a = "omp"; const b = "omp"; const c = "omp";\n`;
+		const root = await tree({ "few.ts": LITERAL_PLUS_PINNED, "many.ts": many });
+		const rows = [row_("few.ts", 1, "keep-path", "d", "W1:d"), row_("many.ts", 1, "keep-path", "d", "W1:d")];
+
+		// `main` prints only the first NAMED and counts the tail. If the order were by
+		// path, a truncated report could hide the largest offender behind an alphabetical
+		// neighbour and still read as complete.
+		const found = await findUnreconciledPinned(root, rows);
+		expect(found.map(u => [u.path, u.occurrences])).toEqual([
+			["many.ts", 3],
+			["few.ts", 1],
+		]);
+	});
+
+	it("skips a row whose file is gone instead of throwing the run away", async () => {
+		const root = await tree({ "present.ts": LITERAL_PLUS_PINNED });
+		const rows = [row_("present.ts", 1, "keep-path", "d", "W1:d"), row_("deleted.ts", 1, "keep-path", "d", "W1:d")];
+
+		// `stale-row` reports the missing file in the `pre` stage. Reading it here would
+		// throw ENOENT and take the whole gate down instead of the one path that is wrong.
+		const found = await findUnreconciledPinned(root, rows);
+		expect(found.map(u => u.path)).toEqual(["present.ts"]);
 	});
 });

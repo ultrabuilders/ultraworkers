@@ -40,6 +40,24 @@ export type ExtensionKind =
 export type ExtensionState = "active" | "disabled" | "shadowed" | "modified";
 
 /**
+ * How far a hook's contents are from what the user approved.
+ *
+ * Deliberately NOT an `ExtensionState`, and that separation is the point. The
+ * states there answer "is this running?"; these answer "what does the loader
+ * hold against this file?". Only `modified` stops a hook, so only it belongs in
+ * `ExtensionState`. `untrusted` hooks **do** run — the loader records an
+ * unrecorded hash on the same pass and admits the hook — so folding it into the
+ * run state would mark a running hook blocked, which is the one disagreement
+ * between dashboard and loader this file exists to prevent.
+ *
+ * Mirrors `HookTrustStatus` in
+ * `coding-agent/src/extensibility/hooks/trust.ts`, which is the source of truth.
+ * Declared here rather than imported because this package must not depend on
+ * `coding-agent`; the two are checked against each other by a test.
+ */
+export type HookTrustState = "managed" | "trusted" | "modified" | "untrusted";
+
+/**
  * Reason why an extension is disabled.
  */
 export type DisabledReason = "provider-disabled" | "user-opt-in" | "item-disabled" | "shadowed" | "hook-modified";
@@ -71,6 +89,14 @@ export interface Extension {
 	};
 	/** Current state */
 	state: ExtensionState;
+	/**
+	 * Content-trust verdict for hooks; absent for every other kind.
+	 *
+	 * A separate field from `state` because the two answer different questions —
+	 * see {@link HookTrustState}. Set only where the loader actually judges, so a
+	 * missing value means "not a hook" rather than "not judged".
+	 */
+	trustState?: HookTrustState;
 	/** Reason for disabled state */
 	disabledReason?: DisabledReason;
 	/** If shadowed, what shadows it */

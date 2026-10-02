@@ -25,7 +25,12 @@ import {
 } from "../../../discovery";
 import { readDisabledServers, readEnabledServers } from "../../../mcp/config-writer";
 import { recordedHookHash } from "../../../config/hook-settings";
-import { hookContentHash, hookTrustKey, hookTrustStatus } from "../../../extensibility/hooks/trust";
+import {
+	hookContentHash,
+	hookTrustKey,
+	hookTrustStatus,
+	type HookTrustStatus,
+} from "../../../extensibility/hooks/trust";
 import { commandPreview } from "@oh-my-pi/pi-tui/overlays/extensions/inspector-model";
 import { inferMcpTransport } from "@oh-my-pi/pi-tui/overlays/extensions/mcp-runtime";
 import {
@@ -90,7 +95,26 @@ async function isHookModified(hook: Hook): Promise<boolean> {
 	const hash = await hookContentHash(hook);
 	if (hash === undefined) return false;
 	const recorded = recordedHookHash(hookTrustKey(hook));
-	return recorded !== undefined && hookTrustStatus(recorded, hash) === "modified";
+	return recorded !== undefined && hookTrustStatus(recorded, hash, hook._source?.level === "native") === "modified";
+}
+
+/**
+ * The hook's content-trust verdict, for display beside the run state.
+ *
+ * The same three steps the loader runs, in the same order, with the same
+ * settings scope — see the note on `isHookModified`. This one reports the whole
+ * verdict rather than only the blocking case, because the list shows it as a
+ * badge next to `state` and `state` already carries the blocking half.
+ *
+ * `undefined` when the file cannot be hashed: the loader judges nothing there
+ * either, and inventing a verdict would put a badge on screen for a hook the
+ * dashboard knows nothing about.
+ */
+async function hookTrustVerdict(hook: Hook): Promise<HookTrustStatus | undefined> {
+	const hash = await hookContentHash(hook);
+	if (hash === undefined) return undefined;
+	const recorded = recordedHookHash(hookTrustKey(hook));
+	return hookTrustStatus(recorded, hash, hook._source?.level === "native");
 }
 
 /**
@@ -280,6 +304,7 @@ export async function loadAllExtensions(cwd?: string, disabledIds?: string[]): P
 				path: hook.path,
 				source: sourceFromMeta(hook._source),
 				state,
+				trustState: await hookTrustVerdict(hook),
 				disabledReason,
 				raw: hook,
 			});

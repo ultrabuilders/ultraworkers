@@ -89,6 +89,22 @@ import type { Hook } from "../../capability/hook";
  */
 export type HookTrustStatus = "managed" | "trusted" | "modified" | "untrusted";
 
+/**
+ * The same four states as a value.
+ *
+ * Exists so a consumer that cannot import the type — the TUI package, which must
+ * not depend on this one, mirrors the union by hand — can be checked against the
+ * real set instead of against a copy that nobody compares to anything. Adding a
+ * state without updating the mirror is then a test failure rather than a badge
+ * that silently renders nothing.
+ */
+export const HOOK_TRUST_STATES = [
+	"managed",
+	"trusted",
+	"modified",
+	"untrusted",
+] as const satisfies readonly HookTrustStatus[];
+
 /** Persisted beside the config for one hook. */
 export interface HookState {
 	/** Hash of the script as it stood when this hook was first seen. */

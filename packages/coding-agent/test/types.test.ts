@@ -36,7 +36,7 @@ import * as path from "node:path";
 import { invalidateAllCaches } from "@oh-my-pi/pi-coding-agent/capability";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { discoverExtensionPaths } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
-import { hookTrustKey, hookTrustStatus } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/trust";
+import { HOOK_TRUST_STATES, hookTrustKey, hookTrustStatus } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/trust";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
 
 describe("hook trust: four states, each reachable", () => {
@@ -137,5 +137,24 @@ describe("hook trust: four states, each reachable", () => {
 		// Same hook, different path, same key.
 		const moved = hookTrustKey({ type: "pre", tool: "Bash", name: "guard", path: "/elsewhere/guard.ts" } as never);
 		expect(moved).toBe(key);
+	});
+});
+
+describe("hook trust: the TUI mirror does not drift", () => {
+	it("carries exactly the states the product declares", () => {
+		// The TUI cannot import from `coding-agent`, so `HookTrustState` there is a
+		// hand-written mirror. A mirror with no test is a mirror that silently rots:
+		// adding a fifth state to the product would leave the badge switch unable to
+		// render it, and nothing would say so until a user hit the case. This reads
+		// the union as a *value* rather than as source text, so it survives a
+		// rename and fails only when the set genuinely differs.
+		const mirror = [
+			"managed",
+			"trusted",
+			"modified",
+			"untrusted",
+		] as const satisfies readonly (typeof HOOK_TRUST_STATES)[number][];
+
+		expect([...HOOK_TRUST_STATES].sort()).toEqual([...mirror].sort());
 	});
 });

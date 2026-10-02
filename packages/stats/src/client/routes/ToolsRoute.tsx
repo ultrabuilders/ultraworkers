@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { getToolDashboardStats } from "../api";
@@ -73,7 +74,7 @@ export function ToolsRoute({ active, range }: ToolsRouteProps) {
 		<div className="page">
 			<PageHeader
 				title="Tools"
-				description={`Which tools omp called in ${meta.windowLabel}, how often they failed, and what they cost.`}
+				description={`Which tools ${APP_NAME} called in ${meta.windowLabel}, how often they failed, and what they cost.`}
 			/>
 
 			<QueryView query={tools} skeleton={<ChartSkeleton height={112} />}>

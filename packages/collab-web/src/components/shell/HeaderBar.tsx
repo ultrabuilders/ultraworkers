@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { LogOut, PanelRight } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ConnectionPhase, GuestSnapshot } from "../../lib/client";
@@ -37,7 +38,7 @@ export function HeaderBar({ snapshot, subCount, railOpen, onToggleRail, onLeave 
 	return (
 		<header className="sh-header">
 			<div className="sh-header-left">
-				<span className="sh-brand" aria-label="omp collab">
+				<span className="sh-brand" aria-label={`${APP_NAME} collab`}>
 					<OmpMark />
 					<span className="sh-brand-slash">/</span>
 				</span>

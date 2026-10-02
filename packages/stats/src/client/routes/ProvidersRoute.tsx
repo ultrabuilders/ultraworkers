@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { format } from "@oh-my-pi/pi-utils/dates";
 import { type ReactNode, useMemo, useState } from "react";
 import { getProviderDashboardStats, getProviderWindowStats } from "../api";
@@ -66,7 +67,7 @@ const TOKEN_MIX = [
 	{ key: "output", label: "Output", color: "var(--chart-secondary)" },
 ] as const;
 
-const SNAPSHOT_HINT = "Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, omp usage).";
+const SNAPSHOT_HINT = `Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, ${APP_NAME} usage).`;
 
 interface WindowRef {
 	provider: string;

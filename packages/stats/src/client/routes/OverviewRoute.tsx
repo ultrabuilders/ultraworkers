@@ -1,3 +1,4 @@
+import { APP_NAME } from "@oh-my-pi/pi-utils/brand";
 import { ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { getOverviewStats, getRecentRequests } from "../api";
@@ -94,7 +95,10 @@ export function OverviewRoute({ active, range, onRequestClick }: OverviewRoutePr
 
 	return (
 		<div className="page">
-			<PageHeader title="Overview" description={`Everything omp did across your sessions in ${meta.windowLabel}.`} />
+			<PageHeader
+				title="Overview"
+				description={`Everything ${APP_NAME} did across your sessions in ${meta.windowLabel}.`}
+			/>
 
 			<QueryView query={overview} skeleton={<ChartSkeleton height={112} />}>
 				{({ overall }) => (

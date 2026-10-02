@@ -3,6 +3,8 @@ import { useSyncExternalStore } from "react";
 export type SystemTheme = "light" | "dark";
 export type ThemePreference = "system" | "light" | "dark";
 
+// A localStorage key holding a preference the user already saved; renaming it discards their
+// choice on upgrade. Displayed brand comes from `APP_NAME`, and never from this string.
 const STORAGE_KEY = "omp-collab-theme";
 const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 

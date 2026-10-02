@@ -589,15 +589,100 @@ describe("blockedBy, from a refusal a person was asked about", () => {
 		// same real turn — one answer apart. If `blockedBy` meant "an approval was
 		// recorded", this turn would carry the id and the row above would be
 		// satisfied by a writer that audits every prompt as a refusal.
+		//
+		// This is also the negative direction, and the dangerous one: `blockedBy`
+		// marks a turn as *refused*, so a reader that accepted an approval would
+		// write a transcript saying a healthy turn was denied. "Absent" is the only
+		// correct answer here and nothing else would be.
 		const manager = await promptThroughPrompt("echo hello", "call-user-allow", "Approve");
 
 		const halves = manager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
 		// Still a full pair: the question really was asked and really was answered.
 		expect(halves.map(e => e.phase)).toEqual(["asked", "answered"]);
+		// The decision a reader must not mistake for a refusal.
+		expect(halves[1]?.decision).toBe("approved");
 		expect(halves.every(entry => !isApprovalDenial(entry))).toBe(true);
 
 		const ended = manager.getEntries().find((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");
 		expect(ended?.blockedBy).toBeUndefined();
+	});
+
+	it("does not carry a refusal into the next turn", async () => {
+		// The window contract, through real writers instead of entries built by hand.
+		// `#approvalDenialsSinceTurnOpen` slices from the leaf captured when the turn
+		// opened; if it scanned the whole log instead, every turn after the first
+		// would inherit all history — and the field would be useless for the question
+		// it exists to answer, while still looking populated.
+		sandboxes.push(TempDir.createSync("@pi-window-"));
+		const manager = SessionManager.inMemory();
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		// Mutable, so one session can refuse and then comply — the cache and the turn
+		// counter both live on the session, so the second turn has to happen in the
+		// same one.
+		let answer: "Approve" | "Deny" = "Deny";
+		const runner = {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			sessionId: "window-turn-test",
+			sessionSettings: settings,
+			getUIContext: () => ({
+				select: async () => answer,
+			}),
+			recordApprovalEntry: (half: Omit<ApprovalEntry, "type">) => {
+				manager.appendApprovalEntry(half as never);
+			},
+			runScoped<T>(fn: () => T): T {
+				return fn();
+			},
+		} as unknown as ExtensionRunner;
+
+		const bash = new BashTool({
+			settings,
+		} as unknown as ConstructorParameters<typeof BashTool>[0]);
+		const wrapped = new ExtensionToolWrapper(bash as unknown as AgentTool, runner);
+		// A reply between the two tool calls, so they land in *separate* prompts. The
+		// mock consumes this list in order, and both calls in one prompt would both be
+		// answered while `answer` still held the first prompt's value — which would
+		// make the second turn denied too and the row test nothing.
+		const mock = createMockModel({
+			responses: [
+				{ content: [{ type: "toolCall", id: "call-turn1", name: "bash", arguments: { command: "echo one" } }] },
+				{ content: ["first reply"] },
+				{ content: [{ type: "toolCall", id: "call-turn2", name: "bash", arguments: { command: "echo two" } }] },
+				{ content: ["finished"] },
+			],
+		});
+		own = new AgentSession({
+			agent: new Agent({
+				getApiKey: () => "test-key",
+				initialState: {
+					model: mock.model,
+					systemPrompt: ["Test"],
+					tools: [wrapped],
+					messages: manager.buildSessionContext().messages,
+				},
+				streamFn: mock.stream,
+			}),
+			sessionManager: manager,
+			settings,
+			modelRegistry: { getApiKey: () => "test-key" } as never,
+		});
+
+		answer = "Deny";
+		await own.prompt("first");
+		answer = "Approve";
+		await own.prompt("second");
+
+		const ended = manager.getEntries().filter((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");
+		// Asserted over the flattened refusals rather than against a turn count: how
+		// many turns a two-tool-call prompt produces is a detail of the mock, and a
+		// count assertion would break when the mock changes while saying nothing
+		// about the window. What matters is that the only refusal anywhere in the log
+		// is the one that really happened, and that it is not duplicated forward.
+		expect(ended.flatMap(e => e.blockedBy ?? [])).toEqual(["call-turn1"]);
+		// And the settled turn reads clean — the direction that would lie to a reader.
+		expect(ended[ended.length - 1]?.blockedBy).toBeUndefined();
 	});
 });
 

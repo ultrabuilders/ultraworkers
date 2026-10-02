@@ -1308,6 +1308,49 @@ it("records both halves of an approval, and neither reaches the model", async ()
 	expect(modelMessages.some(m => JSON.stringify(m).includes("rm -rf ./build"))).toBe(false);
 });
 
+describe("an ACP approval the client never answered", () => {
+	/**
+	 * The negative half of `blockedBy`, and the half that would be dangerous if it were
+	 * wrong in the other direction.
+	 *
+	 * `blockedBy` marks a turn as *refused*. So the failure this guards is not a
+	 * missing entry — it is a healthy turn recorded as blocked, which is a transcript
+	 * that lies about what happened. `isApprovalDenial` already filters on
+	 * `phase === "answered"`, and this is the row that proves the filter is load-bearing
+	 * through a real writer rather than a hand-built object: `session-tools.ts` writes
+	 * the `asked` half at :956 and only reaches the `answered` half at :1006 after the
+	 * client replies, so a cancelled outcome leaves the question genuinely open.
+	 */
+	it("leaves a turn that was only asked about unblocked", async () => {
+		const bashTool = makeFakeTool("bash");
+		// `cancelled` returns before the answered half is written, which is exactly
+		// the crash case the pair exists to make legible.
+		const bridge = makeBridge({ outcome: "cancelled" });
+		session = await createSessionWithMockModel([bashTool], bridge, [
+			{
+				content: [{ type: "toolCall", id: "call-asked-only", name: "bash", arguments: { command: "git status" } }],
+			},
+			{ content: ["done"] },
+		]);
+
+		await session.prompt("check the tree");
+
+		const halves = session.sessionManager
+			.getEntries()
+			.filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+		// The precondition that makes this row mean something: the question really
+		// was put, and really was left unanswered.
+		expect(halves.map(e => e.phase)).toEqual(["asked"]);
+		expect(halves.every(entry => !isApprovalDenial(entry))).toBe(true);
+
+		// Absent, not `[]`.
+		const ended = session.sessionManager
+			.getEntries()
+			.find((e): e is TurnEntry => e.type === TURN_ENTRY_TYPE && e.phase === "ended");
+		expect(ended?.blockedBy).toBeUndefined();
+	});
+});
+
 it("an approval recorded as asked but never answered is distinguishable", async () => {
 	// The crash case the pair exists for. A bridge that never answers leaves only
 	// the `asked` half in the log, which is what tells a reader the question was

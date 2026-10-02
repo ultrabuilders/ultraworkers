@@ -80,14 +80,36 @@ const WORKSPACE = {
  * tool exists to catch. They are NOT the bead's authoritative baseline — GAP-M1B-1 step 3
  * requires capturing that after M1 merges and after the first port wave, and doing it
  * before then would lock in a pre-M1 number.
+ *
+ * Re-pinning is a decision and has to be written as one. A baseline that moves to whatever
+ * the tool last printed is not a ratchet, it is a mirror — it can never fail. So every
+ * re-pin below names what grew and why the growth is intended; a re-pin that cannot say so
+ * is the case to argue about, not the case to apply.
+ *
+ * **One added leaf under `@oh-my-pi/pi-utils` moves all three entries at once.** Every entry
+ * here reaches the utils barrel (`cli.ts` directly, `worker-selectors.ts` through
+ * `worker-host.ts` → `dirs.ts`), so a new module in that graph is `+1` in all three
+ * simultaneously. That is the signature of a shared-leaf addition, and it is how 24/5/284
+ * became 25/6/285 in one commit — see the `brand.ts` note under `cli.ts` below. Recognising the
+ * signature is what keeps a re-pin from being mistaken for three unrelated regressions.
  */
 const BUDGETS = {
 	"packages/coding-agent": {
-		// Measured 24. cli.ts has only 6 static value imports and loads the command
-		// registry, help, and stats through `await import(...)`, so this graph is already
-		// small. The entry that is NOT small is `packages/ai/src/stream.ts`, budgeted below.
-		"src/cli.ts": { maxFiles: 24 },
-		"src/cli/worker-selectors.ts": { maxFiles: 5 },
+		// Measured 24, re-pinned to 25 by `f6c4fb9e79`. cli.ts has only 6 static value
+		// imports and loads the command registry, help, and stats through
+		// `await import(...)`, so this graph is already small. The entry that is NOT small
+		// is `packages/ai/src/stream.ts`, budgeted below.
+		//
+		// The +1 is `packages/utils/src/brand.ts`, a zero-import leaf holding `APP_NAME`.
+		// That extraction is the point of the module: a browser bundle must be able to read
+		// the product name without resolving where state lives, which means without
+		// `node:fs`/`node:os`. `dirs.ts` re-exports it, so every utils consumer reaches it.
+		// Hoisting it back out would undo the fix the commit made, so the ceiling moves.
+		"src/cli.ts": { maxFiles: 25 },
+		// Same +1, same cause, for the same reason — it reaches the barrel through
+		// `worker-host.ts`. Bumped in the same commit as `cli.ts` and `stream.ts` because it
+		// was one shared leaf, not three separate growths.
+		"src/cli/worker-selectors.ts": { maxFiles: 6 },
 	},
 	"packages/ai": {
 		// 284, and the number came from this gate rather than from a hand: add the entry
@@ -110,7 +132,10 @@ const BUDGETS = {
 		// in one directory; `registry/transports.ts` landing beside them is not a coincidence.
 		// 341 is dropped outright, because nobody has reproduced it and a number with no
 		// source reads like it has one.
-		"src/stream.ts": { maxFiles: 284 },
+		// 284, re-pinned to 285 by the same `f6c4fb9e79` that moved the two entries above:
+		// `stream.ts` reaches the utils barrel too, so `brand.ts` was its +1 as well. 52 of
+		// the 285 are still provider transports.
+		"src/stream.ts": { maxFiles: 285 },
 	},
 };
 

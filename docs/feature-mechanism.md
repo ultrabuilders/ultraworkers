@@ -18,12 +18,25 @@ The two contracts are kept honest by
 
 1. A row pointing at a deleted file turns the table red.
 2. Every `proof: none` names the work item that will produce its gate, **and that
-   work item must still be open**. This is why there is no numeric cap on `none`:
-   a cap is a number somebody has to remember to update, and it drifts. Naming the
-   work item instead makes the row **self-clearing** — when `m4-m4-6-052` or
-   `m4-m4-7-053` closes, the test goes red and the row has to become a real gate.
-   A `none` that cannot name a work item is rejected, so a vague "no test yet" can
-   never enter the table.
+   work item must still be open** — and the number of `none` rows does not exceed the
+   cap registered below.
+
+   Naming the work item makes the row **self-clearing**: when `m4-m4-6-052` or
+   `m4-m4-7-053` closes, the test goes red and the row has to become a real gate. A
+   `none` that cannot name a work item is rejected, so a vague "no test yet" can never
+   enter the table.
+
+   That rule clears rows but cannot stop someone *adding* a `none` for something
+   nobody has scheduled, so the count is capped as well:
+
+   **`Registered proof:none cap: 0`** — measured 2026-10-02: 4 rows, 4 real gates, 0
+   `none`.
+
+   The two are not redundant. The cap is a floor that moves only on purpose, so the
+   table cannot rot into a list of wishes; the work-item rule is what actually empties
+   it. A bare cap without a machine check is a wish, and a bare work-item rule without
+   a cap is a hole — so the cap here is **asserted by the test, not remembered**, which
+   is the whole difference between the two designs the plan weighed.
 
 When this table and the documentation disagree, **the documentation is what is
 wrong**. Nothing generates this table, so the table is not the source of truth the

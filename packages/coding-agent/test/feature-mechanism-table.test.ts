@@ -68,6 +68,34 @@ async function readRows(source: string = TABLE_PATH): Promise<Row[]> {
 	return rows;
 }
 
+/**
+ * The `proof: none` cap the document registers, parsed out of the document itself.
+ *
+ * The number lives in the doc rather than in this file so the prose a reader checks
+ * and the bound a machine enforces cannot be two different numbers — the failure mode
+ * of every "remember to update the cap" design. A missing marker throws rather than
+ * defaulting: a cap that silently reads as unlimited is the exact hole it exists to
+ * close.
+ */
+async function readNoneCap(source: string = TABLE_PATH): Promise<number> {
+	const markdown = await Bun.file(source).text();
+	const match = markdown.match(/Registered proof:none cap:\s*(\d+)/);
+	if (!match) throw new Error(`${source} does not register a \`proof: none\` cap`);
+	return Number(match[1]);
+}
+
+/**
+ * The `none` rows in a table, and whether they exceed the registered cap.
+ *
+ * Extracted so the negative test below exercises *this* comparison rather than
+ * re-deriving it as arithmetic. A negative branch that checks `1 > cap` itself
+ * passes even when the gate's own cap assertion is deleted — it proves the fixture
+ * is over the cap, not that the gate notices.
+ */
+function noneRowsOverCap(rows: readonly Row[], cap: number): number {
+	return rows.filter(row => plain(row.proof).startsWith("none")).length - cap;
+}
+
 /** The status of every bead, from the git-tracked JSONL export. */
 async function readBeadStatuses(): Promise<Map<string, string>> {
 	const statuses = new Map<string, string>();
@@ -170,6 +198,7 @@ describe("docs/feature-mechanism.md", () => {
 		// be open. When it closes, this goes red and the row has to become real.
 		const rows = await readRows();
 		const statuses = await readBeadStatuses();
+		const cap = await readNoneCap();
 
 		const unbacked: string[] = [];
 		const stale: string[] = [];
@@ -199,5 +228,49 @@ describe("docs/feature-mechanism.md", () => {
 
 		expect(unbacked).toEqual([]);
 		expect(stale).toEqual([]);
+		// The registered cap, asserted. The work-item rule above clears rows; this
+		// stops anyone *adding* a `none` for something nobody has scheduled, which is
+		// the half of the contract the work-item rule cannot cover on its own.
+		expect(noneRowsOverCap(rows, cap)).toBeLessThanOrEqual(0);
+	});
+
+	test("a proof:none row over the registered cap is rejected", async () => {
+		// The cap's negative branch. A cap that has only ever been satisfied has not
+		// been shown to bite, and "the cap is currently respected" is a different
+		// claim from "adding a row past the cap turns this red".
+		//
+		// The fixture registers its own cap of 0 next to a table carrying one `none`
+		// row, so this exercises the parse and the comparison together rather than
+		// asserting the real table's number.
+		using dir = TempDir.createSync("@omp-mechanism-cap-");
+		const table = path.join(dir.path(), "table.md");
+		await Bun.write(
+			table,
+			[
+				"**Registered proof:none cap: 0**",
+				"",
+				"| feature | mechanism | proof |",
+				"| --- | --- | --- |",
+				"| Unproven | `packages/coding-agent/src/cli.ts:1` | none — m5-some-open-bead |",
+				"",
+			].join("\n"),
+		);
+
+		const rows = await readRows(table);
+		const cap = await readNoneCap(table);
+		expect(cap).toBe(0);
+		// The same comparison the real gate runs, on a table that actually violates it.
+		expect(noneRowsOverCap(rows, cap)).toBe(1);
+	});
+
+	test("a document that registers no cap is an error, not an unlimited table", async () => {
+		// A cap that defaults to "unlimited" when the marker is missing is the exact
+		// hole the cap exists to close: delete one line of prose and the bound
+		// silently stops existing while the gate stays green.
+		using dir = TempDir.createSync("@omp-mechanism-nocap-");
+		const table = path.join(dir.path(), "table.md");
+		await Bun.write(table, ["| feature | mechanism | proof |", "| --- | --- | --- |", ""].join("\n"));
+
+		expect(readNoneCap(table)).rejects.toThrow("does not register a `proof: none` cap");
 	});
 });

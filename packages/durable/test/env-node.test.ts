@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@oh-my-pi/chord/context";
-import { afterEach, describe, expect, it, vi, setSystemTime } from "bun:test";
+import { afterEach, describe, expect, it, vi } from "bun:test";
 import { FileError, getOrThrow, type ShellExecOptions, type ShellOutputView } from "../src/env/index";
 import { NodeExecutionEnv } from "../src/env/node";
 import { applyShellOutputUpdate } from "../src/env/utils/output-capture";

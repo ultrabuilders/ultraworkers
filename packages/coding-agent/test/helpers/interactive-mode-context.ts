@@ -86,9 +86,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * already holds an object merges recursively; every other override (values,
  * getters, class instances, arrays, maps) replaces the slot via its own
  * property descriptor so accessor overrides survive.
+ *
+ * Every override is applied, whatever its enumerability. A non-enumerable override used
+ * to be dropped here: the loop enumerated with `for...in`, which visits own *enumerable*
+ * properties only, so such a key never reached the descriptor lookup below and the stub
+ * kept its default. That failure is silent — a test asserting on the member still passed,
+ * against a value it never set — so the omission is worth a named case rather than an
+ * implicit consequence of the loop's shape.
+ *
+ * The keys come from `Object.getOwnPropertyNames` rather than `for...in` for that reason,
+ * and it also fixes the prototype question by choosing an answer: own properties only. A
+ * member inherited from a prototype is not an override, so it is left alone. Every caller
+ * in this repository passes an object literal, whose keys are all own and all enumerable,
+ * which is why the two enumerations agree for all of them.
  */
 function layer(target: object, overrides: object, skip?: Record<string, true>): void {
-	for (const key in overrides) {
+	for (const key of Object.getOwnPropertyNames(overrides)) {
 		if (skip?.[key]) continue;
 		const descriptor = Object.getOwnPropertyDescriptor(overrides, key);
 		if (descriptor === undefined) continue;

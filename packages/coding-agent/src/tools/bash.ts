@@ -549,7 +549,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		}
 		const criticalCommand = command !== "" && CRITICAL_BASH_PATTERNS.some(pattern => pattern.test(command));
 		if (!compoundSegments && criticalCommand) {
-			return { tier: "exec", override: true, reason: "Critical pattern detected" };
+			return { tier: "exec", override: true, policy: "deny", reason: "Critical pattern detected" };
 		}
 		if (compoundSegments) {
 			let promptRule: BashApprovalPatternRule | undefined = patternRule;
@@ -578,7 +578,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 			for (const segment of compoundSegments) {
 				const literalCommand = segment.argv.join(" ");
 				if (criticalCommand || CRITICAL_BASH_PATTERNS.some(pattern => pattern.test(literalCommand))) {
-					return { tier: "exec", override: true, reason: "Critical pattern detected" };
+					return { tier: "exec", override: true, policy: "deny", reason: "Critical pattern detected" };
 				}
 			}
 			// Unmatched segments retain the standalone tool-policy and mode fallback.

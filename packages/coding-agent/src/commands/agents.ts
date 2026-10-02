@@ -2,7 +2,7 @@
  * Manage bundled task agents.
  */
 
-import { WIRE_NAME } from "@oh-my-pi/pi-utils";
+import { APP_NAME, WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { Args, Command, Flags, renderCommandHelp } from "@oh-my-pi/pi-utils/cli";
 import { type AgentsAction, type AgentsCommandArgs, runAgentsCommand } from "../cli/agents-cli";
 import { agentsHelp as commandHelp } from "../cli/command-help";
@@ -29,10 +29,10 @@ export default class Agents extends Command {
 	};
 
 	static examples = [
-		"# Export bundled agents into user config (default)\n  omp agents unpack",
-		"# Export bundled agents into project config\n  omp agents unpack --project",
-		"# Overwrite existing local agent files\n  omp agents unpack --project --force",
-		"# Export into a custom directory\n  omp agents unpack --dir ./tmp/agents --json",
+		`# Export bundled agents into user config (default)\n  ${APP_NAME} agents unpack`,
+		`# Export bundled agents into project config\n  ${APP_NAME} agents unpack --project`,
+		`# Overwrite existing local agent files\n  ${APP_NAME} agents unpack --project --force`,
+		`# Export into a custom directory\n  ${APP_NAME} agents unpack --dir ./tmp/agents --json`,
 	];
 
 	async run(): Promise<void> {

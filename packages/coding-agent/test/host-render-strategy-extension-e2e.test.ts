@@ -106,7 +106,14 @@ describe("registerHostRenderStrategy reached from an on-disk extension module", 
 			[
 				'import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";',
 				"export default function register(pi: ExtensionAPI): void {",
-				// @ts-expect-error — deliberately malformed, as an out-of-repo author might write it.
+				// Deliberately malformed, as an out-of-repo author might write it.
+				//
+				// No `@ts-expect-error` here, and its absence is the point: this text is
+				// written to a temp directory and loaded, so nothing in this repository ever
+				// typechecks it — the directive was inert and `check:types` correctly
+				// reported it as unused. There is also no type error to suppress, because
+				// `id` is a plain `string`; the seam rejects a blank one at LOAD time, which
+				// is exactly what the assertion below checks.
 				'\tpi.registerHostRenderStrategy({ id: "  ", label: "nameless", decide: () => "in-place" });',
 				"}",
 				"",

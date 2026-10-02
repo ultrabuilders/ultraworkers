@@ -1894,7 +1894,7 @@ export interface ExtensionAPI {
 	registerMode(definition: ModeDefinition): void;
 
 	/**
-	 * Register a top-level `omp <verb>` command, so `omp <verb> …` routes to this
+	 * Register a top-level `ultraworkers <verb>` command, so `ultraworkers <verb> …` routes to this
 	 * extension instead of being forwarded to the model as a prompt.
 	 *
 	 * Distinct from {@link registerCommand}, which registers a *slash* command
@@ -1909,7 +1909,7 @@ export interface ExtensionAPI {
 	 * reported through `subcommandCollisionDiagnostics()` with both owners named,
 	 * and the first registration keeps routing.
 	 *
-	 * `handler` receives the argv that follows the verb, so `omp deploy staging`
+	 * `handler` receives the argv that follows the verb, so `ultraworkers deploy staging`
 	 * arrives as `["staging"]`. It runs in the CLI process before any session
 	 * exists: close over what you captured here, and use it for work that is
 	 * genuinely top-level. Anything needing a session belongs in
@@ -2059,7 +2059,7 @@ export interface ExtensionAPI {
 	registerUsageReporter(toolName: string, reporter: UsageReporter): void;
 
 	/**
-	 * Contribute a check to `omp plugin doctor`.
+	 * Contribute a check to `ultraworkers plugin doctor`.
 	 *
 	 * The surface for reporting on an extension's own state — a half-loaded
 	 * resource, a dependency that resolved but is unusable, a repair the user can
@@ -2110,7 +2110,7 @@ export interface ExtensionAPI {
 	 * documented: a transformer is reachable from the interactive message
 	 * components and from nothing else, so the RPC/JSON transcript a client reads
 	 * stays raw data. A Markdown transform that ran on the RPC path would break
-	 * transcript-reading clients silently, on their side, with no omp stack trace
+	 * transcript-reading clients silently, on their side, with no ultraworkers stack trace
 	 * to point at.
 	 */
 	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
@@ -2771,7 +2771,7 @@ export interface Extension {
 	/** Host render strategies, in registration order. First opinion wins. */
 	hostRenderStrategies: HostRenderStrategy[];
 	copyTargetProviders: CopyTargetProvider[];
-	/** Diagnostics contributed to `omp plugin doctor`, in registration order. */
+	/** Diagnostics contributed to `ultraworkers plugin doctor`, in registration order. */
 	diagnostics: ExtensionDiagnostic[];
 }
 

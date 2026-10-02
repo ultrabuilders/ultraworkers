@@ -1,5 +1,5 @@
 /**
- * Extension-contributed diagnostics for `omp plugin doctor`.
+ * Extension-contributed diagnostics for `ultraworkers plugin doctor`.
  *
  * The surface existed and the contributor path did not: `DoctorCheck` is a
  * closed four-field struct assembled entirely inside `PluginManager.doctor()`,

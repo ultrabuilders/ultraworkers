@@ -50,7 +50,7 @@
  * trusted and recorded. This is a tripwire against "approved once, edited
  * afterwards", not an integrity mechanism; see the closing paragraph.
  *
- * Not the matcher: omp has no matcher group concept, so there is nothing else to
+ * Not the matcher: ultraworkers has no matcher group concept, so there is nothing else to
  * hash; a copied four-field key from a design that does have groups would carry
  * two indices that mean nothing here.
  *

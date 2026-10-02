@@ -534,9 +534,9 @@ async function loadSettings(ctx: LoadContext): Promise<LoadResult<Settings>> {
 	const warnings: string[] = [];
 	const knownSettingIds = new Set(allSettings().map(setting => setting.id));
 
-	// A shared Claude settings file half-applies: keys omp implements take effect, and
+	// A shared Claude settings file half-applies: keys ultraworkers implements take effect, and
 	// the rest are discarded in silence. `hooks` is the one that misleads most, because
-	// omp reads hooks from directories instead — so a valid `hooks` block does nothing
+	// ultraworkers reads hooks from directories instead — so a valid `hooks` block does nothing
 	// at all, with no error to explain why.
 	const reportDropped = (filePath: string, data: Record<string, unknown>): void => {
 		const warning = foreignSettingsWarning(filePath, droppedForeignKeys(data, knownSettingIds));

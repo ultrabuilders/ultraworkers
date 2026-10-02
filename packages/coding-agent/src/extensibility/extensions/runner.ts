@@ -652,7 +652,7 @@ export function clearExtensionBuckets(extension: Extension): void {
 
 /**
  * Built-in keys an extension may not claim, used when the caller does not supply the
- * live set. This is a FLOOR, not the answer: it names the defaults omp ships with, and
+ * live set. This is a FLOOR, not the answer: it names the defaults ultraworkers ships with, and
  * a user who remaps one of them onto a key it does not mention is not represented here.
  * Pass `KeybindingsManager.claimedKeyIds()` to get the real set.
  */
@@ -1858,7 +1858,7 @@ export class ExtensionRunner {
 	 * path calls this, which is what keeps a client reading the session from
 	 * receiving transformed Markdown. The boundary is structural rather than a
 	 * promise in a docblock: a transformer that reached the RPC path would break
-	 * such a client with no stack trace on omp's side.
+	 * such a client with no stack trace on ultraworkers' side.
 	 */
 	getMarkdownTransformers(): MarkdownTransformer[] {
 		return this.extensions.flatMap(ext => (ext.markdownTransformer ? [ext.markdownTransformer] : []));

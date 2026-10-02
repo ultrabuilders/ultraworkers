@@ -1,7 +1,7 @@
 /**
  * Process hardening, applied before any heavy import in `cli.ts`.
  *
- * omp already obfuscates secrets, gates approval, and kills process groups in the
+ * ultraworkers already obfuscates secrets, gates approval, and kills process groups in the
  * bash executor. The axis those miss is the process itself: a peer attaching a
  * debugger, or a core dump on disk, reaches the same secrets without passing any
  * of those gates.
@@ -9,7 +9,7 @@
  * Two rules govern this file:
  *
  *   1. **Never prevent startup.** Every call is individually guarded and degrades
- *      to a no-op. A security measure that leaves omp unable to launch is worse
+ *      to a no-op. A security measure that leaves ultraworkers unable to launch is worse
  *      than the hole it closes, because the user sees a broken tool rather than a
  *      compromised one.
  *   2. **Say which platform did nothing.** The macOS/Windows path is a silent
@@ -47,7 +47,7 @@ const LIBC = process.platform === "linux" ? "libc.so.6" : process.platform === "
 
 type Prctl = (option: number, arg: number) => number;
 
-/** `struct rlimit` is two 64-bit fields on every platform omp ships a binary for. */
+/** `struct rlimit` is two 64-bit fields on every platform ultraworkers ships a binary for. */
 const RLIMIT_STRUCT_BYTES = 16;
 
 let cachedPrctl: Prctl | null | undefined;
@@ -77,7 +77,7 @@ function getPrctl(): Prctl | null {
  * rots is the one nobody edits.
  *
  * Best-effort by contract: `process.env` is read-only on some runtimes, and a
- * failure here means children may inherit a loader variable, not that omp cannot
+ * failure here means children may inherit a loader variable, not that ultraworkers cannot
  * start. That is why it is caught and logged rather than thrown.
  */
 function stripLoaderEnvFromProcess(): void {
@@ -105,7 +105,7 @@ export function hardenProcess(): void {
 	// `sanitizeChildEnv` scrubs the per-command env, but the base layer is built
 	// from `Bun.env` via `filterChildShellEnv`, which strips nothing of this kind
 	// (measured: LD_PRELOAD and DYLD_INSERT_LIBRARIES both survive it). So without
-	// this, a loader variable set before omp launched reaches every child through
+	// this, a loader variable set before ultraworkers launched reaches every child through
 	// the layer the scrub does not cover.
 	//
 	// Done here, at the source, rather than in each spawn path: a scrub added to

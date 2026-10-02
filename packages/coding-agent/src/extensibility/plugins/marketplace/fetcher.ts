@@ -254,7 +254,7 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 			//
 			// Checking against a hand-copied key list instead would be worse still:
 			// it goes stale the moment `ServerConfig` gains a field, and then a
-			// perfectly valid catalog is rejected on an omp upgrade. So strict
+			// perfectly valid catalog is rejected on an ultraworkers upgrade. So strict
 			// validates the REQUIRED fields, which is precisely the set that would
 			// vanish — no more, and nothing that a future field can break.
 			if (strictCatalog) {
@@ -324,7 +324,7 @@ export function parseMarketplaceCatalog(content: string, filePath: string): Mark
 // ── fetchMarketplace ──────────────────────────────────────────────────
 
 /**
- * Catalog paths tried in priority order: omp-namespaced override first, then
+ * Catalog paths tried in priority order: ultraworkers-namespaced override first, then
  * the Claude Code-compatible fallback so existing marketplaces keep loading.
  */
 const CATALOG_RELATIVE_PATHS: readonly string[] = [".omp-plugin/marketplace.json", ".claude-plugin/marketplace.json"];

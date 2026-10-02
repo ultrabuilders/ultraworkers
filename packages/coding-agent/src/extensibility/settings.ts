@@ -40,7 +40,7 @@ const EXTENSION_ID_PREFIX = "extension-module:";
  *
  * There is deliberately **no** list of ids that resist removal. The grammar came
  * from a host whose console delivers org policy over two built-ins, so it refuses
- * to let a repository switch those off. omp has no equivalent: extensions are the
+ * to let a repository switch those off. ultraworkers has no equivalent: extensions are the
  * user's and the project's, there is no policy channel to protect, and naming two
  * ids to protect here would be inventing a guarantee nothing in the tree provides.
  * If a managed-deployment guarantee is ever added, it belongs as an exported set
@@ -68,7 +68,7 @@ export function createExtensionOptOut(selectors: readonly string[]): (name: stri
 	};
 }
 
-// Skill registry (omp skill)
+// Skill registry (ultraworkers skill)
 export const cfgSkillsRegistryUrl = register({
 	id: "skills.registryUrl",
 	type: "string",
@@ -136,7 +136,7 @@ export const cfgSkillsIncludeSkills = register({
 	default: EMPTY_STRING_ARRAY,
 });
 
-/** Skill discovery options (`skills.*` except the `omp skill` registry URL). */
+/** Skill discovery options (`skills.*` except the `ultraworkers skill` registry URL). */
 export const cfgSkills = combine({
 	enabled: cfgSkillsEnabled,
 	enableSkillCommands: cfgSkillsEnableSkillCommands,

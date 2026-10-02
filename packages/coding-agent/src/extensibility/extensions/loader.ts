@@ -424,7 +424,7 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 	}
 
 	/**
-	 * Register a top-level `omp <verb>`, distinct from {@link registerCommand}'s
+	 * Register a top-level `ultraworkers <verb>`, distinct from {@link registerCommand}'s
 	 * session slash command. The verb goes straight into the routing registry
 	 * `cli-commands.ts` reads, because there is no second place for it to live:
 	 * a name that is not in that registry is forwarded to the model as a prompt.

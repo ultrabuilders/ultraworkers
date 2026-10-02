@@ -3,8 +3,8 @@
  *
  * ## Why this module exists
  *
- * Three surfaces answer "is this environment healthy": `omp doctor` (CLI),
- * `omp plugin doctor` (whose environment block), and the TUI's `/debug` menu.
+ * Three surfaces answer "is this environment healthy": `ultraworkers doctor` (CLI),
+ * `ultraworkers plugin doctor` (whose environment block), and the TUI's `/debug` menu.
  * The bead that asked for them was explicit about the failure they guard
  * against — split them and "each copy is green with itself": the plugin
  * report would keep its own denominator, the TUI would keep its own, and a

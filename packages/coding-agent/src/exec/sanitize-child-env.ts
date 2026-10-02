@@ -2,8 +2,8 @@
  * Loader-hijack variables stripped from the environment handed to children.
  *
  * `LD_PRELOAD` and friends make a child load a library the parent never named, so
- * anything omp spawns — a build, a test runner, a user's script — can be taken
- * over without touching omp's own approval gate.
+ * anything ultraworkers spawns — a build, a test runner, a user's script — can be taken
+ * over without touching ultraworkers' own approval gate.
  *
  * The list is deliberately SHORT. A broad scrub would strip `PATH`, `NODE_PATH`
  * and a user's Homebrew prefixes, and LSP servers, kernels and browsers break
@@ -24,7 +24,7 @@ const LOADER_HIJACK_VARS = [
 	"LD_AUTOLOAD",
 	"LD_ORIGIN_PATH",
 	// macOS. `DYLD_*` is the same hijack with a different prefix, and this is the
-	// platform omp ships on most often — leaving it unfiltered meant the guard
+	// platform ultraworkers ships on most often — leaving it unfiltered meant the guard
 	// covered Linux and left the most common target open.
 	"DYLD_INSERT_LIBRARIES",
 	"DYLD_LIBRARY_PATH",

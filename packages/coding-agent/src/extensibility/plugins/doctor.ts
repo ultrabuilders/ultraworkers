@@ -275,7 +275,7 @@ export interface DoctorReportIcons {
  * Title for the report.
  *
  * A parameter rather than a fixed string because the heading is the caller's
- * choice — "Health Check" alone is wrong under `omp plugin doctor`, which reports
+ * choice — "Health Check" alone is wrong under `ultraworkers plugin doctor`, which reports
  * on plugins. Passing it in keeps the formatter from silently renaming the
  * command a user typed.
  */

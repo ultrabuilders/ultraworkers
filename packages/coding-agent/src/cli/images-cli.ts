@@ -845,7 +845,7 @@ export async function runImagesCommand(
  *
  * The daemon queries reach a process-shared broker client, whose socket outlives
  * the query that created it. A one-shot CLI process that returns while holding
- * it never reaches an empty event loop, so `omp images status|doctor|purge`
+ * it never reaches an empty event loop, so `ultraworkers images status|doctor|purge`
  * printed their complete report and then hung forever — the command was
  * unusable and any CI step using it hung with it. `probe` escaped only because
  * it short-circuits before touching the daemon when no backend is configured.

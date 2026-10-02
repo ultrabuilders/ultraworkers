@@ -1,10 +1,10 @@
 /**
- * `omp session` — list, archive, and restore sessions from the shell.
+ * `ultraworkers session` — list, archive, and restore sessions from the shell.
  *
- * Every verb reads through the enumeration `omp gc` uses, and archive/restore use
+ * Every verb reads through the enumeration `ultraworkers gc` uses, and archive/restore use
  * gc's own file primitives. That is the whole reason this module holds no listing
  * logic of its own. A second reader of the sessions directory is a second source
- * of truth, and the two drift apart until gc sweeps a session `omp session list`
+ * of truth, and the two drift apart until gc sweeps a session `ultraworkers session list`
  * still shows as live — with nothing in the output to say so.
  *
  * The archive *format* is likewise a contract with gc rather than a presentation
@@ -113,7 +113,7 @@ export async function runSessionList(args: SessionListArgs): Promise<void> {
 	const rows = args.all ? [...live, ...(await archivedRows(agentDir, sessionsRoot))] : live;
 
 	// `--last` prints a bare path because it exists to feed `--resume`; anything
-	// else on that line breaks `omp session list --last` in a command substitution.
+	// else on that line breaks `ultraworkers session list --last` in a command substitution.
 	if (args.last) {
 		const newest = rows[0];
 		if (!newest) {

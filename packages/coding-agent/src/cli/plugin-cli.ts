@@ -1,7 +1,7 @@
 /**
  * Plugin CLI command handlers.
  *
- * Handles `omp plugin <command>` subcommands for plugin lifecycle management.
+ * Handles `ultraworkers plugin <command>` subcommands for plugin lifecycle management.
  */
 
 import * as path from "node:path";
@@ -448,7 +448,7 @@ async function handleInstall(
 		if (target.type === "local") {
 			// Local paths route to link(): symlink the directory into the plugins
 			// node_modules tree so source edits show up without a reinstall. Matches
-			// `omp plugin link <path>` so users can use either verb interchangeably.
+			// `ultraworkers plugin link <path>` so users can use either verb interchangeably.
 			if (flags.scope) {
 				console.error(
 					chalk.yellow(
@@ -746,7 +746,7 @@ export async function handleDoctor(manager: PluginManager, flags: { json?: boole
 	// bucketing that produced two wrong summaries in a row has one implementation
 	// and one set of tests instead of a copy per renderer. Colouring stays a
 	// parameter, but the DEFAULT set now comes from `doctorPresentation()` —
-	// building the same five chalk wrappers in a third file was how `omp doctor`
+	// building the same five chalk wrappers in a third file was how `ultraworkers doctor`
 	// and this command ended up with two copies that could disagree.
 	const { styles, icons } = doctorPresentation();
 

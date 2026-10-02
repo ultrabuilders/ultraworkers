@@ -9,7 +9,7 @@
  *
  * Putting the class behind `CommandEntry.load` — the same lazy contract every
  * built-in command in that table already uses — means the module is evaluated
- * only once a verb actually dispatches. `omp --version`, `omp --help`, and every
+ * only once a verb actually dispatches. `ultraworkers --version`, `ultraworkers --help`, and every
  * prompt never reach it.
  */
 import { type CommandCtor, Command } from "@oh-my-pi/pi-utils/cli";
@@ -19,7 +19,7 @@ import type { SubcommandHandler } from "../cli-commands";
  * Wrap an extension handler as a command `run()` can dispatch.
  *
  * `run()` calls `new Cmd(argv, config)` then `instance.run()`, so `argv` here is
- * already the tokens *after* the verb — `omp deploy staging` arrives as
+ * already the tokens *after* the verb — `ultraworkers deploy staging` arrives as
  * `["staging"]`. No argv parsing is performed: a verb owns its own grammar, and
  * anything needing one belongs in a session command instead.
  */

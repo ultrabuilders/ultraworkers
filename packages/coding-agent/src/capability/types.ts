@@ -73,7 +73,7 @@ export interface LoadResult<T> {
  * A provider that can load items for a capability.
  */
 export interface Provider<T> {
-	/** Unique provider ID (e.g., "claude", "omp", "mcp-json", "agents-md") */
+	/** Unique provider ID (e.g., "claude", "ultraworkers", "mcp-json", "agents-md") */
 	id: string;
 
 	/** Human-readable name for UI display (e.g., "Claude Code", "OpenAI Codex") */
@@ -85,7 +85,7 @@ export interface Provider<T> {
 	/**
 	 * Priority (higher = checked first, wins on conflicts).
 	 * Suggested ranges:
-	 *   100+ : Primary providers (omp, pi)
+	 *   100+ : Primary providers (ultraworkers, pi)
 	 *   50-99: Tool-specific providers (claude, codex, gemini)
 	 *   1-49 : Shared standards (mcp-json, agents-md)
 	 */
@@ -156,11 +156,11 @@ export interface SourceMeta {
 	/**
 	 * Registry or CLI source that supplied a plugin root, when the provider
 	 * tracks it (currently `claude-plugins`: `"claude"` for `~/.claude/plugins`,
-	 * `"omp"` for the built-in registry, `"plugin-dir"` for `--plugin-dir`). Lets
+	 * `"ultraworkers"` for the built-in registry, `"plugin-dir"` for `--plugin-dir`). Lets
 	 * user-scope gating distinguish our own installs from the foreign Claude
 	 * tree — see `isSourceEnabled` in `extensibility/skills.ts` (#10743).
 	 *
-	 * `"omp"` here is a persisted origin tag, not a brand. `discovery/helpers.ts`
+	 * `"ultraworkers"` here is a persisted origin tag, not a brand. `discovery/helpers.ts`
 	 * writes it and the gating path reads it back to route user-scope decisions,
 	 * so it survives the product rename unchanged — same rule as `~/.omp`.
 	 */

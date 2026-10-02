@@ -206,7 +206,7 @@ async function runSmokeTest(): Promise<void> {
 // its own. They are NOT imported here on purpose: every one of them lives
 // behind a graph this file deliberately loads lazily (see runSmokeTest), and a
 // top-level value import would pull a native addon and the whole worker runtime
-// into every ordinary `omp launch`. That is a real regression, and
+// into every ordinary `ultraworkers launch`. That is a real regression, and
 // process-entry-import.test.ts is what catches it.
 //
 // So all eight derive from the same WORKER_HOST_SELECTOR_PREFIX instead. That
@@ -439,7 +439,7 @@ async function runIpcSubprocessWorker<In, Out>(
 			}
 		} catch {}
 
-		// Note on container environments (Docker/Kubernetes): omp often runs as
+		// Note on container environments (Docker/Kubernetes): ultraworkers often runs as
 		// PID 1, so workers start with process.ppid === 1. Treating ppid <= 1 as
 		// an orphan at boot would break containerized workers. Instead, we allow
 		// PID 1 to boot normally and detect post-spawn reparenting dynamically via
@@ -501,9 +501,9 @@ async function runIpcSubprocessWorker<In, Out>(
 /**
  * Hidden subcommand that boots the ONNX tiny-model worker for one model: a
  * detached process owning that model's socket (`OMP_TINY_WORKER_SOCKET`),
- * shared by every omp process on the machine and exiting on its own when
+ * shared by every ultraworkers process on the machine and exiting on its own when
  * idle. It exists so `onnxruntime-node` (loaded transitively by
- * `@huggingface/transformers`) never runs in an omp address space — its NAPI
+ * `@huggingface/transformers`) never runs in an ultraworkers address space — its NAPI
  * finalizer segfaults Bun on Windows (issue #1606).
  */
 async function runTinyWorker(): Promise<void> {
@@ -528,7 +528,7 @@ export async function runCli(argv: string[]): Promise<void> {
 			// invalid value to avoid an uncaught throw before this try/catch is in
 			// scope (see `readProfileFromEnvSafe` in dirs.ts), and callers may set
 			// OMP_PROFILE after importing this module (profile aliases/tests). Surfacing
-			// validation here turns `OMP_PROFILE=.. omp --version` into a clean error;
+			// validation here turns `OMP_PROFILE=.. ultraworkers --version` into a clean error;
 			// calling setProfile keeps every later path helper on the env-selected
 			// profile instead of the default agent directory.
 			setProfile(resolveProfileEnv(process.env.OMP_PROFILE, process.env.PI_PROFILE));
@@ -632,7 +632,7 @@ export async function runCli(argv: string[]): Promise<void> {
 		// Extensions load *inside* the session `run()` dispatches to, so a verb they
 		// register cannot be known when routing decides — the two would wait on each
 		// other. Priming the registry first closes that loop; skipped entirely for a
-		// token that cannot be a verb, which keeps `omp "two word prompt"` off the
+		// token that cannot be a verb, which keeps `ultraworkers "two word prompt"` off the
 		// extension-loading path.
 		if (couldBeExtensionSubcommand(resolvedArgv[0])) await preloadExtensionSubcommands();
 		// --help and --version are handled by run() directly; --license returned above.
@@ -646,7 +646,7 @@ export async function runCli(argv: string[]): Promise<void> {
 		runningCommand = resolved.argv[0];
 		await run({
 			bin: APP_NAME,
-			// The command on PATH is `omp` (see the package `bin`); the brand is not.
+			// The command on PATH is `ultraworkers` (see the package `bin`); the brand is not.
 			// Printing the brand in a usage line produced `$ ultraworkers update`,
 			// which a reader cannot paste.
 			command: WIRE_NAME,
@@ -678,7 +678,7 @@ if (isProcessEntry || !Bun.isMainThread) {
 	const postmortem: typeof Postmortem | undefined = isProcessEntry
 		? require("@oh-my-pi/pi-utils/postmortem.js")
 		: undefined;
-	// A one-shot CLI run (`omp --help | head`, `omp --version | true`, `omp <sub> | grep -m1`)
+	// A one-shot CLI run (`ultraworkers --help | head`, `ultraworkers --version | true`, `ultraworkers <sub> | grep -m1`)
 	// whose stdout consumer closes before the write drains gets an EPIPE that Bun surfaces as
 	// an unhandled rejection. Treat a vanished stdout peer as an ordinary Unix disconnect
 	// (graceful exit) rather than the fatal path. Interactive launches register their own

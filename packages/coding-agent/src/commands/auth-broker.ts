@@ -1,5 +1,5 @@
 /**
- * `omp auth-broker` — manage the omp credential vault.
+ * `ultraworkers auth-broker` — manage the ultraworkers credential vault.
  */
 
 import { APP_NAME } from "@oh-my-pi/pi-utils";

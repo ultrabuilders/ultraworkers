@@ -1,7 +1,7 @@
 /**
  * Config CLI command handlers.
  *
- * Handles `omp config <command>` subcommands for managing settings.
+ * Handles `ultraworkers config <command>` subcommands for managing settings.
  * The settings registry (`config/registry.ts`) is the source of truth for available settings.
  */
 
@@ -313,7 +313,7 @@ async function handleSet(key: string | undefined, value: string | undefined, fla
 	// inside the `try` because it is what rejects a value the definition will not
 	// accept: an invalid entry must fail here, with the reason, and never reach
 	// `config.yml`. The shared latch in `shadowing.ts` then asks who won, under the
-	// CLI's own policy of `keep` — someone running `omp config set` may be
+	// CLI's own policy of `keep` — someone running `ultraworkers config set` may be
 	// configuring a checkout where the layer that shadows the value here does not
 	// exist, so discarding their edit would destroy something they meant to keep.
 	// The write stays on disk and the shadowing is reported, which is what makes

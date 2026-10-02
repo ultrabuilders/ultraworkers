@@ -215,7 +215,7 @@ export function collectGcErrors(result: GcResult): string[] {
 /**
  * Where archived sessions live.
  *
- * Exported so `omp session archive` writes to the same place rather than keeping a
+ * Exported so `ultraworkers session archive` writes to the same place rather than keeping a
  * second copy of the rule. A separate convention would be silently destructive: gc
  * only stops treating a session as live once it is outside the sessions directory,
  * so a session filed anywhere else is swept as garbage with nothing to warn the user.

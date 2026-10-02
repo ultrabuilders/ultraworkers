@@ -26,8 +26,8 @@
  * false for every source run of the CLI.
  *
  * That is not a hardening nuance, it is a dead CLI. `cli.ts` gates its whole
- * entry block on this flag, so `runCli` was never called: `omp --version`,
- * `omp --help` and every subcommand exited 0 having printed nothing, on both
+ * entry block on this flag, so `runCli` was never called: `ultraworkers --version`,
+ * `ultraworkers --help` and every subcommand exited 0 having printed nothing, on both
  * streams. The guard this module exists to provide was never actually consulted
  * — it was answering a question about the wrong module.
  *

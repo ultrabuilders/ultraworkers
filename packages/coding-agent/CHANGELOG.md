@@ -227,12 +227,23 @@ order wins. The 500 ms recogniser, the rewind target set, and the`"none"`opt-out
 - `Ctrl+Shift+F` searches the rendered transcript and steps through matches
 
 - Documented the extension trust model: extensions are trusted in-process code with no capability
-  gate, project-scoped ones load unconditionally — from `.omp/extensions` inside the repository and
-  from plugin registry `installPath` values outside it, where a project entry shadows the user's own
-  entry for the same plugin ID — and `ctx.isProjectTrusted()` always returns `true` by design, as a
-  compatibility shim. `ctx.exec` is deliberately outside the gate, on the reasoning that a loaded
-  extension is already trusted. The decision, its scope, and its revisit triggers are written up in
-  `docs/extension-trust-model.md`
+  gate, project-scoped ones load only once the project is trusted — `.omp/extensions` inside the
+  repository and plugin registry `installPath` values pointing into the tree, where a project entry
+  shadows the user's own entry for the same plugin ID — and `ctx.isProjectTrusted()` reports that
+  decision rather than a constant. `ctx.exec` remains outside the gate, on the reasoning that a
+  loaded extension is already trusted. The decision, its scope, and its revisit triggers are written
+  up in `docs/extension-trust-model.md`
+- Project-scoped extension code is now gated on a recorded trust decision. `ctx.isProjectTrusted()`
+  was the literal `() => true` at both call sites, and no registry existed behind it, so cloning a
+  repository that ships `.omp/plugins/installed_plugins.json` ran its project-scoped extension
+  modules with no prompt — a reader of the API had no way to tell that from a decision. The
+  decision is three-valued (`yes` / `no` / `undecided`) and stored beside the config as
+  `projectTrust`, so it layers and flushes like every other setting rather than living in a marker
+  file nobody documents. **`undecided` refuses**, which is the safe direction for a directory nobody
+  has answered for; the opposite default would switch off project extensions on every existing
+  install, so set `projectTrust: yes` in the project's `config.yml` to keep loading them. Both call
+  sites answer from the same function, and the decision is re-read at the consumer rather than
+  captured at load, because a directory can change its mind in between
 
 ### Fixed
 

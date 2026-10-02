@@ -31,6 +31,7 @@ import { logger } from "@oh-my-pi/pi-utils";
 import { MAIN_AGENT_RULE_NAME } from "../../capability/rule";
 import type { ModelRegistry } from "../../config/model-registry";
 import { type Settings, withActiveSettings } from "../../config/settings";
+import { isProjectTrustedForScope } from "../../config/project-trust";
 import type { LocalProtocolOptions } from "../../internal-urls/local-protocol";
 import type { MemoryRuntimeContext } from "../../memory-backend";
 import { type Theme, theme } from "@oh-my-pi/pi-tui/theme";
@@ -1940,7 +1941,7 @@ export class ExtensionRunner {
 			cwd: this.cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,
-			isProjectTrusted: () => true,
+			isProjectTrusted: () => isProjectTrustedForScope(this.settings),
 			agent: this.agent,
 			get model() {
 				return getModel();

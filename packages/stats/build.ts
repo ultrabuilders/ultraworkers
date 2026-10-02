@@ -10,6 +10,7 @@ const result = await Bun.build({
 	outdir: "./dist/client",
 	minify: true,
 	naming: "[dir]/[name].[ext]",
+	define: { "process.env.NODE_ENV": '"production"' },
 });
 
 if (!result.success) {

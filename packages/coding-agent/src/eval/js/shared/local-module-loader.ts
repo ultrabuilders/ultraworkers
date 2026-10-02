@@ -15,6 +15,40 @@ interface LocalModuleEntry {
 
 export type LocalImportResolution = { mode: "local"; value: unknown } | { mode: "external"; target: string };
 
+/**
+ * Decides one import, before anything is loaded or executed.
+ *
+ * ## Why the policy sits here and not on the rewritten callee
+ *
+ * `rewriteDynamicImports` already takes a `callee` parameter, which looks like the
+ * seam to inject an import policy. It is not: that parameter is on the *code
+ * rewriting* path, and the fallback inside `DYNAMIC_IMPORT_CALLEE` is a separate,
+ * module-private constant used by a different function. Wiring one does not change
+ * the other, so a policy passed there would look installed while the fallback —
+ * the branch that actually runs in a foreign realm — kept its old behaviour.
+ *
+ * This sits at `#resolveFromBase` instead because that is the **single** decision
+ * point: `resolveForRun` (dynamic `import()` in worker code) and `resolveForModule`
+ * (`import.meta.resolve`/`__omp_import_from__`) both funnel through it, before any
+ * module is loaded and before the external `import()` is reached. One hook, so
+ * there is no second path a policy would have to be added to later.
+ *
+ * ## The default is deliberately the current behaviour
+ *
+ * No policy installed ⇒ every specifier resolves exactly as it did before this
+ * type existed. That is what keeps the fallback load-bearing: puppeteer-
+ * serialized code runs in a realm with no worker globals, and a policy that
+ * rejected unknown specifiers there would break `tab.evaluate`.
+ */
+export type LocalImportPolicy = (request: {
+	/** The raw specifier as written in the source — not the resolved path. */
+	specifier: string;
+	/** Lexically normalized absolute path, or `undefined` for a bare/URL specifier. */
+	resolvedPath: string | undefined;
+	/** True when the specifier names a Node builtin, which needs no policy decision. */
+	isBuiltin: boolean;
+}) => LocalImportResolution | "allow" | "deny";
+
 const LOCAL_MODULE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx", ".mts"]);
 
 export class LocalModuleLoader {
@@ -31,6 +65,7 @@ export class LocalModuleLoader {
 	#modulePaths = new WeakMap<vm.Module, string>();
 	#packageRoot: string | undefined;
 	#linkChain: Promise<void> = Promise.resolve();
+	#importPolicy: LocalImportPolicy | undefined;
 
 	constructor(sessionId: string) {
 		this.#context = vm.createContext(globalThis);
@@ -42,6 +77,18 @@ export class LocalModuleLoader {
 		if (normalized === this.#packageRoot) return;
 		this.#packageRoot = normalized;
 		this.#requireCache.clear();
+	}
+
+	/**
+	 * Install the import policy consulted by every specifier this loader resolves.
+	 *
+	 * Passing `undefined` restores the default, which is to resolve everything as
+	 * before this seam existed. Kept as a setter rather than a constructor argument
+	 * because the loader is constructed by the runtime before a host has any say
+	 * in the policy, and a policy installed later must not require a new session.
+	 */
+	setImportPolicy(policy: LocalImportPolicy | undefined): void {
+		this.#importPolicy = policy;
 	}
 
 	async resolveForRun(baseDir: string, source: string): Promise<LocalImportResolution> {
@@ -79,6 +126,25 @@ export class LocalModuleLoader {
 
 	async #resolveFromBase(baseDir: string, source: string): Promise<LocalImportResolution> {
 		const resolved = resolveImportSpecifier(baseDir, source, this.#packageRoot);
+		const policy = this.#importPolicy;
+		if (policy) {
+			// Consulted BEFORE either branch below, so a denial cannot be bypassed by
+			// choosing a specifier shape that lands in the other one.
+			const verdict = policy({
+				specifier: source,
+				resolvedPath: isLocalPathSpecifier(source) ? resolved : undefined,
+				isBuiltin: isBuiltin(source),
+			});
+			if (verdict === "deny") {
+				// Thrown rather than returned: a denied import must not look like a
+				// module that failed to resolve, because the two get reported
+				// differently and only one of them is a decision the host made.
+				throw new Error(`Import of "${source}" was denied by the configured import policy.`);
+			}
+			// A resolution from the policy replaces the default entirely, so a host can
+			// redirect a specifier (a virtual module, say) and not merely allow it.
+			if (verdict !== "allow") return verdict;
+		}
 		if (isLocalPathSpecifier(source) && isManagedLocalModulePath(resolved)) {
 			const module = await this.#loadLocalModule(resolved);
 			return { mode: "local", value: module.namespace };

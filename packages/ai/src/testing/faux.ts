@@ -307,9 +307,28 @@ function cloneMessage(message: AssistantMessage, api: string, provider: string, 
 	return {
 		...cloned,
 		api,
+		// The parameter is the provider the request was routed to. Assigning it is what makes
+		// a queued message agree with the model that answered it; omitting the assignment left
+		// `provider` at whatever the factory happened to build, so a caller filtering by
+		// provider could not tell a hop from a same-provider turn.
+		provider,
 		model: modelId,
 		timestamp: cloned.timestamp ?? Date.now(),
 		usage: cloned.usage ?? DEFAULT_USAGE,
+	};
+}
+
+function createDeferredMessage(model: Model, handle: DeferredHandle): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: DEFAULT_USAGE,
+		stopReason: "deferred",
+		deferred: handle,
+		timestamp: Date.now(),
 	};
 }
 
@@ -455,6 +474,22 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 	const tokensPerSecond = options.tokensPerSecond;
 	const state: FauxProviderState = { callCount: 0, deferredFetchCount: 0, cancelledDeferred: [] };
 	const promptCache = new Map<string, string>();
+	// Holds a scripted response that was handed back as a `stopReason: "deferred"` result, so a
+	// later `fetchDeferred` can finish it. Copied from pi; without it `RegisterFauxProviderOptions
+	// .deferred` is a registration option nobody reads.
+	const deferredResponses = new Map<
+		string,
+		{
+			handle: DeferredHandle;
+			step: FauxResponseStep;
+			context: TranscriptContext;
+			options: SimpleStreamOptions | undefined;
+			model: Model;
+			pendingFetches: number;
+			cancelled: boolean;
+			final?: AssistantMessage;
+		}
+	>();
 
 	const modelDefinitions = options.models?.length
 		? options.models
@@ -473,6 +508,11 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 		id: definition.id,
 		name: definition.name ?? definition.id,
 		api,
+		// `Model.provider` is how a caller tells which provider a model came from. Upstream
+		// gets it from `createProvider`'s descriptor; this fork has no dispatch layer, so the
+		// value has to be attached here or every model claims to be provider-less and
+		// `cloneMessage` stamps the default for every answer.
+		provider,
 		baseUrl: DEFAULT_BASE_URL,
 		reasoning: definition.reasoning ?? false,
 		input: definition.input ?? ["text", "image"],
@@ -489,14 +529,27 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 	): Promise<AssistantMessage> => {
 		const resolved = typeof step === "function" ? await step(context, streamOptions, state, requestModel) : step;
 		return withUsageEstimate(
-			cloneMessage(resolved, api, provider, requestModel.id),
+			// Stamp the provider the REQUESTED model belongs to, not the registration default.
+			// Upstream reaches the same value through `createProvider`, whose descriptor carries
+			// the registered id; this fork has no dispatch layer, so the only carrier left is
+			// `Model.provider`. Without this a `fauxProvider({ provider: "faux-provider" })`
+			// answers `provider: "faux"` and a caller filtering by provider sees nothing — which
+			// is the cross-provider hop a transcript assertion is usually written to catch.
+			cloneMessage(resolved, api, requestModel.provider ?? provider, requestModel.id),
 			context,
 			streamOptions,
 			promptCache,
 		);
 	};
 
-	const stream: StreamFunction<string> = (requestModel, context, streamOptions) => {
+	// Typed on `SimpleStreamOptions` rather than `StreamFunction<string>`, whose options resolve
+	// to `OptionsForApi<string>` — the raw provider options, which have no `deferred`. pi declares
+	// `deferred` on `SimpleStreamOptions` and reads it here, so this is pi's type, not a widening.
+	const stream = (
+		requestModel: Model,
+		context: TranscriptContext,
+		streamOptions?: SimpleStreamOptions,
+	): AssistantMessageEventStream => {
 		const outer = createAssistantMessageEventStream();
 		const step = pendingResponses.shift();
 		state.callCount++;
@@ -514,6 +567,34 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 					message = withUsageEstimate(message, context, streamOptions, promptCache);
 					outer.push({ type: "error", reason: "error", error: message });
 					outer.end(message);
+					return;
+				}
+
+				if (streamOptions?.deferred) {
+					const handle: DeferredHandle = {
+						provider: requestModel.provider,
+						modelId: requestModel.id,
+						api: requestModel.api,
+						id: randomId("deferred"),
+						...(options.deferred?.pollAfterMs !== undefined ? { pollAfterMs: options.deferred.pollAfterMs } : {}),
+					};
+					deferredResponses.set(handle.id, {
+						handle,
+						step,
+						context,
+						options: streamOptions,
+						model: requestModel,
+						pendingFetches: Math.max(0, Math.floor(options.deferred?.pendingFetches ?? 0)),
+						cancelled: false,
+					});
+					await streamWithDeltas(
+						outer,
+						createDeferredMessage(requestModel, handle),
+						minTokenSize,
+						maxTokenSize,
+						tokensPerSecond,
+						streamOptions.signal,
+					);
 					return;
 				}
 
@@ -537,8 +618,67 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 		handle: DeferredHandle,
 		fetchOptions?: SimpleStreamOptions,
 	): Promise<AssistantMessage> => {
-		await fetchOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
-		throw new Error(`faux: no deferred generation ${handle.id} to resume`);
+		const outer = createAssistantMessageEventStream();
+		state.deferredFetchCount++;
+
+		queueMicrotask(async () => {
+			try {
+				await fetchOptions?.onResponse?.({ status: 200, headers: {} }, requestModel);
+				const entry = deferredResponses.get(handle.id);
+				if (
+					!entry ||
+					entry.handle.provider !== handle.provider ||
+					entry.handle.modelId !== handle.modelId ||
+					entry.handle.api !== handle.api
+				) {
+					throw new Error(`Unknown faux deferred response: ${handle.id}`);
+				}
+				if (entry.cancelled) throw new Error(`Faux deferred response was cancelled: ${handle.id}`);
+
+				if (entry.pendingFetches > 0) {
+					entry.pendingFetches--;
+					await streamWithDeltas(
+						outer,
+						createDeferredMessage(requestModel, entry.handle),
+						minTokenSize,
+						maxTokenSize,
+						tokensPerSecond,
+						fetchOptions?.signal,
+					);
+					return;
+				}
+
+				if (!entry.final) {
+					const {
+						deferred: _deferred,
+						signal: _submissionSignal,
+						onResponse: _submissionOnResponse,
+						...submissionOptions
+					} = entry.options ?? {};
+					try {
+						entry.final = await resolveResponse(entry.step, entry.context, submissionOptions, entry.model);
+					} catch (error) {
+						entry.final = createErrorMessage(error, api, provider, entry.model.id);
+					}
+				}
+				await streamWithDeltas(
+					outer,
+					entry.final,
+					minTokenSize,
+					maxTokenSize,
+					tokensPerSecond,
+					fetchOptions?.signal,
+				);
+			} catch (error) {
+				const message = createErrorMessage(error, api, provider, requestModel.id);
+				outer.push({ type: "error", reason: "error", error: message });
+				outer.end(message);
+			}
+		});
+
+		// pi returns the event stream here; `ModelLookup.fetchDeferred` promises the final message,
+		// so the same stream is drained instead of handed back. Every branch above still runs.
+		return await outer.result();
 	};
 
 	const cancelDeferred = async (

@@ -154,6 +154,34 @@ that name at every depth the discovery walk reaches. See
 
 ---
 
+## Trust
+
+**Project-local inputs are discovered and loaded unconditionally.** Nothing in
+the paths above consults a trust decision, and no prompt, allowlist, or gate runs
+on the way in. A repository that ships project-local extension or config
+directories brings its own code into the session, which is why reviewing what you
+clone is the control here rather than something the loader enforces.
+
+There is a decision record, and it is not yet connected to loading. The project's
+`projectTrust` setting — `yes`, `no`, or `undecided`, defaulting to `undecided` —
+is what `ctx.isProjectTrusted()` reports, so a project nobody has decided about
+answers `false`. Nothing reads that answer before loading, so a `false` there
+does **not** mean the project's extensions were blocked.
+
+Two paths carry different exposure, and a future gate over them is not
+necessarily one gate. A project-local extension directory resolves to the
+workspace, so it arrives with the clone. A project-scoped *plugin* entry instead
+resolves to an `installPath` read from the nearest ancestor's installed-plugin
+registry, which need not be inside the workspace at all — and a project entry
+**shadows** the user's own entry for the same plugin ID rather than adding to it.
+Enumerate the two separately before deciding what to refuse.
+
+The decision, its reasoning, the two load paths it must treat separately, and the
+execution item that closes the gap are in
+[extension-trust-model.md](./extension-trust-model.md).
+
+---
+
 ## Path and entry resolution
 
 ### Path normalization

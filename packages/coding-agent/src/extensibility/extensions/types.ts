@@ -574,11 +574,22 @@ export interface ExtensionContext {
 	/** Identity of the agent this session runs: the top-level session or a subagent. */
 	agent: ExtensionAgentIdentity;
 	/**
-	 * Whether the current project/workspace is trusted. OMP performs no
-	 * project-trust gating — project-level settings and extensions load
-	 * unconditionally — so this always returns `true`. Exposed for
-	 * compatibility with extensions authored against upstream Pi, whose
-	 * `SettingsManager` accepts a `projectTrusted` flag.
+	 * Whether the current project/workspace is trusted, as recorded by the user.
+	 *
+	 * Reads the project's `projectTrust` setting — `yes`, `no`, or `undecided`
+	 * (`config/project-trust.ts`), defaulting to `undecided` — so this answers
+	 * `false` until somebody decides. It was the literal `() => true` before
+	 * `m2-wi-20-049`, so an extension branching on it used to take a branch that
+	 * could not be false; it is now falsifiable.
+	 *
+	 * Branching on it does **not** gate anything. Project-local extensions and
+	 * settings still load unconditionally, and `ctx.exec` is outside the
+	 * decision by choice: no load path consults it yet. Read this as "has this
+	 * project been decided", not "will my extension run". The decision and its
+	 * open questions are in `docs/extension-trust-model.md`.
+	 *
+	 * Still exposed for compatibility with extensions authored against upstream
+	 * Pi, whose `SettingsManager` accepts a `projectTrusted` flag.
 	 */
 	isProjectTrusted(): boolean;
 	/** Get the current effective system prompt. */
@@ -641,11 +652,15 @@ export interface ExtensionContext {
 	 * here; extensions written against that API (e.g. Plannotator) feature-detect this method to
 	 * decide whether project-local config is safe to load, and warn when it is absent.
 	 *
-	 * OMP has no equivalent per-directory trust gate: `.omp/extensions`, `.omp/config.yml`, and
-	 * other project-local inputs are already discovered and loaded unconditionally (see
-	 * `docs/extension-loading.md`). This method exists for compatibility with that upstream surface
-	 * and always returns `true`, truthfully reflecting that OMP already trusts project-local inputs
-	 * by default -- it does not narrow or widen OMP's own security model.
+	 * OMP keeps that surface and now answers it honestly: the value is the project's recorded
+	 * `projectTrust` setting, and `undecided` answers `false`. What OMP does **not** yet have is
+	 * the upstream per-directory *gate* — `.omp/extensions`, `.omp/config.yml`, and other
+	 * project-local inputs are still discovered and loaded unconditionally, so this reports a
+	 * decision without enforcing it. Do not read a `false` here as "this project is blocked".
+	 *
+	 * See `docs/extension-trust-model.md` for the decision, what it does not assert, and the
+	 * execution item that closes the gap; `docs/extension-loading.md` for the path resolution
+	 * rules this decision is expressed over.
 	 */
 	isProjectTrusted(): boolean;
 }

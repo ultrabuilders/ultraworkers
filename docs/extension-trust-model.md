@@ -110,20 +110,21 @@ packages/coding-agent/src/extensibility/extensions/types.ts:583
 packages/coding-agent/src/extensibility/extensions/types.ts:650
 ```
 
-**Their doc comments are stale, and are recorded here rather than fixed here.**
-Both blocks still assert the pre-WI-20 behaviour — `types.ts:577-579` says
-"OMP performs no project-trust gating … so this always returns `true`", and
-`types.ts:645-650` says the method "always returns `true`, truthfully reflecting
-that OMP already trusts project-local inputs by default". Neither is true of the
-code beneath them any more, and the second names `docs/extension-loading.md` as
-its authority — a file that is silent on trust, so the pointer resolves to a
-document that cannot answer the question it is cited for.
+**Their doc comments were stale, and are now corrected.**
+Both blocks asserted the pre-WI-20 behaviour — `types.ts:577-579` said "OMP
+performs no project-trust gating … so this always returns `true`", and
+`types.ts:645-650` said the method "always returns `true`, truthfully reflecting
+that OMP already trusts project-local inputs by default". Neither was true of the
+code beneath them, and the second named `docs/extension-loading.md` as its
+authority — a file that was silent on trust, so the pointer resolved to a
+document that could not answer the question it was cited for.
 
-This work item forbids it: a decision record that edits a `.ts` file is a change
-made before the decision is ratified, which is the failure the plan names. So the
-defect is **reported, not fixed**, and it belongs to the bead that changed the
-behaviour (`m2-wi-20-049`) rather than to this one. An extension author reading
-the jsdoc on the declaration they call is currently misinformed by it.
+Both are fixed, along with a trust section in `docs/extension-loading.md`. The fix
+is **not** part of this work item: this bead forbids a `.ts` file in its diff,
+because a decision record that edits code is a change made before the decision is
+ratified, which is the failure the plan names. So the correction landed under the
+bead that changed the behaviour (`m2-wi-20-049`), and this paragraph records the
+sequence rather than claiming the credit.
 
 **(d) Both implementations are now a real value, and it defaults to `false`.**
 This is the fact that changed under this document, so it is stated at length

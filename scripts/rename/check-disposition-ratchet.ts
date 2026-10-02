@@ -63,15 +63,27 @@ export const STALE_ROW_BASELINE = 9;
 export const BASELINE_TABLE_DIGEST = "ad1f1ef25f5c55fc924da3c07ac71b44";
 
 /**
- * The rules the ceiling was measured against.
+ * The rules the ceiling was measured against, as a literal.
  *
  * The table digest alone is not enough, and the gap is not hypothetical: a change
  * to `check-disposition.ts` that alters what `stale-row` MEANS leaves the table
  * byte-identical, so the digest still matches, no drift is printed, the ceiling
  * stays 9 — now wrong — and the run still prints GREEN. The rules version is what
  * catches that; the table digest only catches "the table was edited".
+ *
+ * **A literal, deliberately not `RULES_VERSION`.** This was `= RULES_VERSION`, and
+ * that made the comparison at the drift check a variable against itself: it could
+ * not fail, so the guard its own docblock describes above did not exist. Measured
+ * before this line changed — bumping `RULES_VERSION` to `2099-01-01.99` left the
+ * run printing `ceiling set against 2099-01-01.99`, i.e. GREEN, against a ceiling
+ * that had been measured under different rules. A pinned value is the value at the
+ * moment of measuring; importing it yields the value at the moment of running, and
+ * those are the moment the guard exists to tell apart.
+ *
+ * Bumping `RULES_VERSION` in `check-disposition.ts` therefore now needs this
+ * literal bumped with it, in the same commit — that is the intended friction.
  */
-export const BASELINE_RULES_VERSION = RULES_VERSION;
+export const BASELINE_RULES_VERSION = "2026-10-02.1";
 
 const TABLE_PATH = "scripts/rename/disposition.tsv";
 

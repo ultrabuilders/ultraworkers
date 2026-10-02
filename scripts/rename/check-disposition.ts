@@ -344,10 +344,20 @@ function isBuildOutput(relPath: string): boolean {
  * `git grep` line count (that reports 34, because `-c` counts matching LINES and
  * one line holds two occurrences).
  *
- * `.tsx`, `.py` and `.sh` are still outside, and that is a pending question
- * rather than a settled answer — `a57q` names them as adjacent ground. What is
- * true today is the narrower claim: `.rs` was added because its inventory was
- * taken, not because Rust was judged more rename-relevant than the others.
+ * `.tsx` and `.sh` joined it for the same reason, and the same blindness applied
+ * to each: the table could not name a decision made in a shell script, so the
+ * decision had no row and the sweep could not see it. Inventory taken with the
+ * same walk and the same expression — 4 `.tsx` files / 5 occurrences, 4 `.sh` /
+ * 12 — 8 files, 17 occurrences that previously produced no signal at all.
+ *
+ * `.py` is measured (15 files / 79 occurrences) but NOT yet in this glob: its
+ * ground is `python/robomp/`, a separate product with its own entrypoint,
+ * containers and system accounts, and two of its sites (`metaharness/agent/
+ * omp_local.py:267`, which returns the command name to invoke in a container,
+ * and `robomp/src/sandbox.py:549,588`, which create a directory literally named
+ * `omp`) turn on bead `epic-4yhd` — an owner decision that is still open. Adding
+ * the extension while the decision is open would file those two under a class
+ * chosen by whoever happened to write the row first.
  *
  * Adding `.rs` also forced a `target/` exclusion, and the two are one change
  * rather than two preferences: `.rs` is the first extension here that Rust build
@@ -367,7 +377,7 @@ function isBuildOutput(relPath: string): boolean {
  * because cargo may place a workspace target directory below the root.
  */
 export async function hitPaths(root: string): Promise<readonly string[]> {
-	const glob = new Bun.Glob("**/*.{ts,js,mjs,rs}");
+	const glob = new Bun.Glob("**/*.{ts,tsx,js,mjs,rs,sh}");
 	const found: string[] = [];
 	const nestedRepos = nestedRepoCache();
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {

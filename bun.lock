@@ -110,7 +110,7 @@
       "name": "@oh-my-pi/pi-coding-agent",
       "version": "18.4.3",
       "bin": {
-        "omp": "src/cli.ts",
+        "ultraworkers": "src/cli.ts",
       },
       "dependencies": {
         "@babel/parser": "catalog:",
@@ -162,6 +162,18 @@
         "@types/bun": "catalog:",
         "@types/react": "catalog:",
         "@types/react-dom": "catalog:",
+      },
+    },
+    "packages/durable": {
+      "name": "@oh-my-pi/pi-durable",
+      "version": "18.4.3",
+      "dependencies": {
+        "@oh-my-pi/chord": "catalog:",
+        "@oh-my-pi/pi-ai": "catalog:",
+        "@oh-my-pi/pi-catalog": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
       },
     },
     "packages/evals": {
@@ -277,6 +289,7 @@
       "dependencies": {
         "@oh-my-pi/chord": "catalog:",
         "@oh-my-pi/pi-protocol": "catalog:",
+        "@oh-my-pi/pi-utils": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -314,6 +327,13 @@
         "@types/bun": "catalog:",
         "@types/react": "catalog:",
         "@types/react-dom": "catalog:",
+      },
+    },
+    "packages/telemetry": {
+      "name": "@oh-my-pi/pi-telemetry",
+      "version": "18.4.3",
+      "devDependencies": {
+        "@types/bun": "catalog:",
       },
     },
     "packages/tui": {
@@ -415,6 +435,7 @@
     "@oh-my-pi/pi-natives": "18.4.3",
     "@oh-my-pi/pi-protocol": "18.4.3",
     "@oh-my-pi/pi-server": "18.4.3",
+    "@oh-my-pi/pi-telemetry": "18.4.3",
     "@oh-my-pi/pi-tui": "18.4.3",
     "@oh-my-pi/pi-utils": "18.4.3",
     "@oh-my-pi/pi-wire": "18.4.3",
@@ -837,6 +858,8 @@
 
     "@oh-my-pi/pi-coding-agent": ["@oh-my-pi/pi-coding-agent@workspace:packages/coding-agent"],
 
+    "@oh-my-pi/pi-durable": ["@oh-my-pi/pi-durable@workspace:packages/durable"],
+
     "@oh-my-pi/pi-evals": ["@oh-my-pi/pi-evals@workspace:packages/evals"],
 
     "@oh-my-pi/pi-metaharness": ["@oh-my-pi/pi-metaharness@workspace:packages/metaharness"],
@@ -848,6 +871,8 @@
     "@oh-my-pi/pi-protocol": ["@oh-my-pi/pi-protocol@workspace:packages/protocol"],
 
     "@oh-my-pi/pi-server": ["@oh-my-pi/pi-server@workspace:packages/server"],
+
+    "@oh-my-pi/pi-telemetry": ["@oh-my-pi/pi-telemetry@workspace:packages/telemetry"],
 
     "@oh-my-pi/pi-tui": ["@oh-my-pi/pi-tui@workspace:packages/tui"],
 

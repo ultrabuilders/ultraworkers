@@ -176,13 +176,13 @@ describe("every registered command is actually routed", () => {
 	});
 
 	test("a reserved plugin verb errors instead of reaching the model", () => {
-		// `omp doctor` is documented-looking but not a top-level command. Returning
-		// an error is the point; reaching `launch` would forward the word itself.
-		const resolved = resolveCliArgv(["doctor"]);
+		// `omp marketplace` is documented-looking but not a top-level command.
+		// Returning an error is the point; reaching `launch` would forward the word
+		// itself. (`doctor` used to be the subject here, but 22225aec9b made it a real
+		// top-level command, so it now routes and this case would not exercise the guard.)
+		const resolved = resolveCliArgv(["marketplace"]);
 
-		console.error("[route:reserved] resolved=%o", resolved);
-
-		expect("error" in resolved && resolved.error).toContain("omp plugin doctor");
+		expect("error" in resolved && resolved.error).toContain("omp plugin marketplace");
 		expect("argv" in resolved).toBe(false);
 	});
 });

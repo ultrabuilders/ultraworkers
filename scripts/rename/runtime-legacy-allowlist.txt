@@ -1,0 +1,35 @@
+# Runtime writers carrying the legacy token, reviewed one line at a time.
+#
+# An entry is `path:line` — a human read THIS line and accepted THIS token. The
+# same file at a different line is a NEW site, not an inherited approval.
+#
+# All four below were surfaced by widening the gate's writer set from
+# `console.*` to `logger.*`. `console.*` is BANNED by AGENTS.md in any code that
+# may run beside the TUI/RPC/SDK/workers, so the previous trigger matched nothing
+# in compliant code and the gate reported `0 ungated of 0 sites` while watching an
+# empty domain. Widening it is what made these visible.
+#
+# None of them is renamed here. Each names the old brand in log TEXT, and which
+# spelling ships is an open owner decision (epic-0y69 / epic-4yhd): the published
+# npm package installs only `ultraworkers`, while the dev launcher links `omp`.
+# Deciding that here would pre-empt it. What changes is that a human has now seen
+# each line — which is the entire point of the gate.
+
+# Debug message naming the product whose render tore down. Not user-facing: it
+# goes to the log sink, never to a screen.
+packages/coding-agent/src/cli/render-cli.ts:272
+
+# Log TAG, not a command. `[omp-plugins]` labels this loader's own diagnostics in
+# the log stream; no user types it and nothing parses it.
+packages/coding-agent/src/discovery/omp-plugins.ts:315
+
+# The one site here that puts the token in front of a user, as a copyable
+# instruction: `omp skill update`. Correct for a dev launcher that links `omp`,
+# wrong for an npm install that ships only `ultraworkers` — so this line is a
+# live instance of epic-0y69, and renaming it is that bead's decision, not this
+# gate's. Recorded rather than silently accepted.
+packages/coding-agent/src/discovery/skillshare.ts:42
+
+# Debug prose describing dropped browser events. Names the product as the actor
+# in a sentence that is never shown to anyone.
+packages/coding-agent/src/tools/browser/tern/tern-tab.ts:577

@@ -76,12 +76,28 @@ const LEGACY_TOKEN = /\bomp\b/;
  * SEMICOLON — "…when the browser prelude needs it;" and "…nothing to do.". A
  * narrower scan is not a stricter scan, it is a wrong one.
  *
- * So the call is not bounded at all. A line qualifies when it invokes a console
+ * So the call is not bounded at all. A line qualifies when it invokes a runtime
  * writer AND carries the token; a migration list that merely stores the token
  * does neither, and a multi-line call still qualifies on the line holding the
  * writer. Reported per LINE either way, so the allow-list stays reviewable.
+ *
+ * The writer set is `logger.*`, not `console.*`. AGENTS.md ("Logging and CLI
+ * Output") BANS `console.log/error/warn` in any code that may run while the
+ * TUI, RPC, SDK, workers or background runtimes are active, and requires
+ * `logger.*` from `@oh-my-pi/pi-utils` instead. So the previous trigger could
+ * not fire on compliant code at all: measured across this corpus it reported
+ * `0 ungated of 0 sites` and exited green while watching an empty domain. A
+ * gate that reports green for a domain it does not observe is the failure this
+ * file exists to prevent, one level up from the token itself.
+ *
+ * This stays a RUNTIME-output gate and deliberately does not widen to data
+ * values — `serverName: "omp"`, `ORIGINATOR_CODEX: "omp"`, `Symbol("omp.…")`.
+ * Those are measured at 141 and 22 sites respectively, and they are not output;
+ * the census for them is `check-disposition.ts`'s 241-row table, which
+ * accounts for each occurrence against a reviewed reason. Folding them in here
+ * would give the same token a second, per-line source of truth.
  */
-const RUNTIME_WRITER = /console\.(?:log|error|warn)\(/;
+const RUNTIME_WRITER = /\blogger\.(?:log|error|warn|debug|info)\(/;
 
 export function isExcluded(relPath: string): boolean {
 	if (EXCLUDED_PREFIXES.some(prefix => relPath.startsWith(prefix))) return true;
@@ -133,7 +149,7 @@ export async function loadAllowlist(root: string): Promise<AllowlistEntry[]> {
 }
 
 /**
- * Every console call in the runtime surface that carries the legacy token.
+ * Every runtime-writer call in the shipped surface that carries the legacy token.
  *
  * Reported per LINE, not per file, for the same reason the allow-list is keyed
  * by line: the token's meaning is a property of the sentence, and a file can

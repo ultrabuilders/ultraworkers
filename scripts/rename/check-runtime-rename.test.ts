@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { isExcluded, ungatedViolations, staleAllowlistEntries } from "./check-runtime-rename";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+import { isExcluded, scanRuntime, ungatedViolations, staleAllowlistEntries } from "./check-runtime-rename";
 
 /**
  * The gate's decision logic, driven by fixtures.
@@ -96,5 +99,70 @@ describe("staleAllowlistEntries", () => {
 
 	it("reports nothing when every approval still matches a site", () => {
 		expect(staleAllowlistEntries([SITE], [{ path: SITE.path, line: SITE.line }])).toEqual([]);
+	});
+});
+
+/**
+ * The control this trigger change has to earn.
+ *
+ * Widening the writer set from `console.*` to `logger.*` is only worth doing if
+ * the gate can still go RED. A trigger change that cannot fail is indistinguishable
+ * from the trigger it replaced: the previous one reported `0 ungated of 0 sites`
+ * and exited green because AGENTS.md bans `console.*` beside every runtime this
+ * corpus covers, so its domain was empty by policy rather than by cleanliness.
+ *
+ * Both directions are asserted against a real scan, not against the regex. The
+ * `console` row is the load-bearing half — it pins that the old trigger really is
+ * the banned one, so a future edit that restores `console.*` (or widens to
+ * "anything that writes") fails here instead of passing on a corpus that happens
+ * to be clean.
+ */
+describe("scanRuntime over a fixture root", () => {
+	async function scanFixture(files: Record<string, string>): Promise<string[]> {
+		const root = await mkdtemp(path.join(tmpdir(), "runtime-rename-"));
+		try {
+			for (const [relPath, body] of Object.entries(files)) {
+				const abs = path.join(root, relPath);
+				await mkdir(path.dirname(abs), { recursive: true });
+				await writeFile(abs, body);
+			}
+			return (await scanRuntime(root)).map(violation => `${violation.path}:${violation.line}`);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}
+
+	it("reports a logger writer carrying the token, and ignores the banned console writer", async () => {
+		expect(
+			await scanFixture({
+				"packages/x/src/writer.ts": [
+					'import { logger } from "@oh-my-pi/pi-utils";',
+					'logger.debug("omp teardown");',
+					"",
+				].join("\n"),
+				"packages/x/src/legacy.ts": ['logger.debug("no token here");', ""].join("\n"),
+				"packages/x/src/banned.ts": ['console.error("omp is interactive");', ""].join("\n"),
+			}),
+		).toEqual(["packages/x/src/writer.ts:2"]);
+	});
+
+	it("reports every level the writer set admits, so a narrowed level cannot pass silently", async () => {
+		expect(
+			await scanFixture({
+				"packages/x/src/levels.ts": [
+					'logger.error("omp a");',
+					'logger.warn("omp b");',
+					'logger.info("omp c");',
+					'logger.debug("omp d");',
+					'logger.trace("omp e");',
+					"",
+				].join("\n"),
+			}),
+		).toEqual([
+			"packages/x/src/levels.ts:1",
+			"packages/x/src/levels.ts:2",
+			"packages/x/src/levels.ts:3",
+			"packages/x/src/levels.ts:4",
+		]);
 	});
 });

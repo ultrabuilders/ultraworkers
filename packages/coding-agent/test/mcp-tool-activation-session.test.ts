@@ -23,6 +23,7 @@ import { AuthStorage } from "@oh-my-pi/pi-ai";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { TOOL_NO_LONGER_OFFERED } from "@oh-my-pi/pi-coding-agent/mcp/tool-bridge";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { removeSyncWithRetries, TempDir } from "@oh-my-pi/pi-utils";
@@ -126,6 +127,73 @@ describe("a session's active tool set after the server pushes a new tool", () =>
 			// arriving catalog, it does not revoke what the user already allowed.
 			expect(session.getEnabledToolNames()).toContain(ALPHA);
 			expect(session.getEnabledToolNames()).toEqual(beforePush);
+		} finally {
+			await session.dispose();
+			removeSyncWithRetries(workDir);
+		}
+	}, 40_000);
+
+	/**
+	 * `#applyMCPToolRefresh` reads `previousMcpTools.size === 0` as "first MCP
+	 * connection", so the gate's soundness rests on an invariant that lives in
+	 * ANOTHER file: `mcp/manager.ts` `#replaceServerTools` leaves a tombstone for
+	 * every withdrawn tool, permanently. Because the tombstone keeps the original
+	 * `mcp__` name, a registry that has held MCP tools never returns to empty —
+	 * which is the only reason a later push is still recognised as a push.
+	 *
+	 * Nothing else pins that. If the tombstone were ever dropped at the manager
+	 * layer, `size === 0` becomes reachable, `isFirstMCPConnection` becomes true,
+	 * and a server that already spent its trust gets a tool silently activated —
+	 * with no test turning red anywhere. This row makes the dependency visible,
+	 * and it is the reason the tombstone must survive: it is not only what a
+	 * mid-turn call resolves against, it is what holds the activation gate shut.
+	 */
+	it("keeps a withdrawn tool in the registry, so a later push is still gated", async () => {
+		const { session } = await createAgentSession({
+			cwd: workDir,
+			agentDir: workDir,
+			modelRegistry,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated({ "mcp.enableProjectConfig": true, "mcp.startupTimeoutMs": 15_000 }),
+			model: getBundledModel("openai", "gpt-4o-mini"),
+			disableExtensionDiscovery: true,
+			skills: [],
+			contextFiles: [],
+			promptTemplates: [],
+			slashCommands: [],
+			enableLsp: false,
+			skipPythonPreflight: true,
+			enableMCP: true,
+		});
+		try {
+			await waitUntil(() => session.getEnabledToolNames().includes(ALPHA), `${ALPHA} to be active`);
+
+			// The server withdraws its only tool, then pushes a new one. Both gates
+			// are opened together: the fixture's poller consumes them in one pass, so
+			// the session sees a catalog that went empty and then did not. Ordering
+			// between the two is not what this row is about — what it asserts is the
+			// state the withdrawal LEAVES behind.
+			fs.writeFileSync(path.join(workDir, "remove"), "go");
+			fs.writeFileSync(addGate, "go");
+			await waitUntil(() => session.getAllToolNames().includes(BETA), `${BETA} to be registered`);
+
+			// The invariant `#applyMCPToolRefresh`'s discriminator leans on, asserted
+			// from the session's side: ALPHA's name is STILL registered even though
+			// the server withdrew it. A tombstone, not a deletion.
+			//
+			// Nothing else pins this. `previousMcpTools.size === 0` stands for "first
+			// MCP connection", and it holds only while a withdrawn tool keeps its
+			// `mcp__` name — an invariant owned by `mcp/manager.ts`
+			// `#replaceServerTools`, in a different file, with no test connecting the
+			// two. Drop the tombstone and `size === 0` becomes reachable again,
+			// `isFirstMCPConnection` flips to true, and a server that already spent
+			// its trust gets a tool silently activated — with nothing red anywhere.
+			expect(session.getAllToolNames()).toContain(ALPHA);
+
+			// And the consequence: BETA arrived while the registry was non-empty only
+			// because of that tombstone, so it is gated as the push it is — registered
+			// and visible, never active.
+			expect(session.getEnabledToolNames()).not.toContain(BETA);
 		} finally {
 			await session.dispose();
 			removeSyncWithRetries(workDir);

@@ -190,7 +190,7 @@ describe("bench index", () => {
 		// The report prints `loaded n/14`, so the only thing standing between that
 		// line and a lie is that the denominator comes from disk and the
 		// differences are named. A registry that counted itself could not.
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-bench-roster-"));
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-bench-roster-"));
 		tempDirs.push(dir);
 		await Bun.write(path.join(dir, "session-branch.bench.ts"), "// bench\n");
 		// A directory holding a bench's name: the script cannot be run, so the

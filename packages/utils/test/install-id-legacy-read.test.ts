@@ -27,7 +27,7 @@ const KNOWN_ID = "11111111-2222-3333-4444-555555555555";
 let home = "";
 
 beforeEach(async () => {
-	home = path.join(os.tmpdir(), `omp-install-id-legacy-${Snowflake.next()}`);
+	home = path.join(os.tmpdir(), `ultraworkers-install-id-legacy-${Snowflake.next()}`);
 	await fs.mkdir(home, { recursive: true });
 	spyOn(os, "homedir").mockReturnValue(home);
 	delete process.env.PI_CONFIG_DIR;

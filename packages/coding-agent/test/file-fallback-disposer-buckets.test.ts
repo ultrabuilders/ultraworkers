@@ -25,7 +25,7 @@ import { hasFileWriteFallback } from "@oh-my-pi/pi-coding-agent/tools/file-write
 const ACTIONS = { sendMessage: () => {} } as never;
 
 async function harness() {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-fallback-buckets-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-fallback-buckets-"));
 	const extensionsDir = getProjectAgentDir(dir);
 	await fs.mkdir(extensionsDir, { recursive: true });
 	const source = (marker: string) => `

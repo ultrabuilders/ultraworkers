@@ -65,7 +65,7 @@ describe("a server that changes its own tool catalog mid-session", () => {
 	}
 
 	beforeEach(() => {
-		workDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-mcp-rugpull-"));
+		workDir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-mcp-rugpull-"));
 		addGate = path.join(workDir, "add");
 		removeGate = path.join(workDir, "remove");
 		manager = new MCPManager(workDir);

@@ -63,7 +63,7 @@ function makeSession(): ToolSession {
 }
 
 beforeAll(async () => {
-	tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-browser-interactions-"));
+	tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-browser-interactions-"));
 	uploadPath = path.join(tempDir, "drop-fixture.txt");
 	await Bun.write(uploadPath, "drop contents");
 });

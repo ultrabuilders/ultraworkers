@@ -35,7 +35,7 @@ import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manage
  * after it.
  */
 
-const INFO = { sources: ["/tmp/omp/config.yml"] };
+const INFO = { sources: ["/tmp/ultraworkers/config.yml"] };
 
 let tempDir: TempDir;
 let extensionsDir: string;
@@ -126,7 +126,7 @@ describe("an extension reaches the config-reload registry", () => {
 		await load();
 
 		let applied = 0;
-		const held = await runConfigReloadPass({ sources: ["/tmp/omp/busy"] }, async () => {
+		const held = await runConfigReloadPass({ sources: ["/tmp/ultraworkers/busy"] }, async () => {
 			applied++;
 		});
 		expect(held.applied).toBe(false);
@@ -153,7 +153,7 @@ describe("an extension reaches the config-reload registry", () => {
 
 		await runConfigReloadPass(INFO, async () => {});
 
-		expect(readRelay()).toBe("/tmp/omp/config.yml");
+		expect(readRelay()).toBe("/tmp/ultraworkers/config.yml");
 	});
 
 	it("refuses a handler that is not callable, naming the type it received", async () => {

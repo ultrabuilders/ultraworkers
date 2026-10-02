@@ -106,7 +106,7 @@ const HOOK_SOURCE = `export default function hook(api: { on(e: string, h: () => 
 `;
 
 async function makeAgentDirWithHook(source: string): Promise<{ agentDir: string; hookPath: string }> {
-	const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-hook-trust-")));
+	const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-hook-trust-")));
 	temps.push(agentDir);
 	const hookDir = path.join(agentDir, "hooks", "pre");
 	await fs.mkdir(hookDir, { recursive: true });
@@ -151,7 +151,7 @@ describe("hook trust", () => {
 	});
 
 	test("two hooks differing only in tool are recorded separately", async () => {
-		const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-hook-trust-two-")));
+		const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-hook-trust-two-")));
 		temps.push(agentDir);
 		const preDir = path.join(agentDir, "hooks", "pre");
 		const postDir = path.join(agentDir, "hooks", "post");
@@ -205,7 +205,7 @@ describe("hook trust", () => {
 	 * and `acp-stdout-hygiene`, which spawn processes too.
 	 */
 	test("a hook that moves to another root keeps loading", async () => {
-		const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "omp-hook-trust-move-")));
+		const agentDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-hook-trust-move-")));
 		temps.push(agentDir);
 		const oldRoot = path.join(agentDir, "old");
 		const newRoot = path.join(agentDir, "new");

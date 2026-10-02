@@ -70,7 +70,7 @@ interface DisposableExecutable {
 }
 
 async function spawnDisposableExecutable(args: string[] = []): Promise<DisposableExecutable> {
-	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-browser-app-path-"));
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-browser-app-path-"));
 	const executablePath = path.join(tempDir, path.basename(process.execPath));
 	await Bun.write(executablePath, Bun.file(process.execPath));
 	if (process.platform !== "win32") await fs.chmod(executablePath, 0o755);
@@ -195,7 +195,7 @@ describe("pickElectronTarget", () => {
 	}, 10_000);
 
 	test("rejects a user-data-dir already used by the running executable", async () => {
-		const profile = path.join(os.tmpdir(), `omp-browser-profile-${process.pid}-${Date.now()}`);
+		const profile = path.join(os.tmpdir(), `ultraworkers-browser-profile-${process.pid}-${Date.now()}`);
 		const existing = await spawnDisposableExecutable([`--user-data-dir=${profile}`]);
 		try {
 			await expect(
@@ -261,7 +261,7 @@ describe("pickElectronTarget", () => {
 
 	test("does not reuse a live CDP endpoint belonging to a different profile", async () => {
 		const cdp = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("{}") });
-		const profile = path.join(os.tmpdir(), `omp-cdp-profile-${crypto.randomUUID()}`);
+		const profile = path.join(os.tmpdir(), `ultraworkers-cdp-profile-${crypto.randomUUID()}`);
 		const existing = await spawnDisposableExecutable([
 			`--user-data-dir=${profile}`,
 			`--remote-debugging-port=${cdp.port}`,
@@ -279,7 +279,7 @@ describe("pickElectronTarget", () => {
 	});
 
 	test.skipIf(process.platform !== "linux")("reuses Chromium launched through a distro wrapper", async () => {
-		const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-browser-wrapper-"));
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-browser-wrapper-"));
 		const wrapper = path.join(root, "google-chrome");
 		const target = path.join(root, "chrome");
 		const profile = path.join(root, "profile");
@@ -319,7 +319,7 @@ describe("pickElectronTarget", () => {
 		async () => {
 			const exe = await ensureChromiumExecutable();
 			if (!exe) throw new Error("Expected a Chromium executable");
-			const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-profile-isolation-"));
+			const root = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-profile-isolation-"));
 			const borrowedProfile = path.join(root, "borrowed");
 			const port = await findFreeCdpPort();
 			// Explicit profiles keep the real OS keystore, so bypass it here or macOS

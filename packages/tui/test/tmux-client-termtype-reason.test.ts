@@ -72,7 +72,7 @@ console.log(JSON.stringify(results));`,
 
 /** Write an executable stand-in for `tmux` and return its directory. */
 async function fakeTmux(script: string): Promise<string> {
-	const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-tmux-reason-"));
+	const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-tmux-reason-"));
 	await Bun.write(path.join(binDir, "tmux"), script);
 	await fs.chmod(path.join(binDir, "tmux"), 0o755);
 	return binDir;

@@ -19,7 +19,7 @@ import { withFileMutationQueue } from "@oh-my-pi/pi-coding-agent/utils/file-muta
 const created: string[] = [];
 
 async function tempDir(): Promise<string> {
-	const dir = await mkdtemp(path.join(os.tmpdir(), "omp-mutation-queue-"));
+	const dir = await mkdtemp(path.join(os.tmpdir(), "ultraworkers-mutation-queue-"));
 	created.push(dir);
 	return dir;
 }

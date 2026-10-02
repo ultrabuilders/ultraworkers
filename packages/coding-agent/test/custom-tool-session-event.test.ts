@@ -47,7 +47,7 @@ async function makeSession(defs: { name: string; onSession?: unknown }[]): Promi
 }
 
 async function buildSession(defs: { name: string; onSession?: unknown }[]): Promise<AgentSession> {
-	const dir = await mkdtemp(join(tmpdir(), "omp-sess-evt-"));
+	const dir = await mkdtemp(join(tmpdir(), "ultraworkers-sess-evt-"));
 	const settings = Settings.isolated({
 		"compaction.enabled": false,
 		"retry.enabled": false,

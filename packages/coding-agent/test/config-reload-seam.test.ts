@@ -53,7 +53,7 @@ afterEach(() => {
 	while (appliedDisposers.length > 0) appliedDisposers.pop()?.();
 });
 
-const INFO = { sources: ["/tmp/omp/config.yml"] };
+const INFO = { sources: ["/tmp/ultraworkers/config.yml"] };
 
 describe("a registered handler sees a reload before it is applied", () => {
 	it("is told which files triggered it", async () => {
@@ -68,7 +68,7 @@ describe("a registered handler sees a reload before it is applied", () => {
 
 		await collectConfigReloadDeferrals(INFO);
 
-		expect(seen).toEqual(["/tmp/omp/config.yml"]);
+		expect(seen).toEqual(["/tmp/ultraworkers/config.yml"]);
 	});
 
 	it("lets the reload through when no handler objects", async () => {
@@ -181,8 +181,8 @@ describe("a debounced pass reports every file it merged, not just the last", () 
 		// way to know the other edit was being applied in the same pass — so it held
 		// the reload for one file while the other silently landed.
 		const accumulator = new WatchSourceAccumulator();
-		accumulator.add("/tmp/omp/config.yml");
-		accumulator.add("/tmp/omp/project/settings.json");
+		accumulator.add("/tmp/ultraworkers/config.yml");
+		accumulator.add("/tmp/ultraworkers/project/settings.json");
 
 		let seen: readonly string[] = [];
 		register(info => {
@@ -192,7 +192,7 @@ describe("a debounced pass reports every file it merged, not just the last", () 
 
 		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
 
-		expect(seen).toEqual(["/tmp/omp/config.yml", "/tmp/omp/project/settings.json"]);
+		expect(seen).toEqual(["/tmp/ultraworkers/config.yml", "/tmp/ultraworkers/project/settings.json"]);
 	});
 
 	it("counts a file once however many events it emitted", () => {
@@ -200,10 +200,10 @@ describe("a debounced pass reports every file it merged, not just the last", () 
 		// chmod). Reported twice, a handler comparing counts sees two changed files
 		// when one changed, and a "was anything else touched?" check misfires.
 		const accumulator = new WatchSourceAccumulator();
-		accumulator.add("/tmp/omp/config.yml");
-		accumulator.add("/tmp/omp/config.yml");
+		accumulator.add("/tmp/ultraworkers/config.yml");
+		accumulator.add("/tmp/ultraworkers/config.yml");
 
-		expect(accumulator.snapshot()).toEqual(["/tmp/omp/config.yml"]);
+		expect(accumulator.snapshot()).toEqual(["/tmp/ultraworkers/config.yml"]);
 	});
 
 	it("still names the held edit on the retry that follows a deferral", async () => {
@@ -213,7 +213,7 @@ describe("a debounced pass reports every file it merged, not just the last", () 
 		// and releases a lock protecting an edit that landed while it wasn't
 		// looking. Snapshot must not consume.
 		const accumulator = new WatchSourceAccumulator();
-		accumulator.add("/tmp/omp/config.yml");
+		accumulator.add("/tmp/ultraworkers/config.yml");
 		const asked: (readonly string[])[] = [];
 		register(info => {
 			asked.push(info.sources);
@@ -223,14 +223,14 @@ describe("a debounced pass reports every file it merged, not just the last", () 
 		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
 		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
 
-		expect(asked).toEqual([["/tmp/omp/config.yml"], ["/tmp/omp/config.yml"]]);
+		expect(asked).toEqual([["/tmp/ultraworkers/config.yml"], ["/tmp/ultraworkers/config.yml"]]);
 
 		// ...and once the pass really does complete, they are history from here on.
 		accumulator.clear();
-		accumulator.add("/tmp/omp/project/settings.json");
+		accumulator.add("/tmp/ultraworkers/project/settings.json");
 		await collectConfigReloadDeferrals({ sources: accumulator.snapshot() });
 
-		expect(asked[2]).toEqual(["/tmp/omp/project/settings.json"]);
+		expect(asked[2]).toEqual(["/tmp/ultraworkers/project/settings.json"]);
 	});
 });
 
@@ -250,7 +250,7 @@ describe("a host learns that a reload actually landed", () => {
 
 		await notifyConfigReloadApplied(INFO);
 
-		expect(seen).toEqual(["/tmp/omp/config.yml"]);
+		expect(seen).toEqual(["/tmp/ultraworkers/config.yml"]);
 	});
 
 	it("awaits an async handler before the notification resolves", async () => {
@@ -387,7 +387,7 @@ describe("a held reload is never announced as applied", () => {
 		});
 
 		expect(applied).toBe(true);
-		expect(announced).toEqual(["/tmp/omp/config.yml"]);
+		expect(announced).toEqual(["/tmp/ultraworkers/config.yml"]);
 		expect(result.deferrals).toEqual([]);
 	});
 
@@ -440,12 +440,12 @@ describe("a held reload is never announced as applied", () => {
 		// The caller clears its accumulator only on an applied pass, so a held one has
 		// to hand back the sources it did not consume — otherwise the retry arrives
 		// naming a different edit and a handler releases a lock over the wrong one.
-		const sources = ["/tmp/omp/config.yml", "/tmp/omp/project/settings.json"] as const;
+		const sources = ["/tmp/ultraworkers/config.yml", "/tmp/ultraworkers/project/settings.json"] as const;
 		register(() => "busy");
 
 		const result = await runConfigReloadPass({ sources }, async () => {});
 
-		expect(result.sources).toEqual(["/tmp/omp/config.yml", "/tmp/omp/project/settings.json"]);
+		expect(result.sources).toEqual(["/tmp/ultraworkers/config.yml", "/tmp/ultraworkers/project/settings.json"]);
 		expect(result.deferrals).toEqual(["busy"]);
 	});
 });

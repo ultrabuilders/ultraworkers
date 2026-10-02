@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 async function makeProbe(logsDir: string): Promise<string> {
-	const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-logger-probe-"));
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-logger-probe-"));
 	roots.push(root);
 	const releasePath = path.join(logsDir, ".release");
 	const probePath = path.join(root, "probe.ts");
@@ -43,7 +43,7 @@ async function makeProbe(logsDir: string): Promise<string> {
 
 describe("multiprocess file logging", () => {
 	it("prunes completed PID namespaces across short-lived invocations", async () => {
-		const logsDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-logger-retention-"));
+		const logsDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-logger-retention-"));
 		roots.push(logsDir);
 		// macOS process identifiers are far below these values, so the fixtures
 		// are deterministically completed rather than briefly lingering as zombies.

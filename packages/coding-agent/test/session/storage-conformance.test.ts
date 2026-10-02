@@ -251,7 +251,7 @@ const memoryHarness: StorageHarnessFactory = async () => ({
 });
 
 const fileHarness: StorageHarnessFactory = async () => {
-	const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-conf-"));
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-conf-"));
 	// No constructor argument: the store resolves whatever path it is handed,
 	// which is why `resolve` below has to map the logical path into `root`.
 	const storage = new FileSessionStorage();

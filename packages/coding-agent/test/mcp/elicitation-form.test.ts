@@ -100,7 +100,7 @@ afterEach(async () => {
  * `decline` into `cancel` there would still be green.
  */
 async function askOverTheWire(answer: MCPElicitOutcome): Promise<ObservedAnswer> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-elicitation-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-elicitation-"));
 	const script = path.join(dir, "server.mjs");
 	await Bun.write(script, SERVER_SOURCE);
 
@@ -147,7 +147,7 @@ describe("elicitation outcomes on the wire", () => {
 	});
 
 	it("rejects with -32601 when no handler is installed", async () => {
-		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-elicitation-nohandler-"));
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-elicitation-nohandler-"));
 		const script = path.join(dir, "server.mjs");
 		await Bun.write(script, SERVER_SOURCE);
 
@@ -172,7 +172,7 @@ describe("elicitation outcomes on the wire", () => {
 	});
 
 	it("passes required and writeOnly through to the host handler", async () => {
-		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-elicitation-flags-"));
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-elicitation-flags-"));
 		const script = path.join(dir, "server.mjs");
 		await Bun.write(script, SERVER_SOURCE);
 
@@ -206,7 +206,7 @@ describe("elicitation outcomes on the wire", () => {
 	});
 
 	it("refuses a host handler answer that is outside the union", async () => {
-		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-elicitation-bad-"));
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-elicitation-bad-"));
 		const script = path.join(dir, "server.mjs");
 		await Bun.write(script, SERVER_SOURCE);
 

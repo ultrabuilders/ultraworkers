@@ -86,7 +86,7 @@ describe("ReviewCommand", () => {
 	let tmpDir: string;
 
 	beforeAll(async () => {
-		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-review-command-"));
+		tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-review-command-"));
 	});
 
 	afterEach(() => {
@@ -553,7 +553,7 @@ describe("ReviewCommand", () => {
 	});
 
 	it("resolves base-branch review against a real repo without a range revspec", async () => {
-		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-review-real-"));
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-review-real-"));
 		try {
 			await $`git init -q -b main`.cwd(dir).quiet();
 			await $`git config user.email test@example.com`.cwd(dir).quiet();
@@ -605,7 +605,7 @@ describe("ReviewCommand", () => {
 	});
 
 	it("rejects base-branch review when histories share no merge base", async () => {
-		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-review-orphan-"));
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-review-orphan-"));
 		try {
 			await $`git init -q -b main`.cwd(dir).quiet();
 			await $`git config user.email test@example.com`.cwd(dir).quiet();

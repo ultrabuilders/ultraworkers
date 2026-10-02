@@ -56,7 +56,7 @@ afterEach(async () => {
 
 describe("a check with a missing premise is never also reported green", () => {
 	test("an unmeasurable ledger produces one unchecked line, carrying no ok marker", async () => {
-		const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "omp-doctor-precondition-"));
+		const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-doctor-precondition-"));
 		((globalThis as { __doctorScratchDirs?: string[] }).__doctorScratchDirs ??= []).push(scratch);
 
 		// `scratch` has no `patches/` directory, so the premise is genuinely

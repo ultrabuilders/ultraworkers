@@ -58,7 +58,7 @@ async function runPluginDoctor(cwd: string): Promise<CliRun> {
  * and report drift for a perfectly healthy project.
  */
 async function driftedProject(): Promise<string> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-doctor-drift-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-doctor-drift-"));
 	await fs.mkdir(path.join(dir, "patches"), { recursive: true });
 	// Declares a patch that does not exist, and ships one nothing declares.
 	await Bun.write(
@@ -71,7 +71,7 @@ async function driftedProject(): Promise<string> {
 
 /** A project whose ledger is consistent — declared and present. */
 async function healthyProject(): Promise<string> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-doctor-ok-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-doctor-ok-"));
 	await fs.mkdir(path.join(dir, "patches"), { recursive: true });
 	await Bun.write(
 		path.join(dir, "package.json"),

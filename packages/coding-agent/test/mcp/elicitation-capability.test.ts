@@ -63,7 +63,7 @@ afterEach(async () => {
  * capability is declared, which is precisely the code under test.
  */
 async function elicitThroughManager(answer?: { action: "accept"; content: Record<string, string> }): Promise<Report> {
-	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-elicit-cap-"));
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-elicit-cap-"));
 	const manager = new MCPManager(dir);
 	managers.push(manager);
 	if (answer) manager.setElicitationHandler(() => Promise.resolve(answer));

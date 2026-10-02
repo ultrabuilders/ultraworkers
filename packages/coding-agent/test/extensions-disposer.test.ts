@@ -109,7 +109,7 @@ describe("hook api on() disposer", () => {
 	 * handover the other hook tests already use.
 	 */
 	async function loadHookModule(source: string): Promise<Map<string, Handler[]>> {
-		const dir = mkdtempSync(path.join(os.tmpdir(), "omp-hook-disposer-"));
+		const dir = mkdtempSync(path.join(os.tmpdir(), "ultraworkers-hook-disposer-"));
 		writeFileSync(
 			path.join(dir, "hook.ts"),
 			`import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/types";

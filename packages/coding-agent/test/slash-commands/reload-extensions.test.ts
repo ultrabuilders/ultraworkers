@@ -77,7 +77,7 @@ describe("/reload-extensions", () => {
 	let projectDir = "";
 
 	beforeEach(async () => {
-		projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-reload-extensions-"));
+		projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-reload-extensions-"));
 		setProjectDir(projectDir);
 	});
 

@@ -25,7 +25,7 @@ import { isUnavailable, type CheckOutcome } from "@oh-my-pi/pi-coding-agent/exte
 
 /** A throwaway package root with the given patches and manifest entries. */
 function repoFixture(files: string[], declared?: Record<string, string>): string {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), "omp-doctor-"));
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-doctor-"));
 	fs.mkdirSync(path.join(root, "patches"), { recursive: true });
 	for (const file of files) fs.writeFileSync(path.join(root, "patches", file), "diff --git a b\n");
 	fs.writeFileSync(
@@ -83,7 +83,7 @@ describe("patch ledger check", () => {
 		// THE case. With no premise, "ok" would be a claim the check never earned.
 		// A temp root with no `patches/` directory is the real shape of this: any
 		// install that is not a checkout of this repo.
-		const root = tracked(fs.mkdtempSync(path.join(os.tmpdir(), "omp-doctor-empty-")));
+		const root = tracked(fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-doctor-empty-")));
 		const outcome = await ledgerFor(root);
 		expect(isUnavailable(outcome)).toBe(true);
 		if (!isUnavailable(outcome)) throw new Error("expected the premise to be missing");
@@ -94,7 +94,7 @@ describe("patch ledger check", () => {
 		// `patches/` present but `package.json` absent: one premise holds, the other
 		// does not, and the check must still decline rather than compare against
 		// nothing.
-		const root = tracked(fs.mkdtempSync(path.join(os.tmpdir(), "omp-doctor-nomanifest-")));
+		const root = tracked(fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-doctor-nomanifest-")));
 		fs.mkdirSync(path.join(root, "patches"), { recursive: true });
 		const outcome = await ledgerFor(root);
 		expect(isUnavailable(outcome)).toBe(true);
@@ -104,7 +104,7 @@ describe("patch ledger check", () => {
 		// The outcome carries its own `name`. Without it, an `unavailable` line
 		// identifies itself only by the message happening to repeat the check's name
 		// — reword the message and the line is unlabelled, with nothing to catch it.
-		const root = tracked(fs.mkdtempSync(path.join(os.tmpdir(), "omp-doctor-unnamed-")));
+		const root = tracked(fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-doctor-unnamed-")));
 		const outcome = await ledgerFor(root);
 		expect(isUnavailable(outcome)).toBe(true);
 		expect(outcome.name).toBe("patch_ledger");

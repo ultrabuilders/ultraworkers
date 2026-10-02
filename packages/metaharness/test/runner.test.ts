@@ -80,14 +80,14 @@ describe("install modes", () => {
 
 	it("omits source mount env when no mount was prepared (binary/local runs)", () => {
 		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8", "--install", "local"]);
-		const env = buildHarborEnv(cfg, "/tmp/models.yml", "/tmp/omp.tgz", "test");
+		const env = buildHarborEnv(cfg, "/tmp/models.yml", "/tmp/ultraworkers.tgz", "test");
 		expect(env.OMP_BENCH_INSTALL).toBe("local");
 		expect(env.OMP_BENCH_SOURCE_DIR).toBeUndefined();
 		expect(env.OMP_BENCH_SOURCE_ARCH).toBeUndefined();
 	});
 
 	it("--tarball implies a local (tarball) install", () => {
-		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8", "--tarball", "/tmp/omp.tgz"]);
+		const cfg = parseArgs(["--model", "anthropic/claude-opus-4-8", "--tarball", "/tmp/ultraworkers.tgz"]);
 		expect(cfg.install).toBe("local");
 		expect(cfg.build).toBe(false);
 	});

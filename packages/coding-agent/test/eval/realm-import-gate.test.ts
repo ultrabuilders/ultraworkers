@@ -81,7 +81,7 @@ const temps: string[] = [];
 
 beforeAll(() => {
 	for (const name of ["a", "b"]) {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), `omp-realm-${name}-`));
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), `ultraworkers-realm-${name}-`));
 		temps.push(dir);
 		// Same specifier, different bytes: the marker is what says which cwd won.
 		fs.writeFileSync(path.join(dir, "mod.mjs"), `export const marker = 'FROM_${name.toUpperCase()}';\n`);

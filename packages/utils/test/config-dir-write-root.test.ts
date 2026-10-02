@@ -21,7 +21,7 @@ import { Snowflake } from "@oh-my-pi/pi-utils/snowflake";
 let home = "";
 
 beforeEach(async () => {
-	home = path.join(os.tmpdir(), `omp-config-write-root-${Snowflake.next()}`);
+	home = path.join(os.tmpdir(), `ultraworkers-config-write-root-${Snowflake.next()}`);
 	await fs.mkdir(home, { recursive: true });
 	spyOn(os, "homedir").mockReturnValue(home);
 	delete process.env.PI_CONFIG_DIR;

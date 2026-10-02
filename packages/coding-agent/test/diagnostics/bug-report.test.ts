@@ -77,7 +77,7 @@ describe("crash ring", () => {
 	let file: string;
 
 	beforeEach(() => {
-		dir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-crash-"));
+		dir = fs.mkdtempSync(path.join(os.tmpdir(), "ultraworkers-crash-"));
 		file = path.join(dir, "crashes.json");
 	});
 

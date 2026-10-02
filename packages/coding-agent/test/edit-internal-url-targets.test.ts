@@ -46,7 +46,7 @@ function localFile(url: string): string {
 
 beforeEach(async () => {
 	resetSettingsForTest();
-	tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-edit-urls-"));
+	tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ultraworkers-edit-urls-"));
 	artifactsDir = path.join(tmpDir, "artifacts");
 	await Settings.init({ inMemory: true, cwd: tmpDir });
 });

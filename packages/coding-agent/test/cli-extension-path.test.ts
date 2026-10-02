@@ -38,7 +38,7 @@ describe("parseArgs — trusted extension allowlist", () => {
 		expect(() => parseArgs(["--extension", "--trusted-extension", "/opt/omp/policy.ts"])).toThrow(
 			/requires a non-empty/,
 		);
-		expect(() => parseArgs(["--trusted-extension", "/opt/omp/policy.ts", "--hook", "/tmp/hook.ts"])).toThrow(
+		expect(() => parseArgs(["--trusted-extension", "/opt/ultraworkers/policy.ts", "--hook", "/tmp/hook.ts"])).toThrow(
 			/cannot be combined/,
 		);
 	});

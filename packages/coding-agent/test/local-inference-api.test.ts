@@ -8,10 +8,11 @@ import {
 	type Usage,
 	type UserMessage,
 } from "@oh-my-pi/pi-ai";
-import { unregisterCustomApis } from "@oh-my-pi/pi-ai/api-registry";
+import { getCustomApi, unregisterCustomApis } from "@oh-my-pi/pi-ai/api-registry";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import {
 	buildLocalInferenceMessages,
+	LOCAL_INFERENCE_SOURCE,
 	registerLocalInferenceApi,
 } from "@oh-my-pi/pi-coding-agent/tiny/local-inference-api";
 import { TINY_LOCAL_MODELS } from "@oh-my-pi/pi-coding-agent/tiny/models";
@@ -26,7 +27,12 @@ import type {
 	TinyWorkerResponse,
 } from "@oh-my-pi/pi-coding-agent/tiny/title-protocol";
 
-const SOURCE_ID = "omp/local-inference";
+// Imported, not repeated: `unregisterCustomApis` matches `entry.sourceId === sourceId`,
+// so a second literal copy here is a silent leak waiting for the next rename. This
+// file previously held `"omp/local-inference"` while the module registered
+// `"ultraworkers/local-inference"`; the mismatch made `afterEach` a no-op and every
+// test in the file still passed.
+const SOURCE_ID = LOCAL_INFERENCE_SOURCE;
 const model = getBundledModel("local", "lfm2.5-230m")!;
 
 function zeroUsage(): Usage {
@@ -112,6 +118,17 @@ describe("local inference API", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		unregisterCustomApis(SOURCE_ID);
+	});
+
+	it("withdraws its own registration, so afterEach cannot silently stop cleaning up", () => {
+		// The regression this file could not see. `unregisterCustomApis` matches on
+		// `entry.sourceId === sourceId`, so a source id that drifts away from the one
+		// passed here makes teardown a no-op: every test in the file still passes while
+		// the registry keeps an entry per run. Asserting the teardown's *effect* is the
+		// only thing that notices — the call itself always succeeds either way.
+		expect(getCustomApi("local-inference")).toBeDefined();
+		unregisterCustomApis(SOURCE_ID);
+		expect(getCustomApi("local-inference")).toBeUndefined();
 	});
 
 	it("flattens assistant context into following user turns and completes through the registered API", async () => {

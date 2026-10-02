@@ -672,6 +672,21 @@ export interface SimpleStreamOptions extends Omit<StreamOptions, "apiKey"> {
 	apiKey?: ApiKey;
 	reasoning?: Effort;
 	/**
+	 * Ask a capable provider to return a durable handle and continue the request asynchronously.
+	 *
+	 * The handle arrives on the result as {@link AssistantMessage.deferred} with
+	 * `stopReason: "deferred"`, and is resumed through `fetchDeferred`. Declared here rather than on
+	 * {@link StreamOptions} because only the simple entry points carry it: `pi` puts it in this same
+	 * interface, and a provider reading `options.deferred` off a raw {@link StreamOptions} has
+	 * nothing to read.
+	 *
+	 * Without this field the request is silently dropped, not rejected: a caller spreading a wider
+	 * options bag (`{...streamOptions}` in pi-durable's generation path) type-checks against this
+	 * interface while the field goes unread, so `stopReason: "deferred"` never arrives and the
+	 * deferred poll loop stays unreachable.
+	 */
+	deferred?: boolean | { window?: "15m" | "1h" | "24h" };
+	/**
 	 * Force-disable reasoning for the request even when the model supports it.
 	 * Takes precedence over `reasoning`. Useful for fast utility calls
 	 * (e.g. title generation) where the model would otherwise burn the entire

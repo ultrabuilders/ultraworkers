@@ -21,6 +21,30 @@ import * as path from "node:path";
 import { checkScriptTests } from "./check-script-tests";
 import { RUN } from "./script-test-manifest";
 
+/** The repository root, one level above `scripts/`. */
+const repoRoot = path.join(import.meta.dir, "..");
+
+/**
+ * Whether this is a git checkout at all.
+ *
+ * The index assertions below have no meaning outside one — a tarball install has no index
+ * to ask — so they are skipped there rather than failed. Skipping is honest only because
+ * the thing being protected (the gate's dot-skip) has nothing to lose when no file is
+ * tracked at all: with an empty index there is no coverage for the skip to delete.
+ */
+const isGitCheckout = fs.existsSync(path.join(repoRoot, ".git"));
+
+/** Repository-tracked paths under `dir`, relative to the root. Empty outside a checkout. */
+function gitLsFiles(dir: string): string[] {
+	if (!isGitCheckout) return [];
+	const result = Bun.spawnSync(["git", "ls-files", dir], { cwd: repoRoot, stdout: "pipe", stderr: "ignore" });
+	if (result.exitCode !== 0) return [];
+	return result.stdout
+		.toString()
+		.split("\n")
+		.filter(line => line.length > 0);
+}
+
 /** A throwaway scripts/ tree holding only the files a test declares. */
 function scriptsDir(files: readonly string[]): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "check-script-tests-"));
@@ -30,6 +54,26 @@ function scriptsDir(files: readonly string[]): string {
 
 function withScriptsDir<T>(files: readonly string[], body: (dir: string) => T): T {
 	const dir = scriptsDir(files);
+	try {
+		return body(dir);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+/** As {@link scriptsDir}, but creates intermediate directories for nested paths. */
+function scriptsTree(files: readonly string[]): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "check-script-tests-tree-"));
+	for (const file of files) {
+		const full = path.join(dir, file);
+		fs.mkdirSync(path.dirname(full), { recursive: true });
+		fs.writeFileSync(full, "");
+	}
+	return dir;
+}
+
+function withScriptsTree<T>(files: readonly string[], body: (dir: string) => T): T {
+	const dir = scriptsTree(files);
 	try {
 		return body(dir);
 	} finally {
@@ -91,6 +135,57 @@ describe("checkScriptTests — the collector's domain", () => {
 			for (const entry of RUN) expect(named(messages, entry.file)).toBe(true);
 		});
 	});
+
+	test("a dot-directory's test file is not reported, because the repository does not own it", () => {
+		// The failure this pins: `readdirSync` returns dot-entries unconditionally, so a
+		// worktree or cache under `scripts/` handed this gate a test file no maintainer
+		// can classify. The gate then failed on a file that is not in the repository —
+		// 661 such phantom failures were measured from one worktree in a sibling gate.
+		withScriptsTree([".worktree/rename/leak.test.ts", ".cache/stale.test.mjs"], dir => {
+			const { messages } = checkScriptTests(dir);
+
+			expect(named(messages, ".worktree/rename/leak.test.ts")).toBe(false);
+			expect(named(messages, ".cache/stale.test.mjs")).toBe(false);
+		});
+	});
+
+	test("a subdirectory the repository owns is still walked, so the dot-skip is not a walk-stop", () => {
+		// The control, and it is the one that makes the test above mean something. A gate
+		// "fixed" by refusing to recurse at all would report nothing anywhere and still pass
+		// the dot-directory row, so this is what proves the guard skips dot-entries and
+		// nothing else. `rename/` is a real subdirectory holding six gated tests.
+		withScriptsTree(["rename/stray.test.ts", "deep/nested/stray.test.mjs"], dir => {
+			const { messages } = checkScriptTests(dir);
+
+			expect(named(messages, "rename/stray.test.ts")).toBe(true);
+			expect(named(messages, "deep/nested/stray.test.mjs")).toBe(true);
+		});
+	});
+
+	test.skipIf(!isGitCheckout)(
+		"scripts/ tracks no file under a dot-directory, so the dot-skip costs no coverage",
+		() => {
+			// This is what stops the gate's justification from rotting. Skipping dot-entries is
+			// correct here ONLY because the repository tracks nothing under one; five sibling
+			// gates deliberately do the opposite, because 532 tracked files elsewhere live under
+			// dot-directories and `.omp/tools/tui.ts` is a gated source. If that ever becomes
+			// true HERE, a tracked script test would become invisible to the gate while the gate
+			// still reported green — so this asserts the precondition and fails the day it stops
+			// holding, instead of letting the skip quietly delete coverage.
+			//
+			// Queries the index rather than the disk: the question is what the repository
+			// contains, and a disk walk would be the very thing under suspicion.
+			const tracked = gitLsFiles("scripts/");
+			const inDotDirectory = tracked.filter(file =>
+				file
+					.split("/")
+					.slice(1)
+					.some(segment => segment.startsWith(".")),
+			);
+
+			expect(inDotDirectory).toEqual([]);
+		},
+	);
 
 	test("the real scripts/ directory is fully classified", () => {
 		// The end-to-end contract, and the one that costs the most when it breaks:

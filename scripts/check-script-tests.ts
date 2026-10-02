@@ -44,10 +44,34 @@ const PREFIX = "[script-tests]";
  */
 const TEST_EXTENSIONS: readonly string[] = [".ts", ".mjs", ".cjs"];
 
+/**
+ * Every script test present on disk under `scriptsDir`, as `scriptsDir`-relative paths.
+ *
+ * The walk stops at dot-entries. `readdirSync` returns them unconditionally — unlike
+ * `Bun.Glob` it has no `dot` option at all, so there is nothing to configure off — and a
+ * dot-directory under `scripts/` holds content this repository does not own: a worktree,
+ * a cache, a scratch checkout. Measured before this guard, with a positive control beside
+ * the probe so both directions could fire, the gate reported BOTH `.dotprobe/leak.test.ts`
+ * and `probecontrol/leak.test.ts` from an identical fixture — the dot-directory was reached,
+ * and the unclassified-test failure it produced named a file no maintainer can act on.
+ *
+ * Blanket dot-skipping is the wrong rule *elsewhere* in this repository and is right here,
+ * so the difference is measured rather than assumed. Five other gates deliberately do NOT
+ * skip dot-directories, because the repository tracks 532 files under them and
+ * `.omp/tools/tui.ts` is a gated TypeScript source: skipping there would silently delete
+ * live coverage. Under `scripts/` the count is zero — `git ls-files scripts/` returns 165
+ * files, none of them a dot-file or under a dot-directory, at any depth. So the skip costs
+ * nothing measurable here.
+ *
+ * Zero today is a measurement, and a measurement rots. `check-script-tests.test.ts` asserts
+ * that invariant against the index, so the first tracked file under `scripts/./` turns a
+ * test red instead of quietly becoming invisible to this gate.
+ */
 function onDiskTestFiles(scriptsDir: string): string[] {
 	const found: string[] = [];
 	const walk = (dir: string, prefix: string): void => {
 		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			if (entry.name.startsWith(".")) continue;
 			const relPath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 			if (entry.isDirectory()) walk(path.join(dir, entry.name), relPath);
 			else if (TEST_EXTENSIONS.some(ext => entry.name.endsWith(`.test${ext}`))) found.push(relPath);

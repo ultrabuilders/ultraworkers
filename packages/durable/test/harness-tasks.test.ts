@@ -16,7 +16,7 @@ import {
 } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
 import { noModels, user } from "./harness-support";
-import { ControlledStorage, context, flush } from "./session-support";
+import { ControlledStorage, context, flush, singleVersion } from "./session-support";
 import { aborted, abortedWith, completed, deferred, eventually, openTasks, settled } from "./task-support";
 
 type Step = { phase: "run" };
@@ -339,7 +339,11 @@ describe("task runtime", () => {
 			absent = await runtime.watchDoc(Absent, ctx);
 			const watch = await runtime.watchDoc(Notes, ctx);
 			watch!.start(async value => {
-				delivered.push(value?.text ?? "retired");
+				// A watch admits any `JsonObject`, so `value.text` is `JsonValue` here. This
+				// document is single-version, so narrow it back through the definition's own
+				// shape — which throws on a mismatch rather than casting, and keeps the "no
+				// value is delivered once the doc is retired" assertion below honest.
+				delivered.push(singleVersion(Notes, value)?.text ?? "retired");
 			});
 			watchClosed = watch?.closed;
 			await runtime.commit(() => completed(null), ctx);

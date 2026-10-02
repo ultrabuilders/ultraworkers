@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { type Context as TranscriptContext, type SimpleStreamOptions } from "../src";
+import {
+	type AssistantMessage,
+	type AssistantMessageEventStream,
+	type Context as TranscriptContext,
+	type SimpleStreamOptions,
+} from "../src";
 import { fauxAssistantMessage, fauxProvider } from "../src/testing";
 
 function context(): TranscriptContext {
@@ -34,22 +39,43 @@ describe("faux deferred generation", () => {
 			id: "deferred:absent",
 		};
 
-		// `fetchDeferred` rejects for a handle it never issued, but it must still have reported the
-		// request first: the hook is what tells a caller the resume reached the provider at all.
-		await expect(faux.fetchDeferred(faux.models[0], handle, { onResponse })).rejects.toThrow();
+		// `fetchDeferred` reports a handle it never issued as a settled error message rather than a
+		// rejected promise — the provider contract, copied from pi. What matters here is that it
+		// reports at all: the hook is what tells a caller the resume reached the provider.
+		const reported = await faux.fetchDeferred(faux.models[0], handle, { onResponse });
 		await faux.cancelDeferred(faux.models[0], handle, { onResponse });
 
+		expect(reported.stopReason).toBe("error");
+		expect(reported.errorMessage).toContain(handle.id);
 		expect(seen).toEqual(["response", "response"]);
 		expect(faux.state.cancelledDeferred).toEqual([handle]);
 	});
 
-	it("hands the deferred request to the provider it is given to", async () => {
-		const faux = fauxProvider();
-		// The shape pi-durable's generation path builds: a wider per-conversation options bag spread
-		// into `SimpleStreamOptions`.
-		const conversationOptions = { cacheRetention: "short" as const, deferred: { window: "1h" as const } };
-		const options: SimpleStreamOptions = { ...conversationOptions };
+	it("defers the generation when the request asks for it, and not otherwise", async () => {
+		const deferredFaux = fauxProvider({ deferred: { pendingFetches: 0 } });
+		deferredFaux.setResponses([fauxAssistantMessage("deferred answer")]);
+		const deferredMessage = await last(deferredFaux.streamSimple(deferredFaux.getModel(), context(), {
+			cacheRetention: "short",
+			deferred: { window: "1h" },
+		}));
 
+		// Asserted through the double's own output rather than by reading the options object back:
+		// an earlier version of this test read `options.deferred` off a locally declared type, which
+		// witnesses the type the test wrote rather than the path a caller takes. Only a handle and a
+		// `deferred` stop reason can come from the entry branch actually running.
+		expect(deferredMessage.stopReason).toBe("deferred");
+		expect(deferredMessage.deferred?.id).toStartWith("deferred");
+
+		// The negative case, so the assertion above cannot pass by a provider that always defers.
+		const plainFaux = fauxProvider();
+		plainFaux.setResponses([fauxAssistantMessage("plain answer")]);
+		const plainMessage = await last(plainFaux.streamSimple(plainFaux.getModel(), context()));
+		expect(plainMessage.stopReason).toBe("stop");
+		expect(plainMessage.deferred).toBeUndefined();
+	});
+
+	it("carries the other request options through the same path", async () => {
+		const faux = fauxProvider();
 		let observed: SimpleStreamOptions | undefined;
 		faux.setResponses([
 			(_transcriptContext, streamOptions) => {
@@ -57,17 +83,18 @@ describe("faux deferred generation", () => {
 				return fauxAssistantMessage("hi");
 			},
 		]);
-		const stream = faux.streamSimple(faux.models[0], context(), options);
-		for await (const _event of stream) {
+		for await (const _event of faux.streamSimple(faux.getModel(), context(), { cacheRetention: "short" })) {
 			// Drain: the response factory runs while the stream is consumed.
 		}
 
-		// Read through a field the declaration is what makes legal. `bun test` does not typecheck, so
-		// this line alone defends nothing at runtime; the guarantee is checked by `bun check:types`,
-		// which rejects it with TS2339 when `deferred` is removed from `SimpleStreamOptions`. The
-		// runtime half asserts the other options survive the spread, which is what would silently
-		// regress if the bag were rebuilt field-by-field instead of spread.
-		expect(typeof observed?.deferred === "object" ? observed.deferred.window : undefined).toBe("1h");
 		expect(observed?.cacheRetention).toBe("short");
 	});
 });
+
+/** The final message of a completed stream. */
+async function last(stream: AssistantMessageEventStream): Promise<AssistantMessage> {
+	for await (const _event of stream) {
+		// Draining matters: the double only advances while a consumer reads the stream.
+	}
+	return await stream.result();
+}

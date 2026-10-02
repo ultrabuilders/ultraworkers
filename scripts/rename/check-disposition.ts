@@ -122,6 +122,65 @@ export function requiresKeepRefs(disposition: string): boolean {
 }
 
 /**
+ * A `keep_refs` value that is a bare plan id — `W9`, `N3`. Namespaced forms
+ * (`W11:project-root-.omp`, `a57q:rs-glob`) are NOT this shape: they name a
+ * contract or a bead, not a node of a plan document.
+ */
+const BARE_PLAN_ID = /^(W\d+)$/;
+
+/** `## W9. Attribution usage ...` — the only shape that INTRODUCES a plan id. */
+const PLAN_ID_HEADING = /^#{1,6}\s+(W\d+)\./;
+
+/**
+ * Plan ids that have a real definition site, loaded from the root
+ * `MILESTONE_*_EXECUTION_PLAN.md`.
+ *
+ * LOADED, not searched. A bare string search finds `W9` inside `_W11`, inside a
+ * file name, or inside a sentence — and would then call a node "defined" that
+ * nothing ever introduced. Only a heading introduces one, so only a heading counts.
+ * That distinction is the whole gate: the alternative is a check that reports
+ * "defined" for a token merely mentioned, which is the `trim() !== ""` gate again
+ * wearing a resolver's clothes.
+ *
+ * The set is deliberately restricted to the `W` family. `N3`–`N7` appear in the
+ * plans only as prose mentions (`### GATE B — N11`) and are never introduced, so
+ * they have nothing to resolve against and are counted as unverified instead —
+ * see `countUnverifiableKeepRefs`, which reports them on every run so the blind
+ * spot cannot be mistaken for coverage.
+ */
+export async function loadDefinedPlanIds(root: string): Promise<ReadonlySet<string>> {
+	const ids = new Set<string>();
+	for await (const rel of new Bun.Glob("MILESTONE_*_EXECUTION_PLAN.md").scan({ cwd: root })) {
+		const text = await Bun.file(path.join(root, rel)).text();
+		for (const line of text.split("\n")) {
+			const heading = PLAN_ID_HEADING.exec(line);
+			if (heading) ids.add(heading[1]!);
+		}
+	}
+	return ids;
+}
+
+/**
+ * `keep_refs` values this gate does NOT validate, by kind.
+ *
+ * Reported rather than enforced, because failing them would be failing refs the
+ * gate cannot judge: `N3`–`N7` have no definition site, and the `W11:*` contract
+ * vocabulary is coined in the table itself and written down nowhere. Printing the
+ * count on every run is what keeps an unchecked ref from reading as a checked one.
+ */
+export function countUnverifiableKeepRefs(rows: readonly Row[]): { count: number; kinds: readonly string[] } {
+	const kinds = new Set<string>();
+	let count = 0;
+	for (const row of rows) {
+		const ref = row.keepRefs.trim();
+		if (ref === "" || BARE_PLAN_ID.test(ref)) continue;
+		count++;
+		kinds.add(ref.includes(":") ? `${ref.slice(0, ref.indexOf(":"))}:*` : "bare-non-W");
+	}
+	return { count, kinds: [...kinds].sort() };
+}
+
+/**
  * Per-class occurrence expressions.
  *
  * `rename` is the pinned expression minus the classes already claimed by a `keep-*`
@@ -523,11 +582,22 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 		}
 		violations.push({ rule: "stale-row", detail: filePath });
 	}
+	// Resolved once per run: the plan documents are a fixed set of files, and
+	// re-reading them per row would make this gate's cost scale with the table.
+	const definedPlanIds = await loadDefinedPlanIds(root);
 	// Per-row reviewability.
 	for (const row of rows) {
 		if (row.reason.trim() === "") violations.push({ rule: "empty-reason", detail: `${row.path} (line ${row.line})` });
 		if (requiresKeepRefs(row.disposition) && row.keepRefs.trim() === "") {
 			violations.push({ rule: "missing-keep-refs", detail: `${row.path} (line ${row.line})` });
+		}
+		// A bare `W<n>` names a node of a plan document, so it either resolves to
+		// an id something introduced or it names nothing at all. Before this rule the
+		// gate could not tell those apart: `keep_refs` was checked only for being
+		// non-empty, which proves a signature exists but not whose it is.
+		const bare = BARE_PLAN_ID.exec(row.keepRefs.trim());
+		if (bare && !definedPlanIds.has(bare[1]!)) {
+			violations.push({ rule: "dangling-keep-ref", detail: `${row.path} (line ${row.line}) -> ${bare[1]}` });
 		}
 	}
 	for (const [filePath, group] of byPath) {
@@ -675,6 +745,18 @@ async function main(): Promise<void> {
 		for (const [rule, count] of tally) console.log(`disposition(${stage}): ${rule} = ${count}`);
 		console.log(`disposition(${stage}): ${violations.length + problems.length} failures over ${rows.length} rows`);
 	}
+	// Reported, not enforced. These refs have no definition site to resolve
+	// against (see countUnverifiableKeepRefs), so failing them would be failing
+	// something this gate cannot judge. Printing them on every run keeps the gate
+	// honest about its own reach, instead of letting a clean run be read as
+	// full coverage — which is the failure this rule was written to close.
+	const unverifiable = countUnverifiableKeepRefs(rows);
+	if (unverifiable.count > 0) {
+		console.log(
+			`disposition(${stage}): keep-refs-not-checkable = ${unverifiable.count} (${unverifiable.kinds.join(", ")}) — no definition site to resolve against`,
+		);
+	}
+
 	console.log(`disposition(${stage}): rules ${RULES_VERSION}`);
 	if (violations.length > 0 || problems.length > 0) process.exit(1);
 }

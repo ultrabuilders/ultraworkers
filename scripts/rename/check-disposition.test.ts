@@ -17,6 +17,7 @@ import * as path from "node:path";
 import {
 	checkPost,
 	checkPre,
+	countUnverifiableKeepRefs,
 	classMatcher,
 	countClass,
 	countRename,
@@ -399,5 +400,55 @@ describe("hit discovery", () => {
 		for (const disposition of DISPOSITIONS) {
 			expect(classMatcher(disposition)).toBeDefined();
 		}
+	});
+});
+describe("a keep_ref that names nothing", () => {
+	const FILES = {
+		"src/a.ts": `const n = "omp"; const m = 1; // omp again\n`,
+		"MILESTONE_9_EXECUTION_PLAN.md": "## W9. Attribution usage theo model\n",
+	};
+
+	it("accepts a bare W ref a plan introduces and reports one that introduces none", async () => {
+		// The cell is the row's claim about WHO signed the exception. Until the
+		// `dangling-keep-ref` rule the gate checked only that it was non-empty, so a
+		// ref naming a node that never existed looked exactly like a real one. Both
+		// directions are asserted: a rule that only ever fires proves nothing, and
+		// neither does one that only ever stays quiet.
+		const root = await tree(FILES);
+
+		const live = await checkPre(root, [row_("src/a.ts", 2, "rename", "renamed", "W9")]);
+		expect(live.map(v => v.rule)).toEqual([]);
+
+		const dead = await checkPre(root, [row_("src/a.ts", 2, "rename", "renamed", "W99")]);
+		expect(dead.map(v => `${v.rule}:${v.detail.split(" ").at(-1)}`)).toEqual(["dangling-keep-ref:W99"]);
+
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("does not resolve an id out of prose that merely mentions it", async () => {
+		// `_W11` inside a file name and `### GATE B — W9` as a heading's tail both
+		// CONTAIN the token without introducing anything. A substring search would
+		// call both "defined"; only a heading that OPENS with the id may count.
+		const root = await tree({
+			...FILES,
+			"MILESTONE_9_EXECUTION_PLAN.md": "prose: see _W11 and ### GATE B — W9\n",
+		});
+		const violations = await checkPre(root, [row_("src/a.ts", 2, "rename", "renamed", "W9")]);
+		expect(violations.map(v => v.rule)).toEqual(["dangling-keep-ref"]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("counts the refs it cannot judge, so a green run is not read as full coverage", async () => {
+		// The `W11:*` vocabulary and the bare `N*` ids have no definition site at all.
+		// They cannot be enforced, but they must still be visible: the whole point is
+		// that an unchecked ref must not read as a checked one.
+		const counted = countUnverifiableKeepRefs([
+			row_("src/a.ts", 1, "keep-wire", "why", "W9"),
+			row_("src/c.ts", 1, "keep-wire", "why", "W11:project-root-.omp"),
+			row_("src/d.ts", 1, "keep-wire", "why", "a57q:rs-glob"),
+			row_("src/e.ts", 1, "keep-wire", "why", "N3"),
+		]);
+		expect(counted.count).toBe(3);
+		expect(counted.kinds).toEqual(["W11:*", "a57q:*", "bare-non-W"]);
 	});
 });

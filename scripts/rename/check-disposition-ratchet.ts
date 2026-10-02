@@ -133,6 +133,15 @@ export interface RatchetVerdict {
 	 * redden CI for everyone mid-sweep. Gated once the sweep settles; see `epic-q8f0`.
 	 */
 	readonly hitsImbalance: number;
+	/**
+	 * GATED, unlike every metric above it, and the difference is the point. A sweep
+	 * never changes which plan documents exist, so this count has no legitimate
+	 * non-zero reading. Its siblings are reported-then-gated-later because peers
+	 * were mid-sweep; a dead keep_refs id has no such excuse, and leaving it ungated
+	 * would ship the rule into the very blind spot hitsImbalance was just removed
+	 * from. Must be 0.
+	 */
+	readonly danglingKeepRef: number;
 }
 
 /**
@@ -145,13 +154,15 @@ export function checkRatchet(
 ): RatchetVerdict {
 	const count = (rule: string) => violations.filter(v => v.rule === rule).length;
 	const staleRow = count("stale-row");
+	const danglingKeepRef = count("dangling-keep-ref");
 	return {
 		staleRow,
 		baseline,
-		ok: staleRow <= baseline,
+		ok: staleRow <= baseline && danglingKeepRef === 0,
 		missingRow: count("missing-row"),
 		literalImbalance: count("literal-hits-imbalance"),
 		hitsImbalance: count("hits-imbalance"),
+		danglingKeepRef,
 	};
 }
 
@@ -198,6 +209,8 @@ async function main(): Promise<number> {
 			`[ratchet] table     : ${TABLE_PATH} · ${rows.length} rows · md5:${printed}\n` +
 			`[ratchet] ceiling set against md5:${BASELINE_TABLE_DIGEST}${tableDrift}\n` +
 			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
+			`[ratchet] gated, must be 0:\n` +
+			`[ratchet]   dangling-keep-ref      = ${verdict.danglingKeepRef}   (a keep_refs id no plan document introduces)\n` +
 			`[ratchet] reported, not gated — all three are CEILINGS, they must fall:\n` +
 			`[ratchet]   missing-row             = ${verdict.missingRow}   (rows still not covered)\n` +
 			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)\n` +
@@ -206,11 +219,21 @@ async function main(): Promise<number> {
 
 	if (!verdict.ok) {
 		console.error(
-			`\n[ratchet] FAIL  stale-row is ${verdict.staleRow}, over the ceiling of ${verdict.baseline}.\n` +
-				`Each one is a file that stopped carrying the literal a keep-* row still freezes —\n` +
-				`a signed-off wire contract or on-disk path that quietly disappeared. That is the\n` +
-				`opposite of what the row authorised. Restore the literal, or delete the row with a\n` +
-				`reason saying the contract is gone.`,
+			`\n[ratchet] FAIL  ${verdict.danglingKeepRef > 0 ? `dangling-keep-ref is ${verdict.danglingKeepRef}` : `stale-row is ${verdict.staleRow}, over the ceiling of ${verdict.baseline}`}.\n` +
+				// The body must diagnose the cause that actually fired. A stale-row failure
+				// and a dangling-ref failure have opposite remedies, and one body naming
+				// only the first sends the reader to restore a literal that is present.
+				(verdict.danglingKeepRef > 0
+					? `Each one is a keep_refs naming a plan id no MILESTONE_*_EXECUTION_PLAN.md\n` +
+						`introduces, so the row points at nothing this repo can resolve. Point it at a\n` +
+						`plan id that does exist, or drop the bare id — the gate reads a definition\n` +
+						`site (a \`W<n>.\` heading), not a mention, and will not follow one into\n` +
+						`another id. Namespaced refs (W11:*, a57q:*) are not this shape and are\n` +
+						`counted as not checkable instead.`
+					: `Each one is a file that stopped carrying the literal a keep-* row still freezes —\n` +
+						`a signed-off wire contract or on-disk path that quietly disappeared. That is the\n` +
+						`opposite of what the row authorised. Restore the literal, or delete the row with a\n` +
+						`reason saying the contract is gone.`),
 		);
 		return 1;
 	}

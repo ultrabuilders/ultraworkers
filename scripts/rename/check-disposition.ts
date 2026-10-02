@@ -122,9 +122,14 @@ export function requiresKeepRefs(disposition: string): boolean {
 }
 
 /**
- * A `keep_refs` value that is a bare plan id — `W9`, `N3`. Namespaced forms
- * (`W11:project-root-.omp`, `a57q:rs-glob`) are NOT this shape: they name a
- * contract or a bead, not a node of a plan document.
+ * A `keep_refs` value shaped like a plan id this gate can resolve: `W9`.
+ *
+ * The `N`-family ids (`N3`–`N7`) are the shape this deliberately does NOT match.
+ * They are bare plan ids too, but no plan document introduces them, so there is
+ * nothing to resolve against; matching them would make a definitional gap look
+ * like the same kind of thing as a dead name. Namespaced forms
+ * (`W11:project-root-.omp`, `a57q:rs-glob`) name a contract or a bead, not a plan
+ * node. All three excluded shapes are counted by `countUnverifiableKeepRefs`.
  */
 const BARE_PLAN_ID = /^(W\d+)$/;
 

@@ -82,6 +82,36 @@ describe("ratchet arithmetic", () => {
 		).toBe(false);
 		expect(checkRatchet([], 0).ok).toBe(true);
 	});
+
+	it("goes red on a dangling keep_ref even with stale-row sitting at its ceiling", () => {
+		// The inverse of the tripwire guard above, and the reason this rule is wired
+		// into `ok` at all. CI reaches the disposition gate ONLY through this ratchet,
+		// so a rule the ratchet counts but does not gate is a rule CI cannot see — the
+		// exact shape of the `hits-imbalance` bug. The other ungated metrics can stay
+		// ungated because a sweep is expected to move them; a keep_refs naming a plan
+		// id no plan document introduces is not a work-in-progress, so nothing
+		// legitimate can be waiting on it.
+		const atCeiling = Array.from({ length: STALE_ROW_BASELINE }, (_, i) => v("stale-row", `src/f${i}.ts`));
+		const clean = checkRatchet(atCeiling);
+		expect(clean.ok).toBe(true);
+
+		const verdict = checkRatchet([...atCeiling, v("dangling-keep-ref", "src/x.ts (line 3) -> W99")]);
+		expect(verdict.staleRow).toBe(STALE_ROW_BASELINE);
+		expect(verdict.danglingKeepRef).toBe(1);
+		expect(verdict.ok).toBe(false);
+	});
+
+	it("reads the dangling count the gate actually emits, not a rule name of its own", () => {
+		// The count is read by matching the emitted rule name. A rule the ratchet
+		// counts under a name the gate never emits is silently always 0, and an
+		// always-0 count gates nothing — green forever, which is how the sibling bug
+		// looked from the outside. Both directions are asserted here so the string
+		// cannot drift from the gate that produces it in either direction.
+		const other = v("some-future-rule", "src/y.ts (line 9)");
+		expect(checkRatchet([other]).danglingKeepRef).toBe(0);
+		expect(checkRatchet([other]).ok).toBe(true);
+		expect(checkRatchet([v("dangling-keep-ref", "src/z.ts (line 1) -> W98")]).danglingKeepRef).toBe(1);
+	});
 });
 
 describe("the baseline records what it was measured against", () => {

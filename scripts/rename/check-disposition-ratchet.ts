@@ -52,8 +52,23 @@ import { checkPre, parseTable, RULES_VERSION } from "./check-disposition";
 /**
  * The ceiling. Not the count of correct rows — the count of rows whose file has
  * stopped carrying the literal the row freezes.
+ *
+ * **Was 9; re-measured as 0 when the rule stopped reporting rows it cannot
+ * witness.** The 9 were not nine decisions someone forgot to make. Every one was
+ * a `keep-wire`/`keep-prose` row over a file that had never contained an `omp`
+ * token, so the shared pinned expression read 0 while the third-party value the
+ * row freezes — `facebook/react`, the `x-exa-source` header, an OAuth
+ * `client_name` — was verifiably still in force. Renaming could never fix them,
+ * and the remedy the old rule printed ("delete the row with a reason") would
+ * have deleted the evidence that the contract survived.
+ *
+ * So the 9 measured a set the rule could not distinguish, not a backlog. Holding
+ * the old number here after the rule changed would leave a green gate reporting a
+ * quantity it no longer computes, which is worse than the miscount it replaced:
+ * 0 is the strictest ratchet available, and it now goes red on the first row that
+ * genuinely stops carrying its own literal.
  */
-export const STALE_ROW_BASELINE = 9;
+export const STALE_ROW_BASELINE = 0;
 
 /**
  * The digest of `disposition.tsv` when the baseline above was measured. Reported
@@ -83,7 +98,7 @@ export const BASELINE_TABLE_DIGEST = "ad1f1ef25f5c55fc924da3c07ac71b44";
  * Bumping `RULES_VERSION` in `check-disposition.ts` therefore now needs this
  * literal bumped with it, in the same commit — that is the intended friction.
  */
-export const BASELINE_RULES_VERSION = "2026-10-02.1";
+export const BASELINE_RULES_VERSION = "2026-10-02.2";
 
 const TABLE_PATH = "scripts/rename/disposition.tsv";
 

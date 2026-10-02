@@ -295,7 +295,7 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
  *
  * Read by `check-disposition-ratchet.ts`, which reports drift and never blocks on it.
  */
-export const RULES_VERSION = "2026-10-02.1";
+export const RULES_VERSION = "2026-10-02.2";
 
 interface Violation {
 	readonly rule: string;
@@ -355,8 +355,24 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 		if (paths.includes(filePath)) continue;
 		const handle = Bun.file(path.join(root, filePath));
 		if (await handle.exists()) {
+			// Only a class counted BY ITS OWN LITERAL can witness its own row here.
+			// `keep-wire` / `keep-prose` / `rename` share one expression across every
+			// row, so "does this file carry an `omp` token" is a property of the FILE,
+			// not of the contract the row freezes. Measured 2026-10-02: nine rows were
+			// reported stale, every one over a file that never contained an `omp` token
+			// at all, because what they freeze is a third-party value (`facebook/react`,
+			// the `x-exa-source` header, an OAuth `client_name`) that was never a brand
+			// token. Seven of those contracts were verifiably still in force, so
+			// completing the rename could never fix them — the remedy this rule used to
+			// print ("delete the row with a reason") would have deleted the evidence
+			// that the contract survived.
+			//
+			// A file that is GONE still reports, for every class: that needs no
+			// counter, and a row pointing at nothing is wrong whoever wrote it.
+			const literalRows = group.filter(row => classMatcher(row.disposition).literal !== undefined);
+			if (literalRows.length === 0) continue;
 			const text = await handle.text();
-			const stillCarriesIt = group.some(row => countClass(text, row.disposition) > 0);
+			const stillCarriesIt = literalRows.some(row => countClass(text, row.disposition) > 0);
 			if (stillCarriesIt) continue;
 		}
 		violations.push({ rule: "stale-row", detail: filePath });

@@ -140,15 +140,28 @@ console.log(JSON.stringify({ id: TERMINAL_ID, notifyProtocol: TERMINAL.notifyPro
 				stdout: "pipe",
 				stderr: "pipe",
 			});
+			const startedAt = performance.now();
 			const [stdout, stderr, exitCode] = await Promise.all([
 				new Response(proc.stdout).text(),
 				new Response(proc.stderr).text(),
 				proc.exited,
 			]);
+			const elapsedMs = Math.round(performance.now() - startedAt);
 
-			expect(stderr).toBe("");
-			expect(exitCode).toBe(0);
-			expect(stdout).toBe('{"id":"wezterm","notifyProtocol":"\\u001b]9;"}\n');
+			// One assertion, not three. As separate `expect`s a failure reports
+			// only that some value differed and leaves the other two unread —
+			// and on a flake that runs once in hundreds, whatever is not printed
+			// is lost for good. Together these four separate the branches: a
+			// non-zero exit with empty stderr and no stdout is the timeout path,
+			// while exit 0 with the wrong stdout means the query succeeded and
+			// the 500ms budget is not the explanation. Elapsed is carried too,
+			// because a duration alone cannot tell those apart — see epic-afrw.
+			expect({ exitCode, stderr, stdout, elapsedMs }).toEqual({
+				exitCode: 0,
+				stderr: "",
+				stdout: '{"id":"wezterm","notifyProtocol":"\\u001b]9;"}\n',
+				elapsedMs: expect.any(Number),
+			});
 		} finally {
 			await fs.rm(binDir, { force: true, recursive: true });
 		}

@@ -113,6 +113,40 @@ describe("occurrence counting", () => {
 		expect(countClass(`x = "__omp_worker_js_eval"`, "keep-worker-selector")).toBe(1);
 	});
 
+	it("counts a token that a dot or hyphen follows, but never the omp.sh homepage", () => {
+		// The pinned expression's trailing class excluded `.`, `-` and `_`, so it was
+		// blind to `starts_with("omp.")` and to `format!("omp-oauth-test-{u}")`. That is
+		// not a cosmetic gap: `--stage=post` accepts a row when the count reaches zero,
+		// so renaming only the occurrences the table names turned the row GREEN with the
+		// token still in the file. Measured on `mktemp.rs`, whose row said `hits=1` while
+		// lines 665-666 assert on `starts_with("omp.")` and `"omp.".len()`.
+		//
+		// The load-bearing half is the domain. Dropping `.`/`-` from the trailing class
+		// is the obvious fix and it is wrong: `omp.sh` is the homepage wire value
+		// (dirs.ts APP_URL), present in 1093 places across 215 .ts files as install,
+		// join and stream URLs. A permissive trailing class matches all of them and the
+		// sweep starts renaming URLs. So the exclusion is not removed, it is narrowed to
+		// the one continuation that is genuinely a domain.
+		//
+		// `_` stays excluded on both edges. That is not an oversight left over from the
+		// fix: the case above at line 112 already pins it, because `__omp_worker_*` is
+		// the `keep-worker-selector` class. Measured — allowing `_` on both edges makes
+		// every worker selector a pinned hit and reports one in 1467 files.
+		expect(countClass(`assert!(name.starts_with("omp."));`, "rename")).toBe(1);
+		expect(countClass(`assert_eq!(name.len(), "omp.".len() + 10);`, "rename")).toBe(1);
+		expect(countClass(`let scheme = format!("omp-oauth-test-{unique}");`, "rename")).toBe(1);
+		expect(countClass(`const INHIBIT_WHO: &str = "omp";`, "rename")).toBe(1);
+
+		// The domain, in every shape it actually appears in the tree.
+		expect(countClass(`const APP_URL: string = "https://omp.sh/";`, "keep-wire")).toBe(0);
+		expect(countClass(`rejects.toThrow("curl -fsSL https://omp.sh/install")`, "keep-wire")).toBe(0);
+		expect(countClass(`resolveCliArgv(["join", "wss://my.omp.sh/s/abc#key"])`, "keep-wire")).toBe(0);
+		expect(countClass(`"live.omp.sh/<your Stencil username>"`, "keep-wire")).toBe(0);
+
+		// `omp.shs` is not the domain, so the exclusion must not swallow it.
+		expect(countClass(`const x = "omp.shs";`, "rename")).toBe(1);
+	});
+
 	it("still counts a rename occurrence after a keep-wire row claims the same expression", () => {
 		// THE regression, in both directions. `keep-wire` shares the pinned
 		// expression, so subtracting keep classes cancelled the file's only

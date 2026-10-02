@@ -106,7 +106,7 @@ export const BASELINE_TABLE_DIGEST = "ad1f1ef25f5c55fc924da3c07ac71b44";
  * Bumping `RULES_VERSION` in `check-disposition.ts` therefore now needs this
  * literal bumped with it, in the same commit — that is the intended friction.
  */
-export const BASELINE_RULES_VERSION = "2026-10-02.3";
+export const BASELINE_RULES_VERSION = "2026-10-03.1";
 
 const TABLE_PATH = "scripts/rename/disposition.tsv";
 

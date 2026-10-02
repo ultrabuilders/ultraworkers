@@ -94,11 +94,31 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * The pinned expression. Byte-identical to the bead's, so the table and this gate
  * can never drift onto different definitions of "a hit".
  *
- * Note the asymmetry, which is deliberate and inherited: the leading class excludes
- * `.` and `/` so `pi-omp` or `sub/omp` do not match, but the trailing class does not
- * exclude `/`, so a path like `"./omp/"` matches on its trailing edge.
+ * The leading class excludes `.` and `/` so `pi-omp` or `sub/omp` do not match. An
+ * earlier version of this docblock claimed that `"./omp/"` therefore "matches on its
+ * trailing edge" — it never did, for the same leading `/`. The example was wrong and
+ * the asymmetry it described is only the one below.
+ *
+ * The trailing class used to exclude `.` and `-` as well, which made this expression
+ * blind to `starts_with("omp.")` and `format!("omp-oauth-test-{u}")`. That is not a
+ * cosmetic gap: `--stage=post` accepts a row when the count reaches zero, so renaming
+ * only the occurrences a table row names turned the row green with the token still in
+ * the file — measured on `mktemp.rs`, whose row claimed `hits=1` while lines 665-666
+ * assert on `starts_with("omp.")` and `"omp.".len()`.
+ *
+ * The obvious repair — dropping `.`/`-` from the trailing class — is wrong, because
+ * `omp.sh` is the homepage wire value (`APP_URL` in `packages/utils/src/dirs.ts`) and
+ * appears in 1093 places across 215 `.ts` files as install, join and stream URLs. So
+ * the exclusion is narrowed rather than removed: `.` and `-` now terminate a hit unless
+ * they open `sh`, which keeps `omp.sh`, `https://omp.sh/install` and `wss://my.omp.sh/…`
+ * out while counting `omp.` and `omp-oauth-test-`. `omp.shs` is not the domain and is
+ * counted, so the lookahead is bounded by `(?![a-zA-Z0-9])` rather than open-ended.
+ *
+ * `_` stays excluded on both edges, and that is load-bearing too: `__omp_worker_*` is
+ * the `keep-worker-selector` class, counted by its own literal. Allowing `_` makes every
+ * worker selector a pinned hit — measured at one per file across 1467 files.
  */
-const PINNED = /(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)/;
+const PINNED = /(^|[^a-zA-Z0-9_./-])omp(?![\.\-]sh(?![a-zA-Z0-9]))([^a-zA-Z0-9_]|$)/;
 
 /** Repo-relative path of the table. */
 const TABLE_PATH = "scripts/rename/disposition.tsv";
@@ -530,7 +550,7 @@ export async function hitPaths(root: string): Promise<readonly string[]> {
  *
  * Read by `check-disposition-ratchet.ts`, which reports drift and never blocks on it.
  */
-export const RULES_VERSION = "2026-10-02.3";
+export const RULES_VERSION = "2026-10-03.1";
 
 interface Violation {
 	readonly rule: string;

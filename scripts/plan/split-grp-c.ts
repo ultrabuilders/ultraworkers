@@ -83,7 +83,13 @@ const NO_CUT_MODULES_INTERNAL = new Map<string, string>([
 	["capability", "registry type consumed across the extension surface — seam, not split"],
 	// `eval` was here, ruled no-cut for "M8 W8 is editing eval/ right now — order must be
 	// settled first". That is a schedule event, not a ruling, and it decays: W8 sat blocked
-	// with nobody in eval/ while the row kept claiming otherwise. The plan does rule on
+	// with nobody in eval/ while the row kept claiming otherwise. Measured 2026-10-02: of
+	// the last 400 commits exactly 1 touches `eval/`, it is 15.7h old, and it is a
+	// cross-cutting worker-selector refactor rather than work in the directory — so the
+	// premise is false and bead AC4's blocking condition is currently satisfied. The
+	// command to reproduce that is recorded on `r0-grp-c-104`; re-measure rather than
+	// trusting the date, because the whole point is that this claim rots.
+	// The plan does rule on
 	// eval, and it rules the other way — §"ngưỡng 41-150" lists
 	// `mcp, registry, discovery, eval, task` together as the cuttable-with-a-seam row. So
 	// eval is a candidate, and at 30 importers it is simply out of band. The sequencing

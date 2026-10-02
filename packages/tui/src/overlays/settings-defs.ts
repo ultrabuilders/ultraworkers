@@ -95,6 +95,13 @@ export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 		"Execution",
 		"Discovery & MCP",
 		"Extensions",
+		// Trust decisions govern whether extension- and plugin-scoped code loads, so
+		// the group sits beside Extensions rather than at the end. Both settings that
+		// declare it — `projectTrust` and `pathRules` — had shipped with the group
+		// unregistered, which `getSettingsForTab` ranked last (`order.length`) instead
+		// of rejecting: the rows rendered, just with no heading above them and out of
+		// the declared order. That is why this is a registration and not a rename.
+		"Trust",
 		"Developer",
 	],
 	tasks: ["Modes", "Subagents", "Isolation", "Commands & Skills"],

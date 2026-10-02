@@ -62,6 +62,21 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
 	{ file: "ci-check-full.test.ts", reason: "" },
 	{ file: "check-script-tests.test.ts", reason: "" },
+	// The subdirectory tests. `onDiskTestFiles` read only the top level, so every
+	// file below was on disk, classified by nobody, and executed by nothing — the
+	// same defect `TEST_EXTENSIONS` was widened for in 1814e9fbad, along the
+	// directory axis instead of the extension one. Six are the rename gates' own
+	// tests, so the tests guarding the sweep could not fail the build.
+	{ file: "install-tests/native-version.test.ts", reason: "" },
+	{ file: "legacy-pi/check-export-coverage.test.ts", reason: "" },
+	{ file: "plan/split-grp-c.test.ts", reason: "" },
+	{ file: "rename/args.test.ts", reason: "" },
+	{ file: "rename/bucket-legacy-token.test.ts", reason: "" },
+	{ file: "rename/check-disposition-ratchet.test.ts", reason: "" },
+	{ file: "rename/check-disposition.test.ts", reason: "" },
+	{ file: "rename/check-docs-rename.test.ts", reason: "" },
+	{ file: "rename/check-runtime-rename.test.ts", reason: "" },
+	{ file: "session-stats/audit.test.ts", reason: "" },
 	// Pins `programs.omp` in `nix/nixos-module.nix` + `nix/home-manager.nix`
 	// against the README that teaches it, and the module's default against an
 	// attribute `flake.nix` actually publishes. Neither module had a test reading

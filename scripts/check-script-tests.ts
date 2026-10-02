@@ -27,14 +27,34 @@ const PREFIX = "[script-tests]";
  * other extension structurally invisible — the same blind spot as no gate at
  * all. `.mjs` was the live instance: nine gate tests ran nowhere because this
  * filter never selected them, and nothing reported it.
+ *
+ * The DIRECTORY axis had the same shape and was still open. A collector that
+ * reads only the top level makes every subdirectory structurally invisible, and
+ * `scripts/rename/` held six of them — the tests guarding the rename sweep
+ * itself, including `check-runtime-rename.test.ts`. So the walk below is
+ * recursive for the same reason `TEST_EXTENSIONS` is wider than what exists
+ * today: a gate's domain is what it collects, not what happens to be on disk.
+ *
+ * `1814e9fbad` closed the extension axis and `df7e28c00c` put a test on it;
+ * this is the same debt along the other axis, which is why the history above
+ * reads as a pattern rather than a one-off.
+ *
+ * Paths stay relative to `scriptsDir` and keep their subdirectory
+ * (`rename/x.test.ts`), because `RUN` is keyed by exactly that string.
  */
 const TEST_EXTENSIONS: readonly string[] = [".ts", ".mjs", ".cjs"];
 
 function onDiskTestFiles(scriptsDir: string): string[] {
-	return fs
-		.readdirSync(scriptsDir)
-		.filter(name => TEST_EXTENSIONS.some(ext => name.endsWith(`.test${ext}`)))
-		.sort();
+	const found: string[] = [];
+	const walk = (dir: string, prefix: string): void => {
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			const relPath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+			if (entry.isDirectory()) walk(path.join(dir, entry.name), relPath);
+			else if (TEST_EXTENSIONS.some(ext => entry.name.endsWith(`.test${ext}`))) found.push(relPath);
+		}
+	};
+	walk(scriptsDir, "");
+	return found.sort();
 }
 
 export function checkScriptTests(scriptsDir: string): {

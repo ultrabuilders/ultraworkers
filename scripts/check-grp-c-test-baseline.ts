@@ -40,6 +40,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { tmpdir } from "node:os";
+import { $ } from "bun";
 import { extractFailures } from "./ci-failure-extract";
 
 const BASELINE = path.join(import.meta.dir, "r0-grp-c-test-baseline.json");
@@ -202,6 +203,37 @@ if (!baseline) {
 	);
 }
 
+/**
+ * The commit this gate is measuring right now, or null when git cannot say.
+ *
+ * Shaped like the `gitMaybe` in `fix-changelogs.ts` — same `-c` flags, same
+ * `.nothrow()` — so a reader who knows that helper knows this one.
+ */
+async function liveHead(): Promise<string | null> {
+	const result =
+		await $`git -c core.fsmonitor=false -c core.untrackedCache=false -c fetch.pruneTags=false rev-parse HEAD`
+			.cwd(process.cwd())
+			.quiet()
+			.nothrow();
+	if (result.exitCode !== 0) return null;
+	return result.text().trim();
+}
+
+/**
+ * Whether a run is allowed to claim a verdict at all.
+ *
+ * An unreadable git is NOT a still tree. Reporting it as still would let the gate
+ * claim a measurement it cannot support, which is the same class of lie as the
+ * empty-failure-set bug this file already exists to prevent.
+ */
+function treeHeldStill(headAtStart: string | null, headAtEnd: string | null): boolean {
+	return headAtStart !== null && headAtEnd !== null && headAtStart === headAtEnd;
+}
+
+// Captured BEFORE the suite runs, which is the whole point: the suite is the long
+// part, and the window it opens is exactly when a peer commits.
+const headAtStart = await liveHead();
+
 const current = await collectFailures();
 
 if (current === null) {
@@ -211,6 +243,26 @@ if (current === null) {
 			"most often a suite that cannot load, which `bun test` reports as an error rather\n" +
 			"than a failure. Reporting that as green would call a broken suite clean and then\n" +
 			"advise deleting baseline entries that are still real.",
+	);
+	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
+}
+
+// The tree moved under the run. Checked here, before the confirm re-run, so a void
+// run does not spend another ten minutes proving something it may not report.
+const headAtEnd = await liveHead();
+if (!treeHeldStill(headAtStart, headAtEnd)) {
+	console.error("grp-c baseline gate: VOID — the tree changed while this gate measured it.");
+	console.error(
+		`  HEAD at start: ${headAtStart ?? "(unreadable)"}\n` +
+			`  HEAD at end:   ${headAtEnd ?? "(unreadable)"}\n` +
+			"\n" +
+			"This gate is a differential against a fixed captured list, so a test ADDED\n" +
+			"after the capture and then failed reads as a new failure — red — with nobody\n" +
+			"having broken anything. A run whose corpus changed mid-flight therefore\n" +
+			"describes a tree that exists at no commit, and its red/green would belong to\n" +
+			"no commit at all. Void is the honest verdict; it is not a pass and not a fail.\n" +
+			"Re-run once the branch is still, or accept that on a shared tree this gate\n" +
+			"reports void rather than a number.",
 	);
 	fail(`\nbaseline: ${BASELINE}\nfull output: ${REPORT}`);
 }

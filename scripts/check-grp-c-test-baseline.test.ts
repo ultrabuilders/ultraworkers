@@ -57,8 +57,68 @@ async function installGate(dir: string, suite: string): Promise<string> {
 	return target;
 }
 
-const runGate = (dir: string, gate: string) =>
-	ptree.exec([process.execPath, gate], { cwd: dir, allowNonZero: true, env: { ...Bun.env, NO_COLOR: "1" } });
+/** One fixed sha: the gate reads HEAD before and after the suite and must see them match. */
+const STILL_HEAD = "0".repeat(40);
+
+/**
+ * A `git` on PATH that answers `rev-parse HEAD` with `shas[n]`, clamping to the last
+ * entry once exhausted. Anything other than `rev-parse` is delegated to the real git,
+ * so a stray call cannot be silently swallowed by the fake.
+ *
+ * Exists because this directory is not a repository: the real `git rev-parse HEAD`
+ * exits 128, the gate reads that as "cannot say", and every case below would take the
+ * VOID branch and assert about a verdict it never reached. The gate's own rule is that
+ * an unreadable git is not a still tree, so the tests have to supply a readable one.
+ */
+async function installGitShim(dir: string, shas: readonly string[]): Promise<string> {
+	const bin = path.join(dir, "gitbin");
+	await fs.mkdir(bin, { recursive: true });
+	const realGit = (await Bun.$`command -v git`.quiet().nothrow()).text().trim();
+	if (!realGit) throw new Error("cannot resolve the real git to delegate to; the shim would swallow it");
+	// The list lives in a file rather than in the script. Interpolating it as a
+	// shell string does not work: `join("\n")` inside double quotes is a literal
+	// backslash-n to `sh`, so the list collapsed to one line, `total` became 1, and
+	// every call returned the first entry — a shim that cannot express a moved HEAD.
+	// That failure is invisible from the gate's side, because a shim that always
+	// answers the same sha is indistinguishable from a tree that never moved.
+	const list = path.join(dir, "git-shas");
+	await Bun.write(list, `${shas.join("\n")}\n`);
+	await Bun.write(
+		path.join(bin, "git"),
+		`#!/bin/sh
+case "$*" in
+*rev-parse*) ;;
+*) exec ${realGit} "$@" ;;
+esac
+n=0
+if [ -f "${dir}/git-calls" ]; then n="$(cat "${dir}/git-calls")"; fi
+n=$((n + 1))
+printf '%s' "$n" > "${dir}/git-calls"
+total="$(wc -l < "${list}" | tr -d " ")"
+i=$((n - 1))
+if [ "$i" -ge "$total" ]; then i=$((total - 1)); fi
+sed -n "$((i + 1))p" "${list}"
+`,
+	);
+	await fs.chmod(path.join(bin, "git"), 0o755);
+	return bin;
+}
+
+const runGateWith = async (dir: string, gate: string, gitBin: string) =>
+	ptree.exec([process.execPath, gate], {
+		cwd: dir,
+		allowNonZero: true,
+		env: { ...Bun.env, NO_COLOR: "1", PATH: `${gitBin}:${Bun.env.PATH ?? ""}` },
+	});
+
+/**
+ * Run the gate with the fake git first on PATH.
+ *
+ * `shas` is what successive `rev-parse HEAD` calls will report; it defaults to a head
+ * that never moves, which is the precondition every other case in this file assumes.
+ */
+const runGate = async (dir: string, gate: string, shas: readonly string[] = [STILL_HEAD]) =>
+	runGateWith(dir, gate, await installGitShim(dir, shas));
 
 /**
  * Runs the gate against a run it cannot reconcile: named `(fail)` lines with no
@@ -352,5 +412,65 @@ describe("R0 GRP-C test-baseline gate", () => {
 		const second = await runGate(dir.absolute(), gate);
 		expect(second.exitCode).toBe(0);
 		expect(second.stdout).toContain("2 failure(s) present in the baseline");
+	}, 60_000);
+});
+
+/**
+ * A verdict has to belong to one commit.
+ *
+ * This gate is a differential against a fixed captured list, so it is only sound while
+ * the corpus is the one that was captured. A test ADDED after the capture and then
+ * failed reads as a regression — red — with nobody having broken anything. On a shared
+ * tree that is not a corner case, it is the normal case: the suite runs for minutes and
+ * peers commit inside that window. The run then describes a tree that exists at no
+ * commit, and its red would belong to no commit at all.
+ */
+describe("R0 GRP-C baseline gate: the run must belong to one commit", () => {
+	test("a head that holds still still reaches its verdict", async () => {
+		// Not decorative: this is the control that makes the VOID assertion below mean
+		// something. A shim that answered nothing at all would also produce VOID, from
+		// `liveHead` returning null rather than from a changed head — the same verdict
+		// for a completely different reason, and the test would pass for the wrong one.
+		using dir = TempDir.createSync("omp-grp-c-baseline-still-");
+		await Bun.write(
+			path.join(dir.absolute(), "clean.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("passes", () => { expect(1).toBe(1); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		const result = await runGate(dir.absolute(), gate, [STILL_HEAD]);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("grp-c baseline gate: green");
+		expect(result.stderr).not.toContain("VOID");
+	}, 60_000);
+
+	test("a run that spans a commit is void, and says so", async () => {
+		// The suite is a clean one, so without the guard this gate is green — which is
+		// exactly why the case needs the guard to be load-bearing: a void run that fell
+		// through to the normal verdict would report "no new failures" for a corpus that
+		// was never the captured one.
+		using dir = TempDir.createSync("omp-grp-c-baseline-void-");
+		await Bun.write(
+			path.join(dir.absolute(), "clean.test.ts"),
+			'import { test, expect } from "bun:test";\ntest("passes", () => { expect(1).toBe(1); });\n',
+		);
+		const gate = await installGate(dir.absolute(), "./");
+
+		const gitBin = await installGitShim(dir.absolute(), ["1".repeat(40), "2".repeat(40)]);
+		const ask = () => ptree.exec([path.join(gitBin, "git"), "rev-parse", "HEAD"], { cwd: dir.absolute() });
+		// Assert the shim can actually move the head. A shim that always answers the
+		// same sha leaves the gate green — indistinguishable, from the gate's side,
+		// from a tree that never moved — and the VOID assertion below would then be
+		// passing for a harness that cannot express the thing it is meant to test.
+		expect((await ask()).stdout.toString().trim()).toBe("1".repeat(40));
+		expect((await ask()).stdout.toString().trim()).toBe("2".repeat(40));
+		// Those two probes consumed the sequence; the gate's own two reads start over.
+		await fs.rm(path.join(dir.absolute(), "git-calls"), { force: true });
+
+		const result = await runGateWith(dir.absolute(), gate, gitBin);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("VOID");
+		// It must not reach the verdict the run has no standing to make.
+		expect(result.stdout).not.toContain("grp-c baseline gate: green");
 	}, 60_000);
 });

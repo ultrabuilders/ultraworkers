@@ -205,6 +205,9 @@ describe("ci-rename-test-literals: the two codes that mean the scan itself is wr
 		// author has to be pointed at the table, not at their test file.
 		expect(run.exitCode).toBe(2);
 		expect(run.stderr).toContain("no table at scripts/rename/disposition.tsv");
+		// Exactly one of the two causes is true. A run reporting both would tell the reader the
+		// table is missing and, in the same breath, that it exists.
+		expect(run.stderr).not.toContain("exists but has no rows");
 	});
 
 	it("exits 2 when the table survives but holds no rows, rather than blaming every hit", async () => {
@@ -219,10 +222,12 @@ describe("ci-rename-test-literals: the two codes that mean the scan itself is wr
 		// "every literal is unaccounted-for", which sends the author to their test file when
 		// the table is what emptied.
 		expect(run.exitCode).toBe(2);
-		// Deliberately NOT asserting on the output. This path exits 2 having written nothing
-		// on either stream — the comment in the gate says `readRows` already said why, and it
-		// does, but only for the missing-file case. Silence here is a gap, not a contract, and
-		// pinning it as one would have to be undone by whoever closes it.
+		// The two causes share a code and must not share a reader: one is fixed by restoring
+		// the file, the other by putting rows in it. This path used to print nothing at all,
+		// and the sibling test above is what keeps the missing-file message from being
+		// printed twice — same `rows.length === 0`, two different explanations.
+		expect(run.stderr).toContain("scripts/rename/disposition.tsv exists but has no rows");
+		expect(run.stderr).not.toContain("no table at");
 	});
 
 	it("exits 2 when the scan finds nothing, rather than reporting a clean tree", async () => {

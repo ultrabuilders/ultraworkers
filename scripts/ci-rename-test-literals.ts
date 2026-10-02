@@ -132,7 +132,19 @@ function isAccounted(hit: Hit, rows: Row[]): boolean {
 
 const rows = await readRows();
 if (rows.length === 0) {
-	// `readRows` already said why. Stop here so the 2 it set survives.
+	// `readRows` reports exactly one cause — the file is missing. An existing table that
+	// parsed to zero rows reaches here by the other route, and it used to leave no trace at
+	// all: two empty streams and a red CI, with nothing for a reader to start from. The
+	// comment this replaces claimed `readRows` had already said why, and it had not.
+	//
+	// The distinction is worth a syscall on the failure path: both are "unusable table", but
+	// only one of them is fixable by restoring a file, and telling those apart is the whole
+	// point of a diagnostic.
+	if (await Bun.file(TABLE_PATH).exists()) {
+		console.error(
+			`ci-rename-test-literals: ${path.relative(REPO_ROOT, TABLE_PATH)} exists but has no rows — a header on its own matches nothing`,
+		);
+	}
 	process.exit(2);
 }
 

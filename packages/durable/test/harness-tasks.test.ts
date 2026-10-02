@@ -194,7 +194,14 @@ describe("task phases", () => {
 			phases: {
 				write: async (task, runtime, ctx) => {
 					expect(await runtime.memo("choice", ctx)).toBeUndefined();
-					const winners = await Promise.all([runtime.memo("choice", "a", ctx), runtime.memo("choice", "b", ctx)]);
+					// `memo<T>` infers T from the candidate it is handed, so the two racers in
+					// one `Promise.all` each need the union — otherwise the second call is typed
+					// against `"a"` and `"b"` fails to assign. Both are racing for the same
+					// durable slot, so both may legitimately be any of the two.
+					const winners = await Promise.all([
+						runtime.memo<"a" | "b">("choice", "a", ctx),
+						runtime.memo<"a" | "b">("choice", "b", ctx),
+					]);
 					expect(winners).toEqual(["a", "a"]);
 					expect(await runtime.memo("choice", ctx)).toBe("a");
 					// Memo names never resolve to inherited object properties.

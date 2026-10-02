@@ -33,11 +33,14 @@ async function apply(conversation: Conversation, desired: Record<string, string>
 		const message = draft.model![0] as DeveloperMessage;
 		expect(message).toMatchObject({ role: "developer", timestamp: 7 });
 		// The provider is sent the section text, joined; a removal contributes nothing here
-		// because the entry that set it is still in the transcript.
+		// because the entry that set it is still in the transcript. The separator is spelled out
+		// rather than shared with the source on purpose: this is the assertion that pins the wire
+		// bytes `pi` sends, so it has to carry its own literal. Blank line, matching `pi`'s
+		// `getSystemMessageText`, and an empty section drops out for the same reason.
 		expect(message.content).toBe(
 			Object.values(draft.data!)
-				.filter(value => value !== null)
-				.join("\n"),
+				.filter(value => value !== null && value.length > 0)
+				.join("\n\n"),
 		);
 		const omit = draft.edits?.map(edit => {
 			expect(edit.action).toBe("omit");
@@ -201,7 +204,7 @@ describe("system prompt preparation", () => {
 		const sent = (await conversation.context(context)).messages.filter(m => m.role === "developer");
 		// The third message is empty on purpose: a patch that only removes a section has no text
 		// of its own, because the entry that set it is still in the transcript carrying it.
-		expect(sent.map(m => m.content)).toEqual(["1\n2", "20", ""]);
+		expect(sent.map(m => m.content)).toEqual(["1\n\n2", "20", ""]);
 		// Cumulative text is what the model reads, so `b` appears with both its values and the
 		// later one wins by position. Nothing in the code enforces that; it is the shape the
 		// transcript has always had, and this test is here so a change to it is visible.

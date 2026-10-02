@@ -107,11 +107,17 @@ export function planSystemEntries(
  * the section opted out — so this joins them rather than re-rendering. Removed sections contribute
  * nothing: the entry that set them is still in the transcript and still carries their text, so
  * omitting here is what keeps a patch minimal.
+ *
+ * The blank-line separator and the empty-part drop are parity with `pi`'s
+ * `getSystemMessageText` (`packages/ai/src/utils/text.ts`), which builds its parts and then joins
+ * `parts.filter(part => part.length > 0).join("\n\n")`. A section that renders empty has to drop
+ * out for the same reason `pi`'s leading `content` does: otherwise it contributes a bare separator
+ * and the section boundaries the model reads stop matching the section boundaries we hold.
  */
 function sectionsText(sections: SystemSections): string {
 	return Object.values(sections)
-		.filter((value): value is string => value !== null)
-		.join("\n");
+		.filter((value): value is string => value !== null && value.length > 0)
+		.join("\n\n");
 }
 
 function systemEntry(sections: SystemSections, timestamp: number): SystemDraft {

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- System prompt sections are joined with a blank line instead of a single newline, and a section that
+  renders empty is dropped rather than contributing a bare separator. Same section text reaches the
+  provider, spaced the way `pi` spaces it.
+
 ### Fixed
 
 - `truncateTail` no longer returns more bytes than it was given. `utf8ByteLength` measured output

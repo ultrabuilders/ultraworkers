@@ -49,8 +49,27 @@ import { cfgTerminalShowImages } from "@oh-my-pi/pi-coding-agent/modes/settings"
 
 type AnyFn = (...args: never[]) => unknown;
 
-/** Partial at every depth; function members keep their exact signature. */
-export type Deep<T> = T extends AnyFn ? T : T extends object ? { [K in keyof T]?: Deep<T[K]> } : T;
+/**
+ * Slots `layer()` replaces wholesale instead of merging: it recurses only into
+ * values `isPlainObject` accepts, and these all carry a prototype of their own.
+ */
+type ReplacedSlot = readonly unknown[] | ReadonlyMap<unknown, unknown> | ReadonlySet<unknown>;
+
+/**
+ * Partial at every depth; function members keep their exact signature.
+ *
+ * `ReplacedSlot` stops the recursion where `layer()` stops it. Without it
+ * `Deep<InteractiveModeContext>` re-enters the recursive `Component` tree
+ * through every array member and exhausts the instantiation budget (TS2589),
+ * while describing merges the helper cannot perform.
+ */
+export type Deep<T> = T extends AnyFn
+	? T
+	: [T] extends [ReplacedSlot]
+		? T
+		: T extends object
+			? { [K in keyof T]?: Deep<T[K]> }
+			: T;
 
 export type ContextOverrides = Deep<InteractiveModeContext>;
 export type SessionOverrides = Deep<AgentSession>;

@@ -165,7 +165,31 @@ project-scoped plugin entries load unconditionally. What WI-20 built is the
 **decision**, its storage, its UI, and its refusals — and no consumer of the
 refusal.
 
-> **The trap worth naming.** `isProjectTrusted()` now returns `false` for an
+> **`setProjectTrust` having no caller does not mean the decision is unwritable.**
+> `cfgProjectTrust` is registered with `ui.tab: "tools"`, and the settings host is
+> generic: it walks `orderedSettings()`, keeps anything whose `ui.tab` matches
+> (`config/settings-ui.ts:68`), and writes through `writeGlobalSetting` for *any*
+> setting carrying `ui` (`:96`). `omp config set` reaches the same key through the
+> same generic call (`cli/config-cli.ts:324`). So there are two writers, neither
+> of which mentions `setProjectTrust` by name, and the decision persists — it
+> survives a flush and a reload. Counted as "0 callers" the table above is
+> accurate; read as "the value can never change" it is badly wrong, and that is
+> the reading this section exists to prevent.
+
+> **The asymmetry, which is the security-relevant part.** Because a value *can* be
+> written, the two answers are not equivalent:
+>
+> - `yes` **has an effect** — `isProjectTrusted()` returns `true`, so an extension
+>   that branches on it takes the trusted branch.
+> - `no` and `undecided` **have no effect on loading at all** — nothing calls
+>   `assertTrusted`, so project code loads either way.
+>
+> So the setting can turn a permission on and cannot turn it off. A user who sets
+> `yes` gets a promise; a user who sets `no` gets a record of their intent and
+> nothing else. Any panel text implying otherwise overstates in the direction that
+> costs the user their protection.
+
+> **The trap worth naming.** `isProjectTrusted()` returns `false` for an
 > undecided project, and `assertTrusted` would throw. Neither is reachable from
 > the load path. A reader who sees a function returning `false`, and a function
 > that throws `ProjectTrustError`, and concludes that project extensions are
@@ -287,6 +311,22 @@ The decision record, its storage, its UI, and its refusals already exist
 `project-trust.ts:95`, defaulting to `undecided` and refusing). What does not
 exist is the enforcement. So B is not a proposal here; it is a **direction with
 its first half built**, and the honest way to record it is to name which half.
+
+**The friction B was supposed to cost is already paid**, which an earlier
+revision of this section got wrong. The declaration surface exists and works: the
+settings panel and `omp config set` both write the decision generically, it
+persists, and it survives a restart (see the writer note in section 1(e)). B is
+not waiting on a mechanism. It is waiting on a call to `assertTrusted` at the
+load path — *the same missing caller A is waiting on*. So the difference between
+A and B is not the cost of recording a decision; that is done. It is whether the
+user is asked once, or is expected to have found a settings panel.
+
+**What both options must fix regardless of which is chosen.** The decision is
+asymmetric today: `yes` takes effect, `no` and `undecided` do not (section 1(e)).
+Neither A nor B changes that by itself. Both have to close the gap between what
+the panel says and what the three answers do, because a setting that can grant
+permission and cannot withdraw it is the shape of bug that is invisible until
+someone relies on the withdrawal.
 
 **Why not A (prompt per project).** It is the cheapest in code — the seam already
 has the right shape — and it is the option that would have produced a gate

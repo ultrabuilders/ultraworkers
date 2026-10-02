@@ -77,7 +77,15 @@ function makeRunner(settings: Settings): ExtensionRunner {
 	);
 }
 
-/** Reads back what the wrapper would have persisted, as `resolveApproval` reads it. */
+/**
+ * Reads back what the wrapper would have persisted, as `resolveApproval` reads it.
+ *
+ * The keys below are spelled `bash:<action>` — one colon — because that is what
+ * `canonicalizeApprovalKey` produces and therefore what the product actually writes.
+ * An earlier draft used `bash::<action>`, which no code path emits; the rows still
+ * passed, because they only exercise the write mechanism, but they advertised a key
+ * format that does not exist. (Reported by ultraworkers-55.)
+ */
 function policies(settings: Settings): Record<string, unknown> {
 	return cfgToolsApproval.get(settings) as Record<string, unknown>;
 }
@@ -103,12 +111,12 @@ describe("persisting an approval decision", () => {
 		const runner = makeRunner(settings);
 		Object.assign(runner, { settings });
 
-		runner.persistApprovalPolicy("bash::git status", "allow");
+		runner.persistApprovalPolicy("bash:git status", "allow");
 
 		// Keyed by action: this is the property `resolveApproval` depends on. Written
 		// under `bash` instead, every later bash call — including a destructive one —
 		// would inherit this approval.
-		expect(policies(settings)["bash::git status"]).toBe("allow");
+		expect(policies(settings)["bash:git status"]).toBe("allow");
 		expect(policies(settings)["bash"]).toBeUndefined();
 	});
 
@@ -147,13 +155,13 @@ describe("persisting an approval decision", () => {
 	});
 
 	it("overwrites a contradicting policy rather than leaving both", () => {
-		const settings = settingsWith({ "bash::rm": "prompt" });
+		const settings = settingsWith({ "bash:rm": "prompt" });
 		const runner = makeRunner(settings);
 		Object.assign(runner, { settings });
 
-		runner.persistApprovalPolicy("bash::rm", "allow");
+		runner.persistApprovalPolicy("bash:rm", "allow");
 
-		expect(policies(settings)["bash::rm"]).toBe("allow");
+		expect(policies(settings)["bash:rm"]).toBe("allow");
 	});
 
 	it("does nothing without a settings layer", () => {
@@ -162,7 +170,7 @@ describe("persisting an approval decision", () => {
 		// with the settings slot left empty, which is the case this defends.
 		const runner = new ExtensionRunner([], undefined as never, "", sessionStub(), undefined as never, undefined);
 
-		expect(() => runner.persistApprovalPolicy("bash::ls", "allow")).not.toThrow();
+		expect(() => runner.persistApprovalPolicy("bash:ls", "allow")).not.toThrow();
 	});
 });
 

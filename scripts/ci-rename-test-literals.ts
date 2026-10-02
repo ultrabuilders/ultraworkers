@@ -103,6 +103,38 @@ interface Hit {
 	text: string;
 }
 
+/**
+ * How many times `needle` occurs in `line`, counting overlaps and advancing past each match.
+ *
+ * `line.includes(needle)` answers a different question — whether the needle appears at all —
+ * and using it here made one hit stand for any number of them on the same line. Measured at
+ * HEAD `8a3c2e9bb2`: `packages/coding-agent/test/update-cli.test.ts:592` spells the binary
+ * literal twice on one line, so the scan reported 412 where 413 literals exist. That
+ * undercount is not cosmetic here. The per-file counts this gate prints are the signal a
+ * reviewer diffs against the previous run to see which files grew, so a line holding two
+ * literals reads as one and the reviewer is told a file is finished while a literal in it is
+ * still unaccounted for.
+ *
+ * The spelling is named by file and line rather than quoted: this file is itself governed by
+ * `scripts/rename/disposition.tsv`, so writing the literal out here would add a pinned
+ * occurrence to the very file the gate measures, and the rename gate would correctly report
+ * this file's rows as short by one.
+ *
+ * Advancing by `needle.length` rather than one character keeps a self-overlapping needle from
+ * being double-counted at a shared boundary; for the fixed strings below, which cannot overlap
+ * themselves, either stride gives the same answer.
+ */
+function countOccurrences(line: string, needle: string): number {
+	let count = 0;
+	let from = 0;
+	for (;;) {
+		const at = line.indexOf(needle, from);
+		if (at === -1) return count;
+		count++;
+		from = at + needle.length;
+	}
+}
+
 async function collectHits(): Promise<Hit[]> {
 	const hits: Hit[] = [];
 	const glob = new Bun.Glob("packages/*/test/**/*.ts");
@@ -111,7 +143,9 @@ async function collectHits(): Promise<Hit[]> {
 		const lines = text.split("\n");
 		for (const [index, line] of lines.entries()) {
 			for (const { label, needle } of PATTERNS) {
-				if (line.includes(needle)) hits.push({ file: relPath, pattern: label, line: index + 1, text: line.trim() });
+				for (let seen = countOccurrences(line, needle); seen > 0; seen--) {
+					hits.push({ file: relPath, pattern: label, line: index + 1, text: line.trim() });
+				}
 			}
 		}
 	}

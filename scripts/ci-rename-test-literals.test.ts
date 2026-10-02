@@ -44,9 +44,9 @@ const HEADER = "scope\tpath\thits\tdisposition\treason\tkeep_refs";
 /**
  * A file holding exactly two hits, on separate lines under different patterns.
  *
- * Two lines rather than two on one line, so the count is unambiguous: the gate appends one
- * hit per (line, pattern) pair, and a file whose count is read as "2" for the wrong reason
- * would make the assertions below prove nothing.
+ * Two lines rather than two on one line, so the count below is "2" for one stated reason
+ * rather than two: a repeat on a single line is its own case, and it has its own test at the
+ * bottom of this file.
  */
 const TWO_LITERALS = ['const LEGACY = ".omp";', 'const MARKER = "__omp_worker_probe";', ""].join("\n");
 
@@ -241,6 +241,52 @@ describe("ci-rename-test-literals: the two codes that mean the scan itself is wr
 		// A glob that silently matched nothing would otherwise report a perfect score forever.
 		expect(run.exitCode).toBe(2);
 		expect(run.stderr).toContain("the scan is not seeing the tree");
+	});
+
+	it("counts every literal on a line, not just the first", async () => {
+		// The regression this pins: the scan used `line.includes(needle)`, which is a boolean,
+		// so a line spelling the same literal twice contributed ONE hit. At HEAD 8a3c2e9bb2
+		// `packages/coding-agent/test/update-cli.test.ts:592` does exactly that — the binary
+		// name appears in both halves of a `symlink` call — and the scan reported 412 across a
+		// tree holding 413.
+		//
+		// Why the undercount matters more than one number: the per-file counts are what a
+		// reviewer diffs between runs to see which files grew (see the note on that line in
+		// the gate). A file holding two literals reads as one, so the reviewer is told it is
+		// finished while a literal in it is still unaccounted for.
+		// The needle is `__omp_worker_` rather than the quoted binary name: this file is itself
+		// governed by `scripts/rename/disposition.tsv`, and the rename gate's pinned pattern
+		// excludes `_` at a token boundary, so this spelling adds no occurrence to this file
+		// while the quoted one would. Choosing the fixture so it cannot perturb the other gate
+		// is the same discipline as naming a line in a docblock instead of quoting it.
+		const doubled = ["await spawn(__omp_worker_tab); await spawn(__omp_worker_stats);", ""].join("\n");
+		const root = await buildTree("repeat-on-one-line", {
+			files: { [IN_SCOPE_FILE]: doubled },
+			rows: [row(IN_SCOPE_FILE, "2", "both halves of the fixture name the same worker selector")],
+		});
+
+		const run = await runGate(root);
+
+		expect(run.exitCode).toBe(0);
+		// Two literals on one line must read as two, not as "present".
+		expect(run.stdout).toContain("2 hit(s) across 1 test file(s)");
+		expect(run.stdout).toContain(`${IN_SCOPE_FILE}=2`);
+	});
+
+	it("still counts a needle once when the line holds it once", async () => {
+		// The other direction. A fix that inflated the count would pass the case above, so the
+		// counting has to be pinned at both ends: present-but-single must stay 1.
+		const single = ['const DIR = ".omp";', ""].join("\n");
+		const root = await buildTree("single-on-one-line", {
+			files: { [IN_SCOPE_FILE]: single },
+			rows: [row(IN_SCOPE_FILE, "1", "XDG cache directory named after the app")],
+		});
+
+		const run = await runGate(root);
+
+		expect(run.exitCode).toBe(0);
+		expect(run.stdout).toContain("1 hit(s) across 1 test file(s)");
+		expect(run.stdout).toContain(`${IN_SCOPE_FILE}=1`);
 	});
 
 	it("counts only files under packages/*/test/, so widening the glob would be caught", async () => {

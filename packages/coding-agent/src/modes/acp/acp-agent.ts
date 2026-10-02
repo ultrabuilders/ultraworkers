@@ -52,6 +52,7 @@ import {
 	type ExtensionUIDialogOptions,
 	getExtensionUISelectOptionLabel,
 	unavailableFrameMessage,
+	type FramelessGuard,
 } from "../../extensibility/extensions";
 import { runExtensionCompact } from "../../extensibility/extensions/compact-handler";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
@@ -423,6 +424,13 @@ function isAcceptedElicitation(
  * at all. Capability gating respects the client's `initialize`
  * advertisement.
  */
+/**
+ * `hasUI` here is `supportsForm` — a variable, not a constant. An author who guards
+ * with it when the client supports `elicitation.form` passes the guard and still gets
+ * this throw, so the message must not tell them the guard would have stopped it.
+ */
+const ACP_FRAMELESS_GUARD = "hasUI-does-not-block-the-call" satisfies FramelessGuard;
+
 export function createAcpExtensionUiContext(
 	connection: AgentSideConnection,
 	getSessionId: () => string,
@@ -587,10 +595,10 @@ export function createAcpExtensionUiContext(
 		setWorkingIndicator: () => {},
 		setWidget: () => {},
 		setFooter: () => {
-			throw new Error(unavailableFrameMessage("setFooter", "ACP mode"));
+			throw new Error(unavailableFrameMessage("setFooter", "ACP mode", ACP_FRAMELESS_GUARD));
 		},
 		setHeader: () => {
-			throw new Error(unavailableFrameMessage("setHeader", "ACP mode"));
+			throw new Error(unavailableFrameMessage("setHeader", "ACP mode", ACP_FRAMELESS_GUARD));
 		},
 		setTitle: () => {},
 		custom: () => {
@@ -599,7 +607,7 @@ export function createAcpExtensionUiContext(
 			// here — an ACP client renders them — which is exactly why `custom` being a
 			// stub is the defect: an author who guards on `hasUI` sees a working surface
 			// next door and reasonably expects this one to answer too.
-			throw new Error(unavailableFrameMessage("custom", "ACP mode"));
+			throw new Error(unavailableFrameMessage("custom", "ACP mode", ACP_FRAMELESS_GUARD));
 		},
 		pasteToEditor: () => {},
 		setEditorText: () => {},

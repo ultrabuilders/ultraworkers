@@ -15,31 +15,72 @@
  */
 
 /**
+ * Whether `pi.ui.hasUI` is a usable guard at the call site building the message.
+ *
+ * This message used to name `pi.ui.hasUI` as the guard for every caller, which is
+ * true at `noOpUIContext` and false nearly everywhere else: ACP reports `true`
+ * whenever the client supports `elicitation.form`, RPC hard-codes `true`, and the
+ * custom-tool context is a `HookUIContext` with no `hasUI` member at all. On those
+ * three the guard an author follows is one they pass, so the throw they were told to
+ * expect is the first sign anything was wrong.
+ *
+ * Only the call site knows which case it is, so it has to say.
+ */
+export type FramelessGuard =
+	/** `hasUI` is falsy here, so `if (pi.ui.hasUI)` skips the call that would throw. */
+	| "hasUI-blocks-the-call"
+	/**
+	 * `hasUI` can be truthy here, so the same guard passes and the call still throws.
+	 *
+	 * Written for ACP, where `hasUI` answers "do dialogs round-trip?" and not "is
+	 * there a frame?". A new call site must re-measure `hasUI` *and* the fallback it
+	 * is about to name before reusing this branch — the `setStatus` claim below is a
+	 * statement about the contexts that pass here, not about framelessness in general.
+	 */
+	| "hasUI-does-not-block-the-call";
+
+/**
  * For a mode that has no frame at all — headless, print, subagent, ACP.
  *
  * `setEditorComponent` is deliberately NOT offered here, even though it is the one
  * surface that mounts a component on a framed context. On every frameless context this
  * message is used from it does nothing an author could act on — it throws on
- * `noOpUIContext` (`runner.ts:511`) and is a bare `() => {}` on the ACP context
- * (`acp-agent.ts:613`) — so naming it would send them to a dead end either way.
+ * `noOpUIContext` and is a bare `() => {}` on the ACP context — so naming it would
+ * send them to a dead end either way.
  *
- * `setStatus` and `hasUI` are named because they are the two that never throw: on
- * `noOpUIContext` and the ACP context `setStatus` is itself a silent no-op, so this is
- * advice for the guarded path, not a promise that text appears here. `hasUI` is the
- * check that reaches it. The one surface excluded for a different reason is `custom`,
- * which returns the caller's own value — `setStatus` cannot return that, so offering
- * it would answer a question the author did not ask.
+ * The one surface excluded for a different reason is `custom`, which returns the
+ * caller's own value: `setStatus` cannot return that, so offering it would answer a
+ * question the author did not ask.
  */
-export function unavailableFrameMessage(surface: "setHeader" | "setFooter" | FramelessSurface, mode: string): string {
+export function unavailableFrameMessage(
+	surface: "setHeader" | "setFooter" | FramelessSurface,
+	mode: string,
+	guard: FramelessGuard,
+): string {
 	const base =
 		`${surface} is not available in ${mode}: there is no interactive frame to mount the component into. ` +
-		`Guard the call with pi.ui.hasUI`;
+		(guard === "hasUI-blocks-the-call"
+			? "Guard the call with pi.ui.hasUI"
+			: // True of ACP at both values of `supportsForm`, which is why this names what
+				// the flag means rather than what it currently reads.
+				"pi.ui.hasUI does not describe this surface: it reports whether dialogs round-trip, not whether a frame exists, so it can be true and this call still throws");
 	// `custom` resolves with a value the caller supplies, so "show text instead" is not
 	// a substitute — setStatus cannot return the author's result, and naming it there
 	// would point at a surface that cannot answer the question being asked.
-	return surface === "custom"
-		? `${base}. There is no text-only substitute: the call yields your own value, and nothing ran to produce it.`
-		: `${base}, or use pi.ui.setStatus for text that does not need a component.`;
+	if (surface === "custom") {
+		return `${base}. There is no text-only substitute: the call yields your own value, and nothing ran to produce it.`;
+	}
+	if (guard === "hasUI-does-not-block-the-call") {
+		// `setStatus` is `() => {}` on every context that reaches this branch, so
+		// keeping it in the sentence would trade a thrown error for the silent absence
+		// this file exists to end. The dialogs are the surfaces `hasUI` really does
+		// describe, so they are the only thing here an author can actually reach.
+		return (
+			`${base}. There is no text substitute here either — pi.ui.setStatus is a no-op in ${mode}. ` +
+			`Use pi.ui.select / confirm / input, which are the surfaces pi.ui.hasUI does describe.`
+		);
+	}
+	return `${base}, or use pi.ui.setStatus for text that does not need a component.`;
 }
 
 /**

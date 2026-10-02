@@ -120,7 +120,7 @@ import type {
 import { unregisterOwned } from "../../config/registry";
 import { extensionSettingOwner } from "./loader";
 import { type HookResultRejection, validateHookResult } from "../hooks/result-validation";
-import { unavailableFrameMessage } from "./unavailable-ui";
+import { unavailableFrameMessage, type FramelessGuard } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
 import { cfgToolsApproval } from "../../tools/settings";
@@ -465,6 +465,13 @@ export async function emitSessionShutdownEvent(extensionRunner: ExtensionRunner 
 	}
 }
 
+/**
+ * `noOpUIContext.hasUI` is a constant `false`, so the guard the frameless message
+ * names is real here: `if (pi.ui.hasUI)` skips the call that would otherwise throw.
+ * This is the opposite of the ACP context, which reports `hasUI` as a variable.
+ */
+const FRAMELESS_GUARD = "hasUI-blocks-the-call" satisfies FramelessGuard;
+
 export const noOpUIContext: ExtensionUIContext = {
 	hasUI: false,
 	select: async (_title, _options, _dialogOptions) => undefined,
@@ -492,26 +499,26 @@ export const noOpUIContext: ExtensionUIContext = {
 	// throw would break a live caller and contradict the advice in the same message.
 	setStatus: () => {},
 	setWorkingMessage: () => {
-		throw new Error(unavailableFrameMessage("setWorkingMessage", "this mode"));
+		throw new Error(unavailableFrameMessage("setWorkingMessage", "this mode", FRAMELESS_GUARD));
 	},
 	setWorkingIndicator: () => {
-		throw new Error(unavailableFrameMessage("setWorkingIndicator", "this mode"));
+		throw new Error(unavailableFrameMessage("setWorkingIndicator", "this mode", FRAMELESS_GUARD));
 	},
 	// This one had no comment at all, which made it read as an oversight rather than a
 	// decision. It is the same decision as its neighbours, so it now says so: there is no
 	// frame to draw the widget into, and silence would leave the author believing a panel
 	// is on screen. Zero in-repo callers, so throwing narrows nothing that was working.
 	setWidget: () => {
-		throw new Error(unavailableFrameMessage("setWidget", "this mode"));
+		throw new Error(unavailableFrameMessage("setWidget", "this mode", FRAMELESS_GUARD));
 	},
 	setFooter: () => {
-		throw new Error(unavailableFrameMessage("setFooter", "this mode"));
+		throw new Error(unavailableFrameMessage("setFooter", "this mode", FRAMELESS_GUARD));
 	},
 	setHeader: () => {
-		throw new Error(unavailableFrameMessage("setHeader", "this mode"));
+		throw new Error(unavailableFrameMessage("setHeader", "this mode", FRAMELESS_GUARD));
 	},
 	setTitle: () => {
-		throw new Error(unavailableFrameMessage("setTitle", "this mode"));
+		throw new Error(unavailableFrameMessage("setTitle", "this mode", FRAMELESS_GUARD));
 	},
 	custom: () => {
 		// Throws rather than resolving `undefined as never`. That cast satisfied the
@@ -519,17 +526,17 @@ export const noOpUIContext: ExtensionUIContext = {
 		// produced, so an author awaiting a result got `undefined` and no error. The
 		// documented usage (hooks/types.ts) is `const result = await ctx.ui.custom(...)`,
 		// which is exactly the shape this lied to.
-		throw new Error(unavailableFrameMessage("custom", "this mode"));
+		throw new Error(unavailableFrameMessage("custom", "this mode", FRAMELESS_GUARD));
 	},
 	setEditorText: () => {
-		throw new Error(unavailableFrameMessage("setEditorText", "this mode"));
+		throw new Error(unavailableFrameMessage("setEditorText", "this mode", FRAMELESS_GUARD));
 	},
 	pasteToEditor: () => {},
 	getEditorText: () => "",
 	editor: async () => undefined,
 	addAutocompleteProvider: () => {},
 	setEditorComponent: () => {
-		throw new Error(unavailableFrameMessage("setEditorComponent", "this mode"));
+		throw new Error(unavailableFrameMessage("setEditorComponent", "this mode", FRAMELESS_GUARD));
 	},
 	get theme() {
 		return theme;
@@ -539,7 +546,7 @@ export const noOpUIContext: ExtensionUIContext = {
 	setTheme: (_theme: string | Theme) => Promise.resolve({ success: false, error: "UI not available" }),
 	getToolsExpanded: () => false,
 	setToolsExpanded: () => {
-		throw new Error(unavailableFrameMessage("setToolsExpanded", "this mode"));
+		throw new Error(unavailableFrameMessage("setToolsExpanded", "this mode", FRAMELESS_GUARD));
 	},
 };
 

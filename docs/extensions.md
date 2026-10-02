@@ -747,16 +747,14 @@ Supported:
 
 - dialogs: `select`, `confirm`, `input`, `editor`
 - input editing: `setEditorText`, `getEditorText`, `pasteToEditor`, `editor`
+- extension bands: `setHeader` and `setFooter` mount a real component into `composer.extensionHeader` / `composer.extensionFooter`, handed to this controller as `extensionHeaderContainer` / `extensionFooterContainer`. Both are keyed per extension, so one key never evicts another's surface; passing `undefined` withdraws only yours
 - autocomplete stacking: `addAutocompleteProvider(factory)` wraps the built-in editor provider (factories apply in registration order and re-apply on every slash-command refresh)
 - terminal title and working message (`setTitle`, `setWorkingMessage`)
 - notifications/status/editor text/terminal input/custom overlays
 - theme listing/loading by name (`setTheme` supports string names)
 - tools expanded toggle
 
-Current no-op methods in this controller:
-
-- `setFooter`
-- `setHeader`
+`setHeader` and `setFooter` need an interactive frame and **throw** where there is none — headless, print, subagent, ACP and RPC. `ctx.hasUI` does not predict this: it is `true` in RPC, and `true` in ACP whenever the client supports `elicitation.form`. See the TSDoc on `ExtensionUIContext.setFooter` for what each mode can offer instead.
 
 `setEditorComponent` is wired to the live editor (`ctx.setEditorComponent(factory)`). `setWidget` renders real widget components above or below the editor via `setHookWidget(...)` (`placement: "aboveEditor" | "belowEditor"`; string-array content capped at 10 lines). `setEditorText` and `pasteToEditor` schedule a repaint after mutating the editor, so prompt changes don't leave stale content on screen.
 

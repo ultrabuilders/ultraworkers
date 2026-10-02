@@ -4,7 +4,7 @@ import { theme } from "@oh-my-pi/pi-tui/theme";
 import { extractUriScheme } from "../internal-urls/parse";
 import { InternalUrlRouter } from "../internal-urls/router";
 import { expandPath } from "../tools/path-utils";
-import { unavailableFrameMessage } from "./extensions/unavailable-ui";
+import { unavailableFrameMessage, type FramelessGuard } from "./extensions/unavailable-ui";
 import type { HookUIContext } from "./hooks/types";
 
 /**
@@ -29,6 +29,15 @@ export function resolvePath(filePath: string, cwd: string): string {
 /**
  * Create a no-op UI context for headless modes.
  */
+/**
+ * A custom tool runs before `setUIContext` swaps in the real context, so it sees this
+ * `HookUIContext` — which has no `hasUI` member at all. `pi.ui.hasUI` is therefore
+ * `undefined`: falsy, so `if (pi.ui.hasUI)` skips the call that would otherwise throw.
+ * Absent is not the same as declared `false`, but the advice behaves identically, so
+ * the message may name the guard here.
+ */
+const FRAMELESS_GUARD = "hasUI-blocks-the-call" satisfies FramelessGuard;
+
 export function createNoOpUIContext(): HookUIContext {
 	return {
 		select: async () => undefined,
@@ -50,7 +59,7 @@ export function createNoOpUIContext(): HookUIContext {
 			// body runs during `load()`, so this context is live before `setUIContext`
 			// swaps it — a top-level `await pi.ui.custom(...)` would get `undefined` and
 			// no error, with nothing having run to produce it.
-			throw new Error(unavailableFrameMessage("custom", "a headless mode"));
+			throw new Error(unavailableFrameMessage("custom", "a headless mode", FRAMELESS_GUARD));
 		},
 		setEditorText: () => {},
 		getEditorText: () => "",

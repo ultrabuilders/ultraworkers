@@ -25,7 +25,16 @@ import {
 	getExtensionUISelectOptionLabel,
 	unavailableFrameMessage,
 	unsupportedSurfaceMessage,
+	type FramelessGuard,
 } from "../../extensibility/extensions";
+
+/**
+ * `RpcExtensionUIContext.hasUI` is `true` on every value, so it cannot be the guard the
+ * frameless message names — an author checking it is always let through to the throw.
+ * Header and footer route to `unsupportedSurfaceMessage`, which never claimed
+ * otherwise; only `custom` reaches this builder.
+ */
+const RPC_FRAMELESS_GUARD = "hasUI-does-not-block-the-call" satisfies FramelessGuard;
 import {
 	type BuiltSkillPromptMessage,
 	buildSkillPromptMessage,
@@ -959,7 +968,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			// the declared return is `Promise<T>`, so an author awaiting a result got
 			// `undefined`, no error, and no factory run. Same fix as `noOpUIContext`.
 			// (`never` is assignable to `Promise<T>`, so the signature still checks.)
-			throw new Error(unavailableFrameMessage("custom", "RPC mode"));
+			throw new Error(unavailableFrameMessage("custom", "RPC mode", RPC_FRAMELESS_GUARD));
 		}
 
 		pasteToEditor(text: string): void {

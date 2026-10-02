@@ -348,9 +348,17 @@ export interface ExtensionUIContext {
 	 * Mount a component in the band below the prompt surface, or pass
 	 * `undefined` to withdraw this extension's footer.
 	 *
-	 * Throws in any context that cannot mount a component — headless, print,
-	 * subagent, ACP and RPC. Check `ui.hasUI` first, or use `setWidget` /
-	 * `setStatus`, which work without a frame.
+	 * Needs an interactive frame, so it mounts in interactive mode and throws
+	 * everywhere else — headless, print, subagent, ACP and RPC.
+	 *
+	 * `hasUI` does not predict which. It is `false` on the frameless context, but
+	 * `true` in RPC and in ACP whenever the client supports `elicitation.form` —
+	 * there it answers "do dialogs round-trip?", not "is there a frame?". Guarding
+	 * on it therefore passes and then throws.
+	 *
+	 * The fallbacks are no safer to reach for: `setWidget` throws on the frameless
+	 * context too, and `setStatus` is a silent no-op there. The thrown error names
+	 * what the calling mode can do instead.
 	 */
 	setFooter(factory: ExtensionUiComponentFactory | undefined, options?: ExtensionSurfaceOptions): void;
 

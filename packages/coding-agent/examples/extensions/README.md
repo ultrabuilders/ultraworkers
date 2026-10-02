@@ -36,7 +36,8 @@ cp permission-gate.ts ~/.omp/agent/extensions/
 
 | Extension          | Description                                                                    |
 | ------------------ | ------------------------------------------------------------------------------ |
-| `plan-mode.ts`     | Claude Code-style plan mode for read-only exploration with `/plan` command     |
+| `plan-mode.ts`     | A mode declared with `registerMode` — read-only exploration, `/plan` toggle   |
+| `plan-todos.ts`    | Tracks plan steps from the agent's own messages, with a status chip and panel |
 | `tools.ts`         | Interactive `/tools` command to enable/disable tools with session persistence  |
 | `handoff.ts`       | Transfer context to a new focused session via `/handoff <goal>`                |
 | `qna.ts`           | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |

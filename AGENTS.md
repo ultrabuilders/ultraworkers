@@ -19,7 +19,7 @@ single line of core**. Every milestone exists to move that statement from aspira
 ### Ask the right question
 
 For any surface the question is **"does an extension have a seam to reach this?"** — never
-"what capability is missing". omp already has the capabilities; the work is de-hardcoding.
+"what capability is missing". ultraworkers already has the capabilities; the work is de-hardcoding.
 
 - Core-owned **with** a registration seam → **already decomposed**. Do not propose it again.
 - Core-owned with **no** seam → that is the finding, and the thing to fix.

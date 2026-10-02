@@ -44,6 +44,7 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "fix-changelogs.test.ts", reason: "" },
 	{ file: "fix-dt-verdef.test.ts", reason: "" },
 	{ file: "gen-nix-bun.test.ts", reason: "" },
+	{ file: "nix-alias-readme.test.ts", reason: "" },
 	{ file: "gen-patch-ledger.test.ts", reason: "" },
 	{ file: "inline-functions.test.ts", reason: "" },
 	{ file: "measure-fan-in.test.ts", reason: "" },

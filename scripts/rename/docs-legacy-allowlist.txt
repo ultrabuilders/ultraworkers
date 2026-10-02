@@ -227,7 +227,7 @@ packages/coding-agent/DEVELOPMENT.md	1
 # on-disk config dir name
 packages/coding-agent/examples/custom-tools/README.md	3
 # on-disk config dir name
-packages/coding-agent/examples/extensions/README.md	1
+packages/coding-agent/examples/extensions/README.md	2
 # on-disk config dir name
 packages/coding-agent/examples/hooks/README.md	2
 # on-disk config dir name

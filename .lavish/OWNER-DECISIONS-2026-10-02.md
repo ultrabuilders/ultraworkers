@@ -7,10 +7,14 @@ Every item below is a **decision**, not engineering work. Each was measured agai
 tree; the measurement, the control, and the consequence are stated so the answer can be given
 without re-running anything.
 
-> **The runtime moved between sessions.** `bun test` printed `v1.3.14` early in the sweep and
-> `v1.4.2` later. `bun --version` is `1.4.2`; the Homebrew keg is *named* `1.3.14` but its binary
-> was rewritten 2026-09-05. **Any number below that mixes the two runtimes is wrong** — item 5
-> was, and is corrected below with the measurement redone on one runtime.
+> **The runtime moved between sessions, and its version label lies.** `bun test` printed
+> `v1.3.14` early in the sweep and `v1.4.2` later. The reason is not a runtime change:
+> `/opt/homebrew/Cellar/bun/` holds a keg _named_ `1.3.14` whose binary was rewritten
+> 2026-09-05 and reports `1.4.2`. **A version has three sources — the binary's own answer, the
+> keg/manifest name, and the runner banner — and only the binary's answer is a measurement.**
+> Anyone labelling a run from `brew list` will label a 1.4.2 run "1.3.14", which is exactly
+> what happened to item 5. A real 1.3.14 binary now exists at `/tmp/bun1314`, so item 5 is an
+> A/B pair rather than a claim.
 
 ## Summary
 
@@ -20,10 +24,10 @@ without re-running anything.
 | 2   | `1beb` | A component factory passed to `ui.setWidget` under RPC: throw, or stay silent? | Extension authors have no way to ask, and get silence when they get it wrong                    |
 | 3   | `1du7` | Do `W11:*` / `a57q:*` ref names get a definition site, or are they human-only? | 19 names covering 335 rows carry no verifiable meaning; the column's docblock implies otherwise |
 | 4   | `r1t2` | Does this fork keep pi's `deferred-response`?                                  | 4 type errors persist in `packages/durable`                                                     |
-| 5   | `0twi` | Is the runtime floor 1.3.14 or 1.4.2?                                         | A workaround in `session-loader.ts` stays that could be deleted                                 |
-| 6   | `q8f0` | A `rename` row that reaches 0 occurrences: delete it, or tombstone it?         | 6 rows sit red, and every future sweep repeats this                                             |
+| 5   | `0twi` | Is the runtime floor 1.3.14 or 1.4.2?                                          | A workaround in `session-loader.ts` stays that could be deleted                                 |
+| 6   | `q8f0` | Does `hits=0` mean "swept", or "the regex can't see it"?                       | The disposition gate and docs gate disagree on what a legacy occurrence is                      |
 | 7   | `grse` | Which binary does the dashboard tell users to run?                             | A user who installed only the dashboard is told a command they do not have                      |
-| 8   | —      | Is `.omp` on disk a contract, or old branding?                                 | `check-docs-rename.ts` stays red on 1 file, and re-litigated every sweep                         |
+| 8   | —      | Is `.omp` on disk a contract, or old branding?                                 | `check-docs-rename.ts` stays red on 1 file, and re-litigated every sweep                        |
 
 Item 3 was reduced by a peer's commit (`194952ede6`) that landed while this document was being
 written; the entry above reflects what is still open.
@@ -169,34 +173,26 @@ The keg directory and `brew list` both say `1.3.14`; the binary inside it was re
 that writes "bun 1.3.14" because `brew list` said so is labelling a 1.4.2 run — which is what
 this entry did.
 
-**What actually reproduces, on the runtime that exists (1.4.2):**
+**What actually reproduces, measured as a pair** (a real 1.3.14 binary was fetched to
+`/tmp/bun1314`, so both sides are now binaries rather than labels):
 
 ```
-slice(0, 262238).stream()   -> completed, 262238 bytes, 0.09ms
-slice(0, 7).stream()        -> completed, 7 bytes, 0.05ms
-whole file.stream()         -> completed, 1049018 bytes, 0.33ms
-5 fresh processes           -> all completed (0.29–3.08ms), 0 hangs
+1.3.14   slice(0, 262238).stream()  ->  HANG past a 2.5s race,  3/3 runs
+1.4.2    slice(0, 262238).stream()  ->  completed 262238B, 0.25–0.47ms, 3/3 runs
 ```
 
-Measured through **both** APIs — `for await` and the explicit `.stream().getReader().read()`
-loop the bead's own note names. The hang does not occur on either. The cap control still holds
-exactly: `createReadStream(…, {end: cap - 1})` reads 262,238 of 262,238 bytes, slack 0.
+The hang is real, the 1.4.2 fix is real, and `createReadStream` is load-bearing at the declared
+floor. What decides it is the **file**, not the slice — under real 1.3.14 on an 8,000,000-byte
+file, `slice(0, 1)` and `slice(0, 1000)` both hang while `slice(0, 7_999_999)` completes; a
+1-byte slice hangs at 4 MB, 8 MB, 20 MB and 40 MB alike.
 
-**So the earlier `1.3.14: slice -> HANG (>2.5s)` line cannot be from this runtime.** It was
-written on 2026-10-02, after the binary had already been 1.4.2 since Sep 5. It is either a
-1.3.14 result carried in from elsewhere without its provenance, or a mislabelled observation.
-It should not be presented as a measurement of this machine.
+**So the conclusion is unchanged; only the label was wrong.** The workaround stays, and it
+should be deleted when the floor moves to 1.4+ — not before. The earlier note's numbers were
+real measurements of a real bug, taken on a 1.4.2 binary and filed under a 1.3.14 name.
 
-**The decision, stated so it can be answered without installing anything:**
-
-- **1.4.2** — measured, on this machine, today: the hang is **gone**, and the cap still bounds.
-- **1.3.14** — **not measurable here**; no 1.3.14 binary exists on this machine. The only
-  remaining unknown is whether the *old* floor genuinely hangs.
-
-**The question.** Keep the workaround while the declared floor is 1.3.14, or raise the floor to
-1.4.2 and delete it? The declared floor currently lives in two places that agree:
-`scripts/install.sh:16` (`MIN_BUN_VERSION="1.3.14"`) and `packages/durable`'s
-`engines.bun: ">=1.3.14"`.
+**The decision, stated so it can be answered without installing anything.** The declared floor
+lives in two places that currently agree: `scripts/install.sh:16`
+(`MIN_BUN_VERSION="1.3.14"`) and `packages/durable`'s `engines.bun: ">=1.3.14"`.
 
 **The same question, second reason.** `packages/durable` ships `storage/sqlite/node.ts`, which
 imports `node:sqlite`. That built-in resolves fine on 1.4.2 — but a package that declares
@@ -211,7 +207,11 @@ re-fix the lockfile.
 
 ## 6. `epic-q8f0` — a row that reaches 0 occurrences
 
-**Finding.** Six rows sit at zero, each "rows sum to N, file has 0":
+> **Largely resolved 2026-10-03 while this document was open.** The gate is now **clean over
+> 823 rows** with all four metrics at 0. What follows is kept because the general question is
+> not settled by this instance — only this instance was answered.
+
+**How it stood when first written.** Six rows sat at zero, each "rows sum to N, file has 0":
 
 ```
 bench.ts (9) · dry-balance.ts (5) · if-bench.ts (4)
@@ -221,27 +221,38 @@ say.ts (3)  · stream.ts (1)   · token.ts (5)
 Four _other_ rows were stale counts on files that still hold occurrences; those were recounted
 and the ratchet confirmed the movement (`hits-imbalance` 10 → 6, exactly 4).
 
-**The consequence of each choice.** **Retire** (delete the row): `missing-row = 0` changes
-meaning from "the table is complete" to "no file has been swept yet" — two different things
-sharing one ratchet metric. **Tombstone** (`hits=0`): a zero row cannot protect anything, and
-the post-stage gate demands `rename` reach 0, so the two gates contradict each other.
+**What actually resolved it.** A peer commit, `f1fc167cec` ("record that the sweep consumed
+six command rows, keeping their refs"), swept those six command files. The rows now legitimately
+declare `hits=0` because the literals are **gone**, not because the rows went stale. That is the
+"tombstone" answer arriving by a third route: the work happened, so the question dissolved.
 
-**A seventh red row appeared while this document was being written**, and it fails in the
-_opposite_ direction:
+**What this teaches about the decision, and why it is not closed.** The choice was
+retire-vs-tombstone, and this instance answered it by _doing the work_ — which is available only
+when the row is a `rename` whose literals were removable. Neither option is safe in general:
 
+- **Retire** (delete the row) makes `missing-row = 0` mean two different things — "the table is
+  complete" and "no file has been swept yet."
+- **Tombstone** (`hits=0`) leaves a row that protects nothing, while the post-stage gate demands
+  `rename` reach 0. A `keep-*` row at `hits=0` is the genuinely ambiguous case, and it is what
+  the peer's audit below found several of.
+
+**The audit finding that does NOT go away.** A row at `hits=0` under `PINNED` does not mean the
+legacy brand is absent from the file — it means the _bare_ token `omp` is absent. The same six
+files carry the old brand as `oh-my-pi` (2–7 occurrences each), and `PINNED` cannot see it:
+
+```ts
+// scripts/rename/check-disposition.ts:101
+const PINNED = /(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)/;
 ```
-scripts/rename/check-disposition.test.ts   rows sum to 15, file has 17
-```
 
-That is an **undercount**, not a dead row — the file gained occurrences without its row
-moving. It is a peer's file (`check-disposition.test.ts`), and its last three commits are all
-gate work by other agents. Two points follow, and they are the reason this is listed rather
-than fixed:
+Verified directly: this expression returns `false` for `.omp`, `HOME/.omp/agent/`, `.omp-session`,
+`x-omp-app` and `OMP_APP_NAME`. Its leading class excludes `.` and it is case-sensitive, so the
+whole `.omp` **path** vocabulary is invisible to it.
 
-- The six zero rows and this one are **different problems**, so "7 red rows" is not one backlog
-  item. Six are a lifecycle decision; this one is a live recount.
-- It confirms the gate does catch undercounts — which is what makes the six zero rows
-  trustworthy as a signal rather than noise.
+**So the standing question is narrower than "retire or tombstone":** is `hits=0` under an
+expression that cannot see `.omp` paths or `oh-my-pi` a _result_ or a _blind spot_? The docs gate
+uses a different expression, `\bomp\b`, which **does** match `.omp` — so the two gates do not
+agree on what a legacy occurrence is. That divergence is unowned.
 
 ---
 

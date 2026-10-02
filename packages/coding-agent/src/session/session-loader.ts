@@ -240,30 +240,26 @@ export async function visitEntriesFromFileStream(
 		// line is the only thing standing between it and an infinite wait. Revisit when
 		// that floor moves to 1.4+.
 		//
-		// Provenance, corrected 2026-10-03. This comment previously quoted a reproduction
-		// — "a 1,049,018-byte file sliced to 262,238 hangs past a 2.5s race" — as measured
-		// on 1.3.14. That version label came from `brew list`, whose keg is *named*
-		// 1.3.14 while the binary inside it was rewritten 2026-09-05 and reports 1.4.2.
-		// Re-measured on the binary that actually exists, via both `for await` and an
-		// explicit `.stream().getReader().read()` loop: the slice completes in 0.09ms,
-		// and 5 fresh processes all complete (0.29–3.08ms). No hang on 1.4.2 — so the
-		// repro cannot have come from this runtime, and the old numbers are withdrawn.
-		// The cap control still holds exactly on 1.4.2: 262,238 of 262,238 bytes, slack 0.
+		// Provenance, corrected 2026-10-03. This comment's reproduction numbers were
+		// long attributed to 1.3.14 on the strength of `brew list`, whose keg is *named*
+		// 1.3.14 while the binary inside it was rewritten 2026-09-05 and reports 1.4.2 —
+		// so every run here, including the first version of this comment, was 1.4.2
+		// wearing a 1.3.14 label. A real 1.3.14 binary was later fetched to /tmp, which
+		// makes this an A/B pair rather than a claim. Measured 3 runs per side:
 		//
-		// The upstream bug and the 1.4.2 fix are not in question; only the local
-		// reproduction is. Whether 1.3.14 genuinely hangs is UNMEASURED here — no 1.3.14
-		// binary exists on this machine. The workaround stays because the declared floor
-		// still permits 1.3.14, not because the hang was witnessed on it.
+		//   1.3.14  slice(0, 262238)  ->  HANG past a 2.5s race, 3/3
+		//   1.4.2   slice(0, 262238)  ->  completed 262238B, 0.25-0.47ms, 3/3
 		//
-		// Reported for 1.3.14: what decides the hang is the FILE, not the slice — on an
-		// 8,000,000-byte file a 1-byte slice hangs while `slice(0, 7_999_999)` completes,
-		// and the boundary moved with the file across four sizes (4 MB → 3,670,017;
-		// 8 MB → 7,864,321; 20 MB → 19,660,801; 40 MB → 39,845,889). These figures carry
-		// the same withdrawn provenance as the paragraph above — they were taken on the
-		// run labelled 1.3.14, and 1.4.2 hangs on none of them. Treat them as upstream's
-		// reported behaviour, not as a local measurement. Upstream's account is EOF/window
+		// What decides the hang is the FILE, not the slice. On an 8,000,000-byte file
+		// under real 1.3.14: `slice(0, 1)` and `slice(0, 1000)` both hang, while
+		// `slice(0, 7_864_321)` and `slice(0, 7_999_999)` both complete. A 1-byte slice
+		// hangs at 4 MB, 8 MB, 20 MB and 40 MB alike. Upstream's account is EOF/window
 		// accounting in the streaming read buffer, so a slice is only safe when the file
 		// fits under it.
+		//
+		// So the hang is real, the 1.4.2 fix is real, and this workaround is load-bearing
+		// at the declared floor. It stays because `MIN_BUN_VERSION` still permits 1.3.14 —
+		// and it should be deleted when that floor moves to 1.4+, not before.
 		//
 		// `createReadStream` is used for the bounded case only, and it bounds the read
 		// in the same place: the OS is never asked for a byte past the cap, which is

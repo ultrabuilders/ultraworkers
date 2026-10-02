@@ -32,9 +32,17 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
+import { BashTool } from "@oh-my-pi/pi-coding-agent/tools/bash";
+import { TempDir } from "@oh-my-pi/pi-utils";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
-import type { TurnEntry } from "../../src/session/session-entries";
+import {
+	APPROVAL_ENTRY_TYPE,
+	isApprovalDenial,
+	type ApprovalEntry,
+	type TurnEntry,
+} from "../../src/session/session-entries";
 import { isTranscriptEntry } from "../../src/session/session-context";
 
 describe("durable turn entries, written by a real turn", () => {
@@ -304,6 +312,151 @@ describe("blockedBy, read back off a real turn", () => {
 		// Absent, not `[]`: an empty array is indistinguishable from a writer that
 		// meant to populate it and failed.
 		expect(endedTurn()?.blockedBy).toBeUndefined();
+	});
+});
+
+/**
+ * The join for the *tool* path, and the reason the rows above are not enough.
+ *
+ * Every row above builds its refusal with `manager.appendApprovalEntry` by hand.
+ * That proves the reader — it does not prove any writer reaches it. So the field
+ * could be green while the tool-policy writer recorded nothing, which is precisely
+ * what it used to do: both `deny` sites in `ExtensionToolWrapper` threw
+ * `denyError` and wrote no entry, so a critical `bash` command was refused in
+ * front of the user and `blockedBy` could not name it.
+ *
+ * The writer here is the real `ExtensionToolWrapper` around the real `BashTool`,
+ * driven through a real turn. Only the runner's one-line forward to the manager is
+ * a stand-in — and that line is verbatim what `ExtensionRunner.recordApprovalEntry`
+ * does (`runner.ts:939`), so what is under test is the wrapper's half.
+ */
+describe("blockedBy, from a tool-policy denial", () => {
+	// A list, not one slot: the row that needs a canary creates a second sandbox
+	// inside the helper's own, and a single field would silently drop one.
+	const sandboxes: TempDir[] = [];
+	// Own session, not the sibling blocks': their `afterEach` disposes theirs, and
+	// sharing the name across describes would leave this one undisposed.
+	let own: AgentSession | undefined;
+
+	afterEach(async () => {
+		if (own) await own.dispose();
+		own = undefined;
+		while (sandboxes.length > 0) await sandboxes.pop()!.remove();
+	});
+
+	/**
+	 * A runner whose only interesting method is the join's last hop: forward one
+	 * audit half to the same `SessionManager` the turn scan reads. Everything else
+	 * is inert so nothing else in the wrapper is under test here.
+	 */
+	function runnerFor(manager: SessionManager, settings: Settings): ExtensionRunner {
+		return {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			sessionId: "policy-denial-turn-test",
+			// The wrapper resolves approval from its context, falling back to the
+			// runner's session settings when the loop supplies none.
+			sessionSettings: settings,
+			recordApprovalEntry: (half: Omit<ApprovalEntry, "type">) => {
+				manager.appendApprovalEntry(half as never);
+			},
+			runScoped<T>(fn: () => T): T {
+				return fn();
+			},
+		} as unknown as ExtensionRunner;
+	}
+
+	/**
+	 * Drive one prompt whose turn calls bash with `command`.
+	 *
+	 * `yolo` on purpose: this is the path where nobody is asked anything, so the
+	 * refusal is the tool's own policy and not a user answering a prompt.
+	 */
+	async function promptThroughToolPolicy(command: string, callId: string): Promise<SessionManager> {
+		sandboxes.push(TempDir.createSync("@pi-policy-denial-"));
+		const manager = SessionManager.inMemory();
+		const settings = Settings.isolated({ "tools.approvalMode": "yolo" });
+		const runner = runnerFor(manager, settings);
+
+		const bash = new BashTool({
+			settings,
+		} as unknown as ConstructorParameters<typeof BashTool>[0]);
+		const wrapped = new ExtensionToolWrapper(bash as unknown as AgentTool, runner);
+
+		const mock = createMockModel({
+			responses: [
+				{ content: [{ type: "toolCall", id: callId, name: "bash", arguments: { command } }] },
+				{ content: ["finished"] },
+			],
+		});
+		own = new AgentSession({
+			agent: new Agent({
+				getApiKey: () => "test-key",
+				initialState: {
+					model: mock.model,
+					systemPrompt: ["Test"],
+					tools: [wrapped],
+					messages: manager.buildSessionContext().messages,
+				},
+				streamFn: mock.stream,
+			}),
+			sessionManager: manager,
+			settings,
+			// The mock model's provider has no key in the real registry, and nothing
+			// here exercises auth — only the log the turn writes.
+			modelRegistry: { getApiKey: () => "test-key" } as never,
+		});
+
+		await own.prompt("do the thing");
+		return manager;
+	}
+
+	it("names the refused call on the turn, and the command never runs", async () => {
+		// A canary rather than a bare assertion that something threw. `rm -rf <abs>`
+		// is critical to the classifier and points at a throwaway file, so the
+		// command is safe to name — and if the gate ever regressed to letting it
+		// through, this row would fail on the missing canary rather than hang the
+		// suite on a refusal that no longer happens.
+		const canary = TempDir.createSync("@pi-canary-");
+		sandboxes.push(canary);
+		const target = `${canary.path()}/canary`;
+		await Bun.write(target, "still here");
+
+		const manager = await promptThroughToolPolicy(`rm -rf ${target}`, "call-canary");
+
+		// The stronger half: not "it threw" but "the thing did not happen".
+		expect(await Bun.file(target).exists()).toBe(true);
+
+		const halves = manager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+		// One half only. A policy denial asks nobody, so there is no `asked` to pair
+		// with, and inventing one would report a question the user never saw.
+		expect(halves).toHaveLength(1);
+		expect(halves[0]).toMatchObject({
+			requestId: "call-canary",
+			phase: "answered",
+			policy: "deny",
+			source: "tool",
+		});
+		// The reader's filter, which is what makes the field non-empty at all.
+		expect(isApprovalDenial(halves[0]!)).toBe(true);
+
+		const ended = manager.getEntries().find((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");
+		expect(ended?.blockedBy).toEqual(["call-canary"]);
+	});
+
+	it("leaves the turn unblocked when the same tool runs an ordinary command", async () => {
+		// The control, and the reason the row above is about the denial rather than
+		// about bash. Same wrapper, same runner, same real turn, same real tool —
+		// only the classifier's verdict differs. A writer that recorded every call
+		// would put `call-benign` on the turn and satisfy the row above wrongly.
+		const manager = await promptThroughToolPolicy("echo hello", "call-benign");
+
+		const halves = manager.getEntries().filter((e): e is ApprovalEntry => e.type === APPROVAL_ENTRY_TYPE);
+		expect(halves.every(entry => !isApprovalDenial(entry))).toBe(true);
+
+		const ended = manager.getEntries().find((e): e is TurnEntry => e.type === "turn" && e.phase === "ended");
+		expect(ended?.blockedBy).toBeUndefined();
 	});
 });
 

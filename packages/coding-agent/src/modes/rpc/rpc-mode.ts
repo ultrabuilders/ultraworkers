@@ -939,7 +939,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 		}
 
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
-			// Only support string arrays in RPC mode - factory functions are ignored
+			// Only string arrays cross an RPC frame — it renders lines, not components.
+			// A component factory is unsupported rather than ignored: it throws, below.
 			if (content === undefined || Array.isArray(content)) {
 				this.output({
 					type: "extension_ui_request",

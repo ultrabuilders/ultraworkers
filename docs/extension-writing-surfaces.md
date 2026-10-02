@@ -211,9 +211,17 @@ not have to re-derive them.
   priority order at `:122-127`, and `loadImpl` (`:138`) maps over exactly that
   array with no fallback loader (`defineCapability` at `:89` accepts no `load`
   function of its own). An empty provider list therefore yields an empty result,
-  not a fallback — but the list is **not** empty: 84 registrations across 20
-  `discovery/` modules. `loadCapability` genuinely does populate settings and
-  context files, because those capabilities do have providers.
+  not a fallback — but the list is **not** empty: **20 registrations across 8
+  `discovery/` modules**, re-measured 2026-10-02. An earlier revision of this line
+  said 84 across 20, and both numbers were wrong in a way worth recording: 104
+  lines in `discovery/` mention `registerProvider`, of which **84 are the
+  `import { registerProvider } from "../capability"` line** and only 20 are
+  calls, so the old figure counted imports as registrations. Parenthesis
+  separates the two — `grep -c 'registerProvider('` is the call count. Neither
+  number is the module count: `grep -rl 'registerProvider('` is **8**, because a
+  module registers more than one capability. `loadCapability` genuinely does
+  populate settings and context files, because those capabilities do have
+  providers.
 - **A grep scoped to `capability/` alone misses this.** Searching only the
   capability directory suggests the registry has no callers; the callers live in
   `discovery/`. Counting callers requires searching the tree.

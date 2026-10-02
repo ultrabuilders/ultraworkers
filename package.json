@@ -106,6 +106,7 @@
 		"check:runtime-rename": "bun scripts/rename/check-runtime-rename.ts",
 		"check:test-rename-literals": "bun scripts/ci-rename-test-literals.ts",
 		"check:disposition-ratchet": "bun scripts/rename/check-disposition-ratchet.ts",
+		"check:legacy-pi-exports": "bun scripts/legacy-pi/check-export-coverage.ts",
 		"check:bench-reporting": "bun scripts/check-bench-reporting.ts",
 		"check:entry-graphs": "node scripts/check-entry-graphs.mjs",
 		"measure:fan-in": "bun scripts/measure-fan-in.ts",

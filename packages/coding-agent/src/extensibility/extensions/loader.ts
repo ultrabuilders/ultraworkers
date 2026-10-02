@@ -29,6 +29,7 @@ import { type Hook, hookCapability } from "../../capability/hook";
 import { recordHookHash, recordedHookHash } from "../../config/hook-settings";
 import { settings } from "../../config/settings";
 import { hookContentHash, hookModifiedMessage, hookTrustKey, hookTrustStatus } from "../hooks/trust";
+import { createExtensionOptOut } from "../settings";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
 import { loadCapability } from "../../discovery";
 import { addDiagnostic, type ExtensionDiagnostic } from "./diagnostics";
@@ -902,10 +903,9 @@ export async function discoverExtensionPaths(
 ): Promise<string[]> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
-	const disabled = new Set(disabledExtensionIds ?? []);
 	const loadOptions = disabledExtensionIds ? { cwd, disabledExtensions: disabledExtensionIds } : { cwd };
 
-	const isDisabledName = (name: string): boolean => disabled.has(`extension-module:${name}`);
+	const isDisabledName = createExtensionOptOut(disabledExtensionIds ?? []);
 
 	const addPath = (extPath: string): void => {
 		const resolved = path.resolve(extPath);

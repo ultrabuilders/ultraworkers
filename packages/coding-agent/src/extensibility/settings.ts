@@ -11,6 +11,62 @@ export const cfgExtensions = register({ id: "extensions", type: "array", default
 
 export const cfgDisabledExtensions = register({ id: "disabledExtensions", type: "array", default: EMPTY_STRING_ARRAY });
 
+/** The capability id an extension is disabled by. */
+const EXTENSION_ID_PREFIX = "extension-module:";
+
+/**
+ * The opt-out grammar for `disabledExtensions`, as a pure predicate over a bare
+ * extension name.
+ *
+ * Entries are processed **in order** and the last one to speak about a name wins:
+ *
+ *   `name`      disable exactly `name`
+ *   `prefix.*`  disable every name beginning `prefix.`
+ *   `*`         disable everything
+ *   `-name`     re-enable — undoes an earlier entry that would have disabled it
+ *
+ * Ordering is the whole contract, and it is what makes a bulk opt-out negotiable:
+ * `["*", "-mine"]` is how a user says "everything off except this one" without
+ * having to enumerate what "everything" currently contains. So the list is scanned
+ * **back to front and the first entry that matches decides** — a fold cannot
+ * express this, because a negation has to punch through a wildcard that a forward
+ * fold has already committed, and `["-mine", "*"]` must mean the opposite of
+ * `["*", "-mine"]`.
+ *
+ * Previously each entry was an exact id and the whole list was a `Set`, so the
+ * only expressible sets were the ones a user could enumerate — and the family
+ * this grammar exists to retire is exactly the one nobody enumerates by hand.
+ *
+ * There is deliberately **no** list of ids that resist removal. The grammar came
+ * from a host whose console delivers org policy over two built-ins, so it refuses
+ * to let a repository switch those off. omp has no equivalent: extensions are the
+ * user's and the project's, there is no policy channel to protect, and naming two
+ * ids to protect here would be inventing a guarantee nothing in the tree provides.
+ * If a managed-deployment guarantee is ever added, it belongs as an exported set
+ * beside this function so the choice is reviewable rather than implicit.
+ */
+export function createExtensionOptOut(selectors: readonly string[]): (name: string) => boolean {
+	const entries = selectors.map(selector => {
+		const negated = selector.startsWith("-");
+		const pattern = negated ? selector.slice(1) : selector;
+		return { negated, pattern };
+	});
+
+	return (name: string): boolean => {
+		const id = `${EXTENSION_ID_PREFIX}${name}`;
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const { negated, pattern } = entries[i]!;
+			const hit =
+				pattern === "*" ||
+				(pattern.endsWith(".*")
+					? id.startsWith(`${EXTENSION_ID_PREFIX}${pattern.slice(0, -1)}`)
+					: pattern === name);
+			if (hit) return !negated;
+		}
+		return false;
+	};
+}
+
 // Skill registry (omp skill)
 export const cfgSkillsRegistryUrl = register({
 	id: "skills.registryUrl",

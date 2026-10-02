@@ -1,8 +1,13 @@
-import { editInspect } from "@oh-my-pi/pi-natives";
 import { isRecord, stringProperty } from "@oh-my-pi/pi-utils";
 import { resolveToCwd } from "../tools/path-utils";
-import { extractFlatShellCommandSegments } from "../tools/shell-tokenize";
 import type { ClientBridgePermissionOption } from "./client-bridge";
+import { canonicalizeApprovalKey, getEditDestructiveIntent } from "../tools/approval";
+// Re-exported, not merely imported: this is where the ACP gate, its tests, and
+// anything reading the gate's public surface have always found it, and moving the
+// implementation down a layer is not a reason to move its address too. `wrapper.ts`
+// imports it from `tools/approval` directly, which is what keeps `extensibility`
+// from depending on `session`.
+export { canonicalizeApprovalKey };
 
 /** Tools that require user permission before execution when an ACP client is connected. */
 export const PERMISSION_REQUIRED_TOOLS: Record<string, true> = {
@@ -22,82 +27,6 @@ export const PERMISSION_OPTIONS: ClientBridgePermissionOption[] = [
 
 /** Permission options indexed by their wire identifiers; unknown IDs miss and fail closed. */
 export const PERMISSION_OPTIONS_BY_ID = new Map(PERMISSION_OPTIONS.map(option => [option.optionId, option]));
-
-/**
- * What an "always" decision is remembered against.
- *
- * ## Why this exists
- *
- * The key used to be the tool's name. So "Always allow" on one `bash` call granted
- * every later `bash` call for the rest of the session — a user who approved
- * `git status` had also approved `rm -rf ./build`, and nothing on screen said so.
- * The decision set is unchanged; only what it is remembered against changed.
- *
- * ## What it keys on
- *
- * The canonicalized *action*, per tool:
- *
- * - `bash` — the parsed command segments, rejoined. Splitting with the shell
- *   tokenizer that `bash-interceptor` already uses means quoting and operators are
- *   read the way the shell reads them, rather than by a second regex that would
- *   disagree with the first one on exactly the inputs that matter.
- * - `delete` / `move` — the path, lexically normalized.
- * - `edit` — which destructive operation was detected, since one edit payload can
- *   carry both.
- *
- * Paths are normalized lexically, not through `realpath`, because this runs on the
- * synchronous path that builds the permission prompt and has no session cwd to
- * resolve against. The consequence is honest and small: two spellings of one file
- * that differ by a symlink ask twice. Asking twice is the safe direction; the
- * alternative is a key that resolves against a cwd this function does not have.
- *
- * `allow_always` and `reject_always` deliberately share this key. Splitting them
- * would make a permanently rejected action prompt again, which is the opposite of
- * what the user chose.
- */
-export function canonicalizeApprovalKey(toolName: string, args: unknown): string {
-	const input = isRecord(args) ? args : {};
-	// Whitespace runs are collapsed so a re-indented command is recognised as the
-	// same action, while every character that can change what the shell does is
-	// kept verbatim.
-	const squeeze = (text: string): string => text.replace(/\s+/g, " ").trim();
-
-	if (toolName === "bash") {
-		const command = stringProperty(input, "command");
-		// No command means there is nothing to canonicalize from, so it deliberately
-		// falls through to the digest below rather than sharing the bare tool name.
-		if (command) {
-			const segments = extractFlatShellCommandSegments(command).map(segment => squeeze(segment.text));
-			return segments.length > 0 ? `bash:${segments.join(" ; ")}` : `bash:${squeeze(command)}`;
-		}
-	}
-	if (toolName === "delete") {
-		const filePath = stringProperty(input, "path");
-		return filePath ? `delete:${squeeze(filePath)}` : toolName;
-	}
-	if (toolName === "move") {
-		const from = stringProperty(input, "oldPath") ?? stringProperty(input, "path") ?? stringProperty(input, "from");
-		const to =
-			stringProperty(input, "newPath") ?? stringProperty(input, "to") ?? stringProperty(input, "destination");
-		if (from && to) return `move:${squeeze(from)}->${squeeze(to)}`;
-		return from ? `move:${squeeze(from)}` : toolName;
-	}
-	if (toolName === "edit") {
-		const intent = getEditDestructiveIntent(args);
-		return intent ? `edit:${intent.kind}` : toolName;
-	}
-	// A tool this function does not know how to canonicalize. Falling back to the
-	// tool name here would quietly restore exactly the bug this function exists to
-	// remove, and it would restore silently: the day a fifth gated tool is added to
-	// `getPermissionIntent` and its author forgets a branch here, every one of its
-	// calls shares one grant again, and no test goes red.
-	//
-	// So an unrecognised tool keys on its whole argument payload. It cannot know
-	// which parts of that payload constitute the action, so it uses all of them —
-	// which can only ever narrow, never widen. Narrowing costs the user a repeat
-	// question; widening costs them a grant they never gave.
-	return `${toolName}:${Bun.hash.wyhash(JSON.stringify(args) ?? "").toString(16)}`;
-}
 
 /**
  * The scope, in the words the user reads before choosing "always".
@@ -193,28 +122,6 @@ export function permissionOptions(scope: string): ClientBridgePermissionOption[]
 			? { ...option, name: `${option.name} \`${scope}\` for the rest of this session` }
 			: option,
 	);
-}
-
-function getEditDestructiveIntent(args: unknown): { kind: "delete" | "move"; paths: string[] } | undefined {
-	if (!isRecord(args)) return undefined;
-
-	const argsJson = JSON.stringify(args);
-	const modes = Array.isArray(args.edits) ? ["patch"] : ["hashline", "apply_patch"];
-	for (const mode of modes) {
-		try {
-			const fileOps = editInspect(mode, argsJson).fileOps;
-			const op =
-				fileOps.find(candidate => candidate.kind === "delete") ??
-				fileOps.find(candidate => candidate.kind === "move");
-			if (!op || (op.kind !== "delete" && op.kind !== "move")) continue;
-			const paths = op.kind === "move" && op.to ? [op.path, op.to] : [op.path];
-			return { kind: op.kind, paths };
-		} catch {
-			// The payload does not use this edit mode's syntax.
-		}
-	}
-
-	return undefined;
 }
 
 /** Describes the permission prompt required for a destructive tool call. */

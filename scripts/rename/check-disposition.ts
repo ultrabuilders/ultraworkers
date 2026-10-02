@@ -321,9 +321,9 @@ const EXCLUDED_PREFIXES = [
 	"python/robomp/web/dist/",
 ];
 
-/** Build output: any path with a `dist` segment, matching the per-package dist rule. */
+/** Build output: any path with a `dist` or `target` segment, matching the per-package dist rule. */
 function isBuildOutput(relPath: string): boolean {
-	return relPath.split("/").includes("dist");
+	return relPath.split("/").some(segment => segment === "dist" || segment === "target");
 }
 
 /**
@@ -334,9 +334,40 @@ function isBuildOutput(relPath: string): boolean {
  * under a package's `src` tree, or under `packages/natives/native/`, reaches
  * production at runtime exactly like a `.ts` beside it, and leaving it outside
  * made `missing-row` report a domain it was not measuring.
+ *
+ * `.rs` is the same argument one language over, and it is not a small correction:
+ * before this, `crates/` was not merely undecided, it was **unmeasured** — 17
+ * files carrying 35 occurrences produced no row and no signal at any stage,
+ * which is a gap in the gate's ground rather than a backlog in its answers.
+ * That number is measured the way this gate measures — the same pinned
+ * expression, over the same filesystem walk `hitPaths` itself performs, not a
+ * `git grep` line count (that reports 34, because `-c` counts matching LINES and
+ * one line holds two occurrences).
+ *
+ * `.tsx`, `.py` and `.sh` are still outside, and that is a pending question
+ * rather than a settled answer — `a57q` names them as adjacent ground. What is
+ * true today is the narrower claim: `.rs` was added because its inventory was
+ * taken, not because Rust was judged more rename-relevant than the others.
+ *
+ * Adding `.rs` also forced a `target/` exclusion, and the two are one change
+ * rather than two preferences: `.rs` is the first extension here that Rust build
+ * output is written in. Cargo emits generated `.rs` into `OUT_DIR` — 30 of them
+ * under this repository's `target/` right now, from `ref-cast`, `serde` and
+ * `bigdecimal` — and those are regenerated whenever a dependency changes
+ * version. Without the exclusion the gate would report a `missing-row` on a file
+ * no row can name, and whether it fires would depend on which crates a given
+ * machine happens to have built: a red that appears on one contributor's box and
+ * not another's is the same defect a nested checkout already caused here.
+ * Probed, not assumed — a planted `.rs` under `target/` was reported before this
+ * line and is not after it, while the identical file outside `target/` still is.
+ *
+ * The exclusion is free for the reason `.claude/` is: `git ls-files` finds **0**
+ * files under any `target/`, so it removes no coverage of this repository's own
+ * index. It is matched by SEGMENT at every level rather than as a root prefix,
+ * because cargo may place a workspace target directory below the root.
  */
 export async function hitPaths(root: string): Promise<readonly string[]> {
-	const glob = new Bun.Glob("**/*.{ts,js,mjs}");
+	const glob = new Bun.Glob("**/*.{ts,js,mjs,rs}");
 	const found: string[] = [];
 	const nestedRepos = nestedRepoCache();
 	for await (const relPath of glob.scan({ cwd: root, dot: true })) {

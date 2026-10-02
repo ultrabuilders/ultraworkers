@@ -57,4 +57,29 @@ describe("census self-blindness", () => {
 		// green light with nothing behind it.
 		expect(judgeBlindness(parseControlVisibility("")).rows).toEqual([]);
 	});
+
+	it("separates a control scoped away from a variant from one that variant must see", () => {
+		// Both rows are a confirmed control, invisible, on the case-sensitive variant —
+		// the state that used to be a single verdict. The census now prints "not required"
+		// for a control scoped to the case-insensitive variant, because that row is its own
+		// evidence the two variants disagree. Scoring it as blindness made the
+		// demonstration of the case-sensitive scan's lossiness indistinguishable from the
+		// census being lossy, which is the exact conflation this row exists to separate.
+		const report = [
+			"  case-sensitive     confirmed       interactive-mode.ts:5483 INVISIBLE not required of this variant",
+			"  case-sensitive     confirmed       other.ts:1                 INVISIBLE DEFECT: census blind to its own control",
+			"  case-insensitive   confirmed       interactive-mode.ts:5483 visible   ok",
+			"",
+		].join("\n");
+
+		const verdict = judgeBlindness(parseControlVisibility(report));
+
+		// Exactly one defect: the scoped-away row is admissible, the un-scoped one is not.
+		// Asserting the count as well as the ref is what stops a fix that silenced every
+		// invisible row from passing.
+		expect(verdict.defects).toHaveLength(1);
+		expect(verdict.defects[0]).toContain("other.ts:1");
+		expect(verdict.rows[0]?.required).toBe(false);
+		expect(verdict.rows[1]?.required).toBe(true);
+	});
 });

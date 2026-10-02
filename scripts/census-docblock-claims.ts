@@ -53,7 +53,22 @@ const NARROW_TERMS = ["enforced", "enforces", "guarantee", "by design", "the gat
  * invisible. `expect` is the substring the cited line must still contain: if a
  * ref rots, the check names the ref instead of passing silently.
  */
-const CONTROLS: readonly { ref: string; expect: string; verdict: "confirmed" | "false-positive" }[] = [
+const CONTROLS: readonly {
+	ref: string;
+	expect: string;
+	verdict: "confirmed" | "false-positive";
+	/**
+	 * Variants that MUST see this control. Absent means all of them.
+	 *
+	 * This exists because "invisible to the case-sensitive variant" and "invisible to
+	 * every variant" are different findings, and the census had no way to tell them
+	 * apart. It reported both as a DEFECT, which made a control that *demonstrates* the
+	 * variants disagreeing indistinguishable from one that exposed a blind spot — so
+	 * the one control that proves the case-sensitive scan is lossy was itself scored as
+	 * the census being lossy.
+	 */
+	variants?: readonly string[];
+}[] = [
 	{
 		ref: "packages/coding-agent/src/tools/index.ts:888",
 		expect: "deviceOnlyWrite",
@@ -63,6 +78,12 @@ const CONTROLS: readonly { ref: string; expect: string; verdict: "confirmed" | "
 		ref: "packages/coding-agent/src/modes/interactive-mode.ts:5483",
 		expect: "Guarantees",
 		verdict: "confirmed",
+		// "Guarantees" opens a sentence, and the case-sensitive variant looks for
+		// lowercase "guarantee". This row is the census's own evidence that the two
+		// variants disagree, so scoring it a DEFECT would use the demonstration as
+		// proof of blindness. The case-insensitive variant must still see it — that is
+		// the half that would be a real gap.
+		variants: ["case-insensitive"],
 	},
 	{
 		ref: "packages/coding-agent/src/tools/fetch.ts:674",
@@ -261,17 +282,26 @@ if (only !== "raw") {
 		const refs = new Set(hits.map(hit => `${hit.file}:${hit.line}`));
 		for (const c of CONTROLS) {
 			const visible = refs.has(c.ref);
-			const defect = c.verdict === "confirmed" && !visible;
+			const required = !c.variants || c.variants.includes(v.label);
+			const defect = c.verdict === "confirmed" && !visible && required;
+			const note =
+				!required && !visible
+					? "not required of this variant"
+					: defect
+						? "DEFECT: census blind to its own control"
+						: "ok";
 			say(
 				`  ${v.label.padEnd(18)} ${c.verdict.padEnd(15)} ${path.basename(c.ref).padEnd(24)} ` +
-					`${visible ? "visible  " : "INVISIBLE"} ${defect ? "DEFECT: census blind to its own control" : "ok"}`,
+					`${visible ? "visible  " : "INVISIBLE"} ${note}`,
 			);
 		}
 	}
 	say();
 	say("  A DEFECT row means that census is not covering its own evidence, and its");
 	say("  counts must not be quoted. For a false-positive control, invisible is the");
-	say("  pattern working and visible is a line still needing a human grade.");
+	say("  pattern working and visible is a line still needing a human grade. A");
+	say("  'not required' row is a control scoped to some variants only — evidence");
+	say("  that the variants disagree, not that the census is blind.");
 	say();
 }
 

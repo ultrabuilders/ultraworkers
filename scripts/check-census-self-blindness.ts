@@ -35,12 +35,13 @@ export interface ControlVisibilityRow {
 	readonly kind: "confirmed" | "false-positive";
 	readonly ref: string;
 	readonly visible: boolean;
-	/** True when a `confirmed` control is invisible — the census lost its evidence. */
+	/** False when the census scoped this control to other variants, so absence is the finding. */
+	readonly required: boolean;
+	/** True when a `confirmed` control is invisible to a variant that must see it. */
 	readonly defect: boolean;
 }
 
-const CONTROL_ROW =
-	/^\s*(case-\w+)\s+(confirmed|false-positive)\s+(\S+)\s+(visible|INVISIBLE)(?:\s+(DEFECT))?/;
+const CONTROL_ROW = /^\s*(case-\w+)\s+(confirmed|false-positive)\s+(\S+)\s+(visible|INVISIBLE)\s*(.*)$/;
 
 /**
  * Pull the control rows out of a census report.
@@ -54,16 +55,22 @@ export function parseControlVisibility(report: string): ControlVisibilityRow[] {
 	for (const line of report.split("\n")) {
 		const match = CONTROL_ROW.exec(line);
 		if (!match) continue;
-		const [, variant, kind, ref, visibility, defect] = match;
+		const [, variant, kind, ref, visibility, note] = match;
 		const visible = visibility === "visible";
+		// The census prints "not required of this variant" when a control is scoped to the
+		// other variants. That row is the census working: it is the evidence the variants
+		// disagree, and scoring it as blindness made the demonstration of the case-sensitive
+		// scan's lossiness indistinguishable from the census itself being lossy.
+		const required = !(note ?? "").includes("not required");
 		rows.push({
 			variant: variant ?? "",
 			kind: kind as ControlVisibilityRow["kind"],
 			ref: ref ?? "",
 			visible,
-			// Only a confirmed control going missing is a defect; an invisible
-			// false-positive is the pattern doing its job.
-			defect: defect !== undefined || (!visible && kind === "confirmed"),
+			required,
+			// Only a confirmed control going missing is a defect, and only from a variant
+			// that must see it; an invisible false-positive is the pattern doing its job.
+			defect: required && !visible && kind === "confirmed",
 		});
 	}
 	return rows;

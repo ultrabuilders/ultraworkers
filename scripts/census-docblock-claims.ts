@@ -72,6 +72,13 @@ const CONTROLS: readonly { ref: string; expect: string; verdict: "confirmed" | "
 		expect: "acquiring the gate",
 		verdict: "false-positive",
 	},
+	{
+		// The census bead cites this one; the path is src/tools, not src/cli, and the
+		// claim says "ACP defines", not "spec". Both wrong spellings read as an absence.
+		ref: "packages/coding-agent/src/tools/acp-bridge.ts:110",
+		expect: "ACP defines no ordering",
+		verdict: "false-positive",
+	},
 ];
 
 interface SourceFile {
@@ -228,20 +235,32 @@ if (only !== "raw") {
 }
 
 // Control visibility: the decisive check, and the reason the census is a script.
+//
+// A DEFECT is not the same for both kinds of control. A `confirmed` control that
+// goes invisible is a blind spot: the census is not covering evidence it claims
+// to rest on. A `false-positive` control that stays invisible is the pattern
+// working — it rejected a line that is not a policy claim — while one that is
+// visible is a line a human still has to grade. Only the first kind is a defect,
+// so a legend that called every INVISIBLE a defect would train the reader to
+// ignore the row that matters.
 if (only !== "raw") {
 	say("CONTROL VISIBILITY — a pattern that cannot see its own control measures nothing");
 	for (const v of NARROW_VARIANTS) {
 		const { hits } = measure(corpus, v.m);
 		const refs = new Set(hits.map(hit => `${hit.file}:${hit.line}`));
 		for (const c of CONTROLS) {
+			const visible = refs.has(c.ref);
+			const defect = c.verdict === "confirmed" && !visible;
 			say(
-				`  ${v.label.padEnd(18)} ${c.verdict.padEnd(15)} ${path.basename(c.ref).padEnd(24)} ${refs.has(c.ref) ? "visible" : "INVISIBLE"}`,
+				`  ${v.label.padEnd(18)} ${c.verdict.padEnd(15)} ${path.basename(c.ref).padEnd(24)} ` +
+					`${visible ? "visible  " : "INVISIBLE"} ${defect ? "DEFECT: census blind to its own control" : "ok"}`,
 			);
 		}
 	}
 	say();
-	say("  INVISIBLE under the variant chosen for a census means that census is not");
-	say("  covering its own evidence, and its counts must not be quoted.");
+	say("  A DEFECT row means that census is not covering its own evidence, and its");
+	say("  counts must not be quoted. For a false-positive control, invisible is the");
+	say("  pattern working and visible is a line still needing a human grade.");
 	say();
 }
 

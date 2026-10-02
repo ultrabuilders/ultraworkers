@@ -72,14 +72,28 @@ the attribution is verified.
 
 ### The pinned expression
 
-```
-(^|[^a-zA-Z0-9_./-])omp([^a-zA-Z0-9_.-]|$)
-```
+**Do not copy it here.** It lives in exactly one place — the `PINNED` constant in
+`check-disposition.ts` — and its docblock there is the authoritative description of
+what it matches and why. A second copy in this file is a claim that can only drift
+from the original, and it already did: the copy below this line was quoted from a
+version that `98` has since replaced, so for a while this README documented an
+expression the gate no longer used. Read the constant; if it needs explaining, fix
+its docblock, which is where the next reader will look.
 
-It is a **locator, not a judgement**. Note the deliberate asymmetry, inherited from
-the bead: the leading class excludes `.` and `/` (so `pi-omp` and `sub/omp` do not
-match) while the trailing class does not exclude `/` (so `"./omp/"` matches its
-trailing edge).
+It is a **locator, not a judgement**. Two properties matter to anyone reasoning about
+a count:
+
+- The **leading** class excludes word characters, `.`, `/` and `-`, so a token joined
+  to a preceding word, dot, slash or hyphen does not match.
+- The **trailing** class excludes `.` and `-` **unless** they open `sh`. That is what
+  keeps the homepage wire value — which appears in install, join and stream URLs —
+  out of a rename sweep, while still counting a token followed by `.` or by `-`.
+
+An earlier version of this file claimed the trailing class "does not exclude `/`, so
+a slash-prefixed path matches on its trailing edge". **That was never true**, for the
+same leading `/` that the leading class already excludes. The corrected docblock in
+`check-disposition.ts` says so explicitly; this file repeated the wrong claim after
+the code had already been fixed.
 
 Two classes are counted by **literal**, not by this expression, and the reason is
 measured rather than assumed:
@@ -93,58 +107,54 @@ measured rather than assumed:
 is genuinely _disjoint_ from it — a `keep-worker-selector` row can never be reported
 "missing", because its file may have no pinned hits at all.
 
-## Measured on the tree at the time of writing
+## Measured on the tree
+
+Re-measured 2026-10-03 with the gate's own code path — `hitPaths(".")` from
+`check-disposition.ts`, and the same paths counted against its `PINNED`:
 
 ```
-706 files carry the token        2072 occurrences
-  1047  prose inside comments    (51%)
-  1007  code
-
-318 files have >=1 code occurrence   (164 source + 154 test)
-386 files are comment-only
+1084 files carry the token       4153 occurrences
 ```
 
-DRIFT, corrected 2026-10-02: the file/occurrence totals were `704` / `2054`,
-stale by 2 files and 18 occurrences. Measured with the gate's own code path —
-`hitPaths(".")` from `check-disposition.ts` returning 706, and the same paths counted
-against the gate's `PINNED` expression returning 2072.
+SUPERSEDED: an earlier version of this section reported `706` / `2072`, and a still
+earlier one `704` / `2054`. None of those can be reproduced any more, and the reason
+is not that the tree drifted — it is that **the glob grew**. `hitPaths` scans
+`**/*.{ts,tsx,js,mjs,rs,py,sh}`; this file used to describe it as
+`**/*.{ts,js,mjs}`, which omitted `.tsx`, `.rs`, `.py` and `.sh` entirely. A
+standalone scan written to the text here matched only TypeScript and came back short
+for exactly that reason. **Quote the glob with the count, or quote neither.**
 
-**The glob is `**/*.{ts,js,mjs}`, not `*.ts`** — this paragraph used to say `*.ts`,
-which is wrong, and it cost a real measurement. A standalone scan written to the text
-here matched only TypeScript and came back 3 files and 6 occurrences short, because
-`hitPaths` also reads `.js` and `.mjs`. `hitPaths` additionally skips
-`EXCLUDED_PREFIXES`, build output, and nested repositories. A scan reproduces the pair
-only when it reproduces **those** rules; a scan that merely re-implements the pattern
-is measuring a different scope and will disagree for a reason that has nothing to do
-with the pattern.
+`hitPaths` additionally skips `EXCLUDED_PREFIXES`, build output, and nested
+repositories. A scan reproduces the pair only when it reproduces **those** rules; a
+scan that merely re-implements the pattern is measuring a different scope and will
+disagree for a reason that has nothing to do with the pattern.
 
-**2072 is a floor, not a total.** `PINNED` is the expression quoted at line 61,
-and it consumes the delimiter it matches: two tokens separated by a single
-space, or by one comma, each count as **1** where 2 exist. Rewriting it with a
-lookbehind fixes that without widening the scope — the `.` exclusion stays, so
-`..` around the token remains 0 in both forms. That is a change to what the
-gate _means_, so it is not made here: `PINNED` is a locator and its value is a
-ratchet baseline. It is written out once, at line 61, on purpose: repeating the
-literal here spends the file's allowlist budget on a copy of a claim that can
-only drift from the original.
+The prose/code/comment-only split is deliberately **absent** here rather than
+reproduced. It was wrong before it was stale: `PINNED` undercounts adjacent tokens,
+so every bucket and every percentage derived from it moves together, and a percentage
+of two low numbers cannot be trusted to the digit. A fresh breakdown must come from a
+fresh count that handles the delimiter collision — not from editing these lines.
+
+**4153 is a floor, not a total.** `PINNED` is the `PINNED` constant in
+`check-disposition.ts`, and it consumes the delimiter it matches: two tokens
+separated by a single space, or by one comma, each count as **1** where 2 exist.
+Rewriting it with a lookbehind fixes that without widening the scope — the `.`
+exclusion stays, so `..` around the token remains 0 in both forms. That is a
+change to what the gate _means_, so it is not made here: `PINNED` is a locator
+and its value is a ratchet baseline. It is defined in exactly one place on
+purpose; see "The pinned expression" above for why this file does not quote it.
 
 Every number above is therefore a lower bound on its own scope. Quote the scope
 and the expression together, never the count alone.
 
 The scope is **not** the whole tree: `\bomp\b` over every tracked file gives
-1203 files and 16766 occurrences, and `check-runtime-rename.ts` uses that
+1990 files and 32231 occurrences, and `check-runtime-rename.ts` uses that
 different matcher over a different scope. Two numbers both called "occurrences
 of the token" is the trap here — quote the scope whenever you quote the count.
+(A previous version of this line said `1203` / `16766`; that pair is not
+reproducible from the current tree either.)
 
-The prose/code/comment-only breakdown below is **wrong under the current
-matcher, not merely stale**. `PINNED` undercounts every bucket, because the
-collision it has on adjacent tokens loses hits wherever tokens sit side by side,
-and each bucket's own percentage therefore moves too — "51%" is a ratio of two
-low numbers and cannot be trusted to the digit. Only the two totals were
-re-measured here. A fresh breakdown must come from a fresh count, and until then
-treat these four lines as an indication of shape, not as figures to quote.
-
-**Read the 51% before filling in a row.** A `rename` row is _not_ automatically a
+**Read the shape before filling in a row.** A `rename` row is _not_ automatically a
 code edit: renaming inside a comment is W13's job, not this table's.
 
 ### A row expires when its file moves, and that is not an authoring error
@@ -254,11 +264,11 @@ The concrete case: `.omp/skills/a.md` is the right control for
 `check-disposition` — `.omp/tools/tui.ts` is a tracked file of this repository
 with a live hit, so that gate _must_ reach into dot-directories. Copying that
 control into `check-docs-rename.test.ts` produced a test that passed for the
-wrong reason: `EXCLUDED_PREFIXES` at `check-docs-rename.ts:71` already lists
-`.lavish-wip/`, `.lavish/` and `.omp/`, the control returned `[]`, and the
-assertion would have been satisfied by a gate that scanned nothing at all.
-`bucket-legacy-token` reuses that same `isExcluded`, so it inherited the same
-blind spot.
+wrong reason: `EXCLUDED_PREFIXES` in `check-docs-rename.ts` already lists
+`.lavish-wip/`, `.lavish/`, `.omp/`, `.claude/` and `node_modules/`, the control
+returned `[]`, and the assertion would have been satisfied by a gate that scanned
+nothing at all. `bucket-legacy-token` reuses that same `isExcluded`, so it
+inherited the same blind spot.
 
 That failure mode is worse than a red test, because it looks like a success.
 Before trusting a green, check the control was non-zero _first_.

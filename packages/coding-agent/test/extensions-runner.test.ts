@@ -2562,6 +2562,11 @@ describe("ExtensionRunner", () => {
 					// and it now reads that off the context rather than comparing
 					// against a sentinel.
 					hasUI: true,
+					// A test UI that claims a frame it does not have: this fixture mounts
+					// nothing, so claiming `true` keeps it honest about being a stub for
+					// the flag while `canMount` — the query an extension author uses to
+					// decide whether mounting will work — correctly answers `false`.
+					canMount: () => false,
 					setWorkingIndicator: () => {},
 					select,
 					confirm: async () => false,

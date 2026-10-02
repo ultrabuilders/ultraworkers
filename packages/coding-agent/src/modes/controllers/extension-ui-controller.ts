@@ -163,6 +163,14 @@ export class ExtensionUiController {
 		const uiContext: ExtensionUIContext = {
 			// The TUI itself: this context renders into the terminal.
 			hasUI: true,
+			// The only context that answers `true`, and the reason the query is worth
+			// having: this one owns `extensionHeaderContainer` and
+			// `extensionFooterContainer`, which are the composer's own objects rather
+			// than copies, and `setExtensionSurface` mounts into them below. The other
+			// three implementations answer `false` with the containers they do not
+			// have — so this is not a restatement of `hasUI`, which is also `true` in
+			// RPC and ACP.
+			canMount: () => true,
 			timeoutStartsOnPresentation: true,
 			select: (title, options, dialogOptions) => this.showCollabAwareSelector(title, options, dialogOptions),
 			confirm: (title, message, dialogOptions) => this.showHookConfirm(title, message, dialogOptions),

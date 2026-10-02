@@ -298,6 +298,24 @@ export interface ExtensionUIContext {
 	 * exists — and one did. A handler now reads the same object it was handed.
 	 */
 	readonly hasUI: boolean;
+	/**
+	 * Whether calling `setHeader` / `setFooter` / `custom` on this context would
+	 * actually mount the component, as opposed to throwing for want of a frame.
+	 *
+	 * This is the question `hasUI` cannot answer, which is why it exists rather than
+	 * a rename of it. `hasUI` reports whether *dialogs* round-trip: it is `true` in
+	 * RPC and `true` in ACP whenever the client supports `elicitation.form`, yet both
+	 * of those contexts throw on every call here. An implementation that answered
+	 * this question by reading `hasUI` would therefore be wrong in exactly the places
+	 * an author most needs an answer, so the value is stated per context instead of
+	 * derived — and the two disagree on purpose.
+	 *
+	 * Scoped to the three surfaces that need a frame and nothing else. `setWidget` is
+	 * excluded because its answer depends on the *content* — RPC renders a string
+	 * array and silently ignores a component factory — and `setStatus` because it
+	 * never throws anywhere, so "will this be seen" has no boolean answer at all.
+	 */
+	canMount(surface: "header" | "footer" | "custom"): boolean;
 	/** True when selector timeouts start only after the dialog is presented. */
 	timeoutStartsOnPresentation?: boolean;
 	/** Show a selector and return the selected label, even when an option also includes a description. */
@@ -354,7 +372,8 @@ export interface ExtensionUIContext {
 	 * `hasUI` does not predict which. It is `false` on the frameless context, but
 	 * `true` in RPC and in ACP whenever the client supports `elicitation.form` —
 	 * there it answers "do dialogs round-trip?", not "is there a frame?". Guarding
-	 * on it therefore passes and then throws.
+	 * on it therefore passes and then throws. `canMount("footer")` is the check
+	 * that does answer it.
 	 *
 	 * The fallbacks are no safer to reach for: `setWidget` throws on the frameless
 	 * context too, and `setStatus` is a silent no-op there. The thrown error names

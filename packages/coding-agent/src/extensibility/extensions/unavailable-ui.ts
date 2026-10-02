@@ -61,9 +61,10 @@ export function unavailableFrameMessage(
 		`${surface} is not available in ${mode}: there is no interactive frame to mount the component into. ` +
 		(guard === "hasUI-blocks-the-call"
 			? "Guard the call with pi.ui.hasUI"
-			: // True of ACP at both values of `supportsForm`, which is why this names what
-				// the flag means rather than what it currently reads.
-				"pi.ui.hasUI does not describe this surface: it reports whether dialogs round-trip, not whether a frame exists, so it can be true and this call still throws");
+			: // Names the check that answers it rather than only denying the old one.
+				// True of ACP at both values of `supportsForm`, so it describes what the
+				// flag means instead of what this instance currently reads.
+				`pi.ui.hasUI does not describe this surface — it reports whether dialogs round-trip, not whether a frame exists — so ask pi.ui.canMount("${surface}"), which does`);
 	// `custom` resolves with a value the caller supplies, so "show text instead" is not
 	// a substitute — setStatus cannot return the author's result, and naming it there
 	// would point at a surface that cannot answer the question being asked.

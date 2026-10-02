@@ -4,6 +4,8 @@ import { logger } from "@oh-my-pi/pi-utils";
 import type { ExtensionUIContext } from "../src/extensibility/extensions/types";
 import { noOpUIContext } from "../src/extensibility/extensions/runner";
 import { createNoOpUIContext } from "../src/extensibility/utils";
+import { createAcpExtensionUiContext } from "../src/modes/acp/acp-agent";
+import type { AgentSideConnection } from "@oh-my-pi/pi-utils/acp";
 
 /**
  * `ui.custom` mounts an author's own component and resolves with whatever that
@@ -27,13 +29,20 @@ describe("a context that cannot render `custom` must throw, not resolve", () => 
 	// quietly skip a context that stopped being a function.
 	//
 	// COVERAGE GAP, stated rather than hidden: `RpcExtensionUIContext`
-	// (`modes/rpc/rpc-mode.ts`) and the ACP context (`modes/acp/acp-agent.ts`) both
-	// carry this member and both now throw, but neither is constructible from a test
-	// — one is a class nested inside `runRpcMode`, the other an object literal inside a
-	// module-private function. They are held by review, not by this file.
+	// (`modes/rpc/rpc-mode.ts`) carries this member and throws, but is a class nested
+	// inside `runRpcMode` and is not reachable from a test without exporting it. It is
+	// held by review, not by this file.
+	//
+	// This note used to also claim the ACP context was unconstructible "an object
+	// literal inside a module-private function". That was wrong — `createAcpExtensionUiContext`
+	// is exported — so the row below was missing for a reason that did not exist.
 	const FRAMELESS: ReadonlyArray<readonly [string, () => { custom: (f: () => never) => unknown }]> = [
 		["noOpUIContext", () => noOpUIContext],
 		["createNoOpUIContext", () => createNoOpUIContext()],
+		[
+			"createAcpExtensionUiContext",
+			() => createAcpExtensionUiContext({} as AgentSideConnection, () => "s", undefined),
+		],
 	];
 
 	for (const [name, make] of FRAMELESS) {

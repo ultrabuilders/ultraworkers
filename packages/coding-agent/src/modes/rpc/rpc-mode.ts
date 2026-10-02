@@ -846,6 +846,16 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 		// agent blocks. So this is UI, and reporting otherwise would tell a
 		// handler to skip work it can in fact do.
 		readonly hasUI = true;
+
+		// The clearest case in the codebase of why this is not derived from `hasUI`:
+		// the two answers are permanently opposed here. `hasUI` is `true` because
+		// dialogs round-trip to a client, and all three of these still throw below,
+		// because an RPC frame has no header band, no footer band and nowhere to put
+		// a focused overlay.
+		canMount(): boolean {
+			return false;
+		}
+
 		constructor(
 			private pendingRequests: Map<string, PendingExtensionRequest>,
 			private output: (obj: RpcResponse | RpcExtensionUIRequest | object) => void,

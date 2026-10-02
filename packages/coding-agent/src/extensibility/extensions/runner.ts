@@ -474,6 +474,11 @@ const FRAMELESS_GUARD = "hasUI-blocks-the-call" satisfies FramelessGuard;
 
 export const noOpUIContext: ExtensionUIContext = {
 	hasUI: false,
+	// Stated, not derived from `hasUI`. They happen to agree here because `hasUI` is
+	// a constant `false`; the point is that nothing forces them to agree anywhere
+	// else, and deriving this one would make the query a rename of the flag rather
+	// than an answer to a different question.
+	canMount: () => false,
 	select: async (_title, _options, _dialogOptions) => undefined,
 	confirm: async (_title, _message, _dialogOptions) => false,
 	input: async (_title, _placeholder, _dialogOptions) => undefined,

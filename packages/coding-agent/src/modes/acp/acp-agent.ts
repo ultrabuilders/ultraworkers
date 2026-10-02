@@ -442,6 +442,12 @@ export function createAcpExtensionUiContext(
 		// the surface is built. This is the same answer runner.hasUI() would give,
 		// stated where the capability is known rather than inferred later.
 		hasUI: supportsForm,
+		// Deliberately not `supportsForm`. An ACP client that supports
+		// `elicitation.form` reports `hasUI: true` and still cannot mount a header,
+		// a footer or a custom overlay — the three surfaces this names all throw two
+		// members below. Answering from the flag would make the query agree with
+		// `hasUI` here and be wrong, which is the specific failure it exists to fix.
+		canMount: () => false,
 		select: async (title, options, dialogOptions) => {
 			if (!supportsForm) return undefined;
 			const value = await elicitFromAcpClient(

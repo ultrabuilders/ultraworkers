@@ -1,15 +1,22 @@
 import type { Context } from "@oh-my-pi/chord";
-import type { Message, SystemMessage } from "@oh-my-pi/pi-ai";
-import { SystemEntry } from "../entries";
-import type { ContextEdit, TypedEntryDraft } from "../types";
+import { SystemEntry, type SystemSections } from "../entries";
+import { contributingEntries } from "./context";
+import type { ContextEdit, EntryRecord, TypedEntryDraft } from "../types";
 import type { ContextView, PromptInput, PromptSection, ToolRegistration } from "./types";
 
-/** Sections in effect after replaying system messages in order: set in place, `null` deletes, re-adding appends. */
-export function replaySections(messages: readonly Message[]): Map<string, string> {
+/**
+ * Sections in effect after replaying `pi.system` entries in order: set in place, `null` deletes,
+ * re-adding appends.
+ *
+ * Replayed from entries rather than messages. The section map is durable's bookkeeping — it is
+ * what makes a minimal patch possible — so it belongs to the entry. The message on that entry
+ * carries only the rendered text a provider understands, which is why it cannot be replayed from.
+ */
+export function replaySections(entries: readonly EntryRecord[]): Map<string, string> {
 	const shown = new Map<string, string>();
-	for (const message of messages) {
-		if (message.role !== "system" || message.sections === undefined) continue;
-		for (const [key, value] of Object.entries(message.sections)) {
+	for (const entry of entries) {
+		if (!SystemEntry.is(entry)) continue;
+		for (const [key, value] of Object.entries(entry.data)) {
 			if (value === null) shown.delete(key);
 			else shown.set(key, value);
 		}
@@ -46,7 +53,7 @@ export async function renderSections<Tool extends ToolRegistration>(
 	return desired;
 }
 
-type SystemDraft = TypedEntryDraft<never>;
+type SystemDraft = TypedEntryDraft<SystemSections>;
 
 /**
  * Plan the `pi.system` entries that make the replayed sections of `view` equal `desired` in values and order.
@@ -71,7 +78,7 @@ export function planSystemEntries(
 		return [edits.length === 0 ? baseline : { ...baseline, edits }];
 	}
 
-	const shown = replaySections(view.messages);
+	const shown = replaySections(contributingEntries(view.entries));
 	const patchedOrder = [
 		...[...shown.keys()].filter(key => desired.has(key)),
 		...[...desired.keys()].filter(key => !shown.has(key)),
@@ -93,7 +100,20 @@ export function planSystemEntries(
 	return Object.keys(patch).length === 0 ? [] : [systemEntry(patch, timestamp)];
 }
 
-function systemEntry(sections: Record<string, string | null>, timestamp: number): SystemDraft {
-	const message: SystemMessage = { role: "system", content: "", sections, timestamp };
-	return { model: [message] };
+/**
+ * Flatten a section patch to the text a provider is sent.
+ *
+ * The values are already final text — `renderSections` wrapped each one as `<key>…</key>` unless
+ * the section opted out — so this joins them rather than re-rendering. Removed sections contribute
+ * nothing: the entry that set them is still in the transcript and still carries their text, so
+ * omitting here is what keeps a patch minimal.
+ */
+function sectionsText(sections: SystemSections): string {
+	return Object.values(sections)
+		.filter((value): value is string => value !== null)
+		.join("\n");
+}
+
+function systemEntry(sections: SystemSections, timestamp: number): SystemDraft {
+	return { data: sections, model: [{ role: "developer", content: sectionsText(sections), timestamp }] };
 }

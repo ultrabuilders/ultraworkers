@@ -13,6 +13,7 @@ import { AssistantEntry, SystemEntry } from "../entries";
 import { defineTask } from "../tasks";
 import type { ConversationId, EntryId, NextTaskState, TaskRuntime, Tx } from "../types";
 import { ConversationConfig, DEFAULT_RETRY_POLICY } from "./config";
+import { contributingEntries } from "./context";
 import { endRun, LiveDoc, type LiveState } from "./live";
 import { planSystemEntries, renderSections, replaySections } from "./prompt";
 import type { ConversationStreamOptions, ModelRef, ModelThinkingLevel } from "./types";
@@ -65,7 +66,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				return failNoModel(runtime, model, context);
 			}
 			const view = await runtime.context(conversationId, context);
-			const shown = replaySections(view.messages);
+			const shown = replaySections(contributingEntries(view.entries));
 			const input = {
 				conversationId,
 				tools: [],

@@ -14,7 +14,15 @@ export function defineEntry<D extends JsonValue = never>(kind: string): Entry<D>
 export const UserEntry = defineEntry("pi.user");
 /** Provider result with any stop reason: `model` is `[AssistantMessage]`. Written by generation. */
 export const AssistantEntry = defineEntry("pi.assistant");
-/** Positional prompt and tool change: `model` is `[SystemMessage]` with empty `content`. */
-export const SystemEntry = defineEntry("pi.system");
+/**
+ * Named prompt sections carried by a `pi.system` entry. `null` removes a section; re-adding one
+ * appends it. This is durable's own bookkeeping — it exists so a later section can be patched
+ * without rewriting the ones that did not change — and it lives on the entry rather than on the
+ * message precisely because of that. The message carries rendered text for the provider.
+ */
+export type SystemSections = Record<string, string | null>;
+
+/** Positional prompt and tool change: `data` is the section patch, `model` is `[DeveloperMessage]`. */
+export const SystemEntry = defineEntry<SystemSections>("pi.system");
 /** Tool result: `model` is `[ToolResultMessage]`. Written by tool tasks. */
 export const ToolResultEntry = defineEntry("pi.tool-result");

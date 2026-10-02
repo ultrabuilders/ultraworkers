@@ -51,6 +51,29 @@ export async function readContext(
 }
 
 /**
+ * Edits the range's entries apply to one another, keyed by the entry each targets. Per target the
+ * newest edit in the range wins, which is what makes an edit issued after a head marker override
+ * one issued before it.
+ */
+function editMap(range: readonly EntryRecord[]): Map<EntryId, ContextEdit> {
+	const edits = new Map<EntryId, ContextEdit>();
+	for (const entry of range) for (const edit of entry.edits ?? []) edits.set(edit.target, edit);
+	return edits;
+}
+
+/**
+ * Entries that survive those edits, in context order.
+ *
+ * `ContextView.entries` is the raw list — it still contains entries an edit omitted, and the head
+ * marker. Anything that must agree with what the model is sent has to filter through this, or it
+ * replays state the transcript no longer has.
+ */
+export function contributingEntries(entries: readonly EntryRecord[]): readonly EntryRecord[] {
+	const edits = editMap(entries);
+	return entries.filter(entry => edits.get(entry.id)?.action !== "omit");
+}
+
+/**
  * Derive the active transcript and model context of one conversation within captured bounds.
  *
  * H = newest visible head marker; the range runs from `H.head` (or transcript start) through the tail. Per target,
@@ -80,8 +103,7 @@ export async function deriveContext(
 	} while (cursor !== undefined);
 	range.reverse();
 
-	const edits = new Map<EntryId, ContextEdit>();
-	for (const entry of range) for (const edit of entry.edits ?? []) edits.set(edit.target, edit);
+	const edits = editMap(range);
 
 	const entries = head === undefined ? range : [head, ...range.filter(entry => entry.head === undefined)];
 	const messages: Message[] = [];

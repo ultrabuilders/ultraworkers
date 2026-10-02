@@ -1860,6 +1860,23 @@ export interface ExtensionAPI {
 	 */
 	registerTheme(name: string, theme: ThemeJson): boolean;
 
+	/**
+	 * The keys core currently owns — built-in defaults and the user's remaps
+	 * together.
+	 *
+	 * `registerShortcut` cannot take a key in this set: core wins, the
+	 * registration is dropped, and the only trace is a line in the log. That is
+	 * invisible to the person writing the extension and unrecoverable from the
+	 * message their key did nothing, so this is the way to find out first.
+	 *
+	 * Live, not the default table: a key core holds only until the user remaps it
+	 * is one an extension may then take, and a table frozen at startup would
+	 * report the opposite of what the dispatcher does. Returns an empty set
+	 * before keybindings are resolved, which reads as "nothing is claimed" rather
+	 * than failing.
+	 */
+	getClaimedKeyIds(): ReadonlySet<KeyId>;
+
 	/** Register a keyboard shortcut. */
 	registerShortcut(
 		shortcut: KeyId,

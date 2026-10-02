@@ -17,6 +17,7 @@ import type {
 	TSchema,
 } from "@oh-my-pi/pi-ai";
 import { isBuiltinComposerStyle, type KeyId } from "@oh-my-pi/pi-tui";
+import { getKeybindings } from "@oh-my-pi/pi-tui/keybindings";
 import type { ThemeJson } from "@oh-my-pi/pi-tui/theme/schema";
 import { registerTheme as registerThemeInRegistry } from "@oh-my-pi/pi-tui/theme";
 import { hasFsCode, isEacces, isEnoent, logger } from "@oh-my-pi/pi-utils";
@@ -430,6 +431,13 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	setLabel(label: string): void {
 		this.extension.label = label;
+	}
+
+	getClaimedKeyIds(): ReadonlySet<KeyId> {
+		// Read through the live manager rather than a snapshot: the set of claimed
+		// keys changes when the user remaps one, and a copy taken now would go on
+		// answering for a table the dispatcher has already stopped using.
+		return getKeybindings().claimedKeyIds();
 	}
 
 	registerShortcut(
@@ -1021,8 +1029,11 @@ export async function discoverExtensionPaths(
 			// Trust gate. A hook whose file changed after its content was recorded
 			// does not load, and says so rather than vanishing — the alternative is
 			// edited code running at the privilege the user approved for different
-			// code. First sight records the hash instead of blocking, so hooks that
-			// already exist keep working across an upgrade; see ../hooks/trust.
+			// code. First sight is blocked too, not recorded: admitting an unvouched
+			// file is what let a hook run at a privilege no one had agreed to. Only a
+			// `hooks.state` entry the user wrote for that exact content approves a
+			// hook, and the message on the untrusted branch names the key and value
+			// to write; see ../hooks/trust.
 			let recordedAny = false;
 			for (const hook of hooks.items) {
 				if (!isExtensionFile(path.basename(hook.path))) continue;

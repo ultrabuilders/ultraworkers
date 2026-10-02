@@ -363,6 +363,35 @@ export class KeybindingsManager {
 		}
 		return resolved;
 	}
+
+	/**
+	 * Every key currently bound to an action — the built-in defaults together
+	 * with the user's remaps.
+	 *
+	 * This is the answer to "may an extension own this key?", derived from the
+	 * bindings themselves. The alternative is a hand-maintained reserved list, and
+	 * a hand-maintained list is wrong the moment a user remaps a default onto a
+	 * key it does not mention: the extension then claims a key the user has
+	 * already given to a built-in, and the remap silently stops working. A
+	 * caller that wanted this had to keep its own copy, which is the table this
+	 * method exists to delete.
+	 *
+	 * Declared here rather than only on the app-level subclass because
+	 * {@link getKeybindings} is typed as the base, so a caller reaching the
+	 * manager through it had no way to ask. Reading
+	 * {@link getResolvedBindings} rather than a private snapshot is what lets the
+	 * subclass — which folds inherited profiles into that method — answer
+	 * correctly from this one body instead of keeping a second copy of the loop.
+	 */
+	claimedKeyIds(): Set<KeyId> {
+		const claimed = new Set<KeyId>();
+		for (const keys of Object.values(this.getResolvedBindings())) {
+			for (const key of Array.isArray(keys) ? keys : [keys]) {
+				if (typeof key === "string") claimed.add(key.toLowerCase() as KeyId);
+			}
+		}
+		return claimed;
+	}
 }
 
 let globalKeybindings: KeybindingsManager | null = null;

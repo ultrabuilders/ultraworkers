@@ -457,14 +457,29 @@ async function getNpmGlobalBinDir(): Promise<string | undefined> {
 	}
 }
 
-async function getHomebrewFormulaPrefix(): Promise<string | undefined> {
+/**
+ * The Homebrew formula this machine actually has installed.
+ *
+ * The name is carried alongside the prefix because the two are not the same
+ * question: detection probes both spellings, and the formula that answered is
+ * the one `brew upgrade` has to be pointed at. Returning the prefix alone made
+ * the detected name unreachable, so the upgrade silently fell back to the
+ * {@link HOMEBREW_FORMULA} constant — which is wrong for anyone whose install
+ * resolved under the other spelling.
+ */
+interface HomebrewFormulaMatch {
+	prefix: string;
+	formula: string;
+}
+
+async function getHomebrewFormulaPrefix(): Promise<HomebrewFormulaMatch | undefined> {
 	if (!$which("brew")) return undefined;
 	for (const formula of [HOMEBREW_FORMULA, WIRE_NAME]) {
 		try {
 			const result = await $`brew --prefix ${formula}`.quiet().nothrow();
 			if (result.exitCode !== 0) continue;
 			const output = result.text().trim();
-			if (output.length > 0) return output;
+			if (output.length > 0) return { prefix: output, formula };
 		} catch {}
 	}
 	return undefined;
@@ -585,6 +600,13 @@ type UpdateMethod = "brew" | "mise" | "nix" | "bun" | "npm" | "binary";
 
 interface UpdateMethodResolutionOptions {
 	homebrewPrefix?: string;
+	/**
+	 * The formula {@link homebrewPrefix} came from. Defaults to
+	 * {@link HOMEBREW_FORMULA}, which is what a caller that never probed
+	 * means — but a caller that *did* probe must pass what it found, or the
+	 * upgrade targets a formula the machine may not have.
+	 */
+	homebrewFormula?: string;
 	miseBinDirs?: readonly string[];
 	miseDataDir?: string;
 	npmBinDir?: string;
@@ -620,7 +642,7 @@ interface UpdateMethodResolutionOptions {
 }
 
 type UpdateTarget =
-	| { method: "brew" }
+	| { method: "brew"; formula: string }
 	| { method: "mise" }
 	| { method: "nix" }
 	| { method: "bun"; path?: string }
@@ -758,6 +780,7 @@ export function resolveUpdateTargetFromPath(
 		};
 	}
 	if (method === "bun" || method === "npm") return { method, path: ompPath };
+	if (method === "brew") return { method, formula: options.homebrewFormula ?? HOMEBREW_FORMULA };
 	return { method };
 }
 /**
@@ -772,7 +795,9 @@ export function resolveUpdateTargetFromPath(
  * binaries and stay valid regardless of how the release is distributed.
  */
 async function resolveUpdateTarget(options: { allowPackageManagers: boolean }): Promise<UpdateTarget> {
-	const homebrewPrefix = await getHomebrewFormulaPrefix();
+	const homebrew = await getHomebrewFormulaPrefix();
+	const homebrewPrefix = homebrew?.prefix;
+	const homebrewFormula = homebrew?.formula;
 	const miseAvailable = $which("mise") !== undefined;
 	const miseBinDirs = miseAvailable ? await getMiseBinDirs() : [];
 	const miseDataDir = miseAvailable ? getMiseDataDir() : undefined;
@@ -792,6 +817,7 @@ async function resolveUpdateTarget(options: { allowPackageManagers: boolean }): 
 			allowPackageManagers: options.allowPackageManagers,
 			bunGlobalDir: probeManagers ? process.env.BUN_INSTALL_GLOBAL_DIR : undefined,
 			homebrewPrefix,
+			homebrewFormula,
 			miseBinDirs,
 			miseDataDir,
 			npmBinDir,
@@ -1569,8 +1595,17 @@ export function buildNpmInstallArgs(
 	];
 }
 
-export function buildHomebrewUpdateArgs(force: boolean): string[] {
-	return [force ? "reinstall" : "upgrade", HOMEBREW_FORMULA];
+/**
+ * Build the attended Homebrew upgrade command.
+ *
+ * `formula` is the spelling the install was actually detected under. It defaults
+ * to {@link HOMEBREW_FORMULA} so a caller that never probed still produces the
+ * historical command, but a caller that probed must pass what it found: the
+ * detector accepts two spellings, and pointing `brew upgrade` at the wrong one
+ * upgrades a formula the machine does not have.
+ */
+export function buildHomebrewUpdateArgs(force: boolean, formula: string = HOMEBREW_FORMULA): string[] {
+	return [force ? "reinstall" : "upgrade", formula];
 }
 
 /**
@@ -1855,7 +1890,11 @@ export async function updateViaManager(
 	);
 }
 
-async function updateViaHomebrew(expectedVersion: string, force: boolean): Promise<void> {
+async function updateViaHomebrew(
+	expectedVersion: string,
+	force: boolean,
+	formula: string = HOMEBREW_FORMULA,
+): Promise<void> {
 	console.log(chalk.dim("Updating Homebrew formulae..."));
 	const update = await $`brew update`.nothrow();
 	if (update.exitCode !== 0) {
@@ -1863,7 +1902,7 @@ async function updateViaHomebrew(expectedVersion: string, force: boolean): Promi
 	}
 
 	console.log(chalk.dim("Updating via Homebrew..."));
-	const args = buildHomebrewUpdateArgs(force);
+	const args = buildHomebrewUpdateArgs(force, formula);
 	const result = await $`brew ${args}`.nothrow();
 	if (result.exitCode !== 0) {
 		throw new Error(`brew ${args[0]} failed with exit code ${result.exitCode}`);
@@ -2227,7 +2266,7 @@ export async function runUpdateCommand(opts: {
 			console.log(chalk.dim(`Update the flake input or profile that provides ${APP_NAME}, then rebuild.`));
 			return;
 		} else if (target.method === "brew") {
-			await updateViaHomebrew(release.version, opts.force);
+			await updateViaHomebrew(release.version, opts.force, target.formula);
 		} else if (target.method === "mise") {
 			await updateViaMise(release.version, opts.force);
 		} else if (target.method === "bun" || target.method === "npm") {

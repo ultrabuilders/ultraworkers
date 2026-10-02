@@ -625,6 +625,19 @@ describe("update-cli package manager commands", () => {
 		expect(buildHomebrewUpdateArgs(true)).toEqual(["reinstall", "can1357/tap/omp"]);
 	});
 
+	// The detector probes BOTH spellings, so the upgrade has to be able to name
+	// the one that answered. Pinning only the constant above would stay green
+	// against the defect this covers: the detected name never reached the
+	// command, so an install living under the other spelling was upgraded by
+	// name rather than in place.
+	it("upgrades the formula it was told was installed, not the hardcoded one", () => {
+		expect(buildHomebrewUpdateArgs(false, "ultraworkers")).toEqual(["upgrade", "ultraworkers"]);
+		expect(buildHomebrewUpdateArgs(true, "ultraworkers")).toEqual(["reinstall", "ultraworkers"]);
+		// The default is the historical command, so a caller that never probed is
+		// unaffected — stated here so the fallback cannot quietly change.
+		expect(buildHomebrewUpdateArgs(false, undefined)).toEqual(["upgrade", "can1357/tap/omp"]);
+	});
+
 	it("targets the mise GitHub backend and overrides release-age settings for attended updates", () => {
 		expect(buildMiseUpgradeArgs()).toEqual(["upgrade", "github:can1357/oh-my-pi", "--bump", "--before", "0s"]);
 		expect(buildMiseUpgradeArgs(false)).toEqual(["upgrade", "github:can1357/oh-my-pi", "--bump"]);

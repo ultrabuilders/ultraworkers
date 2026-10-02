@@ -1,11 +1,12 @@
 /**
- * Interactive alt-screen monitor for `omp ps` (btop idiom): a live process
+ * Interactive alt-screen monitor for `ultraworkers ps` (btop idiom): a live process
  * table over every selected broker scope with in-place actions.
  *
  * Keys — table: `↑/↓`/`j/k` select, `enter`/`i` info, `l` logs, `s` stop,
  * `x` kill, `r` restart, `a` toggle all scopes, `q`/`esc`/`ctrl+c` quit.
  * Sub-views (info, logs): `esc`/`q` back.
  */
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import * as path from "node:path";
 import { formatKeyHint, formatKeyHints } from "../app-keybindings";
 import { KeyValueList, type KeyValueRow } from "../components/key-value-list";
@@ -544,7 +545,7 @@ export class PsTopComponent implements Component {
 					[
 						text("No broker scopes", { role: "ultraworkers.app.empty-title" }),
 						text([
-							span("No omp process broker runs here. ", "muted"),
+							span(`No ${APP_NAME} process broker runs here. `, "muted"),
 							span(this.#all ? "Nothing runs anywhere." : "Show every scope with ", "muted"),
 							...(this.#all ? [] : [span("a", "key"), span(".", "muted")]),
 						]),
@@ -643,7 +644,7 @@ export class PsTopComponent implements Component {
 
 	#header(width: number, title: string): string {
 		const age = this.#lastRefresh ? `updated ${formatDuration(Date.now() - this.#lastRefresh)} ago` : "updating…";
-		const left = ` ${chalk.bold("omp ps")} ${chalk.dim("·")} ${title}`;
+		const left = ` ${chalk.bold(`${APP_NAME} ps`)} ${chalk.dim("·")} ${title}`;
 		const right = chalk.dim(age);
 		const pad = Math.max(1, width - Bun.stringWidth(left) - Bun.stringWidth(right) - 1);
 		return truncateToWidth(`${left}${" ".repeat(pad)}${right}`, width);

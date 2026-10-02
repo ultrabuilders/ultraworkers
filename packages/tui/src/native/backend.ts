@@ -16,6 +16,7 @@
  * into one frame (`set`s merged, `text append`s joined).
  */
 import * as fs from "node:fs";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import {
 	TSP_DEFAULT_APC_LIMIT,
@@ -127,8 +128,8 @@ function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 /**
  * The reply a v1 terminal is assumed to give before its real `hello` arrives
  * (the `TERM_PROGRAM=tern` optimistic start): the whole vocabulary, the
- * default APC limit and credits, the terminal's width, the appearance omp
- * already detected, and full motion.
+ * default APC limit and credits, the terminal's width, the appearance already
+ * detected, and full motion.
  */
 export function assumedTspHello(terminal: Terminal): TspHello {
 	const appearance = terminal.appearance;
@@ -353,7 +354,7 @@ export class NativeBackend {
 		surface.acked = surface.seq;
 		surface.focus = null;
 		surface.dirty = false;
-		this.#write("o", { id: surface.id, mode: "inline", title: "omp", role: "ultraworkers.session", adopt: true });
+		this.#write("o", { id: surface.id, mode: "inline", title: APP_NAME, role: "ultraworkers.session", adopt: true });
 		this.#sendPalette(surface);
 		// After the `o`, as in `start()`.
 		setNativeRendering(true);
@@ -483,7 +484,7 @@ export class NativeBackend {
 	}
 
 	#open(surface: Surface): void {
-		this.#write("o", { id: surface.id, mode: surface.mode, title: "omp", role: "ultraworkers.session" });
+		this.#write("o", { id: surface.id, mode: surface.mode, title: APP_NAME, role: "ultraworkers.session" });
 		this.#sendPalette(surface);
 	}
 

@@ -194,6 +194,13 @@ export const packages: PublishPackage[] = [
 		packLock: STATS_CLIENT_LOCK,
 	},
 	{ dir: "packages/agent", kind: "typescript" },
+	{ dir: "packages/chord", kind: "typescript" },
+	{ dir: "packages/client", kind: "typescript" },
+	{ dir: "packages/codemode", kind: "typescript" },
+	{ dir: "packages/durable", kind: "typescript" },
+	{ dir: "packages/protocol", kind: "typescript" },
+	{ dir: "packages/server", kind: "typescript" },
+	{ dir: "packages/telemetry", kind: "typescript" },
 	{
 		dir: "packages/coding-agent",
 		kind: "typescript",

@@ -45,7 +45,7 @@ export type TypeBoxSafeParseResult<T> =
 	| { success: true; data: T }
 	| { success: false; error: TypeBoxValidationFailure };
 
-interface LegacyTypeBoxCompat<T> {
+export interface LegacyTypeBoxCompat<T> {
 	/** TypeBox compatibility validator used by legacy extension loaders. */
 	__validator(data: unknown): T | TypeBoxValidationFailure;
 	/** Zod-style compatibility parser used by legacy extensions. */
@@ -123,7 +123,7 @@ type RequiredProps<P extends Record<string, AnySchema>> = {
 	[K in keyof P]: P[K] extends TOptional<infer E> ? E : P[K];
 };
 
-interface RuntimeType<T> extends OmpType<T> {
+export interface RuntimeType<T> extends OmpType<T> {
 	[OPTIONAL_INNER]?: AnySchema;
 	[OBJECT_INFO]?: ObjectInfo;
 	describe(description: string): RuntimeType<T>;

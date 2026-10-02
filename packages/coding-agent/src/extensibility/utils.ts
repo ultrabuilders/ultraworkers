@@ -236,10 +236,19 @@ export function hostGuardState(): HostGuardState {
  * "Safe" above means no state is lost or corrupted, not that no window exists.
  *
  * A depth left above zero by an abandoned window (its `finally` never runs) is a
- * different failure, and a silent one: every later `withHostGuard` in that
- * process becomes a no-op, since neither the snapshot nor the restore branch is
- * reached. What a stranded depth owes the host is still open; see
- * {@link hostGuardState} for what can be observed about it.
+ * different failure: every later `withHostGuard` in that process becomes a no-op,
+ * since neither the snapshot nor the restore branch is reached. A test harness that
+ * times out inside a window strands it without anyone writing an abandoned promise —
+ * measured, not assumed — and neither kind of strand unwinds on its own, however long
+ * the process is given. See {@link hostGuardState} for what can be observed about it.
+ *
+ * DO NOT ADD A RECOVERY PATH HERE. When `finally` does not run there is no correct
+ * state to recover to: the snapshot was never taken, so any restore has to guess who
+ * paused stdin and what they meant, and a wrong guess overwrites a pause belonging to
+ * something else — a guard that "heals" a stranded depth fails OPEN and silently, which
+ * is strictly worse than the strand it papers over. There is nothing here to recover
+ * because the continuation holding the state is gone, not merely misplaced. The fix for
+ * a stranded window belongs to whatever abandoned it.
  */
 export async function withHostGuard<T>(fn: () => Promise<T>): Promise<T> {
 	if (hostGuardDepth === 0) {

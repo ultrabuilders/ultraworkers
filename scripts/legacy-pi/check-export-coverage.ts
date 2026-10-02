@@ -39,6 +39,35 @@
  * the measured set, committed; `--update` re-measures it from a local clone and
  * is the only thing that needs the sibling present.
  *
+ * ## Reproducing the number
+ *
+ * `pi value exports: 156` was NOT hand-counted. It is reproducible from a
+ * checkout of pi at the same revision:
+ *
+ * ```bash
+ * bun scripts/legacy-pi/check-export-coverage.ts --update \
+ *   ../pi-ref/packages/coding-agent/src/index.ts
+ * ```
+ *
+ * Two inputs decide it, and both are named so a differing number is diagnosable
+ * rather than mysterious:
+ *
+ * 1. **pi's revision.** The sibling clone is not pinned by this repo. A pi
+ *    version bump moves the denominator — which is exactly when the baseline
+ *    MUST be re-sealed, so a number that changed after a pi bump is the gate
+ *    working, not the gate breaking.
+ * 2. **The parser.** `parsePiValueExports` below IS the definition of "value
+ *    export". Changing it legitimately changes the number, which is why its own
+ *    tests exist.
+ *
+ * ## Who re-seals it, and when
+ *
+ * Whoever bumps pi's version, in that same change. Run the `--update` command
+ * above, then move every name the run placed in `unknown` down into
+ * `internal-to-pi` or `extension-surface` before committing. `measure()` puts
+ * new gaps in `unknown` deliberately, so a re-seal that skipped that review
+ * shows up in the report as a long `undecided:` line rather than passing quietly.
+ *
  * ## What the gate does NOT promise
  *
  * It does not check that the shim matches pi, only that it does not SHRINK. The
@@ -53,11 +82,23 @@ const REPO_ROOT = path.resolve(import.meta.dir, "../..");
 const SHIM_PATH = path.join(REPO_ROOT, "packages/coding-agent/src/extensibility/legacy-pi-coding-agent-shim.ts");
 const BASELINE_PATH = path.join(import.meta.dir, "export-coverage.baseline.json");
 
+/**
+ * Why a pi value export is absent from the shim.
+ *
+ * An unlabelled list of gaps is a snapshot nobody can check. `internal-to-pi`
+ * is a decision ("no extension imports this"); `extension-surface` is a
+ * concession ("one probably does, and we have not ported it"); `unknown` is the
+ * honest admission that the decision has not been made. Keeping `unknown` small
+ * and VISIBLE is the point — it is the work queue, and a gap list that hides
+ * its own uncertainty cannot be reviewed.
+ */
+export type MissingClass = "internal-to-pi" | "extension-surface" | "unknown";
+
 export interface CoverageBaseline {
 	/** Names pi's package root exposes as VALUES that the shim re-exports. */
 	readonly covered: readonly string[];
-	/** Names pi exposes as values that the shim deliberately does not. */
-	readonly knownMissing: readonly string[];
+	/** Names pi exposes as values the shim does not, bucketed by why. */
+	readonly knownMissing: Readonly<Record<MissingClass, readonly string[]>>;
 	/** How many value exports pi's package root declares, for the report. */
 	readonly piValueExports: number;
 	/** How many names the shim exposes at runtime, for the report. */
@@ -130,29 +171,51 @@ export async function loadBaseline(baselinePath: string = BASELINE_PATH): Promis
 	return (await Bun.file(baselinePath).json()) as CoverageBaseline;
 }
 
-/** Re-measure both sides from a local pi clone. The only path that needs one. */
+/**
+ * Re-measure both sides from a local pi clone. The only path that needs one.
+ *
+ * Every new gap lands in `unknown`, deliberately. Classifying a gap is a
+ * judgement about whether an out-of-repo extension imports it, and a script
+ * cannot make that judgement — so regenerating without reviewing leaves the
+ * whole gap list in the bucket the report prints loudest. A re-seal that
+ * skipped the review is therefore visible rather than silent.
+ */
 export async function measure(piIndexPath: string): Promise<CoverageBaseline> {
 	const piValueExports = parsePiValueExports(await Bun.file(piIndexPath).text());
 	const shimExports = await readShimExports();
 	const covered = piValueExports.filter(name => shimExports.has(name));
-	const knownMissing = piValueExports.filter(name => !shimExports.has(name));
 	return {
 		covered,
-		knownMissing,
+		knownMissing: {
+			"internal-to-pi": [],
+			"extension-surface": [],
+			unknown: piValueExports.filter(name => !shimExports.has(name)),
+		},
 		piValueExports: piValueExports.length,
 		shimRuntimeExports: shimExports.size,
 	};
 }
 
 export function formatReport(baseline: CoverageBaseline, regressions: readonly string[]): string {
-	const total = baseline.covered.length + baseline.knownMissing.length;
+	const missing = baseline.knownMissing;
+	const total =
+		baseline.covered.length +
+		missing["internal-to-pi"].length +
+		missing["extension-surface"].length +
+		missing.unknown.length;
 	const lines = [
 		`pi value exports:    ${baseline.piValueExports}`,
 		`shim runtime exports: ${baseline.shimRuntimeExports}`,
 		`covered:             ${baseline.covered.length}/${total}`,
-		`known missing:       ${baseline.knownMissing.length}`,
+		`known missing:       ${missing["internal-to-pi"].length + missing["extension-surface"].length + missing.unknown.length}`,
+		`  internal-to-pi:    ${missing["internal-to-pi"].length}`,
+		`  extension-surface: ${missing["extension-surface"].length}`,
+		`  unknown:           ${missing.unknown.length}`,
 	];
-	if (baseline.knownMissing.length > 0) lines.push(`  missing: ${baseline.knownMissing.join(" ")}`);
+	// `unknown` is printed by name on purpose: it is the bucket a reviewer is
+	// meant to empty, and a count alone does not say WHICH gap is undecided.
+	if (missing.unknown.length > 0) lines.push(`  undecided: ${missing.unknown.join(" ")}`);
+	if (missing["extension-surface"].length > 0) lines.push(`  surface: ${missing["extension-surface"].join(" ")}`);
 	if (regressions.length > 0) {
 		lines.push("", `REGRESSION — the shim no longer exports ${regressions.length}:`);
 		for (const name of regressions) lines.push(`  ${name}`);

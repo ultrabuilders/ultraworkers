@@ -110,20 +110,39 @@ describe("findRegressions", () => {
 describe("formatReport", () => {
 	const baseline: CoverageBaseline = {
 		covered: ["alpha", "beta"],
-		knownMissing: ["gamma"],
-		piValueExports: 3,
+		knownMissing: { "internal-to-pi": ["gamma"], "extension-surface": ["delta"], unknown: ["epsilon"] },
+		// 2 covered + 1 per bucket = 5; the report derives the denominator itself.
+		piValueExports: 5,
 		shimRuntimeExports: 40,
 	};
 
-	it("prints the covered count and the missing list, so the number is a measurement", () => {
+	it("prints the covered count and labels every gap bucket, so the number is a measurement", () => {
 		// The bead this gate answers asked for a number in the report rather than a
 		// bare pass: "17/20" has to stay a quantity someone can watch, and a
 		// shrinking denominator is the regression this shape makes visible.
+		//
+		// Bucket COUNTS are what the report prints for all three; the individual
+		// names live in the committed baseline. Printing 45 internal names on every
+		// run would bury the 6 undecided ones, which are the ones a reader can act
+		// on — so the report labels every bucket and names only the actionable two.
 		const report = formatReport(baseline, []);
 
-		expect(report).toContain("covered:             2/3");
-		expect(report).toContain("gamma");
+		expect(report).toContain("covered:             2/5");
+		expect(report).toContain("internal-to-pi:    1");
+		expect(report).toContain("extension-surface: 1");
+		expect(report).toContain("known missing:       3");
+		expect(report).toContain("delta");
 		expect(report).not.toContain("REGRESSION");
+	});
+
+	it("prints the undecided gaps BY NAME, not only their count", () => {
+		// A bucket labelled `unknown` with a number beside it is still a snapshot:
+		// nothing says WHICH gap has not been judged, so a reviewer cannot find
+		// it to close it. This is what turns the gap list into a work queue.
+		const report = formatReport(baseline, []);
+
+		expect(report).toContain("unknown:           1");
+		expect(report).toContain("epsilon");
 	});
 
 	it("names the lost export and the import failure it causes", () => {

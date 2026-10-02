@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The plugin settings overlay now names a command the user can actually type. It told them to run `omp plugin install <package>`, and no published package ships an `omp` binary — `packages/coding-agent/package.json` declares `bin: { ultraworkers }` and the other three packages ship `metaharness`, `mnemopi` and `omp-stats` — so the instruction could only ever produce "command not found". `omp` survives solely as a legacy config-directory name in `XDG_CONFIG_DIR_CANDIDATES`, which is what made the stale spelling look plausible; `APP_NAME` now supplies the displayed name, the same constant the CLI already uses in its help text, so the two cannot drift again. Five sites carry the instruction and both render paths are covered: the empty-state rows and the native `describe()` projection are separate code, and reverting either one alone leaves the wrong command on screen for whichever path the terminal takes. Two `omp.` role identifiers in the same file are deliberately left alone — they are wire identity, which `dirs.ts:33` marks as a third-party contract value — so a whole-file search-and-replace would have broken exactly the two that must not change
+
 - The extension list and inspector can now render a `modified` state, alongside the existing `active` / `disabled` / `shadowed`. A hook whose file changed after the user approved it is refused by the loader, and it now carries that fact all the way to the row that lists it instead of being indistinguishable from one that is running. It reuses `theme.status.warning` rather than introducing a status symbol: a blocked hook *is* a warning, and a new glyph would mean a fourth preset table entry, a theme-class field and a symbol key to keep in step for one more triangle
 
 ### Fixed

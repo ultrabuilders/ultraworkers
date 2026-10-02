@@ -23,13 +23,6 @@ packages/coding-agent/src/cli/render-cli.ts:272
 # the log stream; no user types it and nothing parses it.
 packages/coding-agent/src/discovery/omp-plugins.ts:315
 
-# The one site here that puts the token in front of a user, as a copyable
-# instruction: `omp skill update`. Correct for a dev launcher that links `omp`,
-# wrong for an npm install that ships only `ultraworkers` — so this line is a
-# live instance of epic-0y69, and renaming it is that bead's decision, not this
-# gate's. Recorded rather than silently accepted.
-packages/coding-agent/src/discovery/skillshare.ts:42
-
 # Debug prose describing dropped browser events. Names the product as the actor
 # in a sentence that is never shown to anyone.
 packages/coding-agent/src/tools/browser/tern/tern-tab.ts:577

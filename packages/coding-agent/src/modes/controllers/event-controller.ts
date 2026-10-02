@@ -53,7 +53,7 @@ import {
 	splitAssistantMessageToolTimeline,
 } from "@oh-my-pi/pi-tui/chat/transcript-render-helpers";
 import { isWarpCliAgentProtocolActive } from "../warp-events";
-import { CustomEntryComponent } from "../components/custom-entry";
+import { mountCustomEntry } from "../utils/mount-custom-entry";
 import type { CustomEntry } from "../../session/session-entries";
 import { StreamingRevealController } from "./streaming-reveal";
 import { streamingStringKeysForTool, ToolArgsRevealController } from "./tool-args-reveal";
@@ -1356,24 +1356,9 @@ export class EventController {
 	 * the order it happened rather than jumping below whatever is still typing.
 	 */
 	#handleEntryAppended(entry: CustomEntry): void {
-		const renderer = this.ctx.viewSession.extensionRunner?.getEntryRenderer(entry.customType);
-		if (!renderer) return;
-
-		const component = new CustomEntryComponent(entry, renderer);
-		component.setExpanded(this.ctx.toolOutputExpanded);
-		if (!component.hasContent()) return;
-
-		const streaming = this.ctx.streamingComponent;
-		if (streaming) {
-			const index = this.ctx.chatContainer.children.indexOf(streaming);
-			if (index >= 0) {
-				this.ctx.chatContainer.children.splice(index, 0, component);
-				this.ctx.ui.requestRender();
-				return;
-			}
-		}
-		this.ctx.chatContainer.addChild(component);
-		this.ctx.ui.requestRender();
+		// Shared with the transcript replay so the two draw paths cannot drift;
+		// see `mountCustomEntry`.
+		mountCustomEntry(this.ctx, entry);
 	}
 
 	/**

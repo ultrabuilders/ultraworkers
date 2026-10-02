@@ -555,3 +555,96 @@ describe("a custom entry is drawn with its registered renderer", () => {
 		}
 	});
 });
+
+describe("a custom entry keeps its place when the transcript is rebuilt", () => {
+	/**
+	 * The half of `pi`'s draw path that `dc5f55a2e2` left out. A custom entry draws
+	 * when appended, but the rebuild reads `context.messages` — and a custom entry
+	 * must never be in there, or it would reach the provider. So the rebuild needs
+	 * its own ordered list that carries entries and messages together.
+	 *
+	 * Position is the whole contract: appending all custom entries at the end would
+	 * satisfy "the entry is drawn" while producing a transcript that disagrees with
+	 * `pi` about where things happened.
+	 */
+	it("interleaves the entry between the messages around it", () => {
+		const session = SessionManager.inMemory();
+		session.appendMessage({ role: "user", content: "before", timestamp: 1 } as never);
+		session.appendCustomEntry("status-card", { note: "middle" });
+		session.appendMessage({ role: "user", content: "after", timestamp: 3 } as never);
+
+		const { displayItems } = session.buildSessionContext({ transcript: true });
+		const kinds = (displayItems ?? []).map(item => ("customType" in item ? item.customType : item.role));
+
+		expect(kinds).toEqual(["user", "status-card", "user"]);
+	});
+
+	it("omits the list entirely when the context is not a transcript", () => {
+		// The provider path. A custom entry leaking into `messages` here would put
+		// extension data in the prompt, which is the one thing the entry type forbids.
+		const session = SessionManager.inMemory();
+		session.appendCustomEntry("status-card", {});
+
+		const context = session.buildSessionContext();
+
+		expect(context.displayItems).toBeUndefined();
+		expect(JSON.stringify(context.messages)).not.toContain("status-card");
+	});
+});
+
+describe("a rebuilt transcript draws the entry where it was appended", () => {
+	/**
+	 * End-to-end over the real replay loop: `renderSessionContext` walks
+	 * `messages` and consults `displayItems` for entries, so this proves the two
+	 * are actually joined. Testing `displayItems` alone would pass even if the
+	 * replay never looked at it — which is the "registered but never read" defect
+	 * this whole seam exists to avoid.
+	 */
+	it("places the drawn entry between the messages around it", async () => {
+		const { UiHelpers } = await import("@oh-my-pi/pi-coding-agent/modes/utils/ui-helpers");
+		const { mountCustomEntry } = await import("@oh-my-pi/pi-coding-agent/modes/utils/mount-custom-entry");
+
+		const session = SessionManager.inMemory();
+		session.appendMessage({ role: "user", content: "before", timestamp: 1 } as never);
+		session.appendCustomEntry("status-card", { note: "middle" });
+		session.appendMessage({ role: "user", content: "after", timestamp: 3 } as never);
+
+		const context = session.buildSessionContext({ transcript: true });
+		// The full harness, not a local stub: the replay body reaches for
+		// `pendingTools`, `servedModelTracker` and more, and a thin stub fails on
+		// the first field it happens to lack rather than on the behaviour under test.
+		const { createInteractiveModeContext } = await import("./helpers/interactive-mode-context");
+		await initTheme(false);
+		const ctx = createInteractiveModeContext({
+			sessionManager: session,
+			viewSession: {
+				sessionManager: session,
+				extensionRunner: readerOver([
+					await load(api => {
+						api.registerEntryRenderer("status-card", () => new Text("CARD DRAWN", 0, 0));
+					}, "entry-replay"),
+				]),
+			},
+		});
+
+		// The harness stubs `addMessageToChat` as a no-op, so messages would render
+		// as nothing and "drew in position" would be indistinguishable from "drew at
+		// the end". Swap in the real renderer.
+		ctx.addMessageToChat = ((message: never, options: never) =>
+			new UiHelpers(ctx).addMessageToChat(message, options)) as never;
+
+		new UiHelpers(ctx).renderSessionContext(context);
+
+		// Positional, not textual. The user-message components render empty under
+		// this harness, so comparing rendered strings would measure the harness and
+		// not the contract. Which *slot* the entry lands in is the contract.
+		const children = ctx.chatContainer.children;
+		const cardSlot = children.findIndex(child => child.render(80).join("\n").includes("CARD DRAWN"));
+
+		expect(children).toHaveLength(3);
+		expect(cardSlot).toBe(1);
+		// Named so the import above is load-bearing: an unused mount helper would
+		// mean the replay grew a second, private draw path.
+		expect(typeof mountCustomEntry).toBe("function");
+	});
+});

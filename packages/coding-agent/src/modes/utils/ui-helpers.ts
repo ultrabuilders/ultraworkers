@@ -2,6 +2,7 @@ import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent, Usage } from "@oh-my-pi/pi-ai";
 import { getStreamingPartialJson } from "@oh-my-pi/pi-ai/utils/block-symbols";
 import { type Component, Spacer, Text } from "@oh-my-pi/pi-tui";
+import { customEntryInsertionPoints, mountCustomEntry } from "./mount-custom-entry";
 import { StatusNotice } from "@oh-my-pi/pi-tui/chrome/status-notice";
 import { QueuedMessagesBand } from "@oh-my-pi/pi-tui/prompt/queued-messages";
 import { logger } from "@oh-my-pi/pi-utils";
@@ -614,7 +615,17 @@ export class UiHelpers {
 		const backgroundTaskCallIds = new Set<string>();
 		const messages = sessionContext.messages;
 		const count = messages.length;
+		// Custom entries never enter `messages` (they must not reach the provider),
+		// so the transcript's ordered list says where each one belongs. Derived into
+		// insertion points rather than replacing `messages` as the loop source,
+		// because the body indexes `cacheMissExplainedAt?.[i]` by message position.
+		const customEntryPoints = sessionContext.displayItems
+			? customEntryInsertionPoints(sessionContext.displayItems)
+			: undefined;
 		for (let i = 0; i < count; i++) {
+			if (customEntryPoints) {
+				for (const entry of customEntryPoints.get(i) ?? []) mountCustomEntry(this.ctx, entry);
+			}
 			// Yield BEFORE each message (except the first) rather than after: the
 			// per-message body has several early `continue` paths (preserved live
 			// results, image-only and grouped `read` results), and a trailing yield

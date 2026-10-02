@@ -20,6 +20,7 @@ import {
 import { CONTEXT_NOTES_ENTRY_TYPE, getContextNotes, renderContextNotes } from "./context-notes";
 import {
 	type CompactionEntry,
+	type CustomEntry,
 	type CustomMessageEntry,
 	EPHEMERAL_MODEL_CHANGE_ROLE,
 	type SessionEntry,
@@ -115,7 +116,27 @@ export interface SessionContext {
 	 * Only populated in transcript mode.
 	 */
 	cacheMissExplainedAt?: boolean[];
+	/**
+	 * Everything the transcript draws, in session order: each message this
+	 * context carries, plus the custom entries that never enter `messages`.
+	 *
+	 * A custom entry is display-only by definition — it must not reach the
+	 * provider — so it cannot ride in `messages` to reach the replay. Without a
+	 * parallel ordered list the transcript rebuild has no way to know where such
+	 * an entry belonged, and the only alternative is drawing them all at the
+	 * end. Ported from `pi` (`interactive-mode.ts:257`, `RenderSessionItem`),
+	 * which threads entries and messages through one list for the same reason.
+	 *
+	 * Only populated in transcript mode, like `cacheMissExplainedAt` above.
+	 */
+	displayItems?: RenderSessionItem[];
 }
+
+/**
+ * One drawable item of the transcript. Messages and display-only entries share
+ * one ordered sequence so a replay can interleave them by position.
+ */
+export type RenderSessionItem = AgentMessage | CustomEntry;
 
 /** Lists session model strings to try when restoring, in fallback order. */
 export function getRestorableSessionModels(
@@ -342,6 +363,8 @@ export function buildSessionContext(
 	// 2. Emit kept messages (from firstKeptEntryId up to compaction)
 	// 3. Emit messages after compaction
 	const messages: AgentMessage[] = [];
+	/** Transcript-only; see `SessionContext.displayItems`. */
+	const displayItems: RenderSessionItem[] = [];
 	const cacheMissExplainedAt: boolean[] = [];
 	let pendingReset = false;
 	let currentMode = "none";
@@ -374,6 +397,7 @@ export function buildSessionContext(
 	const pushMessage = (msg: AgentMessage) => {
 		messages.push(msg);
 		if (!options?.transcript) return;
+		displayItems.push(msg);
 		cacheMissExplainedAt.push(trackMessageCacheState(msg));
 	};
 
@@ -397,6 +421,10 @@ export function buildSessionContext(
 			}
 			const message = customMessageEntryMessage(entry);
 			if (message) pushMessage(message);
+		} else if (entry.type === "custom") {
+			// Display-only: it must never reach `messages`, so the transcript's
+			// ordered list is the only route it has to the screen.
+			if (options?.transcript) displayItems.push(entry);
 		} else if (entry.type === "branch_summary" && entry.summary) {
 			pushMessage(createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
 		}
@@ -736,9 +764,21 @@ export function buildSessionContext(
 		}
 	}
 
+	const survivingMessages = new Set<AgentMessage>(messages);
+
 	return {
 		messages,
 		cacheMissExplainedAt: options?.transcript ? cacheMissExplainedAt : undefined,
+		// Reconciled, not just collected: the dangling-tool strip above runs in
+		// transcript mode and splices `messages` *after* the walk, so a list built
+		// during the walk would still name turns that no longer exist. Anything the
+		// strip dropped is dropped here too — by identity, since it rewrites content
+		// in place rather than substituting objects. Erring toward omission: a
+		// missing item leaves the existing `messages`-driven replay untouched,
+		// while a stale one would draw a turn the transcript decided to hide.
+		displayItems: options?.transcript
+			? displayItems.filter(item => "customType" in item || survivingMessages.has(item))
+			: undefined,
 		thinkingLevel,
 		configuredThinkingLevel,
 		serviceTier,

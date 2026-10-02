@@ -158,10 +158,10 @@ that cannot be false: the branch is never exercised and the safe path is never
 taken. That is worse than its absence, because absence is visible and this is not.
 
 **This is already true today, not a future risk.** The posture is stated three
-times in shipped code and docs — `types.ts:613-624`, `types.ts:551-557` ("ultraworkers has
+times in shipped code and docs — `types.ts:576-583`, `types.ts:642-650` ("OMP has
 no equivalent per-directory trust gate … always returns `true`, truthfully
-reflecting that ultraworkers already trusts project-local inputs by default"), and the
-released changelog entry for #7955 (`packages/coding-agent/CHANGELOG.md:1587`).
+reflecting that OMP already trusts project-local inputs by default"), and the
+released changelog entry for #7955 (`packages/coding-agent/CHANGELOG.md:1628`).
 The gap is the absence of a decision, not the presence of a defect.
 
 ---
@@ -197,13 +197,13 @@ rather than changed.
 
 **Why not A (prompt per project).** It is the cheapest in code — the seam already
 has the right shape — but it is not free, and the ADR should say so rather than
-summarize it away. Two implementations must change (`runner.ts:1810`,
-`agent-session.ts:7708`); two existing tests assert the current value
+summarize it away. Two implementations must change (`runner.ts:1943`,
+`agent-session.ts:7794`); two existing tests assert the current value
 (`test/extension-context-project-trust.test.ts`,
 `test/issue-7955-extension-project-trusted.test.ts`) and go red; and it
-contradicts a **released** changelog entry at `CHANGELOG.md:1587`, making it a
+contradicts a **released** changelog entry at `CHANGELOG.md:1628`, making it a
 user-visible behaviour change requiring its own changelog entry and issue link.
-Its blast radius also exceeds this ADR: the `types.ts:613-624` comment describes
+Its blast radius also exceeds this ADR: the `types.ts:642-650` comment describes
 project trust as covering `extensions, settings, skills, resources`, so A either
 gates more than this document decides or contradicts itself.
 

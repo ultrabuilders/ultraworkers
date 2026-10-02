@@ -3,12 +3,21 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 /**
+ * AUTHORS — read this before changing what follows.
+ *
+ * The two npm-manifest writers, the `MANIFEST_WRITERS` list, and the structure of this
+ * file were written by agent `32` in `4121a48b2e`. The `install.sh` branch below was
+ * contributed by agent `98` in `e4cae061ee` and folded in after a4 found the two gates
+ * were covering the same bead from different directions. Both halves are load-bearing
+ * and neither is a superset; see the note on the installer branch for why the two
+ * sources are read by different means on purpose.
+ *
  * `engines-bun-consistency.test.ts` guards the *manifests*: every published workspace
  * `package.json` must agree with the one manifest code imports. That leaves three more
  * places the same floor is written down, none of which is a manifest and none of which
  * that gate can see:
  *
- *   scripts/install.sh:16              MIN_BUN_VERSION="1.3.14"
+ *   scripts/install.sh:16              MIN_BUN_VERSION="1.3.14"      (asked, not parsed)
  *   packages/natives/scripts/gen-npm-packages.ts:106   engines: { bun: ">=1.3.14" }
  *   scripts/setup-npm-trust.ts:266                    engines: { bun: ">=1.3.14" }
  *
@@ -71,15 +80,30 @@ describe("bun floor sources outside the manifests", () => {
 		expect(authoritative).toMatch(/^\d+\.\d+\.\d+$/);
 	});
 
-	// The installer's literal, matched structurally rather than by line number: the
-	// assignment is what must agree, and a pin that moves to another line is still the
-	// same declaration. A line-numbered read would pass on a moved pin and fail on a
-	// renamed variable, which is the opposite of what this gate is for.
+	// The installer's floor, obtained by RUNNING the installer rather than by matching
+	// its text. `install.sh` is a script, so it can be asked; the two manifest writers
+	// below are modules that only produce their `package.json` at publish time, so they
+	// can only be parsed. That asymmetry is the reason this file is not uniform, and it
+	// is why the installer branch is not "the same check, written twice".
+	//
+	// The flag exits before any side effect. A test that grepped `MIN_BUN_VERSION=`
+	// instead would assert how the script LOOKS: renaming the variable breaks it while
+	// behaviour is byte-identical, and a hand-kept copy of the number in the test would
+	// drift in exactly the way this file exists to catch.
 	it("installer demands the same floor the runtime accepts", () => {
-		const declared = readFile(INSTALL_SH).match(/^MIN_BUN_VERSION="([^"]+)"/m);
+		const proc = Bun.spawnSync(["sh", path.join(REPO_ROOT, INSTALL_SH), "--print-min-bun-version"]);
+		expect(proc.exitCode).toBe(0);
 
-		expect(declared).not.toBeNull();
-		expect(digitsOnly(declared![1])).toBe(authoritative);
+		expect(digitsOnly(proc.stdout.toString().trim())).toBe(authoritative);
+	});
+
+	// The query is an added case in a `curl | sh` argument parser, and that parser is
+	// what rejects a typo before anything is installed. A new case that swallowed the
+	// fallback would turn "Unknown option" into a silent success.
+	it("installer still refuses an unknown option", () => {
+		const proc = Bun.spawnSync(["sh", path.join(REPO_ROOT, INSTALL_SH), "--not-a-real-option"]);
+		expect(proc.exitCode).toBe(1);
+		expect(proc.stderr.toString() + proc.stdout.toString()).toContain("Unknown option");
 	});
 
 	// The two npm-manifest writers. Same reasoning as the shell pin: find the literal
@@ -99,7 +123,8 @@ describe("bun floor sources outside the manifests", () => {
 	// reason. Each source must be locatable by the patterns above, or the assertions
 	// would be comparing against nothing.
 	it("locates every bun floor source outside the manifests", () => {
-		expect(readFile(INSTALL_SH)).toMatch(/^MIN_BUN_VERSION="[^"]+"/m);
+		const installer = Bun.spawnSync(["sh", path.join(REPO_ROOT, INSTALL_SH), "--print-min-bun-version"]);
+		expect(digitsOnly(installer.stdout.toString().trim())).toMatch(/^\d+\.\d+\.\d+$/);
 		for (const writer of MANIFEST_WRITERS) {
 			expect(readFile(writer)).toMatch(/bun:\s*"[^"]+"/);
 		}

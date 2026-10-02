@@ -364,26 +364,90 @@ console.log(JSON.stringify({ id: TERMINAL_ID, imageProtocol: TERMINAL.imageProto
  * image-protocol pin, then applies the caller's overrides. Keeps the suite
  * independent of which terminal it runs inside (full-suite safe).
  */
-function subprocessEnv(overrides: Record<string, string | undefined>): Record<string, string | undefined> {
-	const env: Record<string, string | undefined> = { ...Bun.env };
-	for (const key of [
-		"PI_FORCE_IMAGE_PROTOCOL",
-		"PASEO_TERMINAL_ID",
-		"KITTY_WINDOW_ID",
-		"GHOSTTY_RESOURCES_DIR",
-		"HERDR_ENV",
-		"HERDR_PANE_ID",
-		"HERDR_TAB_ID",
-		"HERDR_WORKSPACE_ID",
-		"WEZTERM_PANE",
-		"ITERM_SESSION_ID",
-		"VSCODE_PID",
-		"ALACRITTY_WINDOW_ID",
-	]) {
-		delete env[key];
+/**
+ * Terminal-identification markers and image-protocol pins, matched by family
+ * rather than enumerated by name.
+ *
+ * Enumerating names cannot keep the promise in this function's docblock: a
+ * terminal that introduces a variable nobody listed is simply not stripped, and
+ * the suite's result then depends on the machine it ran on — the exact
+ * dependence "full-suite safe" rules out. Matching families means a new
+ * variable inside a known terminal's namespace is covered without anyone
+ * remembering to add it.
+ */
+const TERMINAL_MARKER_PREFIXES = [
+	"TERM",
+	"COLORTERM",
+	"WEZTERM_",
+	"KITTY_",
+	"GHOSTTY_",
+	"ITERM_",
+	"ALACRITTY_",
+	"VSCODE_",
+	"CMUX_",
+	"ZELLIJ_",
+	"WT_",
+	"HERDR_",
+	"PASEO_",
+	"PI_FORCE_IMAGE",
+	"__CF",
+	"STY",
+	"TMUX",
+] as const;
+
+function isTerminalMarker(key: string): boolean {
+	return TERMINAL_MARKER_PREFIXES.some(prefix => key.startsWith(prefix));
+}
+
+function subprocessEnv(
+	overrides: Record<string, string | undefined>,
+	base: Record<string, string | undefined> = Bun.env,
+): Record<string, string | undefined> {
+	const env: Record<string, string | undefined> = {};
+	for (const [key, value] of Object.entries(base)) {
+		if (isTerminalMarker(key)) continue;
+		env[key] = value;
 	}
 	return { ...env, ...overrides };
 }
+
+describe("subprocessEnv keeps the suite independent of the terminal it runs in", () => {
+	// Driven through an explicit `base` rather than by mutating `Bun.env`: a
+	// marker that happens to be unset on this machine would make the assertion
+	// pass under the old enumerated list too, which is the one thing this test
+	// exists to rule out. Each key below is a real variable from a real
+	// terminal, and none of them was in that list.
+	it("strips markers from known families that no one enumerated", () => {
+		const env = subprocessEnv(
+			{},
+			{
+				COLORTERM: "truecolor",
+				WEZTERM_UNIX_SOCKET: "/tmp/wezterm",
+				KITTY_LISTEN_ON: "1",
+				CMUX_SURFACE_ID: "cmux-1",
+				TERM_FEATURES: "256color",
+				PI_FORCE_IMAGE_PROTOCOL: "kitty",
+				SOME_UNRELATED_SETTING: "keep me",
+			},
+		);
+		expect(env.COLORTERM).toBeUndefined();
+		expect(env.WEZTERM_UNIX_SOCKET).toBeUndefined();
+		expect(env.KITTY_LISTEN_ON).toBeUndefined();
+		expect(env.CMUX_SURFACE_ID).toBeUndefined();
+		expect(env.TERM_FEATURES).toBeUndefined();
+		expect(env.PI_FORCE_IMAGE_PROTOCOL).toBeUndefined();
+		// Stripping is targeted: an unrelated variable still reaches the child.
+		expect(env.SOME_UNRELATED_SETTING).toBe("keep me");
+	});
+
+	// The overrides are what tests steer detection with, so they must survive the
+	// strip even when their key looks like a terminal marker.
+	it("applies overrides after stripping, so a steered marker is still steered", () => {
+		const env = subprocessEnv({ TERM_PROGRAM: "otty" }, { TERM_PROGRAM: "WezTerm", COLORTERM: "truecolor" });
+		expect(env.TERM_PROGRAM).toBe("otty");
+		expect(env.COLORTERM).toBeUndefined();
+	});
+});
 
 describe("otty terminal capabilities", () => {
 	it("recognizes TERM_PROGRAM=otty before the true-color fallback", () => {

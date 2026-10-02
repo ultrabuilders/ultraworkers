@@ -26,7 +26,7 @@ export default class Git extends Command {
 		dir: Flags.string({ char: "C", description: "Run in another directory instead of the current one" }),
 	};
 
-	static examples = ["omp git", "omp git HEAD~2", "omp git -C ~/projects/app"];
+	static examples = [`${APP_NAME} git`, `${APP_NAME} git HEAD~2`, `${APP_NAME} git -C ~/projects/app`];
 
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(Git);

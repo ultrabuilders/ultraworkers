@@ -9,7 +9,7 @@
  * model into the worker's cache.
  */
 
-import { getProjectDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, getProjectDir } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { Args, Command, Flags } from "@oh-my-pi/pi-utils/cli";
 import { sayHelp as commandHelp } from "../cli/command-help";
@@ -40,7 +40,7 @@ export default class Say extends Command {
 
 	static examples = [
 		'omp say "hello world"',
-		"omp say --file notes.md --voice bm_fable",
+		`${APP_NAME} say --file notes.md --voice bm_fable`,
 		'omp say "hello world" --out /tmp/hello.wav',
 	];
 

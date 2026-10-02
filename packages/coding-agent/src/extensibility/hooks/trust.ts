@@ -155,12 +155,13 @@ export async function hookContentHash(hook: Hook): Promise<string | undefined> {
 /**
  * Whether `hook` may run, given the hash recorded for it — if any.
  *
- * `undefined` means first sight. It reports `untrusted`, because at the moment
- * this is asked nothing has vouched for the file; the loader records the hash
- * immediately afterwards, which is what makes first sight *become* trusted
- * without this function having to guess. Splitting those two moments is what
- * lets the dashboard show an unrecorded hook honestly while the loader still
- * admits it.
+ * `undefined` means first sight, and it reports `untrusted`: at the moment this
+ * is asked nothing has vouched for the file. First sight is blocked rather than
+ * admitted-then-recorded, so the loader must not record a hash for a hook it
+ * refused — were it to, the one unapproved load would be enough to leave a
+ * matching hash behind and let the *next* load admit the file. Becoming trusted
+ * takes a `hooks.state` entry the user wrote for that exact content, which
+ * `hookUntrustedMessage` spells out; this function only reports the comparison.
  *
  * `managed` short-circuits ahead of the comparison, so admin-installed hooks
  * are exempt from the tripwire.

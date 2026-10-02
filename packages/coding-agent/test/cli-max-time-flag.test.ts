@@ -4,7 +4,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { runRootCommand } from "@oh-my-pi/pi-coding-agent/main";
 import type { CreateAgentSessionOptions } from "@oh-my-pi/pi-coding-agent/sdk";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, TempDir } from "@oh-my-pi/pi-utils";
 import { runCli } from "../src/cli";
 
 describe("parseArgs — --max-time flag", () => {
@@ -71,7 +71,10 @@ describe("parseArgs — --max-time flag", () => {
 		const stderr = captured.join("");
 		expect(observedExitCode).toBe(2);
 		expect(stderr).toContain("Error: Invalid --max-time value");
-		expect(stderr).toContain("Run `omp --help` for available flags.");
+		// The hint names the app the user actually has installed. args.ts:401/426 print
+		// APP_NAME, so a literal here pointed at a binary that `npm i -g` never
+		// creates — package.json `bin` publishes `ultraworkers` only.
+		expect(stderr).toContain(`Run \`${APP_NAME} --help\` for available flags.`);
 		expect(stderr).not.toContain("parseMaxTimeSeconds");
 		expect(stderr).not.toContain("CliUsageError");
 	});

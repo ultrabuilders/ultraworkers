@@ -50,11 +50,12 @@ describe("ratchet arithmetic", () => {
 			...Array.from({ length: 40 }, (_, i) => v("hits-imbalance", `src/off-${i}.ts`)),
 			v("empty-reason", "src/a.ts (line 3)"),
 			v("missing-keep-refs", "src/b.ts (line 4)"),
-			v("literal-hits-imbalance", "src/c.ts (line 5)"),
+			...Array.from({ length: 71 }, (_, i) => v("literal-hits-imbalance", `src/c${i}.ts`)),
 		];
 		const verdict = checkRatchet(noisy);
 		expect(verdict.staleRow).toBe(0);
 		expect(verdict.missingRow).toBe(700);
+		expect(verdict.literalImbalance).toBe(71);
 		expect(verdict.ok).toBe(true);
 	});
 
@@ -139,8 +140,12 @@ describe("the ratchet as a runnable gate", () => {
 		expect(out).toContain("ad1f1ef25f5c55fc924da3c07ac71b44");
 		// …and the rules it was measured under, which the digest above cannot cover.
 		expect(out).toMatch(/\[ratchet\] rules {5}: \S+ \(ceiling set against \S+\)/);
-		// A green run must still name the number it deliberately does not gate on.
-		expect(out).toContain("reported, not gated: missing-row");
+		// A green run must still name the numbers it deliberately does not gate on, and
+		// say they are ceilings. An unlabelled 71 reads as a threshold to defend rather
+		// than a number that falls when someone fixes a row.
+		expect(out).toContain("both are CEILINGS, they must fall");
+		expect(out).toMatch(/missing-row\s+= \d+/);
+		expect(out).toMatch(/literal-hits-imbalance\s+= \d+/);
 		expect(proc.exitCode).toBe(0);
 	});
 });

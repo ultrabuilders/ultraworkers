@@ -81,6 +81,14 @@ export interface RatchetVerdict {
 	readonly ok: boolean;
 	/** Reported, never blocking — it counts rows still missing, so it must fall. */
 	readonly missingRow: number;
+	/**
+	 * Also a ceiling, and for the same structural reason. The rule fires when a row's
+	 * declared `hits` disagrees with the file, so correcting a row REMOVES the
+	 * violation: it falls as the table is filled in. Reported with that label because
+	 * an unlabelled 71 reads as a threshold, and a threshold that moves down on
+	 * purpose is the one thing nobody should mistake for a ceiling to defend.
+	 */
+	readonly literalImbalance: number;
 }
 
 /**
@@ -98,6 +106,7 @@ export function checkRatchet(
 		baseline,
 		ok: staleRow <= baseline,
 		missingRow: count("missing-row"),
+		literalImbalance: count("literal-hits-imbalance"),
 	};
 }
 
@@ -144,7 +153,9 @@ async function main(): Promise<number> {
 			`[ratchet] table     : ${TABLE_PATH} · ${rows.length} rows · md5:${printed}\n` +
 			`[ratchet] ceiling set against md5:${BASELINE_TABLE_DIGEST}${tableDrift}\n` +
 			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
-			`[ratchet] reported, not gated: missing-row = ${verdict.missingRow} (a ceiling — it must fall)`,
+			`[ratchet] reported, not gated — both are CEILINGS, they must fall:\n` +
+			`[ratchet]   missing-row             = ${verdict.missingRow}   (rows still not covered)\n` +
+			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)`,
 	);
 
 	if (!verdict.ok) {

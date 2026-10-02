@@ -7,6 +7,7 @@ import {
 	type ApprovalEntry,
 } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { BashTool } from "@oh-my-pi/pi-coding-agent/tools/bash";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 
 /**
@@ -281,5 +282,71 @@ describe("a policy denial is auditable without a prompt", () => {
 
 		expect(entries.every(entry => !isApprovalDenial(entry))).toBe(true);
 		expect(entries.some(entry => entry.policy === "deny")).toBe(false);
+	});
+});
+
+/**
+ * The seam, end to end: the real `BashTool`, the real critical-pattern path.
+ *
+ * `denyingTool` above reproduces the *shape* of a critical decision, which proves
+ * the wrapper records what it is handed. It cannot prove the thing that actually
+ * regressed: that `BashTool.approval` returns `policy: "deny"` for a critical
+ * command at all. That decision is made in `bash.ts`, a different file, and a
+ * fake tool would stay green if it were reverted — so the audit would be shown to
+ * cover a denial the product no longer produces.
+ *
+ * `rm -rf /` is the only command that reaches that branch, which is what makes it
+ * worth naming rather than reaching for any non-empty command.
+ */
+describe("a critical bash command is the denial this records", () => {
+	it("writes the refusal the real tool produces, not a stand-in", async () => {
+		const { runner, entries } = harness("Deny");
+		const bash = new BashTool({
+			settings: Settings.isolated({ "tools.approvalMode": "yolo" }),
+		} as unknown as ConstructorParameters<typeof BashTool>[0]);
+		const wrapped = new ExtensionToolWrapper(bash, runner) as unknown as AgentTool;
+		const settings = Settings.isolated({ "tools.approvalMode": "yolo" });
+
+		await expect(
+			wrapped.execute(
+				"call-critical",
+				{ command: "rm -rf /" },
+				undefined,
+				undefined as never,
+				{
+					settings,
+				} as never,
+			),
+		).rejects.toThrow("Critical pattern detected");
+
+		expect(entries).toHaveLength(1);
+		expect(isApprovalDenial(entries[0]!)).toBe(true);
+		expect(entries[0]).toMatchObject({ phase: "answered", policy: "deny", toolName: "bash" });
+	});
+
+	it("stays quiet on a command the classifier does not flag", async () => {
+		// Control with the real tool on the other side of the same branch: reverting
+		// W6 makes this pass and the test above fail, which is the pair that says the
+		// first one is about the classifier and not about the recorder.
+		const { runner, entries } = harness("Approve");
+		const bash = new BashTool({
+			settings: Settings.isolated({ "tools.approvalMode": "always-ask" }),
+		} as unknown as ConstructorParameters<typeof BashTool>[0]);
+		const wrapped = new ExtensionToolWrapper(bash, runner) as unknown as AgentTool;
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+
+		await expect(
+			wrapped.execute(
+				"call-benign",
+				{ command: "echo hello" },
+				undefined,
+				undefined as never,
+				{
+					settings,
+				} as never,
+			),
+		).rejects.toThrow();
+
+		expect(entries.some(entry => isApprovalDenial(entry))).toBe(false);
 	});
 });

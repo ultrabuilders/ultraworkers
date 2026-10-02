@@ -16,19 +16,21 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { expandWindowsLongPath } from "@oh-my-pi/pi-natives/path";
 import { engines, version } from "../package.json" with { type: "json" };
+import { APP_NAME } from "./brand";
 import { isEnoent, isEnotdir } from "./fs-error";
 
 /**
- * Display name of the app: what the user sees in help text, `process.title`,
- * notification titles and log filenames.
+ * Display name of the app.
  *
- * Deliberately NOT where state lives. The config root is resolved through
- * {@link CONFIG_DIR_CANDIDATES} and {@link XDG_CONFIG_DIR_CANDIDATES}, both frozen
- * lists that already carry the old spelling for migration — so flipping this
- * value moves the app's identity without moving a single byte of user data.
- * Keep it that way: nothing that decides *where to store* may read this.
+ * The definition now lives in `./brand`, which imports nothing, so a browser bundle can
+ * print the product name without pulling this module — and the `node:fs`/`node:path`
+ * chain behind it — into the client. It is re-exported here so that every existing
+ * `@oh-my-pi/pi-utils` and `@oh-my-pi/pi-utils/dirs` consumer resolves it unchanged.
+ *
+ * Both statements are needed: `export *` re-exports the name to callers but does NOT
+ * create a local binding, and this module still uses `APP_NAME` in its own path helpers.
  */
-export const APP_NAME: string = "ultraworkers";
+export * from "./brand";
 
 /** Wire identity — the third-party contract value; do not change without a compatibility decision. */
 export const WIRE_NAME: string = "ultraworkers";

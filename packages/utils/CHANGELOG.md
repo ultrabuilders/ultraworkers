@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `@oh-my-pi/pi-utils/brand` exports `APP_NAME` from a module that imports nothing. Browser-bundled code could previously not print the product name without importing `dirs`, which pulls `node:fs`, `node:os` and `node:path` into the client. There is still one definition: `dirs` re-exports it, so every existing import resolves unchanged.
+
 ### Fixed
 
 - `sanitizeText` no longer truncates its input at a BEL-terminated escape sequence. Command output

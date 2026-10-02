@@ -101,11 +101,34 @@ export const cfgProjectTrust = register({
 		tab: "tools",
 		group: "Trust",
 		label: "Project Trust",
-		description: "Whether code shipped inside this directory may run",
+		description: "Your standing decision about code shipped inside this directory",
+		// These strings state what actually happens, which is deliberately less than
+		// what they used to promise. They said "is refused" for `no` and "Ask" for
+		// `undecided` — and neither was true: no load path consults
+		// `isProjectTrustedForScope`, so nothing refuses and nothing asks. A user who
+		// read "Not trusted" and closed the panel believed project extensions were
+		// blocked; they loaded, silently. That is the worst outcome a control panel
+		// can produce, and it is worse than an inert setting, because it is an inert
+		// setting that says it is not.
+		//
+		// `docs/extension-trust-model.md` records the decision this follows: the
+		// decision is stored and surfaced, and nothing enforces it yet. When a load
+		// path starts calling `assertTrusted`, these strings become the place that
+		// has to change back — and the ADR is the thing to check first, because a
+		// gate landing is a reversal of it, not a completion of it.
 		options: [
 			{ value: "yes", label: "Trusted", description: "Project-scoped extensions and plugins may load" },
-			{ value: "no", label: "Not trusted", description: "Project-scoped code is refused" },
-			{ value: "undecided", label: "Ask", description: "Project-scoped code is refused until you decide" },
+			{
+				value: "no",
+				label: "Not trusted",
+				description:
+					"Records that you do not trust this project. Nothing enforces it yet — project-scoped code still loads.",
+			},
+			{
+				value: "undecided",
+				label: "Undecided",
+				description: "No decision recorded. Project-scoped code loads the same as for any other answer today.",
+			},
 		],
 	},
 });

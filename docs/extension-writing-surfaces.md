@@ -176,7 +176,7 @@ Recorded so a later reader does not mistake silence for a decision.
 
   | shim | what it is | where |
   | --- | --- | --- |
-  | `isProjectTrusted()` | Declared twice on the extension context; both implementations return a constant | declared `extensions/types.ts:558` and `:625`; implemented `extensions/runner.ts:1810` and `session/agent-session.ts:7708`, both `isProjectTrusted: () => true` |
+  | `isProjectTrusted()` | Declared twice on the extension context; reports the recorded `projectTrust` decision and gates nothing | declared `extensions/types.ts:594` and `:665`; implemented `extensions/runner.ts:2020` and `session/agent-session.ts:7795`, both `isProjectTrusted: () => isProjectTrustedForScope(this.settings)` |
   | `@earendil-works/*` specifier shim | Redirects a legacy bare specifier onto the canonical package | imported at `extensions/loader.ts:54` from `../plugins/legacy-pi-compat`, installed at `:80`; the module it hands back is loaded through `loadLegacyPiModule` at `:730` |
   | package-root shims for `pi-ai`, `pi-coding-agent`, `pi-tui`, `typebox` | Re-export a canonical surface under each pre-rebrand package root | `plugins/legacy-pi-compat.ts:967`, `:978`, `:985`; `legacy-typebox.ts:12` re-exports `@oh-my-pi/omptype/typebox` |
 

@@ -563,4 +563,21 @@ thứ***. Nhóm F có tám dòng, ULW đã có sẵn bản riêng cho `todo` và
 renderer thì không có seam nào". **Sai** — chính docblock của `toolRenderers` (`tools/index.ts:34-39`) đã ghi
 đường thay thế bằng văn bản. Đọc docblock trước khi kết luận về một registry.
 
+### Một neo đã rotted **sau** lần đo 2 — đo lại ở `80d3882e5a` (2026-10-02)
+
+Dòng 462 trong phần `TrustDialog` ghi: *"`isProjectTrusted()` vẫn là `() => true`; đó là **M2 WI-20 đang
+`deferred`**"*. **Cả hai vế sai**, và tôi để nguyên dòng đo cũ vì nó **đúng lúc đo**:
+
+| vế | lần đo 2 nói | đúng ở `80d3882e5a` |
+| --- | --- | --- |
+| `isProjectTrusted()` | `() => true` | `() => isProjectTrustedForScope(this.settings)` — `extensions/runner.ts:2020`, `session/agent-session.ts:7795` |
+| `m2-wi-20-049` | `deferred` | **`open`** (đọc thẳng `.beads/issues.jsonl`, không phải từ ghi chú) |
+
+**Kết luận của dòng đó vẫn đúng** — ULW không có trust posture ở tầng nạp — nhưng **lý do** đã cũ. Nay còn
+thêm một điều mà lúc đo chưa có: `assertTrusted` **tồn tại** và `ProjectTrustError` **tồn tại**, chỉ là
+**không có caller trong `src/`**. Tức quyết định đã lưu được, hiển thị được, và **không ai gọi tới nó**.
+
+Bài học bổ sung: một neo có thể rotted theo **hai** chiều — dòng trôi, **và trạng thái bead đổi**. Lần đo 2
+ghim một sha, nhưng `deferred`/`open` là trạng thái tracker, không phải thuộc tính của commit đó.
+
 **Hai bên đều có** `todo` và `websearch` — ULW có bản riêng (`todo.ts` 27 KB, `web-search.ts` 14 KB), opencoding render chung trong `messageActions.tsx`. **Ở phần này nên giữ UI của ULW**, đúng như bạn nói.

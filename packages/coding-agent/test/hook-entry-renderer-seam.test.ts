@@ -66,13 +66,27 @@ describe("a hook registers a renderer for the entries it appends", () => {
 		expect(renderer).toBeDefined();
 		expect(
 			renderer?.(
-				{ type: "custom", customType: "status", data: {}, id: "e1", timestamp: 0 },
+				// `SessionEntryBase.timestamp` is an ISO string written by `nowIso()`, so
+				// `0` here was never a value the production path could produce.
+				{
+					type: "custom",
+					customType: "status",
+					data: {},
+					id: "e1",
+					parentId: null,
+					timestamp: "2026-01-01T00:00:00.000Z",
+				},
 				{
 					expanded: false,
 				},
 				null as never,
 			),
-		).toEqual({ marker: MARKER });
+			// `EntryRenderer` returns `Component | undefined`, and the hook under test
+			// returns a bare marker object rather than a real component — that is what
+			// makes "did this renderer run" observable at all. Same `as never` the
+			// theme argument above uses for the same reason: the seam is what is under
+			// test, not the component's shape.
+		).toEqual({ marker: MARKER } as never);
 	});
 
 	it("reports no renderer for a custom type no hook claimed", async () => {

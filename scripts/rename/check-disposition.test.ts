@@ -451,4 +451,32 @@ describe("a keep_ref that names nothing", () => {
 		expect(counted.count).toBe(3);
 		expect(counted.kinds).toEqual(["W11:*", "a57q:*", "bare-non-W"]);
 	});
+
+	it("decomposes the unverifiable total, largest family first", () => {
+		// The point of the breakdown: `333 (W11:*, a57q:*, bare-non-W)` is one number for
+		// what may be one large cause or several small ones, and a reader cannot tell which
+		// they are looking at. What makes that readable is that the big family is FIRST and
+		// carries its own number, so "the coined vocabulary is almost all of it" is
+		// something the output states rather than something a reader has to infer.
+		const counted = countUnverifiableKeepRefs([
+			row_("src/a.ts", 1, "keep-wire", "why", "W11:contract-one"),
+			row_("src/b.ts", 1, "keep-wire", "why", "W11:contract-two"),
+			row_("src/c.ts", 1, "keep-wire", "why", "W11:contract-three"),
+			row_("src/d.ts", 1, "keep-wire", "why", "a57q:rs-glob"),
+			row_("src/e.ts", 1, "keep-wire", "why", "N3"),
+		]);
+		expect(counted.count).toBe(5);
+		// Descending by count — the assertion is the ORDER, not the presence of the numbers.
+		// An unsorted list carrying the same totals would pass a presence check and fail
+		// exactly the reader this breakdown exists for.
+		expect(counted.byKind).toEqual([
+			["W11:*", 3],
+			["a57q:*", 1],
+			["bare-non-W", 1],
+		]);
+		// Ties break by name, so an unchanged table cannot appear to move between runs.
+		// `a57q:*` and `bare-non-W` both have 1, and this is the order they must land in.
+		expect(counted.byKind[1]?.[0]).toBe("a57q:*");
+		expect(counted.byKind[2]?.[0]).toBe("bare-non-W");
+	});
 });

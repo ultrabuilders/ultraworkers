@@ -172,17 +172,33 @@ export async function loadDefinedPlanIds(root: string): Promise<ReadonlySet<stri
  * gate cannot judge: `N3`–`N7` have no definition site, and the `W11:*` contract
  * vocabulary is coined in the table itself and written down nowhere. Printing the
  * count on every run is what keeps an unchecked ref from reading as a checked one.
+ *
+ * `byKind` exists because the total alone answers nothing. `333 (W11:*, a57q:*,
+ * bare-non-W)` reads as one undifferentiated mass; `333 (W11:*=310, a57q:*=21,
+ * bare-non-W=2)` says the problem is almost entirely the coined-vocabulary family
+ * and the other two are rounding. A single number cannot tell a reader whether they
+ * are looking at one large cause or several small ones, and "unverifiable" as a
+ * verdict on the column is exactly the claim that decomposition exists to prevent.
  */
-export function countUnverifiableKeepRefs(rows: readonly Row[]): { count: number; kinds: readonly string[] } {
-	const kinds = new Set<string>();
+export function countUnverifiableKeepRefs(rows: readonly Row[]): {
+	count: number;
+	kinds: readonly string[];
+	/** Family -> how many refs of that family, most numerous first. */
+	byKind: readonly (readonly [string, number])[];
+} {
+	const perKind = new Map<string, number>();
 	let count = 0;
 	for (const row of rows) {
 		const ref = row.keepRefs.trim();
 		if (ref === "" || BARE_PLAN_ID.test(ref)) continue;
 		count++;
-		kinds.add(ref.includes(":") ? `${ref.slice(0, ref.indexOf(":"))}:*` : "bare-non-W");
+		const kind = ref.includes(":") ? `${ref.slice(0, ref.indexOf(":"))}:*` : "bare-non-W";
+		perKind.set(kind, (perKind.get(kind) ?? 0) + 1);
 	}
-	return { count, kinds: [...kinds].sort() };
+	// Descending by count, then by name so two equal families cannot swap places
+	// between runs and make an unchanged table look like it moved.
+	const byKind = [...perKind.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+	return { count, kinds: byKind.map(([kind]) => kind).sort(), byKind };
 }
 
 /**
@@ -757,8 +773,10 @@ async function main(): Promise<void> {
 	// full coverage — which is the failure this rule was written to close.
 	const unverifiable = countUnverifiableKeepRefs(rows);
 	if (unverifiable.count > 0) {
+		const withRefs = rows.filter(row => row.keepRefs.trim() !== "").length;
 		console.log(
-			`disposition(${stage}): keep-refs-not-checkable = ${unverifiable.count} (${unverifiable.kinds.join(", ")}) — no definition site to resolve against`,
+			`disposition(${stage}): keep-refs-not-checkable = ${unverifiable.count}/${withRefs} carrying a ref ` +
+				`(${unverifiable.byKind.map(([kind, n]) => `${kind}=${n}`).join(", ")}) — no definition site to resolve against`,
 		);
 	}
 

@@ -9,6 +9,7 @@
  * regression that motivated the split.
  */
 import type { CommandEntry } from "@oh-my-pi/pi-utils/cli";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import * as commandHelp from "./cli/command-help";
 import {
 	EXTENSION_SHADOWABLE_STRING_FLAGS,
@@ -359,9 +360,9 @@ const subcommandCollisions: Array<{ verb: string; owner: string; existingOwner: 
  *
  * Returns `false` when `verb` was already claimed so the caller can surface the
  * collision; the existing registration is kept, keeping dispatch deterministic.
- * A verb shadowing a *built-in* command is refused for the same reason, with
- * `"omp"` as the other claimant: {@link extensionCommandEntries} entries are
- * matched after the static table, so a handler registered under a built-in name
+ * A verb shadowing a *built-in* command is refused for the same reason, with the
+ * installed app name as the other claimant: {@link extensionCommandEntries} entries
+ * are matched after the static table, so a handler registered under a built-in name
  * would never be reached — and a silently-unreachable handler is precisely the
  * invisible override this registry exists to make loud.
  */
@@ -372,7 +373,7 @@ export function registerSubcommand(verb: string, owner: string, handler: Subcomm
 		return false;
 	}
 	if (SUBCOMMAND_NAMES.has(verb)) {
-		subcommandCollisions.push({ verb, owner, existingOwner: "omp" });
+		subcommandCollisions.push({ verb, owner, existingOwner: APP_NAME });
 		return false;
 	}
 	registeredSubcommands.set(verb, { owner, handler });

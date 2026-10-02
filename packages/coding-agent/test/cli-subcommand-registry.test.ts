@@ -38,7 +38,7 @@ import {
 	subcommandCollisionDiagnostics,
 } from "@oh-my-pi/pi-coding-agent/cli-commands";
 import { loadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
-import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
 import { run } from "@oh-my-pi/pi-utils/cli";
 
 /**
@@ -337,7 +337,7 @@ describe("registerSubcommand: omp <verb> runs the handler", () => {
 		expect(stderrText()).toContain("command nope not found");
 	});
 
-	it("refuses a verb shadowing a built-in, naming omp as the other claimant", async () => {
+	it("refuses a verb shadowing a built-in, naming the installed app as the other claimant", () => {
 		// `install` is a real command in the static table, and `run()` matches that
 		// table first — so a handler registered under this name would be unreachable.
 		// Refusing loudly is the whole point: a silent no-op here is the invisible
@@ -346,7 +346,13 @@ describe("registerSubcommand: omp <verb> runs the handler", () => {
 
 		const [collision] = subcommandCollisionDiagnostics();
 		expect(collision.verb).toBe("install");
-		expect(collision.existingOwner).toBe("omp");
+		// The built-in branch, not the extension-vs-extension one above: the loser is
+		// named alongside whoever already holds the verb, and here that holder is the
+		// core table rather than a peer extension. Asserted against the constant
+		// rather than a copied literal, so a rename of the installed name cannot
+		// leave this diagnostic naming a binary that no longer exists.
+		expect(collision.existingOwner).toBe(APP_NAME);
+		expect(collision.existingOwner).not.toBe("ext:greedy");
 	});
 
 	it("the composed command list still resolves a refused shadow to the built-in", () => {

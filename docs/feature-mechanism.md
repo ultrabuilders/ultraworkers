@@ -7,7 +7,7 @@ gate proves it**.
 Both halves of that answer are load-bearing:
 
 - `mechanism` names a **path**, not a package. A row that says `capability` or
-  `coding-agent` is a useless row — that is where code *lives*, not the mechanism
+  `coding-agent` is a useless row — that is where code _lives_, not the mechanism
   that makes the behaviour real. It still looks like a table, which is what makes it
   quietly worthless.
 - `proof` names a **gate that has gone red**, or the literal `none` plus the work
@@ -26,7 +26,7 @@ The two contracts are kept honest by
    `none` that cannot name a work item is rejected, so a vague "no test yet" can never
    enter the table.
 
-   That rule clears rows but cannot stop someone *adding* a `none` for something
+   That rule clears rows but cannot stop someone _adding_ a `none` for something
    nobody has scheduled, so the count is capped as well:
 
    **`Registered proof:none cap: 0`** — measured 2026-10-02: 4 rows, 4 real gates, 0
@@ -44,12 +44,12 @@ way a diff-generated ledger is.
 
 ## The four M4 claims
 
-| feature | mechanism | proof |
-| --- | --- | --- |
-| Enabling or disabling a plugin in `/settings` reports the change that actually reached disk, and two processes cannot lose each other's write | `PluginManager.#mutateConfig` (`packages/coding-agent/src/extensibility/plugins/manager.ts:242`) re-reads the config *inside* `withFileLock` (`packages/utils/src/file-lock.ts:70`) and persists only when the serialised config actually changed, via `atomicWriteJson` (`packages/utils/src/atomic-write.ts:37`) | `packages/coding-agent/test/plugin-runtime-config-lock.test.ts` |
-| The `/settings` panel names which layer is shadowing a row | `shadowingSource` (`packages/coding-agent/src/config/shadowing.ts:45`) produces the source, json and message; `createSettingsHost` reuses it at `packages/coding-agent/src/config/settings-ui.ts:54` so the panel and any other consumer cannot drift apart | `packages/coding-agent/test/config/settings-provenance-guard.test.ts` |
-| An extension renderer receives `rawArgs` / `argsComplete` / `executionStarted` | `RegisteredToolAdapter.renderResult` (`packages/coding-agent/src/extensibility/extensions/wrapper.ts:98`) forwards the whole options object through `renderOptionsWithTheme`, rather than re-listing the fields it knew about; re-listing meant a field added to the contract afterwards reached `renderCall` and stopped silently at this boundary, and the theme was augmented on one path and not the other | `packages/coding-agent/test/extensions/raw-args-render-channel.test.ts` |
-| `ultraworkers extensions-triage` prints every extension the loader found, inferring nothing | `runExtensionsTriage` (`packages/coding-agent/src/cli/extensions-triage-cli.ts:73`) is a pure projection of the loader's own result through `toTriageRow`; it does not re-scan, re-order or guess | `packages/coding-agent/test/extensions-triage-cli.test.ts` |
+| feature                                                                                                                                       | mechanism                                                                                                                                                                                                                                                                                                                                                                                                      | proof                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Enabling or disabling a plugin in `/settings` reports the change that actually reached disk, and two processes cannot lose each other's write | `PluginManager.#mutateConfig` (`packages/coding-agent/src/extensibility/plugins/manager.ts:243`) re-reads the config _inside_ `withFileLock` (`packages/utils/src/file-lock.ts:70`) and persists only when the serialised config actually changed, via `atomicWriteJson` (`packages/utils/src/atomic-write.ts:37`)                                                                                             | `packages/coding-agent/test/plugin-runtime-config-lock.test.ts`         |
+| The `/settings` panel names which layer is shadowing a row                                                                                    | `shadowingSource` (`packages/coding-agent/src/config/shadowing.ts:45`) produces the source, json and message; `createSettingsHost` reuses it at `packages/coding-agent/src/config/settings-ui.ts:54` so the panel and any other consumer cannot drift apart                                                                                                                                                    | `packages/coding-agent/test/config/settings-provenance-guard.test.ts`   |
+| An extension renderer receives `rawArgs` / `argsComplete` / `executionStarted`                                                                | `RegisteredToolAdapter.renderResult` (`packages/coding-agent/src/extensibility/extensions/wrapper.ts:100`) forwards the whole options object through `renderOptionsWithTheme`, rather than re-listing the fields it knew about; re-listing meant a field added to the contract afterwards reached `renderCall` and stopped silently at this boundary, and the theme was augmented on one path and not the other | `packages/coding-agent/test/extensions/raw-args-render-channel.test.ts` |
+| `ultraworkers extensions-triage` prints every extension the loader found, inferring nothing                                                   | `runExtensionsTriage` (`packages/coding-agent/src/cli/extensions-triage-cli.ts:73`) is a pure projection of the loader's own result through `toTriageRow`; it does not re-scan, re-order or guess                                                                                                                                                                                                              | `packages/coding-agent/test/extensions-triage-cli.test.ts`              |
 
 ## Adding a row
 

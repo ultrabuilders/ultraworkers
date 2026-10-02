@@ -23,7 +23,6 @@ import { AuthStorage } from "@oh-my-pi/pi-ai";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { TOOL_NO_LONGER_OFFERED } from "@oh-my-pi/pi-coding-agent/mcp/tool-bridge";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { removeSyncWithRetries, TempDir } from "@oh-my-pi/pi-utils";

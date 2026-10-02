@@ -41,16 +41,16 @@ describe("broker unknown operations", () => {
 		const previousTitle = process.title;
 		const broker = startBroker(projectDir, runtimeDir);
 		try {
-			// After `omp update`, a newer client can reach a broker that predates one of its operations.
+			// After `ultraworkers update`, a newer client can reach a broker that predates one of its operations.
 			// A rejection without the request id leaves the call pending until the connection closes
 			// or the client's 30 s timeout fires, instead of surfacing the broker's error.
-			const fromNewerClient = { op: "from-a-newer-omp" } as unknown as DaemonOperation;
+			const fromNewerClient = { op: "from-a-newer-ultraworkers" } as unknown as DaemonOperation;
 			const error = await client.request(fromNewerClient).then(
 				() => undefined,
 				(rejection: unknown) => rejection,
 			);
 			expect(error).toBeInstanceOf(DaemonBrokerRejectedError);
-			expect((error as Error).message).toBe("Unknown daemon operation: from-a-newer-omp");
+			expect((error as Error).message).toBe("Unknown daemon operation: from-a-newer-ultraworkers");
 
 			// The rejection is scoped to that request; the connection keeps serving known operations.
 			expect((await client.request({ op: "ping" })).op).toBe("ping");

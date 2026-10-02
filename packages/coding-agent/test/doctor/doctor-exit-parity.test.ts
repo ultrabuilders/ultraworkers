@@ -74,7 +74,7 @@ describe("doctor exit parity", () => {
 		expect(reported).toEqual(NAMES_IN_COLLECTOR);
 	});
 
-	it("the real `omp doctor` process prints the same checks in the same order", async () => {
+	it("the real `ultraworkers doctor` process prints the same checks in the same order", async () => {
 		// A separate call from the row above so the collector is re-read: if the
 		// builder only matched because both sides shared one cached array, this
 		// would still hold, but the CLI comparison below is what actually proves

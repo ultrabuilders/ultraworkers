@@ -9,7 +9,7 @@
  * including someone removing the call while leaving the helper intact.
  *
  * The contract is a string in `result.warnings` naming the ignored keys, and naming the
- * directories omp actually reads when `hooks` is among them.
+ * directories ultraworkers actually reads when `hooks` is among them.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
@@ -22,7 +22,7 @@ import { TempDir } from "@oh-my-pi/pi-utils";
 // nothing, and every assertion below would pass for the wrong reason.
 import "@oh-my-pi/pi-coding-agent/discovery";
 
-describe("a .claude/settings.json whose keys omp does not implement", () => {
+describe("a .claude/settings.json whose keys ultraworkers does not implement", () => {
 	let tempDir: TempDir;
 	let cwd: string;
 
@@ -72,7 +72,7 @@ describe("a .claude/settings.json whose keys omp does not implement", () => {
 		expect(hookWarning).toContain("hooks/post/");
 	});
 
-	it("stays silent for a settings file omp fully understands", async () => {
+	it("stays silent for a settings file ultraworkers fully understands", async () => {
 		// The negative half. A warning that fires on every clean file would train users
 		// to ignore it, which defeats the warning entirely — so silence here is load-bearing.
 		//

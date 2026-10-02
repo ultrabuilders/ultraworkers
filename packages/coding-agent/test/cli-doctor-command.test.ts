@@ -1,5 +1,5 @@
 /**
- * `omp doctor` must reach the diagnostic, not the fallback.
+ * `ultraworkers doctor` must reach the diagnostic, not the fallback.
  *
  * The command is one entry in `cli-commands.ts`, and that entry is the whole
  * safety property. A verb with no entry is not an error: `resolveCliArgv` hands
@@ -9,8 +9,9 @@
  * about their environment.
  *
  * The reserved-word hint is what stood in front of that before: `doctor` was
- * listed in `RESERVED_TOP_LEVEL_WORDS`, so `omp doctor` refused with "`omp
- * doctor` is not a top-level command" on stderr and exited 1. Measured against
+ * listed in `RESERVED_TOP_LEVEL_WORDS`, so `ultraworkers doctor` refused with
+ * "`ultraworkers doctor` is not a top-level command" on stderr and exited 1.
+ * Measured against
  * that state, this suite fails 2/2 — the report is absent from stdout and the
  * exit code is 1.
  *
@@ -49,7 +50,7 @@ async function runCli(args: string[]): Promise<CliRun> {
 	return { exitCode, stdout, stderr };
 }
 
-describe("omp doctor is a routed command", () => {
+describe("ultraworkers doctor is a routed command", () => {
 	it("prints the environment health check instead of the not-a-command hint", async () => {
 		const run = await runCli(["doctor"]);
 

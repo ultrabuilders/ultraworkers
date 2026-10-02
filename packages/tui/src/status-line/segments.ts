@@ -2,7 +2,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { getTimeBasedPricingPeriod } from "@oh-my-pi/pi-catalog/models";
-import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { SPINNER_ADVANCE_MS, TERMINAL } from "../index";
 import {
 	formatDuration,
@@ -221,15 +220,15 @@ const piSegment: StatusLineSegment = {
 		const content =
 			ctx.turnElapsedMs != null
 				? `${brandSpinnerFrame(ctx.now?.getTime())} ${brandTimer(ctx.turnElapsedMs)}`
-				: theme.icon.omp
-					? theme.icon.omp
+				: theme.icon.mark
+					? theme.icon.mark
 					: "";
 		return { content: `${fgAnsi}${content}\x1b[39m`, visible: true };
 	},
 	describe(ctx) {
 		if (ctx.focusedAgentId) return segView([span(ctx.focusedAgentId, "warning")], "ghost", "warning");
 		// The dock's working row owns activity natively: the brand stays still.
-		return segView([], APP_NAME, "muted");
+		return segView([], "omp", "muted");
 	},
 };
 /** Current braille-spinner glyph on the shared clock, at the Loader's 80ms cadence. */

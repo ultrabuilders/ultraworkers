@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
 
 /**
- * `omp images status|doctor|purge` must terminate.
+ * `ultraworkers images status|doctor|purge` must terminate.
  *
  * Every other test in this area injects `ImagesCliDependencies`, which is
  * precisely why this one is a child process: injection replaces every daemon
@@ -76,14 +76,14 @@ async function runImagesAction(action: string): Promise<RunOutcome> {
 	return { terminated: !timedOut, output: `${stdout}${stderr}` };
 }
 
-describe("omp images terminates", () => {
+describe("ultraworkers images terminates", () => {
 	// Each action below opens a daemon socket through `liveBlobBrokerSocket`.
 	// `probe` is absent deliberately: it short-circuits when no URL backend is
 	// configured and so never reaches the daemon — a case that proves nothing
 	// about the socket's lifetime.
 	for (const action of ["status", "doctor", "purge"]) {
 		test(
-			`\`omp images ${action}\` exits instead of hanging after printing its report`,
+			`\`ultraworkers images ${action}\` exits instead of hanging after printing its report`,
 			async () => {
 				const result = await runImagesAction(action);
 

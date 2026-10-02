@@ -575,15 +575,26 @@ async function advanceBootstrapGuard(): Promise<void> {
 // wire value the product owns. Spelling it as a literal here left these tests calling a
 // name the switch can never match: `_omp/usage` fell through to `default:` and every
 // assertion after it measured the throw, not the handler. Deriving from the same
-// constant keeps the test on the name that is actually dispatched. One literal pin
-// remains below so a rename of `WIRE_NAME` cannot silently redefine both sides at once
-// and leave this file green against a product that stopped answering.
+// constant keeps the test on the name that is actually dispatched.
+//
+// The pin below is deliberately a *different kind of expression* from the value it
+// checks — one is a template, one is a literal — so editing `WIRE_NAME` alone turns this
+// file red. That is the whole contract, and it is worth being precise about its reach,
+// because a wider claim would be false:
+//
+//   PIN          catches a change to the CONSTANT (a rename sweep, a refactor).
+//   the behaviour tests below catch a change to the PRODUCT (the dispatch itself).
+//
+// So the pin does not verify the product, and is not meant to. Someone who edits both
+// the constant and this literal defeats it — that is true of every literal pin, and it
+// is not a defect to fix here. What the pin buys is that the common failure, a rename
+// nobody intended, cannot pass silently.
 const ACP_EXT_PREFIX = `_${WIRE_NAME}/`;
 const ACP_EXT_LIST_ALL = `${ACP_EXT_PREFIX}sessions/listAll`;
 const PIN_ACP_EXT_PREFIX = "_ultraworkers/";
 
 describe("ACP agent", () => {
-	it("scopes _omp/usage to the session the caller named", async () => {
+	it("scopes the usage report to the session the caller named", async () => {
 		const harness = await createHarness();
 		const first = await harness.agent.newSession({ cwd: harness.cwdA, mcpServers: [] });
 		const second = await harness.agent.newSession({ cwd: harness.cwdB, mcpServers: [] });
@@ -1211,7 +1222,7 @@ describe("ACP agent", () => {
 	// falls straight through to `default:` and the caller gets "Unknown ACP ext
 	// method" — the method silently stops existing. Two of these validate their own
 	// params, so the error they throw IS the proof they reached a handler body.
-	it("routes every _omp extension method to a handler rather than the unknown-method fallthrough", async () => {
+	it("routes every wire extension method to a handler rather than the unknown-method fallthrough", async () => {
 		const harness = await createHarness();
 
 		const projects = await harness.agent.extMethod(`${ACP_EXT_PREFIX}projects/list`, {});

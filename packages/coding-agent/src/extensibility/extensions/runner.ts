@@ -95,6 +95,7 @@ import type {
 	EntryRenderer,
 	MarkdownTransformer,
 	ExtensionRegistrationDiagnostic,
+	OutputFormat,
 	RegisteredCommand,
 	RegisteredTool,
 	ResourcesDiscoverEvent,
@@ -1667,6 +1668,33 @@ export class ExtensionRunner {
 			}
 		}
 		return allFlags;
+	}
+
+	/**
+	 * Aggregate the registered output formats across a set of extensions.
+	 *
+	 * Reads each extension's own bucket rather than keeping a parallel
+	 * module-level registry, and that is deliberate: `unloadExtensions` clears
+	 * those buckets, so a format belonging to an extension that has been unloaded
+	 * disappears here too. A second copy of the map would have to be pruned in
+	 * lockstep and would eventually offer a formatter whose module is gone.
+	 *
+	 * On a name collision the first registration wins, matching the tool registry
+	 * above rather than inventing a third policy — the id has already been refused
+	 * within a single extension by `registerOutputFormat`.
+	 */
+	static aggregateOutputFormats(extensions: readonly Extension[]): Map<string, OutputFormat> {
+		const allFormats = new Map<string, OutputFormat>();
+		for (const ext of extensions) {
+			for (const [id, format] of ext.outputFormats) {
+				if (!allFormats.has(id)) allFormats.set(id, format);
+			}
+		}
+		return allFormats;
+	}
+
+	getOutputFormats(): Map<string, OutputFormat> {
+		return ExtensionRunner.aggregateOutputFormats(this.extensions);
 	}
 
 	getFlags(): Map<string, ExtensionFlag> {

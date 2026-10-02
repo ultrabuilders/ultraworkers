@@ -12369,17 +12369,23 @@ export class AgentSession implements SettingsScope {
 			/** Bundle the user's TUI themes rather than the omp web themes. */
 			useUserThemes?: boolean;
 			formatId?: string;
+			/** Defaults to the formats this session's extensions registered. */
 			formats?: ReadonlyMap<string, OutputFormat>;
 		} = {},
 	): Promise<string> {
 		const { outputPath, useUserThemes = false } = options;
+		// Resolve the registry here rather than making every call site supply it.
+		// A caller that only knows `formatId` — which is what a CLI flag or an RPC
+		// request produces — would otherwise have to reach into the runner itself,
+		// and a registry nothing passes is a registry no extension can reach.
+		const formats = options.formats ?? this.#extensionRunner?.getOutputFormats();
 		// Lazy import: the export module embeds the HTML template and pre-built
 		// tool renderers as text; only `/export` should pay that load.
 		const { exportSessionToHtml } = await import("../export/html");
 		return exportSessionToHtml(this.sessionManager, this.state, {
 			outputPath,
 			formatId: options.formatId,
-			formats: options.formats,
+			formats,
 			palette: useUserThemes ? "theme" : "web",
 			themeNames: useUserThemes
 				? {

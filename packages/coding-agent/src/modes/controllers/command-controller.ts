@@ -192,7 +192,7 @@ export class CommandController {
 
 	async handleExportCommand(text: string): Promise<void> {
 		try {
-			const { outputPath, useUserThemes } = parseExportArgs(text.slice("/export".length));
+			const { outputPath, useUserThemes, formatId } = parseExportArgs(text.slice("/export".length));
 			if (outputPath === "--copy" || outputPath === "clipboard" || outputPath === "copy") {
 				this.ctx.showWarning("Use /dump to copy the session to clipboard.");
 				return;
@@ -200,7 +200,7 @@ export class CommandController {
 
 			// The viewed session: the focused subagent's transcript (plus its own
 			// subagents) from a focused view, otherwise the main session.
-			const filePath = await this.ctx.viewSession.exportToHtml({ outputPath, useUserThemes });
+			const filePath = await this.ctx.viewSession.exportToHtml({ outputPath, useUserThemes, formatId });
 			this.ctx.showStatus(`Session exported to: ${filePath}`);
 			this.openInBrowser(filePath);
 		} catch (error: unknown) {

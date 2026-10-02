@@ -663,7 +663,7 @@ function previewPrice(model: Model): string {
 	return parts.join(" · ");
 }
 
-/** The omp theme token of a thinking level's dot (`thinkingHigh`); none for inherit and auto. */
+/** The ultraworkers theme token of a thinking level's dot (`thinkingHigh`); none for inherit and auto. */
 export function thinkingDotToken(level: ConfiguredThinkingLevel): string | undefined {
 	if (level === ThinkingLevel.Inherit || level === AUTO_THINKING) return undefined;
 	return `thinking${level.charAt(0).toUpperCase()}${level.slice(1)}`;

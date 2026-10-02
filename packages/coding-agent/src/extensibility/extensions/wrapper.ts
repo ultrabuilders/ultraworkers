@@ -18,6 +18,7 @@ import {
 	resolveApproval,
 	resolveApprovalFromContext,
 	truncateForPrompt,
+	type ResolvedApproval,
 } from "../../tools/approval";
 import { defaultLoadModeForToolName } from "../../tools/essential-tools";
 import { withFileMutationSession } from "../../tools/file-write-fallback";
@@ -217,6 +218,33 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		return target.restartForModeChange();
 	}
 
+	/**
+	 * Record a refusal that was settled before anyone was asked.
+	 *
+	 * The `asked` half is deliberately absent: no question reached the user, and an
+	 * audit that invented one would misreport the turn — the same reasoning that
+	 * leaves `yolo`, an `xd://` bypass, and an ACP-approved replay unrecorded. What
+	 * did happen is that the call was refused, and that is what an audit of "what was
+	 * this turn blocked by" needs to answer.
+	 *
+	 * These two sites threw `denyError` and recorded nothing, so a `policy: "deny"`
+	 * from the tool's own approval function — a critical `bash` command, a user
+	 * `bash.patterns` deny — left a refusal the user saw and the log did not.
+	 * `isApprovalDenial` already looks for precisely this shape (`phase: "answered"`
+	 * carrying `policy: "deny"`), so the reader was written for an entry no writer
+	 * produced; that is what made this a gap rather than a missing feature.
+	 */
+	#recordPolicyDenial(resolved: ResolvedApproval, toolCallId: string): void {
+		this.runner.recordApprovalEntry({
+			requestId: toolCallId,
+			phase: "answered",
+			toolName: this.tool.name,
+			policyKey: resolved.policyKey ?? this.tool.name,
+			policy: "deny",
+			source: "tool",
+		});
+	}
+
 	async execute(
 		toolCallId: string,
 		params: Static<TParameters>,
@@ -246,6 +274,7 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		);
 		const preResolved = resolveApproval(this.tool, approvalArgs(params, context), approvalMode, userPolicies);
 		if (preResolved.policy === "deny") {
+			this.#recordPolicyDenial(preResolved, toolCallId);
 			throw denyError(preResolved, this.tool.name);
 		}
 
@@ -321,6 +350,7 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		context?.xdevTierResolved?.(resolved.tier);
 		if (resolved.policy === "deny") {
 			cancelPreflight();
+			this.#recordPolicyDenial(resolved, toolCallId);
 			throw denyError(resolved, this.tool.name);
 		}
 		const pendingSafetyChecks = computerSafetyChecks(context);

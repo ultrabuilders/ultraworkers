@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
 import type { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
-import { APPROVAL_ENTRY_TYPE, type ApprovalEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
+import {
+	APPROVAL_ENTRY_TYPE,
+	isApprovalDenial,
+	type ApprovalEntry,
+} from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 
@@ -217,5 +221,65 @@ describe("approval audit records exactly one pair per prompt", () => {
 		expect(entries.filter(e => e.phase === "asked")).toHaveLength(1);
 		expect(entries.filter(e => e.phase === "answered")).toHaveLength(1);
 		expect(entries[1]?.decision).toBe("denied");
+	});
+});
+
+/**
+ * A refusal decided *before* anyone was asked still has to be in the audit.
+ *
+ * The pair contract above is about a prompt: two entries, one `asked` one
+ * `answered`. This is the other refusal, and it was invisible. Both `deny` sites in
+ * the wrapper threw `denyError` and recorded nothing, so a critical `bash` command —
+ * which resolves to `policy: "deny"` straight from the tool's approval function, with
+ * no prompt — was refused in front of the user and left no trace in the transcript.
+ *
+ * What makes this a gap rather than an absent feature: `isApprovalDenial`, the reader
+ * `blockedBy` is built on, already accepts `phase: "answered"` carrying
+ * `policy: "deny"`. The reader was written for an entry no writer produced.
+ */
+function denyingTool(name: string): AgentTool {
+	return {
+		name,
+		description: `denying ${name}`,
+		parameters: { type: "object", properties: {} },
+		// The exact shape `BashTool.approval` returns for a critical pattern: an
+		// override that also carries a deny policy. Copied rather than approximated,
+		// because the wrapper's behaviour keys off `policy`, not off the tool's name.
+		approval: { tier: "exec", override: true, policy: "deny", reason: "Critical pattern detected" },
+		async execute() {
+			return { output: "must not run" };
+		},
+	} as unknown as AgentTool;
+}
+
+describe("a policy denial is auditable without a prompt", () => {
+	it("records the refusal so the reader can name what blocked the turn", async () => {
+		const { runner, entries } = harness("Deny");
+		const wrapped = new ExtensionToolWrapper(denyingTool("bash"), runner) as unknown as AgentTool;
+		const settings = Settings.isolated({ "tools.approvalMode": "yolo" });
+
+		await expect(
+			wrapped.execute("call-deny", {}, undefined, undefined as never, { settings } as never),
+		).rejects.toThrow("blocked by tool policy");
+
+		// Exactly one: a denial asks nothing, so there is no `asked` half to pair with,
+		// and inventing one would report a question the user was never shown.
+		expect(entries).toHaveLength(1);
+		expect(entries[0]).toMatchObject({ phase: "answered", policy: "deny", toolName: "bash", source: "tool" });
+		// The reader is the consumer that matters — this is the shape `blockedBy` reads.
+		expect(isApprovalDenial(entries[0]!)).toBe(true);
+	});
+
+	it("records nothing when the same call is allowed, so the entry above is not ambient", async () => {
+		// Control: without this, "one denial produces an entry" is satisfied by a harness
+		// that writes an entry on every call, which is its own lie.
+		const { runner, entries } = harness("Approve");
+		const wrapped = new ExtensionToolWrapper(fakeTool("bash"), runner) as unknown as AgentTool;
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+
+		await wrapped.execute("call-allowed", {}, undefined, undefined as never, { settings } as never);
+
+		expect(entries.every(entry => !isApprovalDenial(entry))).toBe(true);
+		expect(entries.some(entry => entry.policy === "deny")).toBe(false);
 	});
 });

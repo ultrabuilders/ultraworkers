@@ -701,7 +701,7 @@ const KNOWN_TERMINALS = Object.freeze({
 	// the conservative defaults.
 	rio: new TerminalInfo("rio", ImageProtocol.Kitty, true, true),
 	// Tern (Stencil's terminal, `stencil-term`) sets TERM_PROGRAM=tern and
-	// implements Kitty graphics, OSC 8 and OSC 9/99 notifications. Whether omp
+	// implements Kitty graphics, OSC 8 and OSC 9/99 notifications. Whether ultraworkers
 	// renders natively (Tern Surface Protocol) is decided by the `hello`
 	// handshake alone, never by this identity.
 	tern: new TerminalInfo("tern", ImageProtocol.Kitty, true, true, NotifyProtocol.Osc99),

@@ -45,7 +45,7 @@ export type HostRenderDecision = "in-place" | "alt-borrow" | "defer";
 
 /** Everything a strategy is allowed to reason about. */
 export interface HostRenderContext {
-	/** The environment markers omp itself classifies hosts by. */
+	/** The environment markers ultraworkers itself classifies hosts by. */
 	readonly env: NodeJS.ProcessEnv;
 	/** True when the host owns the grid and re-emits it on resize (ConPTY). */
 	readonly hostOwnsGridOnResize: boolean;

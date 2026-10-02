@@ -677,7 +677,7 @@ let reportedSessionFile: string | undefined;
  * Name the live session's file source. Every session title update (start, new
  * session, resume, cwd switch) and {@link reportTernSessionFile} re-read it and,
  * in Tern, report a changed file, so Tern's daemon can relaunch
- * `omp --resume <file>` after it restarts.
+ * `ultraworkers --resume <file>` after it restarts.
  */
 export function setTerminalSessionFileSource(source: (() => string | undefined) | undefined): void {
 	sessionFileSource = source;

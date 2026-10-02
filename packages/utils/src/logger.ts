@@ -1,5 +1,5 @@
 /**
- * Centralized logger for omp.
+ * Centralized logger for ultraworkers.
  *
  * Default: rotating `~/.omp/logs/omp.<DATE>.<PID>.log`, no console output (writing
  * to stdout/stderr would corrupt the TUI). Long-running headless services
@@ -57,7 +57,7 @@ function emitToSinks(level: LogLevel, message: string, context: Record<string, u
 
 // The two prune patterns and the sink's own filename have to agree on the same
 // name. Deriving both from `APP_NAME` is what keeps them agreeing: hardcoding
-// `omp` here while the sink writes a differently-named prefix means
+// `ultraworkers` here while the sink writes a differently-named prefix means
 // `pruneStaleProcessLogs` never matches a file it just created, so logs
 // accumulate without bound and nothing reports an error.
 const APP_NAME_RE = APP_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -98,7 +98,7 @@ export type TspEffect = "shimmer" | "pulse" | "none";
  * One styled run of text. `s` holds space-separated semantic tokens
  * (`muted`, `dim`, `strong`, `em`, `accent`, `success`, `warning`, `error`,
  * `info`, `code`, `mono`, `path`, `key`, `link`, `num`, `ins`, `del`, `mark`,
- * `icon`, `hide`) or omp theme token names (`thinkingText`, `toolTitle`, …).
+ * `icon`, `hide`) or ultraworkers theme token names (`thinkingText`, `toolTitle`, …).
  * `icon` marks a run of icon glyphs (Nerd Font / Private Use Area codepoints):
  * the terminal draws it in its icon face and spaces it from neighbouring text
  * itself, so senders omit padding spaces around icons. `hide` takes the run
@@ -168,7 +168,7 @@ export interface TspSectionProps {
 	head?: TspText;
 	collapsible?: boolean;
 	collapsed?: boolean;
-	/** A finished thinking section (`omp.thinking*`): how long it thought, in ms, like a tool card's `took`. */
+	/** A finished thinking section (`ultraworkers.thinking*`): how long it thought, in ms, like a tool card's `took`. */
 	took?: number;
 }
 export interface TspRuleProps {
@@ -405,7 +405,7 @@ export interface TspPickerItem {
 	node?: "user" | "assistant" | "tool" | "marker";
 	depth?: number;
 	open?: boolean;
-	/** Leading glyph slot for tree/timeline rows (omp role → icon, e.g. `omp.tool.grep`). */
+	/** Leading glyph slot for tree/timeline rows (ultraworkers role → icon, e.g. `ultraworkers.tool.grep`). */
 	role?: string;
 	title?: string;
 }

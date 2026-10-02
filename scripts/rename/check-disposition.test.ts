@@ -147,6 +147,29 @@ describe("occurrence counting", () => {
 		expect(countClass(`const x = "omp.shs";`, "rename")).toBe(1);
 	});
 
+	it("leaves an underscore-delimited token uncounted, on purpose", () => {
+		// This is a DECISION, not an oversight, and it is the one place a later reader is
+		// most likely to "fix" the expression. A review proposed that `some_omp_thing`
+		// should count 1, because the trailing `.`/`-` blind spot had just been fixed and
+		// `_` looked like the same bug.
+		//
+		// It is not the same bug. `_` on BOTH edges is what keeps `__omp_worker_*` out of
+		// the pinned set, and that is the `keep-worker-selector` class, counted by its own
+		// literal — see the case above at line 112, which already pins the selector at 0.
+		// Measured: allowing `_` on both edges turns every worker selector into a pinned
+		// hit, one per file across 1467 files, and would put 6 real selectors in the
+		// rename count where they can never be renamed.
+		//
+		// So the two edges are not symmetric and must not be made symmetric: the trailing
+		// class admits `.` and `-`, and both edges exclude `_`. If a future change makes
+		// this 1, the worker-selector rows are what breaks — not this assertion's intent.
+		expect(countClass(`let some_omp_thing = 1;`, "rename")).toBe(0);
+		expect(countClass(`let some_omp_x = 1;`, "rename")).toBe(0);
+		// The class it protects, restated here so the two are visibly coupled.
+		expect(countClass(`x = "__omp_worker_js_eval"`, "keep-wire")).toBe(0);
+		expect(countClass(`x = "__omp_worker_js_eval"`, "keep-worker-selector")).toBe(1);
+	});
+
 	it("still counts a rename occurrence after a keep-wire row claims the same expression", () => {
 		// THE regression, in both directions. `keep-wire` shares the pinned
 		// expression, so subtracting keep classes cancelled the file's only

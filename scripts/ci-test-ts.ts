@@ -1234,6 +1234,38 @@ function reportDiffSelection(
 	// one here would describe a fallback that cannot occur.
 }
 
+/**
+ * The tree this run measures, in the two numbers that identify it.
+ *
+ * HEAD alone is not enough on a shared tree. A commit says what was COMMITTED, not what was
+ * EXECUTED: uncommitted work sits in the same directory the tests import, so a run can
+ * execute a commit PLUS half-written code — and the result then belongs to no commit at all.
+ * Measured 2026-10-02: a full-suite failure whose error shape (`{value, reason}` where a
+ * bare string was expected) cannot occur at the commit the run recorded, because that
+ * function was mid-refactor in the working tree. The same commit and the same command gave
+ * two different answers, and the run header could not say which tree it meant.
+ *
+ * So both numbers print, and dirtiness prints a warning.
+ *
+ * This is deliberately NOT a gate. On an actively shared tree it would be permanently red,
+ * and a permanently red gate is one everybody switches off — strictly worse than a header
+ * nobody can miss. Reporting costs one `git status` this runner already runs.
+ */
+async function reportTreeState(): Promise<void> {
+	const head = (await $`git rev-parse --short=10 HEAD`.cwd(repoRoot).quiet().nothrow()).text().trim();
+	const status = await $`git status --porcelain`.cwd(repoRoot).quiet().nothrow();
+	const dirty = status
+		.text()
+		.split("\n")
+		.filter(line => line.length > 0).length;
+	console.log(style.dim(`tree HEAD=${head || "(unknown)"} dirty=${dirty}`));
+	if (dirty > 0) {
+		console.log(
+			`tree WARNING: ${dirty} uncommitted path(s). This result describes the WORKING TREE, not commit ${head || "(unknown)"}.`,
+		);
+	}
+}
+
 // Skipped when imported (e.g. by the runner's own unit tests), where
 // `process.argv` carries test-file paths rather than a mode/flags.
 if (import.meta.main) {
@@ -1244,6 +1276,8 @@ if (import.meta.main) {
 	}
 
 	const allCommands = await commandsForMode(requestedMode as Mode);
+	// Before anything that could be mistaken for a result: which commit, and which tree.
+	await reportTreeState();
 	// Sharding is reported before the diff filter runs, so a wrong chunk set is
 	// visible as a sharding-layer problem rather than a selector-layer one.
 	const shardSpec = Bun.env.OMP_TEST_SHARD?.trim();

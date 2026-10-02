@@ -106,10 +106,83 @@ export interface LiveHolder {
  * guard.
  */
 const CONFIG_ROOT = path.dirname(getAgentDir());
-const DB_LAYOUT: readonly string[] = [getAgentDbPath(), getHistoryDbPath()].map(file =>
-	path.relative(CONFIG_ROOT, file),
-);
+
+/** The databases the resolver names, wherever it currently points. */
+const RESOLVED_DBS: readonly string[] = [getAgentDbPath(), getHistoryDbPath()];
+
+/**
+ * The same layout as a set of root-relative segments, for roots the plan names
+ * that the resolver does not describe — the XDG roots in particular, which sit
+ * outside `CONFIG_ROOT` by definition. A segment that escapes is dropped rather
+ * than re-rooted, because a path that cannot exist is worse than one that can:
+ * `findLiveHolders` skips what it cannot stat, so a bad segment is indistinguishable
+ * from a clean file until it renames something.
+ */
+const DB_LAYOUT: readonly string[] = [getAgentDbPath(), getHistoryDbPath()]
+	.map(file => path.relative(CONFIG_ROOT, file))
+	.filter(segment => segment !== "" && !segment.startsWith("..") && !path.isAbsolute(segment));
 const DAEMON_LAYOUT = path.relative(CONFIG_ROOT, getDaemonRuntimeRoot());
+
+/**
+ * True when `file` really lives under `root`.
+ *
+ * The layout the guard checks used to be `path.relative(CONFIG_ROOT, dbPath)`,
+ * rejoined onto whichever root the plan was about to rename. That is only a layout
+ * while both sides share a root, and they come from different authorities: the move
+ * sources are derived from `HOME`, while `CONFIG_ROOT` comes from the live agent-dir
+ * resolver, which `PI_CODING_AGENT_DIR` can point anywhere.
+ *
+ * Measured with the resolver redirected: the guard checked
+ * `~/.omp/omp-migrate-elsewhere-XXX/agent.db` while the database actually open was
+ * `~/.omp/agent/agent.db`. Every path was skipped as missing, `findLiveHolders`
+ * reported nothing, and the migration renamed a directory holding an open SQLite
+ * database — the exact failure this guard exists to prevent.
+ *
+ * Note that rejecting only a `..` escape does not catch it. The fake agent dir's
+ * *parent* becomes the config root, so the relative path is a plain sibling name
+ * with no `..` in it and no reason to look wrong. Containment against the root
+ * being renamed is the question that actually matters, so that is what is asked.
+ */
+function isInside(root: string, file: string): boolean {
+	const relative = path.relative(root, file);
+	return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+/** SQLite's own files, plus the write-ahead siblings that can hold the database open. */
+const DB_SUFFIXES = [".db", ".db-wal", ".db-shm"] as const;
+
+/**
+ * Every database under one config root, read from the root rather than from a
+ * layout derived elsewhere.
+ *
+ * The fallback for a root the resolver says nothing about. It is a bounded scan
+ * rather than a fixed list of names precisely because hardcoding names is what made
+ * the derived layout necessary in the first place — and it is strictly wider than
+ * the two names it replaces: measured on a real profile it also picks up
+ * `models.db` and `skill-descriptions.db`, which no name-based list carried.
+ */
+function databasePathsUnder(root: string): string[] {
+	const found: string[] = [];
+	const walk = (dir: string, depth: number): void => {
+		if (depth < 0) return;
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return; // No such directory yet is the ordinary case on a fresh install.
+		}
+		for (const entry of entries) {
+			const full = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				walk(full, depth - 1);
+			} else if (DB_SUFFIXES.some(suffix => entry.name.endsWith(suffix))) {
+				found.push(full);
+			}
+		}
+	};
+	walk(root, 3);
+	return found;
+}
 
 /**
  * The files whose live handle makes a directory rename unsafe.
@@ -146,11 +219,36 @@ export function guardedPaths(moves: readonly MigrationMove[]): string[] {
 	// migration is not touching and refuse a command that cannot do damage.
 	const paths: string[] = [];
 	for (const root of new Set(moves.map(move => move.from))) {
+		// The databases the resolver names, when they really sit under this root. A
+		// resolved path outside every move root cannot be harmed by renaming one, and
+		// guarding it anyway would refuse a command that cannot do damage.
+		const inside = RESOLVED_DBS.filter(db => isInside(root, db));
+		if (inside.length > 0) {
+			for (const db of inside) paths.push(db, `${db}-wal`, `${db}-shm`);
+		} else {
+			// The resolver points nowhere near this root, so it cannot say what is inside
+			// it — and a root it cannot describe is exactly the root that must be read
+			// directly. Returning nothing here is indistinguishable from a clean root,
+			// which is the state that lets an open database be renamed out from under its
+			// holder.
+			paths.push(...databasePathsUnder(root));
+		}
+		// The derived layout, rejoined onto this root, so a root the resolver knows
+		// nothing about still gets the canonical set rather than none. Every path this
+		// adds lands under the root by construction, and `findLiveHolders` skips what it
+		// cannot stat, so a redundant entry costs a stat and never a false refusal.
 		for (const layout of DB_LAYOUT) {
 			const file = path.join(root, layout);
 			paths.push(file, `${file}-wal`, `${file}-shm`);
 		}
-		paths.push(...daemonRuntimePaths(path.join(root, DAEMON_LAYOUT)));
+		// The daemon root is additive: the data-loss case is an open database with no
+		// daemon of its own, so the databases above are what the refusal rests on.
+		const daemonRoot = getDaemonRuntimeRoot();
+		paths.push(
+			...(isInside(root, daemonRoot)
+				? daemonRuntimePaths(daemonRoot)
+				: daemonRuntimePaths(path.join(root, DAEMON_LAYOUT))),
+		);
 	}
 	return paths;
 }
@@ -188,7 +286,19 @@ export async function findLiveHolders(paths: readonly string[]): Promise<LiveHol
 			// found still refuses, but the user is left with nothing to act on.
 			const stdout = result.stdout.toString();
 			const provenUnused = result.exitCode === 1 && stdout.length === 0 && result.stderr.length === 0;
-			pids = provenUnused ? [] : stdout.split("\n").map(Number).filter(Number.isInteger);
+			// `lsof -t` terminates every line it prints, so a non-empty result ends in a
+			// newline and the final split element is "". `Number("")` is 0 and
+			// `Number.isInteger(0)` is true, so the naive parse put a phantom pid 0 in
+			// the list — and the refusal then told the user a process was holding their
+			// database when pid 0 names no process at all. Blank lines are dropped, not
+			// coerced: the message is the one thing a user acts on.
+			pids = provenUnused
+				? []
+				: stdout
+						.split("\n")
+						.filter(line => line.trim() !== "")
+						.map(Number)
+						.filter(Number.isInteger);
 		} catch {
 			pids = [-1]; // cannot prove it is unused
 		}

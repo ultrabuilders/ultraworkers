@@ -53,6 +53,12 @@ describe("findLiveHolders", () => {
 		expect(holders[0].path).toBe(heldFile);
 		expect(holders[0].pids).toContain(holder.pid);
 		expect(holders[0].pids).not.toContain(-1);
+		// `lsof -t` ends every line with a newline, so the final split element is "".
+		// `Number("")` is 0 and passes `Number.isInteger`, so the unguarded parse put a
+		// phantom pid 0 in the list and the refusal told the user a process was
+		// holding their database when pid 0 names no process at all. The user acts on
+		// this message, so a fabricated pid in it is a defect, not a cosmetic one.
+		expect(holders[0].pids).not.toContain(0);
 	});
 
 	test("reports nothing for a file no process is holding", async () => {
@@ -147,7 +153,10 @@ describe("config migrate --apply on an open root", () => {
 	/** cwd is the package, so the import below resolves against real sources. */
 	const packageDir = import.meta.dir.replace(/\/test$/, "");
 
-	async function runMigrate(force: boolean): Promise<{
+	async function runMigrate(
+		force: boolean,
+		extraEnv: Record<string, string> = {},
+	): Promise<{
 		exitCode: number;
 		stderr: string;
 		legacyRootSurvived: boolean;
@@ -171,7 +180,13 @@ describe("config migrate --apply on an open root", () => {
 					"-e",
 					`import { configMigrate } from "./src/cli/commands/config-migrate.ts";\nawait configMigrate(true, ${force});`,
 				],
-				{ cwd: packageDir, env: { ...process.env, HOME: home }, stdout: "pipe", stderr: "pipe", stdin: "ignore" },
+				{
+					cwd: packageDir,
+					env: { ...process.env, HOME: home, ...extraEnv },
+					stdout: "pipe",
+					stderr: "pipe",
+					stdin: "ignore",
+				},
 			);
 			const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
 			return { exitCode, stderr, legacyRootSurvived: fs.existsSync(path.join(home, ".omp")) };
@@ -197,5 +212,28 @@ describe("config migrate --apply on an open root", () => {
 		expect(exitCode).toBe(0);
 		expect(stderr).not.toContain("Refusing");
 		expect(legacyRootSurvived).toBe(false);
+	});
+
+	test("still refuses when the agent dir is redirected outside the config root", async () => {
+		// The layout the guard checks is derived from the live resolver, and
+		// `PI_CODING_AGENT_DIR` moves that resolver off the root being renamed. The
+		// relative layout then came back as `../<dir>/agent.db`, which rejoined onto the
+		// move source named a file that does not exist — so every path was skipped as
+		// missing, the guard reported nothing, and the migration renamed a directory
+		// holding an open database. That is the precise failure this guard exists to
+		// prevent, so it is driven through the real child rather than through
+		// `guardedPaths`, which would stay green if the refusal path were deleted.
+		const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "omp-migrate-elsewhere-"));
+		try {
+			const { exitCode, stderr, legacyRootSurvived } = await runMigrate(false, {
+				PI_CODING_AGENT_DIR: elsewhere,
+			});
+
+			expect(exitCode).toBe(1);
+			expect(stderr).toContain("Refusing to move a config root that is open:");
+			expect(legacyRootSurvived).toBe(true);
+		} finally {
+			fs.rmSync(elsewhere, { recursive: true, force: true });
+		}
 	});
 });

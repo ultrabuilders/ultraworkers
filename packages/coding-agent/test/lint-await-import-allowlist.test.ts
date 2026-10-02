@@ -7,7 +7,7 @@ import {
 	isExempt,
 	runGate,
 	trackedTypeScriptFiles,
-} from "../../../scripts/check-await-import.ts";
+} from "../../../scripts/check-await-import";
 
 const repoRoot = path.resolve(import.meta.dir, "..", "..", "..");
 

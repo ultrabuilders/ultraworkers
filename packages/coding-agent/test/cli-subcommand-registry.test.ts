@@ -119,12 +119,33 @@ describe("registerSubcommand: an extension verb reaches the dispatcher", () => {
 		expect(dispatchArgv(resolved)[0]).toBe("launch");
 	});
 
-	it("NEGATIVE: a built-in command still dispatches when nothing is registered", () => {
-		const resolved = resolveCliArgv(["doctor"]);
+	it("NEGATIVE: a reserved word is still told where the real command lives", () => {
+		// `list` is a reserved word, not a command, so it must still be told where
+		// the real one lives. Registration must not have disarmed that.
+		//
+		// This used to assert on `doctor`, and it was right when `doctor` was only a
+		// reserved word pointing at `omp launch doctor`. It stopped being right when
+		// W18 landed `omp doctor` as a real command (22225aec9b) and dropped `doctor`
+		// from `RESERVED_TOP_LEVEL_WORDS` — so the assertion went red against a
+		// deliberate change. Picking a still-reserved verb keeps the branch testing
+		// what it was written to test; the `doctor` half of the contract now has its
+		// own case below, which is the stronger version of the same guarantee.
+		const resolved = resolveCliArgv(["list"]);
 
-		// `doctor` is a reserved word, not a command, so it must still be told
-		// where the real one lives. Registration must not have disarmed that.
 		expect(resolved).toHaveProperty("error");
+	});
+
+	it("NEGATIVE: a word that became a real command dispatches as one, not as a prompt", () => {
+		// The regression this whole file exists to prevent, named on the word the
+		// programme actually cares about. `doctor` was once a reserved word whose
+		// only protection was a hardcoded entry in core; when it became a real
+		// command, a hole re-opened that the reserved entry had been covering —
+		// `omp doctor` must reach the command, never fall through to `launch` and
+		// hand "doctor" to the model as a prompt.
+		expect(isSubcommand("doctor")).toBe(true);
+
+		const resolved = resolveCliArgv(["doctor"]);
+		expect(dispatchArgv(resolved)[0]).toBe("doctor");
 	});
 
 	it("NEGATIVE: a real extension's slash command is still not a top-level verb", () => {

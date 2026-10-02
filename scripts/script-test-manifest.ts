@@ -63,6 +63,10 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
 	{ file: "ci-check-full.test.ts", reason: "" },
 	{ file: "check-script-tests.test.ts", reason: "" },
+	// Guards the census's admissibility, not its arithmetic: a confirmed control
+	// the pattern cannot see means the counts are not quotable, and the census
+	// reports that row while still exiting 0.
+	{ file: "check-census-self-blindness.test.ts", reason: "" },
 	// The subdirectory tests. `onDiskTestFiles` read only the top level, so every
 	// file below was on disk, classified by nobody, and executed by nothing — the
 	// same defect `TEST_EXTENSIONS` was widened for in 1814e9fbad, along the

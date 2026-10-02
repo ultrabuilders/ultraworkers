@@ -6,6 +6,7 @@ import type {
 	AssistantMessageEventStream,
 	DeferredHandle,
 	CacheRetention,
+	Context as RequestContext,
 	Message,
 	SimpleStreamOptions,
 	Tool,
@@ -109,7 +110,15 @@ export type ModelRef = {
  */
 export interface ModelLookup {
 	getModel(provider: string, modelId: string): Model | undefined;
-	streamSimple(model: Model, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream;
+	/**
+	 * The request the provider receives.
+	 *
+	 * `RequestContext` is pi-ai's, not chord's `Context`, and that is the whole difference: this is
+	 * the shape a transport serialises, so it is the transport's contract. Every other `Context`
+	 * on this file is chord's — the one carrying the abort signal through storage and task calls —
+	 * and mixing the two would type-check a request that no provider can read.
+	 */
+	streamSimple(model: Model, context: RequestContext, options?: SimpleStreamOptions): AssistantMessageEventStream;
 	/** Resume a deferred generation from `handle` and resolve to its final message. */
 	fetchDeferred(model: Model, handle: DeferredHandle, options?: { signal?: AbortSignal }): Promise<AssistantMessage>;
 	/** Abandon a deferred generation. Safe to call for a handle that already settled. */

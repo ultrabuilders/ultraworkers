@@ -21,7 +21,7 @@
  * Copyright (c) 2025 Mario Zechner (upstream pi-mono)
  * Copyright (c) 2026 Yeongyu Kim and senpi contributors
  *
- * Full provenance and the per-file adaptation list: see ../NOTICE.
+ * Full provenance and the per-file adaptation list: see ../../NOTICE.
  */
 export function dropFailedAssistantTurns<T extends { role: string }>(messages: readonly T[]): T[] {
 	const callIdsByKeptAssistants = new Set<string>();

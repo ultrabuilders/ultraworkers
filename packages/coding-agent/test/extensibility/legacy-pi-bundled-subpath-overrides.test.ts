@@ -170,6 +170,21 @@ export const observed = [
 		expect(bundledModuleKeys.has("@oh-my-pi/pi-coding-agent/main")).toBe(false);
 	});
 
+	it("renders a module that parses, with one binding per key", () => {
+		// The registry is consumed as generated source, so a key set that is
+		// perfectly correct can still emit `const bundled…Foo.js = …` — a dot inside
+		// an identifier, which does not parse. Serving `./*.js` first produced
+		// exactly that and broke `compileCodingAgent`; asserting on keys alone
+		// passed while the binary could not be built.
+		const source = __renderLegacyPiVirtualModule(bundledEntries);
+		const declarations = [...source.matchAll(/^\s*const\s+([A-Za-z_$][\w$]*)\s*=/gm)].map(m => m[1]!);
+		expect(new Set(declarations).size).toBe(declarations.length);
+		for (const name of declarations) {
+			expect(() => new Function(`let ${name};`)).not.toThrow();
+		}
+		expect(() => new Function(source.replace(/^\s*export\s+/gm, ""))).not.toThrow();
+	});
+
 	it("serves no key that resolves into a build output or dependency tree", () => {
 		// A root catch-all has the whole package as its source, so the failure this
 		// guards is serving `dist/`, `node_modules/` or tests as importable

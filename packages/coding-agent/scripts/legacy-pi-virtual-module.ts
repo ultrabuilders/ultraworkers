@@ -69,7 +69,13 @@ function bindingForSubpath(identifier: string, subpath: string): string {
 		.filter(Boolean)
 		.map(segment =>
 			segment
-				.split(/[-_]/)
+				// `.` joins the split so a subpath carrying an export suffix — `foo.js`,
+				// which `./x/*.js` produces — yields `FooJs` rather than `Foo.js`. A dot
+				// left inside the identifier is not a valid binding: the rendered
+				// module declares `const bundled…Foo.js = …`, which does not parse.
+				// Splitting rather than stripping also keeps the two keys distinct,
+				// so `./*` and `./*.js` over one file do not collide on one binding.
+				.split(/[-_./]/)
 				.filter(Boolean)
 				.map(part => part.charAt(0).toUpperCase() + part.slice(1))
 				.join(""),

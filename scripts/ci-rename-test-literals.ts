@@ -20,6 +20,14 @@
  * Scoped to test sources on purpose. The src-side census belongs to
  * `scripts/rename/check-disposition.ts`, which owns the table's schema; this gate reads
  * that table and never writes it, so the two cannot disagree about what a row means.
+ *
+ * Exits by setting `process.exitCode` rather than calling `process.exit()`. The
+ * difference is observable: `exit()` tears the process down immediately, so a write
+ * still queued from a pending promise never reaches the pipe — the report a CI reader
+ * needs most is the one that gets truncated. Measured here: a `setTimeout` write
+ * survives `exitCode` and is dropped by `exit`. Every read below is awaited, so this
+ * file is not currently losing output, but the hazard is one edit away and the fix
+ * costs one word.
  */
 
 import * as path from "node:path";
@@ -65,7 +73,11 @@ async function readRows(): Promise<Row[]> {
 	const file = Bun.file(TABLE_PATH);
 	if (!(await file.exists())) {
 		console.error(`ci-rename-test-literals: no table at ${path.relative(REPO_ROOT, TABLE_PATH)}`);
-		process.exit(2);
+		// Return rather than fall through. Setting `exitCode` does not stop execution, so
+		// continuing would read a missing file, report every hit as unaccounted-for, and
+		// then overwrite this 2 with a 1 — telling CI "your table is missing" as "you have
+		// unclassified rows". Distinct failures deserve distinct codes.
+		return [];
 	}
 	const lines = (await file.text()).split("\n");
 	const rows: Row[] = [];
@@ -119,10 +131,17 @@ function isAccounted(hit: Hit, rows: Row[]): boolean {
 }
 
 const rows = await readRows();
+if (rows.length === 0) {
+	// `readRows` already said why. Stop here so the 2 it set survives.
+	process.exit(2);
+}
+
 const hits = await collectHits();
 
 if (hits.length === 0) {
 	console.error("ci-rename-test-literals: no old-brand literals in test sources — the scan is not seeing the tree");
+	// Zero hits means the scan is broken, not that the tree is clean: a glob that
+	// silently matched nothing would report a perfect score forever.
 	process.exit(2);
 }
 
@@ -133,8 +152,19 @@ for (const hit of unaccounted) {
 }
 
 const files = new Set(hits.map(hit => hit.file)).size;
+const perFile = new Map<string, number>();
+for (const hit of hits) perFile.set(hit.file, (perFile.get(hit.file) ?? 0) + 1);
+const perFileSummary = [...perFile.entries()]
+	.sort((a, b) => b[1] - a[1])
+	.map(([file, count]) => `${file}=${count}`)
+	.join(" ");
 console.log(
 	`ci-rename-test-literals: ${hits.length} hit(s) across ${files} test file(s); ` +
 		`${unaccounted.length} without a disposition row carrying a reason`,
 );
-if (unaccounted.length > 0) process.exit(1);
+if (unaccounted.length > 0) process.exitCode = 1;
+// The per-file counts are visibility, not a gate. A file that already has a row is
+// covered, so a literal added to it later raises no error — the count moving from 4 to 6
+// in the log is the only signal that it happened. Anyone reviewing a rename can diff
+// this line against the previous run and see which files grew.
+console.log(perFileSummary);

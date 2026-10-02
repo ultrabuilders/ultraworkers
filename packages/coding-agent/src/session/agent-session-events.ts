@@ -8,6 +8,7 @@ import type { GoalModeState } from "../goals/state";
 import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import type { TodoItem } from "@oh-my-pi/pi-tui/tools/todo";
 import type { CustomMessage } from "./messages";
+import type { SessionEntry } from "./session-entries";
 
 /** Session-specific events that extend the core AgentEvent. */
 export type AgentSessionEvent =
@@ -82,7 +83,16 @@ export type AgentSessionEvent =
 	// whenever it differs from the last `queue_update` (enqueue, dequeue on
 	// delivery, remove, clear/restore, or session switch), never on a no-op
 	// mutation. Mirrors `AgentSession.getQueuedMessages()`.
-	| { type: "queue_update"; steering: string[]; followUp: string[] };
+	| { type: "queue_update"; steering: string[]; followUp: string[] }
+	// Ported from `pi` (`core/agent-session.ts:204`), which carries the same union
+	// member. A session entry reached the screen before only by being rebuilt into
+	// the transcript, and `buildSessionContext` has no `case "custom"` — so an
+	// entry an extension appended with `appendEntry()` was persisted and never
+	// drawn. This is what lets the interactive layer see one as it lands.
+	//
+	// Deliberately NOT added to `RelayableEventKind`: that table is the relay arm
+	// set, and an entry carries no provider- or client-facing payload.
+	| { type: "entry_appended"; entry: SessionEntry };
 
 /** Listener function for agent session events. */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;

@@ -797,6 +797,12 @@ export class SessionManager {
 	 */
 	onEntryAppended?: (entry: SessionEntry) => void;
 
+	/**
+	 * Display-side taps on custom-entry appends. Separate from the single-slot
+	 * `onEntryAppended` above, which collab owns; see `appendCustomEntry`.
+	 */
+	#customEntryListeners: ((entry: CustomEntry) => void)[] = [];
+
 	#turnBudgetTotal: number | null = null;
 	#turnBudgetHard = false;
 	#turnOutputBaseline = 0;
@@ -3047,7 +3053,34 @@ export class SessionManager {
 	appendCustomEntry(customType: string, data?: unknown): string {
 		const entry: CustomEntry = { type: "custom", customType, data, ...this.#freshEntryFields() };
 		this.#recordEntry(entry);
+		// A custom entry has no other route to the screen: `buildSessionContext` has
+		// no `case "custom"`, so the transcript rebuild never sees one. Without this
+		// notification a registered `EntryRenderer` has nothing to draw — which is
+		// what `pi` does with its `entry_appended` event (`core/agent-session.ts:204`).
+		//
+		// Separate from `onEntryAppended`: that is a single-slot callback collab owns
+		// (`collab/host.ts:454`), so reusing it would silently break replication the
+		// first time anything else subscribed.
+		for (const listener of this.#customEntryListeners) {
+			try {
+				listener(entry);
+			} catch (err) {
+				logger.warn("custom entry listener failed", { error: String(err) });
+			}
+		}
 		return entry.id;
+	}
+
+	/**
+	 * Subscribe to custom-entry appends. Multi-subscriber, and independent of the
+	 * collab tap, so a display listener and a replication listener can coexist.
+	 */
+	onCustomEntryAppended(listener: (entry: CustomEntry) => void): () => void {
+		this.#customEntryListeners.push(listener);
+		return () => {
+			const index = this.#customEntryListeners.indexOf(listener);
+			if (index !== -1) this.#customEntryListeners.splice(index, 1);
+		};
 	}
 
 	/**

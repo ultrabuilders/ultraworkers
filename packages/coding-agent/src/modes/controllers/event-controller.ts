@@ -53,6 +53,8 @@ import {
 	splitAssistantMessageToolTimeline,
 } from "@oh-my-pi/pi-tui/chat/transcript-render-helpers";
 import { isWarpCliAgentProtocolActive } from "../warp-events";
+import { CustomEntryComponent } from "../components/custom-entry";
+import type { CustomEntry } from "../../session/session-entries";
 import { StreamingRevealController } from "./streaming-reveal";
 import { streamingStringKeysForTool, ToolArgsRevealController } from "./tool-args-reveal";
 
@@ -386,6 +388,18 @@ export class EventController {
 			// this event exists for RPC/ACP clients that have no equivalent local
 			// call site to hook, so there is nothing additional to do here.
 			queue_update: async () => {},
+			// Ported from `pi` (`modes/interactive/interactive-mode.ts:3339`, which
+			// dispatches `entry_appended` to `addCustomEntryToChat`). A custom entry
+			// has no other route to the screen — the transcript rebuild goes through
+			// `buildSessionContext`, which has no `case "custom"` — so this is what
+			// gives a registered `EntryRenderer` something to draw.
+			entry_appended: async e => {
+				// pi narrows here too (`interactive-mode.ts:3341`): the event carries
+				// the whole `SessionEntry` union because several other entry kinds
+				// have their own display paths, and a custom one is the only kind a
+				// registered `EntryRenderer` can draw.
+				if (e.entry.type === "custom") this.#handleEntryAppended(e.entry);
+			},
 		} satisfies AgentSessionEventHandlers;
 	}
 
@@ -1328,6 +1342,38 @@ export class EventController {
 		} else if (delta.type === "thinking_delta" && mode === "all") {
 			vocalizer.pushDelta(delta.delta);
 		}
+	}
+
+	/**
+	 * Draw a custom entry with the renderer its extension registered.
+	 *
+	 * Ported from `pi` (`modes/interactive/interactive-mode.ts:3739`,
+	 * `addCustomEntryToChat`). Three behaviours carried over verbatim because each
+	 * is load-bearing rather than stylistic: an entry with no renderer returns
+	 * silently (most custom entries are bookkeeping, not display); a renderer that
+	 * produced nothing is not mounted either, so an empty widget leaves no gap; and
+	 * the component is spliced in ABOVE an in-flight streaming block so it reads in
+	 * the order it happened rather than jumping below whatever is still typing.
+	 */
+	#handleEntryAppended(entry: CustomEntry): void {
+		const renderer = this.ctx.viewSession.extensionRunner?.getEntryRenderer(entry.customType);
+		if (!renderer) return;
+
+		const component = new CustomEntryComponent(entry, renderer);
+		component.setExpanded(this.ctx.toolOutputExpanded);
+		if (!component.hasContent()) return;
+
+		const streaming = this.ctx.streamingComponent;
+		if (streaming) {
+			const index = this.ctx.chatContainer.children.indexOf(streaming);
+			if (index >= 0) {
+				this.ctx.chatContainer.children.splice(index, 0, component);
+				this.ctx.ui.requestRender();
+				return;
+			}
+		}
+		this.ctx.chatContainer.addChild(component);
+		this.ctx.ui.requestRender();
 	}
 
 	/**

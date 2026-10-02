@@ -775,6 +775,9 @@ export class AgentSession implements SettingsScope {
 	/** Last (enable, providerId) tuple resolved by `#syncAppendOnlyContext` — used to skip no-op invalidations. */
 	#lastAppendOnlyResolution?: { enable: boolean; providerId: string | undefined };
 	#eventListeners: AgentSessionEventListener[] = [];
+
+	/** Releases the session-manager tap behind `entry_appended`; see the constructor. */
+	#unsubscribeCustomEntries: (() => void) | undefined;
 	#activeToolExecutionUpdates = new Map<string, Extract<AgentSessionEvent, { type: "tool_execution_update" }>>();
 	#runStateListeners = new Set<(state: "running" | "idle") => void>();
 	#commandMetadataChangedListeners: CommandMetadataChangedListener[] = [];
@@ -1690,6 +1693,13 @@ export class AgentSession implements SettingsScope {
 			}));
 		this.#preparedExtensions = config.preparedExtensions;
 		this.#extensionPaths = config.extensionPaths;
+		// Ported from `pi` (`core/agent-session.ts`), which emits `entry_appended`
+		// from its session layer. The subscription lives here rather than at each
+		// `appendEntry` handler so all five handler sites are covered by one wire,
+		// and it is the session that already owns `#emit`.
+		this.#unsubscribeCustomEntries = this.sessionManager.onCustomEntryAppended(entry => {
+			this.#emit({ type: "entry_appended", entry });
+		});
 		this.#resetCoordinator = config.codexResetCoordinator ?? defaultCodexAutoRedeemCoordinator;
 		const bashHost: BashRunnerHost = {
 			agent: this.agent,
@@ -5570,6 +5580,13 @@ export class AgentSession implements SettingsScope {
 		this.#disconnectFromAgent();
 		// beginDispose() drained the rest; this catches registrations made during teardown.
 		for (const dispose of this.#disposers.splice(0)) dispose();
+		// Belt-and-braces: `#eventListeners = []` below already stops a disposed
+		// session from reaching anyone, so this line is NOT observable through the
+		// public surface and no test can gate it. Kept because it releases the tap
+		// itself — the manager outlives the session, so holding the closure keeps a
+		// disposed session reachable from it.
+		this.#unsubscribeCustomEntries?.();
+		this.#unsubscribeCustomEntries = undefined;
 		this.#eventListeners = [];
 		this.#runStateListeners.clear();
 		this.#sessionChangeCallbacks.clear();

@@ -27,10 +27,17 @@ import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensi
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { UiHelpers } from "@oh-my-pi/pi-coding-agent/modes/utils/ui-helpers";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
+import { Text } from "@oh-my-pi/pi-tui";
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import { clearExtensionBuckets } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { deobfuscateSessionContext } from "@oh-my-pi/pi-coding-agent/secrets/message-transform";
+import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
+import { Agent } from "@oh-my-pi/pi-agent-core";
+import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
+import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
+import type { CustomEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 
 /** Load a real extension through the real factory. */
 async function load(register: (api: ExtensionAPI) => void, name: string): Promise<Extension> {
@@ -364,5 +371,173 @@ describe("the transcript actually passes transformers to its components", () => 
 		const ext = await load(() => {}, "unwired-user");
 
 		expect((await renderAndReadBack(ext, "untouched")).drawn).toContain("untouched");
+	});
+});
+
+describe("a custom entry reaches the transcript", () => {
+	/**
+	 * The other half of this bead. `appendEntry()` persisted a `CustomEntry` and
+	 * nothing ever drew it: `buildSessionContext` — which the transcript rebuild
+	 * goes through — has no `case "custom"`, so a registered `EntryRenderer` had
+	 * nowhere to land.
+	 *
+	 * `pi` closes that with an `entry_appended` event (`core/agent-session.ts:204`,
+	 * six emit sites). This drives the same chain end to end: a real session
+	 * manager, a real `AgentSession` subscribing to it, and a real event listener —
+	 * because a test that only calls the render method proves the renderer works,
+	 * not that anything ever calls it.
+	 */
+	async function sessionOver(ext: Extension) {
+		const sessionManager = SessionManager.inMemory();
+		const seen: CustomEntry[] = [];
+		const session = new AgentSession({
+			agent: new Agent({
+				getApiKey: () => "test-key",
+				initialState: { model: undefined, systemPrompt: [], tools: [] },
+				streamFn: async () => ({}) as never,
+			}),
+			sessionManager,
+			settings: Settings.isolated(),
+			modelRegistry: new ModelRegistry(createInMemoryAuthStorage(), "/nonexistent/models.yml"),
+			extensionRunner: readerOver([ext]),
+		});
+		session.subscribe(event => {
+			// Narrowed here rather than at each assertion: the event carries the whole
+			// `SessionEntry` union, and a `customType` only exists on one member.
+			if (event.type === "entry_appended" && event.entry.type === "custom") seen.push(event.entry);
+		});
+		return { sessionManager, seen, session };
+	}
+
+	it("delivers an appended custom entry to a subscriber", async () => {
+		const ext = await load(api => {
+			api.registerEntryRenderer("status-card", () => undefined);
+		}, "entry-producer");
+
+		const { sessionManager, seen } = await sessionOver(ext);
+		sessionManager.appendCustomEntry("status-card", { level: "warn" });
+
+		// The observable event: a subscriber learns the entry exists, with its type
+		// and payload intact. Before the seam there was no event at all, so a
+		// listener would simply never fire.
+		expect(seen).toHaveLength(1);
+		expect(seen[0]!.type).toBe("custom");
+		expect(seen[0]!.customType).toBe("status-card");
+	});
+
+	it("says nothing for a custom entry nobody registered a renderer for", async () => {
+		// The negative half. Most custom entries are bookkeeping — `tool_execution_start`,
+		// `session_exit` — and a renderer lookup that ignored the customType would draw
+		// an unrelated extension's panel for them.
+		const ext = await load(api => {
+			api.registerEntryRenderer("status-card", () => undefined);
+		}, "entry-negative");
+
+		const { sessionManager, seen } = await sessionOver(ext);
+		sessionManager.appendCustomEntry("someone-elses-type", {});
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0]!.customType).toBe("someone-elses-type");
+	});
+
+	it("stops delivering once the session is disposed", async () => {
+		// A disposed session that kept its tap would emit into a cleared listener set
+		// on a manager that outlives it — so the unsubscribe is part of the contract,
+		// not tidiness.
+		//
+		// The observable is DELIVERY, not persistence. An earlier version counted
+		// entries on disk and passed with the unsubscribe deleted: the manager
+		// outlives the session, so both entries land either way and the count cannot
+		// tell a released tap from a held one.
+		const ext = await load(api => {
+			api.registerEntryRenderer("status-card", () => undefined);
+		}, "entry-dispose");
+
+		const { sessionManager, seen, session } = await sessionOver(ext);
+		sessionManager.appendCustomEntry("status-card", {});
+		expect(seen).toHaveLength(1);
+
+		await session.dispose();
+		sessionManager.appendCustomEntry("status-card", {});
+
+		// `dispose()` releases the manager, which clears its entries and drops later
+		// appends — so the second `appendCustomEntry` is not persisted either, and
+		// counting entries proves nothing about delivery. The observable is the
+		// announcement the session made while it was alive: exactly one, ever.
+		expect(seen).toHaveLength(1);
+		expect(seen[0]!.customType).toBe("status-card");
+	});
+});
+
+describe("a custom entry is drawn with its registered renderer", () => {
+	/**
+	 * The last link in the chain. The tests above prove the entry is *announced*;
+	 * this proves something *draws* it — because a delivery path with no consumer
+	 * is the same defect one layer down, and a mutation that empties the TUI
+	 * handler survived every assertion above.
+	 *
+	 * Driven through the real `EventController.handleEvent`, the same entry point
+	 * the interactive session uses, with the real transcript container.
+	 */
+	it("mounts a component for an entry whose type an extension registered", async () => {
+		const { EventController } = await import("@oh-my-pi/pi-coding-agent/modes/controllers/event-controller");
+		const { createInteractiveModeContext } = await import("./helpers/interactive-mode-context");
+
+		// A renderer that returns a distinguishable component: `() => undefined`
+		// would leave the container empty whether the handler ran or not, which is
+		// exactly what made an earlier version of this unobservable.
+		const ctx = createInteractiveModeContext({
+			viewSession: {
+				extensionRunner: readerOver([
+					await load(api => {
+						api.registerEntryRenderer("status-card", () => new Text("CARD DRAWN", 0, 0));
+					}, "entry-draw"),
+				]),
+			},
+		});
+
+		const controller = new EventController(ctx as never);
+		try {
+			await controller.handleEvent({
+				type: "entry_appended",
+				entry: { type: "custom", customType: "status-card", data: {}, id: "e1", parentId: null, timestamp: 1 },
+			} as never);
+
+			const drawn = ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n");
+			expect(drawn).toContain("CARD DRAWN");
+		} finally {
+			controller.dispose();
+		}
+	});
+
+	it("draws nothing for a custom type no extension claimed", async () => {
+		// Most custom entries are bookkeeping — `tool_execution_start`, `session_exit`
+		// — so a lookup that ignored the customType would mount an unrelated panel
+		// for them on every turn.
+		const { EventController } = await import("@oh-my-pi/pi-coding-agent/modes/controllers/event-controller");
+		const { createInteractiveModeContext } = await import("./helpers/interactive-mode-context");
+
+		const ctx = createInteractiveModeContext({
+			viewSession: {
+				extensionRunner: readerOver([
+					await load(api => {
+						api.registerEntryRenderer("status-card", () => new Text("CARD DRAWN", 0, 0));
+					}, "entry-draw-negative"),
+				]),
+			},
+		});
+
+		const controller = new EventController(ctx as never);
+		const before = ctx.chatContainer.children.length;
+		try {
+			await controller.handleEvent({
+				type: "entry_appended",
+				entry: { type: "custom", customType: "unclaimed", data: {}, id: "e1", parentId: null, timestamp: 1 },
+			} as never);
+
+			expect(ctx.chatContainer.children).toHaveLength(before);
+		} finally {
+			controller.dispose();
+		}
 	});
 });

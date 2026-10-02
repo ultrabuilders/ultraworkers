@@ -505,6 +505,14 @@ describe("a custom entry is drawn with its registered renderer", () => {
 
 			const drawn = ctx.chatContainer.children.flatMap(child => child.render(80)).join("\n");
 			expect(drawn).toContain("CARD DRAWN");
+
+			// Reading the component tree proves the entry was mounted, not that it
+			// reaches the terminal. `pi` omits `requestRender()` in both branches and
+			// is safe because its two callers sit inside a dispatch/replay that
+			// renders anyway; `handleEvent` here has no such single owner (8+ call
+			// sites), so this handler asks for the render itself. Without this row,
+			// deleting both calls would leave every assertion here green.
+			expect(ctx.ui.requestRender).toHaveBeenCalled();
 		} finally {
 			controller.dispose();
 		}

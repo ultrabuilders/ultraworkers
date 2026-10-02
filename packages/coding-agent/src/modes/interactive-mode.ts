@@ -53,6 +53,7 @@ import { isInsideTerminalMultiplexer } from "@oh-my-pi/pi-tui/terminal-capabilit
 import {
 	$env,
 	adjustHsv,
+	APP_NAME,
 	formatDuration,
 	formatNumber,
 	getProjectDir,
@@ -2318,7 +2319,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		// custom messages, branch summaries, and compaction summaries) and the user
 		// set no explicit `mode_change` (which #reconcileModeFromSession just
 		// restored). SDK startup metadata and extension `custom` state entries are
-		// ignored. This way `omp --continue` (or auto-resume) that finds no recent
+		// ignored. This way `ultraworkers --continue` (or auto-resume) that finds no recent
 		// session and creates a fresh one still honors the default, while a session
 		// with restored context or an explicit mode keeps its reconciled mode. Scoped
 		// to launch (not the switch reconciler above) so /new and the plan-approval →
@@ -2401,7 +2402,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		);
 		// The preset may have switched before this listener existed.
 		this.#refreshSlashCommandIcons();
-		// A confirmed Glyph Protocol handshake means omp's own icons render in
+		// A confirmed Glyph Protocol handshake means ultraworkers's own icons render in
 		// this terminal without a Nerd Font, so the default `unicode` preset is
 		// upgraded to `nerd` for this session. The persisted setting is left
 		// alone: it travels to terminals (ssh, tmux) where the upgrade would
@@ -7258,7 +7259,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	 * `/reload`.
 	 *
 	 * Ported from senpi's `LoaderIndicatorOptions` rather than the bare
-	 * `spinnerFrames` omp already had, because the interval was the part that
+	 * `spinnerFrames` ultraworkers already had, because the interval was the part that
 	 * actually needed naming: a slow terminal wants a slower spinner.
 	 */
 	setWorkingIndicator(indicator: { frames?: string[]; intervalMs?: number } | undefined): void {
@@ -7594,7 +7595,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			await active.stop();
 			this.statusLine.setRecording(false);
 			this.showStatus(
-				`Saved ${formatDuration(elapsed)} recording to ${active.path} · replay: omp play · share: omp clip`,
+				`Saved ${formatDuration(elapsed)} recording to ${active.path} · replay: ${APP_NAME} play · share: ${APP_NAME} clip`,
 			);
 			return;
 		}

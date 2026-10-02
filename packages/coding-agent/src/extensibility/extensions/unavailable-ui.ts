@@ -52,19 +52,44 @@ export type FramelessGuard =
  * caller's own value: `setStatus` cannot return that, so offering it would answer a
  * question the author did not ask.
  */
+/**
+ * The literal `canMount` accepts for each surface, absent where it accepts none.
+ *
+ * `canMount` is scoped to three literals — `canMount(surface: "header" | "footer" | "custom")` —
+ * so the name a surface is *asked about* is not always the name that *throws*: `setHeader`
+ * is queried as `"header"`. Interpolating the method name instead emits a call that does not
+ * typecheck, and an instruction the author cannot compile is worse than none, because it
+ * reads like a handoff to someone who has the answer.
+ *
+ * `setWidget` is the sharpest case, and the reason it is missing here is the one its own
+ * docblock gives: `canMount` excludes it because the answer depends on the content — RPC
+ * renders a string array but throws on a component factory. A surface whose availability
+ * has no single boolean cannot be named in a call that takes one, so this message says the
+ * check does not cover it rather than sending the author to write code that will not build.
+ */
+const CAN_MOUNT_ARGUMENT: Readonly<Record<string, "header" | "footer" | "custom">> = {
+	setHeader: "header",
+	setFooter: "footer",
+	custom: "custom",
+};
+
 export function unavailableFrameMessage(
 	surface: "setHeader" | "setFooter" | FramelessSurface,
 	mode: string,
 	guard: FramelessGuard,
 ): string {
+	const query = CAN_MOUNT_ARGUMENT[surface];
 	const base =
 		`${surface} is not available in ${mode}: there is no interactive frame to mount the component into. ` +
 		(guard === "hasUI-blocks-the-call"
 			? "Guard the call with pi.ui.hasUI"
-			: // Names the check that answers it rather than only denying the old one.
-				// True of ACP at both values of `supportsForm`, so it describes what the
-				// flag means instead of what this instance currently reads.
-				`pi.ui.hasUI does not describe this surface — it reports whether dialogs round-trip, not whether a frame exists — so ask pi.ui.canMount("${surface}"), which does`);
+			: query === undefined
+				? // Names the check that answers it rather than only denying the old one — and
+					// when there is no such check, says so. True of ACP at both values of
+					// `supportsForm`, so it describes what the flag means rather than what this
+					// instance currently reads.
+					"pi.ui.hasUI does not describe this surface — it reports whether dialogs round-trip, not whether a frame exists — and pi.ui.canMount does not take this one either"
+				: `pi.ui.hasUI does not describe this surface — it reports whether dialogs round-trip, not whether a frame exists — so ask pi.ui.canMount("${query}"), which does`);
 	// `custom` resolves with a value the caller supplies, so "show text instead" is not
 	// a substitute — setStatus cannot return the author's result, and naming it there
 	// would point at a surface that cannot answer the question being asked.

@@ -3,6 +3,7 @@ import type { ExtensionUIContext } from "@oh-my-pi/pi-coding-agent/extensibility
 import { noOpUIContext } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { createNoOpUIContext } from "@oh-my-pi/pi-coding-agent/extensibility/utils";
 import { createAcpExtensionUiContext } from "@oh-my-pi/pi-coding-agent/modes/acp/acp-agent";
+import { unavailableFrameMessage } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/unavailable-ui";
 import type { AgentSideConnection, ClientCapabilities } from "@oh-my-pi/pi-utils/acp";
 import type { HookUIContext } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/types";
 
@@ -122,5 +123,67 @@ describe("frameless advice matches what the calling context's hasUI actually doe
 		for (const context of [noOpUIContext, acpContext(FORM_CAPABILITIES)]) {
 			expect(setHeaderMessage(context)).toContain("setHeader is not available");
 		}
+	});
+});
+
+/**
+ * Every surface the message builder accepts, written out rather than derived.
+ *
+ * Deriving the list from `FramelessSurface` would check the type against itself: a surface
+ * added to the union would widen the list and stay unchecked, which is the failure this
+ * describes. Spelling it out means a new surface has to be added here to be covered.
+ */
+const FRAMELESS_SURFACES = [
+	"setHeader",
+	"setFooter",
+	"custom",
+	"setWidget",
+	"setEditorComponent",
+	"setEditorText",
+	"setTitle",
+	"setWorkingMessage",
+	"setWorkingIndicator",
+	"setToolsExpanded",
+] as const;
+
+/** The three literals `canMount(surface: "header" | "footer" | "custom")` accepts. */
+const CAN_MOUNT_LITERALS = ["header", "footer", "custom"] as const;
+
+const GUARDS = ["hasUI-blocks-the-call", "hasUI-does-not-block-the-call"] as const;
+
+describe("the frameless advice names a canMount the caller can actually pass", () => {
+	it("passes canMount only literals its signature accepts, for every surface and both guards", () => {
+		// The advice is the discovery path for these surfaces — the bead that opened this
+		// work rests on the error message being what an author reads when `canMount` cannot
+		// tell them in advance. So an instruction naming a call that does not typecheck is
+		// not a cosmetic slip: it is the seam handing over something unusable, while looking
+		// like a handoff to someone who has the answer.
+		const violations: string[] = [];
+
+		for (const surface of FRAMELESS_SURFACES) {
+			for (const guard of GUARDS) {
+				const message = unavailableFrameMessage(surface, "ACP mode", guard);
+				for (const [, argument] of message.matchAll(/canMount\("([^"]+)"\)/g)) {
+					if (!(CAN_MOUNT_LITERALS as readonly string[]).includes(argument)) {
+						violations.push(`${surface} [${guard}] -> canMount("${argument}")`);
+					}
+				}
+			}
+		}
+
+		expect(violations).toEqual([]);
+	});
+
+	it("says the check does not cover the surface, rather than naming one that would not build", () => {
+		// `setWidget` is excluded from `canMount` because its answer depends on the content.
+		// The honest sentence is that the check does not take it — not a call that fails to
+		// compile, which would send the author looking for a bug in their own extension.
+		const message = unavailableFrameMessage("setWidget", "ACP mode", "hasUI-does-not-block-the-call");
+
+		expect(message).not.toContain("canMount(");
+		expect(message).toContain("pi.ui.canMount does not take this one either");
+		// The surface is still named, and a route that works in ACP is still offered.
+		expect(message).toContain("setWidget is not available");
+		expect(message).toContain("pi.ui.select");
 	});
 });

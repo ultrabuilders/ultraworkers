@@ -304,7 +304,7 @@ describe("a critical bash command is the denial this records", () => {
 		const bash = new BashTool({
 			settings: Settings.isolated({ "tools.approvalMode": "yolo" }),
 		} as unknown as ConstructorParameters<typeof BashTool>[0]);
-		const wrapped = new ExtensionToolWrapper(bash, runner) as unknown as AgentTool;
+		const wrapped = new ExtensionToolWrapper(bash as unknown as AgentTool, runner);
 		const settings = Settings.isolated({ "tools.approvalMode": "yolo" });
 
 		await expect(
@@ -332,7 +332,7 @@ describe("a critical bash command is the denial this records", () => {
 		const bash = new BashTool({
 			settings: Settings.isolated({ "tools.approvalMode": "always-ask" }),
 		} as unknown as ConstructorParameters<typeof BashTool>[0]);
-		const wrapped = new ExtensionToolWrapper(bash, runner) as unknown as AgentTool;
+		const wrapped = new ExtensionToolWrapper(bash as unknown as AgentTool, runner);
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 
 		await expect(

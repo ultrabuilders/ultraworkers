@@ -20,7 +20,7 @@ export default class Stream extends Command {
 
 	static examples = [
 		`${APP_NAME} stream`,
-		'omp stream --title "Building a parser"',
+		`${APP_NAME} stream --title "Building a parser"`,
 		`${APP_NAME} stream --server https://live.example.com`,
 	];
 

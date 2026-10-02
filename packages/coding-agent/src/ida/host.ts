@@ -10,7 +10,7 @@
  */
 import * as fs from "node:fs";
 import * as net from "node:net";
-import { acquireFileLock, logger, postmortem, setProcessName } from "@oh-my-pi/pi-utils";
+import { APP_NAME, acquireFileLock, logger, postmortem, setProcessName } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import {
 	errorMessage,
@@ -242,7 +242,7 @@ export async function startIdaHostFromEnvironment(): Promise<void> {
 	if (!raw) throw new Error("IDA host environment is incomplete");
 	delete process.env[IDA_HOST_CONFIG_ENV];
 	const config = parseIdaHostConfig(raw);
-	setProcessName(`omp ida ${config.loc.id}`);
+	setProcessName(`${APP_NAME} ida ${config.loc.id}`);
 	const host = new IdaHost(config);
 	const cancelCleanup = postmortem.register("ida-host", () => host.shutdown());
 	let code: number;

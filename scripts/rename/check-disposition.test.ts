@@ -291,6 +291,35 @@ describe("stage post", () => {
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 
+	it("checks a literal row against its own literal, but a pinned row against the file total", async () => {
+		// The two classes cannot be checked the same way, and the difference is a
+		// limitation rather than an accident — so it is pinned here. If a future change
+		// makes `keep-shrank` per-row for pinned classes, this test is where the author
+		// learns that the split it would need is a human judgement (epic-qoit B), not
+		// something the table can be made to prove.
+		const pinnedProse = (n: number) => Array.from({ length: n }, (_, i) => `// an omp session ${i}\n`).join("");
+
+		// LITERAL: the row declared 3 `".omp"`, one is gone, and the file still holds
+		// other pinned prose. The row's own literal is what shrank, so it fires.
+		const literal = await tree({ "src/d.ts": `a ".omp"\nb ".omp"\n${pinnedProse(2)}` });
+		const literalHits = await checkPost(literal, [row_("src/d.ts", 3, "keep-path", "r", "X1")]);
+		expect(literalHits.map(v => v.rule)).toEqual(["keep-shrank"]);
+
+		// PINNED: the row declared 1 occurrence; the file went from 8 to 7. The row's
+		// own count is indistinguishable from the file's, so `keep-shrank` compares 7
+		// against 1 and stays green — the occurrence that left is invisible HERE.
+		const pinned = await tree({ "src/e.ts": pinnedProse(7) });
+		const pinnedHits = await checkPost(pinned, [row_("src/e.ts", 1, "keep-wire", "r", "N3")]);
+		expect(pinnedHits).toEqual([]);
+
+		// ...and the sum in `checkPre` is what does catch it, so the table is not
+		// unguarded — it is guarded somewhere other than the row.
+		const preHits = await checkPre(pinned, [row_("src/e.ts", 1, "keep-wire", "r", "N3")]);
+		expect(preHits.map(v => v.rule)).toEqual(["hits-imbalance"]);
+
+		await Bun.$`rm -rf ${literal} ${pinned}`.quiet();
+	});
+
 	it("does not throw on a stale row", async () => {
 		const root = await tree(DONE);
 		const violations = await checkPost(root, [

@@ -175,8 +175,11 @@ export function countClass(text: string, disposition: Disposition): number {
  *
  * The pinned count is therefore the rename count outright. A file holding both a
  * wire contract and a rename candidate simply has a `keep-wire` row whose `hits` is
- * a human-signed number; balancing checks that number against the file, and
- * `--stage=post` checks it did not shrink. Neither needs the rename total adjusted.
+ * a human-signed number; balancing checks that number against the file.
+ *
+ * Balancing, though, is the ONLY stage that checks it, and it checks the SUM —
+ * see the `keep-shrank` note in `checkPost` for why a pinned `keep-*` row's own
+ * `hits` is not verifiable on its own. Neither needs the rename total adjusted.
  */
 export function countRename(text: string, _keepDispositions: readonly Disposition[] = []): number {
 	return countClass(text, "rename");
@@ -470,9 +473,30 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
  * Stage `post`: the sweep is done.
  *
  * `rename` rows must be at 0 — a leftover means someone renamed the file's other
- * occurrences and missed this class. `keep-*` rows must still hold exactly what was
- * recorded: a `keep-wire` row that dropped means the contract it was protecting moved
- * without anyone deciding to move it.
+ * occurrences and missed this class.
+ *
+ * `keep-*` rows are checked per row, and what that means DIFFERS BY CLASS, which is
+ * why the split below is not uniform:
+ *
+ * - LITERAL classes (`keep-path`, `keep-worker-selector`) are genuinely per row.
+ *   `countClass` returns that literal's own count, so a row declaring 3 fires
+ *   `keep-shrank` when one of its 3 goes — verified by deleting one `".omp"` from a
+ *   file that still held other pinned prose.
+ * - PINNED classes (`rename`, `keep-wire`, `keep-prose`) are **not**. Those three are
+ *   one arm of `classMatcher`, so `countClass` returns the same number for each: the
+ *   FILE-WIDE pinned total. `keep-shrank` is therefore comparing the whole file's
+ *   count against ONE row's `hits`, and it stays green when an occurrence leaves while
+ *   the total still clears that row's number. Measured: a real file with 8 pinned
+ *   occurrences, one deleted, leaves 7 — green here, while `checkPre`'s `hits-imbalance`
+ *   catches it on the sum.
+ *
+ * So the honest statement is: **for a pinned `keep-*` row, shrinkage is verified by
+ * the sum in `checkPre`, not per row here.** The per-row check that exists for these
+ * classes is the literal one above. Nothing about the table's data is wrong — the two
+ * files carrying both a `keep-wire` and a `keep-prose` row declare splits verified
+ * occurrence by occurrence (1+7, and 6+2). A split recorded in this table is a
+ * **human judgement**; the gate can confirm the pair sums to the file, and cannot
+ * confirm the split between them. (epic-qoit findings B and C.)
  */
 export async function checkPost(root: string, rows: readonly Row[]): Promise<readonly Violation[]> {
 	const violations: Violation[] = [];

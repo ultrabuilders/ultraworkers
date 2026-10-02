@@ -20,10 +20,10 @@ export default class Update extends Command {
 		stable: Flags.boolean({ description: "Switch back to the stable channel", default: false }),
 	};
 
-	// Examples are rendered verbatim into `omp update --help` and are the one part of
+	// Examples are rendered verbatim into `ultraworkers update --help` and are the one part of
 	// help text the reader is expected to copy and paste, so they name the INVOCABLE
 	// command (WIRE_NAME, pinned by `wire-name.test.ts` and matching `package.json#bin`),
-	// never the brand. A literal `omp` here is a copy that stays green after the binary
+	// never the brand. A literal `ultraworkers` here is a copy that stays green after the binary
 	// it names is renamed — the same defect as `BUNDLED_PACKAGES` and `cacheKey`.
 	static examples = [
 		`${WIRE_NAME} update`,

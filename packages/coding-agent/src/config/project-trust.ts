@@ -6,7 +6,7 @@
  * `isProjectTrusted()` used to be the literal `() => true` at both call sites
  * (`extensions/runner.ts`, `session/agent-session.ts`), and `CHANGELOG.md`
  * documented that as deliberate. It was not a gate; it was a shim that told
- * upstream Pi extensions they were running in a trusted project when omp had no
+ * upstream Pi extensions they were running in a trusted project when ultraworkers had no
  * opinion. The failure mode is the one the shipped docs already named: clone a
  * repository containing `.omp/plugins/installed_plugins.json` and its
  * project-scoped extension modules load and run with no prompt, while a reader

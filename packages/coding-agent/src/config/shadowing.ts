@@ -2,7 +2,7 @@
  * Which layer supplies a setting's effective value, and what to tell the user
  * when the value they just saved is not the value in force.
  *
- * This is the one place that knows how to say it. `omp config set` and the
+ * This is the one place that knows how to say it. `ultraworkers config set` and the
  * settings panel both route through here, so the CLI and the UI cannot describe
  * the same shadowing differently — the messages are released strings, and two
  * copies of them would drift.
@@ -99,7 +99,7 @@ export type SettingWriteOutcome =
 			readonly status: "shadowed";
 			readonly source: ShadowSource;
 			/**
-			 * Machine-readable form of the same fact, for `omp config set --json`.
+			 * Machine-readable form of the same fact, for `ultraworkers config set --json`.
 			 * Carried rather than recomputed: a second `shadowingSource` call at
 			 * the callsite is the fork this module exists to prevent, and the JSON
 			 * shape is a wire contract a consumer may already parse.

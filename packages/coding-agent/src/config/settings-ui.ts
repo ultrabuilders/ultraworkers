@@ -47,7 +47,7 @@ function envNote(setting: AnySetting): string {
 /**
  * Description suffix for whichever layer is shadowing this setting, not just
  * the environment. Reuses `shadowingSource`'s released wording so the panel and
- * `omp config set` describe the same shadowing identically.
+ * `ultraworkers config set` describe the same shadowing identically.
  */
 function provenanceNote(setting: AnySetting, scope: Settings): string {
 	if (!setting.envName || setting.envValue() !== undefined) return envNote(setting);
@@ -87,7 +87,7 @@ export function createSettingsHost(): SettingsHost {
 		entries,
 		get: path => lookup(path)?.layered(settings),
 		set: (path, value) => {
-			// The post-write latch lives in `shadowing.ts`, shared with `omp config
+			// The post-write latch lives in `shadowing.ts`, shared with `ultraworkers config
 			// set` so the two surfaces cannot detect shadowing differently. The panel
 			// reverts: someone editing a value in a live session means the edit they
 			// are making now, and a value saved to the file that never takes effect

@@ -455,7 +455,7 @@ export class DebugSelectorComponent extends OverlayPanel {
 	 *
 	 * Deliberately calls the shared builder rather than collecting checks here.
 	 * This is the second exit the bead asked for, and the property worth having is
-	 * not "a doctor entry exists in /debug" — it is that this entry and `omp
+	 * not "a doctor entry exists in /debug" — it is that this entry and `ultraworkers
 	 * doctor` print the SAME check set. Two collectors would each be correct and
 	 * would drift the moment a check is added, with no test able to see it. One
 	 * builder makes the drift unrepresentable instead of merely untested.

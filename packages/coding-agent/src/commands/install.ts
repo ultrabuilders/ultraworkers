@@ -1,6 +1,6 @@
 /**
- * `ultraworkers install <target>` — top-level convenience over `omp plugin install` /
- * `omp plugin link`.
+ * `ultraworkers install <target>` — top-level convenience over `ultraworkers plugin install` /
+ * `ultraworkers plugin link`.
  *
  * The docs (omp.sh/docs/extension-authoring) advertise
  *

@@ -78,10 +78,10 @@ export type ServerToolUseBlockParam = {
 	[key: string]: unknown;
 };
 
-/** Web-search server-tool call whose matching result is replayable by omp. */
+/** Web-search server-tool call whose matching result is replayable by ultraworkers. */
 export type WebSearchServerToolUseBlockParam = ServerToolUseBlockParam & { name: "web_search" };
 
-/** Tool-search server-tool call whose matching result is replayable by omp. */
+/** Tool-search server-tool call whose matching result is replayable by ultraworkers. */
 export type ToolSearchServerToolUseBlockParam = ServerToolUseBlockParam & {
 	name: "tool_search_tool_regex" | "tool_search_tool_bm25";
 };

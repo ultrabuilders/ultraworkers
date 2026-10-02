@@ -1,5 +1,5 @@
 /**
- * CLI handler for `omp grievances` — view, clean, and manually push reported tool issues.
+ * CLI handler for `ultraworkers grievances` — view, clean, and manually push reported tool issues.
  */
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { APP_NAME } from "@oh-my-pi/pi-utils";
@@ -168,7 +168,7 @@ export async function cleanGrievances(options: CleanGrievancesOptions): Promise<
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Manual push (`omp grievances push`)
+// Manual push (`ultraworkers grievances push`)
 // ───────────────────────────────────────────────────────────────────────────
 
 /**

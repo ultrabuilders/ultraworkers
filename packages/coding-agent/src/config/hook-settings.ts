@@ -12,7 +12,7 @@
  * `hooks: { state: { "pre:bash:guard": { trustedHash: "…" } } }`.
  *
  * The type is `HookState` from the hooks layer rather than a local copy, and
- * there is no `enabled` field: nothing in omp can produce one (there is no
+ * there is no `enabled` field: nothing in ultraworkers can produce one (there is no
  * per-handler toggle to read it back from), and a persisted field with no
  * writer is a field that lies.
  */
@@ -51,7 +51,7 @@ export function recordedHookHash(hookKey: string, scope: Settings = settings): s
  * a short-lived process can exit before that timer fires, and a record that was
  * never written is a record that is absent next run, which would make every hook
  * first-sight again and leave `modified` unreachable for exactly the short-lived
- * invocations (`omp -p`, a catalog command) where it matters most. Measured: with
+ * invocations (`ultraworkers -p`, a catalog command) where it matters most. Measured: with
  * the flush removed the record still lands, because these scans take longer than
  * the debounce — so that window is closed by argument, not by a test.
  */

@@ -1,16 +1,16 @@
 /**
- * `omp doctor` — is this environment able to run the agent?
+ * `ultraworkers doctor` — is this environment able to run the agent?
  *
  * The checks themselves live in `extensibility/plugins/doctor.ts` and are reached
  * through the same `runDoctorChecks` / `formatDoctorResults` pair that
- * `omp plugin doctor` uses. That sharing is the whole point: a second collection
+ * `ultraworkers plugin doctor` uses. That sharing is the whole point: a second collection
  * would make "the doctor is healthy" mean two different things depending on which
  * command the user happened to type, and the exit code would be whichever copy
  * they did not run.
  *
  * Scope: this reports the ENVIRONMENT half — PATH, the log directory's mode, and
  * whether the registered themes and tools actually resolve. Plugin health is
- * `omp plugin doctor`, which additionally reports the plugin registry. The two
+ * `ultraworkers plugin doctor`, which additionally reports the plugin registry. The two
  * halves share no check name, so merging them here would restate a partition the
  * plugin report already draws.
  *
@@ -36,13 +36,13 @@ export default class Doctor extends Command {
 		await initTheme();
 
 		// The shared builder, not a local `runDoctorChecks` + `formatDoctorResults`
-		// pair. `omp plugin doctor` and the TUI's `/debug` entry print the report
+		// pair. `ultraworkers plugin doctor` and the TUI's `/debug` entry print the report
 		// this returns; a surface that collected its own checks would drift from
 		// the other two while each stayed green against its own copy.
 		const report = await buildEnvironmentDoctorReport();
 		for (const line of report.lines) console.log(line);
 
-		// A warning is not a failure. `omp doctor` answering 1 for a noisy-but-working
+		// A warning is not a failure. `ultraworkers doctor` answering 1 for a noisy-but-working
 		// host is how a diagnostic command gets ignored in CI, and the exit code is
 		// the only part of this output a script can read without parsing prose.
 		if (report.errors > 0) process.exitCode = 1;

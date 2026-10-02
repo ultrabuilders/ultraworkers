@@ -1,5 +1,5 @@
 /**
- * Session management from the shell: `omp session <list|archive|unarchive>`.
+ * Session management from the shell: `ultraworkers session <list|archive|unarchive>`.
  */
 
 import { Args, Command, Flags } from "@oh-my-pi/pi-utils/cli";

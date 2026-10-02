@@ -222,7 +222,7 @@ function isExtendedContextEnabledFromSettings(settingsInstance?: Settings): bool
  * Online discovery (`strategy: "online"`) is independent of credential minting:
  * opening `/models` and hovering a provider fetch catalogs without re-running
  * `!command` helpers. Pass `refreshCommandCredentials` only for explicit user
- * refresh (`omp models refresh`, TUI F5).
+ * refresh (`ultraworkers models refresh`, TUI F5).
  */
 export interface ModelRegistryRefreshOptions {
 	refreshCommandCredentials?: boolean;
@@ -2756,7 +2756,7 @@ export class ModelRegistry {
 
 	/**
 	 * Whether a config-declared discovery provider has not yet produced a
-	 * catalog in this process. A cold discovery cache (e.g. after `omp update`
+	 * catalog in this process. A cold discovery cache (e.g. after `ultraworkers update`
 	 * bumps the cache namespace) leaves the provider in its initial `idle`
 	 * state with no models, so a selector the provider will supply looks
 	 * unknown until background discovery lands (#10048).
@@ -2856,7 +2856,7 @@ export class ModelRegistry {
 	 *
 	 * Ported from `pi`'s `ModelRuntime.getRegisteredProviderIds`
 	 * (`core/model-runtime.ts:518`), which unions its extension and native-extension
-	 * provider maps. omp has one registry rather than two — `#runtimeProviderSourceByName`
+	 * provider maps. ultraworkers has one registry rather than two — `#runtimeProviderSourceByName`
 	 * covers both, because a native provider still arrives through `registerProvider` —
 	 * so the union pi needs is a single map's keys here.
 	 *
@@ -2895,7 +2895,7 @@ export class ModelRegistry {
 	 * discovered model that defines one.
 	 *
 	 * The overrides lead because a model-derived answer is only available once
-	 * discovery has populated the registry. `omp usage` builds a `ModelRegistry`
+	 * discovery has populated the registry. `ultraworkers usage` builds a `ModelRegistry`
 	 * and probes credentials immediately, and providers whose roster is
 	 * discovery-only (no bundled rows) have no model to read a URL from at that
 	 * point — so deriving solely from models returned `undefined` cache-cold and

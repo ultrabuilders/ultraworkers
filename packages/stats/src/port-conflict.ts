@@ -306,7 +306,7 @@ async function reclaimStatsPort(port: number, hasDashboardIdentity = false): Pro
 		(!isStatsDashboardProcess(holder.image, holder.commandLine) && !hasDashboardIdentity)
 	) {
 		throw new Error(
-			`Port ${port} is in use by ${holder.image} (PID ${holder.pid}), which is not identifiable as an omp stats dashboard; refusing to stop it.`,
+			`Port ${port} is in use by ${holder.image} (PID ${holder.pid}), which is not identifiable as an ${APP_NAME} stats dashboard; refusing to stop it.`,
 		);
 	}
 

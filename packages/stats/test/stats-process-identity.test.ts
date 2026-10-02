@@ -7,9 +7,13 @@
  * module's identity check hardcoded the old spelling in two places: the runtime
  * image table and the "is this `<binary> stats`" test. Renaming the binary
  * without touching them does not error — the port holder simply stops being
- * recognised, and `prepareStatsPort` refuses forever with "not identifiable as
- * an omp stats dashboard". The refusal is the safe direction, which is exactly
- * why it would have gone unnoticed: it looks like the code protecting you.
+ * recognised, and `prepareStatsPort` refuses forever with a message naming the
+ * legacy binary. That refusal message now reads `APP_NAME` like the rest of the
+ * user-facing text (epic-grse); the identity TABLE below deliberately keeps both
+ * spellings, because there it is a contract with what is on disk rather than a
+ * name shown to a reader. The refusal is the safe direction, which is exactly
+ * why the original mismatch would have gone unnoticed: it looks like the code
+ * protecting you.
  *
  * ## Why both spellings are asserted
  *

@@ -525,13 +525,27 @@ describe("a keep_ref whose owner resolves but whose contract is written nowhere"
 });
 describe("a rename row whose file is a published module", () => {
 	const FILES = {
-		// Publishes every `.ts` directly under src/ as `@oh-my-pi/pub/widget.js`.
+		// `./*.js` → `./src/*.ts`, and `*` SPANS `/`: `pub/deep/nested` is served by
+		// this entry exactly as `pub/widget` is. Anchored on the single-segment shape
+		// instead, this rule reported 16 of 194 and called the other 178 "safe to
+		// rename" — a false safety claim about files this package does publish.
 		"packages/pub/package.json": JSON.stringify({
 			name: "@oh-my-pi/pub",
 			exports: { "./*.js": "./src/*.ts" },
 		}),
 		"packages/pub/src/widget.ts": "export const a = 1;\n",
 		"packages/pub/src/deep/nested.ts": "export const b = 1;\n",
+		// A NESTED KEY, behind conditions. The `.js` here comes from the KEY, and the
+		// entry is only reachable by unwrapping `import`/`types`, so a rule that reads
+		// one condition level of `Object.keys` sees the word `import`, not a path.
+		"packages/cond/package.json": JSON.stringify({
+			name: "@oh-my-pi/cond",
+			exports: {
+				"./overlays/*": { types: "./src/overlays/*.ts", import: "./src/overlays/*.ts" },
+			},
+		}),
+		"packages/cond/src/overlays/model-hub.ts": "export const f = 1;\n",
+		"packages/cond/src/elsewhere/ignored.ts": "export const g = 1;\n",
 		// Same export shape, but private: it reaches nobody, so renaming inside it
 		// breaks no consumer and reporting it would inflate the count.
 		"packages/hidden/package.json": JSON.stringify({
@@ -543,39 +557,65 @@ describe("a rename row whose file is a published module", () => {
 		// Publishes nothing by wildcard.
 		"packages/plain/package.json": JSON.stringify({ name: "@oh-my-pi/plain", exports: { ".": "./src/index.ts" } }),
 		"packages/plain/src/thing.ts": "export const d = 1;\n",
-		// A `**` wildcard WOULD publish nested files; this rule must not treat it as
-		// the single-segment shape, because that would change what it claims to catch.
-		"packages/deep/package.json": JSON.stringify({
-			name: "@oh-my-pi/deep",
-			exports: { "./*.js": "./src/**/*.ts" },
-		}),
-		"packages/deep/src/inner/leaf.ts": "export const e = 1;\n",
 	};
 
-	it("reports the published module and nothing else", async () => {
-		// Four rows that differ in exactly one respect each. Asserting only the total
-		// would pass for a rule that counts the right number of the wrong rows, so the
-		// assertion is on the specifier — the thing a consumer would have to rewrite.
+	it("reports a nested file as published, because `*` spans `/`", async () => {
+		// The regression this defends: a rule that required ONE segment under `src/`
+		// reported only the top-level file and silently cleared the nested one, which
+		// is the file most likely to be renamed without anyone noticing it was public.
 		const root = await tree(FILES);
 		const rows = [
 			row_("packages/pub/src/widget.ts", 1, "rename", "renamed"),
 			row_("packages/pub/src/deep/nested.ts", 1, "rename", "renamed"),
-			row_("packages/hidden/src/secret.ts", 1, "rename", "renamed"),
-			row_("packages/plain/src/thing.ts", 1, "rename", "renamed"),
-			row_("packages/deep/src/inner/leaf.ts", 1, "rename", "renamed"),
 		];
 
 		const survey = await findPublishedFileRenames(root, rows);
 
-		expect(survey.rows.map(r => r.specifier)).toEqual(["@oh-my-pi/pub/widget"]);
-		expect(survey.rows[0]!.path).toBe("packages/pub/src/widget.ts");
+		expect(survey.rows.map(r => r.specifier)).toEqual(["@oh-my-pi/pub/widget.js", "@oh-my-pi/pub/deep/nested.js"]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("reads the specifier through conditions and the key's own `.js` suffix", async () => {
+		// The suffix is the KEY's, not the filename's: a rule that appends `.js` from
+		// the file extension would name a specifier that does not resolve, and one that
+		// reads `Object.keys(value)` sees `import`, never `./src/overlays/*.ts`.
+		const root = await tree(FILES);
+		const rows = [
+			row_("packages/cond/src/overlays/model-hub.ts", 1, "rename", "renamed"),
+			row_("packages/cond/src/elsewhere/ignored.ts", 1, "rename", "renamed"),
+		];
+
+		const survey = await findPublishedFileRenames(root, rows);
+
+		expect(survey.rows.map(r => r.specifier)).toEqual(["@oh-my-pi/cond/overlays/model-hub"]);
+		expect(survey.notPublishedInSamePackage).toBe(1); // in a publishing package, not published
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("excludes a private package, and a row naming a file that is not there", async () => {
+		// Two rows that cannot carry a breaking-change verdict. The private package
+		// publishes to nobody; the deleted file has no specifier and no consumer. Both
+		// are still COUNTED, so the partition stays whole.
+		const root = await tree(FILES);
+		const rows = [
+			row_("packages/hidden/src/secret.ts", 1, "rename", "renamed"),
+			row_("packages/plain/src/thing.ts", 1, "rename", "renamed"),
+			row_("packages/pub/src/gone.ts", 1, "rename", "renamed"),
+		];
+
+		const survey = await findPublishedFileRenames(root, rows);
+
+		expect(survey.rows).toEqual([]);
+		expect(survey.fileMissingOnDisk).toBe(1);
+		expect(survey.outsidePublishingPackage).toBe(2); // the private one publishes nothing either
+		expect(survey.reconciles).toBe(true);
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 
 	it("partitions every rename row, so the headline count is not a silent subset", async () => {
-		// The number `16` means nothing to a reader who cannot see what it was taken
-		// from. If the buckets stop summing, one of them is swallowing rows while the
-		// total still reads like a complete population.
+		// The number means nothing to a reader who cannot see what it was taken from.
+		// If the buckets stop summing, one of them is swallowing rows while the total
+		// still reads like a complete population.
 		const root = await tree(FILES);
 		const rows = [
 			row_("packages/pub/src/widget.ts", 1, "rename", "renamed"),
@@ -588,9 +628,12 @@ describe("a rename row whose file is a published module", () => {
 
 		expect(survey.renameRowsTotal).toBe(3); // the keep-prose row is not counted at all
 		expect(survey.reconciles).toBe(true);
-		expect(survey.rows.length + survey.notPublishedInSamePackage + survey.outsidePublishingPackage).toBe(
-			survey.renameRowsTotal,
-		);
+		expect(
+			survey.rows.length +
+				survey.notPublishedInSamePackage +
+				survey.outsidePublishingPackage +
+				survey.fileMissingOnDisk,
+		).toBe(survey.renameRowsTotal);
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 });

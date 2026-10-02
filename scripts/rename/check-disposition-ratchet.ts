@@ -346,7 +346,8 @@ async function main(): Promise<number> {
 					.join("  ") || "(none)"
 			}\n` +
 			`[ratchet]     partition of ${published.renameRowsTotal} rename rows: ${published.rows.length} published + ` +
-			`${published.notPublishedInSamePackage} same-pkg-not-published + ${published.outsidePublishingPackage} other-package` +
+			`${published.notPublishedInSamePackage} same-pkg-not-published + ${published.outsidePublishingPackage} other-package + ` +
+			`${published.fileMissingOnDisk} missing-on-disk` +
 			`  → reconciles: ${published.reconciles ? "YES" : "NO"}`,
 	);
 

@@ -111,19 +111,37 @@ export function extractFailures(rawLog: string): ExtractionResult {
 	let reportedFailCount: number | undefined;
 	let reportedErrorCount: number | undefined;
 
+	// The runner tallies failing *tests*, not failing `(fail)` header lines, and it
+	// prints one header per failing assertion. A test with two failed expectations
+	// contributes two lines to the log but one to the tally, so counting lines
+	// over-counts the extraction by exactly the number of extra assertions.
+	//
+	// Deduplication is therefore per invocation, not global. A log that concatenates
+	// several `bun test` runs repeats a name once per run, and each run's own summary
+	// counts it again — collapsing those across invocations would under-count instead.
+	// The boundary is the summary block: bun prints exactly one per invocation,
+	// whatever the number of test files.
+	let namedFailureTests = 0;
+	const currentInvocation = new Set<string>();
+
 	const lines = rawLog.split("\n");
 	for (let i = 0; i < lines.length; i++) {
 		const line = stripTimestamp(lines[i] ?? "");
 
 		const fail = BUN_FAIL.exec(line);
 		if (fail?.[1]) {
-			failures.push({ identity: fail[1].trim(), line: i + 1 });
+			const identity = fail[1].trim();
+			failures.push({ identity, line: i + 1 });
+			currentInvocation.add(identity);
 			continue;
 		}
 
 		const summary = BUN_SUMMARY.exec(line);
 		if (summary?.[1]) {
 			reportedFailCount = (reportedFailCount ?? 0) + Number(summary[1]);
+			// The summary closes an invocation: bank its distinct tests, start a new one.
+			namedFailureTests += currentInvocation.size;
+			currentInvocation.clear();
 		}
 
 		const errors = BUN_ERROR_SUMMARY.exec(line);
@@ -132,24 +150,23 @@ export function extractFailures(rawLog: string): ExtractionResult {
 		}
 	}
 
+	// A run killed before its summary never closed its invocation.
+	namedFailureTests += currentInvocation.size;
+
 	const identities = [...new Set(failures.map(f => f.identity))].sort();
 
-	// Compare against extracted failure lines. Identities are deduplicated for
-	// reporting, but repeated failures across invocations still account for each
-	// invocation's summary count.
-	//
 	// Suite-level errors are counted by the runner as failures but never print a
 	// `(fail) <name>` line — there is no test to name when an import throws or an
 	// exception escapes between tests. Allowing for them keeps the guard pointed
 	// at genuine pattern gaps instead of firing on a shape it can never match.
 	const accounted = reportedFailCount ?? 0;
-	const unexplained = accounted - (reportedErrorCount ?? 0) - failures.length;
+	const unexplained = accounted - (reportedErrorCount ?? 0) - namedFailureTests;
 	const underCounted = reportedFailCount !== undefined && unexplained > 0;
 	const overCounted = reportedFailCount !== undefined && unexplained < 0;
 	// No summary at all: nothing to reconcile against, so an identity list here is
 	// unfalsifiable. That is the case the reference let through silently, and it
 	// is the one that looks most like a complete list.
-	const unverifiable = reportedFailCount === undefined && failures.length > 0;
+	const unverifiable = reportedFailCount === undefined && namedFailureTests > 0;
 
 	return {
 		failures,

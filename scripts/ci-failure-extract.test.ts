@@ -130,6 +130,47 @@ describe("extractFailures", () => {
 		expect(result.underCounted).toBe(true);
 	});
 
+	test("counts a test once when its failing assertions print repeated headers", () => {
+		// Bun prints one `(fail)` header per failing assertion but tallies the test
+		// once, so a two-assertion failure contributes two lines and a tally of one.
+		// Counting lines made the extraction exceed the runner's own tally, and the
+		// gate reported a shortfall in the wrong direction — pointing at a missing
+		// failure that was never absent.
+		const log = [
+			`${TS}(fail) the multi-assertion one`,
+			`${TS}1278 | expect(x).toHaveLength(2);`,
+			`${TS}error: expect(received).toHaveLength(expected)`,
+			`${TS}(fail) the multi-assertion one`,
+			`${TS}1303 | expect(y).toHaveLength(0);`,
+			`${TS} 1 fail`,
+			`${TS} 0 error`,
+		].join("\n");
+
+		const result = extractFailures(log);
+
+		// Both lines are still reported — deduplication counts, it does not hide.
+		expect(result.failures).toHaveLength(2);
+		expect(result.identities).toEqual(["the multi-assertion one"]);
+		expect(result.underCounted).toBe(false);
+		expect(result.overCounted).toBe(false);
+	});
+
+	test("counts a repeated name once per invocation, not once overall", () => {
+		// The mirror of the case above, and the reason deduplication is scoped per
+		// invocation: a log concatenating several runs repeats the name, and each
+		// run's own summary counts it again. A global dedupe would collapse these to
+		// one and invent a shortfall that does not exist — the failure mode a
+		// per-line count and a global dedupe share, from opposite directions.
+		const log = [`${TS}(fail) shared`, `${TS} 1 fail`, `${TS}(fail) shared`, `${TS} 1 fail`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.failures).toHaveLength(2);
+		expect(result.identities).toEqual(["shared"]);
+		expect(result.underCounted).toBe(false);
+		expect(result.overCounted).toBe(false);
+	});
+
 	test("does not treat a repeated failure identity as missing output", () => {
 		const log = [`${TS}(fail) same test`, `${TS} 1 fail`, `${TS}(fail) same test`, `${TS} 1 fail`].join("\n");
 

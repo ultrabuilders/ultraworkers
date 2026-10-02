@@ -32,6 +32,12 @@ import { type Hook, hookCapability } from "../../capability/hook";
 import { recordHookHash, recordedHookHash } from "../../config/hook-settings";
 import { settings } from "../../config/settings";
 import {
+	onAfterConfigReload as registerAfterConfigReload,
+	onBeforeConfigReload as registerBeforeConfigReload,
+	type ConfigReloadAppliedHandler,
+	type ConfigReloadHandler,
+} from "../../config/reload-observer";
+import {
 	hookContentHash,
 	hookModifiedMessage,
 	hookTrustKey,
@@ -333,6 +339,29 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	registerContextTransform(transform: ContextTransform): void {
 		this.extension.contextTransforms.push(transform);
+	}
+
+	/**
+	 * See, and optionally hold, a config edit the watcher is about to apply.
+	 *
+	 * The disposer is recorded on the extension as well as returned, so unload
+	 * withdraws it: the registry is process-global, and a handler left behind
+	 * would keep vetoing reloads on behalf of an extension that no longer exists.
+	 */
+	onBeforeConfigReload(handler: ConfigReloadHandler): () => void {
+		const dispose = registerBeforeConfigReload(handler);
+		this.extension.configReloadDisposers.push(dispose);
+		return dispose;
+	}
+
+	/**
+	 * Learn that a config edit has been applied, having previously declined to
+	 * hold it. Recorded for unload on the same terms as {@link onBeforeConfigReload}.
+	 */
+	onAfterConfigReload(handler: ConfigReloadAppliedHandler): () => void {
+		const dispose = registerAfterConfigReload(handler);
+		this.extension.configReloadDisposers.push(dispose);
+		return dispose;
 	}
 
 	/**
@@ -762,6 +791,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		fileWriteFallbackHandlers: [],
 		compactionProtections: [],
 		contextTransforms: [],
+		configReloadDisposers: [],
 		doubleEscapeActions: [],
 		modes: [],
 		fileDeleteFallbackHandlers: [],

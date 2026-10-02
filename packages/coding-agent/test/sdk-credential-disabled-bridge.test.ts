@@ -454,6 +454,7 @@ describe("createAgentSession credential_disabled subscription", () => {
 				fileDeleteFallbackHandlers: [],
 				compactionProtections: [],
 				contextTransforms: [],
+				configReloadDisposers: [],
 				messageRenderers: new Map(),
 				entryRenderers: new Map(),
 

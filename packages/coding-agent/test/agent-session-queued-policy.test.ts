@@ -51,6 +51,7 @@ function extension(name: string, handler: (event: BeforeAgentStartEvent) => Prom
 		fileDeleteFallbackHandlers: [],
 		compactionProtections: [],
 		contextTransforms: [],
+		configReloadDisposers: [],
 		messageRenderers: new Map(),
 		entryRenderers: new Map(),
 

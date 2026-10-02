@@ -1505,6 +1505,13 @@ export class ExtensionRunner {
 		this.disposeFileFallbacksFor(extensionPath);
 		this.#managedTimers.clearForPath(extensionPath);
 
+		// Its config-reload handlers go with it. The registry is process-global and
+		// permanent, so a handler left behind keeps vetoing reloads for an extension
+		// that is gone — the user edits a config, nothing applies, and nothing on
+		// screen says why.
+		for (const dispose of extension.configReloadDisposers) dispose();
+		extension.configReloadDisposers.length = 0;
+
 		// Its modes go with it. The registry is process-global and permanent, so a
 		// mode left behind would outlive the extension and then collide with the
 		// reloaded copy's own registration — an error that reads as the *new*

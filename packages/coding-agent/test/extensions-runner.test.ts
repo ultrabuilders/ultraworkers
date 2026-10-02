@@ -4706,6 +4706,7 @@ describe("ExtensionRunner", () => {
 				fileDeleteFallbackHandlers: [],
 				compactionProtections: [],
 				contextTransforms: [],
+				configReloadDisposers: [],
 				messageRenderers: new Map(),
 				entryRenderers: new Map(),
 

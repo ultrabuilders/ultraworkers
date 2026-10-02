@@ -1,6 +1,10 @@
 import type { CompactionTransactionObserver } from "../../session/compaction-transaction";
 export type { CompactionTransactionObserver };
 import type { DefinitionValue, Setting, SettingDefinition } from "../../config/registry";
+// Extension surface -> config layer, never the reverse: `Settings` must not have to
+// know the extension API exists, which is the same reason the registry itself lives
+// in `reload-observer.ts` rather than on `Settings`.
+import type { ConfigReloadAppliedHandler, ConfigReloadHandler } from "../../config/reload-observer";
 import type { ExtensionDiagnostic } from "./diagnostics";
 /**
  * Extension system types.
@@ -1732,6 +1736,57 @@ export interface ExtensionAPI {
 	registerContextTransform(transform: ContextTransform): void;
 
 	/**
+	 * Observe a config edit before it lands, and hold it by returning a reason.
+	 *
+	 * The watcher, the debounce and keep-last-good were core's long before this
+	 * seam: a long-lived host applies a user's on-disk edit inside `Settings`,
+	 * and an extension had exactly two ways to hear about it afterwards. Anything
+	 * that must stay consistent *across* the edit — an open dialog, a running
+	 * tool, a cached value the extension already rendered — learned about it when
+	 * it was too late to do anything.
+	 *
+	 * ```ts
+	 * const stop = pi.onBeforeConfigReload(info => {
+	 *   if (dialogOpen) return "a modal is open";   // holds; previous values stay
+	 * });
+	 * ```
+	 *
+	 * **Returning a reason defers, it never discards.** The previous values stay
+	 * in force, the watcher stays armed, and the next qualifying edit retries, so
+	 * something the user typed is never thrown away. Returning `undefined` — or a
+	 * blank string — is not a deferral.
+	 *
+	 * Every registered handler is consulted even after one has deferred, so two
+	 * extensions cannot hide from each other by ordering.
+	 *
+	 * @returns a disposer. The registry is process-global, so an extension that
+	 * wants its veto withdrawn on unload should let the runner do it, or call
+	 * this — a handler left behind holds reloads nobody is on hand to release.
+	 */
+	onBeforeConfigReload(handler: ConfigReloadHandler): () => void;
+
+	/**
+	 * Learn that a config edit has been applied.
+	 *
+	 * "Hold it" and "it landed" are different questions, and only the first one
+	 * had an answer. An extension that reconciles cached state — re-reading a
+	 * setting, re-rendering a panel, dropping a value derived from the old
+	 * config — otherwise had to poll or guess, and a *previous* invocation of
+	 * {@link onBeforeConfigReload} cannot tell it whether its own deferral was
+	 * the one that eventually cleared.
+	 *
+	 * ```ts
+	 * pi.onAfterConfigReload(() => reReadConfigDerivedState());
+	 * ```
+	 *
+	 * Runs only after the apply has actually succeeded, and reports the same
+	 * merged source list the before-handlers were given.
+	 *
+	 * @returns a disposer, on the same terms as {@link onBeforeConfigReload}.
+	 */
+	onAfterConfigReload(handler: ConfigReloadAppliedHandler): () => void;
+
+	/**
 	 * Claim the double-Escape gesture for an action of your own.
 	 *
 	 * Double-Escape — two Escapes inside 500 ms with an empty editor — used to be
@@ -2691,6 +2746,13 @@ export interface Extension {
 	 * replacement on reload.
 	 */
 	modes: ModeDefinition[];
+	/**
+	 * Disposers for this extension's config-reload registrations, kept only so
+	 * unload can withdraw exactly those. The reload registry is process-global,
+	 * so without this an unloaded extension's handler would outlive it and keep
+	 * holding — or observing — reloads on behalf of an extension that is gone.
+	 */
+	configReloadDisposers: Array<() => void>;
 	outputFormats: Map<string, OutputFormat>;
 	/**
 	 * Setting ids this extension declared, so unloading can remove exactly those.

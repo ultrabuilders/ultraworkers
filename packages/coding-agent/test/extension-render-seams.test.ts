@@ -25,6 +25,10 @@ import { ExtensionRuntime, loadExtensionFromFactory } from "@oh-my-pi/pi-coding-
 import type { Extension, ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
 import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import { UiHelpers } from "@oh-my-pi/pi-coding-agent/modes/utils/ui-helpers";
+import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
+import { initTheme } from "@oh-my-pi/pi-tui/theme";
+import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import { clearExtensionBuckets } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 
 /** Load a real extension through the real factory. */
@@ -229,5 +233,104 @@ describe("unload", () => {
 		// replacement on reload, because registration now refuses duplicates.
 		expect(runner.getMarkdownTransformers()).toHaveLength(0);
 		expect(runner.getEntryRenderer("status-card")).toBeUndefined();
+	});
+});
+
+describe("markdown transform reaches the transcript", () => {
+	it("flows from a registered transformer through the runner to the renderer", async () => {
+		const ext = await load(api => {
+			api.registerMarkdownTransformer(markdown => `${markdown} [rewritten]`);
+		}, "transform-consumer");
+
+		const transformers = readerOver([ext]).getMarkdownTransformers();
+		expect(transformers).toHaveLength(1);
+
+		// The renderer takes (markdown, width); the extension transformer takes
+		// (markdown, context). Mapping is what the transcript does, and doing it
+		// here is what proves the two shapes meet without either being retyped.
+		const render = (markdown: string, availableWidth: number) =>
+			transformers[0]!(markdown, { messageType: "assistant", isStreaming: false, availableWidth });
+
+		expect(render("hello", 80)).toBe("hello [rewritten]");
+
+		// And the width the renderer passes is the one the extension receives, so a
+		// transform that hard-wraps has what it needs.
+		const { Markdown } = await import("@oh-my-pi/pi-tui/components/markdown");
+		const { getMarkdownTheme } = await import("@oh-my-pi/pi-tui/theme");
+		const drawn = new Markdown("hello", 0, 0, getMarkdownTheme())
+			.setTransform((source, width) => render(source, width))
+			.render(64)
+			.join("\n");
+		expect(drawn).toContain("[rewritten]");
+	});
+
+	it("draws untransformed text when no extension registered one", async () => {
+		// The negative half at the seam: an empty transformer list must leave every
+		// transcript exactly as it was, which is what makes the seam safe to add.
+		const ext = await load(() => {}, "no-transformer");
+		expect(readerOver([ext]).getMarkdownTransformers()).toEqual([]);
+
+		const { Markdown } = await import("@oh-my-pi/pi-tui/components/markdown");
+		const { getMarkdownTheme } = await import("@oh-my-pi/pi-tui/theme");
+		expect(new Markdown("plain", 0, 0, getMarkdownTheme()).render(60).join("\n")).toContain("plain");
+	});
+});
+
+describe("the transcript actually passes transformers to its components", () => {
+	/**
+	 * The test above proves the runner hands out transformers and that the renderer
+	 * applies one. Neither proves the two meet — and a mutation that emptied the
+	 * transcript's own mapper survived all of it, because everything either side of
+	 * the join still worked. This drives the real `UiHelpers` with a real runner so
+	 * the join itself is under test.
+	 */
+	function buildContext(extensionRunner: unknown): InteractiveModeContext {
+		return {
+			chatContainer: new TranscriptContainer(),
+			transcriptMessageComponents: new WeakMap(),
+			viewSession: {
+				extensionRunner,
+				sessionManager: { putBlobSync: () => "unused" },
+			},
+			ui: { requestRender: () => {}, imageBudget: undefined },
+			settings: { get: () => false },
+			effectiveHideThinkingBlock: false,
+			proseOnlyThinking: true,
+			editor: { addToHistory: () => {} },
+		} as unknown as InteractiveModeContext;
+	}
+
+	it("renders a user message through the registered transformer", async () => {
+		const ext = await load(api => {
+			api.registerMarkdownTransformer(markdown => `${markdown} [seen]`);
+		}, "wired-user");
+		const runner = readerOver([ext]);
+
+		const ctx = buildContext(runner);
+		await initTheme(false);
+		const helpers = new UiHelpers(ctx);
+		helpers.addMessageToChat({ role: "user", content: "hello", timestamp: 1 });
+
+		const drawn = ctx.chatContainer.children
+			.flatMap(child => child.render(80))
+			.join("\n");
+		expect(drawn).toContain("[seen]");
+	});
+
+	it("draws the same user message unchanged when nothing registered a transformer", async () => {
+		// The negative half at the join: a session with no transformer must produce
+		// exactly the transcript it produced before the seam existed.
+		const ext = await load(() => {}, "unwired-user");
+		const runner = readerOver([ext]);
+
+		const ctx = buildContext(runner);
+		await initTheme(false);
+		const helpers = new UiHelpers(ctx);
+		helpers.addMessageToChat({ role: "user", content: "untouched", timestamp: 1 });
+
+		const drawn = ctx.chatContainer.children
+			.flatMap(child => child.render(80))
+			.join("\n");
+		expect(drawn).toContain("untouched");
 	});
 });

@@ -3,6 +3,7 @@ import type { AssistantMessage, Model } from "@oh-my-pi/pi-ai";
 import { getMarkdownLinkUrls } from "../index";
 import { EMPTY_LINK_TARGETS } from "../render/render-utils";
 import type { ImageBudget } from "../components/image";
+import type { MarkdownRenderTransform } from "../components/markdown";
 import type { AssistantThinkingRenderer } from "../chat/extension-types";
 import { AssistantMessageComponent } from "../chat/assistant-message";
 /** Session display capabilities supplied unchanged by the interactive host. */
@@ -103,6 +104,13 @@ export function createAssistantMessageComponent(
 	ctx: AssistantMessageHost,
 	message?: AssistantMessage,
 	linkTargets: ReadonlyMap<string, string> = getAssistantMessageLinkTargets(ctx),
+	/**
+	 * Extension-registered Markdown transforms. An explicit argument rather than a
+	 * field on the host, because the host interface is satisfied by callers that
+	 * have no extension runner at all and widening it would make them all name a
+	 * method they do not have.
+	 */
+	markdownTransformers: readonly MarkdownRenderTransform[] = [],
 ): AssistantMessageComponent {
 	const component = new AssistantMessageComponent(
 		message,
@@ -112,6 +120,7 @@ export function createAssistantMessageComponent(
 		ctx.ui.imageBudget,
 		ctx.proseOnlyThinking,
 		linkTargets,
+		markdownTransformers,
 	);
 	component.setImagesVisible(ctx.assistantImagesVisible);
 	component.setToolResultImagesVisible(!ctx.hideToolActivity);

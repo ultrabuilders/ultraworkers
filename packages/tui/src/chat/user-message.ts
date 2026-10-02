@@ -1,7 +1,7 @@
 import { applyBackgroundToLine, padding, visibleWidth } from "../utils";
 import { type Component, Container } from "../tui";
 import { Disclosure } from "../components/disclosure";
-import { Markdown } from "../components/markdown";
+import { foldMarkdownTransforms, Markdown, type MarkdownRenderTransform } from "../components/markdown";
 import { formatBytes } from "@oh-my-pi/pi-utils";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import type { TspSpan } from "@oh-my-pi/pi-wire";
@@ -63,6 +63,12 @@ export interface UserBubbleOptions {
 	skillPath?: (name: string) => string | undefined;
 	/** When the message was sent (ms); shown beside the native hover toolbar. */
 	timestamp?: number;
+	/**
+	 * Extension-registered Markdown transforms, applied at parse time with
+	 * `messageType: "user"`. Empty by default, so a transcript with no
+	 * transformer registered is drawn exactly as it was before the seam existed.
+	 */
+	markdownTransformers?: readonly MarkdownRenderTransform[];
 }
 
 /**
@@ -166,6 +172,15 @@ export class UserMessageComponent extends Container implements ReactionTarget {
 			color: userBubbleColor(options, this.#tokens),
 		});
 		markdown.setIgnoreTight(true);
+		if (options.markdownTransformers && options.markdownTransformers.length > 0) {
+			markdown.setTransform((source, availableWidth) =>
+				foldMarkdownTransforms(
+					source,
+					{ messageType: "user", isStreaming: false, availableWidth },
+					options.markdownTransformers!,
+				),
+			);
+		}
 		this.addChild(markdown);
 	}
 

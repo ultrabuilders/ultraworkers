@@ -2,7 +2,12 @@ import type { AssistantMessage, ImageContent, TextContent } from "@oh-my-pi/pi-a
 import { type Component, Container } from "../tui";
 import { Image, type ImageBudget } from "../components/image";
 import { ImageProtocol, TERMINAL } from "../terminal-capabilities";
-import { Markdown, type MarkdownTheme } from "../components/markdown";
+import {
+	foldMarkdownTransforms,
+	Markdown,
+	type MarkdownRenderTransform,
+	type MarkdownTheme,
+} from "../components/markdown";
 import { Spacer } from "../components/spacer";
 import { Text } from "../components/text";
 import { formatDuration, formatNumber } from "@oh-my-pi/pi-utils";
@@ -454,6 +459,16 @@ export class AssistantMessageComponent extends Container {
 	#hideThinkingBlock: boolean;
 	readonly #onImageUpdate?: () => void;
 	readonly #thinkingRenderers: readonly AssistantThinkingRenderer[];
+	/**
+	 * Extension-registered Markdown transforms, applied at parse time.
+	 *
+	 * Empty by default, which is what keeps an extension's rewrite out of every
+	 * transcript that never registered one. Owned here rather than passed to each
+	 * `new Markdown` because this component builds several instances per frame and
+	 * threading a parameter through all of them would be the same fact stated many
+	 * times.
+	 */
+	readonly #markdownTransformers: readonly MarkdownRenderTransform[];
 	readonly #imageBudget?: ImageBudget;
 	#proseOnlyThinking: boolean;
 
@@ -465,11 +480,13 @@ export class AssistantMessageComponent extends Container {
 		imageBudget?: ImageBudget,
 		proseOnlyThinking = true,
 		linkTargets?: ReadonlyMap<string, string>,
+		markdownTransformers: readonly MarkdownRenderTransform[] = [],
 	) {
 		super();
 		this.#hideThinkingBlock = hideThinkingBlock;
 		this.#onImageUpdate = onImageUpdate;
 		this.#thinkingRenderers = thinkingRenderers;
+		this.#markdownTransformers = markdownTransformers;
 		this.#imageBudget = imageBudget;
 		this.#proseOnlyThinking = proseOnlyThinking;
 
@@ -1173,9 +1190,27 @@ export class AssistantMessageComponent extends Container {
 		return md.render(width);
 	}
 
+	/**
+	 * Apply the extension transforms to a Markdown about to be drawn.
+	 *
+	 * The messageType is "assistant" here and "assistant-thinking" for the thinking
+	 * block, so an extension can rewrite one without rewriting the other. The width
+	 * is threaded by `Markdown` itself, which is the only place that knows it.
+	 */
+	#applyMarkdownTransform(md: Markdown, messageType: "assistant" | "assistant-thinking"): Markdown {
+		if (this.#markdownTransformers.length === 0) return md;
+		return md.setTransform((markdown, availableWidth) =>
+			foldMarkdownTransforms(
+				markdown,
+				{ messageType, isStreaming: false, availableWidth },
+				this.#markdownTransformers,
+			),
+		);
+	}
+
 	/** Constructor args mirror the live child Markdown so stable rows prefix the block render. */
 	#createStableMarkdown(kind: StablePartKind, text: string): Markdown {
-		return kind === "text"
+		return this.#applyMarkdownTransform(kind === "text"
 			? new Markdown(
 					text,
 					1,
@@ -1187,7 +1222,7 @@ export class AssistantMessageComponent extends Container {
 			: new Markdown(text, 1, 0, getMarkdownTheme(), {
 					color: (value: string) => theme.fg("thinkingText", value),
 					italic: true,
-				});
+				}), kind === "text" ? "assistant" : "assistant-thinking");
 	}
 
 	#stableLedger(width: number): StableRowLedger {
@@ -1603,7 +1638,10 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				const trimmed = content.text.trim();
 				const mdOptions = this.#textColorTransform ? { color: this.#textColorTransform } : undefined;
-				const md = new Markdown(trimmed, 1, 0, this.#getProseTheme(), mdOptions, 0);
+				const md = this.#applyMarkdownTransform(
+					new Markdown(trimmed, 1, 0, this.#getProseTheme(), mdOptions, 0),
+					"assistant",
+				);
 				this.#contentContainer.addChild(md);
 				this.#emergencyText = md;
 				captureItems?.push({ md, contentIndex: i, blockType: "text", lastText: trimmed });
@@ -1628,10 +1666,13 @@ export class AssistantMessageComponent extends Container {
 					);
 
 				// Thinking traces in thinkingText color, italic
-				const md = new Markdown(thinkingText, 1, 0, getMarkdownTheme(), {
-					color: (text: string) => theme.fg("thinkingText", text),
-					italic: true,
-				});
+				const md = this.#applyMarkdownTransform(
+					new Markdown(thinkingText, 1, 0, getMarkdownTheme(), {
+						color: (text: string) => theme.fg("thinkingText", text),
+						italic: true,
+					}),
+					"assistant-thinking",
+				);
 				md.transientRenderCache = this.#lastUpdateTransient;
 				this.#contentContainer.addChild(md);
 				captureItems?.push({ md, contentIndex: i, blockType: "thinking", lastText: thinkingText });

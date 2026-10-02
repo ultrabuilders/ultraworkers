@@ -263,6 +263,26 @@ export class UiHelpers {
 		this.ctx.noticeContainer.removeChild(entry.notice);
 	}
 
+
+	/**
+	 * The extension-facing transformers, mapped to the renderer's contract.
+	 *
+	 * `MarkdownTransformer` receives a context object and the renderer receives the
+	 * content width directly, so the two are not the same function type. Mapping
+	 * here keeps that difference in one place instead of at each component that
+	 * happens to build a transcript.
+	 */
+	#markdownRenderTransforms(messageType: "user" | "assistant" = "assistant") {
+		return (this.ctx.viewSession.extensionRunner?.getMarkdownTransformers() ?? []).map(
+			transformer => (markdown: string, availableWidth: number) =>
+				transformer(markdown, {
+					messageType,
+					isStreaming: false,
+					availableWidth,
+				}),
+		);
+	}
+
 	addMessageToChat(message: AgentMessage, options?: AddMessageOptions): Component[] {
 		switch (message.role) {
 			case "bashExecution": {
@@ -408,6 +428,7 @@ export class UiHelpers {
 							images,
 							liveSteered: message.role === "user" && message.liveSteered === true,
 							timestamp: message.timestamp,
+							markdownTransformers: this.#markdownRenderTransforms("user"),
 						});
 						this.ctx.transcriptMessageComponents.set(message, userComponent);
 					}
@@ -426,6 +447,7 @@ export class UiHelpers {
 								this.ctx,
 								splitAssistantMessageToolTimeline(message).beforeTools,
 								getAssistantMessageLinkTargets(this.ctx),
+								this.#markdownRenderTransforms(),
 							);
 				if (cached !== assistantComponent) {
 					this.ctx.transcriptMessageComponents.set(message, assistantComponent);
@@ -638,6 +660,7 @@ export class UiHelpers {
 						this.ctx,
 						segment,
 						getAssistantMessageLinkTargets(this.ctx),
+						this.#markdownRenderTransforms(),
 					);
 					this.ctx.chatContainer.addChild(component);
 				};

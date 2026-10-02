@@ -5,7 +5,7 @@
  *
  * Pipeline under test:
  *   client → POST /v1/messages (Anthropic shape, cache_control markers)
- *     → anthropic-messages parser → omp Context (cacheRetention derived)
+ *     → anthropic-messages parser → ultraworkers Context (cacheRetention derived)
  *     → pi-ai openai-codex-responses provider
  *     → upstream Codex (ChatGPT-subscription Responses API)
  *     → assistant stream → anthropic-messages encoder

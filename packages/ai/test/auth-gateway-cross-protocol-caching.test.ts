@@ -7,7 +7,7 @@
  *
  * Pipeline under test:
  *   client → POST /v1/responses (OpenAI shape)
- *     → openai-responses parser → omp Context
+ *     → openai-responses parser → ultraworkers Context
  *     → pi-ai anthropic provider (auto cache_control via cacheRetention)
  *     → upstream Anthropic (Messages API)
  *     → assistant stream → openai-responses encoder

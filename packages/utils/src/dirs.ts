@@ -44,9 +44,17 @@ export const CONFIG_DIR_NAME: string = ".omp";
 /**
  * Legacy spelling of the home-scoped config root, kept resolvable for reads.
  *
- * Not the same constant as {@link CONFIG_DIR_NAME}: that one is what W6 owns,
- * and flipping it is W6's decision to review. Naming the legacy spelling here
- * is what lets W4 make reads fall back without touching what W6 will change.
+ * The write target already moved — {@link CONFIG_DIR_NAME_NEXT} heads
+ * {@link CONFIG_DIR_CANDIDATES}, so new config lands in `.ultraworkers` and this
+ * spelling is the read fallback behind it.
+ *
+ * Naming it separately is what lets reads fall back without disturbing that
+ * order, and it is why {@link CONFIG_DIR_NAME} must not simply be flipped to the
+ * next spelling. `config.ts` admits a user config directory only when it *is*
+ * `CONFIG_DIR_NAME` or its name is separately enabled, so moving the constant
+ * does not migrate anyone — it moves `.omp` behind that enablement, and an
+ * existing install stops reading its own config with no upgrade path. `trust.ts`
+ * records this repo being bitten by that same rename once already.
  */
 export const LEGACY_CONFIG_DIR_NAME: string = ".omp";
 

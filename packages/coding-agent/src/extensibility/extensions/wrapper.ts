@@ -495,6 +495,22 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 					? `${basePrompt}\nProvider safety checks:\n${safetyCheckLines(pendingSafetyChecks).join("\n")}`
 					: basePrompt;
 			let choice: string | undefined;
+			const actionKey = resolved.policyKey ?? canonicalizeApprovalKey(this.tool.name, effectiveParams);
+			// Registered for as long as the prompt is on screen, so a decision on a
+			// sibling call can release it. Parallel calls are dispatched with
+			// `Promise.allSettled` (agent-loop.ts:3712) and each raises its own
+			// prompt, so without this the grants below would only ever reach calls
+			// that had not started prompting yet.
+			// One resolver, created before registration so the registered callback and the
+			// race share it. Without the registration happening first there is a window
+			// in which a sibling's decision finds no entry to release.
+			let releaseByDecision: (decision: "approve" | "deny") => void = () => {};
+			const released = new Promise<string>(resolve => {
+				releaseByDecision = decision => resolve(decision === "approve" ? "Approve" : "Deny");
+			});
+			const unregister = this.runner.registerPendingApproval?.(toolCallId, actionKey, decision => {
+				releaseByDecision(decision);
+			});
 			try {
 				// "Always" is offered alongside Approve/Deny rather than replacing them, so
 				// a user who did not want it still sees the same two choices first. It is
@@ -502,12 +518,17 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 				// must not also approve `rm -rf ./build`, which is the reason
 				// `resolveApproval` prefers `tools.approval.<policyKey>` over the tool name
 				// and the reason the ACP gate canonicalizes what it keys on.
-				choice = await uiContext.select(safetyPrompt, ["Approve", "Deny", APPROVE_ALWAYS_OPTION]);
+				choice = await Promise.race([
+					uiContext.select(safetyPrompt, ["Approve", "Deny", APPROVE_ALWAYS_OPTION]),
+					released,
+				]);
 			} catch (err) {
+				unregister?.();
 				await emitApprovalResolved(false, err instanceof Error ? err.message : "approval aborted");
 				cancelPreflight();
 				throw err;
 			}
+			unregister?.();
 			const approved = choice === "Approve" || choice === APPROVE_ALWAYS_OPTION;
 			if (choice === APPROVE_ALWAYS_OPTION) {
 				// Written to the same settings the gate resolved against, not to
@@ -519,19 +540,27 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 				// call they approved.
 				const settings = context?.settings ?? this.runner.sessionSettings;
 				if (settings) {
-					// `resolved.policyKey` is only set when a tool *declares* one, and the
-					// core `bash` tool does not — so falling back to `this.tool.name` here
-					// would store the decision per tool, and approving `git status` would
-					// then authorize every later `bash` call, `rm -rf` included. The ACP
-					// gate already solved this by keying on the canonicalized *action*; use
-					// the same function so the two surfaces cannot disagree about what
-					// "always" means.
-					const actionKey = resolved.policyKey ?? canonicalizeApprovalKey(this.tool.name, effectiveParams);
+					// `actionKey` was computed above and is the same key the pending
+					// registry indexed this prompt under, so a grant here releases exactly
+					// the siblings it covers rather than an approximation of them.
 					this.runner.persistApprovalPolicy?.(actionKey, "allow", settings);
+					// Release the siblings still asking about this same action. They had
+					// already resolved and were already showing a prompt, so without this
+					// the new grant would be invisible to the calls it was made for — the
+					// user answers "always" and the batch still nags them one prompt per
+					// remaining call.
+					this.runner.settlePendingApprovals?.(actionKey, "approve");
 				}
 			}
 			await emitApprovalResolved(approved, approved ? undefined : "denied by user");
 			if (!approved) {
+				// A denial settles the siblings asking about the same action, for the same
+				// reason the grant above does. The refaudit states the failure precisely:
+				// without a cascade, rejecting one leaves the rest of the batch hanging on a
+				// prompt nobody will ever see, because the user has already answered. They
+				// resolve as denied and take the same exit this call takes, rather than
+				// waiting on an answer that is never coming.
+				this.runner.settlePendingApprovals?.(actionKey, "deny");
 				cancelPreflight();
 				throw new ToolCallBlockedError("denied", `Tool call denied by user: ${this.tool.name}`);
 			}

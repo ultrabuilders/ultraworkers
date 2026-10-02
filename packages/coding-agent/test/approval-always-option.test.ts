@@ -28,7 +28,54 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 import { ExtensionRunner } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/runner";
 import { ExtensionToolWrapper } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/wrapper";
+import { ToolCallBlockedError } from "@oh-my-pi/pi-coding-agent/extensibility/shared-events";
 import { cfgToolsApproval } from "@oh-my-pi/pi-coding-agent/tools/settings";
+
+/**
+ * The session stand-in every runner here needs.
+ *
+ * `runner.sessionId` is a prototype getter that dereferences `sessionManager`, so it
+ * cannot be supplied by `Object.assign` the way the other fakes on these runners are —
+ * it has to be reachable through the constructor or every call throws before it reaches
+ * the prompt. A fixture that throws early makes the "persists nothing" rows pass for a
+ * reason that has nothing to do with persistence.
+ */
+/**
+ * The runner every row here drives.
+ *
+ * Built in one place because its constructor has seven positional parameters, three of
+ * which are unrelated stand-ins: getting the order wrong compiles fine and throws at
+ * the first `runner.sessionId` read, which is *after* the prompt — so a mis-ordered
+ * fixture surfaces as "persists nothing" passing for the wrong reason. `sessionId` is a
+ * prototype getter, so `Object.assign` cannot supply it the way the other fakes on this
+ * runner are.
+ */
+/**
+ * The session stand-in the runner needs to reach a prompt.
+ *
+ * `runner.sessionId` is a prototype getter that dereferences `sessionManager`, so it
+ * cannot be supplied by `Object.assign` the way this runner's other fakes are — it has
+ * to be reachable through the constructor, or every call throws before it reaches the
+ * prompt. Only `getSessionId` is ever read on these paths; the rest of `SessionManager`
+ * is irrelevant here, so the stub is narrowed rather than built out.
+ */
+function sessionStub(): ConstructorParameters<typeof ExtensionRunner>[3] {
+	return { getSessionId: () => "approval-test-session" } as unknown as ConstructorParameters<
+		typeof ExtensionRunner
+	>[3];
+}
+
+function makeRunner(settings: Settings): ExtensionRunner {
+	return new ExtensionRunner(
+		[],
+		undefined as never, // runtime
+		"", // cwd, ignored: read live via the getter
+		sessionStub(),
+		undefined as never, // modelRegistry
+		undefined, // getMemory
+		settings,
+	);
+}
 
 /** Reads back what the wrapper would have persisted, as `resolveApproval` reads it. */
 function policies(settings: Settings): Record<string, unknown> {
@@ -53,15 +100,7 @@ function settingsWith(seed: Record<string, unknown>): Settings {
 describe("persisting an approval decision", () => {
 	it("writes the policy under the key it was given, not the tool's name", () => {
 		const settings = Settings.isolated();
-		const runner = new ExtensionRunner(
-			[],
-			undefined as never,
-			"",
-			undefined as never,
-			undefined as never,
-			undefined,
-			settings,
-		);
+		const runner = makeRunner(settings);
 		Object.assign(runner, { settings });
 
 		runner.persistApprovalPolicy("bash::git status", "allow");
@@ -75,15 +114,7 @@ describe("persisting an approval decision", () => {
 
 	it("leaves the pre-existing policies intact when adding one", () => {
 		const settings = settingsWith({ write: "deny" });
-		const runner = new ExtensionRunner(
-			[],
-			undefined as never,
-			"",
-			undefined as never,
-			undefined as never,
-			undefined,
-			settings,
-		);
+		const runner = makeRunner(settings);
 		Object.assign(runner, { settings });
 
 		runner.persistApprovalPolicy("read::ls", "allow");
@@ -96,15 +127,7 @@ describe("persisting an approval decision", () => {
 
 	it("does not write when the policy already says the same thing", () => {
 		const settings = settingsWith({ "read::ls": "allow" });
-		const runner = new ExtensionRunner(
-			[],
-			undefined as never,
-			"",
-			undefined as never,
-			undefined as never,
-			undefined,
-			settings,
-		);
+		const runner = makeRunner(settings);
 		Object.assign(runner, { settings });
 
 		let writes = 0;
@@ -125,15 +148,7 @@ describe("persisting an approval decision", () => {
 
 	it("overwrites a contradicting policy rather than leaving both", () => {
 		const settings = settingsWith({ "bash::rm": "prompt" });
-		const runner = new ExtensionRunner(
-			[],
-			undefined as never,
-			"",
-			undefined as never,
-			undefined as never,
-			undefined,
-			settings,
-		);
+		const runner = makeRunner(settings);
 		Object.assign(runner, { settings });
 
 		runner.persistApprovalPolicy("bash::rm", "allow");
@@ -145,7 +160,7 @@ describe("persisting an approval decision", () => {
 		// A runner built without settings must not throw on a path that runs inside a
 		// tool call: refusing to record is not a reason to fail the call. Constructed
 		// with the settings slot left empty, which is the case this defends.
-		const runner = new ExtensionRunner([], undefined as never, "", undefined as never, undefined as never);
+		const runner = new ExtensionRunner([], undefined as never, "", sessionStub(), undefined as never, undefined);
 
 		expect(() => runner.persistApprovalPolicy("bash::ls", "allow")).not.toThrow();
 	});
@@ -165,15 +180,7 @@ describe("the approval prompt", () => {
 	async function run(choice: string): Promise<{ settings: Settings; offered: string[] }> {
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 		const offered: string[] = [];
-		const runner = new ExtensionRunner(
-			[],
-			undefined as never,
-			"",
-			undefined as never,
-			undefined as never,
-			undefined,
-			settings,
-		);
+		const runner = makeRunner(settings);
 		const tool = {
 			name: "bash",
 			description: "Runs a shell command",
@@ -204,9 +211,10 @@ describe("the approval prompt", () => {
 		// without ever having raised a prompt. Settings reach the wrapper through the
 		// execute-time context (as in `approval-audit-pair.test.ts`); `settings` on the
 		// runner is a readonly getter, so it cannot be injected by assignment.
-		await wrapped
-			.execute("call-1", { command: "git status" }, undefined, undefined as never, { settings } as never)
-			.catch(() => {});
+		// The call has to actually complete, not merely raise its prompt: a fixture
+		// that throws before the decision is recorded would leave the "persists
+		// nothing" rows green for the wrong reason. Surfaces an unexpected throw.
+		await wrapped.execute("call-1", { command: "git status" }, undefined, undefined as never, { settings } as never);
 		return { settings, offered };
 	}
 
@@ -234,5 +242,197 @@ describe("the approval prompt", () => {
 		const stored = policies(settings);
 		expect(Object.keys(stored)).toHaveLength(1);
 		expect(stored["bash"]).toBeUndefined();
+	});
+});
+
+/**
+ * The cascade: a decision on one call reaches the calls already asking.
+ *
+ * Parallel tool calls are dispatched with `Promise.allSettled` (agent-loop.ts:3712) and
+ * each raises its own prompt, so a batch of gated calls puts concurrent prompts on
+ * screen. The refaudit's stated reason for the cascade (`CAP-opencode.md`,
+ * opencode.101) is that without it, answering one leaves the siblings hanging on a
+ * prompt nobody will ever see.
+ *
+ * Driven through two real concurrent wrapper calls rather than by calling the registry
+ * directly: the claim is about a *caller* being released, and a registry unit test
+ * would stay green even if nothing ever registered.
+ */
+describe("a decision on one call reaches the calls already asking", () => {
+	/** What one call ended up as. "hung" is the failure this whole block exists to catch. */
+	type Outcome = "approved" | "denied" | "errored" | "hung";
+
+	/**
+	 * Two calls in flight together, the second asking about `siblingCommand`.
+	 *
+	 * The ordering matters and is the reason this is not a plain pair of calls: the
+	 * first call's answer is withheld until the sibling's prompt has actually been
+	 * raised. Answering before the sibling registers cascades to nobody, and the rows
+	 * below would then report on a registry that was empty — a green test proving
+	 * nothing about the cascade.
+	 */
+	async function batch(
+		choice: string,
+		siblingCommand = "git status",
+	): Promise<{ first: Outcome; sibling: Outcome; pending: number }> {
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		const runner = makeRunner(settings);
+
+		let prompts = 0;
+		let openSibling: (() => void) | undefined;
+		const siblingIsAsking = new Promise<void>(resolve => {
+			openSibling = resolve;
+		});
+
+		Object.assign(runner, {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			getUIContext: () => ({
+				select: async () => {
+					prompts++;
+					if (prompts === 1) {
+						await siblingIsAsking;
+						return choice;
+					}
+					// Never resolves on its own: the only thing that can release the
+					// sibling is the first call's decision, so a missing cascade shows up
+					// as a hang which `Bun.sleep` below turns into an ordinary failure.
+					openSibling?.();
+					return new Promise<string>(() => {});
+				},
+			}),
+			waitForToolApprovalPreview: async () => {},
+			recordApprovalEntry: () => {},
+			runScoped: <T>(fn: () => T): T => fn(),
+		});
+
+		const invoke = async (id: string, command: string): Promise<Outcome> => {
+			const tool = {
+				name: "bash",
+				description: "Runs a shell command",
+				parameters: { type: "object", properties: {} },
+				async execute() {
+					return { output: "ok" };
+				},
+			} as unknown as AgentTool;
+			try {
+				await (new ExtensionToolWrapper(tool, runner) as unknown as AgentTool).execute(
+					id,
+					{ command },
+					undefined,
+					undefined as never,
+					{ settings } as never,
+				);
+				return "approved";
+			} catch (err) {
+				// Read from the type, not the wording: "denied" and "hung" are the two
+				// outcomes a cascade decides between, and a sibling released as denied is
+				// the success case rather than a failure to report as one.
+				return err instanceof ToolCallBlockedError ? "denied" : "errored";
+			}
+		};
+
+		const asked = invoke("call-1", "git status");
+		await Bun.sleep(10); // let the first call reach its prompt and block there
+		const sibling = invoke("call-2", siblingCommand);
+
+		const siblingOutcome = await Promise.race<Outcome>([sibling, Bun.sleep(500).then(() => "hung" as const)]);
+		return { first: await asked, sibling: siblingOutcome, pending: runner.pendingApprovalCount };
+	}
+
+	it("releases a sibling asking about the same action when the first is granted always", async () => {
+		const { first, sibling } = await batch("Approve always");
+
+		// The bug this prevents: the user answers "always" and the batch goes on
+		// asking, one prompt per remaining call, with nobody left to answer the first.
+		expect(first).toBe("approved");
+		expect(sibling).toBe("approved");
+	});
+
+	it("leaves the sibling asking when the first call is only approved once", async () => {
+		const { first, sibling } = await batch("Approve");
+
+		// A one-off "yes" grants nothing. Releasing here would silently turn approving
+		// one call of a batch into approving all of them.
+		expect(first).toBe("approved");
+		expect(sibling).toBe("hung");
+	});
+
+	it("leaves a sibling alone when it is asking about a different action", async () => {
+		const { sibling } = await batch("Approve always", "rm -rf build");
+
+		// The cascade matches on the action, not the tool. Keyed on the tool, granting
+		// `git status` forever would release — and run — a sibling asking to delete.
+		expect(sibling).toBe("hung");
+	});
+
+	it("denies the siblings asking about the same action when the first is denied", async () => {
+		const { first, sibling } = await batch("Deny");
+
+		// The other half of the refaudit's claim, and the half that is a hang rather than
+		// a nuisance: the user has answered, so a sibling left on screen is a prompt
+		// nobody will ever see. It has to end the way this call ended.
+		expect(first).toBe("denied");
+		expect(sibling).toBe("denied");
+	});
+
+	it("leaves a differently-asked sibling alone when the first is denied", async () => {
+		const { sibling } = await batch("Deny", "rm -rf build");
+
+		// Denying `git status` is not a decision about `rm -rf build`. Cascading on the
+		// tool name would refuse work the user never looked at.
+		expect(sibling).toBe("hung");
+	});
+
+	/**
+	 * One call, answered on its own, with no sibling for a cascade to sweep up.
+	 *
+	 * Needed because `settlePendingApprovals` deletes every entry it matches — including
+	 * the answering call's own — so a batch hides a missing unregister entirely. Asserting
+	 * `pending === 0` against a batch passes whether or not the settled call cleans up
+	 * after itself; only a call that nothing cascades to isolates it.
+	 */
+	async function lone(choice: string): Promise<number> {
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		const runner = makeRunner(settings);
+		Object.assign(runner, {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			getUIContext: () => ({ select: async () => choice }),
+			waitForToolApprovalPreview: async () => {},
+			recordApprovalEntry: () => {},
+			runScoped: <T>(fn: () => T): T => fn(),
+		});
+		const tool = {
+			name: "bash",
+			description: "Runs a shell command",
+			parameters: { type: "object", properties: {} },
+			async execute() {
+				return { output: "ok" };
+			},
+		} as unknown as AgentTool;
+		await (new ExtensionToolWrapper(tool, runner) as unknown as AgentTool)
+			.execute("call-1", { command: "git status" }, undefined, undefined as never, { settings } as never)
+			.catch(() => {});
+		return runner.pendingApprovalCount;
+	}
+
+	it("keeps no settled call registered when nothing cascades", async () => {
+		// A released prompt that stays in the registry is later settled by an unrelated
+		// decision on the same key — resolving a promise nobody is waiting on — and the
+		// registry grows for the life of the session.
+		expect(await lone("Approve")).toBe(0);
+		expect(await lone("Deny")).toBe(0);
+	});
+
+	it("keeps no settled call registered once the decision has been made", async () => {
+		const { pending } = await batch("Approve always");
+
+		// A released sibling must also be unregistered. Left behind, a later decision on
+		// the same key would resolve a promise nobody is waiting on, and the registry
+		// would grow for the life of the session.
+		expect(pending).toBe(0);
 	});
 });

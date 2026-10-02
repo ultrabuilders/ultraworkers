@@ -694,6 +694,76 @@ export class ExtensionRunner {
 	#pendingCredentialDisabled: CredentialDisabledEvent[] = [];
 
 	/**
+	 * Approval prompts currently on screen, so a later decision can reach them.
+	 *
+	 * ## Why this registry has to exist
+	 *
+	 * A batch of parallel tool calls is dispatched with `Promise.allSettled`
+	 * (agent-loop.ts:3712), and each gated call raises its own prompt. They are
+	 * therefore *concurrent*: a user answering one leaves the siblings still asking.
+	 * Two consequences follow, and both are bugs rather than preferences:
+	 *
+	 * 1. Choosing "Approve always" on one call did nothing for its siblings — they
+	 *    had already resolved and were already showing a prompt, so the new grant
+	 *    was invisible to the calls it was meant to cover.
+	 * 2. Choosing "Deny" on one call left the siblings asking questions the user had
+	 *    already answered in spirit. Worse, a sibling covering a *related* action is
+	 *    now asking about something the user just refused.
+	 *
+	 * Registering the resolver here is what lets a decision answer prompts that are
+	 * already on screen. The alternative — checking a shared policy after each
+	 * prompt returns — cannot work, because the prompt is already blocking the very
+	 * call it would release.
+	 *
+	 * Entries are removed when their prompt settles, so this holds only what is
+	 * genuinely in flight; a registry that outlived its prompt would keep releasing
+	 * callers nobody is waiting for.
+	 */
+	#pendingApprovals = new Map<string, { policyKey: string; settle: (decision: "approve" | "deny") => void }>();
+
+	/**
+	 * Register a prompt that is currently awaiting the user.
+	 *
+	 * @param policyKey the action key this prompt would be persisted under, so a later
+	 *   grant or denial can recognise exactly the prompts it covers.
+	 * @returns A function that must be called when the prompt settles, to unregister.
+	 */
+	registerPendingApproval(
+		toolCallId: string,
+		policyKey: string,
+		settle: (decision: "approve" | "deny") => void,
+	): () => void {
+		this.#pendingApprovals.set(toolCallId, { policyKey, settle });
+		return () => this.#pendingApprovals.delete(toolCallId);
+	}
+
+	/**
+	 * Answer every prompt already on screen that one policy key covers.
+	 *
+	 * Used by the always-grant and by the deny cascade. Matching on the same
+	 * canonical key the grant is written under is what keeps the two consistent: a
+	 * sibling covered by the new policy is exactly a sibling whose key equals it.
+	 *
+	 * @returns how many prompts were released, so a caller can tell a cascade that
+	 *   reached nothing from one that reached a batch.
+	 */
+	settlePendingApprovals(policyKey: string, decision: "approve" | "deny"): number {
+		let settled = 0;
+		for (const [toolCallId, pending] of this.#pendingApprovals) {
+			if (pending.policyKey !== policyKey) continue;
+			this.#pendingApprovals.delete(toolCallId);
+			pending.settle(decision);
+			settled++;
+		}
+		return settled;
+	}
+
+	/** How many approval prompts are on screen; used by tests and diagnostics. */
+	get pendingApprovalCount(): number {
+		return this.#pendingApprovals.size;
+	}
+
+	/**
 	 * Buffer for `mcp_notification` events received via {@link emitMcpNotification} before
 	 * {@link initialize} has run. Two-layer race: `MCPManager` also buffers frames until
 	 * its first `addNotificationListener` subscriber attaches, but the sdk.ts bridge is

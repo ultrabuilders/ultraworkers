@@ -110,6 +110,17 @@ const missedFiles = new Set(ordered.flatMap(s => [...s.files])).size;
 console.log(`needles read from the gate (${needles.length}): ${JSON.stringify(needles)}\n`);
 console.log(`seen by a needle        ${seenHits} hits in ${seenFiles.size} files`);
 console.log(`MISSED by every needle ${missedHits} hits in ${missedFiles} files\n`);
+
+// A decomposition must sum to its population. Stated here because a reader who
+// sees only the first few rows cannot check it by hand — and a partial table is
+// exactly how 1780 got reported against a total of 2649, implying 869 hits were
+// dropped when none were. Printed so the invariant travels with the output.
+const shapeSum = ordered.reduce((sum, s) => sum + s.hits, 0);
+console.log(
+	`reconciliation: ${ordered.length} shapes summing to ${shapeSum} of ${missedHits} missed hits — ` +
+		`${shapeSum === missedHits ? "nothing unaccounted" : `UNACCOUNTED ${missedHits - shapeSum}`}\n`,
+);
+
 console.log(`missed, grouped by token shape (· = a word run):\n`);
 for (const s of ordered) {
 	console.log(`  ${String(s.hits).padStart(5)}  ${String(s.files.size).padStart(4)} files  ${s.shape}`);

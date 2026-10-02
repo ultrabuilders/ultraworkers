@@ -301,6 +301,15 @@ export interface TurnEntry extends SessionEntryBase {
 	 * a gate refusal, which is observable, rather than a causal claim about the
 	 * turn's end, which is not.
 	 *
+	 * "While this turn was open" is a window over the log, anchored on the leaf id
+	 * captured when the turn opened — not a diff against the preceding turn. The
+	 * anchor is an id, so a rebuild that moves the leaf (a branch, a resume) can
+	 * strand it; the scan then falls back to the whole log and *over*-reports,
+	 * naming refusals from turns that ran before the rebuild. That direction is
+	 * deliberate: a spurious id resolves against an `ApprovalEntry` the reader can
+	 * go look at, whereas a dropped one is indistinguishable from a turn that was
+	 * never refused at all.
+	 *
 	 * ## Scope: bounded by what `ApprovalEntry` actually records
 	 *
 	 * Read back off the log, so it can only name refusals that reached the log. As

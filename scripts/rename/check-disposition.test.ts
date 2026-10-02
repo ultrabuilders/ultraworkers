@@ -376,6 +376,25 @@ describe("hit discovery", () => {
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 
+	it("skips a nested repository but still gates tracked dot-directories", async () => {
+		// `EnterWorktree` writes a whole checkout under `.claude/worktrees/<name>/`,
+		// carrying its own `.git` FILE. The glob descends into it, so the gate used to
+		// re-report every finding the parent repository already owns — 661 phantom
+		// failures were measured from a single worktree, against ~490 real ones.
+		//
+		// The first entry is the positive control and is the reason the rule is not
+		// simply `dot: false`: `.omp/tools/tui.ts` is a tracked file of THIS repository
+		// with a live hit, and dropping dot-directories loses it silently (measured as
+		// exactly one lost hit). A nested repository is what separates them.
+		const root = await tree({
+			".omp/tools/tui.ts": `const x = "omp";\n`,
+			".claude/worktrees/someone/.git": `gitdir: /elsewhere\n`,
+			".claude/worktrees/someone/src/copied.ts": `const x = "omp";\n`,
+		});
+		expect(await hitPaths(root)).toEqual([".omp/tools/tui.ts"]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
 	it("keeps the vocabulary closed and every class mappable", () => {
 		for (const disposition of DISPOSITIONS) {
 			expect(classMatcher(disposition)).toBeDefined();

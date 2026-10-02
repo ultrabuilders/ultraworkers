@@ -62,15 +62,22 @@ export const RUN: readonly ScriptTestClassification[] = [
 	{ file: "check-grp-c-test-baseline.test.ts", reason: "" },
 	{ file: "ci-check-full.test.ts", reason: "" },
 	{ file: "check-script-tests.test.ts", reason: "" },
+	// Pins `programs.omp` in `nix/nixos-module.nix` + `nix/home-manager.nix`
+	// against the README that teaches it, and the module's default against an
+	// attribute `flake.nix` actually publishes. Neither module had a test reading
+	// it before, so the option could be renamed while the README kept teaching
+	// the old name — which breaks at activation time on a user's machine.
+	{ file: "nix-module-options.test.ts", reason: "" },
 
-	// The `.mjs` gates' own tests. These run under `node --test`, not `bun test`:
-	// they import `node:test`, whose runner node owns. Measured 2026-10-02 —
-	// `node --test` over all nine: 47 pass / 0 fail. `bun test` over the same nine:
-	// 46 pass / 1 fail, and the failure is `check-ts-relative-imports.test.mjs`
-	// tripping the 5s default `node:test` timeout that bun also enforces (12s
-	// actual, as it walks the module graph). So the split follows the runtime the
-	// file declares rather than a preference: under the wrong runner one of the
-	// nine goes red on elapsed time alone and reports a defect that is not there.
+	// The `.mjs` gates' own tests. They import `node:test`, and bun executes those
+	// natively, so one runner covers both extensions and the split that briefly
+	// lived here was removed. Measured 2026-10-02: `bun test` over all nine gave
+	// 46 pass / 1 fail, and the single failure was
+	// `check-ts-relative-imports.test.mjs` tripping the 5s default `node:test`
+	// timeout that bun also enforces — it walks the real module graph and takes
+	// 11-12s. That was fixed by declaring the timeout on the test, not by moving
+	// the file to `node --test`: a second runner would have bought a PATH
+	// dependency and no change in what is actually verified.
 	{ file: "check-commit-tree-not-shrunk.test.mjs", reason: "" },
 	{ file: "check-entry-graphs.test.mjs", reason: "" },
 	{ file: "check-lockfile-commit.test.mjs", reason: "" },

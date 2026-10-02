@@ -185,8 +185,20 @@ export function countUnverifiableKeepRefs(rows: readonly Row[]): {
 	kinds: readonly string[];
 	/** Family -> how many refs of that family, most numerous first. */
 	byKind: readonly (readonly [string, number])[];
+	/**
+	 * Distinct unverifiable ref -> how many rows carry it, most used first.
+	 *
+	 * `byKind` answers "which family is the problem". This answers "which names are the
+	 * problem", which is the question a vocabulary decision actually needs: defining a
+	 * contract is per-name work, and a reader given only `W11:*=304` cannot tell whether
+	 * that is four contracts or four hundred. The count per name is also the leverage —
+	 * the top name is where a definition buys the most coverage, and the tail is where
+	 * a rename is cheaper than a definition.
+	 */
+	byName: readonly (readonly [string, number])[];
 } {
 	const perKind = new Map<string, number>();
+	const perName = new Map<string, number>();
 	let count = 0;
 	for (const row of rows) {
 		const ref = row.keepRefs.trim();
@@ -194,11 +206,15 @@ export function countUnverifiableKeepRefs(rows: readonly Row[]): {
 		count++;
 		const kind = ref.includes(":") ? `${ref.slice(0, ref.indexOf(":"))}:*` : "bare-non-W";
 		perKind.set(kind, (perKind.get(kind) ?? 0) + 1);
+		perName.set(ref, (perName.get(ref) ?? 0) + 1);
 	}
-	// Descending by count, then by name so two equal families cannot swap places
+	// Descending by count, then by name so two equal entries cannot swap places
 	// between runs and make an unchanged table look like it moved.
-	const byKind = [...perKind.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-	return { count, kinds: byKind.map(([kind]) => kind).sort(), byKind };
+	const byCountThenName = (a: readonly [string, number], b: readonly [string, number]) =>
+		b[1] - a[1] || a[0].localeCompare(b[0]);
+	const byKind = [...perKind.entries()].sort(byCountThenName);
+	const byName = [...perName.entries()].sort(byCountThenName);
+	return { count, kinds: byKind.map(([kind]) => kind).sort(), byKind, byName };
 }
 
 /**
@@ -778,6 +794,22 @@ async function main(): Promise<void> {
 			`disposition(${stage}): keep-refs-not-checkable = ${unverifiable.count}/${withRefs} carrying a ref ` +
 				`(${unverifiable.byKind.map(([kind, n]) => `${kind}=${n}`).join(", ")}) — no definition site to resolve against`,
 		);
+		// The per-name list, so "which contracts exist only because of a .ts" is answered
+		// by running the gate rather than by re-deriving it. Capped because this is
+		// per-run output on every stage; the tail is named as a count rather than dropped
+		// silently, so a truncated list cannot read as a complete one.
+		const NAMED = 8;
+		const named = unverifiable.byName.slice(0, NAMED);
+		for (const [ref, n] of named) {
+			console.log(`disposition(${stage}):   unverifiable ref ${n} row(s): ${ref}`);
+		}
+		const rest = unverifiable.byName.slice(NAMED);
+		if (rest.length > 0) {
+			const restRows = rest.reduce((sum, [, n]) => sum + n, 0);
+			console.log(
+				`disposition(${stage}):   …and ${rest.length} more distinct ref(s) over ${restRows} row(s), not listed`,
+			);
+		}
 	}
 
 	console.log(`disposition(${stage}): rules ${RULES_VERSION}`);

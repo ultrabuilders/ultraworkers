@@ -1,7 +1,7 @@
 import { defineDoc, defineDocFamily } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
-import { getReplicatedStateInternals } from "../../chord/src/services/state-internals.ts";
-import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support.ts";
+import { getReplicatedStateInternals } from "../../chord/src/services/state-internals";
+import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";
 
 type State = { value: number; retained: { label: string } };
 

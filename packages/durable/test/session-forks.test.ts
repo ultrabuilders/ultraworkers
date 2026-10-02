@@ -16,7 +16,7 @@ import {
 	documentCopyChanges,
 	flush,
 	openTestSession,
-} from "./session-support.ts";
+} from "./session-support";
 
 function documentCreates(writes: readonly StorageWrite[]) {
 	return writes.filter(write => write.type === "document.create");

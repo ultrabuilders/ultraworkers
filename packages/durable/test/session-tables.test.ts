@@ -10,8 +10,8 @@ import {
 	type TaskRecord,
 } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
-import { idFromNumber } from "../src/ids.ts";
-import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support.ts";
+import { idFromNumber } from "../src/ids";
+import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";
 
 type Checkpoint = { phase: "start" } | { phase: "next"; step: number };
 const WorkTask = defineTask<{ path: string }, Checkpoint, { ok: boolean }>({

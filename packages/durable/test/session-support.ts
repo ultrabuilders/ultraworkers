@@ -13,7 +13,7 @@ import {
 	type Seq,
 	type StorageWrite,
 } from "@oh-my-pi/pi-durable";
-import { SessionImpl } from "../src/session/session.ts";
+import { SessionImpl } from "../src/session/session";
 
 export const context: Context = BACKGROUND_CONTEXT;
 

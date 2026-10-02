@@ -1,7 +1,7 @@
 import type { Op } from "@oh-my-pi/chord/delta";
 import { defineDoc, defineDocFamily, type EntryId, type JsonObject, type StorageWrite } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
-import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support.ts";
+import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";
 
 function documentWrites(writes: readonly StorageWrite[]): readonly StorageWrite[] {
 	return writes.filter(

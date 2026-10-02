@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import { registerStorageConformance } from "@oh-my-pi/pi-durable/testing";
-import { idFromNumber, seqFromNumber } from "../src/ids.ts";
-import { MemoryStorage } from "../src/storage/memory.ts";
-import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
+import { idFromNumber, seqFromNumber } from "../src/ids";
+import { MemoryStorage } from "../src/storage/memory";
+import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types";
 
 registerStorageConformance({ describe, expect, it }, "MemoryStorage", use => use(new MemoryStorage()));
 

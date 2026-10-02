@@ -5,11 +5,11 @@ import type { Context, JsonValue } from "@oh-my-pi/chord";
 import { BACKGROUND_CONTEXT } from "@oh-my-pi/chord/context";
 import { registerStorageConformance } from "@oh-my-pi/pi-durable/testing";
 import { afterEach, describe, expect, it } from "bun:test";
-import { err, FileError, type FileSystem, type Result } from "../src/env/index.ts";
-import { NodeExecutionEnv } from "../src/env/node.ts";
-import { idFromNumber } from "../src/ids.ts";
-import { JsonlStorage } from "../src/storage/jsonl/index.ts";
-import { openNodeJsonlStorage } from "../src/storage/jsonl/node.ts";
+import { err, FileError, type FileSystem, type Result } from "../src/env/index";
+import { NodeExecutionEnv } from "../src/env/node";
+import { idFromNumber } from "../src/ids";
+import { JsonlStorage } from "../src/storage/jsonl/index";
+import { openNodeJsonlStorage } from "../src/storage/jsonl/node";
 import type {
 	ConversationId,
 	DocumentCreate,
@@ -21,8 +21,8 @@ import type {
 	StorageWrite,
 	TaskId,
 	TaskRecord,
-} from "../src/types.ts";
-import { ROOT_CONVERSATION_ID } from "../src/types.ts";
+} from "../src/types";
+import { ROOT_CONVERSATION_ID } from "../src/types";
 
 const context = BACKGROUND_CONTEXT;
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;

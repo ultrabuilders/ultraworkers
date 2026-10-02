@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "bun:test";
-import { formatSize, truncateHead, truncateLine, truncateTail } from "../src/env/utils/truncate.ts";
+import { formatSize, truncateHead, truncateLine, truncateTail } from "../src/env/utils/truncate";
 
 const encoder = new TextEncoder();
 

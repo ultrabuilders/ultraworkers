@@ -11,8 +11,8 @@ import {
 	type Tx,
 } from "@oh-my-pi/pi-durable";
 import { describe, expect, expectTypeOf, it } from "bun:test";
-import { idFromNumber } from "../src/ids.ts";
-import { context } from "./session-support.ts";
+import { idFromNumber } from "../src/ids";
+import { context } from "./session-support";
 
 type State = { value: number };
 const initial = (): State => ({ value: 0 });

@@ -1,5 +1,5 @@
 import { expect, expectTypeOf, it } from "bun:test";
-import { idFromNumber, seqFromNumber } from "../src/ids.ts";
+import { idFromNumber, seqFromNumber } from "../src/ids";
 import type {
 	ContextEdit,
 	ConversationId,
@@ -16,7 +16,7 @@ import type {
 	TaskOutcome,
 	TaskRecord,
 	TaskState,
-} from "../src/index.ts";
+} from "../src/index";
 
 const conversationId = idFromNumber<ConversationId>(1);
 const entryId = idFromNumber<EntryId>(2);

@@ -9,7 +9,7 @@ import {
 import { applyImmutable } from "@oh-my-pi/chord/delta";
 import { defineDoc } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
-import { context, documentChanges, flush, openTestSession } from "./session-support.ts";
+import { context, documentChanges, flush, openTestSession } from "./session-support";
 
 type State = { value: number; items: string[]; retained: { label: string } };
 

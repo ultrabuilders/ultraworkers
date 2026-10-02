@@ -1,4 +1,4 @@
-import { truncateHead, truncateTail, utf8ByteLength } from "../../src/env/utils/truncate.ts";
+import { truncateHead, truncateTail, utf8ByteLength } from "../../src/env/utils/truncate";
 
 const inputs: string[] = JSON.parse(process.argv[2] ?? "[]");
 

@@ -1,8 +1,8 @@
 import type { Draft, JsonValue } from "@oh-my-pi/chord";
 import { type ConversationId, defineDoc, defineDocFamily, type JsonObject, type TaskId } from "@oh-my-pi/pi-durable";
 import { describe, expect, it } from "bun:test";
-import { idFromNumber } from "../src/ids.ts";
-import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support.ts";
+import { idFromNumber } from "../src/ids";
+import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support";
 
 type Live = { message?: string; items: string[]; nested: { count: number }; other: { label: string } };
 

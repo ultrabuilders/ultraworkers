@@ -38,6 +38,7 @@ import { type Theme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { AsyncJobSnapshot } from "../../session/agent-session";
 import { MAIN_AGENT_ID } from "../../registry/agent-registry";
 import { registerCompactionTransactionObserver } from "../../session/compaction-transaction";
+import { safeJsonStringify } from "../../tools/browser/run-output";
 import type { ApprovalEntry, SessionEntryBase } from "../../session/session-entries";
 import type { SessionManager } from "../../session/session-manager";
 import { addFileDeleteFallback, addFileWriteFallback } from "../../tools/file-write-fallback";
@@ -188,6 +189,26 @@ function handlerTimeoutForEvent(eventType: string): number {
 
 const EXTENSION_HANDLER_TIMEOUT = Symbol("extensionHandlerTimeout");
 const EXTENSION_HANDLER_ABORTED = Symbol("extensionHandlerAborted");
+
+/**
+ * Reported when a handler returned a value for an event that consumes none.
+ *
+ * A return value on such an event is not an error the host can act on — it is
+ * silently dropped — but silence is the worst possible report, because the
+ * author has no way to learn that the seam they wrote to is inert.
+ */
+export const EXTENSION_HANDLER_RESULT_DISCARDED_CODE = "handler-result-discarded";
+
+/** Cap on the rendered value, so a large object cannot flood a toast or a log line. */
+const DISCARDED_RESULT_PREVIEW_LENGTH = 200;
+
+/** Render a discarded value for a one-line surface: collapsed whitespace, bounded length. */
+function describeDiscardedHandlerResult(value: unknown): string {
+	const rendered = safeJsonStringify(value).replace(/\s+/g, " ").trim();
+	return rendered.length > DISCARDED_RESULT_PREVIEW_LENGTH
+		? `${rendered.slice(0, DISCARDED_RESULT_PREVIEW_LENGTH)}…`
+		: rendered;
+}
 
 interface HandlerTimeoutBudget {
 	pause(): void;
@@ -2471,6 +2492,31 @@ export class ExtensionRunner {
 		});
 	}
 
+	/**
+	 * Report a handler result that no branch of `emit` will read.
+	 *
+	 * Surfaces through `emitError` and not only `logger`, because the default logger
+	 * writes to a rotating file with **no** console output — stdout/stderr would
+	 * corrupt the TUI — so a log-only warning is invisible to the extension author,
+	 * who is the one person who can act on it. `emitError` reaches
+	 * `showExtensionError`, a transient toast. Nothing here changes control flow:
+	 * the value is still dropped, and no decision is read from it.
+	 */
+	#reportDiscardedHandlerResult(eventType: string, ext: Extension, value: unknown): void {
+		const rendered = describeDiscardedHandlerResult(value);
+		logger.warn("Extension handler return value discarded", {
+			extensionPath: ext.path,
+			event: eventType,
+			returned: rendered,
+		});
+		this.emitError({
+			extensionPath: ext.path,
+			event: eventType,
+			error: `handler returned a value that "${eventType}" does not consume; it was discarded: ${rendered}`,
+			code: EXTENSION_HANDLER_RESULT_DISCARDED_CODE,
+		});
+	}
+
 	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
 		// Defer the per-event context allocation (and the Promise.race/Bun.sleep
 		// timeout machinery) to the first matching handler. Streaming sessions emit
@@ -2481,6 +2527,7 @@ export class ExtensionRunner {
 		if (this.#isSessionShutdownEvent(event)) {
 			const timeoutMs = handlerTimeoutForEvent(event.type);
 			const promises: Promise<unknown>[] = [];
+			const owners: Extension[] = [];
 			for (const ext of this.extensions) {
 				const handlers = ext.handlers.get(event.type);
 				if (!handlers || handlers.length === 0) continue;
@@ -2490,11 +2537,24 @@ export class ExtensionRunner {
 				const ctx = this.createContext(undefined, undefined, ext);
 				for (const handler of handlers) {
 					promises.push(this.#runHandlerWithTimeout(handler, event, ctx, ext, timeoutMs));
+					owners.push(ext);
 				}
 			}
-			if (promises.length > 0) await Promise.all(promises);
+			if (promises.length > 0) {
+				// Shutdown reads no handler result, so a returned value is dropped.
+				// Kept parallel to `promises` so the report names the right extension.
+				const settled = await Promise.all(promises);
+				for (const [index, value] of settled.entries()) {
+					if (value !== undefined) this.#reportDiscardedHandlerResult(event.type, owners[index], value);
+				}
+			}
 			return result as RunnerEmitResult<TEvent>;
 		}
+
+		// Only these three event types read a handler result; everything else routed
+		// through `emit` drops it. Computed once — it cannot vary per handler.
+		const consumesHandlerResult =
+			this.#isSessionBeforeEvent(event) || event.type === "session.compacting" || event.type === "session_stop";
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
@@ -2509,6 +2569,12 @@ export class ExtensionRunner {
 					ext,
 					handlerTimeoutForEvent(event.type),
 				);
+
+				// Report before the branches below, which would otherwise read this
+				// value as "consumed" for the three types that do consume it.
+				if (handlerResult !== undefined && !consumesHandlerResult) {
+					this.#reportDiscardedHandlerResult(event.type, ext, handlerResult);
+				}
 
 				if (this.#isSessionBeforeEvent(event) && handlerResult) {
 					result = handlerResult as SessionBeforeEventResult;

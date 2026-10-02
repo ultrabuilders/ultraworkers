@@ -244,6 +244,67 @@ describe("generation recovery", () => {
 		await opened.harness.close(context);
 	});
 
+	it("resumes polling a deferred response after reopen", async () => {
+		const path = await sqlitePath();
+		const setup = chatSetup({ deferred: { pollAfterMs: 60_000 } });
+		let now = 1_000;
+		setup.now = () => now;
+		setup.faux.setResponses([fauxAssistantMessage("deferred answer")]);
+		let opened = await open(path, setup);
+		opened.harness.resume();
+		await opened.root.setStreamOptions({ deferred: true }, context);
+		const id = (await opened.root.submit({ type: "input", content: "hi" }, context)).id;
+		await waitFor(
+			async () => (await live(opened.harness, opened.root.id as never))?.generation?.deferred !== undefined,
+		);
+		const taskId = await runTaskId(opened.harness);
+		await opened.harness.close(context);
+
+		opened = await open(path, setup);
+		expect(await checkpoint(opened.harness, taskId)).toMatchObject({ phase: "poll", attempt: 1, pollAt: 61_000 });
+		now = 61_000;
+		opened.harness.resume();
+		const settled = await (await opened.harness.submission(id, context))!.wait(context);
+		if (settled.status !== "done" || settled.type !== "input") throw new Error(`Unexpected ${settled.status}`);
+		const answer = await opened.root.commit(tx => tx.entry(AssistantEntry, settled.answer), context);
+		expect(textOf(answer?.model?.[0])).toBe("deferred answer");
+		// The poll ran after reopen, not a cached answer being replayed.
+		expect(setup.faux.state.deferredFetchCount).toBe(1);
+		await opened.harness.close(context);
+	});
+
+	it("fails no_model in the poll phase when the pinned model is gone after reopen", async () => {
+		const path = await sqlitePath();
+		const setup = chatSetup({ deferred: { pollAfterMs: 60_000 } });
+		setup.faux.setResponses([fauxAssistantMessage("deferred")]);
+		let opened = await open(path, setup);
+		opened.harness.resume();
+		await opened.root.setStreamOptions({ deferred: true }, context);
+		const polling = (await opened.root.submit({ type: "input", content: "two" }, context)).id;
+		await waitFor(
+			async () => (await live(opened.harness, opened.root.id as never))?.generation?.deferred !== undefined,
+		);
+		await opened.harness.close(context);
+
+		// Reopened without the faux provider: the poll's pinned model is unknown.
+		const empty: ChatSetup = { ...setup, models: noModels() };
+		opened = await open(path, empty);
+		opened.harness.resume();
+		expect(await (await opened.harness.submission(polling, context))!.wait(context)).toMatchObject({
+			status: "unanswered",
+			reason: "no_model",
+		});
+		await opened.harness.close(context);
+	});
+
+	/*
+	 * `generation.ts` builds the provider options with `{ ...streamOptions, signal, ... }` —
+	 * spreading the wider `ConversationStreamOptions` into `SimpleStreamOptions`. Whether that
+	 * carries `deferred` to the provider is measured by the poll case above rather than assumed:
+	 * it reaches the double only if the spread preserves the field. If that case regresses to
+	 * "no_model"/no-deferred, this spread is the first place to look — the type-checker cannot
+	 * catch it, because a spread of a wider type into a narrower one is not an excess property.
+	 */
 	/*
 	 * Not yet ported — `pi`'s "resumes polling a deferred response after reopen", and the poll half
 	 * of "fails no_model when the pinned model is gone after reopen".

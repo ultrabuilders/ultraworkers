@@ -32,6 +32,7 @@ import { discoverExtensionPaths } from "@oh-my-pi/pi-coding-agent/extensibility/
 import { loadAllExtensions } from "@oh-my-pi/pi-coding-agent/modes/components/extensions/state-manager";
 import type { Extension } from "@oh-my-pi/pi-tui/overlays/extensions/types";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
+import { approveHooks } from "./helpers/approve-hook";
 
 describe("hook trust: the dashboard reports a hook the loader will not import", () => {
 	let tempDir: TempDir;
@@ -70,7 +71,8 @@ describe("hook trust: the dashboard reports a hook the loader will not import", 
 		setAgentDir(path.join(cwd, "agent"));
 		editedHook = writeHook("guard", "export default () => {};\n// first sight\n");
 		untouchedHook = writeHook("sentinel", "export default () => {};\n// never edited\n");
-		// First sight is what records the hashes the dashboard later compares
+		// Approved first: an unapproved hook does not load (GAP-D3 (a)), so the
+		// hashes the dashboard later compares have to be pinned deliberately
 		// against, so go through the real recording path rather than writing the
 		// record directly — otherwise the fixture would test a state production
 		// never reaches.

@@ -30,7 +30,13 @@ import { declareToolEffectsFor } from "../../tools/effects";
 import { type Hook, hookCapability } from "../../capability/hook";
 import { recordHookHash, recordedHookHash } from "../../config/hook-settings";
 import { settings } from "../../config/settings";
-import { hookContentHash, hookModifiedMessage, hookTrustKey, hookTrustStatus } from "../hooks/trust";
+import {
+	hookContentHash,
+	hookModifiedMessage,
+	hookTrustKey,
+	hookTrustStatus,
+	hookUntrustedMessage,
+} from "../hooks/trust";
 import { createExtensionOptOut } from "../settings";
 import { isServiceTierFamily, isServiceTierForFamily } from "../../config/service-tier";
 import { loadCapability } from "../../discovery";
@@ -1028,13 +1034,21 @@ export async function discoverExtensionPaths(
 				if (hash === undefined) continue;
 				const key = hookTrustKey(hook);
 				const recorded = recordedHookHash(key);
-				// Admin-installed hooks are exempt from the tripwire: a file the user
-				// did not write is not an "approved then edited" event. The record is
-				// still written below, so a hook that later becomes user-editable is
-				// already pinned.
+				// Admin-installed hooks are exempt: a file the user did not write is
+				// not an "approved then edited" event.
 				const managed = hook._source?.level === "native";
-				if (recorded !== undefined && hookTrustStatus(recorded, hash, managed) === "modified") {
-					logger.warn(hookModifiedMessage(hook, recorded));
+				const status = hookTrustStatus(recorded, hash, managed);
+				if (status === "modified") {
+					logger.warn(hookModifiedMessage(hook, recorded ?? ""));
+					continue;
+				}
+				// GAP-D3 (a): block, do not ask. A hook nobody has approved does not
+				// load, and says so — the alternative, admitting it on first sight,
+				// is what let a hook run at a privilege no one had agreed to. The
+				// message carries the hash to approve, because with no approval
+				// surface yet this line is the only place the user will be told.
+				if (status === "untrusted") {
+					logger.warn(hookUntrustedMessage(hook, hash));
 					continue;
 				}
 				if (recordHookHash(key, hash)) recordedAny = true;

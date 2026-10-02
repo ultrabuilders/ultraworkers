@@ -34,6 +34,7 @@ import { invalidateAllCaches } from "@oh-my-pi/pi-coding-agent/capability";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { discoverExtensionPaths } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
+import { approveHooks } from "./helpers/approve-hook";
 
 describe("hook trust: a hook edited after approval stops loading", () => {
 	let tempDir: TempDir;
@@ -80,17 +81,19 @@ describe("hook trust: a hook edited after approval stops loading", () => {
 		tempDir?.removeSync();
 	});
 
-	it("CONTROL: both hooks are discovered on first sight, so the gate is reachable", async () => {
+	it("CONTROL: both approved hooks are discovered, so the gate is reachable", async () => {
+		await approveHooks(cwd, [editedHook, untouchedHook]);
 		const paths = await discover();
 
-		// Records the hashes and returns both. If this ever fails, the negative case
-		// below is measuring an empty list and proves nothing.
+		// Both are approved first: an unapproved hook does not load at all (GAP-D3 (a)),
+		// so without the approval this would be measuring an empty list and proving
+		// nothing about the gate.
 		expect(paths).toContain(editedHook);
 		expect(paths).toContain(untouchedHook);
 	});
 
 	it("stops admitting a hook whose file changed after its hash was recorded", async () => {
-		await discover(); // first sight records the hash
+		await approveHooks(cwd, [editedHook, untouchedHook]);
 
 		// The edit a user would make after approving: same hook, different code.
 		fs.writeFileSync(editedHook, "export default () => {};\n// edited after approval\n", "utf-8");
@@ -101,7 +104,7 @@ describe("hook trust: a hook edited after approval stops loading", () => {
 	});
 
 	it("CONTROL: the gate is per-hook — an unedited sibling still loads", async () => {
-		await discover();
+		await approveHooks(cwd, [editedHook, untouchedHook]);
 
 		fs.writeFileSync(editedHook, "export default () => {};\n// edited after approval\n", "utf-8");
 

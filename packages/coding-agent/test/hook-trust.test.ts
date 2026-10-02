@@ -29,6 +29,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { approveHookOnDisk } from "./helpers/approve-hook";
 
 const temps: string[] = [];
 
@@ -47,6 +48,7 @@ afterEach(async () => {
 async function loadHookPaths(
 	agentDir: string,
 	extraRoots: string[] = [],
+	approve?: { file: string },
 ): Promise<{ loaded: string[]; config: string }> {
 	const script = [
 		'import { injectOmpExtensionCliRoots } from "@oh-my-pi/pi-coding-agent/discovery/omp-extension-roots";',
@@ -57,6 +59,24 @@ async function loadHookPaths(
 		// than on the behaviour under test.
 		"await Settings.init({ cwd: process.cwd(), agentDir: process.env.PI_CODING_AGENT_DIR });",
 		`injectOmpExtensionCliRoots(${JSON.stringify(extraRoots)}, process.env.HOME ?? "/tmp", process.cwd(), { replace: true, mode: "merge" });`,
+		...(approve
+			? [
+					'import { recordHookHash } from "@oh-my-pi/pi-coding-agent/config/hook-settings";',
+					'import { loadCapability } from "@oh-my-pi/pi-coding-agent/capability";',
+					'import { hookCapability } from "@oh-my-pi/pi-coding-agent/capability/hook";',
+					'import { hookContentHash, hookTrustKey } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/trust";',
+					// Read the key off the hook rather than deriving it. Measured, and the
+					// derivation is layout-dependent: the same `pre/guard.ts` keys as
+					// `pre:guard:guard.ts` under an injected extension root but as
+					// `pre:guard.ts:guard.ts` under `.claude/hooks`, so a rule written from
+					// one of them silently approves a key the loader never asks about.
+					`{ const all = (await loadCapability(hookCapability.id, { cwd: process.cwd(), ambient: true })).all;`,
+					`  const h = all.find(x => x.path === ${JSON.stringify(approve.file)});`,
+					"  if (!h) throw new Error('probe: hook not discovered');",
+					"  recordHookHash(hookTrustKey(h), await hookContentHash({ path: h.path }));",
+					"}",
+				]
+			: []),
 		"const paths = await discoverExtensionPaths([], process.cwd(), undefined, { ambient: true });",
 		'process.stdout.write(JSON.stringify({ loaded: paths.filter(p => p.includes("guard.ts")) }));',
 	].join("\n");
@@ -99,9 +119,10 @@ describe("hook trust", () => {
 	test("a hook edited after it was recorded stops being offered for loading", async () => {
 		const { agentDir, hookPath } = await makeAgentDirWithHook(HOOK_SOURCE);
 
-		// First sight: recorded, and loaded. This is what keeps hooks that already
-		// exist working across an upgrade — the alternative policy blocks every
-		// hook on every install with no way to review them.
+		// Approved first, then loaded. Approval is explicit since GAP-D3 (a): a hook
+		// nobody approved does not load, so the record has to be pinned rather than
+		// left to happen as a side effect of looking at it.
+		await approveHookOnDisk(agentDir, hookPath);
 		const first = await loadHookPaths(agentDir);
 		expect(first.loaded).toEqual([hookPath]);
 
@@ -120,6 +141,7 @@ describe("hook trust", () => {
 	test("an unedited hook keeps loading across processes", async () => {
 		const { agentDir, hookPath } = await makeAgentDirWithHook(HOOK_SOURCE);
 
+		await approveHookOnDisk(agentDir, hookPath);
 		await loadHookPaths(agentDir);
 		const again = await loadHookPaths(agentDir);
 
@@ -138,6 +160,8 @@ describe("hook trust", () => {
 		await Bun.write(path.join(preDir, "guard.ts"), HOOK_SOURCE);
 		await Bun.write(path.join(postDir, "guard.ts"), HOOK_SOURCE);
 
+		await approveHookOnDisk(agentDir, path.join(preDir, "guard.ts"));
+		await approveHookOnDisk(agentDir, path.join(postDir, "guard.ts"));
 		const { config } = await loadHookPaths(agentDir);
 
 		// Same name, different hook identity. A record keyed on the file name alone
@@ -148,6 +172,7 @@ describe("hook trust", () => {
 
 	test("a hook that is unreadable once is not locked out afterwards", async () => {
 		const { agentDir, hookPath } = await makeAgentDirWithHook(HOOK_SOURCE);
+		await approveHookOnDisk(agentDir, hookPath);
 
 		// Briefly unreadable — a sync that has not landed, a permissions change, a
 		// network mount that blinked. No hash can be computed, so nothing is
@@ -188,8 +213,13 @@ describe("hook trust", () => {
 		const hookName = path.join("hooks", "pre", "guard.ts");
 		await Bun.write(path.join(oldRoot, hookName), HOOK_SOURCE);
 
-		// Recorded from the old location.
-		expect((await loadHookPaths(agentDir, [oldRoot])).loaded).toEqual([path.join(oldRoot, hookName)]);
+		// Approved inside the child, in the same process and against the same config
+		// the discovery then reads. `oldRoot` is injected as a CLI extension root
+		// rather than the agent dir, so nothing in this process can reach it; the key
+		// comes from the hook itself, in the child.
+		const oldHook = path.join(oldRoot, hookName);
+		const approve = { file: oldHook };
+		expect((await loadHookPaths(agentDir, [oldRoot], approve)).loaded).toEqual([oldHook]);
 
 		// The user moves their extension directory. Same hook identity — same type,
 		// tool and name — same bytes, different path. This must not read as an edit:

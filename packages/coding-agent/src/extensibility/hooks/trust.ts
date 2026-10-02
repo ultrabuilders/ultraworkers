@@ -183,3 +183,27 @@ export function hookModifiedMessage(hook: Hook, recordedHash: string): string {
 		"`hooks.state` in config.yml to run the current version."
 	);
 }
+
+/**
+ * Message shown for a hook nobody has ever approved.
+ *
+ * The hash is quoted rather than withheld, because this is a block with no
+ * in-product way out of it yet — the approval surface the design asks for is
+ * the same one whose location the plan gets wrong. A user who reads this has to
+ * be able to act on it without asking anyone, so the message carries the exact
+ * key and the exact value to write, and says where. Silence here would be the
+ * worst outcome available: a hook that never runs, with nothing in the log.
+ *
+ * This is GAP-D3 (a) — block, do not ask. The alternative, asking once and
+ * pinning, was not chosen because a prompt at load is not a decision a user can
+ * make about a file they have not read, and a prompt that appears once per hook
+ * on every upgrade is a prompt nobody reads carefully.
+ */
+export function hookUntrustedMessage(hook: Hook, currentHash: string): string {
+	return (
+		`Hook "${hook.name}" (${hookTrustKey(hook)}) has never been approved, so it was not loaded. ` +
+		`Approve this exact version by setting hooks.state."${hookTrustKey(hook)}".trustedHash to ` +
+		`${currentHash} in config.yml, or remove the file. It will keep being skipped until one of ` +
+		`those happens, and nothing else will report it again.`
+	);
+}

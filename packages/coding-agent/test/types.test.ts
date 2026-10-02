@@ -37,6 +37,7 @@ import { invalidateAllCaches } from "@oh-my-pi/pi-coding-agent/capability";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { discoverExtensionPaths } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/loader";
 import { HOOK_TRUST_STATES, hookTrustKey, hookTrustStatus } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/trust";
+import { approveHook } from "./helpers/approve-hook";
 import { TempDir, __resetDirsFromEnvForTests, setAgentDir } from "@oh-my-pi/pi-utils";
 
 describe("hook trust: four states, each reachable", () => {
@@ -89,9 +90,19 @@ describe("hook trust: four states, each reachable", () => {
 		tempDir.removeSync();
 	});
 
-	it("CONTROL: an unrecorded hook is discovered and loads", async () => {
-		// The control for both negatives below. A harness that found nothing would
-		// make every `not.toContain` in this file pass for the wrong reason.
+	it("CONTROL: an unrecorded hook is found but not admitted, and approval admits it", async () => {
+		// Reversed from what this file first asserted, and deliberately. GAP-D3 (a)
+		// made an unapproved hook block, so a hook seen for the first time is
+		// discovered and then skipped. Asserting "discovered and loads" here would
+		// have quietly pinned the old, permissive behaviour back in.
+		//
+		// Both halves matter: a harness that found nothing at all would satisfy the
+		// first assertion on its own, and only the second proves the block is about
+		// approval rather than about the fixture being invisible.
+		expect(await discover()).not.toContain(hook);
+
+		await approveHook(cwd, hook);
+
 		expect(await discover()).toContain(hook);
 	});
 
@@ -104,10 +115,9 @@ describe("hook trust: four states, each reachable", () => {
 		expect(hookTrustStatus(undefined, hash)).toBe("untrusted");
 		expect(hookTrustStatus(hash, hash)).toBe("trusted");
 
-		// And the loader really does record: a second discovery pass sees the same
-		// hash, so the hook is no longer first sight.
-		await discover();
-		expect(hookTrustStatus(undefined, hash)).toBe("untrusted");
+		// The loader no longer records on sight -- that is what GAP-D3 (a) removed --
+		// so "once one does" is something the user does, not something a load does.
+		// Asserting the post-load state here would be asserting the old behaviour.
 	});
 
 	it("reports `modified` when the file no longer matches its record", async () => {

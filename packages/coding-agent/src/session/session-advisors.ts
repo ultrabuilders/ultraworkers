@@ -1085,7 +1085,19 @@ export class SessionAdvisors {
 			// primary. Explicit `tools` lists stay user-owned and are not widened.
 			const names =
 				config.tools === undefined ? new Set([...ADVISOR_DEFAULT_TOOL_NAMES, "recall"]) : new Set(config.tools);
-			const tools = (this.#advisorTools ?? []).filter(t => names.has(t.name));
+			let tools = (this.#advisorTools ?? []).filter(t => names.has(t.name));
+			// An explicit list that resolves to nothing falls back to the default
+			// subset rather than to an advisor with no tools at all. The config layer
+			// used to do this by dropping every unrecognised name and reporting an
+			// empty list as "unspecified"; now that it keeps names so an extension's
+			// tool survives, the intersection is the first point that can tell a typo
+			// from a tool that has not loaded yet. Falling back is what that layer
+			// always did, and the alternative turns one misspelling in `WATCHDOG.yml`
+			// into a silently blind reviewer. An explicit empty list still means no
+			// tools — `config.tools.length > 0` is what separates the two cases.
+			if (tools.length === 0 && config.tools !== undefined && config.tools.length > 0) {
+				tools = (this.#advisorTools ?? []).filter(t => ADVISOR_DEFAULT_TOOL_NAMES.has(t.name));
+			}
 			const advisorLoopTools: AgentTool<any>[] = [adviseTool, ...tools];
 			const advisorToolMap = new Map<string, AgentTool<any>>();
 			for (const tool of advisorLoopTools) {

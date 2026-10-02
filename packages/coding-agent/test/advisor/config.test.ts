@@ -52,18 +52,35 @@ describe("discoverAdvisorConfigs", () => {
 		expect(arch.instructions).toBe("Watch module boundaries.");
 		expect(sec.name).toBe("Security Reviewer");
 		expect(sec.model).toBeUndefined();
-		// The unknown/non-read-only tool is dropped; only `read` survives.
-		expect(sec.tools).toEqual(["read"]);
+		// Every name survives. This layer does not decide what is available —
+		// `session-advisors.ts` intersects the list with the session's real tools,
+		// so an entry here that resolves to nothing costs nothing.
+		expect(sec.tools).toEqual(["read", "definitely-not-a-tool"]);
 		expect(sharedInstructions).toBe("Shared baseline for all advisors.");
 	});
 
-	it("distinguishes omitted tools, explicit no-tools, and invalid-only lists", async () => {
+	it("keeps a tool registered by an extension, which a built-in allow-list cannot name", async () => {
+		// The defect this replaced. `filterAdvisorTools` filtered against
+		// `BUILTIN_TOOL_NAMES`, so a name a plugin registered was deleted at config
+		// time and the author saw nothing on screen — the entry would be gone from
+		// `advisor.tools` before anything could grant it. That name is by
+		// construction absent from every built-in list, so this row cannot pass
+		// against a built-in allow-list however long the list grows.
+		const yaml = ["advisors:", "  - name: Reviewer", "    tools: [read, my_extension_tool]"].join("\n");
+		await Bun.write(path.join(tmp, "WATCHDOG.yml"), yaml);
+
+		const { advisors } = await discoverAdvisorConfigs(tmp, agentDir);
+
+		expect(advisors[0]?.tools).toEqual(["read", "my_extension_tool"]);
+	});
+
+	it("distinguishes omitted tools, explicit no-tools, and a list that resolves to nothing", async () => {
 		const yaml = [
 			"advisors:",
 			"  - name: No Tools",
 			"    tools: []",
 			"  - name: Default Tools",
-			"  - name: Invalid Only",
+			"  - name: Unresolvable",
 			"    tools: [reed]",
 		].join("\n");
 		await Bun.write(path.join(tmp, "WATCHDOG.yml"), yaml);
@@ -71,11 +88,18 @@ describe("discoverAdvisorConfigs", () => {
 		const { advisors } = await discoverAdvisorConfigs(tmp, agentDir);
 		const noTools = advisors.find(a => a.name === "No Tools");
 		const defaultTools = advisors.find(a => a.name === "Default Tools");
-		const invalidOnly = advisors.find(a => a.name === "Invalid Only");
+		const unresolvable = advisors.find(a => a.name === "Unresolvable");
 
+		// The omitted and the explicit-empty cases are the config layer's whole
+		// vocabulary, and they stay distinguishable here — an empty list still means
+		// "no tools" rather than "unspecified".
 		expect(noTools?.tools).toEqual([]);
 		expect(defaultTools?.tools).toBeUndefined();
-		expect(invalidOnly?.tools).toBeUndefined();
+		// Kept, not collapsed to "unspecified". It used to collapse to `undefined`
+		// here, and that fallback now lives one layer down where the session's real
+		// tools are known — see `session-advisors.ts`. Collapsing it here is what
+		// would have made a typo indistinguishable from an absent key.
+		expect(unresolvable?.tools).toEqual(["reed"]);
 	});
 
 	it("ignores a malformed YAML file without throwing", async () => {

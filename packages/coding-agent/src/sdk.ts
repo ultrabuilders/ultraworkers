@@ -4424,13 +4424,24 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			advisorToolBuilds.push(BUILTIN_TOOLS[name as keyof typeof BUILTIN_TOOLS](advisorToolSession));
 		}
 		const built = await Promise.all(advisorToolBuilds);
+		// Extension-registered tools, built the way the primary builds them
+		// (`createTools`, above): same adapter, same wrapping, no ToolSession of its
+		// own — `wrapRegisteredTool` resolves context through the runner. The advisor
+		// iterates `BUILTIN_TOOLS` alone, so without this a plugin's tool could be
+		// named in `WATCHDOG.yml`, survive config validation, and then match nothing
+		// at the intersection. Mirrors the primary's `restrictToolNames` guard: under
+		// it the runner never loads extensions, so this is empty anyway, and the
+		// guard keeps the two call sites honest about the same rule.
+		const advisorRegisteredTools = restrictToolNames
+			? []
+			: wrapRegisteredTools(extensionRunner.getAllRegisteredTools(), extensionRunner);
 		// Wrapped like every registry tool: `ExtensionToolWrapper` is where the
 		// approval mode, per-tool `tools.approval.<tool>` policies and
 		// `autoApprove` are enforced. The advisor's loop and its Cursor exec
 		// bridge both run these instances directly, so a raw one would execute a
 		// `bash`/`write` the user configured as `ask` or `deny`. Meta-notice
 		// first, matching the registry's wrap order.
-		const advisorTools: Tool[] = built
+		const advisorTools: Tool[] = [...built.filter((tool): tool is Tool => tool != null), ...advisorRegisteredTools]
 			.filter((tool): tool is Tool => tool != null)
 			.map(tool => new ExtensionToolWrapper(wrapToolWithMetaNotice(tool), extensionRunner) as Tool);
 

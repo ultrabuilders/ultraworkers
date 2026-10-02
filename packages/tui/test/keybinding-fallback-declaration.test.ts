@@ -26,8 +26,8 @@
  * coverage here automatically, and a mismatch fails loudly.
  */
 import { describe, expect, it } from "bun:test";
-import { KEYBINDING_DEFINITIONS, KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
-import type { Keybinding, KeyId, KeybindingDefinition } from "@oh-my-pi/pi-tui/keybindings";
+import { fallbackKeyFor, KEYBINDING_DEFINITIONS, KeybindingsManager } from "@oh-my-pi/pi-tui/app-keybindings";
+import type { Keybinding, KeyId, KeybindingDefinition, KeybindingDefinitions } from "@oh-my-pi/pi-tui/keybindings";
 
 /** An action that exists and has no `fallbackKey`, used as the thing the user binds to. */
 const CLAIMANT: Keybinding = "app.session.new";
@@ -68,16 +68,55 @@ describe("a declared fallback key yields to the user", () => {
 		// The yield removes one key, not the whole binding. If this ever dropped every
 		// default, an action that yields would become unreachable for a user who
 		// happened to claim its fallback.
-		const [, definition] = declaringEntries.find(([, d]) => Array.isArray(d.defaultKeys)) as [
-			string,
-			KeybindingDefinition,
-		];
-		const action = declaringEntries.find(([, d]) => Array.isArray(d.defaultKeys))![0] as Keybinding;
+		const multi = declaringEntries.find(([, d]) => Array.isArray(d.defaultKeys));
+		expect(multi).toBeDefined();
+		const [action, definition] = multi as [string, KeybindingDefinition];
 		const fallback = definition.fallbackKey as KeyId;
-		const remaining = userClaims(CLAIMANT, fallback).getKeys(action);
+		const remaining = userClaims(CLAIMANT, fallback).getKeys(action as Keybinding);
 
 		expect(remaining.length).toBeGreaterThan(0);
 		expect(remaining).not.toContain(fallback);
+	});
+});
+
+/**
+ * The rows above can only name actions the host already declares, and there are
+ * exactly two — which are exactly the two the table this replaced listed. So every
+ * one of them passes against a lookup that is hardcoded again, and none of them can
+ * tell "reads the declaration" from "a table that happens to agree".
+ *
+ * These rows close that by handing {@link fallbackKeyFor} a definitions record no
+ * hardcoded table has ever heard of. A lookup that consults the record it was given
+ * answers from it; one that consults its own list answers `undefined`, and the row
+ * goes red. That is the difference between a gate that holds behaviour and one that
+ * holds the *structure* the bead asked for.
+ */
+describe("the lookup follows the definitions it is given", () => {
+	const SYNTHETIC_ACTION = "app.clear" as Keybinding;
+	const SYNTHETIC_FALLBACK: KeyId = "ctrl+c";
+
+	const synthetic: KeybindingDefinitions = {
+		...KEYBINDING_DEFINITIONS,
+		"app.clear": { defaultKeys: "ctrl+c", fallbackKey: SYNTHETIC_FALLBACK },
+	};
+
+	it("answers from a record declaring an action the host's own list never had", () => {
+		// `app.clear` declares no fallback in the real record — this row proves it, so
+		// the next row's answer cannot be an accident of the host already carrying one.
+		expect(KEYBINDING_DEFINITIONS["app.clear"]?.fallbackKey).toBeUndefined();
+
+		expect(fallbackKeyFor(synthetic, SYNTHETIC_ACTION)).toBe(SYNTHETIC_FALLBACK);
+	});
+
+	it("answers from the real record too, not from whichever record it was handed first", () => {
+		// The control for the row above: same function, the host's own record, and it
+		// still reports what that record says. Without it, a lookup that simply
+		// returned a constant would pass.
+		expect(fallbackKeyFor(KEYBINDING_DEFINITIONS, SYNTHETIC_ACTION)).toBeUndefined();
+
+		for (const [action, definition] of declaringEntries) {
+			expect(fallbackKeyFor(KEYBINDING_DEFINITIONS, action as Keybinding)).toBe(definition.fallbackKey);
+		}
 	});
 });
 

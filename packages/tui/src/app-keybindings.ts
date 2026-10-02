@@ -557,15 +557,25 @@ export const KEYBINDING_DEFINITIONS: KeybindingDefinitions = KEYBINDINGS;
 /**
  * The key an action yields when the user has claimed it, if it declares one.
  *
- * Read off the definition so an action opts in by carrying `fallbackKey` on its
- * own entry, rather than by being added to a table maintained somewhere else. The
- * table this replaced compared against two hardcoded constants and returned
- * `undefined` for everything else, which meant the yield behaviour was opt-in
- * only for the two actions someone remembered to list — a new action could not
- * yield without editing this function.
+ * Takes the definitions as an argument rather than closing over the module record,
+ * and that is what makes the rule testable. As a closed-over lookup it was only
+ * ever exercised through the two actions that already declared a `fallbackKey`,
+ * and the table it replaced listed exactly those two — so replacing the lookup
+ * with that table again reproduced the same behaviour on every case the test could
+ * name, and the test stayed green. Passing the record in lets a caller hand it a
+ * definitions set with an action no hardcoded table has ever heard of, which is the
+ * only way to observe that the lookup follows the record instead of a list.
+ *
+ * `definitions` rather than the module's own, so this stays a pure function of its
+ * two arguments: the production call site passes {@link KEYBINDING_DEFINITIONS}.
  */
+export function fallbackKeyFor(definitions: KeybindingDefinitions, keybinding: Keybinding): KeyId | undefined {
+	return definitions[keybinding]?.fallbackKey;
+}
+
+/** {@link fallbackKeyFor} over the host's own keybinding record. */
 function getFallbackKey(keybinding: Keybinding): KeyId | undefined {
-	return KEYBINDING_DEFINITIONS[keybinding]?.fallbackKey;
+	return fallbackKeyFor(KEYBINDING_DEFINITIONS, keybinding);
 }
 function keyListIncludes(keys: KeyId | KeyId[] | undefined, target: KeyId): boolean {
 	if (keys === undefined) return false;

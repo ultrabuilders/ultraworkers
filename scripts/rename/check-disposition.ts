@@ -87,6 +87,7 @@
  */
 
 import * as path from "node:path";
+import { readGateArgsOrExit } from "./args";
 
 /**
  * The pinned expression. Byte-identical to the bead's, so the table and this gate
@@ -471,9 +472,13 @@ export async function checkPost(root: string, rows: readonly Row[]): Promise<rea
 }
 
 async function main(): Promise<void> {
-	// StartsWith, not an exact `indexOf("--stage=")`: indexOf compares whole
-	// elements, so `--stage=sideways` did not match the prefix and the flag was
-	// silently ignored — a typo'd stage ran `pre` and reported success.
+	// Every unrecognised argument is refused rather than defaulted past. `--gate0`
+	// is documented in MILESTONE_5_EXECUTION_PLAN.md as W8b's Gate 0, but nothing
+	// here ever read it, so it fell through to the `pre` default below and the gate
+	// returned the whole pre-sweep's verdict while looking like it had been asked a
+	// narrower question. StartsWith, not `indexOf`, still matters: indexOf compares
+	// whole elements, so `--stage=sideways` would not match the prefix.
+	readGateArgsOrExit(process.argv.slice(2), { flags: ["--stage="] });
 	const stageArg = process.argv.find(arg => arg.startsWith("--stage="));
 	const stage = stageArg === undefined ? "pre" : stageArg.slice("--stage=".length);
 	if (stage !== "pre" && stage !== "post") {

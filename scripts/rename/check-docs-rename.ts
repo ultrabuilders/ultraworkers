@@ -43,6 +43,7 @@
  * surfaces as new failures rather than as a silently-passing check.
  */
 import * as path from "node:path";
+import { readGateArgsOrExit } from "./args";
 
 /**
  * Path prefixes excluded from the rule, not from the allow-list.
@@ -261,7 +262,10 @@ export function formatRuleAReport(
 }
 
 if (import.meta.main) {
-	const root = process.argv[2] ?? process.cwd();
+	// One positional path, no flags. A `--flag` used to be taken as the path and
+	// surfaced as an ENOENT crash against a filename that never existed; refusing it
+	// names the mistake instead of blaming the filesystem.
+	const root = readGateArgsOrExit(process.argv.slice(2), { positionals: 1 })[0] ?? process.cwd();
 	const violations = await scanRuleA(root);
 	const allowlist = await loadAllowlist(root);
 	const blocking = ungatedViolations(violations, allowlist);

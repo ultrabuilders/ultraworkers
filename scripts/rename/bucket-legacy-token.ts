@@ -40,6 +40,7 @@
  */
 import * as path from "node:path";
 import { isExcluded } from "./check-docs-rename";
+import { readGateArgsOrExit } from "./args";
 
 /** The legacy token, same shape `check-docs-rename.ts` scans with. */
 const LEGACY_TOKEN = /\bomp\b/g;
@@ -137,7 +138,9 @@ export async function bucketLegacyTokens(root: string): Promise<BucketReport> {
 }
 
 if (import.meta.main) {
-	const root = process.argv[2] ?? process.cwd();
+	// One optional positional path, no flags — see `args.ts` for why an unrecognised
+	// argument is refused instead of being used as the path.
+	const root = readGateArgsOrExit(process.argv.slice(2), { positionals: 1 })[0] ?? process.cwd();
 	const report = await bucketLegacyTokens(root);
 	process.stdout.write(
 		`REPORT in-scope ${report.inScopeFiles} files, ${report.inScopeOccurrences} occurrences\n` +

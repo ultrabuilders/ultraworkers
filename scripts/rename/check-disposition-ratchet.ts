@@ -48,6 +48,7 @@
 
 import * as path from "node:path";
 import { checkPre, parseTable, RULES_VERSION } from "./check-disposition";
+import { readGateArgsOrExit } from "./args";
 
 /**
  * The ceiling. Not the count of correct rows — the count of rows whose file has
@@ -205,4 +206,9 @@ async function main(): Promise<number> {
 	return 0;
 }
 
-if (import.meta.main) process.exitCode = await main();
+if (import.meta.main) {
+	// Takes no arguments; see `args.ts` for why an unread argument is refused rather
+	// than ignored. Reported, never blocking — the exit code still comes from main().
+	readGateArgsOrExit(process.argv.slice(2));
+	process.exitCode = await main();
+}

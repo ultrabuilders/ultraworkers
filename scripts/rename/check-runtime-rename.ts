@@ -43,6 +43,7 @@
  */
 
 import * as path from "node:path";
+import { readGateArgsOrExit } from "./args";
 
 /** Path prefixes excluded from the rule, not from the allow-list. */
 const EXCLUDED_PREFIXES = [".lavish-wip/", ".lavish/", ".omp/"];
@@ -194,4 +195,9 @@ async function main(): Promise<void> {
 	if (failures.length > 0 || stale.length > 0) process.exit(1);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+	// This gate reads no arguments at all, so any argument is a mistake — refusing it
+	// is the difference between "you asked a question I cannot see" and a green run.
+	readGateArgsOrExit(process.argv.slice(2));
+	await main();
+}

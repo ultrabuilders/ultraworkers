@@ -483,6 +483,41 @@ describe("a keep_ref that names nothing", () => {
 		await Bun.$`rm -rf ${root}`.quiet();
 	});
 
+	it("resolves the OWNER a namespaced ref names, without resolving the name", async () => {
+		// `W11:project-root-.omp` had no owner check at all: `BARE_PLAN_ID` is anchored,
+		// so the namespaced shape never matched it and all 338 `W11:` rows sat outside
+		// the rule. On the real table that change is invisible — every one of the 338
+		// resolves — so this cell varies the OWNER instead, which is the only thing the
+		// rule now has an opinion about.
+		const withoutW11 = await tree(FILES);
+		const dead = await checkPre(withoutW11, [row_("src/a.ts", 2, "rename", "renamed", "W11:project-root-.omp")]);
+		// The detail names the OWNER, not the full ref: what is unresolved is the node.
+		expect(dead.map(v => `${v.rule}:${v.detail.split(" ").at(-1)}`)).toEqual(["dangling-keep-ref:W11"]);
+		await Bun.$`rm -rf ${withoutW11}`.quiet();
+
+		const withW11 = await tree({ ...FILES, "MILESTONE_11_EXECUTION_PLAN.md": "## W11. Contract vocabulary\n" });
+		const live = await checkPre(withW11, [row_("src/a.ts", 2, "rename", "renamed", "W11:project-root-.omp")]);
+		// Quiet, but NOT because the contract name is defined — it is still coined, and
+		// still counted by `countUnverifiableKeepRefs` below. The owner resolved; the name
+		// did not. A run that read this as "verified" would be the exact overstatement
+		// the unreconciled report exists to prevent.
+		expect(live.map(v => v.rule)).toEqual([]);
+		await Bun.$`rm -rf ${withW11}`.quiet();
+	});
+
+	it("leaves a bead id and a coined contract name unenforced rather than dangling", async () => {
+		// The scoping decision that keeps 24 correctly-attributed rows from going red.
+		// `PLAN_ID_HEADING` introduces `W<n>` only, so `a57q` and `internal-path-reference`
+		// are not plan nodes. Checking "anything before the colon" would fire on all of
+		// them the moment it failed to resolve — trading 24 right rows for 24 wrong reds.
+		const root = await tree(FILES);
+		for (const ref of ["a57q:rs-glob", "N3", "internal-path-reference", "windows-named-pipe-endpoint", ""]) {
+			const violations = await checkPre(root, [row_("src/a.ts", 2, "rename", "renamed", ref)]);
+			expect(violations.map(v => v.rule)).toEqual([]);
+		}
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
 	it("does not resolve an id out of prose that merely mentions it", async () => {
 		// `_W11` inside a file name and `### GATE B — W9` as a heading's tail both
 		// CONTAIN the token without introducing anything. A substring search would

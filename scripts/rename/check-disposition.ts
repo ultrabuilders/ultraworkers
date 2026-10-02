@@ -166,6 +166,37 @@ const BARE_PLAN_ID = /^(W\d+)$/;
 const PLAN_ID_HEADING = /^#{1,6}\s+(W\d+)\./;
 
 /**
+ * The plan node a `keep_refs` value names, or `null` when it names none.
+ *
+ * A bare `W9` names a node. `W11:project-root-.omp` names a contract INSIDE node
+ * W11 — and the owner was just as checkable as the bare form, because
+ * `BARE_PLAN_ID` is anchored: the namespaced shape never matched it, so all 338
+ * `W11:` rows sat outside the one rule that can catch a dead owner. A gate that
+ * cannot see them is not a gate that passed them.
+ *
+ * `a57q:rs-glob` names a BEAD and `internal-path-reference` names a contract
+ * coined in the table itself. Neither prefix is a plan node, so both return
+ * `null` and stay unenforced — deliberately. Widening the check to "any colon
+ * would do" would make `a57q:*` dangling the moment `PLAN_ID_HEADING` failed to
+ * introduce it, turning 24 correctly-attributed rows into red.
+ *
+ * What this does NOT do is make the contract NAME checkable. `W11` resolving
+ * says the owner exists; it says nothing about whether `project-root-.omp` is a
+ * name anything else can resolve. Those 338 rows therefore stay in
+ * `countUnverifiableKeepRefs` — the owner became enforceable, the coined name
+ * did not, and the report must not claim otherwise.
+ */
+export function planNodeOf(ref: string): string | null {
+	const trimmed = ref.trim();
+	const bare = BARE_PLAN_ID.exec(trimmed);
+	if (bare) return bare[1]!;
+	const colon = trimmed.indexOf(":");
+	if (colon <= 0) return null;
+	const prefix = trimmed.slice(0, colon);
+	return BARE_PLAN_ID.test(prefix) ? prefix : null;
+}
+
+/**
  * Plan ids that have a real definition site, loaded from the root
  * `MILESTONE_*_EXECUTION_PLAN.md`.
  *
@@ -657,13 +688,16 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 		if (requiresKeepRefs(row.disposition) && row.keepRefs.trim() === "") {
 			violations.push({ rule: "missing-keep-refs", detail: `${row.path} (line ${row.line})` });
 		}
-		// A bare `W<n>` names a node of a plan document, so it either resolves to
-		// an id something introduced or it names nothing at all. Before this rule the
-		// gate could not tell those apart: `keep_refs` was checked only for being
-		// non-empty, which proves a signature exists but not whose it is.
-		const bare = BARE_PLAN_ID.exec(row.keepRefs.trim());
-		if (bare && !definedPlanIds.has(bare[1]!)) {
-			violations.push({ rule: "dangling-keep-ref", detail: `${row.path} (line ${row.line}) -> ${bare[1]}` });
+		// A `keep_refs` value that names a plan node — bare `W<n>`, or the `W<n>:` prefix
+		// of a namespaced one — either resolves to an id something introduced or it names
+		// nothing at all. Before this rule the gate could not tell those apart:
+		// `keep_refs` was checked only for being non-empty, which proves a signature
+		// exists but not whose it is. The namespaced half was invisible to it as well,
+		// because `BARE_PLAN_ID` is anchored and never matched `W11:anything` — so the
+		// rule reported 0 for 338 rows it had not looked at.
+		const node = planNodeOf(row.keepRefs);
+		if (node !== null && !definedPlanIds.has(node)) {
+			violations.push({ rule: "dangling-keep-ref", detail: `${row.path} (line ${row.line}) -> ${node}` });
 		}
 	}
 	for (const [filePath, group] of byPath) {

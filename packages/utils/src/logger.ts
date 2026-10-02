@@ -6,7 +6,7 @@
  * (the auth broker, etc.) call {@link setTransports} to swap in a console
  * transport so a process supervisor (pm2, journald, k8s) captures the logs.
  *
- * Each entry includes `process.pid` so concurrent omp instances stay
+ * Each entry includes `process.pid` so concurrent ultraworkers instances stay
  * traceable.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -183,7 +183,7 @@ function ensureDir(dir: string): string {
 		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	}
 	// `mode` applies ONLY to a directory this call creates. With `recursive`, an
-	// existing directory is a silent success, so anyone who ran omp before this
+	// existing directory is a silent success, so anyone who ran ultraworkers before this
 	// landed keeps a 0755 log directory forever — and they are the group with the
 	// most accumulated transcripts in it. Measured: new dir 0700, pre-existing dir
 	// 0755 both before and after without this line.

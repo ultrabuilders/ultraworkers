@@ -1,14 +1,14 @@
 /**
- * Centralized path helpers for omp config directories.
+ * Centralized path helpers for ultraworkers config directories.
  *
  * Uses PI_CONFIG_DIR (default ".omp") for the config root and
  * PI_CODING_AGENT_DIR to override the agent directory.
  *
  * On Linux, if XDG_DATA_HOME / XDG_STATE_HOME / XDG_CACHE_HOME environment
  * variables are set, paths are redirected to XDG-compliant locations under
- * $XDG_*_HOME/omp/. This requires running `omp config migrate` first to
+ * $XDG_*_HOME/omp/. This requires running `ultraworkers config migrate` first to
  * move data to the new locations. No filesystem existence checks are performed
- * — if the env var is set, omp trusts that the migration has been done.
+ * — if the env var is set, ultraworkers trusts that the migration has been done.
  */
 
 import * as fs from "node:fs";
@@ -33,7 +33,7 @@ export const APP_NAME: string = "ultraworkers";
 /** Wire identity — the third-party contract value; do not change without a compatibility decision. */
 export const WIRE_NAME: string = "ultraworkers";
 
-/** Public homepage that inference gateways (OpenRouter, Vercel AI Gateway) credit omp traffic to. */
+/** Public homepage that inference gateways (OpenRouter, Vercel AI Gateway) credit traffic to. */
 export const APP_URL: string = "https://omp.sh/";
 
 /** Config directory name (e.g. ".omp") */
@@ -157,7 +157,7 @@ function readProfileFromEnvSafe(): string | undefined {
 }
 
 /**
- * Profile-independent config root a READ uses, shared by every omp profile.
+ * Profile-independent config root a READ uses, shared by every ultraworkers profile.
  *
  * Keeps its name and its read meaning: `collab/registry.ts` imports it, and
  * silently re-pointing that import at the write root would break a path that has
@@ -420,7 +420,7 @@ let cachedConfigReadRootName: string | undefined;
  * Step 1 is what makes the rule safe. "First that exists" alone is not a config
  * root test: `getInstallId` and `adoptLegacyFile` both `mkdirSync` the canonical
  * parent as a side effect, so merely *asking* a question could create an empty
- * directory that then won the next read — and omp would read an empty config
+ * directory that then won the next read — and ultraworkers would read an empty config
  * while a full one sat in the legacy root. A directory created that way holds no
  * config file, so it loses step 1 and the real root wins.
  *
@@ -456,7 +456,7 @@ export function getConfigReadRootName(): string {
 }
 
 /**
- * True when this config root holds a main config file somewhere omp would
+ * True when this config root holds a main config file somewhere ultraworkers would
  * actually read one from.
  *
  * The file lives in the root's **agent** directory, not the root itself —
@@ -511,7 +511,7 @@ export function getConfigAgentDirName(): string {
 type XdgCategory = "data" | "state" | "cache";
 
 /**
- * Resolves and caches all omp directory paths. On Linux, when XDG environment
+ * Resolves and caches all ultraworkers directory paths. On Linux, when XDG environment
  * variables are set, paths are redirected under $XDG_*_HOME/omp/. A new
  * instance is created whenever the agent directory changes, which naturally
  * invalidates all cached paths.
@@ -538,7 +538,7 @@ class DirResolver {
 		const isDefault = this.agentDir === defaultAgent;
 
 		// XDG is a Linux convention. On supported platforms, default profile state
-		// resolves under $XDG_*_HOME/omp once `omp config init-xdg` has migrated
+		// resolves under $XDG_*_HOME/omp once `ultraworkers config init-xdg` has migrated
 		// the user's data. Named profiles follow a stricter rule: the XDG choice
 		// is keyed on the profile-specific XDG path, never the base app root.
 		//
@@ -891,8 +891,8 @@ export function getRemoteDir(): string {
  * empty/whitespace input or a path that is still relative after expansion.
  *
  * A worktree base is process-global and consumed by both creation
- * (PR checkout, task isolation) and cleanup (`omp worktree`). A relative value
- * would resolve against whatever cwd happened to launch `omp`, so checkout and
+ * (PR checkout, task isolation) and cleanup (`ultraworkers worktree`). A relative value
+ * would resolve against whatever cwd happened to launch `ultraworkers`, so checkout and
  * cleanup could disagree — we refuse it rather than silently bind it to cwd.
  */
 function resolveWorktreeBase(value: string | undefined): string | undefined {
@@ -908,7 +908,7 @@ let worktreesDirOverride: string | undefined;
 
 /**
  * Relocate the base directory for agent-managed worktrees (PR checkouts, task
- * isolation, and `omp worktree` cleanup all read the same base). Driven by the
+ * isolation, and `ultraworkers worktree` cleanup all read the same base). Driven by the
  * `worktree.base` setting in coding-agent; pass `undefined`/empty to clear and
  * fall back to `OMP_WORKTREE_DIR` or the `~/.omp/wt` default.
  *
@@ -1203,7 +1203,7 @@ export function getDebugLogPath(agentDir?: string): string {
  * Best-effort one-time copy of a legacy config-root file to its redirected XDG
  * location. Existing installs that enable XDG after the file was created keep
  * their data (e.g. a placeholder key whose loss would break deobfuscation of
- * persisted transcripts). The legacy file is left in place for older omp
+ * persisted transcripts). The legacy file is left in place for older ultraworkers
  * versions sharing the profile.
  */
 function adoptLegacyFile(legacyPath: string, targetPath: string): void {
@@ -1314,7 +1314,7 @@ let cachedInstallId: string | null = null;
 const INSTALL_ID_FILE = "install-id";
 /**
  * Application label for usage attribution (`OMP_APP_NAME`), defaulting to
- * {@link APP_NAME}. Embedders that drive omp programmatically (robomp, CI bots, …) set
+ * {@link APP_NAME}. Embedders that drive ultraworkers programmatically (robomp, CI bots, …) set
  * the env var so broker-side per-client burn tracking can answer "what did
  * app X use" instead of folding everything into one install-wide bucket.
  */

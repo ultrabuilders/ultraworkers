@@ -27,6 +27,7 @@ const gates = [
 	["check-runtime-deps.mjs", "public package runtime imports must be declared"],
 	["check-lockfile-commit.mjs", "staged lockfile changes must be reviewed"],
 	["check-ts-relative-imports.mjs", "relative specifiers must not name a module that does not exist"],
+	["check-bun-version-sources.mjs", "the declared minimum Bun version must agree where it can stop someone"],
 ];
 
 // `process.execPath` is Bun when this file runs under `bun run` — spawning it

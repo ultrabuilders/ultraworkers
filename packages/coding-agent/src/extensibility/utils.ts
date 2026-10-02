@@ -173,8 +173,20 @@ let hostGuardStdinWasRaw = false;
  *   adds is removed, and the stream's paused and raw-mode state is restored to
  *   the pre-load snapshot.
  *
- * Nested and concurrent guard windows are safe: only the outermost guard
- * snapshots and restores host state.
+ * Nested guard windows are safe: only the outermost guard snapshots and
+ * restores host state.
+ *
+ * OVERLAPPING windows are a weaker claim than that. Because the counter is a
+ * plain depth, two windows that interleave rather than nest (A enters, B enters,
+ * A exits, B exits) snapshot only once and restore only once — on B's exit, using
+ * A's snapshot. Between A's exit and B's exit stdin is unguarded, which is real
+ * but bounded: it lasts exactly as long as the inner window has left to run.
+ * "Safe" above means no state is lost or corrupted, not that no window exists.
+ *
+ * A depth left above zero by an abandoned window (its `finally` never runs) is a
+ * different failure, and a silent one: every later `withHostGuard` in that
+ * process becomes a no-op, since neither the snapshot nor the restore branch is
+ * reached. What a stranded depth owes the host is still open.
  */
 function guardedExit(alias: ExitAliasName): (code?: number | string) => never {
 	return (code?: number | string): never => {

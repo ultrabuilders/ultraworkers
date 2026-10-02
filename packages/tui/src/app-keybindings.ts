@@ -399,8 +399,18 @@ function orderKeybindingsConfig(config: KeybindingsConfig): KeybindingsConfig {
 	return ordered;
 }
 
-const KEYBINDINGS_YML = "keybindings.yml";
-const KEYBINDINGS_YAML = "keybindings.yaml";
+/**
+ * Keybinding filenames, exported so the config watcher names the same files the
+ * loader reads.
+ *
+ * These were module-private, and a watcher that spelled them out for itself would
+ * be a second copy of a name that already has one: the day the loader is renamed
+ * to `.yaml`, the watcher keeps firing on a file nothing opens. `LEGACY_KEYBINDINGS_JSON`
+ * is deliberately NOT exported — it is migrated to `.yml` on load, so watching it
+ * would arm a watcher on a path the running process never reads.
+ */
+export const KEYBINDINGS_YML = "keybindings.yml";
+export const KEYBINDINGS_YAML = "keybindings.yaml";
 const LEGACY_KEYBINDINGS_JSON = "keybindings.json";
 
 interface KeybindingsConfigPaths {

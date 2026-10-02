@@ -250,6 +250,7 @@ import {
 	PINNED_HUD_TOGGLE_ID,
 } from "@oh-my-pi/pi-tui/prompt/composer";
 import { setMagicKeywords } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
+import { bindKeybindingsToConfigReload } from "./keybindings-reload";
 import { MAGIC_KEYWORDS } from "./magic-keywords";
 import { sharedComposerCache } from "@oh-my-pi/pi-tui/prompt/composer-cache";
 import { BtwController } from "./controllers/btw-controller";
@@ -1384,6 +1385,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	/** Extension-registered provider factories, applied in registration order (#4919). */
 	#autocompleteProviderFactories: AutocompleteProviderFactory[] = [];
 	#cleanupUnsubscribe?: () => void;
+	/** Withdraws the keybindings-on-config-reload handler registered in `init()`. */
+	#stopKeybindingsReload?: () => void;
 	#signalTeardown?: SessionTeardown;
 	readonly #version: string;
 	readonly #startupChangelog: StartupChangelogSelection | undefined;
@@ -1975,6 +1978,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (keybindingConflicts) {
 			this.#uiHelpers.showWarning(`Conflicting keybindings:\n${keybindingConflicts}`);
 		}
+		// A rebind lands as an applied config-reload pass. `bindKeybindingsToConfigReload`
+		// owns why that needs a bridge at all; `??=` so a re-`init()` after `stop()`
+		// re-registers rather than stacking a second handler.
+		this.#stopKeybindingsReload ??= bindKeybindingsToConfigReload(this.keybindings);
 		// Before first paint, so hints the user already learned never flash on.
 		await logger.time("InteractiveMode.init:hintUsage", () => hintUsage.load());
 
@@ -6602,6 +6609,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.#cleanupUnsubscribe) {
 			this.#cleanupUnsubscribe();
 		}
+		// Withdrawn here, not left to process exit: `stop()` clears `isInitialized`, so a
+		// later `init()` re-registers, and two handlers would reload every rebind twice.
+		this.#stopKeybindingsReload?.();
+		this.#stopKeybindingsReload = undefined;
 		// Clear the process-global consent handler so it doesn't outlive this
 		// InteractiveMode instance (e.g. test harnesses, headless re-init).
 		setAutoQaConsentHandler(null, null);

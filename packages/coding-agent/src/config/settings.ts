@@ -27,6 +27,7 @@ import {
 	procmgr,
 } from "@oh-my-pi/pi-utils";
 import { withFileLock } from "@oh-my-pi/pi-utils/file-lock";
+import { KEYBINDINGS_YAML, KEYBINDINGS_YML } from "@oh-my-pi/pi-tui/app-keybindings";
 import { isLightTheme } from "@oh-my-pi/pi-tui/theme/theme";
 import { JSONC, YAML } from "bun";
 import { invalidate as invalidateCapabilityFsCache } from "../capability/fs";
@@ -1121,6 +1122,14 @@ export class Settings {
 			if (real !== file) addTarget(path.dirname(real), path.basename(real));
 		};
 		for (const filename of MAIN_CONFIG_FILENAMES) addFile(path.join(this.#agentDir, filename));
+		// Keybindings are the user's own config and live in the agent dir, so editing them is a
+		// config edit like any other. The names are imported from the loader rather than spelled
+		// out here: a watcher that spelled them out would be a second copy of a name the loader
+		// already owns, and renaming the loader to `.yaml` would leave it firing on a file
+		// nothing opens. `keybindings.json` is deliberately absent — it is migrated to `.yml` on
+		// load, so watching it arms a watcher on a path the running process never reads.
+		addFile(path.join(this.#agentDir, KEYBINDINGS_YML));
+		addFile(path.join(this.#agentDir, KEYBINDINGS_YAML));
 		const projectCwd = path.resolve(this.#cwd);
 		const projectConfigDir = getProjectAgentDir(projectCwd);
 		addFile(path.join(projectConfigDir, "config.yml"));

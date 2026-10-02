@@ -75,7 +75,7 @@ const CONTROLS: readonly {
 		verdict: "confirmed",
 	},
 	{
-		ref: "packages/coding-agent/src/modes/interactive-mode.ts:5483",
+		ref: "packages/coding-agent/src/modes/interactive-mode.ts:5490",
 		expect: "Guarantees",
 		verdict: "confirmed",
 		// "Guarantees" opens a sentence, and the case-sensitive variant looks for

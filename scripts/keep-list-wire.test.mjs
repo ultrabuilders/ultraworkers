@@ -121,8 +121,25 @@ async function filesWithBareLiterals() {
  * cited by line, but the discussion names the file bare), so a path is
  * recognised with or without the suffix.
  */
+/**
+ * Section 2 runs to the next NUMBERED heading, not to end-of-file.
+ *
+ * Slicing to EOF reads section 3's machine-readable rows as section 2's prose.
+ * That is latent rather than currently wrong: the three paths in section 3
+ * already appear in section 2's discussion, so both slices cite the same five
+ * files today. It breaks the moment someone adds a section-3 row whose path is
+ * not also written out above — then the gate would credit section 2 for a
+ * citation section 2 does not make, and a file could pass without a reason.
+ *
+ * `keep-list-drift.test.mjs` bounds section 1 the same way; the two gates read
+ * the same file, so they should also cut it the same way.
+ */
 function citedFiles(source) {
-	const section2 = source.slice(source.indexOf("# 2. WIRE / OPS IDENTITY"));
+	const start = source.indexOf("# 2. WIRE / OPS IDENTITY");
+	assert.notEqual(start, -1, "section 2 heading is gone from keep-list.txt");
+	const rest = source.slice(start + 1);
+	const nextSection = rest.search(/^# \d+\. /m);
+	const section2 = nextSection === -1 ? source.slice(start) : source.slice(start, start + 1 + nextSection);
 	const cited = new Set();
 	for (const match of section2.matchAll(/(packages\/[\w./-]+\.ts)(?::(\d+))?/g)) {
 		cited.add(match[1]);

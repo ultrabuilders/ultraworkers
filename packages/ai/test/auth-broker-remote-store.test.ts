@@ -12,6 +12,7 @@ import {
 	type SnapshotResponse,
 	startAuthBroker,
 } from "@oh-my-pi/pi-ai/auth-broker";
+import { getAppName } from "@oh-my-pi/pi-utils";
 import { removeWithRetries } from "../../utils/src/temp";
 import { withEnv } from "./helpers";
 
@@ -282,7 +283,15 @@ describe("RemoteAuthCredentialStore SSE integration", () => {
 		expect(reported.hostname).toBe(os.hostname());
 		// Default identity carries the app label so broker-side attribution can
 		// answer "what did app X use" even for broker-direct installs.
-		expect(reported.providers.every(p => p.app === "omp")).toBe(true);
+		//
+		// Asserted against getAppName(), which is what remote-store.ts:1417
+		// actually calls — not APP_NAME directly, because getAppName honours an
+		// OMP_APP_NAME override first. A literal here went stale when APP_NAME was
+		// renamed and then read as a deliberately pinned wire value, which is what
+		// let it sit red: the disposition row claimed the value was "pinned rather
+		// than derived from a brand constant", and the product has derived it all
+		// along.
+		expect(reported.providers.every(p => p.app === getAppName())).toBe(true);
 
 		const anthropic = reported.providers.find(p => p.provider === "anthropic");
 		expect(anthropic).toMatchObject({

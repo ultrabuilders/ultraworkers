@@ -31,7 +31,7 @@ const indexHtml = `<!DOCTYPE html>
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem("ultraworkers-stats-theme");
+          var stored = localStorage.getItem("ultraworkers-stats-theme") || localStorage.getItem("omp-stats-theme");
           var system = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
           var theme = stored === "light" || stored === "dark" ? stored : system;
           document.documentElement.dataset.theme = theme;

@@ -5,6 +5,7 @@
 ### Fixed
 
 - The dashboard now shows the product's current name in its top bar and page help text. These strings carried the pre-rebrand name while the CLI installed under a different one, so the dashboard described a host nobody is running. They now read the shared `APP_NAME` constant through `@oh-my-pi/pi-utils/brand`, the import that stays browser-safe.
+- The dashboard now keeps a light or dark theme you chose before the rename, instead of silently reverting to your operating system's setting.
 
 ## [18.4.3] - 2026-09-28
 

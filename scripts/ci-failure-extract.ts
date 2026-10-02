@@ -83,8 +83,18 @@ const BUN_FAIL = /^\(fail\)\s+(.+?)(?:\s+\[[\d.]+\s*m?s\])?\s*$/;
 /** Bun's tail summary, e.g. ` 6 fail`. */
 const BUN_SUMMARY = /^\s*(\d+)\s+fail\b/;
 
-/** Bun's suite-level error tally, e.g. ` 1 error`. */
-const BUN_ERROR_SUMMARY = /^\s*(\d+)\s+error\b/;
+/**
+ * Bun's suite-level error tally, e.g. ` 1 error` or ` 2 errors`.
+ *
+ * Bun pluralises this one — unlike `fail`, which it never pluralises — so the
+ * `s?` is load-bearing rather than cosmetic. With a bare `error\b` the boundary
+ * sits between `r` and the `s` of `errors`, which are both word characters, so
+ * the pattern silently stops matching the moment the count reaches two. That is
+ * precisely the range where an error tally is worth reading: a run with one
+ * suite-level error reconciles fine without it, and a run with two looks like it
+ * has none at all.
+ */
+const BUN_ERROR_SUMMARY = /^\s*(\d+)\s+errors?\b/;
 
 export function stripTimestamp(line: string): string {
 	return line.replace(TIMESTAMP, "");

@@ -160,6 +160,13 @@ describe("R0 GRP-C test-baseline gate", () => {
 		const result = await runGate(dir.absolute(), gate);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain("could not be reconciled");
+		// This run is killed before the runner prints any tally, so the error count
+		// is unread and must say so. Printing it as `0` is not a cosmetic slip: the
+		// reconciliation subtracts this value, so an unread tally rendered as zero
+		// shifts the arithmetic and can invert the verdict between under- and
+		// over-counted — and the wrong answer then arrives looking settled.
+		expect(result.stderr).toContain("? error");
+		expect(result.stderr).not.toMatch(/\b0 error\b/);
 		// The precise harm: a list this run cannot vouch for must not be allowed
 		// to reach the "all present in the baseline" verdict.
 		expect(result.stdout).not.toContain("all present in the baseline");

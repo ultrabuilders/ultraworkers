@@ -99,6 +99,37 @@ describe("extractFailures", () => {
 		expect(result.underCounted).toBe(false);
 	});
 
+	test("reads a pluralised suite-level error tally", () => {
+		// Bun writes `1 error` but `2 errors`, and never pluralises `fail`. A bare
+		// `error\b` puts its word boundary between `r` and the `s`, so the pattern
+		// stops matching the moment the count reaches two — the one range where the
+		// tally matters, since a single suite-level error already reconciles without it.
+		const log = [`${TS} 2 fail`, `${TS} 2 errors`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.reportedErrorCount).toBe(2);
+		// 2 reported - 0 extracted - 2 errors = 0 unexplained. Reading the tally as
+		// zero instead would leave a phantom shortfall of 2 and demand a fix that
+		// the log does not support.
+		expect(result.underCounted).toBe(false);
+	});
+
+	test("an absent error tally is read as zero rather than as unread", () => {
+		// Deliberate, and pinned so it stays deliberate: bun prints `0 errors` on a
+		// clean run, so a missing line means zero. The reconciliation subtracts this
+		// value with `?? 0`, and treating "absent" as "unknown" there would turn the
+		// gate permanently red on every clean run — a gate that is always red is not
+		// a gate. If bun ever stops printing the line, this is the test that should
+		// fail first, rather than a subtraction quietly changing its verdict.
+		const log = [`${TS} 1 fail`].join("\n");
+
+		const result = extractFailures(log);
+
+		expect(result.reportedErrorCount).toBeUndefined();
+		expect(result.underCounted).toBe(true);
+	});
+
 	test("does not treat a repeated failure identity as missing output", () => {
 		const log = [`${TS}(fail) same test`, `${TS} 1 fail`, `${TS}(fail) same test`, `${TS} 1 fail`].join("\n");
 

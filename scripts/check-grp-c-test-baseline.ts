@@ -149,7 +149,13 @@ async function collectFailures(target: string = SUITE): Promise<Set<string> | nu
 	if (extracted.discrepant) {
 		console.error("grp-c baseline gate: the failure list could not be reconciled.");
 		console.error(
-			`runner tallied ${extracted.reportedFailCount ?? "?"} fail / ${extracted.reportedErrorCount ?? 0} error, ` +
+			// Both tallies render "not read" as `?`, never as a number. Printing an
+			// unread error count as `0` does not merely misreport it — the
+			// reconciliation below subtracts this value, so a missing tally shifts
+			// the arithmetic and inverts the verdict between under-counted and
+			// over-counted. An honest `?` is what stops a wrong conclusion from
+			// arriving looking settled.
+			`runner tallied ${extracted.reportedFailCount ?? "?"} fail / ${extracted.reportedErrorCount ?? "?"} error, ` +
 				`parsed ${extracted.failures.length} line(s) naming ${extracted.identities.length} identity(ies).\n` +
 				"Deciding 'no new failures' from a list this run cannot vouch for would report a\n" +
 				"silently truncated measurement as a clean suite. Fix the parse, not the baseline.",

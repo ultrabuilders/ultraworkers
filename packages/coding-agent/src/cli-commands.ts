@@ -485,7 +485,9 @@ export function isSubcommand(first: string | undefined): boolean {
 // told "`omp list` is not a top-level command". Only this clause is
 // substituted. The `omp plugin …` recommendations after it name the command to
 // run next, which is a separate product decision about the installed binary
-// name and is deliberately left untouched here.
+// name and is deliberately left untouched here. If the owner keeps an `omp`
+// alias (epic-4yhd) these strings are already correct; renaming them before
+// that decision would make the advice wrong.
 const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 	extensions:
 		'`{invoked} extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',

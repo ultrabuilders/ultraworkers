@@ -2,7 +2,9 @@ import type { Context, JsonValue } from "@oh-my-pi/chord";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import type {
+	AssistantMessage,
 	AssistantMessageEventStream,
+	DeferredHandle,
 	CacheRetention,
 	Message,
 	SimpleStreamOptions,
@@ -95,15 +97,23 @@ export type ModelRef = {
  *
  * ### Why the deferred members are absent
  *
- * `generation.ts` also calls `fetchDeferred` and `cancelDeferred` on this same object. They are
- * **deliberately not declared here**: they belong to the deferred feature, which is still an owner
- * decision. Adding them would publish half of an unratified API — and if the owner later declines
- * to keep `deferred`, the seam would have to give back part of its surface after the fact. Their
- * absence is a decision, not an oversight; it resolves when that feature is settled.
+ * `generation.ts` calls `fetchDeferred` and `cancelDeferred` on this same object, so they are
+ * declared here: they were held back while the deferred feature was an open owner decision, and
+ * that decision is now settled. Because `runtime.models` is typed as `ModelLookup`, an undeclared
+ * member would make both call sites untypeable rather than merely optional — the provider-level
+ * `if (!provider.fetchDeferred)` guard that makes it optional upstream sits below this interface.
+ *
+ * The option surface is `{ signal }` because that is all either call site passes. `pi` composes a
+ * wider type from parts this repo does not have; naming those here would import a shape with no
+ * definition behind it.
  */
 export interface ModelLookup {
 	getModel(provider: string, modelId: string): Model | undefined;
 	streamSimple(model: Model, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream;
+	/** Resume a deferred generation from `handle` and resolve to its final message. */
+	fetchDeferred(model: Model, handle: DeferredHandle, options?: { signal?: AbortSignal }): Promise<AssistantMessage>;
+	/** Abandon a deferred generation. Safe to call for a handle that already settled. */
+	cancelDeferred(model: Model, handle: DeferredHandle, options?: { signal?: AbortSignal }): Promise<void>;
 }
 
 export type UserInput = UserMessage["content"];

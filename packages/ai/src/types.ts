@@ -947,7 +947,7 @@ export interface ToolCall {
 	providerMetadata?: ToolCallProviderMetadata;
 }
 
-export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
+export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
 
 export interface OpenAIResponsesHistoryPayload {
 	type: "openaiResponsesHistory";
@@ -1147,6 +1147,8 @@ export interface AssistantMessage {
 	upstreamModel?: string;
 	usage: Usage;
 	stopReason: StopReason;
+	/** Present when `stopReason` is `"deferred"`: the handle a later poll resumes from. */
+	deferred?: DeferredHandle;
 	stopDetails?: StopDetails | null;
 	errorMessage?: string;
 	/** Stable recovery-classification text when errorMessage includes display-only diagnostics. */
@@ -1507,7 +1509,7 @@ export type AssistantMessageEvent =
 	| {
 			type: "done";
 			contentIndex?: undefined;
-			reason: Extract<StopReason, "stop" | "length" | "toolUse">;
+			reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
 			message: AssistantMessage;
 	  }
 	| {

@@ -9,22 +9,27 @@
  * approved *different code*. This module makes that transition observable and
  * stops it.
  *
- * ## Why there is no `untrusted` state
+ * ## Why an unrecorded hook still loads
  *
  * The obvious design — a hook nobody has approved is untrusted and does not run
  * — is wrong for a tool that already ships to users with hooks installed. Every
  * existing hook on every existing install is unapproved, so that rule does not
  * add a review step; it silently switches off people's hooks on upgrade, with
- * no path to turn them back on (there is no hook-management surface to review
- * them in). Shipping a behaviour change onto state that already exists in a
- * user's install without an upgrade path is the thing this repo has already
- * been bitten by once, with the `CONFIG_DIR_NAME` rename.
+ * no path to turn them back on. Shipping a behaviour change onto state that
+ * already exists in a user's install without an upgrade path is the thing this
+ * repo has already been bitten by once, with the `CONFIG_DIR_NAME` rename.
  *
  * So the first time a hook is seen its hash is *recorded* and it is treated as
  * trusted. From then on the record is the contract: edit the file and the next
  * load is `modified`, which does not run. Approval is therefore implicit and
  * one-time, and the only state that can surprise anyone is the one that
  * actually changed.
+ *
+ * `untrusted` is still a real state, and the distinction is the point: it is
+ * what a hook is *before* that write, not a verdict that stops it. `hookTrustStatus`
+ * reports it, the loader records it away on the same pass, and a reader that
+ * asks about a hook the loader has not yet seen gets an honest `untrusted`
+ * rather than a `trusted` nothing has vouched for.
  *
  * ## What this hashes
  *
@@ -59,12 +64,30 @@ import type { Hook } from "../../capability/hook";
 /**
  * Whether a hook may run.
  *
- * Two states, and both are reachable: `trusted` is a hook whose recorded hash
- * matches (or which has never been seen), `modified` is one whose file changed
- * after it was recorded. A third state named here that nothing can produce
- * would be a lie in the type.
+ * Four states, and every one is reachable — which is the bar this type holds
+ * itself to. A state nothing can produce is a lie in the type, and the two-state
+ * version this replaces said so of its own third candidate.
+ *
+ * - `managed` — installed by admin-controlled config, not by the user. Neither
+ *   approved nor tampered with, so the tripwire does not apply.
+ * - `trusted` — the recorded hash matches the file.
+ * - `modified` — the file changed after it was recorded. Does not run.
+ * - `untrusted` — no record exists. See the module docblock: the *loader*
+ *   records on first sight, so this is the state a hook is in before that
+ *   write, and the state it stays in when the write could not happen.
+ *
+ * `managed` and `untrusted` are what make this four rather than two. `managed`
+ * is a real input (`SourceMeta.level === "native"`, admin config) and it is
+ * exempt from the tripwire for the same reason `is_builtin` is in the reference:
+ * a file the user did not write and cannot usefully edit is not an
+ * "approved then edited" event. `untrusted` is not hypothetical either — the
+ * dashboard reads records without the loader having written them, so a hook
+ * listed there before its first load genuinely has none.
+ *
+ * Named after the reference's `Managed` rather than the ledger's `admin`: the
+ * mechanism is the reference's and the name should travel with it.
  */
-export type HookTrustStatus = "trusted" | "modified";
+export type HookTrustStatus = "managed" | "trusted" | "modified" | "untrusted";
 
 /** Persisted beside the config for one hook. */
 export interface HookState {
@@ -116,11 +139,23 @@ export async function hookContentHash(hook: Hook): Promise<string | undefined> {
 /**
  * Whether `hook` may run, given the hash recorded for it — if any.
  *
- * `undefined` means first sight, which is trusted and recorded by the caller.
- * See the module docblock for why that is not `untrusted`.
+ * `undefined` means first sight. It reports `untrusted`, because at the moment
+ * this is asked nothing has vouched for the file; the loader records the hash
+ * immediately afterwards, which is what makes first sight *become* trusted
+ * without this function having to guess. Splitting those two moments is what
+ * lets the dashboard show an unrecorded hook honestly while the loader still
+ * admits it.
+ *
+ * `managed` short-circuits ahead of the comparison, so admin-installed hooks
+ * are exempt from the tripwire.
  */
-export function hookTrustStatus(recordedHash: string | undefined, currentHash: string): HookTrustStatus {
-	if (recordedHash === undefined) return "trusted";
+export function hookTrustStatus(
+	recordedHash: string | undefined,
+	currentHash: string,
+	managed = false,
+): HookTrustStatus {
+	if (managed) return "managed";
+	if (recordedHash === undefined) return "untrusted";
 	return recordedHash === currentHash ? "trusted" : "modified";
 }
 

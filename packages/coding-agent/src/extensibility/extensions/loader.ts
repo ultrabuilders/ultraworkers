@@ -1028,7 +1028,12 @@ export async function discoverExtensionPaths(
 				if (hash === undefined) continue;
 				const key = hookTrustKey(hook);
 				const recorded = recordedHookHash(key);
-				if (recorded !== undefined && hookTrustStatus(recorded, hash) === "modified") {
+				// Admin-installed hooks are exempt from the tripwire: a file the user
+				// did not write is not an "approved then edited" event. The record is
+				// still written below, so a hook that later becomes user-editable is
+				// already pinned.
+				const managed = hook._source?.level === "native";
+				if (recorded !== undefined && hookTrustStatus(recorded, hash, managed) === "modified") {
 					logger.warn(hookModifiedMessage(hook, recorded));
 					continue;
 				}

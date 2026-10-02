@@ -149,19 +149,14 @@ export interface FauxProviderHandle {
 	/** The four `ModelLookup` methods, so a caller can hold this as its model lookup. */
 	streamSimple(model: Model, context: TranscriptContext, options?: SimpleStreamOptions): AssistantMessageEventStream;
 	/**
-	 * Resumes a deferred generation — but there is nothing to resume here, so it reports the
-	 * handle it was given and rejects.
+	 * Resumes a deferred generation from `handle`.
 	 *
-	 * `pi`'s double drives this from a `deferred: true` **entry** option. That option does not
-	 * exist in this fork: `deferred` is a field on the *result* `AssistantMessage`
-	 * (`types.ts:1151`), read when `stopReason === "deferred"`. So pi's entry branch is not
-	 * reachable without adding a production option that exists only to serve a test double.
-	 * **The branch returns when `StreamOptions.deferred` is added** — as a new branch on top,
-	 * not as a rewrite of this commit. `onResponse` is still invoked, because it is a real wire
-	 * contract with ~60 call sites, not a deferred-specific one.
+	 * `deferred` is declared on `SimpleStreamOptions` (`packages/ai/src/types.ts`), which is the
+	 * interface `pi` declares it on and the one `streamSimple` receives — so pi's entry branch is
+	 * reachable here and this double drives it.
 	 */
 	fetchDeferred(model: Model, handle: DeferredHandle, options?: SimpleStreamOptions): Promise<AssistantMessage>;
-	/** Abandon a deferred generation. A no-op: this double never leaves one pending. */
+	/** Abandon a deferred generation. Safe to call for a handle that already settled. */
 	cancelDeferred(model: Model, handle: DeferredHandle, options?: SimpleStreamOptions): Promise<void>;
 }
 

@@ -119,6 +119,7 @@ import { type HookResultRejection, validateHookResult } from "../hooks/result-va
 import { unavailableFrameMessage } from "./unavailable-ui";
 
 import { cfgExtensionHandlersToolCallTimeoutMs } from "../settings";
+import { cfgToolsApproval } from "../../tools/settings";
 import { modeRegistry } from "../../modes/mode-registry";
 
 /** Combined result from all before_agent_start handlers */
@@ -937,6 +938,45 @@ export class ExtensionRunner {
 	 */
 	recordApprovalEntry(half: Omit<ApprovalEntry, keyof SessionEntryBase>): void {
 		this.sessionManager.appendApprovalEntry(half);
+	}
+
+	/**
+	 * Persist a "remember this decision" approval policy, keyed by action.
+	 *
+	 * ## Why this is a runner method and not on `ToolContext`
+	 *
+	 * Same reasoning as `recordApprovalEntry` above: writing a user policy is a
+	 * core decision about the user's configuration, and an extension that could
+	 * write arbitrary policies would be able to grant itself `allow` for any tool.
+	 * The prompt lives in core, so the write belongs in core too — the extension
+	 * never names the policy, it only observes that the choice was made.
+	 *
+	 * ## Why `policyKey` and not `toolName`
+	 *
+	 * `tools.approval` is a `record` setting, and `resolveApproval` (approval.ts:211)
+	 * consults `tools.approval.<policyKey>` in preference to `tools.approval.<tool>`.
+	 * The ACP gate already keys its "always" decisions on the canonicalized
+	 * *action* (`canonicalizeApprovalKey`) rather than the tool name, precisely so
+	 * approving `git status` does not also approve `rm -rf ./build`. This method
+	 * takes that same key so the two surfaces cannot disagree about what "always"
+	 * means.
+	 *
+	 * Silently does nothing when no settings instance is available: a missing
+	 * settings layer is not a reason to fail a call the user already approved.
+	 *
+	 * `settings` is passed in rather than read from `this.settings` because the
+	 * approval gate resolves against the execute-time context when the call carried
+	 * one, and those are different objects. Writing to the runner's copy would persist
+	 * the decision somewhere the very call that granted it would not read it back.
+	 */
+	persistApprovalPolicy(policyKey: string, policy: "allow" | "deny", settings?: Settings): void {
+		const target = settings ?? this.settings;
+		if (!target) return;
+		const existing = cfgToolsApproval.get(target) as Record<string, unknown>;
+		// Skip a write that would change nothing, so repeating an "always" decision
+		// does not dirty the settings file or add a spurious write event.
+		if (existing[policyKey] === policy) return;
+		target.writeValue(cfgToolsApproval, { ...existing, [policyKey]: policy }, "global");
 	}
 
 	/**

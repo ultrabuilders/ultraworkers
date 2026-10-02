@@ -27,6 +27,7 @@ import { applyToolProxy } from "../tool-proxy";
 import type { ExtensionRunner } from "./runner";
 import type { RegisteredTool, ToolCallEventResult } from "./types";
 import { ToolCallBlockedError } from "../shared-events";
+import { canonicalizeApprovalKey } from "../../session/acp-permission-gate";
 
 /**
  * Second `renderCall` argument that satisfies both the omp and the upstream-pi
@@ -149,6 +150,15 @@ export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: E
 }
 
 const LOOP_DISPATCH_CONTEXT = Symbol("omp.loop-dispatch");
+
+/**
+ * The "don't ask again for this action" choice in the approval prompt.
+ *
+ * A named constant rather than a literal because the wrapper tests assert on it and
+ * because the string is also the value compared against the prompt's return — two
+ * spellings of one option that a rename could silently decouple.
+ */
+const APPROVE_ALWAYS_OPTION = "Approve always";
 type LoopAwareToolContext = AgentToolContext & { [LOOP_DISPATCH_CONTEXT]?: true };
 
 function computerSafetyChecks(context: AgentToolContext | undefined): ComputerSafetyCheck[] {
@@ -486,13 +496,40 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 					: basePrompt;
 			let choice: string | undefined;
 			try {
-				choice = await uiContext.select(safetyPrompt, ["Approve", "Deny"]);
+				// "Always" is offered alongside Approve/Deny rather than replacing them, so
+				// a user who did not want it still sees the same two choices first. It is
+				// keyed on the *action* (`policyKey`), not the tool: approving `git status`
+				// must not also approve `rm -rf ./build`, which is the reason
+				// `resolveApproval` prefers `tools.approval.<policyKey>` over the tool name
+				// and the reason the ACP gate canonicalizes what it keys on.
+				choice = await uiContext.select(safetyPrompt, ["Approve", "Deny", APPROVE_ALWAYS_OPTION]);
 			} catch (err) {
 				await emitApprovalResolved(false, err instanceof Error ? err.message : "approval aborted");
 				cancelPreflight();
 				throw err;
 			}
-			const approved = choice === "Approve";
+			const approved = choice === "Approve" || choice === APPROVE_ALWAYS_OPTION;
+			if (choice === APPROVE_ALWAYS_OPTION) {
+				// Written to the same settings the gate resolved against, not to
+				// `runner.sessionSettings`: those differ whenever the call carried an
+				// execute-time context, and writing to the runner's copy would persist
+				// the decision where this call would not read it back. Best-effort — a
+				// settings layer that cannot be written means the user is asked again
+				// next time, which is the pre-existing behaviour, not a reason to refuse a
+				// call they approved.
+				const settings = context?.settings ?? this.runner.sessionSettings;
+				if (settings) {
+					// `resolved.policyKey` is only set when a tool *declares* one, and the
+					// core `bash` tool does not — so falling back to `this.tool.name` here
+					// would store the decision per tool, and approving `git status` would
+					// then authorize every later `bash` call, `rm -rf` included. The ACP
+					// gate already solved this by keying on the canonicalized *action*; use
+					// the same function so the two surfaces cannot disagree about what
+					// "always" means.
+					const actionKey = resolved.policyKey ?? canonicalizeApprovalKey(this.tool.name, effectiveParams);
+					this.runner.persistApprovalPolicy?.(actionKey, "allow", settings);
+				}
+			}
 			await emitApprovalResolved(approved, approved ? undefined : "denied by user");
 			if (!approved) {
 				cancelPreflight();

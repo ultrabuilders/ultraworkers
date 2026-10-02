@@ -2651,6 +2651,10 @@ describe("ExtensionRunner", () => {
 			expect(select).toHaveBeenCalledWith(expect.stringContaining("Allow tool: dangerous_tool"), [
 				"Approve",
 				"Deny",
+				// The always option rides on the same prompt, after the two that were
+				// already there. Listed explicitly rather than loosely so adding a fourth
+				// choice later has to be a decision someone makes.
+				"Approve always",
 			]);
 			delete globalState.__approvalEvents;
 		});

@@ -22,25 +22,47 @@ Adapted files:
                                  use.
 
 Not ported (present upstream at the pinned commit, absent here):
-  src/cli.ts, src/docker.ts, src/report.ts
+  src/cli.ts, src/docker.ts
   evals/            all nine — acme-server.ts, configured-runtime.ts,
                     custom-provider.docs.eval.ts, documentation-audit.eval.ts,
                     extensions.docs.eval.ts, models.docs.eval.ts,
                     openai-provider.docs.eval.ts, smoke.eval.ts, tui.docs.eval.ts
   docker/entrypoint.ts
-  test/             acme-server.test.ts, comparison.test.ts,
-                    configured-runtime.test.ts, report.test.ts
+  test/             acme-server.test.ts, configured-runtime.test.ts,
+                    report.test.ts
   vitest.evals.config.ts, vitest.test.config.ts
 
-  That is 19 of the 23 upstream .ts files; the four above are the only ones
-  carried across. The eval suites are absent for the same reason the harness
-  runners are: the whole eval path stands on vitest-evals, which this
-  repository does not use. `src/report.ts` is a dependency of the unported
-  half of the harness, so it is not independently portable either.
+  That is 18 of the 23 upstream .ts files. The eval suites are absent for the same
+  reason the harness runners are: the whole eval path stands on vitest-evals, which
+  this repository does not use.
 
   Counted at pi commit d6af72e1, whose harness.ts is byte-identical in length
   to the current upstream HEAD — so this list is a scope statement, not an
   artifact of an upstream revision that has since shrunk.
+
+AMENDED 2026-10-02 — src/report.ts and test/comparison.test.ts were ported after
+the statement above was written, so it no longer described the tree. Correcting
+it here rather than letting the next reader trust a stale provenance list:
+
+  src/report.ts            copied byte-identical except the `@vitest-evals/core`
+                           seam described in its own header. That package is
+                           npm-only and is absent from pi-ref's node_modules as
+                           well, so it is not a gap `bun install` closes. Only
+                           `persistSession` needs it; the comparison contract
+                           never reaches that function, so the import is deferred
+                           rather than replaced and the pure half stays verbatim.
+  test/comparison.test.ts  copied byte-identical except `vitest` -> `bun:test`.
+
+  The amended claim is narrower than "report.ts is portable": its comparison
+  half is. `persistSession` still throws, deliberately and by name, and the eval
+  suites that would exercise it remain unported. The earlier reasoning that
+  report.ts "is not independently portable either" was true of the whole file and
+  wrong about the half — a file can be split by which function a contract reaches.
+
+  Verified by mutation, not by green: swapping the `lift` arguments fails the
+  paired-delta test, and making `eligiblePairs` ignore blocked filtering fails all
+  four. Both restored from a copy with `git diff` empty. Suite is 28 tests across
+  3 files, up from 24.
 
 Upstream license follows.
 

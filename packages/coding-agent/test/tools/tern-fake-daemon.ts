@@ -100,7 +100,7 @@ export async function startFakeDaemon(
 						send(socket, replyPayload(1, { text: opts.refusal }));
 						socket.end();
 					} else {
-						// Welcome carries fields omp ignores; an unknown tag follows to prove it is skipped.
+						// Welcome carries fields ultraworkers ignores; an unknown tag follows to prove it is skipped.
 						send(socket, new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0]));
 						send(socket, new Uint8Array([99, 1, 2, 3]));
 					}

@@ -24,7 +24,7 @@ import { cfgProvidersMaxInFlightRequests } from "@oh-my-pi/pi-coding-agent/sessi
  *
  * Both surfaces go through this one function, and they **disagree on purpose**:
  * the panel reverts (someone editing live means the edit they are making now)
- * while `omp config set` keeps (someone writing `config.yml` from a shell may be
+ * while `ultraworkers config set` keeps (someone writing `config.yml` from a shell may be
  * configuring a checkout where the shadowing layer does not exist). The rows pin
  * both answers *and* the fact that the disagreement is only about the fate of the
  * write — the detection and the wording are shared, so the two cannot describe
@@ -96,7 +96,7 @@ describe("a write the user cannot see take effect", () => {
 	});
 
 	it("keeps the value on disk under the policy that keeps it", () => {
-		// `omp config set`'s half. The write stands and the shadowing is reported,
+		// `ultraworkers config set`'s half. The write stands and the shadowing is reported,
 		// because the person at the shell may be configuring a different checkout
 		// where the overriding layer does not exist — discarding their edit would
 		// destroy something they meant to keep. This is the row that would go red if

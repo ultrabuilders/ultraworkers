@@ -4,7 +4,7 @@ import { needsNativeTeardown } from "@oh-my-pi/pi-coding-agent/task/isolation-ow
 
 const { IsoBackendKind } = natives;
 
-// The sidecar set decides which retained workspaces `omp worktree clear`
+// The sidecar set decides which retained workspaces `ultraworkers worktree clear`
 // routes through native `isoStop` instead of plain recursive `rm`.
 describe("retained workspace teardown set", () => {
 	it("routes mounts and subvolumes through native teardown, nothing else", () => {

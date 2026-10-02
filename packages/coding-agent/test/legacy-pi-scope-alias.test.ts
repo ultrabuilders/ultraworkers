@@ -3,7 +3,7 @@
  * that — asserted through the real rewrite, not a copy of the rule.
  *
  * `PI_SCOPE_ALIASES` in `legacy-pi-compat.ts` lists `"ultraworkers"` beside the
- * spellings omp has to keep resolving. Nothing in the repository publishes under
+ * spellings ultraworkers has to keep resolving. Nothing in the repository publishes under
  * that scope yet, so before this file the alias was an assertion nobody ran: it
  * could be deleted, or narrowed, and every suite stayed green because no
  * specifier ever took that branch. A green positive row alone would not have
@@ -74,7 +74,7 @@ describe("the ultraworkers scope alias", () => {
 	test("does not admit an unknown scope just because the basename matches", async () => {
 		// The mirror image. The package list is shared across every accepted scope,
 		// so the scope half of the filter is what stops a third party from claiming
-		// `@anything/pi-utils` and inheriting omp's bundled copy of it.
+		// `@anything/pi-utils` and inheriting ultraworkers's bundled copy of it.
 		const rewritten = await rewriteSpecifier("@evil/pi-utils");
 
 		expect(rewritten).toContain("@evil/pi-utils");

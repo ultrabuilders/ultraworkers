@@ -91,7 +91,7 @@ describe("writeRawStdout", () => {
 
 	it("keeps writing after a record fails, instead of poisoning the chain for the process", async () => {
 		// The failure this defends against: the consumer goes away mid-stream
-		// (`omp --print … | head -1`), so one write reports EPIPE. If the serializer
+		// (`ultraworkers --print … | head -1`), so one write reports EPIPE. If the serializer
 		// tail absorbed that rejection, `.then` on the next record would never run
 		// its callback and `writeOnce` would stop being called — the channel would
 		// report success at every later call site while delivering nothing. Measured
@@ -139,7 +139,7 @@ describe("writeRawStdout", () => {
 		// The chain already guarantees a discarded promise cannot reject unhandled —
 		// `writeRawStdout` attaches its own handler before returning. What a caller
 		// that drops the result would still lose is the *fact* that a record died:
-		// `omp --print … | head -1` closes the pipe mid-stream, and without this the run
+		// `ultraworkers --print … | head -1` closes the pipe mid-stream, and without this the run
 		// ends looking complete while missing output. Asserted on the reported error,
 		// not on a bare call count, so a logger that reported the wrong failure fails.
 		const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});

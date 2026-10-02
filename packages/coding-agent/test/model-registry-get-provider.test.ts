@@ -54,7 +54,7 @@ describe("ModelRegistry.getProvider", () => {
 
 		// The descriptor comes from the compiled catalogue, not from discovered
 		// models. A registry that had never synced — the state every fresh install
-		// is in, and the state `omp usage` builds one in deliberately — still has to
+		// is in, and the state `ultraworkers usage` builds one in deliberately — still has to
 		// answer, or the seam works only after a network round-trip it has no
 		// business requiring.
 		expect(fs.existsSync(path.join(tempDir.path(), "models.yml"))).toBe(false);

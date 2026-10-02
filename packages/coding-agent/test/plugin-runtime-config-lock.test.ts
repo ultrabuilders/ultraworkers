@@ -3,7 +3,7 @@ import { PluginManager } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/m
 import { getPluginsLockfile, TempDir } from "@oh-my-pi/pi-utils";
 
 /**
- * Every mutation of the plugin lockfile is a read-modify-write. Two `omp`
+ * Every mutation of the plugin lockfile is a read-modify-write. Two `ultraworkers`
  * processes — or the settings overlay and a CLI command — can hold a manager
  * each, and both will have memoized the same on-disk config before either
  * writes. If a write serializes the memoized object instead of re-reading

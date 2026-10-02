@@ -25,7 +25,7 @@ describe("InteractiveMode live settings", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-live-ui-settings-");
+		tempDir = TempDir.createSync("@ultraworkers-live-ui-settings-");
 		const settings = await Settings.init({
 			inMemory: true,
 			cwd: tempDir.path(),

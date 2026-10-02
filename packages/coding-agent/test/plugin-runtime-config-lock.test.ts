@@ -19,7 +19,7 @@ describe("plugin runtime config writes", () => {
 	let lockfile: string;
 
 	beforeEach(async () => {
-		home = TempDir.createSync("@pi-plugin-lock-");
+		home = TempDir.createSync("@ultraworkers-plugin-lock-");
 		lockfile = getPluginsLockfile(home.path());
 		await Bun.write(
 			lockfile,

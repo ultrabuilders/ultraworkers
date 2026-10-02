@@ -162,7 +162,7 @@ describe("the runner refuses a hook result it cannot act on", () => {
 	const modelRegistry = new ModelRegistry(authStorage);
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-hook-result-");
+		tempDir = TempDir.createSync("@ultraworkers-hook-result-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		sessionManager = SessionManager.inMemory();

@@ -44,7 +44,7 @@ let newDir: string;
 beforeAll(async () => {
 	vi.spyOn(console, "log").mockImplementation(() => {});
 	await initTheme();
-	fixtureDir = await TempDir.create("@omp-rename-itest-");
+	fixtureDir = await TempDir.create("@ultraworkers-rename-itest-");
 	({ oldDir, newDir } = await makeFixtures(fixtureDir.path()));
 });
 

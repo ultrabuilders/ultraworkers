@@ -16,7 +16,7 @@ describe("issue #775: per-model defaultLevel", () => {
 	const authStorages: AuthStorage[] = [];
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-issue-775-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-775-");
 	});
 
 	afterEach(async () => {

@@ -64,7 +64,7 @@ describe("hook trust: the dashboard reports a hook the loader will not import", 
 	beforeEach(async () => {
 		// In-memory so recording a hash never writes the developer's real config.
 		await Settings.init({ inMemory: true });
-		tempDir = TempDir.createSync("@pi-hook-dashboard-");
+		tempDir = TempDir.createSync("@ultraworkers-hook-dashboard-");
 		cwd = tempDir.absolute();
 		// `setAgentDir` rather than the bare env var: the resolver caches its
 		// paths, so the variable alone is read too late to have any effect.

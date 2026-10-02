@@ -293,7 +293,7 @@ describe("collab read-only links", () => {
 	});
 	for (const kind of ["advisor", "sub"] as const) {
 		it(`${kind === "advisor" ? "denies" : "serves"} ${kind} transcripts requested by a view-link guest`, async () => {
-			await using dir = await TempDir.create("@pi-collab-transcript-");
+			await using dir = await TempDir.create("@ultraworkers-collab-transcript-");
 			const id = `transcript-${kind}-${crypto.randomUUID()}`;
 			const text = `${JSON.stringify({ type: "message", content: id })}\n`;
 			const file = dir.join("session.jsonl");

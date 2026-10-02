@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("failed child evidence", () => {
 	it("hands the parent the finished child's exit status and readable artifact when the merge throws", async () => {
-		using tempDir = TempDir.createSync("@omp-failed-child-");
+		using tempDir = TempDir.createSync("@ultraworkers-failed-child-");
 		vi.spyOn(discoveryModule, "discoverAgents").mockResolvedValue({ agents: [AGENT], projectAgentsDir: null });
 		const git = (...args: string[]) => Bun.spawnSync(["git", ...args], { cwd: tempDir.path(), stdout: "ignore" });
 		git("init", "-q");

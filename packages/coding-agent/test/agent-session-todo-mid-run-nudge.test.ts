@@ -132,7 +132,7 @@ describe("AgentSession mid-run todo reconciliation nudge", () => {
 	}
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-todo-mid-run-nudge-");
+		tempDir = TempDir.createSync("@ultraworkers-todo-mid-run-nudge-");
 		sessionManager = SessionManager.inMemory(tempDir.path());
 
 		const model = getBundledModel("anthropic", "claude-sonnet-4-5");

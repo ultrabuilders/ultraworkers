@@ -26,7 +26,7 @@ describe("issue #816 — plan mode pendingModelSwitch leak", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-816-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-816-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");

@@ -189,7 +189,7 @@ describe("docs/feature-mechanism.md", () => {
 		// Two independent ways to dangle, because they travel different code paths: a
 		// `file:line` inside the mechanism cell, and a bare path in the proof cell.
 		// Fixing only one of them would leave the other unproven.
-		using dir = TempDir.createSync("@omp-mechanism-negative-");
+		using dir = TempDir.createSync("@ultraworkers-mechanism-negative-");
 		const broken = path.join(dir.path(), "feature-mechanism.md");
 		await Bun.write(
 			broken,
@@ -226,7 +226,7 @@ describe("docs/feature-mechanism.md", () => {
 		// holds unrelated code. The third is the one this test cannot assert on
 		// without inventing a symbol contract — it is covered by the real table
 		// instead, which fails today precisely because two of its rows drifted.
-		using dir = TempDir.createSync("@omp-mechanism-drift-");
+		using dir = TempDir.createSync("@ultraworkers-mechanism-drift-");
 		const target = path.join(dir.path(), "widget.ts");
 		await Bun.write(target, ["export const a = 1;", "", "export const b = 2;", ""].join("\n"));
 
@@ -314,7 +314,7 @@ describe("docs/feature-mechanism.md", () => {
 		// The fixture registers its own cap of 0 next to a table carrying one `none`
 		// row, so this exercises the parse and the comparison together rather than
 		// asserting the real table's number.
-		using dir = TempDir.createSync("@omp-mechanism-cap-");
+		using dir = TempDir.createSync("@ultraworkers-mechanism-cap-");
 		const table = path.join(dir.path(), "table.md");
 		await Bun.write(
 			table,
@@ -339,7 +339,7 @@ describe("docs/feature-mechanism.md", () => {
 		// A cap that defaults to "unlimited" when the marker is missing is the exact
 		// hole the cap exists to close: delete one line of prose and the bound
 		// silently stops existing while the gate stays green.
-		using dir = TempDir.createSync("@omp-mechanism-nocap-");
+		using dir = TempDir.createSync("@ultraworkers-mechanism-nocap-");
 		const table = path.join(dir.path(), "table.md");
 		await Bun.write(table, ["| feature | mechanism | proof |", "| --- | --- | --- |", ""].join("\n"));
 

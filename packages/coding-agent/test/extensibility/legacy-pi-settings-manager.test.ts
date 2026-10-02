@@ -30,7 +30,7 @@ describe("legacy pi SettingsManager shim (issue #10397)", () => {
 
 	beforeEach(() => {
 		state = beginSettingsTest();
-		tempDir = TempDir.createSync("@pi-settings-manager-shim-");
+		tempDir = TempDir.createSync("@ultraworkers-settings-manager-shim-");
 		agentDir = tempDir.join("agent");
 		projectDir = tempDir.join("project");
 		fs.mkdirSync(agentDir, { recursive: true });

@@ -26,7 +26,7 @@ function startBroker(projectDir: string, runtimeDir: string): { listening: Promi
 
 describe("daemon metadata writes", () => {
 	it("does not rewrite settled history on subscriber changes or broker restart", async () => {
-		using tempDir = TempDir.createSync("@omp-broker-metadata-");
+		using tempDir = TempDir.createSync("@ultraworkers-broker-metadata-");
 		const projectDir = path.join(tempDir.path(), "project");
 		const runtimeDir = path.join(tempDir.path(), "runtime");
 		const metadataPath = path.join(runtimeDir, "daemons", "historical", "meta.json");

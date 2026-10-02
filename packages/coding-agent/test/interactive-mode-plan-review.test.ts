@@ -83,7 +83,7 @@ describe("InteractiveMode plan review rendering", () => {
 	beforeAll(async () => {
 		initTheme();
 		resetSettingsForTest();
-		sharedTempDir = TempDir.createSync("@pi-plan-review-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-plan-review-shared-");
 		await Settings.init({ inMemory: true, cwd: sharedTempDir.path() });
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
@@ -96,7 +96,7 @@ describe("InteractiveMode plan review rendering", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-plan-review-");
+		tempDir = TempDir.createSync("@ultraworkers-plan-review-");
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");
 		if (!model) {
 			throw new Error("Expected claude-sonnet-4-5 to exist in registry");

@@ -23,7 +23,7 @@ type Harness = {
 type SettingsOverrides = Record<string, unknown>;
 
 const activeHarnesses: Harness[] = [];
-const sharedDir = TempDir.createSync("@pi-empty-stop-guard-shared-");
+const sharedDir = TempDir.createSync("@ultraworkers-empty-stop-guard-shared-");
 const sharedAuthStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 sharedAuthStorage.keys.setRuntime("mock", "test-key");
 const sharedModelRegistry = new ModelRegistry(sharedAuthStorage, path.join(sharedDir.path(), "models.yml"));
@@ -123,7 +123,7 @@ async function createHarness(
 		id?: string;
 	} = {},
 ): Promise<Harness & { mock: MockModel }> {
-	const tempDir = TempDir.createSync("@pi-empty-stop-guard-");
+	const tempDir = TempDir.createSync("@ultraworkers-empty-stop-guard-");
 	const authStorage = sharedAuthStorage;
 
 	const mock = createMockModel({ provider: options.provider, id: options.id, responses });

@@ -26,7 +26,7 @@ describe("AgentSession model persistence", () => {
 	let sharedModelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-model-persistence-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-model-persistence-shared-");
 		sharedAuthStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 		sharedAuthStorage.keys.setRuntime("anthropic", "test-key");
 		sharedModelRegistry = new ModelRegistry(sharedAuthStorage, path.join(sharedDir.path(), "models.yml"));
@@ -38,7 +38,7 @@ describe("AgentSession model persistence", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-model-persistence-");
+		tempDir = TempDir.createSync("@ultraworkers-model-persistence-");
 	});
 
 	afterEach(async () => {

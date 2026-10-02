@@ -1046,7 +1046,7 @@ describe("AgentSession auto-compaction progress guard", () => {
 		// to shake-retry, which re-entered the same empty turn ~once/second for 20
 		// minutes and persisted hundreds of empty assistant turns until manual abort.
 		await session.dispose();
-		const tempDir = TempDir.createSync("@pi-incomplete-recovery-cap-");
+		const tempDir = TempDir.createSync("@ultraworkers-incomplete-recovery-cap-");
 		tempDirs.push(tempDir);
 		const cwd = tempDir.path();
 		const sessionDir = path.join(cwd, "sessions");

@@ -12,7 +12,7 @@ describe("evaluateLoopCondition", () => {
 
 	beforeAll(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-loop-condition-");
+		tempDir = TempDir.createSync("@ultraworkers-loop-condition-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	});
 

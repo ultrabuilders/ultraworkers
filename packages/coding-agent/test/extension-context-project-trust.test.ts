@@ -40,7 +40,7 @@ import { TempDir } from "@oh-my-pi/pi-utils";
  * read and reports `false` for a reason that has nothing to do with the decision.
  */
 async function createRunner(cwd: string): Promise<ExtensionRunner> {
-	const projectDir = TempDir.createSync("@pi-project-trust-");
+	const projectDir = TempDir.createSync("@ultraworkers-project-trust-");
 	const settings = await Settings.loadIsolated({
 		cwd,
 		agentDir: projectDir.join("agent"),
@@ -59,14 +59,14 @@ async function createRunner(cwd: string): Promise<ExtensionRunner> {
 describe("ExtensionContext project trust reports the recorded decision", () => {
 	it("CONTROL: an undecided project is not reported as trusted", async () => {
 		// Without this, `toBe(false)` below is satisfiable by a constant `false`.
-		const projectDir = TempDir.createSync("@pi-project-trust-undecided-");
+		const projectDir = TempDir.createSync("@ultraworkers-project-trust-undecided-");
 		const runner = await createRunner(projectDir.path());
 
 		expect(runner.createContext().isProjectTrusted()).toBe(false);
 	});
 
 	it("reports a project the user trusted as trusted", async () => {
-		const projectDir = TempDir.createSync("@pi-project-trust-yes-");
+		const projectDir = TempDir.createSync("@ultraworkers-project-trust-yes-");
 		const settings = await Settings.loadIsolated({
 			cwd: projectDir.path(),
 			agentDir: projectDir.join("agent"),
@@ -87,7 +87,7 @@ describe("ExtensionContext project trust reports the recorded decision", () => {
 	});
 
 	it("NEGATIVE: a project the user refused stays untrusted", async () => {
-		const projectDir = TempDir.createSync("@pi-project-trust-no-");
+		const projectDir = TempDir.createSync("@ultraworkers-project-trust-no-");
 		const settings = await Settings.loadIsolated({
 			cwd: projectDir.path(),
 			agentDir: projectDir.join("agent"),
@@ -111,7 +111,7 @@ describe("ExtensionContext project trust reports the recorded decision", () => {
 		// The two call sites are separate code. One reporting the decision and the
 		// other still returning a constant would be the silent half-implementation
 		// the bead's criterion (1) names, and it would not fail any other case here.
-		const projectDir = TempDir.createSync("@pi-project-trust-cmd-");
+		const projectDir = TempDir.createSync("@ultraworkers-project-trust-cmd-");
 		const settings = await Settings.loadIsolated({
 			cwd: projectDir.path(),
 			agentDir: projectDir.join("agent"),

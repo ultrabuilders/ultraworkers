@@ -99,7 +99,7 @@ describe("Claude saved-reset trigger integration", () => {
 		vi.spyOn(aiStream, "getEnvApiKey").mockReturnValue(undefined);
 		sessions = [];
 		managers = [];
-		tempDir = TempDir.createSync("@pi-claude-reset-");
+		tempDir = TempDir.createSync("@ultraworkers-claude-reset-");
 	});
 
 	afterEach(async () => {

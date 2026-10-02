@@ -62,7 +62,7 @@ describe("legacy-pi specifier shim", () => {
 		// A plugin that ships its own `@oh-my-pi/pi-ai` must still share the host
 		// singleton (split registries otherwise); only the host copy exposes more
 		// than the fixture's single marker export.
-		tempDir = TempDir.createSync("@pi-legacy-canonical-shadow-");
+		tempDir = TempDir.createSync("@ultraworkers-legacy-canonical-shadow-");
 		const localPackage = tempDir.join("node_modules/@oh-my-pi/pi-ai");
 		await Bun.write(
 			path.join(localPackage, "package.json"),

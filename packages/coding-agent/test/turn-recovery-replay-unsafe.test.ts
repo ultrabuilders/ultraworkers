@@ -115,7 +115,7 @@ describe("TurnRecovery replay-unsafe output classification", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-turn-recovery-replay-");
+		tempDir = TempDir.createSync("@ultraworkers-turn-recovery-replay-");
 		authStorage = await AuthStorage.create(tempDir.join("testauth.db"));
 		// Live-role resolution (#liveRetryRoleHint) filters by provider auth;
 		// pin a runtime key so the test does not depend on host env credentials.

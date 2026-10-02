@@ -43,7 +43,7 @@ describe("AgentStorage model perf aggregates", () => {
 	});
 
 	async function openStorage(): Promise<AgentStorage> {
-		tempDir = TempDir.createSync("@omp-agent-storage-perf-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-storage-perf-");
 		return AgentStorage.open(path.join(tempDir.path(), "agent.db"));
 	}
 
@@ -73,7 +73,7 @@ describe("AgentStorage model perf aggregates", () => {
 	});
 
 	it("records task subagent samples in the shared model performance aggregate", async () => {
-		tempDir = TempDir.createSync("@omp-subagent-perf-");
+		tempDir = TempDir.createSync("@ultraworkers-subagent-perf-");
 		const parent = await Settings.loadIsolated({ cwd: tempDir.path(), agentDir: tempDir.path() });
 		const subagent = createSubagentSettings(parent);
 
@@ -219,7 +219,7 @@ describe("AgentStorage model perf aggregates", () => {
 	});
 
 	it("does not start the stats backfill while flushing a live batch on exit", async () => {
-		tempDir = TempDir.createSync("@omp-agent-storage-exit-backfill-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-storage-exit-backfill-");
 		const homeDir = tempDir.join("home");
 		const agentDir = tempDir.join("agent");
 		const env = {

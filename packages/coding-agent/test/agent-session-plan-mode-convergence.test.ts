@@ -108,7 +108,7 @@ describe("AgentSession plan-mode convergence", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		authDir = TempDir.createSync("@pi-plan-converge-auth-");
+		authDir = TempDir.createSync("@ultraworkers-plan-converge-auth-");
 		authStorage = await AuthStorage.create(authDir.join("auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage, authDir.join("models.yml"));
@@ -120,7 +120,7 @@ describe("AgentSession plan-mode convergence", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-plan-converge-");
+		tempDir = TempDir.createSync("@ultraworkers-plan-converge-");
 	});
 
 	afterEach(async () => {

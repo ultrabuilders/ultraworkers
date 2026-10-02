@@ -42,7 +42,7 @@ import { TempDir } from "@oh-my-pi/pi-utils";
 
 /** A `Settings` bound to a throwaway directory, so no developer's config is read. */
 async function settingsFor(tag: string): Promise<Settings> {
-	const dir = TempDir.createSync(`@pi-trust-gate-${tag}-`);
+	const dir = TempDir.createSync(`@ultraworkers-trust-gate-${tag}-`);
 	return await Settings.loadIsolated({ cwd: dir.path(), agentDir: dir.join("agent") });
 }
 

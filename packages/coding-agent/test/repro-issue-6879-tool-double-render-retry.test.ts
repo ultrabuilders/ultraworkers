@@ -74,7 +74,7 @@ describe("issue #6879 — tool output appears twice after a superseded turn", ()
 	beforeAll(async () => {
 		initTheme();
 		resetSettingsForTest();
-		settingsDir = TempDir.createSync("@pi-issue-6879-settings-");
+		settingsDir = TempDir.createSync("@ultraworkers-issue-6879-settings-");
 		await Settings.init({ inMemory: true, cwd: settingsDir.path() });
 		authStorage = await AuthStorage.create(":memory:");
 		modelRegistry = new ModelRegistry(authStorage);
@@ -89,7 +89,7 @@ describe("issue #6879 — tool output appears twice after a superseded turn", ()
 			vi.spyOn(process.stdin, "setRawMode").mockReturnValue(process.stdin);
 		}
 
-		tempDir = TempDir.createSync("@pi-issue-6879-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-6879-");
 		const model = modelRegistry.find("anthropic", "claude-sonnet-4-5");
 		if (!model) throw new Error("Expected claude-sonnet-4-5 test model");
 

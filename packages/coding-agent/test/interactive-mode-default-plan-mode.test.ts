@@ -67,7 +67,7 @@ describe("InteractiveMode plan.defaultOnStartup", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-default-plan-");
+		tempDir = TempDir.createSync("@ultraworkers-default-plan-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		cfgStartupQuiet.set(Settings.instance, true);
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));

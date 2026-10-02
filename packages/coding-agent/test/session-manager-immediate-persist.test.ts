@@ -85,7 +85,7 @@ function entryKind(entry: Record<string, unknown>): string {
 
 describe("SessionManager JSONL software-crash durability", () => {
 	it("makes completed entries visible on disk without a microtask or flush", () => {
-		const cwd = makeTempDir("@pi-immediate-cwd-");
+		const cwd = makeTempDir("@ultraworkers-immediate-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();
@@ -133,7 +133,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("reopens post-checkpoint user/assistant/tool events after a crash-equivalent snapshot", async () => {
-		const cwd = makeTempDir("@pi-crash-reopen-cwd-");
+		const cwd = makeTempDir("@ultraworkers-crash-reopen-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();
@@ -199,7 +199,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("rewrites a malformed resumed tail before appending another entry", async () => {
-		const cwd = makeTempDir("@pi-malformed-tail-cwd-");
+		const cwd = makeTempDir("@ultraworkers-malformed-tail-cwd-");
 		const manager = SessionManager.create(cwd, path.join(cwd, "sessions"));
 		manager.appendMessage(assistantMessage("seed"));
 		const sessionFile = manager.getSessionFile();
@@ -217,7 +217,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("rejects a corrupt session header without overwriting recoverable transcript bytes", async () => {
-		const cwd = makeTempDir("@pi-corrupt-header-cwd-");
+		const cwd = makeTempDir("@ultraworkers-corrupt-header-cwd-");
 		const sessionFile = path.join(cwd, "corrupt-session.jsonl");
 		const original = [
 			"{broken header",
@@ -240,7 +240,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("keeps pre-assistant sessions out of history during shutdown", async () => {
-		const cwd = makeTempDir("@pi-empty-session-cwd-");
+		const cwd = makeTempDir("@ultraworkers-empty-session-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();
@@ -260,7 +260,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("lets explicit rewrites materialize pre-assistant entries", async () => {
-		const cwd = makeTempDir("@pi-explicit-rewrite-cwd-");
+		const cwd = makeTempDir("@ultraworkers-explicit-rewrite-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();
@@ -349,7 +349,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("alerts once and retries all in-memory entries after a transient write failure", () => {
-		const cwd = makeTempDir("@pi-write-fail-cwd-");
+		const cwd = makeTempDir("@ultraworkers-write-fail-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();
@@ -390,7 +390,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("reparents metadata children when durably discarding an entry", async () => {
-		const cwd = makeTempDir("@pi-discard-metadata-cwd-");
+		const cwd = makeTempDir("@ultraworkers-discard-metadata-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();
@@ -416,7 +416,7 @@ describe("SessionManager JSONL software-crash durability", () => {
 	});
 
 	it("persists a branch marker when a discarded entry has content children", async () => {
-		const cwd = makeTempDir("@pi-discard-content-cwd-");
+		const cwd = makeTempDir("@ultraworkers-discard-content-cwd-");
 		const sessionDir = path.join(cwd, "sessions");
 		const manager = SessionManager.create(cwd, sessionDir);
 		const sessionFile = manager.getSessionFile();

@@ -16,7 +16,7 @@ describe("atomicWriteJson", () => {
 	let target: string;
 
 	beforeEach(() => {
-		dir = TempDir.createSync("@pi-atomic-write-");
+		dir = TempDir.createSync("@ultraworkers-atomic-write-");
 		target = path.join(dir.path(), "state.json");
 	});
 

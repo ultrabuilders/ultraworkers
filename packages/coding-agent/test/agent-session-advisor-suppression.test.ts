@@ -73,7 +73,7 @@ describe("AgentSession advisor auto-resume suppression", () => {
 	const authStorages: AuthStorage[] = [];
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-advisor-suppress-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-suppress-");
 	});
 
 	afterEach(async () => {

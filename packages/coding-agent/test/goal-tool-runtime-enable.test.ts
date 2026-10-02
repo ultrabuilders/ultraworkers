@@ -17,7 +17,7 @@ describe("goal tool registration when goal mode is enabled at runtime", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-repro-9444-");
+		tempDir = TempDir.createSync("@ultraworkers-repro-9444-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	});
 

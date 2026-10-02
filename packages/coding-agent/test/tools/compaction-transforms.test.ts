@@ -260,7 +260,7 @@ describe("an extension outside this repo reaches the surface", () => {
 	const modelRegistry = new ModelRegistry(authStorage);
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-ctx-transform-");
+		tempDir = TempDir.createSync("@ultraworkers-ctx-transform-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		sessionManager = SessionManager.inMemory();

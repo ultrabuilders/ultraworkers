@@ -17,7 +17,7 @@ const hasDirenv = $which("direnv") !== null;
 
 const tmpDirs: TempDir[] = [];
 function tmp(): string {
-	const dir = TempDir.createSync("@pi-direnv-");
+	const dir = TempDir.createSync("@ultraworkers-direnv-");
 	tmpDirs.push(dir);
 	return dir.path();
 }

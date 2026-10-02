@@ -53,7 +53,7 @@ describe("AgentSession manual snapcompact text-only fallback", () => {
 		if (!activeModel) throw new Error("Expected bundled text-only model");
 		expect(activeModel.input).not.toContain("image");
 
-		tempDir = TempDir.createSync("@pi-manual-snapcompact-text-only-");
+		tempDir = TempDir.createSync("@ultraworkers-manual-snapcompact-text-only-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("aimlapi", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage);

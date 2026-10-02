@@ -39,7 +39,7 @@ async function harness(
 	} = {},
 ) {
 	const { doneOnly = false, delayed = false } = options;
-	const root = TempDir.createSync("@pi-yield-report-");
+	const root = TempDir.createSync("@ultraworkers-yield-report-");
 	roots.push(root);
 	const auth = createInMemoryAuthStorage();
 	auth.keys.setRuntime("mock", "test-key");

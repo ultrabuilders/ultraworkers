@@ -50,7 +50,7 @@ describe("ExtensionRunner", () => {
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-runner-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-runner-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -61,7 +61,7 @@ describe("ExtensionRunner", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-runner-test-");
+		tempDir = TempDir.createSync("@ultraworkers-runner-test-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		sessionManager = SessionManager.inMemory();

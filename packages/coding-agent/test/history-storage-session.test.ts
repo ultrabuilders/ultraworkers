@@ -83,7 +83,7 @@ describe("HistoryStorage session linkage", () => {
 	});
 
 	it("adds session_id to a pre-existing schema and leaves legacy rows unstamped", async () => {
-		tempDir = TempDir.createSync("@omp-history-session-migrate-");
+		tempDir = TempDir.createSync("@ultraworkers-history-session-migrate-");
 		const dbPath = tempDir.join("history.db");
 		const legacyDb = new Database(dbPath);
 		legacyDb.exec(`

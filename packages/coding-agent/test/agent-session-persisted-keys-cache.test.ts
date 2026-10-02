@@ -22,7 +22,7 @@ describe("AgentSession persistence-keys cache", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		authDir = TempDir.createSync("@pi-cache-auth-");
+		authDir = TempDir.createSync("@ultraworkers-cache-auth-");
 		authStorage = await AuthStorage.create(authDir.join("auth.db"));
 		modelRegistry = new ModelRegistry(authStorage, authDir.join("models.yml"));
 	});

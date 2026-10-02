@@ -120,7 +120,7 @@ describe("date-cwd reminder on the provider wire", () => {
 	});
 
 	it("keeps the date/cwd out of the system prompt and pins the reminder to the first user turn across requests", async () => {
-		using tempDir = TempDir.createSync("@pi-date-cwd-reminder-");
+		using tempDir = TempDir.createSync("@ultraworkers-date-cwd-reminder-");
 		const api = "test-date-cwd-reminder";
 		const contexts: Context[] = [];
 		registerCustomApi(api, (_model, context) => {

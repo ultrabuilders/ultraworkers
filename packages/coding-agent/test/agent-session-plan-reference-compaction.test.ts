@@ -117,14 +117,14 @@ describe("AgentSession approved-plan reference re-injection after compaction (is
 	const cleanups: Array<() => Promise<void>> = [];
 
 	beforeAll(async () => {
-		fixtureDir = TempDir.createSync("@pi-agent-session-plan-ref-compaction-fixture-");
+		fixtureDir = TempDir.createSync("@ultraworkers-agent-session-plan-ref-compaction-fixture-");
 		authStorage = await AuthStorage.create(path.join(fixtureDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage, path.join(fixtureDir.path(), "models.yml"));
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-agent-session-plan-ref-compaction-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-plan-ref-compaction-");
 		cleanups.length = 0;
 	});
 

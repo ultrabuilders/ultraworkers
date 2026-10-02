@@ -36,7 +36,7 @@ describe("issue #2372 pre-streaming chat rebuild preserves optimistic submission
 		}
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-2372-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-2372-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = createInMemoryAuthStorage();
 		const modelRegistry = new ModelRegistry(authStorage);

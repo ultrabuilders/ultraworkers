@@ -43,7 +43,7 @@ let extensionsDir: string;
 const live: Array<{ runner: ExtensionRunner; paths: string[] }> = [];
 
 beforeEach(() => {
-	tempDir = TempDir.createSync("@pi-config-reload-api-test-");
+	tempDir = TempDir.createSync("@ultraworkers-config-reload-api-test-");
 	extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 	fs.mkdirSync(extensionsDir, { recursive: true });
 });

@@ -43,7 +43,7 @@ describe("a tool_call hook that breaks vs one that denies", () => {
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-block-kind-");
+		tempDir = TempDir.createSync("@ultraworkers-block-kind-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});

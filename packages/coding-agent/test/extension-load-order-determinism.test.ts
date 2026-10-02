@@ -100,7 +100,7 @@ describe("extension load order determinism", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@omp-ext-order-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-ext-order-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -111,7 +111,7 @@ describe("extension load order determinism", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@omp-ext-order-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-order-");
 		extsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions", "exts");
 		fs.mkdirSync(extsDir, { recursive: true });
 		for (const name of EXT_NAMES) {

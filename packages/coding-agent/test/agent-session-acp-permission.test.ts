@@ -174,7 +174,7 @@ async function createSessionWithMockModel(
 }
 
 beforeAll(() => {
-	tempDir = TempDir.createSync("@pi-acp-permission-test-");
+	tempDir = TempDir.createSync("@ultraworkers-acp-permission-test-");
 });
 
 afterEach(async () => {

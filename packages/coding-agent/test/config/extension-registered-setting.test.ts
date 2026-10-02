@@ -150,7 +150,7 @@ describe("an extension registering the same setting twice is idempotent, not a c
 		// Loading and reloading an extension in one process is normal (reload, then
 		// suspend/resume). If rebinding threw "registered twice", the author would be
 		// told their own setting name was taken — by themselves.
-		const temp = TempDir.createSync("@pi-ext-setting-");
+		const temp = TempDir.createSync("@ultraworkers-ext-setting-");
 		try {
 			const extDir = writeExtension(temp.join("ext"), "plugins.test.rebind");
 			const result = await loadExtensions([extDir], process.cwd());
@@ -177,7 +177,7 @@ describe("an extension registering the same setting twice is idempotent, not a c
 		// `loadExtensionFromFactory` throws raw and never produces an `errors` entry,
 		// so a test written against the wrong one would pass on a loader that silently
 		// swallowed the collision.
-		const temp = TempDir.createSync("@pi-ext-collide-");
+		const temp = TempDir.createSync("@ultraworkers-ext-collide-");
 		try {
 			const a = writeExtension(temp.join("a"), "plugins.test.shared");
 			const b = writeExtension(temp.join("b"), "plugins.test.shared");
@@ -201,7 +201,7 @@ describe("the env layer is opt-in per setting", () => {
 		const withEnv = "TEST_OWNER_ENV_YES";
 		const withoutEnv = "TEST_OWNER_ENV_NO";
 		const saved = { withEnv: Bun.env[withEnv], withoutEnv: Bun.env[withoutEnv] };
-		const temp = TempDir.createSync("@pi-ext-env-");
+		const temp = TempDir.createSync("@ultraworkers-ext-env-");
 		try {
 			Bun.env[withEnv] = "from-env";
 			// Set, but the definition does not declare it — so it must not be consulted.
@@ -248,7 +248,7 @@ describe("a dynamically registered setting joins the same five-layer stack as a 
 		// same layer stack, not a renamed store that happens to return the right
 		// number. A flag store would pass a value-only assertion and fail here, which
 		// is why the layer is asserted and not just the value.
-		const temp = TempDir.createSync("@pi-ext-layer-");
+		const temp = TempDir.createSync("@ultraworkers-ext-layer-");
 		const agentDir = temp.join("agent");
 		const overlay = temp.join("overlay.yml");
 		fs.mkdirSync(agentDir, { recursive: true });

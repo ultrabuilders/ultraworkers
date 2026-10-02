@@ -168,7 +168,7 @@ describe("InputController orphaned submit", () => {
 	});
 
 	it("starts a real idle session even when steer drain would be non-resumable", async () => {
-		const tempDir = TempDir.createSync("@pi-orphan-submit-");
+		const tempDir = TempDir.createSync("@ultraworkers-orphan-submit-");
 		let session: AgentSession | undefined;
 		let authStorage: AuthStorage | undefined;
 		try {
@@ -265,7 +265,7 @@ describe("InputController orphaned submit", () => {
 	it("skips automatic titles only for locally consumed extension commands", async () => {
 		const previousNoTitle = Bun.env.PI_NO_TITLE;
 		delete Bun.env.PI_NO_TITLE;
-		const tempDir = TempDir.createSync("@pi-extension-title-");
+		const tempDir = TempDir.createSync("@ultraworkers-extension-title-");
 		let session: AgentSession | undefined;
 		let authStorage: AuthStorage | undefined;
 		try {

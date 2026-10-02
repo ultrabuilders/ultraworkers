@@ -45,7 +45,7 @@ describe("an extension installed from outside the repo", () => {
 	}
 
 	beforeEach(() => {
-		projectDir = TempDir.createSync("@omp-outsider-");
+		projectDir = TempDir.createSync("@ultraworkers-outsider-");
 		// Same isolation the plugin-discovery suite uses, and for the same reason:
 		// `os.homedir()` decides where `<configRoot>` resolves, so a regression
 		// there would otherwise read — and on Windows once wrote — the developer's

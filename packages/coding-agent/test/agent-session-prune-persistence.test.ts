@@ -35,7 +35,7 @@ describe("AgentSession per-turn prune persistence", () => {
 	let advisorRequests: Context[];
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-prune-persistence-");
+		tempDir = TempDir.createSync("@ultraworkers-prune-persistence-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage);

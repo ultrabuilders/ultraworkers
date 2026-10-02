@@ -30,7 +30,7 @@ describe("a .claude/settings.json whose keys omp does not implement", () => {
 		// A fresh project per case, not a shared one: the loader and the filesystem
 		// cache what a directory held, so reusing it lets one case's file answer the
 		// next case's question.
-		tempDir = TempDir.createSync("@pi-claude-dropped-");
+		tempDir = TempDir.createSync("@ultraworkers-claude-dropped-");
 		cwd = path.join(tempDir.path(), "project");
 		fs.mkdirSync(path.join(cwd, ".claude"), { recursive: true });
 	});

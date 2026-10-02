@@ -16,7 +16,7 @@ describe("plugin extension discovery", () => {
 	const originalXdg = new Map<string, string | undefined>();
 
 	beforeEach(() => {
-		projectDir = TempDir.createSync("@pi-plugin-ext-");
+		projectDir = TempDir.createSync("@ultraworkers-plugin-ext-");
 		// Redirect the whole config root to an isolated temp home so plugin discovery
 		// resolves into `<tempHome>/.omp/plugins` on every platform. Two things are needed:
 		//  - mock os.homedir() so configRoot = `<tempHome>/.omp` (the previous

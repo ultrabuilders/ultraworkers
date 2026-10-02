@@ -170,7 +170,7 @@ describe("queued user delivery policy", () => {
 		recall: (query: string) => Promise<string | undefined>,
 		policy = false,
 	) {
-		const dir = TempDir.createSync("@pi-queued-memory-");
+		const dir = TempDir.createSync("@ultraworkers-queued-memory-");
 		tempDirs.push(dir);
 		const settings = Settings.isolated({
 			"compaction.enabled": false,

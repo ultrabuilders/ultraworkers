@@ -29,7 +29,7 @@ describe("AgentSession auto-maintenance controls are session-scoped by default",
 	let configPath: string;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-auto-scope-");
+		tempDir = TempDir.createSync("@ultraworkers-auto-scope-");
 		const agentDir = tempDir.path();
 		configPath = path.join(agentDir, "config.yml");
 

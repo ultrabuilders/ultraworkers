@@ -59,7 +59,7 @@ describe("AgentSession handoff", () => {
 	}
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-handoff-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-handoff-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);
@@ -79,7 +79,7 @@ describe("AgentSession handoff", () => {
 	});
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-handoff-");
+		tempDir = TempDir.createSync("@ultraworkers-handoff-");
 		sessionManager = SessionManager.create(tempDir.path(), tempDir.path());
 		events = [];
 		obfuscator = new SecretObfuscator([{ type: "plain", content: HANDOFF_SECRET }]);
@@ -448,7 +448,7 @@ describe("AgentSession handoff", () => {
 	});
 
 	it("strips hook-supplied snapcompact data when persisting context-full compaction", async () => {
-		const localTempDir = TempDir.createSync("@pi-context-full-preserve-data-");
+		const localTempDir = TempDir.createSync("@ultraworkers-context-full-preserve-data-");
 		const localSessionManager = SessionManager.inMemory(localTempDir.path());
 		const firstKeptEntryId = localSessionManager.appendMessage({
 			role: "user",
@@ -519,7 +519,7 @@ describe("AgentSession handoff", () => {
 	});
 
 	it("strips hook-supplied snapcompact data when persisting auto context-full compaction", async () => {
-		const localTempDir = TempDir.createSync("@pi-auto-context-full-preserve-data-");
+		const localTempDir = TempDir.createSync("@ultraworkers-auto-context-full-preserve-data-");
 		const localSessionManager = SessionManager.inMemory(localTempDir.path());
 		const firstKeptEntryId = localSessionManager.appendMessage({
 			role: "user",

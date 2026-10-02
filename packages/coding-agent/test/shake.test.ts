@@ -41,7 +41,7 @@ describe("AgentSession shake", () => {
 	let apiInfo: { api: AssistantMessage["api"]; provider: AssistantMessage["provider"]; model: string };
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-shake-");
+		tempDir = TempDir.createSync("@ultraworkers-shake-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);

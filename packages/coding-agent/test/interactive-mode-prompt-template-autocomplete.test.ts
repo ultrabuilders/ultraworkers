@@ -54,7 +54,7 @@ describe("InteractiveMode prompt-template autocomplete (#2462)", () => {
 		// scan off the real home dir — that scan was the per-test latency and a source
 		// of nondeterminism (it picked up whatever slash commands / plugins happened to
 		// live in the developer's or CI's home).
-		tempDir = TempDir.createSync("@pi-prompt-template-autocomplete-");
+		tempDir = TempDir.createSync("@ultraworkers-prompt-template-autocomplete-");
 		originalHome = process.env.HOME;
 		process.env.HOME = tempDir.path();
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });

@@ -392,7 +392,7 @@ describe("interactive native input ingress", () => {
 	});
 
 	it("Ctrl+Enter skill dispatch preserves drafts typed during both interception and queue rejection", async () => {
-		using temp = TempDir.createSync("@omp-native-input-skill-");
+		using temp = TempDir.createSync("@ultraworkers-native-input-skill-");
 		const entered = Promise.withResolvers<void>();
 		const release = Promise.withResolvers<void>();
 		const h = await createHarness(pi => {

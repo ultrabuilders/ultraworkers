@@ -24,7 +24,7 @@ describe("disabledProviders takes effect live", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-model-availability-live-");
+		tempDir = TempDir.createSync("@ultraworkers-model-availability-live-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		authStorage.keys.setRuntime("openai", "test-key");

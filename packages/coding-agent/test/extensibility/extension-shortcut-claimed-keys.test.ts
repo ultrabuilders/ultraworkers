@@ -38,7 +38,7 @@ describe("an extension shortcut on a key the user remapped onto a built-in", () 
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-shortcut-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-shortcut-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -49,7 +49,7 @@ describe("an extension shortcut on a key the user remapped onto a built-in", () 
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-shortcut-test-");
+		tempDir = TempDir.createSync("@ultraworkers-shortcut-test-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		sessionManager = SessionManager.inMemory();

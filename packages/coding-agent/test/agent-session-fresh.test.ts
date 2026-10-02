@@ -21,7 +21,7 @@ let authStorage: AuthStorage;
 let modelRegistry: ModelRegistry;
 
 beforeAll(async () => {
-	sharedDir = TempDir.createSync("@pi-agent-session-fresh-shared-");
+	sharedDir = TempDir.createSync("@ultraworkers-agent-session-fresh-shared-");
 	authStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 	modelRegistry = new ModelRegistry(authStorage, path.join(sharedDir.path(), "models.yml"));
 });
@@ -39,7 +39,7 @@ afterEach(async () => {
 });
 
 async function createFreshHarness(): Promise<FreshHarness> {
-	const tempDir = TempDir.createSync("@pi-agent-session-fresh-");
+	const tempDir = TempDir.createSync("@ultraworkers-agent-session-fresh-");
 	const sessionManager = SessionManager.create(tempDir.path(), path.join(tempDir.path(), "sessions"));
 	const agent = new Agent({
 		initialState: {

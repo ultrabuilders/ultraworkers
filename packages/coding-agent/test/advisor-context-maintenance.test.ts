@@ -47,7 +47,7 @@ describe("AgentSession advisor context maintenance", () => {
 	let session: AgentSession;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-advisor-context-maintenance-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-context-maintenance-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 	});

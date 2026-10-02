@@ -71,7 +71,7 @@ describe("issue #3656 /shake mid-stream preserves the in-flight assistant turn",
 		}
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-3656-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-3656-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

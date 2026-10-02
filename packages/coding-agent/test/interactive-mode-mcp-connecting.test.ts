@@ -48,7 +48,7 @@ describe("InteractiveMode MCP connection status", () => {
 		}
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-interactive-mode-mcp-connecting-");
+		tempDir = TempDir.createSync("@ultraworkers-interactive-mode-mcp-connecting-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

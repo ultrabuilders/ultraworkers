@@ -36,7 +36,7 @@ describe("issue #8137 — inline /skill in mode-command prompts", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-8137-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-8137-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

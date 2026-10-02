@@ -101,7 +101,7 @@ describe("pi-* scope aliases", () => {
 	let extensionPath: string;
 
 	beforeEach(() => {
-		projectDir = TempDir.createSync("@pi-scope-aliases-");
+		projectDir = TempDir.createSync("@ultraworkers-scope-aliases-");
 		const pluginDir = path.join(projectDir.path(), "alias-probe-plugin");
 		extensionPath = path.join(pluginDir, "dist", "extension.ts");
 		fs.mkdirSync(path.dirname(extensionPath), { recursive: true });
@@ -194,7 +194,7 @@ describe("pi-* scope resolution without a scope", () => {
 	let extensionPath: string;
 
 	beforeEach(() => {
-		projectDir = TempDir.createSync("@pi-scope-unscoped-");
+		projectDir = TempDir.createSync("@ultraworkers-scope-unscoped-");
 		const pluginDir = path.join(projectDir.path(), "unscoped-probe-plugin");
 		extensionPath = path.join(pluginDir, "dist", "extension.ts");
 		fs.mkdirSync(path.dirname(extensionPath), { recursive: true });

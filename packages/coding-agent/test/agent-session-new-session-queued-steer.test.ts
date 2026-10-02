@@ -42,7 +42,7 @@ describe("newSession() atomic boundary vs queued hidden steer", () => {
 	const authStorages: AuthStorage[] = [];
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-new-session-steer-");
+		tempDir = TempDir.createSync("@ultraworkers-new-session-steer-");
 	});
 
 	afterEach(async () => {

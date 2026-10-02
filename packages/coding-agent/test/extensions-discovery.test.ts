@@ -19,7 +19,7 @@ describe("extensions discovery", () => {
 	let extensionsDir: string;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-ext-test-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-test-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		resetSettingsForTest();

@@ -8,7 +8,7 @@ import { readTar } from "../../src/skillshare/tar";
 let tempDir: TempDir;
 
 beforeEach(async () => {
-	tempDir = await TempDir.create("@pi-skillshare-pack-");
+	tempDir = await TempDir.create("@ultraworkers-skillshare-pack-");
 });
 
 afterEach(async () => {

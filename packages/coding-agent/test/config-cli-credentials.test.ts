@@ -95,7 +95,7 @@ describe("config list output", () => {
 
 	beforeEach(() => {
 		resetSettingsForTest();
-		agentDir = TempDir.createSync("@omp-config-credentials-");
+		agentDir = TempDir.createSync("@ultraworkers-config-credentials-");
 		setAgentDir(agentDir.path());
 	});
 

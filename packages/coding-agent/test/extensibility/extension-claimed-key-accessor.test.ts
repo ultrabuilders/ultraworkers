@@ -50,7 +50,7 @@ describe("an extension asks which keys core already owns", () => {
 	let answerPath: string;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-claimed-accessor-shared-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-claimed-accessor-shared-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
@@ -61,7 +61,7 @@ describe("an extension asks which keys core already owns", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-claimed-accessor-");
+		tempDir = TempDir.createSync("@ultraworkers-claimed-accessor-");
 		extensionsDir = path.join(getProjectAgentDir(tempDir.path()), "extensions");
 		fs.mkdirSync(extensionsDir, { recursive: true });
 		sessionManager = SessionManager.inMemory();

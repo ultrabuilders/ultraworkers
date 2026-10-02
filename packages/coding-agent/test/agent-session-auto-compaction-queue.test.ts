@@ -68,7 +68,7 @@ describe("AgentSession auto-compaction queue resume", () => {
 	let authStorage: AuthStorage;
 	let modelRegistry: ModelRegistry;
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-auto-compaction-queue-");
+		tempDir = TempDir.createSync("@ultraworkers-auto-compaction-queue-");
 		authStorage = await AuthStorage.create(":memory:");
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		authStorage.keys.setRuntime("mock", "test-key");

@@ -997,7 +997,7 @@ describe("formatUsageHistory", () => {
 
 describe("usage command configuration", () => {
 	it("uses PI_CONFIG_FILES account policies during auth discovery", async () => {
-		using tempDir = TempDir.createSync("@omp-usage-overlay-");
+		using tempDir = TempDir.createSync("@ultraworkers-usage-overlay-");
 		const overlayPath = tempDir.join("overlay.yml");
 		await Promise.all([
 			Bun.write(

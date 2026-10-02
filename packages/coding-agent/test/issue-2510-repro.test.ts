@@ -31,7 +31,7 @@ describe("issue #2510 — /plan toggles plan → plan_paused → none", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-2510-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-2510-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

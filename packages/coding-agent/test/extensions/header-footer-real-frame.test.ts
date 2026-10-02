@@ -47,7 +47,7 @@ describe("an extension header reaches the frame the composer draws", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-ext-header-frame-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-header-frame-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

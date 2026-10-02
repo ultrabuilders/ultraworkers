@@ -35,7 +35,7 @@ interface CliRun {
 }
 
 async function runPluginDoctor(cwd: string): Promise<CliRun> {
-	using agentDir = TempDir.createSync("@omp-doctor-exit-");
+	using agentDir = TempDir.createSync("@ultraworkers-doctor-exit-");
 	const proc = Bun.spawn([process.execPath, cliEntry, "plugin", "doctor"], {
 		cwd,
 		stdout: "pipe",

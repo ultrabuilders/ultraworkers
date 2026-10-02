@@ -32,7 +32,7 @@ function startBroker(projectDir: string, runtimeDir: string): Promise<void> {
 
 describe("broker unknown operations", () => {
 	it("rejects an operation it cannot parse on the caller's request instead of stranding it until the client timeout", async () => {
-		using tempDir = TempDir.createSync("@omp-launch-unknown-op-");
+		using tempDir = TempDir.createSync("@ultraworkers-launch-unknown-op-");
 		const projectDir = path.join(tempDir.path(), "project");
 		const runtimeDir = path.join(tempDir.path(), "runtime");
 		await fs.mkdir(projectDir);

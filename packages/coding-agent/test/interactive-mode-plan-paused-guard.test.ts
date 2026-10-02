@@ -29,7 +29,7 @@ describe("InteractiveMode paused-plan guard message", () => {
 
 	beforeAll(async () => {
 		await initTheme();
-		tempDir = TempDir.createSync("@pi-plan-paused-guard-");
+		tempDir = TempDir.createSync("@ultraworkers-plan-paused-guard-");
 		authStorage = createInMemoryAuthStorage();
 		modelRegistry = new ModelRegistry(authStorage);
 	});

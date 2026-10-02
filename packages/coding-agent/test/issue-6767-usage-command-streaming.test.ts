@@ -53,7 +53,7 @@ describe("issue #6767 /usage output during streaming", () => {
 		}
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-issue-6767-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-6767-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

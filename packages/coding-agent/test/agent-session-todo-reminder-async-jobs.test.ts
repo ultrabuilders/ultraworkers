@@ -113,7 +113,7 @@ describe("AgentSession todo reminder async-job deferral", () => {
 	}
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-todo-reminder-async-jobs-");
+		tempDir = TempDir.createSync("@ultraworkers-todo-reminder-async-jobs-");
 		sessionManager = SessionManager.inMemory(tempDir.path());
 		manager = new AsyncJobManager({});
 		gates = [];

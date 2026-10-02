@@ -776,7 +776,7 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("normalizes historical WebP on the main provider request path", async () => {
-		using tempDir = TempDir.createSync("@pi-stb-main-path-");
+		using tempDir = TempDir.createSync("@ultraworkers-stb-main-path-");
 		const api = "test-stb-main-path";
 		const contexts: Context[] = [];
 		registerCustomApi(api, (_model, context) => {
@@ -867,7 +867,7 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("continues a user turn when an attached WebP is undecodable by an STB model", async () => {
-		using tempDir = TempDir.createSync("@pi-stb-corrupt-attachment-");
+		using tempDir = TempDir.createSync("@ultraworkers-stb-corrupt-attachment-");
 		const api = "test-stb-corrupt-attachment";
 		const contexts: Context[] = [];
 		registerCustomApi(api, (_model, context) => {
@@ -1982,7 +1982,7 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("preserves append-only prefixes in subagent sessions when context handlers rewrite prior turns", async () => {
-		using tempDir = TempDir.createSync("@pi-subagent-append-only-");
+		using tempDir = TempDir.createSync("@ultraworkers-subagent-append-only-");
 		const api = "test-subagent-append-only-cache";
 		const contexts: Context[] = [];
 		registerCustomApi(api, (_model, context) => {
@@ -2069,7 +2069,7 @@ describe("AgentSession message pipeline", () => {
 		}
 	});
 	it("rewrites finalized assistant text before it reaches history and session persistence", async () => {
-		using tempDir = TempDir.createSync("@pi-assistant-message-rewrite-");
+		using tempDir = TempDir.createSync("@ultraworkers-assistant-message-rewrite-");
 		const api = "test-assistant-message-rewrite";
 		registerCustomApi(api, () => {
 			const stream = new AssistantMessageEventStream();
@@ -2136,7 +2136,7 @@ describe("AgentSession message pipeline", () => {
 		}
 	});
 	it("retains completed assistant text in history when aborted during a pending rewrite", async () => {
-		using tempDir = TempDir.createSync("@pi-assistant-message-abort-");
+		using tempDir = TempDir.createSync("@ultraworkers-assistant-message-abort-");
 		const api = "test-assistant-message-abort";
 		registerCustomApi(api, () => {
 			const stream = new AssistantMessageEventStream();
@@ -2224,7 +2224,7 @@ describe("AgentSession message pipeline", () => {
 		// own emission is suppressed via the runner marker), the revision is what
 		// tool_execution_start reports, what bash executes, and what the
 		// assistant message persists.
-		using tempDir = TempDir.createSync("@pi-tool-call-revision-");
+		using tempDir = TempDir.createSync("@ultraworkers-tool-call-revision-");
 		const api = "test-tool-call-revision";
 		let requests = 0;
 		registerCustomApi(api, () => {
@@ -2324,7 +2324,7 @@ describe("AgentSession message pipeline", () => {
 		}
 	});
 	it("delivers tool_call and tool_result additionalContext on the next provider request", async () => {
-		using tempDir = TempDir.createSync("@pi-tool-call-context-");
+		using tempDir = TempDir.createSync("@ultraworkers-tool-call-context-");
 		const api = "test-tool-call-context";
 		const contexts: Context[] = [];
 		registerCustomApi(api, (_model, context) => {
@@ -2424,7 +2424,7 @@ describe("AgentSession message pipeline", () => {
 	it("exposes tool-scoped context and invokeTool to a re-registered built-in", async () => {
 		// End-to-end for the registered-tool path: the execute context forwards passive context to
 		// the agent loop and binds invokeTool to the native built-in of the same name.
-		using tempDir = TempDir.createSync("@pi-invoke-tool-");
+		using tempDir = TempDir.createSync("@ultraworkers-invoke-tool-");
 		const api = "test-invoke-tool";
 		const contexts: Context[] = [];
 		registerCustomApi(api, (_model, context) => {
@@ -2537,7 +2537,7 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("uses an extension web_search implementation when the built-in is enabled", async () => {
-		using tempDir = TempDir.createSync("@pi-web-search-override-");
+		using tempDir = TempDir.createSync("@ultraworkers-web-search-override-");
 		const api: Api = "test-web-search-override";
 		let requests = 0;
 		registerCustomApi(api, () => {
@@ -2632,7 +2632,7 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("clears promoted memory from the base prompt when switching sessions", async () => {
-		using tempDir = TempDir.createSync("@pi-injected-memory-switch-");
+		using tempDir = TempDir.createSync("@ultraworkers-injected-memory-switch-");
 		const sessionManager = SessionManager.create(tempDir.path(), tempDir.join("sessions"));
 		const firstSessionFile = sessionManager.getSessionFile();
 		expect(firstSessionFile).toBeString();
@@ -2830,7 +2830,7 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("does not duplicate promoted memory in the base prompt when forking", async () => {
-		using tempDir = TempDir.createSync("@pi-injected-memory-fork-");
+		using tempDir = TempDir.createSync("@ultraworkers-injected-memory-fork-");
 		const sessionManager = SessionManager.create(tempDir.path(), tempDir.join("sessions"));
 		expect(sessionManager.getSessionFile()).toBeString();
 		await sessionManager.flush();

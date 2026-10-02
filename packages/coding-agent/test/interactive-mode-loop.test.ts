@@ -32,7 +32,7 @@ describe("InteractiveMode loop auto-submit", () => {
 	beforeAll(async () => {
 		initTheme();
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-loop-auto-submit-");
+		tempDir = TempDir.createSync("@ultraworkers-loop-auto-submit-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

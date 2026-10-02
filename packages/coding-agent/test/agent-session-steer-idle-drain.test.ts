@@ -62,7 +62,7 @@ describe("AgentSession steer idle drain", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(async () => {
-		tempDir = TempDir.createSync("@pi-steer-idle-drain-");
+		tempDir = TempDir.createSync("@ultraworkers-steer-idle-drain-");
 		authStorage = await AuthStorage.create(":memory:");
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage);

@@ -103,7 +103,7 @@ describe("pi.registerTheme: an extension's theme reaches the user", () => {
 	}
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-theme-seam-");
+		tempDir = TempDir.createSync("@ultraworkers-theme-seam-");
 		cwd = tempDir.absolute();
 		// Steer user-scope discovery at the temp dir, or the scan returns the
 		// developer's own extensions and the suite learns to expect them.

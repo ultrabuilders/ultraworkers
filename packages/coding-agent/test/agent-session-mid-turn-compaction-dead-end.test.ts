@@ -56,7 +56,7 @@ describe("AgentSession mid-turn compaction dead-end", () => {
 		/** Delay message-end hooks so the turn is absent until the persistence barrier resolves. */
 		delayMessageEndPersistence?: boolean;
 	}): Promise<{ notices: string[]; compactionStarts: number[]; compactionResults: number }> {
-		tempDir = TempDir.createSync("@pi-mid-turn-compaction-dead-end-");
+		tempDir = TempDir.createSync("@ultraworkers-mid-turn-compaction-dead-end-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("mock", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));

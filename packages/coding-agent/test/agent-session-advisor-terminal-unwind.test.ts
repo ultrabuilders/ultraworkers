@@ -54,7 +54,7 @@ afterEach(async () => {
 it.each(["concern", "nit", "blocker"] as const)(
 	"routes late terminal %s correctly before a real next run",
 	async severity => {
-		const temp = TempDir.createSync("@pi-advisor-terminal-unwind-");
+		const temp = TempDir.createSync("@ultraworkers-advisor-terminal-unwind-");
 		const auth = await AuthStorage.create(":memory:");
 		auth.keys.setRuntime("anthropic", "test-key");
 		const model = getBundledModel("anthropic", "claude-sonnet-4-5");

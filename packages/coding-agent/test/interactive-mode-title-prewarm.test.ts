@@ -27,7 +27,7 @@ describe("InteractiveMode tiny-title prewarm", () => {
 
 	beforeAll(() => {
 		initTheme();
-		tempDir = TempDir.createSync("@pi-interactive-mode-title-prewarm-");
+		tempDir = TempDir.createSync("@ultraworkers-interactive-mode-title-prewarm-");
 		authStorage = createInMemoryAuthStorage();
 		modelRegistry = new ModelRegistry(authStorage);
 	});

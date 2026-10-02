@@ -31,7 +31,7 @@ describe("primary-agent provider settings changed mid-session", () => {
 
 	it("applies thinking budgets, Kimi format, websocket policy, and tool format on the next request", async () => {
 		delete Bun.env.PI_DIALECT;
-		using tempDir = TempDir.createSync("@pi-live-provider-settings-");
+		using tempDir = TempDir.createSync("@ultraworkers-live-provider-settings-");
 		const api = "test-live-provider-settings";
 		const requests: Array<{ context: Context; options: SimpleStreamOptions | undefined }> = [];
 		registerCustomApi(api, (_model, context, options) => {

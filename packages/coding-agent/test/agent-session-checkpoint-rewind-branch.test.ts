@@ -117,7 +117,7 @@ async function createHarness(
 		resolveFallbackTool?: (name: string) => AgentTool | undefined;
 	},
 ): Promise<Harness & { mock: MockModel }> {
-	const tempDir = TempDir.createSync("@pi-checkpoint-rewind-branch-");
+	const tempDir = TempDir.createSync("@ultraworkers-checkpoint-rewind-branch-");
 	const authStorage = await AuthStorage.create(":memory:");
 	authStorage.keys.setRuntime("mock", "test-key");
 

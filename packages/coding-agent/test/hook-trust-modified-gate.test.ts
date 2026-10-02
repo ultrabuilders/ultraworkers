@@ -62,7 +62,7 @@ describe("hook trust: a hook edited after approval stops loading", () => {
 	beforeEach(async () => {
 		// In-memory so recording a hash never writes the developer's real config.
 		await Settings.init({ inMemory: true });
-		tempDir = TempDir.createSync("@pi-hook-trust-");
+		tempDir = TempDir.createSync("@ultraworkers-hook-trust-");
 		cwd = tempDir.absolute();
 		// Point user-scope discovery at the temp dir too. Without this the scan
 		// returns the developer's real `~/.omp/agent` entries, so the suite would

@@ -76,7 +76,7 @@ describe("hook trust: four states, each reachable", () => {
 	beforeEach(async () => {
 		// In-memory so recording a hash never writes the developer's real config.
 		await Settings.init({ inMemory: true });
-		tempDir = TempDir.createSync("@omp-hook-trust-");
+		tempDir = TempDir.createSync("@ultraworkers-hook-trust-");
 		cwd = tempDir.path();
 		hook = writeHook("fourstate", "export default function() { return null; }\n");
 	});

@@ -51,7 +51,7 @@ describe("setWidget reaches a band the composer draws", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-widget-frame-");
+		tempDir = TempDir.createSync("@ultraworkers-widget-frame-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

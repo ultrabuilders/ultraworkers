@@ -36,7 +36,7 @@ describe("InteractiveMode model-cycle track", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-model-cycle-");
+		tempDir = TempDir.createSync("@ultraworkers-model-cycle-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

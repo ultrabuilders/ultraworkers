@@ -44,7 +44,7 @@ describe("SessionManager session ids", () => {
 	});
 
 	it("generates a UUIDv7 when forking a persisted session", async () => {
-		using tempDir = TempDir.createSync("@pi-session-id-fork-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-id-fork-");
 		const session = SessionManager.create(tempDir.path(), tempDir.path());
 		session.appendMessage({ role: "user", content: "hello", timestamp: 1 });
 		await session.flush();
@@ -59,7 +59,7 @@ describe("SessionManager session ids", () => {
 	});
 
 	it("preserves existing session ids when reopening a saved session", async () => {
-		using tempDir = TempDir.createSync("@pi-session-id-open-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-id-open-");
 		const sessionFile = path.join(tempDir.path(), "existing.jsonl");
 		const existingId = "existing-session-id";
 		await Bun.write(

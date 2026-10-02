@@ -56,7 +56,7 @@ describe("InteractiveMode optimistic skill reconcile (#11217)", () => {
 	beforeAll(async () => {
 		initTheme();
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-optimistic-skill-");
+		tempDir = TempDir.createSync("@ultraworkers-optimistic-skill-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

@@ -21,7 +21,7 @@ describe("advisor watchdog prompt discovery", () => {
 	});
 
 	it("appends WATCHDOG.md and active child repo context to the advisor prompt", async () => {
-		const tempDir = TempDir.createSync("@pi-advisor-watchdog-");
+		const tempDir = TempDir.createSync("@ultraworkers-advisor-watchdog-");
 		tempDirs.push(tempDir);
 		const cwd = tempDir.join("project-root");
 		fs.mkdirSync(cwd, { recursive: true });
@@ -87,7 +87,7 @@ describe("advisor watchdog prompt discovery", () => {
 	});
 
 	it("resolves nested folders and sorts by depth", async () => {
-		const tempDir = TempDir.createSync("@pi-advisor-watchdog-");
+		const tempDir = TempDir.createSync("@ultraworkers-advisor-watchdog-");
 		tempDirs.push(tempDir);
 		const parentCwd = tempDir.join("project-root");
 		const childCwd = path.join(parentCwd, "subfolder");
@@ -115,7 +115,7 @@ describe("advisor watchdog prompt discovery", () => {
 	});
 
 	it("discovers user-level and native project-level watchdog files", async () => {
-		const tempDir = TempDir.createSync("@pi-advisor-watchdog-");
+		const tempDir = TempDir.createSync("@ultraworkers-advisor-watchdog-");
 		tempDirs.push(tempDir);
 		const cwd = tempDir.join("project-root");
 		const ompDir = path.join(cwd, ".omp");

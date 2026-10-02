@@ -62,7 +62,7 @@ describe("/reload-extensions", () => {
 	let session: AgentSession | undefined;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-reload-extensions-");
+		tempDir = TempDir.createSync("@ultraworkers-reload-extensions-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 	});

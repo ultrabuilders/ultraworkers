@@ -18,7 +18,7 @@ import { SessionManager } from "../../src/session/session-manager";
 const tempDirs: TempDir[] = [];
 
 function makeSessionManager(): SessionManager {
-	const dir = TempDir.createSync("@pi-persistence-surface-");
+	const dir = TempDir.createSync("@ultraworkers-persistence-surface-");
 	tempDirs.push(dir);
 	const manager = SessionManager.create(dir.path(), `${dir.path()}/sessions`);
 	return manager;

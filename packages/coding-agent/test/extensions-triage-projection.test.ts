@@ -50,7 +50,7 @@ describe("extensions triage over a real discovery tree", () => {
 
 	beforeEach(async () => {
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-triage-test-");
+		tempDir = TempDir.createSync("@ultraworkers-triage-test-");
 		homeDir = path.join(tempDir.path(), "home");
 		projectDir = path.join(tempDir.path(), "project");
 		await fs.mkdir(path.join(homeDir, "agent"), { recursive: true });

@@ -32,7 +32,7 @@ describe("auth broker settings take effect live", () => {
 	const savedEnv: Partial<Record<(typeof BROKER_ENV)[number], string>> = {};
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-auth-broker-live-");
+		tempDir = TempDir.createSync("@ultraworkers-auth-broker-live-");
 		for (const key of BROKER_ENV) {
 			const value = process.env[key];
 			if (value !== undefined) savedEnv[key] = value;

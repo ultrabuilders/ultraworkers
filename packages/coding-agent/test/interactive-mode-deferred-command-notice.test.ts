@@ -23,7 +23,7 @@ async function createHarness(): Promise<Harness> {
 		return harness;
 	}
 
-	const tempDir = TempDir.createSync("@pi-deferred-notice-");
+	const tempDir = TempDir.createSync("@ultraworkers-deferred-notice-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	await initTheme(false);
 	const sessionManager = SessionManager.inMemory(tempDir.path());

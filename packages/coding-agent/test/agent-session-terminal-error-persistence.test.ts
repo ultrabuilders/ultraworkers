@@ -38,7 +38,7 @@ afterAll(() => {
 });
 
 async function createHarness(responses: MockResponse[]): Promise<Harness & { sessionManager: SessionManager }> {
-	const tempDir = TempDir.createSync("@pi-terminal-error-persistence-");
+	const tempDir = TempDir.createSync("@ultraworkers-terminal-error-persistence-");
 	const mock = createMockModel({ responses });
 	const settings = Settings.isolated({
 		"compaction.enabled": false,

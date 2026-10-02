@@ -126,7 +126,7 @@ async function createSessionHarness(options: SessionHarnessOptions = {}): Promis
 			return await respond(body, requests.length);
 		},
 	});
-	const tempDir = TempDir.createSync("@pi-responses-body-read-");
+	const tempDir = TempDir.createSync("@ultraworkers-responses-body-read-");
 	const authStorage = await AuthStorage.create(tempDir.join("auth.db"));
 	authStorage.keys.setRuntime("openai", "local-test-key");
 	const sessionManager = SessionManager.create(tempDir.path(), tempDir.path());

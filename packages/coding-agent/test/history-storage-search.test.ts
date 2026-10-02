@@ -5,7 +5,7 @@ import { TempDir } from "@oh-my-pi/pi-utils";
 let tempDir: TempDir | null = null;
 
 async function freshStorage(): Promise<HistoryStorage> {
-	tempDir = TempDir.createSync("@omp-history-search-");
+	tempDir = TempDir.createSync("@ultraworkers-history-search-");
 	HistoryStorage.close();
 	return HistoryStorage.open(tempDir.join("history.db"));
 }

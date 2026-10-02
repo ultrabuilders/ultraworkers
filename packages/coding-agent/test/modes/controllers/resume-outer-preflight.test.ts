@@ -25,7 +25,7 @@ async function createMode(opts: { flushFails?: boolean } = {}): Promise<{
 	cleanup: () => Promise<void>;
 }> {
 	resetSettingsForTest();
-	const tempDir = TempDir.createSync("@pi-resume-outer-");
+	const tempDir = TempDir.createSync("@ultraworkers-resume-outer-");
 	await Settings.init({ inMemory: true, cwd: tempDir.path() });
 	const settings = Settings.isolated({ "compaction.enabled": false });
 

@@ -148,7 +148,7 @@ describe("InteractiveMode vibe mode toggle", () => {
 
 	beforeAll(async () => {
 		await initTheme();
-		tempDir = TempDir.createSync("@pi-vibe-toggle-");
+		tempDir = TempDir.createSync("@ultraworkers-vibe-toggle-");
 		authStorage = createInMemoryAuthStorage();
 		modelRegistry = new ModelRegistry(authStorage);
 	});

@@ -30,7 +30,7 @@ afterAll(() => {
 
 describe("createAcpSessionFactory MCP isolation (issue #1234)", () => {
 	it("forces enableMCP=false even when baseOptions opts in", async () => {
-		const tempDir = TempDir.createSync("@pi-acp-mcp-isolation-");
+		const tempDir = TempDir.createSync("@ultraworkers-acp-mcp-isolation-");
 		try {
 			const settings = Settings.isolated({});
 			const fakeSession = {} as AgentSession;
@@ -75,7 +75,7 @@ describe("createAcpSessionFactory MCP isolation (issue #1234)", () => {
 	});
 
 	it("rejects allowlisted tools absent from the completed ACP session registry", async () => {
-		const tempDir = TempDir.createSync("@pi-acp-tool-allowlist-");
+		const tempDir = TempDir.createSync("@ultraworkers-acp-tool-allowlist-");
 		try {
 			const settings = Settings.isolated({});
 			let disposed = false;
@@ -105,7 +105,7 @@ describe("createAcpSessionFactory MCP isolation (issue #1234)", () => {
 	});
 
 	it("shares the trusted extension EventBus with the ACP session", async () => {
-		const tempDir = TempDir.createSync("@pi-acp-trusted-extension-");
+		const tempDir = TempDir.createSync("@ultraworkers-acp-trusted-extension-");
 		try {
 			const settings = Settings.isolated({});
 			const trustedPath = tempDir.join("trusted.ts");
@@ -156,7 +156,7 @@ describe("createAcpSessionFactory MCP isolation (issue #1234)", () => {
 	});
 
 	it("fails before ACP session creation when a trusted extension cannot load", async () => {
-		const tempDir = TempDir.createSync("@pi-acp-trusted-extension-failure-");
+		const tempDir = TempDir.createSync("@ultraworkers-acp-trusted-extension-failure-");
 		try {
 			const settings = Settings.isolated({});
 			const trustedPath = tempDir.join("throwing.ts");
@@ -189,7 +189,7 @@ describe("createAcpSessionFactory MCP isolation (issue #1234)", () => {
 
 describe("createAcpSessionFactory TITLE_SYSTEM.md per-cwd resolution (PR #3736)", () => {
 	it("re-resolves the title prompt for the per-session cwd instead of inheriting the launch cwd's override", async () => {
-		const tempDir = TempDir.createSync("@pi-acp-title-prompt-");
+		const tempDir = TempDir.createSync("@ultraworkers-acp-title-prompt-");
 		try {
 			const settings = Settings.isolated({});
 

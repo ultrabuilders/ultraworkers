@@ -389,7 +389,7 @@ describe("blockedBy, from a tool-policy denial", () => {
 		callId: string,
 		answer: "Approve" | "Deny" = "Approve",
 	): Promise<SessionManager> {
-		sandboxes.push(TempDir.createSync("@pi-policy-denial-"));
+		sandboxes.push(TempDir.createSync("@ultraworkers-policy-denial-"));
 		const manager = SessionManager.inMemory();
 		const settings = Settings.isolated(
 			answer === "Approve" ? { "tools.approvalMode": "yolo" } : { "tools.approvalMode": "always-ask" },
@@ -435,7 +435,7 @@ describe("blockedBy, from a tool-policy denial", () => {
 		// command is safe to name — and if the gate ever regressed to letting it
 		// through, this row would fail on the missing canary rather than hang the
 		// suite on a refusal that no longer happens.
-		const canary = TempDir.createSync("@pi-canary-");
+		const canary = TempDir.createSync("@ultraworkers-canary-");
 		sandboxes.push(canary);
 		const target = `${canary.path()}/canary`;
 		await Bun.write(target, "still here");
@@ -525,7 +525,7 @@ describe("blockedBy, from a refusal a person was asked about", () => {
 
 	/** Drive one real turn whose bash call is put to `answer`. */
 	async function promptThroughPrompt(command: string, callId: string, answer: "Approve" | "Deny") {
-		sandboxes.push(TempDir.createSync("@pi-prompted-denial-"));
+		sandboxes.push(TempDir.createSync("@ultraworkers-prompted-denial-"));
 		const manager = SessionManager.inMemory();
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 		const runner = runnerFor(manager, settings, answer);
@@ -613,7 +613,7 @@ describe("blockedBy, from a refusal a person was asked about", () => {
 		// opened; if it scanned the whole log instead, every turn after the first
 		// would inherit all history — and the field would be useless for the question
 		// it exists to answer, while still looking populated.
-		sandboxes.push(TempDir.createSync("@pi-window-"));
+		sandboxes.push(TempDir.createSync("@ultraworkers-window-"));
 		const manager = SessionManager.inMemory();
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 		// Mutable, so one session can refuse and then comply — the cache and the turn
@@ -699,7 +699,7 @@ describe("blockedBy, from a refusal a person was asked about", () => {
 		// and closes the turn anyway (measured — started and ended both 2). So a row
 		// asserting `started > ended` would have been a test that cannot fail. This one
 		// asserts the reachable half, and says so rather than pretending otherwise.
-		sandboxes.push(TempDir.createSync("@pi-failed-turn-"));
+		sandboxes.push(TempDir.createSync("@ultraworkers-failed-turn-"));
 		const manager = SessionManager.inMemory();
 		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
 		const runner = {

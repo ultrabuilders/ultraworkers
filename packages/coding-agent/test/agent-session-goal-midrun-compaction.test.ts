@@ -67,7 +67,7 @@ describe("AgentSession mid-run threshold compaction", () => {
 	const cleanups: Array<() => Promise<void>> = [];
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-agent-goal-midrun-compaction-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-agent-goal-midrun-compaction-shared-");
 		sharedAuthStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 		sharedAuthStorage.keys.setRuntime("anthropic", "test-key");
 		sharedModelRegistry = new ModelRegistry(sharedAuthStorage, path.join(sharedDir.path(), "models.yml"));
@@ -79,7 +79,7 @@ describe("AgentSession mid-run threshold compaction", () => {
 	});
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-agent-goal-midrun-compaction-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-goal-midrun-compaction-");
 		cleanups.length = 0;
 	});
 

@@ -39,7 +39,7 @@ afterAll(() => {
 });
 
 beforeEach(async () => {
-	tempDir = TempDir.createSync("@pi-idle-initial-render-");
+	tempDir = TempDir.createSync("@ultraworkers-idle-initial-render-");
 	authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 	authStorage.keys.setRuntime("openai", "openai-test-key");
 });

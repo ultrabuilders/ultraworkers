@@ -80,7 +80,7 @@ describe("hook trust state: which hooks the loader admits", () => {
 
 	beforeEach(async () => {
 		await Settings.init({ inMemory: true });
-		tempDir = TempDir.createSync("@omp-hook-state-");
+		tempDir = TempDir.createSync("@ultraworkers-hook-state-");
 		cwd = tempDir.path();
 		hookPath = writeHook("stateprobe");
 	});

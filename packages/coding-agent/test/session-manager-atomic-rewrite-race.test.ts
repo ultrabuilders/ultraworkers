@@ -329,7 +329,7 @@ describe("SessionManager atomic rewrite race", () => {
 });
 describe("SessionManager cross-process rewrite freshness", () => {
 	it("refuses to erase a durable turn appended by another manager", async () => {
-		const tempDir = TempDir.createSync("@omp-session-rewrite-conflict-");
+		const tempDir = TempDir.createSync("@ultraworkers-session-rewrite-conflict-");
 		try {
 			const first = SessionManager.create(tempDir.path(), tempDir.path(), new FileSessionStorage());
 			await first.ensureOnDisk();

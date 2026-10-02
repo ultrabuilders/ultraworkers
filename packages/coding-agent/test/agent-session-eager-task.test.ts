@@ -69,7 +69,7 @@ describe("AgentSession eager task prelude", () => {
 	const harnesses: Harness[] = [];
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-agent-session-eager-task-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-eager-task-");
 		harnesses.length = 0;
 	});
 

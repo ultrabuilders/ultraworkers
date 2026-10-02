@@ -41,7 +41,7 @@ describe("InteractiveMode LSP startup welcome banner", () => {
 		}
 
 		resetSettingsForTest();
-		tempDir = TempDir.createSync("@pi-interactive-mode-lsp-startup-");
+		tempDir = TempDir.createSync("@ultraworkers-interactive-mode-lsp-startup-");
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "testauth.db"));
 		const modelRegistry = new ModelRegistry(authStorage);

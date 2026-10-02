@@ -29,7 +29,7 @@ describe("session event relay table", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-relay-exhaustive-");
+		tempDir = TempDir.createSync("@ultraworkers-relay-exhaustive-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("openai", "openai-test-key");
 	});

@@ -18,7 +18,7 @@ let overlayPath: string;
 
 beforeEach(() => {
 	state = beginSettingsTest();
-	tempDir = TempDir.createSync("@pi-settings-provenance-");
+	tempDir = TempDir.createSync("@ultraworkers-settings-provenance-");
 	agentDir = tempDir.join("agent");
 	cwd = tempDir.join("project");
 	overlayPath = tempDir.join("overlay.yml");

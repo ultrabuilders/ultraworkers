@@ -22,7 +22,7 @@ describe("issue #986 compaction auth fallback", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-issue-986-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-986-");
 	});
 
 	afterEach(async () => {

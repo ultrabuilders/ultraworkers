@@ -87,7 +87,7 @@ describe("advisor memory context", () => {
 	}
 
 	it("injects the sharpshooter summary into main and advisor prompts without a recall tool", async () => {
-		tempDir = TempDir.createSync("@pi-advisor-memory-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-memory-");
 		const decision = "Keep storage project-scoped for advisor memory test.";
 		const memoryFile = sharpshooterMemoryFilePath(tempDir.path(), tempDir.path(), "architecture.md");
 		await fs.mkdir(memoryFile.slice(0, memoryFile.lastIndexOf("/")), { recursive: true });
@@ -108,7 +108,7 @@ describe("advisor memory context", () => {
 	});
 
 	it("grants the default advisor roster a recall tool when the backend builds one", async () => {
-		tempDir = TempDir.createSync("@pi-advisor-memory-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-memory-");
 		// Hindsight without apiUrl is inert at runtime but still builds the recall
 		// tool (MemoryRecallTool.createIf gates on the setting alone), which is
 		// exactly what the advisor roster filter consumes.
@@ -124,7 +124,7 @@ describe("advisor memory context", () => {
 	});
 
 	it.each(["hindsight", "mnemopi"])("keeps in-memory advisor URL tools bound to the %s session", async backend => {
-		tempDir = TempDir.createSync("@pi-advisor-memory-urls-");
+		tempDir = TempDir.createSync("@ultraworkers-advisor-memory-urls-");
 		const previousAgentDir = getAgentDir();
 		setAgentDir(tempDir.path());
 		try {

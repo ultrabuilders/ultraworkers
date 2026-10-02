@@ -85,7 +85,7 @@ describe("extension autocomplete provider API (#4919)", () => {
 		// One empty temp dir doubles as the project cwd and the (isolated) home
 		// directory, keeping `refreshSlashCommandState`'s capability scan off the
 		// real home dir (mirrors the prompt-template autocomplete harness).
-		tempDir = TempDir.createSync("@pi-ext-autocomplete-");
+		tempDir = TempDir.createSync("@ultraworkers-ext-autocomplete-");
 		originalHome = process.env.HOME;
 		process.env.HOME = tempDir.path();
 		await Settings.init({ inMemory: true, cwd: tempDir.path() });

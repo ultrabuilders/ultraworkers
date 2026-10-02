@@ -215,7 +215,7 @@ describe("AgentSession eager todo enforcement", () => {
 	}
 
 	beforeAll(async () => {
-		sharedDir = TempDir.createSync("@pi-agent-session-eager-todo-shared-");
+		sharedDir = TempDir.createSync("@ultraworkers-agent-session-eager-todo-shared-");
 		sharedAuthStorage = await AuthStorage.create(path.join(sharedDir.path(), "auth.db"));
 		sharedAuthStorage.keys.setRuntime("anthropic", "test-key");
 		sharedModelRegistry = new ModelRegistry(sharedAuthStorage, path.join(sharedDir.path(), "models.yml"));
@@ -229,7 +229,7 @@ describe("AgentSession eager todo enforcement", () => {
 	beforeEach(async () => {
 		previousNoTitle = Bun.env.PI_NO_TITLE;
 		delete Bun.env.PI_NO_TITLE;
-		tempDir = TempDir.createSync("@pi-agent-session-eager-todo-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-eager-todo-");
 		streamCallCount = 0;
 		scriptedResponses = [];
 		observedCalls.length = 0;

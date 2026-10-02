@@ -83,7 +83,7 @@ describe("doctor exit parity", () => {
 		const expected = NAMES_IN_COLLECTOR;
 		expect(expected.length).toBeGreaterThan(0);
 
-		using tempDir = TempDir.createSync("@omp-doctor-parity-");
+		using tempDir = TempDir.createSync("@ultraworkers-doctor-parity-");
 		const proc = Bun.spawn([process.execPath, cliEntry, "doctor"], {
 			stdout: "pipe",
 			stderr: "pipe",

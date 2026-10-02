@@ -127,7 +127,7 @@ describe("AgentSession interrupted thinking persistence", () => {
 	let session: AgentSession | undefined;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-interrupted-thinking-");
+		tempDir = TempDir.createSync("@ultraworkers-interrupted-thinking-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "anthropic-test-key");
 	});

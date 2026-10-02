@@ -126,13 +126,13 @@ describe("AgentSession retry recovery", () => {
 	let managers: SessionManager[];
 
 	beforeAll(async () => {
-		fixtureDir = TempDir.createSync("@pi-retry-recovery-fixture-");
+		fixtureDir = TempDir.createSync("@ultraworkers-retry-recovery-fixture-");
 		authStorage = await AuthStorage.create(path.join(fixtureDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage, path.join(fixtureDir.path(), "models.yml"));
 	});
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-retry-recovery-");
+		tempDir = TempDir.createSync("@ultraworkers-retry-recovery-");
 		vi.spyOn(aiStream, "getEnvApiKey").mockReturnValue(undefined);
 		await authStorage.credentials.remove("anthropic");
 		authStorage.keys.removeRuntime("anthropic");

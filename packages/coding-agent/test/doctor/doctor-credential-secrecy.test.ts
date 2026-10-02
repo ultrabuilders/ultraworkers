@@ -35,7 +35,7 @@ interface CliRun {
 }
 
 async function runDoctor(env: Record<string, string>): Promise<CliRun> {
-	using tempDir = TempDir.createSync("@omp-doctor-cred-");
+	using tempDir = TempDir.createSync("@ultraworkers-doctor-cred-");
 	const proc = Bun.spawn([process.execPath, cliEntry, "doctor"], {
 		stdout: "pipe",
 		stderr: "pipe",

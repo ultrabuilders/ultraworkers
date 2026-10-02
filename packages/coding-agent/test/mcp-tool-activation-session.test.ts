@@ -57,7 +57,7 @@ describe("a session's active tool set after the server pushes a new tool", () =>
 	let authStorage: AuthStorage;
 
 	beforeAll(async () => {
-		sharedTempDir = TempDir.createSync("@pi-rugpull-session-");
+		sharedTempDir = TempDir.createSync("@ultraworkers-rugpull-session-");
 		authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});

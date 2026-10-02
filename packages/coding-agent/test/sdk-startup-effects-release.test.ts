@@ -45,7 +45,7 @@ describe("createAgentSession process-state holds", () => {
 	});
 
 	it("keeps both driven by the remaining session when the first of two is disposed", async () => {
-		using tempDir = TempDir.createSync("@pi-sdk-process-state-");
+		using tempDir = TempDir.createSync("@ultraworkers-sdk-process-state-");
 		const previousEffects = effectsSettings();
 		cleanups.push(initializeWithSettings(Settings.isolated()));
 		const authStorage = createInMemoryAuthStorage();

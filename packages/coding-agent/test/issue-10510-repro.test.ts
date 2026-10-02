@@ -27,7 +27,7 @@ describe("issue #10510: prewalk + eager-todo conflict", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeAll(() => {
-		tempDir = TempDir.createSync("@pi-issue-10510-");
+		tempDir = TempDir.createSync("@ultraworkers-issue-10510-");
 		authStorage = createInMemoryAuthStorage();
 		authStorage.keys.setRuntime("anthropic", "test-key");
 		modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));

@@ -68,7 +68,7 @@ describe("/move directory completion", () => {
 
 	it("completes parent directory paths", async () => {
 		const parentDir = path.dirname(tempDir);
-		const siblingName = `omp-move-sibling-${path.basename(tempDir)}`;
+		const siblingName = `ultraworkers-move-sibling-${path.basename(tempDir)}`;
 		const siblingDir = path.join(parentDir, siblingName);
 		await fs.mkdir(siblingDir);
 		try {

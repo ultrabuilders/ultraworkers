@@ -71,9 +71,9 @@ describe("autoresearch before_agent_start handler", () => {
 	let cwdDir: TempDir;
 
 	beforeEach(() => {
-		dbDir = TempDir.createSync("@pi-autoresearch-bas-test-");
+		dbDir = TempDir.createSync("@ultraworkers-autoresearch-bas-test-");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbDir.path();
-		cwdDir = TempDir.createSync("@pi-autoresearch-bas-cwd-");
+		cwdDir = TempDir.createSync("@ultraworkers-autoresearch-bas-cwd-");
 		vi.spyOn(vcs, "git").mockReturnValue({
 			currentBranch: async () => "autoresearch/test",
 		} as unknown as VcsGitRepo);

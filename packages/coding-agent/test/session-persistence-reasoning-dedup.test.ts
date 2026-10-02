@@ -55,7 +55,7 @@ function persistedAssistant(entry: SessionMessageEntry, blobStore: BlobStore): A
 // reconstruct, and never touch messages with no replay payload at all.
 describe("session reasoning-signature dedup", () => {
 	it("keeps a thinkingSignature the payload does not cover", () => {
-		using tempDir = TempDir.createSync("@pi-session-reasoning-keep-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-reasoning-keep-");
 		const blobStore = new BlobStore(tempDir.path());
 		const covered = reasoningItem("rs_covered", "ENC_COVERED");
 		const orphanSignature = JSON.stringify(reasoningItem("rs_orphan", "ENC_ORPHAN"));
@@ -80,7 +80,7 @@ describe("session reasoning-signature dedup", () => {
 	});
 
 	it("leaves thinkingSignatures untouched when there is no provider payload", () => {
-		using tempDir = TempDir.createSync("@pi-session-reasoning-nopayload-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-reasoning-nopayload-");
 		const blobStore = new BlobStore(tempDir.path());
 		const signature = JSON.stringify(reasoningItem("rs_1", "ENC"));
 
@@ -99,7 +99,7 @@ describe("session atomic reasoning persistence", () => {
 	const truncationNotice = "[Session persistence truncated large content]";
 
 	it("preserves an oversized signed thinking block and its signature verbatim", () => {
-		using tempDir = TempDir.createSync("@pi-session-atomic-thinking-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-atomic-thinking-");
 		const blobStore = new BlobStore(tempDir.path());
 
 		const message = persistedAssistant(
@@ -115,7 +115,7 @@ describe("session atomic reasoning persistence", () => {
 	});
 
 	it("preserves an oversized redactedThinking blob verbatim", () => {
-		using tempDir = TempDir.createSync("@pi-session-atomic-redacted-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-atomic-redacted-");
 		const blobStore = new BlobStore(tempDir.path());
 
 		const message = persistedAssistant(
@@ -130,7 +130,7 @@ describe("session atomic reasoning persistence", () => {
 	});
 
 	it("still truncates oversized UNSIGNED thinking and text blocks", () => {
-		using tempDir = TempDir.createSync("@pi-session-atomic-unsigned-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-atomic-unsigned-");
 		const blobStore = new BlobStore(tempDir.path());
 
 		const message = persistedAssistant(
@@ -156,7 +156,7 @@ describe("session atomic reasoning persistence", () => {
 	});
 
 	it("survives a full JSONL string round-trip for signed thinking", () => {
-		using tempDir = TempDir.createSync("@pi-session-atomic-roundtrip-");
+		using tempDir = TempDir.createSync("@ultraworkers-session-atomic-roundtrip-");
 		const blobStore = new BlobStore(tempDir.path());
 		const entry = assistantEntry(
 			[{ type: "thinking", thinking: "x".repeat(600_000), thinkingSignature: "sig-abc" }],

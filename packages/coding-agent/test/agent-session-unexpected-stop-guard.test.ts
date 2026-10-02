@@ -68,7 +68,7 @@ async function createHarness(
 	responses: MockResponse[],
 	settingsOverrides: SettingsOverrides = {},
 ): Promise<Harness & { mock: MockModel }> {
-	const tempDir = TempDir.createSync("@pi-unexpected-stop-guard-");
+	const tempDir = TempDir.createSync("@ultraworkers-unexpected-stop-guard-");
 
 	const mock = createMockModel({ responses });
 	const modelRegistry = sharedModelRegistry;

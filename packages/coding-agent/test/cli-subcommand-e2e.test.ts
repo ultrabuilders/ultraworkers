@@ -75,7 +75,7 @@ async function runCli(agentDir: string, args: string[]): Promise<CliRun> {
 
 describe("omp <verb> in a real CLI process", () => {
 	it("CONTROL: with nothing installed to answer, the verb never reaches a handler", async () => {
-		using tempDir = TempDir.createSync("@omp-subcmd-e2e-control-");
+		using tempDir = TempDir.createSync("@ultraworkers-subcmd-e2e-control-");
 		// The agent dir exists but holds no extension, so the verb is unclaimed.
 		// `deploy` is deliberately not a built-in and not a reserved word: it falls
 		// through to `launch`, which fails fast with no models rather than hanging.
@@ -86,7 +86,7 @@ describe("omp <verb> in a real CLI process", () => {
 	});
 
 	it("runs an installed extension's handler and prints only what it printed", async () => {
-		using tempDir = TempDir.createSync("@omp-subcmd-e2e-");
+		using tempDir = TempDir.createSync("@ultraworkers-subcmd-e2e-");
 		installVerbExtension(tempDir.path(), "deploy");
 
 		const run = await runCli(tempDir.path(), ["deploy", "staging"]);
@@ -98,7 +98,7 @@ describe("omp <verb> in a real CLI process", () => {
 	});
 
 	it("passes flags through to the handler untouched", async () => {
-		using tempDir = TempDir.createSync("@omp-subcmd-e2e-flags-");
+		using tempDir = TempDir.createSync("@ultraworkers-subcmd-e2e-flags-");
 		installVerbExtension(tempDir.path(), "deploy");
 
 		const run = await runCli(tempDir.path(), ["deploy", "prod", "--force", "--tag=v2"]);
@@ -108,7 +108,7 @@ describe("omp <verb> in a real CLI process", () => {
 	});
 
 	it("still sends an ordinary bare prompt to launch, not to a handler", async () => {
-		using tempDir = TempDir.createSync("@omp-subcmd-e2e-prompt-");
+		using tempDir = TempDir.createSync("@ultraworkers-subcmd-e2e-prompt-");
 		installVerbExtension(tempDir.path(), "deploy");
 
 		// A quoted multi-word prompt arrives as one argv token, which cannot name a

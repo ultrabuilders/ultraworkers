@@ -34,7 +34,7 @@ interface CliRun {
 }
 
 async function runCli(args: string[]): Promise<CliRun> {
-	using tempDir = TempDir.createSync("@omp-doctor-cmd-");
+	using tempDir = TempDir.createSync("@ultraworkers-doctor-cmd-");
 	const proc = Bun.spawn([process.execPath, cliEntry, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",

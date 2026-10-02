@@ -78,7 +78,7 @@ async function expectStickyRuleReload(
 	reset: (session: AgentSession) => Promise<unknown>,
 	opts: { seedInitial: boolean; scope: "user" | "project" },
 ): Promise<void> {
-	using tempDir = TempDir.createSync("@pi-rules-reload-");
+	using tempDir = TempDir.createSync("@ultraworkers-rules-reload-");
 	const marker = Bun.nanoseconds().toString(36);
 	const original = `ORIGINAL_STICKY_${marker}`;
 	const updated = `UPDATED_STICKY_${marker}`;
@@ -148,7 +148,7 @@ describe("AgentSession session-local rule snapshot reload on session reset", () 
 	});
 
 	it("resolves rule://<name> for a rulebook rule created after startup once the context resets", async () => {
-		using tempDir = TempDir.createSync("@pi-rules-reload-book-");
+		using tempDir = TempDir.createSync("@ultraworkers-rules-reload-book-");
 		const marker = Bun.nanoseconds().toString(36);
 		const body = `RULEBOOK_BODY_${marker}`;
 		const ruleName = `reload-book-${marker}`;

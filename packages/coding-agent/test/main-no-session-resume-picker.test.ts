@@ -22,7 +22,7 @@ class ProcessExitSignal extends Error {
 
 describe("runRootCommand — --no-session --resume", () => {
 	it("rejects a bare native --resume without invoking the picker", async () => {
-		using tempDir = TempDir.createSync("@omp-no-session-resume-");
+		using tempDir = TempDir.createSync("@ultraworkers-no-session-resume-");
 		const sessionDir = tempDir.path();
 		// A valid session exists, so a picker fall-through would open the picker
 		// (not the "No sessions found" probe) — proving the guard, not empty state.

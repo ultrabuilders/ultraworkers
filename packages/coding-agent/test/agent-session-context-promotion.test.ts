@@ -31,7 +31,7 @@ describe("AgentSession context promotion", () => {
 		// mechanism users configure promotion pairs with. gpt-5.4-mini is pinned
 		// text-only so the snapcompact-fallback case has a codex model on which
 		// snapcompact (vision-based) cannot run.
-		tempDir = TempDir.createSync("@pi-context-promotion-");
+		tempDir = TempDir.createSync("@ultraworkers-context-promotion-");
 		const modelsConfigPath = path.join(tempDir.path(), "models.json");
 		await Bun.write(
 			modelsConfigPath,

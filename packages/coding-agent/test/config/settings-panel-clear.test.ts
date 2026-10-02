@@ -24,7 +24,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
 	state = beginSettingsTest();
-	tempDir = TempDir.createSync("@pi-settings-panel-clear-");
+	tempDir = TempDir.createSync("@ultraworkers-settings-panel-clear-");
 	agentDir = tempDir.join("agent");
 	projectDir = tempDir.join("project");
 	for (const dir of [agentDir, projectDir]) fs.mkdirSync(dir, { recursive: true });

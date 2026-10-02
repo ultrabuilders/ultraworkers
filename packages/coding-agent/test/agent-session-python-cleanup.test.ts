@@ -70,7 +70,7 @@ const getModel = () => {
 };
 
 const createTempProject = () => {
-	const tempDir = TempDir.createSync(`@pi-agent-session-python-cleanup-${Snowflake.next()}-`);
+	const tempDir = TempDir.createSync(`@ultraworkers-agent-session-python-cleanup-${Snowflake.next()}-`);
 	const cwd = tempDir.join("project");
 	fs.mkdirSync(cwd, { recursive: true });
 	return { tempDir, cwd };
@@ -86,7 +86,7 @@ const authStorage = createInMemoryAuthStorage();
 const modelRegistry = new ModelRegistry(authStorage);
 const agentDirPool: TempDir[] = [];
 const createAgentDir = (): string => {
-	const dir = TempDir.createSync("@pi-python-cleanup-agentdir-");
+	const dir = TempDir.createSync("@ultraworkers-python-cleanup-agentdir-");
 	agentDirPool.push(dir);
 	return dir.path();
 };

@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 it("overlaps registry refresh with session-file opening and session setup", async () => {
-	const tempDir = TempDir.createSync("@pi-task-launch-");
+	const tempDir = TempDir.createSync("@ultraworkers-task-launch-");
 	tempDirs.push(tempDir);
 	const authStorage = await AuthStorage.create(tempDir.join("auth.db"));
 	authStorages.push(authStorage);

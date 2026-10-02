@@ -47,7 +47,7 @@ describe("AgentSession skill prompt keyword steering", () => {
 	const observedTurns: ObservedSkillTurn[] = [];
 
 	beforeEach(async () => {
-		tempDir = TempDir.createSync("@pi-agent-session-skill-keywords-");
+		tempDir = TempDir.createSync("@ultraworkers-agent-session-skill-keywords-");
 		observedTurns.length = 0;
 
 		authStorage = await AuthStorage.create(":memory:");

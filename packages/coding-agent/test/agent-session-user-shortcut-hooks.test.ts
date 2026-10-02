@@ -24,7 +24,7 @@ describe("AgentSession user shortcut hooks", () => {
 	let modelRegistry: ModelRegistry;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-user-shortcut-hooks-");
+		tempDir = TempDir.createSync("@ultraworkers-user-shortcut-hooks-");
 		modelRegistry = sharedModelRegistry;
 	});
 

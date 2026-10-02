@@ -197,7 +197,7 @@ describe("registerSubcommand: the ExtensionAPI producer", () => {
 
 	beforeEach(() => {
 		resetSubcommandRegistry();
-		tempDir = TempDir.createSync("@pi-subcommand-ext-");
+		tempDir = TempDir.createSync("@ultraworkers-subcommand-ext-");
 		cwd = tempDir.absolute();
 		// Steer user-scope discovery at the temp dir, or the scan returns the
 		// developer's own extensions and the suite learns to expect them.
@@ -291,7 +291,7 @@ describe("registerSubcommand: omp <verb> runs the handler", () => {
 
 	beforeEach(() => {
 		resetSubcommandRegistry();
-		tempDir = TempDir.createSync("@pi-subcommand-run-");
+		tempDir = TempDir.createSync("@ultraworkers-subcommand-run-");
 		cwd = tempDir.absolute();
 		setAgentDir(path.join(cwd, "agent"));
 		// Asserted through these two streams, never through `process.exitCode`:

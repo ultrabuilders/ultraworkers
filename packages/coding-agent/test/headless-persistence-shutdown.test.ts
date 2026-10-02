@@ -110,7 +110,7 @@ interface ShutdownHarness {
 }
 
 async function createHarness(): Promise<ShutdownHarness> {
-	const dir = TempDir.createSync("@pi-headless-shutdown-");
+	const dir = TempDir.createSync("@ultraworkers-headless-shutdown-");
 	tempDirs.push(dir);
 	const authStorage = await AuthStorage.create(":memory:");
 	const settings = Settings.isolated({ "marketplace.autoUpdate": "off" });

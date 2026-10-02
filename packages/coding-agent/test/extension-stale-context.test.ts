@@ -23,7 +23,7 @@ import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
 
 const authStorage = createInMemoryAuthStorage();
 const modelRegistry = new ModelRegistry(authStorage);
-const tempDir = TempDir.createSync("@pi-stale-ctx-");
+const tempDir = TempDir.createSync("@ultraworkers-stale-ctx-");
 
 afterAll(() => {
 	tempDir.remove();

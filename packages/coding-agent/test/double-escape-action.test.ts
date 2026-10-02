@@ -27,7 +27,7 @@ let modelRegistry: ModelRegistry;
 let authStorage: AuthStorage;
 
 beforeAll(async () => {
-	sharedTempDir = TempDir.createSync("@pi-double-escape-shared-");
+	sharedTempDir = TempDir.createSync("@ultraworkers-double-escape-shared-");
 	authStorage = await AuthStorage.create(path.join(sharedTempDir.path(), "testauth.db"));
 	modelRegistry = new ModelRegistry(authStorage);
 });

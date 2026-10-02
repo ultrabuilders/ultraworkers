@@ -22,7 +22,7 @@ describe("a user-configured MCP server that reaches loopback", () => {
 	let warnSpy: ReturnType<typeof spyOn>;
 
 	beforeEach(() => {
-		tempDir = TempDir.createSync("@pi-loopback-notice-");
+		tempDir = TempDir.createSync("@ultraworkers-loopback-notice-");
 		warnSpy = spyOn(logger, "warn");
 	});
 

@@ -71,7 +71,7 @@ describe("AgentSession context-overflow retry budget", () => {
 	async function createSession(
 		respond: (turn: number) => MockResponse,
 	): Promise<{ modelTurns: () => number; notices: string[]; overflowCompactions: () => number }> {
-		tempDir = TempDir.createSync("@pi-overflow-budget-");
+		tempDir = TempDir.createSync("@ultraworkers-overflow-budget-");
 		authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
 		authStorage.keys.setRuntime("mock", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));

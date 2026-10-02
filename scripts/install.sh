@@ -54,6 +54,18 @@ while [ $# -gt 0 ]; do
             REF="$1"
             shift
             ;;
+        --print-min-bun-version)
+            # Report the floor this script enforces, then stop before any side effect.
+            # It exists because that floor is a SECOND declaration of the version, and
+            # the drift between it and the manifest the app reads is invisible: the
+            # installer refusing a runtime the app runs on is a silent no-op that
+            # already happened once (2d248a2c raised this file and left
+            # packages/utils/package.json behind). A test cannot read that floor out of
+            # this script's text without breaking on a rename of the variable, so the
+            # script is asked instead.
+            echo "$MIN_BUN_VERSION"
+            exit 0
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1

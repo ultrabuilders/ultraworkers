@@ -91,3 +91,60 @@ describe("engines.bun consistency", () => {
 		expect(publishedManifests().length).toBe(19);
 	});
 });
+
+/**
+ * The installer holds a SECOND declaration of the same floor, and the drift between
+ * the two is the half a manifest-only gate cannot see.
+ *
+ * `2d248a2c` raised `scripts/install.sh` and `packages/coding-agent/package.json`
+ * together and left `packages/utils/package.json` — the one manifest code reads —
+ * behind. A manifest-to-manifest gate catches that instance. The reverse instance is
+ * unguarded by construction: bump the installer alone and every manifest agrees with
+ * every other manifest, so the floor is green, while `require_bun_version` refuses a
+ * runtime the app runs on. The failure is a user who cannot install, and nothing in
+ * the repository is red.
+ *
+ * The floor is read by RUNNING the installer, never by matching its text. A test that
+ * greps `MIN_BUN_VERSION=` out of a shell script asserts how the script looks; renaming
+ * the variable breaks it while behaviour is identical, and a hand-maintained copy of
+ * the number in a test would drift in exactly the way this file exists to catch.
+ */
+describe("the installer's floor is the same declaration", () => {
+	const INSTALL_SH = path.join(REPO_ROOT, "scripts", "install.sh");
+
+	function runInstaller(...args: string[]): { exitCode: number; stdout: string; stderr: string } {
+		const proc = Bun.spawnSync(["sh", INSTALL_SH, ...args]);
+		return {
+			exitCode: proc.exitCode,
+			stdout: proc.stdout.toString().trim(),
+			stderr: proc.stderr.toString().trim(),
+		};
+	}
+
+	// Control on the query itself. Without a real answer there is nothing to compare,
+	// and the assertion below would pass against an installer that reports nothing.
+	it("answers which floor it enforces", () => {
+		const result = runInstaller("--print-min-bun-version");
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toMatch(/^\d+\.\d+\.\d+$/);
+	});
+
+	// The whole point: the number the installer refuses users below, and the number the
+	// app refuses at startup, must be the same. Compared in the shape `dirs.ts` uses —
+	// it strips everything but digits and dots before comparing.
+	it("enforces the same floor the manifest code reads", () => {
+		const authoritative = readManifest(AUTHORITATIVE).engines?.bun ?? "";
+		expect(runInstaller("--print-min-bun-version").stdout).toBe(
+			authoritative.replace(/[^0-9.]/g, ""),
+		);
+	});
+
+	// The query is an added case in an argument parser, and the parser is what rejects a
+	// typo in a `curl | sh` line before anything is installed. A new case that swallowed
+	// the fallback would turn "Unknown option" into a silent success.
+	it("still refuses an unknown option", () => {
+		const result = runInstaller("--not-a-real-option");
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr + result.stdout).toContain("Unknown option");
+	});
+});

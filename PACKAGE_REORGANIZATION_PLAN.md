@@ -288,11 +288,48 @@ pi không có** — cắt chỉ để tách khỏi `coding-agent`, không phải
 
 ### Nhóm C — cắt được nhưng phải làm seam (41-150 importer)
 
-`capability` (136), `internal-urls` (110), `registry` (97), `mcp` (97), `discovery` (86),
-`web` (66), `slash-commands` (65), `eval` (126), `task` (125), `launch` (39→B), `async` (50), `edit` (49).
+Băng 41-150 là **ngưỡng phân loại**, không phải danh sách quyết định: một mục rơi vào băng chỉ mới
+là *ứng viên*, và ứng viên vẫn có thể ra phán đoán `no-cut`. Bảng dưới tách **hai danh sách** mà
+bản nháp cũ trộn vào một dòng, và ghi phán đoán cho từng mục.
 
-Đặc biệt `web`: **117 file / 27.444 dòng** nhưng chỉ 66 importer — tỉ lệ ngon nhất trong các thư mục lớn.
-Nhưng nó cần 9 thư mục con (`config exa extensibility lib mcp prompts session tools utils`) và có 3 vòng.
+Cột `đo lại` là phép đo trên cây hiện tại (`bun scripts/plan/split-grp-c.ts`, đọc baseline
+fan-in niêm phong) — **không** phải số trong bảng. Số của kế hoạch là ảnh chụp 4 ngày tuổi và
+đã trôi; xem mục *Cảnh báo về cách đo*.
+
+**11 mục của danh sách cũ, và phán đoán sau khi đo lại:**
+
+| ứng viên | kế hoạch | đo lại | phán đoán | lý do |
+| --- | --- | --- | --- | --- |
+| `capability` | 136 | 56 | **no-cut** | Trong băng, nhưng là registry type trên bề mặt extension — cần seam, không phải cắt |
+| `task` | 125 | 45 | **ứng viên** | Trong băng, kế hoạch không phán đoán |
+| `discovery` | 86 | 41 | **ứng viên** | Trong băng, kế hoạch không phán đoán |
+| `eval` | 126 | 30 | **ngoài băng** | 30 < 41. Thêm nữa `M8 W8` đang sửa chính `src/eval/` — phải chốt thứ tự |
+| `internal-urls` | 110 | 38 | **no-cut** | Được tham chiếu bởi đường cài đặt, không bởi ranh giới tính năng |
+| `registry` | 97 | 33 | **no-cut** | §5.1: tên đụng `catalog`; việc thật là **hợp nhất**, không phải cắt |
+| `mcp` | 97 | 24 | **no-cut** | Ranh giới đi theo client/server, không theo tên thư mục |
+| `edit` | 49 | 21 | **no-cut** | Là bề mặt extension công khai |
+| `slash-commands` | 65 | 11 | **no-cut** | Là bề mặt đăng ký cho extension |
+| `web` | 66 | 9 | **no-cut** | Web **search** provider, không phải web server — xem cảnh báo bên dưới |
+| `async` | 50 | 8 | **no-cut** | Là bề mặt extension công khai |
+
+**Kết quả: 11 mục cũ chỉ còn 2 là ứng viên thật** (`task`, `discovery`). 8 mục từng được coi là
+"cắt được nhưng phải làm seam" đã rơi **khỏi băng** khi đo lại, và 3 mục còn lại trong băng thì bị
+loại vì lý do kiến trúc. Bảng nháp cũ không thấy điều này vì nó chép số của bảng thay vì đo.
+
+`launch` (39 ở bảng cũ, **18** khi đo lại) **không thuộc nhóm C** — dưới băng ở cả hai lần đo.
+Bản nháp cũ để nó trong dòng này với nhãn `(39→B)`: đã bị loại nhưng còn sót.
+
+**Bị loại — nằm trong hoặc sát băng, nhưng không phải ứng viên:**
+
+| mục | fan-in | phán đoán | lý do |
+| --- | --- | --- | --- |
+| `tui/src/components` | 132 | **no-cut** | 130/132 importer nằm **trong `tui`** → chỉ 2 file ngoài. *"Cắt ra = biến thành điểm nghẽn, tăng nghẽn, **không giảm gì**"* (§3.3) |
+| `tui/src/apps` | 40 | **no-cut** | §3.2 tiêu đề: **"KHÔNG, đừng cắt"**; chi phí/giá trị **xấu** |
+| `tui/src/setup` | 5 | **no-cut** | import gần như toàn bộ `tui` (20+ mục tiêu). *"Cắt ra = **vòng ngược với cả package**"* (§3.3) |
+
+`web` từng trông như ứng viên đẹp nhất băng này: **117 file / 27.444 dòng** nhưng chỉ 66
+importer. Nó **không** phải ứng viên — §3.1 đã kết luận `no-cut` vì vòng ngược, và nó cần
+9 thư mục con (`config exa extensibility lib mcp prompts session tools utils`).
 Và cần nói thẳng một điều dễ nhầm: **`web/` không phải web server**. Nó là *web search provider*
 (`firecrawl.ts`, `kagi.ts`, `parallel.ts`, `scrapers/`, `search/`). Nó **không** tương ứng với
 `pi/client` + `pi/server` + `pi/protocol`. Đừng map nó sang đó.
@@ -1181,9 +1218,11 @@ nhầm.
 | `extensibility` | **284** | — | 18 thư mục con; là điểm neo của plugin/hook |
 | `utils` | **224** | 8 | bị 26 file trong `tools` import; là tầng dưới mọi thứ |
 | `cli` | 148 | — | 30 thư mục con; `commands/` (50 file) import nó |
-| `capability` | 136 | 4 | fan-in cao / tỉ lệ dòng cực thấp (18 file / 2.083 dòng) → là registry type, cắt sẽ vỡ type |
-| `internal-urls` | 110 | 6 | 18 thư mục con; chuẩn hoá URL là hợp đồng toàn repo |
-| `mcp`, `registry`, `discovery`, `eval`, `task` | 97-126 | 4-8 | ngưỡng 41-150: cần seam, là việc thiết kế |
+| `capability` | 136 | 4 | fan-in cao / tỉ lệ dòng cực thấp (18 file / 2.083 dòng) → là registry type, cắt sẽ vỡ type. Nằm trong băng 41-150 nhưng phán đoán là **no-cut** — xem §6 *Nhóm C* |
+| `internal-urls` | 110 | 6 | 18 thư mục con; chuẩn hoá URL là hợp đồng toàn repo. Nằm trong băng 41-150 nhưng phán đoán là **no-cut** — xem §6 *Nhóm C* |
+| `mcp` | 97 | 4 | Ranh giới đi theo client/server, không theo tên thư mục |
+| `registry` | 97 | 4 | §5.1: tên đụng `catalog`; việc thật là **hợp nhất**, không phải cắt |
+| ~~`discovery`, `task`~~ | 86-125 | 4-8 | **Đã gỡ khỏi bảng này.** Lý do ghi ở đây là lý do của *Nhóm C* ("cần seam"), nên xếp chúng vào "KHÔNG cắt" là tự mâu thuẫn. Đo lại: 41 và 45 importer — vẫn trong băng, và là **2 ứng viên còn lại** của nhóm C |
 | `tui/*` (trừ `setup`) | 40-588 | — | 9/10 thư mục có fan-in > 50. Là xương sống |
 | `ai/{providers,utils,error,registry}` | 130-432 | — | tương tự |
 

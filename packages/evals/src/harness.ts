@@ -19,9 +19,9 @@
  * Two consequences worth knowing before reading the test:
  *
  * - The env var names are pi's, and that is correct here, not an oversight. `pi`
- *   reads `PI_PROVIDER` / `PI_MODEL` / `PI_EVAL_*`; omp still ships
+ *   reads `PI_PROVIDER` / `PI_MODEL` / `PI_EVAL_*`; ultraworkers still ships
  *   `PI_CODING_AGENT_DIR` as a live variable (`packages/utils/src/dirs.ts`), so
- *   these are omp variables too. Renaming them is a separate decision, in the same
+ *   these are ultraworkers variables too. Renaming them is a separate decision, in the same
  *   family as the scope rename — not something to settle inside a file copy.
  * - `verifySystemPrompt` takes the two fields it actually reads instead of
  *   `Pick<PiCodingAgentHarnessOptions, …>`, because that options type belongs to

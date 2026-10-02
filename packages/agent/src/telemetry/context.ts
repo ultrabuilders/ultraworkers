@@ -1,13 +1,13 @@
 /**
  * Vendor-neutral telemetry contract.
  *
- * omp speaks exactly one telemetry backend today, and every call site names OTEL
+ * ultraworkers speaks exactly one telemetry backend today, and every call site names OTEL
  * types directly. That means the only way to add a second backend is to edit every
- * call site — which is the opposite of a contract. These types describe what omp
+ * call site — which is the opposite of a contract. These types describe what ultraworkers
  * actually needs, and an adapter translates.
  *
  * The attribute types are NOT a guess. They are measured from
- * `@opentelemetry/api`'s own `Attributes.d.ts`, because omp's existing OTEL
+ * `@opentelemetry/api`'s own `Attributes.d.ts`, because the existing OTEL
  * attributes must remain assignable — a "neutral" type that the current exporter
  * could not satisfy would be a second source of truth, not a contract.
  */
@@ -52,7 +52,7 @@ export type SpanStatus = "unset" | "ok" | "error";
 // ── Span ────────────────────────────────────────────────────────────────
 
 /**
- * The minimum a backend must supply for omp to record against a span.
+ * The minimum a backend must supply for ultraworkers to record against a span.
  *
  * Only the MUTATING surface is required. The readable properties are optional
  * because OTEL's own `Span` interface does not expose them — `name`,

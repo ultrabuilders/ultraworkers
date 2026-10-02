@@ -17,7 +17,7 @@
  * senpi's file is written for a flat `AgentMessage[]` that it returns a fresh
  * copy of. Four things did not survive the move unchanged:
  *
- * 1. **In place, not copied.** omp persists the session, and every history
+ * 1. **In place, not copied.** ultraworkers persists the session, and every history
  *    rewrite here (`pruneToolOutputs`, `pruneSupersededToolResults`) mutates the
  *    live message objects and then calls `sessionManager.rewriteEntries()`. A
  *    transform that returned new message objects would leave the session FILE
@@ -40,8 +40,8 @@
  *
  * ## Not ported
  *
- * senpi's third transform, `clearOldToolResults`, is omp's `pruneToolOutputs`
- * already. Porting it would give omp two passes blanking the same results.
+ * senpi's third transform, `clearOldToolResults`, is ultraworkers's `pruneToolOutputs`
+ * already. Porting it would give ultraworkers two passes blanking the same results.
  *
  * ## How an extension reaches this
  *

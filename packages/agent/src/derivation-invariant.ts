@@ -10,7 +10,7 @@
  * `llm/stream` that compares the outgoing messages against
  * `session.deriveMessages()` on every request. Divergence is red, every time.
  *
- * omp has no such log — `deriveMessages` and `surfaceOp` have zero hits here —
+ * ultraworkers has no such log — `deriveMessages` and `surfaceOp` have zero hits here —
  * so this is option A from the plan: keep the current session model and check
  * the one thing that can be checked mechanically, which is that a request built
  * from a context is reproducible from that same context through the same

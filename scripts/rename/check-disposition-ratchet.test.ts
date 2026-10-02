@@ -16,11 +16,15 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import {
 	BASELINE_RULES_VERSION,
 	BASELINE_TABLE_DIGEST,
 	checkRatchet,
 	digest,
+	measureRenameHitsDrift,
 	STALE_ROW_BASELINE,
 } from "./check-disposition-ratchet";
 import { RULES_VERSION } from "./check-disposition";
@@ -226,5 +230,73 @@ describe("the ratchet as a runnable gate", () => {
 		// owner's, so a growing number must not redden the gate mid-sweep. It is still
 		// not allowed to be invisible either, which is what the assertion above holds.
 		expect(grown.ok).toBe(true);
+	});
+});
+
+describe("the `hits` column on a `rename` row is never read, so nothing else reports its drift", () => {
+	// The consumer is a person reading the ratchet's printed line and deciding whether
+	// a row's number is trustworthy. Every case below names what they would SEE go
+	// wrong, because this function shipped in d73fed57a7 without a test and the whole
+	// reason it exists is that its absence is invisible.
+	async function withRoot(files: Record<string, string>): Promise<string> {
+		const root = await mkdtemp(path.join(tmpdir(), "rename-drift-"));
+		for (const [name, body] of Object.entries(files)) {
+			await Bun.write(path.join(root, name), body);
+		}
+		return root;
+	}
+
+	const row = (p: string, hits: number, disposition = "rename") => ({ path: p, hits, disposition });
+
+	it("reports a row whose declared hits UNDERSTATE the file, which is the direction a shrinkage-only check misses", async () => {
+		// `countRename` matches the bare token; the row claims 1 while the file holds 3.
+		const root = await withRoot({ "a.ts": "const a = omp;\nconst b = omp;\nconst c = omp;\n" });
+		const drift = await measureRenameHitsDrift(root, [row("a.ts", 1)]);
+
+		// Declared < actual. A check written as `remaining < row.hits` — the shape
+		// `keep-shrank` uses — returns nothing here and reports the row as honest.
+		expect(drift).toEqual([{ path: "a.ts", declared: 1, actual: 3 }]);
+	});
+
+	it("reports a row whose declared hits OVERSTATE the file", async () => {
+		// The other direction, and the one `keep-shrank`'s comparison does catch. Both
+		// matter: a drift report that only fires one way reads as "no drift" for half
+		// the table, which is the same invisibility the column already has.
+		const root = await withRoot({ "a.ts": "const a = omp;\n" });
+		const drift = await measureRenameHitsDrift(root, [row("a.ts", 5)]);
+
+		expect(drift).toEqual([{ path: "a.ts", declared: 5, actual: 1 }]);
+	});
+
+	it("reports nothing for a row whose declared hits already match", async () => {
+		// The control. Without it, a function returning every `rename` row regardless
+		// of agreement passes both cases above.
+		const root = await withRoot({ "a.ts": "const a = omp;\n" });
+		expect(await measureRenameHitsDrift(root, [row("a.ts", 1)])).toEqual([]);
+	});
+
+	it("ignores a non-`rename` row whose hits are wrong, because that column IS read for those", async () => {
+		// `hits-imbalance` and `keep-shrank` both judge `keep-*` rows. Reporting them
+		// here would name a column the gate already covers as unread — a diagnostic
+		// that cries wolf on covered rows teaches the reader to ignore the line.
+		const root = await withRoot({ "a.ts": "const a = omp;\n" });
+		expect(await measureRenameHitsDrift(root, [row("a.ts", 99, "keep-prose")])).toEqual([]);
+	});
+
+	it("skips a row whose file is gone rather than reporting it as drift", async () => {
+		// A missing file is `stale-row`'s business. Counting it here would report a
+		// number that disagrees with `stale-row` for the same row, and the reader
+		// would have two figures and no way to tell which cause they were looking at.
+		const root = await withRoot({ "present.ts": "const a = omp;\n" });
+		const drift = await measureRenameHitsDrift(root, [row("absent.ts", 4)]);
+		expect(drift).toEqual([]);
+	});
+
+	it("does not count a dotted path as the `omp` token, matching the gate's own matcher", async () => {
+		// `omp.sh` is prose about the host, not the token. A substring count would say
+		// 1 and report drift on a correct row. This is the reason the function calls
+		// `countRename` rather than counting occurrences itself.
+		const root = await withRoot({ "a.ts": "// see https://omp.sh/docs\n" });
+		expect(await measureRenameHitsDrift(root, [row("a.ts", 0)])).toEqual([]);
 	});
 });

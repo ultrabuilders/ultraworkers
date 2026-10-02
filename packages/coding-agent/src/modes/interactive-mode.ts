@@ -1586,6 +1586,12 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.session = session;
 		this.sessionManager = session.sessionManager;
 		this.settings = session.settings;
+		// Declared here rather than in `init`: once a field becomes a
+		// registry-backed accessor, its setter calls `setActivation`, which throws
+		// for a mode nobody declared. Construction is the first moment `this`
+		// exists and the last moment before any field can be written, so it is the
+		// only point where registering is both possible and early enough.
+		this.#registerBuiltinModes();
 		const preferences = {
 			quiet: cfgStartupQuiet.get(settings),
 			composerShape: cfgComposerShape.get(settings),
@@ -1957,7 +1963,6 @@ export class InteractiveMode implements InteractiveModeContext {
 
 	async init(options: InteractiveModeInitOptions = {}): Promise<void> {
 		if (this.isInitialized) return;
-		this.#registerBuiltinModes();
 
 		this.keybindings = logger.time("InteractiveMode.init:keybindings", () => KeybindingsManager.create());
 		// A key bound to two actions means one of them silently stopped responding

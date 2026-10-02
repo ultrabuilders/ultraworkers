@@ -38,9 +38,11 @@ can silently skip a decision, so every explanation belongs in `reason` or here.
 | `keep-wire`            | a third-party contract; renaming breaks a live client | required    |
 | `keep-worker-selector` | the hidden argv selector (`__omp_worker_`)            | required    |
 | `keep-path`            | an on-disk path (`.omp`)                              | required    |
+| `keep-prose`           | prose we are not touching: history, fixture labels    | required    |
 
 A `disposition` outside this set is a **gate failure**, not a new class. Adding one
-is a reviewed act — see "Open question" below for the one currently pending.
+is a reviewed act — see "`keep-prose`, resolved" below for the one that was pending
+when this table was written.
 
 ## The invariant
 
@@ -51,9 +53,22 @@ This is what makes the table falsifiable. Without it, a missed `rename` hides un
 a `keep-*` row for the same file: the file _has_ a row, the gate is satisfied, and
 the leftover occurrence rides along under a decision nobody made.
 
-Splitting `hits` **per class rather than per file** is what closes that hole. A file
-holding both a wire contract and a stale comment gets two rows, and each is counted
-separately.
+Splitting `hits` **per class rather than per file** closes _that_ hole: a file holding
+both a wire contract and a stale comment gets two rows, so neither can hide inside the
+other's count.
+
+**It does not close a second one, and the gate cannot see this.** The invariant is a
+**sum**, so it constrains the total and says nothing about _which_ class received
+_which_ occurrence. A split that is wrong but balances is green. Measured
+2026-10-02 on `packages/utils/src/dirs.ts` (6 pinned occurrences, spread 1/1/1/1/2
+over lines 75, 83, 84, 137, 138): rows were written as `keep-wire 5` + `rename 1`,
+which sums to 6 and passes — while the reasoning recorded alongside those numbers
+described a **3/3** split across different lines. Right total, wrong attribution,
+nothing red.
+
+So the per-class split buys reviewability, not enforcement. Any `keep-*` row with
+`hits > 1` has to be checked **by reading the file**, because that is the only place
+the attribution is verified.
 
 ### The pinned expression
 
@@ -91,10 +106,17 @@ is genuinely _disjoint_ from it — a `keep-worker-selector` row can never be re
 
 DRIFT, corrected 2026-10-02: the file/occurrence totals were `704` / `2054`,
 stale by 2 files and 18 occurrences. Measured with the gate's own code path —
-`hitPaths(".")` from `check-disposition.ts` (glob `**/*.ts`, skipping
-`node_modules/` and `.git/`) returning 706, and the same paths counted against
-the gate's `PINNED` expression returning 2072. A standalone scan reproduces the
-same pair, so the _scope_ is settled.
+`hitPaths(".")` from `check-disposition.ts` returning 706, and the same paths counted
+against the gate's `PINNED` expression returning 2072.
+
+**The glob is `**/*.{ts,js,mjs}`, not `*.ts`** — this paragraph used to say `*.ts`,
+which is wrong, and it cost a real measurement. A standalone scan written to the text
+here matched only TypeScript and came back 3 files and 6 occurrences short, because
+`hitPaths` also reads `.js` and `.mjs`. `hitPaths` additionally skips
+`EXCLUDED_PREFIXES`, build output, and nested repositories. A scan reproduces the pair
+only when it reproduces **those** rules; a scan that merely re-implements the pattern
+is measuring a different scope and will disagree for a reason that has nothing to do
+with the pattern.
 
 **2072 is a floor, not a total.** `PINNED` is the expression quoted at line 61,
 and it consumes the delimiter it matches: two tokens separated by a single
@@ -190,17 +212,32 @@ The gate itself only prints a warning when a second signature is missing; enforc
 that is a people problem, not a code one, and pretending otherwise would make the
 gate fail on a tree nobody has reviewed yet.
 
-## Open question — `keep-prose`
+## `keep-prose`, resolved
 
-386 files carry the token **only** in comments. They currently have no lawful row,
-because renaming inside prose is W13's surface and W8b's vocabulary has no class for
-"prose we are not touching".
+**This section was wrong for its whole life.** It was written by `0ce7a29826` — the
+same commit that added `keep-prose` to `DISPOSITIONS` — and it described the class as
+an open question, an owner decision not yet made, and something with no lawful row.
+The code has carried the class since that commit; six later commits edited this file
+and none corrected the claim. A reader who trusted the prose would conclude that the
+class did not exist.
 
-Adding `keep-prose` would let those 386 files be recorded explicitly rather than
-silently out of scope. It is a one-word change to a deliberately closed vocabulary,
-so it is an owner decision, not an implementer's. Until it is made, `--stage=pre`
-reports those files as `missing-row` — which is the honest answer: nobody has decided
-them yet.
+Why it matters more than a stale number: `keep-prose` is what makes the largest group
+of files recordable at all. Files carrying the token **only** in comments had no
+lawful row while the section said the class was pending, so `--stage=pre` reported
+them as `missing-row` — which was the honest answer then, and is a false description
+of the gate now.
+
+Measured 2026-10-02 at `15449ede24`, with the gate's own `isCommentLine` rather than a
+separate scan: of the 493 files then carrying a hit and holding no row, **348 were
+comment-only** (no code occurrence, and neither of the two literal-counted classes).
+Those are the files this class exists for, and they are recorded now rather than left
+to read as undecided.
+
+Note what the class does **not** say. It does not mean "comments are out of scope":
+renaming inside prose is W13's surface, and a comment describing our own behaviour is
+a `rename` row. `keep-prose` is for prose that records history, or names a legacy
+value as a fixture label — occurrences where a sweep would churn the file without
+changing anything it proves.
 
 ## Writing a test in this directory
 
@@ -245,7 +282,7 @@ It cost a committed red here. The section above moved the count from 5 to 9 and
 the budget still read 6, so `bun check` was failing on the tree before this fix
 and the commit that caused it had already landed. Move the budget in the same
 commit, and prefer wording that does not need the token at all — the rules above
-are all statable without it, and only their *evidence* needs the literal paths.
+are all statable without it, and only their _evidence_ needs the literal paths.
 
 ## Not a test
 

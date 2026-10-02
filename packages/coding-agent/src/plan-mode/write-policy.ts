@@ -37,6 +37,20 @@ export type WritePolicy = Readonly<{
 }>;
 
 /**
+ * Plan mode's policy, declared once.
+ *
+ * Lives here rather than in the tool guard because it has two readers: the guard
+ * that enforces it, and the mode registration that advertises it. A second copy
+ * of these three flags is a policy that can drift from the one being enforced —
+ * and the drift is invisible until a mode claims to refuse a write it allows.
+ */
+export const PLAN_MODE_WRITE_POLICY: WritePolicy = {
+	denyRename: true,
+	denyDelete: true,
+	denyWorkingTree: true,
+};
+
+/**
  * What a write is, from the caller's point of view. `sandbox` is resolved by the
  * caller rather than computed here, because locating a path needs the session's
  * internal-URL mapping — a filesystem concern, not a policy one.

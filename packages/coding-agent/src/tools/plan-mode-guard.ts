@@ -9,7 +9,12 @@ import {
 import { isEnoent } from "@oh-my-pi/pi-utils";
 import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
-import { checkWritePolicy, WRITE_POLICY_DENIAL_MESSAGES, type WritePolicy } from "../plan-mode/write-policy";
+import {
+	checkWritePolicy,
+	PLAN_MODE_WRITE_POLICY,
+	WRITE_POLICY_DENIAL_MESSAGES,
+	type WritePolicy,
+} from "../plan-mode/write-policy";
 import type { ToolSession } from ".";
 import { resolveToCwd } from "./path-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -125,12 +130,12 @@ export async function resolvePlanPath(session: ToolSession, targetPath: string, 
  * The built-in plan mode's policy: no renames, no deletes, and nothing outside
  * the `local://` sandbox. Every field is set, because this mode refuses all
  * three; a mode that permits an operation simply omits the flag.
+ *
+ * Re-exported from the policy module rather than declared here: the mode
+ * registration advertises the same three flags, and two copies of a policy is a
+ * policy that can drift from the one actually being enforced.
  */
-const PLAN_MODE_WRITE_POLICY: WritePolicy = {
-	denyRename: true,
-	denyDelete: true,
-	denyWorkingTree: true,
-};
+export { PLAN_MODE_WRITE_POLICY };
 
 /**
  * Plan mode keeps the working tree read-only while letting the agent draft its

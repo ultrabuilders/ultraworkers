@@ -16,8 +16,18 @@ import * as path from "node:path";
 import { clearCache as clearFsCache } from "@oh-my-pi/pi-coding-agent/capability/fs";
 import { loadAllMCPConfigs } from "@oh-my-pi/pi-coding-agent/mcp/config";
 import { cfgMcpEnableProjectConfig } from "@oh-my-pi/pi-coding-agent/mcp/settings";
-import { getConfigRootDir, setAgentDir } from "@oh-my-pi/pi-utils";
+import { getConfigRootDir, setAgentDir, __resetDirsFromEnvForTests } from "@oh-my-pi/pi-utils";
 import "@oh-my-pi/pi-coding-agent/discovery";
+
+// `setAgentDir` writes `PI_CODING_AGENT_DIR` into the process environment, so leaving it
+// set past this file hands every later suite an agent dir pointing at a temp directory
+// this file then deletes. That is not a cosmetic leak: `config migrate` derives the
+// database paths its open-file guard checks from the agent dir, so with the override
+// still in place the guard inspected a path that cannot exist, reported no holders, and
+// the migration renamed a config root holding an open SQLite database. Restoring the
+// environment and re-reading it is the fix; ordering this file before the victim would
+// only move the failure to whichever file runs next.
+const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
 // A stdio server whose `command` would be spawned, plus a `!command` env value that would
 // be handed to the shell. Neither may reach the result set under the default.
@@ -49,6 +59,9 @@ describe("project-scope MCP config is not trusted by default", () => {
 
 	afterEach(async () => {
 		process.env.HOME = originalHome;
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		__resetDirsFromEnvForTests();
 		vi.restoreAllMocks();
 		clearFsCache();
 		for (const dir of [tempHome, projectDir, userAgentDir]) {

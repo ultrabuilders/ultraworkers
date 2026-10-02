@@ -290,15 +290,17 @@ export async function findLiveHolders(paths: readonly string[]): Promise<LiveHol
 			// newline and the final split element is "". `Number("")` is 0 and
 			// `Number.isInteger(0)` is true, so the naive parse put a phantom pid 0 in
 			// the list — and the refusal then told the user a process was holding their
-			// database when pid 0 names no process at all. Blank lines are dropped, not
-			// coerced: the message is the one thing a user acts on.
+			// database when pid 0 names no process at all. The floor is `pid > 0` rather
+			// than a blank-line filter so a negative parse is rejected too, and it sits
+			// beside the `-1` sentinel this function already uses for "cannot prove it is
+			// unused": the old test guarded only that case, which the parser already
+			// excluded by construction, leaving the case that was real unguarded.
 			pids = provenUnused
 				? []
 				: stdout
 						.split("\n")
-						.filter(line => line.trim() !== "")
 						.map(Number)
-						.filter(Number.isInteger);
+						.filter(pid => Number.isInteger(pid) && pid > 0);
 		} catch {
 			pids = [-1]; // cannot prove it is unused
 		}

@@ -14,6 +14,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import * as path from "node:path";
+import { TempDir } from "@oh-my-pi/pi-utils";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const TABLE_PATH = path.join(REPO_ROOT, "docs", "feature-mechanism.md");
@@ -41,8 +42,17 @@ function plain(cell: string): string {
  * of shape fails loudly rather than being silently skipped — a row the reader sees
  * but the test ignores is the exact failure this file exists to prevent.
  */
-async function readRows(): Promise<Row[]> {
-	const markdown = await Bun.file(TABLE_PATH).text();
+/**
+ * Parses the feature→mechanism table.
+ *
+ * `source` defaults to the real doc. It is a parameter rather than a hardcoded read so
+ * the negative branch can point this at a deliberately broken table: a gate that has
+ * only ever been exercised against a passing fixture has not been shown to fail, and
+ * "the file is currently correct" is not the same claim as "this test can detect a
+ * wrong file". The negative test below is what earns the right to call this a gate.
+ */
+async function readRows(source: string = TABLE_PATH): Promise<Row[]> {
+	const markdown = await Bun.file(source).text();
 	const rows: Row[] = [];
 	for (const line of markdown.split("\n")) {
 		if (!line.startsWith("| ")) continue;
@@ -77,6 +87,30 @@ async function readBeadStatuses(): Promise<Map<string, string>> {
 	return statuses;
 }
 
+/**
+ * Every path a row cites that does not resolve on disk.
+ *
+ * Split out of the test body so the negative branch below exercises *this* function
+ * rather than a re-implementation of it. A negative that copies the check proves the
+ * copy fails, which says nothing about the check the real gate runs.
+ */
+async function findDangling(rows: Row[]): Promise<string[]> {
+	const dangling: string[] = [];
+	for (const row of rows) {
+		// Every `file:line` the mechanism column cites must resolve.
+		for (const match of plain(row.mechanism).matchAll(/([\w./-]+\.ts):\d+/g)) {
+			const referenced = path.join(REPO_ROOT, match[1]!);
+			if (!(await Bun.file(referenced).exists())) dangling.push(`${row.feature} -> ${match[1]}`);
+		}
+		const proofPath = plain(row.proof);
+		if (proofPath.startsWith("none")) continue;
+		if (!(await Bun.file(path.join(REPO_ROOT, proofPath)).exists())) {
+			dangling.push(`${row.feature} -> ${proofPath}`);
+		}
+	}
+	return dangling;
+}
+
 describe("docs/feature-mechanism.md", () => {
 	test("every row points at a file that exists", async () => {
 		// Contract (1). A row whose mechanism or proof names a path that has since
@@ -85,20 +119,42 @@ describe("docs/feature-mechanism.md", () => {
 		const rows = await readRows();
 		expect(rows.length).toBeGreaterThan(0);
 
-		const dangling: string[] = [];
-		for (const row of rows) {
-			// Every `file:line` the mechanism column cites must resolve.
-			for (const match of plain(row.mechanism).matchAll(/([\w./-]+\.ts):\d+/g)) {
-				const referenced = path.join(REPO_ROOT, match[1]!);
-				if (!(await Bun.file(referenced).exists())) dangling.push(`${row.feature} -> ${match[1]}`);
-			}
-			const proofPath = plain(row.proof);
-			if (proofPath.startsWith("none")) continue;
-			if (!(await Bun.file(path.join(REPO_ROOT, proofPath)).exists())) {
-				dangling.push(`${row.feature} -> ${proofPath}`);
-			}
-		}
+		const dangling = await findDangling(rows);
 		expect(dangling).toEqual([]);
+	});
+
+	test("a row pointing at a deleted file is reported, not silently accepted", async () => {
+		// The negative branch contract (1) is supposed to have. A gate that has only
+		// ever run against a correct file has not been shown to detect an incorrect
+		// one — "the doc is right now" and "this test can catch a wrong doc" are
+		// different claims, and only the second makes the table trustworthy enough to
+		// gate on. This is that second claim.
+		//
+		// Two independent ways to dangle, because they travel different code paths: a
+		// `file:line` inside the mechanism cell, and a bare path in the proof cell.
+		// Fixing only one of them would leave the other unproven.
+		using dir = TempDir.createSync("@omp-mechanism-negative-");
+		const broken = path.join(dir.path(), "feature-mechanism.md");
+		await Bun.write(
+			broken,
+			[
+				"| feature | mechanism | proof |",
+				"| --- | --- | --- |",
+				"| Deleted mechanism | `packages/does-not-exist/deleted.ts:12` | none — owes a bead |",
+				"| Deleted proof | `packages/tui/src/overlays/hook-editor.ts:1` | packages/tui/test/gone.test.ts |",
+				"",
+			].join("\n"),
+		);
+
+		const dangling = await findDangling(await readRows(broken));
+
+		// Asserted on the specific strings, not just the count: a check that returned
+		// an empty array would also satisfy `toHaveLength(2)`, and an empty array here
+		// is exactly the silent-pass this test exists to rule out.
+		expect(dangling).toEqual([
+			"Deleted mechanism -> packages/does-not-exist/deleted.ts",
+			"Deleted proof -> packages/tui/test/gone.test.ts",
+		]);
 	});
 
 	test("a proof names a test under packages/*/test, or is a `none` that owes one to a named work item", async () => {

@@ -398,7 +398,7 @@ import { getRestorableSessionModels, isTranscriptEntry } from "./session-context
 import type { CacheWarmer, CacheWarmingStatus } from "./cache-warmer";
 import { isUserRequestEntry, transcriptEntryMessage, userTurnDraft } from "@oh-my-pi/pi-tui/chat/transcript-entry";
 import { formatSessionDumpText } from "./session-dump-format";
-import type { BranchSummaryEntry, NewSessionOptions } from "./session-entries";
+import { isApprovalDenial, type BranchSummaryEntry, type NewSessionOptions } from "./session-entries";
 import { SessionHandoff, type SessionHandoffHost } from "./session-handoff";
 import {
 	COMPACTION_CHECK_NONE,
@@ -1090,6 +1090,30 @@ export class AgentSession implements SettingsScope {
 	 * turn's index is captured once and read back.
 	 */
 	#openTurnIndex = 0;
+	/**
+	 * Leaf id at the moment the open turn began — the lower bound of the window
+	 * scanned for approval refusals. `null` until the first `turn_start`.
+	 */
+	#openTurnEntryId: string | null = null;
+	/**
+	 * `requestId`s of every approval refused since the open turn began.
+	 *
+	 * Reads the log instead of taking reports from writers, because three separate
+	 * places append approval halves and an extension can append its own. A
+	 * push-based design would have to be wired into all three and would still miss
+	 * a fourth added later; the log is already the record, so this cannot fall
+	 * behind what was actually written.
+	 */
+	#approvalDenialsSinceTurnOpen(): string[] {
+		const entries = this.sessionManager.getEntries();
+		const anchor = this.#openTurnEntryId;
+		const from = anchor === null ? -1 : entries.findIndex(entry => entry.id === anchor);
+		// A missing anchor means the log was rebuilt underneath us (a branch or a
+		// resume moved the leaf). Scanning the whole log over-reports rather than
+		// silently dropping a real refusal, and `turn_start` re-anchors next turn.
+		const window = from >= 0 ? entries.slice(from + 1) : entries;
+		return window.filter(isApprovalDenial).map(entry => entry.requestId);
+	}
 	#messageEndPersistenceTail: Promise<void> = Promise.resolve();
 	#pendingMessageEndPersistence = new Map<string, Promise<void>>();
 	#persistedMessageKeys: { anchor: string; keys: Set<string> } | undefined;
@@ -3646,6 +3670,11 @@ export class AgentSession implements SettingsScope {
 			// `runLoopBody` push `turn_start` and then throw, so `turn_end` never
 			// follows them, and one of them never assigns the flag at all.
 			this.#openTurnIndex = this.#turnIndex;
+			// Anchor for `blockedBy`: everything appended between here and `turn_end`
+			// is what happened *inside* this turn. Captured before the `started` half
+			// is written, so the anchor is the boundary rather than a member of the
+			// window.
+			this.#openTurnEntryId = this.sessionManager.getLeafId();
 			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "started" });
 		}
 		// Step the mid-run todo counter synchronously, BEFORE any await in this
@@ -3841,7 +3870,21 @@ export class AgentSession implements SettingsScope {
 			// so both halves of a turn carry the same number, and so `turn_id`
 			// (`Math.max(0, this.#turnIndex - 1)`, further down) keeps naming the
 			// turn that just closed. Ungated for the same reason as the opening half.
-			this.sessionManager.appendTurnEntry({ turnIndex: this.#turnIndex, phase: "ended" });
+			// `blockedBy` names the approvals refused while this turn was open, read
+			// back from the log rather than reported by each writer. Three places
+			// append approval halves (the ACP bridge, the tool path, and extensions
+			// via `ExtensionRunner.recordApprovalEntry`), and `ApprovalEntry` is
+			// already the single source of truth for what was decided — so deriving
+			// from it needs no writer changed and cannot miss a producer.
+			const blockedBy = this.#approvalDenialsSinceTurnOpen();
+			this.sessionManager.appendTurnEntry({
+				turnIndex: this.#turnIndex,
+				phase: "ended",
+				// Absent rather than empty when nothing was refused: an empty array
+				// would read as "we looked and found none" while being
+				// indistinguishable from a writer that forgot to populate it.
+				...(blockedBy.length > 0 ? { blockedBy } : {}),
+			});
 			this.#turnIndex++;
 		}
 		// Finalize the tool-choice queue's in-flight yield after tools have executed.

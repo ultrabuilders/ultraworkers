@@ -265,18 +265,46 @@ export interface ApprovalEntry extends SessionEntryBase {
  * drift from the first, so this names the `requestId`s and leaves the content
  * where it is already written.
  */
+/**
+ * True for the `answered` half of an approval that refused the call.
+ *
+ * A deny-list over what refusal *looks like*, not an allow-list of one
+ * producer's enum, because `decision` has no single vocabulary: the ACP bridge
+ * writes option kinds (`reject_once` / `reject_always`), a tool-level gate can
+ * answer `"denied"`, and an extension may write any string through
+ * `ExtensionRunner.recordApprovalEntry`. `policy: "deny"` is accepted too — it is
+ * the one field a gate denial sets regardless of how the question was answered.
+ *
+ * Only the `answered` half qualifies, so one refusal yields one `requestId` even
+ * though the pair writes two entries.
+ */
+export function isApprovalDenial(entry: SessionEntry): entry is ApprovalEntry {
+	if (entry.type !== APPROVAL_ENTRY_TYPE || entry.phase !== "answered") return false;
+	if (entry.policy === "deny") return true;
+	const decision = entry.decision;
+	if (!decision) return false;
+	return decision === "denied" || decision === "deny" || decision.startsWith("reject");
+}
+
 export interface TurnEntry extends SessionEntryBase {
 	type: typeof TURN_ENTRY_TYPE;
 	/** Index of the turn within the session; matches the loop's `turnIndex`. */
 	turnIndex: number;
 	phase: "started" | "ended";
 	/**
-	 * `ApprovalEntry.requestId` of every denial that cut this turn short.
+	 * `ApprovalEntry.requestId` of every approval refused while this turn was open.
 	 *
-	 * Deliberately not derived from `ToolResultMessage.isError`: that flag
-	 * carries no policy, so it cannot tell a gate denial from an ordinary tool
-	 * failure. Filling this from it would build a second source that disagrees
-	 * with `ApprovalEntry` in exactly the cases that matter.
+	 * "Refused", not "cut short": a rejected tool call does not end the turn — the
+	 * model receives the rejection and continues. The turns that actually die are
+	 * the three sites in `runLoopBody` that push `turn_start` and then throw, and a
+	 * denial is not what kills them. So this records that the turn was *subject to*
+	 * a gate refusal, which is observable, rather than a causal claim about the
+	 * turn's end, which is not.
+	 *
+	 * Deliberately not derived from `ToolResultMessage.isError`: that flag carries
+	 * no policy, so it cannot tell a gate denial from an ordinary tool failure.
+	 * Filling this from it would build a second source that disagrees with
+	 * `ApprovalEntry` in exactly the cases that matter.
 	 */
 	blockedBy?: string[];
 }

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { toolWireSchema } from "@oh-my-pi/pi-ai/utils/schema";
 import { validateToolArguments } from "@oh-my-pi/pi-ai/utils/validation";
 import { loadCustomTools, type ToolPathWithSource } from "../../src/extensibility/custom-tools/loader";
+import { hostGuardState } from "../../src/extensibility/utils";
 
 let tempRoot: string | undefined;
 
@@ -13,6 +14,28 @@ afterEach(async () => {
 		await fs.rm(tempRoot, { recursive: true, force: true });
 		tempRoot = undefined;
 	}
+});
+
+/**
+ * Detector for a guard window abandoned by an EARLIER test file.
+ *
+ * `withHostGuard` restores stdin in `finally` only when its depth returns to 0. A window
+ * whose promise never settles — a harness that abandons it, a test that times out inside
+ * it — leaves the depth above zero for the rest of the process, and every later
+ * `withHostGuard` then sees a window already open and does nothing. The test above, which
+ * asserts the guard resumed host stdin, stops being able to observe that resume.
+ *
+ * Reading the depth is cheaper than reproducing the failure: the flake
+ * `resumes host stdin when a tool pauses it at import time` has been observed once in
+ * ~3388 runs and never on demand, and running this file alone can never see it, because
+ * the damage is done by a file that ran earlier. This turns "run the suite for nine
+ * minutes and hope" into "run the suite and read one number".
+ *
+ * A non-zero reading is the finding, not a cleanup step — this file does not reset the
+ * depth, because a reset would hide exactly the condition it exists to surface.
+ */
+afterAll(() => {
+	expect(hostGuardState().depth).toBe(0);
 });
 
 async function writeTool(name: string, source: string): Promise<string> {

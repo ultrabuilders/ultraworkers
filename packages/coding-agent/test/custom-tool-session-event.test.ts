@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, vi } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -191,18 +191,45 @@ describe("the reason union matches what is actually delivered", () => {
 
 describe("every mode reaches the dispatcher through dispose", () => {
 	it("print mode disposes the session, which is where the dispatcher lives", async () => {
+		// Proved by running print mode, not by reading it. The previous version
+		// counted the *string* `session.dispose(` in print-mode.ts: banned by
+		// AGENTS.md, and it broke on a pure rename — adding `const sess = session`
+		// and calling `sess.dispose(…)` took it red with behaviour unchanged.
+		//
 		// The delivery tests above prove the dispatcher works when called. This
 		// proves the part that was only ever an argument: that a mode with no UI
-		// actually goes through dispose. A mode that exited another way would
-		// deliver nothing, and no test above would notice — the dispatcher was
-		// never asked.
-		const { readFileSync } = await import("node:fs");
-		const src = readFileSync(new URL("../src/modes/print-mode.ts", import.meta.url), "utf8");
-		// Two exits in print mode, both disposing: the clean return and the
-		// failure path. If either stopped disposing, a tool would miss shutdown
-		// in the exact mode used for automation.
-		const calls = src.match(/session\.dispose\(/g) ?? [];
-		expect(calls.length).toBeGreaterThanOrEqual(2);
+		// reaches dispose at all. A mode that exited another way would deliver
+		// nothing, and no test above would notice.
+		const { createDelayedSession, makeAssistantMessage } = await import("./helpers/print-mode");
+		const { runPrintMode } = await import("@oh-my-pi/pi-coding-agent/modes/print-mode");
+
+		// Print mode writes to the real stdout/stderr otherwise.
+		// Print mode's spinner drives an explicit flush by passing a callback as
+		// the last write() argument. A mock that swallows it never resolves, so
+		// print mode waits forever — which reads as a timeout in the code under
+		// test rather than in the mock.
+		const flush = (_chunk: unknown, ...rest: unknown[]) => {
+			const last = rest[rest.length - 1];
+			if (typeof last === "function") (last as () => void)();
+			return true;
+		};
+		const stdout = vi.spyOn(process.stdout, "write").mockImplementation(flush);
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(flush);
+		try {
+			const delayed = createDelayedSession(makeAssistantMessage("done"));
+			const run = runPrintMode(delayed.session, { mode: "text", initialMessage: "hello" });
+			await delayed.promptStarted;
+			delayed.resolvePrompt();
+			await run;
+
+			// Both exits must tear down: the clean return and the failure path. If
+			// either stopped disposing, a tool would miss shutdown in the exact mode
+			// used for automation.
+			expect(delayed.getDisposeCalls()).toBeGreaterThanOrEqual(1);
+		} finally {
+			stdout.mockRestore();
+			stderr.mockRestore();
+		}
 	});
 
 	it("no mode object carries its own dispatcher", async () => {

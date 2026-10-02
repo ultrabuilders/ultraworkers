@@ -172,7 +172,7 @@ describe.skipIf(!CHROMIUM_AVAILABLE)("browser open options", () => {
 		try {
 			const invoke = browserHost();
 			const name = `ua-${crypto.randomUUID()}`;
-			await invoke({ action: "open", name, url: server.url.href, user_agent: "omp-open-options/1.0" });
+			await invoke({ action: "open", name, url: server.url.href, user_agent: "ultraworkers-open-options/1.0" });
 			expect(
 				returnedValue(
 					await invoke({
@@ -181,8 +181,8 @@ describe.skipIf(!CHROMIUM_AVAILABLE)("browser open options", () => {
 						code: "return await tab.evaluate(() => navigator.userAgent);",
 					}),
 				),
-			).toBe("omp-open-options/1.0");
-			expect(await seen.promise).toBe("omp-open-options/1.0");
+			).toBe("ultraworkers-open-options/1.0");
+			expect(await seen.promise).toBe("ultraworkers-open-options/1.0");
 		} finally {
 			server.stop(true);
 		}

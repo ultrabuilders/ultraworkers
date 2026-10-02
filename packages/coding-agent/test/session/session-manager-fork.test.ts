@@ -62,7 +62,7 @@ describe("SessionManager.forkFrom", () => {
 		const previousAgentDir = getAgentDir();
 		const previousTermSessionId = process.env.TERM_SESSION_ID;
 		setAgentDir(path.join(tempDir.path(), "agent"));
-		process.env.TERM_SESSION_ID = "omp-fork-test";
+		process.env.TERM_SESSION_ID = "ultraworkers-fork-test";
 		try {
 			const cwd = path.join(tempDir.path(), "project");
 			const sessionDir = path.join(tempDir.path(), "sessions");

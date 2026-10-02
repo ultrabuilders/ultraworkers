@@ -11,7 +11,7 @@ const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
 const HISTORY_STORAGE_MODULE = path.resolve(import.meta.dir, "../src/session/history-storage.ts");
 const AGENT_STORAGE_MODULE = path.resolve(import.meta.dir, "../src/session/agent-storage.ts");
 
-async function freshStorage(prefix = "omp-history-write-through-"): Promise<HistoryStorage> {
+async function freshStorage(prefix = "ultraworkers-history-write-through-"): Promise<HistoryStorage> {
 	tempDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
 	const dbPath = path.join(tempDir, "history.db");
 	HistoryStorage.close();

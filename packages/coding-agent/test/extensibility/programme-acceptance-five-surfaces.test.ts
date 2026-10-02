@@ -35,14 +35,17 @@ import { SessionManager } from "../../src/session/session-manager";
 /**
  * An out-of-repo extension registering all five surfaces at once.
  *
- * `ui.showOverlay` is only reachable from inside an event handler (the surface
- * arrives as `ctx.ui`), which is why the TUI panel is registered on `session_start`
- * rather than at factory time. That is a property of the real seam, not a
- * convenience: it is why an extension cannot hold a panel across sessions.
+ * The TUI panel is registered on `session_start`, not at factory time, because the
+ * surface arrives as `ctx.ui` on the event — it is not on the `api` object.
+ *
+ * It was previously written as `typeof ctx.ui.showOverlay === "function"`, which was
+ * **false for every value**, so the assertion below passed unconditionally. There is no
+ * `showOverlay` on `ExtensionUIContext`: the declared interface has 24 members and no
+ * such one, and neither runtime implementation carries it either — the TUI controller's
+ * ~50-member object and the frameless fallback in `runner.ts` both lack it. The seam an
+ * extension actually has for a panel is `ctx.ui.setWidget`.
  */
 const FIVE_SURFACE_EXTENSION = `
-import { pluginSettingId } from "@oh-my-pi/pi-coding-agent/extensibility/settings";
-
 export default function (pi) {
 	pi.registerTool({
 		name: "acceptance_probe",
@@ -58,15 +61,32 @@ export default function (pi) {
 
 	pi.registerSetting({
 		// The registry refuses ids outside "plugins.<id>.<key>" (config/registry.ts:899),
-		// so the id is BUILT rather than written: an out-of-repo author copying a literal
-		// from a core setting gets a load error instead of a silent collision.
-		id: pluginSettingId("acceptance", "probeEnabled"),
+		// so the id is written out in full.
+		//
+		// It was previously \`pluginSettingId("acceptance", "probeEnabled")\`, imported from
+		// "@oh-my-pi/pi-coding-agent/extensibility/settings". That import cannot work for
+		// the audience this file models: a "~/.omp/extensions" install has no node_modules
+		// to resolve a package specifier from — the same reason \`api.zod\` is injected rather
+		// than imported. Every in-repo registerSetting call site writes the literal too. The
+		// test asserts below that the literal an author MUST write is exactly what the
+		// helper produces, which pins the fold an author cannot otherwise see.
+		id: "plugins.acceptance.probe_enabled",
 		type: "boolean",
 		default: false,
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		globalThis.__acceptancePanelShown = typeof ctx.ui.showOverlay === "function";
+		globalThis.__acceptanceHookFired = true;
+		try {
+			ctx.ui.setWidget("acceptance-panel", ["acceptance panel"]);
+			globalThis.__acceptancePanelRefusal = null;
+		} catch (error) {
+			// A bare ExtensionRunner is frameless, and setWidget refuses there rather than
+			// silently doing nothing (runner.ts) — on purpose, so an author is never left
+			// believing a panel is on screen. Recording the refusal is what lets this file
+			// tell "the seam refused loudly" apart from "the seam was never reached".
+			globalThis.__acceptancePanelRefusal = error instanceof Error ? error.message : String(error);
+		}
 	});
 }
 `;
@@ -83,7 +103,7 @@ async function loadProbeExtension(): Promise<LoadedProbe> {
 	// os.tmpdir() is outside the repo by construction; asserting that keeps the
 	// "outside this repo" half of the promise from quietly becoming "in a fixture
 	// directory", which is where a same-package import could resolve.
-	const outside = await fs.promises.mkdtemp(path.join(os.tmpdir(), "omp-acceptance-"));
+	const outside = await fs.promises.mkdtemp(path.join(os.tmpdir(), "ultraworkers-acceptance-"));
 	const extensionPath = path.join(outside, "acceptance-extension.ts");
 	await fs.promises.writeFile(extensionPath, FIVE_SURFACE_EXTENSION);
 	const result = await loadExtensions([extensionPath], outside);
@@ -137,11 +157,12 @@ describe("programme acceptance: five surfaces from one out-of-repo extension", (
 		// into the process-global registry, which is why unload has to withdraw them by
 		// id. So the assertion is against that registry, not against the extension.
 		//
-		// The id is recomputed with the same function the extension used rather than
-		// written out, so this asserts the id the REGISTRY derives. Hardcoding
-		// "plugins.acceptance.probe_enabled" would pass even if the sanitizer's fold
-		// changed — and the fold is the part an extension author cannot see.
-		expect(lookup(pluginSettingId("acceptance", "probeEnabled"))).toBeDefined();
+		// The extension cannot import `pluginSettingId`, so it writes the literal. That
+		// makes the fold the one thing in this file no in-repo caller exercises — an
+		// author who copied a literal and then watched the sanitizer change would get an
+		// extension that no longer loads, with nothing on their side having moved.
+		expect(pluginSettingId("acceptance", "probeEnabled")).toBe("plugins.acceptance.probe_enabled");
+		expect(lookup("plugins.acceptance.probe_enabled")).toBeDefined();
 	});
 
 	it("delivers the lifecycle hook and reaches the TUI surface from it", async () => {
@@ -158,10 +179,19 @@ describe("programme acceptance: five surfaces from one out-of-repo extension", (
 
 		await runner.emit({ type: "session_start" });
 
-		// Two facts in one assertion because they are one contract: the hook fired
-		// AND the TUI panel seam was reachable from inside it. A green hook that never
-		// received ctx.ui would satisfy the first and fail the second.
 		expect(errors).toEqual([]);
-		expect(typeof (globalThis as Record<string, unknown>).__acceptancePanelShown).toBe("boolean");
+		const probeGlobals = globalThis as Record<string, unknown>;
+		// Three facts, because the previous version of this asserted
+		// `typeof <probe> === "boolean"` — true for `false` as well, so it passed
+		// whether the seam worked or not.
+		//
+		// 1. The hook fired. 2. It was handed a `ui` carrying the panel seam. 3. The seam
+		// REFUSED, naming itself — a bare runner is frameless, and the refusal is the
+		// behaviour worth pinning: it is the difference between an author being told the
+		// panel is unavailable and an author believing it is on screen. A silent no-op
+		// here would leave this assertion green, which is the defect being fixed.
+		expect(probeGlobals.__acceptanceHookFired).toBe(true);
+		expect(typeof probeGlobals.__acceptancePanelRefusal).toBe("string");
+		expect(probeGlobals.__acceptancePanelRefusal as string).toContain("setWidget is not available");
 	});
 });

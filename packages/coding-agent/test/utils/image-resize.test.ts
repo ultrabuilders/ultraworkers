@@ -62,7 +62,7 @@ describe("formatScreenshot", () => {
 	});
 
 	it("formats non-home path without tilde", () => {
-		const filePath = path.join(path.parse(os.homedir()).root, "omp-render-utils", "capture.png");
+		const filePath = path.join(path.parse(os.homedir()).root, "ultraworkers-render-utils", "capture.png");
 		const resized = fakeResized({ mimeType: "image/webp", buffer: new Uint8Array(1024) });
 
 		expect(

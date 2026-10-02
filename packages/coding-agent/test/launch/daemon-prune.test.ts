@@ -81,7 +81,7 @@ describe("pruneDeadDaemonRuntimeDirs", () => {
 			await fs.mkdir(path.join(fakeTmp, name, "src"), { recursive: true });
 			await fs.utimes(path.join(fakeTmp, name), STALE, STALE);
 		}
-		const runtimeDir = path.join(fakeTmp, "omp-daemon-smoke-run-xxxx");
+		const runtimeDir = path.join(fakeTmp, "ultraworkers-daemon-smoke-run-xxxx");
 		await fs.mkdir(runtimeDir, { recursive: true });
 
 		await pruneDeadDaemonRuntimeDirs(runtimeDir);

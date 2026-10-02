@@ -309,9 +309,9 @@ describe("ensureRuntimeInstalled install lock", () => {
 		tempDirs.push(src);
 		await fs.writeFile(
 			path.join(src, "package.json"),
-			JSON.stringify({ name: "omp-runtime-fixture", version: "1.0.0" }),
+			JSON.stringify({ name: "ultraworkers-runtime-fixture", version: "1.0.0" }),
 		);
-		return { spec: `file:${src}`, probe: "omp-runtime-fixture" };
+		return { spec: `file:${src}`, probe: "ultraworkers-runtime-fixture" };
 	}
 
 	async function makeRuntimeDir(): Promise<string> {

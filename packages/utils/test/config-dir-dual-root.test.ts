@@ -23,7 +23,7 @@ import { Snowflake } from "@oh-my-pi/pi-utils/snowflake";
  * rebrand never actually moves anything. These are different answers on
  * purpose, which is why they are separate functions and not one flag.
  */
-const HOME_TMP = ".omp-config-dir-dual-root";
+const HOME_TMP = ".ultraworkers-config-dir-dual-root";
 
 let home = "";
 let originalXdg: Record<string, string | undefined> = {};

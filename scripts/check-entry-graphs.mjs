@@ -92,6 +92,17 @@ const WORKSPACE = {
  * simultaneously. That is the signature of a shared-leaf addition, and it is how 24/5/284
  * became 25/6/285 in one commit — see the `brand.ts` note under `cli.ts` below. Recognising the
  * signature is what keeps a re-pin from being mistaken for three unrelated regressions.
+ *
+ * **Thresholds already tried for the `brand.ts` +1, so nobody re-measures them.** Both were
+ * measured, not argued, and both are impossible rather than merely undesirable:
+ *
+ * - *Hoist it out of the graph* — impossible by construction. `brand.ts` has **zero imports**,
+ *   so there is nothing above it to cut. The only remaining lever is dropping the
+ *   `export * from "./brand"` in `dirs.ts`, which reaches the 152 files that read `APP_NAME`
+ *   and undoes the browser-bundle isolation the extraction exists to provide.
+ * - *Make the utils barrel import lazy* — measured **delta 0** on both `cli.ts` and
+ *   `stream.ts`. Treating `@oh-my-pi/pi-utils` as a dynamic import removes **no** files,
+ *   because `brand.ts` arrives by another path. It is not a style question; it cannot work.
  */
 const BUDGETS = {
 	"packages/coding-agent": {

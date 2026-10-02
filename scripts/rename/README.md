@@ -234,6 +234,19 @@ to a file the gate scans, so the file's row count goes stale and the gate report
 number — not as a follow-up, because by then the count has already been wrong on
 someone else's tree, which is how it happened twice in one hour.
 
+### The same rule for this file, which is the one that bites
+
+This README is itself allow-listed at a **pinned** count, so the identical trap
+applies in markdown: an edit that quotes the token raises the file above its
+budget and `check:docs-rename` goes red — in `bun check`, for the next person,
+not for you.
+
+It cost a committed red here. The section above moved the count from 5 to 9 and
+the budget still read 6, so `bun check` was failing on the tree before this fix
+and the commit that caused it had already landed. Move the budget in the same
+commit, and prefer wording that does not need the token at all — the rules above
+are all statable without it, and only their *evidence* needs the literal paths.
+
 ## Not a test
 
 AGENTS.md bans source-grep _tests_ — a test asserting on an implementation file's

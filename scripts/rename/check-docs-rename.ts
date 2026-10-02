@@ -67,8 +67,21 @@ import { isInsideNestedRepository, nestedRepoCache } from "./scan-scope";
  * outstanding occurrences were always measured over the intended corpus, and
  * `node_modules` was never part of it. It only stops a third party's README
  * from being able to move the number.
+ *
+ * `.claude/` joins them for the reason measured in epic-wh2q: it holds **0
+ * tracked files** (`git ls-files -- .claude` is empty), so excluding it costs no
+ * coverage, while the tree walk reaches into it unconditionally. `EnterWorktree`
+ * writes checkouts under `.claude/worktrees/`, and a directory there without a
+ * `.git` entry is not a nested repository, so the nested-repository guard does
+ * not catch it — probed both ways against `check-disposition`'s `hitPaths`, and
+ * only the dot-directory shape was reported.
+ *
+ * This list is not the union of every dot-directory: `.omp/` and the `.lavish`
+ * pair are excluded here for their own, different reasons (runtime prompt corpus
+ * and work logs) and `.claude/` is excluded because it is not repository content
+ * at all. Conflating those three would make the next exclusion unreviewable.
  */
-const EXCLUDED_PREFIXES = [".lavish-wip/", ".lavish/", ".omp/", "node_modules/"];
+const EXCLUDED_PREFIXES = [".lavish-wip/", ".lavish/", ".omp/", ".claude/", "node_modules/"];
 
 /** Root-level plan documents: history, not shipped documentation. */
 const EXCLUDED_ROOT = /^(?:[A-Z0-9_]*EXECUTION_PLAN\.md|PACKAGE_REORGANIZATION_PLAN\.md|COMPREHENSIVE_PLAN.*\.md)$/;

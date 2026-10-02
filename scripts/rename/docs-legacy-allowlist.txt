@@ -254,6 +254,13 @@ README.md	42
 # has to name the token and the pinned expression verbatim — a reader must be able
 # to reproduce the counts the gate derives. Renaming them here would make the
 # documentation describe a pattern that no longer matches the gate.
-scripts/rename/README.md	6
+# Budget 6 -> 9 on 2026-10-02, in the same commit that touched the file. The three
+# added occurrences are all dot-directory paths quoted in "Writing a test in this
+# directory", where naming the exact directory IS the point: the section's claim is
+# that `.omp/` is the right control for one gate and the wrong control for another,
+# because the two disagree about dot-directories. Rewriting those paths would leave
+# the rule stated and its evidence gone. The token here is documentation of the
+# gate's own scope, not a brand string in prose.
+scripts/rename/README.md	9
 # on-disk config dir name
 scripts/session-stats/README.md	4

@@ -290,8 +290,36 @@ export function parseTable(text: string): ParseResult {
  * root forgotten here reappears as a `missing-row` on whoever builds next, which
  * is the failure this list exists to prevent, so it fails loudly rather than
  * silently narrowing the gate.
+ *
+ * `.claude/` is a different exclusion and needs its own reason, because
+ * `isInsideNestedRepository` already covers the case this list used to be the
+ * only defence against. Two shapes were probed against this gate's own
+ * `hitPaths`, both under `.claude/worktrees/`:
+ *
+ *   probe A — with a `.git` FILE, the shape `EnterWorktree` writes
+ *     → reported 0 times. The nested-repository guard catches it.
+ *   probe B — the same path with no `.git`, i.e. an ordinary dot-directory
+ *     → reported as `missing-row`. The guard does not, and nothing else did.
+ *
+ * So the guard and this list cover disjoint cases and both are needed. What
+ * makes `.claude/` safe to exclude here is measured, not assumed:
+ * `git ls-files -- .claude` returns **0 files**, so excluding it costs no
+ * coverage at all — unlike `.omp/`, which holds 16 tracked files and must stay
+ * in scope for this gate.
+ *
+ * The local-only half of this is worth stating: `.claude/worktrees/` is hidden
+ * by `.git/info/exclude`, which is never committed. A clean CI clone has
+ * neither the directory nor the exclusion, so this line is free there and load-
+ * bearing on a developer machine — the same walk reading a different corpus in
+ * the two places is the drift this gate must not have.
  */
-const EXCLUDED_PREFIXES = ["node_modules/", ".git/", "python/robomp/src/static/", "python/robomp/web/dist/"];
+const EXCLUDED_PREFIXES = [
+	"node_modules/",
+	".git/",
+	".claude/",
+	"python/robomp/src/static/",
+	"python/robomp/web/dist/",
+];
 
 /** Build output: any path with a `dist` segment, matching the per-package dist rule. */
 function isBuildOutput(relPath: string): boolean {

@@ -62,6 +62,11 @@ type ReplacedSlot = readonly unknown[] | ReadonlyMap<unknown, unknown> | Readonl
  * `Deep<InteractiveModeContext>` re-enters the recursive `Component` tree
  * through every array member and exhausts the instantiation budget (TS2589),
  * while describing merges the helper cannot perform.
+ *
+ * Class instances are the remaining known divergence: `layer()` replaces them
+ * wholesale too, but `Deep` keeps describing them structurally. That is a
+ * looseness rather than a hazard — a fully-populated instance still assigns —
+ * and tightening it would narrow the contract for no gain, so it stays.
  */
 export type Deep<T> = T extends AnyFn
 	? T

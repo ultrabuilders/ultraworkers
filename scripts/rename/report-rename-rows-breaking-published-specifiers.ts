@@ -1,17 +1,31 @@
 /**
- * Report-only: how many `rename` rows order a break of a published specifier?
+ * Report-only: how many `rename` rows sit inside a file that a package publishes?
  *
- * ## Why this matters
+ * ## What a `rename` row means — read this before quoting a number from here
+ *
+ * `rename` renames the **token inside the file**. It does not rename the file.
+ * `scripts/rename/README.md` states the vocabulary, and the gate implements it:
+ * `rename-incomplete` fires when a rename row still has occurrences left in the
+ * file, and `hits` counts those occurrences — which is why `cli.ts` carries
+ * `hits=10` rather than 1. No file-rename primitive exists anywhere in
+ * `scripts/rename/`.
+ *
+ * So **no row in this table can break a specifier.** An earlier version of this
+ * file claimed the opposite and printed "BREAK a published specifier"; that was
+ * wrong, and the error came from reading a row about a token as a row about a
+ * file name. 63 caught it; the count was always answering a question nobody asked.
+ *
+ * ## What this actually measures
  *
  * Every bundled package publishes wildcards rooted at `src/`:
  *
  *     "./*": { "types": "./src/*.ts", "import": "./src/*.ts" }
  *
- * A wildcard turns a **file name** into a **public specifier**. So a `rename` row
- * on `packages/<pkg>/src/foo/bar.ts` is not an internal tidy-up — it is the table
- * ordering `@oh-my-pi/pi-<pkg>/foo/bar` to stop resolving for anyone who installed
- * the package. That is a consequence, not an opinion, which is why it is measured
- * here rather than argued about per row.
+ * A wildcard does turn a **file name** into a **public specifier** — that part is
+ * real. It just is not something `disposition.tsv` decides. The open question is
+ * "should these files be renamed at all", which lives in the package's `exports`
+ * map and needs an owner decision; there is no row to attach a `keep_refs` to.
+ *
  *
  * ## What counts as published
  *
@@ -176,7 +190,7 @@ const accounted = outsideSrc + missingFile + privatePackage + hostEntrypoint + p
 console.log(`HEAD                 ${(await Bun.$`git rev-parse --short HEAD`.cwd(REPO_ROOT).text()).trim()}`);
 console.log(`host entrypoints excluded (read from the registry): ${JSON.stringify([...hostEntrypoints])}\n`);
 console.log(`rename rows total            ${renameRows}`);
-console.log(`  BREAK a published specifier ${publishedRows.length}   <-- the question a4 asked`);
+console.log(`  in a published file        ${publishedRows.length}   (rename hits the TOKEN, not the file name)`);
 console.log(`  outside src/ (not a specifier) ${outsideSrc}`);
 console.log(`  file or manifest missing    ${missingFile}`);
 console.log(`  private package             ${privatePackage}`);

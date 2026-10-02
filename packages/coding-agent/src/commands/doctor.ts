@@ -20,44 +20,26 @@
  * number by construction.
  */
 
-import chalk from "@oh-my-pi/pi-utils/chalk";
 import { Command } from "@oh-my-pi/pi-utils/cli";
-import { initTheme, theme } from "@oh-my-pi/pi-tui/theme";
+import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import { doctorHelp as commandHelp } from "../cli/command-help";
-import { formatDoctorResults, runDoctorChecks } from "../extensibility/plugins/doctor";
+import { buildEnvironmentDoctorReport } from "../extensibility/plugins/doctor-report";
 
 export default class Doctor extends Command {
 	static description = commandHelp.description;
 
 	async run(): Promise<void> {
 		// `theme` is an uninitialised singleton (`export var theme: Theme`) that only
-		// gains its tokens once something calls `setThemeInstance`. Every sibling CLI
-		// command that reaches for `theme.status` — and this one formats a report out
-		// of those tokens — initialises it here first; reading it without this throws
-		// on `theme.status` rather than falling back to uncoloured output.
+		// gains its tokens once something calls `setThemeInstance`. The report's
+		// default icons read `theme.status`, so this must run first — and it must
+		// run before the builder, which snapshots the glyphs at call time.
 		await initTheme();
 
-		const checks = await runDoctorChecks();
-
-		// Styling stays local to the CLI, matching `omp plugin doctor`: the colouring
-		// is this surface's decision, while the bucketing that produced two wrong
-		// summaries in a row belongs to the shared formatter.
-		const styles = {
-			heading: (text: string) => chalk.bold(text),
-			ok: (icon: string) => chalk.green(icon),
-			warning: (icon: string) => chalk.yellow(icon),
-			error: (icon: string) => chalk.red(icon),
-			dim: (text: string) => chalk.dim(text),
-		};
-		const icons = {
-			ok: theme.status.success,
-			warning: theme.status.warning,
-			error: theme.status.error,
-			unavailable: "?",
-			fixed: theme.nav.cursor,
-		};
-
-		const report = formatDoctorResults(checks, styles, icons, { heading: "Environment Health Check" });
+		// The shared builder, not a local `runDoctorChecks` + `formatDoctorResults`
+		// pair. `omp plugin doctor` and the TUI's `/debug` entry print the report
+		// this returns; a surface that collected its own checks would drift from
+		// the other two while each stayed green against its own copy.
+		const report = await buildEnvironmentDoctorReport();
 		for (const line of report.lines) console.log(line);
 
 		// A warning is not a failure. `omp doctor` answering 1 for a noisy-but-working

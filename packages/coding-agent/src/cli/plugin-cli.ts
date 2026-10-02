@@ -19,6 +19,7 @@ import {
 } from "../extensibility/plugins/marketplace/index";
 import { type InstalledPlugin } from "../extensibility/plugins/types";
 import { formatDoctorResults, runDoctorChecks } from "../extensibility/plugins/doctor";
+import { doctorPresentation } from "../extensibility/plugins/doctor-report";
 import { theme } from "@oh-my-pi/pi-tui/theme";
 
 // =============================================================================
@@ -743,22 +744,11 @@ export async function handleDoctor(manager: PluginManager, flags: { json?: boole
 
 	// The report is built by the shared formatter rather than inlined here, so the
 	// bucketing that produced two wrong summaries in a row has one implementation
-	// and one set of tests instead of a copy per renderer. The styles and icons
-	// stay local: colouring is this CLI's decision, the partition is not.
-	const styles = {
-		heading: (text: string) => chalk.bold(text),
-		ok: (icon: string) => chalk.green(icon),
-		warning: (icon: string) => chalk.yellow(icon),
-		error: (icon: string) => chalk.red(icon),
-		dim: (text: string) => chalk.dim(text),
-	};
-	const icons = {
-		ok: theme.status.success,
-		warning: theme.status.warning,
-		error: theme.status.error,
-		unavailable: "?",
-		fixed: theme.nav.cursor,
-	};
+	// and one set of tests instead of a copy per renderer. Colouring stays a
+	// parameter, but the DEFAULT set now comes from `doctorPresentation()` —
+	// building the same five chalk wrappers in a third file was how `omp doctor`
+	// and this command ended up with two copies that could disagree.
+	const { styles, icons } = doctorPresentation();
 
 	const pluginReport = formatDoctorResults(pluginChecks, styles, icons, { heading: "Plugin Health Check" });
 	const environmentReport = formatDoctorResults(environmentChecks, styles, icons, {

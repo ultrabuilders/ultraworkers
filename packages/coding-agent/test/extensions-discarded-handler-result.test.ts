@@ -6,12 +6,11 @@
  * These assert the observable contract — a report reaches `onError`, the value is
  * still discarded, and the events that legitimately consume a result are untouched.
  *
- * The seam is closed at the TYPE layer as well as at runtime: `on()` declares
- * `ExtensionHandler<E, R = undefined>` and the `tool_approval_requested` overload
- * supplies no `R`, so a returned value does not compile there. The runtime tests
- * therefore register through `extension.handlers` rather than through `on()` — that
- * is not a way around the type, it is the only way to *reach the path at all*, and
- * the probe at the bottom of this file is what holds the type closed.
+ * `tool_approval_requested` is the one event that used to sit here and no longer
+ * does: it now carries a `ToolApprovalRequestedEventResult`, so a returned veto is
+ * consumed rather than discarded. The discarding cases below therefore use
+ * `session_start`, an event that reads no result — which keeps both halves of the
+ * contract asserted instead of leaving one of them untested.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -64,12 +63,12 @@ describe("discarded extension handler result", () => {
 	it("reports a returned value on an event that consumes none", async () => {
 		const { extension, runner, errors, dispose } = await harness();
 		try {
-			extension.handlers.set("tool_approval_requested", [async () => VETO]);
-			await runner.emit(APPROVAL_EVENT);
+			extension.handlers.set("session_start", [async () => VETO]);
+			await runner.emit({ type: "session_start", sessionId: "s" } as never);
 
 			expect(errors).toHaveLength(1);
 			expect(errors[0]).toMatchObject({
-				event: "tool_approval_requested",
+				event: "session_start",
 				code: EXTENSION_HANDLER_RESULT_DISCARDED_CODE,
 			});
 			// The author has to see *what* was thrown away, not merely that
@@ -83,10 +82,10 @@ describe("discarded extension handler result", () => {
 	it("still discards the value — reporting must not change the outcome", async () => {
 		const { extension, runner, dispose } = await harness();
 		try {
-			extension.handlers.set("tool_approval_requested", [async () => VETO]);
+			extension.handlers.set("session_start", [async () => VETO]);
 			// No `RunnerEmitResult` branch exists for this event, so the value cannot
 			// become a decision. If a future change made it one, this fails loudly.
-			expect(await runner.emit(APPROVAL_EVENT)).toBeUndefined();
+			expect(await runner.emit({ type: "session_start", sessionId: "s" } as never)).toBeUndefined();
 		} finally {
 			dispose();
 		}
@@ -120,13 +119,81 @@ describe("discarded extension handler result", () => {
 	});
 });
 
-// Compiled, never called: the contract under test here is that this line does NOT
-// compile. If the `on()` overload for `tool_approval_requested` is ever given a
-// result type, `@ts-expect-error` stops applying and the typecheck fails — at which
-// point the veto decision is live and the runtime tests above need revisiting
-// rather than assuming they already cover it.
-const closedSeamProbe: ExtensionFactory = pi => {
-	// @ts-expect-error `tool_approval_requested` exposes no result type (`R` defaults to `undefined`).
+describe("the tool_approval_requested veto seam", () => {
+	it("returns a handler's veto so the caller can act on it", async () => {
+		// The seam, stated as an observable contract: what a handler returns is what
+		// `emit` hands back. The two tests above now cover an event that still
+		// discards, so this pair brackets the change rather than restating it.
+		const { extension, runner, errors, dispose } = await harness();
+		try {
+			extension.handlers.set("tool_approval_requested", [async () => VETO]);
+			const result = await runner.emit(APPROVAL_EVENT);
+
+			expect(result).toMatchObject({ cancel: true, reason: "policy" });
+			// Consumed, not thrown away — reporting here would be a false alarm on the
+			// one path where returning something is the whole point.
+			expect(errors).toEqual([]);
+		} finally {
+			dispose();
+		}
+	});
+
+	it("takes the FIRST veto and stops asking the rest", async () => {
+		// First-truthy-wins, matching `emitUserEvent`. A second handler that also
+		// objects must not overturn the first decision, and one that declines must not
+		// be consulted after the fact.
+		const { extension, runner, dispose } = await harness();
+		try {
+			let secondRan = false;
+			extension.handlers.set("tool_approval_requested", [
+				async () => VETO,
+				async () => {
+					secondRan = true;
+					return { cancel: false };
+				},
+			]);
+			expect(await runner.emit(APPROVAL_EVENT)).toMatchObject({ cancel: true });
+			expect(secondRan).toBe(false);
+		} finally {
+			dispose();
+		}
+	});
+
+	it("asks the user when the handler throws — a broken extension must not allow", async () => {
+		// THE direction that matters. A handler that fails yields `undefined`, which is
+		// exactly what "no handler objected" looks like: the caller falls through to the
+		// prompt. Without this a throwing extension would silently become an allow.
+		const { extension, runner, dispose } = await harness();
+		try {
+			extension.handlers.set("tool_approval_requested", [
+				async () => {
+					throw new Error("handler exploded");
+				},
+			]);
+			expect(await runner.emit(APPROVAL_EVENT)).toBeUndefined();
+		} finally {
+			dispose();
+		}
+	});
+
+	it("asks the user when the handler declines", async () => {
+		// The control for the two above: an explicit non-veto is not a veto. If this
+		// returned its value, the caller could not tell "declined" from "denied".
+		const { extension, runner, dispose } = await harness();
+		try {
+			extension.handlers.set("tool_approval_requested", [async () => ({ cancel: false })]);
+			expect(await runner.emit(APPROVAL_EVENT)).toBeUndefined();
+		} finally {
+			dispose();
+		}
+	});
+});
+
+// Compiled, never called: a type-level guard that the seam is OPEN. It replaces an
+// earlier `@ts-expect-error` asserting the opposite — that a returned veto did not
+// compile. If a future change closes the seam again this stops compiling, which is
+// the point: the veto is now a published contract, not an accident.
+const openSeamProbe: ExtensionFactory = pi => {
 	pi.on("tool_approval_requested", () => VETO);
 };
-void closedSeamProbe;
+void openSeamProbe;

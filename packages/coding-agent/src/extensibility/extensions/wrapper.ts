@@ -28,6 +28,7 @@ import { applyToolProxy } from "../tool-proxy";
 import type { ExtensionRunner } from "./runner";
 import type { RegisteredTool, ToolCallEventResult } from "./types";
 import { ToolCallBlockedError } from "../shared-events";
+import type { ToolApprovalRequestedEventResult } from "../shared-events";
 
 /**
  * Second `renderCall` argument that satisfies both the omp and the upstream-pi
@@ -426,6 +427,10 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			// `emitApprovalResolved`, but a gate whose recorder double-writes would corrupt
 			// the very absence — "asked with no answer" — that makes a crash legible.
 			let approvalAnswered = false;
+			// The veto an extension returned from `tool_approval_requested`, if any. Held
+			// until `emitApprovalResolved` is in scope so a denial is recorded the same way
+			// a user's "Deny" is, and takes the same exit below.
+			let approvalVeto: ToolApprovalRequestedEventResult | undefined;
 			const recordApprovalAnswered = (decision: string): void => {
 				if (approvalAnswered) return;
 				approvalAnswered = true;
@@ -440,7 +445,12 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			};
 
 			if (hasApprovalHandlers) {
-				await this.runner.emit({
+				// Bound, not discarded: an extension may veto the call before it is ever
+				// put to the user. The value is acted on below, once `emitApprovalResolved`
+				// exists to record the answer. A handler that throws or returns nothing
+				// leaves `undefined` here, which is indistinguishable from "no handler
+				// objected" — the prompt is then asked exactly as it was before.
+				approvalVeto = await this.runner.emit({
 					type: "tool_approval_requested",
 					sessionId,
 					toolName: this.tool.name,
@@ -489,13 +499,31 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			}
 
 			const uiContext = this.runner.getUIContext();
+			// Hoisted above the veto below, which settles siblings under this key exactly as
+			// the user-driven deny does.
+			const actionKey = resolved.policyKey ?? canonicalizeApprovalKey(this.tool.name, effectiveParams);
+			// An extension veto is a denial the user never gets to answer, so it takes the
+			// same exit a "Deny" takes below — same sibling cascade, same preflight cancel,
+			// same `ToolCallBlockedError`. Placed here, after the no-UI gate above (whose
+			// denial is the more specific one) and before the prompt is ever built, so a
+			// veto never reaches the screen. With no handler returning `cancel`, `this` is
+			// undefined and the prompt is asked exactly as it was before the seam existed.
+			if (approvalVeto?.cancel) {
+				this.runner.settlePendingApprovals?.(actionKey, "deny");
+				await emitApprovalResolved(false, approvalVeto.reason);
+				cancelPreflight();
+				throw new ToolCallBlockedError(
+					"denied",
+					approvalVeto.reason ?? `Tool call denied by extension: ${this.tool.name}`,
+				);
+			}
+
 			const basePrompt = formatApprovalPrompt(this.tool, resolvedArgs, approvalCheck.reason);
 			const safetyPrompt =
 				pendingSafetyChecks.length > 0
 					? `${basePrompt}\nProvider safety checks:\n${safetyCheckLines(pendingSafetyChecks).join("\n")}`
 					: basePrompt;
 			let choice: string | undefined;
-			const actionKey = resolved.policyKey ?? canonicalizeApprovalKey(this.tool.name, effectiveParams);
 			// Registered for as long as the prompt is on screen, so a decision on a
 			// sibling call can release it. Parallel calls are dispatched with
 			// `Promise.allSettled` (agent-loop.ts:3712) and each raises its own

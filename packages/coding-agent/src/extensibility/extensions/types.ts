@@ -153,6 +153,7 @@ import type {
 	SessionTreeEvent,
 	TodoReminderEvent,
 	ToolCallEventResult,
+	ToolApprovalRequestedEventResult,
 	ToolResultEventResult,
 	TtsrTriggeredEvent,
 	TurnEndEvent,
@@ -991,6 +992,7 @@ export type { ContextEvent } from "../shared-events";
 // ============================================================================
 
 export type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult } from "../shared-events";
+export type { ToolApprovalRequestedEventResult } from "../shared-events";
 export type {
 	CacheWarmingAction,
 	CacheWarmingDecision,
@@ -1620,7 +1622,10 @@ export interface ExtensionAPI {
 	on(event: "goal_updated", handler: ExtensionHandler<GoalUpdatedEvent>): () => void;
 	on(event: "credential_disabled", handler: ExtensionHandler<CredentialDisabledEvent>): () => void;
 	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): () => void;
-	on(event: "tool_approval_requested", handler: ExtensionHandler<ToolApprovalRequestedEvent>): () => void;
+	on(
+		event: "tool_approval_requested",
+		handler: ExtensionHandler<ToolApprovalRequestedEvent, ToolApprovalRequestedEventResult>,
+	): () => void;
 	on(event: "tool_approval_resolved", handler: ExtensionHandler<ToolApprovalResolvedEvent>): () => void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): () => void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): () => void;

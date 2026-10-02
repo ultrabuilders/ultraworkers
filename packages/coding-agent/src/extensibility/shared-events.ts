@@ -312,6 +312,23 @@ export interface TodoReminderEvent {
 // ============================================================================
 
 /**
+ * Return type for `tool_approval_requested` handlers.
+ * Lets an extension deny a call the user was about to be asked to approve, without
+ * ever putting the prompt on screen.
+ *
+ * This is a veto, not a decision: the prompt is still shown unless a handler
+ * returns `{ cancel: true }`, and a handler that returns nothing — or throws, or
+ * times out — leaves the question to the user exactly as it was. A failing
+ * extension therefore cannot turn a denial into an allow.
+ */
+export interface ToolApprovalRequestedEventResult {
+	/** If true, deny the call without prompting. */
+	cancel?: boolean;
+	/** Why the call was denied (returned to the LLM as error). */
+	reason?: string;
+}
+
+/**
  * Return type for `tool_call` handlers.
  * Allows handlers to block tool execution or revise the input the tool runs with.
  */

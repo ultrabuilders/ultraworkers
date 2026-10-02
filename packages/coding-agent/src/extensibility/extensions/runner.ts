@@ -108,6 +108,7 @@ import type {
 	SessionCompactingResult,
 	SessionStopEvent,
 	SessionStopEventResult,
+	ToolApprovalRequestedEventResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolRegistrationListener,
@@ -454,7 +455,9 @@ type RunnerEmitResult<TEvent extends RunnerEmitEvent> = TEvent extends { type: "
 					? SessionCompactingResult | undefined
 					: TEvent extends { type: "session_stop" }
 						? SessionStopEventResult | undefined
-						: undefined;
+						: TEvent extends { type: "tool_approval_requested" }
+							? ToolApprovalRequestedEventResult | undefined
+							: undefined;
 
 // Session-lifecycle handler types live once in session-handler-types (imported
 // above for local use); re-exported here to keep this module's public API stable.
@@ -2551,10 +2554,13 @@ export class ExtensionRunner {
 			return result as RunnerEmitResult<TEvent>;
 		}
 
-		// Only these three event types read a handler result; everything else routed
+		// Only these event types read a handler result; everything else routed
 		// through `emit` drops it. Computed once — it cannot vary per handler.
 		const consumesHandlerResult =
-			this.#isSessionBeforeEvent(event) || event.type === "session.compacting" || event.type === "session_stop";
+			this.#isSessionBeforeEvent(event) ||
+			event.type === "session.compacting" ||
+			event.type === "session_stop" ||
+			event.type === "tool_approval_requested";
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
@@ -2580,6 +2586,18 @@ export class ExtensionRunner {
 					result = handlerResult as SessionBeforeEventResult;
 					if (result.cancel) {
 						return result as RunnerEmitResult<TEvent>;
+					}
+				}
+
+				// First-truthy-wins, matching `emitUserEvent`: a veto short-circuits and a
+				// handler that declines falls through to the prompt untouched. A handler
+				// that throws or times out yields `undefined` from `#runHandlerWithTimeout`,
+				// so a broken extension can neither deny nor — the dangerous direction —
+				// stand in for an allow.
+				if (event.type === "tool_approval_requested" && handlerResult) {
+					const vetoResult = handlerResult as ToolApprovalRequestedEventResult;
+					if (vetoResult.cancel) {
+						return vetoResult as RunnerEmitResult<TEvent>;
 					}
 				}
 

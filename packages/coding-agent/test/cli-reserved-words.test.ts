@@ -92,7 +92,17 @@ describe("reservedTopLevelWordMessage echoes the invocation, not a hardcoded bin
 	it("NEGATIVE: no placeholder survives into the message", () => {
 		// `{invoked}` is a template token, and a hint containing it verbatim would be
 		// worse than the hardcoded binary it replaced.
-		for (const word of ["extensions", "list", "remove", "uninstall", "marketplace", "discover", "upgrade", "enable", "disable"]) {
+		for (const word of [
+			"extensions",
+			"list",
+			"remove",
+			"uninstall",
+			"marketplace",
+			"discover",
+			"upgrade",
+			"enable",
+			"disable",
+		]) {
 			expect(reservedTopLevelWordMessage([word], "ultraworkers")).not.toContain("{invoked}");
 		}
 	});

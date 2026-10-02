@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- `@oh-my-pi/pi-ai/testing` exports a faux provider for tests: `fauxProvider()` returns a handle
+  whose `streamSimple` emits scripted assistant messages, tool calls and deferred responses without a
+  network call, and `fauxAssistantMessage`/`fauxToolCall`/`fauxText`/`fauxThinking` build the messages
+  it streams. `createModels()` returns an empty lookup for the case where a test wants the
+  "nothing configured" state rather than a scripted one. The subpath resolves through the existing
+  `"./*": "./src/*.ts"` export map.
 
 - The message-level retry helpers are now reachable from the package root. `isRetryableAssistantMessage`,
   `isProviderRetryableError` and `isTransientStatus` were exported by their module but the barrel

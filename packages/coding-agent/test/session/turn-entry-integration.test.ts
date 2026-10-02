@@ -684,6 +684,93 @@ describe("blockedBy, from a refusal a person was asked about", () => {
 		// And the settled turn reads clean — the direction that would lie to a reader.
 		expect(ended[ended.length - 1]?.blockedBy).toBeUndefined();
 	});
+
+	it("still closes a turn whose model call failed, so a refusal inside it stays reachable", async () => {
+		// The precondition the whole field rests on, measured rather than assumed.
+		//
+		// `blockedBy` is written only on `turn_end`. A turn that opened and never
+		// closed would strand every refusal inside it: the entries stay in the log but
+		// no turn names them, so the field silently under-reports. Three sites in
+		// `runLoopBody` do push `turn_start` and then throw, so the shape is possible —
+		// which is exactly why the ordinary case needs pinning.
+		//
+		// This row replaced one I could not build. Producing an unclosed turn through
+		// `prompt()` by throwing from the model stream does not work: the loop recovers
+		// and closes the turn anyway (measured — started and ended both 2). So a row
+		// asserting `started > ended` would have been a test that cannot fail. This one
+		// asserts the reachable half, and says so rather than pretending otherwise.
+		sandboxes.push(TempDir.createSync("@pi-failed-turn-"));
+		const manager = SessionManager.inMemory();
+		const settings = Settings.isolated({ "tools.approvalMode": "always-ask" });
+		const runner = {
+			hasHandlers: () => false,
+			consumeToolCallEmitted: () => false,
+			hasUI: () => true,
+			sessionId: "failed-turn-test",
+			sessionSettings: settings,
+			getUIContext: () => ({ select: async () => "Deny" }),
+			recordApprovalEntry: (half: Omit<ApprovalEntry, "type">) => {
+				manager.appendApprovalEntry(half as never);
+			},
+			runScoped<T>(fn: () => T): T {
+				return fn();
+			},
+		} as unknown as ExtensionRunner;
+
+		const bash = new BashTool({
+			settings,
+		} as unknown as ConstructorParameters<typeof BashTool>[0]);
+		const wrapped = new ExtensionToolWrapper(bash as unknown as AgentTool, runner);
+
+		let modelCalls = 0;
+		const mock = createMockModel({
+			responses: [
+				{ content: [{ type: "toolCall", id: "call-refused", name: "bash", arguments: { command: "echo one" } }] },
+				{ content: ["first reply"] },
+				{ content: ["second reply"] },
+			],
+		});
+		const stream = mock.stream;
+		// Annotated rather than cast: the annotation is what gives `model`/`context`/
+		// `options` their types. A cast on the whole arrow leaves them implicitly any.
+		const streamFn: typeof stream = (model, context, options) => {
+			modelCalls++;
+			// The second model call fails, inside the turn that follows the refusal.
+			if (modelCalls === 2) throw new Error("model call failed");
+			return stream(model, context, options);
+		};
+		own = new AgentSession({
+			agent: new Agent({
+				getApiKey: () => "test-key",
+				initialState: {
+					model: mock.model,
+					systemPrompt: ["Test"],
+					tools: [wrapped],
+					messages: manager.buildSessionContext().messages,
+				},
+				streamFn,
+			}),
+			sessionManager: manager,
+			settings,
+			modelRegistry: { getApiKey: () => "test-key" } as never,
+		});
+
+		await own.prompt("first");
+
+		const turns = manager.getEntries().filter((e): e is TurnEntry => e.type === "turn");
+		const started = turns.filter(t => t.phase === "started").length;
+		const ended = turns.filter(t => t.phase === "ended").length;
+
+		// Equal, not "at least one ended". That is the assertion that breaks first if
+		// the error path skips `turn_end` — and it only means anything because the
+		// failing call really happened.
+		expect(modelCalls).toBe(2);
+		expect(ended).toBe(started);
+
+		// And the refusal is still reachable through the field, which is what a
+		// stranded turn would have cost.
+		expect(turns.flatMap(t => t.blockedBy ?? [])).toEqual(["call-refused"]);
+	});
 });
 
 /**

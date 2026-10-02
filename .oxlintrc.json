@@ -56,11 +56,12 @@
 		// including `src/tools/{browser,computer}/prelude.js` — 425 lines that
 		// `prelude-definition.ts` imports as text and injects into the browser eval
 		// runtime. Narrowed to the JS that is not ours to lint: vendored minified
-		// bundles and checked-in test fixtures.
+		// bundles and checked-in test fixtures. `.mjs`/`.cjs` were once here too and
+		// left 25 files unguarded — 15 of them this repository's own gate scripts —
+		// while `**/*.js` was narrowed for exactly that reason; see `e21e07eb0e`.
+		// `.d.ts` stays: declarations are emitted, not authored.
 		"**/*.min.js",
 		"packages/coding-agent/test/fixtures/**",
-		"**/*.mjs",
-		"**/*.cjs",
 		"**/*.d.ts"
 	],
 

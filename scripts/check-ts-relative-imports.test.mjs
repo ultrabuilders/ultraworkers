@@ -117,7 +117,7 @@ test("reports how many files it scanned, so scanning nothing cannot look clean",
 // a passing gate into a red run that reports elapsed time instead of a defect.
 // Measured 2026-10-02: 11.1s unloaded, 18.1s while another full test sweep was
 // running against the same tree.
-test("runs under Bun, which is this repo's runtime", { timeout: 60_000 }, async t => {
+test("runs under Bun, which is this repo's runtime", { timeout: 60_000 }, async () => {
 	// The reason this gate was unwired for as long as it was: it drove
 	// `typescript/unstable/sync`, which spawns a child and reads
 	// `child.stdout._handle` — internals Bun's streams do not have. The failure

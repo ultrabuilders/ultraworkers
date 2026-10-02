@@ -52,7 +52,13 @@
 		"packages/stats/test/**",
 		"packages/snapcompact/research/**",
 		"packages/coding-agent/src/export/html/**",
-		"**/*.js",
+		// `**/*.js` used to sit here. It un-guarded every JS source in the repo,
+		// including `src/tools/{browser,computer}/prelude.js` — 425 lines that
+		// `prelude-definition.ts` imports as text and injects into the browser eval
+		// runtime. Narrowed to the JS that is not ours to lint: vendored minified
+		// bundles and checked-in test fixtures.
+		"**/*.min.js",
+		"packages/coding-agent/test/fixtures/**",
 		"**/*.mjs",
 		"**/*.cjs",
 		"**/*.d.ts"

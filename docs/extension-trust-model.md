@@ -169,7 +169,7 @@ refusal.
 > `cfgProjectTrust` is registered with `ui.tab: "tools"`, and the settings host is
 > generic: it walks `orderedSettings()`, keeps anything whose `ui.tab` matches
 > (`config/settings-ui.ts:68`), and writes through `writeGlobalSetting` for *any*
-> setting carrying `ui` (`:96`). `omp config set` reaches the same key through the
+> setting carrying `ui` (`:96`). The config CLI reaches the same key through the
 > same generic call (`cli/config-cli.ts:324`). So there are two writers, neither
 > of which mentions `setProjectTrust` by name, and the decision persists — it
 > survives a flush and a reload. Counted as "0 callers" the table above is
@@ -314,7 +314,7 @@ its first half built**, and the honest way to record it is to name which half.
 
 **The friction B was supposed to cost is already paid**, which an earlier
 revision of this section got wrong. The declaration surface exists and works: the
-settings panel and `omp config set` both write the decision generically, it
+settings panel and the config CLI's `config set` writes the decision generically, it
 persists, and it survives a restart (see the writer note in section 1(e)). B is
 not waiting on a mechanism. It is waiting on a call to `assertTrusted` at the
 load path — *the same missing caller A is waiting on*. So the difference between

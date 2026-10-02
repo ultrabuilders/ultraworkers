@@ -173,6 +173,12 @@ describe("the ratchet as a runnable gate", () => {
 		expect(out).toContain("metric    : stale-row");
 		expect(out).toContain(`[ratchet] ceiling   : ${STALE_ROW_BASELINE}`);
 		expect(out).toMatch(/measured  : \d+/);
+		// The post stage is reported HERE because nothing else runs it.
+		// `check-disposition.ts` defaults to `--stage=pre`, and `checkPost` is the
+		// only source of `rename-incomplete` — so a hand run of that gate exits 0
+		// with the renames unfinished, which is how epic-m5.3 got closed on a
+		// "0 rename-incomplete" that no process ever produced.
+		expect(out).toMatch(/\[ratchet\]\s+rename-incomplete\s+= \d+/);
 		// The COMPUTED digest, matched through its own line. An earlier version of this
 		// assertion was a bare `/md5:[0-9a-f]{32}/`, which the baseline line also
 		// satisfies — deleting the computed digest entirely left it green. Verified by

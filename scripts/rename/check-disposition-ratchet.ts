@@ -47,7 +47,14 @@
  */
 
 import * as path from "node:path";
-import { checkPre, countRename, findUnreconciledPinned, parseTable, RULES_VERSION } from "./check-disposition";
+import {
+	checkPost,
+	checkPre,
+	countRename,
+	findUnreconciledPinned,
+	parseTable,
+	RULES_VERSION,
+} from "./check-disposition";
 import { readGateArgsOrExit } from "./args";
 
 /**
@@ -271,6 +278,15 @@ async function main(): Promise<number> {
 	// nobody has fixed yet, and since `check:ts` is an `&&` chain it would hide
 	// every link after it. A gate earns its red by being able to go green first.
 	const drift = await measureRenameHitsDrift(root, rows);
+	// `check-disposition.ts` runs `--stage=pre` by DEFAULT (`:825`), and `checkPost` is
+	// the ONLY source of `rename-incomplete` and `keep-shrank`. Nothing in CI invokes
+	// that script at all — `check:disposition-ratchet` is the only disposition entry in
+	// `package.json`, and it calls `checkPre` alone. So running the gate by hand and
+	// reading its exit code reports the renames as DONE when `checkPost` never ran:
+	// that exact mistake closed `epic-m5.3` on 2026-10-03 with "0 rename-incomplete".
+	// Measured here instead, ungated, for the same reason as `drift` above.
+	const postViolations = await checkPost(root, rows);
+	const countPost = (rule: string) => postViolations.filter(v => v.rule === rule).length;
 	const printed = digest(tableText);
 	const tableDrift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table edited since the ceiling was set";
 	const rulesDrift =
@@ -287,11 +303,13 @@ async function main(): Promise<number> {
 			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
 			`[ratchet] gated, must be 0:\n` +
 			`[ratchet]   dangling-keep-ref      = ${verdict.danglingKeepRef}   (a keep_refs id no plan document introduces)\n` +
-			`[ratchet] reported, not gated — all five are CEILINGS, they must fall:\n` +
+			`[ratchet] reported, not gated — all seven are CEILINGS, they must fall:\n` +
 			`[ratchet]   missing-row             = ${verdict.missingRow}   (rows still not covered)\n` +
 			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)\n` +
 			`[ratchet]   hits-imbalance          = ${verdict.hitsImbalance}   (a path's rows sum ≠ the file's count)\n` +
 			`[ratchet]   rename-hits-drift       = ${drift.length}   (rename rows whose declared hits ≠ countRename; no gate reads this column)\n` +
+			`[ratchet]   rename-incomplete      = ${countPost("rename-incomplete")}   (post-stage: rename rows with occurrences left; check-disposition.ts defaults to --stage=pre, so this is otherwise never run)\n` +
+			`[ratchet]   keep-shrank            = ${countPost("keep-shrank")}   (post-stage: keep-* row lost occurrences; same blind spot)\n` +
 			`[ratchet]   unreconciled-pinned     = ${verdict.unreconciledPinned}   (pinned occurrences over ${verdict.unreconciledPaths} path(s) that no row accounts for)`,
 	);
 

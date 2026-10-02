@@ -163,7 +163,10 @@ describe("config migrate --apply on an open root", () => {
 	}> {
 		const home = fs.mkdtempSync(path.join(os.tmpdir(), "omp-migrate-home-"));
 		// Only the LEGACY root exists, which is what puts `agent.db` inside the
-		// directory the migration is about to rename.
+		// directory the migration is about to rename. The literal is the point:
+		// seeding today's name instead would leave nothing to migrate, and this
+		// test would pass while proving the migration handles no legacy tree at
+		// all. Do not derive it from CONFIG_DIR_NAME.
 		fs.mkdirSync(path.join(home, ".omp", "agent"), { recursive: true });
 		const db = path.join(home, ".omp", "agent", "agent.db");
 		fs.writeFileSync(db, "");

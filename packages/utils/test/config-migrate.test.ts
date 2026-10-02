@@ -15,6 +15,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { executeConfigMigration, type MigrationOptions, planConfigMigration } from "@oh-my-pi/pi-utils/config-migrate";
 
+// LEGACY SPELLING — these two stay literals on purpose and must not be derived
+// from a brand constant. This test's whole subject is a tree that was written by
+// an OLDER build, so the old name is the input. Deriving `OLD_BASE` from
+// `CONFIG_DIR_NAME` or `OLD_APP` from `APP_NAME` would make both sides move
+// together: the fixture would be seeded with today's name, the "before" tree
+// would not exist, and the migration would silently become a no-op that passes
+// while proving nothing. That is the failure W4's dual-read exists to prevent,
+// reproduced from the other direction. The new-name constants below are the
+// rename target, so both spellings are stated here rather than imported.
 const OLD_BASE = ".omp";
 const NEW_BASE = ".ultraworkers";
 /** XDG app roots carry no leading dot — they are `APP_NAME`, not `CONFIG_DIR_NAME`. */

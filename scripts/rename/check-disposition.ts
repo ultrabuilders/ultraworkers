@@ -215,14 +215,119 @@ export function planNodeOf(ref: string): string | null {
  */
 export async function loadDefinedPlanIds(root: string): Promise<ReadonlySet<string>> {
 	const ids = new Set<string>();
-	for await (const rel of new Bun.Glob("MILESTONE_*_EXECUTION_PLAN.md").scan({ cwd: root })) {
-		const text = await Bun.file(path.join(root, rel)).text();
-		for (const line of text.split("\n")) {
-			const heading = PLAN_ID_HEADING.exec(line);
-			if (heading) ids.add(heading[1]!);
-		}
-	}
+	for (const text of await readPlanDocuments(root)) collectPlanIds(text, ids);
 	return ids;
+}
+
+/**
+ * Every plan document's text, read once per call.
+ *
+ * Shared by `loadDefinedPlanIds` and `findCoinedRefs` because they need the same
+ * bytes for different reasons — the id set and the definition corpus. Reading them
+ * separately reads the same megabytes twice, which is measurable on a gate that
+ * already runs on every `check:ts`.
+ */
+async function readPlanDocuments(root: string): Promise<readonly string[]> {
+	const docs: string[] = [];
+	for await (const rel of new Bun.Glob("MILESTONE_*_EXECUTION_PLAN.md").scan({ cwd: root })) {
+		docs.push(await Bun.file(path.join(root, rel)).text());
+	}
+	return docs;
+}
+
+/** Add every plan id this document's headings introduce. Prose mentions do not count. */
+function collectPlanIds(text: string, ids: Set<string>): void {
+	for (const line of text.split("\n")) {
+		const heading = PLAN_ID_HEADING.exec(line);
+		if (heading) ids.add(heading[1]!);
+	}
+}
+
+/**
+ * A `keep_refs` contract name that no plan document writes down.
+ *
+ * `W11:project-root-.omp` resolves an OWNER (`W11`) and then names a CONTRACT inside
+ * it. Resolving the owner is not resolving the ref. At this tree all 15 such names
+ * appear in no `MILESTONE_*_EXECUTION_PLAN.md` — not verbatim, and not by stem
+ * either. They were coined in `disposition.tsv` itself.
+ *
+ * This is the half `planNodeOf` deliberately does not cover, and its own docblock
+ * says so: making the owner enforceable says nothing about whether the contract
+ * NAME is a name anything else can resolve. Left there, the two rules partition the
+ * failure cleanly — an unresolvable owner is `dangling-keep-ref`'s, an unresolvable
+ * name is this one's — and neither double-counts the other.
+ *
+ * What this must NOT do is define the 15 names. Writing them into a plan to turn
+ * this count green would invent 15 contracts, and the 338 rows would then rest on
+ * the invention. That is fixing the number instead of the fact.
+ */
+export interface CoinedRef {
+	readonly path: string;
+	/** 1-based line in the TSV, for error messages. */
+	readonly line: number;
+	readonly ref: string;
+	/** The plan node the ref resolves to. Defined, or this rule does not fire. */
+	readonly owner: string;
+	/** The part after the first `:`, which is what has no definition site. */
+	readonly contract: string;
+}
+
+/**
+ * Refs whose owner resolves but whose contract name is written in no plan document.
+ *
+ * Owner resolution is delegated to `planNodeOf` rather than re-parsed here: a second
+ * parser for the same ref shape would be free to drift from the one `dangling-keep-ref`
+ * enforces, and the day it did, this rule would report owners that rule never checked.
+ *
+ * The corpus is read ONCE and concatenated — the plan set is fixed, so re-reading it
+ * per row would make this rule's cost scale with the table instead of the repository.
+ * Matching is a plain `includes`, deliberately LOOSER than `PLAN_ID_HEADING`: a contract
+ * defined in a table row, a prose sentence or a heading's tail is still defined.
+ * Tightening this to a heading would report names that do exist, and a reader would
+ * have to `grep` to discover the gate is wrong. One wrong line costs more trust than
+ * three missing lines — the report's job is to be checkable, not to be complete.
+ *
+ * That looseness is why the search runs once per DISTINCT name, not once per row: the
+ * corpus is megabytes and 338 rows carry only 15 distinct contracts, so a per-row scan
+ * re-reads the same megabytes 22 times over. Measured interleaved against a build with
+ * this rule removed, the naive per-row form cost ~1.1s — enough to push an existing
+ * 5s-budget ratchet test over on a loaded machine, which is a cost a report-only rule
+ * has no business imposing. Reading the plan documents once for BOTH the id set and the
+ * corpus, and scanning per distinct name, brings that to ~0.05s — inside run-to-run
+ * variance on this machine, i.e. not measurable.
+ */
+export async function findCoinedRefs(root: string, rows: readonly Row[]): Promise<readonly CoinedRef[]> {
+	// Resolve every row first, so the corpus is searched once per NAME rather than
+	// once per row: 338 rows carry 15 distinct contracts, so a per-row scan re-reads
+	// the same megabytes 22 times over.
+	const candidates: { row: Row; ref: string; owner: string; contract: string }[] = [];
+	const docs = await readPlanDocuments(root);
+	const defined = new Set<string>();
+	for (const text of docs) collectPlanIds(text, defined);
+	for (const row of rows) {
+		const ref = row.keepRefs.trim();
+		const owner = planNodeOf(ref);
+		if (owner === null) continue;
+		// A bare `W9` resolves an owner but names no contract, so there is nothing
+		// left to look up. An `a57q:` ref names a BEAD, and `planNodeOf` returns null.
+		const colon = ref.indexOf(":");
+		if (colon <= 0) continue;
+		// Skipped rather than counted: an undefined owner is `dangling-keep-ref`'s
+		// failure, and two rules answering one failure produce a number no single
+		// remedy can move.
+		if (!defined.has(owner)) continue;
+		candidates.push({ row, ref, owner, contract: ref.slice(colon + 1) });
+	}
+	if (candidates.length === 0) return [];
+
+	const corpus = docs.join("");
+	const missing = new Set<string>();
+	for (const name of new Set(candidates.map(c => c.contract))) {
+		if (!corpus.includes(name)) missing.add(name);
+	}
+	return candidates
+		.filter(c => missing.has(c.contract))
+		.map(c => ({ path: c.row.path, line: c.row.line, ref: c.ref, owner: c.owner, contract: c.contract }));
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 	checkPost,
 	checkPre,
 	countUnverifiableKeepRefs,
+	findCoinedRefs,
 	findUnreconciledPinned,
 	classMatcher,
 	countClass,
@@ -458,6 +459,67 @@ describe("hit discovery", () => {
 		for (const disposition of DISPOSITIONS) {
 			expect(classMatcher(disposition)).toBeDefined();
 		}
+	});
+});
+describe("a keep_ref whose owner resolves but whose contract is written nowhere", () => {
+	// The rows differ in ONE respect each, which is what makes this a discrimination
+	// rather than a count: same ref shape, same plan document, same everything else.
+	// Only the contract's presence in that document, and the owner's own existence,
+	// decide the outcome.
+	const FILES = {
+		"src/a.ts": `const n = "omp"; const m = 1; // omp again\n`,
+		"MILESTONE_9_EXECUTION_PLAN.md":
+			"## W9. Attribution usage theo model\n\nThe `W9:known-contract` literal is fixed here.\n",
+	};
+
+	it("reports the coined contract by name and stays quiet about the documented one", async () => {
+		// A rule that prints a count cannot be told apart from one that prints the
+		// right count for the wrong rows, and a rule that always fires cannot be told
+		// apart from one that ignores its input. Both directions are asserted — and
+		// the assertion is on the NAME, because the whole point is that a reader sees
+		// WHICH contracts are unverifiable instead of seeing a green line.
+		const root = await tree(FILES);
+
+		const coined = await findCoinedRefs(root, [
+			row_("src/a.ts", 2, "keep-literal", "wire name", "W9:known-contract"),
+			row_("src/a.ts", 2, "keep-literal", "wire name", "W9:ghost-contract"),
+		]);
+
+		expect(coined.map(c => c.contract)).toEqual(["ghost-contract"]);
+		expect(coined.map(c => c.owner)).toEqual(["W9"]);
+		expect(coined[0]!.ref).toBe("W9:ghost-contract");
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("leaves an undefined owner to dangling-keep-ref rather than counting it twice", async () => {
+		// `W99` is introduced by no document at all. That failure already has an owner,
+		// and one failure answered by two rules reports a total no remedy can move.
+		const root = await tree(FILES);
+
+		const coined = await findCoinedRefs(root, [
+			row_("src/a.ts", 2, "keep-literal", "wire name", "W99:ghost-contract"),
+		]);
+
+		expect(coined).toEqual([]);
+		await Bun.$`rm -rf ${root}`.quiet();
+	});
+
+	it("reports a contract a plan mentions in prose, not only one a heading introduces", async () => {
+		// The corpus match is `includes`, not `PLAN_ID_HEADING`. If it were tightened,
+		// a contract defined in an ordinary sentence would be reported as coined, and
+		// the reader would have to go grep to learn the gate was wrong about a name
+		// that was written down all along.
+		const root = await tree({
+			...FILES,
+			"MILESTONE_9_EXECUTION_PLAN.md": "## W9. Attribution usage\n\nsee also W9:prose-contract for the old form\n",
+		});
+
+		const coined = await findCoinedRefs(root, [
+			row_("src/a.ts", 2, "keep-literal", "wire name", "W9:prose-contract"),
+		]);
+
+		expect(coined).toEqual([]);
+		await Bun.$`rm -rf ${root}`.quiet();
 	});
 });
 describe("a keep_ref that names nothing", () => {

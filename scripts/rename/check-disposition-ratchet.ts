@@ -51,6 +51,7 @@ import {
 	checkPost,
 	checkPre,
 	countRename,
+	findCoinedRefs,
 	findUnreconciledPinned,
 	parseTable,
 	RULES_VERSION,
@@ -287,6 +288,14 @@ async function main(): Promise<number> {
 	// Measured here instead, ungated, for the same reason as `drift` above.
 	const postViolations = await checkPost(root, rows);
 	const countPost = (rule: string) => postViolations.filter(v => v.rule === rule).length;
+	// REPORTED, never gated, and NOT one of the ceilings above. Those are debt that
+	// must fall by doing work; this is a statement about what the table CLAIMS, and it
+	// does not fall by renaming a file — 15 contract names are written in no plan
+	// document, so the only ways down are to define them or to stop citing them, and
+	// both are decisions rather than work. Gating it would redden CI for a number
+	// whose remedy is a judgement call, and `check:ts` is an `&&` chain.
+	const coined = await findCoinedRefs(root, rows);
+	const coinedNames = [...new Set(coined.map(c => c.contract))].sort();
 	const printed = digest(tableText);
 	const tableDrift = printed === BASELINE_TABLE_DIGEST ? "" : "  ← table edited since the ceiling was set";
 	const rulesDrift =
@@ -310,7 +319,12 @@ async function main(): Promise<number> {
 			`[ratchet]   rename-hits-drift       = ${drift.length}   (rename rows whose declared hits ≠ countRename; no gate reads this column)\n` +
 			`[ratchet]   rename-incomplete      = ${countPost("rename-incomplete")}   (post-stage: rename rows with occurrences left; check-disposition.ts defaults to --stage=pre, so this is otherwise never run)\n` +
 			`[ratchet]   keep-shrank            = ${countPost("keep-shrank")}   (post-stage: keep-* row lost occurrences; same blind spot)\n` +
-			`[ratchet]   unreconciled-pinned     = ${verdict.unreconciledPinned}   (pinned occurrences over ${verdict.unreconciledPaths} path(s) that no row accounts for)`,
+			`[ratchet]   unreconciled-pinned     = ${verdict.unreconciledPinned}   (pinned occurrences over ${verdict.unreconciledPaths} path(s) that no row accounts for)\n` +
+			`[ratchet] reported, not gated — a keep_ref whose OWNER resolves but whose contract name\n` +
+			`[ratchet] name no plan document writes down. Not a ceiling: naming these contracts is a\n` +
+			`[ratchet] decision, and defining them only to silence this line would invent them.\n` +
+			`[ratchet]   coined-ref              = ${coined.length}   (over ${coinedNames.length} distinct contract name(s))\n` +
+			`[ratchet]     ${coinedNames.join(", ") || "(none)"}`,
 	);
 
 	if (!verdict.ok) {

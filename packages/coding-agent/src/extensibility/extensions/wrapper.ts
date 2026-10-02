@@ -463,16 +463,19 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 				await emitApprovalResolved(false, reason);
 				cancelPreflight();
 				if (pendingSafetyChecks.length > 0) {
-					throw new Error(
+					throw new ToolCallBlockedError(
+						"denied",
 						`Tool "${this.tool.name}" has pending provider safety checks but no interactive UI is available.`,
 					);
 				}
-				throw new Error(
+				throw new ToolCallBlockedError(
+					"denied",
 					`Tool "${this.tool.name}" requires approval but no interactive UI available.\n` +
 						`Options:\n` +
 						`  1. Set tools.approvalMode: yolo in /settings\n` +
 						`  2. Add tools.approval.${this.tool.name}: allow to config\n` +
 						`  3. Use an interactive UI to approve the tool call`,
+					"denied",
 				);
 			}
 
@@ -494,7 +497,7 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 			await emitApprovalResolved(approved, approved ? undefined : "denied by user");
 			if (!approved) {
 				cancelPreflight();
-				throw new Error(`Tool call denied by user: ${this.tool.name}`);
+				throw new ToolCallBlockedError("denied", `Tool call denied by user: ${this.tool.name}`);
 			}
 			if (pendingSafetyChecks.length > 0) {
 				if (!context) {

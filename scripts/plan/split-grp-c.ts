@@ -64,6 +64,13 @@ const BAND = { min: 41, max: 150 } as const;
  * `measure-fan-in.ts` reports. Membership here means "the plan has already ruled on
  * this", NOT "measured as large" — `tui/src/components` has 132 importers yet only 2
  * files outside `tui`, so its count alone would misread as a good candidate.
+ *
+ * STALE PRECONDITION — these verdicts are a transcription, and nothing re-reads the
+ * source. They were copied from `PACKAGE_REORGANIZATION_PLAN.md` at commit
+ * `a183f4957d`. This script does not open the plan and cannot notice when it changes;
+ * if the plan is edited, this table will keep asserting the old ruling, in green, in
+ * silence. That is the failure mode a gate is supposed to prevent, so when the plan
+ * moves, fix this table in the same commit — it will not fix itself.
  */
 const NO_CUT_MODULES_INTERNAL = new Map<string, string>([
 	["config", "plan §7: every module depends on it; splitting it is a cycle in reverse"],
@@ -81,6 +88,12 @@ const NO_CUT_MODULES_INTERNAL = new Map<string, string>([
 	// `mcp, registry, discovery, eval, task` together as the cuttable-with-a-seam row. So
 	// eval is a candidate, and at 30 importers it is simply out of band. The sequencing
 	// concern is real but belongs to the R0/W8 ordering decision, not to this table.
+	//
+	// Note what that leaves unanswered: the plan DOES rule eval cuttable-needs-a-seam, and
+	// this report still cannot answer "should eval be cut?" — it only says eval is not in
+	// Group C, because 30 is out of band. Out of band is a measurement, not a verdict, and
+	// the automatic reason it prints ("30 importers is outside 41-150") is not the plan's
+	// judgement. Read the row above, not the generated line, for what the plan thinks.
 	["internal-urls", "referenced by the installer path, not by feature boundaries"],
 	["registry", "plan §5.1: name collides with catalog; the real work is a merge, not a cut"],
 	["mcp", "plan §4: boundaries follow the client/server split, not the module name"],

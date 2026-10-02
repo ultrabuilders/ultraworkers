@@ -17,8 +17,13 @@
  *
  * ## Registration is permanent, activation is not
  *
- * `register()` is for load time: the built-in modes and any extension that
- * declares one. Activation is a separate, cheap, reversible operation
+ * `register()` is for load time, and today only the built-in modes call it.
+ * **An extension has no way to register a mode yet** — `registerMode` does not
+ * exist on `ExtensionAPI`, and nothing outside core reaches this method. The
+ * shape here is the one an extension will use, but the seam out is not built;
+ * see WI-7 step 7. Do not read this module as extension-facing until then.
+ *
+ * Activation is a separate, cheap, reversible operation
  * ({@link ModeRegistry.setActivation}), because switching modes happens far more
  * often than declaring them, and because a mode that could be unregistered while
  * active would leave every consumer holding a record that no longer resolves.

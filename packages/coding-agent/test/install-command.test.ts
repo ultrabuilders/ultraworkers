@@ -18,6 +18,7 @@ import * as path from "node:path";
 import { commands, isSubcommand, resolveCliArgv } from "@oh-my-pi/pi-coding-agent/cli-commands";
 import { looksLikeLocalPath } from "@oh-my-pi/pi-coding-agent/commands/install";
 import { removeSyncWithRetries } from "@oh-my-pi/pi-utils";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 
 describe("install command is registered as a top-level subcommand", () => {
 	test("CLI runner sees `install` as a known command", () => {
@@ -26,8 +27,13 @@ describe("install command is registered as a top-level subcommand", () => {
 	});
 
 	test("CLI runner rejects only bare reserved management words", () => {
+		// The first clause echoes the binary this process is running as, so it is
+		// sourced from `APP_NAME` rather than typed again here — a copied literal is
+		// what made the message accuse users of running a command they never ran.
+		// The recommendation after it is a separate fixed string and is asserted
+		// verbatim, so a change to either half is visible on its own.
 		expect(resolveCliArgv(["extensions"])).toEqual({
-			error: '`omp extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
+			error: `\`${APP_NAME} extensions\` is not a management command. Use \`omp plugin list\` / \`omp plugin install\`, or run \`omp launch extensions\` if you meant to send "extensions" as a prompt.`,
 		});
 		expect(resolveCliArgv(["extensions", "are", "not", "loading"])).toEqual({
 			argv: ["launch", "extensions", "are", "not", "loading"],

@@ -477,30 +477,57 @@ export function isSubcommand(first: string | undefined): boolean {
 // The real commands live under `omp plugin <action>`; each entry maps a verb to
 // a hint pointing there. See {@link reservedTopLevelWordMessage} for when a hint
 // fires vs. when the argv still falls through to `launch`.
+//
+// `{invoked}` is replaced with the name the CLI was actually started under. It
+// is NOT a synonym for the product name: this clause echoes the command the
+// user typed, and a hardcoded binary in it made the message accuse them of
+// running something they never ran — a user who typed `ultraworkers list` was
+// told "`omp list` is not a top-level command". Only this clause is
+// substituted. The `omp plugin …` recommendations after it name the command to
+// run next, which is a separate product decision about the installed binary
+// name and is deliberately left untouched here.
 const RESERVED_TOP_LEVEL_WORDS: Record<string, string> = {
 	extensions:
-		'`omp extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
-	list: '`omp list` is not a top-level command. Use `omp plugin list` to list installed plugins, or run `omp launch list` if you meant to send "list" as a prompt.',
+		'`{invoked} extensions` is not a management command. Use `omp plugin list` / `omp plugin install`, or run `omp launch extensions` if you meant to send "extensions" as a prompt.',
+	list: '`{invoked} list` is not a top-level command. Use `omp plugin list` to list installed plugins, or run `omp launch list` if you meant to send "list" as a prompt.',
 	remove:
-		'`omp remove` is not a top-level command. Use `omp plugin uninstall <name>` to remove a plugin, or run `omp launch remove` if you meant to send "remove" as a prompt.',
+		'`{invoked} remove` is not a top-level command. Use `omp plugin uninstall <name>` to remove a plugin, or run `omp launch remove` if you meant to send "remove" as a prompt.',
 	uninstall:
-		'`omp uninstall` is not a top-level command. Use `omp plugin uninstall <name@marketplace>` to remove a plugin, or run `omp launch uninstall` if you meant to send "uninstall" as a prompt.',
+		'`{invoked} uninstall` is not a top-level command. Use `omp plugin uninstall <name@marketplace>` to remove a plugin, or run `omp launch uninstall` if you meant to send "uninstall" as a prompt.',
 	marketplace:
-		'`omp marketplace` is not a top-level command. Use `omp plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `omp launch marketplace` if you meant to send "marketplace" as a prompt.',
+		'`{invoked} marketplace` is not a top-level command. Use `omp plugin marketplace <add|remove|update|list>` to manage marketplaces, or run `omp launch marketplace` if you meant to send "marketplace" as a prompt.',
 	discover:
-		'`omp discover` is not a top-level command. Use `omp plugin discover [marketplace]` to browse available plugins, or run `omp launch discover` if you meant to send "discover" as a prompt.',
+		'`{invoked} discover` is not a top-level command. Use `omp plugin discover [marketplace]` to browse available plugins, or run `omp launch discover` if you meant to send "discover" as a prompt.',
 	upgrade:
-		'`omp upgrade` is not a top-level command. Use `omp plugin upgrade [name@marketplace]` to upgrade plugins, or run `omp launch upgrade` if you meant to send "upgrade" as a prompt.',
+		'`{invoked} upgrade` is not a top-level command. Use `omp plugin upgrade [name@marketplace]` to upgrade plugins, or run `omp launch upgrade` if you meant to send "upgrade" as a prompt.',
 	enable:
-		'`omp enable` is not a top-level command. Use `omp plugin enable <name@marketplace>` to enable a plugin, or run `omp launch enable` if you meant to send "enable" as a prompt.',
+		'`{invoked} enable` is not a top-level command. Use `omp plugin enable <name@marketplace>` to enable a plugin, or run `omp launch enable` if you meant to send "enable" as a prompt.',
 	disable:
-		'`omp disable` is not a top-level command. Use `omp plugin disable <name@marketplace>` to disable a plugin, or run `omp launch disable` if you meant to send "disable" as a prompt.',
+		'`{invoked} disable` is not a top-level command. Use `omp plugin disable <name@marketplace>` to disable a plugin, or run `omp launch disable` if you meant to send "disable" as a prompt.',
 };
 
 // Sub-actions that make `omp marketplace <sub>` unambiguously a management
 // command even when multi-word (the reporter's `omp marketplace add xyz`,
 // #4845). Mirrors the switch in `handleMarketplace` (cli/plugin-cli.ts).
 const MARKETPLACE_SUBCOMMANDS: Record<string, true> = { add: true, remove: true, rm: true, update: true, list: true };
+
+/**
+ * The name the CLI was started under, used to echo the user's own invocation
+ * back to them in a hint.
+ *
+ * `process.argv[1]` is the resolved entry, so a symlinked launcher reports the
+ * binary it points at rather than the link's name — which is the right answer
+ * here, because that binary is the one that produced the message. A source-file
+ * entry (`bun src/cli.ts`) is not a command name at all, so it falls back to
+ * {@link APP_NAME} instead of telling the user they typed `cli.ts`.
+ */
+function invokedBinaryName(): string {
+	const entry = process.argv[1];
+	if (!entry) return APP_NAME;
+	const base = entry.split(/[/\\]/).pop() ?? entry;
+	if (base.length === 0 || /\.(ts|js|mjs|cjs)$/.test(base)) return APP_NAME;
+	return base;
+}
 
 /**
  * Hint for a reserved plugin/marketplace verb used as a top-level command, or
@@ -514,12 +541,20 @@ const MARKETPLACE_SUBCOMMANDS: Record<string, true> = { add: true, remove: true,
  *
  * Flags (`-…`) and `@file` arguments in the verb slot are never management
  * commands; those fall through to the default `launch` command.
+ *
+ * `invokedAs` names the binary in the echoed clause. It is a parameter rather
+ * than an inline read of the process so the echo contract can be asserted
+ * directly, and so an embedded SDK call can say which name to echo.
  */
-export function reservedTopLevelWordMessage(argv: readonly string[]): string | undefined {
+export function reservedTopLevelWordMessage(
+	argv: readonly string[],
+	invokedAs: string = invokedBinaryName(),
+): string | undefined {
 	const first = argv[0];
 	if (!first || first.startsWith("-") || first.startsWith("@")) return undefined;
-	const hint = RESERVED_TOP_LEVEL_WORDS[first];
-	if (!hint) return undefined;
+	const template = RESERVED_TOP_LEVEL_WORDS[first];
+	if (!template) return undefined;
+	const hint = template.replaceAll("{invoked}", invokedAs);
 	const second = argv[1];
 	if (second === undefined) return hint;
 	if (first === "marketplace" && MARKETPLACE_SUBCOMMANDS[second]) return hint;

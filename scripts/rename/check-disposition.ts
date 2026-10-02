@@ -490,6 +490,13 @@ export async function checkPre(root: string, rows: readonly Row[]): Promise<read
 	// them a live `keep-path` row over a file carrying `".omp"`, and the README states
 	// the opposite ("its file may have no pinned hits at all"). A row is stale when the
 	// file no longer carries what its class counts, or when the file is gone.
+	//
+	// The converse is the half that used to go unstated, and it is what made this rule
+	// look sufficient: the `continue` below skips EVERY path in `paths`, so `stale-row`
+	// never examines a file that still has a pinned hit. It therefore cannot see a row
+	// that declares the wrong number over such a file — not a row that is stale, but one
+	// that is live and miscounted. That population belongs to `hits-imbalance`, and this
+	// rule is structurally blind to it rather than merely late to it.
 	for (const [filePath, group] of byPath) {
 		if (paths.includes(filePath)) continue;
 		const handle = Bun.file(path.join(root, filePath));

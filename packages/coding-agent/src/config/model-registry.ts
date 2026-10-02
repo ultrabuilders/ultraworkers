@@ -2859,6 +2859,14 @@ export class ModelRegistry {
 	 * provider maps. omp has one registry rather than two — `#runtimeProviderSourceByName`
 	 * covers both, because a native provider still arrives through `registerProvider` —
 	 * so the union pi needs is a single map's keys here.
+	 *
+	 * Measured, so the next reader does not assume more than is true: of the three
+	 * registered-provider accessors, this is the ONLY one with a production caller in `pi`
+	 * (`core/bug-report.ts:123`, asking whether a provider came from an extension). The other
+	 * two — `getRegisteredProviderConfig` and `getRegisteredNativeProvider` — are reached only
+	 * by `pi`'s own thin facade, and this group therefore rests on facade parity plus the
+	 * staleness contract its test pins, NOT on a measured consumer. `hasRegisteredProvider`
+	 * below is not a `pi` method at all and has no caller in either tree.
 	 */
 	getRegisteredProviderIds(): readonly string[] {
 		return [...this.#runtimeProviderSourceByName.keys()];
@@ -2871,6 +2879,12 @@ export class ModelRegistry {
 	 * provenance of ONE id. It reads the source map, so it agrees with
 	 * {@link providerSource} by construction: a provider whose ownership moved to another
 	 * extension answers the same way from both.
+	 *
+	 * There is no `pi` counterpart to this method — it is the per-id form of
+	 * {@link getRegisteredProviderIds}, and it has no production caller in either tree. It is
+	 * kept as facade surface so a `pi` extension's per-id question has somewhere to land, not
+	 * because anything here calls it. See {@link getRegisteredProviderIds} for the counted
+	 * justification of this group.
 	 */
 	hasRegisteredProvider(providerId: string): boolean {
 		return this.#runtimeProviderSourceByName.has(providerId);

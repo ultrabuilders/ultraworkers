@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { styleText } from "node:util";
-import type { DocumentationVariant, EvalTask } from "./plan.ts";
+import type { DocumentationVariant, EvalTask } from "./plan";
 
 // `@vitest-evals/core` is an npm-only dependency that this repository does not
 // install, and it is not present in pi-ref's node_modules either — so this is not a
@@ -20,6 +20,12 @@ import type { DocumentationVariant, EvalTask } from "./plan.ts";
 //
 // Copy-and-adapt, not a rewrite: everything above this seam is byte-identical to
 // upstream at pi commit d6af72e1.
+//
+// One deliberate deviation from upstream beyond the seam: relative specifiers drop their
+// `.ts` suffix (`./plan`, not `./plan.ts`), because this repository's
+// `check-ts-relative-imports` gate forbids it and upstream has no such gate. Copying
+// verbatim brings along the other side's violations; ours does not exempt them. The same
+// applies to `test/comparison.test.ts`.
 
 /**
  * Minimal stand-in for `@vitest-evals/core`'s `ReportCase`.

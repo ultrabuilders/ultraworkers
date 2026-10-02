@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { type GeneratedProvider, getBundledModel } from "@oh-my-pi/pi-catalog/models";
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 /**
  * Harbor benchmark runner for the local `omp` build.
  *
@@ -140,7 +141,7 @@ function defaultConfig(): Config {
 	};
 }
 
-const HELP = `metaharness runner (local omp)
+const HELP = `metaharness runner (local ${APP_NAME})
 
 Usage: metaharness harbor [options] [-- <extra harbor args>]
 
@@ -150,18 +151,18 @@ Commands:
 Model / agent:
   -m, --model <provider/model>   Model (repeatable). Default anthropic/claude-sonnet-4-6
       --agent <name>             omp (default) | oracle | nop | any harbor agent
-      --install <source|local|published> omp install mode (default: source).
+      --install <source|local|published> ${APP_NAME} install mode (default: source).
                                  source = mount /work/pi read-only + prebuilt linux deps tree; TS changes
                                  apply per-trial with no rebuild. local = pack a tarball. published = npm.
-      --version <v>              omp version for published install (default: latest)
+      --version <v>              ${APP_NAME} version for published install (default: latest)
       --thinking <level>         off|minimal|low|medium|high|xhigh|max
 
-      --tarball <path>           Reuse a prebuilt omp tarball (implies --install local, --no-build)
+      --tarball <path>           Reuse a prebuilt ${APP_NAME} tarball (implies --install local, --no-build)
       --no-build                 Skip packing; reuse newest tarball in bench dir (--install local)
-      --agent-arg <arg>          Extra arg forwarded verbatim to the in-container omp CLI (repeatable)
-      --tools <a,b,c>            omp tool allowlist; enables the find tool when listed
-      --setting <key=value>      omp setting for the container config, e.g. edit.mode=sloppy (repeatable; JSON values)
-      --env <KEY[=VALUE]>        Forward env into omp container (repeatable).
+      --agent-arg <arg>          Extra arg forwarded verbatim to the in-container ${APP_NAME} CLI (repeatable)
+      --tools <a,b,c>            ${APP_NAME} tool allowlist; enables the find tool when listed
+      --setting <key=value>      ${APP_NAME} setting for the container config, e.g. edit.mode=sloppy (repeatable; JSON values)
+      --env <KEY[=VALUE]>        Forward env into ${APP_NAME} container (repeatable).
                                  KEY alone forwards host value; host PI_* auto-forwarded.
 
 Dataset / scale:
@@ -177,7 +178,7 @@ Gateway (auth, no keys in container):
       --gateway-token <tok>      Default "no-auth" (gateway runs --no-auth)
       --providers <csv>          Providers to route (default: model provider + anthropic,openai-codex)
       --no-gateway               Pass host provider API keys into containers instead
-      --web-search               Enable omp web_search (off by default; can't auth via gateway)
+      --web-search               Enable ${APP_NAME} web_search (off by default; can't auth via gateway)
       --allow-host <host>        harbor --allow-agent-host (repeatable)
 
 Environment:
@@ -1020,7 +1021,7 @@ function readPkgVersion(): string {
 }
 
 function buildTarball(benchDir: string): string {
-	process.stdout.write(dim("packing local omp (bun pm pack)…\n"));
+	process.stdout.write(dim(`packing local ${APP_NAME} (bun pm pack)…\n`));
 	const r = spawnSync("bun", ["pm", "pack", "--destination", benchDir], {
 		cwd: CODING_AGENT_DIR,
 		encoding: "utf8",

@@ -191,8 +191,9 @@ interface JudgePanelProps {
 
 // Both readings use APP_NAME, and the reasoning is the same as ProvidersRoute's
 // SNAPSHOT_HINT, which carries the full note: `omp` exists only on the `bun run setup`
-// install path, so a published-package install has no such command. A command constant is
-// the right long-term fix and is tracked as epic-grse.
+// install path, so a published-package install has no such command. APP_NAME is also pinned
+// to the installed bin name by `bin-name-matches-app-name.test.ts`, so it cannot drift into
+// naming a command that does not exist — see that note for the measurement.
 const UNAVAILABLE_HINT = `Judging needs the ${APP_NAME} host process: open the dashboard with ${APP_NAME} stats and configure a judge model. Until then messages are classified by regex signals.`;
 
 function JudgePanel({ active, range, judgeAvailable, job, onRunStarted, onRunChanged }: JudgePanelProps) {

@@ -77,10 +77,18 @@ const TOKEN_MIX = [
 // fails for exactly the users who did a normal install, while APP_NAME is right on every
 // path.
 //
-// The honest defect is not "APP_NAME is the wrong constant". It is that APP_NAME equals the
-// binary name today and nothing enforces it: rename the binary without a rebrand and this
-// silently names a command that no longer exists. The fix is a command constant, and
-// epic-grse tracks it. Until then this is correct under every answer epic-4yhd can give.
+// The honest defect is not "APP_NAME is the wrong constant". It would be a real one only if
+// APP_NAME could drift from the installed binary name — and it cannot, silently.
+// `test/bin-name-matches-app-name.test.ts` asserts the manifest's bin map is EXACTLY
+// `[APP_NAME]`: rename the binary without moving the constant and that gate goes red, so the
+// rename cannot land while this string keeps naming the old command. Measured, not assumed —
+// renaming `bin.coding-agent` to `ultraworkers-renamed` with APP_NAME untouched turns that
+// test red. An exact key set rather than containment, so adding an `omp` alias is also a
+// contract change rather than a silent second install name.
+//
+// This note previously said nothing enforced the binding and that the fix was a separate
+// command constant tracked by epic-grse. That gate was committed six minutes after this
+// comment, which is why the claim outlived the thing that answered it.
 const SNAPSHOT_HINT = `Usage snapshots accumulate whenever usage limits are fetched (TUI footer, /usage, ${APP_NAME} usage).`;
 
 interface WindowRef {

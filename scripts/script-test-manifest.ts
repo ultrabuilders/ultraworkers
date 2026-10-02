@@ -67,6 +67,7 @@ export const RUN: readonly ScriptTestClassification[] = [
 	// the pattern cannot see means the counts are not quotable, and the census
 	// reports that row while still exiting 0.
 	{ file: "check-census-self-blindness.test.ts", reason: "" },
+	{ file: "census-host-guard-producers.test.ts", reason: "" },
 	// The subdirectory tests. `onDiskTestFiles` read only the top level, so every
 	// file below was on disk, classified by nobody, and executed by nothing — the
 	// same defect `TEST_EXTENSIONS` was widened for in 1814e9fbad, along the

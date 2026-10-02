@@ -31,6 +31,9 @@ export * from "./telemetry/conformance";
 export * from "./telemetry/context";
 export * from "./telemetry/memory";
 export * from "./telemetry/noop";
+// Schema-driven span vocabulary ported from pi. This repo emits none of it yet;
+// see the module docblock for which spans pi actually wires, and why not.
+export * from "./telemetry/schema";
 // Thinking selectors
 export * from "./thinking";
 // Tool-context augmentation

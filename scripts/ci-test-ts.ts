@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { $ } from "bun";
+import { PROBE_PREFIX } from "@oh-my-pi/pi-utils";
 
 type Mode =
 	| "all"
@@ -687,6 +688,9 @@ const paint = (code: string, value: string): string => (useColor ? `\x1b[${code}
 const style = {
 	green: (s: string) => paint("32", s),
 	red: (s: string) => paint("31", s),
+	// Warnings are neither success nor failure, and reusing `red` for them is how a
+	// warning stops being read as anything but a second failure.
+	yellow: (s: string) => paint("33", s),
 	bold: (s: string) => paint("1", s),
 	dim: (s: string) => paint("2", s),
 };
@@ -845,6 +849,11 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	const env = buildChildEnv();
 	const queue = [...commands];
 	const failures: ChunkOutcome[] = [];
+	// Probe entries that ran in a chunk this run then withheld. Counted while the output is
+	// still in hand, because afterwards the runner cannot tell them from the hundreds of
+	// ordinary bun lines it discarded alongside them.
+	let discardedProbeEntries = 0;
+	let discardedProbeChunks = 0;
 	let completed = 0;
 	const fileWidths = [...new Set(commands.map(c => c.parallel).filter(p => p !== undefined))].sort((a, b) => a - b);
 	console.log(
@@ -910,7 +919,7 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 	// can't keep the runner's event loop alive.
 	async function runAttempt(
 		testCommand: TestCommand,
-	): Promise<{ exitCode: number; output: string; timedOut: boolean }> {
+	): Promise<{ exitCode: number; output: string; timedOut: boolean; probeEntries: number }> {
 		const proc = Bun.spawn(testCommand.command, {
 			cwd: path.join(repoRoot, testCommand.cwd),
 			env,
@@ -939,6 +948,11 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 		return {
 			exitCode,
 			timedOut,
+			// Counted per stream rather than on the concatenation below. stdout and stderr
+			// are joined with no separator, so a stdout that does not end in a newline would
+			// glue itself onto the front of the first probe line and hide it from a
+			// start-of-line anchor — the probe would then be reported as never run.
+			probeEntries: countProbeEntries(stdout.text) + countProbeEntries(stderr.text),
 			output: `${stdout.text}${stderr.text}${timedOut ? `\n[watchdog] chunk exceeded ${Math.round(chunkTimeoutMs() / 1000)}s; killed with SIGKILL (OMP_TEST_CHUNK_TIMEOUT to change)\n` : ""}`,
 		};
 	}
@@ -975,6 +989,11 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 				let msg = `${formatProgressLine(outcome)}\n`;
 				if (result.exitCode !== 0 || result.timedOut) {
 					msg += `${formatChunkFailure(outcome, true)}\n`;
+				} else if (result.probeEntries > 0) {
+					// Passing and quiet means the output carrying these is about to be
+					// dropped on the floor. Take the count now.
+					discardedProbeEntries += result.probeEntries;
+					discardedProbeChunks += 1;
 				}
 				process.stdout.write(msg);
 			} else {
@@ -999,6 +1018,13 @@ export async function runTestCommandsInParallel(commands: TestCommand[], concurr
 		);
 	} else if (failures.length > 0) {
 		process.stdout.write(style.bold(style.red(`\n${failures.length} of ${commands.length} test chunk(s) FAILED\n`)));
+	}
+	// Reported after the footer, and only in quiet mode — a verbose run already showed the
+	// probes on screen, so there is nothing discarded to apologize for.
+	if (discardedProbeEntries > 0) {
+		process.stdout.write(
+			`${formatDiscardedProbeWarning(discardedProbeEntries, discardedProbeChunks, discardWarningSuppressed())}\n`,
+		);
 	}
 	if (failures.length > 0) {
 		process.exitCode = 1;
@@ -1054,6 +1080,74 @@ function chunkTestFiles(testCommand: TestCommand): string[] {
 	return rest
 		.filter(arg => arg !== "test" && !onlyFailuresArgs.includes(arg) && !arg.startsWith("-"))
 		.filter(arg => /\.test\.(?:[cm]?[jt]sx?)$/.test(arg));
+}
+
+/**
+ * How many probe entries a captured stream contains.
+ *
+ * Anchored at the start of a line, which is what {@link PROBE_PREFIX} is written as. The
+ * alternative — counting the bare substring — would match a probe line quoted inside
+ * someone else's error message and report a probe that never ran.
+ */
+export function countProbeEntries(output: string): number {
+	let count = 0;
+	for (const line of output.split("\n")) if (line.startsWith(PROBE_PREFIX)) count += 1;
+	return count;
+}
+
+/**
+ * The line reporting probe entries that a quiet run threw away.
+ *
+ * Three properties are load-bearing, and each one exists because the opposite was
+ * tempting:
+ *
+ * - **It names the count.** The failure being defended is invisible by construction, so
+ *   the report has to be a number. "Some probes may have run" is indistinguishable from
+ *   the silence it is warning about.
+ * - **Suppression still prints.** `OMP_TEST_QUIET_DISCARD_WARN=0` mutes the alarm, not
+ *   the fact. A configuration that produced no output at all would be a quieter way to
+ *   rebuild the exact hole this closes, so opting out leaves a line saying so.
+ * - **It names the way out.** `--full` already replays everything; a warning that did
+ *   not say which flag does that is a complaint with no remedy.
+ */
+export function formatDiscardedProbeWarning(entries: number, chunks: number, suppressed: boolean): string {
+	if (entries === 0) return "";
+	const scope = `${entries} probe ${entries === 1 ? "entry" : "entries"} from ${chunks} passing ${
+		chunks === 1 ? "chunk" : "chunks"
+	}`;
+	if (suppressed) {
+		return style.dim(
+			`⚠ ${scope} were discarded because the ${chunks === 1 ? "chunk" : "chunks"} passed` +
+				` (warning muted by OMP_TEST_QUIET_DISCARD_WARN=0; --full replays them).`,
+		);
+	}
+	return style.yellow(
+		`⚠ ${scope} were discarded because the ${chunks === 1 ? "chunk" : "chunks"} passed.` +
+			` Silence here is not a result — re-run with --full to see them.`,
+	);
+}
+
+/** Whether the discarded-probe warning is muted. Opting out never silences the fact. */
+function discardWarningSuppressed(): boolean {
+	return Bun.env.OMP_TEST_QUIET_DISCARD_WARN?.trim() === "0";
+}
+
+/**
+ * Whether a chunk actually invokes a test runner.
+ *
+ * Distinct from "names no test files", and the distinction is the whole point. A
+ * whole-package chunk (`bun test` with no path) names **no** files and still runs
+ * hundreds of them; `selectAffected` keeps those chunks whenever a change lands in
+ * their package. So a warning keyed on "no files named" would fire on ordinary
+ * diff-scoped runs — a false alarm on every normal run is a warning nobody reads.
+ *
+ * The Rust chunk (`bun scripts/run-rs-task.ts test:rs`) starts with `bun` but runs a
+ * script, and self-skips when nothing Rust-related changed. That is the shape this has
+ * to catch: a selected chunk that can only ever report success about zero tests.
+ */
+export function chunkRunsTests(testCommand: TestCommand): boolean {
+	const [bin, sub] = testCommand.command;
+	return (bin === "bun" || bin === "node") && (sub === "test" || sub === "--test");
 }
 
 /**
@@ -1337,6 +1431,23 @@ if (import.meta.main) {
 	console.log(
 		`selected=${affectedCommands.length} mode=${changedFiles === undefined ? "shard-only" : smokeFallback ? "smoke" : "diff"}`,
 	);
+	// A run that selects no test runner exits 0 having executed nothing, and a log that
+	// ends in a green summary is exactly what a caller reads as "the change is fine".
+	// Measured on a one-file change touching no Rust and no test: the diff matched only the
+	// Rust chunk, which self-skipped — 16 log lines, 0 TypeScript tests, EXIT=0. Scoped to
+	// diff mode and to real runs, because a dry run executes nothing at all and saying so
+	// there would be true of every invocation.
+	if (!isDryRun && changedFiles !== undefined && !smokeFallback) {
+		const runners = affectedCommands.filter(chunkRunsTests).length;
+		if (runners === 0) {
+			console.log(
+				style.yellow(
+					`⚠ diff-scoped run selected ${affectedCommands.length} chunk(s) and none of them invokes a test runner — ` +
+						`0 test files will execute and this run cannot fail. Unset OMP_TEST_AFFECTED to run everything.`,
+				),
+			);
+		}
+	}
 	const requestedCommands = affectedCommands;
 	const explicitConcurrency = Boolean(Bun.env.OMP_TEST_CONCURRENCY?.trim());
 	// CI defaults to one process at a time, but memory-sized workflow buckets

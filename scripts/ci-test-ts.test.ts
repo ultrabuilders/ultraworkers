@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import * as path from "node:path";
-import { ptree, TempDir } from "@oh-my-pi/pi-utils";
-import { formatChunkManifest, selectAffected, selectShard } from "./ci-test-ts";
+import { PROBE_PREFIX, ptree, TempDir } from "@oh-my-pi/pi-utils";
+import {
+	chunkRunsTests,
+	countProbeEntries,
+	formatChunkManifest,
+	formatDiscardedProbeWarning,
+	selectAffected,
+	selectShard,
+} from "./ci-test-ts";
 
 describe("test runner watchdog", () => {
 	// Parent fake timers cannot drive the real watchdog inside the isolated runner process.
@@ -480,5 +487,113 @@ describe("chunk manifest through the real runner", () => {
 		// Recording a broken chunk is not the same as failing on it. Without this the test
 		// would pass against a runner that wrote a perfect manifest and exited 0.
 		expect(result.exitCode).toBe(1);
+	}, 150_000);
+});
+
+/**
+ * A probe that ran inside a passing chunk, and the report that it did.
+ *
+ * The failure this defends against is a silence that reads as a result: quiet mode
+ * withholds a passing chunk's whole output, so an instrument placed there leaves
+ * nothing behind — and nothing behind is exactly what an instrument which never fired
+ * also leaves behind.
+ *
+ * Every assertion below is proven non-vacuous by mutation; the mutations and their
+ * outputs are recorded in the commit that introduced this block.
+ */
+describe("discarded probe reporting", () => {
+	const probeSource = (body: string) =>
+		[
+			'import { expect, test } from "bun:test";',
+			`import { probe } from ${JSON.stringify(import.meta.resolve("../packages/utils/src/probe.ts"))};`,
+			'test("probe fires", () => {',
+			`\t${body}`,
+			"\texpect(1).toBe(1);",
+			"});",
+			"",
+		].join("\n");
+
+	/** Run the real runner over `files` in a temp dir, and hand back what it printed. */
+	async function runRealRunner(dir: TempDir, files: string[]) {
+		const repoRoot = path.join(import.meta.dir, "..");
+		const commands = [
+			{
+				label: "probe chunk",
+				cwd: path.relative(repoRoot, dir.absolute()),
+				command: ["bun", "test", "--only-failures", ...files],
+				parallel: 1,
+			},
+		];
+		return await ptree.exec(
+			[
+				process.execPath,
+				"-e",
+				`import { runTestCommandsInParallel } from ${JSON.stringify(import.meta.resolve("./ci-test-ts.ts"))}; await runTestCommandsInParallel(${JSON.stringify(commands)}, 1);`,
+			],
+			{ env: { ...Bun.env, NO_COLOR: "1" }, timeout: 120_000, detached: true, allowNonZero: true },
+		);
+	}
+
+	test("counts tagged lines, and does not count the tag quoted inside another line", () => {
+		expect(countProbeEntries("")).toBe(0);
+		expect(countProbeEntries(`${PROBE_PREFIX} one\n${PROBE_PREFIX} two\n`)).toBe(2);
+		expect(countProbeEntries("1 pass\n0 fail\n")).toBe(0);
+		// A bare substring search would count this and report a probe that never ran.
+		expect(countProbeEntries(`error: failed near ${PROBE_PREFIX} in the fixture`)).toBe(0);
+	});
+
+	test("says nothing when nothing was discarded, so a normal run stays clean", () => {
+		expect(formatDiscardedProbeWarning(0, 0, false)).toBe("");
+		expect(formatDiscardedProbeWarning(0, 3, true)).toBe("");
+	});
+
+	test("reports the count and the way out, and still reports when muted", () => {
+		const loud = formatDiscardedProbeWarning(3, 2, false);
+		expect(loud).toContain("3 probe entries");
+		expect(loud).toContain("2 passing chunks");
+		expect(loud).toContain("--full");
+		// Muting the alarm must not mute the fact. A configuration that printed nothing at
+		// all would be a quieter way to rebuild the hole this exists to close.
+		const muted = formatDiscardedProbeWarning(3, 2, true);
+		expect(muted).toContain("3 probe entries");
+		expect(muted).toContain("OMP_TEST_QUIET_DISCARD_WARN=0");
+		expect(formatDiscardedProbeWarning(1, 1, false)).toContain("1 probe entry from 1 passing chunk");
+	});
+
+	test("tells a chunk that runs tests from one that only looks like it", () => {
+		// The whole-package chunk names no files and still runs hundreds; warning on it
+		// would fire on ordinary diff-scoped runs. The Rust chunk starts with `bun` and
+		// runs a script — that is the shape with zero tests behind a green exit.
+		expect(chunkRunsTests({ label: "pkg", cwd: "packages/x", command: ["bun", "test"] })).toBe(true);
+		expect(chunkRunsTests({ label: "pkg", cwd: "packages/x", command: ["bun", "test", "a.test.ts"] })).toBe(true);
+		expect(chunkRunsTests({ label: "gates", cwd: ".", command: ["node", "--test", "a.test.mjs"] })).toBe(true);
+		expect(chunkRunsTests({ label: "rs", cwd: ".", command: ["bun", "scripts/run-rs-task.ts", "test:rs"] })).toBe(
+			false,
+		);
+		expect(chunkRunsTests({ label: "rs", cwd: ".", command: ["cargo", "nextest", "run"] })).toBe(false);
+	});
+
+	test("reports a probe that ran in a passing chunk, over the real runner", async () => {
+		using dir = TempDir.createSync("omp-probe-warn-");
+		await Bun.write(dir.join("probed.test.ts"), probeSource('probe("fired-once");'));
+		const result = await runRealRunner(dir, ["probed.test.ts"]);
+		// The chunk passed — that is the precondition for the silence this reports.
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("1 probe entry from 1 passing chunk");
+		expect(result.stdout).toContain("--full");
+	}, 150_000);
+
+	test("stays silent when a passing chunk fired no probe", async () => {
+		// The false-positive guard, and the reason the count is keyed on a tag rather than
+		// on "this chunk produced output": a passing chunk always produces output, so that
+		// key would warn on every run and be read as noise within a week.
+		using dir = TempDir.createSync("omp-probe-quiet-");
+		await Bun.write(
+			dir.join("plain.test.ts"),
+			'import { expect, test } from "bun:test";\ntest("no probe", () => {\n\texpect(1).toBe(1);\n});\n',
+		);
+		const result = await runRealRunner(dir, ["plain.test.ts"]);
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).not.toContain("probe entry");
 	}, 150_000);
 });

@@ -124,6 +124,15 @@ export interface RatchetVerdict {
 	 * purpose is the one thing nobody should mistake for a ceiling to defend.
 	 */
 	readonly literalImbalance: number;
+	/**
+	 * The same ceiling shape again, and the rule that was previously invisible here: it is
+	 * emitted by `checkPre`, but nothing in this file counted it, so a row whose declared
+	 * `hits` disagreed with its file could sit red in the table and CI stayed green.
+	 *
+	 * Reported, not gated — the live count is peers' in-flight sweep, and gating it would
+	 * redden CI for everyone mid-sweep. Gated once the sweep settles; see `epic-q8f0`.
+	 */
+	readonly hitsImbalance: number;
 }
 
 /**
@@ -142,6 +151,7 @@ export function checkRatchet(
 		ok: staleRow <= baseline,
 		missingRow: count("missing-row"),
 		literalImbalance: count("literal-hits-imbalance"),
+		hitsImbalance: count("hits-imbalance"),
 	};
 }
 
@@ -188,9 +198,10 @@ async function main(): Promise<number> {
 			`[ratchet] table     : ${TABLE_PATH} · ${rows.length} rows · md5:${printed}\n` +
 			`[ratchet] ceiling set against md5:${BASELINE_TABLE_DIGEST}${tableDrift}\n` +
 			`[ratchet] rules     : ${RULES_VERSION} (ceiling set against ${BASELINE_RULES_VERSION})${rulesDrift}\n` +
-			`[ratchet] reported, not gated — both are CEILINGS, they must fall:\n` +
+			`[ratchet] reported, not gated — all three are CEILINGS, they must fall:\n` +
 			`[ratchet]   missing-row             = ${verdict.missingRow}   (rows still not covered)\n` +
-			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)`,
+			`[ratchet]   literal-hits-imbalance  = ${verdict.literalImbalance}   (rows whose declared hits ≠ the file's)\n` +
+			`[ratchet]   hits-imbalance          = ${verdict.hitsImbalance}   (a path's rows sum ≠ the file's count)`,
 	);
 
 	if (!verdict.ok) {

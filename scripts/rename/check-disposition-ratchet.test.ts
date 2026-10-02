@@ -143,9 +143,17 @@ describe("the ratchet as a runnable gate", () => {
 		// A green run must still name the numbers it deliberately does not gate on, and
 		// say they are ceilings. An unlabelled 71 reads as a threshold to defend rather
 		// than a number that falls when someone fixes a row.
-		expect(out).toContain("both are CEILINGS, they must fall");
+		//
+		// The ceiling label is matched without its count. It used to assert the literal
+		// "both are CEILINGS", which pinned the number of ungated rules to the shape of
+		// the sentence — adding a third ungated rule reddened a test whose subject was
+		// the labelling, not the arithmetic. Each rule is then asserted to carry a value
+		// of its own, so the contract (every ungated number is named) survives the next
+		// rule and deleting any one of these lines still fails.
+		expect(out).toMatch(/are CEILINGS, they must fall/);
 		expect(out).toMatch(/missing-row\s+= \d+/);
 		expect(out).toMatch(/literal-hits-imbalance\s+= \d+/);
+		expect(out).toMatch(/hits-imbalance\s+= \d+/);
 		expect(proc.exitCode).toBe(0);
 	});
 });

@@ -1,117 +1,119 @@
 # The `check:ts` chain — what each of the 14 links does
 
-`check:ts` is a `&&` chain of 14 links (`package.json`). `&&` stops at the first failure, so in
+`check:ts` is a `&&` chain of 14 links (`package.json:99`). `&&` stops at the first failure, so in
 ordinary use **everything after the first red link has not run** — not "ran and passed". This file
-exists so that when someone reports "check:ts is red", the next question is *which* link, and the
-answer does not require re-deriving it.
+exists so that when someone reports "check:ts is red", the next question is *which* link.
 
-Every row below was measured by running that link **on its own**, never through the chain, and
-each is stamped with the `HEAD` it ran at. The tree was moving during the measurement — a peer
-committed mid-run — so a number without its `HEAD` here is not comparable to one taken minutes
-later.
+The map below was measured on an **isolated `git worktree` at one fixed `HEAD`**, each link run on
+its own, never through the chain. That matters: on the shared working tree the answer changes
+while you measure it, and the changes are not hypothetical — see the last section, where two
+links that are red at `HEAD` were green on the shared tree.
 
-## Measured state
+## Measured at `HEAD=3f19d4e552`, working tree clean throughout
 
-Run of 2026-10-03. Links 1–4 at `HEAD=bfa783a13a`, links 5–13 at `HEAD=c284464c4e`.
-`dirty` is the number of paths `git status --porcelain` reported; the tree never went clean.
+| # | link | reads | exit | ms |
+|---|------|-------|------|----|
+| 1 | `check:tools` | `oxlint .` then `oxfmt --check` over the source globs | **1** | 670 |
+| 2 | `check:ts:tools` | `tsconfig.tools.json` (tsgo `--noEmit`) | 0 | 7916 |
+| 3 | `check:file-counts` | `scripts/check-grp-c-file-counts.ts` + `scripts/r0-grp-c-file-counts.json` | 0 | 92 |
+| 4 | `check:invariants` | `scripts/run-node-invariants.mjs` — reported **6180 files scanned** | 0 | **15645** |
+| 5 | `check:docs-rename` | `scripts/rename/check-docs-rename.ts` + `docs-legacy-allowlist.txt` | 0 | 111 |
+| 6 | `check:runtime-rename` | `scripts/rename/check-runtime-rename.ts` + `runtime-legacy-allowlist.txt` | 0 | 536 |
+| 7 | `check:test-rename-literals` | `scripts/ci-rename-test-literals.ts` | 0 | 732 |
+| 8 | `check:bench-reporting` | `scripts/check-bench-reporting.ts` | 0 | 39 |
+| 9 | `check:entry-graphs` | `scripts/check-entry-graphs.mjs` | 0 | 46 |
+| 10 | `check:census` | `scripts/check-census-self-blindness.ts` | 0 | 1113 |
+| 11 | `check:await-import` | `scripts/check-await-import.ts` | 0 | 561 |
+| 12 | `measure:fan-in:check` | `scripts/measure-fan-in.ts --check` — 83 modules, 1379 files, 7896 edges | 0 | 294 |
+| 13 | `check:types` | every `packages/*/tsconfig.json`, via `bun run --filter` | **1** | 22018 |
+| 14 | `check:test-baseline` | `scripts/check-grp-c-test-baseline.ts` + `scripts/r0-grp-c-test-baseline.json` | **not run** | — |
 
-| # | link | reads | exit | ms | writes? |
-|---|------|-------|------|----|---------|
-| 1 | `check:tools` | `oxlint .` + `oxfmt --check` over the source globs | 0 | 923 | no |
-| 2 | `check:ts:tools` | `tsconfig.tools.json` (tsgo `--noEmit`) | 0 | 873 | no |
-| 3 | `check:file-counts` | `scripts/check-grp-c-file-counts.ts` + `scripts/r0-grp-c-file-counts.json` | 0 | 116 | no |
-| 4 | `check:invariants` | `scripts/run-node-invariants.mjs` — reported **6183 files scanned** | 0 | **30167** | **not measurable, see below** |
-| 5 | `check:docs-rename` | `scripts/rename/check-docs-rename.ts` + `docs-legacy-allowlist.txt` | 0 | 322 | no |
-| 6 | `check:runtime-rename` | `scripts/rename/check-runtime-rename.ts` + `runtime-legacy-allowlist.txt` | 0 | 536 | no |
-| 7 | `check:test-rename-literals` | `scripts/ci-rename-test-literals.ts` | 0 | 613 | no |
-| 8 | `check:bench-reporting` | `scripts/check-bench-reporting.ts` | 0 | 29 | no |
-| 9 | `check:entry-graphs` | `scripts/check-entry-graphs.mjs` | 0 | 45 | no |
-| 10 | `check:census` | `scripts/check-census-self-blindness.ts` | 0 | 995 | no |
-| 11 | `check:await-import` | `scripts/check-await-import.ts` | 0 | 397 | no |
-| 12 | `measure:fan-in:check` | `scripts/measure-fan-in.ts --check` — reported 83 modules, 1379 files, 7896 edges | 0 | 270 | no |
-| 13 | `check:types` | every `packages/*/tsconfig.json`, via `bun run --filter` | **1** | 12810 | no |
-| 14 | `check:test-baseline` | `scripts/check-grp-c-test-baseline.ts` + `scripts/r0-grp-c-test-baseline.json` | **not run** | — | — |
+**Two of thirteen are red, and both reds are in the commit.**
 
-**Link 4 alone is 30.2s of the 48.1s all thirteen measured links took** — 63% of the chain's wall
-time in one link, while the other twelve together take 17.9s. Worth knowing before adding a
-fifteenth.
-
-## Link 14 was deliberately not run
-
-`collectFailures(target = SUITE)` spawns `bun test` against the **whole suite**. Running it was
-out of scope for the measurement that produced this file, so its row says "not run" rather than
-carrying a number nobody measured. It is the one link in the chain whose cost is unbounded by
-anything above.
-
-## Link 13 was red when measured, and went green 20 minutes later — read this before quoting it
-
-At `c284464c4e` link 13 was red:
+### Link 1 — `oxfmt`, not `oxlint`
 
 ```
-packages/coding-agent/test/extensions-discarded-handler-result.test.ts(51,10): error TS2769
+packages/coding-agent/src/tools/computer/prelude.js
+Format issues found in above 1 files.
+```
+
+`oxlint` itself is clean: 18 `no-unused-vars` **warnings**, 0 errors, exit 0. `check:tools` is
+`oxlint . && oxfmt --check …`, so it is the **second half** that fails, on one tracked file whose
+committed text is unformatted. Worth knowing when reading its output: this link prints a page of
+warnings that have nothing to do with its exit code.
+
+### Link 13 — the committed test does not typecheck
+
+```
+test/extensions-discarded-handler-result.test.ts(51,10): error TS2769
+test/extensions-discarded-handler-result.test.ts(72,10): error TS2769
   Argument of type '"tool_approval_requested"' is not assignable to
   parameter of type '"mcp_notification"'.
 ```
 
-At `e7a2da1551`, twenty minutes later, with no commit in between that touched it, it was
-**green** — 0 errors. The table above is therefore a snapshot of `c284464c4e`, not a property of
-this branch.
+Both lines are `pi.on("tool_approval_requested", () => VETO);` in the committed text. The
+overload exists (`extensions/types.ts:1623`), so this is overload resolution against the type `pi`
+has in the test, not a missing declaration.
 
-**The green one is a *disk* reading, and that distinction is not decorative.** At the time of the
-re-run, `extensions-discarded-handler-result.test.ts` was ` M` — modified in the working tree,
-not committed — while `extensions/types.ts` and `extensions/runner.ts` were clean. The committed
-text of the test differs from the working-tree text: `pi.on("tool_approval_requested", …)` at
-`HEAD` against `extension.handlers.set("tool_approval_requested", …)` on disk.
+**Neither red is local noise.** Both were measured on a checkout containing nothing but `HEAD`.
 
-So: **the red was measured on the working tree, and the fix that cleared it is uncommitted.**
-Whether `HEAD` itself typechecks was *not measured*, and no claim is made here either way. An
-earlier draft of this file asserted the red was "a property of the commit, so CI sees it too".
-That was an inference from a disk measurement and it was wrong; the table is the measurement, and
-only the table.
+## Link 14 was deliberately not run
 
-## Disk-reading vs commit-reading, with one measured example of each
+`collectFailures(target = SUITE)` spawns `bun test` against the **whole suite**, which is out of
+scope for this map. Its row says "not run" rather than carrying a number nobody measured. It is
+the one link whose cost nothing above bounds.
 
-## Disk-reading vs commit-reading, with one measured example of each
+## No link writes
 
-This is not a cosmetic distinction — it decides whether a red you see locally is a red CI has.
+Every link was run against a detached worktree at a fixed `HEAD`, and `git status --porcelain` was
+compared before and after each one. **It stayed at 0 for all thirteen.** So unlike the shared-tree
+attempt — where a peer's commit produced a 67-path delta around a link that writes nothing, and
+the two were indistinguishable — the write question is answered here rather than marked unknown.
 
-**Disk-only red (CI would be green).** At `HEAD=def931c391`, link 2 was red with seven
-`prefer-const` errors in `packages/durable/test/harness-tasks.test.ts` — an **untracked** file.
-Nothing in the commit had that error. A peer has since taken the file; link 2 is green in the
-table above. This is the shape of red worth double-checking before filing: *is the file it is
-naming actually in the commit?*
+That is the whole reason for using a worktree, and it is not reproducible on the shared tree: a
+peer committing and a gate writing produce the same observable, and no amount of care with
+snapshots separates them.
 
-**A red whose fix is uncommitted.** Link 13. It was red at `c284464c4e` and green at
-`e7a2da1551` with no intervening commit to the file — because the correcting edit sits in the
-working tree, unstaged. Neither reading is "the commit's verdict"; they are two different trees,
-and only one of them is what CI would check.
+## The shared tree was masking both reds
 
-Links 1 and 2 read the filesystem by construction (`oxlint`/`oxfmt`/`tsgo` take paths, not
-revisions). For the remaining links the disk-vs-commit split was **not** established by
-measurement here — see the caveat below.
+Measured on the shared working tree minutes earlier, links 1 and 13 were **green**, and link 4 was
+green too. All three had uncommitted local fixes:
 
-## "Does this link write?" is not answerable on a shared tree
+| link | at `HEAD` | on the shared tree | why they differ |
+|---|---|---|---|
+| 1 | red | green | `prelude.js` is tracked and locally ` M` — someone reformatted it without committing |
+| 4 | green* | green | *see below* |
+| 13 | red | green | `extensions-discarded-handler-result.test.ts` is locally ` M` — the committed text calls `pi.on(…)`, the working tree calls `handlers.set(…)` |
 
-The question that matters most for a gate is whether it modifies the tree, because a gate that
-does can turn itself green by overwriting its own evidence. The prescribed method — snapshot
-`git status` before and after, compare — **does not work while peers are committing**, and this
-is not a theoretical caveat.
+\* Link 4 was red in the first isolated run and green in the second, and the cause is worth
+recording because it looks like a HEAD defect and is not. `export/html/tool-views.generated.js`
+is **untracked** — a build artifact. CI gets it because `package.json:176` declares
+`"prepare": "bun run gen:tool-views"`, and `prepare` runs on `bun install`, which the CI
+`bun-install` action performs before any gate. My worktree symlinked `node_modules` instead of
+installing, so the artifact was absent and link 4 correctly reported a relative import naming a
+file that did not exist. Generating it made link 4 green.
 
-Link 4, run on its own, exits **0** and writes nothing. Yet the before/after diff around that
-same run reports **67 changed paths**, every one of them a path that went *from dirty to clean* —
-the signature of a peer **committing**, not of this link writing. `HEAD` moved
-`c86407552d` → `a431592168` across the run. Dirty count: 623 → 622.
+**Practical rule:** before reporting "link N is red at HEAD", confirm the worktree was prepared
+the way CI prepares one. Otherwise you will file a defect in the harness.
 
-A link that writes nothing, and a link whose neighbour commits, are **indistinguishable** by this
-method here. So the `writes?` column reads "no" only where nothing changed *and* `HEAD` held
-still; for link 4 the honest entry is "not measurable", not "no".
+## `check:disposition` is not in this chain — and it is not ungated
 
-What would settle it: run each link in an isolated checkout at a fixed `HEAD`, where no peer can
-move the tree underneath the snapshot. That was not done, so it is not claimed.
+Worth stating because the chain is only one of the two things CI runs:
 
-## Not in this chain
+```
+package.json:99    check:ts                 = the 14 links above
+package.json:108   check:disposition-ratchet
+package.json:135   ci:check:full            = bun scripts/ci-check-full.ts
+.github/workflows/ci.yml:190   run: bun run ci:check:full
+scripts/ci-check-full.ts:42    GATES = [ check:ts, check:disposition-ratchet ]
+```
 
-`check:disposition` / `check:disposition-ratchet` is a real gate over
-`scripts/rename/disposition.tsv` and it is **not** one of these 14 links. The `rename-incomplete`
-backlog it reports is therefore not what makes `check:ts` red, and should not be blamed for a
-`check:ts` failure.
+So `rename-incomplete` **is** gated — as CI's second gate, running whether or not `check:ts` is
+red. Its own docblock records why it was moved out of the `&&` chain:
+
+> "The ratchet was in fact wired as the eighth link of `check:ts`, behind `check:tools` and
+> `check:test-rename-literals`, both of which are red on this tree. It would never have run."
+
+A link that never executes is worse than no link, because it reads as coverage nobody has to
+reason about. Reading `package.json:99` and concluding "nothing gates this" repeats exactly that
+error one level up.

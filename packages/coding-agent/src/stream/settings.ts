@@ -7,7 +7,7 @@ import { DEFAULT_STREAM_URL } from "@oh-my-pi/pi-wire";
 
 const EMPTY_STRING_ARRAY: string[] = [];
 
-// Live streaming (omp stream)
+// Live streaming (ultraworkers stream)
 export const cfgStreamServerUrl = register({
 	id: "stream.serverUrl",
 	type: "string",

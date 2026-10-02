@@ -10,10 +10,10 @@ import {
 import type { PluginSource } from "@oh-my-pi/pi-coding-agent/extensibility/plugins/marketplace";
 
 /**
- * `omp plugin upgrade` must not move a source the user pinned.
+ * `ultraworkers plugin upgrade` must not move a source the user pinned.
  *
  * The failure this prevents is quiet and one-sided: the user writes `#main` in a
- * marketplace source, `omp plugin upgrade` re-resolves it, and the running plugin
+ * marketplace source, `ultraworkers plugin upgrade` re-resolves it, and the running plugin
  * changes to whatever `main` points at today. Nothing errors, nothing is logged,
  * and the user's stated constraint — "this is the one I picked" — is simply gone.
  *
@@ -29,7 +29,7 @@ import type { PluginSource } from "@oh-my-pi/pi-coding-agent/extensibility/plugi
  * resolver would not prove the gate sits ahead of the fetch.
  *
  * Both directions are asserted. A gate that refused every upgrade would pass a
- * refusal-only suite, and `omp plugin upgrade` would appear broken.
+ * refusal-only suite, and `ultraworkers plugin upgrade` would appear broken.
  */
 
 describe("upgrading a source the user pinned", () => {
@@ -91,8 +91,8 @@ describe("upgrading a source the user pinned", () => {
 	/**
 	 * Install once so there is something to upgrade, then publish a new version and
 	 * re-fetch the marketplace, which is the sequence a user actually performs: the
-	 * publisher releases, `omp plugin update <marketplace>` picks it up, and only
-	 * then can `omp plugin upgrade` have anything to move to.
+	 * publisher releases, `ultraworkers plugin update <marketplace>` picks it up, and only
+	 * then can `ultraworkers plugin upgrade` have anything to move to.
 	 *
 	 * Editing the cached catalog directly would be shorter but would test a state no
 	 * user can reach — `addMarketplace` copies the catalog into the cache, so a
@@ -169,7 +169,7 @@ describe("upgrading a source the user pinned", () => {
 	});
 
 	it("refuses on the default no-scope path too, not only behind --scope", async () => {
-		// `omp plugin upgrade <id>` with no --scope is the invocation most people
+		// `ultraworkers plugin upgrade <id>` with no --scope is the invocation most people
 		// type, and it routes through a different method. That method did not carry
 		// the pin rule, so the same command refused with --scope and quietly moved
 		// the plugin without it — a gate holding on one branch and not the other is
@@ -188,7 +188,7 @@ describe("upgrading a source the user pinned", () => {
 
 	it("upgrades an unpinned source, so the command still does its job", async () => {
 		// The negative control. Without a ref in the source there is nothing the
-		// user pinned, and refusing here would make `omp plugin upgrade` useless.
+		// user pinned, and refusing here would make `ultraworkers plugin upgrade` useless.
 		const manager = await installThenBump(undefined);
 
 		const entry = await manager.upgradePlugin("pinned-plugin@pin-marketplace");

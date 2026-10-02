@@ -1,5 +1,5 @@
 /**
- * `omp models` — list, search, and refresh available models.
+ * `ultraworkers models` — list, search, and refresh available models.
  *
  * Subcommands:
  * - `ls` (default): list available chat models grouped by provider.
@@ -50,7 +50,7 @@ export interface ModelsCommandArgs {
 /**
  * Known action keywords. Any other first token (e.g. `openai-codex`) is treated
  * as a provider/substring filter for the default `ls` view, so every provider
- * name doubles as an `omp models <provider>` shortcut.
+ * name doubles as an `ultraworkers models <provider>` shortcut.
  */
 const KNOWN_ACTIONS: Record<string, ModelsAction> = {
 	ls: "ls",
@@ -186,7 +186,7 @@ export interface ModelsListingSource {
 }
 
 /**
- * Render `omp models ls`/`find` as one box table per provider, selecting chat
+ * Render `ultraworkers models ls`/`find` as one box table per provider, selecting chat
  * models by default or the caller-requested catalog kind.
  */
 export function renderProviderModels(
@@ -371,7 +371,7 @@ export async function runModelsListing(options: RunModelsListingOptions): Promis
 }
 
 /**
- * Entry point for the standalone `omp models` command: bootstraps auth storage,
+ * Entry point for the standalone `ultraworkers models` command: bootstraps auth storage,
  * settings, and the model registry, force/cache-refreshes built-in providers per
  * the chosen action, then delegates to {@link runModelsListing}.
  */

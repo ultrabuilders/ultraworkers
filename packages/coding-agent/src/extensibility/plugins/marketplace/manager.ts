@@ -1023,7 +1023,7 @@ export class MarketplaceManager {
 
 		// `respectPin` here for the same reason as in `upgradePlugin`: this is the path
 		// taken when the user does NOT pass --scope, so it is the default invocation.
-		// Omitting it left `omp plugin upgrade <id>` free to move a pinned source while
+		// Omitting it left `ultraworkers plugin upgrade <id>` free to move a pinned source while
 		// the same command with --scope refused — the gate would have held only on the
 		// less common branch.
 		const pin = { respectPin: true, unpin: options?.force ?? false };

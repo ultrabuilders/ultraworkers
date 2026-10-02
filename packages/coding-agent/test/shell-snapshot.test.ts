@@ -400,8 +400,8 @@ describe("getOrCreateSnapshot", () => {
 	});
 
 	it("keeps snapshots in a uid-scoped dir so accounts sharing /tmp cannot collide", async () => {
-		// Regression: the dir used to be a single fixed `omp-shell-snapshots` name
-		// under the shared `os.tmpdir()`, created 0700. The first account to run omp
+		// Regression: the dir used to be a single fixed `ultraworkers-shell-snapshots` name
+		// under the shared `os.tmpdir()`, created 0700. The first account to run ultraworkers
 		// owned it and every other account's pre-create write died with EACCES.
 		const realBash = REAL_BASH;
 		if (!existsSync(realBash)) return;

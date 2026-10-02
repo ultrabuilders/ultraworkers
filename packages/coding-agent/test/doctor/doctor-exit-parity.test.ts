@@ -2,7 +2,7 @@
  * Case (1): both exits report the SAME check set, in the SAME order.
  *
  * This is the case the bead calls mandatory-first, and it guards a failure no
- * single-surface test can see. `/debug` and `omp doctor` each used to be free to
+ * single-surface test can see. `/debug` and `ultraworkers doctor` each used to be free to
  * collect their own checks; each copy would have been correct against itself, so
  * every test written against one of them stayed green while the two drifted. A
  * check added to one would be invisible to a user of the other, and the doctor
@@ -10,7 +10,7 @@
  *
  * The assertion is deliberately made across TWO surfaces rather than twice
  * against one. Naming both — the real CLI process and the shared builder the TUI
- * entry prints — is what makes drift detectable: if `omp doctor` grew its own
+ * entry prints — is what makes drift detectable: if `ultraworkers doctor` grew its own
  * collection path, its stdout would stop matching the builder's lines and this
  * goes red.
  *

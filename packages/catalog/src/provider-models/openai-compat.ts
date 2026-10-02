@@ -262,7 +262,7 @@ async function fetchCatalogPayload(
 /**
  * The wire effort tiers the catalog publishes for a model, in canonical order.
  * Undefined when the row has no effort-addressed thinking, or names no tier
- * omp knows.
+ * ultraworkers knows.
  */
 function publishedEffortLadder(model: ModelsDevModel): Effort[] | undefined {
 	const values = model.reasoning_options?.find(option => option?.type === "effort")?.values;
@@ -360,8 +360,8 @@ async function loadPublishedEffortLadders(fetchImpl?: FetchImpl): Promise<Publis
 
 /**
  * The catalog provider keys this endpoint publishes under. A provider whose
- * catalog identity differs from its omp id (`moonshot` → `moonshotai`) is
- * resolved through its descriptors; the omp id stays as a candidate for
+ * catalog identity differs from its ultraworkers id (`moonshot` → `moonshotai`) is
+ * resolved through its descriptors; the ultraworkers id stays as a candidate for
  * providers the descriptors do not cover.
  */
 function catalogProviderKeys(providerId: string): readonly string[] {
@@ -382,7 +382,7 @@ function catalogProviderKeys(providerId: string): readonly string[] {
  * holds it only while every publishing host agrees that it takes an effort
  * dial and on which tiers. A host serving the id that published it without a
  * dial is this deployment's own answer and outranks any other host's ladder,
- * so it vetoes the candidate here; a dialless host omp cannot recognize as the
+ * so it vetoes the candidate here; a dialless host ultraworkers cannot recognize as the
  * server already kept the id out of `byId` when the index was built.
  */
 function lookupPublishedEffortLadder(
@@ -410,7 +410,7 @@ function lookupPublishedEffortLadder(
 }
 
 /**
- * Fill the effort ladder of discovered reasoning models whose tiers omp would
+ * Fill the effort ladder of discovered reasoning models whose tiers ultraworkers would
  * otherwise guess from the neutral wire or provider-wide unknown-class default.
  *
  * Source precedence is unchanged: a provider that reports its own thinking
@@ -1368,7 +1368,7 @@ export function novitaModelManagerOptions(
 export const DEEPINFRA_BASE_URL = "https://api.deepinfra.com/v1/openai";
 /**
  * `filter=with_meta` attaches per-model `metadata` (limits, pricing, tags);
- * `sort_by=omp` asks DeepInfra to return models in omp-priority order
+ * `sort_by=ultraworkers` asks DeepInfra to return models in ultraworkers-priority order
  * (earlier = better). The mapper does not stamp `priority` yet — see
  * `mapDeepinfraModel` — but the params are sent so discovery picks the
  * ordering up as soon as the server honors it.
@@ -1397,7 +1397,7 @@ function deepinfraTags(metadata: Record<string, unknown>): readonly string[] {
  * Map one DeepInfra catalog entry to a chat model spec. Non-`chat` entries
  * (`tts`, `stt`, `embed`, `image-gen`, `video-gen`) are dropped — those
  * surfaces are served by dedicated tool backends, not the chat catalog.
- * DeepInfra reports token prices in USD per 1M tokens — omp's `ModelCost`
+ * DeepInfra reports token prices in USD per 1M tokens — ultraworkers's `ModelCost`
  * unit, used verbatim. A bundled reference (when the generated catalog has
  * one) is spread first so compat/tooling metadata can contribute, but the
  * live metadata always wins for limits, pricing, and modalities.
@@ -1483,7 +1483,7 @@ function mapDeepinfraModel(
  * Bespoke fetch instead of `fetchOpenAICompatibleModels`: the shared helper
  * cannot carry the `filter`/`sort_by` query params and re-sorts results by id,
  * which would destroy DeepInfra's priority ordering once the server honors
- * `sort_by=omp`. Response order is preserved (dedupe keeps the first, i.e.
+ * `sort_by=ultraworkers`. Response order is preserved (dedupe keeps the first, i.e.
  * highest-priority, occurrence).
  */
 async function fetchDeepinfraModels(options: {
@@ -3054,7 +3054,7 @@ function openCodeModelManagerOptions(
 					apiKey,
 					// Live discovery hits the OpenCode gateway outside any
 					// conversation: attribute with the stable install id
-					// (x-opencode-session required from 09/06) and omp's UA
+					// (x-opencode-session required from 09/06) and ultraworkers's UA
 					// instead of Bun's default.
 					headers: { "User-Agent": USER_AGENT, "x-opencode-session": getInstallId() },
 					mapModel: (entry, defaults) => {
@@ -5016,7 +5016,7 @@ function mapStepfunThinking(entry: StepfunModelRecord): ThinkingConfig | undefin
 }
 
 /**
- * Whether a StepFun `/v1/models` id is a chat model omp can route. StepFun's
+ * Whether a StepFun `/v1/models` id is a chat model ultraworkers can route. StepFun's
  * roster interleaves its audio and image SKUs with the chat models; the
  * exclusion policy itself lives in `runtime/behavior.kdl` (`exclude-models
  * provider="stepfun"`), not here.
@@ -5032,7 +5032,7 @@ export function isStepfunChatModelId(id: string): boolean {
  * `api.stepfun.ai/v1`. A successful `/v1/models` snapshot is authoritative over
  * the bundled seed rows (`providers/stepfun.kdl`), so a model StepFun retires
  * leaves the picker instead of lingering as a dead seed row, while models added
- * later become selectable without an omp release.
+ * later become selectable without an ultraworkers release.
  */
 export function stepfunModelManagerOptions(
 	config?: StepfunModelManagerConfig,

@@ -21,7 +21,7 @@
  * pins the property itself — if someone switches to reading the typed name,
  * this goes red with the resolved name and the symlink name swapped.
  *
- * It matters while the dev launcher alias exists: a developer who types `omp
+ * It matters while the dev launcher alias exists: a developer who types `ultraworkers
  * list` through that symlink is told `ultraworkers list`. That is still the
  * honest answer — `ultraworkers` is the binary that ran — but it is a gap, and
  * it is tracked on the bead that decides the alias's fate rather than being
@@ -89,21 +89,21 @@ describe("the reserved-word hint names the binary that ran, not the name invoked
 	it("recommends the plugin command under the SAME resolved entry it echoes", async () => {
 		// INVERTED 2026-10-02 — this test used to assert the recommendation stayed
 		// hardcoded while the echo was substituted, which is precisely what told a
-		// `bun install` / `npm i -g` / `install.sh` / nix user to run `omp plugin
+		// `bun install` / `npm i -g` / `install.sh` / nix user to run `ultraworkers plugin
 		// list`, a command none of those four paths creates (epic-4yhd).
 		//
 		// Both clauses now derive from the same resolved entry, so the message
 		// cannot tell the user to run a command from a namespace they are not in.
 		// That is what makes it correct without picking a side on epic-4yhd: if an
-		// `omp` alias ships, an `omp` user's resolved entry names `omp`; if it does
-		// not, they are never told `omp`.
+		// `ultraworkers` alias ships, an `ultraworkers` user's resolved entry names `ultraworkers`; if it does
+		// not, they are never told `ultraworkers`.
 		const message = await hintViaEntryName("ultraworkers", "some-other-name");
 		expect(message).toContain("`ultraworkers plugin list`");
 		expect(message).not.toContain("some-other-name");
 		// The pinning half, unchanged in spirit: a symlink the user typed is not
 		// what the runtime can resolve, so it must not leak into the advice either.
 		// Scoped to the RECOMMENDED COMMAND, not the bare token: the message ends
-		// "...as a prompt", and a bare `not.toContain("omp")` matches the substring
+		// "...as a prompt", and a bare `not.toContain("ultraworkers")` matches the substring
 		// inside `pr-omp-t`. Asserting the token rather than the thing it appears in
 		// would have gone red on a message that is completely correct.
 		expect(message).not.toContain("`omp plugin");

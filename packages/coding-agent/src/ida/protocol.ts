@@ -1,8 +1,8 @@
 /**
- * Cross-process contract between omp processes and the broker-supervised IDA host daemon.
+ * Cross-process contract between ultraworkers processes and the broker-supervised IDA host daemon.
  *
  * Each open database runs in one daemon named {@link idaDaemonName} under the project's daemon
- * broker (so it shows up in `omp ps`). The daemon is an omp worker (`host.ts`) that owns the
+ * broker (so it shows up in `ultraworkers ps`). The daemon is an ultraworkers worker (`host.ts`) that owns the
  * IDB lock and one Python worker, and serves NDJSON requests on {@link idaHostEndpoint}.
  */
 import type * as net from "node:net";
@@ -78,7 +78,7 @@ export function idaHostEndpoint(projectDir: string, runtimeDir: string, daemonNa
 	return path.join(runtimeDir, `ida-${hash16(daemonName)}.sock`);
 }
 
-/** RPC methods an omp process may forward to the worker through `call`. */
+/** RPC methods an ultraworkers process may forward to the worker through `call`. */
 export const IDA_CALL_METHODS = ["view", "exec", "rename", "comment", "set_type", "make_function", "save"] as const;
 
 /** A method forwarded with `call`. */
@@ -144,7 +144,7 @@ const hostStatusSchema = type({
 
 /**
  * A host's database as reported by `open`/`status`. `busy` counts queued and running requests
- * from every omp process; `lastUsed` drives LRU eviction; `dirty` means a close would save.
+ * from every ultraworkers process; `lastUsed` drives LRU eviction; `dirty` means a close would save.
  */
 export type IdaHostStatus = typeof hostStatusSchema.infer;
 
@@ -169,7 +169,7 @@ const hostConfigSchema = type({
 	idleCloseMs: "number",
 });
 
-/** Everything the host needs to open its database; built by the omp process that starts it. */
+/** Everything the host needs to open its database; built by the ultraworkers process that starts it. */
 export type IdaHostConfig = typeof hostConfigSchema.infer;
 
 /** Decode the host config from {@link IDA_HOST_CONFIG_ENV}; throws on a malformed value. */

@@ -1,7 +1,7 @@
 /**
  * SSH CLI command handlers.
  *
- * Handles `omp ssh <command>` subcommands for SSH host configuration management.
+ * Handles `ultraworkers ssh <command>` subcommands for SSH host configuration management.
  */
 
 import { APP_NAME } from "@oh-my-pi/pi-utils";

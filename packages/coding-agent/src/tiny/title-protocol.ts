@@ -5,9 +5,9 @@ import { WORKER_HOST_SELECTOR_PREFIX } from "@oh-my-pi/pi-utils/worker-host";
 /**
  * Wire protocol between `TinyTitleClient` and a tiny-model worker.
  *
- * One worker per local model: the ONNX worker (`worker.ts`, the omp binary
+ * One worker per local model: the ONNX worker (`worker.ts`, the ultraworkers binary
  * re-entered with {@link TINY_WORKER_ARG}) or the MLX worker (`mlx-server.py`)
- * owns a Unix socket / named pipe named after the model, serves every omp
+ * owns a Unix socket / named pipe named after the model, serves every ultraworkers
  * process on the machine over newline-delimited JSON, and exits on its own
  * once idle. Requests are message-level so both workers render the chat
  * template with their own tokenizer; the client owns prompt construction and

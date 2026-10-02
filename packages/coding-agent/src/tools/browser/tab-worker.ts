@@ -491,7 +491,7 @@ function asElementHandle(handle: unknown): ElementHandle | null {
 	return handle ? (handle as ElementHandle) : null;
 }
 
-/** ElementHandle enriched with omp's additional direct interaction and query methods. */
+/** ElementHandle enriched with ultraworkers's additional direct interaction and query methods. */
 export type ActionableHandle = InteractionHandle & ElementQueryHelpers & { fill(value: string): Promise<void> };
 
 /**
@@ -1382,7 +1382,7 @@ export class WorkerCore {
 			const raw = session as unknown as { send(method: string): Promise<unknown> };
 			await raw.send("OMP.claimTarget");
 		} catch {
-			// Not the omp relay; nothing to claim.
+			// Not the ultraworkers relay; nothing to claim.
 		} finally {
 			await session?.detach().catch(() => undefined);
 		}

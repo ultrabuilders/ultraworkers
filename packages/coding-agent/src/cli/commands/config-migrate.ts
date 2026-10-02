@@ -1,5 +1,5 @@
 /**
- * `omp config migrate` — move a config root from its old name to its new one.
+ * `ultraworkers config migrate` — move a config root from its old name to its new one.
  *
  * Dry-run by default. A user who types a migration command and loses their
  * settings has no way back, so the destructive path is opt-in and the default

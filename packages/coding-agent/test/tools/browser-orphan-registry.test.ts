@@ -1,6 +1,6 @@
 /**
  * Regression tests for issue #10022: the project-shared broker-owned Chromium
- * (`omp.browser.headless`) retains page targets created by omp processes that
+ * (`ultraworkers.browser.headless`) retains page targets created by ultraworkers processes that
  * ended abnormally, because tab ownership was tracked only in per-process
  * memory. `orphan-registry` records ownership durably and reaps targets whose
  * owning process is gone.

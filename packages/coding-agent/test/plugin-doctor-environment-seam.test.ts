@@ -1,5 +1,5 @@
 /**
- * `omp plugin doctor` must run BOTH collectors.
+ * `ultraworkers plugin doctor` must run BOTH collectors.
  *
  * `runDoctorChecks` answers "is this environment healthy" — PATH lookups,
  * credentials, and the extension seam registries. `manager.doctor()` answers "is
@@ -13,7 +13,7 @@
  * `handleDoctor` PRINTS, never on `runDoctorChecks`' return value.
  *
  * The failure a user would otherwise hit: they registered a theme, the
- * registration is recorded, and `omp plugin doctor` reports a clean bill of
+ * registration is recorded, and `ultraworkers plugin doctor` reports a clean bill of
  * health — because the only check that resolves a registered theme is the one
  * no command reached.
  */

@@ -1,22 +1,22 @@
 /**
- * Reporting for settings files omp shares with other tools.
+ * Reporting for settings files ultraworkers shares with other tools.
  *
  * `.claude/settings.json` is registered as a real config layer, which makes it a
- * half-open door: every key omp implements takes effect from it, and every key it
+ * half-open door: every key ultraworkers implements takes effect from it, and every key it
  * does not is discarded without a word. The `hooks` key is the one that bites — a
  * user can write a valid Claude Code `hooks` block, see no error, and get no hooks,
  * because `loadHooks` reads the `hooks/pre/` and `hooks/post/` directories instead.
  *
  * This module exists to turn that silence into one sentence. It deliberately does NOT
- * teach omp another tool's hooks dialect: bridging `hooks.json` is a product decision
+ * teach ultraworkers another tool's hooks dialect: bridging `hooks.json` is a product decision
  * larger than this, and the loader is left alone.
  */
 
-/** `hooks` is called out separately because omp implements a different shape of it. */
+/** `hooks` is called out separately because ultraworkers implements a different shape of it. */
 const HOOKS_KEY = "hooks";
 
 /**
- * Top-level keys in a foreign settings file that omp does not implement.
+ * Top-level keys in a foreign settings file that ultraworkers does not implement.
  *
  * Order follows the file, so the warning a user reads lists their keys in the order
  * they wrote them rather than an arbitrary reshuffle.

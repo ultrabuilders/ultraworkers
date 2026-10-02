@@ -428,8 +428,8 @@ export interface ScanSkillsFromDirOptions {
 	includeSelf?: boolean;
 	/**
 	 * Registry/CLI origin of the plugin root supplying these skills, forwarded
-	 * to {@link SourceMeta.origin} so user-scope gating can tell omp's own
-	 * installs (`omp`, `plugin-dir`) from the foreign Claude tree (`claude`).
+	 * to {@link SourceMeta.origin} so user-scope gating can tell ultraworkers's own
+	 * installs (`ultraworkers`, `plugin-dir`) from the foreign Claude tree (`claude`).
 	 */
 	origin?: string;
 	/**
@@ -777,7 +777,7 @@ async function discoverLinkedExtensionModuleFiles(dir: string): Promise<{
 }> {
 	// `readDirEntries` hands back the module-level `dirCache` array BY REFERENCE, so
 	// sorting it in place would reorder the cache for every other consumer sharing it
-	// (builtin, cline, gemini, omp-extension-roots, omp-plugins) and for this file's
+	// (builtin, cline, gemini, ultraworkers-extension-roots, ultraworkers-plugins) and for this file's
 	// own three other call sites. Copy first.
 	//
 	// This sort is load-bearing on its own: the `Promise.all` below pushes into the
@@ -837,7 +837,7 @@ async function readExtensionModuleManifest(
  * Discovery rules:
  * 1. Direct files: `extensions/*.ts` or `*.js` → load
  * 2. Subdirectory with index: `extensions/<ext>/index.ts` or `index.js` → load
- * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with "omp"/"pi" field → load declared paths
+ * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with "ultraworkers"/"pi" field → load declared paths
  *
  * No recursion beyond one level. Complex packages must use package.json manifest.
  * Uses native glob for fast filesystem scanning with gitignore support.

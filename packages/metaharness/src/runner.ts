@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { type GeneratedProvider, getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { APP_NAME } from "@oh-my-pi/pi-utils";
 /**
- * Harbor benchmark runner for the local `omp` build.
+ * Harbor benchmark runner for the local `ultraworkers` build.
  *
  * Orchestrates Harbor (`harbor run`) against any Harbor dataset (default
  * terminal-bench-2) using a custom agent (`agent/omp_local.py`) that installs
@@ -60,11 +60,11 @@ export interface Config {
 	include: string[];
 	exclude: string[];
 	thinking: string | null;
-	/** Extra args forwarded verbatim to the in-container omp CLI invocation (repeatable). */
+	/** Extra args forwarded verbatim to the in-container ultraworkers CLI invocation (repeatable). */
 	agentArgs: string[];
-	/** omp tool allowlist (`--tools`); `null` keeps omp's default tool set. */
+	/** ultraworkers tool allowlist (`--tools`); `null` keeps ultraworkers's default tool set. */
 	tools: string[] | null;
-	/** Extra omp settings written into the container config (dotted key → JSON value). */
+	/** Extra ultraworkers settings written into the container config (dotted key → JSON value). */
 	settings: Record<string, unknown>;
 
 	agent: string;
@@ -682,7 +682,7 @@ function parseTrial(dir: string, name: string): Trial | null {
 			/* ignore */
 		}
 
-		// Realtime cost from the live agent omp.txt log, parsed incrementally.
+		// Realtime cost from the live agent ultraworkers.txt log, parsed incrementally.
 		const probe = probeTrialCost(path.join(dir, "agent", "omp.txt"));
 		const costUsd = probe?.costUsd ?? 0;
 		const tokIn = probe?.tokIn ?? 0;
@@ -1055,7 +1055,7 @@ function newestTarball(benchDir: string): string | null {
 
 // ─────────────────────────────────────────────────────── source mount (--install source)
 
-/** Linux deps tree + mount plan for running omp straight from the mounted repo. */
+/** Linux deps tree + mount plan for running ultraworkers straight from the mounted repo. */
 export interface SourceMount {
 	arch: "arm64" | "x64";
 	/** Host dir holding the linux `bin/bun` + skeleton `node_modules` trees. */
@@ -1261,7 +1261,7 @@ const PI_UPSTREAM_SYSTEM_PROMPT = path.join(AGENT_DIR, "pi-upstream-system.md");
 /**
  * Catalog facts for each `provider/model` the upstream agent needs in its
  * `models.json`: wire api, limits, modalities and cost, so its usage accounting
- * matches omp's for the same model.
+ * matches ultraworkers's for the same model.
  */
 function upstreamModelSpecs(cfg: Config): Array<Record<string, unknown>> {
 	return cfg.models.map(spec => {
@@ -1430,7 +1430,7 @@ const FORWARD_ENV_DENYLIST = new Set([
 ]);
 
 /**
- * Env vars injected into the in-container omp run: every host `PI_*` knob (minus
+ * Env vars injected into the in-container ultraworkers run: every host `PI_*` knob (minus
  * container-hostile dir/profile/session keys) plus explicit `--env` entries,
  * which always win and bypass the denylist.
  */

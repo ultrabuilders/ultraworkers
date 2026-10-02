@@ -10,6 +10,7 @@
  * The relay repo's build script runs this and embeds the output via go:embed.
  */
 import * as path from "node:path";
+import { WIRE_NAME } from "@oh-my-pi/pi-utils";
 import { generateThemeStyles, getTemplate } from "../src/export/html";
 
 const outPath = process.argv[2];
@@ -18,13 +19,19 @@ if (!outPath) {
 	process.exit(2);
 }
 
-const loaderJs = await Bun.file(new URL("../src/export/html/share-loader.js", import.meta.url).pathname).text();
+// share-loader.js runs in the browser and has no constant to import, so the brand
+// is substituted here, at the point the script is inlined. Reading it from the
+// constant rather than typing it here is what stops the next rebrand from
+// silently putting the old name back on every shared session page.
+const loaderJs = (
+	await Bun.file(new URL("../src/export/html/share-loader.js", import.meta.url).pathname).text()
+).replace("' — omp session'", `' — ${WIRE_NAME} session'`);
 // Public artifacts use the bundled omp web themes rather than TUI themes.
 const themeStyles = await generateThemeStyles("web");
 
 const html = getTemplate()
 	.replace("<theme-vars/>", () => `<style>${themeStyles}</style>`)
-	.replace("<title>Session Export</title>", () => "<title>omp session</title>")
+	.replace("<title>Session Export</title>", () => `<title>${WIRE_NAME} session</title>`)
 	.replace("{{SESSION_DATA}}</script>", () => `</script>\n  <script>${loaderJs}</script>`);
 
 if (html.includes("{{SESSION_DATA}}")) throw new Error("session-data placeholder survived substitution");
